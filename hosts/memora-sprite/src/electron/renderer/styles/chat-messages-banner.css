@@ -1,0 +1,344 @@
+/* 主动提示横幅 / 里程碑 / 配置建议卡片 */
+
+#proactive-banner .banner-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+#proactive-banner .banner-btn {
+  /* 复用 .btn-secondary 基类（含圆角/字体/光标/过渡），此处仅保留差异化样式 */
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  padding: var(--btn-padding-sm);
+  color: var(--text-2);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+#proactive-banner .banner-btn:hover {
+  background: var(--window-bg-2);
+  color: var(--text);
+}
+
+/* UI-UX-02 关闭按钮：右上角，与 actions 分离 */
+#proactive-banner .banner-close {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* banner-close 内 SVG 图标尺寸（与 modal-close 统一） */
+#proactive-banner .banner-close .icon {
+  width: 12px;
+  height: 12px;
+}
+
+#proactive-banner .banner-close:hover {
+  background: var(--window-bg-2);
+  color: var(--text);
+}
+
+/* 里程碑专属样式（金色渐变庆祝效果） */
+#proactive-banner.is-milestone {
+  background: var(--milestone-grad);
+  border-bottom-color: var(--milestone-border);
+  color: var(--milestone-text);
+  animation: bannerSlideDown var(--transition-base) ease-out, milestoneShimmer 2s ease-in-out;
+}
+
+#proactive-banner.is-milestone .banner-icon {
+  color: var(--milestone-icon);
+  animation: milestoneBounce 0.6s ease-out;
+}
+
+#proactive-banner.is-milestone .banner-text {
+  color: var(--milestone-text);
+  font-weight: var(--weight-semibold);
+}
+
+#proactive-banner.is-milestone .banner-btn {
+  background: var(--milestone-btn-bg);
+  border-color: var(--milestone-btn-border);
+  color: var(--milestone-text);
+}
+
+#proactive-banner.is-milestone .banner-btn:hover {
+  background: var(--milestone-btn-hover);
+}
+
+#proactive-banner.is-milestone .banner-close {
+  color: var(--milestone-close);
+}
+
+#proactive-banner.is-milestone .banner-close:hover {
+  background: var(--milestone-close-hover-bg);
+  color: var(--milestone-text);
+}
+
+@keyframes milestoneShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes milestoneBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+
+/* ─── B1：对话区内联里程碑 banner（对齐 demo v3 .milestone-banner） ──── */
+/* 设计：里程碑事件不再走顶部 #proactive-banner，而是作为对话流中的 */
+/*       独立元素内联渲染，金色渐变 + 奖杯图标 + 关闭按钮。         */
+/*       与消息同流，记录"对话中达成的成就"。                       */
+
+.milestone-banner {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--pad-section);
+  background: var(--milestone-grad);
+  border: 1px solid var(--milestone-border);
+  border-radius: var(--radius-md);
+  color: var(--milestone-text);
+  font-size: var(--font-sm);
+  /* 进入动画：复用消息 chat-fade-in 动画，保持视觉一致 */
+  animation: chat-fade-in var(--transition-base) ease-out;
+  /* 限宽，避免长对话中过度占宽 */
+  max-width: 480px;
+  /* 内容不换行：长文本通过 ellipsis 截断，保持单行紧凑 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 里程碑图标：奖杯 SVG，24px，金色 */
+.milestone-banner .milestone-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--milestone-icon);
+}
+
+/* 里程碑文本：粗体，flex:1 占据中间空间 */
+.milestone-banner .milestone-text {
+  flex: 1;
+  font-weight: var(--weight-semibold);
+  /* 覆盖父级 ellipsis，文本本身允许换行避免信息丢失 */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* 关闭按钮：20px 圆角，半透明白底，hover 加亮 */
+.milestone-banner .milestone-close {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--milestone-btn-bg);
+  color: var(--milestone-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background var(--transition-fast);
+}
+
+.milestone-banner .milestone-close:hover {
+  background: var(--milestone-btn-hover);
+}
+
+/* 关闭按钮内的 SVG 图标尺寸 */
+.milestone-banner .milestone-close .icon {
+  width: 10px;
+  height: 10px;
+}
+
+/* ─── 配置建议卡片（AutoConfigRefiner 闭环） ────────────── */
+/* 卡片容器：位于 #proactive-banner 之后、#messages 之前，顶部提示区 */
+.suggestion-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-compact);
+  padding: var(--space-2) var(--space-6);
+  background: var(--surface1);
+  border-bottom: 1px solid var(--surface2);
+  flex-shrink: 0;
+  z-index: calc(var(--z-floating-action) - 1); /* 低于 #proactive-banner，避免遮挡 */
+}
+
+/* 空容器自动隐藏：无建议卡片时不占空间，避免灰色粗条 */
+.suggestion-container:empty {
+  display: none;
+}
+
+/* 单个建议卡片 */
+.suggestion-card {
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 卡片头部：图标 + 类型标签 + 置信度 + 关闭按钮 */
+.suggestion-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  margin-bottom: 8px;
+}
+
+.suggestion-card-icon {
+  font-size: var(--font-base);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 建议卡片图标内的 SVG 尺寸 */
+.suggestion-card-icon .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.suggestion-card-type {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.suggestion-card-confidence {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  margin-left: auto;
+}
+
+/* 建议名称 */
+.suggestion-card-name {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* 建议内容 */
+.suggestion-card-content {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-bottom: 10px;
+  /* 限制 3 行，超出省略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 操作按钮区 */
+.suggestion-card-actions {
+  display: flex;
+  gap: var(--gap-compact);
+}
+
+.suggestion-card-btn {
+  /* 复用 .btn-primary/.btn-secondary 基类，此处仅保留差异化样式 */
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  border: 1px solid transparent;
+}
+
+/* 接受按钮：复用 .btn-primary 主强调色，保留语义钩子 */
+.suggestion-card-btn.accept {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.suggestion-card-btn.accept:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* 拒绝按钮：复用 .btn-secondary 次级样式，保留语义钩子 */
+.suggestion-card-btn.reject {
+  background: transparent;
+  color: var(--text-2);
+  border-color: var(--surface2);
+}
+
+.suggestion-card-btn.reject:hover:not(:disabled) {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.suggestion-card-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 卡片入场动画：从顶部滑入 + 淡入 */
+.suggestion-card-enter {
+  animation: suggestionCardSlideIn var(--transition-slow) ease-out;
+}
+
+@keyframes suggestionCardSlideIn {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 卡片出场动画：淡出 + 缩小 */
+.suggestion-card-leave {
+  animation: suggestionCardFadeOut var(--transition-base) ease-out forwards;
+}
+
+@keyframes suggestionCardFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  /* 顶部 16px 间距，避免第一条消息紧贴工具栏分隔线 */
+  /* 底部 16px 留白，输入区已改为 flex 流占位，不再需要大段避让留白 */
+  padding: var(--space-4) var(--space-6) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  /* 为内部的 #scroll-to-bottom-btn 提供定位上下文 */
+  position: relative;
+}
+

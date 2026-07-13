@@ -2,7 +2,7 @@
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
 > **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）。目录形态已对齐最终目标。
-> **版本**：v1.8（2026-07-13）
+> **版本**：v2.0（2026-07-13）
 
 ---
 
@@ -156,18 +156,26 @@ src/
 │       └── styles/             # CSS 样式表（详见 §2.4 CSS 架构规则）
 │           ├── README.md       # CSS 架构文档（令牌所有权 + 聚合器模式 + 贡献约定）
 │           ├── tokens.css      # 设计令牌「单一真理源」（P0：双主题变量 + CJK 字体栈，三窗口共享）
-│           ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 通用组件骨架
+│           ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类（icon-btn / empty-state / error-state）
 │           ├── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
-│           ├── chat.css        # 聚合器（@import 4 个子模块，P2 拆分）
+│           ├── command-palette.css  # 快捷命令面板（Ctrl+K，类 VS Code 浮层）
+│           ├── search-messages.css  # 对话内容搜索弹窗（Ctrl+Shift+F）
+│           ├── chat.css        # 聚合器（@import 7 个子模块，P2 拆分 + 二级拆分）
 │           ├── chat-toolbar.css      # 对话工具栏 / 状态条 / 在场脉冲浮层
 │           ├── chat-perception.css   # 对话内嵌感知紧凑布局（rapport-row/affect-grid 等紧凑组件）
 │           ├── chat-datenav.css      # 回到今天 / 日期选择 / 下拉 / 空状态
-│           ├── chat-messages.css     # 消息气泡 / 输入框 / 打字指示 / 工具调用卡片
-│           ├── memory.css      # 聚合器（@import 4 个子模块，P2 拆分）
+│           ├── chat-messages-banner.css # 主动提示横幅 / 里程碑 / 配置建议卡片（二级拆分）
+│           ├── chat-messages-bubble.css # 日期分隔符 / 消息分组 / 气泡 / 头像 / 召回（二级拆分）
+│           ├── chat-messages-input.css  # 输入区 / 补全 / 停止按钮 / 空状态（二级拆分）
+│           ├── chat-messages-misc.css   # 思考指示器 / 工具卡片 / 动画 / 启动摘要 / 右键菜单（二级拆分）
+│           ├── memory.css      # 聚合器（@import 7 个子模块，P2 拆分 + 二级拆分）
 │           ├── memory-list.css       # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
 │           ├── memory-detail.css     # 记忆详情弹窗 / 技能列表 / 全局·项目色
 │           ├── memory-views.css      # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
-│           ├── memory-graph.css      # 更多菜单 / 关系图谱 Canvas / 图例 / tooltip
+│           ├── memory-graph-core.css   # 更多菜单 / 图例 / tooltip / 右键菜单 / 关系编辑（二级拆分）
+│           ├── memory-graph-search.css # 高级搜索 / 搜索高亮 / 洞察栏（二级拆分）
+│           ├── memory-graph-detail.css # 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘（二级拆分）
+│           ├── memory-graph-misc.css   # 增强 1-5 / 时间线 / 回收站（二级拆分）
 │           ├── markdown.css    # Markdown 渲染样式
 │           ├── modal.css       # 模态弹窗样式
 │           ├── settings.css    # 设置面板样式
@@ -421,6 +429,8 @@ src/
 - [x] ITER-7: sprite/ 测试补全——新增 spriteLifecycleManager/spriteConfigManager/spriteTracer/constants/errors 5 个测试文件 +136 测试（2026-07-12 迭代 7，非目录结构变更）
 - [x] HEALTH-0712-6: sourceColor 提取——helpers/sourceColor.ts（getSourceColorClass 纯函数 + KNOWN_SOURCES 常量）从 memoryPanelManager 提取，消除 helpers→panels 循环依赖，5 个调用点导入路径更新，测试迁移到 sourceColor.test.ts（2026-07-12 斩木除根）
 - [x] ITER-8: relationGraph 二次拆分——helpers/relationGraphTypes.ts（7 类型 + 14 常量，架构层类型真理源）+ helpers/relationGraphGeometry.ts（5 纯函数：nodeRadius/screenToWorld/findNodeAt/findEdgeAt/pointToSegmentDist）提取，主文件 1206→889 行（-26%），消除 relationGraphLayout.ts 对 components 的 type-only 循环依赖（2026-07-13 神木回天）
+- [x] CSS-R3: 二级拆分——chat-messages.css(1941行)→4 子模块（banner/bubble/input/misc）+ memory-graph.css(1225行)→4 子模块（core/search/detail/misc），chat.css/memory.css 聚合器 @import 更新，层叠等价（2026-07-13 组合拳）
+- [x] CSS-R4: P0 减法——base.css 拆分出 command-palette.css(166行) + search-messages.css(198行)，base.css 620→345 行(-44%)，回归"基础样式"定位（2026-07-13 问诊 CSS 减法）
 
 ### 延后（非目录结构）
 

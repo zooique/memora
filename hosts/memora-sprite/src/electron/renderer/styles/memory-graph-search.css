@@ -1,0 +1,218 @@
+/* ─── 高级搜索栏（Phase 2：搜索增强） ──────────────────────── */
+
+/* 高级搜索栏：折叠时隐藏 */
+.advanced-search-bar {
+  padding: var(--input-padding-md);
+  border-bottom: 1px solid var(--surface2);
+  background: var(--window-bg-2);
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+  max-height: 60px;
+  overflow: hidden;
+}
+
+.advanced-search-bar.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+}
+
+/* 高级搜索行：flex 布局，紧凑排列 */
+.advanced-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  flex-wrap: wrap;
+}
+
+/* 高级搜索标签 */
+.advanced-search-label {
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* 高级搜索下拉框（复用 panel-header select 样式） */
+.advanced-search-row select {
+  padding: var(--space-1) var(--space-2);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+/* ─── 搜索结果高亮（Phase 2：搜索增强） ────────────────────── */
+
+/* 搜索关键词高亮标记 */
+.memory-item .name mark,
+.memory-item .preview mark {
+  background: var(--search-highlight-bg);
+  color: var(--text);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ─── 记忆洞察栏（Phase 3：记忆洞察面板） ───────────────────── */
+
+/* 洞察栏容器：折叠时隐藏 */
+.insights-bar {
+  padding: var(--space-2-5) var(--space-3);
+  border-bottom: 1px solid var(--surface2);
+  background: var(--window-bg-2);
+  max-height: 400px;
+  overflow-y: auto;
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+}
+
+.insights-bar.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+  overflow: hidden;
+}
+
+/* 统计洞察面板头部：标题 + 关闭按钮 */
+.insights-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.insights-title {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+/* 洞察行：统计卡片 + 分布图水平排列 */
+.insights-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* 统计卡片：数字 + 标签 */
+.insights-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 40px;
+}
+
+.insights-stat-value {
+  font-size: var(--font-h1);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  line-height: 1.2;
+}
+
+/* 冲突数有值时红色高亮警示 */
+.insights-stat-value.conflict-value.has-conflicts {
+  color: var(--red);
+}
+
+.insights-stat-label {
+  font-size: var(--font-2xs);
+  color: var(--text-2);
+}
+
+/* source 分布容器：占满剩余空间 */
+.insights-source-distribution {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 分布条：label + 条形 + 数量 */
+.insights-distribution-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--font-xs);
+}
+
+.distribution-label {
+  width: 60px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 分布填充条：复用 source-* 颜色类 */
+.distribution-fill {
+  height: 6px;
+  border-radius: var(--radius-xs);
+  min-width: 2px;
+  transition: width var(--transition-fast);
+}
+
+.distribution-count {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: right;
+}
+
+/* 关系摘要区域 */
+.insights-relations-summary {
+  border-top: 1px solid var(--surface2);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.insights-section-title {
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+/* 单条关系项：类型标签 + 描述 */
+.insights-relation-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  font-size: var(--font-sm);
+  padding: 3px 0;
+}
+
+/* 关系类型标签：复用 relationGraph 中的颜色映射 */
+.relation-type-tag {
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  background: var(--surface0);
+  color: var(--text-2);
+}
+
+/* 关系类型颜色（与 relationGraph.ts EDGE_TYPE_COLORS 对齐，使用 CSS 变量适配双主题） */
+.relation-type-contradicts { background: var(--red-20); color: var(--red); }
+.relation-type-supports { background: var(--green-20); color: var(--green); }
+.relation-type-follows { background: var(--accent-20); color: var(--accent); }
+.relation-type-refines { background: var(--yellow-20); color: var(--yellow); }
+.relation-type-caused { background: var(--mauve-20); color: var(--mauve); }
+.relation-type-related { background: var(--muted); color: var(--text); }
+
+.relation-desc {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+

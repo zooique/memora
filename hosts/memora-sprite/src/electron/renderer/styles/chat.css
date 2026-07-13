@@ -1,11 +1,17 @@
-/* chat.css — 聚合器（2026-07-09 P2 拆分）
+/* chat.css — 聚合器（2026-07-09 P2 拆分 + 2026-07-13 二级拆分）
  * 原单体已按功能拆分为以下子模块；@import 顺序与原文件一致，层叠不变。
  *   chat-toolbar.css（原 chat.css 第 1–286 行）
  *   chat-perception.css（原 chat.css 第 287–596 行）
  *   chat-datenav.css（原 chat.css 第 597–867 行）
- *   chat-messages.css（原 chat.css 第 868–2960 行）
+ *   chat-messages-banner.css（原 chat.css 第 868–1211 行：proactive + milestone + suggestion）
+ *   chat-messages-bubble.css（原 chat.css 第 1212–1693 行：date-sep + message + bubble + recall）
+ *   chat-messages-input.css（原 chat.css 第 1694–2328 行：input + completion + stop + empty-state）
+ *   chat-messages-misc.css（原 chat.css 第 2329–2960 行：thinking + tool-card + animation + startup）
  */
 @import url("chat-toolbar.css");
 @import url("chat-perception.css");
 @import url("chat-datenav.css");
-@import url("chat-messages.css");
+@import url("chat-messages-banner.css");
+@import url("chat-messages-bubble.css");
+@import url("chat-messages-input.css");
+@import url("chat-messages-misc.css");
