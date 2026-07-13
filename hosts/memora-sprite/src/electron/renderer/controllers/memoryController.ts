@@ -443,9 +443,13 @@ export function createMemoryController(uiManager: UIManager) {
           uiManager.showToast('按住 Ctrl 从节点拖拽到另一个节点即可创建连线', 'info');
           break;
         case 'copy-id':
-          // 复制节点 ID 到剪贴板
-          await navigator.clipboard.writeText(nodeId);
-          uiManager.showToast('节点 ID 已复制', 'success');
+          // 复制节点 ID 到剪贴板（UX-0713-L6：添加错误处理，剪贴板失败时反馈用户）
+          try {
+            await navigator.clipboard.writeText(nodeId);
+            uiManager.showToast('节点 ID 已复制', 'success');
+          } catch {
+            uiManager.showToast('复制失败，请手动复制', 'error');
+          }
           break;
       }
     });

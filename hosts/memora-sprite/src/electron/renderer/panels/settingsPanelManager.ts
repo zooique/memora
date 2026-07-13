@@ -1025,6 +1025,9 @@ export class SettingsPanelManager {
     const textEl = this.saveStatusEl.querySelector('.save-status-text');
     if (!iconEl || !textEl) return;
 
+    // UX-0713-L7：切换状态前移除可能存在的重试按钮（避免跨状态残留）
+    this.saveStatusEl.querySelector('.save-status-retry-btn')?.remove();
+
     // 移除所有状态类
     this.saveStatusEl.classList.remove('saving', 'saved', 'error', 'idle');
 
@@ -1050,7 +1053,17 @@ export class SettingsPanelManager {
         // 关闭 X 图标（红色，CSS .save-status-indicator.error 控制颜色）
         iconEl.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
         textEl.textContent = '保存失败';
-        // 3秒后恢复为空闲状态
+        // UX-0713-L7：追加重试按钮，让用户可主动恢复，而非只能等 3 秒后自动恢复
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'save-status-retry-btn';
+        retryBtn.textContent = '重试';
+        retryBtn.title = '重新保存';
+        // 通过 EventTracker 绑定事件，cleanup 时统一清理（避免内存泄漏）
+        this.events.addEventListener(retryBtn, 'click', () => {
+          void this.autoSaveConfig();
+        });
+        this.saveStatusEl.appendChild(retryBtn);
+        // 3秒后恢复为空闲状态（同时清理重试按钮）
         this.timers.setTimeout(() => {
           this.updateSaveStatus('idle');
         }, 3000);

@@ -207,20 +207,20 @@
         <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
-        <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-label="记忆面板">
+        <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-labelledby="panel-title-memories">
           <svg class="icon"><use href="#icon-brain"/></svg>
         </button>
-        <button class="nav-btn" data-panel="perception" data-tooltip="精灵状态" aria-label="精灵状态面板">
+        <button class="nav-btn" data-panel="perception" data-tooltip="精灵状态" aria-labelledby="panel-title-perception">
           <svg class="icon"><use href="#icon-heart"/></svg>
         </button>
-        <button class="nav-btn" data-panel="dashboard" data-tooltip="仪表盘" aria-label="仪表盘面板">
+        <button class="nav-btn" data-panel="dashboard" data-tooltip="仪表盘" aria-labelledby="panel-title-dashboard">
           <svg class="icon"><use href="#icon-chart"/></svg>
         </button>
       </nav>
 
       <!-- 底部低频区：设置 -->
       <nav class="sidebar-nav sidebar-nav-bottom" aria-label="设置">
-        <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-label="设置面板">
+        <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-labelledby="panel-title-settings">
           <svg class="icon"><use href="#icon-gear"/></svg>
         </button>
       </nav>
@@ -419,7 +419,7 @@
       <div id="panel-memories" class="panel" aria-hidden="true" aria-label="记忆">
         <div class="panel-header">
           <!-- 面板标题 -->
-          <span class="panel-title">记忆</span>
+          <span class="panel-title" id="panel-title-memories">记忆</span>
           <!-- 搜索框占据主要宽度 -->
           <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
           <!-- 视图切换分段控件：列表/时间线/图谱（常驻，互斥单选） -->
@@ -694,7 +694,7 @@
       <div id="panel-settings" class="panel" aria-hidden="true" aria-label="设置">
           <!-- 面板头部 -->
           <div class="panel-header">
-            <span class="panel-title">设置</span>
+            <span class="panel-title" id="panel-title-settings">设置</span>
           </div>
 
           <!-- UX-0713-3：自动保存机制说明，让用户明确知道修改会自动保存 -->
@@ -1109,7 +1109,7 @@
       <!-- 感知面板（独立面板，详细展示情感/默契/上下文/模式/在场状态） -->
       <div id="panel-perception" class="panel" aria-hidden="true" aria-label="感知">
         <div class="panel-header">
-          <span class="panel-title">精灵状态</span>
+          <span class="panel-title" id="panel-title-perception">精灵状态</span>
         </div>
         <!-- 感知面板错误横幅（与 settings/memory/chat/dashboard 统一错误反馈体系） -->
         <div id="perception-error" class="panel-error hidden">
@@ -1252,7 +1252,7 @@
       <!-- 仪表盘面板（迭代：感知面板从 overlay 升级为独立 .panel，整合健康诊断 + 感知 + 运行指标） -->
       <div id="panel-dashboard" class="panel" aria-hidden="true" aria-label="仪表盘">
         <div class="panel-header">
-          <span class="panel-title">仪表盘</span>
+          <span class="panel-title" id="panel-title-dashboard">仪表盘</span>
           <button id="btn-refresh-dashboard" class="icon-btn" title="刷新数据" aria-label="刷新仪表盘数据">
             <svg class="icon"><use href="#icon-refresh"/></svg>
           </button>

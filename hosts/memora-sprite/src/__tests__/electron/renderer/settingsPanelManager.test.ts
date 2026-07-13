@@ -653,3 +653,46 @@ describe('renderSkills', () => {
     expect(item.title).toBe('详细描述');
   });
 });
+
+// ─── updateSaveStatus · 重试按钮（UX-0713-L7） ──────────
+
+describe('updateSaveStatus · 重试按钮（UX-0713-L7）', () => {
+  it('error 状态应在指示器内渲染重试按钮', () => {
+    const { manager } = createManager();
+    // 直接调用私有方法进入 error 状态
+    manager['updateSaveStatus']('error');
+    const indicator = document.getElementById('save-status-indicator')!;
+    const retryBtn = indicator.querySelector('.save-status-retry-btn');
+    expect(retryBtn).not.toBeNull();
+    expect((retryBtn as HTMLElement).textContent).toBe('重试');
+  });
+
+  it('idle/saving/saved 状态不应存在重试按钮', () => {
+    const { manager } = createManager();
+    // 先进入 error 状态生成按钮，再切换到其他状态验证按钮被清理
+    manager['updateSaveStatus']('error');
+    expect(document.querySelector('.save-status-retry-btn')).not.toBeNull();
+
+    // 切换到 saving
+    manager['updateSaveStatus']('saving');
+    expect(document.querySelector('.save-status-retry-btn')).toBeNull();
+
+    // 切换到 saved
+    manager['updateSaveStatus']('saved');
+    expect(document.querySelector('.save-status-retry-btn')).toBeNull();
+
+    // 切换到 idle
+    manager['updateSaveStatus']('idle');
+    expect(document.querySelector('.save-status-retry-btn')).toBeNull();
+  });
+
+  it('点击重试按钮应触发 autoSaveConfig', async () => {
+    const { manager } = createManager();
+    // spy 私有方法 autoSaveConfig，验证重试按钮点击后是否被调用
+    const spy = vi.spyOn(manager as unknown as { autoSaveConfig: () => Promise<void> }, 'autoSaveConfig');
+    manager['updateSaveStatus']('error');
+    const retryBtn = document.querySelector('.save-status-retry-btn') as HTMLButtonElement;
+    retryBtn.click();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});

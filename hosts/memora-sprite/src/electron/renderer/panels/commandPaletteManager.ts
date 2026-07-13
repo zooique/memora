@@ -81,9 +81,9 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       keywords: '感知 精灵状态 情感 默契度 上下文 模式 dashboard',
       section: '导航',
       action: () => {
-        // 通过点击精灵状态栏触发完整的感知面板流程（含数据拉取）
-        const statusBar = document.getElementById('sprite-status-bar');
-        statusBar?.click();
+        // UX-0713-L10：直接调用 switchPanel，与 nav-chat/memories/settings 一致，
+        // 避免依赖 sprite-status-bar DOM 元素存在（原模拟点击路径脆弱）
+        void uiManager.switchPanel('perception');
       },
     },
 

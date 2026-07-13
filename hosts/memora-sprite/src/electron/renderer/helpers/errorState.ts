@@ -7,7 +7,7 @@
  *
  * 设计原则：
  * - 提取时机：3 处面板（profilePanel / auditPanel / workProjectionPanel）出现相同
- *   error-state 结构创建模式，遵循"3 次才提取"的自然生长原则
+ *   error-state 结构创建模式，遵循枝叶层 2 次提取原则（ADR-017）
  * - 与 formValidation.ts 同模式：专用工具函数，职责单一
  * - 不依赖业务逻辑，仅负责 DOM 创建 + 事件绑定
  *

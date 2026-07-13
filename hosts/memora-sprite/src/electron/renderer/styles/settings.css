@@ -463,6 +463,28 @@
   color: var(--red);
 }
 
+/* UX-0713-L7：保存失败时的重试按钮（仅 error 状态显示，由 JS 动态追加） */
+.save-status-retry-btn {
+  /* 继承指示器的字号，紧凑内联 */
+  font-size: var(--font-xs);
+  /* 中性边框 + 透明背景，弱化视觉权重避免抢夺错误图标的注意力 */
+  background: transparent;
+  border: 1px solid currentColor;
+  /* 继承 .error 的 --red */
+  color: inherit;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  line-height: 1.5;
+  cursor: pointer;
+  /* 与左侧文字保持间距 */
+  margin-left: var(--space-1);
+}
+
+/* hover 高亮，提供交互反馈 */
+.save-status-retry-btn:hover {
+  background: var(--red-10);
+}
+
 /* 尊重用户的减少动画偏好：关闭沙漏旋转 */
 @media (prefers-reduced-motion: reduce) {
   .save-status-indicator.saving .save-status-icon svg {

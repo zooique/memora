@@ -598,7 +598,11 @@ export class MemoryPanelManager {
     }
 
     const newContent = textarea.value.trim();
-    if (!newContent) return;
+    // UX-0713-L5：空内容时给出用户反馈，避免静默失败
+    if (!newContent) {
+      this.host.showToast('内容不能为空', 'warning');
+      return;
+    }
 
     const id = this.memoryDetailModal?.dataset.memoryId;
     if (!id) return;
