@@ -26,9 +26,6 @@
  * ```
  */
 
-/** 支持事件监听的目标类型：DOM 元素或 Document */
-type EventTarget = HTMLElement | Document;
-
 /**
  * 事件监听器跟踪器
  *
@@ -42,7 +39,7 @@ export class EventTracker {
   /**
    * 添加事件监听器并自动记录清理函数
    *
-   * @param element 事件目标元素（HTMLElement 或 Document）
+   * @param element 事件目标元素（HTMLElement 或 Document 等 DOM 元素）
    * @param event 事件名称（如 'click'、'keydown'）
    * @param handler 事件处理函数
    * @param options 事件监听选项（如 { passive: true } 用于 scroll 事件性能优化）
