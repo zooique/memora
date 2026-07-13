@@ -9,6 +9,7 @@
  *   - loadConfig 抛错时降级返回未配置状态
  *   - 无 embedding 时返回 embedding: null
  *   - apiKey 为空时返回空字符串（不脱敏）
+ *   - embedding.baseUrl 缺失且 apiKey 为空时降级为空字符串
  *   - 带尾斜杠路径匹配
  * - POST /api/llm-config/test：测试 LLM 连接（动态 import('memora') → createLlmProvider）
  *   - 合法请求调用 createLlmProvider + provider.chat 迭代收集 reply
@@ -16,11 +17,44 @@
  *   - createLlmProvider 抛错降级返回 success: false
  *   - provider.chat 抛错降级返回 success: false
  *   - 遇到非 stop finishReason 立即停止迭代
+ *   - chunk.content 为空时 reply 为空字符串
  * - POST /api/llm-config：保存 LLM 配置（触发 reinitAgent + webCloseSprite 全局状态更新）
  *   - 合法请求调用 saveLlmConfig + reinitAgent
  *   - reinitAgent 返回的 close 写回 webCloseSprite（链式验证）
  *   - 缺少必填字段返回 400
  *   - saveLlmConfig / reinitAgent 抛错降级返回 success: false
+ * - GET /api/llm-providers：多 Provider 列表查询（脱敏）
+ *   - 正常返回列表
+ *   - getLlmProviders 抛错降级返回空列表
+ * - POST /api/llm-providers：保存 Provider（新增/更新）
+ *   - 合法请求保存成功
+ *   - 缺少 key/config.provider 返回 400
+ *   - saveLlmProvider 抛错降级返回 success: false
+ * - DELETE /api/llm-providers/:key：删除 Provider
+ *   - 合法请求删除成功
+ *   - 无 key 时返回 400
+ *   - deleteLlmProvider 抛错降级返回 success: false
+ * - POST /api/llm-providers/:key/active：切换激活 Provider（运行时切换）
+ *   - 无 background 时切换前台 + 清空后台
+ *   - 有 background 时同时切换前台 + 后台
+ *   - provider 不存在返回 404
+ *   - setActiveLlmProvider / setProvider 抛错降级返回 success: false
+ *   - providerConfig 无 baseUrl/apiKey 时正常切换
+ *   - key 为空时 fall through 到 404
+ * - GET /api/audit-logs：审计日志列表（支持 ?limit 参数，上限 200）
+ *   - 有/无 auditManager 时的返回
+ *   - limit 参数解析（正常/超限/非法）
+ * - DELETE /api/audit-logs：清空审计日志
+ *   - 有/无 auditManager 时的返回
+ * - POST /api/skill-install：安装技能文件
+ *   - 合法请求安装成功
+ *   - 缺少必填字段返回 400
+ *   - 无 installSkill 返回 501
+ * - GET /api/works：作品投影列表
+ *   - 有/无 works 时的返回
+ * - GET /api/works/detail：作品投影详情（query: filePath）
+ *   - 合法 filePath 返回详情
+ *   - filePath 缺失/过长/works 缺失/getProjection 返回 null 时返回 null
  * - GET /api/projects：项目列表（需要 Agent 就绪）
  * - GET /api/dashboard：仪表盘数据
  *   - 完整数据返回（含 sourceHealth/metrics/skills/各属性）
@@ -32,13 +66,18 @@
  * - GET /api/perception：感知面板数据（异常降级为空对象）
  * - setWebCloseSprite 全局状态：每个测试前 reset，避免状态泄漏
  * - 降级路径：Agent 未就绪 → 503；未匹配路由 → 404；异常 → 500（safeRoute 兜底）
+ * - 防御性分支：req.method/url 为 undefined 时使用默认值
  *
  * Mock 策略：
- * - memora：vi.mock 提供 logger/toError/loadConfig/createLlmProvider（覆盖动态 import）
+ * - memora：vi.mock 提供 logger/toError/loadConfig/createLlmProvider/createProviderFromConfig（覆盖动态 import）
  * - ../../../index.js：vi.mock 提供 saveLlmConfig/isLlmConfigured/PROVIDER_PRESETS/reinitAgent
+ *   + getLlmProviders/saveLlmProvider/deleteLlmProvider/setActiveLlmProvider/DEFAULT_CONFIG_DIR
+ * - ../../../storage/spriteConfigStore.js：vi.mock 提供 DEFAULT_CONFIG_PATH/resolveProviderConfig
  * - IncomingMessage：自建 mock 对象，实现 method/url 与 async iterator
  * - ServerResponse：自建 mock 对象，捕获 writeHead/end 调用
  * - HostContext.sprite：mock 全部仪表盘/项目/感知相关方法 + getter 属性
+ * - HostContext.auditManager/installSkill：可选注入，测试审计/技能安装路由
+ * - HostContext.agent.setProvider/setBackgroundProvider/works：可选注入，测试 Provider 切换/作品投影路由
  *
  * 风格参考：src/__tests__/web/routes/sessionRoutes.test.ts
  */
@@ -68,6 +107,20 @@ const {
   mockLoadConfig,
   /** mock createLlmProvider 函数引用 */
   mockCreateLlmProvider,
+  /** mock getLlmProviders 函数引用 */
+  mockGetLlmProviders,
+  /** mock saveLlmProvider 函数引用 */
+  mockSaveLlmProvider,
+  /** mock deleteLlmProvider 函数引用 */
+  mockDeleteLlmProvider,
+  /** mock setActiveLlmProvider 函数引用 */
+  mockSetActiveLlmProvider,
+  /** mock resolveProviderConfig 函数引用 */
+  mockResolveProviderConfig,
+  /** mock createProviderFromConfig 函数引用 */
+  mockCreateProviderFromConfig,
+  /** mock getLlmProviders 默认返回的 Provider 列表 */
+  MOCK_PROVIDERS_DATA,
 } = vi.hoisted(() => {
   // mock loadConfig：默认返回含 llm + embedding 的完整配置
   const mockLoadConfig = vi.fn(async () => ({
@@ -92,6 +145,24 @@ const {
   const mockIsLlmConfigured = vi.fn(async () => true);
   // mock reinitAgent：默认返回含 close 的结果
   const mockReinitAgent = vi.fn(async () => ({ close: vi.fn(async () => {}) }));
+  // mock getLlmProviders：默认返回含 active + providers 的列表
+  const mockGetLlmProviders = vi.fn(async () => ({ active: 'default', providers: [] }));
+  // mock saveLlmProvider：默认成功
+  const mockSaveLlmProvider = vi.fn(async () => undefined);
+  // mock deleteLlmProvider：默认成功
+  const mockDeleteLlmProvider = vi.fn(async () => undefined);
+  // mock setActiveLlmProvider：默认成功
+  const mockSetActiveLlmProvider = vi.fn(async () => undefined);
+  // mock resolveProviderConfig：默认返回 deepseek provider 配置
+  const mockResolveProviderConfig = vi.fn(() => ({
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com',
+    apiKey: 'sk-test',
+    temperature: 0.7,
+  }));
+  // mock createProviderFromConfig：返回空对象（代表 provider 实例）
+  const mockCreateProviderFromConfig = vi.fn(() => ({}));
   return {
     MOCK_CONFIG: {
       llm: {
@@ -117,6 +188,26 @@ const {
     mockReinitAgent,
     mockLoadConfig,
     mockCreateLlmProvider,
+    mockGetLlmProviders,
+    mockSaveLlmProvider,
+    mockDeleteLlmProvider,
+    mockSetActiveLlmProvider,
+    mockResolveProviderConfig,
+    mockCreateProviderFromConfig,
+    MOCK_PROVIDERS_DATA: {
+      active: 'default',
+      providers: [
+        {
+          key: 'default',
+          name: '默认',
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk-test',
+          temperature: 0.7,
+        },
+      ],
+    },
   };
 });
 
@@ -134,14 +225,27 @@ vi.mock('memora', () => ({
   }),
   loadConfig: mockLoadConfig,
   createLlmProvider: mockCreateLlmProvider,
+  createProviderFromConfig: mockCreateProviderFromConfig,
 }));
 
 // Mock ../../../index.js：覆盖 saveLlmConfig/isLlmConfigured/PROVIDER_PRESETS/reinitAgent
+// 以及多 Provider 管理函数 + 动态 import 的 DEFAULT_CONFIG_DIR
 vi.mock('../../../index.js', () => ({
   saveLlmConfig: mockSaveLlmConfig,
   isLlmConfigured: mockIsLlmConfigured,
   PROVIDER_PRESETS: MOCK_PRESETS,
   reinitAgent: mockReinitAgent,
+  getLlmProviders: mockGetLlmProviders,
+  saveLlmProvider: mockSaveLlmProvider,
+  deleteLlmProvider: mockDeleteLlmProvider,
+  setActiveLlmProvider: mockSetActiveLlmProvider,
+  DEFAULT_CONFIG_DIR: '/mock/config/dir',
+}));
+
+// Mock ../../../storage/spriteConfigStore.js：覆盖 DEFAULT_CONFIG_PATH / resolveProviderConfig
+vi.mock('../../../storage/spriteConfigStore.js', () => ({
+  DEFAULT_CONFIG_PATH: '/mock/config.json',
+  resolveProviderConfig: mockResolveProviderConfig,
 }));
 
 // 导入被测模块（在 vi.mock 之后，确保 mock 生效）
@@ -260,10 +364,16 @@ interface MockSkill {
   layer: string;
 }
 
-/** Mock Agent（systemRoutes 用到的子集：仅 skills.list） */
+/** Mock Agent（systemRoutes 用到的子集：skills.list/setProvider/setBackgroundProvider/works） */
 interface MockAgent {
   /** 技能管理器（可选，未初始化时为 undefined） */
   skills?: { list: MockSkill[] } | null;
+  /** 运行时切换前台 Provider（可选，切换激活 Provider 路由使用） */
+  setProvider?: ReturnType<typeof vi.fn>;
+  /** 运行时切换后台 Provider（可选，切换激活 Provider 路由使用） */
+  setBackgroundProvider?: ReturnType<typeof vi.fn>;
+  /** 作品投影管理器（可选，未初始化时为 undefined/null） */
+  works?: { loadAll: ReturnType<typeof vi.fn>; getProjection: ReturnType<typeof vi.fn> } | null;
 }
 
 /**
@@ -311,9 +421,16 @@ function createMockCtx(overrides?: {
   sprite?: MockSprite;
   /** isAgentReady mock（默认 () => true） */
   isAgentReady?: ReturnType<typeof vi.fn>;
+  /** 审计日志管理器 mock（可选，不传则 undefined） */
+  auditManager?: { readRecent: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> } | null;
+  /** 技能安装回调 mock（可选，不传则 undefined） */
+  installSkill?: ReturnType<typeof vi.fn> | null;
 }): HostContext {
   // agent 可能为 null/undefined（测试无 skills 场景），不能用 ?? 替换
   const hasAgent = overrides && 'agent' in overrides;
+  // auditManager/installSkill 用 in 操作符区分"未传"和"显式传 null"
+  const hasAudit = overrides && 'auditManager' in overrides;
+  const hasInstall = overrides && 'installSkill' in overrides;
   return {
     agent: (hasAgent ? overrides!.agent : { skills: { list: [] } }) as unknown as HostContext['agent'],
     sprite: (overrides?.sprite ?? createMockSprite()) as unknown as HostContext['sprite'],
@@ -321,6 +438,8 @@ function createMockCtx(overrides?: {
     getAbortController: vi.fn(() => null),
     setAbortController: vi.fn(),
     isAgentReady: overrides?.isAgentReady ?? vi.fn(() => true),
+    auditManager: (hasAudit ? overrides!.auditManager : undefined) as unknown as HostContext['auditManager'],
+    installSkill: (hasInstall ? overrides!.installSkill : undefined) as unknown as HostContext['installSkill'],
   };
 }
 
@@ -336,6 +455,19 @@ describe('handleSystemRoute', () => {
     mockIsLlmConfigured.mockResolvedValue(true);
     mockSaveLlmConfig.mockResolvedValue(undefined);
     mockReinitAgent.mockResolvedValue(MOCK_REINIT_RESULT);
+    // 重置多 Provider 管理 mock 默认返回值
+    mockGetLlmProviders.mockResolvedValue(MOCK_PROVIDERS_DATA);
+    mockSaveLlmProvider.mockResolvedValue(undefined);
+    mockDeleteLlmProvider.mockResolvedValue(undefined);
+    mockSetActiveLlmProvider.mockResolvedValue(undefined);
+    mockResolveProviderConfig.mockReturnValue({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test',
+      temperature: 0.7,
+    });
+    mockCreateProviderFromConfig.mockReturnValue({});
     // 重置 MOCK_PROVIDER.chat 默认行为：yield 一个 chunk 后 stop
     MOCK_PROVIDER.chat.mockImplementation(async function* () {
       yield { content: 'hi', finishReason: 'stop' };
@@ -1091,6 +1223,674 @@ describe('handleSystemRoute', () => {
     // reinitAgent 应用 null 调用，而非 staleClose
     expect(mockReinitAgent).toHaveBeenCalledWith(null);
     expect(staleClose).not.toHaveBeenCalled();
+  });
+
+  // ─── GET /api/llm-providers ──────────────────────────
+
+  it('GET /api/llm-providers 应返回 Provider 列表', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('GET', '/api/llm-providers');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockGetLlmProviders).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(MOCK_PROVIDERS_DATA);
+  });
+
+  it('GET /api/llm-providers/ 带尾斜杠也应匹配', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('GET', '/api/llm-providers/');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(MOCK_PROVIDERS_DATA);
+  });
+
+  // getLlmProviders 抛错时降级返回空列表（catch 块）
+  it('GET /api/llm-providers getLlmProviders 抛错时应降级返回空列表', async () => {
+    mockGetLlmProviders.mockRejectedValue(new Error('读取失败'));
+    const ctx = createMockCtx();
+    const req = createMockReq('GET', '/api/llm-providers');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ active: '', providers: [] });
+  });
+
+  // ─── POST /api/llm-providers ─────────────────────────
+
+  it('POST /api/llm-providers 合法请求应保存 Provider 并返回成功', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers', {
+      key: 'new-provider',
+      config: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: 'sk-x',
+      },
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockSaveLlmProvider).toHaveBeenCalledWith('new-provider', expect.objectContaining({ provider: 'openai' }));
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+  });
+
+  it('POST /api/llm-providers/ 带尾斜杠也应匹配', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers/', {
+      key: 'k',
+      config: { provider: 'p', model: 'm', baseUrl: 'u', apiKey: 'a' },
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockSaveLlmProvider).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('POST /api/llm-providers 缺少 key 应返回 400', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers', {
+      config: { provider: 'p', model: 'm', baseUrl: 'u', apiKey: 'a' },
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockSaveLlmProvider).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain('必填');
+  });
+
+  it('POST /api/llm-providers 缺少 config.provider 应返回 400', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers', {
+      key: 'k',
+      config: { model: 'm', baseUrl: 'u', apiKey: 'a' },
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain('必填');
+  });
+
+  it('POST /api/llm-providers saveLlmProvider 抛错时应降级返回 success: false', async () => {
+    mockSaveLlmProvider.mockRejectedValue(new Error('写入失败'));
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers', {
+      key: 'k',
+      config: { provider: 'p', model: 'm', baseUrl: 'u', apiKey: 'a' },
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('写入失败');
+  });
+
+  // ─── DELETE /api/llm-providers/:key ───────────────────
+
+  it('DELETE /api/llm-providers/:key 合法请求应删除 Provider 并返回成功', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('DELETE', '/api/llm-providers/my-key');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockDeleteLlmProvider).toHaveBeenCalledWith('my-key');
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+  });
+
+  // 尾斜杠无 key 时 path.split('/').pop() 返回空字符串，触发 400
+  it('DELETE /api/llm-providers/ 无 key 时应返回 400', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('DELETE', '/api/llm-providers/');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockDeleteLlmProvider).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain('key 必填');
+  });
+
+  it('DELETE /api/llm-providers/:key deleteLlmProvider 抛错时应降级返回 success: false', async () => {
+    mockDeleteLlmProvider.mockRejectedValue(new Error('删除失败'));
+    const ctx = createMockCtx();
+    const req = createMockReq('DELETE', '/api/llm-providers/my-key');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('删除失败');
+  });
+
+  // ─── POST /api/llm-providers/:key/active ──────────────
+
+  it('POST /api/llm-providers/:key/active 合法请求应切换激活 Provider（无 background）', async () => {
+    const setProvider = vi.fn();
+    const setBackgroundProvider = vi.fn();
+    const ctx = createMockCtx({
+      agent: { skills: { list: [] }, setProvider, setBackgroundProvider },
+    });
+    const req = createMockReq('POST', '/api/llm-providers/my-key/active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(mockSetActiveLlmProvider).toHaveBeenCalledWith('my-key');
+    expect(mockCreateProviderFromConfig).toHaveBeenCalled();
+    expect(setProvider).toHaveBeenCalled();
+    // 无 background 时应调用 setBackgroundProvider(null)
+    expect(setBackgroundProvider).toHaveBeenCalledWith(null);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.message).toContain('切换');
+  });
+
+  it('POST /api/llm-providers/:key/active 有 background 时应同时切换后台 Provider', async () => {
+    // 覆盖 loadConfig 返回含 background 的配置
+    mockLoadConfig.mockResolvedValue({
+      llm: {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk-test',
+        temperature: 0.7,
+        background: {
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'sk-bg',
+        },
+      },
+    });
+    const setProvider = vi.fn();
+    const setBackgroundProvider = vi.fn();
+    const ctx = createMockCtx({
+      agent: { skills: { list: [] }, setProvider, setBackgroundProvider },
+    });
+    const req = createMockReq('POST', '/api/llm-providers/my-key/active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    // 应创建前台 + 后台两个 provider 实例
+    expect(mockCreateProviderFromConfig).toHaveBeenCalledTimes(2);
+    expect(setProvider).toHaveBeenCalled();
+    expect(setBackgroundProvider).toHaveBeenCalled();
+    // setBackgroundProvider 应收到非 null 参数（后台 provider 实例）
+    expect(setBackgroundProvider).not.toHaveBeenCalledWith(null);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('POST /api/llm-providers/:key/active provider 不存在时应返回 404', async () => {
+    mockResolveProviderConfig.mockReturnValue(undefined);
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers/missing/active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toContain('不存在');
+  });
+
+  it('POST /api/llm-providers/:key/active setActiveLlmProvider 抛错时应降级返回 success: false', async () => {
+    mockSetActiveLlmProvider.mockRejectedValue(new Error('持久化失败'));
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers/my-key/active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('持久化失败');
+  });
+
+  it('POST /api/llm-providers/:key/active setProvider 抛错时应降级返回 success: false', async () => {
+    const setProvider = vi.fn(() => { throw new Error('Agent 未就绪'); });
+    const ctx = createMockCtx({
+      agent: { skills: { list: [] }, setProvider, setBackgroundProvider: vi.fn() },
+    });
+    const req = createMockReq('POST', '/api/llm-providers/my-key/active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('Agent 未就绪');
+  });
+
+  // ─── GET /api/audit-logs ──────────────────────────────
+
+  it('GET /api/audit-logs 有 auditManager 时应返回日志列表', async () => {
+    const logs = [{ ts: '2026-07-12', action: 'write', path: '/a' }];
+    const auditManager = { readRecent: vi.fn(async () => logs), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('GET', '/api/audit-logs');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(auditManager.readRecent).toHaveBeenCalledWith(50);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(logs);
+  });
+
+  it('GET /api/audit-logs/ 带尾斜杠也应匹配', async () => {
+    const auditManager = { readRecent: vi.fn(async () => []), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('GET', '/api/audit-logs/');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual([]);
+  });
+
+  it('GET /api/audit-logs 无 auditManager 时应返回空数组', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('GET', '/api/audit-logs');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual([]);
+  });
+
+  it('GET /api/audit-logs?limit=10 应将 limit 传递给 readRecent', async () => {
+    const auditManager = { readRecent: vi.fn(async () => []), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('GET', '/api/audit-logs?limit=10');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(auditManager.readRecent).toHaveBeenCalledWith(10);
+  });
+
+  it('GET /api/audit-logs?limit=500 超过 200 时应被截断为 200', async () => {
+    const auditManager = { readRecent: vi.fn(async () => []), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('GET', '/api/audit-logs?limit=500');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(auditManager.readRecent).toHaveBeenCalledWith(200);
+  });
+
+  it('GET /api/audit-logs?limit=abc 非法 limit 应降级为默认 50', async () => {
+    const auditManager = { readRecent: vi.fn(async () => []), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('GET', '/api/audit-logs?limit=abc');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(auditManager.readRecent).toHaveBeenCalledWith(50);
+  });
+
+  // ─── DELETE /api/audit-logs ───────────────────────────
+
+  it('DELETE /api/audit-logs 有 auditManager 时应清空日志', async () => {
+    const auditManager = { readRecent: vi.fn(async () => []), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('DELETE', '/api/audit-logs');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(auditManager.clear).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ success: true });
+  });
+
+  it('DELETE /api/audit-logs/ 带尾斜杠也应匹配', async () => {
+    const auditManager = { readRecent: vi.fn(async () => []), clear: vi.fn(async () => {}) };
+    const ctx = createMockCtx({ auditManager });
+    const req = createMockReq('DELETE', '/api/audit-logs/');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(auditManager.clear).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('DELETE /api/audit-logs 无 auditManager 时应仍返回成功', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('DELETE', '/api/audit-logs');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ success: true });
+  });
+
+  // ─── POST /api/skill-install ──────────────────────────
+
+  it('POST /api/skill-install 合法请求应安装技能', async () => {
+    const installResult = { success: true, skillName: 'my-skill', installedPath: '/skills/my-skill.md' };
+    const installSkill = vi.fn(async () => installResult);
+    const ctx = createMockCtx({ installSkill });
+    const req = createMockReq('POST', '/api/skill-install', {
+      fileName: 'my-skill.md',
+      content: '# My Skill\n技能内容',
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(installSkill).toHaveBeenCalledWith('# My Skill\n技能内容', 'my-skill.md', '/mock/config/dir');
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(installResult);
+  });
+
+  it('POST /api/skill-install/ 带尾斜杠也应匹配', async () => {
+    const installSkill = vi.fn(async () => ({ success: true }));
+    const ctx = createMockCtx({ installSkill });
+    const req = createMockReq('POST', '/api/skill-install/', {
+      fileName: 's.md',
+      content: 'c',
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(installSkill).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('POST /api/skill-install 缺少 content 应返回 400', async () => {
+    const installSkill = vi.fn(async () => ({ success: true }));
+    const ctx = createMockCtx({ installSkill });
+    const req = createMockReq('POST', '/api/skill-install', {
+      fileName: 's.md',
+      // 缺少 content
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(installSkill).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain('必填');
+  });
+
+  it('POST /api/skill-install 无 installSkill 时应返回 501', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/skill-install', {
+      fileName: 's.md',
+      content: 'c',
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(501);
+    expect(JSON.parse(res.body).error).toContain('未启用');
+  });
+
+  // ─── GET /api/works ───────────────────────────────────
+
+  it('GET /api/works 有 works 时应返回作品投影列表', async () => {
+    const entries = [
+      {
+        id: 'work-1',
+        sourcePath: '/path/a.ts',
+        fileHash: 'abc123',
+        summary: '文件摘要',
+        structure: ['模块1', '模块2'],
+        keyDecisions: ['决策1'],
+        updatedAt: '2026-07-12T00:00:00Z',
+      },
+    ];
+    const works = { loadAll: vi.fn(async () => entries), getProjection: vi.fn() };
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works } });
+    const req = createMockReq('GET', '/api/works');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(works.loadAll).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe('work-1');
+    expect(body[0].sourcePath).toBe('/path/a.ts');
+    expect(body[0].summary).toBe('文件摘要');
+    expect(body[0].structure).toEqual(['模块1', '模块2']);
+  });
+
+  it('GET /api/works/ 带尾斜杠也应匹配', async () => {
+    const works = { loadAll: vi.fn(async () => []), getProjection: vi.fn() };
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works } });
+    const req = createMockReq('GET', '/api/works/');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual([]);
+  });
+
+  it('GET /api/works works 为 undefined 时应返回空数组', async () => {
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works: undefined } });
+    const req = createMockReq('GET', '/api/works');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual([]);
+  });
+
+  // ─── GET /api/works/detail ────────────────────────────
+
+  it('GET /api/works/detail 合法 filePath 应返回作品详情', async () => {
+    const entry = {
+      id: 'work-1',
+      sourcePath: '/path/a.ts',
+      fileHash: 'abc123',
+      summary: '摘要',
+      structure: ['模块1'],
+      keyDecisions: ['决策1'],
+      updatedAt: '2026-07-12T00:00:00Z',
+    };
+    const works = { loadAll: vi.fn(), getProjection: vi.fn(async () => entry) };
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works } });
+    const req = createMockReq('GET', '/api/works/detail?filePath=/path/a.ts');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(works.getProjection).toHaveBeenCalledWith('/path/a.ts');
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe('work-1');
+    expect(body.summary).toBe('摘要');
+  });
+
+  it('GET /api/works/detail 缺少 filePath 时应返回 null', async () => {
+    const works = { loadAll: vi.fn(), getProjection: vi.fn() };
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works } });
+    const req = createMockReq('GET', '/api/works/detail');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(works.getProjection).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toBeNull();
+  });
+
+  it('GET /api/works/detail filePath 过长（>1000）时应返回 null', async () => {
+    const works = { loadAll: vi.fn(), getProjection: vi.fn() };
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works } });
+    const longPath = 'a'.repeat(1001);
+    const req = createMockReq('GET', `/api/works/detail?filePath=${longPath}`);
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(works.getProjection).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toBeNull();
+  });
+
+  it('GET /api/works/detail works 为 undefined 时应返回 null', async () => {
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works: undefined } });
+    const req = createMockReq('GET', '/api/works/detail?filePath=/path/a.ts');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toBeNull();
+  });
+
+  it('GET /api/works/detail getProjection 返回 null 时应返回 null', async () => {
+    const works = { loadAll: vi.fn(), getProjection: vi.fn(async () => null) };
+    const ctx = createMockCtx({ agent: { skills: { list: [] }, works } });
+    const req = createMockReq('GET', '/api/works/detail?filePath=/not/found.ts');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toBeNull();
+  });
+
+  // ─── 补充分支覆盖 ──────────────────────────────────────
+
+  // chunk.content 为空时不应拼接 reply（覆盖 line 140 的 falsy 分支）
+  it('POST /api/llm-config/test chunk.content 为空时 reply 应为空字符串', async () => {
+    MOCK_PROVIDER.chat.mockImplementation(async function* () {
+      yield { content: '', finishReason: 'stop' };
+    });
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-config/test', {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test',
+    });
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.reply).toBe('');
+  });
+
+  // POST /api/llm-providers//active key 为空时条件不满足，fall through 到 404
+  it('POST /api/llm-providers//active key 为空时应返回 404', async () => {
+    const ctx = createMockCtx();
+    const req = createMockReq('POST', '/api/llm-providers//active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    // key 为空时 parts[4]==='active' && key 条件不满足，fall through 到未匹配路由
+    expect(res.statusCode).toBe(404);
+  });
+
+  // providerConfig.baseUrl/apiKey 为空时正常切换（覆盖 lines 254-255 的 falsy 分支）
+  it('POST /api/llm-providers/:key/active provider 配置无 baseUrl/apiKey 时应正常切换', async () => {
+    mockResolveProviderConfig.mockReturnValue({
+      provider: 'custom',
+      model: 'm',
+      // baseUrl 和 apiKey 缺失，触发 || undefined / || '' 分支
+    });
+    const setProvider = vi.fn();
+    const setBackgroundProvider = vi.fn();
+    const ctx = createMockCtx({
+      agent: { skills: { list: [] }, setProvider, setBackgroundProvider },
+    });
+    const req = createMockReq('POST', '/api/llm-providers/my-key/active');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(setProvider).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+  });
+
+  // embedding.baseUrl 缺失且 apiKey 为空时降级为空字符串（覆盖 lines 96-97 的 falsy 分支）
+  it('GET /api/llm-config embedding.baseUrl 缺失且 apiKey 为空时应返回空字符串', async () => {
+    mockLoadConfig.mockResolvedValue({
+      llm: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: 'sk-x',
+        temperature: 0.5,
+      },
+      embedding: {
+        model: 'text-embedding-3',
+        // baseUrl 缺失触发 ?? '' 分支，apiKey 为空触发 ? '' : '' 分支
+        apiKey: '',
+      },
+    });
+    const ctx = createMockCtx();
+    const req = createMockReq('GET', '/api/llm-config');
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.embedding.baseUrl).toBe('');
+    expect(body.embedding.apiKey).toBe('');
+  });
+
+  // req.method/url 为 undefined 时使用默认值（覆盖 lines 66-68 的 ?? 防御性分支）
+  it('req.method/url 为 undefined 时应使用默认值 GET 和空字符串并返回 404', async () => {
+    const ctx = createMockCtx();
+    // 构造 method/url 均为 undefined 的请求对象
+    const req = {} as unknown as IncomingMessage;
+    const res = createMockRes();
+
+    await handleSystemRoute(req, res, ctx);
+
+    // method 默认 'GET'，url 默认 ''，path 默认 ''，不匹配任何路由 → 404
+    expect(res.statusCode).toBe(404);
   });
 
   // ─── 未匹配路由 → 404 ──────────────────────────────────
