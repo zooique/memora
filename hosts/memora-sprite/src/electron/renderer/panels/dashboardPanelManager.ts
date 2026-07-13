@@ -518,7 +518,8 @@ export class DashboardPanelManager {
 
     const { recent } = review.insights;
     if (recent.length === 0) {
-      sectionEl.style.display = 'none';
+      // 安全审计修复：使用 hidden class 替代 style.display（CSP 兼容）
+      sectionEl.classList.add('hidden');
       return;
     }
 
@@ -550,7 +551,8 @@ export class DashboardPanelManager {
       listEl.appendChild(item);
     }
 
-    sectionEl.style.display = 'block';
+    // 安全审计修复：使用 hidden class 替代 style.display（CSP 兼容）
+    sectionEl.classList.remove('hidden');
   }
 
   /**

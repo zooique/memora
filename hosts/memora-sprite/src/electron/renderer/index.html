@@ -1300,7 +1300,8 @@
           </section>
 
           <!-- 分区一之二：最近洞察（ReviewData.insights.recent） -->
-          <section class="dashboard-section" id="dashboard-recent-insights" style="display: none;">
+          <!-- 安全审计修复：移除内联 style，改用 hidden class（CSP style-src 'self' 禁止内联 style 属性） -->
+          <section class="dashboard-section hidden" id="dashboard-recent-insights">
             <div class="dashboard-section-title">最近洞察</div>
             <div class="recent-insights-list" id="recent-insights-list">
               <div class="placeholder-text">暂无洞察</div>
