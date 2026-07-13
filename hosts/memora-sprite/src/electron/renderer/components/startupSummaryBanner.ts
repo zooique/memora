@@ -120,6 +120,13 @@ export function showStartupSummary(summary: StartupSummaryData): void {
 function buildSummaryItem(label: string, value: string): HTMLElement {
   const item = document.createElement('div');
   item.className = 'startup-banner-item';
-  item.innerHTML = `<span>${label}</span><span class="startup-banner-value">${value}</span>`;
+  // 使用 createElement + textContent 替代 innerHTML 拼接，天然防 XSS
+  const labelSpan = document.createElement('span');
+  labelSpan.textContent = label;
+  const valueSpan = document.createElement('span');
+  valueSpan.className = 'startup-banner-value';
+  valueSpan.textContent = value;
+  item.appendChild(labelSpan);
+  item.appendChild(valueSpan);
   return item;
 }

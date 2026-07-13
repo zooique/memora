@@ -87,7 +87,7 @@
   font-family: var(--font-mono);
   background: var(--surface2);
   color: var(--muted);
-  padding: 1px 5px;
+  padding: 1px var(--space-1);
   border-radius: var(--radius-xs);
   border: 1px solid var(--surface2);
   margin-left: 2px;
@@ -702,7 +702,7 @@
   visibility: visible;
   pointer-events: auto;
   /* active 面板提升堆叠层级，确保在所有隐藏面板之上 */
-  z-index: 1;
+  z-index: var(--z-base);
 }
 
 /* 减少动画偏好：禁用面板淡入淡出过渡 */
@@ -858,8 +858,8 @@
 
 .recent-insight-name {
   font-size: var(--font-sm);
-  color: var(--text-1);
-  font-weight: 500;
+  color: var(--text);
+  font-weight: var(--weight-medium);
 }
 
 .recent-insight-time {
@@ -887,16 +887,16 @@ body.web-mode {
 
 /* Web 模式：隐藏 Electron 窗口控制按钮（最小化/最大化/关闭） */
 body.web-mode #titlebar-controls {
-  display: none !important;
+  display: none;
 }
 
-/* Web 模式：禁用标题栏拖拽区域样式 */
+/* Web 模式：禁用标题栏拖拽区域样式（body.web-mode + ID 选择器 specificity 已足够覆盖 #titlebar） */
 body.web-mode #titlebar {
-  -webkit-app-region: no-drag !important;
+  -webkit-app-region: no-drag;
 }
 
 body.web-mode #titlebar-drag {
-  -webkit-app-region: no-drag !important;
+  -webkit-app-region: no-drag;
   cursor: default;
 }
 

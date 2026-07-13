@@ -73,18 +73,16 @@ export function getOptionalElement<T extends keyof HTMLElementTagNameMap>(
 }
 
 /**
- * 安全清空 DOM 容器（while + removeChild 模式）
+ * 安全清空 DOM 容器（单次 API 调用）
  *
- * 使用 while + removeChild 替代 innerHTML = ''，
- * 避免事件监听器残留和 XSS 一致性问题。
+ * 使用 Element.replaceChildren() 替代 while + removeChild 循环，
+ * 浏览器内部优化为一次 reflow，避免长列表逐个移除阻塞主线程。
  * 供 ui.ts 和 memoryController.ts 等需要清空 DOM 的模块共享。
  *
  * @param el 要清空的 DOM 元素
  */
 export function clearElement(el: Element): void {
-  while (el.firstChild) {
-    el.removeChild(el.firstChild);
-  }
+  el.replaceChildren();
 }
 
 // ─── HTML 转义 ─────────────────────────────────────────

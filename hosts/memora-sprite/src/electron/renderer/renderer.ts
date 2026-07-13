@@ -20,6 +20,7 @@ import { createPersonaController } from './controllers/personaController.js';
 import { createSettingsController } from './controllers/settingsController.js';
 import { initIpcListeners, consumeConflictTargetId } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
+import { EventTracker } from './helpers/eventTracker.js';
 import { getLocalDate, MS_PER_HOUR, MS_PER_DAY, TOAST_LONG_MS } from '../../sprite/constants.js';
 import {
   createSilentRecoveryScheduler,
@@ -47,6 +48,14 @@ const State = {
   agentReadyHandled: false as boolean,
   /** 记忆控制器实例 */
   memoryController: null as ReturnType<typeof createMemoryController> | null,
+  /**
+   * 渲染进程级事件跟踪器（统一管理 renderer.ts 直接注册的事件监听器）
+   *
+   * 职责：跟踪 forkBtn/dropzone 等页面级元素的事件监听器，beforeunload 时统一清理。
+   * 与 UIManager 内部的 private events 分离，避免破坏 UIManager 封装性。
+   * 符合项目 EventTracker 统一抽象范式（所有面板均通过 EventTracker 注册事件）。
+   */
+  events: new EventTracker(),
 };
 
 /** 静默模式自动恢复时间（1 小时，使用 MS_PER_HOUR 常量统一时间单位） */
@@ -425,7 +434,7 @@ async function bootstrapRenderer(): Promise<void> {
     void memoryController.loadDashboard();
   });
   // 初始化 dropzone 事件监听（dragover/drop/click/change）
-  setupSkillDropzone(State.uiManager);
+  setupSkillDropzone(State.events);
 
   // loadLlmConfig（加载 Embedding 配置）与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
   // Provider 列表由 SettingsPanelManager.initListeners 内部调用 loadProviderList 自行加载
@@ -559,6 +568,8 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   }
 
   State.uiManager?.cleanup();
+  // 清理渲染进程级事件监听器（forkBtn/dropzone 等，EventTracker 统一管理）
+  State.events.cleanup();
   // 清理静默模式恢复定时器，避免定时器触发时操作已销毁的 DOM 或产生未捕获 rejection
   if (State.silentRecoveryTimer !== null) {
     window.clearTimeout(State.silentRecoveryTimer);
@@ -687,7 +698,8 @@ function setupBusinessLogic(
   // 会话分叉按钮：从当前对话分叉出独立分支（基于当前上下文新建会话）
   const forkBtn = document.getElementById('btn-fork-session');
   if (forkBtn) {
-    forkBtn.addEventListener('click', () => {
+    // 通过 State.events 统一注册，beforeunload 时自动清理（EventTracker 范式）
+    State.events.addEventListener(forkBtn, 'click', () => {
       void sessionController.forkSession();
     });
   }
@@ -771,9 +783,12 @@ function setupBusinessLogic(
  * - change：文件选择后触发，提取 File[] 调用 State.uiManager.handleSkillDrop
  * - keydown：Enter/Space 触发点击（支持键盘可访问性，tabindex=0）
  *
- * @param State.uiManager UI 管理器实例
+ * 所有事件通过 EventTracker 统一注册，beforeunload 时由 State.events.cleanup() 清理，
+ * 符合项目 EventTracker 统一抽象范式（避免事件监听器泄漏）。
+ *
+ * @param events 渲染进程级 EventTracker 实例（State.events）
  */
-function setupSkillDropzone(_uiManager: UIManager): void {
+function setupSkillDropzone(events: EventTracker): void {
   const dropzone = document.getElementById('skill-dropzone');
   // dropzone 不存在时静默降级（HTML 可能被裁剪）
   if (!dropzone) return;
@@ -785,29 +800,32 @@ function setupSkillDropzone(_uiManager: UIManager): void {
   }
 
   // dragenter/dragover：阻止默认行为（禁止浏览器打开文件）+ 添加高亮类
-  const handleDragOver = (e: DragEvent): void => {
+  // handler 签名用 Event（EventTracker 范式要求），内部断言为 DragEvent 访问特有属性
+  const handleDragOver = (e: Event): void => {
     e.preventDefault();
     e.stopPropagation();
     dropzone.classList.add('is-dragover');
   };
 
   // dragleave：移除高亮类（仅当离开 dropzone 本身时触发，避免子元素切换抖动）
-  const handleDragLeave = (e: DragEvent): void => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDragLeave = (e: Event): void => {
+    const dragEvent = e as DragEvent;
+    dragEvent.preventDefault();
+    dragEvent.stopPropagation();
     // relatedTarget 为 null 或不在 dropzone 内时才移除高亮
-    const related = e.relatedTarget as Node | null;
+    const related = dragEvent.relatedTarget as Node | null;
     if (!related || !dropzone.contains(related)) {
       dropzone.classList.remove('is-dragover');
     }
   };
 
   // drop：提取文件 + 移除高亮 + 调用安装
-  const handleDrop = (e: DragEvent): void => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDrop = (e: Event): void => {
+    const dragEvent = e as DragEvent;
+    dragEvent.preventDefault();
+    dragEvent.stopPropagation();
     dropzone.classList.remove('is-dragover');
-    const files = e.dataTransfer?.files;
+    const files = dragEvent.dataTransfer?.files;
     if (files && files.length > 0) {
       // FileList 转为数组传递
       const fileArray = Array.from(files);
@@ -821,9 +839,10 @@ function setupSkillDropzone(_uiManager: UIManager): void {
   };
 
   // keydown：Enter/Space 触发点击（键盘可访问性）
-  const handleKeydown = (e: KeyboardEvent): void => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
+  const handleKeydown = (e: Event): void => {
+    const keyboardEvent = e as KeyboardEvent;
+    if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+      keyboardEvent.preventDefault();
       State.uiManager.handleSkillFileSelect();
     }
   };
@@ -838,15 +857,12 @@ function setupSkillDropzone(_uiManager: UIManager): void {
     }
   };
 
-  // 注册事件监听器（beforeunload 时由 State.uiManager.cleanup 统一清理？）
-  // 注意：dropzone 事件不通过 EventTracker 管理，因为 setupSkillDropzone 在
-  // DOMContentLoaded 内调用，且 dropzone 元素随页面卸载自动销毁。
-  // 若未来需要更精细的清理，可改为 EventTracker 模式。
-  dropzone.addEventListener('dragenter', handleDragOver);
-  dropzone.addEventListener('dragover', handleDragOver);
-  dropzone.addEventListener('dragleave', handleDragLeave);
-  dropzone.addEventListener('drop', handleDrop);
-  dropzone.addEventListener('click', handleClick);
-  dropzone.addEventListener('keydown', handleKeydown);
-  fileInput.addEventListener('change', handleFileChange);
+  // 通过 EventTracker 统一注册，beforeunload 时由 State.events.cleanup() 清理
+  events.addEventListener(dropzone, 'dragenter', handleDragOver);
+  events.addEventListener(dropzone, 'dragover', handleDragOver);
+  events.addEventListener(dropzone, 'dragleave', handleDragLeave);
+  events.addEventListener(dropzone, 'drop', handleDrop);
+  events.addEventListener(dropzone, 'click', handleClick);
+  events.addEventListener(dropzone, 'keydown', handleKeydown);
+  events.addEventListener(fileInput, 'change', handleFileChange);
 }

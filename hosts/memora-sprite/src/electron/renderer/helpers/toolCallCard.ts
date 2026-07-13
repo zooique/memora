@@ -145,9 +145,7 @@ export function updateToolResult(
   const status = targetCard.querySelector('.tool-call-status');
   if (status) {
     // 清空旧状态文本（"执行中..."）
-    while (status.firstChild) {
-      status.removeChild(status.firstChild);
-    }
+    status.replaceChildren();
     // 图标（setIcon 使用 SVG sprite，跨平台一致）
     const iconSpan = document.createElement('span');
     iconSpan.className = 'icon-wrapper';

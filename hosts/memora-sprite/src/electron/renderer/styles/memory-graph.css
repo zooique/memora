@@ -765,10 +765,7 @@
   margin-bottom: 4px;
 }
 
-@keyframes emptyIconFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-}
+/* @keyframes emptyIconFloat 已迁移到 base.css 全局基础动画库 */
 
 .empty-title {
   font-size: var(--font-md);

@@ -372,9 +372,7 @@ export class PerceptionPanelManager {
 
     // 无模式数据时清空列表并隐藏 section（但仍更新叙事摘要）
     if (payload.patterns.length === 0) {
-      while (patternsList.firstChild) {
-        patternsList.removeChild(patternsList.firstChild);
-      }
+      patternsList.replaceChildren();
       patternsSection?.classList.add('hidden');
       this.updateNarrative();
       return;
@@ -383,10 +381,8 @@ export class PerceptionPanelManager {
     // 有数据时显示 section（可能之前被隐藏）
     patternsSection?.classList.remove('hidden');
 
-    // 清空并重建列表（遵循项目规范：while + removeChild）
-    while (patternsList.firstChild) {
-      patternsList.removeChild(patternsList.firstChild);
-    }
+    // 清空并重建列表（replaceChildren 单次 API，避免逐个 removeChild 阻塞）
+    patternsList.replaceChildren();
 
     for (const pattern of payload.patterns) {
       const item = document.createElement('div');

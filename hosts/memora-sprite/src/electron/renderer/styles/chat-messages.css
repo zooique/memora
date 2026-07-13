@@ -358,14 +358,14 @@
   animation: chat-fade-in var(--transition-base) ease-out;
 }
 
-/* 两侧装饰线 */
+/* 两侧装饰线：响应式宽度，窄屏自动收缩 */
 .date-separator::before,
 .date-separator::after {
   content: '';
   flex: 1;
   height: 1px;
   background: var(--surface2);
-  max-width: 60px;
+  max-width: min(60px, 15%);
 }
 
 .date-separator::before {

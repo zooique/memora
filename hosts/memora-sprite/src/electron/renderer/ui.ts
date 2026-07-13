@@ -796,9 +796,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (!listEl) return;
     if (state === 'loading') {
       // 加载态：清空列表 + 显示加载提示
-      while (listEl.firstChild) {
-        listEl.removeChild(listEl.firstChild);
-      }
+      listEl.replaceChildren();
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'loading-state';
       loadingDiv.textContent = '加载记忆列表...';

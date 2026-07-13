@@ -48,7 +48,7 @@
   --affect-high: #ff9800;  /* 高值→橙色 */
 
   /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
-  --accent-fg:   #ffffff;  /* 浅色主题：深蓝背景 + 白字，对比度达标 */
+  --accent-fg:   #f5f7ff;  /* 浅色主题：深蓝背景 + 极淡蓝白字，柔化视觉对比度 */
 
   /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
   --text-on-red: #ffffff;
@@ -212,8 +212,8 @@
   /* 技能拖入错误态背景 */
   --dropzone-error-bg:      rgba(255, 59, 48, 0.08);
 
-  /* 里程碑庆祝渐变：浅色主题金色调 */
-  --milestone-grad:         linear-gradient(135deg, #f9e2af 0%, #fab387 50%, #f5c2e7 100%);
+  /* 里程碑庆祝渐变：浅色主题双色金→琥珀，强化"奖杯"语义 */
+  --milestone-grad:         linear-gradient(135deg, #f9e2af 0%, #fab387 100%);
   --milestone-border:       #f9e2af;
   --milestone-text:         #5c4a1a;
   --milestone-icon:         #d4a017;
@@ -413,8 +413,8 @@
   /* 技能拖入错误态背景（深色主题） */
   --dropzone-error-bg:      rgba(243, 139, 168, 0.15); /* Catppuccin red */
 
-  /* 里程碑庆祝渐变：深色主题适配（低饱和金色调，适配Catppuccin） */
-  --milestone-grad:         linear-gradient(135deg, rgba(249, 226, 175, 0.3) 0%, rgba(250, 179, 135, 0.3) 50%, rgba(245, 194, 231, 0.3) 100%);
+  /* 里程碑庆祝渐变：深色主题双色金→琥珀（与浅色主题保持一致，低饱和适配 Catppuccin） */
+  --milestone-grad:         linear-gradient(135deg, rgba(249, 226, 175, 0.3) 0%, rgba(250, 179, 135, 0.3) 100%);
   --milestone-border:       var(--yellow);
   --milestone-text:         var(--text);
   --milestone-icon:         var(--yellow);

@@ -703,16 +703,19 @@
           <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区 -->
           <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
+        <!-- UX-0713-V4：7 个 tab 按功能分组（AI 行为/集成/系统），分隔线提升扫视效率 -->
         <div class="settings-tabs" role="tablist" aria-label="设置分类">
+          <span class="settings-tab-group-label">AI 行为</span>
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
+          <span class="settings-tab-group-label">集成</span>
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
           <!-- UX-0713-12：画像 tab 仅保留用户画像（作品投影归项目 tab） -->
           <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像</button>
+          <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
+          <span class="settings-tab-group-label">系统</span>
           <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit"><svg class="icon"><use href="#icon-eye"/></svg>审计</button>
-          <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
-          <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
           <!-- 内置帮助页面 -->
           <button class="settings-tab" data-settings-tab="help"><svg class="icon"><use href="#icon-question"/></svg>帮助</button>
         </div>

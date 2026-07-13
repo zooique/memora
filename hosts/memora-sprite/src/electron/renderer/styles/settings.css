@@ -79,6 +79,20 @@
   align-items: stretch;
 }
 
+/* UX-0713-V4：tab 分组标签（AI 行为/集成/系统），提升 7 个 tab 的扫视效率 */
+.settings-tab-group-label {
+  padding: var(--space-2-5) var(--space-5) var(--space-1);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+  /* 首个分组标签无上边距，后续分组标签上方留分隔空间 */
+  margin-top: var(--space-2);
+}
+/* 首个分组标签不需要上方间距（紧接容器顶部 padding） */
+.settings-tab-group-label:first-child {
+  margin-top: 0;
+}
+
 .settings-tab {
   padding: var(--space-2-5) var(--space-5);
   background: transparent;
@@ -136,14 +150,14 @@
 }
 
 .settings-group {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
 }
 
 .settings-group-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 .settings-group-header h3 {
@@ -157,7 +171,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 /* UX-0713-8：可折叠设置组（details/summary 结构，复用 h3 视觉风格） */
@@ -165,7 +179,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -202,7 +216,7 @@
 .settings-row {
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
   gap: var(--space-3);
 }
 
@@ -225,7 +239,7 @@
 /* 使用直接子选择器 > label，避免匹配 .settings-row 内的 label */
 .settings-group > label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
   font-size: var(--font-sm);
   color: var(--text-2);
 }
@@ -248,7 +262,7 @@
 /* 垂直堆叠模式（直接子元素）：宽度 100% + 底部边距 */
 .settings-group > :is(input[type="text"], input[type="password"], input[type="number"], select) {
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 /* 水平布局模式（settings-row 内）：flex: 1 占满右侧空间 */
@@ -349,8 +363,8 @@
   font-size: var(--font-xs);
   color: var(--text-3);
   font-style: italic;
-  margin-top: 4px;
-  margin-bottom: 8px;
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-2);
 }
 
 .radio-group {
@@ -382,7 +396,7 @@
 .shortcut-input {
   cursor: pointer;
   text-align: center;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 /* 捕获状态：高亮边框 + 背景色变化，提示用户正在按键捕获 */
@@ -514,7 +528,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 .profile-header h3 {
@@ -523,15 +537,15 @@
 
 /* 分区标题 */
 .profile-section {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 .profile-section-title {
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-2);
-  margin-bottom: 8px;
-  padding-bottom: 4px;
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--surface2);
 }
 
@@ -565,7 +579,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
   font-size: var(--font-xs);
 }
 
@@ -603,7 +617,7 @@
   font-size: var(--font-sm);
   color: var(--text);
   line-height: 1.5;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   word-break: break-word;
 }
 
@@ -699,7 +713,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .settings-group-header h3 {
@@ -757,7 +771,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .work-projection-icon {
@@ -787,19 +801,19 @@
   font-size: var(--font-sm);
   color: var(--text-2);
   line-height: 1.5;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 /* 详情区（默认折叠） */
 .work-projection-details {
   border-top: 1px solid var(--border);
-  padding-top: 8px;
-  margin-top: 4px;
-  margin-bottom: 8px;
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-2);
 }
 
 .work-projection-section {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .work-projection-section:last-child {
@@ -822,7 +836,7 @@
 }
 
 .work-projection-list li {
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 /* 展开/折叠按钮 */
@@ -865,7 +879,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   color: var(--text);
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   line-height: 1.4;
 }
 
@@ -1002,7 +1016,7 @@
 }
 
 .help-section {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 .help-section h4 {
@@ -1031,7 +1045,7 @@
 }
 
 .help-section li {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .help-section li strong {
