@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（layout/color）+ sourceColor 提取（消除 helpers→panels 循环依赖）。目录形态已对齐最终目标。
-> **版本**：v1.7（2026-07-12）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）。目录形态已对齐最终目标。
+> **版本**：v1.8（2026-07-13）
 
 ---
 
@@ -93,8 +93,10 @@ src/
 │       │   ├── providerManagement.ts # Provider 管理辅助（10 纯函数 + ProviderManagementContext，从 settingsPanelManager 提取）
 │       │   ├── shortcutCapture.ts # 快捷键捕获辅助（2 纯函数 + ShortcutCaptureContext，从 settingsPanelManager 提取）
 │       │   │
-│       │   ├── relationGraphLayout.ts # 关系图谱布局算法（力导向布局，从 relationGraph.ts 提取）
-│       │   ├── relationGraphColor.ts  # 关系图谱颜色映射（节点/边配色，从 relationGraph.ts 提取）
+│       │   ├── relationGraphTypes.ts   # 关系图谱类型与常量（7 类型 + 14 常量，类型真理源，消除循环依赖）
+│       │   ├── relationGraphLayout.ts  # 关系图谱布局算法（力导向布局，LayoutContext 依赖注入）
+│       │   ├── relationGraphColor.ts   # 关系图谱颜色映射（节点/边配色纯函数）
+│       │   ├── relationGraphGeometry.ts # 关系图谱几何计算（nodeRadius/screenToWorld/findNodeAt/findEdgeAt/pointToSegmentDist 纯函数）
 │       │   │
 │       │   ├── applyMixins.ts  # Mixin 注入工具（applyMixins 函数，将 uiDelegations/ 委托群方法分发到 UIManager）
 │       │   └── uiDelegations/  # UIManager 委托群（mixin 模式，按业务域聚合的方法集合）
@@ -418,6 +420,7 @@ src/
 - [x] ITER-6: 3 Panel 过厚拆分——settingsPanelManager 提取 helpers/providerManagement.ts + helpers/shortcutCapture.ts（-455 行）；memoryPanelManager 提取 helpers/memoryViewSwitcher.ts + helpers/memoryTimelineView.ts（-496 行）；chatPanelManager 提取 helpers/streamingRenderer.ts + helpers/streamSafetyTimer.ts（-404 行）（2026-07-12 迭代 6）
 - [x] ITER-7: sprite/ 测试补全——新增 spriteLifecycleManager/spriteConfigManager/spriteTracer/constants/errors 5 个测试文件 +136 测试（2026-07-12 迭代 7，非目录结构变更）
 - [x] HEALTH-0712-6: sourceColor 提取——helpers/sourceColor.ts（getSourceColorClass 纯函数 + KNOWN_SOURCES 常量）从 memoryPanelManager 提取，消除 helpers→panels 循环依赖，5 个调用点导入路径更新，测试迁移到 sourceColor.test.ts（2026-07-12 斩木除根）
+- [x] ITER-8: relationGraph 二次拆分——helpers/relationGraphTypes.ts（7 类型 + 14 常量，架构层类型真理源）+ helpers/relationGraphGeometry.ts（5 纯函数：nodeRadius/screenToWorld/findNodeAt/findEdgeAt/pointToSegmentDist）提取，主文件 1206→889 行（-26%），消除 relationGraphLayout.ts 对 components 的 type-only 循环依赖（2026-07-13 神木回天）
 
 ### 延后（非目录结构）
 

@@ -860,4 +860,358 @@ describe('MemoryController', () => {
       expect(mockInspector.getAllRelations).toHaveBeenCalled();
     });
   });
+
+  // ─── 10. setMessageCountProvider 依赖注入（2 测试） ─────
+
+  describe('setMessageCountProvider', () => {
+    it('注入 provider 后 getReviewData 应调用 provider 获取每日消息计数', () => {
+      const controller = new MemoryController(mockAgent);
+      // 准备 inspector 只读 mock，避免 dashboard/list 抛错
+      vi.mocked(mockInspector.stats).mockReturnValue({
+        total: 0,
+        bySource: {},
+        relationCount: 0,
+      });
+      vi.mocked(mockInspector.suggest).mockReturnValue([]);
+      vi.mocked(mockInspector.getAllRelations).mockReturnValue([]);
+      vi.mocked(mockInspector.list).mockReturnValue([]);
+      const provider = vi.fn().mockReturnValue({ '2026-07-13': 10 });
+      controller.setMessageCountProvider(provider);
+      // 触发 getReviewData，间接调用 provider
+      controller.getReviewData();
+      expect(provider).toHaveBeenCalledOnce();
+    });
+
+    it('未注入 provider 时 getReviewData 使用默认空对象（保持向后兼容）', () => {
+      const controller = new MemoryController(mockAgent);
+      // 不调用 setMessageCountProvider，直接调用 getReviewData
+      const result = controller.getReviewData();
+      // 默认 provider 返回 {}，buildReviewData 内 ?? 0 兜底
+      expect(result.today.messageCount).toBe(0);
+    });
+  });
+
+  // ─── 11. deleteBatch 批量删除（3 测试） ────────────────
+
+  describe('deleteBatch', () => {
+    it('正常批量删除：跳过不存在 ID，聚合 {deleted, total}', () => {
+      // getById 按 id 区分返回：a:1/a:3 存在，a:2 不存在
+      vi.mocked(mockInspector.getById).mockImplementation((id: string) => {
+        if (id === 'a:1' || id === 'a:3') return makeMemory({ id });
+        return null;
+      });
+      const controller = new MemoryController(mockAgent);
+      const result = controller.deleteBatch(['a:1', 'a:2', 'a:3']);
+      expect(result).toEqual({ deleted: 2, total: 3 });
+      expect(mockMutator.delete).toHaveBeenCalledWith('a:1');
+      expect(mockMutator.delete).toHaveBeenCalledWith('a:3');
+      expect(mockMutator.delete).not.toHaveBeenCalledWith('a:2');
+    });
+
+    it('跳过非字符串和空字符串 ID（IPC 传入可能含非法值）', () => {
+      vi.mocked(mockInspector.getById).mockReturnValue(makeMemory({ id: 'a:1' }));
+      const controller = new MemoryController(mockAgent);
+      // 混入 null/undefined/数字/空字符串（IPC 边界场景）
+      const ids = ['a:1', null, undefined, 123, ''] as unknown as string[];
+      const result = controller.deleteBatch(ids);
+      // 只有 'a:1' 是合法字符串，total 计入所有传入项
+      expect(result).toEqual({ deleted: 1, total: 5 });
+      expect(mockMutator.delete).toHaveBeenCalledOnce();
+      expect(mockMutator.delete).toHaveBeenCalledWith('a:1');
+    });
+
+    it('inspector/mutator 为 null 时全部失败，返回 {deleted: 0, total: N}', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      const result = controller.deleteBatch(['a:1', 'a:2']);
+      expect(result).toEqual({ deleted: 0, total: 2 });
+    });
+  });
+
+  // ─── 12. restoreAll 批量恢复（3 测试） ─────────────────
+
+  describe('restoreAll', () => {
+    it('正常批量恢复：循环 mutator.restore，返回 {restored, failed: 0}', () => {
+      vi.mocked(mockInspector.listDeleted).mockReturnValue([
+        makeMemory({ id: 'a:1' }),
+        makeMemory({ id: 'a:2' }),
+      ]);
+      const controller = new MemoryController(mockAgent);
+      const result = controller.restoreAll();
+      expect(result).toEqual({ restored: 2, failed: 0 });
+      expect(mockMutator.restore).toHaveBeenCalledWith('a:1');
+      expect(mockMutator.restore).toHaveBeenCalledWith('a:2');
+      // listDeleted 传 0 表示不设上限（获取全部已删除记忆）
+      expect(mockInspector.listDeleted).toHaveBeenCalledWith(0);
+    });
+
+    it('mutator.restore 抛错时累计 failed + logger.warn 降级日志', () => {
+      vi.mocked(mockInspector.listDeleted).mockReturnValue([
+        makeMemory({ id: 'a:1' }),
+        makeMemory({ id: 'a:2' }),
+      ]);
+      // a:2 抛错，a:1 正常
+      vi.mocked(mockMutator.restore).mockImplementation((id: string) => {
+        if (id === 'a:2') throw new Error('restore failed');
+      });
+      const controller = new MemoryController(mockAgent);
+      const result = controller.restoreAll();
+      expect(result).toEqual({ restored: 1, failed: 1 });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'a:2' }),
+        '批量恢复记忆失败',
+      );
+    });
+
+    it('inspector/mutator 为 null 时返回 {restored: 0, failed: 0}', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      const result = controller.restoreAll();
+      expect(result).toEqual({ restored: 0, failed: 0 });
+    });
+  });
+
+  // ─── 13. purgeAll 批量彻底删除（4 测试） ───────────────
+
+  describe('purgeAll', () => {
+    it('正常批量彻底删除：循环 mutator.purge + vectorStore.delete', () => {
+      vi.mocked(mockInspector.listDeleted).mockReturnValue([
+        makeMemory({ id: 'a:1' }),
+        makeMemory({ id: 'a:2' }),
+      ]);
+      const controller = new MemoryController(mockAgent, mockVectorStore);
+      const result = controller.purgeAll();
+      expect(result).toEqual({ purged: 2, failed: 0 });
+      expect(mockMutator.purge).toHaveBeenCalledWith('a:1');
+      expect(mockMutator.purge).toHaveBeenCalledWith('a:2');
+      expect(mockVectorStore.delete).toHaveBeenCalledWith('a:1');
+      expect(mockVectorStore.delete).toHaveBeenCalledWith('a:2');
+    });
+
+    it('mutator.purge 抛错时累计 failed + logger.warn 降级日志', () => {
+      vi.mocked(mockInspector.listDeleted).mockReturnValue([
+        makeMemory({ id: 'a:1' }),
+        makeMemory({ id: 'a:2' }),
+      ]);
+      // a:2 抛错，a:1 正常
+      vi.mocked(mockMutator.purge).mockImplementation((id: string) => {
+        if (id === 'a:2') throw new Error('purge failed');
+      });
+      const controller = new MemoryController(mockAgent, mockVectorStore);
+      const result = controller.purgeAll();
+      expect(result).toEqual({ purged: 1, failed: 1 });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'a:2' }),
+        '批量清空记忆失败',
+      );
+    });
+
+    it('vectorStore.delete 抛错时降级 logger.warn（不影响 purged 计数）', () => {
+      vi.mocked(mockInspector.listDeleted).mockReturnValue([makeMemory({ id: 'a:1' })]);
+      vi.mocked(mockVectorStore.delete).mockImplementation(() => {
+        throw new Error('vector delete failed');
+      });
+      const controller = new MemoryController(mockAgent, mockVectorStore);
+      const result = controller.purgeAll();
+      // vectorStore 错误不影响 purged 计数（内层 try/catch 降级）
+      expect(result).toEqual({ purged: 1, failed: 0 });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'a:1' }),
+        '批量清空时向量索引删除失败',
+      );
+    });
+
+    it('inspector/mutator 为 null 时返回 {purged: 0, failed: 0}', () => {
+      const controller = new MemoryController(createMockAgent(null, null), mockVectorStore);
+      const result = controller.purgeAll();
+      expect(result).toEqual({ purged: 0, failed: 0 });
+    });
+  });
+
+  // ─── 14. addRelation 添加关系（2 测试） ─────────────────
+
+  describe('addRelation', () => {
+    it('正常调用 mutator.addRelation 传入完整对象（含 createdAt）', () => {
+      const controller = new MemoryController(mockAgent);
+      controller.addRelation('a:1', 'a:2', 'supports', 0.8);
+      expect(mockMutator.addRelation).toHaveBeenCalledWith({
+        sourceId: 'a:1',
+        targetId: 'a:2',
+        type: 'supports',
+        weight: 0.8,
+        createdAt: expect.any(String),
+      });
+    });
+
+    it('mutator 为 null 时静默降级（不抛错）', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      expect(() => controller.addRelation('a:1', 'a:2', 'supports', 0.8)).not.toThrow();
+    });
+  });
+
+  // ─── 15. removeRelation 删除关系（2 测试） ──────────────
+
+  describe('removeRelation', () => {
+    it('正常调用 mutator.removeRelation 传入 (sourceId, targetId, type)', () => {
+      const controller = new MemoryController(mockAgent);
+      controller.removeRelation('a:1', 'a:2', 'supports');
+      expect(mockMutator.removeRelation).toHaveBeenCalledWith('a:1', 'a:2', 'supports');
+    });
+
+    it('mutator 为 null 时静默降级', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      expect(() => controller.removeRelation('a:1', 'a:2', 'supports')).not.toThrow();
+    });
+  });
+
+  // ─── 16. updateRelation 更新关系（2 测试） ──────────────
+
+  describe('updateRelation', () => {
+    it('复用 addRelation UPSERT 语义：调用 mutator.addRelation 一次', () => {
+      const controller = new MemoryController(mockAgent);
+      controller.updateRelation('a:1', 'a:2', 'contradicts', 0.9);
+      // updateRelation 内部委托 addRelation（sourceId+targetId+type 三元组唯一 UPSERT）
+      expect(mockMutator.addRelation).toHaveBeenCalledOnce();
+      expect(mockMutator.addRelation).toHaveBeenCalledWith({
+        sourceId: 'a:1',
+        targetId: 'a:2',
+        type: 'contradicts',
+        weight: 0.9,
+        createdAt: expect.any(String),
+      });
+    });
+
+    it('mutator 为 null 时静默降级', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      expect(() => controller.updateRelation('a:1', 'a:2', 'contradicts', 0.9)).not.toThrow();
+    });
+  });
+
+  // ─── 17. getRelationPath 关系路径追溯（3 测试） ─────────
+
+  describe('getRelationPath', () => {
+    it('正常调用透传 memoryId, maxDepth, direction 给 inspector', () => {
+      const path = [{ memoryId: 'a:1', depth: 0 }];
+      vi.mocked(mockInspector.getRelationPath).mockReturnValue(path);
+      const controller = new MemoryController(mockAgent);
+      const result = controller.getRelationPath('a:1', 3, 'outgoing');
+      expect(result).toBe(path);
+      expect(mockInspector.getRelationPath).toHaveBeenCalledWith('a:1', 3, 'outgoing');
+    });
+
+    it('默认 maxDepth=5 direction="incoming"（signature 默认值）', () => {
+      vi.mocked(mockInspector.getRelationPath).mockReturnValue([]);
+      const controller = new MemoryController(mockAgent);
+      controller.getRelationPath('a:1');
+      expect(mockInspector.getRelationPath).toHaveBeenCalledWith('a:1', 5, 'incoming');
+    });
+
+    it('inspector 为 null 时返回 []', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      expect(controller.getRelationPath('a:1')).toEqual([]);
+    });
+  });
+
+  // ─── 18. getRelationNeighbors 邻居查询（3 测试） ────────
+
+  describe('getRelationNeighbors', () => {
+    it('正常调用透传 memoryId, limit 给 inspector', () => {
+      const neighbors = [{ memoryId: 'a:2', relationType: 'supports' }];
+      vi.mocked(mockInspector.getRelationNeighbors).mockReturnValue(neighbors);
+      const controller = new MemoryController(mockAgent);
+      const result = controller.getRelationNeighbors('a:1', 5);
+      expect(result).toBe(neighbors);
+      expect(mockInspector.getRelationNeighbors).toHaveBeenCalledWith('a:1', 5);
+    });
+
+    it('默认 limit=10（signature 默认值）', () => {
+      vi.mocked(mockInspector.getRelationNeighbors).mockReturnValue([]);
+      const controller = new MemoryController(mockAgent);
+      controller.getRelationNeighbors('a:1');
+      expect(mockInspector.getRelationNeighbors).toHaveBeenCalledWith('a:1', 10);
+    });
+
+    it('inspector 为 null 时返回 []', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      expect(controller.getRelationNeighbors('a:1')).toEqual([]);
+    });
+  });
+
+  // ─── 19. getHealthDashboard 健康度仪表盘（2 测试） ──────
+
+  describe('getHealthDashboard', () => {
+    it('调用 list(undefined, DEFAULT_LIST_LIMIT) 并返回 buildHealthDashboard 结果', () => {
+      vi.mocked(mockInspector.list).mockReturnValue([]);
+      const controller = new MemoryController(mockAgent);
+      const result = controller.getHealthDashboard();
+      // 验证调用 list(DEFAULT_LIST_LIMIT=1000)
+      expect(mockInspector.list).toHaveBeenCalledWith(1000);
+      // 验证返回结构符合 HealthDashboard 形态
+      expect(result).toHaveProperty('scores');
+      expect(result).toHaveProperty('duplicates');
+      expect(result).toHaveProperty('staleMemories');
+      expect(result).toHaveProperty('lowQualityCount');
+      expect(result).toHaveProperty('totalMemories');
+      expect(result).toHaveProperty('healthLabel');
+      expect(result).toHaveProperty('healthDescription');
+    });
+
+    it('inspector 为 null 时 list 返回 []，buildHealthDashboard 处理空数组', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      const result = controller.getHealthDashboard();
+      // 空数组也应返回合法的 HealthDashboard 结构（不抛错）
+      expect(result).toHaveProperty('scores');
+      expect(result.scores.overall).toBeGreaterThanOrEqual(0);
+      expect(result.scores.overall).toBeLessThanOrEqual(100);
+    });
+  });
+
+  // ─── 20. getReviewData 对话回顾（3 测试） ───────────────
+
+  describe('getReviewData', () => {
+    it('调用 dashboard + list + messageCountProvider 并返回 buildReviewData 结果', () => {
+      vi.mocked(mockInspector.stats).mockReturnValue({
+        total: 5,
+        bySource: { profile: 3, insight: 2 },
+        relationCount: 1,
+      });
+      vi.mocked(mockInspector.suggest).mockReturnValue([]);
+      vi.mocked(mockInspector.getAllRelations).mockReturnValue([]);
+      vi.mocked(mockInspector.list).mockReturnValue([]);
+      const provider = vi.fn().mockReturnValue({ '2026-07-13': 10 });
+      const controller = new MemoryController(mockAgent);
+      controller.setMessageCountProvider(provider);
+      const result = controller.getReviewData();
+      // 验证 provider 被调用一次
+      expect(provider).toHaveBeenCalledOnce();
+      // 验证返回结构符合 ReviewData 形态
+      expect(result).toHaveProperty('today');
+      expect(result).toHaveProperty('trend');
+      expect(result).toHaveProperty('insights');
+      expect(result).toHaveProperty('totalMemories');
+      expect(result).toHaveProperty('generatedAt');
+    });
+
+    it('未注入 provider 时使用默认空对象，buildReviewData 内 ?? 0 兜底', () => {
+      vi.mocked(mockInspector.stats).mockReturnValue({
+        total: 0,
+        bySource: {},
+        relationCount: 0,
+      });
+      vi.mocked(mockInspector.suggest).mockReturnValue([]);
+      vi.mocked(mockInspector.getAllRelations).mockReturnValue([]);
+      vi.mocked(mockInspector.list).mockReturnValue([]);
+      const controller = new MemoryController(mockAgent);
+      const result = controller.getReviewData();
+      // 默认 provider 返回 {}，today.messageCount 应为 0（?? 0 兜底）
+      expect(result.today.messageCount).toBe(0);
+    });
+
+    it('inspector 为 null 时返回合法 ReviewData 结构（降级而非崩溃）', () => {
+      const controller = new MemoryController(createMockAgent(null, null));
+      const result = controller.getReviewData();
+      // dashboard 降级返回空仪表盘，list 返回 []，buildReviewData 处理空输入
+      expect(result).toHaveProperty('today');
+      expect(result).toHaveProperty('trend');
+      expect(result).toHaveProperty('insights');
+    });
+  });
 });
