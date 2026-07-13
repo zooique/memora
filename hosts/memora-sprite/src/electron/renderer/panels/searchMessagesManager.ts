@@ -70,6 +70,13 @@ export class SearchMessagesManager {
   private isSearching = false;
   /** 结果点击回调（由 renderer.ts 注册，跳转到对应日期的会话） */
   private resultClickCallback: ((date: string, session: string) => void) | null = null;
+  /**
+   * 打开弹窗前的焦点元素（UX-0713-F15）
+   *
+   * close() 时恢复焦点到触发按钮，与 CommandPaletteManager 同理。
+   * 搜索弹窗独立于 ModalManager，需自行管理单层焦点保存。
+   */
+  private previousFocus: HTMLElement | null = null;
 
   /**
    * 初始化事件监听器
@@ -157,6 +164,9 @@ export class SearchMessagesManager {
   open(): void {
     if (!this.modalEl || !this.inputEl || !this.resultsEl) return;
 
+    // UX-0713-F15：保存打开前的焦点元素，close() 时恢复
+    this.previousFocus = document.activeElement as HTMLElement | null;
+
     this.modalEl.classList.remove('hidden');
     this.isOpen = true;
     this.lastKeyword = '';
@@ -197,6 +207,12 @@ export class SearchMessagesManager {
     const otherOverlays = document.querySelectorAll('.modal:not(.hidden), .command-palette:not(.hidden)');
     if (otherOverlays.length === 0) {
       document.body.style.overflow = '';
+    }
+
+    // UX-0713-F15：恢复焦点到打开前的触发元素
+    if (this.previousFocus && typeof this.previousFocus.focus === 'function') {
+      this.previousFocus.focus();
+      this.previousFocus = null;
     }
   }
 

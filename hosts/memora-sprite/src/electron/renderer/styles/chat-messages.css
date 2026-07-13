@@ -884,8 +884,8 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  /* z-index 高于输入区，确保浮层不被遮挡 */
-  z-index: 20;
+  /* UX-0713-F14：使用 z-index 令牌替代硬编码，与项目其他装饰层统一管理 */
+  z-index: var(--z-decoration);
   /* 出现动画：从下方淡入，与聊天消息动画风格一致 */
   animation: chat-completion-in var(--transition-fast) ease-out;
 }

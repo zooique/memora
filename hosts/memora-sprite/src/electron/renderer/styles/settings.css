@@ -485,6 +485,12 @@
   background: var(--red-10);
 }
 
+/* UX-0713-F12：键盘聚焦可见反馈，与项目其他可交互元素 focus-visible 规范一致 */
+.save-status-retry-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* 尊重用户的减少动画偏好：关闭沙漏旋转 */
 @media (prefers-reduced-motion: reduce) {
   .save-status-indicator.saving .save-status-icon svg {

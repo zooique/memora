@@ -373,6 +373,14 @@ export class CommandPaletteManager {
   /** 搜索结果容器 */
   private resultsEl: HTMLElement | null = null;
   /**
+   * 打开面板前的焦点元素（UX-0713-F15）
+   *
+   * close() 时恢复焦点到触发按钮，让键盘用户能继续从原位置 Tab 导航。
+   * 与 ModalManager 的 previousFocusStack 同理，但命令面板独立于 ModalManager，
+   * 需自行管理单层焦点保存（命令面板不嵌套，无需栈结构）。
+   */
+  private previousFocus: HTMLElement | null = null;
+  /**
    * 事件监听器跟踪器
    *
    * 原先 init() 中用裸 addEventListener 注册了 4 个监听器（遮罩点击、输入、
@@ -476,6 +484,9 @@ export class CommandPaletteManager {
   open(): void {
     if (!this.paletteEl || !this.inputEl) return;
 
+    // UX-0713-F15：保存打开前的焦点元素，close() 时恢复，让键盘用户能继续从原位置导航
+    this.previousFocus = document.activeElement as HTMLElement | null;
+
     // 先同步加载静态命令，确保面板立即显示
     this.commands = createStaticCommands(this.uiManager);
 
@@ -517,6 +528,12 @@ export class CommandPaletteManager {
     // 清空输入
     if (this.inputEl) {
       this.inputEl.value = '';
+    }
+
+    // UX-0713-F15：恢复焦点到打开前的触发元素，让键盘用户能继续从原位置 Tab 导航
+    if (this.previousFocus && typeof this.previousFocus.focus === 'function') {
+      this.previousFocus.focus();
+      this.previousFocus = null;
     }
   }
 
