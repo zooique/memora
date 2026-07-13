@@ -321,21 +321,20 @@ export class DashboardPanelManager {
       dashboardDecayCount.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
     }
 
-    const dashboardDecayTotal = document.getElementById('dashboard-decay-total');
-    if (dashboardDecayTotal) {
-      dashboardDecayTotal.textContent = metrics.decay ? String(metrics.decay.totalDecayedCount) : '—';
+    // UX-0713-10：衰减三项合并为 1 卡片，详情行显示"累计 N · 最近 T"
+    const dashboardDecayDetail = document.getElementById('dashboard-decay-detail');
+    if (dashboardDecayDetail) {
+      // runCount=0 表示从未运行过衰减，此时 totalDecayedCount 也是默认值 0，应显示 — 而非 0
+      const hasDecayRun = metrics.decay && metrics.decay.runCount > 0;
+      const totalText = hasDecayRun ? String(metrics.decay!.totalDecayedCount) : '—';
+      const lastRunText = metrics.decay?.lastRunAt ? formatTimeAgo(metrics.decay.lastRunAt) : '—';
+      dashboardDecayDetail.textContent = `累计 ${totalText} · 最近 ${lastRunText}`;
     }
 
     // 仪表盘记忆统计卡片中的衰减运行次数
     const dashboardDecayRuns = document.getElementById('dashboard-decay-runs');
     if (dashboardDecayRuns) {
       dashboardDecayRuns.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
-    }
-
-    // 衰减最近运行时间（消费 lastRunAt，用相对时间格式化：3 小时前 / 2 天前）
-    const dashboardDecayLastRun = document.getElementById('dashboard-decay-last-run');
-    if (dashboardDecayLastRun) {
-      dashboardDecayLastRun.textContent = metrics.decay?.lastRunAt ? formatTimeAgo(metrics.decay.lastRunAt) : '—';
     }
   }
 

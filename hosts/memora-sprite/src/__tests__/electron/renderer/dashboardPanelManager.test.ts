@@ -52,9 +52,8 @@ const DASHBOARD_HTML = `
   <span id="dashboard-truncation-count"></span>
   <span id="dashboard-message-count"></span>
   <span id="dashboard-decay-count"></span>
-  <span id="dashboard-decay-total"></span>
+  <span id="dashboard-decay-detail"></span>
   <span id="dashboard-decay-runs"></span>
-  <span id="dashboard-decay-last-run"></span>
 
   <!-- 里程碑 -->
   <div id="milestones-display" class="hidden">
@@ -211,22 +210,23 @@ describe('renderAgentMetrics', () => {
     expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('30% (3/10)');
   });
 
-  it('衰减最近运行时间应显示相对时间', () => {
+  it('衰减详情行应显示累计和最近运行时间（UX-0713-10 合并卡片）', () => {
     const { manager } = createManager();
     // 使用近期时间（1 小时前），formatTimeAgo 应输出"1 小时前"
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     manager.renderAgentMetrics(createMetrics({
       decay: { runCount: 5, totalDecayedCount: 10, lastRunAt: oneHourAgo },
     }));
-    expect(document.getElementById('dashboard-decay-last-run')!.textContent).toBe('1 小时前');
+    // 详情行格式："累计 N · 最近 T"
+    expect(document.getElementById('dashboard-decay-detail')!.textContent).toBe('累计 10 · 最近 1 小时前');
   });
 
-  it('衰减从未运行时最近运行时间应显示 —', () => {
+  it('衰减从未运行时详情行应显示 — 占位（UX-0713-10）', () => {
     const { manager } = createManager();
     manager.renderAgentMetrics(createMetrics({
       decay: { runCount: 0, totalDecayedCount: 0, lastRunAt: null },
     }));
-    expect(document.getElementById('dashboard-decay-last-run')!.textContent).toBe('—');
+    expect(document.getElementById('dashboard-decay-detail')!.textContent).toBe('累计 — · 最近 —');
   });
 });
 

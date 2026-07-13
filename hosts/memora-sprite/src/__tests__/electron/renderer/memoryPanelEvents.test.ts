@@ -110,9 +110,6 @@ function setupDOM(): void {
     <button id="btn-memory-edit-save">保存</button>
     <button id="btn-memory-edit-cancel">取消</button>
     <button id="btn-memory-discuss">讨论</button>
-
-    <!-- 回收站按钮（面板头部常驻） -->
-    <button id="btn-memory-recycle-bin">回收站入口</button>
   `;
 }
 
@@ -1125,18 +1122,8 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
     });
   });
 
-  describe('initRecycleBinButton', () => {
-    it('点击回收站按钮应调用 moreMenuActionCallback("recycle-bin")', () => {
-      // 验证面板头部常驻回收站按钮：触发与 more-menu 相同的 action
-      const { ctx, callbacks } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      const recycleBinBtn = document.getElementById('btn-memory-recycle-bin')!;
-      recycleBinBtn.click();
-
-      expect(callbacks.moreMenuAction).toHaveBeenCalledWith('recycle-bin');
-    });
-  });
+  // UX-0713-9：initRecycleBinButton 已移除，回收站按钮迁入更多菜单，
+  // recycle-bin action 的事件委托测试在 initMoreMenu 块中覆盖
 
   describe('initRecycleBinBatchActions', () => {
     it('点击全部恢复按钮应调用 recycleBinBatchActionCallback("restore-all")', () => {

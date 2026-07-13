@@ -211,6 +211,14 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--yellow);
 }
 
+/* UX-0713-10：衰减合并卡片的详情行（累计 · 最近），缩小字号弱化视觉权重 */
+.dash-item .dash-detail {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
 /* ─── 记忆源健康列表 ──────────────────────────────── */
 .source-health-list {
   display: flex;

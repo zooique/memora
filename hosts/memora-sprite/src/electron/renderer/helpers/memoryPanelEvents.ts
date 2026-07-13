@@ -146,7 +146,6 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
   initDetailActionButtons(ctx);
   initAdvancedFilterBar(ctx);
   initMoreMenu(ctx);
-  initRecycleBinButton(ctx);
   initAnalysisPanelClose(ctx);
   initViewSwitchButtons(ctx);
   initCleanupDialog(ctx);
@@ -458,21 +457,7 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
   }
 }
 
-// ─── 7. 分析面板关闭按钮 ──────────────────────────────────
-
-// ─── 7.5 回收站按钮（常驻工具栏） ────────────────────────
-
-/**
- * 回收站按钮（面板头部常驻可见），点击触发与 more-menu 中"回收站"相同的 action。
- */
-function initRecycleBinButton(ctx: MemoryPanelEventContext): void {
-  const recycleBinBtn = document.getElementById('btn-memory-recycle-bin');
-  if (recycleBinBtn) {
-    ctx.events.addEventListener(recycleBinBtn, 'click', () => {
-      ctx.getMoreMenuActionCallback()?.('recycle-bin');
-    });
-  }
-}
+// ─── 7.5 回收站按钮已迁入更多菜单（UX-0713-9），事件委托见 initMoreMenu ───
 
 // ─── 8. 分析面板关闭按钮 ─────────────────────────────
 

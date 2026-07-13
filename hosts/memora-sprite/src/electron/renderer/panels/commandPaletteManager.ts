@@ -77,7 +77,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
     },
     {
       id: 'nav-perception',
-      label: '打开感知面板',
+      label: '打开精灵状态面板',
       keywords: '感知 精灵状态 情感 默契度 上下文 模式 dashboard',
       section: '导航',
       action: () => {
