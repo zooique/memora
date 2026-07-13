@@ -519,44 +519,9 @@
   gap: var(--space-1-5);
 }
 
-/* ─── 情感基调展示（四维进度条，容器布局已移至 chat.css .affect-grid） ──── */
-.affect-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  font-size: var(--font-xs);
-}
-
-.affect-label {
-  width: 40px;
-  color: var(--muted);
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.affect-track {
-  flex: 1;
-  height: 6px;
-  background: var(--bg-hover);
-  border-radius: var(--radius-xs);
-  overflow: hidden;
-}
-
-.affect-fill {
-  width: 0;
-  height: 100%;
-  border-radius: var(--radius-xs);
-  /* 色调渐变：低→蓝色 中→绿色 高→橙色（由 JS 动态设置 background） */
-  transition: width var(--transition-xl) ease, background var(--transition-xl) ease;
-}
-
-.affect-level {
-  width: 20px;
-  color: var(--muted);
-  font-size: var(--font-2xs);
-  flex-shrink: 0;
-  text-align: left;
-}
+/* ─── 情感基调展示 ──── */
+/* affect-bar/affect-label/affect-track/affect-fill/affect-level 已迁至 perception.css */
+/* 感知面板为纵向 flex 布局，原 chat 面板横向布局的固定宽度/flex:1 不再适用 */
 
 /* ─── Phase 3：默契度展示（等级徽章 + 双进度条 + 描述） ──── */
 .rapport-level-badge {
@@ -585,56 +550,11 @@
   transition: color var(--transition-slow) ease;
 }
 
-/* ─── Phase 4：对话上下文展示（紧凑内联，类名已移至 chat.css） ──── */
-/* context-label / context-value 仍被新 .context-inline 布局复用 */
-.context-label {
-  color: var(--muted);
-  font-size: var(--font-2xs);
-}
+/* ─── Phase 4：对话上下文展示 ──── */
+/* context-label/context-value 已迁至 perception.css（感知面板 .context-card 内使用） */
 
-.context-value {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  transition: color var(--transition-slow) ease;
-}
-
-/* ─── 模式洞察列表 ───────────────────────────── */
-.patterns-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-}
-
-.pattern-item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-1-5);
-  padding: var(--space-1-5) var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  font-size: var(--font-xs);
-  line-height: 1.5;
-  color: var(--text);
-}
-
-.pattern-item .pattern-icon {
-  flex-shrink: 0;
-  font-size: var(--font-sm);
-  margin-top: 1px;
-}
-
-.pattern-item .pattern-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.pattern-item .pattern-confidence {
-  flex-shrink: 0;
-  font-size: var(--font-3xs);
-  color: var(--muted);
-  align-self: center;
-}
+/* ─── 模式洞察列表 ──── */
+/* patterns-list/pattern-item 已迁至 perception.css（感知面板 .perception-patterns-list 内使用） */
 
 /* 里程碑成就列表 */
 .milestones-list {
@@ -773,12 +693,16 @@
   visibility: hidden;
   pointer-events: none;
   transition: opacity var(--transition-base) ease;
+  /* 隐藏面板创建独立堆叠上下文，避免内部高 z-index 元素穿透到 active 面板 */
+  z-index: 0;
 }
 
 .panel.active {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  /* active 面板提升堆叠层级，确保在所有隐藏面板之上 */
+  z-index: 1;
 }
 
 /* 减少动画偏好：禁用面板淡入淡出过渡 */

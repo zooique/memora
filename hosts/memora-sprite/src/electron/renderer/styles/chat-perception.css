@@ -1,211 +1,23 @@
-/* chat-perception.css — 原 chat.css 第 287–596 行（P2 按功能拆分，顺序保持以保证层叠等价） */
-.affect-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-1) var(--space-3);
-}
-
-/* 默契度一行布局：徽章 + 双进度条横向并列 */
-.rapport-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2-5);
-}
-
-/* 默契度双进度条（横向排列，紧跟徽章） */
-.rapport-bars {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex: 1;
-}
-
-.rapport-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  font-size: var(--font-xs);
-}
-
-/* 紧凑布局：标签宽度收紧（"信任"/"熟悉"两字） */
-.rapport-bar-label {
-  width: 28px;
-  color: var(--muted);
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.rapport-fill {
-  transition: width var(--transition-xl) ease;
-}
-
-/* 对话上下文单行内联（三指标用分隔符连接） */
-.context-inline {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-  font-size: var(--font-xs);
-}
-
-.context-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-1);
-}
-
-.context-label {
-  color: var(--muted);
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-medium);
-}
-
-.context-value {
-  color: var(--text);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.context-sep {
-  color: var(--muted);
-  opacity: 0.4;
-  font-size: var(--font-2xs);
-}
-
-/* 模式洞察列表 */
-.perception-patterns-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-}
-
-.perception-pattern-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--input-padding);
-  border-radius: var(--radius-sm);
-  background: var(--window-bg-2);
-  font-size: var(--font-xs);
-  line-height: 1.4;
-  color: var(--subtext);
-}
-
-/* 主行：类型徽章 + 置信度徽章 + 摘要文本 横向排列 */
-.perception-pattern-main {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-1-5);
-}
-
-.perception-pattern-type {
-  flex-shrink: 0;
-  padding: 1px var(--space-1-5);
-  border-radius: var(--radius-xs);
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-semibold);
-}
-
-.perception-pattern-type.repeat {
-  background: var(--yellow-20);
-  color: var(--yellow);
-}
-
-.perception-pattern-type.gap {
-  background: var(--red-20);
-  color: var(--red);
-}
-
-.perception-pattern-type.drift {
-  background: var(--accent-20);
-  color: var(--accent);
-}
-
-/* 置信度徽章：高/中/低 三色，与类型徽章并列展示 */
-.perception-pattern-confidence {
-  flex-shrink: 0;
-  padding: 1px var(--space-1-5);
-  border-radius: var(--radius-xs);
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-medium);
-}
-
-.perception-pattern-confidence.high {
-  background: var(--green-20);
-  color: var(--green);
-}
-
-.perception-pattern-confidence.mid {
-  background: var(--yellow-20);
-  color: var(--yellow);
-}
-
-.perception-pattern-confidence.low {
-  background: transparent;
-  color: var(--muted);
-  padding: 1px 0;
-}
-
-/* 摘要文本占据剩余宽度，自然换行 */
-.perception-pattern-text {
-  flex: 1;
-}
-
-/* 建议操作行：斜体灰色，左侧细边框作为视觉引导 */
-.perception-pattern-suggestion {
-  font-size: var(--font-2xs);
-  font-style: italic;
-  color: var(--muted);
-  padding-left: 6px;
-  border-left: 2px solid var(--surface2);
-}
-
-/* 相关记忆跳转按钮（manual 模式下点击跳转记忆详情） */
-.perception-pattern-related {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 4px;
-  padding: 2px var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--accent);
-  font-size: var(--font-2xs);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-.perception-pattern-related:hover {
-  background: var(--accent-10);
-  color: var(--accent-hover);
-}
+/* chat-perception.css — 原 chat.css 第 287–596 行（P2 按功能拆分） */
+/*
+ * 感知面板专属样式（affect-grid / rapport-bar / context-label / perception-pattern-* 等）
+ * 已全部迁至 perception.css，本文件仅保留：
+ * - 主动提示统计颜色变体（perception-proactive-rate / dash-value.warning）
+ * - 仪表盘记忆源健康诊断样式（source-health-overall-badge）
+ * - 仪表盘运行指标网格样式（perception-metrics-grid）
+ * - 里程碑成就列表样式（milestones-display / milestones-list）
+ * - 日期导航按钮样式（date-navigator 系列，chat 面板使用）
+ *
+ * 污染源清理历史：
+ * - 2026-07-13：删除与 perception.css 重复的 13 类 BARE 类定义，消除 CSS 作用域泄漏
+ * - 2026-07-13：删除 chat 面板未使用的死代码（affect-grid / rapport-row / context-inline 等）
+ */
 
 /* ─── 主动提示统计 ─────────────────────────── */
+/* 感知面板主动提示统计样式已迁至 perception.css */
+/* 此处保留 .dash-value.warning 供仪表盘运行指标复用 */
 
-/* 主动提示统计网格：复用运行指标的 dash-item 布局 */
-.perception-proactive-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1-5);
-  margin-top: 4px;
-}
-
-/* 接受率徽章：高/中/低 三色（与 PatternDetector confidence 徽章一致） */
-.perception-proactive-rate.high {
-  color: var(--green);
-  font-weight: var(--weight-semibold);
-}
-
-.perception-proactive-rate.mid {
-  color: var(--yellow);
-  font-weight: var(--weight-semibold);
-}
-
-.perception-proactive-rate.low {
-  color: var(--muted);
-  font-weight: var(--weight-semibold);
-}
-
-/* 连续拒绝 / 生效冷却：>0 或 >基础值时高亮警告色 */
+/* 连续拒绝 / 生效冷却：>0 或 >基础值时高亮警告色（仪表盘运行指标复用） */
 .dash-value.warning {
   color: var(--yellow);
   font-weight: var(--weight-semibold);

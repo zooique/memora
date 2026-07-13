@@ -126,17 +126,27 @@
 }
 
 .affect-item .affect-label {
+  /* 感知面板纵向布局：label 宽度自适应、左对齐（区别于 chat 面板横向布局的固定宽度右对齐） */
+  width: auto;
+  text-align: left;
+  flex-shrink: 0;
   font-size: var(--font-2xs);
   color: var(--muted);
 }
 
 .affect-item .affect-level {
+  /* 感知面板等级文字宽度自适应、左对齐 */
+  width: auto;
+  text-align: left;
+  flex-shrink: 0;
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
 .affect-item .affect-track {
+  /* 感知面板纵向布局：track 不伸展（flex:none），固定 4px 高度 */
+  flex: none;
   height: 4px;
   background: var(--surface0);
   border-radius: 2px;
@@ -278,6 +288,28 @@
   color: var(--text);
 }
 
+/* 接受率徽章颜色变体（高/中/低 三色，由 perceptionPanelManager 动态切换 class） */
+#perception-proactive-rate.high {
+  color: var(--green);
+  font-weight: var(--weight-semibold);
+}
+
+#perception-proactive-rate.mid {
+  color: var(--yellow);
+  font-weight: var(--weight-semibold);
+}
+
+#perception-proactive-rate.low {
+  color: var(--muted);
+  font-weight: var(--weight-semibold);
+}
+
+/* 连续拒绝 / 生效冷却：>0 或 >基础值时高亮警告色（由 perceptionPanelManager 动态切换 .warning 类） */
+.proactive-value.warning {
+  color: var(--yellow);
+  font-weight: var(--weight-semibold);
+}
+
 .proactive-empty {
   display: flex;
   align-items: center;
@@ -308,6 +340,10 @@
   background: var(--surface0);
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--mauve);
+  /* 文本基础样式（合并自 chat-perception.css 旧定义） */
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--subtext);
 }
 
 .perception-pattern-main {
@@ -321,12 +357,52 @@
   font-weight: var(--weight-semibold);
   color: var(--mauve);
   flex-shrink: 0;
+  /* 类型徽章基础样式：内边距 + 圆角（与 chat-perception.css 旧定义对齐） */
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-xs);
+}
+
+/* 模式类型颜色变体（重复/缺口/漂移三态，与基础 mauve 色形成视觉区分） */
+.perception-pattern-type.repeat {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.perception-pattern-type.gap {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+.perception-pattern-type.drift {
+  background: var(--accent-20);
+  color: var(--accent);
 }
 
 .perception-pattern-confidence {
   font-size: var(--font-2xs);
   color: var(--muted);
   flex-shrink: 0;
+  /* 置信度徽章基础样式：内边距 + 圆角 */
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-xs);
+  font-weight: var(--weight-medium);
+}
+
+/* 置信度颜色变体：高（绿）/ 中（黄）/ 低（灰）三态 */
+.perception-pattern-confidence.high {
+  background: var(--green-20);
+  color: var(--green);
+}
+
+.perception-pattern-confidence.mid {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.perception-pattern-confidence.low {
+  background: transparent;
+  color: var(--muted);
+  padding: 1px 0;
 }
 
 .perception-pattern-text {
@@ -337,23 +413,30 @@
 }
 
 .perception-pattern-suggestion {
+  /* 建议操作行：斜体灰色 + 左侧细边框作为视觉引导 */
   font-size: var(--font-2xs);
-  color: var(--subtext);
-  padding-left: var(--space-1-5);
+  font-style: italic;
+  color: var(--muted);
+  padding-left: 6px;
+  border-left: 2px solid var(--surface2);
 }
 
 .perception-pattern-related {
-  align-self: flex-start;
-  font-size: var(--font-2xs);
-  color: var(--accent);
+  /* 相关记忆跳转按钮：内联 flex + 顶部间距 + 边框圆角 */
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   background: transparent;
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-xs);
-  padding: 2px var(--space-1-5);
+  color: var(--accent);
+  font-size: var(--font-2xs);
   cursor: pointer;
-  transition: background var(--transition-base) ease;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .perception-pattern-related:hover {
-  background: var(--surface0);
+  background: var(--accent-10);
+  color: var(--accent-hover);
 }
