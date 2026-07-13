@@ -1,19 +1,4 @@
-/* float.css — 组件专属样式（主窗口主题令牌来自 tokens.css） */
-
-/* ─── 浮动窗口专属令牌 ─────────────────────────────────────────
- * 以下令牌仅本窗口使用（未进入 tokens.css 主令牌集），随组件局部定义，
- * 不涉及跨窗口漂移，故保留在 float.css 内。需随主题切换时在此维护。 */
-:root {
-  --badge-text:   #1e1e2e;
-  --badge-border: #1e1e2e;
-  --hint-bg:      rgba(30, 30, 46, 0.95);
-  --hint-text:    #cdd6f4;
-}
-[data-theme="dark"] {
-  --badge-border: #cdd6f4;              /* 深色下边框转亮，保证镂空可见 */
-  --hint-bg:      rgba(205, 214, 244, 0.95);
-  --hint-text:    #1e1e2e;              /* --badge-text 深色下仍为 #1e1e2e，与浅色一致 */
-}
+/* float.css — 组件专属样式（主题令牌统一来自 tokens.css，UX-0713-15 已迁入） */
 
 /* ===== 全局重置 ===== */
     html, body {

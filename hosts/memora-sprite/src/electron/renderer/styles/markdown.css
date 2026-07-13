@@ -75,7 +75,7 @@
 /* 语言标签：等宽字体 + 弱化颜色 */
 .message-bubble .md-code-lang {
   color: var(--text-3);
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-2xs);
   font-weight: var(--weight-medium);
   text-transform: lowercase;
@@ -110,7 +110,7 @@
   padding: var(--space-2-5) var(--space-3);
   overflow-x: auto;
   /* 代码块不使用霞鹜文楷，使用等宽字体 */
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   line-height: 1.5;
 }
@@ -126,7 +126,7 @@
   padding: 1px 5px;
   background: var(--surface2);
   border-radius: var(--radius-xs);
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs); /* 行内代码略小于正文 */
   color: var(--pink);
 }

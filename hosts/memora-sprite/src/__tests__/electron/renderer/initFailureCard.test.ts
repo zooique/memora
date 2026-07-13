@@ -112,13 +112,15 @@ describe('DOM 结构验证', () => {
     expect(card.style.zIndex).toBe('9999');
   });
 
-  it('卡片应包含红色背景 + 边框样式', () => {
+  it('卡片应包含红色主题令牌引用（var() + fallback 兼顾双主题适配）', () => {
     renderInitFailureToBody(new Error('test'));
     const card = document.getElementById('ui-init-failure-card') as HTMLElement;
-    // JSDOM 将 hex 转换为 rgb 格式
-    expect(card.style.background).toBe('rgb(254, 242, 242)');
-    expect(card.style.border).toContain('rgb(220, 38, 38)');
-    expect(card.style.color).toBe('rgb(127, 29, 29)');
+    // UX-0713-18：颜色改用 var(--token, fallback) 形式，JSDOM 不解析 var()，
+    // 改为断言 cssText 包含令牌引用（验证主题适配能力而非具体色值）
+    expect(card.style.cssText).toContain('var(--red-10');
+    expect(card.style.cssText).toContain('var(--red,');
+    expect(card.style.cssText).toContain('var(--text,');
+    expect(card.style.cssText).toContain('var(--red-20');
   });
 
   it('应包含 h2 标题"UI 初始化失败"', () => {
@@ -127,8 +129,8 @@ describe('DOM 结构验证', () => {
     const title = card?.querySelector('h2');
     expect(title).toBeTruthy();
     expect(title?.textContent).toBe('UI 初始化失败');
-    // JSDOM 将 #991b1b 转换为 rgb 格式
-    expect(title?.style.color).toBe('rgb(153, 27, 27)');
+    // UX-0713-18：标题色改用 var(--red, fallback)，JSDOM 不解析 var()，断言 cssText 包含令牌引用
+    expect(title?.style.cssText).toContain('var(--red,');
   });
 
   it('应包含排查建议（可能原因 + 3 条建议）', () => {

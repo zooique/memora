@@ -249,6 +249,12 @@
 
   /* 卡片 hover 边框色（.card.card-hoverable:hover，复用 muted 与其他卡片一致） */
   --border-hover: var(--muted);
+
+  /* UX-0713-15：浮动窗口专属令牌（从 float.css 迁入，保持单一真理源） */
+  --badge-text:   #1e1e2e;
+  --badge-border: #1e1e2e;
+  --hint-bg:      rgba(30, 30, 46, 0.95);
+  --hint-text:    #cdd6f4;
 }
 
 [data-theme="dark"] {
@@ -433,4 +439,9 @@
   /* 以下变量深色主题无需覆盖，复用浅色定义：
      --gap-compact / --error-10（别名）/ --input-bg（复用 --window-bg，深色已覆盖）
      / --padding-sm / --padding-base / --border-hover（复用 --muted，深色已覆盖） */
+
+  /* UX-0713-15：浮动窗口专属令牌深色覆盖（从 float.css 迁入） */
+  --badge-border: #cdd6f4;              /* 深色下边框转亮，保证镂空可见 */
+  --hint-bg:      rgba(205, 214, 244, 0.95);
+  --hint-text:    #1e1e2e;
 }
