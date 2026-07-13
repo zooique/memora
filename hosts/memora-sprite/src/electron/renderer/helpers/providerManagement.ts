@@ -163,7 +163,7 @@ export async function loadProviderList(ctx: ProviderManagementContext): Promise<
     clearElement(ctx.providerListEl);
     const errorHint = document.createElement('div');
     errorHint.className = 'settings-hint provider-load-error';
-    errorHint.innerHTML = '<p>加载 Provider 列表失败</p>';
+    errorHint.innerHTML = '<p>加载服务商列表失败</p>';
     const retryBtn = document.createElement('button');
     retryBtn.className = 'btn-secondary';
     retryBtn.textContent = '重试';
@@ -173,7 +173,7 @@ export async function loadProviderList(ctx: ProviderManagementContext): Promise<
     errorHint.appendChild(retryBtn);
     ctx.providerListEl.appendChild(errorHint);
     reportError('SettingsPanelManager', error);
-    ctx.host.showToast('加载 Provider 列表失败，请稍后重试', 'error');
+    ctx.host.showToast('加载服务商列表失败，请稍后重试', 'error');
   }
 }
 
@@ -449,7 +449,7 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
   try {
     const result = await window.electronAPI.saveLlmProvider(alias!, { provider: provider!, model: model!, baseUrl, apiKey: apiKey!, temperature });
     if (result.success) {
-      ctx.host.showToast('Provider 保存成功');
+      ctx.host.showToast('服务商保存成功');
       hideProviderForm(ctx);
       await loadProviderList(ctx);
     } else {
@@ -520,7 +520,7 @@ export async function deleteProvider(ctx: ProviderManagementContext, key: string
   try {
     const data = await window.electronAPI.listLlmProviders();
     if (data.active === key) {
-      ctx.host.showToast('不能删除当前激活的 Provider，请先切换到其他 Provider', 'error');
+      ctx.host.showToast('不能删除当前激活的服务商，请先切换到其他服务商', 'error');
       return;
     }
   } catch (error) {
@@ -539,7 +539,7 @@ export async function deleteProvider(ctx: ProviderManagementContext, key: string
 
   const result = await window.electronAPI.deleteLlmProvider(key);
   if (result.success) {
-    ctx.host.showToast('Provider 已删除');
+    ctx.host.showToast('服务商已删除');
     await loadProviderList(ctx);
   } else {
     ctx.host.showToast(result.error ?? '删除失败', 'error');

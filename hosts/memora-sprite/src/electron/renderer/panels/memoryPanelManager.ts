@@ -427,7 +427,7 @@ export class MemoryPanelManager {
 
     const scoreEl = document.createElement('span');
     scoreEl.className = 'score';
-    scoreEl.textContent = `score: ${mem.score.toFixed(2)}`;
+    scoreEl.textContent = `权重: ${mem.score.toFixed(2)}`;
     metaEl.appendChild(scoreEl);
 
     if (mem.createdAt) {

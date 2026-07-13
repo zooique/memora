@@ -823,7 +823,7 @@ describe('initIpcListeners · 错误与状态监听', () => {
 
   it('onAgentReady → showToast("success") + onAgentReady 回调', () => {
     captured.onAgentReady();
-    expect(spies.showToast).toHaveBeenCalledWith('Agent 已就绪，可以开始对话了', 'success');
+    expect(spies.showToast).toHaveBeenCalledWith('精灵已就绪，可以开始对话了', 'success');
     expect(cb.onAgentReady).toHaveBeenCalledTimes(1);
   });
 });

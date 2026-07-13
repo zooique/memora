@@ -687,7 +687,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   /** 监听主进程 Agent 就绪通知（LLM 配置保存成功后触发） */
   window.electronAPI.onAgentReady(() => {
     // Agent 就绪是操作反馈（LLM 配置保存后触发），走 toast
-    uiManager.showToast('Agent 已就绪，可以开始对话了', 'success');
+    uiManager.showToast('精灵已就绪，可以开始对话了', 'success');
     callbacks.onAgentReady();
   });
 

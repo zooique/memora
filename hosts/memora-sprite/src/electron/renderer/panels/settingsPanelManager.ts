@@ -647,7 +647,7 @@ export class SettingsPanelManager {
     // 更新状态文本
     const textEl = indicator.querySelector('.agent-status-text');
     if (textEl) {
-      const defaultText = status === 'ready' ? 'Agent 已就绪' : status === 'error' ? 'Agent 未就绪' : '检测中...';
+      const defaultText = status === 'ready' ? '精灵已就绪' : status === 'error' ? '精灵未就绪' : '检测中...';
       textEl.textContent = message ?? defaultText;
     }
   }

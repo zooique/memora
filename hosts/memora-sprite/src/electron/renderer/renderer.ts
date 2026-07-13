@@ -125,7 +125,7 @@ async function bootstrapRenderer(): Promise<void> {
     // 标记 Agent 就绪，解除发送消息限制
     State.uiManager.setAgentReady(true);
     // 同步设置面板状态指示器
-    settingsController.updateAgentStatus('ready', 'Agent 已就绪');
+    settingsController.updateAgentStatus('ready', '精灵已就绪');
     void sessionController.loadSessionHistory();
     // 加载有对话记录的日期列表（供日期导航下拉列表使用）
     void sessionController.loadDateList();
@@ -463,8 +463,8 @@ async function bootstrapRenderer(): Promise<void> {
               } else {
                 // 超过最大重试次数，显示超时错误
                 State.initRetryTimer = null;
-                settingsController.updateAgentStatus('error', 'Agent 初始化超时');
-                State.uiManager.showToast('Agent 初始化超时，请尝试重启应用', 'error');
+                settingsController.updateAgentStatus('error', '精灵初始化超时');
+                State.uiManager.showToast('精灵初始化超时，请尝试重启应用', 'error');
               }
             } catch (retryErr) {
               // 重试查询失败，未达上限时继续重试，debug 级别避免日志噪音
@@ -473,7 +473,7 @@ async function bootstrapRenderer(): Promise<void> {
                 retryAgentStatus(attempt + 1);
               } else {
                 State.initRetryTimer = null;
-                settingsController.updateAgentStatus('error', 'Agent 状态查询失败');
+                settingsController.updateAgentStatus('error', '精灵状态查询失败');
               }
             }
           }, 2000);
@@ -646,7 +646,7 @@ function setupBusinessLogic(
     }
     // Agent 就绪守卫：与 emitSendMessage 一致，避免示例问题绕过校验导致消息残留 + 错误
     if (!State.uiManager.isAgentReady()) {
-      State.uiManager.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      State.uiManager.showToast('精灵未就绪，请先在设置面板配置 LLM', 'warning');
       void State.uiManager.switchPanel('settings');
       return;
     }

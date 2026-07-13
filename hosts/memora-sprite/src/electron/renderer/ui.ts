@@ -482,7 +482,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   regenerateLastMessage(userMessage: string): void {
     if (!this.state.isAgentReady) {
-      this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      this.showToast('精灵未就绪，请先在设置面板配置 LLM', 'warning');
       void this.switchPanel('settings');
       return;
     }
@@ -611,7 +611,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   emitSendMessage(): void {
     // Agent 未就绪时禁止发送：可能是首次配置后正在初始化，或配置缺失
     if (!this.state.isAgentReady) {
-      this.showToast('Agent 未就绪，正在初始化中，请稍候；若长时间无响应请在设置面板检查 LLM 配置', 'warning');
+      this.showToast('精灵未就绪，正在初始化中，请稍候；若长时间无响应请在设置面板检查 LLM 配置', 'warning');
       void this.switchPanel('settings');
       return;
     }

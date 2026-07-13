@@ -553,7 +553,7 @@ describe('saveProvider', () => {
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
-    expect(host.showToast).toHaveBeenCalledWith('Provider 保存成功');
+    expect(host.showToast).toHaveBeenCalledWith('服务商保存成功');
     expect(dom.providerModalEl.classList.contains('hidden')).toBe(true);
   });
 
@@ -602,7 +602,7 @@ describe('saveProvider', () => {
     // 编辑模式跳过重复检查，但 loadProviderList 仍会调用 listLlmProviders
     // 因此 listLlmProviders 应仅被调用 1 次（来自 loadProviderList），而非 2 次
     expect(listCall).toHaveBeenCalledTimes(1);
-    expect(host.showToast).toHaveBeenCalledWith('Provider 保存成功');
+    expect(host.showToast).toHaveBeenCalledWith('服务商保存成功');
   });
 });
 
@@ -691,7 +691,7 @@ describe('deleteProvider', () => {
     });
     const { ctx, host } = createCtx(dom);
     await deleteProvider(ctx, 'active-key');
-    expect(host.showToast).toHaveBeenCalledWith('不能删除当前激活的 Provider，请先切换到其他 Provider', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('不能删除当前激活的服务商，请先切换到其他服务商', 'error');
   });
 
   it('用户取消确认应不删除', async () => {
@@ -713,7 +713,7 @@ describe('deleteProvider', () => {
     });
     const { ctx, host } = createCtx(dom);
     await deleteProvider(ctx, 'test-provider');
-    expect(host.showToast).toHaveBeenCalledWith('Provider 已删除');
+    expect(host.showToast).toHaveBeenCalledWith('服务商已删除');
   });
 
   it('删除失败应显示错误 toast', async () => {
@@ -807,11 +807,11 @@ describe('loadProviderList', () => {
     });
     const { ctx, host } = createCtx(dom);
     await loadProviderList(ctx);
-    expect(host.showToast).toHaveBeenCalledWith('加载 Provider 列表失败，请稍后重试', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('加载服务商列表失败，请稍后重试', 'error');
     // UX-0712-9：catch 分支渲染错误占位符 + 重试按钮，而非清空列表
     const errorHint = dom.providerListEl.querySelector('.provider-load-error');
     expect(errorHint).toBeTruthy();
-    expect(errorHint?.querySelector('p')?.textContent).toBe('加载 Provider 列表失败');
+    expect(errorHint?.querySelector('p')?.textContent).toBe('加载服务商列表失败');
     const retryBtn = errorHint?.querySelector('button');
     expect(retryBtn).toBeTruthy();
     expect(retryBtn?.textContent).toBe('重试');
@@ -867,7 +867,7 @@ describe('initProviderListeners', () => {
     dom.btnProviderSave.click();
     // 等待异步操作完成
     await vi.waitFor(() => {
-      expect(host.showToast).toHaveBeenCalledWith('Provider 保存成功');
+      expect(host.showToast).toHaveBeenCalledWith('服务商保存成功');
     });
     events.cleanup();
   });
@@ -921,7 +921,7 @@ describe('initProviderListeners', () => {
     const deleteBtn = dom.providerListEl.querySelector('[data-action="delete"]') as HTMLButtonElement;
     deleteBtn.click();
     await vi.waitFor(() => {
-      expect(host.showToast).toHaveBeenCalledWith('Provider 已删除');
+      expect(host.showToast).toHaveBeenCalledWith('服务商已删除');
     });
     events.cleanup();
   });

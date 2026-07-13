@@ -143,7 +143,7 @@ describe('renderMemoryList', () => {
     const item = document.querySelector('.memory-item')!;
     expect(item.querySelector('.name')?.textContent).toBe('测试名');
     expect(item.querySelector('.source-tag')?.textContent).toBe('profile');
-    expect(item.querySelector('.score')?.textContent).toBe('score: 0.50');
+    expect(item.querySelector('.score')?.textContent).toBe('权重: 0.50');
     expect(item.querySelector('.preview')?.textContent).toBe('预览文本');
   });
 

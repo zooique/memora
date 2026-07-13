@@ -385,7 +385,7 @@
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
               <div id="input-provider-container" class="input-provider-container">
-                <button type="button" id="provider-selector" title="切换 LLM Provider" aria-label="切换 LLM Provider" aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" id="provider-selector" title="切换 AI 服务商" aria-label="切换 AI 服务商" aria-haspopup="listbox" aria-expanded="false">
                   <span id="provider-icon"><svg class="icon"><use href="#icon-link"/></svg></span>
                   <span id="provider-name">未配置</span>
                   <span id="provider-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
@@ -465,13 +465,13 @@
             <label class="advanced-search-label">来源</label>
             <select id="memory-filter-source" title="按来源筛选" aria-label="按来源筛选">
               <option value="">全部来源</option>
-              <option value="profile">profile</option>
-              <option value="insight">insight</option>
-              <option value="guardrail">guardrail</option>
-              <option value="skill">skill</option>
-              <option value="rule">rule</option>
-              <option value="persona">persona</option>
-              <option value="session">session</option>
+              <option value="profile">用户画像</option>
+              <option value="insight">洞察</option>
+              <option value="guardrail">护栏</option>
+              <option value="skill">技能</option>
+              <option value="rule">规则</option>
+              <option value="persona">角色</option>
+              <option value="session">会话</option>
             </select>
             <label class="advanced-search-label">排序</label>
             <select id="memory-sort-order" title="排序方式" aria-label="排序方式">
@@ -603,24 +603,24 @@
             <div class="legend-section">
               <div class="legend-title">节点类型</div>
               <div class="legend-items">
-                <span class="legend-item"><span class="legend-dot legend-dot-profile"></span>profile</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-insight"></span>insight</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-skill"></span>skill</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-rule"></span>rule</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-guardrail"></span>guardrail</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-persona"></span>persona</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-session"></span>session</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-profile"></span>用户画像</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-insight"></span>洞察</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-skill"></span>技能</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-rule"></span>规则</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-guardrail"></span>护栏</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-persona"></span>角色</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-session"></span>会话</span>
               </div>
             </div>
             <div class="legend-section">
               <div class="legend-title">关系类型</div>
               <div class="legend-items">
-                <span class="legend-item"><span class="legend-line legend-line-contradicts"></span>contradicts</span>
-                <span class="legend-item"><span class="legend-line legend-line-supports"></span>supports</span>
-                <span class="legend-item"><span class="legend-line legend-line-follows"></span>follows</span>
-                <span class="legend-item"><span class="legend-line legend-line-refines"></span>refines</span>
-                <span class="legend-item"><span class="legend-line legend-line-caused"></span>caused</span>
-                <span class="legend-item"><span class="legend-line legend-line-related"></span>related</span>
+                <span class="legend-item"><span class="legend-line legend-line-contradicts"></span>矛盾</span>
+                <span class="legend-item"><span class="legend-line legend-line-supports"></span>支持</span>
+                <span class="legend-item"><span class="legend-line legend-line-follows"></span>延续</span>
+                <span class="legend-item"><span class="legend-line legend-line-refines"></span>细化</span>
+                <span class="legend-item"><span class="legend-line legend-line-caused"></span>导致</span>
+                <span class="legend-item"><span class="legend-line legend-line-related"></span>相关</span>
               </div>
             </div>
           </div>
@@ -727,7 +727,7 @@
               <h3>API 管理</h3>
               <button id="btn-add-provider" class="btn-secondary btn-sm" type="button">+ 添加 API</button>
             </div>
-            <p class="settings-hint">管理多个 LLM Provider，在输入框中随时切换。点击「编辑」查看或修改具体配置。</p>
+            <p class="settings-hint">管理多个 AI 服务商，在输入框中随时切换。点击「编辑」查看或修改具体配置。</p>
 
             <!-- Provider 列表（记录卡片，只显示名称和概要信息） -->
             <div id="provider-list" class="provider-list">
@@ -738,10 +738,10 @@
           <!-- 后台归档设置（独立区域） -->
           <div class="settings-group">
             <h3>后台归档</h3>
-            <p class="settings-hint">选择用于后台记忆归档任务的 API，可选择与实时对话不同的 Provider（如使用更便宜的模型）。</p>
-
-            <div class="settings-row">
-              <label for="cfg-background-provider">归档 Provider</label>
+            <p class="settings-hint">选择用于后台记忆归档任务的 API，可选择与实时对话不同的服务商（如使用更便宜的模型）。</p>
+          </div>
+          <div class="settings-group">
+            <label for="cfg-background-provider">归档服务商</label>
               <select id="cfg-background-provider">
                 <option value="">与实时对话相同</option>
               </select>
@@ -749,7 +749,7 @@
           </div>
 
           <div class="settings-group">
-            <h3>Embedding 配置（可选）</h3>
+            <h3>向量嵌入配置（可选）</h3>
             <p class="settings-hint">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
             <div class="settings-row">
               <label for="cfg-emb-enabled">启用语义搜索</label>
@@ -767,7 +767,7 @@
               <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
               <div class="input-with-action">
                 <input type="password" id="cfg-emb-api-key" placeholder="sk-****" />
-                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Embedding API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
+                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏向量嵌入 API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
               </div>
             </div>
           </div>
@@ -973,7 +973,7 @@
           <div class="settings-group">
             <h3>已安装技能</h3>
             <p class="settings-hint">
-              技能文件存放在 configDir/skills/ 目录，Agent 启动时自动加载。
+              技能文件存放在配置目录的 skills/ 子目录下，应用启动时自动加载。
               技能通过 frontmatter 中的 keywords 或 trigger 字段匹配对话上下文。
             </p>
             <!-- 已加载技能列表（消费内核 agent.skills.list） -->
@@ -1050,7 +1050,7 @@
                   <dd>在<strong>大模型</strong>标签页点击「添加」，选择服务商后点击「获取 API Key」链接，跳转到对应平台注册并获取。</dd>
 
                   <dt>对话没有响应？</dt>
-                  <dd>检查底部状态栏 Provider 是否显示「未配置」，确保已正确配置 API Key。点击状态栏可快速跳转到设置。</dd>
+                  <dd>检查底部状态栏服务商是否显示「未配置」，确保已正确配置 API Key。点击状态栏可快速跳转到设置。</dd>
 
                   <dt>记忆如何归档？</dt>
                   <dd>默认使用<strong>全自动归档</strong>模式。可在<strong>精灵</strong>标签页中切换为「仅洞察自动」或「全手动」模式。</dd>
@@ -1087,9 +1087,9 @@
           <!-- 强制释放对话锁（应急恢复，当对话卡死但未触发超时时使用） -->
           <button id="btn-force-release-lock" class="btn-danger" title="当对话卡死且停止按钮无效时使用">强制释放锁</button>
           <!-- 恢复默认按钮，重置所有配置（危险操作，使用 btn-danger 警示） -->
-          <button id="btn-settings-reset" class="btn-danger">恢复默认</button>
-          <!-- 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
-          <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>
+          <button id="btn-settings-reset" class="btn-danger">恢复精灵默认</button>
+          <!-- 首次配置时提供"完成并回到对话"退出路径，避免用户被困在设置面板 -->
+          <button id="btn-settings-skip" class="btn-secondary">完成并回到对话</button>
           </div>
         </div>
       </div>
@@ -1299,8 +1299,8 @@
           <details class="dashboard-section" id="dashboard-runtime" open>
             <summary class="dashboard-section-title">运行</summary>
             <div class="dash-item-grid" id="dashboard-metrics-grid">
-              <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="dashboard-llm-calls">0</span></div>
-              <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="dashboard-tokens">0</span></div>
+              <div class="dash-item" title="AI 服务商调用次数"><span class="dash-label">AI 调用</span><span class="dash-value" id="dashboard-llm-calls">0</span></div>
+              <div class="dash-item" title="令牌使用总量"><span class="dash-label">令牌</span><span class="dash-value" id="dashboard-tokens">0</span></div>
               <div class="dash-item"><span class="dash-label">召回</span><span class="dash-value" id="dashboard-recall-rate">0%</span></div>
               <div class="dash-item"><span class="dash-label">失败</span><span class="dash-value" id="dashboard-tool-failures">0</span></div>
               <div class="dash-item" title="上下文截断次数"><span class="dash-label">截断</span><span class="dash-value" id="dashboard-truncation-count">—</span></div>
@@ -1395,7 +1395,7 @@
         <label for="cfg-provider-api-key">API Key</label>
         <div class="input-with-action">
           <input type="password" id="cfg-provider-api-key" placeholder="sk-****" aria-required="true" aria-describedby="cfg-provider-api-key-error" />
-          <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Provider API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
+          <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
         </div>
         <p id="cfg-provider-api-key-error" class="prompt-error hidden" role="alert"></p>
 
@@ -1442,9 +1442,9 @@
         <button class="modal-close" data-modal="memory-add-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
-        <label for="memory-add-source">来源（source）</label>
+        <label for="memory-add-source">来源</label>
         <!-- source 下拉：提供常用预设，支持自定义输入（datalist 兼顾灵活性与一致性） -->
-        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" aria-label="记忆来源" aria-required="true" aria-describedby="memory-add-source-error" />
+        <input type="text" id="memory-add-source" list="source-presets" placeholder="选择或输入来源…" autocomplete="off" aria-label="记忆来源" aria-required="true" aria-describedby="memory-add-source-error" />
         <datalist id="source-presets">
           <option value="profile">用户画像</option>
           <option value="insight">洞察记忆</option>

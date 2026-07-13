@@ -438,7 +438,7 @@ describe('updateAgentStatusIndicator', () => {
     manager.updateAgentStatusIndicator('ready');
     const indicator = document.getElementById('agent-status-indicator')!;
     expect(indicator.classList.contains('ready')).toBe(true);
-    expect(indicator.querySelector('.agent-status-text')!.textContent).toBe('Agent 已就绪');
+    expect(indicator.querySelector('.agent-status-text')!.textContent).toBe('精灵已就绪');
   });
 
   it('error 状态应添加 error 类 + 更新文案', () => {
@@ -446,7 +446,7 @@ describe('updateAgentStatusIndicator', () => {
     manager.updateAgentStatusIndicator('error');
     const indicator = document.getElementById('agent-status-indicator')!;
     expect(indicator.classList.contains('error')).toBe(true);
-    expect(indicator.querySelector('.agent-status-text')!.textContent).toBe('Agent 未就绪');
+    expect(indicator.querySelector('.agent-status-text')!.textContent).toBe('精灵未就绪');
   });
 
   it('unknown 状态应添加 unknown 类 + 更新文案', () => {
