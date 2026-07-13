@@ -30,8 +30,8 @@
 
 /* ─── 空状态统一（Phase 4：视觉统一） ────────────────────────── */
 
-/* 时间线空状态：与列表空状态保持一致 */
-.timeline-empty {
+/* 时间线空状态：与列表空状态保持一致（createEmptyState 工厂生成，类名：empty-state timeline-empty-state） */
+.timeline-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,20 +41,20 @@
   font-size: var(--font-sm);
 }
 
-.timeline-empty .empty-icon {
+.timeline-empty-state .empty-icon {
   font-size: 2rem;  /* 32px / 16 = 2rem（空状态大图标，超出 --font-2xl 范围，直接用 rem） */
   color: var(--text-3);
   animation: emptyIconFloat 3s ease-in-out infinite;
   margin-bottom: 4px;
 }
 
-.timeline-empty .empty-title {
+.timeline-empty-state .empty-title {
   font-size: var(--font-md);
   font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
-.timeline-empty .empty-subtitle {
+.timeline-empty-state .empty-subtitle {
   font-size: var(--font-xs);
   color: var(--text-3);
   text-align: center;

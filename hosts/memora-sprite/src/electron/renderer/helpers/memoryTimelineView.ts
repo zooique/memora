@@ -22,7 +22,7 @@
  *   参照 memoryGraphPanel.ts / memoryDetailPanel.ts 的 context 注入模式
  */
 
-import { clearElement, formatDateKey } from './domHelpers.js';
+import { clearElement, formatDateKey, createEmptyState } from './domHelpers.js';
 // getSourceColorClass 是从 helpers/sourceColor 导出的纯函数（模块级，非实例方法）
 import { getSourceColorClass } from './sourceColor.js';
 import type { MemoryListItem } from '../types.js';
@@ -71,28 +71,15 @@ export function renderTimeline(ctx: MemoryTimelineContext): void {
   const container = document.getElementById('memory-timeline-container');
   if (!container) return;
 
-  // 无记忆数据时显示空状态
+  // 无记忆数据时显示空状态（createEmptyState 工厂统一结构）
   if (ctx.allMemories.length === 0) {
     clearElement(container);
-    const empty = document.createElement('div');
-    empty.className = 'timeline-empty';
-
-    // 空状态三段结构：图标 + 标题 + 副标题（createElement 避免 innerHTML 拼接）
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'empty-icon';
-    iconSpan.innerHTML = '<svg class="icon"><use href="#icon-hourglass"/></svg>';
-    empty.appendChild(iconSpan);
-
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'empty-title';
-    titleSpan.textContent = '暂无时间线数据';
-    empty.appendChild(titleSpan);
-
-    const subtitleSpan = document.createElement('span');
-    subtitleSpan.className = 'empty-subtitle';
-    subtitleSpan.textContent = '开始对话后，记忆将按时间自动组织';
-    empty.appendChild(subtitleSpan);
-
+    const empty = createEmptyState({
+      panelPrefix: 'timeline',
+      iconHtml: '<svg class="icon"><use href="#icon-hourglass"/></svg>',
+      title: '暂无时间线数据',
+      subtitle: '开始对话后，记忆将按时间自动组织',
+    });
     container.appendChild(empty);
     return;
   }
