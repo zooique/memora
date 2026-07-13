@@ -721,7 +721,7 @@ describe('showMemoryLineage', () => {
     };
   }
 
-  it('空数组应保持脉络区域隐藏（静默降级）', () => {
+  it('空数组应显示"暂无演化脉络"空状态文案', () => {
     const host = createMockHost();
     const events = new EventTracker();
     const detailModal = document.getElementById('memory-detail-modal')!;
@@ -730,11 +730,14 @@ describe('showMemoryLineage', () => {
     mgr.showMemoryLineage([]);
 
     const lineageEl = document.getElementById('memory-detail-lineage')!;
-    expect(lineageEl.classList.contains('hidden')).toBe(true);
+    expect(lineageEl.classList.contains('hidden')).toBe(false);
     expect(document.querySelectorAll('.lineage-item').length).toBe(0);
+    const empty = lineageEl.querySelector('.lineage-empty');
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).toBe('暂无演化脉络');
   });
 
-  it('仅起点节点（length=1）应保持隐藏（无上游来源）', () => {
+  it('仅起点节点（length=1）应显示空状态（无上游来源）', () => {
     const host = createMockHost();
     const events = new EventTracker();
     const detailModal = document.getElementById('memory-detail-modal')!;
@@ -743,7 +746,8 @@ describe('showMemoryLineage', () => {
     mgr.showMemoryLineage([makePath({ depth: 0 })]);
 
     const lineageEl = document.getElementById('memory-detail-lineage')!;
-    expect(lineageEl.classList.contains('hidden')).toBe(true);
+    expect(lineageEl.classList.contains('hidden')).toBe(false);
+    expect(lineageEl.querySelector('.lineage-empty')?.textContent).toBe('暂无演化脉络');
   });
 
   it('多节点路径应渲染多个 .lineage-item 并显示脉络区域', () => {

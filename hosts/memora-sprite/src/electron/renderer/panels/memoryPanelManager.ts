@@ -42,8 +42,10 @@ import {
   showMemoryDetail as showMemoryDetailHelper,
   resetLineage as resetLineageHelper,
   showMemoryLineage as showMemoryLineageHelper,
+  showLineageError as showLineageErrorHelper,
   resetNeighbors as resetNeighborsHelper,
   showMemoryNeighbors as showMemoryNeighborsHelper,
+  showNeighborsError as showNeighborsErrorHelper,
   updateDetailButtons as updateDetailButtonsHelper,
 } from '../helpers/memoryDetailPanel.js';
 import type { MemoryDetailPanelContext } from '../helpers/memoryDetailPanel.js';
@@ -159,6 +161,10 @@ export class MemoryPanelManager {
   private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => void) | null = null;
   /** 回收站批量操作回调：action='restore-all' 全部恢复 / action='purge-all' 全部清空 */
   private recycleBinBatchActionCallback: ((action: 'restore-all' | 'purge-all') => void) | null = null;
+  /** 回收站完整列表缓存（供分页使用，避免每次翻页重新请求 IPC） */
+  private allRecycleBinMemories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }> = [];
+  /** 回收站当前页码（从 1 开始，与记忆列表分页模式一致） */
+  private recycleBinPage = 1;
 // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
   private pendingCleanupIds: string[] = [];
@@ -487,6 +493,15 @@ export class MemoryPanelManager {
     showMemoryLineageHelper(this.buildDetailPanelContext(), path);
   }
 
+  /**
+   * 显示演化脉络加载失败状态 + 重试按钮（委托到 memoryDetailPanel helper）
+   *
+   * @param onRetry 重试回调（点击重试按钮触发）
+   */
+  showLineageError(onRetry: () => void): void {
+    showLineageErrorHelper(this.buildDetailPanelContext(), onRetry);
+  }
+
   // ─── Phase 5.2：直接邻居视图（委托到 memoryDetailPanel helper） ────
 
   /** 重置直接邻居区域（委托到 memoryDetailPanel helper） */
@@ -501,6 +516,15 @@ export class MemoryPanelManager {
    */
   showMemoryNeighbors(neighbors: RelationNeighbor[]): void {
     showMemoryNeighborsHelper(this.buildDetailPanelContext(), neighbors);
+  }
+
+  /**
+   * 显示直接邻居加载失败状态 + 重试按钮（委托到 memoryDetailPanel helper）
+   *
+   * @param onRetry 重试回调（点击重试按钮触发）
+   */
+  showNeighborsError(onRetry: () => void): void {
+    showNeighborsErrorHelper(this.buildDetailPanelContext(), onRetry);
   }
 
   // ─── 辅助方法 ───────────────────────────────────────────
@@ -886,6 +910,7 @@ export class MemoryPanelManager {
   /**
    * 渲染回收站列表
    *
+   * 缓存完整列表后按页渲染，复用记忆列表的分页模式（MEMORY_PAGE_SIZE + "加载更多"按钮）。
    * 每项结构：header(名称 + 操作按钮) + meta(来源 + 删除时间) + preview(内容预览)
    * 操作按钮通过 data-action + data-memory-id 委托，由 initRecycleBinActions 统一处理
    *
@@ -894,71 +919,109 @@ export class MemoryPanelManager {
   renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void {
     const listEl = document.getElementById('recycle-bin-list');
     if (!listEl) return;
-    // 统一使用 replaceChildren 清空（遵循渲染器统一操作模式，不直接操作 innerHTML）
+    // 缓存完整列表 + 重置页码（与 renderMemoryList 分页入口一致）
+    this.allRecycleBinMemories = memories;
+    this.recycleBinPage = 1;
+    this.renderRecycleBinPage();
+  }
+
+  /**
+   * 渲染回收站当前页（分页策略与 renderMemoryPage 一致）
+   *
+   * 每页 MEMORY_PAGE_SIZE 条，超出部分通过"加载更多"按钮加载。
+   * 空列表时由 CSS :empty::after 显示"回收站为空"。
+   */
+  private renderRecycleBinPage(): void {
+    const listEl = document.getElementById('recycle-bin-list');
+    if (!listEl) return;
+
+    const end = this.recycleBinPage * MemoryPanelManager.MEMORY_PAGE_SIZE;
+    const pageItems = this.allRecycleBinMemories.slice(0, end);
+
+    // 清空容器（与 renderMemoryPage 统一使用 replaceChildren）
     listEl.replaceChildren();
 
-    if (memories.length === 0) {
-      // 空状态由 CSS :empty::after 显示"回收站为空"，无需额外 DOM
-      return;
+    for (const mem of pageItems) {
+      listEl.appendChild(this.createRecycleBinItem(mem));
     }
 
-    for (const mem of memories) {
-      const item = document.createElement('div');
-      item.className = 'recycle-bin-item';
-
-      // 头部：名称 + 操作按钮组
-      const header = document.createElement('div');
-      header.className = 'recycle-bin-item-header';
-
-      const nameEl = document.createElement('div');
-      nameEl.className = 'recycle-bin-item-name';
-      nameEl.textContent = mem.name; // textContent 防 XSS
-
-      const actions = document.createElement('div');
-      actions.className = 'recycle-bin-item-actions';
-
-      // 恢复按钮（绿色强调，对应 .health-action-btn 无 danger 类）
-      const restoreBtn = document.createElement('button');
-      restoreBtn.className = 'health-action-btn';
-      restoreBtn.textContent = '恢复';
-      restoreBtn.setAttribute('data-action', 'restore-memory');
-      restoreBtn.setAttribute('data-memory-id', mem.id);
-      restoreBtn.setAttribute('title', '恢复此记忆到活跃列表');
-
-      // 彻底删除按钮（红色 danger 样式）
-      const purgeBtn = document.createElement('button');
-      purgeBtn.className = 'health-action-btn danger';
-      purgeBtn.textContent = '彻底删除';
-      purgeBtn.setAttribute('data-action', 'purge-memory');
-      purgeBtn.setAttribute('data-memory-id', mem.id);
-      purgeBtn.setAttribute('title', '永久删除此记忆，不可恢复');
-
-      actions.append(restoreBtn, purgeBtn);
-      header.append(nameEl, actions);
-
-      // 元信息：来源 + 删除时间
-      const meta = document.createElement('div');
-      meta.className = 'recycle-bin-item-meta';
-
-      const sourceEl = document.createElement('span');
-      sourceEl.className = 'recycle-bin-item-source';
-      sourceEl.textContent = `来源: ${mem.source}`;
-
-      const deletedAtEl = document.createElement('span');
-      deletedAtEl.className = 'recycle-bin-item-deleted-at';
-      // 格式化删除时间为本地可读日期（复用 formatTimestamp：当天 HH:MM / 昨天 HH:MM / MM-DD HH:MM）
-      deletedAtEl.textContent = `删除于: ${formatTimestamp(mem.deletedAt)}`;
-
-      meta.append(sourceEl, deletedAtEl);
-
-      // 内容预览
-      const previewEl = document.createElement('div');
-      previewEl.className = 'recycle-bin-item-preview';
-      previewEl.textContent = mem.contentPreview; // textContent 防 XSS
-
-      item.append(header, meta, previewEl);
-      listEl.append(item);
+    // 还有更多回收站项时添加"加载更多"按钮
+    if (this.allRecycleBinMemories.length > end) {
+      const loadMoreBtn = document.createElement('button');
+      loadMoreBtn.className = 'memory-load-more btn-secondary';
+      loadMoreBtn.textContent = `加载更多（剩余 ${this.allRecycleBinMemories.length - end} 条）`;
+      this.events.addEventListener(loadMoreBtn, 'click', () => {
+        this.recycleBinPage++;
+        this.renderRecycleBinPage();
+      });
+      listEl.appendChild(loadMoreBtn);
     }
+  }
+
+  /**
+   * 创建单个回收站列表项 DOM 元素（renderRecycleBinPage 的辅助方法）
+   *
+   * 结构：header(名称 + 恢复/彻底删除按钮) + meta(来源 + 删除时间) + preview(内容预览)
+   *
+   * @param mem 回收站记忆项数据
+   * @returns 完整的回收站项 DOM 元素
+   */
+  private createRecycleBinItem(mem: { id: string; name: string; source: string; contentPreview: string; deletedAt: string }): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'recycle-bin-item';
+
+    // 头部：名称 + 操作按钮组
+    const header = document.createElement('div');
+    header.className = 'recycle-bin-item-header';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'recycle-bin-item-name';
+    nameEl.textContent = mem.name; // textContent 防 XSS
+
+    const actions = document.createElement('div');
+    actions.className = 'recycle-bin-item-actions';
+
+    // 恢复按钮（绿色强调，对应 .health-action-btn 无 danger 类）
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'health-action-btn';
+    restoreBtn.textContent = '恢复';
+    restoreBtn.setAttribute('data-action', 'restore-memory');
+    restoreBtn.setAttribute('data-memory-id', mem.id);
+    restoreBtn.setAttribute('title', '恢复此记忆到活跃列表');
+
+    // 彻底删除按钮（红色 danger 样式）
+    const purgeBtn = document.createElement('button');
+    purgeBtn.className = 'health-action-btn danger';
+    purgeBtn.textContent = '彻底删除';
+    purgeBtn.setAttribute('data-action', 'purge-memory');
+    purgeBtn.setAttribute('data-memory-id', mem.id);
+    purgeBtn.setAttribute('title', '永久删除此记忆，不可恢复');
+
+    actions.append(restoreBtn, purgeBtn);
+    header.append(nameEl, actions);
+
+    // 元信息：来源 + 删除时间
+    const meta = document.createElement('div');
+    meta.className = 'recycle-bin-item-meta';
+
+    const sourceEl = document.createElement('span');
+    sourceEl.className = 'recycle-bin-item-source';
+    sourceEl.textContent = `来源: ${mem.source}`;
+
+    const deletedAtEl = document.createElement('span');
+    deletedAtEl.className = 'recycle-bin-item-deleted-at';
+    // 格式化删除时间为本地可读日期（复用 formatTimestamp：当天 HH:MM / 昨天 HH:MM / MM-DD HH:MM）
+    deletedAtEl.textContent = `删除于: ${formatTimestamp(mem.deletedAt)}`;
+
+    meta.append(sourceEl, deletedAtEl);
+
+    // 内容预览
+    const previewEl = document.createElement('div');
+    previewEl.className = 'recycle-bin-item-preview';
+    previewEl.textContent = mem.contentPreview; // textContent 防 XSS
+
+    item.append(header, meta, previewEl);
+    return item;
   }
 
   /**

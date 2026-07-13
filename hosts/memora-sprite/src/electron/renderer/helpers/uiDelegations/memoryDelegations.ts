@@ -24,7 +24,9 @@ export interface MemoryDelegations {
   renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void;
   showMemoryDetail(memory: MemoryDetail): void;
   showMemoryLineage(path: RelationPath[]): void;
+  showMemoryLineageError(onRetry: () => void): void;
   showMemoryNeighbors(neighbors: RelationNeighbor[]): void;
+  showMemoryNeighborsError(onRetry: () => void): void;
   clearAddMemoryForm(): void;
   getAddMemoryFormData(): { source: string; name: string; content: string } | null;
   getCurrentMemoryId(): string | null;
@@ -70,8 +72,14 @@ export const memoryDelegations: MemoryDelegations = {
   showMemoryLineage(this: UIManager, path: RelationPath[]): void {
     this.memoryPanel.showMemoryLineage(path);
   },
+  showMemoryLineageError(this: UIManager, onRetry: () => void): void {
+    this.memoryPanel.showLineageError(onRetry);
+  },
   showMemoryNeighbors(this: UIManager, neighbors: RelationNeighbor[]): void {
     this.memoryPanel.showMemoryNeighbors(neighbors);
+  },
+  showMemoryNeighborsError(this: UIManager, onRetry: () => void): void {
+    this.memoryPanel.showNeighborsError(onRetry);
   },
   clearAddMemoryForm(this: UIManager): void {
     this.memoryPanel.clearAddMemoryForm();

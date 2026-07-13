@@ -648,6 +648,24 @@
   overflow-y: auto;
 }
 
+/* 脉络/邻居空状态文案（无数据时的友好提示） */
+.lineage-empty {
+  padding: var(--input-padding);
+  color: var(--text-3);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+
+/* 脉络/邻居加载失败状态（文案 + 内联重试按钮） */
+.lineage-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--input-padding);
+  color: var(--red);
+  font-size: var(--font-sm);
+}
+
 /* 单条脉络节点：flex 布局，padding-left 由 --lineage-depth 驱动缩进 */
 .lineage-item {
   display: flex;

@@ -180,6 +180,51 @@ export function resetLineage(): void {
 }
 
 /**
+ * 显示演化脉络空状态文案
+ *
+ * 当 BFS 返回空路径或仅起点节点（无上游来源）时调用，
+ * 显示"暂无演化脉络"提示用户该记忆暂无来源链。
+ */
+function showLineageEmpty(): void {
+  const lineageEl = document.getElementById('memory-detail-lineage');
+  const lineageListEl = document.getElementById('memory-lineage-list');
+  if (!lineageEl || !lineageListEl) return;
+  clearElement(lineageListEl);
+  const empty = document.createElement('div');
+  empty.className = 'lineage-empty';
+  empty.textContent = '暂无演化脉络';
+  lineageListEl.appendChild(empty);
+  lineageEl.classList.remove('hidden');
+}
+
+/**
+ * 显示演化脉络加载失败状态 + 重试按钮
+ *
+ * 异步加载脉络 IPC 失败时调用，在脉络子区域显示"加载失败"文案和重试按钮。
+ * 重试按钮通过 EventTracker 绑定 click 事件，cleanup 时统一清理。
+ *
+ * @param ctx 记忆详情面板上下文（提供 EventTracker 绑定重试事件）
+ * @param onRetry 重试回调（点击重试按钮触发，通常为重新加载脉络）
+ */
+export function showLineageError(ctx: MemoryDetailPanelContext, onRetry: () => void): void {
+  const lineageEl = document.getElementById('memory-detail-lineage');
+  const lineageListEl = document.getElementById('memory-lineage-list');
+  if (!lineageEl || !lineageListEl) return;
+  clearElement(lineageListEl);
+  const errorBox = document.createElement('div');
+  errorBox.className = 'lineage-error';
+  const msg = document.createElement('span');
+  msg.textContent = '加载失败';
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'panel-error-btn inline-retry-btn';
+  retryBtn.textContent = '重试';
+  ctx.events.addEventListener(retryBtn, 'click', onRetry);
+  errorBox.append(msg, retryBtn);
+  lineageListEl.appendChild(errorBox);
+  lineageEl.classList.remove('hidden');
+}
+
+/**
  * 渲染演化脉络（异步加载完成后注入）
  *
  * 将 RelationPath[]（BFS 扁平数组 + depth 字段）渲染为按 depth 分组的缩进列表，
@@ -189,7 +234,7 @@ export function resetLineage(): void {
  * - path[0] 是当前记忆（depth=0），高亮标记
  * - 后续节点按 depth 递增缩进，呈现"从哪来"的纵向演化链
  * - 点击节点复用 memoryClickCallback 跳转（与关联列表行为一致）
- * - 空数组静默隐藏区域（不显示错误提示）
+ * - 空数据或仅起点节点（无上游来源）：显示"暂无演化脉络"空状态文案
  *
  * @param ctx 记忆详情面板上下文
  * @param path 内核 BFS 返回的路径节点数组
@@ -199,9 +244,9 @@ export function showMemoryLineage(ctx: MemoryDetailPanelContext, path: RelationP
   const lineageListEl = document.getElementById('memory-lineage-list');
   if (!lineageEl || !lineageListEl) return;
 
-  // 空数据或仅起点节点（无上游来源）：静默隐藏
+  // 空数据或仅起点节点（无上游来源）：显示空状态文案（不再静默隐藏）
   if (!path || path.length <= 1) {
-    resetLineage();
+    showLineageEmpty();
     return;
   }
 
@@ -277,6 +322,50 @@ export function resetNeighbors(): void {
 }
 
 /**
+ * 显示直接邻居空状态文案
+ *
+ * 当内核返回空邻居列表时调用，显示"暂无关联邻居"提示用户该记忆无直接关联。
+ */
+function showNeighborsEmpty(): void {
+  const neighborsEl = document.getElementById('memory-detail-neighbors');
+  const neighborsListEl = document.getElementById('memory-neighbors-list');
+  if (!neighborsEl || !neighborsListEl) return;
+  clearElement(neighborsListEl);
+  const empty = document.createElement('div');
+  empty.className = 'lineage-empty';
+  empty.textContent = '暂无关联邻居';
+  neighborsListEl.appendChild(empty);
+  neighborsEl.classList.remove('hidden');
+}
+
+/**
+ * 显示直接邻居加载失败状态 + 重试按钮
+ *
+ * 异步加载邻居 IPC 失败时调用，在邻居子区域显示"加载失败"文案和重试按钮。
+ * 重试按钮通过 EventTracker 绑定 click 事件，cleanup 时统一清理。
+ *
+ * @param ctx 记忆详情面板上下文（提供 EventTracker 绑定重试事件）
+ * @param onRetry 重试回调（点击重试按钮触发，通常为重新加载邻居）
+ */
+export function showNeighborsError(ctx: MemoryDetailPanelContext, onRetry: () => void): void {
+  const neighborsEl = document.getElementById('memory-detail-neighbors');
+  const neighborsListEl = document.getElementById('memory-neighbors-list');
+  if (!neighborsEl || !neighborsListEl) return;
+  clearElement(neighborsListEl);
+  const errorBox = document.createElement('div');
+  errorBox.className = 'lineage-error';
+  const msg = document.createElement('span');
+  msg.textContent = '加载失败';
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'panel-error-btn inline-retry-btn';
+  retryBtn.textContent = '重试';
+  ctx.events.addEventListener(retryBtn, 'click', onRetry);
+  errorBox.append(msg, retryBtn);
+  neighborsListEl.appendChild(errorBox);
+  neighborsEl.classList.remove('hidden');
+}
+
+/**
  * 渲染直接关联邻居（异步加载完成后注入）
  *
  * 将 RelationNeighbor[]（both 方向，1 跳）渲染为扁平列表，
@@ -286,7 +375,7 @@ export function resetNeighbors(): void {
  * - 与 showMemoryLineage 同构，复用 lineage-item 样式体系
  * - direction 标签区分"来源"/"去向"（incoming = 邻居指向当前记忆，outgoing = 当前记忆指向邻居）
  * - 点击节点复用 memoryClickCallback 跳转（与脉络/关联列表行为一致）
- * - 空数组静默隐藏区域
+ * - 空数组显示"暂无关联邻居"空状态文案
  *
  * @param ctx 记忆详情面板上下文
  * @param neighbors 内核返回的邻居节点数组
@@ -296,9 +385,9 @@ export function showMemoryNeighbors(ctx: MemoryDetailPanelContext, neighbors: Re
   const neighborsListEl = document.getElementById('memory-neighbors-list');
   if (!neighborsEl || !neighborsListEl) return;
 
-  // 空数据：静默隐藏（不显示错误提示）
+  // 空数据：显示空状态文案（不再静默隐藏）
   if (!neighbors || neighbors.length === 0) {
-    resetNeighbors();
+    showNeighborsEmpty();
     return;
   }
 

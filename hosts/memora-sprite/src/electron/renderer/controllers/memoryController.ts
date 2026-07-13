@@ -342,31 +342,9 @@ export function createMemoryController(uiManager: UIManager) {
         const { memory } = await window.electronAPI.showMemory(id);
         if (memory) {
           uiManager.showMemoryDetail(memory);
-          // Phase 5.1：异步加载演化脉络（不阻塞详情弹窗显示，失败静默降级）
-          // incoming 方向追溯来源链，maxDepth=3 足够覆盖典型演化深度
-          try {
-            const path = await window.electronAPI.getRelationPath({
-              memoryId: id,
-              maxDepth: 3,
-              direction: 'incoming',
-            });
-            uiManager.showMemoryLineage(path);
-          } catch (error) {
-            // 脉络加载失败不影响详情查看，resetLineage 已在 showMemoryDetail 中调用
-            reportError('onMemoryClick-lineage', error);
-          }
-          // Phase 5.2：异步加载直接邻居（both 方向 1 跳全景，失败静默降级）
-          // 与脉络互补：脉络看"从哪来"的多跳链，邻居看"直接关联谁"的全景
-          try {
-            const neighbors = await window.electronAPI.getRelationNeighbors({
-              memoryId: id,
-              limit: 10,
-            });
-            uiManager.showMemoryNeighbors(neighbors);
-          } catch (error) {
-            // 邻居加载失败不影响详情查看，resetNeighbors 已在 showMemoryDetail 中调用
-            reportError('onMemoryClick-neighbors', error);
-          }
+          // 异步加载演化脉络 + 直接邻居（不阻塞详情弹窗显示，失败时显示重试按钮）
+          void loadLineage(id);
+          void loadNeighbors(id);
         }
       } catch (error) {
         reportError('onMemoryClick', error);
@@ -620,6 +598,49 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
+   * 加载记忆演化脉络（incoming 方向多跳追溯）
+   *
+   * 在记忆详情弹窗打开后异步调用，失败时在脉络子区域显示"加载失败"+重试按钮，
+   * 不阻塞详情查看。
+   *
+   * @param memoryId 当前查看的记忆 ID
+   */
+  async function loadLineage(memoryId: string): Promise<void> {
+    try {
+      const path = await window.electronAPI.getRelationPath({
+        memoryId,
+        maxDepth: 3,
+        direction: 'incoming',
+      });
+      uiManager.showMemoryLineage(path);
+    } catch (error) {
+      reportError('loadLineage', error);
+      uiManager.showMemoryLineageError(() => loadLineage(memoryId));
+    }
+  }
+
+  /**
+   * 加载记忆直接邻居（both 方向 1 跳全景）
+   *
+   * 在记忆详情弹窗打开后异步调用，失败时在邻居子区域显示"加载失败"+重试按钮，
+   * 不阻塞详情查看。
+   *
+   * @param memoryId 当前查看的记忆 ID
+   */
+  async function loadNeighbors(memoryId: string): Promise<void> {
+    try {
+      const neighbors = await window.electronAPI.getRelationNeighbors({
+        memoryId,
+        limit: 10,
+      });
+      uiManager.showMemoryNeighbors(neighbors);
+    } catch (error) {
+      reportError('loadNeighbors', error);
+      uiManager.showMemoryNeighborsError(() => loadNeighbors(memoryId));
+    }
+  }
+
+  /**
    * 防抖定时器句柄（loadDashboard 高频调用时合并为单次执行）
    *
    * memoryNoticed/insightGained 事件密集触发时，避免每次都发起 IPC + DOM 操作，
@@ -711,10 +732,12 @@ export function createMemoryController(uiManager: UIManager) {
       if (snapshot && Object.keys(snapshot).length > 0) {
         uiManager.renderPerceptionSnapshot(snapshot);
       }
+      // 加载成功后隐藏错误横幅，清除上一次失败的残留状态
+      uiManager.hidePanelError('perception');
     } catch (error) {
       reportError('loadPerception', error);
-      // 感知数据加载失败时用 toast 兜底提示（与 loadDashboard 错误反馈一致）
-      uiManager.showToast('感知数据加载失败，请稍后重试', 'error');
+      // 加载失败时显示面板错误横幅 + 重试按钮（与 loadMemoryList 错误反馈体系一致）
+      uiManager.showPanelError('perception', '感知数据加载失败，请稍后重试', () => loadPerception());
     }
   }
 
