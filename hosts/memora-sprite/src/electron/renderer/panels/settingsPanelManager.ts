@@ -162,7 +162,8 @@ export class SettingsPanelManager {
   private isLoadingConfig = false;
 
   // ─── 回调 ────────────────────────────────────────────────
-  private configSaveCallback: ((config: SpriteConfigForm) => void) | null = null;
+  // UX-0713-F2：回调返回 Promise<boolean>，true=保存成功，false=保存失败（IPC 错误或事务回滚）
+  private configSaveCallback: ((config: SpriteConfigForm) => Promise<boolean>) | null = null;
   /** 角色匹配模式变更回调 */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
   /** ADR-015 归档模式变更回调（radio change 时即时触发，与主题一样即时生效） */
@@ -924,7 +925,7 @@ export class SettingsPanelManager {
 
   // ─── 回调注册 ───────────────────────────────────────────
 
-  onConfigSave(cb: (config: SpriteConfigForm) => void): void {
+  onConfigSave(cb: (config: SpriteConfigForm) => Promise<boolean>): void {
     this.configSaveCallback = cb;
   }
   /** 注册角色匹配模式变更回调 */
@@ -962,9 +963,16 @@ export class SettingsPanelManager {
       }
 
       this.updateSaveStatus('saving');
-      this.configSaveCallback?.(spriteConfig);
-      this.settingsFormDirty = false;
-      this.updateSaveStatus('saved');
+      // UX-0713-F2：await 回调获取保存结果，IPC 失败时显示 error 状态 + 重试按钮
+      // 回调内部已处理 toast 反馈（成功/失败均显示 toast），此处仅根据返回值更新状态指示器
+      const success = (await this.configSaveCallback?.(spriteConfig)) ?? true;
+      if (success) {
+        this.settingsFormDirty = false;
+        this.updateSaveStatus('saved');
+      } else {
+        // 保存失败（IPC 错误或事务回滚），回调内部已显示 toast，此处仅更新状态显示重试按钮
+        this.updateSaveStatus('error');
+      }
     } catch (error) {
       reportError('SettingsPanelManager', error);
       this.host.showToast('保存失败，请重试', 'error');

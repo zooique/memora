@@ -48,7 +48,8 @@ export function createSettingsController(uiManager: UIManager) {
    * 包含精灵配置保存、LLM 配置保存、LLM 连接测试、取消。
    */
   function setupSettingsPanel(): void {
-    uiManager.onConfigSave(async (config: SpriteConfigForm) => {
+    // UX-0713-F2：回调返回 Promise<boolean>，让 autoSaveConfig 能根据结果决定 saved/error 状态
+    uiManager.onConfigSave(async (config: SpriteConfigForm): Promise<boolean> => {
       try {
         // 单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
         const result = await window.electronAPI.updateConfigBatch({
@@ -70,11 +71,14 @@ export function createSettingsController(uiManager: UIManager) {
         if (!result.updated) {
           // 事务回滚：主进程未应用任何更新，提示具体错误
           uiManager.showToast(`保存失败：${result.error ?? '未知错误'}`, 'error');
+          return false;
         } else {
           uiManager.showToast('精灵配置已保存', 'success');
+          return true;
         }
       } catch (error) {
         handleIpcError('onConfigSave', error, '保存精灵配置失败');
+        return false;
       }
     });
 

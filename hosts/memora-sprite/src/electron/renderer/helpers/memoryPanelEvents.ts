@@ -161,30 +161,39 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
  * 记忆列表事件委托：在 list 容器上注册统一 click 监听器，
  * 通过 data-action="view-memory" + data-memory-id 分发，
  * 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理。
+ *
+ * UX-0713-F1：时间线视图项渲染在独立的 memory-timeline-container 中（与 memoryListEl 是同级 DOM 子树），
+ * 需在两个容器上分别注册事件委托，否则切换到时间线视图后点击/键盘 Enter 均无法查看详情。
  */
 function initListClickDelegation(ctx: MemoryPanelEventContext): void {
-  if (!ctx.memoryListEl) return;
-  ctx.events.addEventListener(ctx.memoryListEl, 'click', (e: Event) => {
-    const target = e.target as HTMLElement;
-    const item = target.closest<HTMLElement>('[data-action="view-memory"]');
-    if (item) {
-      const memoryId = item.dataset.memoryId ?? '';
-      ctx.getMemoryClickCallback()?.(memoryId);
-    }
-  });
-  // 键盘可访问性——Enter/Space 触发与 click 等效的查看动作
-  // handler 签名用 Event（与 EventTracker 签名一致），内部断言为 KeyboardEvent 访问 key 属性
-  ctx.events.addEventListener(ctx.memoryListEl, 'keydown', (e: Event) => {
-    const ke = e as KeyboardEvent;
-    if (ke.key !== 'Enter' && ke.key !== ' ') return;
-    const target = ke.target as HTMLElement;
-    const item = target.closest<HTMLElement>('[data-action="view-memory"]');
-    if (item) {
-      ke.preventDefault();
-      const memoryId = item.dataset.memoryId ?? '';
-      ctx.getMemoryClickCallback()?.(memoryId);
-    }
-  });
+  // UX-0713-F1：列表容器和时间线容器都需要注册事件委托
+  // 时间线项同样标记 data-action="view-memory" + data-memory-id + tabindex="0" + role="button"
+  const delegateTargets: HTMLElement[] = [];
+  if (ctx.memoryListEl) delegateTargets.push(ctx.memoryListEl);
+  const timelineEl = document.getElementById('memory-timeline-container');
+  if (timelineEl) delegateTargets.push(timelineEl);
+
+  for (const target of delegateTargets) {
+    ctx.events.addEventListener(target, 'click', (e: Event) => {
+      const item = (e.target as HTMLElement).closest<HTMLElement>('[data-action="view-memory"]');
+      if (item) {
+        const memoryId = item.dataset.memoryId ?? '';
+        ctx.getMemoryClickCallback()?.(memoryId);
+      }
+    });
+    // 键盘可访问性——Enter/Space 触发与 click 等效的查看动作
+    // handler 签名用 Event（与 EventTracker 签名一致），内部断言为 KeyboardEvent 访问 key 属性
+    ctx.events.addEventListener(target, 'keydown', (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key !== 'Enter' && ke.key !== ' ') return;
+      const item = (ke.target as HTMLElement).closest<HTMLElement>('[data-action="view-memory"]');
+      if (item) {
+        ke.preventDefault();
+        const memoryId = item.dataset.memoryId ?? '';
+        ctx.getMemoryClickCallback()?.(memoryId);
+      }
+    });
+  }
 }
 
 // ─── 2. 搜索框 + source 筛选 ──────────────────────────────

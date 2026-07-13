@@ -25,7 +25,7 @@ export interface SettingsModalDelegations {
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void;
   setPersonaMode(mode: string): void;
   collectConfigFromForm(): SpriteConfigForm;
-  onConfigSave(cb: (config: SpriteConfigForm) => void): void;
+  onConfigSave(cb: (config: SpriteConfigForm) => Promise<boolean>): void;
   resetSettingsFormDirty(): void;
   isSettingsDirty(): boolean;
   updateAgentStatusIndicator(status: 'ready' | 'error' | 'unknown', message?: string): void;
@@ -84,7 +84,7 @@ export const settingsModalDelegations: SettingsModalDelegations = {
   collectConfigFromForm(this: UIManager): SpriteConfigForm {
     return this.settingsPanelManager.collectConfigFromForm();
   },
-  onConfigSave(this: UIManager, cb: (config: SpriteConfigForm) => void): void {
+  onConfigSave(this: UIManager, cb: (config: SpriteConfigForm) => Promise<boolean>): void {
     this.settingsPanelManager.onConfigSave(cb);
   },
   resetSettingsFormDirty(this: UIManager): void {
