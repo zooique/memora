@@ -73,3 +73,17 @@ src/<new-module>/
 - [ ] 没有文档偏离（设计文档与代码一致）
 - [ ] 没有遗漏测试
 - [ ] 没有未记录的 ADR
+
+### 6. 新增面板的 CSS 检查项（精灵宿主）
+
+> **来源**：[ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)
+
+新增 `#panel-<name>` 面板时，必须完成以下 CSS 检查：
+
+- [ ] **CSS 文件命名**：创建 `<name>.css`（如 `perception.css`），不得复用现有 CSS 文件
+- [ ] **类名前缀**：所有面板专属类加 `<name>-` 前缀（如 `.perception-affect-grid`），禁止 BARE 类
+- [ ] **单一真理源**：面板专属样式集中在 `<name>.css`，其他 CSS 文件不得定义同类名
+- [ ] **加载顺序**：在 [index.html](../../hosts/memora-sprite/src/electron/renderer/index.html) 的 `<link>` 列表末尾追加 `<name>.css`（L2 面板层最后加载）
+- [ ] **无跨面板依赖**：`<name>.css` 不得覆盖其他面板的样式（如不得定义其他面板的专属类）
+- [ ] **PanelManager 对齐**：CSS 前缀与 JS Manager 类名前缀对齐（如 `perception-` 对应 `PerceptionPanelManager`）
+- [ ] **BEM 风格**：类名采用 `.block-name-element-name--modifier-name` 连字符风格，状态类用 `.is-` 前缀

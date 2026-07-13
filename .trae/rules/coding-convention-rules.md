@@ -114,6 +114,18 @@ date: 2026-07-13
 
 **Memora 适配**：命名规范详见 [project-rules.md §4](./project-rules.md)（文件夹连字符、TS 文件小驼峰、类大驼峰、常量全大写下划线）。
 
+**CSS 命名规范**（详见 [ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)）：
+
+| 类型 | 规则 | 例子 |
+|------|------|------|
+| L2 面板专属类 | **面板前缀 + BEM 连字符风格** | `.perception-affect-grid`、`.dashboard-overview-item` |
+| L3 组件类 | 组件名 + BEM | `.modal-header`、`.toast-content` |
+| 状态类 | `.is-` 前缀或 `.hidden` | `.is-active`、`.is-hidden` |
+| 禁止 | 无前缀的 BARE 类（chat 主面板例外） | ~~`.affect-label`~~ → `.perception-affect-label` |
+| 禁止 | 用 `.active` 作为状态类（与 `.panel.active` 冲突） | 用 `.is-active` 替代 |
+
+**BEM 风格**：`.block-name-element-name--modifier-name`（连字符风格，Block-Element 用单连字符，Modifier 用 `--` 双连字符）
+
 ## 7. 分支与兜底取舍
 
 > **核心原则**：能提前 `return` 就不写 `else`，兜底不掩盖问题。

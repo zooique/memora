@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：26（内核 16 + 精灵 10）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：27（内核 17 + 精灵 10）
 
 ---
 
@@ -30,6 +30,7 @@ description: Memora 关键决策年轮
 | [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual）   | ✅ 已采纳   | 架构   |
 | [ADR-016](./ADR-016-vector-store-interface.md) | 向量存储接口化（IVectorStore + JsonVectorStore）       | ✅ 已接受 | 数据层 |
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
+| [ADR-018](./ADR-018-css-scoping-convention.md) | CSS 作用域规范：面板前缀 + BEM + 单一真理源（消除 BARE 类跨面板污染） | ✅ 已接受 | 前端 |
 
 ### 精灵宿主（SP 系列）
 
@@ -59,6 +60,7 @@ description: Memora 关键决策年轮
 | 安全   | 1    | ADR-006              |
 | 质量   | 1    | ADR-007              |
 | 工程   | 2    | ADR-008, ADR-017     |
+| 前端   | 1    | ADR-018              |
 
 ---
 
