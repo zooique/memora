@@ -1,13 +1,18 @@
 /**
- * RelationGraphRenderer 力导向算法 + 命中检测测试（R1-R2）
+ * RelationGraphRenderer 力导向算法 + loadData + 空状态测试（R1-R2）
  *
- * 覆盖目标：1211 行源码 0 测试的最大缺口
- *   - R1: 纯函数算法（nodeRadius / hexToRgba / getContrastColor / pointToSegmentDist / 布局收敛）
- *   - R2: 命中检测（findNodeAt / findEdgeAt） + loadData 数据转换 + 空状态降级
+ * 覆盖范围：
+ *   - 颜色转换（hexToRgba / getContrastColor）
+ *   - 力导向布局收敛（runInitialLayout 边界 + 不重叠）
+ *   - loadData 数据转换 + nodeMap 构建
+ *   - 空状态降级
+ *
+ * 几何计算纯函数（nodeRadius / pointToSegmentDist / findNodeAt / findEdgeAt / screenToWorld）
+ * 由 relationGraphGeometry.test.ts 覆盖。
  *
  * Mock 策略：
  * - jsdom 环境 + mock canvas（getContext 返回 stub 2D context）
- * - 通过类型断言访问 private 方法（测试常用模式，不破坏封装）
+ * - 通过类型断言访问 private 字段（测试常用模式，不破坏封装）
  * - 力导向算法本身是纯数学，可精确断言坐标变化
  *
  * @vitest-environment jsdom
@@ -166,46 +171,6 @@ describe('RelationGraphRenderer R1 纯函数算法', () => {
     renderer.destroy();
   });
 
-  describe('nodeRadius 半径计算', () => {
-    it('score=0 时应返回最小半径 6', () => {
-      // nodeRadius 是 private，通过类型断言访问（测试常用模式）
-      const radius = (renderer as unknown as { nodeRadius: (n: GraphNode) => number }).nodeRadius(
-        createNode({ score: 0 }),
-      );
-      expect(radius).toBe(6); // MIN_NODE_RADIUS + 0 = 6
-    });
-
-    it('score=1 时应返回最大半径 18', () => {
-      const radius = (renderer as unknown as { nodeRadius: (n: GraphNode) => number }).nodeRadius(
-        createNode({ score: 1 }),
-      );
-      expect(radius).toBe(18); // MIN_NODE_RADIUS + (MAX - MIN) * 1 = 6 + 12 = 18
-    });
-
-    it('score=0.5 时应返回中间半径 12', () => {
-      const radius = (renderer as unknown as { nodeRadius: (n: GraphNode) => number }).nodeRadius(
-        createNode({ score: 0.5 }),
-      );
-      expect(radius).toBe(12); // 6 + 12 * 0.5 = 12
-    });
-
-    it('score>1 时应被 Math.min 截断到最大半径 18', () => {
-      const radius = (renderer as unknown as { nodeRadius: (n: GraphNode) => number }).nodeRadius(
-        createNode({ score: 2 }),
-      );
-      expect(radius).toBe(18); // Math.min(1, 2) = 1 → 6 + 12 * 1 = 18
-    });
-
-    it('score<0 时应返回最小半径 6（Math.min(1, -0.5) = -0.5 → 6 + 12 * -0.5 = 0，但实际 Math.min(1, -0.5) = -0.5）', () => {
-      // 注意：Math.min(1, score) 对负数 score 不截断到 0
-      const radius = (renderer as unknown as { nodeRadius: (n: GraphNode) => number }).nodeRadius(
-        createNode({ score: -0.5 }),
-      );
-      // Math.min(1, -0.5) = -0.5 → 6 + 12 * (-0.5) = 0
-      expect(radius).toBe(0);
-    });
-  });
-
   describe('hexToRgba 颜色转换', () => {
     it('标准 6 位 hex 应正确转换', () => {
       const result = hexToRgba('#ff5733', 0.5);
@@ -255,55 +220,6 @@ describe('RelationGraphRenderer R1 纯函数算法', () => {
     it('非 6 位 hex 应降级为 #ffffff', () => {
       const result = getContrastColor('#fff');
       expect(result).toBe('#ffffff');
-    });
-  });
-
-  describe('pointToSegmentDist 点到线段距离', () => {
-    it('点在线段上时距离应为 0', () => {
-      const dist = (renderer as unknown as {
-        pointToSegmentDist: (px: number, py: number, ax: number, ay: number, bx: number, by: number) => number;
-      }).pointToSegmentDist(5, 0, 0, 0, 10, 0);
-      expect(dist).toBe(0);
-    });
-
-    it('点在线段中点正上方时距离应为垂距', () => {
-      // 线段 (0,0)-(10,0)，点 (5, 3) → 垂距 3
-      const dist = (renderer as unknown as {
-        pointToSegmentDist: (px: number, py: number, ax: number, ay: number, bx: number, by: number) => number;
-      }).pointToSegmentDist(5, 3, 0, 0, 10, 0);
-      expect(dist).toBe(3);
-    });
-
-    it('点在线段延长线外时应取到端点距离（t>1 截断）', () => {
-      // 线段 (0,0)-(10,0)，点 (15, 0) → t=1.5 截断到 1 → 距离 = 5
-      const dist = (renderer as unknown as {
-        pointToSegmentDist: (px: number, py: number, ax: number, ay: number, bx: number, by: number) => number;
-      }).pointToSegmentDist(15, 0, 0, 0, 10, 0);
-      expect(dist).toBe(5);
-    });
-
-    it('点在线段反向延长线外时应取到端点距离（t<0 截断）', () => {
-      // 线段 (0,0)-(10,0)，点 (-5, 0) → t=-0.5 截断到 0 → 距离 = 5
-      const dist = (renderer as unknown as {
-        pointToSegmentDist: (px: number, py: number, ax: number, ay: number, bx: number, by: number) => number;
-      }).pointToSegmentDist(-5, 0, 0, 0, 10, 0);
-      expect(dist).toBe(5);
-    });
-
-    it('线段退化为点（两端点重合）时应返回点到端点的距离', () => {
-      // 线段 (5,5)-(5,5)，点 (5, 8) → 距离 = 3
-      const dist = (renderer as unknown as {
-        pointToSegmentDist: (px: number, py: number, ax: number, ay: number, bx: number, by: number) => number;
-      }).pointToSegmentDist(5, 8, 5, 5, 5, 5);
-      expect(dist).toBe(3);
-    });
-
-    it('斜线段的垂直距离应正确计算', () => {
-      // 线段 (0,0)-(10,10)，点 (0, 10) → 垂距 = 10/√2 ≈ 7.071
-      const dist = (renderer as unknown as {
-        pointToSegmentDist: (px: number, py: number, ax: number, ay: number, bx: number, by: number) => number;
-      }).pointToSegmentDist(0, 10, 0, 0, 10, 10);
-      expect(dist).toBeCloseTo(7.071, 2);
     });
   });
 
@@ -472,175 +388,6 @@ describe('RelationGraphRenderer R2 命中检测 + loadData + 空状态', () => {
       expect(nodes).toHaveLength(0);
       // layoutStable 不应被设为 true（空数据不进入布局）
       // 但 startAnimation 不应启动（renderEmpty 提前 return）
-    });
-  });
-
-  describe('findNodeAt 节点命中检测', () => {
-    it('点击节点中心应返回该节点', () => {
-      const data = createGraphData(1);
-      renderer.loadData(data);
-
-      const nodes = (renderer as unknown as { nodes: GraphNode[] }).nodes;
-      const node = nodes[0]!;
-      // cameraX=0, zoom=1 → screenToWorld 不变
-      // 点击节点中心
-      const found = (renderer as unknown as {
-        findNodeAt: (x: number, y: number) => GraphNode | null;
-      }).findNodeAt(node.x, node.y);
-      expect(found).not.toBeNull();
-      expect(found!.id).toBe(node.id);
-    });
-
-    it('点击节点边缘（半径+热区 4px 内）应命中', () => {
-      const data: RelationGraphData = {
-        nodes: [{ id: 'big', name: '大节点', source: 'insight', score: 1, contentPreview: '预览' }],
-        edges: [],
-      };
-      renderer.loadData(data);
-
-      const nodes = (renderer as unknown as { nodes: GraphNode[] }).nodes;
-      const node = nodes[0]!;
-      // score=1 → radius=18，热区 = 18 + 4 = 22
-      // 点击右侧 22px 处（边缘热区）
-      const found = (renderer as unknown as {
-        findNodeAt: (x: number, y: number) => GraphNode | null;
-      }).findNodeAt(node.x + 20, node.y);
-      expect(found).not.toBeNull();
-      expect(found!.id).toBe('big');
-    });
-
-    it('点击节点外（超出半径+热区）应返回 null', () => {
-      const data: RelationGraphData = {
-        nodes: [{ id: 'small', name: '小节点', source: 'insight', score: 0, contentPreview: '预览' }],
-        edges: [],
-      };
-      renderer.loadData(data);
-
-      const nodes = (renderer as unknown as { nodes: GraphNode[] }).nodes;
-      const node = nodes[0]!;
-      // score=0 → radius=6，热区 = 6 + 4 = 10
-      // 点击右侧 50px 处（远超热区）
-      const found = (renderer as unknown as {
-        findNodeAt: (x: number, y: number) => GraphNode | null;
-      }).findNodeAt(node.x + 50, node.y);
-      expect(found).toBeNull();
-    });
-
-    it('无节点时应返回 null', () => {
-      const data: RelationGraphData = { nodes: [], edges: [] };
-      renderer.loadData(data);
-
-      const found = (renderer as unknown as {
-        findNodeAt: (x: number, y: number) => GraphNode | null;
-      }).findNodeAt(100, 100);
-      expect(found).toBeNull();
-    });
-  });
-
-  describe('findEdgeAt 边命中检测', () => {
-    it('点击边中点附近（EDGE_HIT_RADIUS=8px 内）应返回该边', () => {
-      // 构造两个固定位置的节点 + 一条边
-      const data: RelationGraphData = {
-        nodes: [
-          { id: 'a', name: 'A', source: 'insight', score: 0.5, contentPreview: 'A' },
-          { id: 'b', name: 'B', source: 'insight', score: 0.5, contentPreview: 'B' },
-        ],
-        edges: [createEdge({ sourceId: 'a', targetId: 'b' })],
-      };
-      renderer.loadData(data);
-
-      const nodes = (renderer as unknown as { nodes: GraphNode[] }).nodes;
-      const nodeA = nodes.find((n) => n.id === 'a')!;
-      const nodeB = nodes.find((n) => n.id === 'b')!;
-
-      // 点击边中点
-      const midX = (nodeA.x + nodeB.x) / 2;
-      const midY = (nodeA.y + nodeB.y) / 2;
-      const found = (renderer as unknown as {
-        findEdgeAt: (x: number, y: number) => GraphEdge | null;
-      }).findEdgeAt(midX, midY);
-      expect(found).not.toBeNull();
-      expect(found!.sourceId).toBe('a');
-      expect(found!.targetId).toBe('b');
-    });
-
-    it('点击远离边（>8px）应返回 null', () => {
-      const data: RelationGraphData = {
-        nodes: [
-          { id: 'a', name: 'A', source: 'insight', score: 0.5, contentPreview: 'A' },
-          { id: 'b', name: 'B', source: 'insight', score: 0.5, contentPreview: 'B' },
-        ],
-        edges: [createEdge({ sourceId: 'a', targetId: 'b' })],
-      };
-      renderer.loadData(data);
-
-      // 点击 (0, 0)，远离任意边（保留调用以表达测试意图，返回值由后续 found2 覆盖）
-      (renderer as unknown as {
-        findEdgeAt: (x: number, y: number) => GraphEdge | null;
-      }).findEdgeAt(0, 0);
-      // (0,0) 可能在某条边的 8px 内（取决于布局结果）
-      // 改为点击 Canvas 右下角（远离节点）
-      const nodes = (renderer as unknown as { nodes: GraphNode[] }).nodes;
-      const farX = Math.max(...nodes.map((n) => n.x)) + 100;
-      const farY = Math.max(...nodes.map((n) => n.y)) + 100;
-      const found2 = (renderer as unknown as {
-        findEdgeAt: (x: number, y: number) => GraphEdge | null;
-      }).findEdgeAt(farX, farY);
-      expect(found2).toBeNull();
-    });
-
-    it('多条边时应返回最近的边', () => {
-      const data: RelationGraphData = {
-        nodes: [
-          { id: 'a', name: 'A', source: 'insight', score: 0.5, contentPreview: 'A' },
-          { id: 'b', name: 'B', source: 'insight', score: 0.5, contentPreview: 'B' },
-          { id: 'c', name: 'C', source: 'insight', score: 0.5, contentPreview: 'C' },
-        ],
-        edges: [
-          createEdge({ sourceId: 'a', targetId: 'b' }),
-          createEdge({ sourceId: 'b', targetId: 'c' }),
-        ],
-      };
-      renderer.loadData(data);
-
-      const nodes = (renderer as unknown as { nodes: GraphNode[] }).nodes;
-      const nodeA = nodes.find((n) => n.id === 'a')!;
-      const nodeB = nodes.find((n) => n.id === 'b')!;
-
-      // 点击 a-b 边中点，应返回 a-b 边（而非 b-c）
-      const midX = (nodeA.x + nodeB.x) / 2;
-      const midY = (nodeA.y + nodeB.y) / 2;
-      const found = (renderer as unknown as {
-        findEdgeAt: (x: number, y: number) => GraphEdge | null;
-      }).findEdgeAt(midX, midY);
-      expect(found).not.toBeNull();
-      // 应返回距离最近的边
-      // 注意：可能 a-b 或 b-c，取决于哪个更近
-      expect(['a', 'b']).toContain(found!.sourceId);
-    });
-
-    it('无边时应返回 null', () => {
-      const data: RelationGraphData = {
-        nodes: [{ id: 'solo', name: '孤节点', source: 'insight', score: 0.5, contentPreview: '预览' }],
-        edges: [],
-      };
-      renderer.loadData(data);
-
-      const found = (renderer as unknown as {
-        findEdgeAt: (x: number, y: number) => GraphEdge | null;
-      }).findEdgeAt(100, 100);
-      expect(found).toBeNull();
-    });
-  });
-
-  describe('screenToWorld 坐标转换', () => {
-    it('默认相机+缩放应原样返回坐标', () => {
-      const result = (renderer as unknown as {
-        screenToWorld: (x: number, y: number) => { x: number; y: number };
-      }).screenToWorld(100, 200);
-      // cameraX=0, zoom=1 → (100, 200)
-      expect(result.x).toBe(100);
-      expect(result.y).toBe(200);
     });
   });
 });

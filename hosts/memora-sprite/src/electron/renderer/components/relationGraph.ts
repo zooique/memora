@@ -16,6 +16,12 @@
  * - 斥力：所有节点对之间（平方反比）
  * - 引力：有边相连的节点之间（胡克定律）
  * - 阻尼：每帧速度衰减 0.85
+ *
+ * 拆分说明：
+ * - 类型与常量提取至 helpers/relationGraphTypes.ts（架构层，消除循环依赖）
+ * - 布局算法提取至 helpers/relationGraphLayout.ts（枝叶层，LayoutContext 依赖注入）
+ * - 颜色解析提取至 helpers/relationGraphColor.ts（枝叶层，纯函数 + 常量）
+ * - 几何计算提取至 helpers/relationGraphGeometry.ts（枝叶层，纯函数）
  */
 
 import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
@@ -32,89 +38,45 @@ import {
   hexToRgba,
   getContrastColor,
 } from '../helpers/relationGraphColor.js';
+import {
+  nodeRadius,
+  screenToWorld,
+  findNodeAt,
+  findEdgeAt,
+} from '../helpers/relationGraphGeometry.js';
+import type {
+  GraphNode,
+  GraphEdge,
+  RelationGraphData,
+  NodeClickCallback,
+  NodeContextMenuCallback,
+  EdgeClickCallback,
+  ConnectionCreateCallback,
+} from '../helpers/relationGraphTypes.js';
+import {
+  MIN_EDGE_WIDTH,
+  MAX_EDGE_WIDTH,
+  FRAME_INTERVAL,
+  MIN_ZOOM,
+  MAX_ZOOM,
+  ZOOM_SENSITIVITY,
+  RESET_ANIM_DURATION,
+  CONNECTION_LINE_DASH,
+  CONFLICT_PULSE_PERIOD,
+  CONFLICT_PULSE_MIN_ALPHA,
+  CONFLICT_PULSE_MAX_ALPHA,
+} from '../helpers/relationGraphTypes.js';
 
-// ─── 类型定义 ────────────────────────────────────────────────
-
-/** 图谱节点（来自 MemoryListItem） */
-export interface GraphNode {
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  contentPreview: string;
-  /** 当前 x 坐标（布局计算） */
-  x: number;
-  /** 当前 y 坐标（布局计算） */
-  y: number;
-  /** x 方向速度 */
-  vx: number;
-  /** y 方向速度 */
-  vy: number;
-}
-
-/** 图谱边（来自 MemoryRelation） */
-export interface GraphEdge {
-  sourceId: string;
-  targetId: string;
-  type: string;
-  weight: number;
-  createdAt: string;
-}
-
-/** 图谱原始数据 */
-export interface RelationGraphData {
-  nodes: Array<{
-    id: string;
-    name: string;
-    source: string;
-    score: number;
-    contentPreview: string;
-  }>;
-  edges: GraphEdge[];
-}
-
-/** 节点点击回调 */
-export type NodeClickCallback = (nodeId: string) => void;
-
-/** 节点右键菜单回调 */
-export type NodeContextMenuCallback = (nodeId: string, screenX: number, screenY: number) => void;
-
-/** 边点击回调（编辑关系） */
-export type EdgeClickCallback = (sourceId: string, targetId: string, type: string, weight: number) => void;
-
-/** 手动连线创建关系回调 */
-export type ConnectionCreateCallback = (sourceId: string, targetId: string) => void;
-
-// ─── 常量 ────────────────────────────────────────────────────
-
-/** 节点最小半径 */
-const MIN_NODE_RADIUS = 6;
-/** 节点最大半径 */
-const MAX_NODE_RADIUS = 18;
-/** 边线最小宽度 */
-const MIN_EDGE_WIDTH = 0.5;
-/** 边线最大宽度 */
-const MAX_EDGE_WIDTH = 3;
-/** 动画帧率（ms） */
-const FRAME_INTERVAL = 16;
-/** 最小缩放级别 */
-const MIN_ZOOM = 0.3;
-/** 最大缩放级别 */
-const MAX_ZOOM = 3;
-/** 滚轮缩放灵敏度（每步缩放因子） */
-const ZOOM_SENSITIVITY = 0.001;
-/** 双击缩放重置动画时长（ms） */
-const RESET_ANIM_DURATION = 400;
-/** 边点击检测热区半径（像素） */
-const EDGE_HIT_RADIUS = 8;
-/** 连线模式提示线虚线间隔 */
-const CONNECTION_LINE_DASH = [6, 4];
-/** 冲突脉冲周期（ms） */
-const CONFLICT_PULSE_PERIOD = 1200;
-/** 冲突脉冲最小 alpha */
-const CONFLICT_PULSE_MIN_ALPHA = 0.3;
-/** 冲突脉冲最大 alpha */
-const CONFLICT_PULSE_MAX_ALPHA = 0.9;
+// 类型 re-export（外部调用方仍可从本模块导入类型）
+export type {
+  GraphNode,
+  GraphEdge,
+  RelationGraphData,
+  NodeClickCallback,
+  NodeContextMenuCallback,
+  EdgeClickCallback,
+  ConnectionCreateCallback,
+};
 
 // ─── 力导向图谱渲染器 ────────────────────────────────────────
 
@@ -399,7 +361,7 @@ export class RelationGraphRenderer {
       set stableFrameCount(v: number) { self.stableFrameCount = v; },
       get layoutStable() { return self.layoutStable; },
       set layoutStable(v: boolean) { self.layoutStable = v; },
-      nodeRadius: (node: GraphNode) => self.nodeRadius(node),
+      nodeRadius: (node: GraphNode) => nodeRadius(node),
     };
   }
 
@@ -538,7 +500,7 @@ export class RelationGraphRenderer {
 
     // 绘制节点
     for (const node of this.nodes) {
-      const r = this.nodeRadius(node);
+      const r = nodeRadius(node);
       const isHovered = node === this.hoverNode;
       const isDragged = node === this.dragNode;
       const isSelected = node.id === this.selectedNodeId;
@@ -627,11 +589,6 @@ export class RelationGraphRenderer {
 
   // ─── 辅助方法 ──────────────────────────────────────────────
 
-  /** 根据 score 计算节点半径 */
-  private nodeRadius(node: GraphNode): number {
-    return MIN_NODE_RADIUS + (MAX_NODE_RADIUS - MIN_NODE_RADIUS) * Math.min(1, node.score);
-  }
-
   /**
    * 设置 ResizeObserver 监听容器大小变化
    * 窗口大小改变时自动调整 Canvas 尺寸
@@ -660,95 +617,6 @@ export class RelationGraphRenderer {
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-  }
-
-  /**
-   * 将屏幕坐标转换为世界坐标（考虑相机偏移 + 缩放）
-   * @param screenX 相对于 Canvas 左上角的屏幕 X
-   * @param screenY 相对于 Canvas 左上角的屏幕 Y
-   * @returns 世界坐标 { x, y }
-   */
-  private screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
-    return {
-      x: (screenX - this.cameraX) / this.zoom,
-      y: (screenY - this.cameraY) / this.zoom,
-    };
-  }
-
-  /** 根据坐标查找节点 */
-  private findNodeAt(screenX: number, screenY: number): GraphNode | null {
-    const { x, y } = this.screenToWorld(screenX, screenY);
-    for (const node of this.nodes) {
-      const r = this.nodeRadius(node) + 4; // 增加 4px 的热区
-      const dx = node.x - x;
-      const dy = node.y - y;
-      if (dx * dx + dy * dy <= r * r) {
-        return node;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * 根据屏幕坐标查找边（点到线段距离检测）
-   *
-   * 返回距离鼠标最近的边，用于点击边触发关系编辑弹窗。
-   * 仅检测距离在 EDGE_HIT_RADIUS 范围内的边。
-   *
-   * @param screenX 屏幕 X 坐标
-   * @param screenY 屏幕 Y 坐标
-   * @returns 最近的边，未命中返回 null
-   */
-  private findEdgeAt(screenX: number, screenY: number): GraphEdge | null {
-    const { x, y } = this.screenToWorld(screenX, screenY);
-    let closestEdge: GraphEdge | null = null;
-    let closestDist = EDGE_HIT_RADIUS;
-
-    for (const edge of this.edges) {
-      const source = this.nodeMap.get(edge.sourceId);
-      const target = this.nodeMap.get(edge.targetId);
-      if (!source || !target) continue;
-
-      // 点到线段距离（数学公式，不依赖 DOM）
-      const dist = this.pointToSegmentDist(x, y, source.x, source.y, target.x, target.y);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestEdge = edge;
-      }
-    }
-    return closestEdge;
-  }
-
-  /**
-   * 计算点到线段的最短距离
-   *
-   * 使用向量投影法，投影参数 t 在 [0,1] 之间时为垂足在线段上，
-   * 否则取到端点的距离。
-   */
-  private pointToSegmentDist(
-    px: number, py: number,
-    ax: number, ay: number,
-    bx: number, by: number,
-  ): number {
-    const dx = bx - ax;
-    const dy = by - ay;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) {
-      // 线段退化为点
-      const ex = px - ax;
-      const ey = py - ay;
-      return Math.sqrt(ex * ex + ey * ey);
-    }
-    // 投影参数 t（点在线段上的投影位置）
-    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    // 投影点坐标
-    const projX = ax + t * dx;
-    const projY = ay + t * dy;
-    // 点到投影点的距离
-    const ex = px - projX;
-    const ey = py - projY;
-    return Math.sqrt(ex * ex + ey * ey);
   }
 
   // ─── 事件绑定 ──────────────────────────────────────────────
@@ -788,12 +656,12 @@ export class RelationGraphRenderer {
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-    const node = this.findNodeAt(screenX, screenY);
+    const node = findNodeAt(this.nodes, screenX, screenY, this.cameraX, this.cameraY, this.zoom);
 
     // 连线模式：Ctrl + 从节点开始拖拽 → 画连线到目标节点
     if (node && (e.ctrlKey || e.metaKey)) {
       this.connectionSourceNode = node;
-      const world = this.screenToWorld(screenX, screenY);
+      const world = screenToWorld(screenX, screenY, this.cameraX, this.cameraY, this.zoom);
       this.connectionMouseX = world.x;
       this.connectionMouseY = world.y;
       this.canvas.style.cursor = 'crosshair';
@@ -804,7 +672,7 @@ export class RelationGraphRenderer {
     if (node) {
       this.dragNode = node;
       // 拖拽偏移：节点世界坐标 - 鼠标世界坐标
-      const world = this.screenToWorld(screenX, screenY);
+      const world = screenToWorld(screenX, screenY, this.cameraX, this.cameraY, this.zoom);
       this.dragOffsetX = node.x - world.x;
       this.dragOffsetY = node.y - world.y;
       this.layoutStable = false; // 拖拽时恢复布局
@@ -827,7 +695,7 @@ export class RelationGraphRenderer {
 
     // 连线模式：更新鼠标位置，绘制连线预览
     if (this.connectionSourceNode) {
-      const world = this.screenToWorld(screenX, screenY);
+      const world = screenToWorld(screenX, screenY, this.cameraX, this.cameraY, this.zoom);
       this.connectionMouseX = world.x;
       this.connectionMouseY = world.y;
       this.hideTooltip();
@@ -837,11 +705,11 @@ export class RelationGraphRenderer {
     // 节点拖拽
     if (this.dragNode) {
       this.didDrag = true; // 标记发生过拖拽，阻止后续 click 事件误触发
-      const world = this.screenToWorld(screenX, screenY);
+      const world = screenToWorld(screenX, screenY, this.cameraX, this.cameraY, this.zoom);
       this.dragNode.x = world.x + this.dragOffsetX;
       this.dragNode.y = world.y + this.dragOffsetY;
       // 宽松边界约束（允许拖拽到较大范围，中心引力会在动画中拉回）
-      const r = this.nodeRadius(this.dragNode);
+      const r = nodeRadius(this.dragNode);
       const bound = Math.max(this.width, this.height) * 2 / this.zoom;
       this.dragNode.x = Math.max(-bound + r, Math.min(bound - r, this.dragNode.x));
       this.dragNode.y = Math.max(-bound + r, Math.min(bound - r, this.dragNode.y));
@@ -862,7 +730,7 @@ export class RelationGraphRenderer {
     }
 
     const prevHover = this.hoverNode;
-    this.hoverNode = this.findNodeAt(screenX, screenY);
+    this.hoverNode = findNodeAt(this.nodes, screenX, screenY, this.cameraX, this.cameraY, this.zoom);
     this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'grab';
 
     // tooltip 显示/隐藏/更新
@@ -882,7 +750,7 @@ export class RelationGraphRenderer {
       const rect = this.canvas.getBoundingClientRect();
       const screenX = e.clientX - rect.left;
       const screenY = e.clientY - rect.top;
-      const targetNode = this.findNodeAt(screenX, screenY);
+      const targetNode = findNodeAt(this.nodes, screenX, screenY, this.cameraX, this.cameraY, this.zoom);
       // 释放到另一个节点上 → 触发连线创建回调
       if (targetNode && targetNode !== this.connectionSourceNode && this.onConnectionCreate) {
         this.onConnectionCreate(this.connectionSourceNode.id, targetNode.id);
@@ -916,14 +784,14 @@ export class RelationGraphRenderer {
     const screenY = e.clientY - rect.top;
 
     // 优先检测边点击（编辑关系）
-    const edge = this.findEdgeAt(screenX, screenY);
+    const edge = findEdgeAt(this.edges, this.nodeMap, screenX, screenY, this.cameraX, this.cameraY, this.zoom);
     if (edge && this.onEdgeClick) {
       this.onEdgeClick(edge.sourceId, edge.targetId, edge.type, edge.weight);
       return;
     }
 
     // 节点点击
-    const node = this.findNodeAt(screenX, screenY);
+    const node = findNodeAt(this.nodes, screenX, screenY, this.cameraX, this.cameraY, this.zoom);
     if (node && this.onNodeClick) {
       this.onNodeClick(node.id);
     }
@@ -940,7 +808,7 @@ export class RelationGraphRenderer {
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-    const node = this.findNodeAt(screenX, screenY);
+    const node = findNodeAt(this.nodes, screenX, screenY, this.cameraX, this.cameraY, this.zoom);
     if (node && this.onNodeContextMenu) {
       this.onNodeContextMenu(node.id, e.clientX, e.clientY);
     }

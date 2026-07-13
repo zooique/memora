@@ -17,13 +17,14 @@
  *   - stableFrameCount/layoutStable 通过 ctx 上的可变字段读写
  *     （由调用方 buildLayoutContext 用 getter/setter 桥接到 renderer 实例字段）
  *   - 力导向算法参数（DAMPING/REPULSION/ATTRACTION 等）保持原值不变
+ *   - 类型从 helpers/relationGraphTypes.ts 导入（类型真理源单向下沉）
  *
  * 先例：
  *   参照 memoryGraphPanel.ts 的 MemoryGraphPanelContext 依赖注入模式
  *   本次为布局算法拆分（ADR-017 枝叶层 2 次提取原则首次实践）
  */
 
-import type { GraphNode, GraphEdge } from '../components/relationGraph.js';
+import type { GraphNode, GraphEdge } from './relationGraphTypes.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
