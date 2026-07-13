@@ -101,26 +101,22 @@ describe('DOM 结构验证', () => {
     expect(card?.tagName).toBe('DIV');
   });
 
-  it('卡片应包含 inline style（position:fixed 居中布局）', () => {
+  it('卡片应通过 className 应用样式（CSP style-src self 合规，不使用 inline style）', () => {
     renderInitFailureToBody(new Error('test'));
     const card = document.getElementById('ui-init-failure-card') as HTMLElement;
-    // inline style 应包含 position:fixed（避免依赖 CSS 文件加载状态）
-    expect(card.style.position).toBe('fixed');
-    expect(card.style.top).toBe('50%');
-    expect(card.style.left).toBe('50%');
-    expect(card.style.transform).toBe('translate(-50%,-50%)');
-    expect(card.style.zIndex).toBe('9999');
+    // UI-0713-B2：样式由 base.css 中 .ui-init-failure-card 类提供，不使用 inline style
+    // 测试只验证 className 已正确应用，具体样式由 CSS 文件保证
+    expect(card.classList.contains('ui-init-failure-card')).toBe(true);
+    // inline style 应为空（CSP style-src 'self' 禁止 inline style）
+    expect(card.style.cssText).toBe('');
   });
 
-  it('卡片应包含红色主题令牌引用（var() + fallback 兼顾双主题适配）', () => {
+  it('卡片应为样式类预留主题适配（CSS 类内 var() + fallback 由 base.css 提供）', () => {
     renderInitFailureToBody(new Error('test'));
     const card = document.getElementById('ui-init-failure-card') as HTMLElement;
-    // UX-0713-18：颜色改用 var(--token, fallback) 形式，JSDOM 不解析 var()，
-    // 改为断言 cssText 包含令牌引用（验证主题适配能力而非具体色值）
-    expect(card.style.cssText).toContain('var(--red-10');
-    expect(card.style.cssText).toContain('var(--red,');
-    expect(card.style.cssText).toContain('var(--text,');
-    expect(card.style.cssText).toContain('var(--red-20');
+    // UI-0713-B2：颜色 var(--token, fallback) 写在 base.css 的 .ui-init-failure-card 类中
+    // 测试只验证 className 已应用，主题适配由 CSS 文件保证（JSDOM 不解析 CSS）
+    expect(card.classList.contains('ui-init-failure-card')).toBe(true);
   });
 
   it('应包含 h2 标题"UI 初始化失败"', () => {
@@ -129,8 +125,8 @@ describe('DOM 结构验证', () => {
     const title = card?.querySelector('h2');
     expect(title).toBeTruthy();
     expect(title?.textContent).toBe('UI 初始化失败');
-    // UX-0713-18：标题色改用 var(--red, fallback)，JSDOM 不解析 var()，断言 cssText 包含令牌引用
-    expect(title?.style.cssText).toContain('var(--red,');
+    // UI-0713-B2：标题色由 .ui-init-failure-title 类提供，不使用 inline style
+    expect(title?.classList.contains('ui-init-failure-title')).toBe(true);
   });
 
   it('应包含排查建议（可能原因 + 3 条建议）', () => {

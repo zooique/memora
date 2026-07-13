@@ -99,14 +99,7 @@
   scrollbar-color: var(--border) transparent;
 }
 
-.command-palette-results::-webkit-scrollbar {
-  width: 6px;
-}
-
-.command-palette-results::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: var(--radius-xs);
-}
+/* 滚动条样式复用 base.css 全局 ::-webkit-scrollbar 规则，无需重复定义 */
 
 .command-palette-section {
   padding: var(--space-1-5) var(--space-4) 2px;

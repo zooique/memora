@@ -531,23 +531,6 @@
   }
 }
 
-/* prefers-reduced-motion：禁用所有新增动画 */
-@media (prefers-reduced-motion: reduce) {
-  .chat-empty-state .suggestion-btn:hover {
-    transform: none;
-  }
-  #input-area:focus-within {
-    animation: none;
-  }
-  .message:not(.grouped).user,
-  .message:not(.grouped).assistant {
-    animation: none;
-  }
-  #scroll-to-bottom-btn {
-    animation: none;
-  }
-}
-
 /* ─── 启动摘要横幅 ────────────────── */
 /* Agent 就绪后展示在对话区顶部，与 proactive-banner 同级，横幅形态 */
 /* 横向布局：左侧精灵图标 + 中间内容区（标题 + 数据网格）+ 右侧关闭按钮 */

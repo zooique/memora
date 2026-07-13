@@ -61,16 +61,6 @@
   transform: scale(0.95);
 }
 
-/* prefers-reduced-motion：禁用新增动画 */
-@media (prefers-reduced-motion: reduce) {
-  .health-score {
-    animation: none;
-  }
-  .memory-item .meta .source-tag:hover {
-    transform: none;
-  }
-}
-
 .panel-close-btn .icon {
   width: 16px;
   height: 16px;

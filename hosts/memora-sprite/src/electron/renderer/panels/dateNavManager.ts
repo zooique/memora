@@ -19,6 +19,7 @@
  */
 import { EventTracker } from '../helpers/eventTracker.js';
 import { formatDateKey } from '../helpers/domHelpers.js';
+import { setIcon } from '../helpers/icon.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
@@ -266,7 +267,7 @@ export class DateNavManager {
         deleteBtn.title = '删除该日期的对话记录';
         deleteBtn.setAttribute('aria-label', `删除 ${date} 的对话记录`);
         // 事件委托已处理删除按钮点击，此处无需绑定
-        deleteBtn.innerHTML = '<svg class="icon"><use href="#icon-trash"/></svg>';
+        setIcon(deleteBtn, 'icon-trash');
         item.appendChild(deleteBtn);
       }
 

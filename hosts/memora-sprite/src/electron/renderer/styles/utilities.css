@@ -51,3 +51,27 @@
   color: var(--text-2);
   font-size: var(--font-xs);
 }
+
+/* ─── 过渡工具类 ──────────────────────────────────────────── */
+/* 从 51 处 transition: background var(--transition-fast) 及变体中提取 */
+/* 使用方式：在需要 hover 过渡的元素上追加此类，搭配 :hover { background: ... } 使用 */
+
+/* 仅背景过渡（原 ~20 处） */
+.transition-bg {
+  transition: background var(--transition-fast);
+}
+
+/* 背景 + 文字过渡（原 ~12 处） */
+.transition-bg-color {
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* 背景 + 边框过渡（原 ~4 处） */
+.transition-bg-border-color {
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+/* 背景 + 边框 + 文字过渡（原 ~4 处） */
+.transition-bg-border-color-color {
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}

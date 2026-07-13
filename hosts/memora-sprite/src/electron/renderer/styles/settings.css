@@ -505,13 +505,6 @@
   outline-offset: 1px;
 }
 
-/* 尊重用户的减少动画偏好：关闭沙漏旋转 */
-@media (prefers-reduced-motion: reduce) {
-  .save-status-indicator.saving .save-status-icon svg {
-    animation: none;
-  }
-}
-
 /* ─── 行内提示变体（与 checkbox 同行显示，替代内联 style="display:inline;margin-left:4px"） ─── */
 .settings-hint-inline {
   display: inline;

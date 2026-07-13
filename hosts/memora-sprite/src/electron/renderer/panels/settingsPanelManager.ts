@@ -1055,7 +1055,7 @@ export class SettingsPanelManager {
       case 'saved':
         this.saveStatusEl.classList.add('saved');
         // 勾选图标（绿色，CSS .save-status-indicator.saved 控制颜色）
-        iconEl.innerHTML = '<svg class="icon"><use href="#icon-check"/></svg>';
+        setIcon(iconEl, 'icon-check');
         textEl.textContent = '已保存';
         // 8 秒后恢复为空闲状态（让用户有充足时间感知反馈）
         this.timers.setTimeout(() => {
@@ -1065,7 +1065,7 @@ export class SettingsPanelManager {
       case 'error':
         this.saveStatusEl.classList.add('error');
         // 关闭 X 图标（红色，CSS .save-status-indicator.error 控制颜色）
-        iconEl.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
+        setIcon(iconEl, 'icon-close');
         textEl.textContent = '保存失败';
         // 追加重试按钮，让用户可主动恢复
         const retryBtn = document.createElement('button');

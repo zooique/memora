@@ -20,6 +20,8 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+// bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
+import { bindRefreshButton } from '../helpers/buttonHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
 import { renderErrorState } from '../helpers/errorState.js';
 import type { ConfirmDialogOptions } from '../types.js';
@@ -76,16 +78,7 @@ export class AuditPanelManager {
     this.clearBtn = getOptionalElement('btn-audit-clear', 'button');
 
     // 绑定刷新按钮事件（带 loading 反馈，避免 IPC 调用期间用户重复点击）
-    if (this.refreshBtn) {
-      this.events.addEventListener(this.refreshBtn, 'click', async () => {
-        setButtonLoadingEl(this.refreshBtn!, true, '刷新中...');
-        try {
-          await this.load();
-        } finally {
-          setButtonLoadingEl(this.refreshBtn!, false);
-        }
-      });
-    }
+    bindRefreshButton(this.refreshBtn, this.events, () => this.load());
 
     // 绑定清空按钮事件（带 loading 反馈 + 二次确认，避免误触批量清空审计记录）
     if (this.clearBtn) {

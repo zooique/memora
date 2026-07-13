@@ -1,11 +1,39 @@
 /**
  * Memora — 通用 Agent 架构（纯逻辑库）
  *
- * 零 native 依赖。宿主项目通过注入 IMemoryStorage 实现持久化。
+ * Node.js 专用纯逻辑库（零 native 编译依赖，详见 ADR-002 §定位澄清）。
+ * 宿主项目通过注入 IMemoryStorage 实现持久化。
  * CLI 由宿主项目提供（hosts/memora-sprite/）。
  *
  * 设计哲学：万物皆记忆（详见 architecture_philosophy_rules.md §1）
  * 决策追溯：详见 .trae/rules/decisions/ 下的 ADR
+ *
+ * ─── 类型依赖图 ────────────────────────────────────────────
+ *
+ * 各模块独立 types.ts，跨模块类型追踪可按以下依赖图定位：
+ *
+ *   agent/types.ts ─┬─→ llm/provider.ts (LlmProvider, ChatOptions)
+ *                   ├─→ memory/vectorStore.ts (IVectorStore, EmbeddingService)
+ *                   ├─→ memory/storageInterface.ts (IMemoryStorage)
+ *                   ├─→ memory/relationStore.ts (IMemoryRelationStore)
+ *                   ├─→ memory/sessionStore.ts (ISessionStore, SessionMessage)
+ *                   ├─→ agent/tracer.ts (ITracer, ISpan, AgentMetrics)
+ *                   └─→ memory/projectManager.ts (AgentProjectEntry)
+ *
+ *   memory/types.ts ──→ 纯类型定义（Memory, MemoryRelation, SOURCE_LABELS 等）
+ *
+ *   llm/types.ts ─────→ 纯类型定义（LlmChunk）
+ *
+ *   persona/types.ts ─→ 纯类型定义（Persona, PersonaMode）
+ *
+ *   skill/types.ts ───→ 纯类型定义（SkillEntry, SkillMatch）
+ *
+ *   eval/evalTypes.ts ─→ 纯类型定义（EvalScenario, EvalResult）
+ *
+ *   security/pathGuard.ts ─→ AuditEvent 等安全类型（与 agent/types.ts 解耦）
+ *
+ * 依赖方向（单向）：agent → memory → utils；agent → llm；agent → security
+ * 内核不反向依赖宿主，所有宿主交互通过接口注入（ADR-002 §三层架构）
  */
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────

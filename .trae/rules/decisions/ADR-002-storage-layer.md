@@ -269,9 +269,37 @@ export function setLogger(custom: ILogger | undefined): void {
 ### 影响
 
 - `src/logging/logger.ts`：移除模块顶层 `void tryCreatePinoLogger().then(...)`；新增 `maybeUpgradeToPino()` + `_pinoUpgradeStarted` 守卫
-- import 内核模块零 fs 副作用
+- import 内核模块零 fs 副作用（仅指 logger 模块）
 - 测试环境不再因 import 产生日志文件
-- 浏览器端 import 不再抛异常（pino 动态 import 失败时降级 console）
+- logger 模块浏览器端 import 不再抛异常（pino 动态 import 失败时降级 console）
+
+### 关于"内核浏览器可 import"的定位澄清（2026-07-13 年轮补充）
+
+> **来源**：AUDIT-0713-2 审查报告 · 零依赖内核原则执行评估
+
+**澄清**：ADR-002 §Logger 懒初始化的"浏览器端 import 不再抛异常"**仅针对 logger 模块**，不构成"整个内核可在浏览器 import"的承诺。
+
+**事实**：`src/` 下以下 13 个生产文件直接 import `node:fs`/`node:path`/`node:os`/`node:crypto`，且这些依赖是**核心功能依赖**（非副作用泄漏），无法懒初始化：
+
+| 文件 | 依赖 | 功能性质 |
+|------|------|----------|
+| `src/security/pathGuard.ts` | `node:path` + `node:fs` realpathSync | 符号链接解析（安全核心，浏览器无此概念） |
+| `src/agent/builtinToolHandlers.ts` | `node:fs/promises` + `node:fs` constants + `node:path` | read_file/write_file/list_dir 内置工具（文件系统操作即核心职责） |
+| `src/memory/projectRegistry.ts` | `node:fs` 同步全家桶 | ~/.memora/projects.json 注册表读写（文件即数据源） |
+| `src/config/loader.ts` | `node:fs/promises` + `node:path` + `node:os` | 配置文件加载（从文件系统读取是核心职责） |
+| `src/utils/scanner.ts` | `node:fs/promises` + `node:path` | Markdown 目录扫描（扫描即核心职责） |
+| `src/utils/path.ts` | `node:os` homedir | 家目录展开（浏览器无家目录概念） |
+| `src/agent/agent.ts` | `node:path` basename | 文件名提取（项目切换时推断项目名） |
+| `src/agent/managers/insightExtractor.ts` | `node:crypto` randomUUID | insight ID 生成 |
+| `src/agent/managers/workProjection.ts` | `node:crypto` createHash | 作品内容 SHA-256 哈希 |
+| `src/memory/lockManager.ts` | `node:path` + `node:os` + `node:fs/promises` | 项目级文件锁（跨进程并发保护） |
+| `src/memory/projectManager.ts` | `node:path` + `node:fs/promises` | 项目目录创建 + 资源加载编排 |
+| `src/memory/vectorStore.ts` | `node:fs/promises` + `node:path` | JsonVectorStore 持久化 |
+| `src/memory/store.ts` | `node:fs/promises` + `node:path` | FileStore 配置类记忆文件扫描 |
+
+**定位结论**：memora 内核是 **Node.js 专用纯逻辑库**（零 native 编译依赖，但依赖 Node.js 运行时 API）。"浏览器可 import"不是内核目标，仅在 logger 等纯逻辑模块层面实现。宿主项目（如 memora-sprite）若需浏览器侧能力，应通过 IPC 委托给 Node.js 主进程。
+
+**与原"零 native 依赖内核"目标的关系**：零 native 依赖目标仍然成立（better-sqlite3/electron/commander 等编译型/native 模块不进入内核），但"纯 JS 工具库"的范围明确为"Node.js 纯 JS"，不包括"浏览器纯 JS"。
 
 ## 何时回顾
 

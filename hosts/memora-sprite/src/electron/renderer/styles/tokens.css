@@ -129,6 +129,16 @@
   --tag-insight-fg:   var(--accent);
   --tag-guardrail-bg: var(--pink-20);    /* 护栏：粉色 */
   --tag-guardrail-fg: var(--pink);
+  --tag-skill-bg:     var(--yellow-20);  /* 技能：黄色 */
+  --tag-skill-fg:     var(--yellow);
+  --tag-rule-bg:      var(--mauve-20);   /* 规则：紫色 */
+  --tag-rule-fg:      var(--mauve);
+  --tag-persona-bg:   var(--teal-20);    /* 角色 persona：青色 */
+  --tag-persona-fg:   var(--teal);
+  --tag-session-bg:   var(--peach-20);   /* 会话：橙色 */
+  --tag-session-fg:   var(--peach);
+  --tag-default-bg:   var(--surface2);   /* 默认：中性灰 */
+  --tag-default-fg:   var(--subtext);
 
   /* 字体 */
   /* 不打包字体文件，使用系统默认字体栈（跨平台一致性） */

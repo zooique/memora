@@ -307,12 +307,4 @@
   100% { transform: scale(1); }
 }
 
-/* prefers-reduced-motion：禁用新增动画 */
-@media (prefers-reduced-motion: reduce) {
-  .message-bubble .md-code-inline:hover {
-    transform: none;
-  }
-  .message-bubble .md-code-copy.copied {
-    animation: none;
-  }
-}
+

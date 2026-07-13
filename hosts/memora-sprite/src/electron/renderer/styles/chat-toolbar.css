@@ -141,13 +141,6 @@
   max-width: 200px;
 }
 
-/* prefers-reduced-motion */
-@media (prefers-reduced-motion: reduce) {
-  .sprite-status-dot {
-    animation: none;
-  }
-}
-
 /* ─── 精灵感知浮层（hover 时弹出，轻量感知摘要） ──── */
 /* 浮层定位：相对于 chat-toolbar-info 容器，在状态条下方弹出 */
 .sprite-status-popover {

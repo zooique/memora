@@ -411,13 +411,6 @@
   100% { transform: scale(1); color: var(--accent); }
 }
 
-/* UI-AE-02 prefers-reduced-motion：尊重用户系统偏好 */
-@media (prefers-reduced-motion: reduce) {
-  .dash-value.pulse {
-    animation: none;
-  }
-}
-
 /* ─── 侧边栏导航图标区（垂直排列，复用 .nav-btn 类） ──────── */
 .sidebar-nav {
   display: flex;
@@ -703,13 +696,6 @@
   pointer-events: auto;
   /* active 面板提升堆叠层级，确保在所有隐藏面板之上 */
   z-index: var(--z-base);
-}
-
-/* 减少动画偏好：禁用面板淡入淡出过渡 */
-@media (prefers-reduced-motion: reduce) {
-  .panel {
-    transition: none;
-  }
 }
 
 /* ─── 通用下拉菜单 ─────────────────────────────────────────── */

@@ -108,31 +108,7 @@
 
 /* ─── 抽屉面板滚动条（Phase 4：视觉统一） ────────────────────── */
 
-/* 记忆面板内滚动条：与 base.css 全局风格一致，但适配面板暗色背景 */
-#memory-list::-webkit-scrollbar,
-#memory-timeline-container::-webkit-scrollbar,
-#memory-detail-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-#memory-list::-webkit-scrollbar-track,
-#memory-timeline-container::-webkit-scrollbar-track,
-#memory-detail-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-#memory-list::-webkit-scrollbar-thumb,
-#memory-timeline-container::-webkit-scrollbar-thumb,
-#memory-detail-content::-webkit-scrollbar-thumb {
-  background: var(--surface2);
-  border-radius: var(--radius-xs);
-}
-
-#memory-list::-webkit-scrollbar-thumb:hover,
-#memory-timeline-container::-webkit-scrollbar-thumb:hover,
-#memory-detail-content::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
+/* 滚动条样式复用 base.css 全局 ::-webkit-scrollbar 规则，无需重复定义 */
 
 /* ─── 伙伴洞察面板（Phase 4：从"仓库"到"理解"） ──────────────── */
 

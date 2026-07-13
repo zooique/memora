@@ -383,3 +383,123 @@ export function createEmptyState(options: EmptyStateOptions): HTMLElement {
 
   return empty;
 }
+
+// ─── 元素显隐 ─────────────────────────────────────────
+
+/**
+ * 显示元素（移除 .hidden 类）
+ *
+ * 替代散落在 40+ 处的 `el.classList.remove('hidden')` 裸写。
+ * 项目约定通过 `.hidden { display: none !important }` 控制显隐，
+ * 此函数提供语义化入口，便于全局调整显隐策略。
+ *
+ * @param el 目标元素，null 时静默忽略（兼容可选元素）
+ */
+export function showElement(el: HTMLElement | null): void {
+  el?.classList.remove('hidden');
+}
+
+/**
+ * 隐藏元素（添加 .hidden 类）
+ *
+ * 替代散落在 40+ 处的 `el.classList.add('hidden')` 裸写。
+ *
+ * @param el 目标元素，null 时静默忽略
+ */
+export function hideElement(el: HTMLElement | null): void {
+  el?.classList.add('hidden');
+}
+
+/**
+ * 按条件切换元素显隐
+ *
+ * 替代 `el.classList.toggle('hidden', !visible)` 的双重否定写法，
+ * 直接以"是否可见"的语义传入，提升可读性。
+ *
+ * @param el 目标元素，null 时静默忽略
+ * @param visible true 显示 / false 隐藏
+ */
+export function toggleElement(el: HTMLElement | null, visible: boolean): void {
+  if (!el) return;
+  el.classList.toggle('hidden', !visible);
+}
+
+// ─── 离场动画 ─────────────────────────────────────────
+
+/**
+ * 通过离场动画移除元素
+ *
+ * 替代散落在 toast.ts / suggestionCard.ts / memoryPanelManager.ts 的
+ * `el.classList.add(leavingClass); el.addEventListener('animationend', () => el.remove(), { once: true })` 模式。
+ *
+ * 工作流程：
+ * 1. 添加离场动画类（CSS 负责 @keyframes 定义）
+ * 2. 监听 animationend 事件（一次性）
+ * 3. 动画结束后从 DOM 移除元素
+ *
+ * @param el 要移除的元素
+ * @param leavingClass 触发离场动画的 CSS 类名（如 'leaving' / 'fade-out'）
+ */
+export function removeWithAnimation(el: HTMLElement, leavingClass: string): void {
+  // 无父节点的元素无需动画，直接返回（避免无效 DOM 操作）
+  if (!el.parentElement) return;
+  el.classList.add(leavingClass);
+  // once: true 保证监听器触发后自动解绑，无需手动 removeEventListener
+  el.addEventListener('animationend', () => el.remove(), { once: true });
+}
+
+// ─── 弹窗背景点击 ─────────────────────────────────────────
+
+/**
+ * 绑定"点击背景关闭弹窗"模式
+ *
+ * 替代散落在 modal.ts / onboarding.ts / memoryGraphPanel.ts 的
+ * `if (e.target === modal) { closeHandler(); }` 模式。
+ *
+ * 仅当点击事件的目标是弹窗根元素本身（而非内部子元素）时触发关闭，
+ * 避免误关闭。
+ *
+ * @param overlay 弹窗根元素（如 .modal / 浮层容器）
+ * @param closeHandler 关闭回调
+ * @returns 已绑定的监听器（用于外部解绑，若需要）
+ */
+export function onBackdropClick(
+  overlay: HTMLElement,
+  closeHandler: () => void,
+): (e: MouseEvent) => void {
+  const handler = (e: MouseEvent): void => {
+    // e.target === overlay 表示点击的是弹窗本身（背景遮罩），而非内部子元素
+    if (e.target === overlay) {
+      closeHandler();
+    }
+  };
+  overlay.addEventListener('click', handler);
+  return handler;
+}
+
+// ─── 插入到参考元素之前或追加 ─────────────────────────────────────────
+
+/**
+ * 将新元素插入到指定参考元素之前；若参考元素不存在则追加到父容器末尾
+ *
+ * 替代散落在 streamingRenderer.ts / messageDecorations.ts / toolCallCard.ts 的
+ * `const cursor = parent.querySelector(selector); if (cursor) { parent.insertBefore(el, cursor); } else { parent.appendChild(el); }` 模式。
+ *
+ * 典型场景：流式输出时把新内容插入到光标元素之前，光标不存在时追加到末尾。
+ *
+ * @param parent 父容器
+ * @param el 要插入的新元素
+ * @param referenceSelector 参考元素选择器（如 '.cursor'），不存在时降级为 appendChild
+ */
+export function insertBeforeOrAppend(
+  parent: HTMLElement,
+  el: Node,
+  referenceSelector: string,
+): void {
+  const reference = parent.querySelector(referenceSelector);
+  if (reference) {
+    parent.insertBefore(el, reference);
+  } else {
+    parent.appendChild(el);
+  }
+}

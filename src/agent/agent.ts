@@ -22,7 +22,7 @@
  *   - 记忆查看 → MemoryInspector
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  */
-import { basename } from 'node:path';
+import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig } from '@/agent/types.js';
@@ -674,7 +674,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       );
     }
     const projectPath = target ? target.path : nameOrPath;
-    const projectName = target ? target.name : basename(nameOrPath);
+    const projectName = target ? target.name : getBaseName(nameOrPath);
 
     const newPctx = await pm.initProject(projectPath, projectName, this.#config.configDir);
 

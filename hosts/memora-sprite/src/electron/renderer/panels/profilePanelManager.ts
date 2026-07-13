@@ -18,6 +18,8 @@ import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+// bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
+import { bindRefreshButton } from '../helpers/buttonHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
 import { renderErrorState } from '../helpers/errorState.js';
 import type { ConfirmDialogOptions } from '../types.js';
@@ -88,12 +90,8 @@ export class ProfilePanelManager {
     this.confirmedCountEl = document.getElementById('profile-confirmed-count');
     this.refreshBtn = getOptionalElement('btn-profile-refresh', 'button');
 
-    // 绑定刷新按钮事件
-    if (this.refreshBtn) {
-      this.events.addEventListener(this.refreshBtn, 'click', () => {
-        void this.load();
-      });
-    }
+    // 绑定刷新按钮事件（带 loading 反馈，与 audit/workProjection 面板统一交互模式）
+    bindRefreshButton(this.refreshBtn, this.events, () => this.load());
   }
 
   /**
