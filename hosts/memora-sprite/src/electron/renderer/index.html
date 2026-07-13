@@ -698,6 +698,9 @@
             <span class="panel-title">设置</span>
           </div>
 
+          <!-- UX-0713-3：自动保存机制说明，让用户明确知道修改会自动保存 -->
+          <p class="settings-autosave-hint">所有修改自动保存，无需手动点击保存按钮。</p>
+
           <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区 -->
           <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
@@ -705,7 +708,8 @@
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
-          <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像与作品</button>
+          <!-- UX-0713-12：画像 tab 仅保留用户画像（作品投影归项目 tab） -->
+          <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像</button>
           <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit"><svg class="icon"><use href="#icon-eye"/></svg>审计</button>
           <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
@@ -813,8 +817,9 @@
               <input type="number" id="cfg-interval" min="1" max="1440" value="60" />
             </div>
           </div>
-          <div class="settings-group">
-            <h3>文件监听</h3>
+          <!-- UX-0713-8：文件监听折叠为 details 默认收起（降低精灵 tab 信息密度） -->
+          <details class="settings-group settings-group-collapsible">
+            <summary class="settings-group-summary">文件监听</summary>
             <div class="settings-row">
               <label for="cfg-watcher-enabled">启用文件监听</label>
               <input type="checkbox" id="cfg-watcher-enabled" />
@@ -831,7 +836,7 @@
               <label for="cfg-watcher-ignore">忽略模式（逗号分隔 glob）</label>
               <input type="text" id="cfg-watcher-ignore" placeholder="**/node_modules/**, **/.git/**" autocomplete="off" />
             </div>
-          </div>
+          </details>
           <div class="settings-group">
             <h3>角色</h3>
             <div class="settings-row">
@@ -846,9 +851,9 @@
               <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" autocomplete="off" />
             </div>
           </div>
-          <!-- Phase 3.3 全局快捷键配置（捕获式输入 + 冲突检测在 settingsPanelManager） -->
-          <div class="settings-group">
-            <h3>快捷键</h3>
+          <!-- UX-0713-8：快捷键折叠为 details 默认收起（降低精灵 tab 信息密度） -->
+          <details class="settings-group settings-group-collapsible">
+            <summary class="settings-group-summary">快捷键</summary>
             <div class="settings-row">
               <label for="cfg-shortcuts-enabled">启用全局快捷键</label>
               <input type="checkbox" id="cfg-shortcuts-enabled" />
@@ -866,7 +871,7 @@
               <input type="text" id="cfg-shortcut-recall-memory" class="shortcut-input" readonly placeholder="点击捕获组合键" aria-label="召回记忆的快捷键，点击后按下组合键捕获" aria-describedby="cfg-shortcut-hint" />
             </div>
             <span id="cfg-shortcut-hint" class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
-          </div>
+          </details>
           <!-- 隐私与数据分区（AUDIT-5-4） -->
           <div class="settings-group">
             <h3>隐私与数据</h3>
@@ -884,7 +889,7 @@
           </div>
         </div>
 
-        <!-- 项目模式配置 -->
+        <!-- 项目模式配置 + 作品投影（UX-0713-12：项目相关配置归项目 tab） -->
         <div class="settings-tab-content" data-settings-tab="project">
           <div class="settings-group">
             <h3>项目模式</h3>
@@ -900,6 +905,21 @@
               <select id="cfg-focus-project" disabled>
                 <option value="">-- 选择项目 --</option>
               </select>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <div class="settings-group-header">
+              <h3>作品投影</h3>
+              <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
+              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新" aria-label="刷新作品投影"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+            </div>
+            <p class="settings-hint">
+              精灵读取你的代码文件后，自动生成作品投影摘要。
+              包含文件概要、内部结构和关键设计决策。
+            </p>
+            <div id="work-projection-list" class="work-projection-list-container">
+              <!-- 由 WorkProjectionPanelManager 动态填充 -->
             </div>
           </div>
         </div>
@@ -928,21 +948,6 @@
               <div id="profile-confirmed-list" class="profile-list">
                 <div class="profile-empty">暂无已确认条目</div>
               </div>
-            </div>
-          </div>
-
-          <div class="settings-group">
-            <div class="settings-group-header">
-              <h3>作品投影</h3>
-              <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
-              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新" aria-label="刷新作品投影"><svg class="icon"><use href="#icon-refresh"/></svg></button>
-            </div>
-            <p class="settings-hint">
-              精灵读取你的代码文件后，自动生成作品投影摘要。
-              包含文件概要、内部结构和关键设计决策。
-            </p>
-            <div id="work-projection-list" class="work-projection-list-container">
-              <!-- 由 WorkProjectionPanelManager 动态填充 -->
             </div>
           </div>
         </div>
@@ -1067,6 +1072,16 @@
               </div>
             </div>
           </div>
+
+          <!-- UX-0713-4：高级操作区（应急恢复按钮与帮助文档同区，降低误触） -->
+          <div class="settings-group">
+            <h3>高级</h3>
+            <p class="settings-hint">以下操作为应急恢复手段，仅在对话卡死且停止按钮无效时使用。</p>
+            <div class="settings-row">
+              <!-- 强制释放对话锁（应急恢复，对话卡死且停止按钮无效时使用） -->
+              <button id="btn-force-release-lock" class="btn-danger" title="当对话卡死且停止按钮无效时使用">强制释放锁</button>
+            </div>
+          </div>
         </div>
 
           </div><!-- /.settings-panel-body -->
@@ -1084,12 +1099,10 @@
             <span class="save-status-text"></span>
           </div>
           <div class="settings-actions-buttons">
-          <!-- 强制释放对话锁（应急恢复，当对话卡死但未触发超时时使用） -->
-          <button id="btn-force-release-lock" class="btn-danger" title="当对话卡死且停止按钮无效时使用">强制释放锁</button>
           <!-- 恢复默认按钮，重置所有配置（危险操作，使用 btn-danger 警示） -->
           <button id="btn-settings-reset" class="btn-danger">恢复精灵默认</button>
-          <!-- 首次配置时提供"完成并回到对话"退出路径，避免用户被困在设置面板 -->
-          <button id="btn-settings-skip" class="btn-secondary">完成并回到对话</button>
+          <!-- UX-0713-4：主操作按钮改为 btn-primary，作为底部按钮行的主操作区分 -->
+          <button id="btn-settings-skip" class="btn-primary">完成并回到对话</button>
           </div>
         </div>
       </div>
