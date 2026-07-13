@@ -81,17 +81,34 @@ export class SearchMessagesManager {
    * 在 UIManager 构造完成后调用。
    */
   init(): void {
-    // 绑定 DOM 元素
+    if (!this.bindSearchModalElements()) return;
+    this.bindSearchEvents();
+  }
+
+  /**
+   * 绑定搜索弹窗 DOM 元素并校验
+   *
+   * @returns true 元素就绪 / false 元素缺失（已记录警告日志，功能降级）
+   */
+  private bindSearchModalElements(): boolean {
     this.modalEl = document.getElementById('search-messages-modal');
     const inputEl = document.getElementById('search-messages-input');
     this.resultsEl = document.getElementById('search-messages-results');
 
     if (!(this.modalEl instanceof HTMLElement) || !(inputEl instanceof HTMLInputElement) || !(this.resultsEl instanceof HTMLElement)) {
       reportError('SearchMessages', '搜索弹窗 DOM 元素缺失，功能降级', 'warn');
-      return;
+      return false;
     }
     this.inputEl = inputEl;
+    return true;
+  }
 
+  /**
+   * 绑定搜索弹窗的所有事件监听器
+   *
+   * 在 bindSearchModalElements 校验通过后调用，此时 modalEl/inputEl/resultsEl 已确认非空。
+   */
+  private bindSearchEvents(): void {
     // 搜索按钮点击 → 打开弹窗
     const searchBtn = document.getElementById('btn-search-messages');
     if (searchBtn) {

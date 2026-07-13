@@ -386,70 +386,141 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
   if (isSavingProvider) return;
   isSavingProvider = true;
   try {
-  const alias = ctx.providerAliasInput?.value.trim();
-  const provider = ctx.providerProviderInput?.value.trim();
-  const model = ctx.providerModelInput?.value.trim();
-  const baseUrl = ctx.providerBaseUrlInput?.value.trim() || '';
-  const apiKey = ctx.providerApiKeyInput?.value.trim();
-  // 读取 temperature：空值表示使用默认值，不传 temperature 字段
-  const tempRaw = ctx.providerTemperatureInput?.value.trim();
-  const temperature = tempRaw ? parseFloat(tempRaw) : undefined;
+    const formData = readProviderForm(ctx);
+    if (!validateProviderForm(ctx, formData)) return;
+    if (await checkAliasDuplicate(ctx, formData.alias)) return;
+    await persistProvider(ctx, formData);
+  } finally {
+    isSavingProvider = false;
+  }
+}
 
+/**
+ * Provider 表单数据（readProviderForm 返回）
+ */
+interface ProviderFormData {
+  alias: string;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  temperature: number | undefined;
+}
+
+/**
+ * 读取 Provider 表单字段值
+ *
+ * @param ctx Provider 管理上下文
+ * @returns 表单数据对象（未校验，可能含空字符串）
+ */
+function readProviderForm(ctx: ProviderManagementContext): ProviderFormData {
+  return {
+    alias: ctx.providerAliasInput?.value.trim() ?? '',
+    provider: ctx.providerProviderInput?.value.trim() ?? '',
+    model: ctx.providerModelInput?.value.trim() ?? '',
+    baseUrl: ctx.providerBaseUrlInput?.value.trim() || '',
+    apiKey: ctx.providerApiKeyInput?.value.trim() ?? '',
+    // 空值表示使用默认值，不传 temperature 字段
+    temperature: parseTemperature(ctx.providerTemperatureInput?.value.trim()),
+  };
+}
+
+/**
+ * 解析 temperature 输入：空值返回 undefined，非空解析为浮点数
+ */
+function parseTemperature(raw: string | undefined): number | undefined {
+  return raw ? parseFloat(raw) : undefined;
+}
+
+/**
+ * 校验 Provider 表单：必填 + 格式
+ *
+ * 校验规则：
+ * - 必填：alias / provider / model / apiKey
+ * - alias 格式：仅允许 ASCII 字母数字 . - _，长度 ≤ 50（作为持久化 key，限制 ASCII 避免 path traversal）
+ * - temperature 范围：0-2（与 HTML input min/max 一致）
+ *
+ * 校验失败时通过 showFieldError 标记字段错误并聚焦，返回 false。
+ *
+ * @param ctx Provider 管理上下文
+ * @param data 表单数据
+ * @returns true 通过校验 / false 校验失败（已标记错误字段）
+ */
+function validateProviderForm(ctx: ProviderManagementContext, data: ProviderFormData): boolean {
   // 清空之前的错误状态（开始新一轮校验）
   clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
 
   // 必填字段校验：逐字段标记 aria-invalid，聚焦首个错误字段
   let firstErrorField: HTMLElement | null = null;
-  if (!alias) {
+  if (!data.alias) {
     firstErrorField = showFieldError('cfg-provider-alias', '请填写别名');
   }
-  if (!provider) {
+  if (!data.provider) {
     firstErrorField ??= showFieldError('cfg-provider-provider', '请填写提供商');
   }
-  if (!model) {
+  if (!data.model) {
     firstErrorField ??= showFieldError('cfg-provider-model', '请填写模型');
   }
-  if (!apiKey) {
+  if (!data.apiKey) {
     firstErrorField ??= showFieldError('cfg-provider-api-key', '请填写 API Key');
   }
   if (firstErrorField) {
     firstErrorField.focus();
-    return;
+    return false;
   }
 
-  // 别名格式校验：仅允许 ASCII 字母数字 . - _，长度 ≤ 50
-  // Provider 别名作为持久化 key（文件名/IPC 标识），限制 ASCII 避免 path traversal
-  if (!/^[a-zA-Z0-9._-]{1,50}$/.test(alias as string)) {
+  // alias 格式校验：仅允许 ASCII 字母数字 . - _，长度 ≤ 50
+  if (!/^[a-zA-Z0-9._-]{1,50}$/.test(data.alias)) {
     const field = showFieldError('cfg-provider-alias', '仅支持英文、数字、点、短横线、下划线，最长 50 字符');
     field.focus();
-    return;
+    return false;
   }
 
-  // Temperature 范围校验：0-2（与 HTML input min/max 一致，防止绕过 HTML 校验）
-  if (temperature !== undefined && (Number.isNaN(temperature) || temperature < 0 || temperature > 2)) {
+  // temperature 范围校验：0-2（防止绕过 HTML min/max 校验）
+  if (data.temperature !== undefined && (Number.isNaN(data.temperature) || data.temperature < 0 || data.temperature > 2)) {
     const field = showFieldError('cfg-provider-temperature', 'Temperature 必须在 0-2 之间');
     field.focus();
-    return;
+    return false;
   }
 
-  // 重复 key 检测：新增时检查别名是否已存在
+  return true;
+}
+
+/**
+ * 检查别名是否重复（仅新增模式检查，编辑模式跳过）
+ *
+ * @param ctx Provider 管理上下文
+ * @param alias 待检查的别名
+ * @returns true 已存在重复（已标记错误字段）/ false 未重复或检查失败（不阻塞保存）
+ */
+async function checkAliasDuplicate(ctx: ProviderManagementContext, alias: string): Promise<boolean> {
   const isEditing = (ctx.providerModalEl?.dataset.editKey ?? '') !== '';
-  if (!isEditing) {
-    try {
-      const data = await window.electronAPI.listLlmProviders();
-      if (data.providers.some((p) => p.key === alias)) {
-        const field = showFieldError('cfg-provider-alias', `别名 "${alias}" 已存在，请更换`);
-        field.focus();
-        return;
-      }
-    } catch (error) {
-      // 获取列表失败不阻塞保存，由主进程处理重复，但记录日志便于排查
-      reportError('SettingsPanelManager 保存前检查重复别名', error);
-    }
-  }
+  if (isEditing) return false;
 
-  // 必填字段校验已保证 alias/provider/model/apiKey 非空，但 TypeScript 无法通过间接 flag 收窄类型
-  // 此处使用 ! 断言是因为校验块已 contractually 保证非空（失败则 return）
+  try {
+    const data = await window.electronAPI.listLlmProviders();
+    if (data.providers.some((p) => p.key === alias)) {
+      const field = showFieldError('cfg-provider-alias', `别名 "${alias}" 已存在，请更换`);
+      field.focus();
+      return true;
+    }
+  } catch (error) {
+    // 获取列表失败不阻塞保存，由主进程处理重复，但记录日志便于排查
+    reportError('SettingsPanelManager 保存前检查重复别名', error);
+  }
+  return false;
+}
+
+/**
+ * 持久化 Provider 到主进程
+ *
+ * 保存按钮状态管理：禁用 + 显示"保存中..."，完成后恢复。
+ * 成功时关闭表单 + 刷新列表，失败时显示错误 toast。
+ *
+ * @param ctx Provider 管理上下文
+ * @param data 已校验的表单数据
+ */
+async function persistProvider(ctx: ProviderManagementContext, data: ProviderFormData): Promise<void> {
   const saveBtn = ctx.btnProviderSave;
   const originalText = saveBtn?.textContent ?? '保存';
   if (saveBtn) {
@@ -457,7 +528,13 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
     saveBtn.textContent = '保存中...';
   }
   try {
-    const result = await window.electronAPI.saveLlmProvider(alias!, { provider: provider!, model: model!, baseUrl, apiKey: apiKey!, temperature });
+    const result = await window.electronAPI.saveLlmProvider(data.alias, {
+      provider: data.provider,
+      model: data.model,
+      baseUrl: data.baseUrl,
+      apiKey: data.apiKey,
+      temperature: data.temperature,
+    });
     if (result.success) {
       ctx.host.showToast('服务商保存成功');
       hideProviderForm(ctx);
@@ -470,9 +547,6 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
       saveBtn.disabled = false;
       saveBtn.textContent = originalText;
     }
-  }
-  } finally {
-    isSavingProvider = false;
   }
 }
 

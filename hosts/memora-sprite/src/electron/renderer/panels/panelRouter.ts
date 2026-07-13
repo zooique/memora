@@ -236,54 +236,85 @@ export class PanelRouter {
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭下拉菜单；设置/记忆/仪表盘/感知面板激活时切回对话
+    // Esc：关闭下拉菜单 / 面板切换回对话
     if (e.key === 'Escape') {
-      // 弹窗或浮层打开时，Escape 交给对应管理器处理，不触发面板切换
-      // 命令面板和搜索弹窗不是 .modal 类，需单独检测
-      const openModals = document.querySelectorAll('.modal:not(.hidden)');
-      if (openModals.length > 0) {
-        return;
-      }
-      // 命令面板 / 搜索弹窗打开时，不触发面板切换（由各自管理器处理 Escape）
-      const commandPalette = document.querySelector('.command-palette:not(.hidden)');
-      const searchModal = document.querySelector('.search-messages-modal:not(.hidden)');
-      if (commandPalette || searchModal) {
-        return;
-      }
-      // 设置或记忆或仪表盘或感知面板激活时，Escape 切回对话面板
-      const state = this.host.getState();
-      if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard' || state.currentPanel === 'perception') {
-        void this.switchPanel('chat');
-        e.preventDefault();
-        return;
-      }
-      const openDropdowns = document.querySelectorAll('.dropdown:not(.hidden)');
-      if (openDropdowns.length > 0) {
-        openDropdowns.forEach((dropdown) => dropdown.classList.add('hidden'));
-        e.preventDefault();
-      }
+      this.handleEscapeKey(e);
       return;
     }
 
-    // Ctrl/Cmd + 数字：切换面板
+    // Ctrl/Cmd + 1-5：切换面板
     if (isMod && ['1', '2', '3', '4', '5'].includes(e.key)) {
-      const panelMap: Record<string, string> = {
-        '1': 'chat',
-        '2': 'memories',
-        '3': 'settings',
-        '4': 'dashboard',
-        '5': 'perception',
-      };
-      const panel = panelMap[e.key];
-      if (panel) {
-        void this.switchPanel(panel);
-        e.preventDefault();
-      }
+      this.handlePanelShortcut(e);
       return;
     }
 
-    // Ctrl/Cmd + .：停止生成
-    if (isMod && e.key === '.') {
+    // Ctrl/Cmd + . / /：停止生成 / 快捷键帮助
+    if (isMod && (e.key === '.' || e.key === '/')) {
+      this.handleActionShortcut(e);
+      return;
+    }
+  }
+
+  /**
+   * 处理 Escape 键：关闭下拉菜单 / 弹窗打开时跳过 / 非对话面板切回对话
+   *
+   * 优先级：弹窗 > 命令面板/搜索弹窗 > 面板切换 > 下拉菜单
+   */
+  private handleEscapeKey(e: KeyboardEvent): void {
+    // 弹窗或浮层打开时，Escape 交给对应管理器处理，不触发面板切换
+    const openModals = document.querySelectorAll('.modal:not(.hidden)');
+    if (openModals.length > 0) {
+      return;
+    }
+    // 命令面板 / 搜索弹窗打开时，不触发面板切换（由各自管理器处理 Escape）
+    const commandPalette = document.querySelector('.command-palette:not(.hidden)');
+    const searchModal = document.querySelector('.search-messages-modal:not(.hidden)');
+    if (commandPalette || searchModal) {
+      return;
+    }
+    // 设置或记忆或仪表盘或感知面板激活时，Escape 切回对话面板
+    const state = this.host.getState();
+    if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard' || state.currentPanel === 'perception') {
+      void this.switchPanel('chat');
+      e.preventDefault();
+      return;
+    }
+    // 无弹窗且在对话面板：关闭已展开的下拉菜单
+    const openDropdowns = document.querySelectorAll('.dropdown:not(.hidden)');
+    if (openDropdowns.length > 0) {
+      openDropdowns.forEach((dropdown) => dropdown.classList.add('hidden'));
+      e.preventDefault();
+    }
+  }
+
+  /** 面板快捷键映射：Ctrl/Cmd + 1-5 → chat/memories/settings/dashboard/perception */
+  private static readonly PANEL_SHORTCUT_MAP: Record<string, string> = {
+    '1': 'chat',
+    '2': 'memories',
+    '3': 'settings',
+    '4': 'dashboard',
+    '5': 'perception',
+  };
+
+  /**
+   * 处理 Ctrl/Cmd + 1-5：切换到对应面板
+   */
+  private handlePanelShortcut(e: KeyboardEvent): void {
+    const panel = PanelRouter.PANEL_SHORTCUT_MAP[e.key];
+    if (panel) {
+      void this.switchPanel(panel);
+      e.preventDefault();
+    }
+  }
+
+  /**
+   * 处理 Ctrl/Cmd + . 和 Ctrl/Cmd + /
+   *
+   * - `.`：停止生成（仅流式输出期间）
+   * - `/`：切换快捷键帮助弹窗
+   */
+  private handleActionShortcut(e: KeyboardEvent): void {
+    if (e.key === '.') {
       if (this.host.isStreaming()) {
         this.host.emitStopMessage();
         e.preventDefault();
@@ -291,18 +322,15 @@ export class PanelRouter {
       return;
     }
 
-    // Ctrl/Cmd + /：显示快捷键帮助弹窗
-    if (isMod && e.key === '/') {
-      const modal = document.getElementById('shortcuts-modal');
-      if (modal) {
-        if (modal.classList.contains('hidden')) {
-          this.host.showModal('shortcuts-modal');
-        } else {
-          this.host.hideModal('shortcuts-modal');
-        }
-        e.preventDefault();
+    // e.key === '/'
+    const modal = document.getElementById('shortcuts-modal');
+    if (modal) {
+      if (modal.classList.contains('hidden')) {
+        this.host.showModal('shortcuts-modal');
+      } else {
+        this.host.hideModal('shortcuts-modal');
       }
-      return;
+      e.preventDefault();
     }
   }
 

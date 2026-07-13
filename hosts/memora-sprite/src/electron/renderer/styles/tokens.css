@@ -29,11 +29,11 @@
   --text-3:      #6a6a72;  /* = --muted */
   --text-4:      #6e6e76;  /* 最弱文字（时间戳等辅助信息）；WCAG AA 4.5:1 达标（实测 #f0f0f2 4.6:1），用于 font-sm/xs 正常文本需满足 4.5:1 */
 
-  /* 强调色 */
-  --accent:        #0066ff;  /* 主强调色 */
+  /* 强调色（青蓝偏绿，避开蓝白企业风） */
+  --accent:        #0d7377;  /* 主强调色：青蓝偏绿 */
   /* 统一 --accent-soft 为 rgba 策略 */
-  --accent-soft:   rgba(0, 102, 255, 0.06);  /* 强调色浅底；降至 0.06 提升 --accent 文字对比度至 ~4.5:1 */
-  --accent-hover:  #0052cc;  /* 强调色 hover */
+  --accent-soft:   rgba(13, 115, 119, 0.06);  /* 强调色浅底；降至 0.06 提升 --accent 文字对比度至 ~4.5:1 */
+  --accent-hover:  #0a5a5e;  /* 强调色 hover：深青蓝 */
 
   /* 语义色 */
   --green:       #34c759;
@@ -48,7 +48,7 @@
   --affect-high: #ff9800;  /* 高值→橙色 */
 
   /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
-  --accent-fg:   #f5f7ff;  /* 浅色主题：深蓝背景 + 极淡蓝白字，柔化视觉对比度 */
+  --accent-fg:   #f0fafa;  /* 浅色主题：青蓝背景 + 极淡青白字，柔化视觉对比度 */
 
   /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
   --text-on-red: #ffffff;
@@ -58,8 +58,8 @@
   --teal:        #00838f;  /* 青色：persona */
   --peach:       #e65100;  /* 橙色：session */
 
-  /* 品牌渐变：仅用于 logo/头像（浅色/深色主题通用） */
-  --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+  /* 品牌渐变：仅用于 logo/头像（浅色主题青蓝色调，与 --accent 同色系延伸） */
+  --brand-grad:  linear-gradient(135deg, #0d7377 0%, #5fc6cb 100%);
 
   /* 圆角：整体收敛，更紧凑 */
   --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
@@ -74,9 +74,9 @@
   --shadow:           0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.06);
-  --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
+  --shadow-accent:    0 2px 8px rgba(13, 115, 119, 0.2);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
-  --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
+  --shadow-accent-lg: 0 4px 16px rgba(13, 115, 119, 0.2);
   /* 大型浮层阴影（context-menu / 右键菜单等，比 float 更强层次感） */
   --shadow-lg:        0 8px 24px rgba(0, 0, 0, 0.1);
   /* 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
@@ -111,9 +111,9 @@
   --input-area-height: 140px;
 
   /* 主题色透明度（用于标签背景、badge 等；浅色主题下降低透明度避免过艳） */
-  --accent-20: rgba(0, 102, 255, 0.1);
+  --accent-20: rgba(13, 115, 119, 0.1);
   /* 强调色 hover 背景（比 --accent-20 略深，用于 recall-header 等 hover 状态） */
-  --accent-soft-hover: rgba(0, 102, 255, 0.12);
+  --accent-soft-hover: rgba(13, 115, 119, 0.12);
   --green-20:  rgba(52, 199, 89, 0.1);
   --pink-20:   rgba(245, 194, 231, 0.2);
   --yellow-20: rgba(255, 159, 10, 0.1);
@@ -195,7 +195,7 @@
 
   /* 命令面板等浮层使用的变量（补全缺失定义，避免回退到浏览器默认值） */
   --surface:        var(--window-bg); /* 浮层表面背景 = 核心窗口背景 */
-  --accent-10:      rgba(0, 102, 255, 0.05); /* 强调色 5% 透明度（hover 等更弱的强调场景） */
+  --accent-10:      rgba(13, 115, 119, 0.05); /* 强调色 5% 透明度（hover 等更弱的强调场景） */
   --white:          #ffffff;         /* 纯白（红色按钮 hover 等场景） */
 
   /* ─── 图谱浮层变量（深色主题自动适配） ─── */
@@ -279,10 +279,10 @@
   --text-3:      #b5bcd6;
   --text-4:      #9ba0b8;  /* 最弱文字（深色主题）；WCAG AA 4.5:1 达标（实测 #313244 4.6:1），用于 font-sm/xs 正常文本需满足 4.5:1 */
 
-  /* 强调色 */
-  --accent:        #89b4fa;
-  --accent-soft:   rgba(137, 180, 250, 0.15);
-  --accent-hover:  #74a8fc;
+  /* 强调色（深色主题：亮青蓝，与浅色主题 #0d7377 同色系但提亮保证可见性） */
+  --accent:        #2db5bb;
+  --accent-soft:   rgba(45, 181, 187, 0.15);
+  --accent-hover:  #14a3a8;
 
   /* 语义色 */
   --green:       #a6e3a1;
@@ -323,9 +323,9 @@
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.5);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.4);
   /* 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
-  --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
+  --shadow-accent:    0 2px 8px rgba(45, 181, 187, 0.3);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
-  --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
+  --shadow-accent-lg: 0 4px 16px rgba(45, 181, 187, 0.3);
   /* 大型浮层阴影（深色主题加重以保证层次感可见性） */
   --shadow-lg:        0 8px 24px rgba(0, 0, 0, 0.5);
   /* 小型元素阴影令牌（深色主题加重以保证可见性） */
@@ -348,9 +348,9 @@
   --input-area-height: 140px;
 
   /* 主题色透明度 */
-  --accent-20: rgba(137, 180, 250, 0.2);
+  --accent-20: rgba(45, 181, 187, 0.2);
   /* 强调色 hover 背景（深色主题比 --accent-20 略深） */
-  --accent-soft-hover: rgba(137, 180, 250, 0.25);
+  --accent-soft-hover: rgba(45, 181, 187, 0.25);
   --green-20:  rgba(166, 227, 161, 0.2);
   --pink-20:   rgba(245, 194, 231, 0.2);
   --yellow-20: rgba(249, 226, 175, 0.2);
@@ -396,7 +396,7 @@
 
   /* 命令面板等浮层使用的变量（深色主题同步定义） */
   --surface:        var(--window-bg);
-  --accent-10:      rgba(137, 180, 250, 0.08);
+  --accent-10:      rgba(45, 181, 187, 0.08);
   --white:          #ffffff;
 
   /* ─── 图谱浮层变量（深色主题适配） ─── */
