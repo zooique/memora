@@ -1,0 +1,53 @@
+/**
+ * Memora 精灵 — 通用工具类
+ *
+ * 高频布局模式的原子类，从 3577 条 CSS 属性声明中提取（Top 重复模式）。
+ * 使用方式：在 JS createElement 后 className 拼接，或在 HTML 中直接添加。
+ *
+ * 设计原则（ADR-017 枝叶层 2 次提取）：
+ * - 只提取出现 2+ 次的属性组合模式
+ * - 不提取业务语义类（业务类由各面板 CSS 负责）
+ * - 不提取单次使用的样式（单次样式留在原规则块）
+ *
+ * 与 base.css 的区别：
+ * - base.css = 全局重置 + 通用组件基类（icon-btn / empty-state / error-state）
+ * - utilities.css = 原子布局类（flex / surface / text）
+ */
+
+/* ─── Flex 布局工具类 ──────────────────────────────────────── */
+
+/* 水平 + 垂直双向居中（原 27 处 display:flex + align-items:center + justify-content:center） */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 纵向 flex 容器（原 48 处 display:flex + flex-direction:column） */
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 横向 flex + 垂直居中（原 89 处 display:flex + align-items:center，不含水平居中） */
+.flex-row-center {
+  display: flex;
+  align-items: center;
+}
+
+/* ─── 表面工具类 ──────────────────────────────────────────── */
+
+/* 标准卡片表面（原 23 处 background + border-radius + border 组合） */
+.surface-card {
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface2);
+}
+
+/* ─── 文字工具类 ──────────────────────────────────────────── */
+
+/* 次要文字（原 20 处 color:var(--text-2) + font-size:var(--font-xs) 组合） */
+.text-muted {
+  color: var(--text-2);
+  font-size: var(--font-xs);
+}

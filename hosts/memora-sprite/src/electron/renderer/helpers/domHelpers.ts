@@ -296,3 +296,90 @@ export function setButtonLoadingEl(el: HTMLButtonElement, loading: boolean, load
 export function hasOtherOpenOverlays(): boolean {
   return document.querySelectorAll('.modal:not(.hidden), .command-palette:not(.hidden), .search-messages-modal:not(.hidden)').length > 0;
 }
+
+// ─── 空状态工厂 ─────────────────────────────────────────
+
+/**
+ * 空状态配置选项
+ */
+export interface EmptyStateOptions {
+  /** 面板前缀（如 'memory'），用于生成修饰类 '{prefix}-empty-state'，不传则只用通用 .empty-state */
+  panelPrefix?: string;
+  /** 图标 HTML（SVG 字符串），不传则不渲染图标 */
+  iconHtml?: string;
+  /** 主标题（必需） */
+  title: string;
+  /** 副标题，不传则不渲染 */
+  subtitle?: string;
+  /** CTA 按钮文本，不传则不渲染按钮 */
+  ctaText?: string;
+  /** CTA 按钮点击回调，与 ctaText 配合使用 */
+  ctaOnClick?: () => void;
+}
+
+/**
+ * 创建标准空状态 DOM 元素（五元组结构）
+ *
+ * 从 memoryPanelManager / profilePanelManager / searchMessagesManager 等 6+ 文件
+ * 重复的空状态构建代码中提取（ADR-017 枝叶层 2 次提取原则）。
+ *
+ * DOM 结构：
+ *   <div class="empty-state {panel}-empty-state">
+ *     <div class="empty-icon">{iconHtml}</div>      ← 可选
+ *     <div class="empty-title">{title}</div>
+ *     <div class="empty-subtitle">{subtitle}</div>   ← 可选
+ *     <button class="empty-action-btn btn-secondary">{ctaText}</button>  ← 可选
+ *   </div>
+ *
+ * 事件绑定说明：
+ * - CTA 按钮用 addEventListener 绑定，适用于临时元素（每次渲染重新创建）
+ * - 若需统一事件清理（如 this.events.addEventListener），调用方可在获取容器后
+ *   通过 container.querySelector('.empty-action-btn') 重新绑定
+ *
+ * @param options 空状态配置
+ * @returns 空状态容器元素（已包含所有子元素，可直接 appendChild）
+ */
+export function createEmptyState(options: EmptyStateOptions): HTMLElement {
+  const { panelPrefix, iconHtml, title, subtitle, ctaText, ctaOnClick } = options;
+
+  // 容器：通用基类 + 面板修饰类
+  const empty = document.createElement('div');
+  empty.className = panelPrefix
+    ? `empty-state ${panelPrefix}-empty-state`
+    : 'empty-state';
+
+  // 图标（可选）
+  if (iconHtml) {
+    const icon = document.createElement('div');
+    icon.className = 'empty-icon';
+    icon.innerHTML = iconHtml;
+    empty.appendChild(icon);
+  }
+
+  // 标题（必需）
+  const titleEl = document.createElement('div');
+  titleEl.className = 'empty-title';
+  titleEl.textContent = title;
+  empty.appendChild(titleEl);
+
+  // 副标题（可选）
+  if (subtitle) {
+    const subtitleEl = document.createElement('div');
+    subtitleEl.className = 'empty-subtitle';
+    subtitleEl.textContent = subtitle;
+    empty.appendChild(subtitleEl);
+  }
+
+  // CTA 按钮（可选）
+  if (ctaText) {
+    const ctaBtn = document.createElement('button');
+    ctaBtn.className = 'empty-action-btn btn-secondary';
+    ctaBtn.textContent = ctaText;
+    if (ctaOnClick) {
+      ctaBtn.addEventListener('click', ctaOnClick);
+    }
+    empty.appendChild(ctaBtn);
+  }
+
+  return empty;
+}

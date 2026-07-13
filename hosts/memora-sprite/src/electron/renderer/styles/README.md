@@ -1,12 +1,13 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-13（CSS-R4 P0 减法：base.css 拆分出 command-palette.css + search-messages.css）
+> 最后更新：2026-07-13（CSS-R5 P1 试点：新增 utilities.css 中间层）
 
 ## 1. 加载顺序（index.html 中的 `<link>`，顺序即层叠优先级）
 
 ```
 styles/tokens.css      ← 设计令牌「单一真理源」（P0 抽出，双主题 + CJK 字体栈）
 styles/base.css        ← 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类（icon-btn / empty-state / error-state）
+styles/utilities.css   ← 通用工具类（flex-center / flex-col / flex-row-center / surface-card / text-muted）
 styles/layout.css      ← 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
 styles/command-palette.css  ← 快捷命令面板（Ctrl+K，类 VS Code 浮层）
 styles/search-messages.css  ← 对话内容搜索弹窗（Ctrl+Shift+F）
@@ -74,16 +75,57 @@ styles/dashboard.css
 
 判断标准：一个功能模块如果有自己独立的 DOM 根节点（如 `.command-palette`）、独立的打开/关闭逻辑、独立的交互状态 → 应该独立成文件，不要塞进 base.css。
 
-## 5. CSP 与字体
+## 5. utilities.css 工具类层（CSS-R5 P1 试点）
+
+**utilities.css = 原子布局类中间层**，位于 tokens.css / base.css 之上，功能模块 CSS 之下。
+
+### 三层 CSS 架构
+
+```
+tokens.css（设计令牌，变量定义）     ← 已有，157 变量
+       ↓
+base.css（全局重置 + 组件基类）       ← 已有，345 行
+       ↓
+utilities.css（原子布局工具类）       ← 新增，5 个 class
+       ↓
+各功能模块 CSS（chat-* / memory-* 等）← 已有，按面板聚合
+```
+
+### 工具类清单
+
+| 类名 | 属性组合 | 原重复次数 | 语义 |
+|------|---------|-----------|------|
+| `.flex-center` | display:flex + align-items:center + justify-content:center | 27 | 水平+垂直双向居中 |
+| `.flex-col` | display:flex + flex-direction:column | 48 | 纵向 flex 容器 |
+| `.flex-row-center` | display:flex + align-items:center | 89 | 横向 flex + 垂直居中 |
+| `.surface-card` | background:var(--surface0) + border-radius:var(--radius-sm) + border:1px solid var(--surface2) | 23 | 标准卡片表面 |
+| `.text-muted` | color:var(--text-2) + font-size:var(--font-xs) | 20 | 次要文字 |
+
+### 使用原则
+
+1. **在 JS createElement 后拼接 className 使用**，项目已大量使用 className（583 次 vs 56 次 inline style）
+2. **不替换组件基类**：`.empty-state` / `.icon-btn` 等 BEM 基类保持完整，utility class 用于补充布局属性
+3. **按需使用**：不强求所有元素都用 utility class，单次使用的样式留在原 CSS 规则块
+4. **提取阈值**（ADR-017 枝叶层 2 次提取）：新增工具类需在 2+ 文件出现 2+ 次相同属性组合
+
+### 与 base.css 的区别
+
+| 层 | 职责 | 示例 |
+|----|------|------|
+| base.css | 全局重置 + 通用组件基类（含 BEM 结构） | `.icon-btn` / `.empty-state` / `.error-state` |
+| utilities.css | 原子布局属性组合（无 BEM 结构） | `.flex-center` / `.surface-card` / `.text-muted` |
+
+## 6. CSP 与字体
 
 - 主窗 CSP：`default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'`。
 - 全部 CSS 为本地文件，经 `<link>` / `@import` 加载，无内联样式（图标用 SVG 精灵 `<use>`，规避内联 style 被 CSP 拦截）。
 - 字体：系统字体栈（不打包），含 `--font-sprite` 的 CJK 栈（`'Microsoft YaHei'/'PingFang SC'` 等），在 `tokens.css` 统一定义。跨平台字形差异为已知权衡（报告 P2「字体策略」项，当前标为跳过）。
 
-## 6. 贡献约定（给后续维护者）
+## 7. 贡献约定（给后续维护者）
 
 1. 令牌改动只动 `tokens.css`。
 2. 新组件样式放进对应功能 CSS；若 `chat.css` / `memory.css` 需新增子模块，在聚合器 `@import` 列表按层叠顺序追加，并把内容从单体迁出。
 3. 间距/圆角用 `--space-*` / `--radius-*`；禁止在布局处裸写 px（P1 lint 精神）。
 4. 任何 CSS 改动后，确认选择器顺序未被打乱（层叠依赖顺序）。
 5. 完整功能模块（有独立 DOM 根节点 + 独立交互逻辑）不塞进 base.css，应独立成文件并在 `index.html` 中 `<link>` 引入（参见 §4 base.css 定位）。
+6. 高频布局模式（flex 居中 / 卡片表面 / 次要文字）优先用 `utilities.css` 中的工具类；新增工具类需满足枝叶层 2 次提取原则（参见 §5 utilities.css）。

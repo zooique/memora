@@ -2,7 +2,7 @@
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
 > **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）。目录形态已对齐最终目标。
-> **版本**：v2.0（2026-07-13）
+> **版本**：v2.1（2026-07-13）
 
 ---
 
@@ -157,6 +157,7 @@ src/
 │           ├── README.md       # CSS 架构文档（令牌所有权 + 聚合器模式 + 贡献约定）
 │           ├── tokens.css      # 设计令牌「单一真理源」（P0：双主题变量 + CJK 字体栈，三窗口共享）
 │           ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类（icon-btn / empty-state / error-state）
+│           ├── utilities.css   # 通用工具类（flex-center / flex-col / flex-row-center / surface-card / text-muted）
 │           ├── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
 │           ├── command-palette.css  # 快捷命令面板（Ctrl+K，类 VS Code 浮层）
 │           ├── search-messages.css  # 对话内容搜索弹窗（Ctrl+Shift+F）
@@ -431,6 +432,7 @@ src/
 - [x] ITER-8: relationGraph 二次拆分——helpers/relationGraphTypes.ts（7 类型 + 14 常量，架构层类型真理源）+ helpers/relationGraphGeometry.ts（5 纯函数：nodeRadius/screenToWorld/findNodeAt/findEdgeAt/pointToSegmentDist）提取，主文件 1206→889 行（-26%），消除 relationGraphLayout.ts 对 components 的 type-only 循环依赖（2026-07-13 神木回天）
 - [x] CSS-R3: 二级拆分——chat-messages.css(1941行)→4 子模块（banner/bubble/input/misc）+ memory-graph.css(1225行)→4 子模块（core/search/detail/misc），chat.css/memory.css 聚合器 @import 更新，层叠等价（2026-07-13 组合拳）
 - [x] CSS-R4: P0 减法——base.css 拆分出 command-palette.css(166行) + search-messages.css(198行)，base.css 620→345 行(-44%)，回归"基础样式"定位（2026-07-13 问诊 CSS 减法）
+- [x] CSS-R5: utilities.css 中间层——新增 5 个原子工具类（flex-center/flex-col/flex-row-center/surface-card/text-muted），从 3577 条属性声明提取 Top 重复模式（2026-07-13 P1 试点）
 
 ### 延后（非目录结构）
 

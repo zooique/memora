@@ -14,7 +14,7 @@
  * - 跨模块关注点（showModal / showConfirmDialog）通过 host 回调注入
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml } from '../helpers/domHelpers.js';
+import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml, createEmptyState } from '../helpers/domHelpers.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -314,43 +314,20 @@ export class MemoryPanelManager {
     clearElement(this.memoryListEl);
 
     if (memories.length === 0) {
-      // Phase 4：空状态插画升级（SVG 图标 + 标题 + 副标题 + CTA 按钮）
-      const empty = document.createElement('div');
-      empty.className = 'empty-state memory-empty-state';
-
-      // SVG 图标：大脑轮廓（简洁线条，无外部依赖）
-      const icon = document.createElement('div');
-      icon.className = 'empty-icon';
-      icon.innerHTML = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M24 8C18 8 14 12 14 18C10 18 8 22 8 26C8 30 10 34 14 34C14 38 18 40 22 40C26 40 28 38 28 34V14C28 10 26 8 24 8Z" stroke="currentColor" stroke-width="2" fill="none"/>
-        <path d="M28 14C32 14 36 16 36 20C38 20 40 22 40 26C40 30 38 32 36 32C36 36 32 38 28 38" stroke="currentColor" stroke-width="2" fill="none"/>
-        <circle cx="18" cy="24" r="2" fill="currentColor" opacity="0.5"/>
-        <circle cx="32" cy="28" r="1.5" fill="currentColor" opacity="0.3"/>
-      </svg>`;
-      empty.appendChild(icon);
-
-      // 标题
-      const title = document.createElement('div');
-      title.className = 'empty-title';
-      title.textContent = '暂无记忆';
-      empty.appendChild(title);
-
-      // 副标题
-      const subtitle = document.createElement('div');
-      subtitle.className = 'empty-subtitle';
-      subtitle.textContent = '积累对话后，记忆将自动归档到此处';
-      empty.appendChild(subtitle);
-
-      // 空状态引导：提供"添加第一条记忆"按钮，避免用户不知道下一步
-      const hintBtn = document.createElement('button');
-      // 同时添加 .btn-secondary 类复用通用按钮样式
-      hintBtn.className = 'empty-action-btn btn-secondary';
-      hintBtn.textContent = '+ 添加第一条记忆';
-      this.events.addEventListener(hintBtn, 'click', () => {
-        this.host.showModal('memory-add-modal');
+      // 空状态：图标 + 标题 + 副标题 + CTA 按钮（用 createEmptyState 工厂统一结构）
+      const empty = createEmptyState({
+        panelPrefix: 'memory',
+        iconHtml: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M24 8C18 8 14 12 14 18C10 18 8 22 8 26C8 30 10 34 14 34C14 38 18 40 22 40C26 40 28 38 28 34V14C28 10 26 8 24 8Z" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M28 14C32 14 36 16 36 20C38 20 40 22 40 26C40 30 38 32 36 32C36 36 32 38 28 38" stroke="currentColor" stroke-width="2" fill="none"/>
+          <circle cx="18" cy="24" r="2" fill="currentColor" opacity="0.5"/>
+          <circle cx="32" cy="28" r="1.5" fill="currentColor" opacity="0.3"/>
+        </svg>`,
+        title: '暂无记忆',
+        subtitle: '积累对话后，记忆将自动归档到此处',
+        ctaText: '+ 添加第一条记忆',
+        ctaOnClick: () => this.host.showModal('memory-add-modal'),
       });
-      empty.appendChild(hintBtn);
-
       this.memoryListEl.appendChild(empty);
       return;
     }
