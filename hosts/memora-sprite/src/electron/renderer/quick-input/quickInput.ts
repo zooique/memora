@@ -1,18 +1,21 @@
 /**
- * 快速输入浮窗渲染逻辑 — 用户交互入口（Tab 双重确认模式）
+ * 快速输入浮窗渲染逻辑 — 用户交互入口（三键分工模式）
  *
  * 职责：
- *   1. 绑定输入框键盘事件：Tab 确认、Esc 关闭（移除 Enter 确认）
- *   2. Tab 双重确认逻辑：
- *      - 第 1 击：选择候选项并回填到输入框
- *      - 第 2 击：确认并粘贴到目标应用（优先自动粘贴，降级写剪贴板）
+ *   1. 绑定输入框键盘事件：Tab 提交、Esc 关闭、Enter 换行
+ *   2. Tab 单一提交：将输入框内容粘贴到目标应用（优先自动粘贴，降级写剪贴板）
  *   3. 窗口重新显示时处理剪贴板预填并聚焦
  *   4. 接入补全管理器，输入时显示候选列表
  *   5. 确认成功后显示 Toast，延迟关闭
  *
+ * 三键分工：
+ *   - ↑↓：在候选列表中导航选择（由 quickInputCompletion.ts 处理）
+ *   - ←→：将选中候选项填充到输入框（由 quickInputCompletion.ts 处理）
+ *   - Tab：提交输入框内容（本文件处理）
+ *
  * 设计原则：
  *   - 使用 Pick<ElectronAPI, ...> 提取子集（与 float.ts 范式一致）
- *   - Tab 是唯一确认按钮，Enter 用于换行
+ *   - Tab 是唯一提交按钮，Enter 用于换行
  *   - 确认期间禁用输入框，防止重复触发
  *   - 补全管理器独立封装在 quickInputCompletion.ts，保持职责单一
  *
@@ -55,12 +58,15 @@ function initQuickInput(): void {
   }
 
   const inputField: HTMLTextAreaElement = inputEl;
+  const counterEl = document.querySelector('.quick-input-counter');
   const api: QuickInputElectronAPI = electronApi;
 
   /** 是否正在提交（防止重复确认） */
   let isSubmitting = false;
   /** 补全管理器实例 */
   let completion: QuickInputCompletion | null = null;
+  /** 当前输入区基础高度（不含候选列表） */
+  let baseInputHeight = 72;
 
   /** Toast 显示时长（ms） */
   const TOAST_DURATION_MS = 800;
@@ -144,6 +150,54 @@ function initQuickInput(): void {
   }
 
   /**
+   * 自动调整 textarea 高度（随内容增长，最多 5 行）
+   *
+   * 实现原理：先将高度重置为 auto，再设置为 scrollHeight，
+   * 这样 textarea 会恰好包裹内容，不会出现多余空白。
+   */
+  function autoResize(): void {
+    const prevHeight = inputField.offsetHeight;
+    inputField.style.height = 'auto';
+    inputField.style.height = `${inputField.scrollHeight}px`;
+    const newHeight = inputField.offsetHeight;
+
+    // 高度变化时，更新基础高度并通知主进程调整窗口
+    if (newHeight !== prevHeight) {
+      // 基础高度 = textarea高度 + 上下padding + 底部栏高度 + 容器padding
+      baseInputHeight = newHeight + 36;
+      resizeWindow();
+    }
+  }
+
+  /**
+   * 更新字符计数显示
+   */
+  function updateCounter(): void {
+    if (counterEl instanceof HTMLElement) {
+      counterEl.textContent = `${inputField.value.length} 字`;
+    }
+  }
+
+  /**
+   * 根据当前状态调整窗口高度
+   *
+   * 考虑两种情况：
+   *   - 无候选列表：高度 = 基础输入区高度
+   *   - 有候选列表：高度 = 基础输入区高度 + 候选列表高度
+   */
+  function resizeWindow(): void {
+    if (completionList && !completionList.classList.contains('hidden')) {
+      const itemCount = completionList.querySelectorAll('.completion-item').length;
+      const hasFooter = completionList.dataset.footer === 'true';
+      const footerHeight = hasFooter ? 28 : 0;
+      const targetHeight = baseInputHeight + Math.min(itemCount, 5) * 38 + footerHeight;
+      void api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
+    } else {
+      void api.resizeQuickInput(baseInputHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
+    }
+  }
+
+  /**
    * 关闭浮窗：清理 Toast 定时器 + 调用 IPC 通知主进程隐藏窗口
    */
   async function handleClose(): Promise<void> {
@@ -159,51 +213,24 @@ function initQuickInput(): void {
   }
 
   /**
-   * Tab 键处理逻辑（两种状态）
+   * Tab 键处理：直接提交输入框内容
    *
-   * 状态1：文本输入状态（无候选列表 或 有候选但未用方向键浏览）
-   *   → Tab 直接确认粘贴（记录记忆 + 填入正文）
+   * Tab 是唯一的提交按钮，功能简单明确。
+   * 候选项的填充由 ←→ 方向键完成（见 quickInputCompletion.ts）。
    *
-   * 状态2：记忆选择状态（有候选列表且用户用方向键浏览过）
-   *   → Tab 先回填选中的候选文本到输入框（可修改），清除候选列表
-   *   → 修改完成后再次 Tab，进入状态1，直接确认粘贴
-   *
-   * 设计说明：
-   *   - 在 keyup 阶段执行确认，而非 keydown。
-   *   - 原因：若 keydown 阶段发送 IPC 并关闭浮窗，Tab 键的 keyup 事件会传播到原窗口
-   *     （如微信），可能触发原窗口的快捷键（如最小化到托盘）。
-   *   - 改为 keyup 后，整个 Tab 事件周期在浮窗内消化，不会泄漏到目标应用。
+   * 在 keyup 阶段执行确认，避免 Tab 的 keyup 事件泄漏到原窗口（如微信）。
    */
   function handleTab(): void {
     if (isSubmitting) return;
-
-    // 状态2：有候选列表且用户正在浏览（方向键导航过）
-    // → Tab 先回填选中的候选文本到输入框，清除候选列表
-    if (completion && completionList && !completionList.classList.contains('hidden') && completion.isNavigating()) {
-      const selectedText = completion.getSelectedText();
-      if (selectedText) {
-        inputField.value = selectedText;
-        inputField.focus();
-      }
-      // 清除候选列表，进入编辑状态
-      completionList.classList.add('hidden');
-      completion.clear();
-      return;
-    }
-
-    // 状态1：文本输入状态（无候选列表 或 有候选但未浏览）
-    // → Tab 直接确认粘贴
     void handleConfirm();
   }
 
   /** Tab 键已按下（keydown 中标记，keyup 中消费） */
   let tabPressed = false;
 
-  // 输入框键盘事件：Tab 确认（keydown 标记 + keyup 执行）、Esc 关闭
+  // 输入框键盘事件：Tab 提交（keydown 标记 + keyup 执行）、Esc 关闭
   inputField.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Tab') {
-      // keydown 阶段只阻止默认行为并标记，不在此处执行确认
-      // 避免 keyup 事件泄漏到原窗口（如微信最小化问题）
       e.preventDefault();
       tabPressed = true;
     } else if (e.key === 'Escape') {
@@ -220,20 +247,28 @@ function initQuickInput(): void {
     }
   });
 
+  // 输入时自动调整高度 + 更新字符计数
+  inputField.addEventListener('input', () => {
+    autoResize();
+    updateCounter();
+  });
+
   // 初始化补全管理器（候选列表容器存在时才启用补全）
   if (completionList instanceof HTMLElement) {
     completion = new QuickInputCompletion(inputField, completionList, api);
+    // ←→ 填充选中项到输入框：覆盖现有内容 + 聚焦 + 调整高度/计数
+    completion.onSelect((text) => {
+      inputField.value = text;
+      inputField.focus();
+      // 光标移到末尾，方便用户继续编辑或直接 Tab 提交
+      const len = inputField.value.length;
+      inputField.setSelectionRange(len, len);
+      autoResize();
+      updateCounter();
+    });
     // 候选列表显示/隐藏时，通知主进程调整窗口高度
-    completion.onListChange((visible) => {
-      if (visible) {
-        const itemCount = completionList.querySelectorAll('.completion-item').length;
-        const hasFooter = completionList.dataset.footer === 'true';
-        const footerHeight = hasFooter ? 28 : 0;
-        const targetHeight = 90 + Math.min(itemCount, 5) * 38 + footerHeight;
-        void api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
-      } else {
-        void api.resizeQuickInput(90).catch((e: unknown) => reportError('QuickInput-resize', e));
-      }
+    completion.onListChange(() => {
+      resizeWindow();
     });
     completion.init();
   }
@@ -255,6 +290,11 @@ function initQuickInput(): void {
       inputField.dispatchEvent(new Event('input'));
     } else {
       inputField.value = '';
+      // 清空后重置高度
+      inputField.style.height = 'auto';
+      updateCounter();
+      baseInputHeight = 72;
+      resizeWindow();
     }
     isSubmitting = false;
     inputField.disabled = false;
@@ -262,6 +302,9 @@ function initQuickInput(): void {
   });
 
   inputField.focus();
+  // 初始化：更新字符计数 + 调整初始高度
+  updateCounter();
+  autoResize();
 }
 
 if (document.readyState === 'loading') {

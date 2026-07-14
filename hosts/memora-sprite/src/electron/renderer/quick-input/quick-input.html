@@ -20,20 +20,23 @@
 <body>
   <!-- 快速输入浮窗容器：文本输入区 + 快捷键提示 + 补全候选列表 -->
   <div class="quick-input-container">
-    <!-- 输入区：textarea（支持多行长文本） -->
+    <!-- 输入区：textarea（支持多行长文本 + 自动高度） -->
     <div class="quick-input-area">
       <textarea
         id="quick-input-field"
         class="quick-input-field"
-        placeholder="输入文本，↓↑ 选择补全，Tab 确认并粘贴..."
+        placeholder="输入文本，↓↑ 选择补全，←→ 填充，Tab 确认..."
         autocomplete="off"
         spellcheck="false"
         autofocus
-        rows="2"
+        rows="1"
       ></textarea>
-      <span class="quick-input-hint">Tab 确认 · Esc 关闭</span>
+      <div class="quick-input-footer">
+        <span class="quick-input-hint">Tab 确认 · Esc 关闭</span>
+        <span class="quick-input-counter">0 字</span>
+      </div>
     </div>
-    <!-- 补全候选列表（输入 ≥2 字符后显示，Tab 选择） -->
+    <!-- 补全候选列表（输入 ≥2 字符后显示，↑↓ 导航 + ←→ 填充） -->
     <ul id="completion-list" class="completion-list hidden" role="listbox" aria-label="补全候选"></ul>
   </div>
 

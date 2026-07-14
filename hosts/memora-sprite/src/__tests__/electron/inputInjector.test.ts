@@ -54,7 +54,6 @@ function createMockDeps(getActiveWindowResult: ActiveWindow | null = null): NutJ
       releaseKey: vi.fn(() => Promise.resolve()),
     },
     Key: {
-      Escape: 'Escape' as unknown,
       LeftControl: 'LeftControl' as unknown,
       V: 'V' as unknown,
     },
@@ -162,9 +161,9 @@ describe('InputInjector', () => {
       expect(result.appName).toBe('记事本');
       // 验证隐藏浮窗被调用（排雷修正雷 1.2：在恢复焦点之前）
       expect(hideFloat).toHaveBeenCalledTimes(1);
-      // 验证 keyboard 操作：Esc（press+release）+ Ctrl+V（press+release）
-      expect(deps.keyboard.pressKey).toHaveBeenCalledTimes(2);   // Esc + Ctrl+V
-      expect(deps.keyboard.releaseKey).toHaveBeenCalledTimes(2);
+      // 验证 keyboard 操作：Ctrl+V（press+release）
+      expect(deps.keyboard.pressKey).toHaveBeenCalledTimes(1);
+      expect(deps.keyboard.releaseKey).toHaveBeenCalledTimes(1);
     });
 
     it('成功粘贴时 suppressNextChange 调用 2 次（写入 + 恢复）', async () => {

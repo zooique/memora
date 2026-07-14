@@ -5,7 +5,7 @@
  *   1. 监听输入框内容变化，防抖触发补全请求
  *   2. 并行调用 searchMemories + searchSessionMessages 两个 IPC
  *   3. 合并去重 + 按相关度排序，取 Top-5 候选
- *   4. 渲染候选列表，支持 ↓↑ 键盘导航 + Tab 确认回填
+ *   4. 渲染候选列表，支持 ↓↑ 键盘导航 + ←→ 填充回填
  *   5. 取消上一次未完成的请求（避免乱序）
  *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
  *   7. 搜索 loading 反馈：IPC 发出后显示"搜索中..."占位，返回后自然替换
@@ -81,7 +81,7 @@ const ADOPTION_BOOST_PER_COUNT = 0.1;
  * 使用方式：
  *   1. new QuickInputCompletion(inputField, listEl, api)
  *   2. 用户输入时自动触发补全
- *   3. 用户 Tab 选择候选项时触发 onSelect 回调
+ *   3. 用户按 ←→ 填充候选项时触发 onSelect 回调
  *   4. 窗口关闭时调用 cleanup() 清理监听器
  *
  * 支持的输入元素：HTMLInputElement（浮窗）| HTMLTextAreaElement（主输入框）
@@ -93,7 +93,7 @@ export class QuickInputCompletion {
   private listEl: HTMLElement;
   /** ElectronAPI 子集（搜索能力） */
   private api: CompletionElectronAPI;
-  /** 候选项选择回调（Tab 确认时触发，参数为选中的候选项文本） */
+  /** 候选项选择回调（←→ 填充时触发，参数为选中的候选项文本） */
   private onSelectCallback: ((text: string) => void) | null = null;
   /** 候选列表变化回调（用于通知窗口调整高度） */
   private onListChangeCallback: ((visible: boolean) => void) | null = null;
@@ -102,8 +102,6 @@ export class QuickInputCompletion {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** 当前选中的候选项索引（-1 表示无选中） */
   private selectedIndex = -1;
-  /** 用户是否正在浏览候选列表（方向键导航过） */
-  private isNavigatingList = false;
   /** 当前候选列表（用于键盘导航） */
   private candidates: CompletionItem[] = [];
   /** 上一次请求的序号（用于取消乱序响应） */
@@ -127,40 +125,23 @@ export class QuickInputCompletion {
   /**
    * 初始化：绑定输入框事件监听器
    *
-   * 监听 input 事件（防抖触发补全）和 keydown 事件（↓↑ 导航 + Tab 确认）。
+   * 监听 input 事件（防抖触发补全）和 keydown 事件（↓↑ 导航 + ←→ 填充）。
    */
   init(): void {
     // 输入事件：防抖触发补全
     this.inputField.addEventListener('input', this.handleInput);
-    // 键盘事件：↓↑ 导航 + Tab 确认（Enter/Esc 由 quickInput.ts 处理）
+    // 键盘事件：↓↑ 导航 + ←→ 填充（Tab 提交 / Esc 关闭由 quickInput.ts 处理）
     this.inputField.addEventListener('keydown', this.handleKeyDown);
   }
 
   /**
    * 注册候选项选择回调
    *
-   * 用户按 Tab 或点击候选项时触发，参数为选中的候选项文本。
+   * 用户按 ←→ 或点击候选项时触发，参数为选中的候选项文本。
    * 回调负责将文本回填到输入框（通常设置 inputField.value = text）。
    */
   onSelect(cb: (text: string) => void): void {
     this.onSelectCallback = cb;
-  }
-
-  /**
-   * 检查用户是否正在浏览候选列表（方向键导航过）
-   */
-  isNavigating(): boolean {
-    return this.isNavigatingList;
-  }
-
-  /**
-   * 获取当前选中的候选项文本
-   */
-  getSelectedText(): string | null {
-    if (this.selectedIndex >= 0 && this.selectedIndex < this.candidates.length) {
-      return this.candidates[this.selectedIndex]!.text;
-    }
-    return null;
   }
 
   /**
@@ -193,11 +174,14 @@ export class QuickInputCompletion {
   };
 
   /**
-   * 键盘事件处理器（↓↑ 导航 + Tab 确认）
+   * 键盘事件处理器（↓↑ 导航 + ←→ 填充）
    *
    * - ArrowDown：选中下一项（循环到顶部）
    * - ArrowUp：选中上一项（循环到底部）
-   * - Tab：确认选中项并回填；无选中项时默认补全第一项
+   * - ArrowLeft/ArrowRight：将选中项填充到输入框（仅在已导航时拦截）
+   *
+   * 未用方向键导航时，←→ 不拦截，保持光标移动功能。
+   * Tab 不在此处理，统一由 quickInput.ts / 主对话输入框各自处理。
    */
   private handleKeyDown = (e: Event): void => {
     if (this.candidates.length === 0) return;
@@ -206,22 +190,19 @@ export class QuickInputCompletion {
 
     if (ke.key === 'ArrowDown') {
       ke.preventDefault();
-      this.isNavigatingList = true;
       this.selectedIndex = (this.selectedIndex + 1) % this.candidates.length;
       this.updateSelection();
     } else if (ke.key === 'ArrowUp') {
       ke.preventDefault();
-      this.isNavigatingList = true;
       // selectedIndex 为 -1（无选中）时，ArrowUp 应跳到最后一项（循环导航）
       this.selectedIndex = this.selectedIndex < 0
         ? this.candidates.length - 1
         : (this.selectedIndex - 1 + this.candidates.length) % this.candidates.length;
       this.updateSelection();
-    } else if (ke.key === 'Tab') {
+    } else if ((ke.key === 'ArrowLeft' || ke.key === 'ArrowRight') && this.selectedIndex >= 0) {
+      // 仅在用户已用 ↑↓ 导航选中候选项时，←→ 才填充
       ke.preventDefault();
-      // 无选中项时默认补全第一项（用户输入后直接 Tab 确认）
-      const idx = this.selectedIndex >= 0 ? this.selectedIndex : 0;
-      const selected = this.candidates[idx]!;
+      const selected = this.candidates[this.selectedIndex]!;
       this.recordAdoption(selected.text);
       this.onSelectCallback?.(selected.text);
       this.clearCandidates();
@@ -380,7 +361,7 @@ export class QuickInputCompletion {
   }
 
   /**
-   * 记录用户采纳的候选项（Tab/Click 确认时调用）
+   * 记录用户采纳的候选项（←→/Click 确认时调用）
    *
    * 采纳次数累积，用于下次合并候选时 boost 该候选项的 score。
    * key 与去重逻辑一致（text 前 40 字符小写），确保 boost 能命中。
@@ -528,7 +509,6 @@ export class QuickInputCompletion {
   private clearCandidates(): void {
     this.candidates = [];
     this.selectedIndex = -1;
-    this.isNavigatingList = false;
     // UX-0714-4：清空时同步清除 footer 标记和总数，避免残留状态影响下次渲染
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;

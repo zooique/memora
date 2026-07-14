@@ -34,8 +34,8 @@ import { getDefaultInputInjector, type ActiveWindow, type InputInjector } from '
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
-/** 浮窗高度（px）—— textarea + 提示文字 + 内边距 */
-const QUICK_INPUT_HEIGHT = 120;
+/** 浮窗初始高度（px）—— textarea 1 行 + 底部栏 + 内边距 */
+const QUICK_INPUT_HEIGHT = 72;
 /** 失焦延迟关闭时长（ms）—— 给 Alt+Tab 切换留余量 */
 const BLUR_CLOSE_DELAY_MS = 200;
 /** 光标跟随偏移量（px）—— 浮窗相对鼠标位置的偏移 */
@@ -370,11 +370,54 @@ export class QuickInputWindow {
         }
         const { width } = this.win.getBounds();
         this.win.setSize(width, Math.round(height), true);
+        // resize 后检查位置，防止溢出屏幕边缘
+        this.keepWindowInWorkArea();
       } catch (error) {
         logger.error({ error }, '调整浮窗高度失败');
       }
       return undefined;
     });
+  }
+
+  /**
+   * 确保窗口始终在工作区内，防止溢出屏幕边缘
+   *
+   * 场景：
+   *   1. resize 后高度增加，可能超出屏幕底部
+   *   2. textarea 自动高度调整后，浮窗变高可能超出边缘
+   */
+  private keepWindowInWorkArea(): void {
+    if (!this.win || this.win.isDestroyed()) return;
+
+    const cursor = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursor);
+    const workArea = display.workArea;
+    const { x, y, width, height } = this.win.getBounds();
+
+    let newX = x;
+    let newY = y;
+
+    // 右侧溢出：贴右边界
+    if (newX + width > workArea.x + workArea.width) {
+      newX = workArea.x + workArea.width - width;
+    }
+    // 底部溢出：贴底边界
+    if (newY + height > workArea.y + workArea.height) {
+      newY = workArea.y + workArea.height - height;
+    }
+    // 左侧溢出：贴左边界
+    if (newX < workArea.x) {
+      newX = workArea.x;
+    }
+    // 顶部溢出：贴顶边界
+    if (newY < workArea.y) {
+      newY = workArea.y;
+    }
+
+    // 仅在位置变化时才更新，避免不必要的重绘
+    if (newX !== x || newY !== y) {
+      this.win.setPosition(Math.round(newX), Math.round(newY));
+    }
   }
 
   /**

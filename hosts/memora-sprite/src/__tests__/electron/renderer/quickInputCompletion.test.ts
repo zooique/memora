@@ -8,10 +8,10 @@
  * - handleInput：防抖触发 / 最小字符阈值 / 短输入清空
  * - fetchCandidates：并行 IPC / 乱序取消 / 单源降级 / loading 占位
  * - mergeCandidates：记忆候选 / 对话候选（assistant 过滤）/ 去重 / 排序 / Top-5 截断
- * - handleKeyDown：↓↑ 循环导航 / Tab 确认回填
+ * - handleKeyDown：↓↑ 循环导航 / ←→ 填充回填
  * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知 / UX-0714-4 候选总数 footer
  * - clearCandidates：DOM 清空 / hidden 类 / 回调通知 / footer 同步清除
- * - 采纳反馈回路：Click/Tab 采纳 boost / 多次采纳上限 / 未采纳不受影响
+ * - 采纳反馈回路：Click/←→ 采纳 boost / 多次采纳上限 / 未采纳不受影响
  *
  * Mock 策略：
  * - mock errorHelpers.reportError（避免 console 噪音）
@@ -137,11 +137,13 @@ describe('init · 生命周期', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // cleanup 后按 Tab 不应触发 onSelect
+    // cleanup 后按 ←→ 不应触发 onSelect
     const onSelect = vi.fn();
     completion.onSelect(onSelect);
+    // 先用 ↓ 选中一项（否则 ←→ 不拦截）
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
     completion.cleanup();
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
     expect(onSelect).not.toHaveBeenCalled();
   });
 });
@@ -614,7 +616,7 @@ describe('handleKeyDown · 键盘导航', async () => {
     expect(document.querySelectorAll('.completion-item')[0]!.classList.contains('selected')).toBe(true);
   });
 
-  it('Tab 应确认选中项并触发 onSelect 回调', async () => {
+  it('←→ 应确认选中项并触发 onSelect 回调', async () => {
     const { completion, input, api } = createCompletion();
     const onSelect = vi.fn();
     completion.onSelect(onSelect);
@@ -629,13 +631,13 @@ describe('handleKeyDown · 键盘导航', async () => {
 
     // 选中第一项
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    // Tab 确认
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    // ← 填充到输入框
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
 
     expect(onSelect).toHaveBeenCalledWith('选中文本');
   });
 
-  it('Tab 确认后应清空候选列表', async () => {
+  it('←→ 确认后应清空候选列表', async () => {
     const { completion, input, api, list } = createCompletion();
     completion.onSelect(vi.fn());
 
@@ -648,13 +650,13 @@ describe('handleKeyDown · 键盘导航', async () => {
     await vi.advanceTimersByTimeAsync(300);
 
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
 
     expect(list.classList.contains('hidden')).toBe(true);
     expect(list.children.length).toBe(0);
   });
 
-  it('Tab 无选中项时应自动补全第一项', async () => {
+  it('未用 ↑↓ 导航时按 ←→ 不应触发 onSelect（保持光标移动）', async () => {
     const { completion, input, api } = createCompletion();
     const onSelect = vi.fn();
     completion.onSelect(onSelect);
@@ -670,10 +672,11 @@ describe('handleKeyDown · 键盘导航', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // 不按 ↓ 直接 Tab，应自动补全第一项
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    // 不按 ↓ 直接按 ←→，不应触发填充（selectedIndex 仍为 -1）
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
 
-    expect(onSelect).toHaveBeenCalledWith('第一项候选');
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it('无候选时按键不应有效果', async () => {
@@ -937,7 +940,7 @@ describe('采纳反馈回路', async () => {
     expect(texts).toEqual(['低分记忆A', '高分记忆B']);
   });
 
-  it('Tab 采纳后再次补全，被采纳的候选项应获得 score boost', async () => {
+  it('←→ 采纳后再次补全，被采纳的候选项应获得 score boost', async () => {
     const { input, api } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
       hits: [
@@ -952,10 +955,10 @@ describe('采纳反馈回路', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // ArrowDown 两次选中第二项（初始 -1 → 0 → 1），Tab 确认
+    // ArrowDown 两次选中第二项（初始 -1 → 0 → 1），→ 填充采纳
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
 
     // 再次触发补全
     input.value = '记忆';

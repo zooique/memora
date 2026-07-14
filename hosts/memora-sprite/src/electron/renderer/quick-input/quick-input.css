@@ -46,7 +46,7 @@ body {
   flex-shrink: 0;
 }
 
-/* ===== 文本输入框（textarea） ===== */
+/* ===== 文本输入框（textarea 自动高度） ===== */
 .quick-input-field {
   flex: 1;
   border: none;
@@ -59,11 +59,21 @@ body {
   user-select: text;
   resize: none;
   line-height: 1.5;
-  min-height: 48px;
+  min-height: 36px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .quick-input-field::placeholder {
   color: var(--muted);
+}
+
+/* ===== 底部栏：提示文字 + 字符计数 ===== */
+.quick-input-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* ===== 提示文字 ===== */
@@ -72,6 +82,15 @@ body {
   color: var(--muted);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* ===== 字符计数 ===== */
+.quick-input-counter {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 /* ===== 补全候选列表 ===== */
