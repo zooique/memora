@@ -24,6 +24,8 @@ import { injectThemeScript } from './themeInjector.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 import { logger } from 'memora';
+// 剪贴板敏感内容检测（复用 clipboardHandler 的 5 种正则模式）
+import { isSensitive } from '../clipboardHandler.js';
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
@@ -33,6 +35,10 @@ const QUICK_INPUT_HEIGHT = 80;
 const BLUR_CLOSE_DELAY_MS = 200;
 /** 光标跟随偏移量（px）—— 浮窗相对鼠标位置的偏移 */
 const CURSOR_OFFSET_PX = 16;
+/** 剪贴板预填文本最大长度（防止超长文本撑爆输入框） */
+const CLIPBOARD_PREFILL_MAX_LENGTH = 200;
+/** 剪贴板预填触发补全的最小字符数（与补全管理器 MIN_QUERY_LENGTH 对齐） */
+const CLIPBOARD_PREFILL_MIN_LENGTH = 2;
 
 /** 快速输入浮窗回调（由 main.ts 注入） */
 export interface QuickInputWindowCallbacks {
@@ -182,8 +188,32 @@ export class QuickInputWindow {
     this.cancelBlurClose();
     win.show();
     win.focus();
-    // 通知渲染进程清空输入框（替代 focus 事件，避免 Alt+Tab 切回误清空）
-    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);
+    // 通知渲染进程：携带剪贴板预填文本（敏感内容过滤后），替代 focus 事件避免 Alt+Tab 切回误清空
+    const clipboardText = this.readClipboardForPrefill();
+    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, { clipboardText });
+  }
+
+  /**
+   * 读取剪贴板内容并做敏感检测，返回可用于预填的安全文本
+   *
+   * 敏感内容（token/信用卡/密码/私钥/AWS key）返回 null，不预填。
+   * 过短内容（< 2 字符）返回 null，不触发补全。
+   * 超长内容截断到 200 字符。
+   *
+   * @returns 预填文本或 null
+   */
+  private readClipboardForPrefill(): string | null {
+    try {
+      const raw = clipboard.readText();
+      const trimmed = raw.trim();
+      if (trimmed.length < CLIPBOARD_PREFILL_MIN_LENGTH) return null;
+      // 敏感内容检测：命中 5 种正则模式之一则不预填
+      if (isSensitive(trimmed).sensitive) return null;
+      return trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH);
+    } catch {
+      // 剪贴板读取失败不阻断浮窗显示
+      return null;
+    }
   }
 
   /**

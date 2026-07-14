@@ -734,11 +734,12 @@ export interface ElectronAPI {
    */
   resizeQuickInput: (height: number) => Promise<void>;
   /**
-   * 监听浮窗 show 事件（主进程 show() 调用后触发，用于清空输入框）
+   * 监听浮窗 show 事件（主进程 show() 调用后触发，携带剪贴板预填文本）
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
+   * payload.clipboardText 为 null 时表示无预填（敏感内容或空剪贴板）。
    */
-  onQuickInputShow: (cb: () => void) => void;
+  onQuickInputShow: (cb: (payload: { clipboardText: string | null }) => void) => void;
   /** 移除浮窗 show 事件监听器 */
   removeQuickInputShowListener: () => void;
 
@@ -1019,7 +1020,7 @@ const electronAPI: ElectronAPI = {
   confirmQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
-  onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent) => cb()),
+  onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null }) => cb(payload)),
   removeQuickInputShowListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);
   },

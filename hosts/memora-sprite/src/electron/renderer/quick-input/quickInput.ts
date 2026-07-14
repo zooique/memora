@@ -33,7 +33,7 @@ import { QuickInputCompletion } from './quickInputCompletion.js';
  *
  * Phase 1：confirmQuickInput / closeQuickInput（确认 + 关闭）
  * Phase 2：searchMemories / searchSessionMessages（补全候选搜索）+ resizeQuickInput（调整高度）
- *          onQuickInputShow / removeQuickInputShowListener（主进程 show() 时清空输入框，替代 focus 事件）
+ *          onQuickInputShow / removeQuickInputShowListener（主进程 show() 时携带剪贴板预填文本，替代 focus 事件）
  */
 export type QuickInputElectronAPI = Pick<
   ElectronAPI,
@@ -177,10 +177,21 @@ function initQuickInput(): void {
     completion.init();
   }
 
-  // 浮窗被主进程 show() 调用时清空输入框并聚焦（每次呼出都是干净状态）
+  // 浮窗被主进程 show() 调用时处理剪贴板预填并聚焦
   // 替代 focus 事件：避免 Alt+Tab 切回浮窗时误清空已输入内容
-  api.onQuickInputShow(() => {
-    inputField.value = '';
+  // Phase 2：主进程读取剪贴板并做敏感检测，非敏感内容预填输入框触发补全
+  api.onQuickInputShow((payload) => {
+    const preset = payload?.clipboardText;
+    if (preset) {
+      // 剪贴板感知预填：非敏感内容预填输入框并全选，用户可直接覆盖或修改
+      inputField.value = preset;
+      inputField.select();
+      // 触发 input 事件让补全管理器拉取候选（复用防抖机制）
+      inputField.dispatchEvent(new Event('input'));
+    } else {
+      // 无剪贴板内容或敏感内容，保持空输入框
+      inputField.value = '';
+    }
     isSubmitting = false;
     confirmBtn.disabled = false;
     inputField.disabled = false;
