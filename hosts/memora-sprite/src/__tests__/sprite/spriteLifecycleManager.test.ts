@@ -6,7 +6,7 @@
  * - handleTrigger 主路径（fileWatcher/timer 分发 + tracer span + 异常兜底）
  * - generateSmartSuggestions 间接测试（重复/过时/画像缺失三分支 + 异常静默）
  * - tryUpdateWorkProjection 异步（reason 正则匹配 + works 投影更新 + 异常 catch）
- * - 9 种 Agent 事件转发（memoryAdded/insightExtracted/conflictDetected/...）
+ * - 10 种 Agent 事件转发（memoryAdded/insightExtracted/conflictDetected/.../archiveFailed）
  * - purgeExpiredMemories（回收站清理 + threshold 计算 + 异常 catch）
  * - registerFileWatcher / rebuildFileWatcher（路径解析 + 触发器重建 + running 守卫）
  *
@@ -257,13 +257,13 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     expect(setup.mockTriggerBus.start).toHaveBeenCalledTimes(1);
   });
 
-  it('start 后 agent.on 被调用 9 次（9 种事件）', () => {
+  it('start 后 agent.on 被调用 10 次（10 种事件）', () => {
     const setup = createSetup();
     setup.manager.start();
 
-    // 9 种事件：memoryAdded/insightExtracted/conflictDetected/memoryRecalled/
-    // decayCompleted/personaSwitched/projectSwitched/skillMatched/sessionForked
-    expect(setup.mockAgent.on).toHaveBeenCalledTimes(9);
+    // 10 种事件：memoryAdded/insightExtracted/conflictDetected/memoryRecalled/
+    // decayCompleted/personaSwitched/projectSwitched/skillMatched/sessionForked/archiveFailed
+    expect(setup.mockAgent.on).toHaveBeenCalledTimes(10);
   });
 
   it('start 后立即触发回收站清理（purgeExpired 调用 1 次）', () => {
@@ -280,13 +280,13 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     expect(setup.mockMemory!.writePurgeExpired).not.toHaveBeenCalled();
   });
 
-  it('stop 后 agent.off 被调用 9 次（取消全部订阅）', () => {
+  it('stop 后 agent.off 被调用 10 次（取消全部订阅）', () => {
     const setup = createSetup();
     setup.manager.start();
     setup.mockAgent.off.mockClear();
     setup.manager.stop();
 
-    expect(setup.mockAgent.off).toHaveBeenCalledTimes(9);
+    expect(setup.mockAgent.off).toHaveBeenCalledTimes(10);
   });
 
   it('stop 后 triggerBus.stop 被调用', () => {
@@ -606,7 +606,7 @@ describe('SpriteLifecycleManager tryUpdateWorkProjection（异步作品投影更
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 5. 9 种 Agent 事件转发
+// 5. 10 种 Agent 事件转发
 // ═══════════════════════════════════════════════════════════════
 
 describe('SpriteLifecycleManager Agent 事件转发', () => {
@@ -691,6 +691,35 @@ describe('SpriteLifecycleManager Agent 事件转发', () => {
     emitAgentEvent(setup.agentHandlers, 'decayCompleted', { decayedCount: 12 });
 
     expect(setup.mockEmit).toHaveBeenCalledWith('decayCompleted', { decayedCount: 12 });
+  });
+
+  // ─── archiveFailed → archiveFailed（直接转发 + warn 日志） ───
+
+  it('archiveFailed → emit("archiveFailed") 转发 stage/message + logger.warn', () => {
+    emitAgentEvent(setup.agentHandlers, 'archiveFailed', {
+      stage: 'profile',
+      message: 'LLM 提取失败',
+    });
+
+    expect(setup.mockEmit).toHaveBeenCalledWith('archiveFailed', {
+      stage: 'profile',
+      message: 'LLM 提取失败',
+    });
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      { stage: 'profile', message: 'LLM 提取失败' },
+      '归档失败',
+    );
+  });
+
+  it('archiveFailed 不调用 addNotice（事实通知，非主动行为）', () => {
+    emitAgentEvent(setup.agentHandlers, 'archiveFailed', {
+      stage: 'insight',
+      message: 'LLM 提取失败',
+    });
+
+    // archiveFailed 不经过 proactiveEngine（与 conflictDetected 同属事实通知）
+    const noticeCalls = setup.mockProactiveEngine.addNotice.mock.calls;
+    expect(noticeCalls.find((c) => c[0] === 'archive')).toBeUndefined();
   });
 
   // ─── personaSwitched → personaChanged + addNotice + refreshBeforeChat ───

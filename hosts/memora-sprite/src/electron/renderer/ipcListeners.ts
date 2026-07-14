@@ -249,6 +249,39 @@ export function isWorkProjectionUpdatedPayload(value: unknown): value is WorkPro
 }
 
 /**
+ * 归档失败 stage 合法枚举值
+ *
+ * 与内核 AgentEventMap.archiveFailed.stage / SpriteEventMap.archiveFailed.stage 保持一致。
+ * 提取为常量便于类型守卫做 includes 校验，防止非法 stage 值穿透到 UI。
+ */
+const ARCHIVE_FAILED_STAGES = ['profile', 'insight'] as const;
+/** 归档失败 stage 类型（由 ARCHIVE_FAILED_STAGES 派生） */
+type ArchiveFailedStage = (typeof ARCHIVE_FAILED_STAGES)[number];
+
+/** 归档失败事件载荷 */
+export interface ArchiveFailedPayload {
+  /** 失败阶段：profile（用户画像）/ insight（洞察提取） */
+  stage: ArchiveFailedStage;
+  /** 失败原因摘要（error.message，截断 200 字符） */
+  message: string;
+}
+
+/**
+ * 校验归档失败 payload 结构（含 stage 枚举校验）
+ *
+ * 不仅校验字段类型，还校验 stage 必须是合法枚举值，
+ * 防止上游误传非法 stage 字符串穿透到 UI 展示。
+ */
+export function isArchiveFailedPayload(value: unknown): value is ArchiveFailedPayload {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.stage === 'string' &&
+    (ARCHIVE_FAILED_STAGES as readonly string[]).includes(value.stage) &&
+    typeof value.message === 'string'
+  );
+}
+
+/**
  * 处理主动提示事件
  *
  * 对齐设计契约 §6.6：
@@ -455,6 +488,48 @@ function isTrashPurgedPayload(
     typeof (payload as Record<string, unknown>).purgedCount === 'number'
   );
 }
+
+/**
+ * 归档失败节流状态（按 stage 独立节流）
+ *
+ * profile / insight 两条归档通路独立计时，避免一条失败时另一条的提示被压制。
+ * 节流窗口 5 分钟：归档失败是后台事件，短时间内可能连续触发（如 LLM 服务异常），
+ * 过短窗口会刷屏，过长窗口会让用户错过重要记忆丢失信号。
+ */
+const ARCHIVE_FAILED_COOLDOWN_MS = 5 * 60 * 1000;
+const lastArchiveFailedTime: Record<ArchiveFailedStage, number> = {
+  profile: 0,
+  insight: 0,
+};
+
+/**
+ * 处理归档失败事件
+ *
+ * fire-and-forget 归档在 catch 分支发射此事件，提示用户记忆可能丢失。
+ * 不受 silent 控制：归档失败是用户应感知的重要信号（记忆未持久化），
+ * 与 decayCompleted 同样属于"教育用户记忆有生命周期"的语义。
+ *
+ * 节流策略：按 stage 独立 5 分钟节流，避免 LLM 服务异常时连续刷屏。
+ */
+function handleArchiveFailed(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  if (!isArchiveFailedPayload(msg.payload)) {
+    reportError('handleArchiveFailed', msg.payload);
+    return;
+  }
+  const now = Date.now();
+  if (now - lastArchiveFailedTime[msg.payload.stage] < ARCHIVE_FAILED_COOLDOWN_MS) return;
+  lastArchiveFailedTime[msg.payload.stage] = now;
+
+  const stageLabel = msg.payload.stage === 'profile' ? '用户画像' : '洞察提取';
+  uiManager.showToast(
+    `${stageLabel}归档失败：${msg.payload.message}`,
+    'warning',
+    TOAST_LONG_MS,
+  );
+}
 /**
  * U4 精灵事件处理器映射表
  *
@@ -476,6 +551,8 @@ function createSpriteEventHandlers(
     memoryRecalled: (msg) => handleMemoryRecalled(uiManager, msg),
     decayCompleted: (msg) => handleDecayCompleted(uiManager, msg),
     trashPurged: (msg) => handleTrashPurged(uiManager, msg),
+    // 归档失败 → warning toast 通知用户记忆可能丢失（按 stage 节流）
+    archiveFailed: (msg) => handleArchiveFailed(uiManager, msg),
     // 会话分叉完成 → 切换到新会话（由 renderer.ts 注册的 onSessionForked 回调处理）
     sessionForked: (msg) => {
       if (!isSessionForkedPayload(msg.payload)) {

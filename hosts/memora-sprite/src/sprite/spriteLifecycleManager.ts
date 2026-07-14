@@ -3,7 +3,7 @@
  *
  * 从 sprite.ts 拆分出的独立模块，负责：
  *   1. start() / stop() 生命周期
- *   2. Agent 事件订阅/取消（9 种事件）并转发为精灵事件
+ *   2. Agent 事件订阅/取消（10 种事件）并转发为精灵事件
  *   3. 触发器处理（handleTrigger + generateSmartSuggestions）
  *   4. 文件监听注册/重建
  *   5. 回收站自动清理（定时器 + 过期清理）
@@ -81,6 +81,8 @@ export class SpriteLifecycleManager {
     memoryRecalled?: (e: AgentEventMap['memoryRecalled']) => void;
     decayCompleted?: (e: AgentEventMap['decayCompleted']) => void;
     sessionForked?: (e: AgentEventMap['sessionForked']) => void;
+    /** 归档失败（fire-and-forget catch 分支发射，直接转发为精灵事件） */
+    archiveFailed?: (e: AgentEventMap['archiveFailed']) => void;
   } = {};
 
   /** 回收站自动清理定时器句柄 */
@@ -254,7 +256,7 @@ export class SpriteLifecycleManager {
   /**
    * 订阅记忆类 Agent 事件
    *
-   * 包含：memoryAdded / insightExtracted / conflictDetected / memoryRecalled / decayCompleted
+   * 包含：memoryAdded / insightExtracted / conflictDetected / memoryRecalled / decayCompleted / archiveFailed
    */
   private subscribeMemoryAgentEvents(): void {
     // memoryAdded → memoryNoticed
@@ -305,6 +307,14 @@ export class SpriteLifecycleManager {
     };
     this.agentHandlers.decayCompleted = onDecayCompleted;
     this.agent.on('decayCompleted', onDecayCompleted);
+
+    // 归档失败 → archiveFailed（直接转发，宿主 UI 通知用户记忆可能丢失）
+    const onArchiveFailed = (e: AgentEventMap['archiveFailed']) => {
+      this.emit('archiveFailed', { stage: e.stage, message: e.message });
+      logger.warn({ stage: e.stage, message: e.message }, '归档失败');
+    };
+    this.agentHandlers.archiveFailed = onArchiveFailed;
+    this.agent.on('archiveFailed', onArchiveFailed);
   }
 
   /**
@@ -369,6 +379,7 @@ export class SpriteLifecycleManager {
     if (h.memoryRecalled) this.agent.off('memoryRecalled', h.memoryRecalled);
     if (h.decayCompleted) this.agent.off('decayCompleted', h.decayCompleted);
     if (h.sessionForked) this.agent.off('sessionForked', h.sessionForked);
+    if (h.archiveFailed) this.agent.off('archiveFailed', h.archiveFailed);
     this.agentHandlers = {};
   }
 

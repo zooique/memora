@@ -57,11 +57,12 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 // ─── 模块级常量 ─────────────────────────────────────────
 
 /** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
-// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（9 个事件）
+// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（10 个事件）
 const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryAdded', 'personaSwitched', 'decayCompleted',
   'memoryRecalled', 'sessionForked', 'insightExtracted',
   'conflictDetected', 'projectSwitched', 'skillMatched',
+  'archiveFailed',
 ]);
 
 // ─── Agent 门面类 ───────────────────────────────────────
@@ -582,9 +583,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!skipAutoArchive) {
       try {
         // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
+        // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
         const archiveFactsPromise = this.archiveCoordinator!.archiveProfileFacts(input).then(
           () => {},
-          (err) => { logger.warn({ err }, '用户画像实时归档失败'); },
+          (err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.warn({ err, stage: 'profile' }, '归档失败');
+            this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
+          },
         );
         this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
       } catch (err) {
@@ -597,9 +603,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!skipAutoArchive) {
       try {
         // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
+        // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
         const archiveInsightPromise = this.archiveCoordinator!.archiveInsight(input, assistantContent).then(
           () => {},
-          (err) => { logger.warn({ err }, 'Insight 提取失败'); },
+          (err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.warn({ err, stage: 'insight' }, '归档失败');
+            this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
+          },
         );
         this.requireNonNull(this.history, 'history').registerPendingArchive(archiveInsightPromise);
       } catch (err) {
@@ -1043,11 +1054,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.personaManager) {
       this.personaManager.close();
     }
-    this.removeAllListeners();
 
+    // 先等待后台归档完成，再移除事件监听器
+    // 顺序敏感：若先 removeAllListeners，fire-and-forget 的归档 Promise 在 await 期间
+    // reject 时 emit 会变成 no-op（listeners 已清空），archiveFailed 事件丢失
     if (this.history) {
       await this.history.awaitPendingArchives(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
     }
+    // pending archives 完成后再移除监听器，确保归档失败的 emit 能送达
+    this.removeAllListeners();
 
     if (this.projectManager) {
       await this.projectManager.shutdown();

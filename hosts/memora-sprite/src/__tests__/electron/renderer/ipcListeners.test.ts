@@ -8,13 +8,14 @@
  * - initIpcListeners 注册的所有 IPC 监听器：
  *   - 流式输出（start/recall/thinking/toolStart/toolResult/chunk/end/aborted/contextTruncated）
  *   - 精灵输出（system / proactive 区分）
- *   - 精灵事件分发（memoryNoticed/insightGained/conflictDetected/proactivePrompt 等 16 种 type）
+ *   - 精灵事件分发（memoryNoticed/insightGained/conflictDetected/proactivePrompt 等 17 种 type）
  *   - 应用错误 / 精灵错误 / 浮动窗口未读计数 / Agent 就绪
  *   - 配置建议推送 / 写入确认
  *   - 剪贴板三重保护（changed/sensitiveIgnored/analysisReady/analysisRejected）
  *   - 全局快捷键（quick-record / recall-memory）
  * - consumeConflictTargetId 模块级状态消费
  * - handleDecayCompleted 24h 节流
+ * - handleArchiveFailed 按 stage 独立 5min 节流
  *
  * Mock 策略：
  * - window.electronAPI：通过 Object.assign 注入 mock，捕获 onXxx 注册的回调
@@ -29,6 +30,7 @@ import {
   isSkillMatchedPayload,
   isMemoryRecalledPayload,
   isDecayCompletedPayload,
+  isArchiveFailedPayload,
   initIpcListeners,
   consumeConflictTargetId,
 } from '../../../electron/renderer/ipcListeners.js';
@@ -199,6 +201,41 @@ describe('isDecayCompletedPayload', () => {
 
   it('缺少 decayedCount 应返回 false', () => {
     expect(isDecayCompletedPayload({ count: 10 })).toBe(false);
+  });
+});
+
+// ─── isArchiveFailedPayload（含 stage 枚举校验） ──────────────────────────────
+
+describe('isArchiveFailedPayload', () => {
+  it('合法 payload（stage=profile）应返回 true', () => {
+    expect(isArchiveFailedPayload({ stage: 'profile', message: 'LLM 失败' })).toBe(true);
+  });
+
+  it('合法 payload（stage=insight）应返回 true', () => {
+    expect(isArchiveFailedPayload({ stage: 'insight', message: 'LLM 失败' })).toBe(true);
+  });
+
+  it('stage 为非法枚举值（autoConfig）应返回 false', () => {
+    // 排雷修订：autoConfigRefiner 是"配置学习"非"归档"，不应进入 archiveFailed 事件
+    expect(isArchiveFailedPayload({ stage: 'autoConfig', message: 'x' })).toBe(false);
+  });
+
+  it('stage 为任意字符串（非枚举值）应返回 false', () => {
+    expect(isArchiveFailedPayload({ stage: 'unknown', message: 'x' })).toBe(false);
+  });
+
+  it('stage 非字符串应返回 false', () => {
+    expect(isArchiveFailedPayload({ stage: 123, message: 'x' })).toBe(false);
+  });
+
+  it('message 非字符串应返回 false', () => {
+    expect(isArchiveFailedPayload({ stage: 'profile', message: 123 })).toBe(false);
+  });
+
+  it('非对象应返回 false', () => {
+    expect(isArchiveFailedPayload(null)).toBe(false);
+    expect(isArchiveFailedPayload('string')).toBe(false);
+    expect(isArchiveFailedPayload(undefined)).toBe(false);
   });
 });
 
@@ -715,6 +752,65 @@ describe('initIpcListeners · 精灵事件分发', () => {
     expect(spies.showToast).not.toHaveBeenCalled();
 
     triggerSpriteEvent(captured, 'trashPurged', { purgedCount: 0 }, false);
+    expect(spies.showToast).not.toHaveBeenCalled();
+  });
+
+  // ─── archiveFailed（归档失败，按 stage 独立 5min 节流） ───
+
+  it('archiveFailed 应遵守 5min 节流（首次显示 → 4min 后节流 → 5min 后再显示）', () => {
+    vi.useFakeTimers();
+    // 设为远期时间，确保模块级 lastArchiveFailedTime 已过期
+    vi.setSystemTime(new Date('2099-08-01T00:00:00Z'));
+
+    // 首次触发 profile：显示 warning toast
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'profile', message: '失败1' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 4min 后同 stage 再次触发：节流，不显示
+    vi.setSystemTime(new Date('2099-08-01T00:04:00Z'));
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'profile', message: '失败2' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 5min01s 后同 stage 再次触发：超过 5min 窗口，显示
+    vi.setSystemTime(new Date('2099-08-01T00:05:01Z'));
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'profile', message: '失败3' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('archiveFailed 不同 stage 独立节流（profile 节流中 insight 仍显示）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-09-01T00:00:00Z'));
+
+    // profile 首次：显示
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'profile', message: 'profile 失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 紧接 insight 首次：显示（不同 stage 独立计时，不受 profile 节流影响）
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'insight', message: 'insight 失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('archiveFailed 有效 payload → showToast 含 stage 中文标签（warning 类型）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-10-01T00:00:00Z'));
+
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'insight', message: 'LLM 异常' }, false);
+    expect(spies.showToast).toHaveBeenCalledWith(
+      '洞察提取归档失败：LLM 异常',
+      'warning',
+      expect.any(Number),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('archiveFailed 无效 payload（stage 非法枚举）→ reportError', () => {
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'autoConfig', message: 'x' }, false);
+    expect(console.error).toHaveBeenCalledWith('[handleArchiveFailed]', expect.anything());
     expect(spies.showToast).not.toHaveBeenCalled();
   });
 

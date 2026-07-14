@@ -62,9 +62,17 @@ v2.0 基元驱动重构后，三步过滤**已简化为一步 LLM 提取 + Jacca
 **负面**：
 
 - 价值判断有主观性，可能误判
-- 归档失败不阻塞对话（fire-and-forget），可能导致记忆丢失（见 AUDIT-0713-6 待办）
+- 归档失败不阻塞对话（fire-and-forget），可能导致记忆丢失（已通过 archiveFailed 事件缓解，见下方"归档失败可观测性"）
 
 ## 何时回顾
 
 - 当记忆量级增长到单次 LLM 提取无法有效过滤时，重新引入三步分级处理
-- 当归档失败率上升时，评估增加可观测事件（见 AUDIT-0713-6 待办）
+- 当归档失败率上升时，评估增加可观测事件
+
+## 归档失败可观测性（AUDIT-0713-6，2026-07-14 落地）
+
+postProcessInner 中 archiveProfileFacts / archiveInsight 两处 fire-and-forget 归档失败时，发射 `archiveFailed` 事件（payload: `{ stage: 'profile'|'insight'; message: string }`），经 AgentEventMap → SpriteEventMap → spriteEventBridge IPC → ipcListeners 链路到达宿主 UI，以 toast 非阻塞通知用户（按 stage 独立 5min 节流）。
+
+- autoConfigRefiner 不发射（语义为"配置学习"非"归档"）
+- close() 顺序调整：awaitPendingArchives 在 removeAllListeners 之前，确保 close 期间归档失败的 emit 不丢失
+- 复用现有事件链路，不新增 IPC 通道（通道数仍 105）

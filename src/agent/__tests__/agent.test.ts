@@ -1393,6 +1393,152 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：archiveFailed 事件（归档失败通知）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * ArchiveCoordinator 实例的类型断言 helper
+ *
+ * agent.archiveCoordinator 是 private 字段，测试通过 as unknown as 访问。
+ * 提取为 helper 避免在每个 it 中重复冗长的类型断言。
+ */
+function getArchiveCoordinator(agent: Agent): {
+  archiveProfileFacts: (input: string) => Promise<unknown>;
+  archiveInsight: (input: string, assistantContent: string) => Promise<unknown>;
+} {
+  return (
+    agent as unknown as {
+      archiveCoordinator: {
+        archiveProfileFacts: (input: string) => Promise<unknown>;
+        archiveInsight: (input: string, assistantContent: string) => Promise<unknown>;
+      };
+    }
+  ).archiveCoordinator;
+}
+
+describe('Agent · archiveFailed 事件 · 归档失败通知', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-afail-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-afail-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-afail-cfg-'));
+    seedProjectWithPersonasAndSkills(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('profile 归档失败时发射 archiveFailed 事件（stage=profile）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'full');
+    await agent.init();
+
+    // 注入失败的 archiveProfileFacts，模拟 LLM profile 提取异常
+    const coordinator = getArchiveCoordinator(agent);
+    coordinator.archiveProfileFacts = vi.fn().mockRejectedValue(new Error('LLM profile 提取失败'));
+
+    const events: Array<{ stage: string; message: string }> = [];
+    agent.on('archiveFailed', (e) => events.push(e));
+
+    await agent.chatSync('我喜欢用 TypeScript 开发');
+
+    // 等待 fire-and-forget 的 catch 分支执行
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.stage).toBe('profile');
+    expect(events[0]!.message).toContain('LLM profile 提取失败');
+  });
+
+  it('insight 归档失败时发射 archiveFailed 事件（stage=insight）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'full');
+    await agent.init();
+
+    // 注入失败的 archiveInsight，模拟 LLM insight 提取异常
+    const coordinator = getArchiveCoordinator(agent);
+    coordinator.archiveInsight = vi.fn().mockRejectedValue(new Error('LLM insight 提取失败'));
+
+    const events: Array<{ stage: string; message: string }> = [];
+    agent.on('archiveFailed', (e) => events.push(e));
+
+    await agent.chatSync('我正在开发一个新项目');
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.stage).toBe('insight');
+    expect(events[0]!.message).toContain('LLM insight 提取失败');
+  });
+
+  it('失败原因超长时截断至 200 字符（payload 防膨胀）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'full');
+    await agent.init();
+
+    // 构造超长错误消息（500 字符），验证 catch 分支的 slice(0, 200) 截断
+    const longMessage = 'E'.repeat(500);
+    const coordinator = getArchiveCoordinator(agent);
+    coordinator.archiveProfileFacts = vi.fn().mockRejectedValue(new Error(longMessage));
+
+    const events: Array<{ stage: string; message: string }> = [];
+    agent.on('archiveFailed', (e) => events.push(e));
+
+    await agent.chatSync('测试');
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.message.length).toBe(200);
+  });
+
+  it('close() 期间归档失败仍能发射 archiveFailed（顺序敏感验证）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'full');
+    await agent.init();
+
+    // 创建可控的 pending Promise：在 close() await 期间手动 reject
+    // 验证 close() 顺序（先 awaitPendingArchives 再 removeAllListeners）确保 emit 不丢失
+    let rejectArchive!: (err: Error) => void;
+    const pendingPromise = new Promise<never>((_resolve, reject) => {
+      rejectArchive = reject;
+    });
+
+    const coordinator = getArchiveCoordinator(agent);
+    coordinator.archiveProfileFacts = vi.fn().mockReturnValue(pendingPromise);
+
+    const events: Array<{ stage: string; message: string }> = [];
+    agent.on('archiveFailed', (e) => events.push(e));
+
+    await agent.chatSync('测试');
+    // 此时 archiveProfileFacts 的 Promise 仍 pending（reject 时机由测试控制）
+
+    // 触发 close()，它会进入 awaitPendingArchives 等待 pendingPromise
+    const closePromise = agent.close();
+    // 给 close() 一点时间进入 awaitPendingArchives
+    await new Promise((r) => setTimeout(r, 50));
+    // 此时 close() 正在 await pendingPromise，reject 它触发 catch 分支 emit
+    rejectArchive(new Error('close 期间归档失败'));
+    await closePromise;
+
+    // archiveFailed 事件应在 removeAllListeners 之前送达（顺序敏感性的核心验证点）
+    expect(events).toHaveLength(1);
+    expect(events[0]!.stage).toBe('profile');
+    expect(events[0]!.message).toContain('close 期间归档失败');
+
+    // 防止 afterEach 再次 close（已在测试中 close 完成）
+    agent = null;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：reloadConfig()（事件驱动配置热重载）
 // ═══════════════════════════════════════════════════════════════
 

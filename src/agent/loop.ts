@@ -169,7 +169,13 @@ export class AgentLoop {
   }
 
   /**
-   * 处理一轮用户输入
+   * 处理一轮用户输入（编排方法）
+   *
+   * 拆分为 4 个子方法：
+   *   - handleRecallAndInputGuard：召回注入 + 输入护栏
+   *   - handleIteration：单次迭代编排（abort 检查 + LLM 调用 + 分支路由）
+   *   - handleToolCalls：工具调用分支 + Reflection
+   *   - handleTextResponse：纯文本结束 + 输出护栏
    *
    * @param userInput - 用户原始输入
    * @param recalledMemories - 记忆召回结果（Agent.memory.search() 产出），
@@ -188,210 +194,289 @@ export class AgentLoop {
     });
 
     try {
-      // 注入记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
-      const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
-        recallCount: recalledMemories?.length ?? 0,
-      });
-      // 将召回记忆以 system 消息注入（优先级高、不污染 user 输入）
-      // 替代旧方案：嵌入 user 消息+反指令→模型易混淆
-      if (recalledMemories?.length) {
-        this.injectRecallAsSystem(recalledMemories);
-      }
-      // 补充 span 属性：让宿主监控面板能按命中/未命中过滤
-      recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
-      recallSpan.end();
+      // 1. 召回注入 + 输入护栏（返回 true 表示已 block 并 yield done，应 return）
+      if (yield* this.handleRecallAndInputGuard(userInput, recalledMemories)) return;
 
-      // 召回命中率统计：每轮对话算一次召回，结果非空算命中
-      this.metricRecallTotalCount++;
-      if (recalledMemories && recalledMemories.length > 0) {
-        this.metricRecallHitCount++;
-      }
-
-      // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
-      // 暴露 id/name/score/source 摘要，不泄露完整 content
-      if (recalledMemories?.length) {
-        yield {
-          type: 'recall',
-          memories: recalledMemories.map((m) => ({
-            id: m.id,
-            name: m.name,
-            score: m.score,
-            source: m.source,
-          })),
-        };
-      }
-
-      // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
-      // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
-      // R-103 可观测性：guardrail 输入检查 span
-      const inputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_INPUT, {
-        ruleCount: this.guardrailRules.length,
-      });
-      const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.ui);
-      inputGuardSpan.setAttribute('blocked', inputGuardResult.blocked);
-      inputGuardSpan.setAttribute('warned', !!inputGuardResult.warning);
-      inputGuardSpan.end();
-      if (inputGuardResult.blocked) {
-        // P3: try/finally 确保 done 一定送达，即使 text yield 异常
-        // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
-        try {
-          yield {
-            type: 'text',
-            content: inputGuardResult.message ?? 'Input blocked by guardrail',
-            guardrailBlocked: true,
-          };
-        } finally {
-          yield { type: 'done' };
-        }
-        return;
-      }
-      if (inputGuardResult.warning) {
-        // warn 级别只通知，不阻断
-        yield {
-          type: 'text',
-          content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}`,
-        };
-      }
-
-      // 安全规范 §6：用户输入用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力
+      // 2. 用户消息 push（安全规范 §6：用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
       this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
 
+      // 3. 迭代循环
       let iteration = 0;
       while (iteration < this.maxIterations) {
         iteration++;
-        logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
-
-        // 每次迭代前检查是否已被取消
-        if (signal?.aborted) {
-          yield { type: 'aborted', reason: this.ui.abortedByUser };
-          return;
-        }
-
-        // 调用 LLM（带重试 + 截断保护）
-        const chatOpts = this.buildChatOptions();
-
-        // 上下文摘要：如果启用且首次截断，生成摘要
-        let contextSummary: string | undefined;
-        if (
-          this.enableContextSummary &&
-          this.contextManager.shouldTruncate(this.messages)
-        ) {
-          // 摘要缓存管理已移至 ContextManager.getOrCreateSummary
-          // 传入 signal，让摘要生成可被用户取消中断（避免 generator 挂起）
-          contextSummary = await this.contextManager.getOrCreateSummary(this.messages, signal);
-        }
-        const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
-        // 截断后同步替换工作记忆，防止 messages 数组无限增长
-        // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
-        if (safeMessages !== this.messages) {
-          this.messages = [...safeMessages];
-        }
-
-        const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
-
-        if (llmResult.aborted) {
-          // LLM 调用中断时仍保留已生成的部分文本到上下文消息列表
-          // 让下一轮 LLM 能看到中断响应（追加 interrupted 标记让 LLM 识别非完整回复）
-          // 注意：工具调用中断（execResult.aborted）不在此处理，因 executeToolCalls
-          // 已 push assistant（含 toolCalls），追加文本标记会破坏工具调用结构
-          if (llmResult.fullContent.trim()) {
-            this.messages.push({
-              role: 'assistant',
-              content: llmResult.fullContent + this.ui.interrupted,
-            });
-          }
-          yield { type: 'aborted', reason: this.ui.abortedByUser };
-          return;
-        }
-
-        // 工具调用分支
-        if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-          const execResult = yield* this.executeToolCalls(
-            llmResult.toolCalls,
-            llmResult.fullContent,
-            signal,
-          );
-          if (execResult.aborted) {
-            yield { type: 'aborted', reason: this.ui.abortedByUser };
-            return;
-          }
-
-          // Reflection（反思/自修正）：检查是否有可重试的错误
-          // 如果工具结果中有 retryable 错误，在 LLM 上下文中追加反思提示
-          // 帮助 LLM 聚焦于修正而非放弃
-          const hasRetryableError = this.messages
-            .slice(-llmResult.toolCalls.length) // 只看本轮工具结果
-            .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
-          if (hasRetryableError) {
-            // 反思次数限制：通过前缀匹配统计已推送的 REFLECTION_HINT 消息
-            // （实际推送的 content 带有后缀说明，需用 startsWith 而非严格相等）
-            const reflectionHint = this.messages.filter(
-              (m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'),
-            ).length;
-            if (reflectionHint < this.maxReflectionRetries) {
-              this.messages.push({
-                role: 'system',
-                content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - reflectionHint}`,
-              });
-            }
-          }
-
-          // 继续循环：把工具结果回填给 LLM
-          continue;
-        }
-
-        // 纯文本结束
-        if (llmResult.fullContent) {
-          this.messages.push({ role: 'assistant', content: llmResult.fullContent });
-        } else {
-          // LLM 返回空响应（既无文本也无工具调用）的兜底处理
-          // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
-          logger.warn({ iteration }, 'LLM 返回空响应（无文本、无工具调用），使用兜底提示');
-          const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
-          this.messages.push({ role: 'assistant', content: fallbackText });
-          yield { type: 'text', content: fallbackText };
-        }
-
-        // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
-        // R-103 可观测性：guardrail 输出检查 span
-        const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
-          ruleCount: this.guardrailRules.length,
-        });
-        const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.ui);
-        outputGuardSpan.setAttribute('blocked', outputGuardResult.blocked);
-        outputGuardSpan.setAttribute('warned', !!outputGuardResult.warning);
-        outputGuardSpan.end();
-        if (outputGuardResult.blocked) {
-          // P3: try/finally 确保 done 一定送达，即使 text yield 异常
-          // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
-          try {
-            yield {
-              type: 'text',
-              content: outputGuardResult.message ?? 'Output blocked by guardrail',
-              guardrailBlocked: true,
-            };
-          } finally {
-            yield { type: 'done' };
-          }
-          return;
-        }
-        if (outputGuardResult.warning) {
-          yield {
-            type: 'text',
-            content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}`,
-          };
-        }
-
-        yield { type: 'done' };
-        return;
+        const result = yield* this.handleIteration(iteration, signal);
+        if (result === 'aborted' || result === 'done') return;
       }
 
+      // 4. 最大迭代兜底
       logger.warn({ iterations: iteration }, '达到最大迭代次数');
       yield { type: 'text', content: this.ui.maxIterationsReached };
       yield { type: 'done' };
     } finally {
       responseSpan.end();
     }
+  }
+
+  /**
+   * 召回注入 + 输入护栏（processUserInput 子方法 1/4）
+   *
+   * 职责：
+   *   - 注入记忆召回结果（system 消息，优先级高、不污染 user 输入）
+   *   - 召回命中率统计（metricRecallTotalCount / metricRecallHitCount）
+   *   - 通知上层 UI 召回透明度（yield recall chunk）
+   *   - 输入护栏检查（block 时 yield text + done，warn 时 yield text）
+   *
+   * @yields recall / text（guardrail block/warn）/ done（block 时）
+   * @returns true 表示输入被 block 已 yield done，调用方应 return；false 表示继续
+   */
+  private async *handleRecallAndInputGuard(
+    userInput: string,
+    recalledMemories: readonly Memory[] | undefined,
+  ): AsyncGenerator<AgentChunk, boolean, unknown> {
+    // 注入记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
+    const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
+      recallCount: recalledMemories?.length ?? 0,
+    });
+    // 将召回记忆以 system 消息注入（优先级高、不污染 user 输入）
+    if (recalledMemories?.length) {
+      this.injectRecallAsSystem(recalledMemories);
+    }
+    // 补充 span 属性：让宿主监控面板能按命中/未命中过滤
+    recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
+    recallSpan.end();
+
+    // 召回命中率统计：每轮对话算一次召回，结果非空算命中
+    this.metricRecallTotalCount++;
+    if (recalledMemories && recalledMemories.length > 0) {
+      this.metricRecallHitCount++;
+    }
+
+    // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
+    // 暴露 id/name/score/source 摘要，不泄露完整 content
+    if (recalledMemories?.length) {
+      yield {
+        type: 'recall',
+        memories: recalledMemories.map((m) => ({
+          id: m.id,
+          name: m.name,
+          score: m.score,
+          source: m.source,
+        })),
+      };
+    }
+
+    // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
+    // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
+    const inputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_INPUT, {
+      ruleCount: this.guardrailRules.length,
+    });
+    const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.ui);
+    inputGuardSpan.setAttribute('blocked', inputGuardResult.blocked);
+    inputGuardSpan.setAttribute('warned', !!inputGuardResult.warning);
+    inputGuardSpan.end();
+
+    if (inputGuardResult.blocked) {
+      // P3: try/finally 确保 done 一定送达，即使 text yield 异常
+      // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
+      try {
+        yield {
+          type: 'text',
+          content: inputGuardResult.message ?? 'Input blocked by guardrail',
+          guardrailBlocked: true,
+        };
+      } finally {
+        yield { type: 'done' };
+      }
+      return true;
+    }
+    if (inputGuardResult.warning) {
+      // warn 级别只通知，不阻断
+      yield {
+        type: 'text',
+        content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}`,
+      };
+    }
+    return false;
+  }
+
+  /**
+   * 单次迭代编排（processUserInput 子方法 2/4）
+   *
+   * 职责：
+   *   - abort 检查
+   *   - 上下文摘要 + 截断
+   *   - LLM 调用（callLlmWithRetry）
+   *   - LLM 中断处理
+   *   - 分支路由：工具调用 → handleToolCalls；纯文本 → handleTextResponse
+   *
+   * @yields text / aborted / done（由子方法委托）
+   * @returns 'aborted' | 'done' | 'continue'（continue 表示继续下一轮迭代）
+   */
+  private async *handleIteration(
+    iteration: number,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue', unknown> {
+    logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
+
+    // 每次迭代前检查是否已被取消
+    if (signal?.aborted) {
+      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      return 'aborted';
+    }
+
+    // 调用 LLM（带重试 + 截断保护）
+    const chatOpts = this.buildChatOptions();
+
+    // 上下文摘要：如果启用且首次截断，生成摘要
+    let contextSummary: string | undefined;
+    if (
+      this.enableContextSummary &&
+      this.contextManager.shouldTruncate(this.messages)
+    ) {
+      // 摘要缓存管理已移至 ContextManager.getOrCreateSummary
+      // 传入 signal，让摘要生成可被用户取消中断（避免 generator 挂起）
+      contextSummary = await this.contextManager.getOrCreateSummary(this.messages, signal);
+    }
+    const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
+    // 截断后同步替换工作记忆，防止 messages 数组无限增长
+    // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
+    if (safeMessages !== this.messages) {
+      this.messages = [...safeMessages];
+    }
+
+    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
+
+    if (llmResult.aborted) {
+      // LLM 调用中断时仍保留已生成的部分文本到上下文消息列表
+      // 让下一轮 LLM 能看到中断响应（追加 interrupted 标记让 LLM 识别非完整回复）
+      // 注意：工具调用中断（execResult.aborted）不在此处理，因 executeToolCalls
+      // 已 push assistant（含 toolCalls），追加文本标记会破坏工具调用结构
+      if (llmResult.fullContent.trim()) {
+        this.messages.push({
+          role: 'assistant',
+          content: llmResult.fullContent + this.ui.interrupted,
+        });
+      }
+      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      return 'aborted';
+    }
+
+    // 工具调用分支
+    if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+      return yield* this.handleToolCalls(llmResult, signal);
+    }
+
+    // 纯文本结束分支
+    return yield* this.handleTextResponse(llmResult);
+  }
+
+  /**
+   * 工具调用分支 + Reflection（processUserInput 子方法 3/4）
+   *
+   * 职责：
+   *   - executeToolCalls 执行工具调用
+   *   - abort 检查（工具执行中断）
+   *   - Reflection：检查可重试错误，追加反思提示
+   *
+   * @yields aborted（工具执行中断时）
+   * @returns 'aborted' | 'continue'（continue 表示工具结果已回填，继续下一轮 LLM 调用）
+   */
+  private async *handleToolCalls(
+    llmResult: LlmCallResult,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'continue', unknown> {
+    const execResult = yield* this.executeToolCalls(
+      llmResult.toolCalls!,
+      llmResult.fullContent,
+      signal,
+    );
+    if (execResult.aborted) {
+      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      return 'aborted';
+    }
+
+    // Reflection（反思/自修正）：检查是否有可重试的错误
+    // 如果工具结果中有 retryable 错误，在 LLM 上下文中追加反思提示
+    // 帮助 LLM 聚焦于修正而非放弃
+    const hasRetryableError = this.messages
+      .slice(-llmResult.toolCalls!.length) // 只看本轮工具结果
+      .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
+    if (hasRetryableError) {
+      // 反思次数限制：通过前缀匹配统计已推送的 REFLECTION_HINT 消息
+      // （实际推送的 content 带有后缀说明，需用 startsWith 而非严格相等）
+      const reflectionHint = this.messages.filter(
+        (m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'),
+      ).length;
+      if (reflectionHint < this.maxReflectionRetries) {
+        this.messages.push({
+          role: 'system',
+          content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - reflectionHint}`,
+        });
+      }
+    }
+
+    // 继续循环：把工具结果回填给 LLM
+    return 'continue';
+  }
+
+  /**
+   * 纯文本结束 + 输出护栏（processUserInput 子方法 4/4）
+   *
+   * 职责：
+   *   - push assistant 消息（含空响应兜底）
+   *   - 输出护栏检查（block 时 yield text + done，warn 时 yield text）
+   *   - yield done 结束本轮对话
+   *
+   * @yields text（空响应兜底 / guardrail block/warn）/ done
+   * @returns 'done'（调用方收到后 return）
+   */
+  private async *handleTextResponse(
+    llmResult: LlmCallResult,
+  ): AsyncGenerator<AgentChunk, 'done', unknown> {
+    // 纯文本结束
+    if (llmResult.fullContent) {
+      this.messages.push({ role: 'assistant', content: llmResult.fullContent });
+    } else {
+      // LLM 返回空响应（既无文本也无工具调用）的兜底处理
+      // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
+      logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
+      const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
+      this.messages.push({ role: 'assistant', content: fallbackText });
+      yield { type: 'text', content: fallbackText };
+    }
+
+    // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
+    const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
+      ruleCount: this.guardrailRules.length,
+    });
+    const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.ui);
+    outputGuardSpan.setAttribute('blocked', outputGuardResult.blocked);
+    outputGuardSpan.setAttribute('warned', !!outputGuardResult.warning);
+    outputGuardSpan.end();
+
+    if (outputGuardResult.blocked) {
+      // P3: try/finally 确保 done 一定送达，即使 text yield 异常
+      // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
+      try {
+        yield {
+          type: 'text',
+          content: outputGuardResult.message ?? 'Output blocked by guardrail',
+          guardrailBlocked: true,
+        };
+      } finally {
+        yield { type: 'done' };
+      }
+      return 'done';
+    }
+    if (outputGuardResult.warning) {
+      yield {
+        type: 'text',
+        content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}`,
+      };
+    }
+
+    yield { type: 'done' };
+    return 'done';
   }
 
   /**

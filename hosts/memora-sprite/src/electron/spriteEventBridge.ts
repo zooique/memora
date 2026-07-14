@@ -7,10 +7,13 @@
  *   3. 处理主动提示的特殊逻辑（托盘脉冲 + 系统通知 + 未读计数）
  *
  * 设计原则：
- *   7 个简单转发事件（memoryNoticed / insightGained / personaChanged /
- *   projectSwitched / skillMatched / memoryRecalled / decayCompleted）
- *   通过类型安全的 forwardSimpleEvent 泛型函数逐个注册，
+ *   16 个简单转发事件通过类型安全的 forwardSimpleEvent 泛型函数逐个注册，
  *   消除重复的 registerSpriteEvent + sendSpriteEventIfVisible 模板代码。
+ *   事件清单见 setupSpriteEventListeners 实现（memoryNoticed / insightGained /
+ *   conflictDetected / personaChanged / projectSwitched / skillMatched /
+ *   memoryRecalled / decayCompleted / sessionForked / affectUpdated /
+ *   rapportUpdated / contextUpdated / workProjectionUpdated / patternsUpdated /
+ *   trashPurged / archiveFailed）。
  *
  *   proactivePrompt 保留显式处理（含托盘脉冲 + 系统通知 + 未读计数等副作用）。
  */
@@ -194,7 +197,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     }
   });
 
-  // 7 个简单转发事件：逐个类型安全注册
+  // 16 个简单转发事件：逐个类型安全注册
   // 记忆新增 → 仪表盘计数 +1
   forwardSimpleEvent(deps, 'memoryNoticed', () => ({}));
   // 洞察提取 → 仪表盘计数 +1
@@ -259,6 +262,11 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   }));
   // 回收站自动清理完成 → 渲染层 toast 通知
   forwardSimpleEvent(deps, 'trashPurged', (e) => ({ purgedCount: e.purgedCount }));
+  // 归档失败 → 渲染层 toast 通知（fire-and-forget catch 分支，提示用户记忆可能丢失）
+  forwardSimpleEvent(deps, 'archiveFailed', (e) => ({
+    stage: e.stage,
+    message: e.message,
+  }));
 
   // 在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
   // 浮动窗口需要独立推送：80x80 球体在用户离开时无视觉变化，体验割裂

@@ -31,6 +31,13 @@ export interface AgentEventMap {
   projectSwitched: { from: string | null; to: string; projectName: string };
   /** 技能被匹配（宿主 UI 可据此展示当前激活技能） */
   skillMatched: { skill: string; score: number };
+  /** 归档操作失败（fire-and-forget catch 分支发射，宿主可通知用户） */
+  archiveFailed: {
+    /** 失败阶段：profile（用户画像）/ insight（洞察提取） */
+    stage: 'profile' | 'insight';
+    /** 失败原因摘要（error.message，截断 200 字符避免 payload 过大） */
+    message: string;
+  };
 }
 
 /** 事件名联合类型 */

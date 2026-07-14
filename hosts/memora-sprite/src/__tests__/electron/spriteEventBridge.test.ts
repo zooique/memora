@@ -39,9 +39,8 @@ import type { ILogger } from 'memora';
  * vi.hoisted 与 vi.mock 配合使用：vi.hoisted 创建的变量会被提升到 vi.mock 之前，
  * 使得工厂函数可以访问这些变量。
  */
-/** 精灵事件总数（1 个主动提示 + 14 个简单转发事件 + 1 个 presenceChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked） */
-// 会话生命周期完善：新增 sessionForked 事件，总数从 15 → 16
-const SPRITE_EVENT_COUNT = 17;
+/** 精灵事件总数（1 个主动提示 + 16 个简单转发事件 + 1 个 presenceChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked + trashPurged + archiveFailed） */
+const SPRITE_EVENT_COUNT = 18;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -481,6 +480,7 @@ describe('SpriteEventBridge', () => {
       { name: 'affectUpdated', payload: { warmth: 0.8, playfulness: 0.3, directness: 0.5, initiative: 0.6 } },
       { name: 'rapportUpdated', payload: { trust: 0.7, familiarity: 0.6, level: 'familiar', description: '熟悉阶段' } },
       { name: 'contextUpdated', payload: { rhythm: 'normal', coherence: 'focused', depth: 'moderate', dominantSource: 'code', description: '测试' } },
+      { name: 'archiveFailed', payload: { stage: 'profile', message: 'LLM 提取失败' } },
     ];
 
     simpleEvents.forEach(({ name, payload }) => {

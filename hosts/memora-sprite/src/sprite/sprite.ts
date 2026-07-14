@@ -123,6 +123,13 @@ export interface SpriteEventMap {
   patternsUpdated: { patterns: DetectedPattern[] };
   /** 回收站自动清理完成（定时器触发，通知 UI 显示清理数量） */
   trashPurged: { purgedCount: number };
+  /** 归档操作失败（fire-and-forget catch 分支发射，宿主可通知用户） */
+  archiveFailed: {
+    /** 失败阶段：profile（用户画像）/ insight（洞察提取） */
+    stage: 'profile' | 'insight';
+    /** 失败原因摘要（error.message，截断 200 字符） */
+    message: string;
+  };
 }
 
 // 重新导出 DashboardData 和 AffectState 供外部使用
