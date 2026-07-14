@@ -387,7 +387,7 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
   isSavingProvider = true;
   try {
     const formData = readProviderForm(ctx);
-    if (!validateProviderForm(ctx, formData)) return;
+    if (!validateProviderForm(formData)) return;
     if (await checkAliasDuplicate(ctx, formData.alias)) return;
     await persistProvider(ctx, formData);
   } finally {
@@ -442,11 +442,10 @@ function parseTemperature(raw: string | undefined): number | undefined {
  *
  * 校验失败时通过 showFieldError 标记字段错误并聚焦，返回 false。
  *
- * @param ctx Provider 管理上下文
  * @param data 表单数据
  * @returns true 通过校验 / false 校验失败（已标记错误字段）
  */
-function validateProviderForm(ctx: ProviderManagementContext, data: ProviderFormData): boolean {
+function validateProviderForm(data: ProviderFormData): boolean {
   // 清空之前的错误状态（开始新一轮校验）
   clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
 

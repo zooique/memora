@@ -163,11 +163,11 @@ function initQuickInput(): void {
       inputField.setSelectionRange(inputField.value.length, inputField.value.length);
     });
     // 候选列表显示/隐藏时，通知主进程调整窗口高度
-    // 基础高度 80px + 每个候选项约 40px，最大 240px（受 CSS max-height 限制）
+    // 列布局：基础高度 80px（body padding + 容器 padding + 输入行）+ 每个候选项约 38px（含分隔线）
     completion.onListChange((visible) => {
       if (visible) {
         const itemCount = completionList.querySelectorAll('.completion-item').length;
-        const targetHeight = 80 + Math.min(itemCount, 5) * 40;
+        const targetHeight = 80 + Math.min(itemCount, 5) * 38;
         void api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
       } else {
         // 隐藏时恢复基础高度

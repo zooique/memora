@@ -1,177 +1,175 @@
 /* quick-input.css — 组件专属样式（令牌来自 tokens.css） */
 
 /* ===== 全局重置 ===== */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-    html, body {
-      height: 100%;
-      overflow: hidden;
-      font-family: var(--font-sprite);
-      -webkit-font-smoothing: antialiased;
-    }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sprite);
+  -webkit-font-smoothing: antialiased;
+}
 
-    body {
-      background: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: var(--space-2);
-    }
+body {
+  background: transparent;
+  display: flex;
+  padding: var(--space-2);
+}
 
-    /* ===== 浮窗容器 ===== */
-    .quick-input-container {
-      /* position: relative 作为补全候选列表（.completion-list）绝对定位的参照系 */
-      position: relative;
-      width: 100%;
-      height: 100%;
-      background: var(--window-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow-window);
-      display: flex;
-      align-items: center;
-      gap: var(--space-2);
-      padding: 0 var(--space-3);
-      /* 防止用户选中文本（输入框除外） */
-      user-select: none;
-      -webkit-app-region: no-drag;
-    }
+/* ===== 浮窗容器（列方向：输入行 + 补全列表） ===== */
+.quick-input-container {
+  /* position: relative 保留作为绝对定位参照（当前无绝对定位子元素，保留扩展性） */
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  background: var(--window-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-window);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-2) var(--space-3);
+  /* 防止用户选中文本（输入框除外） */
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
 
-    /* ===== 输入框 ===== */
-    .quick-input-field {
-      flex: 1;
-      border: none;
-      outline: none;
-      background: transparent;
-      font-size: var(--font-base);
-      font-family: var(--font-sprite);
-      color: var(--text);
-      padding: var(--space-2) 0;
-      user-select: text;
-    }
+/* ===== 输入行：输入框 + 按钮 + 提示（横向布局） ===== */
+.quick-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
 
-    .quick-input-field::placeholder {
-      color: var(--muted);
-    }
+/* ===== 输入框 ===== */
+.quick-input-field {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--font-base);
+  font-family: var(--font-sprite);
+  color: var(--text);
+  padding: var(--space-2) 0;
+  user-select: text;
+}
 
-    /* ===== 确认按钮 ===== */
-    .quick-input-confirm {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--accent);
-      color: var(--accent-fg);
-      border: none;
-      border-radius: var(--radius-sm);
-      padding: var(--space-2) var(--space-3);
-      font-size: var(--font-sm);
-      font-weight: var(--weight-semibold);
-      font-family: var(--font-sprite);
-      cursor: pointer;
-      transition: opacity var(--transition-fast);
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
+.quick-input-field::placeholder {
+  color: var(--muted);
+}
 
-    .quick-input-confirm:hover {
-      opacity: 0.9;
-    }
+/* ===== 确认按钮 ===== */
+.quick-input-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  font-family: var(--font-sprite);
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
-    .quick-input-confirm:active {
-      opacity: 0.7;
-    }
+.quick-input-confirm:hover {
+  opacity: 0.9;
+}
 
-    .quick-input-confirm:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
+.quick-input-confirm:active {
+  opacity: 0.7;
+}
 
-    /* ===== 提示文字 ===== */
-    .quick-input-hint {
-      font-size: var(--font-xs);
-      color: var(--muted);
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
+.quick-input-confirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
-    /* ===== Phase 2：补全候选列表 ===== */
-    /*
-     * 候选列表容器：默认 hidden，有候选时显示
-     * 定位为绝对定位，浮在输入框下方，不影响输入框布局
-     */
-    .completion-list {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      background: var(--window-bg);
-      border: 1px solid var(--border);
-      border-top: none;
-      border-radius: 0 0 var(--radius-md) var(--radius-md);
-      box-shadow: var(--shadow-window);
-      max-height: 240px;
-      overflow-y: auto;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      z-index: 10;
-    }
+/* ===== 提示文字 ===== */
+.quick-input-hint {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
-    .completion-list.hidden {
-      display: none;
-    }
+/* ===== Phase 2：补全候选列表 ===== */
+/*
+ * 候选列表容器：默认 hidden，有候选时显示
+ * 改为正常文档流（非绝对定位），在输入行下方，由窗口resize机制提供足够高度
+ */
+.completion-list {
+  list-style: none;
+  margin: var(--space-1) 0 0 0;
+  padding: var(--space-1) 0 0 0;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--surface0);
+}
 
-    /* 候选列表显示时的淡入动画，掩盖窗口高度跳变视觉冲击 */
-    .completion-list:not(.hidden) {
-      animation: completionFadeIn var(--transition-fast) ease;
-    }
+.completion-list.hidden {
+  display: none;
+}
 
-    @keyframes completionFadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+/* 候选列表显示时的淡入动画 */
+.completion-list:not(.hidden) {
+  animation: completionFadeIn var(--transition-fast) ease;
+}
 
-    /* 候选项 */
-    .completion-item {
-      display: flex;
-      align-items: baseline;
-      gap: var(--space-2);
-      padding: var(--space-2) var(--space-3);
-      cursor: pointer;
-      transition: background var(--transition-fast);
-      border-bottom: 1px solid var(--surface0);
-    }
+@keyframes completionFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
-    .completion-item:last-child {
-      border-bottom: none;
-    }
+/* 候选项 */
+.completion-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  border-radius: var(--radius-sm);
+}
 
-    /* 选中态（键盘 ↓↑ 或鼠标 hover） */
-    .completion-item.selected {
-      background: var(--accent-10);
-    }
+.completion-item:hover {
+  background: var(--surface0);
+}
 
-    /* 来源标签（记忆/对话） */
-    .completion-label {
-      font-size: var(--font-xs);
-      color: var(--accent);
-      background: var(--accent-10);
-      padding: 1px 6px;
-      border-radius: var(--radius-sm);
-      flex-shrink: 0;
-      font-weight: var(--weight-medium);
-    }
+/* 选中态（键盘 ↓↑ 或鼠标 hover） */
+.completion-item.selected {
+  background: var(--accent-10);
+}
 
-    /* 候选文本（单行省略） */
-    .completion-text {
-      flex: 1;
-      font-size: var(--font-sm);
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+/* 来源标签（记忆/对话） */
+.completion-label {
+  font-size: var(--font-xs);
+  color: var(--accent);
+  background: var(--accent-10);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  font-weight: var(--weight-medium);
+}
+
+/* 候选文本（单行省略） */
+.completion-text {
+  flex: 1;
+  font-size: var(--font-sm);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

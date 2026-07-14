@@ -36,7 +36,7 @@
 /* 工具栏左侧信息区：标题 + 副标题 */
 .chat-toolbar-info {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--gap-compact);
   min-width: 0;
   position: relative; /* 为精灵感知浮层提供定位参考 */

@@ -229,7 +229,7 @@ describe('showError() · 错误态', () => {
   it('应渲染重试按钮', () => {
     const renderer = createRenderer();
     renderer.showError();
-    const retryBtn = document.querySelector('#memory-health-bar .inline-retry-btn') as HTMLButtonElement;
+    const retryBtn = document.querySelector('#memory-health-bar .error-retry-btn') as HTMLButtonElement;
     expect(retryBtn).not.toBeNull();
     expect(retryBtn.textContent).toBe('重试');
   });
@@ -239,7 +239,7 @@ describe('showError() · 错误态', () => {
     const cb = vi.fn();
     renderer.onReloadHealth(cb);
     renderer.showError();
-    const retryBtn = document.querySelector('#memory-health-bar .inline-retry-btn') as HTMLButtonElement;
+    const retryBtn = document.querySelector('#memory-health-bar .error-retry-btn') as HTMLButtonElement;
     retryBtn.click();
     expect(cb).toHaveBeenCalledTimes(1);
   });
@@ -247,7 +247,7 @@ describe('showError() · 错误态', () => {
   it('未注册回调时点击重试按钮不应抛错', () => {
     const renderer = createRenderer();
     renderer.showError();
-    const retryBtn = document.querySelector('#memory-health-bar .inline-retry-btn') as HTMLButtonElement;
+    const retryBtn = document.querySelector('#memory-health-bar .error-retry-btn') as HTMLButtonElement;
     expect(() => retryBtn.click()).not.toThrow();
   });
 
@@ -266,7 +266,7 @@ describe('cleanup() · 资源清理', () => {
     const cb = vi.fn();
     renderer.onReloadHealth(cb);
     renderer.showError();
-    const retryBtn = document.querySelector('#memory-health-bar .inline-retry-btn') as HTMLButtonElement;
+    const retryBtn = document.querySelector('#memory-health-bar .error-retry-btn') as HTMLButtonElement;
     renderer.cleanup();
     retryBtn.click();
     expect(cb).not.toHaveBeenCalled();

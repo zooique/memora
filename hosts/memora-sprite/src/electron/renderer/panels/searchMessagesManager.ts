@@ -109,6 +109,9 @@ export class SearchMessagesManager {
    * 在 bindSearchModalElements 校验通过后调用，此时 modalEl/inputEl/resultsEl 已确认非空。
    */
   private bindSearchEvents(): void {
+    // bindSearchModalElements 校验通过后调用，此处再做 null 检查以收窄 TS 类型
+    if (!this.inputEl || !this.modalEl || !this.resultsEl) return;
+
     // 搜索按钮点击 → 打开弹窗
     const searchBtn = document.getElementById('btn-search-messages');
     if (searchBtn) {

@@ -1035,8 +1035,8 @@ export class SettingsPanelManager {
   private updateSaveStatus(status: 'idle' | 'saving' | 'saved' | 'error'): void {
     if (!this.saveStatusEl) return;
 
-    const iconEl = this.saveStatusEl.querySelector('.save-status-icon');
-    const textEl = this.saveStatusEl.querySelector('.save-status-text');
+    const iconEl = this.saveStatusEl.querySelector<HTMLElement>('.save-status-icon');
+    const textEl = this.saveStatusEl.querySelector<HTMLElement>('.save-status-text');
     if (!iconEl || !textEl) return;
 
     // UX-0713-L7：切换状态前移除可能存在的重试按钮（避免跨状态残留）

@@ -12,7 +12,9 @@
  * - 由 DashboardPanelManager 持有实例，外观方法委托调用
  */
 
-import { clearElement, showPanelLoading } from '../helpers/domHelpers.js';
+import { showPanelLoading } from '../helpers/domHelpers.js';
+// renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），4 处面板共用
+import { renderErrorState } from '../helpers/errorState.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import type { HealthDashboardPayload } from '../../preload.js';
 
@@ -172,24 +174,20 @@ export class HealthDashboardRenderer {
   /**
    * 显示健康度面板加载失败状态（带重试按钮）
    *
+   * 复用 renderErrorState 统一错误态结构（图标 + 文字 + 重试按钮），
+   * 与 profilePanel/auditPanel/workProjectionPanel 对齐。
    * 用户点击重试按钮时触发 onReloadHealth 回调，由 Controller 重新拉取数据。
    */
   showError(): void {
     const healthBar = document.getElementById('memory-health-bar');
     const metricsEl = healthBar?.querySelector('.health-metrics');
-    if (metricsEl) {
-      clearElement(metricsEl as HTMLElement);
-      const errorDiv = document.createElement('div');
-      errorDiv.className = 'error-state';
-      errorDiv.textContent = '加载失败';
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'panel-error-btn inline-retry-btn';
-      retryBtn.textContent = '重试';
-      this.events.addEventListener(retryBtn, 'click', () => {
-        this.reloadCallback?.();
-      });
-      errorDiv.appendChild(retryBtn);
-      metricsEl.appendChild(errorDiv);
+    if (metricsEl instanceof HTMLElement) {
+      renderErrorState(
+        metricsEl,
+        '加载失败',
+        () => this.reloadCallback?.(),
+        this.events,
+      );
     }
   }
 }
