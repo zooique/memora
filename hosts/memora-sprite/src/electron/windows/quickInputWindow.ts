@@ -45,6 +45,14 @@ const CLIPBOARD_PREFILL_MAX_LENGTH = 200;
 /** 剪贴板预填触发补全的最小字符数（与补全管理器 MIN_QUERY_LENGTH 对齐） */
 const CLIPBOARD_PREFILL_MIN_LENGTH = 2;
 
+/** 剪贴板预填读取结果 */
+interface ClipboardPrefillResult {
+  /** 预填文本（null 表示不预填） */
+  text: string | null;
+  /** 剪贴板内容是否命中敏感模式（用于渲染进程自动进入持久模式） */
+  isSensitive: boolean;
+}
+
 /** 快速输入浮窗回调（由 main.ts 注入） */
 export interface QuickInputWindowCallbacks {
   /**
@@ -232,31 +240,36 @@ export class QuickInputWindow {
     this.cancelBlurClose();
     win.show();
     win.focus();
-    // 通知渲染进程：携带剪贴板预填文本（敏感内容过滤后），替代 focus 事件避免 Alt+Tab 切回误清空
-    const clipboardText = this.readClipboardForPrefill();
-    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, { clipboardText });
+    // 通知渲染进程：携带剪贴板预填文本 + 敏感标记，替代 focus 事件避免 Alt+Tab 切回误清空
+    const prefill = this.readClipboardForPrefill();
+    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, { clipboardText: prefill.text, isSensitive: prefill.isSensitive });
   }
 
   /**
-   * 读取剪贴板内容并做敏感检测，返回可用于预填的安全文本
+   * 读取剪贴板内容并做敏感检测，返回预填文本 + 敏感标记
    *
-   * 敏感内容（token/信用卡/密码/私钥/AWS key）返回 null，不预填。
-   * 过短内容（< 2 字符）返回 null，不触发补全。
+   * 敏感内容（token/信用卡/密码/私钥/AWS key）：text=null（不预填），isSensitive=true（通知渲染进程自动进入持久模式）。
+   * 过短内容（< 2 字符）：text=null，isSensitive=false。
    * 超长内容截断到 200 字符。
    *
-   * @returns 预填文本或 null
+   * @returns 预填结果（text + isSensitive）
    */
-  private readClipboardForPrefill(): string | null {
+  private readClipboardForPrefill(): ClipboardPrefillResult {
     try {
       const raw = clipboard.readText();
       const trimmed = raw.trim();
-      if (trimmed.length < CLIPBOARD_PREFILL_MIN_LENGTH) return null;
-      // 敏感内容检测：命中 5 种正则模式之一则不预填
-      if (isSensitive(trimmed).sensitive) return null;
-      return trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH);
+      if (trimmed.length < CLIPBOARD_PREFILL_MIN_LENGTH) {
+        return { text: null, isSensitive: false };
+      }
+      const sensitiveResult = isSensitive(trimmed);
+      if (sensitiveResult.sensitive) {
+        // 敏感内容不预填，但通知渲染进程进入持久模式
+        return { text: null, isSensitive: true };
+      }
+      return { text: trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH), isSensitive: false };
     } catch {
       // 剪贴板读取失败不阻断浮窗显示
-      return null;
+      return { text: null, isSensitive: false };
     }
   }
 
@@ -304,7 +317,8 @@ export class QuickInputWindow {
     this.ipcRegistered = true;
 
     // 确认输入：Phase 4 优先自动粘贴，降级走 onConfirm 写剪贴板
-    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string): Promise<QuickInputConfirmResult> => {
+    // 持久模式下跳过 hideFloat，窗口保持打开供连续输入
+    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, persistentMode?: boolean): Promise<QuickInputConfirmResult> => {
       try {
         // 参数校验：文本必须是字符串且非空
         if (typeof text !== 'string' || text.length === 0) {
@@ -315,11 +329,13 @@ export class QuickInputWindow {
 
         // Phase 4：优先尝试自动粘贴（inputInjector 统一负责剪贴板操作）
         if (this.autoPasteEnabled && this.inputInjector && this.suppressNextChange) {
+          // 持久模式：跳过 hideFloat，窗口保持打开
+          const hideFloat = persistentMode ? () => {} : () => this.hide();
           const pasteResult = await this.inputInjector.paste(
             safeText,
             this.previousWindow,
-            () => this.hide(),                    // hideFloat 回调（排雷修正雷 1.2）
-            this.suppressNextChange,              // suppressNextChange 回调
+            hideFloat,
+            this.suppressNextChange,
           );
 
           if (pasteResult.success && pasteResult.mode === 'paste') {
@@ -339,6 +355,10 @@ export class QuickInputWindow {
         // 降级路径 / Phase 3 兼容路径：走 onConfirm 写剪贴板
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
+          // 持久模式不关闭窗口
+          if (!persistentMode) {
+            this.hide();
+          }
           // 异步沉淀记忆（不阻塞，错误隔离）
           try {
             this.callbacks.onAfterConfirm?.(safeText);
