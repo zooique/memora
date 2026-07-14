@@ -1,12 +1,13 @@
 /**
  * 快速输入浮窗渲染逻辑 — 用户交互入口
  *
- * 职责（Phase 1 + Phase 2）：
+ * 职责（Phase 1 + Phase 2 + Phase 3）：
  *   1. 绑定输入框键盘事件：Enter 确认、Esc 关闭
  *   2. 绑定确认按钮点击事件
  *   3. 确认时调用 IPC 写入剪贴板（主进程抑制三重保护）
- *   4. 窗口重新显示时清空输入框并聚焦
+ *   4. 窗口重新显示时处理剪贴板预填并聚焦
  *   5. Phase 2：接入补全管理器，输入时显示候选列表，Tab 回填
+ *   6. Phase 3：确认成功后显示"已复制"Toast，延迟 800ms 后关闭
  *
  * 设计原则：
  *   - 使用 Pick<ElectronAPI, ...> 提取子集（与 float.ts 范式一致）
@@ -81,8 +82,14 @@ function initQuickInput(): void {
   /** 补全管理器实例（Phase 2） */
   let completion: QuickInputCompletion | null = null;
 
+  /** Toast 显示时长（ms）—— 确认成功后展示"已复制"提示 */
+  const TOAST_DURATION_MS = 800;
+
   /**
-   * 确认输入：调用 IPC 写入剪贴板 + 关闭浮窗
+   * 确认输入：调用 IPC 写入剪贴板 + 显示 Toast + 延迟关闭
+   *
+   * Phase 3：主进程确认成功后不自动关闭，由本函数显示"✓ 已复制"Toast，
+   * 延迟 TOAST_DURATION_MS 后调用 closeQuickInput() 关闭浮窗。
    *
    * 提交期间禁用输入框和按钮，防止重复触发。
    * 失败时恢复 UI 状态，让用户可以重试。
@@ -104,9 +111,14 @@ function initQuickInput(): void {
 
     try {
       const result = await api.confirmQuickInput(text);
-      // 成功时主进程会关闭浮窗，不需要手动处理
-      // 失败时恢复 UI 状态，让用户可以修改后重试
-      if (!result.success) {
+      if (result.success) {
+        // Phase 3：显示"已复制"Toast，延迟后关闭浮窗
+        showCopyToast();
+        setTimeout(() => {
+          void api.closeQuickInput();
+        }, TOAST_DURATION_MS);
+      } else {
+        // 失败时恢复 UI 状态，让用户可以修改后重试
         isSubmitting = false;
         confirmBtn.disabled = false;
         inputField.disabled = false;
@@ -122,6 +134,19 @@ function initQuickInput(): void {
       inputField.disabled = false;
       inputField.focus();
     }
+  }
+
+  /**
+   * 显示"已复制"Toast（复用输入框区域，不引入额外 DOM 元素）
+   *
+   * 将输入框值替换为"✓ 已复制，Ctrl+V 粘贴"并添加 toast 样式类，
+   * 浮窗关闭时 onQuickInputShow 会清空内容和样式。
+   */
+  function showCopyToast(): void {
+    inputField.value = '✓ 已复制，Ctrl+V 粘贴';
+    inputField.classList.add('copy-toast');
+    inputField.disabled = false;
+    inputField.readOnly = true;
   }
 
   /**
@@ -181,6 +206,9 @@ function initQuickInput(): void {
   // 替代 focus 事件：避免 Alt+Tab 切回浮窗时误清空已输入内容
   // Phase 2：主进程读取剪贴板并做敏感检测，非敏感内容预填输入框触发补全
   api.onQuickInputShow((payload) => {
+    // 清除 Phase 3 的 Toast 状态（readOnly + copy-toast 类）
+    inputField.readOnly = false;
+    inputField.classList.remove('copy-toast');
     const preset = payload?.clipboardText;
     if (preset) {
       // 剪贴板感知预填：非敏感内容预填输入框并全选，用户可直接覆盖或修改

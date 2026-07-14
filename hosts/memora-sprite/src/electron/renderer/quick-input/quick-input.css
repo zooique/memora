@@ -173,3 +173,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ===== Phase 3：复制成功 Toast 状态 ===== */
+/*
+ * 确认成功后输入框变为只读 Toast，居中显示"✓ 已复制"提示。
+ * 利用 accent 色（绿色）提供积极反馈，与确认按钮的 accent 色呼应。
+ */
+.quick-input-field.copy-toast {
+  text-align: center;
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  cursor: default;
+}

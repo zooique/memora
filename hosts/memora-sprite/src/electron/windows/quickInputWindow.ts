@@ -238,7 +238,7 @@ export class QuickInputWindow {
     if (this.ipcRegistered) return;
     this.ipcRegistered = true;
 
-    // 确认输入：写入剪贴板 + 关闭浮窗 + 异步记忆沉淀
+    // 确认输入：写入剪贴板 + 异步记忆沉淀（不自动关闭，由渲染进程显示 Toast 后关闭）
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string) => {
       try {
         // 参数校验：文本必须是字符串且非空
@@ -249,14 +249,13 @@ export class QuickInputWindow {
         const safeText = text.slice(0, 10000);
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
-          // 先关闭浮窗，再异步沉淀记忆（不阻塞用户）
-          this.hide();
-          // 记忆沉淀失败不影响复制成功（错误隔离）
+          // 异步沉淀记忆（不阻塞，错误隔离）
           try {
             this.callbacks.onAfterConfirm?.(safeText);
           } catch (err) {
             logger.warn({ err }, '快速输入记忆沉淀失败（不影响复制结果）');
           }
+          // Phase 3：不自动关闭，由渲染进程显示 Toast 后调用 closeQuickInput() 关闭
         }
         return result;
       } catch (error) {
