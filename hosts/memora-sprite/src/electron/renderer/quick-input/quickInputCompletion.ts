@@ -266,6 +266,15 @@ export class QuickInputCompletion {
     li.setAttribute('aria-hidden', 'true');
     this.listEl.appendChild(li);
 
+    this.showListContainer();
+  }
+
+  /**
+   * 显示候选列表容器（移除 hidden + aria-expanded + 通知窗口调整高度）
+   *
+   * showLoading 和 renderCandidates 共用的列表显示逻辑（ADR-017 枝叶层 2 次提取）。
+   */
+  private showListContainer(): void {
     this.listEl.classList.remove('hidden');
     this.inputField.setAttribute('aria-expanded', 'true');
     this.onListChangeCallback?.(true);
@@ -433,11 +442,8 @@ export class QuickInputCompletion {
       this.listEl.appendChild(li);
     }
 
-    // 显示列表
-    this.listEl.classList.remove('hidden');
-    // 候选列表展开后通知屏幕阅读器
-    this.inputField.setAttribute('aria-expanded', 'true');
-    this.onListChangeCallback?.(true);
+    // 显示列表（复用 showListContainer，枝叶层 2 次提取）
+    this.showListContainer();
   }
 
   /**
