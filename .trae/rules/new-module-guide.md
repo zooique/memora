@@ -86,4 +86,26 @@ src/<new-module>/
 - [ ] **加载顺序**：在 [index.html](../../hosts/memora-sprite/src/electron/renderer/index.html) 的 `<link>` 列表末尾追加 `<name>.css`（L2 面板层最后加载）
 - [ ] **无跨面板依赖**：`<name>.css` 不得覆盖其他面板的样式（如不得定义其他面板的专属类）
 - [ ] **PanelManager 对齐**：CSS 前缀与 JS Manager 类名前缀对齐（如 `perception-` 对应 `PerceptionPanelManager`）
-- [ ] **BEM 风格**：类名采用 `.block-name-element-name--modifier-name` 连字符风格，状态类用 `.is-` 前缀
+- [ ] BEM 风格：类名采用 `.block-name-element-name--modifier-name` 连字符风格，状态类用 `.is-` 前缀
+
+### 7. 新增 Agent Manager 检查清单
+
+> **来源**：AUDIT-0713-5 评估（2026-07-14）——不引入 ComponentRegistry，改为固化检查清单防止遗漏
+
+新增 `src/agent/managers/` 下专职 Manager 时，按以下 9 处修改点检查（跨 [agent.ts](../../src/agent/agent.ts) 和 [assembler.ts](../../src/agent/assembler.ts) 2 文件）：
+
+| # | 文件 | 修改点 | 示例 |
+|---|------|--------|------|
+| 1 | `agent.ts` | import 语句 | `import type { XxxManager } from '@/agent/managers/xxxManager.js';` |
+| 2 | `agent.ts` | 字段声明（null 初始） | `private xxxManager: XxxManager \| null = null;` |
+| 3 | `assembler.ts` | import 语句 | `import { XxxManager } from '@/agent/managers/xxxManager.js';` |
+| 4 | `assembler.ts` | `AssembleOutput` 接口字段 | `xxxManager: XxxManager;` |
+| 5 | `assembler.ts` | `assembleComponents()` 创建逻辑（按 4 阶段依赖顺序） | `const xxxManager = new XxxManager(...);` |
+| 6 | `assembler.ts` | return 对象字段 | `return { ..., xxxManager };` |
+| 7 | `agent.ts` | `assembleComponents()` 调用后赋值 | `this.xxxManager = result.xxxManager;` |
+| 8 | `agent.ts` | 只读 getter | `get xxx(): XxxManager \| null { return this.xxxManager; }` |
+| 9 | `agent.ts` | `nullifyAllComponents()` 追加一行 | `this.xxxManager = null;` |
+
+**带副作用的清理**（dispose/stop/close/shutdown）不进 `nullifyAllComponents()`，由 `close()` 显式调用（顺序敏感不可合并）。
+
+**为何不引入 ComponentRegistry**：类型安全性是门面类核心价值（ADR-010），`#private` 字段无法纳入，生命周期异构需适配层，assembler 已解决装配痛点。详见 [已完成任务.md AUDIT-0713-5 评估记录](../../tasks/已完成任务.md)。

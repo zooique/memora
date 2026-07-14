@@ -297,7 +297,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     // 获取锁 + 分配 token + 创建内部 AbortController + 启动超时定时器
     // token 用于 finally 校验，避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
-    const chatLock = this.requireNonNull(this.chatLockManager, 'chatLockManager');
+    // assertInitialized 已保证 chatLockManager/loop/history 非 null，此处用 ! 窄化类型
+    const chatLock = this.chatLockManager!;
     const { token: myToken, internalAbort } = chatLock.acquire(
       AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS,
     );
@@ -309,7 +310,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 清理上一轮注入的临时 system 消息（recentConversation/skill/recall/truncation）
       // 防止多轮累积：每轮 chat() 开始前，只保留 messages[0] 和非 system 消息
-      this.requireNonNull(this.loop, 'loop').cleanTemporarySystemMessages();
+      const loop = this.loop!;
+      loop.cleanTemporarySystemMessages();
 
       // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };
@@ -327,14 +329,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'processing' };
       this.injectActiveSkill();
 
-      await this.requireNonNull(this.history, 'history').appendUser(input);
+      const history = this.history!;
+      await history.appendUser(input);
 
       let assistantContent = '';
       let wasAborted = false;
       // 把 provider 异常转为 yield error chunk，让宿主能优雅展示并清理 UI
       // （裸 throw 会导致未处理 rejection，UI 收不到错误展示机会）
       try {
-        for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(
+        for await (const chunk of loop.processUserInput(
           input,
           recalledMemories,
           combinedSignal,
@@ -368,9 +371,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (assistantContent.trim()) {
           const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
           try {
-            await this.requireNonNull(this.history, 'history').appendAssistant(
-              assistantContent + interruptedMark,
-            );
+            await history.appendAssistant(assistantContent + interruptedMark);
           } catch (err) {
             logger.warn({ err }, '中断消息历史写入失败');
           }
@@ -380,7 +381,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 追加助手消息到历史（best-effort：失败不影响用户已收到的回答）
       try {
-        await this.requireNonNull(this.history, 'history').appendAssistant(assistantContent);
+        await history.appendAssistant(assistantContent);
       } catch (err) {
         logger.warn({ err }, '助手消息历史写入失败');
       }
@@ -446,7 +447,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     let recalledMemories: Memory[] = [];
     try {
       recalledMemories = await recall(
-        this.requireNonNull(this.pctx, 'projectContext').index,
+        this.pctx!.index,
         input,
         {
           limit: 5,
@@ -466,7 +467,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // Layer 5: 最近对话注入
-    const loop = this.requireNonNull(this.loop, 'loop');
+    const loop = this.loop!;
     const recentHistory = loop.getRecentHistory(3);
     if (recentHistory.length > 0) {
       const msgs = this.#config.messages;
@@ -580,6 +581,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 用户画像实时归档（委托 ArchiveCoordinator，与手动归档路径统一，消除 DRY 违反）
     // ADR-015: full / insights-only 模式下 profile facts 自动归档
+    const history = this.history!;
     if (!skipAutoArchive) {
       try {
         // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
@@ -592,7 +594,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
           },
         );
-        this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
+        history.registerPendingArchive(archiveFactsPromise);
       } catch (err) {
         logger.warn({ err }, '用户画像归档初始化失败');
       }
@@ -612,7 +614,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
           },
         );
-        this.requireNonNull(this.history, 'history').registerPendingArchive(archiveInsightPromise);
+        history.registerPendingArchive(archiveInsightPromise);
       } catch (err) {
         logger.warn({ err }, 'Insight 提取初始化失败');
       }
@@ -625,7 +627,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         const analyzePromise = this.autoConfigRefiner.analyze(input, assistantContent).catch((err) => {
           logger.warn({ err }, 'AutoConfigRefiner 分析失败');
         });
-        this.requireNonNull(this.history, 'history').registerPendingArchive(analyzePromise);
+        history.registerPendingArchive(analyzePromise);
       } catch (err) {
         logger.warn({ err }, 'AutoConfigRefiner 初始化失败');
       }
@@ -653,7 +655,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   forkSession(targetSession?: string): AgentForkResult {
     this.assertInitialized('forkSession');
-    return this.requireNonNull(this._sessionManager, 'sessionManager').forkSession(targetSession);
+    return this._sessionManager!.forkSession(targetSession);
   }
 
   /**
@@ -672,7 +674,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
 
-    const pm = this.requireNonNull(this.projectManager, 'projectManager');
+    const pm = this.projectManager!;
     const projects = pm.list;
     let target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
     if (!target) {
@@ -776,8 +778,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     };
     return new SessionManager(
-      () => this.requireNonNull(this.history, 'history'),
-      () => this.requireNonNull(this.loop, 'loop'),
+      // 惰性 getter：SessionManager 内部调用时 Agent 已 init，用 ! 窄化
+      () => this.history!,
+      () => this.loop!,
       this.#config.sessionStore,
       () => this.chatLockManager?.isBusy ?? false,
       forwardEvent,
@@ -1010,20 +1013,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
   }
 
-  /**
-   * 非空断言守卫——对 null/undefined 值抛出清晰错误的运行时检查
-   *
-   * @param value 可能为 null/undefined 的值
-   * @param name 组件名称（用于错误消息）
-   * @throws MemoraError 如果 value 为 null/undefined
-   */
-  private requireNonNull<T>(value: T | null | undefined, name: string): T {
-    if (value === null || value === undefined) {
-      throw configError('Agent 未初始化', `${name} 组件不可用`, ['请先调用 await agent.init()']);
-    }
-    return value;
-  }
-
   // ─── 记忆生命周期 ───────────────────────────────────────
 
   // ─── runMemoryDecay 已迁移至 MemoryDecayScheduler.runOnce ─────
@@ -1068,28 +1057,39 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       await this.projectManager.shutdown();
     }
     this._initialized = false;
-    this.#backgroundProvider = null;
-    this.history = null;
-    this.loop = null;
-    this._sessionManager = null;
-    this.projectManager = null;
-    this.insightExtractor = null;
-    this.configManager = null;
-    this.memoryInspector = null;
-    this.autoConfigRefiner = null;
-    this.sessionArchiver = null;
-    this.pctx = null;
-    // 补全剩余 manager 字段 null 化，与上述字段处理方式一致
-    // （原实现仅 null 化部分 manager，toolExec/personaManager/#userProfile/skillManager/workProjection 遗漏）
-    this.toolExec = null;
-    this.personaManager = null;
-    this.#userProfile = null;
-    this.skillManager = null;
-    this.workProjection = null;
+    this.nullifyAllComponents();
     // 清理次要状态字段，防止 re-init 后残留上一会话状态
     this.activeSkill = null;
     this._lastInteractionAt = null;
-    // 衰减指标已迁移至 MemoryDecayScheduler，close 时通过 stop() 销毁实例
+  }
+
+  /**
+   * 统一 null 化所有组件字段（新增 Manager 时在此处追加一行）
+   *
+   * 仅处理"纯 null 化"字段，带副作用的清理（dispose/stop/close/shutdown）
+   * 仍由 close() 显式调用，顺序敏感不可合并。
+   */
+  private nullifyAllComponents(): void {
+    // Provider
+    this.#backgroundProvider = null;
+    // 核心组件
+    this.history = null;
+    this.loop = null;
+    this.toolExec = null;
+    // 专职 Manager
+    this.personaManager = null;
+    this.#userProfile = null;
+    this.skillManager = null;
+    this.insightExtractor = null;
+    this.configManager = null;
+    this.memoryInspector = null;
+    this.workProjection = null;
+    this.autoConfigRefiner = null;
+    this.sessionArchiver = null;
+    this._sessionManager = null;
+    // 项目管理
+    this.projectManager = null;
+    this.pctx = null;
   }
 
   // ─── 只读访问器 ───────────────────────────────────────
@@ -1183,7 +1183,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // - 访问器（getter）：返回 Manager | null，供宿主项目链式调用和优雅降级
   //   （如 `agent.persona?.activeName`、`if (!agent.memory) return []`）
   // - 门面方法（snapshot/inspect/stats/searchMemories 等）：通过
-  //   assertInitialized + requireNonNull 抛 MemoraError，提供明确错误信息
+  //   assertInitialized 抛 MemoraError，提供明确错误信息
   // 宿主项目使用访问器时需自行判空，或使用门面方法获得自动错误处理。
 
   /**
