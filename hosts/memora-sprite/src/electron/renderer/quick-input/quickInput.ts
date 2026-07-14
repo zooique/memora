@@ -1,41 +1,34 @@
 /**
- * 快速输入浮窗渲染逻辑 — 用户交互入口
+ * 快速输入浮窗渲染逻辑 — 用户交互入口（Tab 双重确认模式）
  *
- * 职责（Phase 1 + Phase 2 + Phase 3 + Phase 4）：
- *   1. 绑定输入框键盘事件：Enter 确认、Esc 关闭
- *   2. 绑定确认按钮点击事件
- *   3. 确认时调用 IPC（主进程 Phase 4 优先自动粘贴，降级写剪贴板）
- *   4. 窗口重新显示时处理剪贴板预填并聚焦
- *   5. Phase 2：接入补全管理器，输入时显示候选列表，Tab 回填
- *   6. Phase 3：确认成功后显示 Toast，延迟 800ms 后关闭
- *   7. Phase 4：等待期间显示"粘贴中..."loading，按 mode 显示不同 Toast
+ * 职责：
+ *   1. 绑定输入框键盘事件：Tab 确认、Esc 关闭（移除 Enter 确认）
+ *   2. Tab 双重确认逻辑：
+ *      - 第 1 击：选择候选项并回填到输入框
+ *      - 第 2 击：确认并粘贴到目标应用（优先自动粘贴，降级写剪贴板）
+ *   3. 窗口重新显示时处理剪贴板预填并聚焦
+ *   4. 接入补全管理器，输入时显示候选列表
+ *   5. 确认成功后显示 Toast，延迟关闭
  *
  * 设计原则：
  *   - 使用 Pick<ElectronAPI, ...> 提取子集（与 float.ts 范式一致）
- *   - 确认期间禁用按钮，防止重复提交
- *   - 错误处理通过 IPC 返回值判断，不弹窗（浮窗场景不适合 toast）
+ *   - Tab 是唯一确认按钮，Enter 用于换行
+ *   - 确认期间禁用输入框，防止重复触发
  *   - 补全管理器独立封装在 quickInputCompletion.ts，保持职责单一
  *
  * 集成点：
  *   - quick-input.html：通过 <script type="module"> 加载
  *   - preload.ts：暴露 confirmQuickInput / closeQuickInput / searchMemories / searchSessionMessages
- *   - quickInputWindow.ts：主进程处理 IPC，Phase 4 自动粘贴优先
- *   - quickInputCompletion.ts：补全候选管理器（Phase 2）
+ *   - quickInputWindow.ts：主进程处理 IPC，自动粘贴优先
+ *   - quickInputCompletion.ts：补全候选管理器
  */
 import type { ElectronAPI } from '../../preload.js';
-// 导入 types.js 确保 window.electronAPI 全局声明加载（独立入口需显式导入）
 import '../types.js';
-// 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
-// Phase 2：补全管理器
 import { QuickInputCompletion } from './quickInputCompletion.js';
 
 /**
  * 快速输入浮窗所需的 ElectronAPI 子集
- *
- * Phase 1：confirmQuickInput / closeQuickInput（确认 + 关闭）
- * Phase 2：searchMemories / searchSessionMessages（补全候选搜索）+ resizeQuickInput（调整高度）
- *          onQuickInputShow / removeQuickInputShowListener（主进程 show() 时携带剪贴板预填文本，替代 focus 事件）
  */
 export type QuickInputElectronAPI = Pick<
   ElectronAPI,
@@ -46,24 +39,13 @@ export type QuickInputElectronAPI = Pick<
 
 /**
  * 初始化快速输入浮窗交互
- *
- * 绑定 DOM 事件监听器，初始化补全管理器。
- * 在 DOMContentLoaded 后调用（script type=module 默认 defer，DOM 已就绪）。
  */
 function initQuickInput(): void {
-  // 入口契约校验：instanceof 确保运行时类型安全，不通过则报错退出（正视 bug，不掩盖）
-  // reportError 双通道日志（console + 主进程 logger），让生产环境也可观测
   const inputEl = document.getElementById('quick-input-field');
-  if (!(inputEl instanceof HTMLInputElement)) {
-    reportError('QuickInput init', new Error('quick-input-field 元素缺失或类型错误'));
+  if (!(inputEl instanceof HTMLTextAreaElement)) {
+    reportError('QuickInput init', new Error('quick-input-field 元素缺失或类型错误（应为 textarea）'));
     return;
   }
-  const confirmEl = document.getElementById('quick-input-confirm');
-  if (!(confirmEl instanceof HTMLButtonElement)) {
-    reportError('QuickInput init', new Error('quick-input-confirm 元素缺失或类型错误'));
-    return;
-  }
-  // 候选列表容器可选（缺失时跳过补全能力，不阻断主流程）
   const completionList = document.getElementById('completion-list');
 
   const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
@@ -72,137 +54,97 @@ function initQuickInput(): void {
     return;
   }
 
-  // 显式类型标注的 const，确保 async 闭包内类型不回退
-  // （TS 限制：async function 闭包不保留 instanceof / null 窄化，需通过显式标注固化类型）
-  const inputField: HTMLInputElement = inputEl;
-  const confirmBtn: HTMLButtonElement = confirmEl;
+  const inputField: HTMLTextAreaElement = inputEl;
   const api: QuickInputElectronAPI = electronApi;
 
   /** 是否正在提交（防止重复确认） */
   let isSubmitting = false;
-  /** 补全管理器实例（Phase 2） */
+  /** 补全管理器实例 */
   let completion: QuickInputCompletion | null = null;
 
-  /** Toast 显示时长（ms）—— 确认成功后展示"已复制"提示 */
+  /** Toast 显示时长（ms） */
   const TOAST_DURATION_MS = 800;
-  /** Toast 自动关闭定时器句柄 —— 浮窗提前关闭时需清理，避免对已隐藏窗口发起无效 IPC */
+  /** Toast 自动关闭定时器句柄 */
   let toastCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * 确认输入：调用 IPC（主进程 Phase 4 优先自动粘贴，降级写剪贴板）+ 显示 Toast + 延迟关闭
-   *
-   * Phase 3：主进程确认成功后不自动关闭，由本函数显示 Toast，延迟 TOAST_DURATION_MS 后关闭。
-   * Phase 4：等待期间显示"粘贴中..."loading（主进程 paste 约 300ms），按 mode 显示不同 Toast。
-   *
-   * 提交期间禁用输入框和按钮，防止重复触发。
-   * 失败时恢复 UI 状态，让用户可以重试。
+   * 确认输入：调用 IPC（主进程优先自动粘贴，降级写剪贴板）+ 显示 Toast + 延迟关闭
    */
   async function handleConfirm(): Promise<void> {
-    // inputField/confirmBtn 已在入口 instanceof 校验，const 闭包内保留窄化，无需重复检查
     if (isSubmitting) return;
     const text = inputField.value;
-    // 空内容不处理（包括纯空白）
     if (!text.trim()) {
-      // 空内容直接关闭，不写入剪贴板
       await api.closeQuickInput();
       return;
     }
 
     isSubmitting = true;
-    confirmBtn.disabled = true;
     inputField.disabled = true;
-    // Phase 4：等待期间显示"粘贴中..."loading（排雷修正雷 4.1：避免 300ms 无响应）
     showPastingToast();
 
     try {
       const result = await api.confirmQuickInput(text);
       if (result.success) {
-        // Phase 4：按 mode 显示不同 Toast
         if (result.mode === 'paste') {
           showPastedToast(result.appName);
         } else {
           showCopyToast();
         }
-        // 保存句柄：浮窗可能在 Toast 期间被 Esc/blur 提前关闭，需在关闭时清理避免无效 IPC
         toastCloseTimer = setTimeout(() => {
           toastCloseTimer = null;
           void api.closeQuickInput();
         }, TOAST_DURATION_MS);
       } else {
-        // 失败时恢复 UI 状态，让用户可以修改后重试
         isSubmitting = false;
-        confirmBtn.disabled = false;
         inputField.disabled = false;
         inputField.readOnly = false;
         inputField.classList.remove('copy-toast');
-        // UX-0714-3：恢复确认按钮可见性（Toast 期间被 visibility:hidden 隐藏）
-        confirmBtn.style.visibility = '';
-        inputField.value = text;  // 恢复用户输入的内容
+        inputField.value = text;
         inputField.focus();
-        inputField.select();
       }
     } catch (error) {
       reportError('QuickInput 确认', error);
-      // 异常时恢复 UI 状态
       isSubmitting = false;
-      confirmBtn.disabled = false;
       inputField.disabled = false;
       inputField.readOnly = false;
       inputField.classList.remove('copy-toast');
-      // UX-0714-3：恢复确认按钮可见性（Toast 期间被 visibility:hidden 隐藏）
-      confirmBtn.style.visibility = '';
       inputField.value = text;
       inputField.focus();
     }
   }
 
   /**
-   * Phase 4：显示"粘贴中..."loading 状态
-   *
-   * 主进程 paste 流程约 300ms（Esc 50ms + 粘贴 100ms + 剪贴板操作），
-   * 期间输入框显示 loading 文案，避免用户看到浮窗卡住无响应。
-   * UX-0714-3：Toast 期间隐藏确认按钮（visibility:hidden 保留布局避免抖动）。
+   * 显示"粘贴中..."loading 状态
    */
   function showPastingToast(): void {
     inputField.value = '粘贴中...';
     inputField.classList.add('copy-toast');
     inputField.disabled = false;
     inputField.readOnly = true;
-    confirmBtn.style.visibility = 'hidden';
   }
 
   /**
-   * Phase 4：显示"已粘贴"Toast（自动粘贴成功）
-   *
-   * @param appName 粘贴目标应用名（可选，显示在 Toast 中让用户感知）
+   * 显示"已粘贴"Toast（自动粘贴成功）
    */
   function showPastedToast(appName?: string): void {
     inputField.value = appName ? `✓ 已粘贴到 ${appName}` : '✓ 已粘贴';
     inputField.classList.add('copy-toast');
     inputField.disabled = false;
     inputField.readOnly = true;
-    confirmBtn.style.visibility = 'hidden';
   }
 
   /**
-   * 显示"已复制"Toast（降级模式 / Phase 3 兼容）
-   *
-   * 将输入框值替换为"✓ 已复制，Ctrl+V 粘贴"并添加 toast 样式类，
-   * 浮窗关闭时 onQuickInputShow 会清空内容和样式。
-   * UX-0714-3：Toast 期间隐藏确认按钮（visibility:hidden 保留布局避免抖动）。
+   * 显示"已复制"Toast（降级模式）
    */
   function showCopyToast(): void {
     inputField.value = '✓ 已复制，Ctrl+V 粘贴';
     inputField.classList.add('copy-toast');
     inputField.disabled = false;
     inputField.readOnly = true;
-    confirmBtn.style.visibility = 'hidden';
   }
 
   /**
    * 关闭浮窗：清理 Toast 定时器 + 调用 IPC 通知主进程隐藏窗口
-   *
-   * Toast 期间用户主动 Esc 关闭时，需先清理定时器，避免对已隐藏窗口发起无效 closeQuickInput IPC。
    */
   async function handleClose(): Promise<void> {
     if (toastCloseTimer !== null) {
@@ -216,86 +158,112 @@ function initQuickInput(): void {
     }
   }
 
-  // 输入框键盘事件：Enter 确认、Esc 关闭
-  // 注意：↓↑ Tab 由补全管理器处理，这里只处理 Enter/Esc
+  /**
+   * Tab 键处理逻辑（两种状态）
+   *
+   * 状态1：文本输入状态（无候选列表 或 有候选但未用方向键浏览）
+   *   → Tab 直接确认粘贴（记录记忆 + 填入正文）
+   *
+   * 状态2：记忆选择状态（有候选列表且用户用方向键浏览过）
+   *   → Tab 先回填选中的候选文本到输入框（可修改），清除候选列表
+   *   → 修改完成后再次 Tab，进入状态1，直接确认粘贴
+   *
+   * 设计说明：
+   *   - 在 keyup 阶段执行确认，而非 keydown。
+   *   - 原因：若 keydown 阶段发送 IPC 并关闭浮窗，Tab 键的 keyup 事件会传播到原窗口
+   *     （如微信），可能触发原窗口的快捷键（如最小化到托盘）。
+   *   - 改为 keyup 后，整个 Tab 事件周期在浮窗内消化，不会泄漏到目标应用。
+   */
+  function handleTab(): void {
+    if (isSubmitting) return;
+
+    // 状态2：有候选列表且用户正在浏览（方向键导航过）
+    // → Tab 先回填选中的候选文本到输入框，清除候选列表
+    if (completion && completionList && !completionList.classList.contains('hidden') && completion.isNavigating()) {
+      const selectedText = completion.getSelectedText();
+      if (selectedText) {
+        inputField.value = selectedText;
+        inputField.focus();
+      }
+      // 清除候选列表，进入编辑状态
+      completionList.classList.add('hidden');
+      completion.clear();
+      return;
+    }
+
+    // 状态1：文本输入状态（无候选列表 或 有候选但未浏览）
+    // → Tab 直接确认粘贴
+    void handleConfirm();
+  }
+
+  /** Tab 键已按下（keydown 中标记，keyup 中消费） */
+  let tabPressed = false;
+
+  // 输入框键盘事件：Tab 确认（keydown 标记 + keyup 执行）、Esc 关闭
   inputField.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Tab') {
+      // keydown 阶段只阻止默认行为并标记，不在此处执行确认
+      // 避免 keyup 事件泄漏到原窗口（如微信最小化问题）
       e.preventDefault();
-      void handleConfirm();
+      tabPressed = true;
     } else if (e.key === 'Escape') {
       e.preventDefault();
       void handleClose();
     }
   });
 
-  // 确认按钮点击事件
-  confirmBtn.addEventListener('click', () => {
-    void handleConfirm();
+  // Tab 确认在 keyup 阶段执行，确保事件不泄漏到原窗口
+  inputField.addEventListener('keyup', (e: KeyboardEvent) => {
+    if (e.key === 'Tab' && tabPressed) {
+      tabPressed = false;
+      handleTab();
+    }
   });
 
-  // Phase 2：初始化补全管理器（候选列表容器存在时才启用补全）
+  // 初始化补全管理器（候选列表容器存在时才启用补全）
   if (completionList instanceof HTMLElement) {
     completion = new QuickInputCompletion(inputField, completionList, api);
-    // Tab 选择候选项时，回填到输入框并聚焦
-    completion.onSelect((text) => {
-      inputField.value = text;
-      inputField.focus();
-      // 将光标移到末尾
-      inputField.setSelectionRange(inputField.value.length, inputField.value.length);
-    });
     // 候选列表显示/隐藏时，通知主进程调整窗口高度
-    // 列布局：基础高度 80px（body padding + 容器 padding + 输入行）+ 每个候选项约 38px（含分隔线）
-    // UX-0714-4：footer 存在时（totalCandidatesCount > 5）额外预留 28px
     completion.onListChange((visible) => {
       if (visible) {
         const itemCount = completionList.querySelectorAll('.completion-item').length;
         const hasFooter = completionList.dataset.footer === 'true';
         const footerHeight = hasFooter ? 28 : 0;
-        const targetHeight = 80 + Math.min(itemCount, 5) * 38 + footerHeight;
+        const targetHeight = 90 + Math.min(itemCount, 5) * 38 + footerHeight;
         void api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
       } else {
-        // 隐藏时恢复基础高度
-        void api.resizeQuickInput(80).catch((e: unknown) => reportError('QuickInput-resize', e));
+        void api.resizeQuickInput(90).catch((e: unknown) => reportError('QuickInput-resize', e));
       }
     });
     completion.init();
   }
 
   // 浮窗被主进程 show() 调用时处理剪贴板预填并聚焦
-  // 替代 focus 事件：避免 Alt+Tab 切回浮窗时误清空已输入内容
-  // Phase 2：主进程读取剪贴板并做敏感检测，非敏感内容预填输入框触发补全
   api.onQuickInputShow((payload) => {
-    // 清除 Phase 3 的 Toast 状态（readOnly + copy-toast 类 + 残留定时器）
     if (toastCloseTimer !== null) {
       clearTimeout(toastCloseTimer);
       toastCloseTimer = null;
     }
     inputField.readOnly = false;
     inputField.classList.remove('copy-toast');
+    tabPressed = false;
+
     const preset = payload?.clipboardText;
     if (preset) {
-      // 剪贴板感知预填：非敏感内容预填输入框并全选，用户可直接覆盖或修改
       inputField.value = preset;
       inputField.select();
-      // 触发 input 事件让补全管理器拉取候选（复用防抖机制）
       inputField.dispatchEvent(new Event('input'));
     } else {
-      // 无剪贴板内容或敏感内容，保持空输入框
       inputField.value = '';
     }
     isSubmitting = false;
-    confirmBtn.disabled = false;
     inputField.disabled = false;
-    // UX-0714-3：恢复确认按钮可见性（上次 Toast 期间被 visibility:hidden 隐藏）
-    confirmBtn.style.visibility = '';
     inputField.focus();
   });
 
-  // 初始聚焦（首次加载）
   inputField.focus();
 }
 
-// DOMContentLoaded 后初始化（module 脚本默认 defer，但加保护更安全）
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initQuickInput);
 } else {

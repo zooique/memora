@@ -18,25 +18,22 @@
   <link rel="stylesheet" href="quick-input.css" />
 </head>
 <body>
-  <!-- 快速输入浮窗容器：输入框 + 确认按钮 + 快捷键提示 + 补全候选列表 -->
+  <!-- 快速输入浮窗容器：文本输入区 + 快捷键提示 + 补全候选列表 -->
   <div class="quick-input-container">
-    <!-- 输入行：输入框 + 按钮 + 提示（横向布局） -->
-    <div class="quick-input-row">
-      <input
-        type="text"
+    <!-- 输入区：textarea（支持多行长文本） -->
+    <div class="quick-input-area">
+      <textarea
         id="quick-input-field"
         class="quick-input-field"
-        placeholder="输入文本，Enter 复制到剪贴板，↓↑ 选择补全..."
+        placeholder="输入文本，↓↑ 选择补全，Tab 确认并粘贴..."
         autocomplete="off"
         spellcheck="false"
         autofocus
-      />
-      <button id="quick-input-confirm" class="quick-input-confirm" title="复制到剪贴板（Enter）">
-        复制
-      </button>
-      <span class="quick-input-hint">Esc 关闭</span>
+        rows="2"
+      ></textarea>
+      <span class="quick-input-hint">Tab 确认 · Esc 关闭</span>
     </div>
-    <!-- Phase 2：补全候选列表（输入 ≥2 字符后显示，Tab 回填） -->
+    <!-- 补全候选列表（输入 ≥2 字符后显示，Tab 选择） -->
     <ul id="completion-list" class="completion-list hidden" role="listbox" aria-label="补全候选"></ul>
   </div>
 

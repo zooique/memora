@@ -20,9 +20,8 @@ body {
   padding: var(--space-2);
 }
 
-/* ===== 浮窗容器（列方向：输入行 + 补全列表） ===== */
+/* ===== 浮窗容器（列方向：输入区 + 补全列表） ===== */
 .quick-input-container {
-  /* position: relative 保留作为绝对定位参照（当前无绝对定位子元素，保留扩展性） */
   position: relative;
   width: 100%;
   flex: 1;
@@ -33,22 +32,21 @@ body {
   box-shadow: var(--shadow-window);
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   padding: var(--space-2) var(--space-3);
-  /* 防止用户选中文本（输入框除外） */
   user-select: none;
   -webkit-app-region: no-drag;
 }
 
-/* ===== 输入行：输入框 + 按钮 + 提示（横向布局） ===== */
-.quick-input-row {
+/* ===== 输入区：textarea（支持多行长文本） ===== */
+.quick-input-area {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   flex-shrink: 0;
 }
 
-/* ===== 输入框 ===== */
+/* ===== 文本输入框（textarea） ===== */
 .quick-input-field {
   flex: 1;
   border: none;
@@ -59,42 +57,13 @@ body {
   color: var(--text);
   padding: var(--space-2) 0;
   user-select: text;
+  resize: none;
+  line-height: 1.5;
+  min-height: 48px;
 }
 
 .quick-input-field::placeholder {
   color: var(--muted);
-}
-
-/* ===== 确认按钮 ===== */
-.quick-input-confirm {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  font-family: var(--font-sprite);
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.quick-input-confirm:hover {
-  opacity: 0.9;
-}
-
-.quick-input-confirm:active {
-  opacity: 0.7;
-}
-
-.quick-input-confirm:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* ===== 提示文字 ===== */
@@ -105,11 +74,7 @@ body {
   flex-shrink: 0;
 }
 
-/* ===== Phase 2：补全候选列表 ===== */
-/*
- * 候选列表容器：默认 hidden，有候选时显示
- * 改为正常文档流（非绝对定位），在输入行下方，由窗口resize机制提供足够高度
- */
+/* ===== 补全候选列表 ===== */
 .completion-list {
   list-style: none;
   margin: var(--space-1) 0 0 0;
@@ -123,7 +88,6 @@ body {
   display: none;
 }
 
-/* 候选列表显示时的淡入动画 */
 .completion-list:not(.hidden) {
   animation: completionFadeIn var(--transition-fast) ease;
 }
@@ -139,7 +103,6 @@ body {
   align-items: baseline;
   gap: var(--space-2);
   padding: var(--space-2);
-  /* UX-0714-2：左侧透明 border 占位，选中态时替换为 accent 竖条（避免布局抖动） */
   border-left: 2px solid transparent;
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -150,13 +113,11 @@ body {
   background: var(--surface0);
 }
 
-/* 选中态（键盘 ↓↑）—— UX-0714-2：accent 竖条 + 更深背景，与 hover 明确区分 */
 .completion-item.selected {
   background: var(--accent-20);
   border-left-color: var(--accent);
 }
 
-/* 选中态 + hover 叠加：保持 selected 样式优先（避免 hover 覆盖竖条） */
 .completion-item.selected:hover {
   background: var(--accent-20);
 }
@@ -182,11 +143,7 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ===== 搜索 loading 占位（UX-0714-1） ===== */
-/*
- * IPC 发出后、返回前的过渡状态。复用 .completion-item 布局让高度计算兼容，
- * 通过 .completion-loading 修饰符居中 + muted 色 + 禁用交互。
- */
+/* ===== 搜索 loading 占位 ===== */
 .completion-item.completion-loading {
   justify-content: center;
   color: var(--muted);
@@ -198,11 +155,7 @@ body {
   background: transparent;
 }
 
-/* ===== 候选总数 footer（UX-0714-4） ===== */
-/*
- * 候选总数超过 5 项时在列表底部显示"共 N 项"提示，让用户感知列表被截断。
- * 非 .completion-item 类（不参与 querySelectorAll 计数/不作为可选选项）。
- */
+/* ===== 候选总数 footer ===== */
 .completion-footer {
   text-align: center;
   color: var(--muted);
@@ -212,11 +165,7 @@ body {
   user-select: none;
 }
 
-/* ===== Phase 3：复制成功 Toast 状态 ===== */
-/*
- * 确认成功后输入框变为只读 Toast，居中显示"✓ 已复制"提示。
- * 利用 accent 色（绿色）提供积极反馈，与确认按钮的 accent 色呼应。
- */
+/* ===== Toast 状态（粘贴成功/复制成功） ===== */
 .quick-input-field.copy-toast {
   text-align: center;
   color: var(--accent);

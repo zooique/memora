@@ -102,6 +102,8 @@ export class QuickInputCompletion {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** 当前选中的候选项索引（-1 表示无选中） */
   private selectedIndex = -1;
+  /** 用户是否正在浏览候选列表（方向键导航过） */
+  private isNavigatingList = false;
   /** 当前候选列表（用于键盘导航） */
   private candidates: CompletionItem[] = [];
   /** 上一次请求的序号（用于取消乱序响应） */
@@ -142,6 +144,23 @@ export class QuickInputCompletion {
    */
   onSelect(cb: (text: string) => void): void {
     this.onSelectCallback = cb;
+  }
+
+  /**
+   * 检查用户是否正在浏览候选列表（方向键导航过）
+   */
+  isNavigating(): boolean {
+    return this.isNavigatingList;
+  }
+
+  /**
+   * 获取当前选中的候选项文本
+   */
+  getSelectedText(): string | null {
+    if (this.selectedIndex >= 0 && this.selectedIndex < this.candidates.length) {
+      return this.candidates[this.selectedIndex]!.text;
+    }
+    return null;
   }
 
   /**
@@ -187,10 +206,12 @@ export class QuickInputCompletion {
 
     if (ke.key === 'ArrowDown') {
       ke.preventDefault();
+      this.isNavigatingList = true;
       this.selectedIndex = (this.selectedIndex + 1) % this.candidates.length;
       this.updateSelection();
     } else if (ke.key === 'ArrowUp') {
       ke.preventDefault();
+      this.isNavigatingList = true;
       // selectedIndex 为 -1（无选中）时，ArrowUp 应跳到最后一项（循环导航）
       this.selectedIndex = this.selectedIndex < 0
         ? this.candidates.length - 1
@@ -490,6 +511,13 @@ export class QuickInputCompletion {
   }
 
   /**
+   * 清空候选列表（外部调用接口）
+   */
+  clear(): void {
+    this.clearCandidates();
+  }
+
+  /**
    * 清空候选列表
    *
    * 清空 DOM、重置状态、隐藏列表容器、通知窗口收起高度。
@@ -500,6 +528,7 @@ export class QuickInputCompletion {
   private clearCandidates(): void {
     this.candidates = [];
     this.selectedIndex = -1;
+    this.isNavigatingList = false;
     // UX-0714-4：清空时同步清除 footer 标记和总数，避免残留状态影响下次渲染
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;

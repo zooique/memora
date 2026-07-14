@@ -57,8 +57,8 @@ export interface ActiveWindow {
  *
  * 仅暴露 InputInjector 需要的 3 个 API：
  *   - getActiveWindow：获取前台窗口
- *   - keyboard.pressKey / releaseKey：模拟按键（Esc + Ctrl+V）
- *   - Key：按键枚举（Escape / LeftControl / V）
+ *   - keyboard.pressKey / releaseKey：模拟按键（Ctrl+V）
+ *   - Key：按键枚举（LeftControl / V）
  */
 export interface NutJsDeps {
   /** 获取当前前台窗口 */
@@ -70,7 +70,6 @@ export interface NutJsDeps {
   };
   /** 按键枚举（nut-js 的 Key 对象） */
   Key: {
-    Escape: NutJsKey;
     LeftControl: NutJsKey;
     V: NutJsKey;
   };
@@ -93,10 +92,20 @@ export interface PasteResult {
   error?: unknown;
 }
 
-/** 粘贴后等待系统处理的时间（ms） */
-const PASTE_DELAY_MS = 100;
-/** Esc 后等待 IME 处理的时间（ms） */
-const ESC_DELAY_MS = 50;
+/**
+ * 根据文本长度计算粘贴延迟（ms）
+ *
+ * 短文本（<50 字符）：100ms（快速响应）
+ * 中等文本（<200 字符）：200ms（平衡体验与可靠性）
+ * 长文本（≥200 字符）：500ms（确保长文本粘贴完成）
+ *
+ * 之前固定 100ms 导致长文本粘贴被截断——剪贴板在粘贴完成前被恢复。
+ */
+function calculatePasteDelay(text: string): number {
+  if (text.length < 50) return 100;
+  if (text.length < 200) return 200;
+  return 500;
+}
 
 /**
  * 输入注入器
@@ -207,18 +216,13 @@ export class InputInjector {
         return { success: false, mode: 'copy', reason: 'focus_failed', error: err };
       }
 
-      // 边界 2：CJK 输入法处理——Esc 关闭可能激活的 IME 候选窗口
-      // 排雷修正雷 5.1：必须在焦点恢复之后，否则 Esc 发送给浮窗而非 IME
-      await this.deps.keyboard.pressKey(this.deps.Key.Escape);
-      await this.deps.keyboard.releaseKey(this.deps.Key.Escape);
-      await new Promise(resolve => setTimeout(resolve, ESC_DELAY_MS));
-
       // 模拟 Ctrl+V
       await this.deps.keyboard.pressKey(this.deps.Key.LeftControl, this.deps.Key.V);
       await this.deps.keyboard.releaseKey(this.deps.Key.LeftControl, this.deps.Key.V);
 
-      // 等待系统完成粘贴
-      await new Promise(resolve => setTimeout(resolve, PASTE_DELAY_MS));
+      // 等待系统完成粘贴（根据文本长度动态调整延迟）
+      const pasteDelay = calculatePasteDelay(text);
+      await new Promise(resolve => setTimeout(resolve, pasteDelay));
 
       // 获取应用名供 Toast 显示
       const appName = await this.getWindowTitle(previousWindow);

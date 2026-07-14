@@ -34,8 +34,8 @@ import { getDefaultInputInjector, type ActiveWindow, type InputInjector } from '
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
-/** 浮窗高度（px）—— 单行输入框 + 内边距 */
-const QUICK_INPUT_HEIGHT = 80;
+/** 浮窗高度（px）—— textarea + 提示文字 + 内边距 */
+const QUICK_INPUT_HEIGHT = 120;
 /** 失焦延迟关闭时长（ms）—— 给 Alt+Tab 切换留余量 */
 const BLUR_CLOSE_DELAY_MS = 200;
 /** 光标跟随偏移量（px）—— 浮窗相对鼠标位置的偏移 */
