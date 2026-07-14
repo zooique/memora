@@ -714,17 +714,25 @@ export interface ElectronAPI {
   /** 安装技能文件到 configDir/skills/（携带文件名和内容） */
   installSkill: (fileName: string, content: string) => Promise<{ success: boolean; error?: string; skillName?: string }>;
 
-  // ─── 快速输入补全（Phase 1 骨架） ─────────────────────
+  // ─── 快速输入补全（Phase 1 骨架 + Phase 4 自动粘贴） ─────
   /**
-   * 确认输入文本（主进程写入剪贴板 + 关闭浮窗）
+   * 确认输入文本（主进程优先自动粘贴，降级写入剪贴板）
    *
-   * 主进程会先调用 clipboardHandler.suppressNextChange() 抑制三重保护，
-   * 再写入剪贴板，避免触发 CLIPBOARD_CHANGED 干扰用户。
+   * Phase 1-3：主进程调用 clipboardHandler.suppressNextChange() 抑制三重保护，
+   *   再写入剪贴板，避免触发 CLIPBOARD_CHANGED 干扰用户。
+   * Phase 4：主进程优先尝试自动粘贴（恢复焦点 + 模拟 Ctrl+V），
+   *   成功返回 mode='paste'；失败降级走 Phase 3 复制流程，返回 mode='copy'。
    *
    * @param text 用户确认的文本
-   * @returns success 表示写入成功
+   * @returns success 是否成功 + mode 成功模式（paste/copy）+ appName 粘贴目标应用名
    */
-  confirmQuickInput: (text: string) => Promise<{ success: boolean }>;
+  confirmQuickInput: (text: string) => Promise<{
+    success: boolean;
+    /** 成功模式：paste=自动粘贴成功，copy=降级到复制+Toast */
+    mode: 'paste' | 'copy';
+    /** 粘贴目标应用名（paste 模式下供 Toast 显示） */
+    appName?: string;
+  }>;
   /** 关闭快速输入浮窗（Esc / 取消按钮触发，不写入剪贴板） */
   closeQuickInput: () => Promise<void>;
   /**

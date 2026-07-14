@@ -23,6 +23,7 @@ src/
 │   ├── spriteEventBridge.ts    # 精灵事件桥接（主进程 → 渲染进程通知）
 │   ├── trayIcon.ts             # 系统托盘管理
 │   ├── clipboardHandler.ts     # 剪贴板三重保护处理器（Phase 3.1）
+│   ├── inputInjector.ts        # 输入注入器（Phase 4 自动粘贴：nut-js 窗口管理 + 键盘模拟）
 │   ├── shortcuts.ts            # 全局快捷键管理器（Phase 3.3）
 │   ├── types.ts                # Electron 主进程类型 barrel（S-03 阶段 2）
 │   │
@@ -46,7 +47,7 @@ src/
 │   │   ├── floatWindow.ts      # 浮动窗口（右键菜单/消息列表/输入框）
 │   │   ├── windowManager.ts    # 窗口管理器（浮动↔完整切换/生命周期）
 │   │   ├── windowState.ts      # 窗口状态持久化（位置/大小/显示器恢复）
-│   │   ├── quickInputWindow.ts # 快速输入浮窗（单例/懒创建/失焦延迟关闭/剪贴板写入）
+│   │   ├── quickInputWindow.ts # 快速输入浮窗（单例/懒创建/失焦延迟关闭/Phase 4 自动粘贴）
 │   │   └── themeInjector.ts    # 主题注入器（CSS 变量动态注入）
 │   │
 │   └── renderer/               # 渲染进程（UI 层，不直接导入 electron）

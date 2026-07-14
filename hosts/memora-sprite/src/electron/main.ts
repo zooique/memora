@@ -676,6 +676,10 @@ async function initializeApp(): Promise<void> {
         }
       },
     });
+    // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
+    appState.quickInputWindow.setSuppressNextChange(
+      () => appState.clipboardHandler?.suppressNextChange(),
+    );
 
     // Phase 4.3：注册技能文件安装 IPC handler
     // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/

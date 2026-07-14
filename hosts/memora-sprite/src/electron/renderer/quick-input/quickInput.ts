@@ -1,13 +1,14 @@
 /**
  * 快速输入浮窗渲染逻辑 — 用户交互入口
  *
- * 职责（Phase 1 + Phase 2 + Phase 3）：
+ * 职责（Phase 1 + Phase 2 + Phase 3 + Phase 4）：
  *   1. 绑定输入框键盘事件：Enter 确认、Esc 关闭
  *   2. 绑定确认按钮点击事件
- *   3. 确认时调用 IPC 写入剪贴板（主进程抑制三重保护）
+ *   3. 确认时调用 IPC（主进程 Phase 4 优先自动粘贴，降级写剪贴板）
  *   4. 窗口重新显示时处理剪贴板预填并聚焦
  *   5. Phase 2：接入补全管理器，输入时显示候选列表，Tab 回填
- *   6. Phase 3：确认成功后显示"已复制"Toast，延迟 800ms 后关闭
+ *   6. Phase 3：确认成功后显示 Toast，延迟 800ms 后关闭
+ *   7. Phase 4：等待期间显示"粘贴中..."loading，按 mode 显示不同 Toast
  *
  * 设计原则：
  *   - 使用 Pick<ElectronAPI, ...> 提取子集（与 float.ts 范式一致）
@@ -18,7 +19,7 @@
  * 集成点：
  *   - quick-input.html：通过 <script type="module"> 加载
  *   - preload.ts：暴露 confirmQuickInput / closeQuickInput / searchMemories / searchSessionMessages
- *   - quickInputWindow.ts：主进程处理 IPC 并写入剪贴板
+ *   - quickInputWindow.ts：主进程处理 IPC，Phase 4 自动粘贴优先
  *   - quickInputCompletion.ts：补全候选管理器（Phase 2）
  */
 import type { ElectronAPI } from '../../preload.js';
@@ -88,10 +89,10 @@ function initQuickInput(): void {
   let toastCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * 确认输入：调用 IPC 写入剪贴板 + 显示 Toast + 延迟关闭
+   * 确认输入：调用 IPC（主进程 Phase 4 优先自动粘贴，降级写剪贴板）+ 显示 Toast + 延迟关闭
    *
-   * Phase 3：主进程确认成功后不自动关闭，由本函数显示"✓ 已复制"Toast，
-   * 延迟 TOAST_DURATION_MS 后调用 closeQuickInput() 关闭浮窗。
+   * Phase 3：主进程确认成功后不自动关闭，由本函数显示 Toast，延迟 TOAST_DURATION_MS 后关闭。
+   * Phase 4：等待期间显示"粘贴中..."loading（主进程 paste 约 300ms），按 mode 显示不同 Toast。
    *
    * 提交期间禁用输入框和按钮，防止重复触发。
    * 失败时恢复 UI 状态，让用户可以重试。
@@ -110,12 +111,18 @@ function initQuickInput(): void {
     isSubmitting = true;
     confirmBtn.disabled = true;
     inputField.disabled = true;
+    // Phase 4：等待期间显示"粘贴中..."loading（排雷修正雷 4.1：避免 300ms 无响应）
+    showPastingToast();
 
     try {
       const result = await api.confirmQuickInput(text);
       if (result.success) {
-        // Phase 3：显示"已复制"Toast，延迟后关闭浮窗
-        showCopyToast();
+        // Phase 4：按 mode 显示不同 Toast
+        if (result.mode === 'paste') {
+          showPastedToast(result.appName);
+        } else {
+          showCopyToast();
+        }
         // 保存句柄：浮窗可能在 Toast 期间被 Esc/blur 提前关闭，需在关闭时清理避免无效 IPC
         toastCloseTimer = setTimeout(() => {
           toastCloseTimer = null;
@@ -126,8 +133,10 @@ function initQuickInput(): void {
         isSubmitting = false;
         confirmBtn.disabled = false;
         inputField.disabled = false;
+        inputField.readOnly = false;
+        inputField.classList.remove('copy-toast');
+        inputField.value = text;  // 恢复用户输入的内容
         inputField.focus();
-        // 全选已输入内容，便于用户直接覆盖或修改
         inputField.select();
       }
     } catch (error) {
@@ -136,12 +145,40 @@ function initQuickInput(): void {
       isSubmitting = false;
       confirmBtn.disabled = false;
       inputField.disabled = false;
+      inputField.readOnly = false;
+      inputField.classList.remove('copy-toast');
+      inputField.value = text;
       inputField.focus();
     }
   }
 
   /**
-   * 显示"已复制"Toast（复用输入框区域，不引入额外 DOM 元素）
+   * Phase 4：显示"粘贴中..."loading 状态
+   *
+   * 主进程 paste 流程约 300ms（Esc 50ms + 粘贴 100ms + 剪贴板操作），
+   * 期间输入框显示 loading 文案，避免用户看到浮窗卡住无响应。
+   */
+  function showPastingToast(): void {
+    inputField.value = '粘贴中...';
+    inputField.classList.add('copy-toast');
+    inputField.disabled = false;
+    inputField.readOnly = true;
+  }
+
+  /**
+   * Phase 4：显示"已粘贴"Toast（自动粘贴成功）
+   *
+   * @param appName 粘贴目标应用名（可选，显示在 Toast 中让用户感知）
+   */
+  function showPastedToast(appName?: string): void {
+    inputField.value = appName ? `✓ 已粘贴到 ${appName}` : '✓ 已粘贴';
+    inputField.classList.add('copy-toast');
+    inputField.disabled = false;
+    inputField.readOnly = true;
+  }
+
+  /**
+   * 显示"已复制"Toast（降级模式 / Phase 3 兼容）
    *
    * 将输入框值替换为"✓ 已复制，Ctrl+V 粘贴"并添加 toast 样式类，
    * 浮窗关闭时 onQuickInputShow 会清空内容和样式。
