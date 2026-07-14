@@ -183,25 +183,23 @@ export class QuickInputCompletion {
    * 未用方向键导航时，←→ 不拦截，保持光标移动功能。
    * Tab 不在此处理，统一由 quickInput.ts / 主对话输入框各自处理。
    */
-  private handleKeyDown = (e: Event): void => {
+  private handleKeyDown = (e: KeyboardEvent): void => {
     if (this.candidates.length === 0) return;
-    // addEventListener 回调参数类型为 Event，此处断言为 KeyboardEvent 以访问 key 属性
-    const ke = e as KeyboardEvent;
 
-    if (ke.key === 'ArrowDown') {
-      ke.preventDefault();
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
       this.selectedIndex = (this.selectedIndex + 1) % this.candidates.length;
       this.updateSelection();
-    } else if (ke.key === 'ArrowUp') {
-      ke.preventDefault();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
       // selectedIndex 为 -1（无选中）时，ArrowUp 应跳到最后一项（循环导航）
       this.selectedIndex = this.selectedIndex < 0
         ? this.candidates.length - 1
         : (this.selectedIndex - 1 + this.candidates.length) % this.candidates.length;
       this.updateSelection();
-    } else if ((ke.key === 'ArrowLeft' || ke.key === 'ArrowRight') && this.selectedIndex >= 0) {
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && this.selectedIndex >= 0) {
       // 仅在用户已用 ↑↓ 导航选中候选项时，←→ 才填充
-      ke.preventDefault();
+      e.preventDefault();
       const selected = this.candidates[this.selectedIndex]!;
       this.recordAdoption(selected.text);
       this.onSelectCallback?.(selected.text);
@@ -340,7 +338,7 @@ export class QuickInputCompletion {
     // 去重：相同文本只保留 score 较高的（boost 在去重后应用，避免 boost 影响去重判断）
     const seen = new Map<string, CompletionItem>();
     for (const c of candidates) {
-      const key = c.text.slice(0, 40).toLowerCase();
+      const key = this.dedupKey(c.text);
       const existing = seen.get(key);
       if (!existing || c.score > existing.score) {
         seen.set(key, c);
@@ -361,13 +359,24 @@ export class QuickInputCompletion {
   }
 
   /**
+   * 生成去重/采纳 key（文本小写化）
+   *
+   * 用于 mergeCandidates 去重、recordAdoption 记录、getAdoptionBoost 查找，
+   * 三处共用同一 key 逻辑确保 boost 能命中已采纳的候选项。
+   * 使用完整文本（已截断到 PREVIEW_MAX_LENGTH=80）而非前缀截断，避免误去重。
+   */
+  private dedupKey(text: string): string {
+    return text.toLowerCase();
+  }
+
+  /**
    * 记录用户采纳的候选项（←→/Click 确认时调用）
    *
    * 采纳次数累积，用于下次合并候选时 boost 该候选项的 score。
-   * key 与去重逻辑一致（text 前 40 字符小写），确保 boost 能命中。
+   * key 与去重逻辑一致（dedupKey），确保 boost 能命中。
    */
   private recordAdoption(text: string): void {
-    const key = text.slice(0, 40).toLowerCase();
+    const key = this.dedupKey(text);
     const count = this.adoptedTexts.get(key) ?? 0;
     this.adoptedTexts.set(key, count + 1);
   }
@@ -379,7 +388,7 @@ export class QuickInputCompletion {
    * 未被采纳过的候选项返回 0。
    */
   private getAdoptionBoost(text: string): number {
-    const key = text.slice(0, 40).toLowerCase();
+    const key = this.dedupKey(text);
     const count = this.adoptedTexts.get(key);
     if (!count) return 0;
     return Math.min(count, ADOPTION_BOOST_MAX_COUNT) * ADOPTION_BOOST_PER_COUNT;

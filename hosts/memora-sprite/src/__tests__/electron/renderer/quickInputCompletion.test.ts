@@ -278,21 +278,21 @@ describe('mergeCandidates · 合并去重排序', async () => {
     expect(texts).toEqual(['第一条消息', '第二条消息', '第三条消息']);
   });
 
-  it('相同前缀文本应去重，保留 score 较高者', async () => {
+  it('相同文本应去重，保留 score 较高者', async () => {
     const { input, api } = createCompletion();
-    // 构造前 40 字符完全相同的长文本（去重 key = text.slice(0,40).toLowerCase()）
-    const sharedPrefix = '关于项目会议记录的详细分析和总结报告'.repeat(3); // 18×3=54 字符 > 40
+    // 构造完全相同的长文本（去重 key = dedupKey(text) = text.toLowerCase()）
+    const sharedText = '关于项目会议记录的详细分析和总结报告'.repeat(3); // 18×3=54 字符
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
-      hits: [createMemoryHit({ contentPreview: sharedPrefix + '记忆扩展', score: 0.95 })],
+      hits: [createMemoryHit({ contentPreview: sharedText, score: 0.95 })],
     });
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
-      results: [createMessageResult({ content: sharedPrefix + '对话扩展', role: 'user' })],
+      results: [createMessageResult({ content: sharedText, role: 'user' })],
     });
     input.value = '关于项目';
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // 前 40 字符相同 → 去重，只保留 score=0.95 的记忆（对话 score=0.6）
+    // 完全相同文本 → 去重，只保留 score=0.95 的记忆（对话 score=0.6）
     const items = document.querySelectorAll('.completion-item');
     expect(items.length).toBe(1);
     expect(items[0]!.querySelector('.completion-label')?.textContent).toBe('记忆');

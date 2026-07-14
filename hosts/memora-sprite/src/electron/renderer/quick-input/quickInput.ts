@@ -365,6 +365,11 @@ function initQuickInput(): void {
   updateCounter();
   autoResize();
   updateStreamToggle();
+
+  // 窗口销毁时清理补全管理器（移除事件监听器 + 清空定时器）
+  window.addEventListener('beforeunload', () => {
+    completion?.cleanup();
+  });
 }
 
 if (document.readyState === 'loading') {

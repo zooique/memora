@@ -36,6 +36,8 @@ import { getDefaultInputInjector, type ActiveWindow, type InputInjector } from '
 const QUICK_INPUT_WIDTH = 480;
 /** 浮窗初始高度（px）—— textarea 1 行 + 底部栏 + 内边距 */
 const QUICK_INPUT_HEIGHT = 72;
+/** 浮窗最大高度（px）—— 输入区 + 候选列表(最多 5 项×38px) + footer，与 CSS max-height:200px 对齐 */
+const QUICK_INPUT_MAX_HEIGHT = 400;
 /** 失焦延迟关闭时长（ms）—— 给 Alt+Tab 切换留余量 */
 const BLUR_CLOSE_DELAY_MS = 200;
 /** 光标跟随偏移量（px）—— 浮窗相对鼠标位置的偏移 */
@@ -49,7 +51,7 @@ const CLIPBOARD_PREFILL_MIN_LENGTH = 2;
 interface ClipboardPrefillResult {
   /** 预填文本（null 表示不预填） */
   text: string | null;
-  /** 剪贴板内容是否命中敏感模式（用于渲染进程自动进入持久模式） */
+  /** 剪贴板内容是否命中敏感模式（用于渲染进程自动进入流式模式） */
   isSensitive: boolean;
 }
 
@@ -263,7 +265,7 @@ export class QuickInputWindow {
       }
       const sensitiveResult = isSensitive(trimmed);
       if (sensitiveResult.sensitive) {
-        // 敏感内容不预填，但通知渲染进程进入持久模式
+        // 敏感内容不预填，但通知渲染进程进入流式模式
         return { text: null, isSensitive: true };
       }
       return { text: trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH), isSensitive: false };
@@ -385,7 +387,7 @@ export class QuickInputWindow {
       try {
         if (!this.win || this.win.isDestroyed()) return;
         // 参数校验：高度必须是合理范围内的正整数
-        if (typeof height !== 'number' || height < QUICK_INPUT_HEIGHT || height > 400) {
+        if (typeof height !== 'number' || height < QUICK_INPUT_HEIGHT || height > QUICK_INPUT_MAX_HEIGHT) {
           return;
         }
         const { width } = this.win.getBounds();
