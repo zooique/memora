@@ -24,8 +24,6 @@ import { RelationBuilder } from '@/agent/managers/relationBuilder.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-// MemoryMutator：写操作代理，与 MemoryInspector 严格分工
-import { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 // MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
@@ -74,8 +72,6 @@ export interface AssembleOutput {
   insightExtractor: InsightExtractor;
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
-  /** 记忆写入器（与 MemoryInspector 严格分工：写操作代理） */
-  memoryMutator: MemoryMutator;
   autoConfigRefiner: AutoConfigRefiner;
   /** 会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
@@ -208,9 +204,6 @@ export async function assembleComponents(
   // advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
   const memoryAdvisor = new MemoryAdvisor(pctx.index);
   const memoryInspector = new MemoryInspector(pctx.index, loop, history, memoryAdvisor, relationStore ?? null);
-  // MemoryMutator：写操作代理，与 MemoryInspector 共享同一 relationStore 实例
-  // 同一 relationStore 注入两者：MemoryInspector 用于查询，MemoryMutator 用于写入
-  const memoryMutator = new MemoryMutator(pctx.index, relationStore ?? null);
 
   // AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
@@ -229,7 +222,6 @@ export async function assembleComponents(
     insightExtractor,
     configManager,
     memoryInspector,
-    memoryMutator,
     autoConfigRefiner,
     sessionArchiver,
   };

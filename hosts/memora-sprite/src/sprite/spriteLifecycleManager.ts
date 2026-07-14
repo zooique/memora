@@ -218,15 +218,15 @@ export class SpriteLifecycleManager {
 
   /** 执行一次过期记忆清理 */
   private purgeExpiredMemories(): void {
-    const mutator = this.agent.memoryMutator;
-    if (!mutator) return;
+    const memory = this.agent.memory;
+    if (!memory) return;
 
     const retentionDays = this.config.recycleBinRetentionDays;
     if (retentionDays <= 0) return;
 
     const threshold = new Date(Date.now() - retentionDays * MS_PER_DAY);
     try {
-      const purgedCount = mutator.purgeExpired(threshold);
+      const purgedCount = memory.writePurgeExpired(threshold);
       if (purgedCount > 0) {
         logger.info(
           { purgedCount, retentionDays, threshold: threshold.toISOString() },

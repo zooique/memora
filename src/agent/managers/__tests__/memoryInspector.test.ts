@@ -1,8 +1,8 @@
 /**
- * 单元测试：MemoryInspector 记忆查看器（只读查询）
+ * 单元测试：MemoryInspector 记忆管理器（读写统一入口）
  *
- * MemoryInspector 仅负责只读查询，写操作已迁移至 MemoryMutator
- * （见 memoryMutator.test.ts）。本测试覆盖 MemoryInspector 全部公开方法：
+ * MemoryInspector 负责记忆的查询 + 写入操作，写方法以 writeXxx 前缀命名。
+ * 本测试覆盖 MemoryInspector 全部公开方法：
  *   - constructor + setVectorStore：依赖注入
  *   - 只读查询：getById / getDeletedById / listDeleted / getBySource / list
  *   - snapshot：3 层快照（工作记忆 + Bootstrap + 归档）
@@ -11,12 +11,14 @@
  *   - stats：记忆库统计
  *   - getRelations / getAllRelations / getRelationPath / getRelationNeighbors：关系查询
  *   - sourceHealth / suggest：委托 MemoryAdvisor
+ *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired /
+ *     writeAddRelation / writeRemoveRelation
  *
  * Mock 策略：
  *   - InMemoryStorage / InMemoryRelationStore 用真实实现（测试夹具，已被 store.test.ts 验证）
  *   - loop / history 用 Partial<T> as T 单层断言（仅实现被测方法）
  *   - VectorStore 用 mock 对象（search 返回固定结果）
- *   - 测试数据通过 storage.upsert/storage.delete 直接写入（不再经由 inspector 写方法）
+ *   - 写操作测试通过 writeXxx 写入后用只读方法读取验证（读写同源）
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -141,7 +143,7 @@ describe('MemoryInspector', () => {
 
   // ════════════════════════════════════════════════════════
   // 2. 只读查询（6 测试）
-  // 写操作已迁移至 MemoryMutator，本组通过 storage 直接写入测试数据
+  // 通过 storage 直接写入测试夹具，验证只读方法正确性
   // ════════════════════════════════════════════════════════
 
   describe('只读查询', () => {
@@ -696,6 +698,149 @@ describe('MemoryInspector', () => {
       expect(Array.isArray(hits)).toBe(true);
       // limit 选项应被尊重
       expect(hits.length).toBeLessThanOrEqual(5);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
+  // 9. 写操作（writeXxx 前缀）
+  // ════════════════════════════════════════════════════════
+
+  describe('写操作（writeXxx）', () => {
+    /** 带 relationStore 的 inspector（用于关系写操作测试） */
+    let relationStore: InMemoryRelationStore;
+    /** 带 relationStore 的 inspector 实例 */
+    let inspectorWithRelation: MemoryInspector;
+
+    beforeEach(() => {
+      relationStore = new InMemoryRelationStore();
+      inspectorWithRelation = new MemoryInspector(storage, loop, history, advisor, relationStore);
+    });
+
+    // ─── 记忆写入 ───
+
+    it('writeUpsert 应写入记忆（写入后可读取）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+      // 通过只读方法验证写入结果
+      expect(inspector.getById('rule:1')).toEqual(mem);
+    });
+
+    it('writeUpsert 应支持更新已存在的记忆', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1', score: 0.5 });
+      inspector.writeUpsert(mem);
+      // 更新 score
+      inspector.writeUpsert({ ...mem, score: 0.9 });
+      expect(inspector.getById('rule:1')!.score).toBe(0.9);
+    });
+
+    it('writeDelete 应软删除记忆（getById 返回 null，getDeletedById 可读取）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+      inspector.writeDelete('rule:1');
+      // 软删除后 getById 返回 null
+      expect(inspector.getById('rule:1')).toBeNull();
+      // 但 getDeletedById 可读取
+      const deleted = inspector.getDeletedById('rule:1');
+      expect(deleted).not.toBeNull();
+      expect(deleted!.deletedAt).toBeTruthy();
+    });
+
+    it('writeDelete 对不存在的 id 应为 no-op', () => {
+      expect(() => inspector.writeDelete('nonexistent')).not.toThrow();
+    });
+
+    it('writeRestore 应恢复软删除的记忆（清除 deletedAt）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+      inspector.writeDelete('rule:1');
+      expect(inspector.getById('rule:1')).toBeNull();
+      // 恢复
+      inspector.writeRestore('rule:1');
+      expect(inspector.getById('rule:1')).not.toBeNull();
+      expect(inspector.getById('rule:1')!.deletedAt).toBeUndefined();
+    });
+
+    it('writePurge 应物理删除记忆（不可恢复）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+      inspector.writePurge('rule:1');
+      // 物理删除后 getById 和 getDeletedById 都返回 null
+      expect(inspector.getById('rule:1')).toBeNull();
+      expect(inspector.getDeletedById('rule:1')).toBeNull();
+    });
+
+    it('writePurgeExpired 应清理过期的软删除记忆', () => {
+      const mem1 = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      const mem2 = createMemory({ id: 'rule:2', source: 'rule', name: 'r2' });
+      inspector.writeUpsert(mem1);
+      inspector.writeUpsert(mem2);
+      inspector.writeDelete('rule:1');
+      inspector.writeDelete('rule:2');
+
+      // 阈值稍晚于当前，确保覆盖已写入的 deletedAt
+      const before = new Date(Date.now() + 1000);
+      const purgedCount = inspector.writePurgeExpired(before);
+      expect(purgedCount).toBe(2);
+      expect(inspector.getDeletedById('rule:1')).toBeNull();
+      expect(inspector.getDeletedById('rule:2')).toBeNull();
+    });
+
+    it('writePurgeExpired 未过期的软删除记忆不应被清理', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+      inspector.writeDelete('rule:1');
+      // 阈值为 1 小时前（deletedAt 晚于此值，未过期）
+      const before = new Date(Date.now() - 60 * 60 * 1000);
+      const purgedCount = inspector.writePurgeExpired(before);
+      expect(purgedCount).toBe(0);
+      expect(inspector.getDeletedById('rule:1')).not.toBeNull();
+    });
+
+    // ─── 关系写入 ───
+
+    it('writeAddRelation 应透传 relationStore.addRelation', () => {
+      const relation = {
+        sourceId: 'insight:a',
+        targetId: 'insight:b',
+        type: 'supports',
+        weight: 0.7,
+        createdAt: '2026-06-27T10:00:00.000Z',
+      };
+      inspectorWithRelation.writeAddRelation(relation);
+      const all = inspectorWithRelation.getAllRelations();
+      expect(all).toHaveLength(1);
+      expect(all[0]!.sourceId).toBe('insight:a');
+      expect(all[0]!.type).toBe('supports');
+    });
+
+    it('writeRemoveRelation 应透传 relationStore.removeRelation', () => {
+      const relation = {
+        sourceId: 'insight:a',
+        targetId: 'insight:b',
+        type: 'supports',
+        weight: 0.7,
+        createdAt: '2026-06-27T10:00:00.000Z',
+      };
+      inspectorWithRelation.writeAddRelation(relation);
+      expect(inspectorWithRelation.getAllRelations()).toHaveLength(1);
+      inspectorWithRelation.writeRemoveRelation('insight:a', 'insight:b', 'supports');
+      expect(inspectorWithRelation.getAllRelations()).toHaveLength(0);
+    });
+
+    it('writeAddRelation 在 relationStore 未注入时应静默 no-op', () => {
+      // inspector（无 relationStore）调用写关系方法应静默
+      const relation = {
+        sourceId: 'a',
+        targetId: 'b',
+        type: 'related',
+        weight: 0.5,
+        createdAt: '2026-06-27T10:00:00.000Z',
+      };
+      expect(() => inspector.writeAddRelation(relation)).not.toThrow();
+    });
+
+    it('writeRemoveRelation 在 relationStore 未注入时应静默 no-op', () => {
+      expect(() => inspector.writeRemoveRelation('a', 'b', 'related')).not.toThrow();
     });
   });
 });

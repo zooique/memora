@@ -113,7 +113,8 @@ interface Setup {
   mockEmit: SpriteEventEmitter;
   agentHandlers: Map<string, AgentEventHandler>;
   mockWorks: { getProjection: ReturnType<typeof vi.fn>; ensureProjection: ReturnType<typeof vi.fn> } | null;
-  mockMemoryMutator: { purgeExpired: ReturnType<typeof vi.fn> } | null;
+  /** memory 为 null 意味着读写都不可用 */
+  mockMemory: { writePurgeExpired: ReturnType<typeof vi.fn> } | null;
 }
 
 /** 创建完整测试 setup（所有 mock 对象 + manager） */
@@ -121,7 +122,8 @@ function createSetup(opts?: {
   configOverrides?: Partial<Required<SpriteConfig>>;
   tracer?: ITracer | null;
   works?: { getProjection: ReturnType<typeof vi.fn>; ensureProjection: ReturnType<typeof vi.fn> } | null;
-  memoryMutator?: { purgeExpired: ReturnType<typeof vi.fn> } | null;
+  /** memory 为 null 意味着读写都不可用 */
+  memory?: { writePurgeExpired: ReturnType<typeof vi.fn> } | null;
 }): Setup {
   const agentHandlers = new Map<string, AgentEventHandler>();
 
@@ -130,8 +132,8 @@ function createSetup(opts?: {
     ensureProjection: vi.fn().mockResolvedValue(null),
   };
 
-  const mockMemoryMutator = opts?.memoryMutator ?? {
-    purgeExpired: vi.fn().mockReturnValue(0),
+  const mockMemory = opts?.memory ?? {
+    writePurgeExpired: vi.fn().mockReturnValue(0),
   };
 
   const mockAgent = {
@@ -141,7 +143,8 @@ function createSetup(opts?: {
     off: vi.fn((event: string, _handler: AgentEventHandler) => {
       agentHandlers.delete(event);
     }),
-    memoryMutator: mockMemoryMutator,
+    // memory 统一读写入口
+    memory: mockMemory,
     works: mockWorks,
   } as unknown as Agent;
 
@@ -218,7 +221,7 @@ function createSetup(opts?: {
     mockEmit,
     agentHandlers,
     mockWorks,
-    mockMemoryMutator,
+    mockMemory,
   };
 }
 
@@ -267,14 +270,14 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     const setup = createSetup();
     setup.manager.start();
 
-    expect(setup.mockMemoryMutator!.purgeExpired).toHaveBeenCalledTimes(1);
+    expect(setup.mockMemory!.writePurgeExpired).toHaveBeenCalledTimes(1);
   });
 
   it('recycleBinRetentionDays=0 时 start 不清理回收站', () => {
     const setup = createSetup({ configOverrides: { recycleBinRetentionDays: 0 } });
     setup.manager.start();
 
-    expect(setup.mockMemoryMutator!.purgeExpired).not.toHaveBeenCalled();
+    expect(setup.mockMemory!.writePurgeExpired).not.toHaveBeenCalled();
   });
 
   it('stop 后 agent.off 被调用 9 次（取消全部订阅）', () => {
@@ -311,9 +314,9 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     setup.manager.stop();
 
     // 再次 start 后 purgeExpired 应只被调用 1 次（首次 start 的定时器已清理）
-    setup.mockMemoryMutator!.purgeExpired.mockClear();
+    setup.mockMemory!.writePurgeExpired.mockClear();
     setup.manager.start();
-    expect(setup.mockMemoryMutator!.purgeExpired).toHaveBeenCalledTimes(1);
+    expect(setup.mockMemory!.writePurgeExpired).toHaveBeenCalledTimes(1);
     setup.manager.stop();
   });
 });
@@ -764,7 +767,7 @@ describe('SpriteLifecycleManager purgeExpiredMemories（回收站清理）', () 
 
   it('purgedCount > 0 → emit("trashPurged") + logger.info', () => {
     const setup = createSetup();
-    setup.mockMemoryMutator!.purgeExpired.mockReturnValue(5);
+    setup.mockMemory!.writePurgeExpired.mockReturnValue(5);
 
     setup.manager.start();
 
@@ -775,7 +778,7 @@ describe('SpriteLifecycleManager purgeExpiredMemories（回收站清理）', () 
 
   it('purgedCount = 0 → 不 emit("trashPurged")', () => {
     const setup = createSetup();
-    setup.mockMemoryMutator!.purgeExpired.mockReturnValue(0);
+    setup.mockMemory!.writePurgeExpired.mockReturnValue(0);
 
     setup.manager.start();
 
@@ -783,9 +786,9 @@ describe('SpriteLifecycleManager purgeExpiredMemories（回收站清理）', () 
     setup.manager.stop();
   });
 
-  it('mutator.purgeExpired 抛错 → catch + logger.warn（不抛出）', () => {
+  it('memory.writePurgeExpired 抛错 → catch + logger.warn（不抛出）', () => {
     const setup = createSetup();
-    setup.mockMemoryMutator!.purgeExpired.mockImplementation(() => {
+    setup.mockMemory!.writePurgeExpired.mockImplementation(() => {
       throw new Error('mock: purgeExpired 失败');
     });
 
@@ -795,10 +798,10 @@ describe('SpriteLifecycleManager purgeExpiredMemories（回收站清理）', () 
     setup.manager.stop();
   });
 
-  it('agent.memoryMutator 为 null → 直接 return（不抛错）', () => {
-    const setup = createSetup({ memoryMutator: null });
+  it('agent.memory 为 null → 直接 return（不抛错）', () => {
+    const setup = createSetup({ memory: null });
 
-    // memoryMutator 为 null 时 start 不应抛错
+    // memory 为 null 时 start 不应抛错（读写均不可用，跳过回收站清理）
     expect(() => setup.manager.start()).not.toThrow();
     setup.manager.stop();
   });
@@ -809,7 +812,7 @@ describe('SpriteLifecycleManager purgeExpiredMemories（回收站清理）', () 
 
     setup.manager.start();
 
-    const threshold = setup.mockMemoryMutator!.purgeExpired.mock.calls[0][0] as Date;
+    const threshold = setup.mockMemory!.writePurgeExpired.mock.calls[0][0] as Date;
     const expectedThreshold = beforeStart - 7 * MS_PER_DAY;
     // 允许 1 秒误差（测试执行耗时）
     expect(Math.abs(threshold.getTime() - expectedThreshold)).toBeLessThan(1000);

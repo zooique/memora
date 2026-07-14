@@ -13,7 +13,7 @@
  * - getRelationGraph：关系图谱（ADR-014，节点上限 200）
  *
  * 测试策略（对齐 auditManager.test.ts / presenceController.test.ts 范式）：
- * - mock Agent.memory（MemoryInspector 只读子集）+ Agent.memoryMutator（MemoryMutator 写子集）+ IVectorStore，使用 vi.fn() 创建方法
+ * - mock Agent.memory（MemoryInspector 统一读写）+ IVectorStore，使用 vi.fn() 创建方法
  * - 通过 setLogger() 注入 mock logger，验证 warn 降级日志（logger 为 getter-only 单例，无法 spyOn）
  * - 纯业务逻辑测试，无 I/O、无 LLM、无 DOM
  * - 类型导入使用 import type（consistent-type-imports 规则）
@@ -38,18 +38,16 @@ import { setLogger } from 'memora';
 /** MemoryInspector 类型（从 Agent['memory'] 推导，避免直接导入未导出的类） */
 type Inspector = NonNullable<Agent['memory']>;
 
-/** MemoryMutator 类型（从 Agent['memoryMutator'] 推导，写操作代理） */
-type Mutator = NonNullable<Agent['memoryMutator']>;
-
 // ─── Mock 工厂 ──────────────────────────────────────────
 
 /**
- * 创建 Mock MemoryInspector（只读查询，写操作已移至 MemoryMutator）
+ * 创建 Mock MemoryInspector（统一读写）
  *
  * 含 MemoryController 用到的全部读方法：
  * list / getById / getBySource / stats / suggest / searchHybrid / search / getAllRelations
  * + 回收站查询：listDeleted / getDeletedById
  * + Phase 5.1/5.2：getRelationPath / getRelationNeighbors（路径追溯 + 邻居查询）
+ * + 写方法：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired / writeAddRelation / writeRemoveRelation
  * 通过 Partial<Inspector> 中间类型实现单层 as 断言（无需 as unknown as）
  */
 function createMockInspector(): Inspector {
@@ -69,37 +67,26 @@ function createMockInspector(): Inspector {
     // Phase 5.1/5.2：路径追溯 + 邻居查询（show() 用 getRelationNeighbors 替代手动遍历）
     getRelationPath: vi.fn().mockReturnValue([]),
     getRelationNeighbors: vi.fn().mockReturnValue([]),
+    // ─── 写方法（writeXxx 前缀） ───
+    writeUpsert: vi.fn(),
+    writeDelete: vi.fn(),
+    writeRestore: vi.fn(),
+    writePurge: vi.fn(),
+    writePurgeExpired: vi.fn().mockReturnValue(0),
+    writeAddRelation: vi.fn(),
+    writeRemoveRelation: vi.fn(),
   };
   return inspector as Inspector;
 }
 
 /**
- * 创建 Mock MemoryMutator（写操作代理）
+ * 创建 Mock Agent（memory 即 MemoryInspector 统一读写）
  *
- * 含 MemoryController 用到的全部写方法：
- * upsert / delete / restore / purge / purgeExpired / addRelation / removeRelation
+ * MemoryController 仅依赖 agent.memory（统一读写），
+ * 通过 Partial<Agent> 中间类型实现单层 as 断言
  */
-function createMockMutator(): Mutator {
-  const mutator: Partial<Mutator> = {
-    upsert: vi.fn(),
-    delete: vi.fn(),
-    restore: vi.fn(),
-    purge: vi.fn(),
-    purgeExpired: vi.fn().mockReturnValue(0),
-    addRelation: vi.fn(),
-    removeRelation: vi.fn(),
-  };
-  return mutator as Mutator;
-}
-
-/**
- * 创建 Mock Agent（memory + memoryMutator，MemoryController 依赖）
- *
- * MemoryController 同时依赖只读 inspector 和写入 mutator，
- * 两者均通过 Partial<Agent> 中间类型实现单层 as 断言
- */
-function createMockAgent(inspector: Inspector | null, mutator: Mutator | null): Agent {
-  const agent: Partial<Agent> = { memory: inspector, memoryMutator: mutator };
+function createMockAgent(inspector: Inspector | null): Agent {
+  const agent: Partial<Agent> = { memory: inspector };
   return agent as Agent;
 }
 
@@ -193,7 +180,6 @@ function flushMicrotasks(): Promise<void> {
 
 describe('MemoryController', () => {
   let mockInspector: Inspector;
-  let mockMutator: Mutator;
   let mockAgent: Agent;
   let mockVectorStore: IVectorStore;
   let mockLogger: ILogger;
@@ -201,8 +187,7 @@ describe('MemoryController', () => {
   beforeEach(() => {
     // 每个测试用例获得全新的 mock 实例，避免状态泄漏
     mockInspector = createMockInspector();
-    mockMutator = createMockMutator();
-    mockAgent = createMockAgent(mockInspector, mockMutator);
+    mockAgent = createMockAgent(mockInspector);
     mockVectorStore = createMockVectorStore();
     mockLogger = createMockLogger();
     // 注入 mock logger（替代默认 console fallback），使降级日志可验证
@@ -230,7 +215,7 @@ describe('MemoryController', () => {
     });
 
     it('agent.memory 为 null 时所有方法降级（list→[]/show→null/delete→false/upsert→抛错/dashboard→空仪表盘）', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(controller.list()).toEqual([]);
       expect(controller.show('any:id')).toBeNull();
       expect(controller.delete('any:id')).toBe(false);
@@ -342,7 +327,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回 null', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(controller.show('any:id')).toBeNull();
     });
   });
@@ -355,7 +340,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.delete('test:1');
       expect(result).toBe(true);
-      expect(mockMutator.delete).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writeDelete).toHaveBeenCalledWith('test:1');
       // 软删除不删除向量索引，restore 时无需重新嵌入
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
@@ -365,12 +350,12 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.delete('missing:id');
       expect(result).toBe(false);
-      expect(mockMutator.delete).not.toHaveBeenCalled();
+      expect(mockInspector.writeDelete).not.toHaveBeenCalled();
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
     it('inspector 为 null 时返回 false', () => {
-      const controller = new MemoryController(createMockAgent(null, null), mockVectorStore);
+      const controller = new MemoryController(createMockAgent(null), mockVectorStore);
       expect(controller.delete('any:id')).toBe(false);
     });
 
@@ -380,7 +365,7 @@ describe('MemoryController', () => {
       const result = controller.delete('test:1');
       // 软删除成功
       expect(result).toBe(true);
-      expect(mockMutator.delete).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writeDelete).toHaveBeenCalledWith('test:1');
       // 软删除保留向量索引，restore 时无需重新嵌入
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
       // 无降级日志（未触发向量索引操作）
@@ -392,7 +377,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent);
       const result = controller.delete('test:1');
       expect(result).toBe(true);
-      expect(mockMutator.delete).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writeDelete).toHaveBeenCalledWith('test:1');
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
   });
@@ -407,7 +392,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.purge('test:1');
       expect(result).toBe(false);
-      expect(mockMutator.purge).not.toHaveBeenCalled();
+      expect(mockInspector.writePurge).not.toHaveBeenCalled();
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
@@ -419,7 +404,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.purge('test:1');
       expect(result).toBe(true);
-      expect(mockMutator.purge).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writePurge).toHaveBeenCalledWith('test:1');
       expect(mockVectorStore.delete).toHaveBeenCalledWith('test:1');
     });
 
@@ -429,12 +414,12 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.purge('missing:id');
       expect(result).toBe(false);
-      expect(mockMutator.purge).not.toHaveBeenCalled();
+      expect(mockInspector.writePurge).not.toHaveBeenCalled();
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
     it('inspector 为 null 时返回 false', () => {
-      const controller = new MemoryController(createMockAgent(null, null), mockVectorStore);
+      const controller = new MemoryController(createMockAgent(null), mockVectorStore);
       expect(controller.purge('any:id')).toBe(false);
     });
 
@@ -451,7 +436,7 @@ describe('MemoryController', () => {
       const result = controller.purge('test:1');
       // 主流程不受影响：记忆已物理删除，返回 true
       expect(result).toBe(true);
-      expect(mockMutator.purge).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writePurge).toHaveBeenCalledWith('test:1');
       // 降级日志已记录（对齐 upsert 错误处理模式）
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'test:1' }),
@@ -467,7 +452,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent);
       const result = controller.purge('test:1');
       expect(result).toBe(true);
-      expect(mockMutator.purge).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writePurge).toHaveBeenCalledWith('test:1');
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
   });
@@ -483,7 +468,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.restore('test:1');
       expect(result).toBe(true);
-      expect(mockMutator.restore).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writeRestore).toHaveBeenCalledWith('test:1');
     });
 
     it('id 不在回收站返回 false，不调用 inspector.restore', () => {
@@ -492,11 +477,11 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.restore('test:1');
       expect(result).toBe(false);
-      expect(mockMutator.restore).not.toHaveBeenCalled();
+      expect(mockInspector.writeRestore).not.toHaveBeenCalled();
     });
 
     it('inspector 为 null 时返回 false', () => {
-      const controller = new MemoryController(createMockAgent(null, null), mockVectorStore);
+      const controller = new MemoryController(createMockAgent(null), mockVectorStore);
       expect(controller.restore('any:id')).toBe(false);
     });
 
@@ -507,7 +492,7 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.restore('test:1');
       expect(result).toBe(true);
-      expect(mockMutator.restore).toHaveBeenCalledWith('test:1');
+      expect(mockInspector.writeRestore).toHaveBeenCalledWith('test:1');
       // 恢复不触碰向量索引（软删除时保留，恢复时无需操作）
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
       expect(mockVectorStore.upsert).not.toHaveBeenCalled();
@@ -564,7 +549,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回空数组', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(controller.listDeleted()).toEqual([]);
     });
   });
@@ -577,7 +562,7 @@ describe('MemoryController', () => {
       const id = controller.upsert('insight', 'key-1', 'some content');
       expect(id).toBe('insight:key-1');
       // 验证 inspector.upsert 收到完整 Memory 对象
-      expect(mockMutator.upsert).toHaveBeenCalledWith(
+      expect(mockInspector.writeUpsert).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'insight:key-1',
           source: 'insight',
@@ -590,7 +575,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时抛 "存储不可用" 错误', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(() => controller.upsert('s', 'n', 'c')).toThrow('存储不可用');
     });
 
@@ -600,7 +585,7 @@ describe('MemoryController', () => {
       controller.upsert('test', 'item', 'content');
       const after = new Date().toISOString();
       // 提取 inspector.upsert 收到的 Memory 参数
-      const upsertedArg = vi.mocked(mockMutator.upsert).mock.calls[0]![0];
+      const upsertedArg = vi.mocked(mockInspector.writeUpsert).mock.calls[0]![0];
       expect(upsertedArg.score).toBe(0.5);
       // createdAt 与 accessedAt 必须相同（同时赋值 new Date().toISOString()）
       expect(upsertedArg.createdAt).toBe(upsertedArg.accessedAt);
@@ -615,7 +600,7 @@ describe('MemoryController', () => {
       // upsert 同步返回，不等待向量索引更新
       const id = controller.upsert('test', 'item', 'content');
       expect(id).toBe('test:item');
-      expect(mockMutator.upsert).toHaveBeenCalled();
+      expect(mockInspector.writeUpsert).toHaveBeenCalled();
       // 等待微任务刷新（rejected Promise 的 .catch 回调异步执行）
       await flushMicrotasks();
       // 降级日志已记录
@@ -663,7 +648,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回 []', async () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = await controller.search('keyword');
       expect(result).toEqual([]);
     });
@@ -705,7 +690,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回空仪表盘（降级而非崩溃）', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = controller.dashboard();
       expect(result).toEqual({ total: 0, bySource: {}, suggestions: [], relationCount: 0, conflictCount: 0 });
     });
@@ -845,7 +830,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回 { nodes: [], edges: [] }', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = controller.getRelationGraph();
       expect(result).toEqual({ nodes: [], edges: [] });
     });
@@ -903,9 +888,9 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent);
       const result = controller.deleteBatch(['a:1', 'a:2', 'a:3']);
       expect(result).toEqual({ deleted: 2, total: 3 });
-      expect(mockMutator.delete).toHaveBeenCalledWith('a:1');
-      expect(mockMutator.delete).toHaveBeenCalledWith('a:3');
-      expect(mockMutator.delete).not.toHaveBeenCalledWith('a:2');
+      expect(mockInspector.writeDelete).toHaveBeenCalledWith('a:1');
+      expect(mockInspector.writeDelete).toHaveBeenCalledWith('a:3');
+      expect(mockInspector.writeDelete).not.toHaveBeenCalledWith('a:2');
     });
 
     it('跳过非字符串和空字符串 ID（IPC 传入可能含非法值）', () => {
@@ -916,12 +901,12 @@ describe('MemoryController', () => {
       const result = controller.deleteBatch(ids);
       // 只有 'a:1' 是合法字符串，total 计入所有传入项
       expect(result).toEqual({ deleted: 1, total: 5 });
-      expect(mockMutator.delete).toHaveBeenCalledOnce();
-      expect(mockMutator.delete).toHaveBeenCalledWith('a:1');
+      expect(mockInspector.writeDelete).toHaveBeenCalledOnce();
+      expect(mockInspector.writeDelete).toHaveBeenCalledWith('a:1');
     });
 
     it('inspector/mutator 为 null 时全部失败，返回 {deleted: 0, total: N}', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = controller.deleteBatch(['a:1', 'a:2']);
       expect(result).toEqual({ deleted: 0, total: 2 });
     });
@@ -938,8 +923,8 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent);
       const result = controller.restoreAll();
       expect(result).toEqual({ restored: 2, failed: 0 });
-      expect(mockMutator.restore).toHaveBeenCalledWith('a:1');
-      expect(mockMutator.restore).toHaveBeenCalledWith('a:2');
+      expect(mockInspector.writeRestore).toHaveBeenCalledWith('a:1');
+      expect(mockInspector.writeRestore).toHaveBeenCalledWith('a:2');
       // listDeleted 传 0 表示不设上限（获取全部已删除记忆）
       expect(mockInspector.listDeleted).toHaveBeenCalledWith(0);
     });
@@ -950,7 +935,7 @@ describe('MemoryController', () => {
         makeMemory({ id: 'a:2' }),
       ]);
       // a:2 抛错，a:1 正常
-      vi.mocked(mockMutator.restore).mockImplementation((id: string) => {
+      vi.mocked(mockInspector.writeRestore).mockImplementation((id: string) => {
         if (id === 'a:2') throw new Error('restore failed');
       });
       const controller = new MemoryController(mockAgent);
@@ -963,7 +948,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector/mutator 为 null 时返回 {restored: 0, failed: 0}', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = controller.restoreAll();
       expect(result).toEqual({ restored: 0, failed: 0 });
     });
@@ -980,8 +965,8 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.purgeAll();
       expect(result).toEqual({ purged: 2, failed: 0 });
-      expect(mockMutator.purge).toHaveBeenCalledWith('a:1');
-      expect(mockMutator.purge).toHaveBeenCalledWith('a:2');
+      expect(mockInspector.writePurge).toHaveBeenCalledWith('a:1');
+      expect(mockInspector.writePurge).toHaveBeenCalledWith('a:2');
       expect(mockVectorStore.delete).toHaveBeenCalledWith('a:1');
       expect(mockVectorStore.delete).toHaveBeenCalledWith('a:2');
     });
@@ -992,7 +977,7 @@ describe('MemoryController', () => {
         makeMemory({ id: 'a:2' }),
       ]);
       // a:2 抛错，a:1 正常
-      vi.mocked(mockMutator.purge).mockImplementation((id: string) => {
+      vi.mocked(mockInspector.writePurge).mockImplementation((id: string) => {
         if (id === 'a:2') throw new Error('purge failed');
       });
       const controller = new MemoryController(mockAgent, mockVectorStore);
@@ -1020,7 +1005,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector/mutator 为 null 时返回 {purged: 0, failed: 0}', () => {
-      const controller = new MemoryController(createMockAgent(null, null), mockVectorStore);
+      const controller = new MemoryController(createMockAgent(null), mockVectorStore);
       const result = controller.purgeAll();
       expect(result).toEqual({ purged: 0, failed: 0 });
     });
@@ -1032,7 +1017,7 @@ describe('MemoryController', () => {
     it('正常调用 mutator.addRelation 传入完整对象（含 createdAt）', () => {
       const controller = new MemoryController(mockAgent);
       controller.addRelation('a:1', 'a:2', 'supports', 0.8);
-      expect(mockMutator.addRelation).toHaveBeenCalledWith({
+      expect(mockInspector.writeAddRelation).toHaveBeenCalledWith({
         sourceId: 'a:1',
         targetId: 'a:2',
         type: 'supports',
@@ -1042,7 +1027,7 @@ describe('MemoryController', () => {
     });
 
     it('mutator 为 null 时静默降级（不抛错）', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(() => controller.addRelation('a:1', 'a:2', 'supports', 0.8)).not.toThrow();
     });
   });
@@ -1053,11 +1038,11 @@ describe('MemoryController', () => {
     it('正常调用 mutator.removeRelation 传入 (sourceId, targetId, type)', () => {
       const controller = new MemoryController(mockAgent);
       controller.removeRelation('a:1', 'a:2', 'supports');
-      expect(mockMutator.removeRelation).toHaveBeenCalledWith('a:1', 'a:2', 'supports');
+      expect(mockInspector.writeRemoveRelation).toHaveBeenCalledWith('a:1', 'a:2', 'supports');
     });
 
     it('mutator 为 null 时静默降级', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(() => controller.removeRelation('a:1', 'a:2', 'supports')).not.toThrow();
     });
   });
@@ -1069,8 +1054,8 @@ describe('MemoryController', () => {
       const controller = new MemoryController(mockAgent);
       controller.updateRelation('a:1', 'a:2', 'contradicts', 0.9);
       // updateRelation 内部委托 addRelation（sourceId+targetId+type 三元组唯一 UPSERT）
-      expect(mockMutator.addRelation).toHaveBeenCalledOnce();
-      expect(mockMutator.addRelation).toHaveBeenCalledWith({
+      expect(mockInspector.writeAddRelation).toHaveBeenCalledOnce();
+      expect(mockInspector.writeAddRelation).toHaveBeenCalledWith({
         sourceId: 'a:1',
         targetId: 'a:2',
         type: 'contradicts',
@@ -1080,7 +1065,7 @@ describe('MemoryController', () => {
     });
 
     it('mutator 为 null 时静默降级', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(() => controller.updateRelation('a:1', 'a:2', 'contradicts', 0.9)).not.toThrow();
     });
   });
@@ -1105,7 +1090,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回 []', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(controller.getRelationPath('a:1')).toEqual([]);
     });
   });
@@ -1130,7 +1115,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回 []', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       expect(controller.getRelationNeighbors('a:1')).toEqual([]);
     });
   });
@@ -1155,7 +1140,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时 list 返回 []，buildHealthDashboard 处理空数组', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = controller.getHealthDashboard();
       // 空数组也应返回合法的 HealthDashboard 结构（不抛错）
       expect(result).toHaveProperty('scores');
@@ -1206,7 +1191,7 @@ describe('MemoryController', () => {
     });
 
     it('inspector 为 null 时返回合法 ReviewData 结构（降级而非崩溃）', () => {
-      const controller = new MemoryController(createMockAgent(null, null));
+      const controller = new MemoryController(createMockAgent(null));
       const result = controller.getReviewData();
       // dashboard 降级返回空仪表盘，list 返回 []，buildReviewData 处理空输入
       expect(result).toHaveProperty('today');

@@ -174,7 +174,7 @@ InsightExtractor.extract() 现有流程：
 
 关系查询方法（`getRelationPath` / `getRelationNeighbors` / `getRelations`）挂在 `MemoryInspector` 而非 `IMemoryRelationStore`，理由：
 
-1. **读写职责分离**——MemoryInspector 专职只读查询（P1-2 拆分后写操作在 MemoryMutator），关系查询是只读操作，归属 MemoryInspector 与职责一致
+1. **读写统一入口**——MemoryInspector 统一读写（writeXxx 前缀区分写操作），关系查询是只读操作，归属 MemoryInspector 与职责一致
 2. **查询编排层**——`getRelationPath(startId, endId)` 需要多次调用 `IMemoryRelationStore.getRelations()` 做 BFS/DFS 遍历，这是查询编排逻辑，不应放在存储接口
 3. **存储接口保持纯粹**——`IMemoryRelationStore` 只暴露原子操作（addRelation/getRelations/removeRelation），不包含图遍历逻辑
 4. **复用 MemoryInspector 的 Memory 缓存**——关系查询需要获取 Memory 详情（如 content 用于展示），MemoryInspector 已持有 index 引用，避免重复注入
@@ -195,7 +195,7 @@ class MemoryInspector {
 
 // IMemoryRelationStore（原子操作接口，5 方法——与 §2 定义一致，未收窄）
 interface IMemoryRelationStore {
-  addRelation(relation: MemoryRelation): void;  // 写操作（MemoryMutator 调用）
+  addRelation(relation: MemoryRelation): void;  // 写操作（MemoryInspector.writeAddRelation 调用）
   getRelations(memoryId: string, direction?): MemoryRelation[];  // 原子读
   getRelationsByType(type: string): MemoryRelation[];  // 按类型查询（冲突检测用）
   getAllRelations(): MemoryRelation[];  // 全量查询（拓扑可视化用）
@@ -248,7 +248,7 @@ class InsightExtractor {
 
 ### 设计原则
 
-1. **读写分离**——MemoryInspector（只读）+ MemoryMutator（写代理）+ RelationBuilder（关系构建）三角分工
+1. **读写统一入口**——MemoryInspector 统一读写（writeXxx 前缀区分写操作）+ RelationBuilder（关系构建）分工
 2. **存储接口纯粹**——IMemoryRelationStore 只暴露原子操作，图遍历逻辑在 MemoryInspector 编排层
 3. **可选注入降级**——RelationBuilder 未注入时 InsightExtractor 静默跳过关系构建（ADR-006 降级优先）
 4. **独立测试**——RelationBuilder 可脱离 InsightExtractor 独立单元测试

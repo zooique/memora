@@ -1,21 +1,23 @@
 /**
- * 记忆查看器 — 统一查看记忆快照 + 搜索 + 统计
+ * 记忆管理器 — 统一的记忆读写入口
  *
- * 从 Agent 拆分出来，负责只读记忆查询操作。
+ * 从 Agent 拆分出来，负责记忆的查询 + 写入操作。
+ * 写方法以 writeXxx 前缀命名，与读方法明确区分。
  *
  * 设计原则：
- *   - 纯只读——不动任何组件状态（写操作已迁移至 MemoryMutator）
- *   - 同步返回——避免数据不一致（不调 LLM、不调 SQLite 写入）
+ *   - 读写统一入口——writeXxx 前缀区分写操作，降低认知负荷
+ *   - 同步返回——避免数据不一致（不调 LLM、不调 SQLite 异步写入）
  *   - 轻量——每层只返回前 N 条 + 总数
+ *   - 静默降级——relationStore 未注入时关系方法静默 no-op（ADR-014 降级优先）
  *
- * 与 MemoryMutator 的分工（1.0 接口稳定化）：
- *   - MemoryInspector（本类）：snapshot / search / searchHybrid / stats /
+ * 方法清单：
+ *   - 只读查询：snapshot / search / searchHybrid / stats /
  *     getRelations / getAllRelations / getRelationPath / getRelationNeighbors /
  *     getById / getBySource / list / listDeleted / getDeletedById /
  *     sourceHealth / suggest
- *   - MemoryMutator（src/agent/managers/memoryMutator.ts）：
- *     upsert / delete / restore / purge / purgeExpired /
- *     addRelation / removeRelation
+ *   - 写操作（writeXxx 前缀）：
+ *     writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired /
+ *     writeAddRelation / writeRemoveRelation
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -148,17 +150,17 @@ export interface AgentStats {
 export class MemoryInspector {
   /** 向量存储（可选，提供时 searchHybrid 启用语义搜索） */
   private vectorStore: IVectorStore | null = null;
-  /** 关系存储（可选，ADR-014 侧车，未注入时跳过关系查询） */
+  /** 关系存储（可选，ADR-014 侧车，未注入时关系方法静默降级） */
   private readonly relationStore: IMemoryRelationStore | null;
   /** 记忆顾问（sourceHealth + suggest 委托） */
   private readonly advisor: MemoryAdvisor;
 
   /**
-   * @param index - 记忆存储（用于搜索 + 统计）
+   * @param index - 记忆存储（用于读写操作）
    * @param loop - AgentLoop（用于获取工作记忆）
    * @param history - MessageHistory（用于获取当前会话信息）
    * @param advisor - 记忆顾问（组合根一致性，由 assembler.ts 显式注入，必填）
-   * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系相关方法降级返回空）
+   * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系方法降级返回空/no-op）
    */
   constructor(
     private readonly index: IMemoryStorage,
@@ -180,8 +182,7 @@ export class MemoryInspector {
   }
 
   // ─── 只读查询（IMemoryStorage 透传） ───────────────────
-  // 写操作（upsert/delete/restore/purge/purgeExpired）已迁移至 MemoryMutator。
-  // 本节仅保留查询方法：getById / getBySource / list / listDeleted / getDeletedById。
+  // 写操作以 writeXxx 前缀命名，集中在本类末尾的"写操作"section。
 
   /**
    * 列出回收站中的软删除记忆（只读查询）
@@ -454,8 +455,7 @@ export class MemoryInspector {
     return this.relationStore.getAllRelations();
   }
 
-  // 关系写操作（addRelation / removeRelation）已迁移至 MemoryMutator。
-  // 本类仅保留关系查询：getRelations / getAllRelations / getRelationPath / getRelationNeighbors。
+  // 关系写操作以 writeAddRelation / writeRemoveRelation 命名，见本类末尾"写操作"section。
 
   /**
    * 记忆关系路径追溯（ADR-014 扩展，Phase 5.1）
@@ -623,5 +623,84 @@ export class MemoryInspector {
    */
   suggest(query?: string, options?: SuggestOptions): SuggestHit[] {
     return this.advisor.suggest(query, options);
+  }
+
+  // ─── 写操作（writeXxx 前缀，IMemoryStorage / IMemoryRelationStore 透传） ───
+
+  /**
+   * 插入或更新记忆
+   *
+   * @param memory 完整记忆对象
+   */
+  writeUpsert(memory: Memory): void {
+    this.index.upsert(memory);
+  }
+
+  /**
+   * 软删除记忆（写入 deletedAt）
+   *
+   * @param id 记忆唯一标识（${source}:${name} 格式）
+   */
+  writeDelete(id: string): void {
+    this.index.delete(id);
+  }
+
+  /**
+   * 恢复软删除的记忆（清除 deletedAt）
+   *
+   * @param id 记忆唯一标识
+   */
+  writeRestore(id: string): void {
+    this.index.restore(id);
+  }
+
+  /**
+   * 物理删除记忆（不可恢复，用于回收站彻底删除）
+   *
+   * @param id 记忆唯一标识
+   */
+  writePurge(id: string): void {
+    this.index.purge(id);
+  }
+
+  /**
+   * 清理过期的软删除记忆
+   *
+   * 物理删除所有 deletedAt 早于 before 的记忆。
+   * 由宿主项目的定时器调用（默认 30 天保留期）。
+   *
+   * @param before 时间阈值，deletedAt 早于此值的记忆将被物理删除
+   * @returns 被清理的记忆数量
+   */
+  writePurgeExpired(before: Date): number {
+    return this.index.purgeExpired(before);
+  }
+
+  /**
+   * 添加记忆关系（透传 relationStore）
+   *
+   * 用于宿主 UI 手动创建关系（关系图右键菜单 → 连线 → 创建关系）。
+   * relationStore 未注入时静默降级（不阻塞）。
+   *
+   * @param relation 关系边数据
+   */
+  writeAddRelation(relation: MemoryRelation): void {
+    if (!this.relationStore) return;
+    this.relationStore.addRelation(relation);
+  }
+
+  /**
+   * 删除记忆关系（透传 relationStore）
+   *
+   * 用于宿主 UI 手动删除关系（关系图右键菜单 → 编辑关系 → 删除）。
+   * relationStore 未注入时静默降级（不阻塞）。
+   *
+   * @param sourceId 关系起点
+   * @param targetId 关系终点
+   * @param type 关系类型
+   */
+  writeRemoveRelation(sourceId: string, targetId: string, type: string): void {
+    if (!this.relationStore) return;
+    this.relationStore.removeRelation(sourceId, targetId, type);
   }
 }

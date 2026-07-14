@@ -69,6 +69,7 @@ const mockAgent = {
   // B5：归档门面方法（archiveProfileFacts/archiveInsight 委托到 agent）
   archiveProfileFacts: vi.fn().mockResolvedValue([]),
   archiveInsight: vi.fn().mockResolvedValue([]),
+  // memory 统一读写：只读方法 + writeXxx 写方法
   memory: {
     stats: vi.fn().mockReturnValue({ total: 0, bySource: {} }),
     suggest: vi.fn().mockReturnValue([]),
@@ -89,19 +90,17 @@ const mockAgent = {
     search: vi.fn().mockResolvedValue([]),
     // B5：源健康状态（getStartupSummary/sourceHealth 读取 overallStatus）
     sourceHealth: vi.fn().mockReturnValue(null),
-  },
-  // 写操作已移至 agent.memoryMutator
-  memoryMutator: {
-    // 回收站自动清理定时器调用 purgeExpired
-    purgeExpired: vi.fn().mockReturnValue(0),
-    // B5：记忆写操作门面（delete/restore/purge/upsert 委托到 mutator）
-    delete: vi.fn(),
-    restore: vi.fn(),
-    purge: vi.fn(),
-    upsert: vi.fn(),
-    // B5：关系写操作门面（addRelation/removeRelation/updateRelation）
-    addRelation: vi.fn(),
-    removeRelation: vi.fn(),
+    // ─── 写操作（writeXxx 前缀） ───
+    // 回收站自动清理定时器调用 writePurgeExpired
+    writePurgeExpired: vi.fn().mockReturnValue(0),
+    // 记忆写操作门面
+    writeDelete: vi.fn(),
+    writeRestore: vi.fn(),
+    writePurge: vi.fn(),
+    writeUpsert: vi.fn(),
+    // B5：关系写操作门面（writeAddRelation/writeRemoveRelation/updateRelation）
+    writeAddRelation: vi.fn(),
+    writeRemoveRelation: vi.fn(),
   },
   // B5：角色管理器（默认 null，测试中按需注入 mock）
   persona: null,
@@ -207,14 +206,13 @@ describe('Sprite', () => {
   it('start 时调用 purgeExpiredMemories 清理过期记忆（启动即清理）', () => {
     const tmpDir = createTmpDir();
     // 清理前置测试累积的调用计数（mockAgent 为模块级共享）
-    // purgeExpired 已移至 agent.memoryMutator
-    vi.mocked(mockAgent.memoryMutator.purgeExpired).mockClear();
+    vi.mocked(mockAgent.memory.writePurgeExpired).mockClear();
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
     // 启动时立即执行一次清理（retentionDays=30 默认值）
-    expect(mockAgent.memoryMutator.purgeExpired).toHaveBeenCalledTimes(1);
+    expect(mockAgent.memory.writePurgeExpired).toHaveBeenCalledTimes(1);
     // 传入的阈值应为 30 天前
-    const threshold = (mockAgent.memoryMutator.purgeExpired as ReturnType<typeof vi.fn>).mock.calls[0][0] as Date;
+    const threshold = (mockAgent.memory.writePurgeExpired as ReturnType<typeof vi.fn>).mock.calls[0][0] as Date;
     const expectedThreshold = Date.now() - 30 * MS_PER_DAY;
     // 允许 1 秒误差（测试执行耗时）
     expect(Math.abs(threshold.getTime() - expectedThreshold)).toBeLessThan(1000);
@@ -227,10 +225,10 @@ describe('Sprite', () => {
     // 通过 updateConfigBatch 设置 retentionDays=0
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.updateConfigBatch({ recycleBinRetentionDays: 0 });
-    vi.mocked(mockAgent.memoryMutator.purgeExpired).mockClear();
+    vi.mocked(mockAgent.memory.writePurgeExpired).mockClear();
     sprite.start();
     // retentionDays=0 时不应调用 purgeExpired
-    expect(mockAgent.memoryMutator.purgeExpired).not.toHaveBeenCalled();
+    expect(mockAgent.memory.writePurgeExpired).not.toHaveBeenCalled();
     sprite.stop();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -1522,13 +1520,13 @@ describe('Sprite 记忆 CRUD 门面（B5：memory 委托）', () => {
   beforeEach(() => {
     agentListeners.clear();
     mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
-    // 清理 memoryMutator 写操作的调用记录（模块级共享 mock，避免跨测试污染）
-    vi.mocked(mockAgent.memoryMutator.delete).mockClear();
-    vi.mocked(mockAgent.memoryMutator.restore).mockClear();
-    vi.mocked(mockAgent.memoryMutator.purge).mockClear();
-    vi.mocked(mockAgent.memoryMutator.upsert).mockClear();
-    vi.mocked(mockAgent.memoryMutator.addRelation).mockClear();
-    vi.mocked(mockAgent.memoryMutator.removeRelation).mockClear();
+    // 清理 memory 写操作的调用记录（模块级共享 mock，避免跨测试污染）
+    vi.mocked(mockAgent.memory.writeDelete).mockClear();
+    vi.mocked(mockAgent.memory.writeRestore).mockClear();
+    vi.mocked(mockAgent.memory.writePurge).mockClear();
+    vi.mocked(mockAgent.memory.writeUpsert).mockClear();
+    vi.mocked(mockAgent.memory.writeAddRelation).mockClear();
+    vi.mocked(mockAgent.memory.writeRemoveRelation).mockClear();
     tmpDir = createTmpDir();
     sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
   });
@@ -1580,18 +1578,18 @@ describe('Sprite 记忆 CRUD 门面（B5：memory 委托）', () => {
     expect(sprite.showMemory('nonexistent')).toBeNull();
   });
 
-  it('deleteMemory 应委托到 memoryMutator.delete（记忆存在时返回 true）', () => {
+  it('deleteMemory 应委托到 memory.writeDelete（记忆存在时返回 true）', () => {
     vi.mocked(mockAgent.memory.getById).mockReturnValue({
       id: 'insight:test', name: '测试', source: 'insight', content: '内容', score: 0.5, createdAt: '2026-07-12T00:00:00.000Z', accessedAt: '2026-07-12T00:00:00.000Z',
     });
     expect(sprite.deleteMemory('insight:test')).toBe(true);
-    expect(mockAgent.memoryMutator.delete).toHaveBeenCalledWith('insight:test');
+    expect(mockAgent.memory.writeDelete).toHaveBeenCalledWith('insight:test');
   });
 
   it('deleteMemory 记忆不存在时返回 false（不调用 mutator）', () => {
     vi.mocked(mockAgent.memory.getById).mockReturnValue(null);
     expect(sprite.deleteMemory('nonexistent')).toBe(false);
-    expect(mockAgent.memoryMutator.delete).not.toHaveBeenCalled();
+    expect(mockAgent.memory.writeDelete).not.toHaveBeenCalled();
   });
 
   it('deleteMemoriesBatch 应逐条软删除并返回 { deleted, total }', () => {
@@ -1604,20 +1602,20 @@ describe('Sprite 记忆 CRUD 门面（B5：memory 委托）', () => {
     expect(result.deleted).toBe(2);
   });
 
-  it('restoreMemory 应委托到 memoryMutator.restore', () => {
+  it('restoreMemory 应委托到 memory.writeRestore', () => {
     vi.mocked(mockAgent.memory.getDeletedById).mockReturnValue({
       id: 'insight:test', name: '测试', source: 'insight', content: '内容', score: 0.5, createdAt: '2026-07-12T00:00:00.000Z', accessedAt: '2026-07-12T00:00:00.000Z', deletedAt: '2026-07-12T00:00:00.000Z',
     });
     expect(sprite.restoreMemory('insight:test')).toBe(true);
-    expect(mockAgent.memoryMutator.restore).toHaveBeenCalledWith('insight:test');
+    expect(mockAgent.memory.writeRestore).toHaveBeenCalledWith('insight:test');
   });
 
-  it('purgeMemory 应委托到 memoryMutator.purge（仅在回收站时）', () => {
+  it('purgeMemory 应委托到 memory.writePurge（仅在回收站时）', () => {
     vi.mocked(mockAgent.memory.getDeletedById).mockReturnValue({
       id: 'insight:test', name: '测试', source: 'insight', content: '内容', score: 0.5, createdAt: '2026-07-12T00:00:00.000Z', accessedAt: '2026-07-12T00:00:00.000Z', deletedAt: '2026-07-12T00:00:00.000Z',
     });
     expect(sprite.purgeMemory('insight:test')).toBe(true);
-    expect(mockAgent.memoryMutator.purge).toHaveBeenCalledWith('insight:test');
+    expect(mockAgent.memory.writePurge).toHaveBeenCalledWith('insight:test');
   });
 
   it('listDeletedMemories 应返回回收站列表（含 deletedAt）', () => {
@@ -1629,10 +1627,10 @@ describe('Sprite 记忆 CRUD 门面（B5：memory 委托）', () => {
     expect(list[0]!.deletedAt).toBe('2026-07-12T01:00:00.000Z');
   });
 
-  it('upsertMemory 应委托到 memoryMutator.upsert 并返回 ID', () => {
+  it('upsertMemory 应委托到 memory.writeUpsert 并返回 ID', () => {
     const id = sprite.upsertMemory('insight', '新记忆', '内容', 0.7);
     expect(id).toBe('insight:新记忆');
-    expect(mockAgent.memoryMutator.upsert).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockAgent.memory.writeUpsert).toHaveBeenCalledWith(expect.objectContaining({
       id: 'insight:新记忆',
       source: 'insight',
       name: '新记忆',
@@ -1748,18 +1746,18 @@ describe('Sprite 关系图谱门面（B5：relation 委托）', () => {
     expect(neighbors).toHaveLength(1);
   });
 
-  it('addRelation / removeRelation / updateRelation 应委托到 memoryMutator', () => {
+  it('addRelation / removeRelation / updateRelation 应委托到 memory 写操作', () => {
     sprite.addRelation('a', 'b', 'supports', 0.8);
-    expect(mockAgent.memoryMutator.addRelation).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockAgent.memory.writeAddRelation).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: 'a', targetId: 'b', type: 'supports', weight: 0.8,
     }));
 
     sprite.removeRelation('a', 'b', 'supports');
-    expect(mockAgent.memoryMutator.removeRelation).toHaveBeenCalledWith('a', 'b', 'supports');
+    expect(mockAgent.memory.writeRemoveRelation).toHaveBeenCalledWith('a', 'b', 'supports');
 
     // updateRelation 复用 addRelation 的 UPSERT 语义
     sprite.updateRelation('a', 'b', 'contradicts', 0.5);
-    expect(mockAgent.memoryMutator.addRelation).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockAgent.memory.writeAddRelation).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: 'a', targetId: 'b', type: 'contradicts', weight: 0.5,
     }));
   });

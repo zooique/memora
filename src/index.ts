@@ -62,8 +62,6 @@ export type {
   SourceHealthEntry,
   SourceHealthReport,
 } from '@/agent/managers/memoryInspector.js';
-// 记忆写入器（与 MemoryInspector 严格分工：写操作代理）
-export type { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
 // 会话内容归档器类型

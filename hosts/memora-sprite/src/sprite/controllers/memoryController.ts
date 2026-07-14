@@ -251,14 +251,13 @@ export class MemoryController {
    * @returns 是否成功软删除（不存在或已软删除时返回 false）
    */
   delete(id: string): boolean {
-    // 读检查走 MemoryInspector，写操作走 MemoryMutator
-    const inspector = this.agent.memory;
-    const mutator = this.agent.memoryMutator;
-    if (!inspector || !mutator) return false;
+    // 读写统一走 MemoryInspector（writeXxx 前缀区分写操作）
+    const memory = this.agent.memory;
+    if (!memory) return false;
     // getById 返回 null 表示不存在或已软删除
-    const exists = inspector.getById(id);
+    const exists = memory.getById(id);
     if (!exists) return false;
-    mutator.delete(id);
+    memory.writeDelete(id);
     // 软删除不删除向量索引，restore 时无需重新嵌入
     return true;
   }
@@ -292,14 +291,13 @@ export class MemoryController {
    * @returns 是否成功恢复（不存在或未软删除时返回 false）
    */
   restore(id: string): boolean {
-    // 读检查走 MemoryInspector，写操作走 MemoryMutator
-    const inspector = this.agent.memory;
-    const mutator = this.agent.memoryMutator;
-    if (!inspector || !mutator) return false;
+    // 读写统一走 MemoryInspector（writeXxx 前缀区分写操作）
+    const memory = this.agent.memory;
+    if (!memory) return false;
     // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
-    const deleted = inspector.getDeletedById(id);
+    const deleted = memory.getDeletedById(id);
     if (!deleted) return false;
-    mutator.restore(id);
+    memory.writeRestore(id);
     return true;
   }
 
@@ -317,14 +315,13 @@ export class MemoryController {
    * @returns 是否成功删除（记忆不在回收站时返回 false）
    */
   purge(id: string): boolean {
-    // 读检查走 MemoryInspector，写操作走 MemoryMutator
-    const inspector = this.agent.memory;
-    const mutator = this.agent.memoryMutator;
-    if (!inspector || !mutator) return false;
+    // 读写统一走 MemoryInspector（writeXxx 前缀区分写操作）
+    const memory = this.agent.memory;
+    if (!memory) return false;
     // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
-    const deleted = inspector.getDeletedById(id);
+    const deleted = memory.getDeletedById(id);
     if (!deleted) return false;
-    mutator.purge(id);
+    memory.writePurge(id);
     // 物理删除时同步清理向量索引（对齐 upsert 错误处理）
     if (this.vectorStore) {
       try {
@@ -362,16 +359,15 @@ export class MemoryController {
    * @returns 成功恢复的记忆数量
    */
   restoreAll(): { restored: number; failed: number } {
-    const inspector = this.agent.memory;
-    const mutator = this.agent.memoryMutator;
-    if (!inspector || !mutator) return { restored: 0, failed: 0 };
+    const memory = this.agent.memory;
+    if (!memory) return { restored: 0, failed: 0 };
     // 获取所有已删除记忆（不设上限）
-    const deleted = inspector.listDeleted(0);
+    const deleted = memory.listDeleted(0);
     let restored = 0;
     let failed = 0;
     for (const m of deleted) {
       try {
-        mutator.restore(m.id);
+        memory.writeRestore(m.id);
         restored++;
       } catch (err) {
         logger.warn({ err, id: m.id }, '批量恢复记忆失败');
@@ -387,16 +383,15 @@ export class MemoryController {
    * @returns 成功删除的记忆数量
    */
   purgeAll(): { purged: number; failed: number } {
-    const inspector = this.agent.memory;
-    const mutator = this.agent.memoryMutator;
-    if (!inspector || !mutator) return { purged: 0, failed: 0 };
+    const memory = this.agent.memory;
+    if (!memory) return { purged: 0, failed: 0 };
     // 获取所有已删除记忆（不设上限）
-    const deleted = inspector.listDeleted(0);
+    const deleted = memory.listDeleted(0);
     let purged = 0;
     let failed = 0;
     for (const m of deleted) {
       try {
-        mutator.purge(m.id);
+        memory.writePurge(m.id);
         // 同步清理向量索引
         if (this.vectorStore) {
           try {
@@ -426,12 +421,12 @@ export class MemoryController {
    * @returns 记忆唯一标识（${source}:${name} 格式）
    */
   upsert(source: string, name: string, content: string, score = 0.5): string {
-    // 写操作走 MemoryMutator（inspector 只读）
-    const mutator = this.agent.memoryMutator;
-    if (!mutator) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
+    // 写操作走 MemoryInspector.writeUpsert
+    const memory = this.agent.memory;
+    if (!memory) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
     const now = new Date().toISOString();
     const id = `${source}:${name}`;
-    mutator.upsert({
+    memory.writeUpsert({
       id,
       source,
       name,
@@ -598,9 +593,9 @@ export class MemoryController {
    * @param weight 关系权重 0-1
    */
   addRelation(sourceId: string, targetId: string, type: string, weight: number): void {
-    const mutator = this.agent.memoryMutator;
-    if (!mutator) return;
-    mutator.addRelation({
+    const memory = this.agent.memory;
+    if (!memory) return;
+    memory.writeAddRelation({
       sourceId,
       targetId,
       type,
@@ -620,9 +615,9 @@ export class MemoryController {
    * @param type 关系类型
    */
   removeRelation(sourceId: string, targetId: string, type: string): void {
-    const mutator = this.agent.memoryMutator;
-    if (!mutator) return;
-    mutator.removeRelation(sourceId, targetId, type);
+    const memory = this.agent.memory;
+    if (!memory) return;
+    memory.writeRemoveRelation(sourceId, targetId, type);
   }
 
   /**
