@@ -108,6 +108,8 @@ export class QuickInputCompletion {
   private lastRequestId = 0;
   /** 采纳反馈记录（text key → 累积采纳次数，用于 boost 已被采纳的候选项） */
   private adoptedTexts = new Map<string, number>();
+  /** UX-0714-4：本次合并后的候选总数（slice 前），用于判断是否需要显示"共 N 项"footer */
+  private totalCandidatesCount = 0;
 
   /**
    * @param inputField 输入框元素（input 或 textarea）
@@ -257,6 +259,9 @@ export class QuickInputCompletion {
   private showLoading(): void {
     this.candidates = [];
     this.selectedIndex = -1;
+    // UX-0714-4：loading 期间清除 footer 标记和总数，避免 loading 项 + 残留 footer 同时出现
+    this.totalCandidatesCount = 0;
+    delete this.listEl.dataset.footer;
     this.listEl.innerHTML = '';
 
     const li = document.createElement('li');
@@ -347,9 +352,10 @@ export class QuickInputCompletion {
     });
 
     // 排序：score 降序，取 Top-5
-    return boosted
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_CANDIDATES);
+    // UX-0714-4：记录 slice 前的总数，供 renderCandidates 判断是否追加"共 N 项"footer
+    const sorted = boosted.sort((a, b) => b.score - a.score);
+    this.totalCandidatesCount = sorted.length;
+    return sorted.slice(0, MAX_CANDIDATES);
   }
 
   /**
@@ -442,6 +448,20 @@ export class QuickInputCompletion {
       this.listEl.appendChild(li);
     }
 
+    // UX-0714-4：候选总数超过最大显示数时，在列表底部追加"共 N 项"footer
+    // footer 不含 .completion-item 类（不参与 querySelectorAll 计数/不作为可选选项）
+    // 通过 dataset.footer='true' 标记，让 quickInput.ts 的高度计算感知 footer 并预留空间
+    if (this.totalCandidatesCount > MAX_CANDIDATES) {
+      const footer = document.createElement('li');
+      footer.className = 'completion-footer';
+      footer.textContent = `共 ${this.totalCandidatesCount} 项`;
+      footer.setAttribute('aria-hidden', 'true');
+      this.listEl.appendChild(footer);
+      this.listEl.dataset.footer = 'true';
+    } else {
+      delete this.listEl.dataset.footer;
+    }
+
     // 显示列表（复用 showListContainer，枝叶层 2 次提取）
     this.showListContainer();
   }
@@ -480,6 +500,9 @@ export class QuickInputCompletion {
   private clearCandidates(): void {
     this.candidates = [];
     this.selectedIndex = -1;
+    // UX-0714-4：清空时同步清除 footer 标记和总数，避免残留状态影响下次渲染
+    this.totalCandidatesCount = 0;
+    delete this.listEl.dataset.footer;
     this.listEl.innerHTML = '';
     this.listEl.classList.add('hidden');
     // 候选列表收起

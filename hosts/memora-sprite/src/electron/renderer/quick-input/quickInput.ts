@@ -135,6 +135,8 @@ function initQuickInput(): void {
         inputField.disabled = false;
         inputField.readOnly = false;
         inputField.classList.remove('copy-toast');
+        // UX-0714-3：恢复确认按钮可见性（Toast 期间被 visibility:hidden 隐藏）
+        confirmBtn.style.visibility = '';
         inputField.value = text;  // 恢复用户输入的内容
         inputField.focus();
         inputField.select();
@@ -147,6 +149,8 @@ function initQuickInput(): void {
       inputField.disabled = false;
       inputField.readOnly = false;
       inputField.classList.remove('copy-toast');
+      // UX-0714-3：恢复确认按钮可见性（Toast 期间被 visibility:hidden 隐藏）
+      confirmBtn.style.visibility = '';
       inputField.value = text;
       inputField.focus();
     }
@@ -157,12 +161,14 @@ function initQuickInput(): void {
    *
    * 主进程 paste 流程约 300ms（Esc 50ms + 粘贴 100ms + 剪贴板操作），
    * 期间输入框显示 loading 文案，避免用户看到浮窗卡住无响应。
+   * UX-0714-3：Toast 期间隐藏确认按钮（visibility:hidden 保留布局避免抖动）。
    */
   function showPastingToast(): void {
     inputField.value = '粘贴中...';
     inputField.classList.add('copy-toast');
     inputField.disabled = false;
     inputField.readOnly = true;
+    confirmBtn.style.visibility = 'hidden';
   }
 
   /**
@@ -175,6 +181,7 @@ function initQuickInput(): void {
     inputField.classList.add('copy-toast');
     inputField.disabled = false;
     inputField.readOnly = true;
+    confirmBtn.style.visibility = 'hidden';
   }
 
   /**
@@ -182,12 +189,14 @@ function initQuickInput(): void {
    *
    * 将输入框值替换为"✓ 已复制，Ctrl+V 粘贴"并添加 toast 样式类，
    * 浮窗关闭时 onQuickInputShow 会清空内容和样式。
+   * UX-0714-3：Toast 期间隐藏确认按钮（visibility:hidden 保留布局避免抖动）。
    */
   function showCopyToast(): void {
     inputField.value = '✓ 已复制，Ctrl+V 粘贴';
     inputField.classList.add('copy-toast');
     inputField.disabled = false;
     inputField.readOnly = true;
+    confirmBtn.style.visibility = 'hidden';
   }
 
   /**
@@ -236,10 +245,13 @@ function initQuickInput(): void {
     });
     // 候选列表显示/隐藏时，通知主进程调整窗口高度
     // 列布局：基础高度 80px（body padding + 容器 padding + 输入行）+ 每个候选项约 38px（含分隔线）
+    // UX-0714-4：footer 存在时（totalCandidatesCount > 5）额外预留 28px
     completion.onListChange((visible) => {
       if (visible) {
         const itemCount = completionList.querySelectorAll('.completion-item').length;
-        const targetHeight = 80 + Math.min(itemCount, 5) * 38;
+        const hasFooter = completionList.dataset.footer === 'true';
+        const footerHeight = hasFooter ? 28 : 0;
+        const targetHeight = 80 + Math.min(itemCount, 5) * 38 + footerHeight;
         void api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
       } else {
         // 隐藏时恢复基础高度
@@ -274,6 +286,8 @@ function initQuickInput(): void {
     isSubmitting = false;
     confirmBtn.disabled = false;
     inputField.disabled = false;
+    // UX-0714-3：恢复确认按钮可见性（上次 Toast 期间被 visibility:hidden 隐藏）
+    confirmBtn.style.visibility = '';
     inputField.focus();
   });
 

@@ -139,6 +139,8 @@ body {
   align-items: baseline;
   gap: var(--space-2);
   padding: var(--space-2);
+  /* UX-0714-2：左侧透明 border 占位，选中态时替换为 accent 竖条（避免布局抖动） */
+  border-left: 2px solid transparent;
   cursor: pointer;
   transition: background var(--transition-fast);
   border-radius: var(--radius-sm);
@@ -148,9 +150,15 @@ body {
   background: var(--surface0);
 }
 
-/* 选中态（键盘 ↓↑ 或鼠标 hover） */
+/* 选中态（键盘 ↓↑）—— UX-0714-2：accent 竖条 + 更深背景，与 hover 明确区分 */
 .completion-item.selected {
-  background: var(--accent-10);
+  background: var(--accent-20);
+  border-left-color: var(--accent);
+}
+
+/* 选中态 + hover 叠加：保持 selected 样式优先（避免 hover 覆盖竖条） */
+.completion-item.selected:hover {
+  background: var(--accent-20);
 }
 
 /* 来源标签（记忆/对话） */
@@ -188,6 +196,20 @@ body {
 
 .completion-item.completion-loading:hover {
   background: transparent;
+}
+
+/* ===== 候选总数 footer（UX-0714-4） ===== */
+/*
+ * 候选总数超过 5 项时在列表底部显示"共 N 项"提示，让用户感知列表被截断。
+ * 非 .completion-item 类（不参与 querySelectorAll 计数/不作为可选选项）。
+ */
+.completion-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: default;
+  user-select: none;
 }
 
 /* ===== Phase 3：复制成功 Toast 状态 ===== */

@@ -32,6 +32,8 @@
  */
 
 import { clipboard } from 'electron';
+// 类型导入（编译时擦除，不影响零 native 依赖运行时）：用于 getDefaultInputInjector 中的类型适配
+import type { Key as NutJsKeyType } from '@nut-tree-fork/nut-js';
 
 /**
  * nut-js 活跃窗口的最小接口抽象
@@ -257,9 +259,25 @@ export async function getDefaultInputInjector(): Promise<InputInjector> {
   try {
     // 动态 import：避免测试环境强制加载 native 模块
     const nutJs = await import('@nut-tree-fork/nut-js');
+    // 适配层：nut-js 实际 API 类型与 NutJsDeps 接口存在两处差异，需包装
+    //   1. Window.focus() 返回 Promise<boolean>，接口要求 Promise<void>
+    //   2. keyboard.pressKey/releaseKey 返回 Promise<KeyboardClass>（链式），接口要求 Promise<void>
+    //      且参数 Key[] 与 NutJsKey(unknown) 不兼容（strictFunctionTypes 下逆变）
     defaultInjector = new InputInjector({
-      getActiveWindow: nutJs.getActiveWindow,
-      keyboard: nutJs.keyboard,
+      getActiveWindow: async () => {
+        const win = await nutJs.getActiveWindow();
+        return {
+          title: win.title,
+          region: win.region,
+          focus: async () => { await win.focus(); },
+        };
+      },
+      keyboard: {
+        pressKey: (...keys: NutJsKey[]) =>
+          nutJs.keyboard.pressKey(...(keys as NutJsKeyType[])).then(() => undefined),
+        releaseKey: (...keys: NutJsKey[]) =>
+          nutJs.keyboard.releaseKey(...(keys as NutJsKeyType[])).then(() => undefined),
+      },
       Key: nutJs.Key,
     });
   } catch {

@@ -9,8 +9,8 @@
  * - fetchCandidates：并行 IPC / 乱序取消 / 单源降级 / loading 占位
  * - mergeCandidates：记忆候选 / 对话候选（assistant 过滤）/ 去重 / 排序 / Top-5 截断
  * - handleKeyDown：↓↑ 循环导航 / Tab 确认回填
- * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知
- * - clearCandidates：DOM 清空 / hidden 类 / 回调通知
+ * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知 / UX-0714-4 候选总数 footer
+ * - clearCandidates：DOM 清空 / hidden 类 / 回调通知 / footer 同步清除
  * - 采纳反馈回路：Click/Tab 采纳 boost / 多次采纳上限 / 未采纳不受影响
  *
  * Mock 策略：
@@ -804,6 +804,99 @@ describe('renderCandidates · 渲染与交互', async () => {
     const textEl = document.querySelector('.completion-text') as HTMLElement;
     expect(textEl.querySelector('img')).toBeNull();
     expect(textEl.textContent).toBe(malicious);
+  });
+
+  // ─── UX-0714-4：候选总数 footer ───
+
+  it('UX-0714-4：候选总数 > 5 时应在列表底部显示"共 N 项"footer', async () => {
+    const { input, list, api } = createCompletion();
+    // 6 条不同内容的记忆候选，去重后仍为 6 条，超过 MAX_CANDIDATES=5
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '候选A', score: 0.9 }),
+        createMemoryHit({ contentPreview: '候选B', score: 0.85 }),
+        createMemoryHit({ contentPreview: '候选C', score: 0.8 }),
+        createMemoryHit({ contentPreview: '候选D', score: 0.75 }),
+        createMemoryHit({ contentPreview: '候选E', score: 0.7 }),
+        createMemoryHit({ contentPreview: '候选F', score: 0.65 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // footer 存在且文案正确
+    const footer = list.querySelector('.completion-footer');
+    expect(footer).not.toBeNull();
+    expect(footer!.textContent).toBe('共 6 项');
+    // dataset.footer 标记已设置（供高度计算感知）
+    expect(list.dataset.footer).toBe('true');
+  });
+
+  it('UX-0714-4：候选总数 ≤ 5 时不应显示 footer', async () => {
+    const { input, list, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '候选A', score: 0.9 }),
+        createMemoryHit({ contentPreview: '候选B', score: 0.85 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(list.querySelector('.completion-footer')).toBeNull();
+    expect(list.dataset.footer).toBeUndefined();
+  });
+
+  it('UX-0714-4：footer 不含 .completion-item 类（不参与计数和选择）', async () => {
+    const { input, list, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: Array.from({ length: 8 }, (_, i) =>
+        createMemoryHit({ contentPreview: `候选${i}`, score: 0.9 - i * 0.05 }),
+      ),
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // .completion-item 计数应为 5（Top-5），footer 不在其中
+    const items = list.querySelectorAll('.completion-item');
+    expect(items.length).toBe(5);
+    // footer 独立存在
+    const footer = list.querySelector('.completion-footer');
+    expect(footer).not.toBeNull();
+    expect(footer!.classList.contains('completion-item')).toBe(false);
+    // footer 应标记 aria-hidden
+    expect(footer!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('UX-0714-4：清空列表时 footer 和 dataset 应同步清除', async () => {
+    const { input, list, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: Array.from({ length: 8 }, (_, i) =>
+        createMemoryHit({ contentPreview: `候选${i}`, score: 0.9 - i * 0.05 }),
+      ),
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 确认 footer 存在
+    expect(list.querySelector('.completion-footer')).not.toBeNull();
+    expect(list.dataset.footer).toBe('true');
+
+    // 输入短于 2 字符触发清空
+    input.value = 'a';
+    input.dispatchEvent(new Event('input'));
+
+    // footer 和 dataset 都应被清除
+    expect(list.querySelector('.completion-footer')).toBeNull();
+    expect(list.dataset.footer).toBeUndefined();
   });
 });
 
