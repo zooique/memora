@@ -174,6 +174,22 @@ body {
   text-overflow: ellipsis;
 }
 
+/* ===== 搜索 loading 占位（UX-0714-1） ===== */
+/*
+ * IPC 发出后、返回前的过渡状态。复用 .completion-item 布局让高度计算兼容，
+ * 通过 .completion-loading 修饰符居中 + muted 色 + 禁用交互。
+ */
+.completion-item.completion-loading {
+  justify-content: center;
+  color: var(--muted);
+  cursor: default;
+  font-size: var(--font-sm);
+}
+
+.completion-item.completion-loading:hover {
+  background: transparent;
+}
+
 /* ===== Phase 3：复制成功 Toast 状态 ===== */
 /*
  * 确认成功后输入框变为只读 Toast，居中显示"✓ 已复制"提示。

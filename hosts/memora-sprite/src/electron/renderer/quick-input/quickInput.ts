@@ -84,6 +84,8 @@ function initQuickInput(): void {
 
   /** Toast 显示时长（ms）—— 确认成功后展示"已复制"提示 */
   const TOAST_DURATION_MS = 800;
+  /** Toast 自动关闭定时器句柄 —— 浮窗提前关闭时需清理，避免对已隐藏窗口发起无效 IPC */
+  let toastCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * 确认输入：调用 IPC 写入剪贴板 + 显示 Toast + 延迟关闭
@@ -114,7 +116,9 @@ function initQuickInput(): void {
       if (result.success) {
         // Phase 3：显示"已复制"Toast，延迟后关闭浮窗
         showCopyToast();
-        setTimeout(() => {
+        // 保存句柄：浮窗可能在 Toast 期间被 Esc/blur 提前关闭，需在关闭时清理避免无效 IPC
+        toastCloseTimer = setTimeout(() => {
+          toastCloseTimer = null;
           void api.closeQuickInput();
         }, TOAST_DURATION_MS);
       } else {
@@ -123,7 +127,7 @@ function initQuickInput(): void {
         confirmBtn.disabled = false;
         inputField.disabled = false;
         inputField.focus();
-        // 简短提示（利用 placeholder 临时展示错误，不引入额外 UI）
+        // 全选已输入内容，便于用户直接覆盖或修改
         inputField.select();
       }
     } catch (error) {
@@ -150,9 +154,15 @@ function initQuickInput(): void {
   }
 
   /**
-   * 关闭浮窗：调用 IPC 通知主进程隐藏窗口
+   * 关闭浮窗：清理 Toast 定时器 + 调用 IPC 通知主进程隐藏窗口
+   *
+   * Toast 期间用户主动 Esc 关闭时，需先清理定时器，避免对已隐藏窗口发起无效 closeQuickInput IPC。
    */
   async function handleClose(): Promise<void> {
+    if (toastCloseTimer !== null) {
+      clearTimeout(toastCloseTimer);
+      toastCloseTimer = null;
+    }
     try {
       await api.closeQuickInput();
     } catch (error) {
@@ -206,7 +216,11 @@ function initQuickInput(): void {
   // 替代 focus 事件：避免 Alt+Tab 切回浮窗时误清空已输入内容
   // Phase 2：主进程读取剪贴板并做敏感检测，非敏感内容预填输入框触发补全
   api.onQuickInputShow((payload) => {
-    // 清除 Phase 3 的 Toast 状态（readOnly + copy-toast 类）
+    // 清除 Phase 3 的 Toast 状态（readOnly + copy-toast 类 + 残留定时器）
+    if (toastCloseTimer !== null) {
+      clearTimeout(toastCloseTimer);
+      toastCloseTimer = null;
+    }
     inputField.readOnly = false;
     inputField.classList.remove('copy-toast');
     const preset = payload?.clipboardText;

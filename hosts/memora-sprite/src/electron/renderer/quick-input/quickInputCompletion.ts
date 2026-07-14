@@ -8,6 +8,7 @@
  *   4. 渲染候选列表，支持 ↓↑ 键盘导航 + Tab 确认回填
  *   5. 取消上一次未完成的请求（避免乱序）
  *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
+ *   7. 搜索 loading 反馈：IPC 发出后显示"搜索中..."占位，返回后自然替换
  *
  * 设计原则：
  *   - 纯渲染层逻辑，零内核改动、零 IPC 新增
@@ -209,9 +210,15 @@ export class QuickInputCompletion {
    *
    * 使用递增 requestId 取消乱序响应：若发起新请求时旧请求未返回，
    * 旧响应的 requestId 与 lastRequestId 不匹配，直接丢弃。
+   *
+   * UX-0714-1：IPC 发出后立即显示 loading 占位，避免用户等待时无反馈。
+   * loading 期间 candidates 为空，键盘导航天然失效（handleKeyDown 检查 length===0）。
+   * IPC 返回后由 renderCandidates 或 clearCandidates 自然替换 loading。
    */
   private async fetchCandidates(query: string): Promise<void> {
     const requestId = ++this.lastRequestId;
+    // IPC 发出前显示 loading 占位（防抖结束后才到达此处，不会在输入过程中闪烁）
+    this.showLoading();
 
     try {
       // 并行调用两个搜索 IPC，单个失败时降级为空候选（补全是辅助功能，不阻断主流程）
@@ -228,7 +235,7 @@ export class QuickInputCompletion {
         }),
       ]);
 
-      // 请求已过期（用户已输入新内容），丢弃旧响应
+      // 请求已过期（用户已输入新内容），丢弃旧响应（loading 由最新请求接管）
       if (requestId !== this.lastRequestId) return;
 
       const candidates = this.mergeCandidates(memoriesResult.hits, messagesResult.results);
@@ -237,6 +244,31 @@ export class QuickInputCompletion {
       reportError('QuickInputCompletion:fetchCandidates', error);
       this.clearCandidates();
     }
+  }
+
+  /**
+   * 显示搜索 loading 占位
+   *
+   * IPC 发出后、返回前的过渡状态。在候选列表容器中显示"搜索中..."占位项。
+   * 复用 .completion-item 类名让 onListChange 高度计算天然兼容（querySelectorAll 计数为 1）。
+   * loading 期间 candidates 数组为空，键盘导航天然失效。
+   * aria-hidden="true" 避免屏幕阅读器将占位项误报为可选项。
+   */
+  private showLoading(): void {
+    this.candidates = [];
+    this.selectedIndex = -1;
+    this.listEl.innerHTML = '';
+
+    const li = document.createElement('li');
+    // 复用 completion-item 类名让高度计算兼容，额外加 loading 修饰符控制样式
+    li.className = 'completion-item completion-loading';
+    li.textContent = '搜索中...';
+    li.setAttribute('aria-hidden', 'true');
+    this.listEl.appendChild(li);
+
+    this.listEl.classList.remove('hidden');
+    this.inputField.setAttribute('aria-expanded', 'true');
+    this.onListChangeCallback?.(true);
   }
 
   /**

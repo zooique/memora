@@ -6,7 +6,7 @@
  * 覆盖范围：
  * - init/cleanup：事件绑定与解绑生命周期
  * - handleInput：防抖触发 / 最小字符阈值 / 短输入清空
- * - fetchCandidates：并行 IPC / 乱序取消 / 单源降级
+ * - fetchCandidates：并行 IPC / 乱序取消 / 单源降级 / loading 占位
  * - mergeCandidates：记忆候选 / 对话候选（assistant 过滤）/ 去重 / 排序 / Top-5 截断
  * - handleKeyDown：↓↑ 循环导航 / Tab 确认回填
  * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知
@@ -459,6 +459,103 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     await vi.advanceTimersByTimeAsync(300);
 
     expect(list.classList.contains('hidden')).toBe(true);
+  });
+
+  // ─── loading 占位（UX-0714-1） ───
+
+  it('IPC 发出后应显示 loading 占位', async () => {
+    const { input, api, list } = createCompletion();
+    // 控制 IPC 不立即 resolve，让 loading 状态可观测
+    let resolveMemories!: (value: unknown) => void;
+    let resolveMessages!: (value: unknown) => void;
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => { resolveMemories = resolve; }),
+    );
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => { resolveMessages = resolve; }),
+    );
+
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // IPC 发出后、返回前应显示 loading 占位
+    expect(list.classList.contains('hidden')).toBe(false);
+    const loadingEl = list.querySelector('.completion-loading');
+    expect(loadingEl).toBeTruthy();
+    expect(loadingEl?.textContent).toBe('搜索中...');
+    expect(loadingEl?.getAttribute('aria-hidden')).toBe('true');
+
+    // 清理：resolve Promise 避免泄漏
+    resolveMemories({ hits: [] });
+    resolveMessages({ results: [] });
+    await vi.runAllTimersAsync();
+  });
+
+  it('IPC 返回后 loading 应被替换为真实候选', async () => {
+    const { input, api, list } = createCompletion();
+    let resolveMemories!: (value: unknown) => void;
+    let resolveMessages!: (value: unknown) => void;
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => { resolveMemories = resolve; }),
+    );
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => { resolveMessages = resolve; }),
+    );
+
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // loading 显示中
+    expect(list.querySelector('.completion-loading')).toBeTruthy();
+
+    // IPC 返回真实候选
+    resolveMemories({ hits: [createMemoryHit({ contentPreview: '真实候选' })] });
+    resolveMessages({ results: [] });
+    await vi.runAllTimersAsync();
+
+    // loading 被替换为真实候选
+    expect(list.querySelector('.completion-loading')).toBeNull();
+    expect(document.querySelectorAll('.completion-item').length).toBe(1);
+    expect(document.querySelector('.completion-text')?.textContent).toBe('真实候选');
+  });
+
+  it('两个 IPC 都失败时 loading 应被清除', async () => {
+    const { input, api, list } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
+
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 两个 IPC 都失败，loading 被清除，列表隐藏
+    expect(list.querySelector('.completion-loading')).toBeNull();
+    expect(list.classList.contains('hidden')).toBe(true);
+  });
+
+  it('loading 期间键盘导航应失效', async () => {
+    const { input, api } = createCompletion();
+    let resolveMemories!: (value: unknown) => void;
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => { resolveMemories = resolve; }),
+    );
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise(() => { /* 永不 resolve，保持 loading 状态 */ }),
+    );
+
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // loading 期间按 ArrowDown 应无效果（candidates 为空，handleKeyDown 直接 return）
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.querySelectorAll('.completion-item.selected').length).toBe(0);
+
+    // 清理
+    resolveMemories({ hits: [] });
+    await vi.runAllTimersAsync();
   });
 });
 
