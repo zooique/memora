@@ -31,6 +31,8 @@ const QUICK_INPUT_WIDTH = 480;
 const QUICK_INPUT_HEIGHT = 80;
 /** 失焦延迟关闭时长（ms）—— 给 Alt+Tab 切换留余量 */
 const BLUR_CLOSE_DELAY_MS = 200;
+/** 光标跟随偏移量（px）—— 浮窗相对鼠标位置的偏移 */
+const CURSOR_OFFSET_PX = 16;
 
 /** 快速输入浮窗回调（由 main.ts 注入） */
 export interface QuickInputWindowCallbacks {
@@ -143,8 +145,8 @@ export class QuickInputWindow {
   /**
    * 显示浮窗（单例复用）
    *
-   * 若窗口尚未创建则先创建。显示时居中到当前鼠标所在屏幕的上方 1/4 处，
-   * 聚焦输入框准备接收用户输入。
+   * 若窗口尚未创建则先创建。显示时跟随鼠标光标位置弹出（右侧下方偏移），
+   * 屏幕边缘溢出时自动回弹到左侧/顶部，聚焦输入框准备接收用户输入。
    */
   async show(): Promise<void> {
     if (!this.win || this.win.isDestroyed()) {
@@ -152,14 +154,30 @@ export class QuickInputWindow {
     }
 
     const win = this.win!;
-    // 获取鼠标当前所在屏幕的工作区，居中定位到上方 1/4 处
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    // 跟随鼠标光标定位：默认在鼠标右下方偏移 CURSOR_OFFSET_PX
+    const cursor = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursor);
     const workArea = display.workArea;
     const { width, height } = win.getBounds();
-    win.setPosition(
-      Math.round(workArea.x + (workArea.width - width) / 2),
-      Math.round(workArea.y + workArea.height * 0.25 - height / 2),
-    );
+
+    // 默认偏移：鼠标右侧 + 下方各 CURSOR_OFFSET_PX
+    let x = cursor.x + CURSOR_OFFSET_PX;
+    let y = cursor.y + CURSOR_OFFSET_PX;
+    // 边缘溢出回弹：右侧溢出则改到鼠标左侧，底部溢出则贴工作区底部
+    if (x + width > workArea.x + workArea.width) {
+      x = cursor.x - width - CURSOR_OFFSET_PX;
+    }
+    if (y + height > workArea.y + workArea.height) {
+      y = workArea.y + workArea.height - height - CURSOR_OFFSET_PX;
+    }
+    // 确保不超出工作区左边界（负坐标回弹到工作区左边）
+    if (x < workArea.x) {
+      x = workArea.x;
+    }
+    if (y < workArea.y) {
+      y = workArea.y;
+    }
+    win.setPosition(Math.round(x), Math.round(y));
 
     this.cancelBlurClose();
     win.show();
