@@ -1,5 +1,5 @@
 /**
- * 快速输入浮窗渲染逻辑 — 用户交互入口（三键分工 + 持久模式）
+ * 快速输入浮窗渲染逻辑 — 用户交互入口（三键分工 + 流式模式）
  *
  * 职责：
  *   1. 绑定输入框键盘事件：Tab 提交、Esc 关闭、Enter 换行
@@ -7,23 +7,23 @@
  *   3. 窗口重新显示时处理剪贴板预填 + 敏感自动检测并聚焦
  *   4. 接入补全管理器，输入时显示候选列表
  *   5. 确认成功后显示 Toast，延迟关闭
- *   6. 持久模式：粘贴成功后窗口保持打开，清空输入等待下次输入
+ *   6. 流式模式：粘贴成功后窗口保持打开，清空输入等待下次输入
  *
  * 三键分工：
  *   - ↑↓：在候选列表中导航选择（由 quickInputCompletion.ts 处理）
  *   - ←→：将选中候选项填充到输入框（由 quickInputCompletion.ts 处理）
  *   - Tab：提交输入框内容（本文件处理）
  *
- * 持久模式：
+ * 流式模式：
  *   - 自动检测：剪贴板内容命中 isSensitive() 时自动启用
  *   - 手动切换：footer 栏切换按钮（🔒/🔓）覆盖自动检测
- *   - 持久模式下 Tab 提交后：粘贴成功 → 短暂 Toast → 清空输入 → 聚焦等待
- *   - Esc 始终关闭窗口（持久模式也不例外）
+ *   - 流式模式下 Tab 提交后：粘贴成功 → 短暂 Toast → 清空输入 → 聚焦等待
+ *   - Esc 始终关闭窗口（流式模式也不例外）
  *
  * 集成点：
  *   - quick-input.html：通过 <script type="module"> 加载
  *   - preload.ts：暴露 confirmQuickInput / closeQuickInput / searchMemories / searchSessionMessages
- *   - quickInputWindow.ts：主进程处理 IPC，自动粘贴优先（持久模式跳过 hideFloat）
+ *   - quickInputWindow.ts：主进程处理 IPC，自动粘贴优先（流式模式跳过 hideFloat）
  *   - quickInputCompletion.ts：补全候选管理器
  */
 import type { ElectronAPI } from '../../preload.js';
@@ -41,8 +41,8 @@ export type QuickInputElectronAPI = Pick<
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
 >;
 
-/** 持久模式 Toast 显示时长（ms），比普通模式短，快速恢复输入状态 */
-const PERSISTENT_TOAST_MS = 500;
+/** 流式模式 Toast 显示时长（ms），比普通模式短，快速恢复输入状态 */
+const STREAM_TOAST_MS = 500;
 
 /**
  * 初始化快速输入浮窗交互
@@ -54,7 +54,7 @@ function initQuickInput(): void {
     return;
   }
   const completionList = document.getElementById('completion-list');
-  const persistentToggle = document.getElementById('persistent-toggle');
+  const streamToggle = document.getElementById('stream-toggle');
 
   const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
   if (!electronApi) {
@@ -78,37 +78,37 @@ function initQuickInput(): void {
   /** Toast 自动关闭定时器句柄 */
   let toastCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** 持久模式：粘贴成功后窗口保持打开，供连续输入 */
-  let persistentMode = false;
+  /** 流式模式：粘贴成功后窗口保持打开，供连续输入 */
+  let streamMode = false;
 
   /**
-   * 更新持久模式切换按钮视觉状态
+   * 更新流式模式切换按钮视觉状态
    */
-  function updatePersistentToggle(): void {
-    if (!(persistentToggle instanceof HTMLElement)) return;
-    if (persistentMode) {
-      persistentToggle.textContent = '🔒';
-      persistentToggle.classList.add('active');
-      persistentToggle.title = '持久模式：粘贴后保持窗口打开（点击切换）';
+  function updateStreamToggle(): void {
+    if (!(streamToggle instanceof HTMLElement)) return;
+    if (streamMode) {
+      streamToggle.textContent = '🔒';
+      streamToggle.classList.add('active');
+      streamToggle.title = '流式模式开启：粘贴后保持窗口打开（点击切换）';
     } else {
-      persistentToggle.textContent = '🔓';
-      persistentToggle.classList.remove('active');
-      persistentToggle.title = '单次模式：粘贴后关闭窗口（点击切换）';
+      streamToggle.textContent = '🔓';
+      streamToggle.classList.remove('active');
+      streamToggle.title = '流式模式关闭：粘贴后关闭窗口（点击切换）';
     }
   }
 
   /**
-   * 切换持久模式（手动覆盖自动检测）
+   * 切换流式模式（手动覆盖自动检测）
    */
-  function togglePersistentMode(): void {
-    persistentMode = !persistentMode;
-    updatePersistentToggle();
+  function toggleStreamMode(): void {
+    streamMode = !streamMode;
+    updateStreamToggle();
   }
 
   /**
    * 确认输入：调用 IPC（主进程优先自动粘贴，降级写剪贴板）+ 显示 Toast
    *
-   * 持久模式下：粘贴成功后短暂 Toast → 清空输入 → 聚焦等待下次输入（不关闭窗口）。
+   * 流式模式下：粘贴成功后短暂 Toast → 清空输入 → 聚焦等待下次输入（不关闭窗口）。
    * 普通模式下：粘贴成功后 Toast → 延迟关闭窗口。
    */
   async function handleConfirm(): Promise<void> {
@@ -124,10 +124,10 @@ function initQuickInput(): void {
     showPastingToast();
 
     try {
-      const result = await api.confirmQuickInput(text, persistentMode);
+      const result = await api.confirmQuickInput(text, streamMode);
       if (result.success) {
-        if (persistentMode) {
-          // 持久模式：短暂 Toast → 清空输入 → 聚焦等待
+        if (streamMode) {
+          // 流式模式：短暂 Toast → 清空输入 → 聚焦等待
           if (result.mode === 'paste') {
             showPastedToast(result.appName);
           } else {
@@ -136,7 +136,7 @@ function initQuickInput(): void {
           toastCloseTimer = setTimeout(() => {
             toastCloseTimer = null;
             resetInputForNext();
-          }, PERSISTENT_TOAST_MS);
+          }, STREAM_TOAST_MS);
         } else {
           // 普通模式：Toast → 延迟关闭
           if (result.mode === 'paste') {
@@ -159,7 +159,7 @@ function initQuickInput(): void {
   }
 
   /**
-   * 持久模式下重置输入框，准备下一次输入
+   * 流式模式下重置输入框，准备下一次输入
    */
   function resetInputForNext(): void {
     isSubmitting = false;
@@ -306,9 +306,9 @@ function initQuickInput(): void {
     updateCounter();
   });
 
-  // 持久模式切换按钮
-  if (persistentToggle instanceof HTMLElement) {
-    persistentToggle.addEventListener('click', togglePersistentMode);
+  // 流式模式切换按钮
+  if (streamToggle instanceof HTMLElement) {
+    streamToggle.addEventListener('click', toggleStreamMode);
   }
 
   // 初始化补全管理器
@@ -338,10 +338,10 @@ function initQuickInput(): void {
     inputField.classList.remove('copy-toast');
     tabPressed = false;
 
-    // 自动检测：剪贴板内容命中 isSensitive() 时自动进入持久模式
+    // 自动检测：剪贴板内容命中 isSensitive() 时自动进入流式模式
     if (payload?.isSensitive) {
-      persistentMode = true;
-      updatePersistentToggle();
+      streamMode = true;
+      updateStreamToggle();
     }
 
     const preset = payload?.clipboardText;
@@ -364,7 +364,7 @@ function initQuickInput(): void {
   inputField.focus();
   updateCounter();
   autoResize();
-  updatePersistentToggle();
+  updateStreamToggle();
 }
 
 if (document.readyState === 'loading') {

@@ -724,10 +724,10 @@ export interface ElectronAPI {
    *   成功返回 mode='paste'；失败降级走 Phase 3 复制流程，返回 mode='copy'。
    *
    * @param text 用户确认的文本
-   * @param persistentMode 持久模式标志：true 时主进程跳过 hideFloat，窗口保持打开供连续输入
+   * @param streamMode 流式模式标志：true 时主进程跳过 hideFloat，窗口保持打开供连续输入
    * @returns success 是否成功 + mode 成功模式（paste/copy）+ appName 粘贴目标应用名
    */
-  confirmQuickInput: (text: string, persistentMode?: boolean) => Promise<{
+  confirmQuickInput: (text: string, streamMode?: boolean) => Promise<{
     success: boolean;
     /** 成功模式：paste=自动粘贴成功，copy=降级到复制+Toast */
     mode: 'paste' | 'copy';
@@ -747,7 +747,7 @@ export interface ElectronAPI {
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
    * payload.clipboardText 为 null 时表示无预填（敏感内容或空剪贴板）。
-   * payload.isSensitive 为 true 时表示剪贴板内容命中敏感模式，渲染进程自动进入持久模式。
+   * payload.isSensitive 为 true 时表示剪贴板内容命中敏感模式，渲染进程自动进入流式模式。
    */
   onQuickInputShow: (cb: (payload: { clipboardText: string | null; isSensitive: boolean }) => void) => void;
   /** 移除浮窗 show 事件监听器 */
@@ -1027,7 +1027,7 @@ const electronAPI: ElectronAPI = {
   // Phase 4.3：技能文件安装
   installSkill: (fileName, content) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_INSTALL, fileName, content),
   // 快速输入补全：确认（写剪贴板+关闭）、关闭（仅关闭）、调整高度
-  confirmQuickInput: (text, persistentMode) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, persistentMode),
+  confirmQuickInput: (text, streamMode) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, streamMode),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
   onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null; isSensitive: boolean }) => cb(payload)),

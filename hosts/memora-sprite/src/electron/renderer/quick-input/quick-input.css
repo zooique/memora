@@ -93,8 +93,8 @@ body {
   opacity: 0.7;
 }
 
-/* ===== 持久模式切换按钮 ===== */
-.persistent-toggle {
+/* ===== 流式模式切换按钮 ===== */
+.stream-toggle {
   font-size: var(--font-sm);
   cursor: pointer;
   user-select: none;
@@ -103,13 +103,13 @@ body {
   line-height: 1;
 }
 
-.persistent-toggle:hover {
+.stream-toggle:hover {
   opacity: 1;
   transform: scale(1.15);
 }
 
-/* 持久模式激活态 */
-.persistent-toggle.active {
+/* 流式模式激活态 */
+.stream-toggle.active {
   opacity: 1;
 }
 

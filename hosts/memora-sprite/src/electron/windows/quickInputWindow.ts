@@ -317,8 +317,8 @@ export class QuickInputWindow {
     this.ipcRegistered = true;
 
     // 确认输入：Phase 4 优先自动粘贴，降级走 onConfirm 写剪贴板
-    // 持久模式下跳过 hideFloat，窗口保持打开供连续输入
-    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, persistentMode?: boolean): Promise<QuickInputConfirmResult> => {
+    // 流式模式下跳过 hideFloat，窗口保持打开供连续输入
+    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, streamMode?: boolean): Promise<QuickInputConfirmResult> => {
       try {
         // 参数校验：文本必须是字符串且非空
         if (typeof text !== 'string' || text.length === 0) {
@@ -329,8 +329,8 @@ export class QuickInputWindow {
 
         // Phase 4：优先尝试自动粘贴（inputInjector 统一负责剪贴板操作）
         if (this.autoPasteEnabled && this.inputInjector && this.suppressNextChange) {
-          // 持久模式：跳过 hideFloat，窗口保持打开
-          const hideFloat = persistentMode ? () => {} : () => this.hide();
+          // 流式模式：跳过 hideFloat，窗口保持打开
+          const hideFloat = streamMode ? () => {} : () => this.hide();
           const pasteResult = await this.inputInjector.paste(
             safeText,
             this.previousWindow,
@@ -355,8 +355,8 @@ export class QuickInputWindow {
         // 降级路径 / Phase 3 兼容路径：走 onConfirm 写剪贴板
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
-          // 持久模式不关闭窗口
-          if (!persistentMode) {
+          // 流式模式不关闭窗口
+          if (!streamMode) {
             this.hide();
           }
           // 异步沉淀记忆（不阻塞，错误隔离）
