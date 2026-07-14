@@ -1,13 +1,12 @@
 /**
  * 快速输入浮窗管理
  *
- * 职责（Phase 1-4）：
+ * 职责：
  *   1. 创建轻量浮窗（无边框、alwaysOnTop、失焦延迟关闭）
  *   2. 单例管理——多次呼出复用同一窗口，避免创建多个实例
  *   3. 失焦延迟关闭（200ms），给 Alt+Tab 切换留余量
- *   4. IPC 处理：确认输入（写剪贴板+关闭）和关闭（仅关闭）
- *   5. Phase 2：剪贴板感知预填（敏感检测 + 剪贴板文本预填输入框）
- *   6. Phase 4：自动粘贴（恢复焦点到原窗口 + 模拟 Ctrl+V + 恢复剪贴板）
+ *   4. IPC 路由：确认输入（委托 PasteCoordinator + 降级写剪贴板）和关闭（仅关闭）
+ *   5. 剪贴板感知预填（敏感检测 + 剪贴板文本预填输入框）
  *
  * 设计原则：
  *   - 独立于 tray/full 二态状态机，不参与 WindowStateManager.transition
@@ -18,7 +17,7 @@
  *   - main.ts：快捷键 Ctrl+Shift+I 触发 show()
  *   - main.ts：IPC QUICK_INPUT_CONFIRM / QUICK_INPUT_CLOSE 处理
  *   - clipboardHandler：确认写入前调用 suppressNextChange() 抑制三重保护
- *   - inputInjector：Phase 4 自动粘贴（恢复焦点 + 模拟 Ctrl+V）
+ *   - pasteCoordinator：Phase 4 自动粘贴编排（恢复焦点 + 模拟 Ctrl+V）
  */
 
 import * as path from 'node:path';
@@ -29,8 +28,8 @@ import { ELECTRON_DIR } from '../esmShim.js';
 import { logger } from 'memora';
 // 剪贴板敏感内容检测（复用 clipboardHandler 的 5 种正则模式）
 import { isSensitive } from '../clipboardHandler.js';
-// Phase 4：输入注入器（自动粘贴）
-import { getDefaultInputInjector, type ActiveWindow, type InputInjector } from '../inputInjector.js';
+// Phase 4：自动粘贴协调器（从本类抽离的粘贴流程编排）
+import { PasteCoordinator, type SuppressNextChange } from './pasteCoordinator.js';
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
@@ -97,18 +96,17 @@ export interface QuickInputConfirmResult {
 }
 
 /**
- * 剪贴板三重保护抑制函数类型（由 clipboardHandler.suppressNextChange 注入）
- *
- * 一次性抑制：每次 clipboard.writeText 前都需调用。
- */
-type SuppressNextChange = () => void;
-
-/**
  * 快速输入浮窗类
  *
  * 单例模式：create() 只在首次调用时创建窗口，后续 show() 复用。
  * 失焦延迟关闭：blur 事件后延迟 BLUR_CLOSE_DELAY_MS 关闭，
  * 若在延迟内窗口重新获得焦点则取消关闭。
+ *
+ * 职责：
+ *   1. 窗口管理（创建/显示/隐藏/销毁/定位/失焦关闭）
+ *   2. IPC 路由（CONFIRM/CLOSE/RESIZE 三通道）
+ *   3. 剪贴板预填感知（敏感检测 + 文本预填）
+ *   自动粘贴流程编排已抽离至 PasteCoordinator
  */
 export class QuickInputWindow {
   /** BrowserWindow 单例（懒创建） */
@@ -119,14 +117,8 @@ export class QuickInputWindow {
   private blurCloseTimer: ReturnType<typeof setTimeout> | null = null;
   /** IPC handler 是否已注册（防止重复注册） */
   private ipcRegistered = false;
-  /** Phase 4：呼出浮窗前的前台窗口（用于自动粘贴恢复焦点） */
-  private previousWindow: ActiveWindow | null = null;
-  /** Phase 4：输入注入器实例（懒创建） */
-  private inputInjector: InputInjector | null = null;
-  /** Phase 4：剪贴板三重保护抑制函数（由 main.ts 注入） */
-  private suppressNextChange: SuppressNextChange | null = null;
-  /** Phase 4：是否启用自动粘贴（默认 true，配置开关） */
-  private autoPasteEnabled = true;
+  /** Phase 4：自动粘贴协调器（封装 InputInjector + 前台窗口捕获 + 剪贴板保护） */
+  private pasteCoordinator = new PasteCoordinator();
 
   constructor(callbacks: QuickInputWindowCallbacks = {}) {
     this.callbacks = callbacks;
@@ -207,7 +199,7 @@ export class QuickInputWindow {
    */
   async show(): Promise<void> {
     // Phase 4：捕获前台窗口（必须在 create() 之前，排雷修正雷 5.2）
-    await this.capturePreviousWindow();
+    await this.pasteCoordinator.capturePreviousWindow(this.win?.getTitle());
 
     if (!this.win || this.win.isDestroyed()) {
       await this.create();
@@ -276,27 +268,6 @@ export class QuickInputWindow {
   }
 
   /**
-   * Phase 4：捕获当前前台窗口（show() 第一行调用）
-   *
-   * 必须在 create() 之前调用，否则浮窗自身会成为前台窗口。
-   * 快速连续呼出场景：若捕获的窗口标题等于浮窗标题，保持上一次的 previousWindow。
-   * nut-js 不可用时 previousWindow 为 null，paste 将降级到复制+Toast。
-   */
-  private async capturePreviousWindow(): Promise<void> {
-    // 懒创建 InputInjector 单例
-    if (!this.inputInjector) {
-      this.inputInjector = await getDefaultInputInjector();
-    }
-    // 捕获前台窗口（排除浮窗自身）
-    const floatTitle = this.win?.getTitle();
-    const captured = await this.inputInjector.captureActiveWindow(floatTitle);
-    // 排雷修正雷 6.1：若捕获到浮窗自身（返回 null），保持上一次的 previousWindow
-    if (captured) {
-      this.previousWindow = captured;
-    }
-  }
-
-  /**
    * 隐藏浮窗（不销毁，复用单例）
    *
    * 清空输入框内容（由渲染进程在 close 事件中处理）。
@@ -329,28 +300,22 @@ export class QuickInputWindow {
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, 10000);
 
-        // Phase 4：优先尝试自动粘贴（inputInjector 统一负责剪贴板操作）
-        if (this.autoPasteEnabled && this.inputInjector && this.suppressNextChange) {
-          // 流式模式：跳过 hideFloat，窗口保持打开
-          const hideFloat = streamMode ? () => {} : () => this.hide();
-          const pasteResult = await this.inputInjector.paste(
-            safeText,
-            this.previousWindow,
-            hideFloat,
-            this.suppressNextChange,
-          );
+        // Phase 4：优先尝试自动粘贴（PasteCoordinator 封装条件检查 + inputInjector 调用）
+        const hideFloat = streamMode ? () => {} : () => this.hide();
+        const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
 
-          if (pasteResult.success && pasteResult.mode === 'paste') {
-            // 粘贴成功：调用 onAfterConfirm 记忆沉淀（排雷修正雷 1.3：粘贴成功后才记）
-            try {
-              this.callbacks.onAfterConfirm?.(safeText);
-            } catch (err) {
-              logger.warn({ err }, '快速输入记忆沉淀失败（不影响粘贴结果）');
-            }
-            return { success: true, mode: 'paste', appName: pasteResult.appName };
+        if (pasteResult.success && pasteResult.mode === 'paste') {
+          // 粘贴成功：调用 onAfterConfirm 记忆沉淀（排雷修正雷 1.3：粘贴成功后才记）
+          try {
+            this.callbacks.onAfterConfirm?.(safeText);
+          } catch (err) {
+            logger.warn({ err }, '快速输入记忆沉淀失败（不影响粘贴结果）');
           }
+          return { success: true, mode: 'paste', appName: pasteResult.appName };
+        }
 
-          // 降级日志（用于诊断降级原因）
+        // 降级日志（用于诊断降级原因）
+        if (pasteResult.reason) {
           logger.debug({ reason: pasteResult.reason }, 'Phase 4 自动粘贴降级到复制模式');
         }
 
@@ -474,13 +439,13 @@ export class QuickInputWindow {
   /**
    * Phase 4：注入剪贴板三重保护抑制函数
    *
-   * 由 main.ts 在创建 QuickInputWindow 后调用，注入 clipboardHandler.suppressNextChange。
+   * 由 main.ts 在创建 QuickInputWindow 后调用，委托至 PasteCoordinator。
    * 自动粘贴流程中每次 clipboard.writeText 前后都需调用此函数抑制三重保护。
    *
    * @param suppressNextChange 抑制函数（clipboardHandler.suppressNextChange 绑定实例）
    */
   setSuppressNextChange(suppressNextChange: SuppressNextChange): void {
-    this.suppressNextChange = suppressNextChange;
+    this.pasteCoordinator.setSuppressNextChange(suppressNextChange);
   }
 
   /**
@@ -489,7 +454,7 @@ export class QuickInputWindow {
    * @param enabled true=启用自动粘贴（默认），false=强制走复制+Toast 模式
    */
   setAutoPasteEnabled(enabled: boolean): void {
-    this.autoPasteEnabled = enabled;
+    this.pasteCoordinator.setAutoPasteEnabled(enabled);
   }
 
   /**

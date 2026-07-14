@@ -7,7 +7,7 @@
  * - init/cleanup：事件绑定与解绑生命周期
  * - handleInput：防抖触发 / 最小字符阈值 / 短输入清空
  * - fetchCandidates：并行 IPC / 乱序取消 / 单源降级 / loading 占位
- * - mergeCandidates：记忆候选 / 对话候选（assistant 过滤）/ 去重 / 排序 / Top-5 截断
+ * - mergeCandidates：记忆候选 / 对话候选（assistant 过滤）/ 去重 / 排序 / 同源多样性过滤 / Top-5 截断
  * - handleKeyDown：↓↑ 循环导航 / ←→ 填充回填
  * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知 / UX-0714-4 候选总数 footer
  * - clearCandidates：DOM 清空 / hidden 类 / 回调通知 / footer 同步清除
@@ -82,6 +82,8 @@ function createMessageResult(overrides?: Partial<{ content: string; role: string
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // 清理 localStorage，避免采纳记录跨测试用例污染
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -259,23 +261,26 @@ describe('mergeCandidates · 合并去重排序', async () => {
     expect(items[0]!.querySelector('.completion-text')?.textContent).toBe('用户消息');
   });
 
-  it('对话 score 应按顺序递减（0.6 → 0.55 → ...）', async () => {
+  it('对话 score 应基于关键词匹配位置（开头高，末尾低）', async () => {
     const { input, api } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
       results: [
-        createMessageResult({ content: '第一条消息', role: 'user' }),
-        createMessageResult({ content: '第二条消息', role: 'user' }),
-        createMessageResult({ content: '第三条消息', role: 'user' }),
+        // 关键词在开头 → score 最高（0.6）
+        createMessageResult({ content: '测试开头匹配', role: 'user' }),
+        // 关键词在中间 → score 中等
+        createMessageResult({ content: '这是一段测试中间匹配的内容', role: 'user' }),
+        // 关键词在末尾 → score 最低
+        createMessageResult({ content: '这段内容把测试放在末尾', role: 'user' }),
       ],
     });
-    input.value = '条消息';
+    input.value = '测试';
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // 按 DOM 顺序验证排序（score 降序 = 输入顺序）
+    // 按匹配位置排序：开头(pos=0, score=0.6) → 中间(pos=4, score≈0.52) → 末尾(pos=6, score≈0.47)
     const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
-    expect(texts).toEqual(['第一条消息', '第二条消息', '第三条消息']);
+    expect(texts).toEqual(['测试开头匹配', '这是一段测试中间匹配的内容', '这段内容把测试放在末尾']);
   });
 
   it('相同文本应去重，保留 score 较高者', async () => {
@@ -316,21 +321,38 @@ describe('mergeCandidates · 合并去重排序', async () => {
     expect(texts[1]).toBe('低分记忆');
   });
 
-  it('候选应截断为 Top-5', async () => {
+  it('候选应截断为 Top-5（含同源多样性过滤）', async () => {
     const { input, api } = createCompletion();
-    // 6 条不同前缀的记忆（避免去重）
+    // 4 条记忆（score 0.95-0.8）+ 4 条对话（score 0.6-0.45），覆盖两个来源
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
-      hits: Array.from({ length: 6 }, (_, i) =>
-        createMemoryHit({ contentPreview: `记忆${i}号唯一前缀`, score: 0.8 - i * 0.05 }),
-      ),
+      hits: [
+        createMemoryHit({ contentPreview: '记忆A', score: 0.95 }),
+        createMemoryHit({ contentPreview: '记忆B', score: 0.9 }),
+        createMemoryHit({ contentPreview: '记忆C', score: 0.85 }),
+        createMemoryHit({ contentPreview: '记忆D', score: 0.8 }),
+      ],
     });
-    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
-    input.value = '记忆';
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '对话A' }),
+        createMessageResult({ content: '对话B' }),
+        createMessageResult({ content: '对话C' }),
+        createMessageResult({ content: '对话D' }),
+      ],
+    });
+    input.value = '对话';
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
     const items = document.querySelectorAll('.completion-item');
+    // 同源上限 MAX_PER_SOURCE=3：记忆最多3条 + 对话最多3条 = 6条候选，取 Top-5
     expect(items.length).toBe(5);
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts[0]).toBe('记忆A');
+    expect(texts[1]).toBe('记忆B');
+    expect(texts[2]).toBe('记忆C');
+    expect(texts[3]).toBe('对话A');
+    expect(texts[4]).toBe('对话B');
   });
 
   it('超长文本应截断并加省略号', async () => {
@@ -813,7 +835,7 @@ describe('renderCandidates · 渲染与交互', async () => {
 
   it('UX-0714-4：候选总数 > 5 时应在列表底部显示"共 N 项"footer', async () => {
     const { input, list, api } = createCompletion();
-    // 6 条不同内容的记忆候选，去重后仍为 6 条，超过 MAX_CANDIDATES=5
+    // 6 条记忆 + 4 条对话，去重后同源上限各保留 3 条 = 6 条，超过 MAX_CANDIDATES=5
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
       hits: [
         createMemoryHit({ contentPreview: '候选A', score: 0.9 }),
@@ -824,7 +846,14 @@ describe('renderCandidates · 渲染与交互', async () => {
         createMemoryHit({ contentPreview: '候选F', score: 0.65 }),
       ],
     });
-    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '对话X' }),
+        createMessageResult({ content: '对话Y' }),
+        createMessageResult({ content: '对话Z' }),
+        createMessageResult({ content: '对话W' }),
+      ],
+    });
     input.value = '测试';
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
@@ -856,12 +885,20 @@ describe('renderCandidates · 渲染与交互', async () => {
 
   it('UX-0714-4：footer 不含 .completion-item 类（不参与计数和选择）', async () => {
     const { input, list, api } = createCompletion();
+    // 6 条记忆 + 4 条对话，同源上限各 3 条 = 6 条候选，5 条显示 + 1 footer
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
-      hits: Array.from({ length: 8 }, (_, i) =>
+      hits: Array.from({ length: 6 }, (_, i) =>
         createMemoryHit({ contentPreview: `候选${i}`, score: 0.9 - i * 0.05 }),
       ),
     });
-    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '对话X' }),
+        createMessageResult({ content: '对话Y' }),
+        createMessageResult({ content: '对话Z' }),
+        createMessageResult({ content: '对话W' }),
+      ],
+    });
     input.value = '测试';
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
@@ -879,12 +916,20 @@ describe('renderCandidates · 渲染与交互', async () => {
 
   it('UX-0714-4：清空列表时 footer 和 dataset 应同步清除', async () => {
     const { input, list, api } = createCompletion();
+    // 6 条记忆 + 4 条对话，同源上限各 3 条 = 6 条候选，触发 footer
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
-      hits: Array.from({ length: 8 }, (_, i) =>
+      hits: Array.from({ length: 6 }, (_, i) =>
         createMemoryHit({ contentPreview: `候选${i}`, score: 0.9 - i * 0.05 }),
       ),
     });
-    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '对话X' }),
+        createMessageResult({ content: '对话Y' }),
+        createMessageResult({ content: '对话Z' }),
+        createMessageResult({ content: '对话W' }),
+      ],
+    });
     input.value = '测试';
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
@@ -1028,6 +1073,44 @@ describe('采纳反馈回路', async () => {
 
     // A 被 boost（0.6 + 0.1 = 0.7）> B（0.65，未被 boost）
     // A 排到前面证明 B 的 score 没有被错误提升
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['低分记忆A', '高分记忆B']);
+  });
+
+  it('COMP-0714-D2：采纳记录应通过 localStorage 跨会话持久化', async () => {
+    // 第一阶段：实例 A 采纳候选项"低分记忆A"
+    const { input: inputA, api: apiA, completion: completionA } = createCompletion();
+    (apiA.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆A', score: 0.6 }),
+        createMemoryHit({ contentPreview: '高分记忆B', score: 0.65 }),
+      ],
+    });
+    (apiA.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    inputA.value = '记忆';
+    inputA.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // Click 采纳第二项（低分记忆A）
+    const items = document.querySelectorAll('.completion-item');
+    (items[1] as HTMLElement).click();
+    completionA.cleanup();
+
+    // 第二阶段：新建实例 B（模拟窗口重开后），验证采纳记录已从 localStorage 恢复
+    document.body.innerHTML = '';
+    const { input: inputB, api: apiB } = createCompletion();
+    (apiB.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆A', score: 0.6 }),
+        createMemoryHit({ contentPreview: '高分记忆B', score: 0.65 }),
+      ],
+    });
+    (apiB.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    inputB.value = '记忆';
+    inputB.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 低分记忆A 应获得 boost（0.6 + 0.1 = 0.7 > 0.65），排在前面
     const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
     expect(texts).toEqual(['低分记忆A', '高分记忆B']);
   });

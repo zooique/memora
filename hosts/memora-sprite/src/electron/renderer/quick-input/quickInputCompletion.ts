@@ -4,7 +4,7 @@
  * 职责：
  *   1. 监听输入框内容变化，防抖触发补全请求
  *   2. 并行调用 searchMemories + searchSessionMessages 两个 IPC
- *   3. 合并去重 + 按相关度排序，取 Top-5 候选
+ *   3. 合并去重 + 按相关度排序 + 同源多样性过滤，取 Top-5 候选
  *   4. 渲染候选列表，支持 ↓↑ 键盘导航 + ←→ 填充回填
  *   5. 取消上一次未完成的请求（避免乱序）
  *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
@@ -24,8 +24,8 @@
  *
  * score 量纲设计：
  *   - 记忆 score：内核返回的归一化相关度（0-1）
- *   - 对话 score：起始 0.6 递减 0.05（低于记忆，对话作为兜底）
- *   - 采纳 boost：+0.1 * min(采纳次数, 3)，最多 +0.3（单次会话内有效）
+ *   - 对话 score：基于关键词匹配位置（开头 0.6 → 末尾 0.4，低于记忆，对话作为兜底）
+ *   - 采纳 boost：+0.1 * min(采纳次数, 3)，最多 +0.3（通过 localStorage 跨会话持久化）
  */
 import type { ElectronAPI } from '../../preload.js';
 // 复用渲染进程统一日志函数（双通道：console + 主进程 logger），替代本地 logCompletion
@@ -66,14 +66,18 @@ const MAX_CANDIDATES = 5;
 const PREVIEW_MAX_LENGTH = 80;
 /** 候选项 DOM ID 前缀（用于 aria-activedescendant 引用） */
 const COMPLETION_ITEM_ID_PREFIX = 'completion-item-';
-/** 对话候选 score 起始值（低于记忆候选，让结构化记忆优先排序） */
+/** 对话候选 score 基础值（低于记忆候选，让结构化记忆优先排序） */
 const MESSAGE_SCORE_BASE = 0.6;
-/** 对话候选 score 每条递减量 */
-const MESSAGE_SCORE_STEP = 0.05;
+/** 对话候选 score 位置惩罚范围（关键词在内容末尾时最多扣 0.2，score 从 0.6 降至 0.4） */
+const MESSAGE_SCORE_POSITION_PENALTY = 0.2;
 /** 采纳反馈 boost 上限（最多累积 3 次采纳） */
 const ADOPTION_BOOST_MAX_COUNT = 3;
 /** 每次采纳的 score 提升量 */
 const ADOPTION_BOOST_PER_COUNT = 0.1;
+/** localStorage 键名（遵循宿主 `memora-` 前缀约定） */
+const ADOPTION_STORAGE_KEY = 'memora-completion-adoptions';
+/** 同 sourceLabel 最大候选数（保证 Top-5 内至少 2 个来源，当多源共存时） */
+const MAX_PER_SOURCE = 3;
 
 /**
  * 快速输入补全管理器
@@ -85,6 +89,14 @@ const ADOPTION_BOOST_PER_COUNT = 0.1;
  *   4. 窗口关闭时调用 cleanup() 清理监听器
  *
  * 支持的输入元素：HTMLInputElement（浮窗）| HTMLTextAreaElement（主输入框）
+ *
+ * 键盘交互约定（三键分工）：
+ *   - ↓↑：导航候选项（本类处理，循环选择）
+ *   - ←→：填充选中项到输入框（本类处理，仅导航后拦截）
+ *   - Tab：提交/确认补全（本类不处理，由宿主自行实现）
+ *         · 浮窗场景：Tab = 提交输入内容（quickInput.ts handleTab）
+ *         · 主输入框场景：Tab = 确认补全文本（inputAreaManager.ts 自行处理）
+ *   宿主需根据使用场景自行绑定 Tab 键行为，本类仅处理 ↓↑←→。
  */
 export class QuickInputCompletion {
   /** 输入框元素（input 或 textarea） */
@@ -120,6 +132,8 @@ export class QuickInputCompletion {
     this.inputField = inputField;
     this.listEl = listEl;
     this.api = api;
+    // 从 localStorage 加载历史采纳记录，实现跨会话学习
+    this.adoptedTexts = this.loadAdoptions();
   }
 
   /**
@@ -240,7 +254,7 @@ export class QuickInputCompletion {
       // 请求已过期（用户已输入新内容），丢弃旧响应（loading 由最新请求接管）
       if (requestId !== this.lastRequestId) return;
 
-      const candidates = this.mergeCandidates(memoriesResult.hits, messagesResult.results);
+      const candidates = this.mergeCandidates(query, memoriesResult.hits, messagesResult.results);
       this.renderCandidates(candidates);
     } catch (error) {
       reportError('QuickInputCompletion:fetchCandidates', error);
@@ -289,22 +303,25 @@ export class QuickInputCompletion {
    * 合并两个数据源的候选结果
    *
    * - 记忆搜索结果：取 contentPreview，标记"记忆"，score 用原值（0-1 归一化）
-   * - 对话搜索结果：取 content（截断），标记"对话"，score 按递减顺序估算（起始 0.6，低于记忆）
+   * - 对话搜索结果：取 content（截断），标记"对话"，score 按关键词匹配位置计算（开头高、末尾低）
    * - 采纳 boost：已被用户采纳过的候选项 score 获得提升（最多 +0.3）
    * - 去重：相同文本（trim 后）只保留 score 较高的
    * - 排序：score 降序
+   * - 多样性：同 sourceLabel 最多保留 MAX_PER_SOURCE 个（防止 Top-5 来源单一）
    * - 截断：取 Top-5
    *
    * score 量纲设计：
    *   - 记忆 score 来自内核混合搜索，已经是 0-1 归一化的相关度
-   *   - 对话 score 起始 0.6（低于记忆），让结构化记忆优先排序，对话作为兜底
+   *   - 对话 score 基于关键词匹配位置：在内容开头得 0.6，末尾得 0.4（低于记忆，对话作为兜底）
    *   - 采纳 boost 在去重后、排序前应用，确保 boost 不影响去重逻辑
    *
+   * @param query 用户输入的查询文本（用于计算对话候选的匹配位置 score）
    * @param memories 记忆搜索结果
    * @param messages 对话搜索结果
    * @returns 合并后的候选列表
    */
   private mergeCandidates(
+    query: string,
     memories: Array<{ contentPreview: string; score: number; source?: string }>,
     messages: Array<{ content: string; role: string }>,
   ): CompletionItem[] {
@@ -322,16 +339,19 @@ export class QuickInputCompletion {
     }
 
     // 对话搜索结果：历史消息（优先 user 角色，更贴近用户表达习惯）
-    // score 起始 0.6（低于记忆），递减 0.05，最低 0.4
-    messages.forEach((m, idx) => {
+    // score 基于关键词在内容中的匹配位置：开头高（0.6），末尾低（0.4）
+    messages.forEach((m) => {
       const text = m.content?.trim();
       if (!text) return;
       // 过滤 assistant 回复（用户补全不需要 AI 说过的话）
       if (m.role === 'assistant') return;
+      // 计算关键词匹配位置：位置越靠前，相关度越高（话题核心词通常在开头）
+      const matchPos = text.toLowerCase().indexOf(query.toLowerCase());
+      const positionRatio = matchPos >= 0 ? matchPos / text.length : 1;
       candidates.push({
         text: this.truncate(text, PREVIEW_MAX_LENGTH),
         sourceLabel: '对话',
-        score: Math.max(0.4, MESSAGE_SCORE_BASE - idx * MESSAGE_SCORE_STEP),
+        score: Math.max(0.4, MESSAGE_SCORE_BASE - positionRatio * MESSAGE_SCORE_POSITION_PENALTY),
       });
     });
 
@@ -351,11 +371,25 @@ export class QuickInputCompletion {
       return boost > 0 ? { ...c, score: c.score + boost } : c;
     });
 
-    // 排序：score 降序，取 Top-5
-    // UX-0714-4：记录 slice 前的总数，供 renderCandidates 判断是否追加"共 N 项"footer
+    // 排序：score 降序
     const sorted = boosted.sort((a, b) => b.score - a.score);
-    this.totalCandidatesCount = sorted.length;
-    return sorted.slice(0, MAX_CANDIDATES);
+
+    // 同源多样性过滤：每个 sourceLabel 最多保留 MAX_PER_SOURCE 个候选项，
+    // 防止 Top-5 全部来自同一数据源（如全是对话历史）。贪心遍历已排序列表，
+    // 优先保留高分项，同时保证来源分布均衡。
+    const diversified: CompletionItem[] = [];
+    const sourceCount = new Map<string, number>();
+    for (const c of sorted) {
+      const count = sourceCount.get(c.sourceLabel) ?? 0;
+      if (count < MAX_PER_SOURCE) {
+        diversified.push(c);
+        sourceCount.set(c.sourceLabel, count + 1);
+      }
+    }
+
+    // UX-0714-4：记录过滤后的总数，供 renderCandidates 判断是否追加"共 N 项"footer
+    this.totalCandidatesCount = diversified.length;
+    return diversified.slice(0, MAX_CANDIDATES);
   }
 
   /**
@@ -374,11 +408,46 @@ export class QuickInputCompletion {
    *
    * 采纳次数累积，用于下次合并候选时 boost 该候选项的 score。
    * key 与去重逻辑一致（dedupKey），确保 boost 能命中。
+   * 同步写入 localStorage，实现跨会话学习。
    */
   private recordAdoption(text: string): void {
     const key = this.dedupKey(text);
     const count = this.adoptedTexts.get(key) ?? 0;
     this.adoptedTexts.set(key, count + 1);
+    this.saveAdoptions();
+  }
+
+  /**
+   * 从 localStorage 加载采纳记录
+   *
+   * 遵循宿主模式：try-catch 静默降级（隐私模式/cookie 禁用时不崩溃）。
+   * 存储格式：JSON.stringify(Object.fromEntries(adoptedTexts))
+   */
+  private loadAdoptions(): Map<string, number> {
+    try {
+      const raw = localStorage.getItem(ADOPTION_STORAGE_KEY);
+      if (!raw) return new Map();
+      const obj = JSON.parse(raw) as Record<string, number>;
+      return new Map(Object.entries(obj));
+    } catch {
+      // localStorage 不可用或数据损坏时静默降级为空 Map
+      return new Map();
+    }
+  }
+
+  /**
+   * 将采纳记录写入 localStorage
+   *
+   * 遵循宿主模式：try-catch 静默降级。
+   * 仅在 recordAdoption 时写入，避免每次 getAdoptionBoost 查询都触发 IO。
+   */
+  private saveAdoptions(): void {
+    try {
+      const obj = Object.fromEntries(this.adoptedTexts);
+      localStorage.setItem(ADOPTION_STORAGE_KEY, JSON.stringify(obj));
+    } catch {
+      // localStorage 不可用时静默降级（采纳记录仅在内存中有效）
+    }
   }
 
   /**
