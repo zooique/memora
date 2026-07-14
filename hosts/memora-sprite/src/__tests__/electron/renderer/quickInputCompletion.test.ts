@@ -11,6 +11,7 @@
  * - handleKeyDown：↓↑ 循环导航 / Tab 确认回填
  * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知
  * - clearCandidates：DOM 清空 / hidden 类 / 回调通知
+ * - 采纳反馈回路：Click/Tab 采纳 boost / 多次采纳上限 / 未采纳不受影响
  *
  * Mock 策略：
  * - mock errorHelpers.reportError（避免 console 噪音）
@@ -256,7 +257,7 @@ describe('mergeCandidates · 合并去重排序', async () => {
     expect(items[0]!.querySelector('.completion-text')?.textContent).toBe('用户消息');
   });
 
-  it('对话 score 应按顺序递减（0.9 → 0.85 → ...）', async () => {
+  it('对话 score 应按顺序递减（0.6 → 0.55 → ...）', async () => {
     const { input, api } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -289,7 +290,7 @@ describe('mergeCandidates · 合并去重排序', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // 前 40 字符相同 → 去重，只保留 score=0.95 的记忆（对话 score=0.9）
+    // 前 40 字符相同 → 去重，只保留 score=0.95 的记忆（对话 score=0.6）
     const items = document.querySelectorAll('.completion-item');
     expect(items.length).toBe(1);
     expect(items[0]!.querySelector('.completion-label')?.textContent).toBe('记忆');
@@ -706,6 +707,136 @@ describe('renderCandidates · 渲染与交互', async () => {
     const textEl = document.querySelector('.completion-text') as HTMLElement;
     expect(textEl.querySelector('img')).toBeNull();
     expect(textEl.textContent).toBe(malicious);
+  });
+});
+
+// ─── 采纳反馈回路 ───────────────────────────────────────
+
+describe('采纳反馈回路', async () => {
+  it('Click 采纳后再次补全，被采纳的候选项应获得 score boost 排序上升', async () => {
+    const { input, api } = createCompletion();
+    // 记忆 A score=0.6（低分），记忆 B score=0.65（高分），第一次 B 排前面
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆A', score: 0.6 }),
+        createMemoryHit({ contentPreview: '高分记忆B', score: 0.65 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+
+    // 第一次补全
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 验证初始顺序：B（0.65）排在 A（0.6）前面
+    let texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['高分记忆B', '低分记忆A']);
+
+    // Click 采纳第二项（低分记忆A）
+    const items = document.querySelectorAll('.completion-item');
+    (items[1] as HTMLElement).click();
+
+    // 再次触发补全（重置输入触发新一轮）
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // A 的 score = 0.6 + 0.1（boost）= 0.7 > B 的 0.65，A 排到前面
+    texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['低分记忆A', '高分记忆B']);
+  });
+
+  it('Tab 采纳后再次补全，被采纳的候选项应获得 score boost', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆A', score: 0.6 }),
+        createMemoryHit({ contentPreview: '高分记忆B', score: 0.65 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+
+    // 第一次补全
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // ArrowDown 两次选中第二项（初始 -1 → 0 → 1），Tab 确认
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+
+    // 再次触发补全
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // A 的 score = 0.6 + 0.1 = 0.7 > B 的 0.65
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['低分记忆A', '高分记忆B']);
+  });
+
+  it('多次采纳同一候选项，boost 上限为 +0.3（3 次后不再增加）', async () => {
+    const { input, api } = createCompletion();
+    // 差距 0.35，需要 4 次 boost（+0.4）才能超过，但上限 +0.3 无法超过
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆A', score: 0.3 }),
+        createMemoryHit({ contentPreview: '高分记忆B', score: 0.65 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+
+    // 采纳 A 共 4 次（每次需要重新触发补全 + click）
+    for (let i = 0; i < 4; i++) {
+      input.value = '记忆';
+      input.dispatchEvent(new Event('input'));
+      await vi.advanceTimersByTimeAsync(300);
+
+      const items = document.querySelectorAll('.completion-item');
+      // A 始终在第二项（boost 不超过 +0.3，即 0.6 < 0.65）
+      (items[1] as HTMLElement).click();
+    }
+
+    // 第 5 次补全验证：A 的 score = 0.3 + 0.3 = 0.6 < B 的 0.65，B 仍排前面
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['高分记忆B', '低分记忆A']);
+  });
+
+  it('未被采纳的候选项 score 不受 boost 影响', async () => {
+    const { input, api } = createCompletion();
+    // A score=0.6（低分），B score=0.65（高分），第一次 B 排前面
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆A', score: 0.6 }),
+        createMemoryHit({ contentPreview: '高分记忆B', score: 0.65 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+
+    // 第一次补全
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // Click 采纳第二项（A，低分）—— 如果 B 也被错误 boost，B 仍会在 A 前面
+    const items = document.querySelectorAll('.completion-item');
+    (items[1] as HTMLElement).click();
+
+    // 再次补全
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // A 被 boost（0.6 + 0.1 = 0.7）> B（0.65，未被 boost）
+    // A 排到前面证明 B 的 score 没有被错误提升
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['低分记忆A', '高分记忆B']);
   });
 });
 

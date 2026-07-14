@@ -7,6 +7,7 @@
  *   3. 合并去重 + 按相关度排序，取 Top-5 候选
  *   4. 渲染候选列表，支持 ↓↑ 键盘导航 + Tab 确认回填
  *   5. 取消上一次未完成的请求（避免乱序）
+ *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
  *
  * 设计原则：
  *   - 纯渲染层逻辑，零内核改动、零 IPC 新增
@@ -19,6 +20,11 @@
  *   - searchMemories：结构化记忆（洞察/偏好/规则），双通道混合搜索，含 source
  *   - searchSessionMessages：历史对话消息原文，纯 LIKE 匹配，含 role/date
  *   两者互补：记忆提供"用户是什么样的人"，对话提供"用户最近在说什么"
+ *
+ * score 量纲设计：
+ *   - 记忆 score：内核返回的归一化相关度（0-1）
+ *   - 对话 score：起始 0.6 递减 0.05（低于记忆，对话作为兜底）
+ *   - 采纳 boost：+0.1 * min(采纳次数, 3)，最多 +0.3（单次会话内有效）
  */
 import type { ElectronAPI } from '../../preload.js';
 // 复用渲染进程统一日志函数（双通道：console + 主进程 logger），替代本地 logCompletion
@@ -59,6 +65,14 @@ const MAX_CANDIDATES = 5;
 const PREVIEW_MAX_LENGTH = 80;
 /** 候选项 DOM ID 前缀（用于 aria-activedescendant 引用） */
 const COMPLETION_ITEM_ID_PREFIX = 'completion-item-';
+/** 对话候选 score 起始值（低于记忆候选，让结构化记忆优先排序） */
+const MESSAGE_SCORE_BASE = 0.6;
+/** 对话候选 score 每条递减量 */
+const MESSAGE_SCORE_STEP = 0.05;
+/** 采纳反馈 boost 上限（最多累积 3 次采纳） */
+const ADOPTION_BOOST_MAX_COUNT = 3;
+/** 每次采纳的 score 提升量 */
+const ADOPTION_BOOST_PER_COUNT = 0.1;
 
 /**
  * 快速输入补全管理器
@@ -91,6 +105,8 @@ export class QuickInputCompletion {
   private candidates: CompletionItem[] = [];
   /** 上一次请求的序号（用于取消乱序响应） */
   private lastRequestId = 0;
+  /** 采纳反馈记录（text key → 累积采纳次数，用于 boost 已被采纳的候选项） */
+  private adoptedTexts = new Map<string, number>();
 
   /**
    * @param inputField 输入框元素（input 或 textarea）
@@ -182,6 +198,7 @@ export class QuickInputCompletion {
       // 无选中项时默认补全第一项（用户输入后直接 Tab 确认）
       const idx = this.selectedIndex >= 0 ? this.selectedIndex : 0;
       const selected = this.candidates[idx]!;
+      this.recordAdoption(selected.text);
       this.onSelectCallback?.(selected.text);
       this.clearCandidates();
     }
@@ -225,11 +242,17 @@ export class QuickInputCompletion {
   /**
    * 合并两个数据源的候选结果
    *
-   * - 记忆搜索结果：取 contentPreview，标记"记忆"，score 用原值
-   * - 对话搜索结果：取 content（截断），标记"对话"，score 按 1-递减顺序估算
+   * - 记忆搜索结果：取 contentPreview，标记"记忆"，score 用原值（0-1 归一化）
+   * - 对话搜索结果：取 content（截断），标记"对话"，score 按递减顺序估算（起始 0.6，低于记忆）
+   * - 采纳 boost：已被用户采纳过的候选项 score 获得提升（最多 +0.3）
    * - 去重：相同文本（trim 后）只保留 score 较高的
    * - 排序：score 降序
    * - 截断：取 Top-5
+   *
+   * score 量纲设计：
+   *   - 记忆 score 来自内核混合搜索，已经是 0-1 归一化的相关度
+   *   - 对话 score 起始 0.6（低于记忆），让结构化记忆优先排序，对话作为兜底
+   *   - 采纳 boost 在去重后、排序前应用，确保 boost 不影响去重逻辑
    *
    * @param memories 记忆搜索结果
    * @param messages 对话搜索结果
@@ -241,7 +264,7 @@ export class QuickInputCompletion {
   ): CompletionItem[] {
     const candidates: CompletionItem[] = [];
 
-    // 记忆搜索结果：结构化洞察/偏好
+    // 记忆搜索结果：结构化洞察/偏好，score 用内核返回的归一化值
     for (const m of memories) {
       const text = m.contentPreview?.trim();
       if (!text) continue;
@@ -253,7 +276,7 @@ export class QuickInputCompletion {
     }
 
     // 对话搜索结果：历史消息（优先 user 角色，更贴近用户表达习惯）
-    // score 按 1-递减估算：第一条 0.9，第二条 0.85，依此类推
+    // score 起始 0.6（低于记忆），递减 0.05，最低 0.4
     messages.forEach((m, idx) => {
       const text = m.content?.trim();
       if (!text) return;
@@ -262,11 +285,11 @@ export class QuickInputCompletion {
       candidates.push({
         text: this.truncate(text, PREVIEW_MAX_LENGTH),
         sourceLabel: '对话',
-        score: Math.max(0.5, 0.9 - idx * 0.05),
+        score: Math.max(0.4, MESSAGE_SCORE_BASE - idx * MESSAGE_SCORE_STEP),
       });
     });
 
-    // 去重：相同文本只保留 score 较高的
+    // 去重：相同文本只保留 score 较高的（boost 在去重后应用，避免 boost 影响去重判断）
     const seen = new Map<string, CompletionItem>();
     for (const c of candidates) {
       const key = c.text.slice(0, 40).toLowerCase();
@@ -276,10 +299,41 @@ export class QuickInputCompletion {
       }
     }
 
+    // 采纳 boost：已被用户采纳过的候选项 score 获得提升
+    const boosted = Array.from(seen.values()).map((c) => {
+      const boost = this.getAdoptionBoost(c.text);
+      return boost > 0 ? { ...c, score: c.score + boost } : c;
+    });
+
     // 排序：score 降序，取 Top-5
-    return Array.from(seen.values())
+    return boosted
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_CANDIDATES);
+  }
+
+  /**
+   * 记录用户采纳的候选项（Tab/Click 确认时调用）
+   *
+   * 采纳次数累积，用于下次合并候选时 boost 该候选项的 score。
+   * key 与去重逻辑一致（text 前 40 字符小写），确保 boost 能命中。
+   */
+  private recordAdoption(text: string): void {
+    const key = text.slice(0, 40).toLowerCase();
+    const count = this.adoptedTexts.get(key) ?? 0;
+    this.adoptedTexts.set(key, count + 1);
+  }
+
+  /**
+   * 获取候选项的采纳 boost 值
+   *
+   * boost = 0.1 * min(采纳次数, 3)，最多 +0.3。
+   * 未被采纳过的候选项返回 0。
+   */
+  private getAdoptionBoost(text: string): number {
+    const key = text.slice(0, 40).toLowerCase();
+    const count = this.adoptedTexts.get(key);
+    if (!count) return 0;
+    return Math.min(count, ADOPTION_BOOST_MAX_COUNT) * ADOPTION_BOOST_PER_COUNT;
   }
 
   /**
@@ -333,6 +387,7 @@ export class QuickInputCompletion {
       li.addEventListener('click', () => {
         this.selectedIndex = i;
         this.updateSelection();
+        this.recordAdoption(item.text);
         this.onSelectCallback?.(item.text);
         this.clearCandidates();
       });
