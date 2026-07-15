@@ -122,6 +122,7 @@
 
 /* 步骤圆点 */
 .onboarding-step-dot {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -133,7 +134,6 @@
   font-weight: var(--weight-semibold);
   color: var(--text-3);
   transition: background var(--transition-fast), color var(--transition-fast);
-  flex-shrink: 0;
 }
 
 /* 当前步骤圆点 */
@@ -150,11 +150,11 @@
 
 /* 步骤连接线 */
 .onboarding-step-line {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 60px;
   height: 2px;
   background: var(--surface2);
   transition: background var(--transition-fast);
-  flex-shrink: 0;
 }
 
 .onboarding-step-line.done {
@@ -215,9 +215,9 @@
 }
 
 .onboarding-feature-icon {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   font-size: var(--font-xl);
   line-height: 1;
-  flex-shrink: 0;
   color: var(--accent);
 }
 

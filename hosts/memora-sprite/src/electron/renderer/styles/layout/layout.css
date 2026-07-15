@@ -152,6 +152,7 @@
 
 /* 品牌区（图标模式仅显示图标，点击回到对话面板） */
 .sidebar-brand {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
@@ -159,7 +160,6 @@
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
   color: var(--text);
-  flex-shrink: 0;
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: background var(--transition-fast);
@@ -184,6 +184,7 @@
 }
 
 .sidebar-brand-icon {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 26px;
   height: 26px;
   border-radius: var(--radius-sm);
@@ -192,7 +193,6 @@
   align-items: center;
   justify-content: center;
   font-size: var(--font-sm);
-  flex-shrink: 0;
 }
 
 /* ─── 角色选择器（卡片式） ─────────────────────────────── */
@@ -256,13 +256,13 @@
 
 /* 角色匹配模式标签（角色选择器旁，显示当前模式） */
 .mode-badge {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   font-size: var(--font-2xs);
   padding: 1px var(--space-1-5);
   border-radius: var(--radius-sm);
   background: var(--surface1);
   color: var(--subtext);
   white-space: nowrap;
-  flex-shrink: 0;
   font-weight: var(--weight-medium);
 }
 
@@ -413,10 +413,10 @@
 
 /* ─── 侧边栏导航图标区（垂直排列，复用 .nav-btn 类） ──────── */
 .sidebar-nav {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  flex-shrink: 0;
 }
 
 /* 底部低频区：自动推到底部（设置入口） */

@@ -199,14 +199,14 @@
     <aside id="sidebar">
       <!-- 品牌区（纯展示，不再承担展开/收起功能） -->
       <!-- 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
-      <div class="sidebar-brand" title="Memora 精灵">
-        <div class="sidebar-brand-icon"><svg class="icon"><use href="#icon-fairy"/></svg></div>
+      <div class="sidebar-brand flex-shrink-0" title="Memora 精灵">
+        <div class="sidebar-brand-icon flex-shrink-0"><svg class="icon"><use href="#icon-fairy"/></svg></div>
         <h1 class="sidebar-brand-name" translate="no">Memora</h1>
       </div>
 
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
       <!-- 顶部高频区：对话 / 记忆 / 感知 / 仪表盘 -->
-      <nav class="sidebar-nav sidebar-nav-top" aria-label="主导航">
+      <nav class="sidebar-nav sidebar-nav-top flex-shrink-0" aria-label="主导航">
         <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
@@ -222,7 +222,7 @@
       </nav>
 
       <!-- 底部低频区：设置 -->
-      <nav class="sidebar-nav sidebar-nav-bottom" aria-label="设置">
+      <nav class="sidebar-nav sidebar-nav-bottom flex-shrink-0" aria-label="设置">
         <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-labelledby="panel-title-settings">
           <svg class="icon"><use href="#icon-gear"/></svg>
         </button>
@@ -257,10 +257,10 @@
         <div id="chat-toolbar">
           <div class="chat-toolbar-info">
             <!-- 精灵状态条（点击展开感知面板，hover 时弹出感知摘要浮层） -->
-            <button type="button" id="sprite-status-bar" class="sprite-status-bar" title="点击查看精灵感知状态" aria-label="精灵状态：就绪">
-              <svg class="sprite-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-fairy"/></svg>
+            <button type="button" id="sprite-status-bar" class="sprite-status-bar flex-shrink-0" title="点击查看精灵感知状态" aria-label="精灵状态：就绪">
+              <svg class="sprite-status-icon flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-fairy"/></svg>
               <span id="sprite-status-text-bar">就绪</span>
-              <span class="sprite-status-dot" id="sprite-status-dot-bar"></span>
+              <span class="sprite-status-dot flex-shrink-0" id="sprite-status-dot-bar"></span>
             </button>
             <!-- 精灵感知浮层：hover 时弹出，展示情感/默契度/上下文摘要 -->
             <div id="sprite-status-popover" class="sprite-status-popover hidden" role="tooltip" aria-hidden="true">
@@ -308,8 +308,8 @@
           </div>
           <!-- 上下文用量指示器：显示当前对话 token 用量占上下文窗口的比例 -->
           <!-- 默认紧凑态（隐藏进度条），refreshTokenUsage 根据 ratio 动态切换 -->
-          <div id="token-usage" class="token-usage token-usage-compact" data-tooltip="">
-            <svg class="token-usage-icon"><use href="#icon-memo"/></svg>
+          <div id="token-usage" class="token-usage token-usage-compact flex-shrink-0" data-tooltip="">
+            <svg class="token-usage-icon flex-shrink-0"><use href="#icon-memo"/></svg>
             <span id="token-usage-text">--</span>
             <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
           </div>
@@ -337,12 +337,12 @@
 
         <!-- 启动摘要横幅（欢迎回来 + 状态概览，与 proactive-banner 同级，横幅形态展示） -->
         <div id="startup-banner" class="hidden">
-          <span class="startup-banner-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
+          <span class="startup-banner-icon flex-shrink-0"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <div class="startup-banner-content">
             <div class="startup-banner-title">欢迎回来</div>
             <div class="startup-banner-grid" id="startup-banner-grid"></div>
           </div>
-          <button class="startup-banner-close" title="关闭" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+          <button class="startup-banner-close flex-shrink-0" title="关闭" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
         </div>
 
         <div id="messages">
@@ -387,7 +387,7 @@
             </div>
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
-              <div id="input-provider-container" class="input-provider-container">
+              <div id="input-provider-container" class="input-provider-container flex-shrink-0">
                 <button type="button" id="provider-selector" title="切换 AI 服务商" aria-label="切换 AI 服务商" aria-haspopup="listbox" aria-expanded="false">
                   <span id="provider-icon"><svg class="icon"><use href="#icon-link"/></svg></span>
                   <span id="provider-name">未配置</span>
@@ -396,11 +396,11 @@
                 <div id="provider-dropdown" class="dropdown hidden"></div>
               </div>
               <!-- 紧凑版角色选择器（输入区发送按钮旁，输入时可快速切换角色） -->
-              <div id="input-persona-container" class="input-persona-container">
+              <div id="input-persona-container" class="input-persona-container flex-shrink-0">
                 <button type="button" id="persona-selector" title="选择角色" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
                   <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
                   <span id="persona-name">精灵</span>
-                  <span id="persona-mode-badge" class="mode-badge auto" title="角色匹配模式：自动">自动</span>
+                  <span id="persona-mode-badge" class="mode-badge auto flex-shrink-0" title="角色匹配模式：自动">自动</span>
                   <span id="persona-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
                 </button>
                 <div id="persona-dropdown" class="dropdown hidden"></div>
@@ -1133,7 +1133,7 @@
           <section class="perception-section">
             <h4 class="perception-section-title">在场状态</h4>
             <div class="perception-presence">
-              <span class="presence-dot present" id="perception-presence-dot"></span>
+              <span class="presence-dot present flex-shrink-0" id="perception-presence-dot"></span>
               <span class="presence-text" id="perception-presence-text">用户在场</span>
             </div>
           </section>
@@ -1535,13 +1535,13 @@
     <div class="modal-content onboarding-wizard">
       <!-- 步骤指示器 -->
       <div class="onboarding-steps">
-        <div class="onboarding-step-dot active" data-step="1"></div>
-        <div class="onboarding-step-line"></div>
-        <div class="onboarding-step-dot" data-step="2"></div>
-        <div class="onboarding-step-line"></div>
-        <div class="onboarding-step-dot" data-step="3"></div>
-        <div class="onboarding-step-line"></div>
-        <div class="onboarding-step-dot" data-step="4"></div>
+        <div class="onboarding-step-dot active flex-shrink-0" data-step="1"></div>
+        <div class="onboarding-step-line flex-shrink-0"></div>
+        <div class="onboarding-step-dot flex-shrink-0" data-step="2"></div>
+        <div class="onboarding-step-line flex-shrink-0"></div>
+        <div class="onboarding-step-dot flex-shrink-0" data-step="3"></div>
+        <div class="onboarding-step-line flex-shrink-0"></div>
+        <div class="onboarding-step-dot flex-shrink-0" data-step="4"></div>
       </div>
 
       <!-- 步骤 1：欢迎 -->
@@ -1553,21 +1553,21 @@
         <p class="onboarding-intro">你的本地 AI 伙伴，拥有跨会话记忆能力。</p>
         <div class="onboarding-features">
           <div class="onboarding-feature-item">
-            <div class="onboarding-feature-icon"><svg class="icon"><use href="#icon-brain"/></svg></div>
+            <div class="onboarding-feature-icon flex-shrink-0"><svg class="icon"><use href="#icon-brain"/></svg></div>
             <div class="onboarding-feature-text">
               <strong>持久记忆</strong>
               <span>跨会话记住你的偏好和上下文</span>
             </div>
           </div>
           <div class="onboarding-feature-item">
-            <div class="onboarding-feature-icon"><svg class="icon"><use href="#icon-desktop"/></svg></div>
+            <div class="onboarding-feature-icon flex-shrink-0"><svg class="icon"><use href="#icon-desktop"/></svg></div>
             <div class="onboarding-feature-text">
               <strong>三态形态</strong>
               <span>完整窗口 · 浮动图标 · 系统托盘</span>
             </div>
           </div>
           <div class="onboarding-feature-item">
-            <div class="onboarding-feature-icon"><svg class="icon"><use href="#icon-lock"/></svg></div>
+            <div class="onboarding-feature-icon flex-shrink-0"><svg class="icon"><use href="#icon-lock"/></svg></div>
             <div class="onboarding-feature-text">
               <strong>本地优先</strong>
               <span>数据本地存储，API Key 可自选</span>

@@ -48,7 +48,7 @@ export function showToolStart(
   header.className = 'tool-call-header';
   // 折叠/展开箭头（SVG chevron，用 CSS transform 控制旋转方向）
   const chevron = document.createElement('span');
-  chevron.className = 'tool-call-chevron';
+  chevron.className = 'tool-call-chevron flex-shrink-0';
   chevron.setAttribute('aria-hidden', 'true');
   setIcon(chevron, 'icon-chevron');
   header.appendChild(chevron);

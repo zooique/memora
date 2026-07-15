@@ -51,9 +51,9 @@
 
 /* 截断图标：继承父颜色 */
 .truncation-icon {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 TS className 提供） */
   display: inline-flex;
   align-items: center;
-  flex-shrink: 0;
   color: var(--yellow);
 }
 
@@ -72,7 +72,7 @@
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 TS className 提供） */
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
@@ -146,13 +146,13 @@
 
 /* 折叠箭头 */
 .tool-call-chevron {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 TS className 提供） */
   display: inline-flex;
   align-items: center;
   color: var(--text-3);
   transition: transform var(--transition-base) ease;
   /* 默认展开 → 箭头向下 */
   transform: rotate(0deg);
-  flex-shrink: 0;
 }
 .tool-call-chevron .icon {
   width: 12px;
@@ -547,6 +547,7 @@
 
 /* 横幅图标 */
 .startup-banner-icon {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -555,7 +556,6 @@
   border-radius: var(--radius-sm);
   background: var(--accent-20);
   color: var(--accent);
-  flex-shrink: 0;
 }
 
 .startup-banner-icon .icon {
@@ -633,13 +633,13 @@
 
 /* 横幅关闭按钮 */
 .startup-banner-close {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   padding: var(--space-1);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  flex-shrink: 0;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 

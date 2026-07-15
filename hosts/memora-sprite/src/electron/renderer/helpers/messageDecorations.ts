@@ -195,7 +195,7 @@ export function showTruncationNotice(bubble: Element, count: number): void {
 
     // 图标 span（setIcon 作用于此，避免清空整个 notice）
     const iconSpan = document.createElement('span');
-    iconSpan.className = 'truncation-icon';
+    iconSpan.className = 'truncation-icon flex-shrink-0';
     setIcon(iconSpan, 'icon-warning');
     notice.appendChild(iconSpan);
 
@@ -207,7 +207,7 @@ export function showTruncationNotice(bubble: Element, count: number): void {
     // 关闭按钮（data-action 委托，点击移除整个 notice）
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
-    closeBtn.className = 'truncation-close';
+    closeBtn.className = 'truncation-close flex-shrink-0';
     closeBtn.dataset.action = 'dismiss-truncation';
     closeBtn.setAttribute('aria-label', '关闭截断提示');
     setIcon(closeBtn, 'icon-close');

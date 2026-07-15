@@ -155,6 +155,7 @@
 /* Token 用量指示器（只读状态信息） */
 /* 上下文用量指示器：显示 token 用量占上下文窗口比例（图标 + 文字 + 进度条） */
 .token-usage {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   display: flex;
   align-items: center;
   gap: var(--space-1-5);
@@ -162,16 +163,15 @@
   color: var(--text-3);
   cursor: pointer;
   padding: 0 var(--space-1-5);
-  flex-shrink: 0;
   position: relative;  /* 为 ::after tooltip 提供定位锚点 */
 }
 .token-usage:hover {
   color: var(--text-2);
 }
 .token-usage-icon {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 14px;
   height: 14px;
-  flex-shrink: 0;
 }
 /* Token 进度条（细线，填充色反映用量比例） */
 .token-usage-bar {
@@ -262,8 +262,8 @@
 
 /* 输入区紧凑版角色选择器容器 */
 .input-persona-container {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   position: relative;
-  flex-shrink: 0;
 }
 
 /* 输入区紧凑版角色选择器（高度对齐发送按钮32px，字号更小） */
@@ -349,8 +349,8 @@
 /* ═══ 输入区 Provider 选择器（与 persona 选择器并列） ═══ */
 
 .input-provider-container {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   position: relative;
-  flex-shrink: 0;
 }
 
 .input-provider-container #provider-selector {

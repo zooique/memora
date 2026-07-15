@@ -560,10 +560,10 @@ export class PerceptionPanelManager {
     const presenceText = document.getElementById('perception-presence-text');
     if (presenceDot && presenceText) {
       if (payload.state === 'present') {
-        presenceDot.className = 'presence-dot present';
+        presenceDot.className = 'presence-dot present flex-shrink-0';
         presenceText.textContent = '用户在场';
       } else {
-        presenceDot.className = 'presence-dot away';
+        presenceDot.className = 'presence-dot away flex-shrink-0';
         const awayDurationMs = payload.awayDurationMs ?? 0;
         const awayMinutes = Math.floor(awayDurationMs / 60000);
         if (awayMinutes < 1) {

@@ -50,13 +50,7 @@
   margin-left: auto; /* 推到工具栏右侧，与 space-between 协作 */
 }
 
-.chat-toolbar-title {
-  /* 缩小标题字号，与副标题差距更协调 */
-  font-size: var(--font-base);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  flex-shrink: 0;
-}
+/* .chat-toolbar-title 已删除：HTML/TS 零引用死代码（2026-07-15 CSS-R6 清理） */
 
 
 /* ─── 精灵状态条（对话工具栏内，代替 chat-narrative） ── */
@@ -77,7 +71,7 @@
   user-select: none;
   transition: background var(--transition-fast), box-shadow var(--transition-fast);
   white-space: nowrap;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
 }
 
 .sprite-status-bar:hover {
@@ -96,19 +90,19 @@
 
 /* 精灵状态条内图标 */
 .sprite-status-icon {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 12px;
   height: 12px;
-  flex-shrink: 0;
 }
 
 /* 脉冲动画点（事件累积状态指示） */
 .sprite-status-dot {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--green);
   animation: statusPulse 2s infinite;
-  flex-shrink: 0;
 }
 
 .sprite-status-dot.warning {
@@ -240,10 +234,10 @@
 }
 
 .presence-dot {
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  flex-shrink: 0;
   transition: background var(--transition-slow) ease, box-shadow var(--transition-slow) ease;
 }
 
