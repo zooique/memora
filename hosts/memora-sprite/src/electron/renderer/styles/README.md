@@ -1,6 +1,6 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-15（CSS-R6 按功能域分组重构 + 浮窗统一管理）
+> 最后更新：2026-07-15（CSS-R6 按功能域分组重构 + 浮窗统一管理 + 工具类渐进引用）
 
 ## 1. 目录结构（按功能域分组，8 个子目录）
 
@@ -200,6 +200,17 @@ foundation/utilities.css（原子布局工具类）       ← 已有，19 个 cl
 2. **不替换组件基类**：`.empty-state` / `.icon-btn` 等 BEM 基类保持完整，utility class 用于补充布局属性
 3. **按需使用**：不强求所有元素都用 utility class，单次使用的样式留在原 CSS 规则块
 4. **提取阈值**（ADR-017 枝叶层 2 次提取）：新增工具类需在 2+ 文件出现 2+ 次相同属性组合
+5. **渐进引用约束**（CSS-R6 经验）：原生 CSS 无 `@apply`，工具类 `.foo`（0,1,0）仅能覆盖单类选择器；嵌套选择器（`.parent .foo`，0,2,0）/ ID 选择器（`#foo`，1,0,0）不可替换，须保留 CSS 内属性。判定流程：扫描选择器类型 → 排除不可替换 → 单类选择器 HTML/TS 追加 className + CSS 删除重复属性
+
+### 渐进引用记录（CSS-R6 自然生长触发）
+
+| 日期 | commit | 工具类 | 文件数 | 净行数 | 备注 |
+|------|--------|--------|--------|--------|------|
+| 2026-07-15 | 7f3f9f9 | `.icon-btn` 基类复用 + `.text-truncate` 引用 + 死代码清理 | 17 | -56 | 含 9 处关闭按钮 className 追加 |
+| 2026-07-15 | 2b0d5ca | `.flex-between` 引用 | 17 | -30 | 14 处可替换（9 完全 + 5 部分保留 gap/flex-shrink） |
+| 2026-07-15 | b267c74 | `.flex-shrink-0` 首批 14 处 | 8 | -16 | settings.css 9 + quick-input.css 5 |
+| 2026-07-15 | 165b2e4 | `.flex-shrink-0` 第二批 21 处 + 死代码 `.chat-toolbar-title` | 9 | -6 | 含 12 处不可替换（后代 `.icon` + ID 选择器） |
+| **合计** | — | — | — | **-108** | 4 个工具类完成渐进引用 |
 
 ### 与 base.css 的区别
 
@@ -246,3 +257,4 @@ foundation/utilities.css（原子布局工具类）       ← 已有，19 个 cl
 | CSS-R4 P0 减法 | 2026-07-13 | base.css 拆分出 command-palette.css + search-messages.css，620→345 行 |
 | CSS-R5 utilities | 2026-07-13 | 新增 utilities.css 中间层，5 个原子工具类 |
 | CSS-R6 功能域分组 + 工具类扩充 | 2026-07-15 | Phase 1：styles/ 按 8 个功能域子目录分组，浮窗 CSS 统一迁入 windows/，聚合器 @import 改同目录相对路径；Phase 2：utilities.css 扩充 10 个工具类（flex-between / flex-shrink-0 / inline-flex-center / text-truncate / line-clamp-2/3/4 / section-title-sm / collapsible-hidden / input-focus-accent），原 CSS 重复块留待后续 HTML/TS 渐进引用 |
+| CSS-R6 渐进引用 | 2026-07-15 | 4 commit 完成 4 个工具类渐进引用（.icon-btn / .text-truncate / .flex-between / .flex-shrink-0），净删除 108 行 CSS 重复代码；剩余 23 处 .flex-shrink-0（含 12 不可替换 + 11 可替换）归档待完成任务，按自然生长触发 |
