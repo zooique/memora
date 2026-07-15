@@ -40,6 +40,7 @@ export type QuickInputElectronAPI = Pick<
   ElectronAPI,
   | 'confirmQuickInput' | 'closeQuickInput'
   | 'searchMemories' | 'searchSessionMessages' | 'resizeQuickInput'
+  | 'moveQuickInput'
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
 >;
 
@@ -61,6 +62,8 @@ const COMPACT_MIN_HEIGHT = 36;
 const EXPANDED_MIN_HEIGHT = 120;
 /** localStorage key：持久化展开状态（'1' = 展开，'0' = 紧凑） */
 const STORAGE_KEY_EXPAND = 'memora-quick-input-expanded';
+/** 拖动阈值（px）：移动超过此距离才认为是拖动而非点击（与 float.ts 对齐） */
+const DRAG_THRESHOLD_PX = 3;
 
 /**
  * 快速输入浮窗控制器
@@ -87,6 +90,8 @@ class QuickInputController {
   private readonly streamToggle: HTMLElement | null;
   /** 展开高度切换按钮（可能为 null：DOM 中不存在时） */
   private readonly expandToggle: HTMLElement | null;
+  /** footer 区域（拖动浮窗的把手，可能为 null：DOM 中不存在时） */
+  private readonly footerEl: HTMLElement | null;
   /** 字符计数显示元素（可能为 null） */
   private readonly counterEl: HTMLElement | null;
   /** ElectronAPI 子集 */
@@ -109,12 +114,22 @@ class QuickInputController {
   private tabPressed = false;
   /** resize IPC 防抖定时器（避免输入时频繁 setSize 导致窗口闪烁） */
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // ── 拖动状态（footer 把手拖动浮窗，参考 float.ts PointerEvent + setPointerCapture 模式） ──
+  /** 当前捕获的指针 ID（null 表示未拖动） */
+  private dragPointerId: number | null = null;
+  /** 拖动累计位移起点（screen 坐标系，用于计算总位移判断是否超过阈值） */
+  private dragStartX = 0;
+  private dragStartY = 0;
+  /** 上一次 pointermove 的 screen 坐标（用于计算增量位移，逐帧推送 IPC） */
+  private dragLastX = 0;
+  private dragLastY = 0;
 
   /**
    * @param inputField 输入框 textarea 元素
    * @param completionList 候选列表容器（可能为 null）
    * @param streamToggle 流式模式切换按钮（可能为 null）
    * @param expandToggle 展开高度切换按钮（可能为 null）
+   * @param footerEl footer 区域（拖动把手，可能为 null）
    * @param counterEl 字符计数元素（可能为 null）
    * @param api ElectronAPI 子集
    */
@@ -123,6 +138,7 @@ class QuickInputController {
     completionList: HTMLElement | null,
     streamToggle: HTMLElement | null,
     expandToggle: HTMLElement | null,
+    footerEl: HTMLElement | null,
     counterEl: HTMLElement | null,
     api: QuickInputElectronAPI,
   ) {
@@ -130,6 +146,7 @@ class QuickInputController {
     this.completionList = completionList;
     this.streamToggle = streamToggle;
     this.expandToggle = expandToggle;
+    this.footerEl = footerEl;
     this.counterEl = counterEl;
     this.api = api;
   }
@@ -143,6 +160,7 @@ class QuickInputController {
     this.bindKeyboardEvents();
     this.bindStreamToggle();
     this.bindExpandToggle();
+    this.bindDrag();
     this.initCompletion();
     this.bindShowHandler();
     this.initialLayout();
@@ -195,6 +213,68 @@ class QuickInputController {
     if (this.expandToggle instanceof HTMLElement) {
       this.expandToggle.addEventListener('click', () => this.toggleExpand());
     }
+  }
+
+  /**
+   * 绑定 footer 拖动事件（PointerEvent + setPointerCapture 模式，参考 float.ts）
+   *
+   * 交互流程：
+   *   - pointerdown：记录起点 + setPointerCapture（后续 pointermove/pointerup 即使鼠标移出窗口也能持续触发）
+   *   - pointermove：3px 阈值判断 → 计算 screen 增量 → 调用 IPC moveQuickInput 逐帧推送
+   *   - pointerup：releasePointerCapture + 清理状态
+   *
+   * 交互按钮防护：pointerdown 落在 .expand-toggle / .stream-toggle 上时不启动拖动，
+   * 让按钮的 click 事件正常触发。
+   *
+   * 位置不持久化：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效（由主进程负责）。
+   */
+  private bindDrag(): void {
+    if (!(this.footerEl instanceof HTMLElement)) return;
+    const footer = this.footerEl;
+
+    // pointerdown：记录起点 + 捕获指针，使后续 pointermove/pointerup 即使鼠标移出窗口也能触发
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      // 交互按钮（展开/流式切换）上的 pointerdown 不启动拖动，让按钮 click 正常触发
+      const target = e.target as Element | null;
+      if (target?.closest('.expand-toggle, .stream-toggle')) return;
+      this.dragPointerId = e.pointerId;
+      this.dragStartX = e.screenX;
+      this.dragStartY = e.screenY;
+      this.dragLastX = e.screenX;
+      this.dragLastY = e.screenY;
+      footer.setPointerCapture(e.pointerId);
+    };
+
+    // pointermove：超过阈值后逐帧推送 IPC 增量（与 float.ts 一致，避免单击误判为拖动）
+    const onPointerMove = (e: PointerEvent) => {
+      if (this.dragPointerId !== e.pointerId) return;
+      if (e.buttons !== 1) return;
+      const totalDx = e.screenX - this.dragStartX;
+      const totalDy = e.screenY - this.dragStartY;
+      // 首次超过阈值后才开始发送移动（避免单击误判为拖动）
+      if (Math.abs(totalDx) <= DRAG_THRESHOLD_PX && Math.abs(totalDy) <= DRAG_THRESHOLD_PX) return;
+      const moveDx = e.screenX - this.dragLastX;
+      const moveDy = e.screenY - this.dragLastY;
+      if (moveDx !== 0 || moveDy !== 0) {
+        this.api.moveQuickInput(moveDx, moveDy);
+      }
+      this.dragLastX = e.screenX;
+      this.dragLastY = e.screenY;
+    };
+
+    // pointerup：释放指针捕获 + 清理拖动状态
+    const onPointerUp = (e: PointerEvent) => {
+      if (this.dragPointerId !== e.pointerId) return;
+      if (footer.hasPointerCapture(e.pointerId)) {
+        footer.releasePointerCapture(e.pointerId);
+      }
+      this.dragPointerId = null;
+    };
+
+    footer.addEventListener('pointerdown', onPointerDown);
+    footer.addEventListener('pointermove', onPointerMove);
+    footer.addEventListener('pointerup', onPointerUp);
   }
 
   /**
@@ -601,6 +681,7 @@ function initQuickInput(): void {
   const completionList = document.getElementById('completion-list');
   const streamToggle = document.getElementById('stream-toggle');
   const expandToggle = document.getElementById('expand-toggle');
+  const footerEl = document.getElementById('quick-input-footer');
   const counterEl = document.querySelector('.quick-input-counter');
 
   const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
@@ -615,6 +696,7 @@ function initQuickInput(): void {
     completionList,
     streamToggle,
     expandToggle instanceof HTMLElement ? expandToggle : null,
+    footerEl instanceof HTMLElement ? footerEl : null,
     counterEl instanceof HTMLElement ? counterEl : null,
     electronApi,
   );

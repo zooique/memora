@@ -71,6 +71,13 @@ body {
 
 /* ===== 底部栏：提示文字 + 流式开关 + 字符计数 ===== */
 /* .quick-input-footer 复用 .flex-between + .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
+/* footer 同时作为拖动把手：cursor:move 提示可拖动整窗位置；
+   user-select:none 防止拖动时误选提示文字；
+   交互按钮（.expand-toggle / .stream-toggle）显式设 cursor:pointer 覆盖 move */
+.quick-input-footer {
+  cursor: move;
+  user-select: none;
+}
 
 .quick-input-hint {
   font-size: var(--font-xs);

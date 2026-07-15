@@ -386,6 +386,24 @@ export class QuickInputWindow {
       }
       return undefined;
     });
+
+    // 拖动浮窗位置：footer 区域可拖，dx/dy 增量移动（与 float 一致的 PointerEvent 模式）
+    // 不持久化位置：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效
+    ipcMain.on(IPC_CHANNELS.MOVE_QUICK_INPUT, (_event, dx: number, dy: number) => {
+      try {
+        if (!this.win || this.win.isDestroyed()) return;
+        // 参数校验：增量必须是有限数字
+        if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+        const [currentX, currentY] = this.win.getPosition() as [number, number];
+        const newX = currentX + Math.round(dx);
+        const newY = currentY + Math.round(dy);
+        this.win.setPosition(newX, newY);
+        // 拖动后检查位置，防止溢出屏幕边缘
+        this.keepWindowInWorkArea();
+      } catch (error) {
+        logger.error({ error }, '拖动浮窗位置失败');
+      }
+    });
   }
 
   /**
@@ -490,6 +508,7 @@ export class QuickInputWindow {
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CONFIRM);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CLOSE);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_RESIZE);
+      ipcMain.removeAllListeners(IPC_CHANNELS.MOVE_QUICK_INPUT);
       this.ipcRegistered = false;
     }
     if (this.win && !this.win.isDestroyed()) {

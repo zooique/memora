@@ -162,6 +162,8 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
   QUICK_INPUT_CLOSE: 'quick-input-close',
   QUICK_INPUT_RESIZE: 'quick-input-resize',
+  // 拖动浮窗位置（footer 区域可拖，dx/dy 增量，与 ipc/channels.ts MOVE_QUICK_INPUT 同步）
+  MOVE_QUICK_INPUT: 'move-quick-input',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）
@@ -743,6 +745,16 @@ export interface ElectronAPI {
    */
   resizeQuickInput: (height: number) => Promise<void>;
   /**
+   * 拖动浮窗位置（footer 区域可拖，dx/dy 增量移动）
+   *
+   * 使用 ipcRenderer.send 单向发送（无需返回值），主进程 setPosition 后调用 keepWindowInWorkArea。
+   * 位置不持久化：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效。
+   *
+   * @param dx X 方向增量（px，screen 坐标系）
+   * @param dy Y 方向增量（px，screen 坐标系）
+   */
+  moveQuickInput: (dx: number, dy: number) => void;
+  /**
    * 监听浮窗 show 事件（主进程 show() 调用后触发，携带剪贴板预填文本 + 敏感标记）
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
@@ -1030,6 +1042,7 @@ const electronAPI: ElectronAPI = {
   confirmQuickInput: (text, streamMode) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, streamMode),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
+  moveQuickInput: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_QUICK_INPUT, dx, dy),
   onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null; isSensitive: boolean }) => cb(payload)),
   removeQuickInputShowListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);

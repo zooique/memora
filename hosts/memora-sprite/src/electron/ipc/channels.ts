@@ -217,6 +217,8 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_CLOSE: 'quick-input-close',
   /** 渲染进程 → 主进程：调整浮窗高度（候选列表显示/隐藏时触发） */
   QUICK_INPUT_RESIZE: 'quick-input-resize',
+  /** 渲染进程 → 主进程：拖动浮窗位置（footer 区域可拖，dx/dy 增量） */
+  MOVE_QUICK_INPUT: 'move-quick-input',
 
   // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
