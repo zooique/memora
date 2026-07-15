@@ -9,6 +9,6 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src/electron/preload.ts"],
+  "include": ["src/electron/preload.ts", "src/electron/preload-quick-input.ts"],
   "exclude": ["node_modules", "dist", "dist-electron"]
 }

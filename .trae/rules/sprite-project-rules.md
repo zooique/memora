@@ -19,7 +19,7 @@ date: 2026-07-13
 | native 模块 | 零（ADR-002） | better-sqlite3（ADR-SP-002） |
 | 接口实现 | 定义接口 | 实现接口（IMemoryStorage / ISessionStore） |
 | 规则关系 | 内核规则精灵必须遵守 | 精灵规则仅约束精灵代码 |
-| ADR 前缀 | ADR-001~018（跳过 005） | ADR-SP-001~008 + ADR-SP-015~016 |
+| ADR 前缀 | ADR-001~019（跳过 005） | ADR-SP-001~008 + ADR-SP-015~017 |
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
@@ -27,7 +27,7 @@ date: 2026-07-13
 
 | 位置 | 用途 |
 |------|------|
-| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 27 个 ADR（内核 17 + 精灵 10） |
+| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 29 个 ADR（内核 18 + 精灵 11） |
 | `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
 | `memora/tasks/` | **内核任务**：内核健康度快照 + 待完成/已完成 |
 | `hosts/memora-sprite/tasks/` | **宿主任务**：宿主健康度快照 + 待完成/已完成 + 方案文档 |
@@ -348,3 +348,39 @@ SecurityGuard.requestWriteConfirmation
 | 当前时间/日程 | 用户的浏览器历史 |
 
 **文件内容感知的例外**：精灵通过 memora 的 work-projection 机制感知文件——Agent 读取文件时生成摘要（source:work-projection），这是用户主动触发的，不是后台监听。
+
+## 10. 快速输入浮窗模块（quick-input）
+
+> **架构决策**：详见 [ADR-SP-017](./decisions/ADR-SP-017-quick-input-architecture.md)
+> **定位**：用户主动召唤的轻量级输入浮窗，不属于 §9 感知层（感知层是精灵主动感知，quick-input 是用户主动触发）
+
+### 10.1 模块架构
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| 窗口管理器 | `src/electron/windows/quickInputWindow.ts` | BrowserWindow 生命周期 + IPC 注册（内联模式）+ 剪贴板预填 + 粘贴协调 |
+| 交互控制器 | `src/electron/renderer/quick-input/quickInput.ts`（QuickInputController） | 键盘事件 / 流式模式 / 展开收起 / LLM 润色 / 拖动 / 确认流程 / 布局调整 |
+| 补全逻辑 | `src/electron/renderer/quick-input/quickInputCompletion.ts`（QuickInputCompletion） | 防抖 / 并行搜索 / 合并去重 / 多样性过滤 / 采纳反馈 / ARIA |
+| 浮窗样式 | `src/electron/renderer/styles/windows/quick-input.css` | 独立窗口样式（CSS-R6 后迁入 windows/，详见 [ADR-019](./decisions/ADR-019-css-functional-grouping.md)） |
+
+### 10.2 IPC 通道清单（窗口管理器内联注册）
+
+> **例外说明**：quick-input 的 IPC 通道在 `quickInputWindow.ts` 内注册，而非 `ipc/` 下的 handler 文件。判定标准详见 [ADR-SP-017 §1](./decisions/ADR-SP-017-quick-input-architecture.md#1-窗口管理器内联-ipc-模式)。
+
+| 通道 | 模式 | 职责 |
+|------|------|------|
+| QUICK_INPUT_SHOW | 主→渲染 | 浮窗唤起 + 剪贴板预填 + 流式模式信号 |
+| QUICK_INPUT_CONFIRM | `ipcMain.handle` | 确认输入（paste + 流式锁抑制 blur） |
+| QUICK_INPUT_CLOSE | `ipcMain.handle` | 关闭浮窗 |
+| QUICK_INPUT_RESIZE | `ipcMain.handle` | 窗口高度自适应（72-400px 范围校验） |
+| MOVE_QUICK_INPUT | `ipcMain.on` | 拖动移动（clampPositionToWorkArea 边缘检测） |
+| QUICK_INPUT_POLISH | `ipcMain.handle` | LLM 文本润色（onPolish 回调注入，10000 字符截断） |
+
+### 10.3 状态持久化策略
+
+| 状态 | 存储位置 | 生命周期 |
+|------|---------|---------|
+| 展开模式（compact/expanded） | localStorage `memora:qi:expand` | 跨会话持久 |
+| 流式模式（开/关） | 运行时状态 | 单次会话 |
+| 拖动位置 | 运行时状态 | 单次会话（每次唤起重置为光标跟随） |
+| 采纳反馈（adoptedTexts） | localStorage `memora:qi:adoptions` | 跨会话持久（LRU 淘汰，boost 上限 3） |

@@ -162,8 +162,8 @@ export class QuickInputWindow {
       // 浅色主题背景色（对齐完整窗口，避免启动闪烁）
       backgroundColor: '#f0f0f2',
       webPreferences: {
-        // 复用 preload.cjs（与 floatWindow / fullWindow 共用）
-        preload: path.join(ELECTRON_DIR, 'preload.cjs'),
+        // 最小化 preload：preload-quick-input.cjs 仅暴露 9 个 API（ADR-SP-017 §1）
+        preload: path.join(ELECTRON_DIR, 'preload-quick-input.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,

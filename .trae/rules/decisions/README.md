@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：27（内核 17 + 精灵 10）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：29（内核 18 + 精灵 11）
 
 ---
 
@@ -31,6 +31,7 @@ description: Memora 关键决策年轮
 | [ADR-016](./ADR-016-vector-store-interface.md) | 向量存储接口化（IVectorStore + JsonVectorStore）       | ✅ 已接受 | 数据层 |
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
 | [ADR-018](./ADR-018-css-scoping-convention.md) | CSS 作用域规范：面板前缀 + BEM + 单一真理源（消除 BARE 类跨面板污染） | ✅ 已接受 | 前端 |
+| [ADR-019](./ADR-019-css-functional-grouping.md) | CSS-R6 功能域分组重构：8 子目录 + 浮窗统一迁入 windows/ + 聚合器相对路径 | ✅ 已接受 | 前端 |
 
 ### 精灵宿主（SP 系列）
 
@@ -45,7 +46,8 @@ description: Memora 关键决策年轮
 | [ADR-SP-007](./ADR-SP-007-directory-structure.md)  | 目录结构：hosts/memora-sprite/ 按职责分层          | ✅ 已接受 | 工程   |
 | [ADR-SP-008](./ADR-SP-008-v8-ui-refactor.md)       | v8 UI 重构：双主题 CSS 变量 + 悬浮核心窗口         | ✅ 已接受 | 前端   |
 | [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) | PanelManager 组合模式约定（阶段 C 架构演进沉淀） | ✅ 已接受 | 架构   |
-| [ADR-SP-016](./ADR-SP-016-ui-mixin-pattern.md) | UIManager Mixin 拆分模式（applyMixins + uiDelegations/ 委托群） | ✅ 已接受 | 架构   |
+| [ADR-SP-016](./ADR-SP-016-ui-mixin-pattern.md) | UIManager Mixin 拆分模式（applyMixins + uiDelegations/ 委托群） | ✅ 已接受 | 架构 |
+| [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) | 快速输入浮窗架构：窗口管理器内联 IPC + Controller/Completion 双类解耦 + LLM 回调注入 | ✅ 已接受 | 架构 |
 
 ---
 
@@ -56,11 +58,11 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001              |
 | 数据层 | 2    | ADR-002, ADR-016     |
 | 集成层 | 1    | ADR-003              |
-| 架构   | 8    | ADR-004, ADR-009~015 |
+| 架构   | 9    | ADR-004, ADR-009~015, ADR-SP-017 |
 | 安全   | 1    | ADR-006              |
 | 质量   | 1    | ADR-007              |
 | 工程   | 2    | ADR-008, ADR-017     |
-| 前端   | 1    | ADR-018              |
+| 前端   | 2    | ADR-018, ADR-019     |
 
 ---
 

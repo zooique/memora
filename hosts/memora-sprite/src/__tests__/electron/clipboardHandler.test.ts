@@ -429,8 +429,8 @@ describe('ClipboardHandler', () => {
 });
 
 describe('SENSITIVE_PATTERNS 常量', () => {
-  it('包含 5 种敏感模式', () => {
-    expect(SENSITIVE_PATTERNS.length).toBe(5);
+  it('包含 6 种敏感模式', () => {
+    expect(SENSITIVE_PATTERNS.length).toBe(6);
   });
 
   it('每种模式包含 type/pattern/label', () => {

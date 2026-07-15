@@ -426,6 +426,21 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 聚合入口：`src/electron/ipc/index.ts`（`registerIpcHandlers` 调用 7 个领域 register 函数）。
 
+#### 窗口管理器内联 IPC 例外（ADR-SP-017）
+
+> **例外**：quick-input 浮窗的 6 个 IPC 通道在 `src/electron/windows/quickInputWindow.ts` 内注册，不在 `ipc/` 下的 handler 文件中。
+
+| 通道 | 模式 | 注册位置 | 内联理由 |
+|------|------|---------|---------|
+| QUICK_INPUT_CONFIRM | `ipcMain.handle` | quickInputWindow.ts | 深度耦合窗口生命周期（流式 blur 抑制、paste 后聚焦） |
+| QUICK_INPUT_CLOSE | `ipcMain.handle` | quickInputWindow.ts | 操作 `this.hide()`，需窗口实例 |
+| QUICK_INPUT_RESIZE | `ipcMain.handle` | quickInputWindow.ts | 操作 `this.win.setSize()` + `keepWindowInWorkArea()` |
+| MOVE_QUICK_INPUT | `ipcMain.on` | quickInputWindow.ts | 操作 `this.win.setPosition()` + `clampPositionToWorkArea()` |
+| QUICK_INPUT_POLISH | `ipcMain.handle` | quickInputWindow.ts | 调用 `this.callbacks.onPolish`（main.ts 注入） |
+| QUICK_INPUT_SHOW | 主→渲染 | quickInputWindow.ts | 浮窗唤起信号 |
+
+**判定标准**（详见 [ADR-SP-017 §1](../../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md)）：当 IPC handler 需深度访问窗口实例状态（焦点/位置/可见性/blur 定时器）时，在窗口管理器内注册；无状态数据操作放 `ipc/` 下。
+
 #### 命名规范
 
 | 项 | 规范 |

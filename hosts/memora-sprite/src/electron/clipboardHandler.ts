@@ -55,6 +55,14 @@ export const SENSITIVE_PATTERNS: ReadonlyArray<{ type: string; pattern: RegExp; 
     pattern: /^(Bearer\s|sk-|api_key=|apikey=|token=|authorization:\s)/i,
     label: 'API Token',
   },
+  // 平台 Token 前缀模式（GitHub/GitLab/Slack/Stripe/Google 等平台专用 token）
+  // 无 ^ 锚定：可能出现在配置行中（如 export GITHUB_TOKEN=ghp_xxx），
+  // 也可能整段剪贴板仅含 token（此时 ^ 也匹配）
+  {
+    type: 'token',
+    pattern: /(ghp_|github_pat_|glpat-|xox[bp]-|sk_live_|rk_live_|AIza)/i,
+    label: '平台 Token',
+  },
   // 信用卡模式（16 位连续数字，可能含空格或连字符）
   {
     type: 'credit-card',
