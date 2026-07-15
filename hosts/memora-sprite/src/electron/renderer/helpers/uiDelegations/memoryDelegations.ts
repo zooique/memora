@@ -51,6 +51,8 @@ export interface MemoryDelegations {
   onTimeRangeChange(cb: () => void): void;
   onCleanupRequest(cb: (type: 'duplicates' | 'stale' | 'all') => string[]): void;
   onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void;
+  /** LLM 治理回调（G3：dedup/timeliness/conflicts） */
+  onLlmGovernance(cb: (action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>): void;
   onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void;
   onGraphContextMenuAction(cb: (action: string, nodeId: string) => void): void;
   onRelationEdit(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void;
@@ -152,6 +154,9 @@ export const memoryDelegations: MemoryDelegations = {
   },
   onCleanupConfirm(this: UIManager, cb: (ids: string[]) => Promise<void>): void {
     this.memoryPanel.onCleanupConfirm(cb);
+  },
+  onLlmGovernance(this: UIManager, cb: (action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>): void {
+    this.memoryPanel.onLlmGovernance(cb);
   },
   onViewSwitch(this: UIManager, cb: (mode: 'list' | 'timeline' | 'graph') => void): void {
     this.memoryPanel.onViewSwitch(cb);

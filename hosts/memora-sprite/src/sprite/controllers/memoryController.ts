@@ -8,6 +8,8 @@
  */
 import type { Agent, SuggestHit, IVectorStore, Memory } from 'memora';
 import type { MemoryRelation, RelationPath, RelationNeighbor } from 'memora';
+// L1~L3 LLM 治理报告类型：用于 controller 委托方法返回类型注解（内核已 re-export）
+import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
 import { logger } from 'memora';
 import { DEFAULT_LIST_LIMIT } from '../constants.js';
 import { MemoraError, ErrorCode } from '../errors.js';
@@ -457,6 +459,45 @@ export class MemoryController {
     const memory = this.agent.memory;
     if (!memory) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
     return memory.writeBoost(id);
+  }
+
+  // ─── LLM 记忆治理（L1~L3，G1：委托 agent 委托方法） ──
+  // 这三个方法均为异步（调用 LLM），失败时由内核 manager 内部降级返回报告，不抛错。
+  // 与 boostMemory 同模式：controller 仅透传，不附加业务逻辑。
+
+  /**
+   * L1 语义去重（委托 agent.deduplicateMemories）
+   *
+   * 扫描名称相似的记忆对，调用 LLM 判断语义等价，降级低分记忆（score→0.1）。
+   * 仅降级不物理删除，用户可通过 restore() 恢复。
+   *
+   * @returns 去重报告（扫描数 / 降级 ID 列表 / 跳过原因）
+   */
+  async deduplicateMemories(): Promise<DedupReport> {
+    return this.agent.deduplicateMemories();
+  }
+
+  /**
+   * L2 时效性评估（委托 agent.evaluateTimeliness）
+   *
+   * 扫描低分记忆（score<0.3），调用 LLM 判断是否过时，降级过时记忆（score→0.05）。
+   * 用于健康度面板"时效性评估"按钮手动触发。
+   *
+   * @returns 评估报告（扫描数 / 过时数 / 降级 ID 列表 / 跳过原因）
+   */
+  async evaluateTimeliness(): Promise<TimelinessReport> {
+    return this.agent.evaluateTimeliness();
+  }
+
+  /**
+   * L3 冲突检测（委托 agent.detectConflicts）
+   *
+   * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
+   *
+   * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
+   */
+  async detectConflicts(): Promise<ConflictReport> {
+    return this.agent.detectConflicts();
   }
 
   // ─── 记忆搜索 ──────────────────────────────────────────

@@ -92,6 +92,12 @@ export const IPC_CHANNELS = {
   MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
   /** 提升记忆 score（L2 采纳反哺内核，补全采纳时调用） */
   MEMORIES_BOOST: 'memories-boost',
+  /** L1 语义去重（LLM 治理：扫描名称相似对 → 降级低分记忆） */
+  MEMORIES_DEDUP: 'memories-dedup',
+  /** L2 时效性评估（LLM 治理：扫描低分记忆 → 降级过时记忆，手动触发） */
+  MEMORIES_EVALUATE_TIMELINESS: 'memories-evaluate-timeliness',
+  /** L3 冲突检测（LLM 治理：同 source 配对 → 检测冲突，仅检测不修复） */
+  MEMORIES_DETECT_CONFLICTS: 'memories-detect-conflicts',
 
   // ─── 配置相关 ─────────────────────────────────────────
   /** 获取精灵配置 */

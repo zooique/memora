@@ -120,6 +120,8 @@ export interface MemoryPanelEventContext {
   getRecycleBinBatchActionCallback(): ((action: 'restore-all' | 'purge-all') => void) | null;
   /** 更多菜单操作回调（insights/health/recycle-bin） */
   getMoreMenuActionCallback(): ((action: string) => void) | null;
+  /** LLM 记忆治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC） */
+  getLlmGovernanceCallback(): ((action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>) | null;
 }
 
 // ─── 事件监听器初始化主函数 ────────────────────────────────
@@ -153,6 +155,45 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
   initRecycleBinActions(ctx);
   // 回收站批量操作（全部恢复/全部清空）
   initRecycleBinBatchActions(ctx);
+  // LLM 记忆治理（G3：语义去重/时效性评估/冲突检测）
+  initLlmGovernanceActions(ctx);
+}
+
+// ─── 10. LLM 记忆治理（G3） ───────────────────────────────
+
+/**
+ * LLM 治理按钮事件绑定（语义去重/时效性评估/冲突检测）。
+ *
+ * 与清理按钮（initCleanupDialog）的差异：
+ * - 清理：纯代码软删除，同步执行，需确认对话框
+ * - LLM 治理：异步 LLM 调用（5-15 秒），无需确认（仅降级 score 不物理删除，
+ *   用户可通过回收站 restore 恢复），直接执行 + loading 态 + toast 反馈
+ *
+ * 按钮点击期间禁用并显示 loading 文案，防止重复提交。
+ * 失败由 Controller 内部 toast 反馈，此处不补 toast（避免重复）。
+ */
+function initLlmGovernanceActions(ctx: MemoryPanelEventContext): void {
+  const bindLlmBtn = (btnId: string, action: 'dedup' | 'timeliness' | 'conflicts', loadingText: string): void => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    ctx.events.addEventListener(btn, 'click', async () => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      if (btn.disabled) return;
+      setButtonLoadingEl(btn, true, loadingText);
+      try {
+        await ctx.getLlmGovernanceCallback()?.(action);
+      } catch (err) {
+        // Controller 内部已 toast 反馈，此处仅记录日志兜底
+        reportError('MemoryPanel llmGovernance', err);
+      } finally {
+        setButtonLoadingEl(btn, false);
+      }
+    });
+  };
+
+  bindLlmBtn('health-llm-dedup', 'dedup', '去重中…');
+  bindLlmBtn('health-llm-timeliness', 'timeliness', '评估中…');
+  bindLlmBtn('health-llm-conflicts', 'conflicts', '检测中…');
 }
 
 // ─── 1. 列表点击事件委托 ──────────────────────────────────

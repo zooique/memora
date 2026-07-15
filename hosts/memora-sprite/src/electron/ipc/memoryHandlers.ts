@@ -137,6 +137,31 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
+  // ─── LLM 记忆治理（L1~L3，G1：异步调用，safeHandle 降级） ──
+  // 这三个 handler 均为异步（调用 LLM，可能 5-15 秒），safeHandle 确保失败时返回
+  // 空报告而非抛错（与内核 manager 内部 LLM 失败降级语义一致）。
+
+  /** L1 语义去重（扫描名称相似对 → LLM 判断 → 降级低分记忆） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_DEDUP, async () =>
+    safeHandle('语义去重失败', { scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'IPC 失败' }, () =>
+      ctx.sprite.deduplicateMemories(),
+    ),
+  );
+
+  /** L2 时效性评估（扫描低分记忆 → LLM 判断 → 降级过时记忆） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS, async () =>
+    safeHandle('时效性评估失败', { scannedCount: 0, outdatedCount: 0, demotedIds: [], skippedReason: 'IPC 失败' }, () =>
+      ctx.sprite.evaluateTimeliness(),
+    ),
+  );
+
+  /** L3 冲突检测（同 source 配对 → LLM 判断 → 仅检测不修复） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS, async () =>
+    safeHandle('冲突检测失败', { scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'IPC 失败' }, () =>
+      ctx.sprite.detectConflicts(),
+    ),
+  );
+
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_GRAPH, async () =>
     throwingHandle('获取关系图谱失败', () => ctx.sprite.getRelationGraph()),

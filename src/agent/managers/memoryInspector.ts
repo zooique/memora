@@ -45,6 +45,8 @@ import type {
   SourceHealthReport,
   SuggestOptions,
   SuggestHit,
+  // L3 冲突检测报告类型：用于 detectConflicts 委托方法返回类型注解
+  ConflictReport,
 } from '@/agent/managers/memoryAdvisor.js';
 // LLM 语义去重（L1）：backgroundProvider 注入 + 流式累积，参照 TextPolishManager 模式
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -694,6 +696,22 @@ export class MemoryInspector {
    */
   suggest(query?: string, options?: SuggestOptions): SuggestHit[] {
     return this.advisor.suggest(query, options);
+  }
+
+  /**
+   * L3 冲突检测（委托给 MemoryAdvisor.detectConflicts）
+   *
+   * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
+   * backgroundProvider 未注入时由 advisor 内部静默跳过（返回 skippedReason 报告）。
+   *
+   * 委托方法存在理由：agent.ts 仅持有 memoryInspector 引用，不直接持有 memoryAdvisor，
+   * 通过此转发保持"inspector 是读写 + 治理统一入口"语义。
+   *
+   * @param signal 可选的 AbortSignal
+   * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
+   */
+  async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
+    return this.advisor.detectConflicts(signal);
   }
 
   // ─── 写操作（writeXxx 前缀，IMemoryStorage / IMemoryRelationStore 透传） ───

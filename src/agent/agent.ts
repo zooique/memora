@@ -41,6 +41,10 @@ import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+// L1/L3 治理报告类型：用于 agent 委托方法的返回类型注解（不暴露 manager 实例）
+import type { DedupReport } from '@/agent/managers/memoryInspector.js';
+import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
+import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
 import { clearSafeInterval } from '@/utils/safeTimer.js';
@@ -270,7 +274,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // L2 时效性评估：注入 backgroundProvider + index（可选，未注入时 evaluateTimeliness 静默跳过）
     this.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
-      onDecayCompleted: (payload) => this.emit('decayCompleted', payload),
+      onDecayCompleted: (payload) => {
+        this.emit('decayCompleted', payload);
+        // G2 自动触发 L2 时效性评估：衰减完成后 fire-and-forget 调用 evaluateTimeliness。
+        // 不 await：衰减循环不应被 LLM 调用阻塞（LLM 可能 5-15 秒）。
+        // 失败静默降级：evaluateTimeliness 内部已捕获 LLM 异常并返回降级报告。
+        // 触发频次：每小时 1 次（DECAY_INTERVAL_MS=3_600_000），无频次压力。
+        void this.evaluateTimeliness().catch((err: unknown) => {
+          // 仅记录日志，不抛错（与 onDecayCompleted 回调语义一致：不阻塞衰减循环）
+          logger.warn({ err }, 'L2 时效性评估自动触发失败（已降级，不影响衰减循环）');
+        });
+      },
       backgroundProvider: this.#backgroundProvider,
       index: pctx.index,
     });
@@ -1248,6 +1262,87 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
+  }
+
+  // ─── LLM 记忆治理委托方法（G1：暴露能力但不暴露 manager 实例） ──
+  // 这三个方法是 sprite 层接入 L1~L3 治理能力的唯一入口。
+  // 委托内部 manager（memoryInspector / memoryDecayScheduler / memoryAdvisor），
+  // 不返回 manager 实例本身，保持封装（sprite 层不感知 manager 内部结构）。
+  // manager 未初始化时返回 skippedReason 报告，与 manager 内部"backgroundProvider
+  // 未注入时静默跳过"语义一致（向后兼容）。
+
+  /**
+   * L1 语义去重（委托 MemoryInspector.deduplicateMemories）
+   *
+   * 扫描名称相似的记忆对，调用 LLM 判断语义等价，降级低分记忆（score→0.1，不物理删除）。
+   * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
+   *
+   * @param signal 可选的 AbortSignal（取消进行中的 LLM 判断）
+   * @returns 去重报告（扫描数 / 降级 ID 列表 / 跳过原因）
+   */
+  async deduplicateMemories(signal?: AbortSignal): Promise<DedupReport> {
+    const inspector = this.memoryInspector;
+    if (!inspector) {
+      return {
+        scannedCount: 0,
+        pairCount: 0,
+        deduplicatedCount: 0,
+        demotedIds: [],
+        skippedReason: 'Agent 未初始化',
+      };
+    }
+    return inspector.deduplicateMemories(signal);
+  }
+
+  /**
+   * L2 时效性评估（委托 MemoryDecayScheduler.evaluateTimeliness）
+   *
+   * 扫描低分记忆（score<0.3），调用 LLM 判断是否过时，降级过时记忆（score→0.05）。
+   * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
+   *
+   * 使用场景：
+   *   - G2 自动触发：onDecayCompleted 钩子内 fire-and-forget 调用
+   *   - 手动触发：宿主 UI 健康度面板"时效性评估"按钮
+   *
+   * @param signal 可选的 AbortSignal
+   * @returns 评估报告（扫描数 / 过时数 / 降级 ID 列表 / 跳过原因）
+   */
+  async evaluateTimeliness(signal?: AbortSignal): Promise<TimelinessReport> {
+    const scheduler = this.memoryDecayScheduler;
+    if (!scheduler) {
+      return {
+        scannedCount: 0,
+        outdatedCount: 0,
+        demotedIds: [],
+        skippedReason: 'Agent 未初始化',
+      };
+    }
+    return scheduler.evaluateTimeliness(signal);
+  }
+
+  /**
+   * L3 冲突检测（委托 MemoryAdvisor.detectConflicts）
+   *
+   * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
+   * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
+   *
+   * @param signal 可选的 AbortSignal
+   * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
+   */
+  async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
+    // MemoryAdvisor 实例由 MemoryInspector 持有（组合根装配时注入），
+    // 通过 inspector.detectConflicts 转发，避免 agent 直接持有 advisor 引用
+    const inspector = this.memoryInspector;
+    if (!inspector) {
+      return {
+        scannedCount: 0,
+        pairCount: 0,
+        conflictCount: 0,
+        conflicts: [],
+        skippedReason: 'Agent 未初始化',
+      };
+    }
+    return inspector.detectConflicts(signal);
   }
 
   /**

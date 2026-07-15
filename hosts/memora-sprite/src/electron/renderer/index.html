@@ -576,6 +576,15 @@
             <button class="health-action-btn" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
             <button class="health-action-btn danger" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
           </div>
+          <!-- LLM 记忆治理（G3：语义去重/时效性评估/冲突检测，与上方纯代码清理并列分组） -->
+          <div class="health-actions health-actions-llm" id="health-llm-actions">
+            <span class="health-actions-label">LLM 治理</span>
+            <button class="health-action-btn" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
+            <button class="health-action-btn" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
+            <button class="health-action-btn" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
+          </div>
+          <!-- LLM 治理结果展示区（动态渲染，默认空） -->
+          <div class="health-llm-result" id="health-llm-result"></div>
         </div>
         <!-- 记忆面板加载失败状态：默认隐藏，加载失败时显示 -->
         <div id="memory-error" class="panel-error hidden flex-between flex-shrink-0">

@@ -145,6 +145,8 @@ export class MemoryPanelManager {
   private timeRangeChangeCallback: (() => void) | null = null;
   /** 清理按钮点击回调（duplicates/stale/all），返回待清理ID列表 */
   private cleanupRequestCallback: ((type: 'duplicates' | 'stale' | 'all') => string[]) | null = null;
+  /** LLM 治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC） */
+  private llmGovernanceCallback: ((action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>) | null = null;
   /** 清理确认回调（执行批量删除） */
   private cleanupConfirmCallback: ((ids: string[]) => Promise<void>) | null = null;
   /** 视图切换按钮状态更新回调（通知Controller同步按钮active状态） */
@@ -254,6 +256,7 @@ export class MemoryPanelManager {
       getTimeRangeChangeCallback: () => this.timeRangeChangeCallback,
       getCleanupRequestCallback: () => this.cleanupRequestCallback,
       getCleanupConfirmCallback: () => this.cleanupConfirmCallback,
+      getLlmGovernanceCallback: () => this.llmGovernanceCallback,
       getViewSwitchCallback: () => this.viewSwitchCallback,
       // 回收站操作回调读取器
       getRecycleBinActionCallback: () => this.recycleBinActionCallback,
@@ -850,6 +853,10 @@ export class MemoryPanelManager {
   /** 注册清理确认回调（执行批量删除IPC） */
   onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void {
     this.cleanupConfirmCallback = cb;
+  }
+  /** 注册 LLM 治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC） */
+  onLlmGovernance(cb: (action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>): void {
+    this.llmGovernanceCallback = cb;
   }
   /** 注册视图切换回调（通知Controller切换视图后的业务逻辑） */
   onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void {

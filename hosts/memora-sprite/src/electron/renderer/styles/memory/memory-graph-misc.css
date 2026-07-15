@@ -192,6 +192,32 @@
   transform: scale(0.97);
 }
 
+/* LLM 治理 section（G3：与上方纯代码清理并列分组，视觉区分降级 vs 软删除） */
+.health-actions-llm {
+  border-top: 1px dashed var(--surface2);
+  padding-top: 8px;
+  align-items: center;
+}
+
+.health-actions-label {
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  margin-right: var(--space-1);
+  white-space: nowrap;
+}
+
+/* LLM 治理结果展示区（动态渲染，默认空不占位） */
+.health-llm-result:empty {
+  display: none;
+}
+
+.health-llm-result {
+  margin-top: 8px;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 /* .confirm-dialog 外壳样式已移至通用 .modal 类（modal.css） */
 /* 保留 .confirm-dialog-content/title/actions 子元素样式（confirm 弹窗特有布局） */
 

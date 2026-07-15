@@ -670,6 +670,35 @@ export class Sprite {
     return this.memoryController.boostMemory(id);
   }
 
+  // ─── LLM 记忆治理（L1~L3，G1：转发到 memoryController） ──
+
+  /**
+   * L1 语义去重（转发 memoryController.deduplicateMemories）
+   *
+   * 供 IPC handler 调用，返回去重报告。
+   */
+  async deduplicateMemories() {
+    return this.memoryController.deduplicateMemories();
+  }
+
+  /**
+   * L2 时效性评估（转发 memoryController.evaluateTimeliness）
+   *
+   * 供 IPC handler 调用（手动触发）。G2 自动触发走 agent.ts 内部钩子，不经此处。
+   */
+  async evaluateTimeliness() {
+    return this.memoryController.evaluateTimeliness();
+  }
+
+  /**
+   * L3 冲突检测（转发 memoryController.detectConflicts）
+   *
+   * 供 IPC handler 调用，返回冲突报告。
+   */
+  async detectConflicts() {
+    return this.memoryController.detectConflicts();
+  }
+
   async searchMemories(query: string, limit = 10): Promise<Array<{ id: string; name: string; source: string; score: number; contentPreview: string; similarity?: number }>> {
     return this.memoryController.search(query, limit);
   }

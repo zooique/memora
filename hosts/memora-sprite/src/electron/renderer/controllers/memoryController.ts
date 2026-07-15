@@ -273,6 +273,41 @@ export function createMemoryController(uiManager: UIManager) {
       }
     });
 
+    // ─── LLM 记忆治理回调（G3：dedup/timeliness/conflicts） ──
+    // 异步调用 IPC，toast 反馈结果，刷新健康度面板（治理后数据变化）。
+    // 失败时 toast 错误，不阻塞后续操作（与清理按钮一致）。
+    uiManager.onLlmGovernance(async (action: 'dedup' | 'timeliness' | 'conflicts') => {
+      try {
+        if (action === 'dedup') {
+          const report = await window.electronAPI.deduplicateMemories();
+          if (report.skippedReason) {
+            uiManager.showToast(`语义去重跳过：${report.skippedReason}`, 'info');
+          } else {
+            uiManager.showToast(`语义去重完成：扫描 ${report.scannedCount} 条，降级 ${report.deduplicatedCount} 条`, 'success');
+          }
+        } else if (action === 'timeliness') {
+          const report = await window.electronAPI.evaluateTimeliness();
+          if (report.skippedReason) {
+            uiManager.showToast(`时效评估跳过：${report.skippedReason}`, 'info');
+          } else {
+            uiManager.showToast(`时效评估完成：扫描 ${report.scannedCount} 条，过时 ${report.outdatedCount} 条`, 'success');
+          }
+        } else {
+          const report = await window.electronAPI.detectConflicts();
+          if (report.skippedReason) {
+            uiManager.showToast(`冲突检测跳过：${report.skippedReason}`, 'info');
+          } else {
+            uiManager.showToast(`冲突检测完成：扫描 ${report.scannedCount} 条，发现 ${report.conflictCount} 处冲突`, 'success');
+          }
+        }
+        // 治理后刷新健康度面板（score 变化 → 健康度数据变化）
+        await loadHealthDashboard();
+      } catch (error) {
+        reportError('llmGovernance', error);
+        uiManager.showToast('LLM 治理失败，请重试', 'error');
+      }
+    });
+
     // ─── 视图切换回调：切换到图谱时加载数据 ──────────────
     uiManager.onViewSwitch(async (mode) => {
       if (mode === 'graph') {

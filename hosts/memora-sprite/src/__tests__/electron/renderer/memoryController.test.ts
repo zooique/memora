@@ -92,6 +92,8 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     onReloadMemoryList: vi.fn(),
     // 伙伴洞察卡片点击回调
     onPartnerMemoryClick: vi.fn(),
+    // LLM 记忆治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC）
+    onLlmGovernance: vi.fn(),
     switchMemoryView: vi.fn(),
     loadGraphData: vi.fn(),
     hasGraphData: vi.fn(() => false),

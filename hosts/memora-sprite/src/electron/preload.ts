@@ -40,6 +40,8 @@ import type {
 } from '../sprite/controllers/memoryController.js';
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
+// L1~L3 LLM 治理报告类型（从内核 re-export 导入，用于 ElectronAPI 接口声明）
+import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
 // P5：从 sprite 层导入感知状态类型（真理源），修复 getPerceptionSnapshot 返回类型过宽问题
 import type { AffectState, RapportState, ContextState, DetectedPattern, ProactiveStats } from '../sprite/controllers/index.js';
 
@@ -83,6 +85,12 @@ export const IPC_CHANNELS = {
   MEMORIES_ADD: 'memories-add',
   /** 提升记忆 score（L2 采纳反哺内核） */
   MEMORIES_BOOST: 'memories-boost',
+  /** L1 语义去重（LLM 治理） */
+  MEMORIES_DEDUP: 'memories-dedup',
+  /** L2 时效性评估（LLM 治理，手动触发） */
+  MEMORIES_EVALUATE_TIMELINESS: 'memories-evaluate-timeliness',
+  /** L3 冲突检测（LLM 治理） */
+  MEMORIES_DETECT_CONFLICTS: 'memories-detect-conflicts',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
   /** 获取记忆关系路径（Phase 5.1：路径追溯） */
   MEMORIES_RELATION_PATH: 'memories-relation-path',
@@ -499,6 +507,12 @@ export interface ElectronAPI {
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
   /** 提升记忆 score（L2 采纳反哺内核，补全采纳时调用） */
   boostMemory: (id: string) => Promise<{ success: boolean }>;
+  /** L1 语义去重（LLM 治理：扫描名称相似对 → 降级低分记忆） */
+  deduplicateMemories: () => Promise<DedupReport>;
+  /** L2 时效性评估（LLM 治理：扫描低分记忆 → 降级过时记忆） */
+  evaluateTimeliness: () => Promise<TimelinessReport>;
+  /** L3 冲突检测（LLM 治理：仅检测不修复） */
+  detectConflicts: () => Promise<ConflictReport>;
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
   /** 添加记忆关系（手动创建，关系图交互） */
@@ -909,6 +923,12 @@ const electronAPI: ElectronAPI = {
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
   /** 提升记忆 score（L2 采纳反哺内核，补全采纳时调用） */
   boostMemory: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_BOOST, id) as Promise<{ success: boolean }>,
+  /** L1 语义去重（LLM 治理） */
+  deduplicateMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DEDUP) as Promise<DedupReport>,
+  /** L2 时效性评估（LLM 治理，手动触发） */
+  evaluateTimeliness: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS) as Promise<TimelinessReport>,
+  /** L3 冲突检测（LLM 治理） */
+  detectConflicts: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS) as Promise<ConflictReport>,
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
   /** 获取记忆关系路径（Phase 5.1：路径追溯，展示记忆演化脉络） */
   getRelationPath: (data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) =>

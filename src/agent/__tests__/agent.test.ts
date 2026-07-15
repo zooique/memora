@@ -577,6 +577,52 @@ describe('Agent · Manager 委托模式', () => {
     const lastSystem = [...messages].reverse().find((m) => m.role === 'system');
     expect(lastSystem?.content).toContain('E2E 测试规则');
   });
+
+  // ─── L1~L3 LLM 记忆治理委托（G1） ─────────────────────────
+  // makeAgent 未注入 backgroundProvider，验证委托转发 + 降级路径 + 报告结构完整性。
+  // 降级语义：manager 内部检测到 backgroundProvider 缺失时返回 skippedReason 报告。
+
+  it('L1 语义去重：deduplicateMemories 委托应返回 DedupReport 结构（未注入 backgroundProvider 降级）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 委托到 MemoryInspector.deduplicateMemories，未注入 backgroundProvider 时降级
+    const report = await agent.deduplicateMemories();
+    expect(report).toHaveProperty('scannedCount');
+    expect(report).toHaveProperty('pairCount');
+    expect(report).toHaveProperty('deduplicatedCount');
+    expect(report).toHaveProperty('demotedIds');
+    expect(Array.isArray(report.demotedIds)).toBe(true);
+    // 降级路径：skippedReason 非空
+    expect(report.skippedReason).toBeTruthy();
+  });
+
+  it('L2 时效性评估：evaluateTimeliness 委托应返回 TimelinessReport 结构（未注入 backgroundProvider 降级）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 委托到 MemoryDecayScheduler.evaluateTimeliness，未注入 backgroundProvider 时降级
+    const report = await agent.evaluateTimeliness();
+    expect(report).toHaveProperty('scannedCount');
+    expect(report).toHaveProperty('outdatedCount');
+    expect(report).toHaveProperty('demotedIds');
+    expect(Array.isArray(report.demotedIds)).toBe(true);
+    expect(report.skippedReason).toBeTruthy();
+  });
+
+  it('L3 冲突检测：detectConflicts 委托应返回 ConflictReport 结构（未注入 backgroundProvider 降级）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 委托到 MemoryInspector.detectConflicts → MemoryAdvisor.detectConflicts，未注入 backgroundProvider 时降级
+    const report = await agent.detectConflicts();
+    expect(report).toHaveProperty('scannedCount');
+    expect(report).toHaveProperty('pairCount');
+    expect(report).toHaveProperty('conflictCount');
+    expect(report).toHaveProperty('conflicts');
+    expect(Array.isArray(report.conflicts)).toBe(true);
+    expect(report.skippedReason).toBeTruthy();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

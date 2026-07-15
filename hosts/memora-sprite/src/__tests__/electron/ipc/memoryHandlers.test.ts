@@ -65,6 +65,10 @@ function createMockCtx(overrides?: {
   getRelationPath?: ReturnType<typeof vi.fn>;
   getRelationNeighbors?: ReturnType<typeof vi.fn>;
   archiveSessionContent?: ReturnType<typeof vi.fn>;
+  // L1~L3 LLM 治理（G1）
+  deduplicateMemories?: ReturnType<typeof vi.fn>;
+  evaluateTimeliness?: ReturnType<typeof vi.fn>;
+  detectConflicts?: ReturnType<typeof vi.fn>;
 }): IpcContext {
   return {
     agent: {
@@ -105,6 +109,33 @@ function createMockCtx(overrides?: {
         overrides?.getRelationPath ?? vi.fn(() => ({ nodes: [], edges: [] })),
       getRelationNeighbors:
         overrides?.getRelationNeighbors ?? vi.fn(() => ({ neighbors: [] })),
+      // L1~L3 LLM 治理（G1：异步，返回报告对象）
+      deduplicateMemories:
+        overrides?.deduplicateMemories ??
+        vi.fn(async () => ({
+          scannedCount: 0,
+          pairCount: 0,
+          deduplicatedCount: 0,
+          demotedIds: [],
+          skippedReason: '测试默认跳过',
+        })),
+      evaluateTimeliness:
+        overrides?.evaluateTimeliness ??
+        vi.fn(async () => ({
+          scannedCount: 0,
+          outdatedCount: 0,
+          demotedIds: [],
+          skippedReason: '测试默认跳过',
+        })),
+      detectConflicts:
+        overrides?.detectConflicts ??
+        vi.fn(async () => ({
+          scannedCount: 0,
+          pairCount: 0,
+          conflictCount: 0,
+          conflicts: [],
+          skippedReason: '测试默认跳过',
+        })),
     } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
     windowStateManager: {} as IpcContext['windowStateManager'],
@@ -440,6 +471,127 @@ describe('registerMemoryHandlers', () => {
     const result = await callback({}, 'insight:测试记忆');
 
     expect(result).toEqual({ success: false });
+  });
+
+  // ─── MEMORIES_DEDUP（L1 语义去重，G1） ─────
+
+  it('MEMORIES_DEDUP 应返回去重报告', async () => {
+    const report = {
+      scannedCount: 10,
+      pairCount: 3,
+      deduplicatedCount: 2,
+      demotedIds: ['insight:1', 'insight:2'],
+    };
+    const deduplicateMemories = vi.fn(async () => report);
+    const ctx = createMockCtx({ deduplicateMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DEDUP)!;
+    const result = await callback({});
+
+    expect(deduplicateMemories).toHaveBeenCalled();
+    expect(result).toEqual(report);
+  });
+
+  it('MEMORIES_DEDUP 抛错应降级返回空报告（不崩溃）', async () => {
+    const deduplicateMemories = vi.fn(async () => {
+      throw new Error('LLM 不可用');
+    });
+    const ctx = createMockCtx({ deduplicateMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DEDUP)!;
+    const result = await callback({});
+
+    expect(result).toMatchObject({
+      scannedCount: 0,
+      deduplicatedCount: 0,
+      demotedIds: [],
+      skippedReason: expect.any(String),
+    });
+  });
+
+  // ─── MEMORIES_EVALUATE_TIMELINESS（L2 时效性评估，G1） ─────
+
+  it('MEMORIES_EVALUATE_TIMELINESS 应返回评估报告', async () => {
+    const report = {
+      scannedCount: 5,
+      outdatedCount: 2,
+      demotedIds: ['insight:old1', 'insight:old2'],
+    };
+    const evaluateTimeliness = vi.fn(async () => report);
+    const ctx = createMockCtx({ evaluateTimeliness });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS)!;
+    const result = await callback({});
+
+    expect(evaluateTimeliness).toHaveBeenCalled();
+    expect(result).toEqual(report);
+  });
+
+  it('MEMORIES_EVALUATE_TIMELINESS 抛错应降级返回空报告', async () => {
+    const evaluateTimeliness = vi.fn(async () => {
+      throw new Error('LLM 不可用');
+    });
+    const ctx = createMockCtx({ evaluateTimeliness });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS)!;
+    const result = await callback({});
+
+    expect(result).toMatchObject({
+      scannedCount: 0,
+      outdatedCount: 0,
+      demotedIds: [],
+      skippedReason: expect.any(String),
+    });
+  });
+
+  // ─── MEMORIES_DETECT_CONFLICTS（L3 冲突检测，G1） ─────
+
+  it('MEMORIES_DETECT_CONFLICTS 应返回冲突报告', async () => {
+    const report = {
+      scannedCount: 8,
+      pairCount: 4,
+      conflictCount: 1,
+      conflicts: [
+        {
+          memoryA: { id: 'insight:a' },
+          memoryB: { id: 'insight:b' },
+          hasConflict: true,
+          conflictDescription: '观点矛盾',
+          reason: 'A 说东，B 说西',
+        },
+      ],
+    };
+    const detectConflicts = vi.fn(async () => report);
+    const ctx = createMockCtx({ detectConflicts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS)!;
+    const result = await callback({});
+
+    expect(detectConflicts).toHaveBeenCalled();
+    expect(result).toEqual(report);
+  });
+
+  it('MEMORIES_DETECT_CONFLICTS 抛错应降级返回空报告', async () => {
+    const detectConflicts = vi.fn(async () => {
+      throw new Error('LLM 不可用');
+    });
+    const ctx = createMockCtx({ detectConflicts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS)!;
+    const result = await callback({});
+
+    expect(result).toMatchObject({
+      scannedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      skippedReason: expect.any(String),
+    });
   });
 
   // ─── MEMORIES_ARCHIVE_PROFILE（手动归档） ─────
