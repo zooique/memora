@@ -145,45 +145,61 @@ src/
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
-│       │   ├── float.html      # 浮动窗口 HTML 入口
-│       │   └── float.css       # 浮动窗口组件样式（令牌从 styles/tokens.css 共享引入）
+│       │   └── float.html      # 浮动窗口 HTML 入口（CSS 已迁入 styles/windows/float.css）
 │       │
 │       ├── quick-input/        # 快速输入补全浮窗（Phase 1-2）
 │       │   ├── quickInput.ts            # 快速输入渲染逻辑（输入框 + 补全交互）
 │       │   ├── quickInputCompletion.ts  # 补全候选管理器（记忆/历史搜索 + 去重排序）
-│       │   ├── quick-input.html         # 快速输入 HTML 入口
-│       │   └── quick-input.css          # 快速输入组件样式（令牌从 styles/tokens.css 共享引入）
+│       │   └── quick-input.html         # 快速输入 HTML 入口（CSS 已迁入 styles/windows/quick-input.css）
 │       │
-│       └── styles/             # CSS 样式表（详见 §2.4 CSS 架构规则）
-│           ├── README.md       # CSS 架构文档（令牌所有权 + 聚合器模式 + 贡献约定）
-│           ├── tokens.css      # 设计令牌「单一真理源」（P0：双主题变量 + CJK 字体栈，三窗口共享）
-│           ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类（icon-btn / empty-state / error-state）
-│           ├── utilities.css   # 通用工具类（flex-center / flex-col / flex-row-center / surface-card / text-muted）
-│           ├── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
-│           ├── command-palette.css  # 快捷命令面板（Ctrl+K，类 VS Code 浮层）
-│           ├── search-messages.css  # 对话内容搜索弹窗（Ctrl+Shift+F）
-│           ├── chat.css        # 聚合器（@import 7 个子模块，P2 拆分 + 二级拆分）
-│           ├── chat-toolbar.css      # 对话工具栏 / 状态条 / 在场脉冲浮层
-│           ├── chat-perception.css   # 对话内嵌感知紧凑布局（rapport-row/affect-grid 等紧凑组件）
-│           ├── chat-datenav.css      # 回到今天 / 日期选择 / 下拉 / 空状态
-│           ├── chat-messages-banner.css # 主动提示横幅 / 里程碑 / 配置建议卡片（二级拆分）
-│           ├── chat-messages-bubble.css # 日期分隔符 / 消息分组 / 气泡 / 头像 / 召回（二级拆分）
-│           ├── chat-messages-input.css  # 输入区 / 补全 / 停止按钮 / 空状态（二级拆分）
-│           ├── chat-messages-misc.css   # 思考指示器 / 工具卡片 / 动画 / 启动摘要 / 右键菜单（二级拆分）
-│           ├── memory.css      # 聚合器（@import 7 个子模块，P2 拆分 + 二级拆分）
-│           ├── memory-list.css       # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
-│           ├── memory-detail.css     # 记忆详情弹窗 / 技能列表 / 全局·项目色
-│           ├── memory-views.css      # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
-│           ├── memory-graph-core.css   # 更多菜单 / 图例 / tooltip / 右键菜单 / 关系编辑（二级拆分）
-│           ├── memory-graph-search.css # 高级搜索 / 搜索高亮 / 洞察栏（二级拆分）
-│           ├── memory-graph-detail.css # 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘（二级拆分）
-│           ├── memory-graph-misc.css   # 增强 1-5 / 时间线 / 回收站（二级拆分）
-│           ├── markdown.css    # Markdown 渲染样式
-│           ├── modal.css       # 模态弹窗样式
-│           ├── settings.css    # 设置面板样式
-│           ├── toast.css       # Toast 通知样式
-│           ├── dashboard.css   # 仪表盘面板样式（概览+运行指标+记忆源健康+增长趋势，感知样式已迁至 perception.css）
-│           └── perception.css   # 独立感知面板样式（从 dashboard.css 迁出，覆盖 chat-perception.css 基础样式）
+│       └── styles/             # CSS 样式表（详见 §2.4 CSS 架构规则，按功能域分组）
+│           ├── README.md       # CSS 架构文档（令牌所有权 + 聚合器模式 + 贡献约定 + 目录分组规则）
+│           │
+│           ├── foundation/    # 基础层（设计令牌 + 全局重置 + 工具类，三窗口共享）
+│           │   ├── tokens.css      # 设计令牌「单一真理源」（P0：双主题变量 + CJK 字体栈）
+│           │   ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类
+│           │   └── utilities.css   # 通用工具类（flex-center / flex-col / surface-card / text-muted 等）
+│           │
+│           ├── layout/        # 布局层（窗口骨架）
+│           │   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
+│           │
+│           ├── chat/          # 对话功能域（聚合器 + 7 子模块）
+│           │   ├── chat.css             # 聚合器（@import 7 子模块，P2 拆分 + 二级拆分）
+│           │   ├── chat-toolbar.css     # 对话工具栏 / 状态条 / 在场脉冲浮层
+│           │   ├── chat-perception.css  # 对话内嵌感知紧凑布局
+│           │   ├── chat-datenav.css     # 回到今天 / 日期选择 / 下拉 / 空状态
+│           │   ├── chat-messages-banner.css  # 主动提示横幅 / 里程碑 / 配置建议卡片（二级拆分）
+│           │   ├── chat-messages-bubble.css  # 日期分隔符 / 消息分组 / 气泡 / 头像 / 召回（二级拆分）
+│           │   ├── chat-messages-input.css   # 输入区 / 补全 / 停止按钮 / 空状态（二级拆分）
+│           │   └── chat-messages-misc.css    # 思考指示器 / 工具卡片 / 动画 / 启动摘要 / 右键菜单（二级拆分）
+│           │
+│           ├── memory/        # 记忆功能域（聚合器 + 7 子模块）
+│           │   ├── memory.css             # 聚合器（@import 7 子模块，P2 拆分 + 二级拆分）
+│           │   ├── memory-list.css        # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
+│           │   ├── memory-detail.css      # 记忆详情弹窗 / 技能列表 / 全局·项目色
+│           │   ├── memory-views.css       # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
+│           │   ├── memory-graph-core.css  # 更多菜单 / 图例 / tooltip / 右键菜单 / 关系编辑（二级拆分）
+│           │   ├── memory-graph-search.css # 高级搜索 / 搜索高亮 / 洞察栏（二级拆分）
+│           │   ├── memory-graph-detail.css # 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘（二级拆分）
+│           │   └── memory-graph-misc.css  # 增强 1-5 / 时间线 / 回收站（二级拆分）
+│           │
+│           ├── panels/        # 独立面板样式（每个对应一个 .panel）
+│           │   ├── dashboard.css   # 仪表盘面板（概览+运行指标+记忆源健康+增长趋势）
+│           │   ├── perception.css  # 独立感知面板（覆盖 chat-perception.css 基础样式）
+│           │   └── settings.css    # 设置面板
+│           │
+│           ├── overlays/      # 浮层组件（modal / toast / 命令面板 / 搜索弹窗）
+│           │   ├── modal.css           # 模态弹窗
+│           │   ├── toast.css           # Toast 通知
+│           │   ├── command-palette.css # 快捷命令面板（Ctrl+K，类 VS Code 浮层）
+│           │   └── search-messages.css # 对话内容搜索弹窗（Ctrl+Shift+F）
+│           │
+│           ├── content/       # 内容渲染样式
+│           │   └── markdown.css    # Markdown 渲染
+│           │
+│           └── windows/       # 独立窗口专属样式（从 float/ 和 quick-input/ 迁入，统一管理）
+│               ├── float.css       # 浮动窗口（令牌从 foundation/tokens.css 共享引入）
+│               └── quick-input.css # 快速输入浮窗（引入 foundation 三层 + 本地组件样式）
 │
 ├── sprite/                     # 精灵核心层（纯逻辑，零 Electron 依赖）
 │   ├── sprite.ts               # 精灵核心类（启动/关闭/事件/主动行为）
@@ -320,14 +336,67 @@ src/
 - 测试辅助工具与测试文件同目录（如 `storage/nodeSqliteDatabase.ts` 与 `storage/*.test.ts` 同级），仅服务于该模块测试
 - 不采用 co-location（测试与源文件同目录），保持 `__tests__/` 集中管理
 
-### 2.4 CSS 架构规则（2026-07-09 P0-P2 重构）
+### 2.4 CSS 架构规则（2026-07-15 重构：按功能域分组 + 浮窗统一管理）
 
-1. **令牌单一真理源**：`tokens.css` 是唯一令牌定义处。`float.html` / `quick-input.html` 通过 `<link>` 共享引入，**禁止在任何窗口内联 `<style>` 块**。修改令牌只能改 `tokens.css`。
-2. **CSP 收紧**：主窗/浮窗/快速输入窗 `style-src` 均为 `'self'`（无 `'unsafe-inline'`），杜绝内联样式注入。
-3. **聚合器模式**：`chat.css` / `memory.css` 为纯 `@import` 聚合器，不包含任何直接样式规则。`@import` 顺序保持与原单体文件一致，层叠等价。
-4. **拆分切点**：按功能域切分，切点必须落在规则边界（大括号配平处），禁止在 CSS 规则中间切分。
-5. **间距/圆角令牌化**：组件 CSS 间距/圆角走 `--space-*` / `--radius-*` 令牌，禁止裸写 px（布局 width/height 等除外）。
-6. **贡献约定**：新增子模块在聚合器 `@import` 列表按层叠顺序追加；新组件样式放进对应功能 CSS。
+#### 2.4.1 目录分组（8 个功能域子目录）
+
+styles/ 按**功能域**分组，与渲染进程代码组织（panels/components/helpers）一致。禁止平铺 CSS 文件。
+
+| 子目录 | 职责 | 加载顺序 | 文件数 |
+|--------|------|----------|--------|
+| `foundation/` | 设计令牌 + 全局重置 + 工具类（三窗口共享） | 1-3 | 3（tokens/base/utilities）|
+| `layout/` | 窗口骨架（顶栏/侧栏/Grid） | 4 | 1 |
+| `chat/` | 对话功能域（聚合器 + 7 子模块） | 5-12 | 8 |
+| `memory/` | 记忆功能域（聚合器 + 7 子模块） | 13-20 | 8 |
+| `panels/` | 独立面板样式（dashboard/perception/settings） | 21-23 | 3 |
+| `overlays/` | 浮层组件（modal/toast/命令面板/搜索弹窗） | 24-27 | 4 |
+| `content/` | 内容渲染样式（markdown） | 28 | 1 |
+| `windows/` | 独立窗口专属样式（float/quick-input，从原窗口目录迁入） | 浮窗独立引入 | 2 |
+
+#### 2.4.2 令牌单一真理源
+
+`foundation/tokens.css` 是唯一令牌定义处。三窗口（主窗/浮窗/快速输入窗）通过 `<link>` 共享引入 `../styles/foundation/tokens.css`。**禁止在任何窗口内联 `<style>` 块**。修改令牌只能改 `tokens.css`。
+
+#### 2.4.3 CSP 收紧
+
+主窗/浮窗/快速输入窗 `style-src` 均为 `'self'`（无 `'unsafe-inline'`），杜绝内联样式注入。
+
+#### 2.4.4 聚合器模式
+
+`chat/chat.css` / `memory/memory.css` 为纯 `@import` 聚合器，不包含任何直接样式规则。`@import` 路径使用相对路径（如 `@import "./chat-toolbar.css";`），顺序保持与原单体文件一致，层叠等价。
+
+#### 2.4.5 拆分切点
+
+按功能域切分，切点必须落在规则边界（大括号配平处），禁止在 CSS 规则中间切分。
+
+#### 2.4.6 间距/圆角令牌化
+
+组件 CSS 间距/圆角走 `--space-*` / `--radius-*` 令牌，禁止裸写 px（布局 width/height 等除外）。
+
+#### 2.4.7 浮窗 CSS 归属
+
+`windows/float.css` 和 `windows/quick-input.css` 从原 `float/` 和 `quick-input/` 目录迁入 styles/，统一管理。HTML 中的 `<link>` 路径改为 `../styles/windows/xxx.css`。浮窗独立 BrowserWindow 不共享主窗口 SVG sprite，需在 HTML 中内联定义（详见各浮窗 HTML）。
+
+#### 2.4.8 贡献约定
+
+- 新增子模块在聚合器 `@import` 列表按层叠顺序追加
+- 新组件样式放进对应功能域子目录（如对话相关 → `chat/`，记忆相关 → `memory/`）
+- 新增独立面板 → `panels/`；新增浮层组件 → `overlays/`
+- 新增独立窗口 → `windows/`（必须引入 foundation/ 三层 + 本地组件样式）
+
+#### 2.4.9 加载顺序（index.html）
+
+```
+foundation/tokens.css → foundation/base.css → foundation/utilities.css
+→ layout/layout.css
+→ chat/chat.css（聚合器，内部 @import 7 子模块）
+→ memory/memory.css（聚合器，内部 @import 7 子模块）
+→ panels/dashboard.css → panels/perception.css → panels/settings.css
+→ overlays/modal.css → overlays/toast.css → overlays/command-palette.css → overlays/search-messages.css
+→ content/markdown.css
+```
+
+浮窗（float.html / quick-input.html）独立加载：`foundation/tokens.css` → `foundation/base.css` → `foundation/utilities.css` → `windows/xxx.css`。
 
 ### 2.5 IPC 通道治理现状（2026-07-12，排雷 AUDIT-6-2）
 
@@ -434,6 +503,7 @@ src/
 - [x] CSS-R3: 二级拆分——chat-messages.css(1941行)→4 子模块（banner/bubble/input/misc）+ memory-graph.css(1225行)→4 子模块（core/search/detail/misc），chat.css/memory.css 聚合器 @import 更新，层叠等价（2026-07-13 组合拳）
 - [x] CSS-R4: P0 减法——base.css 拆分出 command-palette.css(166行) + search-messages.css(198行)，base.css 620→345 行(-44%)，回归"基础样式"定位（2026-07-13 问诊 CSS 减法）
 - [x] CSS-R5: utilities.css 中间层——新增 5 个原子工具类（flex-center/flex-col/flex-row-center/surface-card/text-muted），从 3577 条属性声明提取 Top 重复模式（2026-07-13 P1 试点）
+- [x] CSS-R6: styles/ 按功能域分组重构——8 个子目录（foundation/layout/chat/memory/panels/overlays/content/windows），浮窗 CSS（float.css + quick-input.css）从原窗口目录迁入 styles/windows/，index.html/float.html/quick-input.html 的 `<link>` 路径更新，chat.css/memory.css 聚合器内部 @import 改为同目录相对路径（2026-07-15 模块重思）
 
 ### 延后（非目录结构）
 
