@@ -97,6 +97,8 @@ class QuickInputController {
   private streamMode = false;
   /** Tab 键已按下标记（keydown 中标记，keyup 中消费，防止事件泄漏） */
   private tabPressed = false;
+  /** resize IPC 防抖定时器（避免输入时频繁 setSize 导致窗口闪烁） */
+  private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * @param inputField 输入框 textarea 元素
@@ -412,15 +414,20 @@ class QuickInputController {
 
   /**
    * 自动调整 textarea 高度（随内容增长，最多 5 行）
+   *
+   * 最小高度保护：空文本时 scrollHeight 可能仅含 padding（约 16px），
+   * 导致 textarea 收缩到不可见。限制最小高度为 36px（与 CSS min-height 对齐）。
    */
   private autoResize(): void {
     const prevHeight = this.inputField.offsetHeight;
     this.inputField.style.height = 'auto';
-    this.inputField.style.height = `${this.inputField.scrollHeight}px`;
-    const newHeight = this.inputField.offsetHeight;
+    const minHeight = 36;
+    const newHeight = Math.max(this.inputField.scrollHeight, minHeight);
+    this.inputField.style.height = `${newHeight}px`;
+    const actualHeight = this.inputField.offsetHeight;
 
-    if (newHeight !== prevHeight) {
-      this.baseInputHeight = newHeight + 36;
+    if (actualHeight !== prevHeight) {
+      this.baseInputHeight = actualHeight + 36;
       this.resizeWindow();
     }
   }
@@ -436,17 +443,26 @@ class QuickInputController {
 
   /**
    * 根据当前状态调整窗口高度（输入区 + 候选列表）
+   *
+   * 防抖 50ms：避免输入时每次按键都触发 IPC → setSize 导致窗口闪烁。
+   * 候选列表显示/隐藏时 50ms 延迟可接受，消除闪烁收益远大于微小延迟。
    */
   private resizeWindow(): void {
-    if (this.completionList && !this.completionList.classList.contains('hidden')) {
-      const itemCount = this.completionList.querySelectorAll('.completion-item').length;
-      const hasFooter = this.completionList.dataset.footer === 'true';
-      const footerHeight = hasFooter ? FOOTER_HEIGHT_PX : 0;
-      const targetHeight = this.baseInputHeight + Math.min(itemCount, MAX_VISIBLE_ITEMS) * ITEM_HEIGHT_PX + footerHeight;
-      void this.api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
-    } else {
-      void this.api.resizeQuickInput(this.baseInputHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
     }
+    this.resizeDebounceTimer = setTimeout(() => {
+      this.resizeDebounceTimer = null;
+      if (this.completionList && !this.completionList.classList.contains('hidden')) {
+        const itemCount = this.completionList.querySelectorAll('.completion-item').length;
+        const hasFooter = this.completionList.dataset.footer === 'true';
+        const footerHeight = hasFooter ? FOOTER_HEIGHT_PX : 0;
+        const targetHeight = this.baseInputHeight + Math.min(itemCount, MAX_VISIBLE_ITEMS) * ITEM_HEIGHT_PX + footerHeight;
+        void this.api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
+      } else {
+        void this.api.resizeQuickInput(this.baseInputHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
+      }
+    }, 50);
   }
 
   // ── 关闭 / Tab 处理 ──

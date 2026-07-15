@@ -49,6 +49,7 @@ body {
 /* ===== 文本输入框（textarea 自动高度） ===== */
 .quick-input-field {
   flex: 1;
+  width: 100%;
   border: none;
   outline: none;
   background: transparent;
