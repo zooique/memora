@@ -200,7 +200,7 @@ export class ProfilePanelManager {
 
     const categoryLabel = ProfilePanelManager.CATEGORY_LABELS[entry.category] ?? entry.category;
     const categorySpan = document.createElement('span');
-    categorySpan.className = `profile-category profile-category-${entry.category}`;
+    categorySpan.className = `profile-category profile-category-${entry.category} flex-shrink-0`;
     categorySpan.textContent = categoryLabel;
     header.appendChild(categorySpan);
 

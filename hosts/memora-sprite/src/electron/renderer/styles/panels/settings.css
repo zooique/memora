@@ -24,7 +24,6 @@
   font-style: italic;
   background: var(--surface1);
   border-bottom: 1px solid var(--surface2);
-  flex-shrink: 0;
 }
 .agent-status-indicator {
   display: flex;
@@ -74,7 +73,6 @@
   background: transparent;
   border-right: 1px solid var(--surface2);  /* 右侧分隔线 */
   border-bottom: none;
-  flex-shrink: 0;
   width: 160px;
   align-items: stretch;
 }
@@ -411,11 +409,10 @@
 }
 
 .settings-actions {
-  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处保留 gap/flex-shrink */
+  /* 两端对齐 + 垂直居中：复用 .flex-between + .flex-shrink-0 工具类（utilities.css），此处仅保留 gap */
   gap: var(--gap-compact);
   padding: var(--space-3) var(--space-6);
   border-top: 1px solid var(--surface2);
-  flex-shrink: 0;
 }
 
 /* 按钮组容器：右侧对齐 */
@@ -576,7 +573,6 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
   font-weight: var(--weight-medium);
-  flex-shrink: 0;
 }
 
 /* 身份：绿色（复用 --tag-profile-* 变量，与 source-profile 同色） */
@@ -654,7 +650,7 @@
 /* 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */
 /* 对标 Arco Alert error 级别 — 浅红填充 + 左边框替代透明背景 + 底边框 */
 .panel-error {
-  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处保留 gap/flex-shrink */
+  /* 两端对齐 + 垂直居中 + 不收缩：复用 .flex-between + .flex-shrink-0 工具类（utilities.css），此处仅保留 gap */
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
   margin: 0;
@@ -663,7 +659,6 @@
   border-left: 4px solid var(--red);
   color: var(--red);
   font-size: var(--font-sm);
-  flex-shrink: 0;
 }
 
 .panel-error.hidden {
@@ -761,7 +756,6 @@
 
 .work-projection-icon {
   font-size: var(--font-lg);
-  flex-shrink: 0;
   line-height: 0; /* SVG 图标消除 inline 元素额外行高 */
 }
 
@@ -775,7 +769,6 @@
 .work-projection-updated {
   font-size: var(--font-xs);
   color: var(--text-4);
-  flex-shrink: 0;
 }
 
 /* 概要（始终可见） */
@@ -935,7 +928,6 @@
   padding: 1px var(--space-1-5);
   border: 1px solid var(--green);
   border-radius: var(--radius-sm);
-  flex-shrink: 0;
   margin-left: var(--gap-compact);
 }
 
@@ -943,7 +935,6 @@
 .provider-actions {
   display: flex;
   gap: var(--gap-compact);
-  flex-shrink: 0;
 }
 
 .provider-btn {

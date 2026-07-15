@@ -31,7 +31,7 @@
   <!-- 快速输入浮窗容器：文本输入区 + 快捷键提示 + 补全候选列表 -->
   <div class="quick-input-container">
     <!-- 输入区：textarea（支持多行长文本 + 自动高度） -->
-    <div class="quick-input-area">
+    <div class="quick-input-area flex-shrink-0">
       <textarea
         id="quick-input-field"
         class="quick-input-field"
@@ -41,10 +41,10 @@
         autofocus
         rows="1"
       ></textarea>
-      <div class="quick-input-footer flex-between">
-        <span class="quick-input-hint">↓↑ 补全 · ←→ 填充 · Tab 提交 · Esc 关闭</span>
+      <div class="quick-input-footer flex-between flex-shrink-0">
+        <span class="quick-input-hint flex-shrink-0">↓↑ 补全 · ←→ 填充 · Tab 提交 · Esc 关闭</span>
         <span id="stream-toggle" class="stream-toggle" title="流式模式关闭：粘贴后关闭窗口（点击切换）"><svg class="icon"><use href="#icon-unlock"/></svg></span>
-        <span class="quick-input-counter">0 字</span>
+        <span class="quick-input-counter flex-shrink-0">0 字</span>
       </div>
     </div>
     <!-- 补全候选列表（输入 ≥2 字符后显示，↑↓ 导航 + ←→ 填充） -->

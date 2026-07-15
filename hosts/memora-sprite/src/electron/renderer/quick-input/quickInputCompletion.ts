@@ -581,7 +581,7 @@ export class QuickInputCompletion {
 
       // 来源标签
       const label = document.createElement('span');
-      label.className = 'completion-label';
+      label.className = 'completion-label flex-shrink-0';
       label.textContent = item.sourceLabel;
 
       // 文本预览（textContent 防 XSS）

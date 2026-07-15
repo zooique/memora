@@ -195,7 +195,7 @@ export class WorkProjectionPanelManager {
     header.className = 'work-projection-card-header';
 
     const icon = document.createElement('span');
-    icon.className = 'work-projection-icon';
+    icon.className = 'work-projection-icon flex-shrink-0';
     // SVG 字符串来自编译期静态常量 FILE_ICONS，无 XSS 风险
     icon.innerHTML = WorkProjectionPanelManager.getFileIcon(entry.sourcePath);
     header.appendChild(icon);
@@ -209,7 +209,7 @@ export class WorkProjectionPanelManager {
     header.appendChild(fileNameEl);
 
     const updatedEl = document.createElement('span');
-    updatedEl.className = 'work-projection-updated';
+    updatedEl.className = 'work-projection-updated flex-shrink-0';
     updatedEl.textContent = formatTimeAgo(entry.updatedAt);
     header.appendChild(updatedEl);
 

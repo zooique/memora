@@ -316,7 +316,7 @@
         </div>
 
         <!-- 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->
-        <div id="chat-error" class="panel-error hidden flex-between">
+        <div id="chat-error" class="panel-error hidden flex-between flex-shrink-0">
           <span id="chat-error-msg"></span>
           <button id="chat-error-retry" class="panel-error-btn">重试</button>
         </div>
@@ -578,7 +578,7 @@
           </div>
         </div>
         <!-- 记忆面板加载失败状态：默认隐藏，加载失败时显示 -->
-        <div id="memory-error" class="panel-error hidden flex-between">
+        <div id="memory-error" class="panel-error hidden flex-between flex-shrink-0">
           <span id="memory-error-msg"></span>
           <button id="memory-error-retry" class="panel-error-btn">重试</button>
         </div>
@@ -701,13 +701,13 @@
           </div>
 
           <!-- UX-0713-3：自动保存机制说明，让用户明确知道修改会自动保存 -->
-          <p class="settings-autosave-hint">所有修改自动保存，无需手动点击保存按钮。</p>
+          <p class="settings-autosave-hint flex-shrink-0">所有修改自动保存，无需手动点击保存按钮。</p>
 
           <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区 -->
           <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
         <!-- UX-0713-V4：7 个 tab 按功能分组（AI 行为/集成/系统），分隔线提升扫视效率 -->
-        <div class="settings-tabs" role="tablist" aria-label="设置分类">
+        <div class="settings-tabs flex-shrink-0" role="tablist" aria-label="设置分类">
           <span class="settings-tab-group-label">AI 行为</span>
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
@@ -724,7 +724,7 @@
         </div>
 
         <!-- 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
-        <div id="settings-error" class="panel-error hidden flex-between">
+        <div id="settings-error" class="panel-error hidden flex-between flex-shrink-0">
           <span id="settings-error-msg"></span>
           <button id="settings-error-retry" class="panel-error-btn">重试</button>
         </div>
@@ -1091,7 +1091,7 @@
           </div><!-- /.settings-panel-body -->
 
         <!-- 面板底部：Agent 状态 + 保存状态指示 + 操作按钮（恢复默认/稍后配置） -->
-        <div class="settings-actions flex-between">
+        <div class="settings-actions flex-between flex-shrink-0">
           <!-- Agent 连接状态指示器（底部按钮行左侧） -->
           <div id="agent-status-indicator" class="agent-status-indicator unknown">
             <span class="agent-status-dot"></span>
@@ -1117,7 +1117,7 @@
           <span class="panel-title" id="panel-title-perception">精灵状态</span>
         </div>
         <!-- 感知面板错误横幅（与 settings/memory/chat/dashboard 统一错误反馈体系） -->
-        <div id="perception-error" class="panel-error hidden flex-between">
+        <div id="perception-error" class="panel-error hidden flex-between flex-shrink-0">
           <span id="perception-error-msg"></span>
           <button id="perception-error-retry" class="panel-error-btn">重试</button>
         </div>
@@ -1263,7 +1263,7 @@
           </button>
         </div>
         <!-- 仪表盘错误横幅（与 settings/memory/chat 统一错误反馈体系） -->
-        <div id="dashboard-error" class="panel-error hidden flex-between">
+        <div id="dashboard-error" class="panel-error hidden flex-between flex-shrink-0">
           <span id="dashboard-error-msg"></span>
           <button id="dashboard-error-retry" class="panel-error-btn">重试</button>
         </div>

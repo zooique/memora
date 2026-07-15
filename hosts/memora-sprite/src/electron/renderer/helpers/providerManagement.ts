@@ -271,14 +271,14 @@ export function renderProviderList(
     // ─── 激活徽章（仅当前 Provider 显示） ────────────
     if (isActive) {
       const badge = document.createElement('span');
-      badge.className = 'provider-active-badge';
+      badge.className = 'provider-active-badge flex-shrink-0';
       badge.textContent = '当前';
       card.appendChild(badge);
     }
 
     // ─── 操作按钮区 ──────────────────────────────────
     const actions = document.createElement('div');
-    actions.className = 'provider-actions';
+    actions.className = 'provider-actions flex-shrink-0';
 
     // 非激活 Provider 显示"设为当前"按钮
     if (!isActive) {
