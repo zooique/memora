@@ -305,6 +305,11 @@ export class QuickInputWindow {
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
 
         if (pasteResult.success && pasteResult.mode === 'paste') {
+          // 流式模式：paste 时恢复焦点到原窗口会触发浮窗 blur，需取消 blur 延迟关闭，
+          // 否则流式模式下窗口会在 blur 延迟后自动消失（与"保持窗口"语义矛盾）
+          if (streamMode) {
+            this.cancelBlurClose();
+          }
           // 粘贴成功：调用 onAfterConfirm 记忆沉淀（排雷修正雷 1.3：粘贴成功后才记）
           try {
             this.callbacks.onAfterConfirm?.(safeText);
@@ -322,9 +327,11 @@ export class QuickInputWindow {
         // 降级路径 / Phase 3 兼容路径：走 onConfirm 写剪贴板
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
-          // 流式模式不关闭窗口
+          // 流式模式不关闭窗口，但需取消 paste 降级过程中可能触发的 blur 延迟关闭
           if (!streamMode) {
             this.hide();
+          } else {
+            this.cancelBlurClose();
           }
           // 异步沉淀记忆（不阻塞，错误隔离）
           try {

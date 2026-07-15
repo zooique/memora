@@ -202,8 +202,14 @@ export class QuickInputCompletion {
    *
    * 未用方向键导航时，←→ 不拦截，保持光标移动功能。
    * Tab 不在此处理，统一由 quickInput.ts / 主对话输入框各自处理。
+   *
+   * 参数类型为 Event 而非 KeyboardEvent：union 类型 inputField（HTMLInputElement | HTMLTextAreaElement）
+   * 在 strictFunctionTypes 下触发 addEventListener 泛型回退，EventHandler 签名需匹配 EventListener。
+   * 内部通过 instanceof 收窄到 KeyboardEvent，保持类型安全。
    */
-  private handleKeyDown = (e: KeyboardEvent): void => {
+  private handleKeyDown = (e: Event): void => {
+    // 收窄到 KeyboardEvent（addEventListener('keydown') 运行时保证传入 KeyboardEvent）
+    if (!(e instanceof KeyboardEvent)) return;
     if (this.candidates.length === 0) return;
 
     if (e.key === 'ArrowDown') {
