@@ -80,6 +80,10 @@ const ADOPTION_STORAGE_KEY = 'memora-completion-adoptions';
 const MAX_ADOPTION_ENTRIES = 100;
 /** 同 sourceLabel 最大候选数（保证 Top-5 内至少 2 个来源，当多源共存时） */
 const MAX_PER_SOURCE = 3;
+/** 短查询阈值（≤此字符数视为"续写"场景，对话历史获得 boost） */
+const SHORT_QUERY_THRESHOLD = 5;
+/** 续写场景下对话候选的 score 提升量（让近期对话在短查询时优先于结构化记忆） */
+const CONVERSATION_SHORT_QUERY_BOOST = 0.1;
 
 /**
  * 快速输入补全管理器
@@ -315,6 +319,8 @@ export class QuickInputCompletion {
    * score 量纲设计：
    *   - 记忆 score 来自内核混合搜索，已经是 0-1 归一化的相关度
    *   - 对话 score 基于关键词匹配位置：在内容开头得 0.6，末尾得 0.4（低于记忆，对话作为兜底）
+   *   - 意图感知：短查询（≤5 字符）视为"续写"场景，对话 score +0.1 boost（0.5-0.7），
+   *     使近期对话在续写时可超越中等相关度的记忆
    *   - 采纳 boost 在去重后、排序前应用，确保 boost 不影响去重逻辑
    *
    * @param query 用户输入的查询文本（用于计算对话候选的匹配位置 score）
@@ -342,6 +348,9 @@ export class QuickInputCompletion {
 
     // 对话搜索结果：历史消息（优先 user 角色，更贴近用户表达习惯）
     // score 基于关键词在内容中的匹配位置：开头高（0.6），末尾低（0.4）
+    // 意图感知：短查询（≤5 字符）视为"续写"场景，对话候选获得 boost，
+    //   使近期对话在续写时优先于结构化记忆（用户更可能想补全刚说过的话）
+    const isShortQuery = query.length <= SHORT_QUERY_THRESHOLD;
     messages.forEach((m) => {
       const text = m.content?.trim();
       if (!text) return;
@@ -350,10 +359,12 @@ export class QuickInputCompletion {
       // 计算关键词匹配位置：位置越靠前，相关度越高（话题核心词通常在开头）
       const matchPos = text.toLowerCase().indexOf(query.toLowerCase());
       const positionRatio = matchPos >= 0 ? matchPos / text.length : 1;
+      const baseScore = Math.max(0.4, MESSAGE_SCORE_BASE - positionRatio * MESSAGE_SCORE_POSITION_PENALTY);
+      const intentBoost = isShortQuery ? CONVERSATION_SHORT_QUERY_BOOST : 0;
       candidates.push({
         text: this.truncate(text, PREVIEW_MAX_LENGTH),
         sourceLabel: '对话',
-        score: Math.max(0.4, MESSAGE_SCORE_BASE - positionRatio * MESSAGE_SCORE_POSITION_PENALTY),
+        score: baseScore + intentBoost,
       });
     });
 
