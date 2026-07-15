@@ -387,7 +387,7 @@ export class DashboardPanelManager {
 
       // 主行：source 标签 + 状态徽章
       const mainRow = document.createElement('div');
-      mainRow.className = 'source-health-main';
+      mainRow.className = 'source-health-main flex-between';
 
       const labelSpan = document.createElement('span');
       labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;

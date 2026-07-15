@@ -210,9 +210,7 @@
 }
 
 .partner-growth-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
   margin-bottom: 6px;
 }
 

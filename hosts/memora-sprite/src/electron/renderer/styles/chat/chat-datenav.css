@@ -178,9 +178,7 @@
 
 /* 单个日期选项 */
 .date-nav-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
   padding: var(--space-1-5) var(--space-2-5);
   border-radius: var(--radius-sm);
   font-size: var(--font-xs);

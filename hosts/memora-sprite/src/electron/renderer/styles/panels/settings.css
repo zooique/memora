@@ -154,9 +154,7 @@
 }
 
 .settings-group-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
   margin-bottom: var(--space-3);
 }
 
@@ -413,9 +411,7 @@
 }
 
 .settings-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between; /* 左侧 agent 状态，右侧按钮组 */
+  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处保留 gap/flex-shrink */
   gap: var(--gap-compact);
   padding: var(--space-3) var(--space-6);
   border-top: 1px solid var(--surface2);
@@ -518,9 +514,7 @@
 
 /* 头部：标题 + 刷新按钮 */
 .profile-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
   margin-bottom: var(--space-3);
 }
 
@@ -660,9 +654,7 @@
 /* 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */
 /* 对标 Arco Alert error 级别 — 浅红填充 + 左边框替代透明背景 + 底边框 */
 .panel-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处保留 gap/flex-shrink */
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
   margin: 0;
@@ -900,9 +892,7 @@
 
 /* Provider 卡片 */
 .provider-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
   padding: var(--pad-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

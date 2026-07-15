@@ -78,9 +78,7 @@
 
 /* 统计洞察面板头部：标题 + 关闭按钮 */
 .insights-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
   margin-bottom: 10px;
 }
 

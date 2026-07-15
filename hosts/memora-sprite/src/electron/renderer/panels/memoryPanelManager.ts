@@ -953,7 +953,7 @@ export class MemoryPanelManager {
 
     // 头部：名称 + 操作按钮组
     const header = document.createElement('div');
-    header.className = 'recycle-bin-item-header';
+    header.className = 'recycle-bin-item-header flex-between';
 
     const nameEl = document.createElement('div');
     nameEl.className = 'recycle-bin-item-name text-truncate';

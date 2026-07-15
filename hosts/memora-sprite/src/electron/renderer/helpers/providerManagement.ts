@@ -249,7 +249,7 @@ export function renderProviderList(
     const isActive = p.key === active;
 
     const card = document.createElement('div');
-    card.className = `provider-card${isActive ? ' active' : ''}`;
+    card.className = `provider-card flex-between${isActive ? ' active' : ''}`;
     card.dataset.providerKey = p.key;
 
     // ─── Provider 信息区（名称 + 详情） ──────────────

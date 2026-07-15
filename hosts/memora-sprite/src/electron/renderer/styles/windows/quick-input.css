@@ -64,9 +64,7 @@ body {
 
 /* ===== 底部栏：提示文字 + 流式开关 + 字符计数 ===== */
 .quick-input-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处仅保留 flex-shrink */
   flex-shrink: 0;
 }
 

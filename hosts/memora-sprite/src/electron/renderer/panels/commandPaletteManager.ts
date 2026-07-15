@@ -559,7 +559,7 @@ export class CommandPaletteManager {
 
       // 命令项
       const item = document.createElement('div');
-      item.className = `command-palette-item${i === this.selectedIndex ? ' active' : ''}`;
+      item.className = `command-palette-item flex-between${i === this.selectedIndex ? ' active' : ''}`;
       item.setAttribute('data-index', String(i));
       item.innerHTML = `
         <span class="command-palette-label">${this.highlightMatch(command.label)}</span>

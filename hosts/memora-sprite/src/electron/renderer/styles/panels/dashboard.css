@@ -258,9 +258,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 /* 主行：source 标签 + 状态徽章 */
 .source-health-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处仅保留 gap */
   gap: var(--gap-compact);
 }
 

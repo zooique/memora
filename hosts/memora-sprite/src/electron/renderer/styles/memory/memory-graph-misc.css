@@ -432,9 +432,7 @@
 
 /* 列表项头部：名称 + 操作按钮（两端对齐） */
 .recycle-bin-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* 两端对齐 + 垂直居中：复用 .flex-between 工具类（utilities.css），此处仅保留 gap */
   gap: var(--gap-compact);
 }
 

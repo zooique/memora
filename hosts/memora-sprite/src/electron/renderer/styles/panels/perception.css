@@ -119,11 +119,7 @@
   gap: var(--space-1);
 }
 
-.affect-item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+/* .affect-item-header 复用 .flex-between 工具类（utilities.css，由 HTML className 提供） */
 
 .affect-item .affect-label {
   /* 感知面板纵向布局：label 宽度自适应、左对齐（区别于 chat 面板横向布局的固定宽度右对齐） */

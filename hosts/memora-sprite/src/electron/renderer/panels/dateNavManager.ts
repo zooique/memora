@@ -228,7 +228,7 @@ export class DateNavManager {
 
     for (const [date, count] of sortedDates) {
       const item = document.createElement('div');
-      item.className = 'date-nav-item';
+      item.className = 'date-nav-item flex-between';
       item.setAttribute('role', 'option');
       item.setAttribute('data-date', date);
       // 添加 tabindex="-1" 支持键盘导航（由父容器事件委托处理）
