@@ -11,13 +11,13 @@
   <!--
     主题初始化已从内联脚本移至主进程 executeJavaScript 注入：
     详见 floatWindow.ts 中的 did-start-loading 事件处理。
-    设计令牌集中在 styles/tokens.css（单一真理源），本窗口不再内联任何变量，
+    设计令牌集中在 styles/foundation/tokens.css（单一真理源），本窗口不再内联任何变量，
     避免与主窗口令牌漂移。
   -->
   <!-- 设计令牌（单一真理源，与主窗口完全一致） -->
-  <link rel="stylesheet" href="../styles/tokens.css" />
+  <link rel="stylesheet" href="../styles/foundation/tokens.css" />
   <!-- 浮动窗口组件专属样式 -->
-  <link rel="stylesheet" href="float.css" />
+  <link rel="stylesheet" href="../styles/windows/float.css" />
 </head>
 <body>
   <!-- 精灵球体：包含形态容器 + 状态点 + 未读徽章 -->

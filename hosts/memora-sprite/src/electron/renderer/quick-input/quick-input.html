@@ -10,16 +10,16 @@
   <!--
     主题初始化由主进程 executeJavaScript 注入（injectThemeScript），
     不使用内联脚本（CSP 限制 + sandbox 兼容）。
-    设计令牌集中在 styles/tokens.css（单一真理源），本窗口不再内联任何变量。
+    设计令牌集中在 styles/foundation/tokens.css（单一真理源），本窗口不再内联任何变量。
   -->
   <!-- 设计令牌（单一真理源，与主窗口完全一致） -->
-  <link rel="stylesheet" href="../styles/tokens.css" />
+  <link rel="stylesheet" href="../styles/foundation/tokens.css" />
   <!-- 全局重置 + .hidden + .icon + 滚动条等通用基类（与主窗口分层一致） -->
-  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/foundation/base.css" />
   <!-- 原子布局工具类（flex-center / flex-col 等） -->
-  <link rel="stylesheet" href="../styles/utilities.css" />
+  <link rel="stylesheet" href="../styles/foundation/utilities.css" />
   <!-- 快速输入浮窗组件专属样式 -->
-  <link rel="stylesheet" href="quick-input.css" />
+  <link rel="stylesheet" href="../styles/windows/quick-input.css" />
 </head>
 <body>
   <!-- SVG sprite：浮窗独立窗口，不共享主窗口 sprite，需内联定义 -->
