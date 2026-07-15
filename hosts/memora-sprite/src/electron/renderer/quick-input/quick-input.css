@@ -1,23 +1,17 @@
-/* quick-input.css — 组件专属样式（令牌来自 tokens.css） */
+/* quick-input.css — 浮窗组件专属样式
+ *
+ * 依赖（按加载顺序，与主窗口分层一致）：
+ *   tokens.css    — 设计令牌（单一真理源）
+ *   base.css      — 全局重置 + .hidden + .icon + 滚动条等通用基类
+ *   utilities.css — flex / 原子布局工具类
+ * 本文件仅定义浮窗特有组件样式，不重复定义上述已有内容。 */
 
-/* ===== 全局重置 ===== */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html, body {
-  height: 100%;
-  overflow: hidden;
-  font-family: var(--font-sprite);
-  -webkit-font-smoothing: antialiased;
-}
-
+/* ===== 浮窗 body（全局重置 / html,body 基础属性由 base.css 提供） ===== */
 body {
   background: transparent;
   display: flex;
   padding: var(--space-2);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ===== 浮窗容器（列方向：输入区 + 补全列表） ===== */
@@ -38,7 +32,7 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* ===== 输入区：textarea（支持多行长文本） ===== */
+/* ===== 输入区：textarea + footer ===== */
 .quick-input-area {
   display: flex;
   flex-direction: column;
@@ -46,9 +40,8 @@ body {
   flex-shrink: 0;
 }
 
-/* ===== 文本输入框（textarea 自动高度） ===== */
+/* ===== 文本输入框（高度由 autoResize() 显式控制，不用 flex:1 避免与 height:auto 冲突） ===== */
 .quick-input-field {
-  flex: 1;
   width: 100%;
   border: none;
   outline: none;
@@ -69,7 +62,7 @@ body {
   color: var(--muted);
 }
 
-/* ===== 底部栏：提示文字 + 字符计数 ===== */
+/* ===== 底部栏：提示文字 + 流式开关 + 字符计数 ===== */
 .quick-input-footer {
   display: flex;
   justify-content: space-between;
@@ -77,7 +70,6 @@ body {
   flex-shrink: 0;
 }
 
-/* ===== 提示文字 ===== */
 .quick-input-hint {
   font-size: var(--font-xs);
   color: var(--muted);
@@ -85,7 +77,6 @@ body {
   flex-shrink: 0;
 }
 
-/* ===== 字符计数 ===== */
 .quick-input-counter {
   font-size: var(--font-xs);
   color: var(--muted);
@@ -109,19 +100,11 @@ body {
   align-items: center;
 }
 
-/* 浮窗不引入 base.css，需本地定义 .icon 尺寸 */
-.stream-toggle .icon {
-  width: 1em;
-  height: 1em;
-  fill: none;
-}
-
 .stream-toggle:hover {
   opacity: 1;
   transform: scale(1.15);
 }
 
-/* 流式模式激活态 */
 .stream-toggle.active {
   opacity: 1;
 }
@@ -136,9 +119,7 @@ body {
   border-top: 1px solid var(--surface0);
 }
 
-.completion-list.hidden {
-  display: none;
-}
+/* .hidden 由 base.css 提供（display: none !important），此处不重复定义 */
 
 .completion-list:not(.hidden) {
   animation: completionFadeIn var(--transition-fast) ease;

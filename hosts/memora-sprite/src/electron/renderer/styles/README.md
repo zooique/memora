@@ -1,6 +1,6 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-13（CSS-R5 P1 试点：新增 utilities.css 中间层）
+> 最后更新：2026-07-15（quick-input 浮窗对齐三层架构：引入 base.css + utilities.css）
 
 ## 1. 加载顺序（index.html 中的 `<link>`，顺序即层叠优先级）
 
@@ -20,7 +20,7 @@ styles/markdown.css
 styles/dashboard.css
 ```
 
-浮窗 `float/float.html`、快捷输入 `quick-input/quick-input.html` 各自 `<link>` 引用 `../styles/tokens.css` + 本地 `float.css` / `quick-input.css`，**不内联任何令牌**（P0 已回收 `unsafe-inline`，CSP 收紧为 `style-src 'self'`）。
+浮窗 `float/float.html` 引用 `../styles/tokens.css` + 本地 `float.css`；快捷输入 `quick-input/quick-input.html` 已对齐主窗口三层架构：`../styles/tokens.css` → `../styles/base.css` → `../styles/utilities.css` → 本地 `quick-input.css`。两窗均**不内联任何令牌**（P0 已回收 `unsafe-inline`，CSP 收紧为 `style-src 'self'`）。
 
 ## 2. 令牌所有权（不可破的约定）
 

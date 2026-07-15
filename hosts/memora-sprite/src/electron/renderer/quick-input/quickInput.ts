@@ -424,10 +424,15 @@ class QuickInputController {
     const minHeight = 36;
     const newHeight = Math.max(this.inputField.scrollHeight, minHeight);
     this.inputField.style.height = `${newHeight}px`;
-    const actualHeight = this.inputField.offsetHeight;
 
-    if (actualHeight !== prevHeight) {
-      this.baseInputHeight = actualHeight + 36;
+    if (this.inputField.offsetHeight !== prevHeight) {
+      // 重新计算窗口基础高度：测量 .quick-input-area 的 offsetHeight（已含 textarea + gap + footer），
+      // 加上 container 上下 padding（var(--space-2) × 2 = 16px）。
+      // 取代原 `actualHeight + 36` 魔法数字估算，避免 footer/padding 漏算导致窗口高度偏差。
+      const inputArea = this.inputField.parentElement;
+      if (inputArea instanceof HTMLElement) {
+        this.baseInputHeight = inputArea.offsetHeight + 16;
+      }
       this.resizeWindow();
     }
   }
