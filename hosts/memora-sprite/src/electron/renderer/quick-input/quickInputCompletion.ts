@@ -76,6 +76,8 @@ const ADOPTION_BOOST_MAX_COUNT = 3;
 const ADOPTION_BOOST_PER_COUNT = 0.1;
 /** localStorage 键名（遵循宿主 `memora-` 前缀约定） */
 const ADOPTION_STORAGE_KEY = 'memora-completion-adoptions';
+/** 采纳记录最大条目数（LRU 淘汰上限，防止 localStorage 无限膨胀） */
+const MAX_ADOPTION_ENTRIES = 100;
 /** 同 sourceLabel 最大候选数（保证 Top-5 内至少 2 个来源，当多源共存时） */
 const MAX_PER_SOURCE = 3;
 
@@ -409,12 +411,38 @@ export class QuickInputCompletion {
    * 采纳次数累积，用于下次合并候选时 boost 该候选项的 score。
    * key 与去重逻辑一致（dedupKey），确保 boost 能命中。
    * 同步写入 localStorage，实现跨会话学习。
+   * 超过 MAX_ADOPTION_ENTRIES 时淘汰最低频项（近似 LRU）。
    */
   private recordAdoption(text: string): void {
     const key = this.dedupKey(text);
     const count = this.adoptedTexts.get(key) ?? 0;
     this.adoptedTexts.set(key, count + 1);
+    // 容量治理：超出上限时淘汰最低频项（防止 localStorage 无限膨胀）
+    if (this.adoptedTexts.size > MAX_ADOPTION_ENTRIES) {
+      this.evictLowestFrequency();
+    }
     this.saveAdoptions();
+  }
+
+  /**
+   * 淘汰最低频的采纳记录（近似 LRU）
+   *
+   * Map 的迭代顺序是插入顺序，重新 set 已有 key 会刷新到末尾。
+   * 因此优先删除迭代中遇到的前 N 个最低频项，使总条目数回到上限以内。
+   */
+  private evictLowestFrequency(): void {
+    // 找到最低频项的 key
+    let minKey: string | null = null;
+    let minCount = Infinity;
+    for (const [k, c] of this.adoptedTexts) {
+      if (c < minCount) {
+        minCount = c;
+        minKey = k;
+      }
+    }
+    if (minKey !== null) {
+      this.adoptedTexts.delete(minKey);
+    }
   }
 
   /**
