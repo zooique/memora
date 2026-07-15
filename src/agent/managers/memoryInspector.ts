@@ -71,6 +71,12 @@ const CONTENT_PREVIEW_LEN = 80;
 /** 搜索结果内容预览字符数（比快照层略长，便于用户判断相关性） */
 const SEARCH_PREVIEW_LEN = 120;
 
+// ─── L2 采纳反哺常量 ────────────────────────────────────
+/** 采纳反哺的 score 提升量（与 recall.ts 的 BOOST_INCREMENT 一致，保持"越常用越重要"语义统一） */
+const ADOPTION_BOOST_INCREMENT = 0.05;
+/** score 上限（与 recall.ts 的 SCORE_CEILING 一致，防止 boost 超过 1.0） */
+const SCORE_CEILING = 1.0;
+
 // ─── L1 语义去重常量 ────────────────────────────────────
 /** 参与去重扫描的 source 标签（与衰减范围一致，不扫描配置型记忆） */
 const DEDUP_SOURCES = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
@@ -699,6 +705,36 @@ export class MemoryInspector {
    */
   writeUpsert(memory: Memory): void {
     this.index.upsert(memory);
+  }
+
+  /**
+   * 提升记忆的 score（L2 采纳反哺内核）
+   *
+   * 用户在补全模块采纳某条候选后，通过 IPC 调用此方法反哺到内核 Memory.score。
+   * 与 recall.ts 的 boostScore 路径语义一致（"越常用越重要"），但触发源不同：
+   *   - recall.ts boostScore：召回时触发（被动）
+   *   - writeBoost：用户主动采纳时触发（主动）
+   *
+   * 设计原则：
+   *   - 复用现有 upsert 路径，不新增存储层接口
+   *   - score 上限 1.0（与 recall.ts SCORE_CEILING 一致）
+   *   - 同步更新 accessedAt，避免被衰减机制误降级
+   *   - 记忆不存在时静默返回 false（补全候选可能来自对话历史，无对应记忆）
+   *
+   * @param id 记忆唯一标识（${source}:${name} 格式）
+   * @param increment score 提升量（默认 0.05，与 recall.ts BOOST_INCREMENT 一致）
+   * @returns 是否成功提升（记忆不存在时返回 false）
+   */
+  writeBoost(id: string, increment: number = ADOPTION_BOOST_INCREMENT): boolean {
+    const memory = this.index.getById(id);
+    if (!memory) return false;
+    const boosted: Memory = {
+      ...memory,
+      score: Math.min(SCORE_CEILING, memory.score + increment),
+      accessedAt: new Date().toISOString(),
+    };
+    this.index.upsert(boosted);
+    return true;
   }
 
   /**

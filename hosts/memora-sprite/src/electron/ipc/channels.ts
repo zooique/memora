@@ -90,6 +90,8 @@ export const IPC_CHANNELS = {
   MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
   /** 手动归档 insight（archiveMode='manual' 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
+  /** 提升记忆 score（L2 采纳反哺内核，补全采纳时调用） */
+  MEMORIES_BOOST: 'memories-boost',
 
   // ─── 配置相关 ─────────────────────────────────────────
   /** 获取精灵配置 */

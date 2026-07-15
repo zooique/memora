@@ -444,6 +444,21 @@ export class MemoryController {
     return id;
   }
 
+  /**
+   * 提升记忆的 score（L2 采纳反哺内核）
+   *
+   * 用户在补全模块采纳某条候选后调用此方法，将用户行为反馈到内核 Memory.score，
+   * 实现"越常用越重要"的主动学习（与召回时被动 boost 语义一致）。
+   *
+   * @param id 记忆唯一标识（${source}:${name} 格式）
+   * @returns 是否成功提升（记忆不存在时返回 false，如候选来自对话历史）
+   */
+  boostMemory(id: string): boolean {
+    const memory = this.agent.memory;
+    if (!memory) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
+    return memory.writeBoost(id);
+  }
+
   // ─── 记忆搜索 ──────────────────────────────────────────
 
   /**

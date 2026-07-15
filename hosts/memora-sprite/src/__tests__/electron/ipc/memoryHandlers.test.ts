@@ -47,6 +47,7 @@ function createMockCtx(overrides?: {
   showMemory?: ReturnType<typeof vi.fn>;
   deleteMemory?: ReturnType<typeof vi.fn>;
   upsertMemory?: ReturnType<typeof vi.fn>;
+  boostMemory?: ReturnType<typeof vi.fn>;
   archiveProfileFacts?: ReturnType<typeof vi.fn>;
   archiveInsight?: ReturnType<typeof vi.fn>;
   restoreMemory?: ReturnType<typeof vi.fn>;
@@ -76,6 +77,8 @@ function createMockCtx(overrides?: {
       showMemory: overrides?.showMemory ?? vi.fn(() => null),
       deleteMemory: overrides?.deleteMemory ?? vi.fn(() => false),
       upsertMemory: overrides?.upsertMemory ?? vi.fn(() => 'new-id'),
+      // L2 采纳反哺内核
+      boostMemory: overrides?.boostMemory ?? vi.fn(() => true),
       // 归档委托方法
       archiveProfileFacts: overrides?.archiveProfileFacts ?? vi.fn(async () => []),
       archiveInsight: overrides?.archiveInsight ?? vi.fn(async () => []),
@@ -385,6 +388,58 @@ describe('registerMemoryHandlers', () => {
     });
 
     expect(result).toEqual({ id: '' });
+  });
+
+  // ─── MEMORIES_BOOST（L2 采纳反哺内核） ─────
+
+  it('MEMORIES_BOOST 合法 ID 应返回 success: true', async () => {
+    const boostMemory = vi.fn(() => true);
+    const ctx = createMockCtx({ boostMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_BOOST)!;
+    const result = await callback({}, 'insight:测试记忆');
+
+    expect(boostMemory).toHaveBeenCalledWith('insight:测试记忆');
+    expect(result).toEqual({ success: true });
+  });
+
+  it('MEMORIES_BOOST 记忆不存在应返回 success: false（不抛错）', async () => {
+    // 候选可能来自对话历史，无对应记忆，内核返回 false 而非抛错
+    const boostMemory = vi.fn(() => false);
+    const ctx = createMockCtx({ boostMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_BOOST)!;
+    const result = await callback({}, 'insight:不存在');
+
+    expect(boostMemory).toHaveBeenCalledWith('insight:不存在');
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_BOOST 非法 ID（空字符串）应拒绝（返回 success: false，不调用内核）', async () => {
+    const boostMemory = vi.fn();
+    const ctx = createMockCtx({ boostMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_BOOST)!;
+    const result = await callback({}, '');
+
+    expect(boostMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_BOOST 抛错应降级返回 success: false', async () => {
+    const boostMemory = vi.fn(() => {
+      throw new Error('存储不可用');
+    });
+    const ctx = createMockCtx({ boostMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_BOOST)!;
+    const result = await callback({}, 'insight:测试记忆');
+
+    expect(result).toEqual({ success: false });
   });
 
   // ─── MEMORIES_ARCHIVE_PROFILE（手动归档） ─────

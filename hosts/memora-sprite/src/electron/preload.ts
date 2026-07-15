@@ -81,6 +81,8 @@ export const IPC_CHANNELS = {
   /** 手动归档会话内容（一键归档） */
   ARCHIVE_SESSION: 'archive-session',
   MEMORIES_ADD: 'memories-add',
+  /** 提升记忆 score（L2 采纳反哺内核） */
+  MEMORIES_BOOST: 'memories-boost',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
   /** 获取记忆关系路径（Phase 5.1：路径追溯） */
   MEMORIES_RELATION_PATH: 'memories-relation-path',
@@ -495,6 +497,8 @@ export interface ElectronAPI {
    */
   listDeletedMemories: () => Promise<{ memories: DeletedMemoryListItem[] }>;
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
+  /** 提升记忆 score（L2 采纳反哺内核，补全采纳时调用） */
+  boostMemory: (id: string) => Promise<{ success: boolean }>;
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
   /** 添加记忆关系（手动创建，关系图交互） */
@@ -903,6 +907,8 @@ const electronAPI: ElectronAPI = {
   purgeAllMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_PURGE_ALL),
   listDeletedMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST_DELETED),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
+  /** 提升记忆 score（L2 采纳反哺内核，补全采纳时调用） */
+  boostMemory: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_BOOST, id) as Promise<{ success: boolean }>,
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
   /** 获取记忆关系路径（Phase 5.1：路径追溯，展示记忆演化脉络） */
   getRelationPath: (data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) =>

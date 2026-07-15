@@ -60,8 +60,9 @@ function createCompletion(opts?: {
 }
 
 /** 模拟记忆搜索结果 */
-function createMemoryHit(overrides?: Partial<{ contentPreview: string; score: number; source: string }>) {
+function createMemoryHit(overrides?: Partial<{ id: string; contentPreview: string; score: number; source: string }>) {
   return {
+    id: 'insight:测试记忆',
     contentPreview: '用户偏好函数式编程风格',
     score: 0.85,
     source: 'insight',
@@ -226,10 +227,10 @@ describe('handleInput · 防抖与字符阈值', async () => {
 // ─── mergeCandidates · 合并去重排序 ─────────────────────
 
 describe('mergeCandidates · 合并去重排序', async () => {
-  it('记忆结果应标记"记忆"并使用原 score', async () => {
+  it('记忆结果应按 source 映射中文标签并使用原 score', async () => {
     const { input, api } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
-      hits: [createMemoryHit({ contentPreview: '偏好函数式', score: 0.9 })],
+      hits: [createMemoryHit({ contentPreview: '偏好函数式', score: 0.9, source: 'insight' })],
     });
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
       results: [],
@@ -239,7 +240,8 @@ describe('mergeCandidates · 合并去重排序', async () => {
     await vi.advanceTimersByTimeAsync(300);
 
     const label = document.querySelector('.completion-label');
-    expect(label?.textContent).toBe('记忆');
+    // L1 source 语义感知：insight → 洞察
+    expect(label?.textContent).toBe('洞察');
   });
 
   it('对话结果应标记"对话"并过滤 assistant 回复', async () => {
@@ -300,7 +302,8 @@ describe('mergeCandidates · 合并去重排序', async () => {
     // 完全相同文本 → 去重，只保留 score=0.95 的记忆（对话 score=0.6）
     const items = document.querySelectorAll('.completion-item');
     expect(items.length).toBe(1);
-    expect(items[0]!.querySelector('.completion-label')?.textContent).toBe('记忆');
+    // L1 source 语义感知：createMemoryHit 默认 source='insight' → 标签为"洞察"
+    expect(items[0]!.querySelector('.completion-label')?.textContent).toBe('洞察');
   });
 
   it('候选应按 score 降序排序', async () => {
@@ -734,7 +737,8 @@ describe('renderCandidates · 渲染与交互', async () => {
 
     const item = document.querySelector('.completion-item');
     expect(item).not.toBeNull();
-    expect(item!.querySelector('.completion-label')?.textContent).toBe('记忆');
+    // L1 source 语义感知：createMemoryHit 默认 source='insight' → 标签为"洞察"
+    expect(item!.querySelector('.completion-label')?.textContent).toBe('洞察');
     expect(item!.querySelector('.completion-text')?.textContent).toBe('测试内容');
   });
 
@@ -949,6 +953,107 @@ describe('renderCandidates · 渲染与交互', async () => {
     // footer 和 dataset 都应被清除
     expect(list.querySelector('.completion-footer')).toBeNull();
     expect(list.dataset.footer).toBeUndefined();
+  });
+});
+
+// ─── L1 source 语义感知（新枝破土） ─────────────────────
+
+describe('L1 source 语义感知', async () => {
+  it('insight source 应映射为"洞察"标签', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '洞察内容', source: 'insight' })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '洞察';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const label = document.querySelector('.completion-label');
+    expect(label?.textContent).toBe('洞察');
+  });
+
+  it('profile source 应映射为"偏好"标签', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '偏好内容', source: 'profile' })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '偏好';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const label = document.querySelector('.completion-label');
+    expect(label?.textContent).toBe('偏好');
+  });
+
+  it('work-projection source 应映射为"作品"标签', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '作品内容', source: 'work-projection' })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '作品';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const label = document.querySelector('.completion-label');
+    expect(label?.textContent).toBe('作品');
+  });
+
+  it('未知 source 应降级为"记忆"标签（向后兼容）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '自定义来源', source: 'custom-source' })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '自定义';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const label = document.querySelector('.completion-label');
+    expect(label?.textContent).toBe('记忆');
+  });
+
+  it('persona/rule/skill/guardrail source 应被排除（不参与补全候选）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '角色配置', source: 'persona' }),
+        createMemoryHit({ contentPreview: '创作规则', source: 'rule' }),
+        createMemoryHit({ contentPreview: '技能定义', source: 'skill' }),
+        createMemoryHit({ contentPreview: '护栏规则', source: 'guardrail' }),
+        createMemoryHit({ contentPreview: '有效洞察', source: 'insight' }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const labels = Array.from(document.querySelectorAll('.completion-label')).map((el) => el.textContent);
+    // 仅保留 insight（洞察），排除 persona/rule/skill/guardrail
+    expect(labels).toEqual(['洞察']);
+  });
+
+  it('多源多样性过滤应区分洞察/偏好/投影/对话（非二分记忆/对话）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '洞察A', score: 0.95, source: 'insight' }),
+        createMemoryHit({ contentPreview: '洞察B', score: 0.9, source: 'insight' }),
+        createMemoryHit({ contentPreview: '洞察C', score: 0.85, source: 'insight' }),
+        createMemoryHit({ contentPreview: '偏好A', score: 0.8, source: 'profile' }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const labels = Array.from(document.querySelectorAll('.completion-label')).map((el) => el.textContent);
+    // MAX_PER_SOURCE=3，洞察 3 条 + 偏好 1 条 = 4 条（多样性过滤基于细分 sourceLabel）
+    expect(labels).toEqual(['洞察', '洞察', '洞察', '偏好']);
   });
 });
 

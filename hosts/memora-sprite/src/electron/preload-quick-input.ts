@@ -2,8 +2,8 @@
  * 预加载脚本 — quick-input 浮窗最小化安全桥接
  *
  * 与主 preload.ts 的差异：
- *   - 仅暴露 quick-input 浮窗所需的 9 个 API（vs 主 preload 的 100+）
- *   - 仅内联 6 个 quick-input 相关 IPC 通道（vs 主 preload 的 105 个通道）
+ *   - 仅暴露 quick-input 浮窗所需的 10 个 API（vs 主 preload 的 100+）
+ *   - 仅内联 8 个 quick-input 相关 IPC 通道（vs 主 preload 的 106 个通道）
  *   - 剥离高危 API：installSkill / saveLlmProvider / deleteMemory / clearAuditLog 等
  *
  * 决策依据：ADR-SP-017 §1 窗口管理器内联 IPC 模式 + 安全审计 P3 最小权限原则
@@ -30,6 +30,8 @@ const IPC_CHANNELS = {
   QUICK_INPUT_POLISH: 'quick-input-polish',
   MEMORIES_SEARCH: 'memories-search',
   SESSION_SEARCH: 'session-search',
+  /** 提升记忆 score（L2 采纳反哺内核） */
+  MEMORIES_BOOST: 'memories-boost',
 } as const;
 
 /** 主→渲染进程 通道（仅 quick-input 相关） */
@@ -87,6 +89,16 @@ const quickInputAPI = {
   searchSessionMessages: (query: { keyword: string; limit?: number }): Promise<{
     results: SessionMessageResult[];
   }> => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SEARCH, query),
+
+  /**
+   * 提升记忆 score（L2 采纳反哺内核）
+   *
+   * 用户采纳补全候选后调用，将用户行为反馈到内核 Memory.score，
+   * 实现"越常用越重要"的主动学习（跨会话生效，与渲染层 adoptedTexts 互补）。
+   * fire-and-forget：失败不影响补全流程。
+   */
+  boostMemory: (id: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_BOOST, id),
 
   /** 确认输入（paste + 流式锁抑制 blur） */
   confirmQuickInput: (text: string, streamMode?: boolean): Promise<ConfirmResult> =>

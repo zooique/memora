@@ -733,6 +733,44 @@ describe('MemoryInspector', () => {
       expect(inspector.getById('rule:1')!.score).toBe(0.9);
     });
 
+    // ─── L2 采纳反哺内核 ───
+
+    it('writeBoost 应提升记忆 score 并更新 accessedAt', () => {
+      const mem = createMemory({ id: 'insight:1', source: 'insight', name: 'i1', score: 0.5 });
+      inspector.writeUpsert(mem);
+      const before = inspector.getById('insight:1')!;
+      // 提升记忆 score
+      const result = inspector.writeBoost('insight:1');
+      expect(result).toBe(true);
+      const after = inspector.getById('insight:1')!;
+      // score 应增加 0.05（ADOPTION_BOOST_INCREMENT）
+      expect(after.score).toBeCloseTo(0.55, 5);
+      // accessedAt 应被更新（不复用原值）
+      expect(after.accessedAt).not.toBe(before.accessedAt);
+    });
+
+    it('writeBoost 应受 SCORE_CEILING=1.0 上限约束', () => {
+      const mem = createMemory({ id: 'insight:1', source: 'insight', name: 'i1', score: 0.98 });
+      inspector.writeUpsert(mem);
+      // 提升后应被钳制到 1.0，不超出上限
+      inspector.writeBoost('insight:1');
+      expect(inspector.getById('insight:1')!.score).toBe(1.0);
+    });
+
+    it('writeBoost 记忆不存在应返回 false（不抛错）', () => {
+      // 候选可能来自对话历史，无对应记忆，应静默返回 false
+      const result = inspector.writeBoost('insight:不存在');
+      expect(result).toBe(false);
+    });
+
+    it('writeBoost 应支持自定义 increment', () => {
+      const mem = createMemory({ id: 'insight:1', source: 'insight', name: 'i1', score: 0.5 });
+      inspector.writeUpsert(mem);
+      // 自定义提升量 0.1
+      inspector.writeBoost('insight:1', 0.1);
+      expect(inspector.getById('insight:1')!.score).toBeCloseTo(0.6, 5);
+    });
+
     it('writeDelete 应软删除记忆（getById 返回 null，getDeletedById 可读取）', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.writeUpsert(mem);

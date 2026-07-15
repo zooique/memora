@@ -661,6 +661,15 @@ export class Sprite {
     return this.memoryController.upsert(source, name, content, score);
   }
 
+  /**
+   * 提升记忆 score（L2 采纳反哺内核）
+   *
+   * 补全模块采纳某条候选后调用，将用户行为反馈到内核 Memory.score。
+   */
+  boostMemory(id: string): boolean {
+    return this.memoryController.boostMemory(id);
+  }
+
   async searchMemories(query: string, limit = 10): Promise<Array<{ id: string; name: string; source: string; score: number; contentPreview: string; similarity?: number }>> {
     return this.memoryController.search(query, limit);
   }

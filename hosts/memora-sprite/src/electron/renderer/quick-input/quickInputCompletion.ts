@@ -9,6 +9,7 @@
  *   5. 取消上一次未完成的请求（避免乱序）
  *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
  *   7. 搜索 loading 反馈：IPC 发出后显示"搜索中..."占位，返回后自然替换
+ *   8. L1 source 语义感知：区分洞察/偏好/投影/对话，排除 persona/rule/skill
  *
  * 设计原则：
  *   - 纯渲染层逻辑，零内核改动、零 IPC 新增
@@ -21,6 +22,11 @@
  *   - searchMemories：结构化记忆（洞察/偏好/规则），双通道混合搜索，含 source
  *   - searchSessionMessages：历史对话消息原文，纯 LIKE 匹配，含 role/date
  *   两者互补：记忆提供"用户是什么样的人"，对话提供"用户最近在说什么"
+ *
+ * L1 source 语义感知（新枝破土）：
+ *   - 记忆候选读取 source 字段，映射为中文标签（洞察/偏好/作品/记忆）
+ *   - 排除 persona/rule/skill/guardrail（已在 system prompt 注入，补全候选不应重复）
+ *   - 多样性过滤从"二分（记忆/对话）"升级为"多源（洞察/偏好/作品/对话）"
  *
  * score 量纲设计：
  *   - 记忆 score：内核返回的归一化相关度（0-1）
@@ -36,7 +42,7 @@ import { reportError } from '../helpers/errorHelpers.js';
  *
  * 仅依赖两个搜索 IPC，与 Phase 1 的 confirmQuickInput/closeQuickInput 解耦。
  */
-export type CompletionElectronAPI = Pick<ElectronAPI, 'searchMemories' | 'searchSessionMessages'>;
+export type CompletionElectronAPI = Pick<ElectronAPI, 'searchMemories' | 'searchSessionMessages' | 'boostMemory'>;
 
 /**
  * 补全目标元素类型
@@ -50,10 +56,15 @@ export type CompletionTarget = HTMLInputElement | HTMLTextAreaElement;
 export interface CompletionItem {
   /** 候选文本（用于回填输入框） */
   text: string;
-  /** 来源标签（记忆/对话） */
+  /** 来源标签（洞察/偏好/投影/记忆/对话） */
   sourceLabel: string;
   /** 相关度分数（0-1，用于排序） */
   score: number;
+  /**
+   * 记忆唯一标识（仅记忆候选有，对话候选无）
+   * L2 采纳反哺：用户采纳时通过此 id 调用 boostMemory 反哺内核 Memory.score
+   */
+  memoryId?: string;
 }
 
 /** 防抖延迟（ms） —— 输入停止后等待多久触发补全 */
@@ -66,6 +77,29 @@ const MAX_CANDIDATES = 5;
 const PREVIEW_MAX_LENGTH = 80;
 /** 候选项 DOM ID 前缀（用于 aria-activedescendant 引用） */
 const COMPLETION_ITEM_ID_PREFIX = 'completion-item-';
+
+// ─── L1 source 语义感知常量 ──────────────────────────────
+/**
+ * 内核 source 标签到补全展示标签的映射
+ *
+ * 仅映射参与补全的记忆 source（insight/profile/work-projection）。
+ * persona/rule/skill/guardrail 在 EXCLUDED_SOURCES 中排除，不参与补全候选。
+ * 未知 source（宿主自定义）降级为"记忆"，保持向后兼容。
+ */
+const SOURCE_LABEL_MAP: Readonly<Record<string, string>> = {
+  insight: '洞察',
+  profile: '偏好',
+  'work-projection': '作品',
+};
+/**
+ * 排除的 source 标签（不参与补全候选）
+ *
+ * persona/rule/skill 已在 system prompt 注入，补全候选重复会干扰用户输入；
+ * guardrail 是内容护栏规则，非用户可感知的记忆类型。
+ */
+const EXCLUDED_SOURCES: ReadonlySet<string> = new Set([
+  'persona', 'rule', 'skill', 'guardrail',
+]);
 /** 对话候选 score 基础值（低于记忆候选，让结构化记忆优先排序） */
 const MESSAGE_SCORE_BASE = 0.6;
 /** 对话候选 score 位置惩罚范围（关键词在内容末尾时最多扣 0.2，score 从 0.6 降至 0.4） */
@@ -227,7 +261,7 @@ export class QuickInputCompletion {
       // 仅在用户已用 ↑↓ 导航选中候选项时，←→ 才填充
       e.preventDefault();
       const selected = this.candidates[this.selectedIndex]!;
-      this.recordAdoption(selected.text);
+      this.recordAdoption(selected.text, selected.memoryId);
       this.onSelectCallback?.(selected.text);
       this.clearCandidates();
     }
@@ -351,7 +385,12 @@ export class QuickInputCompletion {
   /**
    * 合并两个数据源的候选结果
    *
-   * - 记忆搜索结果：取 contentPreview，标记"记忆"，score 用原值（0-1 归一化）
+   * L1 source 语义感知（新枝破土）：
+   *   - 记忆候选读取 m.source 字段，映射为中文标签（洞察/偏好/作品）
+   *   - 排除 persona/rule/skill/guardrail（已在 system prompt 注入，补全候选不应重复）
+   *   - 多样性过滤从"二分（记忆/对话）"升级为"多源（洞察/偏好/作品/对话）"
+   *
+   * - 记忆搜索结果：取 contentPreview，按 source 映射标签，score 用原值（0-1 归一化）
    * - 对话搜索结果：取 content（截断），标记"对话"，score 按关键词匹配位置计算（开头高、末尾低）
    * - 采纳 boost：已被用户采纳过的候选项 score 获得提升（最多 +0.3）
    * - 去重：相同文本（trim 后）只保留 score 较高的
@@ -373,19 +412,28 @@ export class QuickInputCompletion {
    */
   private mergeCandidates(
     query: string,
-    memories: Array<{ contentPreview: string; score: number; source?: string }>,
+    memories: Array<{ id: string; contentPreview: string; score: number; source?: string }>,
     messages: Array<{ content: string; role: string }>,
   ): CompletionItem[] {
     const candidates: CompletionItem[] = [];
 
-    // 记忆搜索结果：结构化洞察/偏好，score 用内核返回的归一化值
+    // 记忆搜索结果：结构化洞察/偏好/投影，score 用内核返回的归一化值
+    // L1 source 语义感知：读取 m.source 字段，映射为中文标签；
+    // 排除 persona/rule/skill/guardrail（已在 system prompt 注入，补全候选重复会干扰输入）
+    // L2 采纳反哺：保留 m.id 到 memoryId，用户采纳时通过此 id 反哺内核 score
     for (const m of memories) {
       const text = m.contentPreview?.trim();
       if (!text) continue;
+      // 排除配置型记忆（persona/rule/skill/guardrail）——这些已在 system prompt 注入，
+      // 出现在补全候选中会造成"系统提示"与"用户输入候选"语义重复
+      if (m.source && EXCLUDED_SOURCES.has(m.source)) continue;
+      // source 标签映射：insight→洞察 / profile→偏好 / work-projection→作品 / 未知→记忆
+      const sourceLabel = (m.source && SOURCE_LABEL_MAP[m.source]) || '记忆';
       candidates.push({
         text: this.truncate(text, PREVIEW_MAX_LENGTH),
-        sourceLabel: '记忆',
+        sourceLabel,
         score: m.score,
+        memoryId: m.id,
       });
     }
 
@@ -467,7 +515,7 @@ export class QuickInputCompletion {
    * 同步写入 localStorage，实现跨会话学习。
    * 超过 MAX_ADOPTION_ENTRIES 时淘汰最低频项（近似 LRU）。
    */
-  private recordAdoption(text: string): void {
+  private recordAdoption(text: string, memoryId?: string): void {
     const key = this.dedupKey(text);
     const count = this.adoptedTexts.get(key) ?? 0;
     this.adoptedTexts.set(key, count + 1);
@@ -476,6 +524,30 @@ export class QuickInputCompletion {
       this.evictLowestFrequency();
     }
     this.saveAdoptions();
+    // L2 采纳反哺内核：将用户行为反馈到内核 Memory.score（跨会话生效）
+    // fire-and-forget：失败不影响补全流程（渲染层 adoptedTexts 已记录）
+    if (memoryId) {
+      this.boostMemoryToKernel(memoryId);
+    }
+  }
+
+  /**
+   * L2 采纳反哺内核 — 异步提升记忆 score
+   *
+   * 通过 IPC 调用内核 writeBoost，将用户采纳行为反馈到 Memory.score，
+   * 实现"越常用越重要"的主动学习。与渲染层 adoptedTexts 互补：
+   *   - adoptedTexts：即时 boost（渲染层排序 +0.1/次），仅当前设备生效
+   *   - boostMemory：持久 boost（内核 score +0.05/次），跨设备/跨会话生效
+   *
+   * fire-and-forget：IPC 失败静默降级（渲染层 boost 仍生效）。
+   */
+  private boostMemoryToKernel(memoryId: string): void {
+    this.api.boostMemory?.(memoryId).catch((err: unknown) => {
+      // 静默降级：渲染层 adoptedTexts 已记录，内核 boost 失败不影响补全流程
+      // 仅记录日志便于排查（如 IPC 通道未注册、内核存储不可用等）
+      // eslint-disable-next-line no-console
+      console.warn('[QuickInputCompletion] boostMemory IPC 失败，降级为仅渲染层 boost', err);
+    });
   }
 
   /**
@@ -596,7 +668,7 @@ export class QuickInputCompletion {
       li.addEventListener('click', () => {
         this.selectedIndex = i;
         this.updateSelection();
-        this.recordAdoption(item.text);
+        this.recordAdoption(item.text, item.memoryId);
         this.onSelectCallback?.(item.text);
         this.clearCandidates();
       });

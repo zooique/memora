@@ -64,6 +64,8 @@ const HANDLE_CHANNELS = [
   // manual 模式手动归档（reinitAgent 时需清理，避免重复注册抛错）
   IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE,
   IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT,
+  // L2 采纳反哺内核（reinitAgent 时需清理，避免重复注册抛错）
+  IPC_CHANNELS.MEMORIES_BOOST,
   // 会话归档（reinitAgent 时需清理，避免重复注册抛错）
   IPC_CHANNELS.ARCHIVE_SESSION,
   IPC_CHANNELS.CONFIG_GET,

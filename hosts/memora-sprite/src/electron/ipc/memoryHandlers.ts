@@ -126,6 +126,17 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
+  /** 提升记忆 score（L2 采纳反哺内核） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_BOOST, async (_event, id: string) =>
+    safeHandle('提升记忆 score 失败', { success: false }, () => {
+      // 校验记忆 ID 类型（与 MEMORIES_SHOW/DELETE 一致）
+      if (!isValidId(id)) {
+        return { success: false };
+      }
+      return { success: ctx.sprite.boostMemory(id) };
+    }),
+  );
+
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_GRAPH, async () =>
     throwingHandle('获取关系图谱失败', () => ctx.sprite.getRelationGraph()),
