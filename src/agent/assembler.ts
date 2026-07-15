@@ -27,6 +27,7 @@ import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 // MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
+import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
@@ -75,6 +76,8 @@ export interface AssembleOutput {
   autoConfigRefiner: AutoConfigRefiner;
   /** 会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
+  /** 文本润色管理器（LLM 语法修正 + 表达优化） */
+  textPolisher: TextPolishManager;
 }
 
 /**
@@ -175,6 +178,10 @@ export async function assembleComponents(
   // 与 InsightExtractor 同模式：构造时注入 provider + storage + sessionStore
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
 
+  // TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化）
+  // 优先后台 Provider（不阻塞前台对话），降级前台（参照 WorkProjectionManager）
+  const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
+
   const loop = new AgentLoop({
     provider,
     bootstrapMemories: pctx.bootstrapMemories,
@@ -224,5 +231,6 @@ export async function assembleComponents(
     memoryInspector,
     autoConfigRefiner,
     sessionArchiver,
+    textPolisher,
   };
 }

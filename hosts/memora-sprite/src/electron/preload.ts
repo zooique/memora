@@ -164,6 +164,8 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_RESIZE: 'quick-input-resize',
   // 拖动浮窗位置（footer 区域可拖，dx/dy 增量，与 ipc/channels.ts MOVE_QUICK_INPUT 同步）
   MOVE_QUICK_INPUT: 'move-quick-input',
+  // LLM 润色文本（携带原文，返回润色后文本，与 ipc/channels.ts QUICK_INPUT_POLISH 同步）
+  QUICK_INPUT_POLISH: 'quick-input-polish',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）
@@ -755,6 +757,17 @@ export interface ElectronAPI {
    */
   moveQuickInput: (dx: number, dy: number) => void;
   /**
+   * LLM 润色文本（非流式，await 返回润色结果）
+   *
+   * 使用 ipcRenderer.invoke 请求/响应模式（与 confirmQuickInput 一致），
+   * 主进程调用 agent.polish?.polish(text) 后返回 { polished, changed }。
+   * 润色期间渲染进程显示 loading 状态，失败了不阻塞用户操作。
+   *
+   * @param text 待润色的原始文本
+   * @returns 润色结果 { polished: string; changed: boolean }
+   */
+  polishQuickInput: (text: string) => Promise<{ polished: string; changed: boolean }>;
+  /**
    * 监听浮窗 show 事件（主进程 show() 调用后触发，携带剪贴板预填文本 + 敏感标记）
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
@@ -1043,6 +1056,7 @@ const electronAPI: ElectronAPI = {
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
   moveQuickInput: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_QUICK_INPUT, dx, dy),
+  polishQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_POLISH, text),
   onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null; isSensitive: boolean }) => cb(payload)),
   removeQuickInputShowListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);

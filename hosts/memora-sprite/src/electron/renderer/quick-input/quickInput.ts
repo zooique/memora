@@ -40,7 +40,7 @@ export type QuickInputElectronAPI = Pick<
   ElectronAPI,
   | 'confirmQuickInput' | 'closeQuickInput'
   | 'searchMemories' | 'searchSessionMessages' | 'resizeQuickInput'
-  | 'moveQuickInput'
+  | 'moveQuickInput' | 'polishQuickInput'
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
 >;
 
@@ -90,7 +90,9 @@ class QuickInputController {
   private readonly streamToggle: HTMLElement | null;
   /** 展开高度切换按钮（可能为 null：DOM 中不存在时） */
   private readonly expandToggle: HTMLElement | null;
-  /** footer 区域（拖动浮窗的把手，可能为 null：DOM 中不存在时） */
+  /** 润色按钮（可能为 null：DOM 中不存在时） */
+  private readonly polishToggle: HTMLElement | null;
+  /** footer 区域（拖动把手，可能为 null：DOM 中不存在时） */
   private readonly footerEl: HTMLElement | null;
   /** 字符计数显示元素（可能为 null） */
   private readonly counterEl: HTMLElement | null;
@@ -112,6 +114,8 @@ class QuickInputController {
   private expandMode = false;
   /** Tab 键已按下标记（keydown 中标记，keyup 中消费，防止事件泄漏） */
   private tabPressed = false;
+  /** 润色中标记（防止重复点击，loading 期间禁用输入框） */
+  private isPolishing = false;
   /** resize IPC 防抖定时器（避免输入时频繁 setSize 导致窗口闪烁） */
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   // ── 拖动状态（footer 把手拖动浮窗，参考 float.ts PointerEvent + setPointerCapture 模式） ──
@@ -129,6 +133,7 @@ class QuickInputController {
    * @param completionList 候选列表容器（可能为 null）
    * @param streamToggle 流式模式切换按钮（可能为 null）
    * @param expandToggle 展开高度切换按钮（可能为 null）
+   * @param polishToggle 润色按钮（可能为 null）
    * @param footerEl footer 区域（拖动把手，可能为 null）
    * @param counterEl 字符计数元素（可能为 null）
    * @param api ElectronAPI 子集
@@ -138,6 +143,7 @@ class QuickInputController {
     completionList: HTMLElement | null,
     streamToggle: HTMLElement | null,
     expandToggle: HTMLElement | null,
+    polishToggle: HTMLElement | null,
     footerEl: HTMLElement | null,
     counterEl: HTMLElement | null,
     api: QuickInputElectronAPI,
@@ -146,6 +152,7 @@ class QuickInputController {
     this.completionList = completionList;
     this.streamToggle = streamToggle;
     this.expandToggle = expandToggle;
+    this.polishToggle = polishToggle;
     this.footerEl = footerEl;
     this.counterEl = counterEl;
     this.api = api;
@@ -160,6 +167,7 @@ class QuickInputController {
     this.bindKeyboardEvents();
     this.bindStreamToggle();
     this.bindExpandToggle();
+    this.bindPolishToggle();
     this.bindDrag();
     this.initCompletion();
     this.bindShowHandler();
@@ -216,6 +224,83 @@ class QuickInputController {
   }
 
   /**
+   * 绑定润色按钮点击事件
+   *
+   * 点击后调用 LLM 润色当前输入框文本（isPolishing 防重复点击），
+   * 润色期间显示 loading 状态（按钮动画 + 输入框禁用），
+   * 成功后替换输入框内容，失败时 Toast 提示（不替换原文）。
+   */
+  private bindPolishToggle(): void {
+    if (this.polishToggle instanceof HTMLElement) {
+      this.polishToggle.addEventListener('click', () => void this.handlePolish());
+    }
+  }
+
+  /**
+   * 执行 LLM 润色：调用 IPC → 替换输入框内容
+   *
+   * 流程：
+   *   1. 校验：非空文本 + 非润色中 + 非提交中
+   *   2. 进入 loading 状态（按钮旋转动画 + 输入框禁用）
+   *   3. 调用 api.polishQuickInput(text)
+   *   4. 成功：替换输入框文本 + 输入事件触发 autoResize
+   *   5. 失败：恢复原文 + Toast 显示错误
+   *   6. 退出 loading 状态
+   */
+  private async handlePolish(): Promise<void> {
+    if (this.isPolishing || this.isSubmitting) return;
+    const text = this.inputField.value.trim();
+    if (!text) return;
+
+    this.isPolishing = true;
+    this.inputField.disabled = true;
+    this.polishToggle?.classList.add('loading');
+
+    try {
+      const result = await this.api.polishQuickInput(text);
+      if (result.changed && result.polished) {
+        this.inputField.value = result.polished;
+        this.inputField.dispatchEvent(new Event('input'));
+      } else {
+        // 润色无变化：短暂闪烁提示
+        this.showPolishNoChange();
+      }
+    } catch (error) {
+      reportError('QuickInput 润色', error);
+      this.showPolishError();
+    } finally {
+      this.isPolishing = false;
+      this.inputField.disabled = false;
+      this.polishToggle?.classList.remove('loading');
+      this.inputField.focus();
+    }
+  }
+
+  /**
+   * 润色无变化：短暂闪烁 polish-toggle 提示用户
+   */
+  private showPolishNoChange(): void {
+    this.polishToggle?.classList.add('no-change');
+    setTimeout(() => {
+      this.polishToggle?.classList.remove('no-change');
+    }, 500);
+  }
+
+  /**
+   * 润色失败：在输入框内短暂显示错误提示
+   */
+  private showPolishError(): void {
+    const original = this.inputField.value;
+    this.inputField.value = '润色失败，请重试';
+    this.inputField.classList.add('copy-toast');
+    setTimeout(() => {
+      this.inputField.value = original;
+      this.inputField.classList.remove('copy-toast');
+      this.inputField.dispatchEvent(new Event('input'));
+    }, 800);
+  }
+
+  /**
    * 绑定 footer 拖动事件（PointerEvent + setPointerCapture 模式，参考 float.ts）
    *
    * 交互流程：
@@ -235,9 +320,9 @@ class QuickInputController {
     // pointerdown：记录起点 + 捕获指针，使后续 pointermove/pointerup 即使鼠标移出窗口也能触发
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      // 交互按钮（展开/流式切换）上的 pointerdown 不启动拖动，让按钮 click 正常触发
+      // 交互按钮（展开/流式切换/润色）上的 pointerdown 不启动拖动，让按钮 click 正常触发
       const target = e.target as Element | null;
-      if (target?.closest('.expand-toggle, .stream-toggle')) return;
+      if (target?.closest('.expand-toggle, .stream-toggle, .polish-toggle')) return;
       this.dragPointerId = e.pointerId;
       this.dragStartX = e.screenX;
       this.dragStartY = e.screenY;
@@ -681,6 +766,7 @@ function initQuickInput(): void {
   const completionList = document.getElementById('completion-list');
   const streamToggle = document.getElementById('stream-toggle');
   const expandToggle = document.getElementById('expand-toggle');
+  const polishToggle = document.getElementById('polish-toggle');
   const footerEl = document.getElementById('quick-input-footer');
   const counterEl = document.querySelector('.quick-input-counter');
 
@@ -696,6 +782,7 @@ function initQuickInput(): void {
     completionList,
     streamToggle,
     expandToggle instanceof HTMLElement ? expandToggle : null,
+    polishToggle instanceof HTMLElement ? polishToggle : null,
     footerEl instanceof HTMLElement ? footerEl : null,
     counterEl instanceof HTMLElement ? counterEl : null,
     electronApi,

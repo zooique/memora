@@ -219,6 +219,8 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_RESIZE: 'quick-input-resize',
   /** 渲染进程 → 主进程：拖动浮窗位置（footer 区域可拖，dx/dy 增量） */
   MOVE_QUICK_INPUT: 'move-quick-input',
+  /** 渲染进程 → 主进程：LLM 润色文本（携带原文，返回润色后文本） */
+  QUICK_INPUT_POLISH: 'quick-input-polish',
 
   // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */

@@ -675,6 +675,18 @@ async function initializeApp(): Promise<void> {
           logger.warn({ error }, '快速输入记忆写入失败');
         }
       },
+      onPolish: async (text) => {
+        // 调用内核 TextPolishManager（agent.polish getter），
+        // 润色失败时返回原文（降级，不阻塞用户操作）
+        const polisher = appState.agent?.polish;
+        if (!polisher) return { polished: text, changed: false };
+        try {
+          return await polisher.polish(text);
+        } catch (error) {
+          logger.warn({ error }, '快速输入润色失败');
+          return { polished: text, changed: false };
+        }
+      },
     });
     // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
     appState.quickInputWindow.setSuppressNextChange(

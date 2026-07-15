@@ -78,6 +78,15 @@ export interface QuickInputWindowCallbacks {
   onAfterConfirm?: (text: string) => void;
   /** 关闭浮窗（Esc / 取消触发，不写入剪贴板） */
   onClose?: () => void;
+  /**
+   * LLM 润色文本（由 main.ts 注入，调用 agent.polish?.polish()）
+   *
+   * 润色期间渲染进程显示 loading 状态，失败时返回错误信息供 Toast 展示。
+   *
+   * @param text 待润色的原始文本
+   * @returns 润色结果 { polished: string; changed: boolean }
+   */
+  onPolish?: (text: string) => Promise<{ polished: string; changed: boolean }>;
 }
 
 /**
@@ -404,6 +413,25 @@ export class QuickInputWindow {
         logger.error({ error }, '拖动浮窗位置失败');
       }
     });
+
+    // LLM 润色文本：渲染进程请求润色，主进程调用 onPolish 回调（main.ts 注入 agent.polish?.polish()）
+    // 润色期间渲染进程显示 loading 状态，失败时返回错误信息供 Toast 展示
+    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_POLISH, async (_event, text: string) => {
+      try {
+        // 参数校验：文本必须是字符串且非空
+        if (typeof text !== 'string' || text.length === 0) {
+          return { polished: '', changed: false };
+        }
+        if (!this.callbacks.onPolish) {
+          return { polished: text, changed: false };
+        }
+        return await this.callbacks.onPolish(text);
+      } catch (error) {
+        logger.error({ error }, 'LLM 润色文本失败');
+        // 润色失败时返回原文（降级，不阻塞用户操作）
+        return { polished: typeof text === 'string' ? text : '', changed: false };
+      }
+    });
   }
 
   /**
@@ -509,6 +537,7 @@ export class QuickInputWindow {
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CLOSE);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_RESIZE);
       ipcMain.removeAllListeners(IPC_CHANNELS.MOVE_QUICK_INPUT);
+      ipcMain.removeAllListeners(IPC_CHANNELS.QUICK_INPUT_POLISH);
       this.ipcRegistered = false;
     }
     if (this.win && !this.win.isDestroyed()) {

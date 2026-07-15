@@ -37,6 +37,7 @@ import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
+import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -125,6 +126,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private autoConfigRefiner: AutoConfigRefiner | null = null;
   /** SessionArchiver（会话内容归档器，content 类记忆） */
   private sessionArchiver: SessionArchiver | null = null;
+  /** TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化） */
+  private textPolisher: TextPolishManager | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
 
@@ -737,6 +740,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
     this.sessionArchiver = result.sessionArchiver;
+    this.textPolisher = result.textPolisher;
     // 绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
     // 与 bindGetRecentHistory 同模式：解决 Agent 晚于 InsightExtractor 创建的时序循环依赖
     this.insightExtractor.bindOnConflict((info) => {
@@ -1086,6 +1090,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.workProjection = null;
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
+    this.textPolisher = null;
     this._sessionManager = null;
     // 项目管理
     this.projectManager = null;
@@ -1293,6 +1298,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 会话管理器（宿主可通过此 getter 访问会话恢复/切换/分叉功能） */
   get sessionManager(): SessionManager | null {
     return this._sessionManager;
+  }
+
+  /** 文本润色管理器（宿主可通过此 getter 调用 polish 方法） */
+  get polish(): TextPolishManager | null {
+    return this.textPolisher;
   }
 
   // storage getter 已删除（@deprecated 已确认宿主全部迁移到 agent.memory）

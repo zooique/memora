@@ -28,6 +28,8 @@
     <symbol id="icon-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 11V7a4 4 0 017-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
     <!-- 展开按钮图标（chevron-down）：紧凑态指向下（可展开），展开态 CSS 旋转 180° 指向上（可收起） -->
     <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <!-- 润色按钮图标（sparkle/stars）：LLM 润色文本 -->
+    <symbol id="icon-sparkle" viewBox="0 0 24 24"><path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M7 14l.5 2L9 16.5l-1.5.5L7 19l-.5-2L5 16.5l1.5-.5L7 14z" fill="currentColor"/><path d="M17 18l.5 2L19 20.5l-1.5.5L17 23l-.5-2L15 20.5l1.5-.5L17 18z" fill="currentColor"/></symbol>
   </svg>
 
   <!-- 快速输入浮窗容器：文本输入区 + 快捷键提示 + 补全候选列表 -->
@@ -46,6 +48,7 @@
       <!-- footer 区域同时承担拖动浮窗的把手（cursor: move 视觉提示） -->
       <div id="quick-input-footer" class="quick-input-footer flex-between flex-shrink-0">
         <span class="quick-input-hint flex-shrink-0">↓↑ 补全 · ←→ 填充 · Tab 提交 · Esc 关闭</span>
+        <span id="polish-toggle" class="polish-toggle" title="LLM 润色文本（语法修正 + 表达优化）"><svg class="icon"><use href="#icon-sparkle"/></svg></span>
         <span id="expand-toggle" class="expand-toggle" title="展开输入框（点击切换高度）"><svg class="icon"><use href="#icon-chevron-down"/></svg></span>
         <span id="stream-toggle" class="stream-toggle" title="流式模式关闭：粘贴后关闭窗口（点击切换）"><svg class="icon"><use href="#icon-unlock"/></svg></span>
         <span class="quick-input-counter flex-shrink-0">0 字</span>

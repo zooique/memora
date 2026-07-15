@@ -92,6 +92,44 @@ body {
   opacity: 0.7;
 }
 
+/* ===== 润色按钮 ===== */
+/* 与 .stream-toggle / .expand-toggle 视觉风格一致。
+   位于 hint 右侧、expand-toggle 左侧，margin-left:auto 将按钮组推到 footer 右侧。 */
+.polish-toggle {
+  font-size: var(--font-sm);
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  line-height: 1;
+  /* 推按钮组到右侧（原在 .expand-toggle 上，现移到按钮组第一个元素） */
+  margin-left: auto;
+  margin-right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+}
+
+.polish-toggle:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+/* loading 状态：图标旋转动画（sparkle 图标转圈表示 LLM 调用中） */
+.polish-toggle.loading .icon {
+  animation: spin 1s linear infinite;
+}
+
+/* 无变化状态：图标短暂闪烁绿色 */
+.polish-toggle.no-change {
+  opacity: 1;
+  color: var(--success, #52c41a);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ===== 展开高度切换按钮 ===== */
 /* 与 .stream-toggle 视觉风格一致，位于其左侧。chevron-down 图标在展开态通过 .active 旋转 180° 变为向上箭头 */
 .expand-toggle {
@@ -101,8 +139,7 @@ body {
   opacity: 0.5;
   transition: opacity 0.15s ease, transform 0.15s ease;
   line-height: 1;
-  /* 推到右侧紧邻 stream-toggle（footer 使用 space-between，hint 左 + 按钮组右） */
-  margin-left: auto;
+  /* margin-left:auto 已移到 .polish-toggle（按钮组第一个元素） */
   margin-right: var(--space-2);
   display: inline-flex;
   align-items: center;
