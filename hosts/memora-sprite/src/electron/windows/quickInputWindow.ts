@@ -115,6 +115,13 @@ export class QuickInputWindow {
   private callbacks: QuickInputWindowCallbacks;
   /** 失焦延迟关闭定时器 */
   private blurCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 流式粘贴期间抑制 blur 关闭
+   *
+   * paste 内部恢复焦点到原窗口会触发浮窗 blur，若不抑制，200ms 延迟后窗口会被关闭，
+   * 与流式模式"保持窗口打开"语义矛盾。paste 返回后清除并取消任何已调度的关闭。
+   */
+  private suppressBlurClose = false;
   /** IPC handler 是否已注册（防止重复注册） */
   private ipcRegistered = false;
   /** Phase 4：自动粘贴协调器（封装 InputInjector + 前台窗口捕获 + 剪贴板保护） */
@@ -169,8 +176,9 @@ export class QuickInputWindow {
     });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-    // 失焦延迟关闭：给 Alt+Tab 切换留余量
+    // 失焦延迟关闭：给 Alt+Tab 切换留余量（流式粘贴期间抑制，避免 paste 恢复焦点导致窗口被关闭）
     win.on('blur', () => {
+      if (this.suppressBlurClose) return;
       this.scheduleBlurClose();
     });
     win.on('focus', () => {
@@ -302,14 +310,19 @@ export class QuickInputWindow {
 
         // Phase 4：优先尝试自动粘贴（PasteCoordinator 封装条件检查 + inputInjector 调用）
         const hideFloat = streamMode ? () => {} : () => this.hide();
+        // 流式模式：paste 内部恢复焦点到原窗口会触发浮窗 blur，
+        // 需在 paste 开始前抑制 blur 关闭，否则 200ms 延迟后窗口会被关闭（paste 可能尚未返回）
+        if (streamMode) {
+          this.suppressBlurClose = true;
+        }
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
+        // paste 返回后清除抑制标志 + 取消任何在抑制期间误调度的关闭
+        if (streamMode) {
+          this.suppressBlurClose = false;
+          this.cancelBlurClose();
+        }
 
         if (pasteResult.success && pasteResult.mode === 'paste') {
-          // 流式模式：paste 时恢复焦点到原窗口会触发浮窗 blur，需取消 blur 延迟关闭，
-          // 否则流式模式下窗口会在 blur 延迟后自动消失（与"保持窗口"语义矛盾）
-          if (streamMode) {
-            this.cancelBlurClose();
-          }
           // 粘贴成功：调用 onAfterConfirm 记忆沉淀（排雷修正雷 1.3：粘贴成功后才记）
           try {
             this.callbacks.onAfterConfirm?.(safeText);
@@ -327,11 +340,9 @@ export class QuickInputWindow {
         // 降级路径 / Phase 3 兼容路径：走 onConfirm 写剪贴板
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
-          // 流式模式不关闭窗口，但需取消 paste 降级过程中可能触发的 blur 延迟关闭
+          // 流式模式不关闭窗口
           if (!streamMode) {
             this.hide();
-          } else {
-            this.cancelBlurClose();
           }
           // 异步沉淀记忆（不阻塞，错误隔离）
           try {
