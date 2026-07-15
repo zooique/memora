@@ -171,9 +171,6 @@ body {
   flex: 1;
   font-size: var(--font-sm);
   color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ===== 搜索 loading 占位 ===== */

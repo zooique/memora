@@ -203,7 +203,7 @@ export class WorkProjectionPanelManager {
     // 提取文件名（从完整路径中截取最后一部分）
     const fileName = entry.sourcePath.split(/[/\\]/).pop() ?? entry.sourcePath;
     const fileNameEl = document.createElement('span');
-    fileNameEl.className = 'work-projection-filename';
+    fileNameEl.className = 'work-projection-filename text-truncate';
     fileNameEl.textContent = fileName;
     fileNameEl.title = entry.sourcePath; // tooltip 显示完整路径
     header.appendChild(fileNameEl);

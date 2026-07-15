@@ -123,7 +123,7 @@ export class InsightsRenderer {
         bar.title = `${source}: ${count} 条`;
 
         const label = document.createElement('span');
-        label.className = 'distribution-label';
+        label.className = 'distribution-label text-truncate';
         label.textContent = source;
 
         const fill = document.createElement('div');
@@ -173,7 +173,7 @@ export class InsightsRenderer {
           typeTag.textContent = edge.type;
 
           const desc = document.createElement('span');
-          desc.className = 'relation-desc';
+          desc.className = 'relation-desc text-truncate';
           desc.textContent = `${sourceName} → ${targetName}`;
 
           item.appendChild(typeTag);

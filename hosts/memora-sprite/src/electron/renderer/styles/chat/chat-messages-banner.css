@@ -119,10 +119,6 @@
   animation: chat-fade-in var(--transition-base) ease-out;
   /* 限宽，避免长对话中过度占宽 */
   max-width: 480px;
-  /* 内容不换行：长文本通过 ellipsis 截断，保持单行紧凑 */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 里程碑图标：奖杯 SVG，24px，金色 */

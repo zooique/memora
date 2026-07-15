@@ -57,12 +57,7 @@
   color: var(--yellow);
 }
 
-/* 截断文本：自适应宽度 */
-.truncation-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* 截断文本：复用 .text-truncate 工具类（utilities.css） */
 
 /* 关闭按钮：无边框透明背景，仅 hover 时高亮 */
 .truncation-close {

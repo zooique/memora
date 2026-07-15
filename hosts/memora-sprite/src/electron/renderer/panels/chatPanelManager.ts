@@ -455,7 +455,7 @@ export class ChatPanelManager {
 
     // 构建里程碑 banner DOM
     const banner = document.createElement('div');
-    banner.className = 'milestone-banner';
+    banner.className = 'milestone-banner text-truncate';
     banner.setAttribute('role', 'status');
     banner.setAttribute('aria-live', 'polite');
 

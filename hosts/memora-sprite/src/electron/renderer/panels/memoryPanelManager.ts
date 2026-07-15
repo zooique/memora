@@ -956,7 +956,7 @@ export class MemoryPanelManager {
     header.className = 'recycle-bin-item-header';
 
     const nameEl = document.createElement('div');
-    nameEl.className = 'recycle-bin-item-name';
+    nameEl.className = 'recycle-bin-item-name text-truncate';
     nameEl.textContent = mem.name; // textContent 防 XSS
 
     const actions = document.createElement('div');

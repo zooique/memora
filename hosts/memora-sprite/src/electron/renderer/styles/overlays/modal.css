@@ -416,18 +416,10 @@ kbd {
   color: var(--text);
 }
 
+/* 弹窗关闭按钮：复用 .icon-btn 基类（尺寸/边框/背景/光标/过渡），仅保留差异属性 */
 .modal-close {
-  width: 28px;
-  height: 28px;
-  background: transparent;
-  border: none;
   color: var(--text-3);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .modal-close .icon {

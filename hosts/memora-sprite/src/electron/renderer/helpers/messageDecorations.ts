@@ -201,7 +201,7 @@ export function showTruncationNotice(bubble: Element, count: number): void {
 
     // 文本 span（textContent 单独更新，便于复用时改文案）
     const textSpan = document.createElement('span');
-    textSpan.className = 'truncation-text';
+    textSpan.className = 'truncation-text text-truncate';
     notice.appendChild(textSpan);
 
     // 关闭按钮（data-action 委托，点击移除整个 notice）

@@ -306,21 +306,11 @@
 }
 
 /* 统一面板关闭按钮（X）：分析面板右上角 */
+/* 统一面板关闭按钮：复用 .icon-btn 基类（尺寸/边框/背景/光标/过渡），仅保留差异属性 */
 .panel-close-btn {
   margin-left: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
   color: var(--text-3);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  flex-shrink: 0;
+  display: flex;
 }
 
 .panel-close-btn:hover {

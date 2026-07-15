@@ -355,9 +355,6 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   margin-bottom: 2px;
 }
 
@@ -381,9 +378,6 @@
 .timeline-item-preview {
   font-size: var(--font-xs);
   color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.4;
 }
 
@@ -448,9 +442,6 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   flex: 1;
 }
 

@@ -58,14 +58,6 @@
   flex-shrink: 0;
 }
 
-.chat-toolbar-subtitle {
-  /* 副标题字号略增，与标题差距缩小 */
-  font-size: var(--font-sm);
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ─── 精灵状态条（对话工具栏内，代替 chat-narrative） ── */
 /* 设计：紧凑胶囊形，font-xs，accent-soft 背景，点击展开感知面板 */

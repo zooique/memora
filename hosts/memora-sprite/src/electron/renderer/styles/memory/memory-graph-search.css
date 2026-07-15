@@ -147,9 +147,6 @@
 .distribution-label {
   width: 60px;
   color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 分布填充条：复用 source-* 颜色类 */
@@ -210,9 +207,6 @@
 
 .relation-desc {
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   flex: 1;
 }
 

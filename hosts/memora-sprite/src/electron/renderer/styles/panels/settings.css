@@ -778,9 +778,6 @@
   font-weight: var(--weight-medium);
   color: var(--text);
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .work-projection-updated {

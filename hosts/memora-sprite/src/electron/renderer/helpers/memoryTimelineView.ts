@@ -191,7 +191,7 @@ export function createTimelineItem(mem: MemoryListItem, ctx: MemoryTimelineConte
   content.className = 'timeline-item-content';
 
   const nameEl = document.createElement('div');
-  nameEl.className = 'timeline-item-name';
+  nameEl.className = 'timeline-item-name text-truncate';
   nameEl.innerHTML = ctx.highlightText(mem.name, ctx.currentSearchQuery);
   content.appendChild(nameEl);
 
@@ -214,7 +214,7 @@ export function createTimelineItem(mem: MemoryListItem, ctx: MemoryTimelineConte
   content.appendChild(metaEl);
 
   const previewEl = document.createElement('div');
-  previewEl.className = 'timeline-item-preview';
+  previewEl.className = 'timeline-item-preview text-truncate';
   previewEl.innerHTML = ctx.highlightText(mem.contentPreview, ctx.currentSearchQuery);
   content.appendChild(previewEl);
 

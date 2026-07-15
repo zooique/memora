@@ -586,7 +586,7 @@ export class QuickInputCompletion {
 
       // 文本预览（textContent 防 XSS）
       const text = document.createElement('span');
-      text.className = 'completion-text';
+      text.className = 'completion-text text-truncate';
       text.textContent = item.text;
 
       li.appendChild(label);
