@@ -167,7 +167,7 @@ foundation/tokens.css（设计令牌，变量定义）     ← 已有，157 变�
        ↓
 foundation/base.css（全局重置 + 组件基类）       ← 已有，345 行
        ↓
-foundation/utilities.css（原子布局工具类）       ← 已有，5 + 4 个 class
+foundation/utilities.css（原子布局工具类）       ← 已有，19 个 class（CSS-R6 扩充 10 个）
        ↓
 各功能域 CSS（chat/ memory/ panels/ overlays/ 等）  ← 按功能域分组
 ```
@@ -179,8 +179,16 @@ foundation/utilities.css（原子布局工具类）       ← 已有，5 + 4 个
 | `.flex-center` | display:flex + align-items:center + justify-content:center | 27 | 水平+垂直双向居中 |
 | `.flex-col` | display:flex + flex-direction:column | 48 | 纵向 flex 容器 |
 | `.flex-row-center` | display:flex + align-items:center | 89 | 横向 flex + 垂直居中 |
+| `.flex-between` | display:flex + align-items:center + justify-content:space-between | 9 | 两端对齐 flex |
+| `.flex-shrink-0` | flex-shrink:0 | 20+ | flex 子项不收缩 |
+| `.inline-flex-center` | display:inline-flex + align-items:center | 6+ | inline-flex + 垂直居中 |
 | `.surface-card` | background:var(--surface0) + border-radius:var(--radius-sm) + border:1px solid var(--surface2) | 23 | 标准卡片表面 |
 | `.text-muted` | color:var(--text-2) + font-size:var(--font-xs) | 20 | 次要文字 |
+| `.text-truncate` | overflow:hidden + text-overflow:ellipsis + white-space:nowrap | 15+ | 单行文本截断 |
+| `.line-clamp-2` / `.line-clamp-3` / `.line-clamp-4` | display:-webkit-box + -webkit-line-clamp:N + -webkit-box-orient:vertical + overflow:hidden | 8 | 多行文本截断（3 变体） |
+| `.section-title-sm` | font-size:var(--font-sm) + font-weight:var(--weight-semibold) | 9+ | 小节标题 |
+| `.collapsible-hidden` | max-height:0 + opacity:0 + overflow:hidden | 5 | 折叠隐藏态 |
+| `.input-focus-accent` | border-color:var(--accent) + box-shadow:0 0 0 2px var(--accent-20) | 5 | 输入框聚焦高亮 |
 | `.transition-bg` | transition: background var(--transition-fast) | ~20 | 仅背景过渡 |
 | `.transition-bg-color` | transition: background + color | ~12 | 背景+文字过渡 |
 | `.transition-bg-border-color` | transition: background + border-color | ~4 | 背景+边框过渡 |
@@ -237,4 +245,4 @@ foundation/utilities.css（原子布局工具类）       ← 已有，5 + 4 个
 | CSS-R3 二级拆分 | 2026-07-13 | chat-messages.css→4 子模块 + memory-graph.css→4 子模块 |
 | CSS-R4 P0 减法 | 2026-07-13 | base.css 拆分出 command-palette.css + search-messages.css，620→345 行 |
 | CSS-R5 utilities | 2026-07-13 | 新增 utilities.css 中间层，5 个原子工具类 |
-| CSS-R6 功能域分组 | 2026-07-15 | styles/ 按 8 个功能域子目录分组，浮窗 CSS 统一迁入 windows/，聚合器 @import 改同目录相对路径 |
+| CSS-R6 功能域分组 + 工具类扩充 | 2026-07-15 | Phase 1：styles/ 按 8 个功能域子目录分组，浮窗 CSS 统一迁入 windows/，聚合器 @import 改同目录相对路径；Phase 2：utilities.css 扩充 10 个工具类（flex-between / flex-shrink-0 / inline-flex-center / text-truncate / line-clamp-2/3/4 / section-title-sm / collapsible-hidden / input-focus-accent），原 CSS 重复块留待后续 HTML/TS 渐进引用 |

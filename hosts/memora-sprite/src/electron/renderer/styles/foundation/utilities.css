@@ -35,6 +35,24 @@
   align-items: center;
 }
 
+/* 两端对齐 flex（原 9 处 display:flex + align-items:center + justify-content:space-between） */
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* flex 子项不收缩（原 20+ 处 flex-shrink:0，单属性超 10+ 阈值） */
+.flex-shrink-0 {
+  flex-shrink: 0;
+}
+
+/* inline-flex + 垂直居中（原 6+ 处 display:inline-flex + align-items:center） */
+.inline-flex-center {
+  display: inline-flex;
+  align-items: center;
+}
+
 /* ─── 表面工具类 ──────────────────────────────────────────── */
 
 /* 标准卡片表面（原 23 处 background + border-radius + border 组合） */
@@ -50,6 +68,56 @@
 .text-muted {
   color: var(--text-2);
   font-size: var(--font-xs);
+}
+
+/* 单行文本截断（原 15+ 处 overflow:hidden + text-overflow:ellipsis + white-space:nowrap 三件套） */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 多行文本截断（原 8 处 -webkit-line-clamp 组合，按行数分 3 个变体） */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 小节标题（原 9+ 处 font-size:var(--font-sm) + font-weight:var(--weight-semibold) 组合） */
+.section-title-sm {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+/* ─── 状态工具类 ──────────────────────────────────────────── */
+
+/* 折叠隐藏态（原 5 处 max-height:0 + opacity:0 + overflow:hidden 组合，配合 transition 实现折叠动画） */
+.collapsible-hidden {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+/* 输入框聚焦高亮（原 5 处 border-color:var(--accent) + box-shadow:0 0 0 2px var(--accent-20) 组合） */
+.input-focus-accent {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-20);
 }
 
 /* ─── 过渡工具类 ──────────────────────────────────────────── */
