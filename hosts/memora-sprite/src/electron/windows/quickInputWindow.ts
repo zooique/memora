@@ -314,19 +314,21 @@ export class QuickInputWindow {
         if (typeof text !== 'string' || text.length === 0) {
           return { success: false, mode: 'copy' };
         }
+        // streamMode 类型校验：防御非布尔 truthy 值进入流式分支
+        const safeStreamMode = typeof streamMode === 'boolean' ? streamMode : false;
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, 10000);
 
         // Phase 4：优先尝试自动粘贴（PasteCoordinator 封装条件检查 + inputInjector 调用）
-        const hideFloat = streamMode ? () => {} : () => this.hide();
+        const hideFloat = safeStreamMode ? () => {} : () => this.hide();
         // 流式模式：paste 内部恢复焦点到原窗口会触发浮窗 blur，
         // 需在 paste 开始前抑制 blur 关闭，否则 200ms 延迟后窗口会被关闭（paste 可能尚未返回）
-        if (streamMode) {
+        if (safeStreamMode) {
           this.suppressBlurClose = true;
         }
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
         // paste 返回后清除抑制标志 + 取消任何在抑制期间误调度的关闭
-        if (streamMode) {
+        if (safeStreamMode) {
           this.suppressBlurClose = false;
           this.cancelBlurClose();
           // 重新聚焦浮窗：paste 时焦点切到了原窗口，需切回浮窗让渲染进程 inputField.focus() 生效
@@ -354,7 +356,7 @@ export class QuickInputWindow {
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
           // 流式模式不关闭窗口
-          if (!streamMode) {
+          if (!safeStreamMode) {
             this.hide();
           }
           // 异步沉淀记忆（不阻塞，错误隔离）
@@ -406,9 +408,9 @@ export class QuickInputWindow {
         const [currentX, currentY] = this.win.getPosition() as [number, number];
         const newX = currentX + Math.round(dx);
         const newY = currentY + Math.round(dy);
-        this.win.setPosition(newX, newY);
-        // 拖动后检查位置，防止溢出屏幕边缘
-        this.keepWindowInWorkArea();
+        // 先 clamp 到工作区再 setPosition，避免窗口短暂超出边缘再被拉回导致视觉挤压
+        const clamped = this.clampPositionToWorkArea(newX, newY);
+        this.win.setPosition(clamped.x, clamped.y);
       } catch (error) {
         logger.error({ error }, '拖动浮窗位置失败');
       }
@@ -422,10 +424,12 @@ export class QuickInputWindow {
         if (typeof text !== 'string' || text.length === 0) {
           return { polished: '', changed: false };
         }
+        // 截断超长文本（防止耗尽 LLM token / 触发速率限制，与 CONFIRM 对齐 10000 字符上限）
+        const safeText = text.slice(0, 10000);
         if (!this.callbacks.onPolish) {
-          return { polished: text, changed: false };
+          return { polished: safeText, changed: false };
         }
-        return await this.callbacks.onPolish(text);
+        return await this.callbacks.onPolish(safeText);
       } catch (error) {
         logger.error({ error }, 'LLM 润色文本失败');
         // 润色失败时返回原文（降级，不阻塞用户操作）
@@ -435,19 +439,21 @@ export class QuickInputWindow {
   }
 
   /**
-   * 确保窗口始终在工作区内，防止溢出屏幕边缘
+   * 将目标位置 clamp 到当前窗口所在显示器的工作区内
    *
-   * 场景：
-   *   1. resize 后高度增加，可能超出屏幕底部
-   *   2. textarea 自动高度调整后，浮窗变高可能超出边缘
+   * 使用 getDisplayMatching（基于窗口 bounds）而非 getDisplayNearestPoint（基于光标），
+   * 避免拖动时光标快速移动到相邻显示器导致用错误的 workArea 修正。
+   *
+   * @param x 目标 x 坐标
+   * @param y 目标 y 坐标
+   * @returns clamp 后的 {x, y}（已取整）
    */
-  private keepWindowInWorkArea(): void {
-    if (!this.win || this.win.isDestroyed()) return;
-
-    const cursor = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursor);
+  private clampPositionToWorkArea(x: number, y: number): { x: number; y: number } {
+    if (!this.win) return { x, y };
+    const { width, height } = this.win.getBounds();
+    // 基于窗口 bounds 匹配显示器，避免光标在边缘时匹配到相邻显示器
+    const display = screen.getDisplayMatching({ x, y, width, height });
     const workArea = display.workArea;
-    const { x, y, width, height } = this.win.getBounds();
 
     let newX = x;
     let newY = y;
@@ -469,9 +475,23 @@ export class QuickInputWindow {
       newY = workArea.y;
     }
 
+    return { x: Math.round(newX), y: Math.round(newY) };
+  }
+
+  /**
+   * 确保窗口始终在工作区内，防止溢出屏幕边缘
+   *
+   * 场景：
+   *   1. resize 后高度增加，可能超出屏幕底部
+   *   2. textarea 自动高度调整后，浮窗变高可能超出边缘
+   */
+  private keepWindowInWorkArea(): void {
+    if (!this.win || this.win.isDestroyed()) return;
+    const { x, y } = this.win.getBounds();
+    const clamped = this.clampPositionToWorkArea(x, y);
     // 仅在位置变化时才更新，避免不必要的重绘
-    if (newX !== x || newY !== y) {
-      this.win.setPosition(Math.round(newX), Math.round(newY));
+    if (clamped.x !== x || clamped.y !== y) {
+      this.win.setPosition(clamped.x, clamped.y);
     }
   }
 

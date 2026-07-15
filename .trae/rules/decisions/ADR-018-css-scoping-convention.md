@@ -14,9 +14,9 @@ description: "CSS 作用域规范：面板前缀 + BEM 风格 + 单一真理源�
 
 迭代 5 完成感知面板独立化（从仪表盘子分区升级为独立 `#panel-perception`），但 CSS 仍沿用 chat 面板时期的 BARE 类（无前缀通用类）：
 
-- [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout.css) 定义 `.affect-label { width: 40px; text-align: right }`（为 chat 面板横向布局设计）
+- [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout/layout.css) 定义 `.affect-label { width: 40px; text-align: right }`（为 chat 面板横向布局设计）
 - 感知面板的 `.affect-item` 是纵向 flex column 布局，HTML 复用了 `.affect-label` 类名
-- [perception.css](../../hosts/memora-sprite/src/electron/renderer/styles/perception.css) 后加载，用 `.affect-item .affect-label`（特异性 0,2,0）覆盖了部分属性，但未显式重置的 `width`/`text-align` 仍被继承污染
+- [perception.css](../../hosts/memora-sprite/src/electron/renderer/styles/panels/perception.css) 后加载，用 `.affect-item .affect-label`（特异性 0,2,0）覆盖了部分属性，但未显式重置的 `width`/`text-align` 仍被继承污染
 
 同类问题还出现在 `.affect-track`（`flex:1` 在 column 布局中垂直伸展成超高矩形）、`.affect-level`、`.context-label`、`.context-value`、`.rapport-bar`、`.perception-pattern-*` 系列，共计 13 类 BARE 类引发跨面板污染。
 
@@ -30,9 +30,9 @@ description: "CSS 作用域规范：面板前缀 + BEM 风格 + 单一真理源�
 
 | 层级 | 作用域 | 命名规范 | 文件归属 | 例子 |
 |------|--------|----------|----------|------|
-| **L1 全局基础** | 跨面板共享的设计令牌与原子类 | `--var-xxx` 变量 / `.btn-primary` 等通用组件类 | [tokens.css](../../hosts/memora-sprite/src/electron/renderer/styles/tokens.css) + [base.css](../../hosts/memora-sprite/src/electron/renderer/styles/base.css) + [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout.css) 的 `#app`/`#titlebar`/`#sidebar`/`.panel`/`.nav-btn` 等 |
+| **L1 全局基础** | 跨面板共享的设计令牌与原子类 | `--var-xxx` 变量 / `.btn-primary` 等通用组件类 | [tokens.css](../../hosts/memora-sprite/src/electron/renderer/styles/foundation/tokens.css) + [base.css](../../hosts/memora-sprite/src/electron/renderer/styles/foundation/base.css) + [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout/layout.css) 的 `#app`/`#titlebar`/`#sidebar`/`.panel`/`.nav-btn` 等 |
 | **L2 面板专属** | 单个面板内的所有样式 | **面板前缀 + BEM** | `<panel>.css` | `.perception-affect-grid`、`.dashboard-overview-item`、`.settings-tab-content` |
-| **L3 组件局部** | 可复用的独立组件（modal/toast/dropdown） | 组件名 + BEM | [modal.css](../../hosts/memora-sprite/src/electron/renderer/styles/modal.css) / [toast.css](../../hosts/memora-sprite/src/electron/renderer/styles/toast.css) | `.modal-header`、`.toast-content` |
+| **L3 组件局部** | 可复用的独立组件（modal/toast/dropdown） | 组件名 + BEM | [modal.css](../../hosts/memora-sprite/src/electron/renderer/styles/overlays/modal.css) / [toast.css](../../hosts/memora-sprite/src/electron/renderer/styles/overlays/toast.css) | `.modal-header`、`.toast-content` |
 
 ### 2. 面板前缀强制约定（L2 层核心规则）
 
@@ -83,12 +83,18 @@ L2 / L3 层类名采用 BEM（Block Element Modifier）风格：
 
 ### 5. CSS 加载顺序约定
 
-[index.html](../../hosts/memora-sprite/src/electron/renderer/index.html) 的 CSS 加载顺序遵循"L1 → L3 → L2"依赖链：
+[index.html](../../hosts/memora-sprite/src/electron/renderer/index.html) 的 CSS 加载顺序遵循"L1 → L3 → L2"依赖链。
+
+> **CSS-R6 重构后（2026-07-15）**：加载顺序由聚合器 `@import` 链实现，index.html 仅引入 `foundation/*` + `layout/*` + `chat.css` + `memory.css` 两个聚合器 + `panels/*` + `overlays/*` + `content/*`。详见 [styles/README.md §2.1](../../hosts/memora-sprite/src/electron/renderer/styles/README.md)。
 
 ```
-L1 全局基础：tokens → base → layout
-L3 组件：modal → toast → markdown
-L2 面板：chat → chat-toolbar → chat-datenav → chat-perception → memory → settings → dashboard → perception
+L1 全局基础：foundation/tokens → foundation/base → foundation/utilities → layout/layout
+L3 组件（overlays 聚合器）：modal → toast → command-palette → search-messages
+L2 面板（chat.css / memory.css 聚合器 + panels/ 独立文件）：
+  chat 聚合器 → chat-toolbar → chat-datenav → chat-perception → chat-messages-* 等
+  memory 聚合器 → memory-* 子模块
+  panels：dashboard → perception → settings
+L3 内容：content/markdown
 ```
 
 **L2 面板之间不得相互依赖**。如果 perception.css 需要覆盖 chat 的样式，说明 DOM 类名复用出了问题，应回到第 2 条"面板前缀强制约定"修复类名，而不是在 perception.css 里做覆盖。
@@ -118,10 +124,10 @@ L2 面板：chat → chat-toolbar → chat-datenav → chat-perception → memor
 
 ### 立即影响（已完成的修复）
 
-- [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout.css)：删除 `.affect-bar`/`.affect-label`/`.affect-track`/`.affect-fill`/`.affect-level`/`.context-label`/`.context-value`/`.patterns-list`/`.pattern-item` 共 9 类 BARE 死代码
-- [chat-perception.css](../../hosts/memora-sprite/src/electron/renderer/styles/chat-perception.css)：删除与 perception.css 重复的 13 类 BARE 类定义
-- [perception.css](../../hosts/memora-sprite/src/electron/renderer/styles/perception.css)：成为感知面板样式的唯一真理源
-- [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout.css)：`.panel` / `.panel.active` 添加 `z-index` 创建堆叠上下文，隔离隐藏面板
+- [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout/layout.css)：删除 `.affect-bar`/`.affect-label`/`.affect-track`/`.affect-fill`/`.affect-level`/`.context-label`/`.context-value`/`.patterns-list`/`.pattern-item` 共 9 类 BARE 死代码
+- [chat-perception.css](../../hosts/memora-sprite/src/electron/renderer/styles/chat/chat-perception.css)：删除与 perception.css 重复的 13 类 BARE 类定义
+- [perception.css](../../hosts/memora-sprite/src/electron/renderer/styles/panels/perception.css)：成为感知面板样式的唯一真理源
+- [layout.css](../../hosts/memora-sprite/src/electron/renderer/styles/layout/layout.css)：`.panel` / `.panel.active` 添加 `z-index` 创建堆叠上下文，隔离隐藏面板
 
 ### 长期影响
 

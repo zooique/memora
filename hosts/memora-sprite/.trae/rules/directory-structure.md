@@ -148,7 +148,7 @@ src/
 │       │   └── float.html      # 浮动窗口 HTML 入口（CSS 已迁入 styles/windows/float.css）
 │       │
 │       ├── quick-input/        # 快速输入补全浮窗（Phase 1-2）
-│       │   ├── quickInput.ts            # 快速输入渲染逻辑（输入框 + 补全交互）
+│       │   ├── quickInput.ts            # 快速输入控制器（QuickInputController：键盘事件/流式模式/展开收起/LLM润色/拖动/确认流程）
 │       │   ├── quickInputCompletion.ts  # 补全候选管理器（记忆/历史搜索 + 去重排序）
 │       │   └── quick-input.html         # 快速输入 HTML 入口（CSS 已迁入 styles/windows/quick-input.css）
 │       │

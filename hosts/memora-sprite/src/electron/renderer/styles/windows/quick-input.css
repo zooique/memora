@@ -119,10 +119,10 @@ body {
   animation: spin 1s linear infinite;
 }
 
-/* 无变化状态：图标短暂闪烁绿色 */
+/* 无变化状态：图标短暂闪烁绿色（--green 在 tokens.css 双主题定义，单一真理源） */
 .polish-toggle.no-change {
   opacity: 1;
-  color: var(--success, #52c41a);
+  color: var(--green);
 }
 
 @keyframes spin {

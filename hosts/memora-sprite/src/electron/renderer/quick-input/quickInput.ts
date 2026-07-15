@@ -258,7 +258,8 @@ class QuickInputController {
 
     try {
       const result = await this.api.polishQuickInput(text);
-      if (result.changed && result.polished) {
+      // 返回值类型校验：防御异常结构导致 textarea.value 被赋 "[object Object]"
+      if (result.changed && typeof result.polished === 'string' && result.polished) {
         this.inputField.value = result.polished;
         this.inputField.dispatchEvent(new Event('input'));
       } else {
@@ -492,7 +493,9 @@ class QuickInputController {
     } catch {
       // localStorage 不可用：仅本次会话生效，不持久化
     }
-    this.autoResize();
+    // 收起动作强制紧凑 min-height，避免内容多时 scrollHeight 撑大导致"无法收回"；
+    // 展开动作随内容增长（传 false 走默认 scrollHeight 计算）
+    this.autoResize(!this.expandMode);
   }
 
   /**
@@ -656,17 +659,19 @@ class QuickInputController {
   // ── 布局调整 ──
 
   /**
-   * 自动调整 textarea 高度（随内容增长，最多 5 行）
+   * 自动调整 textarea 高度
    *
-   * 最小高度保护：空文本时 scrollHeight 可能仅含 padding（约 16px），
-   * 导致 textarea 收缩到不可见。限制最小高度为 36px（与 CSS min-height 对齐）。
+   * @param forceMinHeight true=强制使用当前模式的 min-height（用于收起动作，内容超出时滚动）；
+   *                       false=随内容增长（用于输入事件和展开动作）
    */
-  private autoResize(): void {
+  private autoResize(forceMinHeight = false): void {
     const prevHeight = this.inputField.offsetHeight;
     this.inputField.style.height = 'auto';
     // 最小高度根据展开模式动态选择（与 CSS .expanded min-height 对齐）
     const minHeight = this.expandMode ? EXPANDED_MIN_HEIGHT : COMPACT_MIN_HEIGHT;
-    const newHeight = Math.max(this.inputField.scrollHeight, minHeight);
+    // 收起动作强制 min-height，避免内容多时 scrollHeight 撑大导致无法收回；
+    // 其他场景（输入/展开）随内容增长，由 CSS max-height 限制上限
+    const newHeight = forceMinHeight ? minHeight : Math.max(this.inputField.scrollHeight, minHeight);
     this.inputField.style.height = `${newHeight}px`;
 
     if (this.inputField.offsetHeight !== prevHeight) {
