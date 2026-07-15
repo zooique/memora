@@ -15,3 +15,5 @@
 @import url("memory-graph-search.css");
 @import url("memory-graph-detail.css");
 @import url("memory-graph-misc.css");
+/* 补全统计面板样式（第 3 个 analysis panel） */
+@import url("completion-stats.css");

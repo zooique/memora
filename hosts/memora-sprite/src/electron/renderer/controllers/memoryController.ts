@@ -25,6 +25,10 @@ import type { HealthDashboardPayload } from '../../preload.js';
 import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth.js';
 // 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
 import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js';
+// LLM 治理结果渲染器（持久化展示治理报告 + 降级列表恢复入口）
+import { LlmGovernanceResultRenderer } from '../panels/llmGovernanceResultRenderer.js';
+// 补全统计埋点（重置统计时调用 clear）
+import { getCompletionMetrics } from '../helpers/completionMetrics.js';
 
 // getSearchParams 已移至 UIManager.getMemorySearchParams()
 // 控制器层不再直接访问 DOM，通过 UIManager 门面读取搜索参数
@@ -88,6 +92,14 @@ export function createMemoryController(uiManager: UIManager) {
   /** 存储当前健康度数据，供清理操作使用（闭包级，setupMemoryPanel 和 loadHealthDashboard 共享） */
   let currentHealthData: HealthDashboardPayload | null = null;
 
+  // LLM 治理结果渲染器实例（持久化展示治理报告 + 降级列表恢复入口）
+  const llmResultRenderer = new LlmGovernanceResultRenderer();
+  // 注册恢复回调：调用 boostMemory IPC（score +0.05），与降级语义对称
+  llmResultRenderer.onRestoreMemory(async (memoryId: string) => {
+    await window.electronAPI.boostMemory(memoryId);
+    uiManager.showToast('记忆 score 已恢复（+0.05）', 'success');
+  });
+
   /**
    * 轻量打开记忆详情（IPC + 渲染，不含脉络/邻居加载）
    *
@@ -135,7 +147,17 @@ export function createMemoryController(uiManager: UIManager) {
         // 打开回收站弹窗并加载列表
         await loadRecycleBinList();
         uiManager.showModal('recycle-bin-modal');
+      } else if (action === 'completion-stats') {
+        // 补全统计面板，数据来自渲染层 localStorage（无 IPC），直接渲染
+        uiManager.renderCompletionStats();
       }
+    });
+
+    // 注册补全统计重置回调（清空 localStorage 数据 + 重新渲染）
+    uiManager.onResetCompletionStats(() => {
+      getCompletionMetrics().clear();
+      uiManager.renderCompletionStats();
+      uiManager.showToast('补全统计已重置', 'info');
     });
 
     // ─── 回收站操作回调：恢复 / 彻底删除 ─────────────
@@ -273,9 +295,9 @@ export function createMemoryController(uiManager: UIManager) {
       }
     });
 
-    // ─── LLM 记忆治理回调（G3：dedup/timeliness/conflicts） ──
-    // 异步调用 IPC，toast 反馈结果，刷新健康度面板（治理后数据变化）。
-    // 失败时 toast 错误，不阻塞后续操作（与清理按钮一致）。
+    // ─── LLM 记忆治理回调（toast 即时反馈 + 渲染器持久化展示报告） ──
+    // 异步调用 IPC，toast 反馈结果摘要，渲染器渲染完整报告（降级列表/冲突对详情），
+    // 刷新健康度面板（治理后数据变化）。失败时 toast 错误，不阻塞后续操作。
     uiManager.onLlmGovernance(async (action: 'dedup' | 'timeliness' | 'conflicts') => {
       try {
         if (action === 'dedup') {
@@ -285,6 +307,8 @@ export function createMemoryController(uiManager: UIManager) {
           } else {
             uiManager.showToast(`语义去重完成：扫描 ${report.scannedCount} 条，降级 ${report.deduplicatedCount} 条`, 'success');
           }
+          // 持久化渲染去重报告（降级列表 + 恢复入口）
+          llmResultRenderer.renderDedupReport(report);
         } else if (action === 'timeliness') {
           const report = await window.electronAPI.evaluateTimeliness();
           if (report.skippedReason) {
@@ -292,6 +316,8 @@ export function createMemoryController(uiManager: UIManager) {
           } else {
             uiManager.showToast(`时效评估完成：扫描 ${report.scannedCount} 条，过时 ${report.outdatedCount} 条`, 'success');
           }
+          // 持久化渲染时效报告（降级列表 + 恢复入口）
+          llmResultRenderer.renderTimelinessReport(report);
         } else {
           const report = await window.electronAPI.detectConflicts();
           if (report.skippedReason) {
@@ -299,6 +325,8 @@ export function createMemoryController(uiManager: UIManager) {
           } else {
             uiManager.showToast(`冲突检测完成：扫描 ${report.scannedCount} 条，发现 ${report.conflictCount} 处冲突`, 'success');
           }
+          // 持久化渲染冲突报告（冲突对详情，不提供恢复入口）
+          llmResultRenderer.renderConflictReport(report);
         }
         // 治理后刷新健康度面板（score 变化 → 健康度数据变化）
         await loadHealthDashboard();

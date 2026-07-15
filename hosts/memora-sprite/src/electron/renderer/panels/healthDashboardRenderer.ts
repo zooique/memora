@@ -89,21 +89,24 @@ export class HealthDashboardRenderer {
   }
 
   /**
-   * 渲染记忆健康度仪表盘数据（Phase 1：健康度诊断）
+   * 渲染记忆健康度仪表盘数据
    *
    * 接收 Controller 拉取的健康度数据，渲染：
-   * - 健康度评分（总分）+ 健康等级徽章
+   * - 健康度评分（总分）+ 评分基数（N 条记忆）+ 健康等级徽章
    * - 三维度进度条（uniqueness/freshness/completeness）
-   * - 详情计数（重复/过期/低质量）
+   * - 详情计数（重复 + 平均相似度 / 过期 + 原因分类 + 最长闲置天数 / 低质量）
    * - 健康描述文字
    * - 清理按钮可见性（仅在有可清理项时显示）
    *
    * @param data 健康度数据
    */
   render(data: HealthDashboardPayload): void {
-    // ─── 健康度评分（记忆面板 health-bar） ──────────────
+    // ─── 健康度评分（记忆面板 health-bar）+ 评分基数 ──────────────
     const scoreEl = document.getElementById('health-score');
-    if (scoreEl) scoreEl.textContent = String(data.scores.overall);
+    if (scoreEl) {
+      // 评分后追加基数（基于 N 条记忆），让用户感知评分样本量
+      scoreEl.textContent = `${data.scores.overall}（${data.totalMemories} 条）`;
+    }
 
     // ─── 健康等级徽章 ──────────────────────────────────
     const badgeEl = document.getElementById('health-badge');
@@ -130,20 +133,58 @@ export class HealthDashboardRenderer {
       if (valEl) valEl.textContent = String(dim.value);
     }
 
-    // ─── 详情计数（重复/过期/低质量） ──────────────────
+    // ─── 详情计数（重复/过期/低质量）+ 数据点补全 ──────────────────
     const duplicateCount = data.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
     const dupEl = document.getElementById('health-duplicates');
     if (dupEl) {
-      dupEl.textContent = `重复: ${duplicateCount}`;
+      // 重复组追加平均相似度（payload 的 similarity 为 0-1，越小越相似，转为百分比展示）
+      // 空值保护：similarity 为可选字段，未提供时不追加
+      const similarities = data.duplicates
+        .map((g) => g.similarity)
+        .filter((s): s is number => typeof s === 'number' && !Number.isNaN(s));
+      const avgSimilarity =
+        similarities.length > 0
+          ? Math.round((similarities.reduce((sum, s) => sum + s, 0) / similarities.length) * 100)
+          : null;
+      const dupText = avgSimilarity !== null
+        ? `重复: ${duplicateCount}（相似度 ${avgSimilarity}%）`
+        : `重复: ${duplicateCount}`;
+      dupEl.textContent = dupText;
+      // title 悬停展示完整详情（避免单行溢出）
+      dupEl.title = duplicateCount > 0 ? `${duplicateCount} 条重复记忆，平均相似度 ${avgSimilarity ?? '未知'}%` : '';
       dupEl.className = 'health-detail-item';
       if (duplicateCount > 0) dupEl.classList.add('warning');
     }
 
     const staleEl = document.getElementById('health-stale');
     if (staleEl) {
-      staleEl.textContent = `过期: ${data.staleMemories.length}`;
+      // 过期记忆追加原因分类（old_age / low_score / both）+ 最长闲置天数
+      // 原因分类让用户区分"长期未访问"与"低分"两类过期，针对性清理
+      const reasonCounts = { old_age: 0, low_score: 0, both: 0 } as Record<string, number>;
+      let maxDays = 0;
+      for (const item of data.staleMemories) {
+        reasonCounts[item.reason] = (reasonCounts[item.reason] ?? 0) + 1;
+        if (item.daysSinceAccess > maxDays) maxDays = item.daysSinceAccess;
+      }
+      const staleCount = data.staleMemories.length;
+      const parts: string[] = [`过期: ${staleCount}`];
+      if (staleCount > 0) {
+        // 原因分类（仅展示非零项）
+        const reasonParts: string[] = [];
+        if (reasonCounts.old_age > 0) reasonParts.push(`老化 ${reasonCounts.old_age}`);
+        if (reasonCounts.low_score > 0) reasonParts.push(`低分 ${reasonCounts.low_score}`);
+        if (reasonCounts.both > 0) reasonParts.push(`双重 ${reasonCounts.both}`);
+        if (reasonParts.length > 0) parts.push(`（${reasonParts.join(' / ')}）`);
+        // 最长闲置天数
+        if (maxDays > 0) parts.push(`· 最长 ${maxDays} 天`);
+      }
+      staleEl.textContent = parts.join('');
+      // title 悬停展示完整详情
+      staleEl.title = staleCount > 0
+        ? `${staleCount} 条过期记忆：老化 ${reasonCounts.old_age} / 低分 ${reasonCounts.low_score} / 双重 ${reasonCounts.both}，最长闲置 ${maxDays} 天`
+        : '';
       staleEl.className = 'health-detail-item';
-      if (data.staleMemories.length > 0) staleEl.classList.add('warning');
+      if (staleCount > 0) staleEl.classList.add('warning');
     }
 
     const lowEl = document.getElementById('health-low-quality');

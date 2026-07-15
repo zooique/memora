@@ -36,6 +36,8 @@
 import type { ElectronAPI } from '../../preload.js';
 // 复用渲染进程统一日志函数（双通道：console + 主进程 logger），替代本地 logCompletion
 import { reportError } from '../helpers/errorHelpers.js';
+// 补全统计埋点（展示/采纳事件 → localStorage → 统计面板消费）
+import { getCompletionMetrics } from '../helpers/completionMetrics.js';
 
 /**
  * 补全管理器所需的 ElectronAPI 子集
@@ -162,6 +164,8 @@ export class QuickInputCompletion {
   private adoptedTexts = new Map<string, number>();
   /** 本次合并后的候选总数（slice 前），用于判断是否需要显示"共 N 项"footer */
   private totalCandidatesCount = 0;
+  /** 当前查询文本（fetchCandidates 时缓存，供 renderCandidates/recordAdoption 计算埋点） */
+  private currentQuery = '';
 
   /**
    * @param inputField 输入框元素（input 或 textarea）
@@ -281,6 +285,8 @@ export class QuickInputCompletion {
    */
   private async fetchCandidates(query: string): Promise<void> {
     const requestId = ++this.lastRequestId;
+    // 缓存当前 query，供 renderCandidates/recordAdoption 埋点使用
+    this.currentQuery = query;
     // IPC 发出前显示 loading 占位（防抖结束后才到达此处，不会在输入过程中闪烁）
     this.showLoading();
 
@@ -514,8 +520,14 @@ export class QuickInputCompletion {
    * key 与去重逻辑一致（dedupKey），确保 boost 能命中。
    * 同步写入 localStorage，实现跨会话学习。
    * 超过 MAX_ADOPTION_ENTRIES 时淘汰最低频项（近似 LRU）。
+   *
+   * 同时记录采纳事件到统计埋点（position 用于计算 Top-1 命中率/平均位置）。
+   *
+   * @param text 采纳的候选文本
+   * @param memoryId 记忆 ID（可选，对话候选无）
+   * @param position 采纳位置（0-based，0=Top-1）
    */
-  private recordAdoption(text: string, memoryId?: string): void {
+  private recordAdoption(text: string, memoryId?: string, position?: number): void {
     const key = this.dedupKey(text);
     const count = this.adoptedTexts.get(key) ?? 0;
     this.adoptedTexts.set(key, count + 1);
@@ -529,6 +541,9 @@ export class QuickInputCompletion {
     if (memoryId) {
       this.boostMemoryToKernel(memoryId);
     }
+    // 记录采纳事件到统计埋点（position 缺省时用 selectedIndex 兜底）
+    const adoptedPosition = position ?? this.selectedIndex;
+    getCompletionMetrics().recordAdoption(this.currentQuery, text, adoptedPosition);
   }
 
   /**
@@ -668,7 +683,8 @@ export class QuickInputCompletion {
       li.addEventListener('click', () => {
         this.selectedIndex = i;
         this.updateSelection();
-        this.recordAdoption(item.text, item.memoryId);
+        // 传入 position=i（点击位置），用于统计 Top-1 命中率/平均位置
+        this.recordAdoption(item.text, item.memoryId, i);
         this.onSelectCallback?.(item.text);
         this.clearCandidates();
       });
@@ -698,6 +714,10 @@ export class QuickInputCompletion {
 
     // 显示列表（复用 showListContainer，枝叶层 2 次提取）
     this.showListContainer();
+
+    // 记录展示事件（候选列表展示给用户时）
+    // shownCount = candidates.length（≤5），totalCandidatesCount = slice 前总数
+    getCompletionMetrics().recordShown(this.currentQuery, candidates.length, this.totalCandidatesCount);
   }
 
   /**

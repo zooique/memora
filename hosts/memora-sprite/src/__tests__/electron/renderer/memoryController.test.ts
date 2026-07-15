@@ -90,6 +90,9 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     onReloadInsights: vi.fn(),
     onReloadHealth: vi.fn(),
     onReloadMemoryList: vi.fn(),
+    // 补全统计面板委托
+    renderCompletionStat: vi.fn(),
+    onResetCompletionStats: vi.fn(),
     // 伙伴洞察卡片点击回调
     onPartnerMemoryClick: vi.fn(),
     // LLM 记忆治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC）
@@ -306,5 +309,184 @@ describe('删除按钮 loading 保护', () => {
     await deleteCallback!();
 
     expect(window.electronAPI.deleteMemory).not.toHaveBeenCalled();
+  });
+});
+
+// ─── LLM 治理结果持久化展示 ───────
+
+describe('LLM 治理结果持久化展示', () => {
+  let mockUiManager: ReturnType<typeof createMockUiManager>;
+  /** 捕获 onLlmGovernance 注册的回调，测试中手动触发 */
+  let llmCallback: ((action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>) | null = null;
+
+  beforeEach(() => {
+    // 设置 DOM：需含 #health-llm-result 容器（G3 预留）供渲染器注入
+    document.body.innerHTML = `
+      <div id="health-llm-result"></div>
+      <button id="btn-memory-delete">删除</button>
+      <ul id="recommendation-list"></ul>
+      <section id="recommendations"></section>
+      <input id="memory-search" type="text" />
+      <select id="memory-filter-source"><option value="">全部</option></select>
+    `;
+
+    // mock window.electronAPI：3 个治理方法 + boostMemory + loadHealthDashboard 依赖
+    window.electronAPI = {
+      ...window.electronAPI,
+      deduplicateMemories: vi.fn().mockResolvedValue({
+        scannedCount: 10,
+        pairCount: 3,
+        deduplicatedCount: 2,
+        demotedIds: ['insight:dup-1', 'insight:dup-2'],
+      }),
+      evaluateTimeliness: vi.fn().mockResolvedValue({
+        scannedCount: 5,
+        outdatedCount: 1,
+        demotedIds: ['insight:stale-1'],
+      }),
+      detectConflicts: vi.fn().mockResolvedValue({
+        scannedCount: 8,
+        pairCount: 4,
+        conflictCount: 1,
+        conflicts: [
+          {
+            memoryA: { id: 'rule:a', name: '规则A', content: '使用 TypeScript', source: 'rule', score: 0.9 },
+            memoryB: { id: 'rule:b', name: '规则B', content: '使用 JavaScript', source: 'rule', score: 0.8 },
+            hasConflict: true,
+            conflictDescription: '技术栈选择冲突',
+            recommendation: 'a' as const,
+            reason: 'A 更符合项目现状',
+          },
+        ],
+      }),
+      boostMemory: vi.fn().mockResolvedValue(true),
+      getHealthDashboard: vi.fn().mockResolvedValue({
+        scores: { overall: 80, uniqueness: 70, freshness: 60, completeness: 90 },
+        duplicates: [],
+        staleMemories: [],
+        lowQualityCount: 0,
+        totalMemories: 10,
+        healthLabel: 'good',
+        healthDescription: '健康度良好',
+      }),
+      getDashboard: vi.fn().mockResolvedValue({
+        pendingNotices: 0,
+        proactiveThreshold: 5,
+        registeredTriggers: [],
+        suggestions: [],
+        total: 0,
+        bySource: {},
+        sourceHealth: null,
+        metrics: null,
+        skills: [],
+      }),
+      getReviewData: vi.fn().mockResolvedValue({
+        today: { date: '2026-07-15', messageCount: 0, newMemories: 0, newInsights: 0 },
+        trend: { last7Days: 0, last30Days: 0, daily: [], direction: 'stable', description: '无数据' },
+        insights: { total: 0, recent: [], bySource: {} },
+        totalMemories: 0,
+        generatedAt: '2026-07-15T00:00:00.000Z',
+      }),
+      listMemories: vi.fn().mockResolvedValue({ memories: [] }),
+    } as unknown as typeof window.electronAPI;
+
+    mockUiManager = createMockUiManager();
+
+    // 捕获 onLlmGovernance 回调
+    mockUiManager.onLlmGovernance.mockImplementation((cb) => {
+      llmCallback = cb;
+    });
+  });
+
+  it('dedup 治理：应在 #health-llm-result 渲染降级列表 + 恢复按钮', async () => {
+    const controller = createMemoryController(mockUiManager);
+    controller.setupMemoryPanel();
+
+    expect(llmCallback).not.toBeNull();
+    await llmCallback!('dedup');
+
+    // 容器应含摘要 + 降级列表
+    const container = document.getElementById('health-llm-result')!;
+    expect(container.querySelector('.llm-result-summary')).toBeTruthy();
+    expect(container.querySelector('.llm-result-summary')!.textContent).toContain('降级 2 条');
+    // 2 个降级项
+    const items = container.querySelectorAll('.llm-result-item');
+    expect(items).toHaveLength(2);
+    // 每项含恢复按钮
+    expect(items[0]!.querySelector('.llm-result-restore-btn')).toBeTruthy();
+  });
+
+  it('timeliness 治理：应在 #health-llm-result 渲染降级列表', async () => {
+    const controller = createMemoryController(mockUiManager);
+    controller.setupMemoryPanel();
+
+    await llmCallback!('timeliness');
+
+    const container = document.getElementById('health-llm-result')!;
+    expect(container.querySelector('.llm-result-summary')!.textContent).toContain('过时 1 条');
+    expect(container.querySelectorAll('.llm-result-item')).toHaveLength(1);
+  });
+
+  it('conflicts 治理：应在 #health-llm-result 渲染冲突对详情（无恢复按钮）', async () => {
+    const controller = createMemoryController(mockUiManager);
+    controller.setupMemoryPanel();
+
+    await llmCallback!('conflicts');
+
+    const container = document.getElementById('health-llm-result')!;
+    expect(container.querySelector('.llm-result-summary')!.textContent).toContain('发现 1 处冲突');
+    // 1 个冲突对
+    const pairs = container.querySelectorAll('.llm-result-pair');
+    expect(pairs).toHaveLength(1);
+    // 冲突对应含两条记忆展示
+    expect(pairs[0]!.querySelectorAll('.llm-result-pair-memory')).toHaveLength(2);
+    // 冲突对应含冲突描述 + 建议 + 理由
+    expect(pairs[0]!.querySelector('.llm-result-pair-desc')!.textContent).toContain('技术栈选择冲突');
+    expect(pairs[0]!.querySelector('.llm-result-pair-rec')!.textContent).toContain('保留 A');
+    expect(pairs[0]!.querySelector('.llm-result-pair-reason')!.textContent).toContain('A 更符合项目现状');
+    // 冲突对应不含恢复按钮（L3 仅检测不修复）
+    expect(pairs[0]!.querySelector('.llm-result-restore-btn')).toBeNull();
+  });
+
+  it('降级列表恢复按钮点击应调用 boostMemory IPC', async () => {
+    const controller = createMemoryController(mockUiManager);
+    controller.setupMemoryPanel();
+
+    await llmCallback!('dedup');
+
+    // 点击第一个恢复按钮
+    const restoreBtn = document.querySelector('.llm-result-restore-btn') as HTMLButtonElement;
+    expect(restoreBtn).toBeTruthy();
+    restoreBtn.click();
+
+    // 等待异步回调完成（boostMemory 是 async）
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(window.electronAPI.boostMemory).toHaveBeenCalledWith('insight:dup-1');
+    expect(mockUiManager.showToast).toHaveBeenCalledWith(
+      '记忆 score 已恢复（+0.05）',
+      'success',
+    );
+  });
+
+  it('skippedReason 非空时应渲染跳过提示', async () => {
+    (window.electronAPI.deduplicateMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      scannedCount: 0,
+      pairCount: 0,
+      deduplicatedCount: 0,
+      demotedIds: [],
+      skippedReason: 'backgroundProvider 未注入',
+    });
+
+    const controller = createMemoryController(mockUiManager);
+    controller.setupMemoryPanel();
+
+    await llmCallback!('dedup');
+
+    const container = document.getElementById('health-llm-result')!;
+    expect(container.querySelector('.llm-result-skipped')).toBeTruthy();
+    expect(container.querySelector('.llm-result-skipped')!.textContent).toContain('backgroundProvider 未注入');
+    // 跳过时不应渲染降级列表
+    expect(container.querySelector('.llm-result-list')).toBeNull();
   });
 });

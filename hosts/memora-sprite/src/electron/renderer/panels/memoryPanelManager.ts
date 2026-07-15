@@ -26,6 +26,8 @@ import type { HealthDashboardPayload } from '../../preload.js';
 import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
 import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
 import { InsightsRenderer } from './insightsRenderer.js';
+// 补全统计面板渲染器（第 3 个 analysis panel）
+import { CompletionStatsRenderer } from './completionStatsRenderer.js';
 // 事件监听器注册逻辑提取到独立 helper（降低本文件体量）
 import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';
@@ -103,7 +105,7 @@ export class MemoryPanelManager {
   /** 打开分析面板（统计洞察/健康度诊断）前的视图模式，关闭时恢复 */
   private previousViewMode: 'list' | 'timeline' | 'graph' = 'list';
   /** 当前激活的分析面板：null 表示无，'insights' / 'health' */
-  private activeAnalysisPanel: 'insights' | 'health' | null = null;
+  private activeAnalysisPanel: 'insights' | 'health' | 'completion-stats' | null = null;
   /** 图谱渲染器实例（Canvas 2D 力导向图） */
   private graphRenderer: RelationGraphRenderer | null = null;
   /** 图谱数据缓存（切换回图谱视图时避免重复请求 IPC） */
@@ -120,6 +122,8 @@ export class MemoryPanelManager {
   private healthDashboard = new HealthDashboardRenderer();
   /** 洞察渲染器（统计卡片 / source 分布 / 关系摘要） */
   private insights = new InsightsRenderer();
+  /** 补全统计渲染器（采纳率 / Top-1 命中率 / 事件流） */
+  private completionStats = new CompletionStatsRenderer();
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;
@@ -208,6 +212,7 @@ export class MemoryPanelManager {
     this.partnerInsights.cleanup();
     this.healthDashboard.cleanup();
     this.insights.cleanup();
+    this.completionStats.cleanup();
     this.events.cleanup();
   }
 
@@ -667,7 +672,7 @@ export class MemoryPanelManager {
    *
    * @param panel 目标面板：'insights' 或 'health'
    */
-  toggleAnalysisPanel(panel: 'insights' | 'health'): void {
+  toggleAnalysisPanel(panel: 'insights' | 'health' | 'completion-stats'): void {
     toggleAnalysisPanelHelper(this.buildViewSwitcherContext(), panel);
   }
 
@@ -1101,6 +1106,18 @@ export class MemoryPanelManager {
   /** 注册重试加载健康度数据回调（委托到 HealthDashboardRenderer） */
   onReloadHealth(cb: () => void): void {
     this.healthDashboard.onReloadHealth(cb);
+  }
+
+  // ─── CompletionStatsRenderer 委托（F2） ──
+
+  /** 渲染补全统计面板（委托到 CompletionStatsRenderer，数据来自 localStorage） */
+  renderCompletionStat(): void {
+    this.completionStats.render();
+  }
+
+  /** 注册重置补全统计回调（委托到 CompletionStatsRenderer） */
+  onResetCompletionStats(cb: () => void): void {
+    this.completionStats.onResetStats(cb);
   }
 
   // ─── PartnerInsightsRenderer 委托 ──

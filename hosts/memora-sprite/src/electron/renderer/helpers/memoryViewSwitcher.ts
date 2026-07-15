@@ -31,8 +31,23 @@
 /** 记忆视图模式：list（列表）、timeline（时间线）、graph（图谱） */
 export type MemoryViewMode = 'list' | 'timeline' | 'graph';
 
-/** 分析面板类型：insights（统计洞察）、health（健康度诊断） */
-export type AnalysisPanelType = 'insights' | 'health';
+/** 分析面板类型：insights（统计洞察）、health（健康度诊断）、completion-stats（补全统计） */
+export type AnalysisPanelType = 'insights' | 'health' | 'completion-stats';
+
+/**
+ * 分析面板 DOM ID 映射
+ *
+ * 将二分硬编码改为映射遍历，支持任意数量面板。
+ * 新增面板只需在此映射追加一项，无需修改 toggle/hide 逻辑。
+ */
+const ANALYSIS_PANEL_BAR_IDS: Record<AnalysisPanelType, string> = {
+  insights: 'memory-insights-bar',
+  health: 'memory-health-bar',
+  'completion-stats': 'completion-stats-bar',
+};
+
+/** partner-insights 是 insights 的子内容，需同步隐藏 */
+const PARTNER_INSIGHTS_ID = 'partner-insights';
 
 /**
  * 视图切换子系统所需的上下文
@@ -111,14 +126,18 @@ export function hideAllDisplayViews(ctx: MemoryViewSwitcherContext): void {
  * 不需要恢复 previousViewMode（因为 switchView 本身会切换到新视图）。
  * X 按钮和菜单项 toggle 请使用 hideAnalysisPanel()（会恢复之前的视图）。
  *
+ * 遍历 ANALYSIS_PANEL_BAR_IDS 映射隐藏所有面板，支持任意数量面板。
+ *
  * @param ctx 视图切换上下文
  */
 export function hideInsightsAndHealth(ctx: MemoryViewSwitcherContext): void {
-  const insightsBar = document.getElementById('memory-insights-bar');
-  const healthBar = document.getElementById('memory-health-bar');
-  const partnerInsights = document.getElementById('partner-insights');
-  if (insightsBar) insightsBar.classList.add('hidden');
-  if (healthBar) healthBar.classList.add('hidden');
+  // 遍历映射隐藏所有分析面板
+  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
+    const bar = document.getElementById(barId);
+    if (bar) bar.classList.add('hidden');
+  }
+  // partner-insights 是 insights 的子内容，需同步隐藏
+  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
   if (partnerInsights) partnerInsights.classList.add('hidden');
   ctx.setActiveAnalysisPanel(null);
   updateAnalysisMenuItemsActive(ctx);
@@ -183,22 +202,20 @@ export function updateViewMenuItemsActive(mode: MemoryViewMode): void {
 // ─── 分析面板切换（公开 API） ─────────────────────────────
 
 /**
- * 切换分析面板（统计洞察 / 健康度诊断）
+ * 切换分析面板（统计洞察 / 健康度诊断 / 补全统计）
  *
  * - 如果点击的是当前已激活的面板，则关闭它并恢复之前的视图
  * - 如果点击的是不同面板，则切换到新面板（互斥）
  * - 首次打开时记录当前视图模式，关闭时恢复
  *
+ * 从二分硬编码改为"隐藏所有 + 显示目标"模式，支持任意数量面板。
+ *
  * @param ctx 视图切换上下文
- * @param panel 目标面板：'insights' 或 'health'
+ * @param panel 目标面板：'insights' / 'health' / 'completion-stats'
  */
 export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: AnalysisPanelType): void {
-  const insightsBar = document.getElementById('memory-insights-bar');
-  const healthBar = document.getElementById('memory-health-bar');
-  const partnerInsights = document.getElementById('partner-insights');
-  const targetBar = panel === 'insights' ? insightsBar : healthBar;
-  const otherBar = panel === 'insights' ? healthBar : insightsBar;
-
+  const targetBarId = ANALYSIS_PANEL_BAR_IDS[panel];
+  const targetBar = targetBarId ? document.getElementById(targetBarId) : null;
   if (!targetBar) return;
 
   const isAlreadyActive = ctx.getActiveAnalysisPanel() === panel;
@@ -214,12 +231,18 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
     ctx.setPreviousViewMode(ctx.getViewMode());
   }
 
-  // 隐藏主视图和另一个面板
+  // 隐藏主视图 + 隐藏所有其他分析面板（遍历映射）
   hideAllDisplayViews(ctx);
-  if (otherBar) otherBar.classList.add('hidden');
-  // 打开 health 时隐藏 partner-insights（它是 insights 的子内容）
-  if (panel === 'health' && partnerInsights) {
-    partnerInsights.classList.add('hidden');
+  for (const [type, barId] of Object.entries(ANALYSIS_PANEL_BAR_IDS)) {
+    if (type !== panel) {
+      const bar = document.getElementById(barId);
+      if (bar) bar.classList.add('hidden');
+    }
+  }
+  // partner-insights 是 insights 的子内容，非 insights 面板时需隐藏
+  if (panel !== 'insights') {
+    const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
+    if (partnerInsights) partnerInsights.classList.add('hidden');
   }
 
   // 显示目标面板
@@ -242,11 +265,12 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
  * @param ctx 视图切换上下文
  */
 export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
-  const insightsBar = document.getElementById('memory-insights-bar');
-  const healthBar = document.getElementById('memory-health-bar');
-  const partnerInsights = document.getElementById('partner-insights');
-  if (insightsBar) insightsBar.classList.add('hidden');
-  if (healthBar) healthBar.classList.add('hidden');
+  // 遍历映射隐藏所有分析面板
+  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
+    const bar = document.getElementById(barId);
+    if (bar) bar.classList.add('hidden');
+  }
+  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
   if (partnerInsights) partnerInsights.classList.add('hidden');
 
   // 恢复之前的主视图
@@ -288,11 +312,12 @@ export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
  * @param ctx 视图切换上下文
  */
 export function dismissAnalysisPanels(ctx: MemoryViewSwitcherContext): void {
-  const insightsBar = document.getElementById('memory-insights-bar');
-  const healthBar = document.getElementById('memory-health-bar');
-  const partnerInsights = document.getElementById('partner-insights');
-  if (insightsBar) insightsBar.classList.add('hidden');
-  if (healthBar) healthBar.classList.add('hidden');
+  // 遍历映射隐藏所有分析面板
+  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
+    const bar = document.getElementById(barId);
+    if (bar) bar.classList.add('hidden');
+  }
+  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
   if (partnerInsights) partnerInsights.classList.add('hidden');
   // 重置内部状态：下次打开时重新记录 previousViewMode
   ctx.setActiveAnalysisPanel(null);

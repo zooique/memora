@@ -104,7 +104,8 @@ describe('render() · 健康度数据', () => {
       scores: { overall: 92, uniqueness: 95, freshness: 90, completeness: 90 },
       healthLabel: 'excellent',
     }));
-    expect(document.getElementById('health-score')!.textContent).toBe('92');
+    // 评分后追加基数（基于 N 条记忆），格式为"分数（N 条）"
+    expect(document.getElementById('health-score')!.textContent).toBe('92（100 条）');
     expect(document.getElementById('health-badge')!.textContent).toBe('优秀');
     expect(document.getElementById('health-badge')!.classList.contains('excellent')).toBe(true);
   });

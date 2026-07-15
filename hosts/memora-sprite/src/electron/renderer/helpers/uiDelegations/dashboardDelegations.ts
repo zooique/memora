@@ -52,6 +52,9 @@ export interface DashboardDelegations {
   updateNarrative(): void;
   onReloadInsights(cb: () => void): void;
   onReloadHealth(cb: () => void): void;
+  // 补全统计面板委托
+  renderCompletionStat(): void;
+  onResetCompletionStats(cb: () => void): void;
   onReloadMemoryList(cb: () => void): void;
   repaintCanvasOnThemeChange(): void;
 }
@@ -130,6 +133,13 @@ export const dashboardDelegations: DashboardDelegations = {
   },
   onReloadHealth(this: UIManager, cb: () => void): void {
     this.memoryPanel.onReloadHealth(cb);
+  },
+  // 补全统计面板委托
+  renderCompletionStat(this: UIManager): void {
+    this.memoryPanel.renderCompletionStat();
+  },
+  onResetCompletionStats(this: UIManager, cb: () => void): void {
+    this.memoryPanel.onResetCompletionStats(cb);
   },
   onReloadMemoryList(this: UIManager, cb: () => void): void {
     this.dashboardPanel.onReloadMemoryList(cb);

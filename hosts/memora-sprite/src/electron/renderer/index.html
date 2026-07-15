@@ -458,6 +458,10 @@
               <button class="more-menu-item" data-action="health">
                 <svg class="icon"><use href="#icon-health"/></svg> 健康度诊断
               </button>
+              <!-- 补全统计面板（第 3 个 analysis panel，数据来自 localStorage） -->
+              <button class="more-menu-item" data-action="completion-stats">
+                <svg class="icon"><use href="#icon-chart"/></svg> 补全统计
+              </button>
             </div>
           </div>
         </div>
@@ -586,6 +590,8 @@
           <!-- LLM 治理结果展示区（动态渲染，默认空） -->
           <div class="health-llm-result" id="health-llm-result"></div>
         </div>
+        <!-- 补全统计面板（第 3 个 analysis panel，数据来自 localStorage，默认隐藏） -->
+        <div id="completion-stats-bar" class="completion-stats-bar hidden"></div>
         <!-- 记忆面板加载失败状态：默认隐藏，加载失败时显示 -->
         <div id="memory-error" class="panel-error hidden flex-between flex-shrink-0">
           <span id="memory-error-msg"></span>
