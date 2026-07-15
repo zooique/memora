@@ -61,11 +61,19 @@ export type {
   SourceHealthStatus,
   SourceHealthEntry,
   SourceHealthReport,
+  // L1 语义去重类型
+  DedupPair,
+  DedupVerdict,
+  DedupReport,
 } from '@/agent/managers/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
 // 会话内容归档器类型
 export type { SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
+// L2 时效性评估类型（MemoryDecayScheduler）
+export type { TimelinessVerdict, TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
+// L3 冲突检测类型（MemoryAdvisor）
+export type { ConflictVerdict, ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 // 作品投影管理器类型
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 export { loadConfig } from '@/config/loader.js';

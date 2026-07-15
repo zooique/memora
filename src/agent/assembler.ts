@@ -209,8 +209,17 @@ export async function assembleComponents(
 
   // MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）
   // advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
-  const memoryAdvisor = new MemoryAdvisor(pctx.index);
-  const memoryInspector = new MemoryInspector(pctx.index, loop, history, memoryAdvisor, relationStore ?? null);
+  // L3 冲突检测：注入 backgroundProvider 到 MemoryAdvisor（可选，未注入时 detectConflicts 静默跳过）
+  const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
+  // L1 语义去重：注入 backgroundProvider 到 MemoryInspector（可选，未注入时 deduplicateMemories 静默跳过）
+  const memoryInspector = new MemoryInspector(
+    pctx.index,
+    loop,
+    history,
+    memoryAdvisor,
+    relationStore ?? null,
+    backgroundProvider ?? null,
+  );
 
   // AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>

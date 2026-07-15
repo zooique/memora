@@ -267,9 +267,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     });
 
     // 记忆衰减职责委托给 MemoryDecayScheduler
+    // L2 时效性评估：注入 backgroundProvider + index（可选，未注入时 evaluateTimeliness 静默跳过）
     this.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
       onDecayCompleted: (payload) => this.emit('decayCompleted', payload),
+      backgroundProvider: this.#backgroundProvider,
+      index: pctx.index,
     });
     this.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
     // 保留 decayTimer 引用用于 close 时序兼容（实际定时器由 MemoryDecayScheduler 管理）

@@ -131,8 +131,10 @@ export function validateSource(source: string): {
 
 /**
  * 简单 Levenshtein 距离计算（仅用于短字符串，不做优化）
+ *
+ * 导出供 MemoryInspector 等模块复用（语义去重场景的名称相似度判断）。
  */
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
 
