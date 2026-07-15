@@ -55,6 +55,12 @@ const ITEM_HEIGHT_PX = 38;
 const FOOTER_HEIGHT_PX = 28;
 /** 候选列表最大显示条数（与补全管理器 MAX_CANDIDATES 对齐） */
 const MAX_VISIBLE_ITEMS = 5;
+/** 紧凑态最小高度（px），与 CSS .quick-input-field min-height 对齐 */
+const COMPACT_MIN_HEIGHT = 36;
+/** 展开态最小高度（px），与 CSS .quick-input-field.expanded min-height 对齐 */
+const EXPANDED_MIN_HEIGHT = 120;
+/** localStorage key：持久化展开状态（'1' = 展开，'0' = 紧凑） */
+const STORAGE_KEY_EXPAND = 'memora-quick-input-expanded';
 
 /**
  * 快速输入浮窗控制器
@@ -79,6 +85,8 @@ class QuickInputController {
   private readonly completionList: HTMLElement | null;
   /** 流式模式切换按钮（可能为 null：DOM 中不存在时） */
   private readonly streamToggle: HTMLElement | null;
+  /** 展开高度切换按钮（可能为 null：DOM 中不存在时） */
+  private readonly expandToggle: HTMLElement | null;
   /** 字符计数显示元素（可能为 null） */
   private readonly counterEl: HTMLElement | null;
   /** ElectronAPI 子集 */
@@ -95,6 +103,8 @@ class QuickInputController {
   private toastCloseTimer: ReturnType<typeof setTimeout> | null = null;
   /** 流式模式开关（粘贴后保持窗口打开供连续输入） */
   private streamMode = false;
+  /** 展开模式开关（true 时 textarea 使用更大的 min-height，状态持久化到 localStorage） */
+  private expandMode = false;
   /** Tab 键已按下标记（keydown 中标记，keyup 中消费，防止事件泄漏） */
   private tabPressed = false;
   /** resize IPC 防抖定时器（避免输入时频繁 setSize 导致窗口闪烁） */
@@ -104,6 +114,7 @@ class QuickInputController {
    * @param inputField 输入框 textarea 元素
    * @param completionList 候选列表容器（可能为 null）
    * @param streamToggle 流式模式切换按钮（可能为 null）
+   * @param expandToggle 展开高度切换按钮（可能为 null）
    * @param counterEl 字符计数元素（可能为 null）
    * @param api ElectronAPI 子集
    */
@@ -111,12 +122,14 @@ class QuickInputController {
     inputField: HTMLTextAreaElement,
     completionList: HTMLElement | null,
     streamToggle: HTMLElement | null,
+    expandToggle: HTMLElement | null,
     counterEl: HTMLElement | null,
     api: QuickInputElectronAPI,
   ) {
     this.inputField = inputField;
     this.completionList = completionList;
     this.streamToggle = streamToggle;
+    this.expandToggle = expandToggle;
     this.counterEl = counterEl;
     this.api = api;
   }
@@ -129,6 +142,7 @@ class QuickInputController {
   init(): void {
     this.bindKeyboardEvents();
     this.bindStreamToggle();
+    this.bindExpandToggle();
     this.initCompletion();
     this.bindShowHandler();
     this.initialLayout();
@@ -171,6 +185,15 @@ class QuickInputController {
   private bindStreamToggle(): void {
     if (this.streamToggle instanceof HTMLElement) {
       this.streamToggle.addEventListener('click', () => this.toggleStreamMode());
+    }
+  }
+
+  /**
+   * 绑定展开高度切换按钮点击事件
+   */
+  private bindExpandToggle(): void {
+    if (this.expandToggle instanceof HTMLElement) {
+      this.expandToggle.addEventListener('click', () => this.toggleExpand());
     }
   }
 
@@ -243,13 +266,68 @@ class QuickInputController {
   }
 
   /**
-   * 初次布局：聚焦输入框 + 计数 + 高度调整 + 流式按钮初始化
+   * 初次布局：聚焦输入框 + 计数 + 恢复展开状态 + 高度调整 + 流式按钮初始化
    */
   private initialLayout(): void {
     this.inputField.focus();
     this.updateCounter();
+    this.restoreExpandState();
     this.autoResize();
     this.updateStreamToggle();
+  }
+
+  /**
+   * 从 localStorage 恢复展开状态（跨会话持久化）
+   *
+   * 读取 STORAGE_KEY_EXPAND，'1' 视为展开态。恢复后同步更新 UI 类和 resizeWindow。
+   * localStorage 不可用或无记录时默认为紧凑态（expandMode = false）。
+   */
+  private restoreExpandState(): void {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_EXPAND);
+      if (stored === '1') {
+        this.expandMode = true;
+        this.inputField.classList.add('expanded');
+        this.updateExpandToggle();
+      }
+    } catch {
+      // localStorage 不可用（沙箱或隐私模式）：忽略，使用默认紧凑态
+    }
+  }
+
+  /**
+   * 更新展开按钮视觉状态（.active 类 + title 提示）
+   */
+  private updateExpandToggle(): void {
+    if (!(this.expandToggle instanceof HTMLElement)) return;
+    if (this.expandMode) {
+      this.expandToggle.classList.add('active');
+      this.expandToggle.title = '收起输入框（点击恢复紧凑高度）';
+    } else {
+      this.expandToggle.classList.remove('active');
+      this.expandToggle.title = '展开输入框（点击切换高度）';
+    }
+  }
+
+  /**
+   * 切换展开模式（手动切换 textarea 高度档位）
+   *
+   * 切换 expandMode → 同步 UI（expanded 类 + .active 类）→ 持久化到 localStorage → 触发 autoResize 重算高度。
+   */
+  private toggleExpand(): void {
+    this.expandMode = !this.expandMode;
+    if (this.expandMode) {
+      this.inputField.classList.add('expanded');
+    } else {
+      this.inputField.classList.remove('expanded');
+    }
+    this.updateExpandToggle();
+    try {
+      localStorage.setItem(STORAGE_KEY_EXPAND, this.expandMode ? '1' : '0');
+    } catch {
+      // localStorage 不可用：仅本次会话生效，不持久化
+    }
+    this.autoResize();
   }
 
   /**
@@ -421,7 +499,8 @@ class QuickInputController {
   private autoResize(): void {
     const prevHeight = this.inputField.offsetHeight;
     this.inputField.style.height = 'auto';
-    const minHeight = 36;
+    // 最小高度根据展开模式动态选择（与 CSS .expanded min-height 对齐）
+    const minHeight = this.expandMode ? EXPANDED_MIN_HEIGHT : COMPACT_MIN_HEIGHT;
     const newHeight = Math.max(this.inputField.scrollHeight, minHeight);
     this.inputField.style.height = `${newHeight}px`;
 
@@ -521,6 +600,7 @@ function initQuickInput(): void {
   }
   const completionList = document.getElementById('completion-list');
   const streamToggle = document.getElementById('stream-toggle');
+  const expandToggle = document.getElementById('expand-toggle');
   const counterEl = document.querySelector('.quick-input-counter');
 
   const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
@@ -534,6 +614,7 @@ function initQuickInput(): void {
     inputEl,
     completionList,
     streamToggle,
+    expandToggle instanceof HTMLElement ? expandToggle : null,
     counterEl instanceof HTMLElement ? counterEl : null,
     electronApi,
   );

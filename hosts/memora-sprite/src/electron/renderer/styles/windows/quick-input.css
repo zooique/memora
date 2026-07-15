@@ -55,6 +55,14 @@ body {
   min-height: 36px;
   max-height: 180px;
   overflow-y: auto;
+  /* 高度过渡：展开/收起切换时平滑动画 */
+  transition: min-height var(--transition-base) ease, max-height var(--transition-base) ease;
+}
+
+/* 展开态：扩大最小/最大高度，容纳更多内容（由 #expand-toggle 点击切换，状态由 JS 持久化到 localStorage） */
+.quick-input-field.expanded {
+  min-height: 120px;
+  max-height: 240px;
 }
 
 .quick-input-field::placeholder {
@@ -77,6 +85,36 @@ body {
   opacity: 0.7;
 }
 
+/* ===== 展开高度切换按钮 ===== */
+/* 与 .stream-toggle 视觉风格一致，位于其左侧。chevron-down 图标在展开态通过 .active 旋转 180° 变为向上箭头 */
+.expand-toggle {
+  font-size: var(--font-sm);
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  line-height: 1;
+  /* 推到右侧紧邻 stream-toggle（footer 使用 space-between，hint 左 + 按钮组右） */
+  margin-left: auto;
+  margin-right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+}
+
+.expand-toggle:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+/* 展开态：图标旋转 180° 指向上（表示"可收起"），同时提高不透明度表示激活 */
+.expand-toggle.active {
+  opacity: 1;
+}
+
+.expand-toggle.active .icon {
+  transform: rotate(180deg);
+}
+
 /* ===== 流式模式切换按钮 ===== */
 .stream-toggle {
   font-size: var(--font-sm);
@@ -85,8 +123,7 @@ body {
   opacity: 0.5;
   transition: opacity 0.15s ease, transform 0.15s ease;
   line-height: 1;
-  /* 推到右侧紧邻字符计数（footer 使用 space-between，hint 左 + toggle/counter 右） */
-  margin-left: auto;
+  /* 紧邻 expand-toggle 右侧（margin-left: auto 已由 expand-toggle 提供） */
   margin-right: var(--space-2);
   display: inline-flex;
   align-items: center;
