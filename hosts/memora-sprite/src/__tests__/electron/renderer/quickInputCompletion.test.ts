@@ -431,7 +431,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     expect(document.querySelectorAll('.completion-item').length).toBe(1);
   });
 
-  it('两个 IPC 都失败应显示空候选列表', async () => {
+  it('两个 IPC 都失败应显示错误占位（非空列表）', async () => {
     const { input, api, list } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
@@ -439,8 +439,10 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(list.classList.contains('hidden')).toBe(true);
-    expect(list.children.length).toBe(0);
+    // 两源全失败时显示错误占位，让用户区分"无匹配"和"搜索出错"
+    expect(list.classList.contains('hidden')).toBe(false);
+    expect(list.querySelector('.completion-error')).not.toBeNull();
+    expect(list.querySelector('.completion-error')?.textContent).toBe('搜索失败，修改输入重试');
   });
 
   it('乱序响应应丢弃旧请求结果', async () => {
@@ -545,7 +547,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     expect(document.querySelector('.completion-text')?.textContent).toBe('真实候选');
   });
 
-  it('两个 IPC 都失败时 loading 应被清除', async () => {
+  it('两个 IPC 都失败时 loading 应被错误占位替换', async () => {
     const { input, api, list } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
@@ -554,9 +556,11 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // 两个 IPC 都失败，loading 被清除，列表隐藏
-    expect(list.querySelector('.completion-loading')).toBeNull();
-    expect(list.classList.contains('hidden')).toBe(true);
+    // loading 占位被错误占位替换（错误占位复用 completion-loading 类名 + completion-error 修饰）
+    const errorEl = list.querySelector('.completion-error');
+    expect(errorEl).not.toBeNull();
+    expect(errorEl?.classList.contains('completion-loading')).toBe(true);
+    expect(list.classList.contains('hidden')).toBe(false);
   });
 
   it('loading 期间键盘导航应失效', async () => {

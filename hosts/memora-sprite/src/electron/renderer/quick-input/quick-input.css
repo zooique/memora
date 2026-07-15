@@ -194,6 +194,11 @@ body {
   background: transparent;
 }
 
+/* 搜索错误占位（两源 IPC 全失败时，与 loading 同构但用警告色区分） */
+.completion-item.completion-error {
+  color: var(--yellow);
+}
+
 /* ===== 候选总数 footer ===== */
 .completion-footer {
   text-align: center;

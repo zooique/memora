@@ -285,12 +285,12 @@ export class InputAreaManager {
    * 初始化输入补全
    *
    * 复用 quick-input 模块的 QuickInputCompletion 类，让主对话输入框也具备补全能力。
-   * 用户输入 ≥2 字符后自动触发，从记忆 + 历史对话中搜索候选，↓↑ 导航 + Tab 确认。
+   * 用户输入 ≥2 字符后自动触发，从记忆 + 历史对话中搜索候选，↓↑ 导航 + ←→ 填充。
    *
    * 设计要点：
    * - 候选列表容器（#chat-completion-list）缺失时静默降级，不阻断初始化
    * - 补全管理器独立绑定 input/keydown 事件，与 InputAreaManager 的事件互不干扰
-   *   （补全仅拦截 ↓↑ Tab，Enter/Esc 由 InputAreaManager 处理）
+   *   （补全仅拦截 ↓↑←→，Enter/Esc 由 InputAreaManager 处理）
    * - onSelect 回调：回填文本到输入框并触发 input 事件（更新高度 + 按钮状态）
    * - 不注册 onListChange（主窗口不需要调整窗口高度，候选列表通过 CSS 绝对定位浮层）
    */

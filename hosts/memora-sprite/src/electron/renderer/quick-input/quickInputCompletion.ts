@@ -126,7 +126,7 @@ export class QuickInputCompletion {
   private lastRequestId = 0;
   /** 采纳反馈记录（text key → 累积采纳次数，用于 boost 已被采纳的候选项） */
   private adoptedTexts = new Map<string, number>();
-  /** UX-0714-4：本次合并后的候选总数（slice 前），用于判断是否需要显示"共 N 项"footer */
+  /** 本次合并后的候选总数（slice 前），用于判断是否需要显示"共 N 项"footer */
   private totalCandidatesCount = 0;
 
   /**
@@ -233,9 +233,11 @@ export class QuickInputCompletion {
    * 使用递增 requestId 取消乱序响应：若发起新请求时旧请求未返回，
    * 旧响应的 requestId 与 lastRequestId 不匹配，直接丢弃。
    *
-   * UX-0714-1：IPC 发出后立即显示 loading 占位，避免用户等待时无反馈。
+   * IPC 发出后立即显示 loading 占位，避免用户等待时无反馈。
+   * 两源全失败时显示错误占位，让用户区分"无匹配"和"搜索出错"。
+   *   单源失败仍展示另一源结果（部分可用优于完全不可用）。
    * loading 期间 candidates 为空，键盘导航天然失效（handleKeyDown 检查 length===0）。
-   * IPC 返回后由 renderCandidates 或 clearCandidates 自然替换 loading。
+   * IPC 返回后由 renderCandidates 或 showErrorPlaceholder 或 clearCandidates 替换 loading。
    */
   private async fetchCandidates(query: string): Promise<void> {
     const requestId = ++this.lastRequestId;
@@ -243,16 +245,21 @@ export class QuickInputCompletion {
     this.showLoading();
 
     try {
+      // 跟踪两源失败状态，全失败时显示错误占位（单源失败仍展示另一源结果）
+      let memoriesFailed = false;
+      let messagesFailed = false;
       // 并行调用两个搜索 IPC，单个失败时降级为空候选（补全是辅助功能，不阻断主流程）
       const [memoriesResult, messagesResult] = await Promise.all([
         this.api.searchMemories(query).catch((err) => {
           // IPC 失败时降级为空候选，warn 级别上报（可降级的非致命错误）
           reportError('QuickInputCompletion:searchMemories', err, 'warn');
+          memoriesFailed = true;
           return { hits: [] };
         }),
         this.api.searchSessionMessages({ keyword: query, limit: 20 }).catch((err) => {
           // IPC 失败时降级为空候选，warn 级别上报（可降级的非致命错误）
           reportError('QuickInputCompletion:searchSessionMessages', err, 'warn');
+          messagesFailed = true;
           return { results: [] };
         }),
       ]);
@@ -260,12 +267,42 @@ export class QuickInputCompletion {
       // 请求已过期（用户已输入新内容），丢弃旧响应（loading 由最新请求接管）
       if (requestId !== this.lastRequestId) return;
 
+      // 两源全失败时显示错误占位，让用户知道是搜索出错而非无匹配
+      if (memoriesFailed && messagesFailed) {
+        this.showErrorPlaceholder();
+        return;
+      }
+
       const candidates = this.mergeCandidates(query, memoriesResult.hits, messagesResult.results);
       this.renderCandidates(candidates);
     } catch (error) {
       reportError('QuickInputCompletion:fetchCandidates', error);
       this.clearCandidates();
     }
+  }
+
+  /**
+   * 显示搜索错误占位（两源 IPC 全失败时）
+   *
+   * 与 showLoading 同构：复用 .completion-item 类名让高度计算兼容，
+   * aria-hidden="true" 避免屏幕阅读器误报，candidates 为空使键盘导航失效。
+   * 用户修改输入后触发新请求，自然替换错误占位。
+   */
+  private showErrorPlaceholder(): void {
+    this.candidates = [];
+    this.selectedIndex = -1;
+    this.totalCandidatesCount = 0;
+    delete this.listEl.dataset.footer;
+    this.listEl.innerHTML = '';
+
+    const li = document.createElement('li');
+    // 复用 completion-item + completion-loading 类名（错误态视觉与 loading 同构）
+    li.className = 'completion-item completion-loading completion-error';
+    li.textContent = '搜索失败，修改输入重试';
+    li.setAttribute('aria-hidden', 'true');
+    this.listEl.appendChild(li);
+
+    this.showListContainer();
   }
 
   /**
@@ -279,7 +316,7 @@ export class QuickInputCompletion {
   private showLoading(): void {
     this.candidates = [];
     this.selectedIndex = -1;
-    // UX-0714-4：loading 期间清除 footer 标记和总数，避免 loading 项 + 残留 footer 同时出现
+    // loading 期间清除 footer 标记和总数，避免 loading 项 + 残留 footer 同时出现
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;
     this.listEl.innerHTML = '';
@@ -400,7 +437,7 @@ export class QuickInputCompletion {
       }
     }
 
-    // UX-0714-4：记录过滤后的总数，供 renderCandidates 判断是否追加"共 N 项"footer
+    // 记录过滤后的总数，供 renderCandidates 判断是否追加"共 N 项"footer
     this.totalCandidatesCount = diversified.length;
     return diversified.slice(0, MAX_CANDIDATES);
   }
@@ -567,7 +604,7 @@ export class QuickInputCompletion {
       this.listEl.appendChild(li);
     }
 
-    // UX-0714-4：候选总数超过最大显示数时，在列表底部追加"共 N 项"footer
+    // 候选总数超过最大显示数时，在列表底部追加"共 N 项"footer
     // footer 不含 .completion-item 类（不参与 querySelectorAll 计数/不作为可选选项）
     // 通过 dataset.footer='true' 标记，让 quickInput.ts 的高度计算感知 footer 并预留空间
     if (this.totalCandidatesCount > MAX_CANDIDATES) {
@@ -626,7 +663,7 @@ export class QuickInputCompletion {
   private clearCandidates(): void {
     this.candidates = [];
     this.selectedIndex = -1;
-    // UX-0714-4：清空时同步清除 footer 标记和总数，避免残留状态影响下次渲染
+    // 清空时同步清除 footer 标记和总数，避免残留状态影响下次渲染
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;
     this.listEl.innerHTML = '';

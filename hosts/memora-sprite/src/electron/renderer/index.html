@@ -362,7 +362,7 @@
             <!-- 功能提示：输入补全（让用户知道输入时会自动从记忆/对话中补全） -->
             <div class="empty-feature-hint">
               <svg class="icon"><use href="#icon-search"/></svg>
-              <span>输入时自动补全：从记忆和历史对话中匹配，↓↑ 选择，Tab 确认</span>
+              <span>输入时自动补全：从记忆和历史对话中匹配，↓↑ 选择，←→ 填充</span>
             </div>
             <!-- 功能提示：快捷键帮助（让用户知道按 Ctrl+/ 查看完整快捷键列表） -->
             <div class="empty-feature-hint">
@@ -374,8 +374,8 @@
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
         <div id="input-area">
-          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。输入触发补全，Tab 确认" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
-          <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + Tab 确认，IDE 风格浮层） -->
+          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。↓↑补全 ←→填充" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
+          <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + ←→ 填充，IDE 风格浮层） -->
           <ul id="chat-completion-list" class="chat-completion-list hidden" role="listbox" aria-label="输入补全候选"></ul>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
