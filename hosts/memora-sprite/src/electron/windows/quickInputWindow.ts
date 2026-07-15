@@ -320,6 +320,10 @@ export class QuickInputWindow {
         if (streamMode) {
           this.suppressBlurClose = false;
           this.cancelBlurClose();
+          // 重新聚焦浮窗：paste 时焦点切到了原窗口，需切回浮窗让渲染进程 inputField.focus() 生效
+          if (this.win && !this.win.isDestroyed()) {
+            this.win.focus();
+          }
         }
 
         if (pasteResult.success && pasteResult.mode === 'paste') {

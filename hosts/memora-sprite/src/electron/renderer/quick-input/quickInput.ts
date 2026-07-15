@@ -263,15 +263,19 @@ class QuickInputController {
 
   /**
    * 更新流式模式切换按钮视觉状态
+   *
+   * 通过切换 SVG <use href> 在 lock/unlock icon 间切换（与主窗口 icon 系统对齐）。
    */
   private updateStreamToggle(): void {
     if (!(this.streamToggle instanceof HTMLElement)) return;
+    const useEl = this.streamToggle.querySelector('use');
+    if (useEl) {
+      useEl.setAttribute('href', this.streamMode ? '#icon-lock' : '#icon-unlock');
+    }
     if (this.streamMode) {
-      this.streamToggle.textContent = '🔒';
       this.streamToggle.classList.add('active');
       this.streamToggle.title = '流式模式开启：粘贴后保持窗口打开（点击切换）';
     } else {
-      this.streamToggle.textContent = '🔓';
       this.streamToggle.classList.remove('active');
       this.streamToggle.title = '流式模式关闭：粘贴后关闭窗口（点击切换）';
     }
