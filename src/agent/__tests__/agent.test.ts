@@ -404,6 +404,49 @@ describe('Agent · 生命周期 E2E', () => {
     agent = null;
   });
 
+  it('close 后所有组件字段应被 null 化（nullifyAllComponents 完整性验证）', { timeout: 30000 }, async () => {
+    // 构造并初始化 Agent，使所有组件字段被填充
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 初始化后所有组件字段应非 null（前置验证）
+    expect(agent.persona).not.toBeNull();
+    expect(agent.tools).not.toBeNull();
+    expect(agent.config).not.toBeNull();
+    expect(agent.insight).not.toBeNull();
+    expect(agent.memory).not.toBeNull();
+    expect(agent.agentLoop).not.toBeNull();
+    expect(agent.agentHistory).not.toBeNull();
+    expect(agent.context).not.toBeNull();
+    expect(agent.projects).not.toBeNull();
+    expect(agent.userProfile).not.toBeNull();
+    expect(agent.works).not.toBeNull();
+    expect(agent.sessionManager).not.toBeNull();
+    expect(agent.polish).not.toBeNull();
+
+    // close 调用 nullifyAllComponents，应 null 化全部 13 个组件字段
+    await agent.close();
+
+    // Provider 相关
+    expect(agent.agentLoop).toBeNull();
+    expect(agent.agentHistory).toBeNull();
+    // 核心组件
+    expect(agent.context).toBeNull();
+    // 专职 Manager
+    expect(agent.persona).toBeNull();
+    expect(agent.tools).toBeNull();
+    expect(agent.config).toBeNull();
+    expect(agent.insight).toBeNull();
+    expect(agent.memory).toBeNull();
+    expect(agent.projects).toBeNull();
+    expect(agent.userProfile).toBeNull();
+    expect(agent.works).toBeNull();
+    expect(agent.sessionManager).toBeNull();
+    expect(agent.polish).toBeNull();
+
+    agent = null;
+  });
+
   it('close 后再次 init 应正常工作', { timeout: 30000 }, async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
 

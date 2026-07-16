@@ -366,9 +366,9 @@ export class PerceptionCoordinator {
     this.opts.proactiveEngine.setPatterns(patterns);
 
     // 发射模式更新事件（供 UI 洞察面板展示）
-    if (patterns.length > 0) {
-      this.opts.emitter.patternsUpdated({ patterns });
-    }
+    // 无条件发射：模式消失时 UI 需收到空 patterns 才能清空陈旧显示，
+    // 渲染层 perceptionPanelManager 已处理空 patterns 的清空逻辑
+    this.opts.emitter.patternsUpdated({ patterns });
 
     // 将模式洞察返回（不再直接注入，由调用方统一注入）
     return this.opts.patternDetector.buildPatternPrompt(patterns);

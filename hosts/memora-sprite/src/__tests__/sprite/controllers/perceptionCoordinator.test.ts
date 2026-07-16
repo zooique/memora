@@ -785,7 +785,7 @@ describe('PerceptionCoordinator', () => {
       expect(payload).toEqual(DEFAULT_CONTEXT);
     });
 
-    it('patternsUpdated 仅在有模式时发射', () => {
+    it('patternsUpdated 有模式时发射完整 patterns 载荷', () => {
       const mockPatterns: DetectedPattern[] = [
         { type: 'recurring_topic', summary: '高频模式', confidence: 0.9, relatedMemoryIds: [] },
       ];
@@ -800,7 +800,7 @@ describe('PerceptionCoordinator', () => {
       expect(emitter.patternsUpdated).toHaveBeenCalledWith({ patterns: mockPatterns });
     });
 
-    it('无模式时不发射 patternsUpdated', () => {
+    it('无模式时仍发射 patternsUpdated（空 patterns 载荷，供 UI 清空陈旧显示）', () => {
       const { coordinator, emitter } = createCoordinator({
         memoryList: [makeMemory()],
       });
@@ -808,7 +808,8 @@ describe('PerceptionCoordinator', () => {
 
       coordinator.refreshBeforeChat();
 
-      expect(emitter.patternsUpdated).not.toHaveBeenCalled();
+      expect(emitter.patternsUpdated).toHaveBeenCalledTimes(1);
+      expect(emitter.patternsUpdated).toHaveBeenCalledWith({ patterns: [] });
     });
   });
 
