@@ -151,14 +151,14 @@ export function createMemoryController(uiManager: UIManager) {
         uiManager.showModal('recycle-bin-modal');
       } else if (action === 'completion-stats') {
         // 补全统计面板，数据来自渲染层 localStorage（无 IPC），直接渲染
-        uiManager.renderCompletionStats();
+        uiManager.renderCompletionStat();
       }
     });
 
     // 注册补全统计重置回调（清空 localStorage 数据 + 重新渲染）
     uiManager.onResetCompletionStats(() => {
       getCompletionMetrics().clear();
-      uiManager.renderCompletionStats();
+      uiManager.renderCompletionStat();
       uiManager.showToast('补全统计已重置', 'info');
     });
 

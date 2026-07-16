@@ -1,10 +1,12 @@
 /**
- * ESM 兼容的目录路径 shim
+ * 跨模块模式的目录路径 shim
  *
- * CommonJS 的 __dirname 在 ESM 中不可用，模块若需获取当前目录，
- * 通常需要重复 `path.dirname(fileURLToPath(import.meta.url))` 样板代码。
- * 本模块统一计算 sprite 宿主中频繁使用的 electron 目录绝对路径，
- * 消除多处重复定义，并避免样板代码扩散。
+ * Electron 主进程以 ESM 运行（package.json type: module），
+ * 使用 import.meta.url 定位当前模块路径。
+ *
+ * 本文件仅被 Electron 主进程（ESM）导入，不被 preload（CJS）导入。
+ * 为避免 preload 的 CJS 类型检查追踪到本文件（经 ipc/types.ts → windowManager.ts 链），
+ * ipc/types.ts 已改用 WindowManagerLike 结构化接口，切断类型导入链。
  *
  * currentDir 即为 electron 目录。
  */
@@ -13,8 +15,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Electron 主进程代码目录的绝对路径（src/electron/）
- * 用于定位 preload.js、renderer/index.html 等静态资源
+ * Electron 主进程代码目录的绝对路径（dist-electron/electron/）
+ * 用于定位 preload.cjs、renderer/index.html 等静态资源
  */
 export const ELECTRON_DIR = dirname(fileURLToPath(import.meta.url));
 

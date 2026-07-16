@@ -16,7 +16,7 @@
 import { reportError } from '../helpers/errorHelpers.js';
 import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
-import { safeGet, safeSet } from '../helpers/safeStorage.js';
+import { safeSet } from '../helpers/safeStorage.js';
 
 // ─── Provider 注册链接映射 ──────────────────────────────
 

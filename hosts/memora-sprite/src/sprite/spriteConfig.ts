@@ -19,6 +19,8 @@
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { readFileSync, existsSync } from 'node:fs';
+// logger/toError/isPlainObject：日志 + 错误归一化 + 对象类型守卫（消费内核已提取工具）
+// isPlainObject 用于 validateObjectField 校验 JSON.parse 结果是否为纯对象（H4-E）
 import { logger, toError, isPlainObject } from 'memora';
 // safeWriteJsonSync 统一 JSON 写入（mkdir + 0o600 权限，消除本地手写三件套）
 import { safeWriteJsonSync } from '../shared/safeWriteJson.js';
@@ -381,7 +383,8 @@ function validateObjectField(target: Record<string, unknown>, key: SpriteConfigK
     target[key] = null;
     return true;
   }
-  if (typeof value !== 'object' || value === null) return false;
+  // 使用内核 isPlainObject 统一对象类型守卫（H4-E：消除重复 typeof 判断）
+  if (!isPlainObject(value)) return false;
 
   // floatIconPosition：校验 x/y 为 number
   if (key === 'floatIconPosition') {

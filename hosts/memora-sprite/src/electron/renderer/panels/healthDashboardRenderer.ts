@@ -171,9 +171,9 @@ export class HealthDashboardRenderer {
       if (staleCount > 0) {
         // 原因分类（仅展示非零项）
         const reasonParts: string[] = [];
-        if (reasonCounts.old_age > 0) reasonParts.push(`老化 ${reasonCounts.old_age}`);
-        if (reasonCounts.low_score > 0) reasonParts.push(`低分 ${reasonCounts.low_score}`);
-        if (reasonCounts.both > 0) reasonParts.push(`双重 ${reasonCounts.both}`);
+        if ((reasonCounts.old_age ?? 0) > 0) reasonParts.push(`老化 ${reasonCounts.old_age}`);
+        if ((reasonCounts.low_score ?? 0) > 0) reasonParts.push(`低分 ${reasonCounts.low_score}`);
+        if ((reasonCounts.both ?? 0) > 0) reasonParts.push(`双重 ${reasonCounts.both}`);
         if (reasonParts.length > 0) parts.push(`（${reasonParts.join(' / ')}）`);
         // 最长闲置天数
         if (maxDays > 0) parts.push(`· 最长 ${maxDays} 天`);
@@ -181,7 +181,7 @@ export class HealthDashboardRenderer {
       staleEl.textContent = parts.join('');
       // title 悬停展示完整详情
       staleEl.title = staleCount > 0
-        ? `${staleCount} 条过期记忆：老化 ${reasonCounts.old_age} / 低分 ${reasonCounts.low_score} / 双重 ${reasonCounts.both}，最长闲置 ${maxDays} 天`
+        ? `${staleCount} 条过期记忆：老化 ${reasonCounts.old_age ?? 0} / 低分 ${reasonCounts.low_score ?? 0} / 双重 ${reasonCounts.both ?? 0}，最长闲置 ${maxDays} 天`
         : '';
       staleEl.className = 'health-detail-item';
       if (staleCount > 0) staleEl.classList.add('warning');

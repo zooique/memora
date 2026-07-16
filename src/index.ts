@@ -138,9 +138,7 @@ export { setLogger, logger } from '@/logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────
 // 分词工具：宿主项目（如 SqliteStorage）依赖
-// 工具导出
-export { segmentText } from '@/utils/segmenter.js';
-export { segmentLower } from '@/utils/segmenter.js';
+export { segmentText, segmentLower } from '@/utils/segmenter.js';
 // 对象类型守卫：宿主项目（如 spriteConfig）依赖，校验 JSON.parse 结果
 export { isPlainObject } from '@/utils/objects.js';
 // Frontmatter 解析/序列化：宿主项目（如 skillInstaller）依赖

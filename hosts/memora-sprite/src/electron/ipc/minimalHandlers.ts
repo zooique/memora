@@ -28,7 +28,7 @@ import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteCo
 import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
 import { isValidContent, isNonEmptyString } from './inputValidation.js';
 // AppRuntime / MinimalIpcState / MinimalIpcCallbacks 真理源在 ./types.ts
-import type { AppRuntime, MinimalIpcState, MinimalIpcCallbacks } from './types.js';
+import type { MinimalIpcState, MinimalIpcCallbacks } from './types.js';
 
 /**
  * 脱敏 API Key 供渲染进程显示

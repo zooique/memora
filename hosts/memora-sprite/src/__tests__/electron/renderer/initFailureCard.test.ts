@@ -63,25 +63,27 @@ describe('错误信息提取', () => {
     expect(msgEl?.textContent).toBe('404');
   });
 
-  it('null 应降级为 "null" 字符串', () => {
+  it('null 应通过 toError 降级为 "未知错误"（比 "null" 更友好）', () => {
+    // toError 对 null/undefined 返回 '未知错误'，比 String(null)='null' 更友好
     renderInitFailureToBody(null);
     const card = document.getElementById('ui-init-failure-card');
     const msgEl = card?.querySelector('p');
-    expect(msgEl?.textContent).toBe('null');
+    expect(msgEl?.textContent).toBe('未知错误');
   });
 
-  it('undefined 应降级为 "undefined" 字符串', () => {
+  it('undefined 应通过 toError 降级为 "未知错误"', () => {
     renderInitFailureToBody(undefined);
     const card = document.getElementById('ui-init-failure-card');
     const msgEl = card?.querySelector('p');
-    expect(msgEl?.textContent).toBe('undefined');
+    expect(msgEl?.textContent).toBe('未知错误');
   });
 
-  it('对象应通过 String() 转换为 [object Object]', () => {
+  it('对象应通过 toError JSON 序列化（保留调试信息）', () => {
+    // toError 对无 message 的普通对象执行 JSON.stringify，保留结构化调试信息
     renderInitFailureToBody({ code: 500 });
     const card = document.getElementById('ui-init-failure-card');
     const msgEl = card?.querySelector('p');
-    expect(msgEl?.textContent).toBe('[object Object]');
+    expect(msgEl?.textContent).toBe('{"code":500}');
   });
 });
 

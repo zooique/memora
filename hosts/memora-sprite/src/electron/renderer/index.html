@@ -374,7 +374,7 @@
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
         <div id="input-area">
-          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。↓↑补全 ←→填充" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
+          <textarea id="input" name="message" autocomplete="off" placeholder="输入消息，Enter 发送，Shift+Enter 换行。↓↑补全 ←→填充" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
           <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + ←→ 填充，IDE 风格浮层） -->
           <ul id="chat-completion-list" class="chat-completion-list hidden" role="listbox" aria-label="输入补全候选"></ul>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
@@ -424,7 +424,7 @@
           <!-- 面板标题 -->
           <span class="panel-title" id="panel-title-memories">记忆</span>
           <!-- 搜索框占据主要宽度 -->
-          <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
+          <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" autocomplete="off" />
           <!-- 视图切换分段控件：列表/时间线/图谱（常驻，互斥单选） -->
           <div class="view-switch" role="tablist" aria-label="视图切换">
             <button id="btn-list-view" class="view-switch-btn active" role="tab" aria-selected="true" title="列表视图">

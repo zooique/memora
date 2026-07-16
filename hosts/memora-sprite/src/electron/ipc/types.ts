@@ -8,9 +8,42 @@
 import type { Agent } from 'memora';
 import type { Sprite } from '../../sprite/sprite.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
+import type { BrowserWindow } from 'electron';
 import type { WindowStateManager } from '../windows/windowState.js';
-import type { WindowManager } from '../windows/windowManager.js';
 import type { TrayManager } from '../trayIcon.js';
+
+/**
+ * FloatWindow 的 IPC 层视图
+ *
+ * FloatWindow 是 BrowserWindow 的包装类（非子类），IPC handler 仅使用其 send/broadcastTheme 方法。
+ * 此接口切断 ipc/types.ts → floatWindow.ts → esmShim.ts 的类型导入链，
+ * 避免 preload（CJS 编译）追踪到 esmShim.ts（ESM 运行时）导致 import.meta.url 编译错误（TS1343）。
+ * FloatWindow 类自动满足此接口（结构性类型）。
+ */
+export interface FloatWindowLike {
+  /** 向浮动窗口发送 IPC 消息（转发到底层 BrowserWindow.webContents.send） */
+  send(channel: string, ...args: unknown[]): void;
+  /** 广播主题变更到浮动窗口 */
+  broadcastTheme(theme: 'light' | 'dark'): void;
+}
+
+/**
+ * WindowManager 的 IPC 层视图
+ *
+ * 仅暴露 IPC handler 实际使用的方法，切断 ipc/types.ts → windowManager.ts → esmShim.ts 的类型导入链，
+ * 避免 preload（CJS 编译）追踪到 esmShim.ts（ESM 运行时）导致 import.meta.url 编译错误（TS1343）。
+ *
+ * WindowManager 类自动满足此接口（结构性类型），无需显式 implements。
+ * 新增 IPC handler 使用 WindowManager 的其他方法时，需同步扩展此接口。
+ */
+export interface WindowManagerLike {
+  /** 获取浮动窗口（80x80 悬浮球，FloatWindow 包装类），可能未创建 */
+  getFloatWindow(): FloatWindowLike | null;
+  /** 获取完整窗口（主交互窗口，BrowserWindow 实例），可能未创建 */
+  getFullWindow(): BrowserWindow | null;
+  /** 更新窗口背景色（主题切换时） */
+  updateBackgroundColor(color: string): void;
+}
 // 注入快捷键管理器，供 configHandlers 触发热更新副作用
 import type { ShortcutManager } from '../shortcuts.js';
 import type { UsageStatsCollector } from '../../sprite/usage/usageStatsCollector.js';
@@ -34,7 +67,7 @@ export interface IpcContext {
   /** 窗口状态管理器 */
   windowStateManager: WindowStateManager;
   /** 窗口管理器（获取窗口引用） */
-  windowManager: WindowManager;
+  windowManager: WindowManagerLike;
   /** 托盘管理器（主动提示时脉冲） */
   trayManager: TrayManager | null;
   /**
@@ -211,7 +244,7 @@ export interface MinimalIpcState {
   /** 审计管理器（Agent 未就绪时审计日志查询降级用） */
   auditManager: AuditManager | null;
   /** 窗口管理器（主题变更等通道需要获取窗口引用） */
-  windowManager: WindowManager | undefined;
+  windowManager: WindowManagerLike | undefined;
   /** LLM 配置缓存（用于判断是否需要重新初始化 Agent） */
   lastProvider: string | null;
   /** LLM 配置缓存：model */

@@ -113,9 +113,6 @@ function simpleHash(text: string): string {
   // FNV-1a 参数
   const FNV_OFFSET_BASIS = 0x811c9dc5;
   const FNV_PRIME = 0x01000193;
-  // 32 位无符号整数掩码（JS 位运算是有符号 32 位，需用 >>> 0 转无符号）
-  const UINT32_MASK = 0xffffffff;
-
   let hash = FNV_OFFSET_BASIS;
   for (let i = 0; i < text.length; i++) {
     // XOR 字节

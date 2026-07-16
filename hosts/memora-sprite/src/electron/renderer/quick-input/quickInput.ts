@@ -44,6 +44,7 @@ export type QuickInputElectronAPI = Pick<
   | 'searchMemories' | 'searchSessionMessages' | 'resizeQuickInput'
   | 'moveQuickInput' | 'polishQuickInput'
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
+  | 'boostMemory'
 >;
 
 /** 流式模式 Toast 显示时长（ms），比普通模式短，快速恢复输入状态 */
