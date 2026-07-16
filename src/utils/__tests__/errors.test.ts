@@ -68,10 +68,11 @@ describe('MemoraError · 错误信息友好化', () => {
 // ─── ToolErrorCode 错误码值定义 ──────────────────────
 
 describe('ToolErrorCode · 错误码值定义', () => {
-  it('应定义 10 种错误码', () => {
-    // 验证 ToolErrorCode 对象包含 10 个键
+  it('应定义 9 种错误码', () => {
+    // 验证 ToolErrorCode 对象包含 9 个键
+    // 注：TOOL_TIMEOUT 已删除（原为预留错误码，无业务代码抛出，违反"不为未来预留"原则）
     const codes = Object.keys(ToolErrorCode);
-    expect(codes).toHaveLength(10);
+    expect(codes).toHaveLength(9);
   });
 
   it('每种错误码的键与值相同（as const 语义）', () => {
@@ -80,7 +81,6 @@ describe('ToolErrorCode · 错误码值定义', () => {
     expect(ToolErrorCode.FILE_NOT_FOUND).toBe('FILE_NOT_FOUND');
     expect(ToolErrorCode.PERMISSION_DENIED).toBe('PERMISSION_DENIED');
     expect(ToolErrorCode.ARGUMENT_ERROR).toBe('ARGUMENT_ERROR');
-    expect(ToolErrorCode.TOOL_TIMEOUT).toBe('TOOL_TIMEOUT');
     expect(ToolErrorCode.WRITE_REJECTED).toBe('WRITE_REJECTED');
     expect(ToolErrorCode.DIR_NOT_FOUND).toBe('DIR_NOT_FOUND');
     expect(ToolErrorCode.UNKNOWN_TOOL).toBe('UNKNOWN_TOOL');
@@ -98,10 +98,6 @@ describe('isRetryableErrorCode · AgentLoop Reflection 核心', () => {
 
   it('ARGUMENT_ERROR 应可重试（LLM 可修正参数格式）', () => {
     expect(isRetryableErrorCode(ToolErrorCode.ARGUMENT_ERROR)).toBe(true);
-  });
-
-  it('TOOL_TIMEOUT 应可重试', () => {
-    expect(isRetryableErrorCode(ToolErrorCode.TOOL_TIMEOUT)).toBe(true);
   });
 
   it('DIR_NOT_FOUND 应可重试（LLM 可能用错路径）', () => {
@@ -132,12 +128,13 @@ describe('isRetryableErrorCode · AgentLoop Reflection 核心', () => {
     expect(isRetryableErrorCode(ToolErrorCode.UNKNOWN)).toBe(false);
   });
 
-  it('5 个 retryable + 5 个 non-retryable 边界完整覆盖', () => {
-    // 统计验证：10 个错误码中恰好 5 个可重试 + 5 个不可重试
+  it('4 个 retryable + 5 个 non-retryable 边界完整覆盖', () => {
+    // 统计验证：9 个错误码中恰好 4 个可重试 + 5 个不可重试
+    // 注：TOOL_TIMEOUT 删除后，retryable 从 5 → 4
     const allCodes = Object.values(ToolErrorCode);
     const retryable = allCodes.filter((c) => isRetryableErrorCode(c));
     const nonRetryable = allCodes.filter((c) => !isRetryableErrorCode(c));
-    expect(retryable).toHaveLength(5);
+    expect(retryable).toHaveLength(4);
     expect(nonRetryable).toHaveLength(5);
   });
 });

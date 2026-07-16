@@ -90,7 +90,9 @@ export class SessionManager {
         date: history.currentDateValue,
         session: history.currentSessionValue,
       };
-    } catch {
+    } catch (err) {
+      // history 未就绪属正常分支（首次调用）；其他异常也降级为 null，但记录日志便于排查状态损坏
+      logger.debug({ err }, 'getCurrentSessionInfo: history 未就绪或读取失败，返回 null');
       return null;
     }
   }

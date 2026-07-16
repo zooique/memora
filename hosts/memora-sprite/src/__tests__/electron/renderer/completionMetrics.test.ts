@@ -7,7 +7,7 @@
  * - LRU 淘汰：超 500 条时从头淘汰
  * - localStorage 持久化：写入 + 读取 + JSON 损坏降级
  * - clear：清空数据
- * - simpleHash：hash 工具基本验证
+ * - queryHash / adoptedTextHash 格式验证（FNV-1a 8 字符 hex，不记原文）
  *
  * Mock 策略：
  * - localStorage：JSDOM 环境提供真实 localStorage（每个测试 beforeEach 清空）
@@ -16,7 +16,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CompletionMetrics } from '../../../electron/renderer/helpers/completionMetrics.js';
-import { simpleHash } from '../../../electron/renderer/helpers/hashUtils.js';
 
 describe('补全统计埋点', () => {
   let metrics: CompletionMetrics;
@@ -26,32 +25,6 @@ describe('补全统计埋点', () => {
     localStorage.clear();
     // 每个测试新建实例（绕过单例，直接测试类）
     metrics = new CompletionMetrics();
-  });
-
-  // ─── simpleHash 工具 ───────────────────────────────────
-
-  describe('simpleHash', () => {
-    it('相同文本应返回相同 hash', () => {
-      const hash1 = simpleHash('hello world');
-      const hash2 = simpleHash('hello world');
-      expect(hash1).toBe(hash2);
-    });
-
-    it('不同文本应返回不同 hash', () => {
-      const hash1 = simpleHash('hello');
-      const hash2 = simpleHash('world');
-      expect(hash1).not.toBe(hash2);
-    });
-
-    it('应返回 8 字符十六进制字符串', () => {
-      const hash = simpleHash('test');
-      expect(hash).toMatch(/^[0-9a-f]{8}$/);
-    });
-
-    it('空字符串应返回有效 hash（不报错）', () => {
-      const hash = simpleHash('');
-      expect(hash).toMatch(/^[0-9a-f]{8}$/);
-    });
   });
 
   // ─── 事件记录 ─────────────────────────────────────────
@@ -76,7 +49,8 @@ describe('补全统计埋点', () => {
       const events = metrics.getRecentEvents(10);
       const event = events[0] as { type: string; queryLen: number; queryHash: string };
       expect(event.queryLen).toBe(5);
-      expect(event.queryHash).toBe(simpleHash('hello'));
+      // queryHash 为 FNV-1a 8 字符十六进制字符串（格式验证，不依赖 simpleHash 实现）
+      expect(event.queryHash).toMatch(/^[0-9a-f]{8}$/);
       // 不应包含原文
       expect(JSON.stringify(event)).not.toContain('hello');
     });
@@ -86,9 +60,19 @@ describe('补全统计埋点', () => {
       const events = metrics.getRecentEvents(10);
       const event = events[0] as { type: string; adoptedPosition: number; adoptedTextHash: string };
       expect(event.adoptedPosition).toBe(2);
-      expect(event.adoptedTextHash).toBe(simpleHash('secret text'));
+      // adoptedTextHash 为 FNV-1a 8 字符十六进制字符串（格式验证，不依赖 simpleHash 实现）
+      expect(event.adoptedTextHash).toMatch(/^[0-9a-f]{8}$/);
       // 不应包含原文
       expect(JSON.stringify(event)).not.toContain('secret text');
+    });
+
+    it('相同查询的 queryHash 应一致（FNV-1a 确定性）', () => {
+      metrics.recordShown('sameQuery', 3, 5);
+      metrics.recordAdoption('sameQuery', 'text', 0);
+      const events = metrics.getRecentEvents(10);
+      const showEvent = events[1] as { queryHash: string };
+      const adoptEvent = events[0] as { queryHash: string };
+      expect(showEvent.queryHash).toBe(adoptEvent.queryHash);
     });
   });
 

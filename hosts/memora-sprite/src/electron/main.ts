@@ -333,7 +333,10 @@ function setupAgentReady(
 ): void {
   // 0. 创建使用统计采集器（需在 IpcContext 创建前就绪，供 systemHandlers 访问）
   appState.usageStatsCollector = new UsageStatsCollector(dataDir);
-  appState.usageStatsCollector.load().catch(() => {});
+  // 使用统计加载失败不阻塞启动，但需可观测（避免静默丢失统计基线）
+  appState.usageStatsCollector.load().catch((err) => {
+    logger.warn({ err }, '使用统计加载失败，将从头开始累积');
+  });
   appState.usageStatsCollector.startAutoFlush();
   // AUDIT-5-4 隐私合规：根据配置开启采集（默认关闭）
   const usageStatsConfig = loadSpriteConfig();

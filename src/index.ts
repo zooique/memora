@@ -165,7 +165,9 @@ export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@/utils/errors
 export { toError } from '@/utils/toError.js';
 export type { ToolErrorCodeValue } from '@/utils/errors.js';
 
-// ─── 评估框架导出（Mock Eval：Agent 行为回归测试，不调用真实 LLM） ───
+// ─── 评估框架导出（@internal · Mock Eval：Agent 行为回归测试，不调用真实 LLM） ───
+// 设计定位：仅 CI 回归测试使用（MSW Mock LLM），运行时零消费者。
+// 保留导出供外部宿主项目编写自己的 eval 场景；非运行时 API，不应在业务代码中 import。
 export type { EvalScenario, EvalExpectation, EvalResult } from '@/eval/evalTypes.js';
 export { collectAgentChunks, evaluateResult } from '@/eval/evalTypes.js';
 export { EVAL_SCENARIOS } from '@/eval/scenarios.js';

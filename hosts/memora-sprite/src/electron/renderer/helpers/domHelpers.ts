@@ -11,6 +11,8 @@
  * - 核心元素与可选元素分离，单个面板缺失不阻塞整个 UI
  */
 import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+// reportError 为渲染进程统一日志入口（双通道：console + 主进程 logger），替代散落的 console.warn/error
+import { reportError } from './errorHelpers.js';
 // formatTimeAgo 时间常量替换（统一引用 constants.ts 真理源）
 import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY } from '../../../sprite/constants.js';
 
@@ -59,13 +61,15 @@ export function getOptionalElement<T extends keyof HTMLElementTagNameMap>(
 ): HTMLElementTagNameMap[T] | null {
   const el = document.getElementById(id);
   if (!el) {
-    console.warn(`[UIManager] 可选的 DOM 元素 #${id} 未找到，相关功能将降级`);
+    reportError('UIManager', `可选的 DOM 元素 #${id} 未找到，相关功能将降级`, 'warn');
     return null;
   }
   // 运行时标签名校验
   if (el.tagName.toLowerCase() !== tagName) {
-    console.warn(
-      `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>，相关功能将降级`,
+    reportError(
+      'UIManager',
+      `DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>，相关功能将降级`,
+      'warn',
     );
     return null;
   }

@@ -38,14 +38,6 @@ export const ToolErrorCode = {
   PERMISSION_DENIED: 'PERMISSION_DENIED',
   /** 工具参数错误（可重试 — LLM 可以修正参数格式） */
   ARGUMENT_ERROR: 'ARGUMENT_ERROR',
-  /**
-   * 工具执行超时（可重试）
-   *
-   * 预留错误码，当前无业务代码抛出。
-   * 待 toolExecutor 实现工具执行超时机制后启用（如 Promise.race + AbortSignal）。
-   * 保留在 RETRYABLE_ERROR_CODES 中以维持公共 API 契约稳定。
-   */
-  TOOL_TIMEOUT: 'TOOL_TIMEOUT',
   /** 用户拒绝写入（不可重试） */
   WRITE_REJECTED: 'WRITE_REJECTED',
   /** 目录不存在（可重试 — LLM 可能用错了路径） */
@@ -66,7 +58,6 @@ export type ToolErrorCodeValue = (typeof ToolErrorCode)[keyof typeof ToolErrorCo
 const RETRYABLE_ERROR_CODES = new Set<ToolErrorCodeValue>([
   ToolErrorCode.FILE_NOT_FOUND,
   ToolErrorCode.ARGUMENT_ERROR,
-  ToolErrorCode.TOOL_TIMEOUT,
   ToolErrorCode.DIR_NOT_FOUND,
   ToolErrorCode.CUSTOM_TOOL_FAILED,
 ]);
