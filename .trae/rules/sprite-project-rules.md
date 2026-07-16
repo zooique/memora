@@ -9,7 +9,7 @@ date: 2026-07-13
 
 > **设计哲学**：上下文感知，非内容感知 **核心矛盾**：被动响应 ←→ 主动进化
 > **定位**：memora 内核的第一个真实宿主——能自我进化的桌面精灵
-> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008 + ADR-SP-015~016
+> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008 + ADR-SP-015~017
 
 ## 1. 与 memora 内核的关系
 
@@ -67,9 +67,10 @@ npm run package:win   # 自动：sync-memora → build:electron → clean-releas
 
 > **注意**：`file:` 依赖被 electron-builder 打入 asar 时，会解引用 Junction/symlink，复制实际文件到 `node_modules/memora/dist/`。`verify-package.mjs` 检查 `node_modules/memora/dist/index.js` 仍然有效。
 
-### 2.3 恢复 npm 发布模式（未来如需）
+### 2.3 恢复 npm 发布模式（应急方案，当前不使用）
 
-若未来需要恢复 npm 发布模式：
+> **当前模式**：file:../..（本地 file 协议，详见 [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v2）
+> 以下为未来如需切回 npm alias 模式的应急步骤，当前不执行。
 
 ```bash
 # 1. 修改 package.json：将 "memora": "file:../.." 改回 "memora": "npm:@zooique/memora@^1.0.1"
@@ -85,7 +86,7 @@ npm run package:win   # 自动：sync-memora → build:electron → clean-releas
 | 数据库 | better-sqlite3（native 模块，^12.10.0） | ADR-SP-002 |
 | 桌面壳 | 阶段一 CLI → 阶段二 Electron 40 | ADR-SP-003 |
 | 感知层 | 上下文感知，非内容感知 | ADR-SP-004 |
-| 包管理 | npm + npm alias（`npm:@zooique/memora`）+ @electron/rebuild | ADR-SP-005 |
+| 包管理 | npm + `file:../..`（本地 file 协议）+ @electron/rebuild | [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v2 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
 
 ## 4. 目录结构

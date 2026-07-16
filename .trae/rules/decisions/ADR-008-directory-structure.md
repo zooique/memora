@@ -34,7 +34,7 @@ date: 2026-06-11
 ```
 src/
 ├── index.ts                # 库导出入口（类型 + 接口 + 函数 + 类导出）
-├── agent/                  # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（7 个专职 Manager）+ 对话快照 + 作品投影
+├── agent/                  # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（13 个专职 Manager/服务类）+ 对话快照 + 作品投影
 ├── memory/                 # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/                # 角色管理
 ├── skill/                  # 技能管理
@@ -127,3 +127,15 @@ src/
 - agent/ 清单补充 `constants.ts`（Agent/Loop 常量集合），反映 managers/ 子目录结构
 - utils/ 清单补充 4 个遗漏文件：`toError.ts`（纯逻辑 toError）、`loggerHolder.ts`（Logger 持有者）、`path.ts`（路径工具）、`time.ts`（时间工具）
 - 年轮审判发现规则文档滞后于产出，此次双向对齐
+
+### v0.7（2026-07-16）· managers/ 子目录 Manager 数量同步
+
+**变更**：managers/ 子目录专职 Manager/服务类数量从 v0.5 的 7 个增长到 13 个，本次年轮补记
+
+**设计演进**：
+- v0.5 原 7 个：ConfigManager / SessionManager / MemoryInspector / InsightExtractor / AutoConfigRefiner / WorkProjectionManager / UserFactExtractor（注：UserFactExtractor 实际位于 agent/ 根级，非 managers/，v0.5 年轮记录有误）
+- v0.7 当前 13 个：ArchiveCoordinator / AutoConfigRefiner / ChatLock / Config / Insight / MemoryAdvisor / MemoryDecay / MemoryInspector / RelationBuilder / Session / SessionArchiver / TextPolish / WorkProjection
+- 新增 6 个 Manager/服务类：ArchiveCoordinator（归档协调）、ChatLock（并发锁）、MemoryAdvisor（记忆建议）、MemoryDecay（记忆衰减）、RelationBuilder（关系构建）、TextPolish（文本润色，无状态服务类）
+- UserFactExtractor 保留在 agent/ 根级（纯函数模块，非 Manager）
+- TextPolishManager 命名沿用"Manager"后缀但实际是无状态服务类（详见 [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) §3 补录）
+- 本次年轮同步触发自 2026-07-16 根须体系健康度诊断（发现 Manager 数量三处不同步）

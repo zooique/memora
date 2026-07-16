@@ -53,7 +53,9 @@ QuickInputCompletion（quickInputCompletion.ts，补全逻辑层）
 
 ### 3. LLM 润色回调注入模式
 
-**不引入独立 TextPolishManager 类，通过 `onPolish` 回调注入 LLM 能力。**
+**原决策（2026-07-09）：不引入独立 TextPolishManager 类，通过 `onPolish` 回调注入 LLM 能力。**
+
+**实际实现（2026-07-16 补录）：演变为无状态服务类 TextPolishManager。**
 
 ```typescript
 // quickInputWindow.ts 暴露回调接口
@@ -61,13 +63,18 @@ interface QuickInputWindowCallbacks {
   onPolish?: (text: string) => Promise<{ polished: string; changed: boolean }>;
 }
 
-// main.ts 注入实现
+// main.ts 注入实现（通过 TextPolishManager 服务类）
 quickInputWindow.updateCallbacks({
   onPolish: async (text) => agent.polish?.polish(text) ?? { polished: text, changed: false },
 });
 ```
 
-**不引入 Manager 类的理由**：润色是无状态的单次 LLM 调用，不需要 Manager 的生命周期管理（init/close）、状态持久化、调度器等机制。回调注入是最小成本方案，与内核 Manager 体系（MemoryInspector/MemoryDecayManager 等有状态异步治理）职责不同。
+**演进理由**：实际实现引入了 `src/agent/managers/textPolishManager.ts`（export class TextPolishManager），原因：
+- 与 InsightExtractor/WorkProjection 同模式（构造函数注入 Provider + 流式累积），可测试性更好
+- 仍是无状态服务类（仅 provider 字段，无 init/close/状态持久化/调度器），不符合"有生命周期 Manager"定义
+- 命名"Manager"造成语义歧义，但实际是"服务类"——managers/ 目录下 13 个文件中仅 ChatLockManager 有 dispose() 生命周期方法
+
+**与原决策的关系**：原决策"不引入独立 Manager 类"的语义是"不引入有生命周期的 Manager"，实际实现符合该语义（TextPolishManager 无生命周期），仅命名沿用"Manager"后缀。
 
 ## 理由
 
@@ -84,7 +91,7 @@ quickInputWindow.updateCallbacks({
 |------|---------|
 | 所有 IPC 放 ipc/ 下 + 注入窗口引用 | 反向依赖（ipc/ 依赖窗口管理器），违反分层方向；5 个通道中 5 个都需窗口实例，无收益 |
 | Controller + Completion 合并为单类 | 单类超过 1500 行，补全逻辑与交互控制耦合，测试覆盖困难 |
-| TextPolishManager 类 | 无状态单次调用不需 Manager 生命周期，过度设计 |
+| TextPolishManager 作为有生命周期 Manager 类 | 无状态单次调用不需生命周期管理（init/close/调度器），过度设计。实际实现为无状态服务类（见 §3 补录） |
 
 ## 影响
 
