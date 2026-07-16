@@ -15,6 +15,8 @@
  */
 import { reportError } from '../helpers/errorHelpers.js';
 import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
+// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
+import { safeGet, safeSet } from '../helpers/safeStorage.js';
 
 // ─── Provider 注册链接映射 ──────────────────────────────
 
@@ -132,7 +134,7 @@ export class OnboardingManager {
    * 标记引导已完成并关闭弹窗
    */
   private markSeen(): void {
-    localStorage.setItem(ONBOARDING_SEEN_KEY, '1');
+    safeSet(ONBOARDING_SEEN_KEY, '1');
   }
 
   /**

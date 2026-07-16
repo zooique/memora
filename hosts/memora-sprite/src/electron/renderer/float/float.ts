@@ -24,6 +24,8 @@ import type { ElectronAPI } from '../../preload.js';
 import '../types.js';
 // 共享定时器跟踪器，统一管理 setTimeout/setInterval 的生命周期
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
+// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
+import { safeGet, safeSet } from '../helpers/safeStorage.js';
 // DOM 助手，提供带 tagName 校验的类型安全访问
 import { getOptionalElement } from '../helpers/domHelpers.js';
 // 事件监听器跟踪器（统一事件管理范式，与 modal/suggestionCard 等模块对齐）
@@ -179,7 +181,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示。
   // 使用 localStorage 标记是否已引导过，避免重复打扰老用户。
   // 引导提示在首次拖动或单击后自动消失，不再显示。
-  let hasShownDragHint = localStorage.getItem(DRAG_HINT_SEEN_KEY) === '1';
+  let hasShownDragHint = safeGet(DRAG_HINT_SEEN_KEY, '0') === '1';
   let dragHintTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** 显示拖动引导提示（仅首次使用时） */
@@ -196,7 +198,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   function markDragHintSeen(): void {
     if (!hasShownDragHint) {
       hasShownDragHint = true;
-      localStorage.setItem(DRAG_HINT_SEEN_KEY, '1');
+      safeSet(DRAG_HINT_SEEN_KEY, '1');
       if (dragHint) {
         dragHint.classList.remove('visible');
       }

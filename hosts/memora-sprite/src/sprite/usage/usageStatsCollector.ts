@@ -20,6 +20,8 @@ import { writeFile, readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { logger, toError } from 'memora';
+// formatDateKey 格式化日期为本地 YYYY-MM-DD（修复 UTC 跨日 bug，ADR-017 枝叶层 2 次提取）
+import { formatDateKey } from '../../shared/dateUtils.js';
 
 /** 使用统计快照 */
 export interface UsageStatsSnapshot {
@@ -71,7 +73,8 @@ export class UsageStatsCollector {
   /** 记录对话轮次（按日期分组）。关闭状态下为空操作 */
   recordChatTurn(): void {
     if (!this.enabled) return;
-    const today = new Date().toISOString().slice(0, 10);
+    // formatDateKey 本地日期，修复凌晨 UTC 跨日导致 chatTurns 写入错误日期 key
+    const today = formatDateKey(new Date());
     this.chatTurns[today] = (this.chatTurns[today] ?? 0) + 1;
   }
 

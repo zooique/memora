@@ -15,6 +15,8 @@
 
 import type { MemoryListItem, DashboardData } from './memoryController.js';
 import { MS_PER_DAY } from '../constants.js';
+// formatDateKey 格式化日期为本地 YYYY-MM-DD（修复 UTC 跨日 bug，ADR-017 枝叶层 2 次提取）
+import { formatDateKey } from '../../shared/dateUtils.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -98,7 +100,8 @@ function isWithinDays(isoDate: string | undefined, days: number): boolean {
 function getDatePart(isoDate: string | undefined): string {
   if (!isoDate) return '';
   try {
-    return new Date(isoDate).toISOString().slice(0, 10);
+    // formatDateKey 使用本地时区，与 reviewManager 其他日期查询保持一致（修复 UTC 跨日 bug）
+    return formatDateKey(new Date(isoDate));
   } catch {
     return '';
   }
@@ -170,7 +173,8 @@ function buildGrowthTrend(
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
+    // formatDateKey 本地日期，与 getDatePart（已同步改本地）配对，修复 UTC 跨日 bug
+    const dateStr = formatDateKey(d);
     const dayInsights = allMemories.filter(
       (m) => getDatePart(m.createdAt) === dateStr && m.source === 'insight',
     ).length;
@@ -257,7 +261,8 @@ export function buildReviewData(
   dailyMessageCount?: Record<string, number>,
 ): ReviewData {
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  // formatDateKey 本地日期，与 dailyMessageCount key（usageStatsCollector 已同步改本地）配对
+  const todayStr = formatDateKey(now);
 
   return {
     today: buildTodayReview(allMemories, dailyMessageCount, todayStr),

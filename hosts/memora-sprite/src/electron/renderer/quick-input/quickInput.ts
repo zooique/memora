@@ -31,6 +31,8 @@
 import type { ElectronAPI } from '../../preload.js';
 import '../types.js';
 import { reportError } from '../helpers/errorHelpers.js';
+// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
+import { safeGet, safeSet } from '../helpers/safeStorage.js';
 import { QuickInputCompletion } from './quickInputCompletion.js';
 
 /**
@@ -449,15 +451,12 @@ class QuickInputController {
    * localStorage 不可用或无记录时默认为紧凑态（expandMode = false）。
    */
   private restoreExpandState(): void {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_EXPAND);
-      if (stored === '1') {
-        this.expandMode = true;
-        this.inputField.classList.add('expanded');
-        this.updateExpandToggle();
-      }
-    } catch {
-      // localStorage 不可用（沙箱或隐私模式）：忽略，使用默认紧凑态
+    // safeGet 内部已 try-catch localStorage 不可用场景，降级返回默认值 '0'
+    const stored = safeGet(STORAGE_KEY_EXPAND, '0');
+    if (stored === '1') {
+      this.expandMode = true;
+      this.inputField.classList.add('expanded');
+      this.updateExpandToggle();
     }
   }
 
@@ -488,11 +487,8 @@ class QuickInputController {
       this.inputField.classList.remove('expanded');
     }
     this.updateExpandToggle();
-    try {
-      localStorage.setItem(STORAGE_KEY_EXPAND, this.expandMode ? '1' : '0');
-    } catch {
-      // localStorage 不可用：仅本次会话生效，不持久化
-    }
+    // safeSet 内部已 try-catch，localStorage 不可用时仅本次会话生效，不持久化
+    safeSet(STORAGE_KEY_EXPAND, this.expandMode ? '1' : '0');
     // 收起动作强制紧凑 min-height，避免内容多时 scrollHeight 撑大导致"无法收回"；
     // 展开动作随内容增长（传 false 走默认 scrollHeight 计算）
     this.autoResize(!this.expandMode);

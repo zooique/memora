@@ -11,9 +11,12 @@
  * 设计原则（ADR-SP-008）：
  * - 通过 <html> 元素的 data-theme 属性触发 CSS 变量切换
  * - 真理源为 sprite.json（通过 IPC 持久化），localStorage 仅作为内联脚本缓存
- * - localStorage 不可用时静默降级（如隐私模式）
+ * - localStorage 不可用时静默降级（如隐私模式，safeSet 内部已 try-catch）
  * - 独立于 UIManager，通过组合方式持有
  */
+
+// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
+import { safeSet } from '../helpers/safeStorage.js';
 
 /** 主题配置类型（新增 'auto' 跟随系统） */
 export type ThemeMode = 'light' | 'dark' | 'auto';
@@ -107,12 +110,9 @@ export class ThemeManager {
     // 同步更新 theme-color meta 标签，让任务栏/标题栏颜色跟随主题
     this.syncThemeColorMeta(effectiveTheme);
 
-    try {
-      // 'auto' 模式下缓存实际主题（供内联脚本读取，避免闪烁）
-      localStorage.setItem('memora-theme', effectiveTheme);
-    } catch {
-      // localStorage 不可用时静默降级（如隐私模式）
-    }
+    // 'auto' 模式下缓存实际主题（供内联脚本读取，避免闪烁）
+    // safeSet 内部已 try-catch，localStorage 不可用时静默降级
+    safeSet('memora-theme', effectiveTheme);
     this.syncThemeRadios(mode);
     // 用户主动切换主题，source='user'，renderer.ts 会持久化到 sprite.json
     this.themeChangeCallback?.(effectiveTheme, 'user');
@@ -164,11 +164,8 @@ export class ThemeManager {
         } else {
           document.documentElement.removeAttribute('data-theme');
         }
-        try {
-          localStorage.setItem('memora-theme', effectiveTheme);
-        } catch {
-          // localStorage 不可用时静默降级
-        }
+        // safeSet 内部已 try-catch，localStorage 不可用时静默降级
+        safeSet('memora-theme', effectiveTheme);
         // 系统主题变化，source='system'，renderer.ts 仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
         this.themeChangeCallback?.(effectiveTheme, 'system');
         // auto 模式下系统主题变化时同步 theme-color

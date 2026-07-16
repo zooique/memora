@@ -247,20 +247,13 @@ export function formatClock(isoString: string): string {
 /**
  * 格式化日期为 YYYY-MM-DD 键（本地日期）
  *
- * 从 dateNavManager.formatDate / memoryPanelManager.formatDateKey
- * 等 3 处重复实现中提取的通用工具。
- * 与 getLocalDate() 的区别：getLocalDate 返回"今天"的日期，
- * 本函数接受任意 Date 对象。
+ * 实现已迁移到 shared/dateUtils.ts，供 renderer + sprite 共用。
+ * 本处 re-export 保持 renderer 调用方导入路径不变（domHelpers 仍是 renderer 统一入口）。
  *
- * @param date Date 对象
- * @returns YYYY-MM-DD 字符串（本地日期）
+ * 迁移原因：原位于 domHelpers.ts（renderer 层），sprite 层（usageStatsCollector /
+ * reviewManager）无法导入，不得不继续使用 toISOString().slice(0,10)（UTC，凌晨跨日 bug）。
  */
-export function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+export { formatDateKey } from '../../../shared/dateUtils.js';
 
 // ─── 按钮状态管理 ─────────────────────────────────────────
 

@@ -68,6 +68,8 @@ import {
 } from '../helpers/relationGraphTypes.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../../shared/truncate.js';
+// setCanvasSize 统一 canvas DPR 设置（ADR-017 枝叶层 2 次提取，修复跨显示器 dpr 不更新 bug）
+import { setCanvasSize } from '../helpers/domHelpers.js';
 
 // 类型 re-export（外部调用方仍可从本模块导入类型）
 export type {
@@ -129,9 +131,6 @@ export class RelationGraphRenderer {
   private connectionMouseX = 0;
   private connectionMouseY = 0;
 
-  // 高 DPI 缩放
-  private dpr = 1;
-
   // ─── Tooltip DOM 元素 ───────────────────────────────────────
   /** tooltip 容器元素 */
   private tooltipEl: HTMLElement | null = null;
@@ -192,7 +191,6 @@ export class RelationGraphRenderer {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new MemoraError(ErrorCode.INITIALIZATION_FAILED, 'Canvas 2D 上下文不可用');
     this.ctx = ctx;
-    this.dpr = window.devicePixelRatio || 1;
 
     // 查找 tooltip DOM 元素
     this.tooltipEl = document.getElementById('graph-tooltip');
@@ -613,11 +611,10 @@ export class RelationGraphRenderer {
     this.width = rect.width;
     this.height = rect.height;
 
-    this.canvas.width = this.width * this.dpr;
-    this.canvas.height = this.height * this.dpr;
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    // setCanvasSize 每次重新获取 devicePixelRatio，修复跨显示器移动后 dpr 不更新导致渲染模糊
+    const dpr = setCanvasSize(this.canvas, this.width, this.height);
+    // setTransform 设置 dpr 缩放（canvas.width 赋值会重置变换矩阵，setTransform 与 scale 等价）
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   // ─── 事件绑定 ──────────────────────────────────────────────

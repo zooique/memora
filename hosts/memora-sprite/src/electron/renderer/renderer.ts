@@ -21,6 +21,8 @@ import { createSettingsController } from './controllers/settingsController.js';
 import { initIpcListeners, consumeConflictTargetId } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { EventTracker } from './helpers/eventTracker.js';
+// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
+import { safeGet } from './helpers/safeStorage.js';
 import { getLocalDate, MS_PER_HOUR, MS_PER_DAY, TOAST_LONG_MS } from '../../sprite/constants.js';
 import {
   createSilentRecoveryScheduler,
@@ -273,8 +275,9 @@ async function bootstrapRenderer(): Promise<void> {
         State.uiManager.setTheme(config.theme);
       } else {
       // sprite.json 中无主题配置（v1→v2 迁移前或首次使用），从 localStorage 迁移
+      // safeGet 内部已 try-catch localStorage 不可用场景，外层 try-catch 仍保留以捕获 updateConfig IPC 失败
       try {
-        const cachedTheme = localStorage.getItem('memora-theme');
+        const cachedTheme = safeGet('memora-theme', '');
         if (cachedTheme === 'dark' || cachedTheme === 'light') {
           // 迁移：将 localStorage 中的主题写入 sprite.json
           await window.electronAPI.updateConfig('theme', cachedTheme);

@@ -16,10 +16,12 @@
  *   - 保存时合并（不覆盖未知字段，向前兼容）
  *   - 文件损坏时静默回退到默认值
  */
-import { resolve, dirname } from 'node:path';
+import { resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { logger, toError, isPlainObject } from 'memora';
+// safeWriteJsonSync 统一 JSON 写入（mkdir + 0o600 权限，消除本地手写三件套）
+import { safeWriteJsonSync } from '../shared/safeWriteJson.js';
 // 导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME, MS_PER_HOUR } from './constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
@@ -358,13 +360,9 @@ export function saveSpriteConfig(config: SpriteConfig): void {
     merged = { ...existing, ...config };
   }
 
-  // 确保目录存在（首次运行时 dataDir 可能尚未创建，如 ~/.memora-sprite/data/）
-  // 否则 writeFileSync 会抛 ENOENT
-  mkdirSync(dirname(filePath), { recursive: true });
-
-  // 设置 0o600 权限：仅文件所有者可读写
+  // safeWriteJsonSync 统一封装 mkdir + JSON.stringify + 0o600 权限保护
   // sprite.json 含 focusProjectPath 等路径信息，与 config.json（含 apiKey）保持一致的权限保护
-  writeFileSync(filePath, JSON.stringify(merged, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  safeWriteJsonSync(filePath, merged);
 }
 
 /**
