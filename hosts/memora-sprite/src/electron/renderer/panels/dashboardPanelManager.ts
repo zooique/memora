@@ -317,6 +317,12 @@ export class DashboardPanelManager {
       dashboardMessageCount.textContent = String(metrics.context.messageCount);
     }
 
+    // 上下文估算 Token 数（接近截断阈值时让用户预判，而非事后看到 truncationCount +1）
+    const dashboardEstimatedTokens = document.getElementById('dashboard-estimated-tokens');
+    if (dashboardEstimatedTokens) {
+      dashboardEstimatedTokens.textContent = formatTokenCount(metrics.context.estimatedTokens);
+    }
+
     const dashboardDecayCount = document.getElementById('dashboard-decay-count');
     if (dashboardDecayCount) {
       dashboardDecayCount.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
@@ -356,6 +362,8 @@ export class DashboardPanelManager {
   renderSourceHealth(sourceHealth: SourceHealth | null): void {
     const dashboardListEl = document.getElementById('dashboard-source-health-list');
     const dashboardSectionEl = document.getElementById('dashboard-source-health');
+    const dashboardOverallEl = document.getElementById('dashboard-source-health-overall');
+    const dashboardDiagnosedEl = document.getElementById('dashboard-source-health-diagnosed');
     if (!dashboardListEl || !dashboardSectionEl) return;
 
     // 无数据时保留 section 标题，仅在列表区显示空状态文案
@@ -367,10 +375,24 @@ export class DashboardPanelManager {
       emptyEl.className = 'empty-state';
       emptyEl.textContent = '暂无记忆源健康数据';
       dashboardListEl.appendChild(emptyEl);
+      // 清空总体状态和诊断时间（避免残留旧数据）
+      if (dashboardOverallEl) dashboardOverallEl.textContent = '';
+      if (dashboardDiagnosedEl) dashboardDiagnosedEl.textContent = '';
       return;
     }
 
     dashboardSectionEl.classList.remove('hidden');
+
+    // 总体状态徽章（复用 getSourceHealthStatusLabel，让用户无需心算逐源状态）
+    if (dashboardOverallEl) {
+      dashboardOverallEl.textContent = this.getSourceHealthStatusLabel(sourceHealth.overallStatus);
+      dashboardOverallEl.className = `source-health-overall ${sourceHealth.overallStatus}`;
+    }
+
+    // 诊断时间戳（让用户感知数据新鲜度，复用 formatTimeAgo）
+    if (dashboardDiagnosedEl) {
+      dashboardDiagnosedEl.textContent = `诊断于 ${formatTimeAgo(sourceHealth.diagnosedAt)}`;
+    }
 
     // 按 status 严重度排序：critical(0) → warning(1) → healthy(2)
     const statusOrder: Record<string, number> = { critical: 0, warning: 1, healthy: 2 };

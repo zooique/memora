@@ -64,6 +64,7 @@ export type {
   // L1 语义去重类型
   DedupPair,
   DedupVerdict,
+  DedupVerdictSummary,
   DedupReport,
 } from '@/agent/managers/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';

@@ -19,7 +19,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { createEl } from '../helpers/domHelpers.js';
-import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
+import type { DedupReport, DedupVerdictSummary, TimelinessReport, ConflictReport } from 'memora';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -83,10 +83,11 @@ export class LlmGovernanceResultRenderer {
   /**
    * 渲染 L1 语义去重报告
    *
-   * 展示：扫描数 / 降级数 / 降级 ID 列表（每项含"恢复"按钮）
+   * 展示：扫描数 / 降级数 / 降级 ID 列表（每项含"恢复"按钮 + 降级理由 + 合并内容预览）
    * 跳过原因非空时渲染跳过提示，不渲染降级列表。
+   * verdicts 携带 LLM 判断理由和合并内容，供用户审计降级是否合理（与 L3 冲突检测展示深度对齐）。
    *
-   * @param report L1 去重报告
+   * @param report L1 去重报告（含 verdicts 审计详情）
    */
   renderDedupReport(report: DedupReport): void {
     if (report.skippedReason) {
@@ -94,7 +95,7 @@ export class LlmGovernanceResultRenderer {
       return;
     }
     const summary = `语义去重：扫描 ${report.scannedCount} 条 / ${report.pairCount} 对，降级 ${report.deduplicatedCount} 条`;
-    this.renderDemotedList(summary, report.demotedIds, '去重降级');
+    this.renderDemotedList(summary, report.demotedIds, '去重降级', report.verdicts);
   }
 
   /**
@@ -173,8 +174,14 @@ export class LlmGovernanceResultRenderer {
    * @param summary 摘要文本
    * @param demotedIds 降级记忆 ID 列表
    * @param label 降级类型标签（"去重降级" / "时效降级"）
+   * @param verdicts 降级审计详情（可选，L1 语义去重携带 reason + mergedContent，L2 时效评估不携带）
    */
-  private renderDemotedList(summary: string, demotedIds: string[], label: string): void {
+  private renderDemotedList(
+    summary: string,
+    demotedIds: string[],
+    label: string,
+    verdicts?: DedupVerdictSummary[],
+  ): void {
     const container = document.getElementById(RESULT_CONTAINER_ID);
     if (!container) return;
 
@@ -190,21 +197,32 @@ export class LlmGovernanceResultRenderer {
       return;
     }
 
+    // 构建 ID → verdict 索引（O(1) 查找，避免遍历）
+    const verdictMap = new Map<string, DedupVerdictSummary>();
+    if (verdicts) {
+      for (const v of verdicts) verdictMap.set(v.demotedId, v);
+    }
+
     // 降级列表
     const listEl = createEl('div', 'llm-result-list');
     for (const id of demotedIds) {
-      listEl.appendChild(this.createDemotedItemEl(id, label));
+      listEl.appendChild(this.createDemotedItemEl(id, label, verdictMap.get(id)));
     }
     container.appendChild(listEl);
   }
 
   /**
-   * 创建降级列表项元素（含"恢复"按钮）
+   * 创建降级列表项元素（含"恢复"按钮 + 可选的降级理由和合并内容预览）
    *
    * @param memoryId 记忆 ID
    * @param label 降级类型标签
+   * @param verdict 降级审计详情（可选，L1 携带时展示 reason + mergedContent 预览）
    */
-  private createDemotedItemEl(memoryId: string, label: string): HTMLElement {
+  private createDemotedItemEl(
+    memoryId: string,
+    label: string,
+    verdict?: DedupVerdictSummary,
+  ): HTMLElement {
     const itemEl = createEl('div', 'llm-result-item');
 
     // ID 展示（截断，完整 ID 在 title）
@@ -214,6 +232,22 @@ export class LlmGovernanceResultRenderer {
     const idEl = createEl('span', 'llm-result-item-id', `${label}：${displayId}`);
     idEl.title = memoryId;
     itemEl.appendChild(idEl);
+
+    // 降级理由（可选，L1 携带时展示，便于用户审计降级是否合理）
+    if (verdict?.reason) {
+      const reasonEl = createEl('div', 'llm-result-item-reason', `理由：${verdict.reason}`);
+      itemEl.appendChild(reasonEl);
+    }
+
+    // 合并内容预览（可选，L1 携带 mergedContent 时展示，便于用户验证合并质量）
+    if (verdict?.mergedContent) {
+      const preview = verdict.mergedContent.length > PREVIEW_LEN
+        ? `${verdict.mergedContent.slice(0, PREVIEW_LEN)}…`
+        : verdict.mergedContent;
+      const mergedEl = createEl('div', 'llm-result-item-merged', `合并后：${preview}`);
+      mergedEl.title = verdict.mergedContent;
+      itemEl.appendChild(mergedEl);
+    }
 
     // 恢复按钮（调用 boostMemory，score +0.05）
     const restoreBtn = createEl('button', 'llm-result-restore-btn', '恢复');

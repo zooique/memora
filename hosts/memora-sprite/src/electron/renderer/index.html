@@ -1338,6 +1338,7 @@
               <div class="dash-item"><span class="dash-label">失败</span><span class="dash-value" id="dashboard-tool-failures">0</span></div>
               <div class="dash-item" title="上下文截断次数"><span class="dash-label">截断</span><span class="dash-value" id="dashboard-truncation-count">—</span></div>
               <div class="dash-item" title="当前工作记忆消息数"><span class="dash-label">消息</span><span class="dash-value" id="dashboard-message-count">—</span></div>
+              <div class="dash-item" title="当前上下文估算 Token 数（接近截断阈值时提示）"><span class="dash-label">上下文</span><span class="dash-value" id="dashboard-estimated-tokens">—</span></div>
               <!-- UX-0713-10：衰减三项（次数/累计/最近时间）合并为 1 卡片，hover 显示详情 -->
               <div class="dash-item dash-item-decay" title="衰减已运行次数 / 累计衰减记忆数 / 最近衰减运行时间">
                 <span class="dash-label">衰减</span>
@@ -1349,8 +1350,12 @@
 
           <!-- 分区五：记忆源健康（按 source 分组的质量诊断列表） -->
           <section class="dashboard-section" id="dashboard-source-health">
-            <h4 class="dashboard-section-title">记忆源健康</h4>
+            <h4 class="dashboard-section-title">
+              记忆源健康
+              <span class="source-health-overall" id="dashboard-source-health-overall"></span>
+            </h4>
             <div class="source-health-list" id="dashboard-source-health-list"></div>
+            <div class="source-health-diagnosed" id="dashboard-source-health-diagnosed"></div>
           </section>
         </div>
       </div>

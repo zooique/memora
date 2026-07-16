@@ -202,6 +202,16 @@ export interface DedupVerdict {
   reason: string;
 }
 
+/** 降级记忆的审计详情（DedupReport.verdicts 元素，供 UI 展示"为什么降级"） */
+export interface DedupVerdictSummary {
+  /** 被降级的记忆 ID（与 demotedIds 元素一一对应） */
+  demotedId: string;
+  /** LLM 判断理由（便于用户审计降级是否合理） */
+  reason: string;
+  /** 合并后的完整内容（便于用户验证合并质量；未提供 mergedContent 时省略，渲染器负责截断展示） */
+  mergedContent?: string;
+}
+
 /** 语义去重报告（deduplicateMemories 返回值） */
 export interface DedupReport {
   /** 扫描的候选记忆总数 */
@@ -212,6 +222,8 @@ export interface DedupReport {
   deduplicatedCount: number;
   /** 被降级的记忆 ID 列表（score 降至 DEDUP_LOW_SCORE，未物理删除） */
   demotedIds: string[];
+  /** 降级审计详情（与 demotedIds 一一对应，供 UI 展示 reason + mergedContentPreview） */
+  verdicts?: DedupVerdictSummary[];
   /** 跳过原因（LLM 不可用 / 无候选对 / LLM 失败降级） */
   skippedReason?: string;
 }
@@ -883,6 +895,7 @@ export class MemoryInspector {
 
     // ── 步骤 3：逐对调用 LLM 判断语义等价性 ──
     const demotedIds: string[] = [];
+    const verdicts: DedupVerdictSummary[] = [];
     let deduplicatedCount = 0;
 
     for (const pair of pairs) {
@@ -892,6 +905,12 @@ export class MemoryInspector {
           // 降级低分记忆（b 的 score ≤ a 的 score，因 candidates 已按 score 降序）
           this.demoteMemory(pair.b, verdict.mergedContent);
           demotedIds.push(pair.b.id);
+          // 收集审计详情（供 UI 展示"为什么降级"和"合并后保留了什么"）
+          verdicts.push({
+            demotedId: pair.b.id,
+            reason: verdict.reason,
+            mergedContent: verdict.mergedContent,
+          });
           deduplicatedCount++;
           logger.info(
             { demotedId: pair.b.id, keptId: pair.a.id, reason: verdict.reason },
@@ -912,6 +931,7 @@ export class MemoryInspector {
       pairCount: pairs.length,
       deduplicatedCount,
       demotedIds,
+      verdicts,
     };
   }
 
