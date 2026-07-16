@@ -25,7 +25,7 @@ import type {
   PatternsPayload,
   PresencePayload,
 } from '../../ipcListeners.js';
-import type { ProactiveStats } from '../../../../sprite/controllers/index.js';
+import type { ProactiveStats } from '../../../../shared/spriteStats.js';
 
 /** Dashboard + Perception 委托群方法签名（供 UIManager interface extends 类型合并） */
 export interface DashboardDelegations {

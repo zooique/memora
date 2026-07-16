@@ -14,6 +14,7 @@ import type { DashboardData } from './memoryController.js';
 import type { ContextState } from './contextAwareness.js';
 import type { AffectState } from './affectController.js';
 import type { DetectedPattern } from './patternDetector.js';
+import type { ProactiveStats } from '../../shared/spriteStats.js';
 
 /** 待提示事件 */
 interface PendingNotice {
@@ -32,27 +33,6 @@ export interface ProactiveConfig {
   cooldownMs: number;
   /** 是否静默模式 */
   silentMode: boolean;
-}
-
-/**
- * 主动提示统计快照（供 UI 感知面板展示）
- *
- * 透传 ProactiveEngine 内部的历史反馈和当前生效冷却参数，
- * 让用户看到"我与精灵的互动累计"以及"为什么连续拒绝后精灵变安静"。
- */
-export interface ProactiveStats {
-  /** 历史主动提示总次数 */
-  suggestCount: number;
-  /** 用户接受次数 */
-  acceptCount: number;
-  /** 接受率 0-1（suggestCount=0 时为默认值 0.5） */
-  acceptanceRate: number;
-  /** 当前连续拒绝次数（每次拒绝递增，接受重置） */
-  consecutiveRejects: number;
-  /** 当前生效冷却毫秒（受默契度 + 拒绝惩罚双调节） */
-  effectiveCooldownMs: number;
-  /** 基础冷却毫秒（配置值，用于对比展示生效冷却） */
-  baseCooldownMs: number;
 }
 
 /** 精灵事件发射器 */

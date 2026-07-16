@@ -5,7 +5,8 @@ export { PersonaController } from './personaController.js';
 export type { PersonaInfo } from './personaController.js';
 
 export { ProactiveEngine } from './proactiveEngine.js';
-export type { ProactiveConfig, ProactiveStats, SpriteEmitter } from './proactiveEngine.js';
+export type { ProactiveConfig, SpriteEmitter } from './proactiveEngine.js';
+export type { ProactiveStats } from '../../shared/spriteStats.js';
 
 export { PresenceController } from './presenceController.js';
 export type { PresenceState, PresenceChangeEvent, PresenceControllerOptions, IPowerMonitor, IApp } from './presenceController.js';

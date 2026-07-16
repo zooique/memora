@@ -33,8 +33,7 @@ import type {
   PatternsPayload,
   PresencePayload,
 } from '../ipcListeners.js';
-// 主动提示统计类型从 sprite controllers（真理源）导入
-import type { ProactiveStats } from '../../../sprite/controllers/index.js';
+import type { ProactiveStats } from '../../../shared/spriteStats.js';
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import { NarrativeGenerator } from '../helpers/narrativeGenerator.js';
 // 感知标签映射（统一真理源，消除 6 个私有方法的重复实现）

@@ -44,7 +44,7 @@ import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
 import { PerceptionPanelManager } from './panels/perceptionPanelManager.js';
 import type { PerceptionPanelHost } from './panels/perceptionPanelManager.js';
 import { SpriteStatusPopover } from './panels/spriteStatusPopover.js';
-import type { ProactiveStats } from '../../sprite/controllers/index.js';
+import type { ProactiveStats } from '../../shared/spriteStats.js';
 // Payload 类型直接从 ipcListeners（IPC 契约真理源）导入
 import type {
   AffectPayload,
