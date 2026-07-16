@@ -9,6 +9,8 @@
  */
 
 :root {
+  color-scheme: light;
+
   /* 大底板色（左侧栏 + 顶部栏融为一体） */
   --bg:          #f0f0f2;  /* 页面背景 = 大底板 */
   /* 浅色主题 --surface0 略深于 --bg，保留层级语义 */
@@ -41,6 +43,7 @@
   --yellow:      #ff9f0a;
   --pink:        #ad1457;  /* 浅色主题下使用深玫红色，保证 source-guardrail 标签文字对比度（WCAG AA） */
   --red:         #ff3b30;
+  --warning:     #d97706;  /* 警告色（琥珀色，与 yellow 区分语义） */
 
   /* 情感进度条颜色 */
   --affect-low:  #5b8def;  /* 低值→蓝紫色 */
@@ -121,6 +124,7 @@
   --teal-20:   rgba(0, 131, 143, 0.1);
   --peach-20:  rgba(230, 81, 0, 0.1);
   --red-20:    rgba(255, 59, 48, 0.1);  /* 错误横幅背景色 */
+  --warning-20: rgba(217, 119, 6, 0.1);  /* 警告色浅底 */
 
   /* source 标签配色（记忆系统 source-tag + 用户画像 profile-category 共享，避免两处重复定义） */
   --tag-profile-bg:   var(--green-20);   /* 用户身份/画像：绿色 */
@@ -300,6 +304,7 @@
   --yellow:      #f9e2af;
   --pink:        #f5c2e7;
   --red:         #f38ba8;
+  --warning:     #f9e2af;  /* 警告色（深色主题使用 Catppuccin yellow） */
 
   /* 情感进度条颜色（深色主题下提亮以保证对比度） */
   --affect-low:  #89b4fa;  /* 低值→浅蓝（与深色主题 --blue 一致） */
@@ -368,6 +373,7 @@
   --teal-20:   rgba(148, 226, 213, 0.2);
   --peach-20:  rgba(250, 179, 135, 0.2);
   --red-20:    rgba(243, 139, 168, 0.2);  /* 错误横幅背景色 */
+  --warning-20: rgba(249, 226, 175, 0.2);  /* 警告色浅底 */
 
   /* ─── 设计系统：字号层级（与浅色主题一致） ─── */
   --font-2xl: 1.75rem;

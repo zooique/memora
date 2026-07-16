@@ -374,7 +374,7 @@
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
         <div id="input-area">
-          <textarea id="input" name="message" autocomplete="off" placeholder="输入消息，Enter 发送，Shift+Enter 换行。↓↑补全 ←→填充" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
+          <textarea id="input" name="message" autocomplete="off" placeholder="输入消息…（Enter 发送 / Shift+Enter 换行 / ↓↑补全 / ←→填充）" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
           <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + ←→ 填充，IDE 风格浮层） -->
           <ul id="chat-completion-list" class="chat-completion-list hidden" role="listbox" aria-label="输入补全候选"></ul>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
@@ -419,7 +419,7 @@
       </div>
 
       <!-- 记忆面板（与设置面板对齐，显示在核心区，通过侧边栏切换） -->
-      <div id="panel-memories" class="panel" aria-hidden="true" aria-label="记忆">
+      <div id="panel-memories" class="panel" aria-hidden="true" aria-labelledby="panel-title-memories">
         <div class="panel-header">
           <!-- 面板标题 -->
           <span class="panel-title" id="panel-title-memories">记忆</span>
@@ -671,7 +671,7 @@
           </div>
 
           <!-- 关系编辑弹窗（复用标准 .modal + .modal-content 结构，差异化样式通过关系编辑专属类补充） -->
-          <div id="relation-edit-dialog" class="modal hidden" role="dialog">
+          <div id="relation-edit-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-label="编辑关系">
             <div class="modal-content modal-content-sm">
               <div class="modal-header flex-between">
                 <h3>编辑关系</h3>
@@ -1127,7 +1127,7 @@
       </div>
 
       <!-- 感知面板（独立面板，详细展示情感/默契/上下文/模式/在场状态） -->
-      <div id="panel-perception" class="panel" aria-hidden="true" aria-label="感知">
+      <div id="panel-perception" class="panel" aria-hidden="true" aria-labelledby="panel-title-perception">
         <div class="panel-header">
           <span class="panel-title" id="panel-title-perception">精灵状态</span>
         </div>
@@ -1140,7 +1140,7 @@
           <!-- 叙事摘要区（一句话总结当前感知状态） -->
           <section class="perception-narrative-section">
             <div class="perception-narrative" id="perception-narrative-text">
-              精灵正在感知中...
+              精灵正在感知中…
             </div>
           </section>
 
@@ -1270,7 +1270,7 @@
       </div>
 
       <!-- 仪表盘面板（迭代：感知面板从 overlay 升级为独立 .panel，整合健康诊断 + 感知 + 运行指标） -->
-      <div id="panel-dashboard" class="panel" aria-hidden="true" aria-label="仪表盘">
+      <div id="panel-dashboard" class="panel" aria-hidden="true" aria-labelledby="panel-title-dashboard">
         <div class="panel-header">
           <span class="panel-title" id="panel-title-dashboard">仪表盘</span>
           <button id="btn-refresh-dashboard" class="icon-btn" title="刷新数据" aria-label="刷新仪表盘数据">
@@ -1363,7 +1363,7 @@
   </div>
 
   <!-- 记忆详情弹窗 -->
-  <div id="memory-detail-modal" class="modal hidden" role="dialog">
+  <div id="memory-detail-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="memory-detail-name">
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3 id="memory-detail-name"></h3>
@@ -1408,7 +1408,7 @@
   </div>
 
   <!-- Provider 配置弹窗 -->
-  <div id="provider-modal" class="modal hidden" role="dialog">
+  <div id="provider-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title">
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3 id="provider-modal-title">添加 API</h3>
@@ -1453,7 +1453,7 @@
   </div>
 
   <!-- 回收站弹窗：列出软删除记忆，支持恢复/彻底删除 -->
-  <div id="recycle-bin-modal" class="modal hidden" role="dialog">
+  <div id="recycle-bin-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="回收站">
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3>回收站</h3>
@@ -1476,7 +1476,7 @@
   </div>
 
   <!-- 添加记忆弹窗 -->
-  <div id="memory-add-modal" class="modal hidden" role="dialog">
+  <div id="memory-add-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="添加记忆">
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3>添加记忆</h3>
@@ -1512,7 +1512,7 @@
 
   <!-- 通用确认弹窗：替代 window.confirm，提供一致的视觉体验 -->
   <!-- 由 ui.ts showConfirmDialog() 控制，支持危险操作（删除）红色确认按钮 -->
-  <div id="confirm-modal" class="modal hidden" role="dialog">
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="modal-content modal-content-sm">
       <div class="modal-header flex-between">
         <h3 id="confirm-title">确认</h3>
@@ -1530,7 +1530,7 @@
 
   <!-- 通用输入弹窗：替代 window.prompt，提供一致的视觉体验 -->
   <!-- 由 ui.ts showInputDialog() 控制，用于会话重命名等需要文本输入的场景 -->
-  <div id="prompt-modal" class="modal hidden" role="dialog">
+  <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-message">
     <div class="modal-content modal-content-sm">
       <div class="modal-header flex-between">
         <h3 id="prompt-title">输入</h3>
@@ -1539,7 +1539,7 @@
       <div class="modal-body">
         <p id="prompt-message" class="confirm-message"></p>
         <!-- 补齐 aria-labelledby 关联提示文本 + aria-describedby 关联错误文本 + placeholder 兜底（无 label for 关联） -->
-        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" aria-describedby="prompt-input-error" placeholder="请输入..." />
+        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" aria-describedby="prompt-input-error" placeholder="请输入…" />
         <p id="prompt-input-error" class="prompt-error hidden" role="alert"></p>
       </div>
       <div class="modal-footer">
@@ -1551,7 +1551,7 @@
 
   <!-- 多步骤引导向导（欢迎 → API Key → 开始） -->
   <!-- 使用 localStorage 标记是否已引导过，已配置 Provider 的用户跳过 -->
-  <div id="onboarding-modal" class="modal hidden" role="dialog">
+  <div id="onboarding-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="新手引导">
     <div class="modal-content onboarding-wizard">
       <!-- 步骤指示器 -->
       <div class="onboarding-steps">
@@ -1682,7 +1682,7 @@
   </div>
 
   <!-- 快捷键帮助弹窗（Ctrl+/ 触发） -->
-  <div id="shortcuts-modal" class="modal hidden" role="dialog">
+  <div id="shortcuts-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="键盘快捷键">
     <div class="modal-content modal-content-sm">
       <div class="modal-header flex-between">
         <h3>键盘快捷键</h3>
@@ -1749,9 +1749,9 @@
 
   <script type="module" src="renderer.js"></script>
 <!-- 清理确认对话框（Phase 3：智能清理，默认隐藏） -->
-<div id="cleanup-confirm-dialog" class="modal hidden" role="dialog">
+<div id="cleanup-confirm-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="cleanup-confirm-title">
       <div class="confirm-dialog-content">
-        <h3 class="confirm-dialog-title">确认清理记忆</h3>
+        <h3 class="confirm-dialog-title" id="cleanup-confirm-title">确认清理记忆</h3>
         <p id="cleanup-confirm-msg"></p>
         <div class="confirm-dialog-actions">
           <button id="cleanup-confirm-cancel" class="btn btn-secondary">取消</button>
@@ -1769,7 +1769,7 @@
             type="text"
             id="command-palette-input"
             class="command-palette-input"
-            placeholder="输入命令搜索..."
+            placeholder="输入命令搜索…"
             autocomplete="off"
             aria-label="搜索命令"
           />
@@ -1789,7 +1789,7 @@
             type="text"
             id="search-messages-input"
             class="search-messages-input"
-            placeholder="搜索对话内容..."
+            placeholder="搜索对话内容…"
             autocomplete="off"
             aria-label="搜索关键词"
           />

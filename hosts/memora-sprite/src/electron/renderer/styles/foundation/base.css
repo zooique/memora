@@ -24,6 +24,11 @@
   padding: 0;
 }
 
+/* 标题排版：平衡换行避免孤字（guidelines 推荐，仅对标题元素生效） */
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+}
+
 /* 按钮和可交互元素禁用双击缩放延迟，提升触屏响应速度 */
 button, a, [role="button"], select {
   touch-action: manipulation;

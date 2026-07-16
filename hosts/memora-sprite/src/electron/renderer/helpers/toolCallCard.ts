@@ -69,7 +69,7 @@ export function showToolStart(
   header.appendChild(spinner);
   const status = document.createElement('span');
   status.className = 'tool-call-status';
-  status.textContent = '执行中...';
+  status.textContent = '执行中…';
   header.appendChild(status);
 
   // 点击表头折叠/展开参数和结果（data-action 由 click 委托统一处理）

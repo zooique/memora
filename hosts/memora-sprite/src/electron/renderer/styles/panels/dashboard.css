@@ -102,6 +102,8 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-weight: var(--weight-semibold);
   color: var(--text);
   line-height: 1.2;
+  /* 3 列数字（记忆/洞察/衰减）等宽对齐，动态更新时避免宽度跳动 */
+  font-variant-numeric: tabular-nums;
 }
 
 .overview-item .overview-mini {
@@ -333,12 +335,12 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 @keyframes pulse-highlight {
   0% {
-    color: var(--accent);
     transform: scale(1.1);
+    opacity: 0.7;
   }
   100% {
-    color: inherit;
     transform: scale(1);
+    opacity: 1;
   }
 }
 

@@ -40,7 +40,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .completion-stats-reset-btn:hover {
@@ -130,14 +130,14 @@
 
 /* 展示事件徽章（蓝色） */
 .completion-stats-event-type.shown {
-  background: var(--accent-bg, rgba(59, 130, 246, 0.15));
-  color: var(--accent, #3b82f6);
+  background: var(--accent-20);
+  color: var(--accent);
 }
 
 /* 采纳事件徽章（绿色，表示成功转化） */
 .completion-stats-event-type.adopted {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+  background: var(--green-20);
+  color: var(--green);
 }
 
 .completion-stats-event-detail {

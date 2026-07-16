@@ -47,14 +47,13 @@
 /* 增强：hover 时轻微放大 + 亮度提升，暗示"可点击筛选"           */
 
 .memory-item .meta .source-tag {
-  transition: transform var(--transition-fast), filter var(--transition-fast);
+  transition: transform var(--transition-fast);
   cursor: pointer;
   transform-origin: center;
 }
 
 .memory-item .meta .source-tag:hover {
   transform: scale(1.05);
-  filter: brightness(1.1);
 }
 
 .memory-item .meta .source-tag:active {
@@ -234,7 +233,7 @@
 
 /* 跳过提示（skippedReason 非空时） */
 .llm-result-skipped {
-  color: var(--warning, #d97706);
+  color: var(--warning);
   font-style: italic;
 }
 
@@ -280,7 +279,7 @@
 }
 
 .llm-result-restore-btn:hover:not(:disabled) {
-  background: var(--accent, #3b82f6);
+  background: var(--accent);
   color: white;
 }
 
@@ -293,7 +292,7 @@
 .llm-result-pair {
   padding: 6px 8px;
   background: var(--surface1);
-  border-left: 3px solid var(--warning, #d97706);
+  border-left: 3px solid var(--warning);
   border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
@@ -332,13 +331,13 @@
 
 /* 冲突描述 */
 .llm-result-pair-desc {
-  color: var(--warning, #d97706);
+  color: var(--warning);
   font-size: var(--font-xs);
 }
 
 /* LLM 建议保留 */
 .llm-result-pair-rec {
-  color: var(--accent, #3b82f6);
+  color: var(--accent);
   font-size: var(--font-xs);
 }
 
@@ -657,13 +656,13 @@
 
 /* ─── 恢复后跳转高亮动画 ─────────────────────────────── */
 
-/* 记忆项恢复后的闪烁高亮效果 */
+/* 记忆项恢复后的闪烁高亮效果（使用 opacity 避免非合成器友好属性） */
 @keyframes highlight-pulse {
-  0% { background-color: transparent; }
-  25% { background-color: var(--accent-20); }
-  50% { background-color: transparent; }
-  75% { background-color: var(--accent-20); }
-  100% { background-color: transparent; }
+  0% { opacity: 1; }
+  25% { opacity: 0.6; }
+  50% { opacity: 1; }
+  75% { opacity: 0.6; }
+  100% { opacity: 1; }
 }
 
 .memory-item.highlight-pulse {

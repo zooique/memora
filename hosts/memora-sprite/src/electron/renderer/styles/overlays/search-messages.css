@@ -21,6 +21,7 @@
   background: var(--palette-backdrop);
   backdrop-filter: blur(4px);
   animation: palette-fade-in var(--transition-fast) ease;
+  overscroll-behavior: contain;
 }
 
 .search-messages-modal.hidden {

@@ -113,6 +113,8 @@
   font-weight: var(--weight-semibold);
   color: var(--text);
   line-height: 1.2;
+  /* 4 列数字（记忆/关系/冲突/来源）等宽对齐，避免数字宽度差异导致跳动 */
+  font-variant-numeric: tabular-nums;
 }
 
 /* 冲突数有值时红色高亮警示 */

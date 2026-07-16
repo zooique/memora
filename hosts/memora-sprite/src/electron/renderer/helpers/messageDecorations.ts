@@ -37,9 +37,9 @@ export interface MemoryRecallItem {
  * 将内核 yield 的 thinking phase 标识符映射为用户可读的中文文案。
  */
 const THINKING_PHASE_LABELS: Record<string, string> = {
-  recalling: '正在回忆相关记忆...',
-  processing: '正在处理请求...',
-  archiving: '正在归档对话...',
+  recalling: '正在回忆相关记忆…',
+  processing: '正在处理请求…',
+  archiving: '正在归档对话…',
 };
 
 /**
