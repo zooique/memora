@@ -281,7 +281,7 @@
 /* ─── 工具栏内角色选择器容器 ────────────────────────── */
 .toolbar-persona-container {
   position: relative;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* v3: 工具栏内角色选择器样式（紧凑版） */

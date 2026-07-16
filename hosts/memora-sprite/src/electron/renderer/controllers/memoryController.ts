@@ -425,7 +425,7 @@ export function createMemoryController(uiManager: UIManager) {
       const id = uiManager.getCurrentMemoryId();
       if (!id) return;
       // 删除是不可恢复操作，需防重复点击（与 onMemoryAdd/onMemoryEdit 一致）
-      setButtonLoading('btn-memory-delete', true, '删除中...');
+      setButtonLoading('btn-memory-delete', true, '删除中…');
       try {
         // deleteMemory 现为软删除（移入回收站），检查返回值避免假成功
         const result = await window.electronAPI.deleteMemory(id);

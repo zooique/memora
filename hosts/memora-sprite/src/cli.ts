@@ -288,7 +288,7 @@ async function main(): Promise<void> {
   const interaction: IInteraction = new CliInteraction();
 
   interaction.onClose(async () => {
-    console.log('\n正在关闭...');
+    console.log('\n正在关闭…');
     await close();
     process.exit(0);
   });

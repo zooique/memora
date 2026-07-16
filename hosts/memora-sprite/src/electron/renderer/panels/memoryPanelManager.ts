@@ -956,7 +956,7 @@ export class MemoryPanelManager {
 
     const nameEl = createEl('div', 'recycle-bin-item-name text-truncate', mem.name); // textContent 防 XSS
 
-    const actions = createEl('div', 'recycle-bin-item-actions');
+    const actions = createEl('div', 'recycle-bin-item-actions flex-shrink-0');
 
     // 恢复按钮（绿色强调，对应 .health-action-btn 无 danger 类）
     const restoreBtn = createEl('button', 'health-action-btn', '恢复');

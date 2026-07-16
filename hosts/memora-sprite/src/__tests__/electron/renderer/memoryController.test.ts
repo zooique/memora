@@ -266,7 +266,7 @@ describe('删除按钮 loading 保护', () => {
     const promise = deleteCallback!();
     // 按钮应被禁用 + 文案改变
     expect(btn.disabled).toBe(true);
-    expect(btn.textContent).toBe('删除中...');
+    expect(btn.textContent).toBe('删除中…');
 
     await promise;
   });

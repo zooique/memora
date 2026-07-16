@@ -208,7 +208,7 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
     const loadMoreCallback = ctx.getLoadMoreCallback();
     if (loadMoreBtn && loadMoreCallback) {
       loadMoreBtn.setAttribute('disabled', '');
-      loadMoreBtn.textContent = '加载中...';
+      loadMoreBtn.textContent = '加载中…';
       loadMoreCallback();
       return;
     }
@@ -217,7 +217,7 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
     const loadEarlierDayCallback = ctx.getLoadEarlierDayCallback();
     if (loadEarlierBtn && loadEarlierDayCallback) {
       loadEarlierBtn.setAttribute('disabled', '');
-      loadEarlierBtn.textContent = '加载中...';
+      loadEarlierBtn.textContent = '加载中…';
       loadEarlierDayCallback();
       return;
     }
@@ -227,7 +227,7 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
     if (retryBtn) {
       // 禁用按钮防止重复点击
       retryBtn.setAttribute('disabled', '');
-      retryBtn.textContent = '重试中...';
+      retryBtn.textContent = '重试中…';
       // 回调执行后恢复按钮状态
       // errorRetryCallback 可能在 isStreaming() 检查时提前返回（toast 提示），
       // 此时按钮必须恢复，否则用户无法再次点击重试

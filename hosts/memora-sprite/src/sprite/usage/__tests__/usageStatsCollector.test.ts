@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UsageStatsCollector } from '../usageStatsCollector.js';
 import type { UsageStatsSnapshot } from '../usageStatsCollector.js';
+// formatDateKey 本地日期，与生产代码 usageStatsCollector 一致（修复 UTC 跨日导致测试期望值不匹配）
+import { formatDateKey } from '../../../shared/dateUtils.js';
 
 describe('UsageStatsCollector', () => {
   let tempDir: string;
@@ -70,7 +72,8 @@ describe('UsageStatsCollector', () => {
     it('recordChatTurn 按日期分组', () => {
       collector.recordChatTurn();
       collector.recordChatTurn();
-      const today = new Date().toISOString().slice(0, 10);
+      // 使用 formatDateKey 获取本地日期，与生产代码 usageStatsCollector 内部一致
+      const today = formatDateKey(new Date());
       const snapshot = collector.getSnapshot();
       expect(snapshot.chatTurns).toEqual({ [today]: 2 });
     });

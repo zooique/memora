@@ -235,7 +235,7 @@ export class PartnerInsightsRenderer {
     for (const gap of gaps.slice(0, MAX_GAP_ITEMS)) {
       const item = createEl('div', 'partner-gap-item');
 
-      const icon = createEl('span', 'partner-gap-icon');
+      const icon = createEl('span', 'partner-gap-icon flex-shrink-0');
       // SVG 图标，跨平台渲染一致
       setIcon(icon, 'icon-lightbulb');
 

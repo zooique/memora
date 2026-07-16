@@ -44,7 +44,7 @@ export function setIcon(el: HTMLElement, iconId: string, sizeClass?: IconSizeCla
  * @param label 标签文本（将放入 <span> 中，自动转义 HTML 特殊字符）
  *
  * @example
- * setIconWithLabel(indicator, 'icon-gear', '正在思考...');
+ * setIconWithLabel(indicator, 'icon-gear', '正在思考…');
  */
 export function setIconWithLabel(el: HTMLElement, iconId: string, label: string): void {
   // 先设置图标（会清空 el 子节点）

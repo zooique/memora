@@ -330,7 +330,7 @@ describe('startStreaming', () => {
     // thinking-phase 占位（SVG 齿轮图标 + 文字）
     const phase = msg.querySelector('.thinking-phase');
     expect(phase?.innerHTML).toContain('icon-gear');
-    expect(phase?.textContent).toContain('正在思考...');
+    expect(phase?.textContent).toContain('正在思考…');
     // 光标元素存在
     expect(msg.querySelector('.cursor')).toBeTruthy();
   });
@@ -527,7 +527,7 @@ describe('showThinkingPhase', () => {
     const el = streamingMessages.get('s1') as HTMLElement;
     const indicator = el.querySelector('.thinking-phase');
     expect(indicator?.innerHTML).toContain('icon-gear');
-    expect(indicator?.textContent).toContain('正在回忆相关记忆...');
+    expect(indicator?.textContent).toContain('正在回忆相关记忆…');
   });
 
   it('应更新已存在指示器 + 未知 phase 降级显示原始字符串', () => {
@@ -537,7 +537,7 @@ describe('showThinkingPhase', () => {
     manager.showThinkingPhase('s1', 'processing');
     let el = streamingMessages.get('s1') as HTMLElement;
     expect(el.querySelector('.thinking-phase')?.innerHTML).toContain('icon-gear');
-    expect(el.querySelector('.thinking-phase')?.textContent).toContain('正在处理请求...');
+    expect(el.querySelector('.thinking-phase')?.textContent).toContain('正在处理请求…');
     // 未知 phase 降级显示原始字符串
     manager.showThinkingPhase('s1', 'unknown-phase');
     el = streamingMessages.get('s1') as HTMLElement;
@@ -603,7 +603,7 @@ describe('showToolStart', () => {
     expect(header?.querySelector('.tool-call-chevron')?.innerHTML).toContain('icon-chevron');
     expect(header?.querySelector('.tool-call-name')?.textContent).toBe('readFile');
     expect(header?.querySelector('.tool-call-spinner')).toBeTruthy();
-    expect(header?.querySelector('.tool-call-status')?.textContent).toBe('执行中...');
+    expect(header?.querySelector('.tool-call-status')?.textContent).toBe('执行中…');
     // header 应有 data-action="toggle-collapse"
     expect(header?.getAttribute('data-action')).toBe('toggle-collapse');
   });
@@ -775,7 +775,7 @@ describe('showLoadMore / hideLoadMore / showLoadEarlierDay', () => {
     btn?.click();
     expect(cb).toHaveBeenCalled();
     expect(btn?.hasAttribute('disabled')).toBe(true);
-    expect(btn?.textContent).toBe('加载中...');
+    expect(btn?.textContent).toBe('加载中…');
   });
 
   it('hideLoadMore 移除容器 + showLoadMore 移除旧容器避免重复', () => {
@@ -1042,7 +1042,7 @@ describe('事件委托 · click 分发', () => {
     btn.click();
     expect(cb).toHaveBeenCalled();
     expect(btn.hasAttribute('disabled')).toBe(true);
-    expect(btn.textContent).toBe('加载中...');
+    expect(btn.textContent).toBe('加载中…');
   });
 
   it('data-action=load-earlier-day + retry 应禁用按钮 + 触发各自回调', () => {
@@ -1054,7 +1054,7 @@ describe('事件委托 · click 分发', () => {
     earlierBtn.click();
     expect(earlierCb).toHaveBeenCalled();
     expect(earlierBtn.hasAttribute('disabled')).toBe(true);
-    expect(earlierBtn.textContent).toBe('加载中...');
+    expect(earlierBtn.textContent).toBe('加载中…');
     // retry：先注入错误创建 retry 按钮
     manager.startStreaming('s1');
     manager.injectErrorToStreamingMessages('出错');
@@ -1064,7 +1064,7 @@ describe('事件委托 · click 分发', () => {
     retryBtn.click();
     expect(retryCb).toHaveBeenCalled();
     expect(retryBtn.hasAttribute('disabled')).toBe(true);
-    expect(retryBtn.textContent).toBe('重试中...');
+    expect(retryBtn.textContent).toBe('重试中…');
   });
 });
 
@@ -1118,7 +1118,7 @@ describe('回调注册', () => {
 
     // 点击后应禁用
     expect(btn.hasAttribute('disabled')).toBe(true);
-    expect(btn.textContent).toBe('重试中...');
+    expect(btn.textContent).toBe('重试中…');
 
     // 等待 async IIFE 完成（retryCb 是同步函数，await void 后 finally 执行）
     await Promise.resolve();
@@ -1568,7 +1568,7 @@ describe('showArchiveButton · 一键归档按钮', () => {
     btn.click();
     // 点击后应禁用 + 文案切换为"归档中..."
     expect(btn.hasAttribute('disabled')).toBe(true);
-    expect(btn.textContent).toBe('归档中...');
+    expect(btn.textContent).toBe('归档中…');
     // 等待 archiveSession Promise resolve（需多次微任务刷新）
     await Promise.resolve();
     await Promise.resolve();

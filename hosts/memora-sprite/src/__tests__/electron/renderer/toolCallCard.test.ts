@@ -73,7 +73,7 @@ describe('showToolStart', () => {
     // spinner
     expect(header!.querySelector('.tool-call-spinner')).not.toBeNull();
     // status
-    expect(header!.querySelector('.tool-call-status')!.textContent).toBe('执行中...');
+    expect(header!.querySelector('.tool-call-status')!.textContent).toBe('执行中…');
   });
 
   it('表头应设置 data-action="toggle-collapse" 用于事件委托', () => {

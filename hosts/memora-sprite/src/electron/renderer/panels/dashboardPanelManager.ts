@@ -442,7 +442,7 @@ export class DashboardPanelManager {
       labelSpan.textContent = this.getSourceLabel(s.source);
 
       const statusSpan = document.createElement('span');
-      statusSpan.className = `source-health-status ${s.status}`;
+      statusSpan.className = `source-health-status ${s.status} flex-shrink-0`;
       statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
 
       mainRow.appendChild(labelSpan);

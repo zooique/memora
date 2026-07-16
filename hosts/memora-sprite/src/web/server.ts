@@ -378,7 +378,7 @@ async function startWebServer(): Promise<void> {
   //   - closeSprite() 内部 agent.close/vectorStore.save 可能卡住，需超时兜底
   //   - 总体超时后强制 process.exit(1)，让 OS 回收资源
   const gracefulShutdown = async (signal: string) => {
-    logger.info(`[Web] 收到 ${signal}，正在关闭...`);
+    logger.info(`[Web] 收到 ${signal}，正在关闭…`);
 
     // 总体超时兜底——即使关闭各阶段都卡住，15s 后强制退出
     // 必须在 gracefulShutdown 被调用时才注册，而非启动时注册（否则正常运行 15s 后会自杀）

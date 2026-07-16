@@ -8,7 +8,7 @@
  *   4. 渲染候选列表，支持 ↓↑ 键盘导航 + ←→ 填充回填
  *   5. 取消上一次未完成的请求（避免乱序）
  *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
- *   7. 搜索 loading 反馈：IPC 发出后显示"搜索中..."占位，返回后自然替换
+ *   7. 搜索 loading 反馈：IPC 发出后显示"搜索中…"占位，返回后自然替换
  *   8. L1 source 语义感知：区分洞察/偏好/投影/对话，排除 persona/rule/skill
  *
  * 设计原则：
@@ -358,7 +358,7 @@ export class QuickInputCompletion {
    * 显示"无匹配候选"占位（UX-QI-10）
    *
    * 两源搜索均返回空结果时显示，与 showLoading / showErrorPlaceholder 形成三态一致的占位体系：
-   *   - 搜索中（showLoading）：蓝色 "搜索中..."
+   *   - 搜索中（showLoading）：蓝色 "搜索中…"
    *   - 无匹配（本方法）：灰色 "无匹配，换个词试试"
    *   - 搜索出错（showErrorPlaceholder）：黄色 "搜索失败，修改输入重试"
    *
@@ -389,7 +389,7 @@ export class QuickInputCompletion {
   /**
    * 显示搜索 loading 占位
    *
-   * IPC 发出后、返回前的过渡状态。在候选列表容器中显示"搜索中..."占位项。
+   * IPC 发出后、返回前的过渡状态。在候选列表容器中显示"搜索中…"占位项。
    * 复用 .completion-item 类名让 onListChange 高度计算天然兼容（querySelectorAll 计数为 1）。
    * loading 期间 candidates 数组为空，键盘导航天然失效。
    * aria-hidden="true" 避免屏幕阅读器将占位项误报为可选项。
@@ -405,7 +405,7 @@ export class QuickInputCompletion {
     const li = document.createElement('li');
     // 复用 completion-item 类名让高度计算兼容，额外加 loading 修饰符控制样式
     li.className = 'completion-item completion-loading';
-    li.textContent = '搜索中...';
+    li.textContent = '搜索中…';
     li.setAttribute('aria-hidden', 'true');
     this.listEl.appendChild(li);
 
@@ -730,7 +730,7 @@ export class QuickInputCompletion {
       // UX-QI-06：已采纳候选项在文本末尾追加 ★ 标记（视觉强化"常用"信号）
       if (adoptionCount > 0) {
         const star = document.createElement('span');
-        star.className = 'completion-adopted-mark';
+        star.className = 'completion-adopted-mark flex-shrink-0';
         star.textContent = '★';
         star.setAttribute('aria-hidden', 'true');
         li.appendChild(star);

@@ -230,7 +230,7 @@ export class ProfilePanelManager {
       confirmBtn.textContent = '确认';
       this.events.addEventListener(confirmBtn, 'click', async () => {
         // 复用 setButtonLoadingEl，与全项目 loading 模式一致
-        setButtonLoadingEl(confirmBtn, true, '处理中...');
+        setButtonLoadingEl(confirmBtn, true, '处理中…');
         const rejectBtn = actions.querySelector<HTMLButtonElement>('.reject');
         if (rejectBtn) rejectBtn.disabled = true;
         try {
@@ -250,7 +250,7 @@ export class ProfilePanelManager {
       rejectBtn.textContent = '拒绝';
       this.events.addEventListener(rejectBtn, 'click', async () => {
         // 复用 setButtonLoadingEl
-        setButtonLoadingEl(rejectBtn, true, '处理中...');
+        setButtonLoadingEl(rejectBtn, true, '处理中…');
         confirmBtn.disabled = true;
         try {
           await this.onRejectProfile!(entry.id);
@@ -280,7 +280,7 @@ export class ProfilePanelManager {
           if (!confirmed) return;
         }
         // 复用 setButtonLoadingEl
-        setButtonLoadingEl(deleteBtn, true, '删除中...');
+        setButtonLoadingEl(deleteBtn, true, '删除中…');
         try {
           await this.onRejectProfile!(entry.id);
           card.remove();

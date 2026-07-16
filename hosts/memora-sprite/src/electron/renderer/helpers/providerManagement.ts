@@ -145,7 +145,7 @@ export async function loadProviderList(ctx: ProviderManagementContext): Promise<
   const token = ++loadToken;
 
   // 加载态：await 前显示占位符，避免首次打开时空白（UX-0712-9）
-  ctx.providerListEl.innerHTML = '<p class="settings-hint">加载中...</p>';
+  ctx.providerListEl.innerHTML = '<p class="settings-hint">加载中…</p>';
 
   try {
     const data = await window.electronAPI.listLlmProviders();

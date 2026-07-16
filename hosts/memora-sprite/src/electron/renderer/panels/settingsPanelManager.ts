@@ -1136,7 +1136,7 @@ export class SettingsPanelManager {
 
       // 来源层级标签（project/agent）
       const layerSpan = document.createElement('span');
-      layerSpan.className = `skill-layer skill-layer-${skill.layer}`;
+      layerSpan.className = `skill-layer skill-layer-${skill.layer} flex-shrink-0`;
       layerSpan.textContent = skill.layer === 'agent' ? '全局' : '项目';
 
       // 名称和层级标签始终展示

@@ -127,7 +127,7 @@ export class SpriteLifecycleManager {
     // 启动回收站自动清理定时器
     this.startRecycleBinCleanup();
 
-    logger.info('精灵已启动，等待唤醒...');
+    logger.info('精灵已启动，等待唤醒…');
   }
 
   /** 停止精灵主控 */

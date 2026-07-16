@@ -175,7 +175,7 @@ export class CompletionStatsRenderer {
     // 事件类型徽章
     const typeEl = createEl(
       'span',
-      event.type === 'shown' ? 'completion-stats-event-type shown' : 'completion-stats-event-type adopted',
+      event.type === 'shown' ? 'completion-stats-event-type shown flex-shrink-0' : 'completion-stats-event-type adopted flex-shrink-0',
       event.type === 'shown' ? '展示' : '采纳',
     );
     itemEl.appendChild(typeEl);
@@ -191,7 +191,7 @@ export class CompletionStatsRenderer {
     itemEl.appendChild(detailEl);
 
     // 时间戳
-    const timeEl = createEl('span', 'completion-stats-event-time');
+    const timeEl = createEl('span', 'completion-stats-event-time flex-shrink-0');
     const time = new Date(event.timestamp);
     timeEl.textContent = time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     timeEl.title = event.timestamp;

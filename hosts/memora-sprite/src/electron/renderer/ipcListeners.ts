@@ -658,7 +658,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.setMemoryRecall(msg.messageId, msg.memories);
   });
 
-  // 思考阶段指示：在 text chunk 之前到达，显示"正在回忆.../处理.../归档..."
+  // 思考阶段指示：在 text chunk 之前到达，显示"正在回忆…/处理…/归档…"
   window.electronAPI.onStreamThinking((msg) => {
     uiManager.showThinkingPhase(msg.messageId, msg.phase);
   });

@@ -300,7 +300,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
   font-weight: var(--weight-medium);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 .source-health-status.healthy {

@@ -122,6 +122,8 @@ export const IPC_CHANNELS = {
   PERSONA_MODE_GET: 'persona-mode-get',
   PROJECTS_LIST: 'projects-list',
   DASHBOARD_GET: 'dashboard-get',
+  /** 手动触发一次记忆衰减（L0 纯 score 递减，无 LLM 调用，与 ipc/channels.ts 同步） */
+  MEMORY_DECAY_RUN: 'memory-decay-run',
   PERCEPTION_GET: 'perception-get',
   STARTUP_SUMMARY_GET: 'startup-summary-get',
   LLM_CONFIG_GET: 'llm-config-get',

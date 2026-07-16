@@ -175,7 +175,7 @@
   padding: var(--space-2) var(--space-6);
   background: var(--surface1);
   border-bottom: 1px solid var(--surface2);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   z-index: calc(var(--z-floating-action) - 1); /* 低于 #proactive-banner，避免遮挡 */
 }
 
@@ -203,7 +203,7 @@
 
 .suggestion-card-icon {
   font-size: var(--font-base);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   display: flex;
   align-items: center;
 }

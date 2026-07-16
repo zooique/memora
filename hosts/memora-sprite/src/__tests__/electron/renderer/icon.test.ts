@@ -79,13 +79,13 @@ describe('setIconWithLabel', () => {
   });
 
   it('应注入图标 + span label（label 在 svg 之后）', () => {
-    setIconWithLabel(el, 'icon-gear', '正在思考...');
+    setIconWithLabel(el, 'icon-gear', '正在思考…');
     // 结构：<svg class="icon">...</svg><span>正在思考...</span>
     const svg = el.querySelector('svg.icon');
     const span = el.querySelector('span');
     expect(svg).toBeTruthy();
     expect(span).toBeTruthy();
-    expect(span?.textContent).toBe('正在思考...');
+    expect(span?.textContent).toBe('正在思考…');
   });
 
   it('label 应使用 textContent 赋值（HTML 特殊字符应被转义，防 XSS）', () => {

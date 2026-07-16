@@ -197,7 +197,7 @@ describe('showThinkingPhase', () => {
     const indicator = bubble.querySelector('.thinking-phase');
     expect(indicator).not.toBeNull();
     expect(indicator!.innerHTML).toContain('icon-gear');
-    expect(indicator!.textContent).toContain('正在回忆相关记忆...');
+    expect(indicator!.textContent).toContain('正在回忆相关记忆…');
   });
 
   it('recalling 阶段应显示中文"正在回忆相关记忆"', () => {
@@ -205,7 +205,7 @@ describe('showThinkingPhase', () => {
     showThinkingPhase(bubble, 'recalling');
     const indicator = bubble.querySelector('.thinking-phase');
     expect(indicator!.innerHTML).toContain('icon-gear');
-    expect(indicator!.textContent).toContain('正在回忆相关记忆...');
+    expect(indicator!.textContent).toContain('正在回忆相关记忆…');
   });
 
   it('processing 阶段应显示中文"正在处理请求"', () => {
@@ -213,7 +213,7 @@ describe('showThinkingPhase', () => {
     showThinkingPhase(bubble, 'processing');
     const indicator = bubble.querySelector('.thinking-phase');
     expect(indicator!.innerHTML).toContain('icon-gear');
-    expect(indicator!.textContent).toContain('正在处理请求...');
+    expect(indicator!.textContent).toContain('正在处理请求…');
   });
 
   it('archiving 阶段应显示中文"正在归档对话"', () => {
@@ -221,7 +221,7 @@ describe('showThinkingPhase', () => {
     showThinkingPhase(bubble, 'archiving');
     const indicator = bubble.querySelector('.thinking-phase');
     expect(indicator!.innerHTML).toContain('icon-gear');
-    expect(indicator!.textContent).toContain('正在归档对话...');
+    expect(indicator!.textContent).toContain('正在归档对话…');
   });
 
   it('未知阶段应显示原始 phase 值', () => {
@@ -242,7 +242,7 @@ describe('showThinkingPhase', () => {
     expect(second).toBe(first);
     // 文案已更新
     expect(second!.innerHTML).toContain('icon-gear');
-    expect(second!.textContent).toContain('正在处理请求...');
+    expect(second!.textContent).toContain('正在处理请求…');
   });
 
   it('多次切换阶段应始终只有一个 .thinking-phase 元素', () => {

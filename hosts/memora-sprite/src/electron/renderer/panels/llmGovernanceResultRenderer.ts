@@ -19,6 +19,8 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { createEl } from '../helpers/domHelpers.js';
+// 截断工具（shared/ 层真理源，ADR-017 枝叶层 2 次提取产物）
+import { truncate } from '../../../shared/truncate.js';
 import type { DedupReport, DedupVerdictSummary, TimelinessReport, ConflictReport } from 'memora';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -226,9 +228,7 @@ export class LlmGovernanceResultRenderer {
     const itemEl = createEl('div', 'llm-result-item');
 
     // ID 展示（截断，完整 ID 在 title）
-    const displayId = memoryId.length > ID_DISPLAY_LEN
-      ? `${memoryId.slice(0, ID_DISPLAY_LEN)}…`
-      : memoryId;
+    const displayId = truncate(memoryId, ID_DISPLAY_LEN);
     const idEl = createEl('span', 'llm-result-item-id', `${label}：${displayId}`);
     idEl.title = memoryId;
     itemEl.appendChild(idEl);
@@ -241,16 +241,14 @@ export class LlmGovernanceResultRenderer {
 
     // 合并内容预览（可选，L1 携带 mergedContent 时展示，便于用户验证合并质量）
     if (verdict?.mergedContent) {
-      const preview = verdict.mergedContent.length > PREVIEW_LEN
-        ? `${verdict.mergedContent.slice(0, PREVIEW_LEN)}…`
-        : verdict.mergedContent;
+      const preview = truncate(verdict.mergedContent, PREVIEW_LEN);
       const mergedEl = createEl('div', 'llm-result-item-merged', `合并后：${preview}`);
       mergedEl.title = verdict.mergedContent;
       itemEl.appendChild(mergedEl);
     }
 
     // 恢复按钮（调用 boostMemory，score +0.05）
-    const restoreBtn = createEl('button', 'llm-result-restore-btn', '恢复');
+    const restoreBtn = createEl('button', 'llm-result-restore-btn flex-shrink-0', '恢复');
     restoreBtn.title = '提升该记忆 score（+0.05），与降级语义对称';
     this.events.addEventListener(restoreBtn, 'click', async () => {
       restoreBtn.disabled = true;
@@ -320,16 +318,14 @@ export class LlmGovernanceResultRenderer {
     memory: { name: string; content: string; source: string; score: number },
   ): HTMLElement {
     const memEl = createEl('div', 'llm-result-pair-memory');
-    memEl.appendChild(createEl('span', 'llm-result-pair-memory-label', label));
+    memEl.appendChild(createEl('span', 'llm-result-pair-memory-label flex-shrink-0', label));
 
     const nameEl = createEl('span', 'llm-result-pair-memory-name', memory.name);
     nameEl.title = `${memory.source} · score ${memory.score.toFixed(2)}`;
     memEl.appendChild(nameEl);
 
     // contentPreview 截断
-    const preview = memory.content.length > PREVIEW_LEN
-      ? `${memory.content.slice(0, PREVIEW_LEN)}…`
-      : memory.content;
+    const preview = truncate(memory.content, PREVIEW_LEN);
     const previewEl = createEl('span', 'llm-result-pair-memory-preview', preview);
     previewEl.title = memory.content;
     memEl.appendChild(previewEl);

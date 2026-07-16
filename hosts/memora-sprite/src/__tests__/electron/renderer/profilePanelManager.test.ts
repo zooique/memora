@@ -366,7 +366,7 @@ describe('确认流程 · 待确认条目', () => {
 
     // loading 中状态
     expect(acceptBtn.disabled).toBe(true);
-    expect(acceptBtn.textContent).toBe('处理中...');
+    expect(acceptBtn.textContent).toBe('处理中…');
 
     // 恢复
     resolveConfirm!();

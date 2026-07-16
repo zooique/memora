@@ -458,7 +458,7 @@ describe('updateNarrative() · 叙事合成', () => {
   it('无任何感知数据时应显示默认叙事"精灵正在感知中..."', () => {
     const renderer = createRenderer();
     renderer.updateNarrative();
-    expect(document.getElementById('perception-narrative-text')!.textContent).toBe('精灵正在感知中...');
+    expect(document.getElementById('perception-narrative-text')!.textContent).toBe('精灵正在感知中…');
   });
 
   it('用户离开时应叙事"用户已离开 N 分钟"', () => {

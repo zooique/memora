@@ -402,7 +402,7 @@
   color: var(--text-3);
 }
 
-/* 捕获状态下隐藏默认 placeholder 颜色，让"按下组合键..."提示更醒目 */
+/* 捕获状态下隐藏默认 placeholder 颜色，让"按下组合键…"提示更醒目 */
 .shortcut-input.capturing::placeholder {
   color: var(--accent);
   font-style: italic;

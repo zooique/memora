@@ -799,7 +799,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       listEl.replaceChildren();
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'loading-state';
-      loadingDiv.textContent = '加载记忆列表...';
+      loadingDiv.textContent = '加载记忆列表…';
       listEl.appendChild(loadingDiv);
     } else {
       // 错误态：复用 DashboardPanelManager 的 showMemoryListError（含重试按钮）

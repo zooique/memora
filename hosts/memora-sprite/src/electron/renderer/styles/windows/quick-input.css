@@ -308,7 +308,7 @@ body {
 
 /* ★ 标记：紧贴候选文本末尾，accent 色小字号，不干扰主文本阅读 */
 .completion-adopted-mark {
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   margin-left: var(--space-1);
   font-size: var(--font-2xs);
   color: var(--accent);

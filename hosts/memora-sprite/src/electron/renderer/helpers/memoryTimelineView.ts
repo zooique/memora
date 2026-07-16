@@ -183,7 +183,7 @@ export function createTimelineItem(mem: MemoryListItem, ctx: MemoryTimelineConte
 
   // 时间点
   const timeDot = document.createElement('div');
-  timeDot.className = 'timeline-item-dot';
+  timeDot.className = 'timeline-item-dot flex-shrink-0';
   item.appendChild(timeDot);
 
   // 记忆内容

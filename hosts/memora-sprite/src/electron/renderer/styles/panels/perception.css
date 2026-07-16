@@ -352,7 +352,7 @@
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
   color: var(--mauve);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   /* 类型徽章基础样式：内边距 + 圆角（与 chat-perception.css 旧定义对齐） */
   padding: 1px var(--space-1-5);
   border-radius: var(--radius-xs);
@@ -377,7 +377,7 @@
 .perception-pattern-confidence {
   font-size: var(--font-2xs);
   color: var(--muted);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   /* 置信度徽章基础样式：内边距 + 圆角 */
   padding: 1px var(--space-1-5);
   border-radius: var(--radius-xs);

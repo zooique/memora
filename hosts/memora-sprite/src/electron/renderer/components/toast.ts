@@ -71,7 +71,7 @@ export class ToastManager {
 
     // 图标（SVG sprite，跨平台一致）
     const icon = document.createElement('span');
-    icon.className = 'toast-icon';
+    icon.className = 'toast-icon flex-shrink-0';
     icon.innerHTML = TOAST_ICONS[type];
     toast.appendChild(icon);
 
@@ -119,7 +119,7 @@ export class ToastManager {
 
     // 关闭按钮
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'toast-close';
+    closeBtn.className = 'toast-close flex-shrink-0';
     // 使用 SVG 图标替代 Unicode 符号
     setIcon(closeBtn, 'icon-close');
     closeBtn.title = '关闭';

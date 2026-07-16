@@ -420,7 +420,7 @@
 
       <!-- 记忆面板（与设置面板对齐，显示在核心区，通过侧边栏切换） -->
       <div id="panel-memories" class="panel" aria-hidden="true" aria-labelledby="panel-title-memories">
-        <div class="panel-header">
+        <div class="panel-header flex-shrink-0">
           <!-- 面板标题 -->
           <span class="panel-title" id="panel-title-memories">记忆</span>
           <!-- 搜索框占据主要宽度 -->
@@ -438,14 +438,14 @@
             </button>
           </div>
           <!-- 高级筛选按钮（图标按钮，切换筛选栏显示） -->
-          <button id="btn-advanced-filter" class="icon-btn" title="高级筛选">
+          <button id="btn-advanced-filter" class="icon-btn flex-shrink-0" title="高级筛选">
             <svg class="icon"><use href="#icon-filter"/></svg>
           </button>
           <!-- 主操作：添加记忆 -->
           <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
           <!-- 更多工具（含回收站入口，UX-0713-9：从独立按钮迁入更多菜单降低信息密度） -->
           <div class="toolbar-more">
-            <button id="btn-memory-more" class="icon-btn" title="更多工具" aria-haspopup="true" aria-expanded="false">
+            <button id="btn-memory-more" class="icon-btn flex-shrink-0" title="更多工具" aria-haspopup="true" aria-expanded="false">
               <svg class="icon"><use href="#icon-more"/></svg>
             </button>
             <div id="memory-more-menu" class="dropdown more-menu hidden">
@@ -498,7 +498,7 @@
         <div id="memory-insights-bar" class="insights-bar hidden">
           <div class="insights-header flex-between">
             <span class="insights-title"><svg class="icon"><use href="#icon-chart"/></svg> 统计洞察</span>
-            <button class="panel-close-btn icon-btn" id="btn-close-insights" title="关闭统计洞察" aria-label="关闭">
+            <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-insights" title="关闭统计洞察" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
           </div>
@@ -548,7 +548,7 @@
             <span class="health-title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
             <span class="health-badge" id="health-badge">优秀</span>
             <span class="health-score" id="health-score">100</span>
-            <button class="panel-close-btn icon-btn" id="btn-close-health" title="关闭健康度诊断" aria-label="关闭">
+            <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-health" title="关闭健康度诊断" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
           </div>
@@ -620,24 +620,24 @@
             <div class="legend-section">
               <div class="legend-title">节点类型</div>
               <div class="legend-items">
-                <span class="legend-item"><span class="legend-dot legend-dot-profile"></span>用户画像</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-insight"></span>洞察</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-skill"></span>技能</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-rule"></span>规则</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-guardrail"></span>护栏</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-persona"></span>角色</span>
-                <span class="legend-item"><span class="legend-dot legend-dot-session"></span>会话</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-profile"></span>用户画像</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-insight"></span>洞察</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-skill"></span>技能</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-rule"></span>规则</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-guardrail"></span>护栏</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-persona"></span>角色</span>
+                <span class="legend-item"><span class="legend-dot flex-shrink-0 legend-dot-session"></span>会话</span>
               </div>
             </div>
             <div class="legend-section">
               <div class="legend-title">关系类型</div>
               <div class="legend-items">
-                <span class="legend-item"><span class="legend-line legend-line-contradicts"></span>矛盾</span>
-                <span class="legend-item"><span class="legend-line legend-line-supports"></span>支持</span>
-                <span class="legend-item"><span class="legend-line legend-line-follows"></span>延续</span>
-                <span class="legend-item"><span class="legend-line legend-line-refines"></span>细化</span>
-                <span class="legend-item"><span class="legend-line legend-line-caused"></span>导致</span>
-                <span class="legend-item"><span class="legend-line legend-line-related"></span>相关</span>
+                <span class="legend-item"><span class="legend-line flex-shrink-0 legend-line-contradicts"></span>矛盾</span>
+                <span class="legend-item"><span class="legend-line flex-shrink-0 legend-line-supports"></span>支持</span>
+                <span class="legend-item"><span class="legend-line flex-shrink-0 legend-line-follows"></span>延续</span>
+                <span class="legend-item"><span class="legend-line flex-shrink-0 legend-line-refines"></span>细化</span>
+                <span class="legend-item"><span class="legend-line flex-shrink-0 legend-line-caused"></span>导致</span>
+                <span class="legend-item"><span class="legend-line flex-shrink-0 legend-line-related"></span>相关</span>
               </div>
             </div>
           </div>
@@ -711,7 +711,7 @@
       <!-- 设置面板（核心区域面板，垂直 tab 导航，底部操作按钮） -->
       <div id="panel-settings" class="panel" aria-hidden="true" aria-label="设置">
           <!-- 面板头部 -->
-          <div class="panel-header">
+          <div class="panel-header flex-shrink-0">
             <span class="panel-title" id="panel-title-settings">设置</span>
           </div>
 
@@ -1128,7 +1128,7 @@
 
       <!-- 感知面板（独立面板，详细展示情感/默契/上下文/模式/在场状态） -->
       <div id="panel-perception" class="panel" aria-hidden="true" aria-labelledby="panel-title-perception">
-        <div class="panel-header">
+        <div class="panel-header flex-shrink-0">
           <span class="panel-title" id="panel-title-perception">精灵状态</span>
         </div>
         <!-- 感知面板错误横幅（与 settings/memory/chat/dashboard 统一错误反馈体系） -->
@@ -1271,9 +1271,9 @@
 
       <!-- 仪表盘面板（迭代：感知面板从 overlay 升级为独立 .panel，整合健康诊断 + 感知 + 运行指标） -->
       <div id="panel-dashboard" class="panel" aria-hidden="true" aria-labelledby="panel-title-dashboard">
-        <div class="panel-header">
+        <div class="panel-header flex-shrink-0">
           <span class="panel-title" id="panel-title-dashboard">仪表盘</span>
-          <button id="btn-refresh-dashboard" class="icon-btn" title="刷新数据" aria-label="刷新仪表盘数据">
+          <button id="btn-refresh-dashboard" class="icon-btn flex-shrink-0" title="刷新数据" aria-label="刷新仪表盘数据">
             <svg class="icon"><use href="#icon-refresh"/></svg>
           </button>
         </div>
@@ -1368,10 +1368,10 @@
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3 id="memory-detail-name"></h3>
-        <button class="modal-close icon-btn" data-modal="memory-detail-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="memory-detail-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
-        <div class="memory-meta">
+        <div class="memory-meta flex-shrink-0">
           <span>来源: <code id="memory-detail-source"></code></span>
           <span>权重: <span id="memory-detail-score"></span></span>
           <span>创建: <span id="memory-detail-created"></span></span>
@@ -1413,7 +1413,7 @@
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3 id="provider-modal-title">添加 API</h3>
-        <button class="modal-close icon-btn" data-modal="provider-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="provider-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
         <label for="cfg-provider-alias">别名（唯一标识）</label>
@@ -1458,7 +1458,7 @@
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3>回收站</h3>
-        <button class="modal-close icon-btn" data-modal="recycle-bin-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="recycle-bin-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
         <!-- 回收站说明：软删除记忆保留 30 天后自动清理 -->
@@ -1481,7 +1481,7 @@
     <div class="modal-content">
       <div class="modal-header flex-between">
         <h3>添加记忆</h3>
-        <button class="modal-close icon-btn" data-modal="memory-add-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="memory-add-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
         <label for="memory-add-source">来源</label>
@@ -1517,7 +1517,7 @@
     <div class="modal-content modal-content-sm">
       <div class="modal-header flex-between">
         <h3 id="confirm-title">确认</h3>
-        <button class="modal-close icon-btn" data-modal="confirm-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="confirm-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
         <p id="confirm-message" class="confirm-message"></p>
@@ -1535,7 +1535,7 @@
     <div class="modal-content modal-content-sm">
       <div class="modal-header flex-between">
         <h3 id="prompt-title">输入</h3>
-        <button class="modal-close icon-btn" data-modal="prompt-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="prompt-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
         <p id="prompt-message" class="confirm-message"></p>
@@ -1687,7 +1687,7 @@
     <div class="modal-content modal-content-sm">
       <div class="modal-header flex-between">
         <h3>键盘快捷键</h3>
-        <button class="modal-close icon-btn" data-modal="shortcuts-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        <button class="modal-close icon-btn flex-shrink-0" data-modal="shortcuts-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
         <table class="shortcuts-table">
@@ -1765,7 +1765,7 @@
     <div id="command-palette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="命令面板">
       <div class="command-palette-dialog">
         <div class="command-palette-input-wrapper">
-          <svg class="icon command-palette-search-icon"><use href="#icon-search"/></svg>
+          <svg class="icon command-palette-search-icon flex-shrink-0"><use href="#icon-search"/></svg>
           <input
             type="text"
             id="command-palette-input"
@@ -1785,7 +1785,7 @@
     <div id="search-messages-modal" class="search-messages-modal hidden" role="dialog" aria-modal="true" aria-label="搜索对话内容">
       <div class="search-messages-dialog">
         <div class="search-messages-input-wrapper">
-          <svg class="icon search-messages-icon"><use href="#icon-search"/></svg>
+          <svg class="icon search-messages-icon flex-shrink-0"><use href="#icon-search"/></svg>
           <input
             type="text"
             id="search-messages-input"

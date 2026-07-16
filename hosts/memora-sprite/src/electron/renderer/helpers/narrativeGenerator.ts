@@ -189,7 +189,7 @@ export class NarrativeGenerator {
     }
 
     if (parts.length === 0) {
-      return '精灵正在感知中...';
+      return '精灵正在感知中…';
     }
 
     return parts.join('，') + '。';

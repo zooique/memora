@@ -63,7 +63,7 @@
   width: 1.125rem;
   height: 1.125rem;
   color: var(--muted);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 .command-palette-input {
@@ -153,7 +153,7 @@
   font-family: var(--font-mono);
   white-space: nowrap;
   margin-left: 12px;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 .command-palette-empty {

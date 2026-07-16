@@ -17,7 +17,7 @@
   gap: var(--space-2-5);
   background: transparent;
   border-bottom: 1px solid var(--surface2);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* 面板标题（"记忆"），与对话面板.toolbar-title风格一致 */
@@ -260,7 +260,7 @@
   margin-bottom: 12px;
   font-size: var(--font-xs);
   color: var(--text-3);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 .memory-meta code {

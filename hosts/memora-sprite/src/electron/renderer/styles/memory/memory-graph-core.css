@@ -96,7 +96,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* 关系颜色线条 */
@@ -104,7 +104,7 @@
   width: 14px;
   height: 2px;
   border-radius: 1px;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* ─── 图例颜色类（通过 CSS 变量驱动，自动适配双主题） ────── */

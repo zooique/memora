@@ -267,7 +267,7 @@
 
 /* 恢复按钮（调用 boostMemory，score +0.05） */
 .llm-result-restore-btn {
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   padding: 2px 8px;
   font-size: var(--font-xs);
   border: 1px solid var(--surface2);
@@ -311,7 +311,7 @@
 .llm-result-pair-memory-label {
   font-weight: var(--weight-bold);
   color: var(--text);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* 记忆 name */
@@ -497,7 +497,7 @@
   border-radius: 50%;
   background: var(--text-3);
   border: 2px solid var(--window-bg);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* 时间线节点内容 */
@@ -603,7 +603,7 @@
 .recycle-bin-item-actions {
   display: flex;
   gap: var(--space-1-5);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* 操作按钮复用 .health-action-btn 样式（紧凑小按钮） */

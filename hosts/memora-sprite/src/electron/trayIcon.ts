@@ -183,7 +183,7 @@ export class TrayManager {
       // 更新 tooltip
       const tooltips: Record<TrayState, string> = {
         idle: 'Memora 精灵',
-        active: 'Memora 精灵（思考中...）',
+        active: 'Memora 精灵（思考中…）',
         sleeping: 'Memora 精灵（静默模式）',
       };
       this.tray.setToolTip(tooltips[state]);
@@ -204,9 +204,9 @@ export class TrayManager {
   private startPulse(): void {
     // 纯文字状态指示，避免 emoji 在旧版 Windows 不渲染
     const frames = [
-      'Memora 精灵（思考中...）',
-      'Memora 精灵（处理中...）',
-      'Memora 精灵（生成中...）',
+      'Memora 精灵（思考中…）',
+      'Memora 精灵（处理中…）',
+      'Memora 精灵（生成中…）',
     ];
 
     let step = 0;

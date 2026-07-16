@@ -128,7 +128,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -470,7 +470,7 @@
 .memory-recall-item-icon {
   width: 10px;
   height: 10px;
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   opacity: 0.6;
 }
 

@@ -521,7 +521,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     expect(list.classList.contains('hidden')).toBe(false);
     const loadingEl = list.querySelector('.completion-loading');
     expect(loadingEl).toBeTruthy();
-    expect(loadingEl?.textContent).toBe('搜索中...');
+    expect(loadingEl?.textContent).toBe('搜索中…');
     expect(loadingEl?.getAttribute('aria-hidden')).toBe('true');
 
     // 清理：resolve Promise 避免泄漏

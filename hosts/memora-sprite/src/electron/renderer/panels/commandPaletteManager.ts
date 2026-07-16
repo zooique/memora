@@ -582,7 +582,7 @@ export class CommandPaletteManager {
       item.setAttribute('data-index', String(i));
       item.innerHTML = `
         <span class="command-palette-label">${this.highlightMatch(command.label)}</span>
-        ${command.shortcut ? `<kbd class="command-palette-shortcut">${command.shortcut}</kbd>` : ''}
+        ${command.shortcut ? `<kbd class="command-palette-shortcut flex-shrink-0">${command.shortcut}</kbd>` : ''}
       `;
 
       // 点击执行

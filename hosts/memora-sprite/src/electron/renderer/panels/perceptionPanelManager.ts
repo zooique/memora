@@ -393,7 +393,7 @@ export class PerceptionPanelManager {
 
       // 类型标签：根据模式类型选择对应样式和文字
       const typeSpan = document.createElement('span');
-      typeSpan.className = 'perception-pattern-type';
+      typeSpan.className = 'perception-pattern-type flex-shrink-0';
       switch (pattern.type) {
         case 'recurring_topic':
         case 'repeat':
@@ -418,7 +418,7 @@ export class PerceptionPanelManager {
 
       // 置信度徽章：>= 0.7 高（绿）/ 0.4-0.7 中（黄）/ < 0.4 低（灰）
       const confidenceSpan = document.createElement('span');
-      confidenceSpan.className = 'perception-pattern-confidence';
+      confidenceSpan.className = 'perception-pattern-confidence flex-shrink-0';
       if (pattern.confidence >= 0.7) {
         confidenceSpan.classList.add('high');
         confidenceSpan.textContent = '高置信';

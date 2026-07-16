@@ -284,7 +284,7 @@ export class DateNavManager {
       const isToday = date === today;
       if (!isToday) {
         const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'date-nav-item-delete';
+        deleteBtn.className = 'date-nav-item-delete flex-shrink-0';
         deleteBtn.title = '删除该日期的对话记录';
         deleteBtn.setAttribute('aria-label', `删除 ${date} 的对话记录`);
         // 事件委托已处理删除按钮点击，此处无需绑定

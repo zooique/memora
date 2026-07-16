@@ -58,7 +58,7 @@ export class SuggestionCardManager {
     if (!container) {
       container = document.createElement('div');
       container.id = 'suggestion-container';
-      container.className = 'suggestion-container';
+      container.className = 'suggestion-container flex-shrink-0';
 
       // 插入到 #proactive-banner 之后、#messages 之前
       const proactiveBanner = document.getElementById('proactive-banner');
@@ -141,7 +141,7 @@ export class SuggestionCardManager {
     header.className = 'suggestion-card-header';
 
     const iconSpan = document.createElement('span');
-    iconSpan.className = 'suggestion-card-icon';
+    iconSpan.className = 'suggestion-card-icon flex-shrink-0';
     // 使用 SVG 图标替代 emoji
     setIcon(iconSpan, 'icon-lightbulb');
     header.appendChild(iconSpan);
@@ -190,7 +190,7 @@ export class SuggestionCardManager {
     this.events.addEventListener(acceptBtn, 'click', async () => {
       acceptBtn.disabled = true;
       rejectBtn.disabled = true;
-      acceptBtn.textContent = '处理中...';
+      acceptBtn.textContent = '处理中…';
       try {
         const result = await window.electronAPI.acceptSuggestion(suggestion);
         if (result.success) {

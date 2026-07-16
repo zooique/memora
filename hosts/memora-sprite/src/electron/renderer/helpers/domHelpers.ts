@@ -144,12 +144,12 @@ export function createEl<K extends keyof HTMLElementTagNameMap>(
  * 使用 clearElement + createEl 统一 DOM 操作模式。
  *
  * @param container 目标容器元素
- * @param text 加载提示文字（默认 "加载中..."）
+ * @param text 加载提示文字（默认 "加载中…"）
  */
-export function showPanelLoading(container: Element, text = '加载中...'): void {
+export function showPanelLoading(container: Element, text = '加载中…'): void {
   clearElement(container);
   const wrapper = createEl('div', 'panel-loading');
-  const spinner = createEl('span', 'panel-loading-spinner');
+  const spinner = createEl('span', 'panel-loading-spinner flex-shrink-0');
   const label = createEl('span', undefined, text);
   wrapper.appendChild(spinner);
   wrapper.appendChild(label);
@@ -360,17 +360,21 @@ export interface EmptyStateOptions {
 }
 
 /**
- * 创建标准空状态 DOM 元素（五元组结构）
+ * 创建标准空状态 DOM 元素（可选参数结构）
  *
- * 从 memoryPanelManager / profilePanelManager / searchMessagesManager 等 6+ 文件
- * 重复的空状态构建代码中提取（ADR-017 枝叶层 2 次提取原则）。
+ * 从 memoryPanelManager / memoryTimelineView 等面板重复的空状态构建代码中提取
+ * （ADR-017 枝叶层 2 次提取原则）。
+ *
+ * 当前 2 处调用方：
+ * - memoryPanelManager：完整参数（icon + title + subtitle + ctaText + ctaOnClick）
+ * - memoryTimelineView：简单参数（icon + title + subtitle，不渲染 CTA 按钮）
  *
  * DOM 结构：
  *   <div class="empty-state {panel}-empty-state">
  *     <div class="empty-icon">{iconHtml}</div>      ← 可选
  *     <div class="empty-title">{title}</div>
  *     <div class="empty-subtitle">{subtitle}</div>   ← 可选
- *     <button class="empty-action-btn btn-secondary">{ctaText}</button>  ← 可选
+ *     <button class="empty-action-btn btn-secondary">{ctaText}</button>  ← 可选（ctaText 非空时才创建）
  *   </div>
  *
  * 事件绑定说明：
@@ -378,7 +382,7 @@ export interface EmptyStateOptions {
  * - 若需统一事件清理（如 this.events.addEventListener），调用方可在获取容器后
  *   通过 container.querySelector('.empty-action-btn') 重新绑定
  *
- * @param options 空状态配置
+ * @param options 空状态配置（ctaText / ctaOnClick 可选，ctaText 非空时才创建按钮）
  * @returns 空状态容器元素（已包含所有子元素，可直接 appendChild）
  */
 export function createEmptyState(options: EmptyStateOptions): HTMLElement {

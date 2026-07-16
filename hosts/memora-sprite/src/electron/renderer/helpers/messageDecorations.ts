@@ -93,7 +93,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
     recallItem.type = 'button';
     recallItem.className = 'memory-recall';
     const iconSpan = document.createElement('span');
-    iconSpan.className = 'memory-recall-item-icon';
+    iconSpan.className = 'memory-recall-item-icon flex-shrink-0';
     iconSpan.setAttribute('aria-hidden', 'true');
     setIcon(iconSpan, 'icon-lightbulb');
     recallItem.appendChild(iconSpan);

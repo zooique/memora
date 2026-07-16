@@ -226,7 +226,7 @@
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 .date-nav-item-delete .icon {

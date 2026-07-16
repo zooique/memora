@@ -69,14 +69,14 @@
 .skill-name {
   font-weight: var(--weight-semibold);
   color: var(--text);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 .skill-layer {
   font-size: var(--font-2xs);
   padding: 1px var(--space-1-5);
   border-radius: var(--radius-sm);
-  flex-shrink: 0;
+  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
 /* 全局=蓝色（复用 --accent），项目=绿色（复用 --green） */

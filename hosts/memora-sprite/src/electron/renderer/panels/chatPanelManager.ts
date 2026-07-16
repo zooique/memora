@@ -509,7 +509,7 @@ export class ChatPanelManager {
     // 用户/精灵消息：头像 + 气泡结构（分组模式下省略头像）
     if (!grouped) {
       const avatar = document.createElement('div');
-      avatar.className = 'message-avatar';
+      avatar.className = 'message-avatar flex-shrink-0';
       // 使用 SVG 图标替代 emoji，统一视觉风格
       const iconId = message.role === 'user' ? 'icon-person' : 'icon-fairy';
       setIcon(avatar, iconId);
@@ -746,15 +746,15 @@ export class ChatPanelManager {
     this.host.setStreaming(true);
 
     // 首字节前的"正在思考"占位
-    // SPRITE_STREAM_START 到首个 chunk 之间立即显示"⚙️ 正在思考..."占位，消除空白期感知。
-    // showThinkingPhase 会复用此元素更新为"正在回忆/处理/归档..."（查找或创建模式）；
+    // SPRITE_STREAM_START 到首个 chunk 之间立即显示"⚙️ 正在思考…"占位，消除空白期感知。
+    // showThinkingPhase 会复用此元素更新为"正在回忆/处理/归档…"（查找或创建模式）；
     // updateStreamingMessage / injectErrorToStreamingMessages 会移除此元素。
     const bubble = el.querySelector('.message-bubble');
     if (bubble) {
       const placeholder = document.createElement('div');
       placeholder.className = 'thinking-phase';
       // 使用 SVG 图标替代 emoji
-      setIconWithLabel(placeholder, 'icon-gear', '正在思考...');
+      setIconWithLabel(placeholder, 'icon-gear', '正在思考…');
       // 插入到光标之前（若存在），否则追加到气泡末尾
       const cursor = bubble.querySelector('.cursor');
       if (cursor) {
@@ -1196,7 +1196,7 @@ export class ChatPanelManager {
     btn.title = '一键归档当前会话的全部记忆';
     btn.addEventListener('click', async () => {
       btn.disabled = true;
-      btn.textContent = '归档中...';
+      btn.textContent = '归档中…';
       try {
         const count = await this.host.archiveSession(date, session);
         btn.textContent = `已归档 ${count} 条记忆`;
