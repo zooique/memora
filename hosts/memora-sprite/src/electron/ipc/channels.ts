@@ -339,44 +339,4 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   QUICK_INPUT_SHOW: 'quick-input-show',
 } as const;
 
-// ─── IPC 数据传输类型 ────────────────────────────────────
-
-/**
- * 主进程 AppError 序列化后的 IPC 传输形态
- *
- * 主进程的 AppError 包含 Date 对象和 Error 引用，无法直接通过 IPC 传输。
- * 经由 errorHandler.showErrorToUser 序列化后，渲染进程收到的是此结构的对象。
- * 主进程和渲染进程共享此类型，消除两处重复定义（errorHandler.ts 和 renderer.ts）。
- */
-export interface SerializedAppError {
-  /** 错误码（ErrorCode 枚举经 IPC 传输后转为 string） */
-  code: string;
-  /** 用户友好的错误消息（已由 errorHandler 转换） */
-  message: string;
-  /** ISO 8601 时间戳（AppError.timestamp 的 toISOString() 结果） */
-  timestamp: string;
-}
-
-/**
- * 作品投影 IPC 传输形态（WorkProjectionManager 查看）
- *
- * 内核 WorkProjectionEntry 的 sourcePath 为服务端绝对路径，
- * 通过 IPC 传输后渲染进程仅用于展示，不反解析。
- * 与 WorkProjectionEntry 结构对齐，但确保所有字段可序列化。
- */
-export interface WorkProjectionPayload {
-  /** 唯一 ID（work-proj-<slug>） */
-  id: string;
-  /** 文件路径（服务端绝对路径，仅展示用） */
-  sourcePath: string;
-  /** 文件 hash（用于变更检测） */
-  fileHash: string;
-  /** 概要（50-100 字） */
-  summary: string;
-  /** 结构（章节/模块列表） */
-  structure: string[];
-  /** 关键决策 */
-  keyDecisions: string[];
-  /** 最后更新时间（ISO 8601） */
-  updatedAt: string;
-}
+// IPC 数据传输类型（SerializedAppError / WorkProjectionPayload）见 ./types.ts

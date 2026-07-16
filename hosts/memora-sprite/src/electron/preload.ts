@@ -21,8 +21,8 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { SerializedAppError } from './ipc/channels.js';
-import type { WorkProjectionPayload } from './ipc/channels.js';
+// SerializedAppError / WorkProjectionPayload 真理源在 ipc/types.ts
+import type { SerializedAppError, WorkProjectionPayload } from './ipc/types.js';
 // 重新导出 WorkProjectionPayload，使渲染层统一从 preload 导入
 export type { WorkProjectionPayload };
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。

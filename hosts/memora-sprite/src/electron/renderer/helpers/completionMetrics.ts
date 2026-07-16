@@ -19,6 +19,8 @@
  */
 
 import { safeGetJSON, safeSetJSON } from './safeStorage.js';
+// createSingleton 封装懒创建单例模式（ADR-017 枝叶层 2 次提取）
+import { createSingleton } from '../../../shared/singleton.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -264,18 +266,12 @@ export class CompletionMetrics {
 
 // ─── 单例 ────────────────────────────────────────────────
 
-/** 单例实例（全应用唯一，懒加载） */
-let metricsInstance: CompletionMetrics | null = null;
-
 /**
  * 获取补全统计埋点器单例
  *
  * 懒加载：首次调用时创建实例并从 localStorage 加载历史数据。
  * 后续调用返回同一实例（保证事件流一致性）。
+ *
+ * 使用 createSingleton 封装懒创建模式（ADR-017 枝叶层 2 次提取）。
  */
-export function getCompletionMetrics(): CompletionMetrics {
-  if (!metricsInstance) {
-    metricsInstance = new CompletionMetrics();
-  }
-  return metricsInstance;
-}
+export const getCompletionMetrics = createSingleton(() => new CompletionMetrics());

@@ -40,7 +40,9 @@ import { scheduleSilentRecovery } from './ipc/configHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import { ELECTRON_DIR } from './esmShim.js';
-import { registerMinimalIpcHandlers, type AppRuntime } from './ipc/minimalHandlers.js';
+import { registerMinimalIpcHandlers } from './ipc/minimalHandlers.js';
+// AppRuntime 类型真理源在 ipc/types.ts
+import type { AppRuntime } from './ipc/types.js';
 // 精灵事件桥 + Agent 监听器提取到独立模块
 import { setupSpriteEventListeners } from './spriteEventBridge.js';
 import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';

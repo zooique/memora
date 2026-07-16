@@ -15,7 +15,7 @@ import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
 import { safeHandle, throwingHandle } from './types.js';
 import { isValidContent, isValidId, isValidRelationParams, isValidSearchQuery } from './inputValidation.js';
-import { ErrorCode, MemoraError } from '../errorHandler.js';
+import { ErrorCode, SpriteError } from '../errorHandler.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -29,7 +29,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     throwingHandle('列出记忆失败', () => {
       // 校验 source 参数：非空时必须通过 isValidId（与 MEMORIES_SHOW/DELETE 一致，500 字符上限）
       if (query?.source !== undefined && !isValidId(query.source)) {
-        throw new MemoraError(ErrorCode.VALIDATION_ERROR, '非法 source 参数');
+        throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法 source 参数');
       }
       return { memories: ctx.sprite.listMemories(query?.source) };
     }),
@@ -40,7 +40,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     throwingHandle('搜索记忆失败', async () => {
       // 校验搜索关键词类型和长度，防止超长查询导致性能问题
       if (!isValidSearchQuery(query)) {
-        throw new MemoraError(ErrorCode.VALIDATION_ERROR, '非法搜索关键词');
+        throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法搜索关键词');
       }
       return { hits: await ctx.sprite.searchMemories(query) };
     }),
@@ -51,7 +51,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     throwingHandle('查看记忆详情失败', () => {
       // 校验记忆 ID 类型和长度，防止非字符串或超长值传入内核
       if (!isValidId(id)) {
-        throw new MemoraError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
+        throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
       }
       return { memory: ctx.sprite.showMemory(id) };
     }),
@@ -237,7 +237,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     throwingHandle('获取关系路径失败', () => {
       // 参数校验：memoryId 必须 isValidId
       if (!isValidId(data?.memoryId)) {
-        throw new MemoraError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
+        throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
       }
       return ctx.sprite.getRelationPath(data.memoryId, data.maxDepth ?? 5, data.direction ?? 'incoming');
     }),
@@ -247,7 +247,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS, async (_event, data: { memoryId: string; limit?: number }) =>
     throwingHandle('获取关系邻居失败', () => {
       if (!isValidId(data?.memoryId)) {
-        throw new MemoraError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
+        throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
       }
       return ctx.sprite.getRelationNeighbors(data.memoryId, data.limit ?? 10);
     }),

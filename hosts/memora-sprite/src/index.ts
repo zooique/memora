@@ -29,7 +29,7 @@ import { NodeSqliteDatabase } from './storage/nodeSqliteDatabase.js';
 import { SpriteConfigStore, DEFAULT_CONFIG_PATH, resolveProviderConfig } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
-import { MemoraError, ErrorCode } from './sprite/errors.js';
+import { SpriteError, ErrorCode } from './sprite/errors.js';
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
 // 宿主自定义工具（web_search + memory_search + create_persona + create_skill）
 import {
@@ -266,7 +266,7 @@ export async function setActiveLlmProvider(
   const provider = resolveProviderConfig(config, key);
 
   if (!provider) {
-    throw new MemoraError(
+    throw new SpriteError(
       ErrorCode.INITIALIZATION_FAILED,
       `Provider "${key}" 不存在`,
       {
@@ -367,14 +367,14 @@ async function createStorage(dataDir: string): Promise<{
  *   - 部分打包器（webpack）会预加载 native 模块，Node.js 环境下立即报 ABI 错误
  *   - 动态 import 延迟到 Electron 环境实际调用时才加载，确保 Node.js 环境零 native 依赖
  *
- * 错误处理友好化：包裹 try/catch，抛出带上下文的 MemoraError
+ * 错误处理友好化：包裹 try/catch，抛出带上下文的 SpriteError
  *   - 原始错误信息不含 dbPath、运行时类型，难以定位 ABI 冲突 vs 文件权限 vs 路径无效
  *   - 错误信息包含：dbPath / electron 版本 / node 版本 / 原始错误 message
  *   - ErrorCode.STORAGE_ERROR 与其他存储层错误一致，便于 ErrorHandler 统一分类
  *
  * @param dbPath 数据库文件路径
  * @returns 实现 ISqliteDatabase 接口的 better-sqlite3 实例
- * @throws MemoraError(ErrorCode.STORAGE_ERROR) 当动态 import 或实例化失败时
+ * @throws SpriteError(ErrorCode.STORAGE_ERROR) 当动态 import 或实例化失败时
  */
 async function createBetterSqliteDb(dbPath: string): Promise<ISqliteDatabase> {
   try {
@@ -389,7 +389,7 @@ async function createBetterSqliteDb(dbPath: string): Promise<ISqliteDatabase> {
     // - err.code === 'EACCES' / 'EPERM' → 文件权限问题
     // - err.code === 'ENOENT' → 父目录不存在
     // - err.message 含 'could not open database' → dbPath 被占用或损坏
-    throw new MemoraError(
+    throw new SpriteError(
       ErrorCode.STORAGE_ERROR,
       `better-sqlite3 初始化失败: ${toError(err).message}`,
       {
@@ -725,10 +725,10 @@ export async function startSprite(opts?: {
   try {
     config = await loadConfig(opts?.configPath ?? DEFAULT_CONFIG_PATH);
     if (!config.llm.apiKey) {
-      throw new MemoraError(ErrorCode.CONFIG_LOAD_FAILED, 'API Key 未配置');
+      throw new SpriteError(ErrorCode.CONFIG_LOAD_FAILED, 'API Key 未配置');
     }
   } catch (err) {
-    throw new MemoraError(
+    throw new SpriteError(
       ErrorCode.CONFIG_LOAD_FAILED,
       `配置不完整，请在设置面板中配置 LLM 提供商和 API Key（${toError(err).message}）`,
       { cause: err },

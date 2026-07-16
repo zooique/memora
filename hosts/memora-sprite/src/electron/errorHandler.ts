@@ -10,12 +10,13 @@
 import type { BrowserWindow } from 'electron';
 import { toError, logger } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
-import type { SerializedAppError } from './ipc/channels.js';
+// SerializedAppError 真理源在 ipc/types.ts
+import type { SerializedAppError } from './ipc/types.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
-// ErrorCode + MemoraError 定义在 sprite/errors.ts（纯逻辑层，零 electron 依赖），本模块 re-export 保持公共 API 不变
-import { ErrorCode, MemoraError } from '../sprite/errors.js';
-export { ErrorCode, MemoraError };
+// ErrorCode + SpriteError 定义在 sprite/errors.ts（纯逻辑层，零 electron 依赖），本模块 re-export 保持公共 API 不变
+import { ErrorCode, SpriteError } from '../sprite/errors.js';
+export { ErrorCode, SpriteError };
 
 export interface AppError {
   code: ErrorCode;
@@ -59,14 +60,14 @@ export class ErrorHandler {
    * 复用内核 toError 完成 unknown → Error 转换。
    * code 优先级：
    *   1. 调用方显式传入 explicitCode
-   *   2. MemoraError 携带的 error.code（结构化错误）
-   *   3. 从 error.message 字符串推断（降级 fallback，已废弃，新增错误应使用 MemoraError）
+   *   2. SpriteError 携带的 error.code（结构化错误）
+   *   3. 从 error.message 字符串推断（降级 fallback，已废弃，新增错误应使用 SpriteError）
    *   4. UNKNOWN
    */
   private normalizeError(error: unknown, explicitCode?: ErrorCode, context?: string): AppError {
     const err = toError(error);
-    // 优先读取结构化错误码：MemoraError 实例携带 code 字段
-    const structCode = err instanceof MemoraError ? err.code : undefined;
+    // 优先读取结构化错误码：SpriteError 实例携带 code 字段
+    const structCode = err instanceof SpriteError ? err.code : undefined;
     return {
       code: explicitCode ?? structCode ?? this.extractErrorCode(err),
       message: err.message,
@@ -79,16 +80,16 @@ export class ErrorHandler {
   /**
    * 从错误对象中提取错误代码（降级 fallback）
    *
-   * @deprecated 新增错误应使用 `throw new MemoraError(ErrorCode.XXX, msg)` 显式指定 code。
+   * @deprecated 新增错误应使用 `throw new SpriteError(ErrorCode.XXX, msg)` 显式指定 code。
    *             此方法仅作为未携带 code 的遗留错误降级路径保留。
    *
    * 本降级路径仅覆盖遗留错误的关键词推断，STORAGE_ERROR / VALIDATION_ERROR
-   * 等新错误码必须通过 MemoraError 显式携带，不在此降级路径中追加关键词。
-   * 新增 throw 一律使用 `throw new MemoraError(ErrorCode.XXX, msg)`，
+   * 等新错误码必须通过 SpriteError 显式携带，不在此降级路径中追加关键词。
+   * 新增 throw 一律使用 `throw new SpriteError(ErrorCode.XXX, msg)`，
    * normalizeError 会优先读取 error.code，仅在未携带 code 时才回退到此方法。
    */
   private extractErrorCode(error: Error): ErrorCode {
-    // 检查常见的错误模式（降级路径，存在误匹配风险，新增错误应使用 MemoraError）
+    // 检查常见的错误模式（降级路径，存在误匹配风险，新增错误应使用 SpriteError）
     if (error.message.includes('ENOENT') || error.message.includes('文件')) {
       return ErrorCode.FILE_READ_FAILED;
     }

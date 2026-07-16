@@ -12,7 +12,7 @@ import type { MemoryRelation, RelationPath, RelationNeighbor } from 'memora';
 import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
 import { logger } from 'memora';
 import { DEFAULT_LIST_LIMIT } from '../constants.js';
-import { MemoraError, ErrorCode } from '../errors.js';
+import { SpriteError, ErrorCode } from '../errors.js';
 import { buildHealthDashboard } from './memoryHealth.js';
 import type { HealthDashboard } from './memoryHealth.js';
 import { buildReviewData } from './reviewManager.js';
@@ -427,7 +427,7 @@ export class MemoryController {
   upsert(source: string, name: string, content: string, score = 0.5): string {
     // 写操作走 MemoryInspector.writeUpsert
     const memory = this.agent.memory;
-    if (!memory) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
+    if (!memory) throw new SpriteError(ErrorCode.STORAGE_ERROR, '存储不可用');
     const now = new Date().toISOString();
     const id = `${source}:${name}`;
     memory.writeUpsert({
@@ -459,7 +459,7 @@ export class MemoryController {
    */
   boostMemory(id: string): boolean {
     const memory = this.agent.memory;
-    if (!memory) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
+    if (!memory) throw new SpriteError(ErrorCode.STORAGE_ERROR, '存储不可用');
     return memory.writeBoost(id);
   }
 

@@ -10,7 +10,7 @@
 
 // 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
 import { safeSetInterval, clearSafeInterval, logger, toError } from 'memora';
-import { MemoraError, ErrorCode } from './errors.js';
+import { SpriteError, ErrorCode } from './errors.js';
 import { MS_PER_HOUR } from './constants.js';
 
 // ─── SpriteTrigger 接口 ──────────────────────────────────
@@ -128,7 +128,7 @@ export class TriggerBus {
   /** 注册触发器 */
   register(trigger: SpriteTrigger): void {
     if (this.triggers.has(trigger.name)) {
-      throw new MemoraError(ErrorCode.VALIDATION_ERROR, `触发器 "${trigger.name}" 已注册`);
+      throw new SpriteError(ErrorCode.VALIDATION_ERROR, `触发器 "${trigger.name}" 已注册`);
     }
     this.triggers.set(trigger.name, trigger);
   }

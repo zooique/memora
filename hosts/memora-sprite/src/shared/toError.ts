@@ -6,7 +6,7 @@
  *
  * 设计原则：
  *   - 纯函数，零运行时依赖，可被任意进程安全导入
- *   - 行为与内核 memora/src/utils/toError 对齐
+ *   - 行为与内核 memora/src/utils/toError 完全对齐（5 分支结构 + 相同语义）
  *   - 作为渲染进程 toError 的单一真理源（替代 errorHelpers.ts 中的本地实现）
  *
  * 架构位置：

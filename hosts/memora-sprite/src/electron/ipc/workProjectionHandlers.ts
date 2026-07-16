@@ -14,7 +14,7 @@ import { IPC_CHANNELS } from './channels.js';
 import { throwingHandle } from './types.js';
 import type { IpcContext } from './types.js';
 import { isValidFilePath } from './inputValidation.js';
-import { ErrorCode, MemoraError } from '../errorHandler.js';
+import { ErrorCode, SpriteError } from '../errorHandler.js';
 
 /**
  * 注册作品投影 IPC 处理器
@@ -57,7 +57,7 @@ export function registerWorkProjectionHandlers(ctx: IpcContext): void {
       async () => {
         // filePath 类型 + 长度校验，防止非字符串或超长值进入内核 works.getProjection
         if (!isValidFilePath(filePath)) {
-          throw new MemoraError(ErrorCode.VALIDATION_ERROR, '非法文件路径');
+          throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法文件路径');
         }
         const works = ctx.agent.works;
         if (!works) return null;

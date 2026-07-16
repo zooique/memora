@@ -20,17 +20,15 @@
 
 import { ipcMain } from 'electron';
 import { createProviderFromConfig, toError, logger } from 'memora';
-import type { Agent, Config } from 'memora';
+import type { Config } from 'memora';
 import { IPC_CHANNELS } from './channels.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { loadSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
-import type { Sprite } from '../../sprite/sprite.js';
-import type { AuditManager } from '../../sprite/audit/auditManager.js';
-import type { WindowManager } from '../windows/windowManager.js';
-import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
 import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
 import { isValidContent, isNonEmptyString } from './inputValidation.js';
+// AppRuntime / MinimalIpcState / MinimalIpcCallbacks 真理源在 ./types.ts
+import type { AppRuntime, MinimalIpcState, MinimalIpcCallbacks } from './types.js';
 
 /**
  * 脱敏 API Key 供渲染进程显示
@@ -43,56 +41,6 @@ function maskApiKey(key: string): string {
     return key ? '****' : '';
   }
   return `${key.slice(0, 3)}****${key.slice(-4)}`;
-}
-
-// ─── 类型定义 ──────────────────────────────────────────────
-
-/** Agent 运行时状态（与 main.ts AppRuntime 对齐） */
-export interface AppRuntime {
-  agent: Agent;
-  sprite: Sprite;
-  sessionStore: SqliteSessionStore;
-  close: () => Promise<void>;
-}
-
-/**
- * 最小化 IPC 处理器需要的可变状态
- *
- * 设计：main.ts 持有此对象引用，IPC 处理器内部通过闭包捕获。
- * main.ts 修改对象属性后，IPC 处理器立即可见。
- */
-export interface MinimalIpcState {
-  agentReady: boolean;
-  initErrorDetail: string | null;
-  currentAbortController: AbortController | null;
-  currentDataDir: string;
-  pendingWriteConfirmations: Map<string, (confirmed: boolean) => void>;
-  closeSprite: (() => Promise<void>) | null;
-  auditManager: AuditManager | null;
-  windowManager: WindowManager | undefined;
-  /** LLM 配置缓存（用于判断是否需要重新初始化 Agent） */
-  lastProvider: string | null;
-  lastModel: string | null;
-  lastBaseUrl: string | null;
-  lastApiKey: string | null;
-}
-
-/**
- * 最小化 IPC 处理器需要的回调函数
- *
- * 这些函数是 main.ts 的局部函数，无法通过 import 获取，需通过回调注入。
- */
-export interface MinimalIpcCallbacks {
-  /** 集中赋值 agent/sprite/sessionStore/closeSprite */
-  setAppRuntime: (runtime: AppRuntime | null) => void;
-  /** Agent 就绪后初始化（注册完整 IPC + 事件监听） */
-  setupAgentReady: (agent: Agent, sprite: Sprite, sessionStore: SqliteSessionStore, dataDir: string) => void;
-  /** 统一错误分类 */
-  classifyInitError: (errMessage: string, prefix: string) => string;
-  /** 获取当前 Agent 实例（用于运行时切换 Provider） */
-  getCurrentAgent: () => Agent | null;
-  /** 获取当前 Sprite 实例（用于运行时切换 Provider） */
-  getCurrentSprite: () => Sprite | null;
 }
 
 // ─── 共享函数 ──────────────────────────────────────────────

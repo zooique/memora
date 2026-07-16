@@ -132,7 +132,7 @@ describe('SqliteStorage', () => {
 
   // ─── source 校验阻断路径测试 ──────────────────────
 
-  it('upsert() 空 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
+  it('upsert() 空 source 应抛出 SpriteError(VALIDATION_ERROR)', () => {
     const memory = makeMemory({ source: '' });
     // 空字符串属于 severity='block'，应被拒绝写入
     expect(() => storage.upsert(memory)).toThrow(
@@ -142,7 +142,7 @@ describe('SqliteStorage', () => {
     );
   });
 
-  it('upsert() 路径遍历 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
+  it('upsert() 路径遍历 source 应抛出 SpriteError(VALIDATION_ERROR)', () => {
     const memory = makeMemory({ source: '../../../etc/passwd' });
     // 路径遍历序列属于 severity='block'（安全边界），应被拒绝写入
     expect(() => storage.upsert(memory)).toThrow(
@@ -152,7 +152,7 @@ describe('SqliteStorage', () => {
     );
   });
 
-  it('upsert() 首尾空格 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
+  it('upsert() 首尾空格 source 应抛出 SpriteError(VALIDATION_ERROR)', () => {
     const memory = makeMemory({ source: '  insight  ' });
     // 首尾空格属于 severity='block'（调用方 bug），应被拒绝写入
     expect(() => storage.upsert(memory)).toThrow(

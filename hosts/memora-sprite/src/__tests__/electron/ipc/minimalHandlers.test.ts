@@ -120,7 +120,8 @@ vi.mock('../../../index.js', () => ({
 
 import { registerMinimalIpcHandlers } from '../../../electron/ipc/minimalHandlers.js';
 import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
-import type { MinimalIpcState, MinimalIpcCallbacks } from '../../../electron/ipc/minimalHandlers.js';
+// MinimalIpcState / MinimalIpcCallbacks 真理源在 ipc/types.ts
+import type { MinimalIpcState, MinimalIpcCallbacks } from '../../../electron/ipc/types.js';
 import { createProviderFromConfig } from 'memora';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

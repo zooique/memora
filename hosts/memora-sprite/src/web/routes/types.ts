@@ -12,7 +12,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from 'memora';
-import { MemoraError, ErrorCode } from '../../sprite/errors.js';
+import { SpriteError, ErrorCode } from '../../sprite/errors.js';
 import type { HostContext } from '../../shared/hostContext.js';
 
 // ─── 安全响应头 ──────────────────────────────
@@ -75,7 +75,7 @@ export async function parseJsonBody<T = unknown>(req: IncomingMessage): Promise<
   for await (const chunk of req) {
     totalSize += chunk.length;
     if (totalSize > MAX_BODY_SIZE) {
-      throw new MemoraError(
+      throw new SpriteError(
         ErrorCode.UNKNOWN,
         `请求体超过 10MB 限制（当前: ${(totalSize / 1024 / 1024).toFixed(2)}MB）`,
       );

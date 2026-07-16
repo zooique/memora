@@ -39,10 +39,10 @@ describe('错误信息提取', () => {
     expect(msgEl?.textContent).toBe('核心元素 #chat-messages 不存在');
   });
 
-  it('MemoraError（继承 Error）应提取 message', () => {
-    // 模拟 MemoraError 结构（继承 Error，有 message 字段）
+  it('SpriteError（继承 Error）应提取 message', () => {
+    // 模拟 SpriteError 结构（继承 Error，有 message 字段）
     const err = new Error('INITIALIZATION_FAILED: 预检失败');
-    err.name = 'MemoraError';
+    err.name = 'SpriteError';
     renderInitFailureToBody(err);
     const card = document.getElementById('ui-init-failure-card');
     const msgEl = card?.querySelector('p');

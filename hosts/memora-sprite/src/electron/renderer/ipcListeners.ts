@@ -17,7 +17,8 @@
  */
 
 import type { UIManager } from './ui.js';
-import type { SerializedAppError } from '../ipc/channels.js';
+// SerializedAppError 真理源在 ipc/types.ts
+import type { SerializedAppError } from '../ipc/types.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
 // P4 类型统一：感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联

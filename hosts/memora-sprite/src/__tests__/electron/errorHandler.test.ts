@@ -2,9 +2,9 @@
  * 错误处理器测试
  *
  * 覆盖范围：
- * - MemoraError 类：构造器、code/context 字段、继承 Error
+ * - SpriteError 类：构造器、code/context 字段、继承 Error
  * - ErrorCode 枚举：7 种错误码完整覆盖
- * - ErrorHandler.handle：code 优先级（explicitCode > MemoraError.code > 字符串推断 > UNKNOWN）
+ * - ErrorHandler.handle：code 优先级（explicitCode > SpriteError.code > 字符串推断 > UNKNOWN）
  * - getUserFriendlyMessage：7 种 ErrorCode 映射（通过 handle 间接验证）
  * - extractErrorCode：降级路径（ENOENT/网络/初始化/UNKNOWN）
  * - showErrorToUser：mainWindow 未设置/已销毁/正常发送
@@ -36,7 +36,7 @@ vi.mock('memora', () => ({
 }));
 
 // 导入被测模块（在 mock 之后）
-import { MemoraError, ErrorHandler, ErrorCode } from '../../electron/errorHandler.js';
+import { SpriteError, ErrorHandler, ErrorCode } from '../../electron/errorHandler.js';
 import { logger } from 'memora';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
@@ -57,37 +57,37 @@ function createErrorHandler(): ErrorHandler {
   return new ErrorHandler();
 }
 
-// ─── MemoraError 类 ──────────────────────────────────────
+// ─── SpriteError 类 ──────────────────────────────────────
 
-describe('MemoraError', () => {
+describe('SpriteError', () => {
   it('应携带 code 和 message', () => {
-    const err = new MemoraError(ErrorCode.FILE_READ_FAILED, '文件不存在');
+    const err = new SpriteError(ErrorCode.FILE_READ_FAILED, '文件不存在');
     expect(err.code).toBe(ErrorCode.FILE_READ_FAILED);
     expect(err.message).toBe('文件不存在');
   });
 
-  it('应继承 Error，name 为 MemoraError', () => {
-    const err = new MemoraError(ErrorCode.UNKNOWN, 'test');
+  it('应继承 Error，name 为 SpriteError', () => {
+    const err = new SpriteError(ErrorCode.UNKNOWN, 'test');
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(MemoraError);
-    expect(err.name).toBe('MemoraError');
+    expect(err).toBeInstanceOf(SpriteError);
+    expect(err.name).toBe('SpriteError');
   });
 
   it('应携带可选 context（结构化数据）', () => {
-    const err = new MemoraError(ErrorCode.NETWORK_ERROR, '请求失败', {
+    const err = new SpriteError(ErrorCode.NETWORK_ERROR, '请求失败', {
       context: { url: 'https://api.example.com', status: 500 },
     });
     expect(err.context).toEqual({ url: 'https://api.example.com', status: 500 });
   });
 
   it('无 context 时 context 字段为 undefined', () => {
-    const err = new MemoraError(ErrorCode.UNKNOWN, 'test');
+    const err = new SpriteError(ErrorCode.UNKNOWN, 'test');
     expect(err.context).toBeUndefined();
   });
 
   it('应支持 Error cause 链（options.cause）', () => {
     const cause = new Error('原始原因');
-    const err = new MemoraError(ErrorCode.API_ERROR, 'API 失败', { cause });
+    const err = new SpriteError(ErrorCode.API_ERROR, 'API 失败', { cause });
     expect(err.cause).toBe(cause);
   });
 });
@@ -126,20 +126,20 @@ describe('ErrorHandler.handle code 优先级', () => {
     vi.clearAllMocks();
   });
 
-  it('优先级 1：explicitCode 应覆盖 MemoraError.code', () => {
+  it('优先级 1：explicitCode 应覆盖 SpriteError.code', () => {
     const handler = createErrorHandler();
-    // MemoraError 携带 FILE_READ_FAILED，但 explicitCode 指定 NETWORK_ERROR
-    const err = new MemoraError(ErrorCode.FILE_READ_FAILED, '文件读取失败');
+    // SpriteError 携带 FILE_READ_FAILED，但 explicitCode 指定 NETWORK_ERROR
+    const err = new SpriteError(ErrorCode.FILE_READ_FAILED, '文件读取失败');
     const appError = handler.handle(err, { code: ErrorCode.NETWORK_ERROR });
 
     expect(appError.code).toBe(ErrorCode.NETWORK_ERROR);
   });
 
-  it('优先级 2：MemoraError.code 应优先于字符串推断', () => {
+  it('优先级 2：SpriteError.code 应优先于字符串推断', () => {
     const handler = createErrorHandler();
     // message 含 "网络" 会触发字符串推断为 NETWORK_ERROR，
-    // 但 MemoraError 携带 FILE_READ_FAILED 应优先
-    const err = new MemoraError(ErrorCode.FILE_READ_FAILED, '网络文件读取失败');
+    // 但 SpriteError 携带 FILE_READ_FAILED 应优先
+    const err = new SpriteError(ErrorCode.FILE_READ_FAILED, '网络文件读取失败');
     const appError = handler.handle(err);
 
     expect(appError.code).toBe(ErrorCode.FILE_READ_FAILED);
@@ -263,7 +263,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.FILE_READ_FAILED, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.FILE_READ_FAILED, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -275,7 +275,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.NETWORK_ERROR, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.NETWORK_ERROR, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -287,7 +287,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.API_ERROR, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.API_ERROR, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -299,7 +299,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.INITIALIZATION_FAILED, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.INITIALIZATION_FAILED, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -311,7 +311,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.CONFIG_LOAD_FAILED, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.CONFIG_LOAD_FAILED, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -323,7 +323,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.WINDOW_CREATE_FAILED, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.WINDOW_CREATE_FAILED, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -336,7 +336,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.STORAGE_ERROR, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.STORAGE_ERROR, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -348,7 +348,7 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     const handler = createErrorHandler();
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
-    handler.handle(new MemoraError(ErrorCode.VALIDATION_ERROR, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.VALIDATION_ERROR, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -398,7 +398,7 @@ describe('showErrorToUser 窗口状态边界', () => {
     const mockWin = createMockWindow();
     handler.setMainWindow(mockWin);
 
-    handler.handle(new MemoraError(ErrorCode.FILE_READ_FAILED, '原始消息'));
+    handler.handle(new SpriteError(ErrorCode.FILE_READ_FAILED, '原始消息'));
 
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
@@ -420,8 +420,8 @@ describe('logError 结构化日志', () => {
 
   it('应调用 logger.error 输出结构化日志', () => {
     const handler = createErrorHandler();
-    // appError.context 来自 options.context（人类可读描述），非 MemoraError.context
-    const err = new MemoraError(ErrorCode.NETWORK_ERROR, '请求超时');
+    // appError.context 来自 options.context（人类可读描述），非 SpriteError.context
+    const err = new SpriteError(ErrorCode.NETWORK_ERROR, '请求超时');
     handler.handle(err, { context: 'API 请求阶段' });
 
     expect(logger.error).toHaveBeenCalledWith(

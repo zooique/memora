@@ -11,7 +11,7 @@ import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
 import { segmentLower, validateSource, logger } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
-import { MemoraError, ErrorCode } from '../sprite/errors.js';
+import { SpriteError, ErrorCode } from '../sprite/errors.js';
 
 /** 建表 SQL（含 deleted_at 列支持软删除） */
 const CREATE_TABLE_SQL = `
@@ -121,7 +121,7 @@ export class SqliteStorage implements IMemoryStorage {
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
     if (result.severity === 'block') {
-      throw new MemoraError(ErrorCode.VALIDATION_ERROR, `source 校验失败（拒绝写入）：${result.warning}`);
+      throw new SpriteError(ErrorCode.VALIDATION_ERROR, `source 校验失败（拒绝写入）：${result.warning}`);
     }
     if (result.severity === 'warn' && result.warning) {
       logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');

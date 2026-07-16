@@ -23,7 +23,7 @@
 import type { UIManager } from '../ui.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { getLocalDate } from '../../../sprite/constants.js';
-import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+import { SpriteError, ErrorCode } from '../../../sprite/errors.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色
@@ -302,7 +302,7 @@ export function createSessionController(uiManager: UIManager) {
       // 调用 switchSession IPC：更新 Agent 内部状态 + 加载会话消息
       const result = await window.electronAPI.switchSession({ date, session: name });
       if (!result.success) {
-        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '切换会话失败');
+        throw new SpriteError(ErrorCode.API_ERROR, result.error ?? '切换会话失败');
       }
 
       // 渲染目标会话的消息（批量插入）
@@ -489,7 +489,7 @@ export function createSessionController(uiManager: UIManager) {
       // 调用主进程删除会话（按日期前缀删除当天全部子会话）
       const result = await window.electronAPI.deleteSession(date);
       if (!result.success) {
-        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '删除会话失败');
+        throw new SpriteError(ErrorCode.API_ERROR, result.error ?? '删除会话失败');
       }
 
       uiManager.showToast('对话记录已删除', 'success');
@@ -536,7 +536,7 @@ export function createSessionController(uiManager: UIManager) {
     try {
       const result = await window.electronAPI.renameSession(sessionId, newName);
       if (!result.success) {
-        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '重命名会话失败');
+        throw new SpriteError(ErrorCode.API_ERROR, result.error ?? '重命名会话失败');
       }
 
       uiManager.showToast(`已重命名为 ${newName}`, 'success');
@@ -569,7 +569,7 @@ export function createSessionController(uiManager: UIManager) {
     try {
       const result = await window.electronAPI.forkSession(targetSession);
       if (!result.success || !result.newSession) {
-        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '分叉会话失败');
+        throw new SpriteError(ErrorCode.API_ERROR, result.error ?? '分叉会话失败');
       }
 
       // 分叉成功提示（实际切换由 sessionForked 事件触发）

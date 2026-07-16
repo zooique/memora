@@ -196,7 +196,7 @@ describe('TriggerBus', () => {
       const trigger = createMockTrigger('duplicate');
 
       bus.register(trigger);
-      // 重复注册应抛出 MemoraError 且携带 VALIDATION_ERROR code（防止回归为裸 Error）
+      // 重复注册应抛出 SpriteError 且携带 VALIDATION_ERROR code（防止回归为裸 Error）
       expect(() => bus.register(trigger)).toThrow(
         expect.objectContaining({
           code: ErrorCode.VALIDATION_ERROR,

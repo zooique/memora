@@ -24,10 +24,10 @@ import { toError } from 'memora';
  * 显示内容：醒目红色错误卡片 + 错误信息 + 排查建议（HTML 与 TS 不同步、构建未刷新等）。
  * 错误仍然会 rethrow，让上层（renderer.ts DOMContentLoaded）的 catch 也能感知。
  *
- * @param err 构造函数抛出的错误（通常是 MemoraError INITIALIZATION_FAILED）
+ * @param err 构造函数抛出的错误（通常是 SpriteError INITIALIZATION_FAILED）
  */
 export function renderInitFailureToBody(err: unknown): void {
-  // 提取错误信息（MemoraError 有 message 字段，普通 Error 同样）
+  // 提取错误信息（SpriteError 有 message 字段，普通 Error 同样）
   const errorMessage = toError(err).message;
   // 构建错误提示卡片：样式由 base.css 中 .ui-init-failure-card 等类提供
   // CSS 类内 var(--token, fallback) 兼顾主题适配与 CSS 未加载场景

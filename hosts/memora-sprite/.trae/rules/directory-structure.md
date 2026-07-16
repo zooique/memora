@@ -212,7 +212,7 @@ src/
 │   ├── fileWatcherTrigger.ts   # 文件监听触发器
 │   ├── interaction.ts          # IInteraction 接口定义
 │   ├── skillInstaller.ts       # 技能安装器（拖入安装，Phase 4.3）
-│   ├── errors.ts               # 宿主层共享错误类型（ErrorCode 枚举 + MemoraError 类，零 Electron 依赖）
+│   ├── errors.ts               # 宿主层共享错误类型（ErrorCode 枚举 + SpriteError 类，零 Electron 依赖）
 │   ├── spriteConfigManager.ts  # 精灵配置管理器（配置 CRUD + 每日消息计数，从 sprite.ts 拆分）
 │   │
 │   ├── cli/                    # CLI 专属模块
@@ -248,7 +248,13 @@ src/
 ├── shared/                     # 宿主上下文共享层（纯类型+纯数据，无 Node 依赖，主进程/渲染进程/Web 安全共用）
 │   ├── hostContext.ts          # HostContext 接口（Electron + Web 共用核心依赖容器）
 │   ├── inputValidation.ts      # 跨进程输入验证（IPC + Web 路由白名单真理源，防路径遍历/注入）
-│   └── shortcutDefaults.ts     # 快捷键默认配置（ShortcutConfig 类型 + DEFAULT_SHORTCUTS 常量，主进程+渲染进程共用）
+│   ├── shortcutDefaults.ts     # 快捷键默认配置（ShortcutConfig 类型 + DEFAULT_SHORTCUTS 常量，主进程+渲染进程共用）
+│   ├── toError.ts              # 跨进程错误转换纯函数（与内核 utils/toError 行为对齐，渲染进程真理源）
+│   ├── dateUtils.ts            # 日期工具纯函数（formatDateKey 本地时区 YYYY-MM-DD，与内核 utils/time 对齐）
+│   ├── truncate.ts             # 文本截断纯函数（跨 renderer/sprite/storage 共用，统一 ellipsis U+2026）
+│   ├── escapeRegExp.ts         # 正则转义纯函数（构造正则前转义用户输入特殊字符）
+│   ├── safeWriteJson.ts        # 安全 JSON 写入纯函数（try-catch 防失败 + 原子写入语义）
+│   └── singleton.ts            # 同步单例工厂纯函数（createSingleton，ADR-017 枝叶层 2 次提取）
 │
 ├── web/                        # Web 模式（HTTP 调试通道，与 Electron 模式并行）
 │   ├── server.ts               # HTTP 服务器入口（Express + 静态资源 + 路由挂载）

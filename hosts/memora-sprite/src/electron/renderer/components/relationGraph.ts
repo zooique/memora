@@ -24,7 +24,7 @@
  * - 几何计算提取至 helpers/relationGraphGeometry.ts（枝叶层，纯函数）
  */
 
-import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+import { SpriteError, ErrorCode } from '../../../sprite/errors.js';
 import {
   runInitialLayout,
   updateLayout,
@@ -189,7 +189,7 @@ export class RelationGraphRenderer {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new MemoraError(ErrorCode.INITIALIZATION_FAILED, 'Canvas 2D 上下文不可用');
+    if (!ctx) throw new SpriteError(ErrorCode.INITIALIZATION_FAILED, 'Canvas 2D 上下文不可用');
     this.ctx = ctx;
 
     // 查找 tooltip DOM 元素

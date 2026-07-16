@@ -100,8 +100,16 @@ npm run package:win   # 自动：sync-memora → build:electron → clean-releas
 |----|------|------|
 | `controllers/` | 业务编排（IPC 调用 + 回调注册 + 状态决策） | 直接访问 `document.getElementById` / `querySelector` / `classList` 等 DOM API |
 | `panels/` | DOM 绑定 + 渲染逻辑（事件监听 + 元素操作） | 跨面板业务编排（应由 controllers/ 协调） |
-| `components/` | 可复用 UI 组件（Toast / Modal / Theme 等 leaf 组件） | 直接依赖 panels/ 或 controllers/ |
+| `components/` | 可复用 UI 组件（Toast / Modal / Theme 等 leaf 组件） | 直接依赖 panels/ 或 controllers/（反向依赖） |
 | `ui.ts` | UIManager 门面（组合持有所有子模块 + 薄委托方法） | 内联复杂 DOM 渲染逻辑（应拆分到 panels/） |
+
+**依赖方向**（AUDIT-0716-14 决策，2026-07-16）：
+
+> `panels/` → `components/` 是**合法正向依赖**（leaf 组件被 panels 消费），不算越权。
+>
+> - `components/` 定位为"可复用 UI leaf 组件"，存在的意义就是被上层（panels/helpers）消费
+> - 分层规则只禁止 `components/` **反向依赖** `panels/` 或 `controllers/`
+> - 现有 10 处 `panels → components` 引用（renderMarkdown / ToastManager / ModalManager / RelationGraphRenderer 等）均为合理消费模式
 
 **执行方式**：controllers/ 需要访问 DOM 时，通过 UIManager 提供的门面方法（如 `getMemorySearchParams()` / `triggerMemorySearchInput()` / `setMemoryListState()`），由 UIManager 内部委托到对应 PanelManager。
 

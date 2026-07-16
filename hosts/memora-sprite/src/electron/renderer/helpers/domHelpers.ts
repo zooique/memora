@@ -10,7 +10,7 @@
  * - 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败
  * - 核心元素与可选元素分离，单个面板缺失不阻塞整个 UI
  */
-import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+import { SpriteError, ErrorCode } from '../../../sprite/errors.js';
 // reportError 为渲染进程统一日志入口（双通道：console + 主进程 logger），替代散落的 console.warn/error
 import { reportError } from './errorHelpers.js';
 // formatTimeAgo 时间常量替换（统一引用 constants.ts 真理源）
@@ -34,11 +34,11 @@ export function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
 ): HTMLElementTagNameMap[T] {
   const el = document.getElementById(id);
   if (!el) {
-    throw new MemoraError(ErrorCode.INITIALIZATION_FAILED, `[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
+    throw new SpriteError(ErrorCode.INITIALIZATION_FAILED, `[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
   }
   // 运行时标签名校验：使用 tagName 字符串比较（兼容 JSDOM 等无 DOM 构造函数的环境）
   if (el.tagName.toLowerCase() !== tagName) {
-    throw new MemoraError(
+    throw new SpriteError(
       ErrorCode.INITIALIZATION_FAILED,
       `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>`,
     );

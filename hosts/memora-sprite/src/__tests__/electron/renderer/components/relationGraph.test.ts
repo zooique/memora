@@ -565,7 +565,7 @@ describe('RelationGraphRenderer R3 回调注册 + 高亮/选中 + 视图控制',
       expect(r.height).toBe(600);
     });
 
-    it('构造函数 getContext 返回 null 时抛 MemoraError', () => {
+    it('构造函数 getContext 返回 null 时抛 SpriteError', () => {
       const badCanvas = document.createElement('canvas');
       badCanvas.getContext = vi.fn(() => null) as HTMLCanvasElement['getContext'];
       const parent = document.createElement('div');

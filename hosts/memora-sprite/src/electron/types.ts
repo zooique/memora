@@ -36,7 +36,8 @@ export type { ShortcutAction, ShortcutManagerOptions } from './shortcuts.js';
 export type { AppError } from './errorHandler.js';
 
 // IPC 通道载荷
-export type { SerializedAppError, WorkProjectionPayload } from './ipc/channels.js';
+// SerializedAppError / WorkProjectionPayload 真理源在 ipc/types.ts
+export type { SerializedAppError, WorkProjectionPayload } from './ipc/types.js';
 
 // IPC 上下文（依赖容器）
 export type { IpcContext } from './ipc/types.js';
