@@ -617,6 +617,8 @@ export interface ElectronAPI {
       layer: string;
     }>;
   }>;
+  /** 手动触发一次记忆衰减（L0 纯 score 递减，返回成功/失败） */
+  triggerDecayRun: () => Promise<{ success: boolean; error?: string }>;
 
   // 感知数据快照（精灵感知面板打开时调用，实时推导返回）
   getPerceptionSnapshot: () => Promise<{
@@ -983,6 +985,8 @@ const electronAPI: ElectronAPI = {
 
   // 仪表盘
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
+  // 手动触发一次记忆衰减（L0 纯 score 递减）
+  triggerDecayRun: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_DECAY_RUN),
   // 感知数据快照（精灵感知面板打开时调用）
   getPerceptionSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.PERCEPTION_GET),
   // 启动摘要（Welcome Back Digest，迭代一）

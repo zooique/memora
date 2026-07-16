@@ -127,6 +127,8 @@ export const IPC_CHANNELS = {
   PROJECTS_LIST: 'projects-list',
   /** 获取仪表盘数据 */
   DASHBOARD_GET: 'dashboard-get',
+  /** 手动触发一次记忆衰减（L0 纯 score 递减，无 LLM 调用） */
+  MEMORY_DECAY_RUN: 'memory-decay-run',
   /** 获取感知数据快照（情感基调/默契度/对话上下文/模式洞察） */
   PERCEPTION_GET: 'perception-get',
   /** 获取启动摘要（Welcome Back Digest，迭代一） */

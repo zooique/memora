@@ -1322,6 +1322,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 手动触发一次 L0 记忆衰减（委托 MemoryDecayScheduler.runOnce）
+   *
+   * 执行纯 score 递减（无 LLM 调用），衰减完成后触发 decayCompleted 事件。
+   * 供宿主 UI 手动触发（如仪表盘"立即衰减"按钮），与定时器自动触发路径一致。
+   */
+  runMemoryDecayOnce(): void {
+    this.memoryDecayScheduler?.runOnce();
+  }
+
+  /**
    * L3 冲突检测（委托 MemoryAdvisor.detectConflicts）
    *
    * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。

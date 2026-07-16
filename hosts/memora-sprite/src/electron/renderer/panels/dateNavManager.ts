@@ -168,6 +168,30 @@ export class DateNavManager {
         this.backToTodayCallback?.();
       });
     }
+
+    // 全局快捷键：Alt+←/→ 在有记录的日期间翻日
+    // 基于已加载的 availableDates 排序后查找前/后一天，无记录的日期自动跳过
+    this.events.addEventListener(document, 'keydown', (e) => {
+      if (!(e instanceof KeyboardEvent)) return;
+      // 仅响应 Alt + 左/右方向键
+      if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+      // 无日期数据或未选中日期时跳过
+      if (this.availableDates.size === 0 || !this.currentDate) return;
+
+      // 升序排列（旧→新），与 ArrowLeft=往前(更早)、ArrowRight=往后(更晚) 语义一致
+      const sortedDates = Array.from(this.availableDates.keys()).sort((a, b) =>
+        a.localeCompare(b),
+      );
+      const currentIdx = sortedDates.indexOf(this.currentDate);
+      if (currentIdx === -1) return;
+
+      // 计算目标索引，越界时跳过（已在最早/最新日期）
+      const targetIdx = e.key === 'ArrowLeft' ? currentIdx - 1 : currentIdx + 1;
+      if (targetIdx < 0 || targetIdx >= sortedDates.length) return;
+
+      e.preventDefault();
+      this.selectDate(sortedDates[targetIdx]);
+    });
   }
 
   /**

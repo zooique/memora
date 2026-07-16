@@ -692,6 +692,15 @@ export class Sprite {
   }
 
   /**
+   * 手动触发一次 L0 记忆衰减（转发 agent.runMemoryDecayOnce）
+   *
+   * 供 IPC handler 调用（手动触发）。定时器自动触发走 MemoryDecayScheduler 内部定时器，不经此处。
+   */
+  triggerDecayRun(): void {
+    this.agent.runMemoryDecayOnce();
+  }
+
+  /**
    * L3 冲突检测（转发 memoryController.detectConflicts）
    *
    * 供 IPC handler 调用，返回冲突报告。

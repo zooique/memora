@@ -117,6 +117,21 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   });
 
   /**
+   * 手动触发一次记忆衰减（L0 纯 score 递减）
+   *
+   * 衰减完成后内核自动触发 decayCompleted 事件，仪表盘会通过事件监听刷新指标。
+   */
+  ipcMain.handle(IPC_CHANNELS.MEMORY_DECAY_RUN, () => {
+    try {
+      ctx.sprite.triggerDecayRun();
+      return { success: true };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '手动触发记忆衰减失败' });
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' };
+    }
+  });
+
+  /**
    * 获取感知数据快照（情感基调/默契度/对话上下文/模式洞察）
    *
    * UI 感知面板打开时主动调用，从当前记忆实时推导全量感知数据。

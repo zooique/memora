@@ -205,6 +205,32 @@ export class DashboardPanelManager {
     const canvasEl = document.getElementById('dashboard-growth-canvas');
     this.growthCanvasEl = canvasEl instanceof HTMLCanvasElement ? canvasEl : null;
     this.growthEmptyEl = document.getElementById('dashboard-growth-empty');
+
+    // 绑定手动触发衰减按钮（点击调用 IPC，成功后刷新仪表盘指标）
+    const triggerDecayBtn = document.getElementById('btn-trigger-decay');
+    if (triggerDecayBtn instanceof HTMLButtonElement) {
+      this.events.addEventListener(triggerDecayBtn, 'click', async () => {
+        triggerDecayBtn.disabled = true;
+        const originalText = triggerDecayBtn.textContent;
+        triggerDecayBtn.textContent = '执行中…';
+        try {
+          const result = await window.electronAPI.triggerDecayRun();
+          triggerDecayBtn.textContent = result.success ? '已完成' : '失败';
+          // 衰减完成后刷新仪表盘（reloadMemoryListCallback 会触发 DASHBOARD_GET 重新加载）
+          if (result.success) {
+            this.reloadMemoryListCallback?.();
+          }
+        } catch {
+          triggerDecayBtn.textContent = '失败';
+        } finally {
+          // 1.5 秒后恢复按钮文字和可用状态
+          window.setTimeout(() => {
+            triggerDecayBtn.textContent = originalText;
+            triggerDecayBtn.disabled = false;
+          }, 1500);
+        }
+      });
+    }
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -254,7 +280,7 @@ export class DashboardPanelManager {
     // != null 同时捕获 null 和 undefined，避免显示 "+undefined"
     const dashboardTodayCount = document.getElementById('dashboard-today-memories');
     if (dashboardTodayCount) {
-      dashboardTodayCount.textContent = data.todayNewMemories != null ? `+${data.todayNewMemories}` : '—';
+      dashboardTodayCount.textContent = data.todayNewMemories !== null && data.todayNewMemories !== undefined ? `+${data.todayNewMemories}` : '—';
     }
 
     // ─── 更新洞察计数（bySource 中 source='insight' 的记忆数） ──

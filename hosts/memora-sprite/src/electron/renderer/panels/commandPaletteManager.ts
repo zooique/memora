@@ -87,6 +87,14 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         void uiManager.switchPanel('perception');
       },
     },
+    {
+      id: 'nav-dashboard',
+      label: '切换到仪表盘面板',
+      keywords: '仪表盘 dashboard 统计 概览 指标',
+      section: '导航',
+      shortcut: 'Ctrl+4',
+      action: () => { void uiManager.switchPanel('dashboard'); },
+    },
 
     // ── 记忆 ──
     {
@@ -263,6 +271,17 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         // 点击工具栏分叉按钮（与用户手动点击路径一致，复用 sessionController.forkSession）
         const forkBtn = document.getElementById('btn-fork-session') as HTMLElement | null;
         forkBtn?.click();
+      },
+    },
+    {
+      id: 'action-search-messages',
+      label: '搜索对话内容',
+      keywords: '搜索 查找 对话 消息 内容 search messages 历史',
+      section: '动作',
+      shortcut: 'Ctrl+Shift+F',
+      action: () => {
+        // 复用 SearchMessagesManager.open()，与 Ctrl+Shift+F 快捷键路径一致
+        uiManager.searchMessagesManager.open();
       },
     },
     {

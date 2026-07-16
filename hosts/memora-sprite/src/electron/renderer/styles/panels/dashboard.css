@@ -221,6 +221,31 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   line-height: 1.3;
 }
 
+/* 衰减卡片内的手动触发按钮（紧贴 detail 行下方，低视觉权重避免干扰指标阅读） */
+.dash-item-action {
+  margin-top: var(--space-1);
+  padding: 2px var(--space-2);
+  font-size: var(--font-2xs);
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.dash-item-action:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-10);
+}
+
+.dash-item-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ─── 记忆源健康列表 ──────────────────────────────── */
 .source-health-list {
   display: flex;
