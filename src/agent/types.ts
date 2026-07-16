@@ -14,6 +14,44 @@
  *
  * error 事件：流式过程中发生错误（如 LLM 超时、连接断开），
  * 替代裸 throw 让宿主能优雅展示错误并清理 UI（避免未处理 rejection 静默卡死）。
+ *
+ * ─── agent/ 模块依赖图（最后更新：2026-07-16） ─────────────────
+ * 如需精确依赖关系，请阅读各文件 import 语句。本图仅展示高层模块关系。
+ *
+ *   agent.ts（门面，Agent 类）
+ *     ├─ assembler.ts（组件装配，init 阶段）
+ *     ├─ loop.ts（主循环，chat 阶段）
+ *     │    ├─ toolExecutor.ts（工具执行）
+ *     │    ├─ contextManager.ts（上下文窗口管理）
+ *     │    ├─ messageHistory.ts（历史消息存储）
+ *     │    ├─ guardrail.ts（护栏规则）
+ *     │    └─ tracer.ts（可观测性 span）
+ *     ├─ personaMatcher.ts（LLM 角色匹配，从 persona 迁入）
+ *     ├─ userFactExtractor.ts（用户事实提取，纯函数）
+ *     ├─ builtinToolHandlers.ts（内置工具处理器）
+ *     └─ managers/（12 个专职 Manager）
+ *          ├─ chatLockManager.ts（并发锁，token 机制）
+ *          ├─ configManager.ts（配置加载）
+ *          ├─ contextManager.ts（上下文管理）
+ *          ├─ insightExtractor.ts（LLM 提炼，prompt 独立函数）
+ *          ├─ memoryInspector.ts（记忆读写统一入口，ADR-014）
+ *          ├─ memoryDecayScheduler.ts（记忆衰减调度）
+ *          ├─ memoryAdvisor.ts（记忆建议）
+ *          ├─ relationBuilder.ts（记忆关系构建，ADR-014 侧车）
+ *          ├─ archiveCoordinator.ts（归档协调，emit archiveFailed）
+ *          ├─ sessionArchiver.ts（会话归档）
+ *          ├─ sessionManager.ts（会话状态）
+ *          ├─ textPolishManager.ts（文本润色）
+ *          ├─ autoConfigRefiner.ts（配置自动优化）
+ *          └─ workProjection.ts（作品投影）
+ *
+ * 分层依赖方向（ADR-008）：
+ *   agent/ → memory/ → storage/（不可反向）
+ *   agent/ → persona/（不可反向，persona 不调 LLM）
+ *   agent/ → llm/（provider 注入）
+ *   agent/ → skill/（技能加载）
+ *   agent/ → config/（配置加载）
+ * ──────────────────────────────────────────────────────────
  */
 
 /** thinking 事件的阶段标识 */

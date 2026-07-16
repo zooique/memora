@@ -153,7 +153,8 @@ export class UsageStatsCollector {
         }
       }
       return this.getSnapshot();
-    } catch {
+    } catch (err) {
+      logger.debug({ err: toError(err).message }, '使用统计快照加载失败');
       return null;
     }
   }

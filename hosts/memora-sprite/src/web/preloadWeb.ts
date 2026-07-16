@@ -387,7 +387,8 @@ function parseSseEvent(eventBlock: string): { event: string; data: unknown } | n
   if (!dataStr) return null;
   try {
     return { event: eventName, data: JSON.parse(dataStr) };
-  } catch {
+  } catch (err) {
+    console.warn('SSE data JSON 解析失败', { dataStr, err });
     return null;
   }
 }
