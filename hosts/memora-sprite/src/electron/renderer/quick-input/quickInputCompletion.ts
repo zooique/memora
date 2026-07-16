@@ -355,6 +355,38 @@ export class QuickInputCompletion {
   }
 
   /**
+   * 显示"无匹配候选"占位（UX-QI-10）
+   *
+   * 两源搜索均返回空结果时显示，与 showLoading / showErrorPlaceholder 形成三态一致的占位体系：
+   *   - 搜索中（showLoading）：蓝色 "搜索中..."
+   *   - 无匹配（本方法）：灰色 "无匹配，换个词试试"
+   *   - 搜索出错（showErrorPlaceholder）：黄色 "搜索失败，修改输入重试"
+   *
+   * 让用户能明确区分"还在搜" / "搜不到" / "搜出错"三种状态，
+   * 而非统一表现为候选列表消失（原 clearCandidates 行为会让用户疑惑"是不是浮窗坏了"）。
+   *
+   * 复用 .completion-item + .completion-loading 类名让高度计算兼容（querySelectorAll 计数为 1），
+   * candidates 为空使键盘导航天然失效（handleKeyDown 检查 length===0）。
+   * aria-hidden="true" 避免屏幕阅读器将占位项误报为可选项。
+   */
+  private showEmptyPlaceholder(): void {
+    this.candidates = [];
+    this.selectedIndex = -1;
+    this.totalCandidatesCount = 0;
+    delete this.listEl.dataset.footer;
+    this.listEl.innerHTML = '';
+
+    const li = document.createElement('li');
+    // 复用 completion-item + completion-loading 类名（无匹配态视觉与 loading 同构，颜色由 muted 区分）
+    li.className = 'completion-item completion-loading completion-empty';
+    li.textContent = '无匹配，换个词试试';
+    li.setAttribute('aria-hidden', 'true');
+    this.listEl.appendChild(li);
+
+    this.showListContainer();
+  }
+
+  /**
    * 显示搜索 loading 占位
    *
    * IPC 发出后、返回前的过渡状态。在候选列表容器中显示"搜索中..."占位项。
@@ -625,6 +657,17 @@ export class QuickInputCompletion {
   }
 
   /**
+   * 获取候选项的累计采纳次数（UX-QI-06）
+   *
+   * 与 getAdoptionBoost 不同：返回原始次数（不受 ADOPTION_BOOST_MAX_COUNT 上限截断），
+   * 供 renderCandidates 渲染"你常用这个（已采纳 N 次）"提示。
+   * 未被采纳过返回 0。
+   */
+  private getAdoptionCount(text: string): number {
+    return this.adoptedTexts.get(this.dedupKey(text)) ?? 0;
+  }
+
+  /**
    * 渲染候选列表
    *
    * 每个候选项包含：来源标签 + 文本预览。
@@ -643,7 +686,9 @@ export class QuickInputCompletion {
     // 清空列表
     this.listEl.innerHTML = '';
     if (candidates.length === 0) {
-      this.clearCandidates();
+      // UX-QI-10：两源搜索均返回空时显示"无匹配"占位，与 loading/error 形成三态一致的占位体系
+      // 让用户能区分"搜索中" / "无匹配" / "搜索出错"三种状态，而非统一表现为列表消失
+      this.showEmptyPlaceholder();
       return;
     }
 
@@ -658,18 +703,38 @@ export class QuickInputCompletion {
       li.setAttribute('aria-selected', 'false');
       li.tabIndex = -1;
 
+      // UX-QI-06：已采纳过的候选项加 .adopted 修饰类 + title 提示
+      // 通过 adoptedTexts 记录判断（getAdoptionBoost > 0 即曾被采纳），
+      // 让"越用越准"的学习行为对用户可见，强化核心差异化感知
+      const adoptionCount = this.getAdoptionCount(item.text);
+      if (adoptionCount > 0) {
+        li.classList.add('adopted');
+        li.title = `你常用这个（已采纳 ${adoptionCount} 次）`;
+      }
+
       // 来源标签
       const label = document.createElement('span');
       label.className = 'completion-label flex-shrink-0';
       label.textContent = item.sourceLabel;
 
-      // 文本预览（textContent 防 XSS）
+      // 文本预览：高亮匹配关键词（UX-QI-05）
+      // 用户输入的 query 在候选文本中匹配的部分用 <mark> 包裹，便于一眼定位相关性
+      // 大小写不敏感匹配但保留原文大小写；query 为空或未命中时降级为纯文本
       const text = document.createElement('span');
       text.className = 'completion-text text-truncate';
-      text.textContent = item.text;
+      this.highlightMatch(text, item.text, this.currentQuery);
 
       li.appendChild(label);
       li.appendChild(text);
+
+      // UX-QI-06：已采纳候选项在文本末尾追加 ★ 标记（视觉强化"常用"信号）
+      if (adoptionCount > 0) {
+        const star = document.createElement('span');
+        star.className = 'completion-adopted-mark';
+        star.textContent = '★';
+        star.setAttribute('aria-hidden', 'true');
+        li.appendChild(star);
+      }
 
       // 点击选择
       li.addEventListener('click', () => {
@@ -710,6 +775,49 @@ export class QuickInputCompletion {
     // 记录展示事件（候选列表展示给用户时）
     // shownCount = candidates.length（≤5），totalCandidatesCount = slice 前总数
     getCompletionMetrics().recordShown(this.currentQuery, candidates.length, this.totalCandidatesCount);
+  }
+
+  /**
+   * 在候选文本容器中高亮匹配的查询关键词（UX-QI-05）
+   *
+   * 将文本拆分为「前缀 + 匹配段 + 后缀」三段，匹配段用 <mark class="completion-match"> 包裹。
+   * 大小写不敏感匹配（toLowerCase 比较），但保留原文大小写渲染。
+   * 未命中匹配时降级为纯 textContent（与原行为一致，无 XSS 风险）。
+   *
+   * 仅高亮第一个匹配 occurrence，避免长文本中出现多次匹配时视觉过载。
+   *
+   * @param container 文本容器元素（已创建，本方法负责填充内容）
+   * @param text 候选原始文本（已截断到 PREVIEW_MAX_LENGTH）
+   * @param query 用户当前查询文本
+   */
+  private highlightMatch(container: HTMLElement, text: string, query: string): void {
+    // query 为空或长度不足时降级为纯文本（与原 textContent 行为一致）
+    if (!query || query.length < MIN_QUERY_LENGTH) {
+      container.textContent = text;
+      return;
+    }
+    // 大小写不敏感定位首个匹配位置
+    const matchIdx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (matchIdx < 0) {
+      // 候选文本不直接包含 query（可能来自语义搜索/对话位置匹配），降级纯文本
+      container.textContent = text;
+      return;
+    }
+    // 拆分三段：前缀 + 匹配段 + 后缀，匹配段用 <mark> 强调
+    const prefix = text.slice(0, matchIdx);
+    const match = text.slice(matchIdx, matchIdx + query.length);
+    const suffix = text.slice(matchIdx + query.length);
+
+    if (prefix) {
+      container.appendChild(document.createTextNode(prefix));
+    }
+    const mark = document.createElement('mark');
+    mark.className = 'completion-match';
+    mark.textContent = match;
+    container.appendChild(mark);
+    if (suffix) {
+      container.appendChild(document.createTextNode(suffix));
+    }
   }
 
   /**

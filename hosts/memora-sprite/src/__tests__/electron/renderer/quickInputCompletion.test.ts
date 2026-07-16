@@ -390,7 +390,10 @@ describe('mergeCandidates · 合并去重排序', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(document.querySelectorAll('.completion-item').length).toBe(0);
+    // UX-QI-10：两源搜索返回空结果时显示"无匹配"占位项（非隐藏列表）
+    // 占位项复用 .completion-item 类名（与 loading/error 同构），数量为 1
+    expect(document.querySelectorAll('.completion-item').length).toBe(1);
+    expect(document.querySelector('.completion-item.completion-empty')).not.toBeNull();
   });
 });
 
@@ -480,7 +483,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     expect(text).toBe('第二次结果');
   });
 
-  it('空结果应隐藏候选列表', async () => {
+  it('空结果应显示"无匹配"占位（UX-QI-10 三态占位体系）', async () => {
     const { input, api, list } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
@@ -488,7 +491,12 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(list.classList.contains('hidden')).toBe(true);
+    // UX-QI-10：两源空结果时不再隐藏列表，而是显示"无匹配"占位项
+    // 让用户能区分"搜索中" / "无匹配" / "搜索出错"三种状态
+    expect(list.classList.contains('hidden')).toBe(false);
+    const placeholder = list.querySelector('.completion-item.completion-empty');
+    expect(placeholder).not.toBeNull();
+    expect(placeholder?.textContent).toBe('无匹配，换个词试试');
   });
 
   // ─── loading 占位（UX-0714-1） ───
@@ -1242,6 +1250,116 @@ describe('textarea 支持', async () => {
 
     expect(api.searchMemories).toHaveBeenCalledWith('测试');
     expect(document.querySelectorAll('.completion-item').length).toBe(1);
+
+    completion.cleanup();
+  });
+});
+
+// ─── UX-QI-05 候选文本高亮匹配关键词 ─────────────────────
+
+describe('UX-QI-05 候选文本高亮匹配关键词', async () => {
+  it('候选文本中匹配 query 的部分应用 <mark> 包裹', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '今天会议纪要', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '会议';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 匹配段 "会议" 应用 <mark class="completion-match"> 包裹
+    const mark = document.querySelector('.completion-text mark.completion-match');
+    expect(mark).not.toBeNull();
+    expect(mark?.textContent).toBe('会议');
+  });
+
+  it('大小写不敏感匹配但保留原文大小写', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: 'Meeting Notes', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = 'meeting';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 匹配段保留原文大小写 "Meeting"
+    const mark = document.querySelector('.completion-text mark.completion-match');
+    expect(mark?.textContent).toBe('Meeting');
+  });
+
+  it('候选文本不直接包含 query 时降级为纯文本（无 mark）', async () => {
+    const { input, api } = createCompletion();
+    // 语义搜索可能返回不直接包含 query 的候选
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '完全不相关的文本', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '会议';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 无匹配段时不应用 <mark>
+    const mark = document.querySelector('.completion-text mark.completion-match');
+    expect(mark).toBeNull();
+    // 文本仍正常渲染
+    expect(document.querySelector('.completion-text')?.textContent).toBe('完全不相关的文本');
+  });
+});
+
+// ─── UX-QI-06 已采纳候选加 ★ 常用标记 ────────────────────
+
+describe('UX-QI-06 已采纳候选加 ★ 常用标记', async () => {
+  it('未采纳过的候选项无 ★ 标记', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '新候选', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '候选';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 未采纳过的候选项无 .adopted 类、无 ★ 标记
+    const item = document.querySelector('.completion-item');
+    expect(item?.classList.contains('adopted')).toBe(false);
+    expect(item?.querySelector('.completion-adopted-mark')).toBeNull();
+  });
+
+  it('采纳过的候选项再次出现时显示 ★ 标记和 title', async () => {
+    const { input, api, completion } = createCompletion();
+    const memoryHit = createMemoryHit({ contentPreview: '常用签名', score: 0.9 });
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [memoryHit],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+
+    // 第一次触发补全
+    input.value = '签名';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 第一次出现时无 ★ 标记
+    expect(document.querySelector('.completion-item.adopted')).toBeNull();
+
+    // 模拟用户采纳（点击候选项触发 recordAdoption）
+    const item = document.querySelector('.completion-item') as HTMLElement;
+    item.click();
+
+    // 清空后再次触发补全（模拟用户继续输入，需 ≥2 字符触发补全）
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [memoryHit],
+    });
+    input.value = '签名';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 第二次出现时应有 .adopted 类 + ★ 标记 + title 提示
+    const adoptedItem = document.querySelector('.completion-item.adopted');
+    expect(adoptedItem).not.toBeNull();
+    expect(adoptedItem?.querySelector('.completion-adopted-mark')?.textContent).toBe('★');
+    expect(adoptedItem?.getAttribute('title')).toContain('已采纳 1 次');
 
     completion.cleanup();
   });

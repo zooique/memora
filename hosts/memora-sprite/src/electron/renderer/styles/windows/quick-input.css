@@ -246,6 +246,10 @@ body {
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   font-weight: var(--weight-medium);
+  /* UX-QI-13：固定最小宽度 + 居中，保证任何长度的标签都让候选文本起点对齐 */
+  /* 当前 2 字标签（洞察/偏好/作品/记忆/对话）天然对齐，未来扩展 4 字标签时避免错位 */
+  min-width: 32px;
+  text-align: center;
 }
 
 /* 候选文本（单行省略） */
@@ -270,6 +274,44 @@ body {
 /* 搜索错误占位（两源 IPC 全失败时，与 loading 同构但用警告色区分） */
 .completion-item.completion-error {
   color: var(--yellow);
+}
+
+/* 无匹配占位（UX-QI-10：两源搜索均返回空时显示，与 loading/error 三态一致） */
+/* 颜色用 --muted 与 loading 默认色区分（loading 无 completion-empty 修饰类） */
+.completion-item.completion-empty {
+  color: var(--muted);
+}
+
+/* ===== 匹配关键词高亮（UX-QI-05） ===== */
+/* 候选文本中匹配用户 query 的部分用 <mark> 包裹，便于一眼定位相关性 */
+/* 使用 accent 色系（与来源标签一致），保持视觉统一不过度抢眼 */
+.completion-match {
+  color: var(--accent);
+  background: var(--accent-10);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: var(--weight-medium);
+}
+
+/* ===== 已采纳候选标记（UX-QI-06） ===== */
+/* 用户曾采纳过的候选项加视觉强化，让"越用越准"的学习行为对用户可见 */
+/* .adopted 修饰类：左边框加深为 accent-strong（与普通 selected 态的 accent 区分） */
+.completion-item.adopted {
+  border-left-color: var(--accent);
+}
+
+.completion-item.adopted.selected {
+  border-left-color: var(--accent);
+}
+
+/* ★ 标记：紧贴候选文本末尾，accent 色小字号，不干扰主文本阅读 */
+.completion-adopted-mark {
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+  font-size: var(--font-2xs);
+  color: var(--accent);
+  opacity: 0.8;
+  line-height: 1;
 }
 
 /* ===== 候选总数 footer ===== */
