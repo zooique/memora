@@ -41,18 +41,19 @@
       <textarea
         id="quick-input-field"
         class="quick-input-field"
-        placeholder="输入文本，↓↑ 补全，←→ 填充，Tab 提交..."
+        placeholder="输入文本…（↓↑ 补全 / ←→ 填充 / Tab 提交）"
         autocomplete="off"
         spellcheck="false"
         autofocus
         rows="1"
+        aria-label="快速输入文本"
       ></textarea>
       <!-- footer 区域同时承担拖动浮窗的把手（cursor: move 视觉提示） -->
       <div id="quick-input-footer" class="quick-input-footer flex-between flex-shrink-0">
         <span class="quick-input-hint flex-shrink-0">↓↑ 补全 · ←→ 填充 · Tab 提交 · Esc 关闭</span>
-        <span id="polish-toggle" class="polish-toggle" title="LLM 润色文本（语法修正 + 表达优化）"><svg class="icon"><use href="#icon-sparkle"/></svg></span>
-        <span id="expand-toggle" class="expand-toggle" title="展开输入框（点击切换高度）"><svg class="icon"><use href="#icon-chevron-down"/></svg></span>
-        <span id="stream-toggle" class="stream-toggle" title="流式模式关闭：粘贴后关闭窗口（点击切换）"><svg class="icon"><use href="#icon-unlock"/></svg></span>
+        <button id="polish-toggle" type="button" class="polish-toggle" aria-label="LLM 润色文本" title="LLM 润色文本（语法修正 + 表达优化）"><svg class="icon"><use href="#icon-sparkle"/></svg></button>
+        <button id="expand-toggle" type="button" class="expand-toggle" aria-label="展开输入框" title="展开输入框（点击切换高度）"><svg class="icon"><use href="#icon-chevron-down"/></svg></button>
+        <button id="stream-toggle" type="button" class="stream-toggle" aria-label="流式模式切换" title="流式模式关闭：粘贴后关闭窗口（点击切换）"><svg class="icon"><use href="#icon-unlock"/></svg></button>
         <span class="quick-input-counter flex-shrink-0">0 字</span>
       </div>
     </div>

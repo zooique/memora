@@ -95,6 +95,16 @@ body {
 /* ===== 润色按钮 ===== */
 /* 与 .stream-toggle / .expand-toggle 视觉风格一致。
    位于 hint 右侧、expand-toggle 左侧，margin-left:auto 将按钮组推到 footer 右侧。 */
+/* button 元素默认样式重置（3 个 toggle 共用，span→button 升级后补齐原生样式清零） */
+.polish-toggle,
+.expand-toggle,
+.stream-toggle {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+}
+
 .polish-toggle {
   font-size: var(--font-sm);
   cursor: pointer;

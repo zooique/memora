@@ -75,4 +75,4 @@ postProcessInner 中 archiveProfileFacts / archiveInsight 两处 fire-and-forget
 
 - autoConfigRefiner 不发射（语义为"配置学习"非"归档"）
 - close() 顺序调整：awaitPendingArchives 在 removeAllListeners 之前，确保 close 期间归档失败的 emit 不丢失
-- 复用现有事件链路，不新增 IPC 通道（通道数仍 105）
+- 复用现有事件链路，不新增 IPC 通道
