@@ -289,4 +289,34 @@ export class AffectController {
       initiative: blend(current.initiative, delta.initiative),
     };
   }
+
+  /**
+   * 直接应用对话语气修正值（冷启动专用，不做平滑）
+   *
+   * 与 blendAffect 的区别：
+   *   - blendAffect 使用 EWMA 平滑（α=0.2），delta 被稀释 80%，适合持续对话
+   *   - applyDelta 直接相加（clamp 0-1），delta 全额生效，适合冷启动首条消息
+   *
+   * 冷启动时（无记忆数据）deriveAffect 返回 DEFAULT_AFFECT，此时若用 blendAffect，
+   * 首条消息的关键词修正值（如"你好"→warmthDelta=+0.15）会被稀释为 0.03，
+   * 感知面板四维仍接近初始值 0.5，体现不出精灵的感知能力。
+   * applyDelta 让首条消息的关键词直接影响 affect，后续对话恢复 blend 平滑。
+   *
+   * @param current 当前情感状态
+   * @param delta 对话语气修正值（来自 deriveAffectFromMessages）
+   * @returns 修正后的新情感状态
+   */
+  static applyDelta(current: AffectState, delta: Partial<AffectState>): AffectState {
+    const apply = (cur: number, d: number | undefined): number => {
+      if (d === undefined) return cur;
+      return Math.round(Math.max(0, Math.min(1, cur + d)) * 100) / 100;
+    };
+
+    return {
+      warmth: apply(current.warmth, delta.warmth),
+      playfulness: current.playfulness, // 调皮度由 persona 决定，不随对话变化
+      directness: apply(current.directness, delta.directness),
+      initiative: apply(current.initiative, delta.initiative),
+    };
+  }
 }

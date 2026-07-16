@@ -494,12 +494,13 @@ export class Sprite {
           : `${Math.round(awayDurationMs / MS_PER_DAY)} 天`;
 
       // 构造摘要：时长 + 数量 + 前 3 个 name（提升信息量）
+      // 第一人称文案：体现精灵主动感知（presenceController 检测离开 + 记忆系统主动归档）
       const names = recentMemories
         .map((m) => m.name)
         .filter((n) => n.length > 0)
         .slice(0, 3);
       const nameList = names.length > 0 ? `（${names.join('、')}）` : '';
-      const summary = `你离开了 ${durationText}，期间新增了 ${recentMemories.length} 条记忆${nameList}`;
+      const summary = `我注意到你离开了 ${durationText}，期间我整理了 ${recentMemories.length} 条新记忆${nameList}`;
 
       // 注入主动提示队列，type='recalled' 由 buildPrompt 专属分支处理
       this.proactiveEngine.addNotice('recalled', summary);

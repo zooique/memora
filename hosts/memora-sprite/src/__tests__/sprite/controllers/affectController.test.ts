@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AffectController 单元测试
  *
  * 覆盖范围：
@@ -356,5 +356,75 @@ describe('构造函数', () => {
     });
     const result = controller.deriveAffect([]);
     expect(result.playfulness).toBe(0.8);
+  });
+});
+
+// ─── blendAffect（EWMA 平滑融合，持续对话用） ────────────────
+
+describe('blendAffect', () => {
+  const base: AffectState = {
+    warmth: 0.5,
+    playfulness: 0.3,
+    directness: 0.5,
+    initiative: 0.5,
+  };
+
+  it('应使用 EWMA 平滑（α=0.2）稀释 delta', () => {
+    // warmth: 0.5 * 0.8 + (0.5 + 0.15) * 0.2 = 0.4 + 0.13 = 0.53
+    const result = AffectController.blendAffect(base, { warmth: 0.15 });
+    expect(result.warmth).toBe(0.53);
+  });
+
+  it('delta 为 undefined 时应保持原值不变', () => {
+    const result = AffectController.blendAffect(base, {});
+    expect(result.warmth).toBe(0.5);
+    expect(result.directness).toBe(0.5);
+    expect(result.initiative).toBe(0.5);
+  });
+
+  it('调皮度应保持不变（由 persona 决定）', () => {
+    const result = AffectController.blendAffect(base, { warmth: 0.2 });
+    expect(result.playfulness).toBe(0.3);
+  });
+});
+
+// ─── applyDelta（直接应用 delta，冷启动专用） ────────────────
+
+describe('applyDelta', () => {
+  const base: AffectState = {
+    warmth: 0.5,
+    playfulness: 0.3,
+    directness: 0.5,
+    initiative: 0.5,
+  };
+
+  it('应直接应用 delta（不做平滑稀释）', () => {
+    // warmth: 0.5 + 0.15 = 0.65（对比 blendAffect 的 0.53）
+    const result = AffectController.applyDelta(base, { warmth: 0.15 });
+    expect(result.warmth).toBe(0.65);
+  });
+
+  it('delta 为 undefined 时应保持原值不变', () => {
+    const result = AffectController.applyDelta(base, {});
+    expect(result.warmth).toBe(0.5);
+    expect(result.directness).toBe(0.5);
+    expect(result.initiative).toBe(0.5);
+  });
+
+  it('应 clamp 到 0-1 范围（上界）', () => {
+    // warmth: 0.5 + 0.8 = 1.3 → clamp 到 1
+    const result = AffectController.applyDelta(base, { warmth: 0.8 });
+    expect(result.warmth).toBe(1);
+  });
+
+  it('应 clamp 到 0-1 范围（下界）', () => {
+    // warmth: 0.5 - 0.8 = -0.3 → clamp 到 0
+    const result = AffectController.applyDelta(base, { warmth: -0.8 });
+    expect(result.warmth).toBe(0);
+  });
+
+  it('调皮度应保持不变（由 persona 决定）', () => {
+    const result = AffectController.applyDelta(base, { warmth: 0.2 });
+    expect(result.playfulness).toBe(0.3);
   });
 });

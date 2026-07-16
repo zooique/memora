@@ -203,7 +203,10 @@ export class PerceptionCoordinator {
     // 对话语气实时修正（与 deriveAndInjectAffect 逻辑一致）
     if (this.recentUserMessages.length > 0) {
       const delta = AffectController.deriveAffectFromMessages(this.recentUserMessages);
-      affect = AffectController.blendAffect(affect, delta);
+      // 冷启动时（无记忆数据）不做 blend 平滑，让首条消息关键词直接影响 affect
+      affect = memories.length === 0
+        ? AffectController.applyDelta(affect, delta)
+        : AffectController.blendAffect(affect, delta);
     }
 
     // 2. 默契度推导（先更新配置参数）
@@ -243,10 +246,13 @@ export class PerceptionCoordinator {
     const memories = this.opts.agent.memory?.list(1000) ?? [];
     let affect = this.opts.affectController.deriveAffect(memories);
 
-    // Phase 2.2：对话语气实时分析——从最近用户消息推导语气修正值，平滑融合
+    // Phase 2.2：对话语气实时分析——从最近用户消息推导语气修正值
+    // 冷启动时（无记忆数据）不做 blend 平滑，让首条消息关键词直接影响 affect
     if (this.recentUserMessages.length > 0) {
       const delta = AffectController.deriveAffectFromMessages(this.recentUserMessages);
-      affect = AffectController.blendAffect(affect, delta);
+      affect = memories.length === 0
+        ? AffectController.applyDelta(affect, delta)
+        : AffectController.blendAffect(affect, delta);
     }
 
     this.lastAffect = affect; // Phase 1+2：缓存供 ProactiveEngine 注入
