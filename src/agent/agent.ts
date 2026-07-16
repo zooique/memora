@@ -46,6 +46,7 @@ import type { DedupReport } from '@/agent/managers/memoryInspector.js';
 import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
 import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
+import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
 import { chatBusyError, configError } from '@/utils/errors.js';
 import { clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
@@ -551,9 +552,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private async postProcessInner(input: string, assistantContent: string): Promise<void> {
     // 角色自动匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
+    // 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）
+    // LLM 辅助匹配在 agent 层执行，遵循 backend_layers_rules §分层职责（persona/ 不直接调 LLM）
     if (this.personaManager) {
       try {
-        const matchedPersona = await this.personaManager.autoMatch(input);
+        let matchedPersona: string | null = null;
+        if (this.personaManager.canAutoMatch()) {
+          matchedPersona = await this.personaManager.autoMatch(input);
+          // 关键词低置信度且 backgroundProvider 已注入 → LLM 辅助语义匹配
+          const bgProvider = this.#backgroundProvider;
+          if (!matchedPersona && bgProvider) {
+            matchedPersona = await matchPersonaByLlm(
+              bgProvider,
+              this.personaManager.list,
+              this.personaManager.activeName,
+              input,
+            );
+          }
+        }
         if (matchedPersona) {
           const prevName = this.personaManager.activeName;
           this.personaManager.switchPersona(matchedPersona);

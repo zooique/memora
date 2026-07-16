@@ -21,7 +21,6 @@ import { scoreByKeywords } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
-import type { LlmProvider } from '@/llm/provider.js';
 import { logger } from '@/logging/logger.js';
 import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
@@ -30,11 +29,8 @@ import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.j
 import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
 import { nowIso } from '@/utils/time.js';
 
-/** 关键词匹配高置信度阈值：≥ 此值直接返回，不需 LLM 辅助 */
+/** 关键词匹配高置信度阈值：≥ 此值直接返回（低置信度由 agent 层决定是否调 LLM） */
 const KEYWORD_HIGH_CONFIDENCE_THRESHOLD = 0.5;
-
-/** LLM 辅助匹配的 maxTokens 上限（角色名很短，无需长响应） */
-const LLM_MATCH_MAX_TOKENS = 50;
 
 /**
  * 从 frontmatter 解析 traits.* 键值对
@@ -76,14 +72,6 @@ export class PersonaManager {
   private switchLocked = false;
   /** 锁定恢复计时器 */
   private unlockTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * 后台 LLM Provider（可选，用于低置信度时辅助角色匹配）
-   *
-   * 关键词匹配得分 < KEYWORD_HIGH_CONFIDENCE_THRESHOLD 时，
-   * 调用 backgroundProvider 进行语义级角色匹配。
-   * 未注入时退化为纯关键词匹配（向后兼容）。
-   */
-  private readonly backgroundProvider?: LlmProvider;
 
   /** 时间窗口：60 秒 */
   private static readonly SWITCH_WINDOW_MS = 60_000;
@@ -95,15 +83,11 @@ export class PersonaManager {
   /**
    * @param configDir 配置目录（角色文件在 <configDir>/personas/ 下）
    * @param index SQLite 索引（用于写入 persona 记忆）
-   * @param backgroundProvider 后台 LLM Provider（可选，低置信度时辅助角色匹配）
    */
   constructor(
     private readonly configDir?: string,
     private readonly index?: IMemoryStorage,
-    backgroundProvider?: LlmProvider,
-  ) {
-    this.backgroundProvider = backgroundProvider;
-  }
+  ) {}
 
   /**
    * 启动时加载：扫描目录 + 激活指定角色 + 写入 SQLite
@@ -200,12 +184,14 @@ export class PersonaManager {
   }
 
   /**
-   * 根据用户输入自动匹配最合适的角色
+   * 根据用户输入自动匹配最合适的角色（关键词高置信度匹配）
    *
-   * 增强匹配策略（三层降级）：
-   *   1. 关键词匹配高置信度（≥ KEYWORD_HIGH_CONFIDENCE_THRESHOLD）→ 直接返回
-   *   2. 关键词低置信度/无匹配 + backgroundProvider 已注入 → LLM 辅助语义匹配
-   *   3. LLM 失败/未注入 backgroundProvider → 返回 null（降级为无匹配）
+   * 匹配策略：
+   *   - 关键词匹配高置信度（≥ KEYWORD_HIGH_CONFIDENCE_THRESHOLD）→ 直接返回
+   *   - 关键词低置信度/无匹配 → 返回 null（由 agent 层决定是否调用 LLM 辅助）
+   *
+   * LLM 辅助语义匹配已迁移到 agent 层（agent/personaMatcher.ts），
+   * 遵循 backend_layers_rules §分层职责：persona/ 不直接调 LLM。
    *
    * 匹配前置条件：
    *   - 当前模式为 'auto'（非手动锁定）
@@ -221,25 +207,31 @@ export class PersonaManager {
     if (this.switchLocked) return null;
     if (this.personaList.length === 0) return null;
 
-    // 第一步：关键词匹配
     const keywordBest = this.findBestKeywordMatch(userInput);
 
-    // 高置信度（≥ 阈值）：直接返回，不调用 LLM（避免不必要的延迟）
+    // 高置信度（≥ 阈值）：直接返回
     if (keywordBest && keywordBest.score >= KEYWORD_HIGH_CONFIDENCE_THRESHOLD) {
       if (this.activePersona?.name === keywordBest.name) return null;
       return keywordBest.name;
     }
 
-    // 第二步：低置信度或无匹配，尝试 LLM 辅助语义匹配
-    if (this.backgroundProvider) {
-      const llmMatch = await this.matchByLlm(userInput);
-      if (llmMatch && this.activePersona?.name !== llmMatch) {
-        return llmMatch;
-      }
-    }
-
-    // 第三步：LLM 失败/未注入 backgroundProvider，降级返回 null
+    // 低置信度/无匹配：返回 null，由 agent 层决定是否调用 LLM 辅助
     return null;
+  }
+
+  /**
+   * 检查是否满足自动匹配的前置条件
+   *
+   * 供 agent 层在调用 matchPersonaByLlm 前判断是否值得尝试 LLM 辅助匹配。
+   * 前置条件与 autoMatch 内部检查一致：
+   *   - 当前模式为 'auto'（非手动锁定）
+   *   - 缓冲区未锁定
+   *   - 角色列表非空
+   *
+   * @returns 是否满足自动匹配前置条件
+   */
+  canAutoMatch(): boolean {
+    return this.mode === 'auto' && !this.switchLocked && this.personaList.length > 0;
   }
 
   /**
@@ -266,69 +258,6 @@ export class PersonaManager {
 
     matches.sort(byScoreDesc);
     return matches[0] ?? null;
-  }
-
-  /**
-   * LLM 辅助语义角色匹配
-   *
-   * 当关键词匹配低置信度或无命中时，调用 backgroundProvider 进行语义级匹配。
-   * 构造角色列表 prompt，让 LLM 选择最匹配的角色。
-   *
-   * 降级策略：
-   *   - LLM 调用失败/超时 → 返回 null（由 autoMatch 降级处理）
-   *   - LLM 返回无效角色名 → 返回 null（防止幻觉）
-   *   - LLM 返回 "none" → 返回 null（明确无匹配）
-   *
-   * @param userInput 用户输入文本
-   * @returns 匹配的角色名，无匹配/失败返回 null
-   */
-  private async matchByLlm(userInput: string): Promise<string | null> {
-    if (!this.backgroundProvider) return null;
-
-    // 排除当前激活角色（避免无意义切换）
-    const candidates = this.personaList.filter(
-      (p) => p.name !== this.activePersona?.name,
-    );
-    if (candidates.length === 0) return null;
-
-    // 构造角色列表描述（name + description/content 前缀 + keywords）
-    const personaList = candidates
-      .map((p) => {
-        const desc = p.description ?? p.content.substring(0, 50).trim();
-        return `- ${p.name}：${desc}（关键词：${p.keywords.join(', ')}）`;
-      })
-      .join('\n');
-
-    try {
-      const stream = this.backgroundProvider.chat(
-        [
-          {
-            role: 'system',
-            content:
-              '你是角色匹配助手。根据用户输入，从以下角色中选择最匹配的一个。\n\n' +
-              `角色列表：\n${personaList}\n\n` +
-              '规则：\n1. 只返回角色名，不解释\n2. 无匹配返回 "none"',
-          },
-          { role: 'user', content: userInput },
-        ],
-        { maxTokens: LLM_MATCH_MAX_TOKENS, temperature: 0 },
-      );
-
-      let result = '';
-      for await (const chunk of stream) {
-        if (chunk.content) result += chunk.content;
-      }
-
-      const trimmed = result.trim();
-      if (!trimmed || trimmed === 'none') return null;
-
-      // 验证返回的角色名在候选列表中（防止 LLM 幻觉）
-      const matched = candidates.find((p) => p.name === trimmed);
-      return matched ? matched.name : null;
-    } catch (err) {
-      logger.warn({ err }, 'LLM 辅助角色匹配失败，降级为关键词匹配');
-      return null;
-    }
   }
 
   /**

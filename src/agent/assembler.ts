@@ -133,7 +133,7 @@ export async function assembleComponents(
 
   // ── Phase 2: 依赖 Provider 的组件 ──
 
-  const personaManager = new PersonaManager(configDir, pctx.index, backgroundProvider ?? provider);
+  const personaManager = new PersonaManager(configDir, pctx.index);
   const personaPrompt = await personaManager.load(personaName);
 
   const userProfile = new UserProfile(pctx.index);

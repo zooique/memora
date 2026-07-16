@@ -130,6 +130,7 @@ agent/
 ├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
 ├── types.ts              # Agent 类型定义
 ├── userFactExtractor.ts  # 用户事实提取器（正则规则，纯函数模块，从 userProfile 迁入）
+├── personaMatcher.ts     # 角色语义匹配器（LLM 辅助角色匹配纯函数，从 PersonaManager.matchByLlm 迁入，遵循 persona/ 不调 LLM 约束）
 ├── managers/             # 专职 Manager 子目录（12 个）
 │   ├── archiveCoordinator.ts # 归档协调器（archiveMode 三态控制 + 归档流程编排）
 │   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
