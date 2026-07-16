@@ -462,15 +462,17 @@ class QuickInputController {
   }
 
   /**
-   * 更新展开按钮视觉状态（.active 类 + title 提示）
+   * 更新展开按钮视觉状态（.active 类 + aria-pressed + title 提示）
    */
   private updateExpandToggle(): void {
     if (!(this.expandToggle instanceof HTMLElement)) return;
     if (this.expandMode) {
       this.expandToggle.classList.add('active');
+      this.expandToggle.setAttribute('aria-pressed', 'true');
       this.expandToggle.title = '收起输入框（点击恢复紧凑高度）';
     } else {
       this.expandToggle.classList.remove('active');
+      this.expandToggle.setAttribute('aria-pressed', 'false');
       this.expandToggle.title = '展开输入框（点击切换高度）';
     }
   }
@@ -519,9 +521,11 @@ class QuickInputController {
     }
     if (this.streamMode) {
       this.streamToggle.classList.add('active');
+      this.streamToggle.setAttribute('aria-pressed', 'true');
       this.streamToggle.title = '流式模式开启：粘贴后保持窗口打开（点击切换）';
     } else {
       this.streamToggle.classList.remove('active');
+      this.streamToggle.setAttribute('aria-pressed', 'false');
       this.streamToggle.title = '流式模式关闭：粘贴后关闭窗口（点击切换）';
     }
   }
