@@ -14,9 +14,11 @@
  */
 
 import { setIcon } from '../helpers/icon.js';
-import { clearElement } from '../helpers/domHelpers.js';
+import { clearElement, createEl } from '../helpers/domHelpers.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../../shared/truncate.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -166,9 +168,7 @@ export class PartnerInsightsRenderer {
     clearElement(container);
 
     if (profileMems.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'partner-empty-hint';
-      empty.textContent = '精灵还不了解你，多和它聊聊吧';
+      const empty = createEl('p', 'partner-empty-hint', '精灵还不了解你，多和它聊聊吧');
       container.appendChild(empty);
       return;
     }
@@ -176,8 +176,7 @@ export class PartnerInsightsRenderer {
     // 最多展示 6 张卡片
     const cards = profileMems.slice(0, MAX_PROFILE_CARDS);
     for (const mem of cards) {
-      const card = document.createElement('div');
-      card.className = 'partner-profile-card';
+      const card = createEl('div', 'partner-profile-card');
       card.title = mem.contentPreview;
 
       // 卡片被点击时，通过回调通知 controller
@@ -186,17 +185,11 @@ export class PartnerInsightsRenderer {
       });
 
       // 记忆名称
-      const nameEl = document.createElement('div');
-      nameEl.className = 'partner-profile-card-name';
-      nameEl.textContent = mem.name;
+      const nameEl = createEl('div', 'partner-profile-card-name', mem.name);
       card.appendChild(nameEl);
 
       // 内容预览（截断 80 字符）
-      const previewEl = document.createElement('div');
-      previewEl.className = 'partner-profile-card-preview';
-      previewEl.textContent = mem.contentPreview.length > PREVIEW_MAX_LENGTH
-        ? mem.contentPreview.slice(0, PREVIEW_MAX_LENGTH) + '...'
-        : mem.contentPreview;
+      const previewEl = createEl('div', 'partner-profile-card-preview', truncate(mem.contentPreview, PREVIEW_MAX_LENGTH));
       card.appendChild(previewEl);
 
       container.appendChild(card);
@@ -233,26 +226,20 @@ export class PartnerInsightsRenderer {
     }
 
     if (gaps.length === 0) {
-      const complete = document.createElement('p');
-      complete.className = 'partner-empty-hint';
-      complete.textContent = '精灵对你的了解已经比较全面了';
+      const complete = createEl('p', 'partner-empty-hint', '精灵对你的了解已经比较全面了');
       container.appendChild(complete);
       return;
     }
 
     // 最多展示 3 条
     for (const gap of gaps.slice(0, MAX_GAP_ITEMS)) {
-      const item = document.createElement('div');
-      item.className = 'partner-gap-item';
+      const item = createEl('div', 'partner-gap-item');
 
-      const icon = document.createElement('span');
-      icon.className = 'partner-gap-icon';
+      const icon = createEl('span', 'partner-gap-icon');
       // SVG 图标，跨平台渲染一致
       setIcon(icon, 'icon-lightbulb');
 
-      const text = document.createElement('span');
-      text.className = 'partner-gap-text';
-      text.textContent = gap.description;
+      const text = createEl('span', 'partner-gap-text', gap.description);
 
       item.appendChild(icon);
       item.appendChild(text);

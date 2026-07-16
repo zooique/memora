@@ -104,28 +104,49 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// ─── 元素创建 ─────────────────────────────────────────
+
+/**
+ * 创建 DOM 元素并一次性设置 className 和 textContent
+ *
+ * 替代散落在 100+ 处的 `createElement + className + textContent` 三件套
+ * （ADR-017 枝叶层 2 次提取原则）。
+ *
+ * 类型安全：返回值类型由 tag 参数推导（HTMLElementTagNameMap[K]），
+ * 调用方无需手动 as 断言。
+ *
+ * @param tag HTML 标签名（如 'div' / 'span' / 'button'）
+ * @param className 可选的 CSS 类名（单个字符串，多类用空格分隔）
+ * @param textContent 可选的文本内容
+ * @returns 创建并配置好的 DOM 元素
+ */
+export function createEl<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  textContent?: string,
+): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (textContent !== undefined) el.textContent = textContent;
+  return el;
+}
+
 // ─── 面板加载态 ─────────────────────────────────────────
 
 /**
  * 在指定容器中显示加载态
  *
  * 创建居中旋转圆环 + 文字提示，清空容器后插入加载元素。
- * 使用 clearElement 统一清空模式，避免 DOM 操作不一致。
+ * 使用 clearElement + createEl 统一 DOM 操作模式。
  *
  * @param container 目标容器元素
  * @param text 加载提示文字（默认 "加载中..."）
  */
 export function showPanelLoading(container: Element, text = '加载中...'): void {
   clearElement(container);
-  const wrapper = document.createElement('div');
-  wrapper.className = 'panel-loading';
-
-  const spinner = document.createElement('span');
-  spinner.className = 'panel-loading-spinner';
-
-  const label = document.createElement('span');
-  label.textContent = text;
-
+  const wrapper = createEl('div', 'panel-loading');
+  const spinner = createEl('span', 'panel-loading-spinner');
+  const label = createEl('span', undefined, text);
   wrapper.appendChild(spinner);
   wrapper.appendChild(label);
   container.appendChild(wrapper);
@@ -343,38 +364,28 @@ export function createEmptyState(options: EmptyStateOptions): HTMLElement {
   const { panelPrefix, iconHtml, title, subtitle, ctaText, ctaOnClick } = options;
 
   // 容器：通用基类 + 面板修饰类
-  const empty = document.createElement('div');
-  empty.className = panelPrefix
+  const empty = createEl('div', panelPrefix
     ? `empty-state ${panelPrefix}-empty-state`
-    : 'empty-state';
+    : 'empty-state');
 
   // 图标（可选）
   if (iconHtml) {
-    const icon = document.createElement('div');
-    icon.className = 'empty-icon';
+    const icon = createEl('div', 'empty-icon');
     icon.innerHTML = iconHtml;
     empty.appendChild(icon);
   }
 
   // 标题（必需）
-  const titleEl = document.createElement('div');
-  titleEl.className = 'empty-title';
-  titleEl.textContent = title;
-  empty.appendChild(titleEl);
+  empty.appendChild(createEl('div', 'empty-title', title));
 
   // 副标题（可选）
   if (subtitle) {
-    const subtitleEl = document.createElement('div');
-    subtitleEl.className = 'empty-subtitle';
-    subtitleEl.textContent = subtitle;
-    empty.appendChild(subtitleEl);
+    empty.appendChild(createEl('div', 'empty-subtitle', subtitle));
   }
 
   // CTA 按钮（可选）
   if (ctaText) {
-    const ctaBtn = document.createElement('button');
-    ctaBtn.className = 'empty-action-btn btn-secondary';
-    ctaBtn.textContent = ctaText;
+    const ctaBtn = createEl('button', 'empty-action-btn btn-secondary', ctaText);
     if (ctaOnClick) {
       ctaBtn.addEventListener('click', ctaOnClick);
     }

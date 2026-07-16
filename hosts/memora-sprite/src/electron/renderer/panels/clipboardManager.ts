@@ -16,6 +16,8 @@
 
 import type { ToastManager } from '../components/toast.js';
 import type { ModalManager } from '../components/modal.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../../shared/truncate.js';
 
 /**
  * 剪贴板保护面板管理器类
@@ -73,7 +75,7 @@ export class ClipboardManager {
     contentLabel.textContent = '内容：';
     contentP.appendChild(contentLabel);
     // 截断过长内容，避免对话框过大
-    const preview = content.length > 200 ? content.slice(0, 200) + '...' : content;
+    const preview = truncate(content, 200);
     const codeEl = document.createElement('code');
     codeEl.textContent = preview;
     contentP.appendChild(codeEl);

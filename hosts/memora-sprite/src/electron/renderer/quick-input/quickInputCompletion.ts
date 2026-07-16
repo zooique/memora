@@ -36,8 +36,11 @@
 import type { ElectronAPI } from '../../preload.js';
 // 复用渲染进程统一日志函数（双通道：console + 主进程 logger），替代本地 logCompletion
 import { reportError } from '../helpers/errorHelpers.js';
+import { safeGetJSON, safeSetJSON } from '../helpers/safeStorage.js';
 // 补全统计埋点（展示/采纳事件 → localStorage → 统计面板消费）
 import { getCompletionMetrics } from '../helpers/completionMetrics.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../../shared/truncate.js';
 
 /**
  * 补全管理器所需的 ElectronAPI 子集
@@ -436,7 +439,7 @@ export class QuickInputCompletion {
       // source 标签映射：insight→洞察 / profile→偏好 / work-projection→作品 / 未知→记忆
       const sourceLabel = (m.source && SOURCE_LABEL_MAP[m.source]) || '记忆';
       candidates.push({
-        text: this.truncate(text, PREVIEW_MAX_LENGTH),
+        text: truncate(text, PREVIEW_MAX_LENGTH),
         sourceLabel,
         score: m.score,
         memoryId: m.id,
@@ -459,7 +462,7 @@ export class QuickInputCompletion {
       const baseScore = Math.max(0.4, MESSAGE_SCORE_BASE - positionRatio * MESSAGE_SCORE_POSITION_PENALTY);
       const intentBoost = isShortQuery ? CONVERSATION_SHORT_QUERY_BOOST : 0;
       candidates.push({
-        text: this.truncate(text, PREVIEW_MAX_LENGTH),
+        text: truncate(text, PREVIEW_MAX_LENGTH),
         sourceLabel: '对话',
         score: baseScore + intentBoost,
       });
@@ -560,8 +563,8 @@ export class QuickInputCompletion {
     this.api.boostMemory?.(memoryId).catch((err: unknown) => {
       // 静默降级：渲染层 adoptedTexts 已记录，内核 boost 失败不影响补全流程
       // 仅记录日志便于排查（如 IPC 通道未注册、内核存储不可用等）
-      // eslint-disable-next-line no-console
-      console.warn('[QuickInputCompletion] boostMemory IPC 失败，降级为仅渲染层 boost', err);
+      // 'warn' 级别：可降级的非致命错误，与 searchMemories/searchSessionMessages 失败降级同语义
+      reportError('QuickInputCompletion:boostMemory', err, 'warn');
     });
   }
 
@@ -589,34 +592,23 @@ export class QuickInputCompletion {
   /**
    * 从 localStorage 加载采纳记录
    *
-   * 遵循宿主模式：try-catch 静默降级（隐私模式/cookie 禁用时不崩溃）。
+   * 使用 safeGetJSON 统一 try-catch 静默降级（ADR-017 枝叶层 2 次提取）：
+   * 隐私模式/cookie 禁用/JSON 损坏时返回 null，降级为空 Map。
    * 存储格式：JSON.stringify(Object.fromEntries(adoptedTexts))
    */
   private loadAdoptions(): Map<string, number> {
-    try {
-      const raw = localStorage.getItem(ADOPTION_STORAGE_KEY);
-      if (!raw) return new Map();
-      const obj = JSON.parse(raw) as Record<string, number>;
-      return new Map(Object.entries(obj));
-    } catch {
-      // localStorage 不可用或数据损坏时静默降级为空 Map
-      return new Map();
-    }
+    const obj = safeGetJSON<Record<string, number> | null>(ADOPTION_STORAGE_KEY, null);
+    return obj ? new Map(Object.entries(obj)) : new Map();
   }
 
   /**
    * 将采纳记录写入 localStorage
    *
-   * 遵循宿主模式：try-catch 静默降级。
+   * 使用 safeSetJSON 统一 try-catch 静默降级（ADR-017 枝叶层 2 次提取）。
    * 仅在 recordAdoption 时写入，避免每次 getAdoptionBoost 查询都触发 IO。
    */
   private saveAdoptions(): void {
-    try {
-      const obj = Object.fromEntries(this.adoptedTexts);
-      localStorage.setItem(ADOPTION_STORAGE_KEY, JSON.stringify(obj));
-    } catch {
-      // localStorage 不可用时静默降级（采纳记录仅在内存中有效）
-    }
+    safeSetJSON(ADOPTION_STORAGE_KEY, Object.fromEntries(this.adoptedTexts));
   }
 
   /**
@@ -770,14 +762,6 @@ export class QuickInputCompletion {
     this.inputField.setAttribute('aria-expanded', 'false');
     this.inputField.setAttribute('aria-activedescendant', '');
     this.onListChangeCallback?.(false);
-  }
-
-  /**
-   * 截断文本（超长时加省略号）
-   */
-  private truncate(text: string, maxLen: number): string {
-    if (text.length <= maxLen) return text;
-    return text.slice(0, maxLen - 1) + '…';
   }
 
   /**

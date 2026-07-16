@@ -22,7 +22,7 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
-import { clearElement, escapeHtml, formatClock, formatDateKey, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
+import { clearElement, createEl, escapeHtml, formatClock, formatDateKey, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 /** 输入防抖时长（毫秒）—— 避免每键入一个字符就触发一次 IPC 搜索 */
@@ -430,10 +430,7 @@ export class SearchMessagesManager {
   private renderEmpty(message: string): void {
     if (!this.resultsEl) return;
     clearElement(this.resultsEl);
-    const empty = document.createElement('div');
-    empty.className = 'search-messages-empty';
-    empty.textContent = message;
-    this.resultsEl.appendChild(empty);
+    this.resultsEl.appendChild(createEl('div', 'search-messages-empty', message));
   }
 
   /**

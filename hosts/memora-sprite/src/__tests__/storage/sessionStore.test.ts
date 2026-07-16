@@ -110,8 +110,8 @@ describe('SqliteSessionStore', () => {
       store.appendMessage('2026-06-16', 'main', makeMessage({ role: 'user', content: longContent }));
 
       const preview = store.getFirstUserMessage('2026-06-16-main');
-      expect(preview).toHaveLength(53); // 50 + '...'
-      expect(preview.endsWith('...')).toBe(true);
+      expect(preview).toHaveLength(51); // 50 + '…'
+      expect(preview.endsWith('…')).toBe(true);
     });
 
     it('should return empty string when no user message exists', () => {

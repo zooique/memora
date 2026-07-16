@@ -1544,8 +1544,8 @@ describe('Sprite 记忆 CRUD 门面（B5：memory 委托）', () => {
     const list = sprite.listMemories();
     expect(list).toHaveLength(1);
     expect(list[0]!.id).toBe('insight:test');
-    expect(list[0]!.contentPreview.length).toBe(103); // 100 + '...'
-    expect(list[0]!.contentPreview).toContain('...');
+    expect(list[0]!.contentPreview.length).toBe(101); // 100 + '…'
+    expect(list[0]!.contentPreview).toContain('…');
   });
 
   it('listMemories(source) 应调用 getBySource 过滤', () => {

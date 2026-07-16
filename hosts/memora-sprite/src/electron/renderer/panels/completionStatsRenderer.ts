@@ -17,6 +17,7 @@
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
+import { createEl } from '../helpers/domHelpers.js';
 import { getCompletionMetrics, type CompletionEvent } from '../helpers/completionMetrics.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -86,17 +87,10 @@ export class CompletionStatsRenderer {
     const recentEvents = metrics.getRecentEvents(RECENT_EVENTS_LIMIT);
 
     // ─── 标题栏 + 重置按钮 ──────────────────────────────
-    const headerEl = document.createElement('div');
-    headerEl.className = 'completion-stats-header';
+    const headerEl = createEl('div', 'completion-stats-header');
+    headerEl.appendChild(createEl('span', 'completion-stats-title', '补全统计'));
 
-    const titleEl = document.createElement('span');
-    titleEl.className = 'completion-stats-title';
-    titleEl.textContent = '补全统计';
-    headerEl.appendChild(titleEl);
-
-    const resetBtn = document.createElement('button');
-    resetBtn.className = 'completion-stats-reset-btn';
-    resetBtn.textContent = '重置统计';
+    const resetBtn = createEl('button', 'completion-stats-reset-btn', '重置统计');
     resetBtn.title = '清空所有补全统计数据';
     this.events.addEventListener(resetBtn, 'click', () => {
       this.resetCallback?.();
@@ -105,8 +99,7 @@ export class CompletionStatsRenderer {
     container.appendChild(headerEl);
 
     // ─── 聚合指标卡片 ──────────────────────────────────
-    const metricsEl = document.createElement('div');
-    metricsEl.className = 'completion-stats-metrics';
+    const metricsEl = createEl('div', 'completion-stats-metrics');
 
     // 采纳率（核心指标）
     metricsEl.appendChild(this.createMetricCard(
@@ -140,26 +133,17 @@ export class CompletionStatsRenderer {
 
     // ─── 最近事件流 ──────────────────────────────────────
     if (recentEvents.length > 0) {
-      const eventsEl = document.createElement('div');
-      eventsEl.className = 'completion-stats-events';
+      const eventsEl = createEl('div', 'completion-stats-events');
+      eventsEl.appendChild(createEl('div', 'completion-stats-events-title', `最近 ${recentEvents.length} 条事件`));
 
-      const eventsTitle = document.createElement('div');
-      eventsTitle.className = 'completion-stats-events-title';
-      eventsTitle.textContent = `最近 ${recentEvents.length} 条事件`;
-      eventsEl.appendChild(eventsTitle);
-
-      const listEl = document.createElement('div');
-      listEl.className = 'completion-stats-event-list';
+      const listEl = createEl('div', 'completion-stats-event-list');
       for (const event of recentEvents) {
         listEl.appendChild(this.createEventItemEl(event));
       }
       eventsEl.appendChild(listEl);
       container.appendChild(eventsEl);
     } else {
-      const emptyEl = document.createElement('div');
-      emptyEl.className = 'completion-stats-empty';
-      emptyEl.textContent = '暂无统计数据，开始使用补全功能后将自动记录';
-      container.appendChild(emptyEl);
+      container.appendChild(createEl('div', 'completion-stats-empty', '暂无统计数据，开始使用补全功能后将自动记录'));
     }
   }
 
@@ -173,24 +157,10 @@ export class CompletionStatsRenderer {
    * @param hint 提示文本（副展示，小字）
    */
   private createMetricCard(label: string, value: string, hint: string): HTMLElement {
-    const cardEl = document.createElement('div');
-    cardEl.className = 'completion-stats-card';
-
-    const labelEl = document.createElement('div');
-    labelEl.className = 'completion-stats-card-label';
-    labelEl.textContent = label;
-    cardEl.appendChild(labelEl);
-
-    const valueEl = document.createElement('div');
-    valueEl.className = 'completion-stats-card-value';
-    valueEl.textContent = value;
-    cardEl.appendChild(valueEl);
-
-    const hintEl = document.createElement('div');
-    hintEl.className = 'completion-stats-card-hint';
-    hintEl.textContent = hint;
-    cardEl.appendChild(hintEl);
-
+    const cardEl = createEl('div', 'completion-stats-card');
+    cardEl.appendChild(createEl('div', 'completion-stats-card-label', label));
+    cardEl.appendChild(createEl('div', 'completion-stats-card-value', value));
+    cardEl.appendChild(createEl('div', 'completion-stats-card-hint', hint));
     return cardEl;
   }
 
@@ -200,20 +170,18 @@ export class CompletionStatsRenderer {
    * @param event 补全事件（展示/采纳）
    */
   private createEventItemEl(event: CompletionEvent): HTMLElement {
-    const itemEl = document.createElement('div');
-    itemEl.className = 'completion-stats-event-item';
+    const itemEl = createEl('div', 'completion-stats-event-item');
 
     // 事件类型徽章
-    const typeEl = document.createElement('span');
-    typeEl.className = event.type === 'shown'
-      ? 'completion-stats-event-type shown'
-      : 'completion-stats-event-type adopted';
-    typeEl.textContent = event.type === 'shown' ? '展示' : '采纳';
+    const typeEl = createEl(
+      'span',
+      event.type === 'shown' ? 'completion-stats-event-type shown' : 'completion-stats-event-type adopted',
+      event.type === 'shown' ? '展示' : '采纳',
+    );
     itemEl.appendChild(typeEl);
 
     // 事件详情
-    const detailEl = document.createElement('span');
-    detailEl.className = 'completion-stats-event-detail';
+    const detailEl = createEl('span', 'completion-stats-event-detail');
     if (event.type === 'shown') {
       detailEl.textContent = `query ${event.queryLen} 字 → ${event.shownCount} 候选`;
     } else {
@@ -223,8 +191,7 @@ export class CompletionStatsRenderer {
     itemEl.appendChild(detailEl);
 
     // 时间戳
-    const timeEl = document.createElement('span');
-    timeEl.className = 'completion-stats-event-time';
+    const timeEl = createEl('span', 'completion-stats-event-time');
     const time = new Date(event.timestamp);
     timeEl.textContent = time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     timeEl.title = event.timestamp;

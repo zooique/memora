@@ -370,7 +370,8 @@ describe('mergeCandidates · 合并去重排序', async () => {
     await vi.advanceTimersByTimeAsync(300);
 
     const text = document.querySelector('.completion-text')?.textContent;
-    expect(text!.length).toBeLessThanOrEqual(80);
+    // truncate 语义：maxLen=80 为文本最大保留长度，省略号额外（总长 81）
+    expect(text!.length).toBeLessThanOrEqual(81);
     expect(text!.endsWith('…')).toBe(true);
   });
 

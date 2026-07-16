@@ -28,6 +28,8 @@ import { SafeTimerTracker } from '../helpers/safeTimer.js';
 import { getOptionalElement } from '../helpers/domHelpers.js';
 // 事件监听器跟踪器（统一事件管理范式，与 modal/suggestionCard 等模块对齐）
 import { EventTracker } from '../helpers/eventTracker.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../../shared/truncate.js';
 
 /**
  * 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供）
@@ -337,9 +339,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   const showMessagePreview = (): void => {
     if (!messagePreview || !messagePreviewText || !lastMessageText) return;
     // 截断长文本，最多显示 120 字
-    const preview = lastMessageText.length > 120
-      ? lastMessageText.slice(0, 120) + '...'
-      : lastMessageText;
+    const preview = truncate(lastMessageText, 120);
     messagePreviewText.textContent = preview;
     messagePreview.classList.add('visible');
   };

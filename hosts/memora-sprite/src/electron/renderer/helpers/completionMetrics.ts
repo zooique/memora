@@ -19,6 +19,7 @@
  */
 
 import { simpleHash } from './hashUtils.js';
+import { safeGetJSON, safeSetJSON } from './safeStorage.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -106,11 +107,12 @@ export class CompletionMetrics {
   /**
    * 从 localStorage 加载历史事件
    *
-   * 与 adoptedTexts.loadAdoptions 同构：try-catch 静默降级，
-   * JSON 解析失败时返回空数组（视为首次使用）。
+   * 使用 safeGetJSON 静默降级，JSON 解析失败时返回空数组（视为首次使用）。
+   * 调用方需校验返回值为数组（safeGetJSON 只负责安全读取 + 解析）。
    */
   constructor() {
-    this.events = this.loadFromStorage();
+    const parsed = safeGetJSON<unknown>(METRICS_STORAGE_KEY, []);
+    this.events = Array.isArray(parsed) ? parsed as CompletionEvent[] : [];
   }
 
   // ─── 埋点方法 ──────────────────────────────────────────
@@ -204,10 +206,12 @@ export class CompletionMetrics {
 
   /**
    * 清空所有统计数据（供测试和"重置统计"功能使用）
+   *
+   * 使用 safeSetJSON 统一 try-catch 静默降级（ADR-017 枝叶层 2 次提取）。
    */
   clear(): void {
     this.events = [];
-    this.saveToStorage();
+    safeSetJSON(METRICS_STORAGE_KEY, this.events);
   }
 
   // ─── 内部方法 ──────────────────────────────────────────
@@ -221,39 +225,7 @@ export class CompletionMetrics {
     if (this.events.length > MAX_METRICS_ENTRIES) {
       this.events.splice(0, this.events.length - MAX_METRICS_ENTRIES);
     }
-    this.saveToStorage();
-  }
-
-  /**
-   * 从 localStorage 加载事件流
-   *
-   * try-catch 静默降级：JSON 解析失败或 localStorage 不可用时返回空数组。
-   */
-  private loadFromStorage(): CompletionEvent[] {
-    try {
-      const raw = localStorage.getItem(METRICS_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      // 基本校验：必须是数组
-      if (!Array.isArray(parsed)) return [];
-      return parsed as CompletionEvent[];
-    } catch {
-      // 静默降级：localStorage 不可用或 JSON 损坏，视为首次使用
-      return [];
-    }
-  }
-
-  /**
-   * 持久化事件流到 localStorage
-   *
-   * try-catch 静默降级：写入失败（如配额超限）不影响补全流程。
-   */
-  private saveToStorage(): void {
-    try {
-      localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(this.events));
-    } catch {
-      // 静默降级：写入失败（如配额超限、隐私模式），统计功能降级为仅内存
-    }
+    safeSetJSON(METRICS_STORAGE_KEY, this.events);
   }
 }
 

@@ -18,7 +18,7 @@
  * - 日期数据来自 updateAvailableDates()，由外部（sessionController）提供
  */
 import { EventTracker } from '../helpers/eventTracker.js';
-import { formatDateKey } from '../helpers/domHelpers.js';
+import { createEl, formatDateKey } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
@@ -209,10 +209,7 @@ export class DateNavManager {
 
     // 无数据时显示空状态
     if (this.availableDates.size === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'date-nav-empty';
-      empty.textContent = '暂无对话记录';
-      listEl.appendChild(empty);
+      listEl.appendChild(createEl('div', 'date-nav-empty', '暂无对话记录'));
       return;
     }
 

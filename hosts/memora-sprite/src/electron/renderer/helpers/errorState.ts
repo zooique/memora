@@ -18,8 +18,8 @@
  */
 
 import type { EventTracker } from './eventTracker.js';
-// clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
-import { clearElement } from './domHelpers.js';
+// clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式；createEl 统一元素创建三件套
+import { clearElement, createEl } from './domHelpers.js';
 
 /**
  * 渲染错误状态到指定容器
@@ -48,25 +48,16 @@ export function renderErrorState(
   clearElement(container);
 
   // 错误态根元素
-  const errorEl = document.createElement('div');
-  errorEl.className = 'error-state';
+  const errorEl = createEl('div', 'error-state');
 
   // 警告图标（Unicode 符号，跨平台一致）
-  const icon = document.createElement('div');
-  icon.className = 'error-icon';
-  icon.textContent = '⚠';
-  errorEl.appendChild(icon);
+  errorEl.appendChild(createEl('div', 'error-icon', '⚠'));
 
   // 错误消息文案
-  const msg = document.createElement('div');
-  msg.className = 'error-message';
-  msg.textContent = message;
-  errorEl.appendChild(msg);
+  errorEl.appendChild(createEl('div', 'error-message', message));
 
   // 重试按钮：内嵌在错误态内，便于用户发现恢复入口
-  const retryBtn = document.createElement('button');
-  retryBtn.className = 'btn-secondary error-retry-btn';
-  retryBtn.textContent = '重试';
+  const retryBtn = createEl('button', 'btn-secondary error-retry-btn', '重试');
   // 通过 EventTracker 绑定事件，cleanup 时统一清理（避免内存泄漏）
   events.addEventListener(retryBtn, 'click', onRetry);
   errorEl.appendChild(retryBtn);

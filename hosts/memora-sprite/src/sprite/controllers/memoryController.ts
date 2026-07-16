@@ -17,6 +17,8 @@ import { buildHealthDashboard } from './memoryHealth.js';
 import type { HealthDashboard } from './memoryHealth.js';
 import { buildReviewData } from './reviewManager.js';
 import type { ReviewData } from './reviewManager.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../shared/truncate.js';
 
 // ─── 内核类型 re-export（Phase 5.1/5.2：路径追溯 + 邻居查询） ──────
 // 精灵层不重新定义平行结构，直接复用内核 RelationPath/RelationNeighbor（纯数据形态，
@@ -190,7 +192,7 @@ export class MemoryController {
       name: m.name,
       source: m.source,
       score: this.#formatScore(m.score),
-      contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+      contentPreview: truncate(m.content, 100),
       // 携带创建时间用于列表项展示（m.createdAt 为 ISO 8601 字符串）
       createdAt: m.createdAt,
     }));
@@ -349,7 +351,7 @@ export class MemoryController {
       id: m.id,
       name: m.name,
       source: m.source,
-      contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+      contentPreview: truncate(m.content, 100),
       // deletedAt 非 undefined 已由 listDeleted 保证
       deletedAt: m.deletedAt!,
     }));

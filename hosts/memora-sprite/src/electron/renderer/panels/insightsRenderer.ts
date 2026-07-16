@@ -12,7 +12,7 @@
  * - 由 DashboardPanelManager 持有实例，外观方法委托调用
  */
 
-import { clearElement, showPanelLoading } from '../helpers/domHelpers.js';
+import { clearElement, createEl, showPanelLoading } from '../helpers/domHelpers.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { getSourceColorClass } from '../helpers/sourceColor.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
@@ -118,21 +118,15 @@ export class InsightsRenderer {
       const sources = Object.entries(dashboard.bySource).sort((a, b) => b[1] - a[1]);
       const maxCount = Math.max(1, ...sources.map((s) => s[1]));
       for (const [source, count] of sources) {
-        const bar = document.createElement('div');
-        bar.className = 'insights-distribution-bar';
+        const bar = createEl('div', 'insights-distribution-bar');
         bar.title = `${source}: ${count} 条`;
 
-        const label = document.createElement('span');
-        label.className = 'distribution-label text-truncate';
-        label.textContent = source;
+        const label = createEl('span', 'distribution-label text-truncate', source);
 
-        const fill = document.createElement('div');
-        fill.className = `distribution-fill source-${getSourceColorClass(source)}`;
+        const fill = createEl('div', `distribution-fill source-${getSourceColorClass(source)}`);
         fill.style.width = `${(count / maxCount) * 100}%`;
 
-        const countSpan = document.createElement('span');
-        countSpan.className = 'distribution-count';
-        countSpan.textContent = String(count);
+        const countSpan = createEl('span', 'distribution-count', String(count));
 
         bar.appendChild(label);
         bar.appendChild(fill);
@@ -156,25 +150,18 @@ export class InsightsRenderer {
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .slice(0, MAX_RELATION_ITEMS);
 
-        const title = document.createElement('div');
-        title.className = 'insights-section-title';
-        title.textContent = '最近关系';
+        const title = createEl('div', 'insights-section-title', '最近关系');
         summaryEl.appendChild(title);
 
         for (const edge of recentEdges) {
-          const item = document.createElement('div');
-          item.className = 'insights-relation-item';
+          const item = createEl('div', 'insights-relation-item');
 
           const sourceName = nodeNameMap.get(edge.sourceId) || edge.sourceId;
           const targetName = nodeNameMap.get(edge.targetId) || edge.targetId;
 
-          const typeTag = document.createElement('span');
-          typeTag.className = `relation-type-tag relation-type-${edge.type}`;
-          typeTag.textContent = edge.type;
+          const typeTag = createEl('span', `relation-type-tag relation-type-${edge.type}`, edge.type);
 
-          const desc = document.createElement('span');
-          desc.className = 'relation-desc text-truncate';
-          desc.textContent = `${sourceName} → ${targetName}`;
+          const desc = createEl('span', 'relation-desc text-truncate', `${sourceName} → ${targetName}`);
 
           item.appendChild(typeTag);
           item.appendChild(desc);
@@ -213,9 +200,7 @@ export class InsightsRenderer {
   private renderErrorWithRetry(container: HTMLElement): void {
     clearElement(container);
     container.textContent = '加载失败';
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'panel-error-btn inline-retry-btn';
-    retryBtn.textContent = '重试';
+    const retryBtn = createEl('button', 'panel-error-btn inline-retry-btn', '重试');
     this.events.addEventListener(retryBtn, 'click', () => {
       this.reloadCallback?.();
     });

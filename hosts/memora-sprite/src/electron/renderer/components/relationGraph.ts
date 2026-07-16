@@ -66,6 +66,8 @@ import {
   CONFLICT_PULSE_MIN_ALPHA,
   CONFLICT_PULSE_MAX_ALPHA,
 } from '../helpers/relationGraphTypes.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../../shared/truncate.js';
 
 // 类型 re-export（外部调用方仍可从本模块导入类型）
 export type {
@@ -573,8 +575,7 @@ export class RelationGraphRenderer {
       // 节点名称（截断，hover 时字号略大；非高亮节点文字也淡化）
       if (nodeHighlighted) {
         const maxNameLen = Math.max(3, Math.floor(renderR / 2));
-        const displayName =
-          node.name.length > maxNameLen ? node.name.slice(0, maxNameLen) + '…' : node.name;
+        const displayName = truncate(node.name, maxNameLen);
 
         ctx.fillStyle = getContrastColor(getNodeColor(node.source));
         ctx.font = `${Math.max(10, renderR * 0.7)}px -apple-system, BlinkMacSystemFont, sans-serif`;

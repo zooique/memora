@@ -270,9 +270,9 @@ describe('MemoryController', () => {
       ]);
       const controller = new MemoryController(mockAgent);
       const result = controller.list();
-      // 长内容截断为 100 字符 + "..."（共 103 字符）
-      expect(result[0]!.contentPreview).toBe('x'.repeat(100) + '...');
-      expect(result[0]!.contentPreview).toHaveLength(103);
+      // 长内容截断为 100 字符 + '…'（共 101 字符）
+      expect(result[0]!.contentPreview).toBe('x'.repeat(100) + '…');
+      expect(result[0]!.contentPreview).toHaveLength(101);
       // 短内容原样保留
       expect(result[1]!.contentPreview).toBe('short');
     });
@@ -533,8 +533,8 @@ describe('MemoryController', () => {
       ]);
       const controller = new MemoryController(mockAgent);
       const result = controller.listDeleted();
-      expect(result[0].contentPreview).toBe('x'.repeat(100) + '...');
-      expect(result[0].contentPreview).toHaveLength(103);
+      expect(result[0].contentPreview).toBe('x'.repeat(100) + '…');
+      expect(result[0].contentPreview).toHaveLength(101);
     });
 
     it('content 恰好 100 字符时不截断（边界条件）', () => {

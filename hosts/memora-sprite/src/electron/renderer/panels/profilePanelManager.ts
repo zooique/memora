@@ -17,7 +17,7 @@
 import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
-import { clearElement, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+import { clearElement, createEl, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 // bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
 import { bindRefreshButton } from '../helpers/buttonHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
@@ -158,10 +158,7 @@ export class ProfilePanelManager {
 
     // 空列表提示
     if (entries.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'profile-empty';
-      empty.textContent = isPending ? '暂无待确认条目' : '暂无已确认条目';
-      container.appendChild(empty);
+      container.appendChild(createEl('div', 'profile-empty', isPending ? '暂无待确认条目' : '暂无已确认条目'));
       return;
     }
 

@@ -6,6 +6,8 @@
  */
 import type { ISessionStore, SessionMessage } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../shared/truncate.js';
 
 /** 建表 SQL */
 const CREATE_TABLE_SQL = `
@@ -234,9 +236,7 @@ export class SqliteSessionStore implements ISessionStore {
 
     if (!row) return '';
     // 截断到 MAX_PREVIEW_LENGTH 字符，避免预览过长
-    return row.content.length > MAX_PREVIEW_LENGTH
-      ? row.content.slice(0, MAX_PREVIEW_LENGTH) + '...'
-      : row.content;
+    return truncate(row.content, MAX_PREVIEW_LENGTH);
   }
 
   /**

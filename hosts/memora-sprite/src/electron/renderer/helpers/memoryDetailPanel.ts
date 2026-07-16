@@ -22,7 +22,7 @@
  *   参照 memoryPanelEvents.ts 的提取模式，本次为记忆详情拆分
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo } from './domHelpers.js';
+import { getOptionalElement, clearElement, createEl, formatTimeAgo } from './domHelpers.js';
 import { getSourceColorClass } from './sourceColor.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
@@ -190,10 +190,7 @@ function showLineageEmpty(): void {
   const lineageListEl = document.getElementById('memory-lineage-list');
   if (!lineageEl || !lineageListEl) return;
   clearElement(lineageListEl);
-  const empty = document.createElement('div');
-  empty.className = 'lineage-empty';
-  empty.textContent = '暂无演化脉络';
-  lineageListEl.appendChild(empty);
+  lineageListEl.appendChild(createEl('div', 'lineage-empty', '暂无演化脉络'));
   lineageEl.classList.remove('hidden');
 }
 
@@ -331,10 +328,7 @@ function showNeighborsEmpty(): void {
   const neighborsListEl = document.getElementById('memory-neighbors-list');
   if (!neighborsEl || !neighborsListEl) return;
   clearElement(neighborsListEl);
-  const empty = document.createElement('div');
-  empty.className = 'lineage-empty';
-  empty.textContent = '暂无关联邻居';
-  neighborsListEl.appendChild(empty);
+  neighborsListEl.appendChild(createEl('div', 'lineage-empty', '暂无关联邻居'));
   neighborsEl.classList.remove('hidden');
 }
 

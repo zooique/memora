@@ -150,7 +150,7 @@ describe('showClipboardConfirmDialog · 长内容截断', () => {
     const callArgs = (modal.showConfirmDialog as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const container = callArgs.messageNodes[0] as HTMLElement;
     const codeEl = container.querySelector('code');
-    expect(codeEl?.textContent).toBe('a'.repeat(200) + '...');
+    expect(codeEl?.textContent).toBe('a'.repeat(200) + '…');
   });
 
   it('内容不超过 200 字符不应截断', async () => {

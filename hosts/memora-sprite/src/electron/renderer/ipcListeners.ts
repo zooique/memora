@@ -22,6 +22,8 @@ import { reportError } from './helpers/errorHelpers.js';
 import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
 // P4 类型统一：感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联
 import type { RapportLevel, PresenceState, RhythmType, CoherenceLevel, DepthLevel } from '../../sprite/controllers/index.js';
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+import { truncate } from '../../shared/truncate.js';
 
 /**
  * 主动提示 payload 结构
@@ -343,10 +345,9 @@ function handleConflictDetected(
 
   // 截断过长内容，避免 banner 文本溢出
   const MAX_BANNER_TEXT = 60;
-  const truncate = (s: string) => (s.length > MAX_BANNER_TEXT ? s.slice(0, MAX_BANNER_TEXT) + '…' : s);
 
   // 构造通知文本：突出"矛盾"语义，引导用户查看关系图
-  const text = `检测到记忆冲突：「${truncate(msg.payload.newInsight)}」与已有记忆矛盾`;
+  const text = `检测到记忆冲突：「${truncate(msg.payload.newInsight, MAX_BANNER_TEXT)}」与已有记忆矛盾`;
   // 传入 'conflict' trigger，使 banner onView 能识别冲突场景并跳转
   uiManager.showProactiveBanner(text, false, ['conflict']);
 }

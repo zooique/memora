@@ -14,7 +14,7 @@
  * - 跨模块关注点（showModal / showConfirmDialog）通过 host 回调注入
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml, createEmptyState } from '../helpers/domHelpers.js';
+import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml, createEmptyState, createEl } from '../helpers/domHelpers.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -368,9 +368,7 @@ export class MemoryPanelManager {
 
     // 如果还有更多记忆，添加"加载更多"按钮
     if (this.allMemories.length > end) {
-      const loadMoreBtn = document.createElement('button');
-      loadMoreBtn.className = 'memory-load-more btn-secondary';
-      loadMoreBtn.textContent = `加载更多（剩余 ${this.allMemories.length - end} 条）`;
+      const loadMoreBtn = createEl('button', 'memory-load-more btn-secondary', `加载更多（剩余 ${this.allMemories.length - end} 条）`);
       this.events.addEventListener(loadMoreBtn, 'click', () => {
         this.memoryPage++;
         this.renderMemoryPage();
@@ -390,8 +388,7 @@ export class MemoryPanelManager {
    * @returns 完整的记忆项 DOM 元素
    */
   private createMemoryItemElement(mem: MemoryListItem, staggerIndex: number): HTMLElement {
-    const item = document.createElement('div');
-    item.className = 'memory-item';
+    const item = createEl('div', 'memory-item');
     item.dataset.id = mem.id;
     // 键盘可访问性（tabindex + role + aria-label），让键盘用户能 Tab 聚焦并回车查看
     item.setAttribute('tabindex', '0');
@@ -408,24 +405,17 @@ export class MemoryPanelManager {
     item.appendChild(nameEl);
 
     // 元数据（source 标签 + score + 创建时间）
-    const metaEl = document.createElement('div');
-    metaEl.className = 'meta';
+    const metaEl = createEl('div', 'meta');
 
-    const sourceTag = document.createElement('span');
-    sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
-    sourceTag.textContent = mem.source;
+    const sourceTag = createEl('span', `source-tag source-${getSourceColorClass(mem.source)}`, mem.source);
     metaEl.appendChild(sourceTag);
 
-    const scoreEl = document.createElement('span');
-    scoreEl.className = 'score';
-    scoreEl.textContent = `权重: ${mem.score.toFixed(2)}`;
+    const scoreEl = createEl('span', 'score', `权重: ${mem.score.toFixed(2)}`);
     metaEl.appendChild(scoreEl);
 
     if (mem.createdAt) {
-      const timeEl = document.createElement('span');
-      timeEl.className = 'memory-time';
+      const timeEl = createEl('span', 'memory-time', formatTimeAgo(mem.createdAt));
       timeEl.title = `创建于 ${mem.createdAt}`;
-      timeEl.textContent = formatTimeAgo(mem.createdAt);
       metaEl.appendChild(timeEl);
     }
 
@@ -533,9 +523,8 @@ export class MemoryPanelManager {
 
     // 将 <pre> 内容替换为 <textarea>，保留原始内容
     const originalContent = contentEl.dataset.originalContent ?? contentEl.textContent ?? '';
-    const textarea = document.createElement('textarea');
+    const textarea = createEl('textarea', 'memory-edit-textarea');
     textarea.id = 'memory-detail-content';
-    textarea.className = 'memory-edit-textarea';
     textarea.value = originalContent;
     // 保留 dataset 引用
     textarea.dataset.originalContent = originalContent;
@@ -940,9 +929,7 @@ export class MemoryPanelManager {
 
     // 还有更多回收站项时添加"加载更多"按钮
     if (this.allRecycleBinMemories.length > end) {
-      const loadMoreBtn = document.createElement('button');
-      loadMoreBtn.className = 'memory-load-more btn-secondary';
-      loadMoreBtn.textContent = `加载更多（剩余 ${this.allRecycleBinMemories.length - end} 条）`;
+      const loadMoreBtn = createEl('button', 'memory-load-more btn-secondary', `加载更多（剩余 ${this.allRecycleBinMemories.length - end} 条）`);
       this.events.addEventListener(loadMoreBtn, 'click', () => {
         this.recycleBinPage++;
         this.renderRecycleBinPage();
@@ -960,32 +947,23 @@ export class MemoryPanelManager {
    * @returns 完整的回收站项 DOM 元素
    */
   private createRecycleBinItem(mem: { id: string; name: string; source: string; contentPreview: string; deletedAt: string }): HTMLElement {
-    const item = document.createElement('div');
-    item.className = 'recycle-bin-item';
+    const item = createEl('div', 'recycle-bin-item');
 
     // 头部：名称 + 操作按钮组
-    const header = document.createElement('div');
-    header.className = 'recycle-bin-item-header flex-between';
+    const header = createEl('div', 'recycle-bin-item-header flex-between');
 
-    const nameEl = document.createElement('div');
-    nameEl.className = 'recycle-bin-item-name text-truncate';
-    nameEl.textContent = mem.name; // textContent 防 XSS
+    const nameEl = createEl('div', 'recycle-bin-item-name text-truncate', mem.name); // textContent 防 XSS
 
-    const actions = document.createElement('div');
-    actions.className = 'recycle-bin-item-actions';
+    const actions = createEl('div', 'recycle-bin-item-actions');
 
     // 恢复按钮（绿色强调，对应 .health-action-btn 无 danger 类）
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'health-action-btn';
-    restoreBtn.textContent = '恢复';
+    const restoreBtn = createEl('button', 'health-action-btn', '恢复');
     restoreBtn.setAttribute('data-action', 'restore-memory');
     restoreBtn.setAttribute('data-memory-id', mem.id);
     restoreBtn.setAttribute('title', '恢复此记忆到活跃列表');
 
     // 彻底删除按钮（红色 danger 样式）
-    const purgeBtn = document.createElement('button');
-    purgeBtn.className = 'health-action-btn danger';
-    purgeBtn.textContent = '彻底删除';
+    const purgeBtn = createEl('button', 'health-action-btn danger', '彻底删除');
     purgeBtn.setAttribute('data-action', 'purge-memory');
     purgeBtn.setAttribute('data-memory-id', mem.id);
     purgeBtn.setAttribute('title', '永久删除此记忆，不可恢复');
@@ -994,24 +972,17 @@ export class MemoryPanelManager {
     header.append(nameEl, actions);
 
     // 元信息：来源 + 删除时间
-    const meta = document.createElement('div');
-    meta.className = 'recycle-bin-item-meta';
+    const meta = createEl('div', 'recycle-bin-item-meta');
 
-    const sourceEl = document.createElement('span');
-    sourceEl.className = 'recycle-bin-item-source';
-    sourceEl.textContent = `来源: ${mem.source}`;
+    const sourceEl = createEl('span', 'recycle-bin-item-source', `来源: ${mem.source}`);
 
-    const deletedAtEl = document.createElement('span');
-    deletedAtEl.className = 'recycle-bin-item-deleted-at';
     // 格式化删除时间为本地可读日期（复用 formatTimestamp：当天 HH:MM / 昨天 HH:MM / MM-DD HH:MM）
-    deletedAtEl.textContent = `删除于: ${formatTimestamp(mem.deletedAt)}`;
+    const deletedAtEl = createEl('span', 'recycle-bin-item-deleted-at', `删除于: ${formatTimestamp(mem.deletedAt)}`);
 
     meta.append(sourceEl, deletedAtEl);
 
     // 内容预览
-    const previewEl = document.createElement('div');
-    previewEl.className = 'recycle-bin-item-preview';
-    previewEl.textContent = mem.contentPreview; // textContent 防 XSS
+    const previewEl = createEl('div', 'recycle-bin-item-preview', mem.contentPreview); // textContent 防 XSS
 
     item.append(header, meta, previewEl);
     return item;

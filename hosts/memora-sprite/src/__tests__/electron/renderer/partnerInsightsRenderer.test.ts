@@ -161,7 +161,7 @@ describe('renderProfileCards · 卡片网格', () => {
       { id: 'm1', name: '长预览', source: 'profile', contentPreview: longPreview },
     ]);
     const previewEl = document.querySelector('.partner-profile-card-preview') as HTMLElement;
-    expect(previewEl.textContent!.length).toBe(83); // 80 + '...'
+    expect(previewEl.textContent!.length).toBe(81); // 80 + '…'
   });
 
   it('内容预览不超过 80 字符应保持原样', () => {

@@ -20,6 +20,7 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import {
   clearElement,
+  createEl,
   formatTimeAgo,
   getOptionalElement,
 } from '../helpers/domHelpers.js';
@@ -141,12 +142,12 @@ export class WorkProjectionPanelManager {
 
     // 空列表提示
     if (entries.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'work-projection-empty';
-      empty.textContent = '暂无作品投影';
-      const hint = document.createElement('div');
-      hint.className = 'work-projection-empty-hint';
-      hint.textContent = '让精灵读取你的代码文件后，会自动生成作品投影摘要';
+      const empty = createEl('div', 'work-projection-empty', '暂无作品投影');
+      const hint = createEl(
+        'div',
+        'work-projection-empty-hint',
+        '让精灵读取你的代码文件后，会自动生成作品投影摘要',
+      );
       this.listEl.appendChild(empty);
       this.listEl.appendChild(hint);
       return;
@@ -187,12 +188,10 @@ export class WorkProjectionPanelManager {
    * @returns 卡片 DOM 元素
    */
   private createProjectionCard(entry: WorkProjectionPayload): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'work-projection-card';
+    const card = createEl('div', 'work-projection-card');
 
     // 头部：图标 + 文件名 + 更新时间
-    const header = document.createElement('div');
-    header.className = 'work-projection-card-header';
+    const header = createEl('div', 'work-projection-card-header');
 
     const icon = document.createElement('span');
     icon.className = 'work-projection-icon flex-shrink-0';
@@ -202,42 +201,35 @@ export class WorkProjectionPanelManager {
 
     // 提取文件名（从完整路径中截取最后一部分）
     const fileName = entry.sourcePath.split(/[/\\]/).pop() ?? entry.sourcePath;
-    const fileNameEl = document.createElement('span');
-    fileNameEl.className = 'work-projection-filename text-truncate';
-    fileNameEl.textContent = fileName;
+    const fileNameEl = createEl('span', 'work-projection-filename text-truncate', fileName);
     fileNameEl.title = entry.sourcePath; // tooltip 显示完整路径
     header.appendChild(fileNameEl);
 
-    const updatedEl = document.createElement('span');
-    updatedEl.className = 'work-projection-updated flex-shrink-0';
-    updatedEl.textContent = formatTimeAgo(entry.updatedAt);
+    const updatedEl = createEl(
+      'span',
+      'work-projection-updated flex-shrink-0',
+      formatTimeAgo(entry.updatedAt),
+    );
     header.appendChild(updatedEl);
 
     card.appendChild(header);
 
     // 概要（始终可见）
-    const summary = document.createElement('div');
-    summary.className = 'work-projection-summary';
-    summary.textContent = entry.summary;
+    const summary = createEl('div', 'work-projection-summary', entry.summary);
     card.appendChild(summary);
 
     // 详情区（默认折叠）
-    const details = document.createElement('div');
-    details.className = 'work-projection-details';
+    const details = createEl('div', 'work-projection-details');
     details.hidden = true;
 
     // 结构列表
     if (entry.structure.length > 0) {
-      const structureSection = document.createElement('div');
-      structureSection.className = 'work-projection-section';
+      const structureSection = createEl('div', 'work-projection-section');
 
-      const structureTitle = document.createElement('h4');
-      structureTitle.className = 'work-projection-section-title';
-      structureTitle.textContent = '结构';
+      const structureTitle = createEl('h4', 'work-projection-section-title', '结构');
       structureSection.appendChild(structureTitle);
 
-      const structureList = document.createElement('ul');
-      structureList.className = 'work-projection-list';
+      const structureList = createEl('ul', 'work-projection-list');
       for (const item of entry.structure) {
         const li = document.createElement('li');
         li.textContent = item;
@@ -249,16 +241,12 @@ export class WorkProjectionPanelManager {
 
     // 关键决策列表
     if (entry.keyDecisions.length > 0) {
-      const decisionsSection = document.createElement('div');
-      decisionsSection.className = 'work-projection-section';
+      const decisionsSection = createEl('div', 'work-projection-section');
 
-      const decisionsTitle = document.createElement('h4');
-      decisionsTitle.className = 'work-projection-section-title';
-      decisionsTitle.textContent = '关键决策';
+      const decisionsTitle = createEl('h4', 'work-projection-section-title', '关键决策');
       decisionsSection.appendChild(decisionsTitle);
 
-      const decisionsList = document.createElement('ul');
-      decisionsList.className = 'work-projection-list';
+      const decisionsList = createEl('ul', 'work-projection-list');
       for (const item of entry.keyDecisions) {
         const li = document.createElement('li');
         li.textContent = item;
@@ -271,9 +259,7 @@ export class WorkProjectionPanelManager {
     card.appendChild(details);
 
     // 展开/折叠按钮
-    const expandBtn = document.createElement('button');
-    expandBtn.className = 'work-projection-expand-btn';
-    expandBtn.textContent = '展开详情';
+    const expandBtn = createEl('button', 'work-projection-expand-btn', '展开详情');
     this.events.addEventListener(expandBtn, 'click', () => {
       const isHidden = details.hidden;
       details.hidden = !isHidden;

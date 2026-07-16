@@ -18,6 +18,7 @@
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
+import { createEl } from '../helpers/domHelpers.js';
 import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -137,22 +138,15 @@ export class LlmGovernanceResultRenderer {
 
     // 摘要
     const summary = `冲突检测：扫描 ${report.scannedCount} 条 / ${report.pairCount} 对，发现 ${report.conflictCount} 处冲突`;
-    const summaryEl = document.createElement('div');
-    summaryEl.className = 'llm-result-summary';
-    summaryEl.textContent = summary;
-    container.appendChild(summaryEl);
+    container.appendChild(createEl('div', 'llm-result-summary', summary));
 
     if (report.conflicts.length === 0) {
-      const emptyEl = document.createElement('div');
-      emptyEl.className = 'llm-result-empty';
-      emptyEl.textContent = '未发现语义冲突';
-      container.appendChild(emptyEl);
+      container.appendChild(createEl('div', 'llm-result-empty', '未发现语义冲突'));
       return;
     }
 
     // 冲突对列表
-    const listEl = document.createElement('div');
-    listEl.className = 'llm-result-list';
+    const listEl = createEl('div', 'llm-result-list');
     for (const verdict of report.conflicts) {
       if (!verdict.hasConflict) continue;
       listEl.appendChild(this.createConflictPairEl(verdict));
@@ -170,10 +164,7 @@ export class LlmGovernanceResultRenderer {
     if (!container) return;
     this.events.cleanup();
     container.innerHTML = '';
-    const skipEl = document.createElement('div');
-    skipEl.className = 'llm-result-skipped';
-    skipEl.textContent = `${title}：${reason}`;
-    container.appendChild(skipEl);
+    container.appendChild(createEl('div', 'llm-result-skipped', `${title}：${reason}`));
   }
 
   /**
@@ -192,22 +183,15 @@ export class LlmGovernanceResultRenderer {
     container.innerHTML = '';
 
     // 摘要
-    const summaryEl = document.createElement('div');
-    summaryEl.className = 'llm-result-summary';
-    summaryEl.textContent = summary;
-    container.appendChild(summaryEl);
+    container.appendChild(createEl('div', 'llm-result-summary', summary));
 
     if (demotedIds.length === 0) {
-      const emptyEl = document.createElement('div');
-      emptyEl.className = 'llm-result-empty';
-      emptyEl.textContent = '无需降级';
-      container.appendChild(emptyEl);
+      container.appendChild(createEl('div', 'llm-result-empty', '无需降级'));
       return;
     }
 
     // 降级列表
-    const listEl = document.createElement('div');
-    listEl.className = 'llm-result-list';
+    const listEl = createEl('div', 'llm-result-list');
     for (const id of demotedIds) {
       listEl.appendChild(this.createDemotedItemEl(id, label));
     }
@@ -221,23 +205,18 @@ export class LlmGovernanceResultRenderer {
    * @param label 降级类型标签
    */
   private createDemotedItemEl(memoryId: string, label: string): HTMLElement {
-    const itemEl = document.createElement('div');
-    itemEl.className = 'llm-result-item';
+    const itemEl = createEl('div', 'llm-result-item');
 
     // ID 展示（截断，完整 ID 在 title）
-    const idEl = document.createElement('span');
-    idEl.className = 'llm-result-item-id';
     const displayId = memoryId.length > ID_DISPLAY_LEN
       ? `${memoryId.slice(0, ID_DISPLAY_LEN)}…`
       : memoryId;
-    idEl.textContent = `${label}：${displayId}`;
+    const idEl = createEl('span', 'llm-result-item-id', `${label}：${displayId}`);
     idEl.title = memoryId;
     itemEl.appendChild(idEl);
 
     // 恢复按钮（调用 boostMemory，score +0.05）
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'llm-result-restore-btn';
-    restoreBtn.textContent = '恢复';
+    const restoreBtn = createEl('button', 'llm-result-restore-btn', '恢复');
     restoreBtn.title = '提升该记忆 score（+0.05），与降级语义对称';
     this.events.addEventListener(restoreBtn, 'click', async () => {
       restoreBtn.disabled = true;
@@ -272,8 +251,7 @@ export class LlmGovernanceResultRenderer {
     recommendation?: string;
     reason: string;
   }): HTMLElement {
-    const pairEl = document.createElement('div');
-    pairEl.className = 'llm-result-pair';
+    const pairEl = createEl('div', 'llm-result-pair');
 
     // 记忆 A
     pairEl.appendChild(this.createConflictMemoryEl('A', verdict.memoryA));
@@ -282,26 +260,17 @@ export class LlmGovernanceResultRenderer {
 
     // 冲突描述（可选）
     if (verdict.conflictDescription) {
-      const descEl = document.createElement('div');
-      descEl.className = 'llm-result-pair-desc';
-      descEl.textContent = `冲突点：${verdict.conflictDescription}`;
-      pairEl.appendChild(descEl);
+      pairEl.appendChild(createEl('div', 'llm-result-pair-desc', `冲突点：${verdict.conflictDescription}`));
     }
 
     // LLM 建议（可选）
     if (verdict.recommendation) {
-      const recEl = document.createElement('div');
-      recEl.className = 'llm-result-pair-rec';
       const recLabel = RECOMMENDATION_LABEL[verdict.recommendation] ?? verdict.recommendation;
-      recEl.textContent = `LLM 建议：${recLabel}`;
-      pairEl.appendChild(recEl);
+      pairEl.appendChild(createEl('div', 'llm-result-pair-rec', `LLM 建议：${recLabel}`));
     }
 
     // LLM 理由
-    const reasonEl = document.createElement('div');
-    reasonEl.className = 'llm-result-pair-reason';
-    reasonEl.textContent = `理由：${verdict.reason}`;
-    pairEl.appendChild(reasonEl);
+    pairEl.appendChild(createEl('div', 'llm-result-pair-reason', `理由：${verdict.reason}`));
 
     return pairEl;
   }
@@ -316,17 +285,10 @@ export class LlmGovernanceResultRenderer {
     label: string,
     memory: { name: string; content: string; source: string; score: number },
   ): HTMLElement {
-    const memEl = document.createElement('div');
-    memEl.className = 'llm-result-pair-memory';
+    const memEl = createEl('div', 'llm-result-pair-memory');
+    memEl.appendChild(createEl('span', 'llm-result-pair-memory-label', label));
 
-    const labelEl = document.createElement('span');
-    labelEl.className = 'llm-result-pair-memory-label';
-    labelEl.textContent = label;
-    memEl.appendChild(labelEl);
-
-    const nameEl = document.createElement('span');
-    nameEl.className = 'llm-result-pair-memory-name';
-    nameEl.textContent = memory.name;
+    const nameEl = createEl('span', 'llm-result-pair-memory-name', memory.name);
     nameEl.title = `${memory.source} · score ${memory.score.toFixed(2)}`;
     memEl.appendChild(nameEl);
 
@@ -334,9 +296,7 @@ export class LlmGovernanceResultRenderer {
     const preview = memory.content.length > PREVIEW_LEN
       ? `${memory.content.slice(0, PREVIEW_LEN)}…`
       : memory.content;
-    const previewEl = document.createElement('span');
-    previewEl.className = 'llm-result-pair-memory-preview';
-    previewEl.textContent = preview;
+    const previewEl = createEl('span', 'llm-result-pair-memory-preview', preview);
     previewEl.title = memory.content;
     memEl.appendChild(previewEl);
 
