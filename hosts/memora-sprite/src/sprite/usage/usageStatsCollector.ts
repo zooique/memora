@@ -16,12 +16,14 @@
  *   - UsageStatsCollector 使用 JSON 覆盖写入（使用统计是累积快照）
  */
 
-import { writeFile, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { logger, toError } from 'memora';
 // formatDateKey 格式化日期为本地 YYYY-MM-DD（修复 UTC 跨日 bug，ADR-017 枝叶层 2 次提取）
 import { formatDateKey } from '../../shared/dateUtils.js';
+// safeWriteJson 安全写入 JSON 文件（含 mkdir recursive + 0o600 权限保护，ADR-017 枝叶层 2 次提取）
+import { safeWriteJson } from '../../shared/safeWriteJson.js';
 
 /** 使用统计快照 */
 export interface UsageStatsSnapshot {
@@ -118,7 +120,7 @@ export class UsageStatsCollector {
     if (!this.enabled) return;
     try {
       const snapshot = this.getSnapshot();
-      await writeFile(this.filePath, JSON.stringify(snapshot, null, 2), 'utf8');
+      await safeWriteJson(this.filePath, snapshot);
     } catch (err) {
       logger.debug({ err: toError(err).message }, '使用统计写入失败');
     }
@@ -127,7 +129,7 @@ export class UsageStatsCollector {
   /** 导出快照到 JSON 文件并返回文件路径。无论开关状态均可调用 */
   async export(): Promise<string> {
     const snapshot = this.getSnapshot();
-    await writeFile(this.filePath, JSON.stringify(snapshot, null, 2), 'utf8');
+    await safeWriteJson(this.filePath, snapshot);
     return this.filePath;
   }
 
@@ -166,7 +168,7 @@ export class UsageStatsCollector {
     this.errors = {};
     this.since = new Date().toISOString();
     try {
-      await writeFile(this.filePath, JSON.stringify(this.getSnapshot(), null, 2), 'utf8');
+      await safeWriteJson(this.filePath, this.getSnapshot());
     } catch (err) {
       logger.debug({ err: toError(err).message }, '使用统计清空失败');
     }

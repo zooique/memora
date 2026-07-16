@@ -95,8 +95,10 @@ export function createMemoryController(uiManager: UIManager) {
   // LLM 治理结果渲染器实例（持久化展示治理报告 + 降级列表恢复入口）
   const llmResultRenderer = new LlmGovernanceResultRenderer();
   // 注册恢复回调：调用 boostMemory IPC（score +0.05），与降级语义对称
+  // 恢复后刷新健康度面板（score 变化 → 健康度数据变化，与治理动作回调 L332 对齐）
   llmResultRenderer.onRestoreMemory(async (memoryId: string) => {
     await window.electronAPI.boostMemory(memoryId);
+    await loadHealthDashboard();
     uiManager.showToast('记忆 score 已恢复（+0.05）', 'success');
   });
 
