@@ -18,10 +18,10 @@
  *   - 保留元素（cursor/memory-recall/tool-call/truncation）在 RAF 回调中重新查询
  */
 
-import { clearElement } from './domHelpers.js';
-import { setIcon } from './icon.js';
+import { clearElement } from '../helpers/domHelpers.js';
+import { setIcon } from '../helpers/icon.js';
 import { renderMarkdown } from '../components/markdown.js';
-import { reportError } from './errorHelpers.js';
+import { reportError } from '../helpers/errorHelpers.js';
 
 /** 流式渲染上下文（状态 + 回调注入） */
 export interface StreamingRendererContext {

@@ -27,11 +27,11 @@
  *   参照 memoryPanelEvents.ts 的提取模式，本次为图谱视图拆分
  */
 
-import { reportError } from './errorHelpers.js';
+import { reportError } from '../helpers/errorHelpers.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
-import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
+import type { MemoryPanelHost } from './memoryPanelManager.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 

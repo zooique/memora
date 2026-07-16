@@ -28,14 +28,14 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 // 工具调用卡片 DOM 逻辑提取到独立 helper
 import { showToolStart as renderToolStart, updateToolResult as updateToolCardResult } from '../helpers/toolCallCard.js';
-// 流式渲染核心（RAF 节流 + Markdown 渲染 + 复制按钮）提取到独立 helper
+// 流式渲染核心（RAF 节流 + Markdown 渲染 + 复制按钮）提取到独立子模块（panels/ 同层）
 import {
   updateStreamingMessage as renderStreamingMessage,
   finishStreamingMessage as finishStreamingRender,
   addCopyButtonToMessage,
   cancelPendingRaf,
   type StreamingRendererContext,
-} from '../helpers/streamingRenderer.js';
+} from './streamingRenderer.js';
 // 流式输出安全兜底定时器（30s/90s 二级兜底）提取到独立 helper
 import { StreamSafetyTimer } from '../helpers/streamSafetyTimer.js';
 // 消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
@@ -585,7 +585,7 @@ export class ChatPanelManager {
   /**
    * 更新流式消息内容
    *
-   * 委托到 helpers/streamingRenderer.ts 的 updateStreamingMessage 纯函数。
+   * 委托到 panels/streamingRenderer.ts 的 updateStreamingMessage 纯函数。
    * RAF 节流 + 纯文本显示 + 安全定时器重置逻辑均由 streamingRenderer 通过
    * context 注入模式处理，本方法仅负责转发调用。
    *
@@ -598,7 +598,7 @@ export class ChatPanelManager {
   /**
    * 完成流式消息
    *
-   * 委托到 helpers/streamingRenderer.ts 的 finishStreamingMessage 纯函数。
+   * 委托到 panels/streamingRenderer.ts 的 finishStreamingMessage 纯函数。
    * 取消挂起 rAF + 一次性 Markdown 渲染 + 复制按钮 + 状态重置均由 streamingRenderer
    * 通过 context 注入模式处理，本方法仅负责转发调用。
    *

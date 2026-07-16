@@ -33,14 +33,14 @@ import { CompletionStatsRenderer } from './completionStatsRenderer.js';
 // 事件监听器注册逻辑提取到独立 helper（降低本文件体量）
 import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';
-// 图谱视图子系统（初始化/空状态/缓存状态/上下文菜单/关系弹窗）提取到独立 helper
+// 图谱视图子系统（初始化/空状态/缓存状态/上下文菜单/关系弹窗）提取到独立子模块（panels/ 同层）
 import {
   initGraphRenderer as initGraphRendererHelper,
   updateGraphEmptyState as updateGraphEmptyStateHelper,
   applyCachedGraphState as applyCachedGraphStateHelper,
   clearGraphHighlights as clearGraphHighlightsHelper,
-} from '../helpers/memoryGraphPanel.js';
-import type { MemoryGraphPanelContext } from '../helpers/memoryGraphPanel.js';
+} from './memoryGraphPanel.js';
+import type { MemoryGraphPanelContext } from './memoryGraphPanel.js';
 // 记忆详情子系统（详情/脉络/邻居/按钮）提取到独立 helper
 import {
   showMemoryDetail as showMemoryDetailHelper,
@@ -739,14 +739,14 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 更新图谱空状态提示的可见性（委托到 memoryGraphPanel helper）
+   * 更新图谱空状态提示的可见性（委托到 memoryGraphPanel 子模块）
    */
   private updateGraphEmptyState(): void {
     updateGraphEmptyStateHelper(this.buildGraphPanelContext());
   }
 
   /**
-   * 将缓存的高亮/选中状态应用到渲染器（委托到 memoryGraphPanel helper）
+   * 将缓存的高亮/选中状态应用到渲染器（委托到 memoryGraphPanel 子模块）
    */
   private applyCachedGraphState(): void {
     applyCachedGraphStateHelper(this.buildGraphPanelContext());
@@ -790,13 +790,13 @@ export class MemoryPanelManager {
     this.graphRenderer?.setSelectedNode(nodeId);
   }
 
-  /** 清除图谱所有高亮和选中状态（委托到 memoryGraphPanel helper，含缓存清理） */
+  /** 清除图谱所有高亮和选中状态（委托到 memoryGraphPanel 子模块，含缓存清理） */
   clearGraphHighlights(): void {
     clearGraphHighlightsHelper(this.buildGraphPanelContext());
   }
 
   /**
-   * 延迟初始化图谱渲染器（委托到 memoryGraphPanel helper）
+   * 延迟初始化图谱渲染器（委托到 memoryGraphPanel 子模块）
    *
    * 首次切换到图谱视图时，Canvas 元素可能尚未渲染，
    * 使用 requestAnimationFrame 延迟一帧确保 DOM 就绪。
@@ -1166,7 +1166,7 @@ export class MemoryPanelManager {
    * 构建图谱视图子系统的依赖注入容器
    *
    * 将 MemoryPanelManager 的图谱状态字段和回调通过 getter/setter 暴露给
-   * memoryGraphPanel helper，保持状态所有权在 MemoryPanelManager，
+   * memoryGraphPanel 子模块，保持状态所有权在 MemoryPanelManager，
    * 同时让 helper 能以纯函数方式访问状态和注册回调。
    */
   private buildGraphPanelContext(): MemoryGraphPanelContext {

@@ -28,7 +28,7 @@ import {
   showRelationEditDialog,
   showRelationCreateDialog,
   type MemoryGraphPanelContext,
-} from '../../../electron/renderer/helpers/memoryGraphPanel.js';
+} from '../../../electron/renderer/panels/memoryGraphPanel.js';
 import { RelationGraphRenderer } from '../../../electron/renderer/components/relationGraph.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
 import type { MemoryPanelHost } from '../../../electron/renderer/panels/memoryPanelManager.js';

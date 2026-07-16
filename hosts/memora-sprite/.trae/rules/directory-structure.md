@@ -82,10 +82,8 @@ src/
 │       │   │
 │       │   ├── chatPanelEvents.ts # 对话面板事件监听辅助（从 chatPanelManager 提取）
 │       │   ├── streamSafetyTimer.ts # 流式安全兜底定时器（30s/90s 二级兜底，从 chatPanelManager 提取）
-│       │   ├── streamingRenderer.ts # 流式 RAF 渲染核心（context 注入纯函数，从 chatPanelManager 提取）
 │       │   │
 │       │   ├── memoryDetailPanel.ts # 记忆详情子系统辅助（F-LINE-2 从 memoryPanelManager 提取：详情/脉络/邻居/按钮）
-│       │   ├── memoryGraphPanel.ts  # 图谱视图子系统辅助（F-LINE-2 从 memoryPanelManager 提取：初始化/空状态/缓存/上下文菜单/关系弹窗）
 │       │   ├── memoryPanelEvents.ts # 记忆面板事件监听辅助（AUTO-HEALTH-05 从 memoryPanelManager 提取）
 │       │   ├── memoryTimelineView.ts # 时间线视图辅助（按天分组渲染 + 日期标签格式化，从 memoryPanelManager 提取）
 │       │   ├── memoryViewSwitcher.ts # 视图切换辅助（视图显隐 + 互斥切换 + viewSwitchToken 竞态保护，从 memoryPanelManager 提取）
@@ -141,6 +139,8 @@ src/
 │       │   ├── inputAreaManager.ts       # 输入区域管理（键盘事件/自适应高度/发送按钮，从 UIManager 拆分）
 │       │   ├── searchMessagesManager.ts  # 消息搜索管理器（对话内搜索 + 防抖 + 高亮）
 │       │   ├── spriteStatusPopover.ts    # 精灵状态浮层（在线状态/记忆量/主动行为提示）
+│       │   ├── streamingRenderer.ts      # 流式 RAF 渲染核心（context 注入纯函数，chatPanelManager 子模块，AUDIT-0716-3 从 helpers/ 迁入消除循环依赖）
+│       │   ├── memoryGraphPanel.ts       # 图谱视图子系统（memoryPanelManager 子模块：初始化/空状态/缓存/上下文菜单/关系弹窗，AUDIT-0716-3 从 helpers/ 迁入消除循环依赖）
 │       │   └── panelRouter.ts            # 面板路由器（面板切换/导航/全局快捷键/窗口控制）
 │       │
 │       ├── float/              # 浮动窗口
