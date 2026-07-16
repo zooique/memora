@@ -16,6 +16,7 @@ import type { ToastType, ToastOptions } from '../types.js';
 // 复用 sprite 层共享常量，避免多处硬编码 Toast 时长导致口径不一致
 import { TOAST_LONG_MS } from '../../../sprite/constants.js';
 import { setIcon } from '../helpers/icon.js';
+import { removeWithAnimation } from '../helpers/domHelpers.js';
 
 /**
  * Toast 类型与图标映射
@@ -143,11 +144,9 @@ export class ToastManager {
     }
   }
 
-  /** 移除 Toast（带离场动画） */
+  /** 移除 Toast（带离场动画，复用 removeWithAnimation helper 统一模式） */
   private removeToast(toast: HTMLElement): void {
-    if (!toast.parentElement) return;
-    toast.classList.add('leaving');
-    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+    removeWithAnimation(toast, 'leaving');
   }
 
   /** 清理所有 Toast 定时器（UIManager.cleanup 时调用） */
