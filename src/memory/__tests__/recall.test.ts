@@ -1,9 +1,9 @@
 /**
  * 记忆召回测试
- * 覆盖关键词提取 + recall 函数
+ * 覆盖关键词提取 + recall 函数 + boostScore 上限 + applyDecayToMemory 衰减边界
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { recall, extractKeywords } from '@/memory/recall.js';
+import { recall, extractKeywords, applyDecayToMemory, ONE_DAY_MS } from '@/memory/recall.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
@@ -158,6 +158,17 @@ describe('recall · 记忆召回', () => {
     // 返回的对象不应是原始对象（不污染调用方）
     expect(memories[0]).not.toBe(original);
     expect(memories[0]!.id).toBe(original.id);
+  });
+
+  it('boost 后 score 不应超过上限 1.0', async () => {
+    // 高分记忆（0.98）被召回后 boost +0.05 = 1.03，应被钳制到 1.0
+    const highScore = makeMemory({ id: 'insight:high', source: 'insight', score: 0.98 });
+    vi.mocked(mockStorage.search).mockReturnValue([highScore]);
+
+    await recall(mockStorage, '测试');
+
+    const upserted = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
+    expect(upserted.score).toBe(1.0);
   });
 });
 
@@ -431,5 +442,40 @@ describe('recall · 降级策略', () => {
 
     // minSimilarity=0.5 应透传到 vectorStore.search 第三参数
     expect(mockVectorStore.search).toHaveBeenCalledWith('测试', 10, 0.5);
+  });
+});
+
+// ─── applyDecayToMemory 衰减边界 ──────────────────────
+
+describe('applyDecayToMemory · 衰减计算边界', () => {
+  it('无效日期（NaN）应跳过并返回 false', () => {
+    const memory = makeMemory({ accessedAt: 'invalid-date' });
+    const result = applyDecayToMemory(memory, new Date());
+    expect(result).toBe(false);
+    // score 不应被修改
+    expect(memory.score).toBe(0.8);
+  });
+
+  it('恰好在 DECAY_AGE_DAYS（7 天）边界时不应衰减（<= 包含边界）', () => {
+    const now = new Date('2026-07-15T00:00:00.000Z');
+    // accessedAt 设为恰好 7 天前
+    const sevenDaysAgo = new Date(now.getTime() - 7 * ONE_DAY_MS);
+    const memory = makeMemory({ score: 0.8, accessedAt: sevenDaysAgo.toISOString() });
+
+    const result = applyDecayToMemory(memory, now);
+    expect(result).toBe(false);
+    expect(memory.score).toBe(0.8);
+  });
+
+  it('非整数周期（如 7.9 天）应按 floor 计算为 1 个周期', () => {
+    const now = new Date('2026-07-15T00:00:00.000Z');
+    // 7.9 天前 → Math.floor(7.9 / 7) = 1 个周期
+    const daysAgo = new Date(now.getTime() - 7.9 * ONE_DAY_MS);
+    const memory = makeMemory({ score: 0.8, accessedAt: daysAgo.toISOString() });
+
+    const result = applyDecayToMemory(memory, now);
+    expect(result).toBe(true);
+    // 1 个周期：0.8 - 0.02 * 1 = 0.78
+    expect(memory.score).toBeCloseTo(0.78, 5);
   });
 });
