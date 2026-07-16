@@ -224,6 +224,17 @@
   transition: flex var(--transition-base), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
+/* UX-APP-02：原生搜索清除按钮样式（type="search" 自带 ::-webkit-search-cancel-button） */
+/* 调整为令牌色，与主题一致（默认按钮过淡，hover 时强调） */
+#memory-search::-webkit-search-cancel-button {
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity var(--transition-fast);
+}
+#memory-search::-webkit-search-cancel-button:hover {
+  opacity: 1;
+}
+
 #memory-search:focus-visible {
   flex: 1.5; /* 聚焦时占据更多空间，视觉引导注意力 */
   border-color: var(--accent);

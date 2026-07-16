@@ -53,8 +53,9 @@ const STREAM_TOAST_MS = 500;
 const TOAST_DURATION_MS = 800;
 /** 输入区初始基础高度（px），与 CSS 对齐 */
 const INITIAL_BASE_HEIGHT = 72;
-/** 候选项最大高度基数（px），用于 resizeWindow 计算 */
-const ITEM_HEIGHT_PX = 38;
+/** 候选项高度基数（px），用于 resizeWindow 计算。
+ *  与 CSS 对齐：padding 8px*2 + font-size 12px * line-height 1.5 = 34px（UX-QI-19 校准） */
+const ITEM_HEIGHT_PX = 34;
 /** footer 区域高度（px），用于 resizeWindow 计算 */
 const FOOTER_HEIGHT_PX = 28;
 /** 候选列表最大显示条数（与补全管理器 MAX_CANDIDATES 对齐） */
@@ -258,6 +259,8 @@ class QuickInputController {
     this.isPolishing = true;
     this.inputField.disabled = true;
     this.polishToggle?.classList.add('loading');
+    /* UX-QI-20：通知屏幕阅读器正在处理（视觉已有旋转图标，ARIA 补齐无障碍反馈） */
+    this.polishToggle?.setAttribute('aria-busy', 'true');
 
     try {
       const result = await this.api.polishQuickInput(text);
@@ -276,6 +279,7 @@ class QuickInputController {
       this.isPolishing = false;
       this.inputField.disabled = false;
       this.polishToggle?.classList.remove('loading');
+      this.polishToggle?.removeAttribute('aria-busy');
       this.inputField.focus();
     }
   }
@@ -378,6 +382,8 @@ class QuickInputController {
       this.inputField.focus();
       const len = this.inputField.value.length;
       this.inputField.setSelectionRange(len, len);
+      /* UX-QI-25：填充长文本后滚动到底部，保证光标在可视区域内 */
+      this.inputField.scrollTop = this.inputField.scrollHeight;
       this.autoResize();
       this.updateCounter();
     });

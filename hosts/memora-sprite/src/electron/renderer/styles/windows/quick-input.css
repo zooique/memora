@@ -199,6 +199,8 @@ body {
   padding: var(--space-1) 0 0 0;
   max-height: 200px;
   overflow-y: auto;
+  /* UX-QI-18：预留滚动条空间，避免候选项出现/消失时内容区宽度突变（layout shift） */
+  scrollbar-gutter: stable;
   border-top: 1px solid var(--surface0);
 }
 
