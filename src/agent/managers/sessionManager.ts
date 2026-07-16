@@ -9,7 +9,7 @@
  */
 
 import { logger } from '@/logging/logger.js';
-import { configError } from '@/utils/errors.js';
+import { chatBusyError } from '@/utils/errors.js';
 // 使用 todayDate() 替代 new Date().toISOString().slice(0,10)，修复 UTC 跨天 bug
 import { todayDate } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -71,9 +71,7 @@ export class SessionManager {
   switchSession(newSession: string): string {
     // 对话进行中切换会话会导致消息持久化分散
     if (this.isChatBusy()) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('切换会话');
     }
 
     return this.getHistory().switchSession(newSession);
@@ -114,9 +112,7 @@ export class SessionManager {
    */
   forkSession(targetSession?: string): AgentForkResult {
     if (this.isChatBusy()) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再分叉', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('分叉');
     }
 
     const history = this.getHistory();
@@ -152,9 +148,7 @@ export class SessionManager {
   async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
     // 对话进行中恢复会话会导致 loop 工作记忆被替换
     if (this.isChatBusy()) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再恢复会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('恢复会话');
     }
 
     if (!this.sessionStore) {
@@ -205,9 +199,7 @@ export class SessionManager {
   async restoreSession(date: string, session: string): Promise<number> {
     // 对话进行中恢复会话会导致 loop 工作记忆被替换
     if (this.isChatBusy()) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再恢复会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('恢复会话');
     }
 
     const sessionMessages = await this.getHistory().loadSessionMessages(date, session);
@@ -229,9 +221,7 @@ export class SessionManager {
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     // 对话进行中加载会话会切换 currentDate/currentSession，导致消息持久化分散
     if (this.isChatBusy()) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再加载会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('加载会话');
     }
 
     return this.getHistory().loadSessionMessages(date, session);

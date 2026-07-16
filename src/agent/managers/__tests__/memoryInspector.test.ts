@@ -307,7 +307,7 @@ describe('MemoryInspector', () => {
       expect(() => inspector.search('query', 1.5)).toThrow('无效 limit');
     });
 
-    it('正常搜索：长内容截断到 120 字符 + "..."，短内容不截断', () => {
+    it('正常搜索：长内容截断到 120 字符 + "…"，短内容不截断', () => {
       const longContent = 'B'.repeat(150);
       storage.upsert(createMemory({ id: 'insight:long', source: 'insight', name: 'long', content: longContent }));
       storage.upsert(createMemory({ id: 'insight:short', source: 'insight', name: 'short', content: 'short' }));
@@ -316,9 +316,9 @@ describe('MemoryInspector', () => {
       const longHit = hits.find((h) => h.name === 'long');
       const shortHit = hits.find((h) => h.name === 'short');
       if (longHit) {
-        // 长内容截断到 120 + '...' = 123 字符
-        expect(longHit.contentPreview).toHaveLength(123);
-        expect(longHit.contentPreview.endsWith('...')).toBe(true);
+        // 长内容截断到 120 + '…' = 121 字符
+        expect(longHit.contentPreview).toHaveLength(121);
+        expect(longHit.contentPreview.endsWith('…')).toBe(true);
       }
       if (shortHit) {
         // 短内容不截断
@@ -406,8 +406,8 @@ describe('MemoryInspector', () => {
       const hits = await inspector.searchHybrid('C');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.similarity).toBe(0.7);
-      // 长内容截断到 120 + '...'
-      expect(hits[0]!.contentPreview.endsWith('...')).toBe(true);
+      // 长内容截断到 120 + '…'
+      expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
     });
   });
 

@@ -12,6 +12,9 @@
  * - 错误仍然会 rethrow，让上层（renderer.ts DOMContentLoaded）的 catch 也能感知
  */
 
+// 内核 toError 工具（统一 unknown 错误信息提取，替代 err instanceof Error 三元式）
+import { toError } from 'memora';
+
 /**
  * 渲染 UIManager 初始化失败错误提示到 document.body
  *
@@ -25,7 +28,7 @@
  */
 export function renderInitFailureToBody(err: unknown): void {
   // 提取错误信息（MemoraError 有 message 字段，普通 Error 同样）
-  const errorMessage = err instanceof Error ? err.message : String(err);
+  const errorMessage = toError(err).message;
   // 构建错误提示卡片：样式由 base.css 中 .ui-init-failure-card 等类提供
   // CSS 类内 var(--token, fallback) 兼顾主题适配与 CSS 未加载场景
   const errorCard = document.createElement('div');

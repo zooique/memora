@@ -13,6 +13,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { validateSource } from '@/memory/sourceValidation.js';
 import { segmentText } from '@/utils/segmenter.js';
+import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { applyDecayToMemory } from '@/memory/recall.js';
@@ -236,7 +237,7 @@ export class InMemoryStorage implements IMemoryStorage {
   getBySource(source: string): Memory[] {
     return Array.from(this.memories.values())
       .filter((m) => m.source === source && m.deletedAt === undefined)
-      .sort((a, b) => b.score - a.score)
+      .sort(byScoreDesc)
       .map((m) => ({ ...m }));
   }
 
@@ -257,7 +258,7 @@ export class InMemoryStorage implements IMemoryStorage {
     // 空查询：按 score 降序返回（浅拷贝，读取隔离）
     if (!query.trim()) {
       return activeMemories
-        .sort((a, b) => b.score - a.score)
+        .sort(byScoreDesc)
         .slice(0, limit)
         .map((m) => ({ ...m }));
     }
@@ -268,7 +269,7 @@ export class InMemoryStorage implements IMemoryStorage {
     // 若分词后无有效 token，降级为按 score 返回
     if (tokens.length === 0) {
       return activeMemories
-        .sort((a, b) => b.score - a.score)
+        .sort(byScoreDesc)
         .slice(0, limit)
         .map((m) => ({ ...m }));
     }
@@ -280,7 +281,7 @@ export class InMemoryStorage implements IMemoryStorage {
     });
 
     // 按 score 降序排序
-    results.sort((a, b) => b.score - a.score);
+    results.sort(byScoreDesc);
 
     // 返回浅拷贝，避免调用方修改污染存储内部对象
     return results.slice(0, limit).map((m) => ({ ...m }));

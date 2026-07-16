@@ -23,6 +23,7 @@
 import * as path from 'node:path';
 import { BrowserWindow, ipcMain, clipboard, screen } from 'electron';
 import { injectThemeScript } from './themeInjector.js';
+import { applyWindowSecurity } from './windowSecurity.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 import { logger } from 'memora';
@@ -177,13 +178,8 @@ export class QuickInputWindow {
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'quick-input', 'quick-input.html');
     await win.loadFile(htmlPath);
 
-    // 安全防护：拦截外部导航和弹窗
-    win.webContents.on('will-navigate', (e, url) => {
-      if (url !== win.webContents.getURL()) {
-        e.preventDefault();
-      }
-    });
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
+    applyWindowSecurity(win);
 
     // 失焦延迟关闭：给 Alt+Tab 切换留余量（流式粘贴期间抑制，避免 paste 恢复焦点导致窗口被关闭）
     win.on('blur', () => {

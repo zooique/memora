@@ -21,6 +21,8 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
 import { clearElement, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
+// escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
+import { escapeRegExp } from '../../../shared/escapeRegExp.js';
 
 /** 命令项定义 */
 export interface Command {
@@ -584,7 +586,7 @@ export class CommandPaletteManager {
     const terms = query.split(/\s+/).filter(Boolean);
     let result = text;
     for (const term of terms) {
-      const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      const regex = new RegExp(`(${escapeRegExp(term)})`, 'gi');
       result = result.replace(regex, '<mark>$1</mark>');
     }
     return result;

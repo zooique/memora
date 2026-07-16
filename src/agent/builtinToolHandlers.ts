@@ -20,6 +20,7 @@ import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { segmentText } from '@/utils/segmenter.js';
+import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
@@ -566,7 +567,7 @@ export class BuiltinToolHandlers {
     }
 
     const lines = results.map((m, i) => {
-      const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
+      const preview = truncate(m.content, 80);
       return `${i + 1}. [${m.source}:${m.name}] (score=${m.score})\n   ${preview.replace(/\n/g, ' ')}`;
     });
     return `搜索 "${query}" 找到 ${results.length} 条（${mode} 模式）：\n${lines.join('\n')}`;

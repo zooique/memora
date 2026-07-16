@@ -24,7 +24,9 @@
  *   不一致，导致永远读不到 sprite 自己写的配置。提取此类统一管理路径。
  */
 import { resolve } from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
+// safeWriteJson 统一 JSON 写入 + 0o600 权限保护（ADR-017 枝叶层 2 次提取）
+import { safeWriteJson } from '../shared/safeWriteJson.js';
 import { homedir } from 'node:os';
 import { loadConfig, logger, toError } from 'memora';
 import type { Config } from 'memora';
@@ -197,11 +199,8 @@ export class SpriteConfigStore {
       ...(embeddingConfig ? { embedding: embeddingConfig } : {}),
     };
 
-    // 设置 0600 权限：仅文件所有者可读写（防止 apiKey 泄露给同机其他用户）
-    await writeFile(this.configPath, JSON.stringify(config, null, 2), {
-      encoding: 'utf-8',
-      mode: 0o600,
-    });
+    // safeWriteJson 统一处理 JSON 写入 + 0o600 权限（防止 apiKey 泄露给同机其他用户）
+    await safeWriteJson(this.configPath, config);
   }
 
   /**
@@ -242,10 +241,7 @@ export class SpriteConfigStore {
       },
     };
 
-    await writeFile(this.configPath, JSON.stringify(config, null, 2), {
-      encoding: 'utf-8',
-      mode: 0o600,
-    });
+    await safeWriteJson(this.configPath, config);
   }
 }
 

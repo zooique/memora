@@ -42,6 +42,7 @@ import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 // parseLlmJson 用于解析 LLM 时效性判断结果（与 SessionArchiver 同模式）
 import { parseLlmJson } from '@/utils/json.js';
+import { truncate } from '@/utils/strings.js';
 
 /** 衰减完成的回调类型（Agent 注入 emit('decayCompleted', ...)） */
 export type DecayCompletedCallback = (payload: { decayedCount: number }) => void;
@@ -366,7 +367,7 @@ export class MemoryDecayScheduler {
     const demoted: Memory = {
       ...memory,
       score: TIMELINESS_OUTDATED_SCORE,
-      accessedAt: new Date().toISOString(),
+      accessedAt: nowIso(),
     };
     this.index!.upsert(demoted);
   }
@@ -388,7 +389,7 @@ export class MemoryDecayScheduler {
  */
 function buildTimelinessMessages(memory: Memory): Message[] {
   const content = memory.content.length > TIMELINESS_CONTENT_PREVIEW_LEN
-    ? memory.content.slice(0, TIMELINESS_CONTENT_PREVIEW_LEN) + '…[截断]'
+    ? truncate(memory.content, TIMELINESS_CONTENT_PREVIEW_LEN, '…[截断]')
     : memory.content;
 
   return [

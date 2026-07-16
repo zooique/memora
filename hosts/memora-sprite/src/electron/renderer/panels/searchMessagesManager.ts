@@ -24,6 +24,8 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { clearElement, createEl, escapeHtml, formatClock, formatDateKey, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
+// escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
+import { escapeRegExp } from '../../../shared/escapeRegExp.js';
 
 /** 输入防抖时长（毫秒）—— 避免每键入一个字符就触发一次 IPC 搜索 */
 const DEBOUNCE_MS = 300;
@@ -413,8 +415,8 @@ export class SearchMessagesManager {
     const terms = keyword.split(/\s+/).filter(Boolean);
     let result = safe;
     for (const term of terms) {
-      // 转义正则特殊字符
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // 转义正则特殊字符（escapeRegExp 统一封装，ADR-017 枝叶层 2 次提取）
+      const escaped = escapeRegExp(term);
       const regex = new RegExp(`(${escaped})`, 'gi');
       // 在已转义的文本上替换（& < > " 已被转义，关键词中的这些字符也会被转义，匹配安全）
       result = result.replace(regex, '<mark>$1</mark>');

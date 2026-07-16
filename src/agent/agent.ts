@@ -46,7 +46,7 @@ import type { DedupReport } from '@/agent/managers/memoryInspector.js';
 import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
 import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
-import { configError } from '@/utils/errors.js';
+import { chatBusyError, configError } from '@/utils/errors.js';
 import { clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
@@ -310,10 +310,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再发起新对话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽（收到 done 事件）',
-        '宿主程序应确保同一时间只有一个 chat() 调用',
-      ]);
+      throw chatBusyError('发起新对话');
     }
     // 获取锁 + 分配 token + 创建内部 AbortController + 启动超时定时器
     // token 用于 finally 校验，避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
@@ -689,9 +686,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 对话进行中切换项目会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换项目', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('切换项目');
     }
 
     const pm = this.projectManager!;
@@ -814,9 +809,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 对话进行中切换 Provider 会导致同一 processUserInput 循环内前后两次 LLM 调用命中不同 Provider
     // （模型上下文窗口假设不一致 → 可能导致上下文截断逻辑误判或 tool_call 格式不兼容）
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换 Provider', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('切换 Provider');
     }
     this.#provider = provider;
     if (this.loop) {
@@ -828,9 +821,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   setBackgroundProvider(provider: LlmProvider | null): void {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换后台 Provider', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('切换后台 Provider');
     }
     this.#backgroundProvider = provider;
     // 同步更新 AutoConfigRefiner 的后台 Provider
@@ -851,9 +842,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   setArchiveMode(mode: ArchiveMode): void {
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换归档模式', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('切换归档模式');
     }
     const prev = this.#config.archiveMode;
     if (prev === mode) return; // 幂等：无变更直接返回
@@ -941,9 +930,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async reloadConfig(source?: string): Promise<{ skill: number; persona: number }> {
     this.assertInitialized('reloadConfig');
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再重载配置', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('重载配置');
     }
 
     // guardrail 需重建 AgentLoop，不属于热重载范畴
@@ -995,9 +982,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async rebuildComponents(): Promise<void> {
     // 对话进行中重建组件会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
     if (this.chatLockManager?.isBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再重建组件', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
+      throw chatBusyError('重建组件');
     }
     await this.rebuildComponentsWithCurrentCtx();
   }

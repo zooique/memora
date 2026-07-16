@@ -15,6 +15,8 @@
  */
 
 import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml, createEmptyState, createEl } from '../helpers/domHelpers.js';
+// escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
+import { escapeRegExp } from '../../../shared/escapeRegExp.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -645,8 +647,8 @@ export class MemoryPanelManager {
 
     if (!query) return escaped;
 
-    // 转义正则特殊字符，构建匹配模式
-    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // 转义正则特殊字符，构建匹配模式（escapeRegExp 统一封装，ADR-017 枝叶层 2 次提取）
+    const escapedQuery = escapeRegExp(query);
     const regex = new RegExp(`(${escapedQuery})`, 'gi');
 
     return escaped.replace(regex, '<mark>$1</mark>');

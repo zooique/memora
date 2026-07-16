@@ -30,7 +30,10 @@ import type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor 
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
+import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
+import { nowIso } from '@/utils/time.js';
+import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
 // 双通道融合排序算法 + 常量从 hybridMerge 导入（不再绕道 recall.ts）
 // 消除"agent 模块依赖 memory/recall.ts 内部常量"的分层违规
@@ -409,7 +412,7 @@ export class MemoryInspector {
       source: m.source,
       score: m.score,
       // 截断长内容到搜索预览长度
-      contentPreview: m.content.length > SEARCH_PREVIEW_LEN ? m.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : m.content,
+      contentPreview: truncate(m.content, SEARCH_PREVIEW_LEN),
       createdAt: m.createdAt,
     }));
   }
@@ -471,7 +474,7 @@ export class MemoryInspector {
       source: memory.source,
       score: memory.score,
       similarity: vectorScore,
-      contentPreview: memory.content.length > SEARCH_PREVIEW_LEN ? memory.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : memory.content,
+      contentPreview: truncate(memory.content, SEARCH_PREVIEW_LEN),
       createdAt: memory.createdAt,
     }));
   }
@@ -749,7 +752,7 @@ export class MemoryInspector {
     const boosted: Memory = {
       ...memory,
       score: Math.min(SCORE_CEILING, memory.score + increment),
-      accessedAt: new Date().toISOString(),
+      accessedAt: nowIso(),
     };
     this.index.upsert(boosted);
     return true;
@@ -863,7 +866,7 @@ export class MemoryInspector {
       candidates.push(...memories);
     }
     // 按 score 降序排列，优先处理高分记忆（更可能产生重复）
-    candidates.sort((a, b) => b.score - a.score);
+    candidates.sort(byScoreDesc);
     const limited = candidates.slice(0, DEDUP_CANDIDATE_LIMIT);
 
     // ── 步骤 2：筛选名称高度相似的记忆对 ──
@@ -1039,7 +1042,7 @@ export class MemoryInspector {
       ...memory,
       score: DEDUP_LOW_SCORE,
       // 更新 accessedAt，标记最近被处理过
-      accessedAt: new Date().toISOString(),
+      accessedAt: nowIso(),
     };
     this.index.upsert(demoted);
 
@@ -1067,10 +1070,10 @@ export class MemoryInspector {
  */
 function buildDedupMessages(pair: DedupPair): Message[] {
   const contentA = pair.a.content.length > DEDUP_CONTENT_PREVIEW_LEN
-    ? pair.a.content.slice(0, DEDUP_CONTENT_PREVIEW_LEN) + '…[截断]'
+    ? truncate(pair.a.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')
     : pair.a.content;
   const contentB = pair.b.content.length > DEDUP_CONTENT_PREVIEW_LEN
-    ? pair.b.content.slice(0, DEDUP_CONTENT_PREVIEW_LEN) + '…[截断]'
+    ? truncate(pair.b.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')
     : pair.b.content;
 
   return [

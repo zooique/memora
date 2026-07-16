@@ -12,7 +12,7 @@ const MAX_SLUG_LENGTH = 40;
  *
  * 规则：
  *   - 冒号和空白替换为连字符
- *   - 只保留字母、数字、中文、连字符、下划线
+ *   - 只保留字母、数字、中文、连字符、下划号
  *   - 截断到 MAX_SLUG_LENGTH 字符
  *
  * @param value 输入字符串
@@ -26,3 +26,33 @@ export function slugify(value: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, MAX_SLUG_LENGTH);
 }
+
+// ─── 文本截断 ─────────────────────────────────────────
+
+/**
+ * 截断文本到指定长度，超长时追加后缀（省略号）
+ *
+ * 统一内核中 15 处散落的 `slice + suffix` 模式（ADR-017 枝叶层 2 次提取）。
+ *
+ * 与 sprite 的 `shared/truncate.ts` 独立（ADR-002 内核零依赖约束，kernel/sprite 各自维护）。
+ *
+ * 后缀约定：
+ *   - 默认 '…'（Unicode U+2026，1 字符）：UI 预览场景，简洁
+ *   - '…[截断]'：LLM prompt 场景，明确告知模型"此处被截断，非原文结束"
+ *   - 调用方可通过 suffix 参数自定义
+ *
+ * ellipsis 统一：将散落的 '...'（ASCII 3 字符）统一为 '…'（Unicode 1 字符），
+ * 与 sprite truncate.ts 保持一致。
+ *
+ * @param text 原始文本
+ * @param maxLen 最大保留长度（后缀不计入；截断后总长度 = maxLen + suffix.length）
+ * @param suffix 超长时追加的后缀，默认 '…'
+ * @returns 截断后的文本（含后缀），或原文本（未超长时原样返回）
+ */
+export function truncate(text: string, maxLen: number, suffix: string = '…'): string {
+  // 未超长直接返回原文本（含 text.length === maxLen 的边界情况）
+  if (text.length <= maxLen) return text;
+  // 超长时截断到 maxLen 并追加后缀
+  return text.slice(0, maxLen) + suffix;
+}
+

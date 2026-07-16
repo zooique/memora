@@ -391,7 +391,7 @@ async function createBetterSqliteDb(dbPath: string): Promise<ISqliteDatabase> {
     // - err.message 含 'could not open database' → dbPath 被占用或损坏
     throw new MemoraError(
       ErrorCode.STORAGE_ERROR,
-      `better-sqlite3 初始化失败: ${err instanceof Error ? err.message : String(err)}`,
+      `better-sqlite3 初始化失败: ${toError(err).message}`,
       {
         cause: err,
         context: {

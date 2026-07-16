@@ -22,6 +22,7 @@ import { parseLlmJson } from '@/utils/json.js';
 import { segmentText } from '@/utils/segmenter.js';
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { nowIso } from '@/utils/time.js';
+import { truncate } from '@/utils/strings.js';
 import type { RelationBuilder, ConflictInfo } from '@/agent/managers/relationBuilder.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -266,10 +267,10 @@ export class InsightExtractor {
     const written: Memory[] = [];
     try {
       const safeUserInput = userInput.length > INSIGHT_USER_INPUT_LIMIT
-        ? userInput.slice(0, INSIGHT_USER_INPUT_LIMIT) + '…'
+        ? truncate(userInput, INSIGHT_USER_INPUT_LIMIT)
         : userInput;
       const safeAssistantContent = assistantContent.length > INSIGHT_ASSISTANT_CONTENT_LIMIT
-        ? assistantContent.slice(0, INSIGHT_ASSISTANT_CONTENT_LIMIT) + '…'
+        ? truncate(assistantContent, INSIGHT_ASSISTANT_CONTENT_LIMIT)
         : assistantContent;
 
       // 预检去重：LLM 调用前先检查用户输入是否与已有 insight 高度相似
@@ -292,7 +293,7 @@ export class InsightExtractor {
       const contextSection = recentHistory.length > 0
         ? '\n\n前几轮对话（供参考）：\n' + recentHistory.map(m => {
             const safeContent = m.content.length > INSIGHT_HISTORY_MSG_LIMIT
-              ? m.content.slice(0, INSIGHT_HISTORY_MSG_LIMIT) + '…'
+              ? truncate(m.content, INSIGHT_HISTORY_MSG_LIMIT)
               : m.content;
             return `${m.role === 'user' ? '用户' : '助手'}：${safeContent}`;
           }).join('\n')

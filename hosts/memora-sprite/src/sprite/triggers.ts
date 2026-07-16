@@ -119,7 +119,7 @@ export class TriggerBus {
         handler(payload);
       } catch (err) {
         // 记录错误但不中断后续 handler 的分发
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = toError(err).message;
         logger.error({ err: msg }, '[TriggerBus] handler 执行异常');
       }
     }

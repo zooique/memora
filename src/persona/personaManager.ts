@@ -23,6 +23,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import { logger } from '@/logging/logger.js';
+import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
@@ -263,7 +264,7 @@ export class PersonaManager {
 
     if (matches.length === 0) return null;
 
-    matches.sort((a, b) => b.score - a.score);
+    matches.sort(byScoreDesc);
     return matches[0] ?? null;
   }
 

@@ -20,7 +20,7 @@
  * - 自管理内部状态（流式消息映射、RAF 状态、回调引用），提供 cleanup() 清理
  */
 
-import { formatTimestamp } from '../helpers/domHelpers.js';
+import { formatTimestamp, formatDateKey } from '../helpers/domHelpers.js';
 import { setIcon, setIconWithLabel } from '../helpers/icon.js';
 import { renderMarkdown } from '../components/markdown.js';
 import { reportError } from '../helpers/errorHelpers.js';
@@ -380,7 +380,7 @@ export class ChatPanelManager {
     // 防御无效时间戳导致 toISOString 抛 RangeError（降级为当前时间）
     const rawDate = new Date(message.timestamp ?? Date.now());
     const msgDate = isNaN(rawDate.getTime()) ? new Date() : rawDate;
-    const dateStr = msgDate.toISOString().slice(0, 10); // YYYY-MM-DD
+    const dateStr = formatDateKey(msgDate); // YYYY-MM-DD（本地时区，修复 UTC 跨天 bug）
     if (this.lastMessageDate && dateStr !== this.lastMessageDate) {
       this.insertDateSeparator(msgDate);
     }

@@ -17,6 +17,7 @@
 import * as path from 'node:path';
 import { BrowserWindow, ipcMain, Menu } from 'electron';
 import type { WindowStateManager } from './windowState.js';
+import { applyWindowSecurity } from './windowSecurity.js';
 import { injectThemeScript } from './themeInjector.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
@@ -81,15 +82,8 @@ export class FloatWindow {
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float', 'float.html');
     await this.win.loadFile(htmlPath);
 
-    // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）
-    this.win.webContents.on('will-navigate', (e, url) => {
-      if (url !== this.win.webContents.getURL()) {
-        e.preventDefault();
-      }
-    });
-    this.win.webContents.setWindowOpenHandler(() => {
-      return { action: 'deny' };
-    });
+    // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
+    applyWindowSecurity(this.win);
 
     // 关闭时隐藏而非退出
     this.win.on('close', (e) => {

@@ -22,7 +22,9 @@ import { nowIso } from '@/utils/time.js';
 // L3 冲突检测：可选注入 backgroundProvider
 import type { LlmProvider, Message } from '@/llm/provider.js';
 // parseLlmJson 用于解析 LLM 冲突判断结果
+import { byScoreDesc } from '@/utils/array.js';
 import { parseLlmJson } from '@/utils/json.js';
+import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -298,7 +300,7 @@ export class MemoryAdvisor {
       if (count > 0 && !excludeSources.includes(source)) {
         const memories = this.index.getBySource(source);
         // 取 score 最高的前 N 条
-        const top = memories.sort((a, b) => b.score - a.score).slice(0, SUGGEST_TOP_PER_SOURCE);
+        const top = memories.sort(byScoreDesc).slice(0, SUGGEST_TOP_PER_SOURCE);
         for (const m of top) {
           if (!candidates.has(m.id)) {
             candidates.set(m.id, { memory: m, searchHit: false });
@@ -348,7 +350,7 @@ export class MemoryAdvisor {
       name: memory.name,
       source: memory.source,
       relevance: Math.round(relevance * 100) / 100,
-      contentPreview: memory.content.length > ADVISOR_PREVIEW_LEN ? memory.content.slice(0, ADVISOR_PREVIEW_LEN) + '...' : memory.content,
+      contentPreview: truncate(memory.content, ADVISOR_PREVIEW_LEN),
       reason,
     }));
   }
@@ -395,7 +397,7 @@ export class MemoryAdvisor {
     for (const source of CONFLICT_SOURCES) {
       const memories = this.index.getBySource(source);
       // 按 score 降序取 top N
-      const top = memories.sort((a, b) => b.score - a.score).slice(0, CONFLICT_CANDIDATES_PER_SOURCE);
+      const top = memories.sort(byScoreDesc).slice(0, CONFLICT_CANDIDATES_PER_SOURCE);
       candidates.push(...top);
     }
 
@@ -564,10 +566,10 @@ export class MemoryAdvisor {
  */
 function buildConflictMessages(memoryA: Memory, memoryB: Memory): Message[] {
   const contentA = memoryA.content.length > CONFLICT_CONTENT_PREVIEW_LEN
-    ? memoryA.content.slice(0, CONFLICT_CONTENT_PREVIEW_LEN) + '…[截断]'
+    ? truncate(memoryA.content, CONFLICT_CONTENT_PREVIEW_LEN, '…[截断]')
     : memoryA.content;
   const contentB = memoryB.content.length > CONFLICT_CONTENT_PREVIEW_LEN
-    ? memoryB.content.slice(0, CONFLICT_CONTENT_PREVIEW_LEN) + '…[截断]'
+    ? truncate(memoryB.content, CONFLICT_CONTENT_PREVIEW_LEN, '…[截断]')
     : memoryB.content;
 
   return [

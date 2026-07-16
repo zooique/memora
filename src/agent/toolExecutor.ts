@@ -10,6 +10,7 @@
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, configError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
+import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { BUILTIN_TOOLS, type ToolDefinition } from '@/agent/builtinTools.js';
@@ -193,7 +194,7 @@ export class ToolExecutor {
     const safeArgs = Object.fromEntries(
       Object.entries(args).map(([k, v]) => [
         k,
-        typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}...` : v,
+        typeof v === 'string' ? truncate(v, 200) : v,
       ]),
     );
     logger.info({ tool: name, args: safeArgs }, '执行工具');

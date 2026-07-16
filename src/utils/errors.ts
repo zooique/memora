@@ -141,6 +141,23 @@ export function configError(
 }
 
 /**
+ * 工厂：对话繁忙错误
+ *
+ * 用于 chat() 进行中时拒绝其他需要独占 Agent 的操作（切换项目/Provider/会话/重载配置等）。
+ * 12 处调用点统一使用此工厂，消除 `configError('对话繁忙', ...)` 的重复模板（ADR-017 枝叶层 2 次提取）。
+ *
+ * @param action 被拒绝的操作描述（如"切换项目"），拼接到"请等待其结束后再"之后
+ * @returns MemoraError（config 类别）
+ */
+export function chatBusyError(action: string): MemoraError {
+  return configError(
+    '对话繁忙',
+    `上一轮对话尚未完成，请等待其结束后再${action}`,
+    ['等待上一轮 chat() 的 AsyncGenerator 耗尽（收到 done 事件）'],
+  );
+}
+
+/**
  * 工厂：网络错误
  */
 export function networkError(

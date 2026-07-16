@@ -362,13 +362,13 @@ describe('MemoryAdvisor.suggest()', () => {
       expect(result[0]?.contentPreview).toBe('短内容');
     });
 
-    it('长内容（>120 字符）：截断 + ...', () => {
+    it('长内容（>120 字符）：截断 + …', () => {
       const longContent = 'A'.repeat(200);
       storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', content: longContent, score: 0.7 }));
       const result = advisor.suggest();
-      // 120 字符 + 3 个点 = 123 字符
-      expect(result[0]?.contentPreview).toHaveLength(123);
-      expect(result[0]?.contentPreview.endsWith('...')).toBe(true);
+      // 120 字符 + 1 个 … = 121 字符
+      expect(result[0]?.contentPreview).toHaveLength(121);
+      expect(result[0]?.contentPreview.endsWith('…')).toBe(true);
     });
 
     it('恰好 120 字符：原样返回（不截断）', () => {

@@ -25,6 +25,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
+import { truncate } from '@/utils/strings.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export class RelationBuilder {
     if (candidates.length === 0) return '';
     const lines = candidates.map((m, i) => {
       const safeContent = m.content.length > RELATION_CANDIDATE_CONTENT_LIMIT
-        ? m.content.slice(0, RELATION_CANDIDATE_CONTENT_LIMIT) + '…'
+        ? truncate(m.content, RELATION_CANDIDATE_CONTENT_LIMIT)
         : m.content;
       return `[${i + 1}] id: ${m.id}, content: ${safeContent}`;
     });

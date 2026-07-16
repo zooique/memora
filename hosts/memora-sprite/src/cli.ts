@@ -12,7 +12,8 @@
  * 不会加载 CLI 代码。
  */
 import { resolve } from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+// safeWriteJson 统一 JSON 写入 + 0o600 权限保护（ADR-017 枝叶层 2 次提取）
+import { safeWriteJson } from './shared/safeWriteJson.js';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import type { Agent, Config } from 'memora';
@@ -114,7 +115,6 @@ async function setupWizard(): Promise<void> {
 
   // 保存配置到 ~/.memora-sprite/config.json（根级，与 data/ 分层）
   const configPath = DEFAULT_CONFIG_PATH;
-  await mkdir(resolve(DEFAULT_CONFIG_PATH, '..'), { recursive: true });
 
   const config: Config = {
     llm: {
@@ -130,8 +130,8 @@ async function setupWizard(): Promise<void> {
     ...(embedding ? { embedding } : {}),
   };
 
-  // 设置 0600 权限：仅文件所有者可读写（防止 apiKey 泄露给同机其他用户）
-  await writeFile(configPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  // safeWriteJson 统一处理 JSON 写入 + 0o600 权限（防止 apiKey 泄露给同机其他用户）
+  await safeWriteJson(configPath, config);
   console.log(`\n配置已保存到：${configPath}`);
   if (embedding) {
     console.log('✅ 已启用语义搜索（向量召回）');

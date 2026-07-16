@@ -32,6 +32,7 @@ import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { nowIso } from '@/utils/time.js';
+import { truncate } from '@/utils/strings.js';
 
 /** 会话归档结果 */
 export interface SessionArchiveResult {
@@ -54,7 +55,7 @@ const MAX_MESSAGE_CHARS = 500;
  */
 function truncateContent(content: string): string {
   if (content.length <= MAX_MESSAGE_CHARS) return content;
-  return content.slice(0, MAX_MESSAGE_CHARS) + '…[截断]';
+  return truncate(content, MAX_MESSAGE_CHARS, '…[截断]');
 }
 
 /**

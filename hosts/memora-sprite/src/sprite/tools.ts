@@ -154,7 +154,7 @@ export const memorySearchHandler: ToolHandler = async (args: Record<string, unkn
   } catch (err) {
     // 记忆搜索失败时返回错误信息给 LLM，同时记录警告便于排查
     logger.warn({ err: toError(err).message, query }, '记忆搜索失败');
-    return `错误：记忆搜索失败：${err instanceof Error ? err.message : String(err)}`;
+    return `错误：记忆搜索失败：${toError(err).message}`;
   }
 };
 
@@ -227,7 +227,7 @@ function createConfigHandler(
       return `${label} "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
     } catch (err) {
       logger.warn({ err: toError(err).message, name }, `创建${label}失败`);
-      return `错误：创建${label}失败：${err instanceof Error ? err.message : String(err)}`;
+      return `错误：创建${label}失败：${toError(err).message}`;
     }
   };
 }

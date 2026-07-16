@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 技能文件安装器 — 校验 + 安装到 configDir/skills/
  *
  * 职责（Phase 4.3）：
@@ -18,7 +18,7 @@
  */
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { logger, parseFrontmatter } from 'memora';
+import { logger, parseFrontmatter, toError } from 'memora';
 
 /** 校验结果 */
 export interface SkillValidationResult {
@@ -169,7 +169,7 @@ export async function installSkill(
       skillName: validation.skillName,
     };
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = toError(err).message;
     logger.error({ fileName, err: errMsg }, '技能文件安装失败');
     return { success: false, error: `写入文件失败：${errMsg}` };
   }

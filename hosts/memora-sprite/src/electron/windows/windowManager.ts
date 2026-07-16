@@ -15,6 +15,7 @@
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
 import { BrowserWindow, ipcMain } from 'electron';
+import { applyWindowSecurity } from './windowSecurity.js';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
@@ -154,14 +155,8 @@ export class WindowManager {
     // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）
     // 缓存 fullWindow 引用避免非空断言，并确保回调中引用的是当前窗口实例
     const win = this.fullWindow;
-    win.webContents.on('will-navigate', (e, url) => {
-      if (url !== win.webContents.getURL()) {
-        e.preventDefault();
-      }
-    });
-    win.webContents.setWindowOpenHandler(() => {
-      return { action: 'deny' };
-    });
+    // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
+    applyWindowSecurity(win);
   }
 
   /** 注册窗口控制 IPC */

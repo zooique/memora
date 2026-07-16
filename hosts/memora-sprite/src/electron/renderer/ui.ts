@@ -17,7 +17,7 @@
  */
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
-import { getRequiredElement, getOptionalElement } from './helpers/domHelpers.js';
+import { getRequiredElement, getOptionalElement, formatDateKey } from './helpers/domHelpers.js';
 import { setIcon } from './helpers/icon.js';
 import { EventTracker } from './helpers/eventTracker.js';
 // UI 初始化失败错误卡片（独立于 UIManager，避免半初始化状态二次错误）
@@ -439,7 +439,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private _getCurrentSessionId: (() => string) | null = null;
   setCurrentSessionIdProvider(fn: () => string): void { this._getCurrentSessionId = fn; }
   getCurrentSessionId(): string {
-    return this._getCurrentSessionId?.() ?? new Date().toISOString().slice(0, 10) + '-main';
+    return this._getCurrentSessionId?.() ?? formatDateKey(new Date()) + '-main';
   }
   /** 手动归档对话（调用 preload 暴露的 archiveProfileFacts + archiveInsight IPC） */
   async archiveConversation(input: string, assistantContent: string): Promise<number> {
