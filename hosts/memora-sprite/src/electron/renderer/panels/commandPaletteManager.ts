@@ -20,7 +20,7 @@ import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
-import { clearElement, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
+import { clearElement, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
 // escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
 import { escapeRegExp } from '../../../shared/escapeRegExp.js';
 
@@ -427,7 +427,7 @@ export class CommandPaletteManager {
     this.events.cleanup();
     // 关闭面板状态，恢复 body 滚动（防御性：cleanup 时若面板仍打开）
     if (this.isOpen) {
-      document.body.style.overflow = '';
+      unlockBodyScroll(true);
       this.isOpen = false;
     }
   }
@@ -490,7 +490,7 @@ export class CommandPaletteManager {
     this.inputEl.focus();
 
     // 阻止背景滚动
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
 
     // 异步加载动态命令（角色列表），不阻塞面板打开
     void this.reloadCommands();
@@ -507,9 +507,7 @@ export class CommandPaletteManager {
     this.selectedIndex = 0;
 
     // 有条件恢复背景滚动——仅当没有其他浮层打开时才恢复（自身已隐藏，无需排除）
-    if (!hasOtherOpenOverlays()) {
-      document.body.style.overflow = '';
-    }
+    unlockBodyScroll();
 
     // 清空输入
     if (this.inputEl) {

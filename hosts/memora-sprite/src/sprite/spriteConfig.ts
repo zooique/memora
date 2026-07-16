@@ -19,7 +19,7 @@
 import { resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { logger, toError } from 'memora';
+import { logger, toError, isPlainObject } from 'memora';
 // 导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME, MS_PER_HOUR } from './constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
@@ -365,15 +365,6 @@ export function saveSpriteConfig(config: SpriteConfig): void {
   // 设置 0o600 权限：仅文件所有者可读写
   // sprite.json 含 focusProjectPath 等路径信息，与 config.json（含 apiKey）保持一致的权限保护
   writeFileSync(filePath, JSON.stringify(merged, null, 2), { encoding: 'utf-8', mode: 0o600 });
-}
-
-/**
- * 类型守卫：判断值是否为普通对象（非数组、非 null）
- *
- * 用于校验 JSON.parse 的结果，避免对非对象类型执行展开操作。
- */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

@@ -19,7 +19,7 @@ import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:pat
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
-import { segmentText } from '@/utils/segmenter.js';
+import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
@@ -553,7 +553,7 @@ export class BuiltinToolHandlers {
     // near 模式：过滤只保留所有关键词都命中的结果
     if (mode === 'near' && results.length > 0) {
       // 复用 segmentText 分词，与 inMemoryStorage 搜索保持一致
-      const keywords = segmentText(query).map((t) => t.toLowerCase());
+      const keywords = segmentLower(query);
       if (keywords.length > 1) {
         results = results.filter((m) => {
           const text = `${m.content} ${m.name}`.toLowerCase();

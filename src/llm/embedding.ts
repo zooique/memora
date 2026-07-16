@@ -15,6 +15,7 @@
  */
 import { logger } from '@/logging/logger.js';
 import { networkError, configError, llmError, toError } from '@/utils/errors.js';
+import { mergeAbortSignals } from '@/llm/abortSignal.js';
 // EmbeddingOptions 定义在 memory/vectorStore.ts（消费者层），符合依赖倒置原则
 import type { EmbeddingOptions } from '@/memory/vectorStore.js';
 
@@ -136,23 +137,10 @@ export class EmbeddingProvider {
 
     const url = `${this.config.baseUrl}/embeddings`;
 
-    // 合并 AbortSignal：外部取消信号 + 超时信号（与 openaiCompatible.ts 同构）
+    // 合并 AbortSignal：外部取消信号 + 超时信号（mergeAbortSignals 集中维护，ADR-017 枝叶层 2 次提取）
     // 确保用户取消和请求超时都能中断 fetch
     const timeoutMs = options?.timeoutMs ?? EmbeddingProvider.DEFAULT_TIMEOUT_MS;
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(
-      () => abortController.abort(new DOMException('Embedding 请求超时', 'TimeoutError')),
-      timeoutMs,
-    );
-    const optsSignal = options?.signal;
-    const onOptsAbort = () => abortController.abort(optsSignal?.reason);
-    if (optsSignal) {
-      if (optsSignal.aborted) {
-        abortController.abort(optsSignal.reason);
-      } else {
-        optsSignal.addEventListener('abort', onOptsAbort, { once: true });
-      }
-    }
+    const abort = mergeAbortSignals(options?.signal, timeoutMs, 'Embedding 请求超时');
 
     try {
       let response: Response;
@@ -167,7 +155,7 @@ export class EmbeddingProvider {
             model: this.config.model,
             input: uncached,
           }),
-          signal: abortController.signal,
+          signal: abort.signal,
         });
       } catch (err) {
         const e = toError(err);
@@ -222,8 +210,7 @@ export class EmbeddingProvider {
       return results.filter((r): r is EmbeddingResult => r !== null);
     } finally {
       // 统一清理：覆盖 HTTP 错误、空 body、正常完成所有路径
-      clearTimeout(timeoutId);
-      if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
+      abort.dispose();
     }
   }
 

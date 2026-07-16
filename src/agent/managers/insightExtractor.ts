@@ -19,7 +19,7 @@ import { escapeLike } from '@/memory/sourceValidation.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
-import { segmentText } from '@/utils/segmenter.js';
+import { segmentLower } from '@/utils/segmenter.js';
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
@@ -411,8 +411,8 @@ export class InsightExtractor {
    * 与 recall.ts extractKeywords 保持一致的分词策略。
    */
   private jaccardSimilarity(a: string, b: string): number {
-    const setA = new Set(segmentText(a).map((t) => t.toLowerCase()));
-    const setB = new Set(segmentText(b).map((t) => t.toLowerCase()));
+    const setA = new Set(segmentLower(a));
+    const setB = new Set(segmentLower(b));
     const intersection = new Set([...setA].filter((x) => setB.has(x)));
     const union = new Set([...setA, ...setB]);
     return union.size > 0 ? intersection.size / union.size : 0;

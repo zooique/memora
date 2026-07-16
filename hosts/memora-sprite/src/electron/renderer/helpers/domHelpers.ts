@@ -318,6 +318,30 @@ export function hasOtherOpenOverlays(): boolean {
   return document.querySelectorAll('.modal:not(.hidden), .command-palette:not(.hidden), .search-messages-modal:not(.hidden)').length > 0;
 }
 
+/**
+ * 锁定 body 滚动（打开 overlay 时调用）
+ *
+ * 替代散落在 searchMessagesManager / commandPaletteManager 的
+ * `document.body.style.overflow = 'hidden'` 模式（ADR-017 枝叶层 2 次提取）。
+ */
+export function lockBodyScroll(): void {
+  document.body.style.overflow = 'hidden';
+}
+
+/**
+ * 解锁 body 滚动（关闭/清理 overlay 时调用）
+ *
+ * 替代散落在 searchMessagesManager / commandPaletteManager 的
+ * `document.body.style.overflow = ''` 模式。
+ *
+ * @param force 是否强制解锁（cleanup 场景传 true，忽略其他 overlay 仍打开的情况）
+ */
+export function unlockBodyScroll(force: boolean = false): void {
+  if (force || !hasOtherOpenOverlays()) {
+    document.body.style.overflow = '';
+  }
+}
+
 // ─── 空状态工厂 ─────────────────────────────────────────
 
 /**
@@ -513,4 +537,29 @@ export function insertBeforeOrAppend(
   } else {
     parent.appendChild(el);
   }
+}
+
+// ─── Canvas 工具 ─────────────────────────────────────────
+
+/**
+ * 设置 Canvas 尺寸（含 DPR 高清适配）
+ *
+ * 替代散落在 partnerInsightsRenderer / dashboardPanelManager 的
+ * `canvas.width/height = w/h * dpr; canvas.style.width/height = '${w/h}px'` 4 行赋值模式
+ * （ADR-017 枝叶层 2 次提取原则）。
+ *
+ * 不含 ctx.scale 调用（调用方自行处理，因 scale 参数可能不同）。
+ *
+ * @param canvas 目标 canvas 元素
+ * @param width CSS 宽度（px）
+ * @param height CSS 高度（px）
+ * @returns DPR 值（调用方用于 ctx.scale(dpr, dpr)）
+ */
+export function setCanvasSize(canvas: HTMLCanvasElement, width: number, height: number): number {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  return dpr;
 }

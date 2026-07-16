@@ -12,7 +12,7 @@
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { validateSource } from '@/memory/sourceValidation.js';
-import { segmentText } from '@/utils/segmenter.js';
+import { segmentLower } from '@/utils/segmenter.js';
 import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
@@ -264,7 +264,7 @@ export class InMemoryStorage implements IMemoryStorage {
     }
 
     // 规范分词（与 recall.ts extractKeywords 共用 segmentText）
-    const tokens = segmentText(query).map((t) => t.toLowerCase());
+    const tokens = segmentLower(query);
 
     // 若分词后无有效 token，降级为按 score 返回
     if (tokens.length === 0) {

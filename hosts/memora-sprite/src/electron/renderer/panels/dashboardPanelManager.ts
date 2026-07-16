@@ -14,7 +14,7 @@
  * - 跨模块关注点（showToast）通过 host 回调注入
  */
 
-import { clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
+import { clearElement, formatTimeAgo, setCanvasSize } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
 import { getSourceColorClass } from '../helpers/sourceColor.js';
@@ -620,7 +620,6 @@ export class DashboardPanelManager {
     if (!this.growthCanvasEl) return;
 
     const canvas = this.growthCanvasEl;
-    const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const w = rect.width;
     // 面板隐藏时宽度为 0，跳过绘制避免 canvas.style.width 被设为 '0px' 导致永久空白
@@ -628,10 +627,7 @@ export class DashboardPanelManager {
     // 从 CSS 获取高度（由 .growth-canvas 类控制，避免硬编码）
     const computedHeight = parseInt(getComputedStyle(canvas).height) || 70;
     const h = computedHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    const dpr = setCanvasSize(canvas, w, h);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;

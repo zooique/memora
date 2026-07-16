@@ -22,7 +22,7 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
-import { clearElement, createEl, escapeHtml, formatClock, formatDateKey, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
+import { clearElement, createEl, escapeHtml, formatClock, formatDateKey, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
 // escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
 import { escapeRegExp } from '../../../shared/escapeRegExp.js';
@@ -194,7 +194,7 @@ export class SearchMessagesManager {
     this.inputEl.focus();
 
     // 阻止背景滚动
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
   }
 
   /**
@@ -221,9 +221,7 @@ export class SearchMessagesManager {
     }
 
     // 有条件恢复背景滚动——仅当没有其他浮层打开时才恢复（自身已隐藏，无需排除）
-    if (!hasOtherOpenOverlays()) {
-      document.body.style.overflow = '';
-    }
+    unlockBodyScroll();
 
     // 恢复焦点到打开前的触发元素
     if (this.previousFocus && typeof this.previousFocus.focus === 'function') {
@@ -459,7 +457,7 @@ export class SearchMessagesManager {
       this.debounceTimer = null;
     }
     if (this.isOpen) {
-      document.body.style.overflow = '';
+      unlockBodyScroll(true);
       this.isOpen = false;
     }
     this.resultClickCallback = null;

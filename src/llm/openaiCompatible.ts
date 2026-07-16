@@ -9,6 +9,7 @@ import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk, ToolCall } from '@/llm/types.js';
 import { llmError, networkError, configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
+import { mergeAbortSignals } from '@/llm/abortSignal.js';
 
 export interface OpenAICompatibleConfig {
   baseUrl: string;
@@ -90,19 +91,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
       );
     }
 
-    // 合并 AbortSignal：外部取消信号 + 超时信号
+    // 合并 AbortSignal：外部取消信号 + 超时信号（mergeAbortSignals 集中维护，ADR-017 枝叶层 2 次提取）
     // 确保用户取消和请求超时都能中断 fetch 和流读取
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(new DOMException('LLM 请求超时', 'TimeoutError')), timeoutMs);
-    const { signal: optsSignal } = opts;
-    const onOptsAbort = () => abortController.abort(optsSignal?.reason);
-    if (optsSignal) {
-      if (optsSignal.aborted) {
-        abortController.abort(optsSignal.reason);
-      } else {
-        optsSignal.addEventListener('abort', onOptsAbort, { once: true });
-      }
-    }
+    const abort = mergeAbortSignals(opts.signal, timeoutMs, 'LLM 请求超时');
 
     let response: Response;
     try {
@@ -113,11 +104,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
           Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: JSON.stringify(body),
-        signal: abortController.signal,
+        signal: abort.signal,
       });
     } catch (err) {
-      clearTimeout(timeoutId);
-      if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
+      abort.dispose();
       const e = toError(err);
       // 区分超时错误和网络错误
       if (e.name === 'AbortError' || e.name === 'TimeoutError') {
@@ -145,10 +135,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     // fetch 成功后保留 optsSignal 监听：用户在 SSE 流式阶段取消时，
-    // 仍需通过 onOptsAbort 触发 abortController.abort() 中断 reader.read()。
+    // 仍需通过 mergeAbortSignals 内部的 onOptsAbort 触发 abort 中断 reader.read()。
     // 注意：{ once: true } 仅在 optsSignal 自身 abort 时移除监听器；
-    // 正常完成或异常路径必须显式 removeEventListener，否则监听器常驻泄漏。
-    // 下方外层 try-finally 统一清理 timeoutId 与 optsSignal 监听器，覆盖所有抛错路径。
+    // 正常完成或异常路径必须显式 dispose()，否则监听器常驻泄漏。
+    // 下方外层 try-finally 统一调用 abort.dispose()，覆盖所有抛错路径。
 
     try {
       if (!response.ok) {
@@ -165,11 +155,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
       // fetch 成功且响应正常：清除请求级总超时
       // SSE 阶段由 chunk 级超时（FIRST_CHUNK_TIMEOUT_MS / INTER_CHUNK_TIMEOUT_MS）独立保护
       // 若保留总超时，长文生成（>timeoutMs）会被错误中断
-      clearTimeout(timeoutId);
+      abort.clearTimer();
 
       try {
-        // 将 abortController.signal 传入 SSE 解析器，使超时/取消能中断流读取
-        yield* this.parseSseStream(response.body, abortController.signal);
+        // 将 abort.signal 传入 SSE 解析器，使超时/取消能中断流读取
+        yield* this.parseSseStream(response.body, abort.signal);
       } catch (err) {
         // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
         await this.safeCancelBody(response);
@@ -187,8 +177,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
       }
     } finally {
       // 统一清理：覆盖 HTTP 错误、空 body、SSE 异常、正常完成所有路径
-      clearTimeout(timeoutId);
-      if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
+      abort.dispose();
     }
   }
 

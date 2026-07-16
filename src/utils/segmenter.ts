@@ -88,6 +88,20 @@ export function segmentText(text: string): string[] {
 }
 
 /**
+ * 分词后小写化（文本预处理快捷方法）
+ *
+ * 组合 segmentText + toLowerCase，消除 6 处散落的 `.map((t) => t.toLowerCase())` 模式
+ * （ADR-017 枝叶层 2 次提取原则）。
+ * 用于关键词匹配/召回场景的文本预处理（大小写不敏感匹配）。
+ *
+ * @param text 原文
+ * @returns 分词后的小写 token 数组
+ */
+export function segmentLower(text: string): string[] {
+  return segmentText(text).map((t) => t.toLowerCase());
+}
+
+/**
  * 中文停用词集合
  * 用于关键词提取时过滤无意义词汇（从 memory/types.ts 迁入，
  * 因为停用词是分词/关键词提取的关注点，而非记忆类型定义）

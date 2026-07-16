@@ -22,6 +22,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/toError.js';
 import { nowIso } from '@/utils/time.js';
+import { isPlainObject } from '@/utils/objects.js';
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -38,16 +39,6 @@ export interface ProjectEntry {
 }
 
 // ─── 类型守卫（QC-24，对不可信磁盘 JSON 运行时校验） ─────
-
-/**
- * 判断值是否为非数组对象（排除 null）
- *
- * @param value 待校验的值
- * @returns true 表示是普通对象
- */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * 判断值是否为 ProjectEntry（项目注册表条目）

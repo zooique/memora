@@ -14,7 +14,7 @@
  */
 
 import { setIcon } from '../helpers/icon.js';
-import { clearElement, createEl } from '../helpers/domHelpers.js';
+import { clearElement, createEl, setCanvasSize } from '../helpers/domHelpers.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
@@ -311,14 +311,10 @@ export class PartnerInsightsRenderer {
     }
 
     // Canvas 绘制
-    const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const w = rect.width;
     const h = 120;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    const dpr = setCanvasSize(canvas, w, h);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;

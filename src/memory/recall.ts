@@ -14,7 +14,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import { segmentText, STOPWORDS } from '@/utils/segmenter.js';
+import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 
@@ -52,7 +52,7 @@ export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
  */
 export function extractKeywords(input: string): string[] {
   // 复用 segmenter.ts 的精确分词（Intl.Segmenter ICU 词典切分）
-  const words = segmentText(input).map((w) => w.toLowerCase());
+  const words = segmentLower(input);
 
   // 补充英文词（segmentText 可能遗漏连续英文大写缩写，如 APIKey → "apikey" 整词）
   const englishWords = input.match(/[a-z]{2,}/gi) || [];
