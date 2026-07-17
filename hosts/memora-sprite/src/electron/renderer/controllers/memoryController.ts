@@ -568,9 +568,8 @@ export function createMemoryController(uiManager: UIManager) {
           return;
         }
         uiManager.showToast('关系已更新', 'success');
-        // 刷新图谱数据
-        const data = await window.electronAPI.getRelationGraph();
-        uiManager.loadGraphData(data);
+        // F7：复用 refreshGraphIfVisible，消除三处重复的 getRelationGraph + loadGraphData
+        void refreshGraphIfVisible();
       } catch (error) {
         handleIpcError('onRelationEdit', error, '更新关系失败');
       }
@@ -586,9 +585,8 @@ export function createMemoryController(uiManager: UIManager) {
           return;
         }
         uiManager.showToast('关系已删除', 'success');
-        // 刷新图谱数据
-        const data = await window.electronAPI.getRelationGraph();
-        uiManager.loadGraphData(data);
+        // F7：复用 refreshGraphIfVisible，消除三处重复的 getRelationGraph + loadGraphData
+        void refreshGraphIfVisible();
       } catch (error) {
         handleIpcError('onRelationDelete', error, '删除关系失败');
       }
@@ -604,9 +602,8 @@ export function createMemoryController(uiManager: UIManager) {
           return;
         }
         uiManager.showToast('关系已创建', 'success');
-        // 刷新图谱数据
-        const data = await window.electronAPI.getRelationGraph();
-        uiManager.loadGraphData(data);
+        // F7：复用 refreshGraphIfVisible，消除三处重复的 getRelationGraph + loadGraphData
+        void refreshGraphIfVisible();
       } catch (error) {
         handleIpcError('onRelationCreate', error, '创建关系失败');
       }
