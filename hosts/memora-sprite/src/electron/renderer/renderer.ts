@@ -202,12 +202,17 @@ async function bootstrapRenderer(): Promise<void> {
   initIpcListeners(State.uiManager, {
     // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
     // 事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
+    // pulseCounter 的 DOM ID 对应 index.html 中仪表盘统计卡片（dashboard-total-memories / dashboard-total-insights）
+    // 用户停留在记忆面板时同步触发列表防抖刷新，让新记忆即时可见
     onMemoryNoticed: () => {
-      memoryController.pulseCounter('memory-count');
+      memoryController.pulseCounter('dashboard-total-memories');
       void memoryController.loadDashboardDebounced();
+      if (State.uiManager.getCurrentPanel() === 'memories') {
+        memoryController.loadMemoryListDebounced();
+      }
     },
     onInsightGained: () => {
-      memoryController.pulseCounter('insight-count');
+      memoryController.pulseCounter('dashboard-total-insights');
       void memoryController.loadDashboardDebounced();
     },
     // Agent 就绪：加载初始数据 + 切换到对话面板

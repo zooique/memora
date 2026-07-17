@@ -830,6 +830,32 @@ export function createMemoryController(uiManager: UIManager) {
     }, DASHBOARD_DEBOUNCE_MS);
   }
 
+  /**
+   * 记忆列表防抖定时器句柄
+   *
+   * memoryNoticed 事件密集触发时（一次对话可能产生 5-10 条记忆），
+   * 避免每次都发起 listMemories IPC + 重渲染列表，300ms 内的多次调用合并为一次。
+   * 与 dashboardDebounceTimer 对称（枝叶层 2 次提取原则触发）。
+   */
+  let memoryListDebounceTimer: number | null = null;
+
+  /**
+   * 防抖版 loadMemoryList
+   *
+   * 使用场景：用户停留在记忆面板时，memoryNoticed 事件触发自动刷新。
+   * 300ms 内的多次 memoryNoticed 合并为一次列表加载，避免 IPC + DOM 频繁刷新。
+   * 仅在当前面板为 memories 时调用（由调用方判断）。
+   */
+  function loadMemoryListDebounced(): void {
+    if (memoryListDebounceTimer !== null) {
+      window.clearTimeout(memoryListDebounceTimer);
+    }
+    memoryListDebounceTimer = window.setTimeout(async () => {
+      memoryListDebounceTimer = null;
+      await loadMemoryList();
+    }, DASHBOARD_DEBOUNCE_MS);
+  }
+
   return {
     setupMemoryPanel,
     loadMemoryList,
@@ -841,6 +867,8 @@ export function createMemoryController(uiManager: UIManager) {
     loadHealthDashboard,
     /** 防抖版 loadDashboard（事件密集触发时使用） */
     loadDashboardDebounced,
+    /** 防抖版 loadMemoryList（用户停留在记忆面板时，memoryNoticed 事件触发自动刷新） */
+    loadMemoryListDebounced,
     /** 仪表盘计数 +1 并触发脉冲动画（委托 DashboardPanelManager） */
     pulseCounter: (id: string) => uiManager.pulseCounter(id),
     /**

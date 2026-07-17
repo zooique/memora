@@ -198,8 +198,8 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   });
 
   // 16 个简单转发事件：逐个类型安全注册
-  // 记忆新增 → 仪表盘计数 +1
-  forwardSimpleEvent(deps, 'memoryNoticed', () => ({}));
+  // 记忆新增 → 仪表盘计数 +1（携带 source/name 供渲染层未来展示"刚记住的内容"）
+  forwardSimpleEvent(deps, 'memoryNoticed', (e) => ({ source: e.source, name: e.name }));
   // 洞察提取 → 仪表盘计数 +1
   forwardSimpleEvent(deps, 'insightGained', () => ({}));
   // 记忆冲突检测 → ProactiveBanner 通知用户
