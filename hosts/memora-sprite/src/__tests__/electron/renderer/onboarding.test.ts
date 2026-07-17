@@ -4,16 +4,18 @@
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - shouldShowOnboarding：未见标记返回 true / 已见返回 false
+ * - shouldShowOnboarding：未见标记返回 true / 已见返回 false / 已有 Provider 返回 false
  * - showOnboardingDialog：元素缺失静默退出 / 显示弹窗 / 标记已见
- * - 关闭路径：完成按钮 / Esc 键 / 背景点击
- * - 关闭幂等：重复点击不重复 markSeen / 不重复触发
- * - 背景点击非 modal 不关闭
+ * - 关闭路径：完成按钮 / Esc 键 / 背景点击 / 非背景点击不关闭
+ * - 关闭幂等：重复点击不重复 markSeen
+ * - 通用表单校验：必填字段为空时标记错误
+ * - 测试连接按钮：成功/失败路径
+ * - 保存流程：成功前进步骤 / 失败显示错误
  *
  * Mock 策略：
  * - JSDOM 提供真实 DOM API（classList/addEventListener/removeEventListener/localStorage）
  * - localStorage 由 JSDOM 默认提供，测试间通过 beforeEach 清理
- * - window.electronAPI 由 vi.mock 模拟（persistStep 调用 updateConfig）
+ * - window.electronAPI 由 vi.mock 模拟（saveLlmProvider/testLlmConfig/updateConfigBatch）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { OnboardingManager } from '../../../electron/renderer/components/onboarding.js';
@@ -22,20 +24,20 @@ import { OnboardingManager } from '../../../electron/renderer/components/onboard
 
 beforeEach(() => {
   localStorage.clear();
-  // 模拟 window.electronAPI（persistStep + saveLlmProvider + updateConfigBatch 需要）
-  (window as Window & { electronAPI?: { updateConfig: typeof vi.fn; saveLlmProvider: typeof vi.fn; updateConfigBatch: typeof vi.fn } }).electronAPI = {
-    updateConfig: vi.fn().mockResolvedValue(undefined),
+  // 模拟 window.electronAPI（saveLlmProvider + testLlmConfig + updateConfigBatch 需要）
+  (window as Window & { electronAPI?: { saveLlmProvider: typeof vi.fn; testLlmConfig: typeof vi.fn; updateConfigBatch: typeof vi.fn } }).electronAPI = {
     saveLlmProvider: vi.fn().mockResolvedValue({ success: true }),
+    testLlmConfig: vi.fn().mockResolvedValue({ success: true, error: null }),
     // AUDIT-5-4：bindDone 完成时持久化使用统计选择（fire-and-forget）
     updateConfigBatch: vi.fn().mockResolvedValue(undefined),
   };
 });
 
-// ─── 测试 DOM（多步骤引导结构）─────────────────────────
+// ─── 测试 DOM（多步骤引导结构 - 通用表单版）─────────────
 
 /** 多步骤引导弹窗完整 DOM：
  *  步骤 1：欢迎 → 下一步/跳过
- *  步骤 2：API Key 配置 → 保存/上一步/跳过
+ *  步骤 2：API 配置（通用表单）→ 测试连接/保存/上一步/跳过
  *  步骤 3：隐私统计选择 → 下一步/上一步
  *  步骤 4：完成 → 开始使用按钮
  */
@@ -57,20 +59,22 @@ const ONBOARDING_HTML = `
       <button class="onboarding-next" data-next="2">下一步</button>
       <button class="onboarding-skip" data-skip="4">跳过</button>
     </div>
-    <!-- 步骤 2：API Key -->
+    <!-- 步骤 2：API 配置（通用表单） -->
     <div class="onboarding-step-content" data-step="2">
-      <select id="onboarding-provider-type">
-        <option value="openai">OpenAI</option>
-        <option value="deepseek">DeepSeek</option>
-      </select>
+      <input id="onboarding-provider" type="text" placeholder="如 deepseek" />
+      <p id="onboarding-provider-error" class="onboarding-error hidden" role="alert"></p>
+      <input id="onboarding-model" type="text" placeholder="如 deepseek-chat" />
+      <p id="onboarding-model-error" class="onboarding-error hidden" role="alert"></p>
+      <input id="onboarding-base-url" type="text" placeholder="https://api.deepseek.com/v1" />
+      <p id="onboarding-base-url-error" class="onboarding-error hidden" role="alert"></p>
       <input id="onboarding-api-key" type="password" placeholder="sk-..." />
-      <span id="onboarding-api-error" class="hidden"></span>
-      <a id="onboarding-signup-link" href="#">获取 API Key →</a>
+      <p id="onboarding-api-key-error" class="onboarding-error hidden" role="alert"></p>
+      <button id="btn-onboarding-test" type="button">测试连接</button>
       <button id="btn-onboarding-save-key">保存并继续</button>
       <button class="onboarding-prev" data-prev="1">上一步</button>
       <button class="onboarding-skip" data-skip="4">跳过</button>
     </div>
-    <!-- 步骤 3：隐私统计选择（AUDIT-5-4） -->
+    <!-- 步骤 3：隐私统计选择 -->
     <div class="onboarding-step-content" data-step="3">
       <label>
         <input type="checkbox" id="onboarding-usage-stats" />
@@ -117,6 +121,11 @@ describe('shouldShowOnboarding', () => {
     localStorage.setItem('memora-onboarding-seen', '1');
     const manager = createManager();
     expect(manager.shouldShowOnboarding(false)).toBe(false);
+  });
+
+  it('已有 Provider 配置时应返回 false（已配置用户）', () => {
+    const manager = createManager();
+    expect(manager.shouldShowOnboarding(true)).toBe(false);
   });
 });
 
@@ -221,5 +230,188 @@ describe('showOnboardingDialog · 关闭幂等', () => {
     // 再按 Esc（应被 closed 标志拦截）
     pressEscape();
     expect(modal.classList.contains('hidden')).toBe(true);
+  });
+});
+
+// ─── 步骤 2：通用表单校验 + 保存流程 ────────────────────
+
+describe('步骤 2：通用表单校验', () => {
+  it('保存时必填字段为空应标记错误且不调用 saveLlmProvider', async () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    // 切换到步骤 2
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+
+    // 所有字段为空，点击保存
+    const saveBtn = document.getElementById('btn-onboarding-save-key') as HTMLButtonElement;
+    saveBtn.click();
+    // 等待微任务（async click handler）
+    await Promise.resolve();
+
+    const electronAPI = (window as Window & { electronAPI: { saveLlmProvider: ReturnType<typeof vi.fn> } }).electronAPI;
+    expect(electronAPI.saveLlmProvider).not.toHaveBeenCalled();
+    // 至少 provider 字段应被标记错误
+    const providerError = document.getElementById('onboarding-provider-error')!;
+    expect(providerError.classList.contains('hidden')).toBe(false);
+  });
+
+  it('保存时填写完整应调用 saveLlmProvider 并前进到步骤 3', async () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    // 切换到步骤 2
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+
+    // 填写所有必填字段
+    (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
+    (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-test';
+
+    const saveBtn = document.getElementById('btn-onboarding-save-key') as HTMLButtonElement;
+    saveBtn.click();
+    // 等待 async handler 完成
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const electronAPI = (window as Window & { electronAPI: { saveLlmProvider: ReturnType<typeof vi.fn> } }).electronAPI;
+    expect(electronAPI.saveLlmProvider).toHaveBeenCalledWith('default', {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'sk-test',
+      temperature: 0.7,
+    });
+
+    // 应前进到步骤 3（步骤 2 content 失活，步骤 3 content 激活）
+    const step2 = document.querySelector('[data-step="2"]') as HTMLElement;
+    const step3 = document.querySelector('[data-step="3"]') as HTMLElement;
+    expect(step2.classList.contains('active')).toBe(false);
+    expect(step3.classList.contains('active')).toBe(true);
+  });
+
+  it('保存失败应显示错误且不前进步骤', async () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    // mock saveLlmProvider 返回失败
+    const electronAPI = (window as Window & { electronAPI: { saveLlmProvider: ReturnType<typeof vi.fn> } }).electronAPI;
+    electronAPI.saveLlmProvider.mockResolvedValueOnce({ success: false, error: 'API Key 无效' });
+
+    // 切换到步骤 2 并填写
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+    (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-wrong';
+
+    const saveBtn = document.getElementById('btn-onboarding-save-key') as HTMLButtonElement;
+    saveBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 应显示错误在 apiKey 错误区
+    const apiKeyError = document.getElementById('onboarding-api-key-error')!;
+    expect(apiKeyError.classList.contains('hidden')).toBe(false);
+    // 步骤 2 应仍为激活（未前进）
+    const step2 = document.querySelector('[data-step="2"]') as HTMLElement;
+    expect(step2.classList.contains('active')).toBe(true);
+  });
+});
+
+// ─── 步骤 2：测试连接按钮 ────────────────────────────────
+
+describe('步骤 2：测试连接按钮', () => {
+  it('测试成功应显示成功提示', async () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    // 切换到步骤 2
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+
+    // 填写完整字段
+    (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-test';
+
+    const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;
+    testBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const electronAPI = (window as Window & { electronAPI: { testLlmConfig: ReturnType<typeof vi.fn> } }).electronAPI;
+    expect(electronAPI.testLlmConfig).toHaveBeenCalledWith({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: '',
+      apiKey: 'sk-test',
+    });
+
+    // 应显示成功提示
+    const apiKeyError = document.getElementById('onboarding-api-key-error')!;
+    expect(apiKeyError.classList.contains('hidden')).toBe(false);
+    expect(apiKeyError.textContent).toContain('连接成功');
+  });
+
+  it('测试失败应显示错误提示（错误消息经 classifyLlmError 映射）', async () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    const electronAPI = (window as Window & { electronAPI: { testLlmConfig: ReturnType<typeof vi.fn> } }).electronAPI;
+    // 模拟 401 错误（应被 classifyLlmError 映射为"API Key 无效"）
+    electronAPI.testLlmConfig.mockResolvedValueOnce({ success: false, error: 'API Key 无效，请检查是否复制完整（注意前后不要有空格）' });
+
+    // 切换到步骤 2 并填写
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+    (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-wrong';
+
+    const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;
+    testBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const apiKeyError = document.getElementById('onboarding-api-key-error')!;
+    expect(apiKeyError.classList.contains('hidden')).toBe(false);
+    expect(apiKeyError.textContent).toContain('API Key 无效');
+  });
+
+  it('必填字段为空时点击测试应先校验且不调用 testLlmConfig', async () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    // 切换到步骤 2
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+
+    // 所有字段为空，点击测试
+    const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;
+    testBtn.click();
+    await Promise.resolve();
+
+    const electronAPI = (window as Window & { electronAPI: { testLlmConfig: ReturnType<typeof vi.fn> } }).electronAPI;
+    expect(electronAPI.testLlmConfig).not.toHaveBeenCalled();
+  });
+});
+
+// ─── 跳过路径 ────────────────────────────────────────────
+
+describe('跳过路径', () => {
+  it('步骤 2 点击跳过应设置 skippedApiKey=true 并跳到步骤 4', () => {
+    const manager = createManager();
+    manager.showOnboardingDialog();
+    // 切换到步骤 2
+    const nextBtn = document.querySelector('.onboarding-next[data-next="2"]') as HTMLButtonElement;
+    nextBtn.click();
+    // 点击跳过
+    const skipBtn = document.querySelector('.onboarding-skip[data-skip="4"]') as HTMLButtonElement;
+    skipBtn.click();
+
+    // 应跳到步骤 4
+    const step4 = document.querySelector('[data-step="4"]') as HTMLElement;
+    expect(step4.classList.contains('active')).toBe(true);
+    // 完成消息应是"稍后配置"版本
+    const doneMsg = document.getElementById('onboarding-done-message')!;
+    expect(doneMsg.textContent).toContain('稍后');
   });
 });

@@ -50,8 +50,9 @@ export function createProviderFromConfig(
 
   // 国产模型均走 OpenAI 兼容协议
   const preset = presets[provider];
-  const resolvedBaseUrl = (baseUrl ?? preset?.baseUrl)?.replace(/\/chat\/completions\/?$/, '');
-  const resolvedModel = model ?? preset?.defaultModel;
+  // 使用 || 而非 ??：空字符串视为未配置，回退到 preset 默认值
+  const resolvedBaseUrl = (baseUrl || preset?.baseUrl)?.replace(/\/chat\/completions\/?$/, '');
+  const resolvedModel = model || preset?.defaultModel;
 
   if (!resolvedBaseUrl) {
     throw configError(

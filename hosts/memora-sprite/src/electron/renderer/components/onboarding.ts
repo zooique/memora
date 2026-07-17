@@ -3,55 +3,23 @@
  *
  * 职责：
  * - 检测是否需要显示引导（未配置 Provider 的新用户）
- * - 管理四步引导向导：欢迎 → API Key 配置 → 隐私统计选择 → 开始使用
- * - 为每个预设 Provider 提供注册链接
- * - 保存 API Key 配置（通过 updateConfig IPC）
+ * - 管理四步引导向导：欢迎 → API 配置 → 隐私统计选择 → 开始使用
+ * - 通用表单：用户手填 provider/model/baseUrl/apiKey 四个字段（无内置预设）
+ * - 测试连接：保存前可测试配置是否可用（错误消息经 classifyLlmError 映射）
  * - 持久化使用统计选择（通过 config-update-batch IPC）
  *
  * 设计原则：
  * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage + IPC 操作
  * - 已配置 Provider 的用户跳过引导（检查 provider 列表）
- * - 支持跳过 API Key 步骤（降级路径)
+ * - 支持跳过 API 配置步骤（降级路径）
+ * - 不内置 Provider 预设：模型更迭速度快，预设易滞后，改为用户自填所有字段
  */
 import { reportError } from '../helpers/errorHelpers.js';
 import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
 import { safeSet } from '../helpers/safeStorage.js';
-
-// ─── Provider 注册链接映射 ──────────────────────────────
-
-/** 常用 Provider 的注册/获取 API Key 页面链接 */
-const PROVIDER_SIGNUP_URLS: Record<string, string> = {
-  openai: 'https://platform.openai.com/api-keys',
-  deepseek: 'https://platform.deepseek.com/api_keys',
-  anthropic: 'https://console.anthropic.com/keys',
-  dashscope: 'https://dashscope.console.aliyun.com/apiKey',
-  zhipu: 'https://open.bigmodel.cn/usercenter/apikeys',
-  moonshot: 'https://platform.moonshot.cn/console/api-keys',
-  siliconflow: 'https://cloud.siliconflow.cn/account/ak',
-};
-
-/** Provider 默认模型映射（自动填充，减少用户配置负担） */
-const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
-  openai: 'gpt-4o',
-  deepseek: 'deepseek-chat',
-  anthropic: 'claude-sonnet-4-20250514',
-  dashscope: 'qwen-plus',
-  zhipu: 'glm-4',
-  moonshot: 'moonshot-v1-8k',
-  siliconflow: 'deepseek-ai/DeepSeek-V3',
-};
-
-/** Provider 默认 Base URL 映射 */
-const PROVIDER_BASE_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  dashscope: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  moonshot: 'https://api.moonshot.cn/v1',
-  siliconflow: 'https://api.siliconflow.cn/v1',
-};
+// 跨进程 LLM 错误分类器（onboarding + minimalHandlers 共用）
+import { classifyLlmError } from '../../../shared/llmErrorClassifier.js';
 
 // ─── localStorage 键 ────────────────────────────────────
 
@@ -63,7 +31,7 @@ const ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
 /**
  * 多步骤引导管理器
  *
- * 独立管理四步引导向导的显示、步骤切换、API Key 保存和进度持久化。
+ * 独立管理四步引导向导的显示、步骤切换、API 配置保存和进度持久化。
  * UIManager 通过组合持有。
  */
 export class OnboardingManager {
@@ -71,7 +39,7 @@ export class OnboardingManager {
   private currentStep = 1;
   /** 是否已关闭（防止重复关闭） */
   private closed = false;
-  /** 用户是否已跳过 API Key 配置 */
+  /** 用户是否已跳过 API 配置 */
   private skippedApiKey = false;
   /** 当前关闭处理的 cleanup 函数（ESC/遮罩/完成三路径关闭后统一清理监听器，UX-0712-8） */
   private currentCleanup: (() => void) | null = null;
@@ -96,7 +64,7 @@ export class OnboardingManager {
   /**
    * 显示多步骤引导向导
    *
-   * 绑定步骤导航、API Key 保存、完成收尾等事件。
+   * 绑定步骤导航、API 配置保存、测试连接、完成收尾等事件。
    */
   showOnboardingDialog(): void {
     const modal = document.getElementById('onboarding-modal');
@@ -110,16 +78,14 @@ export class OnboardingManager {
     this.bindClose(modal);
     // 绑定步骤导航
     this.bindStepNavigation(modal);
-    // 绑定 API Key 保存
+    // 绑定 API 配置保存
     this.bindApiKeySave(modal);
+    // 绑定测试连接按钮
+    this.bindTestConnection(modal);
     // 绑定隐私统计选择（AUDIT-5-4）
     this.bindPrivacyChoice(modal);
     // 绑定完成按钮
     this.bindDone(modal);
-    // 绑定 Provider 选择变化（更新注册链接）
-    this.bindProviderSelect(modal);
-    // 初始化注册链接
-    this.updateSignupLink(modal);
 
     // 显示第一步
     this.showStep(modal, 1);
@@ -244,10 +210,126 @@ export class OnboardingManager {
     }
   }
 
-  // ─── API Key 保存 ──────────────────────────────────
+  // ─── API 配置表单读取 + 校验 ──────────────────────
 
   /**
-   * 绑定 API Key 保存按钮事件
+   * Onboarding 表单字段 id 列表（用于 clearFieldErrors 批量清空）
+   */
+  private static readonly FORM_FIELD_IDS = [
+    'onboarding-provider',
+    'onboarding-model',
+    'onboarding-base-url',
+    'onboarding-api-key',
+  ] as const;
+
+  /**
+   * 从表单读取 API 配置
+   *
+   * @param modal 引导弹窗根元素
+   * @returns 表单数据（未校验，可能含空字符串）
+   */
+  private readApiForm(modal: HTMLElement): {
+    provider: string;
+    model: string;
+    baseUrl: string;
+    apiKey: string;
+  } {
+    // 引导弹窗模板静态元素，modal 已确认存在，用 ! 断言正视契约
+    const provider = (modal.querySelector('#onboarding-provider') as HTMLInputElement).value.trim();
+    const model = (modal.querySelector('#onboarding-model') as HTMLInputElement).value.trim();
+    const baseUrl = (modal.querySelector('#onboarding-base-url') as HTMLInputElement).value.trim();
+    const apiKey = (modal.querySelector('#onboarding-api-key') as HTMLInputElement).value.trim();
+    return { provider, model, baseUrl, apiKey };
+  }
+
+  /**
+   * 校验 API 配置表单：必填字段非空
+   *
+   * 校验规则：provider / model / apiKey 必填，baseUrl 可空（部分 Provider 允许）
+   *
+   * @param data 表单数据
+   * @returns true 通过校验 / false 校验失败（已标记错误字段）
+   */
+  private validateApiForm(data: { provider: string; model: string; baseUrl: string; apiKey: string }): boolean {
+    // 清空上次的错误状态
+    clearFieldErrors([...OnboardingManager.FORM_FIELD_IDS]);
+
+    // 逐字段校验：必填字段为空时标记错误
+    let firstErrorField: HTMLElement | null = null;
+    if (!data.provider) {
+      firstErrorField = showFieldError('onboarding-provider', '请填写提供商');
+    }
+    if (!data.model) {
+      firstErrorField ??= showFieldError('onboarding-model', '请填写模型');
+    }
+    if (!data.apiKey) {
+      firstErrorField ??= showFieldError('onboarding-api-key', '请填写 API Key');
+    }
+    if (firstErrorField) {
+      firstErrorField.focus();
+      return false;
+    }
+    return true;
+  }
+
+  // ─── 测试连接 ──────────────────────────────────────
+
+  /**
+   * 绑定测试连接按钮事件
+   *
+   * 复用 LLM_CONFIG_TEST IPC 通道，错误消息经 classifyLlmError 映射为中文友好提示。
+   * 测试期间禁用按钮防止重复点击。
+   */
+  private bindTestConnection(modal: HTMLElement): void {
+    const testBtn = modal.querySelector('#btn-onboarding-test');
+    if (!(testBtn instanceof HTMLButtonElement)) {
+      reportError('Onboarding btn-onboarding-test 元素缺失', new Error('HTMLButtonElement 校验失败'));
+      return;
+    }
+
+    testBtn.addEventListener('click', async () => {
+      const data = this.readApiForm(modal);
+      // 测试连接前先校验必填字段（与保存一致）
+      if (!this.validateApiForm(data)) return;
+
+      // 禁用按钮 + 显示测试中状态
+      const originalText = testBtn.textContent;
+      testBtn.disabled = true;
+      testBtn.textContent = '测试中...';
+
+      try {
+        const result = await window.electronAPI.testLlmConfig({
+          provider: data.provider,
+          model: data.model,
+          baseUrl: data.baseUrl,
+          apiKey: data.apiKey,
+        });
+
+        if (result.success) {
+          // 成功提示显示在 apiKey 错误区（复用现有 DOM 容器，避免新增元素）
+          showFieldError('onboarding-api-key', '✓ 连接成功');
+        } else {
+          // 失败：错误消息已是 classifyLlmError 映射后的友好提示
+          showFieldError('onboarding-api-key', result.error ?? '连接失败');
+        }
+      } catch (err) {
+        // 异常兜底：未知错误也过分类器（可能匹配到通用网络错误）
+        const rawMsg = err instanceof Error ? err.message : '未知错误';
+        showFieldError('onboarding-api-key', classifyLlmError(rawMsg));
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = originalText;
+      }
+    });
+  }
+
+  // ─── API 配置保存 ──────────────────────────────────
+
+  /**
+   * 绑定 API 配置保存按钮事件
+   *
+   * 保存成功后前进到步骤 3；失败时显示错误（错误消息已是友好提示）。
+   * 首次添加 Provider 时 alias 固定为 'default'，用户可在设置面板中后续添加更多。
    */
   private bindApiKeySave(modal: HTMLElement): void {
     const saveBtn = modal.querySelector('#btn-onboarding-save-key');
@@ -257,38 +339,25 @@ export class OnboardingManager {
     }
 
     saveBtn.addEventListener('click', async () => {
-      // 引导弹窗模板静态元素，modal 已确认存在，用 ! 断言正视契约
-      const providerSelect = modal.querySelector('#onboarding-provider-type')! as HTMLSelectElement;
-      const apiKeyInput = modal.querySelector('#onboarding-api-key')! as HTMLInputElement;
+      const data = this.readApiForm(modal);
+      // 清空上次的错误状态
+      clearFieldErrors([...OnboardingManager.FORM_FIELD_IDS]);
 
-      const providerType = providerSelect.value;
-      const apiKey = apiKeyInput.value.trim();
-
-      // 清空上次的错误状态（aria-invalid + 错误文本）
-      clearFieldErrors(['onboarding-api-key']);
-
-      // 校验：空值通过公共 showFieldError 标记 aria-invalid + 显示错误文本
-      if (!apiKey) {
-        showFieldError('onboarding-api-key', '请输入 API Key');
-        return;
-      }
+      // 校验必填字段
+      if (!this.validateApiForm(data)) return;
 
       // 禁用按钮，显示加载状态
       saveBtn.disabled = true;
       saveBtn.textContent = '保存中...';
 
       try {
-        // 自动填充默认值和模型
-        const alias = providerType === 'custom' ? 'custom' : providerType;
-        const model = PROVIDER_DEFAULT_MODELS[providerType] || '';
-        const baseUrl = PROVIDER_BASE_URLS[providerType] || '';
-
-        // 通过 IPC 保存 Provider（使用 saveLlmProvider API）
-        const result = await window.electronAPI.saveLlmProvider(alias, {
-          provider: providerType,
-          model,
-          baseUrl,
-          apiKey,
+        // 首次配置：alias 固定为 'default'，作为用户的首个 Provider
+        // saveLlmProvider 首次添加会自动设为 active，触发 reinitAgent
+        const result = await window.electronAPI.saveLlmProvider('default', {
+          provider: data.provider,
+          model: data.model,
+          baseUrl: data.baseUrl,
+          apiKey: data.apiKey,
           temperature: 0.7,
         });
 
@@ -300,56 +369,21 @@ export class OnboardingManager {
         // 前进到步骤 3
         this.showStep(modal, 3);
       } catch (err) {
-        // 保存失败通过公共 showFieldError 显示错误（含 aria-invalid 语义）
-        showFieldError('onboarding-api-key', `保存失败：${err instanceof Error ? err.message : '未知错误'}`);
+        // 保存失败：错误消息已是 classifyLlmError 映射后的友好提示
+        // 但 saveLlmProvider 返回的 error 可能是 reinit 失败的原始消息，再过一次分类器
+        const rawMsg = err instanceof Error ? err.message : '未知错误';
+        showFieldError('onboarding-api-key', classifyLlmError(rawMsg));
         saveBtn.disabled = false;
         saveBtn.textContent = '保存并继续';
       }
     });
 
-    // Enter 键提交（复用上面已校验的 apiKeyInput，这里用 ! 断言）
-    const apiKeyInputEnter = modal.querySelector('#onboarding-api-key')! as HTMLInputElement;
-    apiKeyInputEnter.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Enter') saveBtn.click();
-    });
-  }
-
-  // ─── Provider 选择 ─────────────────────────────────
-
-  /**
-   * 绑定 Provider 下拉选择变化事件
-   *
-   * 切换 Provider 时更新注册链接和输入框提示。
-   */
-  private bindProviderSelect(modal: HTMLElement): void {
-    const select = modal.querySelector('#onboarding-provider-type');
-    if (!(select instanceof HTMLSelectElement)) {
-      reportError('Onboarding onboarding-provider-type 元素缺失', new Error('HTMLSelectElement 校验失败'));
-      return;
-    }
-
-    select.addEventListener('change', () => {
-      this.updateSignupLink(modal);
-    });
-  }
-
-  /**
-   * 更新注册链接的 href 和文本
-   */
-  private updateSignupLink(modal: HTMLElement): void {
-    // 引导弹窗模板静态元素，modal 已确认存在，用 ! 断言正视契约
-    const select = modal.querySelector('#onboarding-provider-type')! as HTMLSelectElement;
-    const link = modal.querySelector('#onboarding-signup-link')! as HTMLAnchorElement;
-
-    const providerType = select.value;
-    const url = PROVIDER_SIGNUP_URLS[providerType];
-
-    if (url) {
-      link.href = url;
-      link.textContent = '获取 API Key →';
-      link.classList.remove('hidden');
-    } else {
-      link.classList.add('hidden');
+    // Enter 键提交（在 apiKey 输入框内按 Enter 触发保存）
+    const apiKeyInput = modal.querySelector('#onboarding-api-key');
+    if (apiKeyInput instanceof HTMLInputElement) {
+      apiKeyInput.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') saveBtn.click();
+      });
     }
   }
 

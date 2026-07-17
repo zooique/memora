@@ -1601,41 +1601,37 @@
         </div>
       </div>
 
-      <!-- 步骤 2：API Key 配置 -->
+      <!-- 步骤 2：API 配置（通用表单，用户手填所有字段） -->
       <div class="onboarding-step-content" data-step="2">
         <h3>配置 AI 服务</h3>
-        <p class="onboarding-intro">选择 AI 服务商并输入 API Key，即可开始使用。</p>
+        <p class="onboarding-intro">填写任意 OpenAI 兼容协议的 AI 服务信息。提供商字段为厂商标识（如 deepseek/openai），模型为具体模型名（如 deepseek-chat）。</p>
 
-        <!-- 常用 Provider 列表 + 注册链接 -->
-        <div class="onboarding-provider-list" id="onboarding-provider-list">
-          <!-- 动态渲染 -->
-        </div>
-
-        <!-- 手动输入 API Key -->
         <div class="onboarding-api-form">
           <div class="settings-row">
-            <label for="onboarding-provider-type">服务商</label>
-            <select id="onboarding-provider-type">
-              <option value="openai">OpenAI</option>
-              <option value="deepseek">DeepSeek（推荐）</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="dashscope">阿里通义千问</option>
-              <option value="zhipu">智谱 GLM</option>
-              <option value="moonshot">Moonshot</option>
-              <option value="siliconflow">SiliconFlow</option>
-              <option value="custom">自定义</option>
-            </select>
+            <label for="onboarding-provider">提供商（provider）</label>
+            <input type="text" id="onboarding-provider" placeholder="如 deepseek / openai / anthropic" autocomplete="off" aria-required="true" aria-describedby="onboarding-provider-error" />
+            <p id="onboarding-provider-error" class="onboarding-error hidden" role="alert"></p>
+          </div>
+          <div class="settings-row">
+            <label for="onboarding-model">模型（model）</label>
+            <input type="text" id="onboarding-model" placeholder="如 deepseek-chat / gpt-4o / claude-sonnet-4-20250514" autocomplete="off" aria-required="true" aria-describedby="onboarding-model-error" />
+            <p id="onboarding-model-error" class="onboarding-error hidden" role="alert"></p>
+          </div>
+          <div class="settings-row">
+            <label for="onboarding-base-url">API 地址（baseUrl）</label>
+            <input type="text" id="onboarding-base-url" placeholder="如 https://api.deepseek.com/v1" autocomplete="off" aria-describedby="onboarding-base-url-error" />
+            <p id="onboarding-base-url-error" class="onboarding-error hidden" role="alert"></p>
           </div>
           <div class="settings-row">
             <label for="onboarding-api-key">API Key</label>
-            <input type="password" id="onboarding-api-key" placeholder="粘贴你的 API Key" autocomplete="off" aria-describedby="onboarding-api-key-error" />
-            <a class="onboarding-signup-link" id="onboarding-signup-link" href="#" target="_blank">获取 API Key →</a>
+            <input type="password" id="onboarding-api-key" placeholder="粘贴你的 API Key" autocomplete="off" aria-required="true" aria-describedby="onboarding-api-key-error" />
+            <p id="onboarding-api-key-error" class="onboarding-error hidden" role="alert"></p>
           </div>
-          <div id="onboarding-api-key-error" class="onboarding-error hidden" role="alert"></div>
         </div>
 
         <div class="modal-footer">
           <button class="btn-secondary onboarding-prev" data-prev="1">上一步</button>
+          <button class="btn-secondary" id="btn-onboarding-test" type="button">测试连接</button>
           <button class="btn-primary onboarding-next" data-next="3" id="btn-onboarding-save-key">保存并继续</button>
           <button class="btn-text onboarding-skip" data-skip="4">跳过，稍后配置</button>
         </div>

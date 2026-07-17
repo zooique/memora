@@ -64,12 +64,11 @@ export interface WebElectronAPI {
   onAgentReady: (cb: () => void) => void;
   removeAgentReadyListener: () => void;
 
-  // LLM 配置
+  // LLM 配置（注：已移除 presets 字段——UI 改为通用表单，决策见 A4）
   getLlmConfig: () => Promise<{
     configured: boolean;
     config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature: number } | null;
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
-    presets: Record<string, { provider: string; model: string; baseUrl: string }>;
   }>;
   saveLlmConfig: (llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number }, embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string }) => Promise<{ success: boolean; error: string | null }>;
   testLlmConfig: (llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ success: boolean; error: string | null }>;

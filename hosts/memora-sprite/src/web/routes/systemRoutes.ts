@@ -22,7 +22,6 @@ import { parseJsonBody, sendJson, sendError, safeRoute } from './types.js';
 import {
   saveLlmConfig,
   isLlmConfigured,
-  PROVIDER_PRESETS,
   reinitAgent,
   getLlmProviders,
   saveLlmProvider,
@@ -75,6 +74,7 @@ export async function handleSystemRoute(
     }
 
     // GET /api/llm-config — 获取 LLM 配置（脱敏）
+    // 注：不再返回 presets 字段——UI 改为通用表单让用户手填所有字段（决策见 A4）
     if (method === 'GET' && (path === '/api/llm-config' || path === '/api/llm-config/')) {
       try {
         const configured = await isLlmConfigured();
@@ -97,7 +97,6 @@ export async function handleSystemRoute(
                 apiKey: config.embedding.apiKey ? '***' : '',
               }
             : null,
-          presets: PROVIDER_PRESETS,
         });
       } catch (error) {
         // 配置读取失败时返回未配置状态，由前端引导用户进入设置页
@@ -106,7 +105,6 @@ export async function handleSystemRoute(
           configured: false,
           config: null,
           embedding: null,
-          presets: PROVIDER_PRESETS,
         });
       }
       return;

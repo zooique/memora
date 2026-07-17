@@ -339,8 +339,13 @@ export function showProviderForm(ctx: ProviderManagementContext, key: string = '
     if (ctx.providerProviderInput) ctx.providerProviderInput.value = cached?.provider ?? '';
     if (ctx.providerModelInput) ctx.providerModelInput.value = cached?.model ?? '';
     if (ctx.providerBaseUrlInput) ctx.providerBaseUrlInput.value = cached?.baseUrl ?? '';
-    // 编辑时显示脱敏后的 API Key（前4后4），而非清空
-    if (ctx.providerApiKeyInput) ctx.providerApiKeyInput.value = cached?.apiKey ?? '';
+    // 编辑时 apiKey 字段清空 + placeholder 提示"留空保持不变"
+    // 渲染进程持有的 apiKey 是脱敏值（如 sk1****abcd），直接回填会被当真实 Key 保存导致 401
+    // 用户不修改 apiKey 时留空，saveLlmProvider 从旧 config 读取原值保留
+    if (ctx.providerApiKeyInput) {
+      ctx.providerApiKeyInput.value = '';
+      ctx.providerApiKeyInput.placeholder = '留空保持不变（已配置）';
+    }
     if (ctx.providerTemperatureInput) ctx.providerTemperatureInput.value = String(cached?.temperature ?? 0.7);
   } else {
     // 新增模式：清空所有字段
@@ -381,15 +386,19 @@ let isSavingProvider = false;
  *
  * 校验：必填字段 + 别名格式（仅允许字母数字.-_） + Temperature 范围 + 重复 key 检测
  * 反馈：字段级 aria-invalid + aria-describedby 错误文本，失败时聚焦首个错误字段
+ *
+ * 编辑模式下 apiKey 允许空（保留原值），通过 isEditing 标志透传到 IPC 层。
  */
 export async function saveProvider(ctx: ProviderManagementContext): Promise<void> {
   if (isSavingProvider) return;
   isSavingProvider = true;
   try {
     const formData = readProviderForm(ctx);
-    if (!validateProviderForm(formData)) return;
+    // 编辑模式判定：providerModalEl.dataset.editKey 非空表示编辑现有 Provider
+    const isEditing = (ctx.providerModalEl?.dataset.editKey ?? '') !== '';
+    if (!validateProviderForm(formData, isEditing)) return;
     if (await checkAliasDuplicate(ctx, formData.alias)) return;
-    await persistProvider(ctx, formData);
+    await persistProvider(ctx, formData, isEditing);
   } finally {
     isSavingProvider = false;
   }
@@ -436,16 +445,17 @@ function parseTemperature(raw: string | undefined): number | undefined {
  * 校验 Provider 表单：必填 + 格式
  *
  * 校验规则：
- * - 必填：alias / provider / model / apiKey
+ * - 必填：alias / provider / model / apiKey（编辑模式下 apiKey 允许空，表示保留原值）
  * - alias 格式：仅允许 ASCII 字母数字 . - _，长度 ≤ 50（作为持久化 key，限制 ASCII 避免 path traversal）
  * - temperature 范围：0-2（与 HTML input min/max 一致）
  *
  * 校验失败时通过 showFieldError 标记字段错误并聚焦，返回 false。
  *
  * @param data 表单数据
+ * @param isEditing 是否编辑模式（编辑模式下 apiKey 允许空）
  * @returns true 通过校验 / false 校验失败（已标记错误字段）
  */
-function validateProviderForm(data: ProviderFormData): boolean {
+function validateProviderForm(data: ProviderFormData, isEditing: boolean): boolean {
   // 清空之前的错误状态（开始新一轮校验）
   clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
 
@@ -460,7 +470,8 @@ function validateProviderForm(data: ProviderFormData): boolean {
   if (!data.model) {
     firstErrorField ??= showFieldError('cfg-provider-model', '请填写模型');
   }
-  if (!data.apiKey) {
+  // apiKey 必填：新增模式必填，编辑模式允许空（保留原值）
+  if (!data.apiKey && !isEditing) {
     firstErrorField ??= showFieldError('cfg-provider-api-key', '请填写 API Key');
   }
   if (firstErrorField) {
@@ -518,8 +529,9 @@ async function checkAliasDuplicate(ctx: ProviderManagementContext, alias: string
  *
  * @param ctx Provider 管理上下文
  * @param data 已校验的表单数据
+ * @param isEditing 是否编辑模式（透传到 IPC，主进程据此放宽 apiKey 必填校验）
  */
-async function persistProvider(ctx: ProviderManagementContext, data: ProviderFormData): Promise<void> {
+async function persistProvider(ctx: ProviderManagementContext, data: ProviderFormData, isEditing: boolean): Promise<void> {
   const saveBtn = ctx.btnProviderSave;
   const originalText = saveBtn?.textContent ?? '保存';
   if (saveBtn) {
@@ -533,7 +545,7 @@ async function persistProvider(ctx: ProviderManagementContext, data: ProviderFor
       baseUrl: data.baseUrl,
       apiKey: data.apiKey,
       temperature: data.temperature,
-    });
+    }, isEditing);
     if (result.success) {
       ctx.host.showToast('服务商保存成功');
       hideProviderForm(ctx);

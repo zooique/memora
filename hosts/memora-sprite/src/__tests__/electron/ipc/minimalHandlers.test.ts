@@ -23,12 +23,12 @@
  * - memora：createProviderFromConfig / toError / logger
  * - spriteConfig：loadSpriteConfig / DEFAULT_SPRITE_CONFIG
  * - spriteConfigStore：isConfigured / load / resolveProviderConfig
- * - index（宿主入口）：saveLlmConfig / reinitAgent / PROVIDER_PRESETS / getLlmProviders / saveLlmProvider / deleteLlmProvider / setActiveLlmProvider
+ * - index（宿主入口）：saveLlmConfig / reinitAgent / getLlmProviders / saveLlmProvider / deleteLlmProvider / setActiveLlmProvider
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── vi.hoisted：vi.mock 被 hoisted，引用变量需用 vi.hoisted 声明 ──
-const { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteConfigStore, mockSaveLlmConfig, mockReinitAgent, mockLoadSpriteConfig, DEFAULT_SPRITE_CONFIG, PROVIDER_PRESETS, mockGetLlmProviders, mockSaveLlmProvider, mockDeleteLlmProvider, mockSetActiveLlmProvider, mockResolveProviderConfig } = vi.hoisted(() => {
+const { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteConfigStore, mockSaveLlmConfig, mockReinitAgent, mockLoadSpriteConfig, DEFAULT_SPRITE_CONFIG, mockGetLlmProviders, mockSaveLlmProvider, mockDeleteLlmProvider, mockSetActiveLlmProvider, mockResolveProviderConfig } = vi.hoisted(() => {
   const handleCallbacks = new Map<string, (...args: unknown[]) => unknown>();
   const onCallbacks = new Map<string, (...args: unknown[]) => void>();
   const mockLogger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
@@ -47,7 +47,6 @@ const { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteCo
   }>>();
   const mockLoadSpriteConfig = vi.fn(() => ({ silentMode: true }));
   const DEFAULT_SPRITE_CONFIG = { silentMode: false, silentModeExpiresAt: null };
-  const PROVIDER_PRESETS = [{ name: 'OpenAI', value: 'openai' }];
   // 多 Provider 管理 IPC 的 mock
   const mockGetLlmProviders = vi.fn<() => Promise<unknown>>();
   const mockSaveLlmProvider = vi.fn<() => Promise<void>>();
@@ -55,7 +54,7 @@ const { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteCo
   const mockSetActiveLlmProvider = vi.fn<() => Promise<void>>();
   // resolveProviderConfig 是纯函数，mock 为可控返回值
   const mockResolveProviderConfig = vi.fn<(config: unknown, key: string) => unknown>();
-  return { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteConfigStore, mockSaveLlmConfig, mockReinitAgent, mockLoadSpriteConfig, DEFAULT_SPRITE_CONFIG, PROVIDER_PRESETS, mockGetLlmProviders, mockSaveLlmProvider, mockDeleteLlmProvider, mockSetActiveLlmProvider, mockResolveProviderConfig };
+  return { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteConfigStore, mockSaveLlmConfig, mockReinitAgent, mockLoadSpriteConfig, DEFAULT_SPRITE_CONFIG, mockGetLlmProviders, mockSaveLlmProvider, mockDeleteLlmProvider, mockSetActiveLlmProvider, mockResolveProviderConfig };
 });
 
 // ─── Mock electron 模块（handle + on 双回调捕获） ────────
@@ -111,7 +110,6 @@ vi.mock('../../../storage/spriteConfigStore.js', () => ({
 vi.mock('../../../index.js', () => ({
   saveLlmConfig: mockSaveLlmConfig,
   reinitAgent: mockReinitAgent,
-  PROVIDER_PRESETS,
   getLlmProviders: mockGetLlmProviders,
   saveLlmProvider: mockSaveLlmProvider,
   deleteLlmProvider: mockDeleteLlmProvider,
@@ -333,7 +331,6 @@ describe('registerMinimalIpcHandlers', () => {
       expect(result.configured).toBe(true);
       expect(result.config.provider).toBe('openai');
       expect(result.config.model).toBe('gpt-4');
-      expect(result.presets).toEqual(PROVIDER_PRESETS);
     });
 
     it('未配置时应返回 configured=false + null config', async () => {
@@ -347,7 +344,6 @@ describe('registerMinimalIpcHandlers', () => {
 
       expect(result.configured).toBe(false);
       expect(result.config).toBeNull();
-      expect(result.presets).toEqual(PROVIDER_PRESETS);
     });
 
     it('加载失败应降级返回 configured=false', async () => {
@@ -868,16 +864,32 @@ describe('registerMinimalIpcHandlers', () => {
       expect(mockSaveLlmProvider).not.toHaveBeenCalled();
     });
 
-    it('无 apiKey 应返回参数无效', async () => {
+    it('新增模式无 apiKey 应返回错误（不触发保存）', async () => {
       const state = createState();
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
       const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
+      // 新增模式：isEditing 未传（undefined），apiKey 为空应拒绝
       const result = await callback({}, 'key1', { ...providerConfig, apiKey: '' });
 
-      expect(result).toEqual({ success: false, error: '参数无效' });
+      expect(result).toEqual({ success: false, error: 'API Key 不能为空' });
       expect(mockSaveLlmProvider).not.toHaveBeenCalled();
+    });
+
+    it('编辑模式无 apiKey 应允许保存（保留原值）', async () => {
+      const state = createState({ agentReady: true });
+      const callbacks = createCallbacks();
+      mockSaveLlmProvider.mockResolvedValue(undefined);
+      registerMinimalIpcHandlers(state, callbacks);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
+      // 编辑模式：isEditing=true，apiKey 为空表示保留原值
+      const result = await callback({}, 'key1', { ...providerConfig, apiKey: '' }, true);
+
+      expect(mockSaveLlmProvider).toHaveBeenCalledWith('key1', { ...providerConfig, apiKey: '' });
+      expect(mockReinitAgent).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true, error: null });
     });
 
     it('agentReady=true 时保存后不触发 reinit', async () => {

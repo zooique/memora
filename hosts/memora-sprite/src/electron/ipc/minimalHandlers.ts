@@ -25,8 +25,10 @@ import { IPC_CHANNELS } from './channels.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { loadSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
-import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
+import { saveLlmConfig, reinitAgent, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
 import { isValidContent, isNonEmptyString } from './inputValidation.js';
+// 跨进程 LLM 错误分类器：将底层错误映射为用户友好提示（onboarding + 测试连接共用）
+import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
 // AppRuntime / MinimalIpcState / MinimalIpcCallbacks 真理源在 ./types.ts
 import type { MinimalIpcState, MinimalIpcCallbacks } from './types.js';
 
@@ -167,18 +169,22 @@ export function registerMinimalIpcHandlers(
         return { success: true, error: null };
       } catch (error) {
         // LLM 连接测试失败时返回错误给 UI，同时记录警告便于排查
-        logger.warn({ err: toError(error).message, provider: llmConfig.provider, model: llmConfig.model }, 'LLM 连接测试失败');
-        return { success: false, error: toError(error).message };
+        // 错误消息经过 classifyLlmError 映射为用户友好提示（如 401 → "API Key 无效"）
+        const rawMessage = toError(error).message;
+        logger.warn({ err: rawMessage, provider: llmConfig.provider, model: llmConfig.model }, 'LLM 连接测试失败');
+        return { success: false, error: classifyLlmError(rawMessage) };
       }
     },
   );
 
   // LLM 配置读取
+  // 注：不再返回 presets 字段——内置预设易滞后于 Provider 新模型发布，
+  //     UI 改为通用表单让用户手填所有字段（决策见 A4）
   ipcMain.handle(IPC_CHANNELS.LLM_CONFIG_GET, async () => {
     try {
       const configured = await spriteConfigStore.isConfigured();
       if (!configured) {
-        return { configured: false, config: null, presets: PROVIDER_PRESETS };
+        return { configured: false, config: null };
       }
       const config: Config = await spriteConfigStore.load();
       return {
@@ -208,12 +214,11 @@ export function registerMinimalIpcHandlers(
               apiKey: maskApiKey(config.embedding.apiKey ?? ''),
             }
           : null,
-        presets: PROVIDER_PRESETS,
       };
     } catch (err) {
       // LLM 配置读取失败时返回未配置状态，记录警告便于排查
       logger.warn({ err: toError(err).message }, 'LLM 配置读取失败');
-      return { configured: false, config: null, presets: PROVIDER_PRESETS };
+      return { configured: false, config: null };
     }
   });
 
@@ -282,21 +287,29 @@ export function registerMinimalIpcHandlers(
   });
 
   // Provider 保存（新增/更新）
+  // 编辑场景下 apiKey 可为空（保留原值，由 saveLlmProvider 从旧 config 读取）
   ipcMain.handle(
     IPC_CHANNELS.LLM_PROVIDER_SAVE,
     async (
       _event,
       key: string,
       config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
+      isEditing?: boolean,
     ) => {
-      if (!isNonEmptyString(key) || !config?.apiKey) {
+      // 参数校验：key 必填；apiKey 仅新增模式必填（编辑模式允许空，保留原值）
+      if (!isNonEmptyString(key) || !config) {
         return { success: false, error: '参数无效' };
+      }
+      if (!isEditing && !config.apiKey) {
+        return { success: false, error: 'API Key 不能为空' };
       }
       try {
         await saveLlmProvider(key, config);
         // 首次添加 Provider 时 Agent 尚未初始化，需触发 reinit 使其就绪
         // saveLlmProvider 首次添加会自动设 active=key，reinitAgent loadConfig 即用此 Provider
+        // 编辑模式（agentReady=true）不触发 reinit，仅持久化字段变更
         if (!state.agentReady) {
+          // 新增模式首次添加时 config.apiKey 必非空（已校验）
           await reinitAgentRuntime(state, callbacks, {
             provider: config.provider,
             model: config.model,

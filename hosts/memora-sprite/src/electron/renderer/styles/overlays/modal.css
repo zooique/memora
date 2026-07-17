@@ -239,15 +239,7 @@
   line-height: 1.4;
 }
 
-/* ─── 步骤 2：API Key 配置 ──────────────────────── */
-
-.onboarding-provider-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1-5);
-  justify-content: center;
-  margin-bottom: var(--space-3);
-}
+/* ─── 步骤 2：API 配置（通用表单） ──────────────── */
 
 .onboarding-api-form {
   width: 100%;
@@ -266,7 +258,6 @@
   margin-bottom: 4px;
 }
 
-.onboarding-api-form select,
 .onboarding-api-form input {
   width: 100%;
   padding: var(--input-padding);
@@ -278,28 +269,10 @@
   box-sizing: border-box;
 }
 
-.onboarding-api-form select:focus,
 .onboarding-api-form input:focus {
   border-color: var(--accent);
   outline: none;
   box-shadow: 0 0 0 2px var(--accent-20);
-}
-
-/* 注册链接 */
-.onboarding-signup-link {
-  display: inline-block;
-  font-size: var(--font-xs);
-  color: var(--accent);
-  text-decoration: none;
-  margin-top: 4px;
-}
-
-.onboarding-signup-link:hover {
-  text-decoration: underline;
-}
-
-.onboarding-signup-link.hidden {
-  display: none;
 }
 
 /* 错误提示 */

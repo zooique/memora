@@ -70,7 +70,7 @@
  *
  * Mock 策略：
  * - memora：vi.mock 提供 logger/toError/loadConfig/createLlmProvider/createProviderFromConfig（覆盖动态 import）
- * - ../../../index.js：vi.mock 提供 saveLlmConfig/isLlmConfigured/PROVIDER_PRESETS/reinitAgent
+ * - ../../../index.js：vi.mock 提供 saveLlmConfig/isLlmConfigured/reinitAgent
  *   + getLlmProviders/saveLlmProvider/deleteLlmProvider/setActiveLlmProvider/DEFAULT_CONFIG_DIR
  * - ../../../storage/spriteConfigStore.js：vi.mock 提供 DEFAULT_CONFIG_PATH/resolveProviderConfig
  * - IncomingMessage：自建 mock 对象，实现 method/url 与 async iterator
@@ -93,8 +93,6 @@ const {
   MOCK_CONFIG,
   /** mock createLlmProvider 返回的 provider（含 chat 异步生成器） */
   MOCK_PROVIDER,
-  /** mock PROVIDER_PRESETS 预设表 */
-  MOCK_PRESETS,
   /** mock reinitAgent 返回的结果（含 close 函数） */
   MOCK_REINIT_RESULT,
   /** mock saveLlmConfig 函数引用 */
@@ -179,9 +177,6 @@ const {
       },
     },
     MOCK_PROVIDER: { chat: vi.fn() },
-    MOCK_PRESETS: {
-      '1': { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
-    },
     MOCK_REINIT_RESULT: { close: vi.fn(async () => {}) },
     mockSaveLlmConfig,
     mockIsLlmConfigured,
@@ -228,12 +223,11 @@ vi.mock('memora', () => ({
   createProviderFromConfig: mockCreateProviderFromConfig,
 }));
 
-// Mock ../../../index.js：覆盖 saveLlmConfig/isLlmConfigured/PROVIDER_PRESETS/reinitAgent
+// Mock ../../../index.js：覆盖 saveLlmConfig/isLlmConfigured/reinitAgent
 // 以及多 Provider 管理函数 + 动态 import 的 DEFAULT_CONFIG_DIR
 vi.mock('../../../index.js', () => ({
   saveLlmConfig: mockSaveLlmConfig,
   isLlmConfigured: mockIsLlmConfigured,
-  PROVIDER_PRESETS: MOCK_PRESETS,
   reinitAgent: mockReinitAgent,
   getLlmProviders: mockGetLlmProviders,
   saveLlmProvider: mockSaveLlmProvider,
@@ -525,8 +519,6 @@ describe('handleSystemRoute', () => {
     // embedding 也应脱敏
     expect(body.embedding.apiKey).toBe('***');
     expect(body.embedding.model).toBe('text-embedding-3');
-    // 应附带预设（用 toEqual 比较：body.presets 是 JSON 反序列化后的新引用）
-    expect(body.presets).toEqual(MOCK_PRESETS);
   });
 
   it('GET /api/llm-config 未配置时应返回 config: null', async () => {
@@ -542,7 +534,6 @@ describe('handleSystemRoute', () => {
     expect(body.configured).toBe(false);
     expect(body.config).toBeNull();
     // 注意：源码即使未配置也会调用 loadConfig 取 embedding 信息
-    expect(body.presets).toEqual(MOCK_PRESETS);
   });
 
   it('GET /api/llm-config loadConfig 抛错时应降级返回未配置状态', async () => {
@@ -560,7 +551,6 @@ describe('handleSystemRoute', () => {
     expect(body.configured).toBe(false);
     expect(body.config).toBeNull();
     expect(body.embedding).toBeNull();
-    expect(body.presets).toEqual(MOCK_PRESETS);
   });
 
   it('GET /api/llm-config 无 embedding 时应返回 embedding: null', async () => {

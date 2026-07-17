@@ -197,8 +197,9 @@ function parseConfig(raw: unknown): Config {
   const llm: LlmConfig = {
     provider: typeof llmInput.provider === 'string' ? llmInput.provider : DEFAULT_CONFIG.llm.provider,
     model: typeof llmInput.model === 'string' ? llmInput.model : DEFAULT_CONFIG.llm.model,
-    baseUrl: typeof llmInput.baseUrl === 'string' ? llmInput.baseUrl : undefined,
-    apiKey: typeof llmInput.apiKey === 'string' ? llmInput.apiKey : undefined,
+    // 过滤空字符串：空字符串视为未配置，避免旧格式分支中 resolvedBaseUrl = '' 触发误报
+    baseUrl: typeof llmInput.baseUrl === 'string' && llmInput.baseUrl ? llmInput.baseUrl : undefined,
+    apiKey: typeof llmInput.apiKey === 'string' && llmInput.apiKey ? llmInput.apiKey : undefined,
     temperature: validateTemperature(llmInput.temperature, DEFAULT_CONFIG.llm.temperature),
     providers: parseProviders(llmInput.providers),
     active: typeof llmInput.active === 'string' ? llmInput.active : undefined,
@@ -337,8 +338,9 @@ function parseProviders(value: unknown): Record<string, ProviderConfig> | undefi
     providers[key] = {
       provider: p.provider,
       model: p.model,
-      baseUrl: typeof p.baseUrl === 'string' ? p.baseUrl : undefined,
-      apiKey: typeof p.apiKey === 'string' ? p.apiKey : undefined,
+      // 过滤空字符串：与 parseConfig 顶层逻辑保持一致
+      baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
+      apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
       contextWindow: (typeof p.contextWindow === 'number' && Number.isFinite(p.contextWindow)) ? p.contextWindow : undefined,
     };

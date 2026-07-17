@@ -445,11 +445,11 @@ export interface ElectronAPI {
   getAgentStatus: () => Promise<{ ready: boolean; error: string | null }>;
 
   // LLM 配置读写（首次启动引导用）
+  // 注意：已移除 presets 字段——不内置 Provider 预设，用户在 onboarding/设置面板手填所有字段
   getLlmConfig: () => Promise<{
     configured: boolean;
     config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature: number } | null;
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
-    presets: Record<string, { provider: string; model: string; baseUrl: string }>;
   }>;
   saveLlmConfig: (
     llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
@@ -462,8 +462,8 @@ export interface ElectronAPI {
   // ─── 多 Provider 管理 ──────────────────────────────────
   /** 获取 Provider 列表 */
   listLlmProviders: () => Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number; contextWindow?: number }> }>;
-  /** 保存 Provider（新增/更新） */
-  saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; contextWindow?: number }) => Promise<{ success: boolean; error: string | null }>;
+  /** 保存 Provider（新增/更新；编辑模式 isEditing=true 时 apiKey 允许空，保留原值） */
+  saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; contextWindow?: number }, isEditing?: boolean) => Promise<{ success: boolean; error: string | null }>;
   /** 删除 Provider */
   deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
   /** 切换激活 Provider */
@@ -903,7 +903,7 @@ const electronAPI: ElectronAPI = {
 
   // 多 Provider 管理
   listLlmProviders: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_LIST),
-  saveLlmProvider: (key, config) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SAVE, key, config),
+  saveLlmProvider: (key, config, isEditing) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SAVE, key, config, isEditing),
   deleteLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_DELETE, key),
   setActiveLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE, key),
 

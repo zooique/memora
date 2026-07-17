@@ -378,7 +378,9 @@ describe('showProviderForm', () => {
     expect(dom.providerProviderInput.value).toBe('openai');
     expect(dom.providerModelInput.value).toBe('gpt-4');
     expect(dom.providerBaseUrlInput.value).toBe('https://api.openai.com');
-    expect(dom.providerApiKeyInput.value).toBe('sk-1234****5678');
+    // 编辑模式 apiKey 字段清空 + placeholder 提示"留空保持不变"（A1 修复：避免脱敏值被当真实 Key 保存）
+    expect(dom.providerApiKeyInput.value).toBe('');
+    expect(dom.providerApiKeyInput.placeholder).toBe('留空保持不变（已配置）');
     expect(dom.providerTemperatureInput.value).toBe('0.5');
   });
 

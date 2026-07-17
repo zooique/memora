@@ -377,7 +377,7 @@ function createMockElectronAPI() {
     onAppError: vi.fn(),
     removeAppErrorListener: vi.fn(),
     getAgentStatus: vi.fn().mockResolvedValue({ ready: true }),
-    getLlmConfig: vi.fn().mockResolvedValue({ configured: false, config: null, embedding: null, presets: {} }),
+    getLlmConfig: vi.fn().mockResolvedValue({ configured: false, config: null, embedding: null }),
     saveLlmConfig: vi.fn().mockResolvedValue({ success: true }),
     testLlmConfig: vi.fn().mockResolvedValue({ success: true, error: null }),
     onAgentReady: vi.fn(),

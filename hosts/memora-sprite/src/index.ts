@@ -187,8 +187,13 @@ export async function getLlmProviders(
  * 合并到 config.json 的 llm.providers 映射表。
  * 首次添加时自动设为 active（如果此前无 active）。
  *
+ * **apiKey 为空时保留原值**：
+ * 编辑场景下，渲染进程收到的 apiKey 是脱敏值（如 `sk1****abcd`），
+ * 若用户未修改 apiKey 字段，渲染进程会传入空字符串。
+ * 此时从旧 config 中读取原 apiKey 保留，避免脱敏值覆盖真实 Key 导致 401。
+ *
  * @param key Provider 别名
- * @param providerConfig Provider 配置（含 apiKey 明文）
+ * @param providerConfig Provider 配置（apiKey 为空时保留原值）
  * @param configPath 配置文件路径
  */
 export async function saveLlmProvider(
@@ -202,11 +207,16 @@ export async function saveLlmProvider(
   const config = await store.loadOrDefault();
 
   const providers = { ...(config.llm.providers ?? {}) };
+  // 编辑场景下 apiKey 为空表示"保持不变"，从旧 Provider 配置读取原 apiKey
+  // 新增场景下 apiKey 必须由调用方校验非空（minimalHandlers 已校验）
+  const existingProvider = providers[key];
+  const resolvedApiKey = providerConfig.apiKey || existingProvider?.apiKey || undefined;
+
   providers[key] = {
     provider: providerConfig.provider,
     model: providerConfig.model,
     baseUrl: providerConfig.baseUrl || undefined,
-    apiKey: providerConfig.apiKey || undefined,
+    apiKey: resolvedApiKey,
     // 传递 temperature（可选，未传时回退到全局默认值）
     ...(providerConfig.temperature !== undefined ? { temperature: providerConfig.temperature } : {}),
     // 传递 contextWindow（可选，未传时回退到 memory.maxContextTokens）

@@ -231,11 +231,12 @@ export class SpriteConfigStore {
         providers,
         active,
         // 同步更新扁平字段，确保新旧格式一致
+        // 保持 undefined 而非强转空字符串：空字符串会被 parseConfig 过滤，导致旧格式分支误报
         ...(activeProvider ? {
           provider: activeProvider.provider,
           model: activeProvider.model,
-          baseUrl: activeProvider.baseUrl ?? '',
-          apiKey: activeProvider.apiKey ?? '',
+          baseUrl: activeProvider.baseUrl,
+          apiKey: activeProvider.apiKey,
           temperature: activeProvider.temperature ?? existing.llm.temperature ?? 0.7,
         } : {}),
       },
