@@ -428,6 +428,15 @@ export function registerMinimalIpcHandlers(
           currentAgent.setBackgroundProvider(null);
         }
 
+        // H-0717-3：同步更新 lastProvider 缓存，避免后续 saveLlmConfig 误判需要 reinit
+        // 场景：用户运行时切换 Provider 后，再修改 temperature 等非关键字段时，
+        // reinit 判断逻辑会比较 llmConfig.provider 与 state.lastProvider，
+        // 若缓存未同步，会误判为需要 reinit（实际 Agent 已切换完成）。
+        state.lastProvider = providerConfig.provider;
+        state.lastModel = providerConfig.model;
+        state.lastBaseUrl = providerConfig.baseUrl ?? '';
+        state.lastApiKey = providerConfig.apiKey ?? '';
+
         return { success: true, error: null };
       } catch (err) {
         state.agentReady = false;

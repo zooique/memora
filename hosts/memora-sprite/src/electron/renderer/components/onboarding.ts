@@ -18,6 +18,8 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { showFieldError, showFieldSuccess, clearFieldErrors } from '../helpers/formValidation.js';
 // 跨进程 LLM 错误分类器（onboarding + minimalHandlers 共用）
 import { classifyLlmError } from '../../../shared/llmErrorClassifier.js';
+// 确认弹窗选项类型（与 UIManager.showConfirmDialog 共享）
+import type { ConfirmDialogOptions } from '../types.js';
 
 // ─── OnboardingManager ──────────────────────────────────
 
@@ -38,6 +40,8 @@ export class OnboardingManager {
   private savedApiKey = false;
   /** Agent 就绪状态查询函数（由 UIManager 注入，用于 step 4 完成消息感知初始化进度） */
   private agentReadyProvider: (() => boolean) | null = null;
+  /** 确认弹窗函数（由 UIManager 注入，用于跳过 API 配置时弹二次确认避免误触丢失输入） */
+  private confirmDialog: ((options: ConfirmDialogOptions) => Promise<boolean>) | null = null;
   /** 当前关闭处理的 cleanup 函数（ESC/遮罩/完成三路径关闭后统一清理监听器，UX-0712-8） */
   private currentCleanup: (() => void) | null = null;
 
@@ -51,6 +55,18 @@ export class OnboardingManager {
    */
   setAgentReadyProvider(fn: () => boolean): void {
     this.agentReadyProvider = fn;
+  }
+
+  /**
+   * 注入确认弹窗函数
+   *
+   * 由 UIManager 在构造后调用，使 OnboardingManager 能在步骤 2 跳过且用户已填写字段时
+   * 弹出二次确认对话框，避免误触跳过导致已输入内容丢失。
+   *
+   * @param fn UIManager.showConfirmDialog 的引用
+   */
+  setConfirmDialog(fn: (options: ConfirmDialogOptions) => Promise<boolean>): void {
+    this.confirmDialog = fn;
   }
 
   /**
@@ -172,16 +188,37 @@ export class OnboardingManager {
       });
     });
 
-    // 跳过按钮
+    // 跳过按钮（步骤 2 已填字段时弹二次确认，避免误触丢失输入）
     modal.querySelectorAll('.onboarding-skip').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const skipTo = parseInt(btn.getAttribute('data-skip') || '4', 10);
+        // 仅在步骤 2 跳过且用户已填写任一字段时弹确认
+        if (this.currentStep === 2 && this.hasFilledApiFields(modal)) {
+          const confirmed = await this.confirmDialog?.({
+            title: '跳过 API 配置',
+            message: '你已填写部分字段，跳过后这些信息将不会保存。确认跳过吗？',
+            confirmText: '跳过',
+            cancelText: '继续配置',
+          }) ?? true;
+          if (!confirmed) return;
+        }
         if (skipTo === 4 && this.currentStep === 2) {
           this.skippedApiKey = true;
         }
         this.showStep(modal, skipTo);
       });
     });
+  }
+
+  /**
+   * 检测步骤 2 表单是否已填写任一字段
+   *
+   * 用于跳过按钮的确认弹窗触发判定，避免用户误触跳过丢失已输入内容。
+   * 仅检查非空字符串，不校验字段合法性。
+   */
+  private hasFilledApiFields(modal: HTMLElement): boolean {
+    const { provider, model, baseUrl, apiKey } = this.readApiForm(modal);
+    return provider !== '' || model !== '' || baseUrl !== '' || apiKey !== '';
   }
 
   /**
@@ -201,6 +238,12 @@ export class OnboardingManager {
       const elStep = parseInt((el as HTMLElement).dataset.step || '0', 10);
       el.classList.toggle('active', elStep === step);
       el.classList.toggle('done', elStep < step);
+      // aria-current="step" 仅标记当前步骤，辅助屏幕阅读器定位进度
+      if (elStep === step) {
+        (el as HTMLElement).setAttribute('aria-current', 'step');
+      } else {
+        (el as HTMLElement).removeAttribute('aria-current');
+      }
     });
 
     // 更新步骤指示器连线

@@ -295,7 +295,20 @@
   background: var(--green-10);
 }
 
-/* ─── 步骤 3：完成 ──────────────────────────────── */
+/* ─── 步骤 3：使用统计 ──────────────────────────── */
+
+/* 隐私图标容器（与 welcome-icon/done-icon 保持视觉一致） */
+.onboarding-privacy-icon {
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+/* 隐私统计选择容器（checkbox + 说明文字，提供上下间距） */
+.onboarding-privacy-choice {
+  margin: var(--space-3) 0 var(--space-5);
+}
+
+/* ─── 步骤 4：完成 ──────────────────────────────── */
 
 .onboarding-done-icon {
   color: var(--accent);

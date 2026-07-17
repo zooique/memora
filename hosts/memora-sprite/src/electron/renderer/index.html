@@ -1559,15 +1559,15 @@
   <!-- 显示判定：无 Provider 配置时显示，有配置跳过 -->
   <div id="onboarding-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="新手引导">
     <div class="modal-content onboarding-wizard">
-      <!-- 步骤指示器 -->
-      <div class="onboarding-steps">
-        <div class="onboarding-step-dot active flex-shrink-0" data-step="1"></div>
-        <div class="onboarding-step-line flex-shrink-0"></div>
-        <div class="onboarding-step-dot flex-shrink-0" data-step="2"></div>
-        <div class="onboarding-step-line flex-shrink-0"></div>
-        <div class="onboarding-step-dot flex-shrink-0" data-step="3"></div>
-        <div class="onboarding-step-line flex-shrink-0"></div>
-        <div class="onboarding-step-dot flex-shrink-0" data-step="4"></div>
+      <!-- 步骤指示器（ARIA：role=list/listitem 标识进度列表，aria-current=step 标记当前步骤） -->
+      <div class="onboarding-steps" role="list">
+        <div class="onboarding-step-dot active flex-shrink-0" data-step="1" role="listitem" aria-current="step" aria-label="步骤 1：欢迎"></div>
+        <div class="onboarding-step-line flex-shrink-0" aria-hidden="true"></div>
+        <div class="onboarding-step-dot flex-shrink-0" data-step="2" role="listitem" aria-label="步骤 2：配置 API"></div>
+        <div class="onboarding-step-line flex-shrink-0" aria-hidden="true"></div>
+        <div class="onboarding-step-dot flex-shrink-0" data-step="3" role="listitem" aria-label="步骤 3：使用统计"></div>
+        <div class="onboarding-step-line flex-shrink-0" aria-hidden="true"></div>
+        <div class="onboarding-step-dot flex-shrink-0" data-step="4" role="listitem" aria-label="步骤 4：完成"></div>
       </div>
 
       <!-- 步骤 1：欢迎 -->
@@ -1623,8 +1623,8 @@
             <p id="onboarding-model-error" class="onboarding-error hidden" role="alert"></p>
           </div>
           <div class="settings-row">
-            <label for="onboarding-base-url">API 地址（baseUrl）</label>
-            <input type="text" id="onboarding-base-url" placeholder="如 https://api.deepseek.com/v1" autocomplete="off" aria-describedby="onboarding-base-url-error" />
+            <label for="onboarding-base-url">API 地址（baseUrl，可选）</label>
+            <input type="text" id="onboarding-base-url" placeholder="可空，部分 Provider 需要，如 https://api.deepseek.com/v1" autocomplete="off" aria-describedby="onboarding-base-url-error" />
             <p id="onboarding-base-url-error" class="onboarding-error hidden" role="alert"></p>
           </div>
           <div class="settings-row">

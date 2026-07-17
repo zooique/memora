@@ -260,6 +260,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.updateChatAgentStatus();
     // 注入 Agent 就绪状态查询函数，供 onboarding step 4 完成消息感知初始化进度
     this.onboardingManager.setAgentReadyProvider(() => this.isAgentReady());
+    // 注入确认弹窗函数，供 onboarding 步骤 2 跳过时弹二次确认避免误触丢失输入
+    this.onboardingManager.setConfirmDialog((options) => this.showConfirmDialog(options));
 
     // 未读徽章管理器（纯 DOM 渲染，badge 可为 null）
     this.badgeManager = new BadgeManager(this.badge);
