@@ -637,7 +637,7 @@ describe('回调注册', () => {
 // ─── 讨论按钮点击 ───────────────────
 
 describe('讨论按钮点击', () => {
-  it('点击讨论按钮应触发 onMemoryDiscuss 回调，携带记忆名称', () => {
+  it('点击讨论按钮应触发 onMemoryDiscuss 回调，携带记忆名称', async () => {
     const host = createMockHost();
     const events = new EventTracker();
     const detailModal = document.getElementById('memory-detail-modal')!;
@@ -656,11 +656,13 @@ describe('讨论按钮点击', () => {
     // 点击讨论按钮
     const btnDiscuss = document.getElementById('btn-memory-discuss')!;
     btnDiscuss.dispatchEvent(new Event('click'));
-
-    expect(cb).toHaveBeenCalledWith('记忆A');
+    // F2：讨论按钮现在经过 handleCloseRequest 守卫（异步），需 await
+    await vi.waitFor(() => {
+      expect(cb).toHaveBeenCalledWith('记忆A');
+    });
   });
 
-  it('detailModal dataset 无 memoryName 时不应触发回调', () => {
+  it('detailModal dataset 无 memoryName 时不应触发回调', async () => {
     const host = createMockHost();
     const events = new EventTracker();
     const detailModal = document.getElementById('memory-detail-modal')!;
@@ -677,11 +679,13 @@ describe('讨论按钮点击', () => {
 
     const btnDiscuss = document.getElementById('btn-memory-discuss')!;
     btnDiscuss.dispatchEvent(new Event('click'));
-
-    expect(cb).not.toHaveBeenCalled();
+    // F2：等待异步 handleCloseRequest 完成
+    await vi.waitFor(() => {
+      expect(cb).not.toHaveBeenCalled();
+    });
   });
 
-  it('多次注册 onMemoryDiscuss 应覆盖前者', () => {
+  it('多次注册 onMemoryDiscuss 应覆盖前者', async () => {
     const host = createMockHost();
     const events = new EventTracker();
     const detailModal = document.getElementById('memory-detail-modal')!;
@@ -699,9 +703,11 @@ describe('讨论按钮点击', () => {
 
     const btnDiscuss = document.getElementById('btn-memory-discuss')!;
     btnDiscuss.dispatchEvent(new Event('click'));
-
-    expect(cb1).not.toHaveBeenCalled();
-    expect(cb2).toHaveBeenCalledWith('记忆B');
+    // F2：等待异步 handleCloseRequest 完成
+    await vi.waitFor(() => {
+      expect(cb1).not.toHaveBeenCalled();
+      expect(cb2).toHaveBeenCalledWith('记忆B');
+    });
   });
 });
 

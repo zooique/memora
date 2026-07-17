@@ -67,6 +67,8 @@ function createMockInspector(): Inspector {
     // Phase 5.1/5.2：路径追溯 + 邻居查询（show() 用 getRelationNeighbors 替代手动遍历）
     getRelationPath: vi.fn().mockReturnValue([]),
     getRelationNeighbors: vi.fn().mockReturnValue([]),
+    // F5：updateRelation 先删后加，需查询现有关系
+    getRelations: vi.fn().mockReturnValue([]),
     // ─── 写方法（writeXxx 前缀） ───
     writeUpsert: vi.fn(),
     writeDelete: vi.fn(),
@@ -75,6 +77,8 @@ function createMockInspector(): Inspector {
     writePurgeExpired: vi.fn().mockReturnValue(0),
     writeAddRelation: vi.fn(),
     writeRemoveRelation: vi.fn(),
+    // F4：purge/purgeAll 物理删除时清理关系边
+    writeRemoveRelationsByMemoryId: vi.fn().mockReturnValue(0),
   };
   return inspector as Inspector;
 }

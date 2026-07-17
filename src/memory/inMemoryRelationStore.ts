@@ -88,4 +88,22 @@ export class InMemoryRelationStore implements IMemoryRelationStore {
       this.relations.splice(idx, 1);
     }
   }
+
+  /**
+   * 删除某记忆的所有关系（不论方向）
+   *
+   * 一次性过滤掉 sourceId 或 targetId 等于 memoryId 的所有关系边，
+   * 防止记忆删除后留下孤儿边。
+   */
+  removeRelationsByMemoryId(memoryId: string): number {
+    const before = this.relations.length;
+    const remaining = this.relations.filter(
+      (r) => r.sourceId !== memoryId && r.targetId !== memoryId,
+    );
+    const removed = before - remaining.length;
+    // 直接替换数组引用，避免 splice 在循环中性能问题
+    this.relations.length = 0;
+    this.relations.push(...remaining);
+    return removed;
+  }
 }

@@ -85,6 +85,8 @@ const mockAgent = {
     // B5：关系路径追溯 + 邻居查询（Phase 5.1/5.2）
     getRelationNeighbors: vi.fn().mockReturnValue([]),
     getRelationPath: vi.fn().mockReturnValue([]),
+    // F5：updateRelation 先删后加，需查询 sourceId 出发的现有关系
+    getRelations: vi.fn().mockReturnValue([]),
     // B5：混合搜索（searchMemories 委托到 searchHybrid，失败降级到 search）
     searchHybrid: vi.fn().mockResolvedValue([]),
     search: vi.fn().mockResolvedValue([]),
@@ -101,6 +103,8 @@ const mockAgent = {
     // B5：关系写操作门面（writeAddRelation/writeRemoveRelation/updateRelation）
     writeAddRelation: vi.fn(),
     writeRemoveRelation: vi.fn(),
+    // F4：purge/purgeAll 物理删除时清理关系边（防止孤儿边）
+    writeRemoveRelationsByMemoryId: vi.fn().mockReturnValue(0),
   },
   // B5：角色管理器（默认 null，测试中按需注入 mock）
   persona: null,
@@ -1527,6 +1531,9 @@ describe('Sprite 记忆 CRUD 门面（B5：memory 委托）', () => {
     vi.mocked(mockAgent.memory.writeUpsert).mockClear();
     vi.mocked(mockAgent.memory.writeAddRelation).mockClear();
     vi.mocked(mockAgent.memory.writeRemoveRelation).mockClear();
+    // F9：重置读方法返回值（防止跨测试污染，如 deleteMemoriesBatch mock getById 非 null 后影响 upsertMemory 首次创建分支）
+    vi.mocked(mockAgent.memory.getById).mockReturnValue(null);
+    vi.mocked(mockAgent.memory.getDeletedById).mockReturnValue(null);
     tmpDir = createTmpDir();
     sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
   });

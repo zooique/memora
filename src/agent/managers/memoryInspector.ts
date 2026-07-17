@@ -594,8 +594,10 @@ export class MemoryInspector {
 
       const relations = this.relationStore.getRelations(current.id, direction);
       for (const rel of relations) {
-        // direction='incoming' 时邻居是 sourceId；'outgoing' 时邻居是 targetId
-        const neighborId = direction === 'incoming' ? rel.sourceId : rel.targetId;
+        // 根据每条边的实际方向判断邻居，不依赖 direction 参数
+        // （direction='both' 时返回的边可能 incoming 也可能 outgoing，
+        //   旧实现按 direction 取 neighborId 会漏掉 incoming 邻居）
+        const neighborId = rel.sourceId === current.id ? rel.targetId : rel.sourceId;
         if (visited.has(neighborId)) continue;
         visited.add(neighborId);
 
@@ -836,6 +838,20 @@ export class MemoryInspector {
   writeRemoveRelation(sourceId: string, targetId: string, type: string): void {
     if (!this.relationStore) return;
     this.relationStore.removeRelation(sourceId, targetId, type);
+  }
+
+  /**
+   * 删除某记忆的所有关系边（透传 relationStore）
+   *
+   * 用于记忆软删除/物理删除场景，防止 memory_relations 表残留孤儿边。
+   * relationStore 未注入时静默降级（不阻塞记忆删除主流程）。
+   *
+   * @param memoryId 记忆 ID
+   * @returns 被删除的关系数量（relationStore 未注入时返回 0）
+   */
+  writeRemoveRelationsByMemoryId(memoryId: string): number {
+    if (!this.relationStore) return 0;
+    return this.relationStore.removeRelationsByMemoryId(memoryId);
   }
 
   // ─── LLM 记忆治理（异步，backgroundProvider 未注入时静默降级） ───

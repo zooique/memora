@@ -79,4 +79,20 @@ export interface IMemoryRelationStore {
    * @param type 关系类型
    */
   removeRelation(sourceId: string, targetId: string, type: string): void;
+
+  /**
+   * 删除某记忆的所有关系（不论方向）
+   *
+   * 删除 sourceId 或 targetId 等于 memoryId 的所有关系边。
+   * 用于记忆删除/物理清除场景，防止 memory_relations 表残留孤儿边。
+   *
+   * 实现约束：
+   * - 必须原子执行（单条 SQL DELETE WHERE sourceId=? OR targetId=?）
+   * - 返回被删除的关系数量，便于审计
+   * - 不存在的 memoryId 返回 0，不抛错
+   *
+   * @param memoryId 记忆 ID
+   * @returns 被删除的关系数量
+   */
+  removeRelationsByMemoryId(memoryId: string): number;
 }

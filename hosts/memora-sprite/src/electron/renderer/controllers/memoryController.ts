@@ -120,6 +120,27 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
+   * 记忆/关系变更后刷新图谱数据
+   *
+   * 在 delete/purge/restore/addMemory 等改变节点拓扑的操作后调用：
+   * - 先 invalidateGraphCache 清空缓存（防止下次切换到图谱视图时使用陈旧数据）
+   * - 若当前已在图谱视图，立即重新请求 getRelationGraph 并 loadGraphData 更新渲染器
+   * - 若当前不在图谱视图，仅清空缓存，下次切换时由 onViewSwitch 重新请求
+   *
+   * 失败时静默降级（图谱刷新是次要反馈，不阻塞主操作的成功 toast）。
+   */
+  async function refreshGraphIfVisible(): Promise<void> {
+    uiManager.invalidateGraphCache();
+    if (uiManager.getViewMode() !== 'graph') return;
+    try {
+      const data = await window.electronAPI.getRelationGraph();
+      uiManager.loadGraphData(data);
+    } catch (error) {
+      reportError('refreshGraphIfVisible', error);
+    }
+  }
+
+  /**
    * 设置记忆面板回调
    *
    * 包含搜索（带竞态保护）、筛选、点击查看详情、删除、添加。
@@ -181,6 +202,8 @@ export function createMemoryController(uiManager: UIManager) {
             // 刷新回收站列表（移除已恢复项）+ 主列表（显示恢复的记忆）
             await loadRecycleBinList();
             await loadMemoryList();
+            // F6：恢复记忆后刷新图谱缓存，恢复的节点在图谱视图中重新可见
+            void refreshGraphIfVisible();
             // 列表渲染完成后，滚动到目标记忆项并高亮
             uiManager.scrollToMemory(result.id);
           } else {
@@ -204,6 +227,8 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast('记忆已彻底删除', 'success');
             // 刷新回收站列表（移除已删除项）
             await loadRecycleBinList();
+            // F6：彻底删除会清理关系边（writeRemoveRelationsByMemoryId），需刷新图谱缓存
+            void refreshGraphIfVisible();
           } else {
             uiManager.showToast('删除失败：记忆可能已被处理', 'error');
           }
@@ -228,6 +253,8 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast(`已恢复 ${result.restored} 条记忆`, 'success');
             await loadRecycleBinList();
             await loadMemoryList();
+            // F6：批量恢复改变图谱拓扑，刷新缓存
+            void refreshGraphIfVisible();
           } else {
             uiManager.showToast('回收站中没有可恢复的记忆', 'info');
           }
@@ -247,6 +274,8 @@ export function createMemoryController(uiManager: UIManager) {
           if (result.purged > 0) {
             uiManager.showToast(`已彻底删除 ${result.purged} 条记忆`, 'success');
             await loadRecycleBinList();
+            // F6：批量清空会清理所有关系边，刷新图谱缓存
+            void refreshGraphIfVisible();
           } else {
             uiManager.showToast('回收站中没有可删除的记忆', 'info');
           }
@@ -436,6 +465,8 @@ export function createMemoryController(uiManager: UIManager) {
         }
         uiManager.hideModal('memory-detail-modal');
         await loadMemoryList();
+        // F6：删除记忆后刷新图谱缓存，防止图谱视图显示已删除节点
+        void refreshGraphIfVisible();
         // 操作反馈走 toast（措辞调整为"已移入回收站"，体现软删除语义）
         uiManager.showToast('记忆已移入回收站', 'success');
       } catch (error) {
@@ -455,6 +486,8 @@ export function createMemoryController(uiManager: UIManager) {
         uiManager.clearAddMemoryForm();
         uiManager.hideModal('memory-add-modal');
         await loadMemoryList();
+        // F6：新增记忆后刷新图谱缓存，新节点在图谱视图中可见
+        void refreshGraphIfVisible();
         // 操作反馈走 toast
         uiManager.showToast('记忆已添加', 'success');
       } catch (error) {
@@ -479,6 +512,8 @@ export function createMemoryController(uiManager: UIManager) {
         await window.electronAPI.addMemory({ source, name, content });
         uiManager.hideModal('memory-detail-modal');
         await loadMemoryList();
+        // F6：编辑记忆后刷新图谱缓存（节点 name 可能变化，影响图谱标签显示）
+        void refreshGraphIfVisible();
         uiManager.showToast('记忆已更新', 'success');
       } catch (error) {
         handleIpcError('onMemoryEdit', error, '更新记忆失败');
@@ -526,7 +561,12 @@ export function createMemoryController(uiManager: UIManager) {
     // ─── 关系编辑回调（更新类型/权重） ────────────────────
     uiManager.onRelationEdit(async (sourceId: string, targetId: string, type: string, weight: number) => {
       try {
-        await window.electronAPI.updateRelation({ sourceId, targetId, type, weight });
+        const result = await window.electronAPI.updateRelation({ sourceId, targetId, type, weight });
+        // F7：IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
+        if (!result.success) {
+          uiManager.showToast('更新关系失败：参数非法或内部错误', 'error');
+          return;
+        }
         uiManager.showToast('关系已更新', 'success');
         // 刷新图谱数据
         const data = await window.electronAPI.getRelationGraph();
@@ -539,7 +579,12 @@ export function createMemoryController(uiManager: UIManager) {
     // ─── 关系删除回调 ─────────────────────────────────────
     uiManager.onRelationDelete(async (sourceId: string, targetId: string, type: string) => {
       try {
-        await window.electronAPI.removeRelation({ sourceId, targetId, type });
+        const result = await window.electronAPI.removeRelation({ sourceId, targetId, type });
+        // F7：IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
+        if (!result.success) {
+          uiManager.showToast('删除关系失败：参数非法或内部错误', 'error');
+          return;
+        }
         uiManager.showToast('关系已删除', 'success');
         // 刷新图谱数据
         const data = await window.electronAPI.getRelationGraph();
@@ -552,7 +597,12 @@ export function createMemoryController(uiManager: UIManager) {
     // ─── 关系创建回调（Ctrl+拖拽连线后创建） ──────────────
     uiManager.onRelationCreate(async (sourceId: string, targetId: string, type: string, weight: number) => {
       try {
-        await window.electronAPI.addRelation({ sourceId, targetId, type, weight });
+        const result = await window.electronAPI.addRelation({ sourceId, targetId, type, weight });
+        // F7：IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
+        if (!result.success) {
+          uiManager.showToast('创建关系失败：参数非法或内部错误', 'error');
+          return;
+        }
         uiManager.showToast('关系已创建', 'success');
         // 刷新图谱数据
         const data = await window.electronAPI.getRelationGraph();

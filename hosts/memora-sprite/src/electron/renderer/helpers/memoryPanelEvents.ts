@@ -89,8 +89,18 @@ export interface MemoryPanelEventContext {
   getAddMemoryFormData(): { source: string; name: string; content: string } | null;
   /** 进入编辑模式 */
   enterEditMode(): void;
-  /** 退出编辑模式，恢复原始内容 */
+  /** 退出编辑模式，恢复原始内容（强制退出，无未保存提示） */
   exitEditMode(): void;
+  /** 检查未保存修改并按需弹确认对话框后退出编辑模式（取消按钮/Esc 触发） */
+  confirmExitEditMode(): Promise<void>;
+  /**
+   * 处理关闭请求（关闭按钮/backdrop 触发）
+   * 编辑模式下：弹确认对话框，用户放弃修改后返回 true，保留修改返回 false
+   * 非编辑模式：直接返回 true
+   */
+  handleCloseRequest(): Promise<boolean>;
+  /** 读取编辑模式状态（capture phase 拦截关闭按钮/backdrop 时判断） */
+  getIsEditing(): boolean;
   /** 保存编辑内容，通过回调通知宿主层 */
   saveEdit(): void;
   /** 切换分析面板（insights/health 互斥） */
@@ -341,7 +351,13 @@ function validateMemoryAddForm(): void {
 // ─── 4. 详情操作按钮（删除/编辑/讨论） ────────────────────
 
 /**
- * 删除（带确认对话框）、编辑/保存/取消、讨论。
+ * 删除（带确认对话框）、编辑/保存/取消、讨论、关闭按钮守卫。
+ *
+ * 编辑模式守卫：
+ *   关闭按钮（[data-modal="memory-detail-modal"]）和 backdrop 在编辑模式下
+ *   不能直接 hideModal，否则用户未保存的修改会丢失。
+ *   此处注册 capture phase click 监听器，在 modal.ts 的 click 监听器之前触发，
+ *   编辑模式下阻止默认行为并弹确认对话框，由 handleCloseRequest 决定是否放行。
  */
 function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
   // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）
@@ -376,23 +392,90 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // 编辑取消按钮：退出编辑模式，恢复原始内容
+  // 编辑取消按钮：检查未保存修改后退出编辑模式（与 Esc 行为一致）
   const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
   if (btnEditCancel) {
     ctx.events.addEventListener(btnEditCancel, 'click', () => {
-      ctx.exitEditMode();
+      void ctx.confirmExitEditMode();
     });
   }
 
   // 讨论按钮：关闭详情弹窗，切换到对话面板预填讨论提示
   const btnDiscuss = getOptionalElement('btn-memory-discuss', 'button');
   if (btnDiscuss) {
-    ctx.events.addEventListener(btnDiscuss, 'click', () => {
+    ctx.events.addEventListener(btnDiscuss, 'click', async () => {
+      // 讨论按钮会关闭详情弹窗，编辑模式下需先经过未保存提示
+      const canClose = await ctx.handleCloseRequest();
+      if (!canClose) return;
       const memoryName = ctx.memoryDetailModal?.dataset.memoryName ?? '';
       if (memoryName) {
         ctx.getMemoryDiscussCallback()?.(memoryName);
       }
     });
+  }
+
+  // ─── 编辑模式关闭守卫（capture phase 拦截关闭按钮 + backdrop） ───
+  // modal.ts 的 initModalListeners 在 bubble phase 注册 click → hideModal，
+  // 此处在 capture phase 先触发，编辑模式下 stopPropagation 阻止 hideModal，
+  // 由 handleCloseRequest 决定是否放行。
+  if (ctx.memoryDetailModal) {
+    const modal = ctx.memoryDetailModal;
+
+    // 拦截所有带 data-modal="memory-detail-modal" 的关闭按钮（头部 X + 底部"关闭"）
+    const closeButtons = modal.querySelectorAll<HTMLElement>('[data-modal="memory-detail-modal"]');
+    for (const btn of closeButtons) {
+      ctx.events.addEventListener(
+        btn,
+        'click',
+        (async (e: Event) => {
+          if (!ctx.getIsEditing()) return; // 非编辑模式放行，交给 modal.ts 处理
+          e.preventDefault();
+          e.stopPropagation();
+          const canClose = await ctx.handleCloseRequest();
+          if (canClose) {
+            ctx.host.hideModal('memory-detail-modal');
+          }
+        }) as EventListener,
+        true, // capture phase：在 modal.ts 之前触发
+      );
+    }
+
+    // 拦截 backdrop 点击（modal.ts 在 bubble phase 注册 backdrop → hideModal）
+    ctx.events.addEventListener(
+      modal,
+      'click',
+      (async (e: Event) => {
+        if (!ctx.getIsEditing()) return;
+        if (e.target !== modal) return; // 仅 backdrop 触发（点击子元素不触发）
+        e.preventDefault();
+        e.stopPropagation();
+        const canClose = await ctx.handleCloseRequest();
+        if (canClose) {
+          ctx.host.hideModal('memory-detail-modal');
+        }
+      }) as EventListener,
+      true, // capture phase
+    );
+
+    // 拦截全局 Escape（modal.ts 在 document bubble phase 注册 Escape → hideModal）
+    // 焦点在 textarea 时由 textarea 的 keydown 直接处理并 stopPropagation；
+    // 焦点在其他元素（如保存/取消按钮）时，由本监听器在 capture phase 拦截。
+    ctx.events.addEventListener(
+      modal,
+      'keydown',
+      ((e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        if (!ctx.getIsEditing()) return; // 非编辑模式放行，交给 modal.ts 全局 Escape
+        e.preventDefault();
+        e.stopPropagation();
+        void ctx.handleCloseRequest().then((canClose) => {
+          if (canClose) {
+            ctx.host.hideModal('memory-detail-modal');
+          }
+        });
+      }) as EventListener,
+      true, // capture phase：在 modal.ts document bubble 之前触发
+    );
   }
 }
 

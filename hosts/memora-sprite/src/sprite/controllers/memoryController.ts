@@ -334,6 +334,12 @@ export class MemoryController {
         logger.warn({ err, id }, '向量索引删除失败，可能残留孤儿向量');
       }
     }
+    // 物理删除时同步清理关系边，防止 memory_relations 残留孤儿边
+    // （软删除时保留关系边，restore 后自然恢复）
+    const removedRelations = memory.writeRemoveRelationsByMemoryId(id);
+    if (removedRelations > 0) {
+      logger.info({ id, removedRelations }, '物理删除记忆时清理了关联关系边');
+    }
     return true;
   }
 
@@ -404,6 +410,8 @@ export class MemoryController {
             logger.warn({ err, id: m.id }, '批量清空时向量索引删除失败');
           }
         }
+        // 同步清理关系边（与 purge 单条语义一致）
+        memory.writeRemoveRelationsByMemoryId(m.id);
         purged++;
       } catch (err) {
         logger.warn({ err, id: m.id }, '批量清空记忆失败');
@@ -418,25 +426,34 @@ export class MemoryController {
    *
    * 同时异步更新向量索引，失败时降级为纯关键词召回。
    *
+   * 编辑场景下保留已有记忆的 score 和 createdAt，避免编辑后：
+   * - score 重置为默认值（用户长期积累的高分被清零）
+   * - createdAt 重置为当前时间（破坏时间线视图和按创建时间排序）
+   * 首次创建时使用传入的 score 和当前时间。
+   *
    * @param source 记忆来源
    * @param name 记忆名称
    * @param content 记忆内容
-   * @param score 初始权重，默认 0.5
+   * @param score 初始权重，默认 0.5（仅首次创建时生效，编辑时保留原值）
    * @returns 记忆唯一标识（${source}:${name} 格式）
    */
   upsert(source: string, name: string, content: string, score = 0.5): string {
     // 写操作走 MemoryInspector.writeUpsert
     const memory = this.agent.memory;
     if (!memory) throw new SpriteError(ErrorCode.STORAGE_ERROR, '存储不可用');
-    const now = new Date().toISOString();
     const id = `${source}:${name}`;
+    const now = new Date().toISOString();
+    // 读取已有记忆以保留 score 和 createdAt（仅活跃记忆，软删除的同 ID 视为新建）
+    const existing = memory.getById(id);
     memory.writeUpsert({
       id,
       source,
       name,
       content,
-      score,
-      createdAt: now,
+      // 编辑场景保留原 score（避免高分清零），首次创建使用传入 score
+      score: existing ? existing.score : score,
+      // 编辑场景保留原 createdAt（避免时间线错乱），首次创建使用当前时间
+      createdAt: existing ? existing.createdAt : now,
       accessedAt: now,
     });
     // 异步更新向量索引
@@ -682,7 +699,10 @@ export class MemoryController {
    * 更新记忆关系（先删后加，实现修改类型/权重）
    *
    * 用于宿主 UI 关系图交互：编辑关系弹窗 → 修改类型/权重 → 保存。
-   * 由于 relationStore 的 addRelation 是 UPSERT 语义，等效于更新。
+   *
+   * 修复 T1：原实现仅调用 addRelation（UPSERT），修改 type 时旧三元组不被删除，
+   * 留下孤儿边。现查询 (sourceId, targetId) 下所有现有 type，删除与新 type 不同的旧关系，
+   * 再 addRelation 新三元组（同 type 时由 UPSERT 覆盖 weight）。
    *
    * @param sourceId 关系起点
    * @param targetId 关系终点
@@ -690,8 +710,25 @@ export class MemoryController {
    * @param weight 新的关系权重
    */
   updateRelation(sourceId: string, targetId: string, type: string, weight: number): void {
-    // 复用 addRelation 的 UPSERT 语义（sourceId+targetId+type 三元组唯一）
-    this.addRelation(sourceId, targetId, type, weight);
+    const memory = this.agent.memory;
+    if (!memory) return;
+    // 查询 sourceId 出发的所有关系，筛选出 targetId 匹配的旧关系
+    const existingRelations = memory.getRelations(sourceId, 'outgoing')
+      .filter((r) => r.targetId === targetId);
+    // 删除与新 type 不同的旧关系（同 type 由后续 addRelation UPSERT 覆盖 weight）
+    for (const r of existingRelations) {
+      if (r.type !== type) {
+        memory.writeRemoveRelation(r.sourceId, r.targetId, r.type);
+      }
+    }
+    // 添加新关系（UPSERT 语义：同三元组覆盖 weight）
+    memory.writeAddRelation({
+      sourceId,
+      targetId,
+      type,
+      weight,
+      createdAt: new Date().toISOString(),
+    });
   }
 
   // ─── 记忆关系路径追溯与邻居查询（Phase 5.1/5.2 内核能力透传） ───

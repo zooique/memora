@@ -172,6 +172,10 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     getAddMemoryFormData: vi.fn().mockReturnValue({ source: 'insight', name: '测试', content: '内容' }),
     enterEditMode: vi.fn(),
     exitEditMode: vi.fn(),
+    // F2：编辑模式守卫方法（取消按钮/Esc/关闭按钮/backdrop 触发）
+    confirmExitEditMode: vi.fn().mockResolvedValue(undefined),
+    handleCloseRequest: vi.fn().mockResolvedValue(true),
+    getIsEditing: vi.fn().mockReturnValue(false),
     saveEdit: vi.fn(),
     toggleAnalysisPanel: vi.fn(),
     hideAnalysisPanel: vi.fn(),
@@ -979,31 +983,36 @@ describe('memoryPanelEvents M5 详情操作按钮', () => {
       expect(ctx.saveEdit).toHaveBeenCalledTimes(1);
     });
 
-    it('编辑取消按钮应调用 exitEditMode', () => {
-      // 验证取消按钮：退出编辑模式
+    it('编辑取消按钮应调用 confirmExitEditMode（含未保存提示）', async () => {
+      // F2：取消按钮改为调用 confirmExitEditMode（含未保存修改检查），而非直接 exitEditMode
       const { ctx } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
       const btnCancel = document.getElementById('btn-memory-edit-cancel')!;
       btnCancel.click();
-
-      expect(ctx.exitEditMode).toHaveBeenCalledTimes(1);
+      // confirmExitEditMode 是异步的，需 await microtask
+      await vi.waitFor(() => {
+        expect(ctx.confirmExitEditMode).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
   describe('initDetailActionButtons - 讨论按钮', () => {
-    it('讨论按钮（有 memoryName）应调用 discuss 回调', () => {
+    it('讨论按钮（有 memoryName）应调用 discuss 回调', async () => {
       // 验证讨论按钮：从 detail-modal dataset 读取 memoryName 并传入回调
+      // F2：讨论按钮会先经过 handleCloseRequest 守卫（非编辑模式直接放行）
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
       const btnDiscuss = document.getElementById('btn-memory-discuss')!;
       btnDiscuss.click();
-
-      expect(callbacks.discuss).toHaveBeenCalledWith('测试记忆');
+      // handleCloseRequest 是异步的，需 await microtask 让 Promise resolve
+      await vi.waitFor(() => {
+        expect(callbacks.discuss).toHaveBeenCalledWith('测试记忆');
+      });
     });
 
-    it('讨论按钮（memoryName 为空）不应调用 discuss 回调', () => {
+    it('讨论按钮（memoryName 为空）不应调用 discuss 回调', async () => {
       // 验证 memoryName 空字符串降级：避免向对话面板传入空讨论提示
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
@@ -1014,8 +1023,10 @@ describe('memoryPanelEvents M5 详情操作按钮', () => {
 
       const btnDiscuss = document.getElementById('btn-memory-discuss')!;
       btnDiscuss.click();
-
-      expect(callbacks.discuss).not.toHaveBeenCalled();
+      // 等待异步 handleCloseRequest 完成
+      await vi.waitFor(() => {
+        expect(callbacks.discuss).not.toHaveBeenCalled();
+      });
     });
   });
 });

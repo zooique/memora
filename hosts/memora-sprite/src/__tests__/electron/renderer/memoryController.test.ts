@@ -100,6 +100,9 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     switchMemoryView: vi.fn(),
     loadGraphData: vi.fn(),
     hasGraphData: vi.fn(() => false),
+    // F6：图谱缓存失效 + 视图模式查询（记忆变更后刷新图谱）
+    invalidateGraphCache: vi.fn(),
+    getViewMode: vi.fn(() => 'list'),
     highlightGraphNodes: vi.fn(),
     selectGraphNode: vi.fn(),
     clearGraphHighlights: vi.fn(),

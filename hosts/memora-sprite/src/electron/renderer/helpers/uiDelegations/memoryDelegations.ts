@@ -40,6 +40,10 @@ export interface MemoryDelegations {
   loadGraphData(data: RelationGraphData): void;
   switchMemoryView(mode: 'list' | 'timeline' | 'graph'): void;
   hasGraphData(): boolean;
+  /** 使图谱数据缓存失效（记忆/关系变更后调用，防止图谱显示陈旧数据） */
+  invalidateGraphCache(): void;
+  /** 获取当前记忆面板视图模式（list/timeline/graph） */
+  getViewMode(): 'list' | 'timeline' | 'graph';
   highlightGraphNodes(nodeIds: string[] | null): void;
   selectGraphNode(nodeId: string | null): void;
   clearGraphHighlights(): void;
@@ -121,6 +125,12 @@ export const memoryDelegations: MemoryDelegations = {
   },
   hasGraphData(this: UIManager): boolean {
     return this.memoryPanel.hasGraphData();
+  },
+  invalidateGraphCache(this: UIManager): void {
+    this.memoryPanel.invalidateGraphCache();
+  },
+  getViewMode(this: UIManager): 'list' | 'timeline' | 'graph' {
+    return this.memoryPanel.getViewMode();
   },
   highlightGraphNodes(this: UIManager, nodeIds: string[] | null): void {
     this.memoryPanel.highlightGraphNodes(nodeIds);

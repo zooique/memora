@@ -247,6 +247,12 @@ export class MemoryPanelManager {
       getAddMemoryFormData: () => this.getAddMemoryFormData(),
       enterEditMode: () => this.enterEditMode(),
       exitEditMode: () => this.exitEditMode(),
+      // 编辑模式守卫：取消按钮/Esc/关闭按钮/backdrop 关闭时调用，含未保存提示
+      confirmExitEditMode: () => this.confirmExitEditMode(),
+      // 关闭请求守卫：编辑模式下返回 false 阻止关闭，非编辑模式返回 true 放行
+      handleCloseRequest: () => this.handleCloseRequest(),
+      // 读取编辑状态（事件层 capture phase 拦截关闭按钮/backdrop 时判断）
+      getIsEditing: () => this.isEditing,
       saveEdit: () => this.saveEdit(),
       toggleAnalysisPanel: (panel) => this.toggleAnalysisPanel(panel),
       hideAnalysisPanel: () => this.hideAnalysisPanel(),
@@ -449,8 +455,25 @@ export class MemoryPanelManager {
 
   // ─── 记忆详情（委托到 memoryDetailPanel helper） ─────────
 
-  /** 显示记忆详情（委托到 memoryDetailPanel helper） */
+  /**
+   * 显示记忆详情（委托到 memoryDetailPanel helper）
+   *
+   * 进入前做一次防御性清理：若上一次编辑后 Controller 未调用 exitEditMode
+   * （如保存成功后直接 hideModal），#memory-detail-content 可能仍是 textarea，
+   * 此时 helper 的 getOptionalElement('pre') 会返回 null 导致内容不渲染。
+   * 此处检测并恢复为 pre，确保每次打开详情都是干净的只读状态。
+   */
   showMemoryDetail(memory: MemoryDetail): void {
+    const current = document.getElementById('memory-detail-content');
+    if (current instanceof HTMLTextAreaElement) {
+      const originalContent = current.dataset.originalContent ?? '';
+      const pre = document.createElement('pre');
+      pre.id = 'memory-detail-content';
+      pre.textContent = originalContent;
+      pre.dataset.originalContent = originalContent;
+      current.replaceWith(pre);
+      this.isEditing = false;
+    }
     showMemoryDetailHelper(this.buildDetailPanelContext(), memory);
   }
 
@@ -515,32 +538,54 @@ export class MemoryPanelManager {
    *
    * 将 content 区域从只读 <pre> 变为可编辑 <textarea>，
    * 切换底部按钮：隐藏编辑/删除，显示保存/取消。
+   * 同时绑定 Ctrl+Enter 快捷保存和 Esc 退出编辑（含未保存提示）。
    */
   private enterEditMode(): void {
     if (this.isEditing) return;
-    this.isEditing = true;
 
     const contentEl = getOptionalElement('memory-detail-content', 'pre');
+    // P2-1：仅在元素校验通过后才置位 isEditing，避免后续按钮切换状态错乱
     if (!contentEl) return;
+    this.isEditing = true;
 
     // 将 <pre> 内容替换为 <textarea>，保留原始内容
     const originalContent = contentEl.dataset.originalContent ?? contentEl.textContent ?? '';
     const textarea = createEl('textarea', 'memory-edit-textarea');
     textarea.id = 'memory-detail-content';
     textarea.value = originalContent;
-    // 保留 dataset 引用
+    // 保留 dataset 引用，供 exitEditMode 比较和恢复使用
     textarea.dataset.originalContent = originalContent;
     contentEl.replaceWith(textarea);
     textarea.focus();
+
+    // 编辑模式键盘快捷键：Ctrl+Enter 保存，Esc 退出编辑（含未保存提示）
+    // Esc 调用 stopPropagation 阻止冒泡到 modal.ts 全局 Escape 监听器，由本管理器内部处理
+    this.events.addEventListener(
+      textarea,
+      'keydown',
+      ((e: KeyboardEvent) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          this.saveEdit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          void this.confirmExitEditMode();
+        }
+      }) as EventListener,
+    );
 
     this.updateDetailButtons();
   }
 
   /**
-   * 退出编辑模式
+   * 退出编辑模式（强制退出，无未保存提示）
    *
    * 将 <textarea> 恢复为只读 <pre>，恢复原始内容，
    * 切换底部按钮：显示编辑/删除，隐藏保存/取消。
+   *
+   * 用于保存成功后或 confirmExitEditMode 用户确认放弃修改后调用。
+   * 用户主动退出（取消按钮/Esc/关闭弹窗）应调用 confirmExitEditMode 而非本方法。
    */
   private exitEditMode(): void {
     if (!this.isEditing) return;
@@ -550,7 +595,7 @@ export class MemoryPanelManager {
     if (!textarea) return;
 
     // 恢复为只读 <pre>，使用原始内容
-    const originalContent = textarea.dataset.originalContent ?? '';
+    const originalContent = (textarea as HTMLTextAreaElement).dataset.originalContent ?? '';
     const pre = document.createElement('pre');
     pre.id = 'memory-detail-content';
     pre.textContent = originalContent;
@@ -558,6 +603,52 @@ export class MemoryPanelManager {
     textarea.replaceWith(pre);
 
     this.updateDetailButtons();
+  }
+
+  /**
+   * 检查未保存修改并按需弹确认对话框后退出编辑模式
+   *
+   * 编辑模式下取消按钮/Esc/关闭弹窗/backdrop 关闭时调用：
+   * - 有修改：弹"放弃未保存的修改？"确认对话框，确认后退出编辑模式
+   * - 无修改：直接退出编辑模式
+   */
+  private async confirmExitEditMode(): Promise<void> {
+    if (!this.isEditing) return;
+
+    const textarea = document.getElementById('memory-detail-content');
+    const original = textarea instanceof HTMLTextAreaElement
+      ? (textarea.dataset.originalContent ?? '')
+      : '';
+    const current = textarea instanceof HTMLTextAreaElement ? textarea.value : '';
+
+    // 比较当前值与原始值，有差异时弹确认对话框
+    if (current !== original) {
+      const confirmed = await this.host.showConfirmDialog({
+        title: '放弃修改',
+        message: '当前编辑内容未保存，确定要放弃修改吗？',
+        confirmText: '放弃',
+        danger: true,
+      } satisfies ConfirmDialogOptions);
+      if (!confirmed) return; // 用户选择保留修改，停留在编辑模式
+    }
+
+    this.exitEditMode();
+  }
+
+  /**
+   * 处理关闭请求（关闭按钮/Escape/backdrop 触发）
+   *
+   * 编辑模式下：调用 confirmExitEditMode，由用户决定是否放弃未保存修改。
+   *   - 用户确认放弃：isEditing 被置为 false，返回 true 表示可关闭弹窗
+   *   - 用户选择保留：isEditing 仍为 true，返回 false 表示应阻止关闭
+   * 非编辑模式：直接返回 true，由调用方执行 hideModal。
+   *
+   * @returns true 表示可关闭弹窗，false 表示应阻止关闭
+   */
+  async handleCloseRequest(): Promise<boolean> {
+    if (!this.isEditing) return true;
+    await this.confirmExitEditMode();
+    return !this.isEditing;
   }
 
   /**
@@ -581,7 +672,12 @@ export class MemoryPanelManager {
     }
 
     const id = this.memoryDetailModal?.dataset.memoryId;
-    if (!id) return;
+    // P1-6：id 缺失时给出用户反馈，避免静默失败导致用户以为保存成功
+    if (!id) {
+      this.host.showToast('记忆 ID 缺失，无法保存', 'error');
+      reportError('MemoryPanel saveEdit 记忆 ID 缺失', new Error('memoryDetailModal.dataset.memoryId 为空'));
+      return;
+    }
 
     this.memoryEditCallback?.(id, newContent);
   }
@@ -759,6 +855,21 @@ export class MemoryPanelManager {
    */
   hasGraphData(): boolean {
     return this.graphDataCache !== null && this.graphDataCache.edges.length > 0;
+  }
+
+  /**
+   * 使图谱数据缓存失效
+   *
+   * 在记忆 delete/purge/restore/purgeAll/restoreAll/addMemory 等变更节点拓扑的操作后调用，
+   * 防止图谱视图显示陈旧数据（已删除节点仍存在、新增节点缺失）。
+   *
+   * 设计：
+   * - 仅清空 graphDataCache，不主动重新请求 IPC（避免无视图谱视图时的无谓请求）
+   * - 下次切换到图谱视图时 onViewSwitch 回调会重新请求 getRelationGraph
+   * - 若当前已在图谱视图，Controller 应额外调用 loadGraphData 重新加载渲染器
+   */
+  invalidateGraphCache(): void {
+    this.graphDataCache = null;
   }
 
   /** 获取当前视图模式 */

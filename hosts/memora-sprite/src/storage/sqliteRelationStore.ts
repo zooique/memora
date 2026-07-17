@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SqliteRelationStore — IMemoryRelationStore 的 better-sqlite3 实现
  *
  * 宿主项目（精灵）持有 better-sqlite3 实例，实现 IMemoryRelationStore 接口后注入 Agent。
@@ -135,6 +135,21 @@ export class SqliteRelationStore implements IMemoryRelationStore {
     this.db.prepare(
       'DELETE FROM memory_relations WHERE sourceId = ? AND targetId = ? AND type = ?'
     ).run(sourceId, targetId, type);
+  }
+
+  /**
+   * 删除某记忆的所有关系（不论方向）
+   *
+   * 单条 SQL DELETE 原子执行，利用 idx_relations_source 和 idx_relations_target 索引。
+   * 防止记忆删除后留下孤儿边。
+   *
+   * @returns 被删除的关系数量（SQLite changes 字段）
+   */
+  removeRelationsByMemoryId(memoryId: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM memory_relations WHERE sourceId = ? OR targetId = ?'
+    ).run(memoryId, memoryId);
+    return result.changes;
   }
 
   /**
