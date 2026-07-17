@@ -283,12 +283,15 @@ export class OnboardingManager {
         if (this.skippedApiKey) {
           // 跳过 API 配置：引导用户稍后在设置面板配置
           msgEl.textContent = '你可以稍后在设置面板中配置 AI 服务。现在开始对话吧。';
-        } else if (isReady) {
-          // Agent 已就绪：用户可立即开始对话
+        } else if (this.savedApiKey && isReady) {
+          // 已保存且 Agent 已就绪：用户可立即开始对话
           msgEl.textContent = 'AI 服务已配置，开始你的第一段对话吧。';
-        } else {
+        } else if (this.savedApiKey) {
           // 已保存但 Agent 仍在初始化中：让用户知道需要稍候
           msgEl.textContent = 'AI 服务已保存，正在初始化中，请稍候片刻再开始对话。';
+        } else {
+          // 未保存也未跳过（从步骤 1 直接跳过等边界场景）：引导用户稍后配置
+          msgEl.textContent = '你可以稍后在设置面板中配置 AI 服务。现在开始对话吧。';
         }
       }
     }
