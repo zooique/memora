@@ -74,8 +74,9 @@ export function parseMemory(raw: unknown): Memory {
   }
 
   // 验证 score 字段（可选，有默认值）
+  // Number.isFinite 同时排除 NaN/Infinity（对齐 zod z.number() 行为）
   if (obj.score !== undefined && obj.score !== null) {
-    if (typeof obj.score !== 'number' || obj.score < 0 || obj.score > 1) {
+    if (typeof obj.score !== 'number' || !Number.isFinite(obj.score) || obj.score < 0 || obj.score > 1) {
       throw new Error('Memory 解析失败：score 必须是 0-1 之间的数字');
     }
   }

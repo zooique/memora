@@ -212,7 +212,9 @@ function parseConfig(raw: unknown): Config {
 
   const memory: MemoryConfig = {
     dataDir: typeof memoryInput.dataDir === 'string' ? memoryInput.dataDir : DEFAULT_CONFIG.memory.dataDir,
-    maxContextTokens: typeof memoryInput.maxContextTokens === 'number' ? memoryInput.maxContextTokens : DEFAULT_CONFIG.memory.maxContextTokens,
+    maxContextTokens: (typeof memoryInput.maxContextTokens === 'number' && Number.isFinite(memoryInput.maxContextTokens))
+      ? memoryInput.maxContextTokens
+      : DEFAULT_CONFIG.memory.maxContextTokens,
   };
 
   // 解析 security 配置
@@ -253,7 +255,8 @@ function parseConfig(raw: unknown): Config {
  * @throws 当值超出范围时抛出错误
  */
 function validateTemperature(value: unknown, defaultValue: number): number {
-  if (typeof value === 'number') {
+  // Number.isFinite 同时排除 NaN/Infinity（对齐 zod z.number() 行为）
+  if (typeof value === 'number' && Number.isFinite(value)) {
     if (value < 0 || value > 2) {
       throw new Error(`temperature 必须在 0-2 之间，当前值: ${value}`);
     }
@@ -337,7 +340,7 @@ function parseProviders(value: unknown): Record<string, ProviderConfig> | undefi
       baseUrl: typeof p.baseUrl === 'string' ? p.baseUrl : undefined,
       apiKey: typeof p.apiKey === 'string' ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
-      contextWindow: typeof p.contextWindow === 'number' ? p.contextWindow : undefined,
+      contextWindow: (typeof p.contextWindow === 'number' && Number.isFinite(p.contextWindow)) ? p.contextWindow : undefined,
     };
   }
 
