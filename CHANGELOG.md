@@ -4,6 +4,78 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 2026-07-17
+
+从 1.0.1 到 2.0.0 的架构收敛版本。核心目标：读写统一、记忆治理 L1~L4 全链路、god function 拆分、可观测性补全。
+
+### Breaking Changes
+
+> **升级指南**：以下变更需要消费者修改代码。
+
+#### 1. MemoryMutator 移除，读写统一入口
+
+`MemoryMutator` 类（1.0.0 引入的读写分离）已合并回 `MemoryInspector`。写方法以 `writeXxx` 前缀命名，与读方法统一在 `agent.memory` 上。
+
+| 1.0.1 调用方式 | 2.0.0 迁移路径 |
+|---|---|
+| `agent.memoryMutator.upsert(memory)` | `agent.memory.writeUpsert(memory)` |
+| `agent.memoryMutator.delete(id)` | `agent.memory.writeDelete(id)` |
+| `agent.memoryMutator.restore(id)` | `agent.memory.writeRestore(id)` |
+| `agent.memoryMutator.purge(id)` | `agent.memory.writePurge(id)` |
+| `agent.memoryMutator.purgeExpired(before)` | `agent.memory.writePurgeExpired(before)` |
+| `agent.memoryMutator.addRelation(rel)` | `agent.memory.writeAddRelation(rel)` |
+| `agent.memoryMutator.removeRelation(...)` | `agent.memory.writeRemoveRelation(...)` |
+| `import type { MemoryMutator }` | 移除，不再导出 |
+
+**保留在 `agent.memory` 的只读方法**：`snapshot()` / `search()` / `searchHybrid()` / `stats()` / `getById()` / `list()` / `listDeleted()` / 关系查询方法等（不变）。
+
+### Added（新增功能）
+
+- **LLM 记忆治理 L1~L4**：
+  - L1 语义去重：`agent.deduplicateMemories()` — 扫描名称相似记忆对，LLM 判断语义等价，降级重复记忆
+  - L2 时效性评估：`agent.evaluateTimeliness()` — 扫描低分记忆，LLM 判断是否过时，降级过时记忆
+  - L3 冲突检测：`agent.detectConflicts()` — 同 source 内配对，LLM 判断语义冲突，仅检测不修复
+  - L0 手动衰减：`agent.runMemoryDecayOnce()` — 触发一次 score 衰减
+  - 新增类型：`DedupPair` / `DedupVerdict` / `DedupReport`、`TimelinessVerdict` / `TimelinessReport`、`ConflictVerdict` / `ConflictReport`
+- **TextPolishManager**：LLM 文本润色（语法修正 + 表达优化），独立于 Agent 生命周期，通过 `TextPolishManager` 类使用
+- **EvalRunner 公开**：评估框架从 `@internal` 提升为公开 API，新增 `EVAL_SCENARIOS` / `EvalRunner` / `EvalRunnerOptions` / `EvalSummary` 导出
+- **segmentLower**：分词工具扩展，返回小写分词结果（宿主 SqliteStorage 依赖）
+- **isPlainObject**：纯对象类型守卫（宿主 spriteConfig 依赖，校验 JSON.parse 结果）
+- **ChatLockManager**：对话锁管理器（从 AgentLoop 拆分），基于 token 的并发安全机制
+- **ArchiveCoordinator**：归档协调器（从 postProcessInner 拆分），统一管理会话归档 + 洞察提取 + 角色匹配
+- **MemoryDecayScheduler**：记忆衰减调度器（从 agent.ts 拆分），定时衰减 + L2 时效性评估 + 指标统计
+- **MemoryAdvisor**：记忆顾问（从 MemoryInspector 拆分），sourceHealth 诊断 + suggest 关联推荐 + L3 冲突检测
+- `TypedEventEmitter` 新增 `emitAsync` 方法（支持异步事件处理器的 await 等待）
+
+### Changed（改进）
+
+- **processUserInput 拆分**：从 550+ 行 god function 拆分为 4 个职责清晰的子方法（`handleRecallAndInputGuard` / `handleIteration` / `handleToolCalls` / `handleTextResponse`），每个方法独立可测
+- **nullifyAllComponents 统一**：Agent.close() 中 13 个组件字段置空集中到 `nullifyAllComponents()` 私有方法，消除遗漏风险
+- **requireNonNull 消除**：全量替换为局部变量提取 + non-null assertion `!`，减少代码噪音
+- **personaManager LLM 调用迁移**：角色匹配的 LLM 调用从 persona 层迁移到 agent 层（架构分层合规）
+- **toError 行为对齐**：跨模块统一错误处理，`toError(nonError)` 不再抛出 TypeError
+- **formatDateKey 提取**：消除 3 处重复的日期格式化逻辑
+- **抽象剪枝 3 轮**：DRY 收敛——消除重复的工具函数、常量定义、类型推导
+- **types.ts 依赖图注释**：index.ts 新增完整的类型依赖图，降低新开发者学习成本
+- 提示词优化 + 并发工具调用 + 可观测性补全（Tracer Span 覆盖衰减/归档/冲突检测）
+
+### Fixed（修复）
+
+- 神木回天 6 项修复：日志改进、硬约束测试补全、错误处理路径修复
+- 感知层模式陈旧 bug：`welcomeBack` 文案 + 冷启动 blend 逻辑修复
+- P3 静默 catch 修复：不再吞掉关键错误
+- 归档失败事件 `archiveFailed` 可观测性补全（11 处测试覆盖）
+
+### Internal（内部变更）
+
+- `memoryMutator.ts` 文件删除，写方法合并到 `memoryInspector.ts`（`writeXxx` 前缀）
+- `archiveCoordinator.ts` 独立模块（从 `agent.ts` 提取）
+- `chatLockManager.ts` 独立模块（从 `loop.ts` 提取）
+- `memoryDecayScheduler.ts` 独立模块（从 `agent.ts` 提取）
+- `memoryAdvisor.ts` 独立模块（从 `memoryInspector.ts` 提取）
+- `textPolishManager.ts` 新增模块（纯 LLM 调用，无存储依赖）
+- 测试补强：L2 时效性评估测试、衰减边界测试、各 Manager 测试大幅扩展（+500+ 测试用例）
+
 ## [1.0.2] - 2026-07-11
 
 ### Changed

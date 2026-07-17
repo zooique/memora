@@ -109,7 +109,7 @@ src/
 ├── security/       # 安全策略
 ├── config/         # 配置加载
 ├── logging/        # 日志（ILogger 接口 + console fallback）
-├── eval/           # 评估框架（EvalScenario 类型 + 工具函数，CI 回归测试用）
+├── eval/           # 评估框架（EvalScenario + EvalRunner，CI 回归测试用）
 └── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "@zooique/memora",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "通用 Agent 架构（纯逻辑库）— 本地、私有、领域无关，万物皆记忆",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,7 +36,7 @@
     "format:check": "prettier --check \"**/*.{ts,md,json}\"",
     "typecheck": "tsc --noEmit",
     "prepare": "lefthook install || true",
-    "prepublishOnly": "npx rimraf dist && npm run build"
+    "prepublishOnly": "rimraf dist && npm run build"
   },
   "engines": {
     "node": ">=22.0.0"

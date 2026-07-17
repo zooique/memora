@@ -235,10 +235,11 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
   });
 
   it('独立工具调用应该并发执行而非串行', async () => {
-    // 用延迟 mock 验证并发：两个工具各延迟 60ms
-    // 串行总耗时 ≥120ms，并发总耗时 ≈60ms
+    // 用延迟 mock 验证并发：两个工具各延迟 100ms
+    // 串行总耗时 ≥200ms，并发总耗时 ≈100ms + 框架开销
+    // 阈值 180ms 留有充分余地，避免 CI 环境抖动
     const toolExecutor = vi.fn().mockImplementation(async () => {
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((r) => setTimeout(r, 100));
       return 'done';
     });
 
@@ -265,9 +266,8 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     const elapsed = Date.now() - start;
 
     expect(toolExecutor).toHaveBeenCalledTimes(2);
-    // 并发判定：总耗时接近单个工具耗时（60ms），远小于串行（120ms）
-    // 缓冲 <110ms 判定为并发（避免 CI 环境抖动）
-    expect(elapsed).toBeLessThan(110);
+    // 并发判定：总耗时接近单个工具耗时（100ms），远小于串行（200ms）
+    expect(elapsed).toBeLessThan(180);
   });
 
   it('tool_start 应批量 yield（全部在 tool_result 之前）', async () => {
