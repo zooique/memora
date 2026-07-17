@@ -34,6 +34,8 @@ import { reportError } from '../helpers/errorHelpers.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
 import { safeGet, safeSet } from '../helpers/safeStorage.js';
 import { QuickInputCompletion } from './quickInputCompletion.js';
+import type { CompletionItem } from './quickInputCompletion.js';
+import { fetchMemoryContent } from '../helpers/completionHelpers.js';
 
 /**
  * 快速输入浮窗所需的 ElectronAPI 子集
@@ -44,7 +46,7 @@ export type QuickInputElectronAPI = Pick<
   | 'searchMemories' | 'searchSessionMessages' | 'resizeQuickInput'
   | 'moveQuickInput' | 'polishQuickInput'
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
-  | 'boostMemory'
+  | 'boostMemory' | 'showMemory'
 >;
 
 /** 流式模式 Toast 显示时长（ms），比普通模式短，快速恢复输入状态 */
@@ -386,25 +388,65 @@ export class QuickInputController {
 
   /**
    * 初始化补全管理器：创建实例 + 绑定 onSelect / onListChange 回调
+   *
+   * onSelect 填充策略（预览与填充分离）：
+   *   - 对话候选：fullText 已在搜索结果中（m.content 完整原文），同步填充
+   *   - 记忆候选：contentPreview 已被内核截断，通过 showMemory IPC 回库查全量后异步填充
+   *   - 回库查询失败时降级使用截断预览 text，保证不阻塞输入
    */
   private initCompletion(): void {
     this.completion = new QuickInputCompletion(this.inputField, this.completionList, this.api);
     // 候选项被选中（←→/Click）时填充到输入框
-    this.completion.onSelect((text) => {
-      this.inputField.value = text;
-      this.inputField.focus();
-      const len = this.inputField.value.length;
-      this.inputField.setSelectionRange(len, len);
-      /* UX-QI-25：填充长文本后滚动到底部，保证光标在可视区域内 */
-      this.inputField.scrollTop = this.inputField.scrollHeight;
-      this.autoResize();
-      this.updateCounter();
+    this.completion.onSelect((item: CompletionItem) => {
+      // 抑制填充文本触发的 input 事件 → 补全搜索（避免候选列表闪烁）
+      this.completion?.suppressNextSearch();
+      // 对话候选：fullText 已有完整原文，直接同步填充
+      if (item.fullText) {
+        this.fillText(item.fullText);
+        this.completion?.clear();
+        return;
+      }
+      // 记忆候选：fullText 为空，需通过 showMemory IPC 回库查全量内容
+      if (item.memoryId) {
+        this.fillFromMemory(item);
+        return;
+      }
+      // 降级：无 fullText 也无 memoryId（不应发生），使用截断预览
+      this.fillText(item.text);
+      this.completion?.clear();
     });
     // 候选列表变化时调整窗口高度
     this.completion.onListChange(() => {
       this.resizeWindow();
     });
     this.completion.init();
+  }
+
+  /**
+   * 将文本填充到输入框（同步操作）
+   *
+   * 集中管理填充后的 UI 更新：设置 value → 聚焦 → 光标移到末尾 → 滚动到底部 → 更新高度/计数。
+   */
+  private fillText(text: string): void {
+    this.inputField.value = text;
+    this.inputField.focus();
+    const len = this.inputField.value.length;
+    this.inputField.setSelectionRange(len, len);
+    // UX-QI-25：填充长文本后滚动到底部，保证光标在可视区域内
+    this.inputField.scrollTop = this.inputField.scrollHeight;
+    this.autoResize();
+    this.updateCounter();
+  }
+
+  /**
+   * 异步从数据库获取记忆全量内容后填充（记忆候选专用）
+   *
+   * 委托 fetchMemoryContent 公共函数，消除与 inputAreaManager 的重复逻辑。
+   * 回库查询期间候选列表保持可见（不提前清除），填充完成后调用 clear() 隐藏。
+   */
+  private async fillFromMemory(item: CompletionItem): Promise<void> {
+    await fetchMemoryContent(item, this.api.showMemory, this.fillText.bind(this), 'QuickInput:showMemory');
+    this.completion?.clear();
   }
 
   /**

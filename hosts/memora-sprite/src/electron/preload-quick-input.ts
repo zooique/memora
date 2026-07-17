@@ -32,6 +32,8 @@ const IPC_CHANNELS = {
   SESSION_SEARCH: 'session-search',
   /** 提升记忆 score（L2 采纳反哺内核） */
   MEMORIES_BOOST: 'memories-boost',
+  /** 查看单条记忆详情（补全选中时回库查全量内容） */
+  MEMORIES_SHOW: 'memories-show',
 } as const;
 
 /** 主→渲染进程 通道（仅 quick-input 相关） */
@@ -73,6 +75,14 @@ interface PolishResult {
   changed: boolean;
 }
 
+/** 记忆详情（showMemory IPC 返回，仅含补全填充所需的字段） */
+interface MemoryDetail {
+  id: string;
+  content: string;
+  name: string;
+  source: string;
+}
+
 /** 浮窗 show 事件载荷 */
 interface QuickInputShowPayload {
   clipboardText: string | null;
@@ -100,6 +110,15 @@ const quickInputAPI = {
    */
   boostMemory: (id: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_BOOST, id),
+
+  /**
+   * 查看单条记忆详情（补全选中时回库查全量内容）
+   *
+   * 用于补全候选选中后获取记忆的完整内容（contentPreview 已被内核截断），
+   * 实现"预览展示截断文本，填充回库查全量"的分离设计。
+   */
+  showMemory: (id: string): Promise<{ memory: MemoryDetail }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
 
   /** 确认输入（paste + 流式锁抑制 blur） */
   confirmQuickInput: (text: string, streamMode?: boolean): Promise<ConfirmResult> =>

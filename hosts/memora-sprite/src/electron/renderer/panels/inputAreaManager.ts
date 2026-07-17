@@ -28,6 +28,8 @@ import { clearElement } from '../helpers/domHelpers.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 复用 quick-input 补全管理器（已泛化支持 textarea）
 import { QuickInputCompletion } from '../quick-input/quickInputCompletion.js';
+import type { CompletionItem } from '../quick-input/quickInputCompletion.js';
+import { fetchMemoryContent } from '../helpers/completionHelpers.js';
 
 /**
  * 输入区域宿主接口
@@ -302,15 +304,52 @@ export class InputAreaManager {
     // window.electronAPI 由 preload.ts 通过 contextBridge 注入，已有全局类型声明
     // 传入完整的 ElectronAPI，QuickInputCompletion 仅使用 searchMemories/searchSessionMessages 子集
     this.completion = new QuickInputCompletion(this.inputEl, completionList, window.electronAPI);
-    // Tab 选择候选项时，回填到输入框并触发 input 事件（调整高度 + 更新按钮状态）
-    this.completion.onSelect((text) => {
-      this.inputEl.value = text;
-      // 触发 input 事件，让 handleInputChange 感知内容变化
-      this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-      // 将光标移到末尾
-      this.inputEl.setSelectionRange(this.inputEl.value.length, this.inputEl.value.length);
+    // 候选项选中时回填到输入框（优先 fullText，降级 text）
+    // 主窗口的 window.electronAPI 是完整 API，showMemory 可用，记忆候选异步回库查全量
+    this.completion.onSelect((item: CompletionItem) => {
+      // 抑制填充文本触发的 input 事件 → 补全搜索（避免候选列表闪烁）
+      this.completion?.suppressNextSearch();
+      // 对话候选：fullText 已有完整原文，直接同步填充
+      if (item.fullText) {
+        this.fillCompletionText(item.fullText);
+        this.completion?.clear();
+        return;
+      }
+      // 记忆候选：fullText 为空，通过 showMemory IPC 回库查全量
+      if (item.memoryId) {
+        this.fillFromMemoryAsync(item);
+        return;
+      }
+      // 降级：使用截断预览
+      this.fillCompletionText(item.text);
+      this.completion?.clear();
     });
     this.completion.init();
+  }
+
+  /**
+   * 将补全文本填入输入框（同步操作）
+   *
+   * 设置 value → 触发 input 事件（更新高度 + 按钮状态）→ 光标移到末尾。
+   * 与 quickInput.ts 的 fillText 同构，但主输入框需额外触发 input 事件通知 handleInputChange。
+   */
+  private fillCompletionText(text: string): void {
+    this.inputEl.value = text;
+    // 触发 input 事件，让 handleInputChange 感知内容变化（更新高度 + 按钮状态）
+    this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    // 将光标移到末尾
+    this.inputEl.setSelectionRange(this.inputEl.value.length, this.inputEl.value.length);
+  }
+
+  /**
+   * 异步从数据库获取记忆全量内容后填入输入框（记忆候选专用）
+   *
+   * 委托 fetchMemoryContent 公共函数，消除与 quickInput.ts 的重复逻辑。
+   * 回库查询期间候选列表保持可见（不提前清除），填充完成后调用 clear() 隐藏。
+   */
+  private async fillFromMemoryAsync(item: CompletionItem): Promise<void> {
+    await fetchMemoryContent(item, window.electronAPI.showMemory, this.fillCompletionText.bind(this), 'InputArea:showMemory');
+    this.completion?.clear();
   }
 
   // ─── Provider 选择器 ────────────────────────────────────

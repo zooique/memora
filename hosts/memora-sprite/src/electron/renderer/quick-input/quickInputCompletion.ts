@@ -59,8 +59,10 @@ export type CompletionTarget = HTMLInputElement | HTMLTextAreaElement;
 
 /** 补全候选项统一结构（合并记忆搜索 + 对话搜索结果） */
 export interface CompletionItem {
-  /** 候选文本（用于回填输入框） */
+  /** 候选预览文本（截断到 PREVIEW_MAX_LENGTH，仅用于展示） */
   text: string;
+  /** 候选全量文本（用于回填输入框，对话候选从搜索结果直取，记忆候选通过 showMemory IPC 回库查） */
+  fullText?: string;
   /** 来源标签（洞察/偏好/投影/记忆/对话） */
   sourceLabel: string;
   /** 相关度分数（0-1，用于排序） */
@@ -150,8 +152,8 @@ export class QuickInputCompletion {
   private listEl: HTMLElement;
   /** ElectronAPI 子集（搜索能力） */
   private api: CompletionElectronAPI;
-  /** 候选项选择回调（←→ 填充时触发，参数为选中的候选项文本） */
-  private onSelectCallback: ((text: string) => void) | null = null;
+  /** 候选项选择回调（←→ 填充时触发，参数为选中的候选项完整对象） */
+  private onSelectCallback: ((item: CompletionItem) => void) | null = null;
   /** 候选列表变化回调（用于通知窗口调整高度） */
   private onListChangeCallback: ((visible: boolean) => void) | null = null;
 
@@ -169,6 +171,9 @@ export class QuickInputCompletion {
   private totalCandidatesCount = 0;
   /** 当前查询文本（fetchCandidates 时缓存，供 renderCandidates/recordAdoption 计算埋点） */
   private currentQuery = '';
+
+  /** 抑制下一次 input 事件触发的补全搜索（选中候选项填充文本后设置，避免填充触发多余搜索） */
+  private suppressNextInput = false;
 
   /**
    * @param inputField 输入框元素（input 或 textarea）
@@ -198,10 +203,10 @@ export class QuickInputCompletion {
   /**
    * 注册候选项选择回调
    *
-   * 用户按 ←→ 或点击候选项时触发，参数为选中的候选项文本。
-   * 回调负责将文本回填到输入框（通常设置 inputField.value = text）。
+   * 用户按 ←→ 或点击候选项时触发，参数为选中的候选项完整对象。
+   * 回调负责将候选项全量文本回填到输入框（优先使用 fullText，降级使用 text）。
    */
-  onSelect(cb: (text: string) => void): void {
+  onSelect(cb: (item: CompletionItem) => void): void {
     this.onSelectCallback = cb;
   }
 
@@ -215,12 +220,28 @@ export class QuickInputCompletion {
   }
 
   /**
+   * 抑制下一次 input 事件触发的补全搜索
+   *
+   * 选中候选项填充文本到输入框后，input 事件会触发新的补全搜索，
+   * 导致候选列表闪烁。调用此方法后，下一次 input 事件将被跳过。
+   * 标志位仅生效一次，自动重置。
+   */
+  suppressNextSearch(): void {
+    this.suppressNextInput = true;
+  }
+
+  /**
    * 输入事件处理器（防抖）
    *
    * 输入内容变化后等待 DEBOUNCE_MS，若期间无新输入则触发补全。
    * 输入长度 < MIN_QUERY_LENGTH 时清空候选列表。
    */
   private handleInput = (): void => {
+    // 选中候选项填充文本后，跳过本次 input 事件触发的补全搜索（避免候选列表闪烁）
+    if (this.suppressNextInput) {
+      this.suppressNextInput = false;
+      return;
+    }
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
@@ -269,8 +290,8 @@ export class QuickInputCompletion {
       e.preventDefault();
       const selected = this.candidates[this.selectedIndex]!;
       this.recordAdoption(selected.text, selected.memoryId);
-      this.onSelectCallback?.(selected.text);
-      this.clearCandidates();
+      // 清除候选列表由回调负责（记忆候选异步填充后清除，对话候选同步填充后清除）
+      this.onSelectCallback?.(selected);
     }
   };
 
@@ -462,6 +483,8 @@ export class QuickInputCompletion {
     // L1 source 语义感知：读取 m.source 字段，映射为中文标签；
     // 排除 persona/rule/skill/guardrail（已在 system prompt 注入，补全候选重复会干扰输入）
     // L2 采纳反哺：保留 m.id 到 memoryId，用户采纳时通过此 id 反哺内核 score
+    // 记忆候选的 fullText 不在此处设置（contentPreview 已被内核截断），
+    // 选中时通过 showMemory IPC 回库查全量内容
     for (const m of memories) {
       const text = m.contentPreview?.trim();
       if (!text) continue;
@@ -472,6 +495,7 @@ export class QuickInputCompletion {
       const sourceLabel = (m.source && SOURCE_LABEL_MAP[m.source]) || '记忆';
       candidates.push({
         text: truncate(text, PREVIEW_MAX_LENGTH),
+        // 记忆候选全量文本由选中时 showMemory IPC 回库查，此处不设 fullText
         sourceLabel,
         score: m.score,
         memoryId: m.id,
@@ -482,6 +506,7 @@ export class QuickInputCompletion {
     // score 基于关键词在内容中的匹配位置：开头高（0.6），末尾低（0.4）
     // 意图感知：短查询（≤5 字符）视为"续写"场景，对话候选获得 boost，
     //   使近期对话在续写时优先于结构化记忆（用户更可能想补全刚说过的话）
+    // 对话候选的 fullText 存完整原文（m.content），选中时直接同步填充，无需回库查
     const isShortQuery = query.length <= SHORT_QUERY_THRESHOLD;
     messages.forEach((m) => {
       const text = m.content?.trim();
@@ -495,6 +520,8 @@ export class QuickInputCompletion {
       const intentBoost = isShortQuery ? CONVERSATION_SHORT_QUERY_BOOST : 0;
       candidates.push({
         text: truncate(text, PREVIEW_MAX_LENGTH),
+        // 对话候选全量文本：搜索结果中 m.content 已是完整原文，直接存为 fullText
+        fullText: text,
         sourceLabel: '对话',
         score: baseScore + intentBoost,
       });
@@ -742,8 +769,8 @@ export class QuickInputCompletion {
         this.updateSelection();
         // 传入 position=i（点击位置），用于统计 Top-1 命中率/平均位置
         this.recordAdoption(item.text, item.memoryId, i);
-        this.onSelectCallback?.(item.text);
-        this.clearCandidates();
+        // 清除候选列表由回调负责（记忆候选异步填充后清除，对话候选同步填充后清除）
+        this.onSelectCallback?.(item);
       });
 
       // hover 高亮（同步 selectedIndex，键盘和鼠标一致）

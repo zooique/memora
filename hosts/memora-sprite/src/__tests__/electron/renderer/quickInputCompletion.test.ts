@@ -672,10 +672,10 @@ describe('handleKeyDown · 键盘导航', async () => {
     // ← 填充到输入框
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
 
-    expect(onSelect).toHaveBeenCalledWith('选中文本');
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ text: '选中文本' }));
   });
 
-  it('←→ 确认后应清空候选列表', async () => {
+  it('←→ 确认后候选列表保持不变（清除由回调负责）', async () => {
     const { completion, input, api, list } = createCompletion();
     completion.onSelect(vi.fn());
 
@@ -690,8 +690,9 @@ describe('handleKeyDown · 键盘导航', async () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
 
-    expect(list.classList.contains('hidden')).toBe(true);
-    expect(list.children.length).toBe(0);
+    // 候选列表不再自动清除（由回调负责），确认后仍保持可见
+    expect(list.classList.contains('hidden')).toBe(false);
+    expect(list.children.length).toBeGreaterThan(0);
   });
 
   it('未用 ↑↓ 导航时按 ←→ 不应触发 onSelect（保持光标移动）', async () => {
@@ -785,8 +786,9 @@ describe('renderCandidates · 渲染与交互', async () => {
     const item = document.querySelector('.completion-item') as HTMLElement;
     item.click();
 
-    expect(onSelect).toHaveBeenCalledWith('点击文本');
-    expect(list.classList.contains('hidden')).toBe(true);
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ text: '点击文本' }));
+    // 候选列表不再自动清除（由回调负责），点击后仍保持可见
+    expect(list.classList.contains('hidden')).toBe(false);
   });
 
   it('hover 候选项应同步 selectedIndex', async () => {

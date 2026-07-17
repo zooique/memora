@@ -88,6 +88,7 @@ function createMockApi(): QuickInputElectronAPI {
     onQuickInputShow: vi.fn(),
     removeQuickInputShowListener: vi.fn(),
     boostMemory: vi.fn().mockResolvedValue(undefined),
+    showMemory: vi.fn().mockResolvedValue({ memory: null }),
   };
 }
 

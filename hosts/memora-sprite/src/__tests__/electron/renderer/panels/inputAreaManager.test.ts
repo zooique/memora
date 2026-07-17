@@ -56,7 +56,7 @@ vi.mock('../../../../electron/renderer/helpers/domHelpers.js', () => ({
 // vi.hoisted 确保变量在 vi.mock 提升前可用
 const { mockOnSelectCallbacks, MockQuickInputCompletion } = vi.hoisted(() => {
   /** 存储 onSelect 回调，用于测试时模拟用户选择候选项 */
-  const mockOnSelectCallbacks: Array<(text: string) => void> = [];
+  const mockOnSelectCallbacks: Array<(item: { text: string; fullText?: string; memoryId?: string }) => void> = [];
   /** Mock QuickInputCompletion 构造函数 */
   const MockQuickInputCompletion = vi.fn();
   return { mockOnSelectCallbacks, MockQuickInputCompletion };
@@ -68,11 +68,15 @@ vi.mock('../../../../electron/renderer/quick-input/quickInputCompletion.js', () 
   // constructor 返回对象时，new 操作符使用返回的对象（而非 this）
   QuickInputCompletion: MockQuickInputCompletion.mockImplementation(function () {
     return {
-      onSelect: vi.fn((cb: (text: string) => void) => {
+      onSelect: vi.fn((cb: (item: { text: string; fullText?: string; memoryId?: string }) => void) => {
         mockOnSelectCallbacks.push(cb);
       }),
       init: vi.fn(),
       cleanup: vi.fn(),
+      /** 抑制下一次 input 事件触发的补全搜索（选中候选项后的防闪烁机制） */
+      suppressNextSearch: vi.fn(),
+      /** 清除候选列表（选中候选项填充后由回调调用） */
+      clear: vi.fn(),
     };
   }),
 }));
@@ -428,9 +432,9 @@ describe('InputAreaManager', () => {
 
     it('onSelect 回调应回填文本到输入框并触发 input 事件', () => {
       manager.init();
-      // 模拟 QuickInputCompletion 触发 onSelect 回调
+      // 模拟 QuickInputCompletion 触发 onSelect 回调（对话候选，带 fullText）
       expect(mockOnSelectCallbacks).toHaveLength(1);
-      mockOnSelectCallbacks[0]!('回填的候选文本');
+      mockOnSelectCallbacks[0]!({ text: '截断预览', fullText: '回填的候选文本' });
 
       expect(inputEl.value).toBe('回填的候选文本');
       // input 事件应触发 handleInputChange → 发送按钮启用
@@ -440,7 +444,7 @@ describe('InputAreaManager', () => {
     it('onSelect 回调应将光标移到末尾', () => {
       manager.init();
       const setSelectionSpy = vi.spyOn(inputEl, 'setSelectionRange');
-      mockOnSelectCallbacks[0]!('候选文本');
+      mockOnSelectCallbacks[0]!({ text: '截断', fullText: '候选文本' });
       // setSelectionRange 应以 (length, length) 调用（光标移到末尾）
       expect(setSelectionSpy).toHaveBeenCalledWith(4, 4);
     });
