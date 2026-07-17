@@ -30,6 +30,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | v0.5 | 2026-06-10 | **pino 改为可选 + cosmiconfig 移除**     | 内核零第三方依赖，pino 动态导入 + console 回退  |
 | v0.6 | 2026-06-10 | **移除全局路径硬编码**                   | 内核零硬编码路径，全局配置由宿主通过 configDir 管理 |
 | v0.7 | 2026-06-11 | **SqliteStorage 移出内核 + CLI 移出**    | 零 native 依赖，测试全量 InMemoryStorage         |
+| v0.8 | 2026-07-17 | **移除 zod 依赖**                        | 真正零依赖内核：zod 仅用于 37 处基础校验，替换为纯 TS 手写校验 |
 
 > v0.1 版本（better-sqlite3 + sqlite-vec 统一索引表）已被本文替代，v0.2 记录已合并到本文版本历史。
 
@@ -151,10 +152,7 @@ IMemoryStorage 接口**保持同步语义**，不新增 IAsyncMemoryStorage 兄�
 
 ```json
 {
-  "dependencies": {
-    // commander 移除（CLI 移出），better-sqlite3 + pino + picocolors 完全移除
-    "zod": "^3.25.76"
-  },
+  "dependencies": {},
   "peerDependencies": {
     // better-sqlite3 已移除（宿主项目管理）
     // pino 可选（宿主可注入自定义 ILogger）

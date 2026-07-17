@@ -407,7 +407,7 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       expect(config.llm.temperature).toBe(2);
     });
 
-    it('temperature>2 时应抛错（zod 校验失败）', async () => {
+    it('temperature>2 时应抛错（校验失败）', async () => {
       const configPath = writeConfigFile({
         llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 3 },
       });
@@ -415,7 +415,7 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       await expect(loadConfig(configPath)).rejects.toThrow();
     });
 
-    it('temperature<0 时应抛错（zod 校验失败）', async () => {
+    it('temperature<0 时应抛错（校验失败）', async () => {
       const configPath = writeConfigFile({
         llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: -0.5 },
       });

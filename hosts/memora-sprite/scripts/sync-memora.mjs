@@ -2,7 +2,7 @@
  * 内核同步脚本 — 编译 memora 内核，复制到 sprite 的 node_modules/memora
  *
  * sprite 不通过 npm file: 依赖获取内核（避免 Junction 将全量仓库打入 asar），
- * 而是由本脚本负责：编译内核 → 创建最小化 node_modules/memora（仅 dist + zod + 元数据）。
+ * 而是由本脚本负责：编译内核 → 创建最小化 node_modules/memora（仅 dist + 元数据）。
  *
  * 使用场景：
  *   1. 开发：build:electron / start:electron 自动调用，确保 node_modules/memora 存在
@@ -77,7 +77,6 @@ function getDirSize(dirPath) {
  *   - dist/（编译产物）
  *   - package.json（electron-builder 用它找入口 + 依赖声明）
  *   - LICENSE、README.md
- *   - node_modules/zod/（memora 的唯一 runtime dependency）
  *
  * 不复制 src/、tasks/、hosts/、.trae/ 等开发文件，
  * 确保 electron-builder 打包时不会将全量仓库打入 asar。
@@ -115,22 +114,6 @@ function syncToNodeModules() {
   cpSync(memoraDist, join(targetMemora, 'dist'), { recursive: true });
   const distSize = getDirSize(join(targetMemora, 'dist'));
   console.log(`[sync-memora] 已复制: dist/ (${(distSize / 1024).toFixed(1)} KB)`);
-
-  // 复制运行时依赖 zod（memora 的唯一 runtime dependency）
-  // electron-builder 从 memora/package.json 的 dependencies 声明中查找 zod，
-  // 若 node_modules/memora/node_modules/zod 不存在则报 "cannot find path" 警告
-  const zodSource = join(memoraRoot, 'node_modules', 'zod');
-  if (existsSync(zodSource)) {
-    const targetNodeModules = join(targetMemora, 'node_modules');
-    mkdirSync(targetNodeModules, { recursive: true });
-    cpSync(zodSource, join(targetNodeModules, 'zod'), { recursive: true });
-    const zodSize = getDirSize(join(targetNodeModules, 'zod'));
-    console.log(`[sync-memora] 已复制: node_modules/zod (${(zodSize / 1024).toFixed(1)} KB)`);
-  } else {
-    console.error(`[sync-memora] zod 依赖不存在: ${zodSource}`);
-    console.error('[sync-memora] 请在仓库根执行 npm install');
-    process.exit(1);
-  }
 }
 
 // ─── 主流程 ──────────────────────────────────────────────

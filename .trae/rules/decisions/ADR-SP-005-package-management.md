@@ -26,7 +26,7 @@ description: "memora-sprite 宿主：包管理与依赖引用方式"
 }
 ```
 
-`sync-memora.mjs` 负责：编译内核 → 创建最小化 `node_modules/memora/`（仅 dist + zod + package.json + LICENSE）。
+`sync-memora.mjs` 负责：编译内核 → 创建最小化 `node_modules/memora/`（仅 dist + package.json + LICENSE）。
 源码中 import 保持 `from 'memora'`，TypeScript 通过 `node_modules/memora/dist` 解析。
 
 `build:electron` 自动调用 `sync-memora`，开发者无需手动操作。
@@ -42,7 +42,7 @@ description: "memora-sprite 宿主：包管理与依赖引用方式"
 - **消除 Junction 风险**：`file:../..` 在 Windows 上创建 Junction，electron-builder 跟随 Junction 打包全量仓库文件到 asar，包含 src/、tasks/、hosts/ 等开发文件
 - **统一开发/打包机制**：不再区分 Junction 模式（开发）和复制模式（打包），`sync-memora.mjs` 始终创建独立的最小化目录
 - **最简方案**：不需要引入 pnpm workspace 或 turborepo 等新工具链
-- **打包体积可控**：`node_modules/memora/` 仅含 dist（~1.3MB）+ zod（~0.7MB），不含源码和开发文件
+- **打包体积可控**：`node_modules/memora/` 仅含 dist（~1.3MB），不含源码和开发文件
 - **依赖隔离**：精灵的 `better-sqlite3` 不会污染内核的 `node_modules`（独立 package.json）
 
 ## 替代方案

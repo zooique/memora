@@ -37,7 +37,7 @@ date: 2026-07-13
 ## 2. 内核同步工作流（sync-memora 脚本）
 
 > 精灵不通过 npm `file:` 依赖内核（避免 Junction 将全量仓库打入 asar）。
-> `sync-memora.mjs` 负责：编译内核 → 创建最小化 `node_modules/memora/`（仅 dist + zod + 元数据）。
+> `sync-memora.mjs` 负责：编译内核 → 创建最小化 `node_modules/memora/`（仅 dist + 元数据）。
 > 源码中 import 保持 `from 'memora'`，TypeScript 通过 `node_modules/memora/dist` 解析。
 
 ### 2.1 开发工作流
@@ -67,7 +67,7 @@ npm run sync-memora   # 编译内核 src/ → dist/ + 同步到 node_modules/mem
 npm run package:win   # 自动：build:electron（含 sync-memora） → clean-release → electron-builder → verify
 ```
 
-`sync-memora` 创建的 `node_modules/memora/` 仅含运行时文件（dist + zod + package.json），
+`sync-memora` 创建的 `node_modules/memora/` 仅含运行时文件（dist + package.json），
 不含 src/、tasks/、hosts/、.trae/ 等开发文件，确保 electron-builder 不会将全量仓库打入 asar。
 
 ## 3. 技术栈清单

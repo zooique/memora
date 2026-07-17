@@ -69,7 +69,10 @@
     },
     "files": [
       "dist-electron/**/*",
-      "node_modules/memora/**",
+      {
+        "from": "node_modules/memora",
+        "to": "node_modules/memora"
+      },
       "package.json"
     ],
     "extraMetadata": {

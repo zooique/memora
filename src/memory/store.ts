@@ -156,7 +156,7 @@ export class FileStore {
     }
 
     const now = mtime.toISOString();
-    // 修复 #34：校验 score，防止 NaN/越界值违反 zod schema（min(0).max(1)）
+    // 修复 #34：校验 score，防止 NaN/越界值违反校验规则（min(0).max(1)）
     // frontmatter 中 score 字段若为非数字字符串（如 "abc"），Number 返回 NaN 会破坏后续写入
     const rawScore = Number(meta['score'] ?? DEFAULT_MEMORY_SCORE);
     const score =

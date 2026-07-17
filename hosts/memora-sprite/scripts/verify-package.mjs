@@ -20,7 +20,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** 项目根目录 */
@@ -234,8 +234,9 @@ const nativeResult = checkFile('原生依赖 better_sqlite3.node', nativePath, t
 if (nativeResult.passed) passed++;
 else failed++;
 
-// 4. 打包后的 zip 文件
-const zipName = `Memora Sprite-1.0.0-win.zip`;
+// 4. 打包后的 zip 文件（从 package.json 读取版本号，避免硬编码过时）
+const spritePkg = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf-8'));
+const zipName = `Memora Sprite-${spritePkg.version}-${platform}.zip`;
 const zipPath = join(releaseDir, zipName);
 const zipResult = checkFile('打包产物 ZIP', zipPath, false);
 if (zipResult.passed) passed++;

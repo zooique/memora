@@ -22,7 +22,7 @@ date: 2026-07-05
 4. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 是 Agent 级共享资源，不随子项目切换重建
 5. **配置文件是真理源**：configDir
    下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite；SQLite 是运行时索引，不是持久化配置存储
-6. **零依赖内核**：memora 是纯逻辑库，不依赖任何 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 仅允许纯 JS 工具库
+6. **零依赖内核**：memora 是纯逻辑库，不依赖任何第三方包（包括 zod）和 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 为空
 
 ## 2. 技术栈清单
 
@@ -34,7 +34,7 @@ date: 2026-07-05
 | 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](./decisions/ADR-014-memory-relation.md)    |
 | 归档模式 | archiveMode 三态控制（full / insights-only / manual） | [ADR-015](./decisions/ADR-015-archive-mode.md)    |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |
-| 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.7](./decisions/ADR-002-storage-layer.md)  |
+| 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.8](./decisions/ADR-002-storage-layer.md)  |
 | 安全   | 两级权限 + 路径白名单                        | [ADR-006](./decisions/ADR-006-security-model.md)      |
 | 测试   | Vitest + MSW Mock LLM + InMemoryStorage      | [ADR-007](./decisions/ADR-007-testing-strategy.md)    |
 | 目录   | 按职责分层                                   | [ADR-008](./decisions/ADR-008-directory-structure.md) |
@@ -178,7 +178,7 @@ chore: 升级 dependencies
 | DON'T | 在 `src/` 下 import better-sqlite3 / electron / commander 等 native 模块 |
 | DON'T | 在 `src/` 下 import 任何 web 框架（Express / HTML / CSS） |
 | DON'T | 工具函数绑定特定环境依赖（如 pino） |
-| DO | memora `dependencies` 仅允许纯 JS 工具库（当前仅 zod） |
+| DO | memora `dependencies` 为空（零依赖内核） |
 
 ### 7.3 记忆与存储（补充 §1.3/§1.4）
 

@@ -4,37 +4,105 @@
  * 设计哲学：万物皆是记忆，用 source 开放字符串替代封闭枚举
  * 详见 ADR-004 · 记忆统一模型
  */
-import { z } from 'zod';
 
 // ─── 基元定义 ─────────────────────────────────────────────
 
 /**
- * 记忆基元 schema
+ * 记忆基元接口
  *
  * 8 个核心字段（v2.1 软删除扩展），无封闭枚举
  * - 7 个基础字段：id/content/source/name/createdAt/accessedAt/score
  * - 1 个可选字段：deletedAt（软删除时间，undefined 表示活跃记忆）
  */
-export const MemorySchema = z.object({
+export interface Memory {
   /** 唯一标识（source:name，如 'rule:core'、'insight:1718083200000'） */
-  id: z.string(),
+  id: string;
   /** 记忆内容（Markdown 文本） */
-  content: z.string(),
+  content: string;
   /** 来源标签（开放字符串，非枚举） */
-  source: z.string(),
+  source: string;
   /** 可读名称（文件名或摘要标题） */
-  name: z.string(),
+  name: string;
   /** 创建时间（ISO 8601） */
-  createdAt: z.string().datetime(),
+  createdAt: string;
   /** 最后访问时间（每次召回时刷新） */
-  accessedAt: z.string().datetime(),
+  accessedAt: string;
   /** 权重（0-1，召回时用于排序） */
-  score: z.number().min(0).max(1).default(0.5),
+  score: number;
   /** 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理） */
-  deletedAt: z.string().datetime().optional(),
-});
+  deletedAt?: string;
+}
 
-export type Memory = z.infer<typeof MemorySchema>;
+/** 默认记忆权重（parseMemory 的默认值行为） */
+export const DEFAULT_MEMORY_SCORE = 0.5;
+
+/**
+ * 记忆解析器 — 验证原始数据并转换为 Memory 类型
+ *
+ * 提供与原 MemorySchema.parse() 等效的运行时验证能力：
+ * - 非空对象检查
+ * - 字段类型验证（string/number）
+ * - ISO 8601 日期格式验证
+ * - score 范围检查（0-1）
+ * - 默认值填充（score = 0.5）
+ *
+ * @param raw - 原始数据（通常来自 JSON 解析或数据库查询）
+ * @returns 验证通过的 Memory 对象
+ * @throws Error 当数据不符合 Memory 接口定义时
+ */
+export function parseMemory(raw: unknown): Memory {
+  if (raw === null || typeof raw !== 'object') {
+    throw new Error('Memory 解析失败：输入必须是非空对象');
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  // 验证必需的 string 字段
+  const stringFields = ['id', 'content', 'source', 'name'] as const;
+  for (const field of stringFields) {
+    if (typeof obj[field] !== 'string') {
+      throw new Error(`Memory 解析失败：${field} 必须是字符串`);
+    }
+  }
+
+  // 验证 ISO 8601 日期字段
+  const dateFields = ['createdAt', 'accessedAt'] as const;
+  for (const field of dateFields) {
+    if (typeof obj[field] !== 'string' || isNaN(Date.parse(obj[field] as string))) {
+      throw new Error(`Memory 解析失败：${field} 必须是有效的 ISO 8601 日期字符串`);
+    }
+  }
+
+  // 验证 score 字段（可选，有默认值）
+  if (obj.score !== undefined && obj.score !== null) {
+    if (typeof obj.score !== 'number' || obj.score < 0 || obj.score > 1) {
+      throw new Error('Memory 解析失败：score 必须是 0-1 之间的数字');
+    }
+  }
+
+  // 验证可选的 deletedAt 字段
+  if (obj.deletedAt !== undefined && obj.deletedAt !== null) {
+    if (typeof obj.deletedAt !== 'string' || isNaN(Date.parse(obj.deletedAt as string))) {
+      throw new Error('Memory 解析失败：deletedAt 必须是有效的 ISO 8601 日期字符串');
+    }
+  }
+
+  return {
+    id: obj.id as string,
+    content: obj.content as string,
+    source: obj.source as string,
+    name: obj.name as string,
+    createdAt: obj.createdAt as string,
+    accessedAt: obj.accessedAt as string,
+    score: (obj.score as number) ?? DEFAULT_MEMORY_SCORE,
+    deletedAt: obj.deletedAt as string | undefined,
+  };
+}
+
+/**
+ * 兼容性别名 — 保持原有测试代码 (MemorySchema.parse(...)) 无需修改
+ */
+export const MemorySchema = { parse: parseMemory };
 
 // ─── source 标签约定（非枚举，仅为泊文当前使用的约定） ──────
 
