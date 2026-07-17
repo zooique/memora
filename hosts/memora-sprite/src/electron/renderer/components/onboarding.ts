@@ -145,17 +145,40 @@ export class OnboardingManager {
 
   /**
    * 绑定关闭事件（Esc 键 + 点击遮罩）
+   *
+   * 步骤 2 已填字段时弹二次确认，避免用户误触 ESC/遮罩丢失已输入的 API 配置。
+   * 完成按钮路径不走此逻辑（用户已主动完成，无需二次确认）。
    */
   private bindClose(modal: HTMLElement): void {
-    // Esc 键关闭
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') this.closeModal(modal);
+    // Esc 键关闭（步骤 2 已填字段时弹二次确认）
+    const onKey = async (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (this.currentStep === 2 && this.hasFilledApiFields(modal)) {
+        const confirmed = await this.confirmDialog?.({
+          title: '关闭引导',
+          message: '你已填写部分字段，关闭后这些信息将不会保存。确认关闭吗？',
+          confirmText: '关闭',
+          cancelText: '继续配置',
+        }) ?? true;
+        if (!confirmed) return;
+      }
+      this.closeModal(modal);
     };
     document.addEventListener('keydown', onKey, { once: false });
 
-    // 点击遮罩关闭
-    const onBackdrop = (e: MouseEvent) => {
-      if (e.target === modal) this.closeModal(modal);
+    // 点击遮罩关闭（步骤 2 已填字段时弹二次确认）
+    const onBackdrop = async (e: MouseEvent) => {
+      if (e.target !== modal) return;
+      if (this.currentStep === 2 && this.hasFilledApiFields(modal)) {
+        const confirmed = await this.confirmDialog?.({
+          title: '关闭引导',
+          message: '你已填写部分字段，关闭后这些信息将不会保存。确认关闭吗？',
+          confirmText: '关闭',
+          cancelText: '继续配置',
+        }) ?? true;
+        if (!confirmed) return;
+      }
+      this.closeModal(modal);
     };
     modal.addEventListener('click', onBackdrop);
 

@@ -102,7 +102,7 @@
   border-color: var(--red);
 }
 
-/* 三步向导：欢迎 → API Key → 开始使用 */
+/* 四步向导：欢迎 → API 配置 → 使用统计 → 开始使用 */
 
 /* 向导容器：限制宽度，居中 */
 .onboarding-wizard {
