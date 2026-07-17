@@ -281,7 +281,12 @@ export function registerMinimalIpcHandlers(
     try {
       return await getLlmProviders();
     } catch (err) {
-      logger.warn({ err: toError(err).message }, '读取 LLM 提供商配置失败');
+      // ENOENT 是合法状态（首次启动/配置缺失），静默返回空列表不记 warn
+      // 其他错误（权限/JSON 损坏等）仍记 warn 便于排查
+      const errno = err as NodeJS.ErrnoException;
+      if (errno.code !== 'ENOENT') {
+        logger.warn({ err: toError(err).message }, '读取 LLM 提供商配置失败');
+      }
       return { active: '', providers: [] };
     }
   });

@@ -50,6 +50,7 @@ import type { AgentListenerDeps } from './agentListeners.js';
 import type { SpriteEventBridgeDeps } from './spriteEventBridge.js';
 import {
   startSprite,
+  isLlmConfigured,
   DEFAULT_DATA_DIR,
   DEFAULT_CONFIG_DIR,
 } from '../index.js';
@@ -602,11 +603,24 @@ async function initializeApp(): Promise<void> {
     return;
   }
 
-  // ── 阶段 2：初始化 Agent + Sprite（可能因配置缺失失败） ──
+  // ── 阶段 2：初始化 Agent + Sprite（可能因配置缺失跳过） ──
+
+  // 先注册不依赖 Agent 的资源（剪贴板保护/快速输入浮窗/技能安装）
+  // 无论 LLM 配置是否存在都执行，用户在配置 API 前仍可使用快速输入浮窗的粘贴功能
+  // 回调中通过可选链（?.）安全降级：无 Agent 时记忆写入和润色跳过
+  setupAgentIndependentResources();
+
   try {
-    // startSprite 配置缺失时统一抛错（无 skipWizard 选项）
-    // Electron 模式：阶段 1 已注册 registerMinimalIpcHandlers，
-    // 阶段 2 失败后渲染进程可显示设置面板引导用户配置
+    // 预检 LLM 配置：无配置时跳过 Agent 初始化，等待用户配置后通过 reinitAgent 走完整流程
+    // 避免无配置时进入 startSprite → loadConfig → ENOENT 错误链
+    if (!(await isLlmConfigured())) {
+      // 设置初始化错误详情，渲染进程据此显示引导弹窗或设置面板
+      appState.initErrorDetail = classifyInitError('配置不完整，请在设置面板中配置 LLM 提供商和 API Key', '初始化失败');
+      return;
+    }
+
+    // 有配置：走完整 Agent 初始化流程
+    // startSprite 内部 loadConfig 读取配置，失败时抛 SpriteError(CONFIG_LOAD_FAILED)
     const spriteResult = await startSprite();
     appState.currentDataDir = spriteResult.dataDir;
     // 第三季：集中赋值 agent/sprite/sessionStore/closeSprite
@@ -620,102 +634,6 @@ async function initializeApp(): Promise<void> {
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
     // bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
     setupAgentReady(appState.agent!, appState.sprite!, appState.sessionStore!, appState.currentDataDir);
-
-    // Phase 3.1：集成剪贴板三重保护
-    // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程
-    // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
-    appState.clipboardHandler = new ClipboardHandler(clipboard, {
-      emit: (event: ClipboardEventType, payload?: unknown) => {
-        const fullWindow = appState.windowManager.getFullWindow();
-        if (!fullWindow || fullWindow.isDestroyed()) return;
-        // 将 ClipboardHandler 事件映射到 IPC 推送通道
-        switch (event) {
-          case 'changed':
-            // 剪贴板有变化，通知 UI 显示"分析"提示（不携带内容）
-            fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED);
-            break;
-          case 'sensitive-ignored':
-            // 敏感内容已静默忽略，通知 UI 记录日志（携带 type）
-            fullWindow.webContents.send(
-              MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED,
-              payload,
-            );
-            break;
-          case 'analysis-ready':
-            // 内容已通过检测，通知 UI 展示确认对话框（携带 content）
-            fullWindow.webContents.send(
-              MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY,
-              payload,
-            );
-            break;
-          case 'analysis-rejected':
-            // 内容被输入护栏拦截，通知 UI 提示原因（携带 reason）
-            fullWindow.webContents.send(
-              MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED,
-              payload,
-            );
-            break;
-        }
-      },
-    });
-    // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
-    ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
-      return appState.clipboardHandler?.analyze() ?? false;
-    });
-    // 启动剪贴板变化检测轮询
-    appState.clipboardHandler.startPolling();
-
-    // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
-    // 在 clipboardHandler 创建后实例化，确保 onConfirm 回调能调用 suppressNextChange()
-    // onAfterConfirm 用于记忆沉淀：确认成功后异步写入 source:'quick-input' 记忆
-    appState.quickInputWindow = new QuickInputWindow({
-      onConfirm: createDefaultConfirmCallback(appState.clipboardHandler),
-      onAfterConfirm: (text) => {
-        try {
-          // name 用内容前 30 字符（与剪贴板记忆范式一致），upsertMemory 按 (source, name) 去重
-          const name = text.slice(0, 30).replace(/\s+/g, ' ').trim() || '快速输入';
-          appState.sprite?.upsertMemory('quick-input', name, text);
-        } catch (error) {
-          // 记忆写入失败仅记日志，不影响用户已拿到的剪贴板内容
-          logger.warn({ error }, '快速输入记忆写入失败');
-        }
-      },
-      onPolish: async (text) => {
-        // 调用内核 TextPolishManager（agent.polish getter），
-        // 润色失败时返回原文（降级，不阻塞用户操作）
-        const polisher = appState.agent?.polish;
-        if (!polisher) return { polished: text, changed: false };
-        try {
-          return await polisher.polish(text);
-        } catch (error) {
-          logger.warn({ error }, '快速输入润色失败');
-          return { polished: text, changed: false };
-        }
-      },
-    });
-    // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
-    appState.quickInputWindow.setSuppressNextChange(
-      () => appState.clipboardHandler?.suppressNextChange(),
-    );
-
-    // Phase 4.3：注册技能文件安装 IPC handler
-    // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
-    ipcMain.handle(IPC_CHANNELS.SKILL_INSTALL, async (_event, fileName: string, content: string) => {
-      const { installSkill } = await import('../sprite/skillInstaller.js');
-      // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
-      const configDir = DEFAULT_CONFIG_DIR;
-      const result = await installSkill(content, fileName, configDir);
-      // 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
-      if (result.success && appState.agent) {
-        try {
-          await appState.agent.reloadConfig('skill');
-        } catch (err) {
-          // 重载失败不阻塞安装结果返回，用户可手动重启 Agent 生效
-          errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '技能热重载失败' });
-        }
-      }
-      return result;
-    });
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
@@ -727,6 +645,115 @@ async function initializeApp(): Promise<void> {
       context: 'Agent 初始化失败',
     });
   }
+}
+
+/**
+ * 注册不依赖 Agent 的资源
+ *
+ * 包括：剪贴板三重保护、快速输入浮窗、技能安装 IPC handler。
+ * 这些资源不依赖 Agent 实例，回调中通过可选链（?.）安全降级。
+ * 无论 LLM 配置是否存在都执行，用户在配置 API 前仍可使用快速输入浮窗的粘贴功能。
+ * 配置成功后 reinitAgent 走 setupAgentReady，无需重建这些资源。
+ */
+function setupAgentIndependentResources(): void {
+  // Phase 3.1：集成剪贴板三重保护
+  // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程
+  // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
+  appState.clipboardHandler = new ClipboardHandler(clipboard, {
+    emit: (event: ClipboardEventType, payload?: unknown) => {
+      const fullWindow = appState.windowManager.getFullWindow();
+      if (!fullWindow || fullWindow.isDestroyed()) return;
+      // 将 ClipboardHandler 事件映射到 IPC 推送通道
+      switch (event) {
+        case 'changed':
+          // 剪贴板有变化，通知 UI 显示"分析"提示（不携带内容）
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED);
+          break;
+        case 'sensitive-ignored':
+          // 敏感内容已静默忽略，通知 UI 记录日志（携带 type）
+          fullWindow.webContents.send(
+            MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED,
+            payload,
+          );
+          break;
+        case 'analysis-ready':
+          // 内容已通过检测，通知 UI 展示确认对话框（携带 content）
+          fullWindow.webContents.send(
+            MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY,
+            payload,
+          );
+          break;
+        case 'analysis-rejected':
+          // 内容被输入护栏拦截，通知 UI 提示原因（携带 reason）
+          fullWindow.webContents.send(
+            MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED,
+            payload,
+          );
+          break;
+      }
+    },
+  });
+  // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
+    return appState.clipboardHandler?.analyze() ?? false;
+  });
+  // 启动剪贴板变化检测轮询
+  appState.clipboardHandler.startPolling();
+
+  // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
+  // 在 clipboardHandler 创建后实例化，确保 onConfirm 回调能调用 suppressNextChange()
+  // onAfterConfirm 用于记忆沉淀：确认成功后异步写入 source:'quick-input' 记忆
+  appState.quickInputWindow = new QuickInputWindow({
+    onConfirm: createDefaultConfirmCallback(appState.clipboardHandler),
+    onAfterConfirm: (text) => {
+      try {
+        // name 用内容前 30 字符（与剪贴板记忆范式一致），upsertMemory 按 (source, name) 去重
+        const name = text.slice(0, 30).replace(/\s+/g, ' ').trim() || '快速输入';
+        // 无 Agent 时 sprite 为 null，可选链安全降级（跳过记忆写入）
+        appState.sprite?.upsertMemory('quick-input', name, text);
+      } catch (error) {
+        // 记忆写入失败仅记日志，不影响用户已拿到的剪贴板内容
+        logger.warn({ error }, '快速输入记忆写入失败');
+      }
+    },
+    onPolish: async (text) => {
+      // 调用内核 TextPolishManager（agent.polish getter），
+      // 润色失败时返回原文（降级，不阻塞用户操作）
+      // 无 Agent 时 polisher 为 undefined，返回原文不阻塞用户操作
+      const polisher = appState.agent?.polish;
+      if (!polisher) return { polished: text, changed: false };
+      try {
+        return await polisher.polish(text);
+      } catch (error) {
+        logger.warn({ error }, '快速输入润色失败');
+        return { polished: text, changed: false };
+      }
+    },
+  });
+  // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
+  appState.quickInputWindow.setSuppressNextChange(
+    () => appState.clipboardHandler?.suppressNextChange(),
+  );
+
+  // Phase 4.3：注册技能文件安装 IPC handler
+  // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
+  ipcMain.handle(IPC_CHANNELS.SKILL_INSTALL, async (_event, fileName: string, content: string) => {
+    const { installSkill } = await import('../sprite/skillInstaller.js');
+    // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
+    const configDir = DEFAULT_CONFIG_DIR;
+    const result = await installSkill(content, fileName, configDir);
+    // 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
+    // 无 Agent 时跳过热重载，用户配置后 reinitAgent 会读取已安装的技能
+    if (result.success && appState.agent) {
+      try {
+        await appState.agent.reloadConfig('skill');
+      } catch (err) {
+        // 重载失败不阻塞安装结果返回，用户可手动重启 Agent 生效
+        errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '技能热重载失败' });
+      }
+    }
+    return result;
+  });
 }
 
 // ─── 最小化 IPC 处理器 ──────────────────────────────────────
