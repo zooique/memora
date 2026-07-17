@@ -217,6 +217,8 @@ export class InputAreaManager {
       if (this.host.isStreaming()) {
         this.host.emitStopMessage();
       } else {
+        // 发送前清空补全候选列表，避免浮层遮挡输入区
+        this.completion?.clear();
         this.host.emitSendMessage();
       }
     } else if (e.key === 'Escape') {
@@ -248,6 +250,8 @@ export class InputAreaManager {
    * 直接触发发送回调（Agent 就绪/空内容守卫在 UIManager.emitSendMessage 内部）。
    */
   private handleClick(): void {
+    // 与 Enter 发送保持一致：点击发送按钮前清空补全候选列表
+    this.completion?.clear();
     this.host.emitSendMessage();
   }
 

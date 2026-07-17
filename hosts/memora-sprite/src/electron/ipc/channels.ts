@@ -231,6 +231,10 @@ export const IPC_CHANNELS = {
   MOVE_QUICK_INPUT: 'move-quick-input',
   /** 渲染进程 → 主进程：LLM 润色文本（携带原文，返回润色后文本） */
   QUICK_INPUT_POLISH: 'quick-input-polish',
+  /** 渲染进程 → 主进程：切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
+  QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
+  /** 渲染进程 → 主进程：设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发） */
+  QUICK_INPUT_SET_ALWAYS_ON_TOP: 'quick-input-set-always-on-top',
 
   // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
@@ -339,6 +343,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
   /** 快速输入浮窗被 show() 调用（通知渲染进程清空输入框，替代 focus 事件） */
   QUICK_INPUT_SHOW: 'quick-input-show',
+  /** 浮窗聚焦变化通知（blur→null，focus→应用名；渲染进程联动聚焦提示栏 + Tab 启用/禁用） */
+  QUICK_INPUT_FOCUS_CHANGE: 'quick-input-focus-change',
 } as const;
 
 // IPC 数据传输类型（SerializedAppError / WorkProjectionPayload）见 ./types.ts

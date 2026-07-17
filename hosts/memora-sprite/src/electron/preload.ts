@@ -178,6 +178,9 @@ export const IPC_CHANNELS = {
   MOVE_QUICK_INPUT: 'move-quick-input',
   // LLM 润色文本（携带原文，返回润色后文本，与 ipc/channels.ts QUICK_INPUT_POLISH 同步）
   QUICK_INPUT_POLISH: 'quick-input-polish',
+  // 常驻模式切换 + 置顶切换（与 ipc/channels.ts 同步）
+  QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
+  QUICK_INPUT_SET_ALWAYS_ON_TOP: 'quick-input-set-always-on-top',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）
@@ -220,6 +223,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
   /** 快速输入浮窗被 show() 调用（通知渲染进程清空输入框，替代 focus 事件） */
   QUICK_INPUT_SHOW: 'quick-input-show',
+  /** 浮窗聚焦变化通知（blur/focus 事件，appName=null 表示失焦） */
+  QUICK_INPUT_FOCUS_CHANGE: 'quick-input-focus-change',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -750,10 +755,11 @@ export interface ElectronAPI {
    *   成功返回 mode='paste'；失败降级走 Phase 3 复制流程，返回 mode='copy'。
    *
    * @param text 用户确认的文本
-   * @param streamMode 流式模式标志：true 时主进程跳过 hideFloat，窗口保持打开供连续输入
+   * @param pinnedMode 常驻模式标志：true 时主进程持久 suppressBlurClose，浮窗钉住不关闭；
+   *                   false 时 default 模式，paste 期间临时抑制 blur，paste 返回后清除抑制
    * @returns success 是否成功 + mode 成功模式（paste/copy）+ appName 粘贴目标应用名
    */
-  confirmQuickInput: (text: string, streamMode?: boolean) => Promise<{
+  confirmQuickInput: (text: string, pinnedMode?: boolean) => Promise<{
     success: boolean;
     /** 成功模式：paste=自动粘贴成功，copy=降级到复制+Toast */
     mode: 'paste' | 'copy';
@@ -790,15 +796,34 @@ export interface ElectronAPI {
    */
   polishQuickInput: (text: string) => Promise<{ polished: string; changed: boolean }>;
   /**
+   * 切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式）
+   *
+   * 主进程 setPinnedMode() 同步更新 pinnedMode 字段 + suppressBlurClose 标志。
+   */
+  setPinnedMode: (pinned: boolean) => Promise<{ success: boolean }>;
+  /**
+   * 设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发）
+   *
+   * default 模式下 alwaysOnTop 恒为 true，渲染进程不调用此 IPC。
+   */
+  setAlwaysOnTop: (value: boolean) => Promise<{ success: boolean }>;
+  /**
    * 监听浮窗 show 事件（主进程 show() 调用后触发，携带剪贴板预填文本 + 敏感标记）
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
    * payload.clipboardText 为 null 时表示无预填（敏感内容或空剪贴板）。
-   * payload.isSensitive 为 true 时表示剪贴板内容命中敏感模式，渲染进程自动进入流式模式。
+   * payload.isSensitive 为 true 时表示剪贴板内容命中敏感模式，渲染进程自动进入常驻模式。
    */
   onQuickInputShow: (cb: (payload: { clipboardText: string | null; isSensitive: boolean }) => void) => void;
   /** 移除浮窗 show 事件监听器 */
   removeQuickInputShowListener: () => void;
+  /**
+   * 监听浮窗聚焦变化（主进程 blur/focus 事件触发）
+   *
+   * appName=null 表示浮窗失去焦点（用户切走），渲染进程显示"无聚焦" + 禁用 Tab
+   * appName=string 表示浮窗获得焦点，渲染进程显示"聚焦：{应用名}" + 激活 Tab
+   */
+  onFocusChange: (cb: (appName: string | null) => void) => void;
 
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
@@ -1084,15 +1109,18 @@ const electronAPI: ElectronAPI = {
   // Phase 4.3：技能文件安装
   installSkill: (fileName, content) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_INSTALL, fileName, content),
   // 快速输入补全：确认（写剪贴板+关闭）、关闭（仅关闭）、调整高度
-  confirmQuickInput: (text, streamMode) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, streamMode),
+  confirmQuickInput: (text, pinnedMode) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, pinnedMode),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
   moveQuickInput: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_QUICK_INPUT, dx, dy),
   polishQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_POLISH, text),
+  setPinnedMode: (pinned) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
+  setAlwaysOnTop: (value) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_ALWAYS_ON_TOP, value),
   onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null; isSensitive: boolean }) => cb(payload)),
   removeQuickInputShowListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);
   },
+  onFocusChange: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE, (_: IpcRendererEvent, appName: string | null) => cb(appName)),
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),

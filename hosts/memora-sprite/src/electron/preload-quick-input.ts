@@ -28,6 +28,10 @@ const IPC_CHANNELS = {
   QUICK_INPUT_RESIZE: 'quick-input-resize',
   MOVE_QUICK_INPUT: 'move-quick-input',
   QUICK_INPUT_POLISH: 'quick-input-polish',
+  /** 切换常驻模式（pinned=true 持久钉住浮窗） */
+  QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
+  /** 设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发） */
+  QUICK_INPUT_SET_ALWAYS_ON_TOP: 'quick-input-set-always-on-top',
   MEMORIES_SEARCH: 'memories-search',
   SESSION_SEARCH: 'session-search',
   /** 提升记忆 score（L2 采纳反哺内核） */
@@ -40,6 +44,8 @@ const IPC_CHANNELS = {
 const MAIN_TO_RENDERER_CHANNELS = {
   /** 快速输入浮窗被 show() 调用（与 channels.ts 同步，无 sprite: 前缀） */
   QUICK_INPUT_SHOW: 'quick-input-show',
+  /** 浮窗聚焦变化通知（blur→null，focus→应用名） */
+  QUICK_INPUT_FOCUS_CHANGE: 'quick-input-focus-change',
 } as const;
 
 // ─── 类型定义（最小化，仅 quick-input 所需）─────
@@ -120,9 +126,9 @@ const quickInputAPI = {
   showMemory: (id: string): Promise<{ memory: MemoryDetail }> =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
 
-  /** 确认输入（paste + 流式锁抑制 blur） */
-  confirmQuickInput: (text: string, streamMode?: boolean): Promise<ConfirmResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, streamMode),
+  /** 确认输入（paste + pinned 模式持久抑制 blur） */
+  confirmQuickInput: (text: string, pinnedMode?: boolean): Promise<ConfirmResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, pinnedMode),
 
   /** 关闭浮窗 */
   closeQuickInput: (): Promise<void> =>
@@ -140,6 +146,14 @@ const quickInputAPI = {
   polishQuickInput: (text: string): Promise<PolishResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_POLISH, text),
 
+  /** 切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
+  setPinnedMode: (pinned: boolean): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
+
+  /** 设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发） */
+  setAlwaysOnTop: (value: boolean): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_ALWAYS_ON_TOP, value),
+
   /** 监听浮窗 show 事件（替代 window focus，避免 Alt+Tab 误清空） */
   onQuickInputShow: (cb: (payload: QuickInputShowPayload) => void): void => {
     ipcRenderer.on(
@@ -151,6 +165,14 @@ const quickInputAPI = {
   /** 移除浮窗 show 事件监听器 */
   removeQuickInputShowListener: (): void => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);
+  },
+
+  /** 监听浮窗聚焦变化（blur→appName=null，focus→appName=应用名） */
+  onFocusChange: (cb: (appName: string | null) => void): void => {
+    ipcRenderer.on(
+      MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE,
+      (_: IpcRendererEvent, appName: string | null) => cb(appName),
+    );
   },
 };
 

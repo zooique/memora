@@ -287,6 +287,21 @@ describe('InputAreaManager', () => {
       expect(host.mocks.emitStopMessage).not.toHaveBeenCalled();
     });
 
+    it('Enter 发送时应清空补全候选列表（Bug 1：避免浮层不关闭）', () => {
+      manager.init();
+      // 获取 init 后创建的补全 mock 实例
+      const completionInstance = MockQuickInputCompletion.mock.results[0]?.value as
+        | { clear: ReturnType<typeof vi.fn> }
+        | undefined;
+      expect(completionInstance).toBeDefined();
+
+      host.mocks.isStreaming.mockReturnValue(false);
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+
+      expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
+      expect(completionInstance!.clear).toHaveBeenCalledTimes(1);
+    });
+
     it('Enter（非 Shift）流式态应触发 emitStopMessage', () => {
       manager.init();
       host.mocks.isStreaming.mockReturnValue(true);
@@ -350,6 +365,21 @@ describe('InputAreaManager', () => {
       btnSend.disabled = false;
       btnSend.click();
       expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('点击发送按钮时应清空补全候选列表（Bug 1：与 Enter 发送一致）', () => {
+      manager.init();
+      const completionInstance = MockQuickInputCompletion.mock.results[0]?.value as
+        | { clear: ReturnType<typeof vi.fn> }
+        | undefined;
+      expect(completionInstance).toBeDefined();
+
+      inputEl.value = '测试内容';
+      btnSend.disabled = false;
+      btnSend.click();
+
+      expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
+      expect(completionInstance!.clear).toHaveBeenCalledTimes(1);
     });
   });
 
