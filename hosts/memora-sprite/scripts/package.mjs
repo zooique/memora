@@ -155,7 +155,7 @@ function verifyPackage(platform) {
 function syncMemora() {
   console.log('[package] === 同步内核 memora ===');
   try {
-    execSync('node scripts/sync-memora.mjs', {
+    execSync('node scripts/sync-memora.mjs --pack', {
       cwd: projectRoot,
       stdio: 'inherit',
     });

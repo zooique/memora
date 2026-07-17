@@ -1,6 +1,6 @@
 {
   "name": "memora-sprite",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Memora 精灵桌面伴侣——能自我进化的本地 AI Agent",
   "type": "module",
   "main": "./dist-electron/electron/main.js",
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "generate-icons": "node scripts/generate-icons.mjs",
-    "build:electron": "npm run check-ipc && npm run generate-icons && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "build:electron": "npm run sync-memora && npm run check-ipc && npm run generate-icons && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "sync-memora": "node scripts/sync-memora.mjs",
     "build:web": "tsc -p tsconfig.web.json",
     "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",
@@ -43,8 +43,7 @@
   },
   "dependencies": {
     "@nut-tree-fork/nut-js": "^4.2.6",
-    "better-sqlite3": "^12.10.0",
-    "memora": "file:../.."
+    "better-sqlite3": "^12.10.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -70,6 +69,7 @@
     },
     "files": [
       "dist-electron/**/*",
+      "node_modules/memora/**",
       "package.json"
     ],
     "extraMetadata": {
@@ -137,7 +137,6 @@
     "better-sqlite3@12.11.1": true,
     "electron@40.10.5": true,
     "esbuild@0.28.1": true,
-    "sharp@0.35.3": true,
-    "memora@1.0.1": false
+    "sharp@0.35.3": true
   }
 }

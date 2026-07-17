@@ -3,23 +3,24 @@
  *
  * 使用场景：
  *   1. 修改了 memora 内核源码后，开发前手动执行一次：npm run sync-memora
- *   2. 打包流程（package.mjs）自动调用，确保打包用的是最新内核
+ *   2. 打包流程（package.mjs）自动调用 --pack 模式，确保打包只包含最小化内核
  *
  * 不修改内核时无需执行，sprite 的 node_modules/memora/dist 保持上一次同步的状态。
  *
- * 两种安装模式：
- *   - Junction 模式（npm on Windows 默认）：node_modules/memora 是符号链接指向仓库根，
- *     编译后 dist 自动生效，无需复制。
- *   - 复制模式（其他平台或 --force）：node_modules/memora 是独立目录，
- *     需要将 dist 从仓库根复制到 node_modules/memora/dist。
+ * 三种模式：
+ *   - 开发模式（默认）：Junction 模式自动生效，编译后 dist 自动可用；复制模式则复制 dist
+ *   - 打包模式（--pack）：替换 Junction/复制目录为最小化独立目录，
+ *     仅含 dist/ + package.json + LICENSE + README.md，
+ *     防止 electron-builder 跟随 Junction 将全量仓库文件打入 asar
  *
  * 用法：
- *   node scripts/sync-memora.mjs           # 编译 + 同步（自动检测模式）
+ *   node scripts/sync-memora.mjs           # 编译 + 同步（开发模式）
+ *   node scripts/sync-memora.mjs --pack    # 编译 + 打包模式（最小化）
  *   node scripts/sync-memora.mjs --no-build # 仅同步（跳过编译，用于调试）
  */
 
 import { execSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** sprite 项目根目录 */
@@ -33,8 +34,9 @@ const targetMemora = join(spriteRoot, 'node_modules', 'memora');
 /** sprite node_modules 中 memora 的 dist 目录（复制模式下使用） */
 const targetDist = join(targetMemora, 'dist');
 
-/** 解析 --no-build 参数：跳过编译步骤，仅同步（用于调试） */
+/** 解析参数 */
 const skipBuild = process.argv.includes('--no-build');
+const packMode = process.argv.includes('--pack');
 
 /**
  * 执行内核编译
@@ -126,6 +128,71 @@ function getDirSize(dirPath) {
   return total;
 }
 
+/**
+ * 打包模式：替换 node_modules/memora 为最小化独立目录
+ *
+ * 开发时 node_modules/memora 是 Junction 指向仓库根（全量文件），
+ * electron-builder 跟随 Junction 会把 src/、tasks/、hosts/ 等开发文件全部打入 asar。
+ * 打包模式下先删除 Junction/目录，再创建独立目录，仅复制运行时需要的文件：
+ * dist/ + package.json + LICENSE + README.md
+ */
+function packModeSync() {
+  // 删除现有的 node_modules/memora（Junction 或独立目录）
+  if (existsSync(targetMemora)) {
+    const wasJunction = lstatSync(targetMemora).isSymbolicLink();
+    rmSync(targetMemora, { recursive: true, force: true });
+    console.log(`[sync-memora] 已删除${wasJunction ? ' Junction' : ''}: node_modules/memora`);
+  }
+
+  // 创建独立目录
+  mkdirSync(targetMemora, { recursive: true });
+  console.log('[sync-memora] 已创建独立目录: node_modules/memora');
+
+  // 复制 package.json（electron-builder 用它找入口）
+  cpSync(join(memoraRoot, 'package.json'), join(targetMemora, 'package.json'));
+  console.log('[sync-memora] 已复制: package.json');
+
+  // 复制 LICENSE
+  if (existsSync(join(memoraRoot, 'LICENSE'))) {
+    cpSync(join(memoraRoot, 'LICENSE'), join(targetMemora, 'LICENSE'));
+    console.log('[sync-memora] 已复制: LICENSE');
+  }
+
+  // 复制 README.md
+  if (existsSync(join(memoraRoot, 'README.md'))) {
+    cpSync(join(memoraRoot, 'README.md'), join(targetMemora, 'README.md'));
+    console.log('[sync-memora] 已复制: README.md');
+  }
+
+  // 复制 dist/（编译产物）
+  if (!existsSync(memoraDist)) {
+    console.error(`[sync-memora] 内核 dist 目录不存在: ${memoraDist}`);
+    console.error('[sync-memora] 请先编译内核（去掉 --no-build 参数）');
+    process.exit(1);
+  }
+  cpSync(memoraDist, join(targetMemora, 'dist'), { recursive: true });
+  const size = getDirSize(join(targetMemora, 'dist'));
+  console.log(`[sync-memora] 已复制: dist/ (${(size / 1024).toFixed(1)} KB)`);
+
+  // 复制运行时依赖 zod（memora 的唯一 runtime dependency）
+  // electron-builder 跟随 Junction 找依赖，--pack 模式删除 Junction 后需手动复制
+  const memoraNodeModules = join(memoraRoot, 'node_modules');
+  const zodSource = join(memoraNodeModules, 'zod');
+  if (existsSync(zodSource)) {
+    const targetNodeModules = join(targetMemora, 'node_modules');
+    mkdirSync(targetNodeModules, { recursive: true });
+    cpSync(zodSource, join(targetNodeModules, 'zod'), { recursive: true });
+    const zodSize = getDirSize(join(targetNodeModules, 'zod'));
+    console.log(`[sync-memora] 已复制: node_modules/zod (${(zodSize / 1024).toFixed(1)} KB)`);
+  } else {
+    console.error(`[sync-memora] zod 依赖不存在: ${zodSource}`);
+    console.error('[sync-memora] 请在仓库根执行 npm install');
+    process.exit(1);
+  }
+
+  console.log('[sync-memora] 打包模式同步完成 ✓');
+}
+
 // ─── 主流程 ──────────────────────────────────────────────
 
 console.log(`[sync-memora] sprite 目录: ${spriteRoot}`);
@@ -137,7 +204,15 @@ if (skipBuild) {
   buildMemora();
 }
 
-// 检测安装模式：Junction 模式无需复制，复制模式需要同步 dist
+// 打包模式：替换 Junction 为最小化独立目录
+if (packMode) {
+  console.log('[sync-memora] 打包模式：准备最小化 node_modules/memora');
+  packModeSync();
+  console.log('[sync-memora] 同步完成 ✓');
+  process.exit(0);
+}
+
+// 开发模式：Junction 自动生效，复制模式则复制 dist
 const junctionMode = isJunctionMode();
 if (junctionMode) {
   console.log('[sync-memora] Junction 模式：node_modules/memora → 仓库根（符号链接）');

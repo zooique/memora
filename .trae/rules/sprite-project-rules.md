@@ -34,49 +34,41 @@ date: 2026-07-13
 
 > 决策在外层（ADR 集中原则），实现文档跟宿主项目走（monorepo 最佳实践）。任务 ID 命名空间不同（内核用 V-xxx/P-xxx，宿主用 SEC-P2-xx/UX-xx/QC-xx），不合并。
 
-## 2. 内核更新工作流（file: 协议本地链接）
+## 2. 内核同步工作流（sync-memora 脚本）
 
-> 精灵通过 `file:../..` 协议直接引用本地仓库根的 memora 内核（npm 包形式，非 workspace）。  
-> 源码中 import 保持 `from 'memora'`，npm install 时自动建立 `node_modules/memora` → 仓库根的 Junction（Windows）或 symlink（Unix）。
+> 精灵不通过 npm `file:` 依赖内核（避免 Junction 将全量仓库打入 asar）。
+> `sync-memora.mjs` 负责：编译内核 → 创建最小化 `node_modules/memora/`（仅 dist + zod + 元数据）。
+> 源码中 import 保持 `from 'memora'`，TypeScript 通过 `node_modules/memora/dist` 解析。
 
-### 2.1 日常开发工作流（推荐）
+### 2.1 开发工作流
 
-不修改内核时无需任何额外操作，sprite 的 `node_modules/memora` 通过 Junction 直接指向仓库根，dist 保持上一次编译的状态。
-
-**修改了内核源码后**，执行一次同步：
+`build:electron` 自动调用 `sync-memora`，开发者无需手动操作：
 
 ```bash
 # 在 hosts/memora-sprite/ 目录
-npm run sync-memora   # 编译内核 src/ → dist/ + 同步到 node_modules
+npm run build:electron   # 自动：sync-memora → check-ipc → generate-icons → tsc → ...
+npm run start:electron   # 自动：build:electron → electron
 ```
 
-`sync-memora` 脚本（`scripts/sync-memora.mjs`）自动检测安装模式：
-- **Junction 模式**（npm on Windows 默认）：`node_modules/memora` 是符号链接指向仓库根，编译后 dist 自动生效，无需复制
-- **复制模式**（其他平台或 `--force` 安装）：`node_modules/memora` 是独立目录，需将 dist 从仓库根复制到 `node_modules/memora/dist`
+仅修改内核源码时，可手动执行同步（避免完整 rebuild）：
 
-> **效率原则**：不修改内核时零开销；修改内核后只需一次 `npm run sync-memora`（编译 + 同步，几秒）。
+```bash
+npm run sync-memora   # 编译内核 src/ → dist/ + 同步到 node_modules/memora/
+```
+
+> **效率原则**：不修改内核时，`sync-memora` 检测 dist 已存在会跳过编译（--no-build 模式）。
 
 ### 2.2 打包工作流
 
-打包脚本（`scripts/package.mjs`）在执行 electron-builder 前自动调用 `sync-memora`，确保打包用的是最新内核：
+打包脚本（`scripts/package.mjs`）在执行 electron-builder 前自动调用 `sync-memora`，确保 asar 内仅含最小化内核：
 
 ```bash
 # 在 hosts/memora-sprite/ 目录
-npm run package:win   # 自动：sync-memora → build:electron → clean-release → electron-builder → verify
+npm run package:win   # 自动：build:electron（含 sync-memora） → clean-release → electron-builder → verify
 ```
 
-> **注意**：`file:` 依赖被 electron-builder 打入 asar 时，会解引用 Junction/symlink，复制实际文件到 `node_modules/memora/dist/`。`verify-package.mjs` 检查 `node_modules/memora/dist/index.js` 仍然有效。
-
-### 2.3 恢复 npm 发布模式（应急方案，当前不使用）
-
-> **当前模式**：file:../..（本地 file 协议，详见 [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v2）
-> 以下为未来如需切回 npm alias 模式的应急步骤，当前不执行。
-
-```bash
-# 1. 修改 package.json：将 "memora": "file:../.." 改回 "memora": "npm:@zooique/memora@^1.0.1"
-# 2. 删除 node_modules/memora（Junction）+ package-lock.json
-# 3. npm install 恢复 npm alias 模式
-```
+`sync-memora` 创建的 `node_modules/memora/` 仅含运行时文件（dist + zod + package.json），
+不含 src/、tasks/、hosts/、.trae/ 等开发文件，确保 electron-builder 不会将全量仓库打入 asar。
 
 ## 3. 技术栈清单
 
@@ -86,7 +78,7 @@ npm run package:win   # 自动：sync-memora → build:electron → clean-releas
 | 数据库 | better-sqlite3（native 模块，^12.10.0） | ADR-SP-002 |
 | 桌面壳 | 阶段一 CLI → 阶段二 Electron 40 | ADR-SP-003 |
 | 感知层 | 上下文感知，非内容感知 | ADR-SP-004 |
-| 包管理 | npm + `file:../..`（本地 file 协议）+ @electron/rebuild | [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v2 |
+| 包管理 | npm + `sync-memora.mjs`（编译 → 最小化复制） + @electron/rebuild | [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v3 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
 
 ## 4. 目录结构
