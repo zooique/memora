@@ -65,8 +65,9 @@ export class FloatWindow {
       skipTaskbar: true,
       show: false,
       webPreferences: {
-        // preload 使用 .cjs（CommonJS 格式），兼容 sandbox: true；ESM 格式与 sandbox 不兼容
-        preload: path.join(ELECTRON_DIR, 'preload.cjs'),
+        // preload 使用 preload-float.cjs（12 API 最小化暴露面，ADR-SP-017 §何时回顾触发）
+        // 主 preload.cjs 暴露 266 API，浮动窗口仅需 12 API，独立化剥离高危 API（deleteMemory/installSkill 等）
+        preload: path.join(ELECTRON_DIR, 'preload-float.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,

@@ -190,7 +190,9 @@ export class DateNavManager {
       if (targetIdx < 0 || targetIdx >= sortedDates.length) return;
 
       e.preventDefault();
-      this.selectDate(sortedDates[targetIdx]);
+      // L190 已做边界检查（targetIdx ∈ [0, length)），sortedDates[targetIdx] 必有值
+      const targetDate = sortedDates[targetIdx]!;
+      this.selectDate(targetDate);
     });
   }
 

@@ -131,7 +131,7 @@ agent/
 ├── types.ts              # Agent 类型定义
 ├── userFactExtractor.ts  # 用户事实提取器（正则规则，纯函数模块，从 userProfile 迁入）
 ├── personaMatcher.ts     # 角色语义匹配器（LLM 辅助角色匹配纯函数，从 PersonaManager.matchByLlm 迁入，遵循 persona/ 不调 LLM 约束）
-├── managers/             # 专职 Manager 子目录（12 个）
+├── managers/             # 专职 Manager/服务类子目录（13 个，含 12 个生命周期 Manager + 1 个无状态服务类）
 │   ├── archiveCoordinator.ts # 归档协调器（archiveMode 三态控制 + 归档流程编排）
 │   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
 │   ├── chatLockManager.ts    # 对话锁管理器（token 校验 + 超时释放 + race condition 防护）
@@ -143,6 +143,7 @@ agent/
 │   ├── relationBuilder.ts    # 关系构建器（候选召回 + prompt 构建 + 关系写入 + 冲突检测，ADR-014）
 │   ├── sessionArchiver.ts    # 会话归档器（content 类记忆归档，会话级摘要，区别于 InsightExtractor 的洞察提取）
 │   ├── sessionManager.ts     # 会话管理器（fork/switch/restore）
+│   ├── textPolishManager.ts  # 文本润色服务类（无状态，仅依赖 Provider，非生命周期 Manager，详见 ADR-SP-017 §3）
 │   └── workProjection.ts     # 作品投影管理器
 └── __tests__/            # 单元测试
 

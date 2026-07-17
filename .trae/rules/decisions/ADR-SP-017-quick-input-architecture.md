@@ -98,10 +98,11 @@ quickInputWindow.updateCallbacks({
 - **directory-structure.md §2.5**：补充"窗口管理器内联 IPC 例外"说明（RULE-0715-4）
 - **sprite-project-rules.md**：新增 quick-input 模块章节（RULE-0715-3）
 - **新增 IPC 通道时**：参照本 ADR §1 判定标准选择注册位置
-- **preload 暴露面**：当前单 preload 暴露 100+ API，quick-input 仅需 9 个（SEC-0715-1 待方案设计）
+- **preload 暴露面**：主 preload 暴露 266 API（主窗口完整 UI），quick-input 独立为 10 API（preload-quick-input.ts），浮动窗口独立为 12 API（preload-float.ts，2026-07-17 实施独立化，触发条件"quick-input 窗口数 > 1"由浮动窗口作为第 2 个独立窗口等价满足）
 
 ## 何时回顾
 
-- 当 quick-input 窗口数 > 1（如新增独立搜索窗口）时，评估是否提取共用 preload
+- ~~当 quick-input 窗口数 > 1（如新增独立搜索窗口）时，评估是否提取共用 preload~~ → 2026-07-17 浮动窗口 preload 独立化已实施（preload-float.ts），等价触发此条件
 - 当 LLM 润色需要状态管理（历史润色记录/批量润色）时，评估是否升级为 Manager
 - 当 ipc/ 下的 handler 也需要访问窗口实例时，评估是否统一窗口管理器注册模式
+- 当出现第 4 个独立窗口时，评估是否统一 preload 拆分策略（当前 3 个 preload 文件：主/quick-input/float）
