@@ -525,9 +525,15 @@ export class OnboardingManager {
     doneBtn.addEventListener('click', () => {
       // AUDIT-5-4：持久化使用统计选择（fire-and-forget，不阻塞关闭）
       const usageStatsEnabled = this.getUsageStatsChoice();
-      window.electronAPI.updateConfigBatch({ usageStatsEnabled }).catch(() => {
-        // 持久化失败不阻塞引导完成，用户可在设置面板中再次切换
-      });
+      // 跳过路径（未配置 API）：config-update-batch handler 未注册（在 setupAgentReady 中才注册），
+      // 跳过 IPC 调用避免 "No handler registered" 错误日志。
+      // 已配置路径：reinitAgent 触发 setupAgentReady 注册 handler，
+      // 即使 Agent 尚未就绪，handler 已注册，IPC 调用可正常执行。
+      if (!this.skippedApiKey) {
+        window.electronAPI.updateConfigBatch({ usageStatsEnabled }).catch(() => {
+          // 持久化失败不阻塞引导完成，用户可在设置面板中再次切换
+        });
+      }
       this.closeModal(modal);
     });
   }
