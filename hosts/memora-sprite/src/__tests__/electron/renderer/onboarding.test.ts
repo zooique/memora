@@ -4,17 +4,16 @@
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - shouldShowOnboarding：未见标记返回 true / 已见返回 false / 已有 Provider 返回 false
- * - showOnboardingDialog：元素缺失静默退出 / 显示弹窗 / 标记已见
+ * - shouldShowOnboarding：无 Provider 返回 true / 有 Provider 返回 false（C2 修复后基于配置记录判定）
+ * - showOnboardingDialog：元素缺失静默退出 / 显示弹窗
  * - 关闭路径：完成按钮 / Esc 键 / 背景点击 / 非背景点击不关闭
- * - 关闭幂等：重复点击不重复 markSeen
+ * - 关闭幂等：重复点击不重复触发清理
  * - 通用表单校验：必填字段为空时标记错误
  * - 测试连接按钮：成功/失败路径
  * - 保存流程：成功前进步骤 / 失败显示错误
  *
  * Mock 策略：
- * - JSDOM 提供真实 DOM API（classList/addEventListener/removeEventListener/localStorage）
- * - localStorage 由 JSDOM 默认提供，测试间通过 beforeEach 清理
+ * - JSDOM 提供真实 DOM API（classList/addEventListener/removeEventListener）
  * - window.electronAPI 由 vi.mock 模拟（saveLlmProvider/testLlmConfig/updateConfigBatch）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -112,20 +111,22 @@ function pressEscape(): void {
 // ─── shouldShowOnboarding ────────────────────────────────
 
 describe('shouldShowOnboarding', () => {
-  it('未见标记时应返回 true（首次使用）', () => {
+  it('无 Provider 配置时应返回 true（首次使用 / 跳过后未配置）', () => {
     const manager = createManager();
     expect(manager.shouldShowOnboarding(false)).toBe(true);
-  });
-
-  it('已见标记时应返回 false（老用户不再显示）', () => {
-    localStorage.setItem('memora-onboarding-seen', '1');
-    const manager = createManager();
-    expect(manager.shouldShowOnboarding(false)).toBe(false);
   });
 
   it('已有 Provider 配置时应返回 false（已配置用户）', () => {
     const manager = createManager();
     expect(manager.shouldShowOnboarding(true)).toBe(false);
+  });
+
+  it('C2 修复：跳过引导后无 Provider，下次仍应显示（不依赖 localStorage 标记）', () => {
+    // 模拟用户上次跳过引导：旧逻辑会写入 localStorage 标记导致不再显示
+    // C2 修复后：不写 localStorage，仅基于 Provider 列表判定
+    localStorage.setItem('memora-onboarding-seen', '1'); // 模拟旧标记残留（应被忽略）
+    const manager = createManager();
+    expect(manager.shouldShowOnboarding(false)).toBe(true);
   });
 });
 
@@ -136,14 +137,12 @@ describe('showOnboardingDialog · 元素缺失降级', () => {
     document.body.innerHTML = '<button id="btn-onboarding-done">开始</button>';
     const manager = new OnboardingManager();
     expect(() => manager.showOnboardingDialog()).not.toThrow();
-    // 不应标记已见
-    expect(localStorage.getItem('memora-onboarding-seen')).toBeNull();
   });
 });
 
-// ─── showOnboardingDialog · 显示与标记 ──────────────────
+// ─── showOnboardingDialog · 显示 ──────────────────────────
 
-describe('showOnboardingDialog · 显示与标记', () => {
+describe('showOnboardingDialog · 显示', () => {
   it('应移除 hidden 类显示弹窗', () => {
     const manager = createManager();
     manager.showOnboardingDialog();
@@ -151,45 +150,42 @@ describe('showOnboardingDialog · 显示与标记', () => {
     expect(modal.classList.contains('hidden')).toBe(false);
   });
 
-  it('应注册完成按钮事件（点击完成按钮 → 关闭 + 标记已见）', () => {
+  it('应注册完成按钮事件（点击完成按钮 → 关闭弹窗）', () => {
     const manager = createManager();
     manager.showOnboardingDialog();
     const doneBtn = document.getElementById('btn-onboarding-done')!;
     doneBtn.click();
-    // 监听器应已触发并标记已见
-    expect(localStorage.getItem('memora-onboarding-seen')).toBe('1');
+    // 弹窗应已隐藏
+    expect(document.getElementById('onboarding-modal')!.classList.contains('hidden')).toBe(true);
   });
 });
 
 // ─── showOnboardingDialog · 三种关闭路径 ────────────────
 
 describe('showOnboardingDialog · 关闭路径', () => {
-  it('click 完成按钮应关闭弹窗 + 标记已见', () => {
+  it('click 完成按钮应关闭弹窗', () => {
     const manager = createManager();
     manager.showOnboardingDialog();
     const modal = document.getElementById('onboarding-modal')!;
     const doneBtn = document.getElementById('btn-onboarding-done')!;
     doneBtn.click();
     expect(modal.classList.contains('hidden')).toBe(true);
-    expect(localStorage.getItem('memora-onboarding-seen')).toBe('1');
   });
 
-  it('Esc 键应关闭弹窗 + 标记已见', () => {
+  it('Esc 键应关闭弹窗', () => {
     const manager = createManager();
     manager.showOnboardingDialog();
     const modal = document.getElementById('onboarding-modal')!;
     pressEscape();
     expect(modal.classList.contains('hidden')).toBe(true);
-    expect(localStorage.getItem('memora-onboarding-seen')).toBe('1');
   });
 
-  it('click 背景应关闭弹窗 + 标记已见', () => {
+  it('click 背景应关闭弹窗', () => {
     const manager = createManager();
     manager.showOnboardingDialog();
     const modal = document.getElementById('onboarding-modal')!;
     clickBackdrop(modal);
     expect(modal.classList.contains('hidden')).toBe(true);
-    expect(localStorage.getItem('memora-onboarding-seen')).toBe('1');
   });
 
   it('click 弹窗内容（target !== modal）不应关闭', () => {
@@ -201,22 +197,18 @@ describe('showOnboardingDialog · 关闭路径', () => {
     content.click();
     // 弹窗应仍可见
     expect(modal.classList.contains('hidden')).toBe(false);
-    // 不应标记已见
-    expect(localStorage.getItem('memora-onboarding-seen')).toBeNull();
   });
 });
 
 // ─── showOnboardingDialog · 关闭幂等 ────────────────────
 
 describe('showOnboardingDialog · 关闭幂等', () => {
-  it('重复 click 完成按钮不应重复标记已见（closed 标志保护）', () => {
+  it('重复 click 完成按钮不应重复触发清理（closed 标志保护）', () => {
     const manager = createManager();
     manager.showOnboardingDialog();
     const doneBtn = document.getElementById('btn-onboarding-done')!;
     doneBtn.click();
     doneBtn.click(); // 二次点击
-    // localStorage 只应被写入一次
-    expect(localStorage.getItem('memora-onboarding-seen')).toBe('1');
     // 弹窗应仍为隐藏
     expect(document.getElementById('onboarding-modal')!.classList.contains('hidden')).toBe(true);
   });

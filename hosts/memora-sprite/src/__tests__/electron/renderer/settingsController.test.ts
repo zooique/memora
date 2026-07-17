@@ -71,6 +71,8 @@ function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
     updateAgentStatusIndicator: vi.fn(),
     loadUserProfile: vi.fn().mockResolvedValue(undefined),
     loadAuditLog: vi.fn().mockResolvedValue(undefined),
+    // C1 修复：loadLlmConfig 成功时刷新 Provider 列表
+    settingsPanelManager: { loadProviderList: vi.fn().mockResolvedValue(undefined) },
     // F-P0 技术债偿还：回调注入方法（setupSettingsPanel 中调用）
     setClearAuditLogCallback: vi.fn(),
     setConfirmProfileCallback: vi.fn(),
@@ -239,5 +241,15 @@ describe('settingsController', () => {
 
     expect(mockReportError).toHaveBeenCalledWith('loadLlmConfig', expect.any(Error));
     expect(uiManager.showSettingsError).toHaveBeenCalled();
+  });
+
+  it('C1 修复：loadLlmConfig 成功时应刷新 Provider 列表（onboarding 新增后可见）', async () => {
+    await controller.loadLlmConfig();
+
+    // Provider 列表应被刷新（C1 修复核心：每次 loadLlmConfig 都同步 loadProviderList）
+    expect(uiManager.settingsPanelManager.loadProviderList).toHaveBeenCalled();
+    // Embedding 配置也应加载
+    expect(uiManager.loadEmbeddingConfig).toHaveBeenCalled();
+    expect(uiManager.hideSettingsError).toHaveBeenCalled();
   });
 });

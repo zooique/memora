@@ -9,22 +9,15 @@
  * - 持久化使用统计选择（通过 config-update-batch IPC）
  *
  * 设计原则：
- * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage + IPC 操作
- * - 已配置 Provider 的用户跳过引导（检查 provider 列表）
+ * - 独立于 UIManager，无 this 依赖，纯 DOM + IPC 操作
+ * - 显示判定基于 Provider 配置记录存在性（C2 修复）：无配置始终显示，有配置不再显示
  * - 支持跳过 API 配置步骤（降级路径）
  * - 不内置 Provider 预设：模型更迭速度快，预设易滞后，改为用户自填所有字段
  */
 import { reportError } from '../helpers/errorHelpers.js';
 import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
-// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
-import { safeSet } from '../helpers/safeStorage.js';
 // 跨进程 LLM 错误分类器（onboarding + minimalHandlers 共用）
 import { classifyLlmError } from '../../../shared/llmErrorClassifier.js';
-
-// ─── localStorage 键 ────────────────────────────────────
-
-/** 标记引导是否已完成（老用户跳过） */
-const ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
 
 // ─── OnboardingManager ──────────────────────────────────
 
@@ -47,15 +40,18 @@ export class OnboardingManager {
   /**
    * 检查是否需要显示引导
    *
-   * 检查逻辑：
-   * 1. localStorage 标记已见过 → 跳过
-   * 2. 已有 Provider 配置 → 跳过（已配置用户）
+   * 判定逻辑（C2 修复）：
+   * - 仅基于 Provider 配置记录存在性决定，不依赖 localStorage 标记
+   * - 无 Provider 配置 → 显示引导（即便用户上次跳过，下次启动仍会显示）
+   * - 有 Provider 配置 → 跳过引导
+   *
+   * 理由：Provider 列表是主进程的真理源，localStorage 标记易与实际状态不一致
+   * （如用户跳过引导后未配置、或配置后又被删除），导致引导该显示时不显示、
+   * 不该显示时又弹出。改为单一维度判定，状态真理源唯一。
    *
    * @param hasProviders 是否已有 Provider 配置
    */
   shouldShowOnboarding(hasProviders: boolean): boolean {
-    // 已标记过引导 → 不再显示
-    if (localStorage.getItem(ONBOARDING_SEEN_KEY) === '1') return false;
     // 已有 Provider 配置 → 跳过引导
     if (hasProviders) return false;
     return true;
@@ -97,21 +93,16 @@ export class OnboardingManager {
   // ─── 关闭处理 ──────────────────────────────────────
 
   /**
-   * 标记引导已完成并关闭弹窗
-   */
-  private markSeen(): void {
-    safeSet(ONBOARDING_SEEN_KEY, '1');
-  }
-
-  /**
    * 关闭弹窗
    *
    * 三条关闭路径（ESC/遮罩/完成按钮）统一在此清理监听器，避免 ESC 重复触发（UX-0712-8）。
+   *
+   * 注：不再写入 localStorage 标记（C2 修复）——引导是否显示由 Provider 配置记录决定，
+   * 而非"是否见过引导"。用户跳过引导后未配置 Provider 时，下次启动仍会显示。
    */
   private closeModal(modal: HTMLElement): void {
     if (this.closed) return;
     this.closed = true;
-    this.markSeen();
     modal.classList.add('hidden');
     // 统一清理 keydown + click 监听器，防止 listener 累积泄漏
     this.currentCleanup?.();

@@ -535,11 +535,9 @@ async function bootstrapRenderer(): Promise<void> {
   // M2 预加载审计日志数据（用户切换到"审计"tab 时即可见）
   void settingsController.loadAuditLog();
 
-  // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
-  // 使用 localStorage 标记，老用户不再显示
-  if (State.uiManager.shouldShowOnboarding(false)) {
-    State.uiManager.showOnboardingDialog();
-  }
+  // 注：原此处有"三态首次引导"的冗余调用，已删除（C2 修复）。
+  // Agent 就绪时 onAgentReadyCallback 内部已调用 checkAndShowOnboarding（基于真实 Provider 列表判断），
+  // 此处二次调用不仅冗余，且硬编码 hasProviders=false 会导致 Agent 已就绪（有 Provider）时仍显示引导。
 }
 
 // DOMContentLoaded 调用 bootstrapRenderer，统一捕获初始化异常避免 UI 空白
