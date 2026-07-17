@@ -431,6 +431,14 @@ async function initializeApp(): Promise<void> {
     }
   });
 
+  // ── 阶段 0：预检 LLM 配置 ──
+  // 在窗口创建前检查，确保渲染进程加载时 initErrorDetail 已就绪
+  // 避免渲染进程 getAgentStatus() 读到 null（时序竞争）
+  const llmConfiguredEarly = await isLlmConfigured();
+  if (!llmConfiguredEarly) {
+    appState.initErrorDetail = classifyInitError('配置不完整，请在设置面板中配置 LLM 提供商和 API Key', '初始化失败');
+  }
+
   // ── 阶段 1：创建窗口（始终成功） ──
   try {
     // 1. 加载精灵配置（从 dataDir/sprite.json，首次启动使用默认值）
@@ -611,11 +619,8 @@ async function initializeApp(): Promise<void> {
   setupAgentIndependentResources();
 
   try {
-    // 预检 LLM 配置：无配置时跳过 Agent 初始化，等待用户配置后通过 reinitAgent 走完整流程
-    // 避免无配置时进入 startSprite → loadConfig → ENOENT 错误链
-    if (!(await isLlmConfigured())) {
-      // 设置初始化错误详情，渲染进程据此显示引导弹窗或设置面板
-      appState.initErrorDetail = classifyInitError('配置不完整，请在设置面板中配置 LLM 提供商和 API Key', '初始化失败');
+    // 预检结果已在阶段 0 设置（initErrorDetail），此处复用避免重复读取
+    if (!llmConfiguredEarly) {
       return;
     }
 
