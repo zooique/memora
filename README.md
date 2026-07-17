@@ -101,16 +101,16 @@ await agent.close();
 ```
 src/
 ├── index.ts        # 库导出入口（纯类型 + 接口导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/（9 个专职 Manager）
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/（13 个专职 Manager）
 ├── memory/         # 记忆引擎（IMemoryStorage + IMemoryRelationStore + 召回 + 向量存储）
 ├── persona/        # 角色管理
 ├── skill/          # 技能管理
 ├── llm/            # LLM 适配层
 ├── security/       # 安全策略
 ├── config/         # 配置加载
-├── logging/        # 日志
-├── eval/           # 评估框架（Mock Eval / Agent 行为回归测试）
-└── utils/          # 工具函数
+├── logging/        # 日志（ILogger 接口 + console fallback）
+├── eval/           # 评估框架（EvalScenario 类型 + 工具函数，CI 回归测试用）
+└── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
 ## 技术栈

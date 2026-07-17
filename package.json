@@ -4,6 +4,8 @@
   "description": "通用 Agent 架构（纯逻辑库）— 本地、私有、领域无关，万物皆记忆",
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
   "files": [
     "dist",
     "README.md",
@@ -14,6 +16,14 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/zooique/memora.git"
+  },
+  "homepage": "https://gitee.com/zooique/memora#readme",
+  "bugs": {
+    "url": "https://gitee.com/zooique/memora/issues"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
