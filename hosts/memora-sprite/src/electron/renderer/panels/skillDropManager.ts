@@ -17,12 +17,10 @@
  */
 
 import type { ToastManager } from '../components/toast.js';
-// 内核 toError 工具（统一 unknown 错误信息提取，替代 err instanceof Error 三元式）
-import { toError } from 'memora';
 // 精灵公共常量（Toast 时长，跨进程共享 DRY）
 import { TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../../sprite/constants.js';
-// 渲染进程统一日志入口（替代散落的 console.error/warn）
-import { reportError } from '../helpers/errorHelpers.js';
+// 渲染进程统一日志入口 + toError 工具（errorHelpers re-export 自 shared/toError，纯函数零依赖）
+import { reportError, toError } from '../helpers/errorHelpers.js';
 
 /**
  * 技能拖入安装面板管理器类

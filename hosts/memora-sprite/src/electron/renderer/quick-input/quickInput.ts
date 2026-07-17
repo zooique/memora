@@ -66,6 +66,8 @@ const COMPACT_MIN_HEIGHT = 36;
 const EXPANDED_MIN_HEIGHT = 120;
 /** localStorage key：持久化展开状态（'1' = 展开，'0' = 紧凑） */
 const STORAGE_KEY_EXPAND = 'memora-quick-input-expanded';
+/** 流式模式 localStorage 键（跨会话持久化手动切换的用户偏好） */
+const STORAGE_KEY_STREAM = 'memora-quick-input-stream';
 /** 拖动阈值（px）：移动超过此距离才认为是拖动而非点击（与 float.ts 对齐） */
 const DRAG_THRESHOLD_PX = 3;
 
@@ -84,28 +86,51 @@ const DRAG_THRESHOLD_PX = 3;
  *   2. 调用 init() 绑定事件监听器 + 初始化补全管理器
  *   3. 窗口销毁前调用 cleanup() 清理资源
  */
-class QuickInputController {
+
+/** QuickInputController 构造参数（工厂函数一次性校验后传入，所有字段非空） */
+interface QuickInputControllerOptions {
+  /** 输入框 textarea 元素 */
+  inputField: HTMLTextAreaElement;
+  /** 候选列表容器 */
+  completionList: HTMLElement;
+  /** 流式模式切换按钮 */
+  streamToggle: HTMLElement;
+  /** 展开高度切换按钮 */
+  expandToggle: HTMLElement;
+  /** 润色按钮 */
+  polishToggle: HTMLElement;
+  /** footer 区域（拖动把手） */
+  footerEl: HTMLElement;
+  /** 字符计数元素 */
+  counterEl: HTMLElement;
+  /** ElectronAPI 子集 */
+  api: QuickInputElectronAPI;
+}
+
+export class QuickInputController {
   // ── DOM 元素 ──
   /** 输入框（textarea） */
   private readonly inputField: HTMLTextAreaElement;
-  /** 候选列表容器（可能为 null：DOM 中不存在时） */
-  private readonly completionList: HTMLElement | null;
-  /** 流式模式切换按钮（可能为 null：DOM 中不存在时） */
-  private readonly streamToggle: HTMLElement | null;
-  /** 展开高度切换按钮（可能为 null：DOM 中不存在时） */
-  private readonly expandToggle: HTMLElement | null;
-  /** 润色按钮（可能为 null：DOM 中不存在时） */
-  private readonly polishToggle: HTMLElement | null;
-  /** footer 区域（拖动把手，可能为 null：DOM 中不存在时） */
-  private readonly footerEl: HTMLElement | null;
-  /** 字符计数显示元素（可能为 null） */
-  private readonly counterEl: HTMLElement | null;
+  /** 候选列表容器 */
+  private readonly completionList: HTMLElement;
+  /** 流式模式切换按钮 */
+  private readonly streamToggle: HTMLElement;
+  /** 展开高度切换按钮 */
+  private readonly expandToggle: HTMLElement;
+  /** 润色按钮 */
+  private readonly polishToggle: HTMLElement;
+  /** footer 区域（拖动把手） */
+  private readonly footerEl: HTMLElement;
+  /** 字符计数显示元素 */
+  private readonly counterEl: HTMLElement;
   /** ElectronAPI 子集 */
   private readonly api: QuickInputElectronAPI;
 
   // ── 运行时状态 ──
   /** 是否正在提交（防止重复确认） */
   private isSubmitting = false;
+  /** 提交代次计数器：每次提交递增，防止过期 IPC 响应污染状态（竞态防护） */
+  private submitGeneration = 0;
   /** 补全管理器实例（init 时创建，cleanup 时销毁） */
   private completion: QuickInputCompletion | null = null;
   /** 当前输入区基础高度（不含候选列表，随 autoResize 动态变化） */
@@ -131,35 +156,25 @@ class QuickInputController {
   /** 上一次 pointermove 的 screen 坐标（用于计算增量位移，逐帧推送 IPC） */
   private dragLastX = 0;
   private dragLastY = 0;
+  /** 拖动事件处理器引用（用于 cleanup 时移除监听器） */
+  private dragHandlers: {
+    pointerdown: (e: PointerEvent) => void;
+    pointermove: (e: PointerEvent) => void;
+    pointerup: (e: PointerEvent) => void;
+  } | null = null;
 
   /**
-   * @param inputField 输入框 textarea 元素
-   * @param completionList 候选列表容器（可能为 null）
-   * @param streamToggle 流式模式切换按钮（可能为 null）
-   * @param expandToggle 展开高度切换按钮（可能为 null）
-   * @param polishToggle 润色按钮（可能为 null）
-   * @param footerEl footer 区域（拖动把手，可能为 null）
-   * @param counterEl 字符计数元素（可能为 null）
-   * @param api ElectronAPI 子集
+   * @param options 构造参数对象（工厂函数已校验，所有 DOM 字段非空）
    */
-  constructor(
-    inputField: HTMLTextAreaElement,
-    completionList: HTMLElement | null,
-    streamToggle: HTMLElement | null,
-    expandToggle: HTMLElement | null,
-    polishToggle: HTMLElement | null,
-    footerEl: HTMLElement | null,
-    counterEl: HTMLElement | null,
-    api: QuickInputElectronAPI,
-  ) {
-    this.inputField = inputField;
-    this.completionList = completionList;
-    this.streamToggle = streamToggle;
-    this.expandToggle = expandToggle;
-    this.polishToggle = polishToggle;
-    this.footerEl = footerEl;
-    this.counterEl = counterEl;
-    this.api = api;
+  constructor(options: QuickInputControllerOptions) {
+    this.inputField = options.inputField;
+    this.completionList = options.completionList;
+    this.streamToggle = options.streamToggle;
+    this.expandToggle = options.expandToggle;
+    this.polishToggle = options.polishToggle;
+    this.footerEl = options.footerEl;
+    this.counterEl = options.counterEl;
+    this.api = options.api;
   }
 
   /**
@@ -213,18 +228,14 @@ class QuickInputController {
    * 绑定流式模式切换按钮点击事件
    */
   private bindStreamToggle(): void {
-    if (this.streamToggle instanceof HTMLElement) {
-      this.streamToggle.addEventListener('click', () => this.toggleStreamMode());
-    }
+    this.streamToggle.addEventListener('click', () => this.toggleStreamMode());
   }
 
   /**
    * 绑定展开高度切换按钮点击事件
    */
   private bindExpandToggle(): void {
-    if (this.expandToggle instanceof HTMLElement) {
-      this.expandToggle.addEventListener('click', () => this.toggleExpand());
-    }
+    this.expandToggle.addEventListener('click', () => this.toggleExpand());
   }
 
   /**
@@ -235,9 +246,7 @@ class QuickInputController {
    * 成功后替换输入框内容，失败时 Toast 提示（不替换原文）。
    */
   private bindPolishToggle(): void {
-    if (this.polishToggle instanceof HTMLElement) {
-      this.polishToggle.addEventListener('click', () => void this.handlePolish());
-    }
+    this.polishToggle.addEventListener('click', () => void this.handlePolish());
   }
 
   /**
@@ -258,9 +267,9 @@ class QuickInputController {
 
     this.isPolishing = true;
     this.inputField.disabled = true;
-    this.polishToggle?.classList.add('loading');
+    this.polishToggle.classList.add('loading');
     /* UX-QI-20：通知屏幕阅读器正在处理（视觉已有旋转图标，ARIA 补齐无障碍反馈） */
-    this.polishToggle?.setAttribute('aria-busy', 'true');
+    this.polishToggle.setAttribute('aria-busy', 'true');
 
     try {
       const result = await this.api.polishQuickInput(text);
@@ -277,9 +286,9 @@ class QuickInputController {
       this.showPolishError();
     } finally {
       this.isPolishing = false;
-      this.inputField.disabled = false;
-      this.polishToggle?.classList.remove('loading');
-      this.polishToggle?.removeAttribute('aria-busy');
+      this.unlockInput();
+      this.polishToggle.classList.remove('loading');
+      this.polishToggle.removeAttribute('aria-busy');
       this.inputField.focus();
     }
   }
@@ -288,9 +297,9 @@ class QuickInputController {
    * 润色无变化：短暂闪烁 polish-toggle 提示用户
    */
   private showPolishNoChange(): void {
-    this.polishToggle?.classList.add('no-change');
+    this.polishToggle.classList.add('no-change');
     setTimeout(() => {
-      this.polishToggle?.classList.remove('no-change');
+      this.polishToggle.classList.remove('no-change');
     }, 500);
   }
 
@@ -322,7 +331,6 @@ class QuickInputController {
    * 位置不持久化：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效（由主进程负责）。
    */
   private bindDrag(): void {
-    if (!(this.footerEl instanceof HTMLElement)) return;
     const footer = this.footerEl;
 
     // pointerdown：记录起点 + 捕获指针，使后续 pointermove/pointerup 即使鼠标移出窗口也能触发
@@ -365,6 +373,12 @@ class QuickInputController {
       this.dragPointerId = null;
     };
 
+    // 保存处理器引用，供 cleanup 时移除
+    this.dragHandlers = {
+      pointerdown: onPointerDown,
+      pointermove: onPointerMove,
+      pointerup: onPointerUp,
+    };
     footer.addEventListener('pointerdown', onPointerDown);
     footer.addEventListener('pointermove', onPointerMove);
     footer.addEventListener('pointerup', onPointerUp);
@@ -374,7 +388,6 @@ class QuickInputController {
    * 初始化补全管理器：创建实例 + 绑定 onSelect / onListChange 回调
    */
   private initCompletion(): void {
-    if (!(this.completionList instanceof HTMLElement)) return;
     this.completion = new QuickInputCompletion(this.inputField, this.completionList, this.api);
     // 候选项被选中（←→/Click）时填充到输入框
     this.completion.onSelect((text) => {
@@ -409,11 +422,13 @@ class QuickInputController {
    * @param payload 主进程传入的剪贴板预填文本 + 敏感标记
    */
   private handleShow(payload: { clipboardText?: string | null; isSensitive?: boolean } | null): void {
+    // 递增提交代次，使之前的 IPC 响应失效（防止窗口重新显示时过期响应污染状态）
+    this.submitGeneration++;
     if (this.toastCloseTimer !== null) {
       clearTimeout(this.toastCloseTimer);
       this.toastCloseTimer = null;
     }
-    this.inputField.readOnly = false;
+    this.unlockInput();
     this.inputField.classList.remove('copy-toast');
     this.tabPressed = false;
 
@@ -433,7 +448,11 @@ class QuickInputController {
       this.inputField.style.height = 'auto';
       this.updateCounter();
       this.baseInputHeight = INITIAL_BASE_HEIGHT;
+      // 显式清空补全列表，避免依赖上次关闭时的异步清理（排雷 P0-1）
+      this.completion?.clear();
       this.resizeWindow();
+      // 统一 dispatch input 事件，让所有下游处理器（补全/计数器/高度）自行响应
+      this.inputField.dispatchEvent(new Event('input'));
     }
     this.isSubmitting = false;
     this.inputField.disabled = false;
@@ -447,6 +466,7 @@ class QuickInputController {
     this.inputField.focus();
     this.updateCounter();
     this.restoreExpandState();
+    this.restoreStreamState();
     this.autoResize();
     this.updateStreamToggle();
   }
@@ -468,10 +488,23 @@ class QuickInputController {
   }
 
   /**
+   * 从 localStorage 恢复流式模式（跨会话持久化，仅手动切换）
+   *
+   * 注意：handleShow 中的 isSensitive 自动检测会覆盖此值（仅本次会话），不持久化。
+   * localStorage 不可用或无记录时默认为关闭（streamMode = false）。
+   */
+  private restoreStreamState(): void {
+    const stored = safeGet(STORAGE_KEY_STREAM, '0');
+    if (stored === '1') {
+      this.streamMode = true;
+      this.updateStreamToggle();
+    }
+  }
+
+  /**
    * 更新展开按钮视觉状态（.active 类 + aria-pressed + title 提示）
    */
   private updateExpandToggle(): void {
-    if (!(this.expandToggle instanceof HTMLElement)) return;
     if (this.expandMode) {
       this.expandToggle.classList.add('active');
       this.expandToggle.setAttribute('aria-pressed', 'true');
@@ -520,7 +553,6 @@ class QuickInputController {
    * 通过切换 SVG <use href> 在 lock/unlock icon 间切换（与主窗口 icon 系统对齐）。
    */
   private updateStreamToggle(): void {
-    if (!(this.streamToggle instanceof HTMLElement)) return;
     const useEl = this.streamToggle.querySelector('use');
     if (useEl) {
       useEl.setAttribute('href', this.streamMode ? '#icon-lock' : '#icon-unlock');
@@ -538,13 +570,55 @@ class QuickInputController {
 
   /**
    * 切换流式模式（手动覆盖自动检测）
+   *
+   * 手动切换持久化到 localStorage，跨会话保留用户偏好。
+   * 注意：handleShow 中的 isSensitive 自动检测不持久化，仅本次会话生效。
    */
   private toggleStreamMode(): void {
     this.streamMode = !this.streamMode;
+    safeSet(STORAGE_KEY_STREAM, this.streamMode ? '1' : '0');
     this.updateStreamToggle();
   }
 
   // ── 确认流程 ──
+
+  /**
+   * 解锁输入框，恢复为可编辑状态
+   *
+   * 集中管理 disabled/readOnly 的复原逻辑，避免各方法中分散重置导致遗漏。
+   * 注意：仅复原锁状态，不清空 Toast 内容（由调用方负责）。
+   */
+  private unlockInput(): void {
+    this.inputField.disabled = false;
+    this.inputField.readOnly = false;
+  }
+
+  /**
+   * 确认提交成功后调度 Toast 展示 + 后续动作
+   *
+   * 将流式/普通模式的 Toast 选择 + setTimeout 逻辑集中管理，消除 handleConfirm 中的重复分支。
+   */
+  private scheduleSuccessToast(
+    result: { mode: 'paste' | 'copy'; appName?: string },
+    isStreamMode: boolean,
+  ): void {
+    if (result.mode === 'paste') {
+      this.showPastedToast(result.appName);
+    } else {
+      this.showCopyToast();
+    }
+    if (isStreamMode) {
+      this.toastCloseTimer = setTimeout(() => {
+        this.toastCloseTimer = null;
+        this.resetInputForNext();
+      }, STREAM_TOAST_MS);
+    } else {
+      this.toastCloseTimer = setTimeout(() => {
+        this.toastCloseTimer = null;
+        void this.api.closeQuickInput();
+      }, TOAST_DURATION_MS);
+    }
+  }
 
   /**
    * 确认输入：调用 IPC（主进程优先自动粘贴，降级写剪贴板）+ 显示 Toast
@@ -560,40 +634,26 @@ class QuickInputController {
       return;
     }
 
+    // 递增提交代次，标记本次请求的世代；IPC 返回后若代次不匹配则忽略过期响应
+    const currentGen = ++this.submitGeneration;
     this.isSubmitting = true;
     this.inputField.disabled = true;
+    // 提交时立即清空补全列表，避免候选遮挡 Toast
+    this.completion?.clear();
     this.showPastingToast();
 
     try {
       const result = await this.api.confirmQuickInput(text, this.streamMode);
+      // 竞态防护：若期间窗口被重新 show() 或开始了新提交，代次已变化，忽略过期响应
+      if (currentGen !== this.submitGeneration) return;
       if (result.success) {
-        if (this.streamMode) {
-          // 流式模式：短暂 Toast → 清空输入 → 聚焦等待
-          if (result.mode === 'paste') {
-            this.showPastedToast(result.appName);
-          } else {
-            this.showCopyToast();
-          }
-          this.toastCloseTimer = setTimeout(() => {
-            this.toastCloseTimer = null;
-            this.resetInputForNext();
-          }, STREAM_TOAST_MS);
-        } else {
-          // 普通模式：Toast → 延迟关闭
-          if (result.mode === 'paste') {
-            this.showPastedToast(result.appName);
-          } else {
-            this.showCopyToast();
-          }
-          this.toastCloseTimer = setTimeout(() => {
-            this.toastCloseTimer = null;
-            void this.api.closeQuickInput();
-          }, TOAST_DURATION_MS);
-        }
+        this.scheduleSuccessToast(result, this.streamMode);
       } else {
         this.resetInputState(text);
       }
     } catch (error) {
+      // 竞态防护：仅在代次匹配时才处理错误（避免覆盖新状态）
+      if (currentGen !== this.submitGeneration) return;
       reportError('QuickInput 确认', error);
       this.resetInputState(text);
     }
@@ -604,13 +664,14 @@ class QuickInputController {
    */
   private resetInputForNext(): void {
     this.isSubmitting = false;
-    this.inputField.disabled = false;
-    this.inputField.readOnly = false;
+    this.unlockInput();
     this.inputField.classList.remove('copy-toast');
     this.inputField.value = '';
     this.inputField.style.height = 'auto';
     this.updateCounter();
     this.baseInputHeight = INITIAL_BASE_HEIGHT;
+    // 清空补全列表，确保下次输入从干净状态开始
+    this.completion?.clear();
     this.resizeWindow();
     this.inputField.focus();
   }
@@ -622,10 +683,11 @@ class QuickInputController {
    */
   private resetInputState(text: string): void {
     this.isSubmitting = false;
-    this.inputField.disabled = false;
-    this.inputField.readOnly = false;
+    this.unlockInput();
     this.inputField.classList.remove('copy-toast');
     this.inputField.value = text;
+    // 恢复原文后清空补全列表，让 input 事件重新触发候选生成
+    this.completion?.clear();
     this.inputField.focus();
   }
 
@@ -697,9 +759,7 @@ class QuickInputController {
    * 更新字符计数显示
    */
   private updateCounter(): void {
-    if (this.counterEl instanceof HTMLElement) {
-      this.counterEl.textContent = `${this.inputField.value.length} 字`;
-    }
+    this.counterEl.textContent = `${this.inputField.value.length} 字`;
   }
 
   /**
@@ -714,7 +774,7 @@ class QuickInputController {
     }
     this.resizeDebounceTimer = setTimeout(() => {
       this.resizeDebounceTimer = null;
-      if (this.completionList && !this.completionList.classList.contains('hidden')) {
+      if (!this.completionList.classList.contains('hidden')) {
         const itemCount = this.completionList.querySelectorAll('.completion-item').length;
         const hasFooter = this.completionList.dataset.footer === 'true';
         const footerHeight = hasFooter ? FOOTER_HEIGHT_PX : 0;
@@ -732,6 +792,8 @@ class QuickInputController {
    * 关闭浮窗：清理 Toast 定时器 + 调用 IPC 通知主进程隐藏窗口
    */
   private async handleClose(): Promise<void> {
+    // 递增提交代次，使飞行中的 IPC 响应失效（排雷 P0-2：ESC 关闭期间过期响应不污染状态）
+    this.submitGeneration++;
     if (this.toastCloseTimer !== null) {
       clearTimeout(this.toastCloseTimer);
       this.toastCloseTimer = null;
@@ -759,6 +821,13 @@ class QuickInputController {
    * 窗口销毁前调用（beforeunload）
    */
   cleanup(): void {
+    // 移除拖动事件监听器（防止窗口销毁后事件泄漏）
+    if (this.dragHandlers) {
+      this.footerEl.removeEventListener('pointerdown', this.dragHandlers.pointerdown);
+      this.footerEl.removeEventListener('pointermove', this.dragHandlers.pointermove);
+      this.footerEl.removeEventListener('pointerup', this.dragHandlers.pointerup);
+      this.dragHandlers = null;
+    }
     this.completion?.cleanup();
   }
 }
@@ -766,8 +835,9 @@ class QuickInputController {
 /**
  * 初始化快速输入浮窗交互（工厂函数）
  *
- * 校验 DOM 元素后创建 QuickInputController 实例并启动。
+ * 校验所有 DOM 元素后创建 QuickInputController 实例。
  * 校验失败时 reportError 并降级（不创建控制器）。
+ * 校验通过后所有 DOM 字段非空，控制器内部无需重复 null 检查。
  */
 function initQuickInput(): void {
   const inputEl = document.getElementById('quick-input-field');
@@ -776,11 +846,35 @@ function initQuickInput(): void {
     return;
   }
   const completionList = document.getElementById('completion-list');
+  if (!(completionList instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('completion-list 元素缺失'));
+    return;
+  }
   const streamToggle = document.getElementById('stream-toggle');
+  if (!(streamToggle instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('stream-toggle 元素缺失'));
+    return;
+  }
   const expandToggle = document.getElementById('expand-toggle');
+  if (!(expandToggle instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('expand-toggle 元素缺失'));
+    return;
+  }
   const polishToggle = document.getElementById('polish-toggle');
+  if (!(polishToggle instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('polish-toggle 元素缺失'));
+    return;
+  }
   const footerEl = document.getElementById('quick-input-footer');
+  if (!(footerEl instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('quick-input-footer 元素缺失'));
+    return;
+  }
   const counterEl = document.querySelector('.quick-input-counter');
+  if (!(counterEl instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('.quick-input-counter 元素缺失'));
+    return;
+  }
 
   const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
   if (!electronApi) {
@@ -788,17 +882,16 @@ function initQuickInput(): void {
     return;
   }
 
-  // 创建控制器并初始化
-  const controller = new QuickInputController(
-    inputEl,
+  const controller = new QuickInputController({
+    inputField: inputEl,
     completionList,
     streamToggle,
-    expandToggle instanceof HTMLElement ? expandToggle : null,
-    polishToggle instanceof HTMLElement ? polishToggle : null,
-    footerEl instanceof HTMLElement ? footerEl : null,
-    counterEl instanceof HTMLElement ? counterEl : null,
-    electronApi,
-  );
+    expandToggle,
+    polishToggle,
+    footerEl,
+    counterEl,
+    api: electronApi,
+  });
   controller.init();
 }
 

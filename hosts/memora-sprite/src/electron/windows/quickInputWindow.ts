@@ -46,6 +46,8 @@ const CURSOR_OFFSET_PX = 16;
 const CLIPBOARD_PREFILL_MAX_LENGTH = 200;
 /** 剪贴板预填触发补全的最小字符数（与补全管理器 MIN_QUERY_LENGTH 对齐） */
 const CLIPBOARD_PREFILL_MIN_LENGTH = 2;
+/** 确认/润色文本最大长度（防止恶意输入耗尽 LLM token / 触发速率限制） */
+const MAX_CONFIRM_TEXT_LENGTH = 10000;
 
 /** 剪贴板预填读取结果 */
 interface ClipboardPrefillResult {
@@ -313,7 +315,7 @@ export class QuickInputWindow {
         // streamMode 类型校验：防御非布尔 truthy 值进入流式分支
         const safeStreamMode = typeof streamMode === 'boolean' ? streamMode : false;
         // 截断超长文本（防止恶意输入）
-        const safeText = text.slice(0, 10000);
+        const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
 
         // Phase 4：优先尝试自动粘贴（PasteCoordinator 封装条件检查 + inputInjector 调用）
         const hideFloat = safeStreamMode ? () => {} : () => this.hide();
@@ -421,7 +423,7 @@ export class QuickInputWindow {
           return { polished: '', changed: false };
         }
         // 截断超长文本（防止耗尽 LLM token / 触发速率限制，与 CONFIRM 对齐 10000 字符上限）
-        const safeText = text.slice(0, 10000);
+        const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
         if (!this.callbacks.onPolish) {
           return { polished: safeText, changed: false };
         }

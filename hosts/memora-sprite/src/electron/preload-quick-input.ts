@@ -36,7 +36,8 @@ const IPC_CHANNELS = {
 
 /** 主→渲染进程 通道（仅 quick-input 相关） */
 const MAIN_TO_RENDERER_CHANNELS = {
-  QUICK_INPUT_SHOW: 'sprite:quick-input-show',
+  /** 快速输入浮窗被 show() 调用（与 channels.ts 同步，无 sprite: 前缀） */
+  QUICK_INPUT_SHOW: 'quick-input-show',
 } as const;
 
 // ─── 类型定义（最小化，仅 quick-input 所需）─────

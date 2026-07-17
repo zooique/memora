@@ -12,8 +12,8 @@
  * - 错误仍然会 rethrow，让上层（renderer.ts DOMContentLoaded）的 catch 也能感知
  */
 
-// 内核 toError 工具（统一 unknown 错误信息提取，替代 err instanceof Error 三元式）
-import { toError } from 'memora';
+// 渲染进程 toError 工具（errorHelpers re-export 自 shared/toError，纯函数零依赖）
+import { toError } from './errorHelpers.js';
 
 /**
  * 渲染 UIManager 初始化失败错误提示到 document.body
