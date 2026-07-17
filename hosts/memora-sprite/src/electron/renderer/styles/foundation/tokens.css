@@ -337,7 +337,6 @@
   --shadow:           0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.5);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.4);
-  /* 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
   --shadow-accent:    0 2px 8px rgba(45, 181, 187, 0.3);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(45, 181, 187, 0.3);

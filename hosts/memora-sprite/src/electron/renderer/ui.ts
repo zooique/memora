@@ -118,7 +118,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   toastManager = new ToastManager();
   /** 模态框管理器（独立管理焦点恢复和并发保护） */
   modalManager = new ModalManager();
-  /** 三态首次引导管理器（独立管理 localStorage 标记） */
+  /** 多步骤引导管理器（基于 Provider 配置存在性判定是否显示） */
   onboardingManager = new OnboardingManager();
   /** 主题管理器（独立管理主题切换和持久化） */
   themeManager = new ThemeManager();
@@ -213,6 +213,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private badge: HTMLElement | null;
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
+  /** 聊天面板 Agent 状态指示器（输入区上方，门面体验：让用户看到初始化进度） */
+  private chatAgentStatusEl: HTMLElement | null;
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -220,6 +222,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     isStreaming: false,
     // 初始为 false，onAgentReady 回调中置 true
     isAgentReady: false,
+    // 初始为 false，首次 listLlmProviders 返回非空列表时置 true
+    hasProviders: false,
   };
 
   /** 活跃的流式消息映射（messageId → DOM 元素），ChatPanelManager 共享引用 */
@@ -250,6 +254,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
     this.btnMaximize = getOptionalElement('btn-maximize', 'button');
+    // 聊天面板 Agent 状态指示器（缺失时降级，不影响其他功能）
+    this.chatAgentStatusEl = document.getElementById('chat-agent-status');
+    // 初始化指示器状态
+    this.updateChatAgentStatus();
+    // 注入 Agent 就绪状态查询函数，供 onboarding step 4 完成消息感知初始化进度
+    this.onboardingManager.setAgentReadyProvider(() => this.isAgentReady());
 
     // 未读徽章管理器（纯 DOM 渲染，badge 可为 null）
     this.badgeManager = new BadgeManager(this.badge);
@@ -609,10 +619,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitSendMessage() 调用）
   emitSendMessage(): void {
-    // Agent 未就绪时禁止发送：可能是首次配置后正在初始化，或配置缺失
+    // Agent 未就绪时区分两种场景：
+    // - 已配置 Provider 但未就绪 → 正在初始化，仅 Toast 提示，不切面板（避免门面体验断点）
+    // - 未配置 Provider → 引导用户去设置面板配置
     if (!this.state.isAgentReady) {
-      this.showToast('精灵未就绪，正在初始化中，请稍候；若长时间无响应请在设置面板检查 LLM 配置', 'warning');
-      void this.switchPanel('settings');
+      if (this.state.hasProviders) {
+        this.showToast('精灵正在初始化中，请稍候片刻...', 'warning');
+      } else {
+        this.showToast('请先配置 AI 服务商后才能开始对话', 'warning');
+        void this.switchPanel('settings');
+      }
       return;
     }
     // 空内容不发送
@@ -694,10 +710,47 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 设置 Agent 就绪状态
    *
    * 由 renderer.ts 在 onAgentReady 回调中调用，
-   * 设置为 true 后用户才能发送消息。
+   * 设置为 true 后用户才能发送消息。同时联动聊天面板状态指示器。
    */
   setAgentReady(ready: boolean): void {
     this.state.isAgentReady = ready;
+    this.updateChatAgentStatus();
+  }
+
+  /**
+   * 设置是否已配置 Provider
+   *
+   * 由 renderer.ts 在 listLlmProviders 返回后调用，
+   * 用于区分"未配置"与"初始化中"两种未就绪场景。同时联动聊天面板状态指示器。
+   */
+  setHasProviders(has: boolean): void {
+    this.state.hasProviders = has;
+    this.updateChatAgentStatus();
+  }
+
+  /**
+   * 更新聊天面板 Agent 状态指示器
+   *
+   * 根据 isAgentReady + hasProviders 组合显示三种状态：
+   * - 就绪（ready）：Agent 已就绪，绿点
+   * - 初始化中（unknown）：已配置 Provider 但未就绪，灰点 + "正在初始化..."
+   * - 未配置（error）：未配置任何 Provider，红点 + "未配置 AI 服务"
+   */
+  private updateChatAgentStatus(): void {
+    const indicator = this.chatAgentStatusEl;
+    if (!indicator) return;
+    indicator.classList.remove('ready', 'error', 'unknown');
+    const textEl = indicator.querySelector('.agent-status-text');
+    if (this.state.isAgentReady) {
+      indicator.classList.add('ready');
+      if (textEl) textEl.textContent = '精灵已就绪';
+    } else if (this.state.hasProviders) {
+      indicator.classList.add('unknown');
+      if (textEl) textEl.textContent = '正在初始化...';
+    } else {
+      indicator.classList.add('error');
+      if (textEl) textEl.textContent = '未配置 AI 服务';
+    }
   }
 
   /**

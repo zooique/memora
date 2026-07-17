@@ -200,9 +200,9 @@ export function createSettingsController(uiManager: UIManager) {
   /**
    * 加载 LLM 配置（Provider 列表 + Embedding 配置）
    *
-   * Provider 列表原本由 SettingsPanelManager.loadProviderList 内部在 initListeners 时加载一次，
-   * 但 onboarding 保存 Provider 后设置面板不会自动刷新，导致新增配置不可见（C1 修复）。
-   * 现改为：每次加载 LLM 配置时同步刷新 Provider 列表，确保与主进程数据一致。
+   * 每次加载 LLM 配置时同步刷新 Provider 列表，确保 onboarding 新增 / 设置面板内
+   * 编辑/删除后与主进程数据一致（loadProviderList 不在 initListeners 内一次性加载，
+   * 避免遗漏刷新时机）。
    */
   async function loadLlmConfig(): Promise<void> {
     try {

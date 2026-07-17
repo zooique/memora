@@ -289,6 +289,12 @@
   display: none;
 }
 
+/* 成功态修饰：复用同一容器，通过 .success 类切换为绿色视觉（测试连接成功等场景） */
+.onboarding-error.success {
+  color: var(--green);
+  background: var(--green-10);
+}
+
 /* ─── 步骤 3：完成 ──────────────────────────────── */
 
 .onboarding-done-icon {

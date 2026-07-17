@@ -51,6 +51,8 @@ export interface UIState {
   isStreaming: boolean;
   /** Agent 是否就绪（LLM 配置保存成功后置 true，未就绪时禁止发送消息） */
   isAgentReady: boolean;
+  /** 是否已配置任何 Provider（区分"未配置"与"初始化中"两种未就绪场景） */
+  hasProviders: boolean;
 }
 
 // PersonaItem re-export PersonaInfo（sprite 层是真理源），保持向后兼容

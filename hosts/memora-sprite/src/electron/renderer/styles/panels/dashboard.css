@@ -161,11 +161,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   min-width: 2px;
 }
 
-/* ─── 感知分区样式已移除 ──────────────────────────────── */
-/* 感知相关样式（perception-group / dashboard-presence / affect-grid /
-   context-inline / dashboard-patterns / dashboard-proactive 等）
-   已随仪表盘感知分区 HTML 一起移除，感知面板样式已迁至 perception.css。 */
-
 /* presence-dot / presence-text / context-label / context-value 通用样式
    保留在 chat.css 中，感知面板通过 .perception-presence 等专属类引用。 */
 

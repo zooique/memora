@@ -102,8 +102,7 @@ export class FloatWindow {
 
   /** 注册浮动窗口专用 IPC 处理器 */
   private registerFloatIpcHandlers(): void {
-    // 渲染进程请求移动窗口（拖动时持续调用）
-    // 移除 isDragging 守卫：渲染进程完全控制拖动逻辑，避免 IPC 异步时序问题
+    // 渲染进程请求移动窗口（拖动时持续调用），渲染进程完全控制拖动逻辑
     ipcMain.on(IPC_CHANNELS.MOVE_FLOAT_WINDOW, (_event, dx: number, dy: number) => {
       const [currentX, currentY] = this.win.getPosition() as [number, number];
       const newX = currentX + dx;
@@ -250,7 +249,7 @@ export class FloatWindow {
    * 广播在场状态变化到浮动窗口
    *
    * 完整窗口通过 SPRITE_EVENT 通道接收 presenceChanged 事件并更新感知面板；
-   * 浮动窗口此前无视觉反馈（80x80 迷你球体在用户离开时无变化）。
+   * 浮动窗口需同步在场状态以更新迷你球体视觉。
    *
    * 本方法复用 SPRITE_EVENT 通道（与完整窗口同通道），浮动窗口的 onSpriteEvent
    * 监听器按 type 分发即可，无需新增专用 IPC 通道常量。

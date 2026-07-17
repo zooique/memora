@@ -901,8 +901,4 @@ export class DashboardPanelManager {
     };
     return labels[source] ?? source;
   }
-
-  // ─── 感知系统渲染已移除 ──────────────────────────────────
-  // 感知数据渲染（情感/默契/上下文/模式/在场/叙事/主动提示）已迁移到
-  // 独立的 PerceptionPanelManager，仪表盘不再承载感知分区。
 }

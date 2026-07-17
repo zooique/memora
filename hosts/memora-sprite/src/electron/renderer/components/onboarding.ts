@@ -10,12 +10,12 @@
  *
  * 设计原则：
  * - 独立于 UIManager，无 this 依赖，纯 DOM + IPC 操作
- * - 显示判定基于 Provider 配置记录存在性（C2 修复）：无配置始终显示，有配置不再显示
+ * - 显示判定基于 Provider 配置记录存在性：无配置始终显示，有配置跳过
  * - 支持跳过 API 配置步骤（降级路径）
  * - 不内置 Provider 预设：模型更迭速度快，预设易滞后，改为用户自填所有字段
  */
 import { reportError } from '../helpers/errorHelpers.js';
-import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
+import { showFieldError, showFieldSuccess, clearFieldErrors } from '../helpers/formValidation.js';
 // 跨进程 LLM 错误分类器（onboarding + minimalHandlers 共用）
 import { classifyLlmError } from '../../../shared/llmErrorClassifier.js';
 
@@ -34,20 +34,36 @@ export class OnboardingManager {
   private closed = false;
   /** 用户是否已跳过 API 配置 */
   private skippedApiKey = false;
+  /** 用户是否已保存 API 配置（用于 step 4 完成消息区分"已保存未就绪"与"已就绪"） */
+  private savedApiKey = false;
+  /** Agent 就绪状态查询函数（由 UIManager 注入，用于 step 4 完成消息感知初始化进度） */
+  private agentReadyProvider: (() => boolean) | null = null;
   /** 当前关闭处理的 cleanup 函数（ESC/遮罩/完成三路径关闭后统一清理监听器，UX-0712-8） */
   private currentCleanup: (() => void) | null = null;
 
   /**
+   * 注入 Agent 就绪状态查询函数
+   *
+   * 由 UIManager 在构造后调用，使 OnboardingManager 能在 step 4 完成消息中
+   * 感知 Agent 初始化进度（保存 API 后 reinitAgent 是异步 1-3s）。
+   *
+   * @param fn 返回当前 Agent 是否就绪的查询函数
+   */
+  setAgentReadyProvider(fn: () => boolean): void {
+    this.agentReadyProvider = fn;
+  }
+
+  /**
    * 检查是否需要显示引导
    *
-   * 判定逻辑（C2 修复）：
-   * - 仅基于 Provider 配置记录存在性决定，不依赖 localStorage 标记
+   * 判定逻辑：
+   * - 仅基于 Provider 配置记录存在性决定
    * - 无 Provider 配置 → 显示引导（即便用户上次跳过，下次启动仍会显示）
    * - 有 Provider 配置 → 跳过引导
    *
-   * 理由：Provider 列表是主进程的真理源，localStorage 标记易与实际状态不一致
-   * （如用户跳过引导后未配置、或配置后又被删除），导致引导该显示时不显示、
-   * 不该显示时又弹出。改为单一维度判定，状态真理源唯一。
+   * 理由：Provider 列表是主进程的真理源，状态真理源唯一。
+   * localStorage 标记易与实际状态不一致（如用户跳过引导后未配置、或配置后又被删除），
+   * 导致引导该显示时不显示、不该显示时又弹出。
    *
    * @param hasProviders 是否已有 Provider 配置
    */
@@ -69,6 +85,8 @@ export class OnboardingManager {
     this.closed = false;
     this.currentStep = 1;
     this.skippedApiKey = false;
+    // 重置保存标志（每次打开引导时清空，避免上次状态残留）
+    this.savedApiKey = false;
 
     // 绑定关闭处理
     this.bindClose(modal);
@@ -97,8 +115,8 @@ export class OnboardingManager {
    *
    * 三条关闭路径（ESC/遮罩/完成按钮）统一在此清理监听器，避免 ESC 重复触发（UX-0712-8）。
    *
-   * 注：不再写入 localStorage 标记（C2 修复）——引导是否显示由 Provider 配置记录决定，
-   * 而非"是否见过引导"。用户跳过引导后未配置 Provider 时，下次启动仍会显示。
+   * 引导显示由 Provider 配置记录决定，而非"是否见过引导"。用户跳过引导后未配置
+   * Provider 时，下次启动仍会显示。
    */
   private closeModal(modal: HTMLElement): void {
     if (this.closed) return;
@@ -190,13 +208,22 @@ export class OnboardingManager {
       el.classList.toggle('done', index + 1 < step);
     });
 
-    // 步骤 4：更新完成消息
+    // 步骤 4：根据 Agent 状态动态显示完成消息
+    // reinitAgent 是异步的（1-3s），用户到达 step 4 时 Agent 可能仍未就绪
     if (step === 4) {
       const msgEl = modal.querySelector('#onboarding-done-message');
       if (msgEl) {
-        msgEl.textContent = this.skippedApiKey
-          ? '你可以稍后在设置面板中配置 AI 服务。现在开始对话吧。'
-          : 'AI 服务已配置，开始你的第一段对话吧。';
+        const isReady = this.agentReadyProvider?.() ?? false;
+        if (this.skippedApiKey) {
+          // 跳过 API 配置：引导用户稍后在设置面板配置
+          msgEl.textContent = '你可以稍后在设置面板中配置 AI 服务。现在开始对话吧。';
+        } else if (isReady) {
+          // Agent 已就绪：用户可立即开始对话
+          msgEl.textContent = 'AI 服务已配置，开始你的第一段对话吧。';
+        } else {
+          // 已保存但 Agent 仍在初始化中：让用户知道需要稍候
+          msgEl.textContent = 'AI 服务已保存，正在初始化中，请稍候片刻再开始对话。';
+        }
       }
     }
   }
@@ -297,8 +324,8 @@ export class OnboardingManager {
         });
 
         if (result.success) {
-          // 成功提示显示在 apiKey 错误区（复用现有 DOM 容器，避免新增元素）
-          showFieldError('onboarding-api-key', '✓ 连接成功');
+          // 成功提示：使用 showFieldSuccess 切换为绿色视觉，避免复用红色错误容器
+          showFieldSuccess('onboarding-api-key', '✓ 连接成功');
         } else {
           // 失败：错误消息已是 classifyLlmError 映射后的友好提示
           showFieldError('onboarding-api-key', result.error ?? '连接失败');
@@ -319,7 +346,8 @@ export class OnboardingManager {
   /**
    * 绑定 API 配置保存按钮事件
    *
-   * 保存成功后前进到步骤 3；失败时显示错误（错误消息已是友好提示）。
+   * 保存成功后：标记 savedApiKey、给用户视觉反馈（按钮文字临时改为"已保存 ✓"）、
+   * 前进到步骤 3。reinitAgent 是异步的，Agent 就绪状态由 step 4 完成消息感知。
    * 首次添加 Provider 时 alias 固定为 'default'，用户可在设置面板中后续添加更多。
    */
   private bindApiKeySave(modal: HTMLElement): void {
@@ -357,7 +385,11 @@ export class OnboardingManager {
         }
 
         this.skippedApiKey = false;
-        // 前进到步骤 3
+        // 标记已保存，供 step 4 完成消息区分"已保存未就绪"与"已就绪"
+        this.savedApiKey = true;
+        // 恢复按钮文字（保存成功视觉反馈由 step 4 完成消息承载，无需在 step 2 延迟）
+        saveBtn.textContent = '保存并继续';
+        // 前进到步骤 3（reinitAgent 在后台并行初始化，Agent 就绪状态由 step 4 完成消息感知）
         this.showStep(modal, 3);
       } catch (err) {
         // 保存失败：错误消息已是 classifyLlmError 映射后的友好提示

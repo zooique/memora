@@ -1,3 +1,59 @@
+/* ─── 聊天面板 Agent 状态指示器（输入区上方，门面体验） ─────────── */
+/* 复用 settings 面板 .agent-status-indicator 的状态色令牌，但用独立类名避免选择器冲突 */
+.chat-agent-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  margin: 0 var(--space-2-5);
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.chat-agent-status .agent-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+/* 就绪态：绿色圆点 + 浅绿背景（Agent 已就绪，可发送消息） */
+.chat-agent-status.ready {
+  color: var(--green);
+  background: var(--success-10, rgba(34, 197, 94, 0.1));
+}
+.chat-agent-status.ready .agent-status-dot {
+  background: var(--green);
+}
+
+/* 初始化中态：灰色圆点 + 浅灰背景（已配置 Provider，Agent 正在初始化） */
+.chat-agent-status.unknown {
+  color: var(--text-2);
+  background: var(--surface1);
+}
+.chat-agent-status.unknown .agent-status-dot {
+  background: var(--text-3);
+  /* 初始化中呼吸动画，让用户感知"正在工作" */
+  animation: agent-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes agent-status-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* 未配置态：红色圆点 + 浅红背景（未配置任何 Provider，需引导用户去设置） */
+.chat-agent-status.error {
+  color: var(--red);
+  background: var(--error-10);
+}
+.chat-agent-status.error .agent-status-dot {
+  background: var(--red);
+}
+
 /* ─── 输入区（嵌入占位 + 视觉浮动效果） ──────────────────────── */
 /* flex 流占位，通过 margin/border-radius/box-shadow 模拟视觉上的浮动卡片效果 */
 #input-area {

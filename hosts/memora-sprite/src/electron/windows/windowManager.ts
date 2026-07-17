@@ -231,7 +231,6 @@ export class WindowManager {
   /** 关闭所有窗口 */
   closeAll(): void {
     // 清理窗口控制 IPC 监听器，避免 reinitAgent 或窗口重建时累积
-    // 对比 FloatWindow.close() 已正确清理自己的 5 个监听器，WindowManager 此前遗漏
     ipcMain.removeAllListeners(IPC_CHANNELS.WINDOW_MINIMIZE);
     ipcMain.removeAllListeners(IPC_CHANNELS.WINDOW_MAXIMIZE);
     ipcMain.removeAllListeners(IPC_CHANNELS.WINDOW_CLOSE);

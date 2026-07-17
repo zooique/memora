@@ -163,12 +163,15 @@ async function bootstrapRenderer(): Promise<void> {
     try {
       const { providers } = await window.electronAPI.listLlmProviders();
       const hasProviders = providers && providers.length > 0;
+      // 同步更新 hasProviders 状态（供 emitSendMessage 区分"未配置"与"初始化中"）
+      State.uiManager.setHasProviders(hasProviders);
       if (State.uiManager.shouldShowOnboarding(hasProviders)) {
         State.uiManager.showOnboardingDialog();
       }
     } catch (error) {
       // 查询失败时仍显示引导（不阻塞用户）
       reportError('checkAndShowOnboarding', error);
+      State.uiManager.setHasProviders(false);
       if (State.uiManager.shouldShowOnboarding(false)) {
         State.uiManager.showOnboardingDialog();
       }
@@ -534,10 +537,6 @@ async function bootstrapRenderer(): Promise<void> {
   void settingsController.loadWorkProjections();
   // M2 预加载审计日志数据（用户切换到"审计"tab 时即可见）
   void settingsController.loadAuditLog();
-
-  // 注：原此处有"三态首次引导"的冗余调用，已删除（C2 修复）。
-  // Agent 就绪时 onAgentReadyCallback 内部已调用 checkAndShowOnboarding（基于真实 Provider 列表判断），
-  // 此处二次调用不仅冗余，且硬编码 hasProviders=false 会导致 Agent 已就绪（有 Provider）时仍显示引导。
 }
 
 // DOMContentLoaded 调用 bootstrapRenderer，统一捕获初始化异常避免 UI 空白

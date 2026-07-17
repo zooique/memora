@@ -373,6 +373,11 @@
           <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示，置于 messages 内部以便正确定位） -->
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
+        <!-- 聊天面板 Agent 状态指示器（输入区上方，门面体验：让用户看到初始化进度） -->
+        <div id="chat-agent-status" class="chat-agent-status error" role="status" aria-live="polite">
+          <span class="agent-status-dot"></span>
+          <span class="agent-status-text">未配置 AI 服务</span>
+        </div>
         <div id="input-area">
           <textarea id="input" name="message" autocomplete="off" placeholder="输入消息…（Enter 发送 / Shift+Enter 换行 / ↓↑补全 / ←→填充）" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
           <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + ←→ 填充，IDE 风格浮层） -->
@@ -1550,8 +1555,8 @@
     </div>
   </div>
 
-  <!-- 多步骤引导向导（欢迎 → API Key → 开始） -->
-  <!-- 使用 localStorage 标记是否已引导过，已配置 Provider 的用户跳过 -->
+  <!-- 多步骤引导向导（欢迎 → API 配置 → 隐私统计 → 开始使用） -->
+  <!-- 显示判定：无 Provider 配置时显示，有配置跳过 -->
   <div id="onboarding-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="新手引导">
     <div class="modal-content onboarding-wizard">
       <!-- 步骤指示器 -->

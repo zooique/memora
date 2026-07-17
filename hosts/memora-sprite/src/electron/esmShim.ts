@@ -5,9 +5,6 @@
  * 使用 import.meta.url 定位当前模块路径。
  *
  * 本文件仅被 Electron 主进程（ESM）导入，不被 preload（CJS）导入。
- * 为避免 preload 的 CJS 类型检查追踪到本文件（经 ipc/types.ts → windowManager.ts 链），
- * ipc/types.ts 已改用 WindowManagerLike 结构化接口，切断类型导入链。
- *
  * currentDir 即为 electron 目录。
  */
 
