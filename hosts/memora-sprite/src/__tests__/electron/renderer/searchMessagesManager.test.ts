@@ -340,6 +340,63 @@ describe('scheduleSearch / performSearch', () => {
     expect(items.length).toBe(0);
     manager.cleanup();
   });
+
+  // R1 修复回归测试：搜索期间用户输入新关键词，被 isSearching 守卫拦截后，
+  // 搜索完成后应自动重新调度搜索，确保最新关键词的搜索结果最终呈现给用户
+  it('搜索期间输入新关键词，搜索完成后应自动触发新搜索（R1 修复）', async () => {
+    const dom = setupDOM();
+    let resolveFirst: (value: { results: unknown[] }) => void = () => {};
+    let resolveSecond: (value: { results: unknown[] }) => void = () => {};
+    // 第一次搜索 pending，第二次搜索也 pending（模拟 IPC 慢响应）
+    const searchFn = vi.fn(() => new Promise<{ results: unknown[] }>((resolve) => {
+      // 第一次调用挂起在 resolveFirst，第二次挂起在 resolveSecond
+      if (searchFn.mock.calls.length === 1) {
+        resolveFirst = resolve;
+      } else {
+        resolveSecond = resolve;
+      }
+    }));
+    Object.defineProperty(window, 'electronAPI', {
+      value: { searchSessionMessages: searchFn, rendererLog: vi.fn() },
+      configurable: true, writable: true,
+    });
+    const manager = new SearchMessagesManager();
+    manager.init();
+    // 第一次输入 "test"，触发防抖搜索
+    typeAndTriggerSearch(manager, dom.input, 'test');
+    expect(searchFn).toHaveBeenCalledTimes(1);
+    // 第一次搜索 pending 期间，用户输入新关键词 "test2"
+    dom.input.value = 'test2';
+    dom.input.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(300);
+    // 第二次 performSearch 被 isSearching 守卫拦截，searchFn 仍只被调用 1 次
+    expect(searchFn).toHaveBeenCalledTimes(1);
+    // 解析第一次搜索 → finally 块检测到 inputEl.value="test2" !== lastKeyword="test" → 重新调度
+    resolveFirst({ results: [] });
+    await vi.mocked(searchFn).mock.results[0]?.value;
+    // 推进防抖定时器，第二次搜索应被触发
+    vi.advanceTimersByTime(300);
+    expect(searchFn).toHaveBeenCalledTimes(2);
+    expect(searchFn).toHaveBeenNthCalledWith(2, { keyword: 'test2', limit: 50 });
+    // 清理：解析第二次搜索避免悬挂 Promise
+    resolveSecond({ results: [] });
+    await vi.mocked(searchFn).mock.results[1]?.value;
+    manager.cleanup();
+  });
+
+  // R1 修复反向测试：搜索完成后关键词未变化时不应无限重新调度（避免死循环）
+  it('搜索完成后关键词未变化时不应重新调度搜索（R1 修复防死循环）', async () => {
+    const dom = setupDOM();
+    const searchFn = mockSearchAPI([]);
+    const manager = new SearchMessagesManager();
+    manager.init();
+    typeAndTriggerSearch(manager, dom.input, 'test');
+    await vi.mocked(searchFn).mock.results[0]?.value;
+    // 关键词未变化，不应再次调用 searchFn
+    vi.advanceTimersByTime(300);
+    expect(searchFn).toHaveBeenCalledTimes(1);
+    manager.cleanup();
+  });
 });
 
 // ─── 4. renderResults ──────────────────────────────────

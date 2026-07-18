@@ -27,7 +27,6 @@ export interface MiscDelegations {
   onDateNavDelete(cb: (date: string) => void): void;
   onBackToToday(cb: () => void): void;
   onSearchResultClick(cb: (date: string, session: string) => void): void;
-  showClipboardChangedToast(): void;
   showClipboardConfirmDialog(content: string): Promise<void>;
   handleQuickRecordTrigger(): Promise<void>;
   handleRecallMemoryTrigger(): Promise<void>;
@@ -74,9 +73,6 @@ export const miscDelegations: MiscDelegations = {
   },
   onSearchResultClick(this: UIManager, cb: (date: string, session: string) => void): void {
     this.searchMessagesManager.onResultClick(cb);
-  },
-  showClipboardChangedToast(this: UIManager): void {
-    this.clipboardManager.showClipboardChangedToast();
   },
   async showClipboardConfirmDialog(this: UIManager, content: string): Promise<void> {
     await this.clipboardManager.showClipboardConfirmDialog(content);

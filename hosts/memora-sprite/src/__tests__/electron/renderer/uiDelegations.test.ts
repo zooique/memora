@@ -784,11 +784,11 @@ describe('miscDelegations', () => {
     expect(mock.dateNavManager.onBackToToday).toHaveBeenCalledWith(cb);
   });
 
-  // 测试目的：showClipboardChangedToast 应委托到 clipboardManager.showClipboardChangedToast
-  it('showClipboardChangedToast 应委托到 clipboardManager.showClipboardChangedToast', () => {
+  // 测试目的：showClipboardConfirmDialog 应委托到 clipboardManager.showClipboardConfirmDialog
+  it('showClipboardConfirmDialog 应委托到 clipboardManager.showClipboardConfirmDialog', async () => {
     const mock = createMockThis();
-    miscDelegations.showClipboardChangedToast.call(mock as UIManager);
-    expect(mock.clipboardManager.showClipboardChangedToast).toHaveBeenCalled();
+    await miscDelegations.showClipboardConfirmDialog.call(mock as UIManager, '测试内容');
+    expect(mock.clipboardManager.showClipboardConfirmDialog).toHaveBeenCalledWith('测试内容');
   });
 
   // 测试目的：showOnboardingDialog 应委托到 onboardingManager.showOnboardingDialog

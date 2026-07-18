@@ -423,7 +423,8 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
 
     // 拦截所有带 data-modal="memory-detail-modal" 的关闭按钮（头部 X + 底部"关闭"）
     const closeButtons = modal.querySelectorAll<HTMLElement>('[data-modal="memory-detail-modal"]');
-    for (const btn of closeButtons) {
+    // Array.from 显式转换：当前 tsconfig 未启用 DOM.Iterable lib，NodeListOf 缺 Symbol.iterator
+    for (const btn of Array.from(closeButtons)) {
       ctx.events.addEventListener(
         btn,
         'click',

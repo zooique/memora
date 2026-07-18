@@ -520,7 +520,7 @@ function isTrashPurgedPayload(
 /**
  * 归档失败节流状态（按 stage 独立节流）
  *
- * profile / insight 两条归档通路独立计时，避免一条失败时另一条的提示被压制。
+ * profile / insight / content 三条归档通路独立计时，避免一条失败时另一条的提示被压制。
  * 节流窗口 5 分钟：归档失败是后台事件，短时间内可能连续触发（如 LLM 服务异常），
  * 过短窗口会刷屏，过长窗口会让用户错过重要记忆丢失信号。
  */
@@ -528,6 +528,7 @@ const ARCHIVE_FAILED_COOLDOWN_MS = 5 * 60 * 1000;
 const lastArchiveFailedTime: Record<ArchiveFailedStage, number> = {
   profile: 0,
   insight: 0,
+  content: 0,
 };
 
 /**

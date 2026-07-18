@@ -132,7 +132,10 @@ export class PasteCoordinator {
       const title = await this.previousWindow.title;
       // 窗口标题格式约定："{文档} - {应用名}"，取末段
       const parts = title.split(' - ');
-      return parts.length > 1 ? parts[parts.length - 1].trim() : title;
+      if (parts.length <= 1) return title;
+      // noUncheckedIndexedAccess 下 parts[N] 推断为 string | undefined，提取局部变量后守卫
+      const appName = parts[parts.length - 1];
+      return appName ? appName.trim() : title;
     } catch {
       return null;
     }

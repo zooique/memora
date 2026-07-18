@@ -123,6 +123,9 @@ export class ClipboardManager {
     if (existingIndex >= 0) {
       // 已存在相同预览的条目，将其移到列表头部（最新的在最前）
       const [existing] = this.pendingItems.splice(existingIndex, 1);
+      // 类型守卫：splice 返回数组解构在 noUncheckedIndexedAccess 下推断为 possibly undefined，
+      // 实际 existingIndex >= 0 保证 splice 必返回非空数组，守卫仅满足类型契约
+      if (!existing) return;
       existing.detectedAt = Date.now();
       existing.isStale = false;
       this.pendingItems.unshift(existing);
