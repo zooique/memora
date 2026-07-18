@@ -37,7 +37,7 @@ vi.mock('node:child_process', () => ({
   execSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
 }));
 
-import { InputInjector, sanitizeWindowTitle, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
+import { InputInjector, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
 
 /** 创建 mock ActiveWindow */
 function createMockWindow(title: string, focusShouldThrow = false): ActiveWindow {
@@ -254,28 +254,6 @@ describe('InputInjector', () => {
       const injector = new InputInjector(createMockDeps(window));
       const result = await injector.captureActiveWindow('快速输入');
       expect(result).not.toBeNull();
-    });
-  });
-
-  describe('sanitizeWindowTitle', () => {
-    it('正常 ASCII 标题原样返回', () => {
-      expect(sanitizeWindowTitle('VSCode')).toBe('VSCode');
-    });
-
-    it('正常中文标题原样返回', () => {
-      expect(sanitizeWindowTitle('无标题 - 记事本')).toBe('无标题 - 记事本');
-    });
-
-    it('短标题（≤4 字符）原样返回', () => {
-      expect(sanitizeWindowTitle('abc')).toBe('abc');
-    });
-
-    it('乱码标题原样返回（sanitizeWindowTitle 仅做短标题过滤，乱码由 pasteCoordinator.capturePreviousWindow 时 PowerShell 获取准确标题）', () => {
-      // sanitizeWindowTitle 不再尝试修复乱码（latin1 转换对 U+FFFD 无效），
-      // 准确标题由 pasteCoordinator.capturePreviousWindow 时通过 PowerShell GetWindowTextW 获取
-      const garbled = 'Ã¥Â®Å½Â½';
-      const result = sanitizeWindowTitle(garbled);
-      expect(result).toBe(garbled);
     });
   });
 });

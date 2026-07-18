@@ -113,26 +113,6 @@ function calculatePasteDelay(text: string): number {
 }
 
 /**
- * 检测并标记 nut-js 窗口标题编码乱码（Windows 中文软件）
- *
- * @nut-tree-fork/nut-js 的 native addon 在 GetWindowTextW → napi string 转换中存在编码 bug，
- * 中文标题字节被错误解释为 UTF-8，产生 U+FFFD 替换字符（信息已丢失，JS 层不可逆）。
- *
- * 乱码由 pasteCoordinator.capturePreviousWindow 时通过 PowerShell GetWindowTextW 获取准确标题。
- *
- * 注：原 latin1→UTF-8 逆向转换分支已移除（实际日志显示乱码为 U+FFFD，信息已丢失，latin1 转换无效）。
- * 准确标题由 pasteCoordinator.capturePreviousWindow 时通过 PowerShell GetWindowTextW 获取。
- *
- * @param title 窗口原始标题（可能含乱码）
- * @returns title 原样返回（仅作快速路径短标题过滤，乱码检测由 isGarbledTitle 负责）
- */
-export function sanitizeWindowTitle(title: string): string {
-  // 快速路径：短标题不可能是乱码（即使乱码也无意义）
-  if (title.length <= 4) return title;
-  return title;
-}
-
-/**
  * 通过 PowerShell SendInput 发送 Ctrl+V 到当前前台窗口
  *
  * 技术选型：

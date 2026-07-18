@@ -217,7 +217,8 @@ body {
 }
 
 @keyframes completionFadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
+  /* 候选列表在输入区下方，从下方滑入更自然 */
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -372,6 +373,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 聚焦态：应用名用 accent 色强调，让用户一眼看到"已聚焦到哪个应用" */
+  color: var(--accent);
+  font-weight: var(--weight-medium);
 }
 
 /* 无聚焦状态：应用名变灰 + 斜体，视觉提示 Tab 已禁用 */
@@ -379,10 +383,13 @@ body {
   color: var(--muted);
   opacity: 0.6;
   font-style: italic;
+  font-weight: var(--weight-regular);
 }
 
 
 /* ===== 关闭按钮（始终显示，pinned 模式下作为显式关闭入口） ===== */
+/* default 模式下主要靠 Esc/blur 关闭，close-btn 降低默认视觉权重避免分散注意力；
+   hover 时恢复完全不透明，pinned 模式下作为主要关闭入口同样 hover 显眼 */
 .close-btn {
   width: 20px;
   height: 20px;
@@ -395,6 +402,8 @@ body {
   align-items: center;
   justify-content: center;
   margin-left: var(--space-1);
+  opacity: 0.5;
+  transition: opacity var(--transition-fast) ease, color var(--transition-fast) ease;
 }
 
 .close-btn .icon {
@@ -403,6 +412,7 @@ body {
 }
 
 .close-btn:hover {
+  opacity: 1;
   color: var(--text);
 }
 

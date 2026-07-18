@@ -20,7 +20,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { getDefaultInputInjector, sanitizeWindowTitle, type InputInjector, type ActiveWindow, type PasteResult } from '../inputInjector.js';
+import { getDefaultInputInjector, type InputInjector, type ActiveWindow, type PasteResult } from '../inputInjector.js';
 import { logger } from 'memora';
 
 /** 剪贴板三重保护抑制函数类型（由 clipboardHandler.suppressNextChange 注入） */
@@ -122,6 +122,14 @@ export class PasteCoordinator {
    * 快速连续呼出场景：若捕获的窗口标题等于浮窗标题，保持上一次的 previousWindow。
    * nut-js 不可用时 previousWindow 为 null，paste 将降级到复制+Toast。
    *
+   * 乱码修复时机：捕获窗口后立即 await title 并检测 U+FFFD 乱码，若乱码立即调用
+   * PowerShell GetWindowTextW 获取准确标题。此时浮窗尚未 show()，前台窗口仍是目标
+   * 中文软件，PowerShell 能拿到正确的 UTF-16 标题。若延迟到 getCapturedAppName() 才
+   * 调用，浮窗已成为前台窗口，PowerShell 会返回浮窗自身标题而非目标窗口。
+   *
+   * 性能：非乱码场景零开销（仅一次 await title，nut-js 内部已缓存）；乱码场景额外
+   * 100-200ms（PowerShell 启动开销），是修复中文标题的必要成本。
+   *
    * @param floatTitle 浮窗窗口标题（用于排除捕获到浮窗自身）
    */
   async capturePreviousWindow(floatTitle?: string): Promise<void> {
@@ -134,8 +142,38 @@ export class PasteCoordinator {
     // 若捕获到浮窗自身（返回 null），保持上一次的 previousWindow
     if (captured) {
       this.previousWindow = captured;
-      // 窗口切换 → 失效准确标题缓存
-      this.cachedAccurateTitle = null;
+      // 立即检测 nut-js 标题是否乱码并尝试用 PowerShell 修复
+      // 此时浮窗未 show()，PowerShell GetForegroundWindow 返回目标窗口（关键时序）
+      this.cachedAccurateTitle = await this.resolveAccurateTitle(captured);
+    }
+  }
+
+  /**
+   * 解析窗口的准确标题（nut-js 乱码时通过 PowerShell 修复）
+   *
+   * 流程：
+   *   1. await nut-js title（~0ms，nut-js 内部已缓存）
+   *   2. 检测 U+FFFD 乱码字符
+   *   3. 若乱码 → 调用 PowerShell GetWindowTextW 获取 UTF-16 准确标题
+   *   4. 若非乱码 → 返回 null（使用 nut-js 标题即可）
+   *
+   * @param window nut-js 捕获的窗口
+   * @returns 准确标题（乱码且 PS 成功时），null（非乱码或 PS 失败时，调用方用 nut-js 标题）
+   */
+  private async resolveAccurateTitle(window: ActiveWindow): Promise<string | null> {
+    try {
+      const nutJsTitle = await window.title;
+      if (!isGarbledTitle(nutJsTitle)) return null;
+      // nut-js 标题含 U+FFFD → 编码 bug 触发，用 PowerShell 修复
+      const psTitle = getForegroundWindowTitleViaPS();
+      if (psTitle) {
+        logger.info({ nutJsTitle, psTitle }, 'nut-js 标题乱码，已通过 PowerShell 修复');
+        return psTitle;
+      }
+      // PowerShell 失败 → 返回 null，调用方降级使用 nut-js 乱码标题
+      return null;
+    } catch {
+      return null;
     }
   }
 
@@ -180,42 +218,26 @@ export class PasteCoordinator {
   /**
    * 获取当前捕获窗口的应用名（用于 focus-bar 显示）
    *
-   * 优先使用 nut-js 标题（sanitize 后），若检测到乱码则通过 PowerShell 获取准确标题。
+   * 优先使用缓存的准确标题（capturePreviousWindow 时通过 PowerShell 获取），
+   * 缓存为空时降级使用 nut-js 标题。
    * Windows 窗口标题格式通常为 "{文档名} - {应用名}"，取末段作为应用名。
    * 若格式不符（无 " - " 分隔符）则返回完整标题。
-   *
-   * 已知限制：PowerShell GetForegroundWindow 在调用时返回的是浮窗自身（getCapturedAppName
-   * 时浮窗已是前台窗口），中文乱码 fallback 对切换后的目标窗口无效。isGarbledTitle +
-   * PowerShell fallback 框架保留，待获取目标窗口句柄的方案就绪后激活。
    *
    * @returns 应用名（无捕获窗口时返回 null）
    */
   async getCapturedAppName(): Promise<string | null> {
     if (!this.previousWindow) return null;
     try {
-      // 先尝试 nut-js 标题（快路径，无编码问题时 0ms 开销）
-      const title = await this.previousWindow.title;
-      const sane = sanitizeWindowTitle(title);
-
-      // 若 sanitize 检测到乱码（U+FFFD 替换字符），用 PowerShell 获取准确标题
-      let finalTitle = sane;
-      if (isGarbledTitle(title)) {
-        // 使用缓存避免重复调用 PowerShell（单次 capturePreviousWindow 生命周期内标题不变）
-        if (this.cachedAccurateTitle === null) {
-          this.cachedAccurateTitle = getForegroundWindowTitleViaPS();
-        }
-        if (this.cachedAccurateTitle) {
-          finalTitle = this.cachedAccurateTitle;
-          logger.info({ nutJsTitle: title, psTitle: finalTitle }, 'nut-js 标题乱码，已通过 PowerShell 修复');
-        }
-      }
+      // 优先使用 capturePreviousWindow 时缓存的准确标题（PS 修复后的 UTF-16 标题）
+      // 缓存为 null 表示 nut-js 标题非乱码，直接用 nut-js 标题
+      const title = this.cachedAccurateTitle ?? await this.previousWindow.title;
 
       // 窗口标题格式约定："{文档} - {应用名}"，取末段
-      const parts = finalTitle.split(' - ');
-      if (parts.length <= 1) return finalTitle;
+      const parts = title.split(' - ');
+      if (parts.length <= 1) return title;
       // noUncheckedIndexedAccess 下 parts[N] 推断为 string | undefined，提取局部变量后守卫
       const appName = parts[parts.length - 1];
-      return appName ? appName.trim() : finalTitle;
+      return appName ? appName.trim() : title;
     } catch {
       return null;
     }

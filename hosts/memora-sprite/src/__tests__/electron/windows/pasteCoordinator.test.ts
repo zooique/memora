@@ -15,12 +15,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // mock getDefaultInputInjector，返回可控的 InputInjector mock
-const { mockInputInjector, mockGetDefault } = vi.hoisted(() => ({
+const { mockInputInjector, mockGetDefault, mockExecSync } = vi.hoisted(() => ({
   mockInputInjector: {
     captureActiveWindow: vi.fn(),
     paste: vi.fn(),
   },
   mockGetDefault: vi.fn(),
+  mockExecSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
 }));
 
 vi.mock('../../../electron/inputInjector.js', () => ({
@@ -28,9 +29,10 @@ vi.mock('../../../electron/inputInjector.js', () => ({
   InputInjector: vi.fn(), // 类构造函数 mock
 }));
 
-// mock node:child_process execSync（模拟 PowerShell 失败，避免测试环境真的调用 PowerShell）
+// mock node:child_process execSync（默认模拟 PowerShell 失败，避免测试环境真的调用 PowerShell）
+// 单个测试可通过 mockExecSync.mockReturnValue 覆盖为成功路径
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
+  execSync: mockExecSync,
 }));
 
 import { PasteCoordinator } from '../../../electron/windows/pasteCoordinator.js';
@@ -233,6 +235,100 @@ describe('PasteCoordinator', () => {
 
       const result2 = await coordinator.attemptPaste('test', () => {});
       expect(result2.mode).toBe('paste');
+    });
+  });
+
+  // ── getCapturedAppName + 乱码修复 ──
+
+  describe('getCapturedAppName', () => {
+    it('无捕获窗口时返回 null', async () => {
+      const result = await coordinator.getCapturedAppName();
+      expect(result).toBeNull();
+    });
+
+    it('非乱码标题：使用 nut-js 标题，不调用 PowerShell', async () => {
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('无标题 - 记事本'));
+      await coordinator.capturePreviousWindow();
+
+      // execSync 不应被调用（非乱码场景）
+      expect(mockExecSync).not.toHaveBeenCalled();
+
+      const result = await coordinator.getCapturedAppName();
+      expect(result).toBe('记事本');
+    });
+
+    it('非乱码标题：无 " - " 分隔符时返回完整标题', async () => {
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('记事本'));
+      await coordinator.capturePreviousWindow();
+
+      const result = await coordinator.getCapturedAppName();
+      expect(result).toBe('记事本');
+    });
+
+    it('乱码标题：capturePreviousWindow 时立即通过 PowerShell 修复', async () => {
+      // nut-js 返回含 U+FFFD 的乱码标题（模拟中文软件乱码）
+      const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
+
+      // PowerShell 返回 base64(UTF-16LE) 编码的准确标题 "无标题 - 记事本"
+      const accurateTitle = '无标题 - 记事本';
+      const psBase64 = Buffer.from(accurateTitle, 'utf16le').toString('base64');
+      mockExecSync.mockReturnValue(psBase64);
+
+      await coordinator.capturePreviousWindow();
+
+      // 关键断言：PowerShell 在 capturePreviousWindow 阶段被调用（此时浮窗未 show）
+      // 这是修复时序问题的核心——PS 必须在浮窗显示前调用才能拿到目标窗口
+      expect(mockExecSync).toHaveBeenCalledTimes(1);
+
+      const result = await coordinator.getCapturedAppName();
+      // getCapturedAppName 使用缓存的准确标题，不再调 PS
+      expect(mockExecSync).toHaveBeenCalledTimes(1);
+      expect(result).toBe('记事本');
+    });
+
+    it('乱码标题：PowerShell 失败时降级使用 nut-js 乱码标题', async () => {
+      const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
+      // 显式重置 mockExecSync 为抛错（上一个测试设置了 mockReturnValue，clearAllMocks 不重置返回值）
+      mockExecSync.mockReset();
+      mockExecSync.mockImplementation(() => { throw new Error('mocked: PowerShell failed'); });
+
+      await coordinator.capturePreviousWindow();
+
+      const result = await coordinator.getCapturedAppName();
+      // 降级到 nut-js 标题（含乱码），应用名提取仍尝试解析 " - " 分隔符
+      expect(result).toBe('\uFFFD\uFFFD\uFFFD\uFFFD');
+    });
+
+    it('乱码标题：PowerShell 返回空时降级使用 nut-js 标题', async () => {
+      const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
+      mockExecSync.mockReturnValue(''); // PowerShell 返回空
+
+      await coordinator.capturePreviousWindow();
+
+      const result = await coordinator.getCapturedAppName();
+      expect(result).toBe('\uFFFD\uFFFD\uFFFD\uFFFD');
+    });
+
+    it('窗口切换时重新检测乱码并获取新标题', async () => {
+      // 第一次捕获：非乱码窗口
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('文档1 - Word'));
+      await coordinator.capturePreviousWindow();
+      expect(mockExecSync).not.toHaveBeenCalled();
+      const name1 = await coordinator.getCapturedAppName();
+      expect(name1).toBe('Word');
+
+      // 第二次捕获：乱码窗口
+      const garbledTitle = '文档2 - \uFFFD\uFFFD\uFFFD\uFFFD';
+      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
+      const accurateTitle = '文档2 - Excel';
+      mockExecSync.mockReturnValue(Buffer.from(accurateTitle, 'utf16le').toString('base64'));
+      await coordinator.capturePreviousWindow();
+      expect(mockExecSync).toHaveBeenCalledTimes(1);
+      const name2 = await coordinator.getCapturedAppName();
+      expect(name2).toBe('Excel');
     });
   });
 });

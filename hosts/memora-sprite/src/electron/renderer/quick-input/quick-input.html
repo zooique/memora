@@ -39,7 +39,8 @@
   <!-- 快速输入浮窗容器：顶部聚焦栏 + 文本输入区 + 快捷键提示 + 补全候选列表 -->
   <div class="quick-input-container">
     <!-- 顶部聚焦提示栏：显示当前聚焦应用名（无聚焦时禁用 Tab），右侧关闭按钮 -->
-    <div id="focus-bar" class="focus-bar">
+    <!-- 初始 .no-focus 类与"无聚焦"文案匹配，show() 时 notifyFocusChange 移除该类并更新文案 -->
+    <div id="focus-bar" class="focus-bar no-focus">
       <span id="focus-app-name" class="focus-app-name">无聚焦</span>
       <button id="close-btn" type="button" class="close-btn" aria-label="关闭浮窗" title="关闭浮窗（Esc）"><svg class="icon"><use href="#icon-close"/></svg></button>
     </div>
@@ -49,7 +50,7 @@
       <textarea
         id="quick-input-field"
         class="quick-input-field"
-        placeholder="输入文本…（↓↑ 补全 / ←→ 填充 / Tab 提交）"
+        placeholder="输入文本…"
         autocomplete="off"
         spellcheck="false"
         autofocus
