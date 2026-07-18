@@ -117,12 +117,10 @@ export class PasteCoordinator {
   }
 
   /**
-   * 获取当前捕获窗口的应用名
+   * 获取当前捕获窗口的应用名（用于 focus-bar 显示）
    *
-   * ActiveWindow 接口当前仅暴露 title（窗口标题），无 appName 字段。
-   * v1 实现：返回窗口标题末段（多数 Windows 窗口标题格式为 "{文档名} - {应用名}"，
-   * 取末段应用名；若格式不符则返回完整标题）。
-   * v2 规划：inputInjector 升级时增加 getProcessName 能力，返回真实应用名。
+   * Windows 窗口标题格式通常为 "{文档名} - {应用名}"，取末段作为应用名。
+   * 若格式不符（无 " - " 分隔符）则返回完整标题。
    *
    * @returns 应用名（无捕获窗口时返回 null）
    */

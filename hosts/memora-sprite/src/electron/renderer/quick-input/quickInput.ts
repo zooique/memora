@@ -804,7 +804,13 @@ export class QuickInputController {
       // 竞态防护：若期间窗口被重新 show() 或开始了新提交，代次已变化，忽略过期响应
       if (currentGen !== this.submitGeneration) return;
       if (result.success) {
-        this.scheduleSuccessToast(result);
+        // default 模式 paste 成功：浮窗已隐藏，跳过 Toast 直接重置（避免闪烁）
+        // pinned 模式或 copy 降级：显示 Toast 反馈
+        if (result.mode === 'paste' && !this.pinnedMode) {
+          this.resetInputForNext();
+        } else {
+          this.scheduleSuccessToast(result);
+        }
       } else {
         this.resetInputState(text);
       }

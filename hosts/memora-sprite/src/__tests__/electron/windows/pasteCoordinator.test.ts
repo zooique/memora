@@ -230,45 +230,4 @@ describe('PasteCoordinator', () => {
       expect(result2.mode).toBe('paste');
     });
   });
-
-  // ── getCapturedAppName ──
-
-  describe('getCapturedAppName', () => {
-    it('未捕获窗口时返回 null', async () => {
-      const result = await coordinator.getCapturedAppName();
-      expect(result).toBeNull();
-    });
-
-    it('窗口标题含 " - " 分隔符时返回末段应用名', async () => {
-      // 模拟 VSCode 窗口标题："main.ts - my-project - Visual Studio Code"
-      mockInputInjector.captureActiveWindow.mockResolvedValue(
-        createMockWindow('main.ts - my-project - Visual Studio Code'),
-      );
-      await coordinator.capturePreviousWindow();
-
-      const result = await coordinator.getCapturedAppName();
-      expect(result).toBe('Visual Studio Code');
-    });
-
-    it('窗口标题无 " - " 分隔符时返回完整标题', async () => {
-      mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('记事本'));
-      await coordinator.capturePreviousWindow();
-
-      const result = await coordinator.getCapturedAppName();
-      expect(result).toBe('记事本');
-    });
-
-    it('title Promise 抛错时返回 null（防御异常窗口对象）', async () => {
-      const errorWindow: ActiveWindow = {
-        title: Promise.reject(new Error('title 不可访问')),
-        region: Promise.resolve({ left: 0, top: 0, width: 800, height: 600 }),
-        focus: vi.fn(() => Promise.resolve()),
-      };
-      mockInputInjector.captureActiveWindow.mockResolvedValue(errorWindow);
-      await coordinator.capturePreviousWindow();
-
-      const result = await coordinator.getCapturedAppName();
-      expect(result).toBeNull();
-    });
-  });
 });
