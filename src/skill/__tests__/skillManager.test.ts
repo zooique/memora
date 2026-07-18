@@ -119,6 +119,92 @@ keywords: 文件,读取,打开
     });
   });
 
+  // ─── match · SKILL_MATCH_MIN_SCORE 阈值边界 ─────────────────
+  //
+  // 阈值 = 0.3，依据：
+  //   - 3 关键词命中 1 个 → 0.333 ≥ 0.3 → 激活
+  //   - 5 关键词命中 1 个 → 0.2 < 0.3 → 不激活
+  //   - 10 关键词命中 3 个 → 0.3 ≥ 0.3 → 激活（边界值）
+  //   - 10 关键词命中 2 个 → 0.2 < 0.3 → 不激活
+  describe('match · SKILL_MATCH_MIN_SCORE 阈值边界', () => {
+    it('3 关键词命中 1 个（score=0.333）应激活', async () => {
+      createSkillFile(skillsDir, 'three-kw.md', '---\nkeywords: 苹果,香蕉,橙子\n---\n# 三关键词技能');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const match = skillManager.match('苹果');
+      expect(match).not.toBeNull();
+      expect(match!.skill.name).toBe('three-kw');
+      expect(match!.score).toBeCloseTo(1 / 3, 5);
+    });
+
+    it('5 关键词命中 1 个（score=0.2）不应激活', async () => {
+      createSkillFile(
+        skillsDir,
+        'five-kw.md',
+        '---\nkeywords: 苹果,香蕉,橙子,葡萄,西瓜\n---\n# 五关键词技能',
+      );
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const match = skillManager.match('苹果');
+      expect(match).toBeNull();
+    });
+
+    it('2 关键词命中 1 个（score=0.5）应激活', async () => {
+      createSkillFile(skillsDir, 'two-kw.md', '---\nkeywords: 苹果,香蕉\n---\n# 两关键词技能');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const match = skillManager.match('苹果');
+      expect(match).not.toBeNull();
+      expect(match!.score).toBe(0.5);
+    });
+
+    it('10 关键词命中 3 个（score=0.3）应激活（边界值）', async () => {
+      createSkillFile(
+        skillsDir,
+        'ten-kw.md',
+        '---\nkeywords: 苹果,香蕉,橙子,葡萄,西瓜,梨,桃,李,杏,梅\n---\n# 十关键词技能',
+      );
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      // 命中 3 个：苹果 + 橙子 + 西瓜
+      const match = skillManager.match('苹果 橙子 西瓜');
+      expect(match).not.toBeNull();
+      expect(match!.score).toBe(0.3);
+    });
+
+    it('10 关键词命中 2 个（score=0.2）不应激活', async () => {
+      createSkillFile(
+        skillsDir,
+        'ten-kw-2.md',
+        '---\nkeywords: 苹果,香蕉,橙子,葡萄,西瓜,梨,桃,李,杏,梅\n---\n# 十关键词技能',
+      );
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      // 命中 2 个：苹果 + 香蕉
+      const match = skillManager.match('苹果 香蕉');
+      expect(match).toBeNull();
+    });
+
+    it('多个技能同时匹配时应取最高分', async () => {
+      // 技能 A：3 关键词命中 1 个 → 0.333
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: 苹果,香蕉,橙子\n---\n# A');
+      // 技能 B：2 关键词命中 1 个 → 0.5
+      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: 苹果,葡萄\n---\n# B');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const match = skillManager.match('苹果');
+      expect(match).not.toBeNull();
+      expect(match!.skill.name).toBe('skill-b');
+      expect(match!.score).toBe(0.5);
+    });
+  });
+
   describe('排除规则', () => {
     it('应该排除隐藏文件', async () => {
       createSkillFile(

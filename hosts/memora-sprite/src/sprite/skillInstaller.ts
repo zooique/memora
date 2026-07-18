@@ -32,7 +32,7 @@ export interface SkillValidationResult {
 
 /** 安装结果 */
 export interface SkillInstallResult {
-  /** 是否安装成功 */
+  /** 是否安装成功（仅校验+写入文件，不含热重载） */
   success: boolean;
   /** 错误消息（success=false 时有效） */
   error?: string;
@@ -40,6 +40,15 @@ export interface SkillInstallResult {
   installedPath?: string;
   /** 技能名（success=true 时有效） */
   skillName?: string;
+  /**
+   * 热重载是否成功（success=true 时有效）
+   * - true：技能已写入文件且热重载成功，当前会话立即生效
+   * - false：技能已写入文件但热重载失败（如对话繁忙），需重启 Agent 生效，原因见 hotReloadError
+   * - undefined：无 Agent 实例（首次启动未配置 LLM 时），技能已写入文件，将在 Agent 就绪后自动加载
+   */
+  hotReloaded?: boolean;
+  /** 热重载失败原因（hotReloaded=false 时有效） */
+  hotReloadError?: string;
 }
 
 /** 技能文件最大大小（64KB，防止超大文件拖入） */

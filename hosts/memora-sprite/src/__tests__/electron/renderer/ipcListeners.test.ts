@@ -675,14 +675,19 @@ describe('initIpcListeners · 精灵事件分发', () => {
   });
 
   // ─── skillMatched（技能匹配） ───
+  //
+  // 阈值真理源说明：renderer 不再二次过滤分数——内核 SkillManager.match() 已用
+  // SKILL_MATCH_MIN_SCORE (0.3) 过滤低匹配度技能，凡到达此处的 skillMatched 事件
+  // score 均 ≥ 0.3（trigger 命中则 = 1.0），renderer 直接弹 toast。
 
-  it('skillMatched score>=0.5 → showToast；score<0.5 → 不 showToast', () => {
+  it('skillMatched 非静默 → showToast（内核已过滤低分，renderer 不二次过滤）', () => {
     triggerSpriteEvent(captured, 'skillMatched', { skill: '代码审查', score: 0.9 }, false);
     expect(spies.showToast).toHaveBeenCalledWith('匹配到技能：代码审查', 'info', expect.any(Number));
 
+    // 内核过滤后到达 renderer 的事件 score 均 ≥ 0.3，即使低分（如 0.33）也弹 toast
     spies.showToast.mockClear();
-    triggerSpriteEvent(captured, 'skillMatched', { skill: '测试', score: 0.3 }, false);
-    expect(spies.showToast).not.toHaveBeenCalled();
+    triggerSpriteEvent(captured, 'skillMatched', { skill: '测试', score: 0.33 }, false);
+    expect(spies.showToast).toHaveBeenCalledWith('匹配到技能：测试', 'info', expect.any(Number));
   });
 
   it('skillMatched 静默模式 → 不 showToast', () => {

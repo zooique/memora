@@ -857,12 +857,18 @@ function setupAgentIndependentResources(): void {
     const configDir = DEFAULT_CONFIG_DIR;
     const result = await installSkill(content, fileName, configDir);
     // 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
-    // 无 Agent 时跳过热重载，用户配置后 reinitAgent 会读取已安装的技能
+    // 无 Agent 时跳过热重载（hotReloaded 保持 undefined），用户配置后 reinitAgent 会读取已安装的技能
     if (result.success && appState.agent) {
       try {
         await appState.agent.reloadConfig('skill');
+        // 热重载成功：技能当前会话立即生效
+        result.hotReloaded = true;
       } catch (err) {
-        // 重载失败不阻塞安装结果返回，用户可手动重启 Agent 生效
+        // 热重载失败（如对话繁忙 chatBusyError）：文件已写入磁盘，下次重启 Agent 时生效
+        // 不阻塞安装结果返回，但需将失败原因透传给 UI，让用户知道当前会话未生效
+        const errMsg = toError(err).message;
+        result.hotReloaded = false;
+        result.hotReloadError = errMsg;
         errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '技能热重载失败' });
       }
     }

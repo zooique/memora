@@ -318,6 +318,22 @@ export async function handleSystemRoute(
       // 城堡层默认 configDir 由 index.ts 统一管理，动态导入确保路径一致性
       const { DEFAULT_CONFIG_DIR } = await import('../../index.js');
       const result = await ctx.installSkill(body.content, body.fileName, DEFAULT_CONFIG_DIR);
+      // 事件驱动重载：与 Electron IPC 行为一致，安装成功 + Agent 就绪时立即热重载
+      // 无 Agent 时跳过热重载（hotReloaded 保持 undefined），用户配置后 reinitAgent 会读取已安装的技能
+      if (result.success && ctx.isAgentReady()) {
+        try {
+          await ctx.agent.reloadConfig('skill');
+          // 热重载成功：技能当前会话立即生效
+          result.hotReloaded = true;
+        } catch (err) {
+          // 热重载失败（如对话繁忙 chatBusyError）：文件已写入磁盘，下次重启 Agent 时生效
+          // 不阻塞安装结果返回，但需将失败原因透传给 UI，让用户知道当前会话未生效
+          const errMsg = toError(err).message;
+          result.hotReloaded = false;
+          result.hotReloadError = errMsg;
+          logger.error({ fileName: body.fileName, err: errMsg }, 'Web 模式技能热重载失败');
+        }
+      }
       sendJson(res, 200, result);
       return;
     }

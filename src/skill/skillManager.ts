@@ -28,6 +28,23 @@ import { nowIso } from '@/utils/time.js';
 import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
 
 /**
+ * 技能匹配最低激活阈值
+ *
+ * score < 此阈值的匹配不激活技能（避免低匹配度噪音）。
+ *
+ * 作为唯一真理源：宿主 ipcListeners.handleSkillMatched 不再二次过滤分数——
+ * 凡被此阈值放行的 skillMatched 事件均会弹 toast 让用户感知，
+ * 避免"激活但不提示"的静默激活误导。
+ *
+ * 阈值取 0.3 的依据：
+ * - 3 关键词技能命中 1 个 → 0.33 ≥ 0.3 → 激活（避免单关键词命中的技能被误判为噪音）
+ * - 5 关键词技能命中 1 个 → 0.2 < 0.3 → 不激活（避免关键词过多导致误触）
+ * - 与 PersonaManager 的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.5) 形成梯度：
+ *   persona 切换是显式行为（0.5 严格），skill 注入是隐式辅助（0.3 宽松）
+ */
+const SKILL_MATCH_MIN_SCORE = 0.3;
+
+/**
  * 技能管理器
  */
 export class SkillManager {
@@ -65,10 +82,14 @@ export class SkillManager {
    * 根据用户输入匹配最合适的技能
    *
    * 匹配流程：
-   *   1. 先检查所有 trigger 正则，命中直接返回（最高优先级）
+   *   1. 先检查所有 trigger 正则，命中直接返回（最高优先级，score=1.0）
    *   2. 再检查关键词匹配（TF 计分，得分排序）
-   *   3. 若匹配多项但得分相同 → 取第一个
-   *   4. 无任何匹配 → 返回 null
+   *   3. 关键词得分 < SKILL_MATCH_MIN_SCORE 的匹配不激活（避免低匹配度噪音）
+   *   4. 若匹配多项但得分相同 → 取第一个
+   *   5. 无任何匹配 → 返回 null
+   *
+   * 阈值一致性：本方法的最低激活阈值与 ipcListeners.handleSkillMatched 的 toast 阈值
+   * 均使用 SKILL_MATCH_MIN_SCORE（0.3），确保"凡激活即提示"，避免静默激活误导用户。
    *
    * @param userInput 用户输入文本
    * @returns 匹配结果，无匹配返回 null
@@ -90,7 +111,8 @@ export class SkillManager {
       if (skill.keywords.length === 0) continue;
 
       const score = scoreByKeywords(userInput, skill.keywords);
-      if (score > 0) {
+      // 低于最低激活阈值的匹配不纳入候选（避免低匹配度技能被激活）
+      if (score >= SKILL_MATCH_MIN_SCORE) {
         matches.push({ skill, score });
       }
     }

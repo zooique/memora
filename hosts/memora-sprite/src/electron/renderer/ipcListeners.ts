@@ -396,6 +396,11 @@ function handleProjectSwitched(
 /**
  * 处理技能匹配事件
  * 静默模式：不弹 toast；非静默模式：显示"匹配到技能 X"
+ *
+ * 阈值真理源：不在此处二次过滤分数——内核 SkillManager.match() 已用
+ * SKILL_MATCH_MIN_SCORE (0.3) 过滤低匹配度技能，凡到达此处的 skillMatched
+ * 事件 score 均 ≥ 0.3（trigger 命中则 = 1.0）。二次过滤会造成"激活但不提示"
+ * 的静默激活误导（旧代码 < 0.5 即是此问题）。
  */
 function handleSkillMatched(
   uiManager: UIManager,
@@ -407,8 +412,6 @@ function handleSkillMatched(
     return;
   }
   if (msg.silent) return;
-  // 分数 < 0.5 的匹配不通知（避免低匹配度噪音）
-  if (msg.payload.score < 0.5) return;
   uiManager.showToast(`匹配到技能：${msg.payload.skill}`, 'info', TOAST_SHORT_MS);
 }
 

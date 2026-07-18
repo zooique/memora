@@ -766,8 +766,23 @@ export interface ElectronAPI {
   removeRecallMemoryTriggerListener: () => void;
 
   // ─── Phase 4.3：技能文件安装 ──────────────────────────
-  /** 安装技能文件到 configDir/skills/（携带文件名和内容） */
-  installSkill: (fileName: string, content: string) => Promise<{ success: boolean; error?: string; skillName?: string }>;
+  /**
+   * 安装技能文件到 configDir/skills/（携带文件名和内容）
+   *
+   * 返回值字段说明：
+   * - success：文件校验+写入是否成功（不含热重载）
+   * - hotReloaded：热重载是否成功（success=true 时有效）
+   *   - true：当前会话立即生效
+   *   - false：热重载失败（如对话繁忙），需重启 Agent 生效，原因见 hotReloadError
+   *   - undefined：无 Agent 实例，将在 Agent 就绪后自动加载
+   */
+  installSkill: (fileName: string, content: string) => Promise<{
+    success: boolean;
+    error?: string;
+    skillName?: string;
+    hotReloaded?: boolean;
+    hotReloadError?: string;
+  }>;
 
   // ─── 快速输入补全（Phase 1 骨架 + Phase 4 自动粘贴） ─────
   /**

@@ -6,6 +6,7 @@
  * 覆盖范围：
  * - onSkillInstalled：回调注册
  * - handleSkillDrop：空数组 / 全非 md / 部分 md / 全部成功 / 部分失败
+ * - handleSkillDrop · 热重载 4 路结果分类：hot-reloaded / hot-reload-failed / no-agent / failed
  * - handleSkillFileSelect：触发 file input click
  * - installSkillFile：成功 / 失败 / 异常（通过 handleSkillDrop 间接测试）
  * - flashDropzoneError：添加 .is-error 类（通过 handleSkillDrop 间接测试）
@@ -13,7 +14,7 @@
  *
  * Mock 策略：
  * - Mock ToastManager（验证 showToast 调用参数）
- * - Mock window.electronAPI.installSkill（控制成功/失败）
+ * - Mock window.electronAPI.installSkill（控制 success/hotReloaded 返回值）
  * - JSDOM 提供 File / FileReader / DOM API
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -66,8 +67,9 @@ function createOtherFile(name: string): File {
 // ─── 全局设置 ─────────────────────────────────────────────
 
 beforeEach(() => {
+  // 默认 mock：成功 + 热重载成功（最常见路径）
   window.electronAPI = {
-    installSkill: vi.fn().mockResolvedValue({ success: true }),
+    installSkill: vi.fn().mockResolvedValue({ success: true, hotReloaded: true }),
   } as unknown as typeof window.electronAPI;
   document.body.innerHTML = '';
 });
@@ -131,19 +133,19 @@ describe('handleSkillDrop · 文件类型过滤', () => {
   });
 });
 
-// ─── handleSkillDrop · 成功流程 ──────────────────────────
+// ─── handleSkillDrop · 成功流程（热重载成功） ─────────────
 
-describe('handleSkillDrop · 成功流程', () => {
-  it('单个 md 文件成功应显示 success toast', async () => {
+describe('handleSkillDrop · 成功流程（热重载成功）', () => {
+  it('单个 md 文件成功应显示 success toast "已生效"', async () => {
     const { manager, toast } = createManager();
     await manager.handleSkillDrop([createMdFile('test.md')]);
-    expect(toast.__calls.some(c => c.message === '技能安装成功' && c.type === 'success')).toBe(true);
+    expect(toast.__calls.some(c => c.message === '技能安装成功，已生效' && c.type === 'success')).toBe(true);
   });
 
-  it('多个 md 文件成功应显示计数 success toast', async () => {
+  it('多个 md 文件成功应显示计数 success toast "已生效"', async () => {
     const { manager, toast } = createManager();
     await manager.handleSkillDrop([createMdFile('a.md'), createMdFile('b.md'), createMdFile('c.md')]);
-    expect(toast.__calls.some(c => c.message === '3 个技能安装成功' && c.type === 'success')).toBe(true);
+    expect(toast.__calls.some(c => c.message === '3 个技能安装成功，已生效' && c.type === 'success')).toBe(true);
   });
 
   it('成功应触发 skillInstalledCallback', async () => {
@@ -158,6 +160,83 @@ describe('handleSkillDrop · 成功流程', () => {
     const { manager } = createManager();
     await manager.handleSkillDrop([createMdFile('test.md', '技能内容')]);
     expect(window.electronAPI.installSkill).toHaveBeenCalledWith('test.md', '技能内容');
+  });
+});
+
+// ─── handleSkillDrop · 热重载失败路径（对话繁忙） ─────────
+
+describe('handleSkillDrop · 热重载失败路径', () => {
+  it('单个文件热重载失败应显示 warning toast "重启后生效"', async () => {
+    const { manager, toast } = createManager();
+    window.electronAPI.installSkill = vi.fn().mockResolvedValue({
+      success: true,
+      hotReloaded: false,
+      hotReloadError: 'chatBusyError: 当前对话进行中',
+    });
+    await manager.handleSkillDrop([createMdFile('test.md')]);
+    expect(toast.__calls.some(c =>
+      c.type === 'warning' &&
+      c.message === '技能已安装，重启后生效（当前对话进行中）'
+    )).toBe(true);
+  });
+
+  it('多个文件全部热重载失败应显示计数 warning toast', async () => {
+    const { manager, toast } = createManager();
+    window.electronAPI.installSkill = vi.fn().mockResolvedValue({
+      success: true,
+      hotReloaded: false,
+      hotReloadError: 'chatBusyError',
+    });
+    await manager.handleSkillDrop([createMdFile('a.md'), createMdFile('b.md')]);
+    expect(toast.__calls.some(c =>
+      c.type === 'warning' &&
+      c.message === '2 个技能已安装，重启后生效（当前对话进行中）'
+    )).toBe(true);
+  });
+
+  it('部分热重载失败应显示混合 warning toast', async () => {
+    const { manager, toast } = createManager();
+    let callCount = 0;
+    window.electronAPI.installSkill = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // 第一个热重载成功
+        return Promise.resolve({ success: true, hotReloaded: true });
+      }
+      // 第二个热重载失败
+      return Promise.resolve({ success: true, hotReloaded: false, hotReloadError: 'busy' });
+    });
+    await manager.handleSkillDrop([createMdFile('a.md'), createMdFile('b.md')]);
+    // 2 个安装成功，1 个需重启生效
+    expect(toast.__calls.some(c =>
+      c.type === 'warning' &&
+      c.message === '2 个技能已安装，1 个需重启生效（对话进行中）'
+    )).toBe(true);
+  });
+});
+
+// ─── handleSkillDrop · 无 Agent 路径（首次启动） ──────────
+
+describe('handleSkillDrop · 无 Agent 路径', () => {
+  it('单个文件无 Agent 应显示 info toast "Agent 就绪后生效"', async () => {
+    const { manager, toast } = createManager();
+    // hotReloaded === undefined 表示无 Agent 实例
+    window.electronAPI.installSkill = vi.fn().mockResolvedValue({ success: true });
+    await manager.handleSkillDrop([createMdFile('test.md')]);
+    expect(toast.__calls.some(c =>
+      c.type === 'info' &&
+      c.message === '技能已安装，Agent 就绪后生效'
+    )).toBe(true);
+  });
+
+  it('多个文件全部无 Agent 应显示计数 info toast', async () => {
+    const { manager, toast } = createManager();
+    window.electronAPI.installSkill = vi.fn().mockResolvedValue({ success: true });
+    await manager.handleSkillDrop([createMdFile('a.md'), createMdFile('b.md')]);
+    expect(toast.__calls.some(c =>
+      c.type === 'info' &&
+      c.message === '2 个技能已安装，Agent 就绪后生效'
+    )).toBe(true);
   });
 });
 
@@ -187,7 +266,7 @@ describe('handleSkillDrop · 失败流程', () => {
       if (callCount === 1) {
         return Promise.resolve({ success: false, error: '第一个失败' });
       }
-      return Promise.resolve({ success: true });
+      return Promise.resolve({ success: true, hotReloaded: true });
     });
     await manager.handleSkillDrop([createMdFile('a.md'), createMdFile('b.md')]);
     // 应全部调用（不中断）
@@ -202,11 +281,11 @@ describe('handleSkillDrop · 失败流程', () => {
       if (callCount === 1) {
         return Promise.resolve({ success: false, error: '失败' });
       }
-      return Promise.resolve({ success: true });
+      return Promise.resolve({ success: true, hotReloaded: true });
     });
     await manager.handleSkillDrop([createMdFile('a.md'), createMdFile('b.md')]);
-    // 应有 success toast（单个成功时消息为"技能安装成功"，多个时为"N 个技能安装成功"）
-    expect(toast.__calls.some(c => c.type === 'success' && c.message === '技能安装成功')).toBe(true);
+    // 应有 success toast（单个成功时消息为"技能安装成功，已生效"）
+    expect(toast.__calls.some(c => c.type === 'success' && c.message === '技能安装成功，已生效')).toBe(true);
     // 应有 error toast
     expect(toast.__calls.some(c => c.type === 'error')).toBe(true);
   });

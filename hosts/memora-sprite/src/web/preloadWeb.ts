@@ -176,8 +176,14 @@ export interface WebElectronAPI {
   onRecallMemoryTrigger: (cb: () => void) => void;
   removeRecallMemoryTriggerListener: () => void;
 
-  // 技能安装
-  installSkill: (fileName: string, content: string) => Promise<{ success: boolean; error?: string; skillName?: string }>;
+  // 技能安装（返回值含热重载状态，详见 SkillInstallResult 接口）
+  installSkill: (fileName: string, content: string) => Promise<{
+    success: boolean;
+    error?: string;
+    skillName?: string;
+    hotReloaded?: boolean;
+    hotReloadError?: string;
+  }>;
 
   // 审计日志
   listAuditLog: (limit?: number) => Promise<unknown[]>;
