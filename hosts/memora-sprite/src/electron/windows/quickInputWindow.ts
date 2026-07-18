@@ -346,16 +346,14 @@ export class QuickInputWindow {
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
 
-        // paste 期间的处理策略：浮窗保持 alwaysOnTop=true，不切换 z-order（消除闪烁）
-        // previousWindow.focus() 底层调 SetForegroundWindow，alwaysOnTop 不阻碍焦点切换，
-        // 因为当前进程是前台进程（浮窗获焦时），OS 允许前台进程转移焦点到其他窗口。
-        // 原方案 setAlwaysOnTop(false→true) toggle 导致视觉闪烁（被原窗口遮挡→重新置顶）。
-        const hideFloat = () => { /* no-op：浮窗保持置顶，通过 focus 转移实现粘贴 */ };
+        // paste 期间的处理策略：浮窗保持可见（no-op hideFloat）
+        // PowerShell SendInput 发送 Ctrl+V 到目标窗口，浮窗保持 alwaysOnTop=true，
+        // 目标窗口通过 SetForegroundWindow 获焦后接收键盘事件（焦点 ≠ z-order）
+        const hideFloat = () => { /* no-op：浮窗保持可见，避免 hide/show 闪烁 */ };
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
         this.cancelBlurClose();
-        // paste 完成：确保浮窗可见 + 按模式恢复焦点
+        // paste 完成：浮窗保持可见，按模式恢复焦点
         if (this.win && !this.win.isDestroyed()) {
-          this.win.show();
           // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
           if (!safePinnedMode) {
             this.win.focus();
@@ -380,7 +378,6 @@ export class QuickInputWindow {
         // 降级路径 / Phase 3 兼容路径：走 onConfirm 写剪贴板
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
-          // 降级路径同样不 hide 浮窗（路线图闭环 7 F1：浮窗始终可见支持流式输入）
           // copy 降级时浮窗 show + Toast 显示"已复制，Ctrl+V 粘贴"，
           // 用户切到原窗口 Ctrl+V 时浮窗 blur 200ms 后自动关闭
           // 异步沉淀记忆（不阻塞，错误隔离）
@@ -462,14 +459,17 @@ export class QuickInputWindow {
     });
 
     // 切换常驻模式：渲染进程通知主进程抑制/恢复 blur 关闭
+    // pinned 模式下强制 alwaysOnTop=true（防止系统事件重置置顶）
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, (_event, pinned: boolean) => {
       this.pinnedMode = typeof pinned === 'boolean' ? pinned : false;
+      if (this.win && !this.win.isDestroyed() && this.pinnedMode) {
+        this.win.setAlwaysOnTop(true);
+      }
       return { success: true };
     });
 
-    // 注：原 QUICK_INPUT_SET_ALWAYS_ON_TOP handler 已移除（减法 2026-07-18）
     // pinnedMode/alwaysOnTop 强耦合合并，浮窗永远 alwaysOnTop=true + skipTaskbar=true，
-    // 不再需要渲染进程切换置顶状态。粘贴时的临时 setAlwaysOnTop(false/true) 仍在 paste 流程中保留。
+    // 不再需要渲染进程切换置顶状态。
   }
 
   /**

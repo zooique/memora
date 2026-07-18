@@ -28,6 +28,11 @@ vi.mock('../../../electron/inputInjector.js', () => ({
   InputInjector: vi.fn(), // 类构造函数 mock
 }));
 
+// mock node:child_process execSync（模拟 PowerShell 失败，避免测试环境真的调用 PowerShell）
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
+}));
+
 import { PasteCoordinator } from '../../../electron/windows/pasteCoordinator.js';
 import type { ActiveWindow, PasteResult } from '../../../electron/inputInjector.js';
 

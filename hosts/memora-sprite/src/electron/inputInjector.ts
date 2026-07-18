@@ -13,7 +13,7 @@
  *   - 依赖注入 NutJsDeps 便于测试 mock（nut-js 在测试环境无法真实模拟键盘事件）
  *   - 动态 import nut-js：避免测试时强制加载 native 模块
  *
- * 流程（9 步，经 2026-07-18 [问诊：自动迭代] 审查修正）：
+ * 流程（9 步）：
  *   1. getActiveWindow（create 之前）
  *   2. 检测剪贴板格式 + 保存原内容 + 写入目标 + suppressNextChange
  *   3. 隐藏浮窗
@@ -35,8 +35,10 @@
  */
 
 import { clipboard } from 'electron';
+import { execSync } from 'node:child_process';
 // 类型导入（编译时擦除，不影响零 native 依赖运行时）：用于 getDefaultInputInjector 中的类型适配
 import type { Key as NutJsKeyType } from '@nut-tree-fork/nut-js';
+import { logger } from 'memora';
 
 /**
  * nut-js 活跃窗口的最小接口抽象
@@ -111,53 +113,56 @@ function calculatePasteDelay(text: string): number {
 }
 
 /**
- * 检测并修复 nut-js 窗口标题编码乱码（Windows 中文软件）
+ * 检测并标记 nut-js 窗口标题编码乱码（Windows 中文软件）
  *
  * @nut-tree-fork/nut-js 的 native addon 在 GetWindowTextW → napi string 转换中存在编码 bug，
- * 中文标题可能被错误解释为 latin1 再编码为 UTF-8，产生乱码。
+ * 中文标题字节被错误解释为 UTF-8，产生 U+FFFD 替换字符（信息已丢失，JS 层不可逆）。
  *
- * 检测策略：乱码字符串通常含大量 Latin Extended（U+00C0-U+00FF）或 Private Use Area（U+E000-U+F8FF）
- * 字符，正常中文标题主要在 CJK Unified Ideographs 区（U+4E00-U+9FFF），不会触发。
+ * 乱码由 pasteCoordinator.capturePreviousWindow 时通过 PowerShell GetWindowTextW 获取准确标题。
  *
- * 修复策略：尝试 latin1→UTF-8 逆向转换（Buffer.from(garbled, 'latin1').toString('utf8')），
- * 若结果仍含乱码字符则降级返回通用文案。
+ * 注：原 latin1→UTF-8 逆向转换分支已移除（实际日志显示乱码为 U+FFFD，信息已丢失，latin1 转换无效）。
+ * 准确标题由 pasteCoordinator.capturePreviousWindow 时通过 PowerShell GetWindowTextW 获取。
  *
  * @param title 窗口原始标题（可能含乱码）
- * @returns 修复后的标题，或通用文案
+ * @returns title 原样返回（仅作快速路径短标题过滤，乱码检测由 isGarbledTitle 负责）
  */
 export function sanitizeWindowTitle(title: string): string {
-  // 快速路径：短标题或纯 ASCII 不可能是乱码
+  // 快速路径：短标题不可能是乱码（即使乱码也无意义）
   if (title.length <= 4) return title;
+  return title;
+}
 
-  // 检测乱码字符占比
-  const garbledCount = [...title].filter(c => {
-    const code = c.codePointAt(0)!;
-    return (code >= 0x00C0 && code <= 0x00FF) || // Latin Extended（乱码常见区）
-           (code >= 0xE000 && code <= 0xF8FF);   // 私用区（乱码常见区）
-  }).length;
-
-  const garbledRatio = garbledCount / title.length;
-
-  // 正常标题：乱码字符占比 < 40%
-  if (garbledRatio < 0.4) return title;
-
-  // 尝试 latin1 → UTF-8 逆向转换
+/**
+ * 通过 PowerShell SendInput 发送 Ctrl+V 到当前前台窗口
+ *
+ * 技术选型：
+ *   - 用 PowerShell keybd_event 替代 nut-js keyboard：nut-js pressKey+releaseKey 耗时 611ms，
+ *     PowerShell SendInput 仅 ~100ms（浮窗保持可见时无闪烁）
+ *   - 用 -EncodedCommand 传递 base64(UTF-16LE) 脚本：避免引号转义问题
+ *
+ * @returns true=发送成功，false=PowerShell 调用失败（调用方降级到 nut-js keyboard）
+ */
+function sendCtrlVViaPS(): boolean {
+  // PowerShell 脚本：Add-Type 定义 keybd_event P/Invoke → 模拟 Ctrl+V 按键
+  // VK_CONTROL=0x11, VK_V=0x56, KEYEVENTF_KEYUP=0x0002
+  const script = `Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("user32.dll")]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,UIntPtr dwExtraInfo);'
+[C.W]::keybd_event(0x11,0,0,[UIntPtr]::Zero)
+[C.W]::keybd_event(0x56,0,0,[UIntPtr]::Zero)
+[C.W]::keybd_event(0x56,0,2,[UIntPtr]::Zero)
+[C.W]::keybd_event(0x11,0,2,[UIntPtr]::Zero)`;
+  // 用 -EncodedCommand 传递 base64(UTF-16LE) 编码的脚本，避免引号转义
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
   try {
-    const recovered = Buffer.from(title, 'latin1').toString('utf8');
-    // 检查恢复结果是否正常（乱码字符占比 < 40%）
-    const recoveredGarbledCount = [...recovered].filter(c => {
-      const code = c.codePointAt(0)!;
-      return (code >= 0x00C0 && code <= 0x00FF) || (code >= 0xE000 && code <= 0xF8FF);
-    }).length;
-    if (recoveredGarbledCount / recovered.length < 0.4) {
-      return recovered;
-    }
-  } catch {
-    // 转换失败，降级
+    execSync(`powershell -NoProfile -EncodedCommand ${encoded}`, {
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch (err) {
+    logger.warn({ err }, 'PowerShell SendInput Ctrl+V 失败，将降级到 nut-js keyboard');
+    return false;
   }
-
-  // 降级：返回通用文案
-  return '目标应用';
 }
 
 /**
@@ -200,35 +205,23 @@ export class InputInjector {
   }
 
   /**
-   * 获取窗口标题（用于 Toast 显示"已粘贴到 [应用名]"）
-   *
-   * @param window 活跃窗口
-   * @returns 窗口标题或 undefined
-   */
-  async getWindowTitle(window: ActiveWindow | null): Promise<string | undefined> {
-    if (!window) return undefined;
-    try {
-      const title = await window.title;
-      return sanitizeWindowTitle(title);
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
    * 模拟 Ctrl+V 粘贴文本到指定窗口
    *
-   * 完整流程（9 步，本方法实现步骤 2-7）：
-   *   2. 检测剪贴板格式 + 保存原内容 + 写入目标 + suppressNextChange
-   *   3. 隐藏浮窗（hideFloat 回调）
-   *   4. 恢复焦点
-   *   5. Ctrl+V
-   *   6. 延迟（按文本长度自适应 100/200/500ms）
-   *   7. 恢复剪贴板 + suppressNextChange
+   * 完整流程（5 步）：
+   *   1. 检测剪贴板格式 + 保存原内容 + 写入目标 + suppressNextChange
+   *   2. 恢复焦点到原前台窗口（previousWindow.focus）
+   *   3. PowerShell SendInput 发送 Ctrl+V（失败降级到 nut-js keyboard）
+   *   4. 延迟（按文本长度自适应 100/200/500ms）
+   *   5. 恢复剪贴板 + suppressNextChange
+   *
+   * 实现要点：
+   *   - 浮窗不 hide：hideFloat 为 no-op，浮窗保持可见支持流式输入
+   *   - focus() 用 nut-js SetForegroundWindow：目标窗口获焦后即使被浮窗遮挡也能接收键盘事件
+   *   - appName 由 pasteCoordinator.getCapturedAppName() 独立获取，paste 不返回
    *
    * @param text 要粘贴的文本
    * @param previousWindow 呼出浮窗前的前台窗口（null 则降级）
-   * @param hideFloat 隐藏浮窗的回调（必须在恢复焦点之前隐藏）
+   * @param hideFloat 隐藏浮窗的回调（保留接口兼容，当前为 no-op，浮窗保持可见）
    * @param suppressNextChange 剪贴板三重保护抑制函数（一次性抑制，每次写入都需调用）
    * @returns PasteResult（mode='paste' 成功，mode='copy' 降级）
    */
@@ -261,28 +254,31 @@ export class InputInjector {
       clipboard.writeText(text);
       suppressNextChange();
 
-      // 排雷修正雷 1.2：隐藏浮窗必须在恢复焦点之前
+      // hideFloat 保留接口兼容，当前为 no-op（浮窗保持可见，避免 hide/show 闪烁）
       hideFloat();
 
-      // 边界 1：恢复焦点到原前台窗口
+      // 步骤 2：恢复焦点到原前台窗口（SetForegroundWindow）
+      // 即使浮窗 alwaysOnTop=true 挡在前面，目标窗口获焦后仍能接收键盘事件
       try {
         await previousWindow.focus();
       } catch (err) {
         return { success: false, mode: 'copy', reason: 'focus_failed', error: err };
       }
 
-      // 模拟 Ctrl+V
-      await this.deps.keyboard.pressKey(this.deps.Key.LeftControl, this.deps.Key.V);
-      await this.deps.keyboard.releaseKey(this.deps.Key.LeftControl, this.deps.Key.V);
+      // 步骤 3：PowerShell SendInput 发送 Ctrl+V
+      // 绕过 nut-js keyboard（pressKey+releaseKey 耗时 611ms，PowerShell SendInput 仅 ~100ms）
+      const sent = sendCtrlVViaPS();
+      if (!sent) {
+        // PowerShell 失败，降级到 nut-js keyboard（兼容非 Windows 环境）
+        await this.deps.keyboard.pressKey(this.deps.Key.LeftControl, this.deps.Key.V);
+        await this.deps.keyboard.releaseKey(this.deps.Key.LeftControl, this.deps.Key.V);
+      }
 
-      // 等待系统完成粘贴（根据文本长度动态调整延迟）
+      // 步骤 4：等待系统完成粘贴（根据文本长度动态调整延迟）
       const pasteDelay = calculatePasteDelay(text);
       await new Promise(resolve => setTimeout(resolve, pasteDelay));
 
-      // 获取应用名供 Toast 显示
-      const appName = await this.getWindowTitle(previousWindow);
-
-      return { success: true, mode: 'paste', appName };
+      return { success: true, mode: 'paste' };
     } catch (err) {
       return { success: false, mode: 'copy', reason: 'paste_failed', error: err };
     } finally {

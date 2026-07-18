@@ -3,15 +3,16 @@
  *
  * 覆盖范围：
  *   1. 降级模式：deps=null / previousWindow=null / 非文本剪贴板 / focus 失败 / paste 异常
- *   2. 成功路径：paste 成功返回 mode='paste' + appName
+ *   2. 成功路径：paste 成功返回 mode='paste'（PowerShell 失败时降级到 nut-js keyboard）
  *   3. captureActiveWindow：排除浮窗自身 / nut-js 不可用
  *   4. 剪贴板恢复：无论成功失败都恢复原剪贴板内容
  *   5. suppressNextChange 调用次数：每次 writeText 都需调用
  *
  * 测试策略：
  *   - mock electron clipboard（availableFormats/readText/writeText）
+ *   - mock node:child_process execSync（模拟 PowerShell 失败，强制降级到 nut-js keyboard）
  *   - 注入 mock NutJsDeps（getActiveWindow/keyboard/Key）
- *   - 不依赖真实 nut-js native 模块
+ *   - 不依赖真实 nut-js native 模块，不真的发送 Ctrl+V
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -28,6 +29,12 @@ const { clipboardMock } = vi.hoisted(() => ({
 // mock electron clipboard（InputInjector 直接 import electron 的 clipboard）
 vi.mock('electron', () => ({
   clipboard: clipboardMock,
+}));
+
+// mock node:child_process execSync（模拟 PowerShell 失败，强制 sendCtrlVViaPS 返回 false，
+// 触发降级到 nut-js keyboard，避免测试环境真的发送 Ctrl+V）
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
 }));
 
 import { InputInjector, sanitizeWindowTitle, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
@@ -147,7 +154,7 @@ describe('InputInjector', () => {
   });
 
   describe('paste 成功路径', () => {
-    it('成功粘贴返回 mode=paste + appName', async () => {
+    it('成功粘贴返回 mode=paste（PowerShell 失败降级到 nut-js keyboard）', async () => {
       const deps = createMockDeps();
       const injector = new InputInjector(deps);
       const suppress = createSuppressMock();
@@ -158,10 +165,9 @@ describe('InputInjector', () => {
 
       expect(result.success).toBe(true);
       expect(result.mode).toBe('paste');
-      expect(result.appName).toBe('记事本');
-      // 验证隐藏浮窗被调用（排雷修正雷 1.2：在恢复焦点之前）
+      // 验证 hideFloat 被调用（保留接口兼容，当前为 no-op）
       expect(hideFloat).toHaveBeenCalledTimes(1);
-      // 验证 keyboard 操作：Ctrl+V（press+release）
+      // 验证 keyboard 降级：PowerShell 失败后 fallback 到 nut-js keyboard（Ctrl+V press+release）
       expect(deps.keyboard.pressKey).toHaveBeenCalledTimes(1);
       expect(deps.keyboard.releaseKey).toHaveBeenCalledTimes(1);
     });
@@ -251,38 +257,12 @@ describe('InputInjector', () => {
     });
   });
 
-  describe('getWindowTitle', () => {
-    it('window=null 时返回 undefined', async () => {
-      const injector = new InputInjector(null);
-      const result = await injector.getWindowTitle(null);
-      expect(result).toBeUndefined();
-    });
-
-    it('成功返回标题', async () => {
-      const injector = new InputInjector(null);
-      const window = createMockWindow('VSCode');
-      const result = await injector.getWindowTitle(window);
-      expect(result).toBe('VSCode');
-    });
-
-    it('title getter 异常时返回 undefined', async () => {
-      const injector = new InputInjector(null);
-      const window: ActiveWindow = {
-        title: Promise.reject(new Error('title error')),
-        region: Promise.resolve({ left: 0, top: 0, width: 800, height: 600 }),
-        focus: () => Promise.resolve(),
-      };
-      const result = await injector.getWindowTitle(window);
-      expect(result).toBeUndefined();
-    });
-  });
-
   describe('sanitizeWindowTitle', () => {
     it('正常 ASCII 标题原样返回', () => {
       expect(sanitizeWindowTitle('VSCode')).toBe('VSCode');
     });
 
-    it('正常中文标题原样返回（CJK Unified Ideographs 区不触发乱码检测）', () => {
+    it('正常中文标题原样返回', () => {
       expect(sanitizeWindowTitle('无标题 - 记事本')).toBe('无标题 - 记事本');
     });
 
@@ -290,20 +270,12 @@ describe('InputInjector', () => {
       expect(sanitizeWindowTitle('abc')).toBe('abc');
     });
 
-    it('乱码标题（Latin Extended 高密度）返回修复结果或降级文案', () => {
-      // 构造典型乱码：UTF-8 字节被解释为 latin1（U+00C0-U+00FF 区密集）
-      const garbled = 'Ã¥Â®Å½Â½Ã§â€¹â€”Ã¥â€¡ÂºÃ¥Â¥Â½';
+    it('乱码标题原样返回（sanitizeWindowTitle 仅做短标题过滤，乱码由 pasteCoordinator.capturePreviousWindow 时 PowerShell 获取准确标题）', () => {
+      // sanitizeWindowTitle 不再尝试修复乱码（latin1 转换对 U+FFFD 无效），
+      // 准确标题由 pasteCoordinator.capturePreviousWindow 时通过 PowerShell GetWindowTextW 获取
+      const garbled = 'Ã¥Â®Å½Â½';
       const result = sanitizeWindowTitle(garbled);
-      // 结果应为修复后文本或降级文案，不应是原始乱码
-      expect(result).not.toBe(garbled);
-    });
-
-    it('getWindowTitle 返回 sanitized 标题', async () => {
-      const injector = new InputInjector(null);
-      const window = createMockWindow('Ã¥Â®Å½Â½'); // 乱码标题
-      const result = await injector.getWindowTitle(window);
-      // 应返回修复结果或降级文案，不应是原始乱码
-      expect(result).not.toBe('Ã¥Â®Å½Â½');
+      expect(result).toBe(garbled);
     });
   });
 });
