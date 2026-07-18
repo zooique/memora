@@ -472,19 +472,9 @@ export class QuickInputWindow {
       return { success: true };
     });
 
-    // 设置浮窗 alwaysOnTop：pinned 模式下图钉按钮触发
-    // 取消置顶时同步设置 skipTaskbar=false，让浮窗出现在任务栏，避免被遮挡后无法切回
-    // 恢复置顶时同步设置 skipTaskbar=true，回到轻量浮窗状态
-    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_SET_ALWAYS_ON_TOP, (_event, value: boolean) => {
-      if (typeof value !== 'boolean') return { success: false };
-      if (this.win && !this.win.isDestroyed()) {
-        this.win.setAlwaysOnTop(value);
-        // alwaysOnTop=false 时浮窗可被遮挡，需要任务栏可见以便切回
-        // alwaysOnTop=true 时浮窗始终置顶，任务栏可见性无意义且破坏轻量感
-        this.win.setSkipTaskbar(!value);
-      }
-      return { success: true };
-    });
+    // 注：原 QUICK_INPUT_SET_ALWAYS_ON_TOP handler 已移除（减法 2026-07-18）
+    // pinnedMode/alwaysOnTop 强耦合合并，浮窗永远 alwaysOnTop=true + skipTaskbar=true，
+    // 不再需要渲染进程切换置顶状态。粘贴时的临时 setAlwaysOnTop(false/true) 仍在 paste 流程中保留。
   }
 
   /**
@@ -618,7 +608,6 @@ export class QuickInputWindow {
       ipcMain.removeAllListeners(IPC_CHANNELS.MOVE_QUICK_INPUT);
       ipcMain.removeAllListeners(IPC_CHANNELS.QUICK_INPUT_POLISH);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE);
-      ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_SET_ALWAYS_ON_TOP);
       this.ipcRegistered = false;
     }
     if (this.win && !this.win.isDestroyed()) {

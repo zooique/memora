@@ -320,7 +320,6 @@ sequenceDiagram
 | `QUICK_INPUT_RESIZE` | 渲染 → 主 | 调整浮窗高度 |
 | `QUICK_INPUT_POLISH` | 渲染 → 主 | LLM 润色文本 |
 | `QUICK_INPUT_SET_PINNED_MODE` | 渲染 → 主 | 设置常驻模式 |
-| `QUICK_INPUT_SET_ALWAYS_ON_TOP` | 渲染 → 主 | 设置置顶状态 |
 | `QUICK_INPUT_SHOW` | 主 → 渲染 | 显示浮窗（携带预填内容） |
 | `QUICK_INPUT_FOCUS_CHANGE` | 主 → 渲染 | 焦点变化通知 |
 | `searchMemories` | 渲染 → 主 | 搜索记忆 |

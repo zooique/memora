@@ -178,9 +178,10 @@ export const IPC_CHANNELS = {
   MOVE_QUICK_INPUT: 'move-quick-input',
   // LLM 润色文本（携带原文，返回润色后文本，与 ipc/channels.ts QUICK_INPUT_POLISH 同步）
   QUICK_INPUT_POLISH: 'quick-input-polish',
-  // 常驻模式切换 + 置顶切换（与 ipc/channels.ts 同步）
+  // 常驻模式切换（与 ipc/channels.ts 同步）
+  // 注：原 QUICK_INPUT_SET_ALWAYS_ON_TOP 通道已移除（减法 2026-07-18）—— pinnedMode/alwaysOnTop 强耦合，
+  // 浮窗永远 alwaysOnTop=true + skipTaskbar=true，消除 Windows 任务栏默认图标 bug。
   QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
-  QUICK_INPUT_SET_ALWAYS_ON_TOP: 'quick-input-set-always-on-top',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）
@@ -841,12 +842,6 @@ export interface ElectronAPI {
    */
   setPinnedMode: (pinned: boolean) => Promise<{ success: boolean }>;
   /**
-   * 设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发）
-   *
-   * default 模式下 alwaysOnTop 恒为 true，渲染进程不调用此 IPC。
-   */
-  setAlwaysOnTop: (value: boolean) => Promise<{ success: boolean }>;
-  /**
    * 监听浮窗 show 事件（主进程 show() 调用后触发，携带剪贴板预填文本 + 敏感标记）
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
@@ -1154,7 +1149,6 @@ const electronAPI: ElectronAPI = {
   moveQuickInput: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_QUICK_INPUT, dx, dy),
   polishQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_POLISH, text),
   setPinnedMode: (pinned) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
-  setAlwaysOnTop: (value) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_ALWAYS_ON_TOP, value),
   onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null; isSensitive: boolean }) => cb(payload)),
   removeQuickInputShowListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);

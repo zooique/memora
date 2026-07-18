@@ -2,8 +2,8 @@
  * 预加载脚本 — quick-input 浮窗最小化安全桥接
  *
  * 与主 preload.ts 的差异：
- *   - 仅暴露 quick-input 浮窗所需的 10 个 API（vs 主 preload 的 100+）
- *   - 仅内联 8 个 quick-input 相关 IPC 通道（vs 主 preload 的 106 个通道）
+ *   - 仅暴露 quick-input 浮窗所需的最小 API（vs 主 preload 的 100+）
+ *   - 仅内联 quick-input 相关 IPC 通道（vs 主 preload 的 106 个通道）
  *   - 剥离高危 API：installSkill / saveLlmProvider / deleteMemory / clearAuditLog 等
  *
  * 决策依据：ADR-SP-017 §1 窗口管理器内联 IPC 模式 + 安全审计 P3 最小权限原则
@@ -12,6 +12,9 @@
  * Electron sandbox: true 要求 preload 是单个 CommonJS 文件，不能有外部模块的运行时导入。
  * IPC 通道常量内联到本文件，与 channels.ts 保持同步。
  * 通过 tsconfig.preload.json 编译为 CommonJS 格式的 preload-quick-input.cjs。
+ *
+ * 减法（2026-07-18）：移除 setAlwaysOnTop API + QUICK_INPUT_SET_ALWAYS_ON_TOP 通道。
+ * pinnedMode/alwaysOnTop 强耦合合并，浮窗永远 alwaysOnTop=true + skipTaskbar=true。
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
@@ -30,8 +33,6 @@ const IPC_CHANNELS = {
   QUICK_INPUT_POLISH: 'quick-input-polish',
   /** 切换常驻模式（pinned=true 持久钉住浮窗） */
   QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
-  /** 设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发） */
-  QUICK_INPUT_SET_ALWAYS_ON_TOP: 'quick-input-set-always-on-top',
   MEMORIES_SEARCH: 'memories-search',
   SESSION_SEARCH: 'session-search',
   /** 提升记忆 score（L2 采纳反哺内核） */
@@ -149,10 +150,6 @@ const quickInputAPI = {
   /** 切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
   setPinnedMode: (pinned: boolean): Promise<{ success: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
-
-  /** 设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发） */
-  setAlwaysOnTop: (value: boolean): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_ALWAYS_ON_TOP, value),
 
   /** 监听浮窗 show 事件（替代 window focus，避免 Alt+Tab 误清空） */
   onQuickInputShow: (cb: (payload: QuickInputShowPayload) => void): void => {

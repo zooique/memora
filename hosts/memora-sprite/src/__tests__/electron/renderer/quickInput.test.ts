@@ -6,7 +6,7 @@
  * 覆盖范围：
  * - handleShow：状态重置 / 剪贴板预填 / 敏感检测 / 无预设分支
  * - handleConfirm：成功 / 失败 / 常驻 / 默认 / 竞态防护
- * - togglePinnedMode：手动切换 + localStorage 持久化 + IPC 通知 + 图钉按钮显示
+ * - togglePinnedMode：手动切换 + localStorage 持久化 + IPC 通知
  * - toggleExpand：手动切换 + localStorage 持久化
  * - updateFocusIndicator：有聚焦 / 无聚焦 + Tab 启用/禁用联动
  * - handleTab：tabEnabled=false 时不触发提交
@@ -92,7 +92,6 @@ function createMockApi(): QuickInputElectronAPI {
     boostMemory: vi.fn().mockResolvedValue(undefined),
     showMemory: vi.fn().mockResolvedValue({ memory: null }),
     setPinnedMode: vi.fn().mockResolvedValue({ success: true }),
-    setAlwaysOnTop: vi.fn().mockResolvedValue({ success: true }),
     onFocusChange: vi.fn(),
   };
 }
@@ -112,7 +111,6 @@ async function createController(opts?: {
   footerEl: HTMLElement;
   counterEl: HTMLElement;
   focusAppNameEl: HTMLElement;
-  pinToggleEl: HTMLElement;
   closeBtnEl: HTMLElement;
 }> {
   // 注入 electronAPI 到 window
@@ -123,7 +121,6 @@ async function createController(opts?: {
   document.body.innerHTML = `
     <div id="focus-bar" class="focus-bar">
       <span id="focus-app-name" class="focus-app-name">无聚焦</span>
-      <button id="pin-toggle" class="pin-toggle" hidden><svg class="icon"><use href="#icon-pin"/></svg></button>
       <button id="close-btn" class="close-btn"><svg class="icon"><use href="#icon-close"/></svg></button>
     </div>
     <div id="quick-input-container">
@@ -162,7 +159,6 @@ async function createController(opts?: {
   const footerEl = document.getElementById('quick-input-footer')!;
   const counterEl = document.querySelector('.quick-input-counter')! as HTMLElement;
   const focusAppNameEl = document.getElementById('focus-app-name')!;
-  const pinToggleEl = document.getElementById('pin-toggle')!;
   const closeBtnEl = document.getElementById('close-btn')!;
 
   const controller = new QuickInputController({
@@ -174,13 +170,12 @@ async function createController(opts?: {
     footerEl,
     counterEl,
     focusAppNameEl,
-    pinToggleEl,
     closeBtnEl,
     api,
   });
   controller.init();
 
-  return { controller, api, inputField, completionList, pinnedToggle, expandToggle, polishToggle, footerEl, counterEl, focusAppNameEl, pinToggleEl, closeBtnEl };
+  return { controller, api, inputField, completionList, pinnedToggle, expandToggle, polishToggle, footerEl, counterEl, focusAppNameEl, closeBtnEl };
 }
 
 // ─── 测试 ──────────────────────────────────────────────────
@@ -231,21 +226,17 @@ describe('QuickInputController', () => {
       expect(inputField.selectionEnd).toBe(4);
     });
 
-    it('敏感内容自动启用常驻模式并显示图钉按钮', async () => {
-      const { pinnedToggle, pinToggleEl, api } = await createController();
+    it('敏感内容自动启用常驻模式', async () => {
+      const { pinnedToggle, api } = await createController();
       const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
         | ((payload: unknown) => void)
         | undefined;
 
       expect(pinnedToggle.classList.contains('active')).toBe(false);
-      expect(pinToggleEl.hasAttribute('hidden')).toBe(true);
 
       showHandler?.({ clipboardText: null, isSensitive: true });
 
       expect(pinnedToggle.classList.contains('active')).toBe(true);
-      // pinned 模式下图钉按钮应显示（移除 hidden）且初始为激活态（匹配 alwaysOnTop=true 默认）
-      expect(pinToggleEl.hasAttribute('hidden')).toBe(false);
-      expect(pinToggleEl.classList.contains('active')).toBe(true);
       // 通知主进程进入 pinned 模式（持久 suppressBlurClose）
       expect(api.setPinnedMode).toHaveBeenCalledWith(true);
     });
@@ -392,35 +383,27 @@ describe('QuickInputController', () => {
       expect(safeSet).toHaveBeenCalledWith('memora-quick-input-pinned', '0');
     });
 
-    it('开启常驻模式时显示图钉按钮（激活态）并通知主进程', async () => {
-      const { pinnedToggle, pinToggleEl, api } = await createController();
-
-      expect(pinToggleEl.hasAttribute('hidden')).toBe(true);
+    it('开启常驻模式时通知主进程', async () => {
+      const { pinnedToggle, api } = await createController();
 
       pinnedToggle.click();
 
-      expect(pinToggleEl.hasAttribute('hidden')).toBe(false);
-      // 图钉按钮初始为激活态（匹配 alwaysOnTop=true 默认）
-      expect(pinToggleEl.classList.contains('active')).toBe(true);
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
       expect(api.setPinnedMode).toHaveBeenCalledWith(true);
     });
 
-    it('关闭常驻模式时隐藏图钉按钮并恢复 alwaysOnTop', async () => {
-      const { pinnedToggle, pinToggleEl, api } = await createController();
+    it('关闭常驻模式时通知主进程', async () => {
+      const { pinnedToggle, api } = await createController();
 
       // 先开启
       pinnedToggle.click();
-      expect(pinToggleEl.hasAttribute('hidden')).toBe(false);
-      expect(pinToggleEl.classList.contains('active')).toBe(true);
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
 
       // 再关闭
       pinnedToggle.click();
 
-      expect(pinToggleEl.hasAttribute('hidden')).toBe(true);
-      expect(pinToggleEl.classList.contains('active')).toBe(false);
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
       expect(api.setPinnedMode).toHaveBeenCalledWith(false);
-      // default 模式恢复 alwaysOnTop=true（浮窗本意）
-      expect(api.setAlwaysOnTop).toHaveBeenCalledWith(true);
     });
   });
 
@@ -519,27 +502,9 @@ describe('QuickInputController', () => {
     });
   });
 
-  // ─── 顶部按钮（图钉 + 关闭） ─────────────────────────
+  // ─── 顶部按钮（关闭） ─────────────────────────
 
   describe('topBarButtons', () => {
-    it('点击图钉按钮切换 alwaysOnTop 状态', async () => {
-      const { pinToggleEl, api } = await createController();
-
-      expect(pinToggleEl.classList.contains('active')).toBe(false);
-
-      // 第一次点击：激活置顶（取消默认 alwaysOnTop）
-      pinToggleEl.click();
-      expect(pinToggleEl.classList.contains('active')).toBe(true);
-      expect(pinToggleEl.getAttribute('aria-pressed')).toBe('true');
-      expect(api.setAlwaysOnTop).toHaveBeenCalledWith(true);
-
-      // 第二次点击：取消激活（恢复 alwaysOnTop）
-      pinToggleEl.click();
-      expect(pinToggleEl.classList.contains('active')).toBe(false);
-      expect(pinToggleEl.getAttribute('aria-pressed')).toBe('false');
-      expect(api.setAlwaysOnTop).toHaveBeenCalledWith(false);
-    });
-
     it('关闭按钮触发 handleClose', async () => {
       const { closeBtnEl, api } = await createController();
 

@@ -381,38 +381,6 @@ body {
   font-style: italic;
 }
 
-/* ===== 图钉按钮（pinned 模式下显示，切换 alwaysOnTop） ===== */
-.pin-toggle {
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: var(--space-1);
-}
-
-.pin-toggle .icon {
-  width: 14px;
-  height: 14px;
-}
-
-.pin-toggle:hover {
-  color: var(--text);
-}
-
-/* 激活态：accent 色高亮（与 .expand-toggle.active 视觉一致） */
-.pin-toggle.active {
-  color: var(--accent);
-}
-
-.pin-toggle[hidden] {
-  display: none;
-}
 
 /* ===== 关闭按钮（始终显示，pinned 模式下作为显式关闭入口） ===== */
 .close-btn {

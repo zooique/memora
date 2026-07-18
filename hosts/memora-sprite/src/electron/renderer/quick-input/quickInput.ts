@@ -49,7 +49,7 @@ export type QuickInputElectronAPI = Pick<
   | 'moveQuickInput' | 'polishQuickInput'
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
   | 'boostMemory' | 'showMemory'
-  | 'setPinnedMode' | 'setAlwaysOnTop' | 'onFocusChange'
+  | 'setPinnedMode' | 'onFocusChange'
 >;
 
 /** Toast 显示时长（ms），统一所有模式的 Toast 时长 */
@@ -108,8 +108,6 @@ interface QuickInputControllerOptions {
   counterEl: HTMLElement;
   /** 顶部聚焦提示栏应用名元素 */
   focusAppNameEl: HTMLElement;
-  /** 顶部图钉按钮（仅 pinned 模式显示） */
-  pinToggleEl: HTMLElement;
   /** 顶部关闭按钮（始终显示，pinned 模式下作为显式关闭入口） */
   closeBtnEl: HTMLElement;
   /** ElectronAPI 子集 */
@@ -134,8 +132,6 @@ export class QuickInputController {
   private readonly counterEl: HTMLElement;
   /** 顶部聚焦提示栏应用名元素 */
   private readonly focusAppNameEl: HTMLElement;
-  /** 顶部图钉按钮（仅 pinned 模式显示） */
-  private readonly pinToggleEl: HTMLElement;
   /** 顶部关闭按钮（始终显示） */
   private readonly closeBtnEl: HTMLElement;
   /** ElectronAPI 子集 */
@@ -192,7 +188,6 @@ export class QuickInputController {
     this.footerEl = options.footerEl;
     this.counterEl = options.counterEl;
     this.focusAppNameEl = options.focusAppNameEl;
-    this.pinToggleEl = options.pinToggleEl;
     this.closeBtnEl = options.closeBtnEl;
     this.api = options.api;
   }
@@ -208,7 +203,6 @@ export class QuickInputController {
     this.bindExpandToggle();
     this.bindPolishToggle();
     this.bindDrag();
-    this.bindPinToggle();
     this.bindCloseButton();
     this.bindFocusChangeHandler();
     this.initCompletion();
@@ -252,20 +246,6 @@ export class QuickInputController {
    */
   private bindPinnedToggle(): void {
     this.pinnedToggle.addEventListener('click', () => this.togglePinnedMode());
-  }
-
-  /**
-   * 绑定顶部图钉按钮（切换 alwaysOnTop）
-   *
-   * 仅 pinned 模式下显示（HTML 默认 hidden）。点击切换 .active 类 + IPC 通知主进程。
-   */
-  private bindPinToggle(): void {
-    this.pinToggleEl.addEventListener('click', () => {
-      const isActive = this.pinToggleEl.classList.toggle('active');
-      this.pinToggleEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-      this.pinToggleEl.title = isActive ? '取消置顶（点击恢复置顶）' : '置顶浮窗（点击切换）';
-      void this.api.setAlwaysOnTop(isActive);
-    });
   }
 
   /**
@@ -562,8 +542,6 @@ export class QuickInputController {
     if (payload?.isSensitive) {
       this.pinnedMode = true;
       this.updatePinnedToggle();
-      // pinned 模式下显示图钉按钮（初始为激活态，匹配 alwaysOnTop=true 默认）
-      this.showPinToggleActive();
       void this.api.setPinnedMode(true);
     }
 
@@ -627,8 +605,7 @@ export class QuickInputController {
     if (stored === '1') {
       this.pinnedMode = true;
       this.updatePinnedToggle();
-      // pinned 模式下显示图钉按钮（初始为激活态）+ 通知主进程持久抑制 blur
-      this.showPinToggleActive();
+      // 通知主进程持久抑制 blur
       void this.api.setPinnedMode(true);
     }
   }
@@ -702,33 +679,15 @@ export class QuickInputController {
   }
 
   /**
-   * 显示图钉按钮并初始化为激活态（匹配 alwaysOnTop=true 默认）
-   *
-   * 进入 pinned 模式时调用：浮窗默认 alwaysOnTop=true，图钉按钮应反映此状态。
-   * 用户点击图钉按钮可切换 alwaysOnTop（bindPinToggle 处理）。
-   */
-  private showPinToggleActive(): void {
-    this.pinToggleEl.removeAttribute('hidden');
-    this.pinToggleEl.classList.add('active');
-    this.pinToggleEl.setAttribute('aria-pressed', 'true');
-    this.pinToggleEl.title = '取消置顶（点击恢复置顶）';
-  }
-
-  /**
-   * 隐藏图钉按钮并重置为未激活态（退出 pinned 模式时调用）
-   */
-  private hidePinToggle(): void {
-    this.pinToggleEl.setAttribute('hidden', '');
-    this.pinToggleEl.classList.remove('active');
-    this.pinToggleEl.setAttribute('aria-pressed', 'false');
-  }
-
-  /**
    * 切换常驻模式（手动覆盖自动检测）
    *
    * 手动切换持久化到 localStorage，跨会话保留用户偏好。
    * 注意：handleShow 中的 isSensitive 自动检测不持久化，仅本次会话生效。
-   * pinned 模式下显示图钉按钮；default 模式下隐藏图钉按钮并恢复 alwaysOnTop=true。
+   *
+   * 减法（2026-07-18）：原设计有独立的 alwaysOnTop 状态，由 pin-toggle 图钉按钮切换，
+   * 但 pinned 和 alwaysOnTop 在实际使用中强耦合（pinned 不置顶无意义，置顶不 pinned 也无意义），
+   * 合并为单一 pinnedMode 概念。浮窗永远 alwaysOnTop=true + skipTaskbar=true，
+   * 消除 Windows 任务栏默认图标 bug + pin-toggle 发现性问题 + 状态组合 4→2。
    */
   private togglePinnedMode(): void {
     this.pinnedMode = !this.pinnedMode;
@@ -736,14 +695,6 @@ export class QuickInputController {
     this.updatePinnedToggle();
     // 通知主进程切换 pinned 状态（持久 suppressBlurClose 开关）
     void this.api.setPinnedMode(this.pinnedMode);
-    if (this.pinnedMode) {
-      // pinned 模式：显示图钉按钮（初始为激活态，匹配 alwaysOnTop=true 默认）
-      this.showPinToggleActive();
-    } else {
-      // default 模式：隐藏图钉按钮 + 恢复 alwaysOnTop=true（浮窗本意）
-      this.hidePinToggle();
-      void this.api.setAlwaysOnTop(true);
-    }
   }
 
   // ── 确认流程 ──
@@ -1061,11 +1012,6 @@ function initQuickInput(): void {
     reportError('QuickInput init', new Error('focus-app-name 元素缺失'));
     return;
   }
-  const pinToggleEl = document.getElementById('pin-toggle');
-  if (!(pinToggleEl instanceof HTMLElement)) {
-    reportError('QuickInput init', new Error('pin-toggle 元素缺失'));
-    return;
-  }
   const closeBtnEl = document.getElementById('close-btn');
   if (!(closeBtnEl instanceof HTMLElement)) {
     reportError('QuickInput init', new Error('close-btn 元素缺失'));
@@ -1087,7 +1033,6 @@ function initQuickInput(): void {
     footerEl,
     counterEl,
     focusAppNameEl,
-    pinToggleEl,
     closeBtnEl,
     api: electronApi,
   });

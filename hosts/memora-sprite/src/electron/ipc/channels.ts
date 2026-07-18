@@ -233,8 +233,6 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_POLISH: 'quick-input-polish',
   /** 渲染进程 → 主进程：切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
   QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
-  /** 渲染进程 → 主进程：设置浮窗 alwaysOnTop（pinned 模式下图钉按钮触发） */
-  QUICK_INPUT_SET_ALWAYS_ON_TOP: 'quick-input-set-always-on-top',
 
   // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
