@@ -346,22 +346,25 @@ export class QuickInputWindow {
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
 
-        // paste 期间的处理策略：
-        // - default 模式：hide 浮窗（避免遮挡原窗口粘贴结果）
-        // - pinned 模式：临时取消置顶（setAlwaysOnTop=false），不 hide 避免 hide+show 闪烁
-        //   paste 完成后恢复置顶（setAlwaysOnTop=true），浮窗始终可见
-        const hideFloat = safePinnedMode
-          ? () => {
-              if (this.win && !this.win.isDestroyed()) {
-                this.win.setAlwaysOnTop(false);
-              }
-            }
-          : () => this.hide();
+        // paste 期间的处理策略（统一两种模式：临时取消置顶，不 hide 浮窗，支持流式连续输入）
+        // - default 模式 + pinned 模式：setAlwaysOnTop(false)，避免遮挡原窗口粘贴结果
+        //   不用 hide() 是因为路线图闭环 7 F1 设计——流式模式只要不改变聚焦浮窗就应始终存在
+        //   paste 完成后恢复置顶 + show() 重显 + 按模式恢复焦点
+        const hideFloat = () => {
+          if (this.win && !this.win.isDestroyed()) {
+            this.win.setAlwaysOnTop(false);
+          }
+        };
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
         this.cancelBlurClose();
-        // pinned 模式：恢复置顶（paste 期间已临时取消），浮窗始终可见无需 show
-        if (safePinnedMode && this.win && !this.win.isDestroyed()) {
+        // paste 完成：恢复置顶 + 重显浮窗（路线图闭环 7 F1：流式模式浮窗始终可见）
+        if (this.win && !this.win.isDestroyed()) {
           this.win.setAlwaysOnTop(true);
+          this.win.show();
+          // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
+          if (!safePinnedMode) {
+            this.win.focus();
+          }
         }
 
         if (pasteResult.success && pasteResult.mode === 'paste') {
@@ -382,7 +385,9 @@ export class QuickInputWindow {
         // 降级路径 / Phase 3 兼容路径：走 onConfirm 写剪贴板
         const result = await this.callbacks.onConfirm?.(safeText) ?? { success: false };
         if (result.success) {
-          this.hide();
+          // 降级路径同样不 hide 浮窗（路线图闭环 7 F1：浮窗始终可见支持流式输入）
+          // copy 降级时浮窗 show + Toast 显示"已复制，Ctrl+V 粘贴"，
+          // 用户切到原窗口 Ctrl+V 时浮窗 blur 200ms 后自动关闭
           // 异步沉淀记忆（不阻塞，错误隔离）
           try {
             this.callbacks.onAfterConfirm?.(safeText);
