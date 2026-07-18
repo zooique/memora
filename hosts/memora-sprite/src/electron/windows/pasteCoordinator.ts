@@ -18,7 +18,7 @@
  *   - main.ts：通过 QuickInputWindow.setSuppressNextChange() 间接注入
  */
 
-import { getDefaultInputInjector, type InputInjector, type ActiveWindow, type PasteResult } from '../inputInjector.js';
+import { getDefaultInputInjector, sanitizeWindowTitle, type InputInjector, type ActiveWindow, type PasteResult } from '../inputInjector.js';
 
 /** 剪贴板三重保护抑制函数类型（由 clipboardHandler.suppressNextChange 注入） */
 export type SuppressNextChange = () => void;
@@ -128,12 +128,13 @@ export class PasteCoordinator {
     if (!this.previousWindow) return null;
     try {
       const title = await this.previousWindow.title;
+      const sane = sanitizeWindowTitle(title);
       // 窗口标题格式约定："{文档} - {应用名}"，取末段
-      const parts = title.split(' - ');
-      if (parts.length <= 1) return title;
+      const parts = sane.split(' - ');
+      if (parts.length <= 1) return sane;
       // noUncheckedIndexedAccess 下 parts[N] 推断为 string | undefined，提取局部变量后守卫
       const appName = parts[parts.length - 1];
-      return appName ? appName.trim() : title;
+      return appName ? appName.trim() : sane;
     } catch {
       return null;
     }

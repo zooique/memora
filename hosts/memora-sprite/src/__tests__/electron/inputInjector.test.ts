@@ -30,7 +30,7 @@ vi.mock('electron', () => ({
   clipboard: clipboardMock,
 }));
 
-import { InputInjector, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
+import { InputInjector, sanitizeWindowTitle, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
 
 /** 创建 mock ActiveWindow */
 function createMockWindow(title: string, focusShouldThrow = false): ActiveWindow {
@@ -274,6 +274,36 @@ describe('InputInjector', () => {
       };
       const result = await injector.getWindowTitle(window);
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('sanitizeWindowTitle', () => {
+    it('正常 ASCII 标题原样返回', () => {
+      expect(sanitizeWindowTitle('VSCode')).toBe('VSCode');
+    });
+
+    it('正常中文标题原样返回（CJK Unified Ideographs 区不触发乱码检测）', () => {
+      expect(sanitizeWindowTitle('无标题 - 记事本')).toBe('无标题 - 记事本');
+    });
+
+    it('短标题（≤4 字符）原样返回', () => {
+      expect(sanitizeWindowTitle('abc')).toBe('abc');
+    });
+
+    it('乱码标题（Latin Extended 高密度）返回修复结果或降级文案', () => {
+      // 构造典型乱码：UTF-8 字节被解释为 latin1（U+00C0-U+00FF 区密集）
+      const garbled = 'Ã¥Â®Å½Â½Ã§â€¹â€”Ã¥â€¡ÂºÃ¥Â¥Â½';
+      const result = sanitizeWindowTitle(garbled);
+      // 结果应为修复后文本或降级文案，不应是原始乱码
+      expect(result).not.toBe(garbled);
+    });
+
+    it('getWindowTitle 返回 sanitized 标题', async () => {
+      const injector = new InputInjector(null);
+      const window = createMockWindow('Ã¥Â®Å½Â½'); // 乱码标题
+      const result = await injector.getWindowTitle(window);
+      // 应返回修复结果或降级文案，不应是原始乱码
+      expect(result).not.toBe('Ã¥Â®Å½Â½');
     });
   });
 });

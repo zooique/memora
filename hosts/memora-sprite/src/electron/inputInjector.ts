@@ -111,6 +111,56 @@ function calculatePasteDelay(text: string): number {
 }
 
 /**
+ * 检测并修复 nut-js 窗口标题编码乱码（Windows 中文软件）
+ *
+ * @nut-tree-fork/nut-js 的 native addon 在 GetWindowTextW → napi string 转换中存在编码 bug，
+ * 中文标题可能被错误解释为 latin1 再编码为 UTF-8，产生乱码。
+ *
+ * 检测策略：乱码字符串通常含大量 Latin Extended（U+00C0-U+00FF）或 Private Use Area（U+E000-U+F8FF）
+ * 字符，正常中文标题主要在 CJK Unified Ideographs 区（U+4E00-U+9FFF），不会触发。
+ *
+ * 修复策略：尝试 latin1→UTF-8 逆向转换（Buffer.from(garbled, 'latin1').toString('utf8')），
+ * 若结果仍含乱码字符则降级返回通用文案。
+ *
+ * @param title 窗口原始标题（可能含乱码）
+ * @returns 修复后的标题，或通用文案
+ */
+export function sanitizeWindowTitle(title: string): string {
+  // 快速路径：短标题或纯 ASCII 不可能是乱码
+  if (title.length <= 4) return title;
+
+  // 检测乱码字符占比
+  const garbledCount = [...title].filter(c => {
+    const code = c.codePointAt(0)!;
+    return (code >= 0x00C0 && code <= 0x00FF) || // Latin Extended（乱码常见区）
+           (code >= 0xE000 && code <= 0xF8FF);   // 私用区（乱码常见区）
+  }).length;
+
+  const garbledRatio = garbledCount / title.length;
+
+  // 正常标题：乱码字符占比 < 40%
+  if (garbledRatio < 0.4) return title;
+
+  // 尝试 latin1 → UTF-8 逆向转换
+  try {
+    const recovered = Buffer.from(title, 'latin1').toString('utf8');
+    // 检查恢复结果是否正常（乱码字符占比 < 40%）
+    const recoveredGarbledCount = [...recovered].filter(c => {
+      const code = c.codePointAt(0)!;
+      return (code >= 0x00C0 && code <= 0x00FF) || (code >= 0xE000 && code <= 0xF8FF);
+    }).length;
+    if (recoveredGarbledCount / recovered.length < 0.4) {
+      return recovered;
+    }
+  } catch {
+    // 转换失败，降级
+  }
+
+  // 降级：返回通用文案
+  return '目标应用';
+}
+
+/**
  * 输入注入器
  *
  * 封装 nut-js 的窗口管理和键盘模拟，实现自动粘贴流程。
@@ -158,7 +208,8 @@ export class InputInjector {
   async getWindowTitle(window: ActiveWindow | null): Promise<string | undefined> {
     if (!window) return undefined;
     try {
-      return await window.title;
+      const title = await window.title;
+      return sanitizeWindowTitle(title);
     } catch {
       return undefined;
     }

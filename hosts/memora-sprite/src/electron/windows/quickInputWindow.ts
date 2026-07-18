@@ -334,7 +334,7 @@ export class QuickInputWindow {
     this.ipcRegistered = true;
 
     // 确认输入：Phase 4 优先自动粘贴，降级走 onConfirm 写剪贴板
-    // 渲染进程传入 pinnedMode：pinned 模式下 paste 期间不 hide 而是临时取消置顶，避免 hide+show 闪烁
+    // 渲染进程传入 pinnedMode：pinned 模式下 paste 后不抢焦点（保持钉住语义）
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, pinnedMode?: boolean): Promise<QuickInputConfirmResult> => {
       try {
         // 参数校验：文本必须是字符串且非空
@@ -346,20 +346,15 @@ export class QuickInputWindow {
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
 
-        // paste 期间的处理策略（统一两种模式：临时取消置顶，不 hide 浮窗，支持流式连续输入）
-        // - default 模式 + pinned 模式：setAlwaysOnTop(false)，避免遮挡原窗口粘贴结果
-        //   不用 hide() 是因为路线图闭环 7 F1 设计——流式模式只要不改变聚焦浮窗就应始终存在
-        //   paste 完成后恢复置顶 + show() 重显 + 按模式恢复焦点
-        const hideFloat = () => {
-          if (this.win && !this.win.isDestroyed()) {
-            this.win.setAlwaysOnTop(false);
-          }
-        };
+        // paste 期间的处理策略：浮窗保持 alwaysOnTop=true，不切换 z-order（消除闪烁）
+        // previousWindow.focus() 底层调 SetForegroundWindow，alwaysOnTop 不阻碍焦点切换，
+        // 因为当前进程是前台进程（浮窗获焦时），OS 允许前台进程转移焦点到其他窗口。
+        // 原方案 setAlwaysOnTop(false→true) toggle 导致视觉闪烁（被原窗口遮挡→重新置顶）。
+        const hideFloat = () => { /* no-op：浮窗保持置顶，通过 focus 转移实现粘贴 */ };
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
         this.cancelBlurClose();
-        // paste 完成：恢复置顶 + 重显浮窗（路线图闭环 7 F1：流式模式浮窗始终可见）
+        // paste 完成：确保浮窗可见 + 按模式恢复焦点
         if (this.win && !this.win.isDestroyed()) {
-          this.win.setAlwaysOnTop(true);
           this.win.show();
           // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
           if (!safePinnedMode) {
