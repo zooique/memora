@@ -135,8 +135,8 @@ export interface SpriteEventMap {
   trashPurged: { purgedCount: number };
   /** 归档操作失败（fire-and-forget catch 分支发射，宿主可通知用户） */
   archiveFailed: {
-    /** 失败阶段：profile（用户画像）/ insight（洞察提取） */
-    stage: 'profile' | 'insight';
+    /** 失败阶段：profile（用户画像）/ insight（洞察提取）/ content（会话内容归档） */
+    stage: 'profile' | 'insight' | 'content';
     /** 失败原因摘要（error.message，截断 200 字符） */
     message: string;
   };

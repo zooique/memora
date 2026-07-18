@@ -362,6 +362,58 @@ describe('ArchiveCoordinator', () => {
       expect(result.memories).toEqual([]);
       expect(emitSpy.events).toHaveLength(0);
     });
+
+    it('SessionArchiver 抛出异常时应发射 archiveFailed({ stage: "content" }) 事件并返回降级结果', async () => {
+      // 模拟 LLM 异常向上抛出的场景（SessionArchiver 不内部吞掉异常）
+      const throwingArchiver = {
+        archiveSessionContent: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
+      } as unknown as SessionArchiver;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => null,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => throwingArchiver,
+        emit: emitSpy.emit,
+      });
+
+      const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+
+      // 应返回空降级结果，不向上抛出（保证 SESSION_SWITCH 自动归档不中断主流程）
+      expect(result).toEqual({
+        memories: [],
+        sessionLabel: '2026-07-04-session-1',
+        messageCount: 0,
+      });
+      // 应发射 archiveFailed 事件，stage='content'
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'content',
+        message: 'LLM 不可用',
+      });
+    });
+
+    it('异常 message 超过 200 字符时应截断后发射', async () => {
+      // 验证 message.slice(0, 200) 截断逻辑，防止 payload 过大
+      const longMessage = 'X'.repeat(300);
+      const throwingArchiver = {
+        archiveSessionContent: vi.fn().mockRejectedValue(new Error(longMessage)),
+      } as unknown as SessionArchiver;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => null,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => throwingArchiver,
+        emit: emitSpy.emit,
+      });
+
+      await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'content',
+        message: longMessage.slice(0, 200),
+      });
+    });
   });
 
   describe('getter 回调动态求值', () => {

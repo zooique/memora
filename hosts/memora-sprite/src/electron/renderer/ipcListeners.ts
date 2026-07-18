@@ -257,13 +257,13 @@ export function isWorkProjectionUpdatedPayload(value: unknown): value is WorkPro
  * 与内核 AgentEventMap.archiveFailed.stage / SpriteEventMap.archiveFailed.stage 保持一致。
  * 提取为常量便于类型守卫做 includes 校验，防止非法 stage 值穿透到 UI。
  */
-const ARCHIVE_FAILED_STAGES = ['profile', 'insight'] as const;
+const ARCHIVE_FAILED_STAGES = ['profile', 'insight', 'content'] as const;
 /** 归档失败 stage 类型（由 ARCHIVE_FAILED_STAGES 派生） */
 type ArchiveFailedStage = (typeof ARCHIVE_FAILED_STAGES)[number];
 
 /** 归档失败事件载荷 */
 export interface ArchiveFailedPayload {
-  /** 失败阶段：profile（用户画像）/ insight（洞察提取） */
+  /** 失败阶段：profile（用户画像）/ insight（洞察提取）/ content（会话内容归档） */
   stage: ArchiveFailedStage;
   /** 失败原因摘要（error.message，截断 200 字符） */
   message: string;
@@ -551,7 +551,13 @@ function handleArchiveFailed(
   if (now - lastArchiveFailedTime[msg.payload.stage] < ARCHIVE_FAILED_COOLDOWN_MS) return;
   lastArchiveFailedTime[msg.payload.stage] = now;
 
-  const stageLabel = msg.payload.stage === 'profile' ? '用户画像' : '洞察提取';
+  // stage → 中文标签映射（profile/insight/content 三阶段统一）
+  const stageLabelMap: Record<ArchiveFailedStage, string> = {
+    profile: '用户画像',
+    insight: '洞察提取',
+    content: '会话内容',
+  };
+  const stageLabel = stageLabelMap[msg.payload.stage];
   uiManager.showToast(
     `${stageLabel}归档失败：${msg.payload.message}`,
     'warning',

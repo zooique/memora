@@ -133,6 +133,12 @@ export class ArchiveCoordinator {
    * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
+   * 错误传播契约：
+   *   - SessionArchiver LLM 异常 / 写入失败向上抛出（不内部吞掉）。
+   *   - 本方法 catch 异常并发射 archiveFailed({ stage: 'content' }) 事件，
+   *     让宿主 UI 可感知会话内容归档失败（与 profile / insight 阶段对齐）。
+   *   - 失败时返回空降级结果，保证调用方（如 SESSION_SWITCH 自动归档）不中断主流程。
+   *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
    * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
@@ -142,11 +148,18 @@ export class ArchiveCoordinator {
     if (!sessionArchiver) {
       return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
-    const result = await sessionArchiver.archiveSessionContent(date, session);
-    // 发射 memoryAdded 事件：与 insight 自动归档路径一致，宿主可据此刷新记忆面板
-    for (const memory of result.memories) {
-      this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+    try {
+      const result = await sessionArchiver.archiveSessionContent(date, session);
+      // 发射 memoryAdded 事件：与 insight 自动归档路径一致，宿主可据此刷新记忆面板
+      for (const memory of result.memories) {
+        this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+      }
+      return result;
+    } catch (err) {
+      // LLM 异常 / 写入失败：发射 archiveFailed({ stage: 'content' }) 通知宿主 UI
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit('archiveFailed', { stage: 'content', message: message.slice(0, 200) });
+      return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
-    return result;
   }
 }

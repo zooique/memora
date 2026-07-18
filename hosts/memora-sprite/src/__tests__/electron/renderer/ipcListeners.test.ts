@@ -215,6 +215,11 @@ describe('isArchiveFailedPayload', () => {
     expect(isArchiveFailedPayload({ stage: 'insight', message: 'LLM 失败' })).toBe(true);
   });
 
+  it('合法 payload（stage=content）应返回 true', () => {
+    // content 阶段：会话内容归档失败（SessionArchiver LLM 异常 / 写入失败）
+    expect(isArchiveFailedPayload({ stage: 'content', message: '会话内容归档失败' })).toBe(true);
+  });
+
   it('stage 为非法枚举值（autoConfig）应返回 false', () => {
     // 排雷修订：autoConfigRefiner 是"配置学习"非"归档"，不应进入 archiveFailed 事件
     expect(isArchiveFailedPayload({ stage: 'autoConfig', message: 'x' })).toBe(false);
@@ -806,6 +811,21 @@ describe('initIpcListeners · 精灵事件分发', () => {
     vi.useRealTimers();
   });
 
+  it('archiveFailed content stage 独立节流（profile 节流中 content 仍显示）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-11-01T00:00:00Z'));
+
+    // profile 首次：显示
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'profile', message: 'profile 失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 紧接 content 首次：显示（会话内容归档失败独立计时，不受 profile 节流影响）
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'content', message: '会话内容归档失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
   it('archiveFailed 有效 payload → showToast 含 stage 中文标签（warning 类型）', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2099-10-01T00:00:00Z'));
@@ -813,6 +833,20 @@ describe('initIpcListeners · 精灵事件分发', () => {
     triggerSpriteEvent(captured, 'archiveFailed', { stage: 'insight', message: 'LLM 异常' }, false);
     expect(spies.showToast).toHaveBeenCalledWith(
       '洞察提取归档失败：LLM 异常',
+      'warning',
+      expect.any(Number),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('archiveFailed content stage → showToast 含"会话内容"中文标签', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-12-01T00:00:00Z'));
+
+    triggerSpriteEvent(captured, 'archiveFailed', { stage: 'content', message: 'LLM 不可用' }, false);
+    expect(spies.showToast).toHaveBeenCalledWith(
+      '会话内容归档失败：LLM 不可用',
       'warning',
       expect.any(Number),
     );

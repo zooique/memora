@@ -91,9 +91,14 @@ export class SessionArchiver {
    *   4. 写入 source='content' 记忆条目
    *   5. 返回归档结果
    *
+   * 错误传播策略：
+   *   - sessionStore 未注入 / 消息过少 / LLM 判断无价值 → 返回 emptyResult（非错误）
+   *   - LLM 异常 / 写入失败 → 向上抛错，由 ArchiveCoordinator 统一 catch 并发射 archiveFailed 事件
+   *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
-   * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
+   * @returns 归档结果（memories 可能为空，表示无归档价值）
+   * @throws LLM 调用或写入异常时抛出，由调用方决定 catch 策略
    */
   async archiveSessionContent(date: string, session: string): Promise<SessionArchiveResult> {
     const sessionLabel = `${date}-${session}`;
@@ -116,27 +121,22 @@ export class SessionArchiver {
       return { ...emptyResult, messageCount: messages.length };
     }
 
-    try {
-      const memory = await this.generateSummary(messages, sessionLabel);
-      if (!memory) {
-        logger.debug({ sessionLabel }, 'SessionArchiver: LLM 判断无摘要价值');
-        return { ...emptyResult, messageCount: messages.length };
-      }
-
-      logger.info(
-        { sessionLabel, messageCount: messages.length, memoryId: memory.id },
-        'SessionArchiver: 会话内容归档完成',
-      );
-      return {
-        memories: [memory],
-        sessionLabel,
-        messageCount: messages.length,
-      };
-    } catch (err) {
-      // best-effort：归档失败不阻塞会话切换
-      logger.warn({ err, sessionLabel }, 'SessionArchiver: 会话归档失败');
+    // LLM 异常向上抛出，由 ArchiveCoordinator 统一 catch + emit archiveFailed
+    const memory = await this.generateSummary(messages, sessionLabel);
+    if (!memory) {
+      logger.debug({ sessionLabel }, 'SessionArchiver: LLM 判断无摘要价值');
       return { ...emptyResult, messageCount: messages.length };
     }
+
+    logger.info(
+      { sessionLabel, messageCount: messages.length, memoryId: memory.id },
+      'SessionArchiver: 会话内容归档完成',
+    );
+    return {
+      memories: [memory],
+      sessionLabel,
+      messageCount: messages.length,
+    };
   }
 
   /**

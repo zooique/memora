@@ -182,12 +182,11 @@ describe('SessionArchiver · 降级策略', () => {
     expect(storage.getBySource('content')).toHaveLength(0);
   });
 
-  it('LLM 抛出异常时应 best-effort 返回空结果', async () => {
+  it('LLM 抛出异常时应向上抛出（由 ArchiveCoordinator 统一 catch + emit archiveFailed）', async () => {
     provider.setShouldThrow(true);
     const archiver = new SessionArchiver(provider, storage, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
-    expect(result.memories).toHaveLength(0);
-    expect(result.messageCount).toBe(4);
+    // 错误传播契约：SessionArchiver LLM 异常向上抛出，交由上层 ArchiveCoordinator catch + emit archiveFailed
+    await expect(archiver.archiveSessionContent('2026-07-03', 'main')).rejects.toThrow('模拟 LLM 不可用');
     expect(storage.getBySource('content')).toHaveLength(0);
   });
 
