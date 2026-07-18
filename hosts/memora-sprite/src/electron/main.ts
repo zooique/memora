@@ -22,14 +22,14 @@
 // 通过 app.commandLine 追加 --console-utf8 标志，让 Electron 强制使用 UTF-8 编码
 // 注意：import 语句在 ES 模块中会被提升到文件顶部，因此 app.commandLine.appendSwitch
 //       必须紧跟在第一条 import 之后、任何其他模块加载之前执行
-import { app, ipcMain, screen, globalShortcut, powerMonitor, clipboard } from 'electron';
+import { app, ipcMain, screen, globalShortcut, powerMonitor, clipboard, Notification } from 'electron';
 app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { toError, logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import type { Agent } from 'memora';
-import { WindowStateManager, DEFAULT_FLOAT_POSITION, FLOAT_SIZE } from './windows/windowState.js';
+import { WindowStateManager, DEFAULT_FLOAT_POSITION, FLOAT_SIZE, FULL_SIZE } from './windows/windowState.js';
 import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windows/windowManager.js';
 // 快速输入浮窗（Phase 1 骨架）
@@ -230,6 +230,98 @@ function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: n
   // 越界：复位到主显示器默认位置
   logger.warn(`浮动窗口位置越界 (${position.x}, ${position.y})，复位到默认位置`);
   return { ...DEFAULT_FLOAT_POSITION };
+}
+
+/**
+ * 完整窗口边界显示器校验
+ *
+ * 多显示器场景下，用户可能在扩展显示器上使用完整窗口，关闭应用后断开外接显示器，
+ * 下次启动时持久化的边界已不在任何显示器的工作区内，导致完整窗口不可见
+ * （任务栏无入口、托盘点击"显示完整窗口"也无反应），用户以为应用未启动。
+ *
+ * 校验逻辑与 clampFloatPositionToDisplay 一致：
+ * - 遍历所有显示器的 workArea，判断 bounds 是否完全落在某个显示器内
+ * - 越界时复位到主显示器居中位置 + 默认尺寸（FULL_SIZE）
+ *
+ * @param bounds 持久化的完整窗口边界
+ * @returns 校验后的安全边界
+ */
+function clampFullWindowBoundsToDisplay(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): { x: number; y: number; width: number; height: number } {
+  const displays = screen.getAllDisplays();
+  for (const display of displays) {
+    const { x, y, width, height } = display.workArea;
+    // 窗口左上角 + 尺寸需完全落在工作区内
+    if (bounds.x >= x && bounds.x + bounds.width <= x + width
+      && bounds.y >= y && bounds.y + bounds.height <= y + height) {
+      return bounds; // 边界合法，原样返回
+    }
+  }
+
+  // 越界：复位到主显示器居中位置 + 默认尺寸
+  // 主显示器 = screen.getPrimaryDisplay()，确保用户能找到窗口
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { workArea } = primaryDisplay;
+  // 居中放置：工作区中心 - 窗口尺寸一半
+  const centeredX = Math.max(workArea.x, workArea.x + Math.floor((workArea.width - FULL_SIZE.width) / 2));
+  const centeredY = Math.max(workArea.y, workArea.y + Math.floor((workArea.height - FULL_SIZE.height) / 2));
+  logger.warn(`完整窗口边界越界 (${bounds.x}, ${bounds.y})，复位到主显示器居中位置`);
+  return { x: centeredX, y: centeredY, width: FULL_SIZE.width, height: FULL_SIZE.height };
+}
+
+/**
+ * 快捷键动作中文名映射（用于注册失败通知的可读性）
+ *
+ * action 是开放字符串（ADR-004 基元驱动），未在映射表中的 action 回退到原始字符串。
+ */
+const SHORTCUT_ACTION_LABELS: Record<string, string> = {
+  [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: '唤起/隐藏精灵窗口',
+  [SHORTCUT_ACTIONS.QUICK_RECORD]: '快速记录',
+  [SHORTCUT_ACTIONS.RECALL_MEMORY]: '召回记忆',
+  [SHORTCUT_ACTIONS.QUICK_INPUT]: '快速输入浮窗',
+};
+
+/**
+ * 通知用户快捷键注册失败
+ *
+ * 系统通知模式（与 spriteEventBridge proactivePrompt 通知一致）：
+ * - 单条失败：直接列出"动作名（accelerator）"
+ * - 多条失败：列出前 2 条 + "等 N 个快捷键"
+ * - 0 条失败：不通知
+ *
+ * 通知点击行为：无（仅信息提示，用户需自行到设置面板修改快捷键）
+ *
+ * @param failures 注册失败列表（action + accelerator）
+ */
+function notifyShortcutRegistrationFailures(
+  failures: ReadonlyArray<{ action: string; accelerator: string }>,
+): void {
+  if (failures.length === 0) return;
+  if (!Notification.isSupported()) {
+    // 系统不支持通知时降级为日志，确保可观测
+    logger.warn({ failures }, '快捷键注册失败（系统不支持通知，仅记录日志）');
+    return;
+  }
+
+  // 拼接失败快捷键的可读描述：动作中文名（accelerator）
+  const items = failures.map(
+    (f) => `${SHORTCUT_ACTION_LABELS[f.action] ?? f.action}（${f.accelerator}）`,
+  );
+  // 多条失败时只列前 2 条 + "等 N 个"，避免通知过长
+  const body =
+    items.length <= 2
+      ? items.join('、')
+      : `${items.slice(0, 2).join('、')} 等 ${items.length} 个快捷键`;
+
+  const notification = new Notification({
+    title: '快捷键被占用',
+    body: `以下快捷键可能被其他应用占用：${body}。请到设置面板修改。`,
+  });
+  notification.show();
 }
 
 /**
@@ -478,10 +570,12 @@ async function initializeApp(): Promise<void> {
     await appState.windowManager.createWindows();
 
     // 恢复窗口边界（上次关闭时的位置和大小）
+    // 多显示器断开外接时，持久化的边界可能位于已不存在的显示器区域内
+    // 校验边界是否在某个显示器的工作区内，越界则复位到主显示器居中位置
     const fullWindow = appState.windowManager.getFullWindow();
     if (fullWindow && spriteConfig.windowBounds) {
-      const { x, y, width, height } = spriteConfig.windowBounds;
-      fullWindow.setBounds({ x, y, width, height });
+      const safeBounds = clampFullWindowBoundsToDisplay(spriteConfig.windowBounds);
+      fullWindow.setBounds(safeBounds);
     }
 
     // 监听窗口 resize/move 事件，持久化边界（防抖 500ms）
@@ -601,6 +695,10 @@ async function initializeApp(): Promise<void> {
       },
     });
     appState.shortcutManager.registerAll();
+    // 通知用户快捷键注册失败（被其他应用占用）
+    // ADR-SP-017 §快捷键管理器 设计原则第 4 条：注册失败时提示用户
+    // 否则用户按了没反应会困惑，无法定位是快捷键被占用还是应用未响应
+    notifyShortcutRegistrationFailures(appState.shortcutManager.getRegistrationFailures());
   } catch (error) {
     // 窗口创建失败是致命错误
     errorHandler.handle(error, {

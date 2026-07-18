@@ -65,6 +65,8 @@ export class ShortcutManager {
   private handlers: Partial<Record<string, () => void>>;
   /** 已注册的快捷键（action → accelerator，用于注销和热更新） */
   private registered: Map<string, string> = new Map();
+  /** 最近一次 registerAll 的失败列表（供 main.ts 读取并通知用户） */
+  private registrationFailures: Array<{ action: string; accelerator: string }> = [];
 
   constructor(
     globalShortcut: GlobalShortcut,
@@ -81,16 +83,41 @@ export class ShortcutManager {
    * 遍历 accelerators 映射，为每个动作注册对应的加速器。
    * 注册失败（被其他应用占用）时记录日志，不中断后续注册。
    * enabled=false 时跳过所有注册。
+   *
+   * 失败列表累积到 registrationFailures，供 main.ts 在初始注册后通过
+   * getRegistrationFailures() 读取并通知用户（系统通知）。
    */
   registerAll(): void {
+    // 重置失败列表，避免多次调用累积旧数据
+    this.registrationFailures = [];
+
     if (!this.config.enabled) {
       logger.info('全局快捷键已禁用，跳过注册');
       return;
     }
 
     for (const [action, accelerator] of Object.entries(this.config.accelerators)) {
-      this.registerOne(action, accelerator);
+      // handler 未注册属于配置问题，warn 日志即可，不计入失败列表
+      // 否则会向用户推送"快捷键被占用"通知，但实际原因是开发者未注入 handler
+      if (!this.handlers[action]) {
+        logger.warn({ action }, '快捷键动作未注册处理器，跳过');
+        continue;
+      }
+      const success = this.registerOne(action, accelerator);
+      if (!success) {
+        this.registrationFailures.push({ action, accelerator });
+      }
     }
+  }
+
+  /**
+   * 获取最近一次 registerAll 的失败列表
+   *
+   * 供 main.ts 在初始注册后读取，通过系统通知告知用户哪些快捷键被占用。
+   * 失败列表在每次 registerAll 调用时重置。
+   */
+  getRegistrationFailures(): ReadonlyArray<{ action: string; accelerator: string }> {
+    return this.registrationFailures;
   }
 
   /**

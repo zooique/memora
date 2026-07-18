@@ -266,4 +266,27 @@ export class FloatWindow {
       silent: true, // 在场状态变化不弹通知，仅视觉反馈
     });
   }
+
+  /**
+   * 广播主动提示到浮动窗口
+   *
+   * 主动提示触发时，完整窗口可见则展示 banner，不可见则累积未读徽章。
+   * 浮动窗口需同步接收 proactivePrompt 事件以触发球体 bounce 动画 + 状态点切换，
+   * 否则完整窗口隐藏时球体无视觉反馈，违反"主动可见"原则。
+   *
+   * 复用 SPRITE_EVENT 通道（与 broadcastPresence 同模式），浮动窗口的 onSpriteEvent
+   * 监听器已注册 proactivePrompt 分支（float.ts），无需新增 IPC 通道或修改渲染层。
+   *
+   * @param prompt 提示文本
+   * @param isMilestone 是否为里程碑事件
+   */
+  broadcastProactivePrompt(prompt: string, isMilestone: boolean): void {
+    if (this.win.isDestroyed()) return;
+    // 复用 SPRITE_EVENT 通道，payload 结构与完整窗口接收的一致
+    this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+      type: 'proactivePrompt',
+      payload: { prompt, isMilestone, lightweight: false },
+      silent: false,
+    });
+  }
 }

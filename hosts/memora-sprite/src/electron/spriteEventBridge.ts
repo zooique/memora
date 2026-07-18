@@ -188,6 +188,13 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
       // Phase 2.3：传递 isMilestone 标志到渲染层
       sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone, lightweight }, silent);
 
+      // 浮动窗口主动提示反馈：球体 bounce 动画 + 状态点切换 + 未读徽章
+      // 完整窗口隐藏时仅靠未读徽章无主动可见性，需同步触发球体视觉反馈
+      const floatWindow = deps.windowManager?.getFloatWindow();
+      if (floatWindow) {
+        floatWindow.broadcastProactivePrompt(prompt, !!isMilestone);
+      }
+
       // 浮动窗口主动提示未读徽章
       // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
       const fullWindow = deps.windowManager?.getFullWindow();

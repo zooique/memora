@@ -371,9 +371,38 @@ export class PanelRouter {
     window.electronAPI.windowMaximize();
   }
 
-  /** 关闭窗口（隐藏到浮动窗口） */
-  private handleClose(): void {
-    window.electronAPI.windowClose();
+  /**
+   * 关闭完整窗口（隐藏到托盘态）
+   *
+   * 行为分支：取决于 showFloatBubble 偏好（由 windowStateManager 控制）：
+   *   - showFloatBubble=true → 浮动气泡显示
+   *   - showFloatBubble=false → 仅托盘态（用户从托盘菜单恢复）
+   *
+   * 关闭前检查设置面板是否有未保存修改，与 switchPanel 行为一致：
+   * 有未保存修改时弹确认对话框，用户取消则中止关闭。
+   */
+  private async handleClose(): Promise<void> {
+    try {
+      const state = this.host.getState();
+
+      // 当前在设置面板且有未保存修改时，确认后再关闭
+      if (state.currentPanel === 'settings' && this.host.isSettingsDirty()) {
+        const confirmed = await this.host.showConfirmDialog({
+          title: '关闭窗口',
+          message: '有未保存的修改，关闭后将丢失。确定要关闭吗？',
+          confirmText: '关闭',
+          danger: true,
+        });
+        if (!confirmed) return;
+        // 用户选择关闭，重置 dirty 状态避免下次打开设置面板时误判
+        this.host.resetSettingsFormDirty();
+      }
+
+      window.electronAPI.windowClose();
+    } catch (error) {
+      // 关闭失败不应阻塞 UI，仅记录日志供排查
+      reportError('PanelRouter.handleClose', error);
+    }
   }
 
   // ─── 最大化按钮图标 ────────────────────────────────

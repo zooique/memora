@@ -143,6 +143,9 @@ function createMockWindowManager(visible = true, minimized = false, destroyed = 
   return {
     windowManager: {
       getFullWindow: vi.fn(() => (destroyed ? null : mockWindow)),
+      // 浮动窗口默认返回 null：proactivePrompt 推送到浮动窗口的逻辑
+      // 在测试中不验证（broadcastProactivePrompt 是 FloatWindow 实例方法，由独立测试覆盖）
+      getFloatWindow: vi.fn(() => null),
     },
     mockWindow,
     mockWebContents,
