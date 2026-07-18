@@ -268,6 +268,18 @@ async function bootstrapRenderer(): Promise<void> {
     onSessionForked: async (payload) => {
       await sessionController.switchSession(payload.to);
     },
+    // 角色切换 → 刷新顶栏 + 下拉菜单 active + 感知面板（如打开）
+    // auto 自动匹配与手动切换走同一事件链路，统一在此处理 UI 副作用
+    // 不发 toast：手动切换的 toast 由 personaController.setupPersonaSelector 负责（success 级别反馈用户主动操作）；
+    //             auto 模式属于系统行为，频繁 toast 会打扰用户，仅通过 UI 变化（顶栏 + 下拉 active）反馈
+    onPersonaChanged: (_payload) => {
+      // 重新拉取角色列表：更新顶栏角色名 + 下拉菜单 active 标记 + 模式 badge
+      void personaController.loadPersonaList();
+      // 感知面板打开时同步刷新（perceptionCoordinator.refreshBeforeChat 已在主进程基于新角色 traits 重推导）
+      if (State.uiManager.getCurrentPanel() === 'perception') {
+        void memoryController.loadPerception();
+      }
+    },
   });
 
   // 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存

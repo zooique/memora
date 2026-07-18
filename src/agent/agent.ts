@@ -47,7 +47,7 @@ import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js'
 import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
-import { chatBusyError, configError } from '@/utils/errors.js';
+import { chatBusyError, configError, toError } from '@/utils/errors.js';
 import { clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
@@ -574,14 +574,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           const prevName = this.personaManager.activeName;
           this.personaManager.switchPersona(matchedPersona);
           this.emit('personaSwitched', { from: prevName, to: matchedPersona });
-          if (this.loop) {
-            const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
-            const personaPrompt = this.personaManager.buildSystemPrompt();
-            const newPrefix =
-              [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
-              ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
-            this.loop.refreshPersonaPrefix(newPrefix);
-          }
+          // 刷新 AgentLoop 的角色前缀（与 switchPersona 共用同一段逻辑，ADR-017 枝叶层 2 次提取）
+          this.refreshPersonaPrefixOnLoop();
           logger.info({ persona: matchedPersona }, '角色自动切换');
         }
       } catch (err) {
@@ -873,6 +867,74 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   getArchiveMode(): ArchiveMode {
     return this.#config.archiveMode;
+  }
+
+  /**
+   * 手动切换角色（宿主 UI 角色选择器入口）
+   *
+   * 与 postProcessInner 中的自动匹配走同一条事件链路，确保：
+   *   1. AgentLoop 的 systemPromptPrefix 立即刷新（下一次对话使用新角色 prompt）
+   *   2. 发射 personaSwitched 事件，触发 spriteLifecycleManager 的完整副作用：
+   *      - emit('personaChanged') 通知宿主 UI
+   *      - proactiveEngine.addNotice('persona', ...) 记录通知
+   *      - perceptionCoordinator.refreshBeforeChat() 基于新角色 traits 重新推导情感基调
+   *
+   * 对话进行中切换角色会破坏当前 system prompt，与项目切换一致拒绝。
+   *
+   * @param name 目标角色名
+   * @returns 切换成功返回新角色的 system prompt 段；角色不存在或切换失败返回 null
+   */
+  switchPersona(name: string): string | null {
+    this.assertInitialized('switchPersona');
+    if (this.chatLockManager?.isBusy) {
+      throw chatBusyError('切换角色');
+    }
+
+    if (!this.personaManager) return null;
+
+    // 同名切换幂等：直接返回当前 prompt，不触发事件链路
+    if (this.personaManager.activeName === name) {
+      return this.personaManager.buildSystemPrompt();
+    }
+
+    const prevName = this.personaManager.activeName;
+    try {
+      this.personaManager.switchPersona(name);
+    } catch (err) {
+      // 角色不存在时 PersonaManager 抛 MemoraError，降级为 null 返回
+      logger.warn({ err: toError(err).message, name }, '手动切换角色失败');
+      return null;
+    }
+
+    // 同步刷新 AgentLoop 的角色前缀（关键：否则下一次对话仍用旧角色 prompt）
+    // 与 postProcessInner 自动匹配共用同一段逻辑，ADR-017 枝叶层 2 次提取
+    this.refreshPersonaPrefixOnLoop();
+
+    // 发射切换事件，触发宿主 UI 刷新 + 感知重推导 + 通知队列记录
+    this.emit('personaSwitched', { from: prevName, to: name });
+    logger.info({ from: prevName, to: name }, '角色手动切换');
+    return this.personaManager.buildSystemPrompt();
+  }
+
+  /**
+   * 刷新 AgentLoop 的 systemPromptPrefix（角色 prompt + profile prompt）
+   *
+   * 提取自 postProcessInner 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
+   * 组装规则：[personaPrompt, profilePrompt].filter(Boolean).join('\n\n') + 末尾分隔符 '---'
+   *
+   * 调用时机：
+   * - postProcessInner 中角色自动匹配成功后
+   * - switchPersona 手动切换成功后
+   * - loop 为 null 时静默跳过（init 前或 close 后的边界场景）
+   */
+  private refreshPersonaPrefixOnLoop(): void {
+    if (!this.loop) return;
+    const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
+    const personaPrompt = this.personaManager?.buildSystemPrompt() ?? '';
+    const newPrefix =
+      [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
+      ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+    this.loop.refreshPersonaPrefix(newPrefix);
   }
 
   /**

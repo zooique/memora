@@ -8,10 +8,12 @@
  * - 构造函数：Agent 依赖注入
  * - activeName getter：正常返回 / persona manager 缺失降级 null
  * - list()：正常返回角色列表 / active 标记 / description 降级空串 / 空列表 / persona manager 缺失降级空数组
- * - switch(name)：正常切换 / persona manager 缺失降级 null / MemoraError 捕获返回 null（错误吞没防线）/ 非 MemoraError 捕获
  * - setMode(mode)：auto/manual 设置 / persona manager 缺失降级 false
  * - currentMode getter：正常返回 / persona manager 缺失降级 'auto'
  * - PersonaInfo 接口：返回值结构包含 name/description/active 三字段
+ *
+ * 注意：switch(name) 测试已移除——切换逻辑由 Agent.switchPersona 承载，
+ *      覆盖测试见 src/agent/__tests__/agent.test.ts 的 "switchPersona" 区段。
  *
  * 测试策略（对齐 affectController.test.ts 范式）：
  * - 纯业务逻辑测试，无 I/O、无 LLM、无 DOM
@@ -22,7 +24,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PersonaController } from '../../../sprite/controllers/personaController.js';
 import type { PersonaInfo } from '../../../sprite/controllers/personaController.js';
-import { setLogger, MemoraError } from 'memora';
+import { setLogger } from 'memora';
 import type { Agent, Persona, ILogger } from 'memora';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
@@ -57,12 +59,6 @@ interface PersonaManagerMockOptions {
   list?: Persona[];
   /** currentMode getter 返回值（默认 'auto'） */
   currentMode?: 'auto' | 'manual';
-  /** switchPersona 正常返回值（默认 'switched-prompt'） */
-  switchPersonaReturn?: string;
-  /** switchPersona 抛出的异常（设置后优先于 switchPersonaReturn） */
-  switchPersonaThrow?: Error;
-  /** 自定义 switchPersona spy（默认内部创建） */
-  switchPersonaSpy?: ReturnType<typeof vi.fn>;
   /** 自定义 setMode spy（默认内部创建） */
   setModeSpy?: ReturnType<typeof vi.fn>;
 }
@@ -72,20 +68,13 @@ interface PersonaManagerMockOptions {
  *
  * PersonaManager 类型未从 memora 公开导出，这里用对象字面量构造。
  * 通过 getter 模拟 activeName / list / currentMode 只读属性。
+ *
+ * 注意：switchPersona 方法的 mock 已移除——切换逻辑由 Agent.switchPersona 承载，
+ *      PersonaController 不再委托到 PersonaManager.switchPersona。
  */
 function createMockPersonaManager(opts: PersonaManagerMockOptions = {}) {
-  // 创建 spy，若外部传入则复用
-  const switchPersonaSpy = opts.switchPersonaSpy ?? vi.fn();
+  // 创建 setMode spy，若外部传入则复用
   const setModeSpy = opts.setModeSpy ?? vi.fn();
-
-  // 配置 switchPersona 行为：抛异常优先于返回值
-  if (opts.switchPersonaThrow) {
-    switchPersonaSpy.mockImplementation(() => {
-      throw opts.switchPersonaThrow;
-    });
-  } else {
-    switchPersonaSpy.mockReturnValue(opts.switchPersonaReturn ?? 'switched-prompt');
-  }
 
   // 构造 mock 对象，getter 模拟只读属性
   const pm = {
@@ -98,14 +87,12 @@ function createMockPersonaManager(opts: PersonaManagerMockOptions = {}) {
     get currentMode() {
       return opts.currentMode ?? 'auto';
     },
-    switchPersona: switchPersonaSpy,
     setMode: setModeSpy,
   };
 
   return {
     pm,
     spies: {
-      switchPersona: switchPersonaSpy,
       setMode: setModeSpy,
     },
   };
@@ -246,83 +233,9 @@ describe('list()', () => {
   });
 });
 
-// ─── switch(name) ───────────────────────────────────────
-
-describe('switch(name)', () => {
-  it('正常切换角色时返回 switchPersona 的返回值', () => {
-    // 注意：源码 JSDoc 标注 @returns 切换后的角色名称，
-    // 但 pm.switchPersona 实际返回的是 buildSystemPrompt() 的系统提示文本。
-    // 此处测试实际行为（透传 switchPersona 返回值），而非文档所述。
-    const { pm, spies } = createMockPersonaManager({
-      switchPersonaReturn: '【当前角色】coder\n你是编程专家...',
-    });
-    const controller = new PersonaController(createMockAgent(pm));
-
-    const result = controller.switch('coder');
-    expect(spies.switchPersona).toHaveBeenCalledWith('coder');
-    expect(result).toBe('【当前角色】coder\n你是编程专家...');
-  });
-
-  it('persona manager 缺失时降级返回 null', () => {
-    const controller = new PersonaController(createMockAgent(null));
-    expect(controller.switch('coder')).toBeNull();
-  });
-
-  it('switchPersona 抛出 MemoraError 时捕获并返回 null（错误吞没兜底防线）', () => {
-    // 关键测试：角色不存在时 personaManager.switchPersona 抛 MemoraError，
-    // PersonaController.switch 必须吞没此错误返回 null，保持宿主门面"失败返回 null"契约。
-    const notFoundError = new MemoraError({
-      title: '角色切换失败',
-      detail: '角色 "unknown" 不存在',
-      suggestions: ['使用 persona.list 查看可用角色'],
-      category: 'config',
-    });
-    const { pm, spies } = createMockPersonaManager({
-      switchPersonaThrow: notFoundError,
-    });
-    const controller = new PersonaController(createMockAgent(pm));
-
-    // 不应抛出异常，应返回 null
-    const result = controller.switch('unknown');
-    expect(result).toBeNull();
-    // 确认 switchPersona 确实被调用且传入了目标角色名
-    expect(spies.switchPersona).toHaveBeenCalledWith('unknown');
-  });
-
-  it('switchPersona 抛出非 MemoraError 异常时也应捕获返回 null', () => {
-    // catch 块不区分错误类型，所有异常均被吞没
-    const genericError = new Error('unexpected failure');
-    const { pm } = createMockPersonaManager({
-      switchPersonaThrow: genericError,
-    });
-    const controller = new PersonaController(createMockAgent(pm));
-
-    expect(controller.switch('coder')).toBeNull();
-  });
-
-  it('角色名不存在时抛出的 MemoraError 应被捕获（模拟 configError 场景）', () => {
-    // 对齐源码注释：switchPersona 找不到角色时抛 configError（MemoraError 工厂函数）
-    const configErrorInstance = new MemoraError({
-      title: '角色切换失败',
-      detail: '角色 "nonexistent" 不存在',
-      suggestions: [
-        '使用 persona.list 查看可用角色',
-        '在 agent-config/personas/ 目录下创建该角色配置文件',
-      ],
-      category: 'config',
-    });
-    const { pm, spies } = createMockPersonaManager({
-      switchPersonaThrow: configErrorInstance,
-    });
-    const controller = new PersonaController(createMockAgent(pm));
-
-    // 关键断言：错误被捕获，返回 null 而非向上抛出
-    expect(() => controller.switch('nonexistent')).not.toThrow();
-    expect(controller.switch('nonexistent')).toBeNull();
-    // switchPersona 应被调用两次（两次 switch 调用）
-    expect(spies.switchPersona).toHaveBeenCalledTimes(2);
-  });
-});
+// 注意：switch(name) 测试块已移除——PersonaController.switch 方法已删除。
+// 角色切换逻辑统一由 Agent.switchPersona 公共方法承载（事件链路 + 错误吞没），
+// 覆盖测试见 src/agent/__tests__/agent.test.ts 的 "switchPersona" 区段。
 
 // ─── setMode(mode) ──────────────────────────────────────
 

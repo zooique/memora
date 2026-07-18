@@ -107,7 +107,7 @@ describe('spriteConfig', () => {
   describe('常量与类型定义', () => {
     it('DEFAULT_SPRITE_CONFIG 包含所有字段默认值', () => {
       // 核心字段默认值逐一验证
-      expect(DEFAULT_SPRITE_CONFIG.configVersion).toBe(2);
+      expect(DEFAULT_SPRITE_CONFIG.configVersion).toBe(3);
       expect(DEFAULT_SPRITE_CONFIG.triggerIntervalMs).toBe(3_600_000);
       expect(DEFAULT_SPRITE_CONFIG.silentMode).toBe(false);
       expect(DEFAULT_SPRITE_CONFIG.proactiveThreshold).toBe(3);
@@ -131,13 +131,14 @@ describe('spriteConfig', () => {
       expect(accelerators['quick-input']).toBe('Ctrl+Shift+I');
     });
 
-    it('CONFIG_FIELD_SCHEMA 包含所有 26 个字段的类型映射', () => {
+    it('CONFIG_FIELD_SCHEMA 包含所有 27 个字段的类型映射', () => {
       const keys = Object.keys(CONFIG_FIELD_SCHEMA); // 全部字段名
-      expect(keys).toHaveLength(26);
+      expect(keys).toHaveLength(27);
       // 逐一验证关键类型映射存在
       expect(CONFIG_FIELD_SCHEMA.configVersion).toBe('number');
       expect(CONFIG_FIELD_SCHEMA.triggerIntervalMs).toBe('number');
       expect(CONFIG_FIELD_SCHEMA.defaultPersona).toBe('string');
+      expect(CONFIG_FIELD_SCHEMA.personaMode).toBe('enum:auto|manual');
       expect(CONFIG_FIELD_SCHEMA.silentMode).toBe('boolean');
       expect(CONFIG_FIELD_SCHEMA.fileWatcherPaths).toBe('string[]');
       expect(CONFIG_FIELD_SCHEMA.floatIconPosition).toBe('object');
@@ -523,14 +524,28 @@ describe('spriteConfig', () => {
       );
     });
 
-    it("v1→v2 迁移：configVersion=1 + 无 theme 字段 → 迁移后 theme='light' + configVersion=2", () => {
+    it("v1→v2→v3 链式迁移：configVersion=1 + 无 theme/personaMode 字段 → 迁移后 theme='light' + personaMode='auto' + configVersion=3", () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ configVersion: 1 }), // 无 theme 字段
+        JSON.stringify({ configVersion: 1 }), // 无 theme / personaMode 字段
       );
       const config = loadSpriteConfig();
       expect(config.theme).toBe('light');
-      expect(config.configVersion).toBe(2);
+      expect(config.personaMode).toBe('auto');
+      expect(config.configVersion).toBe(3);
+    });
+
+    it("v2→v3 迁移：configVersion=2 + 无 personaMode 字段 → 迁移后 personaMode='auto' + configVersion=3", () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ configVersion: 2, theme: 'dark' }), // 已有 theme，无 personaMode
+      );
+      const config = loadSpriteConfig();
+      // theme 字段保留用户偏好，不被覆盖
+      expect(config.theme).toBe('dark');
+      // personaMode 由迁移补为默认值 'auto'
+      expect(config.personaMode).toBe('auto');
+      expect(config.configVersion).toBe(3);
     });
 
     it('迁移后立即持久化（saveSpriteConfig 被调用）', () => {
@@ -552,7 +567,7 @@ describe('spriteConfig', () => {
       const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
       const config = loadSpriteConfig();
       // 已迁移的配置仍正常返回（持久化失败不影响内存中的配置）
-      expect(config.configVersion).toBe(2);
+      expect(config.configVersion).toBe(3);
       expect(config.theme).toBe('light');
       // 持久化失败已记录日志（logger.error 格式：{ err: msg }, msg）
       expect(errorSpy).toHaveBeenCalledWith(

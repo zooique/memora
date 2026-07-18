@@ -617,6 +617,7 @@ async function setupAgentPostInit(
  * @param agent 已初始化的 Agent 实例
  * @param dataDir 数据目录
  * @param projectPath 项目路径
+ * @param configDir Agent 级配置目录（传入后启用 personas 目录热重载）
  * @param vectorStore 向量存储（可选）
  * @param config 应用配置
  * @param tracer 可观测性 tracer
@@ -626,12 +627,13 @@ function createSpriteAndClose(
   agent: Agent,
   dataDir: string,
   projectPath: string,
+  configDir: string,
   vectorStore: IVectorStore | undefined,
   config: Config,
   tracer: ITracer,
   storage: SqliteStorage,
 ): { sprite: Sprite; close: () => Promise<void> } {
-  const sprite = new Sprite({ agent, dataDir, projectPath, vectorStore, allowedPaths: config.allowedPaths, tracer });
+  const sprite = new Sprite({ agent, dataDir, projectPath, configDir, vectorStore, allowedPaths: config.allowedPaths, tracer });
   sprite.start();
 
   const close = async () => {
@@ -673,7 +675,9 @@ async function initAgentFromConfig(
   await setupAgentPostInit(agent, config, projectPath);
 
   // 3. 创建 Sprite + 关闭清理函数
-  const { sprite, close } = createSpriteAndClose(agent, dataDir, projectPath, vectorStore, config, tracer, storage);
+  // configDir 传入以启用 personas 目录热重载（用户编辑 .md 后自动 reloadConfig）
+  const configDir = opts?.configDir ?? DEFAULT_CONFIG_DIR;
+  const { sprite, close } = createSpriteAndClose(agent, dataDir, projectPath, configDir, vectorStore, config, tracer, storage);
 
   return { agent, sprite, sessionStore, dataDir, close };
 }

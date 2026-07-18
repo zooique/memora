@@ -40,6 +40,16 @@ export interface SpriteConfig {
   triggerIntervalMs?: number;
   /** 默认角色名称，启动时自动切换 */
   defaultPersona?: string;
+  /**
+   * 角色匹配模式，默认 'auto'
+   *
+   * - 'auto'：自动模式，postProcessInner 中由 personaMatcher 基于对话上下文自动匹配角色
+   * - 'manual'：手动模式，仅响应 UI 手动切换，不自动匹配
+   *
+   * 持久化到 sprite.json，启动时读取并应用到 PersonaManager.setMode()，
+   * 运行时通过设置面板切换（sprite.setPersonaMode()）。
+   */
+  personaMode?: 'auto' | 'manual';
   /** 静默模式：不发射 proactivePrompt 事件，默认 false */
   silentMode?: boolean;
   /** 主动提示累积阈值，默认 3 */
@@ -181,6 +191,7 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   configVersion: 'number',
   triggerIntervalMs: 'number',
   defaultPersona: 'string',
+  personaMode: 'enum:auto|manual',
   silentMode: 'boolean',
   proactiveThreshold: 'number',
   proactiveCooldownMs: 'number',
@@ -212,9 +223,10 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
 
 /** 内置默认值 */
 export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
-  configVersion: 2,
+  configVersion: 3,
   triggerIntervalMs: MS_PER_HOUR,
   defaultPersona: '',
+  personaMode: 'auto',
   silentMode: false,
   proactiveThreshold: 3,
   proactiveCooldownMs: 300_000,
@@ -253,7 +265,7 @@ const CONFIG_FILENAME = 'sprite.json';
 const SPRITE_CONFIG_PATH = resolve(homedir(), SPRITE_HOME_DIR_NAME, CONFIG_FILENAME);
 
 /** 当前最新配置版本号（与 DEFAULT_SPRITE_CONFIG.configVersion 保持一致） */
-const CURRENT_CONFIG_VERSION = 2;
+const CURRENT_CONFIG_VERSION = 3;
 
 /**
  * 配置迁移映射表
@@ -270,6 +282,10 @@ const MIGRATIONS: Record<number, (config: Required<SpriteConfig>) => SpriteConfi
   // v1→v2：新增 theme 字段，默认 'light'
   1: (config) => {
     return { ...config, theme: 'light' };
+  },
+  // v2→v3：新增 personaMode 字段，默认 'auto'（角色匹配模式持久化）
+  2: (config) => {
+    return { ...config, personaMode: 'auto' as const };
   },
 };
 

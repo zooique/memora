@@ -112,6 +112,9 @@ const mockAgent = {
   projects: null,
   // B5：技能管理器（默认 null，测试中按需注入 mock）
   skills: null,
+  // F1：手动切换角色统一委托到 Agent.switchPersona（不再走 personaController.switch）
+  // 默认 mock 返回 'switched-prompt'，与 createMockPersonaManager 的 switchPersona 行为一致
+  switchPersona: vi.fn().mockReturnValue('switched-prompt'),
 } as unknown as Agent;
 
 // ─── B5：mock 工厂函数（避免 as unknown as，提供类型安全入口） ──────
@@ -1444,15 +1447,16 @@ describe('Sprite 角色门面（B5：persona 委托）', () => {
   });
 
   it('switchPersona 成功时返回角色提示文本', () => {
+    // F1：手动切换委托到 Agent.switchPersona（统一事件链路）
+    vi.mocked(mockAgent.switchPersona).mockReturnValue('switched-prompt');
     const result = sprite.switchPersona('developer');
     expect(result).toBe('switched-prompt');
-    expect(mockAgent.persona!.switchPersona).toHaveBeenCalledWith('developer');
+    expect(mockAgent.switchPersona).toHaveBeenCalledWith('developer');
   });
 
   it('switchPersona 角色不存在时返回 null（不抛错）', () => {
-    vi.mocked(mockAgent.persona!.switchPersona).mockImplementation(() => {
-      throw new Error('角色不存在');
-    });
+    // F1：Agent.switchPersona 内部捕获 PersonaManager 抛错，降级返回 null
+    vi.mocked(mockAgent.switchPersona).mockReturnValue(null);
     const result = sprite.switchPersona('nonexistent');
     expect(result).toBeNull();
   });
@@ -2273,11 +2277,12 @@ describe('Sprite 分支补强（B5+：archiveMode / defaultPersona / welcomeBack
   });
 
   it('start() 时 defaultPersona 非空应自动切换角色', () => {
+    // F1+F4：start() 走 switchPersona 统一事件链路（委托到 Agent.switchPersona）
     mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG, defaultPersona: 'developer' };
-    mockAgent.persona = createMockPersonaManager();
+    vi.mocked(mockAgent.switchPersona).mockClear();
     sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
-    expect(mockAgent.persona!.switchPersona).toHaveBeenCalledWith('developer');
+    expect(mockAgent.switchPersona).toHaveBeenCalledWith('developer');
   });
 
   it('applyProjectMode 成功后 fileWatcherEnabled=true 时调用 rebuildFileWatcher（不抛错）', async () => {

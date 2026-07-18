@@ -20,6 +20,8 @@ import type { IVectorStore, ITracer } from 'memora';
 // Phase 5.1/5.2：路径追溯 + 邻居查询返回类型（内核纯数据形态，IPC 传输可序列化）
 import type { RelationPath, RelationNeighbor } from 'memora';
 import { logger, toError } from 'memora';
+import { watch } from 'node:fs';
+import { join } from 'node:path';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import { loadSpriteConfig, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
@@ -41,6 +43,14 @@ import { SpriteLifecycleManager } from './spriteLifecycleManager.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
+
+/**
+ * personas 目录热重载防抖间隔（毫秒）
+ *
+ * 编辑器保存文件时可能触发多次 change 事件（写入 + 重命名），500ms 防抖合并为一次 reload。
+ * 与 fileWatcherTrigger 的默认防抖（1000ms）保持同量级，但稍短以提升响应感。
+ */
+const PERSONA_RELOAD_DEBOUNCE_MS = 500;
 
 /**
  * 启动摘要（迭代一：Welcome Back Digest）
@@ -149,6 +159,15 @@ export interface SpriteOptions {
   allowedPaths?: string[];
   /** 可观测性 tracer（可选，注入后关键路径会记录 span 到 trace.log） */
   tracer?: ITracer;
+  /**
+   * Agent 级配置目录（可选，传入后启用 personas 目录热重载）
+   *
+   * - 传入：start() 时挂 fs.watch 监听 <configDir>/personas/，文件变化时防抖触发 agent.reloadConfig('persona')
+   * - 不传：跳过热重载（测试场景默认行为）
+   *
+   * 持久化路径：~/.memora-sprite/config/personas/
+   */
+  configDir?: string;
 }
 
 /**
@@ -168,6 +187,15 @@ export class Sprite {
   private projectPath: string;
   /** 路径白名单（来自 Agent 配置，用于 fileWatcher 安全校验） */
   private allowedPaths: string[];
+  /**
+   * Agent 级配置目录（可选，传入后启用 personas 目录热重载）
+   * 不传则跳过热重载（测试场景默认行为）
+   */
+  private configDir: string | null;
+  /** personas 目录 fs.watch 监听器句柄（start 时创建，stop 时关闭） */
+  private personaWatcher: ReturnType<typeof watch> | null = null;
+  /** personas 热重载防抖计时器（500ms 内多次变化合并为一次 reload） */
+  private personaReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── 拆分后的 Manager ────────────────────────────────
   private configManager: SpriteConfigManager;
@@ -200,6 +228,7 @@ export class Sprite {
     this.projectPath = options.projectPath ?? options.dataDir;
     this.allowedPaths = options.allowedPaths ?? [];
     this.tracer = options.tracer ?? null;
+    this.configDir = options.configDir ?? null;
 
     // ─── 初始化触发器总线 + 控制器 ───
     const config = loadSpriteConfig();
@@ -404,20 +433,48 @@ export class Sprite {
 
   /** 启动精灵主控循环 */
   start(): void {
+    // 幂等守卫：重复调用 start() 直接返回，避免 lifecycleManager / presenceController / watcher 重复启动
+    if (this.started) return;
     this.started = true;
     this.state = 'idle';
     this.lifecycleManager.start();
 
-    // 应用默认角色
-    if (this.getConfig().defaultPersona) {
-      this.personaController.switch(this.getConfig().defaultPersona);
+    // 应用持久化的角色匹配模式（auto/manual）
+    // 必须在应用 defaultPersona 之前设置，避免 auto 模式下默认角色被自动匹配覆盖
+    const persistedMode = this.getConfig().personaMode;
+    if (persistedMode === 'manual' || persistedMode === 'auto') {
+      this.personaController.setMode(persistedMode);
+    }
+
+    // 应用默认角色（走 switchPersona 统一事件链路：刷新 AgentLoop + 发射 personaSwitched）
+    // switchPersona 同名幂等路径返回非 null 但不发射事件，因此不能据此判断感知推导是否已触发
+    // 改为追踪 personaChanged 事件是否实际发射，决定是否需要显式调用 refreshBeforeChat
+    let personaEventFired = false;
+    const personaChangedHandler = (): void => {
+      personaEventFired = true;
+    };
+    this.on('personaChanged', personaChangedHandler);
+    try {
+      if (this.getConfig().defaultPersona) {
+        this.switchPersona(this.getConfig().defaultPersona);
+      }
+    } finally {
+      this.off('personaChanged', personaChangedHandler);
     }
 
     // Phase 3.2：启动在场状态控制器
     this.presenceController?.start();
 
     // Phase 2.1：首次推导情感基调
-    this.perceptionCoordinator.refreshBeforeChat();
+    // 仅在未通过 defaultPersona 切换触发事件链路时显式调用，避免重复推导
+    // 同名幂等路径不触发事件，此时 personaEventFired=false，会显式调用一次 refreshBeforeChat
+    if (!personaEventFired) {
+      this.perceptionCoordinator.refreshBeforeChat();
+    }
+
+    // 启动 personas 目录热重载（configDir 提供时）
+    // 用户在编辑器中修改 personas/*.md 后，自动触发 agent.reloadConfig('persona') 刷新缓存
+    this.startPersonaWatcher();
   }
 
   /** 停止精灵主控 */
@@ -427,6 +484,78 @@ export class Sprite {
     this.presenceController?.stop();
     this.spriteHandlers.clear();
     this.state = 'idle';
+    // 关闭 personas 目录热重载监听器 + 清理防抖计时器
+    this.stopPersonaWatcher();
+  }
+
+  /**
+   * 启动 personas 目录热重载监听器
+   *
+   * 监听 <configDir>/personas/ 目录的文件变化（新增/修改/删除 .md 文件），
+   * 500ms 防抖后触发 agent.reloadConfig('persona') 清空缓存重新扫描。
+   * 重载期间对话繁忙时跳过本次（用户可手动调 reloadConfig）。
+   *
+   * 设计要点：
+   * - 使用 fs.watch recursive 模式（Node 22 LTS 稳定支持）
+   * - 监听器 error 事件仅记录日志，不抛错（目录被删除/权限丢失时优雅降级）
+   * - configDir 未提供时直接跳过（测试场景默认行为）
+   */
+  private startPersonaWatcher(): void {
+    if (!this.configDir) return;
+    // 幂等守卫：已存在 watcher 则跳过，避免重复 start() 导致旧句柄泄漏
+    if (this.personaWatcher) return;
+
+    const personasDir = join(this.configDir, 'personas');
+    try {
+      this.personaWatcher = watch(personasDir, { recursive: true }, (_eventType, filename) => {
+        // 仅响应 .md 文件变化，忽略其他文件（如 .swp 临时文件）
+        if (!filename || !filename.endsWith('.md')) return;
+        this.schedulePersonaReload();
+      });
+      // error 事件：关闭并清理 watcher 句柄，避免目录被删除后 watcher 进入僵尸状态
+      this.personaWatcher.on('error', (err) => {
+        logger.warn({ err: toError(err).message, personasDir }, 'personas 目录监听器错误，热重载已停止');
+        try {
+          this.personaWatcher?.close();
+        } catch {
+          // 二次错误（如句柄已损坏）忽略，避免 error handler 内抛错
+        }
+        this.personaWatcher = null;
+      });
+      logger.info({ personasDir }, 'personas 目录热重载已启动');
+    } catch (err) {
+      // 目录不存在或权限不足时优雅降级，不阻塞 start()
+      logger.warn({ err: toError(err).message, personasDir }, 'personas 目录监听启动失败，跳过热重载');
+    }
+  }
+
+  /**
+   * 防抖调度 personas 重载
+   *
+   * 500ms 内多次文件变化合并为一次 reload，避免编辑器写入触发多次重载。
+   */
+  private schedulePersonaReload(): void {
+    if (this.personaReloadTimer) {
+      clearTimeout(this.personaReloadTimer);
+    }
+    this.personaReloadTimer = setTimeout(() => {
+      this.personaReloadTimer = null;
+      void this.agent.reloadConfig('persona').catch((err) => {
+        logger.warn({ err: toError(err).message }, 'personas 热重载失败');
+      });
+    }, PERSONA_RELOAD_DEBOUNCE_MS);
+  }
+
+  /** 关闭 personas 目录监听器 + 清理防抖计时器 */
+  private stopPersonaWatcher(): void {
+    if (this.personaWatcher) {
+      this.personaWatcher.close();
+      this.personaWatcher = null;
+    }
+    if (this.personaReloadTimer) {
+      clearTimeout(this.personaReloadTimer);
+      this.personaReloadTimer = null;
+    }
   }
 
   /**
@@ -611,11 +740,27 @@ export class Sprite {
   }
 
   switchPersona(name: string): string | null {
-    return this.personaController.switch(name);
+    // 委托到 agent.switchPersona 公共方法（统一事件链路）：
+    //   1. 同步 AgentLoop 的 systemPromptPrefix
+    //   2. 发射 personaSwitched 事件 → spriteLifecycleManager 转 personaChanged
+    //      → proactiveEngine.addNotice + perceptionCoordinator.refreshBeforeChat
+    //   3. 通过 spriteEventBridge 转发到渲染层 UI
+    // 旧的 personaController.switch 路径不触发事件，已废弃。
+    return this.agent.switchPersona(name);
   }
 
   setPersonaMode(mode: 'auto' | 'manual'): boolean {
-    return this.personaController.setMode(mode);
+    const set = this.personaController.setMode(mode);
+    // 持久化到 sprite.json，下次启动时由 start() 读取应用
+    // 失败不影响本次设置（内存中已生效），仅记录日志
+    if (set) {
+      try {
+        this.updateConfig('personaMode', mode);
+      } catch (err) {
+        logger.warn({ err: toError(err).message, mode }, 'personaMode 持久化失败');
+      }
+    }
+    return set;
   }
 
   get personaMode(): string {

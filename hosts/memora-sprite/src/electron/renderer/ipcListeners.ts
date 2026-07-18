@@ -285,6 +285,29 @@ export function isArchiveFailedPayload(value: unknown): value is ArchiveFailedPa
 }
 
 /**
+ * 角色切换事件载荷
+ *
+ * 由 spriteEventBridge.forwardSimpleEvent('personaChanged', ...) 转发，
+ * 携带切换前后的角色名，用于渲染层刷新顶栏、下拉菜单 active 标记、感知面板。
+ *
+ * from 字段可能为 null：首次启动且 defaultPersona 触发切换时，prevName 为 null
+ * （与 SpriteEventMap.personaChanged 的 from: string | null 类型对齐）
+ */
+export interface PersonaChangedPayload {
+  /** 切换前角色名（首次启动时为 null：prevName 为 null） */
+  from: string | null;
+  /** 切换后角色名 */
+  to: string;
+}
+
+/** 角色切换事件载荷类型守卫（from 允许 string 或 null） */
+export function isPersonaChangedPayload(value: unknown): value is PersonaChangedPayload {
+  if (!isObject(value)) return false;
+  const from = (value as { from?: unknown }).from;
+  return (typeof from === 'string' || from === null) && typeof (value as { to?: unknown }).to === 'string';
+}
+
+/**
  * 处理主动提示事件
  *
  * 对齐设计契约 §6.6：
@@ -614,6 +637,15 @@ function createSpriteEventHandlers(
       }
       callbacks.onWorkProjectionUpdated?.(msg.payload);
     },
+    // 角色切换 → 顶栏 + 下拉菜单 active + 感知面板刷新
+    // auto 模式自动匹配与手动切换都走同一事件链路（统一由 Agent.switchPersona 发射）
+    personaChanged: (msg) => {
+      if (!isPersonaChangedPayload(msg.payload)) {
+        reportError('handlePersonaChanged', msg.payload);
+        return;
+      }
+      callbacks.onPersonaChanged?.(msg.payload);
+    },
   };
 }
 export interface IpcListenerCallbacks {
@@ -639,6 +671,16 @@ export interface IpcListenerCallbacks {
   onPatternsUpdated?: (payload: PatternsPayload) => void;
   /** 会话分叉完成时回调（切换到新会话，payload.to 为完整的新会话 ID） */
   onSessionForked?: (payload: SessionForkedPayload) => void;
+  /**
+   * 角色切换完成时回调（auto 自动匹配 / 手动切换统一入口）
+   *
+   * 触发链路：
+   * - 手动：UI 点击 → Agent.switchPersona → emit('personaSwitched')
+   * - auto：postProcessInner → personaMatcher.autoMatch → PersonaManager.switchPersona
+   *
+   * 渲染层职责：刷新顶栏角色名 + 下拉菜单 active 标记 + 感知面板（如打开）
+   */
+  onPersonaChanged?: (payload: PersonaChangedPayload) => void;
 }
 
 /**

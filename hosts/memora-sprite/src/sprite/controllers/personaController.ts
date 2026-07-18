@@ -2,11 +2,14 @@
  * 角色控制器 — 角色交互
  *
  * 职责：
- *   1. 获取/切换当前角色
+ *   1. 获取当前角色
  *   2. 角色列表展示
  *   3. 角色匹配模式设置
+ *
+ * 注意：角色切换（switchPersona）由 Agent.switchPersona 公共方法提供，
+ * 统一走事件链路（refreshPersonaPrefix + emit personaSwitched），
+ * 不再由本控制器委托，避免双路径切换导致的事件发散。
  */
-import { logger, toError } from 'memora';
 import type { Agent, Persona } from 'memora';
 
 /** 角色信息 */
@@ -41,31 +44,6 @@ export class PersonaController {
       description: p.description ?? '',
       active: p.name === activeName,
     }));
-  }
-
-  /**
-   * 切换角色
-   *
-   * 统一错误策略后，switchPersona 找不到角色时抛 MemoraError。
-   * 此处捕获异常返回 null，保持宿主门面的"失败返回 null"契约，
-   * 让 IPC 层通过 switched=false 告知 UI。
-   *
-   * JSDoc 注释订正：原标注 @returns 角色名称，实际返回的是
-   * PersonaManager.buildSystemPrompt 生成的角色系统提示文本。现修正注释。
-   *
-   * @param name 角色名称
-   * @returns 切换后的角色系统提示文本，失败返回 null
-   */
-  switch(name: string): string | null {
-    const pm = this.agent.persona;
-    if (!pm) return null;
-    try {
-      return pm.switchPersona(name);
-    } catch (err) {
-      // 角色切换失败时返回 null，记录警告便于排查
-      logger.warn({ err: toError(err).message, name }, '角色切换失败');
-      return null;
-    }
   }
 
   /**

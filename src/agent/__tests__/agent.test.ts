@@ -1310,6 +1310,83 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
     (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
 
+  // ─── switchPersona 手动切换（与自动匹配共享事件链路） ─────
+
+  it('switchPersona 应切换角色并发射 personaSwitched 事件', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 初始角色为扫描顺序第一个（编程专家）
+    const initialName = agent.persona!.activeName;
+    expect(initialName).toBe('编程专家');
+
+    // 监听 personaSwitched 事件
+    let switchedFrom: string | null = null;
+    let switchedTo: string | null = null;
+    agent.on('personaSwitched', (e) => {
+      switchedFrom = e.from;
+      switchedTo = e.to;
+    });
+
+    const prompt = agent.switchPersona('写作助手');
+
+    // 验证返回值是新角色的 system prompt
+    expect(prompt).toContain('写作助手');
+    // 验证事件已触发
+    expect(switchedFrom).toBe(initialName);
+    expect(switchedTo).toBe('写作助手');
+    // 验证当前角色已切换
+    expect(agent.persona!.activeName).toBe('写作助手');
+
+    agent.off('personaSwitched', () => {});
+  });
+
+  it('switchPersona 同名切换幂等：不触发事件，返回当前 prompt', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    let eventFired = false;
+    agent.on('personaSwitched', () => {
+      eventFired = true;
+    });
+
+    const initialName = agent.persona!.activeName;
+    const prompt = agent.switchPersona(initialName);
+
+    // 同名切换不应触发事件
+    expect(eventFired).toBe(false);
+    // 但应返回当前角色的 prompt
+    expect(prompt).toContain(initialName);
+
+    agent.off('personaSwitched', () => {});
+  });
+
+  it('switchPersona 角色不存在时返回 null（不抛错）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const initialName = agent.persona!.activeName;
+
+    // 角色不存在时返回 null，不向上抛异常
+    const result = agent.switchPersona('不存在的角色');
+    expect(result).toBeNull();
+
+    // 当前角色应保持不变
+    expect(agent.persona!.activeName).toBe(initialName);
+  });
+
+  it('switchPersona 对话繁忙时抛错（与 setArchiveMode 一致）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 模拟对话进行中
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+    expect(() => agent!.switchPersona('写作助手')).toThrow(/对话繁忙/);
+
+    // 恢复空闲状态
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
+  });
+
   // ─── manual 模式跳过自动归档 ────────────────────────────
 
   it('manual 模式：chatSync 后不触发 memoryAdded 事件', async () => {
