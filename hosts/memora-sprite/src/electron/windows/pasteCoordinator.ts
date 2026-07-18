@@ -43,6 +43,20 @@ export class PasteCoordinator {
   private autoPasteEnabled = true;
 
   /**
+   * 预加载 InputInjector 单例（fire-and-forget）
+   *
+   * 在应用启动阶段调用，提前触发 nut-js 动态 import，
+   * 避免首次快捷键唤起浮窗时因 import 耗时（~50-200ms）导致明显延迟。
+   * 调用后 capturePreviousWindow 复用已加载的 InputInjector，首次 show() 仅需 ~50-100ms。
+   */
+  preloadInputInjector(): void {
+    if (this.inputInjector) return;
+    void getDefaultInputInjector().then((injector) => {
+      this.inputInjector = injector;
+    });
+  }
+
+  /**
    * 捕获当前前台窗口（show() 前调用）
    *
    * 必须在浮窗 create() 之前调用，否则浮窗自身会成为前台窗口。
@@ -52,7 +66,7 @@ export class PasteCoordinator {
    * @param floatTitle 浮窗窗口标题（用于排除捕获到浮窗自身）
    */
   async capturePreviousWindow(floatTitle?: string): Promise<void> {
-    // 懒创建 InputInjector 单例
+    // 懒创建 InputInjector 单例（preloadInputInjector 已触发时直接复用）
     if (!this.inputInjector) {
       this.inputInjector = await getDefaultInputInjector();
     }

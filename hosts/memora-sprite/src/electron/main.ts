@@ -846,6 +846,8 @@ function setupAgentIndependentResources(): void {
   appState.quickInputWindow.setSuppressNextChange(
     () => appState.clipboardHandler?.suppressNextChange(),
   );
+  // 预加载 nut-js（fire-and-forget）：消除首次快捷键唤起浮窗时的动态 import 延迟
+  appState.quickInputWindow.preloadInputInjector();
 
   // Phase 4.3：注册技能文件安装 IPC handler
   // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/

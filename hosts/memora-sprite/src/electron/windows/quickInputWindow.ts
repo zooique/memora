@@ -348,13 +348,20 @@ export class QuickInputWindow {
 
         // paste 期间临时抑制 blur（paste 恢复焦点会触发 blur，若不抑制 200ms 后窗口会被关闭）
         this.suppressBlurClose = true;
-        const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, () => {});
+        // paste 期间隐藏浮窗：避免 alwaysOnTop 浮窗遮挡原窗口的粘贴结果
+        // inputInjector.paste 步骤 3 调用 hideFloat（在恢复焦点之前），步骤 4 才 focus 到原窗口
+        const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, () => this.hide());
         // paste 返回后按模式还原抑制标志：pinned 持久抑制，default 清除抑制
         this.suppressBlurClose = safePinnedMode;
         this.cancelBlurClose();
-        // 重新聚焦浮窗：paste 时焦点切到原窗口，需切回浮窗让渲染进程 inputField.focus() 生效
+        // 重新显示浮窗（paste 期间已隐藏）：Toast 需要浮窗可见才能展示给用户
         if (this.win && !this.win.isDestroyed()) {
-          this.win.focus();
+          this.win.show();
+          // default 模式：重新聚焦浮窗让渲染进程 inputField.focus() 生效 + 显示 Toast（支持连续输入）
+          // pinned 模式：不重新聚焦（保持钉住不抢焦点），Toast 仍可见（浮窗 alwaysOnTop=true）
+          if (!safePinnedMode) {
+            this.win.focus();
+          }
         }
 
         if (pasteResult.success && pasteResult.mode === 'paste') {
@@ -609,6 +616,16 @@ export class QuickInputWindow {
    */
   setAutoPasteEnabled(enabled: boolean): void {
     this.pasteCoordinator.setAutoPasteEnabled(enabled);
+  }
+
+  /**
+   * 预加载 InputInjector 单例（fire-and-forget）
+   *
+   * 在应用启动阶段调用，提前触发 nut-js 动态 import，
+   * 消除首次快捷键唤起浮窗时的 nut-js 加载延迟（~50-200ms）。
+   */
+  preloadInputInjector(): void {
+    this.pasteCoordinator.preloadInputInjector();
   }
 
   /**
