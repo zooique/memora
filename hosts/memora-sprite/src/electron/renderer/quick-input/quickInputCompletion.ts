@@ -84,6 +84,14 @@ const MAX_CANDIDATES = 5;
 const PREVIEW_MAX_LENGTH = 80;
 /** 候选项 DOM ID 前缀（用于 aria-activedescendant 引用） */
 const COMPLETION_ITEM_ID_PREFIX = 'completion-item-';
+/**
+ * 单次 IPC 调用超时时间（ms）
+ *
+ * 内核正常响应 < 100ms，5s 阈值覆盖 SQLite FTS5 锁竞争/磁盘 IO 抖动等异常场景。
+ * 超时后视为失败，走与 IPC 异常同构的降级路径（单源失败仍展示另一源结果）。
+ * 符合 coding-convention-rules.md §9："DO 文件、数据库操作增加超时控制，禁止无限阻塞"。
+ */
+const IPC_TIMEOUT_MS = 5000;
 
 // ─── L1 source 语义感知常量 ──────────────────────────────
 /**
@@ -125,6 +133,32 @@ const MAX_PER_SOURCE = 3;
 const SHORT_QUERY_THRESHOLD = 5;
 /** 续写场景下对话候选的 score 提升量（让近期对话在短查询时优先于结构化记忆） */
 const CONVERSATION_SHORT_QUERY_BOOST = 0.1;
+
+/**
+ * 为 Promise 包装超时（单次 IPC 调用专用）
+ *
+ * 超时后 Promise race 返回 timeout 标识，调用方据此判定为失败并降级。
+ * 不主动 cancel 原始 Promise（IPC 无法取消），仅放弃等待结果——
+ * 内核最终响应后 lastRequestId 机制会丢弃乱序响应。
+ *
+ * @param target 要包装的原始 Promise
+ * @param ms 超时毫秒
+ * @returns 解析为 { ok: true, value } 或 { ok: false }
+ */
+async function withTimeout<T>(target: Promise<T>, ms: number): Promise<{ ok: true; value: T } | { ok: false }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      target.then((value) => ({ ok: true as const, value })),
+      new Promise<{ ok: false }>((resolve) => {
+        timer = setTimeout(() => resolve({ ok: false }), ms);
+      }),
+    ]);
+    return result;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 /**
  * 快速输入补全管理器
@@ -318,21 +352,43 @@ export class QuickInputCompletion {
       // 跟踪两源失败状态，全失败时显示错误占位（单源失败仍展示另一源结果）
       let memoriesFailed = false;
       let messagesFailed = false;
-      // 并行调用两个搜索 IPC，单个失败时降级为空候选（补全是辅助功能，不阻断主流程）
-      const [memoriesResult, messagesResult] = await Promise.all([
-        this.api.searchMemories(query).catch((err) => {
-          // IPC 失败时降级为空候选，warn 级别上报（可降级的非致命错误）
+      // 并行调用两个搜索 IPC，每个 IPC 包装超时（IPC_TIMEOUT_MS）
+      // 超时与 IPC 异常同构处理：降级为空候选，单源失败仍展示另一源结果
+      const [memoriesResultRaw, messagesResultRaw] = await Promise.all([
+        withTimeout(this.api.searchMemories(query), IPC_TIMEOUT_MS).catch((err) => {
+          // IPC 异常时降级为空候选，warn 级别上报（可降级的非致命错误）
           reportError('QuickInputCompletion:searchMemories', err, 'warn');
           memoriesFailed = true;
-          return { hits: [] };
+          return { ok: false } as const;
         }),
-        this.api.searchSessionMessages({ keyword: query, limit: 20 }).catch((err) => {
-          // IPC 失败时降级为空候选，warn 级别上报（可降级的非致命错误）
+        withTimeout(this.api.searchSessionMessages({ keyword: query, limit: 20 }), IPC_TIMEOUT_MS).catch((err) => {
+          // IPC 异常时降级为空候选，warn 级别上报（可降级的非致命错误）
           reportError('QuickInputCompletion:searchSessionMessages', err, 'warn');
           messagesFailed = true;
-          return { results: [] };
+          return { ok: false } as const;
         }),
       ]);
+
+      // 超时或异常：降级为空候选
+      let memoriesResult: { hits: unknown[] } = { hits: [] };
+      let messagesResult: { results: unknown[] } = { results: [] };
+      if (memoriesResultRaw.ok) {
+        memoriesResult = memoriesResultRaw.value as { hits: unknown[] };
+      } else {
+        // 区分超时与异常：异常已上面 catch 置 memoriesFailed=true；超时此处补上
+        if (!memoriesFailed) {
+          reportError('QuickInputCompletion:searchMemories', new Error('IPC timeout'), 'warn');
+          memoriesFailed = true;
+        }
+      }
+      if (messagesResultRaw.ok) {
+        messagesResult = messagesResultRaw.value as { results: unknown[] };
+      } else {
+        if (!messagesFailed) {
+          reportError('QuickInputCompletion:searchSessionMessages', new Error('IPC timeout'), 'warn');
+          messagesFailed = true;
+        }
+      }
 
       // 请求已过期（用户已输入新内容），丢弃旧响应（loading 由最新请求接管）
       if (requestId !== this.lastRequestId) return;
@@ -343,7 +399,11 @@ export class QuickInputCompletion {
         return;
       }
 
-      const candidates = this.mergeCandidates(query, memoriesResult.hits, messagesResult.results);
+      const candidates = this.mergeCandidates(
+        query,
+        memoriesResult.hits as Array<{ id: string; contentPreview: string; score: number; source?: string }>,
+        messagesResult.results as Array<{ content: string; role: string }>,
+      );
       this.renderCandidates(candidates);
     } catch (error) {
       reportError('QuickInputCompletion:fetchCandidates', error);

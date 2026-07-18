@@ -4,27 +4,30 @@
  * 职责：
  *   1. 记录呼出浮窗前的前台窗口（getActiveWindow）
  *   2. 确认时恢复焦点到原窗口 + 模拟 Ctrl+V 粘贴
- *   3. CJK 输入法处理（Esc 关闭 IME 候选窗口）
- *   4. 剪贴板内容恢复（不覆盖用户原剪贴板）
- *   5. 非文本剪贴板保护（图片/文件不破坏）
- *   6. 任何步骤失败降级到复制+Toast 模式
+ *   3. 剪贴板内容恢复（不覆盖用户原剪贴板）
+ *   4. 非文本剪贴板保护（图片/文件不破坏）
+ *   5. 任何步骤失败降级到复制+Toast 模式
  *
  * 设计原则（ADR-017 枝叶层）：
  *   - 不提前抽象 backend 接口，只实现 Clipboard 策略（业界共识方案）
  *   - 依赖注入 NutJsDeps 便于测试 mock（nut-js 在测试环境无法真实模拟键盘事件）
  *   - 动态 import nut-js：避免测试时强制加载 native 模块
  *
- * 流程（10 步，经 2026-07-14 排雷修正）：
+ * 流程（9 步，经 2026-07-18 [问诊：自动迭代] 审查修正）：
  *   1. getActiveWindow（create 之前）
  *   2. 检测剪贴板格式 + 保存原内容 + 写入目标 + suppressNextChange
  *   3. 隐藏浮窗
  *   4. 恢复焦点
- *   5. Esc（IME 处理）
- *   6. Ctrl+V
- *   7. 延迟 100ms
- *   8. 恢复剪贴板 + suppressNextChange
- *   9. onAfterConfirm 记忆沉淀
- *   10. Toast + 关闭
+ *   5. Ctrl+V
+ *   6. 延迟 100ms（按文本长度自适应 100/200/500ms，见 calculatePasteDelay）
+ *   7. 恢复剪贴板 + suppressNextChange
+ *   8. onAfterConfirm 记忆沉淀
+ *   9. Toast + 关闭
+ *
+ * 注：原 v0 设计包含"第 5 步 Esc（IME 处理）"用于关闭 CJK 输入法候选窗口，
+ * 但实际代码从未实现此步骤（审查发现注释与实现不一致）。当前流程不模拟 Esc，
+ * 依赖用户在呼出浮窗前手动确认 IME 候选词；若未来出现 IME 拦截 Ctrl+V 的反馈，
+ * 再评估是否补全 Esc 按键模拟（需在 NutJsDeps.Key 接口添加 Escape 字段）。
  *
  * 集成点：
  *   - quickInputWindow.ts：show() 前调用 captureActiveWindow()，CONFIRM handler 调用 paste()
@@ -78,7 +81,7 @@ export interface NutJsDeps {
 /** nut-js Key 类型（opaque，只需在 pressKey/releaseKey 间传递） */
 export type NutJsKey = unknown;
 
-/** 粘贴结果（扩展 mode 字段，排雷修正雷 4.1） */
+/** 粘贴结果（含 mode 字段区分 paste / copy 降级） */
 export interface PasteResult {
   /** 是否成功（无论 paste 还是 copy 降级，只要用户拿到文本就 true） */
   success: boolean;
@@ -164,18 +167,17 @@ export class InputInjector {
   /**
    * 模拟 Ctrl+V 粘贴文本到指定窗口
    *
-   * 完整流程（排雷修正后的 10 步，本方法实现步骤 2-8）：
+   * 完整流程（9 步，本方法实现步骤 2-7）：
    *   2. 检测剪贴板格式 + 保存原内容 + 写入目标 + suppressNextChange
    *   3. 隐藏浮窗（hideFloat 回调）
    *   4. 恢复焦点
-   *   5. Esc（IME 处理）
-   *   6. Ctrl+V
-   *   7. 延迟 100ms
-   *   8. 恢复剪贴板 + suppressNextChange
+   *   5. Ctrl+V
+   *   6. 延迟（按文本长度自适应 100/200/500ms）
+   *   7. 恢复剪贴板 + suppressNextChange
    *
    * @param text 要粘贴的文本
    * @param previousWindow 呼出浮窗前的前台窗口（null 则降级）
-   * @param hideFloat 隐藏浮窗的回调（排雷修正雷 1.2：必须在恢复焦点之前隐藏）
+   * @param hideFloat 隐藏浮窗的回调（必须在恢复焦点之前隐藏）
    * @param suppressNextChange 剪贴板三重保护抑制函数（一次性抑制，每次写入都需调用）
    * @returns PasteResult（mode='paste' 成功，mode='copy' 降级）
    */

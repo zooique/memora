@@ -63,6 +63,8 @@ import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from './sh
 // Phase 3.1：剪贴板三重保护处理器
 import { ClipboardHandler } from './clipboardHandler.js';
 import type { ClipboardEventType } from './clipboardHandler.js';
+// isSensitive 用于快速输入记忆沉淀前的敏感内容过滤（与 clipboardHandler 剪贴板预填过滤对齐）
+import { isSensitive } from './clipboardHandler.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -819,6 +821,14 @@ function setupAgentIndependentResources(): void {
     onConfirm: createDefaultConfirmCallback(appState.clipboardHandler),
     onAfterConfirm: (text) => {
       try {
+        // 敏感内容过滤（与 clipboardHandler 剪贴板预填过滤对齐）
+        // 用户手动输入的 Token/密码/私钥等不应持久化到记忆数据库
+        const sensitiveResult = isSensitive(text);
+        if (sensitiveResult.sensitive) {
+          // 命中敏感模式：跳过记忆沉淀，仅记日志（type 用于追溯命中模式）
+          logger.warn({ type: sensitiveResult.type }, '快速输入内容命中敏感模式，已跳过记忆沉淀');
+          return;
+        }
         // name 用内容前 30 字符（与剪贴板记忆范式一致），upsertMemory 按 (source, name) 去重
         const name = text.slice(0, 30).replace(/\s+/g, ' ').trim() || '快速输入';
         // 无 Agent 时 sprite 为 null，可选链安全降级（跳过记忆写入）
