@@ -242,8 +242,8 @@ export class PanelRouter {
       return;
     }
 
-    // Ctrl/Cmd + 1-5：切换面板
-    if (isMod && ['1', '2', '3', '4', '5'].includes(e.key)) {
+    // Ctrl/Cmd + 1-6：切换面板（1-6 分别对应 chat/memories/settings/dashboard/perception/clipboard）
+    if (isMod && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
       this.handlePanelShortcut(e);
       return;
     }
@@ -272,9 +272,9 @@ export class PanelRouter {
     if (commandPalette || searchModal) {
       return;
     }
-    // 设置或记忆或仪表盘或感知面板激活时，Escape 切回对话面板
+    // 设置/记忆/仪表盘/感知/剪贴板面板激活时，Escape 切回对话面板
     const state = this.host.getState();
-    if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard' || state.currentPanel === 'perception') {
+    if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard' || state.currentPanel === 'perception' || state.currentPanel === 'clipboard') {
       void this.switchPanel('chat');
       e.preventDefault();
       return;
@@ -287,17 +287,18 @@ export class PanelRouter {
     }
   }
 
-  /** 面板快捷键映射：Ctrl/Cmd + 1-5 → chat/memories/settings/dashboard/perception */
+  /** 面板快捷键映射：Ctrl/Cmd + 1-6 → chat/memories/settings/dashboard/perception/clipboard */
   private static readonly PANEL_SHORTCUT_MAP: Record<string, string> = {
     '1': 'chat',
     '2': 'memories',
     '3': 'settings',
     '4': 'dashboard',
     '5': 'perception',
+    '6': 'clipboard',
   };
 
   /**
-   * 处理 Ctrl/Cmd + 1-5：切换到对应面板
+   * 处理 Ctrl/Cmd + 1-6：切换到对应面板
    */
   private handlePanelShortcut(e: KeyboardEvent): void {
     const panel = PanelRouter.PANEL_SHORTCUT_MAP[e.key];

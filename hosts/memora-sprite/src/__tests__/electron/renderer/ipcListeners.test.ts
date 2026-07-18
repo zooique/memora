@@ -263,7 +263,11 @@ interface UiManagerSpies {
   setUnreadCount: ReturnType<typeof vi.fn>;
   showSuggestion: ReturnType<typeof vi.fn>;
   showWriteConfirmation: ReturnType<typeof vi.fn>;
-  showClipboardChangedToast: ReturnType<typeof vi.fn>;
+  /** 剪贴板管理器 mock（v2 重构：addPendingItem + showSensitiveWarning） */
+  clipboardManager: {
+    addPendingItem: ReturnType<typeof vi.fn>;
+    showSensitiveWarning: ReturnType<typeof vi.fn>;
+  };
   showClipboardConfirmDialog: ReturnType<typeof vi.fn>;
   handleQuickRecordTrigger: ReturnType<typeof vi.fn>;
   handleRecallMemoryTrigger: ReturnType<typeof vi.fn>;
@@ -303,7 +307,7 @@ interface CapturedCallbacks {
   onAgentReady: () => void;
   onSuggestionPush: (suggestion: unknown) => void;
   onWriteConfirmation: (info: unknown) => void;
-  onClipboardChanged: () => void;
+  onClipboardChanged: (payload: { preview: string; length: number }) => void;
   onClipboardSensitiveIgnored: (payload: { type: string }) => void;
   onClipboardAnalysisReady: (payload: { content: string }) => void;
   onClipboardAnalysisRejected: (payload: { reason: string }) => void;
@@ -340,7 +344,10 @@ function createMockUiManager(): { uiManager: UIManager; spies: UiManagerSpies } 
     setUnreadCount: vi.fn(),
     showSuggestion: vi.fn(),
     showWriteConfirmation: vi.fn().mockResolvedValue(undefined),
-    showClipboardChangedToast: vi.fn(),
+    clipboardManager: {
+      addPendingItem: vi.fn(),
+      showSensitiveWarning: vi.fn(),
+    },
     showClipboardConfirmDialog: vi.fn().mockResolvedValue(undefined),
     handleQuickRecordTrigger: vi.fn().mockResolvedValue(undefined),
     handleRecallMemoryTrigger: vi.fn().mockResolvedValue(undefined),
@@ -408,7 +415,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onAgentReady: vi.fn((handler: () => void) => { captured.onAgentReady = handler; }),
     onSuggestionPush: vi.fn((handler: (suggestion: unknown) => void) => { captured.onSuggestionPush = handler; }),
     onWriteConfirmation: vi.fn((handler: (info: unknown) => void) => { captured.onWriteConfirmation = handler; }),
-    onClipboardChanged: vi.fn((handler: () => void) => { captured.onClipboardChanged = handler; }),
+    onClipboardChanged: vi.fn((handler: (payload: { preview: string; length: number }) => void) => { captured.onClipboardChanged = handler; }),
     onClipboardSensitiveIgnored: vi.fn((handler: (payload: { type: string }) => void) => { captured.onClipboardSensitiveIgnored = handler; }),
     onClipboardAnalysisReady: vi.fn((handler: (payload: { content: string }) => void) => { captured.onClipboardAnalysisReady = handler; }),
     onClipboardAnalysisRejected: vi.fn((handler: (payload: { reason: string }) => void) => { captured.onClipboardAnalysisRejected = handler; }),
@@ -971,14 +978,16 @@ describe('initIpcListeners · 剪贴板三重保护', () => {
     vi.restoreAllMocks();
   });
 
-  it('onClipboardChanged → showClipboardChangedToast()', () => {
-    captured.onClipboardChanged();
-    expect(spies.showClipboardChangedToast).toHaveBeenCalledTimes(1);
+  it('onClipboardChanged → clipboardManager.addPendingItem(preview, length)（v2 重构：被动累积）', () => {
+    captured.onClipboardChanged({ preview: '剪贴板预览内容', length: 100 });
+    expect(spies.clipboardManager.addPendingItem).toHaveBeenCalledTimes(1);
+    expect(spies.clipboardManager.addPendingItem).toHaveBeenCalledWith('剪贴板预览内容', 100);
   });
 
-  it('onClipboardSensitiveIgnored → showToast("warning") 含 type', () => {
+  it('onClipboardSensitiveIgnored → clipboardManager.showSensitiveWarning(type)（保护性主动提醒）', () => {
     captured.onClipboardSensitiveIgnored({ type: 'password' });
-    expect(spies.showToast).toHaveBeenCalledWith('检测到敏感内容（password），已静默忽略', 'warning');
+    expect(spies.clipboardManager.showSensitiveWarning).toHaveBeenCalledTimes(1);
+    expect(spies.clipboardManager.showSensitiveWarning).toHaveBeenCalledWith('password');
   });
 
   it('onClipboardAnalysisReady → showClipboardConfirmDialog(content)', () => {

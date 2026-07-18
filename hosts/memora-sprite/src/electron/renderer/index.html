@@ -32,6 +32,7 @@
   <link rel="stylesheet" href="styles/content/markdown.css" />
   <link rel="stylesheet" href="styles/panels/dashboard.css" />
   <link rel="stylesheet" href="styles/panels/perception.css" />
+  <link rel="stylesheet" href="styles/panels/clipboard.css" />
   <link rel="stylesheet" href="styles/overlays/command-palette.css" />
   <link rel="stylesheet" href="styles/overlays/search-messages.css" />
 </head>
@@ -218,6 +219,12 @@
         </button>
         <button class="nav-btn" data-panel="dashboard" data-tooltip="仪表盘" aria-labelledby="panel-title-dashboard">
           <svg class="icon"><use href="#icon-chart"/></svg>
+        </button>
+        <!-- 剪贴板入口（被动等待 + 保护性主动；角标显示待处理数量） -->
+        <button class="nav-btn" data-panel="clipboard" data-tooltip="剪贴板" aria-labelledby="panel-title-clipboard">
+          <svg class="icon"><use href="#icon-copy"/></svg>
+          <!-- 角标容器：待处理数 0 时隐藏，1-99 显示数字，>99 显示 99+，有较旧内容边框变橙 -->
+          <span class="nav-badge nav-badge-hidden" id="clipboard-nav-badge" aria-hidden="true"></span>
         </button>
       </nav>
 
@@ -1365,6 +1372,35 @@
           </section>
         </div>
       </div>
+
+      <!-- 剪贴板待处理面板（被动等待 + 保护性主动；普通内容静默累积，敏感内容保护性主动 Toast） -->
+      <div id="panel-clipboard" class="panel" aria-hidden="true" aria-labelledby="panel-title-clipboard">
+        <div class="panel-header flex-shrink-0">
+          <span class="panel-title" id="panel-title-clipboard">剪贴板</span>
+          <!-- 批量操作按钮（列表为空时隐藏） -->
+          <div class="clipboard-actions" id="clipboard-actions">
+            <button id="btn-clipboard-archive-all" class="icon-btn flex-shrink-0" title="全部归档（需二次确认）" aria-label="全部归档">
+              <svg class="icon"><use href="#icon-check"/></svg>
+            </button>
+            <button id="btn-clipboard-ignore-all" class="icon-btn flex-shrink-0" title="全部忽略（需二次确认）" aria-label="全部忽略">
+              <svg class="icon"><use href="#icon-close"/></svg>
+            </button>
+          </div>
+        </div>
+        <!-- 首次引导气泡（一次性，用户首次出现角标时显示，点击关闭后不再出现） -->
+        <div id="clipboard-onboarding-tip" class="clipboard-onboarding-tip hidden" role="status">
+          <span class="clipboard-onboarding-text">剪贴板有新内容待处理，点击这里查看</span>
+          <button type="button" id="clipboard-onboarding-close" class="clipboard-onboarding-close" aria-label="关闭引导">×</button>
+        </div>
+        <!-- 待处理列表（由 clipboardPanelManager 动态渲染；每条含预览/长度/时间/归档/忽略按钮） -->
+        <div id="clipboard-pending-list" class="clipboard-pending-list" role="list"></div>
+        <!-- 空状态（列表为空时显示，引导用户复制内容） -->
+        <div id="clipboard-empty-state" class="clipboard-empty-state">
+          <svg class="clipboard-empty-icon"><use href="#icon-copy"/></svg>
+          <p class="clipboard-empty-text">暂无待处理内容</p>
+          <p class="clipboard-empty-hint">复制内容后会出现在这里</p>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -1700,6 +1736,7 @@
             <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
             <tr><td><kbd>Ctrl+4</kbd></td><td>切换到仪表盘面板</td></tr>
             <tr><td><kbd>Ctrl+5</kbd></td><td>切换到精灵状态面板</td></tr>
+            <tr><td><kbd>Ctrl+6</kbd></td><td>切换到剪贴板面板</td></tr>
             <!-- 命令与搜索组 -->
             <tr><td colspan="2" class="shortcuts-group">命令与搜索</td></tr>
             <tr><td><kbd>Ctrl+K</kbd></td><td>打开命令面板</td></tr>

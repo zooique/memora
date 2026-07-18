@@ -489,6 +489,37 @@
   outline-offset: 2px;
 }
 
+/* ─── 导航角标（剪贴板待处理数量提示） ─────────────────── */
+/* 绝对定位在 nav-btn 右上角，红色背景 + 白色文字，视觉提示有待处理内容 */
+.nav-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  z-index: var(--z-decoration);
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+
+/* 角标隐藏态（待处理数为 0 时） */
+.nav-badge.nav-badge-hidden {
+  display: none;
+}
+
+/* 角标较旧态（存在 >24h 未处理条目时，背景变警告色提示） */
+.nav-badge.nav-badge-stale {
+  background: var(--warning);
+}
+
 /* ─── 侧边栏分区（推荐/技能/健康/指标） ──────────────────── */
 .dashboard-section {
   padding: 0;

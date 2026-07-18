@@ -794,25 +794,25 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showWriteConfirmation(info);
   });
 
-  // ─── Phase 3.1 剪贴板三重保护 ──────────────────────────
+  // ─── Phase 3.1 剪贴板三重保护（被动等待 + 保护性主动） ───
   /**
-   * 监听剪贴板变化通知（被动检测，不携带内容）
+   * 监听剪贴板变化通知（携带 preview + length payload）
    *
    * 触发时机：ClipboardHandler 轮询检测到剪贴板哈希变化时
-   * 处理方式：显示带"分析"按钮的 Toast，用户点击后触发主动分析
+   * 处理方式：加入待处理列表 + 角标 +1（不打断用户，被动等待用户查看）
    */
-  window.electronAPI.onClipboardChanged(() => {
-    uiManager.showClipboardChangedToast();
+  window.electronAPI.onClipboardChanged((payload) => {
+    uiManager.clipboardManager.addPendingItem(payload.preview, payload.length);
   });
 
   /**
-   * 监听敏感内容忽略通知
+   * 监听敏感内容忽略通知（保护性主动提醒）
    *
-   * 触发时机：用户点击"分析"后，ClipboardHandler.analyze() 检测到敏感内容
-   * 处理方式：显示 warning Toast 提示用户（不展示内容）
+   * 触发时机：用户主动分析后，ClipboardHandler.analyze() 检测到敏感内容
+   * 处理方式：显示 warning Toast 5s 自动消失（敏感内容保护性主动，不进入待处理列表）
    */
   window.electronAPI.onClipboardSensitiveIgnored((payload) => {
-    uiManager.showToast(`检测到敏感内容（${payload.type}），已静默忽略`, 'warning');
+    uiManager.clipboardManager.showSensitiveWarning(payload.type);
   });
 
   /**

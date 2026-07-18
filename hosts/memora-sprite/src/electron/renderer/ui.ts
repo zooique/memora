@@ -56,8 +56,11 @@ import { PersonaPanelManager } from './panels/personaPanelManager.js';
 import { CommandPaletteManager } from './panels/commandPaletteManager.js';
 // 面板错误横幅拆分为独立 Manager
 import { PanelErrorBannerManager } from './panels/panelErrorBannerManager.js';
-// 剪贴板三重保护 UI 联动拆分为独立 Manager
+// 剪贴板三重保护 UI 联动拆分为独立 Manager（数据/状态层）
 import { ClipboardManager } from './panels/clipboardManager.js';
+// 剪贴板待处理面板管理器（UI 渲染层）
+import { ClipboardPanelManager } from './panels/clipboardPanelManager.js';
+import type { ClipboardPanelHost } from './panels/clipboardPanelManager.js';
 // 日期导航拆分为独立 Manager
 import { DateNavManager } from './panels/dateNavManager.js';
 // 对话内容搜索拆分为独立 Manager（跨会话关键词检索）
@@ -171,6 +174,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 依赖注入 ToastManager / ModalManager 实例，与 UIManager 共享同一引用。
    */
   clipboardManager: ClipboardManager;
+  /**
+   * 剪贴板待处理面板管理器（UI 渲染层）
+   *
+   * 与 ClipboardManager 解耦：
+   * - ClipboardManager 持有数据/状态（pendingItems、stale 标记、敏感警告）
+   * - ClipboardPanelManager 负责 UI 渲染（列表、角标、引导气泡、归档/忽略按钮）
+   * 单向依赖：PanelManager 依赖 Manager，Manager 通过 onChange 回调通知 PanelManager 刷新。
+   * UIManager 作为 host 提供 showToast / showConfirmDialog，与 ClipboardPanelHost 接口对齐。
+   */
+  clipboardPanelManager: ClipboardPanelManager;
   /**
    * 日期导航面板管理器
    *
@@ -325,6 +338,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelErrorBannerManager = new PanelErrorBannerManager();
     // 剪贴板保护管理器（依赖注入 toastManager + modalManager，与 UIManager 共享同一引用）
     this.clipboardManager = new ClipboardManager(this.toastManager, this.modalManager);
+    // 剪贴板待处理面板管理器：依赖 clipboardManager 数据层 + UIManager 作为 host 提供弹窗/Toast
+    this.clipboardPanelManager = new ClipboardPanelManager(
+      this.clipboardManager,
+      this as ClipboardPanelHost,
+      new EventTracker(),
+    );
     // 日期导航管理器（自包含，无依赖，直接创建）
     this.dateNavManager = new DateNavManager();
     // 对话内容搜索管理器（自包含，无依赖，直接创建）
@@ -351,6 +370,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.commandPaletteManager.init();
     // 面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
     this.panelErrorBannerManager.init();
+    // 剪贴板待处理面板初始化（委托到 ClipboardPanelManager：绑定批量操作 + 引导气泡 + 注入 onChange + 首次渲染）
+    this.clipboardPanelManager.init();
     // 精灵状态条点击：切换到仪表盘面板（替代旧的感知面板 overlay）
     this.initSpriteStatusBarClick();
     // 日期导航事件初始化（委托到 DateNavManager）
@@ -420,7 +441,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.commandPaletteManager.cleanup();
     // 清理面板错误横幅的重试按钮监听器和回调映射
     this.panelErrorBannerManager.cleanup();
-    // 清理剪贴板保护管理器（空实现，保持统一生命周期接口）
+    // 清理剪贴板待处理面板管理器（移除 DOM 事件 + onChange 回调引用）
+    this.clipboardPanelManager.cleanup();
+    // 清理剪贴板保护管理器（清空 pendingItems + 移除 onChange 引用）
     this.clipboardManager.cleanup();
     // 清理日期导航管理器的事件监听器和回调
     this.dateNavManager.cleanup();

@@ -300,6 +300,25 @@ export interface WriteConfirmationPayload {
   afterContent?: string;
 }
 
+/**
+ * 剪贴板变化事件载荷
+ *
+ * 主进程 ClipboardHandler 检测到哈希变化后，读取剪贴板构造此 payload，
+ * 通过 CLIPBOARD_CHANGED 通道推送到渲染进程。渲染层 ClipboardManager
+ * 据此调用 addPendingItem(preview, length) 加入待处理列表。
+ *
+ * 设计决策：
+ * - 仅传 preview（前 100 字符）+ length，不传完整内容（减少 IPC 载荷）
+ * - 完整内容在归档时通过 clipboardHandler.analyze() 主动读取
+ * - 不传 hash（clipboardHandler.computeHash 是 private，不暴露）
+ */
+export interface ClipboardChangedPayload {
+  /** 内容预览（前 100 字符，用于列表展示和归档时软校验） */
+  preview: string;
+  /** 内容完整长度（用于列表展示"100字"等） */
+  length: number;
+}
+
 /** 记忆健康度仪表盘 IPC 传输形态（Phase 1：健康度诊断） */
 export interface HealthDashboardPayload {
   scores: { overall: number; uniqueness: number; freshness: number; completeness: number };
@@ -712,8 +731,13 @@ export interface ElectronAPI {
   responseWriteConfirmation: (requestId: string, confirmed: boolean) => Promise<void>;
 
   // ─── Phase 3.1：剪贴板三重保护 ────────────────────────
-  /** 监听剪贴板变化通知（不携带内容，仅通知 UI 显示"分析"提示） */
-  onClipboardChanged: (cb: () => void) => void;
+  /**
+   * 监听剪贴板变化通知（携带 preview + length payload）
+   *
+   * 主进程 ClipboardHandler 检测到哈希变化后，读取剪贴板构造 payload，
+   * 渲染层 ClipboardManager 据此调用 addPendingItem 加入待处理列表。
+   */
+  onClipboardChanged: (cb: (payload: ClipboardChangedPayload) => void) => void;
   /** 移除剪贴板变化监听器 */
   removeClipboardChangedListener: () => void;
   /** 监听敏感内容忽略通知（携带 type，供 UI 记录日志） */
@@ -1077,8 +1101,8 @@ const electronAPI: ElectronAPI = {
   },
   responseWriteConfirmation: (requestId, confirmed) => ipcRenderer.invoke(IPC_CHANNELS.WRITE_CONFIRMATION_RESPONSE, requestId, confirmed),
 
-  // Phase 3.1：剪贴板三重保护
-  onClipboardChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED, (_: IpcRendererEvent) => cb()),
+  // Phase 3.1：剪贴板三重保护（CLIPBOARD_CHANGED 携带 preview + length payload）
+  onClipboardChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED, (_: IpcRendererEvent, payload: ClipboardChangedPayload) => cb(payload)),
   removeClipboardChangedListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED);
   },

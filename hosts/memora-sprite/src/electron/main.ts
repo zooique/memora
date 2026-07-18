@@ -768,10 +768,19 @@ function setupAgentIndependentResources(): void {
       if (!fullWindow || fullWindow.isDestroyed()) return;
       // 将 ClipboardHandler 事件映射到 IPC 推送通道
       switch (event) {
-        case 'changed':
-          // 剪贴板有变化，通知 UI 显示"分析"提示（不携带内容）
-          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED);
+        case 'changed': {
+          // 读取剪贴板构造 {preview, length} payload，渲染层据此加入待处理列表 + 角标 +1
+          // clipboardHandler 已通过哈希比较确认剪贴板有变化，此处读取的是最新内容
+          const text = clipboard.readText();
+          // 空内容（如复制图片时 readText 返回空串）跳过通知，避免空条目进入待处理列表
+          if (text.length === 0) break;
+          const changedPayload = {
+            preview: text.slice(0, 100),
+            length: text.length,
+          };
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED, changedPayload);
           break;
+        }
         case 'sensitive-ignored':
           // 敏感内容已静默忽略，通知 UI 记录日志（携带 type）
           fullWindow.webContents.send(

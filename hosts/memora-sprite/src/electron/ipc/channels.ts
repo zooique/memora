@@ -327,7 +327,12 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   WRITE_CONFIRMATION: 'write-confirmation',
 
   // ─── 剪贴板（Phase 3.1：三重保护推送） ────────────────
-  /** 剪贴板内容已变化（不携带内容，仅通知 UI 显示"分析"提示） */
+  /**
+   * 剪贴板内容已变化（携带 preview + length，供渲染层加入待处理列表）
+   *
+   * 主进程读取剪贴板构造 {preview, length} payload，渲染层加入待处理列表 + 角标 +1
+   * （被动等待 + 保护性主动：普通内容静默累积，敏感内容保护性主动提醒）
+   */
   CLIPBOARD_CHANGED: 'clipboard-changed',
   /** 检测到敏感内容，已静默忽略（携带 type，供 UI 记录日志） */
   CLIPBOARD_SENSITIVE_IGNORED: 'clipboard-sensitive-ignored',

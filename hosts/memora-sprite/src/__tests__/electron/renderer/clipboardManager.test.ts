@@ -1,20 +1,35 @@
 /**
- * 剪贴板保护面板管理器测试
+ * 剪贴板保护管理器（数据/状态层）测试
  *
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - showClipboardChangedToast：Toast 调用参数 + action 回调触发 clipboardAnalyze
- * - showClipboardConfirmDialog：用户确认/取消 / 长内容截断 / 短内容不截断 / addMemory 调用
- * - cleanup：空实现不应抛错
+ * - setOnChange：注入回调，状态变更时被调用
+ * - addPendingItem：去重 / FIFO 淘汰 / 倒序插入 / onChange 触发 / isStale 重置
+ * - removePendingItem：移除条目 / 不存在时不触发 onChange
+ * - clearPendingItems：清空 / 空列表不触发 onChange
+ * - getPendingItems：返回只读副本（外部修改不影响内部状态）
+ * - getPendingCount：返回数量
+ * - hasStaleItem：返回是否较旧
+ * - refreshStaleFlags：超过 24h 标记 + 触发 onChange + 未变化不触发
+ * - showSensitiveWarning：warning Toast 5s 自动消失
+ * - showClipboardConfirmDialog：用户确认/取消 / 长内容截断 / 短内容不截断 / addMemory 调用 / 防 XSS
+ * - cleanup：清空 pendingItems + 移除 onChange 引用
  *
  * Mock 策略：
- * - Mock ToastManager（验证 showToast 调用参数 + 触发 onAction 回调）
+ * - Mock ToastManager（验证 showToast 调用参数）
  * - Mock ModalManager（控制 showConfirmDialog 返回值）
  * - Mock window.electronAPI.clipboardAnalyze / addMemory
+ * - vi.useFakeTimers 控制 Date.now() 测试较旧标记
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ClipboardManager } from '../../../electron/renderer/panels/clipboardManager.js';
+import {
+  ClipboardManager,
+  MAX_PENDING_ITEMS,
+  BADGE_MAX_DISPLAY,
+  STALE_THRESHOLD_MS,
+} from '../../../electron/renderer/panels/clipboardManager.js';
+import type { ClipboardPendingItem } from '../../../electron/renderer/panels/clipboardManager.js';
 import type { ToastManager } from '../../../electron/renderer/components/toast.js';
 import type { ModalManager } from '../../../electron/renderer/components/modal.js';
 
@@ -57,6 +72,8 @@ function createManager(
 // ─── 全局设置 ─────────────────────────────────────────────
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-18T12:00:00Z'));
   window.electronAPI = {
     clipboardAnalyze: vi.fn().mockResolvedValue(undefined),
     addMemory: vi.fn().mockResolvedValue(undefined),
@@ -64,42 +81,329 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
-// ─── showClipboardChangedToast ──────────────────────────
+// ─── addPendingItem · 基本 ──────────────────────────────
 
-describe('showClipboardChangedToast · Toast 调用', () => {
-  it('应调用 showToast 显示 info Toast', () => {
+describe('addPendingItem · 基本行为', () => {
+  it('应将新条目插入到列表头部（倒序）', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('内容A', 10);
+    manager.addPendingItem('内容B', 20);
+    const items = manager.getPendingItems();
+    expect(items).toHaveLength(2);
+    expect(items[0].preview).toBe('内容B');
+    expect(items[1].preview).toBe('内容A');
+  });
+
+  it('应触发 onChange 回调', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('内容', 10);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('未设置 onChange 时不应抛错', () => {
+    const { manager } = createManager();
+    expect(() => manager.addPendingItem('内容', 10)).not.toThrow();
+  });
+
+  it('应记录内容预览、长度和检测时间', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('预览文本', 100);
+    const items = manager.getPendingItems();
+    expect(items[0].preview).toBe('预览文本');
+    expect(items[0].length).toBe(100);
+    expect(items[0].detectedAt).toBe(Date.now());
+    expect(items[0].isStale).toBe(false);
+  });
+
+  it('每条目应有唯一 ID', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    // 推进时间避免时间戳相同
+    vi.advanceTimersByTime(10);
+    manager.addPendingItem('B', 1);
+    const items = manager.getPendingItems();
+    expect(items[0].id).not.toBe(items[1].id);
+  });
+});
+
+// ─── addPendingItem · 去重 ─────────────────────────────
+
+describe('addPendingItem · 去重', () => {
+  it('相同 preview 不重复添加', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('重复内容', 10);
+    manager.addPendingItem('重复内容', 10);
+    expect(manager.getPendingCount()).toBe(1);
+  });
+
+  it('重复添加时将已有条目移到列表头部', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    manager.addPendingItem('B', 2);
+    manager.addPendingItem('C', 3);
+    // 重复添加 A，A 应移到头部
+    manager.addPendingItem('A', 1);
+    const items = manager.getPendingItems();
+    expect(items).toHaveLength(3);
+    expect(items[0].preview).toBe('A');
+  });
+
+  it('重复添加时应更新 detectedAt 为当前时间', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    const originalTime = manager.getPendingItems()[0].detectedAt;
+    // 推进时间 1 分钟
+    vi.advanceTimersByTime(60000);
+    manager.addPendingItem('A', 1);
+    const updatedItem = manager.getPendingItems()[0];
+    expect(updatedItem.detectedAt).toBe(originalTime + 60000);
+  });
+
+  it('重复添加时应重置 isStale 标记', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    // 推进时间超过 24h 让条目变较旧
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS + 1);
+    manager.refreshStaleFlags();
+    expect(manager.hasStaleItem()).toBe(true);
+    // 重复添加触发重置
+    manager.addPendingItem('A', 1);
+    const item = manager.getPendingItems()[0];
+    expect(item.isStale).toBe(false);
+  });
+
+  it('重复添加时也应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    manager.addPendingItem('A', 1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── addPendingItem · FIFO 淘汰 ────────────────────────
+
+describe('addPendingItem · FIFO 淘汰', () => {
+  it('超出上限时应丢弃最旧条目', () => {
+    const { manager } = createManager();
+    // 添加 MAX_PENDING_ITEMS 条
+    for (let i = 0; i < MAX_PENDING_ITEMS; i++) {
+      manager.addPendingItem(`内容${i}`, i);
+      vi.advanceTimersByTime(1);
+    }
+    expect(manager.getPendingCount()).toBe(MAX_PENDING_ITEMS);
+    // 再添加 1 条，最旧的应被丢弃
+    manager.addPendingItem('新内容', 999);
+    expect(manager.getPendingCount()).toBe(MAX_PENDING_ITEMS);
+    // 最旧的"内容0"应已被丢弃
+    const items = manager.getPendingItems();
+    expect(items.find((item) => item.preview === '内容0')).toBeUndefined();
+    // 最新条目应在头部
+    expect(items[0].preview).toBe('新内容');
+  });
+});
+
+// ─── removePendingItem ─────────────────────────────────
+
+describe('removePendingItem', () => {
+  it('应按 ID 移除指定条目', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    manager.addPendingItem('B', 2);
+    const idToRemove = manager.getPendingItems()[1].id; // A 的 id
+    manager.removePendingItem(idToRemove);
+    expect(manager.getPendingCount()).toBe(1);
+    expect(manager.getPendingItems()[0].preview).toBe('B');
+  });
+
+  it('移除时应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    onChange.mockClear();
+    const id = manager.getPendingItems()[0].id;
+    manager.removePendingItem(id);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('ID 不存在时不应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    onChange.mockClear();
+    manager.removePendingItem('不存在的ID');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+// ─── clearPendingItems ─────────────────────────────────
+
+describe('clearPendingItems', () => {
+  it('应清空所有待处理条目', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    manager.addPendingItem('B', 2);
+    manager.clearPendingItems();
+    expect(manager.getPendingCount()).toBe(0);
+  });
+
+  it('清空时应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    onChange.mockClear();
+    manager.clearPendingItems();
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('列表已为空时不应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.clearPendingItems();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+// ─── getPendingItems · 只读副本 ────────────────────────
+
+describe('getPendingItems · 只读副本', () => {
+  it('返回的数组修改不应影响内部状态', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    const items = manager.getPendingItems();
+    // 尝试修改返回的数组
+    (items as ClipboardPendingItem[]).push({
+      id: 'fake',
+      preview: 'fake',
+      length: 0,
+      detectedAt: 0,
+      isStale: false,
+    });
+    // 内部状态不应受影响
+    expect(manager.getPendingCount()).toBe(1);
+  });
+});
+
+// ─── getPendingCount ───────────────────────────────────
+
+describe('getPendingCount', () => {
+  it('应返回当前待处理数量', () => {
+    const { manager } = createManager();
+    expect(manager.getPendingCount()).toBe(0);
+    manager.addPendingItem('A', 1);
+    expect(manager.getPendingCount()).toBe(1);
+    manager.addPendingItem('B', 2);
+    expect(manager.getPendingCount()).toBe(2);
+  });
+});
+
+// ─── hasStaleItem · 较旧标记 ───────────────────────────
+
+describe('hasStaleItem', () => {
+  it('无条目时应返回 false', () => {
+    const { manager } = createManager();
+    expect(manager.hasStaleItem()).toBe(false);
+  });
+
+  it('所有条目均未超 24h 时应返回 false', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    vi.advanceTimersByTime(1000);
+    manager.refreshStaleFlags();
+    expect(manager.hasStaleItem()).toBe(false);
+  });
+
+  it('存在超过 24h 的条目时应返回 true', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS + 1);
+    manager.refreshStaleFlags();
+    expect(manager.hasStaleItem()).toBe(true);
+  });
+});
+
+// ─── refreshStaleFlags ─────────────────────────────────
+
+describe('refreshStaleFlags', () => {
+  it('应将超过 24h 的条目标记为 isStale', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS + 1);
+    manager.refreshStaleFlags();
+    expect(manager.getPendingItems()[0].isStale).toBe(true);
+  });
+
+  it('新增标记时应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    onChange.mockClear();
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS + 1);
+    manager.refreshStaleFlags();
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('未发生变化时不应触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    onChange.mockClear();
+    // 时间未推进，无变化
+    manager.refreshStaleFlags();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('已较旧条目再次调用不应重复触发 onChange', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.addPendingItem('A', 1);
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS + 1);
+    manager.refreshStaleFlags();
+    onChange.mockClear();
+    // 再次调用，状态未变
+    manager.refreshStaleFlags();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+// ─── showSensitiveWarning ──────────────────────────────
+
+describe('showSensitiveWarning', () => {
+  it('应显示 warning Toast，5 秒自动消失', () => {
     const { manager, toast } = createManager();
+    manager.showSensitiveWarning('token');
     const mockToast = toast as unknown as { __calls: Array<{ message: string; type: string; duration?: number }> };
-    manager.showClipboardChangedToast();
     expect(mockToast.__calls).toHaveLength(1);
-    expect(mockToast.__calls[0].message).toBe('剪贴板有新内容');
-    expect(mockToast.__calls[0].type).toBe('info');
+    expect(mockToast.__calls[0].message).toContain('token');
+    expect(mockToast.__calls[0].type).toBe('warning');
+    expect(mockToast.__calls[0].duration).toBe(5000);
   });
 
-  it('应设置 duration=0（不自动消失）', () => {
+  it('消息文案应包含敏感类型', () => {
     const { manager, toast } = createManager();
-    const mockToast = toast as unknown as { __calls: Array<{ duration?: number }> };
-    manager.showClipboardChangedToast();
-    expect(mockToast.__calls[0].duration).toBe(0);
+    manager.showSensitiveWarning('password');
+    const mockToast = toast as unknown as { __calls: Array<{ message: string }> };
+    expect(mockToast.__calls[0].message).toContain('password');
   });
 
-  it('应提供"分析"按钮 + onAction 回调', () => {
-    const { manager, toast } = createManager();
-    const mockToast = toast as unknown as { __calls: Array<{ options?: ToastOptions }> };
-    manager.showClipboardChangedToast();
-    expect(mockToast.__calls[0].options?.actionLabel).toBe('分析');
-    expect(typeof mockToast.__calls[0].options?.onAction).toBe('function');
-  });
-
-  it('点击"分析"按钮应调用 clipboardAnalyze', () => {
-    const { manager, toast } = createManager();
-    const mockToast = toast as unknown as { __calls: Array<{ options?: ToastOptions }> };
-    manager.showClipboardChangedToast();
-    mockToast.__calls[0].options?.onAction?.();
-    expect(window.electronAPI.clipboardAnalyze).toHaveBeenCalledTimes(1);
+  it('不应将敏感内容添加到待处理列表', () => {
+    const { manager } = createManager();
+    manager.showSensitiveWarning('token');
+    expect(manager.getPendingCount()).toBe(0);
   });
 });
 
@@ -141,7 +445,7 @@ describe('showClipboardConfirmDialog · 用户确认流程', () => {
 // ─── showClipboardConfirmDialog · 内容截断 ─────────────────
 
 describe('showClipboardConfirmDialog · 长内容截断', () => {
-  it('内容超过 200 字符应截断 + 添加 ...', async () => {
+  it('内容超过 200 字符应截断 + 添加 …', async () => {
     const modal = createMockModalManager(false); // 取消，不触发 addMemory
     const { manager } = createManager(createMockToastManager(), modal);
     const longContent = 'a'.repeat(250);
@@ -189,9 +493,42 @@ describe('showClipboardConfirmDialog · 长内容截断', () => {
 
 // ─── cleanup ─────────────────────────────────────────────
 
-describe('cleanup · 空实现', () => {
-  it('cleanup 不应抛错（空实现，与其他 Manager 保持统一生命周期接口）', () => {
+describe('cleanup', () => {
+  it('应清空待处理列表', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('A', 1);
+    manager.addPendingItem('B', 2);
+    manager.cleanup();
+    expect(manager.getPendingCount()).toBe(0);
+  });
+
+  it('应移除 onChange 引用（后续 addPendingItem 不再触发回调）', () => {
+    const { manager } = createManager();
+    const onChange = vi.fn();
+    manager.setOnChange(onChange);
+    manager.cleanup();
+    manager.addPendingItem('A', 1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('空列表时不应抛错', () => {
     const { manager } = createManager();
     expect(() => manager.cleanup()).not.toThrow();
+  });
+});
+
+// ─── 常量导出验证 ───────────────────────────────────────
+
+describe('常量导出', () => {
+  it('MAX_PENDING_ITEMS 应为 20', () => {
+    expect(MAX_PENDING_ITEMS).toBe(20);
+  });
+
+  it('BADGE_MAX_DISPLAY 应为 99', () => {
+    expect(BADGE_MAX_DISPLAY).toBe(99);
+  });
+
+  it('STALE_THRESHOLD_MS 应为 24 小时', () => {
+    expect(STALE_THRESHOLD_MS).toBe(24 * 60 * 60 * 1000);
   });
 });
