@@ -8,9 +8,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Agent, InMemoryStorage } from 'memora';
 import type { LlmProvider, LlmChunk, ChatOptions } from 'memora';
 import { Sprite } from '../../sprite/sprite.js';
+// mock spriteConfig 避免 ProactiveEngine 持久化状态在测试间泄漏
+//   未 mock 时 loadSpriteConfig 读取真实 ~/.memora-sprite/sprite.json，
+//   noticedMagnitudes/knownSources 跨测试保留，导致里程碑触发行为非确定性
+import { DEFAULT_SPRITE_CONFIG, type SpriteConfig } from '../../sprite/spriteConfig.js';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+
+/** 模拟的持久化配置存储（内存中，每个测试用例重置） */
+let mockPersistedConfig: SpriteConfig = { ...DEFAULT_SPRITE_CONFIG };
+
+vi.mock('../../sprite/spriteConfig.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    loadSpriteConfig: vi.fn(() => ({ ...DEFAULT_SPRITE_CONFIG, ...mockPersistedConfig })),
+    saveSpriteConfig: vi.fn((config: SpriteConfig) => {
+      mockPersistedConfig = { ...mockPersistedConfig, ...config };
+    }),
+  };
+});
 
 /** Mock LLM Provider — 返回固定回复 */
 class MockProvider implements LlmProvider {
@@ -48,6 +66,8 @@ describe('Sprite 端到端集成', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    // 重置 mockPersistedConfig，避免上一测试的 ProactiveEngine 持久化状态泄漏
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = join(tmpdir(), `memora-sprite-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
     agent = createTestAgent(tmpDir);
@@ -208,6 +228,8 @@ describe('Sprite · 默契度评估（Phase 2.2）', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    // 重置 mockPersistedConfig，避免上一测试的 ProactiveEngine 持久化状态泄漏
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = join(tmpdir(), `memora-rapport-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
     agent = createTestAgent(tmpDir);
@@ -317,6 +339,8 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    // 重置 mockPersistedConfig，避免上一测试的 ProactiveEngine 持久化状态泄漏
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = join(tmpdir(), `memora-milestone-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
     agent = createTestAgent(tmpDir);

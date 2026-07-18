@@ -15,6 +15,8 @@ import type { ContextState } from './contextAwareness.js';
 import type { AffectState } from './affectController.js';
 import type { DetectedPattern } from './patternDetector.js';
 import type { ProactiveStats } from '../../shared/spriteStats.js';
+// MS_PER_DAY 用于连续拒绝时间衰减（距上次拒绝超过 24h 自动 -1，破解死锁）
+import { MS_PER_DAY } from '../constants.js';
 
 /** 待提示事件 */
 interface PendingNotice {
@@ -34,6 +36,30 @@ export interface ProactiveConfig {
   /** 是否静默模式 */
   silentMode: boolean;
 }
+
+/**
+ * ProactiveEngine 可持久化状态快照
+ *
+ * 由 Sprite 在构造时从 spriteConfig 加载传入，运行时通过 persistCallback
+ * 在状态变更后写回 spriteConfig。三项字段共同避免重启后的体验断点：
+ *   - noticedMagnitudes/knownSources：避免重启重复触发同一里程碑
+ *   - lastRejectAt：使 consecutiveRejects 衰减得以跨重启延续，破解死锁
+ */
+export interface ProactivePersistentState {
+  /** 已通知的记忆量级列表（Math.log10(total) 取整，如 2=百/3=千） */
+  noticedMagnitudes: number[];
+  /** 已知 source 类型集合（chat/insight/profile/rule 等） */
+  knownSources: string[];
+  /** 上次用户拒绝时间戳；null 表示从未拒绝或已完全衰减 */
+  lastRejectAt: number | null;
+}
+
+/**
+ * 状态持久化回调类型（由 Sprite 注入，写入 spriteConfig）
+ *
+ * 在 noticedMagnitudes/knownSources/lastRejectAt 任一变更时调用。
+ */
+export type ProactiveStateCallback = (state: ProactivePersistentState) => void;
 
 /** 精灵事件发射器 */
 export type SpriteEmitter = (event: 'proactivePrompt', payload: {
@@ -60,10 +86,14 @@ export interface MilestoneTrigger {
 export class ProactiveEngine {
   /** pendingNotices 最大累积上限，防止长时间静默或 cooldown 期间内存泄漏 */
   private static readonly MAX_PENDING_NOTICES = 100;
+  /** 单次发射事件上限，防止 banner 文本溢出（剩余留待下次冷却结束后发射） */
+  private static readonly MAX_EMIT_BATCH = 5;
+  /** 连续拒绝衰减阈值，距上次拒绝每过 24h 自动 -1 */
+  private static readonly REJECT_DECAY_MS = MS_PER_DAY;
 
-  /** Phase 2.3：已通知的记忆量级（幂等保护，重启重置符合"自然遗忘"） */
+  /** Phase 2.3：已通知的记忆量级（跨重启持久化保留） */
   private noticedMagnitudes: Set<number> = new Set();
-  /** Phase 2.3：已知的 source 类型（首次出现时触发里程碑） */
+  /** Phase 2.3：已知的 source 类型（首次出现时触发里程碑；跨重启持久化保留） */
   private knownSources: Set<string> = new Set();
   /** 首次 checkMilestones 仅初始化已知状态，不触发通知（避免冷启动首发提示） */
   private milestoneInitialized = false;
@@ -77,6 +107,8 @@ export class ProactiveEngine {
   private emitSprite: SpriteEmitter | null = null;
   /** Phase 2.3：里程碑事件回调（供 Sprite 发射专门的 milestoneAchieved 事件） */
   private onMilestone: MilestoneCallback | null = null;
+  /** 状态持久化回调（noticedMagnitudes/knownSources/lastRejectAt 变更时调用） */
+  private persistCallback: ProactiveStateCallback | null = null;
   private pendingNotices: PendingNotice[] = [];
   private lastProactiveAt = 0;
 
@@ -88,8 +120,10 @@ export class ProactiveEngine {
   private contextState: ContextState | null = null;
   /** 当前默契度等级 0-1（RapportController 推导） */
   private rapportLevel = 0;
-  /** 连续拒绝次数（自适应冷却：每次拒绝延长冷却，接受重置） */
+  /** 连续拒绝次数（自适应冷却：每次拒绝延长冷却，接受重置；跨重启时间衰减） */
   private consecutiveRejects = 0;
+  /** 上次用户拒绝时间戳，用于时间衰减 consecutiveRejects；null 表示从未拒绝或已完全衰减 */
+  private lastRejectAt: number | null = null;
   /** 当前情感基调（Phase 2：个性化提示内容） */
   private affectState: AffectState | null = null;
 
@@ -99,8 +133,31 @@ export class ProactiveEngine {
   /** 已通过模式提示过的模式摘要（幂等保护，避免重复提示同一模式） */
   private promptedPatterns: Set<string> = new Set();
 
-  constructor(config: ProactiveConfig) {
+  /**
+   * @param config 主动提示配置
+   * @param initialState 可选持久化状态（跨重启保留里程碑幂等集合与拒绝衰减时间戳）
+   */
+  constructor(config: ProactiveConfig, initialState?: ProactivePersistentState) {
     this.config = config;
+
+    // 从持久化状态恢复已知集合，避免重启后对已有量级/source 重复触发里程碑
+    if (initialState) {
+      for (const m of initialState.noticedMagnitudes) {
+        this.noticedMagnitudes.add(m);
+      }
+      for (const s of initialState.knownSources) {
+        this.knownSources.add(s);
+      }
+      this.lastRejectAt = initialState.lastRejectAt;
+      // 已有持久化状态时，跳过首次 checkMilestones 的"仅初始化不触发"逻辑，
+      // 否则会导致已知集合被重置后又触发一遍同一里程碑。
+      if (initialState.noticedMagnitudes.length > 0 || initialState.knownSources.length > 0) {
+        this.milestoneInitialized = true;
+      }
+      // 重启后立即应用一次时间衰减，破解"连拒 10 次后冷却 6x 死锁"。
+      // 不写回状态（构造阶段回调尚未注入），由后续变更触发持久化。
+      this.applyRejectDecay();
+    }
   }
 
   /** 设置事件发射器 */
@@ -119,6 +176,70 @@ export class ProactiveEngine {
    */
   setMilestoneCallback(callback: MilestoneCallback): void {
     this.onMilestone = callback;
+  }
+
+  /**
+   * 设置状态持久化回调（由 Sprite 在构造后注入）
+   *
+   * 在 noticedMagnitudes/knownSources/lastRejectAt 任一变更时调用，
+   * 由 Sprite 写回 spriteConfig，避免重启后冷却状态/里程碑幂等集合丢失。
+   */
+  setPersistCallback(callback: ProactiveStateCallback): void {
+    this.persistCallback = callback;
+  }
+
+  /**
+   * 获取当前可持久化状态快照
+   *
+   * 由 Sprite 在持久化回调中接收，也可在外部主动读取（如批量保存前）。
+   */
+  getPersistentState(): ProactivePersistentState {
+    return {
+      noticedMagnitudes: Array.from(this.noticedMagnitudes),
+      knownSources: Array.from(this.knownSources),
+      lastRejectAt: this.lastRejectAt,
+    };
+  }
+
+  /**
+   * 通知状态变更（触发持久化回调）
+   *
+   * 仅在回调已注入时调用，避免构造阶段（回调尚未注入）的无效写入。
+   */
+  private notifyStateChange(): void {
+    if (this.persistCallback) {
+      this.persistCallback(this.getPersistentState());
+    }
+  }
+
+  /**
+   * 时间衰减 consecutiveRejects（破解"连拒 10 次后冷却 6x 死锁"）
+   *
+   * 策略：距上次拒绝每过 REJECT_DECAY_MS（24h），自动 -1；衰减到 0 时清除时间戳。
+   *
+   * 调用时机：
+   *   1. 构造函数加载持久化状态后调用一次（重启后立即衰减）
+   *   2. tryEmit 中每次计算冷却前调用（运行时持续衰减）
+   */
+  private applyRejectDecay(): void {
+    if (this.lastRejectAt === null) return;
+    const now = Date.now();
+    const elapsed = now - this.lastRejectAt;
+    if (elapsed < ProactiveEngine.REJECT_DECAY_MS) return;
+    // 按整天数衰减（避免每分钟调用都触发持久化）
+    const decaySteps = Math.floor(elapsed / ProactiveEngine.REJECT_DECAY_MS);
+    const before = this.consecutiveRejects;
+    this.consecutiveRejects = Math.max(0, this.consecutiveRejects - decaySteps);
+    // 衰减到 0 后清除时间戳，避免记录无意义的时间戳
+    if (this.consecutiveRejects === 0) {
+      this.lastRejectAt = null;
+    } else {
+      // 保留剩余未衰减时间的起点（向过去移动 decaySteps 天）
+      this.lastRejectAt = now - (elapsed % ProactiveEngine.REJECT_DECAY_MS);
+    }
+    if (this.consecutiveRejects !== before) {
+      this.notifyStateChange();
+    }
   }
 
   /**
@@ -183,6 +304,11 @@ export class ProactiveEngine {
     this.acceptCount++;
     // 自适应冷却：接受后重置连续拒绝计数，缩短冷却
     this.consecutiveRejects = 0;
+    // 接受后清除拒绝时间戳，避免下次衰减误把刚清零的计数再降
+    if (this.lastRejectAt !== null) {
+      this.lastRejectAt = null;
+      this.notifyStateChange();
+    }
   }
 
   /**
@@ -196,6 +322,9 @@ export class ProactiveEngine {
     if (this.consecutiveRejects < ProactiveEngine.MAX_CONSECUTIVE_REJECTS) {
       this.consecutiveRejects++;
     }
+    // 记录拒绝时间戳，供下次 tryEmit/构造时按 24h 衰减
+    this.lastRejectAt = Date.now();
+    this.notifyStateChange();
   }
 
   /**
@@ -283,8 +412,11 @@ export class ProactiveEngine {
   addNotice(type: string, summary: string, isMilestone = false): void {
     // 全局上限保护：所有模式下都限制累积上限，防止 cooldown 期间事件持续累积
     if (this.pendingNotices.length >= ProactiveEngine.MAX_PENDING_NOTICES) {
-      // 丢弃最旧的事件，保留最近的事件（FIFO 淘汰）
-      this.pendingNotices.shift();
+      // FIFO 淘汰时优先丢弃最旧的非里程碑事件，里程碑事件保留到最后
+      //   仅当队列中全部为里程碑时，才按原 FIFO 顺序淘汰（保证不会无限增长）
+      const firstNormalIndex = this.pendingNotices.findIndex((n) => !n.isMilestone);
+      const dropIndex = firstNormalIndex >= 0 ? firstNormalIndex : 0;
+      this.pendingNotices.splice(dropIndex, 1);
     }
     this.pendingNotices.push({ type, summary, timestamp: Date.now(), isMilestone });
     if (this.pendingNotices.length >= this.config.threshold) {
@@ -303,6 +435,10 @@ export class ProactiveEngine {
     }
 
     const now = Date.now();
+
+    // 时间衰减 consecutiveRejects，避免长时间未交互后冷却仍处于高位
+    //   必须在计算 effectiveCooldown 之前调用，否则衰减不会反映到本次冷却
+    this.applyRejectDecay();
 
     // Phase 1：自适应冷却时间计算
     //   基础冷却 × 默契度系数（高默契 → 短冷却）× 拒绝惩罚（连续拒绝 → 长冷却）
@@ -324,8 +460,8 @@ export class ProactiveEngine {
         : this.config.threshold;
     if (this.pendingNotices.length < effectiveThreshold) return;
 
-    // 取出所有待提示事件
-    const notices = this.pendingNotices.splice(0);
+    // 取出待提示事件（单次最多 MAX_EMIT_BATCH 个，里程碑优先，剩余留待下次冷却结束）
+    const notices = this.takeEmitBatch();
     this.lastProactiveAt = now;
     // 生成上下文感知提示文本
     const triggers = notices.map(n => n.type);
@@ -342,6 +478,31 @@ export class ProactiveEngine {
     this.suggestCount++;
 
     logger.info({ prompt, effectiveCooldown, effectiveThreshold, hasMilestone }, '主动提示');
+  }
+
+  /**
+   * 取出本批次待发射事件（单次上限 MAX_EMIT_BATCH，里程碑优先）
+   *
+   * 当 pendingNotices 超过 MAX_EMIT_BATCH 时，优先取出里程碑事件，再用普通事件补齐。
+   * 剩余事件保留在队列中，下次冷却结束后继续发射，避免一次性发射 100 条导致 banner 文本溢出。
+   *
+   * @returns 本批次待发射事件数组（已从 pendingNotices 中移除）
+   */
+  private takeEmitBatch(): PendingNotice[] {
+    if (this.pendingNotices.length <= ProactiveEngine.MAX_EMIT_BATCH) {
+      return this.pendingNotices.splice(0);
+    }
+    // 超过上限：优先取里程碑事件，再用普通事件补齐
+    const milestones = this.pendingNotices.filter((n) => n.isMilestone);
+    const normals = this.pendingNotices.filter((n) => !n.isMilestone);
+    const pickedMilestones = milestones.slice(0, ProactiveEngine.MAX_EMIT_BATCH);
+    const remainingSlots = ProactiveEngine.MAX_EMIT_BATCH - pickedMilestones.length;
+    const pickedNormals = normals.slice(0, Math.max(0, remainingSlots));
+    // 取出选中项的原始对象引用（保留时间顺序），剩余按原顺序保留在 pendingNotices
+    const pickedSet = new Set(pickedMilestones.concat(pickedNormals));
+    const picked = this.pendingNotices.filter((n) => pickedSet.has(n));
+    this.pendingNotices = this.pendingNotices.filter((n) => !pickedSet.has(n));
+    return picked;
   }
 
   /**
@@ -610,6 +771,12 @@ export class ProactiveEngine {
       if (this.onMilestone) {
         this.onMilestone(trigger);
       }
+    }
+
+    // 里程碑状态变更后持久化（noticedMagnitudes/knownSources 任一新增时触发）
+    //   避免重启后对已通知过的量级/已知的 source 重复触发里程碑
+    if (triggers.length > 0) {
+      this.notifyStateChange();
     }
 
     return triggers;

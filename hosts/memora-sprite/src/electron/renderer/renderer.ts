@@ -345,7 +345,9 @@ async function bootstrapRenderer(): Promise<void> {
       window.electronAPI.proactiveAccept();
 
       // 根据 triggers 类型跳转到相应面板展示详情
-      // 优先级：冲突 > 洞察 > 记忆 > 仪表盘 > 对话
+      // 优先级：冲突 > 角色 > 洞察 > 记忆 > 里程碑 > 模式 > 召回 > 建议 > 对话
+      // 跳转目标对齐场景闭环设计.md 场景 4 完成判定：
+      //   记忆→记忆面板，洞察→仪表盘，角色→设置
       if (triggers.includes('conflict')) {
         // 冲突检测 → 切换到记忆面板并打开冲突记忆详情
         const conflictTargetId = consumeConflictTargetId();
@@ -353,9 +355,12 @@ async function bootstrapRenderer(): Promise<void> {
           void State.uiManager.switchPanel('memory');
           void State.memoryController?.openMemoryDetail(conflictTargetId);
         }
+      } else if (triggers.includes('persona')) {
+        // 角色切换 → 跳转到设置面板的角色管理区域
+        void State.uiManager.switchPanel('settings');
       } else if (triggers.includes('insight')) {
-        // 有新洞察 → 跳转到记忆面板查看洞察
-        void State.uiManager.switchPanel('memory');
+        // 有新洞察 → 跳转到仪表盘查看最近洞察列表（renderRecentInsights 区块）
+        void State.uiManager.switchPanel('dashboard');
       } else if (triggers.includes('memory')) {
         // 有新记忆 → 跳转到记忆面板查看
         void State.uiManager.switchPanel('memory');
@@ -364,6 +369,12 @@ async function bootstrapRenderer(): Promise<void> {
         void State.uiManager.switchPanel('dashboard');
       } else if (triggers.includes('pattern')) {
         // 模式检测 → 跳转到仪表盘查看模式
+        void State.uiManager.switchPanel('dashboard');
+      } else if (triggers.includes('recalled')) {
+        // 欢迎回来记忆召回 → 跳转到记忆面板查看召回的记忆
+        void State.uiManager.switchPanel('memory');
+      } else if (triggers.includes('suggestion')) {
+        // 智能建议（健康度/回顾/画像）→ 跳转到仪表盘查看建议详情
         void State.uiManager.switchPanel('dashboard');
       } else {
         // 默认：确保对话面板可见

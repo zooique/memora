@@ -123,6 +123,29 @@ export interface SpriteConfig {
    * 数据仅存储在本地，不会上传到任何服务器。
    */
   usageStatsEnabled?: boolean;
+
+  /**
+   * 已通知的记忆量级列表（ProactiveEngine 里程碑幂等保护）
+   *
+   * 记录已触发过"上百条/上千条/..."里程碑通知的量级（Math.log10(total) 取整）。
+   * 持久化避免重启后重复触发同一量级里程碑。重启后首次 dashboard 调用初始化已知集合，
+   * 后续仅在新量级突破时触发。
+   */
+  proactiveNoticedMagnitudes?: number[];
+  /**
+   * 已知 source 类型集合（ProactiveEngine 里程碑幂等保护）
+   *
+   * 记录已出现的记忆来源（如 chat/insight/profile/rule）。
+   * 持久化避免重启后对已有 source 重复触发"首次从 X 提取记忆"里程碑。
+   */
+  proactiveKnownSources?: string[];
+  /**
+   * 上次用户拒绝主动提示的时间戳（ProactiveEngine 自适应冷却衰减）
+   *
+   * 用于时间衰减机制：连续拒绝次数在距上次拒绝超过 24h 后自动 -1，
+   * 破解"连拒 10 次后冷却永久 6x 死锁"。null 表示从未拒绝过。
+   */
+  proactiveLastRejectAt?: number | null;
 }
 
 /**
@@ -180,6 +203,11 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   recycleBinRetentionDays: 'number',
   // 使用统计开关（AUDIT-5-4 隐私合规，默认关闭）
   usageStatsEnabled: 'boolean',
+  // ProactiveEngine 里程碑幂等保护（已通知量级 + 已知 source）
+  proactiveNoticedMagnitudes: 'number[]',
+  proactiveKnownSources: 'string[]',
+  // ProactiveEngine 自适应冷却衰减（上次拒绝时间戳，null 表示从未拒绝）
+  proactiveLastRejectAt: 'number',
 };
 
 /** 内置默认值 */
@@ -211,6 +239,11 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   recycleBinRetentionDays: 30,
   // 使用统计默认关闭（AUDIT-5-4 隐私合规，需用户显式开启）
   usageStatsEnabled: false,
+  // ProactiveEngine 里程碑状态默认空集合（首次启动无已通知量级/已知 source）
+  proactiveNoticedMagnitudes: [],
+  proactiveKnownSources: [],
+  // ProactiveEngine 上次拒绝时间戳默认 null（从未拒绝）
+  proactiveLastRejectAt: null,
 };
 
 /** 配置文件名 */
@@ -460,6 +493,12 @@ export function applyConfigField(
   // 运行时类型校验由 schema 映射表保证，编译时无法推断动态 key 的具体类型
   const target = config as Record<string, unknown>;
 
+  // 可空字段：proactiveLastRejectAt / silentModeExpiresAt 允许设为 null（清除值）
+  if (value === null && (key === 'proactiveLastRejectAt' || key === 'silentModeExpiresAt')) {
+    target[key] = null;
+    return true;
+  }
+
   // 简单类型校验（number / boolean / string）
   if (schema === 'number' || schema === 'boolean' || schema === 'string') {
     if (typeof value === schema) {
@@ -481,6 +520,15 @@ export function applyConfigField(
       if (patterns.length > 0 && !patterns.every((p) => validateGlob(p))) {
         return false;
       }
+    }
+    target[key] = value;
+    return true;
+  }
+
+  // 数字数组类型（如 proactiveNoticedMagnitudes）
+  if (schema === 'number[]') {
+    if (!Array.isArray(value) || !value.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      return false;
     }
     target[key] = value;
     return true;

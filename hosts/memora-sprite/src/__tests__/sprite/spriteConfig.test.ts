@@ -131,9 +131,9 @@ describe('spriteConfig', () => {
       expect(accelerators['quick-input']).toBe('Ctrl+Shift+I');
     });
 
-    it('CONFIG_FIELD_SCHEMA 包含所有 23 个字段的类型映射', () => {
+    it('CONFIG_FIELD_SCHEMA 包含所有 26 个字段的类型映射', () => {
       const keys = Object.keys(CONFIG_FIELD_SCHEMA); // 全部字段名
-      expect(keys).toHaveLength(23);
+      expect(keys).toHaveLength(26);
       // 逐一验证关键类型映射存在
       expect(CONFIG_FIELD_SCHEMA.configVersion).toBe('number');
       expect(CONFIG_FIELD_SCHEMA.triggerIntervalMs).toBe('number');
@@ -143,6 +143,10 @@ describe('spriteConfig', () => {
       expect(CONFIG_FIELD_SCHEMA.floatIconPosition).toBe('object');
       expect(CONFIG_FIELD_SCHEMA.windowBounds).toBe('object');
       expect(CONFIG_FIELD_SCHEMA.shortcuts).toBe('object');
+      // ProactiveEngine 持久化字段类型映射
+      expect(CONFIG_FIELD_SCHEMA.proactiveNoticedMagnitudes).toBe('number[]');
+      expect(CONFIG_FIELD_SCHEMA.proactiveKnownSources).toBe('string[]');
+      expect(CONFIG_FIELD_SCHEMA.proactiveLastRejectAt).toBe('number');
     });
 
     it('CONFIG_FIELD_SCHEMA 的枚举字段格式正确', () => {
@@ -177,6 +181,31 @@ describe('spriteConfig', () => {
         const result = applyConfigField(config, 'proactiveThreshold', 0);
         expect(result).toBe(true);
         expect(config.proactiveThreshold).toBe(0);
+      });
+
+      // proactiveLastRejectAt 允许设为 null（清除拒绝时间戳，表示从未拒绝或已完全衰减）
+      it('proactiveLastRejectAt 设为有效时间戳 → 返回 true', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'proactiveLastRejectAt', 1784332280000);
+        expect(result).toBe(true);
+        expect(config.proactiveLastRejectAt).toBe(1784332280000);
+      });
+
+      it('proactiveLastRejectAt 设为 null（清除拒绝时间戳）→ 返回 true', () => {
+        const config = makeConfig();
+        // 先设为有效时间戳，再清除为 null
+        config.proactiveLastRejectAt = 1784332280000;
+        const result = applyConfigField(config, 'proactiveLastRejectAt', null);
+        expect(result).toBe(true);
+        expect(config.proactiveLastRejectAt).toBeNull();
+      });
+
+      it('proactiveLastRejectAt 设为字符串 → 返回 false', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'proactiveLastRejectAt', '1784332280000');
+        expect(result).toBe(false);
+        // 默认 null，未被覆盖
+        expect(config.proactiveLastRejectAt).toBeNull();
       });
     });
 
@@ -272,6 +301,38 @@ describe('spriteConfig', () => {
         ]);
         expect(result).toBe(true);
         expect(config.fileWatcherIgnore).toHaveLength(6);
+      });
+    });
+
+    describe('number[] 类型', () => {
+      // proactiveNoticedMagnitudes 是新增的 number[] 类型字段
+      it('proactiveNoticedMagnitudes 设为有效数字数组 → 返回 true', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'proactiveNoticedMagnitudes', [2, 3]);
+        expect(result).toBe(true);
+        expect(config.proactiveNoticedMagnitudes).toEqual([2, 3]);
+      });
+
+      it('proactiveNoticedMagnitudes 设为含 NaN 的数组 → 返回 false', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'proactiveNoticedMagnitudes', [2, NaN]);
+        expect(result).toBe(false);
+        // 默认空数组，未被覆盖
+        expect(config.proactiveNoticedMagnitudes).toEqual([]);
+      });
+
+      it('proactiveNoticedMagnitudes 设为非数组 → 返回 false', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'proactiveNoticedMagnitudes', '2,3');
+        expect(result).toBe(false);
+        expect(config.proactiveNoticedMagnitudes).toEqual([]);
+      });
+
+      it('proactiveKnownSources 设为有效字符串数组 → 返回 true', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'proactiveKnownSources', ['chat', 'insight']);
+        expect(result).toBe(true);
+        expect(config.proactiveKnownSources).toEqual(['chat', 'insight']);
       });
     });
 

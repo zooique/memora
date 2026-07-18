@@ -213,6 +213,16 @@ export class Sprite {
     // ─── 创建 ConfigManager（配置持久化 + 副作用） ───
     this.configManager = new SpriteConfigManager(config, this.buildConfigSideEffects());
 
+    // 注入 ProactiveEngine 状态持久化回调
+    //   configManager 创建后才能调用 updateConfigBatch 持久化
+    this.proactiveEngine.setPersistCallback((state) => {
+      this.configManager.updateConfigBatch({
+        proactiveNoticedMagnitudes: state.noticedMagnitudes,
+        proactiveKnownSources: state.knownSources,
+        proactiveLastRejectAt: state.lastRejectAt,
+      });
+    });
+
     // ─── 创建 LifecycleManager（生命周期编排） ───
     this.lifecycleManager = this.createLifecycleManager(config, options);
 
@@ -233,11 +243,19 @@ export class Sprite {
   private initControllers(config: Required<SpriteConfig>, vectorStore?: IVectorStore): void {
     this.memoryController = new MemoryController(this.agent, vectorStore);
     this.personaController = new PersonaController(this.agent);
-    this.proactiveEngine = new ProactiveEngine({
-      threshold: config.proactiveThreshold,
-      cooldownMs: config.proactiveCooldownMs,
-      silentMode: config.silentMode,
-    });
+    // 从持久化配置恢复 ProactiveEngine 状态，避免重启后冷却/里程碑状态丢失
+    this.proactiveEngine = new ProactiveEngine(
+      {
+        threshold: config.proactiveThreshold,
+        cooldownMs: config.proactiveCooldownMs,
+        silentMode: config.silentMode,
+      },
+      {
+        noticedMagnitudes: config.proactiveNoticedMagnitudes,
+        knownSources: config.proactiveKnownSources,
+        lastRejectAt: config.proactiveLastRejectAt,
+      },
+    );
     // 注入每日消息计数 provider（延迟访问 configManager，运行时才解析）
     this.memoryController.setMessageCountProvider(() => this.configManager.getDailyMessageCounts());
   }
