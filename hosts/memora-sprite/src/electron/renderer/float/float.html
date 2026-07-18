@@ -24,10 +24,15 @@
   <!-- title 属性提供原生 tooltip，作为拖动提示的基础层 -->
   <div id="sphere" role="button" tabindex="0" aria-label="Memora 精灵，单击展开对话，拖动移动位置" title="拖动移动位置 · 单击展开对话">
     <div id="sphere-form">
-      <!-- 阶段二：emoji 占位；阶段三：替换为 <img src="生成的形态图片"> -->
-      <span id="sphere-emoji">🧚</span>
-      <!-- 图片在视口外时延迟加载 -->
-      <img id="sphere-image" alt="" width="72" height="72" loading="lazy" />
+      <!--
+        默认形态：项目 logo（assets/icon.svg 真理源）。
+        第一版本对齐项目 logo 设计，替代原 emoji 占位。
+        未来形态进化：主进程通过 SPRITE_EVENT/formUpdate 事件推送新 imageUrl，
+        float.ts 监听后覆盖 src 即可切换精灵形态（保留为扩展点，不破坏当前默认）。
+        draggable="false" 防止浏览器原生 HTML5 图片拖拽（拖出 ghost 图片干扰球体拖动）。
+        相对路径：float.html → dist-electron/electron/renderer/float/，往上级 3 层到 dist-electron/，再到 assets/icon.svg。
+      -->
+      <img id="sphere-image" src="../../../assets/icon.svg" alt="Memora 精灵" width="36" height="36" draggable="false" />
     </div>
     <!-- 状态指示点（idle/active/sleeping） -->
     <div id="status-dot" aria-hidden="true"></div>

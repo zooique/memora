@@ -54,8 +54,8 @@ export type QuickInputElectronAPI = Pick<
 
 /** Toast 显示时长（ms），统一所有模式的 Toast 时长 */
 const TOAST_DURATION_MS = 500;
-/** 输入区初始基础高度（px），与 CSS 对齐 */
-const INITIAL_BASE_HEIGHT = 72;
+/** 输入区初始基础高度（px），与 CSS 对齐（textarea min-height 36px + padding 16px + footer ~20px + focus-bar 28px+4px margin ≈ 104px） */
+const INITIAL_BASE_HEIGHT = 104;
 /** 候选项高度基数（px），用于 resizeWindow 计算。
  *  与 CSS 对齐：padding 8px*2 + font-size 12px * line-height 1.5 = 34px（UX-QI-19 校准） */
 const ITEM_HEIGHT_PX = 34;
@@ -901,12 +901,28 @@ export class QuickInputController {
     this.inputField.style.height = `${newHeight}px`;
 
     if (this.inputField.offsetHeight !== prevHeight) {
-      // 重新计算窗口基础高度：测量 .quick-input-area 的 offsetHeight（已含 textarea + gap + footer），
-      // 加上 container 上下 padding（var(--space-2) × 2 = 16px）。
-      // 取代原 `actualHeight + 36` 魔法数字估算，避免 footer/padding 漏算导致窗口高度偏差。
+      // 重新计算窗口基础高度：
+      // - .quick-input-area 的 offsetHeight 已含 textarea + gap + footer
+      // - 额外加上 focus-bar 的高度（含 margin-bottom）——focus-bar 作为卡片头部在 container 内部
+      // - 再加上 container 的上下 padding（var(--space-2) × 2 = 16px）
+      // 取代原魔法数字 16，改为 DOM 实际测量，避免 CSS 调整后偏移量失准。
       const inputArea = this.inputField.parentElement;
       if (inputArea instanceof HTMLElement) {
-        this.baseInputHeight = inputArea.offsetHeight + 16;
+        const container = inputArea.parentElement;
+        const focusBar = container?.querySelector('#focus-bar');
+        const focusBarHeight = focusBar instanceof HTMLElement ? focusBar.offsetHeight : 0;
+        // focus-bar 的 margin-bottom（var(--space-1) = 4px）通过 offsetHeight 无法获取，
+        // 用 getComputedStyle 读取实际 margin-bottom 值
+        let focusBarMarginBottom = 0;
+        if (focusBar instanceof HTMLElement) {
+          focusBarMarginBottom = parseInt(getComputedStyle(focusBar).marginBottom, 10) || 0;
+        }
+        // container 上下 padding = var(--space-2) × 2
+        const containerVerticalPadding = container instanceof HTMLElement
+          ? (parseInt(getComputedStyle(container).paddingTop, 10) || 0)
+            + (parseInt(getComputedStyle(container).paddingBottom, 10) || 0)
+          : 16;
+        this.baseInputHeight = inputArea.offsetHeight + focusBarHeight + focusBarMarginBottom + containerVerticalPadding;
       }
       this.resizeWindow();
     }

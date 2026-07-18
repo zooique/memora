@@ -380,8 +380,8 @@
           <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示，置于 messages 内部以便正确定位） -->
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
-        <!-- 聊天面板 Agent 状态指示器（输入区上方，门面体验：让用户看到初始化进度） -->
-        <div id="chat-agent-status" class="chat-agent-status error" role="status" aria-live="polite">
+        <!-- 聊天面板 Agent 状态指示器（输入区上方，仅 unknown/error 态显示；ready 时由 updateChatAgentStatus 加 hidden 类隐藏，避免稳态视觉噪音） -->
+        <div id="chat-agent-status" class="chat-agent-status error hidden" role="status" aria-live="polite">
           <span class="agent-status-dot"></span>
           <span class="agent-status-text">未配置 AI 服务</span>
         </div>

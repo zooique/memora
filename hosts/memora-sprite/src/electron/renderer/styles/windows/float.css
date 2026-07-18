@@ -170,7 +170,7 @@
       display: flex;
     }
 
-    /* ===== 阶段三形态进化预留：图片加载容器 ===== */
+    /* ===== 形态图片加载容器（默认形态：项目 logo） ===== */
     #sphere-form {
       width: 100%;
       height: 100%;
@@ -182,10 +182,22 @@
     }
 
     #sphere-form img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: none;  /* 阶段二不显示图片，仅预留接口 */
+      /*
+        尺寸 50%（36px）：logo 缩小到球体直径的一半，中心聚焦感更强，
+        露出 #sphere 的品牌渐变背景形成光环，避免 logo 充满球体的压迫感。
+        object-fit: contain 保持 logo 圆形外框完整，避免被容器圆形剪裁。
+        pointer-events: none：让所有指针事件穿透到 #sphere，防止 img 作为
+        事件 target 干扰 setPointerCapture 拖动逻辑；同时消除浏览器原生
+        HTML5 图片拖拽（拖出 ghost 图片）的风险（配合 HTML draggable="false" 双保险）。
+        user-select / -webkit-user-drag：进一步禁用浏览器图片拖拽/选中行为。
+      */
+      width: 50%;
+      height: 50%;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
     }
 
     /* ===== 拖动引导提示（首次使用） ===== */

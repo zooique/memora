@@ -757,24 +757,28 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 更新聊天面板 Agent 状态指示器
    *
    * 根据 isAgentReady + hasProviders 组合显示三种状态：
-   * - 就绪（ready）：Agent 已就绪，绿点
-   * - 初始化中（unknown）：已配置 Provider 但未就绪，灰点 + "正在初始化..."
-   * - 未配置（error）：未配置任何 Provider，红点 + "未配置 AI 服务"
+   * - 就绪（ready）：Agent 已就绪——**隐藏**（稳态噪音，"精灵已就绪"零信息量）
+   * - 初始化中（unknown）：已配置 Provider 但未就绪——**显示**"正在初始化..."（过渡态反馈，秒级）
+   * - 未配置（error）：未配置任何 Provider——**隐藏**（由 onboarding 流程接管，项目硬约束：
+   *   "Onboarding must appear whenever no LLM API configuration exists"）
+   *
+   * 设计：仅 unknown 态显示。ready 是稳态（99% 时间），error 由 onboarding 接管，
+   * 两者隐藏可消除视觉噪音且避免首屏闪烁（HTML 初始即 hidden，UIManager 构造时
+   * 同步 initial state 后仍保持 hidden，直到 setHasProviders(true) 触发 unknown 显示）。
    */
   private updateChatAgentStatus(): void {
     const indicator = this.chatAgentStatusEl;
     if (!indicator) return;
     indicator.classList.remove('ready', 'error', 'unknown');
     const textEl = indicator.querySelector('.agent-status-text');
-    if (this.state.isAgentReady) {
-      indicator.classList.add('ready');
-      if (textEl) textEl.textContent = '精灵已就绪';
-    } else if (this.state.hasProviders) {
+    if (!this.state.isAgentReady && this.state.hasProviders) {
+      // 唯一显示场景：过渡态，已配 Provider 但 Agent 还在初始化
+      indicator.classList.remove('hidden');
       indicator.classList.add('unknown');
       if (textEl) textEl.textContent = '正在初始化...';
     } else {
-      indicator.classList.add('error');
-      if (textEl) textEl.textContent = '未配置 AI 服务';
+      // ready 稳态 / error 异常态：均隐藏（error 由 onboarding 接管）
+      indicator.classList.add('hidden');
     }
   }
 

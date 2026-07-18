@@ -59,3 +59,13 @@ if (existsSync(srcIconsDir)) {
   copyDir(srcIconsDir, destIconsDir);
   console.log(`[copy-renderer] 已复制图标: ${srcIconsDir} → ${destIconsDir}`);
 }
+
+// 4. 复制 scripts 目录下的 .ps1 脚本（inputInjector 依赖 getForegroundTitle.ps1 获取 UTF-16 窗口标题）
+//    仅复制 .ps1 文件，其他脚本（.mjs 等）由各自流程管理，不在此处复制
+const srcScriptsDir = join(projectRoot, 'scripts');
+const destScriptsDir = join(distRoot, 'scripts');
+if (existsSync(srcScriptsDir)) {
+  // filter：目录正常进入递归；文件仅复制 .ps1
+  copyDir(srcScriptsDir, destScriptsDir, (name, isDir) => isDir || name.endsWith('.ps1'));
+  console.log(`[copy-renderer] 已复制 .ps1 脚本: ${srcScriptsDir} → ${destScriptsDir}`);
+}

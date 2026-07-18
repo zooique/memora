@@ -34,8 +34,8 @@ import { PasteCoordinator, type SuppressNextChange } from './pasteCoordinator.js
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
-/** 浮窗初始高度（px）—— textarea 1 行 + 底部栏 + 内边距 */
-const QUICK_INPUT_HEIGHT = 72;
+/** 浮窗初始高度（px）—— focus-bar 28px + textarea 1行 + padding + footer，与 INITIAL_BASE_HEIGHT 对齐 */
+const QUICK_INPUT_HEIGHT = 104;
 /** 浮窗最大高度（px）—— 输入区 + 候选列表(最多 5 项×38px) + footer，与 CSS max-height:200px 对齐 */
 const QUICK_INPUT_MAX_HEIGHT = 400;
 /** 失焦延迟关闭时长（ms）—— 给 Alt+Tab 切换留余量 */
@@ -204,13 +204,14 @@ export class QuickInputWindow {
       this.notifyFocusChange(null);
     });
     // focus 时通知渲染进程"聚焦：{应用名}"，恢复 Tab 激活
-    // pinned 模式下额外重新捕获前台窗口（用户切走再切回时 previousWindow 可能已陈旧）
+    // 始终重新捕获前台窗口（不仅 pinned 模式）：
+    //   用户切走再切回时 previousWindow 可能已陈旧，需刷新以避免显示过时的 appName。
+    //   原代码仅在 pinnedMode 时重新捕获，导致 default 模式下切回浮窗时 appName 仍是 show() 时的旧值，
+    //   若 show() 时因乱码误捕浮窗自身，后续 focus 永远显示"无聚焦"或乱码（问题 2 根因）。
     win.on('focus', async () => {
       this.cancelBlurClose();
-      if (this.pinnedMode) {
-        // pinned 模式下重新捕获前台窗口（排除浮窗自身，避免误捕）
-        await this.pasteCoordinator.capturePreviousWindow(this.win?.getTitle());
-      }
+      // 重新捕获前台窗口（排除浮窗自身，避免误捕）
+      await this.pasteCoordinator.capturePreviousWindow(this.win?.getTitle());
       const appName = await this.pasteCoordinator.getCapturedAppName();
       this.notifyFocusChange(appName);
     });

@@ -95,6 +95,10 @@ export class JsonlAppender {
   /**
    * 读取最近 N 条记录（从后往前读取，最新在前）
    *
+   * 文件不存在（ENOENT）是预期初始状态——用户首次启动且尚未触发任何审计事件时，
+   * audit.log 根本不会被创建。此时静默返回空数组，仅 debug 级别记录便于排查。
+   * 其他 IO 错误（如权限问题）才属于真正异常，升级为 warn 级别。
+   *
    * @param limit 返回数量上限，默认 50
    * @returns 解析后的记录数组，文件不存在时返回空数组
    */
@@ -104,8 +108,11 @@ export class JsonlAppender {
     try {
       content = await readFile(this.filePath, 'utf8');
     } catch (err) {
-      // 文件读取失败时返回空数组，记录警告便于排查
-      logger.warn({ err: toError(err).message, filePath: this.filePath }, '读取审计日志失败');
+      // 区分"文件不存在"（预期初始状态，debug 级别）与"真实 IO 错误"（warn 级别）
+      const message = toError(err).message;
+      const isENOENT = message.startsWith('ENOENT');
+      const logFn = isENOENT ? logger.debug.bind(logger) : logger.warn.bind(logger);
+      logFn({ err: message, filePath: this.filePath }, isENOENT ? '审计日志尚未生成（首次启动或无审计事件）' : '读取审计日志失败');
       return [];
     }
     const lines = content.trim().split('\n').filter(Boolean);

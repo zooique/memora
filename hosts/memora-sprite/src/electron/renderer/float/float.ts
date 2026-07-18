@@ -6,7 +6,11 @@
  * - 首次使用拖动引导提示（localStorage）
  * - 右键菜单
  * - 未读计数监听
- * - 精灵事件监听（主动提示弹跳 + 形态进化预留）
+ * - 精灵事件监听（主动提示弹跳 + 形态进化扩展点）
+ *
+ * 默认形态：项目 logo（assets/icon.svg），由 float.html 的 <img src> 静态加载。
+ * 形态进化扩展点：主进程通过 SPRITE_EVENT/formUpdate 事件推送新 imageUrl，
+ * 收到事件后覆盖 sphereImage.src 切换形态。当前未投入生产，保留为未来扩展。
  *
  * 返回 cleanup 函数供调用方在窗口关闭时清理事件监听器和定时器。
  *
@@ -100,7 +104,7 @@ const AWAY_LABEL_REFRESH_MS = 60_000;
 export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // ─── DOM 引用 ─────────────────────────────────────────
   const sphere = document.getElementById('sphere');
-  const sphereEmoji = document.getElementById('sphere-emoji');
+  // sphereImage：默认 src 已在 float.html 中静态加载项目 logo，formUpdate 事件仅用于未来形态切换
   const sphereImage = getOptionalElement('sphere-image', 'img');
   const statusDot = document.getElementById('status-dot');
   const badge = document.getElementById('badge');
@@ -383,13 +387,10 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
       timers.setTimeout(() => statusDot.classList.remove('active'), 3000);
     }
 
-    // 阶段三形态进化预留：加载生成的形态图片
+    // 形态进化扩展点：主进程通过 formUpdate 事件推送新 imageUrl，覆盖默认 logo
+    // 当前未投入生产（主进程未发送此事件），保留为未来扩展点
     if (event.type === 'formUpdate' && hasImageUrl(event.payload) && sphereImage) {
       sphereImage.src = event.payload.imageUrl;
-      sphereImage.style.display = 'block';
-      if (sphereEmoji) {
-        sphereEmoji.style.display = 'none';
-      }
     }
 
     // 在场状态变化 → 球体变暗 + 离开时长小标签

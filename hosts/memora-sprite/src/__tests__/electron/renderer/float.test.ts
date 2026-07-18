@@ -25,14 +25,13 @@ function setupFloat(mockAPI: FloatElectronAPI): () => void {
   return initFloatWindow(mockAPI);
 }
 
-/** float.html 的 DOM 结构 */
+/** float.html 的 DOM 结构（默认形态：项目 logo，由 <img src> 静态加载） */
 const FLOAT_HTML = `<!DOCTYPE html>
 <html><body>
   <div id="sphere">
     <div id="sphere-inner">
       <div id="sphere-glow">
-        <span id="sphere-emoji">🧚</span>
-        <img id="sphere-image" src="" alt="精灵形态" style="display:none;" />
+        <img id="sphere-image" src="assets/icon.svg" alt="Memora 精灵" />
       </div>
       <div id="status-dot"></div>
     </div>
@@ -350,20 +349,20 @@ describe('精灵事件', () => {
     vi.useRealTimers();
   });
 
-  it('formUpdate 事件切换形态图片', () => {
+  it('formUpdate 事件切换形态图片（覆盖默认 logo）', () => {
     setupFloat(mockAPI);
+
+    const image = document.getElementById('sphere-image') as HTMLImageElement;
+    // 默认形态：项目 logo（HTML 静态加载）
+    expect(image.src).toContain('icon.svg');
 
     spriteEventCallback!({
       type: 'formUpdate',
       payload: { imageUrl: 'data:image/png;base64,test' },
     });
 
-    const image = document.getElementById('sphere-image') as HTMLImageElement;
-    const emoji = document.getElementById('sphere-emoji')!;
-
+    // formUpdate 后：src 被覆盖为新 imageUrl（未来形态进化扩展点）
     expect(image.src).toContain('data:image/png');
-    expect(image.style.display).toBe('block');
-    expect(emoji.style.display).toBe('none');
   });
 });
 
