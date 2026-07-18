@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：29（内核 18 + 精灵 11）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：30（内核 18 + 精灵 12）
 
 ---
 
@@ -48,6 +48,7 @@ description: Memora 关键决策年轮
 | [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) | PanelManager 组合模式约定（阶段 C 架构演进沉淀） | ✅ 已接受 | 架构   |
 | [ADR-SP-016](./ADR-SP-016-ui-mixin-pattern.md) | UIManager Mixin 拆分模式（applyMixins + uiDelegations/ 委托群） | ✅ 已接受 | 架构 |
 | [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) | 快速输入浮窗架构：窗口管理器内联 IPC + Controller/Completion 双类解耦 + LLM 回调注入 | ✅ 已接受 | 架构 |
+| [ADR-SP-018](./ADR-SP-018-cross-process-encoding.md) | 跨进程非 ASCII 数据传递：文件 I/O + 原始数据提取（绕过 nut-js 编码 bug + stdout 管道污染 + 竞态条件） | ✅ 已接受 | 工程 |
 
 ---
 
@@ -61,7 +62,7 @@ description: Memora 关键决策年轮
 | 架构   | 9    | ADR-004, ADR-009~015, ADR-SP-017 |
 | 安全   | 1    | ADR-006              |
 | 质量   | 1    | ADR-007              |
-| 工程   | 2    | ADR-008, ADR-017     |
+| 工程   | 3    | ADR-008, ADR-017, ADR-SP-018     |
 | 前端   | 2    | ADR-018, ADR-019     |
 
 ---

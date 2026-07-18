@@ -10,7 +10,7 @@ date: 2026-07-05
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 29 个 ADR（内核 18 + 精灵 11）
+> **决策追溯**：`.trae/rules/decisions/` 下 30 个 ADR（内核 18 + 精灵 12）
 
 ## 1. 不可违反的硬约束
 
@@ -154,7 +154,7 @@ chore: 升级 dependencies
 
 ### 6.5 决策记录类（decisions/ 目录，按需读取）
 
-> 详见 [decisions/README.md](./decisions/README.md)。共 29 个 ADR：内核 ADR-001~004 + ADR-006~019（18 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015~017（11 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
+> 详见 [decisions/README.md](./decisions/README.md)。共 30 个 ADR：内核 ADR-001~004 + ADR-006~019（18 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015~018（12 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
 
 ## 7. AI 行为 DO/DON'T 速查表
 

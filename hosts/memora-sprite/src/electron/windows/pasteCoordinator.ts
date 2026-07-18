@@ -20,6 +20,9 @@
  */
 
 import { execSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { getDefaultInputInjector, type InputInjector, type ActiveWindow, type PasteResult } from '../inputInjector.js';
 import { logger } from 'memora';
 
@@ -27,46 +30,79 @@ import { logger } from 'memora';
 export type SuppressNextChange = () => void;
 
 /**
- * 通过 PowerShell 调用 Win32 API 获取前台窗口标题
+ * 通过 PowerShell 调用 Win32 GetWindowTextW 获取指定窗口的准确标题
  *
- * nut-js 的 GetWindowTextA → napi_create_string_utf8 路径存在 GBK→UTF-8 编码 bug，
- * 中文标题字节被错误解释为 UTF-8，产生不可逆的乱码（U+FFFD 替换字符）。
- * 此函数绕过 nut-js，直接通过 PowerShell 调用 GetWindowTextW（UTF-16 原生），无编码损失。
+ * 根因修复：nut-js 底层调用 GetWindowTextA（ANSI 版本），在中文 Windows 上返回 GBK 字节，
+ * nut-js 将其误作 UTF-8 传给 Node.js napi，产生不可逆的 U+FFFD 乱码。
+ * 此函数绕过 nut-js，直接调用 GetWindowTextW（UTF-16 原生），零编码损失。
  *
- * 技术细节：
- *   - 用 -EncodedCommand (base64 UTF-16LE) 传递脚本，避免引号转义问题
- *   - PowerShell 返回 base64(UTF-16LE)，Node.js 解码，绕过 stdout 编码问题
+ * 关键设计（消除旧方案的两个缺陷）：
+ *   1. 接受 HWND 参数而非调用 GetForegroundWindow()——消除竞态条件（旧方案中
+ *      PowerShell 调用 GetForegroundWindow() 时前台窗口可能已切换）
+ *   2. 通过临时文件传递 UTF-16LE 字节而非 stdout + base64——消除 PowerShell stdout
+ *      编码污染（系统代码页/OEM 编码可能破坏 base64 输出中的非 ASCII 字符）
  *
  * 性能：execSync 阻塞约 100-200ms（PowerShell 启动开销），仅在 nut-js 标题被检测为乱码时触发。
  *
+ * @param hwnd Win32 窗口句柄（来自 nut-js Window.windowHandle）
  * @returns 窗口标题，失败时返回 null
  */
-function getForegroundWindowTitleViaPS(): string | null {
+function getWindowTitleViaPS(hwnd: number): string | null {
+  const tmpFile = path.join(os.tmpdir(), `memora_title_${process.pid}_${Date.now()}.bin`);
   try {
-    // PowerShell 脚本：Add-Type 定义 Win32 P/Invoke → 获取前台窗口句柄 → 获取标题 → base64 编码输出
-    // 为什么用 base64：PowerShell 在 Electron 环境下 stdout 编码可能不是 UTF-8（OEM/cp437），
-    // 中文直接输出会被破坏。base64 是纯 ASCII，无论 stdout 编码是什么都不会破坏。
-    // Node.js 端用 Buffer.from(result, 'base64').toString('utf16le') 解码。
-    const script = `Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();[DllImport("user32.dll")]public static extern int GetWindowText(IntPtr h,System.Text.StringBuilder t,int n);[DllImport("user32.dll")]public static extern int GetWindowTextLength(IntPtr h);'
-$h=[C.W]::GetForegroundWindow()
-$l=[C.W]::GetWindowTextLength($h)
+    // PowerShell 脚本：Add-Type 定义 Win32 P/Invoke → 用指定 HWND 获取标题 → 写入临时文件
+    //
+    // 为什么用文件 I/O 而非 stdout：
+    //   PowerShell 在 Electron 环境下 stdout 受系统代码页（中文 Windows = CP936/GBK）影响，
+    //   即使用 base64 编码，管道传输过程中仍可能引入 BOM 或编码层前缀字节。
+    //   文件 I/O 用 UTF-16LE 字节直接写入，Node.js 用 fs.readFileSync 读取后
+    //   .toString('utf16le') 解码，零编码转换，100% 可靠。
+    //
+    // 为什么接受 HWND 参数而非调用 GetForegroundWindow()：
+    //   消除竞态条件——旧方案中 await nut-js title 后再调 PS GetForegroundWindow()，
+    //   中间时间窗口内前台窗口可能已被系统/通知切换，导致拿到错误窗口的标题。
+    //   直接传入 HWND 可确保获取的就是 nut-js 捕获的那个窗口。
+    //
+    // 为什么用 TypeDefinition + 显式 W 后缀：
+    //   - MemberDefinition 对 DllImport CharSet 命名参数的解析在某些环境下可能不一致
+    //   - 显式指定 W 后缀函数名 + CharSet.Unicode 双重保险，确保调用 Unicode 版本 API
+    //   - TypeDefinition 使用完整 C# 语法，语义更明确，避免 PowerShell 解析差异
+    const escapedPath = tmpFile.replace(/\\/g, '\\\\');
+    const script = `Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class Win32Title {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowTextLengthW(IntPtr hWnd);
+}
+"@
+$h=[IntPtr]::new(${hwnd})
+$l=[Win32Title]::GetWindowTextLengthW($h)
+if ($l -eq 0) { exit }
 $s=New-Object System.Text.StringBuilder($l+1)
-[C.W]::GetWindowText($h,$s,$s.Capacity)
-[Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($s.ToString()))`;
+[Win32Title]::GetWindowTextW($h,$s,$s.Capacity)
+$bytes=[System.Text.Encoding]::Unicode.GetBytes($s.ToString())
+[System.IO.File]::WriteAllBytes("${escapedPath}", $bytes)`;
     // 用 -EncodedCommand 传递 base64(UTF-16LE) 编码的脚本，避免引号转义
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const result = execSync(
+    execSync(
       `powershell -NoProfile -EncodedCommand ${encoded}`,
-      { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] },
+      { timeout: 3000, stdio: 'ignore' },
     );
-    // PowerShell 返回 base64(UTF-16LE)，Node.js 解码
-    const base64 = result.trim();
-    if (!base64) return null;
-    const title = Buffer.from(base64, 'base64').toString('utf16le');
+    // 读取临时文件中的 UTF-16LE 字节并解码为字符串
+    const buf = fs.readFileSync(tmpFile);
+    const title = buf.toString('utf16le');
     return title || null;
   } catch (err) {
     logger.warn({ err }, 'PowerShell 获取窗口标题失败');
     return null;
+  } finally {
+    // 清理临时文件（无论成功失败）
+    try { fs.unlinkSync(tmpFile); } catch { /* 文件可能不存在，忽略 */ }
   }
 }
 
@@ -100,6 +136,8 @@ export class PasteCoordinator {
   private autoPasteEnabled = true;
   /** PowerShell 获取的准确标题缓存（每次 capturePreviousWindow 时失效） */
   private cachedAccurateTitle: string | null = null;
+  /** nut-js 捕获窗口的 Win32 HWND 句柄（用于绕过 GetForegroundWindow 竞态） */
+  private cachedHwnd: number | null = null;
 
   /**
    * 预加载 InputInjector 单例（fire-and-forget）
@@ -142,8 +180,10 @@ export class PasteCoordinator {
     // 若捕获到浮窗自身（返回 null），保持上一次的 previousWindow
     if (captured) {
       this.previousWindow = captured;
+      // 缓存 HWND（用于绕过 GetForegroundWindow 竞态条件）
+      this.cachedHwnd = captured.hwnd ?? null;
       // 立即检测 nut-js 标题是否乱码并尝试用 PowerShell 修复
-      // 此时浮窗未 show()，PowerShell GetForegroundWindow 返回目标窗口（关键时序）
+      // 此时浮窗未 show()，前台窗口仍是目标中文软件（关键时序）
       this.cachedAccurateTitle = await this.resolveAccurateTitle(captured);
     }
   }
@@ -164,8 +204,10 @@ export class PasteCoordinator {
     try {
       const nutJsTitle = await window.title;
       if (!isGarbledTitle(nutJsTitle)) return null;
-      // nut-js 标题含 U+FFFD → 编码 bug 触发，用 PowerShell 修复
-      const psTitle = getForegroundWindowTitleViaPS();
+      // nut-js 标题含 U+FFFD → 编码 bug 触发，用 PowerShell + HWND 修复
+      // 直接传入 HWND 消除 GetForegroundWindow 竞态条件
+      if (this.cachedHwnd == null) return null;
+      const psTitle = getWindowTitleViaPS(this.cachedHwnd);
       if (psTitle) {
         logger.info({ nutJsTitle, psTitle }, 'nut-js 标题乱码，已通过 PowerShell 修复');
         return psTitle;

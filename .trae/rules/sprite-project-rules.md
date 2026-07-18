@@ -27,7 +27,7 @@ date: 2026-07-13
 
 | 位置 | 用途 |
 |------|------|
-| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 29 个 ADR（内核 18 + 精灵 11） |
+| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 30 个 ADR（内核 18 + 精灵 12） |
 | `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
 | `memora/tasks/` | **内核任务**：内核健康度快照 + 待完成/已完成 |
 | `hosts/memora-sprite/tasks/` | **宿主任务**：宿主健康度快照 + 待完成/已完成 + 方案文档 |
@@ -353,6 +353,7 @@ SecurityGuard.requestWriteConfirmation
 ## 10. 快速输入浮窗模块（quick-input）
 
 > **架构决策**：详见 [ADR-SP-017](./decisions/ADR-SP-017-quick-input-architecture.md)
+> **窗口标题编码**：详见 [ADR-SP-018](./decisions/ADR-SP-018-cross-process-encoding.md)（nut-js GetWindowTextA 编码 bug 绕过：提取 HWND + PowerShell GetWindowTextW + 文件 I/O 传递）
 > **定位**：用户主动召唤的轻量级输入浮窗，不属于 §9 感知层（感知层是精灵主动感知，quick-input 是用户主动触发）
 
 ### 10.1 模块架构

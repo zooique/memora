@@ -55,6 +55,15 @@ export interface ActiveWindow {
   readonly region: Promise<{ left: number; top: number; width: number; height: number }>;
   /** 恢复焦点到该窗口 */
   focus: () => Promise<void>;
+  /**
+   * Win32 窗口句柄（HWND）
+   *
+   * nut-js Window 对象内部存储的原生窗口句柄。
+   * 用于绕过 nut-js 的 GetWindowTextA 编码 bug：
+   * 拿到 HWND 后可直接调用 GetWindowTextW 获取正确的 Unicode 标题。
+   * 值为 undefined 时降级到 nut-js 标题（可能乱码）。
+   */
+  readonly hwnd?: number;
 }
 
 /**
@@ -305,6 +314,9 @@ export async function getDefaultInputInjector(): Promise<InputInjector> {
           title: win.title,
           region: win.region,
           focus: async () => { await win.focus(); },
+          // 提取 nut-js Window 内部的原生窗口句柄（HWND）
+          // 用于绕过 GetWindowTextA 的 GBK→UTF-8 编码 bug
+          hwnd: (win as unknown as { windowHandle?: number }).windowHandle,
         };
       },
       keyboard: {

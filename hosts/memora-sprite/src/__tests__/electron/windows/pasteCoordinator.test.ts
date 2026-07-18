@@ -15,13 +15,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // mock getDefaultInputInjector，返回可控的 InputInjector mock
-const { mockInputInjector, mockGetDefault, mockExecSync } = vi.hoisted(() => ({
+const { mockInputInjector, mockGetDefault, mockExecSync, mockReadFileSync, mockUnlinkSync } = vi.hoisted(() => ({
   mockInputInjector: {
     captureActiveWindow: vi.fn(),
     paste: vi.fn(),
   },
   mockGetDefault: vi.fn(),
-  mockExecSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
+  mockExecSync: vi.fn((): string => { throw new Error('mocked: PowerShell disabled in test'); }),
+  mockReadFileSync: vi.fn(),
+  mockUnlinkSync: vi.fn(),
 }));
 
 vi.mock('../../../electron/inputInjector.js', () => ({
@@ -30,20 +32,31 @@ vi.mock('../../../electron/inputInjector.js', () => ({
 }));
 
 // mock node:child_process execSync（默认模拟 PowerShell 失败，避免测试环境真的调用 PowerShell）
-// 单个测试可通过 mockExecSync.mockReturnValue 覆盖为成功路径
+// 单个测试可通过 mockExecSync.mockImplementation(() => {}) 覆盖为成功路径
 vi.mock('node:child_process', () => ({
   execSync: mockExecSync,
+}));
+
+// mock node:fs（文件 I/O 方式获取标题：readFileSync 读取 PowerShell 写入的 UTF-16LE 临时文件）
+vi.mock('node:fs', () => ({
+  default: { readFileSync: mockReadFileSync, unlinkSync: mockUnlinkSync },
+  readFileSync: mockReadFileSync,
+  unlinkSync: mockUnlinkSync,
 }));
 
 import { PasteCoordinator } from '../../../electron/windows/pasteCoordinator.js';
 import type { ActiveWindow, PasteResult } from '../../../electron/inputInjector.js';
 
-/** 创建 mock ActiveWindow */
+/** mock HWND 值（nut-js Window.windowHandle） */
+const MOCK_HWND = 12345678;
+
+/** 创建 mock ActiveWindow（含 HWND 用于 PowerShell 标题修复） */
 function createMockWindow(title: string): ActiveWindow {
   return {
     title: Promise.resolve(title),
     region: Promise.resolve({ left: 0, top: 0, width: 800, height: 600 }),
     focus: vi.fn(() => Promise.resolve()),
+    hwnd: MOCK_HWND,
   };
 }
 
@@ -270,10 +283,10 @@ describe('PasteCoordinator', () => {
       const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
 
-      // PowerShell 返回 base64(UTF-16LE) 编码的准确标题 "无标题 - 记事本"
+      // PowerShell 通过文件 I/O 返回 UTF-16LE 编码的准确标题 "无标题 - 记事本"
       const accurateTitle = '无标题 - 记事本';
-      const psBase64 = Buffer.from(accurateTitle, 'utf16le').toString('base64');
-      mockExecSync.mockReturnValue(psBase64);
+      mockExecSync.mockReturnValue(''); // PowerShell 成功（不抛错，返回值不使用）
+      mockReadFileSync.mockReturnValue(Buffer.from(accurateTitle, 'utf16le'));
 
       await coordinator.capturePreviousWindow();
 
@@ -290,7 +303,7 @@ describe('PasteCoordinator', () => {
     it('乱码标题：PowerShell 失败时降级使用 nut-js 乱码标题', async () => {
       const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
-      // 显式重置 mockExecSync 为抛错（上一个测试设置了 mockReturnValue，clearAllMocks 不重置返回值）
+      // 显式重置 mockExecSync 为抛错（上一个测试设置了 mockImplementation，clearAllMocks 不重置实现）
       mockExecSync.mockReset();
       mockExecSync.mockImplementation(() => { throw new Error('mocked: PowerShell failed'); });
 
@@ -301,10 +314,11 @@ describe('PasteCoordinator', () => {
       expect(result).toBe('\uFFFD\uFFFD\uFFFD\uFFFD');
     });
 
-    it('乱码标题：PowerShell 返回空时降级使用 nut-js 标题', async () => {
+    it('乱码标题：PowerShell 返回空文件时降级使用 nut-js 标题', async () => {
       const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
-      mockExecSync.mockReturnValue(''); // PowerShell 返回空
+      mockExecSync.mockReturnValue(''); // PowerShell 成功
+      mockReadFileSync.mockReturnValue(Buffer.alloc(0)); // 但文件为空
 
       await coordinator.capturePreviousWindow();
 
@@ -324,7 +338,8 @@ describe('PasteCoordinator', () => {
       const garbledTitle = '文档2 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
       const accurateTitle = '文档2 - Excel';
-      mockExecSync.mockReturnValue(Buffer.from(accurateTitle, 'utf16le').toString('base64'));
+      mockExecSync.mockReturnValue(''); // PowerShell 成功
+      mockReadFileSync.mockReturnValue(Buffer.from(accurateTitle, 'utf16le'));
       await coordinator.capturePreviousWindow();
       expect(mockExecSync).toHaveBeenCalledTimes(1);
       const name2 = await coordinator.getCapturedAppName();
