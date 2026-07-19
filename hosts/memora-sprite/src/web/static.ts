@@ -41,12 +41,13 @@ const MIME_TYPES: Record<string, string> = {
  *
  * 与 routes/types.ts 中的 SECURITY_HEADERS 内容保持一致；
  * 此处单独定义是为了让 web 入口层（static.ts / server.ts）不反向依赖 routes 子层，
- * 维持层次清晰。两个常量必须同步修改。
+ * 维持层次清晰。两个常量必须同步修改（含 CSP 收紧 default-src 'self'，详见 security_rules.md §7.1）。
  */
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': "default-src 'self'",
 };
 
 /**

@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）。目录形态已对齐最终目标。
-> **版本**：v2.1（2026-07-13）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）+ helpers 补登 4 文件（buttonHelpers/completionHelpers/completionMetrics/safeStorage，v2.2 规则对齐）+ helpers 类形式例外显式标注（EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator）+ CSS-R7 样式层规则对齐（memory/completion-stats.css + panels/clipboard.css 规则补登记 + index.html 重复 link 清理 + float.html 浮窗三层加载补齐 + clipboard.css 死代码剪枝 + completion-stats.css 11 处裸 px 令牌化）。目录形态已对齐最终目标。
+> **版本**：v2.5（2026-07-19，STEP9 斩木除根同步：§1 preload-float→preloadFloat / preload-quick-input→preloadQuickInput（NAMING-2/3，camelCase 对齐 TS 规范）+ uiDelegations/→ui-delegations/（NAMING-1，文件夹 kebab-case 规范）+ shared/ 补登 5 文件（numberUtils/levelUtils/sensitivePatterns/llmErrorClassifier/spriteStats，STEP4-3 + STEP7 漏检补登）+ panels/ 补登 3 文件（clipboardPanelManager/completionStatsRenderer/llmGovernanceResultRenderer，STEP6-5）+ components/ 补登 startupSummaryBanner（STEP6-5）+ §3 迁移日志新增 STEP9-NAMING-1/2/3 + STEP9-DUP-1 + STEP9-DEP-1/2 + STEP4-3 + STEP6-5 + STEP7 漏检补登条目）
 
 ---
 
@@ -15,7 +15,9 @@ src/
 │
 ├── electron/                   # Electron 主进程 + 渲染进程
 │   ├── main.ts                 # 主进程入口（窗口生命周期 + 应用启动）
-│   ├── preload.ts              # 预加载脚本（contextBridge 暴露 API）
+│   ├── preload.ts              # 预加载脚本（contextBridge 暴露 API，主窗口完整 UI ~266 API）
+│   ├── preloadFloat.ts         # 浮动窗口预加载脚本（12 API 最小化暴露面，ADR-SP-017 独立化；camelCase 命名规范，STEP9-NAMING-2）
+│   ├── preloadQuickInput.ts    # 快速输入浮窗预加载脚本（10 API 最小化暴露面，ADR-SP-017 独立化；camelCase 命名规范，STEP9-NAMING-3）
 │   ├── esmShim.ts              # ESM 兼容 shim（__dirname 替代）
 │   ├── errorHandler.ts         # 全局错误处理（分类 + 日志 + 降级）
 │   ├── interaction.ts          # Electron 交互实现（IInteraction 接口）
@@ -64,24 +66,28 @@ src/
 │       │   ├── memoryController.ts      # 记忆面板控制器（C-3 重命名，原 memoryPanelController.ts）
 │       │   └── personaController.ts     # 角色面板控制器（C-3 重命名，原 personaPanelController.ts）
 │       │
-│       ├── helpers/            # 渲染进程工具函数
-│       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作）
-│       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂）
-│       │   ├── errorState.ts   # 错误状态辅助（全局错误状态管理）
-│       │   ├── eventTracker.ts # 事件追踪（埋点/用户行为记录）
-│       │   ├── formValidation.ts # 表单校验辅助（输入校验规则）
+│       ├── helpers/            # 渲染进程工具函数（不持有可变状态、可独立测试；类形式例外：EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator，状态封闭在实例内、职责单一）
+│       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作/统一时间格式化/createEmptyState/setButtonLoadingEl）
+│       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂 + reportError 日志输出）
+│       │   ├── errorState.ts   # 错误状态辅助（全局错误状态管理 + 重试按钮渲染）
+│       │   ├── eventTracker.ts # 事件追踪类（埋点/用户行为记录 + 统一事件清理）
+│       │   ├── formValidation.ts # 表单校验辅助（输入校验规则 + 必填字段 blur 即时校验）
 │       │   ├── icon.ts         # 图标辅助（SVG 图标加载/渲染）
 │       │   ├── initFailureCard.ts # 初始化失败卡片辅助（启动失败时渲染降级卡片）
-│       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式）
-│       │   ├── messageOperations.ts # 消息操作辅助（消息 CRUD 纯函数）
-│       │   ├── narrativeGenerator.ts # 叙事生成器辅助（感知叙事文本生成）
+│       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式/思考阶段中文映射）
+│       │   ├── messageOperations.ts # 消息操作辅助（消息 CRUD 纯函数 + 跨 group 遍历）
+│       │   ├── narrativeGenerator.ts # 叙事生成器类（感知叙事文本生成，累积器模式持有 lastNarrative* 状态）
 │       │   ├── perceptionLabels.ts # 感知标签辅助（情感/默契/上下文标签文本）
-│       │   ├── scrollController.ts # 滚动控制器辅助（消息列表自动滚动/锚定）
+│       │   ├── scrollController.ts # 滚动控制器类（消息列表自动滚动/锚定/rAF 节流）
 │       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
-│       │   ├── safeTimer.ts    # 安全定时器辅助（自动清理/防泄漏）
+│       │   ├── safeTimer.ts    # 安全定时器类（SafeTimerTracker，自动清理/防泄漏）
+│       │   ├── safeStorage.ts  # localStorage 安全读写纯函数（safeGetJSON/safeSetJSON/safeGet/safeSet，try-catch 静默降级，从 5+9 处提取）
+│       │   ├── buttonHelpers.ts # 按钮事件绑定辅助（bindRefreshButton，按钮 click→loading→异步操作→恢复 标准模式）
+│       │   ├── completionHelpers.ts # 补全模块共享工具（fetchMemoryContent，提取 quickInput/inputAreaManager 重复的 fillFromMemory 逻辑）
+│       │   ├── completionMetrics.ts # 补全统计埋点单例类（CompletionMetrics + getCompletionMetrics，LRU 500 条 + 实时聚合，FNV-1a hash 去标识化）
 │       │   │
 │       │   ├── chatPanelEvents.ts # 对话面板事件监听辅助（从 chatPanelManager 提取）
-│       │   ├── streamSafetyTimer.ts # 流式安全兜底定时器（30s/90s 二级兜底，从 chatPanelManager 提取）
+│       │   ├── streamSafetyTimer.ts # 流式安全兜底定时器类（StreamSafetyTimer，30s/90s 二级兜底，从 chatPanelManager 提取）
 │       │   │
 │       │   ├── memoryDetailPanel.ts # 记忆详情子系统辅助（F-LINE-2 从 memoryPanelManager 提取：详情/脉络/邻居/按钮）
 │       │   ├── memoryPanelEvents.ts # 记忆面板事件监听辅助（AUTO-HEALTH-05 从 memoryPanelManager 提取）
@@ -97,8 +103,8 @@ src/
 │       │   ├── relationGraphColor.ts   # 关系图谱颜色映射（节点/边配色纯函数）
 │       │   ├── relationGraphGeometry.ts # 关系图谱几何计算（nodeRadius/screenToWorld/findNodeAt/findEdgeAt/pointToSegmentDist 纯函数）
 │       │   │
-│       │   ├── applyMixins.ts  # Mixin 注入工具（applyMixins 函数，将 uiDelegations/ 委托群方法分发到 UIManager）
-│       │   └── uiDelegations/  # UIManager 委托群（mixin 模式，按业务域聚合的方法集合）
+│       │   ├── applyMixins.ts  # Mixin 注入工具（applyMixins 函数，将 ui-delegations/ 委托群方法分发到 UIManager）
+│       │   └── ui-delegations/ # UIManager 委托群（mixin 模式，按业务域聚合的方法集合；kebab-case 命名规范，STEP9-NAMING-1）
 │       │       ├── chatDelegations.ts        # 对话面板委托方法（消息发送/流式/中断）
 │       │       ├── dashboardDelegations.ts   # 仪表盘委托方法（概览/运行指标/记忆源健康）
 │       │       ├── memoryDelegations.ts      # 记忆面板委托方法（列表/详情/视图切换/关系图谱）
@@ -114,7 +120,8 @@ src/
 │       │   ├── proactiveBanner.ts   # 精灵主动提示横幅
 │       │   ├── suggestionCard.ts    # 建议卡片
 │       │   ├── relationGraph.ts     # 关系图 Canvas 组件（记忆拓扑可视化）
-│       │   └── markdown.ts          # Markdown 渲染
+│       │   ├── markdown.ts          # Markdown 渲染
+│       │   └── startupSummaryBanner.ts # 启动摘要横幅组件（对话区顶部展示记忆/洞察/技能/衰减/感知/健康聚合数据，从 chatPanelManager 提取，STEP6-5）
 │       │
 │       ├── panels/             # 面板管理器（各面板的 DOM 绑定 + 渲染逻辑）
 │       │   ├── chatPanelManager.ts       # 对话面板
@@ -130,8 +137,11 @@ src/
 │       │   ├── partnerInsightsRenderer.ts # 伙伴洞察子渲染器（ADR-SP-015 模式 D，由 memoryPanelManager 持有）
 │       │   ├── insightsRenderer.ts       # 洞察统计子渲染器（ADR-SP-015 模式 C，由 memoryPanelManager 持有）
 │       │   ├── healthDashboardRenderer.ts # 健康度仪表盘子渲染器（ADR-SP-015 模式 C，由 memoryPanelManager 持有）
+│       │   ├── completionStatsRenderer.ts # 补全统计面板渲染器（第 3 个 analysis panel，ADR-SP-015 模式 C+D，由 memoryPanelManager 持有，STEP6-5）
+│       │   ├── llmGovernanceResultRenderer.ts # LLM 治理结果子渲染器（健康度面板"LLM 治理结果"子区域，ADR-SP-015 模式 C+D，由 memoryController 持有，STEP6-5）
 │       │   ├── panelErrorBannerManager.ts # 面板错误横幅（C-5-1 拆分，自包含 EventTracker）
 │       │   ├── clipboardManager.ts       # 剪贴板保护（C-5-2 拆分，依赖注入 ToastManager + ModalManager）
+│       │   ├── clipboardPanelManager.ts  # 剪贴板面板 UI 渲染层（待处理列表/角标/空状态/批量操作/引导气泡，从 clipboardManager 拆分 UI 部分，STEP6-5）
 │       │   ├── dateNavManager.ts         # 日期导航（C-5-3 拆分，自包含 EventTracker）
 │       │   ├── skillDropManager.ts       # 技能拖入安装（C-5-4 拆分，依赖注入 ToastManager）
 │       │   ├── archiveButtonManager.ts   # 归档按钮管理（manual 模式消息归档按钮，从 chatPanelManager 拆分）
@@ -173,19 +183,21 @@ src/
 │           │   ├── chat-messages-input.css   # 输入区 / 补全 / 停止按钮 / 空状态（二级拆分）
 │           │   └── chat-messages-misc.css    # 思考指示器 / 工具卡片 / 动画 / 启动摘要 / 右键菜单（二级拆分）
 │           │
-│           ├── memory/        # 记忆功能域（聚合器 + 7 子模块）
-│           │   ├── memory.css             # 聚合器（@import 7 子模块，P2 拆分 + 二级拆分）
+│           ├── memory/        # 记忆功能域（聚合器 + 7 子模块 + 1 分析子面板）
+│           │   ├── memory.css             # 聚合器（@import 7 子模块 + 1 分析子面板，P2 拆分 + 二级拆分）
 │           │   ├── memory-list.css        # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
 │           │   ├── memory-detail.css      # 记忆详情弹窗 / 技能列表 / 全局·项目色
 │           │   ├── memory-views.css       # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
 │           │   ├── memory-graph-core.css  # 更多菜单 / 图例 / tooltip / 右键菜单 / 关系编辑（二级拆分）
 │           │   ├── memory-graph-search.css # 高级搜索 / 搜索高亮 / 洞察栏（二级拆分）
 │           │   ├── memory-graph-detail.css # 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘（二级拆分）
-│           │   └── memory-graph-misc.css  # 增强 1-5 / 时间线 / 回收站（二级拆分）
+│           │   ├── memory-graph-misc.css  # 增强 1-5 / 时间线 / 回收站（二级拆分）
+│           │   └── completion-stats.css  # 补全统计面板（记忆面板第 3 个 analysis panel，与 insights/health 互斥切换）
 │           │
 │           ├── panels/        # 独立面板样式（每个对应一个 .panel）
 │           │   ├── dashboard.css   # 仪表盘面板（概览+运行指标+记忆源健康+增长趋势）
 │           │   ├── perception.css  # 独立感知面板（覆盖 chat-perception.css 基础样式）
+│           │   ├── clipboard.css   # 剪贴板保护面板（待处理列表 + 引导气泡 + 空状态，clipboardPanelManager 使用）
 │           │   └── settings.css    # 设置面板
 │           │
 │           ├── overlays/      # 浮层组件（modal / toast / 命令面板 / 搜索弹窗）
@@ -254,7 +266,12 @@ src/
 │   ├── truncate.ts             # 文本截断纯函数（跨 renderer/sprite/storage 共用，统一 ellipsis U+2026）
 │   ├── escapeRegExp.ts         # 正则转义纯函数（构造正则前转义用户输入特殊字符）
 │   ├── safeWriteJson.ts        # 安全 JSON 写入纯函数（try-catch 防失败 + 原子写入语义）
-│   └── singleton.ts            # 同步单例工厂纯函数（createSingleton，ADR-017 枝叶层 2 次提取）
+│   ├── singleton.ts            # 同步单例工厂纯函数（createSingleton，ADR-017 枝叶层 2 次提取）
+│   ├── numberUtils.ts          # 数值工具纯函数（roundTo2，从 affectController/rapportController/memoryController 7+ 处提取，STEP4-3）
+│   ├── levelUtils.ts           # 等级标签纯函数（describeLevel 0-1→低/中/高，从 affectController/rapportController 2 处提取，STEP4-3）
+│   ├── sensitivePatterns.ts    # 敏感内容检测模式与函数（SENSITIVE_PATTERNS 常量 + isSensitive 纯函数，从 clipboardHandler 下沉，STEP7 漏检补登）
+│   ├── llmErrorClassifier.ts   # LLM 错误分类器纯函数（底层 API 错误→用户可理解中文提示映射，主进程+渲染进程共用，STEP7 漏检补登）
+│   └── spriteStats.ts          # 精灵统计共享类型（ProactiveStats 类型定义，从 proactiveEngine 提取消除 renderer 反向依赖，STEP7 漏检补登）
 │
 ├── web/                        # Web 模式（HTTP 调试通道，与 Electron 模式并行）
 │   ├── server.ts               # HTTP 服务器入口（Express + 静态资源 + 路由挂载）
@@ -353,10 +370,10 @@ styles/ 按**功能域**分组，与渲染进程代码组织（panels/components
 | `foundation/` | 设计令牌 + 全局重置 + 工具类（三窗口共享） | 1-3 | 3（tokens/base/utilities）|
 | `layout/` | 窗口骨架（顶栏/侧栏/Grid） | 4 | 1 |
 | `chat/` | 对话功能域（聚合器 + 7 子模块） | 5-12 | 8 |
-| `memory/` | 记忆功能域（聚合器 + 7 子模块） | 13-20 | 8 |
-| `panels/` | 独立面板样式（dashboard/perception/settings） | 21-23 | 3 |
-| `overlays/` | 浮层组件（modal/toast/命令面板/搜索弹窗） | 24-27 | 4 |
-| `content/` | 内容渲染样式（markdown） | 28 | 1 |
+| `memory/` | 记忆功能域（聚合器 + 7 子模块 + 1 分析子面板 completion-stats） | 13-21 | 9 |
+| `panels/` | 独立面板样式（dashboard/perception/clipboard/settings） | 22-25 | 4 |
+| `overlays/` | 浮层组件（modal/toast/命令面板/搜索弹窗） | 26-29 | 4 |
+| `content/` | 内容渲染样式（markdown） | 30 | 1 |
 | `windows/` | 独立窗口专属样式（float/quick-input，从原窗口目录迁入） | 浮窗独立引入 | 2 |
 
 #### 2.4.2 令牌单一真理源
@@ -412,9 +429,9 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 | 方向 | 通道数 | 定义文件 |
 |------|--------|----------|
-| 渲染→主进程（`IPC_CHANNELS`） | 78 | `src/electron/ipc/channels.ts` |
-| 主→渲染进程（`MAIN_TO_RENDERER_CHANNELS`） | 27 | 同上 |
-| **合计** | **105** | 单一真理源 |
+| 渲染→主进程（`IPC_CHANNELS`） | 88 | `src/electron/ipc/channels.ts` |
+| 主→渲染进程（`MAIN_TO_RENDERER_CHANNELS`） | 28 | 同上 |
+| **合计** | **116** | 单一真理源 |
 
 #### 功能域分组（7 个领域 handler + 1 个降级 + 1 个流式核心）
 
@@ -434,7 +451,10 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 #### 窗口管理器内联 IPC 例外（ADR-SP-017）
 
-> **例外**：quick-input 浮窗的 6 个 IPC 通道在 `src/electron/windows/quickInputWindow.ts` 内注册，不在 `ipc/` 下的 handler 文件中。
+> **例外**：窗口管理器内联 IPC 通道共 15 个，分布在 3 个窗口文件中，不在 `ipc/` 下的 handler 文件中。
+> 决策原则（STEP3-18，最小修改原则）：扩展例外清单，不迁移到 `ipc/windowHandlers.ts`——窗口管理器内联 handler 深度耦合窗口实例状态，迁移需反向注入窗口引用，违反分层方向。
+
+**quick-input 浮窗（8 个通道，`src/electron/windows/quickInputWindow.ts`）**
 
 | 通道 | 模式 | 注册位置 | 内联理由 |
 |------|------|---------|---------|
@@ -443,9 +463,28 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 | QUICK_INPUT_RESIZE | `ipcMain.handle` | quickInputWindow.ts | 操作 `this.win.setSize()` + `keepWindowInWorkArea()` |
 | MOVE_QUICK_INPUT | `ipcMain.on` | quickInputWindow.ts | 操作 `this.win.setPosition()` + `clampPositionToWorkArea()` |
 | QUICK_INPUT_POLISH | `ipcMain.handle` | quickInputWindow.ts | 调用 `this.callbacks.onPolish`（main.ts 注入） |
+| QUICK_INPUT_SET_PINNED_MODE | `ipcMain.handle` | quickInputWindow.ts | 操作 `this.pinnedMode` 字段，控制 blur 抑制行为（常驻模式） |
 | QUICK_INPUT_SHOW | 主→渲染 | quickInputWindow.ts | 浮窗唤起信号 |
+| QUICK_INPUT_FOCUS_CHANGE | 主→渲染 | quickInputWindow.ts | 推送前台应用名到浮窗（focus-bar 显示来源） |
 
-**判定标准**（详见 [ADR-SP-017 §1](../../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md)）：当 IPC handler 需深度访问窗口实例状态（焦点/位置/可见性/blur 定时器）时，在窗口管理器内注册；无状态数据操作放 `ipc/` 下。
+**浮动窗口（4 个通道，`src/electron/windows/floatWindow.ts`）**
+
+| 通道 | 模式 | 注册位置 | 内联理由 |
+|------|------|---------|---------|
+| MOVE_FLOAT_WINDOW | `ipcMain.on` | floatWindow.ts | 操作 `this.win.setPosition()`（拖动增量） |
+| SAVE_FLOAT_POSITION | `ipcMain.on` | floatWindow.ts | 操作 `this.windowStateManager.saveFloatPosition()` |
+| EXPAND_TO_FULL | `ipcMain.on` | floatWindow.ts | 操作 `this.windowStateManager.transition('full')` |
+| FLOAT_CONTEXT_MENU | `ipcMain.on` | floatWindow.ts | 操作 `this.showContextMenu()`（Menu.popup 需窗口实例） |
+
+**完整窗口（3 个通道，`src/electron/windows/windowManager.ts`）**
+
+| 通道 | 模式 | 注册位置 | 内联理由 |
+|------|------|---------|---------|
+| WINDOW_MINIMIZE | `ipcMain.on` | windowManager.ts | 操作 `this.fullWindow.minimize()` |
+| WINDOW_MAXIMIZE | `ipcMain.on` | windowManager.ts | 操作 `this.fullWindow.maximize()`/`unmaximize()` |
+| WINDOW_CLOSE | `ipcMain.on` | windowManager.ts | 操作 `this.fullWindow.close()` |
+
+**判定标准**（详见 [ADR-SP-017 §1](../../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md)）：当 IPC handler 需深度访问窗口实例状态（焦点/位置/可见性/blur 定时器/窗口状态机）时，在窗口管理器内注册；无状态数据操作放 `ipc/` 下。
 
 #### 命名规范
 
@@ -469,7 +508,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 - **通道合并**：不合并 STREAM_* 为统一通道。成本（preload API 重写 + 渲染层监听重写 + 测试更新 + 高频通道处理开销）远超收益
 - **版本管理**：不引入 v2 前缀。当前无通道需 v2 重构，三处同步（channels + preload + handler）增加复杂度
-- **未来触发时机**：通道数超 150 或出现跨领域 handler 时启动合并评估
+- **未来触发时机**：通道数超 130 或出现跨领域 handler 时启动合并评估（阈值从 150 收紧至 130，对齐用户口径；当前 116，距阈值 14）
 
 #### 通道归属检查流程（AUDIT-6-3）
 
@@ -525,6 +564,17 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 - [x] CSS-R4: P0 减法——base.css 拆分出 command-palette.css(166行) + search-messages.css(198行)，base.css 620→345 行(-44%)，回归"基础样式"定位（2026-07-13 问诊 CSS 减法）
 - [x] CSS-R5: utilities.css 中间层——新增 5 个原子工具类（flex-center/flex-col/flex-row-center/surface-card/text-muted），从 3577 条属性声明提取 Top 重复模式（2026-07-13 P1 试点）
 - [x] CSS-R6: styles/ 按功能域分组重构——8 个子目录（foundation/layout/chat/memory/panels/overlays/content/windows），浮窗 CSS（float.css + quick-input.css）从原窗口目录迁入 styles/windows/，index.html/float.html/quick-input.html 的 `<link>` 路径更新，chat.css/memory.css 聚合器内部 @import 改为同目录相对路径（2026-07-15 模块重思）
+- [x] RULE-ALIGN-0719: helpers/ 补登 4 文件——buttonHelpers.ts（bindRefreshButton）/ completionHelpers.ts（fetchMemoryContent）/ completionMetrics.ts（CompletionMetrics 单例）/ safeStorage.ts（safeGetJSON/safeSetJSON/safeGet/safeSet），同步 §1 helpers 节增加"类形式例外"注释（EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator）（2026-07-19 炼化归元 Step 7 规则对齐）
+- [x] CSS-R7: 样式层规则对齐 + 剪枝 + 提交前审查——(1) directory-structure.md §1/§2.4.1 + styles/README.md §1/§2/§4 补齐 memory/completion-stats.css（第 3 个 analysis panel）+ panels/clipboard.css（剪贴板保护面板）两个规则漏登记的文件；(2) index.html 删除 chat-toolbar/datenav/perception 3 处重复 link（聚合器 chat.css 已 @import，违反 §2.4.4 聚合器模式）；(3) float.html 补 base.css + utilities.css 两 link（违反 §2.4.9 浮窗加载顺序）；(4) panels/clipboard.css 删除死代码 .clipboard-list-hidden（与对称 .clipboard-actions-hidden 对比是遗漏实现的对称设计，clipboardPanelManager.ts 零引用）；(5) memory/completion-stats.css 11 处裸 px 令牌化（保留 1px/2px 次像素对齐 + max-height 容器高度）（2026-07-19 炼化归元 Step 8）
+- [x] STEP4-3: shared/ 补登 2 文件——numberUtils.ts（roundTo2 纯函数，从 affectController/rapportController/memoryController 7+ 处 `Math.round(x*100)/100` 模式提取，ADR-017 枝叶层 2 次提取）+ levelUtils.ts（describeLevel 0-1→低/中/高，从 affectController/rapportController 2 处完全相同实现提取）（2026-07-19 炼化归元 Step 4 QC-1）
+- [x] STEP6-5: panels/ + components/ 补登 4 文件——panels/clipboardPanelManager.ts（剪贴板面板 UI 渲染层，从 clipboardManager 拆分 UI 部分）+ panels/completionStatsRenderer.ts（补全统计面板渲染器，第 3 个 analysis panel，ADR-SP-015 模式 C+D）+ panels/llmGovernanceResultRenderer.ts（LLM 治理结果子渲染器，健康度面板"LLM 治理结果"子区域，ADR-SP-015 模式 C+D）+ components/startupSummaryBanner.ts（启动摘要横幅组件，从 chatPanelManager 提取）（2026-07-19 炼化归元 Step 6 QC-5）
+- [x] STEP7-补登: shared/ 补登 3 文件——sensitivePatterns.ts（SENSITIVE_PATTERNS 常量 + isSensitive 纯函数，从 electron/clipboardHandler.ts 下沉到 shared/ 便于跨环境复用）+ llmErrorClassifier.ts（LLM 错误分类器纯函数，底层 API 错误→中文提示映射，主进程+渲染进程共用）+ spriteStats.ts（ProactiveStats 类型定义，从 sprite/controllers/proactiveEngine.ts 提取消除 renderer 反向引用 sprite/controllers 的跨子系统依赖）（2026-07-19 STEP9 文档同步漏检补登）
+- [x] STEP9-NAMING-1: uiDelegations/ → ui-delegations/——helpers/uiDelegations/ 6 委托群文件夹重命名为 kebab-case（对齐 project-rules.md §4 文件夹命名规范），6 个委托文件（chatDelegations/dashboardDelegations/memoryDelegations/miscDelegations/personaThemeDelegations/settingsModalDelegations）路径同步，ui.ts 8 处导入 + applyMixins.ts 注释 + uiDelegations.test.ts 6 处导入路径更新（2026-07-19 斩木除根 NAMING-1）
+- [x] STEP9-NAMING-2: preload-float.ts → preloadFloat.ts——浮动窗口预加载脚本重命名为 camelCase（对齐 project-rules.md §4 TS 文件命名规范），tsconfig.preload.json include + tsconfig.electron.json exclude + build-preload.mjs 4 处（注释块 + stale*Path 常量 + copyPreload 调用）+ floatWindow.ts 2 处（注释 + preload 路径 preloadFloat.cjs）+ 文件内 2 处注释更新（2026-07-19 斩木除根 NAMING-2）
+- [x] STEP9-NAMING-3: preload-quick-input.ts → preloadQuickInput.ts——快速输入浮窗预加载脚本重命名为 camelCase（TS 文件命名规范；HTML 文件 quick-input.html 保持 kebab-case 不变），tsconfig.preload.json include + tsconfig.electron.json exclude + build-preload.mjs 4 处 + quickInputWindow.ts 2 处 + 文件内 1 处注释更新（2026-07-19 斩木除根 NAMING-3）
+- [x] STEP9-DUP-1: 跨包契约测试——新增 src/__tests__/shared/toError.contract.test.ts（16 测试用例：Error 实例 identity + Error 子类 + 12 契约用例表驱动 + symbol + 循环引用），导入 sprite `../../shared/toError.js` + 内核 `memora` 公共 API（避免内部路径导入，符合架构分层），防止两套 toError 实现行为漂移（2026-07-19 斩木除根 DUP-1）
+- [x] STEP9-DEP-1: memora 内核 12 devDeps 非 Major 升级——@commitlint/cli 21.1.0→21.2.1 + @commitlint/config-conventional 21.1.0→21.2.0 + @types/node 22.15.30→22.20.1 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + @vitest/coverage-v8 4.0.0→4.1.10 + eslint 9.27.0→9.39.5 + lefthook 1.6.10→1.7.0 + msw 2.8.0→2.15.0 + pino-pretty 11.2.0→11.2.0 + prettier 3.5.3→3.9.5 + tsc-alias 1.8.16→1.9.1 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-1）
+- [x] STEP9-DEP-2: sprite 宿主 8 devDeps 非 Major 升级——@types/node 24.0.0→24.13.3 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + electron 40.10.5→40.10.6（需 npm run rebuild 重建 native 模块）+ eslint 9.27.0→9.39.5 + prettier 3.5.3→3.9.5 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-2）
 
 ### 延后（非目录结构）
 

@@ -14,9 +14,11 @@ description: "快速输入浮窗架构：窗口管理器内联 IPC + Controller/
 
 快速输入浮窗（quick-input）是 memora-sprite 的轻量级用户输入入口，经 7 次功能迭代（流式锁、展开/收起、拖拽、LLM 润色、同源过滤、类重构、CSS 重构）形成稳定架构，但以下 3 项架构决策此前未以 ADR 形式记录：
 
-1. **IPC 通道注册位置**：3 个通道（MOVE_QUICK_INPUT / QUICK_INPUT_POLISH / QUICK_INPUT_RESIZE）在 `quickInputWindow.ts`（窗口管理器）内注册，而非 `ipc/` 下的 handler 文件，违反 directory-structure.md §2.5 给人的"所有 IPC 都在 ipc/ 下"错觉
+1. **IPC 通道注册位置**：5 个通道（MOVE_QUICK_INPUT / QUICK_INPUT_POLISH / QUICK_INPUT_RESIZE / QUICK_INPUT_CONFIRM / QUICK_INPUT_CLOSE）在 `quickInputWindow.ts`（窗口管理器）内注册，而非 `ipc/` 下的 handler 文件，违反 directory-structure.md §2.5 给人的"所有 IPC 都在 ipc/ 下"错觉
 2. **类设计解耦**：`QuickInputController`（交互控制）+ `QuickInputCompletion`（补全逻辑）两类通过回调解耦，无直接依赖
 3. **LLM 润色能力注入**：通过 `onPolish` 回调注入，main.ts 注入 `agent.polish?.polish()`，无独立 Manager 类
+
+> **2026-07-19 补录（STEP3-17/18）**：本 ADR §1 原仅列 5 个 quick-input 通道，实际 quick-input 共 8 个通道（含 SET_PINNED_MODE / SHOW / FOCUS_CHANGE）。同时 floatWindow.ts（4 通道）和 windowManager.ts（3 通道）也采用同样的窗口管理器内联模式，合计 15 个通道构成"窗口管理器内联 IPC 例外"完整清单。详见 §4 扩展。
 
 ## 决策
 
@@ -31,6 +33,9 @@ description: "快速输入浮窗架构：窗口管理器内联 IPC + Controller/
 | QUICK_INPUT_RESIZE | quickInputWindow.ts | `ipcMain.handle` | 操作 `this.win.setSize()` + `keepWindowInWorkArea()` |
 | MOVE_QUICK_INPUT | quickInputWindow.ts | `ipcMain.on` | 操作 `this.win.setPosition()` + `clampPositionToWorkArea()` |
 | QUICK_INPUT_POLISH | quickInputWindow.ts | `ipcMain.handle` | 调用 `this.callbacks.onPolish`（main.ts 注入） |
+| QUICK_INPUT_SET_PINNED_MODE | quickInputWindow.ts | `ipcMain.handle` | 操作 `this.pinnedMode` 字段，控制 blur 抑制行为（常驻模式） |
+| QUICK_INPUT_SHOW | quickInputWindow.ts | 主→渲染 | 浮窗唤起信号 |
+| QUICK_INPUT_FOCUS_CHANGE | quickInputWindow.ts | 主→渲染 | 推送前台应用名到浮窗（focus-bar 显示来源） |
 
 **判定标准**：当 IPC handler 需要深度访问窗口实例状态（焦点/位置/可见性/blur 定时器）时，在窗口管理器内注册；当 handler 是无状态的数据操作（CRUD/搜索）时，放在 `ipc/` 下的 handler 文件。
 
@@ -75,6 +80,29 @@ quickInputWindow.updateCallbacks({
 - 命名"Manager"造成语义歧义，但实际是"服务类"——managers/ 目录下 13 个文件中仅 ChatLockManager 有 dispose() 生命周期方法
 
 **与原决策的关系**：原决策"不引入独立 Manager 类"的语义是"不引入有生命周期的 Manager"，实际实现符合该语义（TextPolishManager 无生命周期），仅命名沿用"Manager"后缀。
+
+### 4. 窗口管理器内联 IPC 例外扩展（STEP3-18，2026-07-19）
+
+**决策**：将"窗口管理器内联 IPC 例外"从 quick-input 单文件扩展到所有 3 个窗口管理器文件，合计 15 个通道。采用最小修改原则——扩展例外清单，不迁移到 `ipc/windowHandlers.ts`。
+
+**扩展理由**：floatWindow.ts（4 通道）和 windowManager.ts（3 通道）的 inline handler 与 quick-input 共享同样的判定标准（深度耦合窗口实例状态），原 ADR 仅覆盖 quick-input 是文档漂移。
+
+| 窗口文件 | 通道数 | 通道清单 |
+|---------|--------|---------|
+| quickInputWindow.ts | 8 | QUICK_INPUT_CONFIRM / QUICK_INPUT_CLOSE / QUICK_INPUT_RESIZE / MOVE_QUICK_INPUT / QUICK_INPUT_POLISH / QUICK_INPUT_SET_PINNED_MODE / QUICK_INPUT_SHOW / QUICK_INPUT_FOCUS_CHANGE |
+| floatWindow.ts | 4 | MOVE_FLOAT_WINDOW / SAVE_FLOAT_POSITION / EXPAND_TO_FULL / FLOAT_CONTEXT_MENU |
+| windowManager.ts | 3 | WINDOW_MINIMIZE / WINDOW_MAXIMIZE / WINDOW_CLOSE |
+| **合计** | **15** | — |
+
+**不迁移的理由**（最小修改原则）：
+- 迁移到 `ipc/windowHandlers.ts` 需反向注入窗口引用（ipc/ 依赖窗口管理器），违反分层方向
+- 15 个通道全部深度耦合窗口实例状态（焦点/位置/可见性/blur 定时器/窗口状态机），无一个是无状态数据操作
+- 迁移成本（15 handler 改造 + 测试重写 + 反向依赖注入）远超收益（仅满足"所有 IPC 在 ipc/ 下"的形式整洁）
+
+**何时重新评估**：
+- 当 ipc/ 下的 handler 也需要访问窗口实例时，评估是否统一窗口管理器注册模式
+- 当窗口管理器文件行数超阈值（800 行）时，评估是否提取 inline handler 到独立文件
+- 当出现第 4 个独立窗口时，评估是否统一 preload 拆分策略和 IPC 注册模式
 
 ## 理由
 

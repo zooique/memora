@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { logger, toError } from 'memora';
-// formatDateKey 格式化日期为本地 YYYY-MM-DD（修复 UTC 跨日 bug，ADR-017 枝叶层 2 次提取）
+// formatDateKey 格式化日期为本地时区 YYYY-MM-DD（ADR-017 枝叶层 2 次提取）
 import { formatDateKey } from '../../shared/dateUtils.js';
 // safeWriteJson 安全写入 JSON 文件（含 mkdir recursive + 0o600 权限保护，ADR-017 枝叶层 2 次提取）
 import { safeWriteJson } from '../../shared/safeWriteJson.js';
@@ -75,7 +75,7 @@ export class UsageStatsCollector {
   /** 记录对话轮次（按日期分组）。关闭状态下为空操作 */
   recordChatTurn(): void {
     if (!this.enabled) return;
-    // formatDateKey 本地日期，修复凌晨 UTC 跨日导致 chatTurns 写入错误日期 key
+    // formatDateKey 本地日期，与 dailyMessageCount key 对齐
     const today = formatDateKey(new Date());
     this.chatTurns[today] = (this.chatTurns[today] ?? 0) + 1;
   }

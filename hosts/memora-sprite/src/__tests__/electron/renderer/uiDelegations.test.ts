@@ -22,12 +22,12 @@
  * 测试聚焦"映射正确性"而非"业务逻辑"。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { chatDelegations } from '../../../electron/renderer/helpers/uiDelegations/chatDelegations.js';
-import { dashboardDelegations } from '../../../electron/renderer/helpers/uiDelegations/dashboardDelegations.js';
-import { memoryDelegations } from '../../../electron/renderer/helpers/uiDelegations/memoryDelegations.js';
-import { miscDelegations } from '../../../electron/renderer/helpers/uiDelegations/miscDelegations.js';
-import { personaThemeDelegations } from '../../../electron/renderer/helpers/uiDelegations/personaThemeDelegations.js';
-import { settingsModalDelegations } from '../../../electron/renderer/helpers/uiDelegations/settingsModalDelegations.js';
+import { chatDelegations } from '../../../electron/renderer/helpers/ui-delegations/chatDelegations.js';
+import { dashboardDelegations } from '../../../electron/renderer/helpers/ui-delegations/dashboardDelegations.js';
+import { memoryDelegations } from '../../../electron/renderer/helpers/ui-delegations/memoryDelegations.js';
+import { miscDelegations } from '../../../electron/renderer/helpers/ui-delegations/miscDelegations.js';
+import { personaThemeDelegations } from '../../../electron/renderer/helpers/ui-delegations/personaThemeDelegations.js';
+import { settingsModalDelegations } from '../../../electron/renderer/helpers/ui-delegations/settingsModalDelegations.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── Mock 工厂 ─────────────────────────────────────────────

@@ -6,11 +6,8 @@
  *   - JSONL 格式便于 append（无需序列化整个数组），也便于 grep
  *   - 写入为 fire-and-forget（不阻塞主流程），写入失败写 stderr
  *   - 保留最近 MAX_AUDIT_ENTRIES 条，超出截断（避免文件无限增长）
+ *   - 截断策略为计数器间隔式（每 100 次写入检查一次），避免每次读全文件
  *   - 渲染进程可通过 IPC 读取/清空审计日志
- *
- * 重构（R1）：
- *   - 提取 JSONL 写入 + 截断逻辑到 JsonlAppender（DRY）
- *   - 截断策略优化为计数器间隔式（每 100 次写入检查一次，避免每次读全文件）
  */
 
 import { JsonlAppender } from './jsonlAppender.js';
@@ -57,8 +54,7 @@ export class AuditManager {
   /**
    * 等待写入队列排空（仅用于测试）
    *
-   * 委托 JsonlAppender.flush()，精确等待 writeChain 完成，
-   * 替代 setTimeout 等不可靠的竞态等待方式。
+   * 委托 JsonlAppender.flush()，精确等待 writeChain 完成。
    */
   flush(): Promise<void> {
     return this.appender.flush();

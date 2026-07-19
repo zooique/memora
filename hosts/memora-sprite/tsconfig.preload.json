@@ -11,8 +11,8 @@
   },
   "include": [
     "src/electron/preload.ts",
-    "src/electron/preload-quick-input.ts",
-    "src/electron/preload-float.ts"
+    "src/electron/preloadQuickInput.ts",
+    "src/electron/preloadFloat.ts"
   ],
   "exclude": ["node_modules", "dist", "dist-electron"]
 }

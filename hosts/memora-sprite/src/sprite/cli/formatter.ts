@@ -1,21 +1,15 @@
 /**
  * CLI 格式化器 — 纯文本展示逻辑
  *
- * 从 Sprite 核心类提取的 CLI 专用格式化方法。
- * Electron 模式下不使用这些方法（UI 直接消费结构化数据），
- * 仅 CLI 模式下需要。
- *
- * 提取理由：
+ * 职责：
  *   - formatConfig / formatDashboard / formatPersonas 是 CLI 专用的文本格式化
- *   - 耦合在 Sprite 核心类中违反职责单一
- *   - 提取后 Sprite 只提供结构化数据，格式化由消费方决定
+ *   - Sprite 核心类只提供结构化数据，格式化由消费方决定
+ *   - Electron 模式下不使用这些方法（UI 直接消费结构化数据），仅 CLI 模式下需要
  */
 
 import type { SpriteConfig } from '../spriteConfig.js';
 import type { DashboardData, PersonaInfo } from '../controllers/index.js';
 import { MS_PER_MINUTE } from '../constants.js';
-
-// PersonaEntry 改为导入 PersonaInfo（sprite 层真理源），消除重复定义
 
 /**
  * 格式化精灵配置为 CLI 可读文本

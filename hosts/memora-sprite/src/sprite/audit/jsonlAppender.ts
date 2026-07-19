@@ -2,7 +2,6 @@
  * JSONL 追加写入器 — 公共基础设施
  *
  * 为 auditManager 和 spriteTracer 提供统一的 JSONL 写入 + 截断能力。
- * 提取自两个模块的同构逻辑（DRY），优化截断策略为计数器间隔式。
  *
  * 设计：
  *   - JSONL 格式：每行一条 JSON，便于 append + grep
@@ -146,7 +145,8 @@ export class JsonlAppender {
         await writeFile(this.filePath, '', 'utf8');
       });
     // 无论 clear 成功还是失败，writeChain 恢复为 resolved，避免阻塞后续 append
-    this.writeChain = clearPromise.catch(() => {});
+    // 错误已通过 await clearPromise 抛给调用方，此处 catch 仅恢复链状态
+    this.writeChain = clearPromise.catch(() => { /* 错误已通过 clearPromise 抛出 */ });
     // 等待 clear 完成，错误抛给调用方
     await clearPromise;
   }
