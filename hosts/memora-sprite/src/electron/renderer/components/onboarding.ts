@@ -16,6 +16,7 @@
  */
 import { reportError } from '../helpers/errorHelpers.js';
 import { showFieldError, showFieldSuccess, clearFieldErrors } from '../helpers/formValidation.js';
+import type { EventTracker } from '../helpers/eventTracker.js';
 // 跨进程 LLM 错误分类器（onboarding + minimalHandlers 共用）
 import { classifyLlmError } from '../../../shared/llmErrorClassifier.js';
 // 确认弹窗选项类型（与 UIManager.showConfirmDialog 共享）
@@ -44,21 +45,17 @@ export class OnboardingManager {
   private agentReadyProvider: (() => boolean) | null = null;
   /** 确认弹窗函数（由 UIManager 注入，用于跳过 API 配置时弹二次确认避免误触丢失输入） */
   private confirmDialog: ((options: ConfirmDialogOptions) => Promise<boolean>) | null = null;
-  /** 当前关闭处理的 cleanup 函数（ESC/遮罩/完成三路径关闭后统一清理监听器，UX-0712-8） */
-  private currentCleanup: (() => void) | null = null;
+
   /**
-   * modal 内元素监听器记录（cleanup 时统一移除）
+   * 构造函数：注入 EventTracker（统一管理事件监听器生命周期）
    *
-   * 追踪 bindStepNavigation / bindApiKeySave / bindTestConnection / bindPrivacyChoice / bindDone
-   * 中通过 addTrackedListener 注册的监听器。bindClose 中的 document 级监听器由 currentCleanup 单独处理
-   * （因其关闭即清理的语义与 modal 内监听器不同）。
+   * 与其他 Panel Manager 保持一致模式：EventTracker 在 init 时注入，cleanup 时统一清理。
+   *
+   * @param events 事件监听器跟踪器（由 UIManager 创建并注入）
    */
-  private listeners: Array<{
-    target: EventTarget;
-    type: string;
-    listener: EventListenerOrEventListenerObject;
-    options?: boolean | AddEventListenerOptions;
-  }> = [];
+  constructor(
+    private events: EventTracker,
+  ) {}
 
   /**
    * 注入 Agent 就绪状态查询函数
@@ -87,44 +84,6 @@ export class OnboardingManager {
   // ─── 资源清理 ──────────────────────────────────────
 
   /**
-   * 注册监听器并记录到 listeners 数组
-   *
-   * 替代裸 addEventListener，确保 manager 销毁或弹窗关闭时所有监听器被统一移除。
-   * 与 EventTracker 设计思路一致（OnboardingManager 独立于 UIManager，未注入 EventTracker，
-   * 故自建轻量追踪机制）。
-   *
-   * 泛型 E 默认为 Event，调用方传 `(e: KeyboardEvent) => void` 时自动推断为 KeyboardEvent，
-   * 避免 strict 模式下函数参数逆变报错。
-   */
-  private addTrackedListener<E extends Event = Event>(
-    target: EventTarget,
-    type: string,
-    listener: (e: E) => void,
-    options?: boolean | AddEventListenerOptions,
-  ): void {
-    target.addEventListener(type, listener as EventListener, options);
-    this.listeners.push({
-      target,
-      type,
-      listener: listener as EventListener,
-      options,
-    });
-  }
-
-  /**
-   * 清空所有已追踪的 modal 内监听器
-   *
-   * 在 closeModal 中调用（关闭即清理，防止重复 showOnboardingDialog 时监听器累积）。
-   * bindClose 中的 document 级监听器由 currentCleanup 单独处理（保留原有 UX-0712-8 修复逻辑）。
-   */
-  private clearTrackedListeners(): void {
-    for (const record of this.listeners) {
-      record.target.removeEventListener(record.type, record.listener, record.options);
-    }
-    this.listeners = [];
-  }
-
-  /**
    * 销毁 OnboardingManager，清理所有监听器与注入引用
    *
    * 由 UIManager 在卸载引导模块时调用。与 closeModal 的区别：
@@ -132,9 +91,7 @@ export class OnboardingManager {
    * - cleanup：清理监听器 + 重置注入引用 + 标记已关闭（manager 不再使用）
    */
   cleanup(): void {
-    this.clearTrackedListeners();
-    this.currentCleanup?.();
-    this.currentCleanup = null;
+    this.events.cleanup();
     this.agentReadyProvider = null;
     this.confirmDialog = null;
     this.closed = true;
@@ -209,11 +166,8 @@ export class OnboardingManager {
     if (this.closed) return;
     this.closed = true;
     modal.classList.add('hidden');
-    // 清理 modal 内监听器（btn click / input keydown / checkbox change 等）
-    this.clearTrackedListeners();
-    // 清理 document 级监听器（keydown + click），防止 listener 累积泄漏
-    this.currentCleanup?.();
-    this.currentCleanup = null;
+    // 通过 EventTracker 统一清理所有监听器（modal 内按钮 + document 级 ESC/遮罩）
+    this.events.cleanup();
   }
 
   /**
@@ -237,7 +191,7 @@ export class OnboardingManager {
       }
       this.closeModal(modal);
     };
-    document.addEventListener('keydown', onKey, { once: false });
+    this.events.addEventListener(document, 'keydown', onKey, { once: false });
 
     // 点击遮罩关闭（步骤 2 已填字段时弹二次确认）
     const onBackdrop = async (e: MouseEvent) => {
@@ -253,13 +207,7 @@ export class OnboardingManager {
       }
       this.closeModal(modal);
     };
-    modal.addEventListener('click', onBackdrop);
-
-    // 清理：closeModal 统一调用，确保 ESC/遮罩/完成三路径都触发清理（UX-0712-8）
-    this.currentCleanup = () => {
-      document.removeEventListener('keydown', onKey);
-      modal.removeEventListener('click', onBackdrop);
-    };
+    this.events.addEventListener(modal, 'click', onBackdrop);
   }
 
   // ─── 步骤导航 ──────────────────────────────────────
@@ -270,7 +218,7 @@ export class OnboardingManager {
   private bindStepNavigation(modal: HTMLElement): void {
     // 下一步按钮
     modal.querySelectorAll('.onboarding-next').forEach((btn) => {
-      this.addTrackedListener(btn, 'click', () => {
+      this.events.addEventListener(btn, 'click', () => {
         const next = parseInt(btn.getAttribute('data-next') || '2', 10);
         this.showStep(modal, next);
       });
@@ -278,7 +226,7 @@ export class OnboardingManager {
 
     // 上一步按钮
     modal.querySelectorAll('.onboarding-prev').forEach((btn) => {
-      this.addTrackedListener(btn, 'click', () => {
+      this.events.addEventListener(btn, 'click', () => {
         const prev = parseInt(btn.getAttribute('data-prev') || '1', 10);
         this.showStep(modal, prev);
       });
@@ -286,7 +234,7 @@ export class OnboardingManager {
 
     // 跳过按钮（步骤 2 已填字段时弹二次确认，避免误触丢失输入）
     modal.querySelectorAll('.onboarding-skip').forEach((btn) => {
-      this.addTrackedListener(btn, 'click', async () => {
+      this.events.addEventListener(btn, 'click', async () => {
         const skipTo = parseInt(btn.getAttribute('data-skip') || '4', 10);
         // 仅在步骤 2 跳过且用户已填写任一字段时弹确认
         if (this.currentStep === 2 && this.hasFilledApiFields(modal)) {
@@ -447,7 +395,7 @@ export class OnboardingManager {
       return;
     }
 
-    this.addTrackedListener(testBtn, 'click', async () => {
+    this.events.addEventListener(testBtn, 'click', async () => {
       const data = this.readApiForm(modal);
       // 测试连接前先校验必填字段（与保存一致）
       if (!this.validateApiForm(data)) return;
@@ -499,7 +447,7 @@ export class OnboardingManager {
       return;
     }
 
-    this.addTrackedListener(saveBtn, 'click', async () => {
+    this.events.addEventListener(saveBtn, 'click', async () => {
       const data = this.readApiForm(modal);
       // 清空上次的错误状态
       clearFieldErrors([...OnboardingManager.FORM_FIELD_IDS]);
@@ -547,7 +495,7 @@ export class OnboardingManager {
     // Enter 键提交（在 apiKey 输入框内按 Enter 触发保存）
     const apiKeyInput = modal.querySelector('#onboarding-api-key');
     if (apiKeyInput instanceof HTMLInputElement) {
-      this.addTrackedListener(apiKeyInput, 'keydown', (e: KeyboardEvent) => {
+      this.events.addEventListener(apiKeyInput, 'keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') saveBtn.click();
       });
     }
@@ -568,7 +516,7 @@ export class OnboardingManager {
       return;
     }
     // change 事件即时反馈（具体值在完成时读取）
-    this.addTrackedListener(checkbox, 'change', () => {
+    this.events.addEventListener(checkbox, 'change', () => {
       // 静默更新，具体值在 bindDone 完成时读取
     });
   }
@@ -596,7 +544,7 @@ export class OnboardingManager {
       return;
     }
 
-    this.addTrackedListener(doneBtn, 'click', () => {
+    this.events.addEventListener(doneBtn, 'click', () => {
       // 持久化使用统计选择（fire-and-forget，不阻塞关闭）
       const usageStatsEnabled = this.getUsageStatsChoice();
       // 跳过路径（未配置 API）：config-update-batch handler 未注册（在 setupAgentReady 中才注册），

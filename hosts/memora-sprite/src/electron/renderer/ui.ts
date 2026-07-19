@@ -122,7 +122,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 模态框管理器（独立管理焦点恢复和并发保护） */
   modalManager = new ModalManager();
   /** 多步骤引导管理器（基于 Provider 配置存在性判定是否显示） */
-  onboardingManager = new OnboardingManager();
+  onboardingManager = new OnboardingManager(new EventTracker());
   /** 主题管理器（独立管理主题切换和持久化） */
   themeManager = new ThemeManager();
   /** 主动提示横幅管理器（独立管理横幅按钮事件） */
@@ -457,6 +457,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.scrollController.dispose();
     // 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
+    // 清理引导管理器的事件监听器（通过 EventTracker 统一管理）
+    this.onboardingManager.cleanup();
   }
 
   // ─── 聊天面板（含业务逻辑的方法，纯透传委托见 chatDelegations） ──

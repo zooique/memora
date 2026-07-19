@@ -18,6 +18,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { OnboardingManager } from '../../../electron/renderer/components/onboarding.js';
+import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
 
 // ─── 全局 mock ────────────────────────────────────────
 
@@ -93,7 +94,7 @@ const ONBOARDING_HTML = `
 /** 创建 OnboardingManager（可选 DOM 结构） */
 function createManager(html?: string): OnboardingManager {
   document.body.innerHTML = html ?? ONBOARDING_HTML;
-  return new OnboardingManager();
+  return new OnboardingManager(new EventTracker());
 }
 
 /** 模拟点击背景（target === modal） */
@@ -135,7 +136,7 @@ describe('shouldShowOnboarding', () => {
 describe('showOnboardingDialog · 元素缺失降级', () => {
   it('modal 不存在时应静默退出', () => {
     document.body.innerHTML = '<button id="btn-onboarding-done">开始</button>';
-    const manager = new OnboardingManager();
+    const manager = new OnboardingManager(new EventTracker());
     expect(() => manager.showOnboardingDialog()).not.toThrow();
   });
 });
