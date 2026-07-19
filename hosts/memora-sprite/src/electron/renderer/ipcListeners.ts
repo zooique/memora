@@ -16,6 +16,7 @@
  * - 精灵事件统一注册一个监听器，内部按 type 分发，避免重复触发
  */
 
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 ui 形成运行时循环依赖）
 import type { UIManager } from './ui.js';
 // SerializedAppError 真理源在 ipc/types.ts
 import type { SerializedAppError } from '../ipc/types.js';

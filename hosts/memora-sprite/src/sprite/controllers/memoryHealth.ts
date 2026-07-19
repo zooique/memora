@@ -14,6 +14,7 @@
  *   - 开放字符串阈值，允许后续通过配置调优
  */
 
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryController 形成运行时循环依赖）
 import type { MemoryListItem } from './memoryController.js';
 import { MS_PER_DAY } from '../constants.js';
 

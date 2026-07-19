@@ -12,7 +12,11 @@
  *
  * 架构位置：
  *   - 位于 shared/ 层（与 toError / truncate / escapeRegExp / safeWriteJson 同级）
- *   - 不与内核 memora 共享（ADR-002 内核零依赖约束）
+ *   - 不与内核 memora 共享：渲染进程零 Node 依赖约束——renderer 不能 import 'memora'
+ *     （内核虽 dependencies: {} 零运行时依赖，但 devDependencies 含 pino 等 Node 模块，
+ *     sync-memora.mjs 复制的 dist 产物可能间接拉入 Node 依赖，破坏浏览器环境）
+ *     （STEP9-DUP-2 修正：原注释误引 ADR-002，ADR-002 是内核零 native 依赖约束，
+ *     与"渲染进程不能 import 内核"是不同概念）
  *   - renderer/helpers/domHelpers.ts 从本模块 re-export，保持调用方导入路径不变
  */
 

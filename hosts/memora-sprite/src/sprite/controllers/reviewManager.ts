@@ -13,6 +13,7 @@
  *   - 数据不持久化，每次请求实时计算
  */
 
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryController 形成运行时循环依赖）
 import type { MemoryListItem, DashboardData } from './memoryController.js';
 import { MS_PER_DAY } from '../constants.js';
 // formatDateKey 格式化日期为本地时区 YYYY-MM-DD（ADR-017 枝叶层 2 次提取）

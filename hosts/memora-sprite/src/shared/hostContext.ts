@@ -9,6 +9,14 @@
  *   - 核心字段 = 业务逻辑必需（对话/记忆/会话/配置/角色）
  *   - 原生字段 = Electron 专属（窗口/托盘/剪贴板/快捷键），Web 模式不注入
  *   - Web 模式的 HTTP 路由消费 HostContext，与 IPC handler 平行而非复用
+ *
+ * 架构约束（STEP9-IMPORTS-03）：
+ *   - 本文件对 `../sprite/` 和 `../storage/` 的引用必须保持 `import type`，
+ *     禁止改为 value import——否则 shared/ 层将在运行时反向依赖 sprite/storage，
+ *     破坏 "shared 是被依赖层" 的分层原则（ADR-008 目录结构）。
+ *   - 当前 type-only 引用在编译期擦除，运行时 shared/ 仍只被各层单向引用，无循环风险。
+ *   - 设计妥协理由：Electron 和 Web 模式复用同一 HostContext 类型，避免双份定义；
+ *     替代方案（移到 sprite/ 层）会让 electron/ 和 web/ 都需多跨一层，代价更高。
  */
 
 import type { Agent } from 'memora';

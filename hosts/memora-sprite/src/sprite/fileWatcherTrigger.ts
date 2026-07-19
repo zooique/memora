@@ -136,7 +136,15 @@ export class FileWatcherTrigger implements SpriteTrigger {
   /**
    * 检查路径是否在白名单内
    *
-   * 与内核 pathGuard 的 assertPathAllowed 逻辑一致（严格前缀匹配，追加 sep 防止兄弟目录绕过）。
+   * 与内核 pathGuard.assertPathAllowed 的白名单校验逻辑对齐（严格前缀匹配，追加 sep 防止兄弟目录绕过），
+   * 但属简化版，不包含 pathGuard 的以下防护（STEP9-DUP-3 修正：原注释声称"逻辑一致"不准确）：
+   *   - NFKC 规范化：pathGuard 用 absolutePath.normalize('NFKC') 防全角字符绕过黑名单正则；
+   *     isPathAllowed 不做规范化，因 fileWatcher 配置由宿主程序写入（非用户自由输入），攻击面较小。
+   *   - 符号链接解析（resolveRealpath）：pathGuard 用 realpathSync 解析符号链接链防止逃逸；
+   *     isPathAllowed 仅 resolve()，不解析符号链接。若项目内存在指向白名单外的符号链接，
+   *     监听器可能覆盖该链接目标（但 fs.watch 仅监听不读取内容，ADR-SP-004 安全原则已限制）。
+   *   - 黑名单（BLOCKED_PATTERNS）：pathGuard 维护 28 类禁止规则（.ssh/.aws/.env 等）；
+   *     isPathAllowed 不维护黑名单，依赖 allowedPaths 白名单兜底。
    * 若 allowedPaths 为空，则拒绝所有路径（安全优先）。
    */
   private isPathAllowed(absolutePath: string): boolean {

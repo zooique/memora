@@ -10,6 +10,7 @@
  * - 方法签名与 ui.ts 原始声明完全一致，保持外部契约不变
  */
 
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 ui 形成运行时循环依赖）
 import type { UIManager } from '../../ui.js';
 import type { PersonaItem } from '../../types.js';
 

@@ -34,7 +34,7 @@ import { reportError } from './errorHelpers.js';
 import { showFieldError, clearFieldErrors, attachRequiredBlurValidation } from './formValidation.js';
 import type { EventTracker } from './eventTracker.js';
 import type { LlmProviderConfig } from '../types.js';
-// 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 settingsPanelManager 形成运行时循环依赖）
 import type { SettingsPanelHost } from '../panels/settingsPanelManager.js';
 
 // ─── 常量 ──────────────────────────────────────────────────

@@ -24,7 +24,7 @@
 
 import { getOptionalElement, clearElement, createEl, formatTimeAgo } from './domHelpers.js';
 import { getSourceColorClass } from './sourceColor.js';
-// 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryPanelManager 形成运行时循环依赖）
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
 import type { EventTracker } from './eventTracker.js';
 import type { MemoryDetail, RelationPath, RelationNeighbor } from '../types.js';

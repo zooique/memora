@@ -12,6 +12,7 @@
  * - 键盘导航：↑↓ 移动、Enter 执行、Esc 关闭
  */
 
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 ui 形成运行时循环依赖）
 import type { UIManager } from '../ui.js';
 // Toast 时长常量 + 时间单位
 import { TOAST_SHORT_MS, MS_PER_HOUR } from '../../../sprite/constants.js';

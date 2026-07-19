@@ -10,6 +10,7 @@
 import type { BrowserWindow } from 'electron';
 import { toError, logger } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
+// STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 ipc/types 形成运行时循环依赖）
 // SerializedAppError 真理源在 ipc/types.ts
 import type { SerializedAppError } from './ipc/types.js';
 
