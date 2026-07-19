@@ -96,42 +96,42 @@ function shouldLog(targetLevel: string): boolean {
  */
 function createConsoleLogger(): ILogger {
   return {
-    info: (objOrMsg, msg) => {
-      if (!shouldLog('info')) return;
-      const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-      if (typeof objOrMsg === 'object') {
-        console.error(`[INFO] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-      } else {
-        console.error(`[INFO] ${text}`);
-      }
-    },
-    warn: (objOrMsg, msg) => {
-      if (!shouldLog('warn')) return;
-      const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-      if (typeof objOrMsg === 'object') {
-        console.error(`[WARN] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-      } else {
-        console.error(`[WARN] ${text}`);
-      }
-    },
-    error: (objOrMsg, msg) => {
-      if (!shouldLog('error')) return;
-      const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-      if (typeof objOrMsg === 'object') {
-        console.error(`[ERROR] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-      } else {
-        console.error(`[ERROR] ${text}`);
-      }
-    },
-    debug: (objOrMsg, msg) => {
-      if (!shouldLog('debug')) return;
-      const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-      if (typeof objOrMsg === 'object') {
-        console.error(`[DEBUG] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-      } else {
-        console.error(`[DEBUG] ${text}`);
-      }
-    },
+    info: createConsoleLogFn('info'),
+    warn: createConsoleLogFn('warn'),
+    error: createConsoleLogFn('error'),
+    debug: createConsoleLogFn('debug'),
+  };
+}
+
+/**
+ * 创建 console fallback 单级别日志方法
+ *
+ * 消除 createConsoleLogger 内 4 处 info/warn/error/debug 方法的同构实现
+ * （ADR-017 枝叶层 2 次提取原则，4 次重复已超阈值）。
+ *
+ * 共享逻辑：
+ *   1. shouldLog 级别过滤
+ *   2. 提取 text（字符串直传，对象取 msg 参数）
+ *   3. 区分字符串/对象输出（对象路径调用 redactSensitiveKeys 脱敏）
+ *
+ * @param targetLevel 日志级别（'info' | 'warn' | 'error' | 'debug'）
+ * @returns LogFn 兼容的日志方法
+ */
+function createConsoleLogFn(targetLevel: 'info' | 'warn' | 'error' | 'debug'): LogFn {
+  // 级别前缀（与原实现保持一致，便于日志检索过滤）
+  const prefix = `[${targetLevel.toUpperCase()}]`;
+  return (objOrMsg, msg) => {
+    // 级别过滤：低于当前级别则静默返回
+    if (!shouldLog(targetLevel)) return;
+    // 提取文本：字符串入参直接使用，对象入参取 msg 参数
+    const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
+    if (typeof objOrMsg === 'object') {
+      // 对象路径：脱敏后 JSON 序列化输出（防止 API Key 等敏感数据泄漏到 stderr）
+      console.error(`${prefix} ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
+    } else {
+      // 字符串路径：仅输出前缀 + 文本
+      console.error(`${prefix} ${text}`);
+    }
   };
 }
 

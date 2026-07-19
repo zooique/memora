@@ -40,8 +40,8 @@ import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-// parseLlmJson 用于解析 LLM 时效性判断结果（与 SessionArchiver 同模式）
-import { parseLlmJson } from '@/utils/json.js';
+// LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
+import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { truncate } from '@/utils/strings.js';
 
 /** 衰减完成的回调类型（Agent 注入 emit('decayCompleted', ...)） */
@@ -316,9 +316,9 @@ export class MemoryDecayScheduler {
    * 调用 LLM 判断单条记忆的时效性
    *
    * 使用结构化 JSON 输出（isOutdated + reason），
-   * 参照 SessionArchiver.generateSummary 的 parseLlmJson 模式。
+   * 流式累积 + parseLlmJson + 异常封装委托给 llmJudgeHelper.judgeWithLlm。
    *
-   * LLM 失败时抛出异常（由 evaluateTimeliness 捕获并降级跳过此条）。
+   * LLM 失败时抛出 MemoraError（由 evaluateTimeliness 捕获并降级跳过此条）。
    *
    * @param memory 待评估的记忆
    * @param signal 可选的 AbortSignal
@@ -326,25 +326,12 @@ export class MemoryDecayScheduler {
    */
   private async judgeTimeliness(memory: Memory, signal?: AbortSignal): Promise<TimelinessVerdict> {
     const messages = buildTimelinessMessages(memory);
-    let llmResponse = '';
-
-    // 流式累积模式（与 TextPolishManager / SessionArchiver 一致）
-    for await (const chunk of this.backgroundProvider!.chat(messages, {
-      maxTokens: 200,
-      temperature: 0,
-      timeoutMs: TIMELINESS_TIMEOUT_MS,
-      signal,
-    })) {
-      if (chunk.content) llmResponse += chunk.content;
-    }
-
-    // 解析 LLM 响应（JSON 格式）
-    const parsed = parseLlmJson<{ isOutdated?: boolean; reason?: string }>(
-      llmResponse.trim(),
+    const parsed = await judgeWithLlm<{ isOutdated?: boolean; reason?: string }>(
+      this.backgroundProvider!,
+      messages,
+      { maxTokens: 200, timeoutMs: TIMELINESS_TIMEOUT_MS, signal },
+      'LLM 时效性判断返回非法 JSON',
     );
-    if (!parsed) {
-      throw new Error('LLM 时效性判断返回非法 JSON');
-    }
 
     return {
       memoryId: memory.id,

@@ -53,8 +53,8 @@ import type {
 } from '@/agent/managers/memoryAdvisor.js';
 // LLM 语义去重（L1）：backgroundProvider 注入 + 流式累积，参照 TextPolishManager 模式
 import type { LlmProvider, Message } from '@/llm/provider.js';
-// parseLlmJson 用于解析 LLM 去重判断结果（与 SessionArchiver 同模式）
-import { parseLlmJson } from '@/utils/json.js';
+// LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
+import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 // levenshtein 用于名称相似度计算（复用 sourceValidation 中的实现，避免重复造轮子）
 import { levenshtein } from '@/memory/sourceValidation.js';
 
@@ -1025,9 +1025,9 @@ export class MemoryInspector {
    * 调用 LLM 判断单对记忆的语义等价性
    *
    * 使用结构化 JSON 输出（isDuplicate + mergedContent + reason），
-   * 参照 SessionArchiver.generateSummary 的 parseLlmJson 模式。
+   * 流式累积 + parseLlmJson + 异常封装委托给 llmJudgeHelper.judgeWithLlm。
    *
-   * LLM 失败时抛出异常（由 deduplicateMemories 捕获并降级跳过此对）。
+   * LLM 失败时抛出 MemoraError（由 deduplicateMemories 捕获并降级跳过此对）。
    *
    * @param pair 候选记忆对
    * @param signal 可选的 AbortSignal
@@ -1035,25 +1035,16 @@ export class MemoryInspector {
    */
   private async judgeDuplicate(pair: DedupPair, signal?: AbortSignal): Promise<DedupVerdict> {
     const messages = buildDedupMessages(pair);
-    let llmResponse = '';
-
-    // 流式累积模式（与 TextPolishManager / SessionArchiver 一致）
-    for await (const chunk of this.backgroundProvider!.chat(messages, {
-      maxTokens: 300,
-      temperature: 0,
-      timeoutMs: DEDUP_TIMEOUT_MS,
-      signal,
-    })) {
-      if (chunk.content) llmResponse += chunk.content;
-    }
-
-    // 解析 LLM 响应（JSON 格式）
-    const parsed = parseLlmJson<{ isDuplicate?: boolean; mergedContent?: string; reason?: string }>(
-      llmResponse.trim(),
+    const parsed = await judgeWithLlm<{
+      isDuplicate?: boolean;
+      mergedContent?: string;
+      reason?: string;
+    }>(
+      this.backgroundProvider!,
+      messages,
+      { maxTokens: 300, timeoutMs: DEDUP_TIMEOUT_MS, signal },
+      'LLM 去重判断返回非法 JSON',
     );
-    if (!parsed) {
-      throw new Error('LLM 去重判断返回非法 JSON');
-    }
 
     return {
       isDuplicate: parsed.isDuplicate === true,

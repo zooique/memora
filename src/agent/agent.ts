@@ -48,7 +48,6 @@ import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
 import { chatBusyError, configError, toError } from '@/utils/errors.js';
-import { clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
@@ -150,8 +149,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 详见 ChatLockManager 类注释。
    */
   private chatLockManager: ChatLockManager | null = null;
-  /** 记忆衰减定时器（已迁移至 MemoryDecayScheduler，此字段保留用于 close 时引用判断） */
-  private decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
 
@@ -290,8 +287,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       index: pctx.index,
     });
     this.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
-    // 保留 decayTimer 引用用于 close 时序兼容（实际定时器由 MemoryDecayScheduler 管理）
-    this.decayTimer = null;
 
     return pctx;
   }
@@ -1118,11 +1113,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     // 清理 ArchiveCoordinator（无定时器，只需释放引用）
     this.archiveCoordinator = null;
-    // 清理定时器
-    if (this.decayTimer) {
-      clearSafeInterval(this.decayTimer);
-      this.decayTimer = null;
-    }
     // 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
     if (this.personaManager) {
       this.personaManager.close();

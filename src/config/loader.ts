@@ -17,6 +17,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { configError } from '@/utils/errors.js';
 
 /**
  * 默认上下文 token 数（120K）
@@ -248,18 +249,46 @@ function parseConfig(raw: unknown): Config {
 }
 
 /**
+ * 断言值为字符串，否则抛出 configError
+ *
+ * 消除 loader.ts 中重复的"typeof x !== 'string' → throw"模式（ADR-017 枝叶层 2 次提取原则，6 处重复）。
+ *
+ * @param value 待校验的值
+ * @param field 字段名（用于错误信息，如 "providers.openai.model"）
+ * @returns 类型收窄后的字符串
+ * @throws MemoraError（category: 'config'）当值不是字符串时
+ */
+function assertString(value: unknown, field: string): string {
+  if (typeof value !== 'string') {
+    throw configError(
+      `配置项 ${field} 必须是字符串`,
+      `当前类型: ${typeof value}，当前值: ${JSON.stringify(value)}`,
+      [
+        `检查配置文件中 ${field} 字段是否被引号包裹`,
+        '参考 README 或 default-config.json 中的字段类型约定',
+      ],
+    );
+  }
+  return value;
+}
+
+/**
  * 验证 temperature 值
  *
  * @param value 待验证的值
  * @param defaultValue 默认值
  * @returns 有效的 temperature 值
- * @throws 当值超出范围时抛出错误
+ * @throws MemoraError 当值超出范围时抛出
  */
 function validateTemperature(value: unknown, defaultValue: number): number {
   // Number.isFinite 同时排除 NaN/Infinity（对齐 zod z.number() 行为）
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value < 0 || value > 2) {
-      throw new Error(`temperature 必须在 0-2 之间，当前值: ${value}`);
+      throw configError(
+        'temperature 配置项超出范围',
+        `当前值: ${value}（合法范围 0-2）`,
+        ['将 temperature 调整为 0-2 之间的数字'],
+      );
     }
     return value;
   }
@@ -271,7 +300,7 @@ function validateTemperature(value: unknown, defaultValue: number): number {
  *
  * @param value 待验证的值
  * @returns 有效的 permission 值
- * @throws 当值无效时抛出错误
+ * @throws MemoraError 当值无效时抛出
  */
 function validatePermission(value: unknown): 'owner' | 'guest' {
   if (value === undefined || value === null) {
@@ -280,7 +309,11 @@ function validatePermission(value: unknown): 'owner' | 'guest' {
   if (value === 'owner' || value === 'guest') {
     return value;
   }
-  throw new Error(`security.permission 必须为 "owner" 或 "guest"，收到: ${JSON.stringify(value)}`);
+  throw configError(
+    'security.permission 配置项无效',
+    `当前值: ${JSON.stringify(value)}（仅允许 "owner" 或 "guest"）`,
+    ['将 security.permission 修改为 "owner" 或 "guest"'],
+  );
 }
 
 /**
@@ -288,18 +321,16 @@ function validatePermission(value: unknown): 'owner' | 'guest' {
  *
  * @param value 待验证的值
  * @returns 有效的路径数组
- * @throws 当数组元素类型不匹配时抛出错误
+ * @throws MemoraError 当数组元素类型不匹配时抛出
  */
 function validateAllowedPaths(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return DEFAULT_CONFIG.allowedPaths;
   }
 
-  // 验证每个元素都是字符串
+  // 验证每个元素都是字符串（断言失败抛 configError）
   for (let i = 0; i < value.length; i++) {
-    if (typeof value[i] !== 'string') {
-      throw new Error(`allowedPaths[${i}] 必须是字符串，当前类型: ${typeof value[i]}`);
-    }
+    assertString(value[i], `allowedPaths[${i}]`);
   }
 
   return value as string[];
@@ -310,7 +341,7 @@ function validateAllowedPaths(value: unknown): string[] {
  *
  * @param value 待解析的值
  * @returns 有效的 Provider 配置映射表或 undefined
- * @throws 当 Provider 配置无效时抛出错误
+ * @throws MemoraError 当 Provider 配置无效时抛出
  */
 function parseProviders(value: unknown): Record<string, ProviderConfig> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -322,22 +353,22 @@ function parseProviders(value: unknown): Record<string, ProviderConfig> | undefi
 
   for (const [key, providerValue] of entries) {
     if (!providerValue || typeof providerValue !== 'object' || Array.isArray(providerValue)) {
-      throw new Error(`providers.${key} 必须是对象`);
+      throw configError(
+        `配置项 providers.${key} 必须是对象`,
+        `当前类型: ${providerValue === null ? 'null' : Array.isArray(providerValue) ? 'array' : typeof providerValue}`,
+        [`将 providers.${key} 配置为包含 provider/model 等字段的对象`],
+      );
     }
 
     const p = providerValue as Record<string, unknown>;
 
-    // 验证必需字段
-    if (typeof p.provider !== 'string') {
-      throw new Error(`providers.${key}.provider 必须是字符串`);
-    }
-    if (typeof p.model !== 'string') {
-      throw new Error(`providers.${key}.model 必须是字符串`);
-    }
+    // 验证必需字段（断言失败抛 configError，返回值类型收窄为 string）
+    const providerName = assertString(p.provider, `providers.${key}.provider`);
+    const modelName = assertString(p.model, `providers.${key}.model`);
 
     providers[key] = {
-      provider: p.provider,
-      model: p.model,
+      provider: providerName,
+      model: modelName,
       // 过滤空字符串：与 parseConfig 顶层逻辑保持一致
       baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
@@ -354,7 +385,7 @@ function parseProviders(value: unknown): Record<string, ProviderConfig> | undefi
  *
  * @param value 待解析的值
  * @returns 有效的后台通道配置或 undefined
- * @throws 当配置无效时抛出错误
+ * @throws MemoraError 当配置无效时抛出
  */
 function parseBackground(value: unknown): BackgroundConfig | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -363,17 +394,13 @@ function parseBackground(value: unknown): BackgroundConfig | undefined {
 
   const bg = value as Record<string, unknown>;
 
-  // 验证必需字段
-  if (typeof bg.provider !== 'string') {
-    throw new Error('background.provider 必须是字符串');
-  }
-  if (typeof bg.model !== 'string') {
-    throw new Error('background.model 必须是字符串');
-  }
+  // 验证必需字段（断言失败抛 configError，返回值类型收窄为 string）
+  const bgProvider = assertString(bg.provider, 'background.provider');
+  const bgModel = assertString(bg.model, 'background.model');
 
   return {
-    provider: bg.provider,
-    model: bg.model,
+    provider: bgProvider,
+    model: bgModel,
     baseUrl: typeof bg.baseUrl === 'string' ? bg.baseUrl : undefined,
     apiKey: typeof bg.apiKey === 'string' ? bg.apiKey : undefined,
     temperature: bg.temperature !== undefined ? validateTemperature(bg.temperature, 0.5) : 0.5,
@@ -385,7 +412,7 @@ function parseBackground(value: unknown): BackgroundConfig | undefined {
  *
  * @param value 待解析的值
  * @returns 有效的 Embedding 配置或 undefined
- * @throws 当配置无效时抛出错误
+ * @throws MemoraError 当配置无效时抛出
  */
 function parseEmbedding(value: unknown): EmbeddingConfig | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -394,13 +421,11 @@ function parseEmbedding(value: unknown): EmbeddingConfig | undefined {
 
   const emb = value as Record<string, unknown>;
 
-  // 验证必需字段
-  if (typeof emb.model !== 'string') {
-    throw new Error('embedding.model 必须是字符串');
-  }
+  // 验证必需字段（断言失败抛 configError，返回值类型收窄为 string）
+  const embModel = assertString(emb.model, 'embedding.model');
 
   return {
-    model: emb.model,
+    model: embModel,
     baseUrl: typeof emb.baseUrl === 'string' ? emb.baseUrl : undefined,
     apiKey: typeof emb.apiKey === 'string' ? emb.apiKey : undefined,
   };

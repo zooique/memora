@@ -21,9 +21,9 @@ import { ONE_DAY_MS } from '@/memory/recall.js';
 import { nowIso } from '@/utils/time.js';
 // L3 冲突检测：可选注入 backgroundProvider
 import type { LlmProvider, Message } from '@/llm/provider.js';
-// parseLlmJson 用于解析 LLM 冲突判断结果
+// LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
+import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { byScoreDesc } from '@/utils/array.js';
-import { parseLlmJson } from '@/utils/json.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
 
@@ -496,12 +496,12 @@ export class MemoryAdvisor {
   }
 
   /**
-   * 调用 LLM 判断单对记忆是否存在语义冲突
+   * 调用 LLM 判断两条记忆是否存在语义冲突
    *
    * 使用结构化 JSON 输出（hasConflict + conflictDescription + recommendation + reason），
-   * 参照 SessionArchiver.generateSummary 的 parseLlmJson 模式。
+   * 流式累积 + parseLlmJson + 异常封装委托给 llmJudgeHelper.judgeWithLlm。
    *
-   * LLM 失败时抛出异常（由 detectConflicts 捕获并降级跳过此对）。
+   * LLM 失败时抛出 MemoraError（由 detectConflicts 捕获并降级跳过此对）。
    *
    * @param memoryA 记忆 A
    * @param memoryB 记忆 B
@@ -510,28 +510,17 @@ export class MemoryAdvisor {
    */
   private async judgeConflict(memoryA: Memory, memoryB: Memory, signal?: AbortSignal): Promise<ConflictVerdict> {
     const messages = buildConflictMessages(memoryA, memoryB);
-    let llmResponse = '';
-
-    // 流式累积模式（与 TextPolishManager / SessionArchiver 一致）
-    for await (const chunk of this.backgroundProvider!.chat(messages, {
-      maxTokens: 300,
-      temperature: 0,
-      timeoutMs: CONFLICT_TIMEOUT_MS,
-      signal,
-    })) {
-      if (chunk.content) llmResponse += chunk.content;
-    }
-
-    // 解析 LLM 响应（JSON 格式）
-    const parsed = parseLlmJson<{
+    const parsed = await judgeWithLlm<{
       hasConflict?: boolean;
       conflictDescription?: string;
       recommendation?: string;
       reason?: string;
-    }>(llmResponse.trim());
-    if (!parsed) {
-      throw new Error('LLM 冲突判断返回非法 JSON');
-    }
+    }>(
+      this.backgroundProvider!,
+      messages,
+      { maxTokens: 300, timeoutMs: CONFLICT_TIMEOUT_MS, signal },
+      'LLM 冲突判断返回非法 JSON',
+    );
 
     // 校验 recommendation 字段（允许 'a' / 'b' / 'both'，其他值忽略）
     const recRaw = parsed.recommendation;
