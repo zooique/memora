@@ -5,6 +5,8 @@
  * 详见 ADR-004 · 记忆统一模型
  */
 
+import { configError } from '@/utils/errors.js';
+
 // ─── 基元定义 ─────────────────────────────────────────────
 
 /**
@@ -52,7 +54,11 @@ export const DEFAULT_MEMORY_SCORE = 0.5;
  */
 export function parseMemory(raw: unknown): Memory {
   if (raw === null || typeof raw !== 'object') {
-    throw new Error('Memory 解析失败：输入必须是非空对象');
+    throw configError(
+      'Memory 解析失败',
+      '输入必须是非空对象',
+      ['检查数据源（JSON 文件 / 数据库查询）是否返回了有效对象'],
+    );
   }
 
   const obj = raw as Record<string, unknown>;
@@ -61,7 +67,11 @@ export function parseMemory(raw: unknown): Memory {
   const stringFields = ['id', 'content', 'source', 'name'] as const;
   for (const field of stringFields) {
     if (typeof obj[field] !== 'string') {
-      throw new Error(`Memory 解析失败：${field} 必须是字符串`);
+      throw configError(
+        'Memory 解析失败',
+        `${field} 必须是字符串`,
+        [`检查数据源中 ${field} 字段的类型（当前为 ${typeof obj[field]}）`],
+      );
     }
   }
 
@@ -69,7 +79,11 @@ export function parseMemory(raw: unknown): Memory {
   const dateFields = ['createdAt', 'accessedAt'] as const;
   for (const field of dateFields) {
     if (typeof obj[field] !== 'string' || isNaN(Date.parse(obj[field] as string))) {
-      throw new Error(`Memory 解析失败：${field} 必须是有效的 ISO 8601 日期字符串`);
+      throw configError(
+        'Memory 解析失败',
+        `${field} 必须是有效的 ISO 8601 日期字符串`,
+        [`检查数据源中 ${field} 字段的格式（当前值: ${JSON.stringify(obj[field])}）`],
+      );
     }
   }
 
@@ -77,14 +91,22 @@ export function parseMemory(raw: unknown): Memory {
   // Number.isFinite 同时排除 NaN/Infinity（对齐 zod z.number() 行为）
   if (obj.score !== undefined && obj.score !== null) {
     if (typeof obj.score !== 'number' || !Number.isFinite(obj.score) || obj.score < 0 || obj.score > 1) {
-      throw new Error('Memory 解析失败：score 必须是 0-1 之间的数字');
+      throw configError(
+        'Memory 解析失败',
+        `score 必须是 0-1 之间的数字（当前值: ${String(obj.score)}）`,
+        ['将 score 调整为 0-1 之间的有效数字'],
+      );
     }
   }
 
   // 验证可选的 deletedAt 字段
   if (obj.deletedAt !== undefined && obj.deletedAt !== null) {
     if (typeof obj.deletedAt !== 'string' || isNaN(Date.parse(obj.deletedAt as string))) {
-      throw new Error('Memory 解析失败：deletedAt 必须是有效的 ISO 8601 日期字符串');
+      throw configError(
+        'Memory 解析失败',
+        `deletedAt 必须是有效的 ISO 8601 日期字符串（当前值: ${JSON.stringify(obj.deletedAt)}）`,
+        ['检查数据源中 deletedAt 字段的格式'],
+      );
     }
   }
 

@@ -51,11 +51,7 @@ export class FileStore {
       content = await readFile(filePath, 'utf-8');
       fileStat = await stat(filePath);
     } catch (err) {
-      // ENOENT 属正常情况（文件不存在），静默返回 null；其他错误（EACCES/EISDIR 等）记录警告
-      const error = toError(err) as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        logger.warn({ path: filePath, code: error.code, err: error.message }, '记忆文件读取失败');
-      }
+      this.handleFsError(err, filePath, '记忆文件读取失败');
       return null;
     }
 
@@ -94,11 +90,7 @@ export class FileStore {
     try {
       files = await readdir(dir);
     } catch (err) {
-      // ENOENT 属正常情况（目录不存在），静默返回空数组；其他错误（EACCES/EISDIR 等）记录警告
-      const error = toError(err) as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        logger.warn({ dir, code: error.code, err: error.message }, '记忆目录读取失败');
-      }
+      this.handleFsError(err, dir, '记忆目录读取失败');
       return [];
     }
     return files.filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''));
@@ -118,6 +110,26 @@ export class FileStore {
    */
   private sourceToDir(source: string): string {
     return SOURCE_TO_DIR[source] ?? source;
+  }
+
+  /**
+   * 文件系统错误统一处理
+   *
+   * 消除 read() 和 list() 中 2 次重复的 ENOENT 错误处理模式
+   * （ADR-017 枝叶层 2 次提取原则，2 次重复已达阈值）。
+   *
+   * ENOENT 属正常情况（文件/目录不存在），静默返回；
+   * 其他错误（EACCES/EISDIR 等）记录警告。
+   *
+   * @param err 捕获的异常
+   * @param path 文件/目录路径（用于日志上下文）
+   * @param label 日志标签（中文，如 "记忆文件读取失败"）
+   */
+  private handleFsError(err: unknown, path: string, label: string): void {
+    const error = toError(err) as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      logger.warn({ path, code: error.code, err: error.message }, label);
+    }
   }
 
   /**

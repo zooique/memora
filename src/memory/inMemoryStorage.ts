@@ -257,10 +257,7 @@ export class InMemoryStorage implements IMemoryStorage {
 
     // 空查询：按 score 降序返回（浅拷贝，读取隔离）
     if (!query.trim()) {
-      return activeMemories
-        .sort(byScoreDesc)
-        .slice(0, limit)
-        .map((m) => ({ ...m }));
+      return this.sortCopyLimit(activeMemories, limit);
     }
 
     // 规范分词（与 recall.ts extractKeywords 共用 segmentText）
@@ -268,10 +265,7 @@ export class InMemoryStorage implements IMemoryStorage {
 
     // 若分词后无有效 token，降级为按 score 返回
     if (tokens.length === 0) {
-      return activeMemories
-        .sort(byScoreDesc)
-        .slice(0, limit)
-        .map((m) => ({ ...m }));
+      return this.sortCopyLimit(activeMemories, limit);
     }
 
     const results = activeMemories.filter((m) => {
@@ -280,11 +274,25 @@ export class InMemoryStorage implements IMemoryStorage {
       return tokens.some((t) => text.includes(t));
     });
 
-    // 按 score 降序排序
-    results.sort(byScoreDesc);
+    // 按 score 降序排序，返回浅拷贝（避免调用方修改污染存储内部对象）
+    return this.sortCopyLimit(results, limit);
+  }
 
-    // 返回浅拷贝，避免调用方修改污染存储内部对象
-    return results.slice(0, limit).map((m) => ({ ...m }));
+  /**
+   * 排序 + 截断 + 浅拷贝三件套
+   *
+   * 消除 search() 内 3 次重复的 .sort(byScoreDesc).slice(0, limit).map((m) => ({ ...m })) 模式
+   * （ADR-017 枝叶层 2 次提取原则，3 次重复已超阈值）。
+   *
+   * @param memories 待处理的记忆数组
+   * @param limit 返回数量上限
+   * @returns 排序截断后的浅拷贝记忆数组
+   */
+  private sortCopyLimit(memories: Memory[], limit: number): Memory[] {
+    return memories
+      .sort(byScoreDesc)
+      .slice(0, limit)
+      .map((m) => ({ ...m }));
   }
 
   /**

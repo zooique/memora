@@ -24,6 +24,9 @@ import { nowIso } from '@/utils/time.js';
 /** 用户画像子分类 */
 export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' | 'history';
 
+/** 有效的画像分类列表（模块级常量，消除 parseContentField 内 2 次重复数组） */
+const VALID_PROFILE_CATEGORIES: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
+
 /** 用户画像条目 */
 export interface UserProfileEntry {
   /** 画像唯一 ID（格式：profile:user-profile-{category}-{slug}） */
@@ -360,8 +363,7 @@ export class UserProfile {
     try {
       const parsed = JSON.parse(content) as { category?: string; value?: string };
       if (parsed.category && parsed.value) {
-        const validCategories: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
-        if (validCategories.includes(parsed.category as ProfileCategory)) {
+        if (VALID_PROFILE_CATEGORIES.includes(parsed.category as ProfileCategory)) {
           return { category: parsed.category as ProfileCategory, value: parsed.value };
         }
       }
@@ -373,8 +375,7 @@ export class UserProfile {
     const idx = name.indexOf(':');
     if (idx >= 0) {
       const category = name.slice(0, idx).trim() as ProfileCategory;
-      const validCategories: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
-      if (validCategories.includes(category)) {
+      if (VALID_PROFILE_CATEGORIES.includes(category)) {
         const value = name.slice(idx + 1).trim();
         return { category, value: value || content };
       }
