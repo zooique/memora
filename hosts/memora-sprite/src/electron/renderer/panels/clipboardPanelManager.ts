@@ -25,10 +25,8 @@ import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { ConfirmDialogOptions, ToastType } from '../types.js';
 // 剪贴板数据/状态层（ClipboardPanelManager 依赖其 API，单向依赖）
-import {
-  ClipboardManager,
-  BADGE_MAX_DISPLAY,
-} from './clipboardManager.js';
+import type { ClipboardManager } from './clipboardManager.js';
+import { BADGE_MAX_DISPLAY } from './clipboardManager.js';
 import type { ClipboardPendingItem } from './clipboardManager.js';
 
 // ─── 常量 ───────────────────────────────────────────────

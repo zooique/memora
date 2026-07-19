@@ -85,7 +85,6 @@ export class SkillDropManager {
 
     // 逐个安装（避免并发写入冲突），累计热重载结果用于汇总反馈
     let successCount = 0;
-    let hotReloadedCount = 0;
     let hotReloadFailedCount = 0;
     let noAgentCount = 0;
     let lastError = '';
@@ -98,9 +97,7 @@ export class SkillDropManager {
       }
       // 文件写入成功，根据热重载结果分类计数
       successCount++;
-      if (result === 'hot-reloaded') {
-        hotReloadedCount++;
-      } else if (result === 'hot-reload-failed') {
+      if (result === 'hot-reload-failed') {
         hotReloadFailedCount++;
       } else if (result === 'no-agent') {
         noAgentCount++;

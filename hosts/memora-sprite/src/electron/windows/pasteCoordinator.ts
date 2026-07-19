@@ -236,7 +236,7 @@ export class PasteCoordinator {
       if (!isGarbledTitle(nutJsTitle)) return null;
       // nut-js 标题含 U+FFFD → 编码 bug 触发，用 PowerShell + HWND 修复
       // 直接传入 HWND 消除 GetForegroundWindow 竞态条件
-      if (hwnd == null) return null;
+      if (hwnd === null) return null;
       const psTitle = getWindowTitleViaPS(hwnd);
       if (psTitle) {
         logger.info({ nutJsTitle, psTitle }, 'nut-js 标题乱码，已通过 PowerShell 修复');

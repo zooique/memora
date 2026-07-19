@@ -10,7 +10,7 @@
  * - 仅提取"重复 2+ 次的按钮绑定模式"（ADR-017 枝叶层 2 次提取原则）
  */
 
-import { EventTracker } from './eventTracker.js';
+import type { EventTracker } from './eventTracker.js';
 import { setButtonLoadingEl } from './domHelpers.js';
 
 /**

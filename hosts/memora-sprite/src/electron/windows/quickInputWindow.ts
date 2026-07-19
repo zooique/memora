@@ -51,14 +51,6 @@ const CLIPBOARD_PREFILL_MIN_LENGTH = 2;
 /** 确认/润色文本最大长度（防止恶意输入耗尽 LLM token / 触发速率限制） */
 const MAX_CONFIRM_TEXT_LENGTH = 10000;
 
-/** 剪贴板预填读取结果 */
-interface ClipboardPrefillResult {
-  /** 预填文本（null 表示不预填） */
-  text: string | null;
-  /** 剪贴板内容是否命中敏感模式（用于渲染进程自动进入常驻模式） */
-  isSensitive: boolean;
-}
-
 /** 快速输入浮窗回调（由 main.ts 注入） */
 export interface QuickInputWindowCallbacks {
   /**
@@ -129,15 +121,6 @@ export class QuickInputWindow {
   private callbacks: QuickInputWindowCallbacks;
   /** 失焦延迟关闭定时器 */
   private blurCloseTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * 常驻模式开关
-   *
-   * true=持久钉住浮窗，blur 不关闭
-   * false=default 模式，blur 触发 200ms 延迟关闭
-   *
-   * 由渲染进程通过 QUICK_INPUT_SET_PINNED_MODE IPC 切换
-   */
-  private pinnedMode = false;
   /** IPC handler 是否已注册（防止重复注册） */
   private ipcRegistered = false;
   /**
@@ -145,13 +128,10 @@ export class QuickInputWindow {
    *
    * 根因修复（Tab 提交闪烁）：
    *   paste 流程耗时 200-600ms（PowerShell SendInput ~100ms + pasteDelay 100-500ms），
-   *   超过 blur 关闭延迟 200ms。default 模式下 paste 期间浮窗 blur → scheduleBlurClose
+   *   超过 blur 关闭延迟 200ms。paste 期间浮窗 blur → scheduleBlurClose
    *   定时器触发 hide → paste 完成后 focus 重新 show，视觉上闪烁。
    *   此标记在 paste 期间设为 true，blur 事件检查此标记跳过 scheduleBlurClose。
-   *
-   * 与 pinnedMode 的区别：
-   *   - pinnedMode 是用户态偏好（持久抑制 blur close）
-   *   - pasteInProgress 是流程态标志（仅在 paste 期间临时抑制，paste 完成立即清除）
+   *   paste 完成后立即清除，仅临时抑制 blur close。
    */
   private pasteInProgress = false;
   /** Phase 4：自动粘贴协调器（封装 InputInjector + 前台窗口捕获 + 剪贴板保护） */
@@ -192,7 +172,7 @@ export class QuickInputWindow {
     });
 
     // 先赋值 this.win + 注册 IPC handlers，再 loadFile
-    // 原因：渲染进程 init() 在 loadFile 时执行，会发送 setPinnedMode 等 IPC
+    // 原因：渲染进程 init() 在 loadFile 时执行，会发送 IPC 调用
     // 若 IPC handler 还未注册，IPC 丢失，导致渲染进程 UI 与主进程状态不一致
     this.win = win;
     this.registerIpcHandlers();
@@ -207,11 +187,11 @@ export class QuickInputWindow {
     // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
     applyWindowSecurity(win);
 
-    // 失焦延迟关闭：给 Alt+Tab 切换留余量（pinned 模式 / paste 期间不关闭）
-    // paste 期间抑制 blur close 是为了防止 default 模式下 paste 流程触发的 blur 事件
+    // 失焦延迟关闭：给 Alt+Tab 切换留余量（paste 期间不关闭）
+    // paste 期间抑制 blur close 是为了防止 paste 流程触发的 blur 事件
     // 启动 hide 定时器（paste 耗时 200-600ms > blur 延迟 200ms），导致 hide→show 闪烁
     win.on('blur', () => {
-      if (this.pinnedMode || this.pasteInProgress) return;
+      if (this.pasteInProgress) return;
       this.scheduleBlurClose();
     });
     win.on('focus', () => {
@@ -237,7 +217,7 @@ export class QuickInputWindow {
    */
   async show(): Promise<void> {
     // 捕获前台窗口（必须在 create()/show() 之前，否则浮窗自身会成为前台窗口）
-    // 若浮窗已存在且可见（pinned 模式连续呼出场景），先隐藏再捕获，避免误捕浮窗自身
+    // 若浮窗已存在且可见（连续呼出场景），先隐藏再捕获，避免误捕浮窗自身
     const existingWin = this.win;
     const wasVisible = existingWin && !existingWin.isDestroyed() && existingWin.isVisible();
     if (wasVisible && existingWin) {
@@ -281,9 +261,9 @@ export class QuickInputWindow {
     this.cancelBlurClose();
     win.show();
     win.focus();
-    // 通知渲染进程：携带剪贴板预填文本 + 敏感标记，替代 focus 事件避免 Alt+Tab 切回误清空
-    const prefill = this.readClipboardForPrefill();
-    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, { clipboardText: prefill.text, isSensitive: prefill.isSensitive });
+    // 通知渲染进程：携带剪贴板预填文本（敏感内容时为 null），替代 focus 事件避免 Alt+Tab 切回误清空
+    const prefillText = this.readClipboardForPrefill();
+    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, { clipboardText: prefillText });
     // 通知渲染进程当前聚焦应用名（联动 focus-bar 显示 + Tab 启用）
     const appName = await this.pasteCoordinator.getCapturedAppName();
     this.notifyFocusChange(appName);
@@ -347,31 +327,31 @@ export class QuickInputWindow {
   }
 
   /**
-   * 读取剪贴板内容并做敏感检测，返回预填文本 + 敏感标记
+   * 读取剪贴板内容并做敏感检测，返回可预填的文本
    *
-   * 敏感内容（token/信用卡/密码/私钥/AWS key）：text=null（不预填），isSensitive=true（通知渲染进程自动进入持久模式）。
-   * 过短内容（< 2 字符）：text=null，isSensitive=false。
-   * 超长内容截断到 200 字符。
+   * 敏感内容（token/信用卡/密码/私钥/AWS key）：返回 null（不预填，避免敏感数据被预填到输入框）。
+   * 过短内容（< 2 字符）：返回 null。
+   * 超长内容截断到 CLIPBOARD_PREFILL_MAX_LENGTH 字符。
    *
-   * @returns 预填结果（text + isSensitive）
+   * @returns 预填文本（null 表示不预填）
    */
-  private readClipboardForPrefill(): ClipboardPrefillResult {
+  private readClipboardForPrefill(): string | null {
     try {
       const raw = clipboard.readText();
       const trimmed = raw.trim();
       if (trimmed.length < CLIPBOARD_PREFILL_MIN_LENGTH) {
-        return { text: null, isSensitive: false };
+        return null;
       }
       const sensitiveResult = isSensitive(trimmed);
       if (sensitiveResult.sensitive) {
-        // 敏感内容不预填，但通知渲染进程进入常驻模式
-        return { text: null, isSensitive: true };
+        // 敏感内容不预填，避免明文展示在输入框
+        return null;
       }
-      return { text: trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH), isSensitive: false };
+      return trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH);
     } catch (error) {
       // 剪贴板读取失败不阻断浮窗显示，记录 warn 便于排查
       logger.warn({ error }, 'readClipboardForPrefill failed');
-      return { text: null, isSensitive: false };
+      return null;
     }
   }
 
@@ -398,15 +378,12 @@ export class QuickInputWindow {
     this.ipcRegistered = true;
 
     // 确认输入：Phase 4 优先自动粘贴，降级走 onConfirm 写剪贴板
-    // 渲染进程传入 pinnedMode：pinned 模式下 paste 后不抢焦点（保持钉住语义）
-    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, pinnedMode?: boolean): Promise<QuickInputConfirmResult> => {
+    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string): Promise<QuickInputConfirmResult> => {
       try {
         // 参数校验：文本必须是字符串且非空
         if (typeof text !== 'string' || text.length === 0) {
           return { success: false, mode: 'copy' };
         }
-        // pinnedMode 类型校验：防御非布尔 truthy 值
-        const safePinnedMode = typeof pinnedMode === 'boolean' ? pinnedMode : false;
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
 
@@ -425,18 +402,9 @@ export class QuickInputWindow {
           this.pasteInProgress = false;
           this.cancelBlurClose();
         }
-        // paste 完成：浮窗保持可见，按模式恢复焦点 + 置顶
+        // paste 完成：浮窗保持可见，恢复焦点支持连续输入
         if (this.isWinAlive()) {
-          // pinned 模式强制恢复置顶：paste 期间目标窗口 SetForegroundWindow 可能
-          // 影响 z-order（特别是目标窗口本身是 alwaysOnTop 或系统调整 z-order 时），
-          // pinned 模式必须保证浮窗视觉置顶，否则出现"加锁未置顶"bug
-          if (this.pinnedMode) {
-            this.win!.setAlwaysOnTop(true);
-          }
-          // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
-          if (!safePinnedMode) {
-            this.win!.focus();
-          }
+          this.win!.focus();
         }
 
         if (pasteResult.success && pasteResult.mode === 'paste') {
@@ -534,15 +502,6 @@ export class QuickInputWindow {
       );
     });
 
-    // 切换常驻模式：渲染进程通知主进程抑制/恢复 blur 关闭
-    // pinned 模式下强制 alwaysOnTop=true（防止系统事件重置置顶）
-    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, (_event, pinned: boolean) => {
-      this.pinnedMode = typeof pinned === 'boolean' ? pinned : false;
-      if (this.isWinAlive() && this.pinnedMode) {
-        this.win!.setAlwaysOnTop(true);
-      }
-      return { success: true };
-    });
   }
 
   /**
@@ -675,7 +634,6 @@ export class QuickInputWindow {
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_RESIZE);
       ipcMain.removeAllListeners(IPC_CHANNELS.MOVE_QUICK_INPUT);
       ipcMain.removeAllListeners(IPC_CHANNELS.QUICK_INPUT_POLISH);
-      ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE);
       this.ipcRegistered = false;
     }
     if (this.isWinAlive()) {

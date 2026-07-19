@@ -231,8 +231,6 @@ export const IPC_CHANNELS = {
   MOVE_QUICK_INPUT: 'move-quick-input',
   /** 渲染进程 → 主进程：LLM 润色文本（携带原文，返回润色后文本） */
   QUICK_INPUT_POLISH: 'quick-input-polish',
-  /** 渲染进程 → 主进程：切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
-  QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
 
   // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
