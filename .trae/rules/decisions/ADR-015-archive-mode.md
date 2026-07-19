@@ -5,7 +5,7 @@ description: Agent 归档模式（full / insights-only / manual）三态控制
 
 # ADR-015 · Agent 归档模式三态控制
 
-> **状态**：✅ 已采纳（content 列于 GAP-2 落地后完整生效）
+> **状态**：✅ 已接受（content 列于 GAP-2 落地后完整生效；GAP-2 已于 2026-07-03 落地，三态归档完整生效）
 > **日期**：2026-07-02（新枝破土·GAP-1 收敛）/ 2026-07-03（GAP-2 收敛）
 > **来源**：新枝破土循环——扫描发现 archiveMode 硬约束在 user_profile.md / project_memory.md 中明确记载，但源代码中完全未实现
 
@@ -92,7 +92,7 @@ private async postProcess(input: string, assistantContent: string): Promise<void
 | 类型 | `src/agent/types.ts` | 新增 `ArchiveMode` 类型 |
 | 门面 | `src/agent/agent.ts` | AgentOptions 新增字段 + `#archiveMode` + `setArchiveMode` + 手动 API + postProcess 改造 |
 | 测试 | `src/agent/__tests__/agent.test.ts` | 3 种模式 × 归档行为 用例 |
-| SessionArchiver（GAP-2） | `src/agent/managers/sessionArchiver.ts` | 第 9 个 Manager：会话内容摘要归档器，截取最近 50 条消息 → LLM 摘要 → `source='content'` 记忆 |
+| SessionArchiver（GAP-2） | `src/agent/managers/sessionArchiver.ts` | 第 11 个 Manager（按 project-rules.md §3 字母序列表）：会话内容摘要归档器，截取最近 50 条消息 → LLM 摘要 → `source='content'` 记忆 |
 | Agent 归档 API（GAP-2） | `src/agent/agent.ts` | 新增 `archiveSessionContent(date, session)` 公开 API |
 | SessionManager（GAP-2） | `src/agent/managers/sessionManager.ts` | 新增 `getCurrentSessionInfo()` 返回当前 date+session |
 | 宿主自动归档（GAP-2） | `hosts/memora-sprite/src/electron/ipc/sessionHandlers.ts` | SESSION_SWITCH 前自动归档（仅 `full` 模式，best-effort） |

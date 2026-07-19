@@ -19,7 +19,7 @@ date: 2026-07-13
 | native 模块 | 零（ADR-002） | better-sqlite3（ADR-SP-002） |
 | 接口实现 | 定义接口 | 实现接口（IMemoryStorage / ISessionStore） |
 | 规则关系 | 内核规则精灵必须遵守 | 精灵规则仅约束精灵代码 |
-| ADR 前缀 | ADR-001~019（跳过 005） | ADR-SP-001~008 + ADR-SP-015~017 |
+| ADR 前缀 | ADR-001~019（跳过 005） | ADR-SP-001~008 + ADR-SP-015~018 |
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
@@ -204,10 +204,6 @@ export class ClipboardManager { ... }
 - **字段级**：每个 `private` 字段必须有单行 `/** ... */` 说明用途
 - **方法级**：公共方法必须含 `@param` / `@returns`，私有方法可简化但需说明意图
 
-## 5. 命名规范
-
-命名规范与内核一致（详见 [project-rules.md §4](./project-rules.md)）。
-
 ### 4.3 Web 调试通道（Phase 4 交付）
 
 > **定位**：精灵的平行部署模式——与 Electron 共享同一内核，通过原生 HTTP 提供 REST API + 静态前端。
@@ -223,6 +219,10 @@ export class ClipboardManager { ... }
 | 与 Electron 关系 | 平行模式，共享 `sprite/` 核心层和 `storage/` 持久化层，不共享 `electron/` 进程管理 |
 
 > **历史**：web/ 最初作为"临时开发辅助"创建，经 2026-07-05 根须审查正式接纳为 Phase 4 交付物。
+
+## 5. 命名规范
+
+命名规范与内核一致（详见 [project-rules.md §4](./project-rules.md)）。
 
 ## 6. 不做清单
 
@@ -252,7 +252,7 @@ export class ClipboardManager { ... }
 > **自然生长原则**（[ADR-017](./decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）遵循 2 次提取原则。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
 > **触发条件**：审核报告（`docs/memora-sprite-交叉对齐审核报告.md`）识别出"机制已建、宿主未用"。
 
-### 7.1 工具注册（`agent.tools.registerTool`）
+### 8.1 工具注册（`agent.tools.registerTool`）
 
 **沉淀时机**：迭代 9 出现 1 次工具注册（web_search + memory_search）。  
 **抽取阈值**：第 2 次出现时提取通用 helper（枝叶层 2 次提取原则，详见 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md)）。
@@ -268,7 +268,7 @@ export class ClipboardManager { ... }
 - 当工具数 ≥ 3 时，提取 `registerDefaultTools(agent)` helper
 - 当 ≥ 5 时，提取工具配置 schema + 启用/禁用开关
 
-### 7.2 事件订阅（L5 补全）
+### 8.2 事件订阅（L5 补全）
 
 **沉淀时机**：迭代 9 补齐 4 种未订阅事件（projectSwitched / skillMatched / memoryRecalled / decayCompleted）。  
 **设计原则**：
@@ -283,13 +283,13 @@ export class ClipboardManager { ... }
 - 4 个 handler 集中定义在文件顶部
 - `onSpriteEvent` 统一入口 + type 分发（避免重复监听器）
 
-### 7.3 多 Provider 路由
+### 8.3 多 Provider 路由
 
 **沉淀时机**：迭代 7-8 引入后台 Provider（`agent.setBackgroundProvider`）。  
 **配置入口**：`ConfigSchema.llm.background`（独立块，温度 0.5 默认）。  
 **路由策略**：`AgentOptions.backgroundProvider` 注入独立 LlmProvider 实例，workProjection / autoConfigRefiner 直接调用 `backgroundProvider.chat()`，不通过 `ChatOptions` 字段路由。
 
-### 7.4 写入确认闭环
+### 8.4 写入确认闭环
 
 **沉淀时机**：迭代 8 完成写入确认 UI（M1）。  
 **数据流**：

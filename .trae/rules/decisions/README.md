@@ -26,8 +26,8 @@ description: Memora 关键决策年轮
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
 | [ADR-012](./ADR-012-domain-switch.md)       | 领域切换（已废弃，由角色自动匹配替代）                    | ❌ 已废弃 | 架构   |
 | [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档管道（v2.0：单步 LLM 提取 + Jaccard 去重）        | ✅ 已接受 | 架构   |
-| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ✅ 已接受   | 架构   |
-| [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual）   | ✅ 已采纳   | 架构   |
+| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ✅ 已接受 | 架构   |
+| [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual，GAP-2 已落地 2026-07-03）   | ✅ 已接受 | 架构   |
 | [ADR-016](./ADR-016-vector-store-interface.md) | 向量存储接口化（IVectorStore + JsonVectorStore）       | ✅ 已接受 | 数据层 |
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
 | [ADR-018](./ADR-018-css-scoping-convention.md) | CSS 作用域规范：面板前缀 + BEM + 单一真理源（消除 BARE 类跨面板污染） | ✅ 已接受 | 前端 |
@@ -50,20 +50,23 @@ description: Memora 关键决策年轮
 | [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) | 快速输入浮窗架构：窗口管理器内联 IPC + Controller/Completion 双类解耦 + LLM 回调注入 | ✅ 已接受 | 架构 |
 | [ADR-SP-018](./ADR-SP-018-cross-process-encoding.md) | 跨进程非 ASCII 数据传递：文件 I/O + 原始数据提取（绕过 nut-js 编码 bug + stdout 管道污染 + 竞态条件） | ✅ 已接受 | 工程 |
 
+> **跳号说明**：ADR-005（内核）和 ADR-SP-009~014（精灵）序号保留未使用——内核 005 跳号因初始设计被 ADR-004 合并；精灵 SP-009~014 跳号因精灵 ADR 编号策略与内核 SP 序号对齐，预留 SP-009~014 给未来与内核 SP 序号对齐的扩展。当前精灵 ADR 直接从 SP-008 跳到 SP-015。
+
 ---
 
 ## 类别分布
 
 | 类别   | 数量 | ADR 列表             |
 | ------ | ---- | -------------------- |
-| 运行时 | 1    | ADR-001              |
-| 数据层 | 2    | ADR-002, ADR-016     |
+| 运行时 | 2    | ADR-001, ADR-SP-001  |
+| 数据层 | 3    | ADR-002, ADR-016, ADR-SP-002 |
 | 集成层 | 1    | ADR-003              |
-| 架构   | 9    | ADR-004, ADR-009~015, ADR-SP-017 |
-| 安全   | 1    | ADR-006              |
-| 质量   | 1    | ADR-007              |
-| 工程   | 3    | ADR-008, ADR-017, ADR-SP-018     |
-| 前端   | 2    | ADR-018, ADR-019     |
+| 架构   | 11   | ADR-004, ADR-009~015, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
+| 安全   | 2    | ADR-006, ADR-SP-004 |
+| 质量   | 2    | ADR-007, ADR-SP-006 |
+| 工程   | 5    | ADR-008, ADR-017, ADR-SP-005, ADR-SP-007, ADR-SP-018 |
+| 前端   | 3    | ADR-018, ADR-019, ADR-SP-008 |
+| 形态   | 1    | ADR-SP-003           |
 
 ---
 

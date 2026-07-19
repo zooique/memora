@@ -36,6 +36,8 @@ description: "memora-sprite 宿主：桌面壳分阶段策略"
 
 ## 影响
 
-- 阶段一的 `package.json` 不包含 `electron`，只有 `memora` + `better-sqlite3`
-- 阶段二引入 Electron 时需配置 `electron-rebuild`
-- CLI 交互层设计为可替换的 `IInteraction` 接口，阶段二替换为 Electron 渲染进程
+> **当前状态**：精灵已进入阶段二（Electron 已实施），以下阶段一描述为历史记录。阶段一的 CLI 交互模式已被 [ADR-SP-005](./ADR-SP-005-package-management.md) v3 的 `sync-memora.mjs` 包管理模式取代（不再用 npm `file:` 协议）。
+
+- ~~阶段一的 `package.json` 不包含 `electron`，只有 `memora` + `better-sqlite3`~~（阶段二已加入 `electron` ^40.10.6）
+- 阶段二引入 Electron 时需配置 `electron-rebuild`（已通过 `@electron/rebuild` 解决 ABI 兼容，详见 [ADR-SP-002](./ADR-SP-002-storage.md)）
+- CLI 交互层设计为可替换的 `IInteraction` 接口，阶段二替换为 Electron 渲染进程（已实施：`ElectronInteraction` 实现 `IInteraction`）

@@ -5,7 +5,7 @@ description: Agent 门面类（宿主项目接入入口）
 
 # ADR-010 · Agent 门面类
 
-> **状态**：✅ 已采纳
+> **状态**：✅ 已接受
 > **日期**：2026-06-03（年轮审判补写，原始实现日期 2026-06-02）
 > **来源**：backend_layers_rules.md（历史文档已归档）
 
@@ -37,17 +37,27 @@ Memora 需要支持宿主项目接入：
 
 ## 关键实现
 
-| 组件              | 文件                              | 职责                           |
-| ----------------- | --------------------------------- | ------------------------------ |
-| Agent             | `src/agent/agent.ts`              | 门面类，编排层，统一入口       |
-| AgentLoop         | `src/agent/loop.ts`               | 对话循环（被 Agent 调用）      |
-| ToolExecutor      | `src/agent/toolExecutor.ts`       | 工具执行（通过 `agent.tools`） |
-| InsightExtractor  | `src/agent/managers/insightExtractor.ts`   | 输入分类 + 记忆提取            |
-| ConfigManager     | `src/agent/managers/configManager.ts`      | 规则/技能注入 + 配置建议       |
-| AutoConfigRefiner | `src/agent/managers/autoConfigRefiner.ts`  | 智能配置提炼（模式 3：Agent 智能总结） |
-| MemoryInspector   | `src/agent/managers/memoryInspector.ts`    | 记忆快照 + 搜索 + 统计 + 关联推荐   |
-| WorkProjection    | `src/agent/managers/workProjection.ts`     | 作品投影管理器                 |
-| UserFactExtractor | `src/agent/userFactExtractor.ts`  | 用户事实提取器                 |
+| 组件 | 文件 | 职责 |
+| ---- | ---- | ---- |
+| Agent | `src/agent/agent.ts` | 门面类，编排层，统一入口 |
+| AgentLoop | `src/agent/loop.ts` | 对话循环（被 Agent 调用） |
+| ToolExecutor | `src/agent/toolExecutor.ts` | 工具执行（通过 `agent.tools`） |
+| ArchiveCoordinator | `src/agent/managers/archiveCoordinator.ts` | 归档协调器（profile/insight/content 三阶段闭环，详见 ADR-015） |
+| AutoConfigRefiner | `src/agent/managers/autoConfigRefiner.ts` | 智能配置提炼（模式 3：Agent 智能总结） |
+| ChatLock | `src/agent/managers/chatLock.ts` | 对话并发锁（token 机制，防止重入） |
+| ConfigManager | `src/agent/managers/configManager.ts` | 规则/技能注入 + 配置建议 |
+| InsightExtractor | `src/agent/managers/insightExtractor.ts` | 输入分类 + 记忆提取 |
+| MemoryAdvisor | `src/agent/managers/memoryAdvisor.ts` | 记忆策略建议 |
+| MemoryDecay | `src/agent/managers/memoryDecay.ts` | 记忆衰减管理 |
+| MemoryInspector | `src/agent/managers/memoryInspector.ts` | 记忆快照 + 搜索 + 统计 + 关联推荐 |
+| RelationBuilder | `src/agent/managers/relationBuilder.ts` | 记忆关系图谱构建（ADR-014） |
+| SessionManager | `src/agent/managers/sessionManager.ts` | 会话管理 + getCurrentSessionInfo |
+| SessionArchiver | `src/agent/managers/sessionArchiver.ts` | 会话内容摘要归档器（ADR-015 GAP-2） |
+| TextPolish | `src/agent/managers/textPolish.ts` | 文本润色 |
+| WorkProjection | `src/agent/managers/workProjection.ts` | 作品投影管理器 |
+| UserFactExtractor | `src/agent/userFactExtractor.ts` | 用户事实提取器（纯函数，非 Manager） |
+
+> 共 13 个专职 Manager/服务类（不含 UserFactExtractor 纯函数）。完整列表与 [project-rules.md §3](../project-rules.md) 一致。
 
 ## 后果
 

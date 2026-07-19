@@ -39,12 +39,12 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | 项               | 选择                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | 存储接口         | **IMemoryStorage**（纯 TS 接口，零依赖）                     |
-| SQLite 实现      | **SqliteStorage**（已移出到宿主项目，如泊文 `hosts/memora-utils/`） |
+| SQLite 实现      | **SqliteStorage**（已移出到精灵宿主 `hosts/memora-sprite/src/storage/sqliteStorage.ts`，详见 [ADR-SP-007](./ADR-SP-007-directory-structure.md)） |
 | 内存实现         | **InMemoryStorage implements IMemoryStorage**（测试用 + fallback） |
 | 依赖管理         | better-sqlite3 完全从 memora 移除，由宿主项目管理            |
 | 注入方式         | Agent 构造函数可选参数 `storage?: IMemoryStorage`            |
 | 日志抽象         | `ILogger` 接口 + 全局单例 `setLogger()`                     |
-| CLI 独立运行     | 移出至宿主项目（泊文 `hosts/memora-sprite/`）                   |
+| CLI 独立运行     | 移出至精灵宿主（`hosts/memora-sprite/`）                   |
 
 ## 三层架构
 
@@ -52,8 +52,9 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 ┌─────────────────────────────────────────────────┐
 │  Electron 壳层（提供 Node 原生模块执行环境）       │
 ├─────────────────────────────────────────────────┤
-│  泊文宿主                                         │
+│  精灵宿主（memora-sprite）                        │
 │    ├─ SqliteStorage (持有 better-sqlite3)         │
+│    │   路径：hosts/memora-sprite/src/storage/     │
 │    ├─ memora-cli/ (CLI 入口)                      │
 │    └─ 注入 IMemoryStorage → Memora Agent          │
 ├─────────────────────────────────────────────────┤
@@ -67,8 +68,8 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 ## 理由
 
 - **内核零 native 依赖**：memora 的 `node_modules` 不包含任何 C++ 编译模块，`git push` 不再需要 rebuild
-- **宿主全权持有数据库**：泊文 Electron 主进程管理 better-sqlite3 生命周期，Memora 不感知
-- **宿主可注入日志**：pino 为可选 peerDependency，宿主可注入自定义 ILogger 实现
+- **宿主全权持有数据库**：精灵宿主 Electron 主进程管理 better-sqlite3 生命周期，Memora 不感知
+- **宿主可注入日志**：pino 同时存在于 `peerDependencies`（`optional: true`）和 `optionalDependencies`——peer 声明供宿主感知可注入，optional 声明确保零配置时也开箱即用；宿主可注入自定义 ILogger 实现覆盖
 - **零依赖降级**：pino 不可用时自动降级到 console fallback，内核正常运行
 - **测试零 IO + 零 native**：InMemoryStorage 让测试不需要文件系统、不需要编译
 - **向后兼容**：Agent 构造函数的 `storage` 参数可选，不传则使用 InMemoryStorage（非持久化兜底）
@@ -175,22 +176,25 @@ IMemoryStorage 接口**保持同步语义**，不新增 IAsyncMemoryStorage 兄�
 - `src/memory/projectManager.ts`：`storage` fallback 改为 InMemoryStorage
 - `src/agent/agent.ts`：AgentOptions `storage` fallback 改为 InMemoryStorage
 - `src/index.ts`：移除 SqliteStorage 导出 + CLI 入口
-- **已删除**：`src/memory/index.ts`（SqliteStorage → 宿主项目）
-- **已删除**：`src/cli/`（CLI → 宿主项目）
+- **已删除**：`src/memory/index.ts`（SqliteStorage → 精灵宿主 `hosts/memora-sprite/src/storage/sqliteStorage.ts`）
+- **已删除**：`src/cli/`（CLI → 精灵宿主 `hosts/memora-sprite/src/cli.ts`）
 - **已删除**：better-sqlite3 依赖（peerDependencies + optionalDependencies）
 - **已删除**：commander 依赖（CLI 移出后不再需要）
-- **已移出**：`src/memory/__tests__/index.test.ts` → 宿主项目
-- **已移出**：`src/llm/__tests__/smoke-mimo.test.ts` → 宿主项目
+- **已移出**：`src/memory/__tests__/index.test.ts` → 精灵宿主
+- **已移出**：`src/llm/__tests__/smoke-mimo.test.ts` → 精灵宿主
 - 测试全量 InMemoryStorage，零 IO，零 native 编译
 
 ## 宿主接入示例
 
-```typescript
-import { Agent } from '@zooique/memora';
-import type { IMemoryStorage, ILogger } from '@zooique/memora';
+> **包名说明**：精灵宿主通过 [ADR-SP-005](./ADR-SP-005-package-management.md) v3 的 `sync-memora.mjs` 同步内核到 `node_modules/memora/`，源码 import 路径为 `from 'memora'`（非 npm 包名 `@zooique/memora`）。
 
-// 泊文宿主持有 better-sqlite3
-const storage: IMemoryStorage = new BowenSqliteStorage(db);
+```typescript
+// 精灵宿主 import 内核（详见 ADR-SP-005 sync-memora.mjs 模式）
+import { Agent, setLogger } from 'memora';
+import type { IMemoryStorage, ILogger } from 'memora';
+
+// 精灵宿主持有 better-sqlite3
+const storage: IMemoryStorage = new SqliteStorage(db);
 
 // 可选：注入自定义 logger（不传则使用 pino 或 console fallback）
 const myLogger: ILogger = {
@@ -200,7 +204,7 @@ const myLogger: ILogger = {
   debug: (obj, msg) => console.debug('[debug]', msg, obj),
 };
 
-// v1.0：logger 从 AgentOptions 移除，改用全局 setLogger() 注入（见 ADR-002 补充 · Logger 懒初始化）
+// v1.0：logger 从 AgentOptions 移除，改用全局 setLogger() 注入（见 §Logger 懒初始化）
 const agent = new Agent({
   projectPath: '/path/to/novel',
   provider: myProvider,
@@ -208,7 +212,6 @@ const agent = new Agent({
 });
 
 // 在构造前全局替换日志（v1.0 唯一的 logger 注入方式）
-import { setLogger } from '@zooique/memora';
 setLogger(myLogger);
 ```
 

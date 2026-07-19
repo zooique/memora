@@ -46,10 +46,11 @@ src/
 └── utils/                  # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
-> **已移出至宿主项目**：
-> - `cli/` → 泊文 `hosts/memora-sprite/`
-> - `SqliteStorage`（原 `memory/index.ts`） → 泊文 `hosts/memora-utils/sqliteStorage.ts`
-> - `commander`、`picocolors` → 泊文 dependencies
+> **已移出至精灵宿主项目**（详见 [ADR-SP-007](./ADR-SP-007-directory-structure.md)）：
+> - `cli/` → `hosts/memora-sprite/src/cli.ts`
+> - `SqliteStorage`（原 `memory/index.ts`） → `hosts/memora-sprite/src/storage/sqliteStorage.ts`
+> - `SqliteRelationStore`（ADR-014 侧车实现） → `hosts/memora-sprite/src/storage/sqliteRelationStore.ts`
+> - `commander`、`picocolors` → 精灵宿主 dependencies
 
 ## 年轮修订
 
@@ -104,8 +105,8 @@ src/
 
 **设计演进**：
 - memora 内核定位为零 native 依赖纯逻辑库
-- CLI 移出至宿主项目（泊文 `hosts/memora-sprite/`）
-- SqliteStorage 移出至宿主项目（泊文 `hosts/memora-utils/sqliteStorage.ts`）
+- CLI 移出至精灵宿主项目（`hosts/memora-sprite/src/cli.ts`）
+- SqliteStorage 移出至精灵宿主项目（`hosts/memora-sprite/src/storage/sqliteStorage.ts`）
 - `src/index.ts` 从 CLI 入口转变为库导出入口
 - 目录结构简化为 9 个纯逻辑模块
 

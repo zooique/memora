@@ -134,7 +134,7 @@ export type { EmbeddingOptions } from '@/llm/embedding.js';  // 韧性选项类�
 ## 理由
 
 1. **与现有架构一致**——IMemoryStorage / IMemoryRelationStore / ISessionStore 均为接口注入，IVectorStore 保持同构（B1 边界）
-2. **内核零环境依赖**——`node:fs` 操作封装在 JsonVectorStore 内部，接口无环境依赖，浏览器端可实现 MemoryVectorStore（B2 边界）
+2. **内核零环境依赖**——`node:fs` 操作封装在 JsonVectorStore 内部，接口本身无环境依赖，宿主可注入自定义实现（如 LanceDB / Qdrant / Pinecone）。注意：内核整体仍是 Node.js 专用（详见 [ADR-002](./ADR-002-storage-layer.md) §"关于内核浏览器可 import"的定位澄清），"浏览器端可实现 MemoryVectorStore" 是宿主层的事，不是内核目标
 3. **宿主可扩展**——宿主可实现 IVectorStore 接入 LanceDB / Qdrant / Pinecone 等专业向量数据库，无需 fork 内核（B3 边界）
 4. **测试零 IO**——测试可注入 MockVectorStore（内存实现），不依赖文件系统（B4 边界）
 5. **向后兼容**——JsonVectorStore 保留全部原 VectorStore 功能，宿主代码只需将类型从 `VectorStore` 改为 `IVectorStore`（或继续用 `JsonVectorStore` 值导入）
@@ -178,7 +178,7 @@ export type { EmbeddingOptions } from '@/llm/embedding.js';  // 韧性选项类�
 
 - 当向量数据量级超过 10000 条时，评估是否需要内置 ANN 索引（如 HNSW）实现
 - 当宿主项目需要分布式向量搜索时，评估是否需要拆分 IAsyncVectorStore 接口（当前已是异步，但未考虑网络分区/重试）
-- 当 Web 标准化 Vector Storage API 稳定时，评估是否提供内置浏览器实现
+- 当宿主层 Web 调试通道需要浏览器侧直接调用 IVectorStore 时，由宿主通过 IPC 委托 Node.js 主进程（内核不计划提供浏览器内置实现）
 - 当 EmbeddingService 接口需要支持流式嵌入时（当前 batchEmbed 已支持 AbortSignal + timeoutMs）
 
 ## 相关 ADR

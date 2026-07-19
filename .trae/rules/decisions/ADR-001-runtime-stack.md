@@ -57,8 +57,8 @@ Memora 是纯逻辑库，需要：LLM API 流式调用、跨平台支持。
 | --------------------- | -------------- | ------------------- | --------------------------- |
 | Memora 引擎约束       | `>=22.0.0`     | —                   | 纯 JS，无 native 依赖       |
 | 系统 Node.js（开发）  | 24.x LTS       | 137                 | 仅用于运行 TypeScript 编译  |
-| Electron（宿主泊文）  | 41.7.x         | 145                 | 宿主管理 better-sqlite3 ABI |
-| better-sqlite3        | ^12.10.0       | —                   | 由宿主 project 管理         |
+| Electron（宿主精灵）  | `^40.10.6`     | 137                 | 宿主管理 better-sqlite3 ABI，详见 [ADR-SP-001](./ADR-SP-001-runtime.md) |
+| better-sqlite3        | `^12.10.0`     | —                   | 由宿主 project 管理         |
 
 ### 三方 ABI 统一原则
 

@@ -83,19 +83,21 @@ L2 / L3 层类名采用 BEM（Block Element Modifier）风格：
 
 ### 5. CSS 加载顺序约定
 
-[index.html](../../hosts/memora-sprite/src/electron/renderer/index.html) 的 CSS 加载顺序遵循"L1 → L3 → L2"依赖链。
+[index.html](../../hosts/memora-sprite/src/electron/renderer/index.html) 的 CSS 加载顺序遵循"L1 → L2 → L3"依赖链（真理源：[styles/README.md §2.1](../../hosts/memora-sprite/src/electron/renderer/styles/README.md)）。
 
-> **CSS-R6 重构后（2026-07-15）**：加载顺序由聚合器 `@import` 链实现，index.html 仅引入 `foundation/*` + `layout/*` + `chat.css` + `memory.css` 两个聚合器 + `panels/*` + `overlays/*` + `content/*`。详见 [styles/README.md §2.1](../../hosts/memora-sprite/src/electron/renderer/styles/README.md)。
+> **CSS-R6 重构后（2026-07-15）**：加载顺序由聚合器 `@import` 链实现，index.html 仅引入 `foundation/*` + `layout/*` + `chat.css` + `memory.css` 两个聚合器 + `panels/*` + `overlays/*` + `content/*`。8 子目录结构详见 [ADR-019](./ADR-019-css-functional-grouping.md)。
 
 ```
 L1 全局基础：foundation/tokens → foundation/base → foundation/utilities → layout/layout
-L3 组件（overlays 聚合器）：modal → toast → command-palette → search-messages
-L2 面板（chat.css / memory.css 聚合器 + panels/ 独立文件）：
-  chat 聚合器 → chat-toolbar → chat-datenav → chat-perception → chat-messages-* 等
-  memory 聚合器 → memory-* 子模块
-  panels：dashboard → perception → settings
-L3 内容：content/markdown
+L2 面板：
+  chat.css 聚合器（@import chat-toolbar/chat-perception/chat-datenav/chat-messages-*）
+  memory.css 聚合器（@import memory-list/memory-detail/memory-views/memory-graph-*/completion-stats）
+  panels/ 独立文件：dashboard → perception → clipboard → settings
+L3 组件（overlays）：modal → toast → command-palette → search-messages
+L3 内容（content）：markdown
 ```
+
+> 浮窗（float.html / quick-input.html）独立加载 `foundation/*` 三层 + 本地 `windows/` 样式，不进 index.html 主加载链。
 
 **L2 面板之间不得相互依赖**。如果 perception.css 需要覆盖 chat 的样式，说明 DOM 类名复用出了问题，应回到第 2 条"面板前缀强制约定"修复类名，而不是在 perception.css 里做覆盖。
 
