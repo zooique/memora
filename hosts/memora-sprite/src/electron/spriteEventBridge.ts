@@ -276,7 +276,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   }));
 
   // 在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
-  // 浮动窗口需要独立推送：80x80 球体在用户离开时无视觉变化，体验割裂
+  // 浮动窗口需要独立推送：56x56 球体在用户离开时无视觉变化，体验割裂
   registerSpriteEvent(deps, 'presenceChanged', (e) => {
     // 1. 推送到完整窗口（perceptionRenderer 更新在场状态指示器）
     sendSpriteEventIfVisible(deps, 'presenceChanged', {

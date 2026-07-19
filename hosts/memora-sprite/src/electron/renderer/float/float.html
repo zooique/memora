@@ -31,8 +31,12 @@
         float.ts 监听后覆盖 src 即可切换精灵形态（保留为扩展点，不破坏当前默认）。
         draggable="false" 防止浏览器原生 HTML5 图片拖拽（拖出 ghost 图片干扰球体拖动）。
         相对路径：float.html → dist-electron/electron/renderer/float/，往上级 3 层到 dist-electron/，再到 assets/icon.svg。
+
+        尺寸真理源：CSS（float.css 中 #sphere-form img 引用 --float-sphere-logo 令牌）。
+        HTML 不设置 width/height 属性——浮窗父容器（#sphere-form）尺寸固定，无 CLS 风险，
+        消除 HTML 表现属性与 CSS 双写漂移。
       -->
-      <img id="sphere-image" src="../../../assets/icon.svg" alt="Memora 精灵" width="36" height="36" draggable="false" />
+      <img id="sphere-image" src="../../../assets/icon.svg" alt="Memora 精灵" draggable="false" />
     </div>
     <!-- 状态指示点（idle/active/sleeping） -->
     <div id="status-dot" aria-hidden="true"></div>

@@ -1,4 +1,4 @@
-/* float.css — 组件专属样式（主题令牌统一来自 tokens.css，UX-0713-15 已迁入） */
+/* float.css — 组件专属样式（主题令牌 + 球体尺寸令牌统一来自 tokens.css） */
 
 /* ===== 全局重置 ===== */
     html, body {
@@ -6,8 +6,8 @@
       padding: 0;
       box-sizing: border-box;
       -webkit-app-region: no-drag;  /* 拖动由鼠标事件手动处理，避免吞掉单击 */
-      width: 80px;
-      height: 80px;
+      width: var(--float-window-size);
+      height: var(--float-window-size);
       background: transparent;
       /* 浮动窗口禁止滚动条：badge 和 drag-hint 通过 overflow:visible 溢出显示，
          但 html 层必须隐藏溢出，否则会出现丑陋的滚动条 */
@@ -21,7 +21,7 @@
       -webkit-app-region: no-drag;
     }
 
-    /* ===== 浮动窗口主体（80x80 透明背景） ===== */
+    /* ===== 浮动窗口主体（透明背景，尺寸由 --float-window-size 令牌控制） ===== */
     body {
       /* body 层允许 badge 和 drag-hint 超出版心显示
          （html 层已 overflow:hidden，不会产生滚动条） */
@@ -33,17 +33,17 @@
       user-select: none;
     }
 
-    /* ===== 精灵球体（蓝粉渐变 + 阴影 + 过渡） ===== */
+    /* ===== 精灵球体（蓝粉渐变 + 阴影 + 过渡，尺寸由 --float-sphere-size 令牌控制） ===== */
     #sphere {
-      width: 72px;
-      height: 72px;
+      width: var(--float-sphere-size);
+      height: var(--float-sphere-size);
       border-radius: 50%;
       /* 蓝粉渐变：对齐 的 .float-icon-demo */
       background: var(--brand-grad);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 32px;
+      font-size: 24px;
       position: relative;
       transition: transform var(--transition-base) ease, box-shadow var(--transition-slow) ease;
       /* 使用主题感知阴影变量，与 base.css 设计系统保持一致 */
@@ -80,12 +80,13 @@
     }
 
     /* ===== 状态指示点（右下角，对齐 HTML 预览 .float-status-dot） ===== */
+    /* 位置和尺寸按球体 48px 等比缩小（12×12，bottom/right:3px） */
     #status-dot {
       position: absolute;
-      bottom: 4px;
-      right: 4px;
-      width: 14px;
-      height: 14px;
+      bottom: 3px;
+      right: 3px;
+      width: 12px;
+      height: 12px;
       border-radius: 50%;
       border: 2px solid var(--bg);  /* 与背景同色，形成镂空效果 */
       background: var(--green);  /* 默认 idle 绿色 */
@@ -183,16 +184,17 @@
 
     #sphere-form img {
       /*
-        尺寸 50%（36px）：logo 缩小到球体直径的一半，中心聚焦感更强，
-        露出 #sphere 的品牌渐变背景形成光环，避免 logo 充满球体的压迫感。
+        尺寸由 --float-sphere-logo 令牌控制（24px，约占球体 50%）：
+        logo 居中显示，露出 #sphere 品牌渐变背景形成光环。
         object-fit: contain 保持 logo 圆形外框完整，避免被容器圆形剪裁。
         pointer-events: none：让所有指针事件穿透到 #sphere，防止 img 作为
         事件 target 干扰 setPointerCapture 拖动逻辑；同时消除浏览器原生
         HTML5 图片拖拽（拖出 ghost 图片）的风险（配合 HTML draggable="false" 双保险）。
         user-select / -webkit-user-drag：进一步禁用浏览器图片拖拽/选中行为。
+        CSS 是唯一真理源——HTML <img> 不再设置 width/height 属性，避免双写漂移。
       */
-      width: 50%;
-      height: 50%;
+      width: var(--float-sphere-logo);
+      height: var(--float-sphere-logo);
       object-fit: contain;
       display: block;
       pointer-events: none;
@@ -202,9 +204,10 @@
 
     /* ===== 拖动引导提示（首次使用） ===== */
     /* 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示 */
+    /* bottom 偏移按球体 48px 等比缩小（-22px） */
     #drag-hint {
       position: absolute;
-      bottom: -28px;
+      bottom: -22px;
       left: 50%;
       transform: translateX(-50%);
       background: var(--hint-bg);
@@ -238,9 +241,10 @@
     /* 离开时长小标签（用户离开超过 5 分钟时显示） */
     /* 复用 #drag-hint 的视觉风格（hint-bg 半透明黑底 + hint-text 浅色文字） */
     /* 位置在球体上方（与 drag-hint 底部位置区分，避免同时显示时重叠） */
+    /* top 偏移按球体 48px 等比缩小（-22px） */
     #away-label {
       position: absolute;
-      top: -28px;
+      top: -22px;
       left: 50%;
       transform: translateX(-50%);
       background: var(--hint-bg);
@@ -273,9 +277,10 @@
 
     /* ─── P4-1：消息预览卡片 ─────────────────────────── */
     /* 悬停球体时在右侧显示最后一条助手消息预览 */
+    /* left 偏移按球体 48px + 8px 间隙计算（64px） */
     #message-preview {
       position: absolute;
-      left: 88px;   /* 球体右侧 8px 间隙 */
+      left: 64px;   /* 球体右侧 8px 间隙（56px 窗口 + 8px = 64px） */
       top: 50%;
       transform: translateY(-50%);
       width: 200px;

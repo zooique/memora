@@ -14,7 +14,7 @@
  *
  * 返回 cleanup 函数供调用方在窗口关闭时清理事件监听器和定时器。
  *
- * 浮动窗口拖动方案说明（浮动窗口是 80x80 的
+ * 浮动窗口拖动方案说明（浮动窗口是 56x56 的
  * alwaysOnTop + frame:false 窗口，鼠标移出窗口范围后 mousemove 停止触发，
  * 导致拖动失效。改用 PointerEvent + setPointerCapture 后，指针捕获确保
  * 鼠标移出窗口仍能持续接收 pointermove 事件，拖动可跨屏幕范围。
@@ -225,7 +225,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   };
 
   // ─── 拖动检测（PointerEvent + setPointerCapture） ───
-  // 原方案使用 document mousemove，但浮动窗口是 80x80 alwaysOnTop + frame:false
+  // 原方案使用 document mousemove，但浮动窗口是 56x56 alwaysOnTop + frame:false
   // 窗口，鼠标移出窗口范围后 mousemove 停止触发，导致拖动失效。
   // 改用 PointerEvent + setPointerCapture：在 pointerdown 时将指针捕获到 sphere 元素，
   // 后续 pointermove/pointerup 即使鼠标移出窗口也能持续触发，实现跨屏幕拖动。

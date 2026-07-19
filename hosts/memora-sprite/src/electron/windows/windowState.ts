@@ -40,8 +40,14 @@ export interface WindowStateOptions {
   onSaveState?: (data: WindowStateData) => void;
 }
 
-/** 浮动窗口尺寸（80x80 悬浮球） */
-export const FLOAT_SIZE = { width: 80, height: 80 };
+/**
+ * 浮动窗口尺寸（56x56 悬浮球，球体本体 48x48）
+ *
+ * 真理源同步约束：此值必须与 tokens.css 中 --float-window-size 令牌保持一致。
+ * TS 端无法读取 CSS 令牌（主进程无 CSS 解析能力），双源不可避免，
+ * 通过此注释强约束保持一致。修改时必须同步两处。
+ */
+export const FLOAT_SIZE = { width: 56, height: 56 };
 /** 完整窗口默认尺寸：900x680 确保侧边栏（240px）+ 主内容区有足够空间 */
 export const FULL_SIZE = { width: 900, height: 680 };
 /** 首次启动时浮动窗口的默认位置（屏幕左上角偏移） */

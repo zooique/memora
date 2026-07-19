@@ -269,6 +269,14 @@
   --badge-border: #1e1e2e;
   --hint-bg:      rgba(30, 30, 46, 0.95);
   --hint-text:    #cdd6f4;
+
+  /* 浮动窗口球体尺寸令牌（架构层真理源，ADR-017 架构先行原则）
+     修改时必须同步 windowState.ts 的 FLOAT_SIZE 常量——TS 端无法读取 CSS 令牌，
+     双源不可避免，但通过注释强约束保持一致。
+     球体周边元素（status-dot/badge/drag-hint 等）的位置基于此令牌计算。 */
+  --float-window-size: 56px;  /* BrowserWindow 外尺寸 */
+  --float-sphere-size: 48px;  /* 球体本体尺寸（#sphere） */
+  --float-sphere-logo: 24px;  /* logo 在球体中的尺寸（#sphere-form img） */
 }
 
 [data-theme="dark"] {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 窗口状态管理器测试
  *
  * 覆盖范围：
@@ -53,8 +53,8 @@ function createMockWindow(destroyed = false): BrowserWindow & {
 // ─── 常量 ────────────────────────────────────────────────
 
 describe('窗口尺寸常量', () => {
-  it('FLOAT_SIZE 应为 80x80（悬浮球尺寸）', () => {
-    expect(FLOAT_SIZE).toEqual({ width: 80, height: 80 });
+  it('FLOAT_SIZE 应为 56x56（悬浮球尺寸，球体本体 48x48）', () => {
+    expect(FLOAT_SIZE).toEqual({ width: 56, height: 56 });
   });
 
   it('FULL_SIZE 应为 900x680（确保侧边栏+主内容区空间）', () => {

@@ -37,7 +37,7 @@ export interface FloatWindowLike {
  * 新增 IPC handler 使用 WindowManager 的其他方法时，需同步扩展此接口。
  */
 export interface WindowManagerLike {
-  /** 获取浮动窗口（80x80 悬浮球，FloatWindow 包装类），可能未创建 */
+  /** 获取浮动窗口（56x56 悬浮球，FloatWindow 包装类），可能未创建 */
   getFloatWindow(): FloatWindowLike | null;
   /** 获取完整窗口（主交互窗口，BrowserWindow 实例），可能未创建 */
   getFullWindow(): BrowserWindow | null;

@@ -208,7 +208,7 @@ function resetUnreadCount(): void {
  * 校验逻辑：
  * - 遍历所有显示器的工作区（workArea），判断位置是否在某个显示器内
  * - 若越界，复位到默认位置（DEFAULT_FLOAT_POSITION）
- * - 浮动窗口尺寸为 80x80，校验时以窗口右下角为基准，确保完整窗口可见
+ * - 浮动窗口尺寸为 56x56（球体本体 48x48），校验时以窗口右下角为基准，确保完整窗口可见
  *
  * @param position 持久化的浮动窗口位置
  * @returns 校验后的安全位置

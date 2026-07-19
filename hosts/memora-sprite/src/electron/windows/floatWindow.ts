@@ -1,7 +1,7 @@
 /**
  * 浮动窗口管理
  *
- * 80x80 像素悬浮球，单击 → 展开完整窗口，拖动 → 移动位置，右键 → 快速菜单
+ * 56x56 像素悬浮球（球体本体 48x48），单击 → 展开完整窗口，拖动 → 移动位置，右键 → 快速菜单
  *
  * 拖动实现（方案 §5.4 排雷修正）：
  * - 渲染进程捕获 mousedown/mousemove/mouseup 事件
@@ -143,7 +143,7 @@ export class FloatWindow {
    * - 隐藏到托盘（切换到托盘态）
    * - 退出（关闭应用）
    *
-   * 使用 Electron 原生 Menu，避免在 80x80 浮动窗口内渲染 HTML 菜单（空间不足）
+   * 使用 Electron 原生 Menu，避免在 56x56 浮动窗口内渲染 HTML 菜单（空间不足）
    */
   private showContextMenu(): void {
     if (this.win.isDestroyed()) return;
