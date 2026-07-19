@@ -177,7 +177,7 @@ export class DashboardPanelManager {
   /** 脉冲动画定时器句柄列表（cleanup 时统一清理，避免回调在 DOM 销毁后触发） */
   private pulseTimers: number[] = [];
   /** 记忆衰减按钮恢复定时器（cleanup 时统一清理，避免回调在已销毁 DOM 上执行） */
-  private decayButtonTimer: ReturnType<typeof setTimeout> | null = null;
+  private decayButtonTimer: number | null = null;
 
   // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
   /** 增长趋势 - 区域容器（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） */

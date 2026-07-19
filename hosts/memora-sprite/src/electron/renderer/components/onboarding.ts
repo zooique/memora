@@ -191,7 +191,7 @@ export class OnboardingManager {
       }
       this.closeModal(modal);
     };
-    this.events.addEventListener(document, 'keydown', onKey, { once: false });
+    this.events.addEventListener(document, 'keydown', onKey as unknown as EventListener, { once: false });
 
     // 点击遮罩关闭（步骤 2 已填字段时弹二次确认）
     const onBackdrop = async (e: MouseEvent) => {
@@ -207,7 +207,7 @@ export class OnboardingManager {
       }
       this.closeModal(modal);
     };
-    this.events.addEventListener(modal, 'click', onBackdrop);
+    this.events.addEventListener(modal, 'click', onBackdrop as unknown as EventListener);
   }
 
   // ─── 步骤导航 ──────────────────────────────────────
@@ -495,9 +495,9 @@ export class OnboardingManager {
     // Enter 键提交（在 apiKey 输入框内按 Enter 触发保存）
     const apiKeyInput = modal.querySelector('#onboarding-api-key');
     if (apiKeyInput instanceof HTMLInputElement) {
-      this.events.addEventListener(apiKeyInput, 'keydown', (e: KeyboardEvent) => {
+      this.events.addEventListener(apiKeyInput, 'keydown', ((e: KeyboardEvent) => {
         if (e.key === 'Enter') saveBtn.click();
-      });
+      }) as unknown as EventListener);
     }
   }
 
