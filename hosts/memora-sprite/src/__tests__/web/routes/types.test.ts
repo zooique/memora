@@ -314,7 +314,8 @@ describe('Web 路由工具函数', () => {
 
       expect(res.statusCode).toBe(500);
       expect(JSON.parse(res.body).error).toContain('记忆操作失败');
-      expect(JSON.parse(res.body).error).toContain('业务异常');
+      // 安全：不再暴露原始错误消息，改为通用提示
+      expect(JSON.parse(res.body).error).toContain('请稍后重试');
       expect(logger.error).toHaveBeenCalled();
     });
 
@@ -327,7 +328,8 @@ describe('Web 路由工具函数', () => {
       });
 
       expect(res.statusCode).toBe(500);
-      expect(JSON.parse(res.body).error).toContain('异步异常');
+      // 安全：不再暴露原始错误消息，改为通用提示
+      expect(JSON.parse(res.body).error).toContain('请稍后重试');
     });
 
     it('非 Error 类型异常应转为字符串', async () => {
@@ -339,7 +341,8 @@ describe('Web 路由工具函数', () => {
       });
 
       expect(res.statusCode).toBe(500);
-      expect(JSON.parse(res.body).error).toContain('字符串错误');
+      // 安全：不再暴露原始错误消息，改为通用提示
+      expect(JSON.parse(res.body).error).toContain('请稍后重试');
     });
 
     it('res.headersSent 已发送时不应重复调用 sendError', async () => {

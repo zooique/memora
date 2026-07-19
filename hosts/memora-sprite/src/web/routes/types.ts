@@ -144,11 +144,12 @@ export async function safeRoute(
   try {
     await fn();
   } catch (error) {
-    // 统一使用 toError 提取 message，与 chatStreamRoutes / systemRoutes 等保持一致
+    // 统一使用 toError 提取 message，仅用于日志记录
     const message = toError(error).message;
     logger.error(`[Web Route] ${context} 失败: ${message}`);
     if (!res.headersSent) {
-      sendError(res, 500, `${context}失败: ${message}`);
+      // 安全：返回通用错误消息，不暴露内部错误详情（如文件路径、SQL 错误）
+      sendError(res, 500, `${context}失败，请稍后重试`);
     }
   }
 }

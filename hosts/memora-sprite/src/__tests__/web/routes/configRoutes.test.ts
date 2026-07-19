@@ -619,7 +619,8 @@ describe('handleConfigRoute', () => {
 
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toContain('配置操作失败');
-    expect(JSON.parse(res.body).error).toContain('配置读取失败');
+      // 安全：不再暴露原始错误消息，改为通用提示
+      expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   it('listPersonas 抛错应由 safeRoute 兜底返回 500', async () => {
@@ -635,7 +636,7 @@ describe('handleConfigRoute', () => {
 
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toContain('配置操作失败');
-    expect(JSON.parse(res.body).error).toContain('personaController 未初始化');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   // ─── 未匹配路由 ────────────────────────────────────────

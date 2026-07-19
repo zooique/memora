@@ -397,6 +397,8 @@ export class CommandPaletteManager {
   private previousFocus: HTMLElement | null = null;
   /** 事件监听器跟踪器（cleanup 时统一移除，避免 beforeunload 后监听器累积） */
   private events = new EventTracker();
+  /** 命令执行延迟定时器（cleanup 时统一清理，避免回调在已关闭面板后执行） */
+  private executionTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(uiManager: UIManager) {
     this.uiManager = uiManager;
@@ -445,6 +447,11 @@ export class CommandPaletteManager {
    */
   cleanup(): void {
     this.events.cleanup();
+    // 清理待执行的命令延迟定时器（避免回调在面板已销毁后执行）
+    if (this.executionTimer !== null) {
+      clearTimeout(this.executionTimer);
+      this.executionTimer = null;
+    }
     // 关闭面板状态，恢复 body 滚动（防御性：cleanup 时若面板仍打开）
     if (this.isOpen) {
       unlockBodyScroll(true);
@@ -586,8 +593,8 @@ export class CommandPaletteManager {
         ${command.shortcut ? `<kbd class="command-palette-shortcut flex-shrink-0">${command.shortcut}</kbd>` : ''}
       `;
 
-      // 点击执行
-      item.addEventListener('click', () => {
+      // 点击执行（使用 EventTracker 统一管理，避免内存泄漏）
+      this.events.addEventListener(item, 'click', () => {
         this.executeCommand(i);
       });
 
@@ -661,8 +668,9 @@ export class CommandPaletteManager {
     if (!result) return;
 
     this.close();
-    // 延迟执行，确保面板关闭动画完成
-    setTimeout(() => {
+    // 延迟执行，确保面板关闭动画完成（跟踪定时器，cleanup 时统一清理）
+    this.executionTimer = setTimeout(() => {
+      this.executionTimer = null;
       result.command.action();
     }, 50);
   }

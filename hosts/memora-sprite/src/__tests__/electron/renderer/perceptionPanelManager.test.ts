@@ -18,6 +18,7 @@
  * - 感知面板管理器无 EventTracker 依赖（模式 D 自包含）
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
 import { PerceptionPanelManager } from '../../../electron/renderer/panels/perceptionPanelManager.js';
 import type {
   AffectPayload,
@@ -372,6 +373,8 @@ describe('updatePatternsDisplay() · 模式洞察', () => {
   it('click 关联按钮应触发 onMemoryClick 回调（传入第一条记忆 ID）', () => {
     // 点击按钮跳转第一条相关记忆详情，复用 onMemoryClick 回调
     const renderer = createRenderer();
+    // 初始化事件跟踪器（动态渲染的关联按钮需要通过 EventTracker 注册事件）
+    renderer.init(new EventTracker());
     const cb = vi.fn();
     renderer.onMemoryClick(cb);
     renderer.updatePatternsDisplay(createPatterns([

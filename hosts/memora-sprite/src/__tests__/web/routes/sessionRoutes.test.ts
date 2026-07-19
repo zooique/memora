@@ -377,7 +377,7 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('数据库损坏');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   // ─── GET /api/sessions/messages ────────────────────────
@@ -553,7 +553,7 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('查询失败');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   // ─── POST /api/sessions/switch ─────────────────────────
@@ -730,7 +730,7 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('加载失败');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   // ─── DELETE /api/sessions/:id ──────────────────────────
@@ -821,7 +821,7 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('删除失败');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   // ─── PUT /api/sessions/:id/rename ──────────────────────
@@ -969,7 +969,7 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('重命名失败');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   // ─── 通用：Agent 未就绪 / 404 / 500 兜底 ────────────────
@@ -1027,6 +1027,6 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('恢复失败');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 });

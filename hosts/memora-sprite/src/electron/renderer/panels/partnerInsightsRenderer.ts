@@ -19,6 +19,8 @@ import { clearElement, createEl, setCanvasSize } from '../helpers/domHelpers.js'
 import { reportError } from '../helpers/errorHelpers.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../../shared/truncate.js';
+// 事件监听器跟踪器（统一管理事件监听器注册与清理，防止内存泄漏）
+import { EventTracker } from '../helpers/eventTracker.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -78,6 +80,9 @@ export class PartnerInsightsRenderer {
 
   /** 缓存最近一次渲染的记忆数据，供主题切换时重绘 Canvas（避免重新拉取） */
   private lastMemories: PartnerMemory[] = [];
+
+  /** 事件监听器跟踪器（统一管理卡片点击事件，cleanup 时统一移除） */
+  private events = new EventTracker();
 
   // ─── 回调注册 ──────────────────────────────────────────
 
@@ -153,6 +158,8 @@ export class PartnerInsightsRenderer {
   cleanup(): void {
     this.onMemoryClickCallback = null;
     this.lastMemories = [];
+    // 清理所有卡片点击事件监听器
+    this.events.cleanup();
   }
 
   // ─── 私有渲染方法 ──────────────────────────────────────
@@ -179,8 +186,8 @@ export class PartnerInsightsRenderer {
       const card = createEl('div', 'partner-profile-card');
       card.title = mem.contentPreview;
 
-      // 卡片被点击时，通过回调通知 controller
-      card.addEventListener('click', () => {
+      // 卡片被点击时，通过回调通知 controller（使用 EventTracker 统一管理）
+      this.events.addEventListener(card, 'click', () => {
         this.onMemoryClickCallback?.(mem.id);
       });
 

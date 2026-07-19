@@ -197,6 +197,9 @@ export class ChatPanelManager {
    */
   private safetyTimer: StreamSafetyTimer;
 
+  /** 归档按钮自动移除定时器（cleanup 时统一清理，避免回调在已销毁 DOM 上执行） */
+  private archiveButtonTimer: ReturnType<typeof setTimeout> | null = null;
+
   // ─── 事件清理 ──────────────────────────────────────────
 
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -280,6 +283,11 @@ export class ChatPanelManager {
     cancelPendingRaf(this.streamRenderCtx);
     // 清除超时兜底定时器
     this.safetyTimer.clear();
+    // 清除归档按钮自动移除定时器（避免回调在已销毁 DOM 上执行）
+    if (this.archiveButtonTimer !== null) {
+      clearTimeout(this.archiveButtonTimer);
+      this.archiveButtonTimer = null;
+    }
     // 归档按钮管理器清理（无事件监听器，空实现，保持统一生命周期接口）
     this.archiveButtonManager.cleanup();
     this.events.cleanup();
@@ -1192,15 +1200,19 @@ export class ChatPanelManager {
     btn.className = 'archive-session-btn';
     btn.textContent = '归档当前对话';
     btn.title = '一键归档当前会话的全部记忆';
-    btn.addEventListener('click', async () => {
+    // 使用 EventTracker 统一管理事件监听器，避免内存泄漏
+    this.events.addEventListener(btn, 'click', async () => {
       btn.disabled = true;
       btn.textContent = '归档中…';
       try {
         const count = await this.host.archiveSession(date, session);
         btn.textContent = `已归档 ${count} 条记忆`;
         this.host.showToast(`已归档 ${count} 条记忆`, 'success');
-        // 1.5 秒后移除按钮
-        setTimeout(() => btn.remove(), 1500);
+        // 1.5 秒后移除按钮（跟踪定时器，cleanup 时统一清理）
+        this.archiveButtonTimer = setTimeout(() => {
+          btn.remove();
+          this.archiveButtonTimer = null;
+        }, 1500);
       } catch (err) {
         reportError('ChatPanel', err);
         btn.disabled = false;

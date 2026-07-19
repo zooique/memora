@@ -176,6 +176,8 @@ export class DashboardPanelManager {
   // ─── 内部状态 ────────────────────────────────────────────
   /** 脉冲动画定时器句柄列表（cleanup 时统一清理，避免回调在 DOM 销毁后触发） */
   private pulseTimers: number[] = [];
+  /** 记忆衰减按钮恢复定时器（cleanup 时统一清理，避免回调在已销毁 DOM 上执行） */
+  private decayButtonTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
   /** 增长趋势 - 区域容器（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） */
@@ -223,10 +225,11 @@ export class DashboardPanelManager {
         } catch {
           triggerDecayBtn.textContent = '失败';
         } finally {
-          // 1.5 秒后恢复按钮文字和可用状态
-          window.setTimeout(() => {
+          // 1.5 秒后恢复按钮文字和可用状态（跟踪定时器，cleanup 时统一清理）
+          this.decayButtonTimer = window.setTimeout(() => {
             triggerDecayBtn.textContent = originalText;
             triggerDecayBtn.disabled = false;
+            this.decayButtonTimer = null;
           }, 1500);
         }
       });
@@ -241,6 +244,11 @@ export class DashboardPanelManager {
       window.clearTimeout(t);
     }
     this.pulseTimers = [];
+    // 清理衰减按钮恢复定时器（避免回调在已销毁 DOM 上执行）
+    if (this.decayButtonTimer !== null) {
+      window.clearTimeout(this.decayButtonTimer);
+      this.decayButtonTimer = null;
+    }
     this.events.cleanup();
   }
 

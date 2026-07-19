@@ -19,6 +19,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger, toError } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, parseLimitWithMax } from './types.js';
+import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
 import {
   saveLlmConfig,
   isLlmConfigured,
@@ -141,7 +142,10 @@ export async function handleSystemRoute(
         }
         sendJson(res, 200, { success: true, error: null, reply });
       } catch (error) {
-        sendJson(res, 200, { success: false, error: toError(error).message });
+        // 使用 LLM 错误分类器返回用户友好提示，不暴露原始错误（如 API 地址、内部异常）
+        const rawMessage = toError(error).message;
+        const friendlyMessage = classifyLlmError(rawMessage);
+        sendJson(res, 200, { success: false, error: friendlyMessage });
       }
       return;
     }

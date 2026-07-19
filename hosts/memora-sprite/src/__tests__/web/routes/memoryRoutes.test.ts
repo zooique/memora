@@ -561,7 +561,7 @@ describe('handleMemoryRoute', () => {
     await handleMemoryRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('数据库错误');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 
   it('异步 sprite 方法 reject 应由 safeRoute 兜底返回 500', async () => {
@@ -575,6 +575,6 @@ describe('handleMemoryRoute', () => {
     await handleMemoryRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toContain('搜索服务不可用');
+    expect(JSON.parse(res.body).error).toContain('请稍后重试');
   });
 });

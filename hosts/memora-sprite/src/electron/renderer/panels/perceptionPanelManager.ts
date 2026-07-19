@@ -77,6 +77,9 @@ export class PerceptionPanelManager {
   /** 叙事摘要生成器实例，代替 5 个 lastNarrative* 字段 + generateNarrative 方法 */
   private narrativeGenerator = new NarrativeGenerator();
 
+  /** 事件监听器跟踪器（由 UIManager 注入，统一管理动态渲染的关联按钮事件） */
+  private events: EventTracker | null = null;
+
   // ─── 宿主引用 ──────────────────────────────────────────
 
   /** 宿主能力（跨模块关注点注入：showToast + updateSpriteStatus 精灵状态条写入） */
@@ -104,8 +107,8 @@ export class PerceptionPanelManager {
    * @param _events 事件跟踪器（预留，当前未使用）
    */
   init(_events: EventTracker): void {
-    // 当前感知面板为纯展示型，无事件需绑定
-    // 未来添加交互（如模式洞察的"查看关联记忆"按钮）时在此注册
+    // 存储事件跟踪器，供动态渲染的"关联记忆"按钮使用
+    this.events = _events;
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -117,6 +120,10 @@ export class PerceptionPanelManager {
    */
   cleanup(): void {
     this.onMemoryClickCallback = null;
+    // 清理事件监听器（动态渲染的关联按钮事件）
+    if (this.events) {
+      this.events.cleanup();
+    }
     // 重置叙事生成器缓存，避免下次初始化时残留上个会话的感知数据
     this.narrativeGenerator.reset();
   }
@@ -459,9 +466,12 @@ export class PerceptionPanelManager {
         relatedBtn.className = 'perception-pattern-related';
         relatedBtn.textContent = `关联 ${relatedIds.length} 条记忆`;
         relatedBtn.title = '点击查看最相关的一条记忆';
-        relatedBtn.addEventListener('click', () => {
-          this.onMemoryClickCallback?.(firstId);
-        });
+        // 使用 EventTracker 统一管理事件监听器，避免动态 DOM 内存泄漏
+        if (this.events) {
+          this.events.addEventListener(relatedBtn, 'click', () => {
+            this.onMemoryClickCallback?.(firstId);
+          });
+        }
         item.appendChild(relatedBtn);
       }
 
