@@ -312,4 +312,20 @@ export class PasteCoordinator {
       return appName ? appName.trim() : title;
     }, null, 'getCapturedAppName failed');
   }
+
+  /**
+   * 清理所有内部引用（应用退出时由 QuickInputWindow.destroy() 调用）
+   *
+   * 置 null 所有持有外部资源引用的字段，防止：
+   *   - inputInjector 持有 nut-js native 模块引用，阻碍 GC 回收
+   *   - previousWindow 持有 nut-js ActiveWindow 对象
+   *   - 回调引用链阻止 QuickInputWindow → PasteCoordinator → InputInjector 完整 GC
+   */
+  destroy(): void {
+    this.inputInjector = null;
+    this.previousWindow = null;
+    this.suppressNextChange = null;
+    this.cachedAccurateTitle = null;
+    this.cachedHwnd = null;
+  }
 }

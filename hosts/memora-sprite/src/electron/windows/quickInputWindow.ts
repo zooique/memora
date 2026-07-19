@@ -665,7 +665,7 @@ export class QuickInputWindow {
   /**
    * 销毁窗口并清理资源
    *
-   * 应用退出时调用，清理 IPC 监听器和定时器。
+   * 应用退出时调用，清理 IPC 监听器、定时器和 PasteCoordinator 内部引用。
    */
   destroy(): void {
     this.cancelBlurClose();
@@ -682,6 +682,9 @@ export class QuickInputWindow {
       this.win!.destroy();
     }
     this.win = null;
+    // 清理 PasteCoordinator 内部引用（nut-js native 模块引用 + 回调链），
+    // 防止 GC 回收链路阻断：QuickInputWindow → PasteCoordinator → InputInjector → nut-js
+    this.pasteCoordinator.destroy();
   }
 
   /** 窗口是否可见 */
