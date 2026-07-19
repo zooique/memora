@@ -239,8 +239,8 @@ export class PerceptionCoordinator {
       currentPersona: this.opts.agent.persona?.getActive() ?? null,
     });
 
-    // 获取所有记忆用于推导（上限 1000 条，一次查询供后续所有推导复用）
-    const memories = this.opts.agent.memory?.list(1000) ?? [];
+    // 获取所有记忆用于推导（一次查询供后续所有推导复用）
+    const memories = this.opts.agent.memory?.list(DEFAULT_LIST_LIMIT) ?? [];
     let affect = this.opts.affectController.deriveAffect(memories);
 
     // Phase 2.2：对话语气实时分析——从最近用户消息推导语气修正值
