@@ -2,7 +2,7 @@
  * 预加载脚本 — 浮动窗口最小化安全桥接
  *
  * 与主 preload.ts 的差异：
- *   - 仅暴露浮动窗口所需的最小 API（vs 主 preload 的全量 API）
+ *   - 仅暴露浮动窗口所需的 12 个 API（4 动作 + 8 事件监听，vs 主 preload 的全量 API）
  *   - 仅内联 8 个浮动窗口相关 IPC 通道（4 渲染→主 + 4 主→渲染）
  *   - 剥离高危 API：deleteMemory / installSkill / saveLlmProvider / clearAuditLog 等
  *

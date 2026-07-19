@@ -23,7 +23,7 @@ import type { Clipboard } from 'electron';
 import { logger, safeSetInterval, clearSafeInterval } from 'memora';
 // 引入共享时间常量：消除魔法数字 2000，与 sprite 层统一时间单位定义
 import { MS_PER_SECOND } from '../sprite/constants.js';
-// 敏感内容检测：STEP3-12 已下沉至 shared/sensitivePatterns.ts，
+// 敏感内容检测已下沉至 shared/sensitivePatterns.ts，
 // 本模块 import 供 analyze() 调用，并通过下方 re-export 保持向后兼容（测试文件仍从本模块导入）
 import { isSensitive } from '../shared/sensitivePatterns.js';
 export { isSensitive };
@@ -35,7 +35,7 @@ export type ClipboardEventType =
   | 'analysis-ready'    // 内容已通过敏感检测和护栏，等待用户确认
   | 'analysis-rejected'; // 输入护栏拦截
 
-// 敏感内容检测下沉到 shared/sensitivePatterns.ts（STEP3-12，ADR-017 枝叶层 2 次提取）
+// 敏感内容检测下沉到 shared/sensitivePatterns.ts（ADR-017 枝叶层 2 次提取）
 // 主进程 clipboardHandler / quickInputWindow / main.ts 共享同一份模式定义。
 // re-export 类型 + 常量保持向后兼容（测试文件仍从本模块导入），isSensitive 已在文件顶部 import
 export type { SensitiveType, SensitiveCheckResult } from '../shared/sensitivePatterns.js';

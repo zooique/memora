@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+alwaysApply: false
+description: 自然生长原则重新定义：分层适用
 ---
 # ADR-017 · 自然生长原则重新定义：分层适用
 

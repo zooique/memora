@@ -64,7 +64,7 @@ import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from './sh
 import { ClipboardHandler } from './clipboardHandler.js';
 import type { ClipboardEventType } from './clipboardHandler.js';
 // isSensitive 用于快速输入记忆沉淀前的敏感内容过滤（与 clipboardHandler 剪贴板预填过滤对齐）
-// STEP3-12：直接从 shared/sensitivePatterns.ts 导入（下沉后真理源在 shared 层）
+// 直接从 shared/sensitivePatterns.ts 导入，下沉后真理源在 shared 层
 import { isSensitive } from '../shared/sensitivePatterns.js';
 import { isFullWindowAccessible, safeSendToWindow } from './windows/windowUtils.js';
 
@@ -196,7 +196,7 @@ function resetUnreadCount(): void {
   appState.unreadCount = 0;
   appState.windowManager?.getFloatWindow()?.setUnreadCount(0);
   const fullWindow = appState.windowManager?.getFullWindow();// 重置未读计数（浮窗关闭时调用）
-  // 使用 safeSendToWindow 替代原始 isDestroyed 守卫（STEP3-11）
+  // 使用 safeSendToWindow 替代原始 isDestroyed 守卫
   safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, 0);
 }
 
@@ -671,7 +671,7 @@ async function initializeApp(): Promise<void> {
           // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
           appState.windowManager.showFullWindow();
           const fullWindow = appState.windowManager.getFullWindow();
-          // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫（STEP3-11）
+          // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫
           if (isFullWindowAccessible(fullWindow)) {
             fullWindow.focus();
             // 推送触发事件到渲染进程（聚焦输入框进入快速记录模式）
@@ -682,7 +682,7 @@ async function initializeApp(): Promise<void> {
           // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
           appState.windowManager.showFullWindow();
           const fullWindow = appState.windowManager.getFullWindow();
-          // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫（STEP3-11）
+          // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫
           if (isFullWindowAccessible(fullWindow)) {
             fullWindow.focus();
             // 推送触发事件到渲染进程（切换到记忆面板）
@@ -769,7 +769,7 @@ function setupAgentIndependentResources(): void {
   appState.clipboardHandler = new ClipboardHandler(clipboard, {
     emit: (event: ClipboardEventType, payload?: unknown) => {
       const fullWindow = appState.windowManager.getFullWindow();
-      // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫（STEP3-11）
+      // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫
       // 同时检查窗口可见性，避免向隐藏窗口发送 IPC
       if (!isFullWindowAccessible(fullWindow)) return;
       // 将 ClipboardHandler 事件映射到 IPC 推送通道

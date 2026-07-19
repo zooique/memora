@@ -345,7 +345,6 @@ export async function getDefaultInputInjector(): Promise<InputInjector> {
     //   2. keyboard.pressKey/releaseKey 返回 Promise<KeyboardClass>（链式），接口要求 Promise<void>
     //      且参数 Key[] 与 NutJsKey(unknown) 不兼容（strictFunctionTypes 下逆变）
     //   3. nut-js Window 类未公开 windowHandle 类型，用 NutJsWindow 接口类型断言提取
-    //      （STEP3-7：消除 as unknown as { windowHandle?: number } 双重转换）
     defaultInjector = new InputInjector({
       getActiveWindow: async () => {
         // cast nut-js Window 为 NutJsWindow，访问 windowHandle 字段提取 HWND

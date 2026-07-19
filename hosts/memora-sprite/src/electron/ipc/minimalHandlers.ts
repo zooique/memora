@@ -147,7 +147,7 @@ export function registerMinimalIpcHandlers(
       _event,
       llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
     ) => {
-      // 校验 LLM 配置参数：provider 类型 + apiKey 长度（STEP3-13 提取到 isValidLlmConfigInput）
+      // 校验 LLM 配置参数：provider 类型 + apiKey 长度
       if (!isValidLlmConfigInput(llmConfig)) {
         return { success: false, error: '配置参数无效' };
       }
@@ -236,7 +236,7 @@ export function registerMinimalIpcHandlers(
       },
       embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
     ) => {
-      // 校验 LLM 配置参数：provider 类型 + apiKey 长度（STEP3-13 提取到 isValidLlmConfigInput）
+      // 校验 LLM 配置参数：provider 类型 + apiKey 长度
       if (!isValidLlmConfigInput(llmConfig)) {
         return { success: false, error: '配置参数无效' };
       }

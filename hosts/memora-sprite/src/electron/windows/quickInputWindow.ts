@@ -27,7 +27,7 @@ import { applyWindowSecurity } from './windowSecurity.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 import { logger } from 'memora';
-// 剪贴板敏感内容检测（STEP3-12：直接从 shared/sensitivePatterns.ts 导入，下沉后真理源在 shared 层）
+// 剪贴板敏感内容检测（直接从 shared/sensitivePatterns.ts 导入，下沉后真理源在 shared 层）
 import { isSensitive } from '../../shared/sensitivePatterns.js';
 // Phase 4：自动粘贴协调器（从本类抽离的粘贴流程编排）
 import { PasteCoordinator, type SuppressNextChange } from './pasteCoordinator.js';
