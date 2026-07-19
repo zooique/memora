@@ -51,7 +51,7 @@ memora/                          # Git 仓库根目录
 ├── package.json                 # memora 内核（纯逻辑库）
 ├── tsconfig.json
 ├── src/                         # memora 内核源码（§3 目录结构）
-├── tasks/                       # 内核任务追踪
+├── tasks/                       # 统一任务追踪（内核 + 精灵共享，唯一真理源）
 │
 └── hosts/
     └── memora-sprite/           # 精灵宿主项目（独立 package）
@@ -60,8 +60,7 @@ memora/                          # Git 仓库根目录
         ├── tsconfig.json        # 精灵独立 tsconfig（含 electron 多配置）
         ├── src/                 # 精灵源码（electron + sprite + storage + web）
         ├── assets/              # 精灵静态资源（icon.svg 是真理源，PNG 由脚本生成）
-        ├── scripts/             # 精灵构建脚本（含 generate-icons.mjs）
-        └── tasks/               # 精灵任务追踪（与内核 tasks/ 独立）
+        └── scripts/             # 精灵构建脚本（含 generate-icons.mjs）
 ```
 
 **关键约束**：
@@ -73,7 +72,7 @@ memora/                          # Git 仓库根目录
 | 内核零依赖 | memora 内核不依赖任何 native 模块（better-sqlite3、electron 等），所有 native 能力由精灵宿主注入 |
 | 精灵依赖内核 | 精灵通过 `"memora": "file:../.."` 引用内核（本地 file: 协议，指向仓库根；Junction 模式无需发布 npm） |
 | 规则分层 | 仓库级规则在 `.trae/rules/`，精灵专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束精灵宿主 |
-| 任务独立 | 内核 `tasks/` 和精灵 `hosts/memora-sprite/tasks/` 各自独立追踪 |
+| 任务统一 | 根 `tasks/` 是唯一任务追踪目录（内核 + 精灵共享），`hosts/memora-sprite/tasks/` 已合并归档 |
 
 ## 3. 目录结构（不允许修改）
 
@@ -151,7 +150,7 @@ chore: 升级 dependencies
 |------|------|
 | [sprite-project-rules.md](./sprite-project-rules.md) | 精灵宿主项目总则、技术栈、目录结构、与内核关系（含 §9 感知层规范） |
 
-> **宿主实现文档**位于 `hosts/memora-sprite/.trae/rules/`（仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)，描述 src/ 目录树），跟宿主项目走。宿主任务追踪在 `hosts/memora-sprite/tasks/`，与内核 `tasks/` 独立。详见 [sprite-project-rules.md §1.1](./sprite-project-rules.md)。
+> **宿主实现文档**位于 `hosts/memora-sprite/.trae/rules/`（仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)，描述 src/ 目录树），跟宿主项目走。任务追踪统一在根 `tasks/`（唯一真理源，精灵历史任务已归档至 `tasks/归档/sprite-*`）。详见 [sprite-project-rules.md §1.1](./sprite-project-rules.md)。
 
 ### 6.5 决策记录类（decisions/ 目录，按需读取）
 

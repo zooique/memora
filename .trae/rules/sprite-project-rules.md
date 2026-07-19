@@ -29,10 +29,9 @@ date: 2026-07-13
 |------|------|
 | `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 30 个 ADR（内核 18 + 精灵 12） |
 | `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
-| `memora/tasks/` | **内核任务**：内核健康度快照 + 待完成/已完成 |
-| `hosts/memora-sprite/tasks/` | **宿主任务**：宿主健康度快照 + 待完成/已完成 + 方案文档 |
+| `memora/tasks/` | **统一任务追踪**（唯一真理源）：内核 + 精灵健康度快照 + 待完成/已完成 + 打包前审查 + 归档 |
 
-> 决策在外层（ADR 集中原则），实现文档跟宿主项目走（monorepo 最佳实践）。任务 ID 命名空间不同（内核用 V-xxx/P-xxx，宿主用 SEC-P2-xx/UX-xx/QC-xx），不合并。
+> 决策在外层（ADR 集中原则），实现文档跟宿主项目走（monorepo 最佳实践）。任务追踪统一在根 `tasks/`（精灵历史任务已归档至 `tasks/归档/sprite-*`，精灵健康度快照在 `tasks/精灵健康度快照/`）。
 
 ## 2. 内核同步工作流（sync-memora 脚本）
 
