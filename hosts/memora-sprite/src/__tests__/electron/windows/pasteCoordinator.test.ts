@@ -95,12 +95,13 @@ describe('PasteCoordinator', () => {
       expect(mockGetDefault).toHaveBeenCalledTimes(1);
     });
 
-    it('将 floatTitle 传给 captureActiveWindow（排除浮窗自身）', async () => {
+    it('将 floatWindowHwnd 传给 captureActiveWindow（排除浮窗自身）', async () => {
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('记事本'));
 
-      await coordinator.capturePreviousWindow('Memora 快速输入');
+      const floatHwnd = 999888;
+      await coordinator.capturePreviousWindow(floatHwnd);
 
-      expect(mockInputInjector.captureActiveWindow).toHaveBeenCalledWith('Memora 快速输入');
+      expect(mockInputInjector.captureActiveWindow).toHaveBeenCalledWith(floatHwnd);
     });
 
     it('captureActiveWindow 返回 null（浮窗自身）时保持上一次的 previousWindow', async () => {

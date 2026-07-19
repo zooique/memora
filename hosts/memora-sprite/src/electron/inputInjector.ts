@@ -29,7 +29,8 @@
  * 再评估是否补全 Esc 按键模拟（需在 NutJsDeps.Key 接口添加 Escape 字段）。
  *
  * 集成点：
- *   - quickInputWindow.ts：show() 前调用 captureActiveWindow()，CONFIRM handler 调用 paste()
+ *   - pasteCoordinator.ts：capturePreviousWindow() 调用 captureActiveWindow(floatHwnd)，通过 HWND 排除浮窗自身
+ *   - quickInputWindow.ts：show() 前提取 BrowserWindow HWND 传给 pasteCoordinator
  *   - clipboardHandler.ts：suppressNextChange() 实例方法注入
  */
 
@@ -205,21 +206,22 @@ export class InputInjector {
    * 捕获当前前台窗口（show() 前调用）
    *
    * 必须在浮窗 create() 之前调用，否则浮窗自身会成为前台窗口。
-   * 快速连续呼出场景：若捕获的窗口标题等于浮窗标题，返回 null（保持上一次的窗口）。
+   * 快速连续呼出场景：通过 HWND 比较排除浮窗自身（绕过 nut-js GetWindowTextA 编码 bug）。
    *
-   * @param floatWindowTitle 浮窗标题（用于排除浮窗自身，可选）
+   * ADR-SP-018：不再依赖 nut-js title 字符串比较，改用 HWND 直接比较。
+   * nut-js 底层调用 GetWindowTextA（ANSI 版本），中文窗口标题会返回 U+FFFD 乱码，
+   * 导致浮窗自身排除失效。HWND 是 Win32 原生句柄，零编码损失。
+   *
+   * @param floatWindowHwnd 浮窗的 Win32 窗口句柄（HWND），用于排除浮窗自身
    * @returns 活跃窗口或 null（nut-js 不可用或捕获失败）
    */
-  async captureActiveWindow(floatWindowTitle?: string): Promise<ActiveWindow | null> {
+  async captureActiveWindow(floatWindowHwnd?: number): Promise<ActiveWindow | null> {
     if (!this.deps) return null;
     try {
       const active = await this.deps.getActiveWindow();
-      // 排除浮窗自身（快速连续呼出场景）
-      if (floatWindowTitle) {
-        const title = await active.title;
-        if (title === floatWindowTitle) {
-          return null;
-        }
+      // 排除浮窗自身：通过 HWND 直接比较（绕过 nut-js 标题编码 bug）
+      if (floatWindowHwnd !== undefined && active.hwnd === floatWindowHwnd) {
+        return null;
       }
       return active;
     } catch {

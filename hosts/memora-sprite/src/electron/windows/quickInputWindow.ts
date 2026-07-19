@@ -246,7 +246,12 @@ export class QuickInputWindow {
       // 不加延迟时 nut-js 可能仍返回浮窗自身（Windows 前台窗口切换是异步的）
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    await this.pasteCoordinator.capturePreviousWindow(existingWin?.getTitle());
+    // 提取浮窗的 Win32 HWND 用于排除浮窗自身（绕过 nut-js GetWindowTextA 编码 bug）
+    // ADR-SP-018：不再依赖窗口标题字符串比较，改用 HWND 直接比较
+    const floatHwnd = existingWin
+      ? Number(existingWin.getNativeWindowHandle().readBigUInt64LE(0))
+      : undefined;
+    await this.pasteCoordinator.capturePreviousWindow(floatHwnd);
 
     if (!this.isWinAlive()) {
       await this.create();

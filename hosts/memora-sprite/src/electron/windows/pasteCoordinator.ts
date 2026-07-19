@@ -185,7 +185,7 @@ export class PasteCoordinator {
    * 捕获当前前台窗口（show() 前调用）
    *
    * 必须在浮窗 create() 之前调用，否则浮窗自身会成为前台窗口。
-   * 快速连续呼出场景：若捕获的窗口标题等于浮窗标题，保持上一次的 previousWindow。
+   * 快速连续呼出场景：通过 HWND 比较排除浮窗自身（绕过 nut-js 标题编码 bug）。
    * nut-js 不可用时 previousWindow 为 null，paste 将降级到复制+Toast。
    *
    * 乱码修复时机：捕获窗口后立即 await title 并检测 U+FFFD 乱码，若乱码立即调用
@@ -196,15 +196,15 @@ export class PasteCoordinator {
    * 性能：非乱码场景零开销（仅一次 await title，nut-js 内部已缓存）；乱码场景额外
    * 100-200ms（PowerShell 启动开销），是修复中文标题的必要成本。
    *
-   * @param floatTitle 浮窗窗口标题（用于排除捕获到浮窗自身）
+   * @param floatWindowHwnd 浮窗的 Win32 窗口句柄（HWND），用于排除捕获到浮窗自身
    */
-  async capturePreviousWindow(floatTitle?: string): Promise<void> {
+  async capturePreviousWindow(floatWindowHwnd?: number): Promise<void> {
     // 懒创建 InputInjector 单例（preloadInputInjector 已触发时直接复用）
     if (!this.inputInjector) {
       this.inputInjector = await getDefaultInputInjector();
     }
-    // 捕获前台窗口（排除浮窗自身）
-    const captured = await this.inputInjector.captureActiveWindow(floatTitle);
+    // 捕获前台窗口（通过 HWND 排除浮窗自身，绕过 nut-js 标题编码 bug）
+    const captured = await this.inputInjector.captureActiveWindow(floatWindowHwnd);
     // 若捕获到浮窗自身（返回 null），保持上一次的 previousWindow
     if (captured) {
       this.previousWindow = captured;

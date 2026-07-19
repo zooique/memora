@@ -116,7 +116,8 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
     }
 
     const fullWindow = deps.windowManager.getFullWindow();
-    if (!fullWindow || fullWindow.isDestroyed()) {
+    // 使用 isFullWindowAccessible 统一检查窗口可用性（含可见性，STEP3-11）
+    if (!isFullWindowAccessible(fullWindow)) {
       // 窗口不可用时自动拒绝（安全优先）
       logger.warn({ path: info.targetPath }, '[写入确认] 窗口不可用，自动拒绝写入');
       return false;

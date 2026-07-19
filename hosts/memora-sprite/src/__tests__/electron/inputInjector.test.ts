@@ -39,14 +39,16 @@ vi.mock('node:child_process', () => ({
 
 import { InputInjector, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
 
-/** 创建 mock ActiveWindow */
-function createMockWindow(title: string, focusShouldThrow = false): ActiveWindow {
+/** 创建 mock ActiveWindow（含 HWND 用于 ADR-SP-018 绕过 nut-js 标题编码 bug） */
+function createMockWindow(title: string, focusShouldThrow = false, hwnd?: number): ActiveWindow {
   return {
     title: Promise.resolve(title),
     region: Promise.resolve({ left: 0, top: 0, width: 800, height: 600 }),
     focus: focusShouldThrow
       ? () => Promise.reject(new Error('focus failed'))
       : () => Promise.resolve(),
+    // HWND 用于 captureActiveWindow 排除浮窗自身（ADR-SP-018：绕过 nut-js 标题编码 bug）
+    hwnd: hwnd ?? Math.floor(Math.random() * 100000),
   };
 }
 
@@ -242,17 +244,19 @@ describe('InputInjector', () => {
       expect(await result?.title).toBe('记事本');
     });
 
-    it('排除浮窗自身（标题匹配时返回 null）', async () => {
-      const window = createMockWindow('快速输入');
+    it('排除浮窗自身（HWND 匹配时返回 null）', async () => {
+      const floatHwnd = 12345;
+      const window = createMockWindow('快速输入', false, floatHwnd);  // 浮窗的 HWND
       const injector = new InputInjector(createMockDeps(window));
-      const result = await injector.captureActiveWindow('快速输入');
+      const result = await injector.captureActiveWindow(floatHwnd);
       expect(result).toBeNull();
     });
 
-    it('不排除非浮窗标题', async () => {
-      const window = createMockWindow('记事本');
+    it('不排除 HWND 不同的窗口', async () => {
+      const floatHwnd = 12345;
+      const window = createMockWindow('记事本', false, 99999);  // 不同 HWND
       const injector = new InputInjector(createMockDeps(window));
-      const result = await injector.captureActiveWindow('快速输入');
+      const result = await injector.captureActiveWindow(floatHwnd);
       expect(result).not.toBeNull();
     });
   });
