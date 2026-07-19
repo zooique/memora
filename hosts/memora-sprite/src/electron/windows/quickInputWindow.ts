@@ -31,6 +31,8 @@ import { logger } from 'memora';
 import { isSensitive } from '../../shared/sensitivePatterns.js';
 // Phase 4：自动粘贴协调器（从本类抽离的粘贴流程编排）
 import { PasteCoordinator, type SuppressNextChange } from './pasteCoordinator.js';
+// PasteResult 类型用于 CONFIRM handler 中 pasteResult 变量声明（attemptPaste 返回类型）
+import type { PasteResult } from '../inputInjector.js';
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
@@ -138,6 +140,20 @@ export class QuickInputWindow {
   private pinnedMode = false;
   /** IPC handler 是否已注册（防止重复注册） */
   private ipcRegistered = false;
+  /**
+   * paste 流程进行中标记
+   *
+   * 根因修复（Tab 提交闪烁）：
+   *   paste 流程耗时 200-600ms（PowerShell SendInput ~100ms + pasteDelay 100-500ms），
+   *   超过 blur 关闭延迟 200ms。default 模式下 paste 期间浮窗 blur → scheduleBlurClose
+   *   定时器触发 hide → paste 完成后 focus 重新 show，视觉上闪烁。
+   *   此标记在 paste 期间设为 true，blur 事件检查此标记跳过 scheduleBlurClose。
+   *
+   * 与 pinnedMode 的区别：
+   *   - pinnedMode 是用户态偏好（持久抑制 blur close）
+   *   - pasteInProgress 是流程态标志（仅在 paste 期间临时抑制，paste 完成立即清除）
+   */
+  private pasteInProgress = false;
   /** Phase 4：自动粘贴协调器（封装 InputInjector + 前台窗口捕获 + 剪贴板保护） */
   private pasteCoordinator = new PasteCoordinator();
 
@@ -191,9 +207,11 @@ export class QuickInputWindow {
     // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
     applyWindowSecurity(win);
 
-    // 失焦延迟关闭：给 Alt+Tab 切换留余量（pinned 模式不关闭）
+    // 失焦延迟关闭：给 Alt+Tab 切换留余量（pinned 模式 / paste 期间不关闭）
+    // paste 期间抑制 blur close 是为了防止 default 模式下 paste 流程触发的 blur 事件
+    // 启动 hide 定时器（paste 耗时 200-600ms > blur 延迟 200ms），导致 hide→show 闪烁
     win.on('blur', () => {
-      if (this.pinnedMode) return;
+      if (this.pinnedMode || this.pasteInProgress) return;
       this.scheduleBlurClose();
     });
     win.on('focus', () => {
@@ -396,10 +414,25 @@ export class QuickInputWindow {
         // PowerShell SendInput 发送 Ctrl+V 到目标窗口，浮窗保持 alwaysOnTop=true，
         // 目标窗口通过 SetForegroundWindow 获焦后接收键盘事件（焦点 ≠ z-order）
         const hideFloat = () => { /* no-op：浮窗保持可见，避免 hide/show 闪烁 */ };
-        const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
-        this.cancelBlurClose();
-        // paste 完成：浮窗保持可见，按模式恢复焦点
+        // 标记 paste 进行中：抑制 blur 触发的 scheduleBlurClose，防止 default 模式下
+        // paste 耗时 > 200ms 触发 hide → paste 完成后 focus 重新 show 导致视觉闪烁
+        this.pasteInProgress = true;
+        let pasteResult: PasteResult;
+        try {
+          pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
+        } finally {
+          // finally 块确保即使 paste 抛错也清除标记 + 取消可能已调度的 blur 定时器
+          this.pasteInProgress = false;
+          this.cancelBlurClose();
+        }
+        // paste 完成：浮窗保持可见，按模式恢复焦点 + 置顶
         if (this.isWinAlive()) {
+          // pinned 模式强制恢复置顶：paste 期间目标窗口 SetForegroundWindow 可能
+          // 影响 z-order（特别是目标窗口本身是 alwaysOnTop 或系统调整 z-order 时），
+          // pinned 模式必须保证浮窗视觉置顶，否则出现"加锁未置顶"bug
+          if (this.pinnedMode) {
+            this.win!.setAlwaysOnTop(true);
+          }
           // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
           if (!safePinnedMode) {
             this.win!.focus();
