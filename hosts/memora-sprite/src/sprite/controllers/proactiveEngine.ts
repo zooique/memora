@@ -472,7 +472,7 @@ export class ProactiveEngine {
     // 方向 A：召回类提示标记为 lightweight，宿主据此跳过系统通知
     const lightweight = triggers.includes('recalled');
 
-    // silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
+    // silent 字段恒为 false（tryEmit 已在 silentMode 时 return）
     this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false, isMilestone: hasMilestone, lightweight });
     // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
     this.suggestCount++;
@@ -519,7 +519,7 @@ export class ProactiveEngine {
     // 过滤已提示过的模式，按置信度降序取 top-3
     const newPatterns = this.detectedPatterns
       .filter((p) => !this.promptedPatterns.has(p.summary))
-      .sort((a, b) => b.confidence - a.confidence) // 补充按置信度降序排序，确保取 top-3
+      .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 3);
 
     for (const pattern of newPatterns) {

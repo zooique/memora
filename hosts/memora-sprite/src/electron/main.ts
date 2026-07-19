@@ -64,7 +64,8 @@ import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from './sh
 import { ClipboardHandler } from './clipboardHandler.js';
 import type { ClipboardEventType } from './clipboardHandler.js';
 // isSensitive 用于快速输入记忆沉淀前的敏感内容过滤（与 clipboardHandler 剪贴板预填过滤对齐）
-import { isSensitive } from './clipboardHandler.js';
+// STEP3-12：直接从 shared/sensitivePatterns.ts 导入（下沉后真理源在 shared 层）
+import { isSensitive } from '../shared/sensitivePatterns.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -181,7 +182,7 @@ function setAppRuntime(runtime: AppRuntime | null): void {
   }
 }
 
-// 精灵事件订阅管理已移至 spriteEventBridge.ts
+// 精灵事件订阅管理位于 spriteEventBridge.ts
 
 /** 增加未读计数并推送到浮动窗口 */
 function incrementUnreadCount(): void {
@@ -371,7 +372,6 @@ function createIpcContext(
     agent: activeAgent,
     sprite: activeSprite,
     sessionStore: activeSessionStore,
-    windowStateManager: appState.windowStateManager,
     windowManager: appState.windowManager,
     trayManager: appState.trayManager,
     // Phase 3.3：注入快捷键管理器供 configHandlers 触发热更新（可能为 null）
@@ -567,7 +567,7 @@ async function initializeApp(): Promise<void> {
       onExpandToFull: resetUnreadCount,
     });
 
-    // 不需要在此处再次调用 registerMinimalIpcHandlers()
+    // 最小化 IPC 处理器已在 registerMinimalIpcHandlers() 阶段注册，此处无需重复
 
     await appState.windowManager.createWindows();
 
@@ -903,8 +903,8 @@ registerMinimalIpcHandlers(appState, {
 
 // ─── 应用生命周期 ─────────────────────────────────────────
 
-// initializeApp 内部两阶段均有 try-catch，但阶段 2 的 catch 块调用 registerMinimalIpcHandlers()
-// 若该函数抛错会变成 unhandled rejection，追加 .catch 兜底
+// initializeApp 内部两阶段均有 try-catch，阶段 2 的 catch 块调用 registerMinimalIpcHandlers()，
+// 该函数若抛错会变成 unhandled rejection，此处追加 .catch 兜底
 app.whenReady().then(initializeApp).catch((error) => {
   errorHandler.handle(error, {
     code: ErrorCode.UNKNOWN,
@@ -919,6 +919,52 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   appState.windowStateManager?.transition('full');
 });
+
+/**
+ * 集中清理 appState 所有组件引用
+ *
+ * 在 before-quit 阶段调用，确保所有持有原生资源（BrowserWindow / native 模块 /
+ * AbortController / Map / 定时器）的字段被显式置 null，避免：
+ *   1. 内存 dump 泄漏（尤其 lastApiKey 等敏感字段）
+ *   2. 退出后定时器残留触发已销毁对象的方法
+ *   3. 引用循环阻碍 GC 回收
+ *
+ * 注意：windowStateManager / windowManager / interaction 在 closeAll 后由各自 destroy 负责，
+ * 此处统一置 null 切断 appState 引用。pendingWriteConfirmations 是 const Map，仅 clear 不置 null。
+ */
+function nullifyAllComponents(): void {
+  // ─── Agent 运行时 ───
+  appState.agent = null;
+  appState.sprite = null;
+  appState.sessionStore = null;
+  appState.closeSprite = null;
+
+  // ─── 流式/状态 ───
+  appState.currentAbortController = null;
+  appState.agentReady = false;
+  appState.initErrorDetail = null;
+
+  // ─── 功能模块 ───
+  // M1 写入确认映射表：清空所有 pending resolver，避免渲染进程响应时访问已销毁资源
+  appState.pendingWriteConfirmations.clear();
+  appState.auditManager = null;
+  appState.usageStatsCollector = null;
+  appState.shortcutManager = null;
+  appState.clipboardHandler = null;
+  appState.quickInputWindow = null;
+
+  // ─── 窗口/托盘基础设施 ───
+  appState.windowStateManager = null!;
+  appState.windowManager = null!;
+  appState.interaction = null!;
+  appState.trayManager = null;
+
+  // ─── LLM 配置缓存（敏感字段显式置 null 防止内存 dump 泄漏） ───
+  appState.lastProvider = null;
+  appState.lastModel = null;
+  appState.lastBaseUrl = null;
+  appState.lastApiKey = null;
+}
 
 app.on('before-quit', async (e) => {
   // 防止重复清理
@@ -940,28 +986,28 @@ app.on('before-quit', async (e) => {
     }
     // Phase 3.3：注销全局快捷键，避免退出后残留占用
     appState.shortcutManager?.unregisterAll();
-    appState.shortcutManager = null;
     // Phase 3.1：停止剪贴板轮询，清理定时器
     appState.clipboardHandler?.stopPolling();
-    appState.clipboardHandler = null;
     // 销毁快速输入浮窗，清理 IPC handler 和定时器
     appState.quickInputWindow?.destroy();
-    appState.quickInputWindow = null;
     // AUDIT-5-2：使用统计退出时写入 + 停止定时器
     appState.usageStatsCollector?.stopAutoFlush();
     await appState.usageStatsCollector?.flush();
-    appState.usageStatsCollector = null;
     if (appState.closeSprite) {
       await appState.closeSprite();
     }
     // 显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
     appState.trayManager?.destroy();
+    // 销毁窗口管理器（含 fullWindow + floatWindow）
+    appState.windowManager?.closeAll();
   } catch (error) {
     errorHandler.handle(error, {
       code: ErrorCode.UNKNOWN,
       context: '应用关闭清理失败',
     });
   } finally {
+    // 集中切断所有 appState 字段引用，防止内存 dump 泄漏 + 定时器残留
+    nullifyAllComponents();
     app.exit(0);
   }
 });

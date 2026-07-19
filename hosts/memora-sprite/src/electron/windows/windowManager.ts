@@ -20,7 +20,7 @@ import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
 import { injectThemeScript } from './themeInjector.js';
-import { errorHandler, ErrorCode } from '../errorHandler.js';
+import { errorHandler, ErrorCode, SpriteError } from '../errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 
@@ -108,7 +108,8 @@ export class WindowManager {
         code: ErrorCode.WINDOW_CREATE_FAILED,
         context: '窗口创建失败',
       });
-      throw error;
+      // 包装为 SpriteError 统一错误体系（携带 code + cause，便于上层分类与诊断）
+      throw new SpriteError(ErrorCode.WINDOW_CREATE_FAILED, '窗口创建失败', { cause: error });
     }
   }
 
@@ -129,8 +130,7 @@ export class WindowManager {
       minHeight: FULL_WINDOW_MIN_HEIGHT,
       frame: false,
       show: false,
-      // ADR-SP-008：浅色主题为默认，窗口背景色对齐大底板色（--bg: #f0f0f2）
-      // 避免启动时闪深色（旧值为深色主题的 #1e1e2e）
+      // ADR-SP-008：浅色主题为默认，窗口背景色对齐大底板色（--bg: #f0f0f2），避免启动闪烁
       backgroundColor: '#f0f0f2',
       // 应用图标（任务栏、窗口切换器显示）
       icon: APP_ICON_PATH || undefined,
@@ -145,17 +145,17 @@ export class WindowManager {
 
     this.windowStateManager.attachFullWindow(this.fullWindow);
 
-    // 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
+    // 主进程注入主题初始化脚本（不受 CSP 约束）
     injectThemeScript(this.fullWindow.webContents);
 
     // 加载 HTML 文件
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'index.html');
     await this.fullWindow.loadFile(htmlPath);
 
-    // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）
     // 缓存 fullWindow 引用避免非空断言，并确保回调中引用的是当前窗口实例
     const win = this.fullWindow;
     // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
+    // 防止 XSS 后跳转到恶意页面获取 IPC 权限
     applyWindowSecurity(win);
   }
 
@@ -236,6 +236,10 @@ export class WindowManager {
     ipcMain.removeAllListeners(IPC_CHANNELS.WINDOW_CLOSE);
     this.floatWindow?.close();
     this.fullWindow?.destroy();
+    // 显式切断字段引用，允许 GC 回收 BrowserWindow 包装对象，
+    // 避免退出后定时器/事件残留触发已销毁窗口的方法
+    this.floatWindow = null;
+    this.fullWindow = null;
   }
 
   /**

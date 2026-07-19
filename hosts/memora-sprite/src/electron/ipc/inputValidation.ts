@@ -27,6 +27,7 @@ export {
   isNonEmptyString,
   isValidRelationParams,
   isValidShortcutConfig,
+  isValidLlmConfigInput,
 } from '../../shared/inputValidation.js';
 
 /**

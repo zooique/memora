@@ -90,7 +90,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         logger.debug({ err: toError(err).message }, 'metrics 获取失败，降级为 null');
       }
       // 已加载技能列表（消费内核 agent.skills.list）
-      // 修复 TS18047：agent.skills 可能为 null，使用可选链 + 空数组降级
+      // agent.skills 可能为 null（Agent 未配置技能时），使用可选链 + 空数组降级
       const skills = ctx.agent.skills?.list.map((s) => ({
         name: s.name,
         keywords: s.keywords,

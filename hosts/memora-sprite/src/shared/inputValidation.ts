@@ -240,3 +240,26 @@ export function isValidShortcutConfig(value: unknown): value is ShortcutConfig {
     Object.values(s.accelerators as Record<string, unknown>).every((v) => typeof v === 'string')
   );
 }
+
+/** LLM 配置 API Key 长度上限：1000 字符，防止超大值传入 IPC */
+const MAX_LLM_API_KEY_LENGTH = 1000;
+
+/**
+ * 验证 LLM 配置输入（provider 类型 + apiKey 长度）
+ *
+ * 消除 minimalHandlers.ts 中 LLM_CONFIG_TEST 和 LLM_CONFIG_SAVE 重复的校验链
+ * （STEP3-13，ADR-017 枝叶层 2 次提取）。
+ *
+ * 仅校验 provider 类型为 string 且 apiKey 为非空字符串且长度 ≤ 1000，
+ * model/baseUrl/temperature 由后续业务逻辑处理。
+ *
+ * @param config LLM 配置对象（unknown 类型，IPC 入参运行时类型收窄）
+ * @returns 校验通过返回 true，否则 false
+ */
+export function isValidLlmConfigInput(config: unknown): boolean {
+  if (!config || typeof config !== 'object') return false;
+  const c = config as { provider?: unknown; apiKey?: unknown };
+  if (typeof c.provider !== 'string') return false;
+  // isValidContent 拒绝非字符串和空字符串，先用 typeof 收窄避免传入非字符串
+  return typeof c.apiKey === 'string' && isValidContent(c.apiKey, MAX_LLM_API_KEY_LENGTH);
+}

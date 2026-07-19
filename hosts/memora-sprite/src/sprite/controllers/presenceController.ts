@@ -30,8 +30,7 @@ import { MS_PER_HOUR, MS_PER_MINUTE } from '../constants.js';
  * Electron 的 PowerMonitor 模块自动满足此接口（结构子类型）。
  * 测试时可注入 mock 实现而无需引入 electron。
  *
- * 新增 removeListener 方法，支持 stop() 时取消注册，
- * 防止 reinitAgent 后旧 PresenceController 监听器泄漏。
+ * removeListener 方法支持 stop() 时取消注册，防止 reinitAgent 后旧 PresenceController 监听器泄漏。
  */
 export interface IPowerMonitor {
   /** 系统锁屏时触发 */
@@ -52,7 +51,7 @@ export interface IPowerMonitor {
  * Electron 的 App 模块自动满足此接口（结构子类型）。
  * 测试时可注入 mock 实现而无需引入 electron。
  *
- * 新增 removeListener 方法，支持 stop() 时取消注册。
+ * removeListener 方法支持 stop() 时取消注册。
  */
 export interface IApp {
   /** 浏览器窗口失焦时触发 */
@@ -105,7 +104,7 @@ export interface PresenceControllerOptions {
    *
    * 类型从 ProactiveEngine 收窄为 Pick<'checkPending'>，
    * 应用接口隔离原则——PresenceController 仅依赖 checkPending 方法，
-   * 测试可注入仅含 checkPending 的 mock 而无需 as any 断言。
+   * 测试可注入仅含 checkPending 的 mock。
    */
   proactiveEngine?: Pick<ProactiveEngine, 'checkPending'>;
   /** 事件发射器（由 Sprite 注入，转发为精灵事件） */

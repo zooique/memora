@@ -108,7 +108,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, messages: [], error: '有进行中的对话，请等待完成或中断后再切换会话' };
       }
 
-      // 添加 sessionManager null 检查
+      // SessionManager 未初始化时拒绝切换（agent.sessionManager 在 close() 后为 null）
       if (!ctx.agent.sessionManager) {
         return { success: false, messages: [], error: 'SessionManager 未初始化' };
       }

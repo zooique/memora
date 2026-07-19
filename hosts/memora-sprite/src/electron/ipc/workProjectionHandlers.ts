@@ -15,6 +15,38 @@ import { throwingHandle } from './types.js';
 import type { IpcContext } from './types.js';
 import { isValidFilePath } from './inputValidation.js';
 import { ErrorCode, SpriteError } from '../errorHandler.js';
+// WorkProjectionEntry 类型从 memora 内核导出，用于 toWorkProjectionPayload 入参类型
+import type { WorkProjectionEntry } from 'memora';
+
+/**
+ * 转换 WorkProjectionEntry 为 IPC 传输 payload
+ *
+ * 提取理由（ADR-017 枝叶层 2 次提取原则）：
+ *   WORK_PROJECTION_LIST（列表）和 WORK_PROJECTION_SHOW（单条）两处映射逻辑完全一致，
+ *   统一为单一函数避免字段增删时漏改。
+ *
+ * @param entry 内核返回的作品投影条目
+ * @returns IPC 传输用的纯数据对象（无方法/内部状态）
+ */
+function toWorkProjectionPayload(entry: WorkProjectionEntry): {
+  id: string;
+  sourcePath: string;
+  fileHash: string;
+  summary: string;
+  structure: string[];
+  keyDecisions: string[];
+  updatedAt: string;
+} {
+  return {
+    id: entry.id,
+    sourcePath: entry.sourcePath,
+    fileHash: entry.fileHash,
+    summary: entry.summary,
+    structure: entry.structure,
+    keyDecisions: entry.keyDecisions,
+    updatedAt: entry.updatedAt,
+  };
+}
 
 /**
  * 注册作品投影 IPC 处理器
@@ -32,16 +64,8 @@ export function registerWorkProjectionHandlers(ctx: IpcContext): void {
         const works = ctx.agent.works;
         if (!works) return [];
         const entries = await works.loadAll();
-        // 映射为 IPC 传输形态（与 WorkProjectionEntry 对齐）
-        return entries.map((e) => ({
-          id: e.id,
-          sourcePath: e.sourcePath,
-          fileHash: e.fileHash,
-          summary: e.summary,
-          structure: e.structure,
-          keyDecisions: e.keyDecisions,
-          updatedAt: e.updatedAt,
-        }));
+        // 映射为 IPC 传输形态（委托 toWorkProjectionPayload 统一字段提取）
+        return entries.map(toWorkProjectionPayload);
       },
     );
   });
@@ -63,15 +87,7 @@ export function registerWorkProjectionHandlers(ctx: IpcContext): void {
         if (!works) return null;
         const entry = await works.getProjection(filePath);
         if (!entry) return null;
-        return {
-          id: entry.id,
-          sourcePath: entry.sourcePath,
-          fileHash: entry.fileHash,
-          summary: entry.summary,
-          structure: entry.structure,
-          keyDecisions: entry.keyDecisions,
-          updatedAt: entry.updatedAt,
-        };
+        return toWorkProjectionPayload(entry);
       },
     );
   });

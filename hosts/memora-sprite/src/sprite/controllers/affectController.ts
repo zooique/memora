@@ -16,8 +16,9 @@
 import type { Memory } from 'memora';
 import type { Persona } from 'memora';
 import { logger } from 'memora';
+import { round2 } from '../../shared/numberUtils.js';
 
-// ── 新增：语气关键词用于判断用户当前交互风格 ───────────────────
+// ── 语气关键词：用于判断用户当前交互风格 ───────────────────
 
 /** 直接/简洁风格关键词 */
 const DIRECT_KEYWORDS = [
@@ -124,9 +125,9 @@ export class AffectController {
       const playfulness = this.options.currentPersona?.traits?.playfulness ?? DEFAULT_AFFECT.playfulness;
       return {
         warmth: DEFAULT_AFFECT.warmth,
-        playfulness: Math.round(playfulness * 100) / 100,
+        playfulness: round2(playfulness),
         directness: DEFAULT_AFFECT.directness,
-        initiative: Math.round(this.options.acceptanceRate * 100) / 100,
+        initiative: round2(this.options.acceptanceRate),
       };
     }
 
@@ -152,10 +153,10 @@ export class AffectController {
       this.options.currentPersona?.traits?.playfulness ?? 0.3;
 
     const affect: AffectState = {
-      warmth: Math.round(warmth * 100) / 100,
-      playfulness: Math.round(playfulness * 100) / 100,
-      directness: Math.round(directness * 100) / 100,
-      initiative: Math.round(initiative * 100) / 100,
+      warmth: round2(warmth),
+      playfulness: round2(playfulness),
+      directness: round2(directness),
+      initiative: round2(initiative),
     };
 
     logger.debug({ ...affect }, 'AffectController: 情感基调已推导');
@@ -213,18 +214,6 @@ export class AffectController {
   }
 
   /**
-   * 将 0-1 数值映射为中文等级描述
-   *
-   * @param value 0-1 数值
-   * @returns 等级描述（低/中/高）
-   */
-  static describeLevel(value: number): string {
-    if (value < 0.33) return '低';
-    if (value < 0.67) return '中';
-    return '高';
-  }
-
-  /**
    * 从最近几条用户消息分析对话语气，返回情感修正值
    *
    * 纯关键词匹配，零 LLM 成本，零存储开销。
@@ -279,7 +268,7 @@ export class AffectController {
     const blend = (cur: number, d: number | undefined): number => {
       if (d === undefined) return cur;
       const target = Math.max(0, Math.min(1, cur + d));
-      return Math.round((cur * (1 - SMOOTHING_FACTOR) + target * SMOOTHING_FACTOR) * 100) / 100;
+      return round2(cur * (1 - SMOOTHING_FACTOR) + target * SMOOTHING_FACTOR);
     };
 
     return {
@@ -309,7 +298,7 @@ export class AffectController {
   static applyDelta(current: AffectState, delta: Partial<AffectState>): AffectState {
     const apply = (cur: number, d: number | undefined): number => {
       if (d === undefined) return cur;
-      return Math.round(Math.max(0, Math.min(1, cur + d)) * 100) / 100;
+      return round2(Math.max(0, Math.min(1, cur + d)));
     };
 
     return {

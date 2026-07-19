@@ -27,8 +27,8 @@ import { applyWindowSecurity } from './windowSecurity.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 import { logger } from 'memora';
-// 剪贴板敏感内容检测（复用 clipboardHandler 的 5 种正则模式）
-import { isSensitive } from '../clipboardHandler.js';
+// 剪贴板敏感内容检测（STEP3-12：直接从 shared/sensitivePatterns.ts 导入，下沉后真理源在 shared 层）
+import { isSensitive } from '../../shared/sensitivePatterns.js';
 // Phase 4：自动粘贴协调器（从本类抽离的粘贴流程编排）
 import { PasteCoordinator, type SuppressNextChange } from './pasteCoordinator.js';
 
@@ -167,8 +167,8 @@ export class QuickInputWindow {
       // 浅色主题背景色（对齐完整窗口，避免启动闪烁）
       backgroundColor: '#f0f0f2',
       webPreferences: {
-        // 最小化 preload：preload-quick-input.cjs 仅暴露 9 个 API（ADR-SP-017 §1）
-        preload: path.join(ELECTRON_DIR, 'preload-quick-input.cjs'),
+        // 最小化 preload：preloadQuickInput.cjs 仅暴露 9 个 API（ADR-SP-017 §1）
+        preload: path.join(ELECTRON_DIR, 'preloadQuickInput.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -230,7 +230,7 @@ export class QuickInputWindow {
     }
     await this.pasteCoordinator.capturePreviousWindow(existingWin?.getTitle());
 
-    if (!this.win || this.win.isDestroyed()) {
+    if (!this.isWinAlive()) {
       await this.create();
     }
 
@@ -278,8 +278,53 @@ export class QuickInputWindow {
    * appName=string 表示浮窗获得焦点，渲染进程显示"聚焦：{应用名}"+ 激活 Tab
    */
   private notifyFocusChange(appName: string | null): void {
-    if (this.win && !this.win.isDestroyed()) {
-      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE, appName);
+    if (this.isWinAlive()) {
+      this.win!.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE, appName);
+    }
+  }
+
+  /**
+   * 判断窗口是否存活（非 null 且未销毁）
+   *
+   * ADR-017 枝叶层 2 次提取原则：本类中 8+ 处使用此守卫模式，提取为方法消除重复。
+   *
+   * 调用方约定：
+   *   - early return：if (!this.isWinAlive()) return;
+   *   - 正向判断后访问：if (this.isWinAlive()) { this.win!.method(); }
+   *     （TypeScript 无法通过方法返回值收窄 this.win 类型，需显式 `!` 非空断言）
+   *
+   * @returns true 表示窗口可用，false 表示未创建或已销毁
+   */
+  private isWinAlive(): boolean {
+    return this.win !== null && !this.win.isDestroyed();
+  }
+
+  /**
+   * 包装 IPC handler 逻辑，统一 try/catch + logger.error + 降级返回
+   *
+   * ADR-017 枝叶层 2 次提取原则：本类中 RESIZE / MOVE_QUICK_INPUT / POLISH 三处
+   * 使用相同的 try/catch + logger.error 模式，提取为通用包装器消除重复。
+   *
+   * 设计取舍：
+   *   - CONFIRM handler 未使用此包装器——其内部有嵌套 try/catch（onAfterConfirm）+
+   *     多分支降级逻辑，包装后反而降低可读性，保留独立 try/catch 结构
+   *   - fallback 通过 closure 捕获，支持各 handler 特定的降级返回值
+   *
+   * @param msg 错误日志描述（用于排查）
+   * @param fallback 失败时返回的降级值（通过 closure 捕获上下文）
+   * @param fn 待包装的操作（同步或异步）
+   * @returns fn 成功时的结果，或失败时的 fallback
+   */
+  private async wrapIpcHandler<T>(
+    msg: string,
+    fallback: T,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      logger.error({ error }, msg);
+      return fallback;
     }
   }
 
@@ -305,8 +350,9 @@ export class QuickInputWindow {
         return { text: null, isSensitive: true };
       }
       return { text: trimmed.slice(0, CLIPBOARD_PREFILL_MAX_LENGTH), isSensitive: false };
-    } catch {
-      // 剪贴板读取失败不阻断浮窗显示
+    } catch (error) {
+      // 剪贴板读取失败不阻断浮窗显示，记录 warn 便于排查
+      logger.warn({ error }, 'readClipboardForPrefill failed');
       return { text: null, isSensitive: false };
     }
   }
@@ -317,8 +363,8 @@ export class QuickInputWindow {
    * 清空输入框内容（由渲染进程在 close 事件中处理）。
    */
   hide(): void {
-    if (this.win && !this.win.isDestroyed()) {
-      this.win.hide();
+    if (this.isWinAlive()) {
+      this.win!.hide();
     }
     this.cancelBlurClose();
   }
@@ -353,10 +399,10 @@ export class QuickInputWindow {
         const pasteResult = await this.pasteCoordinator.attemptPaste(safeText, hideFloat);
         this.cancelBlurClose();
         // paste 完成：浮窗保持可见，按模式恢复焦点
-        if (this.win && !this.win.isDestroyed()) {
+        if (this.isWinAlive()) {
           // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
           if (!safePinnedMode) {
-            this.win.focus();
+            this.win!.focus();
           }
         }
 
@@ -403,73 +449,67 @@ export class QuickInputWindow {
 
     // 调整浮窗高度：候选列表显示/隐藏时由渲染进程触发
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_RESIZE, async (_event, height: number) => {
-      try {
-        if (!this.win || this.win.isDestroyed()) return;
+      return this.wrapIpcHandler('调整浮窗高度失败', undefined, () => {
+        if (!this.isWinAlive()) return;
         // 参数校验：高度必须是合理范围内的正整数
         if (typeof height !== 'number' || height < QUICK_INPUT_HEIGHT || height > QUICK_INPUT_MAX_HEIGHT) {
           return;
         }
-        const { width } = this.win.getBounds();
-        this.win.setSize(width, Math.round(height), true);
+        const { width } = this.win!.getBounds();
+        this.win!.setSize(width, Math.round(height), true);
         // resize 后检查位置，防止溢出屏幕边缘
         this.keepWindowInWorkArea();
-      } catch (error) {
-        logger.error({ error }, '调整浮窗高度失败');
-      }
-      return undefined;
+      });
     });
 
     // 拖动浮窗位置：footer 区域可拖，dx/dy 增量移动（与 float 一致的 PointerEvent 模式）
     // 不持久化位置：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效
     ipcMain.on(IPC_CHANNELS.MOVE_QUICK_INPUT, (_event, dx: number, dy: number) => {
-      try {
-        if (!this.win || this.win.isDestroyed()) return;
+      // ipcMain.on 无返回值，用 void 显式忽略 wrapIpcHandler 返回的 Promise
+      void this.wrapIpcHandler('拖动浮窗位置失败', undefined, () => {
+        if (!this.isWinAlive()) return;
         // 参数校验：增量必须是有限数字
         if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
-        const [currentX, currentY] = this.win.getPosition() as [number, number];
+        const [currentX, currentY] = this.win!.getPosition() as [number, number];
         const newX = currentX + Math.round(dx);
         const newY = currentY + Math.round(dy);
         // 先 clamp 到工作区再 setPosition，避免窗口短暂超出边缘再被拉回导致视觉挤压
         const clamped = this.clampPositionToWorkArea(newX, newY);
-        this.win.setPosition(clamped.x, clamped.y);
-      } catch (error) {
-        logger.error({ error }, '拖动浮窗位置失败');
-      }
+        this.win!.setPosition(clamped.x, clamped.y);
+      });
     });
 
     // LLM 润色文本：渲染进程请求润色，主进程调用 onPolish 回调（main.ts 注入 agent.polish?.polish()）
     // 润色期间渲染进程显示 loading 状态，失败时返回错误信息供 Toast 展示
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_POLISH, async (_event, text: string) => {
-      try {
-        // 参数校验：文本必须是字符串且非空
-        if (typeof text !== 'string' || text.length === 0) {
-          return { polished: '', changed: false };
-        }
-        // 截断超长文本（防止耗尽 LLM token / 触发速率限制，与 CONFIRM 对齐 10000 字符上限）
-        const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
-        if (!this.callbacks.onPolish) {
-          return { polished: safeText, changed: false };
-        }
-        return await this.callbacks.onPolish(safeText);
-      } catch (error) {
-        logger.error({ error }, 'LLM 润色文本失败');
-        // 润色失败时返回原文（降级，不阻塞用户操作）
-        return { polished: typeof text === 'string' ? text : '', changed: false };
-      }
+      // fallback 通过 closure 捕获 text，润色失败时返回原文（降级，不阻塞用户操作）
+      return this.wrapIpcHandler(
+        'LLM 润色文本失败',
+        { polished: typeof text === 'string' ? text : '', changed: false },
+        async () => {
+          // 参数校验：文本必须是字符串且非空
+          if (typeof text !== 'string' || text.length === 0) {
+            return { polished: '', changed: false };
+          }
+          // 截断超长文本（防止耗尽 LLM token / 触发速率限制，与 CONFIRM 对齐 10000 字符上限）
+          const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
+          if (!this.callbacks.onPolish) {
+            return { polished: safeText, changed: false };
+          }
+          return await this.callbacks.onPolish(safeText);
+        },
+      );
     });
 
     // 切换常驻模式：渲染进程通知主进程抑制/恢复 blur 关闭
     // pinned 模式下强制 alwaysOnTop=true（防止系统事件重置置顶）
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, (_event, pinned: boolean) => {
       this.pinnedMode = typeof pinned === 'boolean' ? pinned : false;
-      if (this.win && !this.win.isDestroyed() && this.pinnedMode) {
-        this.win.setAlwaysOnTop(true);
+      if (this.isWinAlive() && this.pinnedMode) {
+        this.win!.setAlwaysOnTop(true);
       }
       return { success: true };
     });
-
-    // pinnedMode/alwaysOnTop 强耦合合并，浮窗永远 alwaysOnTop=true + skipTaskbar=true，
-    // 不再需要渲染进程切换置顶状态。
   }
 
   /**
@@ -520,12 +560,12 @@ export class QuickInputWindow {
    *   2. textarea 自动高度调整后，浮窗变高可能超出边缘
    */
   private keepWindowInWorkArea(): void {
-    if (!this.win || this.win.isDestroyed()) return;
-    const { x, y } = this.win.getBounds();
+    if (!this.isWinAlive()) return;
+    const { x, y } = this.win!.getBounds();
     const clamped = this.clampPositionToWorkArea(x, y);
     // 仅在位置变化时才更新，避免不必要的重绘
     if (clamped.x !== x || clamped.y !== y) {
-      this.win.setPosition(clamped.x, clamped.y);
+      this.win!.setPosition(clamped.x, clamped.y);
     }
   }
 
@@ -605,8 +645,8 @@ export class QuickInputWindow {
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE);
       this.ipcRegistered = false;
     }
-    if (this.win && !this.win.isDestroyed()) {
-      this.win.destroy();
+    if (this.isWinAlive()) {
+      this.win!.destroy();
     }
     this.win = null;
   }

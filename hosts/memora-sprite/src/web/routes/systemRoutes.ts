@@ -18,7 +18,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger, toError } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
-import { parseJsonBody, sendJson, sendError, safeRoute } from './types.js';
+import { parseJsonBody, sendJson, sendError, safeRoute, parseLimitWithMax } from './types.js';
 import {
   saveLlmConfig,
   isLlmConfigured,
@@ -285,7 +285,7 @@ export async function handleSystemRoute(
       }
       const queryStr = url.split('?')[1] ?? '';
       const queryParams = new URLSearchParams(queryStr);
-      const limit = Math.min(parseInt(queryParams.get('limit') ?? '50', 10) || 50, 200);
+      const limit = parseLimitWithMax(queryParams, 'limit', 50, 200);
       const logs = await ctx.auditManager.readRecent(limit);
       sendJson(res, 200, logs);
       return;
@@ -458,7 +458,8 @@ export async function handleSystemRoute(
       return;
     }
 
-    // 未匹配的路由
-    sendError(res, 404, `未找到系统路由: ${method} ${path}`);
+    // 未匹配的路由：不回显 path 防止用户输入注入到响应体或泄露路由细节
+    logger.info({ method, path }, '[Web System] 未匹配的系统路由');
+    sendError(res, 404, '404 Not Found');
   });
 }

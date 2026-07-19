@@ -9,7 +9,6 @@ import type { Agent } from 'memora';
 import type { Sprite } from '../../sprite/sprite.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import type { BrowserWindow } from 'electron';
-import type { WindowStateManager } from '../windows/windowState.js';
 import type { TrayManager } from '../trayIcon.js';
 
 /**
@@ -64,8 +63,6 @@ export interface IpcContext {
   sprite: Sprite;
   /** 会话存储（历史消息加载） */
   sessionStore: SqliteSessionStore;
-  /** 窗口状态管理器 */
-  windowStateManager: WindowStateManager;
   /** 窗口管理器（获取窗口引用） */
   windowManager: WindowManagerLike;
   /** 托盘管理器（主动提示时脉冲） */

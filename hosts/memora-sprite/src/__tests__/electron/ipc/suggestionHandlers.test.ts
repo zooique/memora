@@ -73,7 +73,6 @@ function createMockCtx(overrides?: {
     } as unknown as IpcContext['agent'],
     sprite: {} as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
-    windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: {} as IpcContext['windowManager'],
     trayManager: null,
     getAbortController: vi.fn(() => null),

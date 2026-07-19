@@ -28,8 +28,8 @@ const STALE_SCORE_THRESHOLD = 0.2;
 /** 重复检测：内容相似度高于此值视为重复 */
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
 
-/** 重复检测：同名记忆视为重复（无需计算相似度） */
-const DUPLICATE_NAME_THRESHOLD = 1; // 同名出现 >= 此值即为重复
+/** 重复检测：同名记忆组达到此数量即视为重复（>=2 表示出现重复） */
+const DUPLICATE_NAME_THRESHOLD = 2;
 
 /** 低质量记忆：content 长度低于此值（字符数） */
 const LOW_QUALITY_CONTENT_LENGTH = 20;
@@ -151,7 +151,7 @@ function detectDuplicates(memories: MemoryListItem[]): DuplicateGroup[] {
   });
 
   for (const [, indices] of nameMap) {
-    if (indices.length >= DUPLICATE_NAME_THRESHOLD && indices.length > 1) {
+    if (indices.length >= DUPLICATE_NAME_THRESHOLD) {
       groups.push({
         type: 'name',
         memories: indices.map((i) => memories[i]!),

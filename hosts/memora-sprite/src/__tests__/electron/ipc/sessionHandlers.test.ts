@@ -140,7 +140,6 @@ function createMockCtx(overrides?: {
     agent: hasAgent ? (overrides!.agent as IpcContext['agent']) : createMockAgent(),
     sprite: {} as IpcContext['sprite'],
     sessionStore: (overrides?.sessionStore ?? createMockSessionStore()) as unknown as IpcContext['sessionStore'],
-    windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: {} as IpcContext['windowManager'],
     trayManager: null,
     getAbortController: overrides?.getAbortController ?? vi.fn(() => null),

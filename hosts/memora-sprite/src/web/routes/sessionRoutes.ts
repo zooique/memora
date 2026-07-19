@@ -75,6 +75,8 @@ export async function handleSessionRoute(
       // - limit ∈ [1, 500]，默认 50（防止一次拉取过多消息耗尽内存）
       // - offset >= 0，默认 0（防止负数绕过分页起始位）
       // 用 parseInt 截断浮点/非数字前缀，Number.isFinite 拦截 NaN/Infinity
+      // 注：此处采用"越界返回默认值"语义（保守），与 memoryRoutes/systemRoutes 的
+      // "越上限截断"语义不同，故不复用 parseLimitWithMax（语义不同的重复不提取，ADR-017）
       const DEFAULT_LIMIT = 50;
       const DEFAULT_OFFSET = 0;
       const MAX_LIMIT = 500;

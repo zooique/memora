@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 默契度控制器 — 从行为信号推导用户与精灵的长期关系
  *
  * 职责：
@@ -23,6 +23,8 @@
 import type { Memory } from 'memora';
 import { logger } from 'memora';
 import type { RapportLevel } from './memoryController.js';
+import { round2 } from '../../shared/numberUtils.js';
+import { describeLevel } from '../../shared/levelUtils.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -119,8 +121,8 @@ export class RapportController {
     const description = this.buildDescription(level, trust, familiarity);
 
     const rapport: RapportState = {
-      trust: Math.round(trust * 100) / 100,
-      familiarity: Math.round(familiarity * 100) / 100,
+      trust: round2(trust),
+      familiarity: round2(familiarity),
       level,
       description,
     };
@@ -183,8 +185,8 @@ export class RapportController {
    * 构建默契度描述文本
    */
   private buildDescription(level: RapportLevel, trust: number, familiarity: number): string {
-    const trustLabel = RapportController.describeLevel(trust);
-    const familiarityLabel = RapportController.describeLevel(familiarity);
+    const trustLabel = describeLevel(trust);
+    const familiarityLabel = describeLevel(familiarity);
 
     switch (level) {
       case 'stranger':
@@ -245,14 +247,5 @@ export class RapportController {
     }
 
     return lines.join('\n');
-  }
-
-  /**
-   * 将 0-1 数值映射为中文等级描述
-   */
-  static describeLevel(value: number): string {
-    if (value < 0.33) return '低';
-    if (value < 0.67) return '中';
-    return '高';
   }
 }

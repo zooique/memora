@@ -37,7 +37,14 @@ export interface FloatWindowCallbacks {
 }
 
 export class FloatWindow {
-  private win!: BrowserWindow;
+  /**
+   * BrowserWindow 实例
+   *
+   * nullable：create() 前为 null，close() 后置 null。
+   * 类型显式 nullable 后，所有访问点必须先做 null 守卫，
+   * 防止 create() 前或 close() 后调用方法抛错。
+   */
+  private win: BrowserWindow | null = null;
   /** 回调集合（由 main.ts 注入） */
   private callbacks: FloatWindowCallbacks;
   /** 窗口状态管理器（查询浮动窗口尺寸/位置） */
@@ -54,7 +61,7 @@ export class FloatWindow {
   async create(): Promise<BrowserWindow> {
     const size = this.windowStateManager.getFloatSize();
 
-    this.win = new BrowserWindow({
+    const win = new BrowserWindow({
       width: size.width,
       height: size.height,
       frame: false,
@@ -65,45 +72,47 @@ export class FloatWindow {
       skipTaskbar: true,
       show: false,
       webPreferences: {
-        // preload 使用 preload-float.cjs（12 API 最小化暴露面，ADR-SP-017 §何时回顾触发）
+        // preload 使用 preloadFloat.cjs（12 API 最小化暴露面，ADR-SP-017 §何时回顾触发）
         // 主 preload.cjs 暴露 266 API，浮动窗口仅需 12 API，独立化剥离高危 API（deleteMemory/installSkill 等）
-        preload: path.join(ELECTRON_DIR, 'preload-float.cjs'),
+        preload: path.join(ELECTRON_DIR, 'preloadFloat.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
       },
     });
+    this.win = win;
 
-    this.windowStateManager.attachFloatWindow(this.win);
+    this.windowStateManager.attachFloatWindow(win);
 
     // 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
-    injectThemeScript(this.win.webContents);
+    injectThemeScript(win.webContents);
 
     // 加载浮动窗口 HTML
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float', 'float.html');
-    await this.win.loadFile(htmlPath);
+    await win.loadFile(htmlPath);
 
     // 安全防护：拦截外部导航和弹窗（applyWindowSecurity 集中维护，ADR-017 枝叶层 2 次提取）
-    applyWindowSecurity(this.win);
+    applyWindowSecurity(win);
 
-    // 关闭时隐藏而非退出
-    this.win.on('close', (e) => {
-      if (!this.win.isDestroyed()) {
+    // 关闭时隐藏而非退出（使用 win 局部变量，避免 TS 在闭包中无法收窄 this.win）
+    win.on('close', (e) => {
+      if (!win.isDestroyed()) {
         e.preventDefault();
-        this.win.hide();
+        win.hide();
       }
     });
 
     // 注册浮动窗口 IPC 处理器
     this.registerFloatIpcHandlers();
 
-    return this.win;
+    return win;
   }
 
   /** 注册浮动窗口专用 IPC 处理器 */
   private registerFloatIpcHandlers(): void {
     // 渲染进程请求移动窗口（拖动时持续调用），渲染进程完全控制拖动逻辑
     ipcMain.on(IPC_CHANNELS.MOVE_FLOAT_WINDOW, (_event, dx: number, dy: number) => {
+      if (!this.win || this.win.isDestroyed()) return;
       const [currentX, currentY] = this.win.getPosition() as [number, number];
       const newX = currentX + dx;
       const newY = currentY + dy;
@@ -112,6 +121,7 @@ export class FloatWindow {
 
     // 渲染进程通知拖动结束，保存最终位置
     ipcMain.on(IPC_CHANNELS.SAVE_FLOAT_POSITION, () => {
+      if (!this.win || this.win.isDestroyed()) return;
       const [x, y] = this.win.getPosition() as [number, number];
       this.windowStateManager.saveFloatPosition(x, y);
     });
@@ -146,7 +156,8 @@ export class FloatWindow {
    * 使用 Electron 原生 Menu，避免在 56x56 浮动窗口内渲染 HTML 菜单（空间不足）
    */
   private showContextMenu(): void {
-    if (this.win.isDestroyed()) return;
+    const win = this.win;
+    if (!win || win.isDestroyed()) return;
 
     const isSilent = this.callbacks.isSilentMode?.() ?? false;
 
@@ -184,13 +195,12 @@ export class FloatWindow {
     ]);
 
     // 在浮动窗口位置弹出菜单（popup 会自动定位）
-    menu.popup({ window: this.win });
+    menu.popup({ window: win });
   }
 
   show(): void {
-    // 添加 isDestroyed 守卫，防止 create() 前或销毁后调用抛错
-    // 对齐 setUnreadCount/broadcastTheme 的守卫模式
-    if (!this.win.isDestroyed()) {
+    // null 守卫 + isDestroyed 守卫，防止 create() 前或 close() 后调用抛错
+    if (this.win && !this.win.isDestroyed()) {
       this.win.show();
     }
   }
@@ -211,24 +221,28 @@ export class FloatWindow {
     ipcMain.removeAllListeners(IPC_CHANNELS.SAVE_FLOAT_POSITION);
     ipcMain.removeAllListeners(IPC_CHANNELS.EXPAND_TO_FULL);
     ipcMain.removeAllListeners(IPC_CHANNELS.FLOAT_CONTEXT_MENU);
-    this.win.destroy();
+    if (this.win && !this.win.isDestroyed()) {
+      this.win.destroy();
+    }
+    // 显式切断引用，允许 GC 回收 BrowserWindow，避免定时器残留触发已销毁窗口方法
+    this.win = null;
   }
 
   /** 更新未读计数气泡 */
   setUnreadCount(count: number): void {
-    if (!this.win.isDestroyed()) {
-      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, count);
-    }
+    // 复用 send() 方法，集中守卫逻辑（ADR-017 枝叶层 2 次提取：4 处 isDestroyed+send 模式）
+    this.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, count);
   }
 
   /**
    * 向浮动窗口发送 IPC 消息（P4-1：消息预览 + 通用扩展点）
    *
-   * 封装 webContents.send，带窗口销毁防护。
-   * 供 chatStreamHandler 等主进程模块向浮动窗口推送数据。
+   * 封装 webContents.send，带 null + 销毁双重防护。
+   * 供 chatStreamHandler 等主进程模块向浮动窗口推送数据，
+   * 也是 setUnreadCount / broadcastTheme / broadcastPresence / broadcastProactivePrompt 的共同守卫入口。
    */
   send(channel: string, ...args: unknown[]): void {
-    if (!this.win.isDestroyed()) {
+    if (this.win && !this.win.isDestroyed()) {
       this.win.webContents.send(channel, ...args);
     }
   }
@@ -240,9 +254,8 @@ export class FloatWindow {
    * 避免两个窗口主题不一致。
    */
   broadcastTheme(theme: 'light' | 'dark'): void {
-    if (!this.win.isDestroyed()) {
-      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST, theme);
-    }
+    // 复用 send() 方法，集中守卫逻辑
+    this.send(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST, theme);
   }
 
   /**
@@ -258,9 +271,8 @@ export class FloatWindow {
    * @param awayDurationMs 离开时长（毫秒），仅 state='away' 时有意义
    */
   broadcastPresence(state: 'present' | 'away', awayDurationMs?: number): void {
-    if (this.win.isDestroyed()) return;
-    // 复用 SPRITE_EVENT 通道，payload 结构与完整窗口接收的一致
-    this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+    // 复用 send() 方法，集中守卫逻辑；复用 SPRITE_EVENT 通道，payload 与完整窗口接收的一致
+    this.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
       type: 'presenceChanged',
       payload: { state, awayDurationMs },
       silent: true, // 在场状态变化不弹通知，仅视觉反馈
@@ -281,9 +293,8 @@ export class FloatWindow {
    * @param isMilestone 是否为里程碑事件
    */
   broadcastProactivePrompt(prompt: string, isMilestone: boolean): void {
-    if (this.win.isDestroyed()) return;
-    // 复用 SPRITE_EVENT 通道，payload 结构与完整窗口接收的一致
-    this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+    // 复用 send() 方法，集中守卫逻辑；复用 SPRITE_EVENT 通道，payload 与完整窗口接收的一致
+    this.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
       type: 'proactivePrompt',
       payload: { prompt, isMilestone, lightweight: false },
       silent: false,

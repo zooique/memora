@@ -150,7 +150,6 @@ function createMockCtx(overrides?: {
     // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
     sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
-    windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: hasWindowManager
       ? (overrides!.windowManager as IpcContext['windowManager'])
       : ({} as IpcContext['windowManager']),

@@ -11,7 +11,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { logger } from 'memora';
+import { logger, toError } from 'memora';
 import { SpriteError, ErrorCode } from '../../sprite/errors.js';
 import type { HostContext } from '../../shared/hostContext.js';
 
@@ -24,14 +24,20 @@ import type { HostContext } from '../../shared/hostContext.js';
  *   - X-Content-Type-Options: nosniff —— 禁止浏览器 MIME 嗅探（防止 text/plain 被当 HTML 执行）
  *   - X-Frame-Options: DENY       —— 禁止页面被 iframe 嵌套（防点击劫持）
  *   - Referrer-Policy: no-referrer —— 不发送 Referer（防止内部 URL/路径泄露给外部）
+ *   - Content-Security-Policy: default-src 'self' —— 默认只允许同源资源
+ *     （style-src 'self' 与 renderer/index.html 的 CSP meta 保持一致，
+ *     详见 security_rules.md §7.1；API/SSE 响应本身不加载资源，CSP 仅作为深度防御）
  *
  * 在 sendJson 中统一注入，覆盖所有 routes 层 JSON 响应；
  * SSE 响应、静态文件响应、入口层 writeHead 各自展开注入（见 static.ts / chatStreamRoutes.ts / server.ts）。
+ * 注意：static.ts 中 SECURITY_HEADERS 是同步副本（避免 web 入口层反向依赖 routes 子层），修改时需同步更新。
  */
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
+  // CSP 收紧：与 renderer/index.html meta 一致，default-src 'self' 拒绝所有跨源资源加载
+  'Content-Security-Policy': "default-src 'self'",
 };
 
 /**
@@ -138,7 +144,8 @@ export async function safeRoute(
   try {
     await fn();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // 统一使用 toError 提取 message，与 chatStreamRoutes / systemRoutes 等保持一致
+    const message = toError(error).message;
     logger.error(`[Web Route] ${context} 失败: ${message}`);
     if (!res.headersSent) {
       sendError(res, 500, `${context}失败: ${message}`);
@@ -161,4 +168,42 @@ export function ensureAgentReady(res: ServerResponse, ctx: HostContext): boolean
     return false;
   }
   return true;
+}
+
+/**
+ * 解析 query 参数中的整数值（统一分页/数值参数校验）
+ *
+ * 消除各路由重复的 `Math.min(parseInt(...) || default, max)` 与 `Number.isFinite` 校验链
+ * （ADR-017 枝叶层 2 次提取：memoryRoutes / sessionRoutes / systemRoutes 共 4+ 处）。
+ *
+ * 校验规则：
+ *   1. 参数缺失 → 返回 defaultValue
+ *   2. parseInt 解析（截断浮点/非数字前缀）
+ *   3. Number.isFinite 拦截 NaN/Infinity
+ *   4. 低于下限 → 返回 defaultValue（负数/0 对 limit 无意义）
+ *   5. 超过上限 → 截断到 maxValue（与原 Math.min 语义一致，用户请求多给截断即可）
+ *
+ * @param queryParams URL 查询参数对象
+ * @param paramName 参数名
+ * @param defaultValue 默认值（参数缺失或非法时返回）
+ * @param maxValue 最大值上限（含，超上限截断到此值）
+ * @param minValue 最小值下限（含，默认 1，limit 场景；offset 场景传 0）
+ * @returns 解析后的整数值
+ */
+export function parseLimitWithMax(
+  queryParams: URLSearchParams,
+  paramName: string,
+  defaultValue: number,
+  maxValue: number,
+  minValue: number = 1,
+): number {
+  const raw = queryParams.get(paramName);
+  if (raw === null) return defaultValue;
+  const parsed = parseInt(raw, 10);
+  // 非法值（NaN/Infinity/低于下限）→ 返回默认值
+  if (!Number.isFinite(parsed) || parsed < minValue) {
+    return defaultValue;
+  }
+  // 超上限 → 截断到上限（与原 Math.min 语义一致）
+  return Math.min(parsed, maxValue);
 }

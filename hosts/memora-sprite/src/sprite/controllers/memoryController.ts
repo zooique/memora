@@ -19,6 +19,8 @@ import { buildReviewData } from './reviewManager.js';
 import type { ReviewData } from './reviewManager.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../shared/truncate.js';
+// 数值精度工具（跨层共享，统一保留两位小数，ADR-017 枝叶层 2 次提取）
+import { round2 } from '../../shared/numberUtils.js';
 
 // ─── 内核类型 re-export（Phase 5.1/5.2：路径追溯 + 邻居查询） ──────
 // 精灵层不重新定义平行结构，直接复用内核 RelationPath/RelationNeighbor（纯数据形态，
@@ -240,9 +242,9 @@ export class MemoryController {
     return isNaN(parsed.getTime()) ? String(date) : parsed.toISOString();
   }
 
-  /** 格式化记忆分数，保留两位小数 */
+  /** 格式化记忆分数，保留两位小数（委托 shared/numberUtils.round2） */
   #formatScore(score: number): number {
-    return Math.round(score * 100) / 100;
+    return round2(score);
   }
 
   /**
@@ -298,7 +300,7 @@ export class MemoryController {
     // 读写统一走 MemoryInspector（writeXxx 前缀区分写操作）
     const memory = this.agent.memory;
     if (!memory) return false;
-    // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
+    // SEC-GAP6-02：使用 getDeletedById 精确查询，避免 listDeleted() 50 条上限
     const deleted = memory.getDeletedById(id);
     if (!deleted) return false;
     memory.writeRestore(id);
@@ -322,7 +324,7 @@ export class MemoryController {
     // 读写统一走 MemoryInspector（writeXxx 前缀区分写操作）
     const memory = this.agent.memory;
     if (!memory) return false;
-    // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
+    // SEC-GAP6-02：使用 getDeletedById 精确查询，避免 listDeleted() 50 条上限
     const deleted = memory.getDeletedById(id);
     if (!deleted) return false;
     memory.writePurge(id);
@@ -700,8 +702,7 @@ export class MemoryController {
    *
    * 用于宿主 UI 关系图交互：编辑关系弹窗 → 修改类型/权重 → 保存。
    *
-   * 修复 T1：原实现仅调用 addRelation（UPSERT），修改 type 时旧三元组不被删除，
-   * 留下孤儿边。现查询 (sourceId, targetId) 下所有现有 type，删除与新 type 不同的旧关系，
+   * 实现：查询 (sourceId, targetId) 下所有现有 type，删除与新 type 不同的旧关系，
    * 再 addRelation 新三元组（同 type 时由 UPSERT 覆盖 weight）。
    *
    * @param sourceId 关系起点

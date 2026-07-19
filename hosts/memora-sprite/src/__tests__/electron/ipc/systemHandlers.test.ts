@@ -92,7 +92,6 @@ function createMockCtx(overrides?: {
       ...overrides?.sprite,
     } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
-    windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: {
       getFloatWindow: vi.fn(() => floatWindow),
     } as unknown as IpcContext['windowManager'],

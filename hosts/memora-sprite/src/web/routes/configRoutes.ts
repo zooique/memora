@@ -18,6 +18,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { logger } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { isValidPersonaName } from '../../shared/inputValidation.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
@@ -138,7 +139,8 @@ export async function handleConfigRoute(
       return;
     }
 
-    // 未匹配的路由
-    sendError(res, 404, `未找到配置路由: ${method} ${path}`);
+    // 未匹配的路由：不回显 path 防止用户输入注入到响应体或泄露路由细节
+    logger.info({ method, path }, '[Web Config] 未匹配的配置路由');
+    sendError(res, 404, '404 Not Found');
   });
 }

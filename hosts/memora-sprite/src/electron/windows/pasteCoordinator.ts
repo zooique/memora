@@ -117,6 +117,34 @@ function isGarbledTitle(title: string): boolean {
 }
 
 /**
+ * 静默降级包装器（ADR-017 枝叶层 2 次提取原则）
+ *
+ * 应用场景：pasteCoordinator 中两处异步操作（resolveAccurateTitle / getCapturedAppName）
+ * 都需要"失败时静默降级返回 fallback + 记 warn 日志"模式，提取为泛型函数消除重复。
+ *
+ * 与 throw 抛错路径的区别：此函数用于"非致命失败"场景——
+ * 标题解析失败仅影响 focus-bar 显示，不应阻断浮窗显示或自动粘贴流程。
+ *
+ * @param fn 待执行的异步操作
+ * @param fallbackValue 失败时返回的降级值（通常为 null）
+ * @param logMsg 日志消息（描述失败的操作，便于排查）
+ * @returns fn 成功时的结果，或失败时的 fallbackValue
+ */
+async function withSilentFallback<T>(
+  fn: () => Promise<T>,
+  fallbackValue: T,
+  logMsg: string,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    // 静默降级：仅记 warn 日志，不阻断调用方流程
+    logger.warn({ error }, logMsg);
+    return fallbackValue;
+  }
+}
+
+/**
  * 自动粘贴协调器
  *
  * 使用方式：
@@ -201,22 +229,22 @@ export class PasteCoordinator {
    * @returns 准确标题（乱码且 PS 成功时），null（非乱码或 PS 失败时，调用方用 nut-js 标题）
    */
   private async resolveAccurateTitle(window: ActiveWindow): Promise<string | null> {
-    try {
+    // 提取局部变量，便于在闭包中保持类型收窄（避免 this.cachedHwnd 在异步前后变化）
+    const hwnd = this.cachedHwnd;
+    return withSilentFallback(async () => {
       const nutJsTitle = await window.title;
       if (!isGarbledTitle(nutJsTitle)) return null;
       // nut-js 标题含 U+FFFD → 编码 bug 触发，用 PowerShell + HWND 修复
       // 直接传入 HWND 消除 GetForegroundWindow 竞态条件
-      if (this.cachedHwnd == null) return null;
-      const psTitle = getWindowTitleViaPS(this.cachedHwnd);
+      if (hwnd == null) return null;
+      const psTitle = getWindowTitleViaPS(hwnd);
       if (psTitle) {
         logger.info({ nutJsTitle, psTitle }, 'nut-js 标题乱码，已通过 PowerShell 修复');
         return psTitle;
       }
       // PowerShell 失败 → 返回 null，调用方降级使用 nut-js 乱码标题
       return null;
-    } catch {
-      return null;
-    }
+    }, null, 'resolveAccurateTitle failed');
   }
 
   /**
@@ -268,11 +296,13 @@ export class PasteCoordinator {
    * @returns 应用名（无捕获窗口时返回 null）
    */
   async getCapturedAppName(): Promise<string | null> {
-    if (!this.previousWindow) return null;
-    try {
+    // 提取局部变量，便于在闭包中保持类型收窄（避免 this.previousWindow 在异步前后变化）
+    const win = this.previousWindow;
+    if (!win) return null;
+    return withSilentFallback(async () => {
       // 优先使用 capturePreviousWindow 时缓存的准确标题（PS 修复后的 UTF-16 标题）
       // 缓存为 null 表示 nut-js 标题非乱码，直接用 nut-js 标题
-      const title = this.cachedAccurateTitle ?? await this.previousWindow.title;
+      const title = this.cachedAccurateTitle ?? await win.title;
 
       // 窗口标题格式约定："{文档} - {应用名}"，取末段
       const parts = title.split(' - ');
@@ -280,8 +310,6 @@ export class PasteCoordinator {
       // noUncheckedIndexedAccess 下 parts[N] 推断为 string | undefined，提取局部变量后守卫
       const appName = parts[parts.length - 1];
       return appName ? appName.trim() : title;
-    } catch {
-      return null;
-    }
+    }, null, 'getCapturedAppName failed');
   }
 }

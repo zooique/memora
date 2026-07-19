@@ -1,15 +1,14 @@
 /**
- * 对话流式输出处理器（从 chatHandlers.ts 提取）
+ * 对话流式输出处理器
  *
  * 职责：
  *   消费 agent.chat() AsyncGenerator，将流式 chunk 通过 IPC 推送到渲染进程。
  *   包含无进展超时兜底、中断处理、错误降级等完整流式输出逻辑。
  *
- * 提取原因：
- *   chatHandlers.ts 应保持"IPC 通道注册"的薄层职责（registerChatHandlers），
- *   流式输出业务逻辑（~240 行）提取到本模块，职责分离便于维护和测试。
+ * 与 chatHandlers.ts 的关系：chatHandlers.ts 仅注册 IPC 通道，
+ * 流式输出业务逻辑集中在本模块，职责分离便于维护和测试。
  *
- * 流式输出架构（方案 §6.2 排雷修正）：
+ * 流式输出架构：
  *   主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk，
  *   不走 IInteraction（IInteraction 仅负责非流式输出）。
  */
@@ -268,7 +267,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   } catch (error) {
     // 超时已在定时器内完成清理与通知，跳过 catch 后续逻辑（finally 仍会执行定时器清理）
     if (streamTimedOut) return;
-    // 通过 AbortController.reason 判断是否用户主动中断（替代共享布尔标志）
+    // 通过 AbortController.reason 判断是否用户主动中断
     const ctrl = ctx.getAbortController();
     const abortReason = ctrl?.signal.reason;
     const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';

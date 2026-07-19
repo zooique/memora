@@ -25,7 +25,7 @@ import type { IpcContext } from './types.js';
 /**
  * 主进程静默模式恢复定时器
  *
- * 替代渲染层的 silentRecoveryTimer，确保托盘模式下也能自动恢复。
+ * 主进程统一管理静默模式恢复，确保托盘模式下也能自动恢复。
  * 当 silentModeExpiresAt 变更时启动/重置此定时器。
  */
 let silentRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,6 +71,46 @@ export function scheduleSilentRecovery(ctx: IpcContext): void {
 }
 
 /**
+ * 应用配置变更的主进程副作用
+ *
+ * 统一处理 CONFIG_UPDATE 和 CONFIG_UPDATE_BATCH 的副作用逻辑：
+ *   - silentMode 切换：同步托盘状态 + 重建菜单（确保勾选状态一致）
+ *   - silentModeExpiresAt 变更：管理主进程恢复定时器
+ *   - shortcuts 变更：热更新全局快捷键（带二次校验）
+ *
+ * 提取理由（ADR-017 枝叶层 2 次提取原则）：
+ *   CONFIG_UPDATE（单 key）与 CONFIG_UPDATE_BATCH（批量）的副作用逻辑完全一致，
+ *   仅判断方式不同（`key === X` vs `'X' in updates`）。统一为 changes 入参，
+ *   单 key 调用时构造 `{ [key]: value }` 传入，消除两处重复实现。
+ *
+ * @param ctx IPC 上下文（提供 trayManager / shortcutManager）
+ * @param changes 已应用的配置变更（key → value），仅包含实际变更的键
+ */
+function applyConfigSideEffects(ctx: IpcContext, changes: Partial<SpriteConfig>): void {
+  // silentMode 切换时同步托盘状态 + 重建菜单（确保勾选状态一致）
+  // 重建托盘菜单以反映静默模式勾选状态（通过设置面板/IPC 切换时菜单不会自动更新）
+  if ('silentMode' in changes) {
+    if (changes.silentMode === true) {
+      ctx.trayManager?.setState('sleeping');
+    } else {
+      ctx.trayManager?.setState('idle');
+    }
+    ctx.trayManager?.updateMenu();
+  }
+
+  // silentModeExpiresAt 变更时管理主进程恢复定时器
+  if ('silentModeExpiresAt' in changes) {
+    scheduleSilentRecovery(ctx);
+  }
+
+  // shortcuts 变更时热更新全局快捷键（全量替换配置）
+  // 二次校验避免 updateConfig/updateConfigBatch 静默忽略非法值时副作用误触发
+  if ('shortcuts' in changes && ctx.shortcutManager && isValidShortcutConfig(changes.shortcuts)) {
+    ctx.shortcutManager.setConfig(changes.shortcuts);
+  }
+}
+
+/**
  * 注册配置与角色 IPC 处理器
  *
  * @param ctx IPC 上下文
@@ -97,29 +137,8 @@ export function registerConfigHandlers(ctx: IpcContext): void {
         return { updated: false, error: `非法配置键：${key}` };
       }
       ctx.sprite.updateConfig(key, value);
-
-      // 静默模式切换时同步托盘状态 + 重建菜单（确保勾选状态一致）
-      if (key === 'silentMode') {
-        if (value === true) {
-          ctx.trayManager?.setState('sleeping');
-        } else {
-          ctx.trayManager?.setState('idle');
-        }
-        // 重建托盘菜单以反映静默模式勾选状态（通过设置面板/IPC 切换时菜单不会自动更新）
-        ctx.trayManager?.updateMenu();
-      }
-
-      // silentModeExpiresAt 变更时管理主进程恢复定时器
-      if (key === 'silentModeExpiresAt') {
-        scheduleSilentRecovery(ctx);
-      }
-
-      // Phase 3.3：shortcuts 变更时热更新全局快捷键（全量替换配置）
-      // 二次校验避免 updateConfig 静默忽略非法值时副作用误触发
-      if (key === 'shortcuts' && ctx.shortcutManager && isValidShortcutConfig(value)) {
-        ctx.shortcutManager.setConfig(value);
-      }
-
+      // 委托统一的副作用处理：构造单 key 变更对象传入 applyConfigSideEffects
+      applyConfigSideEffects(ctx, { [key]: value } as Partial<SpriteConfig>);
       return { updated: true };
     } catch (error) {
       // 错误返回包含 error 字段，与非法配置键路径返回结构一致
@@ -132,11 +151,10 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   /**
    * 批量更新配置（事务性）
    *
-   * 替代 onConfigSave 中 10 次串行 CONFIG_UPDATE 调用。主进程在单个事务内
-   * 完成全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
+   * 主进程在单个事务内完成全部更新（原子性 + 单次持久化 + 副作用去重），
+   * 避免多次串行 CONFIG_UPDATE 调用产生的半更新状态。
    *
-   * 副作用处理：silentMode / silentModeExpiresAt 与 CONFIG_UPDATE handler 保持
-   * 一致——批量应用成功后，按 key 是否出现在 updates 中触发对应副作用。
+   * 副作用处理：委托 applyConfigSideEffects，与 CONFIG_UPDATE handler 行为一致。
    */
   ipcMain.handle(
     IPC_CHANNELS.CONFIG_UPDATE_BATCH,
@@ -150,27 +168,8 @@ export function registerConfigHandlers(ctx: IpcContext): void {
           return result;
         }
 
-        // ─── 主进程侧副作用（与 CONFIG_UPDATE handler 对齐） ───
-        // silentMode 切换时同步托盘状态 + 重建菜单（确保勾选状态一致）
-        if ('silentMode' in updates) {
-          if (updates.silentMode === true) {
-            ctx.trayManager?.setState('sleeping');
-          } else {
-            ctx.trayManager?.setState('idle');
-          }
-          ctx.trayManager?.updateMenu();
-        }
-
-        // silentModeExpiresAt 变更时管理主进程恢复定时器
-        if ('silentModeExpiresAt' in updates) {
-          scheduleSilentRecovery(ctx);
-        }
-
-        // Phase 3.3：shortcuts 变更时热更新全局快捷键（全量替换配置）
-        // 二次校验避免 updateConfigBatch 静默忽略非法值时副作用误触发
-        if ('shortcuts' in updates && ctx.shortcutManager && isValidShortcutConfig(updates.shortcuts)) {
-          ctx.shortcutManager.setConfig(updates.shortcuts);
-        }
+        // 委托统一的副作用处理（与 CONFIG_UPDATE handler 对齐）
+        applyConfigSideEffects(ctx, updates as Partial<SpriteConfig>);
 
         return result;
       } catch (error) {

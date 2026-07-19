@@ -1,4 +1,4 @@
-﻿/**
+/**
  * RapportController 单元测试 — 默契度推导全分支覆盖
  *
  * 测试覆盖：
@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import { RapportController } from '../../../sprite/controllers/rapportController.js';
 import type { RapportControllerOptions, RapportState } from '../../../sprite/controllers/rapportController.js';
+import { describeLevel } from '../../../shared/levelUtils.js';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
 
@@ -364,19 +365,19 @@ describe('RapportController', () => {
 
   describe('describeLevel', () => {
     it('value < 0.33 → 低', () => {
-      expect(RapportController.describeLevel(0)).toBe('低');
-      expect(RapportController.describeLevel(0.32)).toBe('低');
+      expect(describeLevel(0)).toBe('低');
+      expect(describeLevel(0.32)).toBe('低');
     });
 
     it('0.33 ≤ value < 0.67 → 中', () => {
-      expect(RapportController.describeLevel(0.33)).toBe('中');
-      expect(RapportController.describeLevel(0.5)).toBe('中');
-      expect(RapportController.describeLevel(0.66)).toBe('中');
+      expect(describeLevel(0.33)).toBe('中');
+      expect(describeLevel(0.5)).toBe('中');
+      expect(describeLevel(0.66)).toBe('中');
     });
 
     it('value ≥ 0.67 → 高', () => {
-      expect(RapportController.describeLevel(0.67)).toBe('高');
-      expect(RapportController.describeLevel(1)).toBe('高');
+      expect(describeLevel(0.67)).toBe('高');
+      expect(describeLevel(1)).toBe('高');
     });
   });
 

@@ -6,9 +6,9 @@
  *   2. 角色列表展示
  *   3. 角色匹配模式设置
  *
- * 注意：角色切换（switchPersona）由 Agent.switchPersona 公共方法提供，
+ * 角色切换（switchPersona）由 Agent.switchPersona 公共方法提供，
  * 统一走事件链路（refreshPersonaPrefix + emit personaSwitched），
- * 不再由本控制器委托，避免双路径切换导致的事件发散。
+ * 本控制器不参与切换流程，避免双路径切换导致的事件发散。
  */
 import type { Agent, Persona } from 'memora';
 

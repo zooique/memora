@@ -31,13 +31,17 @@ export function injectThemeScript(webContents: WebContents): void {
             }
           } catch (e) {
             // localStorage 不可用（隐私模式/cookie 禁用）时降级为默认浅色主题
+            // 注意：此处必须用 console.warn 而非主进程 logger——
+            // 此脚本通过 executeJavaScript 注入到渲染进程执行，
+            // 渲染进程无 Node.js 上下文（sandbox: true + contextIsolation: true），
+            // 无法访问主进程的 logger 实例
             console.warn('主题读取失败，降级为默认浅色主题', e);
           }
         })();
       `)
       .catch((err: unknown) => {
         // 注入失败时静默降级为默认浅色主题（不影响功能可用性）
-        // P1：补充 logger.debug 提升可观测性，便于生产环境排查主题注入异常
+        // logger.debug 提升可观测性，便于生产环境排查主题注入异常
         logger.debug({ err: toError(err).message }, '主题注入失败，降级为默认浅色主题');
       });
   });

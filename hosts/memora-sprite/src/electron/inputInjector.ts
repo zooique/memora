@@ -24,8 +24,7 @@
  *   8. onAfterConfirm 记忆沉淀
  *   9. Toast + 关闭
  *
- * 注：原 v0 设计包含"第 5 步 Esc（IME 处理）"用于关闭 CJK 输入法候选窗口，
- * 但实际代码从未实现此步骤（审查发现注释与实现不一致）。当前流程不模拟 Esc，
+ * IME 处理说明：当前流程不模拟 Esc 按键关闭 CJK 输入法候选窗口，
  * 依赖用户在呼出浮窗前手动确认 IME 候选词；若未来出现 IME 拦截 Ctrl+V 的反馈，
  * 再评估是否补全 Esc 按键模拟（需在 NutJsDeps.Key 接口添加 Escape 字段）。
  *
@@ -67,15 +66,51 @@ export interface ActiveWindow {
 }
 
 /**
+ * nut-js Window 的最小接口抽象
+ *
+ * 显式声明 windowHandle 字段，避免适配层用 `as unknown as { windowHandle?: number }`
+ * 绕过类型检查（ADR-SP-018 §3）。
+ *
+ * nut-js Window 类内部存储的原生窗口句柄（HWND），用于：
+ *   - 提取 HWND 后可调用 GetWindowTextW 获取正确 Unicode 标题（绕过 GetWindowTextA 编码 bug）
+ *   - 提取 HWND 后可与浮窗 HWND 直接比较，消除 nut-js title 乱码导致的误识别
+ *
+ * 注意：title/region 在 nut-js 中是返回 Promise 的 getter（Spike 验证确认）。
+ * 此接口仅在适配层（getDefaultInputInjector）用于类型断言，业务层使用 ActiveWindow。
+ */
+export interface NutJsWindow {
+  /** 窗口标题（Promise getter，需 await） */
+  readonly title: Promise<string>;
+  /** 窗口区域（Promise getter，需 await） */
+  readonly region: Promise<{ left: number; top: number; width: number; height: number }>;
+  /** 恢复焦点到该窗口 */
+  focus: () => Promise<unknown>;
+  /**
+   * Win32 窗口句柄（HWND）
+   *
+   * nut-js Window 对象内部存储的原生窗口句柄。
+   * 用于绕过 nut-js 的 GetWindowTextA 编码 bug：
+   * 拿到 HWND 后可直接调用 GetWindowTextW 获取正确的 Unicode 标题。
+   * 值为 undefined 时降级到 nut-js 标题（可能乱码）。
+   */
+  readonly windowHandle?: number;
+}
+
+/**
  * nut-js 依赖的最小接口抽象
  *
  * 仅暴露 InputInjector 需要的 3 个 API：
- *   - getActiveWindow：获取前台窗口
+ *   - getActiveWindow：获取前台窗口（返回 ActiveWindow，hwnd 已从 nut-js windowHandle 提取）
  *   - keyboard.pressKey / releaseKey：模拟按键（Ctrl+V）
  *   - Key：按键枚举（LeftControl / V）
+ *
+ * 设计说明（ADR-SP-018 §3）：
+ *   - 适配层（getDefaultInputInjector）将 nut-js Window 转换为 ActiveWindow，
+ *     从 NutJsWindow.windowHandle 提取 hwnd 字段，业务层统一使用 ActiveWindow.hwnd
+ *   - NutJsWindow 接口仅在适配层使用，避免 as unknown as 双重类型转换
  */
 export interface NutJsDeps {
-  /** 获取当前前台窗口 */
+  /** 获取当前前台窗口（返回 ActiveWindow，hwnd 已从 nut-js windowHandle 提取） */
   getActiveWindow: () => Promise<ActiveWindow>;
   /** 键盘模拟 API */
   keyboard: {
@@ -303,20 +338,23 @@ export async function getDefaultInputInjector(): Promise<InputInjector> {
   try {
     // 动态 import：避免测试环境强制加载 native 模块
     const nutJs = await import('@nut-tree-fork/nut-js');
-    // 适配层：nut-js 实际 API 类型与 NutJsDeps 接口存在两处差异，需包装
-    //   1. Window.focus() 返回 Promise<boolean>，接口要求 Promise<void>
+    // 适配层：nut-js 实际 API 类型与 NutJsDeps 接口存在差异，需包装
+    //   1. Window.focus() 返回 Promise<boolean>，ActiveWindow 要求 Promise<void>
     //   2. keyboard.pressKey/releaseKey 返回 Promise<KeyboardClass>（链式），接口要求 Promise<void>
     //      且参数 Key[] 与 NutJsKey(unknown) 不兼容（strictFunctionTypes 下逆变）
+    //   3. nut-js Window 类未公开 windowHandle 类型，用 NutJsWindow 接口类型断言提取
+    //      （STEP3-7：消除 as unknown as { windowHandle?: number } 双重转换）
     defaultInjector = new InputInjector({
       getActiveWindow: async () => {
-        const win = await nutJs.getActiveWindow();
+        // cast nut-js Window 为 NutJsWindow，访问 windowHandle 字段提取 HWND
+        const win = (await nutJs.getActiveWindow()) as unknown as NutJsWindow;
+        // 转换 NutJsWindow → ActiveWindow，提取 windowHandle 为 hwnd 字段
+        // focus 包装为 Promise<void>（nut-js 原返回 Promise<boolean>）
         return {
           title: win.title,
           region: win.region,
           focus: async () => { await win.focus(); },
-          // 提取 nut-js Window 内部的原生窗口句柄（HWND）
-          // 用于绕过 GetWindowTextA 的 GBK→UTF-8 编码 bug
-          hwnd: (win as unknown as { windowHandle?: number }).windowHandle,
+          hwnd: win.windowHandle,
         };
       },
       keyboard: {

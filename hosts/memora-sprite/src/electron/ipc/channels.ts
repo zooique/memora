@@ -107,8 +107,8 @@ export const IPC_CHANNELS = {
   /**
    * 批量更新精灵配置（事务性）
    *
-   * 替代 onConfigSave 中 10 次串行 CONFIG_UPDATE 调用，主进程在单个事务内
-   * 完成全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
+   * 主进程在单个事务内完成全部更新（原子性 + 单次持久化 + 副作用去重），
+   * 避免多次串行 CONFIG_UPDATE 调用产生的半更新状态。
    */
   CONFIG_UPDATE_BATCH: 'config-update-batch',
 
@@ -280,7 +280,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 用户主动中断（点击停止按钮）或内核 yield aborted chunk 时推送，
    * 携带 messageId 和中断原因。渲染层在原助手气泡内嵌入中断标记，
    * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念），
-   * 替代旧的居中系统消息方案（体验割裂）。
+   * 提供更连贯的中断体验（相比居中系统消息方案）。
    */
   SPRITE_STREAM_ABORTED: 'sprite-stream-aborted',
 
@@ -344,7 +344,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   QUICK_RECORD_TRIGGER: 'quick-record-trigger',
   /** recall-memory 触发：通知渲染进程切换到记忆面板 */
   RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
-  /** 快速输入浮窗被 show() 调用（通知渲染进程清空输入框，替代 focus 事件） */
+  /** 快速输入浮窗被 show() 调用（通知渲染进程清空输入框） */
   QUICK_INPUT_SHOW: 'quick-input-show',
   /** 浮窗聚焦变化通知（blur→null，focus→应用名；渲染进程联动聚焦提示栏 + Tab 启用/禁用） */
   QUICK_INPUT_FOCUS_CHANGE: 'quick-input-focus-change',

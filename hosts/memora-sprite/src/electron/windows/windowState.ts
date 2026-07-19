@@ -105,7 +105,7 @@ export class WindowStateManager {
    * 与 transition 的区别：不隐藏其他窗口（创建后均为 hidden），
    * 仅根据当前 state 和 showFloatBubble 显示对应窗口。
    *
-   * 添加 isDestroyed 守卫，对齐 transition 的 showTargetWindow 守卫模式。
+   * isDestroyed 守卫与 transition 的 showTargetWindow 守卫模式保持一致。
    */
   showInitial(): void {
     if (this.state === 'full' && this.fullWindow && !this.fullWindow.isDestroyed()) {

@@ -29,8 +29,9 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HostContext } from '../../shared/hostContext.js';
-import { toError } from 'memora';
-import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
+import { toError, logger } from 'memora';
+import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady, parseLimitWithMax } from './types.js';
+import { isValidId } from '../../shared/inputValidation.js';
 import { MS_PER_DAY } from '../../sprite/constants.js';
 
 /**
@@ -89,12 +90,12 @@ export async function handleMemoryRoute(
     // query: memoryId（必填）、maxDepth（默认 5）、direction（默认 incoming）
     if (method === 'GET' && subPath === '/relation-path') {
       const memoryId = queryParams.get('memoryId') ?? '';
-      // 参数校验：memoryId 非空且长度 ≤ 500（与 IPC handler isValidId 一致）
-      if (!memoryId || memoryId.length > 500) {
+      // 参数校验：复用 shared/inputValidation 的 isValidId，与 IPC handler 行为一致
+      if (!isValidId(memoryId)) {
         sendError(res, 400, 'memoryId 必填且长度不超过 500');
         return;
       }
-      const maxDepth = Math.min(parseInt(queryParams.get('maxDepth') ?? '5', 10) || 5, 10);
+      const maxDepth = parseLimitWithMax(queryParams, 'maxDepth', 5, 10);
       // direction 运行时校验：非法值降级为 'incoming'（避免 as 断言绕过类型检查）
       const rawDirection = queryParams.get('direction') ?? 'incoming';
       const direction: 'incoming' | 'outgoing' | 'both' =
@@ -108,11 +109,11 @@ export async function handleMemoryRoute(
     // query: memoryId（必填）、limit（默认 10）
     if (method === 'GET' && subPath === '/relation-neighbors') {
       const memoryId = queryParams.get('memoryId') ?? '';
-      if (!memoryId || memoryId.length > 500) {
+      if (!isValidId(memoryId)) {
         sendError(res, 400, 'memoryId 必填且长度不超过 500');
         return;
       }
-      const limit = Math.min(parseInt(queryParams.get('limit') ?? '10', 10) || 10, 50);
+      const limit = parseLimitWithMax(queryParams, 'limit', 10, 50);
       const neighbors = ctx.sprite.getRelationNeighbors(memoryId, limit);
       sendJson(res, 200, neighbors);
       return;
@@ -140,9 +141,10 @@ export async function handleMemoryRoute(
         return;
       }
       // 循环调用 deleteMemory（与 IPC handler 实现一致，Sprite 无 deleteMemoriesBatch 方法）
+      // ID 校验统一使用 isValidId，过滤非法值
       let deleted = 0;
       for (const id of body.ids) {
-        if (id && id.length <= 500) {
+        if (isValidId(id)) {
           if (ctx.sprite.deleteMemory(id)) deleted++;
         }
       }
@@ -206,7 +208,8 @@ export async function handleMemoryRoute(
         && subPath !== '/health' && subPath !== '/review'
         && !subPath.startsWith('/relation')) {
       const id = subPath.slice(1); // 去除前导 /（subPath.length > 1 已保证 id 非空）
-      if (id.length > 500) {
+      // ID 长度校验统一使用 isValidId，超长时返回 null（与 IPC 行为一致）
+      if (!isValidId(id)) {
         sendJson(res, 200, { memory: null });
         return;
       }
@@ -219,7 +222,7 @@ export async function handleMemoryRoute(
     // 注意：必须排除 /trash/ 前缀，否则会拦截回收站彻底删除路由
     if (method === 'DELETE' && subPath.startsWith('/') && subPath.length > 1 && !subPath.startsWith('/trash/')) {
       const id = subPath.slice(1); // 去除前导 /（subPath.length > 1 已保证 id 非空）
-      if (id.length > 500) {
+      if (!isValidId(id)) {
         sendJson(res, 200, { deleted: false });
         return;
       }
@@ -233,8 +236,8 @@ export async function handleMemoryRoute(
     // GET /api/memories/trash — 列出回收站记忆
     // 返回格式与 Electron IPC MEMORIES_LIST_DELETED 一致：{ memories: [] }
     if (method === 'GET' && subPath === '/trash') {
-      const limit = parseInt(queryParams.get('limit') ?? '50', 10);
-      const memories = ctx.sprite.listDeletedMemories(Math.min(limit, 200));
+      const limit = parseLimitWithMax(queryParams, 'limit', 50, 200);
+      const memories = ctx.sprite.listDeletedMemories(limit);
       sendJson(res, 200, { memories });
       return;
     }
@@ -242,7 +245,7 @@ export async function handleMemoryRoute(
     // POST /api/memories/trash/restore — 恢复回收站记忆
     if (method === 'POST' && subPath === '/trash/restore') {
       const body = await parseJsonBody<{ id: string }>(req);
-      if (!body?.id || body.id.length > 500) {
+      if (!body?.id || !isValidId(body.id)) {
         sendError(res, 400, 'id 必填且长度不超过 500');
         return;
       }
@@ -265,7 +268,7 @@ export async function handleMemoryRoute(
     // 与 Electron IPC MEMORIES_PURGE 镜像，渲染层调用 purgeMemory(id)
     if (method === 'DELETE' && subPath.startsWith('/trash/')) {
       const id = decodeURIComponent(subPath.slice('/trash/'.length));
-      if (!id || id.length > 500) {
+      if (!isValidId(id)) {
         sendError(res, 400, 'id 必填且长度不超过 500');
         return;
       }
@@ -326,7 +329,8 @@ export async function handleMemoryRoute(
       return;
     }
 
-    // 未匹配的路由
-    sendError(res, 404, `未找到记忆路由: ${method} ${subPath}`);
+    // 未匹配的路由：不回显 path 防止用户输入注入到响应体或泄露路由细节
+    logger.info({ method, subPath }, '[Web Memory] 未匹配的记忆路由');
+    sendError(res, 404, '404 Not Found');
   });
 }

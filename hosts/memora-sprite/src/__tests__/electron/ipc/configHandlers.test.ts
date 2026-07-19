@@ -75,7 +75,6 @@ function createMockCtx(overrides?: {
       ...overrides?.sprite,
     } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
-    windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: {} as IpcContext['windowManager'],
     trayManager: overrides?.trayManager ?? null,
     // Phase 3.3：快捷键管理器 mock（默认 null，需要测试 shortcuts 副作用时注入）

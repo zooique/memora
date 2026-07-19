@@ -648,6 +648,7 @@ describe('handleConfigRoute', () => {
     await handleConfigRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(404);
-    expect(JSON.parse(res.body).error).toContain('未找到配置路由');
+    // 不回显 path 防止注入/泄露路由结构，仅返回通用 404 文案
+    expect(JSON.parse(res.body).error).toBe('404 Not Found');
   });
 });

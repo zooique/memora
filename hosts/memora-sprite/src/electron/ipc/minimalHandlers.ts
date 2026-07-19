@@ -26,7 +26,7 @@ import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { loadSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
 import { saveLlmConfig, reinitAgent, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
-import { isValidContent, isNonEmptyString } from './inputValidation.js';
+import { isValidContent, isNonEmptyString, isValidLlmConfigInput } from './inputValidation.js';
 // 跨进程 LLM 错误分类器：将底层错误映射为用户友好提示（onboarding + 测试连接共用）
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
 // AppRuntime / MinimalIpcState / MinimalIpcCallbacks 真理源在 ./types.ts
@@ -147,8 +147,8 @@ export function registerMinimalIpcHandlers(
       _event,
       llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
     ) => {
-      // 校验 LLM 配置参数长度，防止超大值传入
-      if (!llmConfig || typeof llmConfig.provider !== 'string' || !isValidContent(llmConfig.apiKey, 1000)) {
+      // 校验 LLM 配置参数：provider 类型 + apiKey 长度（STEP3-13 提取到 isValidLlmConfigInput）
+      if (!isValidLlmConfigInput(llmConfig)) {
         return { success: false, error: '配置参数无效' };
       }
       try {
@@ -236,8 +236,8 @@ export function registerMinimalIpcHandlers(
       },
       embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
     ) => {
-      // 校验 LLM 配置参数长度，防止超大值传入
-      if (!llmConfig || typeof llmConfig.provider !== 'string' || !isValidContent(llmConfig.apiKey, 1000)) {
+      // 校验 LLM 配置参数：provider 类型 + apiKey 长度（STEP3-13 提取到 isValidLlmConfigInput）
+      if (!isValidLlmConfigInput(llmConfig)) {
         return { success: false, error: '配置参数无效' };
       }
       try {
@@ -433,7 +433,7 @@ export function registerMinimalIpcHandlers(
           currentAgent.setBackgroundProvider(null);
         }
 
-        // H-0717-3：同步更新 lastProvider 缓存，避免后续 saveLlmConfig 误判需要 reinit
+        // 同步更新 lastProvider 缓存，避免后续 saveLlmConfig 误判需要 reinit
         // 场景：用户运行时切换 Provider 后，再修改 temperature 等非关键字段时，
         // reinit 判断逻辑会比较 llmConfig.provider 与 state.lastProvider，
         // 若缓存未同步，会误判为需要 reinit（实际 Agent 已切换完成）。

@@ -175,9 +175,6 @@ export class PerceptionCoordinator {
    *   - refreshBeforeChat：写路径，有副作用（更新 lastAffect/lastRapport 缓存 + 发射事件 + 注入 prompt）
    *   - getSnapshot：读路径，不修改 PerceptionCoordinator 自身状态，不发射事件，不注入 prompt
    *
-   * header 注释订正：原声称"无副作用"，但实际调用 affectController.updateOptions /
-   * rapportController.updateOptions 修改了子控制器配置。现修正注释为"不修改 Coordinator 自身状态"。
-   *
    * @returns 感知快照，Agent 未就绪或无记忆时返回 null
    */
   getSnapshot(): {
@@ -434,8 +431,7 @@ export class PerceptionCoordinator {
     if (keyMemories.length === 0) return '';
 
     // 生成时间间隔描述
-    // [SYNC-SPRITE-WELCOMEBACK] sprite.welcomeBackRecall 有相似的时长格式化，
-    // 两处语义不同（此处是"对话间隔"，彼处是"离开时长"），不强行提取公共方法
+    // 时长格式化：与 sprite.welcomeBackRecall 语义不同（此处是"对话间隔"，彼处是"离开时长"），保持独立
     const gapHours = Math.round(gapMs / MS_PER_HOUR);
     const gapText = gapMs < MS_PER_DAY
       ? `${gapHours} 小时`

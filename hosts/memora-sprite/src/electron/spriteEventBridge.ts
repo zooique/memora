@@ -26,6 +26,8 @@ import type { WindowManager } from './windows/windowManager.js';
 import type { WindowStateManager } from './windows/windowState.js';
 import type { TrayManager } from './trayIcon.js';
 import { PROACTIVE_TRAY_RESET_MS } from '../sprite/constants.js';
+// isFullWindowAccessible 集中守卫完整窗口可见性判断（ADR-017 枝叶层 2 次提取）
+import { isFullWindowAccessible } from './windows/windowUtils.js';
 
 /**
  * 精灵事件桥依赖
@@ -91,13 +93,8 @@ function sendSpriteEventIfVisible(
   silent = false,
 ): void {
   const fullWindow = deps.windowManager.getFullWindow();
-  // 同时检查 isVisible 和 !isMinimized：macOS 上最小化的窗口 isVisible 可能仍为 true
-  if (
-    fullWindow &&
-    !fullWindow.isDestroyed() &&
-    fullWindow.isVisible() &&
-    !fullWindow.isMinimized()
-  ) {
+  // 委托 isFullWindowAccessible：集中守卫逻辑（ADR-017 枝叶层 2 次提取）
+  if (isFullWindowAccessible(fullWindow)) {
     fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
       type,
       payload,

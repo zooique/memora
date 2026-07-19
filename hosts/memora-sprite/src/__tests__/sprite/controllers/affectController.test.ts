@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AffectController } from '../../../sprite/controllers/affectController.js';
 import type { AffectState } from '../../../sprite/controllers/affectController.js';
+import { describeLevel } from '../../../shared/levelUtils.js';
 import type { Memory, Persona } from 'memora';
 import { setLogger } from 'memora';
 import type { ILogger } from 'memora';
@@ -69,30 +70,30 @@ beforeEach(() => {
 
 describe('describeLevel', () => {
   it('value < 0.33 返回"低"', () => {
-    expect(AffectController.describeLevel(0)).toBe('低');
-    expect(AffectController.describeLevel(0.1)).toBe('低');
-    expect(AffectController.describeLevel(0.32)).toBe('低');
+    expect(describeLevel(0)).toBe('低');
+    expect(describeLevel(0.1)).toBe('低');
+    expect(describeLevel(0.32)).toBe('低');
   });
 
   it('0.33 <= value < 0.67 返回"中"', () => {
-    expect(AffectController.describeLevel(0.33)).toBe('中');
-    expect(AffectController.describeLevel(0.5)).toBe('中');
-    expect(AffectController.describeLevel(0.66)).toBe('中');
+    expect(describeLevel(0.33)).toBe('中');
+    expect(describeLevel(0.5)).toBe('中');
+    expect(describeLevel(0.66)).toBe('中');
   });
 
   it('value >= 0.67 返回"高"', () => {
-    expect(AffectController.describeLevel(0.67)).toBe('高');
-    expect(AffectController.describeLevel(0.8)).toBe('高');
-    expect(AffectController.describeLevel(1)).toBe('高');
+    expect(describeLevel(0.67)).toBe('高');
+    expect(describeLevel(0.8)).toBe('高');
+    expect(describeLevel(1)).toBe('高');
   });
 
   it('value > 1 仍返回"高"（超出范围不崩溃）', () => {
-    expect(AffectController.describeLevel(1.5)).toBe('高');
-    expect(AffectController.describeLevel(999)).toBe('高');
+    expect(describeLevel(1.5)).toBe('高');
+    expect(describeLevel(999)).toBe('高');
   });
 
   it('负值返回"低"（超出范围不崩溃）', () => {
-    expect(AffectController.describeLevel(-0.5)).toBe('低');
+    expect(describeLevel(-0.5)).toBe('低');
   });
 });
 

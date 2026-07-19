@@ -18,7 +18,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-// 模拟 logger 避免 safeRoute 内部错误日志污染测试输出
+// 模拟 logger 与 toError 避免 safeRoute 内部错误日志/错误转换污染测试输出
 vi.mock('memora', () => {
   const mockLogger = {
     error: vi.fn(),
@@ -26,7 +26,12 @@ vi.mock('memora', () => {
     info: vi.fn(),
     debug: vi.fn(),
   };
-  return { logger: mockLogger };
+  // toError mock：与内核 toError 行为一致，提取 message 字段
+  const toError = (e: unknown): { message: string } => {
+    if (e instanceof Error) return { message: e.message };
+    return { message: String(e) };
+  };
+  return { logger: mockLogger, toError };
 });
 
 // 导入被测函数
@@ -205,10 +210,11 @@ describe('Web 路由工具函数', () => {
       expect(res.writeHead).toHaveBeenCalledWith(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': Buffer.byteLength(JSON.stringify(data)),
-        // 安全响应头统一注入（nosniff / DENY / no-referrer）
+        // 安全响应头统一注入（nosniff / DENY / no-referrer / CSP default-src 'self'）
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': "default-src 'self'",
       });
     });
 

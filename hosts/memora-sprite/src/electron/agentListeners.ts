@@ -18,12 +18,13 @@
  */
 
 import type { Agent } from 'memora';
-// 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
 import { logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { AuditManager } from '../sprite/audit/auditManager.js';
 import { CONFIRMATION_TIMEOUT_MS } from '../sprite/constants.js';
+// isFullWindowAccessible 集中守卫完整窗口可见性判断（ADR-017 枝叶层 2 次提取）
+import { isFullWindowAccessible } from './windows/windowUtils.js';
 
 /**
  * Agent 监听器依赖
@@ -58,13 +59,8 @@ export function setupConfigSuggestionListener(activeAgent: Agent, deps: AgentLis
 
   config.onConfigSuggestion((suggestion) => {
     const fullWindow = deps.windowManager.getFullWindow();
-    // 复用可见性检查模式
-    if (
-      fullWindow &&
-      !fullWindow.isDestroyed() &&
-      fullWindow.isVisible() &&
-      !fullWindow.isMinimized()
-    ) {
+    // 委托 isFullWindowAccessible：集中守卫完整窗口可见性判断（ADR-017 枝叶层 2 次提取）
+    if (isFullWindowAccessible(fullWindow)) {
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, {
         type: suggestion.type,
         name: suggestion.name,

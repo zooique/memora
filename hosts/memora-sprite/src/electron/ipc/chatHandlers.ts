@@ -5,10 +5,9 @@
  *   1. 注册 USER_INPUT 通道（委托到 chatStreamHandler.handleUserInput）
  *   2. 注册 CHAT_ABORT 通道（AbortController + reason 携带中断原因）
  *
- * 流式输出业务逻辑（handleUserInput ~240 行）已提取到
- * chatStreamHandler.ts，本文件回归"IPC 通道注册"的薄层职责。
+ * 本文件仅负责 IPC 通道注册，流式输出业务逻辑由 chatStreamHandler.ts 承担。
  *
- * 流式输出架构（方案 §6.2 排雷修正）：
+ * 流式输出架构：
  *   主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk，
  *   不走 IInteraction（IInteraction 仅负责非流式输出）。
  */
@@ -40,15 +39,14 @@ export function registerChatHandlers(ctx: IpcContext): void {
 
   /** 中断当前对话 */
   ipcMain.handle(IPC_CHANNELS.CHAT_ABORT, async () => {
-    // 使用 AbortController.reason 携带中断原因，替代共享布尔标志
+    // 使用 AbortController.reason 携带中断原因
     const ctrl = ctx.getAbortController();
     if (ctrl) {
       // 使用 DOMException 模拟标准 AbortController.abort(reason) 行为
       // reason='user' 标识用户主动中断，catch 块据此发送系统消息
       ctrl.abort(new DOMException('用户手动停止', 'AbortError'));
       // 不在此处 setAbortController(null)：catch 块需通过 ctrl.signal.reason 判断是否用户主动中断。
-      // 旧实现立即清空引用，导致 catch 块获取的 ctrl 为 null，wasUserAborted 永远为 false，
-      // 用户取消后会收到误导性的"对话出错"提示。清理统一由 finally 块执行。
+      // 清理统一由 finally 块执行。
     }
     return { aborted: true };
   });
