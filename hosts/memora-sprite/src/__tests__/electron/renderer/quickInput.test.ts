@@ -4,8 +4,9 @@
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - handleShow：状态重置 / 剪贴板预填 / 无预设分支
- * - handleConfirm：成功 / 失败 / 竞态防护
+ * - handleShow：状态重置 / 剪贴板预填 / 敏感检测 / 无预设分支
+ * - handleConfirm：成功 / 失败 / 常驻 / 默认 / 竞态防护
+ * - togglePinnedMode：手动切换 + localStorage 持久化 + IPC 通知
  * - toggleExpand：手动切换 + localStorage 持久化
  * - updateFocusIndicator：有聚焦 / 无聚焦 + Tab 启用/禁用联动
  * - handleTab：tabEnabled=false 时不触发提交
@@ -90,6 +91,7 @@ function createMockApi(): QuickInputElectronAPI {
     removeQuickInputShowListener: vi.fn(),
     boostMemory: vi.fn().mockResolvedValue(undefined),
     showMemory: vi.fn().mockResolvedValue({ memory: null }),
+    setPinnedMode: vi.fn().mockResolvedValue({ success: true }),
     onFocusChange: vi.fn(),
   };
 }
@@ -103,6 +105,7 @@ async function createController(opts?: {
   api: QuickInputElectronAPI;
   inputField: HTMLTextAreaElement;
   completionList: HTMLElement;
+  pinnedToggle: HTMLElement;
   expandToggle: HTMLElement;
   polishToggle: HTMLElement;
   footerEl: HTMLElement;
@@ -130,6 +133,9 @@ async function createController(opts?: {
           <button id="expand-toggle" class="expand-toggle" title="展开输入框">
             <svg><use href="#icon-expand"/></svg>
           </button>
+          <button id="pinned-toggle" class="pinned-toggle" title="常驻模式">
+            <svg><use href="#icon-unlock"/></svg>
+          </button>
           <button id="polish-toggle" class="polish-toggle" title="润色">
             <svg><use href="#icon-polish"/></svg>
           </button>
@@ -146,6 +152,8 @@ async function createController(opts?: {
     inputField.value = opts.inputValue;
   }
   const completionList = document.getElementById('completion-list')!;
+  // footer 内的常驻模式切换按钮
+  const pinnedToggle = document.getElementById('pinned-toggle')!;
   const expandToggle = document.getElementById('expand-toggle')!;
   const polishToggle = document.getElementById('polish-toggle')!;
   const footerEl = document.getElementById('quick-input-footer')!;
@@ -156,6 +164,7 @@ async function createController(opts?: {
   const controller = new QuickInputController({
     inputField,
     completionList,
+    pinnedToggle,
     expandToggle,
     polishToggle,
     footerEl,
@@ -166,7 +175,7 @@ async function createController(opts?: {
   });
   controller.init();
 
-  return { controller, api, inputField, completionList, expandToggle, polishToggle, footerEl, counterEl, focusAppNameEl, closeBtnEl };
+  return { controller, api, inputField, completionList, pinnedToggle, expandToggle, polishToggle, footerEl, counterEl, focusAppNameEl, closeBtnEl };
 }
 
 // ─── 测试 ──────────────────────────────────────────────────
@@ -195,7 +204,7 @@ describe('QuickInputController', () => {
         | undefined;
 
       // 触发 show（无预设）
-      showHandler?.({ clipboardText: null });
+      showHandler?.({ clipboardText: null, isSensitive: false });
 
       expect(inputField.value).toBe('');
       expect(inputField.readOnly).toBe(false);
@@ -209,12 +218,27 @@ describe('QuickInputController', () => {
         | ((payload: unknown) => void)
         | undefined;
 
-      showHandler?.({ clipboardText: '预填内容' });
+      showHandler?.({ clipboardText: '预填内容', isSensitive: false });
 
       expect(inputField.value).toBe('预填内容');
       // 选中全文：selectionStart=0, selectionEnd=length
       expect(inputField.selectionStart).toBe(0);
       expect(inputField.selectionEnd).toBe(4);
+    });
+
+    it('敏感内容自动启用常驻模式', async () => {
+      const { pinnedToggle, api } = await createController();
+      const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+        | ((payload: unknown) => void)
+        | undefined;
+
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
+
+      showHandler?.({ clipboardText: null, isSensitive: true });
+
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
+      // 通知主进程进入 pinned 模式（持久 suppressBlurClose）
+      expect(api.setPinnedMode).toHaveBeenCalledWith(true);
     });
 
     it('show 时递增 submitGeneration 使过期 IPC 失效', async () => {
@@ -224,8 +248,8 @@ describe('QuickInputController', () => {
         | undefined;
 
       // 触发 show 两次
-      showHandler?.({ clipboardText: null });
-      showHandler?.({ clipboardText: null });
+      showHandler?.({ clipboardText: null, isSensitive: false });
+      showHandler?.({ clipboardText: null, isSensitive: false });
 
       // 不应崩溃（代次递增正常）
       expect(true).toBe(true);
@@ -260,8 +284,8 @@ describe('QuickInputController', () => {
       // 仅刷新微任务（confirmQuickInput Promise 解析），不推进 Toast 定时器
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(api.confirmQuickInput).toHaveBeenCalledWith('测试输入');
-      // Toast 文本样式应用
+      expect(api.confirmQuickInput).toHaveBeenCalledWith('测试输入', false);
+      // 普通模式：Toast 文本
       expect(inputField.classList.contains('copy-toast')).toBe(true);
 
       // 推进 Toast 定时器后输入框重置（连续输入）
@@ -299,6 +323,30 @@ describe('QuickInputController', () => {
       await vi.runAllTimersAsync();
     });
 
+    it('常驻模式提交后清空输入准备下次输入', async () => {
+      const { inputField, api, pinnedToggle } = await createController({ inputValue: '常驻输入' });
+
+      // 手动启用常驻模式
+      pinnedToggle.click();
+
+      const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
+      inputField.dispatchEvent(tabEvent);
+      const tabUpEvent = new KeyboardEvent('keyup', { key: 'Tab', bubbles: true });
+      inputField.dispatchEvent(tabUpEvent);
+
+      await vi.runAllTimersAsync();
+
+      expect(api.confirmQuickInput).toHaveBeenCalledWith('常驻输入', true);
+
+      // 推进 Toast 定时器
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+
+      // 常驻模式：输入框应被清空，准备下次输入
+      expect(inputField.value).toBe('');
+      expect(inputField.disabled).toBe(false);
+    });
+
     it('确认失败时恢复原文并聚焦', async () => {
       const { inputField, api } = await createController({ inputValue: '原文' });
       (api.confirmQuickInput as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -315,6 +363,47 @@ describe('QuickInputController', () => {
 
       expect(inputField.value).toBe('原文');
       expect(inputField.disabled).toBe(false);
+    });
+  });
+
+  // ─── togglePinnedMode ──────────────────────────────────
+
+  describe('togglePinnedMode', () => {
+    it('手动切换常驻模式并持久化到 localStorage', async () => {
+      const { pinnedToggle } = await createController();
+
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
+
+      pinnedToggle.click();
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
+      expect(safeSet).toHaveBeenCalledWith('memora-quick-input-pinned', '1');
+
+      pinnedToggle.click();
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
+      expect(safeSet).toHaveBeenCalledWith('memora-quick-input-pinned', '0');
+    });
+
+    it('开启常驻模式时通知主进程', async () => {
+      const { pinnedToggle, api } = await createController();
+
+      pinnedToggle.click();
+
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
+      expect(api.setPinnedMode).toHaveBeenCalledWith(true);
+    });
+
+    it('关闭常驻模式时通知主进程', async () => {
+      const { pinnedToggle, api } = await createController();
+
+      // 先开启
+      pinnedToggle.click();
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
+
+      // 再关闭
+      pinnedToggle.click();
+
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
+      expect(api.setPinnedMode).toHaveBeenCalledWith(false);
     });
   });
 
@@ -409,7 +498,7 @@ describe('QuickInputController', () => {
 
       await vi.runAllTimersAsync();
 
-      expect(api.confirmQuickInput).toHaveBeenCalledWith('测试');
+      expect(api.confirmQuickInput).toHaveBeenCalledWith('测试', false);
     });
   });
 

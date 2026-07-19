@@ -11,7 +11,10 @@
  * ⚠️ Sandbox 兼容性：
  * Electron sandbox: true 要求 preload 是单个 CommonJS 文件，不能有外部模块的运行时导入。
  * IPC 通道常量内联到本文件，与 channels.ts 保持同步。
- * 通过 tsconfig.preload.json 编译为 CommonJS 格式的 preloadQuickInput.cjs.
+ * 通过 tsconfig.preload.json 编译为 CommonJS 格式的 preloadQuickInput.cjs。
+ *
+ * pinnedMode/alwaysOnTop 强耦合：浮窗永远 alwaysOnTop=true + skipTaskbar=true，
+ * 不暴露独立的 setAlwaysOnTop API。
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
@@ -28,6 +31,8 @@ const IPC_CHANNELS = {
   QUICK_INPUT_RESIZE: 'quick-input-resize',
   MOVE_QUICK_INPUT: 'move-quick-input',
   QUICK_INPUT_POLISH: 'quick-input-polish',
+  /** 切换常驻模式（pinned=true 持久钉住浮窗） */
+  QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
   MEMORIES_SEARCH: 'memories-search',
   SESSION_SEARCH: 'session-search',
   /** 提升记忆 score（L2 采纳反哺内核） */
@@ -122,9 +127,9 @@ const quickInputAPI = {
   showMemory: (id: string): Promise<{ memory: MemoryDetail }> =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
 
-  /** 确认输入（paste 优先，降级走复制 + Toast） */
-  confirmQuickInput: (text: string): Promise<ConfirmResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text),
+  /** 确认输入（paste + pinned 模式持久抑制 blur） */
+  confirmQuickInput: (text: string, pinnedMode?: boolean): Promise<ConfirmResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, pinnedMode),
 
   /** 关闭浮窗 */
   closeQuickInput: (): Promise<void> =>
@@ -141,6 +146,10 @@ const quickInputAPI = {
   /** LLM 文本润色（主进程调用 agent.polish?.polish()） */
   polishQuickInput: (text: string): Promise<PolishResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_POLISH, text),
+
+  /** 切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
+  setPinnedMode: (pinned: boolean): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
 
   /** 监听浮窗 show 事件（替代 window focus，避免 Alt+Tab 误清空） */
   onQuickInputShow: (cb: (payload: QuickInputShowPayload) => void): void => {

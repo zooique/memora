@@ -26,11 +26,13 @@
        使用 class="svg-sprite"（base.css 已定义 .svg-sprite{display:none}）而非内联 style，
        避免违反 CSP style-src 'self'（与主窗口 index.html 一致）。 -->
   <svg xmlns="http://www.w3.org/2000/svg" class="svg-sprite" aria-hidden="true">
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 11V7a4 4 0 018 0v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="icon-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 11V7a4 4 0 017-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
     <!-- 展开按钮图标（chevron-down）：紧凑态指向下（可展开），展开态 CSS 旋转 180° 指向上（可收起） -->
     <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <!-- 润色按钮图标（sparkle/stars）：LLM 润色文本 -->
     <symbol id="icon-sparkle" viewBox="0 0 24 24"><path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M7 14l.5 2L9 16.5l-1.5.5L7 19l-.5-2L5 16.5l1.5-.5L7 14z" fill="currentColor"/><path d="M17 18l.5 2L19 20.5l-1.5.5L17 23l-.5-2L15 20.5l1.5-.5L17 18z" fill="currentColor"/></symbol>
-    <!-- 关闭按钮图标（close/x）：浮窗显式关闭入口 -->
+    <!-- 关闭按钮图标（close/x）：pinned 模式下显式关闭浮窗 -->
     <symbol id="icon-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -65,6 +67,7 @@
         <span class="quick-input-hint flex-shrink-0">↓↑ 补全 · ←→ 填充 · Tab 提交 · Esc 关闭</span>
         <button id="polish-toggle" type="button" class="polish-toggle" aria-label="LLM 润色文本" title="LLM 润色文本（语法修正 + 表达优化）"><svg class="icon"><use href="#icon-sparkle"/></svg></button>
         <button id="expand-toggle" type="button" class="expand-toggle" aria-label="展开输入框" title="展开输入框（点击切换高度）"><svg class="icon"><use href="#icon-chevron-down"/></svg></button>
+        <button id="pinned-toggle" type="button" class="pinned-toggle" aria-label="常驻模式切换" title="常驻模式关闭：失焦后关闭窗口（点击切换）"><svg class="icon"><use href="#icon-unlock"/></svg></button>
         <span class="quick-input-counter flex-shrink-0">0 字</span>
       </div>
     </div>

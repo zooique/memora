@@ -178,6 +178,10 @@ export const IPC_CHANNELS = {
   MOVE_QUICK_INPUT: 'move-quick-input',
   // LLM 润色文本（携带原文，返回润色后文本，与 ipc/channels.ts QUICK_INPUT_POLISH 同步）
   QUICK_INPUT_POLISH: 'quick-input-polish',
+  // 常驻模式切换（与 ipc/channels.ts 同步）
+  // pinnedMode/alwaysOnTop 强耦合：浮窗永远 alwaysOnTop=true + skipTaskbar=true，
+  // 消除 Windows 任务栏默认图标 bug。
+  QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）
@@ -791,9 +795,11 @@ export interface ElectronAPI {
    *   成功返回 mode='paste'；失败降级走 Phase 3 复制流程，返回 mode='copy'。
    *
    * @param text 用户确认的文本
+   * @param pinnedMode 常驻模式标志：true 时主进程持久 suppressBlurClose，浮窗钉住不关闭；
+   *                   false 时 default 模式，paste 期间临时抑制 blur，paste 返回后清除抑制
    * @returns success 是否成功 + mode 成功模式（paste/copy）+ appName 粘贴目标应用名
    */
-  confirmQuickInput: (text: string) => Promise<{
+  confirmQuickInput: (text: string, pinnedMode?: boolean) => Promise<{
     success: boolean;
     /** 成功模式：paste=自动粘贴成功，copy=降级到复制+Toast */
     mode: 'paste' | 'copy';
@@ -830,11 +836,17 @@ export interface ElectronAPI {
    */
   polishQuickInput: (text: string) => Promise<{ polished: string; changed: boolean }>;
   /**
+   * 切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式）
+   *
+   * 主进程 setPinnedMode() 同步更新 pinnedMode 字段 + suppressBlurClose 标志。
+   */
+  setPinnedMode: (pinned: boolean) => Promise<{ success: boolean }>;
+  /**
    * 监听浮窗 show 事件（主进程 show() 调用后触发，携带剪贴板预填文本 + 敏感标记）
    *
    * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
    * payload.clipboardText 为 null 时表示无预填（敏感内容或空剪贴板）。
-   * payload.isSensitive 为 true 时表示剪贴板内容命中敏感模式（不预填，避免明文暴露）。
+   * payload.isSensitive 为 true 时表示剪贴板内容命中敏感模式，渲染进程自动进入常驻模式。
    */
   onQuickInputShow: (cb: (payload: { clipboardText: string | null; isSensitive: boolean }) => void) => void;
   /** 移除浮窗 show 事件监听器 */
@@ -1131,11 +1143,12 @@ const electronAPI: ElectronAPI = {
   // Phase 4.3：技能文件安装
   installSkill: (fileName, content) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_INSTALL, fileName, content),
   // 快速输入补全：确认（写剪贴板+关闭）、关闭（仅关闭）、调整高度
-  confirmQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text),
+  confirmQuickInput: (text, pinnedMode) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text, pinnedMode),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
   moveQuickInput: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_QUICK_INPUT, dx, dy),
   polishQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_POLISH, text),
+  setPinnedMode: (pinned) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
   onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent, payload: { clipboardText: string | null; isSensitive: boolean }) => cb(payload)),
   removeQuickInputShowListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);

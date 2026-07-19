@@ -1,13 +1,14 @@
 /**
- * 快速输入浮窗渲染逻辑 — 用户交互入口（三键分工 + 聚焦提示栏）
+ * 快速输入浮窗渲染逻辑 — 用户交互入口（三键分工 + 常驻模式 + 聚焦提示栏）
  *
  * 职责：
  *   1. 绑定输入框键盘事件：Tab 提交、Esc 关闭、Enter 换行
  *   2. Tab 单一提交：将输入框内容粘贴到目标应用（优先自动粘贴，降级写剪贴板）
- *   3. 窗口重新显示时处理剪贴板预填 + 聚焦输入框
+ *   3. 窗口重新显示时处理剪贴板预填 + 敏感自动检测并聚焦
  *   4. 接入补全管理器，输入时显示候选列表
  *   5. 确认成功后显示 Toast，重置输入框等待下次输入（连续输入）
  *   6. 顶部聚焦提示栏：显示当前聚焦应用名 / 无聚焦（联动 Tab 启用/禁用）
+ *   7. 常驻模式（pinnedMode）：持久钉住浮窗，blur 不关闭；图钉按钮可切换置顶
  *
  * 三键分工：
  *   - ↑↓：在候选列表中导航选择（由 quickInputCompletion.ts 处理）
@@ -15,13 +16,16 @@
  *   - Tab：提交输入框内容（本文件 QuickInputController.handleTab 处理，无聚焦时禁用）
  *
  * 模式语义：
- *   - Tab 提交后窗口不自动关闭，blur 时 200ms 延迟关闭
- *   - Esc / 顶部关闭按钮始终关闭窗口
+ *   - default 模式（pinnedMode=false）：Tab 提交后窗口不自动关闭，blur 时 200ms 延迟关闭
+ *   - pinned 模式（pinnedMode=true）：持久钉住，blur 不关闭；顶部显示图钉按钮可切换置顶
+ *   - 自动检测：剪贴板内容命中 isSensitive() 时自动启用 pinned 模式（敏感内容更安全）
+ *   - 手动切换：footer 栏切换按钮（🔒/🔓）覆盖自动检测
+ *   - Esc 始终关闭窗口（pinned 模式也不例外）
  *
  * 集成点：
  *   - quick-input.html：通过 <script type="module"> 加载
  *   - preload.ts：暴露 confirmQuickInput / closeQuickInput / searchMemories / searchSessionMessages
- *   - quickInputWindow.ts：主进程处理 IPC，自动粘贴优先
+ *   - quickInputWindow.ts：主进程处理 IPC，自动粘贴优先（pinned 模式持久 suppressBlurClose）
  *   - quickInputCompletion.ts：补全候选管理器
  *
  * 浮窗交互逻辑封装在 QuickInputController 类中，各方法可独立测试。
@@ -45,7 +49,7 @@ export type QuickInputElectronAPI = Pick<
   | 'moveQuickInput' | 'polishQuickInput'
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
   | 'boostMemory' | 'showMemory'
-  | 'onFocusChange'
+  | 'setPinnedMode' | 'onFocusChange'
 >;
 
 /** Toast 显示时长（ms），统一所有模式的 Toast 时长 */
@@ -65,6 +69,8 @@ const COMPACT_MIN_HEIGHT = 36;
 const EXPANDED_MIN_HEIGHT = 120;
 /** localStorage key：持久化展开状态（'1' = 展开，'0' = 紧凑） */
 const STORAGE_KEY_EXPAND = 'memora-quick-input-expanded';
+/** 常驻模式 localStorage 键（跨会话持久化手动切换的用户偏好） */
+const STORAGE_KEY_PINNED = 'memora-quick-input-pinned';
 /** 拖动阈值（px）：移动超过此距离才认为是拖动而非点击（与 float.ts 对齐） */
 const DRAG_THRESHOLD_PX = 3;
 
@@ -73,6 +79,7 @@ const DRAG_THRESHOLD_PX = 3;
  *
  * 封装浮窗交互的完整状态 + 行为：
  *   - 输入框键盘事件处理（Tab 提交、Esc 关闭）
+ *   - 常驻模式切换 + 剪贴板敏感自动检测
  *   - 确认流程（IPC 调用 + Toast 反馈 + 延迟关闭）
  *   - 自动调整高度 + 字符计数
  *   - 补全管理器生命周期管理
@@ -89,6 +96,8 @@ interface QuickInputControllerOptions {
   inputField: HTMLTextAreaElement;
   /** 候选列表容器 */
   completionList: HTMLElement;
+  /** 常驻模式切换按钮（footer 内的 🔒/🔓 按钮） */
+  pinnedToggle: HTMLElement;
   /** 展开高度切换按钮 */
   expandToggle: HTMLElement;
   /** 润色按钮 */
@@ -99,7 +108,7 @@ interface QuickInputControllerOptions {
   counterEl: HTMLElement;
   /** 顶部聚焦提示栏应用名元素 */
   focusAppNameEl: HTMLElement;
-  /** 顶部关闭按钮（始终显示，作为显式关闭入口） */
+  /** 顶部关闭按钮（始终显示，pinned 模式下作为显式关闭入口） */
   closeBtnEl: HTMLElement;
   /** ElectronAPI 子集 */
   api: QuickInputElectronAPI;
@@ -111,6 +120,8 @@ export class QuickInputController {
   private readonly inputField: HTMLTextAreaElement;
   /** 候选列表容器 */
   private readonly completionList: HTMLElement;
+  /** 常驻模式切换按钮（footer 内的 🔒/🔓 按钮） */
+  private readonly pinnedToggle: HTMLElement;
   /** 展开高度切换按钮 */
   private readonly expandToggle: HTMLElement;
   /** 润色按钮 */
@@ -137,6 +148,8 @@ export class QuickInputController {
   private baseInputHeight = INITIAL_BASE_HEIGHT;
   /** Toast 自动关闭定时器句柄 */
   private toastCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 常驻模式开关（true=持久钉住浮窗，blur 不关闭；false=default 模式，blur 时延迟关闭） */
+  private pinnedMode = false;
   /** Tab 是否激活（无聚焦时禁用，避免盲粘） */
   private tabEnabled = true;
   /** 展开模式开关（true 时 textarea 使用更大的 min-height，状态持久化到 localStorage） */
@@ -169,6 +182,7 @@ export class QuickInputController {
   constructor(options: QuickInputControllerOptions) {
     this.inputField = options.inputField;
     this.completionList = options.completionList;
+    this.pinnedToggle = options.pinnedToggle;
     this.expandToggle = options.expandToggle;
     this.polishToggle = options.polishToggle;
     this.footerEl = options.footerEl;
@@ -185,6 +199,7 @@ export class QuickInputController {
    */
   init(): void {
     this.bindKeyboardEvents();
+    this.bindPinnedToggle();
     this.bindExpandToggle();
     this.bindPolishToggle();
     this.bindDrag();
@@ -227,7 +242,14 @@ export class QuickInputController {
   }
 
   /**
-   * 绑定顶部关闭按钮（始终显示，作为显式关闭入口）
+   * 绑定常驻模式切换按钮（footer 内 🔒/🔓）点击事件
+   */
+  private bindPinnedToggle(): void {
+    this.pinnedToggle.addEventListener('click', () => this.togglePinnedMode());
+  }
+
+  /**
+   * 绑定顶部关闭按钮（始终显示，pinned 模式下作为显式关闭入口）
    */
   private bindCloseButton(): void {
     this.closeBtnEl.addEventListener('click', () => {
@@ -369,7 +391,7 @@ export class QuickInputController {
    *   - pointermove：3px 阈值判断 → 计算 screen 增量 → 调用 IPC moveQuickInput 逐帧推送
    *   - pointerup：releasePointerCapture + 清理状态
    *
-   * 交互按钮防护：pointerdown 落在 .expand-toggle / .polish-toggle 上时不启动拖动，
+   * 交互按钮防护：pointerdown 落在 .expand-toggle / .pinned-toggle 上时不启动拖动，
    * 让按钮的 click 事件正常触发。
    *
    * 位置不持久化：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效（由主进程负责）。
@@ -380,9 +402,9 @@ export class QuickInputController {
     // pointerdown：记录起点 + 捕获指针，使后续 pointermove/pointerup 即使鼠标移出窗口也能触发
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      // 交互按钮（展开/润色）上的 pointerdown 不启动拖动，让按钮 click 正常触发
+      // 交互按钮（展开/常驻模式切换/润色）上的 pointerdown 不启动拖动，让按钮 click 正常触发
       const target = e.target as Element | null;
-      if (target?.closest('.expand-toggle, .polish-toggle')) return;
+      if (target?.closest('.expand-toggle, .pinned-toggle, .polish-toggle')) return;
       this.dragPointerId = e.pointerId;
       this.dragStartX = e.screenX;
       this.dragStartY = e.screenY;
@@ -503,9 +525,9 @@ export class QuickInputController {
   /**
    * 处理浮窗显示事件
    *
-   * @param payload 主进程传入的剪贴板预填文本（敏感内容时为 null）
+   * @param payload 主进程传入的剪贴板预填文本 + 敏感标记
    */
-  private handleShow(payload: { clipboardText?: string | null } | null): void {
+  private handleShow(payload: { clipboardText?: string | null; isSensitive?: boolean } | null): void {
     // 递增提交代次，使之前的 IPC 响应失效（防止窗口重新显示时过期响应污染状态）
     this.submitGeneration++;
     if (this.toastCloseTimer !== null) {
@@ -515,6 +537,13 @@ export class QuickInputController {
     this.unlockInput();
     this.inputField.classList.remove('copy-toast');
     this.tabPressed = false;
+
+    // 自动检测：剪贴板内容命中 isSensitive() 时自动进入常驻模式（敏感内容更安全）
+    if (payload?.isSensitive) {
+      this.pinnedMode = true;
+      this.updatePinnedToggle();
+      void this.api.setPinnedMode(true);
+    }
 
     const preset = payload?.clipboardText;
     if (preset) {
@@ -538,13 +567,15 @@ export class QuickInputController {
   }
 
   /**
-   * 初次布局：聚焦输入框 + 计数 + 恢复展开状态 + 高度调整
+   * 初次布局：聚焦输入框 + 计数 + 恢复展开状态 + 恢复常驻模式 + 高度调整
    */
   private initialLayout(): void {
     this.inputField.focus();
     this.updateCounter();
     this.restoreExpandState();
+    this.restorePinnedState();
     this.autoResize();
+    this.updatePinnedToggle();
   }
 
   /**
@@ -560,6 +591,22 @@ export class QuickInputController {
       this.expandMode = true;
       this.inputField.classList.add('expanded');
       this.updateExpandToggle();
+    }
+  }
+
+  /**
+   * 从 localStorage 恢复常驻模式（跨会话持久化，仅手动切换）
+   *
+   * 注意：handleShow 中的 isSensitive 自动检测会覆盖此值（仅本次会话），不持久化。
+   * localStorage 不可用或无记录时默认为 default 模式（pinnedMode = false）。
+   */
+  private restorePinnedState(): void {
+    const stored = safeGet(STORAGE_KEY_PINNED, '0');
+    if (stored === '1') {
+      this.pinnedMode = true;
+      this.updatePinnedToggle();
+      // 通知主进程持久抑制 blur
+      void this.api.setPinnedMode(true);
     }
   }
 
@@ -607,6 +654,49 @@ export class QuickInputController {
     });
   }
 
+  // ── 常驻模式 ──
+
+  /**
+   * 更新常驻模式切换按钮视觉状态
+   *
+   * 通过切换 SVG <use href> 在 lock/unlock icon 间切换（与主窗口 icon 系统对齐）。
+   * 🔒 = 常驻模式开启（持久钉住），🔓 = default 模式（blur 时延迟关闭）
+   */
+  private updatePinnedToggle(): void {
+    const useEl = this.pinnedToggle.querySelector('use');
+    if (useEl) {
+      useEl.setAttribute('href', this.pinnedMode ? '#icon-lock' : '#icon-unlock');
+    }
+    if (this.pinnedMode) {
+      this.pinnedToggle.classList.add('active');
+      this.pinnedToggle.setAttribute('aria-pressed', 'true');
+      this.pinnedToggle.title = '常驻模式开启：浮窗持久钉住（点击切换）';
+    } else {
+      this.pinnedToggle.classList.remove('active');
+      this.pinnedToggle.setAttribute('aria-pressed', 'false');
+      this.pinnedToggle.title = '常驻模式关闭：失焦后关闭窗口（点击切换）';
+    }
+  }
+
+  /**
+   * 切换常驻模式（手动覆盖自动检测）
+   *
+   * 手动切换持久化到 localStorage，跨会话保留用户偏好。
+   * 注意：handleShow 中的 isSensitive 自动检测不持久化，仅本次会话生效。
+   *
+   * 减法（2026-07-18）：原设计有独立的 alwaysOnTop 状态，由 pin-toggle 图钉按钮切换，
+   * 但 pinned 和 alwaysOnTop 在实际使用中强耦合（pinned 不置顶无意义，置顶不 pinned 也无意义），
+   * 合并为单一 pinnedMode 概念。浮窗永远 alwaysOnTop=true + skipTaskbar=true，
+   * 消除 Windows 任务栏默认图标 bug + pin-toggle 发现性问题 + 状态组合 4→2。
+   */
+  private togglePinnedMode(): void {
+    this.pinnedMode = !this.pinnedMode;
+    safeSet(STORAGE_KEY_PINNED, this.pinnedMode ? '1' : '0');
+    this.updatePinnedToggle();
+    // 通知主进程切换 pinned 状态（持久 suppressBlurClose 开关）
+    void this.api.setPinnedMode(this.pinnedMode);
+  }
+
   // ── 确认流程 ──
 
   /**
@@ -623,8 +713,8 @@ export class QuickInputController {
   /**
    * 确认提交成功后调度 Toast 展示 + 重置输入框
    *
-   * 统一走"短 Toast + resetInputForNext"路径（连续输入）。
-   * 关闭由 blur 或 Esc/关闭按钮触发，不由 Toast 定时关闭。
+   * 所有模式统一走"短 Toast + resetInputForNext"路径（连续输入）。
+   * 关闭由 blur（default 模式）或 Esc/关闭按钮（pinned 模式）触发，不由 Toast 定时关闭。
    */
   private scheduleSuccessToast(result: { mode: 'paste' | 'copy'; appName?: string }): void {
     if (result.mode === 'paste') {
@@ -642,7 +732,7 @@ export class QuickInputController {
    * 确认输入：调用 IPC（主进程优先自动粘贴，降级写剪贴板）+ 显示 Toast
    *
    * 提交成功后统一清空输入等待下次输入（连续输入）。
-   * 关闭由 blur 或 Esc/关闭按钮触发。
+   * 关闭由 blur（default 模式）或 Esc/关闭按钮（pinned 模式）触发。
    */
   private async handleConfirm(): Promise<void> {
     if (this.isSubmitting) return;
@@ -661,12 +751,12 @@ export class QuickInputController {
     this.showPastingToast();
 
     try {
-      const result = await this.api.confirmQuickInput(text);
+      const result = await this.api.confirmQuickInput(text, this.pinnedMode);
       // 竞态防护：若期间窗口被重新 show() 或开始了新提交，代次已变化，忽略过期响应
       if (currentGen !== this.submitGeneration) return;
       if (result.success) {
         // 统一显示 Toast 反馈（路线图闭环 7 F1：paste 完成后浮窗重显，Toast 可见）
-        // paste 成功 + copy 降级均显示 Toast，差异仅在主进程焦点处理
+        // default 模式 + pinned 模式 + copy 降级均显示 Toast，差异仅在主进程焦点处理
         this.scheduleSuccessToast(result);
       } else {
         this.resetInputState(text);
@@ -680,7 +770,7 @@ export class QuickInputController {
   }
 
   /**
-   * 重置输入框，准备下一次输入
+   * 重置输入框，准备下一次输入（所有模式统一行为）
    */
   private resetInputForNext(): void {
     this.isSubmitting = false;
@@ -890,7 +980,12 @@ function initQuickInput(): void {
     reportError('QuickInput init', new Error('completion-list 元素缺失'));
     return;
   }
-  // footer 内的展开按钮
+  // footer 内的常驻模式切换按钮
+  const pinnedToggle = document.getElementById('pinned-toggle');
+  if (!(pinnedToggle instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('pinned-toggle 元素缺失'));
+    return;
+  }
   const expandToggle = document.getElementById('expand-toggle');
   if (!(expandToggle instanceof HTMLElement)) {
     reportError('QuickInput init', new Error('expand-toggle 元素缺失'));
@@ -932,6 +1027,7 @@ function initQuickInput(): void {
   const controller = new QuickInputController({
     inputField: inputEl,
     completionList,
+    pinnedToggle,
     expandToggle,
     polishToggle,
     footerEl,
