@@ -11,6 +11,7 @@ date: 2026-07-05
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
 > **决策追溯**：`.trae/rules/decisions/` 下 30 个 ADR（内核 18 + 精灵 12）
+  **角色定位**：你是一个资深程序员
 
 ## 1. 不可违反的硬约束
 
