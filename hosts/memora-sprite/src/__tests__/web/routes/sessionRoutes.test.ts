@@ -136,6 +136,8 @@ interface MockSessionMessage {
 interface MockSessionStore {
   /** 列出所有会话 ID */
   listSessions: ReturnType<typeof vi.fn>;
+  /** 列出所有会话及其元数据（批量查询，替代 N+1） */
+  listSessionsWithMetadata: ReturnType<typeof vi.fn>;
   /** 统计会话消息数 */
   countMessages: ReturnType<typeof vi.fn>;
   /** 加载会话全部消息（用于 switch） */
@@ -158,6 +160,7 @@ interface MockSessionStore {
  */
 function createMockSessionStore(overrides?: {
   listSessions?: string[];
+  listSessionsWithMetadata?: Array<{ id: string; date: string; name: string; preview: string; messageCount: number }>;
   countMessages?: number;
   loadMessages?: MockSessionMessage[];
   loadMessagesPaginated?: MockSessionMessage[];
@@ -166,6 +169,7 @@ function createMockSessionStore(overrides?: {
 }): MockSessionStore {
   return {
     listSessions: vi.fn(() => overrides?.listSessions ?? []),
+    listSessionsWithMetadata: vi.fn(() => overrides?.listSessionsWithMetadata ?? []),
     countMessages: vi.fn(() => overrides?.countMessages ?? 0),
     loadMessages: vi.fn(() => overrides?.loadMessages ?? []),
     loadMessagesPaginated: vi.fn(() => overrides?.loadMessagesPaginated ?? []),
@@ -264,11 +268,11 @@ describe('handleSessionRoute', () => {
   // ─── GET /api/sessions ─────────────────────────────────
 
   it('GET /api/sessions 应返回 200 + 按日期聚合的会话列表', async () => {
-    const messages = [makeMsg('user', '你好')];
     const sessionStore = createMockSessionStore({
-      listSessions: ['2026-06-26-main', '2026-06-25-test'],
-      countMessages: 5,
-      loadMessagesPaginated: messages,
+      listSessionsWithMetadata: [
+        { id: '2026-06-26-main', date: '2026-06-26', name: 'main', preview: '你好', messageCount: 5 },
+        { id: '2026-06-25-test', date: '2026-06-25', name: 'test', preview: '测试', messageCount: 5 },
+      ],
     });
     const ctx = createMockCtx({ sessionStore });
     const req = createMockReq('GET', '/api/sessions');
@@ -276,11 +280,8 @@ describe('handleSessionRoute', () => {
 
     await handleSessionRoute(req, res, ctx);
 
-    // 应调用 listSessions 获取全部会话
-    expect(sessionStore.listSessions).toHaveBeenCalled();
-    // 应为每个会话调用 countMessages + loadMessagesPaginated（limit=1, offset=messageCount-1）
-    expect(sessionStore.countMessages).toHaveBeenCalledWith('2026-06-26', 'main');
-    expect(sessionStore.loadMessagesPaginated).toHaveBeenCalledWith('2026-06-26', 'main', 1, 4);
+    // 应调用 listSessionsWithMetadata 批量获取会话元数据（替代 N+1 模式）
+    expect(sessionStore.listSessionsWithMetadata).toHaveBeenCalled();
     expect(res.statusCode).toBe(200);
     /** 解析响应体 */
     const body = JSON.parse(res.body);
@@ -295,7 +296,7 @@ describe('handleSessionRoute', () => {
   });
 
   it('GET /api/sessions 无会话时应返回空数组', async () => {
-    const sessionStore = createMockSessionStore({ listSessions: [] });
+    const sessionStore = createMockSessionStore({ listSessionsWithMetadata: [] });
     const ctx = createMockCtx({ sessionStore });
     const req = createMockReq('GET', '/api/sessions');
     const res = createMockRes();
@@ -307,10 +308,11 @@ describe('handleSessionRoute', () => {
   });
 
   it('GET /api/sessions 非法 sessionId 格式应被过滤掉', async () => {
-    // 不符合 YYYY-MM-DD-sessionName 格式的会话 ID 应被过滤
+    // listSessionsWithMetadata 由 SessionStore 实现层过滤非法格式
     const sessionStore = createMockSessionStore({
-      listSessions: ['invalid-session', '2026-06-26-main', 'bad-format'],
-      countMessages: 0,
+      listSessionsWithMetadata: [
+        { id: '2026-06-26-main', date: '2026-06-26', name: 'main', preview: '', messageCount: 0 },
+      ],
     });
     const ctx = createMockCtx({ sessionStore });
     const req = createMockReq('GET', '/api/sessions');
@@ -319,17 +321,17 @@ describe('handleSessionRoute', () => {
     await handleSessionRoute(req, res, ctx);
 
     expect(res.statusCode).toBe(200);
-    /** 仅 2026-06-26-main 符合格式，其余两条被过滤 */
+    /** 仅 2026-06-26-main 符合格式，其余由 SQL 层过滤 */
     const body = JSON.parse(res.body);
     expect(body.sessions).toHaveLength(1);
     expect(body.sessions[0].id).toBe('2026-06-26-main');
   });
 
-  it('GET /api/sessions messageCount=0 时 preview 应为空 + loadMessagesPaginated 用 offset=0', async () => {
+  it('GET /api/sessions messageCount=0 时 preview 应为空', async () => {
     const sessionStore = createMockSessionStore({
-      listSessions: ['2026-06-26-main'],
-      countMessages: 0,
-      loadMessagesPaginated: [],
+      listSessionsWithMetadata: [
+        { id: '2026-06-26-main', date: '2026-06-26', name: 'main', preview: '', messageCount: 0 },
+      ],
     });
     const ctx = createMockCtx({ sessionStore });
     const req = createMockReq('GET', '/api/sessions');
@@ -337,8 +339,6 @@ describe('handleSessionRoute', () => {
 
     await handleSessionRoute(req, res, ctx);
 
-    // messageCount=0 时 offset 应为 0（而非 -1）
-    expect(sessionStore.loadMessagesPaginated).toHaveBeenCalledWith('2026-06-26', 'main', 1, 0);
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.sessions[0].preview).toBe('');
@@ -349,9 +349,9 @@ describe('handleSessionRoute', () => {
     /** 构造长度 60 的内容，preview 应截断为 50 */
     const longContent = 'a'.repeat(60);
     const sessionStore = createMockSessionStore({
-      listSessions: ['2026-06-26-main'],
-      countMessages: 1,
-      loadMessagesPaginated: [makeMsg('user', longContent)],
+      listSessionsWithMetadata: [
+        { id: '2026-06-26-main', date: '2026-06-26', name: 'main', preview: longContent.slice(0, 50), messageCount: 1 },
+      ],
     });
     const ctx = createMockCtx({ sessionStore });
     const req = createMockReq('GET', '/api/sessions');
@@ -365,9 +365,9 @@ describe('handleSessionRoute', () => {
     expect(body.sessions[0].preview.length).toBe(50);
   });
 
-  it('GET /api/sessions listSessions 抛错应由 safeRoute 兜底返回 500', async () => {
+  it('GET /api/sessions listSessionsWithMetadata 抛错应由 safeRoute 兜底返回 500', async () => {
     const sessionStore = createMockSessionStore();
-    sessionStore.listSessions.mockImplementation(() => {
+    sessionStore.listSessionsWithMetadata.mockImplementation(() => {
       throw new Error('数据库损坏');
     });
     const ctx = createMockCtx({ sessionStore });

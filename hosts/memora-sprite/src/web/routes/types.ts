@@ -14,31 +14,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger, toError } from 'memora';
 import { SpriteError, ErrorCode } from '../../sprite/errors.js';
 import type { HostContext } from '../../shared/hostContext.js';
+// 真理源：安全响应头常量（消除与 static.ts 的双副本）
+import { SECURITY_HEADERS } from '../../shared/securityHeaders.js';
 
-// ─── 安全响应头 ──────────────────────────────
+// ─── 安全响应头（re-export） ──────────────────────
 
-/**
- * 通用安全响应头常量
- *
- * 所有 HTTP 响应应携带这些头以降低 XSS 点击劫持/MIME 嗅探/Referer 泄露等常见 Web 风险：
- *   - X-Content-Type-Options: nosniff —— 禁止浏览器 MIME 嗅探（防止 text/plain 被当 HTML 执行）
- *   - X-Frame-Options: DENY       —— 禁止页面被 iframe 嵌套（防点击劫持）
- *   - Referrer-Policy: no-referrer —— 不发送 Referer（防止内部 URL/路径泄露给外部）
- *   - Content-Security-Policy: default-src 'self' —— 默认只允许同源资源
- *     （style-src 'self' 与 renderer/index.html 的 CSP meta 保持一致，
- *     详见 security_rules.md §7.1；API/SSE 响应本身不加载资源，CSP 仅作为深度防御）
- *
- * 在 sendJson 中统一注入，覆盖所有 routes 层 JSON 响应；
- * SSE 响应、静态文件响应、入口层 writeHead 各自展开注入（见 static.ts / chatStreamRoutes.ts / server.ts）。
- * 注意：static.ts 中 SECURITY_HEADERS 是同步副本（避免 web 入口层反向依赖 routes 子层），修改时需同步更新。
- */
-export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'no-referrer',
-  // CSP 收紧：与 renderer/index.html meta 一致，default-src 'self' 拒绝所有跨源资源加载
-  'Content-Security-Policy': "default-src 'self'",
-};
+// 真理源：shared/securityHeaders.ts（消除与 static.ts 的双副本）
+// 所有 HTTP 响应应携带这些头以降低 XSS/点击劫持/MIME 嗅探/Referer 泄露等常见 Web 风险
+export { SECURITY_HEADERS } from '../../shared/securityHeaders.js';
 
 /**
  * 路由处理函数签名

@@ -21,11 +21,11 @@ import type { Memory } from '@/memory/types.js';
 /** 语义搜索召回倍率（在最终 limit 基础上多召回一些，供后续融合排序） */
 export const RECALL_LIMIT_MULTIPLIER = 2;
 
-/** 综合排序时语义相似度权重 */
-export const VECTOR_SCORE_WEIGHT = 0.6;
+/** 综合排序时语义相似度权重（模块内部使用，非公共 API） */
+const VECTOR_SCORE_WEIGHT = 0.6;
 
-/** 综合排序时记忆 score 权重 */
-export const MEMORY_SCORE_WEIGHT = 0.4;
+/** 综合排序时记忆 score 权重（模块内部使用，非公共 API） */
+const MEMORY_SCORE_WEIGHT = 0.4;
 
 // ─── 类型 ─────────────────────────────────────────────
 

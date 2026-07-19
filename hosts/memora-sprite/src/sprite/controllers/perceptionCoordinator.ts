@@ -15,7 +15,7 @@
  */
 import { logger, toError } from 'memora';
 import type { Agent, Memory } from 'memora';
-import { AffectController } from './affectController.js';
+import type { AffectController } from './affectController.js';
 import type { AffectState } from './affectController.js';
 import type { RapportController } from './rapportController.js';
 import type { RapportState } from './rapportController.js';
@@ -199,11 +199,11 @@ export class PerceptionCoordinator {
     let affect = this.opts.affectController.deriveAffect(memories);
     // 对话语气实时修正（与 deriveAndInjectAffect 逻辑一致）
     if (this.recentUserMessages.length > 0) {
-      const delta = AffectController.deriveAffectFromMessages(this.recentUserMessages);
+      const delta = this.opts.affectController.deriveAffectFromMessages(this.recentUserMessages);
       // 冷启动时（无记忆数据）不做 blend 平滑，让首条消息关键词直接影响 affect
       affect = memories.length === 0
-        ? AffectController.applyDelta(affect, delta)
-        : AffectController.blendAffect(affect, delta);
+        ? this.opts.affectController.applyDelta(affect, delta)
+        : this.opts.affectController.blendAffect(affect, delta);
     }
 
     // 2. 默契度推导（先更新配置参数）
@@ -246,10 +246,10 @@ export class PerceptionCoordinator {
     // Phase 2.2：对话语气实时分析——从最近用户消息推导语气修正值
     // 冷启动时（无记忆数据）不做 blend 平滑，让首条消息关键词直接影响 affect
     if (this.recentUserMessages.length > 0) {
-      const delta = AffectController.deriveAffectFromMessages(this.recentUserMessages);
+      const delta = this.opts.affectController.deriveAffectFromMessages(this.recentUserMessages);
       affect = memories.length === 0
-        ? AffectController.applyDelta(affect, delta)
-        : AffectController.blendAffect(affect, delta);
+        ? this.opts.affectController.applyDelta(affect, delta)
+        : this.opts.affectController.blendAffect(affect, delta);
     }
 
     this.lastAffect = affect; // Phase 1+2：缓存供 ProactiveEngine 注入

@@ -340,7 +340,7 @@ describe('UserProfile K1 深度补测', () => {
       expect(entry!.value).toBe('TypeScript');
     });
 
-    it('content 非 JSON 且 name 无冒号时应降级为 identity 分类', async () => {
+    it('content 非 JSON 且 name 无冒号时应降级为 history 分类', async () => {
       // 预置异常数据：content 非 JSON，name 无冒号
       const mem: Memory = {
         id: 'profile:异常数据',
@@ -356,8 +356,8 @@ describe('UserProfile K1 深度补测', () => {
       const entries = await userProfile.load();
       const entry = entries.find((e) => e.id === mem.id);
       expect(entry).toBeDefined();
-      // 最终降级：默认 identity 分类
-      expect(entry!.category).toBe('identity');
+      // 最终降级：默认 history 分类（中性默认，避免 identity 高敏感类别污染画像）
+      expect(entry!.category).toBe('history');
       expect(entry!.value).toBe('纯文本内容');
     });
   });

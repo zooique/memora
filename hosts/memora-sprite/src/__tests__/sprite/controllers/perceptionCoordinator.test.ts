@@ -22,8 +22,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PerceptionCoordinator } from '../../../sprite/controllers/perceptionCoordinator.js';
 import type { PerceptionEmitter, PerceptionCoordinatorOptions } from '../../../sprite/controllers/perceptionCoordinator.js';
-import { AffectController } from '../../../sprite/controllers/affectController.js';
-import type { AffectController as AffectControllerType, AffectState } from '../../../sprite/controllers/affectController.js';
+import type { AffectState } from '../../../sprite/controllers/affectController.js';
 import type { RapportController as RapportControllerType, RapportState } from '../../../sprite/controllers/rapportController.js';
 import type { ContextAwareness as ContextAwarenessType, ContextState } from '../../../sprite/controllers/contextAwareness.js';
 import type { PatternDetector as PatternDetectorType, DetectedPattern } from '../../../sprite/controllers/patternDetector.js';
@@ -86,6 +85,10 @@ function createMockSubControllers() {
     updateOptions: vi.fn(),
     deriveAffect: vi.fn(() => ({ ...DEFAULT_AFFECT })),
     buildAffectPrompt: vi.fn(() => '【互动基调指导】mock 情感提示'),
+    /** 实例方法（STEP4-2：改 static 为实例方法，通过回调注入） */
+    deriveAffectFromMessages: vi.fn(() => ({})),
+    blendAffect: vi.fn((current: AffectState) => ({ ...current })),
+    applyDelta: vi.fn((current: AffectState) => ({ ...current })),
   };
 
   const rapportController = {
@@ -258,35 +261,35 @@ describe('PerceptionCoordinator', () => {
 
   describe('pushUserMessage', () => {
     it('null 输入应跳过（不加入缓存）', () => {
-      const { coordinator } = createCoordinator();
+      const { coordinator, subControllers } = createCoordinator();
       coordinator.pushUserMessage(null);
 
       // 通过 refreshBeforeChat 间接验证：recentUserMessages 为空时不调用 deriveAffectFromMessages
-      const spy = vi.spyOn(AffectController, 'deriveAffectFromMessages');
+      const spy = vi.spyOn(subControllers.affectController, 'deriveAffectFromMessages');
       coordinator.refreshBeforeChat();
       expect(spy).not.toHaveBeenCalled();
     });
 
     it('undefined 输入应跳过', () => {
-      const { coordinator } = createCoordinator();
+      const { coordinator, subControllers } = createCoordinator();
       coordinator.pushUserMessage(undefined);
 
-      const spy = vi.spyOn(AffectController, 'deriveAffectFromMessages');
+      const spy = vi.spyOn(subControllers.affectController, 'deriveAffectFromMessages');
       coordinator.refreshBeforeChat();
       expect(spy).not.toHaveBeenCalled();
     });
 
     it('空字符串应跳过（!input 为 true）', () => {
-      const { coordinator } = createCoordinator();
+      const { coordinator, subControllers } = createCoordinator();
       coordinator.pushUserMessage('');
 
-      const spy = vi.spyOn(AffectController, 'deriveAffectFromMessages');
+      const spy = vi.spyOn(subControllers.affectController, 'deriveAffectFromMessages');
       coordinator.refreshBeforeChat();
       expect(spy).not.toHaveBeenCalled();
     });
 
     it('超过 5 条时应移除最旧的（shift 逻辑）', () => {
-      const { coordinator } = createCoordinator();
+      const { coordinator, subControllers } = createCoordinator();
       // 推入 6 条消息
       coordinator.pushUserMessage('msg1');
       coordinator.pushUserMessage('msg2');
@@ -296,7 +299,7 @@ describe('PerceptionCoordinator', () => {
       coordinator.pushUserMessage('msg6');
 
       // 间谍 deriveAffectFromMessages 以捕获传入的消息数组
-      const spy = vi.spyOn(AffectController, 'deriveAffectFromMessages');
+      const spy = vi.spyOn(subControllers.affectController, 'deriveAffectFromMessages');
       coordinator.refreshBeforeChat();
 
       // 应只保留最近 5 条（msg2-msg6），msg1 被移除
@@ -307,14 +310,14 @@ describe('PerceptionCoordinator', () => {
     });
 
     it('正好 5 条时不触发 shift', () => {
-      const { coordinator } = createCoordinator();
+      const { coordinator, subControllers } = createCoordinator();
       coordinator.pushUserMessage('a');
       coordinator.pushUserMessage('b');
       coordinator.pushUserMessage('c');
       coordinator.pushUserMessage('d');
       coordinator.pushUserMessage('e');
 
-      const spy = vi.spyOn(AffectController, 'deriveAffectFromMessages');
+      const spy = vi.spyOn(subControllers.affectController, 'deriveAffectFromMessages');
       coordinator.refreshBeforeChat();
 
       const passedMessages = spy.mock.calls[0]![0];
@@ -672,12 +675,12 @@ describe('PerceptionCoordinator', () => {
     });
 
     it('recentUserMessages 非空时应调用 AffectController.deriveAffectFromMessages', () => {
-      const { coordinator } = createCoordinator({
+      const { coordinator, subControllers } = createCoordinator({
         memoryList: [makeMemory()],
       });
       coordinator.pushUserMessage('你好');
 
-      const spy = vi.spyOn(AffectController, 'deriveAffectFromMessages');
+      const spy = vi.spyOn(subControllers.affectController, 'deriveAffectFromMessages');
       coordinator.getSnapshot();
 
       expect(spy).toHaveBeenCalledTimes(1);

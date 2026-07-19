@@ -27,6 +27,25 @@ export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' 
 /** 有效的画像分类列表（模块级常量，消除 parseContentField 内 2 次重复数组） */
 const VALID_PROFILE_CATEGORIES: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
 
+/**
+ * 类型守卫：检查未知对象是否为合法的 profile content 结构
+ *
+ * 替代 `as { category?: string; value?: string }` 断言，
+ * 与 lockManager/projectRegistry 的类型守卫风格一致。
+ *
+ * @param obj 从 JSON.parse 得到的未知对象
+ * @returns obj 是否为 { category: ProfileCategory; value: string } 结构
+ */
+function isProfileContent(obj: unknown): obj is { category: ProfileCategory; value: string } {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const record = obj as Record<string, unknown>;
+  return (
+    typeof record.category === 'string' &&
+    typeof record.value === 'string' &&
+    VALID_PROFILE_CATEGORIES.includes(record.category as ProfileCategory)
+  );
+}
+
 /** 用户画像条目 */
 export interface UserProfileEntry {
   /** 画像唯一 ID（格式：profile:user-profile-{category}-{slug}） */
@@ -361,11 +380,9 @@ export class UserProfile {
   } {
     // 优先尝试 JSON 解码（新格式）
     try {
-      const parsed = JSON.parse(content) as { category?: string; value?: string };
-      if (parsed.category && parsed.value) {
-        if (VALID_PROFILE_CATEGORIES.includes(parsed.category as ProfileCategory)) {
-          return { category: parsed.category as ProfileCategory, value: parsed.value };
-        }
+      const parsed = JSON.parse(content);
+      if (isProfileContent(parsed)) {
+        return { category: parsed.category, value: parsed.value };
       }
     } catch {
       // content 不是 JSON，降级到旧格式
@@ -381,8 +398,8 @@ export class UserProfile {
       }
     }
 
-    // 最终降级：默认 identity 分类
-    return { category: 'identity', value: content };
+    // 最终降级：默认 history 分类（中性默认，避免 identity 高敏感类别污染画像）
+    return { category: 'history', value: content };
   }
 
   /**

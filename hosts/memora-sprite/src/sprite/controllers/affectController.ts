@@ -222,7 +222,7 @@ export class AffectController {
    * @param recentMessages 最近 N 轮用户消息文本
    * @returns 各维度的修正值（正=提升，负=降低）
    */
-  static deriveAffectFromMessages(recentMessages: string[]): Partial<AffectState> {
+  deriveAffectFromMessages(recentMessages: string[]): Partial<AffectState> {
     if (recentMessages.length === 0) return {};
 
     const combined = recentMessages.join(' ').toLowerCase();
@@ -264,7 +264,7 @@ export class AffectController {
    * @param delta 对话语气修正值（来自 deriveAffectFromMessages）
    * @returns 平滑后的新情感状态
    */
-  static blendAffect(current: AffectState, delta: Partial<AffectState>): AffectState {
+  blendAffect(current: AffectState, delta: Partial<AffectState>): AffectState {
     const blend = (cur: number, d: number | undefined): number => {
       if (d === undefined) return cur;
       const target = Math.max(0, Math.min(1, cur + d));
@@ -295,7 +295,7 @@ export class AffectController {
    * @param delta 对话语气修正值（来自 deriveAffectFromMessages）
    * @returns 修正后的新情感状态
    */
-  static applyDelta(current: AffectState, delta: Partial<AffectState>): AffectState {
+  applyDelta(current: AffectState, delta: Partial<AffectState>): AffectState {
     const apply = (cur: number, d: number | undefined): number => {
       if (d === undefined) return cur;
       return round2(Math.max(0, Math.min(1, cur + d)));

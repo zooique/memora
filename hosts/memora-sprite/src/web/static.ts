@@ -14,6 +14,8 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import type { ServerResponse } from 'node:http';
 import { logger } from 'memora';
+// 真理源：安全响应头常量（消除与 routes/types.ts 的双副本）
+import { SECURITY_HEADERS } from '../shared/securityHeaders.js';
 
 /**
  * 文件扩展名 → MIME 类型映射表
@@ -36,19 +38,8 @@ const MIME_TYPES: Record<string, string> = {
   '.map': 'application/json; charset=utf-8',
 };
 
-/**
- * 通用安全响应头常量
- *
- * 与 routes/types.ts 中的 SECURITY_HEADERS 内容保持一致；
- * 此处单独定义是为了让 web 入口层（static.ts / server.ts）不反向依赖 routes 子层，
- * 维持层次清晰。两个常量必须同步修改（含 CSP 收紧 default-src 'self'，详见 security_rules.md §7.1）。
- */
-export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'",
-};
+// 安全响应头 re-export：真理源 shared/securityHeaders.ts（消除与 routes/types.ts 的双副本）
+export { SECURITY_HEADERS } from '../shared/securityHeaders.js';
 
 /**
  * 提供静态文件服务

@@ -210,14 +210,25 @@ export class SkillManager {
   /**
    * 将所有技能写入 SQLite 索引
    *
-   * 本函数循环体内无 await，作为同步函数实现（与 personaManager.writeAllToIndex 同模式）。
+   * 使用 try/catch 包裹每个 upsert 调用，防止单条写入失败阻断其余技能索引。
+   * IMemoryStorage.upsert 是同步方法，但可能因底层存储故障抛异常。
    */
   private writeAllToIndex(): void {
     if (!this.index) return;
+    let failedCount = 0;
     for (const skill of this.skills) {
-      this.writeSkillToIndex(skill);
+      try {
+        this.writeSkillToIndex(skill);
+      } catch (err) {
+        failedCount++;
+        logger.warn({ err, skill: skill.name }, '技能记忆写入 SQLite 失败');
+      }
     }
-    logger.info({ count: this.skills.length }, '技能记忆已写入 SQLite');
+    if (failedCount > 0) {
+      logger.warn({ total: this.skills.length, failed: failedCount }, '部分技能记忆写入失败');
+    } else {
+      logger.info({ count: this.skills.length }, '技能记忆已写入 SQLite');
+    }
   }
 
   /**

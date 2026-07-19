@@ -408,14 +408,25 @@ export class PersonaManager {
   /**
    * 将所有角色写入 SQLite 索引
    *
-   * 本函数循环体内无 await，作为同步函数实现。
+   * 使用 try/catch 包裹每个 upsert 调用，防止单条写入失败阻断其余角色索引。
+   * IMemoryStorage.upsert 是同步方法，但可能因底层存储故障（磁盘满/权限错误）抛异常。
    */
   private writeAllToIndex(): void {
     if (!this.index) return;
+    let failedCount = 0;
     for (const persona of this.personaList) {
-      this.writePersonaToIndex(persona);
+      try {
+        this.writePersonaToIndex(persona);
+      } catch (err) {
+        failedCount++;
+        logger.warn({ err, persona: persona.name }, '角色记忆写入 SQLite 失败');
+      }
     }
-    logger.info({ count: this.personaList.length }, '角色记忆已写入 SQLite');
+    if (failedCount > 0) {
+      logger.warn({ total: this.personaList.length, failed: failedCount }, '部分角色记忆写入失败');
+    } else {
+      logger.info({ count: this.personaList.length }, '角色记忆已写入 SQLite');
+    }
   }
 
   /**

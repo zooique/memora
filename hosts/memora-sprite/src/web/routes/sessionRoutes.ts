@@ -42,27 +42,8 @@ export async function handleSessionRoute(
   await safeRoute(res, '会话操作', async () => {
     // GET /api/sessions — 列出所有会话
     if (method === 'GET' && (path === '/api/sessions' || path === '/api/sessions/')) {
-      const sessions = ctx.sessionStore.listSessions();
-      // 聚合每个会话的预览和消息数
-      const result = sessions.map((sessionId) => {
-        // sessionId 格式：YYYY-MM-DD-sessionName
-        const match = sessionId.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
-        // 正则匹配成功时两个捕获组一定非空（\d{4}-\d{2}-\d{2} 和 .+ 都要求至少 1 字符）
-        if (!match) return null;
-        const date = match[1]!;
-        const session = match[2]!;
-        const messageCount = ctx.sessionStore.countMessages(date, session);
-        // 获取最后一条消息作为预览
-        const messages = ctx.sessionStore.loadMessagesPaginated(date, session, 1, messageCount > 0 ? messageCount - 1 : 0);
-        const lastMessage = messages[0];
-        return {
-          id: sessionId,
-          date,
-          name: session,
-          preview: lastMessage?.content?.slice(0, 50) ?? '',
-          messageCount,
-        };
-      }).filter((s): s is NonNullable<typeof s> => s !== null);
+      // 使用 listSessionsWithMetadata 单次批量查询替代 N+1 模式
+      const result = ctx.sessionStore.listSessionsWithMetadata();
       sendJson(res, 200, { sessions: result });
       return;
     }

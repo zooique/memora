@@ -324,6 +324,38 @@ export class SqliteSessionStore implements ISessionStore {
   }
 
   /**
+   * 列出所有会话及其元数据（消息数 + 预览）
+   *
+   * 单次 SQL 查询替代 N+1 模式（listSessions + 逐条 countMessages + loadMessagesPaginated），
+   * 消除 web/routes/sessionRoutes.ts 的每个会话 2 次额外查询。
+   *
+   * @returns 会话元数据列表
+   */
+  listSessionsWithMetadata(): SessionListItem[] {
+    const rows = this.db.prepare(`
+      SELECT
+        date || '-' || session AS sessionId,
+        date,
+        session,
+        COUNT(*) AS messageCount,
+        (SELECT content FROM sessions AS s2
+         WHERE s2.date = s1.date AND s2.session = s1.session AND s2.role = 'user'
+         ORDER BY s2.id ASC LIMIT 1) AS firstUserContent
+      FROM sessions AS s1
+      GROUP BY date, session
+      ORDER BY sessionId DESC
+    `).all() as { sessionId: string; date: string; session: string; messageCount: number; firstUserContent: string | null }[];
+
+    return rows.map((row) => ({
+      id: row.sessionId,
+      date: row.date,
+      name: row.session,
+      preview: truncate(row.firstUserContent ?? '', MAX_PREVIEW_LENGTH),
+      messageCount: row.messageCount,
+    }));
+  }
+
+  /**
    * 解析会话 ID 为日期和会话名
    *
    * 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段，date 占 3 段）。
