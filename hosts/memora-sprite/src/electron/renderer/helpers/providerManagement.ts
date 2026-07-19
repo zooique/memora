@@ -138,13 +138,13 @@ let loadToken = 0;
  * 从主进程获取所有 Provider 配置，渲染为卡片列表。
  * 设置面板初次显示时调用。
  *
- * 竞态守卫：通过版本号丢弃过期的加载结果（UX-0712-5）。
+ * 竞态守卫：通过版本号丢弃过期的加载结果。
  */
 export async function loadProviderList(ctx: ProviderManagementContext): Promise<void> {
   if (!ctx.providerListEl) return;
   const token = ++loadToken;
 
-  // 加载态：await 前显示占位符，避免首次打开时空白（UX-0712-9）
+  // 加载态：await 前显示占位符，避免首次打开时空白
   ctx.providerListEl.innerHTML = '<p class="settings-hint">加载中…</p>';
 
   try {
@@ -159,7 +159,7 @@ export async function loadProviderList(ctx: ProviderManagementContext): Promise<
   } catch (error) {
     // 竞态守卫：过期请求的错误也不渲染
     if (token !== loadToken) return;
-    // 加载失败时渲染内联错误占位符 + 重试按钮（UX-0712-9）
+    // 加载失败时渲染内联错误占位符 + 重试按钮
     clearElement(ctx.providerListEl);
     const errorHint = document.createElement('div');
     errorHint.className = 'settings-hint provider-load-error';
@@ -370,7 +370,7 @@ export function showProviderForm(ctx: ProviderManagementContext, key: string = '
  * 隐藏 Provider 编辑弹窗
  */
 export function hideProviderForm(ctx: ProviderManagementContext): void {
-  // UX-0713-F6：通过宿主 hideModal 委托 ModalManager，恢复焦点到触发元素
+  // 通过宿主 hideModal 委托 ModalManager，恢复焦点到触发元素
   if (!ctx.providerModalEl) return;
   ctx.host.hideModal('provider-modal');
   ctx.providerModalEl.dataset.editKey = '';
@@ -378,7 +378,7 @@ export function hideProviderForm(ctx: ProviderManagementContext): void {
 
 // ─── Provider CRUD ────────────────────────────────────────
 
-// UX-0713-F5：Provider 保存重入保护标志——防止重复检测期间双击触发并发保存
+// Provider 保存重入保护标志——防止重复检测期间双击触发并发保存
 let isSavingProvider = false;
 
 /**
@@ -718,6 +718,6 @@ export function initProviderListeners(ctx: ProviderManagementContext): void {
     });
   }
 
-  // 必填字段 blur 即时校验（UX-0712-6）
+  // 必填字段 blur 即时校验
   attachRequiredBlurValidation(PROVIDER_REQUIRED_FIELDS, ctx.events);
 }

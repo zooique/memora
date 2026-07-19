@@ -13,7 +13,7 @@
  * - 提供清晰的 API 供其他模块调用
  * - 子模块公共 API 通过 UIManager 代理，保持向后兼容
  * - 聊天/记忆/角色/会话面板委托至独立 PanelManager，UIManager 仅做 facade
- * - 薄委托方法群通过 mixin 模式注入（ADR-SP-015 §4），物理隔离到 helpers/uiDelegations/
+ * - 薄委托方法群通过 mixin 模式注入（ADR-SP-015 §4），物理隔离到 helpers/ui-delegations/
  */
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
@@ -82,20 +82,20 @@ import type {
 } from './types.js';
 // M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
 import type { WriteConfirmationPayload } from '../preload.js';
-// Mixin 工具函数 + 6 个委托群（ADR-SP-015 §4 纯透传委托，物理隔离到 helpers/uiDelegations/）
+// Mixin 工具函数 + 6 个委托群（ADR-SP-015 §4 纯透传委托，物理隔离到 helpers/ui-delegations/）
 import { applyMixins } from './helpers/applyMixins.js';
-import { chatDelegations } from './helpers/uiDelegations/chatDelegations.js';
-import type { ChatDelegations } from './helpers/uiDelegations/chatDelegations.js';
-import { memoryDelegations } from './helpers/uiDelegations/memoryDelegations.js';
-import type { MemoryDelegations } from './helpers/uiDelegations/memoryDelegations.js';
-import { dashboardDelegations } from './helpers/uiDelegations/dashboardDelegations.js';
-import type { DashboardDelegations } from './helpers/uiDelegations/dashboardDelegations.js';
-import { personaThemeDelegations } from './helpers/uiDelegations/personaThemeDelegations.js';
-import type { PersonaThemeDelegations } from './helpers/uiDelegations/personaThemeDelegations.js';
-import { settingsModalDelegations } from './helpers/uiDelegations/settingsModalDelegations.js';
-import type { SettingsModalDelegations } from './helpers/uiDelegations/settingsModalDelegations.js';
-import { miscDelegations } from './helpers/uiDelegations/miscDelegations.js';
-import type { MiscDelegations } from './helpers/uiDelegations/miscDelegations.js';
+import { chatDelegations } from './helpers/ui-delegations/chatDelegations.js';
+import type { ChatDelegations } from './helpers/ui-delegations/chatDelegations.js';
+import { memoryDelegations } from './helpers/ui-delegations/memoryDelegations.js';
+import type { MemoryDelegations } from './helpers/ui-delegations/memoryDelegations.js';
+import { dashboardDelegations } from './helpers/ui-delegations/dashboardDelegations.js';
+import type { DashboardDelegations } from './helpers/ui-delegations/dashboardDelegations.js';
+import { personaThemeDelegations } from './helpers/ui-delegations/personaThemeDelegations.js';
+import type { PersonaThemeDelegations } from './helpers/ui-delegations/personaThemeDelegations.js';
+import { settingsModalDelegations } from './helpers/ui-delegations/settingsModalDelegations.js';
+import type { SettingsModalDelegations } from './helpers/ui-delegations/settingsModalDelegations.js';
+import { miscDelegations } from './helpers/ui-delegations/miscDelegations.js';
+import type { MiscDelegations } from './helpers/ui-delegations/miscDelegations.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -116,7 +116,7 @@ export type {
 
 export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost {
   // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
-  // 字段为 public：mixin 委托方法（helpers/uiDelegations/）需通过 this.xxx 访问
+  // 字段为 public：mixin 委托方法（helpers/ui-delegations/）需通过 this.xxx 访问
   /** Toast 通知管理器（独立管理定时器和清理） */
   toastManager = new ToastManager();
   /** 模态框管理器（独立管理焦点恢复和并发保护） */

@@ -354,9 +354,10 @@ export function showRelationEditDialog(
   cancelBtn.onclick = () => hideRelationEditDialog();
 
   // 背景遮罩点击关闭（点击 .modal 自身背景区域关闭，与 .modal 类的 Escape 监听配套）
-  dialog.addEventListener('click', (e: MouseEvent) => {
+  // 用 onclick 覆盖赋值（与 saveBtn/cancelBtn 风格一致），避免 addEventListener 累积监听器
+  dialog.onclick = (e: MouseEvent) => {
     if (e.target === dialog) hideRelationEditDialog();
-  });
+  };
 
   // 权重滑块联动
   weightInput.oninput = () => {
@@ -409,9 +410,10 @@ export function showRelationCreateDialog(
   cancelBtn.onclick = () => hideRelationEditDialog();
 
   // 背景遮罩点击关闭（点击 .modal 自身背景区域关闭，与 .modal 类的 Escape 监听配套）
-  dialog.addEventListener('click', (e: MouseEvent) => {
+  // 用 onclick 覆盖赋值（与 saveBtn/cancelBtn 风格一致），避免 addEventListener 累积监听器
+  dialog.onclick = (e: MouseEvent) => {
     if (e.target === dialog) hideRelationEditDialog();
-  });
+  };
 
   // 权重滑块联动
   weightInput.oninput = () => {

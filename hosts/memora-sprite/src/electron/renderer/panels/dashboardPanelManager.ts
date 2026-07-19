@@ -198,7 +198,7 @@ export class DashboardPanelManager {
     private events: EventTracker,
   ) {
     // 缓存渲染方法中重复查询的 DOM 元素（仪表盘 HTML 模板在页面加载时已存在）
-    // 增长趋势区块 DOM 元素缓存（Phase 6.2：新增）
+    // 增长趋势区块 DOM 元素缓存
     this.growthSectionEl = document.getElementById('dashboard-growth');
     this.growthDescEl = document.getElementById('dashboard-growth-desc');
     this.growthCardsEl = document.getElementById('dashboard-growth-cards');
@@ -567,7 +567,7 @@ export class DashboardPanelManager {
 
     const { recent } = review.insights;
     if (recent.length === 0) {
-      // 安全审计修复：使用 hidden class 替代 style.display（CSP 兼容）
+      // 使用 hidden class 替代 style.display（CSP 兼容）
       sectionEl.classList.add('hidden');
       return;
     }
@@ -600,7 +600,7 @@ export class DashboardPanelManager {
       listEl.appendChild(item);
     }
 
-    // 安全审计修复：使用 hidden class 替代 style.display（CSP 兼容）
+    // 使用 hidden class 替代 style.display（CSP 兼容）
     sectionEl.classList.remove('hidden');
   }
 

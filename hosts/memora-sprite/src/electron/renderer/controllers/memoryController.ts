@@ -18,7 +18,7 @@ import type { UIManager } from '../ui.js';
 import { setButtonLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
-// P1 类型统一：感知数据 Payload 类型从 ipcListeners 导入，消除内联类型重复
+// 感知数据 Payload 类型从 ipcListeners 导入，消除内联类型重复
 import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
 import type { HealthDashboardPayload } from '../../preload.js';
 // 复用内核 getDuplicateRemovalIds 计算待清理 ID
@@ -29,9 +29,6 @@ import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js'
 import { LlmGovernanceResultRenderer } from '../panels/llmGovernanceResultRenderer.js';
 // 补全统计埋点（重置统计时调用 clear）
 import { getCompletionMetrics } from '../helpers/completionMetrics.js';
-
-// getSearchParams 已移至 UIManager.getMemorySearchParams()
-// 控制器层不再直接访问 DOM，通过 UIManager 门面读取搜索参数
 
 /**
  * 客户端排序 + 时间过滤（搜索增强，模块级）
@@ -202,7 +199,7 @@ export function createMemoryController(uiManager: UIManager) {
             // 刷新回收站列表（移除已恢复项）+ 主列表（显示恢复的记忆）
             await loadRecycleBinList();
             await loadMemoryList();
-            // F6：恢复记忆后刷新图谱缓存，恢复的节点在图谱视图中重新可见
+            // 恢复记忆后刷新图谱缓存，恢复的节点在图谱视图中重新可见
             void refreshGraphIfVisible();
             // 列表渲染完成后，滚动到目标记忆项并高亮
             uiManager.scrollToMemory(result.id);
@@ -227,7 +224,7 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast('记忆已彻底删除', 'success');
             // 刷新回收站列表（移除已删除项）
             await loadRecycleBinList();
-            // F6：彻底删除会清理关系边（writeRemoveRelationsByMemoryId），需刷新图谱缓存
+            // 彻底删除会清理关系边（writeRemoveRelationsByMemoryId），需刷新图谱缓存
             void refreshGraphIfVisible();
           } else {
             uiManager.showToast('删除失败：记忆可能已被处理', 'error');
@@ -253,7 +250,7 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast(`已恢复 ${result.restored} 条记忆`, 'success');
             await loadRecycleBinList();
             await loadMemoryList();
-            // F6：批量恢复改变图谱拓扑，刷新缓存
+            // 批量恢复改变图谱拓扑，刷新缓存
             void refreshGraphIfVisible();
           } else {
             uiManager.showToast('回收站中没有可恢复的记忆', 'info');
@@ -274,7 +271,7 @@ export function createMemoryController(uiManager: UIManager) {
           if (result.purged > 0) {
             uiManager.showToast(`已彻底删除 ${result.purged} 条记忆`, 'success');
             await loadRecycleBinList();
-            // F6：批量清空会清理所有关系边，刷新图谱缓存
+            // 批量清空会清理所有关系边，刷新图谱缓存
             void refreshGraphIfVisible();
           } else {
             uiManager.showToast('回收站中没有可删除的记忆', 'info');
@@ -456,7 +453,7 @@ export function createMemoryController(uiManager: UIManager) {
       // 删除是不可恢复操作，需防重复点击（与 onMemoryAdd/onMemoryEdit 一致）
       setButtonLoading('btn-memory-delete', true, '删除中…');
       try {
-        // deleteMemory 现为软删除（移入回收站），检查返回值避免假成功
+        // deleteMemory 为软删除（移入回收站），检查返回值避免假成功
         const result = await window.electronAPI.deleteMemory(id);
         if (!result.deleted) {
           // 主进程返回 deleted=false（如 ID 不存在或已软删除），提示用户
@@ -465,9 +462,9 @@ export function createMemoryController(uiManager: UIManager) {
         }
         uiManager.hideModal('memory-detail-modal');
         await loadMemoryList();
-        // F6：删除记忆后刷新图谱缓存，防止图谱视图显示已删除节点
+        // 删除记忆后刷新图谱缓存，防止图谱视图显示已删除节点
         void refreshGraphIfVisible();
-        // 操作反馈走 toast（措辞调整为"已移入回收站"，体现软删除语义）
+        // 操作反馈走 toast（体现软删除语义）
         uiManager.showToast('记忆已移入回收站', 'success');
       } catch (error) {
         handleIpcError('onMemoryDelete', error, '删除记忆失败');
@@ -486,7 +483,7 @@ export function createMemoryController(uiManager: UIManager) {
         uiManager.clearAddMemoryForm();
         uiManager.hideModal('memory-add-modal');
         await loadMemoryList();
-        // F6：新增记忆后刷新图谱缓存，新节点在图谱视图中可见
+        // 新增记忆后刷新图谱缓存，新节点在图谱视图中可见
         void refreshGraphIfVisible();
         // 操作反馈走 toast
         uiManager.showToast('记忆已添加', 'success');
@@ -512,7 +509,7 @@ export function createMemoryController(uiManager: UIManager) {
         await window.electronAPI.addMemory({ source, name, content });
         uiManager.hideModal('memory-detail-modal');
         await loadMemoryList();
-        // F6：编辑记忆后刷新图谱缓存（节点 name 可能变化，影响图谱标签显示）
+        // 编辑记忆后刷新图谱缓存（节点 name 可能变化，影响图谱标签显示）
         void refreshGraphIfVisible();
         uiManager.showToast('记忆已更新', 'success');
       } catch (error) {
@@ -547,7 +544,7 @@ export function createMemoryController(uiManager: UIManager) {
           uiManager.showToast('按住 Ctrl 从节点拖拽到另一个节点即可创建连线', 'info');
           break;
         case 'copy-id':
-          // 复制节点 ID 到剪贴板（UX-0713-L6：添加错误处理，剪贴板失败时反馈用户）
+          // 复制节点 ID 到剪贴板（添加错误处理，剪贴板失败时反馈用户）
           try {
             await navigator.clipboard.writeText(nodeId);
             uiManager.showToast('节点 ID 已复制', 'success');
@@ -562,13 +559,13 @@ export function createMemoryController(uiManager: UIManager) {
     uiManager.onRelationEdit(async (sourceId: string, targetId: string, type: string, weight: number) => {
       try {
         const result = await window.electronAPI.updateRelation({ sourceId, targetId, type, weight });
-        // F7：IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
+        // IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
         if (!result.success) {
           uiManager.showToast('更新关系失败：参数非法或内部错误', 'error');
           return;
         }
         uiManager.showToast('关系已更新', 'success');
-        // F7：复用 refreshGraphIfVisible，消除三处重复的 getRelationGraph + loadGraphData
+        // 复用 refreshGraphIfVisible 刷新图谱
         void refreshGraphIfVisible();
       } catch (error) {
         handleIpcError('onRelationEdit', error, '更新关系失败');
@@ -579,13 +576,13 @@ export function createMemoryController(uiManager: UIManager) {
     uiManager.onRelationDelete(async (sourceId: string, targetId: string, type: string) => {
       try {
         const result = await window.electronAPI.removeRelation({ sourceId, targetId, type });
-        // F7：IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
+        // IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
         if (!result.success) {
           uiManager.showToast('删除关系失败：参数非法或内部错误', 'error');
           return;
         }
         uiManager.showToast('关系已删除', 'success');
-        // F7：复用 refreshGraphIfVisible，消除三处重复的 getRelationGraph + loadGraphData
+        // 复用 refreshGraphIfVisible 刷新图谱
         void refreshGraphIfVisible();
       } catch (error) {
         handleIpcError('onRelationDelete', error, '删除关系失败');
@@ -596,13 +593,13 @@ export function createMemoryController(uiManager: UIManager) {
     uiManager.onRelationCreate(async (sourceId: string, targetId: string, type: string, weight: number) => {
       try {
         const result = await window.electronAPI.addRelation({ sourceId, targetId, type, weight });
-        // F7：IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
+        // IPC 返回 { success: false } 时不 throw，需显式检查避免误报成功
         if (!result.success) {
           uiManager.showToast('创建关系失败：参数非法或内部错误', 'error');
           return;
         }
         uiManager.showToast('关系已创建', 'success');
-        // F7：复用 refreshGraphIfVisible，消除三处重复的 getRelationGraph + loadGraphData
+        // 复用 refreshGraphIfVisible 刷新图谱
         void refreshGraphIfVisible();
       } catch (error) {
         handleIpcError('onRelationCreate', error, '创建关系失败');
@@ -611,7 +608,7 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
-   * 加载记忆洞察数据（Phase 3：记忆洞察面板）
+   * 加载记忆洞察数据（记忆洞察面板）
    *
    * 并行请求仪表盘数据和关系图谱数据，聚合后委托 DashboardPanelManager 渲染：
    * - 统计卡片：记忆总数 / 关系数 / 来源数
@@ -645,7 +642,7 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
-   * 加载记忆健康度仪表盘数据（Phase 1：健康度诊断）
+   * 加载记忆健康度仪表盘数据（健康度诊断）
    *
    * 请求 IPC 获取健康度数据，渲染委托 DashboardPanelManager：
    * - 健康度评分（总分 + 三维度进度条）
@@ -786,7 +783,7 @@ export function createMemoryController(uiManager: UIManager) {
     const perceptionPromise = Promise.resolve()
       .then(() => window.electronAPI.getPerceptionSnapshot?.())
       .catch((err: unknown) => { reportError('getPerceptionSnapshot', err); return null; });
-    // Phase 6.2：对话回顾数据（reviewManager.buildReviewData 的 IPC 透传），失败时不阻塞仪表盘其他区域
+    // 对话回顾数据（reviewManager.buildReviewData 的 IPC 透传），失败时不阻塞仪表盘其他区域
     const reviewPromise = Promise.resolve()
       .then(() => window.electronAPI.getReviewData?.())
       .catch((err: unknown) => { reportError('getReviewData', err); return null; });
@@ -826,7 +823,7 @@ export function createMemoryController(uiManager: UIManager) {
     // 已加载技能列表渲染（消费内核 agent.skills.list）
     uiManager.renderSkills(data.skills);
 
-    // Phase 6.2：增长趋势区块渲染（消费 reviewManager.buildReviewData 已计算的趋势数据）
+    // 增长趋势区块渲染（消费 reviewManager.buildReviewData 已计算的趋势数据）
     if (reviewData) {
       uiManager.renderReviewData(reviewData);
     }
@@ -911,7 +908,6 @@ export function createMemoryController(uiManager: UIManager) {
     loadDashboard,
     /** 加载感知快照（切换到感知面板时调用） */
     loadPerception,
-    loadHealthDashboard,
     /** 防抖版 loadDashboard（事件密集触发时使用） */
     loadDashboardDebounced,
     /** 防抖版 loadMemoryList（用户停留在记忆面板时，memoryNoticed 事件触发自动刷新） */
@@ -927,7 +923,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updateAffectDisplay(affect);
     },
     /**
-     * Phase 3：更新默契度展示（委托 UIManager → PerceptionPanelManager）
+     * 更新默契度展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 rapportUpdated 事件驱动，Controller 仅做转发。
      */
@@ -935,7 +931,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updateRapportDisplay(rapport);
     },
     /**
-     * Phase 4：更新对话上下文展示（委托 UIManager → PerceptionPanelManager）
+     * 更新对话上下文展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 contextUpdated 事件驱动，Controller 仅做转发。
      */
@@ -951,20 +947,12 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updatePatternsDisplay(payload);
     },
     /**
-     * Phase 3.2：更新在场状态展示（委托 UIManager → PerceptionPanelManager）
+     * 更新在场状态展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 presenceChanged 事件驱动，Controller 仅做转发。
      */
     updatePresenceDisplay: (payload: PresencePayload) => {
       uiManager.updatePresenceDisplay(payload);
-    },
-    /**
-     * 更新叙事摘要（委托 UIManager → PerceptionPanelManager）
-     *
-     * 由渲染器在每次感知数据更新后调用，不需要额外参数。
-     */
-    updateNarrative: () => {
-      uiManager.updateNarrative();
     },
     /** 清理防抖定时器（由 renderer.ts beforeunload 调用） */
     cleanup: () => {

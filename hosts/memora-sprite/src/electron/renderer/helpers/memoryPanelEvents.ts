@@ -130,7 +130,7 @@ export interface MemoryPanelEventContext {
   getRecycleBinBatchActionCallback(): ((action: 'restore-all' | 'purge-all') => void) | null;
   /** 更多菜单操作回调（insights/health/recycle-bin） */
   getMoreMenuActionCallback(): ((action: string) => void) | null;
-  /** LLM 记忆治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC） */
+  /** LLM 记忆治理回调（dedup/timeliness/conflicts，由 Controller 调用 IPC） */
   getLlmGovernanceCallback(): ((action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>) | null;
 }
 
@@ -165,11 +165,11 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
   initRecycleBinActions(ctx);
   // 回收站批量操作（全部恢复/全部清空）
   initRecycleBinBatchActions(ctx);
-  // LLM 记忆治理（G3：语义去重/时效性评估/冲突检测）
+  // LLM 记忆治理（语义去重/时效性评估/冲突检测）
   initLlmGovernanceActions(ctx);
 }
 
-// ─── 10. LLM 记忆治理（G3） ───────────────────────────────
+// ─── 10. LLM 记忆治理 ───────────────────────────────
 
 /**
  * LLM 治理按钮事件绑定（语义去重/时效性评估/冲突检测）。
@@ -323,7 +323,7 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
     }) as EventListener);
   }
 
-  // 必填字段 blur 即时校验（UX-0712-6）
+  // 必填字段 blur 即时校验
   attachRequiredBlurValidation(MEMORY_ADD_REQUIRED_FIELDS, ctx.events);
 }
 
@@ -480,14 +480,10 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
   }
 }
 
-// ─── 5. 高级筛选栏（排序/时间范围，合并原重复注册） ────────
+// ─── 5. 高级筛选栏（排序/时间范围） ────────
 
 /**
  * 高级筛选按钮切换 + 排序/时间范围下拉变更。
- *
- * 合并说明：原 initMemoryPanelListeners 在"高级搜索栏"和"排序方式变更"两处
- * 各为 #memory-sort-order / #memory-time-range 注册了一次 change 监听器，
- * 导致回调被触发两次。此处合并为单次注册。
  */
 function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
   // 高级筛选按钮（独立图标按钮，切换筛选栏显示）
@@ -651,7 +647,7 @@ function initViewSwitchButtons(ctx: MemoryPanelEventContext): void {
   if (graphBtn) {
     ctx.events.addEventListener(graphBtn, 'click', () => {
       const graphContainer = document.getElementById('memory-graph-container');
-      // B2: 统一用 .hidden 类判断可见性（替代 style.display 内联样式）
+      // 统一用 .hidden 类判断可见性
       const isGraphView = graphContainer && !graphContainer.classList.contains('hidden');
 
       if (isGraphView) {
@@ -671,7 +667,7 @@ function initViewSwitchButtons(ctx: MemoryPanelEventContext): void {
   if (timelineBtn) {
     ctx.events.addEventListener(timelineBtn, 'click', () => {
       const timelineContainer = document.getElementById('memory-timeline-container');
-      // B2: 统一用 .hidden 类判断可见性（替代 style.display 内联样式）
+      // 统一用 .hidden 类判断可见性
       const isTimelineView = timelineContainer && !timelineContainer.classList.contains('hidden');
 
       if (isTimelineView) {
@@ -687,7 +683,7 @@ function initViewSwitchButtons(ctx: MemoryPanelEventContext): void {
   }
 }
 
-// ─── 9. 智能清理对话框（Phase 3） ─────────────────────────
+// ─── 9. 智能清理对话框 ─────────────────────────
 
 /**
  * 三类清理按钮（重复/过期/全部）+ 取消/确认对话框。

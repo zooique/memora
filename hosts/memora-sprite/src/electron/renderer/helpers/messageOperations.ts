@@ -66,9 +66,9 @@ export function handleRegenerate(ctx: MessageOperationContext, messageEl: HTMLEl
 /**
  * 查找指定精灵消息的上一条用户消息（跨 message-group 遍历）
  *
- * Phase 1 消息分组后，user 和 assistant 分属不同 .message-group 容器，
+ * 消息分组后，user 和 assistant 分属不同 .message-group 容器，
  * previousElementSibling 仅在同一 group 内遍历无法跨 group。
- * 修复：先跳到父 group，再跨 group 向前遍历，在每个 group 内取最后一条 user。
+ * 先跳到父 group，再跨 group 向前遍历，在每个 group 内取最后一条 user。
  *
  * @param assistantMessageEl 精灵消息元素
  * @returns 上一条用户消息元素，找不到返回 null

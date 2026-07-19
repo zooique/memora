@@ -159,7 +159,7 @@ export function showPanelLoading(container: Element, text = '加载中…'): voi
 // ─── 时间格式化 ─────────────────────────────────────────
 
 /**
- * U5 统一相对时间格式化（合并原 formatRelativeTime + formatMemoryTime）
+ * 统一相对时间格式化（合并原 formatRelativeTime + formatMemoryTime）
  *
  * 将任意日期字符串（ISO 8601 或 YYYY-MM-DD）转换为人类可读的相对时间：
  * - 1 分钟内 → "刚刚"
@@ -194,7 +194,7 @@ export function formatTimeAgo(dateStr: string): string {
 }
 
 /**
- * 剪枝：统一时间戳格式化（当天 HH:MM / 昨天 HH:MM / 非当天 MM-DD HH:MM）
+ * 统一时间戳格式化（当天 HH:MM / 昨天 HH:MM / 非当天 MM-DD HH:MM）
  *
  * 合并 chatPanelManager.formatTimestamp 和 ipcListeners 中的手写时间格式化。
  * 解析失败时返回原始字符串（防御性降级）。
@@ -232,7 +232,7 @@ export function formatTimestamp(isoString: string): string {
 }
 
 /**
- * 剪枝：统一时钟格式化（HH:MM）
+ * 统一时钟格式化（HH:MM）
  *
  * 合并 ipcListeners 中审计日志的手写 getHours/getMinutes + padStart 逻辑。
  *
@@ -262,7 +262,7 @@ export { formatDateKey } from '../../../shared/dateUtils.js';
 // ─── 按钮状态管理 ─────────────────────────────────────────
 
 /**
- * U6 设置按钮 loading 状态（从 UIManager 提取的通用工具方法）
+ * 设置按钮 loading 状态（从 UIManager 提取的通用工具方法）
  *
  * 异步操作进行中时禁用按钮并显示 loading 文本，防止用户重复点击。
  * 操作完成后恢复按钮原始状态。

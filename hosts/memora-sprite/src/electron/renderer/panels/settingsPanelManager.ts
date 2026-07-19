@@ -102,7 +102,7 @@ export class SettingsPanelManager {
   private cfgDefaultPersona: HTMLInputElement | null;
   /** 项目模式：专注项目选择下拉框 */
   private cfgFocusProject: HTMLSelectElement | null;
-  /** 使用统计开关（AUDIT-5-4 隐私合规） */
+  /** 使用统计开关（隐私合规，默认关闭） */
   private cfgUsageStats: HTMLInputElement | null;
 
   // ─── 设置面板 DOM 元素 - 快捷键配置（Phase 3.3） ─────────
@@ -377,7 +377,7 @@ export class SettingsPanelManager {
             focusProjectPath: '',
             // ADR-015 归档模式默认 full
             archiveMode: 'full',
-            // AUDIT-5-4 使用统计默认关闭（隐私合规，需用户显式开启）
+            // 使用统计默认关闭（隐私合规，需用户显式开启）
             usageStatsEnabled: false,
             // Phase 3.3 快捷键默认值（与 DEFAULT_SPRITE_CONFIG.shortcuts 一致）
             shortcuts: {
@@ -474,7 +474,7 @@ export class SettingsPanelManager {
     this.initProviderListeners();
     this.loadProviderList();
 
-    // AUDIT-5-4 隐私与数据：导出/清除使用统计按钮
+    // 隐私与数据：导出/清除使用统计按钮
     this.bindUsageStatsButtons();
   }
 
@@ -534,7 +534,7 @@ export class SettingsPanelManager {
   /**
    * 初始化快捷键捕获式输入（委托到 helper）
    *
-   * 捕获逻辑、accelerator 解析、冲突检测已提取到 shortcutCapture.ts，
+   * 捕获逻辑、accelerator 解析、冲突检测委托给 shortcutCapture.ts，
    * 此处仅构建 context 并委托。helper 通过 ctx.events 注册监听器，
    * cleanup 由主类统一管理。
    */
@@ -738,7 +738,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * 绑定「隐私与数据」分区的按钮事件（AUDIT-5-4）
+   * 绑定「隐私与数据」分区的按钮事件
    *
    * - 导出统计：调用主进程导出 JSON 文件，成功后 toast 提示文件路径
    * - 清除数据：二次确认后调用主进程清空计数器，避免误操作
@@ -805,7 +805,7 @@ export class SettingsPanelManager {
       if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
       if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
       if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
-      // AUDIT-5-4 使用统计开关（隐私合规，默认关闭）
+      // 使用统计开关（隐私合规，默认关闭）
       if (this.cfgUsageStats) this.cfgUsageStats.checked = config.usageStatsEnabled;
 
       // 角色匹配模式（单选按钮）
@@ -917,7 +917,7 @@ export class SettingsPanelManager {
       defaultPersona: this.cfgDefaultPersona?.value.trim() ?? '',
       projectMode,
       focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
-      // AUDIT-5-4 使用统计开关（隐私合规，默认关闭）
+      // 使用统计开关（隐私合规，默认关闭）
       usageStatsEnabled: this.cfgUsageStats?.checked ?? false,
       // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
       shortcuts: {

@@ -79,10 +79,7 @@
   gap: var(--space-2);
 }
 
-/* 列表为空时隐藏（与空状态互斥显示） */
-.clipboard-pending-list.clipboard-list-hidden {
-  display: none;
-}
+/* 列表为空时通过 .hidden 工具类隐藏（base.css 提供，复用通用约定） */
 
 /* ─── 待处理条目 ────────────────────────────────────── */
 /* 单条条目：左侧预览文本 + 右侧元信息 + 操作按钮 */

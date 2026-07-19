@@ -134,7 +134,7 @@ export class SuggestionCardManager {
     };
     const typeLabel = typeLabels[suggestion.type] ?? '建议';
 
-    // U3 用 createElement 替代 innerHTML 模板，与项目规范一致且天然防 XSS
+    // 使用 createElement 替代 innerHTML 模板（与项目规范一致且天然防 XSS）
 
     // 头部：图标 + 类型标签 + 置信度
     const header = document.createElement('div');
@@ -243,7 +243,7 @@ export class SuggestionCardManager {
   /** 清理所有事件监听器和卡片（UIManager.cleanup 时调用） */
   cleanup(): void {
     this.events.cleanup();
-    // 剪枝：复用 domHelpers.clearElement 替代手写 while+removeChild
+    // 复用 domHelpers.clearElement 清空容器
     if (this.container) {
       clearElement(this.container);
     }

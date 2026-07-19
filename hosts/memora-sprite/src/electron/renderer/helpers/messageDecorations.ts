@@ -32,7 +32,7 @@ export interface MemoryRecallItem {
 }
 
 /**
- * 思考阶段中文映射（Phase 3：增强文案，更具体）
+ * 思考阶段中文映射（增强文案，更具体）
  *
  * 将内核 yield 的 thinking phase 标识符映射为用户可读的中文文案。
  */
@@ -47,7 +47,7 @@ const THINKING_PHASE_LABELS: Record<string, string> = {
  *
  * 默认仅显示一个小标签"记忆"，点击展开显示具体记忆列表。
  * 每条召回记忆独立可点击，点击触发 memoryRecallClickCallback 跳转记忆详情。
- * 使用 createElement 替代 innerHTML，避免 XSS 风险（UX-08）。
+ * 使用 createElement 替代 innerHTML，避免 XSS 风险。
  * 使用 data-action 属性替代直接 addEventListener，由事件委托统一处理。
  *
  * @param memories 召回记忆摘要列表

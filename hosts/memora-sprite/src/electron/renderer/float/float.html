@@ -14,8 +14,13 @@
     设计令牌集中在 styles/foundation/tokens.css（单一真理源），本窗口不再内联任何变量，
     避免与主窗口令牌漂移。
   -->
+  <!-- 浮窗加载顺序（§2.4.9）：foundation 三层（tokens + base + utilities） → windows/float.css -->
   <!-- 设计令牌（单一真理源，与主窗口完全一致） -->
   <link rel="stylesheet" href="../styles/foundation/tokens.css" />
+  <!-- 全局重置 + .hidden + .icon + 滚动条等通用基类 -->
+  <link rel="stylesheet" href="../styles/foundation/base.css" />
+  <!-- 原子布局工具类（flex-center / surface-card / text-muted 等） -->
+  <link rel="stylesheet" href="../styles/foundation/utilities.css" />
   <!-- 浮动窗口组件专属样式 -->
   <link rel="stylesheet" href="../styles/windows/float.css" />
 </head>

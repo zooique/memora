@@ -1,6 +1,6 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-15（CSS-R6 按功能域分组重构 + 浮窗统一管理 + 工具类渐进引用）
+> 最后更新：2026-07-19（CSS-R7 样式层规则对齐 + 剪枝 + 提交前审查）
 
 ## 1. 目录结构（按功能域分组，8 个子目录）
 
@@ -26,19 +26,21 @@ styles/
 │   ├── chat-messages-input.css   # 输入区 / 补全 / 停止按钮 / 空状态
 │   └── chat-messages-misc.css    # 思考指示器 / 工具卡片 / 动画 / 启动摘要 / 右键菜单
 │
-├── memory/             # 记忆功能域（聚合器 + 7 子模块）
-│   ├── memory.css             # 聚合器（纯 @import 7 子模块）
+├── memory/             # 记忆功能域（聚合器 + 7 子模块 + 1 分析子面板）
+│   ├── memory.css             # 聚合器（纯 @import 7 子模块 + 1 分析子面板）
 │   ├── memory-list.css        # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
 │   ├── memory-detail.css      # 记忆详情弹窗 / 技能列表 / 全局·项目色
 │   ├── memory-views.css       # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
 │   ├── memory-graph-core.css  # 更多菜单 / 图例 / tooltip / 右键菜单 / 关系编辑
 │   ├── memory-graph-search.css # 高级搜索 / 搜索高亮 / 洞察栏
 │   ├── memory-graph-detail.css # 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘
-│   └── memory-graph-misc.css  # 增强 1-5 / 时间线 / 回收站
+│   ├── memory-graph-misc.css  # 增强 1-5 / 时间线 / 回收站
+│   └── completion-stats.css   # 补全统计面板（记忆面板第 3 个 analysis panel，与 insights/health 互斥切换）
 │
 ├── panels/              # 独立面板样式（每个对应一个 .panel）
 │   ├── dashboard.css   # 仪表盘面板（概览+运行指标+记忆源健康+增长趋势）
 │   ├── perception.css  # 独立感知面板（从 dashboard.css 迁出，覆盖 chat-perception.css 基础样式）
+│   ├── clipboard.css   # 剪贴板保护面板（待处理列表 + 引导气泡 + 空状态，clipboardPanelManager 使用）
 │   └── settings.css    # 设置面板
 │
 ├── overlays/            # 浮层组件（modal / toast / 命令面板 / 搜索弹窗）
@@ -65,9 +67,10 @@ foundation/base.css        ← 全局重置 / 滚动条 / 动画 / focus-visible
 foundation/utilities.css   ← 通用工具类（flex-center / flex-col / flex-row-center / surface-card / text-muted）
 layout/layout.css          ← 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
 chat/chat.css              ← 聚合器（@import 7 子模块，见 §3）
-memory/memory.css          ← 聚合器（@import 7 子模块，见 §3）
+memory/memory.css          ← 聚合器（@import 7 子模块 + 1 分析子面板，见 §3）
 panels/dashboard.css
 panels/perception.css
+panels/clipboard.css
 panels/settings.css
 overlays/modal.css
 overlays/toast.css
@@ -134,8 +137,9 @@ windows/float.css          ← 浮动窗口组件样式
 | `memory-graph-search.css` | 高级搜索 / 搜索高亮 / 洞察栏 | 1086–1303 |
 | `memory-graph-detail.css` | 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘 | 1304–1638 |
 | `memory-graph-misc.css` | 增强 1-5 / 时间线 / 回收站 | 1639–末尾 |
+| `completion-stats.css` | 补全统计面板（记忆面板第 3 个 analysis panel，与 insights/health 互斥切换） | 2026-07-15 新增 |
 
-> 注：2026-07-13 二级拆分后，chat-messages 4 子模块（344/482/635/757 行）、memory-graph 4 子模块（341/218/335/536 行）。二级拆分按内部功能域切分，切点落在规则边界（大括号配平处），@import 顺序与原文件一致，层叠 100% 等价。
+> 注：2026-07-13 二级拆分后，chat-messages 4 子模块（344/482/635/757 行）、memory-graph 4 子模块（341/218/335/536 行）。二级拆分按内部功能域切分，切点落在规则边界（大括号配平处），@import 顺序与原文件一致，层叠 100% 等价。2026-07-15 追加 `completion-stats.css` 作为记忆面板第 3 个 analysis panel，挂载在 memory.css 聚合器末尾（与 insights/health 互斥切换，不参与原单体行范围切分）。
 
 ## 5. foundation/base.css 定位与拆分约定
 
@@ -258,3 +262,4 @@ foundation/utilities.css（原子布局工具类）       ← 已有，19 个 cl
 | CSS-R5 utilities | 2026-07-13 | 新增 utilities.css 中间层，5 个原子工具类 |
 | CSS-R6 功能域分组 + 工具类扩充 | 2026-07-15 | Phase 1：styles/ 按 8 个功能域子目录分组，浮窗 CSS 统一迁入 windows/，聚合器 @import 改同目录相对路径；Phase 2：utilities.css 扩充 10 个工具类（flex-between / flex-shrink-0 / inline-flex-center / text-truncate / line-clamp-2/3/4 / section-title-sm / collapsible-hidden / input-focus-accent），原 CSS 重复块留待后续 HTML/TS 渐进引用 |
 | CSS-R6 渐进引用 | 2026-07-15 | 4 commit 完成 4 个工具类渐进引用（.icon-btn / .text-truncate / .flex-between / .flex-shrink-0），净删除 108 行 CSS 重复代码；剩余 23 处 .flex-shrink-0（含 12 不可替换 + 11 可替换）归档待完成任务，按自然生长触发 |
+| CSS-R7 规则对齐 + 剪枝 + 审查 | 2026-07-19 | (1) directory-structure.md §1/§2.4.1 + README.md §1/§2/§4 补齐 memory/completion-stats.css（第 3 个 analysis panel）+ panels/clipboard.css（剪贴板保护面板）规则漏登记；(2) index.html 删除 chat-toolbar/datenav/perception 3 处重复 link（聚合器 chat.css 已 @import，违反 §2.4.4）；(3) float.html 补 base.css + utilities.css（违反 §2.4.9 浮窗加载顺序）；(4) clipboard.css 删除死代码 .clipboard-list-hidden（clipboardPanelManager.ts 零引用）；(5) completion-stats.css 11 处裸 px 令牌化（保留 1px/2px 次像素对齐 + max-height） |

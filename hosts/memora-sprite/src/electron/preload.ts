@@ -179,8 +179,8 @@ export const IPC_CHANNELS = {
   // LLM 润色文本（携带原文，返回润色后文本，与 ipc/channels.ts QUICK_INPUT_POLISH 同步）
   QUICK_INPUT_POLISH: 'quick-input-polish',
   // 常驻模式切换（与 ipc/channels.ts 同步）
-  // 注：原 QUICK_INPUT_SET_ALWAYS_ON_TOP 通道已移除（减法 2026-07-18）—— pinnedMode/alwaysOnTop 强耦合，
-  // 浮窗永远 alwaysOnTop=true + skipTaskbar=true，消除 Windows 任务栏默认图标 bug。
+  // pinnedMode/alwaysOnTop 强耦合：浮窗永远 alwaysOnTop=true + skipTaskbar=true，
+  // 消除 Windows 任务栏默认图标 bug。
   QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
@@ -229,7 +229,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
-// 补齐 DeletedMemoryListItem 导出，供 UI 渲染回收站列表使用
+// DeletedMemoryListItem 用于 UI 渲染回收站列表
 export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem, RelationPath, RelationNeighbor };
 
 // ─── 配置建议/用户画像共享类型定义 ───────────────────────────────────

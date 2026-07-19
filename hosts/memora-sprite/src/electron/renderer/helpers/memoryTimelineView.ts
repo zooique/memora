@@ -16,7 +16,6 @@
  *   - 记忆列表和搜索关键词通过 context 传入（状态所有权归 MemoryPanelManager）
  *   - 文本高亮通过回调委托给 manager，避免逻辑重复
  *   - formatDateLabel 是纯函数，直接使用 domHelpers.formatDateKey
- *   - 不使用 @ts-ignore 或 as any，遵循现有代码风格
  *
  * 先例：
  *   参照 memoryGraphPanel.ts / memoryDetailPanel.ts 的 context 注入模式

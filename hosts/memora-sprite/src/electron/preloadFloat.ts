@@ -2,7 +2,7 @@
  * 预加载脚本 — 浮动窗口最小化安全桥接
  *
  * 与主 preload.ts 的差异：
- *   - 仅暴露浮动窗口所需的 12 个 API（vs 主 preload 的 266 个）
+ *   - 仅暴露浮动窗口所需的最小 API（vs 主 preload 的全量 API）
  *   - 仅内联 8 个浮动窗口相关 IPC 通道（4 渲染→主 + 4 主→渲染）
  *   - 剥离高危 API：deleteMemory / installSkill / saveLlmProvider / clearAuditLog 等
  *
@@ -65,7 +65,7 @@ interface SpriteEventMessage {
   silent: boolean;
 }
 
-// ─── 暴露给渲染进程的 API（仅 12 个方法）─────
+// ─── 暴露给渲染进程的 API（浮动窗口动作 + 事件监听器移除）─────
 
 const floatAPI = {
   // ─── 浮动窗口动作（4 个，渲染→主 fire-and-forget） ─────────

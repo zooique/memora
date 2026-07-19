@@ -15,7 +15,7 @@
  * 由 ipcListeners 中的感知事件处理器同时更新 popover 和感知面板。
  */
 import type { AffectPayload, RapportPayload, ContextPayload } from '../ipcListeners.js';
-// 感知标签映射 + 阈值常量（统一真理源，修复文案不一致 + 阈值硬编码）
+// 感知标签映射 + 阈值常量（统一真理源）
 import { getRapportLevelLabel, describeRhythm, describeCoherence, AFFECT_TONE_THRESHOLD } from '../helpers/perceptionLabels.js';
 
 /**

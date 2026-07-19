@@ -21,7 +21,7 @@ import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipc/types.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
-// P4 类型统一：感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联
+// 感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联
 import type { RapportLevel, PresenceState, RhythmType, CoherenceLevel, DepthLevel } from '../../sprite/controllers/index.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../shared/truncate.js';
@@ -52,7 +52,7 @@ export interface AffectPayload {
   initiative: number;
 }
 
-/** Phase 3.2：在场状态变化载荷 */
+/** 在场状态变化载荷 */
 export interface PresencePayload {
   state: PresenceState;
   timestamp: string;
@@ -60,7 +60,7 @@ export interface PresencePayload {
   reason: string;
 }
 
-/** Phase 3：默契度更新载荷 */
+/** 默契度更新载荷 */
 export interface RapportPayload {
   trust: number;
   familiarity: number;
@@ -68,7 +68,7 @@ export interface RapportPayload {
   description: string;
 }
 
-/** Phase 4：对话上下文更新载荷 */
+/** 对话上下文更新载荷 */
 export interface ContextPayload {
   rhythm: RhythmType;
   coherence: CoherenceLevel;
@@ -233,9 +233,9 @@ export function isPatternsPayload(value: unknown): value is PatternsPayload {
     value.patterns.every(
       (p: unknown) =>
         isObject(p) &&
-        typeof (p as Record<string, unknown>).type === 'string' &&
-        typeof (p as Record<string, unknown>).summary === 'string' &&
-        typeof (p as Record<string, unknown>).confidence === 'number',
+        typeof p.type === 'string' &&
+        typeof p.summary === 'string' &&
+        typeof p.confidence === 'number',
     )
   );
 }
@@ -423,7 +423,7 @@ function handleProjectSwitched(
  * 阈值真理源：不在此处二次过滤分数——内核 SkillManager.match() 已用
  * SKILL_MATCH_MIN_SCORE (0.3) 过滤低匹配度技能，凡到达此处的 skillMatched
  * 事件 score 均 ≥ 0.3（trigger 命中则 = 1.0）。二次过滤会造成"激活但不提示"
- * 的静默激活误导（旧代码 < 0.5 即是此问题）。
+ * 的静默激活误导。
  */
 function handleSkillMatched(
   uiManager: UIManager,
@@ -510,11 +510,7 @@ function handleTrashPurged(
 function isTrashPurgedPayload(
   payload: unknown,
 ): payload is { purgedCount: number } {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    typeof (payload as Record<string, unknown>).purgedCount === 'number'
-  );
+  return isObject(payload) && typeof payload.purgedCount === 'number';
 }
 
 /**
@@ -604,7 +600,7 @@ function createSpriteEventHandlers(
       }
       callbacks.onAffectUpdated?.(msg.payload);
     },
-    // Phase 3.2：在场状态变化 → 状态指示器
+    // 在场状态变化 → 状态指示器
     presenceChanged: (msg) => {
       if (!isPresencePayload(msg.payload)) {
         reportError('handlePresenceChanged', msg.payload);
@@ -612,7 +608,7 @@ function createSpriteEventHandlers(
       }
       callbacks.onPresenceChanged?.(msg.payload);
     },
-    // Phase 3：默契度更新 → 仪表盘展示
+    // 默契度更新 → 仪表盘展示
     rapportUpdated: (msg) => {
       if (!isRapportPayload(msg.payload)) {
         reportError('handleRapportUpdated', msg.payload);
@@ -620,7 +616,7 @@ function createSpriteEventHandlers(
       }
       callbacks.onRapportUpdated?.(msg.payload);
     },
-    // Phase 4：对话上下文更新 → 仪表盘展示
+    // 对话上下文更新 → 仪表盘展示
     contextUpdated: (msg) => {
       if (!isContextPayload(msg.payload)) {
         reportError('handleContextUpdated', msg.payload);
@@ -666,11 +662,11 @@ export interface IpcListenerCallbacks {
   onConversationEnd?: () => void;
   /** 情感基调更新时回调（更新仪表盘四维进度条） */
   onAffectUpdated?: (payload: AffectPayload) => void;
-  /** Phase 3.2：在场状态变化时回调（更新状态指示器） */
+  /** 在场状态变化时回调（更新状态指示器） */
   onPresenceChanged?: (payload: PresencePayload) => void;
-  /** Phase 3：默契度更新时回调（更新仪表盘默契度卡片） */
+  /** 默契度更新时回调（更新仪表盘默契度卡片） */
   onRapportUpdated?: (payload: RapportPayload) => void;
-  /** Phase 4：对话上下文更新时回调（更新仪表盘上下文卡片） */
+  /** 对话上下文更新时回调（更新仪表盘上下文卡片） */
   onContextUpdated?: (payload: ContextPayload) => void;
   /** 作品投影更新时回调（刷新作品投影面板） */
   onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
@@ -741,7 +737,6 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   });
 
   // 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
-  // 替代旧的居中系统消息方案（体验割裂，与原气泡内容脱节）
   window.electronAPI.onStreamAborted((msg) => {
     uiManager.markStreamingAborted(msg.messageId, msg.reason);
   });
@@ -793,8 +788,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    *
    * 错误反馈去重：气泡内错误指示器 + 重试按钮为主通道（主动可见），
    * Toast 仅作辅助提示（无重试按钮，避免与气泡内重试按钮重复）。
-   * 控制台日志保留用于排查。原方案同时触发气泡 + Toast（含重试）+ 控制台，
-   * 重试入口冗余，用户注意力被分散。
+   * 控制台日志保留用于排查。
    */
   window.electronAPI.onSpriteError((msg: { text: string }) => {
     // 主通道：将错误注入到流式消息气泡中，含重试按钮
@@ -846,7 +840,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showWriteConfirmation(info);
   });
 
-  // ─── Phase 3.1 剪贴板三重保护（被动等待 + 保护性主动） ───
+  // ─── 剪贴板三重保护（被动等待 + 保护性主动） ───
   /**
    * 监听剪贴板变化通知（携带 preview + length payload）
    *
@@ -887,7 +881,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showToast(`剪贴板内容被拦截：${payload.reason}`, 'warning');
   });
 
-  // ─── Phase 3.3 第二批：全局快捷键触发 ──────────────────
+  // ─── 全局快捷键触发 ──────────────────
   /**
    * 监听 quick-record 触发
    *

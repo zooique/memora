@@ -33,7 +33,18 @@ import type { ClipboardPendingItem } from './clipboardManager.js';
 
 // ─── 常量 ───────────────────────────────────────────────
 
-/** 首次引导气泡 localStorage 键名（一次性引导，关闭后不再出现） */
+/**
+ * 首次引导气泡 localStorage 键名（一次性引导，关闭后不再出现）
+ *
+ * 权衡说明（STEP6-2 评估结论：保留 localStorage）：
+ * - 这是 UI 一次性提示状态（非用户数据），最坏情况是 localStorage 不可用时气泡再次显示，零数据风险
+ * - 已有 try-catch 降级路径，localStorage 抛错时仅影响气泡显隐，不阻塞功能
+ * - 迁移到主进程 spriteConfig 需改 spriteConfig.ts / preload.ts / configHandlers.ts / ADR-SP-002，
+ *   且 toggleOnboardingTip 是同步方法被 refresh() 同步调用，改 IPC 异步会破坏 refresh 同步链路
+ * - 与 OnboardingManager.shouldShowOnboarding（基于 Provider 真理源）不同，这是纯 UI 提示，
+ *   不需要绝对可靠的真理源
+ * - 符合 ADR-017 枝叶层原则：避免为单次 UI 提示引入跨进程配置开销
+ */
 const ONBOARDING_DISMISSED_KEY = 'memora:clipboard-onboarding-dismissed';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────

@@ -48,7 +48,7 @@ export function createSettingsController(uiManager: UIManager) {
    * 包含精灵配置保存、LLM 配置保存、LLM 连接测试、取消。
    */
   function setupSettingsPanel(): void {
-    // UX-0713-F2：回调返回 Promise<boolean>，让 autoSaveConfig 能根据结果决定 saved/error 状态
+    // 回调返回 Promise<boolean>，让 autoSaveConfig 能根据结果决定 saved/error 状态
     uiManager.onConfigSave(async (config: SpriteConfigForm): Promise<boolean> => {
       try {
         // 单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
@@ -154,9 +154,9 @@ export function createSettingsController(uiManager: UIManager) {
         // 项目模式字段
         projectMode: safeCfg.projectMode === 'focus' ? 'focus' : 'smart',
         focusProjectPath: String(safeCfg.focusProjectPath ?? ''),
-        // Phase 3.3 快捷键配置：safeCfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
+        // 快捷键配置：safeCfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
         shortcuts: safeCfg.shortcuts ?? DEFAULT_SHORTCUTS,
-        // AUDIT-5-4 隐私合规：使用统计开关（默认 false）
+        // 隐私合规：使用统计开关（默认 false）
         usageStatsEnabled: Boolean(safeCfg.usageStatsEnabled),
       };
 
@@ -286,7 +286,7 @@ export function createSettingsController(uiManager: UIManager) {
     loadWorkProjections,
     loadAuditLog,
     updateAgentStatus,
-    /** 暴露静默恢复回调注册方法，代替模块级导出函数 */
+    /** 暴露静默恢复回调注册方法 */
     setSilentRecoveryCallback,
   };
 }

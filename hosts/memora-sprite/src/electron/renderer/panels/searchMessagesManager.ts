@@ -303,11 +303,8 @@ export class SearchMessagesManager {
       }
     } finally {
       this.isSearching = false;
-      // 修复 P1 断点（R1）：搜索期间用户输入新关键词时，新调度的 performSearch 会被
-      // isSearching 守卫拦截并直接 return，导致 lastKeyword 未更新；用户停止输入后
-      // scheduleSearch 不会再被触发（仅 input 事件触发），最新关键词永远搜不到。
-      // 修复策略：每次搜索完成后检查输入框当前值是否与上次搜索关键词不同，
-      // 不同则重新调度搜索，确保用户最终能看到最新关键词的搜索结果。
+      // 搜索完成后检查输入框当前值是否与上次搜索关键词不同，
+      // 不同则重新调度搜索（避免搜索期间输入新关键词被 isSearching 守卫拦截导致漏搜）
       if (this.isOpen && this.inputEl) {
         const currentKeyword = this.inputEl.value.trim();
         if (currentKeyword !== this.lastKeyword && currentKeyword.length >= MIN_KEYWORD_LENGTH) {

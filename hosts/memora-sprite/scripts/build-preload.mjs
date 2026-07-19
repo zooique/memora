@@ -7,8 +7,8 @@
  *
  * 处理三个 preload 文件：
  *   - preload.ts → preload.cjs（主窗口，266 API 完整暴露面）
- *   - preload-quick-input.ts → preload-quick-input.cjs（quick-input 浮窗，10 API 最小化暴露面）
- *   - preload-float.ts → preload-float.cjs（浮动窗口，12 API 最小化暴露面，ADR-SP-017 §何时回顾触发）
+ *   - preloadQuickInput.ts → preloadQuickInput.cjs（quick-input 浮窗，10 API 最小化暴露面）
+ *   - preloadFloat.ts → preloadFloat.cjs（浮动窗口，12 API 最小化暴露面，ADR-SP-017 §何时回顾触发）
  *
  * 此脚本替代 build:electron 中的内联 node -e 脚本，提升可读性和可维护性。
  * 详见 P1-ROOT 修复记录（tasks/待完成任务.md）。
@@ -24,10 +24,10 @@ const targetDir = join(import.meta.dirname, '..', 'dist-electron', 'electron');
 // stale ESM 产物路径（tsconfig.electron.json 仍会编译 preload 文件为 ESM，需清理）
 const stalePreloadJsPath = join(targetDir, 'preload.js');
 const stalePreloadMapPath = join(targetDir, 'preload.js.map');
-const staleQuickInputJsPath = join(targetDir, 'preload-quick-input.js');
-const staleQuickInputMapPath = join(targetDir, 'preload-quick-input.js.map');
-const staleFloatJsPath = join(targetDir, 'preload-float.js');
-const staleFloatMapPath = join(targetDir, 'preload-float.js.map');
+const staleQuickInputJsPath = join(targetDir, 'preloadQuickInput.js');
+const staleQuickInputMapPath = join(targetDir, 'preloadQuickInput.js.map');
+const staleFloatJsPath = join(targetDir, 'preloadFloat.js');
+const staleFloatMapPath = join(targetDir, 'preloadFloat.js.map');
 
 /**
  * 复制单个 preload 产物：preload.js → preload.cjs
@@ -44,8 +44,8 @@ function copyPreload(name) {
 
 // 1. 复制三个 preload 产物
 copyPreload('preload');
-copyPreload('preload-quick-input');
-copyPreload('preload-float');
+copyPreload('preloadQuickInput');
+copyPreload('preloadFloat');
 
 // 2. 清理临时目录
 rmSync(join(import.meta.dirname, '..', 'dist-preload'), { recursive: true, force: true });

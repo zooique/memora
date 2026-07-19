@@ -50,7 +50,7 @@ export class ScrollController {
   /**
    * 监听消息区滚动，更新 isNearBottom 状态
    *
-   * CHAT-A05 优化：rAF 节流避免高频 scroll 事件触发强制 reflow
+   * rAF 节流避免高频 scroll 事件触发强制 reflow
    */
   initListener(): void {
     let scrollRafPending = false;

@@ -14,7 +14,7 @@
  *   - 纯类型 + 常量导出，无运行时逻辑
  *
  * 先例：
- *   参照 memoryPanelManager 拆分模式（F-LINE-2），本次为 relationGraph 的第 3 次提取
+ *   参照 memoryPanelManager 拆分模式，本次为 relationGraph 的第 3 次提取
  *   （layout + color + types），属架构层改进
  */
 

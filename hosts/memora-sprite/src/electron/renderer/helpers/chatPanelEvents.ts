@@ -246,7 +246,7 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
       })();
       return;
     }
-    // B1：里程碑 banner 关闭按钮：data-action="close-milestone"
+    // 里程碑 banner 关闭按钮：data-action="close-milestone"
     // 点击后移除整个 .milestone-banner 元素（内联渲染，无需调用 ProactiveBanner.hideProactiveBanner）
     const milestoneCloseBtn = target.closest<HTMLElement>('[data-action="close-milestone"]');
     if (milestoneCloseBtn) {

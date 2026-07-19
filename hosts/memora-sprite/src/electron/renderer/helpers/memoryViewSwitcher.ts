@@ -368,7 +368,7 @@ export function switchView(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode)
   // 同步更多菜单中视图切换项的 active 状态
   updateViewMenuItemsActive(mode);
 
-  // B2: 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
+  // 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
   const listEl = ctx.memoryListEl;
   const graphEl = document.getElementById('memory-graph-container');
   const timelineEl = document.getElementById('memory-timeline-container');

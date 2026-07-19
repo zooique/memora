@@ -529,7 +529,7 @@ export class MemoryPanelManager {
 
   // ─── 辅助方法 ───────────────────────────────────────────
 
-  // getSourceColorClass 已提取到模块顶层（对齐 formatTokenCount 模式，支持纯函数测试）
+  // getSourceColorClass 位于模块顶层（对齐 formatTokenCount 模式，支持纯函数测试）
 
   // ─── 记忆编辑模式 ────────────────────────────
 

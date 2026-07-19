@@ -153,7 +153,7 @@ export class ProfilePanelManager {
   ): void {
     if (!container) return;
 
-    // Q9 使用 clearElement 工具函数替代手写 while+removeChild
+    // 使用 clearElement 工具函数清空容器
     clearElement(container);
 
     // 空列表提示

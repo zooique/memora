@@ -380,7 +380,7 @@ export class ChatPanelManager {
     // 防御无效时间戳导致 toISOString 抛 RangeError（降级为当前时间）
     const rawDate = new Date(message.timestamp ?? Date.now());
     const msgDate = isNaN(rawDate.getTime()) ? new Date() : rawDate;
-    const dateStr = formatDateKey(msgDate); // YYYY-MM-DD（本地时区，修复 UTC 跨天 bug）
+    const dateStr = formatDateKey(msgDate); // YYYY-MM-DD（本地时区）
     if (this.lastMessageDate && dateStr !== this.lastMessageDate) {
       this.insertDateSeparator(msgDate);
     }
@@ -802,9 +802,7 @@ export class ChatPanelManager {
    * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
    */
   clearMessages(): void {
-    // 只移除 .message 和 .message-group 和 .date-separator 和 .milestone-banner 元素，保留 chat-empty-state
-    // B1：新增 .milestone-banner 选择器，避免清空会话时里程碑 banner 残留
-    // 新增 .archive-session-btn 选择器，避免清空会话时归档按钮残留
+    // 只移除消息、消息分组、日期分隔符、里程碑 banner、归档按钮元素，保留 chat-empty-state
     this.messagesEl.querySelectorAll('.message, .message-group, .date-separator, .milestone-banner, .archive-session-btn').forEach((msg) => msg.remove());
     // 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();
@@ -856,7 +854,7 @@ export class ChatPanelManager {
         this.messagesEl.insertBefore(fragment, this.messagesEl.firstChild);
       }
 
-      // Phase 2：恢复滚动位置（新内容在顶部，向下偏移新增的高度）
+      // 恢复滚动位置（新内容在顶部，向下偏移新增的高度）
       const newScrollHeight = this.messagesEl.scrollHeight;
       const addedHeight = newScrollHeight - prevScrollHeight;
       this.messagesEl.scrollTop = prevScrollTop + addedHeight;
@@ -1108,7 +1106,7 @@ export class ChatPanelManager {
       if (cursor) cursor.remove();
       const phase = el.querySelector('.thinking-phase');
       if (phase) phase.remove();
-      // 翠幕天罗 P2：补齐 copy 按钮，让用户能复制已生成的部分内容
+      // 补齐 copy 按钮，让用户能复制已生成的部分内容
       addCopyButtonToMessage(this.streamRenderCtx, el);
     }
     // 注意：不在此处 delete streamingMessages，留给 markStreamingAborted 走完整嵌入流程

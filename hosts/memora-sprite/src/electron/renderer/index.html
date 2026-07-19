@@ -16,25 +16,24 @@
     避免 FOUC（Flash of Unstyled Content）闪烁。
     详见 main.ts createFullWindow() 中的 did-start-loading 事件处理。
   -->
+  <!-- CSS 加载顺序（§2.4.9）：foundation 三层 → layout → chat 聚合器（@import 7 子模块） → memory 聚合器（@import 7 子模块 + 1 分析子面板） → panels → overlays → content -->
+  <!-- 聚合器子模块不再单独 link（§2.4.4 聚合器模式），避免双重加载 -->
   <!-- 设计令牌（单一真理源）：所有主题变量集中于此，三窗口统一引入 -->
   <link rel="stylesheet" href="styles/foundation/tokens.css" />
   <link rel="stylesheet" href="styles/foundation/base.css" />
   <link rel="stylesheet" href="styles/foundation/utilities.css" />
   <link rel="stylesheet" href="styles/layout/layout.css" />
   <link rel="stylesheet" href="styles/chat/chat.css" />
-  <link rel="stylesheet" href="styles/chat/chat-toolbar.css" />
-  <link rel="stylesheet" href="styles/chat/chat-datenav.css" />
-  <link rel="stylesheet" href="styles/chat/chat-perception.css" />
   <link rel="stylesheet" href="styles/memory/memory.css" />
-  <link rel="stylesheet" href="styles/panels/settings.css" />
-  <link rel="stylesheet" href="styles/overlays/modal.css" />
-  <link rel="stylesheet" href="styles/overlays/toast.css" />
-  <link rel="stylesheet" href="styles/content/markdown.css" />
   <link rel="stylesheet" href="styles/panels/dashboard.css" />
   <link rel="stylesheet" href="styles/panels/perception.css" />
   <link rel="stylesheet" href="styles/panels/clipboard.css" />
+  <link rel="stylesheet" href="styles/panels/settings.css" />
+  <link rel="stylesheet" href="styles/overlays/modal.css" />
+  <link rel="stylesheet" href="styles/overlays/toast.css" />
   <link rel="stylesheet" href="styles/overlays/command-palette.css" />
   <link rel="stylesheet" href="styles/overlays/search-messages.css" />
+  <link rel="stylesheet" href="styles/content/markdown.css" />
 </head>
 <body>
   <!-- SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
@@ -455,7 +454,7 @@
           </button>
           <!-- 主操作：添加记忆 -->
           <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
-          <!-- 更多工具（含回收站入口，UX-0713-9：从独立按钮迁入更多菜单降低信息密度） -->
+          <!-- 更多工具（含回收站入口，从独立按钮迁入更多菜单降低信息密度） -->
           <div class="toolbar-more">
             <button id="btn-memory-more" class="icon-btn flex-shrink-0" title="更多工具" aria-haspopup="true" aria-expanded="false">
               <svg class="icon"><use href="#icon-more"/></svg>
@@ -506,7 +505,7 @@
             </select>
           </div>
         </div>
-        <!-- 记忆洞察栏（Phase 3：统计 + source 分布 + 关系摘要，默认折叠） -->
+        <!-- 记忆洞察栏（统计 + source 分布 + 关系摘要，默认折叠） -->
         <div id="memory-insights-bar" class="insights-bar hidden">
           <div class="insights-header flex-between">
             <span class="insights-title"><svg class="icon"><use href="#icon-chart"/></svg> 统计洞察</span>
@@ -535,7 +534,7 @@
           </div>
           <div class="insights-relations-summary" id="insights-relations-summary"></div>
         </div>
-        <!-- 伙伴洞察面板（Phase 4：从"仓库"到"理解"） -->
+        <!-- 伙伴洞察面板（从"仓库"到"理解"） -->
         <div id="partner-insights" class="partner-insights hidden">
           <div class="partner-insights-header">
             <span class="partner-insights-title">精灵对你的了解</span>
@@ -592,7 +591,7 @@
             <button class="health-action-btn" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
             <button class="health-action-btn danger" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
           </div>
-          <!-- LLM 记忆治理（G3：语义去重/时效性评估/冲突检测，与上方纯代码清理并列分组） -->
+          <!-- LLM 记忆治理（语义去重/时效性评估/冲突检测，与上方纯代码清理并列分组） -->
           <div class="health-actions health-actions-llm" id="health-llm-actions">
             <span class="health-actions-label">LLM 治理</span>
             <button class="health-action-btn" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
@@ -727,20 +726,20 @@
             <span class="panel-title" id="panel-title-settings">设置</span>
           </div>
 
-          <!-- UX-0713-3：自动保存机制说明，让用户明确知道修改会自动保存 -->
+          <!-- 自动保存机制说明：让用户明确知道修改会自动保存 -->
           <p class="settings-autosave-hint flex-shrink-0">所有修改自动保存，无需手动点击保存按钮。</p>
 
           <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区 -->
           <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
-        <!-- UX-0713-V4：7 个 tab 按功能分组（AI 行为/集成/系统），分隔线提升扫视效率 -->
+        <!-- 7 个 tab 按功能分组（AI 行为/集成/系统），分隔线提升扫视效率 -->
         <div class="settings-tabs flex-shrink-0" role="tablist" aria-label="设置分类">
           <span class="settings-tab-group-label">AI 行为</span>
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
           <span class="settings-tab-group-label">集成</span>
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
-          <!-- UX-0713-12：画像 tab 仅保留用户画像（作品投影归项目 tab） -->
+          <!-- 画像 tab 仅保留用户画像（作品投影归项目 tab） -->
           <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像</button>
           <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
           <span class="settings-tab-group-label">系统</span>
@@ -848,7 +847,7 @@
               <input type="number" id="cfg-interval" min="1" max="1440" value="60" />
             </div>
           </div>
-          <!-- UX-0713-8：文件监听折叠为 details 默认收起（降低精灵 tab 信息密度） -->
+          <!-- 文件监听折叠为 details 默认收起（降低精灵 tab 信息密度） -->
           <details class="settings-group settings-group-collapsible">
             <summary class="settings-group-summary">文件监听</summary>
             <div class="settings-row">
@@ -882,7 +881,7 @@
               <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" autocomplete="off" />
             </div>
           </div>
-          <!-- UX-0713-8：快捷键折叠为 details 默认收起（降低精灵 tab 信息密度） -->
+          <!-- 快捷键折叠为 details 默认收起（降低精灵 tab 信息密度） -->
           <details class="settings-group settings-group-collapsible">
             <summary class="settings-group-summary">快捷键</summary>
             <div class="settings-row">
@@ -903,7 +902,7 @@
             </div>
             <span id="cfg-shortcut-hint" class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
           </details>
-          <!-- 隐私与数据分区（AUDIT-5-4） -->
+          <!-- 隐私与数据分区 -->
           <div class="settings-group">
             <h3>隐私与数据</h3>
             <div class="settings-row">
@@ -920,7 +919,7 @@
           </div>
         </div>
 
-        <!-- 项目模式配置 + 作品投影（UX-0713-12：项目相关配置归项目 tab） -->
+        <!-- 项目模式配置 + 作品投影（项目相关配置归项目 tab） -->
         <div class="settings-tab-content" data-settings-tab="project">
           <div class="settings-group">
             <h3>项目模式</h3>
@@ -1104,7 +1103,7 @@
             </div>
           </div>
 
-          <!-- UX-0713-4：高级操作区（应急恢复按钮与帮助文档同区，降低误触） -->
+          <!-- 高级操作区（应急恢复按钮与帮助文档同区，降低误触） -->
           <div class="settings-group">
             <h3>高级</h3>
             <p class="settings-hint">以下操作为应急恢复手段，仅在对话卡死且停止按钮无效时使用。</p>
@@ -1132,7 +1131,7 @@
           <div class="settings-actions-buttons">
           <!-- 恢复默认按钮，重置所有配置（危险操作，使用 btn-danger 警示） -->
           <button id="btn-settings-reset" class="btn-danger">恢复精灵默认</button>
-          <!-- UX-0713-4：主操作按钮改为 btn-primary，作为底部按钮行的主操作区分 -->
+          <!-- 主操作按钮（btn-primary，作为底部按钮行的主操作区分） -->
           <button id="btn-settings-skip" class="btn-primary">完成并回到对话</button>
           </div>
         </div>
@@ -1351,7 +1350,7 @@
               <div class="dash-item" title="上下文截断次数"><span class="dash-label">截断</span><span class="dash-value" id="dashboard-truncation-count">—</span></div>
               <div class="dash-item" title="当前工作记忆消息数"><span class="dash-label">消息</span><span class="dash-value" id="dashboard-message-count">—</span></div>
               <div class="dash-item" title="当前上下文估算 Token 数（接近截断阈值时提示）"><span class="dash-label">上下文</span><span class="dash-value" id="dashboard-estimated-tokens">—</span></div>
-              <!-- UX-0713-10：衰减三项（次数/累计/最近时间）合并为 1 卡片，hover 显示详情 -->
+              <!-- 衰减三项（次数/累计/最近时间）合并为 1 卡片，hover 显示详情 -->
               <div class="dash-item dash-item-decay" title="衰减已运行次数 / 累计衰减记忆数 / 最近衰减运行时间">
                 <span class="dash-label">衰减</span>
                 <span class="dash-value" id="dashboard-decay-count">—</span>
@@ -1424,7 +1423,7 @@
           <div class="relations-title">关联记忆</div>
           <div id="memory-relations-list" class="relations-list"></div>
         </div>
-        <!-- 演化脉络区域（Phase 5.1：异步加载 incoming path，展示记忆来源链） -->
+        <!-- 演化脉络区域（异步加载 incoming path，展示记忆来源链） -->
         <div id="memory-detail-lineage" class="lineage-section hidden">
           <div class="lineage-title">演化脉络</div>
           <div id="memory-lineage-list" class="lineage-list"></div>
@@ -1678,7 +1677,7 @@
         </div>
       </div>
 
-      <!-- 步骤 3：隐私统计选择（AUDIT-5-4） -->
+      <!-- 步骤 3：隐私统计选择 -->
       <div class="onboarding-step-content" data-step="3">
         <div class="onboarding-privacy-icon">
           <svg class="icon" width="64" height="64"><use href="#icon-lock"/></svg>
@@ -1787,7 +1786,7 @@
   </div>
 
   <script type="module" src="renderer.js"></script>
-<!-- 清理确认对话框（Phase 3：智能清理，默认隐藏） -->
+<!-- 清理确认对话框（智能清理，默认隐藏） -->
 <div id="cleanup-confirm-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="cleanup-confirm-title">
       <div class="confirm-dialog-content">
         <h3 class="confirm-dialog-title" id="cleanup-confirm-title">确认清理记忆</h3>

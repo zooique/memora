@@ -4,8 +4,8 @@
  * 职责：
  *   集中管理记忆详情弹窗的渲染逻辑，降低 memoryPanelManager.ts 体量。涵盖：
  *   - 记忆详情模态框渲染（基本信息 + 关联记忆列表 + dataset 状态保存）
- *   - 演化脉络路径追溯渲染（Phase 5.1：BFS 多跳 incoming 方向）
- *   - 直接邻居视图渲染（Phase 5.2：both 方向 1 跳全景）
+ *   - 演化脉络路径追溯渲染（BFS 多跳 incoming 方向）
+ *   - 直接邻居视图渲染（both 方向 1 跳全景）
  *
  * 提取原因：
  *   memoryPanelManager.ts 超标（1968 行，超 1800 触发线）。
@@ -97,7 +97,7 @@ export function showMemoryDetail(ctx: MemoryDetailPanelContext, memory: MemoryDe
     sourceEl.className = `source-${getSourceColorClass(memory.source)}`;
   }
   if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
-  // R5 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
+  // 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
   if (createdEl) createdEl.textContent = formatTimeAgo(memory.createdAt);
   if (accessedEl) accessedEl.textContent = formatTimeAgo(memory.accessedAt);
   if (contentEl) contentEl.textContent = memory.content;
@@ -303,7 +303,7 @@ export function showMemoryLineage(ctx: MemoryDetailPanelContext, path: RelationP
   lineageEl.classList.remove('hidden');
 }
 
-// ─── Phase 5.2：直接邻居视图 ───────────────────────────
+// ─── 直接邻居视图 ───────────────────────────
 
 /**
  * 重置直接邻居区域

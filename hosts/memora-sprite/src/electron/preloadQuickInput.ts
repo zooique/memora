@@ -2,8 +2,8 @@
  * 预加载脚本 — quick-input 浮窗最小化安全桥接
  *
  * 与主 preload.ts 的差异：
- *   - 仅暴露 quick-input 浮窗所需的最小 API（vs 主 preload 的 100+）
- *   - 仅内联 quick-input 相关 IPC 通道（vs 主 preload 的 106 个通道）
+ *   - 仅暴露 quick-input 浮窗所需的最小 API（vs 主 preload 的全量 API）
+ *   - 仅内联 quick-input 相关 IPC 通道（vs 主 preload 的全量通道）
  *   - 剥离高危 API：installSkill / saveLlmProvider / deleteMemory / clearAuditLog 等
  *
  * 决策依据：ADR-SP-017 §1 窗口管理器内联 IPC 模式 + 安全审计 P3 最小权限原则
@@ -96,7 +96,7 @@ interface QuickInputShowPayload {
   isSensitive: boolean;
 }
 
-// ─── 暴露给渲染进程的 API（仅 9 个方法）─────
+// ─── 暴露给渲染进程的 API（搜索 + 浮窗控制 + 监听器）─────
 
 const quickInputAPI = {
   /** 搜索记忆（补全候选来源之一） */
