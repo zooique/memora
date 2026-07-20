@@ -129,6 +129,7 @@ async function createController(opts?: {
         <div id="completion-list" class="hidden"></div>
       </div>
       <div id="quick-input-footer">
+        <span id="quick-input-hint">↓↑ 补全 · ←→ 填充 · Tab 提交 · Esc 关闭</span>
         <div class="footer-left">
           <button id="expand-toggle" class="expand-toggle" title="展开输入框">
             <svg><use href="#icon-expand"/></svg>
@@ -159,6 +160,7 @@ async function createController(opts?: {
   const focusBarEl = document.getElementById('focus-bar')!;
   const counterEl = document.querySelector('.quick-input-counter')! as HTMLElement;
   const focusAppNameEl = document.getElementById('focus-app-name')!;
+  const hintEl = document.getElementById('quick-input-hint')!;
   const closeBtnEl = document.getElementById('close-btn')!;
 
   const controller = new QuickInputController({
@@ -170,6 +172,7 @@ async function createController(opts?: {
     focusBarEl,
     counterEl,
     focusAppNameEl,
+    hintEl,
     closeBtnEl,
     api,
   });

@@ -36,6 +36,23 @@ body {
   user-select: none;
   -webkit-app-region: no-drag;
 }
+/* 右下角 resize grip 视觉提示（frameless 窗口原生 resize 边框极窄，需热区引导） */
+.quick-input-container::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  /* L 形 grip 图标：两条斜线模拟 Windows 原生 resize grip */
+  background:
+    linear-gradient(135deg, transparent 40%, var(--muted) 40%, var(--muted) 50%, transparent 50%) no-repeat 100% 100% / 8px 8px,
+    linear-gradient(135deg, transparent 40%, var(--muted) 40%, var(--muted) 50%, transparent 50%) no-repeat 100% 100% / 4px 4px;
+  cursor: nwse-resize;
+  opacity: 0.4;
+  border-radius: 0 0 var(--radius-md) 0;
+  pointer-events: none; /* 不拦截点击事件，纯视觉提示 */
+}
 
 /* ===== 输入区：textarea + footer ===== */
 .quick-input-area {

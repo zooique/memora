@@ -36,10 +36,16 @@ import type { PasteResult } from '../inputInjector.js';
 
 /** 浮窗宽度（px）—— 足够单行输入 + 确认按钮 */
 const QUICK_INPUT_WIDTH = 480;
+/** 浮窗最小宽度（px）—— 保留基本输入体验 */
+const QUICK_INPUT_MIN_WIDTH = 360;
+/** 浮窗最大宽度（px）—— 避免过度拉伸 */
+const QUICK_INPUT_MAX_WIDTH = 720;
 /** 浮窗初始高度（px）—— focus-bar 28px + textarea 1行 + padding + footer，与 INITIAL_BASE_HEIGHT 对齐 */
 const QUICK_INPUT_HEIGHT = 104;
 /** 浮窗最大高度（px）—— 输入区 + 候选列表(最多 5 项×38px) + footer，与 CSS max-height:200px 对齐 */
 const QUICK_INPUT_MAX_HEIGHT = 400;
+/** 浮窗手动 resize 最大高度（px）—— 比自动最大高度多 50%，给用户更大空间 */
+const QUICK_INPUT_RESIZE_MAX_HEIGHT = 600;
 /** 失焦延迟关闭时长（ms）—— 给 Alt+Tab 切换留余量 */
 const BLUR_CLOSE_DELAY_MS = 200;
 /** 光标跟随偏移量（px）—— 浮窗相对鼠标位置的偏移 */
@@ -140,8 +146,7 @@ export class QuickInputWindow {
   private pinnedMode = false;
   /** IPC handler 是否已注册（防止重复注册） */
   private ipcRegistered = false;
-  /**
-   * paste 流程进行中标记
+  /** paste 流程进行中标记
    *
    * 根因修复（Tab 提交闪烁）：
    *   paste 流程耗时 200-600ms（PowerShell SendInput ~100ms + pasteDelay 100-500ms），
@@ -154,6 +159,21 @@ export class QuickInputWindow {
    *   - pasteInProgress 是流程态标志（仅在 paste 期间临时抑制，paste 完成立即清除）
    */
   private pasteInProgress = false;
+  /**
+   * 用户是否手动 resize 过窗口（本次 show 生命周期内）
+   *
+   * 设为 true 后，渲染进程的 QUICK_INPUT_RESIZE（候选列表显示/隐藏触发的动态高度调整）
+   * 将被跳过，保护用户自主设定的尺寸不被覆盖。
+   * 每次 show() 时重置为 false，让自动高度调整重新生效。
+   */
+  private userResized = false;
+  /**
+   * 程序化 resize 跳过标记
+   *
+   * Electron 的 resize 事件不区分用户拖拽和 setSize() 调用。
+   * 此标记在程序化 setSize() 前设为 true，resize 事件处理器检查此标记跳过 userResized 设置。
+   */
+  private skipResizeFlag = false;
   /** Phase 4：自动粘贴协调器（封装 InputInjector + 前台窗口捕获 + 剪贴板保护） */
   private pasteCoordinator = new PasteCoordinator();
 
@@ -168,15 +188,19 @@ export class QuickInputWindow {
    * - frame: false（无边框，纯输入框）
    * - alwaysOnTop: true（始终置顶）
    * - skipTaskbar: true（不在任务栏显示）
-   * - resizable: false（固定尺寸）
+   * - resizable: true（用户可手动拖拽边缘调整尺寸，min/max 约束范围）
    * - show: false（创建时不显示，由 show() 控制）
    */
   private async create(): Promise<BrowserWindow> {
     const win = new BrowserWindow({
       width: QUICK_INPUT_WIDTH,
       height: QUICK_INPUT_HEIGHT,
+      minWidth: QUICK_INPUT_MIN_WIDTH,
+      maxWidth: QUICK_INPUT_MAX_WIDTH,
+      minHeight: QUICK_INPUT_HEIGHT,
+      maxHeight: QUICK_INPUT_RESIZE_MAX_HEIGHT,
       frame: false,
-      resizable: false,
+      resizable: true,
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
@@ -216,6 +240,15 @@ export class QuickInputWindow {
     });
     win.on('focus', () => {
       this.cancelBlurClose();
+    });
+    // 手动 resize 检测：用户拖拽窗口边缘时，框架自动触发 resize 事件
+    // 程序化 setSize() 调用前通过 skipResizeFlag 跳过，避免误判
+    win.on('resize', () => {
+      if (this.skipResizeFlag) {
+        this.skipResizeFlag = false;
+        return;
+      }
+      this.userResized = true;
     });
     // 关闭时清理资源
     win.on('closed', () => {
@@ -284,6 +317,10 @@ export class QuickInputWindow {
     win.setPosition(Math.round(x), Math.round(y));
 
     this.cancelBlurClose();
+    // 重置手动 resize 标记 + 恢复初始尺寸，让自动高度调整重新生效
+    this.userResized = false;
+    this.skipResizeFlag = true;
+    win.setSize(QUICK_INPUT_WIDTH, QUICK_INPUT_HEIGHT, true);
     win.show();
     win.focus();
     // 通知渲染进程：携带剪贴板预填文本 + 敏感标记，替代 focus 事件避免 Alt+Tab 切回误清空
@@ -485,11 +522,14 @@ export class QuickInputWindow {
     ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_RESIZE, async (_event, height: number) => {
       return this.wrapIpcHandler('调整浮窗高度失败', undefined, () => {
         if (!this.isWinAlive()) return;
+        // 用户手动 resize 后跳过自动高度调整，保护用户设定的尺寸
+        if (this.userResized) return;
         // 参数校验：高度必须是合理范围内的正整数
         if (typeof height !== 'number' || height < QUICK_INPUT_HEIGHT || height > QUICK_INPUT_MAX_HEIGHT) {
           return;
         }
         const { width } = this.win!.getBounds();
+        this.skipResizeFlag = true;
         this.win!.setSize(width, Math.round(height), true);
         // resize 后检查位置，防止溢出屏幕边缘
         this.keepWindowInWorkArea();
