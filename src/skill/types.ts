@@ -19,9 +19,8 @@ export interface SkillEntry {
   /**
    * 来源层（agent / project）
    *
-   * 预留字段，当前仅写入无读取消费者（skillManager + configManager 标注来源层）。
-   * 保留用于未来"按层禁用"（如宿主临时屏蔽 project 层技能）或"UI 显示来源"场景。
-   * 保留在 SkillEntry 契约中以维持类型稳定。
+   * skillManager 写入（project 层扫描），精灵宿主通过 systemHandlers 读取
+   * 并在 settingsPanelManager 中渲染"全局/项目"标签。
    */
   layer: 'agent' | 'project';
 }

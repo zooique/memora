@@ -32,9 +32,6 @@ import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { ProjectRegistry, type ProjectEntry } from '@/memory/projectRegistry.js';
 import { LockManager } from '@/memory/lockManager.js';
 
-// ProjectEntry 已迁移至 projectRegistry.ts，此处重导出保持公共 API 向后兼容
-export type { ProjectEntry } from '@/memory/projectRegistry.js';
-
 // ─── 类型 ────────────────────────────────────────────────
 
 /**

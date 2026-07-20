@@ -7,6 +7,9 @@
  * - 业务配置相关的常量请放到 spriteConfig.ts，不要反向依赖
  */
 
+// formatDateKey 本地日期格式化（ADR-017 枝叶层 2 次提取，shared/dateUtils.ts 真理源）
+import { formatDateKey } from '../shared/dateUtils.js';
+
 // ─── 时间常量（毫秒） ──────────────────────────────────
 
 /** 毫秒/秒转换常量（供 sprite 核心和 UI 层共享，DRY） */
@@ -76,11 +79,13 @@ export const DASHBOARD_DEBOUNCE_MS = 300;
 /**
  * 获取本地日期字符串 YYYY-MM-DD
  *
+ * 委托 shared/dateUtils.ts:formatDateKey(new Date())，消除重复实现。
+ * 保留此函数名以维持 9 处调用方导入路径不变。
+ *
  * 会话 ID 使用日期前缀，必须用本地日期而非 UTC，
  * 否则东八区用户在凌晨 0-8 点创建的会话会被归入前一天。
- * 供主进程（ipcHandlers）和渲染进程（renderer）共享，消除重复定义。
+ * 供主进程（ipcHandlers）和渲染进程（renderer）共享。
  */
 export function getLocalDate(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return formatDateKey(new Date());
 }
