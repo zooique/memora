@@ -15,15 +15,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // mock getDefaultInputInjector，返回可控的 InputInjector mock
-const { mockInputInjector, mockGetDefault, mockExecSync, mockReadFileSync, mockUnlinkSync } = vi.hoisted(() => ({
+const { mockInputInjector, mockGetDefault, mockGetWindowTextLengthW, mockGetWindowTextW } = vi.hoisted(() => ({
   mockInputInjector: {
     captureActiveWindow: vi.fn(),
     paste: vi.fn(),
   },
   mockGetDefault: vi.fn(),
-  mockExecSync: vi.fn((): string => { throw new Error('mocked: PowerShell disabled in test'); }),
-  mockReadFileSync: vi.fn(),
-  mockUnlinkSync: vi.fn(),
+  // koffi FFI mock：GetWindowTextLengthW 默认返回 0（模拟空标题窗口）
+  mockGetWindowTextLengthW: vi.fn(() => 0),
+  // koffi FFI mock：GetWindowTextW 默认空实现
+  mockGetWindowTextW: vi.fn(),
 }));
 
 vi.mock('../../../electron/inputInjector.js', () => ({
@@ -31,17 +32,15 @@ vi.mock('../../../electron/inputInjector.js', () => ({
   InputInjector: vi.fn(), // 类构造函数 mock
 }));
 
-// mock node:child_process execSync（默认模拟 PowerShell 失败，避免测试环境真的调用 PowerShell）
-// 单个测试可通过 mockExecSync.mockImplementation(() => {}) 覆盖为成功路径
-vi.mock('node:child_process', () => ({
-  execSync: mockExecSync,
-}));
-
-// mock node:fs（文件 I/O 方式获取标题：readFileSync 读取 PowerShell 写入的 UTF-16LE 临时文件）
-vi.mock('node:fs', () => ({
-  default: { readFileSync: mockReadFileSync, unlinkSync: mockUnlinkSync },
-  readFileSync: mockReadFileSync,
-  unlinkSync: mockUnlinkSync,
+// mock koffi FFI（用 mock 函数替代真实 Win32 API 调用，避免测试环境依赖 user32.dll）
+vi.mock('koffi', () => ({
+  load: vi.fn(() => ({
+    func: vi.fn((definition: string) => {
+      if (definition.includes('GetWindowTextLengthW')) return mockGetWindowTextLengthW;
+      if (definition.includes('GetWindowTextW')) return mockGetWindowTextW;
+      return vi.fn();
+    }),
+  })),
 }));
 
 import { PasteCoordinator } from '../../../electron/windows/pasteCoordinator.js';
@@ -260,12 +259,13 @@ describe('PasteCoordinator', () => {
       expect(result).toBeNull();
     });
 
-    it('非乱码标题：使用 nut-js 标题，不调用 PowerShell', async () => {
+    it('非乱码标题：使用 nut-js 标题，不调用 koffi FFI', async () => {
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('无标题 - 记事本'));
       await coordinator.capturePreviousWindow();
 
-      // execSync 不应被调用（非乱码场景）
-      expect(mockExecSync).not.toHaveBeenCalled();
+      // koffi FFI 不应被调用（非乱码场景）
+      expect(mockGetWindowTextLengthW).not.toHaveBeenCalled();
+      expect(mockGetWindowTextW).not.toHaveBeenCalled();
 
       const result = await coordinator.getCapturedAppName();
       expect(result).toBe('记事本');
@@ -279,34 +279,40 @@ describe('PasteCoordinator', () => {
       expect(result).toBe('记事本');
     });
 
-    it('乱码标题：capturePreviousWindow 时立即通过 PowerShell 修复', async () => {
+    it('乱码标题：capturePreviousWindow 时立即通过 koffi FFI 修复', async () => {
       // nut-js 返回含 U+FFFD 的乱码标题（模拟中文软件乱码）
       const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
 
-      // PowerShell 通过文件 I/O 返回 UTF-16LE 编码的准确标题 "无标题 - 记事本"
+      // koffi FFI 返回 UTF-16LE 编码的准确标题 "无标题 - 记事本"
       const accurateTitle = '无标题 - 记事本';
-      mockExecSync.mockReturnValue(''); // PowerShell 成功（不抛错，返回值不使用）
-      mockReadFileSync.mockReturnValue(Buffer.from(accurateTitle, 'utf16le'));
+      // GetWindowTextLengthW 返回标题长度
+      mockGetWindowTextLengthW.mockReturnValue(accurateTitle.length);
+      // GetWindowTextW 将标题写入传入的 Buffer（模拟 Win32 API 行为）
+      mockGetWindowTextW.mockImplementation((_hwnd: number, buf: Buffer, _maxCount: number) => {
+        buf.fill(0);
+        buf.write(accurateTitle, 0, 'utf16le');
+      });
 
       await coordinator.capturePreviousWindow();
 
-      // 关键断言：PowerShell 在 capturePreviousWindow 阶段被调用（此时浮窗未 show）
-      // 这是修复时序问题的核心——PS 必须在浮窗显示前调用才能拿到目标窗口
-      expect(mockExecSync).toHaveBeenCalledTimes(1);
+      // 关键断言：koffi FFI 在 capturePreviousWindow 阶段被调用（此时浮窗未 show）
+      expect(mockGetWindowTextLengthW).toHaveBeenCalledTimes(1);
+      expect(mockGetWindowTextW).toHaveBeenCalledTimes(1);
 
       const result = await coordinator.getCapturedAppName();
-      // getCapturedAppName 使用缓存的准确标题，不再调 PS
-      expect(mockExecSync).toHaveBeenCalledTimes(1);
+      // getCapturedAppName 使用缓存的准确标题，不再调 koffi FFI
+      expect(mockGetWindowTextLengthW).toHaveBeenCalledTimes(1);
+      expect(mockGetWindowTextW).toHaveBeenCalledTimes(1);
       expect(result).toBe('记事本');
     });
 
-    it('乱码标题：PowerShell 失败时降级使用 nut-js 乱码标题', async () => {
+    it('乱码标题：koffi FFI 失败时降级使用 nut-js 乱码标题', async () => {
       const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
-      // 显式重置 mockExecSync 为抛错（上一个测试设置了 mockImplementation，clearAllMocks 不重置实现）
-      mockExecSync.mockReset();
-      mockExecSync.mockImplementation(() => { throw new Error('mocked: PowerShell failed'); });
+      // GetWindowTextLengthW 抛出异常（模拟 koffi FFI 调用失败）
+      mockGetWindowTextLengthW.mockReset();
+      mockGetWindowTextLengthW.mockImplementation(() => { throw new Error('koffi: user32.dll not available'); });
 
       await coordinator.capturePreviousWindow();
 
@@ -315,11 +321,13 @@ describe('PasteCoordinator', () => {
       expect(result).toBe('\uFFFD\uFFFD\uFFFD\uFFFD');
     });
 
-    it('乱码标题：PowerShell 返回空文件时降级使用 nut-js 标题', async () => {
+    it('乱码标题：GetWindowTextLengthW 返回 0 时降级使用 nut-js 标题', async () => {
       const garbledTitle = '无标题 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
-      mockExecSync.mockReturnValue(''); // PowerShell 成功
-      mockReadFileSync.mockReturnValue(Buffer.alloc(0)); // 但文件为空
+      // GetWindowTextLengthW 返回 0（窗口无标题或 HWND 无效）
+      mockGetWindowTextLengthW.mockReturnValue(0);
+      // GetWindowTextW 不应被调用
+      mockGetWindowTextW.mockReset();
 
       await coordinator.capturePreviousWindow();
 
@@ -331,7 +339,7 @@ describe('PasteCoordinator', () => {
       // 第一次捕获：非乱码窗口
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('文档1 - Word'));
       await coordinator.capturePreviousWindow();
-      expect(mockExecSync).not.toHaveBeenCalled();
+      expect(mockGetWindowTextLengthW).not.toHaveBeenCalled();
       const name1 = await coordinator.getCapturedAppName();
       expect(name1).toBe('Word');
 
@@ -339,10 +347,14 @@ describe('PasteCoordinator', () => {
       const garbledTitle = '文档2 - \uFFFD\uFFFD\uFFFD\uFFFD';
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow(garbledTitle));
       const accurateTitle = '文档2 - Excel';
-      mockExecSync.mockReturnValue(''); // PowerShell 成功
-      mockReadFileSync.mockReturnValue(Buffer.from(accurateTitle, 'utf16le'));
+      mockGetWindowTextLengthW.mockReturnValue(accurateTitle.length);
+      mockGetWindowTextW.mockImplementation((_hwnd: number, buf: Buffer, _maxCount: number) => {
+        buf.fill(0);
+        buf.write(accurateTitle, 0, 'utf16le');
+      });
       await coordinator.capturePreviousWindow();
-      expect(mockExecSync).toHaveBeenCalledTimes(1);
+      expect(mockGetWindowTextLengthW).toHaveBeenCalledTimes(1);
+      expect(mockGetWindowTextW).toHaveBeenCalledTimes(1);
       const name2 = await coordinator.getCapturedAppName();
       expect(name2).toBe('Excel');
     });

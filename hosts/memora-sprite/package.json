@@ -43,7 +43,8 @@
   },
   "dependencies": {
     "@nut-tree-fork/nut-js": "^4.2.6",
-    "better-sqlite3": "^12.10.0"
+    "better-sqlite3": "^12.10.0",
+    "koffi": "^3.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -138,8 +139,9 @@
   "license": "MIT",
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
-    "electron@40.10.5": true,
+    "electron@40.10.6": true,
     "esbuild@0.28.1": true,
+    "koffi@3.1.1": true,
     "sharp@0.35.3": true
   }
 }

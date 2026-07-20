@@ -31,10 +31,10 @@ vi.mock('electron', () => ({
   clipboard: clipboardMock,
 }));
 
-// mock node:child_process execSync（模拟 PowerShell 失败，强制 sendCtrlVViaPS 返回 false，
+// mock node:child_process spawnSync（模拟 PowerShell 失败，强制 sendCtrlVViaPS 返回 false，
 // 触发降级到 nut-js keyboard，避免测试环境真的发送 Ctrl+V）
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(() => { throw new Error('mocked: PowerShell disabled in test'); }),
+  spawnSync: vi.fn(() => ({ error: new Error('mocked: PowerShell disabled in test'), status: null })),
 }));
 
 import { InputInjector, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';

@@ -35,7 +35,7 @@
  */
 
 import { clipboard } from 'electron';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 // 类型导入（编译时擦除，不影响零 native 依赖运行时）：用于 getDefaultInputInjector 中的类型适配
 import type { Key as NutJsKeyType } from '@nut-tree-fork/nut-js';
 import { logger } from 'memora';
@@ -178,11 +178,22 @@ function sendCtrlVViaPS(): boolean {
   // 用 -EncodedCommand 传递 base64(UTF-16LE) 编码的脚本，避免引号转义
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   try {
-    execSync(`powershell -NoProfile -EncodedCommand ${encoded}`, {
-      encoding: 'utf8',
-      timeout: 2000,
-      stdio: 'ignore',
-    });
+    // 使用 spawnSync 直接调用 powershell.exe，绕过 cmd.exe 中转
+    // execSync 在 Windows 上通过 cmd.exe /d /s /c "..." 包装命令，可能导致 ETIMEDOUT
+    const psResult = spawnSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { timeout: 3000, stdio: 'ignore' },
+    );
+    // spawnSync 不抛异常，需手动检查执行结果
+    if (psResult.error) {
+      logger.warn({ err: psResult.error }, 'PowerShell SendInput 进程启动失败，将降级到 nut-js keyboard');
+      return false;
+    }
+    if (psResult.status !== 0) {
+      logger.warn({ status: psResult.status }, 'PowerShell SendInput 返回非零状态码，将降级到 nut-js keyboard');
+      return false;
+    }
     return true;
   } catch (err) {
     logger.warn({ err }, 'PowerShell SendInput Ctrl+V 失败，将降级到 nut-js keyboard');
