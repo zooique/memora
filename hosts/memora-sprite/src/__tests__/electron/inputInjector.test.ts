@@ -3,14 +3,14 @@
  *
  * 覆盖范围：
  *   1. 降级模式：deps=null / previousWindow=null / 非文本剪贴板 / focus 失败 / paste 异常
- *   2. 成功路径：paste 成功返回 mode='paste'（PowerShell 失败时降级到 nut-js keyboard）
+ *   2. 成功路径：paste 成功返回 mode='paste'（koffi keybd_event 失败时降级到 nut-js keyboard）
  *   3. captureActiveWindow：排除浮窗自身 / nut-js 不可用
  *   4. 剪贴板恢复：无论成功失败都恢复原剪贴板内容
  *   5. suppressNextChange 调用次数：每次 writeText 都需调用
  *
  * 测试策略：
  *   - mock electron clipboard（availableFormats/readText/writeText）
- *   - mock node:child_process execSync（模拟 PowerShell 失败，强制降级到 nut-js keyboard）
+ *   - mock koffi keybd_event 抛异常（强制降级到 nut-js keyboard，避免测试环境真发送 Ctrl+V）
  *   - 注入 mock NutJsDeps（getActiveWindow/keyboard/Key）
  *   - 不依赖真实 nut-js native 模块，不真的发送 Ctrl+V
  */
@@ -31,11 +31,19 @@ vi.mock('electron', () => ({
   clipboard: clipboardMock,
 }));
 
-// mock node:child_process spawnSync（模拟 PowerShell 失败，强制 sendCtrlVViaPS 返回 false，
-// 触发降级到 nut-js keyboard，避免测试环境真的发送 Ctrl+V）
-vi.mock('node:child_process', () => ({
-  spawnSync: vi.fn(() => ({ error: new Error('mocked: PowerShell disabled in test'), status: null })),
-}));
+// mock koffi FFI（默认 mock keybd_event 抛异常，强制降级到 nut-js keyboard，
+// 避免测试环境真的发送 Ctrl+V 按键）
+vi.mock('koffi', () => {
+  const mockKeybdEvent = vi.fn(() => { throw new Error('mocked: keybd_event disabled in test'); });
+  return {
+    load: vi.fn(() => ({
+      func: vi.fn((definition: string) => {
+        if (definition.includes('keybd_event')) return mockKeybdEvent;
+        return vi.fn();
+      }),
+    })),
+  };
+});
 
 import { InputInjector, type NutJsDeps, type ActiveWindow } from '../../electron/inputInjector.js';
 
@@ -156,7 +164,7 @@ describe('InputInjector', () => {
   });
 
   describe('paste 成功路径', () => {
-    it('成功粘贴返回 mode=paste（PowerShell 失败降级到 nut-js keyboard）', async () => {
+    it('成功粘贴返回 mode=paste（koffi keybd_event 失败降级到 nut-js keyboard）', async () => {
       const deps = createMockDeps();
       const injector = new InputInjector(deps);
       const suppress = createSuppressMock();
@@ -169,7 +177,7 @@ describe('InputInjector', () => {
       expect(result.mode).toBe('paste');
       // 验证 hideFloat 被调用（保留接口兼容，当前为 no-op）
       expect(hideFloat).toHaveBeenCalledTimes(1);
-      // 验证 keyboard 降级：PowerShell 失败后 fallback 到 nut-js keyboard（Ctrl+V press+release）
+      // 验证 keyboard 降级：koffi keybd_event 失败后 fallback 到 nut-js keyboard（Ctrl+V press+release）
       expect(deps.keyboard.pressKey).toHaveBeenCalledTimes(1);
       expect(deps.keyboard.releaseKey).toHaveBeenCalledTimes(1);
     });

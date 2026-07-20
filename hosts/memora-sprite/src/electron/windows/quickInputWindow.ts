@@ -160,6 +160,28 @@ export class QuickInputWindow {
    */
   private pasteInProgress = false;
   /**
+   * 重捕获进行中标记
+   *
+   * 防止手动重捕获（RECAPTURE_TARGET IPC）与 blur 自动重捕获并发。
+   * blur 事件处理器检查此标记，手动重捕获期间跳过自动重捕获。
+   */
+  private recaptureInProgress = false;
+  /**
+   * blur 自动重捕获防抖定时器（仅 pinned 模式下生效）
+   *
+   * 浮窗失焦后延迟 200ms 执行重捕获。若在延迟内浮窗恢复焦点（用户点击回来），
+   * 定时器被取消，避免误触发。仅在 pinnedMode=true 且 pasteInProgress=false 时启动。
+   */
+  private recaptureDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 前台窗口轮询定时器（pinned 模式下持续检测前台窗口变化）
+   *
+   * blur 事件依赖浮窗自身焦点状态，在 alwaysOnTop 浮窗下 paste 后 win.focus() 恢复焦点
+   * 不可靠，导致 blur 不触发 → 自动重捕获链断裂。轮询 GetForegroundWindow() 独立于
+   * 焦点状态，每 300ms 检查一次，作为 blur 事件的可靠性兜底。
+   */
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
+  /**
    * 用户是否手动 resize 过窗口（本次 show 生命周期内）
    *
    * 设为 true 后，渲染进程的 QUICK_INPUT_RESIZE（候选列表显示/隐藏触发的动态高度调整）
@@ -234,12 +256,22 @@ export class QuickInputWindow {
     // 失焦延迟关闭：给 Alt+Tab 切换留余量（pinned 模式 / paste 期间不关闭）
     // paste 期间抑制 blur close 是为了防止 default 模式下 paste 流程触发的 blur 事件
     // 启动 hide 定时器（paste 耗时 200-600ms > blur 延迟 200ms），导致 hide→show 闪烁
+    // pinned 模式：启动自动重捕获防抖定时器，用户切到其他窗口后自动更新粘贴目标
     win.on('blur', () => {
-      if (this.pinnedMode || this.pasteInProgress) return;
+      if (this.pasteInProgress) return;
+      if (this.pinnedMode) {
+        // pinned 模式：自动重捕获（不关闭浮窗，仅更新粘贴目标）
+        // 手动重捕获进行中时跳过，避免并发
+        if (this.recaptureInProgress) return;
+        this.scheduleAutoRecapture();
+        return;
+      }
       this.scheduleBlurClose();
     });
     win.on('focus', () => {
       this.cancelBlurClose();
+      // pinned 模式下 focus 恢复时取消防抖定时器（用户点击回了浮窗，不需重捕获）
+      this.cancelAutoRecapture();
     });
     // 手动 resize 检测：用户拖拽窗口边缘时，框架自动触发 resize 事件
     // 程序化 setSize() 调用前通过 skipResizeFlag 跳过，避免误判
@@ -485,6 +517,7 @@ export class QuickInputWindow {
       this.win!.hide();
     }
     this.cancelBlurClose();
+    this.stopPolling(); // 隐藏时停止轮询，避免后台空转
   }
 
   /**
@@ -639,8 +672,30 @@ export class QuickInputWindow {
       this.pinnedMode = typeof pinned === 'boolean' ? pinned : false;
       if (this.isWinAlive() && this.pinnedMode) {
         this.win!.setAlwaysOnTop(true);
+        // pinned 模式启动轮询：blur 事件可能不可靠，轮询作为兜底
+        this.startPolling();
+      } else {
+        // 退出 pinned 模式时停止轮询
+        this.stopPolling();
       }
       return { success: true };
+    });
+
+    // 手动重捕获前台窗口（聚焦栏点击触发）
+    // 流程：设置 recaptureInProgress → 调用 PasteCoordinator.recapture() → 推送 IPC → 清除标记
+    ipcMain.handle(IPC_CHANNELS.RECAPTURE_TARGET, async () => {
+      // 防止与 blur 自动重捕获并发
+      this.recaptureInProgress = true;
+      try {
+        const floatHwnd = this.getFloatHwnd();
+        const result = await this.pasteCoordinator.recapture(floatHwnd);
+        if (result && this.isWinAlive()) {
+          this.win!.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE, result.title);
+        }
+        return result;
+      } finally {
+        this.recaptureInProgress = false;
+      }
     });
   }
 
@@ -724,6 +779,96 @@ export class QuickInputWindow {
   }
 
   /**
+   * 启动 blur 自动重捕获防抖定时器（仅 pinned 模式下调用）
+   *
+   * 浮窗失焦后延迟 200ms 执行重捕获。若在延迟内 focus 恢复，
+   * cancelAutoRecapture() 会清除定时器。
+   */
+  private scheduleAutoRecapture(): void {
+    this.cancelAutoRecapture();
+    this.recaptureDebounceTimer = setTimeout(() => {
+      this.recaptureDebounceTimer = null;
+      void this.autoRecapture();
+    }, BLUR_CLOSE_DELAY_MS);
+  }
+
+  /**
+   * 取消 blur 自动重捕获防抖定时器
+   */
+  private cancelAutoRecapture(): void {
+    if (this.recaptureDebounceTimer) {
+      clearTimeout(this.recaptureDebounceTimer);
+      this.recaptureDebounceTimer = null;
+    }
+  }
+
+  /**
+   * 启动前台窗口轮询（pinned 模式专用）
+   *
+   * 每 300ms 通过 koffi GetForegroundWindow() 检查前台窗口是否变化。
+   * 变化时执行同步重捕获并推送更新。独立于浮窗焦点状态，blur 事件不可靠时的兜底机制。
+   */
+  private startPolling(): void {
+    this.stopPolling(); // 防止重复启动
+    this.pollingTimer = setInterval(() => {
+      void this.pollAndRecapture();
+    }, 300);
+  }
+
+  /**
+   * 停止前台窗口轮询
+   */
+  private stopPolling(): void {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+  }
+
+  /**
+   * 轮询回调：检查前台窗口变化并推送更新
+   */
+  private async pollAndRecapture(): Promise<void> {
+    if (!this.isWinAlive() || this.pasteInProgress || this.recaptureInProgress) return;
+    const floatHwnd = this.getFloatHwnd();
+    if (floatHwnd === undefined) return;
+    // 同步检查 + 重捕获（koffi 调用均在同步路径，无 async 开销）
+    const result = this.pasteCoordinator.checkAndRecapture(floatHwnd);
+    if (result && this.isWinAlive()) {
+      this.win!.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE, result.title);
+    }
+  }
+
+  /**
+   * 执行自动重捕获（blur 防抖到期后调用）
+   *
+   * 委托 PasteCoordinator.recapture() 获取前台窗口，
+   * 成功时通过 IPC 推送新应用名到渲染进程更新聚焦栏。
+   */
+  private async autoRecapture(): Promise<void> {
+    // 双重检查：防抖期间 pasteInProgress 可能已变为 true
+    if (this.pasteInProgress || !this.isWinAlive()) return;
+
+    const floatHwnd = this.getFloatHwnd();
+    const result = await this.pasteCoordinator.recapture(floatHwnd);
+    if (result && this.isWinAlive()) {
+      this.win!.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_FOCUS_CHANGE, result.title);
+    }
+  }
+
+  /**
+   * 获取浮窗的 Win32 HWND（用于 recapture 排除浮窗自身）
+   */
+  private getFloatHwnd(): number | undefined {
+    if (!this.isWinAlive()) return undefined;
+    try {
+      return Number(this.win!.getNativeWindowHandle().readBigUInt64LE(0));
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * 更新回调集合
    */
   updateCallbacks(callbacks: QuickInputWindowCallbacks): void {
@@ -768,6 +913,7 @@ export class QuickInputWindow {
    */
   destroy(): void {
     this.cancelBlurClose();
+    this.stopPolling(); // 销毁时停止轮询，释放定时器资源
     if (this.ipcRegistered) {
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CONFIRM);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CLOSE);
@@ -775,6 +921,7 @@ export class QuickInputWindow {
       ipcMain.removeAllListeners(IPC_CHANNELS.MOVE_QUICK_INPUT);
       ipcMain.removeAllListeners(IPC_CHANNELS.QUICK_INPUT_POLISH);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE);
+      ipcMain.removeHandler(IPC_CHANNELS.RECAPTURE_TARGET);
       this.ipcRegistered = false;
     }
     if (this.isWinAlive()) {

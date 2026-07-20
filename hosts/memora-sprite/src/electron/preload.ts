@@ -183,6 +183,8 @@ export const IPC_CHANNELS = {
   // pinnedMode/alwaysOnTop 强耦合：浮窗永远 alwaysOnTop=true + skipTaskbar=true，
   // 消除 Windows 任务栏默认图标 bug。
   QUICK_INPUT_SET_PINNED_MODE: 'quick-input-set-pinned-mode',
+  // 手动重捕获前台窗口（聚焦栏点击触发，与 ipc/channels.ts 同步）
+  RECAPTURE_TARGET: 'recapture-target',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）

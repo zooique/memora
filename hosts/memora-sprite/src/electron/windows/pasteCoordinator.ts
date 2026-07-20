@@ -33,6 +33,12 @@ import { logger } from 'memora';
 const user32 = load('user32.dll');
 const GetWindowTextLengthW = user32.func('int GetWindowTextLengthW(int hWnd)');
 const GetWindowTextW = user32.func('int GetWindowTextW(int hWnd, char16 *lpString, int nMaxCount)');
+// 用于 recapture()：获取当前前台窗口 HWND 和桌面 HWND，零闪烁（无需 hide/show 浮窗）
+const GetForegroundWindow = user32.func('int GetForegroundWindow()');
+const GetShellWindow = user32.func('int GetShellWindow()');
+// 用于 recapture() 构造合成 ActiveWindow：直接调用 SetForegroundWindow 绕过 nut-js 的
+// getActiveWindow() 在浮窗 alwaysOnTop 时返回浮窗自身的 bug
+const SetForegroundWindow = user32.func('bool SetForegroundWindow(int hWnd)');
 
 /** 剪贴板三重保护抑制函数类型（由 clipboardHandler.suppressNextChange 注入） */
 export type SuppressNextChange = () => void;
@@ -232,15 +238,22 @@ export class PasteCoordinator {
 
     // 超时保护：Promise.race 确保 paste 不会永久阻塞
     // 主要保护点：previousWindow.focus() 在目标窗口无响应时可能挂起
-    const pastePromise = this.inputInjector.paste(text, this.previousWindow, hideFloat, this.suppressNextChange);
+    const pastePromise = this.inputInjector.paste(
+      text, this.previousWindow, hideFloat, this.suppressNextChange,
+    );
+    let timeoutId: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<PasteResult>((resolve) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         logger.warn({ timeoutMs: PASTE_TIMEOUT_MS }, '自动粘贴超时，降级到 copy 模式');
         resolve({ success: false, mode: 'copy', reason: 'paste_failed' });
       }, PASTE_TIMEOUT_MS);
     });
 
-    return Promise.race([pastePromise, timeoutPromise]);
+    const result = await Promise.race([pastePromise, timeoutPromise]);
+    // 清除未触发的超时定时器：paste 成功时 timeout 仍在后台运行，
+    // Promise.race 不取消 loser，5 秒后 clearTimeout 已是 no-op（安全）
+    clearTimeout(timeoutId!);
+    return result;
   }
 
   /**
@@ -265,31 +278,126 @@ export class PasteCoordinator {
   }
 
   /**
-   * 获取当前捕获窗口的应用名（用于 focus-bar 显示）
+   * 获取当前捕获窗口的完整标题（用于 focus-bar 显示）
    *
-   * 优先使用缓存的准确标题（capturePreviousWindow 时通过 PowerShell 获取），
+   * 优先使用缓存的 koffi 准确标题（capturePreviousWindow/recapture 时获取），
    * 缓存为空时降级使用 nut-js 标题。
-   * Windows 窗口标题格式通常为 "{文档名} - {应用名}"，取末段作为应用名。
-   * 若格式不符（无 " - " 分隔符）则返回完整标题。
    *
-   * @returns 应用名（无捕获窗口时返回 null）
+   * @returns 完整窗口标题（无捕获窗口时返回 null）
    */
   async getCapturedAppName(): Promise<string | null> {
-    // 提取局部变量，便于在闭包中保持类型收窄（避免 this.previousWindow 在异步前后变化）
+    // 优先使用 koffi 缓存的完整标题（recapture/capturePreviousWindow 时已同步获取）
+    if (this.cachedAccurateTitle) {
+      return this.cachedAccurateTitle;
+    }
+    // 降级：缓存的标题不可用时，从 nut-js ActiveWindow 获取（可能含编码乱码）
     const win = this.previousWindow;
     if (!win) return null;
     return withSilentFallback(async () => {
-      // 优先使用 capturePreviousWindow 时缓存的准确标题（PS 修复后的 UTF-16 标题）
-      // 缓存为 null 表示 nut-js 标题非乱码，直接用 nut-js 标题
-      const title = this.cachedAccurateTitle ?? await win.title;
-
-      // 窗口标题格式约定："{文档} - {应用名}"，取末段
-      const parts = title.split(' - ');
-      if (parts.length <= 1) return title;
-      // noUncheckedIndexedAccess 下 parts[N] 推断为 string | undefined，提取局部变量后守卫
-      const appName = parts[parts.length - 1];
-      return appName ? appName.trim() : title;
+      return await win.title;
     }, null, 'getCapturedAppName failed');
+  }
+
+  /**
+   * 重新捕获前台窗口（浮窗已可见时调用，零闪烁）
+   *
+   * 与 capturePreviousWindow() 的区别：
+   *   - capturePreviousWindow 在 show() 前调用，浮窗尚未创建，前台窗口就是目标
+   *   - recapture() 在浮窗可见时调用，需用 koffi GetForegroundWindow 绕过浮窗自身
+   *   - 零闪烁：不隐藏/显示浮窗，直接用 koffi 同步获取前台 HWND
+   *
+   * 关键修复：nut-js getActiveWindow() 在浮窗 alwaysOnTop 时返回浮窗自身，
+   * 导致 captureActiveWindow 返回 null 进而 previousWindow 不更新。
+   * 此方法用 koffi SetForegroundWindow 构造合成 ActiveWindow，彻底绕过此问题。
+   *
+   * 流程：
+   *   1. koffi GetForegroundWindow() → 同步获取前台 HWND（<1ms）
+   *   2. 排除浮窗自身、桌面、HWND 为 0
+   *   3. koffi getWindowTitle() → 同步获取完整标题（<1ms）
+   *   4. 更新 cachedHwnd 和 cachedAccurateTitle
+   *   5. 用 koffi SetForegroundWindow 构造合成 ActiveWindow（paste 焦点恢复）
+   *   6. 返回完整窗口标题供 IPC 推送
+   *
+   * @param floatHwnd 浮窗的 Win32 窗口句柄，用于排除浮窗自身
+   * @returns 捕获成功时返回 { title }，失败（桌面/任务栏/浮窗自身）返回 null
+   */
+  async recapture(floatHwnd?: number): Promise<{ title: string | null } | null> {
+    // 1. koffi 同步获取前台 HWND（零延迟，无需 hide/show 浮窗）
+    const fgHwnd = GetForegroundWindow() as number;
+
+    // 2. 排除无效窗口
+    if (!fgHwnd) return null;
+    if (floatHwnd !== undefined && fgHwnd === floatHwnd) return null; // 排除浮窗自身
+    const desktopHwnd = GetShellWindow() as number;
+    if (fgHwnd === desktopHwnd) return null; // 排除桌面
+
+    // 3. koffi 获取完整窗口标题（零编码损失）
+    const title = getWindowTitle(fgHwnd);
+    if (!title) return null;
+
+    // 4. 更新缓存（标题已确认有效，先更新确保 getCapturedAppName 可用）
+    this.cachedHwnd = fgHwnd;
+    this.cachedAccurateTitle = title;
+
+    // 5. 用 koffi SetForegroundWindow 构造合成 ActiveWindow
+    //    绕过 nut-js getActiveWindow() 在浮窗 alwaysOnTop 时返回浮窗自身的 bug
+    //    确保 paste 流程中 previousWindow.focus() 能正确聚焦到目标窗口
+    const syntheticWindow: ActiveWindow = {
+      hwnd: fgHwnd,
+      title: Promise.resolve(title),
+      region: Promise.resolve({ left: 0, top: 0, width: 0, height: 0 }),
+      focus: async () => {
+        SetForegroundWindow(fgHwnd);
+      },
+    };
+    this.previousWindow = syntheticWindow;
+
+    return { title };
+  }
+
+  /**
+   * 轮询检查前台窗口是否变化，变化时同步执行重捕获
+   *
+   * 与 recapture() 的区别：
+   *   - recapture() 是 async，供 blur 事件/IPC 调用（触发时机已知）
+   *   - checkAndRecapture() 是同步的，供 setInterval 轮询（无触发时机，需主动检测）
+   *
+   * 设计理由：blur 事件依赖浮窗焦点状态，在 alwaysOnTop 浮窗下焦点恢复不可靠，
+   * 导致 blur 不触发 → 自动重捕获链断裂。轮询 GetForegroundWindow() 独立于焦点状态，
+   * 零竞态，是 blur 事件的可靠性兜底。
+   *
+   * @param floatHwnd 浮窗 HWND（用于排除自身）
+   * @returns 变化后的完整窗口标题，未变化或无效时返回 null
+   */
+  checkAndRecapture(floatHwnd: number): { title: string } | null {
+    // 1. koffi 同步获取前台 HWND
+    const fgHwnd = GetForegroundWindow() as number;
+
+    // 2. 排除无效窗口
+    if (!fgHwnd) return null;
+    if (fgHwnd === floatHwnd) return null; // 排除浮窗自身
+    if (fgHwnd === (GetShellWindow() as number)) return null; // 排除桌面
+
+    // 3. 未变化：跳过（避免无效的 SetForegroundWindow 调用）
+    if (fgHwnd === this.cachedHwnd) return null;
+
+    // 4. koffi 获取完整窗口标题
+    const title = getWindowTitle(fgHwnd);
+    if (!title) return null;
+
+    // 5. 更新缓存
+    this.cachedHwnd = fgHwnd;
+    this.cachedAccurateTitle = title;
+
+    // 6. 构造合成 ActiveWindow（koffi SetForegroundWindow 绕过 nut-js bug）
+    this.previousWindow = {
+      hwnd: fgHwnd,
+      title: Promise.resolve(title),
+      region: Promise.resolve({ left: 0, top: 0, width: 0, height: 0 }),
+      focus: async () => { SetForegroundWindow(fgHwnd); },
+    };
+
+    return { title };
   }
 
   /**

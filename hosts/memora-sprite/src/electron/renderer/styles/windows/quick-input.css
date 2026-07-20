@@ -391,14 +391,12 @@ body {
   /* 聚焦态：应用名用 accent 色强调，让用户一眼看到"已聚焦到哪个应用" */
   color: var(--accent);
   font-weight: var(--weight-medium);
+  /* 可点击（手动重捕获入口） */
+  cursor: pointer;
+  transition: color var(--transition-fast);
 }
-
-/* 无聚焦状态：应用名变灰 + 斜体，视觉提示 Tab 已禁用 */
-.focus-bar.no-focus .focus-app-name {
-  color: var(--muted);
-  opacity: 0.6;
-  font-style: italic;
-  font-weight: var(--weight-regular);
+.focus-app-name:hover {
+  color: var(--text);
 }
 
 

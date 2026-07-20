@@ -50,7 +50,10 @@ export type QuickInputElectronAPI = Pick<
   | 'onQuickInputShow' | 'removeQuickInputShowListener'
   | 'boostMemory' | 'showMemory'
   | 'setPinnedMode' | 'onFocusChange'
->;
+> & {
+  /** 手动重捕获前台窗口（聚焦栏点击触发，仅 quick-input 浮窗可用） */
+  recaptureTarget: () => Promise<{ title: string | null } | null>;
+};
 
 /** Toast 显示时长（ms），统一所有模式的 Toast 时长 */
 const TOAST_DURATION_MS = 500;
@@ -160,6 +163,8 @@ export class QuickInputController {
   private isPolishing = false;
   /** resize IPC 防抖定时器（避免输入时频繁 setSize 导致窗口闪烁） */
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 聚焦栏点击防抖定时器（防止快速双击触发两次重捕获） */
+  private recaptureClickTimer: ReturnType<typeof setTimeout> | null = null;
   // ── 拖动状态（focus-bar 顶部标题栏拖动浮窗，参考 float.ts PointerEvent + setPointerCapture 模式） ──
   /** 当前捕获的指针 ID（null 表示未拖动） */
   private dragPointerId: number | null = null;
@@ -203,6 +208,7 @@ export class QuickInputController {
     this.bindExpandToggle();
     this.bindPolishToggle();
     this.bindDrag();
+    this.bindFocusBarClick();
     this.bindCloseButton();
     this.bindFocusChangeHandler();
     this.initCompletion();
@@ -453,6 +459,47 @@ export class QuickInputController {
     handle.addEventListener('pointerdown', onPointerDown);
     handle.addEventListener('pointermove', onPointerMove);
     handle.addEventListener('pointerup', onPointerUp);
+  }
+
+  /**
+   * 绑定聚焦栏点击事件（手动重捕获入口）
+   *
+   * 点击聚焦栏（focus-bar）触发手动重捕获，调用 recaptureTarget IPC 获取当前前台窗口。
+   * 点击不触发拖动（drag 通过 pointerdown/move 检测，>3px 阈值才激活）。
+   * 关闭按钮上的点击不触发重捕获（与 drag 的防护逻辑一致）。
+   *
+   * 防抖：300ms leading-edge 模式——首次点击立即触发，300ms 内后续点击被忽略。
+   */
+  private bindFocusBarClick(): void {
+    this.focusBarEl.addEventListener('click', (e: MouseEvent) => {
+      // 关闭按钮上的点击不触发重捕获
+      const target = e.target as Element | null;
+      if (target?.closest('#close-btn')) return;
+      // 防抖：leading edge 模式，300ms 内重复点击被忽略
+      if (this.recaptureClickTimer) return;
+      this.recaptureClickTimer = setTimeout(() => {
+        this.recaptureClickTimer = null;
+      }, 300);
+      // 触发手动重捕获
+      void this.handleRecapture();
+    });
+  }
+
+  /**
+   * 执行手动重捕获：调用 IPC → 更新聚焦栏
+   *
+   * 失败时保持上一次值，不显示错误提示（静默降级）。
+   */
+  private async handleRecapture(): Promise<void> {
+    try {
+      const result = await this.api.recaptureTarget();
+      if (result?.title) {
+        // 复用 updateFocusIndicator 确保格式 + tabEnabled + no-focus class 一致
+        this.updateFocusIndicator(result.title);
+      }
+    } catch {
+      // 静默降级：聚焦栏保持上一次值
+    }
   }
 
   /**
@@ -962,6 +1009,11 @@ export class QuickInputController {
       this.focusBarEl.removeEventListener('pointermove', this.dragHandlers.pointermove);
       this.focusBarEl.removeEventListener('pointerup', this.dragHandlers.pointerup);
       this.dragHandlers = null;
+    }
+    // 清除聚焦栏点击防抖定时器
+    if (this.recaptureClickTimer) {
+      clearTimeout(this.recaptureClickTimer);
+      this.recaptureClickTimer = null;
     }
     this.completion?.cleanup();
   }

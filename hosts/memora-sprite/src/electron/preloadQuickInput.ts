@@ -39,6 +39,8 @@ const IPC_CHANNELS = {
   MEMORIES_BOOST: 'memories-boost',
   /** 查看单条记忆详情（补全选中时回库查全量内容） */
   MEMORIES_SHOW: 'memories-show',
+  /** 手动重捕获前台窗口（聚焦栏点击触发） */
+  RECAPTURE_TARGET: 'recapture-target',
 } as const;
 
 /** 主→渲染进程 通道（仅 quick-input 相关） */
@@ -150,6 +152,10 @@ const quickInputAPI = {
   /** 切换常驻模式（pinned=true 持久钉住浮窗，pinned=false 恢复 default 模式） */
   setPinnedMode: (pinned: boolean): Promise<{ success: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_SET_PINNED_MODE, pinned),
+
+  /** 手动重捕获前台窗口（聚焦栏点击触发，返回完整窗口标题或 null） */
+  recaptureTarget: (): Promise<{ title: string | null } | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.RECAPTURE_TARGET),
 
   /** 监听浮窗 show 事件（替代 window focus，避免 Alt+Tab 误清空） */
   onQuickInputShow: (cb: (payload: QuickInputShowPayload) => void): void => {

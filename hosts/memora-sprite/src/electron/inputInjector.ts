@@ -35,10 +35,18 @@
  */
 
 import { clipboard } from 'electron';
-import { spawnSync } from 'node:child_process';
+import { load } from 'koffi';
 // 类型导入（编译时擦除，不影响零 native 依赖运行时）：用于 getDefaultInputInjector 中的类型适配
 import type { Key as NutJsKeyType } from '@nut-tree-fork/nut-js';
 import { logger } from 'memora';
+
+// ── Win32 FFI：加载 user32.dll 并定义 keybd_event（零进程启动，<1ms）──
+// 与 pasteCoordinator.ts 共享同一 DLL，koffi 内部缓存确保只加载一次
+// koffi 类型映射：Win32 BYTE→uint8, DWORD→uint32, ULONG_PTR→uintptr_t
+const user32 = load('user32.dll');
+const keybd_event = user32.func(
+  'void keybd_event(uint8 bVk, uint8 bScan, uint32 dwFlags, uintptr_t dwExtraInfo)',
+);
 
 /**
  * nut-js 活跃窗口的最小接口抽象
@@ -158,45 +166,29 @@ function calculatePasteDelay(text: string): number {
 }
 
 /**
- * 通过 PowerShell SendInput 发送 Ctrl+V 到当前前台窗口
+ * 通过 koffi FFI 直接调用 Win32 keybd_event 发送 Ctrl+V
  *
- * 技术选型：
- *   - 用 PowerShell keybd_event 替代 nut-js keyboard：nut-js pressKey+releaseKey 耗时 611ms，
- *     PowerShell SendInput 仅 ~100ms（浮窗保持可见时无闪烁）
- *   - 用 -EncodedCommand 传递 base64(UTF-16LE) 脚本：避免引号转义问题
+ * 根因修复（与 getWindowTitle 同一模式）：
+ *   旧方案用 PowerShell Add-Type 编译 C# keybd_event P/Invoke，
+ *   每次 spawnSync 新进程编译 2-5 秒，打包 Electron 中频繁 ETIMEDOUT。
+ *   koffi FFI 在 Node.js 进程内直接调用 user32.dll，零进程启动，<1ms。
  *
- * @returns true=发送成功，false=PowerShell 调用失败（调用方降级到 nut-js keyboard）
+ * @returns true=发送成功，false=koffi 调用失败（调用方降级到 nut-js keyboard）
  */
-function sendCtrlVViaPS(): boolean {
-  // PowerShell 脚本：Add-Type 定义 keybd_event P/Invoke → 模拟 Ctrl+V 按键
-  // VK_CONTROL=0x11, VK_V=0x56, KEYEVENTF_KEYUP=0x0002
-  const script = `Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("user32.dll")]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,UIntPtr dwExtraInfo);'
-[C.W]::keybd_event(0x11,0,0,[UIntPtr]::Zero)
-[C.W]::keybd_event(0x56,0,0,[UIntPtr]::Zero)
-[C.W]::keybd_event(0x56,0,2,[UIntPtr]::Zero)
-[C.W]::keybd_event(0x11,0,2,[UIntPtr]::Zero)`;
-  // 用 -EncodedCommand 传递 base64(UTF-16LE) 编码的脚本，避免引号转义
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+function sendCtrlVViaFFI(): boolean {
   try {
-    // 使用 spawnSync 直接调用 powershell.exe，绕过 cmd.exe 中转
-    // execSync 在 Windows 上通过 cmd.exe /d /s /c "..." 包装命令，可能导致 ETIMEDOUT
-    const psResult = spawnSync(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-      { timeout: 3000, stdio: 'ignore' },
-    );
-    // spawnSync 不抛异常，需手动检查执行结果
-    if (psResult.error) {
-      logger.warn({ err: psResult.error }, 'PowerShell SendInput 进程启动失败，将降级到 nut-js keyboard');
-      return false;
-    }
-    if (psResult.status !== 0) {
-      logger.warn({ status: psResult.status }, 'PowerShell SendInput 返回非零状态码，将降级到 nut-js keyboard');
-      return false;
-    }
+    // VK_CONTROL=0x11, VK_V=0x56, KEYEVENTF_KEYUP=0x0002
+    const VK_CONTROL = 0x11;
+    const VK_V = 0x56;
+    const KEYEVENTF_KEYUP = 0x0002;
+    // 按下 Ctrl → 按下 V → 释放 V → 释放 Ctrl（dwExtraInfo=0，无额外信息）
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event(VK_V, 0, 0, 0);
+    keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
     return true;
   } catch (err) {
-    logger.warn({ err }, 'PowerShell SendInput Ctrl+V 失败，将降级到 nut-js keyboard');
+    logger.warn({ err }, 'koffi keybd_event Ctrl+V 失败，将降级到 nut-js keyboard');
     return false;
   }
 }
@@ -247,7 +239,7 @@ export class InputInjector {
    * 完整流程（5 步）：
    *   1. 检测剪贴板格式 + 保存原内容 + 写入目标 + suppressNextChange
    *   2. 恢复焦点到原前台窗口（previousWindow.focus）
-   *   3. PowerShell SendInput 发送 Ctrl+V（失败降级到 nut-js keyboard）
+   *   3. koffi FFI keybd_event 发送 Ctrl+V（失败降级到 nut-js keyboard）
    *   4. 延迟（按文本长度自适应 100/200/500ms）
    *   5. 恢复剪贴板 + suppressNextChange
    *
@@ -302,11 +294,11 @@ export class InputInjector {
         return { success: false, mode: 'copy', reason: 'focus_failed', error: err };
       }
 
-      // 步骤 3：PowerShell SendInput 发送 Ctrl+V
-      // 绕过 nut-js keyboard（pressKey+releaseKey 耗时 611ms，PowerShell SendInput 仅 ~100ms）
-      const sent = sendCtrlVViaPS();
+      // 步骤 3：koffi FFI 直接发送 Ctrl+V（零进程启动，<1ms）
+      // 绕过 nut-js keyboard（pressKey+releaseKey 耗时 611ms）
+      const sent = sendCtrlVViaFFI();
       if (!sent) {
-        // PowerShell 失败，降级到 nut-js keyboard（兼容非 Windows 环境）
+        // koffi 失败，降级到 nut-js keyboard（兼容非 Windows 环境）
         await this.deps.keyboard.pressKey(this.deps.Key.LeftControl, this.deps.Key.V);
         await this.deps.keyboard.releaseKey(this.deps.Key.LeftControl, this.deps.Key.V);
       }

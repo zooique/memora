@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // mock getDefaultInputInjector，返回可控的 InputInjector mock
-const { mockInputInjector, mockGetDefault, mockGetWindowTextLengthW, mockGetWindowTextW } = vi.hoisted(() => ({
+const { mockInputInjector, mockGetDefault, mockGetWindowTextLengthW, mockGetWindowTextW, mockGetForegroundWindow, mockGetShellWindow, mockSetForegroundWindow } = vi.hoisted(() => ({
   mockInputInjector: {
     captureActiveWindow: vi.fn(),
     paste: vi.fn(),
@@ -25,6 +25,12 @@ const { mockInputInjector, mockGetDefault, mockGetWindowTextLengthW, mockGetWind
   mockGetWindowTextLengthW: vi.fn(() => 0),
   // koffi FFI mock：GetWindowTextW 默认空实现
   mockGetWindowTextW: vi.fn(),
+  // koffi FFI mock：GetForegroundWindow 默认返回有效 HWND（模拟有前台窗口）
+  mockGetForegroundWindow: vi.fn(() => 1181106),
+  // koffi FFI mock：GetShellWindow 默认返回 0（无桌面窗口，避免误排除）
+  mockGetShellWindow: vi.fn(() => 0),
+  // koffi FFI mock：SetForegroundWindow 用于合成 ActiveWindow.focus()
+  mockSetForegroundWindow: vi.fn(),
 }));
 
 vi.mock('../../../electron/inputInjector.js', () => ({
@@ -38,6 +44,9 @@ vi.mock('koffi', () => ({
     func: vi.fn((definition: string) => {
       if (definition.includes('GetWindowTextLengthW')) return mockGetWindowTextLengthW;
       if (definition.includes('GetWindowTextW')) return mockGetWindowTextW;
+      if (definition.includes('GetForegroundWindow')) return mockGetForegroundWindow;
+      if (definition.includes('GetShellWindow')) return mockGetShellWindow;
+      if (definition.includes('SetForegroundWindow')) return mockSetForegroundWindow;
       return vi.fn();
     }),
   })),
@@ -259,7 +268,7 @@ describe('PasteCoordinator', () => {
       expect(result).toBeNull();
     });
 
-    it('非乱码标题：使用 nut-js 标题，不调用 koffi FFI', async () => {
+    it('非乱码标题：返回完整标题', async () => {
       mockInputInjector.captureActiveWindow.mockResolvedValue(createMockWindow('无标题 - 记事本'));
       await coordinator.capturePreviousWindow();
 
@@ -268,7 +277,8 @@ describe('PasteCoordinator', () => {
       expect(mockGetWindowTextW).not.toHaveBeenCalled();
 
       const result = await coordinator.getCapturedAppName();
-      expect(result).toBe('记事本');
+      // 直接返回完整窗口标题，不再截取应用名
+      expect(result).toBe('无标题 - 记事本');
     });
 
     it('非乱码标题：无 " - " 分隔符时返回完整标题', async () => {
@@ -304,7 +314,7 @@ describe('PasteCoordinator', () => {
       // getCapturedAppName 使用缓存的准确标题，不再调 koffi FFI
       expect(mockGetWindowTextLengthW).toHaveBeenCalledTimes(1);
       expect(mockGetWindowTextW).toHaveBeenCalledTimes(1);
-      expect(result).toBe('记事本');
+      expect(result).toBe('无标题 - 记事本');
     });
 
     it('乱码标题：koffi FFI 失败时降级使用 nut-js 乱码标题', async () => {
@@ -317,8 +327,8 @@ describe('PasteCoordinator', () => {
       await coordinator.capturePreviousWindow();
 
       const result = await coordinator.getCapturedAppName();
-      // 降级到 nut-js 标题（含乱码），应用名提取仍尝试解析 " - " 分隔符
-      expect(result).toBe('\uFFFD\uFFFD\uFFFD\uFFFD');
+      // 降级到 nut-js 标题（含乱码），返回完整标题不再截取
+      expect(result).toBe('无标题 - \uFFFD\uFFFD\uFFFD\uFFFD');
     });
 
     it('乱码标题：GetWindowTextLengthW 返回 0 时降级使用 nut-js 标题', async () => {
@@ -332,7 +342,8 @@ describe('PasteCoordinator', () => {
       await coordinator.capturePreviousWindow();
 
       const result = await coordinator.getCapturedAppName();
-      expect(result).toBe('\uFFFD\uFFFD\uFFFD\uFFFD');
+      // 降级到 nut-js 标题（含乱码），返回完整标题不再截取
+      expect(result).toBe('无标题 - \uFFFD\uFFFD\uFFFD\uFFFD');
     });
 
     it('窗口切换时重新检测乱码并获取新标题', async () => {
@@ -341,7 +352,7 @@ describe('PasteCoordinator', () => {
       await coordinator.capturePreviousWindow();
       expect(mockGetWindowTextLengthW).not.toHaveBeenCalled();
       const name1 = await coordinator.getCapturedAppName();
-      expect(name1).toBe('Word');
+      expect(name1).toBe('文档1 - Word');
 
       // 第二次捕获：乱码窗口
       const garbledTitle = '文档2 - \uFFFD\uFFFD\uFFFD\uFFFD';
@@ -356,7 +367,202 @@ describe('PasteCoordinator', () => {
       expect(mockGetWindowTextLengthW).toHaveBeenCalledTimes(1);
       expect(mockGetWindowTextW).toHaveBeenCalledTimes(1);
       const name2 = await coordinator.getCapturedAppName();
-      expect(name2).toBe('Excel');
+      expect(name2).toBe('文档2 - Excel');
+    });
+  });
+
+  /** recapture() 方法测试：浮窗可见时重新捕获前台窗口 */
+  describe('recapture()', () => {
+    /** 为 recapture 测试设置 mock 标题（模拟 koffi GetWindowTextW 写入 UTF-16LE 标题） */
+    function setMockTitle(title: string): void {
+      // GetWindowTextLengthW 返回字符数（Win32 API 返回 wchar 长度）
+      mockGetWindowTextLengthW.mockReturnValue(title.length);
+      // GetWindowTextW 的第 2 个参数是 char16* 数组，直接写入 UTF-16LE 字节到 ArrayBuffer
+      mockGetWindowTextW.mockImplementation((_hwnd: number, _buf: unknown, _len: number) => {
+        const arr = (_buf as unknown) as Uint16Array;
+        // 通过底层 ArrayBuffer 写入 UTF-16LE 字节（绕过 Uint16Array 的编码转换）
+        const rawBytes = new Uint8Array(arr.buffer);
+        const utf16le = Buffer.from(title, 'utf16le');
+        for (let i = 0; i < utf16le.length && i < rawBytes.length; i++) {
+          rawBytes[i] = utf16le[i]!;
+        }
+        return title.length;
+      });
+    }
+
+    beforeEach(() => {
+      // 重置 koffi mock 为默认值
+      mockGetForegroundWindow.mockReturnValue(1181106);
+      mockGetShellWindow.mockReturnValue(0);
+      // 重置 nut-js mock
+      mockInputInjector.captureActiveWindow.mockReset();
+      mockGetDefault.mockResolvedValue(mockInputInjector);
+    });
+
+    it('成功捕获前台窗口完整标题', async () => {
+      setMockTitle('无标题 - 记事本');
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture();
+
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe('无标题 - 记事本');
+    });
+
+    it('返回 null 当 GetForegroundWindow 返回 0（无前台窗口）', async () => {
+      mockGetForegroundWindow.mockReturnValue(0);
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture();
+
+      expect(result).toBeNull();
+    });
+
+    it('返回 null 当浮窗自身是前台窗口（floatHwnd 排除）', async () => {
+      const floatHwnd = 1181106;
+      mockGetForegroundWindow.mockReturnValue(floatHwnd);
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture(floatHwnd);
+
+      expect(result).toBeNull();
+    });
+
+    it('返回 null 当桌面是前台窗口（GetShellWindow 排除）', async () => {
+      const desktopHwnd = 65535;
+      mockGetForegroundWindow.mockReturnValue(desktopHwnd);
+      mockGetShellWindow.mockReturnValue(desktopHwnd);
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture();
+
+      expect(result).toBeNull();
+    });
+
+    it('返回 null 当标题为空', async () => {
+      setMockTitle('');
+      // GetWindowTextLengthW 返回 0 → getWindowTitle 返回 null
+      mockGetWindowTextLengthW.mockReturnValue(0);
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture();
+
+      expect(result).toBeNull();
+    });
+
+    it('返回完整窗口标题（无截取，直接返回原始标题）', async () => {
+      setMockTitle('Windows PowerShell');
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture();
+
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe('Windows PowerShell');
+    });
+
+    it('recapture 使用 koffi SetForegroundWindow 合成 ActiveWindow（绕过 nut-js bug）', async () => {
+      setMockTitle('文档 - Word');
+      const coordinator = new PasteCoordinator();
+
+      const result = await coordinator.recapture();
+
+      // 标题直接返回完整窗口标题（不再截取应用名）
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe('文档 - Word');
+    });
+
+    it('recapture 后 getCapturedAppName 返回完整标题', async () => {
+      setMockTitle('测试文档 - VS Code');
+      const coordinator = new PasteCoordinator();
+
+      await coordinator.recapture();
+      const title = await coordinator.getCapturedAppName();
+
+      // 直接返回完整标题，不再截取为 "VS Code"
+      expect(title).toBe('测试文档 - VS Code');
+    });
+  });
+
+  // ── checkAndRecapture（轮询同步重捕获）──
+
+  describe('checkAndRecapture()', () => {
+    /** 为 checkAndRecapture 测试设置 mock 标题 */
+    function setMockTitle(title: string): void {
+      mockGetWindowTextLengthW.mockReturnValue(title.length);
+      mockGetWindowTextW.mockImplementation((_hwnd: number, _buf: unknown, _len: number) => {
+        const arr = (_buf as unknown) as Uint16Array;
+        const rawBytes = new Uint8Array(arr.buffer);
+        const utf16le = Buffer.from(title, 'utf16le');
+        for (let i = 0; i < utf16le.length && i < rawBytes.length; i++) {
+          rawBytes[i] = utf16le[i]!;
+        }
+        return title.length;
+      });
+    }
+
+    const FLOAT_HWND = 999888;
+
+    beforeEach(() => {
+      mockGetForegroundWindow.mockReturnValue(1181106);
+      mockGetShellWindow.mockReturnValue(0);
+    });
+
+    it('前台窗口变化时返回新标题', () => {
+      setMockTitle('浏览器 - Chrome');
+      const coordinator = new PasteCoordinator();
+
+      const result = coordinator.checkAndRecapture(FLOAT_HWND);
+
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe('浏览器 - Chrome');
+    });
+
+    it('前台窗口未变化时返回 null（避免无效 SetForegroundWindow）', () => {
+      setMockTitle('浏览器 - Chrome');
+      const coordinator = new PasteCoordinator();
+
+      // 第一次：捕获 Chrome
+      coordinator.checkAndRecapture(FLOAT_HWND);
+      // 第二次：前台窗口未变，应返回 null
+      const result = coordinator.checkAndRecapture(FLOAT_HWND);
+
+      expect(result).toBeNull();
+    });
+
+    it('前台窗口是浮窗自身时返回 null', () => {
+      setMockTitle('浮窗标题');
+      mockGetForegroundWindow.mockReturnValue(FLOAT_HWND);
+      const coordinator = new PasteCoordinator();
+
+      const result = coordinator.checkAndRecapture(FLOAT_HWND);
+
+      expect(result).toBeNull();
+    });
+
+    it('前台窗口是桌面时返回 null', () => {
+      const desktopHwnd = 65535;
+      mockGetForegroundWindow.mockReturnValue(desktopHwnd);
+      mockGetShellWindow.mockReturnValue(desktopHwnd);
+      const coordinator = new PasteCoordinator();
+
+      const result = coordinator.checkAndRecapture(FLOAT_HWND);
+
+      expect(result).toBeNull();
+    });
+
+    it('连续两次切换到不同窗口均返回正确标题', () => {
+      const coordinator = new PasteCoordinator();
+
+      // 第一次切换
+      setMockTitle('文档 - Word');
+      const result1 = coordinator.checkAndRecapture(FLOAT_HWND);
+      expect(result1!.title).toBe('文档 - Word');
+
+      // 模拟切换到另一个窗口（更换 HWND）
+      mockGetForegroundWindow.mockReturnValue(2222222);
+      setMockTitle('表格 - Excel');
+      const result2 = coordinator.checkAndRecapture(FLOAT_HWND);
+      expect(result2!.title).toBe('表格 - Excel');
     });
   });
 });
