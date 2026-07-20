@@ -102,8 +102,8 @@ interface QuickInputControllerOptions {
   expandToggle: HTMLElement;
   /** 润色按钮 */
   polishToggle: HTMLElement;
-  /** footer 区域（拖动把手） */
-  footerEl: HTMLElement;
+  /** 顶部聚焦提示栏（拖动把手：语义等价于窗口标题栏） */
+  focusBarEl: HTMLElement;
   /** 字符计数元素 */
   counterEl: HTMLElement;
   /** 顶部聚焦提示栏应用名元素 */
@@ -126,8 +126,8 @@ export class QuickInputController {
   private readonly expandToggle: HTMLElement;
   /** 润色按钮 */
   private readonly polishToggle: HTMLElement;
-  /** footer 区域（拖动把手） */
-  private readonly footerEl: HTMLElement;
+  /** 顶部聚焦提示栏（拖动把手） */
+  private readonly focusBarEl: HTMLElement;
   /** 字符计数显示元素 */
   private readonly counterEl: HTMLElement;
   /** 顶部聚焦提示栏应用名元素 */
@@ -160,7 +160,7 @@ export class QuickInputController {
   private isPolishing = false;
   /** resize IPC 防抖定时器（避免输入时频繁 setSize 导致窗口闪烁） */
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  // ── 拖动状态（footer 把手拖动浮窗，参考 float.ts PointerEvent + setPointerCapture 模式） ──
+  // ── 拖动状态（focus-bar 顶部标题栏拖动浮窗，参考 float.ts PointerEvent + setPointerCapture 模式） ──
   /** 当前捕获的指针 ID（null 表示未拖动） */
   private dragPointerId: number | null = null;
   /** 拖动累计位移起点（screen 坐标系，用于计算总位移判断是否超过阈值） */
@@ -185,7 +185,7 @@ export class QuickInputController {
     this.pinnedToggle = options.pinnedToggle;
     this.expandToggle = options.expandToggle;
     this.polishToggle = options.polishToggle;
-    this.footerEl = options.footerEl;
+    this.focusBarEl = options.focusBarEl;
     this.counterEl = options.counterEl;
     this.focusAppNameEl = options.focusAppNameEl;
     this.closeBtnEl = options.closeBtnEl;
@@ -384,33 +384,38 @@ export class QuickInputController {
   }
 
   /**
-   * 绑定 footer 拖动事件（PointerEvent + setPointerCapture 模式，参考 float.ts）
+   * 绑定顶部聚焦栏拖动（替代原 footer 拖动）
+   *
+   * 拖动把手从 footer 迁移到 focus-bar 顶部，原因：
+   *   - focus-bar 语义等价于窗口标题栏（含"聚焦：应用名"+ 关闭按钮）
+   *   - footer 同时承载 5 种交互元素（提示文本/润色/展开/常驻/计数），拖动冲突严重
+   *   - focus-bar 仅排斥关闭按钮，大幅减少冲突
    *
    * 交互流程：
    *   - pointerdown：记录起点 + setPointerCapture（后续 pointermove/pointerup 即使鼠标移出窗口也能持续触发）
    *   - pointermove：3px 阈值判断 → 计算 screen 增量 → 调用 IPC moveQuickInput 逐帧推送
    *   - pointerup：releasePointerCapture + 清理状态
    *
-   * 交互按钮防护：pointerdown 落在 .expand-toggle / .pinned-toggle 上时不启动拖动，
-   * 让按钮的 click 事件正常触发。
+   * 交互按钮防护：pointerdown 落在 #close-btn 上时不启动拖动，
+   * 让关闭按钮的 click 事件正常触发。
    *
    * 位置不持久化：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效（由主进程负责）。
    */
   private bindDrag(): void {
-    const footer = this.footerEl;
+    const handle = this.focusBarEl;
 
     // pointerdown：记录起点 + 捕获指针，使后续 pointermove/pointerup 即使鼠标移出窗口也能触发
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      // 交互按钮（展开/常驻模式切换/润色）上的 pointerdown 不启动拖动，让按钮 click 正常触发
+      // 关闭按钮上的 pointerdown 不启动拖动，让按钮 click 正常触发
       const target = e.target as Element | null;
-      if (target?.closest('.expand-toggle, .pinned-toggle, .polish-toggle')) return;
+      if (target?.closest('#close-btn')) return;
       this.dragPointerId = e.pointerId;
       this.dragStartX = e.screenX;
       this.dragStartY = e.screenY;
       this.dragLastX = e.screenX;
       this.dragLastY = e.screenY;
-      footer.setPointerCapture(e.pointerId);
+      handle.setPointerCapture(e.pointerId);
     };
 
     // pointermove：超过阈值后逐帧推送 IPC 增量（与 float.ts 一致，避免单击误判为拖动）
@@ -433,8 +438,8 @@ export class QuickInputController {
     // pointerup：释放指针捕获 + 清理拖动状态
     const onPointerUp = (e: PointerEvent) => {
       if (this.dragPointerId !== e.pointerId) return;
-      if (footer.hasPointerCapture(e.pointerId)) {
-        footer.releasePointerCapture(e.pointerId);
+      if (handle.hasPointerCapture(e.pointerId)) {
+        handle.releasePointerCapture(e.pointerId);
       }
       this.dragPointerId = null;
     };
@@ -445,9 +450,9 @@ export class QuickInputController {
       pointermove: onPointerMove,
       pointerup: onPointerUp,
     };
-    footer.addEventListener('pointerdown', onPointerDown);
-    footer.addEventListener('pointermove', onPointerMove);
-    footer.addEventListener('pointerup', onPointerUp);
+    handle.addEventListener('pointerdown', onPointerDown);
+    handle.addEventListener('pointermove', onPointerMove);
+    handle.addEventListener('pointerup', onPointerUp);
   }
 
   /**
@@ -953,9 +958,9 @@ export class QuickInputController {
   cleanup(): void {
     // 移除拖动事件监听器（防止窗口销毁后事件泄漏）
     if (this.dragHandlers) {
-      this.footerEl.removeEventListener('pointerdown', this.dragHandlers.pointerdown);
-      this.footerEl.removeEventListener('pointermove', this.dragHandlers.pointermove);
-      this.footerEl.removeEventListener('pointerup', this.dragHandlers.pointerup);
+      this.focusBarEl.removeEventListener('pointerdown', this.dragHandlers.pointerdown);
+      this.focusBarEl.removeEventListener('pointermove', this.dragHandlers.pointermove);
+      this.focusBarEl.removeEventListener('pointerup', this.dragHandlers.pointerup);
       this.dragHandlers = null;
     }
     this.completion?.cleanup();
@@ -996,9 +1001,10 @@ function initQuickInput(): void {
     reportError('QuickInput init', new Error('polish-toggle 元素缺失'));
     return;
   }
-  const footerEl = document.getElementById('quick-input-footer');
-  if (!(footerEl instanceof HTMLElement)) {
-    reportError('QuickInput init', new Error('quick-input-footer 元素缺失'));
+  // 顶部聚焦提示栏（拖动把手）
+  const focusBarEl = document.getElementById('focus-bar');
+  if (!(focusBarEl instanceof HTMLElement)) {
+    reportError('QuickInput init', new Error('focus-bar 元素缺失'));
     return;
   }
   const counterEl = document.querySelector('.quick-input-counter');
@@ -1030,7 +1036,7 @@ function initQuickInput(): void {
     pinnedToggle,
     expandToggle,
     polishToggle,
-    footerEl,
+    focusBarEl,
     counterEl,
     focusAppNameEl,
     closeBtnEl,

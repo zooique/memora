@@ -144,6 +144,9 @@ async function withSilentFallback<T>(
   }
 }
 
+/** 自动粘贴超时（ms）：超过此时间未完成则降级到 copy 模式 */
+const PASTE_TIMEOUT_MS = 5000;
+
 /**
  * 自动粘贴协调器
  *
@@ -253,6 +256,9 @@ export class PasteCoordinator {
    * 条件不满足（未启用/未注入 suppressNextChange/nut-js 不可用）时
    * 返回降级结果，由调用方走 fallback 路径。
    *
+   * 超时保护：若 paste 流程超过 PASTE_TIMEOUT_MS（5 秒）未完成，
+   * 自动降级到 copy 模式，防止 paste 永久阻塞用户操作。
+   *
    * @param text 要粘贴的文本
    * @param hideFloat 隐藏浮窗的回调（粘贴成功前调用）
    * @returns 粘贴结果（mode='paste' 成功，mode='copy' 需降级）
@@ -261,7 +267,18 @@ export class PasteCoordinator {
     if (!this.autoPasteEnabled || !this.inputInjector || !this.suppressNextChange) {
       return { success: false, mode: 'copy', reason: 'no_deps' };
     }
-    return this.inputInjector.paste(text, this.previousWindow, hideFloat, this.suppressNextChange);
+
+    // 超时保护：Promise.race 确保 paste 不会永久阻塞
+    // 主要保护点：previousWindow.focus() 在目标窗口无响应时可能挂起
+    const pastePromise = this.inputInjector.paste(text, this.previousWindow, hideFloat, this.suppressNextChange);
+    const timeoutPromise = new Promise<PasteResult>((resolve) => {
+      setTimeout(() => {
+        logger.warn({ timeoutMs: PASTE_TIMEOUT_MS }, '自动粘贴超时，降级到 copy 模式');
+        resolve({ success: false, mode: 'copy', reason: 'paste_failed' });
+      }, PASTE_TIMEOUT_MS);
+    });
+
+    return Promise.race([pastePromise, timeoutPromise]);
   }
 
   /**

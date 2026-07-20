@@ -108,7 +108,7 @@ async function createController(opts?: {
   pinnedToggle: HTMLElement;
   expandToggle: HTMLElement;
   polishToggle: HTMLElement;
-  footerEl: HTMLElement;
+  focusBarEl: HTMLElement;
   counterEl: HTMLElement;
   focusAppNameEl: HTMLElement;
   closeBtnEl: HTMLElement;
@@ -156,7 +156,7 @@ async function createController(opts?: {
   const pinnedToggle = document.getElementById('pinned-toggle')!;
   const expandToggle = document.getElementById('expand-toggle')!;
   const polishToggle = document.getElementById('polish-toggle')!;
-  const footerEl = document.getElementById('quick-input-footer')!;
+  const focusBarEl = document.getElementById('focus-bar')!;
   const counterEl = document.querySelector('.quick-input-counter')! as HTMLElement;
   const focusAppNameEl = document.getElementById('focus-app-name')!;
   const closeBtnEl = document.getElementById('close-btn')!;
@@ -167,7 +167,7 @@ async function createController(opts?: {
     pinnedToggle,
     expandToggle,
     polishToggle,
-    footerEl,
+    focusBarEl,
     counterEl,
     focusAppNameEl,
     closeBtnEl,
@@ -175,7 +175,7 @@ async function createController(opts?: {
   });
   controller.init();
 
-  return { controller, api, inputField, completionList, pinnedToggle, expandToggle, polishToggle, footerEl, counterEl, focusAppNameEl, closeBtnEl };
+  return { controller, api, inputField, completionList, pinnedToggle, expandToggle, polishToggle, focusBarEl, counterEl, focusAppNameEl, closeBtnEl };
 }
 
 // ─── 测试 ──────────────────────────────────────────────────

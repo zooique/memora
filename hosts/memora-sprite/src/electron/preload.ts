@@ -174,7 +174,7 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
   QUICK_INPUT_CLOSE: 'quick-input-close',
   QUICK_INPUT_RESIZE: 'quick-input-resize',
-  // 拖动浮窗位置（footer 区域可拖，dx/dy 增量，与 ipc/channels.ts MOVE_QUICK_INPUT 同步）
+  // 拖动浮窗位置（focus-bar 顶部标题栏可拖，dx/dy 增量，与 ipc/channels.ts MOVE_QUICK_INPUT 同步）
   MOVE_QUICK_INPUT: 'move-quick-input',
   // LLM 润色文本（携带原文，返回润色后文本，与 ipc/channels.ts QUICK_INPUT_POLISH 同步）
   QUICK_INPUT_POLISH: 'quick-input-polish',
@@ -815,7 +815,7 @@ export interface ElectronAPI {
    */
   resizeQuickInput: (height: number) => Promise<void>;
   /**
-   * 拖动浮窗位置（footer 区域可拖，dx/dy 增量移动）
+   * 拖动浮窗位置（focus-bar 顶部标题栏可拖，dx/dy 增量移动）
    *
    * 使用 ipcRenderer.send 单向发送（无需返回值），主进程 setPosition 后调用 keepWindowInWorkArea。
    * 位置不持久化：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效。

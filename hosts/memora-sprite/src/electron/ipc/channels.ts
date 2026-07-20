@@ -227,7 +227,7 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_CLOSE: 'quick-input-close',
   /** 渲染进程 → 主进程：调整浮窗高度（候选列表显示/隐藏时触发） */
   QUICK_INPUT_RESIZE: 'quick-input-resize',
-  /** 渲染进程 → 主进程：拖动浮窗位置（footer 区域可拖，dx/dy 增量） */
+  /** 渲染进程 → 主进程：拖动浮窗位置（focus-bar 顶部标题栏可拖，dx/dy 增量） */
   MOVE_QUICK_INPUT: 'move-quick-input',
   /** 渲染进程 → 主进程：LLM 润色文本（携带原文，返回润色后文本） */
   QUICK_INPUT_POLISH: 'quick-input-polish',

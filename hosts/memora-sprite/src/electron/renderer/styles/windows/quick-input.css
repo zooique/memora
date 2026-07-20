@@ -77,11 +77,7 @@ body {
 
 /* ===== 底部栏：提示文字 + 常驻模式开关 + 字符计数 ===== */
 /* .quick-input-footer 复用 .flex-between + .flex-shrink-0 工具类（utilities.css，由 HTML className 提供） */
-/* footer 同时作为拖动把手：cursor:move 提示可拖动整窗位置；
-   user-select:none 防止拖动时误选提示文字；
-   交互按钮（.expand-toggle / .pinned-toggle）显式设 cursor:pointer 覆盖 move */
 .quick-input-footer {
-  cursor: move;
   user-select: none;
 }
 
@@ -343,6 +339,7 @@ body {
 
 /* ===== 顶部聚焦提示栏（卡片头部，嵌入 .quick-input-container 顶部） ===== */
 /* 显示当前聚焦应用名（如"聚焦：VSCode"），无聚焦时显示"无聚焦"并禁用 Tab。
+   同时作为拖动把手：cursor:move 提示可拖动整窗位置（语义等价于窗口标题栏）。
    通过负 margin 贴合 container 边缘：
    - margin-top: -8px 抵消 container padding-top（var(--space-2)）
    - margin 左右: -12px 抵消 container padding 左右（var(--space-3)）
@@ -359,6 +356,7 @@ body {
   border-bottom: 1px solid var(--border);
   font-size: var(--font-xs);
   color: var(--muted);
+  cursor: move;
   user-select: none;
   /* 顶部圆角与 container 一致（底部无圆角，通过 border-bottom 与输入区分隔） */
   border-radius: inherit;

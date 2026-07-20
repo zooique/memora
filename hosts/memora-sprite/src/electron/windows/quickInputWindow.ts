@@ -403,15 +403,13 @@ export class QuickInputWindow {
     this.ipcRegistered = true;
 
     // 确认输入：Phase 4 优先自动粘贴，降级走 onConfirm 写剪贴板
-    // 渲染进程传入 pinnedMode：pinned 模式下 paste 后不抢焦点（保持钉住语义）
-    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, pinnedMode?: boolean): Promise<QuickInputConfirmResult> => {
+    // 两种模式统一重聚焦支持流式输入（_pinnedMode 保留接口兼容，不再影响焦点行为）
+    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_CONFIRM, async (_event, text: string, _pinnedMode?: boolean): Promise<QuickInputConfirmResult> => {
       try {
         // 参数校验：文本必须是字符串且非空
         if (typeof text !== 'string' || text.length === 0) {
           return { success: false, mode: 'copy' };
         }
-        // pinnedMode 类型校验：防御非布尔 truthy 值
-        const safePinnedMode = typeof pinnedMode === 'boolean' ? pinnedMode : false;
         // 截断超长文本（防止恶意输入）
         const safeText = text.slice(0, MAX_CONFIRM_TEXT_LENGTH);
 
@@ -438,10 +436,8 @@ export class QuickInputWindow {
           if (this.pinnedMode) {
             this.win!.setAlwaysOnTop(true);
           }
-          // default 模式恢复焦点支持连续输入；pinned 模式不抢焦点（保持钉住语义）
-          if (!safePinnedMode) {
-            this.win!.focus();
-          }
+          // 两种模式统一重聚焦浮窗支持流式连续输入（锁定模式 = 流式输入的升级版）
+          this.win!.focus();
         }
 
         if (pasteResult.success && pasteResult.mode === 'paste') {
@@ -500,7 +496,7 @@ export class QuickInputWindow {
       });
     });
 
-    // 拖动浮窗位置：footer 区域可拖，dx/dy 增量移动（与 float 一致的 PointerEvent 模式）
+    // 拖动浮窗位置：focus-bar 顶部标题栏可拖，dx/dy 增量移动（与 float 一致的 PointerEvent 模式）
     // 不持久化位置：每次唤起仍在光标跟随位置显示，拖动仅本次会话生效
     ipcMain.on(IPC_CHANNELS.MOVE_QUICK_INPUT, (_event, dx: number, dy: number) => {
       // ipcMain.on 无返回值，用 void 显式忽略 wrapIpcHandler 返回的 Promise
