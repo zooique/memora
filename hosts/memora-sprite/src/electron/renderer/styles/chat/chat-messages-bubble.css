@@ -231,6 +231,10 @@
 
 /**
  * 消息元信息行：复制按钮 + 时间戳同行显示
+ *
+ * 主动可见原则（project-rules.md §7.6.5）：复制是常规操作，时间戳是辅助信息，
+ * 默认半透明可见（0.55）而非完全隐藏，hover 时增强至 1.0。
+ * 避免 hover-only 显示让用户找不到按钮。
  */
 .message-meta {
   display: flex;
@@ -238,7 +242,7 @@
   gap: var(--space-1);
   margin-top: 4px;
   padding: 0 var(--space-1);
-  opacity: 0;
+  opacity: 0.55;
   transition: opacity var(--transition-fast);
 }
 
@@ -285,20 +289,20 @@
   height: 13px;
 }
 
-/* hover 消息行时增强可见性 */
+/* hover 消息行时增强可见性：父级 .message-meta 已提升 opacity，子按钮无需再单独增强 */
 .message-content:hover .message-copy-btn,
 .message-content:hover .message-archive-btn {
-  opacity: 0.85;
+  opacity: 1;
 }
 
-/* 复制按钮：默认透明度 0.65（略低于归档按钮，复制是更常规的操作） */
+/* 复制按钮：默认 opacity 1（可见性由父级 .message-meta 统一控制） */
 .message-copy-btn {
-  opacity: 0.65;
+  opacity: 1;
 }
 
-/* 归档按钮：默认透明度 0.7（manual 模式专用，略高以提示存在） */
+/* 归档按钮：默认 opacity 1（可见性由父级 .message-meta 统一控制） */
 .message-archive-btn {
-  opacity: 0.7;
+  opacity: 1;
 }
 
 /* 复制按钮 hover：蓝色强调 */

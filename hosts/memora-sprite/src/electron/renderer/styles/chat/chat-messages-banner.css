@@ -289,8 +289,9 @@
 }
 
 .suggestion-card-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* 卡片入场动画：从顶部滑入 + 淡入 */

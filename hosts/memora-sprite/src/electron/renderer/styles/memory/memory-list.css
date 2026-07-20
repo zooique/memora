@@ -73,6 +73,7 @@
 #btn-add-memory:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 #memory-list {
@@ -114,17 +115,11 @@
   }
 }
 
+/* hover 反馈：与 .skill-item:hover / .relation-item:hover / .lineage-item:hover 等同类列表项对齐
+   （仅 background + border-color，无 transform/box-shadow，避免视觉权重过强） */
 .memory-item:hover {
   background: var(--surface0);
   border-color: var(--muted);
-  /* hover 时轻微上浮 + 阴影 */
-  transform: translateY(-1px);
-  box-shadow: var(--shadow);
-}
-
-.memory-item:active {
-  /* active 时下沉反馈 */
-  transform: translateY(0);
 }
 
 /* 键盘聚焦可见样式（与 .relation-item:focus-visible 对齐） */
@@ -214,6 +209,7 @@
 .memory-load-more:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* 键盘聚焦可见样式 */

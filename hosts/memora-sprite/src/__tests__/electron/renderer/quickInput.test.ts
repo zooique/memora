@@ -201,7 +201,7 @@ describe('QuickInputController', () => {
 
   describe('handleShow', () => {
     it('无预设文本时清空输入框并重置状态', async () => {
-      const { controller, inputField, api } = await createController({ inputValue: '旧文本' });
+      const { inputField, api } = await createController({ inputValue: '旧文本' });
       const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
         | ((payload: unknown) => void)
         | undefined;
@@ -216,7 +216,7 @@ describe('QuickInputController', () => {
     });
 
     it('有预设文本时预填输入框并选中全文', async () => {
-      const { controller, inputField, api } = await createController();
+      const { inputField, api } = await createController();
       const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
         | ((payload: unknown) => void)
         | undefined;
@@ -245,7 +245,7 @@ describe('QuickInputController', () => {
     });
 
     it('show 时递增 submitGeneration 使过期 IPC 失效', async () => {
-      const { controller, api } = await createController();
+      const { api } = await createController();
       const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
         | ((payload: unknown) => void)
         | undefined;
@@ -350,7 +350,7 @@ describe('QuickInputController', () => {
       expect(inputField.disabled).toBe(false);
     });
 
-    it('确认失败时恢复原文并聚焦', async () => {
+    it('确认失败时显示错误 Toast 后恢复原文并聚焦', async () => {
       const { inputField, api } = await createController({ inputValue: '原文' });
       (api.confirmQuickInput as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         success: false,
@@ -362,10 +362,42 @@ describe('QuickInputController', () => {
       const tabUpEvent = new KeyboardEvent('keyup', { key: 'Tab', bubbles: true });
       inputField.dispatchEvent(tabUpEvent);
 
+      // 微任务推进：IPC 返回后立即显示错误 Toast（FUNC-4 反馈闭环）
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(inputField.value).toBe('✗ 粘贴失败，请重试');
+      expect(inputField.classList.contains('error')).toBe(true);
+      expect(inputField.classList.contains('copy-toast')).toBe(true);
+
+      // 定时器推进后恢复原文
       await vi.runAllTimersAsync();
 
       expect(inputField.value).toBe('原文');
       expect(inputField.disabled).toBe(false);
+      expect(inputField.classList.contains('error')).toBe(false);
+      expect(inputField.classList.contains('copy-toast')).toBe(false);
+    });
+
+    it('确认抛异常时显示错误 Toast 后恢复原文', async () => {
+      const { inputField, api } = await createController({ inputValue: '原始内容' });
+      (api.confirmQuickInput as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('IPC 异常'));
+
+      const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
+      inputField.dispatchEvent(tabEvent);
+      const tabUpEvent = new KeyboardEvent('keyup', { key: 'Tab', bubbles: true });
+      inputField.dispatchEvent(tabUpEvent);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(inputField.value).toBe('✗ 提交失败，请重试');
+      expect(inputField.classList.contains('error')).toBe(true);
+
+      await vi.runAllTimersAsync();
+
+      expect(inputField.value).toBe('原始内容');
+      expect(inputField.classList.contains('error')).toBe(false);
     });
   });
 

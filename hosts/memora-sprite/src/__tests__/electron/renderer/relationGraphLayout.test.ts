@@ -403,7 +403,6 @@ describe('updateLayout', () => {
     // 单节点从中心偏移开始，多次更新后应趋于中心
     const node = makeNode({ id: 'decay', x: 100, y: 100, score: 0 });
     const ctx = buildContext([node], []);
-    const initialEnergy = Math.abs(node.vx) + Math.abs(node.vy);
     // 跑 50 帧
     for (let i = 0; i < 50; i++) {
       updateLayout(ctx);

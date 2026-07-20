@@ -298,7 +298,7 @@
 /* 增强：添加 scale 弹跳动画，让"已复制"反馈更生动               */
 
 .message-bubble .md-code-copy.copied {
-  animation: copySuccessBounce 0.3s ease;
+  animation: copySuccessBounce var(--transition-slow) ease;
 }
 
 @keyframes copySuccessBounce {

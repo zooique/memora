@@ -519,6 +519,7 @@ kbd {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-secondary {
@@ -540,6 +541,7 @@ kbd {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-sm {
@@ -564,6 +566,7 @@ kbd {
 .btn-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ─── 快捷键帮助表格 ──────────────────────────────────── */

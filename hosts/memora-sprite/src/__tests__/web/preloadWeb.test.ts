@@ -122,7 +122,6 @@ function createSseResponse(
  * @returns 模拟的 Response 对象 + controller 引用（用于手动关闭）
  */
 function createPendingSseResponse(): { response: Response; close: () => void } {
-  const encoder = new TextEncoder();
   let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -400,7 +399,6 @@ describe('webElectronAPI', () => {
     });
 
     it('SSE error 事件应转发到 onSpriteError 回调', async () => {
-      const errorCb = vi.fn();
       const spriteErrorCb = vi.fn();
       webElectronAPI.onStreamStart(() => {});
       webElectronAPI.onStreamEnd(() => {});
@@ -524,7 +522,6 @@ describe('webElectronAPI', () => {
     });
 
     it('HTTP 非 2xx 响应应通知 error 和 spriteError 回调', async () => {
-      const errorCb = vi.fn();
       const spriteErrorCb = vi.fn();
       webElectronAPI.onStreamStart(() => {});
       webElectronAPI.onSpriteError(spriteErrorCb);

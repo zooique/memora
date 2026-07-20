@@ -71,7 +71,7 @@
     /* 主动提示弹跳动画（对齐 HTML 预览 @keyframes floatBounce） */
     /* UI-AE-02 弱化弹跳幅度：12px→6px，与专注模式基调一致 */
     #sphere.bounce {
-      animation: floatBounce 0.5s ease;
+      animation: floatBounce var(--transition-xl) ease;
     }
     @keyframes floatBounce {
       0%, 100% { transform: translateY(0); }
@@ -218,7 +218,7 @@
       white-space: nowrap;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.3s ease;
+      transition: opacity var(--transition-slow) ease;
       z-index: 10;
     }
 
@@ -255,7 +255,7 @@
       white-space: nowrap;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.3s ease;
+      transition: opacity var(--transition-slow) ease;
       z-index: 10;
     }
 

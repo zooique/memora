@@ -452,13 +452,10 @@
 }
 
 .save-status-indicator.saving .save-status-icon svg {
-  animation: saveStatusSpin 1.2s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
-@keyframes saveStatusSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
+/* @keyframes saveStatusSpin 已合并到 base.css @keyframes spin（统一旋转动画真理源） */
 
 /* 已保存状态：绿色成功反馈 */
 .save-status-indicator.saved {
@@ -643,8 +640,9 @@
 }
 
 .profile-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */

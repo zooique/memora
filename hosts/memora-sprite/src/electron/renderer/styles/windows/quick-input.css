@@ -129,7 +129,7 @@ body {
   cursor: pointer;
   user-select: none;
   opacity: 0.5;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--transition-fast) ease, transform var(--transition-fast) ease;
   line-height: 1;
   /* 推按钮组到右侧（原在 .expand-toggle 上，现移到按钮组第一个元素） */
   margin-left: auto;
@@ -144,19 +144,15 @@ body {
 }
 
 /* loading 状态：图标旋转动画（sparkle 图标转圈表示 LLM 调用中） */
+/* @keyframes spin 已在 foundation/base.css 统一定义（旋转动画真理源，三窗口共享） */
 .polish-toggle.loading .icon {
-  animation: spin 1s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
 /* 无变化状态：图标短暂闪烁绿色（--green 在 tokens.css 双主题定义，单一真理源） */
 .polish-toggle.no-change {
   opacity: 1;
   color: var(--green);
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 /* ===== 展开高度切换按钮 ===== */
@@ -166,7 +162,7 @@ body {
   cursor: pointer;
   user-select: none;
   opacity: 0.5;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--transition-fast) ease, transform var(--transition-fast) ease;
   line-height: 1;
   /* margin-left:auto 已移到 .polish-toggle（按钮组第一个元素） */
   margin-right: var(--space-2);
@@ -194,7 +190,7 @@ body {
   cursor: pointer;
   user-select: none;
   opacity: 0.5;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--transition-fast) ease, transform var(--transition-fast) ease;
   line-height: 1;
   /* 紧邻 expand-toggle 右侧（margin-left: auto 已由 expand-toggle 提供） */
   margin-right: var(--space-2);
@@ -346,12 +342,17 @@ body {
   user-select: none;
 }
 
-/* ===== Toast 状态（粘贴成功/复制成功） ===== */
+/* ===== Toast 状态（粘贴成功/复制成功/失败提示） ===== */
 .quick-input-field.copy-toast {
   text-align: center;
   color: var(--accent);
   font-weight: var(--weight-semibold);
   cursor: default;
+}
+
+/* 失败 Toast 变体：使用 --red 令牌与全局错误态保持一致 */
+.quick-input-field.copy-toast.error {
+  color: var(--red);
 }
 
 /* ===== 顶部聚焦提示栏（卡片头部，嵌入 .quick-input-container 顶部） ===== */

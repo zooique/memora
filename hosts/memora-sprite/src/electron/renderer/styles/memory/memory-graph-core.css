@@ -1,8 +1,10 @@
 /* 关系图谱核心样式：更多菜单 / 图例 / tooltip / 右键菜单 / 关系编辑 */
 
+/* hover 反馈：与 .graph-context-menu-item:hover / .dropdown-item:hover / .context-menu-item:hover 等同类菜单项对齐
+   （中性背景 + 主文字色），让 hover 与 active 状态层级清晰区分（active 才用强调色） */
 .more-menu-item:hover {
-  background: var(--accent-10);
-  color: var(--accent);
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 /* 更多菜单项键盘聚焦可见样式 */

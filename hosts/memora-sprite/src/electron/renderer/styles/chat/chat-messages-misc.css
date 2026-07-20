@@ -12,8 +12,8 @@
   font-size: var(--font-sm);
   color: var(--text-2);
   font-family: var(--font-sprite);
-  /* 脉冲动画：透明度循环变化，暗示"正在工作" */
-  animation: thinking-pulse 1.4s ease-in-out infinite;
+  /* 脉冲动画：复用 base.css 全局 breathing-pulse keyframes（统一呼吸动画真理源） */
+  animation: breathing-pulse 1.4s ease-in-out infinite;
 }
 
 /* 思考阶段指示器内的齿轮图标 */
@@ -24,10 +24,7 @@
   opacity: 0.8;
 }
 
-@keyframes thinking-pulse {
-  0%, 100% { opacity: 0.55; }
-  50%      { opacity: 1; }
-}
+/* @keyframes thinking-pulse 已合并到 base.css @keyframes breathing-pulse（统一呼吸动画真理源） */
 
 /* ─── 上下文截断提示条（可关闭模式） ─────────────────────────────── */
 /* 对话中发生上下文截断时，在消息气泡顶部显示提示条             */
@@ -217,12 +214,10 @@
   border: 1.5px solid var(--surface2);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: tool-call-spin 0.8s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
-@keyframes tool-call-spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes tool-call-spin 已合并到 base.css @keyframes spin（统一旋转动画真理源） */
 
 /* 工具参数：等宽字体 + 弱化背景，模拟代码块 */
 .tool-call-args {
@@ -281,7 +276,7 @@
 
 .load-more-btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
   pointer-events: none;
 }
 
@@ -403,6 +398,7 @@
 .stream-error-retry:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -675,8 +671,9 @@
 }
 
 .archive-session-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ─── 消息右键菜单 ─── */

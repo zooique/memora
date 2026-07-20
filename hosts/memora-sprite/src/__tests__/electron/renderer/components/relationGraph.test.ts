@@ -120,22 +120,6 @@ function createMockCanvas(width = 800, height = 600): HTMLCanvasElement {
   return canvas;
 }
 
-/** 创建测试用 GraphNode */
-function createNode(overrides: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id: 'test-node',
-    name: '测试节点',
-    source: 'insight',
-    score: 0.5,
-    contentPreview: '内容预览',
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    ...overrides,
-  };
-}
-
 /** 创建测试用 GraphEdge */
 function createEdge(overrides: Partial<GraphEdge> = {}): GraphEdge {
   return {

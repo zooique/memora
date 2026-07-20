@@ -129,10 +129,17 @@ html, body {
   border: 2px solid var(--surface2);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: panel-spin 0.8s linear infinite;
+  animation: spin 0.8s linear infinite;
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
-@keyframes panel-spin {
+
+/* 全局唯一旋转关键帧（统一替代原 panel-spin / tool-call-spin / saveStatusSpin / spin 4 处重复定义）
+   - .panel-loading-spinner（base.css，0.8s）
+   - .tool-call-spinner（chat-messages-misc.css，0.8s）
+   - .save-status-indicator.saving .save-status-icon svg（settings.css，0.8s）
+   - .polish-toggle.loading .icon（quick-input.css，0.8s） */
+@keyframes spin {
+  from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
@@ -140,6 +147,15 @@ html, body {
 @keyframes emptyIconFloat {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-4px); }
+}
+
+/* 全局统一呼吸节奏动画（1.4s，统一替代原 agent-status-pulse + thinking-pulse 2 处重复定义）
+   - .chat-agent-status.unknown .agent-status-dot（chat-messages-input.css，agent 状态点）
+   - .thinking-phase（chat-messages-misc.css，思考阶段指示器）
+   节奏 1.4s ease-in-out infinite，opacity 0.5↔1 折中幅度 */
+@keyframes breathing-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
 }
 
 /* UI-UX-03 统一错误状态：居中错误图标 + 文字 + 重试按钮 */
@@ -234,7 +250,7 @@ button:active,
 }
 
 .icon-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
 }

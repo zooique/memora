@@ -34,30 +34,6 @@ vi.mock('node:readline', () => ({
 // 导入被测模块（在 vi.mock 之后）
 import { CliInteraction } from '../../../sprite/cli/interaction.js';
 
-// ─── 测试辅助 ─────────────────────────────────────────────
-
-/** 创建 CliInteraction 实例并捕获 readline 事件回调 */
-function createInteractionWithCapturedHandlers(): {
-  interaction: CliInteraction;
-  triggerLine: (line: string) => void;
-  triggerClose: () => void;
-} {
-  const interaction = new CliInteraction();
-  const inputHandler = vi.fn();
-  interaction.start(inputHandler);
-
-  // 从 mockRL.on 调用中提取事件回调
-  const onCalls = mockRL.on.mock.calls;
-  const lineCall = onCalls.find(([event]) => event === 'line');
-  const closeCall = onCalls.find(([event]) => event === 'close');
-
-  return {
-    interaction,
-    triggerLine: (line: string) => lineCall?.[1]?.(line),
-    triggerClose: () => closeCall?.[1]?.(),
-  };
-}
-
 // ─── 测试用例 ─────────────────────────────────────────────
 
 describe('CliInteraction', () => {

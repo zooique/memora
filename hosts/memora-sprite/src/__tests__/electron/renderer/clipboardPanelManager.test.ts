@@ -138,8 +138,8 @@ afterEach(() => {
 
 describe('init · DOM 元素获取与 onChange 注入', () => {
   it('应获取所有 DOM 元素引用并通过 onChange 注入回调', () => {
-    const { clipboardManager, panelManager } = createManagers();
-    // onChange 已注入：addPendingItem 应触发 panelManager.refresh（自动渲染列表）
+    const { clipboardManager } = createManagers();
+    // onChange 已注入：addPendingItem 应自动触发列表刷新
     clipboardManager.addPendingItem('内容A', 10);
     const listEl = document.getElementById('clipboard-pending-list')!;
     expect(listEl.children).toHaveLength(1);

@@ -19,11 +19,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setLogger } from 'memora';
 import type { ILogger } from 'memora';
+// 类型命名空间：用于 vi.mock 中保留原始模块导出类型
+// （eslint consistent-type-imports 规则禁止 typeof import() 语法）
+import type * as SpriteConfigModule from '../../sprite/spriteConfig.js';
 
 // vi.mock 必须在 import 之前声明（vitest 会自动提升到文件顶部）
 // 拦截 spriteConfig.js 的 saveSpriteConfig，保留 applyConfigField / DEFAULT_SPRITE_CONFIG 真实实现
 vi.mock('../../sprite/spriteConfig.js', async (importOriginal) => {
-  const actual = await importOriginal() as typeof import('../../sprite/spriteConfig.js');
+  const actual = await importOriginal() as typeof SpriteConfigModule;
   return {
     ...actual,
     saveSpriteConfig: vi.fn(),

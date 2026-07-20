@@ -1117,7 +1117,7 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
 
     it('点击非 HTMLElement 的菜单项节点不应触发回调', () => {
       // 验证 instanceof HTMLElement 检查：SVGElement 等非 HTMLElement 不触发
-      const { ctx, callbacks } = createMockCtx();
+      const { ctx } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
       const moreMenu = document.getElementById('memory-more-menu')!;

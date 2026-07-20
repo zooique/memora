@@ -299,10 +299,12 @@
   outline-offset: 1px;
 }
 
+/* 视图切换按钮激活态：与 .nav-btn.active / .icon-btn.active / .settings-tab.active 等全局激活态语义对齐
+   （accent-soft 浅底 + accent 文字 + semibold 字重），移除原白底+阴影的反相样式 */
 .view-switch-btn.active {
-  background: var(--window-bg);
+  background: var(--accent-soft);
   color: var(--accent);
-  box-shadow: var(--shadow-sm);
+  font-weight: var(--weight-semibold);
 }
 
 /* ─── 工具栏更多菜单（下拉） ───────────────────────────────── */

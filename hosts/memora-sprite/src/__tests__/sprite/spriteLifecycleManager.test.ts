@@ -17,26 +17,30 @@
  * - agent.on/off 记录 handler 引用，手动触发事件测试转发链路
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Agent, AgentEventMap, ITracer } from 'memora';
+import type { Agent, ITracer } from 'memora';
 import { setLogger } from 'memora';
 import type { ILogger } from 'memora';
 import { SpriteLifecycleManager } from '../../sprite/spriteLifecycleManager.js';
 import type { LifecycleDeps, SpriteEventEmitter } from '../../sprite/spriteLifecycleManager.js';
-import type { TriggerPayload, TriggerBus } from '../../sprite/triggers.js';
+import type { TriggerBus } from '../../sprite/triggers.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig } from '../../sprite/spriteConfig.js';
-import type { HealthDashboard, DuplicateGroup, StaleMemory, HealthScores } from '../../sprite/controllers/memoryHealth.js';
+import type { HealthDashboard, DuplicateGroup, StaleMemory } from '../../sprite/controllers/memoryHealth.js';
 import type { DashboardData } from '../../sprite/controllers/memoryController.js';
 import type { ProactiveEngine } from '../../sprite/controllers/proactiveEngine.js';
 import type { PerceptionCoordinator } from '../../sprite/controllers/perceptionCoordinator.js';
 import type { MemoryController } from '../../sprite/controllers/memoryController.js';
 import { MS_PER_DAY } from '../../sprite/constants.js';
 import { resolve } from 'node:path';
+// 类型命名空间：用于 vi.mock 中保留原始模块导出类型
+// （eslint consistent-type-imports 规则禁止 typeof import() 语法）
+import type * as nodeFs from 'node:fs';
+import type * as nodeFsPromises from 'node:fs/promises';
 
 // ─── Mock node:fs / node:fs/promises（保留原始导出，仅替换需要控制的函数） ───
 
 vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal() as typeof import('node:fs');
+  const actual = await importOriginal() as typeof nodeFs;
   return {
     ...actual,
     existsSync: vi.fn(),
@@ -44,7 +48,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal() as typeof import('node:fs/promises');
+  const actual = await importOriginal() as typeof nodeFsPromises;
   return {
     ...actual,
     readFile: vi.fn(),

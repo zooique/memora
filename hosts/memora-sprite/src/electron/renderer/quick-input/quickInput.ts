@@ -774,10 +774,7 @@ export class QuickInputController {
     } else {
       this.showCopyToast();
     }
-    this.toastCloseTimer = setTimeout(() => {
-      this.toastCloseTimer = null;
-      this.resetInputForNext();
-    }, TOAST_DURATION_MS);
+    this.scheduleToast(() => this.resetInputForNext());
   }
 
   /**
@@ -811,13 +808,17 @@ export class QuickInputController {
         // default 模式 + pinned 模式 + copy 降级均显示 Toast，差异仅在主进程焦点处理
         this.scheduleSuccessToast(result);
       } else {
-        this.resetInputState(text);
+        // 失败分支：显示错误 Toast（FUNC-4 修复，原仅 resetInputState 用户无可见反馈）
+        this.showErrorToast('✗ 粘贴失败，请重试');
+        this.scheduleToast(() => this.resetInputState(text));
       }
     } catch (error) {
       // 竞态防护：仅在代次匹配时才处理错误（避免覆盖新状态）
       if (currentGen !== this.submitGeneration) return;
       reportError('QuickInput 确认', error);
-      this.resetInputState(text);
+      // 异常分支：显示错误 Toast（FUNC-4 修复，原仅 reportError 用户无可见反馈）
+      this.showErrorToast('✗ 提交失败，请重试');
+      this.scheduleToast(() => this.resetInputState(text));
     }
   }
 
@@ -827,7 +828,7 @@ export class QuickInputController {
   private resetInputForNext(): void {
     this.isSubmitting = false;
     this.unlockInput();
-    this.inputField.classList.remove('copy-toast');
+    this.inputField.classList.remove('copy-toast', 'error');
     this.inputField.value = '';
     this.inputField.style.height = 'auto';
     this.updateCounter();
@@ -846,7 +847,7 @@ export class QuickInputController {
   private resetInputState(text: string): void {
     this.isSubmitting = false;
     this.unlockInput();
-    this.inputField.classList.remove('copy-toast');
+    this.inputField.classList.remove('copy-toast', 'error');
     this.inputField.value = text;
     // 恢复原文后清空补全列表，让 input 事件重新触发候选生成
     this.completion?.clear();
@@ -885,6 +886,32 @@ export class QuickInputController {
     this.inputField.classList.add('copy-toast');
     this.inputField.disabled = false;
     this.inputField.readOnly = true;
+  }
+
+  /**
+   * 显示错误 Toast（提交失败/粘贴失败时反馈用户）
+   *
+   * 使用 .copy-toast.error 变体（红色），与成功 Toast 形成 ✓/✗ 视觉对比。
+   *
+   * @param message 错误提示文案
+   */
+  private showErrorToast(message: string): void {
+    this.inputField.value = message;
+    this.inputField.classList.add('copy-toast', 'error');
+    this.inputField.disabled = false;
+    this.inputField.readOnly = true;
+  }
+
+  /**
+   * 统一 Toast 定时关闭逻辑（ADR-017 枝叶层 2 次提取，3 处使用：成功/失败/异常）
+   *
+   * @param onClose Toast 到期后的回调（恢复输入状态/清空输入等）
+   */
+  private scheduleToast(onClose: () => void): void {
+    this.toastCloseTimer = setTimeout(() => {
+      this.toastCloseTimer = null;
+      onClose();
+    }, TOAST_DURATION_MS);
   }
 
   // ── 布局调整 ──

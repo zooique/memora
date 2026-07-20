@@ -227,7 +227,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .dash-item-action:hover:not(:disabled) {
@@ -237,8 +237,9 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .dash-item-action:disabled {
-  opacity: 0.6;
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ─── 记忆源健康列表 ──────────────────────────────── */
@@ -402,9 +403,9 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 /* ─── 刷新按钮加载动画 ──────────────────────────── */
 
-/* 刷新按钮旋转动画：复用 base.css 的 panel-spin keyframes */
+/* 刷新按钮旋转动画：复用 base.css 全局 @keyframes spin */
 #btn-refresh-dashboard.spinning .icon {
-  animation: panel-spin 0.8s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
 /* 加载中时禁用按钮防止重复点击 */

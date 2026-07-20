@@ -16,7 +16,6 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SpriteTracer, SPRITE_TRACE_SPANS, TRACE_SPANS } from '../../sprite/spriteTracer.js';
-import type { ISpan } from 'memora';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

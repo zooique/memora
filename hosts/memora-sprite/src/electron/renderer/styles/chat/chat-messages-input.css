@@ -36,14 +36,11 @@
 }
 .chat-agent-status.unknown .agent-status-dot {
   background: var(--text-3);
-  /* 初始化中呼吸动画，让用户感知"正在工作" */
-  animation: agent-status-pulse 1.4s ease-in-out infinite;
+  /* 初始化中呼吸动画：复用 base.css 全局 breathing-pulse keyframes */
+  animation: breathing-pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes agent-status-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
+/* @keyframes agent-status-pulse 已合并到 base.css @keyframes breathing-pulse（统一呼吸动画真理源） */
 
 /* 未配置态：红色圆点 + 浅红背景（未配置任何 Provider，需引导用户去设置） */
 .chat-agent-status.error {
@@ -532,7 +529,17 @@
   transform: scale(0.94);
 }
 
-#btn-send:disabled,
+/* 发送按钮禁用态：主 CTA 强禁用语义，opacity 0.35 比通用 0.5 更弱以明显表达「无法发送」 */
+#btn-send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: var(--surface2);
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+/* 输入为空时的视觉禁用（.empty）：与 :disabled 视觉等价，但不阻塞 pointer-events
+   （inputAreaManager 仍可监听点击给用户输入提示） */
 #btn-send.empty {
   opacity: 0.35;
   cursor: not-allowed;
