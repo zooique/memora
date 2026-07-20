@@ -700,18 +700,8 @@ describe('MemoryInspector', () => {
       expect(hits.length).toBeLessThanOrEqual(5);
     });
 
-    // G1：detectConflicts 委托测试（L3 冲突检测）
-    it('detectConflicts 应委托 MemoryAdvisor 返回冲突报告（backgroundProvider 未注入时静默跳过）', async () => {
-      // advisor 在 beforeEach 中用 new MemoryAdvisor(storage) 构造，未注入 backgroundProvider
-      // detectConflicts 应返回 skippedReason 报告而非抛错
-      const report = await inspector.detectConflicts();
-      expect(report).toMatchObject({
-        scannedCount: 0,
-        conflictCount: 0,
-        conflicts: [],
-      });
-      expect(report.skippedReason).toBeTruthy();
-    });
+    // v2 PROXY-1 闭环：detectConflicts 已从 MemoryInspector 删除（迁移至 Agent 直接调用 advisor）
+    // L3 冲突检测的 agent 层公共 API 测试见 agent.test.ts
   });
 
   // ════════════════════════════════════════════════════════

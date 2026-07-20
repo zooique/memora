@@ -17,17 +17,13 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
+// 召回 score 提升量/上限：使用治理共享常量（v2 REPEAT-2 闭环，与 memoryInspector.writeBoost 同源）
+import { BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
 
 // ─── 召回与衰减常量 ─────────────────────────────────────
 
 /** 语义搜索默认相似度阈值 */
 const DEFAULT_MIN_SIMILARITY = 0.3;
-
-/** 每次召回时 score 提升量 */
-const BOOST_INCREMENT = 0.05;
-
-/** score 上限 */
-const SCORE_CEILING = 1.0;
 
 /** 衰减：未访问天数阈值 */
 const DECAY_AGE_DAYS = 7;

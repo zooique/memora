@@ -73,6 +73,13 @@ export interface AssembleOutput {
   insightExtractor: InsightExtractor;
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
+  /**
+   * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
+   *
+   * v2 REPEAT-PROXY-1 闭环：Agent.detectConflicts 收缩为直接调用 advisor，
+   * 不再经 MemoryInspector 转发。assembler 显式返回 advisor 供 Agent 持有。
+   */
+  memoryAdvisor: MemoryAdvisor;
   autoConfigRefiner: AutoConfigRefiner;
   /** 会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
@@ -238,6 +245,7 @@ export async function assembleComponents(
     insightExtractor,
     configManager,
     memoryInspector,
+    memoryAdvisor,
     autoConfigRefiner,
     sessionArchiver,
     textPolisher,

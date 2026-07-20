@@ -26,6 +26,8 @@ import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { byScoreDesc } from '@/utils/array.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
+// LLM 治理源列表（v2 REPEAT-1 闭环，消除 5 处独立维护的 [INSIGHT, PROFILE, WORK_PROJECTION] 列表）
+import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -48,8 +50,7 @@ const SOURCE_HEALTH_THRESHOLDS = {
 } as const;
 
 // ─── L3 冲突检测常量 ────────────────────────────────────
-/** 参与冲突检测的 source 标签 */
-const CONFLICT_SOURCES = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
+// 注：CONFLICT_SOURCES 已统一为 GOVERNANCE_SOURCES（governance.ts），消除 5 处独立维护
 /** 单个 source 内参与配对的记忆条数上限（控制 O(n²) 配对规模） */
 const CONFLICT_CANDIDATES_PER_SOURCE = 10;
 /** 单次 LLM 冲突判断的候选对数上限 */
@@ -293,9 +294,8 @@ export class MemoryAdvisor {
       }
     }
 
-    // 补充：按 source 分组采样，确保来源多样性
-    const knownSources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
-    for (const source of knownSources) {
+    // 补充：按 source 分组采样，确保来源多样性（治理源列表统一来自 governance.ts）
+    for (const source of GOVERNANCE_SOURCES) {
       const count = this.index.countBySource(source);
       if (count > 0 && !excludeSources.includes(source)) {
         const memories = this.index.getBySource(source);
@@ -394,7 +394,7 @@ export class MemoryAdvisor {
 
     // ── 步骤 1：加载候选记忆（每个 source 取 top 10 条，按 score 降序） ──
     const candidates: Memory[] = [];
-    for (const source of CONFLICT_SOURCES) {
+    for (const source of GOVERNANCE_SOURCES) {
       const memories = this.index.getBySource(source);
       // 按 score 降序取 top N
       const top = memories.sort(byScoreDesc).slice(0, CONFLICT_CANDIDATES_PER_SOURCE);

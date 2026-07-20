@@ -45,6 +45,8 @@ import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupReport } from '@/agent/managers/memoryInspector.js';
 import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
 import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
+// MemoryAdvisor 类型注解：v2 PROXY-1 闭环，agent 直接持有 advisor 调用 detectConflicts
+import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
 import { chatBusyError, configError, toError } from '@/utils/errors.js';
@@ -125,6 +127,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
+  /**
+   * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
+   *
+   * v2 PROXY-1 闭环：Agent.detectConflicts 直接调用 advisor，
+   * 不再经 MemoryInspector 转发，消除 3 层无意义代理。
+   * sourceHealth/suggest 仍由 inspector 转发以保持 agent.memory 统一入口语义。
+   */
+  private memoryAdvisor: MemoryAdvisor | null = null;
   private workProjection: WorkProjectionManager | null = null;
   /** AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
@@ -754,6 +764,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
+    this.memoryAdvisor = result.memoryAdvisor;
     this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
     this.sessionArchiver = result.sessionArchiver;
@@ -1157,6 +1168,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = null;
     this.configManager = null;
     this.memoryInspector = null;
+    this.memoryAdvisor = null;
     this.workProjection = null;
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
@@ -1389,14 +1401,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
    * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
    *
+   * v2 PROXY-1 闭环：直接调用 advisor，不再经 MemoryInspector 转发（消除 3 层无意义代理）。
+   * sourceHealth / suggest 仍由 inspector 转发以保持 `agent.memory.xxx()` 公共 API 统一入口语义。
+   *
    * @param signal 可选的 AbortSignal
    * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
    */
   async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
-    // MemoryAdvisor 实例由 MemoryInspector 持有（组合根装配时注入），
-    // 通过 inspector.detectConflicts 转发，避免 agent 直接持有 advisor 引用
-    const inspector = this.memoryInspector;
-    if (!inspector) {
+    // v2 PROXY-1：直接持有 advisor 引用，无需经 inspector 转发
+    const advisor = this.memoryAdvisor;
+    if (!advisor) {
       return {
         scannedCount: 0,
         pairCount: 0,
@@ -1405,7 +1419,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         skippedReason: 'Agent 未初始化',
       };
     }
-    return inspector.detectConflicts(signal);
+    return advisor.detectConflicts(signal);
   }
 
   /**

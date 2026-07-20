@@ -20,6 +20,10 @@
  *     writeAddRelation / writeRemoveRelation
  *   - LLM 记忆治理（异步，backgroundProvider 未注入时静默降级）：
  *     deduplicateMemories（语义去重）
+ *
+ * v2 PROXY-1 闭环：原 detectConflicts 转发方法已删除，Agent.detectConflicts
+ * 改为直接调用 MemoryAdvisor。inspector 职责收缩为"读写 + 查询入口"，
+ * 不再含 L3 冲突检测转发。
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -41,15 +45,16 @@ import {
   hybridMerge,
   RECALL_LIMIT_MULTIPLIER,
 } from '@/memory/hybridMerge.js';
+// LLM 治理共享常量（v2 REPEAT-1/2 闭环，消除 5 处独立维护的治理源列表 + 2 处 score 常量重复）
+import { GOVERNANCE_SOURCES, BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
 // sourceHealth() + suggest() 已提取到 MemoryAdvisor
 // 删除兜底分支后 MemoryAdvisor 仅用于类型注解，改用 import type
+// v2 PROXY-1：detectConflicts 已迁移至 Agent 直接调用 advisor，ConflictReport 不再在此 import
 import type {
   MemoryAdvisor,
   SourceHealthReport,
   SuggestOptions,
   SuggestHit,
-  // L3 冲突检测报告类型：用于 detectConflicts 委托方法返回类型注解
-  ConflictReport,
 } from '@/agent/managers/memoryAdvisor.js';
 // LLM 语义去重（L1）：backgroundProvider 注入 + 流式累积，参照 TextPolishManager 模式
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -76,15 +81,8 @@ const CONTENT_PREVIEW_LEN = 80;
 /** 搜索结果内容预览字符数（比快照层略长，便于用户判断相关性） */
 const SEARCH_PREVIEW_LEN = 120;
 
-// ─── L2 采纳反哺常量 ────────────────────────────────────
-/** 采纳反哺的 score 提升量（与 recall.ts 的 BOOST_INCREMENT 一致，保持"越常用越重要"语义统一） */
-const ADOPTION_BOOST_INCREMENT = 0.05;
-/** score 上限（与 recall.ts 的 SCORE_CEILING 一致，防止 boost 超过 1.0） */
-const SCORE_CEILING = 1.0;
-
 // ─── L1 语义去重常量 ────────────────────────────────────
-/** 参与去重扫描的 source 标签（与衰减范围一致，不扫描配置型记忆） */
-const DEDUP_SOURCES = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
+// 注：DEDUP_SOURCES 已统一为 GOVERNANCE_SOURCES（governance.ts），消除 5 处独立维护
 /** 单次去重扫描的候选记忆条数上限（控制内存和 LLM 调用量） */
 const DEDUP_CANDIDATE_LIMIT = 50;
 /** 单次 LLM 判断的候选对数上限（每对约 200 tokens，10 对 ≈ 2000 tokens） */
@@ -715,21 +713,9 @@ export class MemoryInspector {
     return this.advisor.suggest(query, options);
   }
 
-  /**
-   * L3 冲突检测（委托给 MemoryAdvisor.detectConflicts）
-   *
-   * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
-   * backgroundProvider 未注入时由 advisor 内部静默跳过（返回 skippedReason 报告）。
-   *
-   * 委托方法存在理由：agent.ts 仅持有 memoryInspector 引用，不直接持有 memoryAdvisor，
-   * 通过此转发保持"inspector 是读写 + 治理统一入口"语义。
-   *
-   * @param signal 可选的 AbortSignal
-   * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
-   */
-  async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
-    return this.advisor.detectConflicts(signal);
-  }
+  // v2 PROXY-1 闭环：原 detectConflicts 转发方法已删除，
+  // Agent.detectConflicts 改为直接调用 advisor（消除 3 层无意义代理）。
+  // sourceHealth / suggest 保留转发以保持 agent.memory.xxx() 公共 API 统一入口语义。
 
   // ─── 写操作（writeXxx 前缀，IMemoryStorage / IMemoryRelationStore 透传） ───
 
@@ -760,7 +746,7 @@ export class MemoryInspector {
    * @param increment score 提升量（默认 0.05，与 recall.ts BOOST_INCREMENT 一致）
    * @returns 是否成功提升（记忆不存在时返回 false）
    */
-  writeBoost(id: string, increment: number = ADOPTION_BOOST_INCREMENT): boolean {
+  writeBoost(id: string, increment: number = BOOST_INCREMENT): boolean {
     const memory = this.index.getById(id);
     if (!memory) return false;
     const boosted: Memory = {
@@ -889,7 +875,7 @@ export class MemoryInspector {
 
     // ── 步骤 1：加载候选记忆（按 score 降序，取前 50 条） ──
     const candidates: Memory[] = [];
-    for (const source of DEDUP_SOURCES) {
+    for (const source of GOVERNANCE_SOURCES) {
       const memories = this.index.getBySource(source);
       candidates.push(...memories);
     }

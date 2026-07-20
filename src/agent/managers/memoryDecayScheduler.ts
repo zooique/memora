@@ -34,7 +34,6 @@ import { safeSetInterval, clearSafeInterval } from '@/utils/safeTimer.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/errors.js';
 import { nowIso } from '@/utils/time.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
 // L2 时效性评估：可选注入 backgroundProvider + 完整 IMemoryStorage
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -43,6 +42,8 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 // LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
 import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { truncate } from '@/utils/strings.js';
+// LLM 治理源列表（v2 REPEAT-1 闭环，消除 5 处独立维护的 [INSIGHT, PROFILE, WORK_PROJECTION] 列表）
+import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 /** 衰减完成的回调类型（Agent 注入 emit('decayCompleted', ...)） */
 export type DecayCompletedCallback = (payload: { decayedCount: number }) => void;
@@ -60,8 +61,7 @@ export interface MemoryDecaySchedulerOptions {
 }
 
 // ─── L2 时效性评估常量 ────────────────────────────────────
-/** 参与时效性评估的 source 标签（与衰减范围一致） */
-const TIMELINESS_SOURCES = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
+// 注：TIMELINESS_SOURCES 已统一为 GOVERNANCE_SOURCES（governance.ts），消除 5 处独立维护
 /** 低分记忆阈值（score 低于此值的记忆进入 LLM 时效性评估） */
 const TIMELINESS_LOW_SCORE_THRESHOLD = 0.3;
 /** 单次时效性评估的记忆条数上限（控制 LLM 调用量） */
@@ -190,8 +190,8 @@ export class MemoryDecayScheduler {
     // 衰减 Span：记录衰减执行过程，补全衰减可观测性缺口
     const decaySpan = this.tracer.startSpan(TRACE_SPANS.DECAY);
     try {
-      const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
-      const decayedCount = this.storage.decayScores(sources, new Date());
+      // 治理源列表统一来自 governance.ts（v2 REPEAT-1 闭环）
+      const decayedCount = this.storage.decayScores([...GOVERNANCE_SOURCES], new Date());
       logger.debug({ decayedCount }, '记忆衰减完成');
 
       // 衰减指标统计：累计执行次数和衰减记忆数
@@ -261,7 +261,7 @@ export class MemoryDecayScheduler {
 
     // ── 步骤 1：加载低分记忆 ──
     const lowScoreMemories: Memory[] = [];
-    for (const source of TIMELINESS_SOURCES) {
+    for (const source of GOVERNANCE_SOURCES) {
       const memories = this.index.getBySource(source);
       // 筛选低分记忆（score 低于阈值）
       lowScoreMemories.push(...memories.filter((m) => m.score < TIMELINESS_LOW_SCORE_THRESHOLD));

@@ -47,9 +47,9 @@ Memora 需要支持宿主项目接入：
 | ChatLock | `src/agent/managers/chatLock.ts` | 对话并发锁（token 机制，防止重入） |
 | ConfigManager | `src/agent/managers/configManager.ts` | 规则/技能注入 + 配置建议 |
 | InsightExtractor | `src/agent/managers/insightExtractor.ts` | 输入分类 + 记忆提取 |
-| MemoryAdvisor | `src/agent/managers/memoryAdvisor.ts` | 记忆策略建议 |
+| MemoryAdvisor | `src/agent/managers/memoryAdvisor.ts` | 记忆策略建议（sourceHealth + suggest + L3 detectConflicts） |
 | MemoryDecay | `src/agent/managers/memoryDecay.ts` | 记忆衰减管理 |
-| MemoryInspector | `src/agent/managers/memoryInspector.ts` | 记忆快照 + 搜索 + 统计 + 关联推荐 |
+| MemoryInspector | `src/agent/managers/memoryInspector.ts` | 记忆快照 + 搜索 + 统计 + 关联推荐（sourceHealth / suggest 委托 advisor） |
 | RelationBuilder | `src/agent/managers/relationBuilder.ts` | 记忆关系图谱构建（ADR-014） |
 | SessionManager | `src/agent/managers/sessionManager.ts` | 会话管理 + getCurrentSessionInfo |
 | SessionArchiver | `src/agent/managers/sessionArchiver.ts` | 会话内容摘要归档器（ADR-015 GAP-2） |
@@ -75,3 +75,16 @@ Memora 需要支持宿主项目接入：
   ✅ 已修复（翠幕天罗 v1.2：REPL 不再自行创建 providers Map / AgentLoop /
   MessageHistory）
   ✅ 已迁移（2026-06-11：CLI + repl.ts 移出至宿主项目，门面类仅服务库模式）
+
+## 变更记录
+
+- 2026-07-20 v2 年轮审判 PROXY-1 闭环：`Agent.detectConflicts` 由经 MemoryInspector
+  转发改为**直接持有 MemoryAdvisor 引用调用**（assembler 显式返回 memoryAdvisor，
+  Agent 新增 `private memoryAdvisor` 字段）。消除 3 层无意义代理
+  `Agent → MemoryInspector → MemoryAdvisor`。MemoryInspector 职责收缩为
+  "读写 + 查询入口（含 sourceHealth / suggest 转发以保持 agent.memory.xxx()
+  公共 API 统一入口语义）"，不再含 L3 冲突检测转发。
+- 2026-07-20 v2 年轮审判 REPEAT-1/2 闭环：提取 `src/memory/governance.ts`
+  作为 LLM 治理源列表 + score 提升量/上限的统一真理源，消除 5 处独立维护的
+  `[INSIGHT, PROFILE, WORK_PROJECTION]` 列表 + 2 处 score 常量重复
+  （memoryInspector / memoryAdvisor / memoryDecayScheduler / recall 共 4 文件改用共享常量）。

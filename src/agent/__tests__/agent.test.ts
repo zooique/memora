@@ -657,7 +657,8 @@ describe('Agent · Manager 委托模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 委托到 MemoryInspector.detectConflicts → MemoryAdvisor.detectConflicts，未注入 backgroundProvider 时降级
+    // v2 PROXY-1 闭环：直接调用 MemoryAdvisor.detectConflicts（不经 MemoryInspector 转发），
+    // 未注入 backgroundProvider 时降级返回 skippedReason
     const report = await agent.detectConflicts();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('pairCount');
