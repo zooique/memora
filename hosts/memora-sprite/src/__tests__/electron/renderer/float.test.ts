@@ -46,6 +46,7 @@ function createMockFloatAPI(): FloatElectronAPI {
     moveFloatWindow: vi.fn(),
     saveFloatPosition: vi.fn(),
     expandToFull: vi.fn(),
+    showQuickInputFromFloat: vi.fn(), // STEP-4：浮球单击 → 补全弹窗
     showFloatContextMenu: vi.fn(),
     onFloatUnread: vi.fn(),
     onSpriteEvent: vi.fn(),
@@ -247,19 +248,48 @@ describe('拖动检测', () => {
   });
 });
 
-// ─── 单击展开 ─────────────────────────────────────────────
+// ─── 单击/双击行为（STEP-4 交互重构） ─────────────────────
 
-describe('单击展开', () => {
-  it('未拖动时单击展开为完整窗口', () => {
+describe('单击/双击行为', () => {
+  it('单击 → 300ms 后呼出补全弹窗（非双击时）', () => {
+    vi.useFakeTimers();
     setupFloat(mockAPI);
 
     dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
     dispatchPointerEvent('pointermove', { screenX: 101, screenY: 100, buttons: 1 });
     dispatchPointerEvent('pointerup', { screenX: 101, screenY: 100, button: 0 });
 
-    // 移动未超阈值，应触发单击展开
-    expect(mockAPI.expandToFull).toHaveBeenCalled();
+    // 移动未超阈值，不应立即触发任何 API
+    expect(mockAPI.expandToFull).not.toHaveBeenCalled();
+    expect(mockAPI.showQuickInputFromFloat).not.toHaveBeenCalled();
+
+    // 300ms 后 → 确认为单击 → 呼出补全弹窗
+    vi.advanceTimersByTime(300);
+    expect(mockAPI.showQuickInputFromFloat).toHaveBeenCalled();
+    expect(mockAPI.expandToFull).not.toHaveBeenCalled();
     expect(mockAPI.saveFloatPosition).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it('双击 → 展开完整窗口（300ms 内第二次 click）', () => {
+    vi.useFakeTimers();
+    setupFloat(mockAPI);
+
+    // 第一次 click
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointerup', { screenX: 100, screenY: 100, button: 0 });
+
+    // 第二次 click（200ms 内，< 300ms 阈值）
+    vi.advanceTimersByTime(200);
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointerup', { screenX: 100, screenY: 100, button: 0 });
+
+    // 应触发双击 → 展开完整窗口
+    expect(mockAPI.expandToFull).toHaveBeenCalled();
+    expect(mockAPI.showQuickInputFromFloat).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });
 
@@ -443,6 +473,7 @@ describe('清理函数', () => {
     expect(mockAPI.moveFloatWindow).not.toHaveBeenCalled();
     expect(mockAPI.saveFloatPosition).not.toHaveBeenCalled();
     expect(mockAPI.expandToFull).not.toHaveBeenCalled();
+    expect(mockAPI.showQuickInputFromFloat).not.toHaveBeenCalled();
   });
 
   it('调用 cleanup 后右键菜单不再触发', () => {

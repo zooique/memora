@@ -83,7 +83,7 @@ export class WindowManager {
   /** 创建所有窗口 */
   async createWindows(): Promise<void> {
     try {
-      // 创建浮动窗口
+      // 创建浮动窗口（先创建，后续 main.ts 通过 updateFloatCallbacks 注入 onShowQuickInput）
       await this.createFloatWindow();
 
       // 创建完整窗口

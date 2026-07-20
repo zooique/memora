@@ -34,6 +34,13 @@ export interface FloatWindowCallbacks {
   onToggleSilent?: (newSilent: boolean) => void;
   /** 查询当前静默模式状态（同步返回，用于菜单勾选） */
   isSilentMode?: () => boolean;
+  /**
+   * 浮球单击 → 呼出补全弹窗（STEP-4 交互重构）
+   *
+   * 携带浮球位置（x, y）和浮球窗口的 Win32 HWND，
+   * 供 quickInputWindow.showAtPosition() 定位弹窗并排除浮球自身。
+   */
+  onShowQuickInput?: (x: number, y: number, floatHwnd: number) => void;
 }
 
 export class FloatWindow {
@@ -142,6 +149,19 @@ export class FloatWindow {
     ipcMain.on(IPC_CHANNELS.FLOAT_CONTEXT_MENU, () => {
       this.showContextMenu();
     });
+
+    // 浮球单击 → 呼出补全弹窗（STEP-4 交互重构，替代 EXPAND_TO_FULL 的单击行为）
+    // 获取浮球位置 + HWND，通过回调传递给 quickInputWindow.showAtPosition()
+    ipcMain.on(IPC_CHANNELS.SHOW_QUICK_INPUT_FROM_FLOAT, () => {
+      if (!this.win || this.win.isDestroyed()) return;
+      const [x, y] = this.win.getPosition() as [number, number];
+      const size = this.windowStateManager.getFloatSize();
+      // 弹窗锚点：浮球正下方偏移 CURSOR_OFFSET_PX（16px）
+      const popupY = y + size.height + 16;
+      // 提取浮球 HWND 用于排除浮球自身（浮球单击后成为前台窗口）
+      const floatHwnd = Number(this.win.getNativeWindowHandle().readBigUInt64LE(0));
+      this.callbacks.onShowQuickInput?.(x, popupY, floatHwnd);
+    });
   }
 
   /**
@@ -221,6 +241,7 @@ export class FloatWindow {
     ipcMain.removeAllListeners(IPC_CHANNELS.SAVE_FLOAT_POSITION);
     ipcMain.removeAllListeners(IPC_CHANNELS.EXPAND_TO_FULL);
     ipcMain.removeAllListeners(IPC_CHANNELS.FLOAT_CONTEXT_MENU);
+    ipcMain.removeAllListeners(IPC_CHANNELS.SHOW_QUICK_INPUT_FROM_FLOAT);
     if (this.win && !this.win.isDestroyed()) {
       this.win.destroy();
     }

@@ -29,16 +29,18 @@ import type { IpcRendererEvent } from 'electron';
 // ⚠️ 与 channels.ts 保持同步：修改 channels.ts 时需同步更新此处的内联副本。
 // 主进程使用 channels.ts（真理源），preload 使用此内联副本（sandbox 限制）。
 
-/** 渲染→主进程 通道（仅浮动窗口相关，4 个） */
+/** 渲染→主进程 通道（仅浮动窗口相关，5 个） */
 const IPC_CHANNELS = {
   /** 拖动浮动窗口（fire-and-forget，增量移动） */
   MOVE_FLOAT_WINDOW: 'move-float-window',
   /** 拖动结束保存最终位置 */
   SAVE_FLOAT_POSITION: 'save-float-position',
-  /** 单击展开为完整窗口 */
+  /** 双击展开为完整窗口 */
   EXPAND_TO_FULL: 'expand-to-full',
   /** 右键显示上下文菜单 */
   FLOAT_CONTEXT_MENU: 'float-context-menu',
+  /** 浮球单击 → 呼出补全弹窗（STEP-4 交互重构） */
+  SHOW_QUICK_INPUT_FROM_FLOAT: 'show-quick-input-from-float',
 } as const;
 
 /** 主→渲染进程 通道（仅浮动窗口相关，4 个） */
@@ -85,6 +87,10 @@ const floatAPI = {
   /** 右键显示上下文菜单（主进程使用 Electron 原生 Menu） */
   showFloatContextMenu: (): void =>
     ipcRenderer.send(IPC_CHANNELS.FLOAT_CONTEXT_MENU),
+
+  /** 浮球单击 → 呼出补全弹窗（STEP-4 交互重构，替代 expandToFull 的单击行为） */
+  showQuickInputFromFloat: (): void =>
+    ipcRenderer.send(IPC_CHANNELS.SHOW_QUICK_INPUT_FROM_FLOAT),
 
   // ─── 未读消息计数监听（1 on + 1 remove） ─────────
 

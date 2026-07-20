@@ -48,6 +48,7 @@ export type FloatElectronAPI = Pick<
   | 'moveFloatWindow'
   | 'saveFloatPosition'
   | 'expandToFull'
+  | 'showQuickInputFromFloat'
   | 'showFloatContextMenu'
   | 'onFloatUnread'
   | 'onLastMessage'
@@ -236,6 +237,10 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   let lastScreenY = 0;  // 上一次 pointermove 的 screenY
   let activePointerId: number | null = null;  // 当前捕获的指针 ID（用于 cleanup 时释放）
 
+  // STEP-4 双击检测：单击 300ms 内若发生第二次 click → 双击 → 展开完整窗口
+  // 否则 300ms 后 → 单击 → 呼出补全弹窗
+  let clickTimer: ReturnType<typeof setTimeout> | null = null;
+
   // 命名函数引用（便于 cleanup 时 removeEventListener）
   const onPointerDown = (e: PointerEvent) => {
     // 仅处理左键（button=0）或触摸（pointerType=touch）
@@ -291,10 +296,23 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
       sphere.classList.remove('dragging');
       electronAPI.saveFloatPosition();
     } else {
-      // 非拖动 → 单击 → 展开为完整窗口
+      // 非拖动：区分单击 vs 双击
       // 首次单击后标记已见过引导，不再显示
       markDragHintSeen();
-      electronAPI.expandToFull();
+
+      if (clickTimer) {
+        // 300ms 内第二次 click → 双击 → 展开完整窗口
+        timers.clearSafeTimeout(clickTimer);
+        clickTimer = null;
+        electronAPI.expandToFull();
+      } else {
+        // 第一次 click → 等待 300ms 判断是否为双击
+        clickTimer = timers.setTimeout(() => {
+          clickTimer = null;
+          // 300ms 内无第二次 click → 确认为单击 → 呼出补全弹窗（STEP-4 交互重构）
+          electronAPI.showQuickInputFromFloat();
+        }, 300);
+      }
     }
     isDragging = false;
   };
@@ -425,6 +443,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     // 清理最后一条消息监听器
     electronAPI.removeLastMessageListener();
     if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);
+    // 清理双击检测定时器（STEP-4）
+    if (clickTimer) timers.clearSafeTimeout(clickTimer);
     // 清理离开时长小标签定时器
     stopAwayLabelTimer();
     timers.cleanup();

@@ -863,6 +863,15 @@ function setupAgentIndependentResources(): void {
   // 预加载 nut-js（fire-and-forget）：消除首次快捷键唤起浮窗时的动态 import 延迟
   appState.quickInputWindow.preloadInputInjector();
 
+  // STEP-4：浮球单击 → 呼出补全弹窗回调（连接 floatWindow → quickInputWindow）
+  // 浮球单击后浮球成为前台窗口，通过 floatHwnd 排除浮球自身，
+  // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+I 时捕获的应用）
+  appState.windowManager.updateFloatCallbacks({
+    onShowQuickInput: (x, y, floatHwnd) => {
+      void appState.quickInputWindow!.showAtPosition(x, y, floatHwnd);
+    },
+  });
+
   // Phase 4.3：注册技能文件安装 IPC handler
   // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
   ipcMain.handle(IPC_CHANNELS.SKILL_INSTALL, async (_event, fileName: string, content: string) => {

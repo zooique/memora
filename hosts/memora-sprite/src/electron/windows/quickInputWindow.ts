@@ -332,6 +332,64 @@ export class QuickInputWindow {
   }
 
   /**
+   * 在指定位置显示浮窗（STEP-4 交互重构：浮球单击入口）
+   *
+   * 与 show() 的区别：
+   *   - 不使用光标位置，改用传入的锚点坐标（浮球下方）
+   *   - excludeHwnd 用于排除浮球窗口自身（浮球单击后成为前台窗口）
+   *   - 其余逻辑（创建、捕获、预填、focus-bar 通知）与 show() 完全一致
+   *
+   * @param anchorX 弹窗锚点 x 坐标（屏幕坐标）
+   * @param anchorY 弹窗锚点 y 坐标（屏幕坐标，取浮球底部）
+   * @param excludeHwnd 需从前台窗口捕获中排除的 HWND（浮球窗口）
+   */
+  async showAtPosition(anchorX: number, anchorY: number, excludeHwnd?: number): Promise<void> {
+    // 若浮窗已存在且可见，先隐藏再捕获（与 show() 一致的时序）
+    const existingWin = this.win;
+    const wasVisible = existingWin && !existingWin.isDestroyed() && existingWin.isVisible();
+    if (wasVisible && existingWin) {
+      existingWin.hide();
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    // 使用传入的 excludeHwnd 排除不应捕获的窗口（浮球自身）
+    await this.pasteCoordinator.capturePreviousWindow(excludeHwnd);
+
+    if (!this.isWinAlive()) {
+      await this.create();
+    }
+
+    const win = this.win!;
+    const { width, height } = win.getBounds();
+    const display = screen.getDisplayNearestPoint({ x: anchorX, y: anchorY });
+    const workArea = display.workArea;
+
+    // 默认在锚点下方偏移（浮球顶部 + 浮球高度 + 偏移量 = 浮球下方 16px）
+    let x = anchorX;
+    let y = anchorY;
+    // 边缘溢出回弹：右侧溢出则改到浮球左侧，底部溢出则贴工作区底部
+    if (x + width > workArea.x + workArea.width) {
+      x = anchorX - width - CURSOR_OFFSET_PX;
+    }
+    if (y + height > workArea.y + workArea.height) {
+      y = workArea.y + workArea.height - height - CURSOR_OFFSET_PX;
+    }
+    if (x < workArea.x) x = workArea.x;
+    if (y < workArea.y) y = workArea.y;
+    win.setPosition(Math.round(x), Math.round(y));
+
+    this.cancelBlurClose();
+    this.userResized = false;
+    this.skipResizeFlag = true;
+    win.setSize(QUICK_INPUT_WIDTH, QUICK_INPUT_HEIGHT, true);
+    win.show();
+    win.focus();
+    const prefill = this.readClipboardForPrefill();
+    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, { clipboardText: prefill.text, isSensitive: prefill.isSensitive });
+    const appName = await this.pasteCoordinator.getCapturedAppName();
+    this.notifyFocusChange(appName);
+  }
+
+  /**
    * 通知渲染进程聚焦变化（主→渲染 IPC）
    *
    * appName=null 表示浮窗失去焦点（用户切走），渲染进程显示"无聚焦"+ 禁用 Tab

@@ -158,6 +158,7 @@ export const IPC_CHANNELS = {
   SAVE_FLOAT_POSITION: 'save-float-position',
   EXPAND_TO_FULL: 'expand-to-full',
   FLOAT_CONTEXT_MENU: 'float-context-menu',
+  SHOW_QUICK_INPUT_FROM_FLOAT: 'show-quick-input-from-float',
   // M1：写入确认响应（渲染进程 → 主进程）
   WRITE_CONFIRMATION_RESPONSE: 'write-confirmation-response',
   // 作品投影查看
@@ -685,6 +686,8 @@ export interface ElectronAPI {
   expandToFull: () => void;
   /** 显示浮动窗口右键菜单（主进程原生 Menu） */
   showFloatContextMenu: () => void;
+  /** 浮球单击 → 呼出补全弹窗（STEP-4 交互重构） */
+  showQuickInputFromFloat: () => void;
 
   // 主动提示已显示通知
   proactivePromptShown: () => void;
@@ -1072,6 +1075,7 @@ const electronAPI: ElectronAPI = {
   saveFloatPosition: () => ipcRenderer.send(IPC_CHANNELS.SAVE_FLOAT_POSITION),
   expandToFull: () => ipcRenderer.send(IPC_CHANNELS.EXPAND_TO_FULL),
   showFloatContextMenu: () => ipcRenderer.send(IPC_CHANNELS.FLOAT_CONTEXT_MENU),
+  showQuickInputFromFloat: () => ipcRenderer.send(IPC_CHANNELS.SHOW_QUICK_INPUT_FROM_FLOAT),
 
   // 主动提示
   proactivePromptShown: () => ipcRenderer.send(IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN),

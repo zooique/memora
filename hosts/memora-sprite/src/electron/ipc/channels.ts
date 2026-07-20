@@ -211,6 +211,8 @@ export const IPC_CHANNELS = {
   EXPAND_TO_FULL: 'expand-to-full',
   /** 请求显示浮动窗口右键菜单 */
   FLOAT_CONTEXT_MENU: 'float-context-menu',
+  /** 浮球单击 → 呼出补全弹窗（替代 EXPAND_TO_FULL，STEP-4 交互重构） */
+  SHOW_QUICK_INPUT_FROM_FLOAT: 'show-quick-input-from-float',
 
   // ─── 剪贴板（Phase 3.1：三重保护） ────────────────────
   /** 渲染进程 → 主进程：请求分析剪贴板内容（用户点击"分析"按钮触发） */
