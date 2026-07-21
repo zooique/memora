@@ -94,8 +94,7 @@ describe('SpriteStatusPopover', () => {
       const payload: AffectPayload = { warmth: 0.8, playfulness: 0.7, directness: 0.5, initiative: 0.4 };
       popover.updateAffect(payload);
 
-      // 修复前：仍为"—"（refreshPopover 早退）
-      // 修复后：温暖 · 活泼
+      // 预期：温暖 · 活泼
       expect(affectEl?.textContent).toBe('温暖 · 活泼');
     });
 
@@ -113,7 +112,7 @@ describe('SpriteStatusPopover', () => {
       };
       popover.updateRapport(payload);
 
-      // 修复后：熟悉 · 信任 60% · 熟悉 75%
+      // 预期：熟悉 · 信任 60% · 熟悉 75%
       expect(rapportEl?.textContent).toBe('熟悉 · 信任 60% · 熟悉 75%');
     });
 
@@ -132,7 +131,7 @@ describe('SpriteStatusPopover', () => {
       };
       popover.updateContext(payload);
 
-      // 修复后：快节奏 · 专注（perceptionLabels 统一文案）
+      // 预期：快节奏 · 专注（perceptionLabels 统一文案）
       expect(contextEl?.textContent).toBe('快节奏 · 专注');
     });
   });

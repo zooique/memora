@@ -246,7 +246,7 @@ button:active,
 
 .icon-btn.active {
   color: var(--accent);
-  background: var(--accent-10);
+  background: var(--accent-soft);
 }
 
 .icon-btn:disabled {

@@ -680,8 +680,7 @@ describe('handleSessionRoute', () => {
   });
 
   it('POST /api/sessions/switch session 名超长（> 200）应被拒绝', async () => {
-    // 长度上限 200（与 IPC 层 isValidSessionName 一致，
-    // 原 Web 层本地实现的 100 上限已废弃，避免两层行为分歧）
+    // 长度上限 200（与 IPC 层 isValidSessionName 一致，避免两层行为分歧）
     const ctx = createMockCtx();
     /** 构造长度 201 的会话名（超过 200 限制） */
     const longName = 'a'.repeat(201);
@@ -872,8 +871,7 @@ describe('handleSessionRoute', () => {
   });
 
   it('PUT /api/sessions/:id/rename newName 超长（> 200）应被拒绝', async () => {
-    // 长度上限 200（与 IPC 层 isValidSessionName 一致，
-    // 原 Web 层本地实现的 100 上限已废弃，避免两层行为分歧）
+    // 长度上限 200（与 IPC 层 isValidSessionName 一致，避免两层行为分歧）
     const sessionStore = createMockSessionStore();
     const ctx = createMockCtx({ sessionStore });
     /** 构造长度 201 的新会话名（超过 200 限制） */

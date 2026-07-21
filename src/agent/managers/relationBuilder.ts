@@ -20,7 +20,7 @@
  */
 import type { Memory } from '@/memory/types.js';
 import { RELATION_WEIGHTS } from '@/memory/types.js';
-import { escapeLike } from '@/memory/sourceValidation.js';
+import { escapeLikeSnippet } from '@/memory/sourceValidation.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import { logger } from '@/logging/logger.js';
@@ -107,7 +107,7 @@ export class RelationBuilder {
    */
   recallRelationCandidates(userInput: string): Memory[] {
     if (!this.relationStore) return [];
-    const snippet = escapeLike(userInput.slice(0, 50));
+    const snippet = escapeLikeSnippet(userInput);
     return this.index.search(snippet, RELATION_CANDIDATE_LIMIT);
   }
 

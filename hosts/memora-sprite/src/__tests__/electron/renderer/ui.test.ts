@@ -1541,4 +1541,4 @@ describe('shortcuts-modal 内容同步', () => {
   });
 });
 
-// 感知面板已重构为单页紧凑布局，选项卡结构已移除。旧 test suite 已清理。
+// 感知面板现为单页紧凑布局，相关测试在 perceptionPanelManager.test.ts 中覆盖。

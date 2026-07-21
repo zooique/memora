@@ -4,7 +4,7 @@
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - shouldShowOnboarding：无 Provider 返回 true / 有 Provider 返回 false（C2 修复后基于配置记录判定）
+ * - shouldShowOnboarding：无 Provider 返回 true / 有 Provider 返回 false（基于配置记录判定）
  * - showOnboardingDialog：元素缺失静默退出 / 显示弹窗
  * - 关闭路径：完成按钮 / Esc 键 / 背景点击 / 非背景点击不关闭
  * - 关闭幂等：重复点击不重复触发清理
@@ -123,8 +123,7 @@ describe('shouldShowOnboarding', () => {
   });
 
   it('C2 修复：跳过引导后无 Provider，下次仍应显示（不依赖 localStorage 标记）', () => {
-    // 模拟用户上次跳过引导：旧逻辑会写入 localStorage 标记导致不再显示
-    // C2 修复后：不写 localStorage，仅基于 Provider 列表判定
+    // 行为：不写 localStorage，仅基于 Provider 列表判定
     localStorage.setItem('memora-onboarding-seen', '1'); // 模拟旧标记残留（应被忽略）
     const manager = createManager();
     expect(manager.shouldShowOnboarding(false)).toBe(true);

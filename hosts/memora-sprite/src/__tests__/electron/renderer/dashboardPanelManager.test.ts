@@ -13,10 +13,8 @@
  * - 错误状态 + 重试回调：showMemoryListError
  * - cleanup：脉冲定时器清理
  *
- * 已移除（子渲染器归位到 MemoryPanelManager）：
- * - renderInsights / renderHealthDashboard / renderPartnerInsights
- * - showInsightsError / showHealthError / onReloadInsights / onReloadHealth
- * 子渲染器行为测试在各自独立测试文件中覆盖。
+ * 子渲染器（renderInsights / renderHealthDashboard / renderPartnerInsights）归位到
+ * MemoryPanelManager，行为测试在各自独立测试文件中覆盖。
  *
  * Mock 策略：
  * - 使用真实 EventTracker（构造函数注入，验证事件注册与清理）
@@ -230,8 +228,7 @@ describe('renderAgentMetrics', () => {
   });
 });
 
-// ─── renderInsights / renderHealthDashboard 测试已移除 ──────
-// InsightsRenderer / HealthDashboardRenderer 已归位到 MemoryPanelManager，
+// InsightsRenderer / HealthDashboardRenderer 归位到 MemoryPanelManager，
 // 子渲染器行为测试在 insightsRenderer.test.ts / healthDashboardRenderer.test.ts 中覆盖。
 
 // ─── pulseCounter ────────────────────────────────────────
@@ -290,12 +287,10 @@ describe('错误状态与重试回调', () => {
   });
 });
 
-// ─── 感知系统测试已移除 ──────────────────────────────────
-// 感知数据渲染（情感/默契/上下文/模式/在场）已迁移到独立的 PerceptionPanelManager，
-// 相关测试在 perceptionPanelManager.test.ts 中覆盖。
+// 感知数据渲染（情感/默契/上下文/模式/在场）在独立的 PerceptionPanelManager 中覆盖，
+// 相关测试见 perceptionPanelManager.test.ts。
 
-// ─── renderPartnerInsights 测试已移除 ─────────────────────
-// PartnerInsightsRenderer 已归位到 MemoryPanelManager，
+// PartnerInsightsRenderer 归位到 MemoryPanelManager，
 // 子渲染器行为测试在 partnerInsightsRenderer.test.ts 中覆盖。
 
 // ─── renderReviewData · 增长趋势（Phase 6.2） ─────────────

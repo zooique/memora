@@ -12,8 +12,8 @@
  * - currentMode getter：正常返回 / persona manager 缺失降级 'auto'
  * - PersonaInfo 接口：返回值结构包含 name/description/active 三字段
  *
- * 注意：switch(name) 测试已移除——切换逻辑由 Agent.switchPersona 承载，
- *      覆盖测试见 src/agent/__tests__/agent.test.ts 的 "switchPersona" 区段。
+ * 注意：切换逻辑由 Agent.switchPersona 承载，覆盖测试见
+ *      src/agent/__tests__/agent.test.ts 的 "switchPersona" 区段。
  *
  * 测试策略（对齐 affectController.test.ts 范式）：
  * - 纯业务逻辑测试，无 I/O、无 LLM、无 DOM
@@ -69,8 +69,8 @@ interface PersonaManagerMockOptions {
  * PersonaManager 类型未从 memora 公开导出，这里用对象字面量构造。
  * 通过 getter 模拟 activeName / list / currentMode 只读属性。
  *
- * 注意：switchPersona 方法的 mock 已移除——切换逻辑由 Agent.switchPersona 承载，
- *      PersonaController 不再委托到 PersonaManager.switchPersona。
+ * 切换逻辑由 Agent.switchPersona 承载，PersonaController 不再委托到
+ * PersonaManager.switchPersona。
  */
 function createMockPersonaManager(opts: PersonaManagerMockOptions = {}) {
   // 创建 setMode spy，若外部传入则复用
@@ -233,7 +233,6 @@ describe('list()', () => {
   });
 });
 
-// 注意：switch(name) 测试块已移除——PersonaController.switch 方法已删除。
 // 角色切换逻辑统一由 Agent.switchPersona 公共方法承载（事件链路 + 错误吞没），
 // 覆盖测试见 src/agent/__tests__/agent.test.ts 的 "switchPersona" 区段。
 

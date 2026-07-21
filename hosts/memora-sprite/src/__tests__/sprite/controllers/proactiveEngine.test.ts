@@ -115,7 +115,7 @@ describe('ProactiveEngine', () => {
       const { engine, mockEmit } = createEngine({ threshold: 5, cooldownMs: 60000, silentMode: false });
       // 更新 threshold 为 2，其余不变
       engine.updateConfig({ threshold: 2 });
-      // 添加 2 个 notice 后应触发 emit（threshold 已改为 2）
+      // 添加 2 个 notice 后应触发 emit（threshold = 2）
       engine.addNotice('memory', 'a');
       engine.addNotice('memory', 'b');
       // threshold=2 触发 tryEmit，cooldownMs=60000 首次发射通过

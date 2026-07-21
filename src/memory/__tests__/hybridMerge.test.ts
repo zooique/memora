@@ -19,8 +19,8 @@ import {
 } from '@/memory/hybridMerge.js';
 import type { Memory } from '@/memory/types.js';
 
-// VECTOR_SCORE_WEIGHT / MEMORY_SCORE_WEIGHT 已改为模块内部常量（非公共 API），
-// 测试改为硬编码验证算法公式的正确性（而非常量值本身）
+// VECTOR_SCORE_WEIGHT / MEMORY_SCORE_WEIGHT 为模块内部常量（非公共 API），
+// 测试硬编码验证算法公式的正确性（而非常量值本身）
 const VECTOR_SCORE_WEIGHT = 0.6;
 const MEMORY_SCORE_WEIGHT = 0.4;
 

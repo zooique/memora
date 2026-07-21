@@ -15,7 +15,7 @@
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import { escapeLike } from '@/memory/sourceValidation.js';
+import { escapeLikeSnippet } from '@/memory/sourceValidation.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
@@ -275,7 +275,7 @@ export class InsightExtractor {
 
       // 预检去重：LLM 调用前先检查用户输入是否与已有 insight 高度相似
       // 避免对重复内容浪费 LLM 调用
-      const precheckSnippet = escapeLike(safeUserInput.slice(0, 50));
+      const precheckSnippet = escapeLikeSnippet(safeUserInput);
       const precheckExisting = this.index.search(precheckSnippet, 3);
       const precheckDuplicate = precheckExisting.find((m) => {
         const sim = this.jaccardSimilarity(safeUserInput, m.content);
@@ -343,7 +343,7 @@ export class InsightExtractor {
       const score = this.scoreByQuality(quality);
 
       // Step 2: 去重检查（使用 Jaccard 相似度）
-      const snippet = escapeLike(insight.slice(0, 50));
+      const snippet = escapeLikeSnippet(insight);
       const existing = this.index.search(snippet, 3);
       const existingMemory = existing.find((m) => {
         const similarity = this.jaccardSimilarity(insight, m.content);

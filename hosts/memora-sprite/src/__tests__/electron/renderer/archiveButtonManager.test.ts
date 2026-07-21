@@ -233,7 +233,7 @@ describe('findPreviousUserMessage · 向前查找', () => {
 
   // TODO: 此测试场景不成立——assistant 消息所在 group 内已有 user 消息时，
   // findPreviousUserMessage 应返回同组内的 user 消息（正确行为），而非跨组查找。
-  // 已移除错误场景测试，待重新设计后补充。
+  // 待重新设计后补充。
 
   it('无匹配时应返回 null', () => {
     const { manager } = createManager();

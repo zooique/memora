@@ -173,8 +173,6 @@ describe('settingsController', () => {
     expect(showToast.mock.calls[0]).toEqual(['精灵配置已保存', 'success']);
   });
 
-  // ─── onConfigCancel 已移除（自动保存改造后无需取消按钮） ──
-
   // ─── loadConfig ────────────────────────────────────────
 
   it('loadConfig 正常应加载配置到表单 + 重置 dirty', async () => {

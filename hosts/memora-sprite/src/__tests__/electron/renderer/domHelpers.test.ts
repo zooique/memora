@@ -89,7 +89,7 @@ describe('formatTimeAgo', () => {
   // ─── Invalid Date 降级 ──
 
   it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
-    // 修复后：new Date('not-a-date') 返回 Invalid Date，
+    // 行为：new Date('not-a-date') 返回 Invalid Date，
     // Number.isNaN(date.getTime()) 为 true，降级返回原始字符串
     const invalid = 'not-a-date';
     expect(formatTimeAgo(invalid)).toBe('not-a-date');

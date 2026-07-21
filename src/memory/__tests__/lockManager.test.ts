@@ -229,7 +229,7 @@ describe('LockManager · 损坏锁文件处理', () => {
     const lm = new LockManager();
     await lm.acquire(memoraDir);
 
-    // 修复后行为：清理损坏锁后 fall through 到写入新锁，currentPath 指向新锁文件
+    // 清理损坏锁后 fall through 到写入新锁，currentPath 指向新锁文件
     const lockPath = join(memoraDir, '.lock');
     expect(existsSync(lockPath)).toBe(true);
     expect(lm.currentPath).toBe(lockPath);

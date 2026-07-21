@@ -183,8 +183,9 @@
 }
 
 .health-action-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .health-action-btn:active:not(:disabled) {
@@ -241,8 +242,8 @@
 .llm-result-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
+  gap: var(--space-1-5);
+  margin-top: var(--space-1);
 }
 
 /* 降级列表项（ID + 恢复按钮） */
@@ -250,8 +251,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 4px 6px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1-5);
   background: var(--surface1);
   border-radius: var(--radius-sm);
 }
@@ -268,7 +269,7 @@
 /* 恢复按钮（调用 boostMemory，score +0.05） */
 .llm-result-restore-btn {
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   font-size: var(--font-xs);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
@@ -291,20 +292,20 @@
 
 /* 冲突对详情卡片 */
 .llm-result-pair {
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
   background: var(--surface1);
   border-left: 3px solid var(--warning);
   border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* 冲突对中单条记忆展示（标签 + name + contentPreview） */
 .llm-result-pair-memory {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-1-5);
   flex-wrap: wrap;
 }
 

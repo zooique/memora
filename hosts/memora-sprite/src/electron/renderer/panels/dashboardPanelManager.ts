@@ -277,7 +277,7 @@ export class DashboardPanelManager {
    * 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
    *
    * 由 Controller 在 loadDashboard 中调用，传入 IPC 返回的仪表盘数据。
-   * 原 DOM 位置已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
+   * 所有元素查询均安全降级（null 检查），方法不会崩溃。
    *
    * @param data 仪表盘数据
    */

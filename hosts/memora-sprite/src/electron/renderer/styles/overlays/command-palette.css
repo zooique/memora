@@ -127,7 +127,7 @@
 }
 
 .command-palette-item.active {
-  background: var(--accent-10);
+  background: var(--accent-soft);
   border-left-color: var(--accent);
 }
 

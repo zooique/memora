@@ -21,9 +21,8 @@
  *   - LLM 记忆治理（异步，backgroundProvider 未注入时静默降级）：
  *     deduplicateMemories（语义去重）
  *
- * v2 PROXY-1 闭环：原 detectConflicts 转发方法已删除，Agent.detectConflicts
- * 改为直接调用 MemoryAdvisor。inspector 职责收缩为"读写 + 查询入口"，
- * 不再含 L3 冲突检测转发。
+ * Inspector 职责：读写 + 查询入口；L3 冲突检测由 Agent.detectConflicts
+ * 直接调用 MemoryAdvisor（消除 3 层无意义代理）。
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -713,8 +712,6 @@ export class MemoryInspector {
     return this.advisor.suggest(query, options);
   }
 
-  // v2 PROXY-1 闭环：原 detectConflicts 转发方法已删除，
-  // Agent.detectConflicts 改为直接调用 advisor（消除 3 层无意义代理）。
   // sourceHealth / suggest 保留转发以保持 agent.memory.xxx() 公共 API 统一入口语义。
 
   // ─── 写操作（writeXxx 前缀，IMemoryStorage / IMemoryRelationStore 透传） ───

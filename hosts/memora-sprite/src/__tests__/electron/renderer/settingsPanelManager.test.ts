@@ -14,8 +14,8 @@
  * - 回调注册：onConfigSave / onConfigCancel / onPersonaModeChange
  * - cleanup：事件监听器解绑
  *
- * 说明：单模型 LLM 表单已移除（loadLlmConfigToForm 为 no-op、collectLlmConfigFromForm 返回 null），
- * 相关测试已删除。Provider 列表管理由独立的 loadProviderList 管理，不在本测试覆盖范围内。
+ * 说明：单模型 LLM 表单相关逻辑（loadLlmConfigToForm 为 no-op、collectLlmConfigFromForm 返回 null）
+ * 不在本测试覆盖范围内。Provider 列表管理由独立的 loadProviderList 管理。
  *
  * Mock 策略：
  * - Mock SettingsPanelHost 接口（setTheme/updatePersonaModeBadge/showConfirmDialog/showToast/switchPanel）

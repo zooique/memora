@@ -1497,7 +1497,4 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.textPolisher;
   }
 
-  // storage getter 已删除（@deprecated 已确认宿主全部迁移到 agent.memory）
-  // 扫描确认：hosts/memora-sprite 无 agent.storage 调用
-  // MemoryInspector 提供等价 CRUD 能力且符合分层规范
 }

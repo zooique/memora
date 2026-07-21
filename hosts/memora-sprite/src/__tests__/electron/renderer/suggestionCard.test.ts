@@ -247,7 +247,7 @@ describe('createCardElement · 按钮', () => {
   it('不应创建关闭按钮（建议必须经接受/拒绝明确处置）', () => {
     const { manager } = createManager({ dom: 'empty' });
     manager.showSuggestion(createSuggestion());
-    // X 关闭按钮已移除：避免用户随手关闭导致建议悬而未决
+    // X 关闭按钮不展示：避免用户随手关闭导致建议悬而未决
     expect(document.querySelector('.suggestion-card-close')).toBeNull();
   });
 });

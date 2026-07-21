@@ -1133,8 +1133,7 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
     });
   });
 
-  // UX-0713-9：initRecycleBinButton 已移除，回收站按钮迁入更多菜单，
-  // recycle-bin action 的事件委托测试在 initMoreMenu 块中覆盖
+  // UX-0713-9：回收站按钮在更多菜单中，recycle-bin action 的事件委托测试在 initMoreMenu 块中覆盖
 
   describe('initRecycleBinBatchActions', () => {
     it('点击全部恢复按钮应调用 recycleBinBatchActionCallback("restore-all")', () => {

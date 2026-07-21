@@ -19,6 +19,7 @@ import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
+import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
 import type { BrowserWindow } from 'electron';
 
 // ─── 流式输出超时兜底常量 ─────────────────────────────────
@@ -247,9 +248,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         // 复用 SPRITE_STREAM_ABORTED 通道展示错误（气泡内嵌错误提示）
         // 标记 abortedNotified 让 finally 不重复发 ABORTED
         abortedNotified = true;
+        // 原始技术错误保留到日志便于排查，UI 仅展示友好映射文本
+        logger.error('chatStream chunk error:', chunk.message);
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
           messageId,
-          reason: chunk.message,
+          reason: classifyLlmError(chunk.message ?? ''),
         });
         break;
       } else if (chunk.type === 'aborted') {
@@ -287,8 +290,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           abortedNotified = true;
         }
       } else {
+        // 原始错误保留到日志，UI 走 classifyLlmError 友好映射（未匹配回退到原始消息）
+        const rawMsg = toError(error).message;
+        logger.error('chatStream catch error:', rawMsg);
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-          text: `对话出错：${toError(error).message}`,
+          text: classifyLlmError(rawMsg),
         });
       }
     }

@@ -745,7 +745,6 @@ export class Sprite {
     //   2. 发射 personaSwitched 事件 → spriteLifecycleManager 转 personaChanged
     //      → proactiveEngine.addNotice + perceptionCoordinator.refreshBeforeChat
     //   3. 通过 spriteEventBridge 转发到渲染层 UI
-    // 旧的 personaController.switch 路径不触发事件，已废弃。
     return this.agent.switchPersona(name);
   }
 

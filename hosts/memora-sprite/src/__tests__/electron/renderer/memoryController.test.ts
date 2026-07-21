@@ -174,7 +174,7 @@ describe('推荐记忆点击事件委托', () => {
         skills: [],
       }),
       listMemories: vi.fn().mockResolvedValue({ memories: [] }),
-      // Phase 2 重构后 loadDashboard 串行调用 getReviewData，需提供 mock 避免抛错
+      // loadDashboard 串行调用 getReviewData，需提供 mock 避免抛错
       getReviewData: vi.fn().mockResolvedValue({
         today: { date: '2026-06-29', messageCount: 0, newMemories: 0, newInsights: 0 },
         trend: { last7Days: 0, last30Days: 0, daily: [], direction: 'stable', description: '无数据' },
@@ -195,7 +195,7 @@ describe('推荐记忆点击事件委托', () => {
     controller.setupMemoryPanel();
     await controller.loadDashboard();
 
-    // Phase 2 重构后，Controller 仅做 IPC 编排，DOM 渲染委托 DashboardPanelManager
+    // Controller 仅做 IPC 编排，DOM 渲染委托 DashboardPanelManager
     // 此处验证 renderDashboardStats 被调用并接收含 suggestions 的完整数据
     expect(mockUiManager.renderDashboardStats).toHaveBeenCalledTimes(1);
     const callArg = mockUiManager.renderDashboardStats.mock.calls[0][0];
@@ -206,7 +206,7 @@ describe('推荐记忆点击事件委托', () => {
     expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
     // Phase 6.2：loadDashboard 现在并发拉取 reviewData 并委托 renderReviewData 渲染增长趋势区块
     expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
-    // G6: updateLearningProgress 已移除（死代码清理），不应再被调用
+    // updateLearningProgress 为死代码，不应再被调用
     expect(mockUiManager.updateLearningProgress).not.toHaveBeenCalled();
   });
 });

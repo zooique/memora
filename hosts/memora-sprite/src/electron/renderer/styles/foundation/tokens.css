@@ -87,11 +87,11 @@
   /* emoji 文字阴影令牌（brand-grad 背景上 emoji 可读性），深色主题下加重 */
   --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.25);
 
-  /* 统一动画时长变量 */
-  --transition-fast: 0.12s;  /* 微交互（hover/active/按钮） */
+  /* 统一动画时长变量（§7.6.5 要求 150-300ms，故 fast=0.15s/xl=0.3s 收敛到区间内） */
+  --transition-fast: 0.15s;  /* 微交互（hover/active/按钮） */
   --transition-base: 0.2s;   /* 标准过渡（动画/滑入/淡入） */
   --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
-  --transition-xl:   0.5s;   /* 超长过渡（进度条填充/宽度变化） */
+  --transition-xl:   0.3s;   /* 超长过渡（进度条填充/宽度变化） */
 
   /* z-index 层级体系（从低到高，确保浮层叠放顺序统一） */
   --z-base:             1;     /* 基础内容层（时间线节点等） */

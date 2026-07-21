@@ -70,7 +70,6 @@ describe('MemoraError · 错误信息友好化', () => {
 describe('ToolErrorCode · 错误码值定义', () => {
   it('应定义 9 种错误码', () => {
     // 验证 ToolErrorCode 对象包含 9 个键
-    // 注：TOOL_TIMEOUT 已删除（原为预留错误码，无业务代码抛出，违反"不为未来预留"原则）
     const codes = Object.keys(ToolErrorCode);
     expect(codes).toHaveLength(9);
   });
