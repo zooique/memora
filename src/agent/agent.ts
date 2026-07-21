@@ -42,7 +42,9 @@ import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 // L1/L3 治理报告类型：用于 agent 委托方法的返回类型注解（不暴露 manager 实例）
-import type { DedupReport } from '@/agent/managers/memoryInspector.js';
+// SPLIT-3 闭环（2026-07-21）：DedupReport 类型来源已迁移至 DedupManager
+import type { DedupReport } from '@/agent/managers/dedupManager.js';
+import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
 import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 // MemoryAdvisor 类型注解：v2 PROXY-1 闭环，agent 直接持有 advisor 调用 detectConflicts
@@ -127,6 +129,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
+  /**
+   * 语义去重管理器（L1 LLM 记忆治理）
+   *
+   * SPLIT-3 闭环（2026-07-21）：从 MemoryInspector 拆分出 deduplicateMemories 职责，
+   * 让 MemoryInspector 回归纯存储读写。Agent.deduplicateMemories() 委托本对象。
+   */
+  private dedupManager: DedupManager | null = null;
   /**
    * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
    *
@@ -764,6 +773,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
+    this.dedupManager = result.dedupManager;
     this.memoryAdvisor = result.memoryAdvisor;
     this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
@@ -1185,6 +1195,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = null;
     this.configManager = null;
     this.memoryInspector = null;
+    this.dedupManager = null;
     this.memoryAdvisor = null;
     this.workProjection = null;
     this.autoConfigRefiner = null;
@@ -1354,17 +1365,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 未注入时静默跳过"语义一致（向后兼容）。
 
   /**
-   * L1 语义去重（委托 MemoryInspector.deduplicateMemories）
+   * L1 语义去重（委托 DedupManager.deduplicateMemories）
    *
    * 扫描名称相似的记忆对，调用 LLM 判断语义等价，降级低分记忆（score→0.1，不物理删除）。
    * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
+   *
+   * SPLIT-3 闭环（2026-07-21）：委托对象从 MemoryInspector 改为 DedupManager，
+   * 语义去重职责独立，MemoryInspector 回归纯存储读写。
    *
    * @param signal 可选的 AbortSignal（取消进行中的 LLM 判断）
    * @returns 去重报告（扫描数 / 降级 ID 列表 / 跳过原因）
    */
   async deduplicateMemories(signal?: AbortSignal): Promise<DedupReport> {
-    const inspector = this.memoryInspector;
-    if (!inspector) {
+    const dedup = this.dedupManager;
+    if (!dedup) {
       return {
         scannedCount: 0,
         pairCount: 0,
@@ -1373,7 +1387,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         skippedReason: 'Agent 未初始化',
       };
     }
-    return inspector.deduplicateMemories(signal);
+    return dedup.deduplicateMemories(signal);
   }
 
   /**

@@ -61,12 +61,14 @@ export type {
   SourceHealthStatus,
   SourceHealthEntry,
   SourceHealthReport,
-  // L1 语义去重类型
+} from '@/agent/managers/memoryInspector.js';
+// L1 语义去重类型（SPLIT-3 闭环：来源从 MemoryInspector 迁移至 DedupManager）
+export type {
   DedupPair,
   DedupVerdict,
   DedupVerdictSummary,
   DedupReport,
-} from '@/agent/managers/memoryInspector.js';
+} from '@/agent/managers/dedupManager.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
 // 会话内容归档器类型

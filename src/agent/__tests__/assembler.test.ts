@@ -166,13 +166,14 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 14 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 15 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 14 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
+      // 15 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
       // workProjection/skillManager/insightExtractor/configManager/memoryInspector/
-      // memoryAdvisor/autoConfigRefiner/sessionArchiver/textPolisher）
+      // dedupManager/memoryAdvisor/autoConfigRefiner/sessionArchiver/textPolisher）
       // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
+      // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
       const expectedKeys = [
         'history',
         'loop',
@@ -184,6 +185,7 @@ describe('assembleComponents', () => {
         'insightExtractor',
         'configManager',
         'memoryInspector',
+        'dedupManager',
         'memoryAdvisor',
         'autoConfigRefiner',
         'sessionArchiver',
@@ -207,6 +209,8 @@ describe('assembleComponents', () => {
       expect(output.memoryInspector).toBeDefined();
       // v2 PROXY-1：新增 memoryAdvisor 实例验证
       expect(output.memoryAdvisor).toBeDefined();
+      // SPLIT-3：新增 dedupManager 实例验证（L1 语义去重独立管理器）
+      expect(output.dedupManager).toBeDefined();
       expect(output.autoConfigRefiner).toBeDefined();
     });
   });

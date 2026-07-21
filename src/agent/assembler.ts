@@ -24,6 +24,8 @@ import { RelationBuilder } from '@/agent/managers/relationBuilder.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+// DedupManager 在组合根装配，承担 L1 语义去重（SPLIT-3 拆分自 MemoryInspector）
+import { DedupManager } from '@/agent/managers/dedupManager.js';
 // MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
@@ -73,6 +75,13 @@ export interface AssembleOutput {
   insightExtractor: InsightExtractor;
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
+  /**
+   * 语义去重管理器（L1 LLM 记忆治理）
+   *
+   * SPLIT-3 闭环（2026-07-21）：从 MemoryInspector 拆分出 deduplicateMemories 职责，
+   * 让 MemoryInspector 回归纯存储读写。Agent.deduplicateMemories() 委托本对象。
+   */
+  dedupManager: DedupManager;
   /**
    * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
    *
@@ -218,15 +227,16 @@ export async function assembleComponents(
   // advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
   // L3 冲突检测：注入 backgroundProvider 到 MemoryAdvisor（可选，未注入时 detectConflicts 静默跳过）
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  // L1 语义去重：注入 backgroundProvider 到 MemoryInspector（可选，未注入时 deduplicateMemories 静默跳过）
+  // MemoryInspector 已回归纯存储读写（SPLIT-3 后不再注入 backgroundProvider）
   const memoryInspector = new MemoryInspector(
     pctx.index,
     loop,
     history,
     memoryAdvisor,
     relationStore ?? null,
-    backgroundProvider ?? null,
   );
+  // L1 语义去重：注入 backgroundProvider 到 DedupManager（可选，未注入时 deduplicateMemories 静默跳过）
+  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null);
 
   // AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
@@ -245,6 +255,7 @@ export async function assembleComponents(
     insightExtractor,
     configManager,
     memoryInspector,
+    dedupManager,
     memoryAdvisor,
     autoConfigRefiner,
     sessionArchiver,
