@@ -516,6 +516,48 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(deleted).toHaveLength(2);
     });
 
+    // 边界用例：limit <= 0 或 undefined 应表示"不设上限"（与 storageInterface 契约一致）
+    // 回归测试：修复 listDeleted(0) 触发 slice(0,0) 返回空数组的 JS 语义陷阱 bug
+    it('limit=0 时返回全部已删除记忆（不设上限语义）', () => {
+      for (let i = 0; i < 5; i++) {
+        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.delete(`m${i}`);
+      }
+
+      const deleted = storage.listDeleted(0);
+      expect(deleted).toHaveLength(5);
+    });
+
+    it('limit=undefined 时返回全部已删除记忆（默认不设上限）', () => {
+      for (let i = 0; i < 5; i++) {
+        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.delete(`m${i}`);
+      }
+
+      const deleted = storage.listDeleted(undefined);
+      expect(deleted).toHaveLength(5);
+    });
+
+    it('limit=-1 时返回全部已删除记忆（负数视为不设上限）', () => {
+      for (let i = 0; i < 5; i++) {
+        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.delete(`m${i}`);
+      }
+
+      const deleted = storage.listDeleted(-1);
+      expect(deleted).toHaveLength(5);
+    });
+
+    it('limit=NaN 时返回全部已删除记忆（NaN 视为不设上限）', () => {
+      for (let i = 0; i < 5; i++) {
+        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.delete(`m${i}`);
+      }
+
+      const deleted = storage.listDeleted(NaN);
+      expect(deleted).toHaveLength(5);
+    });
+
     it('应返回浅拷贝（修改不影响内部存储）', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
       storage.delete('rule:1');

@@ -234,6 +234,87 @@ describe('renderMemoryList', () => {
   });
 });
 
+// ─── removeMemoryFromCache（半乐观移除 · animationend 路径） ───
+//
+// 验证修复：原 transitionend 实现会被 .memory-item 的 animation: both fill
+// 状态屏蔽导致 DOM 永不 remove；改用 animation + animationend 绕过。
+describe('removeMemoryFromCache', () => {
+  it('list 视图：从缓存移除 + 添加 .removing 类', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const mgr = new MemoryPanelManager(host, document.getElementById('memory-list'), null, null, null, events);
+    mgr.renderMemoryList([makeMemory({ id: 'del-1' })]);
+
+    const removed = mgr.removeMemoryFromCache('del-1');
+
+    expect(removed).toBe(true);
+    // DOM 元素应仍存在（等 animationend 触发后才 remove）
+    const itemEl = document.querySelector('[data-id="del-1"]');
+    expect(itemEl).not.toBeNull();
+    // 应已添加 .removing 类（触发 memoryItemRemove animation）
+    expect(itemEl?.classList.contains('removing')).toBe(true);
+    // pointer-events 应由 CSS 处理，JS 不再内联设置（原 style.pointerEvents='none' 已移除）
+    // 注：item.style.animationDelay 仍存在（staggered fade-in 延迟，由 createMemoryItemElement 设置）
+    expect((itemEl as HTMLElement).style.pointerEvents).toBe('');
+  });
+
+  it('animationend 触发后应 remove DOM', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const mgr = new MemoryPanelManager(host, document.getElementById('memory-list'), null, null, null, events);
+    mgr.renderMemoryList([makeMemory({ id: 'del-2' })]);
+
+    mgr.removeMemoryFromCache('del-2');
+
+    // JSDOM 不触发真实动画，手动派发 animationend
+    const itemEl = document.querySelector('[data-id="del-2"]') as HTMLElement;
+    expect(itemEl).not.toBeNull();
+    itemEl.dispatchEvent(new Event('animationend', { bubbles: true }));
+
+    // animationend 后 DOM 应被移除
+    expect(document.querySelector('[data-id="del-2"]')).toBeNull();
+  });
+
+  it('列表变空时应重新渲染空状态', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const mgr = new MemoryPanelManager(host, document.getElementById('memory-list'), null, null, null, events);
+    mgr.renderMemoryList([makeMemory({ id: 'only-1' })]);
+
+    mgr.removeMemoryFromCache('only-1');
+
+    // 派发 animationend → remove DOM → children.length===0 → renderMemoryList([]) 渲染空状态
+    const itemEl = document.querySelector('[data-id="only-1"]') as HTMLElement;
+    itemEl.dispatchEvent(new Event('animationend', { bubbles: true }));
+
+    // 空状态应有 .empty-state 元素（renderMemoryList 空状态分支）
+    expect(document.querySelector('.empty-state')).not.toBeNull();
+  });
+
+  it('非 list 视图应返回 false（调用方需自行全量刷新）', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const mgr = new MemoryPanelManager(host, document.getElementById('memory-list'), null, null, null, events);
+    mgr.renderMemoryList([makeMemory({ id: 'graph-1' })]);
+
+    // 模拟切换到 timeline 视图
+    mgr.switchView('timeline');
+
+    const removed = mgr.removeMemoryFromCache('graph-1');
+    expect(removed).toBe(false);
+  });
+
+  it('未找到对应 ID 应返回 false', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const mgr = new MemoryPanelManager(host, document.getElementById('memory-list'), null, null, null, events);
+    mgr.renderMemoryList([makeMemory({ id: 'exists' })]);
+
+    const removed = mgr.removeMemoryFromCache('non-existent');
+    expect(removed).toBe(false);
+  });
+});
+
 // ─── showMemoryDetail ─────────────────────────────────────
 
 describe('showMemoryDetail', () => {

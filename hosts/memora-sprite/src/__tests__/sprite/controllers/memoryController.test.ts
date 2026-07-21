@@ -929,8 +929,8 @@ describe('MemoryController', () => {
       expect(result).toEqual({ restored: 2, failed: 0 });
       expect(mockInspector.writeRestore).toHaveBeenCalledWith('a:1');
       expect(mockInspector.writeRestore).toHaveBeenCalledWith('a:2');
-      // listDeleted 传 0 表示不设上限（获取全部已删除记忆）
-      expect(mockInspector.listDeleted).toHaveBeenCalledWith(0);
+      // listDeleted 不传参表示不设上限（获取全部已删除记忆）
+      expect(mockInspector.listDeleted).toHaveBeenCalledWith();
     });
 
     it('mutator.restore 抛错时累计 failed + logger.warn 降级日志', () => {
@@ -1012,6 +1012,33 @@ describe('MemoryController', () => {
       const controller = new MemoryController(createMockAgent(null), mockVectorStore);
       const result = controller.purgeAll();
       expect(result).toEqual({ purged: 0, failed: 0 });
+    });
+  });
+
+  // ─── 13.1 purgeAll/restoreAll 契约回归（2 测试） ──────────
+  // 回归测试：修复 listDeleted(0) 触发 slice(0,0) 陷阱 bug
+  // 契约：purgeAll/restoreAll 必须调用 listDeleted() 不传参（依赖 undefined = 全部语义）
+  describe('purgeAll/restoreAll 契约回归', () => {
+    beforeEach(() => {
+      vi.mocked(mockInspector.listDeleted).mockReturnValue([
+        makeMemory({ id: 'a:1' }),
+        makeMemory({ id: 'a:2' }),
+        makeMemory({ id: 'a:3' }),
+      ]);
+    });
+
+    it('purgeAll 调用 listDeleted 时不传参（不传 0/50，依赖 undefined=全部语义）', () => {
+      const controller = new MemoryController(mockAgent, mockVectorStore);
+      controller.purgeAll();
+      // 验证 listDeleted 被调用时未传 limit 参数（无参调用）
+      expect(mockInspector.listDeleted).toHaveBeenCalledWith();
+    });
+
+    it('restoreAll 调用 listDeleted 时不传参（不传 0/50，依赖 undefined=全部语义）', () => {
+      const controller = new MemoryController(mockAgent);
+      controller.restoreAll();
+      // 验证 listDeleted 被调用时未传 limit 参数（无参调用）
+      expect(mockInspector.listDeleted).toHaveBeenCalledWith();
     });
   });
 
@@ -1201,6 +1228,54 @@ describe('MemoryController', () => {
       expect(result).toHaveProperty('today');
       expect(result).toHaveProperty('trend');
       expect(result).toHaveProperty('insights');
+    });
+  });
+
+  describe('listSources', () => {
+    it('返回 stats().bySource 的 keys，排序后输出（保证 UI 顺序稳定）', () => {
+      // 故意打乱顺序，验证输出按字典序排序
+      vi.mocked(mockInspector.stats).mockReturnValue({
+        total: 6,
+        // source 顺序与字典序不一致：profile/insight/session/clipboard/rule/skill
+        bySource: {
+          profile: 3,
+          insight: 1,
+          session: 1,
+          clipboard: 1,
+          rule: 1,
+          skill: 1,
+        },
+        relationCount: 0,
+      });
+      const controller = new MemoryController(mockAgent);
+      const sources = controller.listSources();
+      // 期望按字典序：clipboard → insight → profile → rule → session → skill
+      expect(sources).toEqual(['clipboard', 'insight', 'profile', 'rule', 'session', 'skill']);
+    });
+
+    it('空记忆库时返回空数组（bySource 为空对象）', () => {
+      vi.mocked(mockInspector.stats).mockReturnValue({
+        total: 0,
+        bySource: {},
+        relationCount: 0,
+      });
+      const controller = new MemoryController(mockAgent);
+      expect(controller.listSources()).toEqual([]);
+    });
+
+    it('inspector 为 null 时降级返回空数组（不抛错）', () => {
+      const controller = new MemoryController(createMockAgent(null));
+      expect(controller.listSources()).toEqual([]);
+    });
+
+    it('单 source 时返回单元素数组', () => {
+      vi.mocked(mockInspector.stats).mockReturnValue({
+        total: 5,
+        bySource: { 'quick-input': 5 },
+        relationCount: 0,
+      });
+      const controller = new MemoryController(mockAgent);
+      expect(controller.listSources()).toEqual(['quick-input']);
     });
   });
 });

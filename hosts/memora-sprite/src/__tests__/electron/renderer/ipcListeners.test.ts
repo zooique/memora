@@ -541,10 +541,12 @@ describe('initIpcListeners · 精灵输出', () => {
     expect(api.proactivePromptShown).not.toHaveBeenCalled();
   });
 
-  it('kind="proactive" → appendMessage + clearUnreadCount + proactivePromptShown', () => {
+  it('kind="proactive" → appendMessage + proactivePromptShown（不清除未读计数）', () => {
     captured.onSpriteOutput({ text: '主动提示', kind: 'proactive' });
     expect(spies.appendMessage).toHaveBeenCalledWith({ role: 'system', content: '主动提示' });
-    expect(spies.clearUnreadCount).toHaveBeenCalledTimes(1);
+    // 未读计数清零统一由 onExpandToFull → resetUnreadCount 处理，
+    // 此处不应清零（避免误清主进程在完整窗口不可见时累积的未读）
+    expect(spies.clearUnreadCount).not.toHaveBeenCalled();
     expect(api.proactivePromptShown).toHaveBeenCalledTimes(1);
   });
 });

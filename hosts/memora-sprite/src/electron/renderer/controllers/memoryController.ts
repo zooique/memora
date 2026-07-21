@@ -268,13 +268,20 @@ export function createMemoryController(uiManager: UIManager) {
         if (!confirmed) return;
         try {
           const result = await window.electronAPI.purgeAllMemories();
-          if (result.purged > 0) {
+          if (result.purged > 0 && result.failed === 0) {
+            // 全部成功
             uiManager.showToast(`已彻底删除 ${result.purged} 条记忆`, 'success');
+          } else if (result.purged > 0 && result.failed > 0) {
+            // 部分成功：明确告知用户失败数量，避免"已删除 N 条"误报全部成功
+            uiManager.showToast(`已删除 ${result.purged} 条，${result.failed} 条失败（详见日志）`, 'warning');
+          } else {
+            // 回收站为空
+            uiManager.showToast('回收站中没有可删除的记忆', 'info');
+          }
+          if (result.purged > 0 || result.failed > 0) {
             await loadRecycleBinList();
             // 批量清空会清理所有关系边，刷新图谱缓存
             void refreshGraphIfVisible();
-          } else {
-            uiManager.showToast('回收站中没有可删除的记忆', 'info');
           }
         } catch (error) {
           handleIpcError('purgeAllMemories', error, '批量清空失败');
@@ -461,7 +468,13 @@ export function createMemoryController(uiManager: UIManager) {
           return;
         }
         uiManager.hideModal('memory-detail-modal');
-        await loadMemoryList();
+        // 半乐观更新：优先局部移除（避免全量 loadMemoryList 触发列表闪烁）
+        // 仅 list 视图支持局部移除；timeline/graph 视图降级为全量刷新
+        const removedLocally = uiManager.removeMemoryFromCache(id);
+        if (!removedLocally) {
+          // 当前视图不支持局部移除（timeline/graph），全量刷新
+          await loadMemoryList();
+        }
         // 删除记忆后刷新图谱缓存，防止图谱视图显示已删除节点
         void refreshGraphIfVisible();
         // 操作反馈走 toast（体现软删除语义）
@@ -681,9 +694,16 @@ export function createMemoryController(uiManager: UIManager) {
 
     try {
       const params = uiManager.getMemorySearchParams();
-      const { memories } = await window.electronAPI.listMemories(
-        params.source ? { source: params.source } : {},
-      );
+      // 并行加载记忆列表 + distinct source 列表：
+      // - listMemorySources 仅返回 string[]，不携带记忆内容（轻量 IPC）
+      // - 与 listMemories 并行执行，总耗时等于两者中较慢的一项
+      // - 每次列表刷新同步刷新来源 dropdown，保证 source 选项与记忆库实时一致
+      const [{ memories }, { sources }] = await Promise.all([
+        window.electronAPI.listMemories(params.source ? { source: params.source } : {}),
+        window.electronAPI.listMemorySources(),
+      ]);
+      // 重建来源筛选 dropdown，保留当前选中值（source 可能因增删变化，需实时同步）
+      uiManager.renderMemorySourceFilter(sources, params.source);
       // 客户端排序 + 时间过滤
       const filtered = applyClientFilters(memories, params);
       // 传递空字符串表示无搜索关键词（不高亮）

@@ -380,6 +380,8 @@ describe('chatHandlers', () => {
       const wc = createMockWebContents({ visible: false }); // 窗口不可见
       const wm = createMockWindowManager(wc);
       const chatGen = (async function* () {
+        // 必须有 text 事件：accumulatedText 为空时（AI 无实际回复）不计入未读
+        yield { type: 'text' as const, content: '回复' };
         yield { type: 'done' as const };
       })();
       const ctx = createMockCtx({
@@ -743,6 +745,8 @@ describe('chatStreamHandler C1 流式主路径', () => {
 
   it('完整窗口不可见时应累加未读计数', async () => {
     const chatGen = (async function* () {
+      // 必须有 text 事件：accumulatedText 为空时（AI 无实际回复）不计入未读
+      yield { type: 'text' as const, content: '回复' };
       yield { type: 'done' as const };
     })();
     // 构造不可见窗口

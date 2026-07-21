@@ -67,6 +67,8 @@ export const IPC_CHANNELS = {
   /** 会话分叉（内核 forkSession 已实现，发射 sessionForked 事件） */
   SESSION_FORK: 'session-fork',
   MEMORIES_LIST: 'memories-list',
+  /** 列出 distinct 记忆 source（与 ipc/channels.ts 保持同步，用于来源筛选 dropdown 动态生成） */
+  MEMORIES_SOURCES: 'memories-sources',
   MEMORIES_SEARCH: 'memories-search',
   MEMORIES_SHOW: 'memories-show',
   MEMORIES_DELETE: 'memories-delete',
@@ -504,6 +506,11 @@ export interface ElectronAPI {
 
   // 记忆
   listMemories: (query?: { source?: string }) => Promise<{ memories: MemoryListItem[] }>;
+  /**
+   * 列出全部 distinct 记忆 source（用于来源筛选 dropdown 动态生成）
+   * @returns sources 排序后的 source 字符串数组
+   */
+  listMemorySources: () => Promise<{ sources: string[] }>;
   searchMemories: (query: string) => Promise<{ hits: MemorySearchHit[] }>;
   showMemory: (id: string) => Promise<{ memory: MemoryDetail | null }>;
   deleteMemory: (id: string) => Promise<{ deleted: boolean }>;
@@ -996,6 +1003,8 @@ const electronAPI: ElectronAPI = {
 
   // 记忆
   listMemories: (query) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST, query ?? {}),
+  /** 列出 distinct 记忆 source（用于来源筛选 dropdown 动态生成） */
+  listMemorySources: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SOURCES),
   searchMemories: (q) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SEARCH, q),
   showMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),

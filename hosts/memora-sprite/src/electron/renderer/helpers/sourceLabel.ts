@@ -32,8 +32,10 @@
  * - quick-input → '快速输入'（补全，main.ts:839 upsertMemory 使用）
  * - clipboard → '剪贴板'（补全，clipboardManager.ts:283 upsertMemory 使用）
  * - timer → '定时器'（补全，triggers.test.ts 触发器 source）
+ *
+ * 导出供 sourceColor.ts 派生 KNOWN_SOURCES（消除双真理源同步漂移风险）。
  */
-const SOURCE_LABELS: Readonly<Record<string, string>> = {
+export const SOURCE_LABELS: Readonly<Record<string, string>> = {
   profile: '个人偏好',
   insight: '洞察',
   rule: '规则',

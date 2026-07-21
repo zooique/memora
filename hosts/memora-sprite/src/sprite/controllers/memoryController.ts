@@ -201,6 +201,23 @@ export class MemoryController {
   }
 
   /**
+   * 列出当前活跃记忆库中所有 distinct source
+   *
+   * 用于渲染层"来源筛选" dropdown 动态生成（替代 index.html 中硬编码的 7 项 option）。
+   * 直接复用 stats().bySource 的 keys，避免在内核新增方法（ADR-017 不为不满足 2 次提取阈值的抽象提取）。
+   * 返回排序后的数组，让 UI 渲染顺序稳定（首屏体验更可预测）。
+   *
+   * @returns 排序后的 source 字符串数组（空记忆库返回 []）
+   */
+  listSources(): string[] {
+    const inspector = this.agent.memory;
+    if (!inspector) return [];
+    const sources = Object.keys(inspector.stats().bySource);
+    // 排序：按 source 字符串字典序，确保 UI 渲染顺序稳定
+    return sources.sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
    * 查看单条记忆详情
    *
    * @param id 记忆唯一标识（${source}:${name} 格式）
@@ -373,8 +390,8 @@ export class MemoryController {
   restoreAll(): { restored: number; failed: number } {
     const memory = this.agent.memory;
     if (!memory) return { restored: 0, failed: 0 };
-    // 获取所有已删除记忆（不设上限）
-    const deleted = memory.listDeleted(0);
+    // 获取所有已删除记忆（不传参 = 不设上限，契约规定 undefined 表示全部）
+    const deleted = memory.listDeleted();
     let restored = 0;
     let failed = 0;
     for (const m of deleted) {
@@ -397,8 +414,8 @@ export class MemoryController {
   purgeAll(): { purged: number; failed: number } {
     const memory = this.agent.memory;
     if (!memory) return { purged: 0, failed: 0 };
-    // 获取所有已删除记忆（不设上限）
-    const deleted = memory.listDeleted(0);
+    // 获取所有已删除记忆（不传参 = 不设上限，契约规定 undefined 表示全部）
+    const deleted = memory.listDeleted();
     let purged = 0;
     let failed = 0;
     for (const m of deleted) {

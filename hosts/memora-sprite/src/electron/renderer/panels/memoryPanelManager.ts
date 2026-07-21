@@ -355,6 +355,90 @@ export class MemoryPanelManager {
   }
 
   /**
+   * 半乐观局部移除记忆项（避免全量 loadMemoryList 触发闪烁）
+   *
+   * 删除成功后调用：仅从 allMemories 缓存数组中移除对应项，并在 DOM 上加 .removing
+   * 类触发移除过渡动画，动画结束后 remove()。不触发全量重新加载，避免列表闪烁。
+   *
+   * 仅在 list 视图下生效；timeline/graph 视图返回 false，调用方需自行全量刷新。
+   *
+   * @param id 被删除记忆的 ID
+   * @returns true 表示已局部移除；false 表示当前视图不支持局部移除或未找到对应项
+   */
+  removeMemoryFromCache(id: string): boolean {
+    // 仅 list 视图支持局部移除（timeline/graph 视图 DOM 结构不同，降级全量刷新）
+    if (this.getViewMode() !== 'list') return false;
+
+    const index = this.allMemories.findIndex((m) => m.id === id);
+    if (index === -1) return false;
+
+    // 从缓存数组移除（避免下次 render 又把已删项画回来）
+    this.allMemories.splice(index, 1);
+
+    // 从 DOM 移除（带 .removing 移除动画，避免直接 remove 造成视觉跳变）
+    const itemEl = this.memoryListEl?.querySelector<HTMLElement>(`[data-id="${id}"]`);
+    if (itemEl) {
+      // .removing 类触发 memoryItemRemove animation（CSS 中定义）
+      // 监听 animationend 移除 DOM——比 transitionend 更可靠
+      // （transitionend 会被 .memory-item 基础 animation: both fill 状态屏蔽，详见 CSS 注释）
+      itemEl.classList.add('removing');
+      // 原生一次性监听（DOM 即将被移除，无需 EventTracker 跟踪清理）
+      itemEl.addEventListener(
+        'animationend',
+        () => {
+          itemEl.remove();
+          // 列表变空时重新渲染空状态（reuse renderMemoryList 的空状态分支）
+          if (this.memoryListEl && this.memoryListEl.children.length === 0) {
+            this.renderMemoryList([], this.currentSearchQuery);
+          }
+        },
+        { once: true },
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * 重建来源筛选 dropdown 选项（保留当前选中值）
+   *
+   * 调用时机：loadMemoryList 内并行加载 distinct sources 后。
+   * 由 controller 调用 uiManager.renderMemorySourceFilter 委托到本方法。
+   *
+   * 设计要点：
+   * - 清空原 option 后重建，仅保留"全部来源"占位项 + 动态填充 sources
+   * - 使用 getSourceLabel 获取中文标签（未知 source 透传原值，避免信息丢失）
+   * - 当前选中值不在新 sources 列表中时（如该 source 的所有记忆被删除），
+   *   回退到"全部来源"，避免 dropdown 显示无效选项
+   * - 内存级 dropdown 重建无动画需求，直接 innerHTML 重设即可
+   *
+   * @param sources 排序后的 distinct source 字符串数组
+   * @param currentValue 当前选中值（空字符串表示"全部来源"）
+   */
+  renderSourceFilter(sources: string[], currentValue: string): void {
+    if (!this.memoryFilterSourceEl) return;
+    // 清空并重建 option（保留"全部来源"占位项）
+    this.memoryFilterSourceEl.innerHTML = '';
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = '全部来源';
+    this.memoryFilterSourceEl.appendChild(allOption);
+    // 逐项追加 source（使用 getSourceLabel 转中文标签）
+    for (const source of sources) {
+      const option = document.createElement('option');
+      option.value = source;
+      option.textContent = getSourceLabel(source);
+      this.memoryFilterSourceEl.appendChild(option);
+    }
+    // 保留当前选中值；选中值不在新列表时回退到"全部来源"
+    if (currentValue && sources.includes(currentValue)) {
+      this.memoryFilterSourceEl.value = currentValue;
+    } else {
+      this.memoryFilterSourceEl.value = '';
+    }
+  }
+
+  /**
    * 渲染当前页的记忆列表项
    *
    * 分页策略：每页 MEMORY_PAGE_SIZE 条，超出部分通过"加载更多"按钮加载。

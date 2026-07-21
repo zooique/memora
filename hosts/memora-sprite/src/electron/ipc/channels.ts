@@ -48,6 +48,14 @@ export const IPC_CHANNELS = {
   // ─── 记忆相关 ─────────────────────────────────────────
   /** 列出记忆 */
   MEMORIES_LIST: 'memories-list',
+  /**
+   * 列出全部 distinct 记忆 source（用于来源筛选 dropdown 动态生成）
+   *
+   * 返回当前活跃记忆库中所有出现过的 source 字符串数组。
+   * 比起拉全量 listMemories 再去重，单次 IPC 仅返回 source 数组（轻量），
+   * 避免大记忆库场景下传输整张表。
+   */
+  MEMORIES_SOURCES: 'memories-sources',
   /** 搜索记忆 */
   MEMORIES_SEARCH: 'memories-search',
   /** 查看单条记忆详情 */

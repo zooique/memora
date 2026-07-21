@@ -78,7 +78,8 @@ export interface IMemoryStorage {
    *
    * 按 deletedAt 降序（最近删除的在前），便于回收站 UI 展示。
    *
-   * @param limit - 返回数量上限（默认 50）
+   * @param limit - 返回数量上限。`limit <= 0` 或 `undefined` 表示不设上限（返回全部）；
+   *                正整数 N 表示返回最近 N 条。默认 undefined（全部）。
    * @returns 软删除记忆列表（浅拷贝）
    */
   listDeleted(limit?: number): Memory[];

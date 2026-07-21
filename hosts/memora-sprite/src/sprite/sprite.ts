@@ -794,6 +794,15 @@ export class Sprite {
     return this.memoryController.list(source, limit);
   }
 
+  /**
+   * 列出全部 distinct 记忆 source（委托 memoryController.listSources）
+   *
+   * 供 IPC MEMORIES_SOURCES handler 调用，返回排序后的 source 字符串数组。
+   */
+  listMemorySources(): string[] {
+    return this.memoryController.listSources();
+  }
+
   showMemory(id: string): { id: string; name: string; source: string; score: number; content: string; createdAt: string; accessedAt: string } | null {
     return this.memoryController.show(id);
   }

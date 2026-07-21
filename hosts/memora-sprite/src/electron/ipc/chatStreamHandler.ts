@@ -107,11 +107,6 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   const messageId = randomUUID();
   fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, { messageId });
 
-  // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
-  if (!fullWindow.isVisible()) {
-    ctx.incrementUnreadCount();
-  }
-
   // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
   // 放在竞态/就绪检查通过后、流式开始前，确保只对真正发送的消息计数
   ctx.sprite.incrementDailyMessageCount();
@@ -321,6 +316,16 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         const floatWin = ctx.windowManager.getFloatWindow();
         if (floatWin) {
           floatWin.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE, accumulatedText);
+        }
+        // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
+        // 语义：未读 = "AI 回复后用户尚未查看"，仅当 AI 真正生成内容时计数；
+        // - accumulatedText 非空：AI 有实际回复内容（防止空回复计数）
+        // - !abortedNotified：用户主动中断或内核错误时不计数（中断后视为无新消息）
+        // - !fullWindow.isVisible()：完整窗口不可见时才计数（用户可见时不需提醒）
+        // 与 spriteEventBridge.ts proactivePrompt 的 incrementUnreadCount 配合，
+        // 都由 main.ts 的 onExpandToFull → resetUnreadCount 统一清除。
+        if (!fullWindow.isVisible()) {
+          ctx.incrementUnreadCount();
         }
       }
       ctx.setAbortController(null);

@@ -23,6 +23,19 @@ import type { RelationGraphData } from '../../components/relationGraph.js';
 export interface MemoryDelegations {
   dismissMemoryAnalysisPanels(): void;
   renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void;
+  /**
+   * 半乐观局部移除记忆项（避免全量 loadMemoryList 触发闪烁）
+   *
+   * @returns true 表示已局部移除；false 表示当前视图不支持局部移除，调用方需自行全量刷新
+   */
+  removeMemoryFromCache(id: string): boolean;
+  /**
+   * 重建来源筛选 dropdown 选项（保留当前选中值）
+   *
+   * @param sources 排序后的 distinct source 字符串数组
+   * @param currentValue 当前选中值（空字符串表示"全部来源"）
+   */
+  renderMemorySourceFilter(sources: string[], currentValue: string): void;
   showMemoryDetail(memory: MemoryDetail): void;
   showMemoryLineage(path: RelationPath[]): void;
   showMemoryLineageError(onRetry: () => void): void;
@@ -72,6 +85,12 @@ export const memoryDelegations: MemoryDelegations = {
   },
   renderMemoryList(this: UIManager, memories: MemoryListItem[], searchQuery?: string): void {
     this.memoryPanel.renderMemoryList(memories, searchQuery);
+  },
+  removeMemoryFromCache(this: UIManager, id: string): boolean {
+    return this.memoryPanel.removeMemoryFromCache(id);
+  },
+  renderMemorySourceFilter(this: UIManager, sources: string[], currentValue: string): void {
+    this.memoryPanel.renderSourceFilter(sources, currentValue);
   },
   showMemoryDetail(this: UIManager, memory: MemoryDetail): void {
     this.memoryPanel.showMemoryDetail(memory);

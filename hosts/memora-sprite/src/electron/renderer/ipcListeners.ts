@@ -749,9 +749,12 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
       content: msg.text,
     });
 
-    // 通知主进程：主动提示已显示（用于清除未读计数）
+    // 通知主进程：主动提示已显示（用于托盘 active → idle 状态复位）
+    // 注意：此处不调用 clearUnreadCount()——未读计数清零统一由 onExpandToFull →
+    // resetUnreadCount 处理（用户展开完整窗口时才认为"已读"）。
+    // 若在此处清零会误清 spriteEventBridge 在完整窗口不可见时累积的未读计数
+    // （proactivePrompt 触发时若完整窗口不可见，主进程会 incrementUnreadCount）。
     if (msg.kind === 'proactive') {
-      uiManager.clearUnreadCount();
       window.electronAPI.proactivePromptShown();
     }
   });

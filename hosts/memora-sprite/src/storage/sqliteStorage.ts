@@ -185,10 +185,18 @@ export class SqliteStorage implements IMemoryStorage {
    *
    * 按 deleted_at 降序排列（最近删除的在前），便于回收站 UI 展示。
    *
-   * @param limit 返回数量上限，默认 50
+   * @param limit 返回数量上限。`limit <= 0` 或 `undefined` 表示不设上限（返回全部）；
+   *             正整数 N 表示返回最近 N 条。默认 undefined（全部）。
    * @returns 软删除记忆列表
    */
-  listDeleted(limit = 50): Memory[] {
+  listDeleted(limit?: number): Memory[] {
+    // limit <= 0 或 undefined 表示不设上限（与 storageInterface 契约一致）
+    if (limit === undefined || limit <= 0) {
+      const rows = this.db.prepare(
+        'SELECT * FROM memories WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+      ).all() as MemoryRow[];
+      return rows.map(r => this.rowToMemory(r));
+    }
     const rows = this.db.prepare(
       'SELECT * FROM memories WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?'
     ).all(limit) as MemoryRow[];

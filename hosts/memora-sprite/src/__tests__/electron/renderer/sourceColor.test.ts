@@ -68,7 +68,13 @@ describe('getSourceColorClass', () => {
   });
 
   it('自定义 source（如 chat）应返回 default', () => {
-    expect(getSourceColorClass('chat')).toBe('default');
+    // 注意：'chat' 已在 SOURCE_LABELS 中（chat: '对话'），
+    // 方案 1 后 KNOWN_SOURCES 派生自 SOURCE_LABELS，故 'chat' 现在是已知 source 返回 'chat'
+    expect(getSourceColorClass('chat')).toBe('chat');
+  });
+
+  it('真正未知的 source 应返回 default', () => {
+    expect(getSourceColorClass('nonexistent-source')).toBe('default');
   });
 
   it('纯空格应 trim 后为空，返回 default', () => {

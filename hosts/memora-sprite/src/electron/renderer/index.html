@@ -480,15 +480,9 @@
         <div id="advanced-search-bar" class="advanced-search-bar hidden">
           <div class="advanced-search-row">
             <label class="advanced-search-label">来源</label>
+            <!-- 仅保留"全部来源"占位项，其余 source 选项由 memoryController.loadMemoryList 调用 listMemorySources 动态填充 -->
             <select id="memory-filter-source" title="按来源筛选" aria-label="按来源筛选">
               <option value="">全部来源</option>
-              <option value="profile">用户画像</option>
-              <option value="insight">洞察</option>
-              <option value="guardrail">护栏</option>
-              <option value="skill">技能</option>
-              <option value="rule">规则</option>
-              <option value="persona">角色</option>
-              <option value="session">会话</option>
             </select>
             <label class="advanced-search-label">排序</label>
             <select id="memory-sort-order" title="排序方式" aria-label="排序方式">

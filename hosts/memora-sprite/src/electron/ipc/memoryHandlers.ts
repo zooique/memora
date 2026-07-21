@@ -35,6 +35,18 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
+  /**
+   * 列出全部 distinct 记忆 source
+   *
+   * 用于渲染层"来源筛选" dropdown 动态生成：替换 index.html 中硬编码的 7 项 option。
+   * 仅返回 source 字符串数组，不携带记忆内容（轻量 IPC，避免大记忆库全量传输）。
+   */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_SOURCES, async () =>
+    throwingHandle('列出记忆来源失败', () => {
+      return { sources: ctx.sprite.listMemorySources() };
+    }),
+  );
+
   /** 搜索记忆（混合搜索：关键词 + 向量召回） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_SEARCH, async (_event, query: string) =>
     throwingHandle('搜索记忆失败', async () => {

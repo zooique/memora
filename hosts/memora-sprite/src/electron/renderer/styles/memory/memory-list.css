@@ -115,6 +115,32 @@
   }
 }
 
+/* 删除移除动画：半乐观更新时由 removeMemoryFromCache 添加 .removing 类
+   动画期间禁用交互（pointer-events: none 在此声明，无需 JS 内联设置）
+
+   设计选型（资深程序员思维 · 绕过而非修补）：
+   - .memory-item 基础规则已声明 animation: memoryItemFadeIn ... both，
+     animation 的 fill-mode: both 会在 fade-in 结束后保留 to 状态（opacity: 1）。
+   - 若 .removing 用 transition 实现（opacity: 0 + transform），animation 的 fill
+     状态会覆盖这些目标值（CSS animation fill 优先级高于普通声明，除非 !important），
+     导致 transition 实际无变化 → transitionend 不触发 → DOM 永不被 remove。
+   - 改用 animation 实现 .removing：新 animation 覆盖旧 animation（同属性后写胜出），
+     animationend 事件总会触发（除非显式取消 animation-name），可靠性高于 transitionend。
+   - 动画时长 var(--transition-base) = 200ms，对齐 §7.6.5「过渡动画自然」150-300ms 区间。
+*/
+.memory-item.removing {
+  pointer-events: none;
+  animation: memoryItemRemove var(--transition-base) ease forwards;
+}
+
+/* 移除动画关键帧：透明度淡出 + 左移 12px（视觉暗示"被移走"） */
+@keyframes memoryItemRemove {
+  to {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
 /* hover 反馈：与 .skill-item:hover / .relation-item:hover / .lineage-item:hover 等同类列表项对齐
    （仅 background + border-color，无 transform/box-shadow，避免视觉权重过强） */
 .memory-item:hover {

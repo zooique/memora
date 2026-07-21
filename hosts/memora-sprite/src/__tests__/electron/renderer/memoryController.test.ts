@@ -108,6 +108,10 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     clearGraphHighlights: vi.fn(),
     triggerMemoryRecall: vi.fn(),
     renderMemoryList: vi.fn(),
+    // 方案 2：删除记忆时半乐观更新，先从缓存移除避免全量 reload 闪烁
+    removeMemoryFromCache: vi.fn(() => true),
+    // 方案 1：source 筛选下拉项动态渲染（基于 distinct sources）
+    renderMemorySourceFilter: vi.fn(),
     showMemoryDetail: vi.fn(),
     showToast: vi.fn(),
     showPanelError: vi.fn(),
