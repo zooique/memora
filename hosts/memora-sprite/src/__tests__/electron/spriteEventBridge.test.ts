@@ -2,18 +2,22 @@
  * SpriteEventBridge 单元测试
  *
  * 覆盖范围：
- * - setupSpriteEventListeners 注册（3 测试）：unsubscribe 先执行 + 8 个事件订阅 + sprite.on 调用次数
+ * - setupSpriteEventListeners 注册（3 测试）：unsubscribe 先执行 + 18 个事件订阅 + sprite.on 调用次数
  * - proactivePrompt 事件处理（10 测试）：
  *   - 始终执行部分（3 测试）：silent=true 仅 trayManager.setState / silent=false+Notification.isSupported=false 跳过通知 / try/catch 保护
  *   - 托盘复位定时器（2 测试）：30 秒定时器到期 / 定时器防重
  *   - 系统通知（2 测试）：silent=false+isSupported=true 创建 Notification / silent=true 不创建
- *   - 窗口内提示（2 测试）：窗口可见时发送 IPC / 窗口不可见时 incrementUnreadCount
+ *   - 窗口内提示（2 测试）：窗口可见时发送 IPC / 窗口不可见时 incrementUnreadCount + 仍发送 IPC（渲染层缓存）
  *   - 窗口状态检查（1 测试）：窗口已销毁时不调用 isVisible
- * - 7 个简单转发事件（7 测试）：
- *   - memoryNoticed / insightGained / personaChanged / projectSwitched / skillMatched / memoryRecalled / decayCompleted
- *   - 每个事件：窗口可见时发送 IPC + 窗口不可见时不发送
- * - sendSpriteEventIfVisible 可见性检查（3 测试）：可见/最小化/不可见
+ * - 11 个简单转发事件（每事件 2 测试）：
+ *   - memoryNoticed / insightGained / personaChanged / projectSwitched / skillMatched / memoryRecalled / decayCompleted / affectUpdated / rapportUpdated / contextUpdated / archiveFailed
+ *   - 每个事件：窗口可见时发送 IPC + 窗口不可见时仍发送 IPC（渲染层缓存）
+ * - sendSpriteEvent IPC 推送（3 测试）：可见/最小化/不可见均发送（BUG-6 修复后统一策略）
  * - unsubscribeSpriteEvents（3 测试）：取消订阅 + 数组清空 + 单个 unsubscribe 抛错不影响其他
+ *
+ * 守卫策略（BUG-6 修复后统一策略）：
+ * - sendSpriteEvent 单向推送：用 safeSendToWindow（null/destroyed 守卫），窗口隐藏时仍发送
+ * - 渲染层在窗口隐藏时仍能接收并缓存事件，窗口恢复可见时直接展示
  *
  * 测试策略：
  * - mock Sprite（on/off/emit 方法使用 vi.fn()）
@@ -251,11 +255,11 @@ describe('SpriteEventBridge', () => {
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT * 2);
     });
 
-    it('注册 13 个事件订阅（proactivePrompt + 12 个简单事件 + presenceChanged）', () => {
+    it('注册 18 个事件订阅（proactivePrompt + 16 个简单事件 + presenceChanged）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
-      // 验证 13 个事件类型都被订阅
+      // 验证 18 个事件类型都被订阅
       const calledEvents = deps.sprite.on.mock.calls.map((call: unknown[]) => call[0]);
       expect(calledEvents).toContain('proactivePrompt');
       expect(calledEvents).toContain('memoryNoticed');
@@ -273,7 +277,7 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toHaveLength(SPRITE_EVENT_COUNT);
     });
 
-    it('sprite.on 被调用 14 次（每个事件一次）', () => {
+    it('sprite.on 被调用 18 次（每个事件一次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
@@ -430,17 +434,22 @@ describe('SpriteEventBridge', () => {
         expect((sendCall?.[1] as { payload: { prompt: string } })?.payload?.prompt).toBe('测试提示');
       });
 
-      it('silent=false + 窗口不可见：incrementUnreadCount 调用 + 不发送 IPC', () => {
+      it('silent=false + 窗口不可见：incrementUnreadCount 调用 + 仍发送 IPC（渲染层缓存）', () => {
         const deps = createTestDeps(false, false, false);
         setupSpriteEventListeners(deps);
 
         // 触发 proactivePrompt
         deps.emit('proactivePrompt', { prompt: '测试提示', triggers: ['memory'], silent: false });
 
-        // incrementUnreadCount 应被调用
+        // incrementUnreadCount 应被调用（浮动窗口徽章累积未读计数）
         expect(deps.incrementUnreadCount).toHaveBeenCalledTimes(1);
-        // IPC 不应被发送（窗口不可见）
-        expect(deps._mockWebContents.send).not.toHaveBeenCalled();
+        // IPC 仍应被发送（BUG-6 修复后策略：渲染层缓存，窗口恢复可见时展示 banner）
+        const sendCall = deps._mockWebContents.send.mock.calls.find(
+          (call: unknown[]) =>
+            call[0] === MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT &&
+            (call[1] as { type?: string })?.type === 'proactivePrompt',
+        );
+        expect(sendCall).toBeDefined();
       });
     });
 
@@ -465,10 +474,10 @@ describe('SpriteEventBridge', () => {
   });
 
   // ════════════════════════════════════════════════════════
-  // 3. 8 个简单转发事件（8 测试 × 2 = 16 测试）
+  // 3. 11 个简单转发事件（11 测试 × 2 = 22 测试）
   // ════════════════════════════════════════════════════════
 
-  describe('8 个简单转发事件', () => {
+  describe('11 个简单转发事件', () => {
     const simpleEvents: Array<{
       name: keyof SpriteEventMap;
       payload: SpriteEventMap[keyof SpriteEventMap];
@@ -505,54 +514,59 @@ describe('SpriteEventBridge', () => {
         expect((sendCall?.[1] as { silent: boolean })?.silent).toBe(false);
       });
 
-      it(`${name}：窗口不可见时不发送 IPC`, () => {
+      it(`${name}：窗口不可见时仍发送 IPC（渲染层缓存）`, () => {
         const deps = createTestDeps(false, false, false);
         setupSpriteEventListeners(deps);
 
         // 触发事件
         deps.emit(name, payload);
 
-        // IPC 不应被发送
-        expect(deps._mockWebContents.send).not.toHaveBeenCalled();
+        // BUG-6 修复后策略：窗口隐藏时仍发送 IPC，渲染层缓存等窗口恢复可见时展示
+        const sendCall = deps._mockWebContents.send.mock.calls.find(
+          (call: unknown[]) =>
+            call[0] === MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT &&
+            (call[1] as { type: string })?.type === name,
+        );
+        expect(sendCall).toBeDefined();
       });
     });
   });
 
   // ════════════════════════════════════════════════════════
-  // 4. sendSpriteEventIfVisible 可见性检查（3 测试）
+  // 4. sendSpriteEvent IPC 推送（3 测试，BUG-6 修复后统一策略）
   // ════════════════════════════════════════════════════════
 
-  describe('sendSpriteEventIfVisible 可见性检查', () => {
+  describe('sendSpriteEvent IPC 推送', () => {
     it('窗口可见（isVisible=true && !isMinimized && !isDestroyed）→ 发送 IPC', () => {
       const deps = createTestDeps(true, false, false);
       setupSpriteEventListeners(deps);
 
-      // 触发 memoryNoticed（简单事件，走 sendSpriteEventIfVisible）
+      // 触发 memoryNoticed（简单事件，走 sendSpriteEvent）
       deps.emit('memoryNoticed', { source: 'chat', name: '测试' });
 
       expect(deps._mockWebContents.send).toHaveBeenCalled();
     });
 
-    it('窗口最小化（isMinimized=true）→ 不发送 IPC（macOS isVisible 可能仍为 true）', () => {
+    it('窗口最小化（isMinimized=true）→ 仍发送 IPC（渲染层缓存，macOS isVisible 可能仍为 true）', () => {
       const deps = createTestDeps(true, true, false); // visible=true, minimized=true
       setupSpriteEventListeners(deps);
 
       // 触发 memoryNoticed
       deps.emit('memoryNoticed', { source: 'chat', name: '测试' });
 
-      // IPC 不应被发送（isMinimized 检查阻止）
-      expect(deps._mockWebContents.send).not.toHaveBeenCalled();
+      // BUG-6 修复后策略：最小化窗口仍能接收 IPC，渲染层缓存等恢复可见时展示
+      expect(deps._mockWebContents.send).toHaveBeenCalled();
     });
 
-    it('窗口不可见（isVisible=false）→ 不发送 IPC', () => {
+    it('窗口不可见（isVisible=false）→ 仍发送 IPC（渲染层缓存，BUG-6 同类模式）', () => {
       const deps = createTestDeps(false, false, false);
       setupSpriteEventListeners(deps);
 
       // 触发 memoryNoticed
       deps.emit('memoryNoticed', { source: 'chat', name: '测试' });
 
-      // IPC 不应被发送
-      expect(deps._mockWebContents.send).not.toHaveBeenCalled();
+      // BUG-6 修复后策略：窗口隐藏时仍发送 IPC，渲染层缓存等窗口恢复可见时展示
+      expect(deps._mockWebContents.send).toHaveBeenCalled();
     });
   });
 

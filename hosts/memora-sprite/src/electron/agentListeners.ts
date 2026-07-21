@@ -23,8 +23,9 @@ import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { AuditManager } from '../sprite/audit/auditManager.js';
 import { CONFIRMATION_TIMEOUT_MS } from '../sprite/constants.js';
-// isFullWindowAccessible 集中守卫完整窗口可见性判断（ADR-017 枝叶层 2 次提取）
-import { isFullWindowAccessible } from './windows/windowUtils.js';
+// isFullWindowAccessible 用于写入确认的请求-响应场景（窗口不可见时快速失败）
+// safeSendToWindow 用于配置建议的单向推送（渲染层缓存隐藏窗口的 IPC）
+import { isFullWindowAccessible, safeSendToWindow } from './windows/windowUtils.js';
 
 /**
  * Agent 监听器依赖
@@ -59,22 +60,17 @@ export function setupConfigSuggestionListener(activeAgent: Agent, deps: AgentLis
 
   config.onConfigSuggestion((suggestion) => {
     const fullWindow = deps.windowManager.getFullWindow();
-    // 委托 isFullWindowAccessible：集中守卫完整窗口可见性判断（ADR-017 枝叶层 2 次提取）
-    if (isFullWindowAccessible(fullWindow)) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, {
-        type: suggestion.type,
-        name: suggestion.name,
-        content: suggestion.content,
-        confidence: suggestion.confidence,
-        source: suggestion.source,
-      });
-    } else {
-      // 窗口不可见时记录日志（建议已生成但用户看不到，下次对话可能再次提取）
-      logger.info(
-        { name: suggestion.name, type: suggestion.type },
-        '[配置建议] 窗口不可见，建议未推送（用户下次对话可能再次提取）',
-      );
-    }
+    // 单向推送 + 渲染层缓存：webContents.send 向隐藏窗口发送不抛异常，
+    // 渲染层在窗口隐藏时仍能接收并缓存建议，窗口可见时直接展示。
+    // 仅需 null/destroyed 守卫（safeSendToWindow 内置），跳过 isVisible 避免建议永久丢失
+    // （BUG-6 同类模式：AutoConfigRefiner 下次对话不一定再提取到相同建议）
+    safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, {
+      type: suggestion.type,
+      name: suggestion.name,
+      content: suggestion.content,
+      confidence: suggestion.confidence,
+      source: suggestion.source,
+    });
   });
 
   logger.info('[setupConfigSuggestionListener] 配置建议回调已注册');
@@ -116,7 +112,9 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
     }
 
     const fullWindow = deps.windowManager.getFullWindow();
-    // 使用 isFullWindowAccessible 统一检查窗口可用性（含可见性）
+    // 写入确认是请求-响应场景：窗口不可见时用户无法看到对话框，
+    // 立即拒绝优于等待 30s 超时（安全优先 + 快速失败）。
+    // 与 SUGGESTION_PUSH/SPRITE_EVENT 的单向推送不同——此处保留 isVisible 检查是必要的。
     if (!isFullWindowAccessible(fullWindow)) {
       // 窗口不可用时自动拒绝（安全优先）
       logger.warn({ path: info.targetPath }, '[写入确认] 窗口不可用，自动拒绝写入');

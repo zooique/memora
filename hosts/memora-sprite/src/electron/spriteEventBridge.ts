@@ -8,7 +8,7 @@
  *
  * 设计原则：
  *   16 个简单转发事件通过类型安全的 forwardSimpleEvent 泛型函数逐个注册，
- *   消除重复的 registerSpriteEvent + sendSpriteEventIfVisible 模板代码。
+ *   消除重复的 registerSpriteEvent + sendSpriteEvent 模板代码。
  *   事件清单见 setupSpriteEventListeners 实现（memoryNoticed / insightGained /
  *   conflictDetected / personaChanged / projectSwitched / skillMatched /
  *   memoryRecalled / decayCompleted / sessionForked / affectUpdated /
@@ -26,8 +26,9 @@ import type { WindowManager } from './windows/windowManager.js';
 import type { WindowStateManager } from './windows/windowState.js';
 import type { TrayManager } from './trayIcon.js';
 import { PROACTIVE_TRAY_RESET_MS } from '../sprite/constants.js';
-// isFullWindowAccessible 集中守卫完整窗口可见性判断（ADR-017 枝叶层 2 次提取）
-import { isFullWindowAccessible } from './windows/windowUtils.js';
+// safeSendToWindow 守卫单向推送 IPC（null/destroyed 检查），不阻断隐藏窗口的 IPC 发送
+// 渲染层在窗口隐藏时仍能接收并缓存事件，窗口可见时直接展示（BUG-6 修复后统一策略）
+import { safeSendToWindow } from './windows/windowUtils.js';
 
 /**
  * 精灵事件桥依赖
@@ -69,14 +70,18 @@ function forwardSimpleEvent<K extends keyof SpriteEventMap>(
   toPayload: (e: SpriteEventMap[K]) => Record<string, unknown>,
 ): void {
   registerSpriteEvent(deps, eventName, (e) => {
-    sendSpriteEventIfVisible(deps, eventName, toPayload(e));
+    sendSpriteEvent(deps, eventName, toPayload(e));
   });
 }
 
 /**
- * 向完整窗口发送精灵事件（若窗口可见）
+ * 向完整窗口发送精灵事件（始终发送，渲染层缓存）
  *
- * 仅在完整窗口存在且可见时发送，避免窗口隐藏或销毁时调用 webContents.send 抛错。
+ * 单向推送 + 渲染层缓存：webContents.send 向隐藏窗口发送不抛异常，
+ * 渲染层在窗口隐藏时仍能接收并缓存事件，窗口恢复可见时直接展示。
+ * 仅需 null/destroyed 守卫（safeSendToWindow 内置），跳过 isVisible 避免
+ * 事件永久丢失（BUG-6 同类模式：archiveFailed/personaChanged/sessionForked 等
+ * 单向事件阻断即不可恢复）。pushInitialPerceptionData 已采用相同模式。
  *
  * silent 默认值为 false。silent 仅控制系统通知（是否弹系统通知），
  * 渲染层 toast 显示由各 handler 自行决定（基于业务逻辑，非 silent 标志）。
@@ -86,21 +91,19 @@ function forwardSimpleEvent<K extends keyof SpriteEventMap>(
  * @param payload 事件载荷
  * @param silent 是否静默（默认 false；proactivePrompt 通过 payload.silent 控制）
  */
-function sendSpriteEventIfVisible(
+function sendSpriteEvent(
   deps: SpriteEventBridgeDeps,
   type: string,
   payload: Record<string, unknown>,
   silent = false,
 ): void {
   const fullWindow = deps.windowManager.getFullWindow();
-  // 委托 isFullWindowAccessible：集中守卫逻辑（ADR-017 枝叶层 2 次提取）
-  if (isFullWindowAccessible(fullWindow)) {
-    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-      type,
-      payload,
-      silent,
-    });
-  }
+  // 委托 safeSendToWindow：null/destroyed 守卫，不检查 isVisible（渲染层缓存）
+  safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+    type,
+    payload,
+    silent,
+  });
 }
 
 /**
@@ -180,10 +183,11 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
       notification.show();
     }
 
-    // 非静默模式 + 完整窗口可见：窗口内提示
+    // 非静默模式：窗口内提示（IPC 始终推送，渲染层缓存）+ 浮动窗口反馈 + 未读徽章累积
     if (!silent) {
       // Phase 2.3：传递 isMilestone 标志到渲染层
-      sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone, lightweight }, silent);
+      // IPC 始终发送：窗口可见时直接展示 banner，隐藏时渲染层缓存等窗口恢复可见时展示
+      sendSpriteEvent(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone, lightweight }, silent);
 
       // 浮动窗口主动提示反馈：球体 bounce 动画 + 状态点切换 + 未读徽章
       // 完整窗口隐藏时仅靠未读徽章无主动可见性，需同步触发球体视觉反馈
@@ -194,6 +198,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
 
       // 浮动窗口主动提示未读徽章
       // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
+      // （与 IPC 推送独立：IPC 缓存保证窗口恢复时 banner 展示，徽章保证浮动窗口主动可见性）
       const fullWindow = deps.windowManager?.getFullWindow();
       if (fullWindow && !fullWindow.isDestroyed() && !fullWindow.isVisible()) {
         deps.incrementUnreadCount();
@@ -276,7 +281,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   // 浮动窗口需要独立推送：56x56 球体在用户离开时无视觉变化，体验割裂
   registerSpriteEvent(deps, 'presenceChanged', (e) => {
     // 1. 推送到完整窗口（perceptionRenderer 更新在场状态指示器）
-    sendSpriteEventIfVisible(deps, 'presenceChanged', {
+    sendSpriteEvent(deps, 'presenceChanged', {
       state: e.state,
       timestamp: e.timestamp,
       awayDurationMs: e.awayDurationMs,

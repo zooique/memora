@@ -2,12 +2,16 @@
  * Agent 监听器测试
  *
  * 覆盖范围：
- * - setupConfigSuggestionListener：H1 配置建议回调注册 + 窗口可见性检查 + IPC 推送
- * - setupWriteConfirmationListener：M1 写入确认回调 + 30 秒超时保护 + 渲染进程响应
+ * - setupConfigSuggestionListener：H1 配置建议回调注册 + IPC 推送（始终发送，渲染层缓存）
+ * - setupWriteConfirmationListener：M1 写入确认回调 + 30 秒超时保护 + 渲染进程响应 + 窗口不可见时快速失败
  * - setupAuditListener：M2 审计日志回调 + AuditManager.record
  *
+ * 守卫策略（BUG-6 修复后统一策略）：
+ * - SUGGESTION_PUSH 单向推送：用 safeSendToWindow（null/destroyed 守卫），窗口隐藏时仍发送
+ * - WRITE_CONFIRMATION 请求-响应：用 isFullWindowAccessible（含 isVisible），窗口不可见时快速失败
+ *
  * Mock 策略：
- * - memora.safeSetTimeout/clearSafeTimeout：vi.fn() 透传到原生 setTimeout/clearTimeout，
+ * - memora.safeSetTimeout/clearSafeTimeout：vi.fn() 透传到原生 setTimeout/clearTimeout,
  *   使 vi.useFakeTimers() 能统一控制定时器生命周期
  * - memora.logger：通过 setLogger 注入 mockLogger，捕获日志调用
  * - Agent：仅含 config/security 属性的 mock 对象（as Agent 单层断言）
@@ -269,7 +273,7 @@ describe('setupConfigSuggestionListener', () => {
     );
   });
 
-  it('窗口不可见（isVisible=false）时不应推送，应记录 info 日志', () => {
+  it('窗口不可见（isVisible=false）时仍应推送（渲染层缓存），不记录 info 日志', () => {
     const bundle = createMockAgent();
     const mockWindow = createMockWindow({ visible: false });
     const { deps } = createMockDeps(mockWindow);
@@ -278,15 +282,19 @@ describe('setupConfigSuggestionListener', () => {
     const handler = bundle.getConfigHandler()!;
     handler(SUGGESTION);
 
-    expect(mockWindow.webContents.send).not.toHaveBeenCalled();
-    // 验证 info 日志携带建议名称和类型
-    expect(mockLogger.info).toHaveBeenCalledWith(
+    // BUG-6 同类模式：单向推送 + 渲染层缓存，窗口隐藏时仍发送 IPC
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith(
+      MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH,
+      expect.objectContaining({ name: SUGGESTION.name }),
+    );
+    // 不应再记录"窗口不可见"日志（IPC 已发送，渲染层会缓存）
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
       expect.objectContaining({ name: SUGGESTION.name, type: SUGGESTION.type }),
       expect.stringContaining('窗口不可见'),
     );
   });
 
-  it('窗口已销毁（isDestroyed=true）时不应推送', () => {
+  it('窗口已销毁（isDestroyed=true）时不应推送（safeSendToWindow 守卫）', () => {
     const bundle = createMockAgent();
     const mockWindow = createMockWindow({ destroyed: true });
     const { deps } = createMockDeps(mockWindow);
@@ -295,10 +303,11 @@ describe('setupConfigSuggestionListener', () => {
     const handler = bundle.getConfigHandler()!;
     handler(SUGGESTION);
 
+    // safeSendToWindow 内置 isDestroyed 守卫：销毁窗口静默跳过
     expect(mockWindow.webContents.send).not.toHaveBeenCalled();
   });
 
-  it('窗口最小化（isMinimized=true）时不应推送', () => {
+  it('窗口最小化（isMinimized=true）时仍应推送（渲染层缓存）', () => {
     const bundle = createMockAgent();
     const mockWindow = createMockWindow({ minimized: true });
     const { deps } = createMockDeps(mockWindow);
@@ -307,7 +316,11 @@ describe('setupConfigSuggestionListener', () => {
     const handler = bundle.getConfigHandler()!;
     handler(SUGGESTION);
 
-    expect(mockWindow.webContents.send).not.toHaveBeenCalled();
+    // BUG-6 同类模式：最小化窗口仍能接收 IPC，渲染层缓存等恢复可见时展示
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith(
+      MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH,
+      expect.objectContaining({ name: SUGGESTION.name }),
+    );
   });
 });
 

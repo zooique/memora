@@ -66,7 +66,9 @@ import type { ClipboardEventType } from './clipboardHandler.js';
 // isSensitive 用于快速输入记忆沉淀前的敏感内容过滤（与 clipboardHandler 剪贴板预填过滤对齐）
 // 直接从 shared/sensitivePatterns.ts 导入，下沉后真理源在 shared 层
 import { isSensitive } from '../shared/sensitivePatterns.js';
-import { isFullWindowAccessible, safeSendToWindow } from './windows/windowUtils.js';
+// isFullWindowAccessible 仅用于请求-响应场景（如写入确认），main.ts 仅用 safeSendToWindow
+// 守卫单向推送 IPC（BUG-6 修复后统一策略：渲染层缓存隐藏窗口的 IPC，避免永久丢失）
+import { safeSendToWindow } from './windows/windowUtils.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -671,22 +673,26 @@ async function initializeApp(): Promise<void> {
           // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
           appState.windowManager.showFullWindow();
           const fullWindow = appState.windowManager.getFullWindow();
-          // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫
-          if (isFullWindowAccessible(fullWindow)) {
+          // 用户主动快捷键触发：showFullWindow 后 isVisible 可能尚未翻转，
+          // 仅需 null/destroyed 守卫，跳过 isVisible 避免 QUICK_RECORD_TRIGGER 丢失
+          // （BUG-6 同类模式：单向触发事件，阻断即用户操作失效）
+          if (fullWindow && !fullWindow.isDestroyed()) {
             fullWindow.focus();
             // 推送触发事件到渲染进程（聚焦输入框进入快速记录模式）
-            fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER);
+            safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER);
           }
         },
         [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => {
           // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
           appState.windowManager.showFullWindow();
           const fullWindow = appState.windowManager.getFullWindow();
-          // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫
-          if (isFullWindowAccessible(fullWindow)) {
+          // 用户主动快捷键触发：showFullWindow 后 isVisible 可能尚未翻转，
+          // 仅需 null/destroyed 守卫，跳过 isVisible 避免 RECALL_MEMORY_TRIGGER 丢失
+          // （BUG-6 同类模式：单向触发事件，阻断即用户操作失效）
+          if (fullWindow && !fullWindow.isDestroyed()) {
             fullWindow.focus();
             // 推送触发事件到渲染进程（切换到记忆面板）
-            fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
+            safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
           }
         },
         [SHORTCUT_ACTIONS.QUICK_INPUT]: () => {
