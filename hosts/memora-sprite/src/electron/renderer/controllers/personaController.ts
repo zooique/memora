@@ -29,17 +29,56 @@ export function createPersonaController(uiManager: UIManager) {
    *
    * 包含角色切换（调用主进程 + 更新 UI + toast 反馈）
    * 和角色匹配模式变更（持久化 + 更新标签）。
+   *
+   * P0-2 用户体验打磨：根据 IPC 返回的 reason 字段区分失败原因，
+   * 让用户知道为什么没反应（锁定/对话中/角色不存在/名称非法），
+   * 而非笼统的"切换角色失败"。
    */
   function setupPersonaSelector(): void {
     uiManager.onPersonaSwitch(async (name: string) => {
       try {
-        const { switched, name: activeName } = await window.electronAPI.switchPersona(name);
-        if (switched && activeName) {
-          uiManager.updateActivePersona(activeName);
-          // 操作反馈走 toast
-          uiManager.showToast(`已切换到角色：${activeName}`, 'success');
+        const result = await window.electronAPI.switchPersona(name);
+        // 切换成功：更新 UI + success toast
+        if (result.switched && result.name) {
+          uiManager.updateActivePersona(result.name);
+          // 同名幂等也走成功路径（用户主动选择当前角色不应提示失败）
+          uiManager.showToast(`已切换到角色：${result.name}`, 'success');
+          return;
+        }
+
+        // 按 reason 分支显示具体原因（P0-2 核心：信息可见性）
+        switch (result.reason) {
+          case 'locked': {
+            // 锁定中：展示剩余锁定时长（unlockAt 为 ms epoch 时间戳）
+            const unlockAt = result.unlockAt ?? 0;
+            const remainingMs = Math.max(0, unlockAt - Date.now());
+            const remainingMin = Math.ceil(remainingMs / 60_000);
+            uiManager.showToast(
+              `切换过于频繁，已临时锁定，约 ${remainingMin} 分钟后恢复`,
+              'warning',
+            );
+            return;
+          }
+          case 'busy':
+            // 对话进行中：提示用户等待
+            uiManager.showToast('对话进行中，请等待当前对话结束后再切换角色', 'warning');
+            return;
+          case 'not_found':
+            // 角色不存在：提示用户检查角色列表
+            uiManager.showToast(`角色 "${name}" 不存在，请检查角色列表`, 'warning');
+            return;
+          case 'invalid':
+            // 名称非法：通常不会从 UI 触发，但保留兜底
+            uiManager.showToast('角色名称包含非法字符', 'warning');
+            return;
+          case 'unknown':
+          default:
+            // 未知异常：走错误处理（含日志上报）
+            handleIpcError('onPersonaSwitch', new Error(result.error ?? '切换角色失败'), '切换角色失败');
+            return;
         }
       } catch (error) {
+        // IPC 异常（如主进程未响应）：走错误处理
         handleIpcError('onPersonaSwitch', error, '切换角色失败');
       }
     });

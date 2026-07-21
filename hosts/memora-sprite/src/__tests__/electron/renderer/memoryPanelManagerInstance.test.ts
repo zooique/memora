@@ -246,7 +246,8 @@ describe('showMemoryDetail', () => {
     mgr.showMemoryDetail(makeDetail({ name: '详情名', source: 'insight', score: 0.88, content: '内容文本' }));
 
     expect(document.getElementById('memory-detail-name')?.textContent).toBe('详情名');
-    expect(document.getElementById('memory-detail-source')?.textContent).toBe('insight');
+    // P0-1：source 经 sourceLabel.ts 映射为中文显示（insight → 洞察）
+    expect(document.getElementById('memory-detail-source')?.textContent).toBe('洞察');
     expect(document.getElementById('memory-detail-score')?.textContent).toBe('0.88');
     expect(document.getElementById('memory-detail-content')?.textContent).toBe('内容文本');
   });

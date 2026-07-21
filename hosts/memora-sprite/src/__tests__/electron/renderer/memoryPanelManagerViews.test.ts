@@ -675,7 +675,8 @@ describe('renderRecycleBinList', () => {
     const item = document.querySelector('.recycle-bin-item') as HTMLElement;
     expect(item).not.toBeNull();
     expect(item.querySelector('.recycle-bin-item-name')?.textContent).toBe('回收记忆1');
-    expect(item.querySelector('.recycle-bin-item-source')?.textContent).toContain('insight');
+    // P0-1：source 经 sourceLabel.ts 映射为中文显示（insight → 洞察）
+    expect(item.querySelector('.recycle-bin-item-source')?.textContent).toContain('洞察');
     expect(item.querySelector('.recycle-bin-item-preview')?.textContent).toBe('预览内容');
   });
 

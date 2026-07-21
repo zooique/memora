@@ -24,6 +24,8 @@
 import { clearElement, formatDateKey, createEmptyState } from './domHelpers.js';
 // getSourceColorClass 是从 helpers/sourceColor 导出的纯函数（模块级，非实例方法）
 import { getSourceColorClass } from './sourceColor.js';
+// getSourceLabel 将 source 字符串映射为中文标签（UX-2：时间线列表中文化）
+import { getSourceLabel } from './sourceLabel.js';
 import type { MemoryListItem } from '../types.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
@@ -198,7 +200,7 @@ export function createTimelineItem(mem: MemoryListItem, ctx: MemoryTimelineConte
   metaEl.className = 'timeline-item-meta';
   const sourceTag = document.createElement('span');
   sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
-  sourceTag.textContent = mem.source;
+  sourceTag.textContent = getSourceLabel(mem.source);
   metaEl.appendChild(sourceTag);
 
   if (mem.createdAt) {

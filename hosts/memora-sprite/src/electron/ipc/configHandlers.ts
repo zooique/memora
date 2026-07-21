@@ -187,17 +187,72 @@ export function registerConfigHandlers(ctx: IpcContext): void {
     throwingHandle('列出角色失败', () => ({ personas: ctx.sprite.listPersonas() })),
   );
 
-  /** 切换角色 */
-  ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) =>
-    safeHandle('切换角色失败', { switched: false, name: null }, () => {
-      // 校验角色名称白名单字符 + 长度，防路径遍历
+  /**
+   * 切换角色（P0-2 用户体验打磨：三段式判断 + reason 字段）
+   *
+   * 判断顺序（排雷雷点 1/2/3 修复）：
+   *   1. 名称合法性校验（防路径遍历）→ reason='invalid'
+   *   2. 角色存在性校验（前置避免锁定期间无法区分）→ reason='not_found'
+   *   3. 锁定状态查询（前置避免前后名比较推断）→ reason='locked' + unlockAt
+   *   4. 调用 switchPersona（捕获 chatBusyError）→ reason='busy'
+   *   5. 同名幂等路径（switched=true，name 为当前激活角色）
+   *
+   * 返回值扩展（向后兼容，reason/unlockAt 可选）：
+   *   { switched: true, name }                     — 切换成功（含同名幂等）
+   *   { switched: false, name: null, reason: 'invalid' }   — 名称非法
+   *   { switched: false, name: null, reason: 'not_found' } — 角色不存在
+   *   { switched: false, name: 当前角色, reason: 'locked', unlockAt } — 锁定中
+   *   { switched: false, name: null, reason: 'busy' }      — 对话进行中
+   */
+  ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) => {
+    try {
+      // 1. 名称合法性校验（防路径遍历）
       if (!isValidPersonaName(name)) {
-        return { switched: false, name: null };
+        return { switched: false, name: null, reason: 'invalid' as const };
       }
-      const result = ctx.sprite.switchPersona(name);
-      return { switched: result !== null, name: result };
-    }),
-  );
+
+      // 2. 角色存在性前置校验（锁定期间 switchPersona 直接返回 prompt，无法区分存在性）
+      const personaList = ctx.sprite.listPersonas();
+      const exists = personaList.some((p) => p.name === name);
+      if (!exists) {
+        return { switched: false, name: null, reason: 'not_found' as const };
+      }
+
+      // 3. 锁定状态前置查询（避免前后名比较推断的误判，排雷雷点 1）
+      const lockStatus = ctx.sprite.getPersonaSwitchLockStatus();
+      if (lockStatus.locked) {
+        const currentName = ctx.sprite.activePersona;
+        return {
+          switched: false,
+          name: currentName,
+          reason: 'locked' as const,
+          unlockAt: lockStatus.unlockAt,
+        };
+      }
+
+      // 4. 调用 switchPersona（捕获对话进行中异常，排雷雷点 3）
+      try {
+        const result = ctx.sprite.switchPersona(name);
+        if (result === null) {
+          // 角色不存在降级路径（理论上 step 2 已拦截，此处防御性兜底）
+          return { switched: false, name: null, reason: 'not_found' as const };
+        }
+        // 切换成功（含同名幂等），name 为当前激活角色名
+        const afterName = ctx.sprite.activePersona;
+        return { switched: true, name: afterName };
+      } catch (innerError) {
+        // 对话进行中：Agent.switchPersona 抛 chatBusyError（title='对话繁忙'）
+        if (innerError instanceof Error && innerError.message === '对话繁忙') {
+          return { switched: false, name: null, reason: 'busy' as const };
+        }
+        throw innerError;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '切换角色失败';
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '切换角色失败' });
+      return { switched: false, name: null, reason: 'unknown' as const, error: message };
+    }
+  });
 
   /** 设置角色匹配模式 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') =>

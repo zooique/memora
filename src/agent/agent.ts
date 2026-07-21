@@ -923,6 +923,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 获取角色切换锁定状态（透传 PersonaManager，P0-2 用户体验打磨）
+   *
+   * 与 switchPersona 分离：switchPersona 仍返回 string | null 不变，
+   * 锁定原因查询走独立路径，避免破坏既有契约（cli.ts、sprite.test.ts 等消费者无感）。
+   *
+   * 宿主 IPC 层调用此方法前置判断锁定状态，区分"切换失败"原因
+   * （locked / busy / not_found / invalid），让用户知道为什么没反应。
+   *
+   * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
+   */
+  getPersonaSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
+    this.assertInitialized('getPersonaSwitchLockStatus');
+    if (!this.personaManager) return { locked: false, unlockAt: null };
+    return this.personaManager.getSwitchLockStatus();
+  }
+
+  /**
    * 刷新 AgentLoop 的 systemPromptPrefix（角色 prompt + profile prompt）
    *
    * 提取自 postProcessInner 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。

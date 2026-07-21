@@ -17,6 +17,8 @@
  */
 
 import { setIcon } from './icon.js';
+// P1-5 用户体验打磨：工具名中文映射（read_file → "读取文件"）
+import { getToolDisplayName } from './toolNameMap.js';
 
 /**
  * 显示工具调用开始卡片
@@ -60,7 +62,10 @@ export function showToolStart(
   header.appendChild(icon);
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tool-call-name';
-  nameSpan.textContent = name;
+  // P1-5 用户体验打磨：显示中文工具名（如"读取文件"），而非英文 snake_case 原值
+  nameSpan.textContent = getToolDisplayName(name);
+  // title 保留原始工具名，便于排查（hover 显示英文标识）
+  nameSpan.title = name;
   header.appendChild(nameSpan);
   // 执行中 spinner：旋转动画替代静态"执行中..."文本，增强视觉反馈
   const spinner = document.createElement('span');

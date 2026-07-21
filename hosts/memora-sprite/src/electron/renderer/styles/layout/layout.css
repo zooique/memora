@@ -454,6 +454,31 @@
   font-weight: var(--weight-semibold);
 }
 
+/*
+ * 里程碑联动高亮（P1-3 用户体验打磨）
+ *
+ * 当对话中触发里程碑时，给 dashboard 导航按钮加 pulse 动画，
+ * 让用户跨面板感知"仪表盘有新成就可查看"。
+ * 500ms 单次动画，JS 在动画结束后移除 .pulse-highlight 类。
+ * 使用 accent 色边框脉冲，与 active 态视觉协调。
+ */
+@keyframes nav-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+}
+
+.nav-btn.pulse-highlight {
+  animation: nav-pulse 500ms ease-out;
+  border-radius: var(--radius-md, 8px);
+}
+
 /* 导航按钮图标尺寸 */
 .nav-btn .icon {
   width: 20px;

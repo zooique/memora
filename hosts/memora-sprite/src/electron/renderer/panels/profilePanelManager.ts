@@ -18,6 +18,8 @@ import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, createEl, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+// getSourceLabel 将 source 字符串映射为中文标签（UX-2：画像条目来源中文化）
+import { getSourceLabel } from '../helpers/sourceLabel.js';
 // bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
 import { bindRefreshButton } from '../helpers/buttonHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
@@ -203,7 +205,7 @@ export class ProfilePanelManager {
 
     const sourceSpan = document.createElement('span');
     sourceSpan.className = 'profile-source';
-    sourceSpan.textContent = `来源: ${entry.source}`;
+    sourceSpan.textContent = `来源: ${getSourceLabel(entry.source)}`;
     header.appendChild(sourceSpan);
 
     const updatedSpan = document.createElement('span');

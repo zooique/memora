@@ -72,6 +72,13 @@ export class PersonaManager {
   private switchLocked = false;
   /** 锁定恢复计时器 */
   private unlockTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 锁定自动恢复时间戳（ms epoch）
+   *
+   * 锁定期间为 `Date.now() + AUTO_UNLOCK_MS`，解锁后清空为 null。
+   * 供宿主 UI 展示剩余锁定时长（P0-2 用户体验打磨）。
+   */
+  private unlockAt: number | null = null;
 
   /** 时间窗口：60 秒 */
   private static readonly SWITCH_WINDOW_MS = 60_000;
@@ -267,12 +274,25 @@ export class PersonaManager {
    */
   setMode(mode: PersonaMode): void {
     this.mode = mode;
-    // 切回自动模式时清除锁定状态
+    // 切回自动模式时清除锁定状态（同步清空 unlockAt，避免残留脏数据，P0-2 排雷雷点 4）
     if (mode === 'auto' && this.switchLocked) {
       this.switchLocked = false;
       this.switchTimestamps = [];
+      this.unlockAt = null;
       logger.info({ mode: this.mode }, '角色切换锁定已解除（模式切回自动）');
     }
+  }
+
+  /**
+   * 获取角色切换锁定状态（供宿主 UI 展示剩余锁定时长，P0-2 用户体验打磨）
+   *
+   * 锁定触发条件：60s 内切换 3 次后自动锁定 5 分钟（AUTO_UNLOCK_MS）。
+   * 返回值用于宿主 IPC 透传到渲染层，区分"切换失败"原因。
+   *
+   * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
+   */
+  getSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
+    return { locked: this.switchLocked, unlockAt: this.unlockAt };
   }
 
   /** 获取当前激活模式 */
@@ -292,12 +312,17 @@ export class PersonaManager {
    *
    * PersonaManager 持有 unlockTimer（角色切换防抖锁的自动恢复计时器），
    * 若不清理，Agent 关闭后定时器仍会触发回调，在已关闭的实例上执行引发异常。
+   * 同步清空锁定状态字段（switchLocked/unlockAt/switchTimestamps），
+   * 避免 Agent 关闭后宿主查询 getSwitchLockStatus 返回脏数据（P0-2 排雷雷点 5）。
    */
   close(): void {
     if (this.unlockTimer) {
       clearSafeTimeout(this.unlockTimer);
       this.unlockTimer = null;
     }
+    this.switchLocked = false;
+    this.unlockAt = null;
+    this.switchTimestamps = [];
   }
 
   /**
@@ -367,11 +392,14 @@ export class PersonaManager {
     if (this.switchTimestamps.length >= PersonaManager.MAX_SWITCHES_IN_WINDOW) {
       logger.warn({ count: this.switchTimestamps.length }, '角色切换过于频繁，锁定 5 分钟');
       this.switchLocked = true;
-      // 5 分钟后自动解锁
+      // 记录锁定自动恢复时间戳（供宿主 UI 展示剩余时长，P0-2 用户体验打磨）
+      this.unlockAt = now + PersonaManager.AUTO_UNLOCK_MS;
+      // 5 分钟后自动解锁（同步清空 unlockAt，避免残留脏数据）
       if (this.unlockTimer) clearSafeTimeout(this.unlockTimer);
       this.unlockTimer = safeSetTimeout(() => {
         this.switchLocked = false;
         this.switchTimestamps = [];
+        this.unlockAt = null;
         logger.info({ mode: this.mode }, '角色切换锁定已自动解除');
       }, PersonaManager.AUTO_UNLOCK_MS);
     }

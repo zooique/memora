@@ -164,6 +164,9 @@ export class ArchiveButtonManager {
       // 触发归档（profile facts + insight 一次性提取）
       const count = await this.host.archiveConversation(userInput, assistantContent);
       if (count > 0) {
+        // P1-1 用户体验打磨：内联反馈——在按钮下方插入"已归档 N 条"短暂提示，
+        // 让用户在消息上下文中立即看到结果，无需依赖右上角 toast
+        this.showInlineArchiveFeedback(archiveBtn, count);
         this.host.showToast(`已归档 ${count} 条记忆`, 'success', 2000);
         archiveBtn.classList.add('archived');
         archiveBtn.title = '已归档';
@@ -179,6 +182,48 @@ export class ArchiveButtonManager {
       archiveBtn.removeAttribute('disabled');
       archiveBtn.classList.remove('archiving');
     }
+  }
+
+  /**
+   * 在归档按钮附近显示内联反馈（P1-1 用户体验打磨）
+   *
+   * 在按钮父容器（metaRow）内追加 .archive-inline-feedback 元素，
+   * 3 秒后淡出移除。让用户在消息上下文中立即看到归档结果，
+   * 而非只依赖右上角全局 toast（toast 离消息上下文较远，用户可能错过）。
+   *
+   * 设计原则：
+   * - 复用现有 metaRow 容器，不新增 DOM 层级
+   * - class 命名遵循项目约定（archive- 前缀对齐 archive-btn）
+   * - 3 秒后自动移除，避免累积 DOM
+   *
+   * @param archiveBtn 归档按钮元素（用于定位父容器）
+   * @param count 归档条目数
+   */
+  private showInlineArchiveFeedback(archiveBtn: HTMLElement, count: number): void {
+    // 定位按钮所在的元信息行（metaRow），作为内联反馈的插入容器
+    const metaRow = archiveBtn.parentElement;
+    if (!metaRow) return;
+
+    // 幂等保护：同一消息已有内联反馈时先移除旧提示
+    const existing = metaRow.querySelector('.archive-inline-feedback');
+    if (existing instanceof HTMLElement) {
+      existing.remove();
+    }
+
+    // 构建内联反馈元素
+    const feedback = document.createElement('span');
+    feedback.className = 'archive-inline-feedback';
+    feedback.textContent = `已归档 ${count} 条`;
+    feedback.setAttribute('aria-live', 'polite');
+    // 插入到按钮之后（与按钮同行，视觉顺序：复制 → 归档 → 反馈）
+    metaRow.appendChild(feedback);
+
+    // 3 秒后淡出移除（CSS transition opacity，300ms 淡出）
+    window.setTimeout(() => {
+      feedback.classList.add('fade-out');
+      // 淡出动画结束后移除 DOM
+      window.setTimeout(() => feedback.remove(), 300);
+    }, 3000);
   }
 
   /**

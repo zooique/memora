@@ -68,8 +68,14 @@ function createMockCtx(overrides?: {
       updateConfig: vi.fn(),
       // 默认 batch 成功，单个测试可覆盖为失败以验证事务回滚
       updateConfigBatch: vi.fn(() => ({ updated: true })),
-      listPersonas: vi.fn(() => ['default', 'coder']),
+      listPersonas: vi.fn(() => [
+        { name: 'default', description: '默认', active: true },
+        { name: 'coder', description: '程序员', active: false },
+      ]),
       switchPersona: vi.fn(() => 'coder'),
+      // P0-2：默认未锁定，activePersona 返回当前激活角色名
+      getPersonaSwitchLockStatus: vi.fn(() => ({ locked: false, unlockAt: null })),
+      activePersona: 'default',
       setPersonaMode: vi.fn(() => true),
       personaMode: 'auto',
       ...overrides?.sprite,
@@ -509,10 +515,16 @@ describe('registerConfigHandlers', () => {
   });
 
   // ─── PERSONA_SWITCH ────────────────────────────────────
+  // P0-2 用户体验打磨：三段式判断 + reason 字段（locked/busy/not_found/invalid）
 
   it('PERSONA_SWITCH 成功应返回 switched=true + 新角色名', async () => {
-    const switchPersona = vi.fn(() => 'coder');
-    const ctx = createMockCtx({ sprite: { switchPersona } });
+    const switchPersona = vi.fn(() => 'coder-prompt');
+    const ctx = createMockCtx({
+      sprite: {
+        switchPersona,
+        activePersona: 'coder',
+      },
+    });
     registerConfigHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
@@ -522,7 +534,7 @@ describe('registerConfigHandlers', () => {
     expect(result).toEqual({ switched: true, name: 'coder' });
   });
 
-  it('PERSONA_SWITCH 返回 null 应 switched=false', async () => {
+  it('PERSONA_SWITCH 返回 null 应 switched=false + reason=not_found（防御性兜底）', async () => {
     const ctx = createMockCtx({
       sprite: {
         switchPersona: vi.fn(() => null),
@@ -531,13 +543,60 @@ describe('registerConfigHandlers', () => {
     registerConfigHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
-    const result = await callback({}, 'unknown');
+    // 注意：step 2 前置校验已拦截 not_found，此处用 default（存在于 list）触发 switchPersona 返回 null
+    const result = await callback({}, 'default');
 
-    expect(result).toEqual({ switched: false, name: null });
+    expect(result).toEqual({ switched: false, name: null, reason: 'not_found' });
   });
 
-  // 角色名称校验失败路径
-  it('PERSONA_SWITCH 含路径分隔符应拒绝（不调用 switchPersona）', async () => {
+  // P0-2 新增：锁定状态前置判断
+  it('PERSONA_SWITCH 锁定中应返回 switched=false + reason=locked + unlockAt', async () => {
+    const unlockAt = Date.now() + 300_000;
+    const switchPersona = vi.fn(() => 'coder-prompt');
+    const ctx = createMockCtx({
+      sprite: {
+        switchPersona,
+        getPersonaSwitchLockStatus: vi.fn(() => ({ locked: true, unlockAt })),
+        activePersona: 'default',
+      },
+    });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
+    const result = await callback({}, 'coder');
+
+    // 锁定时不应调用 switchPersona（避免无效切换）
+    expect(switchPersona).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      switched: false,
+      name: 'default',
+      reason: 'locked',
+      unlockAt,
+    });
+  });
+
+  // P0-2 新增：对话进行中异常捕获
+  it('PERSONA_SWITCH 对话进行中应返回 switched=false + reason=busy', async () => {
+    const switchPersona = vi.fn(() => {
+      const err = new Error('对话繁忙');
+      throw err;
+    });
+    const ctx = createMockCtx({
+      sprite: {
+        switchPersona,
+      },
+    });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
+    const result = await callback({}, 'coder');
+
+    expect(switchPersona).toHaveBeenCalledWith('coder');
+    expect(result).toEqual({ switched: false, name: null, reason: 'busy' });
+  });
+
+  // 角色名称校验失败路径（reason='invalid'）
+  it('PERSONA_SWITCH 含路径分隔符应拒绝（reason=invalid，不调用 switchPersona）', async () => {
     const switchPersona = vi.fn(() => 'coder');
     const ctx = createMockCtx({ sprite: { switchPersona } });
     registerConfigHandlers(ctx);
@@ -546,10 +605,10 @@ describe('registerConfigHandlers', () => {
     const result = await callback({}, '../etc/passwd');
 
     expect(switchPersona).not.toHaveBeenCalled();
-    expect(result).toEqual({ switched: false, name: null });
+    expect(result).toEqual({ switched: false, name: null, reason: 'invalid' });
   });
 
-  it('PERSONA_SWITCH 含空格应拒绝（不调用 switchPersona）', async () => {
+  it('PERSONA_SWITCH 含空格应拒绝（reason=invalid，不调用 switchPersona）', async () => {
     const switchPersona = vi.fn(() => 'coder');
     const ctx = createMockCtx({ sprite: { switchPersona } });
     registerConfigHandlers(ctx);
@@ -558,10 +617,10 @@ describe('registerConfigHandlers', () => {
     const result = await callback({}, 'code reviewer');
 
     expect(switchPersona).not.toHaveBeenCalled();
-    expect(result).toEqual({ switched: false, name: null });
+    expect(result).toEqual({ switched: false, name: null, reason: 'invalid' });
   });
 
-  it('PERSONA_SWITCH 空字符串应拒绝（不调用 switchPersona）', async () => {
+  it('PERSONA_SWITCH 空字符串应拒绝（reason=invalid，不调用 switchPersona）', async () => {
     const switchPersona = vi.fn(() => 'coder');
     const ctx = createMockCtx({ sprite: { switchPersona } });
     registerConfigHandlers(ctx);
@@ -570,7 +629,20 @@ describe('registerConfigHandlers', () => {
     const result = await callback({}, '');
 
     expect(switchPersona).not.toHaveBeenCalled();
-    expect(result).toEqual({ switched: false, name: null });
+    expect(result).toEqual({ switched: false, name: null, reason: 'invalid' });
+  });
+
+  // P0-2 新增：角色不存在前置校验
+  it('PERSONA_SWITCH 角色不存在应返回 reason=not_found（不调用 switchPersona）', async () => {
+    const switchPersona = vi.fn(() => 'coder');
+    const ctx = createMockCtx({ sprite: { switchPersona } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
+    const result = await callback({}, 'nonexistent');
+
+    expect(switchPersona).not.toHaveBeenCalled();
+    expect(result).toEqual({ switched: false, name: null, reason: 'not_found' });
   });
 
   // ─── PERSONA_MODE ──────────────────────────────────────

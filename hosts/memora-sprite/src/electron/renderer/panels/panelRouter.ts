@@ -197,6 +197,14 @@ export class PanelRouter {
           searchInput.focus();
         }
       }
+      // P1-4 用户体验打磨：其他面板切换后将焦点移到面板容器，
+      // 让键盘用户能直接 Tab 导航面板内容，而非从顶部导航按钮开始。
+      // tabindex="-1" 让容器可编程聚焦但不进入 Tab 顺序（避免破坏正常 Tab 流）。
+      // preventScroll:true 避免焦点切换引发意外滚动（与上面 requestAnimationFrame 重置滚动协作）。
+      if (panel !== 'chat' && panel !== 'memories' && panelEl) {
+        panelEl.tabIndex = -1;
+        panelEl.focus({ preventScroll: true });
+      }
 
       // 面板切换回调：通知外部控制器刷新数据
       this.host.getPanelSwitchCallback()?.(panel);

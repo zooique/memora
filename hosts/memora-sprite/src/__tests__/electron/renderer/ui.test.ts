@@ -681,8 +681,8 @@ describe('工具调用卡片', () => {
     expect(toolCard?.getAttribute('data-tool-name')).toBe('read_file');
     expect(toolCard?.getAttribute('data-tool-call-id')).toBe('call-1');
 
-    // 验证卡片包含工具名和状态
-    expect(toolCard?.querySelector('.tool-call-name')?.textContent).toBe('read_file');
+    // P1-5：工具名经 toolNameMap.ts 映射为中文显示（read_file → 读取文件）
+    expect(toolCard?.querySelector('.tool-call-name')?.textContent).toBe('读取文件');
     expect(toolCard?.querySelector('.tool-call-status')?.textContent).toContain('执行中');
     expect(toolCard?.querySelector('.tool-call-args')?.textContent).toContain('test.txt');
   });

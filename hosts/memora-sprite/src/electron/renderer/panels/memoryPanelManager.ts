@@ -17,6 +17,8 @@
 import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml, createEmptyState, createEl } from '../helpers/domHelpers.js';
 // escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
 import { escapeRegExp } from '../../../shared/escapeRegExp.js';
+// getSourceLabel 将 source 字符串映射为中文标签（UX-2：消除英文原值直显，单一真理源在 helpers/sourceLabel.ts）
+import { getSourceLabel } from '../helpers/sourceLabel.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -1087,7 +1089,7 @@ export class MemoryPanelManager {
     // 元信息：来源 + 删除时间
     const meta = createEl('div', 'recycle-bin-item-meta');
 
-    const sourceEl = createEl('span', 'recycle-bin-item-source', `来源: ${mem.source}`);
+    const sourceEl = createEl('span', 'recycle-bin-item-source', `来源: ${getSourceLabel(mem.source)}`);
 
     // 格式化删除时间为本地可读日期（复用 formatTimestamp：当天 HH:MM / 昨天 HH:MM / MM-DD HH:MM）
     const deletedAtEl = createEl('span', 'recycle-bin-item-deleted-at', `删除于: ${formatTimestamp(mem.deletedAt)}`);

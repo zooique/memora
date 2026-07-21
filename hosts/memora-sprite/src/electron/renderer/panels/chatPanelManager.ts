@@ -484,6 +484,16 @@ export class ChatPanelManager {
 
     // 滚动到底部，确保用户看到新里程碑
     this.host.scrollToBottom();
+
+    // P1-3 用户体验打磨：里程碑触发时给 dashboard 导航按钮加 pulse 高亮，
+    // 让用户知道仪表盘有新成就可查看（跨面板信息可见性）。
+    // 直接操作 DOM 避免引入事件总线（v2 不新增架构）。
+    const dashboardNav = document.querySelector('.nav-btn[data-panel="dashboard"]');
+    if (dashboardNav instanceof HTMLElement) {
+      dashboardNav.classList.add('pulse-highlight');
+      // 500ms 后移除高亮类（与 CSS 动画时长一致）
+      window.setTimeout(() => dashboardNav.classList.remove('pulse-highlight'), 500);
+    }
   }
 
   /**

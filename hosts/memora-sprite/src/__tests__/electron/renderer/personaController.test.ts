@@ -168,18 +168,69 @@ describe('createPersonaController', () => {
       expect(spies.showToast).toHaveBeenCalledWith('已切换到角色：教师', 'success');
     });
 
-    it('switchPersona switched=false 不应调用 updateActivePersona / showToast', async () => {
+    it('switchPersona switched=false + reason=not_found 应显示 warning toast（P0-2 信息可见性）', async () => {
       const { uiManager, captured, spies } = createMockUiManager();
       mockElectronAPI({
-        switchPersona: vi.fn().mockResolvedValue({ switched: false, name: null }),
+        switchPersona: vi.fn().mockResolvedValue({
+          switched: false,
+          name: null,
+          reason: 'not_found',
+        }),
       });
       const controller = createPersonaController(uiManager);
       controller.setupPersonaSelector();
 
       await captured.personaSwitchCb!('不存在');
 
+      // P0-2 新行为：失败时按 reason 显示具体原因（warning toast），而非静默无反馈
       expect(spies.updateActivePersona).not.toHaveBeenCalled();
-      expect(spies.showToast).not.toHaveBeenCalled();
+      expect(spies.showToast).toHaveBeenCalledWith(
+        expect.stringContaining('不存在'),
+        'warning',
+      );
+    });
+
+    it('switchPersona switched=false + reason=locked 应显示剩余锁定时长', async () => {
+      const { uiManager, captured, spies } = createMockUiManager();
+      const unlockAt = Date.now() + 300_000;
+      mockElectronAPI({
+        switchPersona: vi.fn().mockResolvedValue({
+          switched: false,
+          name: 'default',
+          reason: 'locked',
+          unlockAt,
+        }),
+      });
+      const controller = createPersonaController(uiManager);
+      controller.setupPersonaSelector();
+
+      await captured.personaSwitchCb!('coder');
+
+      // 锁定 toast 应包含"锁定"和"分钟"
+      expect(spies.showToast).toHaveBeenCalledWith(
+        expect.stringMatching(/锁定.*分钟/),
+        'warning',
+      );
+    });
+
+    it('switchPersona switched=false + reason=busy 应显示对话进行中提示', async () => {
+      const { uiManager, captured, spies } = createMockUiManager();
+      mockElectronAPI({
+        switchPersona: vi.fn().mockResolvedValue({
+          switched: false,
+          name: null,
+          reason: 'busy',
+        }),
+      });
+      const controller = createPersonaController(uiManager);
+      controller.setupPersonaSelector();
+
+      await captured.personaSwitchCb!('coder');
+
+      expect(spies.showToast).toHaveBeenCalledWith(
+        expect.stringContaining('对话进行中'),
+        'warning',
+      );
     });
 
     it('switchPersona 异常应走 handleIpcError（showToast error）', async () => {

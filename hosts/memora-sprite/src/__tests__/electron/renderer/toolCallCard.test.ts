@@ -68,8 +68,10 @@ describe('showToolStart', () => {
     expect(header!.querySelector('.tool-call-chevron')!.innerHTML).toContain('icon-chevron');
     // icon
     expect(header!.querySelector('span:nth-child(2)')!.innerHTML).toContain('icon-tools');
-    // name
-    expect(header!.querySelector('.tool-call-name')!.textContent).toBe('write_file');
+    // name（P1-5：英文工具名通过 toolNameMap 映射为中文显示）
+    expect(header!.querySelector('.tool-call-name')!.textContent).toBe('写入文件');
+    // title 保留原始工具名，便于排查
+    expect((header!.querySelector('.tool-call-name') as HTMLElement)!.title).toBe('write_file');
     // spinner
     expect(header!.querySelector('.tool-call-spinner')).not.toBeNull();
     // status
@@ -122,6 +124,15 @@ describe('showToolStart', () => {
     expect(cards.length).toBe(2);
     expect(cards[0].getAttribute('data-tool-call-id')).toBe('tc-1');
     expect(cards[1].getAttribute('data-tool-call-id')).toBe('tc-2');
+  });
+
+  // P1-5：未映射工具名应保持原样（fallback 路径覆盖）
+  it('未映射工具名应保持原样显示（fallback）', () => {
+    const bubble = createBubble();
+    showToolStart(bubble, 'tc-1', 'custom_unknown_tool');
+    const nameEl = bubble.querySelector('.tool-call-name') as HTMLElement;
+    expect(nameEl.textContent).toBe('custom_unknown_tool');
+    expect(nameEl.title).toBe('custom_unknown_tool');
   });
 });
 

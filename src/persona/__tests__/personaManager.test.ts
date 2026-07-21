@@ -14,7 +14,7 @@
  * 注意：PersonaManager v1.1 扫描 <configDir>/personas/*.md，
  * 测试中目录名必须为 personas。
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PersonaManager } from '@/persona/personaManager.js';
 import type { Persona } from '@/persona/types.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -330,6 +330,123 @@ keywords: 通用
       const result = personaManager.switchPersona('默认助手');
 
       expect(result).toContain('默认助手');
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
+  // 角色切换锁定状态（P0-2 用户体验打磨）
+  // ════════════════════════════════════════════════════════
+  describe('角色切换锁定状态 (P0-2)', () => {
+    it('未锁定时 getSwitchLockStatus 应返回 locked=false + unlockAt=null', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+---
+你是一个通用AI助手。`,
+      );
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('默认助手');
+
+      const status = personaManager.getSwitchLockStatus();
+      expect(status).toEqual({ locked: false, unlockAt: null });
+    });
+
+    it('60s 内切换 3 次后应锁定并记录 unlockAt', async () => {
+      // 创建 4 个角色用于频繁切换测试
+      for (const name of ['角色A', '角色B', '角色C', '角色D']) {
+        createPersonaFile(
+          personasDir,
+          `${name}.md`,
+          `---
+name: ${name}
+---
+${name}内容`,
+        );
+      }
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('角色A');
+      // 用 vi.useFakeTimers 控制 AUTO_UNLOCK_MS 定时器
+      vi.useFakeTimers();
+      const now = Date.now();
+      try {
+        // 3 次切换触发锁定（第 3 次 recordSwitch 时 length >= 3）
+        personaManager.switchPersona('角色B');
+        personaManager.switchPersona('角色C');
+        personaManager.switchPersona('角色D');
+
+        // 锁定后 getSwitchLockStatus 应返回 locked=true + unlockAt ≈ now + 300000
+        const status = personaManager.getSwitchLockStatus();
+        expect(status.locked).toBe(true);
+        expect(status.unlockAt).toBeGreaterThan(now);
+        // unlockAt 应在 now+300000 附近（允许 1 秒误差）
+        expect(status.unlockAt! - now).toBeGreaterThanOrEqual(299_000);
+        expect(status.unlockAt! - now).toBeLessThanOrEqual(301_000);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('setMode(auto) 解除锁定时应同步清空 unlockAt', async () => {
+      for (const name of ['角色A', '角色B', '角色C', '角色D']) {
+        createPersonaFile(
+          personasDir,
+          `${name}.md`,
+          `---
+name: ${name}
+---
+${name}内容`,
+        );
+      }
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('角色A');
+      vi.useFakeTimers();
+      try {
+        personaManager.switchPersona('角色B');
+        personaManager.switchPersona('角色C');
+        personaManager.switchPersona('角色D');
+        expect(personaManager.getSwitchLockStatus().locked).toBe(true);
+
+        // 切到 manual 再切回 auto 解除锁定
+        personaManager.setMode('manual');
+        personaManager.setMode('auto');
+
+        // unlockAt 应被同步清空（P0-2 排雷雷点 4）
+        const status = personaManager.getSwitchLockStatus();
+        expect(status).toEqual({ locked: false, unlockAt: null });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('close() 应清空锁定状态字段（避免脏数据，P0-2 排雷雷点 5）', async () => {
+      for (const name of ['角色A', '角色B', '角色C', '角色D']) {
+        createPersonaFile(
+          personasDir,
+          `${name}.md`,
+          `---
+name: ${name}
+---
+${name}内容`,
+        );
+      }
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('角色A');
+      vi.useFakeTimers();
+      try {
+        personaManager.switchPersona('角色B');
+        personaManager.switchPersona('角色C');
+        personaManager.switchPersona('角色D');
+        expect(personaManager.getSwitchLockStatus().locked).toBe(true);
+
+        personaManager.close();
+
+        // close 后所有锁定字段应清空
+        expect(personaManager.getSwitchLockStatus()).toEqual({ locked: false, unlockAt: null });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

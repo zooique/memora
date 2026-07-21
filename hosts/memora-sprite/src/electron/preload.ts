@@ -583,7 +583,24 @@ export interface ElectronAPI {
 
   // 角色
   listPersonas: () => Promise<{ personas: Array<{ name: string; description: string; active: boolean }> }>;
-  switchPersona: (name: string) => Promise<{ switched: boolean; name: string | null }>;
+  /**
+   * 切换角色（P0-2 用户体验打磨：返回值扩展 reason + unlockAt，向后兼容）
+   *
+   * @returns reason 取值：
+   *   - undefined：切换成功
+   *   - 'invalid'：名称非法（含路径分隔符/空格）
+   *   - 'not_found'：角色不存在
+   *   - 'locked'：切换锁定中（60s 内 3 次后锁 5 分钟），unlockAt 为自动恢复时间戳（ms epoch）
+   *   - 'busy'：对话进行中
+   *   - 'unknown'：其他异常
+   */
+  switchPersona: (name: string) => Promise<{
+    switched: boolean;
+    name: string | null;
+    reason?: 'invalid' | 'not_found' | 'locked' | 'busy' | 'unknown';
+    unlockAt?: number | null;
+    error?: string;
+  }>;
   setPersonaMode: (mode: 'auto' | 'manual') => Promise<{ set: boolean }>;
   /** 查询当前角色匹配模式 */
   getPersonaMode: () => Promise<{ mode: string }>;

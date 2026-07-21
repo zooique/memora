@@ -97,7 +97,15 @@
 /* 雷达图顶点圆点 */
 .radar-dot {
   fill: var(--accent);
-  transition: fill var(--transition-slow) ease;
+  /*
+   * P1-2 用户体验打磨：顶点圆点位置变化加 transition
+   *
+   * cx/cy 是 SVG 几何属性，Chromium 78+ 支持 CSS transition 过渡。
+   * Electron 基于 Chromium，可安全使用。
+   * 让感知数据更新时顶点圆点平滑滑动，而非瞬间跳变。
+   * fill 保留原有过渡（颜色变化平滑）。
+   */
+  transition: fill var(--transition-slow) ease, cx var(--transition-slow) ease, cy var(--transition-slow) ease;
 }
 
 /* 雷达图标签文字 */

@@ -24,6 +24,8 @@
 
 import { getOptionalElement, clearElement, createEl, formatTimeAgo } from './domHelpers.js';
 import { getSourceColorClass } from './sourceColor.js';
+// getSourceLabel 将 source 字符串映射为中文标签（UX-2：详情弹窗 + 演化脉络中文化）
+import { getSourceLabel } from './sourceLabel.js';
 // STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryPanelManager 形成运行时循环依赖）
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
 import type { EventTracker } from './eventTracker.js';
@@ -92,7 +94,7 @@ export function showMemoryDetail(ctx: MemoryDetailPanelContext, memory: MemoryDe
 
   if (nameEl) nameEl.textContent = memory.name;
   if (sourceEl) {
-    sourceEl.textContent = memory.source;
+    sourceEl.textContent = getSourceLabel(memory.source);
     // source 标签颜色区分（与列表保持一致）
     sourceEl.className = `source-${getSourceColorClass(memory.source)}`;
   }
@@ -263,10 +265,10 @@ export function showMemoryLineage(ctx: MemoryDetailPanelContext, path: RelationP
     depthTag.className = 'lineage-depth-tag';
     depthTag.textContent = node.depth === 0 ? '当前' : `L${node.depth}`;
 
-    // source 标签：颜色区分（复用列表项 source 配色）
+    // source 标签：颜色区分（复用列表项 source 配色）+ 中文化（UX-2）
     const sourceTag = document.createElement('span');
     sourceTag.className = `lineage-source-tag source-${getSourceColorClass(node.memorySource)}`;
-    sourceTag.textContent = node.memorySource;
+    sourceTag.textContent = getSourceLabel(node.memorySource);
 
     // 关系类型标签（起点节点 relationType 为 null，不显示）
     if (node.relationType) {
@@ -400,10 +402,10 @@ export function showMemoryNeighbors(ctx: MemoryDetailPanelContext, neighbors: Re
     dirTag.className = `neighbor-direction-tag neighbor-dir-${node.direction}`;
     dirTag.textContent = node.direction === 'incoming' ? '来源' : '去向';
 
-    // source 标签：颜色区分（复用列表项 source 配色）
+    // source 标签：颜色区分（复用列表项 source 配色）+ 中文化（UX-2）
     const sourceTag = document.createElement('span');
     sourceTag.className = `lineage-source-tag source-${getSourceColorClass(node.memorySource)}`;
-    sourceTag.textContent = node.memorySource;
+    sourceTag.textContent = getSourceLabel(node.memorySource);
 
     // 关系类型标签
     const relTag = document.createElement('span');

@@ -749,6 +749,18 @@ export class Sprite {
     return this.agent.switchPersona(name);
   }
 
+  /**
+   * 获取角色切换锁定状态（透传 Agent，P0-2 用户体验打磨）
+   *
+   * 供 IPC 层前置判断锁定状态，区分"切换失败"原因，
+   * 让用户知道为什么没反应（锁定/对话中/角色不存在/名称非法）。
+   *
+   * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
+   */
+  getPersonaSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
+    return this.agent.getPersonaSwitchLockStatus();
+  }
+
   setPersonaMode(mode: 'auto' | 'manual'): boolean {
     const set = this.personaController.setMode(mode);
     // 持久化到 sprite.json，下次启动时由 start() 读取应用

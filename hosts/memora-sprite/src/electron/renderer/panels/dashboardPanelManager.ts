@@ -18,6 +18,8 @@ import { clearElement, formatTimeAgo, setCanvasSize } from '../helpers/domHelper
 import type { EventTracker } from '../helpers/eventTracker.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
 import { getSourceColorClass } from '../helpers/sourceColor.js';
+// getSourceLabel 将 source 字符串映射为中文标签（UX-2：从本文件原私有方法提取为共享工具，消除 5+ 处英文原值直显）
+import { getSourceLabel } from '../helpers/sourceLabel.js';
 import type { ToastType } from '../types.js';
 import type { ReviewDataPayload } from '../../preload.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入
@@ -447,7 +449,7 @@ export class DashboardPanelManager {
 
       const labelSpan = document.createElement('span');
       labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;
-      labelSpan.textContent = this.getSourceLabel(s.source);
+      labelSpan.textContent = getSourceLabel(s.source);
 
       const statusSpan = document.createElement('span');
       statusSpan.className = `source-health-status ${s.status} flex-shrink-0`;
@@ -882,31 +884,4 @@ export class DashboardPanelManager {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
-  /**
-   * 将 source 标识符映射为中文友好名称
-   *
-   * 与 PatternDetector.sourceLabel 保持一致，确保全 UI 层 source 命名统一。
-   * 未知 source 透传原值，避免信息丢失。
-   *
-   * @param source 原始 source 字符串
-   * @returns 中文标签
-   */
-  private getSourceLabel(source: string): string {
-    const labels: Record<string, string> = {
-      profile: '个人偏好',
-      insight: '洞察',
-      rule: '规则',
-      skill: '技能',
-      guardrail: '安全',
-      chat: '对话',
-      file: '文件',
-      work: '工作',
-      memory: '记忆',
-      summary: '摘要',
-      note: '笔记',
-      persona: '角色',
-      session: '会话',
-    };
-    return labels[source] ?? source;
-  }
 }

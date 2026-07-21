@@ -13,6 +13,8 @@
  */
 
 import { clearElement, createEl, showPanelLoading } from '../helpers/domHelpers.js';
+// getSourceLabel 将 source 字符串映射为中文标签（UX-2：source 分布条形图标签中文化）
+import { getSourceLabel } from '../helpers/sourceLabel.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { getSourceColorClass } from '../helpers/sourceColor.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
@@ -119,9 +121,9 @@ export class InsightsRenderer {
       const maxCount = Math.max(1, ...sources.map((s) => s[1]));
       for (const [source, count] of sources) {
         const bar = createEl('div', 'insights-distribution-bar');
-        bar.title = `${source}: ${count} 条`;
+        bar.title = `${getSourceLabel(source)}: ${count} 条`;
 
-        const label = createEl('span', 'distribution-label text-truncate', source);
+        const label = createEl('span', 'distribution-label text-truncate', getSourceLabel(source));
 
         const fill = createEl('div', `distribution-fill source-${getSourceColorClass(source)}`);
         fill.style.width = `${(count / maxCount) * 100}%`;

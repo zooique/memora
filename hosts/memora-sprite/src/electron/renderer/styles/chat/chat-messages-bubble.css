@@ -339,6 +339,29 @@
   cursor: default;
 }
 
+/*
+ * 归档内联反馈（P1-1 用户体验打磨）
+ *
+ * 在归档按钮同行显示"已归档 N 条"，3 秒后淡出。
+ * 让用户在消息上下文中立即看到归档结果，无需依赖右上角 toast。
+ * 间距/圆角走令牌，禁止裸 px（§2.4.6 间距/圆角令牌化）。
+ */
+.archive-inline-feedback {
+  color: var(--green);
+  font-size: var(--text-xs, 12px);
+  margin-left: var(--space-2, 8px);
+  padding: 0 var(--space-1, 4px);
+  border-radius: var(--radius-sm, 4px);
+  opacity: 1;
+  transition: opacity 300ms ease;
+  user-select: none;
+}
+
+/* 淡出态：JS 在 3 秒后追加 .fade-out 触发 transition */
+.archive-inline-feedback.fade-out {
+  opacity: 0;
+}
+
 .message .cursor {
   display: inline-block;
   width: 2px;
