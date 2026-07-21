@@ -840,8 +840,8 @@ describe('InputAreaManager', () => {
       await manager.refreshTokenUsage();
 
       const textEl = document.getElementById('token-usage-text')!;
-      // 800 < 1000 → "800"，32768 >= 1000 → "32.8K"
-      expect(textEl.textContent).toBe('800/32.8K');
+      // UX-12：800 < 1000 → "800"，32768 >= 1000 → "32.8k"（小写 k，与 SI 词头一致）
+      expect(textEl.textContent).toBe('800/32.8k');
       const fillEl = document.getElementById('token-usage-fill')!;
       // ratio = 800/32768 ≈ 0.0244 → 2%
       expect(fillEl.style.width).toBe('2%');
@@ -864,8 +864,8 @@ describe('InputAreaManager', () => {
       await manager.refreshTokenUsage();
 
       const textEl = document.getElementById('token-usage-text')!;
-      // 3500 >= 1000 → "3.5K"，32768 → "32.8K"
-      expect(textEl.textContent).toBe('3.5K/32.8K');
+      // UX-12：3500 >= 1000 → "3.5k"，32768 → "32.8k"（小写 k）
+      expect(textEl.textContent).toBe('3.5k/32.8k');
     });
 
     it('contextWindow 缺失时应使用默认值 32768', async () => {
@@ -883,8 +883,8 @@ describe('InputAreaManager', () => {
       await manager.refreshTokenUsage();
 
       const textEl = document.getElementById('token-usage-text')!;
-      // 使用默认 32768 → "32.8K"
-      expect(textEl.textContent).toBe('150/32.8K');
+      // UX-12：使用默认 32768 → "32.8k"
+      expect(textEl.textContent).toBe('150/32.8k');
     });
 
     it('active provider 不在列表中时应使用默认 contextWindow', async () => {
@@ -902,7 +902,7 @@ describe('InputAreaManager', () => {
 
       // active 不匹配 → activeProvider 为 undefined → 使用默认 32768
       const textEl = document.getElementById('token-usage-text')!;
-      expect(textEl.textContent).toBe('150/32.8K');
+      expect(textEl.textContent).toBe('150/32.8k');
     });
 
     it('ratio >= 0.9 时应添加 level-danger 类', async () => {
@@ -995,7 +995,8 @@ describe('InputAreaManager', () => {
       await manager.refreshTokenUsage();
 
       const usageEl = document.getElementById('token-usage')!;
-      expect(usageEl.getAttribute('data-tooltip')).toBe('输入 1.5K / 输出 2.0K / 上下文窗口 32.8K');
+      // UX-12：小写 k（1.5k / 2.0k / 32.8k）
+      expect(usageEl.getAttribute('data-tooltip')).toBe('输入 1.5k / 输出 2.0k / 上下文窗口 32.8k');
     });
 
     it('ratio 超过 100% 时进度条应截断到 100%', async () => {

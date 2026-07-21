@@ -22,9 +22,12 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "搜索失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 import { clearElement, createEl, escapeHtml, formatClock, formatDateKey, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
-// escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
+
+// 从 shared/ 导入 escapeRegExp（纯函数，跨进程共享，消除渲染进程本地实现）
 import { escapeRegExp } from '../../../shared/escapeRegExp.js';
 
 /** 输入防抖时长（毫秒）—— 避免每键入一个字符就触发一次 IPC 搜索 */
@@ -299,7 +302,7 @@ export class SearchMessagesManager {
     } catch (error) {
       reportError('SearchMessages', error);
       if (this.isOpen) {
-        this.renderEmpty('搜索失败，请重试');
+        this.renderEmpty(formatErrorMessage('搜索', error));
       }
     } finally {
       this.isSearching = false;

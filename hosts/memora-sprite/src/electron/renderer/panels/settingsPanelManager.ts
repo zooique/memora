@@ -15,6 +15,8 @@
 
 import { clearElement, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 import { reportError } from '../helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "保存失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
@@ -981,7 +983,7 @@ export class SettingsPanelManager {
       }
     } catch (error) {
       reportError('SettingsPanelManager', error);
-      this.host.showToast('保存失败，请重试', 'error');
+      this.host.showToast(formatErrorMessage('保存', error), 'error');
       this.updateSaveStatus('error');
     } finally {
       this.isAutoSaving = false;

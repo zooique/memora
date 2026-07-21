@@ -18,6 +18,8 @@
 import type { UIManager } from '../ui.js';
 import type { SpriteConfigForm } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "切换归档模式失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 import { MS_PER_HOUR } from '../../../sprite/constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
@@ -76,7 +78,7 @@ export function createSettingsController(uiManager: UIManager) {
         uiManager.showToast('精灵配置已保存', 'success');
         return true;
       } catch (error) {
-        handleIpcError('onConfigSave', error, '保存精灵配置失败');
+        handleIpcError('onConfigSave', error, '保存精灵配置');
         return false;
       }
     });
@@ -89,7 +91,7 @@ export function createSettingsController(uiManager: UIManager) {
         uiManager.showToast(`归档模式已切换为：${mode === 'full' ? '全自动' : mode === 'insights-only' ? '仅洞察自动' : '全手动'}`, 'success');
       } catch (error) {
         reportError('onArchiveModeChange', error);
-        uiManager.showToast('切换归档模式失败，请重试', 'error');
+        uiManager.showToast(formatErrorMessage('切换归档模式', error), 'error');
         // 失败时重新加载表单，恢复 radio 到实际状态
         void loadConfig();
       }
@@ -100,7 +102,7 @@ export function createSettingsController(uiManager: UIManager) {
       try {
         await window.electronAPI.clearAuditLog();
       } catch (error) {
-        handleIpcError('clearAuditLog', error, '清空审计日志失败');
+        handleIpcError('clearAuditLog', error, '清空审计日志');
       }
     });
 
@@ -110,7 +112,7 @@ export function createSettingsController(uiManager: UIManager) {
         // 确认后重新加载画像列表，确保 UI 反映最新状态
         await uiManager.loadUserProfile();
       } catch (error) {
-        handleIpcError('confirmUserProfile', error, '确认用户画像失败');
+        handleIpcError('confirmUserProfile', error, '确认用户画像');
       }
     });
 
@@ -120,7 +122,7 @@ export function createSettingsController(uiManager: UIManager) {
         // 拒绝后重新加载画像列表，确保 UI 反映最新状态
         await uiManager.loadUserProfile();
       } catch (error) {
-        handleIpcError('rejectUserProfile', error, '拒绝用户画像失败');
+        handleIpcError('rejectUserProfile', error, '拒绝用户画像');
       }
     });
   }

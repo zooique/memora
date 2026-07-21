@@ -16,7 +16,8 @@
  * - JSDOM 提供真实 DOM 事件（click 事件委托）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { formatTokenCount } from '../../../electron/renderer/panels/dashboardPanelManager.js';
+// formatTokenCount 已迁移至 shared/numberUtils.ts（UX-12 术语统一）
+import { formatTokenCount } from '../../../shared/numberUtils.js';
 import { createMemoryController } from '../../../electron/renderer/controllers/memoryController.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 

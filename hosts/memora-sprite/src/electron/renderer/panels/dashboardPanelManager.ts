@@ -24,6 +24,10 @@ import type { ToastType } from '../types.js';
 import type { ReviewDataPayload } from '../../preload.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入
 import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
+// Token 数量格式化纯函数（UX-12：从本文件原导出提取至 shared/numberUtils 真理源，消除与 inputAreaManager 的 K/k 大小写不一致）
+import { formatTokenCount } from '../../../shared/numberUtils.js';
+
+// Token 数量格式化函数由 shared/numberUtils.ts 提供，本模块仅消费（UX-12 术语统一）
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -141,21 +145,9 @@ export interface DashboardViewModel {
 
 // ─── 导出的纯函数（保持向后兼容） ─────────────────────────
 
-/**
- * 格式化 token 数显示
- *
- * 超过 1000 时显示为 "1.2k" 格式，否则直接显示数字。
- * 供仪表盘 LLM Token 指标卡片使用。
- *
- * @param tokens token 数量
- * @returns 格式化后的字符串（如 "999" / "1.2k"）
- */
-export function formatTokenCount(tokens: number): string {
-  if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(1)}k`;
-  }
-  return String(tokens);
-}
+// formatTokenCount 已迁移至 shared/numberUtils.ts（UX-12 术语统一，消除 K/k 大小写不一致）
+// 旧导入路径 `import { formatTokenCount } from './dashboardPanelManager.js'` 应改为
+// `import { formatTokenCount } from '../../../shared/numberUtils.js'`
 
 // ─── 仪表盘面板管理器类 ───────────────────────────────────
 

@@ -35,6 +35,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { toError, logger } from 'memora';
+// formatErrorMessage 错误文案真理源（UX-13/14：替代 isNetworkError 二选一静态文案 + 直传 error.message）
+import { formatErrorMessage } from '../../shared/errorMessages.js';
 import { getLocalDate } from '../../sprite/constants.js';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, SECURITY_HEADERS } from './types.js';
@@ -81,42 +83,8 @@ function writeSSE(res: ServerResponse, eventName: string, data: unknown): void {
   }
 }
 
-/**
- * 判断错误是否为网络/连接类错误
- *
- * 用于区分 LLM 调用中的网络故障（返回友好提示）与其他异常，避免把
- * 上游错误细节（如 fetch failed 原文、主机名、API 端点）回传客户端。
- *
- * 判断依据：
- *   1. Node/undici 网络错误码（ENOTFOUND/ECONNREFUSED/ECONNRESET 等）
- *   2. 错误消息中的网络相关关键词（兜底，覆盖未携带 code 的封装错误）
- *
- * @param error 待判断的错误对象
- * @returns true 表示网络类错误
- */
-function isNetworkError(error: unknown): boolean {
-  // 检查 Node/undici 错误码（原生网络错误会带 code 字段）
-  if (error && typeof error === 'object' && 'code' in error) {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === 'string') {
-      const NETWORK_CODES = [
-        'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
-        'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH',
-        'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
-      ];
-      if (NETWORK_CODES.includes(code)) return true;
-    }
-  }
-  // 检查错误消息关键词（兜底：覆盖被封装/重抛后丢失 code 的网络错误）
-  const msg = toError(error).message.toLowerCase();
-  return (
-    msg.includes('fetch failed')
-    || msg.includes('network')
-    || msg.includes('econnrefused')
-    || msg.includes('timed out')
-    || msg.includes('getaddrinfo')
-  );
-}
+// isNetworkError 已删除（UX-13/14 重构）：原用于区分网络类错误返回不同静态文案，
+// 现由 shared/errorMessages.formatErrorMessage 统一分类映射，无需在 Web 路由层手写 if-else。
 
 // ─── 路由处理函数 ─────────────────────────────────────────
 
@@ -381,12 +349,10 @@ async function handleChatStart(
           writeSSE(res, SSE_EVENTS.ABORTED, { messageId, reason: '用户手动停止' });
           abortedNotified = true;
         } else {
-          // 对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
-          // - 网络类错误（DNS 失败/连接拒绝/超时等）→ 提示检查网络或 LLM 配置
-          // - 其他错误（如内核异常）→ 通用"对话出错，请重试"
-          const friendlyMessage = isNetworkError(error)
-            ? '对话服务暂不可用，请检查网络或 LLM 配置'
-            : '对话出错，请重试';
+          // UX-13/14：用 formatErrorMessage 替代 isNetworkError 二选一 + 静态文案
+          // - 网络类错误（DNS 失败/连接拒绝/超时等）→ "对话失败：网络连接失败，请检查网络后重试"
+          // - 其他错误（如内核异常）→ "对话失败，请稍后重试"
+          const friendlyMessage = formatErrorMessage('对话', error);
           writeSSE(res, SSE_EVENTS.ERROR, {
             messageId,
             message: friendlyMessage,
@@ -508,10 +474,8 @@ async function handleChatStart(
         aborted: { reason: '用户手动停止' },
       });
     } else {
-      // 对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
-      const friendlyMessage = isNetworkError(error)
-        ? '对话服务暂不可用，请检查网络或 LLM 配置'
-        : '对话出错，请重试';
+      // UX-13/14：用 formatErrorMessage 替代 isNetworkError 二选一 + 静态文案
+      const friendlyMessage = formatErrorMessage('对话', error);
       sendError(res, 500, friendlyMessage);
       logger.error({ err: toError(error).message }, 'Web 非流式对话失败');
     }

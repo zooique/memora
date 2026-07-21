@@ -22,10 +22,9 @@
  * - pulseCounter 测试使用 vi.useFakeTimers 控制定时器
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  DashboardPanelManager,
-  formatTokenCount,
-} from '../../../electron/renderer/panels/dashboardPanelManager.js';
+import { DashboardPanelManager } from '../../../electron/renderer/panels/dashboardPanelManager.js';
+// formatTokenCount 已迁移至 shared/numberUtils.ts（UX-12 术语统一）
+import { formatTokenCount } from '../../../shared/numberUtils.js';
 import type {
   AgentMetrics,
   DashboardViewModel,

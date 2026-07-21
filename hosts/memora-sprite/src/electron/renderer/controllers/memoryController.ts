@@ -18,6 +18,8 @@ import type { UIManager } from '../ui.js';
 import { setButtonLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "XXX失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 // 感知数据 Payload 类型从 ipcListeners 导入，消除内联类型重复
 import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
 import type { HealthDashboardPayload } from '../../preload.js';
@@ -207,7 +209,7 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast('恢复失败：记忆可能已被处理', 'error');
           }
         } catch (error) {
-          handleIpcError('restoreMemory', error, '恢复记忆失败');
+          handleIpcError('restoreMemory', error, '恢复记忆');
         }
       } else if (recycleAction === 'purge') {
         // 彻底删除：不可恢复操作，danger 确认
@@ -230,7 +232,7 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast('删除失败：记忆可能已被处理', 'error');
           }
         } catch (error) {
-          handleIpcError('purgeMemory', error, '彻底删除记忆失败');
+          handleIpcError('purgeMemory', error, '彻底删除记忆');
         }
       }
     });
@@ -256,7 +258,7 @@ export function createMemoryController(uiManager: UIManager) {
             uiManager.showToast('回收站中没有可恢复的记忆', 'info');
           }
         } catch (error) {
-          handleIpcError('restoreAllMemories', error, '批量恢复失败');
+          handleIpcError('restoreAllMemories', error, '批量恢复');
         }
       } else if (batchAction === 'purge-all') {
         const confirmed = await uiManager.showConfirmDialog({
@@ -284,7 +286,7 @@ export function createMemoryController(uiManager: UIManager) {
             void refreshGraphIfVisible();
           }
         } catch (error) {
-          handleIpcError('purgeAllMemories', error, '批量清空失败');
+          handleIpcError('purgeAllMemories', error, '批量清空');
         }
       }
     });
@@ -326,7 +328,7 @@ export function createMemoryController(uiManager: UIManager) {
         await loadMemoryList();
       } catch (error) {
         reportError('cleanupConfirm', error);
-        uiManager.showToast('清理失败，请重试', 'error');
+        uiManager.showToast(formatErrorMessage('清理', error), 'error');
       }
     });
 
@@ -367,7 +369,7 @@ export function createMemoryController(uiManager: UIManager) {
         await loadHealthDashboard();
       } catch (error) {
         reportError('llmGovernance', error);
-        uiManager.showToast('LLM 治理失败，请重试', 'error');
+        uiManager.showToast(formatErrorMessage('LLM 治理', error), 'error');
       }
     });
 
@@ -425,7 +427,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 搜索失败时给用户可见反馈
         if (seq !== searchSeq) return;
         reportError('onMemorySearch', error);
-        uiManager.showToast('搜索记忆失败，请重试', 'error');
+        uiManager.showToast(formatErrorMessage('搜索记忆', error), 'error');
         // 搜索前已清空列表，失败时需重新加载恢复数据
         await loadMemoryList();
       }
@@ -480,7 +482,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 操作反馈走 toast（体现软删除语义）
         uiManager.showToast('记忆已移入回收站', 'success');
       } catch (error) {
-        handleIpcError('onMemoryDelete', error, '删除记忆失败');
+        handleIpcError('onMemoryDelete', error, '删除记忆');
       } finally {
         // 恢复按钮状态（弹窗已关闭时 setButtonLoading 内部会安全降级）
         setButtonLoading('btn-memory-delete', false);
@@ -501,7 +503,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 操作反馈走 toast
         uiManager.showToast('记忆已添加', 'success');
       } catch (error) {
-        handleIpcError('onMemoryAdd', error, '添加记忆失败');
+        handleIpcError('onMemoryAdd', error, '添加记忆');
       } finally {
         // 恢复按钮状态
         setButtonLoading('btn-memory-add-confirm', false);
@@ -526,7 +528,7 @@ export function createMemoryController(uiManager: UIManager) {
         void refreshGraphIfVisible();
         uiManager.showToast('记忆已更新', 'success');
       } catch (error) {
-        handleIpcError('onMemoryEdit', error, '更新记忆失败');
+        handleIpcError('onMemoryEdit', error, '更新记忆');
       } finally {
         setButtonLoading('btn-memory-edit-save', false);
       }
@@ -581,7 +583,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 复用 refreshGraphIfVisible 刷新图谱
         void refreshGraphIfVisible();
       } catch (error) {
-        handleIpcError('onRelationEdit', error, '更新关系失败');
+        handleIpcError('onRelationEdit', error, '更新关系');
       }
     });
 
@@ -598,7 +600,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 复用 refreshGraphIfVisible 刷新图谱
         void refreshGraphIfVisible();
       } catch (error) {
-        handleIpcError('onRelationDelete', error, '删除关系失败');
+        handleIpcError('onRelationDelete', error, '删除关系');
       }
     });
 
@@ -615,7 +617,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 复用 refreshGraphIfVisible 刷新图谱
         void refreshGraphIfVisible();
       } catch (error) {
-        handleIpcError('onRelationCreate', error, '创建关系失败');
+        handleIpcError('onRelationCreate', error, '创建关系');
       }
     });
   }
@@ -730,7 +732,7 @@ export function createMemoryController(uiManager: UIManager) {
       const { memories } = await window.electronAPI.listDeletedMemories();
       uiManager.renderRecycleBinList(memories);
     } catch (error) {
-      handleIpcError('loadRecycleBinList', error, '加载回收站列表失败');
+      handleIpcError('loadRecycleBinList', error, '加载回收站列表');
     }
   }
 

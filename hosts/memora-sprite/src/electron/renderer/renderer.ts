@@ -20,6 +20,8 @@ import { createPersonaController } from './controllers/personaController.js';
 import { createSettingsController } from './controllers/settingsController.js';
 import { initIpcListeners, consumeConflictTargetId } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "XXX失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../shared/errorMessages.js';
 import { EventTracker } from './helpers/eventTracker.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
 import { safeGet } from './helpers/safeStorage.js';
@@ -768,7 +770,7 @@ function setupBusinessLogic(
       }
     } catch (error) {
       reportError('dateNavDelete', error);
-      State.uiManager.showToast('删除对话记录失败，请重试', 'error');
+      State.uiManager.showToast(formatErrorMessage('删除对话记录', error), 'error');
     }
   });
 
@@ -780,7 +782,7 @@ function setupBusinessLogic(
       await sessionController.loadSessionHistory();
     } catch (error) {
       reportError('backToToday', error);
-      State.uiManager.showToast('回到今天失败，请重试', 'error');
+      State.uiManager.showToast(formatErrorMessage('回到今天', error), 'error');
     }
   });
 
@@ -793,7 +795,7 @@ function setupBusinessLogic(
       await sessionController.switchSession(`${date}-${session}`);
     } catch (error) {
       reportError('searchResultClick', error);
-      State.uiManager.showToast('跳转到搜索结果失败，请重试', 'error');
+      State.uiManager.showToast(formatErrorMessage('跳转到搜索结果', error), 'error');
     }
   });
 }

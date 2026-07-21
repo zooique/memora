@@ -33,6 +33,8 @@
 import type { ElectronAPI } from '../../preload.js';
 import '../types.js';
 import { reportError } from '../helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "润色失败，请重试" 等模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
 import { safeGet, safeSet } from '../helpers/safeStorage.js';
 import { QuickInputCompletion } from './quickInputCompletion.js';
@@ -355,7 +357,7 @@ export class QuickInputController {
       }
     } catch (error) {
       reportError('QuickInput 润色', error);
-      this.showPolishError();
+      this.showPolishError(error);
     } finally {
       this.isPolishing = false;
       this.unlockInput();
@@ -376,11 +378,13 @@ export class QuickInputController {
   }
 
   /**
-   * 润色失败：在输入框内短暂显示错误提示
+   * 润色失败：在输入框内短暂显示错误提示（UX-14：用 formatErrorMessage 替代模板化"请重试"）
+   *
+   * @param error 润色异常对象，用于分类映射生成中文文案
    */
-  private showPolishError(): void {
+  private showPolishError(error: unknown): void {
     const original = this.inputField.value;
-    this.inputField.value = '润色失败，请重试';
+    this.inputField.value = formatErrorMessage('润色', error);
     this.inputField.classList.add('copy-toast');
     setTimeout(() => {
       this.inputField.value = original;
@@ -809,7 +813,8 @@ export class QuickInputController {
         this.scheduleSuccessToast(result);
       } else {
         // 失败分支：显示错误 Toast（FUNC-4 修复，原仅 resetInputState 用户无可见反馈）
-        this.showErrorToast('✗ 粘贴失败，请重试');
+        // result.success=false 但无 error 对象，按两段式静态文案（UX-14）
+        this.showErrorToast('✗ 粘贴失败，请稍后重试');
         this.scheduleToast(() => this.resetInputState(text));
       }
     } catch (error) {
@@ -817,7 +822,8 @@ export class QuickInputController {
       if (currentGen !== this.submitGeneration) return;
       reportError('QuickInput 确认', error);
       // 异常分支：显示错误 Toast（FUNC-4 修复，原仅 reportError 用户无可见反馈）
-      this.showErrorToast('✗ 提交失败，请重试');
+      // UX-14：用 formatErrorMessage 分类映射替代模板化"请重试"
+      this.showErrorToast(`✗ ${formatErrorMessage('提交', error)}`);
       this.scheduleToast(() => this.resetInputState(text));
     }
   }

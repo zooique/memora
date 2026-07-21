@@ -79,7 +79,7 @@ export function createPersonaController(uiManager: UIManager) {
         }
       } catch (error) {
         // IPC 异常（如主进程未响应）：走错误处理
-        handleIpcError('onPersonaSwitch', error, '切换角色失败');
+        handleIpcError('onPersonaSwitch', error, '切换角色');
       }
     });
 
@@ -108,7 +108,7 @@ export function createPersonaController(uiManager: UIManager) {
         // IPC 异常，回滚 UI 到旧模式
         uiManager.updatePersonaModeBadge(previousMode);
         uiManager.setPersonaMode(previousMode);
-        handleIpcError('onPersonaModeChange', error, '设置角色模式失败');
+        handleIpcError('onPersonaModeChange', error, '设置角色模式');
       }
     });
   }

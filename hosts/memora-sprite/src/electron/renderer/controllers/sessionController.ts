@@ -24,6 +24,8 @@ import type { UIManager } from '../ui.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { getLocalDate } from '../../../sprite/constants.js';
 import { SpriteError, ErrorCode } from '../../../sprite/errors.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "XXX失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色
@@ -321,9 +323,9 @@ export function createSessionController(uiManager: UIManager) {
       uiManager.hidePanelError('chat');
     } catch (error) {
       reportError('switchSession', error);
-      // 失败时显示 toast 和错误横幅，提供重试
-      uiManager.showToast('切换会话失败，请重试', 'error');
-      uiManager.showPanelError('chat', `切换会话失败：${error instanceof Error ? error.message : '未知错误'}`, () => switchSession(sessionId));
+      // 失败时显示 toast 和错误横幅，提供重试（UX-14：用 formatErrorMessage 替代模板化"请重试"）
+      uiManager.showToast(formatErrorMessage('切换会话', error), 'error');
+      uiManager.showPanelError('chat', formatErrorMessage('切换会话', error), () => switchSession(sessionId));
     }
   }
 
@@ -511,7 +513,7 @@ export function createSessionController(uiManager: UIManager) {
       return true;
     } catch (error) {
       reportError('deleteSession', error);
-      uiManager.showToast('删除对话记录失败，请重试', 'error');
+      uiManager.showToast(formatErrorMessage('删除对话记录', error), 'error');
       return false;
     }
   }
@@ -544,7 +546,7 @@ export function createSessionController(uiManager: UIManager) {
       return true;
     } catch (error) {
       reportError('renameSession', error);
-      uiManager.showToast('重命名会话失败，请重试', 'error');
+      uiManager.showToast(formatErrorMessage('重命名会话', error), 'error');
       return false;
     }
   }
@@ -578,7 +580,7 @@ export function createSessionController(uiManager: UIManager) {
       return true;
     } catch (error) {
       reportError('forkSession', error);
-      uiManager.showToast('分叉会话失败，请重试', 'error');
+      uiManager.showToast(formatErrorMessage('分叉会话', error), 'error');
       return false;
     }
   }

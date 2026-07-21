@@ -366,7 +366,8 @@ describe('QuickInputController', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(inputField.value).toBe('✗ 粘贴失败，请重试');
+      // UX-14：result.success=false 无 error 对象，按 quickInput.ts 静态文案 '✗ 粘贴失败，请稍后重试'
+      expect(inputField.value).toBe('✗ 粘贴失败，请稍后重试');
       expect(inputField.classList.contains('error')).toBe(true);
       expect(inputField.classList.contains('copy-toast')).toBe(true);
 
@@ -391,7 +392,8 @@ describe('QuickInputController', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(inputField.value).toBe('✗ 提交失败，请重试');
+      // UX-14：catch 块有 error 对象，'IPC 异常' 不匹配 ERROR_PATTERNS，走两段式回退
+      expect(inputField.value).toBe('✗ 提交失败，请稍后重试');
       expect(inputField.classList.contains('error')).toBe(true);
 
       await vi.runAllTimersAsync();

@@ -748,7 +748,8 @@ describe('handleChatStreamRoute', () => {
       const errorEvent = events.find((e) => e.event === 'error');
       expect(errorEvent).toBeDefined();
       // 非网络错误返回通用友好消息，不回传原始 error.message
-      expect((errorEvent!.data as { message: string }).message).toBe('对话出错，请重试');
+      // UX-14：'LLM 服务不可用' 不匹配 ERROR_PATTERNS，走两段式回退
+      expect((errorEvent!.data as { message: string }).message).toBe('对话失败，请稍后重试');
       // 非用户中断不应发送 aborted 事件
       const abortedEvent = events.find((e) => e.event === 'aborted');
       expect(abortedEvent).toBeUndefined();

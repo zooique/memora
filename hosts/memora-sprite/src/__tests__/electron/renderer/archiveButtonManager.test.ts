@@ -206,13 +206,14 @@ describe('handleClick · 归档流程', () => {
 
   it('归档失败应恢复按钮 + 显示 error toast', async () => {
     const host = createMockHost();
+    // '失败' 不匹配 ERROR_PATTERNS，走两段式回退
     (host.archiveConversation as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('失败'));
     const { manager } = createManager(host);
     const { assistantEl } = buildMessageGroup();
     manager.maybeAddArchiveButton(assistantEl, assistantEl.querySelector('button')!, assistantEl.querySelector('.message-meta')!);
     const archiveBtn = assistantEl.querySelector('.message-archive-btn') as HTMLElement;
     await manager.handleClick(archiveBtn);
-    expect(host.showToast).toHaveBeenCalledWith('归档失败，请重试', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('归档失败，请稍后重试', 'error');
     expect(archiveBtn.hasAttribute('disabled')).toBe(false);
   });
 });

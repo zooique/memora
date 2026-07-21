@@ -487,7 +487,8 @@ describe('sessionController', () => {
       const result = await controller.renameSession('2026-06-21-main', '新名称');
 
       expect(result).toBe(false);
-      expect(toastSpy).toHaveBeenCalledWith('重命名会话失败，请重试', 'error');
+      // UX-14：'会话不存在' 不匹配 ERROR_PATTERNS，走两段式回退
+      expect(toastSpy).toHaveBeenCalledWith('重命名会话失败，请稍后重试', 'error');
     });
 
     it('renameSession 异常应显示 error toast 并返回 false', async () => {

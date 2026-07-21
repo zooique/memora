@@ -26,6 +26,8 @@ import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../.
 import type { RapportLevel, PresenceState, RhythmType, CoherenceLevel, DepthLevel } from '../../sprite/controllers/index.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../shared/truncate.js';
+// getArchiveFailedMessage 归档失败文案真理源（UX-13：替代直传 msg.payload.message 到 Toast）
+import { getArchiveFailedMessage } from '../../shared/errorMessages.js';
 
 /**
  * 主动提示 payload 结构
@@ -549,15 +551,11 @@ function handleArchiveFailed(
   if (now - lastArchiveFailedTime[msg.payload.stage] < ARCHIVE_FAILED_COOLDOWN_MS) return;
   lastArchiveFailedTime[msg.payload.stage] = now;
 
-  // stage → 中文标签映射（profile/insight/content 三阶段统一）
-  const stageLabelMap: Record<ArchiveFailedStage, string> = {
-    profile: '用户画像',
-    insight: '洞察提取',
-    content: '会话内容',
-  };
-  const stageLabel = stageLabelMap[msg.payload.stage];
+  // stage → 用户可理解文案由 shared/errorMessages.getArchiveFailedMessage 提供
+  // UX-13：不再直传 msg.payload.message 到 Toast（避免内核错误细节泄露）
+  const friendlyMessage = getArchiveFailedMessage(msg.payload.stage);
   uiManager.showToast(
-    `${stageLabel}归档失败：${msg.payload.message}`,
+    friendlyMessage,
     'warning',
     TOAST_LONG_MS,
   );

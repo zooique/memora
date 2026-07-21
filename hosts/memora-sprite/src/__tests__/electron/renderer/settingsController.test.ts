@@ -163,7 +163,8 @@ describe('settingsController', () => {
 
     await callbacks.onConfigSave!(makeFormConfig());
 
-    expect(mockHandleIpcError).toHaveBeenCalledWith('onConfigSave', expect.any(Error), '保存精灵配置失败');
+    // UX-14：handleIpcError 第三参数从 toastPrefix（含"失败"后缀）改为 operation（不含后缀）
+    expect(mockHandleIpcError).toHaveBeenCalledWith('onConfigSave', expect.any(Error), '保存精灵配置');
   });
 
   it('自动保存成功应显示成功提示', async () => {

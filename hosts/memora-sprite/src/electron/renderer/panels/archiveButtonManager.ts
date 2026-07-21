@@ -22,6 +22,8 @@ import type { ToastType } from '../types.js';
 import { setIcon } from '../helpers/icon.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
+// formatErrorMessage 错误文案真理源（UX-14：替代 "归档失败，请重试" 模板化文案）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -178,7 +180,7 @@ export class ArchiveButtonManager {
       }
     } catch (err) {
       reportError('ArchiveButton', err);
-      this.host.showToast('归档失败，请重试', 'error');
+      this.host.showToast(formatErrorMessage('归档', err), 'error');
       archiveBtn.removeAttribute('disabled');
       archiveBtn.classList.remove('archiving');
     }

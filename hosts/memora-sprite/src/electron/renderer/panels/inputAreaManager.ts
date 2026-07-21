@@ -30,6 +30,8 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { QuickInputCompletion } from '../quick-input/quickInputCompletion.js';
 import type { CompletionItem } from '../quick-input/quickInputCompletion.js';
 import { fetchMemoryContent } from '../helpers/completionHelpers.js';
+// Token 数量格式化纯函数（UX-12：从本文件原闭包提取至 shared/numberUtils 真理源，消除与 dashboardPanelManager 的 K/k 大小写不一致）
+import { formatTokenCount } from '../../../shared/numberUtils.js';
 
 /**
  * 输入区域宿主接口
@@ -551,15 +553,10 @@ export class InputAreaManager {
       );
       const contextWindow = activeProvider?.contextWindow ?? InputAreaManager.DEFAULT_CONTEXT_TOKENS;
 
-      // 格式化数字（< 1K 显示原值，>= 1K 显示 X.XK）
-      const formatTokens = (n: number): string => {
-        if (n < 1000) return String(n);
-        return `${(n / 1000).toFixed(1)}K`;
-      };
-
+      // 格式化由 shared/numberUtils.formatTokenCount 提供（UX-12：统一小写 k 后缀）
       // 显示为「已用/总量」格式，比单独数字更有语义
-      const windowK = formatTokens(contextWindow);
-      this.tokenUsageText.textContent = `${formatTokens(total)}/${windowK}`;
+      const windowK = formatTokenCount(contextWindow);
+      this.tokenUsageText.textContent = `${formatTokenCount(total)}/${windowK}`;
 
       // 进度条：基于上下文窗口大小计算填充比例（截断到 100%）
       const ratio = Math.min(total / contextWindow, 1);
@@ -588,7 +585,7 @@ export class InputAreaManager {
       if (this.tokenUsageEl) {
         this.tokenUsageEl.setAttribute(
           'data-tooltip',
-          `输入 ${formatTokens(totalInputTokens)} / 输出 ${formatTokens(totalOutputTokens)} / 上下文窗口 ${windowK}`
+          `输入 ${formatTokenCount(totalInputTokens)} / 输出 ${formatTokenCount(totalOutputTokens)} / 上下文窗口 ${windowK}`
         );
       }
     } catch (error) {

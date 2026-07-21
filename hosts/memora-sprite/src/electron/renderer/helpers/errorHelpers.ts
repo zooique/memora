@@ -17,6 +17,8 @@
 // 注意：必须 import 后再 export，不能直接 `export { toError } from '...'`——
 // 透传导出不会在当前模块作用域创建 toError 绑定，reportError/createIpcErrorHandler 内部使用会 ReferenceError
 import { toError } from '../../../shared/toError.js';
+// formatErrorMessage 错误文案真理源（UX-13：替代直传 error.message 到 Toast，分类映射 + 两段式模板）
+import { formatErrorMessage } from '../../../shared/errorMessages.js';
 export { toError };
 
 /**
@@ -68,23 +70,28 @@ export function reportError(context: string, error: unknown, level: LogLevel = '
  * 内部使用 reportError 代替 console.error，
  * 确保 IPC 错误日志格式与其他日志一致。
  *
+ * UX-13 重构：原 `${toastPrefix}：${error.message}` 直传原始消息到 Toast，
+ * 现改用 formatErrorMessage 分类映射（IPC/存储/网络/权限等），原始 message
+ * 仅用于模式匹配，不直接拼接进 Toast（避免技术细节泄露 + 文案统一）。
+ *
  * @param uiManager UI 管理器实例（用于显示 toast）
  * @returns 绑定了 uiManager 的错误处理函数
  */
 export function createIpcErrorHandler(
   uiManager: IpcErrorUi,
-): (context: string, error: unknown, toastPrefix?: string) => void {
+): (context: string, error: unknown, operation?: string) => void {
   /**
    * 统一处理 IPC 错误：记录日志 + 可选 toast 反馈
    *
    * @param context 错误上下文标识（用于日志前缀，如 'onMemoryDelete'）
    * @param error 捕获的错误对象
-   * @param toastPrefix 可选的 toast 提示前缀（如 '删除记忆失败'）；不提供则仅记录日志
+   * @param operation 可选的操作名（不含"失败"后缀，如 '删除记忆'）；不提供则仅记录日志
    */
-  return (context: string, error: unknown, toastPrefix?: string): void => {
+  return (context: string, error: unknown, operation?: string): void => {
     reportError(context, error);
-    if (toastPrefix) {
-      uiManager.showToast(`${toastPrefix}：${toError(error).message}`, 'error');
+    if (operation) {
+      // 通过 formatErrorMessage 分类映射错误，输出两段式/三段式中文文案
+      uiManager.showToast(formatErrorMessage(operation, error), 'error');
     }
   };
 }

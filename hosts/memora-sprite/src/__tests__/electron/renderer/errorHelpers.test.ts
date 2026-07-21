@@ -209,7 +209,7 @@ describe('createIpcErrorHandler', () => {
     expect(typeof handler).toBe('function');
   });
 
-  it('不传 toastPrefix 时仅记录日志，不显示 toast', () => {
+  it('不传 operation 时仅记录日志，不显示 toast', () => {
     const mockUI = createMockUIManager();
     const handler = createIpcErrorHandler(mockUI as UIManager);
     const error = new Error('IPC 失败');
@@ -220,15 +220,16 @@ describe('createIpcErrorHandler', () => {
     expect(mockUI.showToast).not.toHaveBeenCalled();
   });
 
-  it('传 toastPrefix 时应记录日志 + 显示错误 toast', () => {
+  it('传 operation 时应记录日志 + 显示错误 toast', () => {
     const mockUI = createMockUIManager();
     const handler = createIpcErrorHandler(mockUI as UIManager);
     const error = new Error('删除失败');
 
-    handler('onMemoryDelete', error, '删除记忆失败');
+    handler('onMemoryDelete', error, '删除记忆');
 
     expect(console.error).toHaveBeenCalledWith('[onMemoryDelete]', error);
-    expect(mockUI.showToast).toHaveBeenCalledWith('删除记忆失败：删除失败', 'error');
+    // UX-14：'删除失败' 不匹配 ERROR_PATTERNS，走两段式回退
+    expect(mockUI.showToast).toHaveBeenCalledWith('删除记忆失败，请稍后重试', 'error');
   });
 
   it('toast 消息应提取未知错误的 message', () => {
@@ -236,9 +237,10 @@ describe('createIpcErrorHandler', () => {
     const handler = createIpcErrorHandler(mockUI as UIManager);
 
     // 传入字符串而非 Error，验证 toError 转换被调用
-    handler('onFetch', '网络超时', '获取数据失败');
+    handler('onFetch', '网络超时', '获取数据');
 
-    expect(mockUI.showToast).toHaveBeenCalledWith('获取数据失败：网络超时', 'error');
+    // UX-14：'网络超时' 不匹配 ERROR_PATTERNS（仅 timeout/timed out/请求超时 命中），走两段式回退
+    expect(mockUI.showToast).toHaveBeenCalledWith('获取数据失败，请稍后重试', 'error');
   });
 
   it('闭包应绑定传入的 uiManager，多个 handler 互不影响', () => {
@@ -247,12 +249,13 @@ describe('createIpcErrorHandler', () => {
     const handler1 = createIpcErrorHandler(mockUI1 as UIManager);
     const handler2 = createIpcErrorHandler(mockUI2 as UIManager);
 
-    handler1('ctx1', new Error('err1'), '前缀1');
-    handler2('ctx2', new Error('err2'), '前缀2');
+    handler1('ctx1', new Error('err1'), '操作1');
+    handler2('ctx2', new Error('err2'), '操作2');
 
     expect(mockUI1.showToast).toHaveBeenCalledTimes(1);
-    expect(mockUI1.showToast).toHaveBeenCalledWith('前缀1：err1', 'error');
+    // UX-14：'err1' 不匹配 ERROR_PATTERNS，走两段式回退
+    expect(mockUI1.showToast).toHaveBeenCalledWith('操作1失败，请稍后重试', 'error');
     expect(mockUI2.showToast).toHaveBeenCalledTimes(1);
-    expect(mockUI2.showToast).toHaveBeenCalledWith('前缀2：err2', 'error');
+    expect(mockUI2.showToast).toHaveBeenCalledWith('操作2失败，请稍后重试', 'error');
   });
 });

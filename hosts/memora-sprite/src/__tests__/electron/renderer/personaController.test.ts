@@ -243,8 +243,8 @@ describe('createPersonaController', () => {
 
       await captured.personaSwitchCb!('教师');
 
-      // handleIpcError 会拼接错误信息：`${toastPrefix}：${errorMessage}`
-      expect(spies.showToast).toHaveBeenCalledWith('切换角色失败：IPC 失败', 'error');
+      // handleIpcError 走 formatErrorMessage：'IPC 失败' 不匹配 ERROR_PATTERNS，回退两段式
+      expect(spies.showToast).toHaveBeenCalledWith('切换角色失败，请稍后重试', 'error');
     });
 
     // ─── onPersonaModeChange 回调 ───────────────────────
@@ -323,7 +323,8 @@ describe('createPersonaController', () => {
 
       await captured.personaModeChangeCb!('auto');
 
-      expect(spies.showToast).toHaveBeenCalledWith('设置角色模式失败：IPC 失败', 'error');
+      // handleIpcError 走 formatErrorMessage：'IPC 失败' 不匹配 ERROR_PATTERNS，回退两段式
+      expect(spies.showToast).toHaveBeenCalledWith('设置角色模式失败，请稍后重试', 'error');
       // IPC 异常时应回滚 UI 到旧模式（auto → 旧模式 manual）
       expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('manual');
       expect(spies.setPersonaMode).toHaveBeenCalledWith('manual');
