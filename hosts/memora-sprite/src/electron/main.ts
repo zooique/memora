@@ -769,10 +769,16 @@ function setupAgentIndependentResources(): void {
   appState.clipboardHandler = new ClipboardHandler(clipboard, {
     emit: (event: ClipboardEventType, payload?: unknown) => {
       const fullWindow = appState.windowManager.getFullWindow();
-      // 使用 isFullWindowAccessible 替代原始 isDestroyed 守卫
-      // 同时检查窗口可见性，避免向隐藏窗口发送 IPC
-      if (!isFullWindowAccessible(fullWindow)) return;
       // 将 ClipboardHandler 事件映射到 IPC 推送通道
+      //
+      // 设计决策（资深程序员思维 · 识别不可逆损失点）：
+      // - 此处不检查 isVisible / !isMinimized，只用 safeSendToWindow 守卫 null + isDestroyed。
+      // - 剪贴板变化是单向数据流：pendingItems 是渲染层会话级内存态，主进程不持久化。
+      //   若窗口隐藏时阻断 IPC，数据永久丢失——切换回完整窗口也无法补偿。
+      // - Electron 的 webContents.send 向隐藏窗口发送不抛异常，消息堆积在渲染进程事件队列，
+      //   窗口恢复可见后依次处理。剪贴板变化频率低（2 秒轮询），堆积风险可忽略。
+      // - 用户使用场景：浮动窗口模式下复制内容 → 期望切换回完整窗口后能看到。
+      //   原可见性守卫导致此场景失效。
       switch (event) {
         case 'changed': {
           // 读取剪贴板构造 {preview, length} payload，渲染层据此加入待处理列表 + 角标 +1
@@ -784,29 +790,20 @@ function setupAgentIndependentResources(): void {
             preview: text.slice(0, 100),
             length: text.length,
           };
-          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED, changedPayload);
+          safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED, changedPayload);
           break;
         }
         case 'sensitive-ignored':
           // 敏感内容已静默忽略，通知 UI 记录日志（携带 type）
-          fullWindow.webContents.send(
-            MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED,
-            payload,
-          );
+          safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED, payload);
           break;
         case 'analysis-ready':
           // 内容已通过检测，通知 UI 展示确认对话框（携带 content）
-          fullWindow.webContents.send(
-            MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY,
-            payload,
-          );
+          safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY, payload);
           break;
         case 'analysis-rejected':
           // 内容被输入护栏拦截，通知 UI 提示原因（携带 reason）
-          fullWindow.webContents.send(
-            MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED,
-            payload,
-          );
+          safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED, payload);
           break;
       }
     },
