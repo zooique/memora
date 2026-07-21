@@ -20,6 +20,8 @@ import { createPersonaController } from './controllers/personaController.js';
 import { createSettingsController } from './controllers/settingsController.js';
 import { initIpcListeners, consumeConflictTargetId } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
+// setButtonLoading 按钮异步操作 loading 状态（B7：forkBtn 异步反馈）
+import { setButtonLoading } from './helpers/domHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "XXX失败，请重试" 模板化文案）
 import { formatErrorMessage } from '../../shared/errorMessages.js';
 import { EventTracker } from './helpers/eventTracker.js';
@@ -730,7 +732,11 @@ function setupBusinessLogic(
   if (forkBtn) {
     // 通过 State.events 统一注册，beforeunload 时自动清理（EventTracker 范式）
     State.events.addEventListener(forkBtn, 'click', () => {
-      void sessionController.forkSession();
+      // B7：异步操作期间禁用按钮 + 显示"分叉中…"，防止重复点击（forkSession 内部已捕获错误并 toast）
+      setButtonLoading('btn-fork-session', true, '分叉中…');
+      void sessionController.forkSession().finally(() => {
+        setButtonLoading('btn-fork-session', false);
+      });
     });
   }
 

@@ -392,9 +392,11 @@ styles/ 按**功能域**分组，与渲染进程代码组织（panels/components
 
 按功能域切分，切点必须落在规则边界（大括号配平处），禁止在 CSS 规则中间切分。
 
-#### 2.4.6 间距/圆角令牌化
+#### 2.4.6 间距/圆角/动画时长令牌化
 
-组件 CSS 间距/圆角走 `--space-*` / `--radius-*` 令牌，禁止裸写 px（布局 width/height 等除外）。
+- 间距/圆角走 `--space-*` / `--radius-*` 令牌，禁止裸写 px（布局 width/height 等除外）。
+- 动画播放时长走 `--duration-*` 令牌（`--duration-spin` / `--duration-breathing` / `--duration-float` / `--duration-pulse-slow`），与 `--transition-*` 过渡时长语义区分：前者是 `animation` 播放时长，后者是 `transition` 过渡时长。
+- 激活态语义色走 `--active-bg` / `--active-bg-strong` / `--active-fg` / `--active-border` 四件套，统一 `.active` / `.selected` / `.current` 三套语义。
 
 #### 2.4.7 浮窗 CSS 归属
 

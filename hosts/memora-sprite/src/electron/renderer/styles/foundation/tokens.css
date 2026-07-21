@@ -43,6 +43,7 @@
   --yellow:      #ff9f0a;
   --pink:        #ad1457;  /* 浅色主题下使用深玫红色，保证 source-guardrail 标签文字对比度（WCAG AA） */
   --red:         #ff3b30;
+  --red-hover:   #d9302a;  /* 红色 hover 态：比 --red 深一档，加重警示感（与 --accent-hover 模式对齐） */
   --warning:     #d97706;  /* 警告色（琥珀色，与 yellow 区分语义） */
 
   /* 情感进度条颜色 */
@@ -52,6 +53,13 @@
 
   /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
   --accent-fg:   #f0fafa;  /* 浅色主题：青蓝背景 + 极淡青白字，柔化视觉对比度 */
+
+  /* ─── 激活态语义令牌（统一 .active / .selected / .current 三套语义） ─── */
+  /* 设计原则：激活态是"用户当前关注/选中"的视觉表达，统一走语义令牌而非散落 --accent-soft/--accent-20 */
+  --active-bg:        var(--accent-soft);   /* 激活态浅底（nav-btn/dropdown-item/date-nav-item 等 .active 场景） */
+  --active-bg-strong: var(--accent-20);      /* 激活态强底（completion-item.selected 等需要强指示的选中态） */
+  --active-fg:        var(--accent);          /* 激活态文字/图标色（与 .active 背景配套使用） */
+  --active-border:    var(--accent);          /* 激活态边框/左边框指示条（settings-tab/command-palette-item 等） */
 
   /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
   --text-on-red: #ffffff;
@@ -92,6 +100,13 @@
   --transition-base: 0.2s;   /* 标准过渡（动画/滑入/淡入） */
   --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
   --transition-xl:   0.3s;   /* 超长过渡（进度条填充/宽度变化） */
+
+  /* ─── 动画播放时长令牌（与 --transition-* 区分：transition 是过渡时长，duration 是 animation 播放时长） ─── */
+  /* 自然生长原则：3+ 处同值同语义的硬编码提取为语义令牌 */
+  --duration-spin:         0.8s;  /* 旋转加载动画（spin 关键帧，spinner/loading 图标） */
+  --duration-breathing:    1.4s;  /* 呼吸式脉冲动画（breathing-pulse 关键帧，思考态/未知态指示） */
+  --duration-float:       3s;     /* 浮动动画（emptyIconFloat 关键帧，空状态图标缓慢浮动） */
+  --duration-pulse-slow: 2s;     /* 长脉冲动画（presencePulse/statusPulse 关键帧，在场状态/状态指示） */
 
   /* z-index 层级体系（从低到高，确保浮层叠放顺序统一） */
   --z-base:             1;     /* 基础内容层（时间线节点等） */
@@ -195,9 +210,10 @@
 
   /* ─── 设计系统：语义内边距（扩展，高频模式提取） ─── */
   /* 自然生长原则：3+ 次重复的 padding 模式提取为语义令牌，避免硬编码散落 */
-  --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
+  --pad-card:           var(--space-3) var(--space-4);  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
+  --pad-card-compact:   var(--space-2) var(--space-3);  /* 紧凑卡片内边距（审计条目、时间线节点等只读紧凑卡片，与 --input-padding-md 数值相同但语义独立） */
   --pad-section:   10px 16px;  /* 面板区块内边距（面板头部、引导项等） */
-  --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距（prompt-input、filter 下拉等） */
+  --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距（prompt-input、filter 下拉等，禁止卡片场景借用） */
 
   /* 语义化背景变量（hover/次级背景） */
   --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
@@ -312,6 +328,7 @@
   --yellow:      #f9e2af;
   --pink:        #f5c2e7;
   --red:         #f38ba8;
+  --red-hover:   #eba4b3;  /* 红色 hover 态：深色主题比 --red 略亮（深色 hover 加亮惯例，与 --accent-hover 模式对齐） */
   --warning:     #f9e2af;  /* 警告色（深色主题使用 Catppuccin yellow） */
 
   /* 情感进度条颜色（深色主题下提亮以保证对比度） */
@@ -321,6 +338,12 @@
 
   /* accent 背景上的前景色（深色主题：浅蓝背景 + 深字，对比度达标） */
   --accent-fg:   #1e1e2e;
+
+  /* ─── 激活态语义令牌（深色主题，复用浅色定义的 accent 令牌自动适配） ─── */
+  --active-bg:        var(--accent-soft);
+  --active-bg-strong: var(--accent-20);
+  --active-fg:        var(--accent);
+  --active-border:    var(--accent);
 
   /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
   --text-on-red: #ffffff;
@@ -360,6 +383,12 @@
   --transition-base: 0.2s;
   --transition-slow: 0.3s;
   --transition-xl:   0.5s;
+
+  /* 动画播放时长令牌（深色主题与浅色一致） */
+  --duration-spin:         0.8s;
+  --duration-breathing:    1.4s;
+  --duration-float:       3s;
+  --duration-pulse-slow: 2s;
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.6);
@@ -406,6 +435,7 @@
 
   /* ─── 设计系统：语义内边距（与浅色主题一致，复用 --space-* 令牌） ─── */
   --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距 */
+  --pad-card-compact:   var(--space-2) var(--space-3);  /* 紧凑卡片内边距（审计条目、时间线节点等） */
   --pad-section:   10px 16px;  /* 面板区块内边距（10px 无令牌，保留） */
   --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距 */
 

@@ -57,7 +57,7 @@
   background: var(--milestone-grad);
   border-bottom-color: var(--milestone-border);
   color: var(--milestone-text);
-  animation: bannerSlideDown var(--transition-base) ease-out, milestoneShimmer 2s ease-in-out;
+  animation: bannerSlideDown var(--transition-base) ease-out, milestoneShimmer var(--duration-pulse-slow) ease-in-out;
 }
 
 #proactive-banner.is-milestone .banner-icon {

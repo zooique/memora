@@ -447,10 +447,10 @@
   color: var(--text);
 }
 
-/* active 态：accent 色背景 + 强调色文字 */
+/* active 态：激活态语义令牌统一指示（--active-bg 浅底 + --active-fg 强调文字） */
 .nav-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--active-bg);
+  color: var(--active-fg);
   font-weight: var(--weight-semibold);
 }
 
@@ -809,13 +809,13 @@
 }
 
 .dropdown-item.active {
-  color: var(--accent);
+  color: var(--active-fg);
   font-weight: var(--weight-semibold);
-  background: var(--accent-soft);
+  background: var(--active-bg);
 }
 
 .dropdown-item.active .dropdown-item-desc {
-  color: var(--accent);
+  color: var(--active-fg);
   opacity: 0.8;
 }
 

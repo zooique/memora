@@ -44,7 +44,7 @@
 .timeline-empty-state .empty-icon {
   font-size: 2rem;  /* 32px / 16 = 2rem（空状态大图标，超出 --font-2xl 范围，直接用 rem） */
   color: var(--text-3);
-  animation: emptyIconFloat 3s ease-in-out infinite;
+  animation: emptyIconFloat var(--duration-float) ease-in-out infinite;
   margin-bottom: 4px;
 }
 
@@ -84,7 +84,7 @@
   height: 48px;
   color: var(--text-3);
   opacity: 0.6;
-  animation: emptyIconFloat 3s ease-in-out infinite;
+  animation: emptyIconFloat var(--duration-float) ease-in-out infinite;
 }
 
 .graph-empty-icon svg {
@@ -249,9 +249,9 @@
 
 /* 图标按钮 active 状态（筛选激活时高亮） */
 #panel-memories .panel-header .icon-btn.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--active-bg);
+  border-color: var(--active-border);
+  color: var(--active-fg);
 }
 
 /* ─── 视图切换分段控件（列表/时间线/图谱） ───────────────── */
@@ -300,10 +300,10 @@
 }
 
 /* 视图切换按钮激活态：与 .nav-btn.active / .icon-btn.active / .settings-tab.active 等全局激活态语义对齐
-   （accent-soft 浅底 + accent 文字 + semibold 字重），移除原白底+阴影的反相样式 */
+   （--active-bg 浅底 + --active-fg 文字 + semibold 字重），移除原白底+阴影的反相样式 */
 .view-switch-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--active-bg);
+  color: var(--active-fg);
   font-weight: var(--weight-semibold);
 }
 

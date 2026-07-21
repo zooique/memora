@@ -146,7 +146,7 @@ body {
 /* loading 状态：图标旋转动画（sparkle 图标转圈表示 LLM 调用中） */
 /* @keyframes spin 已在 foundation/base.css 统一定义（旋转动画真理源，三窗口共享） */
 .polish-toggle.loading .icon {
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
 }
 
 /* 无变化状态：图标短暂闪烁绿色（--green 在 tokens.css 双主题定义，单一真理源） */
@@ -248,12 +248,12 @@ body {
 }
 
 .completion-item.selected {
-  background: var(--accent-20);
-  border-left-color: var(--accent);
+  background: var(--active-bg-strong);
+  border-left-color: var(--active-border);
 }
 
 .completion-item.selected:hover {
-  background: var(--accent-20);
+  background: var(--active-bg-strong);
 }
 
 /* 来源标签（记忆/对话） */

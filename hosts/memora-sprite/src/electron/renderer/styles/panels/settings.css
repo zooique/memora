@@ -123,10 +123,10 @@
 }
 
 .settings-tab.active {
-  color: var(--accent);
-  border-left-color: var(--accent);  /* 左侧 accent 色指示条 */
+  color: var(--active-fg);
+  border-left-color: var(--active-border);  /* 左侧激活态指示条 */
   font-weight: var(--weight-semibold);
-  background: var(--accent-soft);
+  background: var(--active-bg);
 }
 
 /* 设置 tab 键盘聚焦可见样式 */
@@ -452,7 +452,7 @@
 }
 
 .save-status-indicator.saving .save-status-icon svg {
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
 }
 
 /* @keyframes saveStatusSpin 已合并到 base.css @keyframes spin（统一旋转动画真理源） */
@@ -839,7 +839,7 @@
   border: 1px solid var(--surface2);
   border-left: 3px solid var(--surface2);  /* 左侧色条，强化"日志"语义 */
   border-radius: var(--radius-sm);
-  padding: var(--input-padding-md);
+  padding: var(--pad-card-compact);  /* 只读紧凑卡片，复用 --pad-card-compact 语义令牌（原误用 --input-padding-md） */
   transition: border-left-color var(--transition-fast);
 }
 

@@ -129,7 +129,7 @@ html, body {
   border: 2px solid var(--surface2);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 

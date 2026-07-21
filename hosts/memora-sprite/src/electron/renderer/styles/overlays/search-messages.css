@@ -108,7 +108,7 @@
 .search-messages-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-4);
   cursor: pointer;
   transition: background var(--transition-fast) ease;

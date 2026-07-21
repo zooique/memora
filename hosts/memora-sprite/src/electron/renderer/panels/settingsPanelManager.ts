@@ -410,6 +410,8 @@ export class SettingsPanelManager {
             danger: true,
           });
           if (!confirmed) return;
+          // B7：异步操作期间禁用按钮 + 显示"释放中…"，防止重复点击触发多次 IPC
+          setButtonLoadingEl(btnForceRelease, true, '释放中…');
           try {
             const { released } = await window.electronAPI.forceReleaseChatLock();
             if (released) {
@@ -420,6 +422,8 @@ export class SettingsPanelManager {
           } catch (error) {
             reportError('forceReleaseChatLock', error);
             this.host.showToast('强制释放失败，请稍后重试或重启应用', 'error');
+          } finally {
+            setButtonLoadingEl(btnForceRelease, false);
           }
         })();
       });

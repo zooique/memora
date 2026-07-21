@@ -1,6 +1,6 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-19（CSS-R7 样式层规则对齐 + 剪枝 + 提交前审查）
+> 最后更新：2026-07-21（UI-SCAN-10-19 令牌化第二轮：--active-* / --duration-* / --pad-card-compact / --red-hover）
 
 ## 1. 目录结构（按功能域分组，8 个子目录）
 
@@ -9,7 +9,7 @@ styles/
 ├── README.md           # 本文件——CSS 架构文档
 │
 ├── foundation/         # 基础层（设计令牌 + 全局重置 + 工具类，三窗口共享）
-│   ├── tokens.css      # 设计令牌「单一真理源」（157 变量：颜色/表面/文字/语义色/圆角/阴影/z-index/字号/字重/间距/过渡）
+│   ├── tokens.css      # 设计令牌「单一真理源」（167 变量：颜色/表面/文字/语义色/激活态语义色/圆角/阴影/z-index/字号/字重/间距/动画播放时长/过渡）
 │   ├── base.css        # 全局重置 + 滚动条 + 动画 + focus-visible + 图标系统 + 通用组件基类（icon-btn/empty-state/error-state）
 │   └── utilities.css   # 原子布局工具类（flex-center/flex-col/flex-row-center/surface-card/text-muted + 过渡工具类）
 │
@@ -93,9 +93,11 @@ windows/float.css          ← 浮动窗口组件样式
 
 ## 3. 令牌所有权（不可破的约定）
 
-- **`foundation/tokens.css` 是唯一令牌定义处**：颜色 / 表面 / 文字 / 语义色 / 圆角 / 阴影 / z-index / 字号 / 字重 / 间距 / 过渡。任何窗口、任何组件 CSS 只消费 `var()`，不得重新定义或内联令牌。
+- **`foundation/tokens.css` 是唯一令牌定义处**：颜色 / 表面 / 文字 / 语义色 / 激活态语义色 / 圆角 / 阴影 / z-index / 字号 / 字重 / 间距 / 动画播放时长 / 过渡。任何窗口、任何组件 CSS 只消费 `var()`，不得重新定义或内联令牌。
 - 修改令牌只能改 `tokens.css`；新增令牌同理。严禁在组件 CSS 或 HTML 内联 `<style>` 中复制令牌块（这正是 P0 修复的漂移问题）。
 - 组件 CSS 间距/圆角一律走 `--space-*` / `--radius-*` 令牌（P1 已收口，含 `--space-2-5: 10px`）；盒阴影、字号、width 等含 px 处保持字面量。
+- 激活态语义色统一走 `--active-bg` / `--active-bg-strong` / `--active-fg` / `--active-border` 四件套（2026-07-21 引入，统一 `.active` / `.selected` / `.current` 三套语义，禁止直接引用 `--accent-soft` / `--accent` 等底层颜色令牌）。
+- 动画播放时长走 `--duration-*` 令牌（`--duration-spin` / `--duration-breathing` / `--duration-float` / `--duration-pulse-slow`），与 `--transition-*` 过渡时长语义区分。
 
 ## 4. chat.css / memory.css 聚合器模式（P2 拆分）
 
@@ -263,3 +265,4 @@ foundation/utilities.css（原子布局工具类）       ← 已有，19 个 cl
 | CSS-R6 功能域分组 + 工具类扩充 | 2026-07-15 | Phase 1：styles/ 按 8 个功能域子目录分组，浮窗 CSS 统一迁入 windows/，聚合器 @import 改同目录相对路径；Phase 2：utilities.css 扩充 10 个工具类（flex-between / flex-shrink-0 / inline-flex-center / text-truncate / line-clamp-2/3/4 / section-title-sm / collapsible-hidden / input-focus-accent），原 CSS 重复块留待后续 HTML/TS 渐进引用 |
 | CSS-R6 渐进引用 | 2026-07-15 | 4 commit 完成 4 个工具类渐进引用（.icon-btn / .text-truncate / .flex-between / .flex-shrink-0），净删除 108 行 CSS 重复代码；剩余 23 处 .flex-shrink-0（含 12 不可替换 + 11 可替换）归档待完成任务，按自然生长触发 |
 | CSS-R7 规则对齐 + 剪枝 + 审查 | 2026-07-19 | (1) directory-structure.md §1/§2.4.1 + README.md §1/§2/§4 补齐 memory/completion-stats.css（第 3 个 analysis panel）+ panels/clipboard.css（剪贴板保护面板）规则漏登记；(2) index.html 删除 chat-toolbar/datenav/perception 3 处重复 link（聚合器 chat.css 已 @import，违反 §2.4.4）；(3) float.html 补 base.css + utilities.css（违反 §2.4.9 浮窗加载顺序）；(4) clipboard.css 删除死代码 .clipboard-list-hidden（clipboardPanelManager.ts 零引用）；(5) completion-stats.css 11 处裸 px 令牌化（保留 1px/2px 次像素对齐 + max-height） |
+| CSS-R8 令牌化第二轮 | 2026-07-21 | (1) 新增 --active-bg/-active-bg-strong/-active-fg/-active-border 4 件套，统一 .active/.selected/.current 三套语义，14 个 .active 选择器 + 5 个 .selected 选择器收口；(2) 新增 --duration-spin/-breathing/-float/-pulse-slow 4 个动画播放时长令牌，14 处硬编码收口（statusPulse 三档保留分级完整性）；(3) 新增 --pad-card-compact 紧凑卡片专用令牌，修复 .audit-item 误用 --input-padding-md；(4) 新增 --red-hover 修复 .btn-danger:hover 用 opacity 而非颜色变化；(5) modal.css 15 处裸 px → --space-* 令牌化；(6) search-messages.css gap 4px → --space-1；(7) B7 异步按钮 loading 补齐 P0 共 8 处（forkBtn/forceRelease/2 Provider 按钮/4 回收站按钮），recycleBin callback 签名 void → Promise<void>（事件委托层包装 loading）；(8) directory-structure.md §2.4.6 扩展为"间距/圆角/动画时长令牌化"，README.md §3 令牌所有权补登激活态语义色 + 动画播放时长约束 |

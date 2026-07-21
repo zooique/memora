@@ -85,8 +85,8 @@ function setupDOM(): void {
 
     <!-- 回收站列表（事件委托：恢复 / 彻底删除按钮） -->
     <div id="recycle-bin-list">
-      <div data-action="restore-memory" data-memory-id="mem-1">恢复</div>
-      <div data-action="purge-memory" data-memory-id="mem-2">彻底删除</div>
+      <button type="button" data-action="restore-memory" data-memory-id="mem-1">恢复</button>
+      <button type="button" data-action="purge-memory" data-memory-id="mem-2">彻底删除</button>
     </div>
 
     <!-- 回收站批量操作按钮 -->
@@ -561,24 +561,30 @@ describe('memoryPanelEvents M2 视图切换 + 清理对话框 + 回收站', () =
   });
 
   describe('initRecycleBinActions', () => {
-    it('点击恢复按钮应调用 recycleBinActionCallback("restore", id)', () => {
+    it('点击恢复按钮应调用 recycleBinActionCallback("restore", id)', async () => {
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
       const restoreBtn = document.querySelector('[data-action="restore-memory"]') as HTMLElement;
       restoreBtn.click();
 
-      expect(callbacks.recycleBinAction).toHaveBeenCalledWith('restore', 'mem-1');
+      // B7：click handler 已改为 async（事件委托 + loading 包装），用 vi.waitFor 等待异步完成
+      await vi.waitFor(() => {
+        expect(callbacks.recycleBinAction).toHaveBeenCalledWith('restore', 'mem-1');
+      });
     });
 
-    it('点击彻底删除按钮应调用 recycleBinActionCallback("purge", id)', () => {
+    it('点击彻底删除按钮应调用 recycleBinActionCallback("purge", id)', async () => {
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
       const purgeBtn = document.querySelector('[data-action="purge-memory"]') as HTMLElement;
       purgeBtn.click();
 
-      expect(callbacks.recycleBinAction).toHaveBeenCalledWith('purge', 'mem-2');
+      // B7：click handler 已改为 async，用 vi.waitFor 等待异步完成
+      await vi.waitFor(() => {
+        expect(callbacks.recycleBinAction).toHaveBeenCalledWith('purge', 'mem-2');
+      });
     });
 
     it('点击回收站列表空白区域不应触发回调', () => {
@@ -1296,8 +1302,9 @@ describe('memoryPanelEvents M8 回收站列表降级 + 缺失 id', () => {
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      // 动态插入一个无 data-memory-id 的恢复按钮
-      const restoreBtn = document.createElement('div');
+      // 动态插入一个无 data-memory-id 的恢复按钮（与生产 createRecycleBinItem 一致使用 button）
+      const restoreBtn = document.createElement('button');
+      restoreBtn.type = 'button';
       restoreBtn.setAttribute('data-action', 'restore-memory');
       document.getElementById('recycle-bin-list')!.appendChild(restoreBtn);
       restoreBtn.click();
@@ -1310,7 +1317,8 @@ describe('memoryPanelEvents M8 回收站列表降级 + 缺失 id', () => {
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const purgeBtn = document.createElement('div');
+      const purgeBtn = document.createElement('button');
+      purgeBtn.type = 'button';
       purgeBtn.setAttribute('data-action', 'purge-memory');
       document.getElementById('recycle-bin-list')!.appendChild(purgeBtn);
       purgeBtn.click();

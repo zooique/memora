@@ -29,7 +29,7 @@
  *   参照 memoryGraphPanel.ts / memoryDetailPanel.ts 的 context 注入模式
  */
 
-import { clearElement } from './domHelpers.js';
+import { clearElement, setButtonLoadingEl } from './domHelpers.js';
 import { reportError } from './errorHelpers.js';
 import { showFieldError, clearFieldErrors, attachRequiredBlurValidation } from './formValidation.js';
 import type { EventTracker } from './eventTracker.js';
@@ -698,6 +698,7 @@ export function initProviderListeners(ctx: ProviderManagementContext): void {
 
   // Provider 卡片列表事件委托（一次性绑定，避免每次渲染重绑）
   // 通过 closest 定位点击的按钮，根据 data-action 分发到对应处理方法
+  // B7：activate/delete 为异步 IPC 操作，期间禁用按钮 + 显示 loading 文案，防止重复点击
   if (ctx.providerListEl) {
     ctx.events.addEventListener(ctx.providerListEl, 'click', async (e: Event) => {
       const target = e.target as HTMLElement;
@@ -709,11 +710,21 @@ export function initProviderListeners(ctx: ProviderManagementContext): void {
       if (!key) return;
 
       if (action === 'activate') {
-        await setActiveProvider(ctx, key);
+        setButtonLoadingEl(btn, true, '切换中…');
+        try {
+          await setActiveProvider(ctx, key);
+        } finally {
+          setButtonLoadingEl(btn, false);
+        }
       } else if (action === 'edit') {
         showProviderForm(ctx, key);
       } else if (action === 'delete') {
-        await deleteProvider(ctx, key);
+        setButtonLoadingEl(btn, true, '删除中…');
+        try {
+          await deleteProvider(ctx, key);
+        } finally {
+          setButtonLoadingEl(btn, false);
+        }
       }
     });
   }

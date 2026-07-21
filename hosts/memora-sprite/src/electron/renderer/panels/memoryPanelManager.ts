@@ -167,10 +167,10 @@ export class MemoryPanelManager {
   private relationDeleteCallback: ((sourceId: string, targetId: string, type: string) => void) | null = null;
   /** 关系创建回调 */
   private relationCreateCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
-  /** 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除 */
-  private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => void) | null = null;
-  /** 回收站批量操作回调：action='restore-all' 全部恢复 / action='purge-all' 全部清空 */
-  private recycleBinBatchActionCallback: ((action: 'restore-all' | 'purge-all') => void) | null = null;
+  /** 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除（Promise 用于事件委托层包装 loading） */
+  private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => Promise<void>) | null = null;
+  /** 回收站批量操作回调：action='restore-all' 全部恢复 / action='purge-all' 全部清空（Promise 用于事件委托层包装 loading） */
+  private recycleBinBatchActionCallback: ((action: 'restore-all' | 'purge-all') => Promise<void>) | null = null;
   /** 回收站完整列表缓存（供分页使用，避免每次翻页重新请求 IPC） */
   private allRecycleBinMemories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }> = [];
   /** 回收站当前页码（从 1 开始，与记忆列表分页模式一致） */
@@ -1077,12 +1077,12 @@ export class MemoryPanelManager {
   }
 
   /** 注册回收站操作回调（恢复/彻底删除） */
-  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void {
+  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => Promise<void>): void {
     this.recycleBinActionCallback = cb;
   }
 
   /** 注册回收站批量操作回调（全部恢复/全部清空） */
-  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => void): void {
+  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => Promise<void>): void {
     this.recycleBinBatchActionCallback = cb;
   }
 

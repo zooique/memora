@@ -124,10 +124,10 @@ export interface MemoryPanelEventContext {
   getCleanupRequestCallback(): ((type: 'duplicates' | 'stale' | 'all') => string[]) | null;
   getCleanupConfirmCallback(): ((ids: string[]) => Promise<void>) | null;
   getViewSwitchCallback(): ((mode: 'list' | 'timeline' | 'graph') => void) | null;
-  /** 回收站操作回调（恢复/彻底删除） */
-  getRecycleBinActionCallback(): ((action: 'restore' | 'purge', id: string) => void) | null;
-  /** 回收站批量操作回调（全部恢复/全部清空） */
-  getRecycleBinBatchActionCallback(): ((action: 'restore-all' | 'purge-all') => void) | null;
+  /** 回收站操作回调（恢复/彻底删除，Promise 用于事件委托层包装 loading） */
+  getRecycleBinActionCallback(): ((action: 'restore' | 'purge', id: string) => Promise<void>) | null;
+  /** 回收站批量操作回调（全部恢复/全部清空，Promise 用于事件委托层包装 loading） */
+  getRecycleBinBatchActionCallback(): ((action: 'restore-all' | 'purge-all') => Promise<void>) | null;
   /** 更多菜单操作回调（insights/health/recycle-bin） */
   getMoreMenuActionCallback(): ((action: string) => void) | null;
   /** LLM 记忆治理回调（dedup/timeliness/conflicts，由 Controller 调用 IPC） */
@@ -770,19 +770,27 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
  *
  * 通过 data-action="restore-memory" / "purge-memory" + data-memory-id 分发，
  * 与列表点击委托模式一致。回调由 Controller 实现，包含确认对话框 + IPC 调用。
+ *
+ * B7：异步操作期间禁用按钮 + 显示 loading 文案，防止用户在 IPC 往返期间重复点击。
+ * 注意 callback 内部已 toast 反馈结果，此处不重复 toast；错误也由 callback 内部捕获。
  */
 function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
   const recycleBinList = document.getElementById('recycle-bin-list');
   if (!recycleBinList) return;
 
-  ctx.events.addEventListener(recycleBinList, 'click', (e: Event) => {
+  ctx.events.addEventListener(recycleBinList, 'click', async (e: Event) => {
     const target = e.target as HTMLElement;
     // 优先匹配恢复按钮
     const restoreBtn = target.closest<HTMLElement>('[data-action="restore-memory"]');
     if (restoreBtn) {
       const id = restoreBtn.dataset.memoryId ?? '';
-      if (id) {
-        ctx.getRecycleBinActionCallback()?.('restore', id);
+      if (id && restoreBtn instanceof HTMLButtonElement) {
+        setButtonLoadingEl(restoreBtn, true, '恢复中…');
+        try {
+          await ctx.getRecycleBinActionCallback()?.('restore', id);
+        } finally {
+          setButtonLoadingEl(restoreBtn, false);
+        }
       }
       return;
     }
@@ -790,8 +798,13 @@ function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
     const purgeBtn = target.closest<HTMLElement>('[data-action="purge-memory"]');
     if (purgeBtn) {
       const id = purgeBtn.dataset.memoryId ?? '';
-      if (id) {
-        ctx.getRecycleBinActionCallback()?.('purge', id);
+      if (id && purgeBtn instanceof HTMLButtonElement) {
+        setButtonLoadingEl(purgeBtn, true, '删除中…');
+        try {
+          await ctx.getRecycleBinActionCallback()?.('purge', id);
+        } finally {
+          setButtonLoadingEl(purgeBtn, false);
+        }
       }
       return;
     }
@@ -802,19 +815,30 @@ function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
  * 回收站批量操作事件：全部恢复 / 全部清空
  *
  * 通过 ID 选择器直接绑定按钮，操作前需二次确认（由 Controller 回调实现）。
+ * B7：批量操作期间禁用按钮 + 显示 loading 文案，防止重复提交。
  */
 function initRecycleBinBatchActions(ctx: MemoryPanelEventContext): void {
   const restoreAllBtn = document.getElementById('recycle-bin-restore-all');
   const purgeAllBtn = document.getElementById('recycle-bin-purge-all');
 
-  if (restoreAllBtn) {
-    ctx.events.addEventListener(restoreAllBtn, 'click', () => {
-      ctx.getRecycleBinBatchActionCallback()?.('restore-all');
+  if (restoreAllBtn && restoreAllBtn instanceof HTMLButtonElement) {
+    ctx.events.addEventListener(restoreAllBtn, 'click', async () => {
+      setButtonLoadingEl(restoreAllBtn, true, '恢复中…');
+      try {
+        await ctx.getRecycleBinBatchActionCallback()?.('restore-all');
+      } finally {
+        setButtonLoadingEl(restoreAllBtn, false);
+      }
     });
   }
-  if (purgeAllBtn) {
-    ctx.events.addEventListener(purgeAllBtn, 'click', () => {
-      ctx.getRecycleBinBatchActionCallback()?.('purge-all');
+  if (purgeAllBtn && purgeAllBtn instanceof HTMLButtonElement) {
+    ctx.events.addEventListener(purgeAllBtn, 'click', async () => {
+      setButtonLoadingEl(purgeAllBtn, true, '清空中…');
+      try {
+        await ctx.getRecycleBinBatchActionCallback()?.('purge-all');
+      } finally {
+        setButtonLoadingEl(purgeAllBtn, false);
+      }
     });
   }
 }

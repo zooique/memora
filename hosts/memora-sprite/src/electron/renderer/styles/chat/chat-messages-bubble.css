@@ -392,7 +392,7 @@
   height: 8px;
   background: var(--accent);
   border-radius: 50%;
-  animation: typingDot 1.4s infinite ease-in-out;
+  animation: typingDot var(--duration-breathing) infinite ease-in-out;
 }
 
 .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }

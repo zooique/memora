@@ -37,7 +37,7 @@
 .chat-agent-status.unknown .agent-status-dot {
   background: var(--text-3);
   /* 初始化中呼吸动画：复用 base.css 全局 breathing-pulse keyframes */
-  animation: breathing-pulse 1.4s ease-in-out infinite;
+  animation: breathing-pulse var(--duration-breathing) ease-in-out infinite;
 }
 
 /* @keyframes agent-status-pulse 已合并到 base.css @keyframes breathing-pulse（统一呼吸动画真理源） */
@@ -143,14 +143,14 @@
   background: var(--surface0);
 }
 
-/* 选中态（键盘 ↓↑ 或鼠标 hover，与浮窗一致：accent-20 + 左边框 accent） */
+/* 选中态（键盘 ↓↑ 或鼠标 hover，与浮窗一致：--active-bg-strong + 左边框 --active-border） */
 .chat-completion-list .completion-item.selected {
-  background: var(--accent-20);
-  border-left-color: var(--accent);
+  background: var(--active-bg-strong);
+  border-left-color: var(--active-border);
 }
 
 .chat-completion-list .completion-item.selected:hover {
-  background: var(--accent-20);
+  background: var(--active-bg-strong);
 }
 
 /* 搜索错误占位（两源 IPC 全失败时，与 loading 同构但用警告色区分） */

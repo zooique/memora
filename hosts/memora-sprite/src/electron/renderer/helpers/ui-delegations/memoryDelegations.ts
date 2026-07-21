@@ -62,8 +62,8 @@ export interface MemoryDelegations {
   selectGraphNode(nodeId: string | null): void;
   clearGraphHighlights(): void;
   onMoreMenuAction(cb: (action: string) => void): void;
-  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void;
-  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => void): void;
+  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => Promise<void>): void;
+  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => Promise<void>): void;
   renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void;
   onSortChange(cb: () => void): void;
   onTimeRangeChange(cb: () => void): void;
@@ -164,10 +164,10 @@ export const memoryDelegations: MemoryDelegations = {
   onMoreMenuAction(this: UIManager, cb: (action: string) => void): void {
     this.memoryPanel.onMoreMenuAction(cb);
   },
-  onRecycleBinAction(this: UIManager, cb: (action: 'restore' | 'purge', id: string) => void): void {
+  onRecycleBinAction(this: UIManager, cb: (action: 'restore' | 'purge', id: string) => Promise<void>): void {
     this.memoryPanel.onRecycleBinAction(cb);
   },
-  onRecycleBinBatchAction(this: UIManager, cb: (action: 'restore-all' | 'purge-all') => void): void {
+  onRecycleBinBatchAction(this: UIManager, cb: (action: 'restore-all' | 'purge-all') => Promise<void>): void {
     this.memoryPanel.onRecycleBinBatchAction(cb);
   },
   renderRecycleBinList(this: UIManager, memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void {

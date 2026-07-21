@@ -15,8 +15,8 @@
 
 /* 当前视图对应的菜单项 active 状态，让用户感知当前视图模式 */
 .more-menu-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--active-bg);
+  color: var(--active-fg);
   font-weight: var(--weight-semibold);
 }
 

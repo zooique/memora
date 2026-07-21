@@ -127,8 +127,8 @@
 }
 
 .command-palette-item.active {
-  background: var(--accent-soft);
-  border-left-color: var(--accent);
+  background: var(--active-bg);
+  border-left-color: var(--active-border);
 }
 
 .command-palette-label {

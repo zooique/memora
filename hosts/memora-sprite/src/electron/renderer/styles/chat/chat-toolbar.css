@@ -245,7 +245,7 @@
 .presence-dot.present {
   background: var(--green);
   box-shadow: 0 0 0 0 var(--presence-pulse);
-  animation: presencePulse 2s infinite;
+  animation: presencePulse var(--duration-pulse-slow) infinite;
 }
 
 /* 用户离开：灰色静态点 */

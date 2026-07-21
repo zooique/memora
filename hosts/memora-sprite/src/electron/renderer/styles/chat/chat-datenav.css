@@ -193,8 +193,8 @@
 }
 
 .date-nav-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--active-bg);
+  color: var(--active-fg);
   font-weight: var(--weight-semibold);
 }
 
