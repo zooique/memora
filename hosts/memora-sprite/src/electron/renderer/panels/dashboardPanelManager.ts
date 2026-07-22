@@ -589,6 +589,8 @@ export class DashboardPanelManager {
       const timeEl = document.createElement('div');
       timeEl.className = 'recent-insight-time';
       timeEl.textContent = formatTimeAgo(insight.createdAt);
+      // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
+      timeEl.dataset.timestamp = insight.createdAt;
 
       // 内容预览
       const previewEl = document.createElement('div');

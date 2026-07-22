@@ -234,7 +234,10 @@ export class ClipboardPanelManager {
     metaEl.appendChild(lengthEl);
 
     // 时间标签（相对时间，如"刚刚"/"3分钟前"，复用 domHelpers.formatTimeAgo 统一入口）
-    const timeEl = createEl('span', 'clipboard-item-time', formatTimeAgo(new Date(item.detectedAt).toISOString()));
+    // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
+    const detectedIso = new Date(item.detectedAt).toISOString();
+    const timeEl = createEl('span', 'clipboard-item-time', formatTimeAgo(detectedIso));
+    timeEl.dataset.timestamp = detectedIso;
     metaEl.appendChild(timeEl);
 
     // 较旧标签（>24h 时显示）

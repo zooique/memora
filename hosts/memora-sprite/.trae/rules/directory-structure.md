@@ -66,7 +66,7 @@ src/
 │       │   ├── memoryController.ts      # 记忆面板控制器（C-3 重命名，原 memoryPanelController.ts）
 │       │   └── personaController.ts     # 角色面板控制器（C-3 重命名，原 personaPanelController.ts）
 │       │
-│       ├── helpers/            # 渲染进程工具函数（不持有可变状态、可独立测试；类形式例外：EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator，状态封闭在实例内、职责单一）
+│       ├── helpers/            # 渲染进程工具函数（不持有可变状态、可独立测试；类形式例外：EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator/TimeRefresher，状态封闭在实例内、职责单一）
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作/统一时间格式化/createEmptyState/setButtonLoadingEl）
 │       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂 + reportError 日志输出）
 │       │   ├── errorState.ts   # 错误状态辅助（全局错误状态管理 + 重试按钮渲染）
@@ -85,6 +85,7 @@ src/
 │       │   ├── buttonHelpers.ts # 按钮事件绑定辅助（bindRefreshButton，按钮 click→loading→异步操作→恢复 标准模式）
 │       │   ├── completionHelpers.ts # 补全模块共享工具（fetchMemoryContent，提取 quickInput/inputAreaManager 重复的 fillFromMemory 逻辑）
 │       │   ├── completionMetrics.ts # 补全统计埋点单例类（CompletionMetrics + getCompletionMetrics，LRU 500 条 + 实时聚合，FNV-1a hash 去标识化）
+│       │   ├── timeRefresher.ts # 全局相对时间刷新器单例类（TimeRefresher，window focus/visibilitychange/60s 定时器三重触发，刷新所有 data-timestamp 元素）
 │       │   │
 │       │   ├── chatPanelEvents.ts # 对话面板事件监听辅助（从 chatPanelManager 提取）
 │       │   ├── streamSafetyTimer.ts # 流式安全兜底定时器类（StreamSafetyTimer，30s/90s 二级兜底，从 chatPanelManager 提取）

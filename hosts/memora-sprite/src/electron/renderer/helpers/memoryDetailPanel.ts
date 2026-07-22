@@ -100,8 +100,15 @@ export function showMemoryDetail(ctx: MemoryDetailPanelContext, memory: MemoryDe
   }
   if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
   // 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
-  if (createdEl) createdEl.textContent = formatTimeAgo(memory.createdAt);
-  if (accessedEl) accessedEl.textContent = formatTimeAgo(memory.accessedAt);
+  // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
+  if (createdEl) {
+    createdEl.textContent = formatTimeAgo(memory.createdAt);
+    createdEl.dataset.timestamp = memory.createdAt;
+  }
+  if (accessedEl) {
+    accessedEl.textContent = formatTimeAgo(memory.accessedAt);
+    accessedEl.dataset.timestamp = memory.accessedAt;
+  }
   if (contentEl) contentEl.textContent = memory.content;
 
   // 保存原始内容到 dataset，供编辑取消时恢复

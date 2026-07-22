@@ -210,6 +210,8 @@ export class WorkProjectionPanelManager {
       'work-projection-updated flex-shrink-0',
       formatTimeAgo(entry.updatedAt),
     );
+    // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
+    updatedEl.dataset.timestamp = entry.updatedAt;
     header.appendChild(updatedEl);
 
     card.appendChild(header);

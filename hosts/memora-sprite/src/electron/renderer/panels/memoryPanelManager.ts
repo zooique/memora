@@ -510,6 +510,8 @@ export class MemoryPanelManager {
     if (mem.createdAt) {
       const timeEl = createEl('span', 'memory-time', formatTimeAgo(mem.createdAt));
       timeEl.title = `创建于 ${mem.createdAt}`;
+      // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
+      timeEl.dataset.timestamp = mem.createdAt;
       metaEl.appendChild(timeEl);
     }
 

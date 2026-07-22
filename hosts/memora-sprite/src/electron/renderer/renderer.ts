@@ -27,6 +27,8 @@ import { formatErrorMessage } from '../../shared/errorMessages.js';
 import { EventTracker } from './helpers/eventTracker.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
 import { safeGet } from './helpers/safeStorage.js';
+// timeRefresher 全局相对时间刷新器（窗口恢复焦点/可见时刷新所有 data-timestamp 元素）
+import { timeRefresher } from './helpers/timeRefresher.js';
 import { getLocalDate, MS_PER_HOUR, MS_PER_DAY, TOAST_LONG_MS } from '../../sprite/constants.js';
 import {
   createSilentRecoveryScheduler,
@@ -78,6 +80,10 @@ const SILENT_RECOVERY_MS = MS_PER_HOUR;
 async function bootstrapRenderer(): Promise<void> {
   // 初始化 UI 管理器
   State.uiManager = new UIManager();
+
+  // 启动全局相对时间刷新器：窗口恢复焦点/可见时刷新所有 data-timestamp 元素，
+  // 解决"复制后很长时间仍显示'刚刚'"的问题。beforeunload 时统一清理。
+  timeRefresher.start();
 
   // 创建各业务控制器（接收 State.uiManager 实例，通过闭包绑定）
   const sessionController = createSessionController(State.uiManager);
@@ -602,6 +608,8 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   State.uiManager?.cleanup();
   // 清理渲染进程级事件监听器（forkBtn/dropzone 等，EventTracker 统一管理）
   State.events.cleanup();
+  // 清理全局相对时间刷新器（移除 focus/visibilitychange 监听 + clearInterval）
+  timeRefresher.stop();
   // 清理静默模式恢复定时器，避免定时器触发时操作已销毁的 DOM 或产生未捕获 rejection
   if (State.silentRecoveryTimer !== null) {
     window.clearTimeout(State.silentRecoveryTimer);

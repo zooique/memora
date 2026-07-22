@@ -211,6 +211,8 @@ export class ProfilePanelManager {
     const updatedSpan = document.createElement('span');
     updatedSpan.className = 'profile-updated';
     updatedSpan.textContent = formatTimeAgo(entry.updatedAt);
+    // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
+    updatedSpan.dataset.timestamp = entry.updatedAt;
     header.appendChild(updatedSpan);
 
     card.appendChild(header);
