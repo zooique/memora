@@ -152,7 +152,7 @@ src/
 │       │   ├── spriteStatusPopover.ts    # 精灵状态浮层（在线状态/记忆量/主动行为提示）
 │       │   ├── streamingRenderer.ts      # 流式 RAF 渲染核心（context 注入纯函数，chatPanelManager 子模块，AUDIT-0716-3 从 helpers/ 迁入消除循环依赖）
 │       │   ├── memoryGraphPanel.ts       # 图谱视图子系统（memoryPanelManager 子模块：初始化/空状态/缓存/上下文菜单/关系弹窗，AUDIT-0716-3 从 helpers/ 迁入消除循环依赖）
-│       │   └── panelRouter.ts            # 面板路由器（面板切换/导航/全局快捷键/窗口控制）
+│       │   └── panelRouter.ts            # 面板路由器（双维度路由：switchPanel 主面板区 + switchAuxTab/openAuxSidebar/toggleAuxSidebar 信息侧栏；auxSidebarOpen/activeAuxTab 状态；isAuxTabVisible 替代 getCurrentPanel 用于侧栏面板可见性判断）
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
@@ -172,7 +172,7 @@ src/
 │           │   └── utilities.css   # 通用工具类（flex-center / flex-col / surface-card / text-muted 等）
 │           │
 │           ├── layout/        # 布局层（窗口骨架）
-│           │   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
+│           │   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局 + 信息侧栏双栏布局（2.1：#main-content.aux-open grid-template-columns 1fr/1px/280px，含 .aux-sidebar-divider/.aux-sidebar-header/.aux-tab/.aux-sidebar-content/.sidebar-divider）
 │           │
 │           ├── chat/          # 对话功能域（聚合器 + 7 子模块）
 │           │   ├── chat.css             # 聚合器（@import 7 子模块，P2 拆分 + 二级拆分）
@@ -578,6 +578,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 - [x] STEP9-DUP-1: 跨包契约测试——新增 src/__tests__/shared/toError.contract.test.ts（16 测试用例：Error 实例 identity + Error 子类 + 12 契约用例表驱动 + symbol + 循环引用），导入 sprite `../../shared/toError.js` + 内核 `memora` 公共 API（避免内部路径导入，符合架构分层），防止两套 toError 实现行为漂移（2026-07-19 斩木除根 DUP-1）
 - [x] STEP9-DEP-1: memora 内核 12 devDeps 非 Major 升级——@commitlint/cli 21.1.0→21.2.1 + @commitlint/config-conventional 21.1.0→21.2.0 + @types/node 22.15.30→22.20.1 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + @vitest/coverage-v8 4.0.0→4.1.10 + eslint 9.27.0→9.39.5 + lefthook 1.6.10→1.7.0 + msw 2.8.0→2.15.0 + pino-pretty 11.2.0→11.2.0 + prettier 3.5.3→3.9.5 + tsc-alias 1.8.16→1.9.1 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-1）
 - [x] STEP9-DEP-2: sprite 宿主 8 devDeps 非 Major 升级——@types/node 24.0.0→24.13.3 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + electron 40.10.5→40.10.6（需 npm run rebuild 重建 native 模块）+ eslint 9.27.0→9.39.5 + prettier 3.5.3→3.9.5 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-2）
+- [x] INFO-ARCH-2.1: 信息架构重构双栏布局——(1) layout.css `#main-content` 改为 `display: grid`，`.aux-open` 状态下 `grid-template-columns: 1fr 1px var(--aux-sidebar-width)`（主面板区 + 1px 分隔线 + 280px 信息侧栏）；(2) index.html 新增 `#btn-toggle-aux` 单图标按钮（#icon-panel-right）+ `.main-panel-area` 包裹层 + `.aux-sidebar-divider` + `#aux-sidebar`（含 `.aux-sidebar-header` + 2 个 `.aux-tab` + `.aux-sidebar-content`）+ `.sidebar-divider` 视觉分隔线；(3) panelRouter.ts 扩展双维度路由：`switchPanel()` 主面板区（chat/memories/clipboard/settings，选择器限定 `.nav-btn[data-panel]` 排除 toggle 按钮）+ `switchAuxTab()`/`openAuxSidebar()`/`toggleAuxSidebar()` 信息侧栏（perception/dashboard，独立 `.aux-active` 类，与主面板 `.active` 互不干扰），新增 `auxSidebarOpen`/`activeAuxTab` 状态 + `isAuxTabVisible()` 替代 `getCurrentPanel()` 用于侧栏面板可见性判断；(4) #panel-perception/#panel-dashboard DOM 从 `.main-panel-area` 迁移到 `.aux-sidebar-content`；(5) tokens.css 新增 `--aux-sidebar-width: 280px`（浅色+深色双主题）；(6) 快捷键重编号 PANEL_SHORTCUT_MAP 从 6 项缩减为 4 项（Ctrl+1=chat/Ctrl+2=memories/Ctrl+3=clipboard/Ctrl+4=settings，移除 5/6），commandPaletteManager nav-perception/nav-dashboard 改为 `openAuxSidebar(tab)` 路径，shortcuts-modal + onboarding 文案同步更新；(7) 自动打开路径 3 条：精灵状态条点击 → `openAuxSidebar('perception')` + 命令面板 Ctrl+K → `openAuxSidebar(tab)` + 主动触发（洞察/里程碑/模式/建议）→ `openAuxSidebar('dashboard')`；(8) 渲染层 onPanelSwitch 回调扩展触发 switchAuxTab 数据刷新（perception→loadPerception，dashboard→loadDashboard），Canvas 重绘通过 getPanelSwitchCallback 触发（renderGrowthChart 在 `getBoundingClientRect().width === 0` 时跳过绘制）；(9) 智能决策：移除自动收起逻辑（min-width=640px 验证：280 侧栏 + 360 主面板 = 640，无需自动收起）；(10) 即时切换无动画（参考 VSCode 标准行为，`transition: width` 触发 reflow 性能差）（2026-07-22 2.1 阶段实施）
 
 ### 延后（非目录结构）
 

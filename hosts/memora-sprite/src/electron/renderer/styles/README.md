@@ -1,6 +1,6 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-21（UI-SCAN-10-19 令牌化第二轮：--active-* / --duration-* / --pad-card-compact / --red-hover）
+> 最后更新：2026-07-22（2.1 信息架构双栏布局：--aux-sidebar-width + layout.css 双栏 grid 布局）
 
 ## 1. 目录结构（按功能域分组，8 个子目录）
 
@@ -14,7 +14,7 @@ styles/
 │   └── utilities.css   # 原子布局工具类（flex-center/flex-col/flex-row-center/surface-card/text-muted + 过渡工具类）
 │
 ├── layout/             # 布局层（窗口骨架）
-│   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
+│   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局 + 信息侧栏双栏布局（2.1：#main-content.aux-open 1fr/1px/280px，含 .aux-sidebar-divider/.aux-sidebar-header/.aux-tab/.aux-sidebar-content/.sidebar-divider）
 │
 ├── chat/               # 对话功能域（聚合器 + 7 子模块）
 │   ├── chat.css             # 聚合器（纯 @import 7 子模块）
@@ -98,6 +98,7 @@ windows/float.css          ← 浮动窗口组件样式
 - 组件 CSS 间距/圆角一律走 `--space-*` / `--radius-*` 令牌（P1 已收口，含 `--space-2-5: 10px`）；盒阴影、字号、width 等含 px 处保持字面量。
 - 激活态语义色统一走 `--active-bg` / `--active-bg-strong` / `--active-fg` / `--active-border` 四件套（2026-07-21 引入，统一 `.active` / `.selected` / `.current` 三套语义，禁止直接引用 `--accent-soft` / `--accent` 等底层颜色令牌）。
 - 动画播放时长走 `--duration-*` 令牌（`--duration-spin` / `--duration-breathing` / `--duration-float` / `--duration-pulse-slow`），与 `--transition-*` 过渡时长语义区分。
+- 信息侧栏宽度走 `--aux-sidebar-width: 280px` 令牌（2.1 引入，浅色+深色双主题，雷达图 100px + 柱状图 224px + padding 计算后的最小可用宽度，主窗口 minWidth=640px = 280 侧栏 + 360 主面板）。
 
 ## 4. chat.css / memory.css 聚合器模式（P2 拆分）
 
@@ -266,3 +267,4 @@ foundation/utilities.css（原子布局工具类）       ← 已有，19 个 cl
 | CSS-R6 渐进引用 | 2026-07-15 | 4 commit 完成 4 个工具类渐进引用（.icon-btn / .text-truncate / .flex-between / .flex-shrink-0），净删除 108 行 CSS 重复代码；剩余 23 处 .flex-shrink-0（含 12 不可替换 + 11 可替换）归档待完成任务，按自然生长触发 |
 | CSS-R7 规则对齐 + 剪枝 + 审查 | 2026-07-19 | (1) directory-structure.md §1/§2.4.1 + README.md §1/§2/§4 补齐 memory/completion-stats.css（第 3 个 analysis panel）+ panels/clipboard.css（剪贴板保护面板）规则漏登记；(2) index.html 删除 chat-toolbar/datenav/perception 3 处重复 link（聚合器 chat.css 已 @import，违反 §2.4.4）；(3) float.html 补 base.css + utilities.css（违反 §2.4.9 浮窗加载顺序）；(4) clipboard.css 删除死代码 .clipboard-list-hidden（clipboardPanelManager.ts 零引用）；(5) completion-stats.css 11 处裸 px 令牌化（保留 1px/2px 次像素对齐 + max-height） |
 | CSS-R8 令牌化第二轮 | 2026-07-21 | (1) 新增 --active-bg/-active-bg-strong/-active-fg/-active-border 4 件套，统一 .active/.selected/.current 三套语义，14 个 .active 选择器 + 5 个 .selected 选择器收口；(2) 新增 --duration-spin/-breathing/-float/-pulse-slow 4 个动画播放时长令牌，14 处硬编码收口（statusPulse 三档保留分级完整性）；(3) 新增 --pad-card-compact 紧凑卡片专用令牌，修复 .audit-item 误用 --input-padding-md；(4) 新增 --red-hover 修复 .btn-danger:hover 用 opacity 而非颜色变化；(5) modal.css 15 处裸 px → --space-* 令牌化；(6) search-messages.css gap 4px → --space-1；(7) B7 异步按钮 loading 补齐 P0 共 8 处（forkBtn/forceRelease/2 Provider 按钮/4 回收站按钮），recycleBin callback 签名 void → Promise<void>（事件委托层包装 loading）；(8) directory-structure.md §2.4.6 扩展为"间距/圆角/动画时长令牌化"，README.md §3 令牌所有权补登激活态语义色 + 动画播放时长约束 |
+| INFO-ARCH-2.1 双栏布局 | 2026-07-22 | (1) tokens.css 新增 --aux-sidebar-width: 280px（浅色+深色双主题，雷达图 100px + 柱状图 224px + padding 最小可用宽度）；(2) layout.css #main-content 改为 `display: grid`，`.aux-open` 状态下 `grid-template-columns: 1fr 1px var(--aux-sidebar-width)`（主面板区 + 1px 分隔线 + 280px 信息侧栏），新增 .aux-sidebar-divider/.aux-sidebar-header/.aux-tab/.aux-sidebar-content/.sidebar-divider 完整样式块；(3) 侧栏面板可见性独立于主面板：`.aux-sidebar-content .panel` 默认隐藏，`.panel.aux-active` 显示，与主面板 `.active` 互不干扰；(4) toggle 按钮 #btn-toggle-aux 单图标（#icon-panel-right）+ active 态绿色高亮（复用 CSS-R8 --active-bg/--active-fg）；(5) 即时切换无动画（参考 VSCode 标准行为，`transition: width` 触发 reflow 性能差）；(6) 主窗口 minWidth=640px（280 侧栏 + 360 主面板），智能决策移除自动收起逻辑 |

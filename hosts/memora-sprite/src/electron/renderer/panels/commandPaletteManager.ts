@@ -71,11 +71,19 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       action: () => { void uiManager.switchPanel('memories'); },
     },
     {
+      id: 'nav-clipboard',
+      label: '切换到剪贴板面板',
+      keywords: '剪贴板 clipboard 待处理 复制',
+      section: '导航',
+      shortcut: 'Ctrl+3',
+      action: () => { void uiManager.switchPanel('clipboard'); },
+    },
+    {
       id: 'nav-settings',
       label: '切换到设置面板',
       keywords: '设置 settings 配置',
       section: '导航',
-      shortcut: 'Ctrl+3',
+      shortcut: 'Ctrl+4',
       action: () => { void uiManager.switchPanel('settings'); },
     },
     {
@@ -84,8 +92,8 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       keywords: '感知 精灵状态 情感 默契度 上下文 模式 dashboard',
       section: '导航',
       action: () => {
-        // 直接调用 switchPanel，避免依赖 sprite-status-bar DOM 元素存在
-        void uiManager.switchPanel('perception');
+        // 2.1：感知面板迁至信息侧栏，打开侧栏 + 激活感知 tab
+        uiManager.panelRouter.openAuxSidebar('perception');
       },
     },
     {
@@ -93,8 +101,10 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       label: '切换到仪表盘面板',
       keywords: '仪表盘 dashboard 统计 概览 指标',
       section: '导航',
-      shortcut: 'Ctrl+4',
-      action: () => { void uiManager.switchPanel('dashboard'); },
+      action: () => {
+        // 2.1：仪表盘迁至信息侧栏，打开侧栏 + 激活仪表盘 tab
+        uiManager.panelRouter.openAuxSidebar('dashboard');
+      },
     },
 
     // ── 记忆 ──

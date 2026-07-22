@@ -419,9 +419,20 @@
   gap: var(--space-1);
 }
 
-/* 底部低频区：自动推到底部（设置入口） */
+/* 视觉分隔线：工作区按钮与底部控制区分隔（nav-bottom 一起推到底部） */
+.sidebar-divider {
+  margin-top: auto; /* 吸收剩余空间，将分隔线及之后的 nav-bottom 推到底部 */
+  width: 24px;
+  height: 1px;
+  background: var(--surface2);
+  margin-left: auto;
+  margin-right: auto;
+  border: none;
+}
+
+/* 底部低频区：设置 + 信息侧栏 toggle（紧跟分隔线） */
 .sidebar-nav-bottom {
-  margin-top: auto;
+  /* margin-top: auto 已移至 .sidebar-divider，保证分隔线紧贴 nav-bottom 上方 */
 }
 
 /* 导航按钮：图标模式仅显示图标 */
@@ -718,6 +729,9 @@
 }
 
 /* ─── 核心悬浮窗口（margin + radius + shadow 形成悬浮效果） ─ */
+/* 2.1 双栏布局：主面板区 + 1px 分隔线 + 信息侧栏（grid 三列）
+ * 主面板区和侧栏共享同一外框圆角阴影，中间用 1px var(--surface2) 分隔。
+ * 侧栏关闭时 grid-template-columns: 1fr 0px 0px（3 列对应 3 个子元素，分隔线和侧栏塌缩为 0 宽）。 */
 #main-content {
   grid-area: window;
   /* 修正 margin 不对称问题，四周留边距形成完整悬浮感 */
@@ -725,10 +739,15 @@
   background: var(--window-bg);
   border-radius: var(--radius-window);
   box-shadow: var(--shadow-window);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 0px 0px; /* 侧栏关闭：主面板全宽，分隔线和侧栏 0 宽（3 列对应 3 个子元素：.main-panel-area + .aux-sidebar-divider + #aux-sidebar） */
+  overflow: hidden; /* 内部面板裁切圆角 */
   position: relative;
+}
+
+/* 侧栏打开时：1fr + 1px 分隔线 + var(--aux-sidebar-width) */
+#main-content.aux-open {
+  grid-template-columns: 1fr 1px var(--aux-sidebar-width);
 }
 
 /* ─── 面板（核心窗口内的面板容器，淡入淡出过渡） ────── */
@@ -752,6 +771,119 @@
   pointer-events: auto;
   /* active 面板提升堆叠层级，确保在所有隐藏面板之上 */
   z-index: var(--z-base);
+}
+
+/* ─── 2.1 信息侧栏（主面板区 + 1px 分隔线 + 侧栏三列结构） ─── */
+/* 主面板区包裹层：作为主面板 .panel 的定位上下文（grid 第 1 列） */
+.main-panel-area {
+  position: relative;
+  overflow: hidden;
+  /* 左上角和左下角圆角由 #main-content overflow:hidden 裁切 */
+}
+
+/* 1px 垂直分隔线（grid 第 2 列） */
+.aux-sidebar-divider {
+  width: 1px;
+  background: var(--surface2);
+}
+
+/* 侧栏关闭时分隔线塌缩为 0 宽（grid 列宽已声明 0px，此处 width:0 是兜底，防止 min-content 溢出导致分隔线占用空间） */
+#main-content:not(.aux-open) .aux-sidebar-divider {
+  width: 0;
+}
+
+/* 侧栏容器（grid 第 3 列，flex column：header + content） */
+#aux-sidebar {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--window-bg);
+  /* 右上角和右下角圆角由 #main-content overflow:hidden 裁切 */
+}
+
+/* 侧栏关闭时宽度塌缩为 0（grid 列宽已声明 0px，此处 width:0 是兜底，防止 min-content 溢出导致侧栏占用空间） */
+#main-content:not(.aux-open) #aux-sidebar {
+  width: 0;
+}
+
+/* 侧栏 header：40px 高，承载 tab 切换按钮（与 #chat-toolbar/.panel-header 风格一致，显式声明 background: transparent 与其对齐） */
+.aux-sidebar-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  gap: var(--space-1);
+  background: transparent;
+  border-bottom: 1px solid var(--surface2);
+  flex-shrink: 0;
+}
+
+/* Tab 图标按钮（参考 nav-btn 的交互风格独立定义，单图标 active 态；不复用 .nav-btn 类避免 padding/position:relative 干扰 32x32 方形布局） */
+.aux-tab {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  border: none;
+  background: none;
+  /* 激活态指示条定位锚点 */
+  position: relative;
+}
+
+.aux-tab:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+/* 激活态：浅底 + 强调色 + 底部 2px accent 指示条（对齐 VSCode/Trea 面板 tab 视觉语言） */
+.aux-tab.aux-active {
+  background: var(--active-bg);
+  color: var(--active-fg);
+}
+
+.aux-tab.aux-active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px; /* 对齐 header 底边框 */
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--active-fg);
+  border-radius: 1px;
+}
+
+/* 侧栏内容区：承载感知/仪表盘面板（独立于主面板 .active 路由） */
+.aux-sidebar-content {
+  flex: 1;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 侧栏内 panel 堆叠（独立于主面板 .active，使用 .aux-active 控制可见性） */
+.aux-sidebar-content .panel {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.aux-sidebar-content .panel.aux-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* nav toggle 按钮 active 态（复用 .nav-btn 基础样式，仅扩展 active 高亮） */
+#btn-toggle-aux.active {
+  background: var(--active-bg);
+  color: var(--active-fg);
 }
 
 /* ─── 通用下拉菜单 ─────────────────────────────────────────── */

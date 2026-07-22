@@ -19,8 +19,10 @@
 .perception-panel-body {
   display: flex;
   flex-direction: column;
+  /* 侧栏紧凑布局：gap 与 dashboard-body 一致（var(--space-2)=8px） */
   gap: var(--space-2);
-  padding: var(--space-3);
+  /* 水平 padding 统一为 16px（与 dashboard-body 对齐，侧栏内容宽度一致） */
+  padding: var(--space-3) var(--space-4) var(--space-4);
   overflow-y: auto;
   flex: 1;
 }
@@ -41,7 +43,11 @@
 
 /* ─── 分区通用 ────────────────────────────────────────── */
 /* chat.css 中已有 .perception-section / .perception-section-title 基础样式，
-   此处补充感知面板专属覆盖（如有差异） */
+   此处补充感知面板专属覆盖：标题颜色与 margin 对齐 dashboard-section-title */
+.perception-panel-body .perception-section-title {
+  color: var(--subtext);
+  margin: 0 0 var(--space-1-5) 0;
+}
 
 /* ─── 在场状态 ────────────────────────────────────────── */
 .perception-presence {
@@ -276,7 +282,8 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: var(--space-1-5);
+  /* 紧凑内边距：4px 适配侧栏 5 列窄格，避免中文标签溢出 */
+  padding: var(--space-2) var(--space-1);
   background: var(--surface0);
   border-radius: var(--radius-sm);
 }

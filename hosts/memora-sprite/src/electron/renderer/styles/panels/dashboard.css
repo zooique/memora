@@ -19,7 +19,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  /* 侧栏紧凑布局：section 间距 8px，与 perception-panel-body 对齐 */
+  gap: var(--space-2);
 }
 
 /* ─── 分区（section） ──────────────────────────────── */
@@ -75,42 +76,52 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   padding: 0;
 }
 
-/* ─── 概览区：紧凑指标网格 ─────────────────────────────── */
+/* ─── 概览区：3 列一排，对齐增长趋势卡片风格 ─────────────── */
 .dashboard-overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  /* 固定 3 列一排：与 .growth-cards 布局一致，侧栏窄列中整齐排列 */
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--gap-compact);
 }
 
-/* 概览指标项：标签在上，数值在下 */
+/* 概览指标项：居中对齐，紧凑内边距（与 .growth-card 风格对齐） */
 .overview-item {
   background: var(--surface0);
   border-radius: var(--radius-sm);
-  padding: var(--space-2-5) var(--space-3);
+  padding: var(--space-2) var(--space-1);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  gap: 2px;
+  position: relative;
 }
 
 .overview-item .overview-label {
   font-size: var(--font-2xs);
   color: var(--muted);
+  text-align: center;
 }
 
 .overview-item .overview-value {
   font-size: var(--font-h2);
+  /* 与 .growth-card-value 字重统一为 semibold，侧栏窄列中 bold 过于粗重 */
   font-weight: var(--weight-semibold);
   color: var(--text);
-  line-height: 1.2;
+  line-height: 1.1;
+  text-align: center;
   /* 3 列数字（记忆/洞察/衰减）等宽对齐，动态更新时避免宽度跳动 */
   font-variant-numeric: tabular-nums;
 }
 
+/* 今日新增微型徽章：右上角绝对定位，不挤压数值 */
 .overview-item .overview-mini {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-  color: var(--accent);
-  margin-top: 2px;
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  color: var(--green);
+  line-height: 1;
 }
 
 /* ─── 卡片样式 ──────────────────────────────────── */
@@ -420,14 +431,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   grid-template-columns: repeat(3, 1fr);
   gap: var(--gap-compact);
   margin-bottom: 6px;
-}
-
-/* 小屏下改为 2 列，避免卡片过于拥挤 */
-/* 断点对齐 layout.css 中屏断点（799px），避免组件在不同窗口宽度下错位跳跃 */
-@media (max-width: 799px) {
-  .growth-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 /* 单张卡片：label 上 + value 下，垂直居中 */

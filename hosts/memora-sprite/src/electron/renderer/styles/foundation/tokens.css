@@ -81,6 +81,10 @@
   --radius-pill:   100px;   /* 胶囊形按钮/标签 */
   --radius-window: 18px;    /* 核心窗口圆角 */
 
+  /* ─── 2.1 信息侧栏尺寸令牌 ─── */
+  /* 侧栏展开宽度（280px：雷达图100px+padding+柱状图7根×32px=224px 的最小可用宽度） */
+  --aux-sidebar-width: 280px;
+
   /* 阴影：浅色主题下更轻量，避免过度悬浮感 */
   --shadow:           0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
@@ -363,6 +367,9 @@
   --radius-lg:     12px;
   --radius-xl:     18px;
   --radius-window: 18px;
+
+  /* ─── 2.1 信息侧栏尺寸令牌（深色主题同步） ─── */
+  --aux-sidebar-width: 280px;
 
   /* 阴影：深色主题下阴影更重，以产生层次感 */
   --shadow:           0 4px 16px rgba(0, 0, 0, 0.4);

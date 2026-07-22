@@ -72,6 +72,11 @@ export class PanelRouter {
   /** 事件监听器跟踪器（独立于 UIManager 的 EventTracker） */
   private events = new EventTracker();
 
+  /** 信息侧栏是否展开（默认 true，用户确认默认打开） */
+  private auxSidebarOpen = true;
+  /** 当前激活的侧栏 tab（'perception' | 'dashboard'，默认 perception） */
+  private activeAuxTab: 'perception' | 'dashboard' = 'perception';
+
   constructor(private host: PanelRouterHost) {}
 
   // ─── 初始化 ────────────────────────────────────────
@@ -110,6 +115,20 @@ export class PanelRouter {
 
     // 全局键盘快捷键
     this.events.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
+
+    // 信息侧栏 toggle 按钮（独立绑定，#btn-toggle-aux 无 data-panel 故不触发 switchPanel）
+    const btnToggleAux = getOptionalElement('btn-toggle-aux', 'button');
+    if (btnToggleAux) {
+      this.events.addEventListener(btnToggleAux, 'click', this.handleToggleAuxClick.bind(this));
+    }
+    // 信息侧栏 tab 切换（感知 / 仪表盘）
+    document.querySelectorAll<HTMLElement>('.aux-tab').forEach((tab) => {
+      this.events.addEventListener(tab, 'click', this.handleAuxTabClick.bind(this));
+    });
+
+    // 同步信息侧栏初始 DOM 状态（与 auxSidebarOpen/activeAuxTab 默认值一致）
+    this.applyAuxSidebarState();
+    this.applyAuxTabState();
   }
 
   // ─── 清理 ──────────────────────────────────────────
@@ -147,9 +166,10 @@ export class PanelRouter {
         this.host.resetSettingsFormDirty();
       }
 
-      // 移除所有面板活动状态
+      // 移除所有面板活动状态（侧栏面板使用 .aux-active 而非 .active，故全局移除 .active 无副作用）
       document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-      document.querySelectorAll('.nav-btn').forEach((b) => {
+      // 仅清除带 data-panel 的导航按钮 active 态（排除 #btn-toggle-aux，其 active 表示侧栏打开）
+      document.querySelectorAll('.nav-btn[data-panel]').forEach((b) => {
         b.classList.remove('active');
         // 清除其他导航的 aria-current，避免屏幕阅读器误读多个"当前页"
         b.removeAttribute('aria-current');
@@ -250,8 +270,8 @@ export class PanelRouter {
       return;
     }
 
-    // Ctrl/Cmd + 1-6：切换面板（1-6 分别对应 chat/memories/settings/dashboard/perception/clipboard）
-    if (isMod && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
+    // Ctrl/Cmd + 1-4：切换主面板（chat/memories/clipboard/settings）
+    if (isMod && ['1', '2', '3', '4'].includes(e.key)) {
       this.handlePanelShortcut(e);
       return;
     }
@@ -280,9 +300,9 @@ export class PanelRouter {
     if (commandPalette || searchModal) {
       return;
     }
-    // 设置/记忆/仪表盘/感知/剪贴板面板激活时，Escape 切回对话面板
+    // 设置/记忆/剪贴板面板激活时，Escape 切回对话面板（感知/仪表盘现为侧栏 tab，不参与主面板 Escape）
     const state = this.host.getState();
-    if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard' || state.currentPanel === 'perception' || state.currentPanel === 'clipboard') {
+    if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'clipboard') {
       void this.switchPanel('chat');
       e.preventDefault();
       return;
@@ -295,14 +315,12 @@ export class PanelRouter {
     }
   }
 
-  /** 面板快捷键映射：Ctrl/Cmd + 1-6 → chat/memories/settings/dashboard/perception/clipboard */
+  /** 面板快捷键映射：Ctrl/Cmd + 1-4 → chat/memories/clipboard/settings（侧栏面板感知/仪表盘由 toggle + tab 控制） */
   private static readonly PANEL_SHORTCUT_MAP: Record<string, string> = {
     '1': 'chat',
     '2': 'memories',
-    '3': 'settings',
-    '4': 'dashboard',
-    '5': 'perception',
-    '6': 'clipboard',
+    '3': 'clipboard',
+    '4': 'settings',
   };
 
   /**
@@ -431,5 +449,93 @@ export class PanelRouter {
     const iconId = isMaximized ? 'icon-restore' : 'icon-maximize';
     setIcon(btnMaximize, iconId);
     btnMaximize.title = isMaximized ? '还原' : '最大化';
+  }
+
+  // ─── 信息侧栏（2.1 双栏布局） ──────────────────────
+
+  /** toggle 按钮点击：展开/收起信息侧栏 */
+  private handleToggleAuxClick(): void {
+    this.toggleAuxSidebar();
+  }
+
+  /** aux tab 点击：切换侧栏视图（感知 / 仪表盘） */
+  private handleAuxTabClick(e: Event): void {
+    const target = e.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const tab = target.dataset.auxTab;
+    if (tab === 'perception' || tab === 'dashboard') {
+      this.switchAuxTab(tab);
+    }
+  }
+
+  /** 切换信息侧栏展开/收起（仅 #btn-toggle-aux 内部调用，无外部消费者） */
+  private toggleAuxSidebar(): void {
+    this.auxSidebarOpen = !this.auxSidebarOpen;
+    this.applyAuxSidebarState();
+  }
+
+  /** 切换侧栏 tab（perception / dashboard，仅 .aux-tab 内部调用，无外部消费者） */
+  private switchAuxTab(tab: 'perception' | 'dashboard'): void {
+    if (this.activeAuxTab === tab && this.auxSidebarOpen) return; // 已激活且可见则跳过
+    this.activeAuxTab = tab;
+    this.applyAuxTabState();
+    // 触发数据刷新（复用主面板切换回调：dashboard → loadDashboard，perception → loadPerception）
+    // 仪表盘 Canvas 在面板可见后需重绘（隐藏时 getBoundingClientRect().width=0 会跳过绘制）
+    this.host.getPanelSwitchCallback()?.(tab);
+  }
+
+  /** 判断指定侧栏 tab 是否当前可见（侧栏展开 + 该 tab 激活） */
+  isAuxTabVisible(tab: 'perception' | 'dashboard'): boolean {
+    return this.auxSidebarOpen && this.activeAuxTab === tab;
+  }
+
+  /** 打开信息侧栏（可选指定 tab），用于自动打开路径（精灵状态条 / 健康度诊断等） */
+  openAuxSidebar(tab?: 'perception' | 'dashboard'): void {
+    const tabChanged = tab && tab !== this.activeAuxTab;
+    if (tab) {
+      this.activeAuxTab = tab;
+    }
+    this.auxSidebarOpen = true;
+    this.applyAuxSidebarState();
+    this.applyAuxTabState();
+    // 指定 tab 且发生变化时触发数据刷新（仪表盘 Canvas 重绘等）
+    if (tab && tabChanged) {
+      this.host.getPanelSwitchCallback()?.(tab);
+    }
+  }
+
+  /** 将侧栏展开状态同步到 DOM（#main-content.aux-open + #btn-toggle-aux.active + aria-pressed） */
+  private applyAuxSidebarState(): void {
+    const mainContent = document.getElementById('main-content');
+    const btnToggleAux = getOptionalElement('btn-toggle-aux', 'button');
+    if (this.auxSidebarOpen) {
+      mainContent?.classList.add('aux-open');
+      btnToggleAux?.classList.add('active');
+      btnToggleAux?.setAttribute('aria-pressed', 'true');
+    } else {
+      mainContent?.classList.remove('aux-open');
+      btnToggleAux?.classList.remove('active');
+      btnToggleAux?.setAttribute('aria-pressed', 'false');
+    }
+  }
+
+  /** 将当前 tab 状态同步到 DOM（.aux-tab.aux-active + 对应 .panel.aux-active） */
+  private applyAuxTabState(): void {
+    // tab 按钮
+    document.querySelectorAll('.aux-tab').forEach((tab) => {
+      const tabName = tab.getAttribute('data-aux-tab');
+      if (tabName === this.activeAuxTab) {
+        tab.classList.add('aux-active');
+        tab.setAttribute('aria-selected', 'true');
+      } else {
+        tab.classList.remove('aux-active');
+        tab.setAttribute('aria-selected', 'false');
+      }
+    });
+    // 面板（通过 id 匹配 tab：panel-perception / panel-dashboard）
+    const perceptionPanel = document.getElementById('panel-perception');
+    const dashboardPanel = document.getElementById('panel-dashboard');
+    perceptionPanel?.classList.toggle('aux-active', this.activeAuxTab === 'perception');
+    dashboardPanel?.classList.toggle('aux-active', this.activeAuxTab === 'dashboard');
   }
 }

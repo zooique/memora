@@ -545,12 +545,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     await this.panelRouter.switchPanel(panel);
   }
 
-  /** 添加精灵状态条点击：切换到感知面板（状态条数据来自感知系统，跳转应去感知面板） */
+  /** 添加精灵状态条点击：打开信息侧栏并切到感知 tab（状态条数据来自感知系统） */
   initSpriteStatusBarClick(): void {
     const spriteStatusBar = document.getElementById('sprite-status-bar');
     if (spriteStatusBar) {
       this.events.addEventListener(spriteStatusBar, 'click', () => {
-        this.panelRouter.switchPanel('perception');
+        // 2.1：感知面板迁至信息侧栏，点击状态条打开侧栏 + 激活感知 tab
+        this.panelRouter.openAuxSidebar('perception');
       });
     }
   }
