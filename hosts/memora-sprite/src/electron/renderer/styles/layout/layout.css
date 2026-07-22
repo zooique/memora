@@ -782,9 +782,11 @@
 }
 
 /* 1px 垂直分隔线（grid 第 2 列） */
+/* 顶部跳过 44px（与 chat-toolbar 高度一致），只在内容区显示 */
 .aux-sidebar-divider {
   width: 1px;
   background: var(--surface2);
+  margin-top: 44px;
 }
 
 /* 侧栏关闭时分隔线塌缩为 0 宽（grid 列宽已声明 0px，此处 width:0 是兜底，防止 min-content 溢出导致分隔线占用空间） */
@@ -807,6 +809,7 @@
 }
 
 /* 侧栏 header：40px 高，承载 tab 切换按钮（与 #chat-toolbar/.panel-header 风格一致，显式声明 background: transparent 与其对齐） */
+/* 降级为侧栏后移除 border-bottom（不再需要标题内容分隔线） */
 .aux-sidebar-header {
   height: 40px;
   display: flex;
@@ -814,7 +817,6 @@
   padding: 0 var(--space-2);
   gap: var(--space-1);
   background: transparent;
-  border-bottom: 1px solid var(--surface2);
   flex-shrink: 0;
 }
 
