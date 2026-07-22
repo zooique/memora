@@ -171,8 +171,13 @@ src/
 │           │   ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类
 │           │   └── utilities.css   # 通用工具类（flex-center / flex-col / surface-card / text-muted 等）
 │           │
-│           ├── layout/        # 布局层（窗口骨架）
-│           │   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局 + 信息侧栏双栏布局（2.1：#main-content.aux-open grid-template-columns 1fr/1px/280px，含 .aux-sidebar-divider/.aux-sidebar-header/.aux-tab/.aux-sidebar-content/.sidebar-divider）
+│           ├── layout/        # 布局层（窗口骨架 + 内嵌组件，聚合器 + 5 子模块）
+│           │   ├── layout.css      # 聚合器（@import 5 子模块，CSS-R8 拆分）
+│           │   ├── titlebar.css    # 顶部栏 + 命令面板入口 + 窗口控制按钮 + 角色选择器
+│           │   ├── sidebar.css     # 侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线
+│           │   ├── app-grid.css    # 窗口骨架（#app Grid + #main-content 悬浮窗口 + .panel + 信息侧栏双栏布局 + 响应式 @media）
+│           │   ├── widgets.css     # 布局内嵌小部件（仪表盘/默契度/里程碑/技能拖入区/通用下拉菜单/最近洞察列表）
+│           │   └── web-mode.css    # Web 模式适配（body.web-mode 渐变底板 + 隐藏窗口控制 + 放大命令面板 + 悬浮窗口优化）
 │           │
 │           ├── chat/          # 对话功能域（聚合器 + 7 子模块）
 │           │   ├── chat.css             # 聚合器（@import 7 子模块，P2 拆分 + 二级拆分）
@@ -369,7 +374,7 @@ styles/ 按**功能域**分组，与渲染进程代码组织（panels/components
 | 子目录 | 职责 | 加载顺序 | 文件数 |
 |--------|------|----------|--------|
 | `foundation/` | 设计令牌 + 全局重置 + 工具类（三窗口共享） | 1-3 | 3（tokens/base/utilities）|
-| `layout/` | 窗口骨架（顶栏/侧栏/Grid） | 4 | 1 |
+| `layout/` | 窗口骨架 + 内嵌组件（聚合器 + 5 子模块：titlebar/sidebar/app-grid/widgets/web-mode） | 4 | 6 |
 | `chat/` | 对话功能域（聚合器 + 7 子模块） | 5-12 | 8 |
 | `memory/` | 记忆功能域（聚合器 + 7 子模块 + 1 分析子面板 completion-stats） | 13-21 | 9 |
 | `panels/` | 独立面板样式（dashboard/perception/clipboard/settings） | 22-25 | 4 |
@@ -414,7 +419,7 @@ styles/ 按**功能域**分组，与渲染进程代码组织（panels/components
 
 ```
 foundation/tokens.css → foundation/base.css → foundation/utilities.css
-→ layout/layout.css
+→ layout/layout.css（聚合器，内部 @import 5 子模块：titlebar/sidebar/app-grid/widgets/web-mode）
 → chat/chat.css（聚合器，内部 @import 7 子模块）
 → memory/memory.css（聚合器，内部 @import 7 子模块）
 → panels/dashboard.css → panels/perception.css → panels/settings.css
@@ -579,6 +584,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 - [x] STEP9-DEP-1: memora 内核 12 devDeps 非 Major 升级——@commitlint/cli 21.1.0→21.2.1 + @commitlint/config-conventional 21.1.0→21.2.0 + @types/node 22.15.30→22.20.1 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + @vitest/coverage-v8 4.0.0→4.1.10 + eslint 9.27.0→9.39.5 + lefthook 1.6.10→1.7.0 + msw 2.8.0→2.15.0 + pino-pretty 11.2.0→11.2.0 + prettier 3.5.3→3.9.5 + tsc-alias 1.8.16→1.9.1 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-1）
 - [x] STEP9-DEP-2: sprite 宿主 8 devDeps 非 Major 升级——@types/node 24.0.0→24.13.3 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + electron 40.10.5→40.10.6（需 npm run rebuild 重建 native 模块）+ eslint 9.27.0→9.39.5 + prettier 3.5.3→3.9.5 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-2）
 - [x] INFO-ARCH-2.1: 信息架构重构双栏布局——(1) layout.css `#main-content` 改为 `display: grid`，`.aux-open` 状态下 `grid-template-columns: 1fr 1px var(--aux-sidebar-width)`（主面板区 + 1px 分隔线 + 280px 信息侧栏）；(2) index.html 新增 `#btn-toggle-aux` 单图标按钮（#icon-panel-right）+ `.main-panel-area` 包裹层 + `.aux-sidebar-divider` + `#aux-sidebar`（含 `.aux-sidebar-header` + 2 个 `.aux-tab` + `.aux-sidebar-content`）+ `.sidebar-divider` 视觉分隔线；(3) panelRouter.ts 扩展双维度路由：`switchPanel()` 主面板区（chat/memories/clipboard/settings，选择器限定 `.nav-btn[data-panel]` 排除 toggle 按钮）+ `switchAuxTab()`/`openAuxSidebar()`/`toggleAuxSidebar()` 信息侧栏（perception/dashboard，独立 `.aux-active` 类，与主面板 `.active` 互不干扰），新增 `auxSidebarOpen`/`activeAuxTab` 状态 + `isAuxTabVisible()` 替代 `getCurrentPanel()` 用于侧栏面板可见性判断；(4) #panel-perception/#panel-dashboard DOM 从 `.main-panel-area` 迁移到 `.aux-sidebar-content`；(5) tokens.css 新增 `--aux-sidebar-width: 280px`（浅色+深色双主题）；(6) 快捷键重编号 PANEL_SHORTCUT_MAP 从 6 项缩减为 4 项（Ctrl+1=chat/Ctrl+2=memories/Ctrl+3=clipboard/Ctrl+4=settings，移除 5/6），commandPaletteManager nav-perception/nav-dashboard 改为 `openAuxSidebar(tab)` 路径，shortcuts-modal + onboarding 文案同步更新；(7) 自动打开路径 3 条：精灵状态条点击 → `openAuxSidebar('perception')` + 命令面板 Ctrl+K → `openAuxSidebar(tab)` + 主动触发（洞察/里程碑/模式/建议）→ `openAuxSidebar('dashboard')`；(8) 渲染层 onPanelSwitch 回调扩展触发 switchAuxTab 数据刷新（perception→loadPerception，dashboard→loadDashboard），Canvas 重绘通过 getPanelSwitchCallback 触发（renderGrowthChart 在 `getBoundingClientRect().width === 0` 时跳过绘制）；(9) 智能决策：移除自动收起逻辑（min-width=640px 验证：280 侧栏 + 360 主面板 = 640，无需自动收起）；(10) 即时切换无动画（参考 VSCode 标准行为，`transition: width` 触发 reflow 性能差）（2026-07-22 2.1 阶段实施）
+- [x] CSS-R8: layout.css 聚合器拆分——原单体 1238 行（剪枝后）拆分为 6 文件（1 聚合器 + 5 子模块），参考 chat.css/memory.css 先例：(1) layout.css 降级为纯 @import 聚合器（22 行）；(2) titlebar.css（顶部栏 + 命令面板入口 + 窗口控制按钮 + 角色选择器，~253 行）；(3) sidebar.css（侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线，~201 行）；(4) app-grid.css（窗口骨架：#app Grid + #main-content 悬浮窗口 + .panel + 信息侧栏双栏布局 + 响应式 @media，~244 行）；(5) widgets.css（布局内嵌小部件：仪表盘 dash-item / 默契度 rapport / 里程碑 milestone / 技能拖入区 skill-dropzone / 通用下拉菜单 dropdown / 最近洞察列表，~290 行）；(6) web-mode.css（Web 模式适配 body.web-mode *，~210 行）；@import 顺序保证层叠等价（app-grid.css 含 @media 须在 titlebar/sidebar 之后加载以覆盖 #titlebar-drag / #sidebar 小屏响应式规则）；index.html link 路径不变（聚合器内部 @import 子模块）（2026-07-22 模块重思 + 炼化归元）
 
 ### 延后（非目录结构）
 

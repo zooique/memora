@@ -1,0 +1,243 @@
+/**
+ * app-grid.css — 窗口骨架（Grid 布局 + 核心悬浮窗口 + 信息侧栏 + 响应式）
+ *
+ * 布局策略（大底板 + 悬浮卡片）：
+ * - 大底板：64px 图标侧边栏 + 顶部栏融为一体（同色，无边界）
+ * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
+ * - CSS Grid 布局：grid-template-areas 定义三区域
+ * - 2.1 双栏布局：主面板区 + 1px 分隔线 + 信息侧栏（grid 三列）
+ */
+
+/* ─── 大底板容器（grid 布局，左侧 + 顶部连成一片） ───────── */
+/* 侧边栏固定 64px，不再展开 */
+#app {
+  height: 100vh;
+  display: grid;
+  /* 左侧栏 64px（图标模式）+ 右侧自适应；顶部栏 44px + 下方自适应 */
+  grid-template-columns: 64px 1fr;
+  grid-template-rows: 44px 1fr;
+  grid-template-areas:
+    "sidebar titlebar"
+    "sidebar window";
+  background: var(--bg);
+  transition: grid-template-columns var(--transition-base) ease;
+}
+
+/* ─── 核心悬浮窗口（margin + radius + shadow 形成悬浮效果） ─ */
+/* 2.1 双栏布局：主面板区 + 1px 分隔线 + 信息侧栏（grid 三列）
+ * 主面板区和侧栏共享同一外框圆角阴影，中间用 1px var(--surface2) 分隔。
+ * 侧栏关闭时 grid-template-columns: 1fr 0px 0px（3 列对应 3 个子元素，分隔线和侧栏塌缩为 0 宽）。 */
+#main-content {
+  grid-area: window;
+  /* 修正 margin 不对称问题，四周留边距形成完整悬浮感 */
+  margin: 0 var(--space-1-5) var(--space-1-5) var(--space-1-5);
+  background: var(--window-bg);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
+  display: grid;
+  grid-template-columns: 1fr 0px 0px; /* 侧栏关闭：主面板全宽，分隔线和侧栏 0 宽（3 列对应 3 个子元素：.main-panel-area + .aux-sidebar-divider + #aux-sidebar） */
+  overflow: hidden; /* 内部面板裁切圆角 */
+  position: relative;
+}
+
+/* 侧栏打开时：1fr + 1px 分隔线 + var(--aux-sidebar-width) */
+#main-content.aux-open {
+  grid-template-columns: 1fr 1px var(--aux-sidebar-width);
+}
+
+/* ─── 面板（核心窗口内的面板容器，淡入淡出过渡） ────── */
+/* 所有面板绝对定位堆叠，仅 .active 面板可见且可交互 */
+.panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--transition-base) ease;
+  /* 隐藏面板创建独立堆叠上下文，避免内部高 z-index 元素穿透到 active 面板 */
+  z-index: 0;
+}
+
+.panel.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  /* active 面板提升堆叠层级，确保在所有隐藏面板之上 */
+  z-index: var(--z-base);
+}
+
+/* ─── 2.1 信息侧栏（主面板区 + 1px 分隔线 + 侧栏三列结构） ─── */
+/* 主面板区包裹层：作为主面板 .panel 的定位上下文（grid 第 1 列） */
+.main-panel-area {
+  position: relative;
+  overflow: hidden;
+  /* 左上角和左下角圆角由 #main-content overflow:hidden 裁切 */
+}
+
+/* 1px 垂直分隔线（grid 第 2 列） */
+/* 顶部跳过 44px（与 chat-toolbar 高度一致），只在内容区显示 */
+.aux-sidebar-divider {
+  width: 1px;
+  background: var(--surface2);
+  margin-top: 44px;
+}
+
+/* 侧栏关闭时分隔线塌缩为 0 宽（grid 列宽已声明 0px，此处 width:0 是兜底，防止 min-content 溢出导致分隔线占用空间） */
+#main-content:not(.aux-open) .aux-sidebar-divider {
+  width: 0;
+}
+
+/* 侧栏容器（grid 第 3 列，flex column：header + content） */
+#aux-sidebar {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--window-bg);
+  /* 右上角和右下角圆角由 #main-content overflow:hidden 裁切 */
+}
+
+/* 侧栏关闭时宽度塌缩为 0（grid 列宽已声明 0px，此处 width:0 是兜底，防止 min-content 溢出导致侧栏占用空间） */
+#main-content:not(.aux-open) #aux-sidebar {
+  width: 0;
+}
+
+/* 侧栏 header：40px 高，承载 tab 切换按钮（与 #chat-toolbar/.panel-header 风格一致，显式声明 background: transparent 与其对齐） */
+.aux-sidebar-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  gap: var(--space-1);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+/* Tab 图标按钮（参考 nav-btn 的交互风格独立定义，单图标 active 态；不复用 .nav-btn 类避免 padding/position:relative 干扰 32x32 方形布局） */
+.aux-tab {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  border: none;
+  background: none;
+  /* 激活态指示条定位锚点 */
+  position: relative;
+}
+
+.aux-tab:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+/* 激活态：浅底 + 强调色 + 底部 2px accent 指示条（对齐 VSCode/Trea 面板 tab 视觉语言） */
+.aux-tab.aux-active {
+  background: var(--active-bg);
+  color: var(--active-fg);
+}
+
+.aux-tab.aux-active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px; /* 对齐 header 底边框 */
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--active-fg);
+  border-radius: 1px;
+}
+
+/* 侧栏内容区：承载感知/仪表盘面板（独立于主面板 .active 路由） */
+.aux-sidebar-content {
+  flex: 1;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 侧栏内 panel 堆叠（独立于主面板 .active，使用 .aux-active 控制可见性） */
+.aux-sidebar-content .panel {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 侧栏内 panel-header 优化：移除 border-bottom（避免与 aux-sidebar-header 形成双层分隔线），
+   紧凑高度（24px）作为 panel 标题展示（"精灵状态"），aria-labelledby 仍引用 panel-title。 */
+.aux-sidebar-content .panel-header {
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-bottom: none;
+  flex-shrink: 0;
+}
+
+.aux-sidebar-content .panel-header .panel-title {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--subtext);
+}
+
+.aux-sidebar-content .panel.aux-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#btn-toggle-aux.active {
+  background: var(--active-bg);
+  color: var(--active-fg);
+}
+
+/* ============================================================
+ * 响应式适配（ADR-SP-008 §五 响应式策略）
+ * - ≥800px：完整 240px 侧边栏（默认窗口 900px 在此范围）
+ * - ≤799px：侧边栏收窄为 64px 图标模式
+ * - ≤639px：侧边栏隐藏（受 minWidth 640px 约束，通常不会触发）
+ * ============================================================ */
+
+/* 中屏（≤799px）：消息气泡放宽 */
+@media (max-width: 799px) {
+  /* 侧边栏始终 64px，无需 override */
+  #app {
+    grid-template-columns: 64px 1fr;
+  }
+
+  /* 消息气泡放宽 max-width，避免可用宽度减少后阅读体验差 */
+  .message {
+    max-width: 90%;
+  }
+}
+
+/* 小屏（≤639px）：侧边栏隐藏，核心窗口全宽（受 minWidth 640px 约束，通常不会触发） */
+@media (max-width: 639px) {
+  #app {
+    grid-template-columns: 0 1fr;
+    grid-template-areas:
+      "titlebar titlebar"
+      "window window";
+  }
+
+  /* 侧边栏隐藏（抽屉模式需 JS 配合，后续实现） */
+  #sidebar {
+    display: none;
+  }
+
+  /* ADR-NAV-001：小屏下导航标签保持显示，拖拽区左 padding 归零 */
+  #titlebar-drag {
+    padding-left: 0;
+  }
+
+  /* 核心窗口全宽 */
+  #main-content {
+    margin: 0;
+    border-radius: 0;
+  }
+}

@@ -1,6 +1,6 @@
 # styles/ — Memora Sprite 渲染层 CSS 架构
 
-> 最后更新：2026-07-22（2.1 信息架构双栏布局：--aux-sidebar-width + layout.css 双栏 grid 布局）
+> 最后更新：2026-07-22（CSS-R8 layout.css 聚合器拆分：1 文件 → 6 文件，参考 chat.css/memory.css 先例）
 
 ## 1. 目录结构（按功能域分组，8 个子目录）
 
@@ -13,8 +13,13 @@ styles/
 │   ├── base.css        # 全局重置 + 滚动条 + 动画 + focus-visible + 图标系统 + 通用组件基类（icon-btn/empty-state/error-state）
 │   └── utilities.css   # 原子布局工具类（flex-center/flex-col/flex-row-center/surface-card/text-muted + 过渡工具类）
 │
-├── layout/             # 布局层（窗口骨架）
-│   └── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局 + 信息侧栏双栏布局（2.1：#main-content.aux-open 1fr/1px/280px，含 .aux-sidebar-divider/.aux-sidebar-header/.aux-tab/.aux-sidebar-content/.sidebar-divider）
+├── layout/             # 布局层（窗口骨架 + 内嵌组件，聚合器 + 5 子模块）
+│   ├── layout.css      # 聚合器（@import 5 子模块，CSS-R8 拆分）
+│   ├── titlebar.css    # 顶部栏 + 命令面板入口 + 窗口控制按钮 + 角色选择器
+│   ├── sidebar.css     # 侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线
+│   ├── app-grid.css    # 窗口骨架（#app Grid + #main-content 悬浮窗口 + .panel + 信息侧栏双栏布局 + 响应式 @media）
+│   ├── widgets.css     # 布局内嵌小部件（仪表盘/默契度/里程碑/技能拖入区/通用下拉菜单/最近洞察列表）
+│   └── web-mode.css    # Web 模式适配（body.web-mode 渐变底板 + 隐藏窗口控制 + 放大命令面板 + 悬浮窗口优化）
 │
 ├── chat/               # 对话功能域（聚合器 + 7 子模块）
 │   ├── chat.css             # 聚合器（纯 @import 7 子模块）
@@ -65,7 +70,7 @@ styles/
 foundation/tokens.css      ← 设计令牌「单一真理源」（P0 抽出，双主题 + CJK 字体栈）
 foundation/base.css        ← 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类
 foundation/utilities.css   ← 通用工具类（flex-center / flex-col / flex-row-center / surface-card / text-muted）
-layout/layout.css          ← 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
+layout/layout.css          ← 聚合器（@import 5 子模块：titlebar/sidebar/app-grid/widgets/web-mode）
 chat/chat.css              ← 聚合器（@import 7 子模块，见 §3）
 memory/memory.css          ← 聚合器（@import 7 子模块 + 1 分析子面板，见 §3）
 panels/dashboard.css

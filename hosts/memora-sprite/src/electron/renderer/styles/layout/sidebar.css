@@ -1,0 +1,200 @@
+/**
+ * sidebar.css — 侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线
+ *
+ * 侧边栏固定 64px 图标模式（不再展开），与顶部栏同色无边界。
+ * 导航按钮复用 .nav-btn 类，含 tooltip（::after 伪元素）+ 键盘聚焦样式 + 里程碑联动高亮。
+ */
+
+/* ─── 侧边栏（与顶部栏同色，无边界；默认 64px 图标模式） ─── */
+#sidebar {
+  grid-area: sidebar;
+  background: var(--bg);
+  border-right: none;  /* 侧边栏与大底板同色，无边界 */
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-2);  /* 图标模式紧凑 padding */
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+/* 品牌区（图标模式仅显示图标，点击回到对话面板） */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  padding: var(--space-1-5);
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+
+.sidebar-brand:hover {
+  background: var(--surface0);
+}
+
+/* 图标模式：仅显示品牌图标，隐藏品牌名 */
+.sidebar-brand-name {
+  display: none;
+}
+
+/* h1 作为品牌名时重置默认 margin/padding，保持视觉不变 */
+.sidebar-brand h1.sidebar-brand-name {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.sidebar-brand-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-grad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-sm);
+}
+
+/* ─── 侧边栏导航图标区（垂直排列，复用 .nav-btn 类） ──────── */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 视觉分隔线：工作区按钮与底部控制区分隔（nav-bottom 一起推到底部） */
+.sidebar-divider {
+  margin-top: auto; /* 吸收剩余空间，将分隔线及之后的 nav-bottom 推到底部 */
+  width: 24px;
+  height: 1px;
+  background: var(--surface2);
+  margin-left: auto;
+  margin-right: auto;
+  border: none;
+}
+
+/* 导航按钮：图标模式仅显示图标 */
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative; /* 为 ::after tooltip 提供定位锚点 */
+  padding: var(--space-2-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* active 态：激活态语义令牌统一指示（--active-bg 浅底 + --active-fg 强调文字） */
+.nav-btn.active {
+  background: var(--active-bg);
+  color: var(--active-fg);
+  font-weight: var(--weight-semibold);
+}
+
+/*
+ * 里程碑联动高亮（P1-3 用户体验打磨）
+ *
+ * 当对话中触发里程碑时，给 dashboard 导航按钮加 pulse 动画，
+ * 让用户跨面板感知"仪表盘有新成就可查看"。
+ * 500ms 单次动画，JS 在动画结束后移除 .pulse-highlight 类。
+ * 使用 accent 色边框脉冲，与 active 态视觉协调。
+ */
+@keyframes nav-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+}
+
+.nav-btn.pulse-highlight {
+  animation: nav-pulse 500ms ease-out;
+  border-radius: var(--radius-md, 8px);
+}
+
+/* 导航按钮图标尺寸 */
+.nav-btn .icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* 侧边栏 tooltip 改 CSS ::after（对齐 demo，代替 title 属性） */
+/* 使用 data-tooltip 属性存储提示文本，hover 时通过 ::after 伪元素渲染 */
+.nav-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: var(--space-1) var(--space-2-5);
+  background: var(--surface1);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: var(--z-decoration);
+  box-shadow: var(--shadow-sm);
+}
+.nav-btn:hover::after { opacity: 1; }
+
+/* 导航按钮键盘聚焦可见样式 */
+.nav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─── 导航角标（剪贴板待处理数量提示） ─────────────────── */
+/* 绝对定位在 nav-btn 右上角，红色背景 + 白色文字，视觉提示有待处理内容 */
+.nav-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  z-index: var(--z-decoration);
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+
+/* 角标隐藏态（待处理数为 0 时） */
+.nav-badge.nav-badge-hidden {
+  display: none;
+}
+
+/* 角标较旧态（存在 >24h 未处理条目时，背景变警告色提示） */
+.nav-badge.nav-badge-stale {
+  background: var(--warning);
+}

@@ -1,0 +1,252 @@
+/**
+ * titlebar.css — 顶部栏 + 命令面板入口 + 窗口控制按钮 + 角色选择器
+ *
+ * 顶部栏与左侧栏同色无边界，整体设为窗口拖拽区（-webkit-app-region: drag），
+ * 按钮区域显式 no-drag。角色选择器在工具栏内复用（.toolbar-persona-container）。
+ */
+
+/* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
+/* 拖动策略：#titlebar 整体设为 drag，按钮区域显式 no-drag */
+#titlebar {
+  grid-area: titlebar;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0;
+  background: var(--bg);
+  border-bottom: none;  /* 顶部栏与侧边栏同色，无边界 */
+  flex-shrink: 0;
+  -webkit-app-region: drag;  /* 整体设为可拖动区域 */
+}
+
+/* 顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
+/* ADR-NAV-001：导航标签已有独立间距 */
+/* flex 子元素，高度由父级 align-items: center 控制 */
+#titlebar-drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  cursor: default;
+}
+
+/* 标题栏命令面板入口：搜索框样式，不占用过多空间 */
+.cmdk-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 28px;
+  padding: 0 var(--space-2-5);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--font-2xs);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.cmdk-hint:hover {
+  background: var(--surface0);
+  border-color: var(--muted);
+  color: var(--text-2);
+}
+
+.cmdk-hint .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.cmdk-hint kbd {
+  font-size: var(--font-3xs);
+  font-family: var(--font-mono);
+  background: var(--surface2);
+  color: var(--muted);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--surface2);
+  margin-left: 2px;
+}
+
+#titlebar-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+#titlebar-controls button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 标题栏按钮内的 SVG 图标尺寸 */
+#titlebar-controls button .icon {
+  width: 14px;
+  height: 14px;
+}
+
+#titlebar-controls button:hover {
+  background: var(--surface1);
+}
+
+#titlebar-controls button:active {
+  background: var(--surface2);
+}
+
+#titlebar-controls #btn-close:hover {
+  background: var(--red);
+  color: var(--text-on-red);
+}
+
+#titlebar-controls #btn-close:active {
+  background: var(--red-20);
+}
+
+/* ─── 角色选择器（卡片式） ─────────────────────────────── */
+#persona-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-md);
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  color: inherit;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+#persona-selector:hover {
+  background: var(--window-bg-2);
+  border-color: var(--muted);
+}
+
+#persona-icon {
+  font-size: var(--font-base);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand-grad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#persona-name {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+#persona-arrow {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+  transition: transform var(--transition-base) ease;
+}
+#persona-arrow .icon {
+  width: 12px;
+  height: 12px;
+}
+/* 角色下拉展开时箭头旋转 */
+#persona-selector[aria-expanded="true"] #persona-arrow {
+  transform: rotate(180deg);
+}
+
+/* 角色匹配模式标签（角色选择器旁，显示当前模式） */
+.mode-badge {
+  font-size: var(--font-2xs);
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--surface1);
+  color: var(--subtext);
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+/* 自动模式：蓝色调（accent-soft） */
+.mode-badge.auto {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 手动模式：灰色调 */
+.mode-badge.manual {
+  background: var(--surface1);
+  color: var(--subtext);
+}
+
+/* ─── 工具栏内角色选择器容器 ────────────────────────── */
+.toolbar-persona-container {
+  position: relative;
+}
+
+/* v3: 工具栏内角色选择器样式（紧凑版） */
+.toolbar-persona-container #persona-selector {
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-pill);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  gap: var(--space-1-5);
+  font-size: var(--font-sm);
+}
+
+.toolbar-persona-container #persona-selector:hover {
+  background: var(--surface1);
+  border-color: var(--muted);
+}
+
+.toolbar-persona-container #persona-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.toolbar-persona-container #persona-name {
+  font-size: var(--font-sm);
+}
+
+.toolbar-persona-container #persona-arrow .icon {
+  width: 10px;
+  height: 10px;
+}
+
+/* 工具栏内角色下拉菜单（右对齐） */
+.toolbar-persona-container #persona-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  width: 220px;
+  margin-top: 4px;
+  z-index: var(--z-popover);
+}
+
+.toolbar-persona-container #persona-dropdown .dropdown-item {
+  padding: var(--input-padding-md);
+}
+
+.toolbar-persona-container .mode-badge {
+  font-size: var(--font-2xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+}
