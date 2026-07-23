@@ -932,8 +932,21 @@ export class QuickInputCompletion {
 
   /**
    * 清空候选列表（外部调用接口）
+   *
+   * 先取消待触发的防抖定时器 + 递增请求序号使进行中的异步 IPC 响应过期，
+   * 再清空 DOM 和状态。防止两条竞态让候选列表在 clear 后"复活"：
+   * - 竞态 A：debounceTimer 还在倒计时，到期后触发 fetchCandidates 重新渲染
+   * - 竞态 B：fetchCandidates 已发起 IPC，clear 后 IPC 返回，lastRequestId 未变导致请求未过期继续渲染
    */
   clear(): void {
+    // 取消待触发的防抖定时器（对应竞态 A）
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    // 递增请求序号，使进行中的异步 IPC 响应过期（对应竞态 B）
+    // fetchCandidates 第 394 行 if (requestId !== this.lastRequestId) return; 会丢弃旧响应
+    this.lastRequestId++;
     this.clearCandidates();
   }
 
