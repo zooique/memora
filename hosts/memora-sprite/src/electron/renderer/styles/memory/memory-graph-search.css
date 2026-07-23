@@ -95,7 +95,7 @@
 .insights-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2-5);
   flex-wrap: wrap;
   margin-bottom: 8px;
 }
@@ -105,7 +105,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 40px;
+  min-width: 36px;
 }
 
 .insights-stat-value {
@@ -127,10 +127,8 @@
   color: var(--text-2);
 }
 
-/* source 分布容器：占满剩余空间 */
+/* source 分布容器：独立一行 */
 .insights-source-distribution {
-  flex: 1;
-  min-width: 150px;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -146,11 +144,16 @@
 
 .distribution-label {
   width: 60px;
+  flex-shrink: 0;
   color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 分布填充条：复用 source-* 颜色类 */
 .distribution-fill {
+  flex: 1;
   height: 6px;
   border-radius: var(--radius-xs);
   min-width: 2px;
@@ -158,6 +161,7 @@
 }
 
 .distribution-count {
+  flex-shrink: 0;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
   min-width: 24px;

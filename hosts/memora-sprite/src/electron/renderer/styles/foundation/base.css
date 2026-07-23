@@ -255,6 +255,73 @@ button:active,
   pointer-events: none;
 }
 
+/* 纯文本按钮（无背景无边框，用于次要操作如"清除数据"、"导出"等） */
+.btn-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.btn-text:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.btn-text:active {
+  background: var(--surface1);
+}
+
+.btn-text:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 图标按钮（仅图标，无文字，用于紧凑场景如刷新按钮） */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--surface2);
+}
+
+.btn-icon:active {
+  background: var(--surface1);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-icon .icon {
+  width: 14px;
+  height: 14px;
+}
+
 /* 小尺寸（24×24，用于行内紧凑场景） */
 .icon-btn.icon-btn-sm {
   width: 24px;

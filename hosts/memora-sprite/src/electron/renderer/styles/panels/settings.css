@@ -151,18 +151,6 @@
   margin-bottom: var(--space-6);
 }
 
-.settings-group-header {
-  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
-  margin-bottom: var(--space-3);
-}
-
-.settings-group-header h3 {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  margin: 0;
-}
-
 .settings-group h3 {
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
@@ -698,6 +686,9 @@
 
 .settings-group-header h3 {
   margin: 0;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
 }
 
 .settings-group-count {

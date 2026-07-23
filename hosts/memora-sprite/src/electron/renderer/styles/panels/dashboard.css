@@ -333,6 +333,16 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--muted);
 }
 
+/* 诊断时间提示：健康列表底部的"诊断于 xxx"文字 */
+.source-health-diagnosed {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--surface2);
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  text-align: right;
+}
+
 .source-health-meta span {
   display: flex;
   align-items: center;
