@@ -14,7 +14,7 @@
  *   - 失焦不立即关闭，避免用户切换窗口查看内容时浮窗消失
  *
  * 集成点：
- *   - main.ts：快捷键 Ctrl+Shift+I 触发 show()
+ *   - main.ts：快捷键 Ctrl+Shift+C 触发 show()
  *   - main.ts：IPC QUICK_INPUT_CONFIRM / QUICK_INPUT_CLOSE 处理
  *   - clipboardHandler：确认写入前调用 suppressNextChange() 抑制三重保护
  *   - pasteCoordinator：Phase 4 自动粘贴编排（恢复焦点 + 模拟 Ctrl+V）

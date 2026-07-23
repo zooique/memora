@@ -45,7 +45,7 @@ export interface ShortcutConfig {
  * - toggle-window: Ctrl+Shift+Space（切换窗口显示）
  * - quick-record: Ctrl+Shift+M（快速记录）
  * - recall-memory: Ctrl+Shift+R（召回记忆）
- * - quick-input: Ctrl+Shift+I（快速输入补全浮窗）
+ * - quick-input: Ctrl+Shift+C（快速输入补全浮窗）
  */
 export const DEFAULT_SHORTCUTS: ShortcutConfig = {
   enabled: true,
@@ -53,6 +53,6 @@ export const DEFAULT_SHORTCUTS: ShortcutConfig = {
     'toggle-window': 'Ctrl+Shift+Space',
     'quick-record': 'Ctrl+Shift+M',
     'recall-memory': 'Ctrl+Shift+R',
-    'quick-input': 'Ctrl+Shift+I',
+    'quick-input': 'Ctrl+Shift+C',
   },
 };

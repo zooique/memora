@@ -6,7 +6,7 @@
 
 ### 1.1 核心价值
 
-- **快速输入**：通过全局快捷键 `Ctrl+Shift+I` 快速调出输入浮窗
+- **快速输入**：通过全局快捷键 `Ctrl+Shift+C` 快速调出输入浮窗
 - **智能粘贴**：自动粘贴到目标应用（优先自动粘贴，失败降级到剪贴板）
 - **实时补全**：基于记忆和历史对话的智能补全建议
 - **记忆沉淀**：输入内容自动沉淀为记忆，供未来检索使用
@@ -161,7 +161,7 @@ sequenceDiagram
     participant TargetApp as 目标应用
     participant Memory as 记忆系统
 
-    User->>Shortcut: Ctrl+Shift+I
+    User->>Shortcut: Ctrl+Shift+C
     Shortcut->>QuickInputWindow: show()
     QuickInputWindow->>PasteCoordinator: capturePreviousWindow()
     PasteCoordinator->>InputInjector: captureActiveWindow()
@@ -298,12 +298,12 @@ sequenceDiagram
 
 ### 5.1 快捷键配置
 
-默认快捷键：`Ctrl+Shift+I`（可在 `src/electron/shortcuts.ts` 中配置）
+默认快捷键：`Ctrl+Shift+C`（可在 `src/electron/shortcuts.ts` 中配置）
 
 ```typescript
 // shortcuts.ts 中的配置
 {
-  key: 'CommandOrControl+Shift+I',
+  key: 'CommandOrControl+Shift+C',
   action: () => appState.quickInputWindow.show(),
   name: '快速输入'
 }
@@ -399,7 +399,7 @@ export interface InputAreaHost {
 npm run dev:electron
 
 # 打开开发者工具
-# 快捷键 Ctrl+Shift+I 触发浮窗
+# 快捷键 Ctrl+Shift+C 触发浮窗
 # 在开发者工具中查看控制台日志
 ```
 

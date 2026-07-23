@@ -128,7 +128,7 @@ describe('spriteConfig', () => {
       expect(accelerators['toggle-window']).toBe('Ctrl+Shift+Space');
       expect(accelerators['quick-record']).toBe('Ctrl+Shift+M');
       expect(accelerators['recall-memory']).toBe('Ctrl+Shift+R');
-      expect(accelerators['quick-input']).toBe('Ctrl+Shift+I');
+      expect(accelerators['quick-input']).toBe('Ctrl+Shift+C');
     });
 
     it('CONFIG_FIELD_SCHEMA 包含所有 27 个字段的类型映射', () => {

@@ -134,7 +134,7 @@ const appState = {
   shortcutManager: null as ShortcutManager | null,
   /** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
   clipboardHandler: null as ClipboardHandler | null,
-  /** 快速输入浮窗（Phase 1 骨架：懒创建，快捷键 Ctrl+Shift+I 触发显示） */
+  /** 快速输入浮窗（Phase 1 骨架：懒创建，快捷键 Ctrl+Shift+C 触发显示） */
   quickInputWindow: null as QuickInputWindow | null,
 
   // ─── 其他 ───
@@ -868,7 +868,7 @@ function setupAgentIndependentResources(): void {
 
   // STEP-4：浮球单击 → 呼出补全弹窗回调（连接 floatWindow → quickInputWindow）
   // 浮球单击后浮球成为前台窗口，通过 floatHwnd 排除浮球自身，
-  // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+I 时捕获的应用）
+  // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+C 时捕获的应用）
   appState.windowManager.updateFloatCallbacks({
     onShowQuickInput: (x, y, floatHwnd) => {
       void appState.quickInputWindow!.showAtPosition(x, y, floatHwnd);
