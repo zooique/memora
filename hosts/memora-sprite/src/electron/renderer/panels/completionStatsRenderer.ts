@@ -91,16 +91,31 @@ export class CompletionStatsRenderer {
     const recentEvents = metrics.getRecentEvents(RECENT_EVENTS_LIMIT);
     const dailyTrend = metrics.getDailyAggregated(DAILY_TREND_DAYS);
 
-    // ─── 标题栏 + 重置按钮 ──────────────────────────────
+    // ─── 标题栏 + 导出/重置按钮 ──────────────────────────
     const headerEl = createEl('div', 'completion-stats-header');
     headerEl.appendChild(createEl('span', 'completion-stats-title', '补全统计'));
 
+    // 按钮组容器（导出 + 重置并排，主动可见）
+    const actionsEl = createEl('div', 'completion-stats-actions');
+
+    // 导出按钮：渲染层 Blob 下载，零新增 IPC，beta 用户可回传统计 JSON 闭合度量环
+    const exportBtn = createEl('button', 'completion-stats-export-btn', '导出');
+    exportBtn.title = '导出统计 JSON（含聚合+趋势+事件流，用于回传度量数据）';
+    exportBtn.type = 'button';
+    this.events.addEventListener(exportBtn, 'click', () => {
+      this.exportStatsJson();
+    });
+    actionsEl.appendChild(exportBtn);
+
     const resetBtn = createEl('button', 'completion-stats-reset-btn', '重置统计');
     resetBtn.title = '清空所有补全统计数据';
+    resetBtn.type = 'button';
     this.events.addEventListener(resetBtn, 'click', () => {
       this.resetCallback?.();
     });
-    headerEl.appendChild(resetBtn);
+    actionsEl.appendChild(resetBtn);
+
+    headerEl.appendChild(actionsEl);
     container.appendChild(headerEl);
 
     // ─── R1 度量卡片组（激活率 + 召回时刻） ──────────────
@@ -171,6 +186,46 @@ export class CompletionStatsRenderer {
   }
 
   // ─── 内部渲染方法 ──────────────────────────────────────
+
+  /**
+   * 导出统计 JSON 并触发浏览器下载
+   *
+   * 渲染层 Blob 下载，零新增 IPC、零遥测、零隐私冲突。
+   * beta 用户点击后获得 JSON 文件，可手动回传用于聚合真实度量数据。
+   *
+   * 导出内容：聚合统计 + 14 天趋势 + 全量事件流（最多 500 条，LRU 上限）。
+   * 失败静默：try-catch 包裹，度量功能不能影响主路径（沿用项目规则"度量失败静默"）。
+   */
+  private exportStatsJson(): void {
+    try {
+      const metrics = getCompletionMetrics();
+      // 导出 payload：聚合 + 趋势 + 事件流（用于离线分析与回传）
+      const payload = {
+        // 导出时间戳（用于排序回传数据）
+        exportedAt: new Date().toISOString(),
+        // 聚合统计（R1 三数 + B2 召回时刻）
+        aggregated: metrics.getAggregated(),
+        // 14 天按日趋势（B2 纵向曲线）
+        dailyTrend: metrics.getDailyAggregated(DAILY_TREND_DAYS),
+        // 全量事件流（LRU 上限 500，用于深度分析）
+        events: metrics.getRecentEvents(500),
+      };
+      const json = JSON.stringify(payload, null, 2);
+      // Blob 下载：渲染层原生 API，无需主进程介入
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // 文件名含日期，便于多次导出归档
+      a.download = `memora-completion-stats-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      // 释放 Blob URL（避免内存泄漏）
+      URL.revokeObjectURL(url);
+    } catch {
+      // 度量失败静默：不抛错、不阻塞、不影响主路径
+      // 沿用项目规则"度量不能影响功能"
+    }
+  }
 
   /**
    * 创建指标卡片元素

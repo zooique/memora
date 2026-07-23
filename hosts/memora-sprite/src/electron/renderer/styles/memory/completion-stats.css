@@ -6,7 +6,7 @@
  *
  * 结构：
  *   .completion-stats-bar
- *   ├── .completion-stats-header（标题 + 重置按钮）
+ *   ├── .completion-stats-header（标题 + 导出/重置按钮组）
  *   ├── .completion-stats-metrics-r1（R1 度量卡片组：激活率 + 召回时刻）
  *   ├── .completion-stats-metrics（补全效率卡片组：采纳率/Top-1/平均位置/展示数）
  *   ├── .completion-stats-trend（B2 按日趋势柱状图）
@@ -49,6 +49,33 @@
 .completion-stats-reset-btn:hover {
   background: var(--surface2);
   color: var(--text);
+}
+
+/* 按钮组容器（导出 + 重置并排，gap 拉开间距） */
+.completion-stats-actions {
+  display: flex;
+  gap: var(--space-1-5);
+}
+
+/* 导出按钮：主操作用 accent 色强调，与重置按钮（次要操作）形成层级区分 */
+.completion-stats-export-btn {
+  /* 2px 保留次像素对齐（与 reset-btn 一致），10px 走 --space-2-5 令牌 */
+  padding: 2px var(--space-2-5);
+  font-size: var(--font-xs);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--white, #fff);
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.completion-stats-export-btn:hover {
+  opacity: 0.85;
+}
+
+.completion-stats-export-btn:active {
+  opacity: 0.7;
 }
 
 /* 指标卡片网格（4 列，窄屏降级为 2 列） */
