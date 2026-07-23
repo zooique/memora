@@ -313,11 +313,15 @@
 }
 
 .more-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  /* 靠左定位（向右展开），避免向左展开时左部分被 panel overflow:hidden 裁剪 */
-  left: 0;
-  min-width: 150px;
+  /* position:fixed 脱离 .main-panel-area 的 overflow:hidden 裁剪。
+     2.1 双栏布局后 .main-panel-area 被侧栏挤窄，旧 position:absolute 方案
+     菜单越界被裁剪；fixed 以视口为坐标系，与 getBoundingClientRect 一致，
+     不受任何中间层 overflow 影响（详见 ADR-SP 侧栏改造雷区）。 */
+  position: fixed;
+  /* top/left 由 TS 基于 btnRect 动态计算（fixed 坐标系 = 视口坐标） */
+  /* width: max-content 让菜单宽度自适应内容，避免过宽产生左侧空白 */
+  width: max-content;
+  min-width: 120px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
@@ -339,8 +343,10 @@
   font-family: inherit;
   font-size: var(--font-sm);
   cursor: pointer;
-  /* 菜单项内容右对齐（图标在右，文字在左），与靠左定位视觉协调 */
-  flex-direction: row-reverse;
-  text-align: right;
+  /* 图标在左，文字在右，文字撑满剩余空间 */
   transition: background var(--transition-fast);
+}
+
+.more-menu-item .icon {
+  flex-shrink: 0;
 }

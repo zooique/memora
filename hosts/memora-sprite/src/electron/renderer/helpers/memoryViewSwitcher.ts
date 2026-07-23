@@ -193,7 +193,7 @@ export function updateViewMenuItemsActive(mode: MemoryViewMode): void {
   const items = moreMenu.querySelectorAll('.more-menu-item');
   items.forEach((item) => {
     const action = item.getAttribute('data-action');
-    // 仅视图切换项参与 active 标记（advanced-search/insights/health 不参与）
+    // 仅视图切换项参与 active 标记（advanced-search/insights/health/completion-stats 不参与）
     const isActive = action === `view-${mode}`;
     item.classList.toggle('active', isActive);
   });

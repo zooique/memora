@@ -161,6 +161,19 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       },
     },
     {
+      id: 'mem-completion-stats',
+      label: '查看补全统计',
+      keywords: '补全 统计 采纳 命中率 completion 记忆',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        // 点击更多菜单中的"补全统计"项（与用户手动点击路径一致）
+        const statsItem = document.querySelector('.more-menu-item[data-action="completion-stats"]');
+        if (!(statsItem instanceof HTMLElement)) return;
+        statsItem.click();
+      },
+    },
+    {
       id: 'mem-graph',
       label: '切换到记忆图谱视图',
       keywords: '图谱 graph 关系 网络 拓扑 可视化',

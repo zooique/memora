@@ -103,8 +103,8 @@ export interface MemoryPanelEventContext {
   getIsEditing(): boolean;
   /** 保存编辑内容，通过回调通知宿主层 */
   saveEdit(): void;
-  /** 切换分析面板（insights/health 互斥） */
-  toggleAnalysisPanel(panel: 'insights' | 'health'): void;
+  /** 切换分析面板（insights/health/completion-stats 互斥） */
+  toggleAnalysisPanel(panel: 'insights' | 'health' | 'completion-stats'): void;
   /** 隐藏分析面板并恢复主视图 */
   hideAnalysisPanel(): void;
   /** 切换视图模式（list/timeline/graph） */
@@ -513,11 +513,11 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
   }
 }
 
-// ─── 6. 更多菜单（统计洞察/健康度诊断） ───────────────────
+// ─── 6. 更多菜单（统计洞察/健康度诊断/补全统计/回收站） ───────────────────
 
 /**
  * 更多菜单按钮 + 点击外部关闭 + 菜单项事件委托。
- * 菜单项仅保留统计洞察和健康度诊断两个动作。
+ * 菜单项含统计洞察、健康度诊断、补全统计、回收站四个动作。
  */
 function initMoreMenu(ctx: MemoryPanelEventContext): void {
   const moreBtn = document.getElementById('btn-memory-more');
@@ -528,20 +528,22 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
     if (!moreMenu || !moreBtn) return;
     const shouldShow = show ?? moreMenu.classList.contains('hidden');
     if (shouldShow) {
-      // 动态计算弹出框位置，默认靠左展开（符合用户期望），
-      // 若右侧空间不足则降级为靠右展开，避免超出窗口被 panel overflow:hidden 裁剪
+      // 菜单 position:fixed（视口坐标系），坐标基于按钮视口位置动态计算，
+      // 彻底脱离 .main-panel-area 的 overflow:hidden 裁剪（2.1 双栏布局后该容器被侧栏挤窄）。
+      // getBoundingClientRect 返回值即视口坐标，与 fixed 定位坐标系一致，无需转换。
       const btnRect = moreBtn.getBoundingClientRect();
       const menuMinWidth = 150; // 与 CSS .more-menu min-width 一致
+      // 默认靠左对齐按钮、向右展开（符合用户期望）
       const wouldOverflowRight = btnRect.left + menuMinWidth > window.innerWidth;
       if (wouldOverflowRight) {
-        // 右侧空间不足，靠右展开（向左）
-        moreMenu.style.left = 'auto';
-        moreMenu.style.right = '0';
+        // 右侧空间不足，靠右对齐按钮、向左展开
+        moreMenu.style.left = `${Math.max(0, btnRect.right - menuMinWidth)}px`;
       } else {
-        // 右侧空间充足，靠左展开（向右）
-        moreMenu.style.left = '0';
-        moreMenu.style.right = 'auto';
+        // 右侧空间充足，靠左对齐按钮、向右展开
+        moreMenu.style.left = `${btnRect.left}px`;
       }
+      // 顶部紧贴按钮下方 4px
+      moreMenu.style.top = `${btnRect.bottom + 4}px`;
     }
     moreMenu.classList.toggle('hidden', !shouldShow);
     moreBtn.setAttribute('aria-expanded', String(shouldShow));
@@ -564,7 +566,7 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
     }
   });
 
-  // 更多菜单项事件委托（insights/health/recycle-bin）
+  // 更多菜单项事件委托（insights/health/completion-stats/recycle-bin）
   if (moreMenu) {
     ctx.events.addEventListener(moreMenu, 'click', async (e) => {
       const target = (e as Event).target as HTMLElement;
@@ -578,6 +580,10 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
         ctx.getMoreMenuActionCallback()?.(action);
       } else if (action === 'health') {
         ctx.toggleAnalysisPanel('health');
+        ctx.getMoreMenuActionCallback()?.(action);
+      } else if (action === 'completion-stats') {
+        // 补全统计：切换面板 UI + 触发渲染（数据来自渲染层 localStorage，无 IPC）
+        ctx.toggleAnalysisPanel('completion-stats');
         ctx.getMoreMenuActionCallback()?.(action);
       } else if (action === 'recycle-bin') {
         ctx.getMoreMenuActionCallback()?.(action);

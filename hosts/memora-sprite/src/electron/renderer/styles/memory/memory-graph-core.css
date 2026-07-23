@@ -20,10 +20,7 @@
   font-weight: var(--weight-semibold);
 }
 
-.more-menu-item .icon {
-  width: 1rem;
-  height: 1rem;
-}
+/* .more-menu-item .icon 样式已移至 memory-views.css（统一管理） */
 
 /* 图谱容器：填充记忆面板内容区 */
 #memory-graph-container {
