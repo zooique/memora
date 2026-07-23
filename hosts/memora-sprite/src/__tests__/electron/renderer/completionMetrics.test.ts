@@ -2,9 +2,10 @@
  * 补全统计埋点模块测试
  *
  * 覆盖范围：
- * - recordShown / recordAdoption：事件记录
- * - getAggregated：聚合计算（采纳率/Top-1 命中率/平均位置）
- * - LRU 淘汰：超 500 条时从头淘汰
+ * - recordShown / recordAdoption / recordChatTurn / recordRecallMoment：事件记录
+ * - getAggregated：聚合计算（采纳率/Top-1 命中率/平均位置/激活率/召回时刻）
+ * - getDailyAggregated：按日聚合（缺失日期补零/跨天分组/归一化基准）
+ * - LRU 淘汰：超 500 条时从头淘汰（含混合事件类型）
  * - localStorage 持久化：写入 + 读取 + JSON 损坏降级
  * - clear：清空数据
  * - queryHash / adoptedTextHash 格式验证（FNV-1a 8 字符 hex，不记原文）
@@ -12,9 +13,10 @@
  * Mock 策略：
  * - localStorage：JSDOM 环境提供真实 localStorage（每个测试 beforeEach 清空）
  * - 单例：每个测试手动 new CompletionMetrics() 避免单例污染（或用 clear 重置）
+ * - 时间：用 vi.useFakeTimers + vi.setSystemTime 固定时间，避免 getDailyAggregated 跨天测试不稳
  */
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CompletionMetrics } from '../../../electron/renderer/helpers/completionMetrics.js';
 
 describe('补全统计埋点', () => {
@@ -25,6 +27,13 @@ describe('补全统计埋点', () => {
     localStorage.clear();
     // 每个测试新建实例（绕过单例，直接测试类）
     metrics = new CompletionMetrics();
+    // 固定时间避免跨天测试不稳定（2026-07-23 12:00 本地时间，月份 0-based：6=7 月）
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 23, 12, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // ─── 事件记录 ─────────────────────────────────────────
@@ -86,6 +95,10 @@ describe('补全统计埋点', () => {
       expect(agg.adoptionRate).toBe(0);
       expect(agg.top1HitRate).toBe(0);
       expect(agg.avgAdoptedPosition).toBe(0);
+      // R1 + B2 新增字段零值
+      expect(agg.totalChatTurns).toBe(0);
+      expect(agg.activationRate).toBe(0);
+      expect(agg.recallMoments).toBe(0);
     });
 
     it('应正确计算采纳率（totalAdopted / totalShown）', () => {
@@ -211,6 +224,199 @@ describe('补全统计埋点', () => {
       }
       const events = metrics.getRecentEvents();
       expect(events).toHaveLength(50);
+    });
+  });
+
+  // ─── R1 对话轮次埋点（激活率分母） ──────────────────
+
+  describe('recordChatTurn', () => {
+    it('应记录对话轮次事件', () => {
+      metrics.recordChatTurn();
+      const events = metrics.getRecentEvents(10);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.type).toBe('chat-turn');
+    });
+
+    it('事件应只含 type + timestamp（不记消息内容）', () => {
+      metrics.recordChatTurn();
+      const events = metrics.getRecentEvents(10);
+      const event = events[0] as { type: string; timestamp: string };
+      expect(event.type).toBe('chat-turn');
+      expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      // 不应含任何消息内容字段
+      expect(Object.keys(event).sort()).toEqual(['timestamp', 'type']);
+    });
+  });
+
+  // ─── B2 召回可感知时刻埋点 ──────────────────────────
+
+  describe('recordRecallMoment', () => {
+    it('应记录召回时刻事件', () => {
+      metrics.recordRecallMoment(3);
+      const events = metrics.getRecentEvents(10);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.type).toBe('recall-moment');
+    });
+
+    it('事件应含 recallCount + timestamp（不记记忆内容）', () => {
+      metrics.recordRecallMoment(5);
+      const events = metrics.getRecentEvents(10);
+      const event = events[0] as { type: string; recallCount: number; timestamp: string };
+      expect(event.type).toBe('recall-moment');
+      expect(event.recallCount).toBe(5);
+      expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      // 不应含记忆内容字段
+      expect(Object.keys(event).sort()).toEqual(['recallCount', 'timestamp', 'type']);
+    });
+  });
+
+  // ─── R1 激活率聚合（totalShown / totalChatTurns） ────
+
+  describe('getAggregated 激活率 + 召回时刻', () => {
+    it('应正确计算激活率（totalShown / totalChatTurns）', () => {
+      // 3 次对话 + 1 次展示 → 激活率 1/3
+      metrics.recordChatTurn();
+      metrics.recordChatTurn();
+      metrics.recordChatTurn();
+      metrics.recordShown('q1', 3, 5);
+      const agg = metrics.getAggregated();
+      expect(agg.totalChatTurns).toBe(3);
+      expect(agg.totalShown).toBe(1);
+      expect(agg.activationRate).toBeCloseTo(1 / 3, 5);
+    });
+
+    it('对话次数为 0 时激活率应为 0（不除零）', () => {
+      metrics.recordShown('q1', 3, 5);
+      const agg = metrics.getAggregated();
+      expect(agg.totalChatTurns).toBe(0);
+      expect(agg.activationRate).toBe(0);
+    });
+
+    it('应正确累计召回时刻数', () => {
+      metrics.recordRecallMoment(2);
+      metrics.recordRecallMoment(3);
+      metrics.recordRecallMoment(1);
+      const agg = metrics.getAggregated();
+      expect(agg.recallMoments).toBe(3);
+    });
+
+    it('4 种事件混合时聚合应互不干扰', () => {
+      // 混合事件流：对话 + 展示 + 采纳 + 召回
+      metrics.recordChatTurn();
+      metrics.recordShown('q1', 3, 5);
+      metrics.recordAdoption('q1', 'text', 0);
+      metrics.recordRecallMoment(2);
+      metrics.recordChatTurn();
+      metrics.recordShown('q2', 2, 3);
+      const agg = metrics.getAggregated();
+      // 各类型独立计数
+      expect(agg.totalChatTurns).toBe(2);
+      expect(agg.totalShown).toBe(2);
+      expect(agg.totalAdopted).toBe(1);
+      expect(agg.recallMoments).toBe(1);
+      // 激活率 = 2/2 = 1.0（每次对话都唤起了补全）
+      expect(agg.activationRate).toBe(1);
+      // 采纳率 = 1/2 = 0.5
+      expect(agg.adoptionRate).toBe(0.5);
+    });
+  });
+
+  // ─── B2 按日聚合（纵向养成曲线） ─────────────────────
+
+  describe('getDailyAggregated', () => {
+    it('无事件时应返回 N 天零值数组（缺失日期补零）', () => {
+      const daily = metrics.getDailyAggregated(7);
+      expect(daily).toHaveLength(7);
+      for (const item of daily) {
+        expect(item.shown).toBe(0);
+        expect(item.adopted).toBe(0);
+        expect(item.chatTurns).toBe(0);
+        expect(item.activationRate).toBe(0);
+        expect(item.recallMoments).toBe(0);
+      }
+    });
+
+    it('应返回最近 N 天按日期升序的数组', () => {
+      metrics.recordChatTurn();
+      const daily = metrics.getDailyAggregated(3);
+      expect(daily).toHaveLength(3);
+      // 升序：最旧在前，最新在后
+      // 今天是 2026-07-23，3 天 = 07-21, 07-22, 07-23
+      expect(daily[0]!.date).toBe('2026-07-21');
+      expect(daily[1]!.date).toBe('2026-07-22');
+      expect(daily[2]!.date).toBe('2026-07-23');
+      // 今天应有 1 次 chat-turn
+      expect(daily[2]!.chatTurns).toBe(1);
+      // 前两天应为 0
+      expect(daily[0]!.chatTurns).toBe(0);
+      expect(daily[1]!.chatTurns).toBe(0);
+    });
+
+    it('应正确按日聚合多事件类型', () => {
+      // 今天：2 次展示 + 1 次采纳 + 3 次对话 + 1 次召回
+      metrics.recordShown('q1', 3, 5);
+      metrics.recordShown('q2', 2, 3);
+      metrics.recordAdoption('q1', 'text', 0);
+      metrics.recordChatTurn();
+      metrics.recordChatTurn();
+      metrics.recordChatTurn();
+      metrics.recordRecallMoment(4);
+
+      const daily = metrics.getDailyAggregated(1);
+      expect(daily).toHaveLength(1);
+      const today = daily[0]!;
+      expect(today.shown).toBe(2);
+      expect(today.adopted).toBe(1);
+      expect(today.chatTurns).toBe(3);
+      expect(today.recallMoments).toBe(1);
+      // 激活率 = 2/3
+      expect(today.activationRate).toBeCloseTo(2 / 3, 5);
+    });
+
+    it('chatTurns=0 的日期 activationRate 应为 0（不除零）', () => {
+      metrics.recordShown('q1', 3, 5);
+      const daily = metrics.getDailyAggregated(1);
+      expect(daily[0]!.chatTurns).toBe(0);
+      expect(daily[0]!.activationRate).toBe(0);
+    });
+
+    it('跨天事件应按本地时区分组（避免 UTC 错位）', () => {
+      // 写入一个昨天的事件（直接操作 localStorage 模拟跨天数据）
+      const yesterday = new Date(2026, 6, 22, 23, 30, 0);
+      metrics.recordChatTurn();
+      // 手动追加昨天的事件（绕过 recordChatTurn 用当前时间）
+      const events = [
+        { type: 'chat-turn', timestamp: yesterday.toISOString() },
+        { type: 'chat-turn', timestamp: new Date().toISOString() },
+      ];
+      localStorage.setItem('memora-completion-stats', JSON.stringify(events));
+      const m2 = new CompletionMetrics();
+      const daily = m2.getDailyAggregated(2);
+      expect(daily).toHaveLength(2);
+      // 07-22 应有 1 次，07-23 应有 1 次
+      expect(daily[0]!.date).toBe('2026-07-22');
+      expect(daily[0]!.chatTurns).toBe(1);
+      expect(daily[1]!.date).toBe('2026-07-23');
+      expect(daily[1]!.chatTurns).toBe(1);
+    });
+  });
+
+  // ─── LRU 淘汰（混合事件类型） ───────────────────────
+
+  describe('LRU 淘汰（混合类型）', () => {
+    it('超过 500 条混合事件时应从头淘汰最老事件', () => {
+      // 写入 502 条混合事件
+      for (let i = 0; i < 502; i++) {
+        if (i % 3 === 0) metrics.recordShown(`q${i}`, 1, 1);
+        else if (i % 3 === 1) metrics.recordChatTurn();
+        else metrics.recordRecallMoment(1);
+      }
+      const events = metrics.getRecentEvents(1000);
+      expect(events).toHaveLength(500);
+      // 最老的 2 条应被淘汰（query0 + chat-turn）
+      // 最近的事件应是 i=501，501 % 3 = 0 → recordShown
+      const newest = events[0]!;
+      expect(newest.type).toBe('shown');
     });
   });
 });

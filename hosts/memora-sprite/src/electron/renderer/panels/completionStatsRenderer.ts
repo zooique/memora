@@ -2,8 +2,9 @@
  * 补全统计面板渲染器
  *
  * 职责：
- * - 渲染补全统计聚合数据（采纳率 / Top-1 命中率 / 平均位置 / 展示数 / 采纳数）
- * - 渲染最近事件流（展示/采纳事件，最近 50 条）
+ * - 渲染补全统计聚合数据（采纳率 / Top-1 命中率 / 平均位置 / 展示数 / 采纳数 / 激活率 / 召回时刻）
+ * - 渲染最近事件流（展示/采纳/对话轮次/召回时刻事件，最近 50 条）
+ * - 渲染按日趋势柱状图（最近 14 天，B2 纵向养成曲线）
  * - 提供"重置统计"入口（清空 localStorage 数据）
  *
  * 设计原则（遵循 ADR-SP-015 组合模式）：
@@ -13,12 +14,12 @@
  *
  * 数据来源：
  * - CompletionMetrics 单例（getCompletionMetrics()），localStorage 持久化
- * - 打开面板时实时调用 getAggregated() + getRecentEvents() 渲染
+ * - 打开面板时实时调用 getAggregated() + getRecentEvents() + getDailyAggregated() 渲染
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { createEl } from '../helpers/domHelpers.js';
-import { getCompletionMetrics, type CompletionEvent } from '../helpers/completionMetrics.js';
+import { getCompletionMetrics, type CompletionEvent, type DailyAggregatedItem } from '../helpers/completionMetrics.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -27,6 +28,9 @@ const STATS_CONTAINER_ID = 'completion-stats-bar';
 
 /** 最近事件展示条数 */
 const RECENT_EVENTS_LIMIT = 50;
+
+/** 按日趋势默认覆盖天数（B2 纵向养成曲线，2 周观察窗口） */
+const DAILY_TREND_DAYS = 14;
 
 // ─── 渲染器 ────────────────────────────────────────────────
 
@@ -71,7 +75,7 @@ export class CompletionStatsRenderer {
   /**
    * 渲染补全统计面板
    *
-   * 从 CompletionMetrics 单例读取聚合数据 + 最近事件流，渲染到容器。
+   * 从 CompletionMetrics 单例读取聚合数据 + 最近事件流 + 按日趋势，渲染到容器。
    * 每次打开面板时调用（实时刷新，无缓存）。
    */
   render(): void {
@@ -85,6 +89,7 @@ export class CompletionStatsRenderer {
     const metrics = getCompletionMetrics();
     const aggregated = metrics.getAggregated();
     const recentEvents = metrics.getRecentEvents(RECENT_EVENTS_LIMIT);
+    const dailyTrend = metrics.getDailyAggregated(DAILY_TREND_DAYS);
 
     // ─── 标题栏 + 重置按钮 ──────────────────────────────
     const headerEl = createEl('div', 'completion-stats-header');
@@ -98,7 +103,22 @@ export class CompletionStatsRenderer {
     headerEl.appendChild(resetBtn);
     container.appendChild(headerEl);
 
-    // ─── 聚合指标卡片 ──────────────────────────────────
+    // ─── R1 度量卡片组（激活率 + 召回时刻） ──────────────
+    // 放在最前——R1 是"发布前提验证"的核心三数之一
+    const r1El = createEl('div', 'completion-stats-metrics completion-stats-metrics-r1');
+    r1El.appendChild(this.createMetricCard(
+      '激活率',
+      `${(aggregated.activationRate * 100).toFixed(1)}%`,
+      `展示 ${aggregated.totalShown} / 对话 ${aggregated.totalChatTurns}`,
+    ));
+    r1El.appendChild(this.createMetricCard(
+      '召回时刻',
+      String(aggregated.recallMoments),
+      `"你教过我 X" 可感知次数`,
+    ));
+    container.appendChild(r1El);
+
+    // ─── 补全效率卡片组 ──────────────────────────────
     const metricsEl = createEl('div', 'completion-stats-metrics');
 
     // 采纳率（核心指标）
@@ -130,6 +150,9 @@ export class CompletionStatsRenderer {
     ));
 
     container.appendChild(metricsEl);
+
+    // ─── B2 按日趋势柱状图（纵向养成曲线） ──────────────
+    container.appendChild(this.createDailyTrendEl(dailyTrend));
 
     // ─── 最近事件流 ──────────────────────────────────────
     if (recentEvents.length > 0) {
@@ -165,28 +188,123 @@ export class CompletionStatsRenderer {
   }
 
   /**
+   * 创建按日趋势柱状图区块（B2 纵向养成曲线）
+   *
+   * 渲染最近 N 天的双指标柱状图：
+   * - 蓝色柱：当日展示数（左轴，归一化到全期最大值）
+   * - 橙色柱：当日召回时刻数（同图叠加，归一化到全期最大值）
+   * - 柱顶常驻显示数值（主动可见，不藏 hover）
+   * - 柱底显示日期（MM-DD）
+   *
+   * 全零数据时显示空状态提示，避免渲染无意义空图。
+   *
+   * @param daily 按日聚合数据（由 getDailyAggregated 返回，升序）
+   */
+  private createDailyTrendEl(daily: DailyAggregatedItem[]): HTMLElement {
+    const trendEl = createEl('div', 'completion-stats-trend');
+    trendEl.appendChild(createEl('div', 'completion-stats-trend-title', '最近 14 天趋势'));
+
+    // 全零数据空状态（避免渲染无意义空图）
+    const hasData = daily.some(d => d.shown > 0 || d.adopted > 0 || d.chatTurns > 0 || d.recallMoments > 0);
+    if (!hasData) {
+      trendEl.appendChild(createEl('div', 'completion-stats-trend-empty', '暂无趋势数据，使用 1-2 天后可见'));
+      return trendEl;
+    }
+
+    // 归一化基准：取展示数和召回时刻数的最大值（分别归一化，避免召回数被展示数淹没）
+    const maxShown = Math.max(1, ...daily.map(d => d.shown));
+    const maxRecall = Math.max(1, ...daily.map(d => d.recallMoments));
+
+    // 图例
+    const legendEl = createEl('div', 'completion-stats-trend-legend');
+    legendEl.appendChild(createLegendItem('completion-stats-trend-legend-shown', '展示'));
+    legendEl.appendChild(createLegendItem('completion-stats-trend-legend-recall', '召回时刻'));
+    trendEl.appendChild(legendEl);
+
+    // 柱状图容器
+    const chartEl = createEl('div', 'completion-stats-trend-chart');
+    for (const item of daily) {
+      chartEl.appendChild(this.createDailyBarEl(item, maxShown, maxRecall));
+    }
+    trendEl.appendChild(chartEl);
+
+    return trendEl;
+  }
+
+  /**
+   * 创建单日柱组元素
+   *
+   * 每日一组双柱（展示 + 召回），柱顶常驻数值，柱底日期。
+   * 柱高归一化到 4-100% 区间（最小 4% 保证零值也可见，便于辨识空日）。
+   *
+   * @param item 单日聚合数据
+   * @param maxShown 展示数归一化基准（全期最大值，至少为 1）
+   * @param maxRecall 召回时刻归一化基准（全期最大值，至少为 1）
+   */
+  private createDailyBarEl(item: DailyAggregatedItem, maxShown: number, maxRecall: number): HTMLElement {
+    const barGroupEl = createEl('div', 'completion-stats-trend-bar-group');
+
+    // 双柱容器
+    const barsEl = createEl('div', 'completion-stats-trend-bars');
+
+    // 展示数柱（蓝色）
+    const shownBarEl = createEl('div', 'completion-stats-trend-bar shown');
+    const shownHeightPct = item.shown > 0 ? 4 + (item.shown / maxShown) * 96 : 0;
+    shownBarEl.style.height = `${shownHeightPct}%`;
+    shownBarEl.title = `展示 ${item.shown} 次`;
+    barsEl.appendChild(shownBarEl);
+
+    // 召回时刻柱（橙色）
+    const recallBarEl = createEl('div', 'completion-stats-trend-bar recall');
+    const recallHeightPct = item.recallMoments > 0 ? 4 + (item.recallMoments / maxRecall) * 96 : 0;
+    recallBarEl.style.height = `${recallHeightPct}%`;
+    recallBarEl.title = `召回时刻 ${item.recallMoments} 次`;
+    barsEl.appendChild(recallBarEl);
+
+    // 柱顶数值（仅展示数 > 0 时显示，避免空柱顶堆零；主动可见不藏 hover）
+    if (item.shown > 0) {
+      barsEl.appendChild(createEl('div', 'completion-stats-trend-value', String(item.shown)));
+    }
+
+    barGroupEl.appendChild(barsEl);
+
+    // 柱底日期（MM-DD，省略年份节省宽度）
+    const dateLabel = item.date.slice(5);
+    barGroupEl.appendChild(createEl('div', 'completion-stats-trend-date', dateLabel));
+
+    return barGroupEl;
+  }
+
+  /**
    * 创建事件列表项元素
    *
-   * @param event 补全事件（展示/采纳）
+   * @param event 补全事件（展示/采纳/对话轮次/召回时刻）
    */
   private createEventItemEl(event: CompletionEvent): HTMLElement {
     const itemEl = createEl('div', 'completion-stats-event-item');
 
-    // 事件类型徽章
-    const typeEl = createEl(
-      'span',
-      event.type === 'shown' ? 'completion-stats-event-type shown flex-shrink-0' : 'completion-stats-event-type adopted flex-shrink-0',
-      event.type === 'shown' ? '展示' : '采纳',
-    );
+    // 事件类型徽章（按类型分色：展示/采纳/对话/召回）
+    const typeBadge = this.getEventBadge(event.type);
+    const typeEl = createEl('span', `completion-stats-event-type ${typeBadge.class} flex-shrink-0`, typeBadge.label);
     itemEl.appendChild(typeEl);
 
     // 事件详情
     const detailEl = createEl('span', 'completion-stats-event-detail');
-    if (event.type === 'shown') {
-      detailEl.textContent = `query ${event.queryLen} 字 → ${event.shownCount} 候选`;
-    } else {
-      const positionLabel = event.adoptedPosition === 0 ? 'Top-1' : `#${event.adoptedPosition + 1}`;
-      detailEl.textContent = `query ${event.queryLen} 字 → 采纳 ${positionLabel}`;
+    switch (event.type) {
+      case 'shown':
+        detailEl.textContent = `query ${event.queryLen} 字 → ${event.shownCount} 候选`;
+        break;
+      case 'adopted': {
+        const positionLabel = event.adoptedPosition === 0 ? 'Top-1' : `#${event.adoptedPosition + 1}`;
+        detailEl.textContent = `query ${event.queryLen} 字 → 采纳 ${positionLabel}`;
+        break;
+      }
+      case 'chat-turn':
+        detailEl.textContent = `用户发送对话`;
+        break;
+      case 'recall-moment':
+        detailEl.textContent = `召回 ${event.recallCount} 条记忆`;
+        break;
     }
     itemEl.appendChild(detailEl);
 
@@ -199,4 +317,37 @@ export class CompletionStatsRenderer {
 
     return itemEl;
   }
+
+  /**
+   * 获取事件类型徽章的样式类与标签
+   *
+   * 4 种事件类型分色：展示=蓝 / 采纳=绿 / 对话=灰 / 召回=橙
+   *
+   * @param type 事件类型标识
+   */
+  private getEventBadge(type: CompletionEvent['type']): { class: string; label: string } {
+    switch (type) {
+      case 'shown':
+        return { class: 'shown', label: '展示' };
+      case 'adopted':
+        return { class: 'adopted', label: '采纳' };
+      case 'chat-turn':
+        return { class: 'chat-turn', label: '对话' };
+      case 'recall-moment':
+        return { class: 'recall-moment', label: '召回' };
+    }
+  }
+}
+
+/**
+ * 创建图例项元素（模块级私有工具）
+ *
+ * @param colorClass 颜色样式类
+ * @param label 图例文字
+ */
+function createLegendItem(colorClass: string, label: string): HTMLElement {
+  const itemEl = createEl('div', 'completion-stats-trend-legend-item');
+  itemEl.appendChild(createEl('span', `completion-stats-trend-legend-dot ${colorClass}`));
+  itemEl.appendChild(createEl('span', 'completion-stats-trend-legend-text', label));
+  return itemEl;
 }

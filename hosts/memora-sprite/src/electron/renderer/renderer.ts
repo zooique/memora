@@ -29,6 +29,8 @@ import { EventTracker } from './helpers/eventTracker.js';
 import { safeGet } from './helpers/safeStorage.js';
 // timeRefresher 全局相对时间刷新器（窗口恢复焦点/可见时刷新所有 data-timestamp 元素）
 import { timeRefresher } from './helpers/timeRefresher.js';
+// 补全统计埋点（R1 激活率分母：用户发送对话时记录 chat-turn 事件）
+import { getCompletionMetrics } from './helpers/completionMetrics.js';
 import { getLocalDate, MS_PER_HOUR, MS_PER_DAY, TOAST_LONG_MS } from '../../sprite/constants.js';
 import {
   createSilentRecoveryScheduler,
@@ -431,6 +433,8 @@ async function bootstrapRenderer(): Promise<void> {
       role: 'user',
       content: State.lastUserInput,
     });
+    // R1 度量埋点：记录对话轮次（激活率分母，覆盖重试路径）
+    getCompletionMetrics().recordChatTurn();
     window.electronAPI.sendUserInput(State.lastUserInput);
   };
 
@@ -763,6 +767,8 @@ function setupBusinessLogic(
       content: text,
     });
 
+    // R1 度量埋点：记录对话轮次（激活率分母，覆盖主发送路径）
+    getCompletionMetrics().recordChatTurn();
     // 发送到主进程
     window.electronAPI.sendUserInput(text);
   });
@@ -799,6 +805,8 @@ function setupBusinessLogic(
       role: 'user',
       content: text,
     });
+    // R1 度量埋点：记录对话轮次（激活率分母，覆盖示例问题路径）
+    getCompletionMetrics().recordChatTurn();
     // 发送到主进程
     window.electronAPI.sendUserInput(text);
   });

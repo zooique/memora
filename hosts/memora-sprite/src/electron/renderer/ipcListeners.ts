@@ -23,6 +23,8 @@ import type { SerializedAppError } from '../ipc/types.js';
 // ConfigFilesChangedPayload 真理源在 preload（与 settingsManagerPanel 共用同一类型契约）
 import type { ConfigFilesChangedPayload } from '../preload.js';
 import { reportError } from './helpers/errorHelpers.js';
+// 补全统计埋点（B2 纵向养成指标：召回可感知时刻计数）
+import { getCompletionMetrics } from './helpers/completionMetrics.js';
 import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
 // 感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联
 import type { RapportLevel, PresenceState, RhythmType, CoherenceLevel, DepthLevel } from '../../sprite/controllers/index.js';
@@ -715,6 +717,11 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   // 召回透明度：在 text chunk 之前到达，注入召回记忆摘要到消息气泡
   window.electronAPI.onStreamRecall((msg) => {
     uiManager.setMemoryRecall(msg.messageId, msg.memories);
+    // B2 纵向度量埋点：记录召回可感知时刻（精灵向用户展示"想起 N 条记忆"的次数）
+    // 仅在 memories 非空时计数（空召回不构成"可感知时刻"，memories 类型为非可选数组）
+    if (msg.memories.length > 0) {
+      getCompletionMetrics().recordRecallMoment(msg.memories.length);
+    }
   });
 
   // 思考阶段指示：在 text chunk 之前到达，显示"正在回忆…/处理…/归档…"
