@@ -401,6 +401,41 @@ describe('QuickInputController', () => {
       expect(inputField.value).toBe('原始内容');
       expect(inputField.classList.contains('error')).toBe(false);
     });
+
+    it('记忆候选填充未完成时 Tab 等待填充完成再提交（修复异步竞态）', async () => {
+      const { controller, inputField, api } = await createController({ inputValue: '剪贴板内容' });
+
+      // mock showMemory 返回延迟 Promise（模拟 IPC 未完成）
+      let resolveShowMemory!: (value: unknown) => void;
+      (api.showMemory as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        new Promise((r) => { resolveShowMemory = r; }),
+      );
+
+      // 模拟选择记忆候选（触发 fillFromMemory 异步路径）
+      // 直接调用 private 方法绕过 completion 的 onSelect 机制，聚焦测试 handleConfirm 的 await 行为
+      (controller as unknown as {
+        fillFromMemory: (item: { memoryId: string; text: string }) => void;
+      }).fillFromMemory({ memoryId: 'mem-1', text: '预览内容' });
+
+      // 在 showMemory Promise resolve 之前按 Tab
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+
+      // 推进微任务，handleConfirm 应在 await pendingFillPromise 处暂停
+      await vi.advanceTimersByTimeAsync(0);
+
+      // showMemory 未 resolve，confirmQuickInput 不应被调用
+      // 修复前 bug：handleConfirm 同步读 inputField.value，提交了旧值 '剪贴板内容'
+      expect(api.confirmQuickInput).not.toHaveBeenCalled();
+
+      // resolve showMemory，fillText 被调用，inputField.value 更新为记忆内容
+      resolveShowMemory({ memory: { content: '完整记忆内容' } });
+      await vi.runAllTimersAsync();
+
+      // pendingFillPromise 已 resolve，handleConfirm 继续执行
+      // 验证提交的是记忆内容，不是"剪贴板内容"
+      expect(api.confirmQuickInput).toHaveBeenCalledWith('完整记忆内容', false);
+    });
   });
 
   // ─── togglePinnedMode ──────────────────────────────────

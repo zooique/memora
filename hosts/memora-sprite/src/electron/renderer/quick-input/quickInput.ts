@@ -147,6 +147,16 @@ export class QuickInputController {
   private isSubmitting = false;
   /** 提交代次计数器：每次提交递增，防止过期 IPC 响应污染状态（竞态防护） */
   private submitGeneration = 0;
+  /**
+   * 正在进行的记忆候选填充 Promise（fillFromMemory 异步期间持有）
+   *
+   * 协调异步填充与同步提交：用户按 ←→ 选择记忆候选后可能立即按 Tab，
+   * 此时 showMemory IPC 尚未返回，inputField.value 还是旧内容（剪贴板预填/查询词）。
+   * handleConfirm 开头 await 此 Promise，确保读到填充后的内容。
+   * fillFromMemory 无论 IPC 成功或失败都会调 fillText（成功用全量内容，失败降级截断预览），
+   * 故 await 完成后 value 一定是记忆内容。
+   */
+  private pendingFillPromise: Promise<void> | null = null;
   /** 补全管理器实例（init 时创建，cleanup 时销毁） */
   private completion: QuickInputCompletion | null = null;
   /** 当前输入区基础高度（不含候选列表，随 autoResize 动态变化） */
@@ -563,10 +573,29 @@ export class QuickInputController {
    *
    * 委托 fetchMemoryContent 公共函数，消除与 inputAreaManager 的重复逻辑。
    * 回库查询期间候选列表保持可见（不提前清除），填充完成后调用 clear() 隐藏。
+   *
+   * 同步入口存储进行中的 Promise 到 pendingFillPromise，供 handleConfirm 协调：
+   * 用户按 ←→ 选择记忆候选后可能立即按 Tab，此时 showMemory IPC 尚未返回，
+   * handleConfirm 开头 await pendingFillPromise 确保读到填充后的 value。
    */
-  private async fillFromMemory(item: CompletionItem): Promise<void> {
-    await fetchMemoryContent(item, this.api.showMemory, this.fillText.bind(this), 'QuickInput:showMemory');
-    this.completion?.clear();
+  private fillFromMemory(item: CompletionItem): void {
+    this.pendingFillPromise = this.executeFillFromMemory(item);
+  }
+
+  /**
+   * fillFromMemory 的异步执行体（实际发起 IPC + 填充 + 清理）
+   *
+   * finally 中清理 pendingFillPromise 引用，避免 handleConfirm 永远 await 已完成的 Promise。
+   * fetchMemoryContent 无论 IPC 成功或失败都会调 fillText（成功用全量内容，失败降级截断预览），
+   * 故此 Promise resolve 后 inputField.value 一定是记忆内容。
+   */
+  private async executeFillFromMemory(item: CompletionItem): Promise<void> {
+    try {
+      await fetchMemoryContent(item, this.api.showMemory, this.fillText.bind(this), 'QuickInput:showMemory');
+    } finally {
+      this.completion?.clear();
+      this.pendingFillPromise = null;
+    }
   }
 
   /**
@@ -789,6 +818,12 @@ export class QuickInputController {
    */
   private async handleConfirm(): Promise<void> {
     if (this.isSubmitting) return;
+    // 等待正在进行的记忆候选填充完成，避免读到填充前的旧 value
+    // 场景：用户按 ←→ 选择记忆候选后立即按 Tab，fillFromMemory 的 showMemory IPC 尚未返回
+    // await 后 inputField.value 一定是记忆内容（完整内容或降级截断预览）
+    if (this.pendingFillPromise) {
+      await this.pendingFillPromise;
+    }
     const text = this.inputField.value;
     if (!text.trim()) {
       await this.api.closeQuickInput();
