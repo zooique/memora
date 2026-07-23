@@ -123,7 +123,6 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     // DashboardPanelManager 委托方法
     renderDashboardStats: vi.fn(),
     renderAgentMetrics: vi.fn(),
-    renderSkills: vi.fn(),
     renderReviewData: vi.fn(),
     showInsightsLoading: vi.fn(),
     renderInsights: vi.fn(),
@@ -208,7 +207,6 @@ describe('推荐记忆点击事件委托', () => {
     expect(callArg.suggestions[0].name).toBe('推荐记忆A');
     // 同时验证其他委托方法被调用
     expect(mockUiManager.renderAgentMetrics).toHaveBeenCalledWith(null);
-    expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
     // Phase 6.2：loadDashboard 现在并发拉取 reviewData 并委托 renderReviewData 渲染增长趋势区块
     expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
     // updateLearningProgress 为死代码，不应再被调用

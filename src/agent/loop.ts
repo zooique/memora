@@ -952,6 +952,28 @@ export class AgentLoop {
   }
 
   /**
+   * 刷新 bootstrap 记忆段（设定面板 CRUD 专用）
+   *
+   * 设定面板对 rule/skill 执行增删改后，调用此方法用最新的记忆数组
+   * 重建 system prompt 中的 bootstrap 段，使变更立即对当前会话生效。
+   *
+   * 与 refreshPersonaPrefix 的区别：
+   *   - refreshPersonaPrefix 替换 systemPromptPrefix（角色 + 画像）
+   *   - refreshBootstrapMemories 替换 bootstrapMemories（rule + skill）
+   *
+   * 调用链：ConfigManager.deleteRule/updateRule/deleteSkill
+   *   → refreshBootstrapMemories 回调（assembler 注入）
+   *   → loop.refreshBootstrapMemories(memories)
+   *   → rebuildSystemMessage()
+   *
+   * @param memories 最新的 rule + skill 活跃记忆数组（由 ConfigManager.getBootstrapMemories 提供）
+   */
+  refreshBootstrapMemories(memories: Memory[]): void {
+    this.opts.bootstrapMemories = memories;
+    this.rebuildSystemMessage();
+  }
+
+  /**
    * 注入情感基调到 system prompt（Phase 2.1：AffectController）
    *
    * 在角色前缀和 bootstrap 记忆之间插入情感描述文本。

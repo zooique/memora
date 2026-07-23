@@ -40,6 +40,15 @@ import type { DetectedPattern } from './controllers/patternDetector.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 import { SpriteConfigManager, type ConfigSideEffects } from './spriteConfigManager.js';
 import { SpriteLifecycleManager } from './spriteLifecycleManager.js';
+import {
+  readConfigFile as readFileEntry,
+  saveConfigFile as saveFileEntry,
+  deleteConfigFile as deleteFileEntry,
+  listConfigFiles as listFileEntries,
+  type ConfigFileType,
+  type ConfigFileEntry,
+  type ConfigFileOperationResult,
+} from './configFileManager.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
@@ -139,6 +148,24 @@ export interface SpriteEventMap {
     stage: 'profile' | 'insight' | 'content';
     /** 失败原因摘要（error.message，截断 200 字符） */
     message: string;
+  };
+  /**
+   * 设定文件变更（精灵设定面板 Epic 3 · I4）
+   *
+   * 触发场景：
+   *   1. 设定面板 CRUD（saveConfigFile/deleteConfigFile）成功后发射
+   *   2. personaWatcher 监听到外部编辑器修改 personas/ 目录时发射（防抖后）
+   *
+   * 宿主 IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程，渲染层按 type 全量刷新对应 tab。
+   * name 为空字符串时表示批量变更（如 watcher 防抖合并多次文件变化），渲染层应全量刷新。
+   */
+  configFilesChanged: {
+    /** 配置类型 */
+    type: 'persona' | 'rule' | 'skill';
+    /** 操作类型 */
+    action: 'save' | 'delete';
+    /** 配置名（空字符串表示批量变更，渲染层应全量刷新对应 tab） */
+    name: string;
   };
 }
 
@@ -533,6 +560,11 @@ export class Sprite {
    * 防抖调度 personas 重载
    *
    * 500ms 内多次文件变化合并为一次 reload，避免编辑器写入触发多次重载。
+   *
+   * reload 完成后（无论成功失败）发射 configFilesChanged 事件：
+   *   - 文件层已变化是事实（真理源），渲染层应据此刷新列表
+   *   - reload 失败仅影响内核同步，不影响文件层刷新通知
+   *   - name 为空字符串表示批量变更（防抖合并多次变化，无法确定具体文件名）
    */
   private schedulePersonaReload(): void {
     if (this.personaReloadTimer) {
@@ -540,9 +572,16 @@ export class Sprite {
     }
     this.personaReloadTimer = setTimeout(() => {
       this.personaReloadTimer = null;
-      void this.agent.reloadConfig('persona').catch((err) => {
-        logger.warn({ err: toError(err).message }, 'personas 热重载失败');
-      });
+      void this.agent
+        .reloadConfig('persona')
+        .catch((err) => {
+          logger.warn({ err: toError(err).message }, 'personas 热重载失败');
+        })
+        .finally(() => {
+          // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
+          // type='persona' + name='' 表示批量变更，渲染层全量刷新 persona tab
+          this.emitSprite('configFilesChanged', { type: 'persona', action: 'save', name: '' });
+        });
     }, PERSONA_RELOAD_DEBOUNCE_MS);
   }
 
@@ -780,6 +819,177 @@ export class Sprite {
 
   formatPersonas(): string {
     return cliFormatter.formatPersonas(this.personaController.list(), this.personaController.activeName ?? undefined);
+  }
+
+  // ─── 设定文件管理（委托 configFileManager + 联动内核 Manager） ───
+  //
+  // 设定面板的统一入口：persona/rule/skill 三类文件的读/写/删/列表。
+  // 文件层操作委托 configFileManager（纯文件 CRUD），
+  // 内核层联动由本区块负责（同步 SQLite 索引 + Manager 内存缓存 + system prompt）。
+
+  /**
+   * 读取设定文件内容
+   *
+   * @param type 配置类型
+   * @param name 配置名
+   * @returns 文件条目（含完整内容）；文件不存在或 configDir 未设置返回 null
+   */
+  async readConfigFile(
+    type: ConfigFileType,
+    name: string,
+  ): Promise<ConfigFileEntry | null> {
+    if (!this.configDir) {
+      logger.warn({ type, name }, '读取设定文件失败：configDir 未设置');
+      return null;
+    }
+    return readFileEntry(type, name, this.configDir);
+  }
+
+  /**
+   * 保存设定文件（新增/更新合并）
+   *
+   * 联动逻辑（文件保存成功后执行，确保 SQLite + 内存缓存 + system prompt 同步）：
+   *   - persona: agent.reloadConfig('persona') 重新扫描 personas/ 目录
+   *   - rule: agent.config.updateRule(name, content) 同步 SQLite + bootstrap 段
+   *   - skill: agent.skills.reload() 重新扫描 skills/ 目录
+   *
+   * 联动失败不阻断文件保存（文件已是真理源），仅记录日志。
+   * 对话繁忙时 reloadConfig 会抛 chatBusyError，捕获后降级为日志。
+   *
+   * @param type 配置类型
+   * @param name 配置名
+   * @param content 文件内容
+   * @returns 操作结果
+   */
+  async saveConfigFile(
+    type: ConfigFileType,
+    name: string,
+    content: string,
+  ): Promise<ConfigFileOperationResult> {
+    if (!this.configDir) {
+      return { success: false, error: 'configDir 未设置' };
+    }
+
+    // 文件层保存（真理源）
+    const result = await saveFileEntry(type, name, content, this.configDir);
+    if (!result.success) {
+      return result;
+    }
+
+    // 内核层联动（同步 SQLite + 内存 + system prompt）
+    await this.syncConfigFileChange(type, name, content, 'save');
+
+    // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
+    this.emitSprite('configFilesChanged', { type, action: 'save', name });
+
+    return result;
+  }
+
+  /**
+   * 删除设定文件
+   *
+   * 联动逻辑（文件删除成功后执行）：
+   *   - persona: agent.persona.deletePersona(name) 清内存 + SQLite 软删除 + 激活角色回退
+   *   - rule: agent.config.deleteRule(name) SQLite 软删除 + bootstrap 段刷新
+   *   - skill: agent.config.deleteSkill(name) SQLite 软删除 + SkillManager 内存清理 + bootstrap 段刷新
+   *
+   * 联动失败不阻断文件删除（文件已删，Manager 联动失败仅记录日志）。
+   *
+   * @param type 配置类型
+   * @param name 配置名
+   * @returns 操作结果
+   */
+  async deleteConfigFile(
+    type: ConfigFileType,
+    name: string,
+  ): Promise<ConfigFileOperationResult> {
+    if (!this.configDir) {
+      return { success: false, error: 'configDir 未设置' };
+    }
+
+    // 文件层删除（真理源）
+    const result = await deleteFileEntry(type, name, this.configDir);
+    if (!result.success) {
+      return result;
+    }
+
+    // 内核层联动（同步 SQLite + 内存 + system prompt）
+    await this.syncConfigFileChange(type, name, '', 'delete');
+
+    // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
+    this.emitSprite('configFilesChanged', { type, action: 'delete', name });
+
+    return result;
+  }
+
+  /**
+   * 列出设定文件
+   *
+   * 返回文件元数据列表（不含内容，调用方需要内容时通过 readConfigFile 单独获取）。
+   * 按 mtime 降序排序（最近修改的在前）。
+   *
+   * @param type 配置类型
+   * @returns 文件条目数组；configDir 未设置或目录不存在返回空数组
+   */
+  async listConfigFiles(type: ConfigFileType): Promise<ConfigFileEntry[]> {
+    if (!this.configDir) {
+      logger.warn({ type }, '列出设定文件失败：configDir 未设置');
+      return [];
+    }
+    return listFileEntries(type, this.configDir);
+  }
+
+  /**
+   * 设定文件变更后的内核联动同步
+   *
+   * 内部辅助方法，统一处理 save/delete 后的 Manager 同步逻辑。
+   * 联动失败不抛错（文件已是真理源，Manager 联动失败仅记录日志，下次 reloadConfig 时自然对齐）。
+   *
+   * @param type 配置类型
+   * @param name 配置名
+   * @param content 文件内容（delete 时为空字符串）
+   * @param action 操作类型 'save' | 'delete'
+   */
+  private async syncConfigFileChange(
+    type: ConfigFileType,
+    name: string,
+    content: string,
+    action: 'save' | 'delete',
+  ): Promise<void> {
+    try {
+      if (type === 'persona') {
+        if (action === 'delete') {
+          // 删除：清内存 + SQLite 软删除 + 激活角色回退（K3）
+          this.agent.persona?.deletePersona(name);
+        } else {
+          // 保存：重新扫描 personas/ 目录（保持激活角色，reload 内部处理）
+          // personaWatcher 也会触发，但显式调用确保即时生效（避免 500ms 防抖延迟）
+          await this.agent.reloadConfig('persona');
+        }
+      } else if (type === 'rule') {
+        if (action === 'delete') {
+          // 删除：SQLite 软删除 + bootstrap 段刷新（K1）
+          this.agent.config?.deleteRule(name);
+        } else {
+          // 保存：upsert SQLite + bootstrap 段刷新（K1，处理软删除复活）
+          this.agent.config?.updateRule(name, content);
+        }
+      } else if (type === 'skill') {
+        if (action === 'delete') {
+          // 删除：SQLite 软删除 + SkillManager 内存清理 + bootstrap 段刷新（K1 联动 K4）
+          this.agent.config?.deleteSkill(name);
+        } else {
+          // 保存：重新扫描 skills/ 目录（SkillManager.reload 内部同步 SQLite + 内存）
+          await this.agent.skills?.reload();
+        }
+      }
+    } catch (err) {
+      // 联动失败不阻断文件操作（文件已是真理源），下次 reloadConfig 时自然对齐
+      logger.warn(
+        { type, name, action, err: toError(err).message },
+        '设定文件变更后的内核联动失败，下次 reloadConfig 时自然对齐',
+      );
+    }
   }
 
   // ─── 项目管理 ──────────────────────────────────────────

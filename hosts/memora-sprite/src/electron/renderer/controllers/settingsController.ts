@@ -64,7 +64,8 @@ export function createSettingsController(uiManager: UIManager) {
           // fileWatcherIgnore 纳入批量更新
           fileWatcherIgnore: config.fileWatcherIgnore,
           fileWatcherDebounceMs: config.fileWatcherDebounceMs,
-          defaultPersona: config.defaultPersona,
+          // defaultPersona 由精灵设定面板独立持久化（onDefaultPersonaChange 即时生效），
+          // 不纳入设置面板的批量更新，避免覆盖精灵设定面板的配置
           // 项目模式：路径与模式在同一事务内更新，避免中间态
           focusProjectPath: config.focusProjectPath,
           projectMode: config.projectMode,

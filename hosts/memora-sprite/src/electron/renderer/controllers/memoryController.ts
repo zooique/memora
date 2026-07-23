@@ -842,9 +842,6 @@ export function createMemoryController(uiManager: UIManager) {
     // 记忆源健康诊断渲染（消费内核 sourceHealth()，展示每个 source 的质量维度）
     uiManager.renderSourceHealth(data.sourceHealth);
 
-    // 已加载技能列表渲染（消费内核 agent.skills.list）
-    uiManager.renderSkills(data.skills);
-
     // 增长趋势区块渲染（消费 reviewManager.buildReviewData 已计算的趋势数据）
     if (reviewData) {
       uiManager.renderReviewData(reviewData);

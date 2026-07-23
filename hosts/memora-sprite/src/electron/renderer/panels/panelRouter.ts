@@ -315,12 +315,18 @@ export class PanelRouter {
     }
   }
 
-  /** 面板快捷键映射：Ctrl/Cmd + 1-4 → chat/memories/clipboard/settings（侧栏面板感知/仪表盘由 toggle + tab 控制） */
+  /**
+   * 面板快捷键映射：Ctrl/Cmd + 1-6 → chat/memories/sprite-settings/clipboard/settings
+   *
+   * 顶部高频区 4 项：对话(1) / 记忆(2) / 设定(3) / 剪贴板(4)；
+   * 底部控制区：设置(5)。侧栏面板感知/仪表盘由 toggle + tab 控制。
+   */
   private static readonly PANEL_SHORTCUT_MAP: Record<string, string> = {
     '1': 'chat',
     '2': 'memories',
-    '3': 'clipboard',
-    '4': 'settings',
+    '3': 'sprite-settings',
+    '4': 'clipboard',
+    '5': 'settings',
   };
 
   /**

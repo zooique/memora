@@ -2,7 +2,7 @@
  * SpriteEventBridge 单元测试
  *
  * 覆盖范围：
- * - setupSpriteEventListeners 注册（3 测试）：unsubscribe 先执行 + 18 个事件订阅 + sprite.on 调用次数
+ * - setupSpriteEventListeners 注册（3 测试）：unsubscribe 先执行 + 19 个事件订阅 + sprite.on 调用次数
  * - proactivePrompt 事件处理（10 测试）：
  *   - 始终执行部分（3 测试）：silent=true 仅 trayManager.setState / silent=false+Notification.isSupported=false 跳过通知 / try/catch 保护
  *   - 托盘复位定时器（2 测试）：30 秒定时器到期 / 定时器防重
@@ -43,8 +43,8 @@ import type { ILogger } from 'memora';
  * vi.hoisted 与 vi.mock 配合使用：vi.hoisted 创建的变量会被提升到 vi.mock 之前，
  * 使得工厂函数可以访问这些变量。
  */
-/** 精灵事件总数（1 个主动提示 + 16 个简单转发事件 + 1 个 presenceChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked + trashPurged + archiveFailed） */
-const SPRITE_EVENT_COUNT = 18;
+/** 精灵事件总数（1 个主动提示 + 16 个简单转发事件 + 1 个 presenceChanged + 1 个 configFilesChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked + trashPurged + archiveFailed） */
+const SPRITE_EVENT_COUNT = 19;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -255,11 +255,11 @@ describe('SpriteEventBridge', () => {
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT * 2);
     });
 
-    it('注册 18 个事件订阅（proactivePrompt + 16 个简单事件 + presenceChanged）', () => {
+    it('注册 19 个事件订阅（proactivePrompt + 16 个简单事件 + presenceChanged + configFilesChanged）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
-      // 验证 18 个事件类型都被订阅
+      // 验证 19 个事件类型都被订阅
       const calledEvents = deps.sprite.on.mock.calls.map((call: unknown[]) => call[0]);
       expect(calledEvents).toContain('proactivePrompt');
       expect(calledEvents).toContain('memoryNoticed');
@@ -277,7 +277,7 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toHaveLength(SPRITE_EVENT_COUNT);
     });
 
-    it('sprite.on 被调用 18 次（每个事件一次）', () => {
+    it('sprite.on 被调用 19 次（每个事件一次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);

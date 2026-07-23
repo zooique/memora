@@ -6,21 +6,20 @@
  * 职责：
  * - 注册技能安装成功回调（由 renderer.ts 调用以刷新技能列表）
  * - 处理拖入的 .md 技能文件（多文件逐个安装，避免并发写入冲突）
- * - 触发文件选择对话框（dropzone click 时打开隐藏 <input type="file">）
  * - 读取 File 为文本（Promise 包装 FileReader）
  * - 短暂闪烁 dropzone 错误态（添加 .is-error 类触发抖动动画）
  *
  * 设计原则：
  * - 依赖注入 ToastManager 实例，与 UIManager 共享同一引用，行为与拆分前一致
- * - 不绑定 DOM 事件（事件绑定在 renderer.ts 中），无需 EventTracker
- * - 公共 API：onSkillInstalled / handleSkillDrop / handleSkillFileSelect
+ * - 不绑定 DOM 事件（事件绑定在 settingsManagerPanel.initSkillDropzone 中），无需 EventTracker
+ * - 公共 API：onSkillInstalled / handleSkillDrop
  */
 
 import type { ToastManager } from '../components/toast.js';
 // 精灵公共常量（Toast 时长，跨进程共享 DRY）
 import { TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../../sprite/constants.js';
 // 渲染进程统一日志入口 + toError 工具（errorHelpers re-export 自 shared/toError，纯函数零依赖）
-import { reportError, toError } from '../helpers/errorHelpers.js';
+import { toError } from '../helpers/errorHelpers.js';
 
 /**
  * 技能拖入安装面板管理器类
@@ -136,21 +135,6 @@ export class SkillDropManager {
   }
 
   /**
-   * 触发文件选择对话框
-   *
-   * 由 dropzone 的 click 事件触发。打开隐藏的 <input type="file">，
-   * 用户选择文件后由 change 事件处理（在 renderer.ts 中注册）。
-   */
-  handleSkillFileSelect(): void {
-    const fileInput = document.getElementById('skill-file-input');
-    if (fileInput instanceof HTMLInputElement) {
-      fileInput.click();
-    } else {
-      reportError('SkillDrop skill-file-input 元素缺失', new Error('文件选择不可用：HTMLInputElement 校验失败'));
-    }
-  }
-
-  /**
    * 安装单个技能文件
    *
    * 内部方法，执行实际的文件读取 + IPC 调用 + 状态反馈。
@@ -166,11 +150,12 @@ export class SkillDropManager {
   private async installSkillFile(
     file: File,
   ): Promise<'failed' | 'hot-reloaded' | 'hot-reload-failed' | 'no-agent'> {
+    // dropzone 可选：设置面板旧 DOM 已迁移到设定面板（sprite-skill-dropzone），
+    // 此处仅用于视觉状态反馈（.is-installing），DOM 不存在时跳过视觉状态但仍执行安装
     const dropzone = document.getElementById('skill-dropzone');
-    if (!dropzone) return 'failed';
 
-    // 安装中态：降低透明度 + 禁用指针
-    dropzone.classList.add('is-installing');
+    // 安装中态：降低透明度 + 禁用指针（dropzone 存在时才添加）
+    dropzone?.classList.add('is-installing');
     try {
       // 读取文件内容（FileReader 同步读取为文本）
       const content = await this.readFileAsText(file);
@@ -197,8 +182,8 @@ export class SkillDropManager {
       this.toastManager.showToast(`${file.name}：${errMsg}`, 'error', TOAST_LONG_MS);
       return 'failed';
     } finally {
-      // 无论成功失败，移除安装中态
-      dropzone.classList.remove('is-installing');
+      // 无论成功失败，移除安装中态（dropzone 存在时才操作）
+      dropzone?.classList.remove('is-installing');
     }
   }
 

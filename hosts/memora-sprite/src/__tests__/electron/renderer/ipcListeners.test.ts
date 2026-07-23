@@ -36,6 +36,8 @@ import {
 } from '../../../electron/renderer/ipcListeners.js';
 import type { IpcListenerCallbacks } from '../../../electron/renderer/ipcListeners.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
+// ConfigFilesChangedPayload 真理源在 preload（与 settingsManagerPanel 共用同一类型契约）
+import type { ConfigFilesChangedPayload } from '../../../electron/preload.js';
 
 // ─── isObject ─────────────────────────────────────────────
 
@@ -291,6 +293,8 @@ interface CallbackSpies {
   onWorkProjectionUpdated: ReturnType<typeof vi.fn>;
   onPatternsUpdated: ReturnType<typeof vi.fn>;
   onSessionForked: ReturnType<typeof vi.fn>;
+  /** 设定文件变更回调（精灵设定面板 Epic 3 · I4） */
+  onConfigFilesChanged: ReturnType<typeof vi.fn>;
 }
 
 /** 捕获的 IPC onXxx 注册回调（initIpcListeners 调用后由 mock electronAPI 捕获） */
@@ -318,6 +322,8 @@ interface CapturedCallbacks {
   onClipboardAnalysisRejected: (payload: { reason: string }) => void;
   onQuickRecordTrigger: () => void;
   onRecallMemoryTrigger: () => void;
+  /** 设定文件变更注册回调（initIpcListeners 末尾注册，由 onConfigFilesChanged 捕获） */
+  onConfigFilesChanged: (payload: ConfigFilesChangedPayload) => void;
 }
 
 /** mock electronAPI（含主动调用的方法） */
@@ -384,6 +390,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onWorkProjectionUpdated: vi.fn(),
     onPatternsUpdated: vi.fn(),
     onSessionForked: vi.fn(),
+    onConfigFilesChanged: vi.fn(),
   };
 
   const callbacks: IpcListenerCallbacks = {
@@ -398,6 +405,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onWorkProjectionUpdated: cb.onWorkProjectionUpdated,
     onPatternsUpdated: cb.onPatternsUpdated,
     onSessionForked: cb.onSessionForked,
+    onConfigFilesChanged: cb.onConfigFilesChanged,
   };
 
   const captured = {} as CapturedCallbacks;
@@ -426,6 +434,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onClipboardAnalysisRejected: vi.fn((handler: (payload: { reason: string }) => void) => { captured.onClipboardAnalysisRejected = handler; }),
     onQuickRecordTrigger: vi.fn((handler: () => void) => { captured.onQuickRecordTrigger = handler; }),
     onRecallMemoryTrigger: vi.fn((handler: () => void) => { captured.onRecallMemoryTrigger = handler; }),
+    onConfigFilesChanged: vi.fn((handler: (payload: ConfigFilesChangedPayload) => void) => { captured.onConfigFilesChanged = handler; }),
     proactivePromptShown: vi.fn(),
     rendererLog: vi.fn(),
   };

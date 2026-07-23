@@ -130,6 +130,14 @@ export const IPC_CHANNELS = {
   /** 查询当前角色匹配模式 */
   PERSONA_MODE_GET: 'persona-mode-get',
 
+  // ─── 角色文件 CRUD（精灵设定面板 Epic 3 · I1） ─────────
+  /** 读取角色文件内容（携带 name，返回 ConfigFileEntry | null） */
+  PERSONA_READ_FILE: 'persona-read-file',
+  /** 保存角色文件（新增/更新合并，携带 name + content） */
+  PERSONA_SAVE_FILE: 'persona-save-file',
+  /** 删除角色文件（携带 name） */
+  PERSONA_DELETE_FILE: 'persona-delete-file',
+
   // ─── 项目 / 仪表盘 ────────────────────────────────────
   /** 列出已注册项目 */
   PROJECTS_LIST: 'projects-list',
@@ -229,6 +237,22 @@ export const IPC_CHANNELS = {
   // ─── 技能安装（Phase 4.3） ────────────────────────────
   /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容） */
   SKILL_INSTALL: 'skill-install',
+
+  // ─── 设定文件 CRUD（精灵设定面板 Epic 3 · I2/I3） ───────
+  // 规则与技能的统一文件管理入口（角色文件 CRUD 见上方 PERSONA_READ_FILE 等）
+  // PERSONA_LIST 复用为角色列表通道，不新增 RULE_LIST 对应的 persona 通道
+  /** 列出所有规则文件（返回 ConfigFileEntry[]，按 mtime 降序） */
+  RULE_LIST: 'rule-list',
+  /** 读取规则文件内容（携带 name，返回 ConfigFileEntry | null） */
+  RULE_READ: 'rule-read',
+  /** 保存规则文件（新增/更新合并，携带 name + content） */
+  RULE_SAVE: 'rule-save',
+  /** 删除规则文件（携带 name） */
+  RULE_DELETE: 'rule-delete',
+  /** 列出所有技能文件（返回 ConfigFileEntry[]，按 mtime 降序） */
+  SKILL_LIST: 'skill-list',
+  /** 删除技能文件（携带 name；新增/更新复用 SKILL_INSTALL 通道） */
+  SKILL_DELETE: 'skill-delete',
 
   // ─── 快速输入补全（Phase 1 骨架） ─────────────────────
   /** 渲染进程 → 主进程：确认输入（携带文本，主进程写入剪贴板 + 关闭浮窗） */
@@ -360,6 +384,23 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   QUICK_INPUT_SHOW: 'quick-input-show',
   /** 浮窗聚焦变化通知（blur→null，focus→应用名；渲染进程联动聚焦提示栏 + Tab 启用/禁用） */
   QUICK_INPUT_FOCUS_CHANGE: 'quick-input-focus-change',
+
+  // ─── 设定文件变更广播（精灵设定面板 Epic 3 · I4） ───────
+  /**
+   * 主进程 → 渲染进程：设定文件变更通知
+   *
+   * 携带 { type, action, name } payload：
+   *   - type: 'persona' | 'rule' | 'skill'
+   *   - action: 'save' | 'delete'
+   *   - name: 配置名
+   *
+   * 触发场景：
+   *   1. 设定面板 CRUD 操作完成后广播（让其他面板如 personaPanelManager/commandPaletteManager 刷新）
+   *   2. personaWatcher 监听到外部编辑器修改 personas/ 目录时广播
+   *
+   * 渲染层监听后按 type 分发刷新（U8）。
+   */
+  CONFIG_FILES_CHANGED: 'config-files-changed',
 } as const;
 
 // IPC 数据传输类型（SerializedAppError / WorkProjectionPayload）见 ./types.ts

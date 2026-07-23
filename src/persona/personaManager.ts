@@ -366,6 +366,53 @@ export class PersonaManager {
   }
 
   /**
+   * 删除角色（设定面板调用）
+   *
+   * 从内存列表移除指定角色，并软删除 SQLite 中对应的 persona 记忆。
+   * 若删除的是当前激活角色，自动回退到列表第一个角色（与 reload() 删除场景一致）。
+   *
+   * 文件层删除由宿主层 configFileManager 处理（本方法不操作文件）。
+   * 调用方在删除后应通过 Agent.refreshPersonaPrefixOnLoop() 刷新 system prompt 前缀，
+   * 本方法不直接操作 AgentLoop（保持与 reload() 一致的职责边界）。
+   *
+   * @param name 角色名
+   * @returns true 删除成功；false 角色不存在
+   */
+  deletePersona(name: string): boolean {
+    const idx = this.personaList.findIndex((p) => p.name === name);
+    if (idx < 0) {
+      logger.warn({ name }, '删除角色失败：角色不存在');
+      return false;
+    }
+
+    const deleted = this.personaList[idx]!; // idx >= 0 已由上方 findIndex 检查保证
+    this.personaList.splice(idx, 1);
+
+    // 软删除 SQLite 中的 persona 记忆（id 优先取 frontmatter，回退 persona:name）
+    const personaId = deleted.id ?? `persona:${name}`;
+    if (this.index) {
+      try {
+        this.index.delete(personaId);
+      } catch (err) {
+        // SQLite 删除失败不阻断内存删除（内存已是最新的）
+        logger.warn({ err, name, personaId }, '角色 SQLite 记忆软删除失败');
+      }
+    }
+
+    // 若删除的是激活角色，回退到列表第一个或默认角色
+    if (this.activePersona?.name === name) {
+      this.activePersona = this.personaList[0] ?? this.createDefaultPersona();
+      logger.warn(
+        { deleted: name, newActive: this.activePersona.name },
+        '激活角色已被删除，回退到默认',
+      );
+    }
+
+    logger.info({ name, remaining: this.personaList.length }, '角色已删除');
+    return true;
+  }
+
+  /**
    * 构建 system prompt 中的角色段
    */
   buildSystemPrompt(name?: string): string {

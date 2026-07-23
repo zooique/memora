@@ -135,9 +135,9 @@ describe('settingsController', () => {
 
     const api = (globalThis as { window: { electronAPI: { updateConfigBatch: { mock: { calls: unknown[][] } } } } }).window.electronAPI.updateConfigBatch;
     expect(api.mock.calls).toHaveLength(1);
-    // fileWatcherIgnore 纳入批量更新后，字段数从 10 增至 11
+    // defaultPersona 改由精灵设定面板独立持久化后，updateConfigBatch 字段数从 11 降至 10
     const updates = api.mock.calls[0]![0] as Record<string, unknown>;
-    expect(Object.keys(updates)).toHaveLength(11);
+    expect(Object.keys(updates)).toHaveLength(10);
     expect(updates.silentMode).toBe(false);
     expect(updates.projectMode).toBe('smart');
 

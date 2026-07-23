@@ -270,4 +270,61 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, async () =>
     throwingHandle('查询角色模式失败', () => ({ mode: ctx.sprite.personaMode })),
   );
+
+  // ─── 设定文件 CRUD（精灵设定面板 Epic 3 · I2） ─────────────
+  //
+  // 统一委托 sprite.readConfigFile/saveConfigFile/deleteConfigFile/listConfigFiles，
+  // 这些 wrapper 内部已封装：文件层操作（configFileManager）+ 内核层联动（同步 SQLite + 内存 + system prompt）。
+  // 通过 type 参数区分 persona/rule/skill，三类文件共用同一套 wrapper 实现（H2 集中化设计）。
+  //
+  // 错误处理：sprite wrapper 不抛错（返回值含 success/error），throwingHandle 仅作防御兜底。
+
+  /** 读取角色文件内容（携带 name，返回 ConfigFileEntry | null） */
+  ipcMain.handle(IPC_CHANNELS.PERSONA_READ_FILE, async (_event, name: string) =>
+    throwingHandle('读取角色文件失败', () => ctx.sprite.readConfigFile('persona', name)),
+  );
+
+  /** 保存角色文件（新增/更新合并，携带 name + content） */
+  ipcMain.handle(IPC_CHANNELS.PERSONA_SAVE_FILE, async (_event, name: string, content: string) =>
+    throwingHandle('保存角色文件失败', () => ctx.sprite.saveConfigFile('persona', name, content)),
+  );
+
+  /** 删除角色文件（携带 name） */
+  ipcMain.handle(IPC_CHANNELS.PERSONA_DELETE_FILE, async (_event, name: string) =>
+    throwingHandle('删除角色文件失败', () => ctx.sprite.deleteConfigFile('persona', name)),
+  );
+
+  /** 列出所有规则文件（按 mtime 降序） */
+  ipcMain.handle(IPC_CHANNELS.RULE_LIST, async () =>
+    throwingHandle('列出规则文件失败', () => ctx.sprite.listConfigFiles('rule')),
+  );
+
+  /** 读取规则文件内容（携带 name，返回 ConfigFileEntry | null） */
+  ipcMain.handle(IPC_CHANNELS.RULE_READ, async (_event, name: string) =>
+    throwingHandle('读取规则文件失败', () => ctx.sprite.readConfigFile('rule', name)),
+  );
+
+  /** 保存规则文件（新增/更新合并，携带 name + content） */
+  ipcMain.handle(IPC_CHANNELS.RULE_SAVE, async (_event, name: string, content: string) =>
+    throwingHandle('保存规则文件失败', () => ctx.sprite.saveConfigFile('rule', name, content)),
+  );
+
+  /** 删除规则文件（携带 name） */
+  ipcMain.handle(IPC_CHANNELS.RULE_DELETE, async (_event, name: string) =>
+    throwingHandle('删除规则文件失败', () => ctx.sprite.deleteConfigFile('rule', name)),
+  );
+
+  /** 列出所有技能文件（按 mtime 降序） */
+  ipcMain.handle(IPC_CHANNELS.SKILL_LIST, async () =>
+    throwingHandle('列出技能文件失败', () => ctx.sprite.listConfigFiles('skill')),
+  );
+
+  /**
+   * 删除技能文件（携带 name）
+   *
+   * 注：技能新增/更新复用 SKILL_INSTALL 通道（已含热重载逻辑），此处仅暴露删除。
+   */
+  ipcMain.handle(IPC_CHANNELS.SKILL_DELETE, async (_event, name: string) =>
+    throwingHandle('删除技能文件失败', () => ctx.sprite.deleteConfigFile('skill', name)),
+  );
 }

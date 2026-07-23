@@ -13,7 +13,7 @@
  * - 跨模块关注点（setTheme / updatePersonaModeBadge / showConfirmDialog）通过 host 回调注入
  */
 
-import { clearElement, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+import { getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "保存失败，请重试" 模板化文案）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
@@ -101,7 +101,6 @@ export class SettingsPanelManager {
   private cfgWatcherDebounce: HTMLInputElement | null;
   /** 文件监听忽略模式（glob 列表，逗号分隔输入） */
   private cfgWatcherIgnore: HTMLInputElement | null;
-  private cfgDefaultPersona: HTMLInputElement | null;
   /** 项目模式：专注项目选择下拉框 */
   private cfgFocusProject: HTMLSelectElement | null;
   /** 使用统计开关（隐私合规，默认关闭） */
@@ -140,8 +139,6 @@ export class SettingsPanelManager {
   // ─── 缓存 DOM 元素 - radio 按钮组（loadConfigToForm / collectConfigFromForm 中重复查询） ─
   /** 项目模式单选按钮组（NodeList 静态快照，构造时获取一次） */
   private projectModeRadios: NodeListOf<HTMLInputElement>;
-  /** 角色匹配模式单选按钮组 */
-  private personaModeRadios: NodeListOf<HTMLInputElement>;
   /** 主题模式单选按钮组 */
   private themeModeRadios: NodeListOf<HTMLInputElement>;
   /** 归档模式单选按钮组 */
@@ -152,18 +149,10 @@ export class SettingsPanelManager {
   private agentStatusEl: HTMLElement | null;
   /** 保存状态指示器元素（显示"保存中..."、"已保存"等状态） */
   private saveStatusEl: HTMLElement | null;
-  /** 技能 - 列表容器（设置面板 skill tab，由 renderSkills 填充） */
-  private skillsListEl: HTMLElement | null;
-  /** 技能 - 区域容器（无技能时隐藏，有技能时显示） */
-  private skillsSectionEl: HTMLElement | null;
-  /** 技能 - 空状态占位元素（无技能时显示"拖入 .md 文件安装"提示） */
-  private skillsEmptyEl: HTMLElement | null;
 
   // ─── 状态 ────────────────────────────────────────────────
   /** 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
-  /** 当前角色匹配模式（由 UIManager 同步） */
-  private currentPersonaMode = 'auto';
   /** 定时器跟踪器（用于防抖自动保存） */
   private timers = new SafeTimerTracker();
   /** 是否正在自动保存中 */
@@ -174,8 +163,6 @@ export class SettingsPanelManager {
   // ─── 回调 ────────────────────────────────────────────────
   // 回调返回 Promise<boolean>，true=保存成功，false=保存失败（IPC 错误或事务回滚）
   private configSaveCallback: ((config: SpriteConfigForm) => Promise<boolean>) | null = null;
-  /** 角色匹配模式变更回调 */
-  private personaModeChangeCallback: ((mode: string) => void) | null = null;
   /** ADR-015 归档模式变更回调（radio change 时即时触发，与主题一样即时生效） */
   private archiveModeChangeCallback: ((mode: 'full' | 'insights-only' | 'manual') => void) | null = null;
 
@@ -201,7 +188,6 @@ export class SettingsPanelManager {
     this.cfgWatcherPaths = getOptionalElement('cfg-watcher-paths', 'input');
     this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
     this.cfgWatcherIgnore = getOptionalElement('cfg-watcher-ignore', 'input');
-    this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
     this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
     this.cfgUsageStats = getOptionalElement('cfg-usage-stats', 'input');
 
@@ -213,7 +199,6 @@ export class SettingsPanelManager {
 
     // 缓存 radio 按钮组（loadConfigToForm / collectConfigFromForm / initListeners 中重复查询）
     this.projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
-    this.personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
     this.themeModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
     this.archiveModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
 
@@ -221,11 +206,6 @@ export class SettingsPanelManager {
     this.agentStatusEl = document.getElementById('agent-status-indicator');
     /** 保存状态指示器元素 */
     this.saveStatusEl = document.getElementById('save-status-indicator');
-    // 技能管理 tab 的 DOM 元素（renderSkills 填充，从 dashboardPanelManager 迁入）
-    this.skillsListEl = document.getElementById('skills-list');
-    this.skillsSectionEl = document.getElementById('skills-section');
-    this.skillsEmptyEl = document.getElementById('skills-empty');
-
     // 多 Provider 管理元素
     this.providerListEl = document.getElementById('provider-list');
     this.providerModalEl = document.getElementById('provider-modal');
@@ -272,7 +252,6 @@ export class SettingsPanelManager {
       ['cfgWatcherPaths', this.cfgWatcherPaths, 'cfg-watcher-paths'],
       ['cfgWatcherDebounce', this.cfgWatcherDebounce, 'cfg-watcher-debounce'],
       ['cfgWatcherIgnore', this.cfgWatcherIgnore, 'cfg-watcher-ignore'],
-      ['cfgDefaultPersona', this.cfgDefaultPersona, 'cfg-default-persona'],
       ['cfgFocusProject', this.cfgFocusProject, 'cfg-focus-project'],
       ['cfgUsageStats', this.cfgUsageStats, 'cfg-usage-stats'],
       ['cfgShortcutsEnabled', this.cfgShortcutsEnabled, 'cfg-shortcuts-enabled'],
@@ -435,16 +414,6 @@ export class SettingsPanelManager {
         if (this.cfgFocusProject) {
           this.cfgFocusProject.disabled = radio.value !== 'focus';
         }
-      });
-    });
-
-    // 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
-    this.personaModeRadios.forEach((radio) => {
-      this.events.addEventListener(radio, 'change', () => {
-        const selectedMode = radio.value;
-        this.currentPersonaMode = selectedMode;
-        this.host.updatePersonaModeBadge(selectedMode);
-        this.personaModeChangeCallback?.(selectedMode);
       });
     });
 
@@ -810,17 +779,8 @@ export class SettingsPanelManager {
       if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
       if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
       if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
-      if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
       // 使用统计开关（隐私合规，默认关闭）
       if (this.cfgUsageStats) this.cfgUsageStats.checked = config.usageStatsEnabled;
-
-      // 角色匹配模式（单选按钮）
-      const modeRadio = Array.from(this.personaModeRadios).find(
-        (r) => r.value === this.currentPersonaMode,
-      );
-      if (modeRadio) {
-        modeRadio.checked = true;
-      }
 
       // ADR-015 同步归档模式 radio（即时生效字段，仅回显选中状态）
       this.archiveModeRadios.forEach((radio) => {
@@ -874,22 +834,8 @@ export class SettingsPanelManager {
     this.cfgFocusProject.value = selectedPath;
   }
 
-  /** 设置角色匹配模式（供 renderer.ts 调用） */
-  setPersonaMode(mode: string): void {
-    this.currentPersonaMode = mode;
-    const radio = Array.from(this.personaModeRadios).find(
-      (r) => r.value === mode,
-    );
-    if (radio) {
-      radio.checked = true;
-    }
-  }
-
   /** 收集表单中的配置 */
   collectConfigFromForm(): SpriteConfigForm {
-    const modeRadio = Array.from(this.personaModeRadios).find((r) => r.checked);
-    this.currentPersonaMode = modeRadio?.value ?? 'auto';
-
     // 收集项目模式
     const projectModeRadio = Array.from(this.projectModeRadios).find((r) => r.checked);
     const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
@@ -920,7 +866,9 @@ export class SettingsPanelManager {
         .map((s) => s.trim())
         .filter((s) => s.length > 0) ?? [],
       fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce?.value ?? '1000', 10) || 1000,
-      defaultPersona: this.cfgDefaultPersona?.value.trim() ?? '',
+      // defaultPersona 由精灵设定面板独立持久化（onDefaultPersonaChange 即时生效），
+      // 设置面板不再管理此字段，此处返回空字符串仅满足 SpriteConfigForm 类型契约
+      defaultPersona: '',
       projectMode,
       focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
       // 使用统计开关（隐私合规，默认关闭）
@@ -942,18 +890,9 @@ export class SettingsPanelManager {
   onConfigSave(cb: (config: SpriteConfigForm) => Promise<boolean>): void {
     this.configSaveCallback = cb;
   }
-  /** 注册角色匹配模式变更回调 */
-  onPersonaModeChange(cb: (mode: string) => void): void {
-    this.personaModeChangeCallback = cb;
-  }
   /** ADR-015 注册归档模式变更回调（radio change 时即时触发持久化 + 应用到 Agent） */
   onArchiveModeChange(cb: (mode: 'full' | 'insights-only' | 'manual') => void): void {
     this.archiveModeChangeCallback = cb;
-  }
-
-  /** 获取当前角色匹配模式（供 UIManager 同步到 persona badge） */
-  getCurrentPersonaMode(): string {
-    return this.currentPersonaMode;
   }
 
   /**
@@ -961,7 +900,7 @@ export class SettingsPanelManager {
    *
    * 用户修改设置后，500ms 内无操作则自动保存到主进程。
    * 已排除的字段：theme（主题即时生效，单独持久化）、archiveMode（即时生效，单独持久化）、
-   * personaMode（即时生效，单独持久化）。
+   * personaMode（由精灵设定面板独立持久化）。
    */
   private async autoSaveConfig(): Promise<void> {
     if (this.isAutoSaving) return;
@@ -1091,77 +1030,5 @@ export class SettingsPanelManager {
         iconEl.innerHTML = '';
         textEl.textContent = '';
     }
-  }
-
-  /**
-   * 渲染已加载技能列表（设置面板 skill tab）
-   *
-   * 消费内核 agent.skills.list，在设置面板的"技能"tab 展示当前加载的技能。
-   * 每个技能项展示名称、关键词标签和来源层级（project/agent）。
-   * 无技能时隐藏列表区域，显示空状态占位。
-   *
-   * 从 dashboardPanelManager 迁入：技能列表 DOM 本就在设置面板 skill tab 内，
-   * 渲染逻辑应归属于 SettingsPanelManager，职责对齐。
-   *
-   * @param skills 技能列表（由 DASHBOARD_GET 返回，含 name/keywords/description/layer）
-   */
-  renderSkills(
-    skills: Array<{
-      name: string;
-      keywords: string[];
-      description: string;
-      layer: string;
-    }>,
-  ): void {
-    const listEl = this.skillsListEl;
-    const sectionEl = this.skillsSectionEl;
-    const emptyEl = this.skillsEmptyEl;
-    if (!listEl || !sectionEl) return;
-
-    // 无技能：隐藏列表，显示空状态占位
-    if (skills.length === 0) {
-      sectionEl.classList.add('hidden');
-      if (emptyEl) emptyEl.classList.remove('hidden');
-      return;
-    }
-
-    clearElement(listEl);
-
-    // 使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
-    const fragment = document.createDocumentFragment();
-
-    for (const skill of skills) {
-      const li = document.createElement('li');
-      li.className = 'skill-item';
-      li.title = skill.description || skill.name;
-
-      // 技能名称
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'skill-name';
-      nameSpan.textContent = skill.name;
-
-      // 来源层级标签（project/agent）
-      const layerSpan = document.createElement('span');
-      layerSpan.className = `skill-layer skill-layer-${skill.layer} flex-shrink-0`;
-      layerSpan.textContent = skill.layer === 'agent' ? '全局' : '项目';
-
-      // 名称和层级标签始终展示
-      li.appendChild(nameSpan);
-      li.appendChild(layerSpan);
-      // 关键词标签（最多展示 5 个，避免过长）
-      if (skill.keywords.length > 0) {
-        const kwSpan = document.createElement('span');
-        kwSpan.className = 'skill-keywords';
-        kwSpan.textContent = skill.keywords.slice(0, 5).join(' · ');
-        li.appendChild(kwSpan);
-      }
-
-      fragment.appendChild(li);
-    }
-
-    listEl.appendChild(fragment);
-    sectionEl.classList.remove('hidden');
-    // 有技能时隐藏空状态占位
-    if (emptyEl) emptyEl.classList.add('hidden');
   }
 }

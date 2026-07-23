@@ -1031,7 +1031,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 支持的 source：
    * - 'skill' → SkillManager.reload() 清空缓存重新扫描 skills/ 目录
    * - 'persona' → PersonaManager.reload() 清空缓存重新扫描 personas/ 目录（保持激活角色）
-   * - 'rule' → 无操作（rule 类型已由 ConfigManager.addRule() 即时注入 system prompt）
+   * - 'rule' → 无操作（rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段，详见 deleteRule/updateRule）
    * - 'guardrail' → 抛错（guardrail 是 AgentLoop 的 readonly 数组，需 rebuildComponents 才能重载）
    * - undefined → 重载 skill + persona（全量重载，不含 guardrail）
    *
@@ -1053,9 +1053,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       );
     }
 
-    // rule 类型已由 ConfigManager.addRule() 即时注入，无需重载
+    // rule 类型由 ConfigManager.deleteRule/updateRule CRUD 即时同步 bootstrap 段（refreshBootstrapMemories 回调），无需 reloadConfig
     if (source === 'rule') {
-      logger.info('rule 类型已由 addRule() 即时注入，reloadConfig 跳过');
+      logger.info('rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段，reloadConfig 跳过');
       return { skill: 0, persona: 0 };
     }
 

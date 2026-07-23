@@ -221,6 +221,10 @@ export async function assembleComponents(
     skillManager,
     (msg: string) => loop.injectSystemMessage(msg),
     configDir ? (memory: Memory) => fileStore.write(memory) : undefined,
+    // 设定 CRUD 同步回调：ConfigManager.deleteRule/updateRule/deleteSkill 执行后，
+    // 调用 loop.refreshBootstrapMemories 用最新的 rule+skill 记忆重建 system prompt bootstrap 段
+    // 闭包内引用 configManager 自身——TS 严格模式允许（闭包执行时机晚于 const 初始化）
+    () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
   );
 
   // MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）

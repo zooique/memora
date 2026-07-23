@@ -335,15 +335,6 @@ describe('dashboardDelegations', () => {
     expect(mock.memoryPanel.repaintOnThemeChange).toHaveBeenCalled();
   });
 
-  it('renderSkills 应委托到 settingsPanelManager（而非 dashboardPanel）', () => {
-    const mock = createMockThis();
-    const skills = [{ name: 's1', keywords: ['k'], description: 'd', layer: 'L1' }];
-    dashboardDelegations.renderSkills.call(mock as UIManager, skills);
-    expect(mock.settingsPanelManager.renderSkills).toHaveBeenCalledWith(skills);
-    // dashboardPanel.renderSkills 不应被调用（委托目标是 settingsPanelManager）
-    expect(mock.dashboardPanel.renderSkills).not.toHaveBeenCalled();
-  });
-
   it('showMemoryListError 应透传 listEl 元素', () => {
     const mock = createMockThis();
     const el = document.createElement('div');
@@ -873,14 +864,6 @@ describe('personaThemeDelegations', () => {
     expect(mock.personaPanel.triggerMemoryRecallClick).toHaveBeenCalledWith('mem-1');
   });
 
-  // 测试目的：onPersonaModeChange 应透传模式变更回调到 settingsPanelManager
-  it('onPersonaModeChange 应透传模式变更回调到 settingsPanelManager', () => {
-    const mock = createMockThis();
-    const cb = vi.fn();
-    personaThemeDelegations.onPersonaModeChange.call(mock as UIManager, cb);
-    expect(mock.settingsPanelManager.onPersonaModeChange).toHaveBeenCalledWith(cb);
-  });
-
   // 测试目的：onThemeChange 应透传主题变更回调到 themeManager
   it('onThemeChange 应透传主题变更回调到 themeManager', () => {
     const mock = createMockThis();
@@ -974,14 +957,6 @@ describe('settingsModalDelegations', () => {
     expect(result).toBe('用户输入');
   });
 
-  it('handleSkillDrop 应 async 委托到 skillDropManager', async () => {
-    const mock = createMockThis();
-    mock.skillDropManager.handleSkillDrop.mockResolvedValue(undefined);
-    const files = [new File(['content'], 'skill.zip')];
-    await settingsModalDelegations.handleSkillDrop.call(mock as UIManager, files);
-    expect(mock.skillDropManager.handleSkillDrop).toHaveBeenCalledWith(files);
-  });
-
   it('resetSettingsFormDirty 应委托到 settingsPanelManager.resetFormDirty', () => {
     const mock = createMockThis();
     settingsModalDelegations.resetSettingsFormDirty.call(mock as UIManager);
@@ -1036,13 +1011,6 @@ describe('settingsModalDelegations', () => {
     expect(mock.settingsPanelManager.loadProjectsToForm).toHaveBeenCalledWith(projects, '/p1');
   });
 
-  // 测试目的：setPersonaMode 应透传模式字符串到 settingsPanelManager
-  it('setPersonaMode 应透传模式字符串到 settingsPanelManager', () => {
-    const mock = createMockThis();
-    settingsModalDelegations.setPersonaMode.call(mock as UIManager, 'auto');
-    expect(mock.settingsPanelManager.setPersonaMode).toHaveBeenCalledWith('auto');
-  });
-
   // 测试目的：onConfigSave 应透传配置保存回调到 settingsPanelManager
   it('onConfigSave 应透传配置保存回调到 settingsPanelManager', () => {
     const mock = createMockThis();
@@ -1095,12 +1063,5 @@ describe('settingsModalDelegations', () => {
     const cb = vi.fn();
     settingsModalDelegations.onSkillInstalled.call(mock as UIManager, cb);
     expect(mock.skillDropManager.onSkillInstalled).toHaveBeenCalledWith(cb);
-  });
-
-  // 测试目的：handleSkillFileSelect 应委托到 skillDropManager.handleSkillFileSelect
-  it('handleSkillFileSelect 应委托到 skillDropManager.handleSkillFileSelect', () => {
-    const mock = createMockThis();
-    settingsModalDelegations.handleSkillFileSelect.call(mock as UIManager);
-    expect(mock.skillDropManager.handleSkillFileSelect).toHaveBeenCalled();
   });
 });

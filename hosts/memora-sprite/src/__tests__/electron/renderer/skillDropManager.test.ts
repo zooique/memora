@@ -7,7 +7,6 @@
  * - onSkillInstalled：回调注册
  * - handleSkillDrop：空数组 / 全非 md / 部分 md / 全部成功 / 部分失败
  * - handleSkillDrop · 热重载 4 路结果分类：hot-reloaded / hot-reload-failed / no-agent / failed
- * - handleSkillFileSelect：触发 file input click
  * - installSkillFile：成功 / 失败 / 异常（通过 handleSkillDrop 间接测试）
  * - flashDropzoneError：添加 .is-error 类（通过 handleSkillDrop 间接测试）
  * - cleanup：清空 skillInstalledCallback 引用
@@ -41,10 +40,9 @@ function createMockToastManager() {
   } as unknown as ToastManager & { __calls: ToastCall[] };
 }
 
-/** dropzone 完整 DOM 结构 */
+/** dropzone 完整 DOM 结构（仅 skill-dropzone，视觉状态反馈用） */
 const DROPZONE_HTML = `
   <div id="skill-dropzone"></div>
-  <input id="skill-file-input" type="file" />
 `;
 
 /** 创建 SkillDropManager 实例（注入 Mock ToastManager） */
@@ -304,25 +302,6 @@ describe('handleSkillDrop · 失败流程', () => {
     window.electronAPI.installSkill = vi.fn().mockResolvedValue({ success: false, error: '失败' });
     await manager.handleSkillDrop([createMdFile('test.md')]);
     expect(document.getElementById('skill-dropzone')!.classList.contains('is-installing')).toBe(false);
-  });
-});
-
-// ─── handleSkillFileSelect ───────────────────────────────
-
-describe('handleSkillFileSelect', () => {
-  it('应触发 file input 的 click', () => {
-    const { manager } = createManager();
-    const fileInput = document.getElementById('skill-file-input') as HTMLInputElement;
-    const clickSpy = vi.spyOn(fileInput, 'click');
-    manager.handleSkillFileSelect();
-    expect(clickSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('file input 缺失时不应抛错', () => {
-    document.body.innerHTML = '';
-    const toast = createMockToastManager();
-    const manager = new SkillDropManager(toast);
-    expect(() => manager.handleSkillFileSelect()).not.toThrow();
   });
 });
 

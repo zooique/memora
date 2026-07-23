@@ -44,6 +44,9 @@ import type { SpriteConfig } from '../sprite/spriteConfig.js';
 import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
 // P5：从 sprite 层导入感知状态类型（真理源），修复 getPerceptionSnapshot 返回类型过宽问题
 import type { AffectState, RapportState, ContextState, DetectedPattern, ProactiveStats } from '../sprite/controllers/index.js';
+// 精灵设定面板 Epic 3：从 sprite 层 configFileManager 导入契约类型（真理源，编译时擦除）
+// 与 skillInstaller.installSkill 的 SkillInstallResult 一样，通过 preload 透出给渲染层
+import type { ConfigFileEntry, ConfigFileOperationResult } from '../sprite/configFileManager.js';
 
 // ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
 // ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
@@ -122,6 +125,13 @@ export const IPC_CHANNELS = {
   PERSONA_SWITCH: 'persona-switch',
   PERSONA_MODE: 'persona-mode',
   PERSONA_MODE_GET: 'persona-mode-get',
+  // ─── 角色文件 CRUD（精灵设定面板 Epic 3 · I1，与 ipc/channels.ts 同步） ─
+  /** 读取角色文件内容（携带 name，返回 ConfigFileEntry | null） */
+  PERSONA_READ_FILE: 'persona-read-file',
+  /** 保存角色文件（新增/更新合并，携带 name + content） */
+  PERSONA_SAVE_FILE: 'persona-save-file',
+  /** 删除角色文件（携带 name） */
+  PERSONA_DELETE_FILE: 'persona-delete-file',
   PROJECTS_LIST: 'projects-list',
   DASHBOARD_GET: 'dashboard-get',
   /** 手动触发一次记忆衰减（L0 纯 score 递减，无 LLM 调用，与 ipc/channels.ts 同步） */
@@ -173,6 +183,20 @@ export const IPC_CHANNELS = {
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
   // Phase 4.3：技能安装（渲染进程 → 主进程）
   SKILL_INSTALL: 'skill-install',
+  // ─── 设定文件 CRUD（精灵设定面板 Epic 3 · I2/I3，与 ipc/channels.ts 同步） ─
+  // 规则与技能的统一文件管理入口（角色文件 CRUD 见上方 PERSONA_*_FILE）
+  /** 列出所有规则文件（返回 ConfigFileEntry[]，按 mtime 降序） */
+  RULE_LIST: 'rule-list',
+  /** 读取规则文件内容（携带 name，返回 ConfigFileEntry | null） */
+  RULE_READ: 'rule-read',
+  /** 保存规则文件（新增/更新合并，携带 name + content） */
+  RULE_SAVE: 'rule-save',
+  /** 删除规则文件（携带 name） */
+  RULE_DELETE: 'rule-delete',
+  /** 列出所有技能文件（返回 ConfigFileEntry[]，按 mtime 降序） */
+  SKILL_LIST: 'skill-list',
+  /** 删除技能文件（携带 name；新增/更新复用 SKILL_INSTALL 通道） */
+  SKILL_DELETE: 'skill-delete',
   // 快速输入补全（Phase 1 骨架：确认 + 关闭 + Phase 2 调整高度）
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
   QUICK_INPUT_CLOSE: 'quick-input-close',
@@ -231,11 +255,40 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   QUICK_INPUT_SHOW: 'quick-input-show',
   /** 浮窗聚焦变化通知（blur/focus 事件，appName=null 表示失焦） */
   QUICK_INPUT_FOCUS_CHANGE: 'quick-input-focus-change',
+  // ─── 设定文件变更广播（精灵设定面板 Epic 3 · I4，与 ipc/channels.ts 同步） ─
+  /**
+   * 主进程 → 渲染进程：设定文件变更通知
+   *
+   * 携带 { type, action, name } payload：
+   *   - type: 'persona' | 'rule' | 'skill'
+   *   - action: 'save' | 'delete'
+   *   - name: 配置名
+   *
+   * 触发场景：设定面板 CRUD 完成后广播 + personaWatcher 监听到外部编辑器修改 personas/ 目录时广播。
+   * 渲染层监听后按 type 分发刷新（U8）。
+   */
+  CONFIG_FILES_CHANGED: 'config-files-changed',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
 // DeletedMemoryListItem 用于 UI 渲染回收站列表
-export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem, RelationPath, RelationNeighbor };
+// ConfigFileEntry / ConfigFileOperationResult 用于精灵设定面板渲染层引用
+export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem, RelationPath, RelationNeighbor, ConfigFileEntry, ConfigFileOperationResult };
+
+/**
+ * 设定文件变更事件载荷（精灵设定面板 Epic 3 · I4）
+ *
+ * 主进程通过 CONFIG_FILES_CHANGED 通道推送到渲染进程，
+ * 渲染层按 type 分发刷新对应面板（persona/rule/skill）。
+ */
+export interface ConfigFilesChangedPayload {
+  /** 配置类型 */
+  type: 'persona' | 'rule' | 'skill';
+  /** 操作类型 */
+  action: 'save' | 'delete';
+  /** 配置名 */
+  name: string;
+}
 
 // ─── 配置建议/用户画像共享类型定义 ───────────────────────────────────
 
@@ -611,6 +664,55 @@ export interface ElectronAPI {
   setPersonaMode: (mode: 'auto' | 'manual') => Promise<{ set: boolean }>;
   /** 查询当前角色匹配模式 */
   getPersonaMode: () => Promise<{ mode: string }>;
+
+  // ─── 精灵设定面板 Epic 3：角色/规则/技能文件 CRUD ─────────────
+  /**
+   * 读取角色文件内容
+   *
+   * @param name 配置名（不含扩展名）
+   * @returns ConfigFileEntry | null（文件不存在返回 null）
+   */
+  readPersonaFile: (name: string) => Promise<ConfigFileEntry | null>;
+  /**
+   * 保存角色文件（新增/更新合并，同名覆盖）
+   *
+   * @param name 配置名
+   * @param content 文件完整内容（含 frontmatter）
+   * @returns 操作结果（含校验错误信息）
+   */
+  savePersonaFile: (name: string, content: string) => Promise<ConfigFileOperationResult>;
+  /**
+   * 删除角色文件
+   *
+   * @param name 配置名
+   * @returns 操作结果（文件不存在时 success=false）
+   */
+  deletePersonaFile: (name: string) => Promise<ConfigFileOperationResult>;
+  /** 列出所有规则文件（按 mtime 降序） */
+  listRules: () => Promise<ConfigFileEntry[]>;
+  /** 读取规则文件内容 */
+  readRule: (name: string) => Promise<ConfigFileEntry | null>;
+  /** 保存规则文件（新增/更新合并） */
+  saveRule: (name: string, content: string) => Promise<ConfigFileOperationResult>;
+  /** 删除规则文件 */
+  deleteRule: (name: string) => Promise<ConfigFileOperationResult>;
+  /** 列出所有技能文件（按 mtime 降序） */
+  listSkills: () => Promise<ConfigFileEntry[]>;
+  /**
+   * 删除技能文件
+   *
+   * 注：技能新增/更新复用 installSkill 通道（已含热重载逻辑），不新增 saveSkill。
+   */
+  deleteSkill: (name: string) => Promise<ConfigFileOperationResult>;
+  /**
+   * 监听设定文件变更广播
+   *
+   * 主进程在设定面板 CRUD 完成后 + personaWatcher 监听到外部编辑器修改时广播，
+   * 渲染层按 type 分发刷新对应面板。
+   */
+  onConfigFilesChanged: (cb: (payload: ConfigFilesChangedPayload) => void) => void;
+  /** 移除设定文件变更监听器 */
+  removeConfigFilesChangedListener: () => void;
 
   // 项目（项目模式）
   /** 列出已注册项目（供专注模式选择器使用） */
@@ -1060,6 +1162,23 @@ const electronAPI: ElectronAPI = {
   setPersonaMode: (mode) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_MODE, mode),
   /** 查询当前角色匹配模式 */
   getPersonaMode: () => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_MODE_GET),
+
+  // 精灵设定面板 Epic 3：角色/规则/技能文件 CRUD（统一委托 sprite.configFileManager）
+  readPersonaFile: (name) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_READ_FILE, name),
+  savePersonaFile: (name, content) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_SAVE_FILE, name, content),
+  deletePersonaFile: (name) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_DELETE_FILE, name),
+  listRules: () => ipcRenderer.invoke(IPC_CHANNELS.RULE_LIST),
+  readRule: (name) => ipcRenderer.invoke(IPC_CHANNELS.RULE_READ, name),
+  saveRule: (name, content) => ipcRenderer.invoke(IPC_CHANNELS.RULE_SAVE, name, content),
+  deleteRule: (name) => ipcRenderer.invoke(IPC_CHANNELS.RULE_DELETE, name),
+  listSkills: () => ipcRenderer.invoke(IPC_CHANNELS.SKILL_LIST),
+  // 技能新增/更新复用 installSkill（已含热重载），此处仅暴露删除
+  deleteSkill: (name) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_DELETE, name),
+  // 设定文件变更广播监听（与 onClipboardChanged 模式一致）
+  onConfigFilesChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED, (_: IpcRendererEvent, payload: ConfigFilesChangedPayload) => cb(payload)),
+  removeConfigFilesChangedListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED);
+  },
 
   // 项目
   listProjects: () => ipcRenderer.invoke(IPC_CHANNELS.PROJECTS_LIST),

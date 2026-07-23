@@ -217,19 +217,6 @@ const TEST_HTML = `<!DOCTYPE html>
               <input type="number" id="cfg-watcher-debounce" min="100" value="1000" />
             </div>
           </div>
-          <div class="settings-group">
-            <div class="settings-row">
-              <label for="cfg-persona-mode">匹配模式</label>
-              <div class="radio-group">
-                <label><input type="radio" name="persona-mode" value="auto" checked /> 自动</label>
-                <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
-              </div>
-            </div>
-            <div class="settings-row">
-              <label for="cfg-default-persona">默认角色</label>
-              <input type="text" id="cfg-default-persona" />
-            </div>
-          </div>
         </div>
         <div class="settings-tab-content" data-settings-tab="project">
           <div class="settings-group">

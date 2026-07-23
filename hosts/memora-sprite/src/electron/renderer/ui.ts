@@ -35,6 +35,9 @@ import { WorkProjectionPanelManager } from './panels/workProjectionPanelManager.
 import { AuditPanelManager } from './panels/auditPanelManager.js';
 import { SettingsPanelManager } from './panels/settingsPanelManager.js';
 import type { SettingsPanelHost } from './panels/settingsPanelManager.js';
+// 精灵设定面板管理器（角色/规则/技能三类设定文件 CRUD，独立于 SettingsPanelManager）
+import { SettingsManagerPanelManager } from './panels/settingsManagerPanel.js';
+import type { SettingsManagerPanelHost } from './panels/settingsManagerPanel.js';
 import { ChatPanelManager } from './panels/chatPanelManager.js';
 import type { ChatPanelHost } from './panels/chatPanelManager.js';
 import { MemoryPanelManager } from './panels/memoryPanelManager.js';
@@ -114,7 +117,7 @@ export type {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost, SettingsManagerPanelHost {
   // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
   // 字段为 public：mixin 委托方法（helpers/ui-delegations/）需通过 this.xxx 访问
   /** Toast 通知管理器（独立管理定时器和清理） */
@@ -137,6 +140,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   auditPanel = new AuditPanelManager();
   /** 设置面板管理器（独立管理设置面板 DOM 和事件） */
   settingsPanelManager: SettingsPanelManager;
+  /**
+   * 精灵设定面板管理器（角色/规则/技能三类设定文件 CRUD）
+   *
+   * 与 SettingsPanelManager 的区别：
+   * - SettingsPanelManager 管理系统配置（LLM/精灵行为/项目/画像/审计/帮助）
+   * - SettingsManagerPanelManager 管理"人写的设定"（persona/rule/skill 文件）
+   * 二者通过 panel-sprite-settings / panel-settings 隔离，各自独立。
+   */
+  settingsManagerPanel: SettingsManagerPanelManager;
   /** 缓存当前 SpriteConfig（供 getArchiveMode 查询，避免异步 IPC 调用） */
   private currentConfig: SpriteConfigForm | null = null;
 
@@ -282,6 +294,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.scrollController = new ScrollController(this.messagesEl);
 
     this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
+    // 精灵设定面板管理器（与 settingsPanelManager 同模式：host 接口注入）
+    // 注：onSkillInstall 方法在 settingsManagerPanel 内部按需调用，本调用时该回调未触发，
+    // 因此构造顺序无依赖（this.skillDropManager 在第 364 行创建，仅当用户实际触发安装时才需可用）
+    this.settingsManagerPanel = new SettingsManagerPanelManager(this as SettingsManagerPanelHost);
 
     // 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
   // 注入 showToast 用于操作失败时给用户可见反馈
@@ -366,6 +382,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.memoryPanel.initMemoryPanelListeners();
     this.personaPanel.initPersonaSelectorListeners();
     this.settingsPanelManager.initListeners();
+    // 精灵设定面板管理器事件初始化（与 settingsPanelManager 同模式）
+    this.settingsManagerPanel.init();
     // init 需在 initEventListeners 之后（cmdk 按钮监听在 initEventListeners 中注册）
     this.commandPaletteManager.init();
     // 面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
@@ -430,6 +448,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.workProjectionPanel.cleanup(); // 清理作品投影面板事件监听器
     this.auditPanel.cleanup(); // M2 清理审计日志面板事件监听器
     this.settingsPanelManager.cleanup();
+    // 精灵设定面板管理器清理（与 settingsPanelManager 同模式）
+    this.settingsManagerPanel.cleanup();
     // 清理面板管理器
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
@@ -913,7 +933,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       case 'audit':
         void this.auditPanel.load();
         break;
-      // skill tab 的数据由 loadDashboard → renderSkills 驱动（委托到 settingsPanel），无需单独加载
       default:
         break;
     }
@@ -968,6 +987,19 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     const confirmed = await this.modalManager.showWriteConfirmation(info);
     // 将用户决策传回主进程
     await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);
+  }
+
+  /**
+   * 技能安装入口（SettingsManagerPanelHost 接口实现）
+   *
+   * 由精灵设定面板在用户拖入/选择 .md 文件后调用。
+   * 委托到 SkillDropManager 复用既有的"installSkill IPC + 热重载 + Toast 反馈"链路，
+   * 避免在设定面板重复实现安装逻辑。
+   *
+   * @param files 用户拖入或通过文件选择器选中的技能文件列表
+   */
+  onSkillInstall(files: File[]): void {
+    void this.skillDropManager.handleSkillDrop(files);
   }
 }
 

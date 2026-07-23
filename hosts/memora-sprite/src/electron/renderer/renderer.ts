@@ -102,6 +102,43 @@ async function bootstrapRenderer(): Promise<void> {
   // setupSettingsPanel 仅注册 UI 事件回调（onConfigSave 等），不依赖 setSilentRecoveryCallback
   settingsController.setupSettingsPanel();
 
+  // 精灵设定面板 - 持久化回调注册（与 settingsController.setupSettingsPanel 同模式）
+  // 角色匹配模式 / 默认角色即时持久化，不走保存按钮（与主题、归档模式同模式）
+  // R4 迁移后 personaMode 持久化统一由 settingsManagerPanel.onPersonaModeChange 负责，
+  // personaController 已退出该职责（仅保留 onPersonaSwitch + loadPersonaList），避免双面板竞争。
+  State.uiManager.settingsManagerPanel.onPersonaModeChange(async (mode) => {
+    // 回调触发时 settingsManagerPanel 已乐观更新 currentPersonaMode + badge 为新模式，
+    // 需在 IPC 调用前保存旧模式用于失败回滚（乐观更新 + 失败回滚模式）
+    const previousMode = mode === 'manual' ? 'auto' : 'manual';
+    try {
+      const { set } = await window.electronAPI.setPersonaMode(mode);
+      if (set) {
+        // IPC 成功：badge 已在 radio change 时乐观更新，此处保持幂等同步
+        State.uiManager.updatePersonaModeBadge(mode);
+        State.uiManager.showToast(`角色匹配模式已切换为：${mode === 'auto' ? '自动' : '手动'}`, 'success');
+      } else {
+        // IPC 拒绝切换：回滚 radio + badge 到旧模式（badge 回滚不可遗漏，否则顶栏与 radio 不一致）
+        State.uiManager.updatePersonaModeBadge(previousMode);
+        State.uiManager.settingsManagerPanel.setPersonaMode(previousMode);
+        State.uiManager.showToast('角色匹配模式切换失败', 'error');
+      }
+    } catch (error) {
+      // IPC 异常：回滚 radio + badge 到旧模式
+      State.uiManager.updatePersonaModeBadge(previousMode);
+      State.uiManager.settingsManagerPanel.setPersonaMode(previousMode);
+      reportError('sprite-settings.onPersonaModeChange', error);
+      State.uiManager.showToast(formatErrorMessage('设置角色模式', error), 'error');
+    }
+  });
+  State.uiManager.settingsManagerPanel.onDefaultPersonaChange(async (value) => {
+    try {
+      await window.electronAPI.updateConfig('defaultPersona', value);
+    } catch (error) {
+      reportError('sprite-settings.onDefaultPersonaChange', error);
+      State.uiManager.showToast(formatErrorMessage('保存默认角色', error), 'error');
+    }
+  });
+
   // 面板切换时刷新数据
   State.uiManager.onPanelSwitch((panel) => {
     if (panel === 'memories') {
@@ -111,6 +148,11 @@ async function bootstrapRenderer(): Promise<void> {
       // 切换到设置面板时重新加载配置表单，确保与主进程数据一致
       void settingsController.loadConfig();
       void settingsController.loadLlmConfig();
+    } else if (panel === 'sprite-settings') {
+      // 切换到精灵设定面板时加载三类设定文件列表 + 同步角色匹配模式/默认角色
+      // 列表与状态分离加载：列表由 loadAll 内部并行加载，状态由 syncSpriteSettingsState 同步
+      void State.uiManager.settingsManagerPanel.loadAll();
+      void syncSpriteSettingsState();
     } else if (panel === 'dashboard') {
       // 切换到仪表盘面板时刷新仪表盘数据（健康诊断 + 感知 + 运行指标）
       void memoryController.loadDashboard();
@@ -206,6 +248,36 @@ async function bootstrapRenderer(): Promise<void> {
     }
   }
 
+  /**
+   * 同步精灵设定面板的角色匹配模式 + 默认角色输入框
+   *
+   * 切换到精灵设定面板时调用，确保面板显示的 personaMode / defaultPersona
+   * 与主进程 spriteConfig 一致（避免用户在外部修改后看到陈旧状态）。
+   *
+   * 设计选择：每次切换都重新查询而非缓存，因为：
+   * 1. IPC 调用量小（两次轻量级查询）
+   * 2. 避免缓存失效问题（用户可能在设置面板或其他入口修改了配置）
+   * 3. 与 settingsController.loadConfig 同模式（每次切换都重新加载）
+   */
+  async function syncSpriteSettingsState(): Promise<void> {
+    // 同步角色匹配模式（独立 IPC，与 spriteConfig 解耦）
+    try {
+      const { mode } = await window.electronAPI.getPersonaMode();
+      State.uiManager.settingsManagerPanel.setPersonaMode(mode as 'auto' | 'manual');
+    } catch (error) {
+      reportError('syncSpriteSettingsState-mode', error);
+    }
+    // 同步默认角色（从 spriteConfig 读取，与 settingsController.loadConfig 同源）
+    try {
+      const { config } = await window.electronAPI.getConfig();
+      if (config) {
+        State.uiManager.settingsManagerPanel.setDefaultPersona(String(config.defaultPersona ?? ''));
+      }
+    } catch (error) {
+      reportError('syncSpriteSettingsState-defaultPersona', error);
+    }
+  }
+
   // IPC 监听器提前注册——在 controllers 创建 + onAgentReadyCallback 赋值后立即注册，
   // 避免主进程在 DOMContentLoaded 中段（主题读取/回调注册期间）推送的事件丢失。
   // 所有回调依赖（memoryController/settingsController/sessionController）均已在上文创建。
@@ -290,6 +362,13 @@ async function bootstrapRenderer(): Promise<void> {
       if (State.uiManager.panelRouter.isAuxTabVisible('perception')) {
         void memoryController.loadPerception();
       }
+    },
+    // 设定文件变更 → 精灵设定面板按 type 分发刷新对应列表
+    // 触发源：本面板 CRUD（saveRule/deleteSkill 等）或外部文件系统编辑
+    onConfigFilesChanged: (payload) => {
+      // 广播到达后直接按 type 分发刷新对应列表（refreshByType 内部按 type 调用 loadXxxList）
+      // 不再经过 handleConfigFilesChanged → configFilesChangedCallback 中间层，调用链路最短
+      void State.uiManager.settingsManagerPanel.refreshByType(payload.type);
     },
   });
 
@@ -475,11 +554,10 @@ async function bootstrapRenderer(): Promise<void> {
 
   // ─── 技能文件拖入安装初始化 ──────────────
   // 注册安装成功回调：刷新仪表盘技能列表 + 计数
+  // 注：dropzone 事件监听已迁移到设定面板 settingsManagerPanel.initSkillDropzone（sprite-skill-dropzone）
   State.uiManager.onSkillInstalled(() => {
     void memoryController.loadDashboard();
   });
-  // 初始化 dropzone 事件监听（dragover/drop/click/change）
-  setupSkillDropzone(State.events);
 
   // loadLlmConfig（加载 Embedding 配置）与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
   // Provider 列表由 SettingsPanelManager.initListeners 内部调用 loadProviderList 自行加载
@@ -813,101 +891,4 @@ function setupBusinessLogic(
       State.uiManager.showToast(formatErrorMessage('跳转到搜索结果', error), 'error');
     }
   });
-}
-
-// ─── 技能文件拖入安装 dropzone 初始化 ──────
-
-/**
- * 初始化技能拖入安装区域的事件监听
- *
- * 绑定以下事件：
- * - dragenter/dragover：添加 .is-dragover 类，反馈可接收
- * - dragleave/drop：移除 .is-dragover 类
- * - drop：提取 File[] 调用 State.uiManager.handleSkillDrop
- * - click：触发文件选择对话框（State.uiManager.handleSkillFileSelect）
- * - change：文件选择后触发，提取 File[] 调用 State.uiManager.handleSkillDrop
- * - keydown：Enter/Space 触发点击（支持键盘可访问性，tabindex=0）
- *
- * 所有事件通过 EventTracker 统一注册，beforeunload 时由 State.events.cleanup() 清理，
- * 符合项目 EventTracker 统一抽象范式（避免事件监听器泄漏）。
- *
- * @param events 渲染进程级 EventTracker 实例（State.events）
- */
-function setupSkillDropzone(events: EventTracker): void {
-  const dropzone = document.getElementById('skill-dropzone');
-  // dropzone 不存在时静默降级（HTML 可能被裁剪）
-  if (!dropzone) return;
-
-  const fileInput = document.getElementById('skill-file-input');
-  if (!(fileInput instanceof HTMLInputElement)) {
-    reportError('Renderer skill-file-input 元素缺失', new Error('技能导入功能不可用：HTMLInputElement 校验失败'));
-    return;
-  }
-
-  // dragenter/dragover：阻止默认行为（禁止浏览器打开文件）+ 添加高亮类
-  // handler 签名用 Event（EventTracker 范式要求），内部断言为 DragEvent 访问特有属性
-  const handleDragOver = (e: Event): void => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.classList.add('is-dragover');
-  };
-
-  // dragleave：移除高亮类（仅当离开 dropzone 本身时触发，避免子元素切换抖动）
-  const handleDragLeave = (e: Event): void => {
-    const dragEvent = e as DragEvent;
-    dragEvent.preventDefault();
-    dragEvent.stopPropagation();
-    // relatedTarget 为 null 或不在 dropzone 内时才移除高亮
-    const related = dragEvent.relatedTarget as Node | null;
-    if (!related || !dropzone.contains(related)) {
-      dropzone.classList.remove('is-dragover');
-    }
-  };
-
-  // drop：提取文件 + 移除高亮 + 调用安装
-  const handleDrop = (e: Event): void => {
-    const dragEvent = e as DragEvent;
-    dragEvent.preventDefault();
-    dragEvent.stopPropagation();
-    dropzone.classList.remove('is-dragover');
-    const files = dragEvent.dataTransfer?.files;
-    if (files && files.length > 0) {
-      // FileList 转为数组传递
-      const fileArray = Array.from(files);
-      void State.uiManager.handleSkillDrop(fileArray);
-    }
-  };
-
-  // click：触发文件选择对话框
-  const handleClick = (): void => {
-    State.uiManager.handleSkillFileSelect();
-  };
-
-  // keydown：Enter/Space 触发点击（键盘可访问性）
-  const handleKeydown = (e: Event): void => {
-    const keyboardEvent = e as KeyboardEvent;
-    if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
-      keyboardEvent.preventDefault();
-      State.uiManager.handleSkillFileSelect();
-    }
-  };
-
-  // change：文件选择后触发
-  const handleFileChange = (): void => {
-    if (fileInput.files && fileInput.files.length > 0) {
-      const fileArray = Array.from(fileInput.files);
-      void State.uiManager.handleSkillDrop(fileArray);
-      // 清空 input.value 允许重复选择同一文件（否则 change 事件不触发）
-      fileInput.value = '';
-    }
-  };
-
-  // 通过 EventTracker 统一注册，beforeunload 时由 State.events.cleanup() 清理
-  events.addEventListener(dropzone, 'dragenter', handleDragOver);
-  events.addEventListener(dropzone, 'dragover', handleDragOver);
-  events.addEventListener(dropzone, 'dragleave', handleDragLeave);
-  events.addEventListener(dropzone, 'drop', handleDrop);
-  events.addEventListener(dropzone, 'click', handleClick);
-  events.addEventListener(dropzone, 'keydown', handleKeydown);
-  events.addEventListener(fileInput, 'change', handleFileChange);
 }

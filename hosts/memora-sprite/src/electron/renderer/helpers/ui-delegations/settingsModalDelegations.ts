@@ -24,7 +24,6 @@ export interface SettingsModalDelegations {
   onProviderChanged(): void;
   loadEmbeddingConfig(data: { embedding: { model: string; baseUrl: string; apiKey: string } | null }): void;
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void;
-  setPersonaMode(mode: string): void;
   collectConfigFromForm(): SpriteConfigForm;
   onConfigSave(cb: (config: SpriteConfigForm) => Promise<boolean>): void;
   resetSettingsFormDirty(): void;
@@ -46,8 +45,6 @@ export interface SettingsModalDelegations {
     required?: boolean;
   }): Promise<string | null>;
   onSkillInstalled(callback: () => void): void;
-  handleSkillDrop(files: File[]): Promise<void>;
-  handleSkillFileSelect(): void;
 }
 
 /** Settings / Profile / Modal / PanelError / SkillDrop 委托群实现——纯透传到各子模块 */
@@ -78,9 +75,6 @@ export const settingsModalDelegations: SettingsModalDelegations = {
   },
   loadProjectsToForm(this: UIManager, projects: Array<{ name: string; path: string }>, selectedPath: string): void {
     this.settingsPanelManager.loadProjectsToForm(projects, selectedPath);
-  },
-  setPersonaMode(this: UIManager, mode: string): void {
-    this.settingsPanelManager.setPersonaMode(mode);
   },
   collectConfigFromForm(this: UIManager): SpriteConfigForm {
     return this.settingsPanelManager.collectConfigFromForm();
@@ -130,11 +124,5 @@ export const settingsModalDelegations: SettingsModalDelegations = {
   },
   onSkillInstalled(this: UIManager, callback: () => void): void {
     this.skillDropManager.onSkillInstalled(callback);
-  },
-  async handleSkillDrop(this: UIManager, files: File[]): Promise<void> {
-    await this.skillDropManager.handleSkillDrop(files);
-  },
-  handleSkillFileSelect(this: UIManager): void {
-    this.skillDropManager.handleSkillFileSelect();
   },
 };

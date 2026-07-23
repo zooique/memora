@@ -20,6 +20,8 @@
 import type { UIManager } from './ui.js';
 // SerializedAppError 真理源在 ipc/types.ts
 import type { SerializedAppError } from '../ipc/types.js';
+// ConfigFilesChangedPayload 真理源在 preload（与 settingsManagerPanel 共用同一类型契约）
+import type { ConfigFilesChangedPayload } from '../preload.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
 // 感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联
@@ -683,6 +685,16 @@ export interface IpcListenerCallbacks {
    * 渲染层职责：刷新顶栏角色名 + 下拉菜单 active 标记 + 感知面板（如打开）
    */
   onPersonaChanged?: (payload: PersonaChangedPayload) => void;
+  /**
+   * 设定文件变更回调（精灵设定面板 Epic 3 · I4）
+   *
+   * 触发链路：
+   * - 内部：精灵设定面板 CRUD（saveRule/deleteSkill 等）→ 主进程写盘 → ConfigFileWatcher 检测
+   * - 外部：用户在文件系统中手动编辑 configDir/{personas,rules,skills}/ 下文件
+   *
+   * 渲染层职责：按 payload.type 分发到 settingsManagerPanel.handleConfigFilesChanged 刷新对应列表
+   */
+  onConfigFilesChanged?: (payload: ConfigFilesChangedPayload) => void;
 }
 
 /**
@@ -902,5 +914,20 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    */
   window.electronAPI.onRecallMemoryTrigger(() => {
     uiManager.handleRecallMemoryTrigger();
+  });
+
+  // ─── 设定文件变更广播（精灵设定面板 Epic 3 · I4） ───────
+  /**
+   * 监听 configDir/{personas,rules,skills}/ 下文件变更（外部编辑器或本面板 CRUD 触发）
+   *
+   * 触发链路：
+   * - 内部：本面板 saveRule/deleteSkill → 主进程 ConfigFileManager 写盘 → ConfigFileWatcher
+   * - 外部：用户在文件系统直接编辑设定文件
+   *
+   * 处理方式：按 payload.type 分发到 settingsManagerPanel.handleConfigFilesChanged，
+   * 由其根据当前激活的 tab 决定是否刷新列表（避免在不可见面板上做无意义的 IPC 调用）
+   */
+  window.electronAPI.onConfigFilesChanged((payload) => {
+    callbacks.onConfigFilesChanged?.(payload);
   });
 }

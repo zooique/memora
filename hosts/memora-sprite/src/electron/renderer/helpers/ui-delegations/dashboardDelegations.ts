@@ -33,7 +33,6 @@ export interface DashboardDelegations {
   renderAgentMetrics(metrics: AgentMetrics | null): void;
   renderSourceHealth(sourceHealth: SourceHealth | null): void;
   renderReviewData(review: ReviewDataPayload): void;
-  renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void;
   showInsightsLoading(): void;
   renderInsights(dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number }, graph: RelationGraphData): void;
   renderPartnerInsights(memories: Array<{ id: string; name: string; source: string; contentPreview: string; createdAt?: string }>): void;
@@ -72,9 +71,6 @@ export const dashboardDelegations: DashboardDelegations = {
   },
   renderReviewData(this: UIManager, review: ReviewDataPayload): void {
     this.dashboardPanel.renderReviewData(review);
-  },
-  renderSkills(this: UIManager, skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
-    this.settingsPanelManager.renderSkills(skills);
   },
   showInsightsLoading(this: UIManager): void {
     this.memoryPanel.showInsightsLoading();

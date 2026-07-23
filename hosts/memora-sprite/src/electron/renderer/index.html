@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="styles/panels/perception.css" />
   <link rel="stylesheet" href="styles/panels/clipboard.css" />
   <link rel="stylesheet" href="styles/panels/settings.css" />
+  <link rel="stylesheet" href="styles/panels/sprite-settings.css" />
   <link rel="stylesheet" href="styles/overlays/modal.css" />
   <link rel="stylesheet" href="styles/overlays/toast.css" />
   <link rel="stylesheet" href="styles/overlays/command-palette.css" />
@@ -52,6 +53,8 @@
       <symbol id="icon-chart" viewBox="0 0 24 24"><rect x="3" y="14" width="4" height="6" rx="0.5" fill="currentColor"/><rect x="10" y="8" width="4" height="12" rx="0.5" fill="currentColor"/><rect x="17" y="4" width="4" height="16" rx="0.5" fill="currentColor"/></symbol>
       <!-- 设置 / 齿轮 -->
       <symbol id="icon-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 2v2.5M12 19.5V22M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 滑块（精灵设定面板专用，区别于设置的纯齿轮） -->
+      <symbol id="icon-sliders" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
       <!-- 问号（帮助） -->
       <symbol id="icon-question" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></symbol>
       <!-- 搜索 -->
@@ -207,13 +210,17 @@
       </div>
 
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
-      <!-- 顶部高频区：对话 / 记忆 / 剪贴板（工作区 + 辅助操作型面板） -->
+      <!-- 顶部高频区：对话 / 记忆 / 设定 / 剪贴板（工作区 + 设定管理 + 辅助操作型面板） -->
       <nav class="sidebar-nav sidebar-nav-top flex-shrink-0" aria-label="主导航">
         <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
         <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-labelledby="panel-title-memories">
           <svg class="icon"><use href="#icon-brain"/></svg>
+        </button>
+        <!-- 精灵设定入口（角色/规则/技能三类设定文件统一管理，与记忆相邻体现因果关系） -->
+        <button class="nav-btn" data-panel="sprite-settings" data-tooltip="设定" aria-labelledby="panel-title-sprite-settings">
+          <svg class="icon"><use href="#icon-sliders"/></svg>
         </button>
         <!-- 剪贴板入口（被动等待 + 保护性主动；角标显示待处理数量） -->
         <button class="nav-btn" data-panel="clipboard" data-tooltip="剪贴板" aria-labelledby="panel-title-clipboard">
@@ -741,7 +748,6 @@
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
           <!-- 画像 tab 仅保留用户画像（作品投影归项目 tab） -->
           <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像</button>
-          <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
           <span class="settings-tab-group-label">系统</span>
           <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit"><svg class="icon"><use href="#icon-eye"/></svg>审计</button>
@@ -867,20 +873,6 @@
               <input type="text" id="cfg-watcher-ignore" placeholder="**/node_modules/**, **/.git/**" autocomplete="off" />
             </div>
           </details>
-          <div class="settings-group">
-            <h3>角色</h3>
-            <div class="settings-row">
-              <label for="cfg-persona-mode">匹配模式</label>
-              <div class="radio-group">
-                <label><input type="radio" name="persona-mode" value="auto" /> 自动</label>
-                <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
-              </div>
-            </div>
-            <div class="settings-row">
-              <label for="cfg-default-persona">默认角色</label>
-              <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" autocomplete="off" />
-            </div>
-          </div>
           <!-- 快捷键折叠为 details 默认收起（降低精灵 tab 信息密度） -->
           <details class="settings-group settings-group-collapsible">
             <summary class="settings-group-summary">快捷键</summary>
@@ -1003,40 +995,6 @@
           </div>
         </div>
 
-        <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
-        <div class="settings-tab-content" data-settings-tab="skill">
-          <div class="settings-group">
-            <h3>已安装技能</h3>
-            <p class="settings-hint">
-              技能文件存放在配置目录的 skills/ 子目录下，应用启动时自动加载。
-              技能通过 frontmatter 中的 keywords 或 trigger 字段匹配对话上下文。
-            </p>
-            <!-- 已加载技能列表（消费内核 agent.skills.list） -->
-            <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
-            <div id="skills-section" class="skill-section hidden">
-              <ul id="skills-list" class="skills-list"></ul>
-            </div>
-            <div id="skills-empty" class="profile-empty">暂无已安装技能，拖入 .md 文件安装</div>
-          </div>
-
-          <div class="settings-group">
-            <h3>安装技能</h3>
-            <p class="settings-hint">
-              将 .md 技能文件拖入下方区域，或点击选择文件。安装后立即生效，无需重启。
-            </p>
-            <!-- 用户可将 .md 技能文件拖入此区域或点击选择文件 -->
-            <div id="skill-dropzone" class="skill-dropzone" tabindex="0" role="button"
-                 aria-label="拖入技能文件或点击选择">
-              <div class="dropzone-icon"><svg class="icon"><use href="#icon-download"/></svg></div>
-              <div class="dropzone-text">
-                <span class="dropzone-hint">拖入 .md 技能文件</span>
-                <span class="dropzone-subtext">或点击选择文件</span>
-              </div>
-              <input type="file" id="skill-file-input" accept=".md" hidden />
-            </div>
-          </div>
-        </div>
-
         <!-- 内置帮助页面（离线可用，不依赖外部链接） -->
         <div class="settings-tab-content" data-settings-tab="help">
           <div class="settings-group">
@@ -1133,6 +1091,130 @@
           <button id="btn-settings-reset" class="btn-danger">恢复精灵默认</button>
           <!-- 主操作按钮（btn-primary，作为底部按钮行的主操作区分） -->
           <button id="btn-settings-skip" class="btn-primary">完成并回到对话</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 精灵设定面板（角色/规则/技能三类设定文件统一管理，1 文件 1 条记录 + 增删改查） -->
+      <div id="panel-sprite-settings" class="panel" aria-hidden="true" aria-label="精灵设定">
+        <!-- 面板头部 -->
+        <div class="panel-header flex-shrink-0">
+          <span class="panel-title" id="panel-title-sprite-settings">精灵设定</span>
+        </div>
+
+        <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区（复用 settings 面板的垂直 tab 模式） -->
+        <div class="sprite-settings-body">
+          <!-- 三 tab 导航（角色/规则/技能，对应 configDir/{personas,rules,skills}/） -->
+          <div class="sprite-settings-tabs flex-shrink-0" role="tablist" aria-label="设定分类">
+            <button class="sprite-settings-tab active" data-sprite-settings-tab="persona" type="button"><svg class="icon"><use href="#icon-persona"/></svg>角色</button>
+            <button class="sprite-settings-tab" data-sprite-settings-tab="rule" type="button"><svg class="icon"><use href="#icon-flag"/></svg>规则</button>
+            <button class="sprite-settings-tab" data-sprite-settings-tab="skill" type="button"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
+          </div>
+
+          <!-- 右侧内容区（三 tab 内容容器） -->
+          <div class="sprite-settings-content">
+            <!-- ─── 角色 tab ─── -->
+            <div class="sprite-settings-tab-content active" data-sprite-settings-tab="persona">
+              <!-- 角色匹配配置区（M3 从设置面板精灵 tab 迁移）
+                   sprite- 前缀作为面板归属标识（与 perception-/dashboard-/archive- 同模式） -->
+              <div class="sprite-settings-group">
+                <h3>角色匹配</h3>
+                <div class="settings-row">
+                  <label for="cfg-sprite-persona-mode">匹配模式</label>
+                  <div class="radio-group">
+                    <label><input type="radio" id="cfg-sprite-persona-mode" name="sprite-persona-mode" value="auto" /> 自动</label>
+                    <label><input type="radio" name="sprite-persona-mode" value="manual" /> 手动</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <label for="cfg-sprite-default-persona">默认角色</label>
+                  <!-- select 下拉动态读取角色列表，避免手敲错误角色名（options 由 settingsManagerPanel.renderPersonaList 刷新） -->
+                  <select id="cfg-sprite-default-persona">
+                    <option value="">（自动匹配）</option>
+                  </select>
+                </div>
+              </div>
+              <!-- 角色列表区（1 文件 1 条记录） -->
+              <div class="sprite-settings-group">
+                <div class="sprite-settings-group-header flex-between">
+                  <h3>角色列表</h3>
+                  <button id="btn-add-persona" class="btn-secondary btn-sm" type="button">+ 新建角色</button>
+                </div>
+                <div id="persona-config-list" class="sprite-settings-list"></div>
+                <div id="persona-config-empty" class="sprite-settings-empty hidden">暂无角色，点击"新建角色"创建</div>
+              </div>
+            </div>
+
+            <!-- ─── 规则 tab ─── -->
+            <div class="sprite-settings-tab-content" data-sprite-settings-tab="rule">
+              <!-- 普通规则列表（可 CRUD） -->
+              <div class="sprite-settings-group">
+                <div class="sprite-settings-group-header flex-between">
+                  <h3>规则列表</h3>
+                  <button id="btn-add-rule" class="btn-secondary btn-sm" type="button">+ 新建规则</button>
+                </div>
+                <div id="rule-config-list" class="sprite-settings-list"></div>
+                <div id="rule-config-empty" class="sprite-settings-empty hidden">暂无规则，点击"新建规则"创建</div>
+              </div>
+              <!-- 护栏规则子分组（只读，不可热重载，修改后需重启生效） -->
+              <div class="sprite-settings-group">
+                <h3>护栏规则 <span class="sprite-settings-badge">只读 · 需重启生效</span></h3>
+                <div id="guardrail-config-list" class="sprite-settings-list sprite-settings-list-readonly"></div>
+                <div id="guardrail-config-empty" class="sprite-settings-empty hidden">暂无护栏规则（来源于 .trae/rules/decisions/，修改后需重启精灵生效）</div>
+              </div>
+              <!-- 项目级规则子分组（只读，来源于 projectPath/.memora/rules/） -->
+              <div class="sprite-settings-group">
+                <h3>项目级规则 <span class="sprite-settings-badge">只读 · 项目仓库</span></h3>
+                <div id="project-rule-config-list" class="sprite-settings-list sprite-settings-list-readonly"></div>
+                <div id="project-rule-config-empty" class="sprite-settings-empty hidden">暂无项目级规则（来源于当前项目 .memora/rules/ 目录，请在项目仓库中添加）</div>
+              </div>
+            </div>
+
+            <!-- ─── 技能 tab ─── -->
+            <div class="sprite-settings-tab-content" data-sprite-settings-tab="skill">
+              <div class="sprite-settings-group">
+                <div class="sprite-settings-group-header flex-between">
+                  <h3>技能列表</h3>
+                  <button id="btn-add-skill" class="btn-secondary btn-sm" type="button">+ 新建技能</button>
+                </div>
+                <!-- 技能拖入安装区（M1 从设置面板迁移，保留拖入 + 点击选择能力）
+                     sprite- 前缀作为面板归属标识（与 perception-/dashboard-/archive- 同模式） -->
+                <div id="sprite-skill-dropzone" class="skill-dropzone" tabindex="0" role="button" aria-label="拖入技能文件或点击选择">
+                  <div class="dropzone-icon"><svg class="icon"><use href="#icon-download"/></svg></div>
+                  <div class="dropzone-text">
+                    <span class="dropzone-hint">拖入 .md 技能文件</span>
+                    <span class="dropzone-subtext">或点击选择文件</span>
+                  </div>
+                  <input type="file" id="sprite-skill-file-input" accept=".md" hidden />
+                </div>
+                <div id="skill-config-list" class="sprite-settings-list"></div>
+                <div id="skill-config-empty" class="sprite-settings-empty hidden">暂无技能，拖入 .md 文件或点击"新建技能"</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设定文件编辑器模态框（三类共用，frontmatter 表单 + 正文 textarea） -->
+      <div id="config-file-editor-modal" class="modal hidden" role="dialog" aria-hidden="true" aria-labelledby="config-file-editor-title">
+        <div class="modal-overlay" data-action="close-editor"></div>
+        <div class="modal-content config-file-editor-content">
+          <div class="modal-header">
+            <h2 id="config-file-editor-title">编辑设定</h2>
+            <button class="modal-close" data-action="close-editor" aria-label="关闭编辑器"><svg class="icon"><use href="#icon-close"/></svg></button>
+          </div>
+          <div class="modal-body config-file-editor-body">
+            <!-- frontmatter 表单区（按类型动态渲染字段） -->
+            <div id="config-file-editor-form" class="config-file-editor-form"></div>
+            <!-- 正文 textarea（Markdown） -->
+            <div class="config-file-editor-body-section">
+              <label for="config-file-editor-content">正文（Markdown）</label>
+              <textarea id="config-file-editor-content" class="config-file-editor-textarea" rows="12" placeholder="输入正文内容..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" data-action="cancel-editor">取消</button>
+            <button class="btn-primary" data-action="save-editor">保存</button>
           </div>
         </div>
       </div>

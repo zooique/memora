@@ -10,8 +10,7 @@
  * - updateAgentStatusIndicator：三态 + null 降级
  * - loadConfigToForm：加载精灵配置 + 项目模式 + 专注项目联动
  * - collectConfigFromForm：收集精灵配置 + 项目模式 + 主题
- * - renderSkills：空列表隐藏 / 非空渲染 / 关键词标签 / 层级标签（从 dashboardPanelManager 迁入）
- * - 回调注册：onConfigSave / onConfigCancel / onPersonaModeChange
+ * - 回调注册：onConfigSave / onConfigCancel
  * - cleanup：事件监听器解绑
  *
  * 说明：单模型 LLM 表单相关逻辑（loadLlmConfigToForm 为 no-op、collectLlmConfigFromForm 返回 null）
@@ -69,7 +68,6 @@ const SETTINGS_HTML = `
     <input id="cfg-watcher-paths" type="text" />
     <input id="cfg-watcher-debounce" type="number" value="1000" />
     <input id="cfg-watcher-ignore" type="text" />
-    <input id="cfg-default-persona" type="text" />
     <select id="cfg-focus-project"><option value="">选择项目</option></select>
 
     <!-- 快捷键配置（Phase 3.3） -->
@@ -83,8 +81,6 @@ const SETTINGS_HTML = `
     <button id="btn-settings-skip">稍后配置</button>
 
     <!-- 单选按钮组 -->
-    <input type="radio" name="persona-mode" value="auto" checked />
-    <input type="radio" name="persona-mode" value="manual" />
     <input type="radio" name="project-mode" value="smart" checked />
     <input type="radio" name="project-mode" value="focus" />
     <input type="radio" name="theme-mode" value="light" checked />
@@ -101,12 +97,6 @@ const SETTINGS_HTML = `
       <span class="save-status-icon"></span>
       <span class="save-status-text"></span>
     </div>
-
-    <!-- 技能管理 tab DOM（renderSkills 从 dashboardPanelManager 迁入） -->
-    <div id="skills-section" class="skill-section hidden">
-      <ul id="skills-list" class="skills-list"></ul>
-    </div>
-    <div id="skills-empty" class="profile-empty">暂无已安装技能</div>
 
     <!-- tab 切换 -->
     <div class="settings-tab active" data-settings-tab="llm">LLM</div>
@@ -280,21 +270,6 @@ describe('initListeners · 项目模式联动', () => {
   });
 });
 
-// ─── initListeners · 角色模式 ───────────────────────────
-
-describe('initListeners · 角色模式切换', () => {
-  it('切换角色模式应触发 updatePersonaModeBadge + personaModeChangeCallback', () => {
-    const { manager, host } = createManager();
-    const cb = vi.fn();
-    manager.onPersonaModeChange(cb);
-    const manualRadio = document.querySelector('input[name="persona-mode"][value="manual"]') as HTMLInputElement;
-    manualRadio.checked = true;
-    manualRadio.dispatchEvent(new Event('change'));
-    expect(host.updatePersonaModeBadge).toHaveBeenCalledWith('manual');
-    expect(cb).toHaveBeenCalledWith('manual');
-  });
-});
-
 // ─── initListeners · 主题切换 ───────────────────────────
 
 describe('initListeners · 主题切换', () => {
@@ -334,10 +309,10 @@ describe('initListeners · tab 切换', () => {
   });
 });
 
-// ─── initListeners · tab 合并（7 tab 完整结构）───────────
+// ─── initListeners · tab 合并（6 tab 完整结构）───────────
 
 describe('initListeners · tab 合并', () => {
-  // 7 tab 完整 DOM（对齐 index.html：嵌入已合并到大模型、作品已合并到画像与作品）
+  // 6 tab 完整 DOM（对齐 index.html：嵌入已合并到大模型、作品已合并到画像与作品、技能已迁移到精灵设定面板）
   const TABS_HTML = `
     <div id="panel-settings">
       <div class="settings-tabs">
@@ -346,7 +321,6 @@ describe('initListeners · tab 合并', () => {
         <button class="settings-tab" data-settings-tab="project">项目</button>
         <button class="settings-tab" data-settings-tab="profile">画像与作品</button>
         <button class="settings-tab" data-settings-tab="audit">审计</button>
-        <button class="settings-tab" data-settings-tab="skill">技能</button>
         <button class="settings-tab" data-settings-tab="help">帮助</button>
       </div>
       <div class="settings-tab-content active" data-settings-tab="llm"></div>
@@ -354,17 +328,16 @@ describe('initListeners · tab 合并', () => {
       <div class="settings-tab-content" data-settings-tab="project"></div>
       <div class="settings-tab-content" data-settings-tab="profile"></div>
       <div class="settings-tab-content" data-settings-tab="audit"></div>
-      <div class="settings-tab-content" data-settings-tab="skill"></div>
       <div class="settings-tab-content" data-settings-tab="help"></div>
     </div>
   `;
 
-  it('7 tab 完整结构下应能正确切换任意 tab', () => {
+  it('6 tab 完整结构下应能正确切换任意 tab', () => {
     createManager({ html: TABS_HTML });
     const tabs = document.querySelectorAll<HTMLElement>('.settings-tab');
     const contents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
-    expect(tabs.length).toBe(7);
-    expect(contents.length).toBe(7);
+    expect(tabs.length).toBe(6);
+    expect(contents.length).toBe(6);
 
     // 依次点击每个 tab，验证 active 状态切换
     tabs.forEach((tab, idx) => {
@@ -503,9 +476,8 @@ describe('loadConfigToForm + collectConfigFromForm', () => {
     expect((document.getElementById('cfg-cooldown') as HTMLInputElement).value).toBe('10'); // 600000ms / 60000 = 10
     expect((document.getElementById('cfg-interval') as HTMLInputElement).value).toBe('120'); // 7200000ms / 60000 = 120
     expect((document.getElementById('cfg-watcher-paths') as HTMLInputElement).value).toBe('., src');
-    expect((document.getElementById('cfg-default-persona') as HTMLInputElement).value).toBe('coder');
 
-    // 回收
+    // 回收（defaultPersona 由精灵设定面板独立持久化，设置面板收集值固定为空字符串）
     const collected = manager.collectConfigFromForm();
     expect(collected.silentMode).toBe(true);
     expect(collected.proactiveThreshold).toBe(5);
@@ -513,7 +485,7 @@ describe('loadConfigToForm + collectConfigFromForm', () => {
     expect(collected.triggerIntervalMs).toBe(7_200_000);
     expect(collected.fileWatcherPaths).toEqual(['.', 'src']);
     expect(collected.fileWatcherDebounceMs).toBe(2000);
-    expect(collected.defaultPersona).toBe('coder');
+    expect(collected.defaultPersona).toBe('');
   });
 
   it('focus 项目模式应启用专注项目下拉框', () => {
@@ -558,16 +530,6 @@ describe('回调注册', () => {
     await new Promise(resolve => setTimeout(resolve, 600));
     expect(cb).toHaveBeenCalled();
   });
-
-  it('onPersonaModeChange 应注册回调', () => {
-    const { manager } = createManager();
-    const cb = vi.fn();
-    manager.onPersonaModeChange(cb);
-    const radio = document.querySelector('input[name="persona-mode"][value="manual"]') as HTMLInputElement;
-    radio.checked = true;
-    radio.dispatchEvent(new Event('change'));
-    expect(cb).toHaveBeenCalledWith('manual');
-  });
 });
 
 // ─── cleanup ─────────────────────────────────────────────
@@ -593,64 +555,6 @@ describe('cleanup', () => {
     radio.checked = true;
     radio.dispatchEvent(new Event('change'));
     expect(host.setTheme).not.toHaveBeenCalled();
-  });
-});
-
-// ─── renderSkills（从 dashboardPanelManager 迁入） ──────
-
-describe('renderSkills', () => {
-  it('空技能列表应隐藏 section 并显示空状态', () => {
-    const { manager } = createManager();
-    manager.renderSkills([]);
-    expect(document.getElementById('skills-section')!.classList.contains('hidden')).toBe(true);
-    expect(document.getElementById('skills-empty')!.classList.contains('hidden')).toBe(false);
-  });
-
-  it('应渲染技能列表项（名称 + 层级 + 关键词）', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 'code-review', keywords: ['review', 'lint'], description: '代码审查', layer: 'agent' },
-    ]);
-    const item = document.querySelector('#skills-list .skill-item') as HTMLElement;
-    expect(item).not.toBeNull();
-    expect(item.querySelector('.skill-name')!.textContent).toBe('code-review');
-    expect(item.querySelector('.skill-layer')!.textContent).toBe('全局');
-    expect(item.querySelector('.skill-keywords')!.textContent).toContain('review');
-    // 有技能时 section 显示、空状态隐藏
-    expect(document.getElementById('skills-section')!.classList.contains('hidden')).toBe(false);
-    expect(document.getElementById('skills-empty')!.classList.contains('hidden')).toBe(true);
-  });
-
-  it('项目层级应显示"项目"标签', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 's', keywords: [], description: '', layer: 'project' },
-    ]);
-    expect(document.querySelector('.skill-layer')!.textContent).toBe('项目');
-  });
-
-  it('无关键词时不应渲染关键词标签', () => {
-    const { manager } = createManager();
-    manager.renderSkills([{ name: 's', keywords: [], description: '', layer: 'agent' }]);
-    expect(document.querySelector('.skill-keywords')).toBeNull();
-  });
-
-  it('关键词超过 5 个应只展示前 5 个', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 's', keywords: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], description: '', layer: 'agent' },
-    ]);
-    const kw = document.querySelector('.skill-keywords')!.textContent!;
-    expect(kw.split(' · ').length).toBe(5);
-  });
-
-  it('应使用 title 属性携带技能描述（悬停提示）', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 's', keywords: [], description: '详细描述', layer: 'agent' },
-    ]);
-    const item = document.querySelector('.skill-item') as HTMLElement;
-    expect(item.title).toBe('详细描述');
   });
 });
 

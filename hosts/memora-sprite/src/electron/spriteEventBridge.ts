@@ -16,6 +16,8 @@
  *   trashPurged / archiveFailed）。
  *
  *   proactivePrompt 保留显式处理（含托盘脉冲 + 系统通知 + 未读计数等副作用）。
+ *   configFilesChanged 保留显式处理（走独立 CONFIG_FILES_CHANGED 通道，非 SPRITE_EVENT）。
+ *   presenceChanged 保留显式处理（需同时推送到完整窗口 + 浮动窗口）。
  */
 
 import { Notification } from 'electron';
@@ -276,6 +278,26 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     stage: e.stage,
     message: e.message,
   }));
+
+  // 设定文件变更 → 独立 CONFIG_FILES_CHANGED 通道广播（精灵设定面板 Epic 3 · I4）
+  //
+  // 不走 SPRITE_EVENT 通道的原因：CONFIG_FILES_CHANGED 是设定面板专用刷新信号，
+  // 渲染层为其单独注册 onConfigFilesChanged 监听器，避免在 SPRITE_EVENT 的 type
+  // 分发逻辑中混杂设定面板刷新职责。
+  //
+  // 触发场景：
+  //   1. 设定面板 CRUD（saveConfigFile/deleteConfigFile）成功后
+  //   2. personaWatcher 监听到外部编辑器修改 personas/ 目录时（name='' 批量变更）
+  //
+  // 渲染层收到后按 type 全量刷新对应 tab（U8）。
+  registerSpriteEvent(deps, 'configFilesChanged', (e) => {
+    const fullWindow = deps.windowManager.getFullWindow();
+    safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED, {
+      type: e.type,
+      action: e.action,
+      name: e.name,
+    });
+  });
 
   // 在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
   // 浮动窗口需要独立推送：56x56 球体在用户离开时无视觉变化，体验割裂

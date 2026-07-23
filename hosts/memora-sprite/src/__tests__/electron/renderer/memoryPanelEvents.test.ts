@@ -1045,8 +1045,9 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
   });
 
   describe('initMoreMenu - 菜单弹出位置计算', () => {
-    it('右侧空间充足时应靠左展开（left:0, right:auto）', () => {
+    it('右侧空间充足时应靠左对齐按钮展开（left=btnRect.left）', () => {
       // 验证 wouldOverflowRight=false 分支：btnRect.left + 150 <= window.innerWidth
+      // 实现用统一 left 坐标定位（position:fixed），靠左展开时 left=按钮 left
       const { ctx } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
@@ -1060,13 +1061,13 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
       moreBtn.click();
 
       const moreMenu = document.getElementById('memory-more-menu')!;
-      // jsdom 会将 '0' 规范化为 '0px'
-      expect(moreMenu.style.left).toBe('0px');
-      expect(moreMenu.style.right).toBe('auto');
+      // 靠左对齐按钮：left = btnRect.left = 100px
+      expect(moreMenu.style.left).toBe('100px');
     });
 
-    it('右侧空间不足时应靠右展开（left:auto, right:0）', () => {
+    it('右侧空间不足时应靠右对齐按钮向左展开（left=btnRect.right-menuMinWidth）', () => {
       // 验证 wouldOverflowRight=true 分支：btnRect.left + 150 > window.innerWidth
+      // 实现用统一 left 坐标定位，靠右展开时 left=按钮 right - menuMinWidth（保证菜单右边缘对齐按钮右边缘）
       const { ctx } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
@@ -1080,9 +1081,8 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
       moreBtn.click();
 
       const moreMenu = document.getElementById('memory-more-menu')!;
-      expect(moreMenu.style.left).toBe('auto');
-      // jsdom 会将 '0' 规范化为 '0px'
-      expect(moreMenu.style.right).toBe('0px');
+      // 靠右对齐按钮向左展开：left = btnRect.right - menuMinWidth = 930 - 150 = 780px
+      expect(moreMenu.style.left).toBe('780px');
     });
   });
 

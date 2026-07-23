@@ -3,12 +3,12 @@
  *
  * 职责：
  * - 设置角色切换回调（调用主进程切换角色 + 更新 UI）
- * - 设置角色匹配模式变更回调（持久化模式 + 更新标签）
- * - 加载角色列表和当前匹配模式
+ * - 加载角色列表和当前匹配模式标签
  *
  * 设计原则：
  * - 接收 UIManager 实例，不持有模块级状态
- * - 角色匹配模式：auto（自动）/ manual（手动），实时持久化
+ * - 角色匹配模式持久化由精灵设定面板（settingsManagerPanel.onPersonaModeChange）负责，
+ *   本控制器仅加载模式并更新顶栏 badge
  */
 
 import type { UIManager } from '../ui.js';
@@ -82,35 +82,8 @@ export function createPersonaController(uiManager: UIManager) {
         handleIpcError('onPersonaSwitch', error, '切换角色');
       }
     });
-
-    // 角色匹配模式变更：实时持久化 + 更新标签
-    // IPC 成功后主动同步 badge + 单选按钮状态，确保 UI 与主进程一致；
-    //       IPC 失败时回滚到旧模式，避免 UI 显示新模式但主进程仍为旧模式
-    uiManager.onPersonaModeChange(async (mode: string) => {
-      // 回调触发时 settingsPanelManager 已更新 currentPersonaMode 为新模式，
-      // 需在 IPC 调用前保存旧模式用于失败回滚
-      const previousMode = mode === 'manual' ? 'auto' : 'manual';
-      try {
-        const validMode = mode === 'manual' ? 'manual' : 'auto';
-        const { set } = await window.electronAPI.setPersonaMode(validMode);
-        if (set) {
-          // 防御性同步——确认 badge + 单选按钮状态与持久化值一致
-          uiManager.updatePersonaModeBadge(validMode);
-          uiManager.setPersonaMode(validMode);
-          uiManager.showToast(`角色匹配模式已切换为：${mode === 'auto' ? '自动' : '手动'}`, 'success');
-        } else {
-          // IPC 拒绝切换，回滚 UI 到旧模式
-          uiManager.updatePersonaModeBadge(previousMode);
-          uiManager.setPersonaMode(previousMode);
-          uiManager.showToast('角色匹配模式切换失败', 'error');
-        }
-      } catch (error) {
-        // IPC 异常，回滚 UI 到旧模式
-        uiManager.updatePersonaModeBadge(previousMode);
-        uiManager.setPersonaMode(previousMode);
-        handleIpcError('onPersonaModeChange', error, '设置角色模式');
-      }
-    });
+    // 角色匹配模式持久化由精灵设定面板负责（renderer.ts 注册 settingsManagerPanel.onPersonaModeChange），
+    // 本控制器不再注册重复回调，避免双面板竞争
   }
 
   /**
@@ -130,11 +103,11 @@ export function createPersonaController(uiManager: UIManager) {
         uiManager.updateActivePersona(active.name);
       }
 
-      // 加载当前角色匹配模式并更新标签
+      // 加载当前角色匹配模式并更新顶栏 badge
+      // 精灵设定面板的 radio 同步由 syncSpriteSettingsState（切换面板时）负责
       try {
         const { mode } = await window.electronAPI.getPersonaMode();
         uiManager.updatePersonaModeBadge(mode);
-        uiManager.setPersonaMode(mode);
       } catch (modeErr) {
         reportError('loadPersonaList-mode', modeErr);
       }

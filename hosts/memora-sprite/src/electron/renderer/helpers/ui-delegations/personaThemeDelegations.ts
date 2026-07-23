@@ -22,7 +22,6 @@ export interface PersonaThemeDelegations {
   onPersonaSwitch(cb: (name: string) => void): void;
   onMemoryRecallClick(cb: (memoryId: string) => void): void;
   triggerMemoryRecall(memoryId: string): void;
-  onPersonaModeChange(cb: (mode: string) => void): void;
   onArchiveModeChange(cb: (mode: 'full' | 'insights-only' | 'manual') => void): void;
   onThemeChange(cb: (theme: 'light' | 'dark', source: 'user' | 'system') => void): void;
   getThemeMode(): 'light' | 'dark' | 'auto';
@@ -50,9 +49,6 @@ export const personaThemeDelegations: PersonaThemeDelegations = {
   },
   triggerMemoryRecall(this: UIManager, memoryId: string): void {
     this.personaPanel.triggerMemoryRecallClick(memoryId);
-  },
-  onPersonaModeChange(this: UIManager, cb: (mode: string) => void): void {
-    this.settingsPanelManager.onPersonaModeChange(cb);
   },
   onArchiveModeChange(this: UIManager, cb: (mode: 'full' | 'insights-only' | 'manual') => void): void {
     this.settingsPanelManager.onArchiveModeChange(cb);

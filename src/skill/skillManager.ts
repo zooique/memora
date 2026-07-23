@@ -189,6 +189,29 @@ export class SkillManager {
   }
 
   /**
+   * 删除技能（设定面板调用）
+   *
+   * 从内存缓存中移除指定技能。SQLite 索引的软删除由 ConfigManager.deleteSkill 统一处理，
+   * 本方法只管内存缓存，避免职责重叠。
+   *
+   * 文件层删除由宿主层 configFileManager 处理（本方法不操作文件）。
+   * 不存在时为 no-op（设定面板删除文件后内存可能已无对应条目）。
+   *
+   * @param name 技能名
+   * @returns true 删除成功；false 技能不存在
+   */
+  deleteSkill(name: string): boolean {
+    const idx = this.skills.findIndex((s) => s.name === name);
+    if (idx < 0) {
+      logger.warn({ name }, '内存缓存中未找到技能，跳过删除');
+      return false;
+    }
+    this.skills.splice(idx, 1);
+    logger.info({ name, remaining: this.skills.length }, '技能已从内存缓存删除');
+    return true;
+  }
+
+  /**
    * 构建 system prompt 中的技能段
    *
    * 格式：

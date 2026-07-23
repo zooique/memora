@@ -1,14 +1,18 @@
 /**
- * 配置管理器 — 规则/技能注入 + 配置建议持久化
+ * 配置管理器 — 规则/技能注入 + 配置建议持久化 + 设定 CRUD
  *
  * 从 Agent 拆分出来，负责：
  *   - addRule / addSimpleRule：运行时规则注入（SQLite + System Prompt）
  *   - addSkill / addSimpleSkill：运行时技能注入（仅 SkillManager，session-only）
  *   - onConfigSuggestion / confirmConfigSuggestion：模式 3 配置建议回调 + 持久化
+ *   - deleteRule / updateRule / listRules：规则单条 CRUD（SQLite + System Prompt 同步）
+ *   - deleteSkill / listSkills：技能单条删除与列表（SQLite + SkillManager 内存同步）
+ *   - getBootstrapMemories：获取 rule + skill 记忆（供 AgentLoop 刷新 system prompt）
  *
  * 设计原则：
- *   - 独立于 Agent 生命周期，仅依赖 Storage / SkillManager / Loop
+ *   - 独立于 Agent 生命周期，仅依赖 Storage / SkillManager / 回调
  *   - 不持有 LLM Provider（纯配置操作）
+ *   - 不直接操作文件（文件 CRUD 由宿主层 configFileManager 处理，本类只管 SQLite + system prompt 同步）
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -17,6 +21,8 @@ import type { SkillManager } from '@/skill/skillManager.js';
 import { configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
+// parseFrontmatter：与 FileStore.parseMemory 保持一致的 content 处理（只存 body，去掉 frontmatter）
+import { parseFrontmatter } from '@/utils/frontmatter.js';
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -69,12 +75,16 @@ export class ConfigManager {
    * @param skillManager - 技能管理器（运行时注入技能）
    * @param injectSystemMessage - 注入 system 消息的回调（来自 AgentLoop）
    * @param writeConfigFile - 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖）
+   * @param refreshBootstrapMemories - 刷新 AgentLoop system prompt 中 bootstrap 段的回调
+   *   设定 CRUD（deleteRule/updateRule/deleteSkill）后调用，使 system prompt 中的
+   *   rule/skill 段立即同步。由 Agent 在装配时注入（assembler.ts）。
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly skillManager: SkillManager,
     private readonly injectSystemMessage: (message: string) => void,
     private readonly writeConfigFile?: (memory: Memory) => Promise<void>,
+    private readonly refreshBootstrapMemories?: () => void,
   ) {}
 
   // ─── 配置建议 ─────────────────────────────────────────
@@ -274,5 +284,135 @@ export class ConfigManager {
       score: 0.7,
     };
     await this.addSkill(memory);
+  }
+
+  // ─── 设定 CRUD（设定面板专用） ───────────────────────
+
+  /**
+   * 删除规则（设定面板调用）
+   *
+   * 软删除 SQLite 中 source='rule' name=name 的记忆，
+   * 并刷新 AgentLoop system prompt 中的 bootstrap 段。
+   *
+   * 文件层删除由宿主层 configFileManager 处理（本方法不操作文件）。
+   * 删除后调用 refreshBootstrapMemories 回调，使 system prompt 立即同步。
+   *
+   * @param name 规则名（与 frontmatter name 字段一致）
+   * @returns true 删除成功；false 规则不存在
+   */
+  deleteRule(name: string): boolean {
+    const id = `rule:${name}`;
+    const existing = this.index.getById(id);
+    if (!existing) {
+      logger.warn({ name, id }, '删除规则失败：规则不存在');
+      return false;
+    }
+    this.index.delete(id);
+    this.refreshBootstrapMemories?.();
+    logger.info({ name, id }, '规则已删除');
+    return true;
+  }
+
+  /**
+   * 更新规则内容（设定面板调用）
+   *
+   * upsert SQLite 中 source='rule' name=name 的记忆，
+   * 并刷新 AgentLoop system prompt 中的 bootstrap 段。
+   *
+   * 文件层更新由宿主层 configFileManager 处理（本方法不操作文件）。
+   * 与 addRule 的区别：addRule 是新增（追加 system 消息），
+   * updateRule 是覆盖更新（刷新 bootstrap 段，不追加 system 消息）。
+   *
+   * content 处理：调用方传入的是完整文件内容（含 frontmatter + body），
+   * 本方法用 parseFrontmatter 解析后只存 body.trim()，
+   * 与 FileStore.parseMemory（store.ts）保持一致——避免 system prompt bootstrap 段
+   * 含 frontmatter 噪音，且重启后 MemoryLoader 重新加载时内容一致。
+   *
+   * @param name 规则名
+   * @param content 新的规则文件内容（含 frontmatter + body）
+   */
+  updateRule(name: string, content: string): void {
+    const id = `rule:${name}`;
+    const existing = this.index.getById(id);
+    const now = nowIso();
+    // 与 FileStore.parseMemory 保持一致：只存 body（去掉 frontmatter），避免 system prompt 含噪音
+    const { body } = parseFrontmatter(content);
+    const memory: Memory = {
+      id,
+      content: body.trim(),
+      source: SOURCE_LABELS.RULE,
+      name,
+      createdAt: existing?.createdAt ?? now,
+      accessedAt: now,
+      score: existing?.score ?? 0.8,
+    };
+    // 若 existing 已软删除，需先 restore 再 upsert（避免"通过 upsert 复活软删除记忆"校验失败）
+    if (existing?.deletedAt) {
+      this.index.restore(id);
+    }
+    this.index.upsert(memory);
+    this.refreshBootstrapMemories?.();
+    logger.info({ name, id }, '规则已更新');
+  }
+
+  /**
+   * 列出所有规则（设定面板调用）
+   *
+   * @returns 所有 source='rule' 的活跃记忆（按 score 降序）
+   */
+  listRules(): Memory[] {
+    return this.index.getBySource(SOURCE_LABELS.RULE);
+  }
+
+  /**
+   * 删除技能（设定面板调用）
+   *
+   * 软删除 SQLite 中 source='skill' name=name 的记忆，
+   * 同步清理 SkillManager 内存缓存，
+   * 并刷新 AgentLoop system prompt 中的 bootstrap 段。
+   *
+   * 文件层删除由宿主层 configFileManager 处理（本方法不操作文件）。
+   *
+   * @param name 技能名
+   * @returns true 删除成功；false 技能不存在
+   */
+  deleteSkill(name: string): boolean {
+    const id = `skill:${name}`;
+    const existing = this.index.getById(id);
+    if (!existing) {
+      logger.warn({ name, id }, '删除技能失败：技能不存在');
+      return false;
+    }
+    this.index.delete(id);
+    // 同步清理 SkillManager 内存缓存（deleteSkill 内部处理 name 不存在的情况）
+    this.skillManager.deleteSkill(name);
+    this.refreshBootstrapMemories?.();
+    logger.info({ name, id }, '技能已删除');
+    return true;
+  }
+
+  /**
+   * 列出所有技能（设定面板调用）
+   *
+   * @returns 所有 source='skill' 的活跃记忆（按 score 降序）
+   */
+  listSkills(): Memory[] {
+    return this.index.getBySource(SOURCE_LABELS.SKILL);
+  }
+
+  /**
+   * 获取 bootstrap 记忆（rule + skill，供 AgentLoop 刷新 system prompt）
+   *
+   * AgentLoop 的 system prompt 中包含 bootstrap 段（rule + skill 记忆）。
+   * 设定 CRUD 后调用 refreshBootstrapMemories 回调，回调内部调用此方法
+   * 获取最新的 rule + skill 记忆，传给 AgentLoop.refreshBootstrapMemories()。
+   *
+   * @returns rule + skill 活跃记忆数组
+   */
+  getBootstrapMemories(): Memory[] {
+    return [
+      ...this.index.getBySource(SOURCE_LABELS.RULE),
+      ...this.index.getBySource(SOURCE_LABELS.SKILL),
+    ];
   }
 }
