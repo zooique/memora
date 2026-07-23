@@ -243,7 +243,9 @@
 /* 合并 .settings-group input 和 .settings-row input 的公共样式，消除重复定义 */
 /* 公共输入框样式：适用于设置面板内所有文本/密码/数字输入框和下拉框 */
 /* 使用 :is() 伪类简化选择器，避免重复声明 */
-.settings-group :is(input[type="text"], input[type="password"], input[type="number"], select) {
+/* 容器扩展：:is(.settings-group, .sprite-settings-group) 让精灵设定面板的角色匹配配置区
+   共享同一套表单视觉规则（sprite-settings.css 头部注释声明复用本文件表单组件） */
+:is(.settings-group, .sprite-settings-group) :is(input[type="text"], input[type="password"], input[type="number"], select) {
   padding: var(--input-padding);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -256,7 +258,7 @@
 }
 
 /* 垂直堆叠模式（直接子元素）：宽度 100% + 底部边距 */
-.settings-group > :is(input[type="text"], input[type="password"], input[type="number"], select) {
+:is(.settings-group, .sprite-settings-group) > :is(input[type="text"], input[type="password"], input[type="number"], select) {
   width: 100%;
   margin-bottom: var(--space-3);
 }
@@ -266,12 +268,12 @@
   flex: 1;
 }
 
-.settings-group :is(input, select):focus-visible {
+:is(.settings-group, .sprite-settings-group) :is(input, select):focus-visible {
   border-color: var(--accent);
 }
 
 /* 下拉选择框：增加 cursor: pointer（仅 select 需要） */
-.settings-group select {
+:is(.settings-group, .sprite-settings-group) select {
   cursor: pointer;
 }
 

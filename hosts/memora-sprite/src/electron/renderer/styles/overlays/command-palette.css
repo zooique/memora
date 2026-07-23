@@ -66,15 +66,25 @@
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
+/* 胶囊形搜索框：与记忆面板 .panel-header input 风格一致 */
 .command-palette-input {
   flex: 1;
-  border: none;
-  background: transparent;
+  padding: var(--space-1-5) var(--space-3);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-pill);
+  color: var(--text);
   font-size: var(--font-base);
   font-family: var(--font-sprite);
-  color: var(--text);
-  /* 移除默认搜索框样式，聚焦反馈由全局 :focus-visible 兜底提供 */
+  outline: none;
+  height: 30px;
   -webkit-appearance: none;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.command-palette-input:focus {
+  border-color: var(--accent);
+  background: var(--window-bg);
 }
 
 .command-palette-input::placeholder {
