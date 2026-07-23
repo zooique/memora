@@ -235,76 +235,8 @@
   }
 }
 
-/* ─── 记忆健康度仪表盘（Phase 1：健康度诊断） ────────────────── */
-
-/* 健康栏容器：折叠时隐藏，展开时下滑 */
-.health-bar {
-  padding: var(--pad-card);
-  border-bottom: 1px solid var(--surface2);
-  background: var(--window-bg-2);
-  max-height: 300px;
-  overflow-y: auto;
-  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
-}
-
-.health-bar.hidden {
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-  opacity: 0;
-  overflow: hidden;
-}
-
-/* 健康度头部：标题 + 等级徽章 + 总分 + 关闭按钮 */
-.health-header {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  margin-bottom: 10px;
-}
-
-.health-title {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-}
-
-.health-badge {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-}
-
-/* 健康等级徽章颜色（使用 CSS 变量适配双主题） */
-.health-badge.excellent { background: var(--green-20); color: var(--green); }
-.health-badge.good { background: var(--accent-20); color: var(--accent); }
-.health-badge.fair { background: var(--yellow-20); color: var(--yellow); }
-.health-badge.poor { background: var(--red-20); color: var(--red); }
-
-.health-score {
-  font-size: var(--font-score);
-  font-weight: var(--weight-bold);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 统一面板关闭按钮（X）：分析面板右上角 */
-/* 统一面板关闭按钮：复用 .icon-btn 基类（尺寸/边框/背景/光标/过渡），仅保留差异属性 */
-.panel-close-btn {
-  margin-left: auto;
-  color: var(--text-3);
-  display: flex;
-}
-
-.panel-close-btn:hover {
-  background: var(--surface1);
-  color: var(--text);
-}
+/* 记忆健康度仪表盘样式已迁至 memory/health.css（CSS-R11，ADR-018 单一真理源）。
+   下方保留 memory-graph-detail.css 专属的关联记忆 / 演化脉络 / 空状态 / 弹窗动画规则。 */
 
 /* ═══════════════════════════════════════════════════════════════
    记忆面板视觉增强（新枝破土 · 第三轮）

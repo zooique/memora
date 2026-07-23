@@ -279,34 +279,9 @@
   height: auto;
 }
 
-/**
- * 带操作按钮的输入框容器：API Key 显示/隐藏切换
- * 在 settings-row 内 flex:1 占满右侧空间
- */
-.input-with-action {
-  position: relative;
-  flex: 1;
-  display: flex;
-  gap: var(--space-1-5);
-}
-
-.input-with-action input {
-  flex: 1;
-  padding: var(--space-1-5) 36px var(--space-1-5) var(--space-2-5);
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: inherit;
-  font-size: var(--font-sm);
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.input-with-action input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-20);
-}
+/* 带操作按钮的输入框容器 .input-with-action / 内部 input / :focus 外观
+   已迁至 foundation/controls.css（单一真理源，ADR-018）。标记无需改动。
+   下方仅保留 settings 专属的显隐切换按钮 .toggle-visibility。 */
 
 /* 显示/隐藏切换按钮：绝对定位在输入框右侧 */
 .toggle-visibility {
@@ -554,25 +529,7 @@
   font-size: var(--font-xs);
 }
 
-/* 类别标签：不同类别用不同颜色（复用记忆系统 source 配色） */
-.profile-category {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-medium);
-}
-
-/* 身份：绿色（复用 --tag-profile-* 变量，与 source-profile 同色） */
-.profile-category-identity   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
-/* 偏好：蓝色（复用 --tag-insight-* 变量，与 source-insight 同色） */
-.profile-category-preference { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
-/* 专长：黄色（与 source-skill 同色，代表能力） */
-.profile-category-expertise  { background: var(--yellow-20); color: var(--yellow); }
-/* 习惯：紫色（与 source-rule 同色，代表规律） */
-.profile-category-habit      { background: var(--mauve-20); color: var(--mauve); }
-/* 历史：橙色（与 source-session 同色，代表过往） */
-.profile-category-history    { background: var(--peach-20); color: var(--peach); }
-
+ /* 类别标签（.profile-category）已迁至 foundation/controls.css（单一真理源，与 .source-tag 共用 --tag-* 令牌，ADR-018） */
 .profile-source {
   color: var(--text-3);
 }

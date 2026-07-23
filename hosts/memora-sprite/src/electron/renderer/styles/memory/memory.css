@@ -1,12 +1,14 @@
-/* memory.css — 聚合器（2026-07-09 P2 拆分 + 2026-07-13 二级拆分）
+/* memory.css — 聚合器（2026-07-09 P2 拆分 + 2026-07-13 二级拆分 + 2026-07-23 CSS-R11 抽离）
  * 原单体已按功能拆分为以下子模块；@import 顺序与原文件一致，层叠不变。
  *   memory-list.css（原 memory.css 第 1–272 行）
  *   memory-detail.css（原 memory.css 第 273–375 行）
  *   memory-views.css（原 memory.css 第 376–744 行）
  *   memory-graph-core.css（原 memory.css 第 745–1085 行：more-menu + 图例 + tooltip + 右键菜单 + 关系编辑）
- *   memory-graph-search.css（原 memory.css 第 1086–1303 行：高级搜索 + 搜索高亮 + 洞察栏）
- *   memory-graph-detail.css（原 memory.css 第 1304–1638 行：关联记忆 + 演化脉络 + 空状态 + 健康度）
- *   memory-graph-misc.css（原 memory.css 第 1639–2197 行：增强 1-5 + 时间线 + 回收站）
+ *   memory-graph-search.css（原 memory.css 第 1086–1303 行：高级搜索 + 搜索高亮；洞察栏样式已迁至 insights.css）
+ *   memory-graph-detail.css（原 memory.css 第 1304–1638 行：关联记忆 + 演化脉络 + 空状态；健康度样式已迁至 health.css）
+ *   memory-graph-misc.css（原 memory.css 第 1639–2197 行：增强 1-5 + 时间线 + 回收站；健康度/LLM 样式已迁至 health.css）
+ *   insights.css（CSS-R11 新增：记忆洞察栏单一真理源）
+ *   health.css（CSS-R11 新增：记忆健康度诊断面板单一真理源）
  */
 @import url("memory-list.css");
 @import url("memory-detail.css");
@@ -15,5 +17,8 @@
 @import url("memory-graph-search.css");
 @import url("memory-graph-detail.css");
 @import url("memory-graph-misc.css");
+/* 洞察栏 / 健康度诊断面板：CSS-R11 从 graph 文件抽离的单一真理源（须先于 completion-stats.css 以保证共享类层叠） */
+@import url("insights.css");
+@import url("health.css");
 /* 补全统计面板样式（第 3 个 analysis panel） */
 @import url("completion-stats.css");

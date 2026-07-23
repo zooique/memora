@@ -104,8 +104,13 @@ export class HealthDashboardRenderer {
     // ─── 健康度评分（记忆面板 health-bar）+ 评分基数 ──────────────
     const scoreEl = document.getElementById('health-score');
     if (scoreEl) {
-      // 评分后追加基数（基于 N 条记忆），让用户感知评分样本量
-      scoreEl.textContent = `${data.scores.overall}（${data.totalMemories} 条）`;
+      // 评分：纯分数（样本量由 #health-score-sample 承载，CSS-R11 分离层级）
+      scoreEl.textContent = String(data.scores.overall);
+    }
+    const scoreSampleEl = document.getElementById('health-score-sample');
+    if (scoreSampleEl) {
+      // 样本量：基于 N 条记忆，muted 次级信息，不与分数争夺视觉权重
+      scoreSampleEl.textContent = `（${data.totalMemories} 条）`;
     }
 
     // ─── 健康等级徽章 ──────────────────────────────────

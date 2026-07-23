@@ -1,0 +1,291 @@
+/**
+ * Memora 精灵 — 共享控件层（L1 单一真理源）
+ *
+ * 通用「控件」组件类：按钮、标签（tag/chip）、卡片。
+ * 与 base.css（通用组件基类 icon-btn/empty-state/error-state）的区别：
+ *   - base.css  = 全局重置 + 原子基类（icon-btn 等单文件内聚组件）
+ *   - controls.css = 跨面板复用的「控件形状」（按钮/标签/卡片），被多个面板 DOM 共用
+ *
+ * 设计原则（ADR-018 单一真理源 + ADR-017 枝叶层 2 次提取）：
+ *   - 凡跨面板重复 ≥2 次的控件形状，必须在此集中定义，禁止各面板自行实现。
+ *   - 控件只消费 tokens.css 的 var()，不得内联颜色/字号/间距令牌。
+ *   - 历史散落的同名/同义控件（modal.css 的 .btn-*、memory-list 的 .source-tag、
+ *     settings 的 .profile-category、memory-graph-detail 的 .lineage-source-tag）
+ *     已统一收口到本文件；原文件仅保留迁移注释，不再定义任何样式（ADR-018 §4）。
+ *
+ * 加载顺序：foundation/tokens → base → utilities → **controls** → layout → 各面板。
+ */
+
+/* ════════════════════════════════════════════════════════════════
+   1. 按钮系统
+   ────────────────────────────────────────────────────────────────
+   通用按钮基类 + 变体。原定义位于 overlays/modal.css（L3），但其被
+   弹窗/面板/onboarding 跨文件复用，违反 L3「组件局部」约定，故提升至 L1。
+   所有使用 .btn-* 的 HTML/TS 无需改动（类名保持不变）。
+   ════════════════════════════════════════════════════════════════ */
+
+/* 通用按钮基类：共享圆角、字体、光标、过渡等基础属性，变体类只定义差异部分 */
+/* 项目内部 UI 约定：.btn 系列是通用按钮基类，可在弹窗/面板/onboarding 复用 */
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.btn-primary {
+  padding: var(--space-1-5) var(--space-4);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: var(--weight-semibold);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-secondary {
+  padding: var(--btn-padding-md);
+  background: var(--window-bg);
+  color: var(--text-2);
+  border: 1px solid var(--surface2);
+}
+
+.btn-secondary:hover {
+  background: var(--window-bg-2);
+  color: var(--text);
+}
+
+.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 小尺寸按钮（紧凑场景） */
+.btn-sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-xs);
+}
+
+.btn-danger {
+  padding: var(--btn-padding-md);
+  background: var(--red);
+  color: var(--text-on-red);
+}
+
+.btn-danger:hover {
+  background: var(--red-hover);
+}
+
+.btn-danger:active {
+  transform: scale(0.97);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   2. 标签 / 徽章（tag / chip）
+   ────────────────────────────────────────────────────────────────
+   原三套实现（memory .source-tag / memory-detail .lineage-source-tag /
+   settings .profile-category）渲染完全相同的 token 驱动标签，仅类名不同。
+   现统一为单一样式 + 单组颜色修饰类：
+     · 芯片式（带背景）：.source-tag / .profile-category 共用 .tag-* 颜色
+     · 文字式（仅颜色，无背景）：.lineage-source-tag（记忆详情/演化脉络）
+   旧类名（.source-profile / .profile-category-identity / .lineage-source-tag.source-x）
+   均作为别名保留，HTML/TS 无需改动。
+   ════════════════════════════════════════════════════════════════ */
+
+/* 标签基础形状（无背景，背景由颜色修饰类提供；文字式标签即仅此基础 + 颜色） */
+.tag,
+.source-tag,
+.lineage-source-tag,
+.profile-category {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* ── 芯片式颜色修饰（带背景）：source-tag / profile-category 共用 ── */
+/* 对齐 helpers/sourceColor.ts getSourceColorClass() 的颜色映射 */
+
+.tag-profile,
+.source-tag.source-profile,
+.profile-category-identity {
+  background: var(--tag-profile-bg);
+  color: var(--tag-profile-fg);
+}
+
+.tag-insight,
+.source-tag.source-insight,
+.profile-category-preference {
+  background: var(--tag-insight-bg);
+  color: var(--tag-insight-fg);
+}
+
+.tag-guardrail,
+.source-tag.source-guardrail {
+  background: var(--tag-guardrail-bg);
+  color: var(--tag-guardrail-fg);
+}
+
+.tag-skill,
+.source-tag.source-skill,
+.profile-category-expertise {
+  background: var(--tag-skill-bg);
+  color: var(--tag-skill-fg);
+}
+
+.tag-rule,
+.source-tag.source-rule,
+.profile-category-habit {
+  background: var(--tag-rule-bg);
+  color: var(--tag-rule-fg);
+}
+
+.tag-persona,
+.source-tag.source-persona {
+  background: var(--tag-persona-bg);
+  color: var(--tag-persona-fg);
+}
+
+.tag-session,
+.source-tag.source-session,
+.profile-category-history {
+  background: var(--tag-session-bg);
+  color: var(--tag-session-fg);
+}
+
+.tag-default,
+.source-tag.source-default {
+  background: var(--tag-default-bg);
+  color: var(--tag-default-fg);
+}
+
+/* ── 文字式颜色修饰（仅颜色，无背景）：lineage-source-tag ── */
+/* 记忆详情/演化脉络中的 source 标签为行内 code，仅取色不取背景 */
+
+.lineage-source-tag.source-profile   { color: var(--tag-profile-fg); }
+.lineage-source-tag.source-insight   { color: var(--tag-insight-fg); }
+.lineage-source-tag.source-guardrail { color: var(--tag-guardrail-fg); }
+.lineage-source-tag.source-skill     { color: var(--tag-skill-fg); }
+.lineage-source-tag.source-rule      { color: var(--tag-rule-fg); }
+.lineage-source-tag.source-persona   { color: var(--tag-persona-fg); }
+.lineage-source-tag.source-session   { color: var(--tag-session-fg); }
+.lineage-source-tag.source-default   { color: var(--tag-default-fg); }
+
+/* ════════════════════════════════════════════════════════════════
+   3. 卡片（card）
+   ────────────────────────────────────────────────────────────────
+   面板内大量出现「window-bg-2 表面 + 1px 边框 + 小圆角」的卡片形状（约 37 处），
+   此前由各面板手写，无统一控件。现提供 .card 作为该形状的单一真理源。
+   （另有 .surface-card = surface0 表面，位于 utilities.css，二者并列。）
+   新增卡片请优先引用 .card / .surface-card，不要再次手写表面组合。
+   ════════════════════════════════════════════════════════════════ */
+
+.card {
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   4. 输入框（input）
+   ────────────────────────────────────────────────────────────────
+   通用文本输入框基类 + 带操作按钮的输入框容器。
+   各面板此前各自手写 border/radius/padding/bg/font（settings 行内输入、
+   modal 表单、搜索框、命令面板输入等），现提供 .input 作为规范外观的
+   单一真理源；聚焦态复用 utilities.css 的 .input-focus-accent 同款
+   border-color + box-shadow。应用时在 <input> 上追加 .input 即可
+   （渐进式 className 引用，见 README §6），无需重复书写外观。
+   .input-with-action 原定义于 panels/settings.css，被 settings（API Key
+   显隐）与 overlays/modal.css 的 aria-invalid 扩展跨文件复用，违反 L3
+   局部约定，故提升至 L1 单一真理源（类名保持不变，标记无需改动）。
+   ════════════════════════════════════════════════════════════════ */
+
+/* 通用文本输入框基类：跨面板复用的规范外观 */
+.input {
+  width: 100%;
+  padding: var(--input-padding);
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+/* 聚焦态：与 .input-focus-accent 工具类同款（border-color + 聚焦环） */
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-20);
+}
+
+/* 校验失败：红色边框高亮（与 .prompt-error 文字色一致形成视觉关联） */
+.input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+/* 胶囊形变体：记忆/搜索/命令面板搜索框统一用胶囊形（半径 100px），
+   与标准 .input（--radius-sm）区分；search-messages / command-palette 搜索框
+   同样适用，避免各面板重复手写胶囊外观。 */
+.input--pill {
+  border-radius: var(--radius-pill);
+}
+
+/* 带操作按钮的输入框容器（input + 尾部按钮，如 API Key 显隐切换） */
+.input-with-action {
+  position: relative;
+  flex: 1;
+  display: flex;
+  gap: var(--space-1-5);
+}
+
+.input-with-action input {
+  flex: 1;
+  /* 预留右侧 36px 给显隐切换按钮，其余外观与 .input 基类对齐 */
+  padding: var(--space-1-5) 36px var(--space-1-5) var(--space-2-5);
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.input-with-action input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-20);
+}

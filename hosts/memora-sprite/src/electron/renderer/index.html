@@ -22,6 +22,8 @@
   <link rel="stylesheet" href="styles/foundation/tokens.css" />
   <link rel="stylesheet" href="styles/foundation/base.css" />
   <link rel="stylesheet" href="styles/foundation/utilities.css" />
+  <!-- 共享控件层（L1 单一真理源）：按钮/标签/卡片，跨面板复用 -->
+  <link rel="stylesheet" href="styles/foundation/controls.css" />
   <link rel="stylesheet" href="styles/layout/layout.css" />
   <link rel="stylesheet" href="styles/chat/chat.css" />
   <link rel="stylesheet" href="styles/memory/memory.css" />
@@ -448,7 +450,7 @@
           <!-- 面板标题 -->
           <span class="panel-title" id="panel-title-memories">记忆</span>
           <!-- 搜索框占据主要宽度 -->
-          <input type="search" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" autocomplete="off" />
+          <input type="search" id="memory-search" class="input input--pill" placeholder="搜索记忆…" aria-label="搜索记忆" autocomplete="off" />
           <!-- 视图切换分段控件：列表/时间线/图谱（常驻，互斥单选） -->
           <div class="view-switch" role="tablist" aria-label="视图切换">
             <button id="btn-list-view" class="view-switch-btn active" role="tab" aria-selected="true" title="列表视图">
@@ -520,26 +522,37 @@
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
           </div>
-          <div class="insights-row">
-            <div class="insights-stat">
-              <span class="insights-stat-value" id="insights-total">0</span>
-              <span class="insights-stat-label">记忆</span>
-            </div>
-            <div class="insights-stat">
-              <span class="insights-stat-value" id="insights-relations">0</span>
-              <span class="insights-stat-label">关系</span>
-            </div>
-            <div class="insights-stat">
-              <span class="insights-stat-value conflict-value" id="insights-conflicts">0</span>
-              <span class="insights-stat-label">冲突</span>
-            </div>
-            <div class="insights-stat">
-              <span class="insights-stat-value" id="insights-sources">0</span>
-              <span class="insights-stat-label">来源</span>
+          <!-- 统计：成组为抬升卡片（CSS-R11 就地优化） -->
+          <div class="insights-section">
+            <div class="insights-section-title">统计</div>
+            <div class="insights-row insights-stats card">
+              <div class="insights-stat">
+                <span class="insights-stat-value" id="insights-total">0</span>
+                <span class="insights-stat-label">记忆</span>
+              </div>
+              <div class="insights-stat">
+                <span class="insights-stat-value" id="insights-relations">0</span>
+                <span class="insights-stat-label">关系</span>
+              </div>
+              <div class="insights-stat">
+                <span class="insights-stat-value conflict-value" id="insights-conflicts">0</span>
+                <span class="insights-stat-label">冲突</span>
+              </div>
+              <div class="insights-stat">
+                <span class="insights-stat-value" id="insights-sources">0</span>
+                <span class="insights-stat-label">来源</span>
+              </div>
             </div>
           </div>
-          <div class="insights-source-distribution" id="insights-distribution"></div>
-          <div class="insights-relations-summary" id="insights-relations-summary"></div>
+          <!-- 来源分布 -->
+          <div class="insights-section">
+            <div class="insights-section-title">来源分布</div>
+            <div class="insights-source-distribution" id="insights-distribution"></div>
+          </div>
+          <!-- 最近关系：标题由渲染器动态注入 #insights-relations-summary 内 -->
+          <div class="insights-section">
+            <div class="insights-relations-summary" id="insights-relations-summary"></div>
+          </div>
         </div>
         <!-- 伙伴洞察面板（从"仓库"到"理解"） -->
         <div id="partner-insights" class="partner-insights hidden">
@@ -566,6 +579,7 @@
             <span class="health-title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
             <span class="health-badge" id="health-badge">优秀</span>
             <span class="health-score" id="health-score">100</span>
+            <span class="health-score-sample" id="health-score-sample"></span>
             <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-health" title="关闭健康度诊断" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
@@ -594,17 +608,19 @@
           </div>
           <p class="health-description" id="health-description"></p>
           <div class="health-actions" id="health-actions">
-            <button class="health-action-btn" id="health-cleanup-duplicates" title="清理重复记忆（保留每组中分最高的一条）">清理重复</button>
-            <button class="health-action-btn" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
+            <button class="health-action-btn health-action-btn--ghost" id="health-cleanup-duplicates" title="清理重复记忆（保留每组中分最高的一条）">清理重复</button>
+            <button class="health-action-btn health-action-btn--ghost" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
             <button class="health-action-btn danger" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
           </div>
-          <!-- LLM 记忆治理（语义去重/时效性评估/冲突检测，与上方纯代码清理并列分组） -->
-          <div class="health-actions health-actions-llm" id="health-llm-actions">
-            <span class="health-actions-label">LLM 治理</span>
-            <button class="health-action-btn" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
-            <button class="health-action-btn" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
-            <button class="health-action-btn" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
-          </div>
+          <!-- LLM 记忆治理：收为可折叠次级组（纯 <details> 零 JS，CSS-R11 就地优化） -->
+          <details class="health-llm-group">
+            <summary class="health-llm-summary">AI 治理</summary>
+            <div class="health-actions health-actions-llm" id="health-llm-actions">
+              <button class="health-action-btn" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
+              <button class="health-action-btn" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
+              <button class="health-action-btn" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
+            </div>
+          </details>
           <!-- LLM 治理结果展示区（动态渲染，默认空） -->
           <div class="health-llm-result" id="health-llm-result"></div>
         </div>

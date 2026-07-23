@@ -29,23 +29,17 @@
   white-space: nowrap;
 }
 
-/* 搜索框胶囊形 */
+/* 搜索框外观统一引用 .input 基类 + .input--pill 胶囊变体（foundation/controls.css，单一真理源）。
+   此处仅保留布局属性（flex 占满 + 固定高度），外观由 .input/.input--pill 提供。
+   胶囊形是搜索框的特意语义（与 search-messages / command-palette 搜索框一致），故走 .input--pill 变体而非标准 .input。 */
 .panel-header input {
   flex: 1;
-  padding: var(--space-1-5) var(--space-3);
-  background: var(--window-bg-2);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-pill);
-  color: var(--text);
-  font-family: inherit;
-  font-size: var(--font-sm);
-  outline: none;
   height: 30px;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .panel-header input:focus {
-  border-color: var(--accent);
+  /* 聚焦态：border-color + box-shadow 由 .input:focus 提供；此处仅保留
+     搜索框专属的背景提亮（与 .input:focus 互补，不重复定义边框/阴影） */
   background: var(--window-bg);
 }
 
@@ -200,36 +194,7 @@
   margin-top: 6px;
 }
 
-.memory-item .meta .source-tag {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-medium);
-}
-
-/**
- * source 标签颜色区分：不同 source 类型用不同颜色
- * 对齐 helpers/sourceColor.ts getSourceColorClass() 的颜色映射
- * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
- */
-.source-tag.source-profile   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
-.source-tag.source-insight   { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
-.source-tag.source-guardrail { background: var(--tag-guardrail-bg); color: var(--tag-guardrail-fg); }
-.source-tag.source-skill     { background: var(--tag-skill-bg); color: var(--tag-skill-fg); }
-.source-tag.source-rule      { background: var(--tag-rule-bg); color: var(--tag-rule-fg); }
-.source-tag.source-persona   { background: var(--tag-persona-bg); color: var(--tag-persona-fg); }
-.source-tag.source-session  { background: var(--tag-session-bg); color: var(--tag-session-fg); }
-.source-tag.source-default   { background: var(--tag-default-bg); color: var(--tag-default-fg); }
-
-/* 记忆详情弹窗中的 source 标签：使用 code 元素，复用 source 颜色类（仅 color，无 background） */
-#memory-detail-source.source-profile   { color: var(--tag-profile-fg); }
-#memory-detail-source.source-insight   { color: var(--tag-insight-fg); }
-#memory-detail-source.source-guardrail { color: var(--tag-guardrail-fg); }
-#memory-detail-source.source-skill     { color: var(--tag-skill-fg); }
-#memory-detail-source.source-rule      { color: var(--tag-rule-fg); }
-#memory-detail-source.source-persona   { color: var(--tag-persona-fg); }
-#memory-detail-source.source-session  { color: var(--tag-session-fg); }
-#memory-detail-source.source-default   { color: var(--tag-default-fg); }
+ /* source 标签系统（.source-tag/.lineage-source-tag 芯片+文字变体，.profile-category 共用 --tag-* 令牌）已迁至 foundation/controls.css（单一真理源） */
 
 .memory-item .meta .score {
   color: var(--accent);
