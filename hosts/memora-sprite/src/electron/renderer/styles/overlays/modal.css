@@ -528,7 +528,7 @@ kbd {
 
 /* 分组标题中的提示文字（如"任意应用中可用"） */
 .shortcuts-table .shortcuts-hint {
-  font-weight: var(--weight-normal);
+  font-weight: var(--weight-regular);
   text-transform: none;
   color: var(--text-3);
   letter-spacing: normal;

@@ -18,6 +18,7 @@
   --surface1:    #e8e8ea;  /* 次级表面，hover 态 */
   --surface2:    #dbdbdd;  /* 边框/分隔线 */
   --border:      #dbdbdd;  /* 语义化边框色，= --surface2 */
+  --surface3:    #c8c8cc;  /* 悬停强调边框（settings 项 hover 等，比 --surface2 略深） */
 
   /* 核心悬浮窗口 */
   --window-bg:   #ffffff;  /* 核心窗口背景 */
@@ -308,6 +309,7 @@
   --surface0:    #313244;  /* 侧边栏/顶部栏背景 */
   --surface1:    #45475a;  /* 次级表面 */
   --surface2:    #585b70;  /* 边框/分隔线 */
+  --surface3:    #6e7185;  /* 悬停强调边框（深色主题，比 --surface2 略浅以凸显） */
   --border:      #585b70;  /* 语义化边框色，= --surface2 */
 
   /* 核心悬浮窗口 */

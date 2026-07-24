@@ -75,7 +75,7 @@
 /* 评分样本量（N 条记忆）：muted 次级信息，不与分数争夺视觉权重 */
 .health-score-sample {
   font-size: var(--font-xs);
-  font-weight: var(--weight-normal);
+  font-weight: var(--weight-regular);
   color: var(--text-3);
   margin-left: 2px;
   font-variant-numeric: tabular-nums;

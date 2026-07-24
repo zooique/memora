@@ -3,6 +3,7 @@
 ## 样式系统审计方法论（可复用，避免再踩坑）
 - **统计「硬编码色」必须排除 `tokens.css` 的定义值**：`--red: #dc2626` 是 token 定义不是泄露。脚本里先 `var_re.sub('', text)` 去掉 `var(...)`（含 fallback 颜色），再对剩余文本找色值；且遍历文件时跳过 `foundation/tokens.css`。否则会把定义值误计为硬编码色（曾误报 157→真实 3）。
 - **「重复选择器」多为误报**：`.x` 出现在 2+ 文件时，先确认是「基类重定义」还是「后代作用域覆写 / `:focus-visible` 状态扩展 / `animation` 钩子」。后者合法，不算真重复。
+- **csstools stylelint 插件不跨 glob 聚合 `:root`**：`stylelint-value-no-unknown-custom-properties` 只在单文件沿 `@import` 聚合，整目录 glob 会把全部合法 token 误报为 unknown（曾误报 3260 条）；跨文件 token 必须用 `importFrom` 绝对路径（`.mjs` 配置用 `fileURLToPath`）提供，或给叶子文件加 `@import tokens.css`。验证守卫有效性时务必注入幻影 token 到叶子文件确认能抓到（避免假绿）。
 - **对抗式核查习惯**：grep 实测优先于记忆估算；每轮 R 改完跑 `tsc --noEmit` + grep 回归（确认 graph 文件无实际规则、新类均被使用）。
 
 ## 设计令牌与架构约定（ADR）
@@ -16,4 +17,4 @@
 - ~~`.lineage-source-tag` 基类在 memory-graph-detail.css:143 是 R9 残留~~ → **已删（CSS-R14，2026-07-24）**：单一真理源收敛到 controls.css。
 - ~~**R13-bis（幻影 token）**~~ → **已修（CSS-R13-bis，2026-07-24）**：实际范围比初判更广——`--text-secondary` 是直接幻影（无 fallback），横跨 completion-stats.css(5)/dashboard.css:236(1)/health.css(4) 共 10 处；加 completion-stats.css 的 --orange(3)/--orange-20(1)/--text-tertiary(4)，合计 18 处全目录清零（→ --accent/--accent-20/--text-2/--text-3）。
 - spacing 刻度值（4/8/10/12/16/20/24/28/32px 等）大量裸写未用 `--space-*` → 需分阶段迁移 + 视觉回归（R15）。
-- **R16 样式守卫执行方案已设计**（docs/css-stylelint-guard-R16.md）：stylelint + `@csstools/stylelint-value-no-unknown-custom-properties`，不 extend preset，整目录 glob 防跨文件误报；待确认后 P1 安装+配置。
+- ~~**R16 样式守卫**~~ → **已实现（2026-07-24）**：stylelint v16 + `stylelint-value-no-unknown-custom-properties`@6（npm 上**无** `@csstools/` 作用域包，其注册规则名是 `csstools/value-no-unknown-custom-properties`）；关键修正——插件**不跨 glob 聚合 `:root`**，必须用 `importFrom` 绝对路径（`.mjs` 配置）提供 token 集，整目录 glob 会误报 3260 条合法 token；首跑即抓 6 处真幻影 token 并修复（`--weight-normal`→`--weight-regular`、`--overlay`→`--surface2`、补 `--surface3` 双主题）；守卫接入 `lint:css` 脚本 + lefthook pre-commit 阻塞步骤，现状 0 错误。设计文档已同步修正（docs/css-stylelint-guard-R16.md）。

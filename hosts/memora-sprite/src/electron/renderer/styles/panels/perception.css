@@ -72,21 +72,21 @@
 /* 雷达图背景外框（100% 参考线） */
 .radar-frame {
   fill: var(--surface0);
-  stroke: var(--overlay);
+  stroke: var(--surface2);
   stroke-width: 1;
 }
 
 /* 雷达图内框（50% 参考线） */
 .radar-frame-inner {
   fill: none;
-  stroke: var(--overlay);
+  stroke: var(--surface2);
   stroke-width: 0.5;
   stroke-dasharray: 2 2;
 }
 
 /* 雷达图十字辅助轴 */
 .radar-axis {
-  stroke: var(--overlay);
+  stroke: var(--surface2);
   stroke-width: 0.5;
   stroke-dasharray: 2 2;
 }
