@@ -10,6 +10,8 @@
  *   6. 采纳反馈回路：用户采纳过的候选项获得 score boost（越用越准）
  *   7. 搜索 loading 反馈：IPC 发出后显示"搜索中…"占位，返回后自然替换
  *   8. L1 source 语义感知：区分洞察/偏好/投影/对话，排除 persona/rule/skill
+ *   9. 折叠开关（可选能力，宿主调用 enableCollapse() 开启）：
+ *      弹窗遮挡对话内容时折叠为胶囊条，不打断输入、不丢失补全会话
  *
  * 设计原则：
  *   - 纯渲染层逻辑，零内核改动、零 IPC 新增
@@ -39,6 +41,8 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { safeGetJSON, safeSetJSON } from '../helpers/safeStorage.js';
 // 补全统计埋点（展示/采纳事件 → localStorage → 统计面板消费）
 import { getCompletionMetrics } from '../helpers/completionMetrics.js';
+// 折叠开关按钮的 SVG sprite 图标注入（统一入口，label 用 textContent 防 XSS）
+import { setIconWithLabel } from '../helpers/icon.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'）
 import { truncate } from '../../../shared/truncate.js';
 
@@ -172,12 +176,17 @@ async function withTimeout<T>(target: Promise<T>, ms: number): Promise<{ ok: tru
  * 支持的输入元素：HTMLInputElement（浮窗）| HTMLTextAreaElement（主输入框）
  *
  * 键盘交互约定（三键分工）：
- *   - ↓↑：导航候选项（本类处理，循环选择）
+ *   - ↓↑：导航候选项（本类处理，循环选择；折叠态不拦截，恢复光标移动语义）
  *   - ←→：填充选中项到输入框（本类处理，仅导航后拦截）
  *   - Tab：提交/确认补全（本类不处理，由宿主自行实现）
  *         · 浮窗场景：Tab = 提交输入内容（quickInput.ts handleTab）
  *         · 主输入框场景：Tab = 确认补全文本（inputAreaManager.ts 自行处理）
  *   宿主需根据使用场景自行绑定 Tab 键行为，本类仅处理 ↓↑←→。
+ *
+ * 折叠开关（enableCollapse() 开启后）：
+ *   - 候选列表顶部「收起候选」行 / 折叠态胶囊，均为原生 <button>，
+ *     点击或 Tab 聚焦后 Enter/Space 切换折叠态
+ *   - 折叠 = 临时让出遮挡区域（保留补全会话），清空/发送/选中后下次出现恢复展开
  */
 export class QuickInputCompletion {
   /** 输入框元素（input 或 textarea） */
@@ -216,6 +225,24 @@ export class QuickInputCompletion {
 
   /** 抑制下一次 input 事件触发的补全搜索（选中候选项填充文本后设置，避免填充触发多余搜索） */
   private suppressNextInput = false;
+
+  /**
+   * 折叠开关是否启用（默认关闭，由宿主调用 enableCollapse() 开启）
+   *
+   * 主对话输入框场景专用：补全弹窗绝对定位在输入区上方，会遮挡最近对话内容，
+   * 用户想回看/复制对话时可将弹窗折叠为胶囊条（不打断输入、不丢失补全会话）。
+   * quick-input 浮窗通过窗口增高避让候选列表（onListChange），无遮挡问题，不启用。
+   */
+  private collapseEnabled = false;
+  /**
+   * 当前是否处于折叠态（仅 collapseEnabled 时有意义）
+   *
+   * 折叠态行为约定：
+   * - 新搜索结果仅刷新折叠条计数，不自动展开（尊重用户主动折叠意图，避免"打地鼠"式反复遮挡）
+   * - 不拦截任何按键（↓↑ 恢复光标移动语义，补全会话在后台静默保持）
+   * - clearCandidates 时重置为展开（弹窗会话结束 = 折叠意图结束，下次出现恢复展开）
+   */
+  private collapsed = false;
 
   /**
    * @param inputField 输入框元素（input 或 textarea）
@@ -271,6 +298,17 @@ export class QuickInputCompletion {
    */
   onRecentFallback(cb: (currentQuery: string) => string[]): void {
     this.recentProvider = cb;
+  }
+
+  /**
+   * 启用补全弹窗折叠开关（主对话输入框场景）
+   *
+   * 启用后候选列表顶部渲染「收起候选」行，点击后弹窗折叠为胶囊条
+   * （仅显示候选计数），让出被遮挡的对话内容供回看/复制；点击胶囊展开恢复。
+   * 与 onRecentFallback 同模式：宿主按需开启的可选能力，默认关闭。
+   */
+  enableCollapse(): void {
+    this.collapseEnabled = true;
   }
 
   /**
@@ -357,6 +395,8 @@ export class QuickInputCompletion {
   private handleKeyDown = (e: Event): void => {
     // 收窄到 KeyboardEvent（addEventListener('keydown') 运行时保证传入 KeyboardEvent）
     if (!(e instanceof KeyboardEvent)) return;
+    // 折叠态不拦截任何按键（↓↑ 恢复光标移动语义，补全会话在后台静默保持）
+    if (this.collapsed) return;
     if (this.candidates.length === 0) return;
 
     if (e.key === 'ArrowDown') {
@@ -489,6 +529,11 @@ export class QuickInputCompletion {
     this.selectedIndex = -1;
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;
+    // 折叠态保持：占位状态不展开列表，仅刷新折叠条（candidates 已清空，胶囊降级为「候选已收起」）
+    if (this.collapsed) {
+      this.paintCollapsedBar();
+      return;
+    }
     this.listEl.innerHTML = '';
 
     const li = document.createElement('li');
@@ -521,6 +566,11 @@ export class QuickInputCompletion {
     this.selectedIndex = -1;
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;
+    // 折叠态保持：占位状态不展开列表，仅刷新折叠条（candidates 已清空，胶囊降级为「候选已收起」）
+    if (this.collapsed) {
+      this.paintCollapsedBar();
+      return;
+    }
     this.listEl.innerHTML = '';
 
     const li = document.createElement('li');
@@ -547,6 +597,11 @@ export class QuickInputCompletion {
     // loading 期间清除 footer 标记和总数，避免 loading 项 + 残留 footer 同时出现
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;
+    // 折叠态保持：loading 不展开列表，仅刷新折叠条（candidates 已清空，胶囊降级为「候选已收起」）
+    if (this.collapsed) {
+      this.paintCollapsedBar();
+      return;
+    }
     this.listEl.innerHTML = '';
 
     const li = document.createElement('li');
@@ -563,11 +618,90 @@ export class QuickInputCompletion {
    * 显示候选列表容器（移除 hidden + aria-expanded + 通知窗口调整高度）
    *
    * showLoading 和 renderCandidates 共用的列表显示逻辑。
+   * 展开绘制统一入口：确保折叠态修饰类被清除（paintCollapsedBar 不经过此方法）。
    */
   private showListContainer(): void {
+    this.listEl.classList.remove('collapsed');
     this.listEl.classList.remove('hidden');
     this.inputField.setAttribute('aria-expanded', 'true');
     this.onListChangeCallback?.(true);
+  }
+
+  /**
+   * 绘制折叠态胶囊条
+   *
+   * 容器加 .collapsed 修饰类：背景/边框/阴影透明化 + pointer-events:none，
+   * 让被弹窗遮挡的对话内容恢复可见且可选中复制；
+   * 仅胶囊按钮可交互（pointer-events:auto），点击展开恢复。
+   *
+   * 候选计数取 this.candidates.length（展开后实际可导航的条数）；
+   * 占位状态（搜索中/无匹配/出错）candidates 为空，胶囊降级为「候选已收起」。
+   */
+  private paintCollapsedBar(): void {
+    delete this.listEl.dataset.footer;
+    this.listEl.innerHTML = '';
+
+    const li = document.createElement('li');
+    li.className = 'completion-collapse-row';
+    li.appendChild(this.buildCollapseToggleButton());
+    this.listEl.appendChild(li);
+
+    this.listEl.classList.add('collapsed');
+    this.listEl.classList.remove('hidden');
+    // 折叠态语义 = 列表未展开：aria-expanded=false + 清空悬空 activedescendant
+    this.inputField.setAttribute('aria-expanded', 'false');
+    this.inputField.setAttribute('aria-activedescendant', '');
+    // 容器仍可见（胶囊条），与 showListContainer 同样通知可见态
+    // （quick-input 未启用折叠不会到达此分支；主对话未注册 onListChange，防御性保留）
+    this.onListChangeCallback?.(true);
+  }
+
+  /**
+   * 构建折叠开关按钮（候选列表顶部收起行 + 折叠胶囊共用）
+   *
+   * 原生 <button>：Enter/Space 键盘触发 + Tab 可聚焦（键盘用户的展开路径），无需手写 keydown。
+   * 文案随状态切换：
+   * - 展开态（列表顶部）：chevron-down +「收起候选」（向输入区方向折叠）
+   * - 折叠态（胶囊）：chevron-up（CSS rotate 实现）+「N 项候选」（向上展开回列表）
+   */
+  private buildCollapseToggleButton(): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const count = this.candidates.length;
+    if (this.collapsed) {
+      btn.className = 'completion-collapse-toggle is-collapsed';
+      btn.setAttribute('aria-expanded', 'false');
+      btn.title = '展开候选';
+      setIconWithLabel(btn, 'icon-chevron', count > 0 ? `${count} 项候选` : '候选已收起');
+    } else {
+      btn.className = 'completion-collapse-toggle';
+      btn.setAttribute('aria-expanded', 'true');
+      btn.title = '收起候选，查看对话内容';
+      setIconWithLabel(btn, 'icon-chevron', '收起候选');
+    }
+    btn.addEventListener('click', () => {
+      this.toggleCollapse();
+    });
+    return btn;
+  }
+
+  /**
+   * 切换折叠/展开态
+   *
+   * - 折叠：清空选中态（避免悬空 aria-activedescendant），绘制胶囊条
+   * - 展开：复用当前候选重绘展开列表，不重复记录展示埋点（非新搜索产生的展示）
+   * - 切换后焦点归还输入框：折叠后可继续输入，展开后可立即 ↓↑ 导航
+   */
+  private toggleCollapse(): void {
+    if (!this.collapseEnabled) return;
+    this.collapsed = !this.collapsed;
+    if (this.collapsed) {
+      this.selectedIndex = -1;
+      this.paintCollapsedBar();
+    } else {
+      this.paintExpandedList();
+    }
+    this.inputField.focus();
   }
 
   /**
@@ -821,28 +955,66 @@ export class QuickInputCompletion {
   }
 
   /**
-   * 渲染候选列表
+   * 渲染候选列表（搜索完成后的入口）
    *
-   * 每个候选项包含：来源标签 + 文本预览。
-   * 选中态通过 CSS 类 `selected` 控制。
-   *
-   * 候选项补 WAI-ARIA combobox with listbox 模式属性：
-   * - role="option"：声明为可选候选项
-   * - id="completion-item-{i}"：供 textarea 的 aria-activedescendant 引用
-   * - aria-selected：同步选中态
-   * 同时更新 textarea 的 aria-expanded=true 表示候选列表已展开。
+   * 折叠态时仅刷新折叠条计数（不展开列表、不记录展示埋点——候选未实际展示）。
+   * 正常态委托 paintExpandedList 绘制 DOM，随后记录展示埋点。
    */
   private renderCandidates(candidates: CompletionItem[]): void {
     this.candidates = candidates;
     this.selectedIndex = -1;
 
-    // 清空列表
-    this.listEl.innerHTML = '';
+    // 折叠态保持：仅刷新折叠条计数，不展开列表
+    // （用户主动折叠 = 明确的不打扰意图，新候选到达不应重新遮挡对话内容）
+    if (this.collapsed) {
+      this.paintCollapsedBar();
+      return;
+    }
+
     if (candidates.length === 0) {
       // UX-QI-10：两源搜索均返回空时显示"无匹配"占位，与 loading/error 形成三态一致的占位体系
       // 让用户能区分"搜索中" / "无匹配" / "搜索出错"三种状态，而非统一表现为列表消失
       this.showEmptyPlaceholder();
       return;
+    }
+
+    this.paintExpandedList();
+
+    // 记录展示事件（候选列表展示给用户时）
+    // shownCount = candidates.length（≤5），totalCandidatesCount = slice 前总数
+    getCompletionMetrics().recordShown(this.currentQuery, candidates.length, this.totalCandidatesCount);
+  }
+
+  /**
+   * 绘制展开态候选列表（纯 DOM 操作，不记录展示埋点）
+   *
+   * 供两处复用：
+   *   1. renderCandidates（搜索完成后的正常渲染，埋点由其记录）
+   *   2. toggleCollapse 折叠→展开重绘（非新搜索产生的展示，不重复记录埋点）
+   *
+   * 每个候选项包含：来源标签 + 文本预览。选中态通过 CSS 类 `selected` 控制。
+   * 候选项补 WAI-ARIA combobox with listbox 模式属性（role="option" / id / aria-selected）。
+   *
+   * 折叠开关启用时，列表顶部渲染「收起候选」行（.completion-collapse-row，
+   * 不带 .completion-item 类：不参与 updateSelection 计数/选中，与 footer 同模式）。
+   */
+  private paintExpandedList(): void {
+    const candidates = this.candidates;
+    this.listEl.innerHTML = '';
+
+    // 展开守卫：折叠期间查询已变为无匹配（candidates 被占位流程清空）时，
+    // 展开应呈现"无匹配"占位而非只有收起行的空列表
+    if (candidates.length === 0) {
+      this.showEmptyPlaceholder();
+      return;
+    }
+
+    // 折叠开关（主对话）：列表顶部收起行
+    if (this.collapseEnabled) {
+      const header = document.createElement('li');
+      header.className = 'completion-collapse-row';
+      header.appendChild(this.buildCollapseToggleButton());
+      this.listEl.appendChild(header);
     }
 
     // 构建候选项 DOM（用 entries() 避免索引访问返回 T | undefined）
@@ -924,10 +1096,6 @@ export class QuickInputCompletion {
 
     // 显示列表（复用 showListContainer，枝叶层 2 次提取）
     this.showListContainer();
-
-    // 记录展示事件（候选列表展示给用户时）
-    // shownCount = candidates.length（≤5），totalCandidatesCount = slice 前总数
-    getCompletionMetrics().recordShown(this.currentQuery, candidates.length, this.totalCandidatesCount);
   }
 
   /**
@@ -1027,11 +1195,14 @@ export class QuickInputCompletion {
   private clearCandidates(): void {
     this.candidates = [];
     this.selectedIndex = -1;
+    // 弹窗会话结束 = 折叠意图结束：重置折叠态，下次出现恢复展开
+    this.collapsed = false;
     // 清空时同步清除 footer 标记和总数，避免残留状态影响下次渲染
     this.totalCandidatesCount = 0;
     delete this.listEl.dataset.footer;
     this.listEl.innerHTML = '';
     this.listEl.classList.add('hidden');
+    this.listEl.classList.remove('collapsed');
     // 候选列表收起
     this.inputField.setAttribute('aria-expanded', 'false');
     this.inputField.setAttribute('aria-activedescendant', '');

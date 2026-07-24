@@ -301,6 +301,8 @@ export class InputAreaManager {
    *   （补全仅拦截 ↓↑←→，Enter/Esc 由 InputAreaManager 处理）
    * - onSelect 回调：回填文本到输入框并触发 input 事件（更新高度 + 按钮状态）
    * - 不注册 onListChange（主窗口不需要调整窗口高度，候选列表通过 CSS 绝对定位浮层）
+   * - enableCollapse：浮层会遮挡最近对话内容，启用折叠开关让用户可临时收起弹窗
+   *   （回看/复制对话场景；与 quick-input 浮窗的窗口增高避让形成场景化互补）
    */
   private initCompletion(): void {
     // 候选列表容器可选（缺失时跳过补全能力，不阻断主流程）
@@ -310,6 +312,9 @@ export class InputAreaManager {
     // window.electronAPI 由 preload.ts 通过 contextBridge 注入，已有全局类型声明
     // 传入完整的 ElectronAPI，QuickInputCompletion 仅使用 searchMemories/searchSessionMessages 子集
     this.completion = new QuickInputCompletion(this.inputEl, completionList, window.electronAPI);
+    // 启用折叠开关：补全弹窗绝对定位在输入区上方会遮挡最近对话内容，
+    // 用户想回看/复制对话时可点击「收起候选」将弹窗折叠为胶囊条（不打断输入、不丢失补全会话）
+    this.completion.enableCollapse();
     // 候选项选中时回填到输入框（优先 fullText，降级 text）
     // 主窗口的 window.electronAPI 是完整 API，showMemory 可用，记忆候选异步回库查全量
     this.completion.onSelect((item: CompletionItem) => {

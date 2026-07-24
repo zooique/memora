@@ -179,6 +179,83 @@
   color: var(--text);
 }
 
+/* ─── 补全弹窗折叠开关（主对话专用：弹窗遮挡对话内容时折叠为胶囊） ─── */
+/* 收起行按钮：候选列表顶部全宽细行（父行 .completion-collapse-row 无 .completion-item 类，不参与选中计数） */
+.chat-completion-list .completion-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--surface0);
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.chat-completion-list .completion-collapse-toggle:hover {
+  color: var(--text-2);
+  background: var(--surface0);
+}
+
+/* 内凹 outline 避免被列表 overflow 裁切 */
+.chat-completion-list .completion-collapse-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-completion-list .completion-collapse-toggle .icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* 折叠态容器：透明化 + 不拦截指针（对话内容恢复可见且可选中复制），仅胶囊可交互 */
+.chat-completion-list.collapsed {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 折叠态行：收缩为内容宽度，左对齐（避开右下角 scroll-to-bottom 浮动按钮） */
+.chat-completion-list.collapsed .completion-collapse-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* 折叠态胶囊按钮 */
+.chat-completion-list.collapsed .completion-collapse-toggle {
+  width: auto;
+  margin-bottom: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--window-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  pointer-events: auto;
+  color: var(--text-2);
+}
+
+.chat-completion-list.collapsed .completion-collapse-toggle:hover {
+  color: var(--text);
+  background: var(--surface0);
+}
+
+.chat-completion-list.collapsed .completion-collapse-toggle:focus-visible {
+  outline-offset: 1px;
+}
+
+/* 折叠态 chevron 旋转朝上（点击向上展开回候选列表） */
+.chat-completion-list .completion-collapse-toggle.is-collapsed .icon {
+  transform: rotate(180deg);
+}
+
 /* 补全列表出现动画 */
 @keyframes chat-completion-in {
   from {

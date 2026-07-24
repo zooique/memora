@@ -12,6 +12,7 @@
  * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知 / UX-0714-4 候选总数 footer
  * - clearCandidates：DOM 清空 / hidden 类 / 回调通知 / footer 同步清除
  * - 采纳反馈回路：Click/←→ 采纳 boost / 多次采纳上限 / 未采纳不受影响
+ * - 折叠开关（enableCollapse）：收起行渲染 / 折叠胶囊 / 折叠态保持与键盘不拦截 / 展开恢复 / 埋点不重复 / clear 重置
  *
  * Mock 策略：
  * - mock errorHelpers.reportError（避免 console 噪音）
@@ -22,6 +23,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QuickInputCompletion } from '../../../electron/renderer/quick-input/quickInputCompletion.js';
 import type { CompletionElectronAPI } from '../../../electron/renderer/quick-input/quickInputCompletion.js';
+// 折叠展开重绘的埋点断言（真实模块，localStorage 在 beforeEach 清理，断言用增量对比）
+import { getCompletionMetrics } from '../../../electron/renderer/helpers/completionMetrics.js';
 
 // ─── Mock errorHelpers（reportError 依赖 UI，需 mock） ───
 vi.mock('../../../electron/renderer/helpers/errorHelpers.js', () => ({
@@ -1422,5 +1425,164 @@ describe('UX-QI-06 已采纳候选加 ★ 常用标记', async () => {
     expect(adoptedItem?.getAttribute('title')).toContain('已采纳 1 次');
 
     completion.cleanup();
+  });
+});
+
+// ─── 折叠开关（enableCollapse，主对话防遮挡） ──────────────
+
+describe('collapse · 折叠开关', async () => {
+  /**
+   * 创建启用折叠的补全实例并渲染出候选列表
+   *
+   * @param candidateCount 候选条数（默认 2 条记忆候选）
+   * @returns 补全上下文（completion/input/list/api）
+   */
+  async function createCollapsibleContext(candidateCount = 2) {
+    const api = createMockApi();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: Array.from({ length: candidateCount }, (_, i) =>
+        createMemoryHit({ id: `insight:候选${i}`, contentPreview: `候选内容${i}`, score: 0.9 - i * 0.1 }),
+      ),
+    });
+    const ctx = createCompletion({ api });
+    ctx.completion.enableCollapse();
+    ctx.input.value = '测试';
+    ctx.input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    return ctx;
+  }
+
+  it('未启用折叠（默认）时不渲染收起行（quick-input 浮窗回归守卫）', async () => {
+    const { input, list, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '候选内容' })],
+    });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(list.querySelector('.completion-collapse-toggle')).toBeNull();
+    expect(list.querySelectorAll('.completion-item').length).toBe(1);
+  });
+
+  it('启用后候选列表顶部应渲染收起行（不参与候选计数）', async () => {
+    const { list } = await createCollapsibleContext(2);
+    const toggle = list.querySelector<HTMLButtonElement>('.completion-collapse-toggle');
+    expect(toggle).toBeTruthy();
+    expect(toggle!.textContent).toContain('收起候选');
+    expect(toggle!.getAttribute('aria-expanded')).toBe('true');
+    // 收起行不带 .completion-item 类，不参与候选计数
+    expect(list.querySelectorAll('.completion-item').length).toBe(2);
+    expect(list.classList.contains('collapsed')).toBe(false);
+  });
+
+  it('点击收起应折叠为胶囊：候选隐藏 + aria 收缩 + 焦点归还输入框', async () => {
+    const { input, list } = await createCollapsibleContext(2);
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+
+    expect(list.classList.contains('collapsed')).toBe(true);
+    expect(list.querySelectorAll('.completion-item').length).toBe(0);
+    const pill = list.querySelector<HTMLButtonElement>('.completion-collapse-toggle.is-collapsed');
+    expect(pill).toBeTruthy();
+    expect(pill!.textContent).toContain('2 项候选');
+    expect(pill!.getAttribute('aria-expanded')).toBe('false');
+    // 折叠语义 = 列表未展开
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+    expect(input.getAttribute('aria-activedescendant')).toBe('');
+    // 焦点归还输入框（可继续输入）
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('折叠态继续输入应保持折叠并刷新计数（不自动展开）', async () => {
+    const { input, list, api } = await createCollapsibleContext(2);
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+
+    // 继续输入触发新搜索（新结果 1 条候选）
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ id: 'insight:新候选', contentPreview: '新候选内容', score: 0.9 })],
+    });
+    input.value = '测试2';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(list.classList.contains('collapsed')).toBe(true);
+    expect(list.querySelector('.completion-collapse-toggle')?.textContent).toContain('1 项候选');
+  });
+
+  it('折叠态不应拦截 ↓↑ 按键（恢复光标移动语义）', async () => {
+    const { input, list } = await createCollapsibleContext(2);
+    // 展开态对照：↓ 被拦截（preventDefault 用于候选导航）
+    const expandedEvt = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true });
+    input.dispatchEvent(expandedEvt);
+    expect(expandedEvt.defaultPrevented).toBe(true);
+
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+
+    const collapsedEvt = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true });
+    input.dispatchEvent(collapsedEvt);
+    expect(collapsedEvt.defaultPrevented).toBe(false);
+    expect(list.querySelectorAll('.completion-item.selected').length).toBe(0);
+  });
+
+  it('点击胶囊应展开恢复候选列表，且不重复记录展示埋点', async () => {
+    const { input, list } = await createCollapsibleContext(2);
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+
+    const shownBefore = getCompletionMetrics().getAggregated().totalShown;
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle.is-collapsed')!.click();
+
+    expect(list.classList.contains('collapsed')).toBe(false);
+    expect(list.querySelectorAll('.completion-item').length).toBe(2);
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    // 展开重绘非新搜索展示，展示事件数不应增加
+    expect(getCompletionMetrics().getAggregated().totalShown).toBe(shownBefore);
+  });
+
+  it('clear() 后折叠态应重置：下次渲染恢复展开', async () => {
+    const { completion, input, list } = await createCollapsibleContext(2);
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+    expect(list.classList.contains('collapsed')).toBe(true);
+
+    completion.clear();
+    expect(list.classList.contains('hidden')).toBe(true);
+    expect(list.classList.contains('collapsed')).toBe(false);
+
+    // 再次触发补全，应恢复展开态（含收起行 + 候选项）
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(list.classList.contains('collapsed')).toBe(false);
+    expect(list.querySelectorAll('.completion-item').length).toBe(2);
+  });
+
+  it('折叠态占位状态（无匹配）不展开列表，胶囊降级为「候选已收起」', async () => {
+    const { input, list, api } = await createCollapsibleContext(2);
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+
+    // 新查询两源均无匹配（recentProvider 未注入，无历史回退）
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    input.value = '无匹配词';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(list.classList.contains('collapsed')).toBe(true);
+    expect(list.querySelector('.completion-item')).toBeNull();
+    expect(list.querySelector('.completion-collapse-toggle')?.textContent).toContain('候选已收起');
+  });
+
+  it('折叠期间查询变为无匹配后展开，应呈现「无匹配」占位而非空列表', async () => {
+    const { input, list, api } = await createCollapsibleContext(2);
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle')!.click();
+
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    input.value = '无匹配词';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(list.classList.contains('collapsed')).toBe(true);
+
+    // 展开：candidates 已被占位流程清空，应路由到无匹配占位
+    list.querySelector<HTMLButtonElement>('.completion-collapse-toggle.is-collapsed')!.click();
+    expect(list.classList.contains('collapsed')).toBe(false);
+    expect(list.querySelector('.completion-empty')?.textContent).toBe('无匹配，换个词试试');
   });
 });

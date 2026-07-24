@@ -19,3 +19,8 @@
 - ~~**R13-bis（幻影 token）**~~ → **已修（CSS-R13-bis，2026-07-24）**：实际范围比初判更广——`--text-secondary` 是直接幻影（无 fallback），横跨 completion-stats.css(5)/dashboard.css:236(1)/health.css(4) 共 10 处；加 completion-stats.css 的 --orange(3)/--orange-20(1)/--text-tertiary(4)，合计 18 处全目录清零（→ --accent/--accent-20/--text-2/--text-3）。
 - ~~spacing 刻度值（4/8/10/12/16/20/24/28/32px 等）裸写未用 `--space-*`~~ → **已修（CSS-R15，2026-07-24）**：注释感知脚本批量迁移 27 文件 118 处裸 px→var(--space-*)（仅 spacing 语义属性，1px/2px 次像素与非栅格值故意保留）；tokens.css 补 --space-7:28px 补全 4px 栅格。替换 computed-identical，零视觉变化，lint:css 守卫 0 错误。
 - ~~**R16 样式守卫**~~ → **已实现（2026-07-24）**：stylelint v16 + `stylelint-value-no-unknown-custom-properties`@6（npm 上**无** `@csstools/` 作用域包，其注册规则名是 `csstools/value-no-unknown-custom-properties`）；关键修正——插件**不跨 glob 聚合 `:root`**，必须用 `importFrom` 绝对路径（`.mjs` 配置）提供 token 集，整目录 glob 会误报 3260 条合法 token；首跑即抓 6 处真幻影 token 并修复（`--weight-normal`→`--weight-regular`、`--overlay`→`--surface2`、补 `--surface3` 双主题）；守卫接入 `lint:css` 脚本 + lefthook pre-commit 阻塞步骤，现状 0 错误。设计文档已同步修正（docs/css-stylelint-guard-R16.md）。
+
+## memora-sprite 工程门与测试模式（可复用）
+- **真实质量门** = `tsc --noEmit` + `eslint` + `lint:css`（stylelint）+ vitest；**prettier --check 不是门**（lint 脚本不含，存量文件普遍不过，对照组也 warn）——勿批量 prettier --write 造成无关 diff。
+- **panels/inputAreaManager.test.ts 的 QuickInputCompletion mock 是字面量对象**（非 vi.automock）：补全类新增公开方法必须手动补进 mock 工厂，否则全部用例 TypeError。
+- **补全弹窗折叠（2026-07-24 落地）**：QuickInputCompletion 可选能力 `enableCollapse()`（主对话开、quick-input 浮窗关）；三态可见性 hidden/expanded/collapsed，collapsed 时容器 pointer-events:none + 左对齐胶囊；展开重绘走 paintExpandedList() 不重复 recordShown。宿主专属能力走「构造后注册方法」模式（同 onRecentFallback），不改构造签名。

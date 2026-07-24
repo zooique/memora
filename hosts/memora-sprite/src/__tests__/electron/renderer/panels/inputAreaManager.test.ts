@@ -77,6 +77,8 @@ vi.mock('../../../../electron/renderer/quick-input/quickInputCompletion.js', () 
       suppressNextSearch: vi.fn(),
       /** 清除候选列表（选中候选项填充后由回调调用） */
       clear: vi.fn(),
+      /** 启用补全弹窗折叠开关（主对话防遮挡场景） */
+      enableCollapse: vi.fn(),
     };
   }),
 }));
@@ -451,6 +453,16 @@ describe('InputAreaManager', () => {
         document.getElementById('chat-completion-list'),
         mockApi,
       );
+    });
+
+    it('应为主对话补全启用折叠开关（弹窗遮挡对话内容时可收起）', () => {
+      manager.init();
+      // 获取 init 后创建的补全 mock 实例
+      const completionInstance = MockQuickInputCompletion.mock.results[0]?.value as
+        | { enableCollapse: ReturnType<typeof vi.fn> }
+        | undefined;
+      expect(completionInstance).toBeDefined();
+      expect(completionInstance!.enableCollapse).toHaveBeenCalledTimes(1);
     });
 
     it('候选列表容器缺失时应静默降级（不初始化补全）', () => {
