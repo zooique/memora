@@ -395,7 +395,10 @@ kbd {
 }
 
 .modal-header {
-  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
+  /* 两端对齐：标题左对齐，关闭按钮右对齐 */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--surface2);
 }

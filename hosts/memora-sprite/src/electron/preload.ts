@@ -132,6 +132,8 @@ export const IPC_CHANNELS = {
   PERSONA_SAVE_FILE: 'persona-save-file',
   /** 删除角色文件（携带 name） */
   PERSONA_DELETE_FILE: 'persona-delete-file',
+  /** 打开配置文件目录（personas/skills/rules 所在目录） */
+  CONFIG_DIR_OPEN: 'config-dir-open',
   PROJECTS_LIST: 'projects-list',
   DASHBOARD_GET: 'dashboard-get',
   /** 手动触发一次记忆衰减（L0 纯 score 递减，无 LLM 调用，与 ipc/channels.ts 同步） */
@@ -195,6 +197,8 @@ export const IPC_CHANNELS = {
   RULE_DELETE: 'rule-delete',
   /** 列出所有技能文件（返回 ConfigFileEntry[]，按 mtime 降序） */
   SKILL_LIST: 'skill-list',
+  /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
+  SKILL_READ: 'skill-read',
   /** 删除技能文件（携带 name；新增/更新复用 SKILL_INSTALL 通道） */
   SKILL_DELETE: 'skill-delete',
   // 快速输入补全（Phase 1 骨架：确认 + 关闭 + Phase 2 调整高度）
@@ -698,12 +702,20 @@ export interface ElectronAPI {
   deleteRule: (name: string) => Promise<ConfigFileOperationResult>;
   /** 列出所有技能文件（按 mtime 降序） */
   listSkills: () => Promise<ConfigFileEntry[]>;
+  /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
+  readSkill: (name: string) => Promise<ConfigFileEntry | null>;
   /**
    * 删除技能文件
    *
    * 注：技能新增/更新复用 installSkill 通道（已含热重载逻辑），不新增 saveSkill。
    */
   deleteSkill: (name: string) => Promise<ConfigFileOperationResult>;
+  /**
+   * 打开配置文件目录（personas/skills/rules 所在目录）
+   *
+   * 技能编辑时的辅助功能：复杂技能可跳转到文件目录手动编辑。
+   */
+  openConfigDir: () => Promise<{ success: boolean; error: string | null }>;
   /**
    * 监听设定文件变更广播
    *
@@ -1172,9 +1184,14 @@ const electronAPI: ElectronAPI = {
   saveRule: (name, content) => ipcRenderer.invoke(IPC_CHANNELS.RULE_SAVE, name, content),
   deleteRule: (name) => ipcRenderer.invoke(IPC_CHANNELS.RULE_DELETE, name),
   listSkills: () => ipcRenderer.invoke(IPC_CHANNELS.SKILL_LIST),
+  /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
+  readSkill: (name) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_READ, name),
   // 技能新增/更新复用 installSkill（已含热重载），此处仅暴露删除
   deleteSkill: (name) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_DELETE, name),
-  // 设定文件变更广播监听（与 onClipboardChanged 模式一致）
+  /** 打开配置文件目录（personas/skills/rules 所在目录） */
+  openConfigDir: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_DIR_OPEN),
+
+  // 设定文件变更监听设定文件变更广播监听（与 onClipboardChanged 模式一致）
   onConfigFilesChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED, (_: IpcRendererEvent, payload: ConfigFilesChangedPayload) => cb(payload)),
   removeConfigFilesChangedListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED);

@@ -441,18 +441,23 @@ export class SettingsManagerPanelManager {
     item.dataset.type = type;
     item.dataset.name = name;
 
+    // 主信息区（名称 + 描述 + active 标记）：包装在容器中，flex: 1 占据剩余空间
+    // 这样操作按钮区始终靠右对齐，不受内容长度影响
+    const infoContainer = document.createElement('div');
+    infoContainer.className = 'sprite-settings-item-info';
+
     // 名称
     const nameSpan = document.createElement('span');
     nameSpan.className = 'sprite-settings-item-name';
     nameSpan.textContent = name;
-    item.appendChild(nameSpan);
+    infoContainer.appendChild(nameSpan);
 
     // 描述
     if (description) {
       const descSpan = document.createElement('span');
       descSpan.className = 'sprite-settings-item-desc';
       descSpan.textContent = description;
-      item.appendChild(descSpan);
+      infoContainer.appendChild(descSpan);
     }
 
     // 激活标记（仅 persona active 时显示）
@@ -460,8 +465,10 @@ export class SettingsManagerPanelManager {
       const activeSpan = document.createElement('span');
       activeSpan.className = 'sprite-settings-item-active';
       activeSpan.textContent = '当前';
-      item.appendChild(activeSpan);
+      infoContainer.appendChild(activeSpan);
     }
+
+    item.appendChild(infoContainer);
 
     // 操作按钮区
     const actions = document.createElement('div');
@@ -608,7 +615,7 @@ export class SettingsManagerPanelManager {
 
     this.events.addEventListener(this.editorModal, 'click', (e: Event) => {
       const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (!(target instanceof Element)) return;
       const actionEl = target.closest<HTMLElement>('[data-action]');
       if (!actionEl) return;
       const action = actionEl.dataset.action;
@@ -616,8 +623,28 @@ export class SettingsManagerPanelManager {
         this.closeEditor();
       } else if (action === 'save-editor') {
         void this.handleSave();
+      } else if (action === 'open-config-dir') {
+        void this.openConfigDir();
       }
     });
+  }
+
+  /**
+   * 打开配置文件目录
+   *
+   * 技能编辑时的辅助功能：复杂技能可跳转到文件目录手动编辑。
+   * 调用 IPC 打开配置目录（personas/skills/rules 所在目录）。
+   */
+  private async openConfigDir(): Promise<void> {
+    try {
+      const result = await window.electronAPI.openConfigDir();
+      if (!result.success && result.error) {
+        this.host.showToast(result.error, 'error');
+      }
+    } catch (error) {
+      reportError('openConfigDir', error);
+      this.host.showToast('打开目录失败', 'error');
+    }
   }
 
   /**
@@ -755,6 +782,10 @@ export class SettingsManagerPanelManager {
       this.editorContent.value = '';
     }
 
+    // 技能类型：隐藏正文区域（技能正文内容复杂，建议在文件目录中手动编辑），显示打开目录按钮
+    // 其他类型：显示正文区域，隐藏打开目录按钮
+    this.toggleEditorBodySection(type);
+
     // 编辑模式：加载已有内容
     if (name) {
       try {
@@ -773,6 +804,26 @@ export class SettingsManagerPanelManager {
   }
 
   /**
+   * 切换编辑器打开目录按钮的显示状态
+   *
+   * 技能类型：显示打开目录按钮（复杂技能可跳转文件目录手动编辑），同时保留正文 textarea 供简单技能直接编辑
+   * 角色/规则类型：隐藏打开目录按钮
+   *
+   * @param type 配置类型
+   */
+  private toggleEditorBodySection(type: EditorType): void {
+    const openDirBtn = document.querySelector('.config-file-editor-open-dir');
+
+    if (type === 'skill') {
+      // 技能：显示打开目录按钮（正文 textarea 始终显示，简单技能可直接编辑）
+      openDirBtn?.classList.remove('hidden');
+    } else {
+      // 角色/规则：隐藏打开目录按钮
+      openDirBtn?.classList.add('hidden');
+    }
+  }
+
+  /**
    * 读取配置文件内容（按类型选择 IPC）
    *
    * @param type 配置类型
@@ -786,10 +837,9 @@ export class SettingsManagerPanelManager {
     if (type === 'rule') {
       return window.electronAPI.readRule(name);
     }
-    // skill 类型复用 readRule 的模式，但 skill 没有 readSkill IPC
-    // skill 编辑通过读取文件内容实现，复用 listSkills + 文件路径
-    // 实际上 skill 文件内容读取需要单独通道，这里降级为 null（编辑模式加载不到内容）
-    // 后续可补充 SKILL_READ 通道（当前 IPC 预算 129，已接近 130 阈值）
+    if (type === 'skill') {
+      return window.electronAPI.readSkill(name);
+    }
     return null;
   }
 

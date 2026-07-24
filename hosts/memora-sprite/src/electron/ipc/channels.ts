@@ -251,6 +251,8 @@ export const IPC_CHANNELS = {
   RULE_DELETE: 'rule-delete',
   /** 列出所有技能文件（返回 ConfigFileEntry[]，按 mtime 降序） */
   SKILL_LIST: 'skill-list',
+  /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
+  SKILL_READ: 'skill-read',
   /** 删除技能文件（携带 name；新增/更新复用 SKILL_INSTALL 通道） */
   SKILL_DELETE: 'skill-delete',
 
@@ -279,6 +281,10 @@ export const IPC_CHANNELS = {
   USAGE_STATS_EXPORT: 'usage-stats-export',
   /** 清除使用统计数据（AUDIT-5-4） */
   USAGE_STATS_CLEAR: 'usage-stats-clear',
+
+  // ─── 配置目录（精灵设定面板辅助功能） ───────────────
+  /** 渲染进程 → 主进程：打开配置文件目录（personas/skills/rules 所在目录） */
+  CONFIG_DIR_OPEN: 'config-dir-open',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */

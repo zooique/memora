@@ -770,6 +770,11 @@ export class Sprite {
 
   // ─── 角色交互（委托 PersonaController） ────────────────
 
+  /** 获取 Agent 级配置目录（供宿主打开配置目录等场景使用） */
+  get configDirValue(): string | null {
+    return this.configDir;
+  }
+
   get activePersona(): string | null {
     return this.personaController.activeName;
   }

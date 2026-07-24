@@ -1221,7 +1221,7 @@
         <div class="modal-content config-file-editor-content">
           <div class="modal-header">
             <h2 id="config-file-editor-title">编辑设定</h2>
-            <button class="modal-close" data-action="close-editor" aria-label="关闭编辑器"><svg class="icon"><use href="#icon-close"/></svg></button>
+            <button class="modal-close icon-btn flex-shrink-0" data-action="close-editor" aria-label="关闭编辑器"><svg class="icon"><use href="#icon-close"/></svg></button>
           </div>
           <div class="modal-body config-file-editor-body">
             <!-- frontmatter 表单区（按类型动态渲染字段） -->
@@ -1230,6 +1230,11 @@
             <div class="config-file-editor-body-section">
               <label for="config-file-editor-content">正文（Markdown）</label>
               <textarea id="config-file-editor-content" class="config-file-editor-textarea" rows="12" placeholder="输入正文内容..."></textarea>
+            </div>
+            <!-- 技能编辑辅助：打开文件目录按钮（复杂技能可跳转目录手动编辑，简单技能可直接在上方编辑） -->
+            <div class="config-file-editor-open-dir hidden">
+              <p class="config-file-editor-open-dir-hint">复杂技能可在文件目录中手动编辑，简单技能可直接在上方正文区修改。</p>
+              <button class="btn-secondary" data-action="open-config-dir">打开配置文件目录</button>
             </div>
           </div>
           <div class="modal-footer">

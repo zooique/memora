@@ -13,7 +13,7 @@
  * 确保无论渲染层是否运行都能自动恢复。
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
@@ -319,6 +319,11 @@ export function registerConfigHandlers(ctx: IpcContext): void {
     throwingHandle('列出技能文件失败', () => ctx.sprite.listConfigFiles('skill')),
   );
 
+  /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
+  ipcMain.handle(IPC_CHANNELS.SKILL_READ, async (_event, name: string) =>
+    throwingHandle('读取技能文件失败', () => ctx.sprite.readConfigFile('skill', name)),
+  );
+
   /**
    * 删除技能文件（携带 name）
    *
@@ -327,4 +332,22 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.SKILL_DELETE, async (_event, name: string) =>
     throwingHandle('删除技能文件失败', () => ctx.sprite.deleteConfigFile('skill', name)),
   );
+
+  /**
+   * 打开配置文件目录（personas/skills/rules 所在目录）
+   *
+   * 技能编辑时的辅助功能：复杂技能可跳转到文件目录手动编辑。
+   */
+  ipcMain.handle(IPC_CHANNELS.CONFIG_DIR_OPEN, async () => {
+    try {
+      const configDir = ctx.sprite.configDirValue;
+      if (!configDir) {
+        return { success: false, error: '配置目录未设置' };
+      }
+      await shell.openPath(configDir);
+      return { success: true, error: null };
+    } catch (error) {
+      return { success: false, error: `打开目录失败: ${(error as Error).message}` };
+    }
+  });
 }

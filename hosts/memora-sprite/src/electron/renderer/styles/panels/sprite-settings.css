@@ -168,6 +168,15 @@
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
+/* 主信息区（名称 + 描述 + active 标记）：flex: 1 占据剩余空间，操作按钮区始终靠右对齐 */
+.sprite-settings-item-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .sprite-settings-item:hover {
   border-color: var(--surface3);
   background: var(--surface0);
