@@ -139,13 +139,10 @@
   min-width: 32px;
 }
 
-/* source 标签：复用 .source-* 颜色类（与列表项配色一致） */
-.lineage-source-tag {
-  font-size: var(--font-2xs);
-  padding: 1px var(--space-1-5);
-  border-radius: var(--radius-sm);
-  font-weight: var(--weight-medium);
-}
+/* source 标签基类 .lineage-source-tag 已迁至 foundation/controls.css（单一真理源，ADR-018）。
+   注：controls.css 基类 padding 为 2px var(--space-2)，与下方 .lineage-relation-tag 一致；
+   此处不再覆写（原 1px var(--space-1-5) 紧致覆写已移除，行内标签与其他 source 标签对齐）。
+   颜色修饰类 .source-x 见 controls.css:196 起。 */
 
 /* 关系类型标签：复用 .relation-type-* 类（与关联列表配色一致） */
 .lineage-relation-tag {

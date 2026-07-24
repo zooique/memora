@@ -23,7 +23,7 @@
 /* 就绪态：绿色圆点 + 浅绿背景（Agent 已就绪，可发送消息） */
 .chat-agent-status.ready {
   color: var(--green);
-  background: var(--success-10, rgba(34, 197, 94, 0.1));
+  background: var(--success-10);
 }
 .chat-agent-status.ready .agent-status-dot {
   background: var(--green);

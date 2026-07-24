@@ -319,7 +319,7 @@
 .health-llm-result {
   margin-top: 8px;
   font-size: var(--font-xs);
-  color: var(--text-secondary);
+  color: var(--text-2);
   line-height: 1.5;
 }
 
@@ -333,7 +333,7 @@
 
 /* 空结果提示（无需降级/未发现冲突） */
 .llm-result-empty {
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-style: italic;
 }
 
@@ -429,7 +429,7 @@
 
 /* 记忆 contentPreview（截断） */
 .llm-result-pair-memory-preview {
-  color: var(--text-secondary);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -450,7 +450,7 @@
 
 /* LLM 判断理由 */
 .llm-result-pair-reason {
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: var(--font-xs);
   font-style: italic;
 }

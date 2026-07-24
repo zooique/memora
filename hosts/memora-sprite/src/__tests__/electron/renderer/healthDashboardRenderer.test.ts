@@ -26,6 +26,7 @@ const HEALTH_HTML = `
     <div class="health-metrics"></div>
   </div>
   <span id="health-score"></span>
+  <span id="health-score-sample"></span>
   <span id="health-badge" class="health-badge"></span>
   <div id="health-uniqueness" class="health-metric-fill uniqueness" style="width: 0%"></div>
   <span id="health-uniqueness-val"></span>
@@ -102,8 +103,9 @@ describe('render() · 健康度数据', () => {
       scores: { overall: 92, uniqueness: 95, freshness: 90, completeness: 90 },
       healthLabel: 'excellent',
     }));
-    // 评分后追加基数（基于 N 条记忆），格式为"分数（N 条）"
-    expect(document.getElementById('health-score')!.textContent).toBe('92（100 条）');
+    // R11：评分与样本量分离（#health-score 纯分数 + #health-score-sample 样本量）
+    expect(document.getElementById('health-score')!.textContent).toBe('92');
+    expect(document.getElementById('health-score-sample')!.textContent).toBe('（100 条）');
     expect(document.getElementById('health-badge')!.textContent).toBe('优秀');
     expect(document.getElementById('health-badge')!.classList.contains('excellent')).toBe(true);
   });

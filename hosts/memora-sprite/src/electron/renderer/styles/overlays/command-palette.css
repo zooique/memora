@@ -66,25 +66,16 @@
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
-/* 胶囊形搜索框：与记忆面板 .panel-header input 风格一致 */
+/* 胶囊形搜索框：基础外观统一引用 L1 .input .input--pill（foundation/controls.css，单一真理源，ADR-018）。
+   此处仅保留 overlay 专属的上下文差异属性（弹性占满 + 固定高度 + 精灵字体 + 去原生外观 + 浮层内凹底色）。 */
 .command-palette-input {
   flex: 1;
+  height: 30px;
   padding: var(--space-1-5) var(--space-3);
   background: var(--window-bg-2);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-pill);
-  color: var(--text);
-  font-size: var(--font-base);
   font-family: var(--font-sprite);
-  outline: none;
-  height: 30px;
+  font-size: var(--font-base);
   -webkit-appearance: none;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-
-.command-palette-input:focus {
-  border-color: var(--accent);
-  background: var(--window-bg);
 }
 
 .command-palette-input::placeholder {

@@ -41,7 +41,7 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
@@ -105,7 +105,7 @@
 
 .completion-stats-card-label {
   font-size: var(--font-xs);
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 
 .completion-stats-card-value {
@@ -116,7 +116,7 @@
 
 .completion-stats-card-hint {
   font-size: var(--font-xs);
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-3);
 }
 
 /* 最近事件流 */
@@ -127,7 +127,7 @@
 .completion-stats-events-title {
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
-  color: var(--text-secondary);
+  color: var(--text-2);
   margin-bottom: var(--space-1-5);
 }
 
@@ -176,13 +176,13 @@
 /* 对话轮次事件徽章（灰色，中性事件） */
 .completion-stats-event-type.chat-turn {
   background: var(--surface2);
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 
 /* 召回时刻事件徽章（橙色，养成信号） */
 .completion-stats-event-type.recall-moment {
-  background: var(--orange-20, var(--accent-20));
-  color: var(--orange, var(--accent));
+  background: var(--accent-20);
+  color: var(--accent);
 }
 
 /* ─── R1 度量卡片组（激活率 + 召回时刻，发布前提验证核心数） ─── */
@@ -213,7 +213,7 @@
 .completion-stats-trend-title {
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
-  color: var(--text-secondary);
+  color: var(--text-2);
   margin-bottom: var(--space-2);
 }
 
@@ -221,7 +221,7 @@
 .completion-stats-trend-empty {
   padding: var(--space-4) var(--space-2);
   text-align: center;
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-3);
   font-size: var(--font-xs);
   font-style: italic;
 }
@@ -253,12 +253,12 @@
 }
 
 .completion-stats-trend-legend-dot.completion-stats-trend-legend-recall {
-  background: var(--orange, var(--accent));
+  background: var(--accent);
 }
 
 .completion-stats-trend-legend-text {
   font-size: var(--font-xs);
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 
 /* 柱状图主体：横向 flex，每天一柱组，等宽分布 */
@@ -307,7 +307,7 @@
 
 /* 召回柱（橙色，与 recall-moment 徽章色对齐） */
 .completion-stats-trend-bar.recall {
-  background: var(--orange, var(--accent));
+  background: var(--accent);
 }
 
 /* 柱顶数值（常驻可见，不藏 hover；零柱不渲染数值元素由 JS 控制） */
@@ -315,13 +315,13 @@
   position: absolute;
   top: -14px;
   font-size: 9px;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 
 /* 柱底日期（MM-DD，省略年份节省宽度） */
 .completion-stats-trend-date {
   font-size: 9px;
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-3);
   font-family: var(--font-mono, monospace);
   white-space: nowrap;
 }
@@ -337,7 +337,7 @@
 
 .completion-stats-event-time {
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-3);
   font-family: var(--font-mono, monospace);
 }
 
@@ -345,7 +345,7 @@
 .completion-stats-empty {
   padding: var(--space-6) var(--space-4);
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: var(--font-sm);
   font-style: italic;
 }

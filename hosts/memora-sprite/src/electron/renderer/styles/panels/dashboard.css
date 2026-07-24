@@ -233,7 +233,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   padding: 2px var(--space-2);
   font-size: var(--font-2xs);
   line-height: 1.4;
-  color: var(--text-secondary);
+  color: var(--text-2);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
