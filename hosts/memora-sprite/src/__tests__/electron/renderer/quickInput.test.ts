@@ -34,23 +34,39 @@ vi.mock('../../../electron/renderer/helpers/errorHelpers.js', () => ({
 
 // 内存模拟 localStorage，每次测试独立
 const store = new Map<string, string>();
-const { safeSet, safeGet } = vi.hoisted(() => ({
+const { safeSet, safeGet, safeSetJSON, safeGetJSON } = vi.hoisted(() => ({
   safeSet: vi.fn((key: string, value: string) => {
     store.set(key, value);
   }),
   safeGet: vi.fn((key: string, defaultValue: string) => {
     return store.has(key) ? store.get(key)! : defaultValue;
   }),
+  // STEP-5A：最近提交历史用 JSON 场景，mock 需同步补齐
+  safeSetJSON: vi.fn((key: string, value: unknown) => {
+    store.set(key, JSON.stringify(value));
+  }),
+  safeGetJSON: vi.fn(<T>(key: string, defaultValue: T): T => {
+    if (!store.has(key)) return defaultValue;
+    try {
+      return JSON.parse(store.get(key)!) as T;
+    } catch {
+      return defaultValue;
+    }
+  }),
 }));
 function clearStore(): void {
   store.clear();
   safeSet.mockClear();
   safeGet.mockClear();
+  safeSetJSON.mockClear();
+  safeGetJSON.mockClear();
 }
 
 vi.mock('../../../electron/renderer/helpers/safeStorage.js', () => ({
   safeSet,
   safeGet,
+  safeSetJSON,
+  safeGetJSON,
 }));
 
 // ─── Mock 补全管理器（避免测试中创建完整补全实例） ────────
@@ -60,6 +76,8 @@ const mockCompletionClear = vi.fn();
 const mockCompletionInit = vi.fn();
 const mockCompletionOnSelect = vi.fn();
 const mockCompletionOnListChange = vi.fn();
+const mockCompletionOnRecentFallback = vi.fn();
+const mockCompletionSuppressNextSearch = vi.fn();
 
 vi.mock('../../../electron/renderer/quick-input/quickInputCompletion.js', () => {
   // 使用 function 声明而非箭头函数，确保 new 调用可用
@@ -69,6 +87,8 @@ vi.mock('../../../electron/renderer/quick-input/quickInputCompletion.js', () => 
     this.clear = mockCompletionClear;
     this.onSelect = mockCompletionOnSelect;
     this.onListChange = mockCompletionOnListChange;
+    this.onRecentFallback = mockCompletionOnRecentFallback;
+    this.suppressNextSearch = mockCompletionSuppressNextSearch;
   } as unknown as { new (...args: unknown[]): Record<string, unknown> };
   return {
     QuickInputCompletion: MockCompletion,
@@ -438,6 +458,140 @@ describe('QuickInputController', () => {
     });
   });
 
+  // ─── fillText dispatch input 事件（Bug B 回归） ────────
+
+  describe('fillText dispatch input 事件（Bug B 回归）', () => {
+    it('fillText 设置 value 后 dispatch input 事件（消费 suppressNextInput）', async () => {
+      const { inputField, controller } = await createController();
+
+      // 监听 input 事件
+      const inputListener = vi.fn();
+      inputField.addEventListener('input', inputListener);
+
+      // 直接调用 private fillText（绕过 onSelect 机制，聚焦验证 dispatch input 行为）
+      (controller as unknown as { fillText: (text: string) => void }).fillText('回填内容');
+
+      // fillText 应设置 inputField.value
+      expect(inputField.value).toBe('回填内容');
+      // Bug B 根因：fillText 必须 dispatch input 事件，让 suppressNextInput 被立即消费
+      // 否则 suppressNextInput 悬挂到 resetInputForNext 的 dispatch，导致历史不显示
+      expect(inputListener).toHaveBeenCalled();
+    });
+  });
+
+  // ─── STEP-5A：最近提交历史持久化 ─────────────────────────
+
+  describe('recentSubmission 持久化（STEP-5A）', () => {
+    it('提交成功后记录到 localStorage', async () => {
+      const { inputField, api } = await createController({ inputValue: '提交内容A' });
+
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 验证 confirmQuickInput 成功后，最近提交历史已持久化
+      expect(api.confirmQuickInput).toHaveBeenCalledWith('提交内容A', false);
+      const stored = safeGetJSON<string[]>('memora-quick-input-recent', []);
+      expect(stored).toEqual(['提交内容A']);
+    });
+
+    it('多次提交后历史按时间倒序排列并去重', async () => {
+      // 预置一条历史
+      safeSetJSON('memora-quick-input-recent', ['旧内容']);
+
+      const { inputField } = await createController({ inputValue: '新内容' });
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 新内容应插入头部，旧内容保留
+      const stored = safeGetJSON<string[]>('memora-quick-input-recent', []);
+      expect(stored).toEqual(['新内容', '旧内容']);
+    });
+
+    it('重复提交相同内容时去重（只保留最新）', async () => {
+      safeSetJSON('memora-quick-input-recent', ['重复内容', '其他内容']);
+
+      const { inputField } = await createController({ inputValue: '重复内容' });
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // '重复内容' 应移到头部，原位置删除（去重）
+      const stored = safeGetJSON<string[]>('memora-quick-input-recent', []);
+      expect(stored).toEqual(['重复内容', '其他内容']);
+    });
+
+    it('提交失败时不记录历史', async () => {
+      const { inputField, api } = await createController({ inputValue: '失败内容' });
+      (api.confirmQuickInput as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        success: false,
+        mode: 'copy',
+      });
+
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 失败分支不应污染历史
+      const stored = safeGetJSON<string[]>('memora-quick-input-recent', []);
+      expect(stored).toEqual([]);
+    });
+
+    it('历史超过上限时淘汰最旧条目', async () => {
+      // 预置 10 条历史（上限）
+      const full = Array.from({ length: 10 }, (_, i) => `历史${i}`);
+      safeSetJSON('memora-quick-input-recent', full);
+
+      const { inputField } = await createController({ inputValue: '新条目' });
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // '新条目' 插入头部，'历史9'（最旧）被淘汰，总数仍为 10
+      const stored = safeGetJSON<string[]>('memora-quick-input-recent', []);
+      expect(stored).toHaveLength(10);
+      expect(stored[0]).toBe('新条目');
+      expect(stored).not.toContain('历史9');
+      expect(stored).toContain('历史0');
+    });
+  });
+
+  // ─── STEP-5A：剪贴板智能预填去重 ─────────────────────────
+
+  describe('剪贴板智能预填去重（STEP-5A）', () => {
+    it('剪贴板内容与最近提交相同时跳过预填', async () => {
+      // 预置最近提交为 '刚提交的内容'
+      safeSetJSON('memora-quick-input-recent', ['刚提交的内容']);
+
+      const { inputField, api } = await createController();
+      const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+        | ((payload: unknown) => void)
+        | undefined;
+
+      // 剪贴板内容与最近提交相同
+      showHandler?.({ clipboardText: '刚提交的内容', isSensitive: false });
+
+      // 应跳过预填，输入框为空
+      expect(inputField.value).toBe('');
+    });
+
+    it('剪贴板内容与最近提交不同时正常预填', async () => {
+      safeSetJSON('memora-quick-input-recent', ['历史内容']);
+
+      const { inputField, api } = await createController();
+      const showHandler = (api.onQuickInputShow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+        | ((payload: unknown) => void)
+        | undefined;
+
+      showHandler?.({ clipboardText: '新剪贴板内容', isSensitive: false });
+
+      // 正常预填
+      expect(inputField.value).toBe('新剪贴板内容');
+      expect(inputField.selectionStart).toBe(0);
+    });
+  });
+
   // ─── togglePinnedMode ──────────────────────────────────
 
   describe('togglePinnedMode', () => {
@@ -476,6 +630,41 @@ describe('QuickInputController', () => {
 
       expect(pinnedToggle.classList.contains('active')).toBe(false);
       expect(api.setPinnedMode).toHaveBeenCalledWith(false);
+    });
+
+    it('STEP-6: Ctrl+L 切换常驻模式（与图钉按钮等价）', async () => {
+      const { inputField, pinnedToggle, api } = await createController();
+
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
+
+      // 派发 Ctrl+L keydown 事件
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }));
+
+      // 应切换为常驻模式
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
+      expect(safeSet).toHaveBeenCalledWith('memora-quick-input-pinned', '1');
+      expect(api.setPinnedMode).toHaveBeenCalledWith(true);
+
+      // 再次 Ctrl+L 切换回默认模式
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'L', ctrlKey: true, bubbles: true }));
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
+      expect(api.setPinnedMode).toHaveBeenCalledWith(false);
+    });
+
+    it('STEP-6: Cmd+L 在 macOS 上同样切换常驻模式', async () => {
+      const { inputField, pinnedToggle } = await createController();
+
+      // metaKey 对应 macOS 的 Cmd 键
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', metaKey: true, bubbles: true }));
+      expect(pinnedToggle.classList.contains('active')).toBe(true);
+    });
+
+    it('STEP-6: 无修饰键的 L 键不触发常驻切换（避免误触）', async () => {
+      const { inputField, pinnedToggle } = await createController();
+
+      // 纯 L 键（无 Ctrl/Cmd）不应触发切换
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true }));
+      expect(pinnedToggle.classList.contains('active')).toBe(false);
     });
   });
 

@@ -5,7 +5,7 @@
  *   1. 降级模式：deps=null / previousWindow=null / 非文本剪贴板 / focus 失败 / paste 异常
  *   2. 成功路径：paste 成功返回 mode='paste'（koffi keybd_event 失败时降级到 nut-js keyboard）
  *   3. captureActiveWindow：排除浮窗自身 / nut-js 不可用
- *   4. 剪贴板恢复：无论成功失败都恢复原剪贴板内容
+ *   4. 剪贴板恢复：失败/降级路径恢复原剪贴板；成功路径保留提交文本（契约对齐：下次唤起去重）
  *   5. suppressNextChange 调用次数：每次 writeText 都需调用
  *
  * 测试策略：
@@ -182,7 +182,7 @@ describe('InputInjector', () => {
       expect(deps.keyboard.releaseKey).toHaveBeenCalledTimes(1);
     });
 
-    it('成功粘贴时 suppressNextChange 调用 2 次（写入 + 恢复）', async () => {
+    it('成功粘贴时 suppressNextChange 调用 1 次（仅写入目标，不恢复）', async () => {
       const injector = new InputInjector(createMockDeps());
       const suppress = createSuppressMock();
       const hideFloat = vi.fn();
@@ -190,12 +190,12 @@ describe('InputInjector', () => {
 
       await injector.paste('test', window, hideFloat, suppress);
 
-      // 排雷修正雷 1.1：一次性抑制，每次 writeText 都需调用
-      expect(suppress).toHaveBeenCalledTimes(2);
-      expect(clipboardMock.writeText).toHaveBeenCalledTimes(2);  // 写入目标 + 恢复原内容
+      // 成功路径仅在写入目标文本时抑制一次；不恢复剪贴板（契约对齐：剪贴板停留为提交文本）
+      expect(suppress).toHaveBeenCalledTimes(1);
+      expect(clipboardMock.writeText).toHaveBeenCalledTimes(1);  // 仅写入目标
     });
 
-    it('成功粘贴时剪贴板恢复为原内容', async () => {
+    it('成功粘贴时剪贴板保留为提交文本（不恢复为原内容）', async () => {
       const injector = new InputInjector(createMockDeps());
       const suppress = createSuppressMock();
       const hideFloat = vi.fn();
@@ -204,9 +204,28 @@ describe('InputInjector', () => {
 
       await injector.paste('补全内容', window, hideFloat, suppress);
 
-      // 第一次写入目标文本，第二次恢复原内容
+      // 写入目标文本，且不恢复原内容（供下次唤起时剪贴板==最近提交→去重显历史）
       expect(clipboardMock.writeText).toHaveBeenNthCalledWith(1, '补全内容');
-      expect(clipboardMock.writeText).toHaveBeenNthCalledWith(2, '用户原复制的文本');
+      expect(clipboardMock.writeText).not.toHaveBeenCalledWith('用户原复制的文本');
+      expect(clipboardMock.readText()).toBe('用户原复制的文本'); // 原内容仍在原变量，但剪贴板未恢复
+    });
+
+    it('回归：编辑后提交（原剪贴板 P + 提交 P+extra）剪贴板应停留为 P+extra', async () => {
+      // 复现用户 bug 场景：清空→黏贴 P→补字→提交 P+extra。
+      // 修复前 finally 会把剪贴板恢复为 P，导致①目标收到 P ②下次唤起去重失败不显历史。
+      // 修复后成功路径不恢复，剪贴板停在被提交的 P+extra。
+      const injector = new InputInjector(createMockDeps());
+      const suppress = createSuppressMock();
+      const hideFloat = vi.fn();
+      const window = createMockWindow('记事本');
+      clipboardMock.readText.mockReturnValue('P'); // 用户最初复制的内容
+
+      const result = await injector.paste('P+extra', window, hideFloat, suppress);
+
+      expect(result.success).toBe(true);
+      // 剪贴板最终值 == 被提交文本（目标应用读到 P+extra；下次唤起剪贴板==最近提交→去重显历史）
+      expect(clipboardMock.writeText).toHaveBeenLastCalledWith('P+extra');
+      expect(clipboardMock.writeText).not.toHaveBeenCalledWith('P');
     });
   });
 

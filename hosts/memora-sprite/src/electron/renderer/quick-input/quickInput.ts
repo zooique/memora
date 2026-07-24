@@ -2,18 +2,21 @@
  * 快速输入浮窗渲染逻辑 — 用户交互入口（三键分工 + 常驻模式 + 聚焦提示栏）
  *
  * 职责：
- *   1. 绑定输入框键盘事件：Tab 提交、Esc 关闭、Enter 换行
+ *   1. 绑定输入框键盘事件：Tab 提交、Esc 关闭、Ctrl+L 切换常驻、Enter 换行
  *   2. Tab 单一提交：将输入框内容粘贴到目标应用（优先自动粘贴，降级写剪贴板）
  *   3. 窗口重新显示时处理剪贴板预填 + 敏感自动检测并聚焦
  *   4. 接入补全管理器，输入时显示候选列表
- *   5. 确认成功后显示 Toast，重置输入框等待下次输入（连续输入）
+ *   5. 确认成功后显示 Toast，重置输入框等待下次输入（连续输入）+ 持久化最近提交历史
  *   6. 顶部聚焦提示栏：显示当前聚焦应用名 / 无聚焦（联动 Tab 启用/禁用）
- *   7. 常驻模式（pinnedMode）：持久钉住浮窗，blur 不关闭；图钉按钮可切换置顶
+ *   7. 常驻模式（pinnedMode）：持久钉住浮窗，blur 不关闭；图钉按钮或 Ctrl+L 快捷键可切换
  *
  * 三键分工：
  *   - ↑↓：在候选列表中导航选择（由 quickInputCompletion.ts 处理）
  *   - ←→：将选中候选项填充到输入框（由 quickInputCompletion.ts 处理）
  *   - Tab：提交输入框内容（本文件 QuickInputController.handleTab 处理，无聚焦时禁用）
+ *
+ * 快捷键：
+ *   - Ctrl+L（或 Cmd+L）：切换常驻模式（与图钉按钮等价，键盘流不中断）
  *
  * 模式语义：
  *   - default 模式（pinnedMode=false）：Tab 提交后窗口不自动关闭，blur 时 200ms 延迟关闭
@@ -36,7 +39,7 @@ import { reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "润色失败，请重试" 等模板化文案）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
 // safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
-import { safeGet, safeSet } from '../helpers/safeStorage.js';
+import { safeGet, safeSet, safeGetJSON, safeSetJSON } from '../helpers/safeStorage.js';
 import { QuickInputCompletion } from './quickInputCompletion.js';
 import type { CompletionItem } from './quickInputCompletion.js';
 import { fetchMemoryContent } from '../helpers/completionHelpers.js';
@@ -76,6 +79,12 @@ const EXPANDED_MIN_HEIGHT = 120;
 const STORAGE_KEY_EXPAND = 'memora-quick-input-expanded';
 /** 常驻模式 localStorage 键（跨会话持久化手动切换的用户偏好） */
 const STORAGE_KEY_PINNED = 'memora-quick-input-pinned';
+/** 最近提交历史 localStorage 键（跨会话持久化，补全回退候选源） */
+const STORAGE_KEY_RECENT = 'memora-quick-input-recent';
+/** 最近提交历史最大条目数（超出时淘汰最旧条目，LRU 语义） */
+const MAX_RECENT_ENTRIES = 10;
+/** 最近提交历史回退显示的最大条目数（补全列表容量限制，与 MAX_CANDIDATES 对齐） */
+const MAX_RECENT_FALLBACK_ITEMS = 5;
 /** 拖动阈值（px）：移动超过此距离才认为是拖动而非点击（与 float.ts 对齐） */
 const DRAG_THRESHOLD_PX = 3;
 
@@ -230,7 +239,7 @@ export class QuickInputController {
   }
 
   /**
-   * 绑定输入框键盘事件（Tab 提交、Esc 关闭、input 自动调整）
+   * 绑定输入框键盘事件（Tab 提交、Esc 关闭、Ctrl+L 切换常驻、input 自动调整）
    */
   private bindKeyboardEvents(): void {
     // Tab 键：keydown 阻止默认行为（防止焦点跳转），keyup 触发提交
@@ -241,6 +250,11 @@ export class QuickInputController {
       } else if (e.key === 'Escape') {
         e.preventDefault();
         void this.handleClose();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
+        // Ctrl+L / Cmd+L 切换常驻模式（与图钉按钮等价，键盘流不中断）
+        // 参考 commandPaletteManager.ts:674 的 Mod 键判断模式，兼容 Windows(Ctrl) 与 macOS(Cmd)
+        e.preventDefault();
+        this.togglePinnedMode();
       }
     });
 
@@ -549,13 +563,23 @@ export class QuickInputController {
     this.completion.onListChange(() => {
       this.resizeWindow();
     });
+    // STEP-5A：注入最近提交历史回退提供者
+    // 优先级链：匹配候选为空时回退到历史，历史也为空则隐藏列表
+    this.completion.onRecentFallback((currentQuery: string) => {
+      return this.getRecentSubmissionsForCompletion(currentQuery);
+    });
     this.completion.init();
   }
 
   /**
    * 将文本填充到输入框（同步操作）
    *
-   * 集中管理填充后的 UI 更新：设置 value → 聚焦 → 光标移到末尾 → 滚动到底部 → 更新高度/计数。
+   * 集中管理填充后的 UI 更新：设置 value → 聚焦 → 光标移到末尾 → 滚动到底部 → 更新高度/计数 → 触发 input 事件。
+   *
+   * dispatch input 事件与 inputAreaManager.fillCompletionText 对齐：
+   *   - 让 suppressNextInput 标志被立即消费（onSelect 回调中 suppressNextSearch 设置），
+   *     避免标志悬挂到下一次 input 事件（如 resetInputForNext 的 dispatch）导致历史候选不显示
+   *   - 让下游处理器（autoResize/updateCounter 已在此处手动调用，input 事件为补全搜索的统一入口）自行响应
    */
   private fillText(text: string): void {
     this.inputField.value = text;
@@ -566,6 +590,8 @@ export class QuickInputController {
     this.inputField.scrollTop = this.inputField.scrollHeight;
     this.autoResize();
     this.updateCounter();
+    // 触发 input 事件：消费 suppressNextInput 标志，避免悬挂
+    this.inputField.dispatchEvent(new Event('input'));
   }
 
   /**
@@ -632,9 +658,25 @@ export class QuickInputController {
 
     const preset = payload?.clipboardText;
     if (preset) {
-      this.inputField.value = preset;
-      this.inputField.select();
-      this.inputField.dispatchEvent(new Event('input'));
+      // STEP-5A 剪贴板智能预填去重：若剪贴板内容与最近一次提交相同，跳过预填避免重复
+      // 场景：用户刚 Tab 提交了文本 A，剪贴板仍是 A，再次呼出浮窗时不必预填 A（用户已提交过）
+      const recent = this.loadRecentSubmissions();
+      const isDuplicateOfLastSubmission = recent.length > 0 && recent[0] === preset;
+      if (isDuplicateOfLastSubmission) {
+        // 跳过预填，走空输入分支（清空输入框 + 显示最近提交历史）
+        this.inputField.value = '';
+        this.inputField.style.height = 'auto';
+        this.updateCounter();
+        this.baseInputHeight = INITIAL_BASE_HEIGHT;
+        this.completion?.clear();
+        this.resizeWindow();
+        // 空输入时显示最近提交历史（与 resetInputForNext 保持一致）
+        this.inputField.dispatchEvent(new Event('input'));
+      } else {
+        this.inputField.value = preset;
+        this.inputField.select();
+        this.inputField.dispatchEvent(new Event('input'));
+      }
     } else {
       this.inputField.value = '';
       this.inputField.style.height = 'auto';
@@ -843,6 +885,9 @@ export class QuickInputController {
       // 竞态防护：若期间窗口被重新 show() 或开始了新提交，代次已变化，忽略过期响应
       if (currentGen !== this.submitGeneration) return;
       if (result.success) {
+        // 持久化最近提交文本（用于补全回退候选 + 剪贴板智能预填去重）
+        // STEP-5A：提交成功后才记录，失败/异常不污染历史
+        this.recordRecentSubmission(text);
         // 统一显示 Toast 反馈（路线图闭环 7 F1：paste 完成后浮窗重显，Toast 可见）
         // default 模式 + pinned 模式 + copy 降级均显示 Toast，差异仅在主进程焦点处理
         this.scheduleSuccessToast(result);
@@ -878,6 +923,65 @@ export class QuickInputController {
     this.completion?.clear();
     this.resizeWindow();
     this.inputField.focus();
+    // 空输入时显示最近提交历史（核心场景：Tab 提交后直接用方向键选择复用）
+    // dispatch input 事件触发 handleInput 空查询分支，立即显示历史候选
+    this.inputField.dispatchEvent(new Event('input'));
+  }
+
+  /**
+   * 记录最近提交文本到 localStorage（STEP-5A）
+   *
+   * 用途：
+   *   1. 补全候选回退源——记忆/对话匹配为空时，显示最近提交历史供快速复用
+   *   2. 剪贴板智能预填去重——主进程读取此历史，若剪贴板内容与最近提交相同则跳过预填
+   *
+   * LRU 语义：新文本插入头部，相同文本去重（只保留最新），超出 MAX_RECENT_ENTRIES 淘汰尾部。
+   * 仅在提交成功后调用（handleConfirm 的 result.success 分支），失败/异常不污染历史。
+   *
+   * @param text 本次提交成功的文本（已 trim 校验非空）
+   */
+  private recordRecentSubmission(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const recent = this.loadRecentSubmissions();
+    // 去重：移除已存在的相同文本（大小写敏感，避免语义不同的同形文本被误删）
+    const filtered = recent.filter((t) => t !== trimmed);
+    // 插入头部（最近提交在前）
+    filtered.unshift(trimmed);
+    // 淘汰超限条目
+    if (filtered.length > MAX_RECENT_ENTRIES) {
+      filtered.length = MAX_RECENT_ENTRIES;
+    }
+    safeSetJSON(STORAGE_KEY_RECENT, filtered);
+  }
+
+  /**
+   * 加载最近提交历史（STEP-5A）
+   *
+   * @returns 历史文本数组（按时间倒序，最近在前）；localStorage 不可用或损坏时返回空数组
+   */
+  private loadRecentSubmissions(): string[] {
+    const raw = safeGetJSON<unknown>(STORAGE_KEY_RECENT, []);
+    if (!Array.isArray(raw)) return [];
+    // 过滤非字符串项（防御 JSON 损坏/手动篡改），保证类型安全
+    return raw.filter((t): t is string => typeof t === 'string');
+  }
+
+  /**
+   * 获取最近提交历史作为补全回退候选（STEP-5A）
+   *
+   * 供 QuickInputCompletion 在记忆/对话匹配为空时回退使用。
+   * 按时间倒序取前 MAX_RECENT_FALLBACK_ITEMS 条，过滤掉与当前查询完全相同的文本
+   *（用户已经输入了就不必再作为候选）。
+   *
+   * @param currentQuery 当前输入框查询文本（用于排除完全相同的候选）
+   * @returns 历史候选文本数组（最近在前）
+   */
+  getRecentSubmissionsForCompletion(currentQuery: string): string[] {
+    const query = currentQuery.trim();
+    return this.loadRecentSubmissions()
+      .filter((t) => t !== query)
+      .slice(0, MAX_RECENT_FALLBACK_ITEMS);
   }
 
   /**

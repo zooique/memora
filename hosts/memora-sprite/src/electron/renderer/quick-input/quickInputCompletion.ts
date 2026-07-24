@@ -190,6 +190,14 @@ export class QuickInputCompletion {
   private onSelectCallback: ((item: CompletionItem) => void) | null = null;
   /** 候选列表变化回调（用于通知窗口调整高度） */
   private onListChangeCallback: ((visible: boolean) => void) | null = null;
+  /**
+   * 最近提交历史回退提供者（STEP-5A）
+   *
+   * 当记忆+对话匹配候选为空时调用，返回最近提交文本数组作为回退候选。
+   * 返回空数组表示无历史可回退，此时隐藏候选列表（不显示空占位）。
+   * 由 quickInput.ts 注入（读取 localStorage 持久化的最近提交历史）。
+   */
+  private recentProvider: ((currentQuery: string) => string[]) | null = null;
 
   /** 防抖定时器 */
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -254,6 +262,18 @@ export class QuickInputCompletion {
   }
 
   /**
+   * 注册最近提交历史回退提供者（STEP-5A）
+   *
+   * 优先级链：匹配候选（记忆+对话）第一优先级 → 最近提交历史第二优先级 → 都无则隐藏列表。
+   * 当 fetchCandidates 合并记忆+对话候选为空时，调用此提供者获取回退候选。
+   *
+   * @param cb 回调函数，接收当前查询文本，返回历史候选文本数组（最近在前）
+   */
+  onRecentFallback(cb: (currentQuery: string) => string[]): void {
+    this.recentProvider = cb;
+  }
+
+  /**
    * 抑制下一次 input 事件触发的补全搜索
    *
    * 选中候选项填充文本到输入框后，input 事件会触发新的补全搜索，
@@ -268,7 +288,8 @@ export class QuickInputCompletion {
    * 输入事件处理器（防抖）
    *
    * 输入内容变化后等待 DEBOUNCE_MS，若期间无新输入则触发补全。
-   * 输入长度 < MIN_QUERY_LENGTH 时清空候选列表。
+   * 空输入（length === 0）立即显示最近提交历史（核心场景：Tab 提交后直接用方向键选择复用）。
+   * 输入长度 1 且 < MIN_QUERY_LENGTH 时清空候选列表（1 字符太短难以匹配）。
    */
   private handleInput = (): void => {
     // 选中候选项填充文本后，跳过本次 input 事件触发的补全搜索（避免候选列表闪烁）
@@ -280,6 +301,16 @@ export class QuickInputCompletion {
       clearTimeout(this.debounceTimer);
     }
     const query = this.inputField.value.trim();
+    if (query.length === 0) {
+      // 空输入：立即显示最近提交历史（跳过防抖，Tab 提交后直接可选）
+      const recentCandidates = this.buildRecentCandidates('');
+      if (recentCandidates.length === 0) {
+        this.clearCandidates();
+        return;
+      }
+      this.renderCandidates(recentCandidates);
+      return;
+    }
     if (query.length < MIN_QUERY_LENGTH) {
       this.clearCandidates();
       return;
@@ -288,6 +319,26 @@ export class QuickInputCompletion {
       void this.fetchCandidates(query);
     }, DEBOUNCE_MS);
   };
+
+  /**
+   * 构建最近提交历史候选（STEP-5A）
+   *
+   * 供两处复用：
+   *   1. handleInput 空查询时直接显示历史（核心场景：Tab 提交后用方向键选择复用）
+   *   2. fetchCandidates 匹配候选为空时回退到历史
+   *
+   * @param currentQuery 当前查询文本（用于排除完全相同的候选，避免用户已输入的内容作为候选）
+   * @returns 历史候选数组；无历史时返回空数组
+   */
+  private buildRecentCandidates(currentQuery: string): CompletionItem[] {
+    const recentTexts = this.recentProvider?.(currentQuery) ?? [];
+    return recentTexts.map((text) => ({
+      text: truncate(text, PREVIEW_MAX_LENGTH),
+      fullText: text,
+      sourceLabel: '最近',
+      score: 0.5, // 历史候选统一低分，排序时自然靠后（与匹配候选混排时不抢位）
+    }));
+  }
 
   /**
    * 键盘事件处理器（↓↑ 导航 + ←→ 填充）
@@ -404,6 +455,21 @@ export class QuickInputCompletion {
         memoriesResult.hits as Array<{ id: string; contentPreview: string; score: number; source?: string }>,
         messagesResult.results as Array<{ content: string; role: string }>,
       );
+
+      // STEP-5A 优先级链：匹配候选（记忆+对话）为空时回退到最近提交历史
+      // 用户设想：匹配内容第一优先级，历史提交第二优先级，都没有则显示"无匹配"占位（状态反馈，非 bug）
+      if (candidates.length === 0) {
+        const recentCandidates = this.buildRecentCandidates(query);
+        if (recentCandidates.length === 0) {
+          // 无匹配且无历史：显示"无匹配"占位提供状态反馈
+          // 保留三态占位体系（搜索中/无匹配/出错），避免用户在"搜不到"时误以为 bug
+          this.showEmptyPlaceholder();
+          return;
+        }
+        this.renderCandidates(recentCandidates);
+        return;
+      }
+
       this.renderCandidates(candidates);
     } catch (error) {
       reportError('QuickInputCompletion:fetchCandidates', error);

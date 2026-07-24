@@ -4,7 +4,7 @@
  * 职责：
  *   1. 记录呼出浮窗前的前台窗口（getActiveWindow）
  *   2. 确认时恢复焦点到原窗口 + 模拟 Ctrl+V 粘贴
- *   3. 剪贴板内容恢复（不覆盖用户原剪贴板）
+ *   3. 剪贴板恢复策略：成功路径【不】恢复（使剪贴板停留为提交文本，供下次唤起去重）；失败/降级路径恢复用户原剪贴板
  *   4. 非文本剪贴板保护（图片/文件不破坏）
  *   5. 任何步骤失败降级到复制+Toast 模式
  *
@@ -20,7 +20,7 @@
  *   4. 恢复焦点
  *   5. Ctrl+V
  *   6. 延迟 100ms（按文本长度自适应 100/200/500ms，见 calculatePasteDelay）
- *   7. 恢复剪贴板 + suppressNextChange
+ *   7. 失败路径恢复剪贴板 + suppressNextChange（成功路径不恢复，见 paste()）
  *   8. onAfterConfirm 记忆沉淀
  *   9. Toast + 关闭
  *
@@ -241,7 +241,7 @@ export class InputInjector {
    *   2. 恢复焦点到原前台窗口（previousWindow.focus）
    *   3. koffi FFI keybd_event 发送 Ctrl+V（失败降级到 nut-js keyboard）
    *   4. 延迟（按文本长度自适应 100/200/500ms）
-   *   5. 恢复剪贴板 + suppressNextChange
+   *   5. 失败路径恢复剪贴板 + suppressNextChange；成功路径【不】恢复（见下方说明）
    *
    * 实现要点：
    *   - 浮窗不 hide：hideFloat 为 no-op，浮窗保持可见支持流式输入
@@ -275,7 +275,7 @@ export class InputInjector {
       return { success: false, mode: 'copy', reason: 'non_text_clipboard' };
     }
 
-    // 保存原剪贴板内容
+    // 保存原剪贴板内容（仅用于失败/降级路径恢复，保全用户原内容）
     const originalClipboard = clipboard.readText();
 
     try {
@@ -291,6 +291,10 @@ export class InputInjector {
       try {
         await previousWindow.focus();
       } catch (err) {
+        // 焦点恢复失败：粘贴实际未发生，必须恢复用户原剪贴板（避免丢失），降级返回
+        // 注意：此处是内层 return（不抛异常），不能依赖下方 catch 恢复，须显式恢复
+        clipboard.writeText(originalClipboard);
+        suppressNextChange();
         return { success: false, mode: 'copy', reason: 'focus_failed', error: err };
       }
 
@@ -307,14 +311,17 @@ export class InputInjector {
       const pasteDelay = calculatePasteDelay(text);
       await new Promise(resolve => setTimeout(resolve, pasteDelay));
 
+      // 步骤 5（成功路径）：【刻意不恢复剪贴板】，使其停留为被提交文本。
+      // 契约对齐：quickInput.ts handleShow 的「剪贴板智能预填去重」假设
+      // 「提交成功后剪贴板 == 提交文本」——下次唤起时剪贴板==最近提交→跳过预填→显示历史。
+      // 同时消除短文本 100ms 恢复竞态：目标应用读到的是被提交文本，而非被恢复的原始剪贴板。
+      // 失败/降级路径仍在下方 catch 恢复用户原剪贴板，确保异常时用户内容不丢失。
       return { success: true, mode: 'paste' };
     } catch (err) {
-      return { success: false, mode: 'copy', reason: 'paste_failed', error: err };
-    } finally {
-      // 边界 3：恢复原剪贴板内容（无论成功失败）
-      // 排雷修正雷 1.1：suppressNextChange 是一次性抑制，恢复时需再次调用
+      // 粘贴过程异常：恢复用户原剪贴板（仅异常路径），避免用户内容丢失
       clipboard.writeText(originalClipboard);
       suppressNextChange();
+      return { success: false, mode: 'copy', reason: 'paste_failed', error: err };
     }
   }
 }

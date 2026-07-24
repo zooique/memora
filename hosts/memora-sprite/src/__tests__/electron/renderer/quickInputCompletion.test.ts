@@ -390,8 +390,8 @@ describe('mergeCandidates · 合并去重排序', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // UX-QI-10：两源搜索返回空结果时显示"无匹配"占位项（非隐藏列表）
-    // 占位项复用 .completion-item 类名（与 loading/error 同构），数量为 1
+    // 炼化归元：两源搜索返回空结果且无历史回退时，显示"无匹配"占位（状态反馈，非 bug）
+    // 优先级链：匹配候选为空 → 历史回退为空（未注入 recentProvider）→ 显示占位
     expect(document.querySelectorAll('.completion-item').length).toBe(1);
     expect(document.querySelector('.completion-item.completion-empty')).not.toBeNull();
   });
@@ -483,7 +483,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     expect(text).toBe('第二次结果');
   });
 
-  it('空结果应显示"无匹配"占位（UX-QI-10 三态占位体系）', async () => {
+  it('空结果且无历史回退时显示"无匹配"占位（炼化归元：状态反馈，非 bug）', async () => {
     const { input, api, list } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
     (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
@@ -491,12 +491,70 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // UX-QI-10：两源空结果时不再隐藏列表，而是显示"无匹配"占位项
-    // 让用户能区分"搜索中" / "无匹配" / "搜索出错"三种状态
+    // 炼化归元：两源空结果 + 未注入历史回退 → 显示"无匹配"占位（保留三态反馈，避免用户误以为 bug）
     expect(list.classList.contains('hidden')).toBe(false);
     const placeholder = list.querySelector('.completion-item.completion-empty');
     expect(placeholder).not.toBeNull();
     expect(placeholder?.textContent).toBe('无匹配，换个词试试');
+  });
+
+  it('空结果但有历史回退时显示历史候选（STEP-5A 优先级链：历史第二优先级）', async () => {
+    const { input, list, api, completion } = createCompletion();
+    // 注入历史回退提供者，返回 2 条历史提交
+    completion.onRecentFallback(() => ['历史提交A', '历史提交B']);
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // STEP-5A：两源空结果 + 有历史回退 → 显示历史候选
+    expect(list.classList.contains('hidden')).toBe(false);
+    const items = list.querySelectorAll('.completion-item');
+    expect(items.length).toBe(2);
+    // 历史候选项 sourceLabel 为"最近"
+    expect(items[0]?.querySelector('.completion-label')?.textContent).toBe('最近');
+    expect(items[0]?.textContent).toContain('历史提交A');
+  });
+
+  it('空结果且历史回退排除当前查询文本（避免用户已输入的内容作为候选）', async () => {
+    const { input, list, completion } = createCompletion();
+    completion.onRecentFallback((query) => ['历史A', '历史B', query].filter((t) => t !== query));
+    input.value = '历史A';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 当前查询"历史A"应被历史回退排除，只显示"历史B"
+    const items = list.querySelectorAll('.completion-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.textContent).toContain('历史B');
+  });
+
+  it('空输入时立即显示历史候选（核心场景：Tab 提交后直接用方向键选择复用）', async () => {
+    const { input, list, completion } = createCompletion();
+    completion.onRecentFallback(() => ['最近提交1', '最近提交2', '最近提交3']);
+
+    // 空输入触发 input 事件（模拟 Tab 提交后 resetInputForNext 的 dispatch）
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+
+    // 空查询跳过防抖，立即显示历史候选（无需 advanceTimersByTimeAsync）
+    expect(list.classList.contains('hidden')).toBe(false);
+    const items = list.querySelectorAll('.completion-item');
+    expect(items.length).toBe(3);
+    expect(items[0]?.textContent).toContain('最近提交1');
+    expect(items[0]?.querySelector('.completion-label')?.textContent).toBe('最近');
+  });
+
+  it('空输入且无历史时隐藏列表（首次使用，尚无提交历史）', async () => {
+    const { input, list } = createCompletion();
+    // 未注入 recentProvider，buildRecentCandidates 返回空数组
+
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+
+    // 无历史可显示，隐藏列表
+    expect(list.classList.contains('hidden')).toBe(true);
   });
 
   // ─── loading 占位（UX-0714-1） ───
