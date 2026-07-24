@@ -8,7 +8,7 @@
  *   4. 管理剪贴板三重保护抑制函数 + 自动粘贴开关
  *   5. 获取准确窗口标题（nut-js 编码 bug 绕过：PowerShell fallback）
  *
- * 设计原则（ADR-017 架构层）：
+ * 设计原则：
  *   - 从 QuickInputWindow 抽离，使 QuickInputWindow 仅负责窗口管理 + IPC 路由
  *   - PasteCoordinator 不依赖 BrowserWindow，可独立单元测试
  *   - 集成点：QuickInputWindow.show() 调用 capturePreviousWindow()，
@@ -85,7 +85,7 @@ function isGarbledTitle(title: string): boolean {
 }
 
 /**
- * 静默降级包装器（ADR-017 枝叶层 2 次提取原则）
+ * 静默降级包装器
  *
  * 应用场景：pasteCoordinator 中两处异步操作（resolveAccurateTitle / getCapturedAppName）
  * 都需要"失败时静默降级返回 fallback + 记 warn 日志"模式，提取为泛型函数消除重复。

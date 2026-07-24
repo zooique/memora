@@ -46,7 +46,7 @@ function createMockFloatAPI(): FloatElectronAPI {
     moveFloatWindow: vi.fn(),
     saveFloatPosition: vi.fn(),
     expandToFull: vi.fn(),
-    showQuickInputFromFloat: vi.fn(), // STEP-4：浮球单击 → 补全弹窗
+    showQuickInputFromFloat: vi.fn(), // 浮球单击 → 补全弹窗
     showFloatContextMenu: vi.fn(),
     onFloatUnread: vi.fn(),
     onSpriteEvent: vi.fn(),

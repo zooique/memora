@@ -38,7 +38,7 @@ import '../types.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "润色失败，请重试" 等模板化文案）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
-// safeStorage 统一 localStorage 读写（ADR-017 枝叶层 2 次提取，字符串场景）
+// safeStorage 统一 localStorage 读写（ADR-017，字符串场景）
 import { safeGet, safeSet, safeGetJSON, safeSetJSON } from '../helpers/safeStorage.js';
 import { QuickInputCompletion } from './quickInputCompletion.js';
 import type { CompletionItem } from './quickInputCompletion.js';
@@ -563,8 +563,7 @@ export class QuickInputController {
     this.completion.onListChange(() => {
       this.resizeWindow();
     });
-    // STEP-5A：注入最近提交历史回退提供者
-    // 优先级链：匹配候选为空时回退到历史，历史也为空则隐藏列表
+    // 注入最近提交历史回退提供者（优先级链：匹配候选为空时回退到历史，历史也为空则显示占位）
     this.completion.onRecentFallback((currentQuery: string) => {
       return this.getRecentSubmissionsForCompletion(currentQuery);
     });
@@ -658,7 +657,7 @@ export class QuickInputController {
 
     const preset = payload?.clipboardText;
     if (preset) {
-      // STEP-5A 剪贴板智能预填去重：若剪贴板内容与最近一次提交相同，跳过预填避免重复
+      // 剪贴板智能预填去重：若剪贴板内容与最近一次提交相同，跳过预填避免重复
       // 场景：用户刚 Tab 提交了文本 A，剪贴板仍是 A，再次呼出浮窗时不必预填 A（用户已提交过）
       const recent = this.loadRecentSubmissions();
       const isDuplicateOfLastSubmission = recent.length > 0 && recent[0] === preset;
@@ -811,10 +810,7 @@ export class QuickInputController {
    * 手动切换持久化到 localStorage，跨会话保留用户偏好。
    * 注意：handleShow 中的 isSensitive 自动检测不持久化，仅本次会话生效。
    *
-   * 减法（2026-07-18）：原设计有独立的 alwaysOnTop 状态，由 pin-toggle 图钉按钮切换，
-   * 但 pinned 和 alwaysOnTop 在实际使用中强耦合（pinned 不置顶无意义，置顶不 pinned 也无意义），
-   * 合并为单一 pinnedMode 概念。浮窗永远 alwaysOnTop=true + skipTaskbar=true，
-   * 消除 Windows 任务栏默认图标 bug + pin-toggle 发现性问题 + 状态组合 4→2。
+   * 浮窗永远 alwaysOnTop=true + skipTaskbar=true，pinnedMode 仅控制 blur 是否关闭 + alwaysOnTop 强制恢复。
    */
   private togglePinnedMode(): void {
     this.pinnedMode = !this.pinnedMode;
@@ -886,13 +882,13 @@ export class QuickInputController {
       if (currentGen !== this.submitGeneration) return;
       if (result.success) {
         // 持久化最近提交文本（用于补全回退候选 + 剪贴板智能预填去重）
-        // STEP-5A：提交成功后才记录，失败/异常不污染历史
+        // 提交成功后才记录，失败/异常不污染历史
         this.recordRecentSubmission(text);
-        // 统一显示 Toast 反馈（路线图闭环 7 F1：paste 完成后浮窗重显，Toast 可见）
+        // 统一显示 Toast 反馈（paste 完成后浮窗重显，Toast 可见）
         // default 模式 + pinned 模式 + copy 降级均显示 Toast，差异仅在主进程焦点处理
         this.scheduleSuccessToast(result);
       } else {
-        // 失败分支：显示错误 Toast（FUNC-4 修复，原仅 resetInputState 用户无可见反馈）
+        // 失败分支：显示错误 Toast
         // result.success=false 但无 error 对象，按两段式静态文案（UX-14）
         this.showErrorToast('✗ 粘贴失败，请稍后重试');
         this.scheduleToast(() => this.resetInputState(text));
@@ -901,7 +897,7 @@ export class QuickInputController {
       // 竞态防护：仅在代次匹配时才处理错误（避免覆盖新状态）
       if (currentGen !== this.submitGeneration) return;
       reportError('QuickInput 确认', error);
-      // 异常分支：显示错误 Toast（FUNC-4 修复，原仅 reportError 用户无可见反馈）
+      // 异常分支：显示错误 Toast
       // UX-14：用 formatErrorMessage 分类映射替代模板化"请重试"
       this.showErrorToast(`✗ ${formatErrorMessage('提交', error)}`);
       this.scheduleToast(() => this.resetInputState(text));
@@ -929,7 +925,7 @@ export class QuickInputController {
   }
 
   /**
-   * 记录最近提交文本到 localStorage（STEP-5A）
+   * 记录最近提交文本到 localStorage
    *
    * 用途：
    *   1. 补全候选回退源——记忆/对话匹配为空时，显示最近提交历史供快速复用
@@ -956,7 +952,7 @@ export class QuickInputController {
   }
 
   /**
-   * 加载最近提交历史（STEP-5A）
+   * 加载最近提交历史
    *
    * @returns 历史文本数组（按时间倒序，最近在前）；localStorage 不可用或损坏时返回空数组
    */
@@ -968,7 +964,7 @@ export class QuickInputController {
   }
 
   /**
-   * 获取最近提交历史作为补全回退候选（STEP-5A）
+   * 获取最近提交历史作为补全回退候选
    *
    * 供 QuickInputCompletion 在记忆/对话匹配为空时回退使用。
    * 按时间倒序取前 MAX_RECENT_FALLBACK_ITEMS 条，过滤掉与当前查询完全相同的文本
@@ -1048,7 +1044,7 @@ export class QuickInputController {
   }
 
   /**
-   * 统一 Toast 定时关闭逻辑（ADR-017 枝叶层 2 次提取，3 处使用：成功/失败/异常）
+   * 统一 Toast 定时关闭逻辑（3 处使用：成功/失败/异常）
    *
    * @param onClose Toast 到期后的回调（恢复输入状态/清空输入等）
    */

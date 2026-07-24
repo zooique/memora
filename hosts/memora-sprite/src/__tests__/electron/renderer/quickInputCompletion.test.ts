@@ -498,7 +498,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     expect(placeholder?.textContent).toBe('无匹配，换个词试试');
   });
 
-  it('空结果但有历史回退时显示历史候选（STEP-5A 优先级链：历史第二优先级）', async () => {
+  it('空结果但有历史回退时显示历史候选（历史第二优先级）', async () => {
     const { input, list, api, completion } = createCompletion();
     // 注入历史回退提供者，返回 2 条历史提交
     completion.onRecentFallback(() => ['历史提交A', '历史提交B']);
@@ -508,7 +508,7 @@ describe('fetchCandidates · 并行 IPC 与降级', async () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(300);
 
-    // STEP-5A：两源空结果 + 有历史回退 → 显示历史候选
+    // 两源空结果 + 有历史回退 → 显示历史候选
     expect(list.classList.contains('hidden')).toBe(false);
     const items = list.querySelectorAll('.completion-item');
     expect(items.length).toBe(2);
@@ -1025,7 +1025,7 @@ describe('renderCandidates · 渲染与交互', async () => {
   });
 });
 
-// ─── L1 source 语义感知（新枝破土） ─────────────────────
+// ─── L1 source 语义感知 ─────────────────────
 
 describe('L1 source 语义感知', async () => {
   it('insight source 应映射为"洞察"标签', async () => {

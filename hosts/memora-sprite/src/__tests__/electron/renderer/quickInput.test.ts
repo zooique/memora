@@ -479,9 +479,9 @@ describe('QuickInputController', () => {
     });
   });
 
-  // ─── STEP-5A：最近提交历史持久化 ─────────────────────────
+  // ─── 最近提交历史持久化 ─────────────────────────
 
-  describe('recentSubmission 持久化（STEP-5A）', () => {
+  describe('recentSubmission 持久化', () => {
     it('提交成功后记录到 localStorage', async () => {
       const { inputField, api } = await createController({ inputValue: '提交内容A' });
 
@@ -557,9 +557,9 @@ describe('QuickInputController', () => {
     });
   });
 
-  // ─── STEP-5A：剪贴板智能预填去重 ─────────────────────────
+  // ─── 剪贴板智能预填去重 ─────────────────────────
 
-  describe('剪贴板智能预填去重（STEP-5A）', () => {
+  describe('剪贴板智能预填去重', () => {
     it('剪贴板内容与最近提交相同时跳过预填', async () => {
       // 预置最近提交为 '刚提交的内容'
       safeSetJSON('memora-quick-input-recent', ['刚提交的内容']);
@@ -651,7 +651,7 @@ describe('QuickInputController', () => {
       expect(api.setPinnedMode).toHaveBeenCalledWith(false);
     });
 
-    it('STEP-6: Cmd+L 在 macOS 上同样切换常驻模式', async () => {
+    it('Cmd+L 在 macOS 上同样切换常驻模式', async () => {
       const { inputField, pinnedToggle } = await createController();
 
       // metaKey 对应 macOS 的 Cmd 键
@@ -659,7 +659,7 @@ describe('QuickInputController', () => {
       expect(pinnedToggle.classList.contains('active')).toBe(true);
     });
 
-    it('STEP-6: 无修饰键的 L 键不触发常驻切换（避免误触）', async () => {
+    it('无修饰键的 L 键不触发常驻切换（避免误触）', async () => {
       const { inputField, pinnedToggle } = await createController();
 
       // 纯 L 键（无 Ctrl/Cmd）不应触发切换

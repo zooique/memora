@@ -23,7 +23,7 @@
  *   - searchSessionMessages：历史对话消息原文，纯 LIKE 匹配，含 role/date
  *   两者互补：记忆提供"用户是什么样的人"，对话提供"用户最近在说什么"
  *
- * L1 source 语义感知（新枝破土）：
+ * L1 source 语义感知：
  *   - 记忆候选读取 source 字段，映射为中文标签（洞察/偏好/作品/记忆）
  *   - 排除 persona/rule/skill/guardrail（已在 system prompt 注入，补全候选不应重复）
  *   - 多样性过滤从"二分（记忆/对话）"升级为"多源（洞察/偏好/作品/对话）"
@@ -39,7 +39,7 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { safeGetJSON, safeSetJSON } from '../helpers/safeStorage.js';
 // 补全统计埋点（展示/采纳事件 → localStorage → 统计面板消费）
 import { getCompletionMetrics } from '../helpers/completionMetrics.js';
-// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
+// 文本截断工具（跨层共享，统一 ellipsis 为 '…'）
 import { truncate } from '../../../shared/truncate.js';
 
 /**
@@ -191,7 +191,7 @@ export class QuickInputCompletion {
   /** 候选列表变化回调（用于通知窗口调整高度） */
   private onListChangeCallback: ((visible: boolean) => void) | null = null;
   /**
-   * 最近提交历史回退提供者（STEP-5A）
+   * 最近提交历史回退提供者
    *
    * 当记忆+对话匹配候选为空时调用，返回最近提交文本数组作为回退候选。
    * 返回空数组表示无历史可回退，此时隐藏候选列表（不显示空占位）。
@@ -456,8 +456,8 @@ export class QuickInputCompletion {
         messagesResult.results as Array<{ content: string; role: string }>,
       );
 
-      // STEP-5A 优先级链：匹配候选（记忆+对话）为空时回退到最近提交历史
-      // 用户设想：匹配内容第一优先级，历史提交第二优先级，都没有则显示"无匹配"占位（状态反馈，非 bug）
+      // 优先级链：匹配候选（记忆+对话）为空时回退到最近提交历史
+      // 匹配内容第一优先级，历史提交第二优先级，都没有则显示"无匹配"占位（状态反馈，非 bug）
       if (candidates.length === 0) {
         const recentCandidates = this.buildRecentCandidates(query);
         if (recentCandidates.length === 0) {
@@ -562,7 +562,7 @@ export class QuickInputCompletion {
   /**
    * 显示候选列表容器（移除 hidden + aria-expanded + 通知窗口调整高度）
    *
-   * showLoading 和 renderCandidates 共用的列表显示逻辑（ADR-017 枝叶层 2 次提取）。
+   * showLoading 和 renderCandidates 共用的列表显示逻辑。
    */
   private showListContainer(): void {
     this.listEl.classList.remove('hidden');
@@ -573,7 +573,7 @@ export class QuickInputCompletion {
   /**
    * 合并两个数据源的候选结果
    *
-   * L1 source 语义感知（新枝破土）：
+   * L1 source 语义感知：
    *   - 记忆候选读取 m.source 字段，映射为中文标签（洞察/偏好/作品）
    *   - 排除 persona/rule/skill/guardrail（已在 system prompt 注入，补全候选不应重复）
    *   - 多样性过滤从"二分（记忆/对话）"升级为"多源（洞察/偏好/作品/对话）"
@@ -789,7 +789,7 @@ export class QuickInputCompletion {
   /**
    * 将采纳记录写入 localStorage
    *
-   * 使用 safeSetJSON 统一 try-catch 静默降级（ADR-017 枝叶层 2 次提取）。
+   * 使用 safeSetJSON 统一 try-catch 静默降级。
    * 仅在 recordAdoption 时写入，避免每次 getAdoptionBoost 查询都触发 IO。
    */
   private saveAdoptions(): void {
