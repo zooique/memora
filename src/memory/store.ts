@@ -61,17 +61,23 @@ export class FileStore {
 
   /**
    * 写入记忆文件
+   *
+   * frontmatter 包含标准字段（id/source/score/createdAt/accessedAt）
+   * 和 memory.metadata 中的额外元数据（如 keywords/description）。
    */
   async write(memory: Memory): Promise<void> {
     const filePath = this.getFilePath(memory.source, memory.name);
     await mkdir(dirname(filePath), { recursive: true });
 
+    // 标准字段优先，metadata 中的键值对追加到尾部
+    // 如果 metadata 中包含与标准字段同名的键，后者覆盖前者（metadata 优先）
     const frontmatter = serializeFm({
       id: memory.id,
       source: memory.source,
       score: String(memory.score),
       createdAt: memory.createdAt,
       accessedAt: memory.accessedAt,
+      ...memory.metadata,
     });
     const content = `---\n${frontmatter}\n---\n\n${memory.content}`;
     await writeFile(filePath, content, 'utf-8');

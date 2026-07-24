@@ -197,6 +197,115 @@ describe('BuiltinToolHandlers.writeFile', () => {
     });
   });
 
+  describe('配置目录拦截', () => {
+    it('personas/ 路径返回错误并提示 create_persona', async () => {
+      const result = await handlers.writeFile('personas/deep-thinker.md', '内容');
+      expect(result).toContain('create_persona');
+      expect(result).toContain('错误');
+    });
+
+    it('skills/ 路径返回错误并提示 create_skill', async () => {
+      const result = await handlers.writeFile('skills/coding.md', '内容');
+      expect(result).toContain('create_skill');
+      expect(result).toContain('错误');
+    });
+
+    it('rules/ 路径返回错误并提示 create_rule', async () => {
+      const result = await handlers.writeFile('rules/code-style.md', '内容');
+      expect(result).toContain('create_rule');
+      expect(result).toContain('错误');
+    });
+
+    it('前导 ./ 不绕过拦截', async () => {
+      const result = await handlers.writeFile('./personas/test.md', '内容');
+      expect(result).toContain('create_persona');
+    });
+
+    it('大小写不敏感：Personas/ 被拦截', async () => {
+      const result = await handlers.writeFile('Personas/test.md', '内容');
+      expect(result).toContain('create_persona');
+    });
+
+    it('普通项目路径不被拦截', async () => {
+      const result = await handlers.writeFile('src/test.txt', '内容');
+      expect(result).not.toContain('create_');
+    });
+  });
+
+  describe('内容特征检测（frontmatter source 字段）', () => {
+    it('内容含 source: persona 被拦截，即使路径无 personas/ 前缀', async () => {
+      const content = '---\nsource: persona\nname: test\n---\n\n# 角色内容';
+      const result = await handlers.writeFile('logic-architect.md', content);
+      expect(result).toContain('create_persona');
+      expect(result).toContain('错误');
+      expect(result).toContain('source: persona');
+    });
+
+    it('内容含 source: skill 被拦截', async () => {
+      const content = '---\nsource: skill\nname: test\n---\n\n# 技能内容';
+      const result = await handlers.writeFile('my-skill.md', content);
+      expect(result).toContain('create_skill');
+      expect(result).toContain('错误');
+    });
+
+    it('内容含 source: rule 被拦截', async () => {
+      const content = '---\nsource: rule\nname: test\n---\n\n# 规则内容';
+      const result = await handlers.writeFile('code-style.md', content);
+      expect(result).toContain('create_rule');
+      expect(result).toContain('错误');
+    });
+
+    it('无 frontmatter 的内容不被拦截', async () => {
+      const result = await handlers.writeFile('normal.md', '# 普通内容\n没有 frontmatter');
+      expect(result).not.toContain('create_');
+    });
+
+    it('frontmatter 不含 source 字段不被拦截', async () => {
+      const content = '---\nname: test\ndescription: 测试\n---\n\n# 普通 markdown';
+      const result = await handlers.writeFile('test.md', content);
+      expect(result).not.toContain('create_');
+    });
+
+    it('source: insight 不被拦截（非配置文件 source）', async () => {
+      const content = '---\nsource: insight\n---\n\n# 洞察内容';
+      const result = await handlers.writeFile('insight.md', content);
+      expect(result).not.toContain('create_');
+    });
+
+    it('路径拦截 + 内容检测双重防护：路径匹配优先拦截', async () => {
+      const content = '---\nsource: persona\n---\n\n# 角色';
+      const result = await handlers.writeFile('personas/test.md', content);
+      // 路径拦截先触发，信息包含 personas/
+      expect(result).toContain('personas/');
+      expect(result).toContain('create_persona');
+    });
+  });
+
+  describe('configDir 已知时路径提示', () => {
+    // 构造带 configDir 的 handlers，验证拦截消息中包含实际路径
+    const mockConfigDir = '/home/user/.memora-sprite/config';
+    const handlersWithConfig = new BuiltinToolHandlers(
+      projectPath,
+      security,
+      storage,
+      undefined,
+      mockConfigDir,
+    );
+
+    it('路径拦截时错误消息包含实际配置目录路径', async () => {
+      const result = await handlersWithConfig.writeFile('personas/deep-thinker.md', '内容');
+      expect(result).toContain('create_persona');
+      expect(result).toContain(mockConfigDir + '/personas/');
+    });
+
+    it('内容特征检测时错误消息也包含实际配置目录路径', async () => {
+      const content = '---\nsource: skill\n---\n\n# 技能';
+      const result = await handlersWithConfig.writeFile('my-skill.md', content);
+      expect(result).toContain('create_skill');
+      expect(result).toContain(mockConfigDir + '/skills/');
+    });
+  });
+
   describe('overwrite 模式', () => {
     it('新文件写入成功', async () => {
       const result = await handlers.writeFile('new.txt', '新内容');

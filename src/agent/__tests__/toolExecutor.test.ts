@@ -420,6 +420,39 @@ describe('工具执行器（4 个工具）', () => {
       expect(() => executor.registerTool(customDef, async () => '')).toThrow(/工具已注册/);
     });
 
+    it('registerTool 应触发 onToolsChanged 回调', () => {
+      let callCount = 0;
+      executor.setOnToolsChanged(() => { callCount++; });
+      const newDef = {
+        name: 'callback_test_tool',
+        description: '测试回调触发',
+        parameters: {
+          type: 'object' as const,
+          properties: { msg: { type: 'string', description: '消息' } },
+          required: ['msg'],
+        },
+      };
+      executor.registerTool(newDef, async () => 'ok');
+      expect(callCount).toBe(1);
+    });
+
+    it('setOnToolsChanged(undefined) 后 registerTool 不触发回调', () => {
+      let callCount = 0;
+      executor.setOnToolsChanged(() => { callCount++; });
+      executor.setOnToolsChanged(undefined);
+      const newDef = {
+        name: 'no_callback_tool',
+        description: '测试清除回调',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      executor.registerTool(newDef, async () => 'ok');
+      expect(callCount).toBe(0);
+    });
+
     it('未知工具错误信息应包含自定义工具名', async () => {
       try {
         await executor.execute('truly_unknown', '{}');

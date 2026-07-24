@@ -371,6 +371,12 @@ async function bootstrapRenderer(): Promise<void> {
       // 广播到达后直接按 type 分发刷新对应列表（refreshByType 内部按 type 调用 loadXxxList）
       // 不再经过 handleConfigFilesChanged → configFilesChangedCallback 中间层，调用链路最短
       void State.uiManager.settingsManagerPanel.refreshByType(payload.type);
+      // persona 列表变更时，同步刷新对话输入框的角色下拉菜单
+      // 下拉菜单默认只订阅 personaChanged（角色切换）事件，角色"创建/删除"不触发切换事件，
+      // 需在此补刷新，否则对话中新建的角色不会出现在下拉菜单中（设定面板已刷新但下拉菜单未刷新）
+      if (payload.type === 'persona') {
+        void personaController.loadPersonaList();
+      }
     },
   });
 

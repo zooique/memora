@@ -17,17 +17,17 @@
  */
 import { execFile } from 'node:child_process';
 import { logger, toError } from 'memora';
-import type { ToolDefinition, ToolHandler, ToolContext } from 'memora';
+import type { ToolDefinition, ToolHandler, ToolContext, ConfigSuggestion } from 'memora';
 
 /**
  * Agent 引用（由 index.ts 在 initAgentFromConfig 中注入）
- * 
+ *
  * 用于工具处理器中调用 config.confirmConfigSuggestion 和 agent.reloadConfig。
  * 采用延迟注入模式，避免循环依赖。
  */
 type AgentRef = {
   config: {
-    confirmConfigSuggestion: (suggestion: { type: string; name: string; content: string; confidence: number }) => Promise<void>;
+    confirmConfigSuggestion: (suggestion: ConfigSuggestion) => Promise<void>;
   };
   reloadConfig: (source?: string) => Promise<{ skill: number; persona: number }>;
 };
@@ -175,17 +175,17 @@ function getMemorySearcher(): MemorySearcher | null {
 // ─── 创建角色和技能工具 ─────────────────────────────────────────
 
 /**
- * 创建角色/技能的公共处理器工厂
+ * 创建角色/技能/规则的公共处理器工厂
  *
- * createPersonaHandler 和 createSkillHandler 的公共逻辑提取：
+ * createPersonaHandler / createSkillHandler / createRuleHandler 的公共逻辑提取：
  * 参数提取 → 校验 → 内容拼接 → confirmConfigSuggestion → reloadConfig。
  * 仅 type 和消息文本不同，由参数区分。
  *
- * @param type 类型标识（'persona' | 'skill'）
+ * @param type 类型标识（'persona' | 'skill' | 'rule'）
  * @param label 中文标签（用于消息文本）
  */
 function createConfigHandler(
-  type: 'persona' | 'skill',
+  type: 'persona' | 'skill' | 'rule',
   label: string,
 ): ToolHandler {
   return async (args: Record<string, unknown>, _ctx: ToolContext) => {
@@ -206,36 +206,51 @@ function createConfigHandler(
       return `错误：${label}内容不能为空`;
     }
 
-    try {
-      let configContent = content;
-      if (description) {
-        configContent = `描述：${description}\n\n${content}`;
-      }
-      if (keywords) {
-        configContent = `关键词：${keywords}\n\n${configContent}`;
-      }
+    // description/keywords 通过 metadata 传递，写入 frontmatter 供 PersonaManager/SkillManager 解析
+    // 不再拼接到 content 纯文本——避免 body 噪音，且 keywords 字段可被 parseKeywords 正确读取
+    const metadata: Record<string, string> = {};
+    if (description) {
+      metadata.description = description;
+    }
+    if (keywords) {
+      metadata.keywords = keywords;
+    }
 
+    // 阶段 1：写入配置文件 + SQLite index（confirmConfigSuggestion）
+    // 这一步失败属于真正的创建失败，返回错误
+    try {
       await agent.config.confirmConfigSuggestion({
         type,
         name,
-        content: configContent,
+        content,
         confidence: 0.95,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       });
-
-      await agent.reloadConfig(type);
-
-      return `${label} "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
     } catch (err) {
-      logger.warn({ err: toError(err).message, name }, `创建${label}失败`);
+      logger.warn({ err: toError(err).message, name }, `创建${label}失败：配置文件写入异常`);
       return `错误：创建${label}失败：${toError(err).message}`;
     }
+
+    // 阶段 2：热重载内存（reloadConfig）
+    // 这一步在对话进行中会因 chatLock 冲突失败（"对话繁忙"），但文件已成功持久化，
+    // 不应掩盖创建成功的事实——降级为提示"重启后生效"
+    let reloadHint = '';
+    try {
+      await agent.reloadConfig(type);
+    } catch (err) {
+      const errMsg = toError(err).message;
+      logger.info({ err: errMsg, name, type }, `${label}文件已写入，热重载推迟（对话进行中）`);
+      reloadHint = '\n\n注意：当前对话进行中，新配置将在对话结束后自动加载，或重启后生效。';
+    }
+
+    return `${label} "${name}" 创建成功！已持久化到配置文件，重启后依然生效。${reloadHint}\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
   };
 }
 
 /** create_persona 工具定义 */
 export const CREATE_PERSONA_TOOL: ToolDefinition = {
   name: 'create_persona',
-  description: '创建一个新的角色（Persona）。当用户说"创建一个XX角色"、"制作一个XX角色"或"我想要一个XX助手"时调用。角色会持久化到配置文件，重启后依然生效。',
+  description: '创建一个新的角色（Persona）。当用户要求创建/修改角色时，必须使用此工具。角色会持久化到配置文件，重启后依然生效。',
   parameters: {
     type: 'object',
     properties: {
@@ -266,7 +281,7 @@ export const createPersonaHandler: ToolHandler = createConfigHandler('persona', 
 /** create_skill 工具定义 */
 export const CREATE_SKILL_TOOL: ToolDefinition = {
   name: 'create_skill',
-  description: '创建一个新的技能（Skill）。当用户说"创建一个XX技能"、"制作一个XX技能"或"我需要一个XX能力"时调用。技能会持久化到配置文件，重启后依然生效。',
+  description: '创建一个新的技能（Skill）。当用户要求创建/修改技能时，必须使用此工具。技能会持久化到配置文件，重启后依然生效。',
   parameters: {
     type: 'object',
     properties: {
@@ -293,3 +308,35 @@ export const CREATE_SKILL_TOOL: ToolDefinition = {
 
 /** create_skill 工具处理器（由公共工厂 createConfigHandler 生成） */
 export const createSkillHandler: ToolHandler = createConfigHandler('skill', '技能');
+
+/** create_rule 工具定义 */
+export const CREATE_RULE_TOOL: ToolDefinition = {
+  name: 'create_rule',
+  description: '创建一个新的项目规则（Rule）。当用户要求创建/修改规则时，必须使用此工具。'
+    + '规则会持久化到配置文件并立即注入当前会话，重启后依然生效。',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description: '规则名称，简短描述（2-6字），例如"代码风格"、"回复格式"',
+      },
+      description: {
+        type: 'string',
+        description: '规则描述，说明这个规则的作用和适用场景',
+      },
+      content: {
+        type: 'string',
+        description: '规则的详细内容，描述具体的规则条款和约束',
+      },
+      keywords: {
+        type: 'string',
+        description: '关键词列表（逗号分隔），预留字段，当前规则不靠关键词匹配',
+      },
+    },
+    required: ['name', 'content'],
+  },
+};
+
+/** create_rule 工具处理器（由公共工厂 createConfigHandler 生成） */
+export const createRuleHandler: ToolHandler = createConfigHandler('rule', '规则');

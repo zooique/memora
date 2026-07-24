@@ -59,6 +59,14 @@ export interface ConfigSuggestion {
    * 当 type 不在约定值内时，必须提供此字段，否则 confirmConfigSuggestion 抛 configError。
    */
   memorySource?: string;
+  /**
+   * 可选：写入配置文件 frontmatter 的额外元数据
+   *
+   * 键值对会合并到 frontmatter 中（如 `keywords`、`description`），
+   * 供 PersonaManager.parseKeywords / SkillManager 等加载时解析。
+   * 不传时 frontmatter 仅含标准字段（id/source/score/createdAt/accessedAt）。
+   */
+  metadata?: Record<string, string>;
 }
 
 /** 配置建议回调函数类型 */
@@ -141,7 +149,8 @@ export class ConfigManager {
     }
 
     // 构造记忆对象并写入配置文件（真理源）
-    // 不写入 SQLite——遵守"配置文件是真理源"约束
+    // 写入 SQLite index（运行时索引）：配置文件是真理源，SQLite 是运行时检索索引
+    // 两层写入语义：配置文件保证重启后自动加载；SQLite 保证当前会话 search_memories 可检索
     const now = nowIso();
     const memory: Memory = {
       id: `${source}:${suggestion.name}`,
@@ -151,6 +160,8 @@ export class ConfigManager {
       createdAt: now,
       accessedAt: now,
       score: suggestion.confidence,
+      // metadata 透传到 FileStore.write，合并到 frontmatter（如 keywords/description）
+      metadata: suggestion.metadata,
     };
     // 包裹错误处理：磁盘满/权限不足/路径越界等异常转为友好的 configError
     try {
@@ -168,6 +179,11 @@ export class ConfigManager {
         e,
       );
     }
+
+    // 同步写入 SQLite index：当前会话的 search_memories / recall 可立即检索到新创建的配置
+    // persona/skill 后续由 reloadConfig → SkillManager.reload / PersonaManager.reload 重新扫描覆盖，
+    // 但 rule 的 reloadConfig 是 no-op（agent.ts 内跳过），必须在此显式同步
+    this.index.upsert(memory);
 
     // 如果是规则，立即注入到 AgentLoop（当前会话生效，重启后由配置文件自动加载）
     if (suggestion.type === 'rule') {

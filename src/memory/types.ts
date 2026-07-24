@@ -33,6 +33,14 @@ export interface Memory {
   score: number;
   /** 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理） */
   deletedAt?: string;
+  /**
+   * 可选：配置文件 frontmatter 的额外元数据
+   *
+   * 仅在写入配置文件时使用（FileStore.write 合并到 frontmatter）。
+   * SQLite index 不存储此字段（运行时检索不需要）。
+   * 典型场景：persona 的 keywords/description，供 PersonaManager 加载时解析。
+   */
+  metadata?: Record<string, string>;
 }
 
 /** 默认记忆权重（parseMemory 的默认值行为） */

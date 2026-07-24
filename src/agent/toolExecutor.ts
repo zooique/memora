@@ -94,6 +94,13 @@ export class ToolExecutor {
   private readonly customTools = new Map<string, CustomToolEntry>();
   /** 内置工具处理器（路径安全 + 内置工具实现） */
   private readonly builtinHandlers: BuiltinToolHandlers;
+  /**
+   * 工具列表变更回调（由 assembleComponents 设置为 loop.refreshToolDefinitions）
+   *
+   * registerTool 调用后触发，确保 AgentLoop 的 toolDefinitions 快照和 system prompt
+   * 同步更新。无 AgentLoop 时为 undefined（如纯 ToolExecutor 单元测试场景）。
+   */
+  private onToolsChanged?: () => void;
 
   constructor(
     projectPath: string,
@@ -101,6 +108,8 @@ export class ToolExecutor {
     memoryIndex: IMemoryStorage,
     /** 作品投影管理器（可选，读取文件时自动生成投影） */
     workProjection?: WorkProjectionManager,
+    /** 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置） */
+    configDir?: string,
   ) {
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
     // 构造参数仅用于初始化 BuiltinToolHandlers，ToolExecutor 自身不再持有这些引用
@@ -109,6 +118,7 @@ export class ToolExecutor {
       security,
       memoryIndex,
       workProjection,
+      configDir,
     );
   }
 
@@ -146,6 +156,23 @@ export class ToolExecutor {
     }
     this.customTools.set(definition.name, { definition, handler });
     logger.info({ tool: definition.name }, '自定义工具已注册');
+    // 触发 AgentLoop 刷新 toolDefinitions 快照 + system prompt
+    // 未设置回调时（如单元测试）静默跳过
+    this.onToolsChanged?.();
+  }
+
+  /**
+   * 设置工具列表变更回调
+   *
+   * 由 assembleComponents 在构造 AgentLoop 后调用，将 loop.refreshToolDefinitions
+   * 绑定到 registerTool 的副作用链路中。这样宿主调用 registerTool 注册工具后，
+   * AgentLoop 的 toolDefinitions 快照和 system prompt 会自动刷新，
+   * 无需宿主手动调用 refreshToolDefinitions。
+   *
+   * @param callback 工具列表变更时的回调（传 undefined 清除回调）
+   */
+  setOnToolsChanged(callback: (() => void) | undefined): void {
+    this.onToolsChanged = callback;
   }
 
   /**

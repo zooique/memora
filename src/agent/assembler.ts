@@ -39,6 +39,9 @@ import type { UIMessages } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
+// FileStore 用于 configDir 存在时创建 config 级文件存储，
+// 供 ConfigManager.confirmConfigSuggestion 写入配置文件（真理源）
+import { FileStore } from '@/memory/store.js';
 
 /** 组装器输入参数 */
 export interface AssembleInput {
@@ -145,6 +148,7 @@ export async function assembleComponents(
     pctx.security,
     pctx.index,
     workProjection,
+    configDir,
   );
 
   // ── Phase 2: 依赖 Provider 的组件 ──
@@ -213,14 +217,19 @@ export async function assembleComponents(
   });
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
 
+  // 将 registerTool 的副作用链接到 AgentLoop，每次注册工具后自动刷新 system prompt 中的工具列表
+  toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
+
   // ── Phase 4: 依赖 Loop 的组件 ──
 
-  const fileStore = pctx.fileStore;
+  // ConfigManager 的 writeConfigFile 回调必须使用 config 级 FileStore（configDir），
+  // 与设置面板 CRUD + personaWatcher 热重载路径一致，创建后立即可见
+  const configFileStore = configDir ? new FileStore(configDir) : null;
   const configManager = new ConfigManager(
     pctx.index,
     skillManager,
     (msg: string) => loop.injectSystemMessage(msg),
-    configDir ? (memory: Memory) => fileStore.write(memory) : undefined,
+    configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
     // 设定 CRUD 同步回调：ConfigManager.deleteRule/updateRule/deleteSkill 执行后，
     // 调用 loop.refreshBootstrapMemories 用最新的 rule+skill 记忆重建 system prompt bootstrap 段
     // 闭包内引用 configManager 自身——TS 严格模式允许（闭包执行时机晚于 const 初始化）

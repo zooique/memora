@@ -21,6 +21,7 @@ import { toolError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.j
 import { logger } from '@/logging/logger.js';
 import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';
+import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
@@ -28,6 +29,25 @@ import type { WriteExtensions } from '@/agent/toolExecutor.js';
 
 /** 工具结果类型（字符串，LLM 直接消费） */
 type ToolResult = string;
+
+/**
+ * 检测写入内容是否为配置文件（persona/skill/rule）
+ *
+ * 解析 frontmatter 中的 source 字段，若匹配 persona/skill/rule 则返回对应的工具名后缀。
+ * 这是内容特征检测——路径拦截易被绕过，但 frontmatter 中的 source 字段
+ * 是 FileStore.write 写入的结构特征，LLM 无法绕过。
+ *
+ * @param content 写入内容（可能含 frontmatter）
+ * @returns 匹配的 source 标签（'persona' | 'skill' | 'rule'），未匹配返回 null
+ */
+function checkForConfigSource(content: string): 'persona' | 'skill' | 'rule' | null {
+  const { frontmatter } = parseFrontmatter(content);
+  const source = frontmatter.source;
+  if (source && BuiltinToolHandlers.CONFIG_SOURCES.has(source)) {
+    return source as 'persona' | 'skill' | 'rule';
+  }
+  return null;
+}
 
 /**
  * 内置工具处理器
@@ -47,17 +67,52 @@ export class BuiltinToolHandlers {
   ];
 
   /**
+   * 配置文件目录名集合——这些目录的内容应通过专用工具创建
+   *
+   * personas/skills/rules 是 SOURCE_LABELS 的映射目录（store.ts SOURCE_TO_DIR），
+   * 通过 create_persona/create_skill/create_rule 工具创建会正确写入 configDir 并触发热重载。
+   * write_file 写入 projectPath/personas/ 只会创建"孤儿文件"——不在配置目录中，不会被加载。
+   */
+  /** 配置目录名（路径拦截用，第一级目录匹配） */
+  static readonly CONFIG_DIRS: ReadonlySet<string> = new Set(['personas', 'skills', 'rules']);
+
+  /**
+   * 配置文件 source 标签（内容特征检测用，frontmatter 中 source 字段值）
+   *
+   * 路径拦截易被绕过（去掉 personas/ 前缀即可），但配置文件 frontmatter 中必然包含
+   * source: persona/skill/rule —— 这是 FileStore.write 写入的结构特征，LLM 无法绕过。
+   */
+  static readonly CONFIG_SOURCES: ReadonlySet<string> = new Set(['persona', 'skill', 'rule']);
+
+  /**
    * @param projectPath 项目根路径（用于相对路径解析）
    * @param security 安全守卫（路径白名单 + 写入确认）
    * @param memoryIndex 记忆索引（用于 search_memories 工具）
    * @param workProjection 作品投影管理器（可选，读取文件时自动生成投影）
+   * @param configDir 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置）
    */
   constructor(
     private readonly projectPath: string,
     private readonly security: SecurityGuard,
     private readonly memoryIndex: IMemoryStorage,
     private readonly workProjection?: WorkProjectionManager,
+    private readonly configDir?: string,
   ) {}
+
+  /**
+   * 生成配置目录路径提示
+   *
+   * 当 configDir 已知时，告知 LLM 正确写入位置（如 C:\Users\SJ\.memora-sprite\config\personas\）；
+   * 未知时回退到通用描述。用于拦截错误消息中，引导 LLM 使用专用工具而非 write_file。
+   */
+  private configPathHint(toolSuffix: string): string {
+    if (this.configDir) {
+      // 计算目标子目录：persona → personas, skill → skills, rule → rules
+      const subDir = `${toolSuffix}s`;
+      return `${this.configDir}/${subDir}/`;
+    }
+    return '配置目录';
+  }
 
   // ─── 路径安全（内置 + 自定义工具共享） ──────────────────────────
 
@@ -215,6 +270,28 @@ export class BuiltinToolHandlers {
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );
+    }
+
+    // 配置目录拦截：personas/skills/rules 目录的内容应通过专用工具创建
+    // 防止 LLM 误用 write_file 创建"孤儿文件"——写入 projectPath/personas/ 而非 configDir/personas/
+    // 检查相对路径的第一级目录（去除前导 ./ / \），不区分大小写
+    const firstSegment = relativePath
+      .replace(/^[/\\]+/, '')
+      .replace(/^\.\//, '')
+      .split(/[/\\]/)[0]
+      ?.toLowerCase();
+    if (firstSegment && BuiltinToolHandlers.CONFIG_DIRS.has(firstSegment)) {
+      // personas → persona, skills → skill, rules → rule（去尾 s 得到工具名后缀）
+      const toolSuffix = firstSegment.replace(/s$/, '');
+      return `错误：${firstSegment}/ 目录下的文件请使用 create_${toolSuffix} 工具创建，不要使用 write_file。create_${toolSuffix} 会正确写入 ${this.configPathHint(toolSuffix)} 并触发热重载。`;
+    }
+
+    // 内容特征检测：检查写入内容是否包含配置文件 frontmatter（source: persona/skill/rule）
+    // 路径拦截易被绕过（去掉 personas/ 前缀即可），但配置文件 frontmatter 中 source 字段
+    // 是 FileStore.write 写入的结构特征，LLM 无法绕过。
+    const configSource = checkForConfigSource(content);
+    if (configSource) {
+      return `错误：写入内容包含 ${configSource} 配置文件的 frontmatter 标记（source: ${configSource}），请使用 create_${configSource} 工具创建，不要使用 write_file。create_${configSource} 会正确写入 ${this.configPathHint(configSource)} 并触发热重载。`;
     }
 
     const absolutePath = this.resolveSafePath(relativePath);

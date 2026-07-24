@@ -170,6 +170,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private chatLockManager: ChatLockManager | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
+  /**
+   * 对话进行中暂存的配置重载请求集合（chatLock 释放后补执行）
+   *
+   * 场景：用户在对话中通过 create_persona / create_skill 工具创建配置，
+   * reloadConfig 因 chatLock 冲突失败时，将 source 暂存于此。
+   * chat() 的 finally 块释放锁后遍历此集合逐个补执行 reloadConfig，
+   * 兑现"对话结束后自动加载"的承诺（见 tools.ts createConfigHandler 提示文案）。
+   *
+   * 用 Set 而非数组：同一 source 多次请求只需补执行一次（去重）。
+   */
+  private pendingConfigReload = new Set<string>();
 
   // ─── 衰减职责已拆分至 MemoryDecayScheduler ──────────
   // metricDecayRunCount / metricTotalDecayedCount / metricLastDecayAt 字段
@@ -426,6 +437,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 若 token 已变（超时释放后被新调用者获取），跳过清理避免误清新调用者的状态
       this.chatLockManager?.release(myToken);
       cleanupExternalSignal();
+      // 补执行对话期间暂存的配置重载请求（chatLock 释放后才能执行 reloadConfig）
+      // 兑现 tools.ts createConfigHandler 中"对话结束后自动加载"的承诺
+      if (this.pendingConfigReload.size > 0) {
+        const pending = Array.from(this.pendingConfigReload);
+        this.pendingConfigReload.clear();
+        for (const src of pending) {
+          try {
+            await this.reloadConfig(src);
+          } catch (err) {
+            logger.warn({ err, source: src }, '补执行配置重载失败');
+          }
+        }
+      }
     }
   }
 
@@ -1041,6 +1065,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async reloadConfig(source?: string): Promise<{ skill: number; persona: number }> {
     this.assertInitialized('reloadConfig');
     if (this.chatLockManager?.isBusy) {
+      // 对话进行中无法热重载：将 source 暂存，待 chat() finally 块释放锁后补执行
+      // source 为 undefined（全量重载）时不暂存——全量重载无具体来源，补执行语义不明
+      if (source) {
+        this.pendingConfigReload.add(source);
+        logger.info({ source }, '对话进行中，配置重载已暂存，将在对话结束后补执行');
+      }
       throw chatBusyError('重载配置');
     }
 
@@ -1173,6 +1203,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清理次要状态字段，防止 re-init 后残留上一会话状态
     this.activeSkill = null;
     this._lastInteractionAt = null;
+    this.pendingConfigReload.clear();
   }
 
   /**

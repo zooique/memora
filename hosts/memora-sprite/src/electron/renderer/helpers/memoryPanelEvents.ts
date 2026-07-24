@@ -54,6 +54,18 @@ const MEMORY_ADD_REQUIRED_FIELDS: ReadonlyArray<{ id: string; label: string }> =
 ];
 
 /**
+ * 添加记忆 source 黑名单
+ *
+ * persona/skill/rule 三种类型有独立的设定模块入口（对话工具 create_persona/
+ * create_skill/create_rule + 设置面板 CRUD），通过"添加记忆"创建会导致：
+ *   1. 只写入 SQLite 不写入配置文件（非持久化，重启后靠 MemoryLoader 扫描）
+ *   2. 不触发 personaWatcher 热重载，UI 不可见
+ *   3. frontmatter 缺少 keywords/description 字段，关键词匹配不生效
+ * 因此在表单校验层直接拒绝，引导用户走设定模块。
+ */
+const BLOCKED_SOURCES: ReadonlySet<string> = new Set(['persona', 'skill', 'rule']);
+
+/**
  * 记忆面板事件初始化所需的上下文
  *
  * 由 MemoryPanelManager 在 initMemoryPanelListeners() 中构建并传入。
@@ -295,6 +307,11 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
     ctx.events.addEventListener(btnAddConfirm, 'click', () => {
       const data = ctx.getAddMemoryFormData();
       if (data) {
+        // source 黑名单校验：persona/skill/rule 走设定模块，不允许通过添加记忆创建
+        if (BLOCKED_SOURCES.has(data.source)) {
+          showFieldError('memory-add-source', `${data.source} 请通过设定模块创建`);
+          return;
+        }
         clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
         ctx.getMemoryAddCallback()?.(data);
       } else {
@@ -313,6 +330,11 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
         e.preventDefault();
         const data = ctx.getAddMemoryFormData();
         if (data) {
+          // source 黑名单校验（与 btnAddConfirm 一致，防止 Ctrl+Enter 绕过）
+          if (BLOCKED_SOURCES.has(data.source)) {
+            showFieldError('memory-add-source', `${data.source} 请通过设定模块创建`);
+            return;
+          }
           clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
           ctx.getMemoryAddCallback()?.(data);
         } else {

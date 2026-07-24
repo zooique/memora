@@ -36,10 +36,12 @@ import {
   setAgentRef,
   createPersonaHandler,
   createSkillHandler,
+  createRuleHandler,
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
   CREATE_PERSONA_TOOL,
   CREATE_SKILL_TOOL,
+  CREATE_RULE_TOOL,
 } from '../../sprite/tools.js';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
@@ -494,7 +496,7 @@ describe('tools', () => {
       expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
     });
 
-    it('仅 name+content 时应成功创建，configContent 等于原始 content', async () => {
+    it('仅 name+content 时应成功创建，content 等于原始 content，metadata 为 undefined', async () => {
       const result = await createPersonaHandler(
         { name: '写作助手', content: '你是一个写作助手' },
         mockCtx,
@@ -506,10 +508,11 @@ describe('tools', () => {
         name: '写作助手',
         content: '你是一个写作助手',
         confidence: 0.95,
+        metadata: undefined,
       });
     });
 
-    it('带 description 时 configContent 应以"描述："前缀拼接', async () => {
+    it('带 description 时 content 保持纯正文，metadata.description 携带描述', async () => {
       await createPersonaHandler(
         { name: '角色A', description: '这是一个描述', content: '正文内容' },
         mockCtx,
@@ -517,12 +520,13 @@ describe('tools', () => {
 
       expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: '描述：这是一个描述\n\n正文内容',
+          content: '正文内容',
+          metadata: { description: '这是一个描述' },
         }),
       );
     });
 
-    it('带 keywords 时 configContent 应以"关键词："前缀拼接', async () => {
+    it('带 keywords 时 content 保持纯正文，metadata.keywords 携带关键词', async () => {
       await createPersonaHandler(
         { name: '角色A', keywords: '写作,编辑', content: '正文内容' },
         mockCtx,
@@ -530,12 +534,13 @@ describe('tools', () => {
 
       expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: '关键词：写作,编辑\n\n正文内容',
+          content: '正文内容',
+          metadata: { keywords: '写作,编辑' },
         }),
       );
     });
 
-    it('同时带 description 和 keywords 时应双层前缀拼接（关键词在最前）', async () => {
+    it('同时带 description 和 keywords 时 metadata 包含两个字段', async () => {
       await createPersonaHandler(
         { name: '角色A', description: '描述内容', keywords: '关键词1,关键词2', content: '正文' },
         mockCtx,
@@ -543,7 +548,8 @@ describe('tools', () => {
 
       expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: '关键词：关键词1,关键词2\n\n描述：描述内容\n\n正文',
+          content: '正文',
+          metadata: { description: '描述内容', keywords: '关键词1,关键词2' },
         }),
       );
     });
@@ -571,11 +577,30 @@ describe('tools', () => {
       expect(result).toBe('错误：创建角色失败：配置文件不可写');
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ err: '配置文件不可写', name: '角色A' }),
-        '创建角色失败',
+        '创建角色失败：配置文件写入异常',
       );
     });
 
-    it('reloadConfig reject 非 Error 值时应返回 String(err) 形式错误消息', async () => {
+    it('reloadConfig 失败时应返回成功消息 + 热重载推迟提示（不掩盖文件已写入的事实）', async () => {
+      mockAgent.reloadConfig.mockRejectedValue(new Error('对话繁忙'));
+
+      const result = await createPersonaHandler(
+        { name: '角色B', content: '内容' },
+        mockCtx,
+      );
+
+      // 文件已成功写入，reloadConfig 失败不应返回错误
+      expect(result).toContain('创建成功');
+      expect(result).toContain('对话进行中');
+      expect(result).toContain('重启后生效');
+      // 日志级别为 info（不是 warn），因为文件已写入，只是热重载推迟
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ err: '对话繁忙', name: '角色B', type: 'persona' }),
+        '角色文件已写入，热重载推迟（对话进行中）',
+      );
+    });
+
+    it('reloadConfig reject 非 Error 值时同样返回成功消息', async () => {
       mockAgent.reloadConfig.mockRejectedValue('重载失败');
 
       const result = await createPersonaHandler(
@@ -583,12 +608,9 @@ describe('tools', () => {
         mockCtx,
       );
 
-      // err instanceof Error === false → String(err) 分支
-      expect(result).toBe('错误：创建角色失败：重载失败');
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ err: '重载失败', name: '角色B' }),
-        '创建角色失败',
-      );
+      // err instanceof Error === false → toError(err).message = '重载失败'
+      expect(result).toContain('创建成功');
+      expect(result).toContain('对话进行中');
     });
   });
 
@@ -620,6 +642,7 @@ describe('tools', () => {
         name: '去AI味',
         content: '执行去AI味处理',
         confidence: 0.95,
+        metadata: undefined,
       });
       expect(mockAgent.reloadConfig).toHaveBeenCalledWith('skill');
     });
@@ -646,14 +669,80 @@ describe('tools', () => {
       expect(result).toBe('错误：创建技能失败：磁盘已满');
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ err: '磁盘已满', name: '技能A' }),
-        '创建技能失败',
+        '创建技能失败：配置文件写入异常',
       );
     });
   });
 
-  // ─── 10. 角色/技能工具定义常量 ─────────────────────────
+  // ─── 9b. createRuleHandler ──────────────────────────
 
-  describe('角色/技能工具定义常量', () => {
+  describe('createRuleHandler', () => {
+    let mockAgent: ReturnType<typeof createMockAgent>;
+
+    beforeEach(() => {
+      mockAgent = createMockAgent();
+      setAgentRef(mockAgent);
+    });
+
+    it('name 为空时应返回"错误：规则名称不能为空"', async () => {
+      const result = await createRuleHandler({ name: '', content: '内容' }, mockCtx);
+      expect(result).toBe('错误：规则名称不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('content 为空时应返回"错误：规则内容不能为空"', async () => {
+      const result = await createRuleHandler({ name: '规则', content: '' }, mockCtx);
+      expect(result).toBe('错误：规则内容不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('成功时应调用 confirmConfigSuggestion(type="rule") + reloadConfig("rule")', async () => {
+      const result = await createRuleHandler(
+        { name: '代码风格', content: '使用 TypeScript strict 模式' },
+        mockCtx,
+      );
+
+      expect(result).toContain('创建成功');
+      expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith({
+        type: 'rule',
+        name: '代码风格',
+        content: '使用 TypeScript strict 模式',
+        confidence: 0.95,
+        metadata: undefined,
+      });
+      // rule 类型 reloadConfig 是 no-op（agent.ts 内部跳过），但仍会被调用
+      expect(mockAgent.reloadConfig).toHaveBeenCalledWith('rule');
+    });
+
+    it('成功消息应包含"规则"标签和名称', async () => {
+      const result = await createRuleHandler(
+        { name: '回复格式', description: '控制回复格式', content: '回复用中文', keywords: '格式' },
+        mockCtx,
+      );
+
+      expect(result).toContain('规则 "回复格式" 创建成功');
+      expect(result).toContain('描述：控制回复格式');
+    });
+
+    it('confirmConfigSuggestion 抛异常时应返回"错误：创建规则失败：..."', async () => {
+      mockAgent.config.confirmConfigSuggestion.mockRejectedValue(new Error('权限不足'));
+
+      const result = await createRuleHandler(
+        { name: '规则A', content: '内容' },
+        mockCtx,
+      );
+
+      expect(result).toBe('错误：创建规则失败：权限不足');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: '权限不足', name: '规则A' }),
+        '创建规则失败：配置文件写入异常',
+      );
+    });
+  });
+
+  // ─── 10. 角色/技能/规则工具定义常量 ─────────────────────────
+
+  describe('角色/技能/规则工具定义常量', () => {
     it('CREATE_PERSONA_TOOL：name="create_persona"，required 含 name+content', () => {
       expect(CREATE_PERSONA_TOOL.name).toBe('create_persona');
       expect(CREATE_PERSONA_TOOL.description).toBeTruthy();
@@ -682,6 +771,24 @@ describe('tools', () => {
 
     it('CREATE_SKILL_TOOL：parameters 含 name/description/content/keywords 四个属性', () => {
       const props = CREATE_SKILL_TOOL.parameters.properties;
+      expect(props).toHaveProperty('name');
+      expect(props).toHaveProperty('description');
+      expect(props).toHaveProperty('content');
+      expect(props).toHaveProperty('keywords');
+      expect(props.name!.type).toBe('string');
+      expect(props.content!.type).toBe('string');
+    });
+
+    it('CREATE_RULE_TOOL：name="create_rule"，required 含 name+content', () => {
+      expect(CREATE_RULE_TOOL.name).toBe('create_rule');
+      expect(CREATE_RULE_TOOL.description).toBeTruthy();
+      expect(CREATE_RULE_TOOL.parameters.type).toBe('object');
+      expect(CREATE_RULE_TOOL.parameters.required).toContain('name');
+      expect(CREATE_RULE_TOOL.parameters.required).toContain('content');
+    });
+
+    it('CREATE_RULE_TOOL：parameters 含 name/description/content/keywords 四个属性', () => {
+      const props = CREATE_RULE_TOOL.parameters.properties;
       expect(props).toHaveProperty('name');
       expect(props).toHaveProperty('description');
       expect(props).toHaveProperty('content');

@@ -8,11 +8,11 @@
  * 设计原则：
  *   - 纯函数 + 只读映射表，无副作用
  *   - 未知工具降级为原值（不破坏显示）
- *   - 内核 4 个内置工具 + sprite 4 个自定义工具，共 8 项
+ *   内核 4 个内置工具 + sprite 5 个自定义工具，共 9 项
  *
  * 来源：
  *   - 内核工具：memora/src/agent/builtinTools.ts（read_file/write_file/list_dir/search_memories）
- *   - 精灵工具：memora-sprite/src/sprite/tools.ts（web_search/memory_search/create_persona/create_skill）
+ *   - 精灵工具：memora-sprite/src/sprite/tools.ts（web_search/memory_search/create_persona/create_skill/create_rule）
  */
 
 /**
@@ -32,6 +32,7 @@ const TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   memory_search: '记忆搜索',
   create_persona: '创建角色',
   create_skill: '创建技能',
+  create_rule: '创建规则',
 };
 
 /**

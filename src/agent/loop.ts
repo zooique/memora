@@ -841,6 +841,13 @@ export class AgentLoop {
         })
         .join('\n');
       prompt += `\n\n## 可用工具\n\n你可以通过 tool_call 调用以下工具：\n${toolDescs}`;
+
+      // 工具选择规则：肯定式引导，放在工具描述之后作为 LLM 选工具时的决策依据
+      prompt += `\n\n## 工具选择规则（必须遵守）\n\n`
+        + `- 创建/修改角色（Persona）→ 必须使用 create_persona，禁止使用 write_file\n`
+        + `- 创建/修改技能（Skill）→ 必须使用 create_skill，禁止使用 write_file\n`
+        + `- 创建/修改规则（Rule）→ 必须使用 create_rule，禁止使用 write_file\n`
+        + `- 以上三种配置文件的任何操作，永远不要使用 write_file 工具`;
     }
 
     return prompt;

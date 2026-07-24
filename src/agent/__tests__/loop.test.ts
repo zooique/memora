@@ -108,6 +108,63 @@ describe('AgentLoop · 构造函数', () => {
   });
 });
 
+describe('AgentLoop · refreshToolDefinitions', () => {
+  it('初始 system prompt 应包含构造时传入的工具', () => {
+    const customTool = {
+      name: 'initial_tool',
+      description: '初始工具',
+      parameters: { type: 'object' as const, properties: {}, required: [] },
+    };
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [customTool],
+    });
+    expect(loop.getMessages()[0]!.content).toContain('initial_tool');
+  });
+
+  it('refreshToolDefinitions 后 system prompt 应包含新工具', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [],
+    });
+    // 初始无工具描述
+    expect(loop.getMessages()[0]!.content).not.toContain('new_custom_tool');
+
+    // 刷新后应包含
+    const newTool = {
+      name: 'new_custom_tool',
+      description: '新增的自定义工具',
+      parameters: { type: 'object' as const, properties: {}, required: [] },
+    };
+    loop.refreshToolDefinitions([newTool]);
+    expect(loop.getMessages()[0]!.content).toContain('new_custom_tool');
+  });
+
+  it('refreshToolDefinitions 后 system prompt 应包含工具选择规则', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [],
+    });
+    const tools = [
+      {
+        name: 'create_rule',
+        description: '创建规则',
+        parameters: { type: 'object' as const, properties: {}, required: [] },
+      },
+    ];
+    loop.refreshToolDefinitions(tools);
+    const prompt = loop.getMessages()[0]!.content;
+    expect(prompt).toContain('工具选择规则');
+    expect(prompt).toContain('create_rule');
+  });
+});
+
 describe('AgentLoop · processUserInput 纯文本流式输出', () => {
   it('应该流式 yield LLM 返回的文本块', async () => {
     const loop = new AgentLoop({

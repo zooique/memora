@@ -31,16 +31,18 @@ import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
 import { SpriteError, ErrorCode } from './sprite/errors.js';
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
-// 宿主自定义工具（web_search + memory_search + create_persona + create_skill）
+// 宿主自定义工具（web_search + memory_search + create_persona + create_skill + create_rule）
 import {
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
   CREATE_PERSONA_TOOL,
   CREATE_SKILL_TOOL,
+  CREATE_RULE_TOOL,
   webSearchHandler,
   memorySearchHandler,
   createPersonaHandler,
   createSkillHandler,
+  createRuleHandler,
   setMemorySearcher,
   setAgentRef,
 } from './sprite/tools.js';
@@ -598,6 +600,7 @@ async function setupAgentPostInit(
     agent.tools.registerTool(MEMORY_SEARCH_TOOL, memorySearchHandler);
     agent.tools.registerTool(CREATE_PERSONA_TOOL, createPersonaHandler);
     agent.tools.registerTool(CREATE_SKILL_TOOL, createSkillHandler);
+    agent.tools.registerTool(CREATE_RULE_TOOL, createRuleHandler);
 
     if (agent.config) {
       setAgentRef({

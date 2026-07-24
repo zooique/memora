@@ -1802,6 +1802,60 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
     (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
+
+  it('对话繁忙时 reloadConfig(persona/skill) 应暂存到 pendingConfigReload', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 模拟对话繁忙
+    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    lock._chatBusy = true;
+    await expect(agent.reloadConfig('persona')).rejects.toThrow(/对话繁忙/);
+    await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
+    // 两个 source 均应暂存
+    expect(agent['pendingConfigReload'].has('persona')).toBe(true);
+    expect(agent['pendingConfigReload'].has('skill')).toBe(true);
+    lock._chatBusy = false;
+  });
+
+  it('对话繁忙时 reloadConfig() 无参数不暂存（全量重载无具体来源）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    lock._chatBusy = true;
+    await expect(agent.reloadConfig()).rejects.toThrow(/对话繁忙/);
+    expect(agent['pendingConfigReload'].size).toBe(0);
+    lock._chatBusy = false;
+  });
+
+  it('对话繁忙时 reloadConfig(rule) 仍暂存（虽 rule 重载为 no-op，但补执行语义一致）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    lock._chatBusy = true;
+    await expect(agent.reloadConfig('rule')).rejects.toThrow(/对话繁忙/);
+    // rule 在 chatLock busy 阶段被暂存（补执行时 reloadConfig('rule') 会 no-op 返回）
+    expect(agent['pendingConfigReload'].has('rule')).toBe(true);
+    lock._chatBusy = false;
+  });
+
+  it('close() 应清空 pendingConfigReload（防止 re-init 残留）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 暂存一个请求
+    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    lock._chatBusy = true;
+    await expect(agent.reloadConfig('persona')).rejects.toThrow(/对话繁忙/);
+    expect(agent['pendingConfigReload'].size).toBe(1);
+    lock._chatBusy = false;
+
+    await agent.close();
+    expect(agent['pendingConfigReload'].size).toBe(0);
+    agent = null; // 阻止 afterEach 重复 close
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
