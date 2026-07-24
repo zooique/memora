@@ -175,13 +175,11 @@ async function withTimeout<T>(target: Promise<T>, ms: number): Promise<{ ok: tru
  *
  * 支持的输入元素：HTMLInputElement（浮窗）| HTMLTextAreaElement（主输入框）
  *
- * 键盘交互约定（三键分工）：
+ * 键盘交互约定（本类处理的键）：
  *   - ↓↑：导航候选项（本类处理，循环选择；折叠态不拦截，恢复光标移动语义）
  *   - ←→：填充选中项到输入框（本类处理，仅导航后拦截）
- *   - Tab：提交/确认补全（本类不处理，由宿主自行实现）
- *         · 浮窗场景：Tab = 提交输入内容（quickInput.ts handleTab）
- *         · 主输入框场景：Tab = 确认补全文本（inputAreaManager.ts 自行处理）
- *   宿主需根据使用场景自行绑定 Tab 键行为，本类仅处理 ↓↑←→。
+ *   本类仅处理 ↓↑←→；Tab 由宿主实现——
+ *   · 浮窗场景：Tab = 提交输入内容（quickInput.ts handleTab），主窗口不使用 Tab 提交补全。
  *
  * 折叠开关（enableCollapse() 开启后）：
  *   - 候选列表顶部「收起候选」行 / 折叠态胶囊，均为原生 <button>，
@@ -1092,6 +1090,29 @@ export class QuickInputCompletion {
       this.listEl.dataset.footer = 'true';
     } else {
       delete this.listEl.dataset.footer;
+    }
+
+    // 交互提示 footer：补全二键契约（↓↑ 选择 / ←→ 填充 ）无原生可发现性，
+    // 主对话常驻一行降低新用户学习成本。门控于 collapseEnabled（与折叠特性同源，quick-input 浮窗不显示）。
+    // 纯静态文本、无用户输入，使用 createElement + textContent 防止 XSS。
+    if (this.collapseEnabled) {
+      const hint = document.createElement('li');
+      hint.className = 'completion-hint';
+      hint.setAttribute('aria-hidden', 'true');
+      const hintParts: Array<[string, string]> = [
+        ['↓↑', '选择'],
+        ['←→', '填充']
+      ];
+      hintParts.forEach(([key, desc], idx) => {
+        if (idx > 0) hint.appendChild(document.createTextNode(' · '));
+        const kbd = document.createElement('kbd');
+        kbd.className = 'completion-kbd';
+        kbd.textContent = key;
+        hint.appendChild(kbd);
+        hint.appendChild(document.createTextNode(` ${desc}`));
+      });
+      hint.appendChild(document.createTextNode(' · 点「收起候选」看对话'));
+      this.listEl.appendChild(hint);
     }
 
     // 显示列表（复用 showListContainer，枝叶层 2 次提取）

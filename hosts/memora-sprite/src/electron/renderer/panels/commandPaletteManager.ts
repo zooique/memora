@@ -21,7 +21,7 @@ import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
-import { clearElement, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
+import { clearElement, escapeHtml, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
 // escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
 import { escapeRegExp } from '../../../shared/escapeRegExp.js';
 
@@ -613,7 +613,7 @@ export class CommandPaletteManager {
       item.setAttribute('data-index', String(i));
       item.innerHTML = `
         <span class="command-palette-label">${this.highlightMatch(command.label)}</span>
-        ${command.shortcut ? `<kbd class="command-palette-shortcut flex-shrink-0">${command.shortcut}</kbd>` : ''}
+        ${command.shortcut ? `<kbd class="command-palette-shortcut flex-shrink-0">${escapeHtml(command.shortcut)}</kbd>` : ''}
       `;
 
       // 点击执行（使用 EventTracker 统一管理，避免内存泄漏）
@@ -631,8 +631,11 @@ export class CommandPaletteManager {
     const query = this.inputEl.value.trim();
     if (!query) return text;
 
+    // 先转义候选文本，防止命令名/快捷键含特殊字符时被解析为 HTML
+    // （与 memoryPanelManager.highlightText / searchMessagesManager.highlightKeyword 保持一致，消除 XSS 防御约定不一致）
+    const escaped = escapeHtml(text);
     const terms = query.split(/\s+/).filter(Boolean);
-    let result = text;
+    let result = escaped;
     for (const term of terms) {
       const regex = new RegExp(`(${escapeRegExp(term)})`, 'gi');
       result = result.replace(regex, '<mark>$1</mark>');

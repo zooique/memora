@@ -256,6 +256,32 @@
   transform: rotate(180deg);
 }
 
+/* 交互提示 footer（新枝破土）：补全三键契约（↓↑/→/Tab）无原生可发现性，
+   常驻一行降低新用户学习成本；门控于主对话（collapseEnabled），与折叠特性同源 */
+.chat-completion-list .completion-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-1-5);
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--surface0);
+  color: var(--text-3);
+  font-size: var(--font-xs);
+  line-height: var(--space-3);
+  user-select: none;
+}
+
+.chat-completion-list .completion-kbd {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--surface0);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  line-height: calc(var(--space-3) - 2px);
+  color: var(--text-2);
+}
+
 /* 补全列表出现动画 */
 @keyframes chat-completion-in {
   from {

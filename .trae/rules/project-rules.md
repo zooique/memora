@@ -1,5 +1,5 @@
 ---
-alwaysApply: true
+alwaysApply: false
 description: Memora 项目总则、技术栈清单、目录结构
 date: 2026-07-21
 ---

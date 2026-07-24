@@ -89,7 +89,7 @@ date: 2026-06-02
 | 文件 | CSP 严格度 | 说明 |
 |------|-----------|------|
 | `renderer/index.html` | **严格**（`style-src 'self'`） | Web/Electron 共用入口，必须 CSP 兼容 |
-| `float.html` | 宽松（CSP 含 `'unsafe-inline'`） | 独立悬浮窗，内联样式可保留 |
+| `float.html` | 严格（`style-src 'self'`，与 `index.html` 一致） | 悬浮窗内联样式已全部外置为外部 stylesheet，2026-07 起收紧，不再保留 `'unsafe-inline'`（见 ADR-006 §7 修正记录） |
 | 主进程注入的脚本 | 不受 CSP meta 限制 | 通过 `executeJavaScript` 注入视为可信源 |
 
 ### 7.3 替代模式

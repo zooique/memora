@@ -1,5 +1,5 @@
 ---
-alwaysApply: true
+alwaysApply: false
 description: 资深程序员心智模型（Bug 修复 + 逻辑大师设计思维）
 date: 2026-07-22
 ---
