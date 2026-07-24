@@ -115,6 +115,8 @@ export class SettingsPanelManager {
   private cfgShortcutQuickRecord: HTMLInputElement | null;
   /** 召回记忆快捷键（捕获式输入） */
   private cfgShortcutRecallMemory: HTMLInputElement | null;
+  /** 快速输入浮窗快捷键（捕获式输入，对应 quick-input 全局快捷键） */
+  private cfgShortcutQuickInput: HTMLInputElement | null;
 
   // ─── 设置面板 DOM 元素 - 多 Provider 管理 ─────────────
   private providerListEl: HTMLElement | null;
@@ -196,6 +198,7 @@ export class SettingsPanelManager {
     this.cfgShortcutToggleWindow = getOptionalElement('cfg-shortcut-toggle-window', 'input');
     this.cfgShortcutQuickRecord = getOptionalElement('cfg-shortcut-quick-record', 'input');
     this.cfgShortcutRecallMemory = getOptionalElement('cfg-shortcut-recall-memory', 'input');
+    this.cfgShortcutQuickInput = getOptionalElement('cfg-shortcut-quick-input', 'input');
 
     // 缓存 radio 按钮组（loadConfigToForm / collectConfigFromForm / initListeners 中重复查询）
     this.projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
@@ -258,6 +261,7 @@ export class SettingsPanelManager {
       ['cfgShortcutToggleWindow', this.cfgShortcutToggleWindow, 'cfg-shortcut-toggle-window'],
       ['cfgShortcutQuickRecord', this.cfgShortcutQuickRecord, 'cfg-shortcut-quick-record'],
       ['cfgShortcutRecallMemory', this.cfgShortcutRecallMemory, 'cfg-shortcut-recall-memory'],
+      ['cfgShortcutQuickInput', this.cfgShortcutQuickInput, 'cfg-shortcut-quick-input'],
     ];
     // 收集缺失字段
     const missing = fields.filter(([, el]) => el === null).map(([name, , id]) => `${name} (#${id})`);
@@ -367,6 +371,7 @@ export class SettingsPanelManager {
                 'toggle-window': 'Ctrl+Shift+Space',
                 'quick-record': 'Ctrl+Shift+M',
                 'recall-memory': 'Ctrl+Shift+R',
+                'quick-input': 'Ctrl+Shift+C',
               },
             },
           });
@@ -442,7 +447,7 @@ export class SettingsPanelManager {
       });
     });
 
-    // Phase 3.3：初始化快捷键捕获式输入（三个动作 + 冲突检测）
+    // Phase 3.3：初始化快捷键捕获式输入（四个动作 + 冲突检测）
     this.initShortcutCapture();
 
     // 多 Provider 管理：事件监听器 + 初始加载列表
@@ -530,6 +535,7 @@ export class SettingsPanelManager {
       { input: this.cfgShortcutToggleWindow, action: 'toggle-window' },
       { input: this.cfgShortcutQuickRecord, action: 'quick-record' },
       { input: this.cfgShortcutRecallMemory, action: 'recall-memory' },
+      { input: this.cfgShortcutQuickInput, action: 'quick-input' },
     ].filter((b): b is ShortcutInputBinding => b.input !== null);
 
     return {
@@ -799,7 +805,7 @@ export class SettingsPanelManager {
       }
       // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
 
-      // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
+      // Phase 3.3 快捷键配置（总开关 + 四个动作的 accelerator）
       if (this.cfgShortcutsEnabled) {
         this.cfgShortcutsEnabled.checked = config.shortcuts.enabled;
       }
@@ -811,6 +817,9 @@ export class SettingsPanelManager {
       }
       if (this.cfgShortcutRecallMemory) {
         this.cfgShortcutRecallMemory.value = config.shortcuts.accelerators['recall-memory'] ?? '';
+      }
+      if (this.cfgShortcutQuickInput) {
+        this.cfgShortcutQuickInput.value = config.shortcuts.accelerators['quick-input'] ?? '';
       }
     } finally {
       this.isLoadingConfig = false;
@@ -873,13 +882,14 @@ export class SettingsPanelManager {
       focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
       // 使用统计开关（隐私合规，默认关闭）
       usageStatsEnabled: this.cfgUsageStats?.checked ?? false,
-      // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
+      // Phase 3.3 快捷键配置（总开关 + 四个动作的 accelerator）
       shortcuts: {
         enabled: this.cfgShortcutsEnabled?.checked ?? true,
         accelerators: {
           'toggle-window': this.cfgShortcutToggleWindow?.value.trim() ?? '',
           'quick-record': this.cfgShortcutQuickRecord?.value.trim() ?? '',
           'recall-memory': this.cfgShortcutRecallMemory?.value.trim() ?? '',
+          'quick-input': this.cfgShortcutQuickInput?.value.trim() ?? '',
         },
       },
     };

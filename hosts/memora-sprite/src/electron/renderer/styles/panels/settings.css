@@ -158,44 +158,6 @@
   margin-bottom: var(--space-3);
 }
 
-/* UX-0713-8：可折叠设置组（details/summary 结构，复用 h3 视觉风格） */
-.settings-group-collapsible > summary {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  margin-bottom: var(--space-3);
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-  position: relative;
-  padding-left: var(--space-4);
-  transition: color var(--transition-fast);
-}
-.settings-group-collapsible > summary:hover {
-  color: var(--text-2);
-}
-/* 展开/收起指示器（三角形旋转动画） */
-.settings-group-collapsible > summary::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%) rotate(0deg);
-  width: 0;
-  height: 0;
-  border-left: 5px solid var(--text-3);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: transform var(--transition-fast);
-}
-.settings-group-collapsible[open] > summary::before {
-  transform: translateY(-50%) rotate(90deg);
-}
-/* 折叠状态下隐藏内容区 margin，展开时恢复 */
-.settings-group-collapsible:not([open]) > *:not(summary) {
-  display: none;
-}
-
 /* settings-row：对齐 demo 左右布局（label 最小宽度 140px，长标签自适应扩展） */
 .settings-row {
   display: flex;

@@ -96,6 +96,18 @@ function makeFormConfig(overrides: Partial<SpriteConfigForm> = {}): SpriteConfig
     defaultPersona: '',
     projectMode: 'smart',
     focusProjectPath: '',
+    // 快捷键配置（含 4 个动作 accelerator，与 shortcutDefaults 保持一致）
+    shortcuts: {
+      enabled: true,
+      accelerators: {
+        'toggle-window': 'Ctrl+Shift+Space',
+        'quick-record': 'Ctrl+Shift+M',
+        'recall-memory': 'Ctrl+Shift+R',
+        'quick-input': 'Ctrl+Shift+C',
+      },
+    },
+    // 隐私合规：使用统计开关
+    usageStatsEnabled: false,
     ...overrides,
   } as SpriteConfigForm;
 }
@@ -135,11 +147,14 @@ describe('settingsController', () => {
 
     const api = (globalThis as { window: { electronAPI: { updateConfigBatch: { mock: { calls: unknown[][] } } } } }).window.electronAPI.updateConfigBatch;
     expect(api.mock.calls).toHaveLength(1);
-    // defaultPersona 改由精灵设定面板独立持久化后，updateConfigBatch 字段数从 11 降至 10
+    // 字段数演进：defaultPersona 独立持久化后降至 10，shortcuts + usageStatsEnabled 纳入后升至 12
     const updates = api.mock.calls[0]![0] as Record<string, unknown>;
-    expect(Object.keys(updates)).toHaveLength(10);
+    expect(Object.keys(updates)).toHaveLength(12);
     expect(updates.silentMode).toBe(false);
     expect(updates.projectMode).toBe('smart');
+    // 快捷键配置透传（修复"修改后变默认值"bug 的关键断言）
+    expect(updates.shortcuts).toBeDefined();
+    expect(updates.usageStatsEnabled).toBe(false);
 
     const showToast = uiManager.showToast as unknown as { mock: { calls: unknown[][] } };
     expect(showToast.mock.calls[0]).toEqual(['精灵配置已保存', 'success']);

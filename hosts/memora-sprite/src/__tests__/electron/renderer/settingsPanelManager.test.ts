@@ -75,6 +75,7 @@ const SETTINGS_HTML = `
     <input id="cfg-shortcut-toggle-window" type="text" />
     <input id="cfg-shortcut-quick-record" type="text" />
     <input id="cfg-shortcut-recall-memory" type="text" />
+    <input id="cfg-shortcut-quick-input" type="text" />
 
     <!-- 按钮 -->
     <button id="btn-settings-reset">恢复默认</button>
@@ -467,6 +468,7 @@ describe('loadConfigToForm + collectConfigFromForm', () => {
           'toggle-window': 'Ctrl+Shift+Space',
           'quick-record': 'Ctrl+Shift+M',
           'recall-memory': 'Ctrl+Shift+R',
+          'quick-input': 'Ctrl+Shift+C',
         },
       },
     };
@@ -509,6 +511,7 @@ describe('loadConfigToForm + collectConfigFromForm', () => {
           'toggle-window': 'Ctrl+Shift+Space',
           'quick-record': 'Ctrl+Shift+M',
           'recall-memory': 'Ctrl+Shift+R',
+          'quick-input': 'Ctrl+Shift+C',
         },
       },
     });

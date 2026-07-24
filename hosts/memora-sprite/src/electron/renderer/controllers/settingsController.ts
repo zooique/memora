@@ -69,6 +69,11 @@ export function createSettingsController(uiManager: UIManager) {
           // 项目模式：路径与模式在同一事务内更新，避免中间态
           focusProjectPath: config.focusProjectPath,
           projectMode: config.projectMode,
+          // 快捷键配置：捕获式输入修改后纳入批量更新，主进程副作用热更新全局快捷键
+          // （applyConfigSideEffects 检测到 shortcuts 变更会调用 shortcutManager.setConfig）
+          shortcuts: config.shortcuts,
+          // 使用统计开关：隐私合规字段，设置面板修改后纳入批量更新持久化
+          usageStatsEnabled: config.usageStatsEnabled,
         });
 
         if (!result.updated) {

@@ -869,9 +869,9 @@
               <input type="number" id="cfg-interval" min="1" max="1440" value="60" />
             </div>
           </div>
-          <!-- 文件监听折叠为 details 默认收起（降低精灵 tab 信息密度） -->
-          <details class="settings-group settings-group-collapsible">
-            <summary class="settings-group-summary">文件监听</summary>
+          <!-- 文件监听（平铺展示，不再折叠） -->
+          <div class="settings-group">
+            <h3>文件监听</h3>
             <div class="settings-row">
               <label for="cfg-watcher-enabled">启用文件监听</label>
               <input type="checkbox" id="cfg-watcher-enabled" />
@@ -888,10 +888,10 @@
               <label for="cfg-watcher-ignore">忽略模式（逗号分隔 glob）</label>
               <input type="text" id="cfg-watcher-ignore" placeholder="**/node_modules/**, **/.git/**" autocomplete="off" />
             </div>
-          </details>
-          <!-- 快捷键折叠为 details 默认收起（降低精灵 tab 信息密度） -->
-          <details class="settings-group settings-group-collapsible">
-            <summary class="settings-group-summary">快捷键</summary>
+          </div>
+          <!-- 快捷键（平铺展示，不再折叠） -->
+          <div class="settings-group">
+            <h3>快捷键</h3>
             <div class="settings-row">
               <label for="cfg-shortcuts-enabled">启用全局快捷键</label>
               <input type="checkbox" id="cfg-shortcuts-enabled" />
@@ -908,8 +908,12 @@
               <label for="cfg-shortcut-recall-memory">召回记忆</label>
               <input type="text" id="cfg-shortcut-recall-memory" class="shortcut-input" readonly placeholder="点击捕获组合键" aria-label="召回记忆的快捷键，点击后按下组合键捕获" aria-describedby="cfg-shortcut-hint" />
             </div>
+            <div class="settings-row">
+              <label for="cfg-shortcut-quick-input">快速输入浮窗</label>
+              <input type="text" id="cfg-shortcut-quick-input" class="shortcut-input" readonly placeholder="点击捕获组合键" aria-label="快速输入浮窗的快捷键，点击后按下组合键捕获" aria-describedby="cfg-shortcut-hint" />
+            </div>
             <span id="cfg-shortcut-hint" class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
-          </details>
+          </div>
           <!-- 隐私与数据分区 -->
           <div class="settings-group">
             <h3>隐私与数据</h3>
