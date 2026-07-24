@@ -173,7 +173,7 @@ html, body {
 
 .error-state .error-icon {
   font-size: var(--font-2xl);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .error-state .error-message {
@@ -185,7 +185,7 @@ html, body {
 /* .error-retry-btn 复用 .btn-secondary 样式（modal.css），消除重复定义 */
 /* 保留 .error-retry-btn 类名作为语义别名，HTML 中同时添加 .btn-secondary 类即可 */
 .error-state .error-retry-btn {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* ─── UI-AE-02 prefers-reduced-motion ──────────────────────────── */
@@ -358,7 +358,7 @@ button:active,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
+  padding: 48px var(--space-6);
   text-align: center;
   color: var(--muted);
 }
@@ -366,7 +366,7 @@ button:active,
 .empty-state .empty-icon {
   width: 48px;
   height: 48px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
   opacity: 0.5;
 }
 
@@ -374,7 +374,7 @@ button:active,
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-2);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* ─── UI 初始化失败错误卡片 ──────────────────────────────────── */
@@ -390,7 +390,7 @@ button:active,
   max-width: 560px;
   width: 90%;
   /* 内边距：28px 无对应令牌（--space-7 不存在），降级为 --space-6(24px) 保持一致性 */
-  padding: var(--space-6, 24px) var(--space-6, 24px);
+  padding: var(--space-6, var(--space-6)) var(--space-6, var(--space-6));
   /* 背景/边框复用 --red-10/--red（语义红色，双主题自动适配） */
   background: var(--red-10, #fef2f2);
   border: 1px solid var(--red, #dc2626);
@@ -408,17 +408,17 @@ button:active,
 
 /* 标题：复用 --red 语义红色，字号对齐 --font-h1（18px） */
 .ui-init-failure-card .ui-init-failure-title {
-  margin: 0 0 var(--space-3, 12px) 0;
+  margin: 0 0 var(--space-3, var(--space-3)) 0;
   font-size: var(--font-h1, 18px);
   color: var(--red, #991b1b);
 }
 
 /* 错误信息：等宽字体 + 红色半透明背景，与卡片背景层次区分 */
 .ui-init-failure-card .ui-init-failure-msg {
-  margin: 0 0 var(--space-4, 16px) 0;
+  margin: 0 0 var(--space-4, var(--space-4)) 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   background: var(--red-20, #fee2e2);
-  padding: var(--space-2, 8px) var(--space-3, 12px);
+  padding: var(--space-2, var(--space-2)) var(--space-3, var(--space-3));
   border-radius: var(--radius-xs, 4px);
   word-break: break-all;
 }

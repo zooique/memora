@@ -185,7 +185,7 @@
 
 /* ─── 感知面板分节（紧凑布局，仪表盘面板复用） ──── */
 .perception-section {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .perception-section:last-child {
@@ -230,7 +230,7 @@
   background: var(--surface1);
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 .presence-dot {

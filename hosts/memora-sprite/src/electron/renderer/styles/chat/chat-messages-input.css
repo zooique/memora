@@ -163,7 +163,7 @@
   font-size: var(--font-xs);
   color: var(--accent);
   background: var(--accent-10);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
   font-weight: var(--weight-medium);
@@ -648,7 +648,7 @@
   gap: var(--space-1-5);
   width: 100%;
   max-width: 480px;
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
 }
 
 /* 示例问题按钮：胶囊式，对齐 demo */
@@ -708,7 +708,7 @@
 .chat-empty-state .empty-feature-hint kbd {
   background: var(--surface1);
   border-color: var(--border);
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   font-size: var(--font-2xs);
 }
 

@@ -198,7 +198,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .suggestion-card-icon {
@@ -234,7 +234,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* 建议内容 */
@@ -242,7 +242,7 @@
   font-size: var(--font-sm);
   color: var(--text-2);
   line-height: 1.5;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2-5);
   /* 限制 3 行，超出省略 */
   display: -webkit-box;
   -webkit-line-clamp: 3;

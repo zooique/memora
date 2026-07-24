@@ -37,7 +37,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2-5);
 }
 
 .health-title {
@@ -117,7 +117,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2-5);
 }
 
 .health-metric {
@@ -171,7 +171,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 .health-detail-item {
@@ -213,7 +213,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1-5);
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .health-action-btn {
@@ -317,7 +317,7 @@
 }
 
 .health-llm-result {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   font-size: var(--font-xs);
   color: var(--text-2);
   line-height: 1.5;
@@ -328,7 +328,7 @@
 .llm-result-summary {
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* 空结果提示（无需降级/未发现冲突） */

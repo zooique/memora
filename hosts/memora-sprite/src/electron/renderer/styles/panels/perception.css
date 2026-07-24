@@ -428,7 +428,7 @@
   font-size: var(--font-2xs);
   font-style: italic;
   color: var(--muted);
-  padding-left: 6px;
+  padding-left: var(--space-1-5);
   border-left: 2px solid var(--surface2);
 }
 
@@ -436,7 +436,7 @@
   /* 相关记忆跳转按钮：内联 flex + 顶部间距 + 边框圆角 */
   display: inline-flex;
   align-items: center;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   padding: 2px var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

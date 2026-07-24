@@ -393,7 +393,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   display: flex;
   align-items: center;
   gap: var(--space-1-5);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
   font-size: var(--font-sm);
   color: var(--subtext);
 }
@@ -440,7 +440,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--gap-compact);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 /* 单张卡片：label 上 + value 下，垂直居中 */

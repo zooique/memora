@@ -58,7 +58,7 @@
 .dash-sub-value {
   font-size: var(--font-2xs);
   color: var(--muted);
-  margin-left: 8px;
+  margin-left: var(--space-2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -96,7 +96,7 @@
   font-weight: var(--weight-semibold);
   color: var(--white);
   background: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
   transition: background var(--transition-xl) ease;
 }
 
@@ -241,7 +241,7 @@
   z-index: var(--z-popover);
   max-height: 240px;
   overflow-y: auto;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .dropdown-item {

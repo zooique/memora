@@ -25,11 +25,11 @@
 }
 
 .date-separator::before {
-  margin-right: 12px;
+  margin-right: var(--space-3);
 }
 
 .date-separator::after {
-  margin-left: 12px;
+  margin-left: var(--space-3);
 }
 
 /* ─── Phase 1：消息分组容器 ──────────────────────────────── */
@@ -221,7 +221,7 @@
 .message .meta {
   font-size: var(--font-2xs);
   opacity: 0.6;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .message.streaming .message-bubble {
@@ -240,7 +240,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  margin-top: 4px;
+  margin-top: var(--space-1);
   padding: 0 var(--space-1);
   opacity: 0.55;
   transition: opacity var(--transition-fast);
@@ -349,8 +349,8 @@
 .archive-inline-feedback {
   color: var(--green);
   font-size: var(--text-xs, 12px);
-  margin-left: var(--space-2, 8px);
-  padding: 0 var(--space-1, 4px);
+  margin-left: var(--space-2, var(--space-2));
+  padding: 0 var(--space-1, var(--space-1));
   border-radius: var(--radius-sm, 4px);
   opacity: 1;
   transition: opacity var(--transition-base) ease;
@@ -412,7 +412,7 @@
  * - 记忆项仅显示名称，隐藏 score 等技术细节
  */
 .memory-recall-container {
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
 }
 
 /* 折叠按钮：小标签样式 */
@@ -462,8 +462,8 @@
 /* 记忆列表：默认隐藏 */
 .memory-recall-list {
   display: none;
-  margin-top: 4px;
-  padding-left: 4px;
+  margin-top: var(--space-1);
+  padding-left: var(--space-1);
 }
 
 /* 展开状态 */

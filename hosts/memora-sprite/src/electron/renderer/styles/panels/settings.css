@@ -465,7 +465,7 @@
   display: inline;
   margin-top: 0;
   margin-bottom: 0;
-  margin-left: 4px;
+  margin-left: var(--space-1);
 }
 
 /* ─── 用户画像面板 ───────────────────────────────────── */
@@ -628,7 +628,7 @@
 
 /* 洞察/健康度子面板内联重试按钮（复用 panel-error-btn 样式，略缩小） */
 .inline-retry-btn {
-  margin-left: 6px;
+  margin-left: var(--space-1-5);
   padding: 2px var(--space-2);
   font-size: var(--font-xs);
 }
@@ -674,7 +674,7 @@
   text-align: center;
   color: var(--text-4);
   font-size: var(--font-sm);
-  padding-bottom: 16px;
+  padding-bottom: var(--space-4);
 }
 
 .work-projection-error {
@@ -752,7 +752,7 @@
 
 .work-projection-list {
   margin: 0;
-  padding-left: 16px;
+  padding-left: var(--space-4);
   font-size: var(--font-sm);
   color: var(--text-2);
   line-height: 1.6;
@@ -943,7 +943,7 @@
   font-weight: var(--weight-bold);
   color: var(--text);
   margin: 0 0 var(--space-2);
-  padding-bottom: 6px;
+  padding-bottom: var(--space-1-5);
   border-bottom: 1px solid var(--surface2);
 }
 
@@ -993,7 +993,7 @@
   color: var(--text-2);
   line-height: 1.6;
   margin: 0 0 0 var(--space-3);
-  padding-bottom: 8px;
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--surface1);
 }
 

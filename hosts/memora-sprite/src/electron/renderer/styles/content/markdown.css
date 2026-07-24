@@ -12,7 +12,7 @@
 
 /* 多段落时，段落间留 8px 间距 */
 .message-bubble .md-p + .md-p {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* 标题：层级递减，颜色用 accent 强调 */
@@ -67,8 +67,8 @@
 /* hover 时展开头部 */
 .message-bubble .md-code-block:hover .md-code-header {
   max-height: 40px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
   opacity: 1;
 }
 
@@ -142,7 +142,7 @@
 .message-bubble .md-ol + .md-ol,
 .message-bubble .md-p + .md-ul,
 .message-bubble .md-p + .md-ol {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .message-bubble .md-li {

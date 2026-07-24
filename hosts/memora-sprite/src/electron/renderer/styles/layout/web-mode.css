@@ -86,7 +86,7 @@ body.web-mode .sidebar-brand:hover .sidebar-brand-icon {
 /* Web 模式：侧边栏背景透明，与渐变底板融合 */
 body.web-mode #sidebar {
   background: transparent;
-  padding-top: 16px;
+  padding-top: var(--space-4);
 }
 
 /* Web 模式：核心悬浮窗口增加边距和阴影，营造更好的悬浮感 */
@@ -149,7 +149,7 @@ body.web-mode .chat-empty-state {
 body.web-mode .empty-avatar {
   width: 72px;
   height: 72px;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 body.web-mode .empty-avatar .icon {
@@ -160,13 +160,13 @@ body.web-mode .empty-avatar .icon {
 body.web-mode .empty-title {
   font-size: var(--font-h1);
   font-weight: var(--weight-semibold);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 body.web-mode .empty-subtitle {
   font-size: var(--font-base);
   color: var(--subtext);
-  margin-bottom: 28px;
+  margin-bottom: var(--space-7);
 }
 
 body.web-mode .empty-suggestions {

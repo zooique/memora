@@ -174,7 +174,7 @@
 .memory-item .name {
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
@@ -191,7 +191,7 @@
   display: flex;
   gap: var(--space-3);
   align-items: center;
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
 }
 
  /* source 标签系统（.source-tag/.lineage-source-tag 芯片+文字变体，.profile-category 共用 --tag-* 令牌）已迁至 foundation/controls.css（单一真理源） */
@@ -212,7 +212,7 @@
 .memory-load-more {
   display: block;
   width: 100%;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding: var(--input-padding-md);
   font-size: var(--font-sm);
   text-align: center;
@@ -235,7 +235,7 @@
 .memory-item .preview {
   font-size: var(--font-sm);
   color: var(--text-2);
-  margin-top: 4px;
+  margin-top: var(--space-1);
   line-height: 1.5;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -254,7 +254,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
   font-size: var(--font-xs);
   color: var(--text-3);
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */

@@ -7,7 +7,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
-  margin-top: 4px;
+  margin-top: var(--space-1);
   padding: var(--space-1) var(--space-2-5);
   font-size: var(--font-sm);
   color: var(--text-2);
@@ -32,7 +32,7 @@
 /* 用户已知晓后可点击关闭按钮移除，避免持久打扰                 */
 
 .truncation-notice {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   padding: 2px var(--space-1-5);
   font-size: var(--font-2xs);
   color: var(--text-3);
@@ -89,7 +89,7 @@
 /* 三种状态：running（执行中）/ success（成功）/ failed（失败） */
 
 .tool-call-card {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-sm);
   border: 1px solid var(--surface2);
@@ -210,7 +210,7 @@
   width: 10px;
   height: 10px;
   margin-left: auto;
-  margin-right: 4px;
+  margin-right: var(--space-1);
   border: 1.5px solid var(--surface2);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -221,7 +221,7 @@
 
 /* 工具参数：等宽字体 + 弱化背景，模拟代码块 */
 .tool-call-args {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   padding: var(--space-1) var(--space-1-5);
   background: var(--window-bg);
   border-radius: var(--radius-sm);
@@ -237,8 +237,8 @@
 
 /* 工具结果摘要：等宽字体 + 上下边距分隔 */
 .tool-call-result {
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
   border-top: 1px dashed var(--surface2);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: var(--font-2xs);
@@ -340,7 +340,7 @@
 /* 灰色虚线风格，与错误指示器（红色）区分：中断是用户主动行为，非错误 */
 
 .stream-aborted {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   padding: var(--input-padding);
   border-radius: var(--radius-sm);
   border: 1px dashed var(--surface2);
@@ -358,7 +358,7 @@
 /* 红色调 + 左侧红色边框，与工具调用失败卡片风格一致 */
 
 .stream-error {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--red);
@@ -375,7 +375,7 @@
 /* 与 .stream-error 同容器，主动可见（不依赖 hover） */
 .stream-error-retry {
   display: inline-block;
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--red);
   border-radius: var(--radius-sm);
@@ -531,7 +531,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--padding-sm) var(--padding-base);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   background: var(--surface0);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
@@ -570,7 +570,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* 数据网格：横向排列，紧凑展示各维度 */

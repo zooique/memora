@@ -45,7 +45,7 @@
   font-size: 2rem;  /* 32px / 16 = 2rem（空状态大图标，超出 --font-2xl 范围，直接用 rem） */
   color: var(--text-3);
   animation: emptyIconFloat var(--duration-float) ease-in-out infinite;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .timeline-empty-state .empty-title {
@@ -115,7 +115,7 @@
 .partner-insights {
   padding: 0 0 var(--space-3) 0;
   border-bottom: 1px solid var(--surface2);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .partner-insights.hidden {
@@ -162,7 +162,7 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   line-height: 1.4;
 }
 
@@ -189,7 +189,7 @@
   background: var(--surface0);
   border: 1px dashed var(--surface2);
   border-radius: var(--radius-sm);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   font-size: var(--font-xs);
   color: var(--text-2);
   line-height: 1.4;
@@ -211,7 +211,7 @@
 
 .partner-growth-header {
   /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 .partner-growth-title {

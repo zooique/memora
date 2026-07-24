@@ -72,7 +72,7 @@
   font-weight: var(--weight-semibold);
   font-size: var(--font-xs);
   color: var(--graph-overlay-muted);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* 图例项容器：flex wrap 紧凑排列 */
@@ -161,7 +161,7 @@
 .graph-tooltip-source {
   font-size: var(--font-xs);
   color: var(--graph-overlay-muted);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* tooltip 内容预览 */

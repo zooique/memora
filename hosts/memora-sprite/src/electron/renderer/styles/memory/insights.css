@@ -32,7 +32,7 @@
 /* 统计洞察面板头部：标题 + 关闭按钮 */
 .insights-header {
   /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2-5);
 }
 
 .insights-title {
@@ -144,14 +144,14 @@
 /* 关系摘要区域 */
 .insights-relations-summary {
   border-top: 1px solid var(--surface2);
-  padding-top: 8px;
-  margin-top: 4px;
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 .insights-section-title {
   font-size: var(--font-xs);
   color: var(--text-2);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 /* 单条关系项：类型标签 + 描述 */
