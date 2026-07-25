@@ -61,8 +61,9 @@ import {
   hideAnalysisPanel as hideAnalysisPanelHelper,
   dismissAnalysisPanels as dismissAnalysisPanelsHelper,
   switchView as switchViewHelper,
+  setSection as setSectionHelper,
 } from '../helpers/memoryViewSwitcher.js';
-import type { MemoryViewSwitcherContext } from '../helpers/memoryViewSwitcher.js';
+import type { MemoryViewSwitcherContext, MemorySection } from '../helpers/memoryViewSwitcher.js';
 // 时间线视图子系统（按天分组渲染 + 日期标签格式化）提取到独立 helper
 import { renderTimeline as renderTimelineHelper } from '../helpers/memoryTimelineView.js';
 import type { MemoryTimelineContext } from '../helpers/memoryTimelineView.js';
@@ -110,6 +111,8 @@ export class MemoryPanelManager {
   private previousViewMode: 'list' | 'timeline' | 'graph' = 'list';
   /** 当前激活的分析面板：null 表示无，'insights' / 'health' */
   private activeAnalysisPanel: 'insights' | 'health' | 'completion-stats' | null = null;
+  /** 当前激活区块（统一导航单一真相）：rail 高亮与切换均以此为准，默认列表 */
+  private activeSection: MemorySection = 'list';
   /** 图谱渲染器实例（Canvas 2D 力导向图） */
   private graphRenderer: RelationGraphRenderer | null = null;
   /** 图谱数据缓存（切换回图谱视图时避免重复请求 IPC） */
@@ -259,6 +262,7 @@ export class MemoryPanelManager {
       toggleAnalysisPanel: (panel) => this.toggleAnalysisPanel(panel),
       hideAnalysisPanel: () => this.hideAnalysisPanel(),
       switchView: (mode) => this.switchView(mode),
+      setSection: (section) => this.setSection(section),
       showCleanupDialog: (message, ids) => this.showCleanupDialog(message, ids),
       // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
       getMemorySearchCallback: () => this.memorySearchCallback,
@@ -888,6 +892,18 @@ export class MemoryPanelManager {
   }
 
   /**
+   * 设置当前激活区块（统一导航单一入口，rail 点击委托至此）
+   *
+   * 合并 switchView / toggleAnalysisPanel / togglePartnerInsights 三套切换，
+   * 以 activeSection 为单一真相。详情见 memoryViewSwitcher.setSection。
+   *
+   * @param section 目标区块
+   */
+  setSection(section: MemorySection): void {
+    setSectionHelper(this.buildViewSwitcherContext(), section);
+  }
+
+  /**
    * 激活图谱视图（由 viewSwitcher 通过 onGraphViewActivated 回调调用）
    *
    * 视图切换 helper 完成容器显隐后委托本方法执行图谱专属初始化：
@@ -1157,14 +1173,14 @@ export class MemoryPanelManager {
 
     const actions = createEl('div', 'recycle-bin-item-actions flex-shrink-0');
 
-    // 恢复按钮（绿色强调，对应 .health-action-btn 无 danger 类）
-    const restoreBtn = createEl('button', 'health-action-btn', '恢复');
+    // 恢复按钮（次要操作，复用通用 .btn-secondary）
+    const restoreBtn = createEl('button', 'btn btn-secondary btn-sm', '恢复');
     restoreBtn.setAttribute('data-action', 'restore-memory');
     restoreBtn.setAttribute('data-memory-id', mem.id);
     restoreBtn.setAttribute('title', '恢复此记忆到活跃列表');
 
-    // 彻底删除按钮（红色 danger 样式）
-    const purgeBtn = createEl('button', 'health-action-btn danger', '彻底删除');
+    // 彻底删除按钮（破坏性操作，复用通用 .btn-danger）
+    const purgeBtn = createEl('button', 'btn btn-danger btn-sm', '彻底删除');
     purgeBtn.setAttribute('data-action', 'purge-memory');
     purgeBtn.setAttribute('data-memory-id', mem.id);
     purgeBtn.setAttribute('title', '永久删除此记忆，不可恢复');
@@ -1337,6 +1353,8 @@ export class MemoryPanelManager {
       setPreviousViewMode: (mode) => { this.previousViewMode = mode; },
       getActiveAnalysisPanel: () => this.activeAnalysisPanel,
       setActiveAnalysisPanel: (panel) => { this.activeAnalysisPanel = panel; },
+      getActiveSection: () => this.activeSection,
+      setActiveSection: (section) => { this.activeSection = section; },
       getViewSwitchToken: () => this.viewSwitchToken,
       incrementViewSwitchToken: () => ++this.viewSwitchToken,
       onTimelineViewActivated: () => { this.renderTimeline(); },

@@ -247,8 +247,9 @@ export class LlmGovernanceResultRenderer {
       itemEl.appendChild(mergedEl);
     }
 
-    // 恢复按钮（调用 boostMemory，score +0.05）
-    const restoreBtn = createEl('button', 'llm-result-restore-btn flex-shrink-0', '恢复');
+    // 恢复按钮（调用 boostMemory，score +0.05）；收口为通用 .btn-secondary，data-action 作测试钩子
+    const restoreBtn = createEl('button', 'btn btn-secondary btn-sm flex-shrink-0', '恢复');
+    restoreBtn.setAttribute('data-action', 'restore-boost');
     restoreBtn.title = '提升该记忆 score（+0.05），与降级语义对称';
     this.events.addEventListener(restoreBtn, 'click', async () => {
       restoreBtn.disabled = true;

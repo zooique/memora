@@ -419,7 +419,7 @@ describe('LLM 治理结果持久化展示', () => {
     const items = container.querySelectorAll('.llm-result-item');
     expect(items).toHaveLength(2);
     // 每项含恢复按钮
-    expect(items[0]!.querySelector('.llm-result-restore-btn')).toBeTruthy();
+    expect(items[0]!.querySelector('[data-action="restore-boost"]')).toBeTruthy();
   });
 
   it('timeliness 治理：应在 #health-llm-result 渲染降级列表', async () => {
@@ -451,7 +451,7 @@ describe('LLM 治理结果持久化展示', () => {
     expect(pairs[0]!.querySelector('.llm-result-pair-rec')!.textContent).toContain('保留 A');
     expect(pairs[0]!.querySelector('.llm-result-pair-reason')!.textContent).toContain('A 更符合项目现状');
     // 冲突对应不含恢复按钮（L3 仅检测不修复）
-    expect(pairs[0]!.querySelector('.llm-result-restore-btn')).toBeNull();
+    expect(pairs[0]!.querySelector('[data-action="restore-boost"]')).toBeNull();
   });
 
   it('降级列表恢复按钮点击应调用 boostMemory IPC', async () => {
@@ -461,7 +461,7 @@ describe('LLM 治理结果持久化展示', () => {
     await llmCallback!('dedup');
 
     // 点击第一个恢复按钮
-    const restoreBtn = document.querySelector('.llm-result-restore-btn') as HTMLButtonElement;
+    const restoreBtn = document.querySelector('[data-action="restore-boost"]') as HTMLButtonElement;
     expect(restoreBtn).toBeTruthy();
     restoreBtn.click();
 

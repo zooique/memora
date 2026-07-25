@@ -691,14 +691,15 @@ describe('renderRecycleBinList', () => {
     expect(restoreBtn.textContent).toBe('恢复');
   });
 
-  it('purge 按钮应有 data-action=purge-memory + danger 类', () => {
+  it('purge 按钮应有 data-action=purge-memory + btn-danger 类', () => {
     const mgr = new MemoryPanelManager(createMockHost(), null, null, null, null, new EventTracker());
     mgr.renderRecycleBinList([{
       id: 'r3', name: 'n', source: 's', contentPreview: 'p', deletedAt: '2026-06-27T10:00:00Z',
     }]);
     const purgeBtn = document.querySelector('[data-action="purge-memory"]') as HTMLElement;
     expect(purgeBtn).not.toBeNull();
-    expect(purgeBtn.classList.contains('danger')).toBe(true);
+    expect(purgeBtn.classList.contains('btn-danger')).toBe(true);
+    expect(purgeBtn.classList.contains('danger')).toBe(false);
     expect(purgeBtn.textContent).toBe('彻底删除');
   });
 

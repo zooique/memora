@@ -1,0 +1,102 @@
+/* analysis-panel.css — 记忆模块分析面板共享外壳与通用组件
+ *
+ * UI 工程化心智模型（ui-engineering-mindset-rules.md）§二/§三：
+ *   - 三面板（insights / health / completion-stats）曾各自发明 header / 卡片 / 按钮，
+ *     属"零起点样式"。本文件收口为单一真理源，各面板在此外壳上做最小语义覆写。
+ *   - 关闭按钮统一复用 .panel-close-btn（health.css 定义）；本文件不重复定义关闭外观。
+ *
+ * 采用约定：
+ *   - 根容器挂 .analysis-panel；头部挂 .analysis-panel__header + .analysis-panel__title；
+ *   - 统计卡用 .stat-card（.stat-card__value / __label / __hint），强调卡用 .stat-card--accent；
+ *   - 指标条用 .metric-track + .metric-track__fill（宽度由 JS 内联设置）。
+ */
+
+/* ─── 分析面板根容器 ──────────────────────────────── */
+.analysis-panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--pad-card);
+  background: var(--window-bg);
+}
+
+/* ─── 通用头部（标题 + 右侧操作/关闭） ─────────────── */
+.analysis-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  flex-shrink: 0;
+}
+
+.analysis-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.analysis-panel__title .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.analysis-panel__close {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ─── 共享统计卡（替代三面板各自散落的 stat / card） ── */
+.stat-card {
+  padding: var(--space-2) var(--space-2-5);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stat-card__value {
+  font-size: var(--font-lg);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card__label {
+  font-size: var(--font-xs);
+  color: var(--text-2);
+}
+
+.stat-card__hint {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+}
+
+/* 强调数值（如 R1 发布前提验证数） */
+.stat-card--accent .stat-card__value {
+  color: var(--accent);
+}
+
+/* ─── 共享指标条（替代 health-metric-track 散落实现） ── */
+.metric-track {
+  position: relative;
+  height: 6px;
+  background: var(--surface0);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.metric-track__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--transition-xl) ease;
+}

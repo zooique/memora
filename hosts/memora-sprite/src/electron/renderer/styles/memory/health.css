@@ -216,55 +216,8 @@
   margin-top: var(--space-2);
 }
 
-.health-action-btn {
-  padding: var(--space-1) var(--space-2-5);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  background: var(--surface0);
-  color: var(--text);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.health-action-btn:hover {
-  background: var(--surface1);
-  border-color: var(--accent);
-}
-
-/* 一键清理：danger 实色，作为唯一主操作突出 */
-.health-action-btn.danger {
-  color: var(--red);
-  border-color: var(--red-20);
-  background: var(--red-10, var(--red-20));
-}
-
-.health-action-btn.danger:hover {
-  background: var(--red-20);
-  border-color: var(--red);
-}
-
-/* 清理重复 / 清理过期：降为 ghost 次级，弱化视觉权重 */
-.health-action-btn--ghost {
-  background: transparent;
-  color: var(--text-2);
-}
-
-.health-action-btn--ghost:hover {
-  background: var(--surface1);
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.health-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.health-action-btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
+/* 健康度操作按钮已收口为通用 .btn 变体（.btn-secondary / .btn-danger + .btn-sm），
+   见 index.html 与 memoryPanelManager.ts 的回收站项按钮；此处不再保留 bespoke 样式。 */
 
 /* ─── AI 治理可折叠次级组（CSS-R11：纯 <details> 零 JS） ─────── */
 
@@ -371,30 +324,7 @@
   white-space: nowrap;
 }
 
-/* 恢复按钮（调用 boostMemory，score +0.05） */
-.llm-result-restore-btn {
-  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
-  padding: 2px var(--space-2);
-  font-size: var(--font-xs);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  background: var(--surface2);
-  color: var(--text);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.llm-result-restore-btn:hover:not(:disabled) {
-  background: var(--accent);
-  /* accent 背景上的白色文字（复用 --text-on-red 令牌，值与 --white 一致） */
-  color: var(--text-on-red);
-}
-
-.llm-result-restore-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
+/* 恢复按钮已收口为通用 .btn-secondary（见 llmGovernanceResultRenderer.ts），此处不再保留 bespoke 样式。 */
 
 /* 冲突对详情卡片 */
 .llm-result-pair {

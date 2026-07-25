@@ -20,5 +20,9 @@
 /* 洞察栏 / 健康度诊断面板：CSS-R11 从 graph 文件抽离的单一真理源（须先于 completion-stats.css 以保证共享类层叠） */
 @import url("insights.css");
 @import url("health.css");
+/* 分析面板共享外壳与通用组件（单一真理源，须先于 completion-stats.css 以保证 .stat-card 等共享类层叠） */
+@import url("analysis-panel.css");
 /* 补全统计面板样式（第 3 个 analysis panel） */
 @import url("completion-stats.css");
+/* 统一导航 rail（取代 .view-switch 分段控件 + 更多菜单，activeSection 单一真相） */
+@import url("memory-rail.css");

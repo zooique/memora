@@ -46,7 +46,24 @@
 /* 记忆搜索框专属增强（从 memory-graph-detail.css / memory-graph-misc.css 整合）
    避免 focus 规则分散在 3 个文件中导致冲突和视觉不一致 */
 #memory-search {
+  /* min-width:0 允许搜索框在窄主面板下收缩（默认 min-width:auto 会锁死到 min-content，
+     导致固定控件链 + 搜索框超出 ~305px 主面板 → header 横向溢出/裁切） */
+  min-width: 0;
   transition: flex var(--transition-base), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+/* 窄屏折叠：主面板最窄 ≈305px，固定控件链（标题+视图切换+筛选+添加+更多 ≈270px）已逼近极限。
+   窗口较窄时隐藏非必要控件（面板标题、高级筛选）并收紧内边距/间距，确保搜索框仍可用、header 不溢出。
+   高级筛选栏降级为窄屏不可见（次要功能），其余导航/操作均保留。 */
+@media (max-width: 760px) {
+  #panel-memories .panel-header {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+  #panel-memories .panel-header .panel-title,
+  #panel-memories .panel-header #btn-advanced-filter {
+    display: none;
+  }
 }
 
 #memory-search::-webkit-search-cancel-button {

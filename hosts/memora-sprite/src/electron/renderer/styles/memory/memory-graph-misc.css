@@ -303,8 +303,8 @@
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
-/* 操作按钮复用 .health-action-btn 样式（紧凑小按钮） */
-.recycle-bin-item-actions .health-action-btn {
+/* 操作按钮复用通用 .btn（紧凑小按钮，在 .btn-sm 基础上进一步收紧内边距以适配列表行高） */
+.recycle-bin-item-actions .btn {
   padding: 3px var(--space-2);
   font-size: var(--font-xs);
 }

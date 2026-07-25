@@ -6,8 +6,8 @@
  *
  * 结构：
  *   .completion-stats-bar
- *   ├── .completion-stats-header（标题 + 导出/重置按钮组）
- *   ├── .completion-stats-metrics-r1（R1 度量卡片组：激活率 + 召回时刻）
+ *   ├── .completion-stats-header（标题 + 导出/重置/关闭按钮组；按钮收口为 .btn*，关闭复用 .panel-close-btn）
+ *   ├── .completion-stats-metrics-r1（R1 度量卡片组：激活率 + 召回时刻；卡片复用共享 .stat-card）
  *   ├── .completion-stats-metrics（补全效率卡片组：采纳率/Top-1/平均位置/展示数）
  *   ├── .completion-stats-trend（B2 按日趋势柱状图）
  *   │   └── .completion-stats-trend-bar-group × 14
@@ -20,7 +20,7 @@
   padding: var(--space-3) var(--space-4);
 }
 
-/* 标题栏 + 重置按钮 */
+/* 标题栏（标题 + 操作/关闭按钮组；按钮收口为通用 .btn*，关闭复用 .panel-close-btn） */
 .completion-stats-header {
   display: flex;
   align-items: center;
@@ -34,51 +34,14 @@
   color: var(--text);
 }
 
-.completion-stats-reset-btn {
-  /* 2px 保留次像素对齐（与项目其他 reset/badge 按钮一致），10px 走 --space-2-5 令牌 */
-  padding: 2px var(--space-2-5);
-  font-size: var(--font-xs);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.completion-stats-reset-btn:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-
-/* 按钮组容器（导出 + 重置并排，gap 拉开间距） */
+/* 按钮组容器（导出 + 重置 + 关闭并排，gap 拉开间距，垂直居中） */
 .completion-stats-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-1-5);
 }
 
-/* 导出按钮：主操作用 accent 色强调，与重置按钮（次要操作）形成层级区分 */
-.completion-stats-export-btn {
-  /* 2px 保留次像素对齐（与 reset-btn 一致），10px 走 --space-2-5 令牌 */
-  padding: 2px var(--space-2-5);
-  font-size: var(--font-xs);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--white, #fff);
-  cursor: pointer;
-  transition: background var(--transition-fast), opacity var(--transition-fast);
-}
-
-.completion-stats-export-btn:hover {
-  opacity: 0.85;
-}
-
-.completion-stats-export-btn:active {
-  opacity: 0.7;
-}
-
-/* 指标卡片网格（4 列，窄屏降级为 2 列） */
+/* 指标卡片网格（4 列，窄屏降级为 2 列；卡片本体复用共享 .stat-card） */
 .completion-stats-metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -92,32 +55,7 @@
   }
 }
 
-/* 单个指标卡片 */
-.completion-stats-card {
-  padding: var(--space-2) var(--space-2-5);
-  background: var(--surface1);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  /* 2px 保留次像素对齐（卡片内 label/value 行高紧凑对齐） */
-  gap: 2px;
-}
-
-.completion-stats-card-label {
-  font-size: var(--font-xs);
-  color: var(--text-2);
-}
-
-.completion-stats-card-value {
-  font-size: var(--font-lg);
-  font-weight: var(--weight-bold);
-  color: var(--text);
-}
-
-.completion-stats-card-hint {
-  font-size: var(--font-xs);
-  color: var(--text-3);
-}
+/* 指标卡片本体已迁移至共享 .stat-card（analysis-panel.css），此处不再重复定义 */
 
 /* 最近事件流 */
 .completion-stats-events {
@@ -196,10 +134,8 @@
   padding-left: var(--space-2);
 }
 
-/* R1 卡片：数值用强调色（accent/orange），突出"需关注"语义 */
-.completion-stats-metrics-r1 .completion-stats-card-value {
-  color: var(--accent);
-}
+/* R1 卡片强调色：由 createMetricCard(accent=true) 注入 .stat-card--accent 修饰类（analysis-panel.css 定义），
+   此处不再用后代选择器覆写 .stat-card__value，避免重复样式真理源 */
 
 /* ─── B2 按日趋势柱状图（纵向养成曲线） ─── */
 

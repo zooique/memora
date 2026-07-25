@@ -446,51 +446,68 @@
 
       <!-- 记忆面板（与设置面板对齐，显示在核心区，通过侧边栏切换） -->
       <div id="panel-memories" class="panel" aria-hidden="true" aria-labelledby="panel-title-memories">
-        <div class="panel-header flex-shrink-0">
-          <!-- 面板标题 -->
-          <span class="panel-title" id="panel-title-memories">记忆</span>
-          <!-- 搜索框占据主要宽度 -->
-          <input type="search" id="memory-search" class="input input--pill" placeholder="搜索记忆…" aria-label="搜索记忆" autocomplete="off" />
-          <!-- 视图切换分段控件：列表/时间线/图谱（常驻，互斥单选） -->
-          <div class="view-switch" role="tablist" aria-label="视图切换">
-            <button id="btn-list-view" class="view-switch-btn active" role="tab" aria-selected="true" title="列表视图">
-              <svg class="icon"><use href="#icon-memo"/></svg>
-            </button>
-            <button id="btn-timeline-view" class="view-switch-btn" role="tab" aria-selected="false" title="时间线视图">
-              <svg class="icon"><use href="#icon-timeline"/></svg>
-            </button>
-            <button id="btn-graph-view" class="view-switch-btn" role="tab" aria-selected="false" title="图谱视图">
-              <svg class="icon"><use href="#icon-brain"/></svg>
-            </button>
-          </div>
-          <!-- 高级筛选按钮（图标按钮，切换筛选栏显示） -->
-          <button id="btn-advanced-filter" class="icon-btn flex-shrink-0" title="高级筛选" aria-label="高级筛选">
-            <svg class="icon"><use href="#icon-filter"/></svg>
-          </button>
-          <!-- 主操作：添加记忆 -->
-          <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
-          <!-- 更多工具（含回收站入口，从独立按钮迁入更多菜单降低信息密度） -->
-          <div class="toolbar-more">
-            <button id="btn-memory-more" class="icon-btn flex-shrink-0" title="更多工具" aria-haspopup="true" aria-expanded="false" aria-label="更多工具">
-              <svg class="icon"><use href="#icon-more"/></svg>
-            </button>
-            <div id="memory-more-menu" class="dropdown more-menu hidden">
-              <button class="more-menu-item" data-action="recycle-bin">
-                <svg class="icon"><use href="#icon-inbox"/></svg> 回收站
+        <div class="memory-panel-body">
+          <!-- 统一导航 rail：取代头部 .view-switch 分段控件 + 更多菜单，activeSection 单一真相 -->
+          <nav id="memory-rail" class="memory-rail" role="tablist" aria-label="记忆区块">
+            <div class="memory-rail-group">
+              <span class="memory-rail-group-label">数据视图</span>
+              <button class="memory-rail-item" data-section="list" role="tab" aria-selected="true" title="列表视图">
+                <svg class="icon"><use href="#icon-memo"/></svg>
+                <span class="memory-rail-label">列表</span>
               </button>
-              <button class="more-menu-item" data-action="insights">
-                <svg class="icon"><use href="#icon-chart"/></svg> 统计洞察
+              <button class="memory-rail-item" data-section="timeline" role="tab" aria-selected="false" title="时间线视图">
+                <svg class="icon"><use href="#icon-timeline"/></svg>
+                <span class="memory-rail-label">时间线</span>
               </button>
-              <button class="more-menu-item" data-action="health">
-                <svg class="icon"><use href="#icon-health"/></svg> 健康度诊断
-              </button>
-              <!-- 补全统计面板（第 3 个 analysis panel，数据来自 localStorage） -->
-              <button class="more-menu-item" data-action="completion-stats">
-                <svg class="icon"><use href="#icon-chart"/></svg> 补全统计
+              <button class="memory-rail-item" data-section="graph" role="tab" aria-selected="false" title="图谱视图">
+                <svg class="icon"><use href="#icon-brain"/></svg>
+                <span class="memory-rail-label">图谱</span>
               </button>
             </div>
+            <div class="memory-rail-group">
+              <span class="memory-rail-group-label">分析</span>
+              <button class="memory-rail-item" data-section="insights" role="tab" aria-selected="false" title="统计洞察">
+                <svg class="icon"><use href="#icon-chart"/></svg>
+                <span class="memory-rail-label">统计洞察</span>
+              </button>
+              <button class="memory-rail-item" data-section="health" role="tab" aria-selected="false" title="健康度诊断">
+                <svg class="icon"><use href="#icon-health"/></svg>
+                <span class="memory-rail-label">健康度</span>
+              </button>
+              <button class="memory-rail-item" data-section="completion-stats" role="tab" aria-selected="false" title="补全统计">
+                <svg class="icon"><use href="#icon-chart"/></svg>
+                <span class="memory-rail-label">补全统计</span>
+              </button>
+            </div>
+            <div class="memory-rail-group">
+              <span class="memory-rail-group-label">伙伴</span>
+              <button class="memory-rail-item" data-section="partner-insights" role="tab" aria-selected="false" title="伙伴洞察">
+                <svg class="icon"><use href="#icon-fairy"/></svg>
+                <span class="memory-rail-label">伙伴洞察</span>
+              </button>
+            </div>
+            <div class="memory-rail-group memory-rail-group--bottom">
+              <!-- 回收站为模态动作（data-action），非区块，不参与 activeSection -->
+              <button class="memory-rail-item memory-rail-item--action" data-action="recycle-bin" title="回收站" aria-label="回收站">
+                <svg class="icon"><use href="#icon-inbox"/></svg>
+                <span class="memory-rail-label">回收站</span>
+              </button>
+            </div>
+          </nav>
+          <!-- 记忆面板内容区：头部 + 各区块面板 + 视图容器 -->
+          <div class="memory-panel-content">
+          <div class="panel-header flex-shrink-0">
+            <!-- 面板标题 -->
+            <span class="panel-title" id="panel-title-memories">记忆</span>
+            <!-- 搜索框占据主要宽度 -->
+            <input type="search" id="memory-search" class="input input--pill" placeholder="搜索记忆…" aria-label="搜索记忆" autocomplete="off" />
+            <!-- 高级筛选按钮（图标按钮，切换筛选栏显示） -->
+            <button id="btn-advanced-filter" class="icon-btn flex-shrink-0" title="高级筛选" aria-label="高级筛选">
+              <svg class="icon"><use href="#icon-filter"/></svg>
+            </button>
+            <!-- 主操作：添加记忆 -->
+            <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
           </div>
-        </div>
         <!-- 高级搜索栏（搜索增强，默认折叠） -->
         <div id="advanced-search-bar" class="advanced-search-bar hidden">
           <div class="advanced-search-row">
@@ -608,17 +625,17 @@
           </div>
           <p class="health-description" id="health-description"></p>
           <div class="health-actions" id="health-actions">
-            <button class="health-action-btn health-action-btn--ghost" id="health-cleanup-duplicates" title="清理重复记忆（保留每组中分最高的一条）">清理重复</button>
-            <button class="health-action-btn health-action-btn--ghost" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
-            <button class="health-action-btn danger" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
+            <button class="btn btn-secondary btn-sm" id="health-cleanup-duplicates" title="清理重复记忆（保留每组中分最高的一条）">清理重复</button>
+            <button class="btn btn-secondary btn-sm" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
+            <button class="btn btn-danger btn-sm" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
           </div>
           <!-- LLM 记忆治理：收为可折叠次级组（纯 <details> 零 JS，CSS-R11 就地优化） -->
           <details class="health-llm-group">
             <summary class="health-llm-summary">AI 治理</summary>
             <div class="health-actions health-actions-llm" id="health-llm-actions">
-              <button class="health-action-btn" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
-              <button class="health-action-btn" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
-              <button class="health-action-btn" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
+              <button class="btn btn-secondary btn-sm" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
+              <button class="btn btn-secondary btn-sm" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
+              <button class="btn btn-secondary btn-sm" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
             </div>
           </details>
           <!-- LLM 治理结果展示区（动态渲染，默认空） -->
@@ -740,6 +757,8 @@
         </div>
         <!-- 时间线视图容器（A2：按天分组记忆，默认隐藏） -->
         <div id="memory-timeline-container" class="hidden"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 设置面板（核心区域面板，垂直 tab 导航，底部操作按钮） -->

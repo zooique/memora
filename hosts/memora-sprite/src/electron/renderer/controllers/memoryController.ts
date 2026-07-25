@@ -172,6 +172,9 @@ export function createMemoryController(uiManager: UIManager) {
       } else if (action === 'completion-stats') {
         // 补全统计面板，数据来自渲染层 localStorage（无 IPC），直接渲染
         uiManager.renderCompletionStat();
+      } else if (action === 'partner-insights') {
+        // 伙伴洞察区块（rail 独立区块），仅加载伙伴洞察数据
+        await loadPartnerInsights();
       }
     });
 
@@ -643,16 +646,29 @@ export function createMemoryController(uiManager: UIManager) {
         window.electronAPI.getRelationGraph(),
       ]);
 
-      // 渲染委托 DashboardPanelManager
+      // 渲染委托 DashboardPanelManager（伙伴洞察已独立为 rail 区块，由 loadPartnerInsights 单独渲染）
       uiManager.renderInsights(dashboard, graph);
-      // 伙伴洞察面板：基于记忆列表数据渲染（profile 卡片 + 知识缺口 + 成长趋势）
-      const memList = await window.electronAPI.listMemories({});
-      uiManager.renderPartnerInsights(memList.memories);
     } catch (error) {
       reportError('loadInsights', error);
       // 渲染错误状态（含重试按钮，点击触发 onReloadInsights 回调）
       uiManager.showInsightsError();
       // 洞察加载失败不阻塞记忆面板主流程
+    }
+  }
+
+  /**
+   * 加载伙伴洞察区块数据（rail "伙伴洞察" 区块，独立于统计洞察面板）
+   *
+   * 仅基于记忆列表数据渲染伙伴洞察（profile 卡片 + 知识缺口 + 成长趋势图），
+   * 不耦合统计洞察的 dashboard/graph 请求，使两个区块可独立加载与刷新。
+   */
+  async function loadPartnerInsights(): Promise<void> {
+    try {
+      const memList = await window.electronAPI.listMemories({});
+      uiManager.renderPartnerInsights(memList.memories);
+    } catch (error) {
+      reportError('loadPartnerInsights', error);
+      // 伙伴洞察加载失败不阻塞记忆面板主流程
     }
   }
 

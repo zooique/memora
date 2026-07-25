@@ -1,10 +1,10 @@
 /**
  * memoryPanelEvents 事件接线测试
  *
- * 覆盖目标：initMemoryPanelListeners 提取出的 10 个 init 子函数中
- * 现有 memoryPanelManagerInstance.test.ts 未直接覆盖的 6 个：
- *   - M1: initAdvancedFilterBar + initMoreMenu + initAnalysisPanelClose
- *   - M2: initViewSwitchButtons + initCleanupDialog + initRecycleBinActions
+ * 覆盖目标：initMemoryPanelListeners 提取出的 init 子函数中
+ * 现有 memoryPanelManagerInstance.test.ts 未直接覆盖的若干：
+ *   - M1: initAdvancedFilterBar + initMemoryRail（取代原 initMoreMenu）+ initAnalysisPanelClose
+ *   - M2: initMemoryRail 数据视图 + initCleanupDialog + initRecycleBinActions
  *
  * Mock 策略：
  * - jsdom 环境 + setupDOM() 设置完整 DOM
@@ -56,22 +56,30 @@ function setupDOM(): void {
       <option value="7d">最近7天</option>
     </select>
 
-    <!-- 更多菜单 -->
-    <button id="btn-memory-more">更多</button>
-    <div id="memory-more-menu" class="hidden">
-      <div class="more-menu-item" data-action="insights">统计洞察</div>
-      <div class="more-menu-item" data-action="health">健康度诊断</div>
-      <div class="more-menu-item" data-action="recycle-bin">回收站</div>
-    </div>
+    <!-- 统一导航 rail（取代 .view-switch 分段控件 + 更多菜单） -->
+    <nav id="memory-rail">
+      <div class="memory-rail-group">
+        <button class="memory-rail-item" data-section="list" aria-selected="true">列表</button>
+        <button class="memory-rail-item" data-section="timeline" aria-selected="false">时间线</button>
+        <button class="memory-rail-item" data-section="graph" aria-selected="false">图谱</button>
+      </div>
+      <div class="memory-rail-group">
+        <button class="memory-rail-item" data-section="insights">统计洞察</button>
+        <button class="memory-rail-item" data-section="health">健康度</button>
+        <button class="memory-rail-item" data-section="completion-stats">补全统计</button>
+      </div>
+      <div class="memory-rail-group">
+        <button class="memory-rail-item" data-section="partner-insights">伙伴洞察</button>
+      </div>
+      <div class="memory-rail-group memory-rail-group--bottom">
+        <button class="memory-rail-item memory-rail-item--action" data-action="recycle-bin">回收站</button>
+      </div>
+    </nav>
 
     <!-- 分析面板关闭按钮 -->
     <button id="btn-close-insights">关闭洞察</button>
     <button id="btn-close-health">关闭健康度</button>
 
-    <!-- 视图切换按钮 -->
-    <button id="btn-list-view" class="active" aria-selected="true">列表</button>
-    <button id="btn-graph-view" aria-selected="false">图谱</button>
-    <button id="btn-timeline-view" aria-selected="false">时间线</button>
     <div id="memory-graph-container" class="hidden"></div>
     <div id="memory-timeline-container" class="hidden"></div>
 
@@ -180,6 +188,7 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     toggleAnalysisPanel: vi.fn(),
     hideAnalysisPanel: vi.fn(),
     switchView: vi.fn(),
+    setSection: vi.fn(),
     showCleanupDialog: vi.fn(),
     getMemorySearchCallback: () => callbacks.search,
     getMemoryFilterCallback: () => callbacks.filter,
@@ -259,76 +268,69 @@ describe('memoryPanelEvents M1 高级筛选栏 + 更多菜单 + 分析面板关�
     });
   });
 
-  describe('initMoreMenu', () => {
-    it('更多菜单按钮点击应切换菜单显示 + 阻止冒泡', () => {
-      const { ctx } = createMockCtx();
+  describe('initMemoryRail', () => {
+    it('点击数据视图 rail 项（list）应调用 setSection("list") + viewSwitchCallback("list")', () => {
+      const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const moreBtn = document.getElementById('btn-memory-more')!;
-      const moreMenu = document.getElementById('memory-more-menu')!;
+      const listItem = document.querySelector('.memory-rail-item[data-section="list"]') as HTMLElement;
+      listItem.click();
 
-      // 初始 hidden
-      expect(moreMenu.classList.contains('hidden')).toBe(true);
-
-      // 点击切换显示
-      moreBtn.click();
-      expect(moreMenu.classList.contains('hidden')).toBe(false);
-      expect(moreBtn.getAttribute('aria-expanded')).toBe('true');
-
-      // 再次点击隐藏
-      moreBtn.click();
-      expect(moreMenu.classList.contains('hidden')).toBe(true);
-      expect(moreBtn.getAttribute('aria-expanded')).toBe('false');
+      expect(ctx.setSection).toHaveBeenCalledWith('list');
+      expect(callbacks.viewSwitch).toHaveBeenCalledWith('list');
     });
 
-    it('点击菜单外部应关闭更多菜单', () => {
-      const { ctx } = createMockCtx();
+    it('点击数据视图 rail 项（timeline）应调用 setSection("timeline") + viewSwitchCallback("timeline")', () => {
+      const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const moreBtn = document.getElementById('btn-memory-more')!;
-      const moreMenu = document.getElementById('memory-more-menu')!;
+      const timelineItem = document.querySelector('.memory-rail-item[data-section="timeline"]') as HTMLElement;
+      timelineItem.click();
 
-      // 先打开菜单
-      moreBtn.click();
-      expect(moreMenu.classList.contains('hidden')).toBe(false);
-
-      // 点击 document body（菜单外部）应关闭
-      document.body.click();
-      expect(moreMenu.classList.contains('hidden')).toBe(true);
+      expect(ctx.setSection).toHaveBeenCalledWith('timeline');
+      expect(callbacks.viewSwitch).toHaveBeenCalledWith('timeline');
     });
 
-    it('点击 insights 菜单项应调用 toggleAnalysisPanel("insights") 并关闭菜单', () => {
+    it('点击分析面板 rail 项（insights）应调用 setSection("insights")', () => {
       const { ctx } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const moreBtn = document.getElementById('btn-memory-more')!;
-      const insightsItem = document.querySelector('.more-menu-item[data-action="insights"]') as HTMLElement;
-
-      // 打开菜单
-      moreBtn.click();
-
-      // 点击 insights 菜单项
+      const insightsItem = document.querySelector('.memory-rail-item[data-section="insights"]') as HTMLElement;
       insightsItem.click();
 
-      expect(ctx.toggleAnalysisPanel).toHaveBeenCalledWith('insights');
-      // 菜单应自动关闭
-      const moreMenu = document.getElementById('memory-more-menu')!;
-      expect(moreMenu.classList.contains('hidden')).toBe(true);
+      expect(ctx.setSection).toHaveBeenCalledWith('insights');
     });
 
-    it('点击 health 菜单项应调用 toggleAnalysisPanel("health") 并关闭菜单', () => {
+    it('点击伙伴洞察 rail 项应调用 setSection("partner-insights")', () => {
       const { ctx } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const moreBtn = document.getElementById('btn-memory-more')!;
-      const healthItem = document.querySelector('.more-menu-item[data-action="health"]') as HTMLElement;
+      const partnerItem = document.querySelector('.memory-rail-item[data-section="partner-insights"]') as HTMLElement;
+      partnerItem.click();
 
-      moreBtn.click();
-      healthItem.click();
+      expect(ctx.setSection).toHaveBeenCalledWith('partner-insights');
+    });
 
-      expect(ctx.toggleAnalysisPanel).toHaveBeenCalledWith('health');
-      const moreMenu = document.getElementById('memory-more-menu')!;
-      expect(moreMenu.classList.contains('hidden')).toBe(true);
+    it('点击 recycle-bin 动作项应调用 moreMenuActionCallback("recycle-bin")，不调用 setSection', () => {
+      const { ctx, callbacks } = createMockCtx();
+      initMemoryPanelListeners(ctx);
+
+      const recycleItem = document.querySelector('.memory-rail-item[data-action="recycle-bin"]') as HTMLElement;
+      recycleItem.click();
+
+      expect(callbacks.moreMenuAction).toHaveBeenCalledWith('recycle-bin');
+      expect(ctx.setSection).not.toHaveBeenCalled();
+    });
+
+    it('点击 rail 容器空白区域（非 rail 项）不应触发任何导航', () => {
+      const { ctx, callbacks } = createMockCtx();
+      initMemoryPanelListeners(ctx);
+
+      const rail = document.getElementById('memory-rail')!;
+      rail.click();
+
+      expect(ctx.setSection).not.toHaveBeenCalled();
+      expect(callbacks.moreMenuAction).not.toHaveBeenCalled();
     });
   });
 
@@ -377,80 +379,31 @@ describe('memoryPanelEvents M2 视图切换 + 清理对话框 + 回收站', () =
     setupDOM();
   });
 
-  describe('initViewSwitchButtons', () => {
-    it('点击列表视图按钮应切换 active 状态 + 调用 switchView + viewSwitchCallback', () => {
+  describe('initMemoryRail - 数据视图无 toggle-off 语义', () => {
+    it('点击 graph rail 项（无论当前是否图谱）始终调用 setSection("graph") + viewSwitchCallback("graph")', () => {
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const listBtn = document.getElementById('btn-list-view')!;
-      listBtn.click();
-
-      expect(ctx.switchView).toHaveBeenCalledWith('list');
-      expect(callbacks.viewSwitch).toHaveBeenCalledWith('list');
-      // list 按钮应保持 active
-      expect(listBtn.classList.contains('active')).toBe(true);
-      expect(listBtn.getAttribute('aria-selected')).toBe('true');
-    });
-
-    it('点击图谱视图按钮（当前为列表）应切换到图谱视图', () => {
-      const { ctx, callbacks } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      const graphBtn = document.getElementById('btn-graph-view')!;
-      // memory-graph-container 初始 hidden，即当前非图谱视图
-      graphBtn.click();
-
-      expect(ctx.switchView).toHaveBeenCalledWith('graph');
-      expect(callbacks.viewSwitch).toHaveBeenCalledWith('graph');
-      // graph 按钮应变 active
-      expect(graphBtn.classList.contains('active')).toBe(true);
-      expect(graphBtn.getAttribute('aria-selected')).toBe('true');
-      // list 按钮应取消 active
-      const listBtn = document.getElementById('btn-list-view')!;
-      expect(listBtn.classList.contains('active')).toBe(false);
-    });
-
-    it('点击图谱视图按钮（当前已是图谱）应降级回列表视图', () => {
-      const { ctx, callbacks } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      // 模拟当前已是图谱视图：移除 graph-container 的 hidden
+      // 模拟当前已是图谱视图：移除 graph-container 的 hidden（原 toggle-off 逻辑已废弃）
       const graphContainer = document.getElementById('memory-graph-container')!;
       graphContainer.classList.remove('hidden');
 
-      const graphBtn = document.getElementById('btn-graph-view')!;
-      graphBtn.click();
+      const graphItem = document.querySelector('.memory-rail-item[data-section="graph"]') as HTMLElement;
+      graphItem.click();
 
-      // 应降级回列表
-      expect(ctx.switchView).toHaveBeenCalledWith('list');
-      expect(callbacks.viewSwitch).toHaveBeenCalledWith('list');
+      expect(ctx.setSection).toHaveBeenCalledWith('graph');
+      expect(callbacks.viewSwitch).toHaveBeenCalledWith('graph');
     });
 
-    it('点击时间线视图按钮（当前为列表）应切换到时间线视图', () => {
+    it('点击 timeline rail 项应调用 setSection("timeline") + viewSwitchCallback("timeline")', () => {
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const timelineBtn = document.getElementById('btn-timeline-view')!;
-      timelineBtn.click();
+      const timelineItem = document.querySelector('.memory-rail-item[data-section="timeline"]') as HTMLElement;
+      timelineItem.click();
 
-      expect(ctx.switchView).toHaveBeenCalledWith('timeline');
+      expect(ctx.setSection).toHaveBeenCalledWith('timeline');
       expect(callbacks.viewSwitch).toHaveBeenCalledWith('timeline');
-      expect(timelineBtn.classList.contains('active')).toBe(true);
-    });
-
-    it('点击时间线视图按钮（当前已是时间线）应降级回列表视图', () => {
-      const { ctx, callbacks } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      // 模拟当前已是时间线视图
-      const timelineContainer = document.getElementById('memory-timeline-container')!;
-      timelineContainer.classList.remove('hidden');
-
-      const timelineBtn = document.getElementById('btn-timeline-view')!;
-      timelineBtn.click();
-
-      expect(ctx.switchView).toHaveBeenCalledWith('list');
-      expect(callbacks.viewSwitch).toHaveBeenCalledWith('list');
     });
   });
 
@@ -1044,102 +997,36 @@ describe('memoryPanelEvents M6 更多菜单位置 + 回收站按钮 + 批量操�
     setupDOM();
   });
 
-  describe('initMoreMenu - 菜单弹出位置计算', () => {
-    it('右侧空间充足时应靠左对齐按钮展开（left=btnRect.left）', () => {
-      // 验证 wouldOverflowRight=false 分支：btnRect.left + 150 <= window.innerWidth
-      // 实现用统一 left 坐标定位（position:fixed），靠左展开时 left=按钮 left
-      const { ctx } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      const moreBtn = document.getElementById('btn-memory-more') as HTMLElement;
-      // mock getBoundingClientRect：按钮靠左，右侧空间充足
-      moreBtn.getBoundingClientRect = () => ({
-        left: 100, top: 10, right: 130, bottom: 40, width: 30, height: 30, x: 100, y: 10, toJSON: () => ({}),
-      });
-      Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
-
-      moreBtn.click();
-
-      const moreMenu = document.getElementById('memory-more-menu')!;
-      // 靠左对齐按钮：left = btnRect.left = 100px
-      expect(moreMenu.style.left).toBe('100px');
-    });
-
-    it('右侧空间不足时应靠右对齐按钮向左展开（left=btnRect.right-menuMinWidth）', () => {
-      // 验证 wouldOverflowRight=true 分支：btnRect.left + 150 > window.innerWidth
-      // 实现用统一 left 坐标定位，靠右展开时 left=按钮 right - menuMinWidth（保证菜单右边缘对齐按钮右边缘）
-      const { ctx } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      const moreBtn = document.getElementById('btn-memory-more') as HTMLElement;
-      // mock：按钮靠右，右侧空间不足 150px
-      moreBtn.getBoundingClientRect = () => ({
-        left: 900, top: 10, right: 930, bottom: 40, width: 30, height: 30, x: 900, y: 10, toJSON: () => ({}),
-      });
-      Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
-
-      moreBtn.click();
-
-      const moreMenu = document.getElementById('memory-more-menu')!;
-      // 靠右对齐按钮向左展开：left = btnRect.right - menuMinWidth = 930 - 150 = 780px
-      expect(moreMenu.style.left).toBe('780px');
-    });
-  });
-
-  describe('initMoreMenu - 菜单项委托', () => {
-    it('点击 recycle-bin 菜单项应调用 moreMenuActionCallback("recycle-bin")', () => {
-      // 验证 recycle-bin 分支：仅调用 moreMenuAction，不调用 toggleAnalysisPanel
+  describe('initMemoryRail - 委托健壮性', () => {
+    it('点击未知 action 的 rail 项不应触发任何回调', () => {
+      // 验证 data-action 不匹配 recycle-bin 时静默忽略
       const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const moreBtn = document.getElementById('btn-memory-more')!;
-      moreBtn.click();
-
-      const recycleBinItem = document.querySelector('.more-menu-item[data-action="recycle-bin"]') as HTMLElement;
-      recycleBinItem.click();
-
-      expect(callbacks.moreMenuAction).toHaveBeenCalledWith('recycle-bin');
-      expect(ctx.toggleAnalysisPanel).not.toHaveBeenCalled();
-    });
-
-    it('点击未知 action 菜单项不应触发任何回调', () => {
-      // 验证 action 不匹配任何分支时静默忽略
-      const { ctx, callbacks } = createMockCtx();
-      initMemoryPanelListeners(ctx);
-
-      const moreBtn = document.getElementById('btn-memory-more')!;
-      moreBtn.click();
-
-      // 动态插入未知 action 菜单项
-      const unknownItem = document.createElement('div');
-      unknownItem.className = 'more-menu-item';
+      const unknownItem = document.createElement('button');
+      unknownItem.className = 'memory-rail-item';
       unknownItem.setAttribute('data-action', 'unknown');
-      document.getElementById('memory-more-menu')!.appendChild(unknownItem);
+      document.getElementById('memory-rail')!.appendChild(unknownItem);
       unknownItem.click();
 
       expect(callbacks.moreMenuAction).not.toHaveBeenCalled();
-      expect(ctx.toggleAnalysisPanel).not.toHaveBeenCalled();
+      expect(ctx.setSection).not.toHaveBeenCalled();
     });
 
-    it('点击非 HTMLElement 的菜单项节点不应触发回调', () => {
-      // 验证 instanceof HTMLElement 检查：SVGElement 等非 HTMLElement 不触发
-      const { ctx } = createMockCtx();
+    it('点击无 data-section/data-action 的 rail 项不应触发导航', () => {
+      // 验证既无 data-section 也无 data-action 的 rail 项被忽略
+      const { ctx, callbacks } = createMockCtx();
       initMemoryPanelListeners(ctx);
 
-      const moreMenu = document.getElementById('memory-more-menu')!;
-      // 插入一个 SVG 元素（属于 SVGElement，不是 HTMLElement）
-      const svgItem = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      svgItem.setAttribute('class', 'more-menu-item');
-      svgItem.setAttribute('data-action', 'insights');
-      moreMenu.appendChild(svgItem);
-      svgItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const blankItem = document.createElement('button');
+      blankItem.className = 'memory-rail-item';
+      document.getElementById('memory-rail')!.appendChild(blankItem);
+      blankItem.click();
 
-      // 由于 instanceof HTMLElement 检查失败，不应触发 toggleAnalysisPanel
-      expect(ctx.toggleAnalysisPanel).not.toHaveBeenCalled();
+      expect(ctx.setSection).not.toHaveBeenCalled();
+      expect(callbacks.moreMenuAction).not.toHaveBeenCalled();
     });
   });
-
-  // UX-0713-9：回收站按钮在更多菜单中，recycle-bin action 的事件委托测试在 initMoreMenu 块中覆盖
 
   describe('initRecycleBinBatchActions', () => {
     it('点击全部恢复按钮应调用 recycleBinBatchActionCallback("restore-all")', () => {

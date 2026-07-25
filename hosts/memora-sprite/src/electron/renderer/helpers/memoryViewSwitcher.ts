@@ -35,6 +35,29 @@ export type MemoryViewMode = 'list' | 'timeline' | 'graph';
 export type AnalysisPanelType = 'insights' | 'health' | 'completion-stats';
 
 /**
+ * 记忆面板导航区块（统一导航单一真相）
+ *
+ * 取代原先分散在三处的导航机制：
+ *   - 头部 .view-switch 分段控件（list/timeline/graph）
+ *   - 更多菜单（insights/health/completion-stats/recycle-bin）
+ *   - partner-insights 孤儿子块
+ *
+ * 三类区块：
+ *   - 数据视图：list / timeline / graph（互斥，替换主内容区）
+ *   - 分析面板：insights / health / completion-stats（互斥，替换主内容区并恢复 previousViewMode）
+ *   - 伙伴洞察：partner-insights（独立区块，替换主内容区）
+ * 注：回收站为模态动作（data-action="recycle-bin"），不是区块，不进入 activeSection。
+ */
+export type MemorySection =
+  | 'list'
+  | 'timeline'
+  | 'graph'
+  | 'insights'
+  | 'health'
+  | 'completion-stats'
+  | 'partner-insights';
+
+/**
  * 分析面板 DOM ID 映射
  *
  * 将二分硬编码改为映射遍历，支持任意数量面板。
@@ -77,6 +100,10 @@ export interface MemoryViewSwitcherContext {
   getViewSwitchToken(): number;
   /** 递增视图切换令牌并返回新值（每次 switchView 调用时触发） */
   incrementViewSwitchToken(): number;
+  /** 获取当前激活区块（统一导航单一真相，取代分段控件/更多菜单双 active） */
+  getActiveSection(): MemorySection;
+  /** 设置当前激活区块 */
+  setActiveSection(section: MemorySection): void;
 
   // ─── 视图内容激活回调（由 manager 提供，封装子视图的初始化逻辑） ───
   /** 切换到 timeline 视图后调用（触发时间线内容渲染） */
@@ -239,15 +266,15 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
       if (bar) bar.classList.add('hidden');
     }
   }
-  // partner-insights 是 insights 的子内容，非 insights 面板时需隐藏
-  if (panel !== 'insights') {
-    const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
-    if (partnerInsights) partnerInsights.classList.add('hidden');
-  }
+  // partner-insights 与所有分析面板互斥（统一导航后同为区块，不可共存）
+  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
+  if (partnerInsights) partnerInsights.classList.add('hidden');
 
   // 显示目标面板
   targetBar.classList.remove('hidden');
   ctx.setActiveAnalysisPanel(panel);
+  // 统一导航单一真相：激活区块指向当前分析面板
+  ctx.setActiveSection(panel);
 
   // 更新菜单项高亮
   updateAnalysisMenuItemsActive(ctx);
@@ -279,6 +306,8 @@ export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
     showDisplayView(ctx, previousMode);
     ctx.setViewMode(previousMode);
     ctx.setActiveAnalysisPanel(null);
+    // 统一导航单一真相：关闭分析面板后激活区块回到之前的数据视图
+    ctx.setActiveSection(previousMode);
 
     // 同步视图切换按钮状态
     const currentMode = ctx.getViewMode();
@@ -301,6 +330,8 @@ export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
 
   // 更新菜单项高亮
   updateAnalysisMenuItemsActive(ctx);
+  // 同步 rail 高亮（统一导航单一真相）
+  updateRailItemsActive(ctx);
 }
 
 /**
@@ -322,6 +353,8 @@ export function dismissAnalysisPanels(ctx: MemoryViewSwitcherContext): void {
   // 重置内部状态：下次打开时重新记录 previousViewMode
   ctx.setActiveAnalysisPanel(null);
   ctx.setViewMode('list');
+  // 统一导航单一真相：离开记忆面板时激活区块回到列表
+  ctx.setActiveSection('list');
   updateAnalysisMenuItemsActive(ctx);
   // 同步视图按钮状态到列表
   const listBtn = document.getElementById('btn-list-view');
@@ -339,6 +372,8 @@ export function dismissAnalysisPanels(ctx: MemoryViewSwitcherContext): void {
     graphBtn.classList.remove('active');
     graphBtn.setAttribute('aria-selected', 'false');
   }
+  // 同步 rail 高亮
+  updateRailItemsActive(ctx);
 }
 
 // ─── 视图切换主入口（公开 API） ───────────────────────────
@@ -367,6 +402,9 @@ export function switchView(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode)
   hideInsightsAndHealth(ctx);
   // 同步更多菜单中视图切换项的 active 状态
   updateViewMenuItemsActive(mode);
+  // 统一导航单一真相：激活区块指向当前数据视图（同步，立即反馈）
+  ctx.setActiveSection(mode);
+  updateRailItemsActive(ctx);
 
   // 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
   const listEl = ctx.memoryListEl;
@@ -423,4 +461,119 @@ export function switchView(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode)
       allViews.forEach((v) => v.classList.remove('memory-view-enter'));
     }, VIEW_TRANSITION_DURATION);
   }, VIEW_TRANSITION_DURATION);
+}
+
+// ─── rail 高亮同步（统一导航单一真相） ───────────────────
+
+/**
+ * 同步 rail 导航项的 active 高亮（取代原分段控件 + 更多菜单双 active 逻辑）
+ *
+ * 读取 ctx.getActiveSection() 作为唯一真相，遍历 #memory-rail 下所有
+ * [data-section] 项，命中当前区块的标记为 active。
+ * 回收站等 [data-action] 动作项不参与高亮（模态动作，无持续激活态）。
+ *
+ * @param ctx 视图切换上下文
+ */
+export function updateRailItemsActive(ctx: MemoryViewSwitcherContext): void {
+  const rail = document.getElementById('memory-rail');
+  if (!rail) return;
+  const active = ctx.getActiveSection();
+  rail.querySelectorAll<HTMLElement>('.memory-rail-item[data-section]').forEach((item) => {
+    const section = item.getAttribute('data-section');
+    const isActive = section === active;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-selected', String(isActive));
+  });
+}
+
+// ─── 伙伴洞察区块（独立区块，互斥于数据视图与分析面板） ────
+
+/**
+ * 切换伙伴洞察区块（rail 的"伙伴洞察"项）
+ *
+ * - 若当前已激活伙伴洞察：收起并恢复之前的数据视图（previousViewMode）
+ * - 否则：记录当前数据视图（若当前无分析面板激活），隐藏主视图 + 所有分析面板，
+ *   显示伙伴洞察区块，并触发数据加载回调（'partner-insights'）
+ *
+ * 与 toggleAnalysisPanel 互斥：打开伙伴洞察时分析面板全部隐藏，反之亦然。
+ *
+ * @param ctx 视图切换上下文
+ */
+export function togglePartnerInsights(ctx: MemoryViewSwitcherContext): void {
+  const panel = document.getElementById(PARTNER_INSIGHTS_ID);
+  if (!panel) return;
+
+  const isActive = ctx.getActiveSection() === 'partner-insights';
+
+  if (isActive) {
+    // 收起：恢复之前的数据视图
+    panel.classList.add('hidden');
+    const prev = ctx.getPreviousViewMode();
+    if (ctx.getActiveAnalysisPanel() === null) {
+      showDisplayView(ctx, prev);
+      ctx.setViewMode(prev);
+    }
+    ctx.setActiveSection(prev);
+    updateRailItemsActive(ctx);
+    return;
+  }
+
+  // 打开：记录 previousViewMode（仅当当前无分析面板激活）
+  if (ctx.getActiveAnalysisPanel() === null) {
+    ctx.setPreviousViewMode(ctx.getViewMode());
+  }
+
+  // 隐藏主视图 + 所有分析面板 + 其他区块（互斥）
+  hideAllDisplayViews(ctx);
+  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
+    const bar = document.getElementById(barId);
+    if (bar) bar.classList.add('hidden');
+  }
+  ctx.setActiveAnalysisPanel(null);
+
+  // 显示伙伴洞察区块
+  panel.classList.remove('hidden');
+  ctx.setActiveSection('partner-insights');
+
+  // 同步高亮
+  updateRailItemsActive(ctx);
+
+  // 触发数据加载（与 insights/health 同机制的回调入口）
+  ctx.getMoreMenuActionCallback()?.('partner-insights');
+}
+
+// ─── 统一导航入口（取代分段控件 + 更多菜单两套切换） ──────
+
+/**
+ * 设置当前激活区块（统一导航单一入口）
+ *
+ * 合并原先 switchView / toggleAnalysisPanel / togglePartnerInsights 三套切换逻辑，
+ * 以 activeSection 为单一真相。rail 点击事件统一走本函数：
+ *   - 数据视图（list/timeline/graph）→ switchView（内部互斥隐藏分析面板 + partner）
+ *   - 分析面板（insights/health/completion-stats）→ toggleAnalysisPanel
+ *   - 伙伴洞察（partner-insights）→ togglePartnerInsights
+ *
+ * 同一区块重复点击不重复切换（rail 无 toggle-off 语义，离开需点其他项）。
+ *
+ * @param ctx 视图切换上下文
+ * @param section 目标区块
+ */
+export function setSection(ctx: MemoryViewSwitcherContext, section: MemorySection): void {
+  if (ctx.getActiveSection() === section) return;
+
+  if (section === 'list' || section === 'timeline' || section === 'graph') {
+    // 数据视图：复用 switchView（同步更新 activeSection + rail 高亮）
+    switchView(ctx, section);
+    return;
+  }
+
+  if (section === 'insights' || section === 'health' || section === 'completion-stats') {
+    toggleAnalysisPanel(ctx, section);
+    // toggleAnalysisPanel 打开分支已 setActiveSection(section) + updateRailItemsActive
+    return;
+  }
+
+  if (section === 'partner-insights') {
+    togglePartnerInsights(ctx);
+  }
 }

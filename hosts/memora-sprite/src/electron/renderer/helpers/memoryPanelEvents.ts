@@ -26,6 +26,8 @@ import type { EventTracker } from './eventTracker.js';
 import type { ConfirmDialogOptions } from '../types.js';
 // STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryPanelManager 形成运行时循环依赖）
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
+// 统一导航区块类型（rail 单一真相），type-only 引用避免运行时循环依赖
+import type { MemorySection } from './memoryViewSwitcher.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
@@ -121,6 +123,8 @@ export interface MemoryPanelEventContext {
   hideAnalysisPanel(): void;
   /** 切换视图模式（list/timeline/graph） */
   switchView(mode: 'list' | 'timeline' | 'graph'): void;
+  /** 设置当前激活区块（统一导航，rail 点击委托至此） */
+  setSection(section: MemorySection): void;
   /** 显示清理确认对话框 */
   showCleanupDialog(message: string, ids: string[]): void;
 
@@ -169,9 +173,8 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
   initAddMemoryForm(ctx);
   initDetailActionButtons(ctx);
   initAdvancedFilterBar(ctx);
-  initMoreMenu(ctx);
   initAnalysisPanelClose(ctx);
-  initViewSwitchButtons(ctx);
+  initMemoryRail(ctx);
   initCleanupDialog(ctx);
   // 回收站列表事件委托（恢复/彻底删除按钮）
   initRecycleBinActions(ctx);
@@ -538,81 +541,10 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
 // ─── 6. 更多菜单（统计洞察/健康度诊断/补全统计/回收站） ───────────────────
 
 /**
- * 更多菜单按钮 + 点击外部关闭 + 菜单项事件委托。
- * 菜单项含统计洞察、健康度诊断、补全统计、回收站四个动作。
+ * 更多菜单（initMoreMenu）已废弃：统一导航 rail 取代头部 .view-switch 分段控件
+ * 与 #memory-more-menu 更多菜单两套分散导航。菜单项动作改为 rail 项的
+ * data-section / data-action 事件委托（见 initMemoryRail）。
  */
-function initMoreMenu(ctx: MemoryPanelEventContext): void {
-  const moreBtn = document.getElementById('btn-memory-more');
-  const moreMenu = document.getElementById('memory-more-menu');
-
-  /** 切换更多菜单的显示/隐藏 */
-  const toggleMoreMenu = (show?: boolean): void => {
-    if (!moreMenu || !moreBtn) return;
-    const shouldShow = show ?? moreMenu.classList.contains('hidden');
-    if (shouldShow) {
-      // 菜单 position:fixed（视口坐标系），坐标基于按钮视口位置动态计算，
-      // 彻底脱离 .main-panel-area 的 overflow:hidden 裁剪（2.1 双栏布局后该容器被侧栏挤窄）。
-      // getBoundingClientRect 返回值即视口坐标，与 fixed 定位坐标系一致，无需转换。
-      const btnRect = moreBtn.getBoundingClientRect();
-      const menuMinWidth = 150; // 与 CSS .more-menu min-width 一致
-      // 默认靠左对齐按钮、向右展开（符合用户期望）
-      const wouldOverflowRight = btnRect.left + menuMinWidth > window.innerWidth;
-      if (wouldOverflowRight) {
-        // 右侧空间不足，靠右对齐按钮、向左展开
-        moreMenu.style.left = `${Math.max(0, btnRect.right - menuMinWidth)}px`;
-      } else {
-        // 右侧空间充足，靠左对齐按钮、向右展开
-        moreMenu.style.left = `${btnRect.left}px`;
-      }
-      // 顶部紧贴按钮下方 4px
-      moreMenu.style.top = `${btnRect.bottom + 4}px`;
-    }
-    moreMenu.classList.toggle('hidden', !shouldShow);
-    moreBtn.setAttribute('aria-expanded', String(shouldShow));
-  };
-
-  if (moreBtn) {
-    ctx.events.addEventListener(moreBtn, 'click', (e) => {
-      (e as Event).stopPropagation();
-      toggleMoreMenu();
-    });
-  }
-
-  // 点击外部关闭更多菜单（注册到 document）
-  ctx.events.addEventListener(document, 'click', (e) => {
-    if (moreMenu && !moreMenu.classList.contains('hidden')) {
-      const target = (e as Event).target as HTMLElement;
-      if (!moreMenu.contains(target) && target !== moreBtn) {
-        toggleMoreMenu(false);
-      }
-    }
-  });
-
-  // 更多菜单项事件委托（insights/health/completion-stats/recycle-bin）
-  if (moreMenu) {
-    ctx.events.addEventListener(moreMenu, 'click', async (e) => {
-      const target = (e as Event).target as HTMLElement;
-      const item = target.closest('.more-menu-item');
-      if (!(item instanceof HTMLElement)) return;
-      const action = item.getAttribute('data-action');
-      toggleMoreMenu(false);
-
-      if (action === 'insights') {
-        ctx.toggleAnalysisPanel('insights');
-        ctx.getMoreMenuActionCallback()?.(action);
-      } else if (action === 'health') {
-        ctx.toggleAnalysisPanel('health');
-        ctx.getMoreMenuActionCallback()?.(action);
-      } else if (action === 'completion-stats') {
-        // 补全统计：切换面板 UI + 触发渲染（数据来自渲染层 localStorage，无 IPC）
-        ctx.toggleAnalysisPanel('completion-stats');
-        ctx.getMoreMenuActionCallback()?.(action);
-      } else if (action === 'recycle-bin') {
-        ctx.getMoreMenuActionCallback()?.(action);
-      }
-    });
-  }
-}
 
 // ─── 8. 分析面板关闭按钮 ─────────────────────────────
 
@@ -632,83 +564,54 @@ function initAnalysisPanelClose(ctx: MemoryPanelEventContext): void {
       ctx.hideAnalysisPanel();
     });
   }
+  // 补全统计面板关闭按钮：该按钮由 CompletionStatsRenderer 在面板打开时才动态注入 DOM，
+  // init 阶段尚不存在，故在稳定容器 #completion-stats-bar 上做事件委托，
+  // 命中 .panel-close-btn 即关闭面板（与列表点击委托同一手法）。
+  const completionStatsBar = document.getElementById('completion-stats-bar');
+  if (completionStatsBar) {
+    ctx.events.addEventListener(completionStatsBar, 'click', (e: Event) => {
+      const closeBtn = (e.target as HTMLElement).closest<HTMLElement>('.panel-close-btn');
+      if (closeBtn) {
+        ctx.hideAnalysisPanel();
+      }
+    });
+  }
 }
 
-// ─── 8. 视图切换按钮（列表 ↔ 图谱 ↔ 时间线） ─────────────
+// ─── 8. 统一导航 rail（取代 .view-switch 分段控件 + 更多菜单） ─────
 
 /**
- * 三视图 segmented control 切换：点击当前激活视图时降级回列表，
- * 点击其他视图时切换到该视图。同步更新按钮 active 状态。
+ * 记忆面板统一导航 rail：事件委托处理所有区块切换。
+ *
+ * - [data-section] 项（list/timeline/graph/insights/health/completion-stats/partner-insights）
+ *   委托到 ctx.setSection（统一导航单一入口）。数据视图额外触发 getViewSwitchCallback
+ *   以保持图谱/时间线激活等上游通知（与原 view-switch 按钮行为一致）。
+ * - [data-action="recycle-bin"] 项：触发 getMoreMenuActionCallback('recycle-bin') 打开回收站模态。
  */
-function initViewSwitchButtons(ctx: MemoryPanelEventContext): void {
-  const listBtn = document.getElementById('btn-list-view');
-  const graphBtn = document.getElementById('btn-graph-view');
+function initMemoryRail(ctx: MemoryPanelEventContext): void {
+  const rail = document.getElementById('memory-rail');
+  if (!rail) return;
 
-  /** 更新视图切换按钮的 active 状态 */
-  const updateViewSwitchBtns = (view: 'list' | 'timeline' | 'graph'): void => {
-    if (listBtn) {
-      listBtn.classList.toggle('active', view === 'list');
-      listBtn.setAttribute('aria-selected', String(view === 'list'));
-    }
-    const timelineBtn = document.getElementById('btn-timeline-view');
-    if (timelineBtn) {
-      timelineBtn.classList.toggle('active', view === 'timeline');
-      timelineBtn.setAttribute('aria-selected', String(view === 'timeline'));
-    }
-    if (graphBtn) {
-      graphBtn.classList.toggle('active', view === 'graph');
-      graphBtn.setAttribute('aria-selected', String(view === 'graph'));
-    }
-  };
+  ctx.events.addEventListener(rail, 'click', (e) => {
+    const target = (e as Event).target as HTMLElement;
+    const item = target.closest<HTMLElement>('.memory-rail-item');
+    if (!item) return;
 
-  // 默认列表视图 active
-  updateViewSwitchBtns('list');
-
-  if (listBtn) {
-    ctx.events.addEventListener(listBtn, 'click', () => {
-      updateViewSwitchBtns('list');
-      ctx.switchView('list');
-      ctx.getViewSwitchCallback()?.('list');
-    });
-  }
-
-  if (graphBtn) {
-    ctx.events.addEventListener(graphBtn, 'click', () => {
-      const graphContainer = document.getElementById('memory-graph-container');
-      // 统一用 .hidden 类判断可见性
-      const isGraphView = graphContainer && !graphContainer.classList.contains('hidden');
-
-      if (isGraphView) {
-        updateViewSwitchBtns('list');
-        ctx.switchView('list');
-        ctx.getViewSwitchCallback()?.('list');
-      } else {
-        updateViewSwitchBtns('graph');
-        ctx.switchView('graph');
-        ctx.getViewSwitchCallback()?.('graph');
+    const section = item.getAttribute('data-section');
+    if (section) {
+      ctx.setSection(section as MemorySection);
+      // 数据视图额外触发上游通知（图谱/时间线激活等），与原 view-switch 行为一致
+      if (section === 'list' || section === 'timeline' || section === 'graph') {
+        ctx.getViewSwitchCallback()?.(section);
       }
-    });
-  }
+      return;
+    }
 
-  // 时间线视图按钮
-  const timelineBtn = document.getElementById('btn-timeline-view');
-  if (timelineBtn) {
-    ctx.events.addEventListener(timelineBtn, 'click', () => {
-      const timelineContainer = document.getElementById('memory-timeline-container');
-      // 统一用 .hidden 类判断可见性
-      const isTimelineView = timelineContainer && !timelineContainer.classList.contains('hidden');
-
-      if (isTimelineView) {
-        updateViewSwitchBtns('list');
-        ctx.switchView('list');
-        ctx.getViewSwitchCallback()?.('list');
-      } else {
-        updateViewSwitchBtns('timeline');
-        ctx.switchView('timeline');
-        ctx.getViewSwitchCallback()?.('timeline');
-      }
-    });
-  }
+    const action = item.getAttribute('data-action');
+    if (action === 'recycle-bin') {
+      ctx.getMoreMenuActionCallback()?.('recycle-bin');
+    }
+  });
 }
 
 // ─── 9. 智能清理对话框 ─────────────────────────

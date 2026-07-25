@@ -1,0 +1,125 @@
+/* memory-rail.css — 记忆面板统一导航 rail（UI 统一方案 Task #5）
+ *
+ * 取代原头部 .view-switch 分段控件（列表/时间线/图谱）与 #memory-more-menu 更多菜单
+ * （统计洞察/健康度/补全统计/回收站）两套分散导航，统一为左侧竖向 rail。
+ * 设计对齐设置面板的 .settings-tabs（160px 竖向 tab + 左侧激活指示条），
+ * 语义统一：activeSection 单一真相驱动 .memory-rail-item.active 高亮。
+ */
+
+/* ─── 面板主体布局：rail + 内容区 横向 flex ────── */
+/* 取代 .panel 直接承载 header + 各区块，改为 body 横向布局，填充面板剩余空间 */
+.memory-panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 内容区：纵向 flex 列，承载头部 + 各区块面板 + 视图容器，吸收剩余空间并管理内部滚动 */
+.memory-panel-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── 统一导航 rail（左侧 160px 宽） ────── */
+.memory-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 160px;
+  flex-shrink: 0;
+  padding: var(--space-2) 0;
+  background: transparent;
+  border-right: 1px solid var(--surface2);
+  overflow-y: auto;
+}
+
+/* rail 分组（数据视图 / 分析 / 伙伴） */
+.memory-rail-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 底部组（回收站动作）：推到 rail 底部并加分隔线 */
+.memory-rail-group--bottom {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--surface2);
+}
+
+/* 分组标签（提升多区块扫视效率，对齐 .settings-tab-group-label） */
+.memory-rail-group-label {
+  padding: var(--space-2-5) var(--space-5) var(--space-1);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+  margin-top: var(--space-2);
+}
+.memory-rail-group-label:first-child {
+  margin-top: 0;
+}
+
+/* rail 项（区块导航 / 动作） */
+.memory-rail-item {
+  padding: var(--space-2-5) var(--space-5);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent; /* 左侧激活指示条 */
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  text-align: left;
+  width: 100%;
+}
+
+/* rail 项图标：统一尺寸，继承文字颜色 */
+.memory-rail-item .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.memory-rail-item:hover {
+  color: var(--text);
+  background: var(--surface0);
+}
+
+.memory-rail-item.active {
+  color: var(--active-fg);
+  border-left-color: var(--active-border);
+  font-weight: var(--weight-semibold);
+  background: var(--active-bg);
+}
+
+.memory-rail-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ─── 窄屏降级：64px 图标轨，隐藏文字与分组标签（对齐设置面板响应式） ────── */
+@media (max-width: 760px) {
+  .memory-rail {
+    width: 64px;
+    align-items: stretch;
+  }
+  .memory-rail-group-label,
+  .memory-rail-label {
+    display: none;
+  }
+  .memory-rail-item {
+    justify-content: center;
+    padding: var(--space-2-5) 0;
+  }
+}

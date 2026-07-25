@@ -91,15 +91,15 @@ export class CompletionStatsRenderer {
     const recentEvents = metrics.getRecentEvents(RECENT_EVENTS_LIMIT);
     const dailyTrend = metrics.getDailyAggregated(DAILY_TREND_DAYS);
 
-    // ─── 标题栏 + 导出/重置按钮 ──────────────────────────
-    const headerEl = createEl('div', 'completion-stats-header');
-    headerEl.appendChild(createEl('span', 'completion-stats-title', '补全统计'));
+    // ─── 标题栏 + 导出/重置/关闭按钮（统一外壳 + 通用 .btn） ──
+    const headerEl = createEl('div', 'completion-stats-header analysis-panel__header');
+    headerEl.appendChild(createEl('span', 'completion-stats-title analysis-panel__title', '补全统计'));
 
-    // 按钮组容器（导出 + 重置并排，主动可见）
+    // 按钮组容器（导出 + 重置 + 关闭并排，主动可见）
     const actionsEl = createEl('div', 'completion-stats-actions');
 
     // 导出按钮：渲染层 Blob 下载，零新增 IPC，beta 用户可回传统计 JSON 闭合度量环
-    const exportBtn = createEl('button', 'completion-stats-export-btn', '导出');
+    const exportBtn = createEl('button', 'btn btn-primary btn-sm', '导出');
     exportBtn.title = '导出统计 JSON（含聚合+趋势+事件流，用于回传度量数据）';
     exportBtn.type = 'button';
     this.events.addEventListener(exportBtn, 'click', () => {
@@ -107,13 +107,21 @@ export class CompletionStatsRenderer {
     });
     actionsEl.appendChild(exportBtn);
 
-    const resetBtn = createEl('button', 'completion-stats-reset-btn', '重置统计');
+    const resetBtn = createEl('button', 'btn btn-secondary btn-sm', '重置统计');
     resetBtn.title = '清空所有补全统计数据';
     resetBtn.type = 'button';
     this.events.addEventListener(resetBtn, 'click', () => {
       this.resetCallback?.();
     });
     actionsEl.appendChild(resetBtn);
+
+    // 关闭按钮：复用 .panel-close-btn，经 memoryPanelEvents 在 #completion-stats-bar 上的事件委托触发 hideAnalysisPanel
+    const closeBtn = createEl('button', 'panel-close-btn icon-btn flex-shrink-0', '');
+    closeBtn.id = 'btn-close-completion-stats';
+    closeBtn.title = '关闭补全统计';
+    closeBtn.setAttribute('aria-label', '关闭补全统计');
+    closeBtn.type = 'button';
+    actionsEl.appendChild(closeBtn);
 
     headerEl.appendChild(actionsEl);
     container.appendChild(headerEl);
@@ -125,11 +133,13 @@ export class CompletionStatsRenderer {
       '激活率',
       `${(aggregated.activationRate * 100).toFixed(1)}%`,
       `展示 ${aggregated.totalShown} / 对话 ${aggregated.totalChatTurns}`,
+      true, // R1 = 发布前提验证数，数值用强调色（accent）
     ));
     r1El.appendChild(this.createMetricCard(
       '召回时刻',
       String(aggregated.recallMoments),
       `"你教过我 X" 可感知次数`,
+      true,
     ));
     container.appendChild(r1El);
 
@@ -228,17 +238,18 @@ export class CompletionStatsRenderer {
   }
 
   /**
-   * 创建指标卡片元素
+   * 创建指标卡片元素（复用共享 .stat-card，避免三面板各自发明卡片样式）
    *
    * @param label 指标名称
    * @param value 指标值（主展示）
    * @param hint 提示文本（副展示，小字）
+   * @param accent 是否用强调色渲染数值（R1 发布前提验证数，对应 .stat-card--accent）
    */
-  private createMetricCard(label: string, value: string, hint: string): HTMLElement {
-    const cardEl = createEl('div', 'completion-stats-card');
-    cardEl.appendChild(createEl('div', 'completion-stats-card-label', label));
-    cardEl.appendChild(createEl('div', 'completion-stats-card-value', value));
-    cardEl.appendChild(createEl('div', 'completion-stats-card-hint', hint));
+  private createMetricCard(label: string, value: string, hint: string, accent = false): HTMLElement {
+    const cardEl = createEl('div', accent ? 'stat-card stat-card--accent' : 'stat-card');
+    cardEl.appendChild(createEl('div', 'stat-card__label', label));
+    cardEl.appendChild(createEl('div', 'stat-card__value', value));
+    cardEl.appendChild(createEl('div', 'stat-card__hint', hint));
     return cardEl;
   }
 
