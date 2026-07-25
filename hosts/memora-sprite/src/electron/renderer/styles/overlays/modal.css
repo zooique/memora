@@ -62,26 +62,16 @@
   margin: 0;
 }
 
-/* 输入弹窗 input 样式：与设计系统一致的输入框 */
+/* 输入弹窗 input：复用 .input 基类（foundation/controls.css），
+   仅保留差异化属性（padding 用 md 档、字号用 base、行高、transition 时长、box-sizing）。
+   :focus 状态由 .input 基类统一提供，不再重复定义。 */
 .prompt-input {
-  width: 100%;
   padding: var(--input-padding-md);
   margin-top: var(--space-3);
   font-size: var(--font-base);
   line-height: 1.5;
-  color: var(--text);
-  /* 引用已定义的 CSS 变量 */
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  outline: none;
   transition: border-color var(--transition-base) ease;
   box-sizing: border-box;
-}
-
-.prompt-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-20);
 }
 
 /* 输入弹窗错误提示：红色文字，默认隐藏 */
@@ -346,16 +336,15 @@
   width: 100%;
 }
 
-.onboarding-step-content .modal-footer .btn-text {
+/* onboarding 步骤页脚跳过按钮变体：缩小字号 + 弱化文字色。
+   基类 .btn-text 已提供 padding/background/border/cursor，此处仅覆写差异属性（窄覆写原则）。
+   HTML 用 class="btn-text btn-text--onboarding" 组合应用。 */
+.btn-text--onboarding {
   font-size: var(--font-xs);
   color: var(--text-3);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: var(--space-1) var(--space-2);
 }
 
-.onboarding-step-content .modal-footer .btn-text:hover {
+.btn-text--onboarding:hover {
   color: var(--accent);
 }
 
@@ -429,11 +418,8 @@ kbd {
   transform: scale(0.97);
 }
 
-/* 弹窗按钮键盘聚焦可见样式（统一 modal 内所有可交互元素） */
-.modal-close:focus-visible,
-.btn-primary:focus-visible,
-.btn-secondary:focus-visible,
-.btn-danger:focus-visible {
+/* 弹窗关闭按钮键盘聚焦可见样式（.btn-* 的 :focus-visible 已上移到 controls.css 基类） */
+.modal-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

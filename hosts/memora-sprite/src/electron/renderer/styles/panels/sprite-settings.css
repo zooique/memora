@@ -212,7 +212,8 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
   color: var(--green);
-  background: rgba(76, 175, 80, 0.12);
+  /* 激活标记淡绿底（统一到 --green-20 令牌，原裸 rgba 76,175,80,0.12 已废弃） */
+  background: var(--green-20);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
 }

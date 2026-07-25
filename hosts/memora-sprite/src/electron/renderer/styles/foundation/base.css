@@ -74,6 +74,8 @@ html, body {
 
 /* ─── 通用工具类 ───────────────────────────────────────────── */
 .hidden {
+  /* !important 是有意明知故犯：L1 工具类必须压制所有 display 声明（含 inline style），
+     详见 .stylelintrc.mjs:27 的 stylelint 允许清单 */
   display: none !important;
 }
 
@@ -194,6 +196,8 @@ html, body {
   *,
   *::before,
   *::after {
+    /* !important 是有意明知故犯：无障碍强制优先级，必须覆盖所有组件动画时长，
+       详见 .stylelintrc.mjs:27 的 stylelint 允许清单 */
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -285,42 +289,9 @@ button:active,
   pointer-events: none;
 }
 
-/* 图标按钮（仅图标，无文字，用于紧凑场景如刷新按钮） */
-.btn-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-2);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-}
-
-.btn-icon:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-  border-color: var(--surface2);
-}
-
-.btn-icon:active {
-  background: var(--surface1);
-}
-
-.btn-icon:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.btn-icon .icon {
-  width: 14px;
-  height: 14px;
-}
+/* 已删除 .btn-icon 重复定义（P1-5 合并至 .icon-btn 单一真理源）。
+   原唯一使用点 index.html:957 已改用 .icon-btn 基类。
+   视觉差异：hover 由「背景+边框」收敛为「仅背景」，与项目其他 57 处 .icon-btn 保持一致。 */
 
 /* 小尺寸（24×24，用于行内紧凑场景） */
 .icon-btn.icon-btn-sm {

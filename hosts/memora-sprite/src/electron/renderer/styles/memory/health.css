@@ -386,7 +386,8 @@
 
 .llm-result-restore-btn:hover:not(:disabled) {
   background: var(--accent);
-  color: white;
+  /* accent 背景上的白色文字（复用 --text-on-red 令牌，值与 --white 一致） */
+  color: var(--text-on-red);
 }
 
 .llm-result-restore-btn:disabled {

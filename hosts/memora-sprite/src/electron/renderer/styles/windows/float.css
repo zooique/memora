@@ -43,7 +43,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: var(--font-h2);  /* 球体 emoji 字号（24px，令牌化） */
       position: relative;
       transition: transform var(--transition-base) ease, box-shadow var(--transition-slow) ease;
       /* 使用主题感知阴影变量，与 base.css 设计系统保持一致 */
@@ -155,10 +155,10 @@
       right: -4px;
       min-width: 20px;
       height: 20px;
-      border-radius: 10px;
+      border-radius: var(--radius-md);  /* 徽章圆角（10px，令牌化） */
       background: var(--red);
       color: var(--badge-text);
-      font-size: 0.7rem;
+      font-size: var(--font-xs);  /* 徽章字号（原 0.7rem，统一到 11px 令牌） */
       font-weight: 700;
       display: none;
       align-items: center;
@@ -212,14 +212,14 @@
       transform: translateX(-50%);
       background: var(--hint-bg);
       color: var(--hint-text);
-      font-size: 11px;
+      font-size: var(--font-xs);  /* 拖动提示字号（11px，令牌化） */
       padding: var(--space-1) var(--space-2-5);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);  /* 拖动提示圆角（6px，令牌化） */
       white-space: nowrap;
       pointer-events: none;
       opacity: 0;
       transition: opacity var(--transition-slow) ease;
-      z-index: 10;
+      z-index: var(--z-floating-action);  /* 浮动操作元素层级（10，令牌化） */
     }
 
     #drag-hint.visible {
@@ -249,14 +249,14 @@
       transform: translateX(-50%);
       background: var(--hint-bg);
       color: var(--hint-text);
-      font-size: 11px;
+      font-size: var(--font-xs);  /* 离开标签字号（11px，令牌化） */
       padding: var(--space-1) var(--space-2-5);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);  /* 离开标签圆角（6px，令牌化） */
       white-space: nowrap;
       pointer-events: none;
       opacity: 0;
       transition: opacity var(--transition-slow) ease;
-      z-index: 10;
+      z-index: var(--z-floating-action);  /* 浮动操作元素层级（10，令牌化） */
     }
 
     #away-label.visible {
@@ -293,7 +293,7 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity var(--transition-slow);
-      z-index: 20;
+      z-index: var(--z-decoration);  /* 装饰性浮层层级（20，令牌化） */
       overflow: hidden;
     }
 
@@ -302,7 +302,7 @@
     }
 
     .message-preview-header {
-      font-size: 10px;
+      font-size: var(--font-2xs);  /* 预览头字号（10px，令牌化） */
       font-weight: 600;
       color: var(--accent);
       margin-bottom: var(--space-1);
@@ -311,7 +311,7 @@
     }
 
     .message-preview-text {
-      font-size: 12px;
+      font-size: var(--font-sm);  /* 预览文本字号（12px，令牌化） */
       line-height: 1.5;
       color: var(--text);
       /* 最多显示 4 行，超出省略 */

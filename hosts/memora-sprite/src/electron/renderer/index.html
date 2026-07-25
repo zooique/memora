@@ -954,7 +954,7 @@
             <div class="settings-group-header flex-between">
               <h3>作品投影</h3>
               <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
-              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新" aria-label="刷新作品投影"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+              <button id="btn-work-projection-refresh" class="icon-btn" title="刷新" aria-label="刷新作品投影"><svg class="icon"><use href="#icon-refresh"/></svg></button>
             </div>
             <p class="settings-hint">
               精灵读取你的代码文件后，自动生成作品投影摘要。
@@ -1703,7 +1703,7 @@
       <div class="modal-body">
         <p id="prompt-message" class="confirm-message"></p>
         <!-- 补齐 aria-labelledby 关联提示文本 + aria-describedby 关联错误文本 + placeholder 兜底（无 label for 关联） -->
-        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" aria-describedby="prompt-input-error" placeholder="请输入…" />
+        <input id="prompt-input" type="text" class="input prompt-input" maxlength="100" aria-labelledby="prompt-message" aria-describedby="prompt-input-error" placeholder="请输入…" />
         <p id="prompt-input-error" class="prompt-error hidden" role="alert"></p>
       </div>
       <div class="modal-footer">
@@ -1760,7 +1760,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn-primary onboarding-next" data-next="2">下一步：配置 API</button>
-          <button class="btn-text onboarding-skip" data-skip="4">跳过，直接开始</button>
+          <button class="btn-text btn-text--onboarding onboarding-skip" data-skip="4">跳过，直接开始</button>
         </div>
       </div>
 
@@ -1796,7 +1796,7 @@
           <button class="btn-secondary onboarding-prev" data-prev="1">上一步</button>
           <button class="btn-secondary" id="btn-onboarding-test" type="button">测试连接</button>
           <button class="btn-primary onboarding-next" data-next="3" id="btn-onboarding-save-key">保存并继续</button>
-          <button class="btn-text onboarding-skip" data-skip="4">跳过，稍后配置</button>
+          <button class="btn-text btn-text--onboarding onboarding-skip" data-skip="4">跳过，稍后配置</button>
         </div>
       </div>
 
