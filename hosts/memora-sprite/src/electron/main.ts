@@ -54,7 +54,7 @@ import {
   DEFAULT_DATA_DIR,
   DEFAULT_CONFIG_DIR,
 } from '../index.js';
-import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig, type SpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/audit/auditManager.js';
 import { UsageStatsCollector } from '../sprite/usage/usageStatsCollector.js';
@@ -199,6 +199,23 @@ function setAppRuntime(runtime: AppRuntime | null): void {
     appState.sprite = null;
     appState.sessionStore = null;
     appState.closeSprite = null;
+  }
+}
+
+/**
+ * 持久化窗口相关配置
+ *
+ * sprite 就绪时通过 updateConfigBatch 写入（同步 ConfigManager 内存态 + 写文件），
+ * 否则 fallback 到模块级 saveSpriteConfig（部分配置，读文件合并）。
+ *
+ * 影响字段：windowBounds / windowState / floatIconPosition / showFloatBubble
+ * （均为 main.ts 直接管理的窗口层配置，Sprite 层不主动变更）
+ */
+function persistWindowConfig(updates: Partial<SpriteConfig>): void {
+  if (appState.sprite) {
+    appState.sprite.updateConfigBatch(updates);
+  } else {
+    saveSpriteConfig(updates);
   }
 }
 
@@ -483,7 +500,7 @@ function setupAgentReady(
   appState.windowManager.updateFloatCallbacks({
     onHideToTray: () => {
       appState.windowStateManager.setShowFloatBubble(false);
-      saveSpriteConfig({ showFloatBubble: false });
+      persistWindowConfig({ showFloatBubble: false });
       appState.trayManager?.updateMenu();
     },
     onQuit: () => {
@@ -567,9 +584,9 @@ async function initializeApp(): Promise<void> {
       defaultState: spriteConfig.windowState,
       floatPosition,
       showFloatBubble: spriteConfig.showFloatBubble,
-      // 持久化委托给 saveSpriteConfig（避免与 spriteConfig.ts 重复写文件）
+      // 持久化委托给 persistWindowConfig（同步 ConfigManager 内存态）
       onSaveState: (data) => {
-        saveSpriteConfig({
+        persistWindowConfig({
           windowState: data.windowState,
           floatIconPosition: data.floatPosition,
           showFloatBubble: data.showFloatBubble,
@@ -602,7 +619,7 @@ async function initializeApp(): Promise<void> {
         // 窗口可能已销毁，getBounds 前检查 isDestroyed
         if (fullWindow.isDestroyed()) return;
         const bounds = fullWindow.getBounds();
-        saveSpriteConfig({
+        persistWindowConfig({
           windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
         });
       };
@@ -639,8 +656,8 @@ async function initializeApp(): Promise<void> {
         },
         onToggleFloatBubble: (checked: boolean) => {
           appState.windowStateManager.setShowFloatBubble(checked);
-          // 同步持久化到 spriteConfig
-          saveSpriteConfig({ showFloatBubble: checked });
+          // 持久化到 spriteConfig（通过 persistWindowConfig 同步 ConfigManager 内存态）
+          persistWindowConfig({ showFloatBubble: checked });
           // 重建托盘菜单以反映勾选状态
           appState.trayManager?.updateMenu();
         },
@@ -1007,6 +1024,15 @@ app.on('before-quit', async (e) => {
   e.preventDefault();
 
   try {
+    // flush 窗口边界（resize/move 防抖定时器可能尚未触发）
+    // 必须在任何清理之前执行，此时窗口和 sprite 都仍可用
+    const flushFullWindow = appState.windowManager?.getFullWindow();
+    if (flushFullWindow && !flushFullWindow.isDestroyed()) {
+      const flushBounds = flushFullWindow.getBounds();
+      persistWindowConfig({
+        windowBounds: { x: flushBounds.x, y: flushBounds.y, width: flushBounds.width, height: flushBounds.height },
+      });
+    }
     // 先中断进行中的对话，避免 agent.close() 在对话进行中调用
     // 导致 AsyncGenerator 未正常退出、资源泄漏或状态不一致
     if (appState.currentAbortController) {
