@@ -532,96 +532,98 @@
           </div>
         </div>
         <!-- 记忆洞察栏（统计 + source 分布 + 关系摘要，默认折叠） -->
-        <div id="memory-insights-bar" class="insights-bar hidden">
-          <div class="insights-header flex-between">
-            <span class="insights-title"><svg class="icon"><use href="#icon-chart"/></svg> 统计洞察</span>
+        <div id="memory-insights-bar" class="insights-bar analysis-bar hidden">
+          <div class="analysis-panel__header">
+            <span class="analysis-panel__title"><svg class="icon"><use href="#icon-chart"/></svg> 统计洞察</span>
             <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-insights" title="关闭统计洞察" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
           </div>
-          <!-- 统计：成组为抬升卡片（CSS-R11 就地优化） -->
-          <div class="insights-section">
-            <div class="insights-section-title">统计</div>
-            <div class="insights-row insights-stats card">
-              <div class="insights-stat">
-                <span class="insights-stat-value" id="insights-total">0</span>
-                <span class="insights-stat-label">记忆</span>
+          <!-- 统计：复用共享 .stat-card 网格 -->
+          <div class="panel-section">
+            <div class="panel-section-title">统计</div>
+            <div class="stat-grid">
+              <div class="stat-card">
+                <span class="stat-card__value" id="insights-total">0</span>
+                <span class="stat-card__label">记忆</span>
               </div>
-              <div class="insights-stat">
-                <span class="insights-stat-value" id="insights-relations">0</span>
-                <span class="insights-stat-label">关系</span>
+              <div class="stat-card">
+                <span class="stat-card__value" id="insights-relations">0</span>
+                <span class="stat-card__label">关系</span>
               </div>
-              <div class="insights-stat">
-                <span class="insights-stat-value conflict-value" id="insights-conflicts">0</span>
-                <span class="insights-stat-label">冲突</span>
+              <div class="stat-card">
+                <span class="stat-card__value conflict-value" id="insights-conflicts">0</span>
+                <span class="stat-card__label">冲突</span>
               </div>
-              <div class="insights-stat">
-                <span class="insights-stat-value" id="insights-sources">0</span>
-                <span class="insights-stat-label">来源</span>
+              <div class="stat-card">
+                <span class="stat-card__value" id="insights-sources">0</span>
+                <span class="stat-card__label">来源</span>
               </div>
             </div>
           </div>
           <!-- 来源分布 -->
-          <div class="insights-section">
-            <div class="insights-section-title">来源分布</div>
-            <div class="insights-source-distribution" id="insights-distribution"></div>
+          <div class="panel-section">
+            <div class="panel-section-title">来源分布</div>
+            <div class="dist-bars" id="insights-distribution"></div>
           </div>
           <!-- 最近关系：标题由渲染器动态注入 #insights-relations-summary 内 -->
-          <div class="insights-section">
+          <div class="panel-section">
             <div class="insights-relations-summary" id="insights-relations-summary"></div>
           </div>
         </div>
         <!-- 伙伴洞察面板（从"仓库"到"理解"） -->
-        <div id="partner-insights" class="partner-insights hidden">
+        <div id="partner-insights" class="partner-insights analysis-bar hidden">
           <div class="partner-insights-header">
-            <span class="partner-insights-title">精灵对你的了解</span>
+            <span class="analysis-panel__title">精灵对你的了解</span>
           </div>
-          <div id="partner-profile-cards" class="partner-profile-cards">
+          <div id="profile-cards" class="profile-cards">
             <!-- JS 动态渲染 profile 记忆卡片 -->
           </div>
-          <div id="partner-knowledge-gaps" class="partner-knowledge-gaps">
+          <div id="gap-list" class="gap-list">
             <!-- JS 动态渲染知识缺口提示 -->
           </div>
-          <div class="partner-growth-section">
-            <div class="partner-growth-header flex-between">
-              <span class="partner-growth-title">记忆累积趋势</span>
+          <div class="growth-section">
+            <div class="analysis-panel__header">
+              <span class="panel-section-title">记忆累积趋势</span>
               <span id="partner-growth-total" class="partner-growth-total">0 条</span>
             </div>
             <canvas id="partner-growth-chart" class="partner-growth-chart" width="320" height="120" role="img" aria-label="伙伴成长曲线图"></canvas>
           </div>
         </div>
         <!-- 记忆健康度仪表盘（Phase 1：健康度诊断，默认折叠） -->
-        <div id="memory-health-bar" class="health-bar hidden">
-          <div class="health-header">
-            <span class="health-title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
-            <span class="health-badge" id="health-badge">优秀</span>
-            <span class="health-score" id="health-score">100</span>
-            <span class="health-score-sample" id="health-score-sample"></span>
+        <div id="memory-health-bar" class="health-bar analysis-bar hidden">
+          <div class="analysis-panel__header">
+            <span class="analysis-panel__title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
             <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-health" title="关闭健康度诊断" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
           </div>
+          <div class="health-summary">
+            <span class="panel-badge" id="health-badge">优秀</span>
+            <span class="panel-score" id="health-score">100</span>
+            <span class="panel-score-sample" id="health-score-sample"></span>
+          </div>
           <div class="health-metrics">
             <div class="health-metric">
               <span class="health-metric-label">唯一性</span>
-              <div class="health-metric-track"><div class="health-metric-fill" id="health-uniqueness"></div></div>
+              <div class="metric-track"><div class="metric-track__fill" id="health-uniqueness"></div></div>
               <span class="health-metric-value" id="health-uniqueness-val">100</span>
             </div>
             <div class="health-metric">
               <span class="health-metric-label">新鲜度</span>
-              <div class="health-metric-track"><div class="health-metric-fill" id="health-freshness"></div></div>
+              <div class="metric-track"><div class="metric-track__fill" id="health-freshness"></div></div>
               <span class="health-metric-value" id="health-freshness-val">100</span>
             </div>
             <div class="health-metric">
               <span class="health-metric-label">完整度</span>
-              <div class="health-metric-track"><div class="health-metric-fill" id="health-completeness"></div></div>
+              <div class="metric-track"><div class="metric-track__fill" id="health-completeness"></div></div>
               <span class="health-metric-value" id="health-completeness-val">100</span>
             </div>
           </div>
           <div class="health-details">
-            <span class="health-detail-item" id="health-duplicates">重复: 0</span>
-            <span class="health-detail-item" id="health-stale">过期: 0</span>
-            <span class="health-detail-item" id="health-low-quality">低质量: 0</span>
+            <span class="panel-chip" id="health-duplicates">重复: 0</span>
+            <span class="panel-chip" id="health-stale">过期: 0</span>
+            <span class="panel-chip" id="health-low-quality">低质量: 0</span>
           </div>
           <p class="health-description" id="health-description"></p>
           <div class="health-actions" id="health-actions">

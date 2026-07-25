@@ -1,144 +1,38 @@
-/* insights.css — 记忆洞察栏样式（CSS-R11：从 memory-graph-search.css 抽出单一真理源）
- * 仅承载「统计洞察」面板（#memory-insights-bar）相关规则。
- * 层级重构（就地优化）：补区块标题（统计 / 来源分布 / 最近关系）、统计卡成组、
- *   去掉 cramped 内部滚动（max-height 抬至 720px 安全网 + flex-shrink:0 让列表吸收剩余空间）。
+/* insights.css — 统计洞察栏样式
+ *
+ * 组件（统计卡 / 分布条 / 关系项 / 区块标题）已收口到 analysis-panel.css 共享外壳
+ * （.stat-card / .dist-bar / .relation-item / .panel-section-title）。
+ * 本文件仅承载：容器（.insights-bar 复用共享 .analysis-bar 根的 bg/边框/折叠）+ 统计卡网格 +
+ * 分布条容器 + 关系摘要容器 + 冲突数红色高亮。
  */
 
-/* ─── 记忆洞察栏（Phase 3：记忆洞察面板） ───────────────────── */
-
-/* 洞察栏容器：折叠时隐藏 */
+/* 洞察栏容器：padding 由本类提供，背景/边框/折叠由共享 .analysis-bar 提供 */
 .insights-bar {
   padding: var(--space-2-5) var(--space-3);
-  border-bottom: 1px solid var(--surface2);
-  background: var(--window-bg-2);
-  /* CSS-R11 就地优化：去掉 cramped 内部滚动。
-     正常分析数据（≤720px）不再出现滚动条；flex-shrink:0 让下方记忆列表吸收剩余空间。
-     overflow-y:auto 仅作为极端数据的兜底安全网。 */
-  flex-shrink: 0;
-  max-height: 720px;
-  overflow-y: auto;
-  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
 }
 
-.insights-bar.hidden {
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-  opacity: 0;
-  overflow: hidden;
+/* 统计卡网格（4 列，窄屏降级 2 列；卡片本体复用共享 .stat-card） */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+@media (max-width: 600px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-/* 统计洞察面板头部：标题 + 关闭按钮 */
-.insights-header {
-  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
-  margin-bottom: var(--space-2-5);
-}
-
-.insights-title {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-}
-
-/* ─── 区块层级（CSS-R11：补区块标题 + 统计卡成组） ──────── */
-
-.insights-section {
-  margin-bottom: var(--space-2-5);
-}
-
-.insights-section:last-child {
-  margin-bottom: 0;
-}
-
-/* 统计卡成组：复用 L1 .card 基样式（border + radius），
-   覆写为 surface1 形成「抬升」分组（bar 为 window-bg-2，需对比度） */
-.insights-stats {
-  margin-top: var(--space-1-5);
-  padding: var(--space-2) var(--space-2-5);
-  background: var(--surface1);
-  border-radius: var(--radius-md);
-}
-
-/* 洞察行：统计卡片 + 分布图水平排列（区块间距改由 .insights-section 提供，故归零） */
-.insights-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2-5);
-  flex-wrap: wrap;
-  margin-bottom: 0;
-}
-
-/* 统计卡片：数字 + 标签 */
-.insights-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 36px;
-  flex: 1;
-}
-
-.insights-stat-value {
-  font-size: var(--font-h1);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  line-height: 1.2;
-  /* 4 列数字（记忆/关系/冲突/来源）等宽对齐，避免数字宽度差异导致跳动 */
-  font-variant-numeric: tabular-nums;
-}
-
-/* 冲突数有值时红色高亮警示 */
-.insights-stat-value.conflict-value.has-conflicts {
+/* 冲突数有值时红色高亮警示（挂在共享 .stat-card__value 上） */
+.stat-card__value.conflict-value.has-conflicts {
   color: var(--red);
 }
 
-.insights-stat-label {
-  font-size: var(--font-2xs);
-  color: var(--text-2);
-}
-
-/* source 分布容器：独立一行 */
-.insights-source-distribution {
+/* source 分布容器：独立一列，条由 .dist-bar 承载 */
+.dist-bars {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-}
-
-/* 分布条：label + 条形 + 数量 */
-.insights-distribution-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  font-size: var(--font-xs);
-}
-
-.distribution-label {
-  width: 60px;
-  flex-shrink: 0;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 分布填充条：复用 source-* 颜色类 */
-.distribution-fill {
-  flex: 1;
-  height: 6px;
-  border-radius: var(--radius-xs);
-  min-width: 2px;
-  transition: width var(--transition-fast);
-}
-
-.distribution-count {
-  flex-shrink: 0;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-  min-width: 24px;
-  text-align: right;
+  gap: var(--space-1);
 }
 
 /* 关系摘要区域 */
@@ -146,43 +40,4 @@
   border-top: 1px solid var(--surface2);
   padding-top: var(--space-2);
   margin-top: var(--space-1);
-}
-
-.insights-section-title {
-  font-size: var(--font-xs);
-  color: var(--text-2);
-  margin-bottom: var(--space-1);
-}
-
-/* 单条关系项：类型标签 + 描述 */
-.insights-relation-item {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  font-size: var(--font-sm);
-  padding: 3px 0;
-}
-
-/* 关系类型标签：复用 relationGraph 中的颜色映射 */
-.relation-type-tag {
-  padding: 1px var(--space-1-5);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-medium);
-  white-space: nowrap;
-  background: var(--surface0);
-  color: var(--text-2);
-}
-
-/* 关系类型颜色（与 relationGraph.ts EDGE_TYPE_COLORS 对齐，使用 CSS 变量适配双主题） */
-.relation-type-contradicts { background: var(--red-20); color: var(--red); }
-.relation-type-supports { background: var(--green-20); color: var(--green); }
-.relation-type-follows { background: var(--accent-20); color: var(--accent); }
-.relation-type-refines { background: var(--yellow-20); color: var(--yellow); }
-.relation-type-caused { background: var(--mauve-20); color: var(--mauve); }
-.relation-type-related { background: var(--muted); color: var(--text); }
-
-.relation-desc {
-  color: var(--text);
-  flex: 1;
 }

@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "generate-icons": "node scripts/generate-icons.mjs",
-    "build:electron": "npm run sync-memora && npm run check-ipc && npm run generate-icons && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "build:electron": "npm run sync-memora && npm run check-ipc && npm run generate-icons && node --input-type=module -e \"import{mkdirSync}from'node:fs';mkdirSync('dist-electron',{recursive:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "sync-memora": "node scripts/sync-memora.mjs",
     "build:web": "tsc -p tsconfig.web.json",
     "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",

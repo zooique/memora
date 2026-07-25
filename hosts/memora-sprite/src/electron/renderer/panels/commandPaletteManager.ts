@@ -141,9 +141,12 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        // 点击更多菜单中的"健康度诊断"项（与用户手动点击路径一致）
-        const healthItem = document.querySelector('.more-menu-item[data-action="health"]');
-        if (!(healthItem instanceof HTMLElement)) return;
+        // 经统一导航 rail 跳转到健康度区块（与用户点击 rail 项路径一致）
+        const healthItem = document.querySelector('.memory-rail-item[data-section="health"]');
+        if (!(healthItem instanceof HTMLElement)) {
+          reportError('CommandPalette 健康度 rail 项缺失', new Error('无法跳转：rail 元素校验失败'));
+          return;
+        }
         healthItem.click();
       },
     },
@@ -154,9 +157,12 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        // 点击更多菜单中的"统计洞察"项（与用户手动点击路径一致）
-        const insightsItem = document.querySelector('.more-menu-item[data-action="insights"]');
-        if (!(insightsItem instanceof HTMLElement)) return;
+        // 经统一导航 rail 跳转到统计洞察区块（与用户点击 rail 项路径一致）
+        const insightsItem = document.querySelector('.memory-rail-item[data-section="insights"]');
+        if (!(insightsItem instanceof HTMLElement)) {
+          reportError('CommandPalette 统计洞察 rail 项缺失', new Error('无法跳转：rail 元素校验失败'));
+          return;
+        }
         insightsItem.click();
       },
     },
@@ -167,9 +173,12 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        // 点击更多菜单中的"补全统计"项（与用户手动点击路径一致）
-        const statsItem = document.querySelector('.more-menu-item[data-action="completion-stats"]');
-        if (!(statsItem instanceof HTMLElement)) return;
+        // 经统一导航 rail 跳转到补全统计区块（与用户点击 rail 项路径一致）
+        const statsItem = document.querySelector('.memory-rail-item[data-section="completion-stats"]');
+        if (!(statsItem instanceof HTMLElement)) {
+          reportError('CommandPalette 补全统计 rail 项缺失', new Error('无法跳转：rail 元素校验失败'));
+          return;
+        }
         statsItem.click();
       },
     },
@@ -180,11 +189,12 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        const graphBtn = document.getElementById('btn-graph-view');
-        if (graphBtn instanceof HTMLButtonElement) {
-          graphBtn.click();
+        // 经统一导航 rail 切换到图谱视图（与用户点击 rail 项路径一致）
+        const graphItem = document.querySelector('.memory-rail-item[data-section="graph"]');
+        if (graphItem instanceof HTMLElement) {
+          graphItem.click();
         } else {
-          reportError('CommandPalette btn-graph-view 元素缺失', new Error('HTMLButtonElement 校验失败'));
+          reportError('CommandPalette 图谱 rail 项缺失', new Error('rail 元素校验失败'));
         }
       },
     },
@@ -195,8 +205,13 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        const timelineBtn = document.getElementById('btn-timeline-view');
-        timelineBtn?.click();
+        // 经统一导航 rail 切换到时间线视图（与用户点击 rail 项路径一致）
+        const timelineItem = document.querySelector('.memory-rail-item[data-section="timeline"]');
+        if (timelineItem instanceof HTMLElement) {
+          timelineItem.click();
+        } else {
+          reportError('CommandPalette 时间线 rail 项缺失', new Error('rail 元素校验失败'));
+        }
       },
     },
 

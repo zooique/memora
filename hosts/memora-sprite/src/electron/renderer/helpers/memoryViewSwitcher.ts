@@ -167,7 +167,6 @@ export function hideInsightsAndHealth(ctx: MemoryViewSwitcherContext): void {
   const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
   if (partnerInsights) partnerInsights.classList.add('hidden');
   ctx.setActiveAnalysisPanel(null);
-  updateAnalysisMenuItemsActive(ctx);
 }
 
 /**
@@ -185,46 +184,10 @@ export function showDisplayView(ctx: MemoryViewSwitcherContext, mode: MemoryView
   if (timelineEl) timelineEl.classList.toggle('hidden', mode !== 'timeline');
 }
 
-// ─── 分析面板菜单项 active 状态同步 ────────────────────────
-
-/**
- * 更新分析面板菜单项的激活状态
- *
- * 打开分析面板时高亮对应菜单项，关闭时取消高亮。
- *
- * @param ctx 视图切换上下文
- */
-export function updateAnalysisMenuItemsActive(ctx: MemoryViewSwitcherContext): void {
-  const moreMenu = document.getElementById('memory-more-menu');
-  if (!moreMenu) return;
-  const items = moreMenu.querySelectorAll('.more-menu-item');
-  const activePanel = ctx.getActiveAnalysisPanel();
-  items.forEach((item) => {
-    const action = item.getAttribute('data-action');
-    const isActive = action === activePanel;
-    item.classList.toggle('active', isActive);
-  });
-}
-
-/**
- * 更新更多菜单中视图切换项的 active 状态
- *
- * 切换视图时，标记当前视图对应的菜单项为 active，
- * 让用户通过菜单直观感知当前所处视图模式。
- *
- * @param mode 当前视图模式
- */
-export function updateViewMenuItemsActive(mode: MemoryViewMode): void {
-  const moreMenu = document.getElementById('memory-more-menu');
-  if (!moreMenu) return;
-  const items = moreMenu.querySelectorAll('.more-menu-item');
-  items.forEach((item) => {
-    const action = item.getAttribute('data-action');
-    // 仅视图切换项参与 active 标记（advanced-search/insights/health/completion-stats 不参与）
-    const isActive = action === `view-${mode}`;
-    item.classList.toggle('active', isActive);
-  });
-}
+// ─── 导航高亮已收口到 rail（updateRailItemsActive）──────────
+// updateAnalysisMenuItemsActive / updateViewMenuItemsActive 已删除：
+// 旧 #memory-more-menu 与 .view-switch 分段控件已不存在，rail 的
+// .memory-rail-item[data-section] 经 updateRailItemsActive 统一驱动高亮。
 
 // ─── 分析面板切换（公开 API） ─────────────────────────────
 
@@ -275,9 +238,8 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
   ctx.setActiveAnalysisPanel(panel);
   // 统一导航单一真相：激活区块指向当前分析面板
   ctx.setActiveSection(panel);
-
-  // 更新菜单项高亮
-  updateAnalysisMenuItemsActive(ctx);
+  // 同步 rail 高亮（统一导航单一真相）
+  updateRailItemsActive(ctx);
 
   // 触发数据加载回调
   ctx.getMoreMenuActionCallback()?.(panel);
@@ -308,28 +270,8 @@ export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
     ctx.setActiveAnalysisPanel(null);
     // 统一导航单一真相：关闭分析面板后激活区块回到之前的数据视图
     ctx.setActiveSection(previousMode);
-
-    // 同步视图切换按钮状态
-    const currentMode = ctx.getViewMode();
-    const listBtn = document.getElementById('btn-list-view');
-    const timelineBtn = document.getElementById('btn-timeline-view');
-    const graphBtn = document.getElementById('btn-graph-view');
-    if (listBtn) {
-      listBtn.classList.toggle('active', currentMode === 'list');
-      listBtn.setAttribute('aria-selected', String(currentMode === 'list'));
-    }
-    if (timelineBtn) {
-      timelineBtn.classList.toggle('active', currentMode === 'timeline');
-      timelineBtn.setAttribute('aria-selected', String(currentMode === 'timeline'));
-    }
-    if (graphBtn) {
-      graphBtn.classList.toggle('active', currentMode === 'graph');
-      graphBtn.setAttribute('aria-selected', String(currentMode === 'graph'));
-    }
   }
 
-  // 更新菜单项高亮
-  updateAnalysisMenuItemsActive(ctx);
   // 同步 rail 高亮（统一导航单一真相）
   updateRailItemsActive(ctx);
 }
@@ -355,24 +297,7 @@ export function dismissAnalysisPanels(ctx: MemoryViewSwitcherContext): void {
   ctx.setViewMode('list');
   // 统一导航单一真相：离开记忆面板时激活区块回到列表
   ctx.setActiveSection('list');
-  updateAnalysisMenuItemsActive(ctx);
-  // 同步视图按钮状态到列表
-  const listBtn = document.getElementById('btn-list-view');
-  const timelineBtn = document.getElementById('btn-timeline-view');
-  const graphBtn = document.getElementById('btn-graph-view');
-  if (listBtn) {
-    listBtn.classList.add('active');
-    listBtn.setAttribute('aria-selected', 'true');
-  }
-  if (timelineBtn) {
-    timelineBtn.classList.remove('active');
-    timelineBtn.setAttribute('aria-selected', 'false');
-  }
-  if (graphBtn) {
-    graphBtn.classList.remove('active');
-    graphBtn.setAttribute('aria-selected', 'false');
-  }
-  // 同步 rail 高亮
+  // 同步 rail 高亮（统一导航单一真相）
   updateRailItemsActive(ctx);
 }
 
@@ -400,8 +325,6 @@ export function switchView(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode)
 
   // 切换视图时隐藏 insights/health，避免显示类型平铺污染
   hideInsightsAndHealth(ctx);
-  // 同步更多菜单中视图切换项的 active 状态
-  updateViewMenuItemsActive(mode);
   // 统一导航单一真相：激活区块指向当前数据视图（同步，立即反馈）
   ctx.setActiveSection(mode);
   updateRailItemsActive(ctx);

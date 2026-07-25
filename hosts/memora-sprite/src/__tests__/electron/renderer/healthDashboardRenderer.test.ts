@@ -27,16 +27,16 @@ const HEALTH_HTML = `
   </div>
   <span id="health-score"></span>
   <span id="health-score-sample"></span>
-  <span id="health-badge" class="health-badge"></span>
-  <div id="health-uniqueness" class="health-metric-fill uniqueness" style="width: 0%"></div>
+  <span id="health-badge" class="panel-badge"></span>
+  <div id="health-uniqueness" class="metric-track__fill uniqueness" style="width: 0%"></div>
   <span id="health-uniqueness-val"></span>
-  <div id="health-freshness" class="health-metric-fill freshness" style="width: 0%"></div>
+  <div id="health-freshness" class="metric-track__fill freshness" style="width: 0%"></div>
   <span id="health-freshness-val"></span>
-  <div id="health-completeness" class="health-metric-fill completeness" style="width: 0%"></div>
+  <div id="health-completeness" class="metric-track__fill completeness" style="width: 0%"></div>
   <span id="health-completeness-val"></span>
-  <span id="health-duplicates" class="health-detail-item"></span>
-  <span id="health-stale" class="health-detail-item"></span>
-  <span id="health-low-quality" class="health-detail-item"></span>
+  <span id="health-duplicates" class="panel-chip"></span>
+  <span id="health-stale" class="panel-chip"></span>
+  <span id="health-low-quality" class="panel-chip"></span>
   <span id="health-description"></span>
   <div id="health-actions" style="display: none">
     <button id="health-cleanup-duplicates">清理重复</button>

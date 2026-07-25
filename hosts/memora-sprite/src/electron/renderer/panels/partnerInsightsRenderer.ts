@@ -123,13 +123,13 @@ export class PartnerInsightsRenderer {
 
     // 筛选 profile 记忆（精灵对你的了解）
     const profileMems = memories.filter((m) => m.source === 'profile');
-    const profileCardsContainer = panel.querySelector('.partner-profile-cards');
+    const profileCardsContainer = panel.querySelector('.profile-cards');
     if (profileCardsContainer) {
       this.renderProfileCards(profileMems, profileCardsContainer as HTMLElement);
     }
 
     // 知识缺口检测
-    const gapsContainer = panel.querySelector('.partner-knowledge-gaps');
+    const gapsContainer = panel.querySelector('.gap-list');
     if (gapsContainer) {
       this.renderKnowledgeGaps(memories, gapsContainer as HTMLElement);
     }
@@ -183,7 +183,7 @@ export class PartnerInsightsRenderer {
     // 最多展示 6 张卡片
     const cards = profileMems.slice(0, MAX_PROFILE_CARDS);
     for (const mem of cards) {
-      const card = createEl('div', 'partner-profile-card');
+      const card = createEl('div', 'profile-card');
       card.title = mem.contentPreview;
 
       // 卡片被点击时，通过回调通知 controller（使用 EventTracker 统一管理）
@@ -192,11 +192,11 @@ export class PartnerInsightsRenderer {
       });
 
       // 记忆名称
-      const nameEl = createEl('div', 'partner-profile-card-name', mem.name);
+      const nameEl = createEl('div', 'profile-card-name', mem.name);
       card.appendChild(nameEl);
 
       // 内容预览（截断 80 字符）
-      const previewEl = createEl('div', 'partner-profile-card-preview', truncate(mem.contentPreview, PREVIEW_MAX_LENGTH));
+      const previewEl = createEl('div', 'profile-card-preview', truncate(mem.contentPreview, PREVIEW_MAX_LENGTH));
       card.appendChild(previewEl);
 
       container.appendChild(card);
@@ -240,7 +240,7 @@ export class PartnerInsightsRenderer {
 
     // 最多展示 3 条
     for (const gap of gaps.slice(0, MAX_GAP_ITEMS)) {
-      const item = createEl('div', 'partner-gap-item');
+      const item = createEl('div', 'gap-item');
 
       const icon = createEl('span', 'partner-gap-icon flex-shrink-0');
       // SVG 图标，跨平台渲染一致

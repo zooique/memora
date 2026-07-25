@@ -132,10 +132,16 @@ function setupDOM(): void {
       <button id="btn-memory-edit-save" class="hidden">保存</button>
       <button id="btn-memory-edit-cancel" class="hidden">取消</button>
     </div>
-    <!-- 视图切换按钮 -->
-    <button id="btn-list-view" class="active" aria-selected="true"></button>
-    <button id="btn-timeline-view" aria-selected="false"></button>
-    <button id="btn-graph-view" aria-selected="false"></button>
+    <!-- 统一导航 rail（取代旧分段控件 + 更多菜单，activeSection 单一真相） -->
+    <nav id="memory-rail">
+      <button class="memory-rail-item" data-section="list" role="tab" aria-selected="true">列表</button>
+      <button class="memory-rail-item" data-section="timeline" role="tab" aria-selected="false">时间线</button>
+      <button class="memory-rail-item" data-section="graph" role="tab" aria-selected="false">图谱</button>
+      <button class="memory-rail-item" data-section="insights" role="tab" aria-selected="false">统计洞察</button>
+      <button class="memory-rail-item" data-section="health" role="tab" aria-selected="false">健康度</button>
+      <button class="memory-rail-item" data-section="completion-stats" role="tab" aria-selected="false">补全统计</button>
+      <button class="memory-rail-item" data-section="partner-insights" role="tab" aria-selected="false">伙伴洞察</button>
+    </nav>
     <!-- 视图容器 -->
     <div id="memory-graph-container" class="hidden">
       <canvas id="memory-graph-canvas"></canvas>
@@ -147,15 +153,7 @@ function setupDOM(): void {
       <div id="partner-insights"></div>
     </div>
     <div id="memory-health-bar" class="hidden"></div>
-    <!-- 更多菜单（含视图切换项 + 分析面板项 + 高级搜索） -->
-    <div id="memory-more-menu">
-      <div class="more-menu-item" data-action="view-list">列表</div>
-      <div class="more-menu-item" data-action="view-timeline">时间线</div>
-      <div class="more-menu-item" data-action="view-graph">图谱</div>
-      <div class="more-menu-item" data-action="insights">统计洞察</div>
-      <div class="more-menu-item" data-action="health">健康度</div>
-      <div class="more-menu-item" data-action="advanced-search">高级搜索</div>
-    </div>
+    <!-- (已删除：#memory-more-menu，统一导航改由 #memory-rail 承载) -->
     <!-- 感知面板 -->
     <div id="perception-narrative-text"></div>
     <!-- 回收站列表 -->
@@ -325,13 +323,14 @@ describe('switchView', () => {
     vi.advanceTimersByTime(300);
   });
 
-  it('切换视图后应同步更多菜单中对应项的 active 状态', () => {
+  it('切换视图后应同步 rail 中对应区块的 active 状态', () => {
     const mgr = new MemoryPanelManager(createMockHost(), null, null, null, null, new EventTracker());
     mgr.switchView('graph');
-    const graphItem = document.querySelector('.more-menu-item[data-action="view-graph"]') as HTMLElement;
-    const listItem = document.querySelector('.more-menu-item[data-action="view-list"]') as HTMLElement;
+    const graphItem = document.querySelector('.memory-rail-item[data-section="graph"]') as HTMLElement;
+    const listItem = document.querySelector('.memory-rail-item[data-section="list"]') as HTMLElement;
     expect(graphItem.classList.contains('active')).toBe(true);
     expect(listItem.classList.contains('active')).toBe(false);
+    expect(graphItem.getAttribute('aria-selected')).toBe('true');
   });
 });
 
@@ -374,11 +373,12 @@ describe('toggleAnalysisPanel', () => {
     expect(cb).toHaveBeenCalledWith('insights');
   });
 
-  it('打开 insights 应高亮对应菜单项（active 类）', () => {
+  it('打开 insights 应高亮对应 rail 区块（active 类 + aria-selected）', () => {
     const mgr = new MemoryPanelManager(createMockHost(), document.getElementById('memory-list'), null, null, null, new EventTracker());
     mgr.toggleAnalysisPanel('insights');
-    const insightsItem = document.querySelector('.more-menu-item[data-action="insights"]') as HTMLElement;
+    const insightsItem = document.querySelector('.memory-rail-item[data-section="insights"]') as HTMLElement;
     expect(insightsItem.classList.contains('active')).toBe(true);
+    expect(insightsItem.getAttribute('aria-selected')).toBe('true');
   });
 
   it('targetBar 元素缺失时应静默降级（不抛错）', () => {
@@ -412,15 +412,17 @@ describe('hideAnalysisPanel', () => {
     expect(document.getElementById('memory-graph-container')?.classList.contains('hidden')).toBe(false);
   });
 
-  it('关闭分析面板应同步视图按钮 active 状态', () => {
+  it('关闭分析面板应同步 rail 视图项 active 状态', () => {
     const mgr = new MemoryPanelManager(createMockHost(), document.getElementById('memory-list'), null, null, null, new EventTracker());
     mgr.switchView('timeline');
     vi.advanceTimersByTime(300);
     mgr.toggleAnalysisPanel('insights');
     mgr.hideAnalysisPanel();
-    expect(document.getElementById('btn-timeline-view')?.classList.contains('active')).toBe(true);
-    expect(document.getElementById('btn-list-view')?.classList.contains('active')).toBe(false);
-    expect(document.getElementById('btn-timeline-view')?.getAttribute('aria-selected')).toBe('true');
+    const timelineItem = document.querySelector('.memory-rail-item[data-section="timeline"]') as HTMLElement;
+    const listItem = document.querySelector('.memory-rail-item[data-section="list"]') as HTMLElement;
+    expect(timelineItem.classList.contains('active')).toBe(true);
+    expect(listItem.classList.contains('active')).toBe(false);
+    expect(timelineItem.getAttribute('aria-selected')).toBe('true');
   });
 
   it('无激活面板时调用 hideAnalysisPanel 应安全（无副作用）', () => {
@@ -449,14 +451,17 @@ describe('dismissAnalysisPanels', () => {
     expect(mgr.getViewMode()).toBe('list');
   });
 
-  it('应同步视图按钮状态到 list', () => {
+  it('应同步 rail 视图项状态到 list', () => {
     const mgr = new MemoryPanelManager(createMockHost(), document.getElementById('memory-list'), null, null, null, new EventTracker());
     mgr.switchView('timeline');
     vi.advanceTimersByTime(300);
     mgr.dismissAnalysisPanels();
-    expect(document.getElementById('btn-list-view')?.classList.contains('active')).toBe(true);
-    expect(document.getElementById('btn-timeline-view')?.classList.contains('active')).toBe(false);
-    expect(document.getElementById('btn-graph-view')?.classList.contains('active')).toBe(false);
+    const listItem = document.querySelector('.memory-rail-item[data-section="list"]') as HTMLElement;
+    const timelineItem = document.querySelector('.memory-rail-item[data-section="timeline"]') as HTMLElement;
+    const graphItem = document.querySelector('.memory-rail-item[data-section="graph"]') as HTMLElement;
+    expect(listItem.classList.contains('active')).toBe(true);
+    expect(timelineItem.classList.contains('active')).toBe(false);
+    expect(graphItem.classList.contains('active')).toBe(false);
   });
 
   it('应隐藏所有分析面板 DOM', () => {

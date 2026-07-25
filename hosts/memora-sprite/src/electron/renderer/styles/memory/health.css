@@ -1,114 +1,41 @@
 /* health.css — 记忆健康度诊断面板样式（CSS-R11：从 memory-graph-detail.css / memory-graph-misc.css 抽出单一真理源）
- * 承载「记忆健康度」面板（#memory-health-bar）相关规则：容器/头部/徽章/评分/指标/详情/操作/AI 治理/结果。
- * 层级重构（就地优化）：
- *   - 去掉 cramped 内部滚动（max-height 300→720 安全网 + flex-shrink:0）；
- *   - 评分与样本量分离（#health-score 纯分数，#health-score-sample 为 muted 样本量）；
- *   - 详情项改小号 chip，问题项 amber/red 高亮；
- *   - 6 个操作按钮收敛：一键清理(danger 实色)常态突出，清理重复/过期降为 ghost 次级，
- *     AI 治理收为 <details> 可折叠次级组（纯 HTML，零 JS）。
+ * 承载「记忆健康度」面板（#memory-health-bar）相关规则。
+ *
+ * 组件已收口到 analysis-panel.css 共享外壳（CSS-R11 目标落地）：
+ *   - 统计卡 / 指标条 → .stat-card / .metric-track（外壳）
+ *   - 徽章 / 胶囊 / 评分 → .panel-badge / .panel-chip / .panel-score（外壳）
+ *   - 区块标题 → .panel-section-title（外壳）
+ * 本文件仅保留：容器 padding（背景/边框/折叠由共享 .analysis-bar 根提供）、
+ *   三维度行布局（.health-metrics / .health-metric*）、维度配色（.metric-track__fill.*）、
+ *   详情容器、描述、操作、AI 治理（<details> 零 JS）等面板专属布局。
  */
 
-/* ─── 记忆健康度仪表盘（Phase 1：健康度诊断） ────────────────── */
-
-/* 健康栏容器：折叠时隐藏，展开时下滑 */
+/* 健康栏容器：padding 由本类提供，背景/边框/折叠由共享 .analysis-bar 提供 */
 .health-bar {
   padding: var(--pad-card);
-  border-bottom: 1px solid var(--surface2);
-  background: var(--window-bg-2);
-  /* CSS-R11 就地优化：去掉 cramped 内部滚动。
-     正常分析数据（≤720px）不再出现滚动条；flex-shrink:0 让下方记忆列表吸收剩余空间。 */
-  flex-shrink: 0;
-  max-height: 720px;
-  overflow-y: auto;
-  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
 }
 
-.health-bar.hidden {
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-  opacity: 0;
-  overflow: hidden;
-}
-
-/* 健康度头部：标题 + 等级徽章 + 总分 + 样本量 + 关闭按钮 */
-.health-header {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  margin-bottom: var(--space-2-5);
-}
-
-.health-title {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-}
-
-.health-badge {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-}
-
-/* 健康等级徽章颜色（使用 CSS 变量适配双主题） */
-.health-badge.excellent { background: var(--green-20); color: var(--green); }
-.health-badge.good { background: var(--accent-20); color: var(--accent); }
-.health-badge.fair { background: var(--yellow-20); color: var(--yellow); }
-.health-badge.poor { background: var(--red-20); color: var(--red); }
-
-/* 健康度评分（纯分数，样本量由 #health-score-sample 承载，CSS-R11 分离） */
-.health-score {
-  font-size: var(--font-score);
-  font-weight: var(--weight-bold);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  /* 增强 3：评分数字 count-up 风格淡入+缩放动画（原 memory-graph-misc.css，已合并） */
-  animation: scoreReveal 0.4s ease-out;
-}
-
-/* 评分样本量（N 条记忆）：muted 次级信息，不与分数争夺视觉权重 */
-.health-score-sample {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-regular);
-  color: var(--text-3);
-  margin-left: 2px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-@keyframes scoreReveal {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* 统一面板关闭按钮（X）：分析面板右上角 */
-/* 复用 .icon-btn 基类（尺寸/边框/背景/光标/过渡），仅保留差异属性 */
+/* 统一面板关闭按钮（X）：分析面板右上角（共享，定义于 analysis-panel.css 收口前原地保留） */
 .panel-close-btn {
   margin-left: auto;
   color: var(--text-3);
   display: flex;
 }
-
 .panel-close-btn:hover {
   background: var(--surface1);
   color: var(--text);
 }
-
 .panel-close-btn .icon {
   width: 16px;
   height: 16px;
+}
+
+/* ─── 健康度评分 + 等级徽章 + 样本量（汇总行） ─────────────── */
+.health-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2-5);
 }
 
 /* ─── 健康度指标三行 ───────────────────────────────── */
@@ -133,28 +60,10 @@
   white-space: nowrap;
 }
 
-/* 进度条轨道 */
-.health-metric-track {
-  flex: 1;
-  height: 6px;
-  background: var(--surface0);
-  border-radius: var(--radius-xs);
-  overflow: hidden;
-}
-
-/* 进度条填充 */
-.health-metric-fill {
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-xs);
-  transition: width var(--transition-xl) ease;
-  background: var(--accent);
-}
-
-/* 各维度颜色（使用 CSS 变量适配双主题） */
-.health-metric-fill.uniqueness { background: var(--green); }
-.health-metric-fill.freshness { background: var(--accent); }
-.health-metric-fill.completeness { background: var(--yellow); }
+/* 各维度颜色（覆盖共享 .metric-track__fill 默认 --accent） */
+.metric-track__fill.uniqueness { background: var(--green); }
+.metric-track__fill.freshness { background: var(--accent); }
+.metric-track__fill.completeness { background: var(--yellow); }
 
 .health-metric-value {
   width: 28px;
@@ -165,38 +74,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── 健康度详情：重复/过期/低质量计数（CSS-R11 改小号 chip） ─── */
+/* ─── 健康度详情：重复/过期/低质量计数（chip 容器） ──────── */
 
 .health-details {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
   margin-bottom: var(--space-1-5);
-}
-
-.health-detail-item {
-  font-size: var(--font-2xs);
-  color: var(--text-2);
-  background: var(--surface1);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-pill);
-  padding: 2px var(--space-2);
-  white-space: nowrap;
-}
-
-/* 有问题的项目高亮（使用 CSS 变量适配双主题） */
-.health-detail-item.warning {
-  color: var(--yellow);
-  background: var(--yellow-20);
-  border-color: transparent;
-  font-weight: var(--weight-medium);
-}
-
-.health-detail-item.danger {
-  color: var(--red);
-  background: var(--red-20);
-  border-color: transparent;
-  font-weight: var(--weight-medium);
 }
 
 /* 健康度描述文字 */
@@ -277,26 +161,22 @@
 }
 
 /* LLM 治理结果渲染器子元素样式 */
-/* 摘要（扫描数/降级数/冲突数） */
 .llm-result-summary {
   font-weight: var(--weight-semibold);
   color: var(--text);
   margin-bottom: var(--space-1);
 }
 
-/* 空结果提示（无需降级/未发现冲突） */
 .llm-result-empty {
   color: var(--text-2);
   font-style: italic;
 }
 
-/* 跳过提示（skippedReason 非空时） */
 .llm-result-skipped {
   color: var(--warning);
   font-style: italic;
 }
 
-/* 降级列表 / 冲突对列表容器 */
 .llm-result-list {
   display: flex;
   flex-direction: column;
@@ -304,7 +184,6 @@
   margin-top: var(--space-1);
 }
 
-/* 降级列表项（ID + 恢复按钮） */
 .llm-result-item {
   display: flex;
   align-items: center;
@@ -315,7 +194,6 @@
   border-radius: var(--radius-sm);
 }
 
-/* 降级列表项 ID 展示（截断，完整 ID 在 title） */
 .llm-result-item-id {
   font-family: var(--font-mono, monospace);
   font-size: var(--font-xs);
@@ -324,7 +202,7 @@
   white-space: nowrap;
 }
 
-/* 恢复按钮已收口为通用 .btn-secondary（见 llmGovernanceResultRenderer.ts），此处不再保留 bespoke 样式。 */
+/* 降级列表项 ID 展示（截断，完整 ID 在 title） */
 
 /* 冲突对详情卡片 */
 .llm-result-pair {
@@ -337,7 +215,6 @@
   gap: var(--space-1);
 }
 
-/* 冲突对中单条记忆展示（标签 + name + contentPreview） */
 .llm-result-pair-memory {
   display: flex;
   align-items: baseline;
@@ -345,20 +222,16 @@
   flex-wrap: wrap;
 }
 
-/* 记忆标签（A / B） */
 .llm-result-pair-memory-label {
   font-weight: var(--weight-bold);
   color: var(--text);
-  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
 
-/* 记忆 name */
 .llm-result-pair-memory-name {
   font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
-/* 记忆 contentPreview（截断） */
 .llm-result-pair-memory-preview {
   color: var(--text-2);
   overflow: hidden;
@@ -367,19 +240,16 @@
   min-width: 0;
 }
 
-/* 冲突描述 */
 .llm-result-pair-desc {
   color: var(--warning);
   font-size: var(--font-xs);
 }
 
-/* LLM 建议保留 */
 .llm-result-pair-rec {
   color: var(--accent);
   font-size: var(--font-xs);
 }
 
-/* LLM 判断理由 */
 .llm-result-pair-reason {
   color: var(--text-2);
   font-size: var(--font-xs);

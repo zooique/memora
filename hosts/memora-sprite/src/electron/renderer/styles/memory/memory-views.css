@@ -110,17 +110,14 @@
 
 /* 滚动条样式复用 base.css 全局 ::-webkit-scrollbar 规则，无需重复定义 */
 
-/* ─── 伙伴洞察面板（Phase 4：从"仓库"到"理解"） ──────────────── */
+/* ─── 伙伴洞察面板（组件已收口到 analysis-panel.css 共享外壳） ──────────────── */
 
 .partner-insights {
   padding: 0 0 var(--space-3) 0;
-  border-bottom: 1px solid var(--surface2);
   margin-bottom: var(--space-2);
 }
-
-.partner-insights.hidden {
-  display: none;
-}
+/* 背景/边框/折叠由共享 .analysis-bar 根提供；画像卡/缺口项/区块标题见 analysis-panel.css
+   （.profile-card / .gap-item / .panel-section-title） */
 
 .partner-insights-header {
   display: flex;
@@ -129,95 +126,22 @@
   padding: var(--space-2) var(--space-4) var(--space-1-5);
 }
 
-.partner-insights-title {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text-2);
-}
-
-/* Profile 记忆卡片（网格布局，最多 4 张） */
-.partner-profile-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-1-5);
+/* 知识缺口容器（横向 padding 由本类提供，根无横向 padding） */
+.gap-list {
   padding: 0 var(--space-3) var(--space-2);
 }
 
-.partner-profile-card {
-  background: var(--surface0);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2-5);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
-}
-
-.partner-profile-card:hover {
-  background: var(--surface1);
-  border-color: var(--muted);
-  transform: translateY(-1px);
-}
-
-.partner-profile-card-title {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-  margin-bottom: var(--space-1);
-  line-height: 1.4;
-}
-
-.partner-profile-card-preview {
-  font-size: var(--font-xs);
-  color: var(--text-3);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* 知识缺口提示 */
-.partner-knowledge-gaps {
-  padding: 0 var(--space-3) var(--space-2);
-}
-
-.partner-gap-item {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  padding: var(--input-padding);
-  background: var(--surface0);
-  border: 1px dashed var(--surface2);
-  border-radius: var(--radius-sm);
-  margin-bottom: var(--space-1);
-  font-size: var(--font-xs);
-  color: var(--text-2);
-  line-height: 1.4;
-}
-
+/* 缺口图标 / 文本（子元素布局） */
 .partner-gap-icon {
   font-size: var(--font-sm);
-  /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
 }
-
 .partner-gap-text {
   flex: 1;
 }
 
 /* 成长趋势 */
-.partner-growth-section {
+.growth-section {
   padding: var(--space-2) var(--space-3) 0;
-}
-
-.partner-growth-header {
-  /* 两端对齐：复用 .flex-between 工具类（utilities.css） */
-  margin-bottom: var(--space-1-5);
-}
-
-.partner-growth-title {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--text-2);
 }
 
 .partner-growth-total {
@@ -231,6 +155,12 @@
   border-radius: var(--radius-sm);
   background: var(--surface0);
   border: 1px solid var(--surface2);
+}
+
+.partner-empty-hint {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  padding: var(--space-1) 0;
 }
 
 /* ─── 记忆面板工具栏按钮（限定在记忆面板头部，避免污染全局 .icon-btn） ── */

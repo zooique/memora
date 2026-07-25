@@ -24,8 +24,8 @@ import { PartnerInsightsRenderer, type PartnerMemory } from '../../../electron/r
 /** 伙伴洞察面板完整 DOM 结构 */
 const PARTNER_HTML = `
   <div id="partner-insights" class="hidden">
-    <div class="partner-profile-cards"></div>
-    <div class="partner-knowledge-gaps"></div>
+    <div class="profile-cards"></div>
+    <div class="gap-list"></div>
     <canvas id="partner-growth-chart"></canvas>
     <span id="partner-growth-total"></span>
   </div>
@@ -140,7 +140,7 @@ describe('renderProfileCards · 卡片网格', () => {
       contentPreview: `预览 ${i}`,
     }));
     renderer.render(profileMems);
-    const cards = document.querySelectorAll('.partner-profile-card');
+    const cards = document.querySelectorAll('.profile-card');
     expect(cards.length).toBe(6);
   });
 
@@ -160,7 +160,7 @@ describe('renderProfileCards · 卡片网格', () => {
     renderer.render([
       { id: 'm1', name: '长预览', source: 'profile', contentPreview: longPreview },
     ]);
-    const previewEl = document.querySelector('.partner-profile-card-preview') as HTMLElement;
+    const previewEl = document.querySelector('.profile-card-preview') as HTMLElement;
     expect(previewEl.textContent!.length).toBe(81); // 80 + '…'
   });
 
@@ -170,7 +170,7 @@ describe('renderProfileCards · 卡片网格', () => {
     renderer.render([
       { id: 'm1', name: '短预览', source: 'profile', contentPreview: '短内容' },
     ]);
-    const previewEl = document.querySelector('.partner-profile-card-preview') as HTMLElement;
+    const previewEl = document.querySelector('.profile-card-preview') as HTMLElement;
     expect(previewEl.textContent).toBe('短内容');
   });
 
@@ -180,7 +180,7 @@ describe('renderProfileCards · 卡片网格', () => {
     renderer.render([
       { id: 'm1', name: '测试名称', source: 'profile', contentPreview: 'p' },
     ]);
-    const nameEl = document.querySelector('.partner-profile-card-name') as HTMLElement;
+    const nameEl = document.querySelector('.profile-card-name') as HTMLElement;
     expect(nameEl.textContent).toBe('测试名称');
   });
 });
@@ -199,7 +199,7 @@ describe('renderKnowledgeGaps · 知识缺口', () => {
       contentPreview: 'p',
     }));
     renderer.render(memories);
-    const gaps = document.querySelectorAll('.partner-gap-item');
+    const gaps = document.querySelectorAll('.gap-item');
     expect(gaps.length).toBeGreaterThan(0);
   });
 
@@ -227,7 +227,7 @@ describe('renderKnowledgeGaps · 知识缺口', () => {
     renderer.render([
       { id: 'm1', name: '唯一', source: 'test', contentPreview: 'p' },
     ]);
-    const gaps = document.querySelectorAll('.partner-gap-item');
+    const gaps = document.querySelectorAll('.gap-item');
     expect(gaps.length).toBeLessThanOrEqual(3);
   });
 });
@@ -244,7 +244,7 @@ describe('renderGrowthChart · 趋势图', () => {
   });
 
   it('Canvas 不存在时应安全降级（不抛错）', () => {
-    document.body.innerHTML = '<div id="partner-insights"><div class="partner-profile-cards"></div><div class="partner-knowledge-gaps"></div></div>';
+    document.body.innerHTML = '<div id="partner-insights"><div class="profile-cards"></div><div class="gap-list"></div></div>';
     const renderer = new PartnerInsightsRenderer();
     expect(() => renderer.render(createMemories({ count: 1 }))).not.toThrow();
   });
@@ -271,7 +271,7 @@ describe('onMemoryClick · 回调注册', () => {
     renderer.render([
       { id: 'profile:click-test', name: '卡片', source: 'profile', contentPreview: 'p' },
     ]);
-    const card = document.querySelector('.partner-profile-card') as HTMLElement;
+    const card = document.querySelector('.profile-card') as HTMLElement;
     card.click();
     expect(cb).toHaveBeenCalledWith('profile:click-test');
   });
@@ -282,7 +282,7 @@ describe('onMemoryClick · 回调注册', () => {
     renderer.render([
       { id: 'm1', name: '卡片', source: 'profile', contentPreview: 'p' },
     ]);
-    const card = document.querySelector('.partner-profile-card') as HTMLElement;
+    const card = document.querySelector('.profile-card') as HTMLElement;
     expect(() => card.click()).not.toThrow();
   });
 });
@@ -322,7 +322,7 @@ describe('cleanup · 资源清理', () => {
     renderer.render([
       { id: 'm1', name: '卡片', source: 'profile', contentPreview: 'p' },
     ]);
-    const card = document.querySelector('.partner-profile-card') as HTMLElement;
+    const card = document.querySelector('.profile-card') as HTMLElement;
     renderer.cleanup();
     card.click();
     expect(cb).not.toHaveBeenCalled();
@@ -344,6 +344,6 @@ describe('cleanup · 资源清理', () => {
     renderer.cleanup();
     // 再次 render 应正常工作
     expect(() => renderer.render(createMemories({ count: 2 }))).not.toThrow();
-    expect(document.querySelectorAll('.partner-profile-card').length).toBe(2);
+    expect(document.querySelectorAll('.profile-card').length).toBe(2);
   });
 });

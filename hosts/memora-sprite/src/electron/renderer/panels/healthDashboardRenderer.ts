@@ -117,7 +117,7 @@ export class HealthDashboardRenderer {
     const badgeEl = document.getElementById('health-badge');
     if (badgeEl) {
       // 清除旧等级类名
-      badgeEl.className = 'health-badge';
+      badgeEl.className = 'panel-badge';
       badgeEl.classList.add(data.healthLabel);
       badgeEl.textContent = HEALTH_LABEL_MAP[data.healthLabel] || data.healthLabel;
     }
@@ -133,7 +133,7 @@ export class HealthDashboardRenderer {
       const valEl = document.getElementById(`health-${dim.id}-val`);
       if (fillEl) {
         fillEl.style.width = `${dim.value}%`;
-        fillEl.className = `health-metric-fill ${dim.cssClass}`;
+        fillEl.className = `metric-track__fill ${dim.cssClass}`;
       }
       if (valEl) valEl.textContent = String(dim.value);
     }
@@ -157,7 +157,7 @@ export class HealthDashboardRenderer {
       dupEl.textContent = dupText;
       // title 悬停展示完整详情（避免单行溢出）
       dupEl.title = duplicateCount > 0 ? `${duplicateCount} 条重复记忆，平均相似度 ${avgSimilarity ?? '未知'}%` : '';
-      dupEl.className = 'health-detail-item';
+      dupEl.className = 'panel-chip';
       if (duplicateCount > 0) dupEl.classList.add('warning');
     }
 
@@ -188,14 +188,14 @@ export class HealthDashboardRenderer {
       staleEl.title = staleCount > 0
         ? `${staleCount} 条过期记忆：老化 ${reasonCounts.old_age ?? 0} / 低分 ${reasonCounts.low_score ?? 0} / 双重 ${reasonCounts.both ?? 0}，最长闲置 ${maxDays} 天`
         : '';
-      staleEl.className = 'health-detail-item';
+      staleEl.className = 'panel-chip';
       if (staleCount > 0) staleEl.classList.add('warning');
     }
 
     const lowEl = document.getElementById('health-low-quality');
     if (lowEl) {
       lowEl.textContent = `低质量: ${data.lowQualityCount}`;
-      lowEl.className = 'health-detail-item';
+      lowEl.className = 'panel-chip';
       if (data.lowQualityCount > 0) lowEl.classList.add('warning');
     }
 

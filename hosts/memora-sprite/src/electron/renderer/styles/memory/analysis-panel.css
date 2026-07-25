@@ -100,3 +100,198 @@
   background: var(--accent);
   transition: width var(--transition-xl) ease;
 }
+
+/* ─── 共享区块标题（替代各面板散落的 *-section-title / *-title） ── */
+.panel-section-title {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-2);
+  margin-bottom: var(--space-1);
+}
+
+/* ─── 共享区块容器（竖向间距语义化） ── */
+.panel-section {
+  margin-bottom: var(--space-2-5);
+}
+.panel-section:last-child {
+  margin-bottom: 0;
+}
+
+/* ─── 共享分析栏根容器（insights / health / partner 统一背景 + 折叠） ── */
+.analysis-bar {
+  background: var(--window-bg-2);
+  border-bottom: 1px solid var(--surface2);
+  flex-shrink: 0;
+  max-height: 720px;
+  overflow-y: auto;
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+}
+.analysis-bar.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+  overflow: hidden;
+}
+
+/* ─── 共享分布条（source 分布，替代 insights-distribution-bar 系列） ── */
+.dist-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--font-xs);
+}
+.dist-bar__label {
+  width: 60px;
+  flex-shrink: 0;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dist-bar__fill {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-xs);
+  min-width: 2px;
+  transition: width var(--transition-fast);
+}
+.dist-bar__count {
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: right;
+}
+
+/* ─── 共享关系项 + 类型标签（替代 insights-relation-item；relation-type-tag 跨面板共享） ── */
+.relation-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  font-size: var(--font-sm);
+  padding: 3px 0;
+}
+.relation-type-tag {
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  background: var(--surface0);
+  color: var(--text-2);
+}
+.relation-type-contradicts { background: var(--red-20); color: var(--red); }
+.relation-type-supports { background: var(--green-20); color: var(--green); }
+.relation-type-follows { background: var(--accent-20); color: var(--accent); }
+.relation-type-refines { background: var(--yellow-20); color: var(--yellow); }
+.relation-type-caused { background: var(--mauve-20); color: var(--mauve); }
+.relation-type-related { background: var(--muted); color: var(--text); }
+
+/* ─── 共享徽章 / 胶囊（替代 health-badge / health-detail-item） ── */
+.panel-badge {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+.panel-badge.excellent { background: var(--green-20); color: var(--green); }
+.panel-badge.good { background: var(--accent-20); color: var(--accent); }
+.panel-badge.fair { background: var(--yellow-20); color: var(--yellow); }
+.panel-badge.poor { background: var(--red-20); color: var(--red); }
+
+.panel-chip {
+  font-size: var(--font-2xs);
+  color: var(--text-2);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+.panel-chip.warning {
+  color: var(--yellow);
+  background: var(--yellow-20);
+  border-color: transparent;
+  font-weight: var(--weight-medium);
+}
+.panel-chip.danger {
+  color: var(--red);
+  background: var(--red-20);
+  border-color: transparent;
+  font-weight: var(--weight-medium);
+}
+
+/* ─── 共享评分（替代 health-score / health-score-sample） ── */
+.panel-score {
+  font-size: var(--font-score);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  animation: scoreReveal 0.4s ease-out;
+}
+.panel-score-sample {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-regular);
+  color: var(--text-3);
+  margin-left: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@keyframes scoreReveal {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── 共享画像卡网格（替代 partner-profile-cards / partner-profile-card） ── */
+.profile-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-3) var(--space-2);
+}
+.profile-card {
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2-5);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+.profile-card:hover {
+  background: var(--surface1);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+.profile-card-name {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  margin-bottom: var(--space-1);
+  line-height: 1.4;
+}
+.profile-card-preview {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ─── 共享知识缺口项（替代 partner-gap-item） ── */
+.gap-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  padding: var(--input-padding);
+  background: var(--surface0);
+  border: 1px dashed var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  line-height: 1.4;
+}

@@ -120,15 +120,15 @@ export class InsightsRenderer {
       const sources = Object.entries(dashboard.bySource).sort((a, b) => b[1] - a[1]);
       const maxCount = Math.max(1, ...sources.map((s) => s[1]));
       for (const [source, count] of sources) {
-        const bar = createEl('div', 'insights-distribution-bar');
+        const bar = createEl('div', 'dist-bar');
         bar.title = `${getSourceLabel(source)}: ${count} 条`;
 
-        const label = createEl('span', 'distribution-label text-truncate', getSourceLabel(source));
+        const label = createEl('span', 'dist-bar__label text-truncate', getSourceLabel(source));
 
-        const fill = createEl('div', `distribution-fill source-${getSourceColorClass(source)}`);
+        const fill = createEl('div', `dist-bar__fill source-${getSourceColorClass(source)}`);
         fill.style.width = `${(count / maxCount) * 100}%`;
 
-        const countSpan = createEl('span', 'distribution-count', String(count));
+        const countSpan = createEl('span', 'dist-bar__count', String(count));
 
         bar.appendChild(label);
         bar.appendChild(fill);
@@ -152,11 +152,11 @@ export class InsightsRenderer {
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .slice(0, MAX_RELATION_ITEMS);
 
-        const title = createEl('div', 'insights-section-title', '最近关系');
+        const title = createEl('div', 'panel-section-title', '最近关系');
         summaryEl.appendChild(title);
 
         for (const edge of recentEdges) {
-          const item = createEl('div', 'insights-relation-item');
+          const item = createEl('div', 'relation-item');
 
           const sourceName = nodeNameMap.get(edge.sourceId) || edge.sourceId;
           const targetName = nodeNameMap.get(edge.targetId) || edge.targetId;

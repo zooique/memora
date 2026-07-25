@@ -148,16 +148,16 @@ describe('render() · source 分布条形图', () => {
   it('应按数量倒序渲染每个 source 的条形', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard({ bySource: { test: 50, insight: 30, profile: 20 } }), createGraph());
-    const bars = document.querySelectorAll('#insights-distribution .insights-distribution-bar');
+    const bars = document.querySelectorAll('#insights-distribution .dist-bar');
     expect(bars.length).toBe(3);
     // 第一个应为数量最多的 test
-    expect(bars[0]!.querySelector('.distribution-label')!.textContent).toBe('test');
+    expect(bars[0]!.querySelector('.dist-bar__label')!.textContent).toBe('test');
   });
 
   it('最大数量条形宽度应为 100%', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard({ bySource: { test: 50, insight: 30 } }), createGraph());
-    const fills = document.querySelectorAll('#insights-distribution .distribution-fill');
+    const fills = document.querySelectorAll('#insights-distribution .dist-bar__fill');
     const firstFill = fills[0] as HTMLElement;
     expect(firstFill.style.width).toBe('100%');
   });
@@ -165,7 +165,7 @@ describe('render() · source 分布条形图', () => {
   it('非最大数量条形宽度按比例计算', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard({ bySource: { test: 50, insight: 25 } }), createGraph());
-    const fills = document.querySelectorAll('#insights-distribution .distribution-fill');
+    const fills = document.querySelectorAll('#insights-distribution .dist-bar__fill');
     // test=50 (100%), insight=25 (50%)
     expect((fills[0] as HTMLElement).style.width).toBe('100%');
     expect((fills[1] as HTMLElement).style.width).toBe('50%');
@@ -179,16 +179,16 @@ describe('render() · source 分布条形图', () => {
   it('空 bySource 应无条形（不报错）', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard({ bySource: {} }), createGraph());
-    const bars = document.querySelectorAll('#insights-distribution .insights-distribution-bar');
+    const bars = document.querySelectorAll('#insights-distribution .dist-bar');
     expect(bars.length).toBe(0);
   });
 
   it('条形应包含 source 颜色类（source-<colorClass>）', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard({ bySource: { test: 1 } }), createGraph());
-    const fill = document.querySelector('#insights-distribution .distribution-fill') as HTMLElement;
+    const fill = document.querySelector('#insights-distribution .dist-bar__fill') as HTMLElement;
     // getSourceColorClass 返回的类名应附加到 source- 前缀
-    expect(fill.className).toMatch(/^distribution-fill source-/);
+    expect(fill.className).toMatch(/^dist-bar__fill source-/);
   });
 });
 
@@ -204,7 +204,7 @@ describe('render() · 关系摘要', () => {
   it('有关系时应渲染标题"最近关系"', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard(), createGraph());
-    const title = document.querySelector('#insights-relations-summary .insights-section-title');
+    const title = document.querySelector('#insights-relations-summary .panel-section-title');
     expect(title).not.toBeNull();
     expect(title!.textContent).toBe('最近关系');
   });
@@ -212,7 +212,7 @@ describe('render() · 关系摘要', () => {
   it('应按 createdAt 倒序取前 3 条关系', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard(), createGraph());
-    const items = document.querySelectorAll('#insights-relations-summary .insights-relation-item');
+    const items = document.querySelectorAll('#insights-relations-summary .relation-item');
     expect(items.length).toBe(3);
     // 4 条 edges，倒序前 3 条：12:00 / 11:00 / 10:00
     // 第一条应为 e3（createdAt=12:00）
@@ -224,7 +224,7 @@ describe('render() · 关系摘要', () => {
   it('关系项应展示类型标签和节点名称', () => {
     const renderer = createRenderer();
     renderer.render(createDashboard(), createGraph());
-    const firstItem = document.querySelector('#insights-relations-summary .insights-relation-item')!;
+    const firstItem = document.querySelector('#insights-relations-summary .relation-item')!;
     expect(firstItem.querySelector('.relation-type-tag')).not.toBeNull();
     expect(firstItem.querySelector('.relation-desc')!.textContent).toMatch(/→/);
   });
