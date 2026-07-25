@@ -380,6 +380,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 初始化 UI
     this.initEventListeners();
     this.memoryPanel.initMemoryPanelListeners();
+    // 感知面板（精灵状态/模式洞察）需独立 EventTracker 以绑定动态"关联记忆"按钮点击
+    this.perceptionPanel.init(new EventTracker());
     this.personaPanel.initPersonaSelectorListeners();
     this.settingsPanelManager.initListeners();
     // 精灵设定面板管理器事件初始化（与 settingsPanelManager 同模式）

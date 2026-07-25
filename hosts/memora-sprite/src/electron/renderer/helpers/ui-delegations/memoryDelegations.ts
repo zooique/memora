@@ -124,6 +124,8 @@ export const memoryDelegations: MemoryDelegations = {
   },
   onMemoryClick(this: UIManager, cb: (id: string) => void): void {
     this.memoryPanel.onMemoryClick(cb);
+    // 感知面板（精灵状态/模式洞察）的"关联记忆"按钮复用同一跳转回调
+    this.perceptionPanel.onMemoryClick(cb);
   },
   onMemoryDelete(this: UIManager, cb: () => void): void {
     this.memoryPanel.onMemoryDelete(cb);

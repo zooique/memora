@@ -101,10 +101,10 @@ export class PerceptionPanelManager {
   /**
    * 初始化感知面板事件监听
    *
-   * 目前感知面板无交互按钮（纯展示型面板），方法体为空。
-   * 保留方法以符合 ADR-SP-015 生命周期契约，便于未来扩展。
+   * 注入事件跟踪器，供动态渲染的"关联记忆"按钮（模式洞察区）绑定点击事件。
+   * 详见 updatePatternsDisplay 中 perception-pattern-related 按钮的点击委托。
    *
-   * @param _events 事件跟踪器（预留，当前未使用）
+   * @param _events 事件跟踪器（绑定关联记忆按钮的 click 监听）
    */
   init(_events: EventTracker): void {
     // 存储事件跟踪器，供动态渲染的"关联记忆"按钮使用
