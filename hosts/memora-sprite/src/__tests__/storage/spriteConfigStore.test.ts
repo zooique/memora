@@ -5,9 +5,9 @@
  * - load()：委托 loadConfig，文件缺失时抛错
  * - loadOrDefault()：文件缺失时返回 sprite 专属默认配置
  * - isConfigured()：apiKey + provider 非 mock 判定
- * - save()：合并写入 + 保留 providers/active + 0600 权限
- * - saveProviders()：多 Provider 映射表 + 同步扁平字段
- * - resolveProviderConfig()：新格式 + 旧格式向后兼容
+ * - save()：合并写入 + 收敛到 providers['default'] + 0600 权限
+ * - saveProviders()：多 Provider 映射表（单一格式，不再回填扁平字段）
+ * - resolveProviderConfig()：从 providers 映射表按 key 读取
  *
  * Mock 策略：
  * - vi.mock('memora') 拦截 loadConfig + logger + toError
@@ -55,11 +55,9 @@ import type { LlmConfigFormData } from '../../storage/spriteConfigStore.js';
 function makeMockConfig(overrides: Partial<Config> = {}): Config {
   return {
     llm: {
-      provider: 'deepseek',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
-      apiKey: 'sk-test-key',
-      temperature: 0.7,
+      // 配置文件已收敛为 providers+active 单一格式（v1.x 扁平兼容已移除）
+      providers: { default: { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-test-key', temperature: 0.7 } },
+      active: 'default',
     },
     memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
     security: { permission: 'owner', confirmWrites: false },
@@ -194,8 +192,10 @@ describe('SpriteConfigStore', () => {
       const [path, content] = vi.mocked(writeFile).mock.calls[0];
       expect(path).toBe('/mock/config.json');
       const parsed = JSON.parse(content as string);
-      expect(parsed.llm.provider).toBe('openai');
-      expect(parsed.llm.apiKey).toBe('sk-new-key');
+      // 单配置表单收敛到 providers['default'] 单一格式
+      expect(parsed.llm.providers.default.provider).toBe('openai');
+      expect(parsed.llm.providers.default.apiKey).toBe('sk-new-key');
+      expect(parsed.llm.active).toBe('default');
     });
 
     it('应以 0600 权限写入（保护 apiKey）', async () => {
@@ -286,7 +286,7 @@ describe('SpriteConfigStore', () => {
       await store.save(makeLlmConfig({ temperature: undefined }));
 
       const parsed = JSON.parse(vi.mocked(writeFile).mock.calls[0][1] as string);
-      expect(parsed.llm.temperature).toBe(0.7);
+      expect(parsed.llm.providers.default.temperature).toBe(0.7);
     });
 
     it('temperature 缺失且现有值也缺失时应默认 0.7', async () => {
@@ -297,7 +297,7 @@ describe('SpriteConfigStore', () => {
       await store.save(makeLlmConfig({ temperature: undefined }));
 
       const parsed = JSON.parse(vi.mocked(writeFile).mock.calls[0][1] as string);
-      expect(parsed.llm.temperature).toBe(0.7);
+      expect(parsed.llm.providers.default.temperature).toBe(0.7);
     });
 
     it('传入 embeddingConfig 时应写入 embedding 字段', async () => {
@@ -328,22 +328,7 @@ describe('SpriteConfigStore', () => {
       expect(parsed.llm.active).toBe('openai');
     });
 
-    it('应同步更新激活 Provider 的扁平字段', async () => {
-      const existing = makeMockConfig();
-      const providers = {
-        openai: { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-2', temperature: 0.5 },
-      };
-
-      await store.saveProviders(providers, 'openai', existing);
-
-      const parsed = JSON.parse(vi.mocked(writeFile).mock.calls[0][1] as string);
-      expect(parsed.llm.provider).toBe('openai');
-      expect(parsed.llm.model).toBe('gpt-4o');
-      expect(parsed.llm.apiKey).toBe('sk-2');
-      expect(parsed.llm.temperature).toBe(0.5);
-    });
-
-    it('active 不在 providers 中时不应更新扁平字段', async () => {
+    it('active 不在 providers 中时仍应写入给定的 providers 映射与 active（不写扁平字段）', async () => {
       const existing = makeMockConfig();
       const providers = {
         openai: { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-2' },
@@ -352,20 +337,23 @@ describe('SpriteConfigStore', () => {
       await store.saveProviders(providers, 'nonexistent', existing);
 
       const parsed = JSON.parse(vi.mocked(writeFile).mock.calls[0][1] as string);
-      // 扁平字段保持 existing 值
-      expect(parsed.llm.provider).toBe('deepseek');
+      expect(parsed.llm.providers).toEqual(providers);
+      expect(parsed.llm.active).toBe('nonexistent');
+      // 配置文件已收敛为 providers+active 单一格式，不再写扁平 llm.provider 等字段
+      expect(parsed.llm.provider).toBeUndefined();
     });
 
-    it('Provider 缺失 temperature 时应回退到 existing 值', async () => {
-      const existing = makeMockConfig();
+    it('Provider 缺失 temperature 时应回退到 existing 同 key 值', async () => {
+      const existing = makeMockConfig(); // providers.default.temperature = 0.7
       const providers = {
-        openai: { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-2' },
+        default: { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-2' }, // 同 key 'default'，缺 temperature
       };
 
-      await store.saveProviders(providers, 'openai', existing);
+      await store.saveProviders(providers, 'default', existing);
 
       const parsed = JSON.parse(vi.mocked(writeFile).mock.calls[0][1] as string);
-      expect(parsed.llm.temperature).toBe(0.7);
+      // 新 providers.default 缺失 temperature，应回退到 existing.default.temperature
+      expect(parsed.llm.providers.default.temperature).toBe(0.7);
     });
   });
 });
@@ -405,36 +393,6 @@ describe('resolveProviderConfig', () => {
     });
 
     expect(resolveProviderConfig(config, 'nonexistent')).toBeUndefined();
-  });
-
-  it('旧格式：key=default 且 providers 为空时应从扁平字段读取', () => {
-    const config = makeMockConfig({
-      llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
-        baseUrl: 'https://api.deepseek.com/v1',
-        apiKey: 'sk-old',
-        temperature: 0.7,
-      },
-    });
-
-    const result = resolveProviderConfig(config, 'default');
-    expect(result?.provider).toBe('deepseek');
-    expect(result?.apiKey).toBe('sk-old');
-    expect(result?.baseUrl).toBe('https://api.deepseek.com/v1');
-  });
-
-  it('旧格式：provider 为 mock 时不应读取', () => {
-    const config = makeMockConfig({
-      llm: {
-        provider: 'mock',
-        model: 'mock-model',
-        apiKey: '',
-        temperature: 0.7,
-      },
-    });
-
-    expect(resolveProviderConfig(config, 'default')).toBeUndefined();
   });
 
   it('旧格式：key 非 default 时不应回退', () => {

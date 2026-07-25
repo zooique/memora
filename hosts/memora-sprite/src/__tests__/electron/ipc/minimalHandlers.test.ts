@@ -52,8 +52,11 @@ const { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteCo
   const mockSaveLlmProvider = vi.fn<() => Promise<void>>();
   const mockDeleteLlmProvider = vi.fn<() => Promise<void>>();
   const mockSetActiveLlmProvider = vi.fn<() => Promise<void>>();
-  // resolveProviderConfig 是纯函数，mock 为可控返回值
-  const mockResolveProviderConfig = vi.fn<(config: unknown, key: string) => unknown>();
+  // resolveProviderConfig 为纯函数：仅按 key 读取 providers 映射（v1.x 扁平兼容已移除）
+  const mockResolveProviderConfig = vi.fn((config: unknown, key: string) => {
+    const providers = (config as { llm?: { providers?: Record<string, unknown> } } | undefined)?.llm?.providers;
+    return providers?.[key];
+  });
   return { handleCallbacks, onCallbacks, mockLogger, mockErrorHandler, mockSpriteConfigStore, mockSaveLlmConfig, mockReinitAgent, mockLoadSpriteConfig, DEFAULT_SPRITE_CONFIG, mockGetLlmProviders, mockSaveLlmProvider, mockDeleteLlmProvider, mockSetActiveLlmProvider, mockResolveProviderConfig };
 });
 
@@ -313,11 +316,16 @@ describe('registerMinimalIpcHandlers', () => {
       mockSpriteConfigStore.isConfigured.mockResolvedValue(true);
       mockSpriteConfigStore.load.mockResolvedValue({
         llm: {
-          provider: 'openai',
-          model: 'gpt-4',
-          baseUrl: 'https://api.openai.com/v1',
-          apiKey: 'sk-test',
-          temperature: 0.7,
+          providers: {
+            default: {
+              provider: 'openai',
+              model: 'gpt-4',
+              baseUrl: 'https://api.openai.com/v1',
+              apiKey: 'sk-test',
+              temperature: 0.7,
+            },
+          },
+          active: 'default',
         },
         memory: { dataDir: '/tmp', maxContextTokens: 120000 },
         security: { permission: 'owner', confirmWrites: false },
@@ -691,11 +699,16 @@ describe('registerMinimalIpcHandlers', () => {
       mockSpriteConfigStore.isConfigured.mockResolvedValue(true);
       mockSpriteConfigStore.load.mockResolvedValue({
         llm: {
-          provider: 'openai',
-          model: 'gpt-4',
-          baseUrl: 'https://api.openai.com/v1',
-          apiKey: 'sk-test',
-          temperature: 0.7,
+          providers: {
+            default: {
+              provider: 'openai',
+              model: 'gpt-4',
+              baseUrl: 'https://api.openai.com/v1',
+              apiKey: 'sk-test',
+              temperature: 0.7,
+            },
+          },
+          active: 'default',
           background: {
             provider: 'anthropic',
             model: 'claude-3',
@@ -731,11 +744,16 @@ describe('registerMinimalIpcHandlers', () => {
       mockSpriteConfigStore.isConfigured.mockResolvedValue(true);
       mockSpriteConfigStore.load.mockResolvedValue({
         llm: {
-          provider: 'openai',
-          model: 'gpt-4',
-          baseUrl: '',
-          apiKey: 'sk-supersecretkey',
-          temperature: 0.7,
+          providers: {
+            default: {
+              provider: 'openai',
+              model: 'gpt-4',
+              baseUrl: '',
+              apiKey: 'sk-supersecretkey',
+              temperature: 0.7,
+            },
+          },
+          active: 'default',
         },
         embedding: {
           model: 'text-embedding-3',

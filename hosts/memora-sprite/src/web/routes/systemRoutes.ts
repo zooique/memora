@@ -83,13 +83,17 @@ export async function handleSystemRoute(
         sendJson(res, 200, {
           configured,
           config: configured
-            ? {
-                provider: config.llm.provider,
-                model: config.llm.model,
-                baseUrl: config.llm.baseUrl,
-                apiKey: config.llm.apiKey ? '***' : '', // 脱敏
-                temperature: config.llm.temperature,
-              }
+            ? (() => {
+                const active = config.llm.active ?? Object.keys(config.llm.providers ?? {})[0] ?? 'default';
+                const p = resolveProviderConfig(config, active) ?? resolveProviderConfig(config, 'default');
+                return {
+                  provider: p?.provider ?? '',
+                  model: p?.model ?? '',
+                  baseUrl: p?.baseUrl ?? '',
+                  apiKey: p?.apiKey ? '***' : '', // 脱敏
+                  temperature: p?.temperature ?? 0.7,
+                };
+              })()
             : null,
           embedding: config.embedding?.model
             ? {

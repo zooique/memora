@@ -187,15 +187,17 @@ export function registerMinimalIpcHandlers(
         return { configured: false, config: null };
       }
       const config: Config = await spriteConfigStore.load();
+      const active = config.llm.active ?? Object.keys(config.llm.providers ?? {})[0] ?? 'default';
+      const p = resolveProviderConfig(config, active) ?? resolveProviderConfig(config, 'default');
       return {
         configured: true,
         config: {
-          provider: config.llm.provider,
-          model: config.llm.model,
-          baseUrl: config.llm.baseUrl ?? '',
+          provider: p?.provider ?? '',
+          model: p?.model ?? '',
+          baseUrl: p?.baseUrl ?? '',
           // 脱敏 apiKey，渲染进程只需知道"已配置"状态
-          apiKey: maskApiKey(config.llm.apiKey ?? ''),
-          temperature: config.llm.temperature,
+          apiKey: maskApiKey(p?.apiKey ?? ''),
+          temperature: p?.temperature ?? 0.7,
           ...(config.llm.background ? {
             background: {
               enabled: true,

@@ -115,19 +115,26 @@ const {
   mockSetActiveLlmProvider,
   /** mock resolveProviderConfig 函数引用 */
   mockResolveProviderConfig,
+  /** resolveProviderConfig 真实行为对齐函数（供 mock 默认实现 / beforeEach 使用） */
+  faithfulResolveProviderConfig,
   /** mock createProviderFromConfig 函数引用 */
   mockCreateProviderFromConfig,
   /** mock getLlmProviders 默认返回的 Provider 列表 */
   MOCK_PROVIDERS_DATA,
 } = vi.hoisted(() => {
-  // mock loadConfig：默认返回含 llm + embedding 的完整配置
+  // mock loadConfig：默认返回含 llm + embedding 的完整配置（providers+active 单一格式）
   const mockLoadConfig = vi.fn(async () => ({
     llm: {
-      provider: 'deepseek',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
-      apiKey: 'sk-test-key',
-      temperature: 0.7,
+      providers: {
+        default: {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk-test-key',
+          temperature: 0.7,
+        },
+      },
+      active: 'default',
     },
     embedding: {
       model: 'text-embedding-3',
@@ -151,24 +158,27 @@ const {
   const mockDeleteLlmProvider = vi.fn(async () => undefined);
   // mock setActiveLlmProvider：默认成功
   const mockSetActiveLlmProvider = vi.fn(async () => undefined);
-  // mock resolveProviderConfig：默认返回 deepseek provider 配置
-  const mockResolveProviderConfig = vi.fn(() => ({
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    baseUrl: 'https://api.deepseek.com',
-    apiKey: 'sk-test',
-    temperature: 0.7,
-  }));
+  // resolveProviderConfig 为纯函数：仅按 key 读取 providers 映射（v1.x 扁平兼容已移除）
+  const faithfulResolveProviderConfig = (config: unknown, key: string) => {
+    const providers = (config as { llm?: { providers?: Record<string, unknown> } } | undefined)?.llm?.providers;
+    return providers?.[key];
+  };
+  const mockResolveProviderConfig = vi.fn(faithfulResolveProviderConfig);
   // mock createProviderFromConfig：返回空对象（代表 provider 实例）
   const mockCreateProviderFromConfig = vi.fn(() => ({}));
   return {
     MOCK_CONFIG: {
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk-test-key',
-        temperature: 0.7,
+        providers: {
+          default: {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-test-key',
+            temperature: 0.7,
+          },
+        },
+        active: 'default',
       },
       embedding: {
         model: 'text-embedding-3',
@@ -188,6 +198,7 @@ const {
     mockDeleteLlmProvider,
     mockSetActiveLlmProvider,
     mockResolveProviderConfig,
+    faithfulResolveProviderConfig,
     mockCreateProviderFromConfig,
     MOCK_PROVIDERS_DATA: {
       active: 'default',
@@ -454,13 +465,8 @@ describe('handleSystemRoute', () => {
     mockSaveLlmProvider.mockResolvedValue(undefined);
     mockDeleteLlmProvider.mockResolvedValue(undefined);
     mockSetActiveLlmProvider.mockResolvedValue(undefined);
-    mockResolveProviderConfig.mockReturnValue({
-      provider: 'deepseek',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
-      apiKey: 'sk-test',
-      temperature: 0.7,
-    });
+    // 默认按真实 resolveProviderConfig 行为从传入 config 解析（GET /api/llm-config 测试依赖此契约）
+    mockResolveProviderConfig.mockImplementation(faithfulResolveProviderConfig);
     mockCreateProviderFromConfig.mockReturnValue({});
     // 重置 MOCK_PROVIDER.chat 默认行为：yield 一个 chunk 后 stop
     MOCK_PROVIDER.chat.mockImplementation(async function* () {
@@ -556,11 +562,16 @@ describe('handleSystemRoute', () => {
   it('GET /api/llm-config 无 embedding 时应返回 embedding: null', async () => {
     mockLoadConfig.mockResolvedValue({
       llm: {
-        provider: 'openai',
-        model: 'gpt-4o',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKey: 'sk-x',
-        temperature: 0.5,
+        providers: {
+          default: {
+            provider: 'openai',
+            model: 'gpt-4o',
+            baseUrl: 'https://api.openai.com/v1',
+            apiKey: 'sk-x',
+            temperature: 0.5,
+          },
+        },
+        active: 'default',
       },
       // 无 embedding 字段
     });
@@ -578,11 +589,16 @@ describe('handleSystemRoute', () => {
   it('GET /api/llm-config apiKey 为空时应返回 apiKey: ""（不脱敏）', async () => {
     mockLoadConfig.mockResolvedValue({
       llm: {
-        provider: 'openai',
-        model: 'gpt-4o',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKey: '',
-        temperature: 0.5,
+        providers: {
+          default: {
+            provider: 'openai',
+            model: 'gpt-4o',
+            baseUrl: 'https://api.openai.com/v1',
+            apiKey: '',
+            temperature: 0.5,
+          },
+        },
+        active: 'default',
       },
     });
     const ctx = createMockCtx();
@@ -1382,6 +1398,14 @@ describe('handleSystemRoute', () => {
   // ─── POST /api/llm-providers/:key/active ──────────────
 
   it('POST /api/llm-providers/:key/active 合法请求应切换激活 Provider（无 background）', async () => {
+    // 该测试不喂 providers 映射，显式让 resolveProviderConfig 返回有效 Provider（模拟"key 已存在"）
+    mockResolveProviderConfig.mockReturnValue({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test',
+      temperature: 0.7,
+    });
     const setProvider = vi.fn();
     const setBackgroundProvider = vi.fn();
     const ctx = createMockCtx({
@@ -1404,14 +1428,27 @@ describe('handleSystemRoute', () => {
   });
 
   it('POST /api/llm-providers/:key/active 有 background 时应同时切换后台 Provider', async () => {
+    // 该测试不喂 providers 映射，显式让 resolveProviderConfig 返回有效 Provider（模拟"key 已存在"）
+    mockResolveProviderConfig.mockReturnValue({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test',
+      temperature: 0.7,
+    });
     // 覆盖 loadConfig 返回含 background 的配置
     mockLoadConfig.mockResolvedValue({
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk-test',
-        temperature: 0.7,
+        providers: {
+          default: {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-test',
+            temperature: 0.7,
+          },
+        },
+        active: 'default',
         background: {
           provider: 'openai',
           model: 'gpt-4o-mini',
@@ -1466,6 +1503,14 @@ describe('handleSystemRoute', () => {
   });
 
   it('POST /api/llm-providers/:key/active setProvider 抛错时应降级返回 success: false', async () => {
+    // 该测试不喂 providers 映射，显式让 resolveProviderConfig 返回有效 Provider（模拟"key 已存在"）
+    mockResolveProviderConfig.mockReturnValue({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test',
+      temperature: 0.7,
+    });
     const setProvider = vi.fn(() => { throw new Error('Agent 未就绪'); });
     const ctx = createMockCtx({
       agent: { skills: { list: [] }, setProvider, setBackgroundProvider: vi.fn() },
@@ -1848,11 +1893,16 @@ describe('handleSystemRoute', () => {
   it('GET /api/llm-config embedding.baseUrl 缺失且 apiKey 为空时应返回空字符串', async () => {
     mockLoadConfig.mockResolvedValue({
       llm: {
-        provider: 'openai',
-        model: 'gpt-4o',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKey: 'sk-x',
-        temperature: 0.5,
+        providers: {
+          default: {
+            provider: 'openai',
+            model: 'gpt-4o',
+            baseUrl: 'https://api.openai.com/v1',
+            apiKey: 'sk-x',
+            temperature: 0.5,
+          },
+        },
+        active: 'default',
       },
       embedding: {
         model: 'text-embedding-3',

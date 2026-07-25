@@ -121,7 +121,7 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
  * 获取所有 Provider 配置列表
  *
  * 从 config.json 读取 providers 映射表，转换为 UI 层格式。
- * 向后兼容：当 providers 为空但存在旧的扁平配置时，自动迁移为单 provider 条目。
+ * 配置文件已收敛为 providers+active 单一格式（内核以 providers[active] 为真理源）。
  *
  * @param configPath 配置文件路径
  * @returns Provider 列表 + 当前激活的 alias
@@ -139,43 +139,21 @@ export async function getLlmProviders(
     return key.slice(0, 4) + '****' + key.slice(-4);
   };
 
-  let providerList: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number; contextWindow?: number }>;
-  let active: string;
-
-  // 向后兼容：当 providers 为空但存在旧的扁平配置时，自动迁移为单 provider 条目
-  // 旧格式：config.llm.provider / model / baseUrl / apiKey / temperature
-  // 新格式：config.llm.providers = { "default": { provider, model, baseUrl, apiKey, temperature } }
-  if (Object.keys(providers).length === 0 && config.llm.provider && config.llm.provider !== 'mock') {
-    // 使用旧配置创建一个默认 provider
-    const defaultKey = 'default';
-    providerList = [{
-      key: defaultKey,
-      name: defaultKey,
-      provider: config.llm.provider,
-      model: config.llm.model ?? '',
-      baseUrl: config.llm.baseUrl ?? '',
-      apiKey: maskKey(config.llm.apiKey),
-      temperature: config.llm.temperature ?? 0.7,
-      // 旧配置无 contextWindow，不返回
-    }];
-    active = config.llm.active ?? defaultKey;
-  } else {
-    // 使用新的 providers 映射表
-    providerList = Object.entries(providers).map(([key, p]) => {
-      const providerData = p as { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number; contextWindow?: number };
-      return {
-        key,
-        name: key,
-        provider: providerData.provider,
-        model: providerData.model,
-        baseUrl: providerData.baseUrl ?? '',
-        apiKey: maskKey(providerData.apiKey),
-        temperature: providerData.temperature ?? config.llm.temperature,
-        contextWindow: providerData.contextWindow,
-      };
-    });
-    active = config.llm.active ?? Object.keys(providers)[0] ?? '';
-  }
+  // 统一展开 providers 映射表（配置文件已收敛为 providers+active 单一格式）
+  const providerList = Object.entries(providers).map(([key, p]) => {
+    const providerData = p as { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number; contextWindow?: number };
+    return {
+      key,
+      name: key,
+      provider: providerData.provider,
+      model: providerData.model,
+      baseUrl: providerData.baseUrl ?? '',
+      apiKey: maskKey(providerData.apiKey),
+      temperature: providerData.temperature ?? 0.7,
+      contextWindow: providerData.contextWindow,
+    };
+  });
+  const active = config.llm.active ?? Object.keys(providers)[0] ?? '';
 
   return {
     active,
@@ -289,26 +267,10 @@ export async function setActiveLlmProvider(
     );
   }
 
-  // 同步全局 temperature 到激活 Provider 的值（内核 createLlmProvider 读取 config.llm.temperature）
-  const configWithTemp = {
-    ...config,
-    llm: {
-      ...config.llm,
-      temperature: provider.temperature ?? config.llm.temperature,
-    },
-  };
-
-  // 获取当前 providers 映射表（用于判断是否需要转换格式）
+  // 获取当前 providers 映射表（配置文件已统一为 providers+active 单一格式）
   const providers = config.llm.providers ?? {};
 
-  // 如果是旧格式（providers 为空），先将扁平配置转换为 providers 映射
-  const targetProviders = Object.keys(providers).length > 0
-    ? providers
-    : {
-        [key]: provider,
-      };
-
-  await store.saveProviders(targetProviders, key, configWithTemp);
+  await store.saveProviders(providers, key, config);
 }
 
 // ─── 启动精灵 ──────────────────────────────────────────
@@ -434,9 +396,11 @@ async function createVectorStoreIfNeeded(
 ): Promise<IVectorStore | undefined> {
   if (!config.embedding?.model) return undefined;
 
+  const activeProvider = resolveProviderConfig(config, config.llm.active ?? Object.keys(config.llm.providers ?? {})[0] ?? '')
+    ?? resolveProviderConfig(config, 'default');
   const embeddingProvider = new EmbeddingProvider({
-    baseUrl: config.embedding.baseUrl ?? config.llm.baseUrl ?? '',
-    apiKey: config.embedding.apiKey ?? config.llm.apiKey ?? '',
+    baseUrl: config.embedding.baseUrl ?? activeProvider?.baseUrl ?? '',
+    apiKey: config.embedding.apiKey ?? activeProvider?.apiKey ?? '',
     model: config.embedding.model,
   });
   // 内核内置 JsonVectorStore（文件系统 JSON 实现），宿主也可替换为自定义 IVectorStore
@@ -741,7 +705,9 @@ export async function startSprite(opts?: {
   let config: Config;
   try {
     config = await loadConfig(opts?.configPath ?? DEFAULT_CONFIG_PATH);
-    if (!config.llm.apiKey) {
+    const startupProvider = resolveProviderConfig(config, config.llm.active ?? Object.keys(config.llm.providers ?? {})[0] ?? 'default')
+      ?? resolveProviderConfig(config, 'default');
+    if (!startupProvider?.apiKey) {
       throw new SpriteError(ErrorCode.CONFIG_LOAD_FAILED, 'API Key 未配置');
     }
   } catch (err) {

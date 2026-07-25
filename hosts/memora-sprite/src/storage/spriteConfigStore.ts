@@ -142,7 +142,11 @@ export class SpriteConfigStore {
   async isConfigured(): Promise<boolean> {
     try {
       const config = await this.load();
-      return Boolean(config.llm.apiKey && config.llm.provider !== 'mock');
+      // 读取激活 Provider 判定，兼容 v1.x 遗留扁平配置（兜底到 default）
+      const providers = config.llm.providers ?? {};
+      const active = config.llm.active ?? Object.keys(providers)[0] ?? 'default';
+      const provider = resolveProviderConfig(config, active) ?? resolveProviderConfig(config, 'default');
+      return Boolean(provider?.apiKey && provider.provider !== 'mock');
     } catch (err) {
       // ENOENT 是合法状态（首次启动/配置缺失），静默判定为未配置不记 warn
       // 其他错误（权限/JSON 损坏等）仍记 warn 便于排查
@@ -175,20 +179,24 @@ export class SpriteConfigStore {
     // 读取现有配置（保留其他字段），不存在则用默认值
     const existing = await this.loadOrDefault();
 
-    // 合并新配置：保留 providers/active 字段（多 Provider 管理用），避免互相覆盖
+    // 单配置表单统一收敛到 providers['default'] 别名，使配置文件始终为
+    // providers+active 单一格式（内核以 providers[active] 为真理源，
+    // 旧扁平 provider/model/apiKey 已废弃，不再写入）。
+    const providers = { ...(existing.llm.providers ?? {}) };
+    providers['default'] = {
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      baseUrl: llmConfig.baseUrl || undefined,
+      apiKey: llmConfig.apiKey,
+      temperature: llmConfig.temperature ?? existing.llm.providers?.['default']?.temperature ?? 0.7,
+    };
+
     const config: Config = {
       ...existing,
       llm: {
         ...existing.llm,
-        provider: llmConfig.provider,
-        model: llmConfig.model,
-        baseUrl: llmConfig.baseUrl,
-        apiKey: llmConfig.apiKey,
-        temperature: llmConfig.temperature ?? existing.llm.temperature ?? 0.7,
-        // 保留 providers 映射表（多 Provider 管理专用）
-        ...(existing.llm.providers ? { providers: existing.llm.providers } : {}),
-        // 保留 active Provider 别名
-        ...(existing.llm.active ? { active: existing.llm.active } : {}),
+        providers,
+        active: existing.llm.active ?? 'default',
         // 保存后台 Provider 配置（仅当 enabled 时写入）
         ...(llmConfig.background?.enabled ? {
           background: {
@@ -225,24 +233,23 @@ export class SpriteConfigStore {
     const dir = resolve(this.configPath, '..');
     await mkdir(dir, { recursive: true });
 
-    // 获取当前激活的 Provider 配置，同步更新扁平字段用于向后兼容
-    const activeProvider = providers[active];
+    // 配置文件已收敛为 providers+active 单一格式，不再回填扁平字段
+    // （内核以 providers[active] 为真理源，扁平 provider/model 已废弃）。
+    // providers 整体替换 existing（不合并未传入的 key），以保证 deleteLlmProvider 的删除语义正确；
+    // 对映射中缺失 temperature 的 key，回退到 existing 同 key 的值，避免编辑时丢失已配置温度。
+    const mergedProviders = Object.fromEntries(
+      Object.entries(providers).map(([key, p]) => [
+        key,
+        { ...p, temperature: p.temperature ?? existing.llm.providers?.[key]?.temperature },
+      ]),
+    );
 
     const config: Config = {
       ...existing,
       llm: {
         ...existing.llm,
-        providers,
+        providers: mergedProviders,
         active,
-        // 同步更新扁平字段，确保新旧格式一致
-        // 保持 undefined 而非强转空字符串：空字符串会被 parseConfig 过滤，导致旧格式分支误报
-        ...(activeProvider ? {
-          provider: activeProvider.provider,
-          model: activeProvider.model,
-          baseUrl: activeProvider.baseUrl,
-          apiKey: activeProvider.apiKey,
-          temperature: activeProvider.temperature ?? existing.llm.temperature ?? 0.7,
-        } : {}),
       },
     };
 
@@ -254,13 +261,15 @@ export class SpriteConfigStore {
 export const spriteConfigStore = new SpriteConfigStore();
 
 /**
- * 从配置中解析 Provider 配置（向后兼容）
+ * 从配置中解析 Provider 配置
  *
- * 支持两种配置格式：
- * - 新格式：config.llm.providers = { "key": { provider, model, baseUrl, apiKey, temperature } }
- * - 旧格式：config.llm.provider / model / baseUrl / apiKey / temperature
+ * 配置文件以 providers+active 为单一格式：
+ * - config.llm.providers = { "key": { provider, model, baseUrl, apiKey, temperature } }
+ * - config.llm.active 为当前激活的 key
  *
- * 当新格式中找不到指定 key 时，会尝试从旧格式读取（仅 key='default' 且 providers 为空时）。
+ * 仅按 key 读取 providers 映射表；不存在返回 undefined。
+ * （v1.x 遗留扁平配置兼容分支已移除——项目从未正式发布，
+ *  仅作者单人开发测试，旧扁平文件直接重新引导即可。）
  *
  * @param config 完整配置对象
  * @param key Provider 别名
@@ -270,23 +279,5 @@ export function resolveProviderConfig(
   config: Config,
   key: string,
 ): { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number } | undefined {
-  const providers = config.llm.providers ?? {};
-
-  if (providers[key]) {
-    // 新格式：从 providers 映射表读取
-    return providers[key] as { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number };
-  }
-
-  // 旧格式：从扁平配置读取（仅当 providers 为空且存在旧配置时）
-  if (key === 'default' && !Object.keys(providers).length && config.llm.provider && config.llm.provider !== 'mock') {
-    return {
-      provider: config.llm.provider,
-      model: config.llm.model ?? '',
-      baseUrl: config.llm.baseUrl ?? undefined,
-      apiKey: config.llm.apiKey ?? '',
-      temperature: config.llm.temperature,
-    };
-  }
-
-  return undefined;
+  return config.llm.providers?.[key];
 }
