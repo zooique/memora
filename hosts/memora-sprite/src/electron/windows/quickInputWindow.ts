@@ -940,18 +940,6 @@ export class QuickInputWindow {
 }
 
 /**
- * 创建快速输入浮窗的工厂函数
- *
- * 供 main.ts 调用，注入 clipboardHandler 用于抑制三重保护。
- *
- * @param callbacks 回调集合（onConfirm 负责写入剪贴板 + 抑制三重保护）
- * @returns QuickInputWindow 实例
- */
-export function createQuickInputWindow(callbacks: QuickInputWindowCallbacks): QuickInputWindow {
-  return new QuickInputWindow(callbacks);
-}
-
-/**
  * 默认的确认回调实现：写入剪贴板（带抑制三重保护）
  *
  * 供 main.ts 使用，注入 clipboardHandler 实例后即可工作。

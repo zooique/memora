@@ -446,31 +446,6 @@ export function removeWithAnimation(el: HTMLElement, leavingClass: string): void
 
 // ─── 插入到参考元素之前或追加 ─────────────────────────────────────────
 
-/**
- * 将新元素插入到指定参考元素之前；若参考元素不存在则追加到父容器末尾
- *
- * 替代散落在 streamingRenderer.ts / messageDecorations.ts / toolCallCard.ts 的
- * `const cursor = parent.querySelector(selector); if (cursor) { parent.insertBefore(el, cursor); } else { parent.appendChild(el); }` 模式。
- *
- * 典型场景：流式输出时把新内容插入到光标元素之前，光标不存在时追加到末尾。
- *
- * @param parent 父容器
- * @param el 要插入的新元素
- * @param referenceSelector 参考元素选择器（如 '.cursor'），不存在时降级为 appendChild
- */
-export function insertBeforeOrAppend(
-  parent: HTMLElement,
-  el: Node,
-  referenceSelector: string,
-): void {
-  const reference = parent.querySelector(referenceSelector);
-  if (reference) {
-    parent.insertBefore(el, reference);
-  } else {
-    parent.appendChild(el);
-  }
-}
-
 // ─── Canvas 工具 ─────────────────────────────────────────
 
 /**

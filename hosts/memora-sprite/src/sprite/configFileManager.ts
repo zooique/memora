@@ -443,16 +443,3 @@ export async function listConfigFiles(
   }
 }
 
-/**
- * 获取设定文件子目录路径（供外部 watcher 使用）
- *
- * sprite.ts 的 personaWatcher 通过此函数获取子目录路径，
- * 未来 rulesWatcher / skillsWatcher 同样使用。
- *
- * @param type 配置类型
- * @param configDir 配置根目录
- * @returns 子目录绝对路径
- */
-export function getConfigFileDir(type: ConfigFileType, configDir: string): string {
-  return path.join(configDir, TYPE_TO_SUBDIR[type]);
-}

@@ -331,7 +331,6 @@ export class InputInjector {
  *
  * 动态 import 策略：
  *   - 生产环境：首次调用时动态 import @nut-tree-fork/nut-js，创建真实 InputInjector
- *   - 测试环境：可通过 setInputInjectorForTest() 注入 mock
  *   - nut-js 不可用：创建降级 InputInjector（deps=null，所有 paste 返回 copy 降级）
  */
 let defaultInjector: InputInjector | null = null;
@@ -383,11 +382,3 @@ export async function getDefaultInputInjector(): Promise<InputInjector> {
   return defaultInjector;
 }
 
-/**
- * 测试用：注入 mock InputInjector（仅供测试调用）
- *
- * @param injector mock 实例或 null（重置为默认懒创建）
- */
-export function setInputInjectorForTest(injector: InputInjector | null): void {
-  defaultInjector = injector;
-}

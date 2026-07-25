@@ -205,7 +205,7 @@ function setAppRuntime(runtime: AppRuntime | null): void {
 /**
  * 持久化窗口相关配置
  *
- * sprite 就绪时通过 updateConfigBatch 写入（同步 ConfigManager 内存态 + 写文件），
+ * sprite 就绪时通过 updateConfigBatch 写入（统一更新内存态与文件），
  * 否则 fallback 到模块级 saveSpriteConfig（部分配置，读文件合并）。
  *
  * 影响字段：windowBounds / windowState / floatIconPosition / showFloatBubble
@@ -584,7 +584,7 @@ async function initializeApp(): Promise<void> {
       defaultState: spriteConfig.windowState,
       floatPosition,
       showFloatBubble: spriteConfig.showFloatBubble,
-      // 持久化委托给 persistWindowConfig（同步 ConfigManager 内存态）
+      // 窗口状态变更时持久化窗口配置
       onSaveState: (data) => {
         persistWindowConfig({
           windowState: data.windowState,
@@ -656,7 +656,7 @@ async function initializeApp(): Promise<void> {
         },
         onToggleFloatBubble: (checked: boolean) => {
           appState.windowStateManager.setShowFloatBubble(checked);
-          // 持久化到 spriteConfig（通过 persistWindowConfig 同步 ConfigManager 内存态）
+          // 勾选状态变更时持久化窗口配置
           persistWindowConfig({ showFloatBubble: checked });
           // 重建托盘菜单以反映勾选状态
           appState.trayManager?.updateMenu();

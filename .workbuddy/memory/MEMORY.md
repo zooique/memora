@@ -31,3 +31,11 @@
 - **集成测试宿主 Bug 模板**：sprite 集成测试接真实 `memora` 实例时最容易暴露**宿主存储层**问题——例：`SqliteStorage.upsert` 用 `{ ...memory }` 展开，而 `Memory.metadata?` 注释声明"SQLite 不存储此字段"，导致带 metadata 的记忆（内核加载配置文件必填）upsert 即 `Unknown named parameter 'metadata'`。修复：upsert 显式绑定 8 已知列、忽略 metadata。此类 Bug 独立于内核 12 项修复，属宿主层。
 - **集成目录约定**：`src/__tests__/integration/`（vitest include `src/**/__tests__/**/*.test.ts` 自动纳入）放"接真实 Agent / 真实 SqliteStorage / 真实落盘"的端到端用例；内核未导出的 Manager（ProjectManager/UserProfile/DedupManager/WorkProjectionManager）只能经真实 `Agent` 实例驱动（getter 返 `| null`，用 `!` 断言），不可直接 `new`。
 - **saveSpriteConfig 双写不同步 Bug 模式（2026-07-25 修复）**：`saveSpriteConfig` 有 isFullConfig 优化（完整配置含全部默认键时跳过读文件直接写入）。当 main.ts 直接调模块级 `saveSpriteConfig({ windowBounds })` 部分写入（绕过 ConfigManager），ConfigManager 的 `this.config` 不更新，后续 `incrementDailyMessageCount` → `saveSpriteConfig(this.config)` 完整写入用过时值覆盖文件。**症状**：sprite.json 的 windowBounds 恰好等于 FULL_SIZE 默认值（900x680）但位置是真实用户值（move 触发了部分写入但 resize 被覆盖）。**修复模式**：所有配置写入统一走 `sprite.updateConfig/updateConfigBatch`（同步 this.config），main.ts 用 `persistWindowConfig` 辅助函数封装 sprite 就绪/未就绪两条路径。**可复用判据**：发现 JSON 配置文件某字段恰好等于默认值但其他字段是真实用户值时，优先排查"双写不同步"——一个路径部分写入（读文件合并），另一个路径完整写入（内存快照），后者覆盖前者。
+
+## 代码孤儿/死导出静态分析方法论（可复用，2026-07-25 新增）
+- **分析器骨架**：遍历 `src/**/*.ts`，解析相对 `import`/`export ... from` 构建「模块→被谁引用」图 + 「符→被谁 import」图；排除入口（main/cli/renderer/server/preload*/index 桶）。输出全模块孤儿/仅测试引用/死导出。
+- **坑1（必踩）**：NodeNext 源码 import 写显式 `.js` 扩展名 → 解析器必须先 `replace(/\.(js|ts|mjs|cjs)$/,'')` 再 `path.resolve`+尝试 `.ts/.d.ts/.js/index.ts`，否则 100% 误判孤儿。
+- **坑2（Electron 多入口）**：整模块孤儿数不可信——preload 脚本经 `path.join(ELECTRON_DIR,'x.cjs')` 加载、renderer 入口经 HTML `<script src="x.js">` 加载、preloadWeb 经运行时 esbuild 转译、类型 barrel 仅 `export type` 转发。此四类须手工核对，否则全误删。
+- **坑3（类型漏判）**：interface/type 经 `import type` 或 barrel re-export 时易漏抓 → 类型"死导出"误报率极高（如 ElectronAPI 36 处引用被漏判）。**类型导出删除一律人工确认，不可信分析器**。
+- **真死代码铁律**：仅「导出值（函数/const）且全仓（含 __tests__）零词边界引用」可信为真死导出；「导出但仅内部使用」属不必要 export（测试可达性保留），非死代码，删会破测试。
+- **顺带清理**：删死导出时同步修 import（如死导出是唯一某 import 使用者 → 删该 import 避免 lint 报错）与引用它的陈旧注释（去痕）。

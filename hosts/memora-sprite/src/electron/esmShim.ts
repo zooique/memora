@@ -8,7 +8,7 @@
  * currentDir 即为 electron 目录。
  */
 
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -16,11 +16,3 @@ import { fileURLToPath } from 'node:url';
  * 用于定位 preload.cjs、renderer/index.html 等静态资源
  */
 export const ELECTRON_DIR = dirname(fileURLToPath(import.meta.url));
-
-/**
- * 项目根目录绝对路径
- *
- * 开发时指向 hosts/memora-sprite/
- * 打包后指向 app.asar 根目录（dist-electron 的父目录）
- */
-export const PROJECT_ROOT = join(ELECTRON_DIR, '..', '..');

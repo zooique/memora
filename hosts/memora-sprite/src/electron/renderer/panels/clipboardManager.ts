@@ -56,9 +56,6 @@ export const BADGE_MAX_DISPLAY = 99;
 /** 较旧阈值（24h，超过则标记 isStale，角标边框变橙色） */
 export const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-/** 敏感内容预览长度（前 100 字符，与 ClipboardHandler.computeHash 的 readText 一致语义） */
-export const PREVIEW_LENGTH = 100;
-
 // ─── ClipboardManager 类 ───────────────────────────────
 
 /**
