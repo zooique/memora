@@ -8,7 +8,7 @@
  * - save 并发串行化（多次 save 不互相覆盖）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { JsonVectorStore, type EmbeddingService } from '@/memory/vectorStore.js';
@@ -412,5 +412,92 @@ describe('JsonVectorStore · save 串行化', () => {
     // delete 内部已 save，文件立即更新（不再有"未 save 残留"窗口）
     const dataAfterDelete = JSON.parse(readFileSync(storePath, 'utf-8'));
     expect(dataAfterDelete.entries).toHaveLength(0);
+  });
+});
+
+// ─── M8 / M9 加固测试 ─────────────────────────────────
+
+describe('JsonVectorStore · M8 并发 save 不丢数据', () => {
+  let tmpDir: string;
+  let storePath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-m8-'));
+    storePath = join(tmpDir, 'vectors.json');
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('交错 upsert+save 并发，最终全部条目落盘且无残留 tmp', async () => {
+    const provider = mockEmbeddingService();
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
+
+    // 并发触发多轮 upsert+save（模拟高频写入），
+    // 验证 save() 串行化不会互相覆盖丢失数据（旧实现 .finally 直接置 null 会截断后续 save 链）。
+    await Promise.all(
+      [1, 2, 3, 4, 5].map(async (i) => {
+        await store.upsert(`m${i}`, `文本${i}`);
+        return store.save();
+      }),
+    );
+
+    expect(existsSync(storePath)).toBe(true);
+    const data = JSON.parse(readFileSync(storePath, 'utf-8'));
+    expect(data.entries).toHaveLength(5);
+    expect(data.entries.map((e: { id: string }) => e.id).sort()).toEqual([
+      'm1',
+      'm2',
+      'm3',
+      'm4',
+      'm5',
+    ]);
+
+    // M9 原子写：临时文件应已被 rename 掉，无残留 .tmp（残留 tmp 是崩溃源）
+    expect(existsSync(`${storePath}.tmp`)).toBe(false);
+  });
+});
+
+describe('JsonVectorStore · M9 损坏文件备份', () => {
+  let tmpDir: string;
+  let storePath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-m9-'));
+    storePath = join(tmpDir, 'vectors.json');
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('损坏 JSON 加载时应备份为 .corrupt.<ts> 且原路径被移走', async () => {
+    writeFileSync(storePath, '{ 这是损坏的 json,,,', 'utf-8');
+
+    const provider = mockEmbeddingService();
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
+
+    // 损坏文件不再被静默「从空开始」吞噬——先备份再清空，避免不可逆数据丢失
+    await store.load();
+    expect(store.size).toBe(0);
+
+    // 原 storePath 已被 rename 走
+    expect(existsSync(storePath)).toBe(false);
+    // 存在 .corrupt.<timestamp> 备份，便于人工恢复或 re-embed
+    const backups = readdirSync(tmpDir).filter((f) => f.startsWith('vectors.json.corrupt.'));
+    expect(backups.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('原子 rename 后文件可被再次 load 还原（往返可读）', async () => {
+    const provider = mockEmbeddingService();
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
+    await store.upsert('m1', '文本A');
+    await store.save();
+
+    // 再次加载应成功还原，证明 rename 写出的文件格式完整可读（未被半写截断）
+    const store2 = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
+    await store2.load();
+    expect(store2.size).toBe(1);
   });
 });

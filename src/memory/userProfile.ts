@@ -49,6 +49,8 @@ interface ProfileContent {
   value: string;
   /** 显式字段名，新数据必填；旧数据可能缺失，由 parseContentField 降级从 value 前缀提取 */
   fieldName?: string;
+  /** 确认态标记（M10）：缺省视为已确认，向后兼容旧数据 */
+  confirmed?: boolean;
 }
 
 /**
@@ -138,19 +140,20 @@ export class UserProfile {
     const entries: UserProfileEntry[] = [];
 
     for (const m of memories) {
-      // 优先从 content JSON 解码，降级到旧格式 name 解析
-      const parsed = this.parseContentField(m.content, m.name);
-      const entry: UserProfileEntry = {
-        id: m.id,
-        category: parsed.category,
-        // fieldName 由 parseContentField 统一填充（新数据直接读，旧数据从 value 前缀降级提取）
-        fieldName: parsed.fieldName,
-        value: parsed.value,
-        source: '',
-        weight: m.score,
-        confirmed: true, // 存储中只保存已确认条目
-        updatedAt: m.accessedAt,
-      };
+    // 优先从 content JSON 解码，降级到旧格式 name 解析
+    const parsed = this.parseContentField(m.content, m.name);
+    const entry: UserProfileEntry = {
+      id: m.id,
+      category: parsed.category,
+      // fieldName 由 parseContentField 统一填充（新数据直接读，旧数据从 value 前缀降级提取）
+      fieldName: parsed.fieldName,
+      value: parsed.value,
+      source: '',
+      weight: m.score,
+      // M10 修复：从 content 还原确认态（旧数据无 confirmed 字段 → 默认已确认，向后兼容）
+      confirmed: parsed.confirmed,
+      updatedAt: m.accessedAt,
+    };
       this.cache.set(entry.id, entry);
       entries.push(entry);
     }
@@ -288,8 +291,9 @@ export class UserProfile {
    * @returns 成功写入的条目，或 null（写入失败）
    */
   private async upsertFact(fact: ExtractedFact): Promise<UserProfileEntry | null> {
-    // 构造稳定 ID（profile: 前缀 + 分类 + slug）
-    const id = `profile:user-profile-${fact.category}-${slugify(fact.value)}`;
+    // M3 修复：id 维度纳入 fieldName，与冲突检测维度（category+fieldName）一致。
+    // 否则不同 fieldName 经 slugify 撞车时分配同一 id → 后写覆盖前写 → 跨字段记忆静默丢失。
+    const id = `profile:user-profile-${fact.category}-${slugify(fact.fieldName)}-${slugify(fact.value)}`;
 
     // 同分类冲突解决 — 删除旧条目（相同子分类 + 不同值 = 用户更新了信息）
     await this.removeConflictingEntries(fact);
@@ -306,12 +310,18 @@ export class UserProfile {
       updatedAt: nowIso(),
     };
 
+    // M2 修复：已确认条目不因同 value 的低置信度重提取而降级。
+    // 同一 id 若缓存中已是 confirmed=true，保留确认态（用户已确认该事实，低置信重提取不应撤销）。
+    const existingInCache = this.cache.get(id);
+    if (existingInCache?.confirmed && !entry.confirmed) {
+      entry.confirmed = true;
+    }
+
     try {
-      // 仅已确认条目写入存储（待确认条目仅存内存缓存）
-      if (entry.confirmed) {
-        const memory = this.toMemory(entry);
-        this.index.upsert(memory);
-      }
+      // M10 修复：待确认条目也持久化（content 含 confirmed=false 标记），
+      // 重启后由 load() 恢复为 pending，消除"确认前无兜底"的不可逆损失点。
+      const memory = this.toMemory(entry);
+      this.index.upsert(memory);
       this.cache.set(id, entry);
 
       if (entry.confirmed) {
@@ -405,6 +415,7 @@ export class UserProfile {
         category: entry.category,
         value: entry.value,
         fieldName: entry.fieldName,
+        confirmed: entry.confirmed,
       }),
       source: SOURCE_LABELS.PROFILE,
       name: `用户画像-${entry.category}`,
@@ -434,6 +445,7 @@ export class UserProfile {
     category: ProfileCategory;
     value: string;
     fieldName: string;
+    confirmed: boolean;
   } {
     // 优先尝试 JSON 解码（新格式）
     try {
@@ -441,7 +453,9 @@ export class UserProfile {
       if (isProfileContent(parsed)) {
         // 新数据含 fieldName 直接返回；旧 JSON 数据无 fieldName 时从 value 前缀降级提取
         const fieldName = parsed.fieldName ?? extractFieldNameFromValue(parsed.value);
-        return { category: parsed.category, value: parsed.value, fieldName };
+        // M10：confirmed 缺失（旧数据）默认 true，向后兼容；新数据按实际标记还原
+        const confirmed = typeof parsed.confirmed === 'boolean' ? parsed.confirmed : true;
+        return { category: parsed.category, value: parsed.value, fieldName, confirmed };
       }
     } catch {
       // content 不是 JSON，降级到旧格式
@@ -454,13 +468,13 @@ export class UserProfile {
       if (VALID_PROFILE_CATEGORIES.includes(category)) {
         const value = name.slice(idx + 1).trim() || content;
         // 旧格式数据无 fieldName，从 value 前缀提取（如 "姓名: 张三" → "姓名"）
-        return { category, value, fieldName: extractFieldNameFromValue(value) };
+        return { category, value, fieldName: extractFieldNameFromValue(value), confirmed: true };
       }
     }
 
     // 最终降级：默认 history 分类（中性默认，避免 identity 高敏感类别污染画像）
     // fieldName = 'unknown'：无法识别字段名，removeConflictingEntries 会跳过该条目
-    return { category: 'history', value: content, fieldName: 'unknown' };
+    return { category: 'history', value: content, fieldName: 'unknown', confirmed: true };
   }
 
   /**

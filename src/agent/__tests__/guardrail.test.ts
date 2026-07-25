@@ -32,8 +32,8 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
 /**
  * 创建 guardrail 类型的 Memory
  *
- * content 格式需换行分隔 pattern 和 action，
- * 因为 AgentLoop.runInputGuardrails 中 /pattern:\s*(.+)/ 的 .+ 会贪婪匹配到行尾
+ * content 同时支持多行格式（`pattern: /regex/\naction: block`）与
+ * 单行格式（`pattern: /regex/ action: block`）——S1 修复后两者等价。
  */
 function makeGuardrailMemory(
   name: string,
@@ -152,6 +152,34 @@ describe('runGuardrails · 纯函数直接测试', () => {
     const rules = [makeGuardrailMemory('禁止', '暴力', 'block')];
     const result = runGuardrails(rules, '我要暴力', testUI);
     expect(result.blocked).toBe(true);
+  });
+
+  it('S1 修复：单行格式 `pattern: /regex/ action: block` 应正确阻断', () => {
+    // 旧实现贪婪正则 /pattern:\s*(.+)/ 把 `action: block` 整段吞入 pattern → 单行格式 fail-open；
+    // 修复后非贪婪 + 正向预查止步于 action:，单行格式应与多行格式等价生效。
+    const singleLineRule = makeMemory({
+      id: 'guardrail:single',
+      source: 'guardrail',
+      name: '单行规则',
+      content: 'pattern: /暴力|攻击/ action: block',
+      score: 1.0,
+    });
+    const result = runGuardrails([singleLineRule], '我要暴力解决问题', testUI);
+    expect(result.blocked).toBe(true);
+    expect(result.message).toBe('Blocked by 单行规则');
+  });
+
+  it('S1 修复：单行格式 warn 应正常返回 warning（不阻断）', () => {
+    const singleLineRule = makeMemory({
+      id: 'guardrail:single-warn',
+      source: 'guardrail',
+      name: '单行警告',
+      content: 'pattern: /敏感词/ action: warn',
+      score: 1.0,
+    });
+    const result = runGuardrails([singleLineRule], '这里有个敏感词', testUI);
+    expect(result.blocked).toBe(false);
+    expect(result.warning).toBe('Blocked by 单行警告');
   });
 
   it('多个规则时第一个命中即返回', () => {

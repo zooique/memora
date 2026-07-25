@@ -44,6 +44,8 @@ export interface LoadResult {
   skipped: number;
   /** 加载失败的详情 */
   errors: Array<{ file: string; error: string }>;
+  /** 本次加载写入索引的记忆 ID（供调用方追踪项目级记忆以支持关闭时撤销） */
+  loadedIds?: string[];
 }
 
 export class MemoryLoader {
@@ -59,7 +61,7 @@ export class MemoryLoader {
    * @returns 加载结果统计
    */
   async loadAllToIndex(): Promise<LoadResult> {
-    const result: LoadResult = { loaded: 0, skipped: 0, errors: [] };
+    const result: LoadResult = { loaded: 0, skipped: 0, errors: [], loadedIds: [] };
 
     for (const source of STARTUP_SCAN_SOURCES) {
       const names = await this.fileStore.list(source);
@@ -75,8 +77,15 @@ export class MemoryLoader {
             result.skipped++;
             continue;
           }
+          // 从磁盘重新加载 = 以文件为权威源恢复记忆。若此前该记忆已被软删除
+          // （如 closeProject 撤销项目记忆），必须先 restore 再 upsert——
+          // IMemoryStorage.upsert 明确禁止「以活跃态覆盖软删除态」复活，
+          // 否则 closeProject 后重新打开同一项目时记忆会因 upsert 抛错被静默跳过而永久丢失。
+          // restore 对活跃/不存在记忆为 no-op，不影响正常加载路径。
+          this.index.restore(memory.id);
           this.index.upsert(memory);
           result.loaded++;
+          result.loadedIds!.push(memory.id);
         } catch (err) {
           result.skipped++;
           result.errors.push({

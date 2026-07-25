@@ -117,6 +117,8 @@ export class ProjectManager {
   private readonly registry: ProjectRegistry;
   /** 锁文件管理器（专职管理 .memora/.lock） */
   private readonly lockManager: LockManager;
+  /** 当前项目级记忆在共享 index 中的 ID 集合（closeProject 时撤销，修复跨项目隔离泄漏） */
+  private currentProjectMemoryIds: Set<string> = new Set();
 
   constructor(options: ProjectManagerOptions) {
     const { dataDir, storage, registryDir, createSecurityGuard } = options;
@@ -249,6 +251,8 @@ export class ProjectManager {
     loadResult.loaded += projectResult.loaded;
     loadResult.skipped += projectResult.skipped;
     loadResult.errors.push(...projectResult.errors);
+    // 记录本项目级记忆 ID，供 closeProject 撤销（修复跨项目隔离泄漏）
+    this.currentProjectMemoryIds = new Set(projectResult.loadedIds ?? []);
 
     // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
     if (configDir) {
@@ -329,6 +333,20 @@ export class ProjectManager {
    * 释放锁文件，但不关闭 Agent 级数据库（memora.db 是共享的）
    */
   async closeProject(): Promise<void> {
+    // S2 修复：撤销当前项目级记忆，防止跨项目隔离泄漏。
+    // 项目级 rules/skills/personas 由 loadAllResources 写入共享 index（只 add 不 evict），
+    // 若不撤销，切换项目后旧项目规则仍注入新项目 system prompt 与召回结果。
+    // 项目文件仍在磁盘，重新打开同一项目时会重新 upsert 恢复（软删除不影响文件本体）。
+    if (this.agentIndex) {
+      for (const id of this.currentProjectMemoryIds) {
+        try {
+          this.agentIndex.delete(id);
+        } catch (err) {
+          logger.warn({ err, id }, '撤销项目级记忆失败（软删除）');
+        }
+      }
+    }
+    this.currentProjectMemoryIds.clear();
     // Agent 级 index/sessionStore 不关闭——它们是共享的，在整个 Agent 生命周期内持久存在
     await this.lockManager.release();
     this.currentProjectPath = null;

@@ -9,7 +9,7 @@
  *   - list 过滤非 .md 文件
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileStore } from '@/memory/store.js';
@@ -141,6 +141,38 @@ accessedAt: 2026-06-02T00:00:00.000Z
       const readBack = await store.read('custom', 'deep-tool');
       expect(readBack).not.toBeNull();
       expect(readBack!.content).toBe('深路径工具');
+    });
+
+    it('M4：metadata 含标准字段同名键时不应劫持 source/score/id', async () => {
+      // 模拟攻击：metadata 注入与标准字段同名的键，企图劫持 source/score/id 语义
+      const memory = {
+        id: 'rule:evil-test',
+        content: '内容',
+        source: 'rule',
+        name: 'evil-test',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        accessedAt: '2026-06-02T00:00:00.000Z',
+        score: 0.8,
+        metadata: { source: 'evil', score: '999', id: 'hacked' },
+      };
+      await store.write(memory);
+
+      // 写入的 frontmatter 必须只含合法的 source=rule / score=0.8 / id=rule:evil-test，
+      // 不得出现被 metadata 劫持的 source=evil / score=999 / id=hacked。
+      const raw = readFileSync(join(dataDir, 'rules', 'evil-test.md'), 'utf-8');
+      expect(raw).toContain('source: rule');
+      expect(raw).not.toContain('source: evil');
+      expect(raw).toContain('score: 0.8');
+      expect(raw).not.toContain('score: 999');
+      expect(raw).toContain('id: rule:evil-test');
+      expect(raw).not.toContain('id: hacked');
+
+      // 回读后语义正确（source/score/id 来自 memory 显式值，而非 metadata）
+      const readBack = await store.read(SOURCE_LABELS.RULE, 'evil-test');
+      expect(readBack).not.toBeNull();
+      expect(readBack!.source).toBe('rule');
+      expect(readBack!.score).toBe(0.8);
+      expect(readBack!.id).toBe('rule:evil-test');
     });
   });
 

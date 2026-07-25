@@ -285,17 +285,21 @@ describe('UserProfile K1 深度补测', () => {
       expect(confirmed.some((e) => e.value === '姓名: 边界测试')).toBe(true);
     });
 
-    it('confidence=0.79 应标记为待确认（不写入存储）', async () => {
+    it('confidence=0.79 应标记为待确认（持久化但 confirmed=false）', async () => {
       await userProfile.load();
       const facts: ExtractedFact[] = [
         { category: 'identity', fieldName: '姓名', value: '姓名: 低于阈值', sourceTurn: 'turn-1', confidence: 0.79 },
       ];
       await userProfile.archiveFacts(facts);
-      // 0.79 < 0.8 → 待确认 → 不写入存储
-      expect(mockStorage.upsert).not.toHaveBeenCalled();
-      // 但应存入内存缓存，可通过 getPending 访问
+      // M10 修复：待确认条目仍为持久化（confirmed=false 标记，重启可恢复为 pending），但不注入 system prompt
+      expect(mockStorage.upsert).toHaveBeenCalled();
+      const stored = (mockStorage.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Memory;
+      expect(JSON.parse(stored.content).confirmed).toBe(false);
+      // 仍可通过 getPending 访问
       const pending = userProfile.getPending();
       expect(pending.some((e) => e.value === '姓名: 低于阈值')).toBe(true);
+      // 不出现在已确认（system prompt）中
+      expect(userProfile.getConfirmed().some((e) => e.value === '姓名: 低于阈值')).toBe(false);
     });
   });
 
@@ -414,6 +418,66 @@ describe('UserProfile K1 深度补测', () => {
     });
   });
 
+  describe('M2/M3/M10 修复回归', () => {
+    it('M2：已确认条目不因同 value 低置信度重提取而降级', async () => {
+      await userProfile.load();
+      await userProfile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ]);
+      expect(userProfile.getConfirmed().some((e) => e.value === '姓名: 张三')).toBe(true);
+
+      // 同 value 低置信度重提取（如对话中再次提及但 LLM 置信度低）
+      await userProfile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-2', confidence: 0.3 },
+      ]);
+
+      // 已确认态应保留（不被覆盖降级）
+      expect(userProfile.getConfirmed().some((e) => e.value === '姓名: 张三')).toBe(true);
+    });
+
+    it('M3：不同 fieldName 同 value 应分配不同 id 而不互相覆盖', async () => {
+      await userProfile.load();
+      await userProfile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '张三', sourceTurn: 'turn-1', confidence: 0.9 },
+      ]);
+      await userProfile.archiveFacts([
+        { category: 'identity', fieldName: '别名', value: '张三', sourceTurn: 'turn-2', confidence: 0.9 },
+      ]);
+
+      // 两条均应保留（不同 fieldName → 不同 id），不应静默丢失
+      const confirmed = userProfile.getConfirmed();
+      expect(confirmed.filter((e) => e.value === '张三').length).toBe(2);
+    });
+
+    it('M10：重启后待确认条目由存储恢复为 pending', async () => {
+      const pendingMem: Memory = {
+        id: 'profile:user-profile-identity-姓名-李四',
+        content: JSON.stringify({ category: 'identity', value: '姓名: 李四', fieldName: '姓名', confirmed: false }),
+        source: SOURCE_LABELS.PROFILE,
+        name: '用户画像-identity',
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+        score: 1.0,
+      };
+      const confirmedMem: Memory = {
+        id: 'profile:user-profile-identity-姓名-王五',
+        content: JSON.stringify({ category: 'identity', value: '姓名: 王五', fieldName: '姓名', confirmed: true }),
+        source: SOURCE_LABELS.PROFILE,
+        name: '用户画像-identity',
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+        score: 1.0,
+      };
+      mockStorage.upsert(pendingMem);
+      mockStorage.upsert(confirmedMem);
+
+      const entries = await userProfile.load();
+      expect(userProfile.getPending().some((e) => e.value === '姓名: 李四')).toBe(true);
+      expect(userProfile.getConfirmed().some((e) => e.value === '姓名: 王五')).toBe(true);
+      expect(entries.length).toBe(2);
+    });
+  });
+
   describe('confirm / reject / getPending 状态流转', () => {
     it('confirm(id) 应将待确认条目标记为已确认并写入存储', async () => {
       await userProfile.load();
@@ -423,13 +487,14 @@ describe('UserProfile K1 深度补测', () => {
       ]);
       const pending = userProfile.getPending();
       expect(pending).toHaveLength(1);
-      expect(mockStorage.upsert).not.toHaveBeenCalled();
+      // M10：待确认条目已持久化（confirmed=false）
+      expect(mockStorage.upsert).toHaveBeenCalled();
 
       // 用户确认
       await userProfile.confirm(pending[0]!.id);
 
-      // 应写入存储 + 从 pending 移除 + 出现在 confirmed
-      expect(mockStorage.upsert).toHaveBeenCalled();
+      // 应再次写入存储（confirmed=true）+ 从 pending 移除 + 出现在 confirmed
+      expect((mockStorage.upsert as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
       expect(userProfile.getPending()).toHaveLength(0);
       expect(userProfile.getConfirmed().some((e) => e.value === '专长: React')).toBe(true);
     });

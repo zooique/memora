@@ -292,7 +292,13 @@ export class WorkProjectionManager {
     const fileName = getBaseName(entry.sourcePath);
     return {
       id: entry.id,
-      content: this.encodeContent(hash, entry.structure, entry.keyDecisions, entry.summary),
+      content: this.encodeContent(
+        hash,
+        entry.sourcePath,
+        entry.structure,
+        entry.keyDecisions,
+        entry.summary,
+      ),
       source: SOURCE_LABELS.WORK_PROJECTION,
       name: `作品投影: ${fileName}`,
       createdAt: now,
@@ -307,10 +313,11 @@ export class WorkProjectionManager {
    * 从 content 的 HTML 注释中解码 hash / structure / keyDecisions
    */
   private fromMemory(m: Memory): WorkProjectionEntry {
-    const { hash, structure, keyDecisions, summary } = this.decodeContent(m.content);
+    const { hash, structure, keyDecisions, summary, sourcePath } = this.decodeContent(m.content);
     return {
       id: m.id,
-      sourcePath: '',
+      // M1 修复：从 content 还原 sourcePath（旧数据无该字段 → 兜底空串，向后兼容）
+      sourcePath: sourcePath ?? '',
       fileHash: hash ?? '',
       summary,
       structure,
@@ -329,11 +336,13 @@ export class WorkProjectionManager {
    */
   private encodeContent(
     hash: string,
+    sourcePath: string,
     structure: string[],
     keyDecisions: string[],
     summary: string,
   ): string {
-    const meta = JSON.stringify({ hash, structure, decisions: keyDecisions });
+    // M1 修复：将 sourcePath 编入元数据，使往返（toMemory → fromMemory）不丢字段
+    const meta = JSON.stringify({ hash, sourcePath, structure, decisions: keyDecisions });
     return `${meta}\n\n${summary}`;
   }
 
@@ -345,6 +354,7 @@ export class WorkProjectionManager {
    */
   private decodeContent(content: string): {
     hash: string | null;
+    sourcePath: string;
     structure: string[];
     keyDecisions: string[];
     summary: string;
@@ -355,12 +365,14 @@ export class WorkProjectionManager {
       try {
         const meta = JSON.parse(firstLine) as {
           hash?: string;
+          sourcePath?: string;
           structure?: string[];
           decisions?: string[];
         };
         const summary = content.slice(firstLine.length).trim();
         return {
           hash: meta.hash ?? null,
+          sourcePath: meta.sourcePath ?? '',
           structure: meta.structure ?? [],
           keyDecisions: meta.decisions ?? [],
           summary,
@@ -378,6 +390,7 @@ export class WorkProjectionManager {
 
     return {
       hash: hashMatch?.[1] ?? null,
+      sourcePath: '',
       structure: structureMatch?.[1]?.split('|') ?? [],
       keyDecisions: decisionsMatch?.[1]?.split('|') ?? [],
       summary,

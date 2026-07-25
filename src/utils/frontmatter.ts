@@ -22,8 +22,10 @@ export function parseFrontmatter(raw: string): {
   frontmatter: Record<string, string>;
   body: string;
 } {
-  const normalized = raw.replace(/\r\n/g, '\n');
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\n+$/, '');
+  // 结束 `---` 后允许可选换行（\n?），兼容"以 --- 收尾无尾随换行"的合法文件；
+  // 已先规整掉末尾换行（\n+$），避免"文件以 --- 结尾"被误判为不匹配而整体落入 body。
+  const match = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   // 仅当结构不匹配时返回 fallback；空 frontmatter 块和空 body 块为合法输入
   if (!match) {
     return { frontmatter: {}, body: raw };

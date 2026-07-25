@@ -106,4 +106,18 @@ describe('validateSource 校验函数', () => {
     expect(result.severity).toBe('block');
     expect(result.warning).toContain('null 字节');
   });
+
+  it('M5 修复：路径分隔符 / 应返回 valid: false, severity: block', () => {
+    // source="rules/secret" 通过校验会落入保留的 rules/ 目录子树，命名空间污染
+    const result = validateSource('rules/secret');
+    expect(result.valid).toBe(false);
+    expect(result.severity).toBe('block');
+    expect(result.warning).toContain('路径分隔符');
+  });
+
+  it('M5 修复：反斜杠 \\ 应返回 valid: false, severity: block', () => {
+    const result = validateSource('rules\\secret');
+    expect(result.valid).toBe(false);
+    expect(result.severity).toBe('block');
+  });
 });

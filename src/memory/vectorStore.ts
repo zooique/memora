@@ -20,7 +20,7 @@
  * 详见 ADR-002 · 存储层抽象（向量检索备选方案）
  * 详见 ADR-013 · 记忆归档三步价值过滤
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
@@ -206,12 +206,20 @@ export class JsonVectorStore implements IVectorStore {
    * 防止部分写入 / 手动编辑错误 / 版本不匹配的文件污染内存索引
    */
   async load(): Promise<void> {
+    let content: string;
     try {
-      const content = await readFile(this.storePath, 'utf-8');
+      content = await readFile(this.storePath, 'utf-8');
+    } catch {
+      // 文件不存在，从空开始（正常冷启动路径）
+      logger.info({ path: this.storePath }, '向量索引文件不存在，从空开始');
+      return;
+    }
+    try {
       const data: unknown = JSON.parse(content);
-      // schema 校验：损坏 / 格式错误的文件视为"从空开始"，避免污染内存索引
+      // schema 校验：损坏 / 格式错误的文件视为"从空开始"，但先备份以免数据不可逆丢失
       if (!isValidVectorStoreFile(data)) {
-        logger.warn({ path: this.storePath }, '向量索引文件格式无效，从空开始');
+        await this.backupCorrupt();
+        logger.warn({ path: this.storePath }, '向量索引文件格式无效，已从空开始并备份损坏文件');
         return;
       }
       this.dimension = data.dimension;
@@ -222,8 +230,21 @@ export class JsonVectorStore implements IVectorStore {
       this.dirty = false;
       logger.info({ count: this.entries.size, dimension: this.dimension }, '向量索引加载完成');
     } catch {
-      // 文件不存在或 JSON 解析失败，从空开始
-      logger.info({ path: this.storePath }, '向量索引文件不存在，从空开始');
+      // JSON 解析失败（文件半写 / 手动损坏），从空开始并备份
+      await this.backupCorrupt();
+      logger.warn({ path: this.storePath }, '向量索引文件解析失败，已从空开始并备份损坏文件');
+    }
+  }
+
+  /**
+   * 将损坏的向量索引文件备份为 .corrupt.<timestamp>，便于人工恢复或 re-embed，
+   * 避免 load 直接「从空开始」导致原始损坏数据被静默覆盖、不可逆丢失。
+   */
+  private async backupCorrupt(): Promise<void> {
+    try {
+      await rename(this.storePath, `${this.storePath}.corrupt.${Date.now()}`);
+    } catch (err) {
+      logger.warn({ err, path: this.storePath }, '备份损坏向量索引文件失败（不影响从空开始）');
     }
   }
 
@@ -236,16 +257,15 @@ export class JsonVectorStore implements IVectorStore {
    * @returns 等待所有挂起 save 完成的 Promise
    */
   async save(): Promise<void> {
-    // 串行化：若已有 save 在执行，将本次调用追加到链尾
-    if (this.savePromise !== null) {
-      this.savePromise = this.savePromise.then(() => this.doSave());
-      return this.savePromise;
-    }
-    this.savePromise = this.doSave().finally(() => {
-      // 当前链路完成，清空引用以允许下次独立 save
-      this.savePromise = null;
+    // 串行化：将本次 save 追加到既有链尾（或开启新链），确保多个 save 严格顺序执行。
+    // 仅当本节点仍是链尾（未被更新的 save 取代）时才在完成后清空引用，
+    // 避免旧实现「.finally 直接置 null」把仍在飞行的后续 save 链引用截断，导致并发写。
+    const p = (this.savePromise ?? Promise.resolve()).then(() => this.doSave());
+    this.savePromise = p;
+    p.finally(() => {
+      if (this.savePromise === p) this.savePromise = null;
     });
-    return this.savePromise;
+    return p;
   }
 
   /**
@@ -263,7 +283,11 @@ export class JsonVectorStore implements IVectorStore {
     };
 
     await mkdir(dirname(this.storePath), { recursive: true });
-    await writeFile(this.storePath, JSON.stringify(data), 'utf-8');
+    // M9 修复：先写临时文件再原子 rename，避免写一半崩溃导致 vectors.json 损坏、
+    // 下次加载 isValidVectorStoreFile 失败而整库向量静默清空（向量索引昂贵且只能重算）。
+    const tmpPath = `${this.storePath}.tmp`;
+    await writeFile(tmpPath, JSON.stringify(data), 'utf-8');
+    await rename(tmpPath, this.storePath);
     this.dirty = false;
     logger.info({ count: this.entries.size }, '向量索引持久化完成');
   }

@@ -58,7 +58,9 @@ export function runGuardrails(
   for (const rule of rules) {
     try {
       // 从记忆内容中提取 pattern（格式：pattern: /regex/ action: block|warn）
-      const patternMatch = rule.content.match(/pattern:\s*(.+)/);
+      // 非贪婪 + 正向预查止步于 `action:`：单行格式 `pattern: /暴力/ action: block`
+      // 也能正确切出 /暴力/，不再把 `action: block` 整段吞入 pattern 导致 fail-open。
+      const patternMatch = rule.content.match(/pattern:\s*(\S.*?)(?=\s+action:|$)/);
       const actionMatch = rule.content.match(/action:\s*(block|warn)/);
       if (!patternMatch || !actionMatch) continue;
 
@@ -66,9 +68,13 @@ export function runGuardrails(
       const action = actionMatch[1]?.trim();
       if (!pattern || !action) continue;
 
-      // 去掉正则定界符 //
+      // 去掉正则定界符 //（仅当被 / 完整包围时，避免误剥内容中的 /）
       const regexStr =
-        pattern.startsWith('/') && pattern.endsWith('/') ? pattern.slice(1, -1) : pattern;
+        pattern.length >= 2 && pattern.startsWith('/') && pattern.endsWith('/')
+          ? pattern.slice(1, -1)
+          : pattern;
+      // 编译失败（用户写错正则）被下方 catch 捕获，记 error 并跳过该规则，
+      // 不再像旧实现那样静默放行（旧实现因贪婪匹配生成非法字面量正则，永远不匹配）。
       const regex = new RegExp(regexStr, 'i');
 
       if (regex.test(input)) {

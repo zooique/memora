@@ -420,6 +420,9 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(restored!.structure).toEqual(['模块A', '模块B']);
       expect(restored!.keyDecisions).toEqual(['决策1', '决策2']);
       expect(restored!.fileHash).toBe(entry!.fileHash);
+      // M1 修复：sourcePath 经 content 元数据往返不丢（旧实现 sourcePath 只存内存，
+      // toMemory → fromMemory 往返后丢失，导致 getProjection 拿不到文件路径）
+      expect(restored!.sourcePath).toBe('/project/file.md');
     });
 
     it('旧格式 HTML 注释应兼容解码', async () => {

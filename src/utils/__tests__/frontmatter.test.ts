@@ -108,6 +108,23 @@ id: test-003
       expect(frontmatter).toEqual({});
       expect(body).toBe('正文内容');
     });
+
+    it('M7 修复：结束 --- 无尾随换行时仍应正确解析（不丢失 frontmatter）', () => {
+      // 文件以 --- 结尾且无换行：旧实现要求结束 --- 后必须跟 \n，否则整体落入 body
+      const raw = '---\nid: test-001\ntype: rule\n---';
+      const { frontmatter, body } = parseFrontmatter(raw);
+      expect(frontmatter.id).toBe('test-001');
+      expect(frontmatter.type).toBe('rule');
+      expect(body).toBe('');
+    });
+
+    it('M7 修复：结束 --- 后仅一个换行（无 body）也应正确解析', () => {
+      const raw = '---\nid: test-002\nsource: rule\n---\n';
+      const { frontmatter, body } = parseFrontmatter(raw);
+      expect(frontmatter.id).toBe('test-002');
+      expect(frontmatter.source).toBe('rule');
+      expect(body).toBe('');
+    });
   });
 
   // ─── serializeFrontmatter ──────────────────────────────

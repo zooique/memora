@@ -127,6 +127,21 @@ export class SqliteStorage implements IMemoryStorage {
       logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');
     }
 
+    // 仅绑定 schema 既有列，忽略 Memory.metadata 等扩展字段。
+    // Memory 类型约定 metadata 仅用于 FileStore 写回 frontmatter，SQLite index 不存储
+    // （见 memory/types.ts Memory.metadata 注释）。若直接 { ...memory } 展开，
+    // 含 metadata 的记忆（如从配置文件加载、含额外 frontmatter 的 persona/rule/skill）
+    // 会让 node:sqlite 报 Unknown named parameter 'metadata' 而崩溃。
+    const params = {
+      id: memory.id,
+      content: memory.content,
+      source: memory.source,
+      name: memory.name,
+      createdAt: memory.createdAt,
+      accessedAt: memory.accessedAt,
+      score: memory.score,
+      deletedAt: memory.deletedAt ?? null,
+    };
     this.db.prepare(`
       INSERT INTO memories (id, content, source, name, createdAt, accessedAt, score, deleted_at)
       VALUES (@id, @content, @source, @name, @createdAt, @accessedAt, @score, @deletedAt)
@@ -138,7 +153,7 @@ export class SqliteStorage implements IMemoryStorage {
         accessedAt = @accessedAt,
         score = @score,
         deleted_at = @deletedAt
-    `).run({ ...memory, deletedAt: memory.deletedAt ?? null });
+    `).run(params);
   }
 
   /**

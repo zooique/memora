@@ -118,6 +118,16 @@ export function validateSource(source: string): {
     };
   }
 
+  // 路径分隔符（/ 或 \）同样构成目录穿越：source="rules/secret" 可落入保留的
+  // rules/ 目录子树，污染命名空间。source 是扁平标签，必须拒绝分隔符。
+  if (source.includes('/') || source.includes('\\')) {
+    return {
+      valid: false,
+      severity: 'block',
+      warning: `source 不能包含路径分隔符（/ 或 \\）："${source}"`,
+    };
+  }
+
   if (source.includes('\0')) {
     return {
       valid: false,

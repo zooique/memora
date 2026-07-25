@@ -7,7 +7,9 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ProjectManager } from '@/memory/projectManager.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Config } from '@/config/loader.js';
 
 function makeConfig(dataDir?: string): Config {
@@ -265,5 +267,88 @@ describe('ProjectManager · 锁文件安全', () => {
     expect(ctx.projectPath).toBe(tmpDir);
 
     await pm.shutdown();
+  });
+});
+
+describe('ProjectManager · closeProject 撤销项目记忆 (S2)', () => {
+  let tmpDir: string;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-pm-s2-'));
+    tmpHome = mkdtempSync(join(tmpdir(), 'memora-pm-s2-home-'));
+    mkdirSync(join(tmpHome, '.memora'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  /**
+   * 在 tmpDir/.memora/rules/ 下写入一条项目级规则记忆文件
+   */
+  const seedProjectRule = (): void => {
+    const memoraDir = join(tmpDir, '.memora');
+    mkdirSync(join(memoraDir, 'rules'), { recursive: true });
+    writeFileSync(
+      join(memoraDir, 'rules', 'proj-rule.md'),
+      `---
+id: rule:proj-rule
+source: rule
+name: proj-rule
+score: 1.0
+createdAt: 2026-01-01T00:00:00.000Z
+accessedAt: 2026-01-01T00:00:00.000Z
+---
+
+# 项目专属规则
+仅本项目生效，切换项目后不应泄漏。`,
+      'utf-8',
+    );
+  };
+
+  it('关闭项目应撤销本项目级记忆，防止跨项目泄漏', async () => {
+    seedProjectRule();
+
+    // 注入共享 Agent 级存储（InMemoryStorage），initProject 会把项目记忆加载进它
+    const storage = new InMemoryStorage();
+    const pm = new ProjectManager({
+      dataDir: join(tmpHome, '.memora'),
+      storage,
+    });
+    const ctx = await pm.initProject(tmpDir);
+
+    // 项目记忆已加载进共享 index
+    expect(ctx.index.getById('rule:proj-rule')).not.toBeNull();
+    expect(ctx.index.getBySource(SOURCE_LABELS.RULE).length).toBeGreaterThanOrEqual(1);
+
+    // S2 修复：关闭项目（不关闭 Agent 级 DB）应撤销本项目级记忆，
+    // 否则切换项目后旧项目规则仍注入新项目 system prompt 与召回结果（跨项目泄漏）。
+    await pm.closeProject();
+
+    expect(ctx.index.getById('rule:proj-rule')).toBeNull();
+    expect(ctx.index.getBySource(SOURCE_LABELS.RULE).length).toBe(0);
+  });
+
+  it('重新打开同一项目应从磁盘重新加载恢复项目记忆', async () => {
+    seedProjectRule();
+
+    const storage = new InMemoryStorage();
+    const pm = new ProjectManager({
+      dataDir: join(tmpHome, '.memora'),
+      storage,
+    });
+
+    const ctx = await pm.initProject(tmpDir);
+    expect(ctx.index.getById('rule:proj-rule')).not.toBeNull();
+
+    // 关闭（软删除，文件本体仍在磁盘）
+    await pm.closeProject();
+    expect(ctx.index.getById('rule:proj-rule')).toBeNull();
+
+    // 重新打开同一项目：文件仍在，应重新 upsert 恢复
+    const ctx2 = await pm.initProject(tmpDir);
+    expect(ctx2.index.getById('rule:proj-rule')).not.toBeNull();
   });
 });

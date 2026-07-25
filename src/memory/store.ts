@@ -67,15 +67,21 @@ export class FileStore {
     const filePath = this.getFilePath(memory.source, memory.name);
     await mkdir(dirname(filePath), { recursive: true });
 
-    // 标准字段优先，metadata 中的键值对追加到尾部
-    // 如果 metadata 中包含与标准字段同名的键，后者覆盖前者（metadata 优先）
+    // 标准字段必须优先于 metadata：metadata 中可能含同名键（如恶意的 source='evil'），
+    // 若后展开则劫持 source 语义绕过 sourceValidation。先展开 metadata，再显式覆盖标准字段；
+    // 并过滤掉与标准字段同名的 metadata 键，避免写入重复行（如 source: evil\n source: normal）。
+    const STANDARD_KEYS = new Set(['id', 'source', 'score', 'createdAt', 'accessedAt']);
+    const safeMeta: Record<string, string> = {};
+    for (const [k, v] of Object.entries(memory.metadata ?? {})) {
+      if (!STANDARD_KEYS.has(k)) safeMeta[k] = v;
+    }
     const frontmatter = serializeFm({
+      ...safeMeta,
       id: memory.id,
       source: memory.source,
       score: String(memory.score),
       createdAt: memory.createdAt,
       accessedAt: memory.accessedAt,
-      ...memory.metadata,
     });
     const content = `---\n${frontmatter}\n---\n\n${memory.content}`;
     await writeFile(filePath, content, 'utf-8');

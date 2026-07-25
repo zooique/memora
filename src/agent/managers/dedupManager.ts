@@ -188,8 +188,12 @@ export class DedupManager {
         const verdict = await this.judgeDuplicate(pair, signal);
         if (verdict.isDuplicate) {
           // 降级低分记忆（b 的 score ≤ a 的 score，因 candidates 已按 score 降序）
-          this.demoteMemory(pair.b, verdict.mergedContent);
+          this.demoteMemory(pair.b);
           demotedIds.push(pair.b.id);
+          // 合并内容写回保留方 a（M6 修复：旧实现生成 mergedContent 却从不落库，合并实为死代码）
+          if (verdict.mergedContent) {
+            this.keepMerged(pair.a, verdict.mergedContent);
+          }
           // 收集审计详情（供 UI 展示"为什么降级"和"合并后保留了什么"）
           verdicts.push({
             demotedId: pair.b.id,
@@ -199,7 +203,7 @@ export class DedupManager {
           deduplicatedCount++;
           logger.info(
             { demotedId: pair.b.id, keptId: pair.a.id, reason: verdict.reason },
-            '语义去重：降级重复记忆',
+            '语义去重：降级重复记忆并合并内容到保留方',
           );
         }
       } catch (err) {
@@ -323,17 +327,15 @@ export class DedupManager {
   }
 
   /**
-   * 降级重复记忆（score → DEDUP_LOW_SCORE，可选合并内容）
+   * 降级重复记忆（score → DEDUP_LOW_SCORE）
    *
    * 安全设计：
    *   - 不物理删除，仅降低 score，保留可恢复性
-   *   - 若提供 mergedContent，更新保留记忆（a）的 content 为合并后内容
-   *   - 通过 upsert 覆盖原记忆（保持 id/source/name/createdAt 不变）
+   *   - 合并内容由 keepMerged() 单独写回保留方 a（职责清晰：本方法只降级低分方）
    *
    * @param memory 待降级的记忆（低分方）
-   * @param mergedContent 可选的合并后内容（更新到保留方，由调用方负责）
    */
-  private demoteMemory(memory: Memory, mergedContent?: string): void {
+  private demoteMemory(memory: Memory): void {
     const demoted: Memory = {
       ...memory,
       score: DEDUP_LOW_SCORE,
@@ -341,12 +343,25 @@ export class DedupManager {
       accessedAt: nowIso(),
     };
     this.index.upsert(demoted);
+  }
 
-    // 若提供合并内容，调用方可通过 writeUpsert 单独更新保留方
-    // 此处不直接修改保留方，保持职责单一（仅降级低分方）
-    if (mergedContent) {
-      logger.debug({ demotedId: memory.id, mergedContentLen: mergedContent.length }, '语义去重：合并内容已生成（需调用方手动更新保留方）');
-    }
+  /**
+   * 将合并内容写回保留方（高分记忆 a）
+   *
+   * 保持 a 的 id/source/name/score/createdAt 不变，仅更新 content 为合并后内容并刷新
+   * accessedAt，使"两条重复记忆合并为一条更完整记忆"的语义真正落库（M6 修复）。
+   *
+   * @param memory 保留方记忆（高分方）
+   * @param mergedContent LLM 生成的合并后完整内容
+   */
+  private keepMerged(memory: Memory, mergedContent: string): void {
+    const updated: Memory = {
+      ...memory,
+      content: mergedContent,
+      accessedAt: nowIso(),
+    };
+    this.index.upsert(updated);
+    logger.info({ keptId: memory.id }, '语义去重：保留方已合并对方内容');
   }
 }
 
