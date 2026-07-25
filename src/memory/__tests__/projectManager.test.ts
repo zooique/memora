@@ -155,19 +155,23 @@ describe('ProjectManager · 项目注册表', () => {
     expect(projects[0]!.name).toBe('project-b');
   });
 
-  it('注册表 JSON 损坏时应降级为空列表', async () => {
+  it('FIX-P0-3：注册表 JSON 损坏时 list 降级为空列表，但 register 抛错避免覆盖', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     // 写入损坏的 JSON
     writeFileSync(join(tmpHome, '.memora', 'projects.json'), 'not valid{{{', 'utf-8');
 
     const pm = new ProjectManager({ dataDir: config.memory.dataDir });
+    // list 是只读操作，损坏时降级返回空列表（不破坏磁盘数据）
     const projects = pm.listProjects();
-    // 应降级为返回空列表
     expect(projects).toHaveLength(0);
 
-    // 注册后应能正常工作
-    pm.registerProject('/path/to/project-a', 'project-a');
-    expect(pm.listProjects()).toHaveLength(1);
+    // FIX-P0-3：register 路径必须抛错，避免用空数据覆盖损坏文件导致数据永久丢失
+    expect(() => pm.registerProject('/path/to/project-a', 'project-a')).toThrow(
+      /项目注册表损坏/,
+    );
+    // 损坏文件应仍保留原内容（未被空数据覆盖）
+    const rawContent = readFileSync(join(tmpHome, '.memora', 'projects.json'), 'utf-8');
+    expect(rawContent).toBe('not valid{{{');
   });
 });
 

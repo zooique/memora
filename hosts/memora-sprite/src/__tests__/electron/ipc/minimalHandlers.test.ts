@@ -401,7 +401,6 @@ describe('registerMinimalIpcHandlers', () => {
       expect(callbacks.setupAgentReady).toHaveBeenCalledWith(
         reinitResult.agent,
         reinitResult.sprite,
-        reinitResult.sessionStore,
         '/tmp/new-data',
       );
       expect(result).toEqual({ success: true, error: null, reinit: true });

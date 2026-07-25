@@ -236,16 +236,15 @@ export async function assembleComponents(
     () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
   );
 
-  // MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）
-  // advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
+  // MemoryAdvisor 在组合根装配（sourceHealth + suggest + detectConflicts 均由 Agent 直连）
   // L3 冲突检测：注入 backgroundProvider 到 MemoryAdvisor（可选，未注入时 detectConflicts 静默跳过）
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  // MemoryInspector 已回归纯存储读写（SPLIT-3 后不再注入 backgroundProvider）
+  // FIX-P1-3：MemoryInspector 不再注入 advisor，sourceHealth/suggest 由 Agent 直接委托 advisor
+  // SPLIT-3 后 inspector 已回归纯存储读写，构造参数仅剩 relationStore（可选侧车）
   const memoryInspector = new MemoryInspector(
     pctx.index,
     loop,
     history,
-    memoryAdvisor,
     relationStore ?? null,
   );
   // L1 语义去重：注入 backgroundProvider 到 DedupManager（可选，未注入时 deduplicateMemories 静默跳过）

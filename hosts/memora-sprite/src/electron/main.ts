@@ -78,6 +78,16 @@ import { safeSendToWindow } from './windows/windowUtils.js';
  */
 const TRAY_ICON_PATH = path.join(ELECTRON_DIR, '..', 'build', 'icons', 'tray.png');
 
+/**
+ * FIX-P1-1：主进程 IPC 上下文（首次注册后保持引用）
+ *
+ * 首次 setupAgentReady 调用时创建，reinitAgent 路径复用此引用。
+ * scheduleSilentRecovery 等需要在 IPC 之外访问 ctx 的场景使用此变量。
+ * ctx 内部的 agent/sprite/sessionStore 通过 getter 实时查询 appState，
+ * 因此 mainIpcContext 一次构造终身使用，不会持有过时实例。
+ */
+let mainIpcContext: IpcContext | null = null;
+
 // ─── 主进程状态 ──────────────────────────────────────────────
 
 /**
@@ -94,6 +104,7 @@ const TRAY_ICON_PATH = path.join(ELECTRON_DIR, '..', 'build', 'icons', 'tray.png
  *   - currentAbortController/agentReady/initErrorDetail/unreadCount/currentDataDir 运行时可变
  *   - pendingWriteConfirmations 为 const Map 引用（M1 写入确认映射表）
  *   - isQuitting 防止 before-quit 重复清理
+ *   - ipcRegistered 标志：完整 IPC 仅首次注册，reinitAgent 通过 getter 复用
  */
 const appState = {
   // ─── 窗口/托盘基础设施（阶段 1 初始化） ───
@@ -122,6 +133,12 @@ const appState = {
   agentReady: false as boolean,
   /** 初始化失败的具体错误信息（agentReady=false 时有效，区分配置缺失 vs 其他错误） */
   initErrorDetail: null as string | null,
+  /**
+   * FIX-P1-1：完整 IPC 是否已注册
+   * 首次 setupAgentReady 调用时注册，后续 reinitAgent 路径跳过注册
+   * （IPC handler 通过 getter 实时访问 appState.agent，无需重注册）
+   */
+  ipcRegistered: false as boolean,
 
   // ─── 功能模块 ───
   /** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
@@ -357,23 +374,17 @@ function createSilentModeCallbacks(activeSprite: Sprite): {
 /**
  * 构建 IPC 处理器上下文
  *
- * initializeApp 阶段 2 和 reinitAgent 路径都需要构造 IpcContext 注册完整 IPC。
- * 两者仅 agent/sprite/sessionStore 不同（来自不同的初始化结果），其余字段完全相同。
- * 提取为工厂函数避免 12 个字段的重复构造（DRY）。
- *
- * @param activeAgent 已就绪的 Agent 实例
- * @param activeSprite 已就绪的 Sprite 实例
- * @param activeSessionStore 已就绪的会话存储
+ * ctx 一次构造终身使用，无需 reinitAgent 时重新构造：
+ * - agent/sprite/sessionStore 通过 getter 实时查询 appState，IPC handler 自动看到最新实例
+ * - 不再接受 activeAgent/activeSprite/activeSessionStore 参数（闭包已捕获 appState 引用）
+ * - 完整 IPC 仅在 setupAgentReady 中注册，调用方通过 require* 工具函数处理 null 分支
  */
-function createIpcContext(
-  activeAgent: Agent,
-  activeSprite: Sprite,
-  activeSessionStore: SqliteSessionStore,
-): IpcContext {
+function createIpcContext(): IpcContext {
   return {
-    agent: activeAgent,
-    sprite: activeSprite,
-    sessionStore: activeSessionStore,
+    // 函数式 getter，与 getAbortController/isAgentReady 风格一致（可变状态实时查询）
+    getAgent: () => appState.agent,
+    getSprite: () => appState.sprite,
+    getSessionStore: () => appState.sessionStore,
     windowManager: appState.windowManager,
     trayManager: appState.trayManager,
     // Phase 3.3：注入快捷键管理器供 configHandlers 触发热更新（可能为 null）
@@ -421,13 +432,11 @@ function classifyInitError(errMessage: string, prefix: string): string {
  *
  * @param activeAgent 已就绪的 Agent 实例
  * @param activeSprite 已就绪的 Sprite 实例
- * @param activeSessionStore 已就绪的会话存储
  * @param dataDir 数据目录（用于审计管理器初始化）
  */
 function setupAgentReady(
   activeAgent: Agent,
   activeSprite: Sprite,
-  activeSessionStore: SqliteSessionStore,
   dataDir: string,
 ): void {
   // 0. 创建使用统计采集器（需在 IpcContext 创建前就绪，供 systemHandlers 访问）
@@ -442,9 +451,13 @@ function setupAgentReady(
   appState.usageStatsCollector.setEnabled(usageStatsConfig.usageStatsEnabled ?? false);
 
   // 1. 注册完整 IPC 处理器
-  ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
-  const ipcContext = createIpcContext(activeAgent, activeSprite, activeSessionStore);
-  registerIpcHandlers(ipcContext);
+  // 首次注册后设置 ipcRegistered 标志，reinitAgent 路径跳过重注册
+  // IPC handler 通过 getter 实时访问 appState.agent，reinit 后自动看到新实例
+  if (!appState.ipcRegistered) {
+    mainIpcContext = createIpcContext();
+    registerIpcHandlers(mainIpcContext);
+    appState.ipcRegistered = true;
+  }
 
   // 3. 订阅精灵事件（主动提示分发）
   const spriteEventDeps: SpriteEventBridgeDeps = {
@@ -501,7 +514,7 @@ function setupAgentReady(
       appState.trayManager?.updateMenu();
     } else {
       // 未过期：启动主进程定时器，到期后自动恢复
-      scheduleSilentRecovery(ipcContext);
+      scheduleSilentRecovery(mainIpcContext!);
     }
   }
 
@@ -746,7 +759,7 @@ async function initializeApp(): Promise<void> {
 
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
     // bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
-    setupAgentReady(appState.agent!, appState.sprite!, appState.sessionStore!, appState.currentDataDir);
+    setupAgentReady(appState.agent!, appState.sprite!, appState.currentDataDir);
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册

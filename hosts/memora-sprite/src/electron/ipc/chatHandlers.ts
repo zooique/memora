@@ -70,7 +70,8 @@ export function registerChatHandlers(ctx: IpcContext): void {
     // （agent._chatBusy 是私有字段，宿主无法直接读取）
     const hadActiveChat = ctx.getAbortController() !== null;
     // 调用内核强制释放（幂等，无锁时 no-op）
-    ctx.agent.forceReleaseChatLock();
+    // Agent 为 null 时静默跳过：此时无锁可释放，AbortController 仍需清理
+    ctx.getAgent()?.forceReleaseChatLock();
     // 清理宿主侧的 AbortController 引用（与 chatStreamHandler finally 块职责对齐）
     ctx.setAbortController(null);
     return { released: hadActiveChat };

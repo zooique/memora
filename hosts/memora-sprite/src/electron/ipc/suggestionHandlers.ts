@@ -14,7 +14,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
-import { safeHandle, throwingHandle } from './types.js';
+import { safeHandle, throwingHandle, requireAgent } from './types.js';
 import { isValidConfigName, isValidContent, isValidId } from './inputValidation.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import type { IpcContext } from './types.js';
@@ -45,7 +45,9 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
           if (!isValidContent(suggestion.content)) {
             return { success: false, error: '内容过长' };
           }
-          const config = ctx.agent.config;
+          // 缓存 Agent 实例：本 handler 内多次调用，统一取一次避免重复调用 getter
+          const agent = requireAgent(ctx);
+          const config = agent.config;
           if (!config) {
             return { success: false, error: '配置管理器未就绪' };
           }
@@ -54,7 +56,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
           // rule 类型已由 confirmConfigSuggestion 内部即时注入 system prompt，无需重载
           if (suggestion.type === 'skill' || suggestion.type === 'persona') {
             try {
-              await ctx.agent.reloadConfig(suggestion.type);
+              await agent.reloadConfig(suggestion.type);
             } catch (err) {
               // 重载失败不阻塞持久化结果（文件已写入，下次启动自动加载）
               errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '配置热重载失败' });
@@ -91,7 +93,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
     return throwingHandle(
       '列出用户画像失败',
       () => {
-        const profile = ctx.agent.userProfile;
+        const profile = requireAgent(ctx).userProfile;
         if (!profile) {
           return { entries: [] };
         }
@@ -126,7 +128,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
         if (!isValidId(id)) {
           return { success: false, error: '非法画像条目 ID' };
         }
-        const profile = ctx.agent.userProfile;
+        const profile = requireAgent(ctx).userProfile;
         if (!profile) {
           return { success: false, error: '用户画像管理器未就绪' };
         }
@@ -150,7 +152,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
         if (!isValidId(id)) {
           return { success: false, error: '非法画像条目 ID' };
         }
-        const profile = ctx.agent.userProfile;
+        const profile = requireAgent(ctx).userProfile;
         if (!profile) {
           return { success: false, error: '用户画像管理器未就绪' };
         }

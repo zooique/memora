@@ -23,7 +23,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ProjectRegistry, type ProjectEntry } from '@/memory/projectRegistry.js';
+import { ProjectRegistry, ProjectRegistryCorruptError, type ProjectEntry } from '@/memory/projectRegistry.js';
 
 // ─── 测试夹具 ────────────────────────────────────────────
 
@@ -343,7 +343,7 @@ describe('ProjectRegistry · 持久化（跨实例）', () => {
   });
 });
 
-describe('ProjectRegistry · 损坏降级', () => {
+describe('ProjectRegistry · 损坏语义区分（FIX-P0-3）', () => {
   /** 临时目录 */
   let tmpDir: string;
 
@@ -355,19 +355,30 @@ describe('ProjectRegistry · 损坏降级', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('注册表 JSON 解析失败时应降级为空列表（不抛异常）', () => {
+  it('文件不存在时应返回空列表（首次启动正常情况）', () => {
+    const path = registryPathOf(tmpDir);
+    // 不创建文件，直接构造实例
+    const registry = new ProjectRegistry(path);
+
+    // 断言：list 返回空数组（不抛异常）
+    expect(registry.list).toEqual([]);
+    // 文件不应被读取触发创建（list 是只读操作）
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('list getter 在 JSON 语法损坏时应降级返回空列表（只读不破坏数据）', () => {
     const path = registryPathOf(tmpDir);
     // 写入损坏的 JSON（语法错误）
     writeFileSync(path, 'not valid{{{', 'utf-8');
 
     const registry = new ProjectRegistry(path);
 
-    // 断言：list 不抛异常，返回空数组
+    // 断言：list 不抛异常，降级返回空数组（UI 不至于崩溃）
     expect(() => registry.list).not.toThrow();
     expect(registry.list).toEqual([]);
   });
 
-  it('注册表为非数组 JSON 时应降级为空列表', () => {
+  it('list getter 在顶层非数组时应降级返回空列表', () => {
     const path = registryPathOf(tmpDir);
     // 写入合法 JSON 但非数组（对象）
     writeFileSync(path, JSON.stringify({ not: 'an array' }), 'utf-8');
@@ -376,7 +387,7 @@ describe('ProjectRegistry · 损坏降级', () => {
     expect(registry.list).toEqual([]);
   });
 
-  it('注册表为原始类型 JSON 时应降级为空列表', () => {
+  it('list getter 在原始类型 JSON 时应降级返回空列表', () => {
     const path = registryPathOf(tmpDir);
     // 写入 JSON 字符串/数字
     writeFileSync(path, '"just a string"', 'utf-8');
@@ -385,9 +396,67 @@ describe('ProjectRegistry · 损坏降级', () => {
     expect(registry.list).toEqual([]);
   });
 
-  it('部分条目结构不合法时应仅保留合法条目（类型守卫过滤）', () => {
+  it('register 在 JSON 语法损坏时应抛 ProjectRegistryCorruptError（防止空数据覆盖）', () => {
     const path = registryPathOf(tmpDir);
-    // 混合：1 条合法 + 2 条不合法（缺字段 / 类型错误）
+    // 写入损坏的 JSON
+    writeFileSync(path, 'not valid{{{', 'utf-8');
+
+    const registry = new ProjectRegistry(path);
+
+    // 断言：register 抛出 ProjectRegistryCorruptError，不让空数据覆盖原文件
+    expect(() => registry.register('/path/to/project-a', 'project-a')).toThrow(
+      ProjectRegistryCorruptError,
+    );
+
+    // 磁盘文件应保持原状（损坏内容未被覆盖）
+    const raw = readFileSync(path, 'utf-8');
+    expect(raw).toBe('not valid{{{');
+  });
+
+  it('register 在顶层非数组时应抛 ProjectRegistryCorruptError', () => {
+    const path = registryPathOf(tmpDir);
+    writeFileSync(path, JSON.stringify({ not: 'an array' }), 'utf-8');
+
+    const registry = new ProjectRegistry(path);
+
+    expect(() => registry.register('/path/to/project-a', 'project-a')).toThrow(
+      ProjectRegistryCorruptError,
+    );
+  });
+
+  it('unregister 在 JSON 语法损坏时应抛 ProjectRegistryCorruptError', () => {
+    const path = registryPathOf(tmpDir);
+    writeFileSync(path, 'not valid{{{', 'utf-8');
+
+    const registry = new ProjectRegistry(path);
+
+    expect(() => registry.unregister('/path/to/project-a')).toThrow(
+      ProjectRegistryCorruptError,
+    );
+  });
+
+  it('ProjectRegistryCorruptError 应携带 registryPath 和 cause 字段', () => {
+    const path = registryPathOf(tmpDir);
+    writeFileSync(path, 'not valid{{{', 'utf-8');
+
+    const registry = new ProjectRegistry(path);
+
+    let caught: unknown;
+    try {
+      registry.register('/path/to/project-a', 'project-a');
+    } catch (err) {
+      caught = err;
+    }
+
+    // 断言：错误对象携带 registryPath 便于备份排查，携带 cause 便于定位底层错误
+    expect(caught).toBeInstanceOf(ProjectRegistryCorruptError);
+    expect((caught as ProjectRegistryCorruptError).registryPath).toBe(path);
+    expect((caught as ProjectRegistryCorruptError).cause).toBeDefined();
+  });
+
+  it('部分条目结构不合法时应仅保留合法条目（类型守卫容错过滤）', () => {
+    const path = registryPathOf(tmpDir);
+    // 混合：1 条合法 + 3 条不合法（缺字段 / 类型错误）
     const mixed = [
       { path: '/path/to/valid', name: 'valid', lastOpened: '2026-01-01T00:00:00.000Z' },
       { path: '/path/to/missing-field', lastOpened: '2026-01-01T00:00:00.000Z' }, // 缺 name
@@ -399,15 +468,35 @@ describe('ProjectRegistry · 损坏降级', () => {
     const registry = new ProjectRegistry(path);
     const entries = registry.list;
 
-    // 断言：仅保留 1 条合法条目
+    // 断言：仅保留 1 条合法条目（单条损坏不毁全部）
     expect(entries).toHaveLength(1);
     expect(entries[0]!.path).toBe('/path/to/valid');
     expect(entries[0]!.name).toBe('valid');
   });
 
-  it('全部条目结构不合法时应降级为空列表', () => {
+  it('部分条目不合法时 register 应能正常工作（容错过滤后写入合法条目）', () => {
     const path = registryPathOf(tmpDir);
-    // 全部条目都不合法
+    // 混合：1 条合法 + 1 条不合法
+    const mixed = [
+      { path: '/path/to/valid', name: 'valid', lastOpened: '2026-01-01T00:00:00.000Z' },
+      { path: '/path/to/missing-field', lastOpened: '2026-01-01T00:00:00.000Z' }, // 缺 name
+    ];
+    writeFileSync(path, JSON.stringify(mixed), 'utf-8');
+
+    const registry = new ProjectRegistry(path);
+    // 注册新项目应能正常工作（基于过滤后的合法条目 + 新条目写入）
+    registry.register('/path/to/new-project', 'new-project');
+
+    const entries = registry.list;
+    // 断言：原有合法条目 + 新条目 = 2 条
+    expect(entries).toHaveLength(2);
+    expect(entries.find((e) => e.path === '/path/to/valid')).toBeDefined();
+    expect(entries.find((e) => e.path === '/path/to/new-project')).toBeDefined();
+  });
+
+  it('全部条目结构不合法时应返回空列表（容错极端情况）', () => {
+    const path = registryPathOf(tmpDir);
+    // 全部条目都不合法（但顶层是数组，所以不抛错，仅过滤后为空）
     const allInvalid = [
       { path: '/a', lastOpened: '2026-01-01T00:00:00.000Z' }, // 缺 name
       { name: 'b', lastOpened: '2026-01-01T00:00:00.000Z' }, // 缺 path
@@ -415,28 +504,9 @@ describe('ProjectRegistry · 损坏降级', () => {
     writeFileSync(path, JSON.stringify(allInvalid), 'utf-8');
 
     const registry = new ProjectRegistry(path);
+    // list 返回空（容错过滤），但 register 此时是基于空数组 + 新条目写入
+    // 注意：这种情况下原有"看起来像条目"的数据会丢失，但因为是非法结构，无法恢复
     expect(registry.list).toEqual([]);
-  });
-
-  it('损坏状态下注册新项目应能正常工作（自愈）', () => {
-    const path = registryPathOf(tmpDir);
-    // 写入损坏 JSON
-    writeFileSync(path, 'not valid{{{', 'utf-8');
-
-    const registry = new ProjectRegistry(path);
-    // 读取时降级为空
-    expect(registry.list).toEqual([]);
-
-    // 注册新项目应能正常写入（覆盖损坏内容）
-    registry.register('/path/to/project-a', 'project-a');
-    expect(registry.list).toHaveLength(1);
-    expect(registry.list[0]!.name).toBe('project-a');
-
-    // 磁盘文件应已被合法 JSON 覆盖
-    const raw = readFileSync(path, 'utf-8');
-    const parsed = JSON.parse(raw) as unknown[];
-    expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed).toHaveLength(1);
   });
 
   it('空数组 JSON 应返回空列表', () => {
@@ -445,6 +515,31 @@ describe('ProjectRegistry · 损坏降级', () => {
 
     const registry = new ProjectRegistry(path);
     expect(registry.list).toEqual([]);
+  });
+
+  it('调用方可通过 ProjectRegistryCorruptError.registryPath 备份损坏文件后从空重建', () => {
+    const path = registryPathOf(tmpDir);
+    writeFileSync(path, 'not valid{{{', 'utf-8');
+
+    const registry = new ProjectRegistry(path);
+
+    // 模拟调用方的"备份后重建"流程
+    let corruptPath: string | undefined;
+    try {
+      registry.register('/path/to/project-a', 'project-a');
+    } catch (err) {
+      if (err instanceof ProjectRegistryCorruptError) {
+        corruptPath = err.registryPath;
+        // 调用方可在此处备份 corruptPath 文件，然后删除它让下次 read 视为"不存在"
+        rmSync(corruptPath, { force: true });
+      }
+    }
+
+    // 备份 + 删除后，register 应能正常工作（文件不存在 = 首次启动）
+    expect(corruptPath).toBe(path);
+    registry.register('/path/to/project-a', 'project-a');
+    expect(registry.list).toHaveLength(1);
+    expect(registry.list[0]!.name).toBe('project-a');
   });
 });
 

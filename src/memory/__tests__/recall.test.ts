@@ -3,7 +3,7 @@
  * 覆盖关键词提取 + recall 函数 + boostScore 上限 + applyDecayToMemory 衰减边界
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { recall, extractKeywords, applyDecayToMemory, ONE_DAY_MS } from '@/memory/recall.js';
+import { recall, extractKeywords, applyDecayToMemory, boostScores, ONE_DAY_MS } from '@/memory/recall.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
@@ -143,32 +143,110 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.search).not.toHaveBeenCalled();
   });
 
-  it('召回时应将 boost 后的 score 写回存储（upsert）', async () => {
+  it('FIX-P1-2：recall 只读不写，返回 boost 后的副本（不调用 upsert）', async () => {
     const original = makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 });
     vi.mocked(mockStorage.search).mockReturnValue([original]);
 
     const memories = await recall(mockStorage, '测试');
 
-    // upsert 应被调用，写回 boost 后的 memory
-    expect(mockStorage.upsert).toHaveBeenCalledTimes(1);
-    const upserted = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
-    expect(upserted.id).toBe('insight:1');
-    expect(upserted.score).toBeGreaterThanOrEqual(0.5);
-
-    // 返回的对象不应是原始对象（不污染调用方）
+    // FIX-P1-2：recall 只读，不再 upsert；boost 持久化由调用方 fire-and-forget 调用 boostScores
+    expect(mockStorage.upsert).not.toHaveBeenCalled();
+    // 返回的 memory 应是 boost 后的副本（score 提升）
     expect(memories[0]).not.toBe(original);
     expect(memories[0]!.id).toBe(original.id);
+    expect(memories[0]!.score).toBeGreaterThanOrEqual(0.5);
+    // 原始对象不应被修改（不污染调用方持有的对象）
+    expect(original.score).toBe(0.5);
   });
 
-  it('boost 后 score 不应超过上限 1.0', async () => {
+  it('FIX-P1-2：boost 后 score 不应超过上限 1.0（在返回的副本上验证）', async () => {
     // 高分记忆（0.98）被召回后 boost +0.05 = 1.03，应被钳制到 1.0
     const highScore = makeMemory({ id: 'insight:high', source: 'insight', score: 0.98 });
     vi.mocked(mockStorage.search).mockReturnValue([highScore]);
 
-    await recall(mockStorage, '测试');
+    const memories = await recall(mockStorage, '测试');
+
+    // 验证返回的副本 score 被钳制到 1.0（不再通过 upsert 验证）
+    expect(memories[0]!.score).toBe(1.0);
+    expect(mockStorage.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ─── FIX-P1-2：boostScores 显式写操作 ──────────────────────
+
+describe('FIX-P1-2: boostScores · 批量持久化 boost', () => {
+  let mockStorage: IMemoryStorage;
+
+  beforeEach(() => {
+    mockStorage = {
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      getById: vi.fn(),
+      getBySource: vi.fn(),
+      search: vi.fn(),
+      count: vi.fn(() => 0),
+      countBySource: vi.fn(() => 0),
+      close: vi.fn(),
+    } as unknown as IMemoryStorage;
+  });
+
+  it('应对每个 id 读取并 boost 后 upsert 写回', async () => {
+    const mem1 = makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 });
+    const mem2 = makeMemory({ id: 'insight:2', source: 'insight', score: 0.7 });
+    vi.mocked(mockStorage.getById).mockImplementation((id: string) =>
+      id === 'insight:1' ? mem1 : id === 'insight:2' ? mem2 : null,
+    );
+
+    await boostScores(mockStorage, ['insight:1', 'insight:2']);
+
+    // 应调用 2 次 upsert
+    expect(mockStorage.upsert).toHaveBeenCalledTimes(2);
+    const upserted1 = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
+    const upserted2 = vi.mocked(mockStorage.upsert).mock.calls[1]![0] as Memory;
+    expect(upserted1.id).toBe('insight:1');
+    expect(upserted1.score).toBeGreaterThan(0.5); // boost 后 score 提升
+    expect(upserted2.id).toBe('insight:2');
+    expect(upserted2.score).toBeGreaterThan(0.7);
+  });
+
+  it('记忆已被删除（getById 返回 null）应静默跳过', async () => {
+    vi.mocked(mockStorage.getById).mockReturnValue(null);
+
+    await boostScores(mockStorage, ['insight:deleted']);
+
+    // 不应调用 upsert
+    expect(mockStorage.upsert).not.toHaveBeenCalled();
+  });
+
+  it('空 ids 数组应直接返回，不调用 getById/upsert', async () => {
+    await boostScores(mockStorage, []);
+
+    expect(mockStorage.getById).not.toHaveBeenCalled();
+    expect(mockStorage.upsert).not.toHaveBeenCalled();
+  });
+
+  it('boost 后 score 不应超过上限 1.0', async () => {
+    const highScore = makeMemory({ id: 'insight:high', source: 'insight', score: 0.98 });
+    vi.mocked(mockStorage.getById).mockReturnValue(highScore);
+
+    await boostScores(mockStorage, ['insight:high']);
 
     const upserted = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
     expect(upserted.score).toBe(1.0);
+  });
+
+  it('不应修改原始 memory 对象（在副本上操作）', async () => {
+    const original = makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 });
+    vi.mocked(mockStorage.getById).mockReturnValue(original);
+
+    await boostScores(mockStorage, ['insight:1']);
+
+    // 原始对象 score 不变
+    expect(original.score).toBe(0.5);
+    // upsert 的是副本，score 已 boost
+    const upserted = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
+    expect(upserted.score).toBeGreaterThan(0.5);
+    expect(upserted).not.toBe(original);
   });
 });
 

@@ -187,7 +187,7 @@ export class ArchiveButtonManager {
   }
 
   /**
-   * 在归档按钮附近显示内联反馈（P1-1 用户体验打磨）
+   * 在归档按钮附近显示内联反馈
    *
    * 在按钮父容器（metaRow）内追加 .archive-inline-feedback 元素，
    * 3 秒后淡出移除。让用户在消息上下文中立即看到归档结果，

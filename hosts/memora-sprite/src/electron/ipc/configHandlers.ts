@@ -18,7 +18,7 @@ import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig, SpriteConfigKey } from '../../sprite/spriteConfig.js';
-import { safeHandle, throwingHandle } from './types.js';
+import { safeHandle, throwingHandle, requireSprite } from './types.js';
 import { isValidPersonaName, isValidShortcutConfig } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
@@ -45,7 +45,9 @@ export function scheduleSilentRecovery(ctx: IpcContext): void {
     silentRecoveryTimer = null;
   }
 
-  const config = ctx.sprite.getConfig();
+  // 同步路径在 handler 调用栈内，用 requireSprite 取一次实例缓存复用
+  const sprite = requireSprite(ctx);
+  const config = sprite.getConfig();
   if (!config.silentMode || !config.silentModeExpiresAt) return;
 
   const expiresAtMs = new Date(config.silentModeExpiresAt).getTime();
@@ -53,18 +55,20 @@ export function scheduleSilentRecovery(ctx: IpcContext): void {
 
   if (remainingMs <= 0) {
     // 已过期：立即关闭静默模式
-    ctx.sprite.updateConfig('silentMode', false);
-    ctx.sprite.updateConfig('silentModeExpiresAt', null);
+    sprite.updateConfig('silentMode', false);
+    sprite.updateConfig('silentModeExpiresAt', null);
     ctx.trayManager?.setState('idle');
     ctx.trayManager?.updateMenu();
     return;
   }
 
   // 设置主进程定时器，到期后自动恢复
+  // 延迟回调脱离 handler 调用栈，用可选链取最新 Sprite 实例（reinitAgent 后旧实例可能已关闭），
+  // Sprite 未就绪时静默跳过（恢复逻辑下次配置变更时再次触发）
   silentRecoveryTimer = setTimeout(() => {
     silentRecoveryTimer = null;
-    ctx.sprite.updateConfig('silentMode', false);
-    ctx.sprite.updateConfig('silentModeExpiresAt', null);
+    ctx.getSprite()?.updateConfig('silentMode', false);
+    ctx.getSprite()?.updateConfig('silentModeExpiresAt', null);
     ctx.trayManager?.setState('idle');
     ctx.trayManager?.updateMenu();
   }, remainingMs);
@@ -120,7 +124,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 获取精灵配置 */
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () =>
-    throwingHandle('获取配置失败', () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
+    throwingHandle('获取配置失败', () => ({ config: requireSprite(ctx).getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
   );
 
   /**
@@ -136,7 +140,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       if (!isSpriteConfigKey(key)) {
         return { updated: false, error: `非法配置键：${key}` };
       }
-      ctx.sprite.updateConfig(key, value);
+      requireSprite(ctx).updateConfig(key, value);
       // 委托统一的副作用处理：构造单 key 变更对象传入 applyConfigSideEffects
       applyConfigSideEffects(ctx, { [key]: value } as Partial<SpriteConfig>);
       return { updated: true };
@@ -161,7 +165,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
     async (_event, updates: Record<string, unknown>) => {
       try {
         // 委托给 Sprite.updateConfigBatch：内部完成副本校验 → 原子应用 → 单次持久化 → 副作用去重
-        const result = ctx.sprite.updateConfigBatch(updates as Partial<SpriteConfig>);
+        const result = requireSprite(ctx).updateConfigBatch(updates as Partial<SpriteConfig>);
 
         // 应用失败：直接返回错误，不触发任何主进程侧副作用
         if (!result.updated) {
@@ -184,7 +188,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 列出所有角色 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_LIST, async () =>
-    throwingHandle('列出角色失败', () => ({ personas: ctx.sprite.listPersonas() })),
+    throwingHandle('列出角色失败', () => ({ personas: requireSprite(ctx).listPersonas() })),
   );
 
   /**
@@ -211,17 +215,20 @@ export function registerConfigHandlers(ctx: IpcContext): void {
         return { switched: false, name: null, reason: 'invalid' as const };
       }
 
+      // 缓存 Sprite 实例：本 handler 内多次调用，统一取一次避免重复调用 getter
+      const sprite = requireSprite(ctx);
+
       // 2. 角色存在性前置校验（锁定期间 switchPersona 直接返回 prompt，无法区分存在性）
-      const personaList = ctx.sprite.listPersonas();
+      const personaList = sprite.listPersonas();
       const exists = personaList.some((p) => p.name === name);
       if (!exists) {
         return { switched: false, name: null, reason: 'not_found' as const };
       }
 
       // 3. 锁定状态前置查询（避免前后名比较推断的误判，排雷雷点 1）
-      const lockStatus = ctx.sprite.getPersonaSwitchLockStatus();
+      const lockStatus = sprite.getPersonaSwitchLockStatus();
       if (lockStatus.locked) {
-        const currentName = ctx.sprite.activePersona;
+        const currentName = sprite.activePersona;
         return {
           switched: false,
           name: currentName,
@@ -232,13 +239,13 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
       // 4. 调用 switchPersona（捕获对话进行中异常，排雷雷点 3）
       try {
-        const result = ctx.sprite.switchPersona(name);
+        const result = sprite.switchPersona(name);
         if (result === null) {
           // 角色不存在降级路径（理论上 step 2 已拦截，此处防御性兜底）
           return { switched: false, name: null, reason: 'not_found' as const };
         }
         // 切换成功（含同名幂等），name 为当前激活角色名
-        const afterName = ctx.sprite.activePersona;
+        const afterName = sprite.activePersona;
         return { switched: true, name: afterName };
       } catch (innerError) {
         // 对话进行中：Agent.switchPersona 抛 chatBusyError（title='对话繁忙'）
@@ -262,13 +269,13 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       if (mode !== 'auto' && mode !== 'manual') {
         return { set: false };
       }
-      return { set: ctx.sprite.setPersonaMode(mode) };
+      return { set: requireSprite(ctx).setPersonaMode(mode) };
     }),
   );
 
   /** 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, async () =>
-    throwingHandle('查询角色模式失败', () => ({ mode: ctx.sprite.personaMode })),
+    throwingHandle('查询角色模式失败', () => ({ mode: requireSprite(ctx).personaMode })),
   );
 
   // ─── 设定文件 CRUD（精灵设定面板 Epic 3 · I2） ─────────────
@@ -281,47 +288,47 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 读取角色文件内容（携带 name，返回 ConfigFileEntry | null） */
   ipcMain.handle(IPC_CHANNELS.PERSONA_READ_FILE, async (_event, name: string) =>
-    throwingHandle('读取角色文件失败', () => ctx.sprite.readConfigFile('persona', name)),
+    throwingHandle('读取角色文件失败', () => requireSprite(ctx).readConfigFile('persona', name)),
   );
 
   /** 保存角色文件（新增/更新合并，携带 name + content） */
   ipcMain.handle(IPC_CHANNELS.PERSONA_SAVE_FILE, async (_event, name: string, content: string) =>
-    throwingHandle('保存角色文件失败', () => ctx.sprite.saveConfigFile('persona', name, content)),
+    throwingHandle('保存角色文件失败', () => requireSprite(ctx).saveConfigFile('persona', name, content)),
   );
 
   /** 删除角色文件（携带 name） */
   ipcMain.handle(IPC_CHANNELS.PERSONA_DELETE_FILE, async (_event, name: string) =>
-    throwingHandle('删除角色文件失败', () => ctx.sprite.deleteConfigFile('persona', name)),
+    throwingHandle('删除角色文件失败', () => requireSprite(ctx).deleteConfigFile('persona', name)),
   );
 
   /** 列出所有规则文件（按 mtime 降序） */
   ipcMain.handle(IPC_CHANNELS.RULE_LIST, async () =>
-    throwingHandle('列出规则文件失败', () => ctx.sprite.listConfigFiles('rule')),
+    throwingHandle('列出规则文件失败', () => requireSprite(ctx).listConfigFiles('rule')),
   );
 
   /** 读取规则文件内容（携带 name，返回 ConfigFileEntry | null） */
   ipcMain.handle(IPC_CHANNELS.RULE_READ, async (_event, name: string) =>
-    throwingHandle('读取规则文件失败', () => ctx.sprite.readConfigFile('rule', name)),
+    throwingHandle('读取规则文件失败', () => requireSprite(ctx).readConfigFile('rule', name)),
   );
 
   /** 保存规则文件（新增/更新合并，携带 name + content） */
   ipcMain.handle(IPC_CHANNELS.RULE_SAVE, async (_event, name: string, content: string) =>
-    throwingHandle('保存规则文件失败', () => ctx.sprite.saveConfigFile('rule', name, content)),
+    throwingHandle('保存规则文件失败', () => requireSprite(ctx).saveConfigFile('rule', name, content)),
   );
 
   /** 删除规则文件（携带 name） */
   ipcMain.handle(IPC_CHANNELS.RULE_DELETE, async (_event, name: string) =>
-    throwingHandle('删除规则文件失败', () => ctx.sprite.deleteConfigFile('rule', name)),
+    throwingHandle('删除规则文件失败', () => requireSprite(ctx).deleteConfigFile('rule', name)),
   );
 
   /** 列出所有技能文件（按 mtime 降序） */
   ipcMain.handle(IPC_CHANNELS.SKILL_LIST, async () =>
-    throwingHandle('列出技能文件失败', () => ctx.sprite.listConfigFiles('skill')),
+    throwingHandle('列出技能文件失败', () => requireSprite(ctx).listConfigFiles('skill')),
   );
 
   /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
   ipcMain.handle(IPC_CHANNELS.SKILL_READ, async (_event, name: string) =>
-    throwingHandle('读取技能文件失败', () => ctx.sprite.readConfigFile('skill', name)),
+    throwingHandle('读取技能文件失败', () => requireSprite(ctx).readConfigFile('skill', name)),
   );
 
   /**
@@ -330,7 +337,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
    * 注：技能新增/更新复用 SKILL_INSTALL 通道（已含热重载逻辑），此处仅暴露删除。
    */
   ipcMain.handle(IPC_CHANNELS.SKILL_DELETE, async (_event, name: string) =>
-    throwingHandle('删除技能文件失败', () => ctx.sprite.deleteConfigFile('skill', name)),
+    throwingHandle('删除技能文件失败', () => requireSprite(ctx).deleteConfigFile('skill', name)),
   );
 
   /**
@@ -340,7 +347,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.CONFIG_DIR_OPEN, async () => {
     try {
-      const configDir = ctx.sprite.configDirValue;
+      const configDir = requireSprite(ctx).configDirValue;
       if (!configDir) {
         return { success: false, error: '配置目录未设置' };
       }

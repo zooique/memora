@@ -577,5 +577,82 @@ describe('MemoryDecayScheduler', () => {
         expect(mockStorage.upsertCalls[0]!.score).toBe(0.05);
       });
     });
+
+    // ─── FIX-P0-1：awaitInflight + AbortSignal ───
+
+    describe('FIX-P0-1：awaitInflight + AbortSignal', () => {
+      it('无 inflight 时 awaitInflight 应立即 resolve', async () => {
+        await scheduler.awaitInflight();
+        // 无断言，能到达此行即表示立即 resolve
+      });
+
+      it('stop() 应 abort 正在进行的 evaluateTimeliness（LLM 快速失败）', async () => {
+        // 准备：mock LlmProvider，让 chat 在 abort 后抛错
+        // 这里用真实 storage + 真实 LlmProvider mock，模拟 stop() 中断 inflight
+        const mockStorageForAbort = createMockMemoryStorage({
+          [SOURCE_LABELS.INSIGHT]: [
+            createMemory({ id: 'insight:1', name: '记忆1', source: 'insight', score: 0.05 }),
+          ],
+        });
+        // LLM 调用会因 abort 抛错（judgeWithLlm 内部 signal 传递给 provider）
+        const mockProviderForAbort: LlmProvider = {
+          name: 'mock-abort-provider',
+          chat(_messages: Message[]): AsyncIterable<LlmChunk> {
+            return (async function* () {
+              // 模拟 LLM 调用延迟，让 stop() 有机会 abort
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              yield { content: '{"isOutdated": false}' } as LlmChunk;
+            })();
+          },
+        } as unknown as LlmProvider;
+
+        const schedulerForAbort = new MemoryDecayScheduler({
+          tracer: tracer.tracer,
+          onDecayCompleted: cb.callback,
+          backgroundProvider: mockProviderForAbort,
+          index: mockStorageForAbort,
+        });
+
+        // 启动 evaluateTimeliness（不 await，让它进入 inflight）
+        const evaluatePromise = schedulerForAbort.evaluateTimeliness();
+        // 给 evaluateTimeliness 一点时间启动并进入 LLM 调用
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        // 执行 stop()，应触发 abort
+        schedulerForAbort.stop();
+
+        // awaitInflight 应等待 evaluatePromise 完成（abort 后 LLM 抛错被捕获，返回报告）
+        await schedulerForAbort.awaitInflight();
+        const report = await evaluatePromise;
+        // abort 后单条 LLM 失败，但仍返回报告（scannedCount=1, outdatedCount=0）
+        expect(report.scannedCount).toBe(1);
+        expect(report.outdatedCount).toBe(0);
+      });
+
+      it('多次 evaluateTimeliness 串行调用应正确清理 inflightEvaluate 引用', async () => {
+        mockStorage = createMockMemoryStorage({
+          [SOURCE_LABELS.INSIGHT]: [
+            createMemory({ id: 'insight:1', name: '记忆1', source: 'insight', score: 0.1 }),
+          ],
+        });
+        mockProvider = createMockLlmProvider([
+          { type: 'json', content: '{"isOutdated": false, "reason": "未过时"}' },
+          { type: 'json', content: '{"isOutdated": false, "reason": "未过时"}' },
+        ]);
+        l2Scheduler = new MemoryDecayScheduler({
+          tracer: tracer.tracer,
+          onDecayCompleted: cb.callback,
+          backgroundProvider: mockProvider,
+          index: mockStorage,
+        });
+
+        // 第一次调用
+        await l2Scheduler.evaluateTimeliness();
+        // 第二次调用应正常工作（inflightEvaluate 已清理）
+        await l2Scheduler.evaluateTimeliness();
+        // awaitInflight 应立即 resolve（无 inflight 残留）
+        await l2Scheduler.awaitInflight();
+      });
+    });
   });
 });

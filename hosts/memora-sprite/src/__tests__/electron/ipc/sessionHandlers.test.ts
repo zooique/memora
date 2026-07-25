@@ -125,7 +125,7 @@ function createMockAgent(overrides?: {
     archiveSessionContent: vi.fn().mockResolvedValue({ memories: [], sessionLabel: '', messageCount: 0 }),
     // 会话分叉：默认返回 newSession + messageCount（测试可覆盖）
     forkSession: vi.fn(() => ({ newSession: 'fork-001', messageCount: 5 })),
-  } as unknown as IpcContext['agent'];
+  } as unknown as ReturnType<IpcContext['getAgent']>;
 }
 
 /** 创建 mock IpcContext */
@@ -133,18 +133,22 @@ function createMockCtx(overrides?: {
   sessionStore?: ReturnType<typeof createMockSessionStore>;
   agent?: ReturnType<typeof createMockAgent> | null;
   getAbortController?: ReturnType<typeof vi.fn>;
+  /** Agent 就绪状态：默认 true，"Agent 未初始化"场景需显式传 false */
+  isAgentReady?: ReturnType<typeof vi.fn>;
 }): IpcContext {
   // 注意：agent 可能为 null（测试 Agent 未初始化场景），不能用 ?? 替换
   const hasAgent = overrides && 'agent' in overrides;
   return {
-    agent: hasAgent ? (overrides!.agent as IpcContext['agent']) : createMockAgent(),
-    sprite: {} as IpcContext['sprite'],
-    sessionStore: (overrides?.sessionStore ?? createMockSessionStore()) as unknown as IpcContext['sessionStore'],
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => (hasAgent ? (overrides!.agent as ReturnType<IpcContext['getAgent']>) : createMockAgent()),
+    getSprite: () => ({}) as ReturnType<IpcContext['getSprite']>,
+    getSessionStore: () => (overrides?.sessionStore ?? createMockSessionStore()) as unknown as ReturnType<IpcContext['getSessionStore']>,
     windowManager: {} as IpcContext['windowManager'],
     trayManager: null,
     getAbortController: overrides?.getAbortController ?? vi.fn(() => null),
     setAbortController: vi.fn(),
-    isAgentReady: vi.fn(() => true),
+    // Agent 未初始化场景由 isAgentReady() 控制（handler 先检查就绪状态再解引用 getAgent()）
+    isAgentReady: overrides?.isAgentReady ?? vi.fn(() => true),
     getUnreadCount: vi.fn(() => 0),
     incrementUnreadCount: vi.fn(),
     resetUnreadCount: vi.fn(),
@@ -330,7 +334,8 @@ describe('sessionHandlers', () => {
 
   describe('SESSION_SWITCH', () => {
     it('Agent 未初始化时应返回错误', async () => {
-      const ctx = createMockCtx({ agent: null as unknown as IpcContext['agent'] });
+      // FIX-P1-1：handler 先检查 isAgentReady() 再解引用 getAgent()，故通过 isAgentReady=false 模拟未初始化
+      const ctx = createMockCtx({ isAgentReady: vi.fn(() => false) });
       registerSessionHandlers(ctx);
 
       const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_SWITCH)!;
@@ -595,7 +600,8 @@ describe('sessionHandlers', () => {
 
   describe('SESSION_FORK', () => {
     it('Agent 未初始化时应返回错误', async () => {
-      const ctx = createMockCtx({ agent: null as unknown as IpcContext['agent'] });
+      // FIX-P1-1：handler 先检查 isAgentReady() 再解引用 getAgent()，故通过 isAgentReady=false 模拟未初始化
+      const ctx = createMockCtx({ isAgentReady: vi.fn(() => false) });
       registerSessionHandlers(ctx);
 
       const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;

@@ -17,7 +17,7 @@ import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { runGuardrails } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
-import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
+import { MemoraError, isAbortError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { logger } from '@/logging/logger.js';
 
@@ -96,6 +96,14 @@ export class AgentLoop {
   private readonly guardrailRules: readonly Memory[];
   /** Reflection 最大重试次数（默认 2） */
   private readonly maxReflectionRetries: number;
+  /**
+   * 当前轮次已推送的 REFLECTION_HINT 次数（显式计数器）
+   *
+   * 替代旧实现通过 messages.filter(startsWith('[REFLECTION_HINT]')).length 推断的方式——
+   * 当 ContextManager 裁剪中间段消息时，REFLECTION_HINT 可能被裁掉导致计数失真。
+   * 显式字段不受 messages 数组变动影响，状态机更健壮。
+   */
+  private reflectionCountThisTurn: number = 0;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
@@ -199,6 +207,9 @@ export class AgentLoop {
 
       // 2. 用户消息 push（安全规范 §6：用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
       this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
+
+      // 重置当前轮次的反思计数器（每轮用户输入独立计算反思次数）
+      this.reflectionCountThisTurn = 0;
 
       // 3. 迭代循环
       let iteration = 0;
@@ -402,15 +413,12 @@ export class AgentLoop {
       .slice(-llmResult.toolCalls!.length) // 只看本轮工具结果
       .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
     if (hasRetryableError) {
-      // 反思次数限制：通过前缀匹配统计已推送的 REFLECTION_HINT 消息
-      // （实际推送的 content 带有后缀说明，需用 startsWith 而非严格相等）
-      const reflectionHint = this.messages.filter(
-        (m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'),
-      ).length;
-      if (reflectionHint < this.maxReflectionRetries) {
+      // 反思次数限制：使用显式计数器，避免 messages 裁剪导致计数失真
+      if (this.reflectionCountThisTurn < this.maxReflectionRetries) {
+        this.reflectionCountThisTurn++;
         this.messages.push({
           role: 'system',
-          content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - reflectionHint}`,
+          content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - this.reflectionCountThisTurn}`,
         });
       }
     }
@@ -597,7 +605,7 @@ export class AgentLoop {
 
         // AbortError 表示用户主动取消或超时中断，不重试，直接标记 aborted 退出
         // 避免用户点击停止后仍继续发起 LLM 请求，防止 UI 卡在"停止生成"状态
-        if (e.name === 'AbortError' || (err instanceof DOMException && err.name === 'AbortError')) {
+        if (isAbortError(err)) {
           aborted = true;
           break;
         }

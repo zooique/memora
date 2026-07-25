@@ -1,15 +1,16 @@
 /**
  * IPC 处理器聚合注册入口
  *
- * 职责：
- *   1. 通道清理（reinitAgent 重复调用时先移除旧 handler，避免重复注册抛错）
- *   2. 聚合调用各领域 register 函数
+ * 职责：聚合调用各领域 register 函数。
  *
- * 支持重复调用：reinitAgent 路径会在 Agent 重新初始化后再次调用本函数。
+ * 仅首次调用注册，reinitAgent 路径不再重注册：
+ * - IpcContext 通过 getter 实时访问 appState.agent/sprite/sessionStore，
+ *   reinit 后 IPC handler 自动看到新实例，无需 removeHandler + 重注册。
+ * - 调用方（main.ts setupAgentReady）用 appState.ipcRegistered 标志保证幂等。
+ * - 若强行重复调用本函数，ipcMain.handle 会抛"Attempted to register a second handle"——
+ *   这是 Electron 的契约，由调用方保证不重复调用。
  */
 
-import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { registerChatHandlers } from './chatHandlers.js';
 import { registerSessionHandlers } from './sessionHandlers.js';
@@ -20,130 +21,15 @@ import { registerSuggestionHandlers } from './suggestionHandlers.js';
 import { registerWorkProjectionHandlers } from './workProjectionHandlers.js';
 
 /**
- * 所有通过 ipcMain.handle 注册的通道
+ * 注册所有 IPC 处理器（仅首次调用）
  *
- * reinitAgent 路径可能重复调用注册函数，先清理这些通道避免重复注册抛错。
- */
-const HANDLE_CHANNELS = [
-  IPC_CHANNELS.CHAT_ABORT,
-  // 强制释放对话锁（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.CHAT_FORCE_RELEASE_LOCK,
-  IPC_CHANNELS.SESSION_LOAD,
-  IPC_CHANNELS.SESSION_LIST,
-  // 会话搜索（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.SESSION_SEARCH,
-  // 遗漏这三个通道会导致 reinitAgent 时 ipcMain.handle 重复注册抛错
-  IPC_CHANNELS.SESSION_SWITCH,
-  IPC_CHANNELS.SESSION_DELETE,
-  IPC_CHANNELS.SESSION_RENAME,
-  // 会话分叉（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.SESSION_FORK,
-  IPC_CHANNELS.MEMORIES_LIST,
-  // distinct 记忆 source 列表（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_SOURCES,
-  IPC_CHANNELS.MEMORIES_SEARCH,
-  IPC_CHANNELS.MEMORIES_SHOW,
-  IPC_CHANNELS.MEMORIES_DELETE,
-  // 回收站通道（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_RESTORE,
-  IPC_CHANNELS.MEMORIES_PURGE,
-  // 批量回收站操作（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_RESTORE_ALL,
-  IPC_CHANNELS.MEMORIES_PURGE_ALL,
-  IPC_CHANNELS.MEMORIES_LIST_DELETED,
-  IPC_CHANNELS.MEMORIES_ADD,
-  IPC_CHANNELS.MEMORIES_RELATION_GRAPH,
-  IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD,
-  IPC_CHANNELS.MEMORIES_REVIEW_DATA,
-  IPC_CHANNELS.MEMORIES_DELETE_BATCH,
-  // 关系编辑（Phase 4：关系图可交互化）
-  IPC_CHANNELS.MEMORIES_ADD_RELATION,
-  IPC_CHANNELS.MEMORIES_REMOVE_RELATION,
-  IPC_CHANNELS.MEMORIES_UPDATE_RELATION,
-  // Phase 5.1/5.2：路径追溯 + 邻居查询（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_RELATION_PATH,
-  IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS,
-  // manual 模式手动归档（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE,
-  IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT,
-  // L2 采纳反哺内核（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_BOOST,
-  // L1~L3 LLM 记忆治理（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORIES_DEDUP,
-  IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS,
-  IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS,
-  // 会话归档（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.ARCHIVE_SESSION,
-  IPC_CHANNELS.CONFIG_GET,
-  IPC_CHANNELS.CONFIG_UPDATE,
-  // 批量配置通道也需在 reinitAgent 时清理，避免重复注册抛错
-  IPC_CHANNELS.CONFIG_UPDATE_BATCH,
-  IPC_CHANNELS.PERSONA_LIST,
-  IPC_CHANNELS.PERSONA_SWITCH,
-  IPC_CHANNELS.PERSONA_MODE,
-  IPC_CHANNELS.PERSONA_MODE_GET,
-  // 精灵设定面板 Epic 3 · I3：角色文件 CRUD（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.PERSONA_READ_FILE,
-  IPC_CHANNELS.PERSONA_SAVE_FILE,
-  IPC_CHANNELS.PERSONA_DELETE_FILE,
-  IPC_CHANNELS.PROJECTS_LIST,
-  IPC_CHANNELS.DASHBOARD_GET,
-  // 手动触发记忆衰减（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.MEMORY_DECAY_RUN,
-  IPC_CHANNELS.PERCEPTION_GET,
-  IPC_CHANNELS.STARTUP_SUMMARY_GET,
-  // 配置建议（接受/拒绝）
-  IPC_CHANNELS.SUGGESTION_ACCEPT,
-  IPC_CHANNELS.SUGGESTION_REJECT,
-  // 用户画像管理
-  IPC_CHANNELS.USER_PROFILE_LIST,
-  IPC_CHANNELS.USER_PROFILE_CONFIRM,
-  IPC_CHANNELS.USER_PROFILE_REJECT,
-  // 作品投影查看
-  IPC_CHANNELS.WORK_PROJECTION_LIST,
-  IPC_CHANNELS.WORK_PROJECTION_SHOW,
-  // 使用统计导出（AUDIT-5-3，reinitAgent 时需清理）
-  IPC_CHANNELS.USAGE_STATS_EXPORT,
-  // 使用统计清除（AUDIT-5-4，reinitAgent 时需清理）
-  IPC_CHANNELS.USAGE_STATS_CLEAR,
-  // 精灵设定面板 Epic 3 · I3：规则/技能文件 CRUD（reinitAgent 时需清理，避免重复注册抛错）
-  IPC_CHANNELS.RULE_LIST,
-  IPC_CHANNELS.RULE_READ,
-  IPC_CHANNELS.RULE_SAVE,
-  IPC_CHANNELS.RULE_DELETE,
-  IPC_CHANNELS.SKILL_LIST,
-  IPC_CHANNELS.SKILL_DELETE,
-] as const;
-
-/**
- * 所有通过 ipcMain.on 监听的通道
- */
-const ON_CHANNELS = [
-  IPC_CHANNELS.USER_INPUT,
-  IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN,
-  IPC_CHANNELS.PROACTIVE_ACCEPT,
-  IPC_CHANNELS.PROACTIVE_REJECT,
-  IPC_CHANNELS.THEME_CHANGED,
-] as const;
-
-/**
- * 注册所有 IPC 处理器
- *
- * 支持重复调用：reinitAgent 路径会在 Agent 重新初始化后再次调用本函数。
- * 先清理本函数注册的通道，避免重复注册 handle 或重复监听 on 事件。
+ * 不支持重复调用：
+ * - IpcContext 持有 appState 引用，getter 实时返回最新实例，无需重注册
+ * - 调用方负责保证仅首次调用（appState.ipcRegistered 标志）
  *
  * @param ctx IPC 上下文（Agent + Sprite + SessionStore + WindowManager 等）
  */
 export function registerIpcHandlers(ctx: IpcContext): void {
-  // 通道清理：removeHandler 对未注册通道是 no-op，安全用于幂等注册
-  for (const channel of HANDLE_CHANNELS) {
-    ipcMain.removeHandler(channel);
-  }
-  // on 通道仅由本函数注册，移除全部监听器是安全的
-  for (const channel of ON_CHANNELS) {
-    ipcMain.removeAllListeners(channel);
-  }
-
   // 聚合注册各领域 handler
   registerChatHandlers(ctx);
   registerSessionHandlers(ctx);

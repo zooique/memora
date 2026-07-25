@@ -31,7 +31,7 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
-import { recall } from '@/memory/recall.js';
+import { recall, boostScores } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
@@ -47,15 +47,21 @@ import type { DedupReport } from '@/agent/managers/dedupManager.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
 import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
-// MemoryAdvisor 类型注解：v2 PROXY-1 闭环，agent 直接持有 advisor 调用 detectConflicts
-import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
+// FIX-P1-3：sourceHealth/suggest/detectConflicts 三件套均由 Agent 直连 advisor
+// MemoryAdvisor 类型注解：v2 PROXY-1 闭环 + FIX-P1-3 收尾
+import type {
+  MemoryAdvisor,
+  SourceHealthReport,
+  SuggestOptions,
+  SuggestHit,
+} from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
-import { chatBusyError, configError, toError } from '@/utils/errors.js';
+import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
-import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
+import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
@@ -291,10 +297,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 归档操作委托给 ArchiveCoordinator
     // 使用 getter 回调注入依赖，close 时 null 化字段后 getter 自然返回 null
+    // FIX-P1-4：注入 getArchiveMode，三态控制集中到 ArchiveCoordinator
     this.archiveCoordinator = new ArchiveCoordinator({
       getUserProfile: () => this.#userProfile,
       getInsightExtractor: () => this.insightExtractor,
       getSessionArchiver: () => this.sessionArchiver,
+      getArchiveMode: () => this.#config.archiveMode,
       emit: (event, payload) => this.emit(event, payload as never),
     });
 
@@ -396,7 +404,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // aborted 已由 loop.ts 内部 yield chunk 处理，此处只捕获真正的异常
         // （如 LLM 超时、连接断开、AbortError 未被 loop 拦截等）
         // 转为 error chunk 通知宿主，避免裸 throw 导致 UI 卡死
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isAbortError(err)) {
           // 必须 yield aborted chunk 让宿主能展示中断标记
           // （仅设置 wasAborted 会导致 chatHandlers catch 不触发，渲染层收不到 ABORTED）
           yield { type: 'aborted', reason: 'User cancelled the conversation' };
@@ -520,6 +528,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     if (recalledMemories.length > 0) {
       this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
+      // FIX-P1-2：boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
+      // boost 是软指标（每次 +0.05，上限 1.0），写入失败仅 log 不影响 chat 流程
+      const ids = recalledMemories.map((m) => m.id);
+      void boostScores(this.pctx!.index, ids).catch((err: unknown) => {
+        logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
+      });
     }
 
     // Layer 5: 最近对话注入
@@ -636,53 +650,45 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    // ADR-015: manual 模式跳过所有自动归档（profile + insight），
-    // 需用户手动调用 archiveProfileFacts/archiveInsight 触发。
+    // ADR-015 + FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator
+    // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
+    //   - manual 模式 → 跳过 profile/insight 自动归档（用户需手动调用）
+    //   - full / insights-only 模式 → 执行
     // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
-    const skipAutoArchive = this.#config.archiveMode === 'manual';
-    if (skipAutoArchive) {
-      logger.debug({ mode: 'manual' }, '归档模式为 manual，跳过自动归档');
-    }
+    const history = this.history!;
 
     // 用户画像实时归档（委托 ArchiveCoordinator，与手动归档路径统一，消除 DRY 违反）
-    // ADR-015: full / insights-only 模式下 profile facts 自动归档
-    const history = this.history!;
-    if (!skipAutoArchive) {
-      try {
-        // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
-        // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-        const archiveFactsPromise = this.archiveCoordinator!.archiveProfileFacts(input).then(
-          () => {},
-          (err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.warn({ err, stage: 'profile' }, '归档失败');
-            this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
-          },
-        );
-        history.registerPendingArchive(archiveFactsPromise);
-      } catch (err) {
-        logger.warn({ err }, '用户画像归档初始化失败');
-      }
+    try {
+      // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
+      // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
+      const archiveFactsPromise = this.archiveCoordinator!.archiveProfileFacts(input, { autoTriggered: true }).then(
+        () => {},
+        (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.warn({ err, stage: 'profile' }, '归档失败');
+          this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
+        },
+      );
+      history.registerPendingArchive(archiveFactsPromise);
+    } catch (err) {
+      logger.warn({ err }, '用户画像归档初始化失败');
     }
 
     // 输入分类 → Insight 提取（委托 ArchiveCoordinator，与手动归档路径统一）
-    // ADR-015: full / insights-only 模式下 insight 自动归档
-    if (!skipAutoArchive) {
-      try {
-        // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
-        // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-        const archiveInsightPromise = this.archiveCoordinator!.archiveInsight(input, assistantContent).then(
-          () => {},
-          (err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.warn({ err, stage: 'insight' }, '归档失败');
-            this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
-          },
-        );
-        history.registerPendingArchive(archiveInsightPromise);
-      } catch (err) {
-        logger.warn({ err }, 'Insight 提取初始化失败');
-      }
+    try {
+      // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
+      // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
+      const archiveInsightPromise = this.archiveCoordinator!.archiveInsight(input, assistantContent, { autoTriggered: true }).then(
+        () => {},
+        (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.warn({ err, stage: 'insight' }, '归档失败');
+          this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
+        },
+      );
+      history.registerPendingArchive(archiveInsightPromise);
+    } catch (err) {
+      logger.warn({ err }, 'Insight 提取初始化失败');
     }
 
     // AutoConfigRefiner（模式 3：Agent 智能总结）
@@ -1000,14 +1006,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
    * full / insights-only 模式下也可调用（会重复归档，但不推荐）。
    *
+   * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
+   * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
+   * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
+   *
    * 归档逻辑已委托给 ArchiveCoordinator
    *
    * @param input 本轮用户输入
+   * @param options 触发选项（autoTriggered 默认 false，即手动触发）
    * @returns 写入/更新的 UserProfileEntry 列表
    */
-  async archiveProfileFacts(input: string): Promise<UserProfileEntry[]> {
+  async archiveProfileFacts(input: string, options?: ArchiveTriggerOptions): Promise<UserProfileEntry[]> {
     this.assertInitialized('archiveProfileFacts');
-    return this.archiveCoordinator!.archiveProfileFacts(input);
+    return this.archiveCoordinator!.archiveProfileFacts(input, options);
   }
 
   /**
@@ -1016,15 +1027,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
    * 内部仍走 classify 判断（避免无价值输入浪费 LLM 调用）。
    *
+   * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
+   * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
+   * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
+   *
    * 归档逻辑已委托给 ArchiveCoordinator
    *
    * @param input 本轮用户输入
    * @param assistantContent 本轮助手回复内容
+   * @param options 触发选项（autoTriggered 默认 false，即手动触发）
    * @returns 写入/更新的 Memory 列表
    */
-  async archiveInsight(input: string, assistantContent: string): Promise<Memory[]> {
+  async archiveInsight(
+    input: string,
+    assistantContent: string,
+    options?: ArchiveTriggerOptions,
+  ): Promise<Memory[]> {
     this.assertInitialized('archiveInsight');
-    return this.archiveCoordinator!.archiveInsight(input, assistantContent);
+    return this.archiveCoordinator!.archiveInsight(input, assistantContent, options);
   }
 
   /**
@@ -1033,15 +1053,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
+   * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
+   * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
+   * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
+   *
    * 归档逻辑已委托给 ArchiveCoordinator
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
+   * @param options 触发选项（autoTriggered 默认 false，即手动触发）
    * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
    */
-  async archiveSessionContent(date: string, session: string): Promise<SessionArchiveResult> {
+  async archiveSessionContent(
+    date: string,
+    session: string,
+    options?: ArchiveTriggerOptions,
+  ): Promise<SessionArchiveResult> {
     this.assertInitialized('archiveSessionContent');
-    return this.archiveCoordinator!.archiveSessionContent(date, session);
+    return this.archiveCoordinator!.archiveSessionContent(date, session, options);
   }
 
   // ─── 配置重载（事件驱动） ───────────────────────
@@ -1175,9 +1204,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.chatLockManager?.dispose();
     this.chatLockManager = null;
     // 清理 MemoryDecayScheduler（含定时器和 storage 引用）
+    // FIX-P0-1：先 stop() abort L2 评估的 LLM 调用，再 awaitInflight() 等待 Promise 完成，
+    // 防止 close 后 LLM 回调 upsert 已关闭的 storage
     if (this.memoryDecayScheduler) {
       this.memoryDecayScheduler.stop();
+      await this.memoryDecayScheduler.awaitInflight();
       this.memoryDecayScheduler = null;
+    }
+    // FIX-P0-1：等待 WorkProjection 的 inflight LLM 生成完成，防止 close 后 upsert 已关闭的 storage
+    if (this.workProjection) {
+      await this.workProjection.awaitInflight();
     }
     // 清理 ArchiveCoordinator（无定时器，只需释放引用）
     this.archiveCoordinator = null;
@@ -1458,13 +1494,52 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 记忆源健康诊断（委托 MemoryAdvisor.sourceHealth）
+   *
+   * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态），返回整体健康报告。
+   * 纯只读计算，不修改任何状态。
+   *
+   * FIX-P1-3（2026-07-24）：与 detectConflicts 同模式，Agent 直接委托 advisor，
+   * 不再经 MemoryInspector 转发（消除 3 层无意义代理）。
+   * 原调用方 `agent.memory.sourceHealth()` 应改为 `agent.sourceHealth()`。
+   *
+   * @returns 健康诊断报告；advisor 未初始化时返回 null
+   */
+  sourceHealth(): SourceHealthReport | null {
+    // FIX-P1-3：直接持有 advisor 引用，无需经 inspector 转发
+    const advisor = this.memoryAdvisor;
+    if (!advisor) return null;
+    return advisor.sourceHealth();
+  }
+
+  /**
+   * 关联推荐（委托 MemoryAdvisor.suggest）
+   *
+   * 基于 score + 时效性 + source 多样性推荐记忆。
+   * 纯只读计算，不修改任何状态。
+   *
+   * FIX-P1-3（2026-07-24）：与 detectConflicts 同模式，Agent 直接委托 advisor。
+   * 原调用方 `agent.memory.suggest(...)` 应改为 `agent.suggest(...)`。
+   *
+   * @param query - 可选的搜索关键词（提供时结合搜索结果推荐，省略时基于全局热度推荐）
+   * @param options - 推荐选项（limit / excludeSources / recencyWeight）
+   * @returns 推荐命中列表；advisor 未初始化时返回空数组
+   */
+  suggest(query?: string, options?: SuggestOptions): SuggestHit[] {
+    // FIX-P1-3：直接持有 advisor 引用，无需经 inspector 转发
+    const advisor = this.memoryAdvisor;
+    if (!advisor) return [];
+    return advisor.suggest(query, options);
+  }
+
+  /**
    * L3 冲突检测（委托 MemoryAdvisor.detectConflicts）
    *
    * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
    * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
    *
-   * v2 PROXY-1 闭环：直接调用 advisor，不再经 MemoryInspector 转发（消除 3 层无意义代理）。
-   * sourceHealth / suggest 仍由 inspector 转发以保持 `agent.memory.xxx()` 公共 API 统一入口语义。
+   * v2 PROXY-1 闭环 + FIX-P1-3 收尾：sourceHealth / suggest / detectConflicts
+   * 三件套均由 Agent 直接委托 advisor，不再经 MemoryInspector 转发。
    *
    * @param signal 可选的 AbortSignal
    * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）

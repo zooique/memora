@@ -1104,14 +1104,15 @@ export class ChatPanelManager {
    * 当 30s 主定时器通知主进程 onStreamStuck 后，主进程 60s 内未响应（总等待 90s），
    * 视为主进程完全失联，本地强制清理流式状态，防止 UI 永久锁死。
    *
-   * 清理内容（与 markStreamingAborted 保持一致）：
+   * 清理内容（与 markStreamingAborted 的 DOM 清理保持一致）：
    * - 取消挂起的 rAF 回调（防止后续 rAF 渲染覆盖清理结果）
    * - 移除每条 streaming 消息的 .streaming 类、cursor、thinking-phase
    * - 添加 copy 按钮（让用户能复制已生成的部分内容）
    * - 清空 streamingMessages 映射 + 重置 isStreaming + 更新发送按钮
    *
-   * 注意：不在此处逐条 delete streamingMessages，留给 markStreamingAborted 走完整嵌入流程，
-   * 这里仅 clear() 整个映射。
+   * 90s 兜底为"全量重置"语义：clear() 后 Map 为空，后续若主进程延迟恢复
+   * 并发送 aborted chunk，markStreamingAborted 会因 Map 为空走 early return
+   * （不嵌入中断标记）——本地已接管清理，不再接受主进程的延迟响应。
    */
   private handleStreamFallbackCleanup(): void {
     reportError('chatPanelManager', '90s 兜底：主进程未响应 onStreamStuck，本地清理');
@@ -1127,7 +1128,8 @@ export class ChatPanelManager {
       // 补齐 copy 按钮，让用户能复制已生成的部分内容
       addCopyButtonToMessage(this.streamRenderCtx, el);
     }
-    // 注意：不在此处 delete streamingMessages，留给 markStreamingAborted 走完整嵌入流程
+    // 全量重置——clear() 后 Map 为空，markStreamingAborted 后续调用会 early return
+    // 这是 90s 兜底的预期行为：本地已接管清理，不再接受主进程的延迟 aborted chunk
     this.streamingMessages.clear();
     this.host.setStreaming(false);
     this.host.updateSendButton();

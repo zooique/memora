@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { toError, logger } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './channels.js';
+import { requireAgent, requireSprite } from './types.js';
 import type { IpcContext } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
@@ -82,14 +83,19 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     return;
   }
 
+  // 缓存 Agent / Sprite 实例：本函数内多次使用，统一取一次避免重复调用 getter；
+  // 同时锁定本次对话使用的实例引用（reinitAgent 后旧实例仍能完成本次对话的清理）
+  const agent = requireAgent(ctx);
+  const sprite = requireSprite(ctx);
+
   // 跨日/跨会话自动重置：确保新消息始终归当天主会话
-  const history = ctx.agent.agentHistory;
+  const history = agent.agentHistory;
   if (history) {
     const todayDate = getLocalDate();
     if (history.currentDateValue !== todayDate) {
       // 类型守卫：sessionManager 类型为 SessionManager | null，
       // 初始化未完成或 close() 后为 null，跨日重置依赖 sessionManager 必须存在
-      const sessionManager = ctx.agent.sessionManager;
+      const sessionManager = agent.sessionManager;
       if (!sessionManager) {
         emitStreamError(fullWindow, '会话管理器未初始化，请稍后重试', 'SessionManager 未初始化');
         return;
@@ -98,8 +104,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       sessionManager.switchSession('main');
       const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
       // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
-      if (restoredCount === 0 && ctx.agent.agentLoop) {
-        ctx.agent.agentLoop.restoreHistory([]);
+      if (restoredCount === 0 && agent.agentLoop) {
+        agent.agentLoop.restoreHistory([]);
       }
     }
   }
@@ -109,11 +115,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
 
   // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
   // 放在竞态/就绪检查通过后、流式开始前，确保只对真正发送的消息计数
-  ctx.sprite.incrementDailyMessageCount();
+  sprite.incrementDailyMessageCount();
 
   // 对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
   // 确保 LLM 在流式对话中也能拿到最新的感知数据（与 CLI 路径的 wakeup() 共享同一份刷新逻辑）
-  ctx.sprite.prepareForChat(text);
+  sprite.prepareForChat(text);
 
   // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
   ctx.trayManager?.setState('active');
@@ -140,7 +146,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       // generator 仍卡住时 _chatBusy 锁未释放，用户再发消息会被 agent.chat() 竞态保护拒绝。
       // forceReleaseChatLock 递增 token + 清理锁，让用户能立即发起新对话；
       // 原 generator 的 finally 块通过 token 校验跳过清理，不影响新调用。
-      ctx.agent.forceReleaseChatLock();
+      agent.forceReleaseChatLock();
       // 兜底清理宿主状态：即使 generator 不响应 abort，也确保渲染进程解锁 + AbortController 释放
       if (!fullWindow.isDestroyed()) {
         emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
@@ -154,7 +160,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   resetStreamTimeout();
 
   // 记录对话开始前的截断次数，对话结束后对比检测截断事件
-  const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
+  const truncationBefore = agent.getMetrics().context.truncationCount;
 
   /**
    * 中断通道已发送标志
@@ -174,7 +180,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
 
   try {
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
-    for await (const chunk of ctx.agent.chat(text, abortController.signal)) {
+    for await (const chunk of agent.chat(text, abortController.signal)) {
       // 超时已被强制清理，或窗口销毁，则退出循环（break 会触发 generator return()）
       if (streamTimedOut || fullWindow.isDestroyed()) break;
       // 每个 chunk 到达即重置无进展定时器（chunk 到达代表 generator 有进展）
@@ -218,7 +224,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         });
       } else if (chunk.type === 'done') {
         // 对话正常结束时检测截断次数是否增加
-        const truncationAfter = ctx.agent.getMetrics().context.truncationCount;
+        const truncationAfter = agent.getMetrics().context.truncationCount;
         if (truncationAfter > truncationBefore) {
           fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, {
             messageId,

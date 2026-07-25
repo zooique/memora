@@ -174,6 +174,25 @@ export class WorkProjectionManager {
   }
 
   /**
+   * 等待所有 inflight 投影生成完成
+   *
+   * FIX-P0-1：Agent.close() 调用此方法，确保所有正在进行的 LLM 生成 Promise
+   * 完成后再关闭 storage，防止 close 后 upsert 写入已关闭的 storage。
+   *
+   * 实现：等待 inflight Map 中所有 Promise 完成（不论成功失败）。
+   * 不 abort LLM 调用——作品投影生成是用户主动触发的高价值操作，
+   * 让正在进行的生成完成比快速失败更合理（与 L2 时效性评估的批量场景不同）。
+   *
+   * @returns 完成 Promise，无 inflight 时立即 resolve
+   */
+  async awaitInflight(): Promise<void> {
+    if (this.inflight.size === 0) return;
+    // 收集所有 inflight Promise，等待全部完成
+    const promises = Array.from(this.inflight.values());
+    await Promise.allSettled(promises);
+  }
+
+  /**
    * 加载所有作品投影（按 source 标签召回）
    */
   async loadAll(): Promise<WorkProjectionEntry[]> {

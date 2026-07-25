@@ -15,7 +15,7 @@
  * - load() 增加 schema 校验（防止损坏文件污染内存索引）
  * - upsert/batchUpsert 增加维度一致性校验（防止维度错位导致相似度计算崩溃）
  * - save() 串行化（防止并发 save 互相覆盖丢失数据）
- * - delete() JSDoc 明确"需显式 save"约定
+ * - delete() 立即 save（FIX-P0-9：防止崩溃后已删除向量复活）
  *
  * 详见 ADR-002 · 存储层抽象（向量检索备选方案）
  * 详见 ADR-013 · 记忆归档三步价值过滤
@@ -88,10 +88,14 @@ export interface IVectorStore {
    */
   batchUpsert(items: Array<{ id: string; text: string }>, options?: EmbeddingOptions): Promise<void>;
   /**
-   * 删除向量（实现决定是否立即持久化）
+   * 删除向量并立即持久化
+   *
+   * 与 upsert（标记 dirty 由调用方 save）不同，delete 是低频操作，
+   * 立即 save 可防止崩溃后已删除向量在下次冷启动复活（FIX-P0-9）。
+   *
    * @param id 待删除的记忆 ID
    */
-  delete(id: string): void;
+  delete(id: string): Promise<void>;
   /**
    * 语义搜索：基于查询文本的向量，返回 topK 最相似的 ID
    * @param query 查询文本
@@ -326,17 +330,18 @@ export class JsonVectorStore implements IVectorStore {
   }
 
   /**
-   * 删除向量
+   * 删除向量并立即持久化
    *
-   * 注意：此方法仅标记 dirty=true，不会自动调用 save。
-   * 调用方需在合适的时机显式调用 save() 持久化删除操作，
-   * 否则下次冷启动会重新加载已删除的向量。
+   * FIX-P0-9：原实现仅标记 dirty=true 不 save，崩溃时已删除向量会在下次冷启动复活。
+   * 现改为 async + 立即 save（与 upsert 不对称合理——delete 是低频操作，立即持久化代价可控）。
    *
    * @param id 待删除的记忆 ID
    */
-  delete(id: string): void {
+  async delete(id: string): Promise<void> {
     this.entries.delete(id);
     this.dirty = true;
+    // 立即持久化，串行化由 save() 内部 savePromise 链保证
+    await this.save();
   }
 
   /**

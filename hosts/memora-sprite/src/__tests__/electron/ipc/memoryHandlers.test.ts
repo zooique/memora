@@ -71,11 +71,12 @@ function createMockCtx(overrides?: {
   detectConflicts?: ReturnType<typeof vi.fn>;
 }): IpcContext {
   return {
-    agent: {
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => ({
       archiveSessionContent:
         overrides?.archiveSessionContent ?? vi.fn(async () => ({ memories: [] })),
-    } as IpcContext['agent'],
-    sprite: {
+    }) as ReturnType<IpcContext['getAgent']>,
+    getSprite: () => ({
       listMemories: overrides?.listMemories ?? vi.fn(() => []),
       searchMemories: overrides?.searchMemories ?? vi.fn(async () => []),
       showMemory: overrides?.showMemory ?? vi.fn(() => null),
@@ -136,8 +137,8 @@ function createMockCtx(overrides?: {
           conflicts: [],
           skippedReason: '测试默认跳过',
         })),
-    } as unknown as IpcContext['sprite'],
-    sessionStore: {} as IpcContext['sessionStore'],
+    }) as unknown as ReturnType<IpcContext['getSprite']>,
+    getSessionStore: () => ({}) as ReturnType<IpcContext['getSessionStore']>,
     windowManager: {} as IpcContext['windowManager'],
     trayManager: null,
     getAbortController: vi.fn(() => null),

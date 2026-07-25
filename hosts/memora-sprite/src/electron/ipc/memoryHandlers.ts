@@ -13,7 +13,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
-import { safeHandle, throwingHandle } from './types.js';
+import { safeHandle, throwingHandle, requireSprite, requireAgent } from './types.js';
 import { isValidContent, isValidId, isValidRelationParams, isValidSearchQuery } from './inputValidation.js';
 import { ErrorCode, SpriteError } from '../errorHandler.js';
 import type { IpcContext } from './types.js';
@@ -31,7 +31,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (query?.source !== undefined && !isValidId(query.source)) {
         throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法 source 参数');
       }
-      return { memories: ctx.sprite.listMemories(query?.source) };
+      return { memories: requireSprite(ctx).listMemories(query?.source) };
     }),
   );
 
@@ -43,7 +43,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_SOURCES, async () =>
     throwingHandle('列出记忆来源失败', () => {
-      return { sources: ctx.sprite.listMemorySources() };
+      return { sources: requireSprite(ctx).listMemorySources() };
     }),
   );
 
@@ -54,7 +54,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidSearchQuery(query)) {
         throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法搜索关键词');
       }
-      return { hits: await ctx.sprite.searchMemories(query) };
+      return { hits: await requireSprite(ctx).searchMemories(query) };
     }),
   );
 
@@ -65,7 +65,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(id)) {
         throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
       }
-      return { memory: ctx.sprite.showMemory(id) };
+      return { memory: requireSprite(ctx).showMemory(id) };
     }),
   );
 
@@ -76,7 +76,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(id)) {
         return { deleted: false };
       }
-      return { deleted: ctx.sprite.deleteMemory(id) };
+      return { deleted: requireSprite(ctx).deleteMemory(id) };
     }),
   );
 
@@ -87,38 +87,40 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
         return { restored: false };
       }
       // 返回 id 供渲染层定位恢复的记忆
-      return { restored: ctx.sprite.restoreMemory(id), id };
+      return { restored: requireSprite(ctx).restoreMemory(id), id };
     }),
   );
 
   /** 物理删除记忆（回收站彻底删除） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE, async (_event, id: string) =>
-    safeHandle('彻底删除记忆失败', { purged: false }, () => {
+    safeHandle('彻底删除记忆失败', { purged: false }, async () => {
       if (!isValidId(id)) {
         return { purged: false };
       }
-      return { purged: ctx.sprite.purgeMemory(id) };
+      // purgeMemory 为 async：vectorStore.delete 立即 save 持久化删除结果
+      return { purged: await requireSprite(ctx).purgeMemory(id) };
     }),
   );
 
   /** 批量恢复回收站所有记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RESTORE_ALL, async () =>
     safeHandle('批量恢复记忆失败', { restored: 0, failed: 0 }, () => {
-      return ctx.sprite.restoreAllMemories();
+      return requireSprite(ctx).restoreAllMemories();
     }),
   );
 
   /** 批量清空回收站所有记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE_ALL, async () =>
-    safeHandle('批量清空回收站失败', { purged: 0, failed: 0 }, () => {
-      return ctx.sprite.purgeAllMemories();
+    safeHandle('批量清空回收站失败', { purged: 0, failed: 0 }, async () => {
+      // purgeAllMemories 为 async：批量删除需等待所有 vectorStore.delete 完成
+      return requireSprite(ctx).purgeAllMemories();
     }),
   );
 
   /** 列出回收站记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST_DELETED, async () =>
     throwingHandle('列出回收站记忆失败', () => {
-      return { memories: ctx.sprite.listDeletedMemories() };
+      return { memories: requireSprite(ctx).listDeletedMemories() };
     }),
   );
 
@@ -134,7 +136,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(data.source) || !isValidId(data.name)) {
         return { id: '' };
       }
-      return { id: ctx.sprite.upsertMemory(data.source, data.name, data.content) };
+      return { id: requireSprite(ctx).upsertMemory(data.source, data.name, data.content) };
     }),
   );
 
@@ -145,7 +147,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(id)) {
         return { success: false };
       }
-      return { success: ctx.sprite.boostMemory(id) };
+      return { success: requireSprite(ctx).boostMemory(id) };
     }),
   );
 
@@ -156,27 +158,27 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** L1 语义去重（扫描名称相似对 → LLM 判断 → 降级低分记忆） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DEDUP, async () =>
     safeHandle('语义去重失败', { scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'IPC 失败' }, () =>
-      ctx.sprite.deduplicateMemories(),
+      requireSprite(ctx).deduplicateMemories(),
     ),
   );
 
   /** L2 时效性评估（扫描低分记忆 → LLM 判断 → 降级过时记忆） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS, async () =>
     safeHandle('时效性评估失败', { scannedCount: 0, outdatedCount: 0, demotedIds: [], skippedReason: 'IPC 失败' }, () =>
-      ctx.sprite.evaluateTimeliness(),
+      requireSprite(ctx).evaluateTimeliness(),
     ),
   );
 
   /** L3 冲突检测（同 source 配对 → LLM 判断 → 仅检测不修复） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS, async () =>
     safeHandle('冲突检测失败', { scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'IPC 失败' }, () =>
-      ctx.sprite.detectConflicts(),
+      requireSprite(ctx).detectConflicts(),
     ),
   );
 
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_GRAPH, async () =>
-    throwingHandle('获取关系图谱失败', () => ctx.sprite.getRelationGraph()),
+    throwingHandle('获取关系图谱失败', () => requireSprite(ctx).getRelationGraph()),
   );
 
   /** 批量归档当前会话（一键归档） */
@@ -188,25 +190,25 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
         if (typeof params.date !== 'string' || typeof params.session !== 'string') {
           return { archivedCount: 0 };
         }
-        const result = await ctx.agent.archiveSessionContent(params.date, params.session);
+        const result = await requireAgent(ctx).archiveSessionContent(params.date, params.session);
         return { archivedCount: result.memories.length };
       }),
   );
 
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD, async () =>
-    throwingHandle('获取健康度仪表盘失败', () => ctx.sprite.getHealthDashboard()),
+    throwingHandle('获取健康度仪表盘失败', () => requireSprite(ctx).getHealthDashboard()),
   );
 
   /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_REVIEW_DATA, async () =>
-    throwingHandle('获取回顾数据失败', () => ctx.sprite.getReviewData()),
+    throwingHandle('获取回顾数据失败', () => requireSprite(ctx).getReviewData()),
   );
 
   /** 批量删除记忆（智能清理） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE_BATCH, async (_event, ids: string[]) =>
     safeHandle('批量删除记忆失败', { deleted: 0, total: ids.length }, async () =>
-      ctx.sprite.deleteMemoriesBatch(ids),
+      requireSprite(ctx).deleteMemoriesBatch(ids),
     ),
   );
 
@@ -217,7 +219,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidRelationParams(data)) {
         return { success: false };
       }
-      ctx.sprite.addRelation(data.sourceId, data.targetId, data.type, data.weight);
+      requireSprite(ctx).addRelation(data.sourceId, data.targetId, data.type, data.weight);
       return { success: true };
     }),
   );
@@ -228,7 +230,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidRelationParams(data)) {
         return { success: false };
       }
-      ctx.sprite.removeRelation(data.sourceId, data.targetId, data.type);
+      requireSprite(ctx).removeRelation(data.sourceId, data.targetId, data.type);
       return { success: true };
     }),
   );
@@ -239,7 +241,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidRelationParams(data)) {
         return { success: false };
       }
-      ctx.sprite.updateRelation(data.sourceId, data.targetId, data.type, data.weight);
+      requireSprite(ctx).updateRelation(data.sourceId, data.targetId, data.type, data.weight);
       return { success: true };
     }),
   );
@@ -251,7 +253,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(data?.memoryId)) {
         throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
       }
-      return ctx.sprite.getRelationPath(data.memoryId, data.maxDepth ?? 5, data.direction ?? 'incoming');
+      return requireSprite(ctx).getRelationPath(data.memoryId, data.maxDepth ?? 5, data.direction ?? 'incoming');
     }),
   );
 
@@ -261,7 +263,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(data?.memoryId)) {
         throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法记忆 ID');
       }
-      return ctx.sprite.getRelationNeighbors(data.memoryId, data.limit ?? 10);
+      return requireSprite(ctx).getRelationNeighbors(data.memoryId, data.limit ?? 10);
     }),
   );
 
@@ -276,7 +278,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidContent(data?.input)) {
         return { count: 0 };
       }
-      const entries = await ctx.sprite.archiveProfileFacts(data.input);
+      const entries = await requireSprite(ctx).archiveProfileFacts(data.input);
       return { count: entries.length };
     }),
   );
@@ -292,7 +294,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidContent(data?.input) || !isValidContent(data?.assistantContent)) {
         return { count: 0 };
       }
-      const memories = await ctx.sprite.archiveInsight(data.input, data.assistantContent);
+      const memories = await requireSprite(ctx).archiveInsight(data.input, data.assistantContent);
       return { count: memories.length };
     }),
   );

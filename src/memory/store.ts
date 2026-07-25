@@ -6,11 +6,12 @@
  */
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
-import { inferSource } from '@/memory/sourceValidation.js';
+import { SOURCE_LABELS, DEFAULT_MEMORY_SCORE, type Memory } from '@/memory/types.js';
+import { inferSource, validateSource } from '@/memory/sourceValidation.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/toError.js';
+import { configError } from '@/utils/errors.js';
 
 /**
  * 已知 source 到文件系统目录的映射
@@ -23,9 +24,6 @@ const SOURCE_TO_DIR: Record<string, string> = {
   [SOURCE_LABELS.RULE]: 'rules',
   [SOURCE_LABELS.SKILL]: 'skills',
 };
-
-/** 无 frontmatter 或 score 缺失时的默认 score */
-const DEFAULT_MEMORY_SCORE = 0.5;
 
 /**
  * 文件存储类
@@ -112,9 +110,20 @@ export class FileStore {
   /**
    * source 到目录名的映射
    *
-   * 已知 source 使用预定义目录，未知 source 直接用 source 字符串作目录名
+   * 已知 source 使用预定义目录，未知 source 直接用 source 字符串作目录名。
+   * 安全校验：调用 validateSource 拒绝路径遍历（`..`）、null 字节等危险字符，
+   * 防止未知 source 被构造为恶意路径绕过 SOURCE_TO_DIR 白名单。
    */
   private sourceToDir(source: string): string {
+    const result = validateSource(source);
+    if (result.severity === 'block') {
+      // 路径遍历 / null 字节 / 空字符串等安全边界违规，必须拒绝
+      throw configError(
+        'source 校验失败，拒绝映射到目录',
+        result.warning,
+        ['检查 source 字段是否包含路径遍历序列或特殊字符'],
+      );
+    }
     return SOURCE_TO_DIR[source] ?? source;
   }
 

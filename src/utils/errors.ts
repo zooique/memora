@@ -197,4 +197,24 @@ export function securityError(
   return new MemoraError({ title, detail, suggestions, category: 'security', cause });
 }
 
+/**
+ * 判断错误是否为 AbortError（用户主动取消或超时中断）
+ *
+ * AbortError 可能源于：
+ *   - AbortController.abort() 触发的 fetch 取消（DOMException with name='AbortError'）
+ *   - 超时机制（setTimeout + abort）触发的 AbortError
+ *   - 用户主动取消（停止生成按钮）
+ *
+ * 统一基于 `err.name === 'AbortError'` 判定，兼容：
+ *   - 原生 DOMException（modern Node 18+ / 浏览器中 DOMException 是 Error 子类）
+ *   - 普通 Error 子类（name 字段被设为 'AbortError'）
+ *   - toError() 规范化后的 Error
+ *
+ * @param err 未知类型的错误对象
+ * @returns 是否为 AbortError
+ */
+export function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
+
 // toError 实现位于 ./toError.ts（纯逻辑，零依赖），此处 re-export 保持向后兼容

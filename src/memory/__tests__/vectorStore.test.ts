@@ -81,7 +81,8 @@ describe('JsonVectorStore · upsert + search', () => {
 
   it('删除向量后不应再搜索到', async () => {
     await store.upsert('mem:1', '文本A');
-    store.delete('mem:1');
+    // FIX-P0-9：delete 改为 async + 立即 save
+    await store.delete('mem:1');
 
     const results = await store.search('文本A', 5, 0.0);
 
@@ -397,24 +398,19 @@ describe('JsonVectorStore · save 串行化', () => {
     expect(data.entries[0].id).toBe('m1');
   });
 
-  it('delete 后需显式 save 才持久化', async () => {
+  it('delete 后立即 save 持久化（FIX-P0-9）', async () => {
     const provider = mockEmbeddingService();
     const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.upsert('m1', '文本A');
     await store.save();
 
-    // delete 仅标记 dirty，不自动 save
-    store.delete('m1');
+    // FIX-P0-9：delete 改为 async + 立即 save，无需调用方显式 save
+    await store.delete('m1');
     expect(store.size).toBe(0);
 
-    // 此时文件仍包含 m1（未 save）
-    const dataBeforeSave = JSON.parse(readFileSync(storePath, 'utf-8'));
-    expect(dataBeforeSave.entries).toHaveLength(1);
-
-    // 显式 save 后文件更新
-    await store.save();
-    const dataAfterSave = JSON.parse(readFileSync(storePath, 'utf-8'));
-    expect(dataAfterSave.entries).toHaveLength(0);
+    // delete 内部已 save，文件立即更新（不再有"未 save 残留"窗口）
+    const dataAfterDelete = JSON.parse(readFileSync(storePath, 'utf-8'));
+    expect(dataAfterDelete.entries).toHaveLength(0);
   });
 });

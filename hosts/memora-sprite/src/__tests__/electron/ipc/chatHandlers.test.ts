@@ -129,7 +129,7 @@ function createMockAgent(overrides?: {
     getMetrics: overrides?.getMetrics ?? vi.fn(() => ({ context: { truncationCount: 0 } })),
     // 超时兜底强制释放内核锁的 mock（默认 no-op，测试可覆盖验证调用）
     forceReleaseChatLock: overrides?.forceReleaseChatLock ?? vi.fn(),
-  } as unknown as IpcContext['agent'];
+  } as unknown as ReturnType<IpcContext['getAgent']>;
 }
 
 /** 创建 mock IpcContext */
@@ -145,11 +145,22 @@ function createMockCtx(overrides?: {
   const hasGetAbort = overrides && 'getAbortController' in overrides;
   const hasIsReady = overrides && 'isAgentReady' in overrides;
   const hasTray = overrides && 'trayManager' in overrides;
+  // FIX-P1-1：getter 必须返回固定实例——IPC handler 调用的 mock 与测试断言验证的 mock 必须为同一对象，
+  // 否则 forceReleaseChatLock 等断言因 mock 引用不一致而失败
+  const agent = hasAgent
+    ? (overrides!.agent as ReturnType<IpcContext['getAgent']>)
+    : createMockAgent();
+  // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+  const sprite = {
+    incrementDailyMessageCount: vi.fn(),
+    prepareForChat: vi.fn(),
+  } as unknown as ReturnType<IpcContext['getSprite']>;
+  const sessionStore = {} as ReturnType<IpcContext['getSessionStore']>;
   return {
-    agent: hasAgent ? (overrides!.agent as IpcContext['agent']) : createMockAgent(),
-    // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
-    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() } as unknown as IpcContext['sprite'],
-    sessionStore: {} as IpcContext['sessionStore'],
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => agent,
+    getSprite: () => sprite,
+    getSessionStore: () => sessionStore,
     windowManager: hasWindowManager
       ? (overrides!.windowManager as IpcContext['windowManager'])
       : ({} as IpcContext['windowManager']),
@@ -222,7 +233,7 @@ describe('chatHandlers', () => {
       // 应返回 released: true（之前有锁）
       expect(result).toEqual({ released: true });
       // 应调用内核 forceReleaseChatLock
-      expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalledTimes(1);
+      expect(ctx.getAgent().forceReleaseChatLock).toHaveBeenCalledTimes(1);
       // 应清理宿主侧 AbortController 引用
       expect(ctx.setAbortController).toHaveBeenCalledWith(null);
     });
@@ -239,7 +250,7 @@ describe('chatHandlers', () => {
       // 应返回 released: false（本来就没锁）
       expect(result).toEqual({ released: false });
       // 内核 forceReleaseChatLock 仍被调用（幂等 no-op，由内核 _chatBusy 判断）
-      expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalledTimes(1);
+      expect(ctx.getAgent().forceReleaseChatLock).toHaveBeenCalledTimes(1);
       // 仍应清理 AbortController（防御性，确保状态一致）
       expect(ctx.setAbortController).toHaveBeenCalledWith(null);
     });
@@ -595,10 +606,10 @@ describe('chatStreamHandler C1 流式主路径', () => {
       }),
     });
     // 覆盖 sprite mock（createMockCtx 内 sprite 是新建的，需重新指向）
-    (ctx as unknown as { sprite: unknown }).sprite = {
+    (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: incrementDaily,
       prepareForChat,
-    };
+    });
     (ctx as unknown as { setAbortController: unknown }).setAbortController = setAbortController;
     (ctx as unknown as { incrementUnreadCount: unknown }).incrementUnreadCount = incrementUnread;
     // 拦截 webContents.send 到 sends 数组
@@ -759,10 +770,10 @@ describe('chatStreamHandler C1 流式主路径', () => {
       getAbortController: vi.fn(() => null),
       agent: createMockAgent({ chat: vi.fn(() => chatGen) }),
     });
-    (ctx as unknown as { sprite: unknown }).sprite = {
+    (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: vi.fn(),
       prepareForChat: vi.fn(),
-    };
+    });
     (ctx as unknown as { incrementUnreadCount: unknown }).incrementUnreadCount = incrementUnread;
     const fullWindow = wm.getFullWindow();
     (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(
@@ -854,10 +865,10 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
         getMetrics,
       }),
     });
-    (ctx as unknown as { sprite: unknown }).sprite = {
+    (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: incrementDaily,
       prepareForChat,
-    };
+    });
     // setAbortController 真实写入 ref，让 getAbortController 能读到
     (ctx as unknown as { setAbortController: unknown }).setAbortController = vi.fn(
       (ctrl: AbortController | null) => {
@@ -909,7 +920,7 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
     // 托盘应切回 idle
     expect(traySetState).toHaveBeenCalledWith('idle');
     // 应调用 forceReleaseChatLock 强制释放内核锁（防止 generator 挂起导致锁泄漏）
-    expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalled();
+    expect(ctx.getAgent().forceReleaseChatLock).toHaveBeenCalled();
     // loggerWarn 应被调用（emitStreamError 内部）
     expect(loggerWarn).toHaveBeenCalled();
     vi.useRealTimers();
@@ -1031,7 +1042,7 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
     const ends = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
     expect(ends).toHaveLength(1);
     // 超时路径应调用 forceReleaseChatLock（与上一个超时测试一致）
-    expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalled();
+    expect(ctx.getAgent().forceReleaseChatLock).toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -1053,10 +1064,10 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
         }),
       }),
     });
-    (ctx as unknown as { sprite: unknown }).sprite = {
+    (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: vi.fn(),
       prepareForChat: vi.fn(),
-    };
+    });
     const fullWindow = wm.getFullWindow();
     // 第一个 chunk 发送后标记窗口为已销毁（下次循环检查 isDestroyed 时 break）
     (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(

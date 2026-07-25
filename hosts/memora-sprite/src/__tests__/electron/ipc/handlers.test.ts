@@ -85,12 +85,13 @@ function createMockIpcContext(options: {
   };
 
   const ctx = {
-    agent: {
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => ({
       getMetrics: () => ({ context: { truncationCount: 0 } }),
-    },
+    }),
     // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
-    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() },
-    sessionStore: {},
+    getSprite: () => ({ incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() }),
+    getSessionStore: () => ({}),
     windowStateManager: {},
     windowManager: {
       getFullWindow: () => mockWindow,
@@ -120,10 +121,14 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     vi.clearAllMocks();
   });
 
-  // ─── registerIpcHandlers 幂等性 ──────────────────
+  // ─── registerIpcHandlers 首次调用契约 ──────────────────
+  // FIX-P1-1：registerIpcHandlers 改为"仅首次调用"设计——
+  // - IpcContext getter 实时返回最新实例，reinitAgent 后 IPC handler 自动看到新实例，无需 removeHandler + 重注册
+  // - 调用方（main.ts setupAgentReady）用 appState.ipcRegistered 标志保证幂等
+  // - 若强行重复调用，ipcMain.handle 会抛 "Attempted to register a second handler"（Electron 契约）
 
-  describe('registerIpcHandlers 幂等性（reinitAgent 重复调用）', () => {
-    it('重复调用 registerIpcHandlers 不抛错', { timeout: 15000 }, async () => {
+  describe('registerIpcHandlers 首次调用契约（FIX-P1-1：不再支持重复注册）', () => {
+    it('首次调用应正常注册所有 handler 不抛错', { timeout: 15000 }, async () => {
       // 动态导入，确保 vi.mock('electron') 已生效
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx } = createMockIpcContext({
@@ -131,15 +136,27 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
         abortController: null,
       });
 
-      // 第一次注册：正常
-      expect(() => registerIpcHandlers(ctx as never)).not.toThrow();
-
-      // 第二次注册（模拟 reinitAgent 路径）：应清理旧通道后重新注册，不抛错
-      // 验证重复注册时清理旧通道（SESSION_SWITCH/DELETE/RENAME 的 removeHandler）后重新注册不抛错
+      // 首次注册：应正常完成，不抛错
       expect(() => registerIpcHandlers(ctx as never)).not.toThrow();
     });
 
-    it('handleChannels 包含 SESSION_SWITCH/DELETE/RENAME 通道', async () => {
+    it('重复调用应抛 "Attempted to register a second handler" 错误（Electron 契约）', async () => {
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
+      const { ctx } = createMockIpcContext({
+        isAgentReady: true,
+        abortController: null,
+      });
+
+      // 首次注册：正常
+      registerIpcHandlers(ctx as never);
+
+      // 第二次注册（违反 FIX-P1-1 契约）：应抛错——调用方需通过 appState.ipcRegistered 标志保证不重复调用
+      expect(() => registerIpcHandlers(ctx as never)).toThrow(
+        /Attempted to register a second handler/,
+      );
+    });
+
+    it('首次注册应注册关键 session 通道（session-switch/delete/rename）', async () => {
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ipcMain } = await import('electron');
       const { ctx } = createMockIpcContext({
@@ -149,48 +166,14 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
       registerIpcHandlers(ctx as never);
 
-      // 验证 removeHandler 被调用的通道列表包含三个通道
-      const removeHandlerCalls = (ipcMain.removeHandler as ReturnType<typeof vi.fn>).mock.calls;
-      const removedChannels = removeHandlerCalls.map((call: unknown[]) => call[0] as string);
-
-      // 关键断言：这三个通道必须被 removeHandler 清理，
-      // 否则 reinitAgent 时 ipcMain.handle 会抛 "second handler" 错误
-      expect(removedChannels).toContain('session-switch');
-      expect(removedChannels).toContain('session-delete');
-      expect(removedChannels).toContain('session-rename');
-    });
-
-    it('所有 handle 通道在重复注册前都被清理', async () => {
-      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
-      const { ipcMain } = await import('electron');
-      const { ctx } = createMockIpcContext({
-        isAgentReady: true,
-        abortController: null,
-      });
-
-      registerIpcHandlers(ctx as never);
-
-      // 获取第一次注册后所有 handle 注册的通道
+      // 验证关键 session 通道被 ipcMain.handle 注册（不再验证 removeHandler 清理）
       const handleCalls = (ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls;
       const registeredChannels = handleCalls.map((call: unknown[]) => call[0] as string);
 
-      // 清除 mock 调用记录，便于验证第二次注册前的清理
-      // 使用 mockClear 而非 clearAllMocks，保留 mock 实现（removeHandler 需继续清除 handleCallbacks）
-      (ipcMain.handle as ReturnType<typeof vi.fn>).mockClear();
-      (ipcMain.removeHandler as ReturnType<typeof vi.fn>).mockClear();
-      (ipcMain.on as ReturnType<typeof vi.fn>).mockClear();
-      (ipcMain.removeAllListeners as ReturnType<typeof vi.fn>).mockClear();
-
-      // 第二次注册
-      registerIpcHandlers(ctx as never);
-
-      // 验证第二次注册前，所有第一次注册的通道都被 removeHandler 清理
-      const removeHandlerCalls = (ipcMain.removeHandler as ReturnType<typeof vi.fn>).mock.calls;
-      const removedChannels = removeHandlerCalls.map((call: unknown[]) => call[0] as string);
-
-      for (const channel of registeredChannels) {
-        expect(removedChannels).toContain(channel);
-      }
+      // 关键断言：这三个 session 通道必须被注册
+      expect(registeredChannels).toContain('session-switch');
+      expect(registeredChannels).toContain('session-delete');
+      expect(registeredChannels).toContain('session-rename');
     });
   });
 
@@ -322,12 +305,13 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     it('fullWindow 为 null 时静默返回（不抛错）', async () => {
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const ctx = {
-        agent: {
+        // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+        getAgent: () => ({
           getMetrics: () => ({ context: { truncationCount: 0 } }),
-        },
+        }),
         // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
-    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() },
-        sessionStore: {},
+        getSprite: () => ({ incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() }),
+        getSessionStore: () => ({}),
         windowStateManager: {},
         windowManager: {
           getFullWindow: () => null, // 窗口已销毁

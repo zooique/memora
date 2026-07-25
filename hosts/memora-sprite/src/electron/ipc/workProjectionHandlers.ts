@@ -11,7 +11,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
-import { throwingHandle } from './types.js';
+import { throwingHandle, requireAgent } from './types.js';
 import type { IpcContext } from './types.js';
 import { isValidFilePath } from './inputValidation.js';
 import { ErrorCode, SpriteError } from '../errorHandler.js';
@@ -61,7 +61,7 @@ export function registerWorkProjectionHandlers(ctx: IpcContext): void {
     return throwingHandle(
       '列出作品投影失败',
       async () => {
-        const works = ctx.agent.works;
+        const works = requireAgent(ctx).works;
         if (!works) return [];
         const entries = await works.loadAll();
         // 映射为 IPC 传输形态（委托 toWorkProjectionPayload 统一字段提取）
@@ -83,7 +83,7 @@ export function registerWorkProjectionHandlers(ctx: IpcContext): void {
         if (!isValidFilePath(filePath)) {
           throw new SpriteError(ErrorCode.VALIDATION_ERROR, '非法文件路径');
         }
-        const works = ctx.agent.works;
+        const works = requireAgent(ctx).works;
         if (!works) return null;
         const entry = await works.getProjection(filePath);
         if (!entry) return null;

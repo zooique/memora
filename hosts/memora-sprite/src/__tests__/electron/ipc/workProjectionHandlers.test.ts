@@ -49,9 +49,10 @@ function createMockEntry(id: string, filePath: string) {
 /** 创建 mock IpcContext（含 agent.works 可空） */
 function createMockCtx(works: unknown): IpcContext {
   return {
-    agent: { works } as unknown as IpcContext['agent'],
-    sprite: {} as IpcContext['sprite'],
-    sessionStore: {} as IpcContext['sessionStore'],
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => ({ works }) as unknown as ReturnType<IpcContext['getAgent']>,
+    getSprite: () => ({}) as ReturnType<IpcContext['getSprite']>,
+    getSessionStore: () => ({}) as ReturnType<IpcContext['getSessionStore']>,
     windowManager: {} as IpcContext['windowManager'],
     trayManager: null,
     getAbortController: vi.fn(() => null),

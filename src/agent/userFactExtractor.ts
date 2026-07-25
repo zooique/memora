@@ -33,6 +33,8 @@ const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!
   if (identityMatch) {
     facts.push({
       category: 'identity',
+      // 显式 fieldName，冲突检测基于 category + fieldName
+      fieldName: '姓名',
       value: `姓名: ${identityMatch[1]}`,
       sourceTurn: turnIndex,
       confidence: 0.95,
@@ -44,6 +46,7 @@ const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!
   if (locationMatch) {
     facts.push({
       category: 'identity',
+      fieldName: '住址',
       value: `住址: ${locationMatch[1]}`,
       sourceTurn: turnIndex,
       confidence: 0.9,
@@ -58,6 +61,7 @@ const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!
     // 避免与 identityMatch 重复
     facts.push({
       category: 'identity',
+      fieldName: '职业',
       value: `职业: ${jobMatch[1]}`,
       sourceTurn: turnIndex,
       confidence: 0.85,
@@ -72,6 +76,7 @@ const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!
   if (prefMatch) {
     facts.push({
       category: 'preference',
+      fieldName: '偏好',
       value: `偏好: ${prefMatch[1]}`,
       sourceTurn: turnIndex,
       confidence: 0.85,
@@ -84,6 +89,7 @@ const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!
   if (toolMatch && !prefMatch) {
     facts.push({
       category: 'preference',
+      fieldName: '工具',
       value: `工具: ${toolMatch[1]}`,
       sourceTurn: turnIndex,
       confidence: 0.8,
@@ -96,6 +102,7 @@ const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!
   if (expertiseMatch) {
     facts.push({
       category: 'expertise',
+      fieldName: '专长',
       value: `专长: ${expertiseMatch[1]}`,
       sourceTurn: turnIndex,
       confidence: 0.75,

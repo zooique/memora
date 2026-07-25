@@ -75,7 +75,8 @@ export interface AgentMetrics {
 /**
  * 记忆源健康诊断快照（对齐 preload.ts getDashboard 返回的 sourceHealth 结构）
  *
- * 消费内核 agent.memory.sourceHealth()，展示每个 source 的质量维度：
+ * 消费内核 agent.sourceHealth()（sourceHealth 已从 agent.memory.sourceHealth() 迁移到 agent.sourceHealth()），
+ * 展示每个 source 的质量维度：
  * - count：该 source 记忆数
  * - avgScore：平均分（0-1，反映记忆整体质量）
  * - daysSinceLastAccess：距上次访问天数（反映活跃度）

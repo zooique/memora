@@ -54,33 +54,36 @@ import type { IpcContext } from '../../../electron/ipc/types.js';
 
 /** 创建 mock IpcContext */
 function createMockCtx(overrides?: {
-  sprite?: Partial<IpcContext['sprite']>;
+  sprite?: Partial<ReturnType<IpcContext['getSprite']>>;
   trayManager?: { setState: ReturnType<typeof vi.fn>; updateMenu: ReturnType<typeof vi.fn> } | null;
   shortcutManager?: { setConfig: ReturnType<typeof vi.fn> } | null;
 }): IpcContext {
+  // 先创建 sprite mock 实例，确保 getSprite() 每次返回同一对象（IPC handler 与测试验证需共享 mock 引用）
+  const sprite = {
+    getConfig: vi.fn(() => ({
+      silentMode: false,
+      silentModeExpiresAt: null,
+    })),
+    updateConfig: vi.fn(),
+    // 默认 batch 成功，单个测试可覆盖为失败以验证事务回滚
+    updateConfigBatch: vi.fn(() => ({ updated: true })),
+    listPersonas: vi.fn(() => [
+      { name: 'default', description: '默认', active: true },
+      { name: 'coder', description: '程序员', active: false },
+    ]),
+    switchPersona: vi.fn(() => 'coder'),
+    // P0-2：默认未锁定，activePersona 返回当前激活角色名
+    getPersonaSwitchLockStatus: vi.fn(() => ({ locked: false, unlockAt: null })),
+    activePersona: 'default',
+    setPersonaMode: vi.fn(() => true),
+    personaMode: 'auto',
+    ...overrides?.sprite,
+  } as unknown as ReturnType<IpcContext['getSprite']>;
   return {
-    agent: {} as IpcContext['agent'],
-    sprite: {
-      getConfig: vi.fn(() => ({
-        silentMode: false,
-        silentModeExpiresAt: null,
-      })),
-      updateConfig: vi.fn(),
-      // 默认 batch 成功，单个测试可覆盖为失败以验证事务回滚
-      updateConfigBatch: vi.fn(() => ({ updated: true })),
-      listPersonas: vi.fn(() => [
-        { name: 'default', description: '默认', active: true },
-        { name: 'coder', description: '程序员', active: false },
-      ]),
-      switchPersona: vi.fn(() => 'coder'),
-      // P0-2：默认未锁定，activePersona 返回当前激活角色名
-      getPersonaSwitchLockStatus: vi.fn(() => ({ locked: false, unlockAt: null })),
-      activePersona: 'default',
-      setPersonaMode: vi.fn(() => true),
-      personaMode: 'auto',
-      ...overrides?.sprite,
-    } as unknown as IpcContext['sprite'],
-    sessionStore: {} as IpcContext['sessionStore'],
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => ({}) as ReturnType<IpcContext['getAgent']>,
+    getSprite: () => sprite,
+    getSessionStore: () => ({}) as ReturnType<IpcContext['getSessionStore']>,
     windowManager: {} as IpcContext['windowManager'],
     trayManager: overrides?.trayManager ?? null,
     // Phase 3.3：快捷键管理器 mock（默认 null，需要测试 shortcuts 副作用时注入）
@@ -116,7 +119,7 @@ describe('scheduleSilentRecovery', () => {
 
     // 推进时间，不应有任何副作用
     vi.advanceTimersByTime(10000);
-    expect(ctx.sprite.updateConfig).not.toHaveBeenCalled();
+    expect(ctx.getSprite().updateConfig).not.toHaveBeenCalled();
   });
 
   it('silentModeExpiresAt 为 null 不应设置定时器', () => {
@@ -128,7 +131,7 @@ describe('scheduleSilentRecovery', () => {
     scheduleSilentRecovery(ctx);
 
     vi.advanceTimersByTime(10000);
-    expect(ctx.sprite.updateConfig).not.toHaveBeenCalled();
+    expect(ctx.getSprite().updateConfig).not.toHaveBeenCalled();
   });
 
   it('已过期应立即关闭静默模式 + 更新托盘', () => {
@@ -143,8 +146,8 @@ describe('scheduleSilentRecovery', () => {
     });
     scheduleSilentRecovery(ctx);
 
-    expect(ctx.sprite.updateConfig).toHaveBeenCalledWith('silentMode', false);
-    expect(ctx.sprite.updateConfig).toHaveBeenCalledWith('silentModeExpiresAt', null);
+    expect(ctx.getSprite().updateConfig).toHaveBeenCalledWith('silentMode', false);
+    expect(ctx.getSprite().updateConfig).toHaveBeenCalledWith('silentModeExpiresAt', null);
     expect(setState).toHaveBeenCalledWith('idle');
     expect(updateMenu).toHaveBeenCalled();
   });
@@ -163,12 +166,12 @@ describe('scheduleSilentRecovery', () => {
 
     // 未到期不应调用 updateConfig
     vi.advanceTimersByTime(4999);
-    expect(ctx.sprite.updateConfig).not.toHaveBeenCalled();
+    expect(ctx.getSprite().updateConfig).not.toHaveBeenCalled();
 
     // 到期应关闭静默模式
     vi.advanceTimersByTime(1);
-    expect(ctx.sprite.updateConfig).toHaveBeenCalledWith('silentMode', false);
-    expect(ctx.sprite.updateConfig).toHaveBeenCalledWith('silentModeExpiresAt', null);
+    expect(ctx.getSprite().updateConfig).toHaveBeenCalledWith('silentMode', false);
+    expect(ctx.getSprite().updateConfig).toHaveBeenCalledWith('silentModeExpiresAt', null);
     expect(setState).toHaveBeenCalledWith('idle');
     expect(updateMenu).toHaveBeenCalled();
   });
@@ -182,7 +185,7 @@ describe('scheduleSilentRecovery', () => {
       trayManager: null,
     });
     expect(() => scheduleSilentRecovery(ctx)).not.toThrow();
-    expect(ctx.sprite.updateConfig).toHaveBeenCalledWith('silentMode', false);
+    expect(ctx.getSprite().updateConfig).toHaveBeenCalledWith('silentMode', false);
   });
 
   it('重复调用应清除已有定时器（避免叠加）', () => {
@@ -199,7 +202,7 @@ describe('scheduleSilentRecovery', () => {
     vi.advanceTimersByTime(5000);
     // 两次 scheduleSilentRecovery 各设置一个定时器，但第二次清除了第一次
     // 最终只有第二个定时器触发，updateConfig 被调用 2 次（silentMode + silentModeExpiresAt）
-    expect(ctx.sprite.updateConfig).toHaveBeenCalledTimes(2);
+    expect(ctx.getSprite().updateConfig).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -663,7 +666,7 @@ describe('registerConfigHandlers', () => {
 
   it('PERSONA_MODE_GET 应返回当前角色模式', async () => {
     const ctx = createMockCtx({
-      sprite: { personaMode: 'manual' } as unknown as IpcContext['sprite'],
+      sprite: { personaMode: 'manual' } as unknown as ReturnType<IpcContext['getSprite']>,
     });
     registerConfigHandlers(ctx);
 
@@ -680,12 +683,12 @@ describe('registerConfigHandlers', () => {
         getConfig: vi.fn(() => {
           throw new Error('err');
         }),
-      } as unknown as IpcContext['sprite'],
+      } as unknown as ReturnType<IpcContext['getSprite']>,
     });
     registerConfigHandlers(ctx);
 
-    // 通过覆盖 getter 抛错模拟
-    Object.defineProperty(ctx.sprite, 'personaMode', {
+    // 通过覆盖 getter 抛错模拟（FIX-P1-1：sprite 改为函数式 getter，需通过 getSprite() 拿到固定实例）
+    Object.defineProperty(ctx.getSprite(), 'personaMode', {
       get() {
         throw new Error('读取失败');
       },

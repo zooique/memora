@@ -85,7 +85,7 @@ async function reinitAgentRuntime(
   });
 
   // 3. Agent 就绪后初始化（注册完整 IPC + 推送 AGENT_READY）
-  callbacks.setupAgentReady(result.agent, result.sprite, result.sessionStore, state.currentDataDir);
+  callbacks.setupAgentReady(result.agent, result.sprite, state.currentDataDir);
 }
 
 /**

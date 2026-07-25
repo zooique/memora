@@ -147,18 +147,47 @@ export async function recall(
   // ── 综合排序：委托给 hybridMerge 纯函数 ──
   const sorted = hybridMerge(merged.values(), limit);
 
-  // ── 召回时提升 score ──
-  // 在副本上操作避免污染调用方持有的对象，boost 后写回存储
+  // ── FIX-P1-2：拆分读/写，recall 只读 + boostScores 显式写 ──
+  // 在副本上 boost，仅影响本轮上下文排序；持久化由调用方 fire-and-forget 调用 boostScores，
+  // 不阻塞读路径，boost 写入失败不影响 chat 流程。
   const now = nowIso();
-  const result: Memory[] = [];
-  for (const { memory } of sorted) {
+  const result: Memory[] = sorted.map(({ memory }) => {
     const copy = { ...memory };
     boostScore(copy, now);
-    storage.upsert(copy); // 写回存储，持久化 score 提升
-    result.push(copy);
-  }
+    return copy;
+  });
 
   return result;
+}
+
+/**
+ * 批量持久化 boost 后的 score（FIX-P1-2：从 recall() 拆分出的显式写操作）
+ *
+ * 调用方在 recall() 后 fire-and-forget 调用本函数持久化 boost，不阻塞读路径。
+ * 失败仅 log 不抛错，避免读路径因 boost 写入失败而中断。
+ *
+ * 设计权衡：
+ *   - 不在 recall() 内部 upsert：消除 IO 写耦合读路径（boost 是软指标，丢失影响小）
+ *   - 不引入 dirty 标记 + 治理调度器批量持久化：避免新增状态队列和跨模块依赖
+ *   - 立即持久化但 fire-and-forget：boost 数据不丢，读路径不阻塞
+ *
+ * @param storage 记忆存储实例
+ * @param ids 待 boost 的记忆 id 列表（从 recall() 返回结果的 id 字段提取）
+ * @param now 当前时间戳（可选，默认 nowIso()）
+ */
+export async function boostScores(
+  storage: IMemoryStorage,
+  ids: string[],
+  now: string = nowIso(),
+): Promise<void> {
+  for (const id of ids) {
+    const memory = storage.getById(id);
+    // 记忆可能已被删除（recall 后到 boost 前 window 内被清理）→ 静默跳过
+    if (!memory) continue;
+    const boosted = { ...memory };
+    boostScore(boosted, now);
+    storage.upsert(boosted);
+  }
 }
 
 // ─── Score 衰减机制 ─────────────────────────────────────

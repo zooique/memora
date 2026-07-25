@@ -90,19 +90,26 @@ function createMockInspector(): Inspector {
  * 通过 Partial<Agent> 中间类型实现单层 as 断言
  */
 function createMockAgent(inspector: Inspector | null): Agent {
-  const agent: Partial<Agent> = { memory: inspector };
+  const agent: Partial<Agent> = {
+    memory: inspector,
+    // FIX-P1-3：suggest/sourceHealth 已迁至 Agent 门面直连 advisor
+    // mock 默认返回空数组/null，模拟 advisor 未初始化的降级场景
+    suggest: vi.fn(() => []),
+    sourceHealth: vi.fn(() => null),
+  };
   return agent as Agent;
 }
 
 /**
  * 创建 Mock IVectorStore（仅 upsert + delete，MemoryController 唯一依赖）
  *
- * upsert 返回 Promise<void>（异步），delete 为同步 void
+ * upsert 返回 Promise<void>（异步），delete 也为 Promise<void>（FIX-P0-9 改为立即 save）
  */
 function createMockVectorStore(): IVectorStore {
   const store: Partial<IVectorStore> = {
     upsert: vi.fn().mockResolvedValue(undefined),
-    delete: vi.fn(),
+    // FIX-P0-9：delete 改为 async + 立即 save，mock 同步返回 resolved Promise
+    delete: vi.fn().mockResolvedValue(undefined),
   };
   return store as IVectorStore;
 }
@@ -389,55 +396,53 @@ describe('MemoryController', () => {
   // ─── 4b. purge 物理删除（6 测试） ───────────
 
   describe('purge', () => {
-    it('SEC-GAP6-01 拒绝物理删除活跃态记忆：仅活跃（未软删除）→ 返回 false，不调用 inspector.purge', () => {
+    it('SEC-GAP6-01 拒绝物理删除活跃态记忆：仅活跃（未软删除）→ 返回 false，不调用 inspector.purge', async () => {
       // 活跃记忆必须先软删除到回收站，再彻底删除（防止绕过软删除保护）
       // SEC-GAP6-02：getDeletedById 返回 null 表示该 id 不在回收站（活跃态）
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(null);
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purge('test:1');
+      const result = await controller.purge('test:1');
       expect(result).toBe(false);
       expect(mockInspector.writePurge).not.toHaveBeenCalled();
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
-    it('物理删除软删除态记忆：getDeletedById 命中 → inspector.purge → vectorStore.delete → 返回 true', () => {
+    it('物理删除软删除态记忆：getDeletedById 命中 → inspector.purge → vectorStore.delete → 返回 true', async () => {
       // SEC-GAP6-02：getDeletedById 返回软删除态记忆（避免 listDeleted 50 条上限）
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
       );
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purge('test:1');
+      const result = await controller.purge('test:1');
       expect(result).toBe(true);
       expect(mockInspector.writePurge).toHaveBeenCalledWith('test:1');
       expect(mockVectorStore.delete).toHaveBeenCalledWith('test:1');
     });
 
-    it('id 不存在（不在回收站）返回 false，不调用 inspector.purge', () => {
+    it('id 不存在（不在回收站）返回 false，不调用 inspector.purge', async () => {
       // SEC-GAP6-02：getDeletedById 返回 null 表示不存在或非软删除态
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(null);
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purge('missing:id');
+      const result = await controller.purge('missing:id');
       expect(result).toBe(false);
       expect(mockInspector.writePurge).not.toHaveBeenCalled();
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
-    it('inspector 为 null 时返回 false', () => {
+    it('inspector 为 null 时返回 false', async () => {
       const controller = new MemoryController(createMockAgent(null), mockVectorStore);
-      expect(controller.purge('any:id')).toBe(false);
+      expect(await controller.purge('any:id')).toBe(false);
     });
 
-    it('vectorStore.delete 抛错时捕获 + logger.warn，仍返回 true（不阻断主流程）', () => {
+    it('vectorStore.delete 抛错时捕获 + logger.warn，仍返回 true（不阻断主流程）', async () => {
       // 软删除态记忆（getDeletedById 命中），物理删除时向量索引抛错
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
       );
-      // 模拟向量索引删除抛错（同步方法用 mockImplementation）
-      vi.mocked(mockVectorStore.delete).mockImplementation(() => {
-        throw new Error('vector index corrupted');
-      });
+      // FIX-P0-9：delete 改为 async，用 mockRejectedValue 模拟 rejection
+      vi.mocked(mockVectorStore.delete).mockRejectedValue(new Error('vector index corrupted'));
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purge('test:1');
+      const result = await controller.purge('test:1');
       // 主流程不受影响：记忆已物理删除，返回 true
       expect(result).toBe(true);
       expect(mockInspector.writePurge).toHaveBeenCalledWith('test:1');
@@ -448,13 +453,13 @@ describe('MemoryController', () => {
       );
     });
 
-    it('无 vectorStore 时跳过向量索引删除，返回 true', () => {
+    it('无 vectorStore 时跳过向量索引删除，返回 true', async () => {
       // 软删除态记忆（getDeletedById 命中），无 vectorStore 注入
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
       );
       const controller = new MemoryController(mockAgent);
-      const result = controller.purge('test:1');
+      const result = await controller.purge('test:1');
       expect(result).toBe(true);
       expect(mockInspector.writePurge).toHaveBeenCalledWith('test:1');
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
@@ -676,7 +681,8 @@ describe('MemoryController', () => {
       };
       const hits = [makeSuggestHit({ name: 'sugg-1' })];
       vi.mocked(mockInspector.stats).mockReturnValue(stats);
-      vi.mocked(mockInspector.suggest).mockReturnValue(hits);
+      // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，mock 作用在 agent.suggest 而非 inspector.suggest
+      vi.mocked(mockAgent.suggest).mockReturnValue(hits);
       const controller = new MemoryController(mockAgent);
       const result = controller.dashboard();
       expect(result.total).toBe(42);
@@ -690,7 +696,8 @@ describe('MemoryController', () => {
       vi.mocked(mockInspector.stats).mockReturnValue({ total: 0, bySource: {}, relationCount: 0 });
       const controller = new MemoryController(mockAgent);
       controller.dashboard();
-      expect(mockInspector.suggest).toHaveBeenCalledWith(undefined, { limit: 5 });
+      // FIX-P1-3：验证 agent.suggest 调用（已从 inspector 迁至 Agent 门面）
+      expect(mockAgent.suggest).toHaveBeenCalledWith(undefined, { limit: 5 });
     });
 
     it('inspector 为 null 时返回空仪表盘（降级而非崩溃）', () => {
@@ -961,13 +968,13 @@ describe('MemoryController', () => {
   // ─── 13. purgeAll 批量彻底删除（4 测试） ───────────────
 
   describe('purgeAll', () => {
-    it('正常批量彻底删除：循环 mutator.purge + vectorStore.delete', () => {
+    it('正常批量彻底删除：循环 mutator.purge + vectorStore.delete', async () => {
       vi.mocked(mockInspector.listDeleted).mockReturnValue([
         makeMemory({ id: 'a:1' }),
         makeMemory({ id: 'a:2' }),
       ]);
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purgeAll();
+      const result = await controller.purgeAll();
       expect(result).toEqual({ purged: 2, failed: 0 });
       expect(mockInspector.writePurge).toHaveBeenCalledWith('a:1');
       expect(mockInspector.writePurge).toHaveBeenCalledWith('a:2');
@@ -975,7 +982,7 @@ describe('MemoryController', () => {
       expect(mockVectorStore.delete).toHaveBeenCalledWith('a:2');
     });
 
-    it('mutator.purge 抛错时累计 failed + logger.warn 降级日志', () => {
+    it('mutator.purge 抛错时累计 failed + logger.warn 降级日志', async () => {
       vi.mocked(mockInspector.listDeleted).mockReturnValue([
         makeMemory({ id: 'a:1' }),
         makeMemory({ id: 'a:2' }),
@@ -985,7 +992,7 @@ describe('MemoryController', () => {
         if (id === 'a:2') throw new Error('purge failed');
       });
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purgeAll();
+      const result = await controller.purgeAll();
       expect(result).toEqual({ purged: 1, failed: 1 });
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'a:2' }),
@@ -993,13 +1000,12 @@ describe('MemoryController', () => {
       );
     });
 
-    it('vectorStore.delete 抛错时降级 logger.warn（不影响 purged 计数）', () => {
+    it('vectorStore.delete 抛错时降级 logger.warn（不影响 purged 计数）', async () => {
       vi.mocked(mockInspector.listDeleted).mockReturnValue([makeMemory({ id: 'a:1' })]);
-      vi.mocked(mockVectorStore.delete).mockImplementation(() => {
-        throw new Error('vector delete failed');
-      });
+      // FIX-P0-9：delete 改为 async，用 mockRejectedValue 模拟 rejection
+      vi.mocked(mockVectorStore.delete).mockRejectedValue(new Error('vector delete failed'));
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      const result = controller.purgeAll();
+      const result = await controller.purgeAll();
       // vectorStore 错误不影响 purged 计数（内层 try/catch 降级）
       expect(result).toEqual({ purged: 1, failed: 0 });
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -1008,9 +1014,9 @@ describe('MemoryController', () => {
       );
     });
 
-    it('inspector/mutator 为 null 时返回 {purged: 0, failed: 0}', () => {
+    it('inspector/mutator 为 null 时返回 {purged: 0, failed: 0}', async () => {
       const controller = new MemoryController(createMockAgent(null), mockVectorStore);
-      const result = controller.purgeAll();
+      const result = await controller.purgeAll();
       expect(result).toEqual({ purged: 0, failed: 0 });
     });
   });
@@ -1027,9 +1033,9 @@ describe('MemoryController', () => {
       ]);
     });
 
-    it('purgeAll 调用 listDeleted 时不传参（不传 0/50，依赖 undefined=全部语义）', () => {
+    it('purgeAll 调用 listDeleted 时不传参（不传 0/50，依赖 undefined=全部语义）', async () => {
       const controller = new MemoryController(mockAgent, mockVectorStore);
-      controller.purgeAll();
+      await controller.purgeAll();
       // 验证 listDeleted 被调用时未传 limit 参数（无参调用）
       expect(mockInspector.listDeleted).toHaveBeenCalledWith();
     });

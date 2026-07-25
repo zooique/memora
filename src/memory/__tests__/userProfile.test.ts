@@ -57,7 +57,7 @@ describe('UserProfile', () => {
 
       // When
       const facts: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
       ];
       await userProfile.archiveFacts(facts);
 
@@ -72,13 +72,13 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
       const facts1: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
       ];
       await userProfile.archiveFacts(facts1);
 
       // When - 再次归档相同信息
       const facts2: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-2', confidence: 0.95 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-2', confidence: 0.95 },
       ];
       await userProfile.archiveFacts(facts2);
 
@@ -94,7 +94,7 @@ describe('UserProfile', () => {
 
       // When - 偏好声明（高置信度 ≥ 0.8）
       const facts: ExtractedFact[] = [
-        { category: 'preference', value: '偏好: TypeScript', sourceTurn: 'turn-1', confidence: 0.85 },
+        { category: 'preference', fieldName: '偏好', value: '偏好: TypeScript', sourceTurn: 'turn-1', confidence: 0.85 },
       ];
       await userProfile.archiveFacts(facts);
 
@@ -150,7 +150,7 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
       const facts: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
       ];
       await userProfile.archiveFacts(facts);
 
@@ -182,7 +182,7 @@ describe('UserProfile', () => {
 
       // When - 高置信度（≥ 0.8）
       const facts: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
       ];
       await userProfile.archiveFacts(facts);
 
@@ -198,7 +198,7 @@ describe('UserProfile', () => {
 
       // When - 低置信度（< 0.8）
       const facts: ExtractedFact[] = [
-        { category: 'expertise', value: '专长: React', sourceTurn: 'turn-1', confidence: 0.75 },
+        { category: 'expertise', fieldName: '专长', value: '专长: React', sourceTurn: 'turn-1', confidence: 0.75 },
       ];
       await userProfile.archiveFacts(facts);
 
@@ -254,7 +254,7 @@ describe('UserProfile K1 深度补测', () => {
     it('应该归档 habit 子分类（习惯）', async () => {
       await userProfile.load();
       const facts: ExtractedFact[] = [
-        { category: 'habit', value: '习惯: 上午工作', sourceTurn: 'turn-1', confidence: 0.9 },
+        { category: 'habit', fieldName: '习惯', value: '习惯: 上午工作', sourceTurn: 'turn-1', confidence: 0.9 },
       ];
       await userProfile.archiveFacts(facts);
       const confirmed = userProfile.getConfirmed();
@@ -264,7 +264,7 @@ describe('UserProfile K1 深度补测', () => {
     it('应该归档 history 子分类（历史）', async () => {
       await userProfile.load();
       const facts: ExtractedFact[] = [
-        { category: 'history', value: '历史: 2024年入职', sourceTurn: 'turn-1', confidence: 0.85 },
+        { category: 'history', fieldName: '历史', value: '历史: 2024年入职', sourceTurn: 'turn-1', confidence: 0.85 },
       ];
       await userProfile.archiveFacts(facts);
       const confirmed = userProfile.getConfirmed();
@@ -276,7 +276,7 @@ describe('UserProfile K1 深度补测', () => {
     it('confidence=0.8 边界值应直接归档为已确认', async () => {
       await userProfile.load();
       const facts: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 边界测试', sourceTurn: 'turn-1', confidence: 0.8 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 边界测试', sourceTurn: 'turn-1', confidence: 0.8 },
       ];
       await userProfile.archiveFacts(facts);
       // 0.8 ≥ 0.8 → 已确认 → 写入存储
@@ -288,7 +288,7 @@ describe('UserProfile K1 深度补测', () => {
     it('confidence=0.79 应标记为待确认（不写入存储）', async () => {
       await userProfile.load();
       const facts: ExtractedFact[] = [
-        { category: 'identity', value: '姓名: 低于阈值', sourceTurn: 'turn-1', confidence: 0.79 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 低于阈值', sourceTurn: 'turn-1', confidence: 0.79 },
       ];
       await userProfile.archiveFacts(facts);
       // 0.79 < 0.8 → 待确认 → 不写入存储
@@ -363,17 +363,17 @@ describe('UserProfile K1 深度补测', () => {
   });
 
   describe('removeConflictingEntries 同分类冲突解决', () => {
-    it('同分类同前缀的新值应替换旧值（用户更新信息）', async () => {
+    it('同分类同字段的新值应替换旧值（用户更新信息）', async () => {
       await userProfile.load();
       // 先归档"姓名: 张三"
       await userProfile.archiveFacts([
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.9 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.9 },
       ]);
       expect(userProfile.getConfirmed().some((e) => e.value === '姓名: 张三')).toBe(true);
 
-      // 再归档"姓名: 李四"（同分类 identity + 同前缀"姓名"）
+      // 再归档"姓名: 李四"（同分类 identity + 同 fieldName "姓名"）
       await userProfile.archiveFacts([
-        { category: 'identity', value: '姓名: 李四', sourceTurn: 'turn-2', confidence: 0.9 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 李四', sourceTurn: 'turn-2', confidence: 0.9 },
       ]);
 
       // 旧值"姓名: 张三"应被删除，仅保留"姓名: 李四"
@@ -382,19 +382,35 @@ describe('UserProfile K1 深度补测', () => {
       expect(confirmed.some((e) => e.value === '姓名: 李四')).toBe(true);
     });
 
-    it('同分类不同前缀不应替换（姓名 vs 年龄）', async () => {
+    it('同分类不同字段不应替换（姓名 vs 年龄）', async () => {
       await userProfile.load();
       await userProfile.archiveFacts([
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.9 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.9 },
       ]);
       await userProfile.archiveFacts([
-        { category: 'identity', value: '年龄: 25', sourceTurn: 'turn-2', confidence: 0.9 },
+        { category: 'identity', fieldName: '年龄', value: '年龄: 25', sourceTurn: 'turn-2', confidence: 0.9 },
       ]);
 
-      // 两条都应保留（前缀不同，不冲突）
+      // 两条都应保留（fieldName 不同，不冲突）
       const confirmed = userProfile.getConfirmed();
       expect(confirmed.some((e) => e.value === '姓名: 张三')).toBe(true);
       expect(confirmed.some((e) => e.value === '年龄: 25')).toBe(true);
+    });
+
+    it('value 无前缀时仍能基于 fieldName 正确识别冲突', async () => {
+      // 场景：LLM 提取输出 value 无 "姓名:" 前缀，仅靠 fieldName 识别冲突
+      await userProfile.load();
+      await userProfile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '张三', sourceTurn: 'turn-1', confidence: 0.9 },
+      ]);
+      await userProfile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '李四', sourceTurn: 'turn-2', confidence: 0.9 },
+      ]);
+
+      // 旧值"张三"应被删除，仅保留"李四"（基于 fieldName 识别冲突，不依赖 value 前缀）
+      const confirmed = userProfile.getConfirmed();
+      expect(confirmed.some((e) => e.value === '张三')).toBe(false);
+      expect(confirmed.some((e) => e.value === '李四')).toBe(true);
     });
   });
 
@@ -403,7 +419,7 @@ describe('UserProfile K1 深度补测', () => {
       await userProfile.load();
       // 归档低置信度条目（待确认）
       await userProfile.archiveFacts([
-        { category: 'expertise', value: '专长: React', sourceTurn: 'turn-1', confidence: 0.7 },
+        { category: 'expertise', fieldName: '专长', value: '专长: React', sourceTurn: 'turn-1', confidence: 0.7 },
       ]);
       const pending = userProfile.getPending();
       expect(pending).toHaveLength(1);
@@ -429,7 +445,7 @@ describe('UserProfile K1 深度补测', () => {
       await userProfile.load();
       // 归档高置信度条目（已确认 + 写入存储）
       await userProfile.archiveFacts([
-        { category: 'identity', value: '姓名: 测试', sourceTurn: 'turn-1', confidence: 0.9 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 测试', sourceTurn: 'turn-1', confidence: 0.9 },
       ]);
       const confirmed = userProfile.getConfirmed();
       expect(confirmed).toHaveLength(1);
@@ -446,7 +462,7 @@ describe('UserProfile K1 深度补测', () => {
       await userProfile.load();
       // 归档低置信度条目（待确认，未写入存储）
       await userProfile.archiveFacts([
-        { category: 'expertise', value: '专长: 待删除', sourceTurn: 'turn-1', confidence: 0.7 },
+        { category: 'expertise', fieldName: '专长', value: '专长: 待删除', sourceTurn: 'turn-1', confidence: 0.7 },
       ]);
       const pending = userProfile.getPending();
       expect(pending).toHaveLength(1);
@@ -465,10 +481,10 @@ describe('UserProfile K1 深度补测', () => {
     it('应按分类分组聚合 + value 去除前缀', async () => {
       await userProfile.load();
       await userProfile.archiveFacts([
-        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.9 },
-        { category: 'identity', value: '年龄: 25', sourceTurn: 'turn-2', confidence: 0.9 },
-        { category: 'preference', value: '偏好: 暗色主题', sourceTurn: 'turn-3', confidence: 0.9 },
-        { category: 'expertise', value: '专长: TypeScript', sourceTurn: 'turn-4', confidence: 0.9 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.9 },
+        { category: 'identity', fieldName: '年龄', value: '年龄: 25', sourceTurn: 'turn-2', confidence: 0.9 },
+        { category: 'preference', fieldName: '偏好', value: '偏好: 暗色主题', sourceTurn: 'turn-3', confidence: 0.9 },
+        { category: 'expertise', fieldName: '专长', value: '专长: TypeScript', sourceTurn: 'turn-4', confidence: 0.9 },
       ]);
 
       const prompt = userProfile.buildSystemPrompt();
@@ -490,7 +506,7 @@ describe('UserProfile K1 深度补测', () => {
 
       // 不应抛错，应降级返回空数组
       const result = await userProfile.archiveFacts([
-        { category: 'identity', value: '姓名: 错误测试', sourceTurn: 'turn-1', confidence: 0.9 },
+        { category: 'identity', fieldName: '姓名', value: '姓名: 错误测试', sourceTurn: 'turn-1', confidence: 0.9 },
       ]);
       // upsertFact 返回 null → archiveFacts 返回空数组
       expect(result).toEqual([]);

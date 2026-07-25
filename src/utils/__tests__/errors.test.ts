@@ -13,6 +13,7 @@ import {
   MemoraError,
   ToolErrorCode,
   isRetryableErrorCode,
+  isAbortError,
 } from '@/utils/errors.js';
 
 describe('MemoraError · 错误信息友好化', () => {
@@ -205,5 +206,42 @@ describe('MemoraError.errorCode · 工具错误码字段', () => {
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(MemoraError);
     expect(err.name).toBe('MemoraError');
+  });
+});
+
+// ─── isAbortError AbortError 判定 ─────────────────────
+
+describe('isAbortError · AbortError 统一判定', () => {
+  it('原生 Error with name=AbortError 应识别', () => {
+    const err = new Error('用户取消');
+    err.name = 'AbortError';
+    expect(isAbortError(err)).toBe(true);
+  });
+
+  it('DOMException with name=AbortError 应识别（modern Node 18+ DOMException 是 Error 子类）', () => {
+    // DOMException 在 Node 18+ / 浏览器中是 Error 子类，isAbortError 应直接识别
+    const err = new DOMException('用户取消', 'AbortError');
+    expect(isAbortError(err)).toBe(true);
+  });
+
+  it('普通 Error 不应识别', () => {
+    expect(isAbortError(new Error('普通错误'))).toBe(false);
+  });
+
+  it('MemoraError 不应识别（name=MemoraError 非 AbortError）', () => {
+    expect(isAbortError(configError('a', 'b', []))).toBe(false);
+  });
+
+  it('非 Error 类型应安全返回 false（不抛错）', () => {
+    expect(isAbortError(null)).toBe(false);
+    expect(isAbortError(undefined)).toBe(false);
+    expect(isAbortError('字符串错误')).toBe(false);
+    expect(isAbortError({ name: 'AbortError' })).toBe(false);
+    expect(isAbortError(42)).toBe(false);
+  });
+
+  it('Error 子类（如 TypeError）不应识别', () => {
+    expect(isAbortError(new TypeError('type error'))).toBe(false);
+    expect(isAbortError(new RangeError('range error'))).toBe(false);
   });
 });

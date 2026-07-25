@@ -104,6 +104,8 @@ function createEntry(id: string, confirmed: boolean = true): UserProfileEntry {
   return {
     id,
     category: 'identity',
+    // fieldName 必填，与 UserProfileEntry 接口契约一致
+    fieldName: '姓名',
     value: `值-${id}`,
     source: 'turn-test',
     weight: 0.9,
@@ -128,6 +130,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveProfileFacts('我叫张三');
@@ -144,6 +148,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveProfileFacts('我叫张三');
@@ -173,6 +179,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveProfileFacts('我叫张三');
@@ -193,6 +201,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       await coordinator.archiveProfileFacts('我叫张三');
@@ -210,6 +220,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveProfileFacts('你好');
@@ -226,6 +238,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveInsight('输入', '助手回复');
@@ -241,6 +255,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveInsight('你好', '你好');
@@ -258,6 +274,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveInsight('关键洞察', '助手回复');
@@ -287,6 +305,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveInsight('输入', '助手回复');
@@ -303,6 +323,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
@@ -328,6 +350,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
@@ -355,6 +379,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
@@ -373,6 +399,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => throwingArchiver,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
@@ -403,6 +431,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => throwingArchiver,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       await coordinator.archiveSessionContent('2026-07-04', 'session-1');
@@ -434,6 +464,8 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
+        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        getArchiveMode: () => 'full',
       });
 
       // close 前：所有归档正常工作
@@ -461,6 +493,228 @@ describe('ArchiveCoordinator', () => {
         messageCount: 0,
       });
       expect(emitSpy.events).toHaveLength(0);
+    });
+  });
+
+  // ─── FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator ───
+  describe('FIX-P1-4: archiveMode 三态控制', () => {
+    /**
+     * 辅助：构造指定 archiveMode 的 coordinator
+     * @param mode archiveMode
+     * @param userProfile 可选 UserProfile mock
+     * @param insightExtractor 可选 InsightExtractor mock
+     * @param sessionArchiver 可选 SessionArchiver mock
+     */
+    function createCoordinatorWithMode(
+      mode: 'full' | 'insights-only' | 'manual',
+      userProfile: UserProfile | null = null,
+      insightExtractor: InsightExtractor | null = null,
+      sessionArchiver: SessionArchiver | null = null,
+    ): ArchiveCoordinator {
+      return new ArchiveCoordinator({
+        getUserProfile: () => userProfile,
+        getInsightExtractor: () => insightExtractor,
+        getSessionArchiver: () => sessionArchiver,
+        emit: emitSpy.emit,
+        getArchiveMode: () => mode,
+      });
+    }
+
+    describe('archiveProfileFacts() 模式判断', () => {
+      it('autoTriggered + manual 模式 → 跳过（返回空，不调用 archiveFacts）', async () => {
+        const userProfile = createMockUserProfile([createEntry('p-1', true)]);
+        const coordinator = createCoordinatorWithMode('manual', userProfile);
+
+        const result = await coordinator.archiveProfileFacts('我叫张三', { autoTriggered: true });
+
+        expect(result).toEqual([]);
+        expect(userProfile.archiveFacts).not.toHaveBeenCalled();
+        expect(emitSpy.events).toHaveLength(0);
+      });
+
+      it('autoTriggered + full 模式 → 执行（调用 archiveFacts）', async () => {
+        const userProfile = createMockUserProfile([createEntry('p-1', true)]);
+        const coordinator = createCoordinatorWithMode('full', userProfile);
+
+        const result = await coordinator.archiveProfileFacts('我叫张三', { autoTriggered: true });
+
+        expect(result).toHaveLength(1);
+        expect(userProfile.archiveFacts).toHaveBeenCalled();
+        expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(1);
+      });
+
+      it('autoTriggered + insights-only 模式 → 执行（profile 不受 insights-only 限制）', async () => {
+        const userProfile = createMockUserProfile([createEntry('p-1', true)]);
+        const coordinator = createCoordinatorWithMode('insights-only', userProfile);
+
+        const result = await coordinator.archiveProfileFacts('我叫张三', { autoTriggered: true });
+
+        expect(result).toHaveLength(1);
+        expect(userProfile.archiveFacts).toHaveBeenCalled();
+      });
+
+      it('手动触发 + manual 模式 → 执行（用户意图优先，不受模式限制）', async () => {
+        const userProfile = createMockUserProfile([createEntry('p-1', true)]);
+        const coordinator = createCoordinatorWithMode('manual', userProfile);
+
+        // 不传 options（默认 autoTriggered=false）
+        const result = await coordinator.archiveProfileFacts('我叫张三');
+
+        expect(result).toHaveLength(1);
+        expect(userProfile.archiveFacts).toHaveBeenCalled();
+      });
+    });
+
+    describe('archiveInsight() 模式判断', () => {
+      it('autoTriggered + manual 模式 → 跳过（不调用 classify/extract）', async () => {
+        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
+        const coordinator = createCoordinatorWithMode('manual', null, insightExtractor);
+
+        const result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
+
+        expect(result).toEqual([]);
+        expect(insightExtractor.classify).not.toHaveBeenCalled();
+        expect(insightExtractor.extract).not.toHaveBeenCalled();
+        expect(emitSpy.events).toHaveLength(0);
+      });
+
+      it('autoTriggered + full 模式 → 执行（走 classify 判断）', async () => {
+        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
+        const coordinator = createCoordinatorWithMode('full', null, insightExtractor);
+
+        const result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
+
+        expect(result).toHaveLength(1);
+        expect(insightExtractor.classify).toHaveBeenCalled();
+        expect(insightExtractor.extract).toHaveBeenCalledWith('关键洞察', '回复');
+      });
+
+      it('autoTriggered + insights-only 模式 → 执行（insight 是 insights-only 的核心）', async () => {
+        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
+        const coordinator = createCoordinatorWithMode('insights-only', null, insightExtractor);
+
+        const result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
+
+        expect(result).toHaveLength(1);
+        expect(insightExtractor.extract).toHaveBeenCalled();
+      });
+
+      it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {
+        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
+        const coordinator = createCoordinatorWithMode('manual', null, insightExtractor);
+
+        const result = await coordinator.archiveInsight('关键洞察', '回复');
+
+        expect(result).toHaveLength(1);
+        expect(insightExtractor.extract).toHaveBeenCalled();
+      });
+    });
+
+    describe('archiveSessionContent() 模式判断', () => {
+      it('autoTriggered + full 模式 → 执行（调用 SessionArchiver）', async () => {
+        const memories = [createMemory('c-1', 'content')];
+        const sessionArchiver = createMockSessionArchiver({
+          memories,
+          sessionLabel: '2026-07-04-s-1',
+          messageCount: 5,
+        });
+        const coordinator = createCoordinatorWithMode('full', null, null, sessionArchiver);
+
+        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
+
+        expect(result.memories).toHaveLength(1);
+        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1');
+        expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(1);
+      });
+
+      it('autoTriggered + insights-only 模式 → 跳过（content 仅 full 模式自动归档）', async () => {
+        const sessionArchiver = createMockSessionArchiver({
+          memories: [createMemory('c-1', 'content')],
+          sessionLabel: '2026-07-04-s-1',
+          messageCount: 5,
+        });
+        const coordinator = createCoordinatorWithMode('insights-only', null, null, sessionArchiver);
+
+        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
+
+        expect(result).toEqual({
+          memories: [],
+          sessionLabel: '2026-07-04-s-1',
+          messageCount: 0,
+        });
+        expect(sessionArchiver.archiveSessionContent).not.toHaveBeenCalled();
+        expect(emitSpy.events).toHaveLength(0);
+      });
+
+      it('autoTriggered + manual 模式 → 跳过', async () => {
+        const sessionArchiver = createMockSessionArchiver({
+          memories: [createMemory('c-1', 'content')],
+          sessionLabel: '2026-07-04-s-1',
+          messageCount: 5,
+        });
+        const coordinator = createCoordinatorWithMode('manual', null, null, sessionArchiver);
+
+        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
+
+        expect(result.memories).toEqual([]);
+        expect(sessionArchiver.archiveSessionContent).not.toHaveBeenCalled();
+      });
+
+      it('手动触发 + insights-only 模式 → 执行（用户意图优先，如"一键归档"按钮）', async () => {
+        const memories = [createMemory('c-1', 'content')];
+        const sessionArchiver = createMockSessionArchiver({
+          memories,
+          sessionLabel: '2026-07-04-s-1',
+          messageCount: 5,
+        });
+        const coordinator = createCoordinatorWithMode('insights-only', null, null, sessionArchiver);
+
+        // 不传 options（默认 autoTriggered=false）
+        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
+
+        expect(result.memories).toHaveLength(1);
+        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1');
+      });
+
+      it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {
+        const memories = [createMemory('c-1', 'content')];
+        const sessionArchiver = createMockSessionArchiver({
+          memories,
+          sessionLabel: '2026-07-04-s-1',
+          messageCount: 5,
+        });
+        const coordinator = createCoordinatorWithMode('manual', null, null, sessionArchiver);
+
+        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
+
+        expect(result.memories).toHaveLength(1);
+        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalled();
+      });
+    });
+
+    describe('archiveMode 动态切换', () => {
+      it('getArchiveMode 每次调用动态求值（模拟运行时切换 archiveMode）', async () => {
+        const userProfile = createMockUserProfile([createEntry('p-1', true)]);
+        let currentMode: 'full' | 'insights-only' | 'manual' = 'manual';
+        const coordinator = new ArchiveCoordinator({
+          getUserProfile: () => userProfile,
+          getInsightExtractor: () => null,
+          getSessionArchiver: () => null,
+          emit: emitSpy.emit,
+          getArchiveMode: () => currentMode,
+        });
+
+        // manual 模式 + 自动触发 → 跳过
+        let result = await coordinator.archiveProfileFacts('我叫张三', { autoTriggered: true });
+        expect(result).toEqual([]);
+        expect(userProfile.archiveFacts).not.toHaveBeenCalled();
+
+        // 运行时切换到 full 模式 + 自动触发 → 执行
+        currentMode = 'full';
+        result = await coordinator.archiveProfileFacts('我叫张三', { autoTriggered: true });
+        expect(result).toHaveLength(1);
+        expect(userProfile.archiveFacts).toHaveBeenCalled();
+      });
     });
   });
 });

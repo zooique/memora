@@ -47,8 +47,8 @@ export function inferSource(filePath: string, frontmatterSource?: string): strin
   if (/[\\/]rules[\\/]/.test(filePath)) return SOURCE_LABELS.RULE;
   if (/[\\/]skills[\\/]/.test(filePath)) return SOURCE_LABELS.SKILL;
 
-  // 默认
-  return 'unknown';
+  // 默认：未知来源（SOURCE_LABELS.UNKNOWN 显式声明，避免字符串字面量分散）
+  return SOURCE_LABELS.UNKNOWN;
 }
 
 /**

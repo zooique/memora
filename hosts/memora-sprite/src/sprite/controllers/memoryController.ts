@@ -334,10 +334,13 @@ export class MemoryController {
    * 安全约束（SEC-GAP6-01）：防止被攻陷的渲染进程通过 IPC 直接 purge
    * 活跃记忆绕过软删除保护，造成不可恢复的数据丢失。
    *
+   * FIX-P0-9：vectorStore.delete 改为 async + 立即 save，本方法签名同步改为 async，
+   * 确保向量索引持久化完成后再返回，防止崩溃后孤儿向量复活。
+   *
    * @param id 记忆唯一标识
    * @returns 是否成功删除（记忆不在回收站时返回 false）
    */
-  purge(id: string): boolean {
+  async purge(id: string): Promise<boolean> {
     // 读写统一走 MemoryInspector（writeXxx 前缀区分写操作）
     const memory = this.agent.memory;
     if (!memory) return false;
@@ -345,10 +348,10 @@ export class MemoryController {
     const deleted = memory.getDeletedById(id);
     if (!deleted) return false;
     memory.writePurge(id);
-    // 物理删除时同步清理向量索引（对齐 upsert 错误处理）
+    // 物理删除时清理向量索引（FIX-P0-9：vectorStore.delete 立即 save，需 await）
     if (this.vectorStore) {
       try {
-        this.vectorStore.delete(id);
+        await this.vectorStore.delete(id);
       } catch (err) {
         logger.warn({ err, id }, '向量索引删除失败，可能残留孤儿向量');
       }
@@ -409,9 +412,11 @@ export class MemoryController {
   /**
    * 批量彻底删除回收站中所有记忆
    *
+   * FIX-P0-9：vectorStore.delete 改为 async + 立即 save，本方法签名同步改为 async。
+   *
    * @returns 成功删除的记忆数量
    */
-  purgeAll(): { purged: number; failed: number } {
+  async purgeAll(): Promise<{ purged: number; failed: number }> {
     const memory = this.agent.memory;
     if (!memory) return { purged: 0, failed: 0 };
     // 获取所有已删除记忆（不传参 = 不设上限，契约规定 undefined 表示全部）
@@ -421,10 +426,10 @@ export class MemoryController {
     for (const m of deleted) {
       try {
         memory.writePurge(m.id);
-        // 同步清理向量索引
+        // 清理向量索引（FIX-P0-9：await 立即 save）
         if (this.vectorStore) {
           try {
-            this.vectorStore.delete(m.id);
+            await this.vectorStore.delete(m.id);
           } catch (err) {
             logger.warn({ err, id: m.id }, '批量清空时向量索引删除失败');
           }
@@ -575,7 +580,9 @@ export class MemoryController {
       return { total: 0, bySource: {}, suggestions: [], relationCount: 0, conflictCount: 0 };
     }
     const stats = memory.stats();
-    const suggestions = memory.suggest(undefined, { limit: 5 });
+    // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    // agent.suggest 在 advisor 未初始化时返回空数组，无需额外降级
+    const suggestions = this.agent.suggest(undefined, { limit: 5 });
     // 统计冲突关系数：遍历所有关系边，type === 'contradicts' 的即为冲突
     const allEdges = memory.getAllRelations();
     const conflictCount = allEdges.filter((e) => e.type === 'contradicts').length;

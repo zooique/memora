@@ -483,6 +483,83 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(result2).not.toBeNull();
       expect(result1!.summary).toBe(result2!.summary);
     });
+
+    // ─── FIX-P0-1：awaitInflight 等待 inflight LLM 生成完成 ───
+
+    it('FIX-P0-1：awaitInflight 应等待正在进行的 LLM 生成完成', async () => {
+      // Given - LLM 调用有延迟，让 ensureProjection 进入 inflight
+      let llmResolved = false;
+      const provider = {
+        name: 'mock-await-inflight',
+        chat: vi.fn(async function* () {
+          // 模拟 LLM 延迟，让 awaitInflight 调用时 inflight 仍存在
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          llmResolved = true;
+          yield {
+            content: JSON.stringify({ summary: 'awaitInflight 测试', structure: [], keyDecisions: [] }),
+            done: false,
+          };
+          yield { content: '', done: true };
+        }),
+      } as unknown as LlmProvider;
+      const manager = new WorkProjectionManager(mockStorage, provider);
+
+      // When - 启动 ensureProjection（不 await），立即调用 awaitInflight
+      const projectionPromise = manager.ensureProjection('/project/file.md', '内容', 'file.md');
+      // 此时 inflight 应已注册（同步阶段已进入 doEnsureProjection）
+      await manager.awaitInflight();
+      // awaitInflight 完成后，LLM 应已 resolve
+      expect(llmResolved).toBe(true);
+      // 原 ensureProjection 也应能正常返回
+      const result = await projectionPromise;
+      expect(result).not.toBeNull();
+      expect(result!.summary).toBe('awaitInflight 测试');
+    });
+
+    it('FIX-P0-1：无 inflight 时 awaitInflight 应立即 resolve', async () => {
+      const provider = createMockProvider(
+        JSON.stringify({ summary: '无 inflight', structure: [], keyDecisions: [] }),
+      );
+      const manager = new WorkProjectionManager(mockStorage, provider);
+
+      // 无 inflight 时 awaitInflight 应立即返回
+      await manager.awaitInflight();
+      // 能到达此行即表示立即 resolve
+    });
+
+    it('FIX-P0-1：多文件并发 inflight 时 awaitInflight 应等待全部完成', async () => {
+      let pendingCount = 0;
+      const provider = {
+        name: 'mock-multi-inflight',
+        chat: vi.fn(async function* () {
+          pendingCount++;
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          pendingCount--;
+          yield {
+            content: JSON.stringify({ summary: '多文件', structure: [], keyDecisions: [] }),
+            done: false,
+          };
+          yield { content: '', done: true };
+        }),
+      } as unknown as LlmProvider;
+      const manager = new WorkProjectionManager(mockStorage, provider);
+
+      // 启动 3 个不同文件的并发生成
+      const promises = [
+        manager.ensureProjection('/project/file1.md', '内容1', 'file1.md'),
+        manager.ensureProjection('/project/file2.md', '内容2', 'file2.md'),
+        manager.ensureProjection('/project/file3.md', '内容3', 'file3.md'),
+      ];
+
+      // awaitInflight 应等待全部 inflight 完成
+      await manager.awaitInflight();
+      // 全部 LLM 调用应已完成
+      expect(pendingCount).toBe(0);
+      // 原 promises 也应能正常返回
+      const results = await Promise.all(promises);
+      expect(results).toHaveLength(3);
+      expect(results.every((r) => r !== null)).toBe(true);
+    });
   });
 
   describe('fileName 推导与 slug 冲突', () => {

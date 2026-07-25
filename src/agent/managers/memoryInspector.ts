@@ -13,19 +13,17 @@
  * 方法清单：
  *   - 只读查询：snapshot / search / searchHybrid / stats /
  *     getRelations / getAllRelations / getRelationPath / getRelationNeighbors /
- *     getById / getBySource / list / listDeleted / getDeletedById /
- *     sourceHealth / suggest
+ *     getById / getBySource / list / listDeleted / getDeletedById
  *   - 写操作（writeXxx 前缀）：
  *     writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired /
  *     writeAddRelation / writeRemoveRelation
  *
- * 拆分历史（SPLIT-3，2026-07-21）：
- *   - L1 语义去重（deduplicateMemories）已拆分至 DedupManager（dedupManager.ts）
- *   - 本类不再依赖 LLM Provider，纯存储读写
- *   - DedupPair/DedupVerdict/DedupVerdictSummary/DedupReport 类型随职责迁移至 dedupManager.ts
- *
- * Inspector 职责：读写 + 查询入口；L3 冲突检测由 Agent.detectConflicts
- * 直接调用 MemoryAdvisor（消除 3 层无意义代理）。
+ * 拆分历史：
+ *   - SPLIT-3（2026-07-21）：L1 语义去重（deduplicateMemories）拆分至 DedupManager
+ *   - v2 PROXY-1（2026-07-21）：detectConflicts 直连 MemoryAdvisor（消除 3 层代理）
+ *   - FIX-P1-3（2026-07-24）：sourceHealth/suggest 直连 MemoryAdvisor，
+ *     删除本类转发方法 + advisor 字段，Agent 作为门面委托 advisor（与
+ *     detectConflicts 同模式）。本类回归纯存储读写 + 查询入口。
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -48,17 +46,10 @@ import {
 } from '@/memory/hybridMerge.js';
 // LLM 治理共享常量（v2 REPEAT-1/2 闭环，消除 5 处独立维护的治理源列表 + 2 处 score 常量重复）
 import { BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
-// sourceHealth() + suggest() 已提取到 MemoryAdvisor
-// 删除兜底分支后 MemoryAdvisor 仅用于类型注解，改用 import type
-// v2 PROXY-1：detectConflicts 已迁移至 Agent 直接调用 advisor，ConflictReport 不再在此 import
-import type {
-  MemoryAdvisor,
-  SourceHealthReport,
-  SuggestOptions,
-  SuggestHit,
-} from '@/agent/managers/memoryAdvisor.js';
 
 // 类型再导出，保持公共 API 不变（src/index.ts 通过本文件再导出这些类型）
+// FIX-P1-3：sourceHealth/suggest 实现已迁回 MemoryAdvisor 直连，类型仍在此再导出
+// 以维持 src/index.ts 公共 API 兼容（类型定义本身在 memoryAdvisor.ts）
 export type {
   SourceHealthStatus,
   SourceHealthEntry,
@@ -165,25 +156,22 @@ export class MemoryInspector {
   private vectorStore: IVectorStore | null = null;
   /** 关系存储（可选，ADR-014 侧车，未注入时关系方法静默降级） */
   private readonly relationStore: IMemoryRelationStore | null;
-  /** 记忆顾问（sourceHealth + suggest 委托） */
-  private readonly advisor: MemoryAdvisor;
 
   /**
+   * FIX-P1-3（2026-07-24）：移除 advisor 参数，sourceHealth/suggest 改由
+   * Agent 直接委托 MemoryAdvisor（与 detectConflicts 同模式），消除 3 层代理。
+   *
    * @param index - 记忆存储（用于读写操作）
    * @param loop - AgentLoop（用于获取工作记忆）
    * @param history - MessageHistory（用于获取当前会话信息）
-   * @param advisor - 记忆顾问（组合根一致性，由 assembler.ts 显式注入，必填）
    * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系方法降级返回空/no-op）
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly loop: AgentLoop,
     private readonly history: MessageHistory,
-    advisor: MemoryAdvisor,
     relationStore: IMemoryRelationStore | null = null,
   ) {
-    // 组合根一致性——advisor 由 assembler.ts 显式注入（必填，不再内部创建）
-    this.advisor = advisor;
     this.relationStore = relationStore;
   }
 
@@ -616,32 +604,14 @@ export class MemoryInspector {
     return this.relationStore.getAllRelations().length;
   }
 
-  // ─── 源健康诊断 + 关联推荐（委托给 MemoryAdvisor） ───
-
-  /**
-   * 记忆源健康诊断（委托给 MemoryAdvisor）
-   *
-   * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态）。
-   * 实现已迁移至 MemoryAdvisor，此处保留委托以维持 API 契约。
-   */
-  sourceHealth(): SourceHealthReport {
-    return this.advisor.sourceHealth();
-  }
-
-  /**
-   * 关联推荐（委托给 MemoryAdvisor）
-   *
-   * 基于 score + 时效性 + source 多样性推荐记忆。
-   * 实现已迁移至 MemoryAdvisor，此处保留委托以维持 API 契约。
-   *
-   * @param query - 可选的搜索关键词（提供时结合搜索结果推荐，省略时基于全局热度推荐）
-   * @param options - 推荐选项
-   */
-  suggest(query?: string, options?: SuggestOptions): SuggestHit[] {
-    return this.advisor.suggest(query, options);
-  }
-
-  // sourceHealth / suggest 保留转发以保持 agent.memory.xxx() 公共 API 统一入口语义。
+  // ─── 源健康诊断 + 关联推荐 ───
+  //
+  // FIX-P1-3（2026-07-24）：sourceHealth() / suggest() 已从此处删除。
+  // 调用方应通过 Agent 门面访问：
+  //   - agent.sourceHealth()  →  MemoryAdvisor.sourceHealth()
+  //   - agent.suggest(...)    →  MemoryAdvisor.suggest(...)
+  // 与 detectConflicts 同模式（agent.detectConflicts → advisor.detectConflicts），
+  // 消除"inspector 三层纯转发"的设计气味。
 
   // ─── 写操作（writeXxx 前缀，IMemoryStorage / IMemoryRelationStore 透传） ───
 
@@ -712,15 +682,56 @@ export class MemoryInspector {
   }
 
   /**
-   * 清理过期的软删除记忆
+   * 清理过期的软删除记忆（FIX-P0-2：统一编排关系清理）
    *
-   * 物理删除所有 deletedAt 早于 before 的记忆。
+   * 物理删除所有 deletedAt 早于 before 的记忆，并同步清理这些记忆的关系边。
    * 由宿主项目的定时器调用（默认 30 天保留期）。
+   *
+   * FIX-P0-2 修复说明：
+   *   原实现仅调用 `index.purgeExpired(before)` 物理删除记忆，不清理 memory_relations
+   *   表中的关系边，导致孤儿边残留。手动 purge 路径会清理关系，但自动清理路径遗漏。
+   *   本方法是统一协调点（已持有 relationStore 引用），先查询待清理记忆 → 逐个清理关系边
+   *   → 再物理删除记忆，保证两侧数据一致。
+   *
+   * 容错策略：
+   *   - relationStore 未注入时跳过关系清理，仅物理删除记忆（向后兼容）
+   *   - 单条关系清理失败不阻塞整体流程，记录 warn 日志后继续
    *
    * @param before 时间阈值，deletedAt 早于此值的记忆将被物理删除
    * @returns 被清理的记忆数量
    */
   writePurgeExpired(before: Date): number {
+    // 1. 先查询待清理的软删除记忆（listDeleted 不传 limit = 全部）
+    //    用 before 时间戳过滤，避免清理未过期的记忆
+    const beforeMs = before.getTime();
+    const candidates = this.index
+      .listDeleted()
+      .filter((m) => m.deletedAt && new Date(m.deletedAt).getTime() < beforeMs);
+
+    // 2. 关系清理：在物理删除前移除关系边，防止 memory_relations 残留孤儿边
+    //    relationStore 未注入时跳过（ADR-014 降级优先）
+    if (this.relationStore && candidates.length > 0) {
+      for (const m of candidates) {
+        try {
+          const removed = this.relationStore.removeRelationsByMemoryId(m.id);
+          if (removed > 0) {
+            logger.debug(
+              { memoryId: m.id, removedRelations: removed },
+              '自动清理过期记忆时清理了关系边',
+            );
+          }
+        } catch (err) {
+          // 单条关系清理失败不阻塞整体流程，记忆仍会被物理删除
+          // 孤儿边比记忆残留更可控（后续可由关系图谱治理任务清理）
+          logger.warn(
+            { err, memoryId: m.id },
+            '清理过期记忆的关系边失败，可能残留孤儿边',
+          );
+        }
+      }
+    }
+
+    // 3. 物理删除记忆（IMemoryStorage.purgeExpired 返回被清理的数量）
     return this.index.purgeExpired(before);
   }
 

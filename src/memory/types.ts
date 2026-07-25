@@ -158,6 +158,8 @@ export const SOURCE_LABELS = {
   WORK_PROJECTION: 'work-projection',
   /** 内容护栏规则（configDir/rules/guardrails/ 下的规则文件） */
   GUARDRAIL: 'guardrail',
+  /** 未知来源（inferSource 兜底值，文件路径未匹配已知目录时的默认标签） */
+  UNKNOWN: 'unknown',
 } as const;
 
 // ─── Source 校验（运行时函数已迁移到 sourceValidation.ts） ──

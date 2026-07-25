@@ -67,12 +67,13 @@ function createMockCtx(overrides?: {
     reject: vi.fn(async () => {}),
   };
   return {
-    agent: {
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => ({
       config,
       userProfile,
-    } as unknown as IpcContext['agent'],
-    sprite: {} as IpcContext['sprite'],
-    sessionStore: {} as IpcContext['sessionStore'],
+    }) as unknown as ReturnType<IpcContext['getAgent']>,
+    getSprite: () => ({}) as ReturnType<IpcContext['getSprite']>,
+    getSessionStore: () => ({}) as ReturnType<IpcContext['getSessionStore']>,
     windowManager: {} as IpcContext['windowManager'],
     trayManager: null,
     getAbortController: vi.fn(() => null),

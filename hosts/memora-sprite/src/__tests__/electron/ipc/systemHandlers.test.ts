@@ -63,17 +63,18 @@ import type { IpcContext } from '../../../electron/ipc/types.js';
 function createMockCtx(overrides?: {
   trayManager?: { setState: ReturnType<typeof vi.fn> } | null;
   floatWindow?: { broadcastTheme: ReturnType<typeof vi.fn> } | null;
-  sprite?: Partial<IpcContext['sprite']>;
-  agent?: Partial<IpcContext['agent']>;
+  sprite?: Partial<ReturnType<IpcContext['getSprite']>>;
+  agent?: Partial<ReturnType<IpcContext['getAgent']>>;
   usageStatsCollector?: { export: () => Promise<string>; clear: () => Promise<void> } | null;
 }): IpcContext {
   const floatWindow = overrides?.floatWindow ?? { broadcastTheme: vi.fn() };
   return {
-    agent: {
+    // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
+    getAgent: () => ({
       skills: { list: [] },
       ...overrides?.agent,
-    } as unknown as IpcContext['agent'],
-    sprite: {
+    }) as unknown as ReturnType<IpcContext['getAgent']>,
+    getSprite: () => ({
       dashboard: vi.fn(() => ({
         total: 10,
         bySource: { insight: 5, profile: 5 },
@@ -90,8 +91,8 @@ function createMockCtx(overrides?: {
       getPerceptionSnapshot: vi.fn(() => ({ affect: { warmth: 0.5 } })),
       getStartupSummary: vi.fn(() => ({ totalMemories: 10 })),
       ...overrides?.sprite,
-    } as unknown as IpcContext['sprite'],
-    sessionStore: {} as IpcContext['sessionStore'],
+    }) as unknown as ReturnType<IpcContext['getSprite']>,
+    getSessionStore: () => ({}) as ReturnType<IpcContext['getSessionStore']>,
     windowManager: {
       getFloatWindow: vi.fn(() => floatWindow),
     } as unknown as IpcContext['windowManager'],

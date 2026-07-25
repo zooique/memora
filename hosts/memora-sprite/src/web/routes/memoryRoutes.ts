@@ -272,7 +272,8 @@ export async function handleMemoryRoute(
         sendError(res, 400, 'id 必填且长度不超过 500');
         return;
       }
-      const purged = ctx.sprite.purgeMemory(id);
+      // purgeMemory 为 async：vectorStore.delete 立即 save 持久化删除结果
+      const purged = await ctx.sprite.purgeMemory(id);
       sendJson(res, 200, { purged });
       return;
     }

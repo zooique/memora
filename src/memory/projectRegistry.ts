@@ -10,7 +10,9 @@
  * 设计原则：
  *   - 纯文件系统操作，无锁机制（锁由 LockManager 负责）
  *   - 同步 I/O（list getter 契约要求同步返回；注册表操作低频，影响可控）
- *   - 损坏降级：解析失败返回空列表 + 警告日志，不抛异常
+ *   - 损坏语义区分（FIX-P0-3）：文件不存在 = 首次启动返回空列表；文件损坏 = 抛出
+ *     ProjectRegistryCorruptError 让调用方决策。list getter 只读降级返回空，
+ *     register/unregister 写入路径必须抛错传播，防止用空数据覆盖原文件导致数据丢失
  *
  * 与 ProjectManager 的分工（1.0 接口稳定化）：
  *   - ProjectRegistry：注册表读写 + 条目管理 + 名称推断
@@ -20,7 +22,6 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';
-import { toError } from '@/utils/toError.js';
 import { nowIso } from '@/utils/time.js';
 import { isPlainObject } from '@/utils/objects.js';
 
@@ -36,6 +37,31 @@ export interface ProjectEntry {
   name: string;
   /** 最后打开时间 */
   lastOpened: string;
+}
+
+/**
+ * 项目注册表损坏错误
+ *
+ * FIX-P0-3：当磁盘上的 projects.json 存在但内容无法解析（JSON 语法错误或结构
+ * 不符合 ProjectEntry[] 契约）时抛出。与"文件不存在"语义区分——后者是首次启动
+ * 的正常情况，前者意味着数据可能丢失，需要调用方决策（备份/重建/中止）。
+ *
+ * 设计意图：
+ *   - register/unregister 路径必须让此错误向上传播，避免用空数据覆盖损坏文件
+ *   - list getter 可捕获此错误降级返回空数组（只读操作，不破坏数据）
+ */
+export class ProjectRegistryCorruptError extends Error {
+  /** 损坏文件的绝对路径，便于备份/排查 */
+  readonly registryPath: string;
+  /** 底层错误（JSON 解析错误或类型校验错误），可能为 undefined */
+  readonly cause?: unknown;
+
+  constructor(registryPath: string, cause?: unknown) {
+    super(`项目注册表损坏：${registryPath}`);
+    this.name = 'ProjectRegistryCorruptError';
+    this.registryPath = registryPath;
+    this.cause = cause;
+  }
 }
 
 // ─── 类型守卫（QC-24，对不可信磁盘 JSON 运行时校验） ─────
@@ -58,13 +84,24 @@ function isProjectEntry(value: unknown): value is ProjectEntry {
 /**
  * 判断值是否为 ProjectEntry 数组
  *
- * 过滤掉不符合结构的条目，仅保留合法条目
+ * 顶层必须为数组，否则视为注册表结构损坏（抛错让调用方决策）。
+ * 数组内个别条目不合法时仅过滤保留合法条目（容错：单条损坏不毁全部）。
+ *
+ * FIX-P0-3：顶层非数组不再静默返回空，而是抛 ProjectRegistryCorruptError，
+ * 避免 register 用空数据覆盖原文件导致全部项目记录永久丢失。
  *
  * @param value 待校验的值
- * @returns 解析后的合法条目数组（损坏时返回空数组）
+ * @param registryPath 注册表路径（用于错误信息）
+ * @returns 解析后的合法条目数组
+ * @throws {ProjectRegistryCorruptError} 顶层非数组时抛出
  */
-function asProjectEntryArray(value: unknown): ProjectEntry[] {
-  if (!Array.isArray(value)) return [];
+function asProjectEntryArray(value: unknown, registryPath: string): ProjectEntry[] {
+  if (!Array.isArray(value)) {
+    throw new ProjectRegistryCorruptError(
+      registryPath,
+      new Error(`注册表顶层应为数组，实际类型：${typeof value}`),
+    );
+  }
   return value.filter(isProjectEntry);
 }
 
@@ -84,9 +121,26 @@ export class ProjectRegistry {
 
   /**
    * 列出已注册的项目（同步读取，契约要求 getter 风格）
+   *
+   * FIX-P0-3：list 是只读操作，损坏时降级返回空数组（UI 显示空列表）。
+   * 与 register/unregister 不同——只读不会用空数据覆盖原文件，降级是安全的。
+   * 损坏错误记录 warn 日志便于排查，但不向上抛出避免 UI 崩溃。
    */
   get list(): ProjectEntry[] {
-    return this.read();
+    try {
+      return this.read();
+    } catch (err) {
+      // 只读降级：损坏时返回空列表，UI 显示"无项目"，但不会破坏磁盘数据
+      if (err instanceof ProjectRegistryCorruptError) {
+        logger.warn(
+          { path: err.registryPath, cause: err.cause },
+          '项目注册表损坏，list getter 降级返回空列表（只读，不破坏数据）',
+        );
+        return [];
+      }
+      // 非 ProjectRegistryCorruptError 的意外错误仍向上抛出
+      throw err;
+    }
   }
 
   /**
@@ -148,35 +202,50 @@ export class ProjectRegistry {
    * 读取项目注册表
    *
    * 同步读取：list getter 契约要求同步返回，注册表操作低频，同步 I/O 影响可控。
-   * 损坏时返回空数组并记录警告日志，避免静默吞错掩盖磁盘故障。
+   *
+   * FIX-P0-3：语义区分——
+   *   - 文件不存在：返回空数组（首次启动的正常情况）
+   *   - 文件损坏（JSON 解析失败或顶层非数组）：抛出 ProjectRegistryCorruptError
+   *     让调用方决策。register/unregister 不捕获此错误，避免用空数据覆盖原文件。
+   *   - 数组内个别条目不合法：仅过滤保留合法条目（容错，不抛错）
+   *
+   * @returns 项目注册表条目数组
+   * @throws {ProjectRegistryCorruptError} 文件存在但内容损坏时抛出
    */
   private read(): ProjectEntry[] {
+    // 文件不存在 = 首次启动，返回空数组（正常情况，不抛错）
     if (!existsSync(this.registryPath)) {
       return [];
     }
 
+    let raw: string;
     try {
-      const raw = readFileSync(this.registryPath, 'utf-8');
-      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as ProjectEntry[]` 类型断言
-      // 过滤掉不符合结构的条目，仅保留合法条目
-      const parsed: unknown = JSON.parse(raw);
-      const entries = asProjectEntryArray(parsed);
-      if (entries.length === 0 && Array.isArray(parsed) && parsed.length > 0) {
-        // 数组存在但所有条目都不合法，记录警告
-        logger.warn(
-          { path: this.registryPath, totalEntries: parsed.length },
-          '项目注册表所有条目结构不合法，返回空列表',
-        );
-      }
-      return entries;
+      raw = readFileSync(this.registryPath, 'utf-8');
     } catch (err) {
-      // 注册表损坏：记录警告日志便于排查（不存在属正常首次启动，损坏需排查）
-      logger.warn(
-        { path: this.registryPath, err: toError(err).message },
-        '项目注册表解析失败，返回空列表',
-      );
-      return [];
+      // 文件存在但读取失败（权限/磁盘故障），视为损坏
+      throw new ProjectRegistryCorruptError(this.registryPath, err);
     }
+
+    let parsed: unknown;
+    try {
+      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as ProjectEntry[]` 类型断言
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      // JSON 语法错误 = 文件整体损坏，抛错让调用方决策（备份/重建/中止）
+      throw new ProjectRegistryCorruptError(this.registryPath, err);
+    }
+
+    // 顶层非数组也视为损坏（asProjectEntryArray 内部抛 ProjectRegistryCorruptError）
+    // 数组内个别条目不合法时仅过滤保留合法条目（容错：单条损坏不毁全部）
+    const entries = asProjectEntryArray(parsed, this.registryPath);
+    if (entries.length === 0 && Array.isArray(parsed) && parsed.length > 0) {
+      // 数组存在但所有条目都不合法，记录警告（仍返回空，因为是单条容错的极端情况）
+      logger.warn(
+        { path: this.registryPath, totalEntries: parsed.length },
+        '项目注册表所有条目结构不合法，返回空列表',
+      );
+    }
+    return entries;
   }
 
   /**

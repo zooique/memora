@@ -12,7 +12,7 @@ import { ipcMain } from 'electron';
 import { logger, toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
-import { throwingHandle } from './types.js';
+import { throwingHandle, requireSprite, requireAgent } from './types.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -36,7 +36,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    * 更新 ProactiveEngine 的接受率，重新推导情感基调（主动度提升）。
    */
   ipcMain.on(IPC_CHANNELS.PROACTIVE_ACCEPT, () => {
-    ctx.sprite.recordProactiveAccept();
+    ctx.getSprite()?.recordProactiveAccept();
   });
 
   /**
@@ -46,14 +46,14 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    * 更新 ProactiveEngine 的连续拒绝计数（自适应冷却）。
    */
   ipcMain.on(IPC_CHANNELS.PROACTIVE_REJECT, () => {
-    ctx.sprite.recordProactiveReject();
+    ctx.getSprite()?.recordProactiveReject();
   });
 
   // ─── 项目管理（项目模式） ──────────────────────────
 
   /** 列出已注册项目（供 UI 专注模式选择器使用） */
   ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () =>
-    throwingHandle('获取项目列表失败', () => ({ projects: ctx.sprite.listProjects() })),
+    throwingHandle('获取项目列表失败', () => ({ projects: requireSprite(ctx).listProjects() })),
   );
 
   // ─── 仪表盘（UI 完整仪表盘） ──────────────────────
@@ -72,11 +72,13 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.DASHBOARD_GET, () => {
     try {
-      const data = ctx.sprite.dashboard();
+      // 缓存 Sprite 实例：本 handler 内多次调用，统一取一次避免重复调用 getter
+      const sprite = requireSprite(ctx);
+      const data = sprite.dashboard();
       // 记忆源健康诊断（消费内核 sourceHealth()，为宿主提供每个 source 的质量指标）
       let sourceHealth = null;
       try {
-        sourceHealth = ctx.sprite.sourceHealth();
+        sourceHealth = sprite.sourceHealth();
       } catch (err) {
         // 降级：sourceHealth 不可用时仪表盘仍正常返回，debug 级别避免日志噪音
         logger.debug({ err: toError(err).message }, 'sourceHealth 获取失败，降级为 null');
@@ -84,14 +86,14 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       // Agent 运行时指标（消费内核 agent.getMetrics()）
       let metrics = null;
       try {
-        metrics = ctx.sprite.getMetrics();
+        metrics = sprite.getMetrics();
       } catch (err) {
         // 降级：metrics 不可用时仪表盘仍正常返回，debug 级别避免日志噪音
         logger.debug({ err: toError(err).message }, 'metrics 获取失败，降级为 null');
       }
       // 已加载技能列表（消费内核 agent.skills.list）
       // agent.skills 可能为 null（Agent 未配置技能时），使用可选链 + 空数组降级
-      const skills = ctx.agent.skills?.list.map((s) => ({
+      const skills = requireAgent(ctx).skills?.list.map((s) => ({
         name: s.name,
         keywords: s.keywords,
         description: s.description ?? '',
@@ -101,9 +103,9 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         total: data.total,
         bySource: data.bySource,
         suggestions: data.suggestions,
-        pendingNotices: ctx.sprite.pendingCount,
-        proactiveThreshold: ctx.sprite.proactiveThreshold,
-        registeredTriggers: ctx.sprite.registeredTriggers,
+        pendingNotices: sprite.pendingCount,
+        proactiveThreshold: sprite.proactiveThreshold,
+        registeredTriggers: sprite.registeredTriggers,
         sourceHealth,
         metrics,
         skills,
@@ -123,7 +125,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.MEMORY_DECAY_RUN, () => {
     try {
-      ctx.sprite.triggerDecayRun();
+      requireSprite(ctx).triggerDecayRun();
       return { success: true };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '手动触发记忆衰减失败' });
@@ -139,7 +141,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.PERCEPTION_GET, () => {
     try {
-      return ctx.sprite.getPerceptionSnapshot() ?? {};
+      return requireSprite(ctx).getPerceptionSnapshot() ?? {};
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取感知数据失败' });
       return {};
@@ -156,7 +158,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.STARTUP_SUMMARY_GET, () => {
     try {
-      return ctx.sprite.getStartupSummary();
+      return requireSprite(ctx).getStartupSummary();
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取启动摘要失败' });
       return null;

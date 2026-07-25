@@ -19,6 +19,7 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
+import { isAbortError } from '@/utils/errors.js';
 
 /** ContextManager 构造选项（模块私有，0 外部 import） */
 interface ContextManagerOptions {
@@ -448,8 +449,7 @@ export class ContextManager {
       return `[Context summary of earlier conversation]\n${summary}`;
     } catch (err) {
       // AbortError 是用户主动取消，降级为无摘要，不当作错误
-      const isAbort = err instanceof Error && err.name === 'AbortError';
-      if (isAbort) {
+      if (isAbortError(err)) {
         summarySpan.setAttribute('aborted', true);
         logger.debug('上下文摘要生成被中断，降级为无摘要');
         return '';

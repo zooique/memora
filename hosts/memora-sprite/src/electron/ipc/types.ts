@@ -10,6 +10,9 @@ import type { Sprite } from '../../sprite/sprite.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import type { BrowserWindow } from 'electron';
 import type { TrayManager } from '../trayIcon.js';
+// errorHandler + SpriteError + ErrorCode：errorHandler 用于 safeHandle/throwingHandle 兜底；
+// SpriteError/ErrorCode 用于 requireAgent/requireSprite/requireSessionStore 运行时抛错
+import { errorHandler, SpriteError, ErrorCode } from '../errorHandler.js';
 
 /**
  * FloatWindow 的 IPC 层视图
@@ -48,21 +51,29 @@ import type { ShortcutManager } from '../shortcuts.js';
 import type { UsageStatsCollector } from '../../sprite/usage/usageStatsCollector.js';
 // AuditManager 用于 MinimalIpcState（Agent 未就绪时审计日志降级处理）
 import type { AuditManager } from '../../sprite/audit/auditManager.js';
-import { errorHandler, ErrorCode } from '../errorHandler.js';
 
 /**
  * IPC 处理器上下文
  *
  * 封装所有 IPC 处理器需要的依赖，由 main.ts 注入。
  * 仅在 Agent 就绪后注册完整 IPC（配置缺失时由 main.ts 注册最小化 IPC）。
+ *
+ * 可变运行时字段（agent/sprite/sessionStore）统一以函数式 getter 暴露：
+ * reinitAgent 时这些实例会重建，闭包捕获会导致 IPC handler 持有旧实例；
+ * getter 内部实时查询 appState，IPC handler 一次注册终身使用，无需重注册。
+ *
+ * 返回类型显式标注 | null：reinitAgent 失败时 setAppRuntime(null) 会置空，
+ * 调用方必须显式处理 null 分支（Agent 已关闭的降级场景）。
+ * 对话入口（chatStreamHandler）通过 isAgentReady 守卫提前拦截，避免在
+ * 未就绪状态下调用 getAgent()；查询类 handler 读到 null 时返回错误响应。
  */
 export interface IpcContext {
-  /** Agent 实例（对话 + 记忆） */
-  agent: Agent;
-  /** Sprite 实例（精灵控制 + 配置 + 角色） */
-  sprite: Sprite;
-  /** 会话存储（历史消息加载） */
-  sessionStore: SqliteSessionStore;
+  /** 获取 Agent 实例（对话 + 记忆）。reinitAgent 后返回新实例；reinit 失败或未就绪时返回 null */
+  getAgent: () => Agent | null;
+  /** 获取 Sprite 实例（精灵控制 + 配置 + 角色）。reinitAgent 后返回新实例；reinit 失败或未就绪时返回 null */
+  getSprite: () => Sprite | null;
+  /** 获取会话存储（历史消息加载）。reinitAgent 后返回新实例；reinit 失败或未就绪时返回 null */
+  getSessionStore: () => SqliteSessionStore | null;
   /** 窗口管理器（获取窗口引用） */
   windowManager: WindowManagerLike;
   /** 托盘管理器（主动提示时脉冲） */
@@ -152,6 +163,52 @@ export async function throwingHandle<T>(
     errorHandler.handle(error, { code, context });
     throw error;
   }
+}
+
+// ─── 运行时实例获取工具 ─────────────────────────────────
+// 区段说明：getAgent/getSprite/getSessionStore 返回 | null，调用方需显式处理 null。
+// throwingHandle/safeHandle 包装的 handler 用 require* 工具函数（null 抛 SpriteError）；
+// ipcMain.on 事件类（无错误处理包装）用可选链静默降级。
+
+/**
+ * 获取 Agent 实例，未就绪时抛 SpriteError
+ *
+ * 用于 throwingHandle/safeHandle 包装的查询/操作类 handler。
+ * 抛出的 SpriteError 会被上层 throwingHandle/safeHandle 捕获并转换为
+ * 用户友好的错误响应，调用方无需额外 try/catch。
+ */
+export function requireAgent(ctx: IpcContext): Agent {
+  const agent = ctx.getAgent();
+  if (!agent) {
+    throw new SpriteError(ErrorCode.INITIALIZATION_FAILED, 'Agent 未就绪，请稍后重试或检查 LLM 配置');
+  }
+  return agent;
+}
+
+/**
+ * 获取 Sprite 实例，未就绪时抛 SpriteError
+ *
+ * 与 requireAgent 同模式，用于 throwingHandle/safeHandle 包装的 handler。
+ */
+export function requireSprite(ctx: IpcContext): Sprite {
+  const sprite = ctx.getSprite();
+  if (!sprite) {
+    throw new SpriteError(ErrorCode.INITIALIZATION_FAILED, '精灵未就绪，请稍后重试或检查 LLM 配置');
+  }
+  return sprite;
+}
+
+/**
+ * 获取会话存储，未就绪时抛 SpriteError
+ *
+ * 与 requireAgent 同模式，用于 throwingHandle/safeHandle 包装的 handler。
+ */
+export function requireSessionStore(ctx: IpcContext): SqliteSessionStore {
+  const store = ctx.getSessionStore();
+  if (!store) {
+    throw new SpriteError(ErrorCode.INITIALIZATION_FAILED, '会话存储未就绪，请稍后重试或检查 LLM 配置');
+  }
+  return store;
 }
 
 // ─── IPC 数据传输类型 ────────────────────────────────────
@@ -261,7 +318,7 @@ export interface MinimalIpcCallbacks {
   /** 集中赋值 agent/sprite/sessionStore/closeSprite */
   setAppRuntime: (runtime: AppRuntime | null) => void;
   /** Agent 就绪后初始化（注册完整 IPC + 事件监听） */
-  setupAgentReady: (agent: Agent, sprite: Sprite, sessionStore: SqliteSessionStore, dataDir: string) => void;
+  setupAgentReady: (agent: Agent, sprite: Sprite, dataDir: string) => void;
   /** 统一错误分类 */
   classifyInitError: (errMessage: string, prefix: string) => string;
   /** 获取当前 Agent 实例（用于运行时切换 Provider） */

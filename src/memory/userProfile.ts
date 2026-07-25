@@ -28,15 +28,42 @@ export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' 
 const VALID_PROFILE_CATEGORIES: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
 
 /**
+ * 从 value 字符串前缀提取字段名（兼容旧数据）
+ *
+ * 旧数据 value 格式为 "字段名: 值"（如 "姓名: 张三"），fieldName 未显式存储。
+ * 本函数从 value 前缀提取字段名，用于：
+ *   - parseContentField 降级路径（旧 JSON 数据无 fieldName 字段）
+ *   - removeConflictingEntries 兼容旧持久化数据
+ *
+ * @param value 事实值（可能含 "字段名: " 前缀）
+ * @returns 提取的字段名；无法提取时返回 'unknown'（冲突检测会跳过该条目）
+ */
+function extractFieldNameFromValue(value: string): string {
+  const prefix = (value.split(':')[0] ?? '').trim();
+  return prefix || 'unknown';
+}
+
+/** profile content JSON 结构（含可选 fieldName，兼容旧数据） */
+interface ProfileContent {
+  category: ProfileCategory;
+  value: string;
+  /** 显式字段名，新数据必填；旧数据可能缺失，由 parseContentField 降级从 value 前缀提取 */
+  fieldName?: string;
+}
+
+/**
  * 类型守卫：检查未知对象是否为合法的 profile content 结构
  *
  * 替代 `as { category?: string; value?: string }` 断言，
  * 与 lockManager/projectRegistry 的类型守卫风格一致。
  *
+ * fieldName 为可选字段（旧数据可能缺失），不参与结构校验，
+ * 由 parseContentField 决定降级策略。
+ *
  * @param obj 从 JSON.parse 得到的未知对象
  * @returns obj 是否为 { category: ProfileCategory; value: string } 结构
  */
-function isProfileContent(obj: unknown): obj is { category: ProfileCategory; value: string } {
+function isProfileContent(obj: unknown): obj is ProfileContent {
   if (typeof obj !== 'object' || obj === null) return false;
   const record = obj as Record<string, unknown>;
   return (
@@ -52,6 +79,13 @@ export interface UserProfileEntry {
   id: string;
   /** 子分类 */
   category: ProfileCategory;
+  /**
+   * 显式字段名
+   *
+   * 标识同 category 下的具体字段（如 identity 下 "姓名"/"住址"/"职业"），
+   * 用于冲突检测——同 category + 同 fieldName 视为同一字段的更新。
+   */
+  fieldName: string;
   /** 事实值（如 "姓名: 张三"） */
   value: string;
   /** 来源（哪一轮对话提到） */
@@ -67,6 +101,14 @@ export interface UserProfileEntry {
 /** extractUserFacts 的原始提取结果 */
 export interface ExtractedFact {
   category: ProfileCategory;
+  /**
+   * 显式字段名
+   *
+   * 由提取器显式填充（如 "姓名"/"住址"/"职业"/"偏好"/"工具"/"专长"），
+   * 冲突检测基于 category + fieldName，即使 value 格式变化（如 LLM 输出无前缀），
+   * 仍能正确识别冲突。
+   */
+  fieldName: string;
   value: string;
   sourceTurn: string;
   /** 置信度 0-1（≥0.8 直接归档，否则标记待确认） */
@@ -101,6 +143,8 @@ export class UserProfile {
       const entry: UserProfileEntry = {
         id: m.id,
         category: parsed.category,
+        // fieldName 由 parseContentField 统一填充（新数据直接读，旧数据从 value 前缀降级提取）
+        fieldName: parsed.fieldName,
         value: parsed.value,
         source: '',
         weight: m.score,
@@ -253,6 +297,8 @@ export class UserProfile {
     const entry: UserProfileEntry = {
       id,
       category: fact.category,
+      // 显式存储 fieldName，供冲突检测使用
+      fieldName: fact.fieldName,
       value: fact.value,
       source: fact.sourceTurn,
       weight: 1.0,
@@ -287,52 +333,51 @@ export class UserProfile {
   }
 
   /**
-   * 删除同分类的旧条目（用户更新了信息）
+   * 删除同分类同字段的旧条目（用户更新了信息）
    *
-   * 当用户说"我叫李四"替换之前的"我叫张三"时，移除旧的 identity 条目。
-   * 策略：同分类（category）下，新值替换旧值。判断标准是旧条目的 value 前缀。
+   * 当用户说"我叫李四"替换之前的"我叫张三"时，移除旧的 identity/姓名 条目。
    *
-   * 从 content JSON 解码 category，替代 name 字段隐式解析。
-   * 构建 contentPrefix → entry 的 Map 索引，冲突检测从 O(n*m) 降为 O(m)。
+   * 冲突判定基于 `category + fieldName`：
+   * - 新数据：fact.fieldName 由提取器显式填充，parseContentField 返回 parsed.fieldName
+   * - 旧数据：parseContentField 降级从 value 前缀提取 fieldName（兼容历史持久化数据）
+   * - 同 category + 同 fieldName + 不同 value = 用户更新了该字段，删除旧条目
+   *
+   * 构建 `category:fieldName` → Memory[] 的 Map 索引，冲突检测从 O(n*m) 降为 O(m)。
    *
    * @param fact 当前提取到的新事实
    */
   private async removeConflictingEntries(fact: ExtractedFact): Promise<void> {
     try {
       const existing = this.index.getBySource(SOURCE_LABELS.PROFILE);
-      // 提取新事实的核心模式（如 "姓名: 李四" → 前缀 "姓名"）
-      const newPrefix = (fact.value.split(':')[0] ?? '').trim();
 
-      // 构建 contentPrefix → Memory 的 Map 索引，冲突检测降为 O(m)
-      const prefixIndex = new Map<string, Memory[]>();
+      // 构建 `category:fieldName` → Memory[] 的 Map 索引，冲突检测降为 O(m)
+      const fieldIndex = new Map<string, Memory[]>();
       for (const m of existing) {
-        // 从 content JSON 解码 category，替代 parseNameField
         const parsed = this.parseContentField(m.content, m.name);
         if (parsed.category !== fact.category) continue;
-        const oldPrefix = (parsed.value.split(':')[0] ?? '').trim();
-        if (!oldPrefix) continue;
-        const key = `${parsed.category}:${oldPrefix}`;
-        const list = prefixIndex.get(key);
+        if (!parsed.fieldName) continue;
+        const key = `${parsed.category}:${parsed.fieldName}`;
+        const list = fieldIndex.get(key);
         if (list) {
           list.push(m);
         } else {
-          prefixIndex.set(key, [m]);
+          fieldIndex.set(key, [m]);
         }
       }
 
-      // 在索引中查找冲突条目
-      const conflictKey = `${fact.category}:${newPrefix}`;
-      const conflicts = prefixIndex.get(conflictKey);
+      // 在索引中查找同 category + 同 fieldName 的冲突条目
+      const conflictKey = `${fact.category}:${fact.fieldName}`;
+      const conflicts = fieldIndex.get(conflictKey);
       if (conflicts) {
         for (const m of conflicts) {
           const parsed = this.parseContentField(m.content, m.name);
           if (parsed.value !== fact.value) {
             this.index.delete(m.id);
-            // BUGFIX: 同步删除内存缓存中的旧条目，避免"只删 storage 不删 cache"
-            // 导致 getConfirmed() 仍返回已被替换的旧值（如"我叫张三"→"我叫李四"后张三仍在）
+            // 同步删除内存缓存中的旧条目，避免 storage 与 cache 不一致
+            // 导致 getConfirmed() 仍返回已被替换的旧值
             this.cache.delete(m.id);
             logger.info(
-              { oldId: m.id, oldValue: parsed.value, newValue: fact.value },
+              { oldId: m.id, oldValue: parsed.value, newValue: fact.value, fieldName: fact.fieldName },
               '用户画像冲突已解决',
             );
           }
@@ -347,7 +392,7 @@ export class UserProfile {
   /**
    * 将 UserProfileEntry 转为 Memory（用于写入 SQLite）
    *
-   * content 字段使用 JSON 编码存储 category + value 元数据，
+   * content 字段使用 JSON 编码存储 category + value + fieldName 元数据，
    * name 字段为固定可读标签，category 通过 content 的 JSON 元数据显式编码。
    * 确认状态：仅已确认条目调用此方法（待确认条目不写入存储）
    */
@@ -355,7 +400,12 @@ export class UserProfile {
     const now = nowIso();
     return {
       id: entry.id,
-      content: JSON.stringify({ category: entry.category, value: entry.value }),
+      // 序列化 fieldName，与 parseContentField 反序列化对称
+      content: JSON.stringify({
+        category: entry.category,
+        value: entry.value,
+        fieldName: entry.fieldName,
+      }),
       source: SOURCE_LABELS.PROFILE,
       name: `用户画像-${entry.category}`,
       createdAt: now,
@@ -365,24 +415,33 @@ export class UserProfile {
   }
 
   /**
-   * 从 content 字段解析 category 和 value
+   * 从 content 字段解析 category / value / fieldName
    *
    * 优先从 content JSON 解码元数据，降级到旧格式 name 字段解析，
    * 确保已有 SQLite 数据（旧格式 name="${category}: ${value}"）兼容加载。
    *
+   * fieldName 解析优先级：
+   *   1. content JSON 含 fieldName → 直接返回（新数据）
+   *   2. content JSON 无 fieldName → 从 value 前缀提取（旧 JSON 数据，无 fieldName 字段）
+   *   3. name 字段旧格式 → 从 value 前缀提取
+   *   4. 最终降级 → fieldName = 'unknown'（无法识别字段名，冲突检测会跳过）
+   *
    * @param content Memory 的 content 字段（新格式为 JSON，旧格式为纯 value）
    * @param name Memory 的 name 字段（旧格式为 "${category}: ${value}"）
-   * @returns 解析出的 category 和 value
+   * @returns 解析出的 category / value / fieldName
    */
   private parseContentField(content: string, name: string): {
     category: ProfileCategory;
     value: string;
+    fieldName: string;
   } {
     // 优先尝试 JSON 解码（新格式）
     try {
       const parsed = JSON.parse(content);
       if (isProfileContent(parsed)) {
-        return { category: parsed.category, value: parsed.value };
+        // 新数据含 fieldName 直接返回；旧 JSON 数据无 fieldName 时从 value 前缀降级提取
+        const fieldName = parsed.fieldName ?? extractFieldNameFromValue(parsed.value);
+        return { category: parsed.category, value: parsed.value, fieldName };
       }
     } catch {
       // content 不是 JSON，降级到旧格式
@@ -393,13 +452,15 @@ export class UserProfile {
     if (idx >= 0) {
       const category = name.slice(0, idx).trim() as ProfileCategory;
       if (VALID_PROFILE_CATEGORIES.includes(category)) {
-        const value = name.slice(idx + 1).trim();
-        return { category, value: value || content };
+        const value = name.slice(idx + 1).trim() || content;
+        // 旧格式数据无 fieldName，从 value 前缀提取（如 "姓名: 张三" → "姓名"）
+        return { category, value, fieldName: extractFieldNameFromValue(value) };
       }
     }
 
     // 最终降级：默认 history 分类（中性默认，避免 identity 高敏感类别污染画像）
-    return { category: 'history', value: content };
+    // fieldName = 'unknown'：无法识别字段名，removeConflictingEntries 会跳过该条目
+    return { category: 'history', value: content, fieldName: 'unknown' };
   }
 
   /**

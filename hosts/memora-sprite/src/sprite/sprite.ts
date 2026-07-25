@@ -1040,7 +1040,7 @@ export class Sprite {
     return this.memoryController.restore(id);
   }
 
-  purgeMemory(id: string): boolean {
+  purgeMemory(id: string): Promise<boolean> {
     return this.memoryController.purge(id);
   }
 
@@ -1048,7 +1048,7 @@ export class Sprite {
     return this.memoryController.restoreAll();
   }
 
-  purgeAllMemories(): { purged: number; failed: number } {
+  purgeAllMemories(): Promise<{ purged: number; failed: number }> {
     return this.memoryController.purgeAll();
   }
 
@@ -1175,7 +1175,8 @@ export class Sprite {
   }
 
   sourceHealth() {
-    return this.agent.memory?.sourceHealth() ?? null;
+    // sourceHealth 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    return this.agent.sourceHealth() ?? null;
   }
 
   getMetrics(): AgentMetrics {
@@ -1234,7 +1235,8 @@ export class Sprite {
     const dashboard = this.memoryController.dashboard();
     const metrics = this.agent.getMetrics();
     const snapshot = this.perceptionCoordinator.getSnapshot();
-    const sourceHealth = this.agent.memory?.sourceHealth();
+    // sourceHealth 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    const sourceHealth = this.agent.sourceHealth();
     const skillCount = this.agent.skills?.list.length ?? 0;
 
     return {

@@ -131,6 +131,21 @@ export class MemoryDecayScheduler {
   private decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 衰减目标存储（start 时注入，stop 时释放） */
   private storage: IMemoryStorageLike | null = null;
+  /**
+   * L2 时效性评估的 AbortController
+   *
+   * FIX-P0-1：stop() 时 abort，让正在进行的 evaluateTimeliness 尽快结束，
+   * 防止 close 后 LLM 回调 upsert 已关闭的 storage。
+   * 每次 evaluateTimeliness 启动时重置为新的 controller。
+   */
+  private evaluateAbortController: AbortController | null = null;
+  /**
+   * 当前正在进行的 evaluateTimeliness Promise（null 表示无）
+   *
+   * FIX-P0-1：close() 通过 awaitInflight() 等待此 Promise 完成，
+   * 确保关闭时所有 L2 评估的 upsert 都落在 storage 关闭前。
+   */
+  private inflightEvaluate: Promise<TimelinessReport> | null = null;
 
   // ─── 衰减指标统计字段 ──────────────────────────────────
   /** 衰减执行次数（每次 runOnce 实际执行 +1） */
@@ -165,14 +180,43 @@ export class MemoryDecayScheduler {
   /**
    * 停止定期衰减，释放资源
    *
-   * 清理定时器和 storage 引用，防止 close 后回调触发。
+   * FIX-P0-1：清理定时器 + abort 正在进行的 L2 时效性评估 + 释放 storage 引用，
+   * 防止 close 后回调触发 upsert 已关闭的 storage。
+   *
+   * 注意：stop() 不等待 inflightEvaluate 完成（避免阻塞 close 流程），
+   * 调用方如需等待应使用 awaitInflight()。abort 后 LLM 调用会快速失败，
+   * evaluateTimeliness 内部的 try/catch 会捕获并降级返回。
    */
   stop(): void {
     if (this.decayTimer) {
       clearSafeInterval(this.decayTimer);
       this.decayTimer = null;
     }
+    // FIX-P0-1：abort 正在进行的 L2 评估，让 LLM 调用快速失败
+    if (this.evaluateAbortController) {
+      this.evaluateAbortController.abort();
+      this.evaluateAbortController = null;
+    }
     this.storage = null;
+  }
+
+  /**
+   * 等待正在进行的 L2 时效性评估完成
+   *
+   * FIX-P0-1：Agent.close() 在 stop() 后调用此方法，确保所有 inflight 的
+   * evaluateTimeliness Promise 完成（要么正常返回，要么因 abort 快速 reject），
+   * 防止 close 后 LLM 回调 upsert 已关闭的 storage。
+   *
+   * @returns 完成 Promise，无 inflight 时立即 resolve
+   */
+  async awaitInflight(): Promise<void> {
+    if (this.inflightEvaluate) {
+      try {
+        await this.inflightEvaluate;
+      } catch {
+        // abort 导致的 reject 是预期行为，吞掉即可
+      }
+    }
   }
 
   /**
@@ -245,7 +289,11 @@ export class MemoryDecayScheduler {
    *   - 单条 LLM 失败不阻塞后续评估
    *   - backgroundProvider / index 未注入时静默跳过（向后兼容）
    *
-   * @param signal 可选的 AbortSignal（取消正在进行的 LLM 评估）
+   * FIX-P0-1：每次启动评估创建新的 AbortController，注册到 inflightEvaluate。
+   * stop() 时 abort 让 LLM 调用快速失败，awaitInflight() 等待 Promise 完成。
+   * 外部 signal 仍可与内部 abort 信号同时使用（任一触发即取消）。
+   *
+   * @param signal 可选的外部 AbortSignal（与内部 abort 信号叠加，任一触发即取消）
    * @returns 评估报告
    */
   async evaluateTimeliness(signal?: AbortSignal): Promise<TimelinessReport> {
@@ -259,10 +307,43 @@ export class MemoryDecayScheduler {
       };
     }
 
+    // FIX-P0-1：每次评估创建新的 AbortController，stop() 可主动 abort
+    this.evaluateAbortController = new AbortController();
+    const internalSignal = this.evaluateAbortController.signal;
+    // 外部 signal 与内部 signal 叠加：任一 abort 即触发
+    // 使用 AbortSignal.any 需 Node 18+，兼容方案是手动转发
+    const combinedSignal = signal
+      ? AbortSignal.any([internalSignal, signal])
+      : internalSignal;
+
+    // 注册到 inflightEvaluate，让 awaitInflight() 可等待
+    const promise = this.doEvaluateTimeliness(combinedSignal);
+    this.inflightEvaluate = promise;
+    try {
+      return await promise;
+    } finally {
+      // 评估完成（成功/失败/abort）后清理引用
+      if (this.inflightEvaluate === promise) {
+        this.inflightEvaluate = null;
+      }
+      if (this.evaluateAbortController?.signal === internalSignal) {
+        this.evaluateAbortController = null;
+      }
+    }
+  }
+
+  /**
+   * 实际执行 L2 时效性评估的核心逻辑
+   *
+   * 从 evaluateTimeliness 拆出，便于 inflightEvaluate Promise 注册和清理。
+   *
+   * @param combinedSignal 已叠加内部 + 外部的 AbortSignal
+   */
+  private async doEvaluateTimeliness(signal: AbortSignal): Promise<TimelinessReport> {
     // ── 步骤 1：加载低分记忆 ──
     const lowScoreMemories: Memory[] = [];
     for (const source of GOVERNANCE_SOURCES) {
-      const memories = this.index.getBySource(source);
+      const memories = this.index!.getBySource(source);
       // 筛选低分记忆（score 低于阈值）
       lowScoreMemories.push(...memories.filter((m) => m.score < TIMELINESS_LOW_SCORE_THRESHOLD));
     }
@@ -285,6 +366,8 @@ export class MemoryDecayScheduler {
     let outdatedCount = 0;
 
     for (const memory of limited) {
+      // abort 后提前退出循环，避免无谓的 LLM 调用
+      if (signal.aborted) break;
       try {
         const verdict = await this.judgeTimeliness(memory, signal);
         if (verdict.isOutdated) {
@@ -297,7 +380,7 @@ export class MemoryDecayScheduler {
           );
         }
       } catch (err) {
-        // 单条 LLM 判断失败不阻塞后续评估
+        // 单条 LLM 判断失败不阻塞后续评估（abort 导致的失败也走此分支）
         logger.warn(
           { err, memoryId: memory.id },
           '时效性评估：LLM 判断失败，跳过此条',
