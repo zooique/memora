@@ -48,7 +48,7 @@ date: 2026-07-13
 
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
-| `cli/`（宿主） | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
+| `cli/`（已移出内核，宿主项目自行实现） | 历史参考：解析命令、REPL 循环、用户交互（精灵宿主使用 Electron 主进程替代） | 直接调数据库（应通过 memory/ 层）             |
 | `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（13 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/RelationBuilder/Session/SessionArchiver/TextPolish/WorkProjection）+ 对话快照 + 作品投影 + 用户事实提取（userFactExtractor，纯函数模块，位于 agent/ 根级） | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选）+ 关系图谱侧车（IMemoryRelationStore 接口，独立于 IMemoryStorage） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
