@@ -60,6 +60,8 @@ export class TrayManager {
   private useCustomIcon: boolean;
   /** 回调集合（由 main.ts 注入，支持延迟注入静默模式回调） */
   private callbacks: TrayCallbacks;
+  /** 托盘右键菜单（不绑定 setContextMenu，由 right-click 显式弹出，把左键留给"单击呼出主窗口"） */
+  private contextMenu!: Menu;
 
   constructor(iconPath: string | NativeImage, callbacks: TrayCallbacks) {
     this.callbacks = callbacks;
@@ -85,8 +87,15 @@ export class TrayManager {
     this.tray.setToolTip('Memora 精灵');
     this.updateMenu();
 
-    this.tray.on('double-click', () => {
+    // 单击托盘图标呼出主窗口（主流程序交互：左键=主操作，右键=菜单）。
+    // 刻意不使用 setContextMenu：其左键行为跨平台不一致（macOS 左键弹菜单 / Windows 部分版本左键弹菜单），
+    // 会吞掉"单击呼出主窗口"，这也是此前退而用双击的根因。改为显式绑定：
+    // 左键 click → onShowFull（呼出主窗口）；右键 right-click → 弹出菜单。
+    this.tray.on('click', () => {
       this.callbacks.onShowFull();
+    });
+    this.tray.on('right-click', () => {
+      this.tray.popUpContextMenu(this.contextMenu);
     });
   }
 
@@ -138,8 +147,7 @@ export class TrayManager {
       },
     ];
 
-    const contextMenu = Menu.buildFromTemplate(menuItems);
-    this.tray.setContextMenu(contextMenu);
+    this.contextMenu = Menu.buildFromTemplate(menuItems);
   }
 
   /**
