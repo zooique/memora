@@ -42,6 +42,8 @@ import type { ISqliteDatabase, ISqliteStatement } from './sqliteDatabaseTypes.js
 export class NodeSqliteDatabase implements ISqliteDatabase {
   /** 内部 DatabaseSync 实例 */
   private db: DatabaseSync;
+  /** 关闭标记（幂等保护） */
+  private _closed = false;
 
   /**
    * @param path 数据库文件路径，默认 ':memory:'（内存数据库，测试用）
@@ -97,9 +99,11 @@ export class NodeSqliteDatabase implements ISqliteDatabase {
     };
   }
 
-  /** 关闭数据库连接 */
+  /** 关闭数据库连接（幂等：重复调用安全） */
   close(): void {
+    if (this._closed) return;
     this.db.close();
+    this._closed = true;
   }
 }
 

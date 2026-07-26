@@ -153,7 +153,7 @@
 |---|---|---|---|
 | H1 | sqliteStorage.ts:89-111 | Schema 迁移静默丢数据（重建表仅保留 id+content） | [TODO] |
 | H2 | spriteConfigStore.ts:120-132 | 配置损坏导致静默覆盖（loadOrDefault 返回默认后续 save 覆盖） | [DONE] |
-| H3 | safeWriteJson.ts:30-35 | 非原子写入，崩溃导致文件损坏 | [TODO] |
+| H3 | safeWriteJson.ts:30-35 | 非原子写入，崩溃导致文件损坏 | [DONE] 临时文件+rename 原子写入 |
 | H4 | sensitivePatterns.ts:83-90 | 敏感内容被静默吞掉，不提示用户 | [TODO] |
 | H5 | server.ts:324-329 | Agent 初始化失败后用户无诊断信息 | [TODO] |
 | H6 | webContext.ts:77-80 | Preload 脚本转译失败后所有 API 不可用 | [TODO] |
@@ -164,17 +164,17 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| M1 | errorMessages.ts:178-179 | fallback 文案过于泛化 | [TODO] |
-| M2 | llmErrorClassifier.ts:138 | 未匹配时泄露原始技术错误 | [TODO] |
-| M3 | llmErrorClassifier.ts:45 | 正则可能误匹配（无 \b 边界） | [TODO] |
-| M4 | inputValidation.ts:52-57 | 验证失败不提供拒绝原因 | [TODO] |
+| M1 | errorMessages.ts:178-179 | fallback 文案过于泛化 | [DONE] 追加恢复建议 |
+| M2 | llmErrorClassifier.ts:138 | 未匹配时泄露原始技术错误 | [DONE] 改为通用提示 |
+| M3 | llmErrorClassifier.ts:45 | 正则可能误匹配（无 \b 边界） | [DONE] 401/403 加 \b |
+| M4 | inputValidation.ts:52-57 | 验证失败不提供拒绝原因 | [SKIP] 需改返回值类型（API 重设计） |
 | M5 | chatStreamRoutes.ts:146-486 | Web 模式缺少感知刷新和消息计数 | [TODO] |
 | M6 | chatStreamRoutes.ts:242-262 | Web 模式超时不强制释放对话锁 | [TODO] |
 | M7 | chatHandlers.ts:34-36 | 输入校验失败静默吞消息 | [TODO] |
 | M8 | chatStreamHandler.ts vs chatStreamRoutes.ts | 错误映射策略不一致 | [TODO] |
-| M9 | systemRoutes.ts:186+217+233+279 | 多个路由 catch 块泄露原始错误 | [TODO] |
+| M9 | systemRoutes.ts:186+217+233+279 | 多个路由 catch 块泄露原始错误 | [DONE] sanitizeError 统一处理 |
 | M10 | systemRoutes.ts:106-114 | 配置读取失败不区分损坏和首次使用 | [TODO] |
-| M11 | server.ts:363-365 | 500 错误返回英文 | [TODO] |
+| M11 | server.ts:363-365 | 500 错误返回英文 | [DONE] 改为中文 |
 | M12 | sessionStore.ts:48-53 | 消息写入失败无用户反馈 | [TODO] |
 | M13 | sqliteRelationStore.ts:134-138 | 关系操作无存在性反馈 | [TODO] |
 | M14 | spriteEventBridge.ts:277-280 | archiveFailed 事件可能永久丢失 | [TODO] |
@@ -183,9 +183,9 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| L1 | nodeSqliteDatabase.ts:101-103 | close() 无幂等保护 | [TODO] |
+| L1 | nodeSqliteDatabase.ts:101-103 | close() 无幂等保护 | [DONE] _closed 标记 |
 | L2 | sessionStore.ts:196-219 | copySession 覆盖目标不通知 | [TODO] |
 | L3 | systemRoutes.ts:420-432 | 仪表盘降级数据无用户提示 | [TODO] |
-| L4 | errorMessages.ts:119-123 | 归档失败文案无恢复建议 | [TODO] |
+| L4 | errorMessages.ts:119-123 | 归档失败文案无恢复建议 | [DONE] 追加恢复/重试建议 |
 | L5 | chatStreamHandler.ts:185 | 窗口销毁时不发 STREAM_END | [TODO] |
 | L6 | chatHandlers.ts:68-78 | CHAT_FORCE_RELEASE_LOCK 无用户反馈 | [TODO] |

@@ -72,12 +72,13 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 // ─── 模块级常量 ─────────────────────────────────────────
 
 /** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
-// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（11 个事件）
+// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（13 个事件）
 const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryAdded', 'personaSwitched', 'decayCompleted',
   'memoryRecalled', 'sessionForked', 'insightExtracted',
   'conflictDetected', 'projectSwitched', 'skillMatched',
-  'archiveFailed', 'contextTruncated',
+  'archiveFailed', 'contextTruncated', 'configReloaded',
+  'guardrailError',
 ]);
 
 // ─── Agent 门面类 ───────────────────────────────────────
@@ -453,6 +454,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         for (const src of pending) {
           try {
             await this.reloadConfig(src);
+            this.emit('configReloaded', { source: src });
           } catch (err) {
             logger.warn({ err, source: src }, '补执行配置重载失败');
           }

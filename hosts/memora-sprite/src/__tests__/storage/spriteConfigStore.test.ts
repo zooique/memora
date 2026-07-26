@@ -24,6 +24,7 @@ vi.mock('node:os', () => ({
 vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
   writeFile: vi.fn(async () => undefined),
+  rename: vi.fn(async () => undefined),
 }));
 
 vi.mock('memora', () => ({
@@ -190,7 +191,7 @@ describe('SpriteConfigStore', () => {
       expect(mkdir).toHaveBeenCalledWith(resolve('/mock/config.json', '..'), { recursive: true });
       expect(writeFile).toHaveBeenCalledTimes(1);
       const [path, content] = vi.mocked(writeFile).mock.calls[0];
-      expect(path).toBe('/mock/config.json');
+      expect(path).toBe('/mock/config.json.tmp');
       const parsed = JSON.parse(content as string);
       // 单配置表单收敛到 providers['default'] 单一格式
       expect(parsed.llm.providers.default.provider).toBe('openai');

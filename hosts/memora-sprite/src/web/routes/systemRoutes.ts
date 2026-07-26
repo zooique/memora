@@ -20,6 +20,14 @@ import { logger, toError } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, parseLimitWithMax } from './types.js';
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
+
+/** 将原始错误转为安全响应信息（避免泄露技术细节到客户端） */
+function sanitizeError(error: unknown, context: string): string {
+  const msg = toError(error).message;
+  logger.warn({ err: msg, context }, '系统路由异常');
+  return '操作失败，请稍后重试';
+}
+
 import {
   saveLlmConfig,
   isLlmConfigured,
@@ -183,7 +191,7 @@ export async function handleSystemRoute(
           message: 'LLM 配置已保存，请重启 Web 服务使新配置生效',
         });
       } catch (error) {
-        sendJson(res, 200, { success: false, error: toError(error).message });
+        sendJson(res, 200, { success: false, error: sanitizeError(error, 'saveConfig') });
       }
       return;
     }
@@ -214,7 +222,7 @@ export async function handleSystemRoute(
         await saveLlmProvider(body.key, body.config);
         sendJson(res, 200, { success: true, error: null });
       } catch (error) {
-        sendJson(res, 200, { success: false, error: toError(error).message });
+        sendJson(res, 200, { success: false, error: sanitizeError(error, 'saveConfig') });
       }
       return;
     }
@@ -230,7 +238,7 @@ export async function handleSystemRoute(
         await deleteLlmProvider(key);
         sendJson(res, 200, { success: true, error: null });
       } catch (error) {
-        sendJson(res, 200, { success: false, error: toError(error).message });
+        sendJson(res, 200, { success: false, error: sanitizeError(error, 'saveConfig') });
       }
       return;
     }
@@ -276,7 +284,7 @@ export async function handleSystemRoute(
 
           sendJson(res, 200, { success: true, error: null, message: 'Provider 已切换，立即生效' });
         } catch (error) {
-          sendJson(res, 200, { success: false, error: toError(error).message });
+          sendJson(res, 200, { success: false, error: sanitizeError(error, 'saveConfig') });
         }
         return;
       }

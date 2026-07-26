@@ -117,9 +117,9 @@ type ArchiveFailedStage = 'profile' | 'insight' | 'content';
  * 经 ipcListeners.handleArchiveFailed 路由到 Toast。
  */
 const ARCHIVE_FAILED_MESSAGES: Readonly<Record<ArchiveFailedStage, string>> = {
-  profile: '用户画像归档失败，记忆可能未保存',
-  insight: '洞察提取归档失败，本次对话未沉淀',
-  content: '会话内容归档失败，对话记录可能丢失',
+  profile: '用户画像归档失败，记忆可能未保存——下次对话可重新沉淀',
+  insight: '洞察提取归档失败，本次对话未沉淀——可在记忆面板中手动归档',
+  content: '会话内容归档失败，对话记录可能丢失——请检查磁盘空间',
 };
 
 // ─── 公共函数 ─────────────────────────────────────────────
@@ -176,7 +176,7 @@ export function formatErrorMessage(operation: string, error: unknown): string {
   }
 
   // 未匹配任何已知模式，回退到两段式（不编造原因）
-  return `${operation}失败，请稍后重试`;
+  return `${operation}失败，请稍后重试。如持续出现，请检查网络或重启应用`;
 }
 
 /**

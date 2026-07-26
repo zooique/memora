@@ -42,11 +42,11 @@ interface LlmErrorPattern {
 const LLM_ERROR_PATTERNS: readonly LlmErrorPattern[] = [
   // ─── 认证/授权类（最常见，首次配置用户最易踩坑） ───
   {
-    pattern: /401|unauthorized|invalid api key|invalid apikey|authentication/i,
+    pattern: /\b401\b|unauthorized|invalid api key|invalid apikey|authentication/i,
     message: 'API Key 无效，请检查是否复制完整（注意前后不要有空格）',
   },
   {
-    pattern: /403|forbidden|permission denied|access denied/i,
+    pattern: /\b403\b|forbidden|permission denied|access denied/i,
     message: 'API Key 无权访问该模型，请检查账户额度或模型权限',
   },
 
@@ -76,7 +76,7 @@ const LLM_ERROR_PATTERNS: readonly LlmErrorPattern[] = [
     message: '无法连接服务器，请检查 API 地址（baseUrl）是否正确',
   },
   {
-    pattern: /etimedout|timeout|timed out|请求超时/i,
+    pattern: /etimedout|timeout|timed out|请求超时|连接超时/i,
     message: '请求超时，请检查网络连接或稍后重试',
   },
   {
@@ -96,8 +96,8 @@ const LLM_ERROR_PATTERNS: readonly LlmErrorPattern[] = [
 
   // ─── 协议/配置类 ───
   {
-    pattern: /base url|invalid url|协议错误|invalid protocol/i,
-    message: 'API 地址格式错误，请确认以 https:// 开头且无多余路径',
+    pattern: /base url|invalid url|协议错误|invalid protocol|无效的 provider|无效的配置/i,
+    message: 'API 地址或 Provider 配置无效，请检查 LLM 设置',
   },
   {
     pattern: /empty response|返回空响应|空响应/i,
@@ -134,6 +134,7 @@ export function classifyLlmError(rawError: string): string {
     }
   }
 
-  // 未匹配任何已知模式，回退到原始消息
-  return rawError;
+  // 未匹配任何已知模式，返回泛化提示（避免泄露原始技术错误到用户界面）
+  // 原始错误已由调用方 logger 记录，此处不重复
+  return '服务暂时不可用，请稍后重试。如持续出现，请检查网络连接或联系支持。';
 }

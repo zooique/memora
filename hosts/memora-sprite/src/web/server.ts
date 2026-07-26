@@ -362,7 +362,7 @@ async function startWebServer(): Promise<void> {
       if (!res.headersSent) {
         // 注入安全响应头
         res.writeHead(500, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Internal Server Error' }));
+        res.end(JSON.stringify({ error: '服务器内部错误，请稍后重试' }));
       }
     }
   });

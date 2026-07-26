@@ -102,7 +102,7 @@ describe('llmErrorClassifier', () => {
   // ─── 协议/配置类 ────────────────────────────────────────
   describe('协议/配置类', () => {
     it('base url 错误 应映射为 API 地址格式错误', () => {
-      expect(classifyLlmError('Invalid base url')).toBe('API 地址格式错误，请确认以 https:// 开头且无多余路径');
+      expect(classifyLlmError('Invalid base url')).toBe('API 地址或 Provider 配置无效，请检查 LLM 设置');
     });
 
     it('empty response 应映射为 LLM 返回空响应', () => {
@@ -126,8 +126,8 @@ describe('llmErrorClassifier', () => {
 
   // ─── 未匹配回退 ──────────────────────────────────────────
   describe('未匹配回退', () => {
-    it('未知错误应回退到原始消息', () => {
-      expect(classifyLlmError('some unknown weird error')).toBe('some unknown weird error');
+    it('未知错误应回退到通用提示（不泄露原始技术错误）', () => {
+      expect(classifyLlmError('some unknown weird error')).toContain('请稍后重试');
     });
 
     it('空字符串应返回未知错误', () => {

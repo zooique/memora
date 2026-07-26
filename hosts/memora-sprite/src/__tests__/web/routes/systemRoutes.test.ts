@@ -681,7 +681,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('无效的 provider 配置');
+    expect(body.error).toContain('配置无效');
   });
 
   it('POST /api/llm-config/test provider.chat 抛错时应降级返回 success: false', async () => {
@@ -702,7 +702,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('连接超时');
+    expect(body.error).toContain('超时');
   });
 
   it('POST /api/llm-config/test 遇到非 stop finishReason 应立即停止迭代', async () => {
@@ -824,7 +824,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('文件系统错误');
+    expect(body.error).toContain('请稍后重试');
   });
 
   it('POST /api/llm-config reinitAgent 抛错时应降级返回 success: false', async () => {
@@ -843,7 +843,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('Agent 初始化失败');
+    expect(body.error).toContain('请稍后重试');
   });
 
   it('POST /api/llm-config/ 带尾斜杠也应匹配', async () => {
@@ -1350,7 +1350,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('写入失败');
+    expect(body.error).toContain('请稍后重试');
   });
 
   // ─── DELETE /api/llm-providers/:key ───────────────────
@@ -1392,7 +1392,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('删除失败');
+    expect(body.error).toContain('请稍后重试');
   });
 
   // ─── POST /api/llm-providers/:key/active ──────────────
@@ -1499,7 +1499,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('持久化失败');
+    expect(body.error).toContain('请稍后重试');
   });
 
   it('POST /api/llm-providers/:key/active setProvider 抛错时应降级返回 success: false', async () => {
@@ -1523,7 +1523,7 @@ describe('handleSystemRoute', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('Agent 未就绪');
+    expect(body.error).toContain('请稍后重试');
   });
 
   // ─── GET /api/audit-logs ──────────────────────────────
