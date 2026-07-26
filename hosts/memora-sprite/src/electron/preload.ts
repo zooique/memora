@@ -376,6 +376,8 @@ export interface WriteConfirmationPayload {
  * - 不传 hash（clipboardHandler.computeHash 是 private，不暴露）
  */
 export interface ClipboardChangedPayload {
+  /** 完整内容（用于复制按钮写回 OS 剪贴板，localStorage 持久化） */
+  content: string;
   /** 内容预览（前 100 字符，用于列表展示和归档时软校验） */
   preview: string;
   /** 内容完整长度（用于列表展示"100字"等） */

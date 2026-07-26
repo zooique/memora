@@ -1030,7 +1030,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * 处理方式：加入待处理列表 + 角标 +1（不打断用户，被动等待用户查看）
    */
   window.electronAPI.onClipboardChanged((payload) => {
-    uiManager.clipboardManager.addPendingItem(payload.preview, payload.length);
+    uiManager.clipboardManager.addPendingItem(payload.preview, payload.length, payload.content);
   });
 
   /**

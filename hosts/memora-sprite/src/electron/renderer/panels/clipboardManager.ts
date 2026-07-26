@@ -38,6 +38,8 @@ import { truncate } from '../../../shared/truncate.js';
 export interface ClipboardPendingItem {
   /** 唯一 ID（时间戳 + 随机数，便于列表 key 和单条操作定位） */
   id: string;
+  /** 完整内容（用于复制按钮，localStorage 持久化） */
+  content: string;
   /** 内容预览（前 100 字符，用于列表展示和归档时软校验） */
   preview: string;
   /** 内容长度（完整内容长度，用于列表展示"100字"等） */
@@ -140,7 +142,7 @@ export class ClipboardManager {
    * @param preview 内容预览（前 100 字符，由 main.ts 在 CLIPBOARD_CHANGED emit 时构造）
    * @param length 内容完整长度
    */
-  addPendingItem(preview: string, length: number): void {
+  addPendingItem(preview: string, length: number, content?: string): void {
     // 去重：相同 preview 不重复添加
     const existingIndex = this.pendingItems.findIndex((item) => item.preview === preview);
     if (existingIndex >= 0) {
@@ -159,6 +161,7 @@ export class ClipboardManager {
     // 构造新条目
     const item: ClipboardPendingItem = {
       id: this.generateId(),
+      content: content ?? preview,
       preview,
       length,
       detectedAt: Date.now(),

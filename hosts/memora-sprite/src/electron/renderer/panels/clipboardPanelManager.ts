@@ -255,7 +255,7 @@ export class ClipboardPanelManager {
     copyBtn.title = '复制到剪贴板';
     copyBtn.setAttribute('aria-label', '复制到剪贴板');
     copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
-    this.events.addEventListener(copyBtn, 'click', () => this.handleCopyItem(item.preview));
+    this.events.addEventListener(copyBtn, 'click', () => this.handleCopyItem(item.content));
     actionsEl.appendChild(copyBtn);
 
     // 归档按钮（乐观移除 + 触发 clipboardAnalyze）
@@ -330,18 +330,15 @@ export class ClipboardPanelManager {
    * @param id 待忽略条目 ID
    */
   /**
-   * 处理复制按钮点击——将条目 preview 写回 OS 剪贴板
+   * 处理复制按钮点击——将条目内容写回 OS 剪贴板
    *
-   * 使用 navigator.clipboard.writeText() 直接写入。
+   * 使用 navigator.clipboard.writeText() 写入完整内容（非 preview 截断）。
    * ClipboardHandler 检测到变化后通过 CLIPBOARD_CHANGED IPC 通知渲染层，
-   * addPendingItem 的去重逻辑会将同名条目移到列表顶部（bump to top），
-   * 不会创建重复条目，也不会增加未查看计数。
-   *
-   * @param preview 条目预览文本（前 100 字符）
+   * addPendingItem 的去重逻辑会将同名条目移到列表顶部，不创建重复，不增加未查看计数。
    */
-  private async handleCopyItem(preview: string): Promise<void> {
+  private async handleCopyItem(text: string): Promise<void> {
     try {
-      await navigator.clipboard.writeText(preview);
+      await navigator.clipboard.writeText(text);
     } catch {
       // 剪贴板写入失败（如权限被拒绝），静默降级不弹 toast
     }

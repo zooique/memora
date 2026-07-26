@@ -849,6 +849,7 @@ function setupAgentIndependentResources(): void {
           // 空内容（如复制图片时 readText 返回空串）跳过通知，避免空条目进入待处理列表
           if (text.length === 0) break;
           const changedPayload = {
+            content: text,
             preview: text.slice(0, 100),
             length: text.length,
           };
