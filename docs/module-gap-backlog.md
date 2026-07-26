@@ -83,12 +83,12 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| H1 | dedupManager.ts:147-225 | 语义去重完全静默（无事件，无自动触发） | [TODO] 需增加 dedupCompleted 事件 + 内核接线 |
-| H2 | memoryDecayScheduler.ts:299-396 | L2 时效性评估静默降级记忆 score 到 0.05 | [TODO] 需增加 timelinessEvaluated 事件 |
+| H1 | dedupManager.ts:147-225 | 语义去重完全静默 | [DONE] onCompleted 回调 + dedupCompleted 事件 |
+| H2 | memoryDecayScheduler.ts:299-396 | L2 时效性评估静默降级 | [SKIP] onDecayCompleted/decayCompleted 已覆盖衰减免周期 |
 | H3 | memoryDecayScheduler.ts:172-178 | 记忆衰减调度器后台运行无感知 | [TODO] 需为 decayScheduler 增加生命周期事件 |
-| H4 | contextManager.ts:187-279 | 上下文窗口截断静默丢弃用户消息 | [PARTIAL] 事件类型已定义 + ContextManager 回调接口已就位，AgentLoop→assembler 接线待完成 |
+| H4 | contextManager.ts:187-279 | 上下文窗口截断静默丢弃用户消息 | [DONE] 4 层注入链完成：agent→assembler→AgentLoop→ContextManager |
 | H5 | autoConfigRefiner.ts:61-104 | AutoConfigRefiner 后台提取配置建议无通知 | [TODO] 需增加 configSuggested 事件 |
-| H6 | workProjection.ts:91-161 | 作品投影生成无感知（无 memoryAdded 也无事件） | [TODO] 需增加 workProjectionGenerated 事件 |
+| H6 | workProjection.ts:91-161 | 作品投影生成无感知（无 memoryAdded 也无事件） | [DONE] WorkProjectionManager.onGenerated 回调 + 4 层接线 |
 | H7 | sessionArchiver.ts:103-140 | 会话内容归档无独立进度事件 | [TODO] 需增加 sessionArchived 事件 |
 
 ### Medium
@@ -111,8 +111,8 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| L1 | agent.ts:534-536 | boost score 持久化失败无事件 | [TODO] |
-| L2 | recall.ts:122-124 | 关键词搜索/语义搜索降级无事件 | [TODO] |
+| L1 | agent.ts:534-536 | boost score 持久化失败无事件 | [DONE] boostPersistFailed 事件已接线 |
+| L2 | recall.ts:122-124 | 关键词搜索/语义搜索降级无事件 | [SKIP] 内部技术降级已有 logger.debug，用户不需知道 |
 | L3 | agent.ts:976-980 | persona 切换防抖锁定状态变化无事件 | [SKIP] personaManager 管理锁状态，需跨层接线 |
 | L4 | agent.ts:899-907 | archiveMode 切换无事件 | [DONE] archiveModeChanged 事件已接线 |
 | L5 | agent.ts:846-860 | 会话切换/恢复/删除无独立事件 | [TODO] |

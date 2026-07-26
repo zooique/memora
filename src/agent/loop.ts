@@ -76,6 +76,13 @@ export interface AgentLoopOptions {
    * 避免关键信息永久丢失。（首次触发时增加 ~1-2s 延迟）
    */
   enableContextSummary?: boolean;
+  /**
+   * 上下文截断回调（宿主可据此发射 contextTruncated 事件通知用户）
+   *
+   * 每次 truncateMessages 触发截断时调用，传入被裁剪和保留的消息数量。
+   * 未注入时静默忽略。
+   */
+  onContextTruncated?: (skippedCount: number, keptCount: number) => void;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -166,6 +173,7 @@ export class AgentLoop {
       provider: opts.provider,
       contextTruncatedFn: this.ui.contextTruncated,
       tracer: this.tracer,
+      onContextTruncated: opts.onContextTruncated,
     });
 
     // 初始化 system prompt（基于永驻记忆，加前缀）

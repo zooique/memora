@@ -64,6 +64,12 @@ export interface AssembleInput {
    * 注入此字段可覆盖默认 locale，实现国际化时间格式。
    */
   locale?: string;
+  /** 作品投影生成/更新回调（宿主可据此发射事件通知用户） */
+  onWorkProjectionGenerated?: (sourcePath: string, summary: string) => void;
+  /** 上下文截断回调 */
+  onContextTruncated?: (skippedCount: number, keptCount: number) => void;
+  /** 语义去重完成回调 */
+  onDedupCompleted?: (report: { scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[] }) => void;
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -141,7 +147,7 @@ export async function assembleComponents(
 
   const history = new MessageHistory(sessionStore);
 
-  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider);
+  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider, input.onWorkProjectionGenerated);
 
   const toolExec = new ToolExecutor(
     projectPath,
@@ -214,6 +220,7 @@ export async function assembleComponents(
     messages,
     enableContextSummary,
     guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
+    onContextTruncated: input.onContextTruncated,
   });
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
 
@@ -248,7 +255,7 @@ export async function assembleComponents(
     relationStore ?? null,
   );
   // L1 语义去重：注入 backgroundProvider 到 DedupManager（可选，未注入时 deduplicateMemories 静默跳过）
-  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null);
+  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, input.onDedupCompleted);
 
   // AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>

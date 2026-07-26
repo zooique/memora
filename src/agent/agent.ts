@@ -72,13 +72,14 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 // ─── 模块级常量 ─────────────────────────────────────────
 
 /** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
-// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（15 个事件）
+// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（18 个事件）
 const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryAdded', 'personaSwitched', 'decayCompleted',
   'memoryRecalled', 'sessionForked', 'insightExtracted',
   'conflictDetected', 'projectSwitched', 'skillMatched',
   'archiveFailed', 'contextTruncated', 'configReloaded',
   'guardrailError', 'archiveModeChanged', 'personaSwitchLocked',
+  'workProjectionGenerated', 'boostPersistFailed', 'dedupCompleted',
 ]);
 
 // ─── Agent 门面类 ───────────────────────────────────────
@@ -535,6 +536,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const ids = recalledMemories.map((m) => m.id);
       void boostScores(this.pctx!.index, ids).catch((err: unknown) => {
         logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
+        this.emit('boostPersistFailed', { memoryId: ids.join(','), message: toError(err).message });
       });
     }
 
@@ -794,6 +796,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       messages: this.#config.messages,
       enableContextSummary: this.#config.enableContextSummary,
       existingSkillManager: this.skillManager,
+      onWorkProjectionGenerated: (sourcePath, summary) => {
+        this.emit('workProjectionGenerated', { sourcePath, summary });
+      },
+      onContextTruncated: (skippedCount, keptCount) => {
+        this.emit('contextTruncated', { skippedCount, keptCount });
+      },
+      onDedupCompleted: (report) => {
+        this.emit('dedupCompleted', { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
+      },
     });
 
     this.history = result.history;

@@ -71,6 +71,27 @@ export interface AgentEventMap {
     /** 锁定时长（秒） */
     lockedSeconds: number;
   };
+  /** 作品投影生成/更新（宿主可据此刷新作品面板） */
+  workProjectionGenerated: {
+    /** 源文件路径 */
+    sourcePath: string;
+    /** 投影摘要 */
+    summary: string;
+  };
+  /** boost score 持久化失败（宿主可通知用户记忆权重可能丢失） */
+  boostPersistFailed: {
+    /** 记忆 ID */
+    memoryId: string;
+    /** 失败原因 */
+    message: string;
+  };
+  /** 语义去重完成（宿主可据此刷新记忆面板） */
+  dedupCompleted: {
+    /** 被降级的记忆数 */
+    deduplicatedCount: number;
+    /** 被降级的记忆 ID 列表 */
+    demotedIds: string[];
+  };
 }
 
 /** 事件名联合类型 */

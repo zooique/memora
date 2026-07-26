@@ -121,6 +121,8 @@ export class DedupManager {
   constructor(
     private readonly index: IMemoryStorage,
     backgroundProvider: LlmProvider | null = null,
+    /** 去重完成回调（宿主可据此发射事件通知用户） */
+    private readonly onCompleted?: (report: DedupReport) => void,
   ) {
     this.backgroundProvider = backgroundProvider;
   }
@@ -215,6 +217,7 @@ export class DedupManager {
       }
     }
 
+    this.onCompleted?.({ scannedCount: limited.length, pairCount: pairs.length, deduplicatedCount, demotedIds });
     return {
       scannedCount: limited.length,
       pairCount: pairs.length,

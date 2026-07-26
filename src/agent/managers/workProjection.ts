@@ -60,10 +60,16 @@ export interface WorkProjectionEntry {
  * 属于"作品 → 记忆投影"的桥梁组件，不属于 memory/ 的纯存储/召回职责。
  */
 export class WorkProjectionManager {
+  /** 作品投影生成/更新时的回调（宿主可据此发射事件通知用户） */
+  private readonly onGenerated?: (sourcePath: string, summary: string) => void;
+
   constructor(
     private readonly index: IMemoryStorage,
     private readonly provider: LlmProvider,
-  ) {}
+    onGenerated?: (sourcePath: string, summary: string) => void,
+  ) {
+    this.onGenerated = onGenerated;
+  }
 
   /**
    * in-flight Promise 缓存，防止同文件并发读取时重复调用 LLM
@@ -153,6 +159,7 @@ export class WorkProjectionManager {
         '作品投影已生成',
       );
 
+      this.onGenerated?.(filePath, projection.summary);
       return entry;
     } catch (err) {
       logger.warn({ err, file: filePath }, '作品投影生成失败');
