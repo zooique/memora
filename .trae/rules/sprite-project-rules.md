@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v2.1
+version: v2.2
 date: 2026-07-26
 ---
 
@@ -77,7 +77,7 @@ npm run package:win   # 自动：build:electron（含 sync-memora） → clean-r
 |------|------|------|
 | 运行时 | Node.js 24 LTS + TypeScript 5 strict + ESM | ADR-SP-001 |
 | 数据库 | better-sqlite3（native 模块，^12.10.0） | ADR-SP-002 |
-| 桌面壳 | 阶段一 CLI → 阶段二 Electron 40 | ADR-SP-003 |
+| 桌面壳 | CLI 起步，演进至 Electron 40 | ADR-SP-003 |
 | 感知层 | 上下文感知，非内容感知 | ADR-SP-004 |
 | 包管理 | npm + `sync-memora.mjs`（编译 → 最小化复制） + @electron/rebuild | [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v3 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
@@ -191,7 +191,7 @@ export class ClipboardManager { ... }
 - **字段级**：每个 `private` 字段必须有单行 `/** ... */` 说明用途
 - **方法级**：公共方法必须含 `@param` / `@returns`，私有方法可简化但需说明意图
 
-### 4.3 Web 调试通道（Phase 4 交付）
+### 4.3 Web 调试通道
 
 > **定位**：精灵的平行部署模式——与 Electron 共享同一内核，通过原生 HTTP 提供 REST API + 静态前端。
 > **设计原则**：零框架依赖（仅 `node:http`），安全隔离（127.0.0.1 绑定 + 路径穿越防护 + Security Headers）。
@@ -215,7 +215,7 @@ export class ClipboardManager { ... }
 
 1. 不做多用户——单精灵单用户，与 memora 单 Agent 模型一致
 2. 不做云端同步——纯本地，隐私优先，数据不出本机
-3. 不做语音交互——阶段一只做文本交互
+3. 不做语音交互——当前范围只做文本交互
 4. 不做插件市场——技能通过 configManager.addSkill 本地添加
 5. 不做移动端——专注桌面场景
 6. 不做被动内容监听——永远不做 keylogger、屏幕截图、网络流量监听（ADR-SP-004）
@@ -285,13 +285,13 @@ SecurityGuard.requestWriteConfirmation
 
 ### 9.1 感知层级
 
-| 层级 | 能力 | 阶段 | 示例 |
+| 层级 | 能力 | 状态 | 示例 |
 |------|------|------|------|
-| L1 热键 | 用户主动召唤 | 一 | Ctrl+Shift+Space |
-| L2 定时 | 周期性检查触发条件 | 一 | 每分钟检查 insight/profile |
-| L3 文件变化 | 监听项目文件修改 | 二 | chokidar on change |
-| L4 窗口上下文 | 获取活跃窗口标题/进程名 | 二 | active-win |
-| L5 日程模式 | 基于时间的主动问候 | 二 | 每日早安/工作日提醒 |
+| L1 热键 | 用户主动召唤 | 已实现 | Ctrl+Shift+Space |
+| L2 定时 | 周期性检查触发条件 | 已实现 | 每分钟检查 insight/profile |
+| L3 文件变化 | 监听项目文件修改 | 规划中 | chokidar on change |
+| L4 窗口上下文 | 获取活跃窗口标题/进程名 | 规划中 | active-win |
+| L5 日程模式 | 基于时间的主动问候 | 规划中 | 每日早安/工作日提醒 |
 
 ### 9.2 永远禁止的感知方式
 

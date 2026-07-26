@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 description: Memora 项目总则、技术栈清单、目录结构
-date: 2026-07-21
+date: 2026-07-26
 ---
 
 # Memora · 项目总则
@@ -106,7 +106,7 @@ src/
 ```
 feat: 新增记忆召回管线
 fix: 修复路径白名单越界
-docs: 更新 01-主架构-v4.0.md v3.6
+docs: 更新架构设计文档
 test: 补充 Agent Loop E2E
 refactor: 重构 LLM Provider 抽象
 chore: 升级 dependencies
