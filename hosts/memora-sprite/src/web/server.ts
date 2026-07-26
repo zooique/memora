@@ -118,6 +118,8 @@ let closeSprite: (() => Promise<void>) | null = null;
 let currentAbortController: AbortController | null = null;
 /** Agent 是否就绪 */
 let agentReady = false;
+/** Agent 初始化失败原因（供前端展示诊断信息） */
+let initError: string | null = null;
 
 /** HTTP 服务实例（用于优雅关闭） */
 let server: Server | null = null;
@@ -156,6 +158,8 @@ function createHostContext(
       currentAbortController = ctrl;
     },
     isAgentReady: () => agentReady,
+    /** Agent 初始化失败原因（null = 成功或尚未初始化） */
+    initError: () => initError,
     auditManager: activeAuditManager,
     installSkill: activeInstallSkill,
   };
@@ -323,6 +327,7 @@ async function startWebServer(): Promise<void> {
     logger.info(`[Web] Agent 初始化成功，dataDir=${result.dataDir}`);
   } catch (error) {
     const errMessage = toError(error).message;
+    initError = errMessage;
     logger.error(`[Web] Agent 初始化失败: ${errMessage}`);
     agentReady = false;
     // 配置缺失时仍启动 HTTP 服务，提供设置页面（与 Electron 两阶段初始化一致）
@@ -345,6 +350,7 @@ async function startWebServer(): Promise<void> {
         getAbortController: () => null,
         setAbortController: () => {},
         isAgentReady: () => false,
+        initError: () => initError,
         // 降级模式下审计日志和技能安装不可用，设为 null
         auditManager: null,
         installSkill: undefined,

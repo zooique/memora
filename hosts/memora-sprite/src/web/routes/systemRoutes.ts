@@ -78,7 +78,7 @@ export async function handleSystemRoute(
   await safeRoute(res, '系统操作', async () => {
     // GET /api/agent-status — 查询 Agent 是否就绪（不需要 Agent 就绪，本身用于检查状态）
     if (method === 'GET' && path === '/api/agent-status') {
-      sendJson(res, 200, { ready: ctx.isAgentReady(), error: null });
+      sendJson(res, 200, { ready: ctx.isAgentReady(), error: ctx.initError() });
       return;
     }
 

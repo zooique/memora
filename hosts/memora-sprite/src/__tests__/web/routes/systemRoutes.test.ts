@@ -445,6 +445,7 @@ function createMockCtx(overrides?: {
     isAgentReady: overrides?.isAgentReady ?? vi.fn(() => true),
     auditManager: (hasAudit ? overrides!.auditManager : undefined) as unknown as HostContext['auditManager'],
     installSkill: (hasInstall ? overrides!.installSkill : undefined) as unknown as HostContext['installSkill'],
+    initError: () => null,
   };
 }
 

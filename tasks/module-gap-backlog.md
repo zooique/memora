@@ -101,7 +101,7 @@
 | M4 | insightExtractor.ts:276-290 | Insight 提取的预检去重 + 质量分级对用户不透明 | [TODO] |
 | M5 | userProfile.ts:207-209 | 用户画像待确认条目无主动通知 | [TODO] |
 | M6 | userProfile.ts:359-400 | 用户画像冲突解决无通知——旧事实被静默删除 | [TODO] |
-| M7 | guardrail.ts 全文 | Guardrail block/warn 无结构化事件 | [TODO] |
+| M7 | guardrail.ts 全文 | Guardrail block/warn 无结构化事件 | [SKIP] 结果已在 AgentLoop 内部消费，emit 到宿主创建重复通道 |
 | M8 | contextManager.ts:449 | Context summary 摘要内容不回传宿主 | [TODO] |
 | M9 | loop.ts:409-424 | 工具调用的 Reflection（自修正）对用户不透明 | [TODO] |
 | M10 | agent.ts:448-460 | 配置热重载暂存+补执行无可见反馈 | [DONE] configReloaded 事件已接线 |
@@ -117,7 +117,7 @@
 | L4 | agent.ts:899-907 | archiveMode 切换无事件 | [DONE] archiveModeChanged 事件已接线 |
 | L5 | agent.ts:846-860 | 会话切换/恢复/删除无独立事件 | [TODO] |
 | L6 | workProjection.ts:133 | hash 变更检测覆盖旧投影无事件 | [TODO] |
-| L7 | projectManager.ts:155-157 | InMemoryStorage 兜底降级无事件 | [TODO] |
+| L7 | projectManager.ts:155-157 | InMemoryStorage 兜底降级无事件 | [SKIP] memory/ 层不直接可达 agent 事件，需跨层回调 |
 | L8 | guardrail.ts:78+88-91 | Guardrail 规则正则编译失败放行但无主动报错 | [TODO] |
 | L9 | loop.ts:448-454 | 空响应兜底无事件 | [TODO] |
 | L10 | relationBuilder.ts:109+145 | RelationBuilder 未注入时静默降级无反馈 | [TODO] |
@@ -155,10 +155,10 @@
 | H2 | spriteConfigStore.ts:120-132 | 配置损坏导致静默覆盖（loadOrDefault 返回默认后续 save 覆盖） | [DONE] |
 | H3 | safeWriteJson.ts:30-35 | 非原子写入，崩溃导致文件损坏 | [DONE] 临时文件+rename 原子写入 |
 | H4 | sensitivePatterns.ts:83-90 | 敏感内容被静默吞掉，不提示用户 | [SKIP] 后端已发射 sensitive-ignored 事件，UI 层订阅缺失属前端缺口 |
-| H5 | server.ts:324-329 | Agent 初始化失败后用户无诊断信息 | [TODO] |
+| H5 | server.ts:324-329 | Agent 初始化失败后用户无诊断信息 | [DONE] initError 变量 + /api/agent-status 端点暴露 |
 | H6 | webContext.ts:77-80 | Preload 脚本转译失败后所有 API 不可用 | [TODO] |
-| H7 | systemRoutes.ts:158-189 | Web 模式保存配置后新 Agent 未注入 ctx | [TODO] |
-| H8 | spriteEventBridge.ts:143-323 | Web 模式完全没有精灵事件推送（16 事件全丢） | [TODO] |
+| H7 | systemRoutes.ts:158-189 | Web 模式保存配置后新 Agent 未注入 ctx | [SKIP] |
+| H8 | spriteEventBridge.ts:143-323 | Web 模式完全没有精灵事件推送（16 事件全丢） | [SKIP] |
 
 ### Medium
 

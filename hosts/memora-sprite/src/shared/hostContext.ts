@@ -52,6 +52,12 @@ export interface HostContext {
    */
   isAgentReady: () => boolean;
   /**
+   * Agent 初始化失败原因（null = 成功或尚未初始化）
+   *
+   * 提供诊断信息给前端，区分"未配置"和"初始化失败"两种状态。
+   */
+  initError: () => string | null;
+  /**
    * 审计日志管理器（可选，Web 调试通道使用）
    *
    * 提供审计日志的读取和清理能力，与 Electron IPC 的 AUDIT_LOG_LIST / AUDIT_LOG_CLEAR 平行。
