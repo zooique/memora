@@ -1,20 +1,22 @@
-# Memora 内核 API 参考手册（v1.0.0）
+# Memora 内核 API 参考手册（v2.0.1）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v1.0.0（最后更新：2026-07-08，对应内核 v1.0.0）
+> **版本**：v2.0.1（最后更新：2026-07-26，对应内核 v2.0.1）
 >
-> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：zod schema 单一真理源（DEFAULT_CONFIG 由 `.default()` 声明驱动）、IVectorStore 接口提取（JsonVectorStore 为内置实现）、AbortSignal 合并工具（mergeSignals）、Logger 懒初始化（移除模块顶层 pino 副作用，改为首次日志调用时 maybeUpgradeToPino 懒触发）、评估框架结构化信号（AgentChunk.guardrailBlocked 替代中文文案匹配）、文档全量对齐（包名 @zooique/memora、config.example.json 补全 providers/embedding 段）。
+> **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
+> - **Agent God Object 拆分（原 v3.0）**：记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
+> - **可观测性与护栏（原 v3.1）**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。
+> - **关系图谱与画像（原 v3.2）**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
+> - **npm 正式包与基础工具（原 v3.3）**：内核发布 v0.2.0（npm 正式包）。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具（parseFrontmatter/serializeFrontmatter）、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（collectAgentChunks/evaluateResult）。
 >
-> **v3.3 变更**：内核发布 v0.2.0（npm 正式包）。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具（parseFrontmatter/serializeFrontmatter）、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（collectAgentChunks/evaluateResult）。
+> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：DEFAULT_CONFIG 由 `config/loader.ts` 常量声明单一真理源（不再维护独立 schema）、IVectorStore 接口提取（JsonVectorStore 为内置实现）、AbortSignal 合并工具（mergeSignals）、Logger 懒初始化（移除模块顶层 pino 副作用，改为首次日志调用时 maybeUpgradeToPino 懒触发）、评估框架结构化信号（AgentChunk.guardrailBlocked 替代中文文案匹配）、文档全量对齐（包名 @zooique/memora、config.example.json 补全 providers/embedding 段）。
 >
-> **v3.2 变更**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
+> **v2.0.0 变更**：版本号提升（维护性质，无破坏性 API 变更）。
 >
-> **v3.1 变更**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。
->
-> **v3.0 重大变更**：Agent God Object 拆分。记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
+> **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
 
 ---
 
@@ -48,7 +50,7 @@
 ```
 
 **设计原则**：
-- **零 native 依赖**（核心层仅依赖 `zod`；持久化由宿主通过 `IMemoryStorage` 接口注入）
+- **零运行时依赖**（核心层零 npm 运行时依赖；`pino` 为可选 peer 依赖，通过动态 `import('pino')` 懒加载，加载失败时静默降级为内置 console logger；持久化由宿主通过 `IMemoryStorage` 接口注入）
 - **零控制台输出**（核心库不调用 `console.*`）
 - **零写用户文件**（配置文件是真理源，Agent 只读）
 - **零 LLM 配置加载**（Agent 不知道 `apiKey`，宿主传入 `LlmProvider` 实例）
@@ -105,7 +107,7 @@
 
 ### 2.4 Manager 访问器（委托模式）
 
-v3.0 起，Agent 通过 9 个 getter 暴露专职 Manager。详见后续章节。
+Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 
 | 访问器 | 类型 | 职责 |
 |--------|------|------|
@@ -114,12 +116,12 @@ v3.0 起，Agent 通过 9 个 getter 暴露专职 Manager。详见后续章节�
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
 | `agent.config` | `ConfigManager \| null` | 规则/技能注入 + 配置建议 |
 | `agent.insight` | `InsightExtractor \| null` | 输入分类 + 记忆提取 |
-| `agent.memory` | `MemoryInspector \| null` | 记忆快照 + 搜索 + 统计（只读） |
-| `agent.memoryMutator` | `MemoryMutator \| null` | 记忆写入代理（upsert/delete/restore/purge，P1-2 拆分） |
-| `agent.userProfile` | `UserProfileManager \| null` | 用户画像管理（事实提取 + 确认/拒绝） |
+| `agent.memory` | `MemoryInspector \| null` | 记忆查询 + 写入（`writeXxx` 前缀） |
+| `agent.userProfile` | `UserProfile \| null` | 用户画像管理（事实提取 + 确认/拒绝） |
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
+| `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
 
-> **读写分离**（P1-2 拆分）：`agent.memory`（MemoryInspector）只暴露只读查询（snapshot/search/stats/suggest/sourceHealth），所有写操作（upsert/delete/restore/purge）通过 `agent.memoryMutator`（MemoryMutator）执行。
+> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/search/searchHybrid/stats/list/getById/getBySource/listDeleted/relations 等）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired/writeBoost/writeAddRelation/writeRemoveRelation/writeRemoveRelationsByMemoryId）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
 
 ### 2.5 内部组件访问器（高级）
 
@@ -163,6 +165,7 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | `conflictDetected` | `{ newMemoryId, newInsight, targetId, targetContent }` | 记忆冲突被检测到（`contradicts` 关系写入时触发，宿主可通知用户） |
 | `projectSwitched` | `{ from: string \| null, to: string, projectName: string }` | 项目切换（宿主 UI 可据此刷新项目相关界面） |
 | `skillMatched` | `{ skill: string, score: number }` | 技能被匹配（宿主 UI 可据此展示当前激活技能） |
+| `archiveFailed` | `{ stage: 'profile' \| 'insight' \| 'content'; message: string }` | 归档操作失败（任一阶段失败，fire-and-forget catch 分支发射，宿主可通知用户） |
 
 ```typescript
 // 使用示例
@@ -232,7 +235,7 @@ async chatSync(input: string, signal?: AbortSignal): Promise<string>
 
 ---
 
-## 四、记忆查询（`agent.memory` · MemoryInspector）
+## 四、记忆查询与写入（`agent.memory` · MemoryInspector）
 
 > Manager 访问路径：`agent.memory.xxx()`。`init()` 前返回 `null`。
 
@@ -266,10 +269,13 @@ agent.memory.search(query: string, limit?: number): AgentSearchHit[]
 
 ```typescript
 interface AgentSearchHit {
+  id: string;             // 记忆唯一标识（source:name 格式，供 showMemory/deleteMemory 等操作使用）
   name: string;           // 记忆名称
   source: string;         // 来源标签
   score: number;          // 权重（0-1）
   contentPreview: string; // 内容预览（截断到 120 字符）
+  similarity?: number;    // 语义相似度（0-1，仅 searchHybrid 返回；纯关键词搜索时无此字段）
+  createdAt?: string;     // 创建时间（ISO 8601，供 UI 层时间筛选/排序使用）
 }
 ```
 
@@ -283,6 +289,7 @@ agent.memory.stats(): AgentStats
 interface AgentStats {
   bySource: Record<string, number>; // 按来源标签分组的记忆数量
   total: number;                    // 记忆总数
+  relationCount: number;            // 关系边总数（relationStore 未注入时为 0）
 }
 ```
 
@@ -291,6 +298,39 @@ interface AgentStats {
 ```typescript
 agent.agentLoop.getMessages(): readonly Message[]
 ```
+
+### 4.5 写入与关系方法（P1-2 合并回 MemoryInspector）
+
+记忆的写入与关系操作统一收口在 `agent.memory`，写方法以 `writeXxx` 前缀命名（同步返回、不调 LLM、不触发异步 IO）：
+
+```typescript
+// ─── 写入（writeXxx 前缀） ───
+agent.memory.writeUpsert(memory: Memory): void;                 // 插入或更新记忆
+agent.memory.writeBoost(id: string, increment?: number): boolean; // 提升 score（用户采纳反哺，默认 +0.05）
+agent.memory.writeDelete(id: string): void;                    // 软删除（写入 deletedAt）
+agent.memory.writeRestore(id: string): void;                   // 恢复软删除
+agent.memory.writePurge(id: string): void;                     // 物理删除（不可恢复）
+agent.memory.writePurgeExpired(before: Date): number;          // 清理过期回收站（并清理孤儿关系边）
+agent.memory.writeAddRelation(relation: MemoryRelation): void; // 添加关系边
+agent.memory.writeRemoveRelation(sourceId: string, targetId: string, type: string): void;
+agent.memory.writeRemoveRelationsByMemoryId(memoryId: string): number; // 删除某记忆的所有关系边
+
+// ─── 只读扩展查询 ───
+agent.memory.list(limit?: number): Memory[];                   // 列出所有记忆（按 score 降序）
+agent.memory.getById(id: string): Memory | null;               // 按 ID 获取活跃记忆
+agent.memory.getBySource(source: string): Memory[];            // 按 source 获取
+agent.memory.listDeleted(limit?: number): Memory[];            // 回收站（软删除记忆）
+agent.memory.getDeletedById(id: string): Memory | null;
+agent.memory.searchHybrid(query: string, limit?: number): Promise<AgentSearchHit[]>; // 语义 + 关键词双通道
+
+// ─── 关系查询（relationStore 未注入时静默返回空/0） ───
+agent.memory.getRelations(memoryId: string, direction?: RelationDirection): MemoryRelation[];
+agent.memory.getAllRelations(): MemoryRelation[];
+agent.memory.getRelationPath(memoryId: string, maxDepth?: number, direction?: RelationDirection): RelationPath[];
+agent.memory.getRelationNeighbors(memoryId: string, limit?: number): RelationNeighbor[];
+```
+
+> **注意**：`suggest()` / `sourceHealth()` 已上移至 Agent 层（`agent.suggest()` / `agent.sourceHealth()`），不再挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。
 
 ---
 
@@ -306,6 +346,7 @@ interface Memory {
   accessedAt: string; // 最后访问时间（每次召回时刷新）
   score: number;      // 权重（0-1，召回时用于排序）
   deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理）
+  metadata?: Record<string, string>; // 配置文件 frontmatter 额外元数据（仅配置文件写入时使用，SQLite 不存储此字段）
 }
 ```
 
@@ -428,6 +469,8 @@ interface IMemoryRelationStore {
   getAllRelations(): MemoryRelation[];
   /** 删除关系（用于关系修正，用户确认冲突后删除误判关系） */
   removeRelation(sourceId: string, targetId: string, type: string): void;
+  /** 删除某记忆的所有关系边（不论方向，用于记忆删除/物理清除场景，防止孤儿边残留） */
+  removeRelationsByMemoryId(memoryId: string): number;
 }
 ```
 
@@ -740,6 +783,7 @@ type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' | 'hist
 interface UserProfileEntry {
   id: string;           // 画像唯一 ID（格式：profile:user-profile-{category}-{slug}）
   category: ProfileCategory;
+  fieldName: string;    // 显式字段名（如 "姓名"/"住址"，冲突检测基于 category+fieldName）
   value: string;        // 事实值（如 "姓名: 张三"）
   source: string;       // 来源（哪一轮对话提到）
   weight: number;       // 权重（0-1）
@@ -750,6 +794,7 @@ interface UserProfileEntry {
 /** 事实提取的原始结果 */
 interface ExtractedFact {
   category: ProfileCategory;
+  fieldName: string;    // 显式字段名（由提取器填充，冲突检测基于 category+fieldName）
   value: string;
   sourceTurn: string;
   confidence: number;   // 置信度 0-1（≥0.8 直接归档，否则标记待确认）
@@ -864,37 +909,41 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ## 十四、完整 API 一览
 
-### Agent 面类直接方法（12 个）
+### Agent 面类直接方法
 
 | 分组 | 方法 |
 |------|------|
-| 生命周期 | `init()` / `close()` |
-| 对话 | `chat()` / `chatSync()` |
-| 事件 | `on()` / `off()` / `once()` |
-| 项目 / 会话 | `switchProject()` / `rebuildComponents()` / `forkSession()` |
-| Provider | `setProvider()` / `setBackgroundProvider()` |
+| 生命周期 | `init(projectPathOverride?)` / `close()` |
+| 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `forceReleaseChatLock()` |
+| 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
+| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` |
+| Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
+| 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
+| 角色 | `switchPersona(name)` / `getPersonaSwitchLockStatus()` / `injectAffect(affectString)` |
+| 手动归档 | `archiveProfileFacts(input, options?)` / `archiveInsight(input, assistantContent, options?)` / `archiveSessionContent(date, session, options?)` |
+| 配置热更新 | `reloadConfig(source?)` |
+| 记忆治理 | `deduplicateMemories(signal?)` / `evaluateTimeliness(signal?)` / `runMemoryDecayOnce()` / `sourceHealth()` / `suggest(query?, options?)` / `detectConflicts(signal?)` |
+| 指标 | `getMetrics()` |
 
-### Agent 面类只读访问器（10 个）
+### Agent 面类只读访问器
 
-`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager`
+`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `persona` / `tools` / `skills` / `config` / `insight` / `memory` / `userProfile` / `works` / `polish`
 
-### Manager 访问器（9 个）
+### 各 Manager / 组件公开成员
 
-`persona` / `tools` / `skills` / `config` / `insight` / `memory` / `memoryMutator` / `userProfile` / `works`
+| 访问器 | 类型 | 公开成员 |
+|---------|---------|---------|
+| `agent.persona` | `PersonaManager` | `.list` / `.activeName` / `.currentMode` / `.active` / `.switchPersona()` / `.setMode()` |
+| `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
+| `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
+| `agent.config` | `ConfigManager` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
+| `agent.insight` | `InsightExtractor` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
+| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()` / `.getRelations()` / `.getAllRelations()` / `.getRelationPath()` / `.getRelationNeighbors()`；写：`.writeUpsert()` / `.writeBoost()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` / `.writeAddRelation()` / `.writeRemoveRelation()` / `.writeRemoveRelationsByMemoryId()` |
+| `agent.userProfile` | `UserProfile` | `.load()` / `.archiveFacts(facts)` / `.getConfirmed()` / `.getPending()` / `.buildSystemPrompt()` / `.confirm(id)` / `.reject(id)` |
+| `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
+| `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
-### 各 Manager 公开成员
-
-| Manager | 公开成员 |
-|---------|---------|
-| `agent.persona` | `.list` / `.activeName` / `.currentMode` / `.active` / `.switchPersona()` / `.setMode()` |
-| `agent.tools` | `.list` / `.registerTool()` / `.execute()` |
-| `agent.skills` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
-| `agent.config` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
-| `agent.insight` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
-| `agent.memory` | `.snapshot()` / `.search()` / `.stats()` / `.suggest()` / `.sourceHealth()` |
-| `agent.memoryMutator` | `.upsert()` / `.delete()` / `.restore()` / `.purge()`（写操作代理，P1-2 拆分） |
-| `agent.userProfile` | `.load()` / `.archiveFacts(facts)` / `.getConfirmed()` / `.getPending()` / `.buildSystemPrompt()` / `.confirm(id)` / `.reject(id)` |
-| `agent.works` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
+> **说明**：`suggest()` / `sourceHealth()` 现为 Agent 层方法（`agent.suggest()` / `agent.sourceHealth()`），不再挂在 `agent.memory` 下。旧的 `memoryMutator` 访问器与 `MemoryMutator` 类已合并回 `MemoryInspector`，请勿再使用。
 
 ---
 
@@ -1002,7 +1051,7 @@ action: block
 
 ## 十八、类型导出
 
-> 以下导出与 `src/index.ts` 完全对齐（v1.0.0）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
+> 以下导出与 `src/index.ts` 完全对齐（v2.0.1）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
 
 ```typescript
 // Agent 与流式事件
@@ -1035,8 +1084,14 @@ export type {
   SourceHealthEntry,
   SourceHealthReport,
 } from '@zooique/memora';
-// 记忆写入器（P1-2 拆分）
-export type { MemoryMutator } from '@zooique/memora';
+// 记忆治理 / 健康度（Agent 层方法返回的报告类型）
+export type { DedupPair, DedupVerdict, DedupVerdictSummary, DedupReport } from '@zooique/memora';
+export type { TimelinessVerdict, TimelinessReport } from '@zooique/memora';
+export type { ConflictVerdict, ConflictReport } from '@zooique/memora';
+export type { SourceHealthStatus, SourceHealthEntry, SourceHealthReport } from '@zooique/memora';
+export type { SuggestOptions, SuggestHit } from '@zooique/memora';
+// 文本润色
+export type { PolishResult } from '@zooique/memora';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 
 // 工具
@@ -1145,6 +1200,8 @@ export type {
 // 评估
 export type { EvalScenario, EvalExpectation, EvalResult } from '@zooique/memora';
 export { collectAgentChunks, evaluateResult } from '@zooique/memora';
+export { EVAL_SCENARIOS, EvalRunner } from '@zooique/memora';
+export type { EvalRunnerOptions, EvalSummary } from '@zooique/memora';
 ```
 
 ---
@@ -1166,6 +1223,6 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v1.0.0
-**最后更新**：2026-07-08
+**版本**：v2.0.1
+**最后更新**：2026-07-26
 **配套文档**：[memora-接入指南.md](./memora-接入指南.md)（步骤式教程）

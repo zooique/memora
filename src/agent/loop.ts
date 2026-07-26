@@ -13,7 +13,7 @@ import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import type { AgentChunk, UIMessages } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
-import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { runGuardrails } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
@@ -133,7 +133,7 @@ export class AgentLoop {
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
-    this.maxContextTokens = opts.maxContextTokens ?? 32000;
+    this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.guardrailRules = opts.guardrailRules ?? [];
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;

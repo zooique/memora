@@ -1,7 +1,7 @@
 /**
  * Agent 门面类 — Memora 宿主项目接入入口
  *
- * 设计文档（ADR-010 · Agent 门面类）要求宿主项目通过 `import { Agent } from '@memora/core'`
+ * 设计文档（ADR-010 · Agent 门面类）要求宿主项目通过 `import { Agent } from '@zooique/memora'`
  * 一行代码接入。本类负责组件组装和核心对话编排，
  * 领域专属操作委托给专职 Manager（PersonaManager / ToolExecutor / SkillManager / ConfigManager / InsightExtractor / MemoryInspector）。
  *
@@ -222,7 +222,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
-    // 如需自定义日志，请在创建 Agent 前调用 `import { setLogger } from '@memora/core'` 全局设置
+    // 如需自定义日志，请在创建 Agent 前调用 `import { setLogger } from '@zooique/memora'` 全局设置
   }
 
   // ─── 生命周期 ─────────────────────────────────────────

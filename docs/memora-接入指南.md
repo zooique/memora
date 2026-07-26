@@ -1,18 +1,20 @@
-# Memora · 接入指南 v1.0.0
+# Memora · 接入指南 v2.0.1
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v1.0.0（最后更新：2026-07-08）
+> **版本**：v2.0.1（最后更新：2026-07-26）
 >
-> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：zod schema 单一真理源、IVectorStore 接口提取（JsonVectorStore 内置实现）、AbortSignal 合并工具、Logger 懒初始化（移除模块顶层副作用）、评估框架结构化信号（guardrailBlocked 替代文案匹配）、文档全量对齐（包名 @zooique/memora）。
+> **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
+> - **Agent God Object 拆分（原 v3.0）**：记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference.md)。
+> - **可观测性与护栏（原 v3.1）**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
+> - **关系图谱与画像（原 v3.2）**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
+> - **npm 正式包与基础工具（原 v3.3）**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
 >
-> **v3.3 变更**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
+> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：DEFAULT_CONFIG 由 `config/loader.ts` 常量声明单一真理源（不再维护独立 schema）、IVectorStore 接口提取（JsonVectorStore 内置实现）、AbortSignal 合并工具、Logger 懒初始化（移除模块顶层副作用）、评估框架结构化信号（guardrailBlocked 替代文案匹配）、文档全量对齐（包名 @zooique/memora）。
 >
-> **v3.2 变更**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
+> **v2.0.0 变更**：版本号提升（维护性质，无破坏性 API 变更）。
 >
-> **v3.1 变更**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
->
-> **v3.0 重大变更**：Agent God Object 拆分。记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference.md)。
+> **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
 
 ---
 
@@ -44,7 +46,7 @@
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式（v3.0）。** Agent 面类只做编排，领域操作委托给 8 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory` / `agent.userProfile` / `agent.works`。
+**Manager 委托模式（1.0.0）。** Agent 面类只做编排，领域操作委托给 9 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory` / `agent.userProfile` / `agent.works` / `agent.polish`（文本润色）。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -57,7 +59,7 @@
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 8 个 Manager getter（委托模式）        │               │
+│  │  - 9 个 Manager getter（委托模式，含文本润色）      │               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
@@ -89,13 +91,13 @@
 ### 1. 安装
 
 ```bash
-npm install memora
+npm install @zooique/memora
 ```
 
 ### 2. 创建 Provider + Agent
 
 ```typescript
-import { Agent, createLlmProvider, VectorStore } from '@zooique/memora';
+import { Agent, createLlmProvider, JsonVectorStore, setLogger } from '@zooique/memora';
 import type { IMemoryStorage, ILogger, EmbeddingService } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider（Agent 不关心 API Key）
@@ -117,12 +119,12 @@ const backgroundProvider = createLlmProvider({
 // 可选：注入存储层（不传则使用 InMemoryStorage）
 const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db');
 
-// 可选：注入日志实现（不传则使用默认 pino logger）
-const logger: ILogger = myCustomLogger;
+// 可选：全局替换日志实现（不调用则使用内置 console logger；pino 为可选 peer 依赖，动态 import 懒加载）
+setLogger(myCustomLogger);
 
 // 可选：向量存储（提供后启用语义搜索召回）
 const embeddingService: EmbeddingService = myEmbeddingService;
-const vectorStore = new VectorStore('/path/to/vectors.json', embeddingService);
+const vectorStore = new JsonVectorStore('/path/to/vectors.json', embeddingService);
 
 // 创建 Agent
 const agent = new Agent({
@@ -138,7 +140,6 @@ const agent = new Agent({
   confirmWrites: false,
   storage,               // 存储层注入（可选）
   vectorStore,           // 向量存储（可选，启用语义搜索）
-  logger,                // 日志注入（可选）
   tracer: myOtelTracer,  // 可观测性 Tracer（可选，不传则静默丢弃所有 span）
 });
 
@@ -181,7 +182,7 @@ agent.on('sessionForked', (e) => console.log(`分叉: ${e.from} → ${e.to}，${
 
 ### 4. 注册领域工具
 
-> v3.0：工具注册走 `agent.tools.xxx()`。
+> 1.0.0：工具注册走 `agent.tools.xxx()`。
 
 ```typescript
 agent.tools.registerTool(
@@ -203,7 +204,7 @@ agent.tools.registerTool(
 
 ### 5. 注入写入扩展 + 记忆关键词
 
-> v3.0：写入扩展和关键词走 `agent.insight.xxx()`。
+> 1.0.0：写入扩展和关键词走 `agent.insight.xxx()`。
 
 ```typescript
 // 写入前 diff 确认回调
@@ -223,7 +224,7 @@ agent.insight.setKeywords({
 
 ### 6. 注入项目规则
 
-> v3.0：规则注入走 `agent.config.xxx()`。
+> 1.0.0：规则注入走 `agent.config.xxx()`。
 
 ```typescript
 await agent.config.addSimpleRule(
@@ -234,7 +235,7 @@ await agent.config.addSimpleRule(
 
 ### 7. 查询记忆
 
-> v3.0：记忆查询走 `agent.memory.xxx()`。
+> 1.0.0：记忆查询走 `agent.memory.xxx()`。
 
 ```typescript
 // 3 层记忆快照
@@ -253,7 +254,7 @@ console.log('记忆总数:', stats.total);
 
 ### 8. 管理角色
 
-> v3.0：角色管理走 `agent.persona.xxx`。
+> 1.0.0：角色管理走 `agent.persona.xxx`。
 
 ```typescript
 // 列出所有角色
@@ -388,13 +389,12 @@ agent.on('sessionForked', (event) => {
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入 |
 | `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
-| `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索） |
+| `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索；内置实现 `JsonVectorStore`） |
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
-| `logger` | `ILogger` | ❌ | 日志注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
-| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 false） |
+| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
 
 ### Agent 生命周期与状态
 
@@ -418,7 +418,7 @@ agent.on('sessionForked', (event) => {
 
 | 方法 | 说明 |
 |------|------|
-| `agent.listProjects()` | 列出已注册的子项目（@deprecated 请使用 `agent.projects.list`） |
+| `agent.projects.listProjects()` / `agent.projects.list` | 列出已注册的子项目 |
 | `agent.switchProject(name)` | 切换到其他子项目 |
 | `agent.rebuildComponents()` | 通常不需要手动调用（`switchProject` 已自动执行），仅在强制刷新配置时使用 |
 | `agent.switchSession(name)` | 切换当前会话（同步，返回新会话名） |
@@ -432,7 +432,7 @@ agent.on('sessionForked', (event) => {
 
 | 路径 | Manager | 主要成员 |
 |------|---------|---------|
-| `agent.memory.xxx()` | MemoryInspector | `snapshot()` / `search(q, n)` / `stats()` |
+| `agent.memory.xxx()` | MemoryInspector | 读：`snapshot()` / `search(q, n)` / `searchHybrid(q, n)` / `stats()` / `list()` / `getById(id)` / `listDeleted()` / 关系查询；写：`writeUpsert()` / `writeDelete()` / `writeRestore()` / `writePurge()` / `writeAddRelation()` 等（`writeXxx` 前缀）。`suggest()` / `sourceHealth()` 已上移至 `agent.suggest()` / `agent.sourceHealth()` |
 | `agent.config.xxx()` | ConfigManager | `addRule(m)` / `addSimpleRule(n, c)` / `addSkill(m)` / `addSimpleSkill(n, c, k?)` / `onSuggestion(h)` / `confirm(s)` |
 | `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` / `list` |
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
@@ -440,7 +440,7 @@ agent.on('sessionForked', (event) => {
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
 | `agent.userProfile.xxx()` | UserProfile | `load()` / `archiveFacts(f)` / `getConfirmed()` / `getPending()` / `buildSystemPrompt()` / `confirm(id)` / `reject(id)` |
 | `agent.works.xxx()` | WorkProjectionManager | `ensureProjection(path, content)` / `getProjection(path)` / `loadAll()` |
-| `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `insightExtracted` |
+| `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `insightExtracted` / `conflictDetected` / `projectSwitched` / `skillMatched` / `archiveFailed` |
 
 ### Provider 管理
 
@@ -460,7 +460,7 @@ import {
   loadConfig,
   InMemoryStorage,
   InMemoryRelationStore,
-  VectorStore,
+  JsonVectorStore,
   EmbeddingProvider,
   setLogger,
   logger,
