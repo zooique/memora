@@ -76,6 +76,12 @@ export interface CompletionItem {
    * L2 采纳反哺：用户采纳时通过此 id 调用 boostMemory 反哺内核 Memory.score
    */
   memoryId?: string;
+  /**
+   * 对话候选的来源消息时间戳（ISO 8601，仅对话候选有，记忆候选无）
+   * STEP-7 近期会话权重：用于计算消息新鲜度 boost，让"刚聊过的话"在补全中优先浮现。
+   * 记忆候选的 score 已由内核反映重要性/新鲜度，无需此字段。
+   */
+  timestamp?: string;
 }
 
 /** 防抖延迟（ms） —— 输入停止后等待多久触发补全 */
@@ -137,6 +143,21 @@ const MAX_PER_SOURCE = 3;
 const SHORT_QUERY_THRESHOLD = 5;
 /** 续写场景下对话候选的 score 提升量（让近期对话在短查询时优先于结构化记忆） */
 const CONVERSATION_SHORT_QUERY_BOOST = 0.1;
+// ─── STEP-7 近期会话权重常量 ──────────────────────────────
+/**
+ * 近期会话权重：对话候选按来源消息新鲜度获得额外排序权重。
+ *
+ * 双重动机：
+ *   - STEP-7 补全排序加权（让"刚聊过的话"在补全中优先浮现）
+ *   - 加深与记忆养成 A2 前置（近期会话优先是"记忆养成"的输入信号）
+ * 仅作用于对话候选（其携带 timestamp）；记忆候选的 score 已由内核综合重要性/新鲜度，不加此 boost。
+ */
+/** 最新消息的额外权重上限（叠加在 base 0.6 之上，单次最多 +0.15） */
+const RECENT_SESSION_BOOST_MAX = 0.15;
+/** 半衰期（天）：消息年龄每增加一个半衰期，boost 衰减一半 */
+const RECENT_SESSION_HALF_LIFE_DAYS = 7;
+/** 最大有效年龄（天）：超过此年龄的对话候选不再加权（boost 归零） */
+const RECENT_SESSION_MAX_AGE_DAYS = 30;
 
 /**
  * 为 Promise 包装超时（单次 IPC 调用专用）
@@ -491,7 +512,7 @@ export class QuickInputCompletion {
       const candidates = this.mergeCandidates(
         query,
         memoriesResult.hits as Array<{ id: string; contentPreview: string; score: number; source?: string }>,
-        messagesResult.results as Array<{ content: string; role: string }>,
+        messagesResult.results as Array<{ content: string; role: string; timestamp?: string }>,
       );
 
       // 优先级链：匹配候选（记忆+对话）为空时回退到最近提交历史
@@ -733,7 +754,7 @@ export class QuickInputCompletion {
   private mergeCandidates(
     query: string,
     memories: Array<{ id: string; contentPreview: string; score: number; source?: string }>,
-    messages: Array<{ content: string; role: string }>,
+    messages: Array<{ content: string; role: string; timestamp?: string }>,
   ): CompletionItem[] {
     const candidates: CompletionItem[] = [];
 
@@ -782,6 +803,8 @@ export class QuickInputCompletion {
         fullText: text,
         sourceLabel: '对话',
         score: baseScore + intentBoost,
+        // STEP-7：携带来源消息时间戳，供后续近期会话权重 boost 计算（仅对话候选有）
+        timestamp: m.timestamp,
       });
     });
 
@@ -795,9 +818,9 @@ export class QuickInputCompletion {
       }
     }
 
-    // 采纳 boost：已被用户采纳过的候选项 score 获得提升
+    // 采纳 boost + 近期会话 boost：已被用户采纳过 / 来自近期会话的候选 score 获得提升
     const boosted = Array.from(seen.values()).map((c) => {
-      const boost = this.getAdoptionBoost(c.text);
+      const boost = this.getAdoptionBoost(c.text) + this.getRecentSessionBoost(c.timestamp);
       return boost > 0 ? { ...c, score: c.score + boost } : c;
     });
 
@@ -939,6 +962,28 @@ export class QuickInputCompletion {
     const count = this.adoptedTexts.get(key);
     if (!count) return 0;
     return Math.min(count, ADOPTION_BOOST_MAX_COUNT) * ADOPTION_BOOST_PER_COUNT;
+  }
+
+  /**
+   * 获取候选项的近期会话权重 boost 值（STEP-7）
+   *
+   * 仅对话候选携带 timestamp（记忆候选无，其 score 已由内核综合重要性/新鲜度）。
+   * 按消息新鲜度指数衰减：
+   *   boost = RECENT_SESSION_BOOST_MAX * 0.5^(ageDays / RECENT_SESSION_HALF_LIFE_DAYS)
+   *   - 最新消息接近 RECENT_SESSION_BOOST_MAX（最多 +0.15）
+   *   - 年龄达到 RECENT_SESSION_MAX_AGE_DAYS（30 天）时衰减为 0
+   * 时钟异常（未来时间戳）一律返回 0，避免异常值污染排序。
+   * 与 getAdoptionBoost 设计一致：纯函数、无 IO、可安全叠加。
+   *
+   * @param timestamp 来源消息时间戳（ISO 8601），缺失或非法返回 0
+   */
+  private getRecentSessionBoost(timestamp?: string): number {
+    if (!timestamp) return 0;
+    const t = Date.parse(timestamp);
+    if (isNaN(t)) return 0;
+    const ageDays = (Date.now() - t) / 86_400_000;
+    if (ageDays < 0 || ageDays > RECENT_SESSION_MAX_AGE_DAYS) return 0;
+    return RECENT_SESSION_BOOST_MAX * Math.pow(0.5, ageDays / RECENT_SESSION_HALF_LIFE_DAYS);
   }
 
   /**

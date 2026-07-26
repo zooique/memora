@@ -118,6 +118,9 @@ function createThrowingAgentFactory(): () => Agent {
 // ═══════════════════════════════════════════════════════════════
 
 describe('EvalRunner', () => {
+  // hookTimeout 提到 30s：Windows 沙箱下满载跑完整测试套件时，
+  // 累积 tmp 目录（含 .memora/SQLite）的 rmSync 清理偶发超过 vitest 默认 10s 钩子超时，
+  // 触发 afterEach 超时并级联标记用例失败（隔离复跑 10/10 全过，证实为环境抖动而非断言失败）。
   afterEach(() => {
     for (const dir of tmpDirs) {
       try {
@@ -127,7 +130,7 @@ describe('EvalRunner', () => {
       }
     }
     tmpDirs.length = 0;
-  });
+  }, 30000);
 
   // ─── 构造 + 选项 ────────────────────────────────────────
 

@@ -119,7 +119,7 @@ chore: 升级 dependencies
 
 > 本节列出 `.trae/rules/` 下所有规则文件，方便按需加载。`alwaysApply: true` 的文件随会话自动加载，其余文件需 AI 主动读取。
 
-### 6.1 总则类（alwaysApply: true，自动加载）
+### 6.1 总则类（alwaysApply: false，按需加载）
 
 | 文件 | 用途 |
 |------|------|

@@ -73,8 +73,10 @@ function createMemoryHit(overrides?: Partial<{ id: string; contentPreview: strin
   };
 }
 
-/** 模拟对话搜索结果 */
-function createMessageResult(overrides?: Partial<{ content: string; role: string }>) {
+/** 模拟对话搜索结果（STEP-7 起支持携带 timestamp，供近期会话权重 boost 使用） */
+function createMessageResult(
+  overrides?: Partial<{ content: string; role: string; timestamp: string }>,
+) {
   return {
     content: '帮我看看这个 TypeScript 类型问题',
     role: 'user',
@@ -1126,6 +1128,57 @@ describe('L1 source 语义感知', async () => {
     const labels = Array.from(document.querySelectorAll('.completion-label')).map((el) => el.textContent);
     // MAX_PER_SOURCE=3，洞察 3 条 + 偏好 1 条 = 4 条（多样性过滤基于细分 sourceLabel）
     expect(labels).toEqual(['洞察', '洞察', '洞察', '偏好']);
+  });
+});
+
+// ─── STEP-7 近期会话权重 ───────────────────────────────
+
+describe('STEP-7 近期会话权重', async () => {
+  it('新鲜对话候选（1 天前）应排在陈旧对话候选（25 天前）之前', async () => {
+    const { input, api } = createCompletion();
+    // 固定系统时钟，确保 ageDays 计算与测试用例一致（对抗式：与时间无关，可重复）
+    vi.setSystemTime(new Date('2026-07-26T00:00:00Z'));
+    const now = Date.now();
+    const recentTs = new Date(now - 1 * 86_400_000).toISOString(); // 1 天前
+    const oldTs = new Date(now - 25 * 86_400_000).toISOString(); // 25 天前
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        // 故意将"陈旧"项（携带 oldTs）排在结果数组前面，验证排序由 boost 决定而非插入顺序
+        // 关键词都在开头 → base score 相同；新鲜项（recentTs）boost 更高，应逆序排前
+        createMessageResult({ content: '话题陈旧讨论', role: 'user', timestamp: oldTs }),
+        createMessageResult({ content: '话题新鲜讨论', role: 'user', timestamp: recentTs }),
+      ],
+    });
+    input.value = '话题';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    // 新鲜项 boost≈0.136 >> 陈旧项 boost≈0.012 → 新鲜项排前（与插入顺序相反，证明加权生效）
+    expect(texts).toEqual(['话题新鲜讨论', '话题陈旧讨论']);
+  });
+
+  it('超过 30 天的陈旧对话不获得 boost（两件均陈旧 → 保持 base 稳定顺序）', async () => {
+    const { input, api } = createCompletion();
+    vi.setSystemTime(new Date('2026-07-26T00:00:00Z'));
+    const now = Date.now();
+    const oldA = new Date(now - 35 * 86_400_000).toISOString(); // 35 天前
+    const oldB = new Date(now - 45 * 86_400_000).toISOString(); // 45 天前
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '话题A陈旧', role: 'user', timestamp: oldA }),
+        createMessageResult({ content: '话题B陈旧', role: 'user', timestamp: oldB }),
+      ],
+    });
+    input.value = '话题';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    // 均 >30 天 → getRecentSessionBoost 均返回 0；base score 相同 → 稳定排序保持原始相对顺序
+    expect(texts).toEqual(['话题A陈旧', '话题B陈旧']);
   });
 });
 
