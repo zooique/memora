@@ -184,6 +184,9 @@ describe('ClipboardHandler', () => {
 
       handler.startPolling();
       expect(handler.isPolling()).toBe(true);
+      // 启动时主动推送当前剪贴板内容，然后记录哈希避免后续重复触发
+      expect(emitHandler).toHaveBeenCalledWith('changed');
+      emitHandler.mockClear();
 
       // 内容未变化，不应触发事件
       vi.advanceTimersByTime(2000);
@@ -228,6 +231,10 @@ describe('ClipboardHandler', () => {
       const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
 
       handler.startPolling();
+      // 启动时主动推送当前剪贴板内容
+      expect(emitHandler).toHaveBeenCalledWith('changed');
+      emitHandler.mockClear();
+
       handler.stopPolling();
       expect(handler.isPolling()).toBe(false);
 
@@ -236,12 +243,17 @@ describe('ClipboardHandler', () => {
       expect(emitHandler).not.toHaveBeenCalled();
     });
 
-    it('启动时记录当前哈希，避免立即触发变化事件', () => {
+    it('启动时主动推送当前剪贴板内容，并记录哈希避免重复触发', () => {
       vi.useFakeTimers();
       const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
 
       handler.startPolling();
-      // 内容未变化，第一次轮询不应触发
+      // 启动时主动推送一次，覆盖应用重启后的历史恢复场景
+      expect(emitHandler).toHaveBeenCalledTimes(1);
+      expect(emitHandler).toHaveBeenCalledWith('changed');
+      emitHandler.mockClear();
+
+      // 推送后哈希已记录，内容未变化时轮询不再重复触发
       vi.advanceTimersByTime(2000);
       expect(emitHandler).not.toHaveBeenCalled();
 
@@ -345,6 +357,8 @@ describe('ClipboardHandler', () => {
       });
 
       handler.startPolling();
+      // 启动时主动推送当前剪贴板内容
+      emitHandler.mockClear();
       mockClipboard.setText('changed');
 
       // 500ms 后应触发（默认是 2000ms）
@@ -361,6 +375,9 @@ describe('ClipboardHandler', () => {
       const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
 
       handler.startPolling();
+      // 启动推送后重置 mock，聚焦抑制行为验证
+      emitHandler.mockClear();
+
       // 调用抑制标记，模拟程序主动写入剪贴板
       handler.suppressNextChange();
       mockClipboard.setText('programmatic write');
@@ -377,6 +394,8 @@ describe('ClipboardHandler', () => {
       const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
 
       handler.startPolling();
+      emitHandler.mockClear();
+
       // 第一次：抑制程序写入
       handler.suppressNextChange();
       mockClipboard.setText('programmatic write');
@@ -396,6 +415,8 @@ describe('ClipboardHandler', () => {
       const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
 
       handler.startPolling();
+      emitHandler.mockClear();
+
       // 调用抑制但内容未变化（哈希相同），标记保持
       handler.suppressNextChange();
       vi.advanceTimersByTime(2000);

@@ -74,6 +74,9 @@ function createManager(
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-07-18T12:00:00Z'));
+  // 清除 localStorage 确保每个测试从空历史开始
+  //（构造函数会调用 loadPendingItems() 从 localStorage 恢复上次会话的待处理列表）
+  localStorage.clear();
   window.electronAPI = {
     clipboardAnalyze: vi.fn().mockResolvedValue(undefined),
     addMemory: vi.fn().mockResolvedValue(undefined),

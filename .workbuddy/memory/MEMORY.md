@@ -1,4 +1,10 @@
-# 项目长期记忆（memora 样式系统）
+# 项目长期记忆（memora）
+
+## 炼化归元全量扫描结论（2026-07-26）
+- 综合健康度 9.0/10。依赖方向全部合规（零反向依赖），内核零 native/第三方依赖，1630 测试全绿（69 文件，1 skipped）。
+- 唯一修复：`src/llm/__tests__/llm-integration.test.ts` → `llmIntegration.test.ts`（命名规范对齐 kebab→camelCase）。
+- 无真死代码/孤模块/调试残留/AI 修改痕迹。CSP 零内联 style 违规。
+- 潜在关注：agent.ts(70KB) 与 loop.ts(49KB) 单文件体积偏大；toolExecutor.ts re-export 可简化。
 
 ## 样式系统审计方法论（可复用，避免再踩坑）
 - **统计「硬编码色」必须排除 `tokens.css` 的定义值**：`--red: #dc2626` 是 token 定义不是泄露。脚本里先 `var_re.sub('', text)` 去掉 `var(...)`（含 fallback 颜色），再对剩余文本找色值；且遍历文件时跳过 `foundation/tokens.css`。否则会把定义值误计为硬编码色（曾误报 157→真实 3）。

@@ -144,12 +144,6 @@ export interface DashboardViewModel {
 
 // ─── 常量 ────────────────────────────────────────────────
 
-// ─── 导出的纯函数（保持向后兼容） ─────────────────────────
-
-// formatTokenCount 已迁移至 shared/numberUtils.ts（UX-12 术语统一，消除 K/k 大小写不一致）
-// 旧导入路径 `import { formatTokenCount } from './dashboardPanelManager.js'` 应改为
-// `import { formatTokenCount } from '../../../shared/numberUtils.js'`
-
 // ─── 仪表盘面板管理器类 ───────────────────────────────────
 
 /**

@@ -2,7 +2,8 @@
  * 剪贴板保护面板管理器 — 数据/状态层
  *
  * 职责：
- * - 维护会话级待处理列表（pendingItems）：去重 + FIFO 淘汰 + 24h 标记较旧
+ * - 维护待处理列表（pendingItems）：去重 + FIFO 淘汰 + 24h 标记较旧
+ * - localStorage 持久化：应用重启后恢复历史记录（不含原文，仅预览元数据）
  * - 提供 addPendingItem / removePendingItem / clearPendingItems / getPendingItems API
  * - 通过 onChange 回调通知 UI 层（clipboardPanelManager）刷新角标和列表
  * - 普通内容静默累积到待处理列表，角标 +1，不打断用户
@@ -24,13 +25,15 @@ import { truncate } from '../../../shared/truncate.js';
 // ─── 类型定义 ───────────────────────────────────────────
 
 /**
- * 剪贴板待处理条目（会话级内存态，不持久化）
+ * 剪贴板待处理条目（localStorage 持久化，应用重启恢复）
  *
  * 设计决策：
- * - 不存储原文：仅存预览（前 100 字符）+ 长度，原文在归档时从剪贴板读取
+ * - 不存储原文：仅存预览（前 100 字符）+ 长度，原文在归档时从 OS 剪贴板读取
  * - 不持有哈希：clipboardHandler 的哈希是 private 状态不暴露；
  *   归档时通过 preview.slice(0,100) 比较做软校验（防止内容已变化时存错条目）
  * - isStale 标记：超过 24h 未处理标记为"较旧"，角标边框变橙色提示
+ * - 持久化策略：每次状态变更 fire-and-forget 写 localStorage；
+ *   恢复时由 ClipboardHandler 启动主动推送 + loadPendingItems() 双重兜底
  */
 export interface ClipboardPendingItem {
   /** 唯一 ID（时间戳 + 随机数，便于列表 key 和单条操作定位） */
@@ -56,6 +59,9 @@ export const BADGE_MAX_DISPLAY = 99;
 /** 较旧阈值（24h，超过则标记 isStale，角标边框变橙色） */
 export const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
+/** localStorage 键名（剪贴板待处理历史，应用重启恢复） */
+const STORAGE_KEY = 'memora:clipboard-pending';
+
 // ─── ClipboardManager 类 ───────────────────────────────
 
 /**
@@ -77,7 +83,7 @@ export class ClipboardManager {
   private onChange?: () => void;
 
   /**
-   * 构造函数：注入共享的 Toast / Modal 管理器实例
+   * 构造函数：注入共享的 Toast / Modal 管理器实例，从 localStorage 恢复历史记录
    *
    * @param toastManager Toast 通知管理器（用于敏感内容保护性提醒 + 归档成功 toast）
    * @param modalManager 模态框管理器（用于归档确认对话框）
@@ -88,6 +94,8 @@ export class ClipboardManager {
   ) {
     this.toastManager = toastManager;
     this.modalManager = modalManager;
+    // 应用重启后恢复剪贴板历史记录（不含原文，仅预览元数据）
+    this.pendingItems = this.loadPendingItems();
   }
 
   /**
@@ -100,6 +108,16 @@ export class ClipboardManager {
    */
   setOnChange(cb: () => void): void {
     this.onChange = cb;
+  }
+
+  /**
+   * 通知 UI 层状态变更并持久化到 localStorage
+   *
+   * 每次 pendingItems 变更时调用，fire-and-forget 不阻塞 UI。
+   */
+  private notifyAndSave(): void {
+    this.onChange?.();
+    this.savePendingItems();
   }
 
   /**
@@ -126,7 +144,7 @@ export class ClipboardManager {
       existing.detectedAt = Date.now();
       existing.isStale = false;
       this.pendingItems.unshift(existing);
-      this.onChange?.();
+      this.notifyAndSave();
       return;
     }
 
@@ -148,7 +166,7 @@ export class ClipboardManager {
     }
 
     // 通知 UI 层刷新
-    this.onChange?.();
+    this.notifyAndSave();
   }
 
   /**
@@ -160,7 +178,7 @@ export class ClipboardManager {
     const index = this.pendingItems.findIndex((item) => item.id === id);
     if (index >= 0) {
       this.pendingItems.splice(index, 1);
-      this.onChange?.();
+      this.notifyAndSave();
     }
   }
 
@@ -170,7 +188,7 @@ export class ClipboardManager {
   clearPendingItems(): void {
     if (this.pendingItems.length === 0) return;
     this.pendingItems = [];
-    this.onChange?.();
+    this.notifyAndSave();
   }
 
   /**
@@ -217,7 +235,7 @@ export class ClipboardManager {
       }
     }
     if (changed) {
-      this.onChange?.();
+      this.notifyAndSave();
     }
   }
 
@@ -304,5 +322,44 @@ export class ClipboardManager {
    */
   private generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  /**
+   * 从 localStorage 恢复剪贴板待处理历史
+   *
+   * 应用重启后调用，恢复上次会话的 pendingItems 列表（不含原文，仅预览元数据）。
+   * JSON 解析失败或数据格式异常时静默降级返回空数组（历史丢失优于初始化崩溃）。
+   *
+   * @returns 恢复的 ClipboardPendingItem 数组，失败时返回空数组
+   */
+  private loadPendingItems(): ClipboardPendingItem[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      // 基本结构校验：至少要有 id 字段（防止非预期格式注入）
+      return parsed.filter(
+        (item): item is ClipboardPendingItem =>
+          typeof item === 'object' && item !== null && typeof (item as ClipboardPendingItem).id === 'string',
+      );
+    } catch {
+      // JSON 解析失败：可能被手动编辑损坏或版本不兼容，静默丢弃
+      return [];
+    }
+  }
+
+  /**
+   * 持久化待处理列表到 localStorage
+   *
+   * 每次 pendingItems 变更时 fire-and-forget 调用，不阻塞 UI 线程。
+   * 写入失败静默降级（历史丢失优于抛错阻断剪贴板功能）。
+   */
+  private savePendingItems(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.pendingItems));
+    } catch {
+      // localStorage 写入失败：可能是配额耗尽或隐私模式下不可用，静默降级
+    }
   }
 }

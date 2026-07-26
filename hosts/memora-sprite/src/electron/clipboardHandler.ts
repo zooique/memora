@@ -111,8 +111,17 @@ export class ClipboardHandler {
     if (this.polling) return;
     this.polling = true;
 
-    // 初始化哈希（记录当前剪贴板状态，避免启动时立即触发变化事件）
+    // 初始化哈希（记录当前剪贴板状态，避免启动后立即因"未变化"而跳过推送）
     this.lastHash = this.computeHash();
+
+    // 启动时主动推送当前剪贴板内容：
+    // 应用重启后剪贴板可能仍有内容（用户在上次会话中复制但未处理，或应用关闭期间复制）。
+    // 主动推送使渲染层恢复最后一条待处理条目，无需完整持久化即可覆盖最常见的数据丢失场景。
+    // 复用运行时 changed 事件的完整链路（main.ts → CLIPBOARD_CHANGED IPC → addPendingItem），零新代码路径。
+    const hasContent = this.clipboard.readText().length > 0;
+    if (hasContent) {
+      this.options.emit?.('changed');
+    }
 
     // 使用 safeSetInterval 替代原生 setInterval，便于统一追踪定时器生命周期
     this.pollTimer = safeSetInterval(() => {

@@ -1078,7 +1078,7 @@ export class QuickInputController {
       // - .quick-input-area 的 offsetHeight 已含 textarea + gap + footer
       // - 额外加上 focus-bar 的高度（含 margin-bottom）——focus-bar 作为卡片头部在 container 内部
       // - 再加上 container 的上下 padding（var(--space-2) × 2 = 16px）
-      // 取代原魔法数字 16，改为 DOM 实际测量，避免 CSS 调整后偏移量失准。
+      // 通过 DOM 实际测量替代固定数值，避免 CSS 调整后偏移量失准
       const inputArea = this.inputField.parentElement;
       if (inputArea instanceof HTMLElement) {
         const container = inputArea.parentElement;
