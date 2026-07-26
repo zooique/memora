@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v1.0
-date: 2026-07-13
+version: v1.1
+date: 2026-07-26
 ---
 
 # 后端分层规范
@@ -89,7 +89,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 
 ## 存储层同步性约束（ADR-002 补充）
 
-> **来源**：排雷 AUDIT-4-2 · 详见 [ADR-002 §同步优先决策](./decisions/ADR-002-storage-layer.md)
+> **来源**：详见 [ADR-002 §同步优先决策](./decisions/ADR-002-storage-layer.md)
 
 | 项 | 约束 |
 |----|------|

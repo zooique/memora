@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v2.0
-date: 2026-07-20
+version: v2.1
+date: 2026-07-26
 ---
 
 # memora-sprite · 宿主项目总则
@@ -11,9 +11,7 @@ date: 2026-07-20
 > **定位**：memora 内核的第一个真实宿主——能自我进化的桌面精灵
 > **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008 + ADR-SP-015~018
 >
-> **当前阶段**：🆕 v2 质量打磨（与内核同步启动）
-> **v2 基调**：敢于重构——只有底层设计优秀，才能更好地自然生长。不新增功能模块，但敢于动底层手术
-> **v2 五大维度**：代码质量 → 设计质量 → 功能质量 → UI 质量 → 用户体验/视觉体验
+> **重构哲学**：底层设计优秀才能自然生长——不畏惧对底层架构动手术（功能定版后不盲目新增模块，但持续打磨架构与代码质量）。
 
 ## 1. 与 memora 内核的关系
 
@@ -99,7 +97,7 @@ npm run package:win   # 自动：build:electron（含 sync-memora） → clean-r
 | `components/` | 可复用 UI 组件（Toast / Modal / Theme 等 leaf 组件） | 直接依赖 panels/ 或 controllers/（反向依赖） |
 | `ui.ts` | UIManager 门面（组合持有所有子模块 + 薄委托方法） | 内联复杂 DOM 渲染逻辑（应拆分到 panels/） |
 
-**依赖方向**（AUDIT-0716-14 决策，2026-07-16）：
+**依赖方向**：
 
 > `panels/` → `components/` 是**合法正向依赖**（leaf 组件被 panels 消费），不算越权。
 >
@@ -109,9 +107,9 @@ npm run package:win   # 自动：build:electron（含 sync-memora） → clean-r
 
 **执行方式**：controllers/ 需要访问 DOM 时，通过 UIManager 提供的门面方法（如 `getMemorySearchParams()` / `triggerMemorySearchInput()` / `setMemoryListState()`），由 UIManager 内部委托到对应 PanelManager。
 
-#### 4.1.1 Panel Manager IPC 调用边界（F-P0 评估沉淀）
+#### 4.1.1 Panel Manager IPC 调用边界
 
-> **背景**：F-P0 审计发现 `panels/` 中 34 处 `window.electronAPI.*` 直调，经评估 23 处合理、11 处需处理。此条款明确判断标准，避免"所有 IPC 必须经 Controller"的过度约束。
+> **背景**：为避免"所有 IPC 必须经 Controller"的过度约束，明确 IPC 归属的判断标准——归属取决于业务编排职责，而非 IPC 调用本身。
 
 **核心判断标准**：IPC 调用的归属取决于"是否涉及跨模块业务编排"，而非"是否调用 IPC"。`controllers/` 自身也直接调 IPC（如 `settingsController` 调 `updateConfigBatch`），分层边界是"业务编排职责"而非"IPC 调用权限"。
 
@@ -126,20 +124,6 @@ npm run package:win   # 自动：build:electron（含 sync-memora） → clean-r
 - `panels/` 中的 IPC 调用必须通过 `host` 回调注入 `showToast` / `showConfirmDialog` 等跨模块关注点，不直接访问 UIManager 内部
 - `controllers/` 中的 IPC 调用后，通过 UIManager 门面方法通知 PanelManager 刷新 DOM
 - 加载操作（如 `listLlmProviders` / `listWorkProjections` / `listAuditLog`）允许在 `panels/` 中直调，因为 PanelManager 是渲染数据源的消费者
-
-**F-P0 评估结论**（2026-07-10）：
-
-| 违规项 | 位置 | 处理方式 |
-|--------|------|----------|
-| Provider CRUD 7 处 | `settingsPanelManager.ts` | 归类为"UI 耦合型业务逻辑"，允许直调（已通过 `host` 回调注入 toast/confirm） |
-| 画像 confirm/reject 3 处 | `profilePanelManager.ts` | 技术债：应委托 `settingsController`（加载已委托，写操作未委托，模式不一致） |
-| 审计日志清空 1 处 | `auditPanelManager.ts` | 技术债：应委托 `settingsController`（同上模式不一致） |
-| 窗口控制 4 处 | `panelRouter.ts` | 归类为"合理 UI 联动"，允许直调 |
-| 命令面板 6 处 | `commandPaletteManager.ts` | 归类为"合理 UI 联动"（快捷启动器定位） |
-| 输入区 Provider 选择 5 处 | `inputAreaManager.ts` | 归类为"合理 UI 联动"（独立 UI 表面的快捷操作） |
-| 其他 7 处 | skillDrop/clipboard/searchMessages 等 | 归类为"合理 UI 联动"（单一功能专项触发） |
-
-> 技术债（画像 3 处 + 审计 1 处）触发时机：profile/audit 模块下次有功能需求时顺带偿还。
 
 ### 4.2 注释规范（文件头与类级注释关系）
 
@@ -221,7 +205,7 @@ export class ClipboardManager { ... }
 | 测试 | 6 个路由测试文件（chatStream/config/memory/session/system + types），全量通过 |
 | 与 Electron 关系 | 平行模式，共享 `sprite/` 核心层和 `storage/` 持久化层，不共享 `electron/` 进程管理 |
 
-> **历史**：web/ 最初作为"临时开发辅助"创建，经 2026-07-05 根须审查正式接纳为 Phase 4 交付物。
+> **历史**：web/ 最初作为临时开发辅助创建，后正式接纳为与 Electron 平行的部署模式（共享内核，经原生 HTTP 提供 REST API + 静态前端）。
 
 ## 5. 命名规范
 
@@ -241,27 +225,13 @@ export class ClipboardManager { ... }
      采用三重保护方案（被动检测变化 + 主动触发读取 + 用户确认写入），
      仅在用户主动操作（复制/粘贴）时触发，且写入需用户显式确认。
 
-## 7. 阶段规划
-
-| 阶段 | 目标 | 交付物 |
-|------|------|--------|
-| 一 | CLI 宿主验证跑通 | SqliteStorage + SqliteSessionStore + CLI 交互 + 热键唤醒 |
-| 二 | 桌面存在感 | Electron 窗口 + 系统托盘 + 通知 + 文件监听 + 窗口感知 |
-| 三 | 多模态 | 语音输入/输出 + 高级 UI |
-| 四 | 能力扩展 | 工具化（registerTool）+ 事件补全 + 后台 Provider + 写入确认 |
-| ✅ v1 | **定版**（2026-07-19） | 以上四阶段全部完成，6037 测试全通过 |
-| 🆕 v2 | **质量打磨**（2026-07-20 启动） | 敢于重构底层——代码质量 + 设计质量 + 功能质量 + UI 质量 + 用户体验/视觉体验。不新增功能模块，但敢于动底层手术 |
-
-> v2 阶段敢于重构底层设计，为更好的自然生长奠基。详细原则见 [project-rules.md §7.6](./project-rules.md#76-v2-质量打磨原则敢于重构--2026-07-20-启动)。
-
-## 8. 阶段四：能力扩展（迭代 7-9 沉淀）
+## 8. 能力扩展
 
 > **自然生长原则**（[ADR-017](./decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）遵循 2 次提取原则。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
-> **触发条件**：审核报告（`docs/memora-sprite-交叉对齐审核报告.md`）识别出"机制已建、宿主未用"。
+> **触发条件**：识别到"内核机制已建、宿主尚未接入"的能力缺口时，按架构层原则评估归属后接入，不闭门造接口。
 
 ### 8.1 工具注册（`agent.tools.registerTool`）
 
-**沉淀时机**：迭代 9 出现 1 次工具注册（web_search + memory_search）。  
 **抽取阈值**：第 2 次出现时提取通用 helper（枝叶层 2 次提取原则，详见 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md)）。
 
 **当前实现**（[hosts/memora-sprite/src/sprite/tools.ts](../../hosts/memora-sprite/src/sprite/tools.ts)）：
@@ -277,7 +247,6 @@ export class ClipboardManager { ... }
 
 ### 8.2 事件订阅（L5 补全）
 
-**沉淀时机**：迭代 9 补齐 4 种未订阅事件（projectSwitched / skillMatched / memoryRecalled / decayCompleted）。  
 **设计原则**：
 
 - 静默模式过滤：项目切换/技能匹配/记忆召回在静默模式下不弹 toast
@@ -292,13 +261,11 @@ export class ClipboardManager { ... }
 
 ### 8.3 多 Provider 路由
 
-**沉淀时机**：迭代 7-8 引入后台 Provider（`agent.setBackgroundProvider`）。  
 **配置入口**：`ConfigSchema.llm.background`（独立块，温度 0.5 默认）。  
 **路由策略**：`AgentOptions.backgroundProvider` 注入独立 LlmProvider 实例，workProjection / autoConfigRefiner 直接调用 `backgroundProvider.chat()`，不通过 `ChatOptions` 字段路由。
 
 ### 8.4 写入确认闭环
 
-**沉淀时机**：迭代 8 完成写入确认 UI（M1）。  
 **数据流**：
 
 ```

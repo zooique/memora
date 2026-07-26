@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 新增模块的标准流程（防止随意加模块破坏架构）
-version: v0.2
-date: 2026-07-13
+version: v0.3
+date: 2026-07-26
 ---
 
 # 新增模块指南
@@ -48,7 +48,7 @@ src/<new-module>/
 ### 3. 必须的产物
 
 - [ ] 模块入口 `index.ts`（导出公共 API，不导出内部）
-- [ ] 单元测试 ≥ 80% 覆盖率
+- [ ] 单元测试覆盖率达标（目标见 [testing_rules.md §3](./testing_rules.md)：行 ≥80% / 函数 ≥88% / 分支 ≥75%）
 - [ ] 至少 1 个集成测试
 - [ ] 在 [project-rules.md §3 目录结构](./project-rules.md) 中添加
 - [ ] 在 [backend_layers_rules.md](./backend_layers_rules.md) 的职责表中添加
@@ -76,9 +76,9 @@ src/<new-module>/
 
 ### 6. 新增面板的 CSS 检查项（精灵宿主）
 
-> **来源**：[ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)
+> **来源**：[ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)；CSS 三层作用域模型（L1/L2/L3、面板前缀、单一真理源）与完整约束见 [backend_layers_rules.md §前端 CSS 三层作用域模型](./backend_layers_rules.md)。
 
-新增 `#panel-<name>` 面板时，必须完成以下 CSS 检查：
+新增 `#panel-<name>` 面板时，必须完成以下 CSS 检查（动作项，模型定义不在此重复）：
 
 - [ ] **CSS 文件命名**：创建 `<name>.css`（如 `perception.css`），不得复用现有 CSS 文件
 - [ ] **类名前缀**：所有面板专属类加 `<name>-` 前缀（如 `.perception-affect-grid`），禁止 BARE 类
@@ -90,7 +90,7 @@ src/<new-module>/
 
 ### 7. 新增 Agent Manager 检查清单
 
-> **来源**：AUDIT-0713-5 评估（2026-07-14）——不引入 ComponentRegistry，改为固化检查清单防止遗漏
+> **来源**：不引入 ComponentRegistry，改为固化检查清单防止遗漏（详见 [ADR-010](./decisions/ADR-010-agent-facade.md)）。
 
 新增 `src/agent/managers/` 下专职 Manager 时，按以下 9 处修改点检查（跨 [agent.ts](../../src/agent/agent.ts) 和 [assembler.ts](../../src/agent/assembler.ts) 2 文件）：
 
@@ -108,4 +108,4 @@ src/<new-module>/
 
 **带副作用的清理**（dispose/stop/close/shutdown）不进 `nullifyAllComponents()`，由 `close()` 显式调用（顺序敏感不可合并）。
 
-**为何不引入 ComponentRegistry**：类型安全性是门面类核心价值（ADR-010），`#private` 字段无法纳入，生命周期异构需适配层，assembler 已解决装配痛点。详见 [已完成任务.md AUDIT-0713-5 评估记录](../../tasks/已完成任务.md)。
+**为何不引入 ComponentRegistry**：类型安全性是门面类核心价值（ADR-010），`#private` 字段无法纳入，生命周期异构需适配层，assembler 已解决装配痛点——故以固化检查清单替代运行时注册表。

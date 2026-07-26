@@ -18,9 +18,8 @@ date: 2026-07-21
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
 3. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
    `source` 开放字符串区分（详见 [ADR-004](./decisions/ADR-004-memory-unification.md)）
-4. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 是 Agent 级共享资源，不随子项目切换重建
-5. **配置文件是真理源**：configDir
-   下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite；SQLite 是运行时索引，不是持久化配置存储
+4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
+5. **配置文件是真理源**：配置文件是持久化真理源，SQLite 仅作运行时索引（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
 6. **零依赖内核**：memora 是纯逻辑库，不依赖任何第三方包（包括 zod）和 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 为空。pino 作为可选 `peerDependencies`（`optional: true`）+ `optionalDependencies` 保留，零配置时宿主开箱即用，宿主也可注入自定义 `ILogger` 覆盖（详见 [ADR-002](./decisions/ADR-002-storage-layer.md) §理由）
 
 ## 2. 技术栈清单
@@ -68,7 +67,7 @@ memora/                          # Git 仓库根目录
 | 独立 package | 两个 package 各自 `npm install`、`npm test`、`npm run build`，互不依赖对方的 devDependencies |
 | 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
 | 内核零依赖 | memora 内核不依赖任何 native 模块（better-sqlite3、electron 等），所有 native 能力由精灵宿主注入 |
-| 精灵依赖内核 | 精灵通过 `"memora": "file:../.."` 引用内核（本地 file: 协议，指向仓库根；Junction 模式无需发布 npm） |
+| 精灵依赖内核 | 精灵通过 `sync-memora.mjs` 分发内核：编译内核 `src/` → `dist/`，最小化复制到精灵 `node_modules/memora/`（仅含 dist + 元数据）；源码 import 保持 `from 'memora'`。`file:../..` 已于 2026-07-17 废弃（Junction 会将全量仓库打入 asar，详见 [ADR-SP-005](./decisions/ADR-SP-005-package-management.md)） |
 | 规则分层 | 仓库级规则在 `.trae/rules/`，精灵专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束精灵宿主 |
 | 任务统一 | 根 `tasks/` 是唯一任务追踪目录（内核 + 精灵共享），`hosts/memora-sprite/tasks/` 已合并归档 |
 
@@ -154,6 +153,13 @@ chore: 升级 dependencies
 
 > 详见 [decisions/README.md](./decisions/README.md)。共 30 个 ADR：内核 ADR-001~004 + ADR-006~019（18 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015~018（12 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
 
+### 6.6 心智模型类（按需读取，跨前后端通用）
+
+| 文件 | 用途 |
+|------|------|
+| [programmer-mindset-rules.md](./programmer-mindset-rules.md) | 资深程序员心智模型（Bug 修复 + 逻辑设计：根因 / 嫁接 / 逻辑先行） |
+| [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) | UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继承，继承自 programmer-mindset-rules.md） |
+
 ## 7. AI 行为 DO/DON'T 速查表
 
 > 本节集中列出 AI 在编写/修改 memora 内核代码时的实施级 DO/DON'T 规则。
@@ -176,7 +182,6 @@ chore: 升级 dependencies
 | DON'T | 在 `src/` 下 import better-sqlite3 / electron / commander 等 native 模块 |
 | DON'T | 在 `src/` 下 import 任何 web 框架（Express / HTML / CSS） |
 | DON'T | 工具函数绑定特定环境依赖（如 pino） |
-| DO | memora `dependencies` 为空（零依赖内核） |
 
 ### 7.3 记忆与存储（补充 §1.3/§1.4）
 
@@ -185,7 +190,7 @@ chore: 升级 dependencies
 | DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要） |
 | DON'T | 混合技能定义与内存存储（技能通过 `skills/` 文件夹管理） |
 | DON'T | 直接修改 config schema（配置文件是真理源，§1.5） |
-| DON'T | 多 Agent 并发（单 Agent 模型，`memora.db` 跨项目共享） |
+| DON'T | 多 Agent 并发（单 Agent 模型，详见 §1.4） |
 | DO | 工作内容通过宿主工具访问，内核仅保留投影 |
 | DO | 切换项目用 `close()`，完全终止用 `shutdown()` |
 
