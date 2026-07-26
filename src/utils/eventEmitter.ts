@@ -57,6 +57,20 @@ export interface AgentEventMap {
     /** 编译失败原因 */
     message: string;
   };
+  /** 归档模式切换 */
+  archiveModeChanged: {
+    /** 切换前模式 */
+    from: string;
+    /** 切换后模式 */
+    to: string;
+  };
+  /** 角色切换锁定状态变化（防抖期间用户尝试切换被拒绝时通知） */
+  personaSwitchLocked: {
+    /** 锁定原因 */
+    reason: string;
+    /** 锁定时长（秒） */
+    lockedSeconds: number;
+  };
 }
 
 /** 事件名联合类型 */

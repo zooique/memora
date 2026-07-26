@@ -426,10 +426,12 @@ export async function handleSystemRoute(
       const data = ctx.sprite.dashboard();
       // 记忆源健康诊断（降级为 null）
       let sourceHealth = null;
+      let degraded = false;
       try {
         sourceHealth = ctx.sprite.sourceHealth();
       } catch (err) {
         logger.debug({ err: toError(err).message }, 'sourceHealth 获取失败，降级为 null');
+        degraded = true;
       }
       // Agent 运行时指标（降级为 null）
       let metrics = null;
@@ -437,6 +439,7 @@ export async function handleSystemRoute(
         metrics = ctx.sprite.getMetrics();
       } catch (err) {
         logger.debug({ err: toError(err).message }, 'metrics 获取失败，降级为 null');
+        degraded = true;
       }
       // 已加载技能列表
       const skills = ctx.agent.skills?.list.map((s) => ({
@@ -457,6 +460,7 @@ export async function handleSystemRoute(
         sourceHealth,
         metrics,
         skills,
+        degraded,
       });
       return;
     }

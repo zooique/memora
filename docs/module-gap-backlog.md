@@ -113,8 +113,8 @@
 |---|---|---|---|
 | L1 | agent.ts:534-536 | boost score 持久化失败无事件 | [TODO] |
 | L2 | recall.ts:122-124 | 关键词搜索/语义搜索降级无事件 | [TODO] |
-| L3 | agent.ts:976-980 | persona 切换防抖锁定状态变化无事件 | [TODO] |
-| L4 | agent.ts:899-907 | archiveMode 切换无事件 | [TODO] |
+| L3 | agent.ts:976-980 | persona 切换防抖锁定状态变化无事件 | [SKIP] personaManager 管理锁状态，需跨层接线 |
+| L4 | agent.ts:899-907 | archiveMode 切换无事件 | [DONE] archiveModeChanged 事件已接线 |
 | L5 | agent.ts:846-860 | 会话切换/恢复/删除无独立事件 | [TODO] |
 | L6 | workProjection.ts:133 | hash 变更检测覆盖旧投影无事件 | [TODO] |
 | L7 | projectManager.ts:155-157 | InMemoryStorage 兜底降级无事件 | [TODO] |
@@ -184,8 +184,8 @@
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
 | L1 | nodeSqliteDatabase.ts:101-103 | close() 无幂等保护 | [DONE] _closed 标记 |
-| L2 | sessionStore.ts:196-219 | copySession 覆盖目标不通知 | [TODO] |
-| L3 | systemRoutes.ts:420-432 | 仪表盘降级数据无用户提示 | [TODO] |
+| L2 | sessionStore.ts:196-219 | copySession 覆盖目标不通知 | [SKIP] 数据操作层不应通知 UI，调用方负责 |
+| L3 | systemRoutes.ts:420-432 | 仪表盘降级数据无用户提示 | [DONE] 增加 degraded 标记 |
 | L4 | errorMessages.ts:119-123 | 归档失败文案无恢复建议 | [DONE] 追加恢复/重试建议 |
-| L5 | chatStreamHandler.ts:185 | 窗口销毁时不发 STREAM_END | [TODO] |
-| L6 | chatHandlers.ts:68-78 | CHAT_FORCE_RELEASE_LOCK 无用户反馈 | [TODO] |
+| L5 | chatStreamHandler.ts:185 | 窗口销毁时不发 STREAM_END | [SKIP] 已销毁窗口无法接收 IPC，正确行为 |
+| L6 | chatHandlers.ts:68-78 | CHAT_FORCE_RELEASE_LOCK 无用户反馈 | [SKIP] 返回值已含 released 状态，UI 层消费 |

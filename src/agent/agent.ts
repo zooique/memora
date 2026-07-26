@@ -72,13 +72,13 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 // ─── 模块级常量 ─────────────────────────────────────────
 
 /** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
-// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（13 个事件）
+// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（15 个事件）
 const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryAdded', 'personaSwitched', 'decayCompleted',
   'memoryRecalled', 'sessionForked', 'insightExtracted',
   'conflictDetected', 'projectSwitched', 'skillMatched',
   'archiveFailed', 'contextTruncated', 'configReloaded',
-  'guardrailError',
+  'guardrailError', 'archiveModeChanged', 'personaSwitchLocked',
 ]);
 
 // ─── Agent 门面类 ───────────────────────────────────────
@@ -905,6 +905,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const prev = this.#config.archiveMode;
     if (prev === mode) return; // 幂等：无变更直接返回
     this.#config.archiveMode = mode;
+    this.emit('archiveModeChanged', { from: prev, to: mode });
     logger.info({ from: prev, to: mode }, '归档模式已切换');
   }
 
