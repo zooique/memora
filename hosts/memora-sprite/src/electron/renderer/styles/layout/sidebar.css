@@ -2,7 +2,9 @@
  * sidebar.css — 侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线
  *
  * 侧边栏固定 64px 图标模式（不再展开），与顶部栏同色无边界。
- * 导航按钮复用 .nav-btn 类，含 tooltip（::after 伪元素）+ 键盘聚焦样式 + 里程碑联动高亮。
+ * 导航按钮复用 .nav-btn 类：键盘聚焦样式 + 里程碑联动高亮 + 剪贴板角标（nav-badge）。
+ * 导航名称提示气泡（data-tooltip ::after）已弃用——64px icon 模式 + .active 态已足以表达位置，
+ * 无障碍标签由 aria-label / aria-labelledby 提供。
  */
 
 /* ─── 侧边栏（与顶部栏同色，无边界；默认 64px 图标模式） ─── */
@@ -83,7 +85,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative; /* 为 ::after tooltip 提供定位锚点 */
+  position: relative; /* 为 nav-badge 角标提供绝对定位锚点（保留，剪贴板待处理数角标依赖它） */
   padding: var(--space-2-5);
   border: none;
   border-radius: var(--radius-md);
@@ -140,27 +142,8 @@
   flex-shrink: 0;
 }
 
-/* 侧边栏 tooltip 改 CSS ::after（对齐 demo，代替 title 属性） */
-/* 使用 data-tooltip 属性存储提示文本，hover 时通过 ::after 伪元素渲染 */
-.nav-btn::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: calc(100% + 8px);
-  top: 50%;
-  transform: translateY(-50%);
-  padding: var(--space-1) var(--space-2-5);
-  background: var(--surface1);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-xs);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-  z-index: var(--z-decoration);
-  box-shadow: var(--shadow-sm);
-}
-.nav-btn:hover::after { opacity: 1; }
+/* 侧边栏导航不渲染名称提示气泡：64px icon 模式 + .active 态已表达当前面板位置，
+ * 无障碍标签由 aria-label / aria-labelledby 提供；剪贴板角标（nav-badge）独立保留。 */
 
 /* 导航按钮键盘聚焦可见样式 */
 .nav-btn:focus-visible {

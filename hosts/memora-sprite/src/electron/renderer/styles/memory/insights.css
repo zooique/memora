@@ -6,9 +6,11 @@
  * 分布条容器 + 关系摘要容器 + 冲突数红色高亮。
  */
 
-/* 洞察栏容器：padding 由本类提供，背景/边框/折叠由共享 .analysis-bar 提供 */
+/* 洞察栏容器：padding 由本类提供，背景/边框/折叠由共享 .analysis-bar 提供
+ * 横向对齐统一为 --space-4（16px），与 health-bar / completion-stats-bar 的 --pad-card 一致，
+ * 消除三面板内容左缘错位（原 12px 与另两页 16px 不一致）。 */
 .insights-bar {
-  padding: var(--space-2-5) var(--space-3);
+  padding: var(--space-2-5) var(--space-4);
 }
 
 /* 统计卡网格（4 列，窄屏降级 2 列；卡片本体复用共享 .stat-card） */

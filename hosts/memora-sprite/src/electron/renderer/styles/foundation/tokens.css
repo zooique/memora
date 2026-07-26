@@ -117,7 +117,7 @@
   --z-base:             1;     /* 基础内容层（时间线节点等） */
   --z-empty-state:      5;     /* 空状态覆盖层 */
   --z-floating-action:  10;    /* 浮动操作元素（banner/legend/suggestion） */
-  --z-decoration:       20;    /* 装饰性伪元素（nav-btn::after 等，低于 tooltip） */
+  --z-decoration:       20;    /* 装饰性浮层层级（低于 tooltip，令牌化；nav-badge / float / chat 装饰层使用） */
   --z-tooltip:          50;    /* tooltip（高于装饰元素，低于 popover） */
   --z-popover:          100;   /* popover/dropdown/menu（交互浮层） */
   --z-modal:            1000;  /* 模态弹窗 */

@@ -35,7 +35,8 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-1);
-  margin-bottom: var(--space-2-5);
+  /* 块间距上移至 .panel-section；本块为"健康评分"section 内唯一内容 */
+  margin-bottom: 0;
 }
 
 /* ─── 健康度指标三行 ───────────────────────────────── */
@@ -44,7 +45,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
-  margin-bottom: var(--space-2-5);
+  /* 同 section 内与 .health-details 相邻，仅保留到详情的微间距 */
+  margin-bottom: var(--space-1-5);
 }
 
 .health-metric {
@@ -80,7 +82,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-  margin-bottom: var(--space-1-5);
+  /* 块间距上移至 .panel-section（"维度明细"section 末元素） */
+  margin-bottom: 0;
 }
 
 /* 健康度描述文字 */
@@ -97,51 +100,18 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1-5);
-  margin-top: var(--space-2);
+  /* 块间距上移至 .panel-section（"治理操作"section 标题已提供上间距） */
+  margin-top: 0;
 }
 
 /* 健康度操作按钮已收口为通用 .btn 变体（.btn-secondary / .btn-danger + .btn-sm），
    见 index.html 与 memoryPanelManager.ts 的回收站项按钮；此处不再保留 bespoke 样式。 */
 
-/* ─── AI 治理可折叠次级组（CSS-R11：纯 <details> 零 JS） ─────── */
+/* ─── AI 治理（用户要求直接展开，已去掉 <details> 折叠） ─────── */
 
-.health-llm-group {
-  margin-top: var(--space-2);
-}
-
-.health-llm-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-  color: var(--text-2);
-  cursor: pointer;
-  user-select: none;
-  padding: var(--space-1) 0;
-  list-style: none; /* 去掉默认三角，用自定义箭头 */
-}
-
-.health-llm-summary::-webkit-details-marker {
-  display: none;
-}
-
-.health-llm-summary::before {
-  content: '▾';
-  font-size: 10px;
-  line-height: 1;
-  transition: transform var(--transition-fast);
-}
-
-.health-llm-group[open] .health-llm-summary::before {
-  transform: rotate(180deg);
-}
-
-/* LLM 治理按钮组（原为 .health-actions.health-actions-llm，现置于 <details> 内） */
+/* LLM 治理按钮组（与 .health-actions 同级，置于 .panel-section 内，
+   分隔由 section 的 head 提供，此处仅做按钮排列） */
 .health-actions-llm {
-  border-top: 1px dashed var(--surface2);
-  padding-top: var(--space-1-5);
-  margin-top: var(--space-1);
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1-5);

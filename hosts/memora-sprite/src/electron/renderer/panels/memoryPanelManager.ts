@@ -62,6 +62,7 @@ import {
   dismissAnalysisPanels as dismissAnalysisPanelsHelper,
   switchView as switchViewHelper,
   setSection as setSectionHelper,
+  showDisplayView as showDisplayViewHelper,
 } from '../helpers/memoryViewSwitcher.js';
 import type { MemoryViewSwitcherContext, MemorySection } from '../helpers/memoryViewSwitcher.js';
 // 时间线视图子系统（按天分组渲染 + 日期标签格式化）提取到独立 helper
@@ -901,6 +902,35 @@ export class MemoryPanelManager {
    */
   setSection(section: MemorySection): void {
     setSectionHelper(this.buildViewSwitcherContext(), section);
+  }
+
+  /**
+   * 进入记忆面板时确保当前激活区块对应的视图容器可见。
+   *
+   * 修复：首次点击记忆面板时，若默认数据视图（list）容器处于 hidden，
+   * 列表虽已加载数据却不可见，必须切一次 rail 才触发 switchView 取消 hidden。
+   * 主动同步显隐，避免首屏空白。对默认已可见场景为无操作（安全）。
+   */
+  ensureActiveSectionVisible(): void {
+    const ctx = this.buildViewSwitcherContext();
+    const section = this.activeSection;
+    if (section === 'list' || section === 'timeline' || section === 'graph') {
+      // 数据视图：按当前 viewMode 同步显隐（默认 list 取消 hidden）
+      showDisplayViewHelper(ctx, this.viewMode);
+    } else if (section === 'partner-insights') {
+      const p = document.getElementById('partner-insights');
+      if (p) p.classList.remove('hidden');
+    } else {
+      // 分析面板（insights / health / completion-stats）：确保对应 bar 可见
+      const barId =
+        section === 'insights'
+          ? 'memory-insights-bar'
+          : section === 'health'
+            ? 'memory-health-bar'
+            : 'completion-stats-bar';
+      const bar = document.getElementById(barId);
+      if (bar) bar.classList.remove('hidden');
+    }
   }
 
   /**

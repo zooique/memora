@@ -214,18 +214,18 @@
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
       <!-- 顶部高频区：对话 / 记忆 / 设定 / 剪贴板（工作区 + 设定管理 + 辅助操作型面板） -->
       <nav class="sidebar-nav sidebar-nav-top flex-shrink-0" aria-label="主导航">
-        <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
+        <button class="nav-btn active" data-panel="chat" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
-        <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-labelledby="panel-title-memories">
+        <button class="nav-btn" data-panel="memories" aria-labelledby="panel-title-memories">
           <svg class="icon"><use href="#icon-brain"/></svg>
         </button>
         <!-- 精灵设定入口（角色/规则/技能三类设定文件统一管理，与记忆相邻体现因果关系） -->
-        <button class="nav-btn" data-panel="sprite-settings" data-tooltip="设定" aria-labelledby="panel-title-sprite-settings">
+        <button class="nav-btn" data-panel="sprite-settings" aria-labelledby="panel-title-sprite-settings">
           <svg class="icon"><use href="#icon-sliders"/></svg>
         </button>
         <!-- 剪贴板入口（被动等待 + 保护性主动；角标显示待处理数量） -->
-        <button class="nav-btn" data-panel="clipboard" data-tooltip="剪贴板" aria-labelledby="panel-title-clipboard">
+        <button class="nav-btn" data-panel="clipboard" aria-labelledby="panel-title-clipboard">
           <svg class="icon"><use href="#icon-copy"/></svg>
           <!-- 角标容器：待处理数 0 时隐藏，1-99 显示数字，>99 显示 99+，有较旧内容边框变橙 -->
           <span class="nav-badge nav-badge-hidden" id="clipboard-nav-badge" aria-hidden="true"></span>
@@ -237,11 +237,11 @@
 
       <!-- 底部控制区：设置 + 信息侧栏 toggle（感知/仪表盘整合入口） -->
       <nav class="sidebar-nav sidebar-nav-bottom flex-shrink-0" aria-label="设置与侧栏">
-        <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-labelledby="panel-title-settings">
+        <button class="nav-btn" data-panel="settings" aria-labelledby="panel-title-settings">
           <svg class="icon"><use href="#icon-gear"/></svg>
         </button>
         <!-- 信息侧栏 toggle（单图标 + active 态表示打开；感知/仪表盘切换在侧栏 header tab） -->
-        <button id="btn-toggle-aux" class="nav-btn" data-tooltip="信息面板（感知 / 仪表盘）" aria-label="切换信息侧栏" aria-pressed="false">
+        <button id="btn-toggle-aux" class="nav-btn" aria-label="切换信息侧栏" aria-pressed="false">
           <svg class="icon"><use href="#icon-panel-right"/></svg>
         </button>
       </nav>
@@ -535,6 +535,7 @@
         <div id="memory-insights-bar" class="insights-bar analysis-bar hidden">
           <div class="analysis-panel__header">
             <span class="analysis-panel__title"><svg class="icon"><use href="#icon-chart"/></svg> 统计洞察</span>
+            <span class="panel-badge good" id="insights-total-badge">0 条记忆</span>
             <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-insights" title="关闭统计洞察" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
@@ -573,17 +574,31 @@
         </div>
         <!-- 伙伴洞察面板（从"仓库"到"理解"） -->
         <div id="partner-insights" class="partner-insights analysis-bar hidden">
-          <div class="partner-insights-header">
-            <span class="analysis-panel__title">精灵对你的了解</span>
+          <div class="analysis-panel__header">
+            <span class="analysis-panel__title"><svg class="icon"><use href="#icon-fairy"/></svg> 伙伴洞察</span>
+            <span class="panel-badge good" id="partner-insights-badge">0 条了解</span>
           </div>
-          <div id="profile-cards" class="profile-cards">
-            <!-- JS 动态渲染 profile 记忆卡片 -->
+          <!-- 用户画像：精灵对你的了解（profile 记忆卡片网格） -->
+          <div class="panel-section">
+            <div class="panel-section-head">
+              <span class="panel-section-title">用户画像</span>
+            </div>
+            <div id="profile-cards" class="profile-cards">
+              <!-- JS 动态渲染 profile 记忆卡片 -->
+            </div>
           </div>
-          <div id="gap-list" class="gap-list">
-            <!-- JS 动态渲染知识缺口提示 -->
+          <!-- 待了解：知识缺口提示 -->
+          <div class="panel-section">
+            <div class="panel-section-head">
+              <span class="panel-section-title">待了解</span>
+            </div>
+            <div id="gap-list" class="gap-list">
+              <!-- JS 动态渲染知识缺口提示 -->
+            </div>
           </div>
-          <div class="growth-section">
-            <div class="analysis-panel__header">
+          <!-- 记忆累积趋势：Canvas 折线图 + 右侧总数 -->
+          <div class="panel-section growth-section">
+            <div class="panel-section-head">
               <span class="panel-section-title">记忆累积趋势</span>
               <span id="partner-growth-total" class="partner-growth-total">0 条</span>
             </div>
@@ -594,54 +609,80 @@
         <div id="memory-health-bar" class="health-bar analysis-bar hidden">
           <div class="analysis-panel__header">
             <span class="analysis-panel__title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
+            <span class="panel-badge" id="health-badge">优秀</span>
             <button class="panel-close-btn icon-btn flex-shrink-0" id="btn-close-health" title="关闭健康度诊断" aria-label="关闭">
               <svg class="icon"><use href="#icon-close"/></svg>
             </button>
           </div>
-          <div class="health-summary">
-            <span class="panel-badge" id="health-badge">优秀</span>
-            <span class="panel-score" id="health-score">100</span>
-            <span class="panel-score-sample" id="health-score-sample"></span>
-          </div>
-          <div class="health-metrics">
-            <div class="health-metric">
-              <span class="health-metric-label">唯一性</span>
-              <div class="metric-track"><div class="metric-track__fill" id="health-uniqueness"></div></div>
-              <span class="health-metric-value" id="health-uniqueness-val">100</span>
+          <!-- 健康评分：总分 + 样本量（等级徽章已在 header） -->
+          <div class="panel-section">
+            <div class="panel-section-head">
+              <span class="panel-section-title">健康评分</span>
             </div>
-            <div class="health-metric">
-              <span class="health-metric-label">新鲜度</span>
-              <div class="metric-track"><div class="metric-track__fill" id="health-freshness"></div></div>
-              <span class="health-metric-value" id="health-freshness-val">100</span>
-            </div>
-            <div class="health-metric">
-              <span class="health-metric-label">完整度</span>
-              <div class="metric-track"><div class="metric-track__fill" id="health-completeness"></div></div>
-              <span class="health-metric-value" id="health-completeness-val">100</span>
+            <div class="health-summary">
+              <span class="panel-score" id="health-score">100</span>
+              <span class="panel-score-sample" id="health-score-sample"></span>
             </div>
           </div>
-          <div class="health-details">
-            <span class="panel-chip" id="health-duplicates">重复: 0</span>
-            <span class="panel-chip" id="health-stale">过期: 0</span>
-            <span class="panel-chip" id="health-low-quality">低质量: 0</span>
-          </div>
-          <p class="health-description" id="health-description"></p>
-          <div class="health-actions" id="health-actions">
-            <button class="btn btn-secondary btn-sm" id="health-cleanup-duplicates" title="清理重复记忆（保留每组中分最高的一条）">清理重复</button>
-            <button class="btn btn-secondary btn-sm" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
-            <button class="btn btn-danger btn-sm" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
-          </div>
-          <!-- LLM 记忆治理：收为可折叠次级组（纯 <details> 零 JS，CSS-R11 就地优化） -->
-          <details class="health-llm-group">
-            <summary class="health-llm-summary">AI 治理</summary>
-            <div class="health-actions health-actions-llm" id="health-llm-actions">
-              <button class="btn btn-secondary btn-sm" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
-              <button class="btn btn-secondary btn-sm" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
-              <button class="btn btn-secondary btn-sm" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
+          <!-- 维度明细：三维度进度条 + 问题计数 -->
+          <div class="panel-section">
+            <div class="panel-section-head">
+              <span class="panel-section-title">维度明细</span>
             </div>
-          </details>
-          <!-- LLM 治理结果展示区（动态渲染，默认空） -->
-          <div class="health-llm-result" id="health-llm-result"></div>
+            <div class="health-metrics">
+              <div class="health-metric">
+                <span class="health-metric-label">唯一性</span>
+                <div class="metric-track"><div class="metric-track__fill" id="health-uniqueness"></div></div>
+                <span class="health-metric-value" id="health-uniqueness-val">100</span>
+              </div>
+              <div class="health-metric">
+                <span class="health-metric-label">新鲜度</span>
+                <div class="metric-track"><div class="metric-track__fill" id="health-freshness"></div></div>
+                <span class="health-metric-value" id="health-freshness-val">100</span>
+              </div>
+              <div class="health-metric">
+                <span class="health-metric-label">完整度</span>
+                <div class="metric-track"><div class="metric-track__fill" id="health-completeness"></div></div>
+                <span class="health-metric-value" id="health-completeness-val">100</span>
+              </div>
+            </div>
+            <div class="health-details">
+              <span class="panel-chip" id="health-duplicates">重复: 0</span>
+              <span class="panel-chip" id="health-stale">过期: 0</span>
+              <span class="panel-chip" id="health-low-quality">低质量: 0</span>
+            </div>
+          </div>
+          <!-- 诊断建议 -->
+          <div class="panel-section">
+            <div class="panel-section-head">
+              <span class="panel-section-title">诊断建议</span>
+            </div>
+            <p class="health-description" id="health-description"></p>
+          </div>
+          <!-- 治理操作：快速清理 + AI 治理 + 结果 -->
+          <div class="panel-section">
+            <div class="panel-section-head">
+              <span class="panel-section-title">治理操作</span>
+            </div>
+            <div class="health-actions" id="health-actions">
+              <button class="btn btn-secondary btn-sm" id="health-cleanup-duplicates" title="清理重复记忆（保留每组中分最高的一条）">清理重复</button>
+              <button class="btn btn-secondary btn-sm" id="health-cleanup-stale" title="清理过期记忆">清理过期</button>
+              <button class="btn btn-danger btn-sm" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
+            </div>
+            <!-- LLM 记忆治理区块：常驻展开的 panel-section -->
+            <div class="panel-section">
+              <div class="panel-section-head">
+                <span class="panel-section-title">AI 治理</span>
+              </div>
+              <div class="health-actions health-actions-llm" id="health-llm-actions">
+                <button class="btn btn-secondary btn-sm" id="health-llm-dedup" title="LLM 语义去重（扫描名称相似对，降级低分记忆）">语义去重</button>
+                <button class="btn btn-secondary btn-sm" id="health-llm-timeliness" title="LLM 时效性评估（扫描低分记忆，降级过时记忆）">时效评估</button>
+                <button class="btn btn-secondary btn-sm" id="health-llm-conflicts" title="LLM 冲突检测（同 source 配对，仅检测不修复）">冲突检测</button>
+              </div>
+            </div>
+            <!-- LLM 治理结果展示区（动态渲染，默认空） -->
+            <div class="health-llm-result" id="health-llm-result"></div>
+          </div>
         </div>
         <!-- 补全统计面板（第 3 个 analysis panel，数据来自 localStorage，默认隐藏） -->
         <div id="completion-stats-bar" class="completion-stats-bar hidden"></div>

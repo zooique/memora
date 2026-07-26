@@ -52,6 +52,8 @@ export interface PanelRouterHost {
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /** 关闭记忆面板的分析面板 */
   dismissMemoryAnalysisPanels(): void;
+  /** 进入记忆面板时确保当前激活区块视图可见 */
+  activateMemoryPanelView(): void;
   /** 显示弹窗 */
   showModal(modalId: string): void;
   /** 隐藏弹窗 */
@@ -216,6 +218,8 @@ export class PanelRouter {
         if (searchInput instanceof HTMLInputElement) {
           searchInput.focus();
         }
+        // 确保当前激活区块视图可见（默认 list 容器可能处于 hidden，兜底同步显隐）
+        this.host.activateMemoryPanelView();
       }
       // P1-4 用户体验打磨：其他面板切换后将焦点移到面板容器，
       // 让键盘用户能直接 Tab 导航面板内容，而非从顶部导航按钮开始。

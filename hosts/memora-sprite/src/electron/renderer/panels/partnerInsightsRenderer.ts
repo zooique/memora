@@ -123,6 +123,9 @@ export class PartnerInsightsRenderer {
 
     // 筛选 profile 记忆（精灵对你的了解）
     const profileMems = memories.filter((m) => m.source === 'profile');
+    // 顶部状态徽章同步了解数（信息语义，固定青色 good）
+    const badgeEl = document.getElementById('partner-insights-badge');
+    if (badgeEl) badgeEl.textContent = `${profileMems.length} 条了解`;
     const profileCardsContainer = panel.querySelector('.profile-cards');
     if (profileCardsContainer) {
       this.renderProfileCards(profileMems, profileCardsContainer as HTMLElement);

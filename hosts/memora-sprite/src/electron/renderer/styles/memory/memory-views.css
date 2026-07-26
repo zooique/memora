@@ -113,22 +113,25 @@
 /* ─── 伙伴洞察面板（组件已收口到 analysis-panel.css 共享外壳） ──────────────── */
 
 .partner-insights {
-  padding: 0 0 var(--space-3) 0;
+  /* 横向内距统一为 16px（与 health-bar 的 --pad-card 对齐），
+     原根横向 0 + 内层 12px 导致标题(16)/内容(12)错位，现已收敛 */
+  padding: 0 var(--space-4) var(--space-3);
   margin-bottom: var(--space-2);
 }
 /* 背景/边框/折叠由共享 .analysis-bar 根提供；画像卡/缺口项/区块标题见 analysis-panel.css
    （.profile-card / .gap-item / .panel-section-title） */
 
-.partner-insights-header {
+/* 伙伴面板根已提供横向 16px，header 仅保留纵向内距，横向交由根控制，避免双倍内距 */
+.partner-insights > .analysis-panel__header {
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  padding: var(--space-2) var(--space-4) var(--space-1-5);
+  padding: var(--space-2) 0 var(--space-1-5);
 }
 
-/* 知识缺口容器（横向 padding 由本类提供，根无横向 padding） */
+/* 知识缺口容器（横向内距上移至根，仅保留底距） */
 .gap-list {
-  padding: 0 var(--space-3) var(--space-2);
+  padding: 0 0 var(--space-2);
 }
 
 /* 缺口图标 / 文本（子元素布局） */
@@ -139,9 +142,9 @@
   flex: 1;
 }
 
-/* 成长趋势 */
+/* 成长趋势（现为 .panel-section 子类，横向内距由根提供，仅保留逻辑分组） */
 .growth-section {
-  padding: var(--space-2) var(--space-3) 0;
+  padding: 0;
 }
 
 .partner-growth-total {

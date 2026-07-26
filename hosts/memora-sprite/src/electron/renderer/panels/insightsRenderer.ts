@@ -102,6 +102,9 @@ export class InsightsRenderer {
     const conflictsEl = document.getElementById('insights-conflicts');
     const sourcesEl = document.getElementById('insights-sources');
     if (totalEl) totalEl.textContent = String(dashboard.total);
+    // 顶部状态徽章同步总数（信息语义，固定青色 good）
+    const totalBadgeEl = document.getElementById('insights-total-badge');
+    if (totalBadgeEl) totalBadgeEl.textContent = `${dashboard.total} 条记忆`;
     if (relationsEl) relationsEl.textContent = String(graph.edges.length);
     // 冲突数：优先用后端传的 conflictCount，fallback 从 edges 过滤（向后兼容）
     const conflictCount = dashboard.conflictCount ?? graph.edges.filter((e) => e.type === 'contradicts').length;

@@ -22,6 +22,8 @@ import type { RelationGraphData } from '../../components/relationGraph.js';
 /** Memory 委托群方法签名（供 UIManager interface extends 类型合并） */
 export interface MemoryDelegations {
   dismissMemoryAnalysisPanels(): void;
+  /** 进入记忆面板时确保当前激活区块视图可见 */
+  activateMemoryPanelView(): void;
   renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void;
   /**
    * 半乐观局部移除记忆项（避免全量 loadMemoryList 触发闪烁）
@@ -82,6 +84,9 @@ export interface MemoryDelegations {
 export const memoryDelegations: MemoryDelegations = {
   dismissMemoryAnalysisPanels(this: UIManager): void {
     this.memoryPanel.dismissAnalysisPanels();
+  },
+  activateMemoryPanelView(this: UIManager): void {
+    this.memoryPanel.ensureActiveSectionVisible();
   },
   renderMemoryList(this: UIManager, memories: MemoryListItem[], searchQuery?: string): void {
     this.memoryPanel.renderMemoryList(memories, searchQuery);
