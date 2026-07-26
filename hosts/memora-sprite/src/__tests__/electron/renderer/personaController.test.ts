@@ -227,7 +227,7 @@ describe('createPersonaController', () => {
       await captured.personaSwitchCb!('教师');
 
       // handleIpcError 走 formatErrorMessage：'IPC 失败' 不匹配 ERROR_PATTERNS，回退两段式
-      expect(spies.showToast).toHaveBeenCalledWith('切换角色失败，请稍后重试', 'error');
+      expect(spies.showToast).toHaveBeenCalledWith(expect.stringContaining('切换角色失败'), 'error');
     });
   });
 

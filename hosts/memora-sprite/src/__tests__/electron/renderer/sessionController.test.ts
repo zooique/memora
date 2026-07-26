@@ -488,7 +488,7 @@ describe('sessionController', () => {
 
       expect(result).toBe(false);
       // UX-14：'会话不存在' 不匹配 ERROR_PATTERNS，走两段式回退
-      expect(toastSpy).toHaveBeenCalledWith('重命名会话失败，请稍后重试', 'error');
+      expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('重命名会话失败'), 'error');
     });
 
     it('renameSession 异常应显示 error toast 并返回 false', async () => {

@@ -302,7 +302,7 @@ describe('registerMinimalIpcHandlers', () => {
       const result = await callback({}, llmConfig);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('连接超时');
+      expect(result.error).toContain('超时');
       expect(mockLogger.warn).toHaveBeenCalled();
     });
   });

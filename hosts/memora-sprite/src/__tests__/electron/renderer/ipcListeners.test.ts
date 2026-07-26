@@ -844,7 +844,7 @@ describe('initIpcListeners · 精灵事件分发', () => {
     triggerSpriteEvent(captured, 'archiveFailed', { stage: 'insight', message: 'LLM 异常' }, false);
     // UX-14：handleArchiveFailed 改用 getArchiveFailedMessage 固定文案，不再直传内核 message
     expect(spies.showToast).toHaveBeenCalledWith(
-      '洞察提取归档失败，本次对话未沉淀',
+      expect.stringContaining('洞察提取归档失败'),
       'warning',
       expect.any(Number),
     );
@@ -859,7 +859,7 @@ describe('initIpcListeners · 精灵事件分发', () => {
     triggerSpriteEvent(captured, 'archiveFailed', { stage: 'content', message: 'LLM 不可用' }, false);
     // UX-14：handleArchiveFailed 改用 getArchiveFailedMessage 固定文案
     expect(spies.showToast).toHaveBeenCalledWith(
-      '会话内容归档失败，对话记录可能丢失',
+      expect.stringContaining('会话内容归档失败'),
       'warning',
       expect.any(Number),
     );

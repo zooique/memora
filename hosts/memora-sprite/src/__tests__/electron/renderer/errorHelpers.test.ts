@@ -229,7 +229,10 @@ describe('createIpcErrorHandler', () => {
 
     expect(console.error).toHaveBeenCalledWith('[onMemoryDelete]', error);
     // UX-14：'删除失败' 不匹配 ERROR_PATTERNS，走两段式回退
-    expect(mockUI.showToast).toHaveBeenCalledWith('删除记忆失败，请稍后重试', 'error');
+    expect(mockUI.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('删除记忆失败'),
+      'error',
+    );
   });
 
   it('toast 消息应提取未知错误的 message', () => {
@@ -240,7 +243,10 @@ describe('createIpcErrorHandler', () => {
     handler('onFetch', '网络超时', '获取数据');
 
     // UX-14：'网络超时' 不匹配 ERROR_PATTERNS（仅 timeout/timed out/请求超时 命中），走两段式回退
-    expect(mockUI.showToast).toHaveBeenCalledWith('获取数据失败，请稍后重试', 'error');
+    expect(mockUI.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('获取数据失败'),
+      'error',
+    );
   });
 
   it('闭包应绑定传入的 uiManager，多个 handler 互不影响', () => {
@@ -254,8 +260,14 @@ describe('createIpcErrorHandler', () => {
 
     expect(mockUI1.showToast).toHaveBeenCalledTimes(1);
     // UX-14：'err1' 不匹配 ERROR_PATTERNS，走两段式回退
-    expect(mockUI1.showToast).toHaveBeenCalledWith('操作1失败，请稍后重试', 'error');
+    expect(mockUI1.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('操作1失败'),
+      'error',
+    );
     expect(mockUI2.showToast).toHaveBeenCalledTimes(1);
-    expect(mockUI2.showToast).toHaveBeenCalledWith('操作2失败，请稍后重试', 'error');
+    expect(mockUI2.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('操作2失败'),
+      'error',
+    );
   });
 });

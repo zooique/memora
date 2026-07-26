@@ -96,6 +96,7 @@ describe('spriteConfig', () => {
     vi.mocked(readFileSync).mockReset();
     vi.mocked(writeFileSync).mockReset();
     vi.mocked(mkdirSync).mockReset();
+    vi.mocked(renameSync).mockReset();
   });
 
   afterEach(() => {

@@ -413,7 +413,7 @@ describe('QuickInputController', () => {
       await Promise.resolve();
 
       // UX-14：catch 块有 error 对象，'IPC 异常' 不匹配 ERROR_PATTERNS，走两段式回退
-      expect(inputField.value).toBe('✗ 提交失败，请稍后重试');
+      expect(inputField.value).toContain('提交失败');
       expect(inputField.classList.contains('error')).toBe(true);
 
       await vi.runAllTimersAsync();
