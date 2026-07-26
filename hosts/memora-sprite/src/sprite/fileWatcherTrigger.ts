@@ -14,7 +14,7 @@ import { resolve, sep } from 'node:path';
 // 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
 import { logger, toError, safeSetTimeout, clearSafeTimeout } from 'memora';
 import { MS_PER_SECOND } from './constants.js';
-import type { SpriteTrigger, TriggerCallback } from './triggers.js';
+import type { SpriteTrigger, TriggerCallback, TriggerErrorCallback } from './triggers.js';
 
 /** FileWatcherTrigger 配置 */
 export interface FileWatcherConfig {
@@ -52,6 +52,8 @@ const DEFAULT_IGNORE = [
 export class FileWatcherTrigger implements SpriteTrigger {
   readonly name = 'fileWatcher';
   private callback: TriggerCallback | null = null;
+  /** 错误回调（由 TriggerBus 设置，触发器失效时通知宿主） */
+  private errorCallback: TriggerErrorCallback | null = null;
   private watchers: Array<{ close(): void }> = [];
   private config: Required<FileWatcherConfig>;
   /** 防抖计时器 */
@@ -87,6 +89,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
           { path: watchPath, allowedPaths: this.config.allowedPaths },
           '文件监听路径越界，已跳过',
         );
+        this.errorCallback?.({ triggerName: this.name, reason: '路径不在白名单内', path: watchPath });
         continue;
       }
       try {
@@ -95,6 +98,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
         logger.info({ path: watchPath }, '文件监听已启动');
       } catch (error) {
         logger.warn({ path: watchPath, err: toError(error).message }, '文件监听启动失败');
+        this.errorCallback?.({ triggerName: this.name, reason: '监听启动失败', path: watchPath, error: toError(error).message });
       }
     }
   }
@@ -113,6 +117,10 @@ export class FileWatcherTrigger implements SpriteTrigger {
     this.callback = null;
   }
 
+  setErrorCallback(cb: TriggerErrorCallback): void {
+    this.errorCallback = cb;
+  }
+
   /** 创建 fs.watch 监听器 */
   private createWatcher(watchPath: string): { close(): void } {
     const watcher = watch(watchPath, { recursive: true }, (eventType, filename) => {
@@ -128,6 +136,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
     // 监听 error 事件，防止监听目录被删除/权限丢失时触发 uncaughtException 导致进程崩溃
     watcher.on('error', (err) => {
       logger.error({ err, watchPath }, '文件监听器错误，停止该路径监听');
+      this.errorCallback?.({ triggerName: this.name, reason: '监听器运行时错误', path: watchPath, error: toError(err).message });
     });
 
     return watcher;

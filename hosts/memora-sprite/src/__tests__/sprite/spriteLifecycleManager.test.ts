@@ -158,6 +158,7 @@ function createSetup(opts?: {
     stop: vi.fn(),
     register: vi.fn(),
     unregister: vi.fn(),
+    onError: vi.fn(),
   } as unknown as TriggerBus;
 
   const mockConfig: Required<SpriteConfig> = {

@@ -39,3 +39,10 @@
 - **坑3（类型漏判）**：interface/type 经 `import type` 或 barrel re-export 时易漏抓 → 类型"死导出"误报率极高（如 ElectronAPI 36 处引用被漏判）。**类型导出删除一律人工确认，不可信分析器**。
 - **真死代码铁律**：仅「导出值（函数/const）且全仓（含 __tests__）零词边界引用」可信为真死导出；「导出但仅内部使用」属不必要 export（测试可达性保留），非死代码，删会破测试。
 - **顺带清理**：删死导出时同步修 import（如死导出是唯一某 import 使用者 → 删该 import 避免 lint 报错）与引用它的陈旧注释（去痕）。
+
+## 精灵感知系统架构约定（2026-07-26 新增）
+- **vi.mock 工厂必须覆盖所有被 import 的函数**：`vi.mock('node:fs', () => ({ readFileSync, writeFileSync, existsSync, mkdirSync }))` 若源码新增 `import { renameSync }`，测试 mock 工厂必须同步加 `renameSync: vi.fn()`，否则运行期 `renameSync` 为 `undefined` 抛 TypeError（曾导致 spriteConfig 损坏测试失败）。
+- **可选接口方法模式（向后兼容扩展）**：扩展 `SpriteTrigger` 等接口时用 `setErrorCallback?(cb)` 可选方法，现有实现（TimerTrigger）不需修改。调用方 `if (trigger.setErrorCallback)` 检测后再调用。
+- **分级通知架构**：`priority: 'normal' | 'high' | 'critical'`，high 绕过节奏抑制（rapid rhythm），critical 绕过节奏+冷却。里程碑→high，健康警告→high，普通建议→normal。
+- **触发器错误回调链路**：`SpriteTrigger.setErrorCallback?()` → `TriggerBus.onError()` → `spriteLifecycleManager` 订阅 → `proactiveEngine.addNotice('suggestion', ..., false, 'high')`。三段式：触发器自报告→总线转发→宿主转通知。
+- **配置损坏保护模式**：catch 块先 `rename`/`renameSync` 备份为 `.corrupted.{timestamp}` 再返回默认值，区分 ENOENT（正常首次运行）和 JSON 解析错误（损坏）。两层实现：`loadSpriteConfig`（同步）+ `spriteConfigStore.loadOrDefault`（异步）。

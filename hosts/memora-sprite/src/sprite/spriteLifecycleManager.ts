@@ -119,6 +119,11 @@ export class SpriteLifecycleManager {
       this.handleTrigger(payload);
     };
     this.triggerBus.on(this.triggerCallback);
+    // 订阅触发器错误（文件监听器失效等），通过主动提示引擎通知用户
+    this.triggerBus.onError((error) => {
+      const pathInfo = error.path ? `（${error.path}）` : '';
+      this.proactiveEngine.addNotice('suggestion', `文件监听异常：${error.reason}${pathInfo}`, false, 'high');
+    });
     this.triggerBus.start();
 
     // 订阅 Agent 事件
@@ -396,11 +401,11 @@ export class SpriteLifecycleManager {
 
     const dupCount = health.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
     if (dupCount > 0) {
-      this.proactiveEngine.addNotice('suggestion', `发现 ${dupCount} 条重复记忆，建议清理以保持记忆库整洁`);
+      this.proactiveEngine.addNotice('suggestion', `发现 ${dupCount} 条重复记忆，建议清理以保持记忆库整洁`, false, 'high');
     }
 
     if (health.staleMemories.length > 5) {
-      this.proactiveEngine.addNotice('suggestion', `有 ${health.staleMemories.length} 条记忆可能已过时，需要回顾一下吗？`);
+      this.proactiveEngine.addNotice('suggestion', `有 ${health.staleMemories.length} 条记忆可能已过时，需要回顾一下吗？`, false, 'high');
     }
 
     const dashboard = this.memoryController.dashboard();

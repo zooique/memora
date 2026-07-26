@@ -25,6 +25,8 @@ interface PendingNotice {
   timestamp: number;
   /** Phase 2.3：是否为里程碑事件（专属样式+庆祝反馈） */
   isMilestone?: boolean;
+  /** 优先级：normal=受全部抑制约束 | high=绕过节奏抑制 | critical=绕过节奏+冷却 */
+  priority?: 'normal' | 'high' | 'critical';
 }
 
 /** 主动提示配置 */
@@ -409,7 +411,7 @@ export class ProactiveEngine {
    * @param summary 事件摘要
    * @param isMilestone 是否为里程碑事件（Phase 2.3）
    */
-  addNotice(type: string, summary: string, isMilestone = false): void {
+  addNotice(type: string, summary: string, isMilestone = false, priority: 'normal' | 'high' | 'critical' = 'normal'): void {
     // 全局上限保护：所有模式下都限制累积上限，防止 cooldown 期间事件持续累积
     if (this.pendingNotices.length >= ProactiveEngine.MAX_PENDING_NOTICES) {
       // FIFO 淘汰时优先丢弃最旧的非里程碑事件，里程碑事件保留到最后
@@ -418,7 +420,7 @@ export class ProactiveEngine {
       const dropIndex = firstNormalIndex >= 0 ? firstNormalIndex : 0;
       this.pendingNotices.splice(dropIndex, 1);
     }
-    this.pendingNotices.push({ type, summary, timestamp: Date.now(), isMilestone });
+    this.pendingNotices.push({ type, summary, timestamp: Date.now(), isMilestone, priority });
     if (this.pendingNotices.length >= this.config.threshold) {
       this.tryEmit();
     }
@@ -429,8 +431,13 @@ export class ProactiveEngine {
     if (this.pendingNotices.length === 0 && this.detectedPatterns.length === 0) return;
     if (this.config.silentMode) return;
 
+    // 分级通知：高优先级事件绕过节奏抑制，critical 绕过冷却
+    const hasHighPriority = this.pendingNotices.some(n => n.priority === 'high' || n.priority === 'critical');
+    const hasCriticalPriority = this.pendingNotices.some(n => n.priority === 'critical');
+
     // Phase 1：对话节奏过快时不打断用户（rapid 节奏下静默）
-    if (this.contextState?.rhythm === 'rapid') {
+    // 高优先级事件绕过节奏抑制（里程碑不应因快速对话而永远不展示）
+    if (this.contextState?.rhythm === 'rapid' && !hasHighPriority) {
       return;
     }
 
@@ -446,7 +453,8 @@ export class ProactiveEngine {
     const rejectMultiplier = 1 + this.consecutiveRejects * 0.5; // 每次拒绝 +50%
     const effectiveCooldown = this.config.cooldownMs * rapportMultiplier * rejectMultiplier;
 
-    if (now - this.lastProactiveAt < effectiveCooldown) return;
+    // critical 优先级绕过冷却（健康警告等紧急信息不应被冷却延迟）
+    if (now - this.lastProactiveAt < effectiveCooldown && !hasCriticalPriority) return;
 
     // Phase 2+：注入未提示过的模式作为待提示事件
     this.injectPatternNotices();
@@ -766,7 +774,7 @@ export class ProactiveEngine {
 
     // 将触发的里程碑注入待提示队列（标记为里程碑事件，使用专属样式）
     for (const trigger of triggers) {
-      this.addNotice('milestone', trigger.summary, true);
+      this.addNotice('milestone', trigger.summary, true, 'high');
       // Phase 2.3：通知里程碑回调（供 Sprite 发射专门的 milestoneAchieved 事件）
       if (this.onMilestone) {
         this.onMilestone(trigger);

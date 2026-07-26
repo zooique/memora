@@ -29,9 +29,10 @@ vi.mock('node:fs', () => ({
   writeFileSync: vi.fn(),
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
+  renameSync: vi.fn(),
 }));
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { setLogger, logger } from 'memora';
 import type { ILogger } from 'memora';
 import {
@@ -512,15 +513,17 @@ describe('spriteConfig', () => {
       expect(config.showFloatBubble).toBe(false);
     });
 
-    it('文件损坏（JSON.parse 抛错）时返回默认配置 + logger.warn 记录', () => {
+    it('文件损坏（JSON.parse 抛错）时备份原文件并返回默认配置 + logger.warn 记录', () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue('{ invalid json }'); // 非法 JSON
       const config = loadSpriteConfig();
       expect(config).toEqual(DEFAULT_SPRITE_CONFIG);
-      // 降级日志已记录
+      // 损坏文件已备份（renameSync 被调用）
+      expect(renameSync).toHaveBeenCalledTimes(1);
+      // 降级日志已记录，含 backupPath
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ filePath: expect.any(String) }),
-        '精灵配置文件损坏，使用默认配置',
+        expect.objectContaining({ filePath: expect.any(String), backupPath: expect.any(String) }),
+        '精灵配置文件损坏，已备份原文件并使用默认配置',
       );
     });
 

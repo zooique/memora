@@ -26,6 +26,21 @@ export interface TriggerPayload {
 /** 触发器回调 */
 export type TriggerCallback = (payload: TriggerPayload) => void;
 
+/** 触发器错误信息 */
+export interface TriggerError {
+  /** 触发器名称 */
+  triggerName: string;
+  /** 失败原因（人类可读） */
+  reason: string;
+  /** 相关路径（如有） */
+  path?: string;
+  /** 原始错误消息（如有） */
+  error?: string;
+}
+
+/** 触发器错误回调 */
+export type TriggerErrorCallback = (error: TriggerError) => void;
+
 /**
  * 精灵触发器接口
  *
@@ -39,6 +54,8 @@ export interface SpriteTrigger {
   start(cb: TriggerCallback): void;
   /** 停止触发器 */
   stop(): void;
+  /** 设置错误回调（可选，触发器在启动失败/运行时错误时调用） */
+  setErrorCallback?(cb: TriggerErrorCallback): void;
 }
 
 // ─── TimerTrigger ────────────────────────────────────────
@@ -95,6 +112,7 @@ type TriggerHandler = (payload: TriggerPayload) => void;
  */
 export class TriggerBus {
   private handlers: Set<TriggerHandler> = new Set();
+  private errorHandlers: Set<TriggerErrorCallback> = new Set();
   private triggers: Map<string, SpriteTrigger> = new Map();
   /** 触发器回调引用（用于 stop 时清理） */
   private triggerCallbacks: Map<string, TriggerCallback> = new Map();
@@ -109,6 +127,11 @@ export class TriggerBus {
     this.handlers.delete(handler);
   }
 
+  /** 注册触发器错误回调 */
+  onError(handler: TriggerErrorCallback): void {
+    this.errorHandlers.add(handler);
+  }
+
   /** 发射触发事件 */
   private emit(payload: TriggerPayload): void {
     // 对每个 handler 调用包裹 try/catch，防止单个 handler 异常中断全部分发
@@ -121,6 +144,17 @@ export class TriggerBus {
         // 记录错误但不中断后续 handler 的分发
         const msg = toError(err).message;
         logger.error({ err: msg }, '[TriggerBus] handler 执行异常');
+      }
+    }
+  }
+
+  /** 发射触发器错误事件 */
+  private emitTriggerError(error: TriggerError): void {
+    for (const handler of this.errorHandlers) {
+      try {
+        handler(error);
+      } catch (err) {
+        logger.error({ err: toError(err).message }, '[TriggerBus] error handler 执行异常');
       }
     }
   }
@@ -153,11 +187,16 @@ export class TriggerBus {
     for (const [name, trigger] of this.triggers) {
       const cb: TriggerCallback = (payload) => this.emit(payload);
       this.triggerCallbacks.set(name, cb);
+      // 设置错误回调（如果触发器支持），将触发器内部错误转发到 errorHandlers
+      if (trigger.setErrorCallback) {
+        trigger.setErrorCallback((error) => this.emitTriggerError({ ...error, triggerName: name }));
+      }
       try {
         trigger.start(cb);
       } catch (err) {
         // 单个触发器启动失败不中断其他触发器（§9.3.3 降级保护）
         logger.warn({ trigger: name, err: toError(err).message }, '触发器启动失败，跳过该触发器');
+        this.emitTriggerError({ triggerName: name, reason: '启动失败', error: toError(err).message });
       }
     }
   }

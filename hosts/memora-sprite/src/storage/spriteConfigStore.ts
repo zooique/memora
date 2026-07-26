@@ -24,7 +24,8 @@
  *   不一致，导致永远读不到 sprite 自己写的配置。提取此类统一管理路径。
  */
 import { resolve } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rename } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 // safeWriteJson 统一 JSON 写入 + 0o600 权限保护（ADR-017 枝叶层 2 次提取）
 import { safeWriteJson } from '../shared/safeWriteJson.js';
 import { homedir } from 'node:os';
@@ -121,7 +122,21 @@ export class SpriteConfigStore {
     try {
       return await this.load();
     } catch (err) {
-      logger.warn({ err: toError(err).message, configPath: this.configPath }, '读取现有配置失败，使用默认配置');
+      // ENOENT 是合法状态（首次启动/配置缺失），不备份
+      // 其他错误（JSON 损坏、权限等）备份原文件再返回默认值，避免后续 save() 覆盖损坏文件
+      const errno = err as NodeJS.ErrnoException;
+      if (errno.code !== 'ENOENT' && existsSync(this.configPath)) {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = `${this.configPath}.corrupted.${ts}`;
+        try {
+          await rename(this.configPath, backupPath);
+          logger.warn({ err: toError(err).message, configPath: this.configPath, backupPath }, '配置文件损坏，已备份原文件并使用默认配置');
+        } catch {
+          logger.warn({ err: toError(err).message, configPath: this.configPath }, '配置文件损坏且备份失败，使用默认配置');
+        }
+      } else if (errno.code !== 'ENOENT') {
+        logger.warn({ err: toError(err).message, configPath: this.configPath }, '读取现有配置失败，使用默认配置');
+      }
       return {
         llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
         memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },

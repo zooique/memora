@@ -18,7 +18,7 @@
  */
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, renameSync } from 'node:fs';
 // logger/toError/isPlainObject：日志 + 错误归一化 + 对象类型守卫（消费内核已提取工具）
 // isPlainObject 用于 validateObjectField 校验 JSON.parse 结果是否为纯对象（H4-E）
 import { logger, toError, isPlainObject } from 'memora';
@@ -367,8 +367,15 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
 
     return migrated;
   } catch (err) {
-    // 文件损坏时回退到默认配置，记录警告便于排查
-    logger.warn({ err: toError(err).message, filePath: SPRITE_CONFIG_PATH }, '精灵配置文件损坏，使用默认配置');
+    // 文件损坏时备份原文件再回退到默认值，避免后续 saveSpriteConfig 覆盖损坏文件导致配置永久丢失
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = `${SPRITE_CONFIG_PATH}.corrupted.${ts}`;
+    try {
+      renameSync(SPRITE_CONFIG_PATH, backupPath);
+      logger.warn({ err: toError(err).message, filePath: SPRITE_CONFIG_PATH, backupPath }, '精灵配置文件损坏，已备份原文件并使用默认配置');
+    } catch {
+      logger.warn({ err: toError(err).message, filePath: SPRITE_CONFIG_PATH }, '精灵配置文件损坏且备份失败，使用默认配置');
+    }
     return { ...DEFAULT_SPRITE_CONFIG };
   }
 }
