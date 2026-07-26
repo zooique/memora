@@ -274,4 +274,31 @@
   }
 }
 
+/* ─── 静默模式倒计时指示器（新枝破土） ────────────────── */
+
+.silent-mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  padding: 2px var(--space-2);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--warning);
+  background: var(--surface1);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  animation: silentPulse 3s ease-in-out infinite;
+}
+
+.silent-mode-indicator.hidden {
+  display: none;
+}
+
+@keyframes silentPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 /* 情感基调 2×2 紧凑网格 */

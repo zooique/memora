@@ -20,7 +20,7 @@
  *     通过 getter/setter 访问，保持 MemoryPanelManager 作为状态所有者
  *   - 视图内容渲染（renderTimeline / 图谱初始化）通过回调委托给 manager，
  *     避免在 helper 中引入对图谱 / 时间线子系统的依赖
- *   - 不使用 @ts-ignore 或 as any，遵循现有代码风格
+ *   - 不使用 @ts-ignore；类型断言仅出现在 switchView 的 filter 窄化处（类型谓词替代 as），其余遵循现有代码风格
  *
  * 先例：
  *   参照 memoryGraphPanel.ts / memoryDetailPanel.ts 的 context 注入模式
@@ -127,6 +127,26 @@ export interface MemoryViewSwitcherContext {
  */
 const VIEW_TRANSITION_DURATION = 150;
 
+// ─── 分析面板 bar 隐藏收口（嫁接：消除多处复制） ────────
+
+/**
+ * 隐藏所有分析面板 bar + partner-insights（纯 UI 收口，无状态副作用）
+ *
+ * 取代 hideInsightsAndHealth / hideAnalysisPanel / dismissAnalysisPanels /
+ * toggleAnalysisPanel / togglePartnerInsights 中重复的「遍历 ANALYSIS_PANEL_BAR_IDS
+ * 隐藏 + 隐藏 partnerInsights」循环（programmer §2.2：复制的代码是技术债务，
+ * 应接入调用链而非复制）。状态变更（setActiveAnalysisPanel / 视图恢复 /
+ * previousViewMode 记录）由调用方负责。
+ */
+function hideAllAnalysisPanelBars(): void {
+  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
+    const bar = document.getElementById(barId);
+    if (bar) bar.classList.add('hidden');
+  }
+  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
+  if (partnerInsights) partnerInsights.classList.add('hidden');
+}
+
 // ─── 视图容器显隐 ────────────────────────────────────────
 
 /**
@@ -158,14 +178,7 @@ export function hideAllDisplayViews(ctx: MemoryViewSwitcherContext): void {
  * @param ctx 视图切换上下文
  */
 export function hideInsightsAndHealth(ctx: MemoryViewSwitcherContext): void {
-  // 遍历映射隐藏所有分析面板
-  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
-    const bar = document.getElementById(barId);
-    if (bar) bar.classList.add('hidden');
-  }
-  // partner-insights 是 insights 的子内容，需同步隐藏
-  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
-  if (partnerInsights) partnerInsights.classList.add('hidden');
+  hideAllAnalysisPanelBars();
   ctx.setActiveAnalysisPanel(null);
 }
 
@@ -223,15 +236,7 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
 
   // 隐藏主视图 + 隐藏所有其他分析面板（遍历映射）
   hideAllDisplayViews(ctx);
-  for (const [type, barId] of Object.entries(ANALYSIS_PANEL_BAR_IDS)) {
-    if (type !== panel) {
-      const bar = document.getElementById(barId);
-      if (bar) bar.classList.add('hidden');
-    }
-  }
-  // partner-insights 与所有分析面板互斥（统一导航后同为区块，不可共存）
-  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
-  if (partnerInsights) partnerInsights.classList.add('hidden');
+  hideAllAnalysisPanelBars();
 
   // 显示目标面板
   targetBar.classList.remove('hidden');
@@ -254,13 +259,7 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
  * @param ctx 视图切换上下文
  */
 export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
-  // 遍历映射隐藏所有分析面板
-  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
-    const bar = document.getElementById(barId);
-    if (bar) bar.classList.add('hidden');
-  }
-  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
-  if (partnerInsights) partnerInsights.classList.add('hidden');
+  hideAllAnalysisPanelBars();
 
   // 恢复之前的主视图
   if (ctx.getActiveAnalysisPanel() !== null) {
@@ -285,13 +284,7 @@ export function hideAnalysisPanel(ctx: MemoryViewSwitcherContext): void {
  * @param ctx 视图切换上下文
  */
 export function dismissAnalysisPanels(ctx: MemoryViewSwitcherContext): void {
-  // 遍历映射隐藏所有分析面板
-  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
-    const bar = document.getElementById(barId);
-    if (bar) bar.classList.add('hidden');
-  }
-  const partnerInsights = document.getElementById(PARTNER_INSIGHTS_ID);
-  if (partnerInsights) partnerInsights.classList.add('hidden');
+  hideAllAnalysisPanelBars();
   // 重置内部状态：下次打开时重新记录 previousViewMode
   ctx.setActiveAnalysisPanel(null);
   ctx.setViewMode('list');
@@ -335,7 +328,9 @@ export function switchView(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode)
   const timelineEl = document.getElementById('memory-timeline-container');
 
   // 视图切换过渡动画：先退出旧视图，再进入新视图
-  const allViews = [listEl, graphEl, timelineEl].filter(Boolean) as HTMLElement[];
+  const allViews = [listEl, graphEl, timelineEl].filter(
+    (v): v is HTMLElement => v !== null
+  );
 
   // 当前可见的视图 → 添加退出动画
   const currentView = allViews.find((v) => !v.classList.contains('hidden'));
@@ -448,10 +443,7 @@ export function togglePartnerInsights(ctx: MemoryViewSwitcherContext): void {
 
   // 隐藏主视图 + 所有分析面板 + 其他区块（互斥）
   hideAllDisplayViews(ctx);
-  for (const barId of Object.values(ANALYSIS_PANEL_BAR_IDS)) {
-    const bar = document.getElementById(barId);
-    if (bar) bar.classList.add('hidden');
-  }
+  hideAllAnalysisPanelBars();
   ctx.setActiveAnalysisPanel(null);
 
   // 显示伙伴洞察区块

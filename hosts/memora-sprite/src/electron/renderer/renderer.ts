@@ -68,6 +68,9 @@ const State = {
   events: new EventTracker(),
 };
 
+/** 静默模式指示器定时器（新枝破土，模块级供 beforeunload 清理） */
+let silentIndicatorTimer: ReturnType<typeof setInterval> | null = null;
+
 /** 静默模式自动恢复时间（1 小时，使用 MS_PER_HOUR 常量统一时间单位） */
 const SILENT_RECOVERY_MS = MS_PER_HOUR;
 
@@ -183,6 +186,52 @@ async function bootstrapRenderer(): Promise<void> {
   // setupSettingsPanel 已提前到第 82 行与其他面板 setup 同一位置
 
   // 提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
+  /**
+   * 设置静默模式倒计时指示器（新枝破土）
+   *
+   * 在聊天工具栏中显示静默模式状态和距到期剩余时间，
+   * 填补完整窗口内用户无法感知静默状态的操作流中断。
+   */
+  function setupSilentModeIndicator(): void {
+    const indicator = document.getElementById('silent-mode-indicator');
+    if (!indicator) return;
+
+    const refresh = () => {
+      window.electronAPI.getConfig().then(({ config }) => {
+        // 未开启静默：隐藏
+        if (!config.silentMode) {
+          indicator.classList.add('hidden');
+          return;
+        }
+
+        // 有过期时间且未过期：显示倒计时
+        if (config.silentModeExpiresAt) {
+          const expiresAt = new Date(config.silentModeExpiresAt).getTime();
+          const remaining = expiresAt - Date.now();
+          if (!Number.isNaN(remaining) && remaining > 0) {
+            const expireTime = new Date(expiresAt);
+            const timeStr = `${String(expireTime.getHours()).padStart(2, '0')}:${String(expireTime.getMinutes()).padStart(2, '0')}`;
+            const minutes = Math.ceil(remaining / 60000);
+            indicator.textContent = minutes <= 1 ? '静默中 · 即将恢复' : `静默中 · 将于 ${timeStr} 恢复`;
+            indicator.classList.remove('hidden');
+            return;
+          }
+        }
+
+        // 已开启但无过期时间或已过期：只显示状态
+        indicator.textContent = '静默中';
+        indicator.classList.remove('hidden');
+      }).catch(() => {
+        // IPC 失败时隐藏指示器（降级）
+        indicator.classList.add('hidden');
+      });
+    };
+
+    refresh();
+    // 5 秒轮询：平衡即时反馈与 IPC 开销（静默模式是低频手动开关，此频率足够）
+    silentIndicatorTimer = silentIndicatorTimer ?? setInterval(refresh, 5_000);
+  }
+
   State.onAgentReadyCallback = () => {
     // 幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
     if (State.agentReadyHandled) return;
@@ -202,6 +251,7 @@ async function bootstrapRenderer(): Promise<void> {
     void memoryController.loadDashboard();
     // 启动摘要（迭代一：Welcome Back Digest）
     void loadStartupSummary();
+    setupSilentModeIndicator();
     // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
     void State.uiManager.switchPanel('chat');
     // 检查是否需要显示多步骤引导（未配置 Provider 的新用户）
@@ -703,6 +753,11 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   if (State.silentRecoveryTimer !== null) {
     window.clearTimeout(State.silentRecoveryTimer);
     State.silentRecoveryTimer = null;
+  }
+  // 清理静默模式指示器定时器（新枝破土）
+  if (silentIndicatorTimer !== null) {
+    window.clearInterval(silentIndicatorTimer);
+    silentIndicatorTimer = null;
   }
   // 清理 Agent 初始化重试定时器（与 State.silentRecoveryTimer 同模式）
   if (State.initRetryTimer !== null) {

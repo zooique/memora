@@ -360,44 +360,44 @@ button:active,
   transform: translate(-50%, -50%);
   max-width: 560px;
   width: 90%;
-  /* 内边距：28px 无对应令牌（--space-7 不存在），降级为 --space-6(24px) 保持一致性 */
-  padding: var(--space-6, var(--space-6)) var(--space-6, var(--space-6));
-  /* 背景/边框复用 --red-10/--red（语义红色，双主题自动适配） */
-  background: var(--red-10, #fef2f2);
-  border: 1px solid var(--red, #dc2626);
-  border-radius: var(--radius-lg, 8px);
+  /* 内边距：--space-7(28px) 已补全 4px 栅格（CSS-R15），直接使用 */
+  padding: var(--space-7) var(--space-6);
+  /* 背景/边框复用 --red-10/--red（语义红色，双主题自动适配；令牌已定义，无需 fallback 遮罩） */
+  background: var(--red-10);
+  border: 1px solid var(--red);
+  border-radius: var(--radius-lg);
   /* 主文字色复用 --text 保证双主题可读性（--text 在浅色为深色文字、深色为浅色文字，自动适配） */
-  color: var(--text, #7f1d1d);
+  color: var(--text);
   font-family: var(--font-sprite, system-ui, sans-serif);
-  font-size: var(--font-base, 14px);
+  font-size: var(--font-base);
   line-height: 1.6;
   /* 阴影复用 --red-20（红色半透明），与边框色调一致 */
-  box-shadow: 0 8px 32px var(--red-20, rgba(220, 38, 38, 0.2));
+  box-shadow: 0 8px 32px var(--red-20);
   /* z-index 复用 --z-toast（顶层提示，UI 崩溃时不会与 toast 并存，2000 已覆盖所有层） */
-  z-index: var(--z-toast, 2000);
+  z-index: var(--z-toast);
 }
 
 /* 标题：复用 --red 语义红色，字号对齐 --font-h1（18px） */
 .ui-init-failure-card .ui-init-failure-title {
-  margin: 0 0 var(--space-3, var(--space-3)) 0;
-  font-size: var(--font-h1, 18px);
-  color: var(--red, #991b1b);
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--font-h1);
+  color: var(--red);
 }
 
 /* 错误信息：等宽字体 + 红色半透明背景，与卡片背景层次区分 */
 .ui-init-failure-card .ui-init-failure-msg {
-  margin: 0 0 var(--space-4, var(--space-4)) 0;
+  margin: 0 0 var(--space-4) 0;
   font-family: var(--font-mono, ui-monospace, monospace);
-  background: var(--red-20, #fee2e2);
-  padding: var(--space-2, var(--space-2)) var(--space-3, var(--space-3));
-  border-radius: var(--radius-xs, 4px);
+  background: var(--red-20);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
   word-break: break-all;
 }
 
 /* 排查建议：次要文字色，字号对齐 --font-md-2（13px） */
 .ui-init-failure-card .ui-init-failure-hints {
   margin: 0;
-  font-size: var(--font-md-2, 13px);
-  color: var(--text, #7f1d1d);
+  font-size: var(--font-md-2);
+  color: var(--text);
 }
 

@@ -221,6 +221,28 @@ function persistWindowConfig(updates: Partial<SpriteConfig>): void {
 
 // 精灵事件订阅管理位于 spriteEventBridge.ts
 
+/**
+ * 退出静默模式（统一入口，消除 createSilentModeCallbacks / setupAgentReady
+ * 中重复的「updateConfig × 2 + 托盘同步」内联代码。
+ * programmer §2.2：同一语义应共享调用链，在分叉点差异化。）
+ */
+function exitSilentMode(): void {
+  appState.sprite?.updateConfig('silentMode', false);
+  appState.sprite?.updateConfig('silentModeExpiresAt', null);
+  appState.trayManager?.setState('idle');
+  appState.trayManager?.updateMenu();
+}
+
+/**
+ * 切换静默模式（统一入口，消除 createSilentModeCallbacks 中
+ * 手动拼接 setState 状态的重复。）
+ */
+function toggleSilentMode(silent: boolean): void {
+  appState.sprite?.updateConfig('silentMode', silent);
+  appState.trayManager?.setState(silent ? 'sleeping' : 'idle');
+  appState.trayManager?.updateMenu();
+}
+
 /** 增加未读计数并推送到浮动窗口 */
 function incrementUnreadCount(): void {
   appState.unreadCount++;
@@ -250,23 +272,47 @@ function resetUnreadCount(): void {
  * @param position 持久化的浮动窗口位置
  * @returns 校验后的安全位置
  */
-function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: number; y: number } {
-  // 浮动窗口尺寸（引用 windowState.ts 的 FLOAT_SIZE，避免硬编码重复）
-  const FLOAT_WIDTH = FLOAT_SIZE.width;
-  const FLOAT_HEIGHT = FLOAT_SIZE.height;
-
-  // 遍历所有显示器，判断位置是否在某个显示器的工作区内
+/**
+ * 判断矩形区域是否完全落在任一显示器工作区内
+ *
+ * 提取自 clampFloatPositionToDisplay / clampFullWindowBoundsToDisplay 中
+ * 重复的「遍历 displays 判断 bounds 是否在工作区内」逻辑（programmer §2.2：
+ * 复制的代码是技术债务，应接入调用链而非复制）。
+ *
+ * @returns 是否落在某个显示器内
+ */
+function isBoundsInsideDisplays(x: number, y: number, width: number, height: number): boolean {
   const displays = screen.getAllDisplays();
   for (const display of displays) {
-    const { x, y, width, height } = display.workArea;
-    // 窗口左上角 + 尺寸需完全落在工作区内
-    if (position.x >= x && position.x + FLOAT_WIDTH <= x + width
-      && position.y >= y && position.y + FLOAT_HEIGHT <= y + height) {
-      return position; // 位置合法，原样返回
+    const { x: wx, y: wy, width: ww, height: wh } = display.workArea;
+    if (x >= wx && x + width <= wx + ww
+      && y >= wy && y + height <= wy + wh) {
+      return true;
     }
   }
+  return false;
+}
 
-  // 越界：复位到主显示器默认位置
+/**
+ * 浮动窗口位置显示器边界校验
+ *
+ * 多显示器场景下，用户可能在扩展显示器上使用浮动窗口，关闭应用后断开外接显示器，
+ * 下次启动时持久化的位置已不在任何显示器的工作区内，导致浮动窗口不可见。
+ *
+ * 校验逻辑：
+ * - 调用 isBoundsInsideDisplays 判断位置是否在某个显示器内
+ * - 若越界，复位到默认位置（DEFAULT_FLOAT_POSITION）
+ * - 浮动窗口尺寸为 56x56（球体本体 48x48），校验时以窗口右下角为基准，确保完整窗口可见
+ *
+ * @param position 持久化的浮动窗口位置
+ * @returns 校验后的安全位置
+ */
+function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: number; y: number } {
+  const FLOAT_WIDTH = FLOAT_SIZE.width;
+  const FLOAT_HEIGHT = FLOAT_SIZE.height;
+  if (isBoundsInsideDisplays(position.x, position.y, FLOAT_WIDTH, FLOAT_HEIGHT)) {
+    return position; // 位置合法，原样返回
+  }
   logger.warn(`浮动窗口位置越界 (${position.x}, ${position.y})，复位到默认位置`);
   return { ...DEFAULT_FLOAT_POSITION };
 }
@@ -279,7 +325,7 @@ function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: n
  * （任务栏无入口、托盘点击"显示完整窗口"也无反应），用户以为应用未启动。
  *
  * 校验逻辑与 clampFloatPositionToDisplay 一致：
- * - 遍历所有显示器的 workArea，判断 bounds 是否完全落在某个显示器内
+ * - 调用 isBoundsInsideDisplays 判断边界是否完全落在某个显示器内
  * - 越界时复位到主显示器居中位置 + 默认尺寸（FULL_SIZE）
  *
  * @param bounds 持久化的完整窗口边界
@@ -291,18 +337,10 @@ function clampFullWindowBoundsToDisplay(bounds: {
   width: number;
   height: number;
 }): { x: number; y: number; width: number; height: number } {
-  const displays = screen.getAllDisplays();
-  for (const display of displays) {
-    const { x, y, width, height } = display.workArea;
-    // 窗口左上角 + 尺寸需完全落在工作区内
-    if (bounds.x >= x && bounds.x + bounds.width <= x + width
-      && bounds.y >= y && bounds.y + bounds.height <= y + height) {
-      return bounds; // 边界合法，原样返回
-    }
+  if (isBoundsInsideDisplays(bounds.x, bounds.y, bounds.width, bounds.height)) {
+    return bounds; // 边界合法，原样返回
   }
-
   // 越界：复位到主显示器居中位置 + 默认尺寸
-  // 主显示器 = screen.getPrimaryDisplay()，确保用户能找到窗口
   const primaryDisplay = screen.getPrimaryDisplay();
   const { workArea } = primaryDisplay;
   // 居中放置：工作区中心 - 窗口尺寸一半
@@ -364,6 +402,25 @@ function notifyShortcutRegistrationFailures(
 }
 
 /**
+ * 快捷键动作触发（消除 QUICK_RECORD/RECALL_MEMORY 重复模式）
+ *
+ * showFullWindow → getFullWindow → 守卫 → focus → safeSendToWindow
+ * 两处 handler 结构完全相同，仅 channel 参数不同。
+ * （programmer §2.2：复制的代码是技术债务，应接入调用链而非复制。）
+ */
+function triggerShortcutAction(channel: string): void {
+  appState.windowManager.showFullWindow();
+  const fullWindow = appState.windowManager.getFullWindow();
+  // 用户主动快捷键触发：showFullWindow 后 isVisible 可能尚未翻转，
+  // 仅需 null/destroyed 守卫，跳过 isVisible 避免单向触发事件丢失
+  // （BUG-6 同类模式：单向触发事件，阻断即用户操作失效）
+  if (fullWindow && !fullWindow.isDestroyed()) {
+    fullWindow.focus();
+    safeSendToWindow(fullWindow, channel);
+  }
+}
+
+/**
  * 构建静默模式切换回调
  *
  * windowManager 和 trayManager 都需要注入 onToggleSilent / isSilentMode 回调，
@@ -378,11 +435,7 @@ function createSilentModeCallbacks(activeSprite: Sprite): {
 } {
   return {
     onToggleSilent: (newSilent: boolean) => {
-      activeSprite.updateConfig('silentMode', newSilent);
-      // 同步托盘状态（与 ipcHandlers.ts config-update 逻辑一致）
-      appState.trayManager?.setState(newSilent ? 'sleeping' : 'idle');
-      // 重建托盘菜单以反映静默模式勾选状态
-      appState.trayManager?.updateMenu();
+      toggleSilentMode(newSilent);
     },
     isSilentMode: () => activeSprite.getConfig().silentMode,
   };
@@ -524,11 +577,8 @@ function setupAgentReady(
   if (startConfig.silentMode && startConfig.silentModeExpiresAt) {
     const expiresAtMs = new Date(startConfig.silentModeExpiresAt).getTime();
     if (Number.isNaN(expiresAtMs) || Date.now() >= expiresAtMs) {
-      // 已过期：立即关闭静默模式
-      activeSprite.updateConfig('silentMode', false);
-      activeSprite.updateConfig('silentModeExpiresAt', null);
-      appState.trayManager?.setState('idle');
-      appState.trayManager?.updateMenu();
+      // 已过期：立即关闭静默模式（exitSilentMode 统一入口）
+      exitSilentMode();
     } else {
       // 未过期：启动主进程定时器，到期后自动恢复
       scheduleSilentRecovery(mainIpcContext!);
@@ -699,32 +749,8 @@ async function initializeApp(): Promise<void> {
         [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
           appState.windowManager.toggleWindow();
         },
-        [SHORTCUT_ACTIONS.QUICK_RECORD]: () => {
-          // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
-          appState.windowManager.showFullWindow();
-          const fullWindow = appState.windowManager.getFullWindow();
-          // 用户主动快捷键触发：showFullWindow 后 isVisible 可能尚未翻转，
-          // 仅需 null/destroyed 守卫，跳过 isVisible 避免 QUICK_RECORD_TRIGGER 丢失
-          // （BUG-6 同类模式：单向触发事件，阻断即用户操作失效）
-          if (fullWindow && !fullWindow.isDestroyed()) {
-            fullWindow.focus();
-            // 推送触发事件到渲染进程（聚焦输入框进入快速记录模式）
-            safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER);
-          }
-        },
-        [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => {
-          // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
-          appState.windowManager.showFullWindow();
-          const fullWindow = appState.windowManager.getFullWindow();
-          // 用户主动快捷键触发：showFullWindow 后 isVisible 可能尚未翻转，
-          // 仅需 null/destroyed 守卫，跳过 isVisible 避免 RECALL_MEMORY_TRIGGER 丢失
-          // （BUG-6 同类模式：单向触发事件，阻断即用户操作失效）
-          if (fullWindow && !fullWindow.isDestroyed()) {
-            fullWindow.focus();
-            // 推送触发事件到渲染进程（切换到记忆面板）
-            safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
-          }
-        },
+        [SHORTCUT_ACTIONS.QUICK_RECORD]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER),
+        [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER),
         [SHORTCUT_ACTIONS.QUICK_INPUT]: () => {
           // 显示快速输入浮窗（独立于完整窗口，不切换窗口状态机）
           // quickInputWindow 在 setupAgentReady 后创建（依赖 clipboardHandler 注入确认回调）
