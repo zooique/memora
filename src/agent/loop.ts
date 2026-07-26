@@ -16,6 +16,7 @@ import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { runGuardrails } from '@/agent/guardrail.js';
+import type { GuardrailUI } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isAbortError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
@@ -83,6 +84,13 @@ export interface AgentLoopOptions {
    * 未注入时静默忽略。
    */
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
+  /**
+   * 护栏规则正则编译失败回调（宿主可据此发射 guardrailError 事件通知用户）
+   *
+   * 每次 runGuardrails 遇到正则编译异常时调用。
+   * 未注入时仅记日志（降级优先原则，不阻断对话）。
+   */
+  onGuardrailError?: (rule: string, message: string) => void;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -113,6 +121,8 @@ export class AgentLoop {
   private reflectionCountThisTurn: number = 0;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
+  /** 护栏规则正则编译失败回调（从 opts.onGuardrailError 提取，用于 GuardrailUI） */
+  private readonly guardrailUI: GuardrailUI;
   /** 上下文超限时是否自动生成摘要 */
   private readonly enableContextSummary: boolean;
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
@@ -165,6 +175,12 @@ export class AgentLoop {
         ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
+
+    // 护栏规则正则编译失败回调（从 opts 提取，供 GuardrailUI 使用）
+    this.guardrailUI = {
+      inputBlockedByGuard: this.ui.inputBlockedByGuard,
+      onRegexError: opts.onGuardrailError,
+    };
 
     // 上下文管理器（token 估算 + 截断 + 摘要）
     // 注入 tracer，让 generateContextSummary 有 span 埋点
@@ -289,7 +305,7 @@ export class AgentLoop {
     const inputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_INPUT, {
       ruleCount: this.guardrailRules.length,
     });
-    const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.ui);
+    const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.guardrailUI);
     inputGuardSpan.setAttribute('blocked', inputGuardResult.blocked);
     inputGuardSpan.setAttribute('warned', !!inputGuardResult.warning);
     inputGuardSpan.end();
@@ -465,7 +481,7 @@ export class AgentLoop {
     const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
       ruleCount: this.guardrailRules.length,
     });
-    const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.ui);
+    const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.guardrailUI);
     outputGuardSpan.setAttribute('blocked', outputGuardResult.blocked);
     outputGuardSpan.setAttribute('warned', !!outputGuardResult.warning);
     outputGuardSpan.end();

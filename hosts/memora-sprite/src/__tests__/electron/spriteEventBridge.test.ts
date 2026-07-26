@@ -44,7 +44,7 @@ import type { ILogger } from 'memora';
  * 使得工厂函数可以访问这些变量。
  */
 /** 精灵事件总数（1 个主动提示 + 16 个简单转发事件 + 1 个 presenceChanged + 1 个 configFilesChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked + trashPurged + archiveFailed） */
-const SPRITE_EVENT_COUNT = 19;
+const SPRITE_EVENT_COUNT = 23;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -255,11 +255,11 @@ describe('SpriteEventBridge', () => {
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT * 2);
     });
 
-    it('注册 19 个事件订阅（proactivePrompt + 16 个简单事件 + presenceChanged + configFilesChanged）', () => {
+    it('注册 21 个事件订阅（proactivePrompt + 18 个简单事件 + presenceChanged + configFilesChanged）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
-      // 验证 19 个事件类型都被订阅
+      // 验证 21 个事件类型都被订阅
       const calledEvents = deps.sprite.on.mock.calls.map((call: unknown[]) => call[0]);
       expect(calledEvents).toContain('proactivePrompt');
       expect(calledEvents).toContain('memoryNoticed');
@@ -274,6 +274,10 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toContain('contextUpdated');
       expect(calledEvents).toContain('workProjectionUpdated');
       expect(calledEvents).toContain('patternsUpdated');
+      expect(calledEvents).toContain('dedupCompleted');
+      expect(calledEvents).toContain('boostPersistFailed');
+      expect(calledEvents).toContain('configReloaded');
+      expect(calledEvents).toContain('guardrailError');
       expect(calledEvents).toHaveLength(SPRITE_EVENT_COUNT);
     });
 

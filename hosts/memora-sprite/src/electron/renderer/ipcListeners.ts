@@ -403,6 +403,20 @@ export function consumeConflictTargetId(): string | null {
 let lastDecayNoticeTime = 0;
 const DECAY_NOTICE_COOLDOWN_MS = MS_PER_DAY;
 
+/** dedupCompleted 上次显示时间戳（24h 节流，与 decayCompleted 同策略） */
+let lastDedupNoticeTime = 0;
+
+/** boostPersistFailed 上次显示时间戳（24h 节流：boost 每次召回都会触发，持久化失败会高频，长节流防刷屏） */
+let lastBoostPersistFailedNotice = 0;
+
+/** configReloaded 上次显示时间戳（5min 节流：仅在对话结束后补执行暂存的 reload 时触发，低频但留适度节流防边缘） */
+const CONFIG_RELOAD_COOLDOWN_MS = 5 * 60 * 1000;
+let lastConfigReloadNoticeTime = 0;
+
+/** guardrailError 上次显示时间戳（5min 节流：每次输入/输出都会跑护栏规则，正则破则高频，短节流防刷屏） */
+const GUARDRAIL_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
+let lastGuardrailErrorNoticeTime = 0;
+
 /** 最近一次冲突检测的 targetId（供 banner onView 跳转使用，与 lastDecayNoticeTime 同模式） */
 let lastConflictTargetId: string | null = null;
 
@@ -564,6 +578,147 @@ function handleArchiveFailed(
     TOAST_LONG_MS,
   );
 }
+
+/**
+ * 处理语义去重完成事件
+ *
+ * 内核 DedupManager 自动/手动去重后发射，提示用户相似记忆已被整理（降低重复记忆权重）。
+ * 复用 decayCompleted 的 24h 节流策略（后台事件，与用户操作解耦），且 0 条不通知。
+ * 不受 silent 控制：整理动作是用户应感知的"记忆被重新组织"信号。
+ */
+function handleDedupCompleted(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  // payload: { deduplicatedCount: number; demotedIds: string[] }
+  if (!isDedupCompletedPayload(msg.payload)) {
+    reportError('handleDedupCompleted', msg.payload);
+    return;
+  }
+  if (msg.payload.deduplicatedCount <= 0) return; // 0 条不通知
+
+  const now = Date.now();
+  if (now - lastDedupNoticeTime < DECAY_NOTICE_COOLDOWN_MS) return;
+  lastDedupNoticeTime = now;
+
+  uiManager.showToast(
+    `已自动整理 ${msg.payload.deduplicatedCount} 条相似记忆（降低重复记忆权重）`,
+    'info',
+    TOAST_LONG_MS,
+  );
+}
+
+/**
+ * 处理记忆权重持久化失败事件
+ *
+ * boost 在每次召回时 fire-and-forget 持久化记忆权重，失败时内核发射此事件。
+ * 不受 silent 控制：权重丢失是应感知的重要信号（记忆优先级可能偏低）。
+ * 但 boost 每次召回都触发，持久化失败时若直接弹窗会刷屏——用 24h 长节流，
+ * 仅首次暴露问题。遵循 UX-13：不直传内核错误细节，仅给可理解的提示。
+ */
+function handleBoostPersistFailed(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  // payload: { memoryId: string; message: string }
+  if (!isBoostPersistFailedPayload(msg.payload)) {
+    reportError('handleBoostPersistFailed', msg.payload);
+    return;
+  }
+  const now = Date.now();
+  if (now - lastBoostPersistFailedNotice < DECAY_NOTICE_COOLDOWN_MS) return;
+  lastBoostPersistFailedNotice = now;
+
+  uiManager.showToast(
+    '部分记忆的重要性权重未能保存，下次对话时这些记忆的优先级可能偏低',
+    'warning',
+    TOAST_LONG_MS,
+  );
+}
+
+/** 配置热重载完成通知（5min 节流） */
+function handleConfigReloaded(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  if (!isConfigReloadedPayload(msg.payload)) {
+    reportError('handleConfigReloaded', msg.payload);
+    return;
+  }
+  const now = Date.now();
+  if (now - lastConfigReloadNoticeTime < CONFIG_RELOAD_COOLDOWN_MS) return;
+  lastConfigReloadNoticeTime = now;
+
+  uiManager.showToast(
+    '配置已自动更新',
+    'info',
+    TOAST_SHORT_MS,
+  );
+}
+
+/** 护栏规则正则编译失败通知（5min 节流） */
+function handleGuardrailError(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  if (!isGuardrailErrorPayload(msg.payload)) {
+    reportError('handleGuardrailError', msg.payload);
+    return;
+  }
+  const p = msg.payload;
+  const now = Date.now();
+  if (now - lastGuardrailErrorNoticeTime < GUARDRAIL_ERROR_COOLDOWN_MS) return;
+  lastGuardrailErrorNoticeTime = now;
+
+  uiManager.showToast(
+    `护栏规则「${p.rule}」的正则表达式无效，该规则暂时未生效`,
+    'warning',
+    TOAST_LONG_MS,
+  );
+}
+
+/** 类型守卫：配置热重载完成事件载荷 */
+function isConfigReloadedPayload(
+  payload: unknown,
+): payload is { source: string } {
+  return (
+    isObject(payload) &&
+    typeof payload.source === 'string'
+  );
+}
+
+/** 类型守卫：护栏规则正则编译失败事件载荷 */
+function isGuardrailErrorPayload(
+  payload: unknown,
+): payload is { rule: string; message: string } {
+  return (
+    isObject(payload) &&
+    typeof payload.rule === 'string' &&
+    typeof payload.message === 'string'
+  );
+}
+
+/** 类型守卫：语义去重完成事件载荷 */
+function isDedupCompletedPayload(
+  payload: unknown,
+): payload is { deduplicatedCount: number; demotedIds: string[] } {
+  return (
+    isObject(payload) &&
+    typeof payload.deduplicatedCount === 'number' &&
+    Array.isArray(payload.demotedIds)
+  );
+}
+
+/** 类型守卫：记忆权重持久化失败事件载荷 */
+function isBoostPersistFailedPayload(
+  payload: unknown,
+): payload is { memoryId: string; message: string } {
+  return (
+    isObject(payload) &&
+    typeof payload.memoryId === 'string' &&
+    typeof payload.message === 'string'
+  );
+}
 /**
  * U4 精灵事件处理器映射表
  *
@@ -587,6 +742,12 @@ function createSpriteEventHandlers(
     trashPurged: (msg) => handleTrashPurged(uiManager, msg),
     // 归档失败 → warning toast 通知用户记忆可能丢失（按 stage 节流）
     archiveFailed: (msg) => handleArchiveFailed(uiManager, msg),
+    // 语义去重完成 → 提示用户记忆被整理（24h 节流）
+    dedupCompleted: (msg) => handleDedupCompleted(uiManager, msg),
+    // 记忆权重持久化失败 → warning toast（24h 节流，不泄露内核错误细节）
+    boostPersistFailed: (msg) => handleBoostPersistFailed(uiManager, msg),
+    configReloaded: (msg) => handleConfigReloaded(uiManager, msg),
+    guardrailError: (msg) => handleGuardrailError(uiManager, msg),
     // 会话分叉完成 → 切换到新会话（由 renderer.ts 注册的 onSessionForked 回调处理）
     sessionForked: (msg) => {
       if (!isSessionForkedPayload(msg.payload)) {

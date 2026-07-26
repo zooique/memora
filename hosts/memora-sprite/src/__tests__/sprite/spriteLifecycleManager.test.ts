@@ -263,13 +263,14 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     expect(setup.mockTriggerBus.start).toHaveBeenCalledTimes(1);
   });
 
-  it('start 后 agent.on 被调用 10 次（10 种事件）', () => {
+  it('start 后 agent.on 被调用 14 次（14 种事件）', () => {
     const setup = createSetup();
     setup.manager.start();
 
-    // 10 种事件：memoryAdded/insightExtracted/conflictDetected/memoryRecalled/
-    // decayCompleted/personaSwitched/projectSwitched/skillMatched/sessionForked/archiveFailed
-    expect(setup.mockAgent.on).toHaveBeenCalledTimes(10);
+    // 14 种事件：memoryAdded/insightExtracted/conflictDetected/memoryRecalled/
+    // decayCompleted/personaSwitched/projectSwitched/skillMatched/sessionForked/
+    // archiveFailed/dedupCompleted/boostPersistFailed/configReloaded/guardrailError
+    expect(setup.mockAgent.on).toHaveBeenCalledTimes(14);
   });
 
   it('start 后立即触发回收站清理（purgeExpired 调用 1 次）', () => {
@@ -286,13 +287,13 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     expect(setup.mockMemory!.writePurgeExpired).not.toHaveBeenCalled();
   });
 
-  it('stop 后 agent.off 被调用 10 次（取消全部订阅）', () => {
+  it('stop 后 agent.off 被调用 14 次（取消全部订阅）', () => {
     const setup = createSetup();
     setup.manager.start();
     setup.mockAgent.off.mockClear();
     setup.manager.stop();
 
-    expect(setup.mockAgent.off).toHaveBeenCalledTimes(10);
+    expect(setup.mockAgent.off).toHaveBeenCalledTimes(14);
   });
 
   it('stop 后 triggerBus.stop 被调用', () => {

@@ -149,6 +149,14 @@ export interface SpriteEventMap {
     /** 失败原因摘要（error.message，截断 200 字符） */
     message: string;
   };
+  /** 语义去重完成（内核 DedupManager 自动/手动去重后发射，宿主可据此提示用户记忆已被整理） */
+  dedupCompleted: { deduplicatedCount: number; demotedIds: string[] };
+  /** 记忆权重持久化失败（boost 写盘失败，记忆权重可能丢失，宿主应通知用户） */
+  boostPersistFailed: { memoryId: string; message: string };
+  /** 配置热重载完成（对话期间暂存的 reload 在 chatLock 释放后补执行，宿主可据此提示用户） */
+  configReloaded: { source: string };
+  /** 护栏规则正则编译失败（安全放行但应通知用户该规则未生效） */
+  guardrailError: { rule: string; message: string };
   /**
    * 设定文件变更（精灵设定面板 Epic 3 · I4）
    *

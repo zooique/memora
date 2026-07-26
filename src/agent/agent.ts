@@ -805,6 +805,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       onDedupCompleted: (report) => {
         this.emit('dedupCompleted', { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
       },
+      onGuardrailError: (rule, message) => {
+        this.emit('guardrailError', { rule, message });
+      },
     });
 
     this.history = result.history;

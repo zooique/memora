@@ -852,6 +852,166 @@ describe('initIpcListeners · 精灵事件分发', () => {
     vi.useRealTimers();
   });
 
+  // ─── dedupCompleted（语义去重完成，24h 节流） ───
+
+  it('dedupCompleted 应遵守 24h 节流（首次显示 → 1h 后节流 → 25h 后再显示）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-04-01T00:00:00Z'));
+
+    triggerSpriteEvent(captured, 'dedupCompleted', { deduplicatedCount: 5, demotedIds: ['a', 'b'] }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2099-04-01T01:00:00Z'));
+    triggerSpriteEvent(captured, 'dedupCompleted', { deduplicatedCount: 3, demotedIds: ['c'] }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2099-04-02T01:00:00Z'));
+    triggerSpriteEvent(captured, 'dedupCompleted', { deduplicatedCount: 2, demotedIds: ['d'] }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('dedupCompleted deduplicatedCount<=0 → 不 showToast', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-05-01T00:00:00Z'));
+    triggerSpriteEvent(captured, 'dedupCompleted', { deduplicatedCount: 0, demotedIds: [] }, false);
+    expect(spies.showToast).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('dedupCompleted 有效 payload → showToast 含整理条数（info 类型）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-06-01T00:00:00Z'));
+    triggerSpriteEvent(captured, 'dedupCompleted', { deduplicatedCount: 4, demotedIds: ['x'] }, false);
+    expect(spies.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('已自动整理 4 条相似记忆'),
+      'info',
+      expect.any(Number),
+    );
+    vi.useRealTimers();
+  });
+
+  it('dedupCompleted 无效 payload → reportError', () => {
+    triggerSpriteEvent(captured, 'dedupCompleted', { count: 5 }, false);
+    expect(console.error).toHaveBeenCalledWith('[handleDedupCompleted]', expect.anything());
+  });
+
+  // ─── boostPersistFailed（记忆权重持久化失败，24h 节流） ───
+
+  it('boostPersistFailed 应遵守 24h 节流（首次显示 → 1h 后节流 → 25h 后再显示）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-07-01T00:00:00Z'));
+
+    triggerSpriteEvent(captured, 'boostPersistFailed', { memoryId: 'm1', message: '写入失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2099-07-01T01:00:00Z'));
+    triggerSpriteEvent(captured, 'boostPersistFailed', { memoryId: 'm2', message: '写入失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2099-07-02T01:00:00Z'));
+    triggerSpriteEvent(captured, 'boostPersistFailed', { memoryId: 'm3', message: '写入失败' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('boostPersistFailed 有效 payload → showToast 不泄露内核错误细节（warning 类型）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-08-01T00:00:00Z'));
+    triggerSpriteEvent(captured, 'boostPersistFailed', { memoryId: 'm1', message: 'ECONNREFUSED 内部细节' }, false);
+    const call = spies.showToast.mock.calls[0];
+    expect(call[1]).toBe('warning');
+    expect(call[0]).not.toContain('ECONNREFUSED');
+    vi.useRealTimers();
+  });
+
+  it('boostPersistFailed 无效 payload → reportError', () => {
+    triggerSpriteEvent(captured, 'boostPersistFailed', { id: 'x' }, false);
+    expect(console.error).toHaveBeenCalledWith('[handleBoostPersistFailed]', expect.anything());
+  });
+
+  // ─── configReloaded（配置热重载，5min 节流） ───
+
+  it('configReloaded 应遵守 5min 节流（首次显示 → 1min 后节流 → 6min 后再显示）', () => {
+    vi.useFakeTimers();
+    const base = new Date('2099-12-01T00:00:00Z').getTime();
+    vi.setSystemTime(base);
+
+    triggerSpriteEvent(captured, 'configReloaded', { source: 'persona' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 1 分钟后：节流生效
+    vi.setSystemTime(base + 60 * 1000);
+    triggerSpriteEvent(captured, 'configReloaded', { source: 'skill' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 6 分钟后：可再次显示
+    vi.setSystemTime(base + 6 * 60 * 1000);
+    triggerSpriteEvent(captured, 'configReloaded', { source: 'rule' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('configReloaded 有效 payload → showToast 显示 info 类型短提示', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-12-02T00:00:00Z'));
+    triggerSpriteEvent(captured, 'configReloaded', { source: 'persona' }, false);
+    expect(spies.showToast).toHaveBeenCalledWith(
+      '配置已自动更新',
+      'info',
+      expect.any(Number),
+    );
+    vi.useRealTimers();
+  });
+
+  it('configReloaded 无效 payload → reportError', () => {
+    triggerSpriteEvent(captured, 'configReloaded', { source: 123 }, false);
+    expect(console.error).toHaveBeenCalledWith('[handleConfigReloaded]', expect.anything());
+  });
+
+  // ─── guardrailError（护栏正则编译失败，5min 节流） ───
+
+  it('guardrailError 应遵守 5min 节流（首次显示 → 1min 后节流 → 6min 后再显示）', () => {
+    vi.useFakeTimers();
+    const base = new Date('2099-12-01T00:00:00Z').getTime();
+    vi.setSystemTime(base);
+
+    triggerSpriteEvent(captured, 'guardrailError', { rule: '禁止暴力', message: 'Invalid regex' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 1 分钟后：节流生效
+    vi.setSystemTime(base + 60 * 1000);
+    triggerSpriteEvent(captured, 'guardrailError', { rule: '禁止暴力', message: 'Invalid regex' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(1);
+
+    // 6 分钟后：可再次显示
+    vi.setSystemTime(base + 6 * 60 * 1000);
+    triggerSpriteEvent(captured, 'guardrailError', { rule: '敏感词', message: 'Invalid regex' }, false);
+    expect(spies.showToast).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('guardrailError 有效 payload → showToast 包含规则名（warning 类型）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2099-12-03T00:00:00Z'));
+    triggerSpriteEvent(captured, 'guardrailError', { rule: '禁止暴力', message: 'Invalid regex' }, false);
+    expect(spies.showToast).toHaveBeenCalledWith(
+      expect.stringContaining('禁止暴力'),
+      'warning',
+      expect.any(Number),
+    );
+    vi.useRealTimers();
+  });
+
+  it('guardrailError 无效 payload → reportError', () => {
+    triggerSpriteEvent(captured, 'guardrailError', { name: '禁止暴力' }, false);
+    expect(console.error).toHaveBeenCalledWith('[handleGuardrailError]', expect.anything());
+  });
+
   it('archiveFailed content stage → showToast 含"会话内容"中文标签', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2099-12-01T00:00:00Z'));

@@ -5,7 +5,7 @@
  * 遍历 guardrail 规则，用正则匹配输入/输出文本，
  * 命中 block action 时返回 blocked=true。
  *
- * 护栏自身异常（正则编译失败等）降级为"放行 + 记日志"，
+ * 护栏自身异常（正则编译失败等）降级为"放行 + 记日志 + 通知宿主"，
  * 永远不阻断用户对话（降级优先原则）。
  *
  * 设计说明：
@@ -30,6 +30,8 @@ export interface GuardrailResult {
 export interface GuardrailUI {
   /** 输入被阻断时的消息生成函数 */
   inputBlockedByGuard: (rule: string) => string;
+  /** 护栏规则正则编译失败时的回调（宿主可据此发射事件通知用户） */
+  onRegexError?: (rule: string, message: string) => void;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface GuardrailUI {
  * 命中 block action 时返回 blocked=true；
  * 命中 warn action 时返回 blocked=false + warning。
  *
- * 护栏自身异常（正则编译失败等）降级为"放行 + 记日志"，
+ * 护栏自身异常（正则编译失败等）降级为"放行 + 记日志 + 通知宿主"，
  * 永远不阻断用户对话（降级优先原则）。
  *
  * @param rules - 护栏规则记忆数组（source='guardrail' 的 Memory）
@@ -86,8 +88,10 @@ export function runGuardrails(
         return { blocked: false, warning: ui.inputBlockedByGuard(rule.name) };
       }
     } catch (err) {
-      // 护栏自身异常降级：放行 + 记日志
+      // 护栏自身异常降级：放行 + 记日志 + 通知宿主
       logger.error({ rule: rule.name, err }, '护栏规则执行异常，已降级放行');
+      const errMessage = err instanceof Error ? err.message : String(err);
+      ui.onRegexError?.(rule.name, errMessage);
     }
   }
   return { blocked: false };

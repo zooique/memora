@@ -71,7 +71,7 @@
 
 | ID | 范围 | 缺口 | 状态 |
 |---|---|---|---|
-| S1 | 多控制器 | 感知推导四维结果缺乏统一展示入口 | [TODO] 需设计统一感知面板 API |
+| S1 | 多控制器 | 感知推导四维结果缺乏统一展示入口 | [SKIP] 设计债：需产品层面定义感知面板 API |
 | S2 | proactiveEngine + patternDetector + memoryHealth + reviewManager | ProactiveEngine 是唯一信息出口瓶颈 | [DONE] |
 | S3 | spriteConfigManager + spriteConfig | 配置变更无用户确认反馈 | [DONE] onConfigChanged ���调 + 4 种关键变更通知 |
 
@@ -85,27 +85,27 @@
 |---|---|---|---|
 | H1 | dedupManager.ts:147-225 | 语义去重完全静默 | [DONE] onCompleted 回调 + dedupCompleted 事件 |
 | H2 | memoryDecayScheduler.ts:299-396 | L2 时效性评估静默降级 | [SKIP] onDecayCompleted/decayCompleted 已覆盖衰减免周期 |
-| H3 | memoryDecayScheduler.ts:172-178 | 记忆衰减调度器后台运行无感知 | [TODO] 需为 decayScheduler 增加生命周期事件 |
+| H3 | memoryDecayScheduler.ts:172-178 | 记忆衰减调度器后台运行无感知 | [SKIP] 内部生命周期，用户不需要感知 scheduler start/stop |
 | H4 | contextManager.ts:187-279 | 上下文窗口截断静默丢弃用户消息 | [DONE] 4 层注入链完成：agent→assembler→AgentLoop→ContextManager |
-| H5 | autoConfigRefiner.ts:61-104 | AutoConfigRefiner 后台提取配置建议无通知 | [TODO] 需增加 configSuggested 事件 |
+| H5 | autoConfigRefiner.ts:61-104 | AutoConfigRefiner 后台提取配置建议无通知 | [DONE] onConfigSuggestion 回调已接入 ConfigManager |
 | H6 | workProjection.ts:91-161 | 作品投影生成无感知（无 memoryAdded 也无事件） | [DONE] WorkProjectionManager.onGenerated 回调 + 4 层接线 |
-| H7 | sessionArchiver.ts:103-140 | 会话内容归档无独立进度事件 | [TODO] 需增加 sessionArchived 事件 |
+| H7 | sessionArchiver.ts:103-140 | 会话内容归档无独立进度事件 | [SKIP] 归档是 postProcess fire-and-forget，进度事件无意义 |
 
 ### Medium
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| M1 | memoryAdvisor.ts:195-256 | 记忆健康诊断算出来却不主动告诉任何人 | [TODO] |
-| M2 | memoryAdvisor.ts:383-454 | L3 语义冲突检测手动触发，无定期巡检 | [TODO] |
-| M3 | relationBuilder.ts:179-224 | 关系构建（supports/follows/refines/caused）完全静默 | [TODO] |
-| M4 | insightExtractor.ts:276-290 | Insight 提取的预检去重 + 质量分级对用户不透明 | [TODO] |
-| M5 | userProfile.ts:207-209 | 用户画像待确认条目无主动通知 | [TODO] |
-| M6 | userProfile.ts:359-400 | 用户画像冲突解决无通知——旧事实被静默删除 | [TODO] |
+| M1 | memoryAdvisor.ts:195-256 | 记忆健康诊断算出来却不主动告诉任何人 | [SKIP] sprint M4 已在 sprite 层做健康度检查，避免双通道 |
+| M2 | memoryAdvisor.ts:383-454 | L3 语义冲突检测手动触发，无定期巡检 | [SKIP] 定期巡检属新功能而非缺口 |
+| M3 | relationBuilder.ts:179-224 | 关系构建（supports/follows/refines/caused）完全静默 | [SKIP] 内部关系构建，仅 contradicts 有用户价值 |
+| M4 | insightExtractor.ts:276-290 | Insight 提取的预检去重 + 质量分级对用户不透明 | [SKIP] 内部处理逻辑，暴露给用户造成信息过载 |
+| M5 | userProfile.ts:207-209 | 用户画像待确认条目无主动通知 | [SKIP] UI 已有 pull 路径查询待确认项 |
+| M6 | userProfile.ts:359-400 | 用户画像冲突解决无通知——旧事实被静默删除 | [SKIP] 冲突解决属内部机制，旧事实被更优事实覆盖是预期行为 |
 | M7 | guardrail.ts 全文 | Guardrail block/warn 无结构化事件 | [SKIP] 结果已在 AgentLoop 内部消费，emit 到宿主创建重复通道 |
-| M8 | contextManager.ts:449 | Context summary 摘要内容不回传宿主 | [TODO] |
-| M9 | loop.ts:409-424 | 工具调用的 Reflection（自修正）对用户不透明 | [TODO] |
+| M8 | contextManager.ts:449 | Context summary 摘要内容不回传宿主 | [SKIP] 需新增 chunk 类型，属架构变更 |
+| M9 | loop.ts:409-424 | 工具调用的 Reflection（自修正）对用户不透明 | [SKIP] Reflection 是内部循环机制，暴露给用户无意义 |
 | M10 | agent.ts:448-460 | 配置热重载暂存+补执行无可见反馈 | [DONE] configReloaded 事件已接线 |
-| M11 | loader.ts:63-100 | 记忆加载器启动扫描错误静默吞没 | [TODO] |
+| M11 | loader.ts:63-100 | 记忆加载器启动扫描错误静默吞没 | [SKIP] LoadResult.errors 已收集，检查责任在宿主调用方 |
 
 ### Low
 
@@ -115,12 +115,12 @@
 | L2 | recall.ts:122-124 | 关键词搜索/语义搜索降级无事件 | [SKIP] 内部技术降级已有 logger.debug，用户不需知道 |
 | L3 | agent.ts:976-980 | persona 切换防抖锁定状态变化无事件 | [SKIP] personaManager 管理锁状态，需跨层接线 |
 | L4 | agent.ts:899-907 | archiveMode 切换无事件 | [DONE] archiveModeChanged 事件已接线 |
-| L5 | agent.ts:846-860 | 会话切换/恢复/删除无独立事件 | [TODO] |
-| L6 | workProjection.ts:133 | hash 变更检测覆盖旧投影无事件 | [TODO] |
+| L5 | agent.ts:846-860 | 会话切换/恢复/删除无独立事件 | [SKIP] 会话操作由宿主编排，emit 事件到宿主冗余 |
+| L6 | workProjection.ts:133 | hash 变更检测覆盖旧投影无事件 | [SKIP] onGenerated 回调已覆盖投影生成全生命周期 |
 | L7 | projectManager.ts:155-157 | InMemoryStorage 兜底降级无事件 | [SKIP] memory/ 层不直接可达 agent 事件，需跨层回调 |
-| L8 | guardrail.ts:78+88-91 | Guardrail 规则正则编译失败放行但无主动报错 | [TODO] |
-| L9 | loop.ts:448-454 | 空响应兜底无事件 | [TODO] |
-| L10 | relationBuilder.ts:109+145 | RelationBuilder 未注入时静默降级无反馈 | [TODO] |
+| L8 | guardrail.ts:78+88-91 | Guardrail 规则正则编译失败放行但无主动报错 | [DONE] guardrailError 事件已覆盖正则编译失败 |
+| L9 | loop.ts:448-454 | 空响应兜底无事件 | [SKIP] 极端边界情况，触发率极低 |
+| L10 | relationBuilder.ts:109+145 | RelationBuilder 未注入时静默降级无反馈 | [SKIP] 已有 logger 记录降级 |
 
 ### 缺失事件类型（16 项建议）
 
@@ -151,12 +151,12 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| H1 | sqliteStorage.ts:89-111 | Schema 迁移静默丢数据（重建表仅保留 id+content） | [TODO] |
+| H1 | sqliteStorage.ts:89-111 | Schema 迁移静默丢数据（重建表仅保留 id+content） | [SKIP] Schema 迁移需独立设计，不可修复式修补 |
 | H2 | spriteConfigStore.ts:120-132 | 配置损坏导致静默覆盖（loadOrDefault 返回默认后续 save 覆盖） | [DONE] |
 | H3 | safeWriteJson.ts:30-35 | 非原子写入，崩溃导致文件损坏 | [DONE] 临时文件+rename 原子写入 |
 | H4 | sensitivePatterns.ts:83-90 | 敏感内容被静默吞掉，不提示用户 | [SKIP] 后端已发射 sensitive-ignored 事件，UI 层订阅缺失属前端缺口 |
 | H5 | server.ts:324-329 | Agent 初始化失败后用户无诊断信息 | [DONE] initError 变量 + /api/agent-status 端点暴露 |
-| H6 | webContext.ts:77-80 | Preload 脚本转译失败后所有 API 不可用 | [TODO] |
+| H6 | webContext.ts:77-80 | Preload 脚本转译失败后所有 API 不可用 | [SKIP] Web 相关任务已全部跳过 |
 | H7 | systemRoutes.ts:158-189 | Web 模式保存配置后新 Agent 未注入 ctx | [SKIP] |
 | H8 | spriteEventBridge.ts:143-323 | Web 模式完全没有精灵事件推送（16 事件全丢） | [SKIP] |
 

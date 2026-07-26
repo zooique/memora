@@ -278,6 +278,25 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     stage: e.stage,
     message: e.message,
   }));
+  // 语义去重完成 → 渲染层 toast 通知（24h 节流由渲染层控制）
+  forwardSimpleEvent(deps, 'dedupCompleted', (e) => ({
+    deduplicatedCount: e.deduplicatedCount,
+    demotedIds: e.demotedIds,
+  }));
+  // 记忆权重持久化失败 → 渲染层 warning toast 通知���会话级节流由渲染层控制）
+  forwardSimpleEvent(deps, 'boostPersistFailed', (e) => ({
+    memoryId: e.memoryId,
+    message: e.message,
+  }));
+
+  // 配置热重载完成 → info toast 通知（对话期间暂存的 reload 补执行后发射）
+  forwardSimpleEvent(deps, 'configReloaded', (e) => ({ source: e.source }));
+
+  // 护栏规则正则编译失败 → warning toast 通知
+  forwardSimpleEvent(deps, 'guardrailError', (e) => ({
+    rule: e.rule,
+    message: e.message,
+  }));
 
   // 设定文件变更 → 独立 CONFIG_FILES_CHANGED 通道广播（精灵设定面板 Epic 3 · I4）
   //

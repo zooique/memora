@@ -83,6 +83,14 @@ export class SpriteLifecycleManager {
     sessionForked?: (e: AgentEventMap['sessionForked']) => void;
     /** 归档失败（fire-and-forget catch 分支发射，直接转发为精灵事件） */
     archiveFailed?: (e: AgentEventMap['archiveFailed']) => void;
+    /** 语义去重完成（内核 DedupManager 发射，直接转发为精灵事件） */
+    dedupCompleted?: (e: AgentEventMap['dedupCompleted']) => void;
+    /** 记忆权重持久化失败（boost 写盘失败，直接转发为精灵事件） */
+    boostPersistFailed?: (e: AgentEventMap['boostPersistFailed']) => void;
+    /** 配置热重载完成（直接转发为精灵事件） */
+    configReloaded?: (e: AgentEventMap['configReloaded']) => void;
+    /** 护栏规则正则编译失败（直接转发为精灵事件） */
+    guardrailError?: (e: AgentEventMap['guardrailError']) => void;
   } = {};
 
   /** 回收站自动清理定时器句柄 */
@@ -324,6 +332,39 @@ export class SpriteLifecycleManager {
     };
     this.agentHandlers.archiveFailed = onArchiveFailed;
     this.agent.on('archiveFailed', onArchiveFailed);
+
+    // 语义去重完成 → dedupCompleted（直接转发，宿主 UI 提示记忆被整理）
+    const onDedupCompleted = (e: AgentEventMap['dedupCompleted']) => {
+      this.emit('dedupCompleted', {
+        deduplicatedCount: e.deduplicatedCount,
+        demotedIds: e.demotedIds,
+      });
+      logger.info({ deduplicatedCount: e.deduplicatedCount }, '语义去重完成');
+    };
+    this.agentHandlers.dedupCompleted = onDedupCompleted;
+    this.agent.on('dedupCompleted', onDedupCompleted);
+
+    // 记忆权重持久化失败 → boostPersistFailed（直接转发，宿主 UI 通知用户权重可能丢失）
+    const onBoostPersistFailed = (e: AgentEventMap['boostPersistFailed']) => {
+      this.emit('boostPersistFailed', { memoryId: e.memoryId, message: e.message });
+      logger.warn({ memoryId: e.memoryId }, '记忆权重持久化失败');
+    };
+    this.agentHandlers.boostPersistFailed = onBoostPersistFailed;
+    this.agent.on('boostPersistFailed', onBoostPersistFailed);
+
+    const onConfigReloaded = (e: AgentEventMap['configReloaded']) => {
+      this.emit('configReloaded', { source: e.source });
+      logger.info({ source: e.source }, '配置热重载完成');
+    };
+    this.agentHandlers.configReloaded = onConfigReloaded;
+    this.agent.on('configReloaded', onConfigReloaded);
+
+    const onGuardrailError = (e: AgentEventMap['guardrailError']) => {
+      this.emit('guardrailError', { rule: e.rule, message: e.message });
+      logger.warn({ rule: e.rule }, '护栏规则正则编译失败');
+    };
+    this.agentHandlers.guardrailError = onGuardrailError;
+    this.agent.on('guardrailError', onGuardrailError);
   }
 
   /**
@@ -389,6 +430,10 @@ export class SpriteLifecycleManager {
     if (h.decayCompleted) this.agent.off('decayCompleted', h.decayCompleted);
     if (h.sessionForked) this.agent.off('sessionForked', h.sessionForked);
     if (h.archiveFailed) this.agent.off('archiveFailed', h.archiveFailed);
+    if (h.dedupCompleted) this.agent.off('dedupCompleted', h.dedupCompleted);
+    if (h.boostPersistFailed) this.agent.off('boostPersistFailed', h.boostPersistFailed);
+    if (h.configReloaded) this.agent.off('configReloaded', h.configReloaded);
+    if (h.guardrailError) this.agent.off('guardrailError', h.guardrailError);
     this.agentHandlers = {};
   }
 

@@ -70,6 +70,8 @@ export interface AssembleInput {
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   /** 语义去重完成回调 */
   onDedupCompleted?: (report: { scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[] }) => void;
+  /** 护栏规则正则编译失败回调（宿主可据此发射 guardrailError 事件通知用户） */
+  onGuardrailError?: (rule: string, message: string) => void;
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -221,6 +223,7 @@ export async function assembleComponents(
     enableContextSummary,
     guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
     onContextTruncated: input.onContextTruncated,
+    onGuardrailError: input.onGuardrailError,
   });
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
 
