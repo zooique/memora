@@ -62,6 +62,9 @@ export const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 /** localStorage 键名（剪贴板待处理历史，应用重启恢复） */
 const STORAGE_KEY = 'memora:clipboard-pending';
 
+/** localStorage 键名（未查看计数，跨应用重启保持） */
+const UNVIEWED_KEY = 'memora:clipboard-unviewed';
+
 // ─── ClipboardManager 类 ───────────────────────────────
 
 /**
@@ -81,6 +84,8 @@ export class ClipboardManager {
   private pendingItems: ClipboardPendingItem[] = [];
   /** 状态变更回调（由 UIManager 注入，触发 clipboardPanelManager.refresh） */
   private onChange?: () => void;
+  /** 未查看条目数（自上次切换到剪贴板面板后新增的条目数，用于角标显示） */
+  private unviewedCount = 0;
 
   /**
    * 构造函数：注入共享的 Toast / Modal 管理器实例，从 localStorage 恢复历史记录
@@ -96,6 +101,8 @@ export class ClipboardManager {
     this.modalManager = modalManager;
     // 应用重启后恢复剪贴板历史记录（不含原文，仅预览元数据）
     this.pendingItems = this.loadPendingItems();
+    // 恢复未查看计数（跨应用重启保持，直到用户切换到剪贴板面板清零）
+    this.unviewedCount = this.loadUnviewedCount();
   }
 
   /**
@@ -118,6 +125,7 @@ export class ClipboardManager {
   private notifyAndSave(): void {
     this.onChange?.();
     this.savePendingItems();
+    this.saveUnviewedCount();
   }
 
   /**
@@ -159,6 +167,9 @@ export class ClipboardManager {
 
     // 插入到列表头部
     this.pendingItems.unshift(item);
+
+    // 新条目（非重复）增加未查看计数
+    this.unviewedCount++;
 
     // FIFO 淘汰：超出上限丢弃最旧条目（列表尾部）
     if (this.pendingItems.length > MAX_PENDING_ITEMS) {
@@ -216,6 +227,30 @@ export class ClipboardManager {
    */
   hasStaleItem(): boolean {
     return this.pendingItems.some((item) => item.isStale);
+  }
+
+  /**
+   * 获取未查看条目数（用于角标显示）
+   *
+   * 自上次切换到剪贴板面板后新增的条目数。角标仅显示此值而非总条目数，
+   * 避免已浏览过的历史条目持续占据角标。
+   *
+   * @returns 未查看条目数
+   */
+  getUnviewedCount(): number {
+    return this.unviewedCount;
+  }
+
+  /**
+   * 标记所有条目为已查看（用户切换到剪贴板面板时调用）
+   *
+   * 重置未查看计数为 0，并持久化。角标在下次 UI 刷新时自动隐藏。
+   */
+  markAllViewed(): void {
+    if (this.unviewedCount === 0) return;
+    this.unviewedCount = 0;
+    this.saveUnviewedCount();
+    this.onChange?.();
   }
 
   /**
@@ -360,6 +395,31 @@ export class ClipboardManager {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.pendingItems));
     } catch {
       // localStorage 写入失败：可能是配额耗尽或隐私模式下不可用，静默降级
+    }
+  }
+
+  /**
+   * 从 localStorage 恢复未查看计数
+   */
+  private loadUnviewedCount(): number {
+    try {
+      const raw = localStorage.getItem(UNVIEWED_KEY);
+      if (!raw) return 0;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * 持久化未查看计数到 localStorage
+   */
+  private saveUnviewedCount(): void {
+    try {
+      localStorage.setItem(UNVIEWED_KEY, String(this.unviewedCount));
+    } catch {
+      // 静默降级
     }
   }
 }

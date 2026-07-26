@@ -167,7 +167,12 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-/* 操作按钮 hover 态（归档→绿色，忽略→红色） */
+/* 操作按钮 hover 态（复制→蓝色，归档→绿色，忽略→红色） */
+.clipboard-item-btn-copy:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
 .clipboard-item-btn-archive:hover {
   background: var(--green);
   color: var(--bg);

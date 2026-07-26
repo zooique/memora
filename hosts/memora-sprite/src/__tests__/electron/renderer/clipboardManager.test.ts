@@ -311,6 +311,56 @@ describe('getPendingCount', () => {
   });
 });
 
+// ─── getUnviewedCount / markAllViewed ──────────────────
+
+describe('未查看计数', () => {
+  it('初始应为 0', () => {
+    const { manager } = createManager();
+    expect(manager.getUnviewedCount()).toBe(0);
+  });
+
+  it('新增条目应增加未查看计数', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('内容A', 10);
+    expect(manager.getUnviewedCount()).toBe(1);
+    manager.addPendingItem('内容B', 20);
+    expect(manager.getUnviewedCount()).toBe(2);
+  });
+
+  it('重复条目不应增加未查看计数', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('内容A', 10);
+    expect(manager.getUnviewedCount()).toBe(1);
+    // 重复添加相同 preview
+    manager.addPendingItem('内容A', 10);
+    expect(manager.getUnviewedCount()).toBe(1);
+  });
+
+  it('markAllViewed 应清零未查看计数', () => {
+    const { manager } = createManager();
+    manager.addPendingItem('内容A', 10);
+    manager.addPendingItem('内容B', 20);
+    expect(manager.getUnviewedCount()).toBe(2);
+
+    manager.markAllViewed();
+    expect(manager.getUnviewedCount()).toBe(0);
+  });
+
+  it('已清零后再次调用 markAllViewed 不应重复触发 onChange', () => {
+    const { manager } = createManager();
+    let callCount = 0;
+    manager.setOnChange(() => { callCount++; });
+    manager.addPendingItem('内容', 10);
+    callCount = 0; // 重置计数
+
+    manager.markAllViewed();
+    expect(callCount).toBe(1); // 第一次清零触发 onChange
+
+    manager.markAllViewed();
+    expect(callCount).toBe(1); // 已经为 0，不应再次触发
+  });
+});
+
 // ─── hasStaleItem · 较旧标记 ───────────────────────────
 
 describe('hasStaleItem', () => {

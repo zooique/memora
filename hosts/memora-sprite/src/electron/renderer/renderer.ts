@@ -164,6 +164,9 @@ async function bootstrapRenderer(): Promise<void> {
     } else if (panel === 'perception') {
       // 切换到感知面板时重新加载感知快照（确保显示最新情感/默契度/上下文数据）
       void memoryController.loadPerception();
+    } else if (panel === 'clipboard') {
+      // 切换到剪贴板面板时标记所有条目为已查看（角标清零）
+      State.uiManager.clipboardManager.markAllViewed();
     }
   });
 

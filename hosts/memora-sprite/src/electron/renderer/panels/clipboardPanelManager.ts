@@ -166,8 +166,8 @@ export class ClipboardPanelManager {
     // 切换批量操作按钮显隐
     this.toggleActionsVisibility(count === 0);
 
-    // 更新导航角标
-    this.updateBadge(count, this.clipboardManager.hasStaleItem());
+    // 更新导航角标（未查看计数，非总条目数）
+    this.updateBadge(this.clipboardManager.getUnviewedCount(), this.clipboardManager.hasStaleItem());
 
     // 首次引导气泡显隐
     this.toggleOnboardingTip(count > 0);
@@ -246,8 +246,17 @@ export class ClipboardPanelManager {
       metaEl.appendChild(staleTag);
     }
 
-    // 操作按钮容器（归档 + 忽略）
+    // 操作按钮容器（复制 + 归档 + 忽略）
     const actionsEl = createEl('div', 'clipboard-item-actions');
+
+    // 复制按钮（将 preview 写回 OS 剪贴板）
+    const copyBtn = createEl('button', 'clipboard-item-btn clipboard-item-btn-copy');
+    copyBtn.type = 'button';
+    copyBtn.title = '复制到剪贴板';
+    copyBtn.setAttribute('aria-label', '复制到剪贴板');
+    copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
+    this.events.addEventListener(copyBtn, 'click', () => this.handleCopyItem(item.preview));
+    actionsEl.appendChild(copyBtn);
 
     // 归档按钮（乐观移除 + 触发 clipboardAnalyze）
     const archiveBtn = createEl('button', 'clipboard-item-btn clipboard-item-btn-archive');
@@ -320,6 +329,24 @@ export class ClipboardPanelManager {
    *
    * @param id 待忽略条目 ID
    */
+  /**
+   * 处理复制按钮点击——将条目 preview 写回 OS 剪贴板
+   *
+   * 使用 navigator.clipboard.writeText() 直接写入。
+   * ClipboardHandler 检测到变化后通过 CLIPBOARD_CHANGED IPC 通知渲染层，
+   * addPendingItem 的去重逻辑会将同名条目移到列表顶部（bump to top），
+   * 不会创建重复条目，也不会增加未查看计数。
+   *
+   * @param preview 条目预览文本（前 100 字符）
+   */
+  private async handleCopyItem(preview: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(preview);
+    } catch {
+      // 剪贴板写入失败（如权限被拒绝），静默降级不弹 toast
+    }
+  }
+
   private handleIgnoreItem(id: string): void {
     this.clipboardManager.removePendingItem(id);
   }
