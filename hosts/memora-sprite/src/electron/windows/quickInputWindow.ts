@@ -226,8 +226,10 @@ export class QuickInputWindow {
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
-      // 浅色主题背景色（对齐完整窗口，避免启动闪烁）
-      backgroundColor: '#f0f0f2',
+      // Q6 Phase A：透明窗口（镜像 floatWindow 的已验证模式）。
+      // 去掉不透明 backgroundColor，交由 renderer 的 frosted 半透明表面承担视觉，
+      // 让桌面隐约透出、消除"悬浮硬盒"感。窗口创建即 show:false，CSS 在 show 前已加载，无启动闪烁。
+      transparent: true,
       webPreferences: {
         // 最小化 preload：preloadQuickInput.cjs 仅暴露 9 个 API（ADR-SP-017 §1）
         preload: path.join(ELECTRON_DIR, 'preloadQuickInput.cjs'),

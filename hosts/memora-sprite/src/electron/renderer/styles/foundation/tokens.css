@@ -23,6 +23,10 @@
   /* 核心悬浮窗口 */
   --window-bg:   #ffffff;  /* 核心窗口背景 */
   --window-bg-2: #efeff1;  /* A2: 调深,与 --window-bg(#ffffff) 拉开层次 */  /* 核心窗口次级背景（输入框、卡片等） */
+  /* 浮窗 frosted 表面（Q6 Phase A：transparent 窗口 + 半透明表面，让桌面隐约透出，去"悬浮硬盒"感） */
+  --surface-frost:        rgba(236, 236, 238, 0.85);  /* 浮窗主体表面：surface0 @85% 透明 */
+  --surface-frost-strong: rgba(230, 230, 232, 0.96);  /* 头部聚焦栏：更不透明以区分层级 */
+  --surface-frost-border: rgba(0, 0, 0, 0.08);        /* 玻璃边缘：极淡描边，非硬边框 */
 
   /* 文字层级 */
   --text:        #1d1d1f;  /* 主文字 */
@@ -316,6 +320,10 @@
   /* 核心悬浮窗口 */
   --window-bg:   #313244;
   --window-bg-2: #45475a;
+  /* 浮窗 frosted 表面（Q6 Phase A，深色主题同步） */
+  --surface-frost:        rgba(49, 50, 68, 0.85);
+  --surface-frost-strong: rgba(43, 44, 60, 0.96);
+  --surface-frost-border: rgba(255, 255, 255, 0.08);
 
   /* 文字层级 */
   --text:        #cdd6f4;

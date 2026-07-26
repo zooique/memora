@@ -24,8 +24,9 @@ body {
   width: 100%;
   flex: 1;
   min-height: 0;
-  background: var(--window-bg);
-  border: 1px solid var(--border);
+  /* Q6 Phase A：frosted 半透明表面（替代原不透明 --window-bg），让桌面隐约透出 */
+  background: var(--surface-frost);
+  border: 1px solid var(--surface-frost-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-window);
   display: flex;
@@ -370,8 +371,9 @@ body {
   height: 28px;
   margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-3)) var(--space-1);
   padding: 0 var(--space-2);
-  background: var(--surface0);
-  border-bottom: 1px solid var(--border);
+  /* Q6 Phase A：头部用更不透明的 frosted 表面，与下方输入区形成层级而非硬边 */
+  background: var(--surface-frost-strong);
+  border-bottom: 1px solid var(--surface-frost-border);
   font-size: var(--font-xs);
   color: var(--muted);
   cursor: move;
