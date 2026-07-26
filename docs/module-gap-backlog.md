@@ -23,11 +23,11 @@
 | H1 | fileWatcherTrigger.ts:80-100 | 文件监听路径被拒仅 warn，用户无感 | [DONE] |
 | H2 | fileWatcherTrigger.ts:92-98 | 监听器创建失败仅 warn | [DONE] |
 | H3 | fileWatcherTrigger.ts:129-131 | watcher error 事件仅 logger.error | [DONE] |
-| H4 | sprite.ts:530-557 | personas 目录热重载启动失败用户无感 | [TODO] |
-| H5 | spriteLifecycleManager.ts:222-246 | 回收站自动清理失败静默吞掉 | [TODO] |
-| H6 | sprite.ts:958-998 | 设定文件内核联动失败用户不知 | [TODO] |
-| H7 | sprite.ts:718-741 | 专注模式项目切换失败用户无感 | [TODO] |
-| H8 | triggers.ts:19-24 | 触发原因不暴露给用户 | [TODO] |
+| H4 | sprite.ts:530-557 | personas 目录热重载启动失败用户无感 | [DONE] |
+| H5 | spriteLifecycleManager.ts:222-246 | 回收站自动清理失败静默吞掉 | [DONE] |
+| H6 | sprite.ts:958-998 | 设定文件内核联动失败用户不知 | [DONE] |
+| H7 | sprite.ts:718-741 | 专注模式项目切换失败用户无感 | [DONE] |
+| H8 | triggers.ts:19-24 | 触发原因不暴露给用户 | [DONE] |
 | H9 | proactiveEngine.ts:428-481 | 主动提示被多条件静默抑制，用户不知道错过了什么 | [DONE] |
 | H10 | proactiveEngine.ts:718-783 | 里程碑事件可能永远无法展示 | [DONE] |
 | H11 | spriteConfig.ts:320-374 | 配置文件损坏静默回退，用户丢失全部设置 | [DONE] |
@@ -36,44 +36,44 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| M1 | rapportController.ts:177-182 | 默契度等级变化无通知 | [TODO] |
-| M2 | affectController.ts:122-164 | 情感基调四维值用户不可见 | [TODO] |
-| M3 | contextAwareness.ts:161-169 | 对话节奏分析影响提示抑制但用户无感 | [TODO] |
-| M4 | memoryHealth.ts:273-278 | 记忆健康度降至 poor/critical 无主动通知 | [TODO] |
-| M5 | patternDetector.ts:216-262 | 知识缺口检测结果仅走 ProactiveEngine 通道 | [TODO] |
-| M6 | patternDetector.ts:276-326 | 兴趣漂移检测结果用户不可直接查看 | [TODO] |
-| M7 | perceptionCoordinator.ts:411-455 | 跨会话上下文选取的记忆用户不可见 | [TODO] |
-| M8 | spriteConfigManager.ts:221-236 | 每日消息计数持久化失败静默吞掉 | [TODO] |
-| M9 | sprite.ts:650-702 | 欢迎回来记忆召回失败用户无感 | [TODO] |
-| M10 | proactiveEngine.ts:134 | promptedPatterns 无限增长且不可重置 | [TODO] |
-| M11 | contextAwareness.ts:202-210 | 对话深度判定基于内容长度过于粗糙 | [TODO] |
-| M12 | spriteLifecycleManager.ts:441-476 | 工作品投影更新失败静默吞掉 | [TODO] |
-| M13 | reviewManager.ts:190-201 | 记忆增长趋势变化方向无主动通知 | [TODO] |
+| M1 | rapportController.ts:177-182 | 默契度等级变化无通知 | [SKIP] 需为 RapportController 增加回调机制，低需求 |
+| M2 | affectController.ts:122-164 | 情感基调四维值用户不可见 | [SKIP] 情感值展示属于 UI pull 功能，非主动 push 缺口 |
+| M3 | contextAwareness.ts:161-169 | 对话节奏分析影响提示抑制但用户无感 | [SKIP] 抑制逻辑对用户透明是设计意图 |
+| M4 | memoryHealth.ts:273-278 | 记忆健康度降至 poor/critical 无主动通知 | [TODO] 需在 checkHealth 处加回调 |
+| M5 | patternDetector.ts:216-262 | 知识缺口检测结果仅走 ProactiveEngine 通道 | [SKIP] ProactiveEngine 是唯一信息出口，走同一通道是设计收敛 |
+| M6 | patternDetector.ts:276-326 | 兴趣漂移检测结果用户不可直接查看 | [SKIP] 兴趣漂移属 UI pull 展示，非主动通知缺口 |
+| M7 | perceptionCoordinator.ts:411-455 | 跨会话上下文选取的记忆用户不可见 | [SKIP] 上下文选取是内部推理过程，暴露给用户导致信息过载 |
+| M8 | spriteConfigManager.ts:221-236 | 每日消息计数持久化失败静默吞掉 | [DONE] |
+| M9 | sprite.ts:650-702 | 欢迎回来记忆召回失败用户无感 | [DONE] |
+| M10 | proactiveEngine.ts:134 | promptedPatterns 无限增长且不可重置 | [DONE] |
+| M11 | contextAwareness.ts:202-210 | 对话深度判定基于内容长度过于粗糙 | [SKIP] 深度判定算法改进是持续优化事项 |
+| M12 | spriteLifecycleManager.ts:441-476 | 工作品投影更新失败静默吞掉 | [DONE] |
+| M13 | reviewManager.ts:190-201 | 记忆增长趋势变化方向无主动通知 | [TODO] 需存上次 direction 做对比决定是否通知 |
 
 ### Low
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| L1 | sprite.ts:807-819 | 角色模式持久化失败仅 warn | [TODO] |
-| L2 | triggers.ts:113-126 | 触发器回调异常仅记录不通知 | [TODO] |
-| L3 | sprite.ts:569-586 | personas 热重载失败仍发射 configFilesChanged 事件 | [TODO] |
-| L4 | proactiveEngine.ts:266-269 | acceptanceRate 无数据时返回 0.5 默认值 | [TODO] |
-| L5 | affectController.ts:24-47 | 情感关键词修正范围有限（硬编码中文） | [TODO] |
-| L6 | presenceController.ts:83 | 窗口失焦离开 debounce 2 分钟内不可见 | [TODO] |
-| L7 | patternDetector.ts:186 | 重复主题检测 50% 占比阈值过高 | [TODO] |
-| L8 | patternDetector.ts:225-227 | 知识缺口检测仅依赖 "?" 字符 | [TODO] |
-| L9 | spriteConfig.ts:298-313 | 配置版本迁移失败无通知 | [TODO] |
-| L10 | spriteConfigManager.ts:207-215 | 每日消息计数 7 天后静默丢弃 | [TODO] |
-| L11 | sprite.ts:124-125 | 衰减完成事件 24h 节流但用户不知 | [TODO] |
+| L1 | sprite.ts:807-819 | 角色模式持久化失败仅 warn | [DONE] |
+| L2 | triggers.ts:113-126 | 触发器回调异常仅记录不通知 | [DONE] |
+| L3 | sprite.ts:569-586 | personas 热重载失败仍发射 configFilesChanged 事件 | [DONE] |
+| L4 | proactiveEngine.ts:266-269 | acceptanceRate 无数据时返回 0.5 默认值 | [SKIP] 0.5 是合理中间值，返回特殊值需要改 getter 类型签名，收益低 |
+| L5 | affectController.ts:24-47 | 情感关键词修正范围有限（硬编码中文） | [SKIP] 关键词扩展是持续改进事项，非结构性缺口 |
+| L6 | presenceController.ts:83 | 窗口失焦离开 debounce 2 分钟内不可见 | [SKIP] 2min debounce 是防抖设计，缩短会导致误触发 |
+| L7 | patternDetector.ts:186 | 重复主题检测 50% 占比阈值过高 | [SKIP] 阈值是经验参数，可通过配置暴露，非缺口 |
+| L8 | patternDetector.ts:225-227 | 知识缺口检测仅依赖 "?" 字符 | [SKIP] 检测算法改进是持续优化事项 |
+| L9 | spriteConfig.ts:298-313 | 配置版本迁移失败无通知 | [SKIP] spriteConfig 是纯函数模块无回调机制，迁移是启动时一次性操作 |
+| L10 | spriteConfigManager.ts:207-215 | 每日消息计数 7 天后静默丢弃 | [SKIP] 7 天窗口是有意设计，旧数据对趋势分析无价值 |
+| L11 | sprite.ts:124-125 | 衰减完成事件 24h 节流但用户不知 | [SKIP] 节流是防骚扰设计，通知用户每次衰减完成会过度打扰 |
 | L12 | spriteLifecycleManager.ts:394-411 | smartSuggestions 受 ProactiveEngine 抑制 | [DONE] |
 
 ### 系统性缺口
 
 | ID | 范围 | 缺口 | 状态 |
 |---|---|---|---|
-| S1 | affectController + rapportController + contextAwareness + patternDetector + perceptionCoordinator | 感知推导四维结果缺乏统一展示入口（pull 模型无 push） | [TODO] |
-| S2 | proactiveEngine + patternDetector + memoryHealth + reviewManager | ProactiveEngine 是唯一信息出口瓶颈（健康警告和普通事件走同一通道） | [DONE] |
-| S3 | spriteConfigManager + spriteConfig | 配置变更无用户确认反馈 | [TODO] |
+| S1 | 多控制器 | 感知推导四维结果缺乏统一展示入口 | [TODO] 需设计统一感知面板 API |
+| S2 | proactiveEngine + patternDetector + memoryHealth + reviewManager | ProactiveEngine 是唯一信息出口瓶颈 | [DONE] |
+| S3 | spriteConfigManager + spriteConfig | 配置变更无用户确认反馈 | [TODO] 需为 ConfigSideEffects 增加 onConfigChanged 回调 |
 
 ---
 
@@ -83,13 +83,13 @@
 
 | ID | 文件:行 | 缺口 | 状态 |
 |---|---|---|---|
-| H1 | dedupManager.ts:147-225 | 语义去重完全静默（无事件，无自动触发） | [TODO] |
-| H2 | memoryDecayScheduler.ts:299-396 | L2 时效性评估静默降级记忆 score 到 0.05 | [TODO] |
-| H3 | memoryDecayScheduler.ts:172-178 | 记忆衰减调度器后台运行无感知 | [TODO] |
-| H4 | contextManager.ts:187-279 | 上下文窗口截断静默丢弃用户消息 | [TODO] |
-| H5 | autoConfigRefiner.ts:61-104 | AutoConfigRefiner 后台提取配置建议无通知 | [TODO] |
-| H6 | workProjection.ts:91-161 | 作品投影生成无感知（无 memoryAdded 也无事件） | [TODO] |
-| H7 | sessionArchiver.ts:103-140 | 会话内容归档无独立进度事件 | [TODO] |
+| H1 | dedupManager.ts:147-225 | 语义去重完全静默（无事件，无自动触发） | [TODO] 需增加 dedupCompleted 事件 + 内核接线 |
+| H2 | memoryDecayScheduler.ts:299-396 | L2 时效性评估静默降级记忆 score 到 0.05 | [TODO] 需增加 timelinessEvaluated 事件 |
+| H3 | memoryDecayScheduler.ts:172-178 | 记忆衰减调度器后台运行无感知 | [TODO] 需为 decayScheduler 增加生命周期事件 |
+| H4 | contextManager.ts:187-279 | 上下文窗口截断静默丢弃用户消息 | [PARTIAL] 事件类型已定义 + ContextManager 回调接口已就位，AgentLoop→assembler 接线待完成 |
+| H5 | autoConfigRefiner.ts:61-104 | AutoConfigRefiner 后台提取配置建议无通知 | [TODO] 需增加 configSuggested 事件 |
+| H6 | workProjection.ts:91-161 | 作品投影生成无感知（无 memoryAdded 也无事件） | [TODO] 需增加 workProjectionGenerated 事件 |
+| H7 | sessionArchiver.ts:103-140 | 会话内容归档无独立进度事件 | [TODO] 需增加 sessionArchived 事件 |
 
 ### Medium
 

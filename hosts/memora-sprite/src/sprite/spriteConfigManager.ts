@@ -32,6 +32,8 @@ export interface ConfigSideEffects {
   onProjectModeChanged: () => Promise<void>;
   /** 归档模式变更 */
   onArchiveModeChanged: (mode: string) => void;
+  /** 配置持久化失败（用于宿主通知用户） */
+  onPersistError?: (reason: string) => void;
 }
 
 /**
@@ -232,6 +234,7 @@ export class SpriteConfigManager {
       saveSpriteConfig(this.config);
     } catch (err) {
       logger.warn({ err: toError(err).message }, '每日消息计数持久化失败');
+      this.sideEffects.onPersistError?.('每日消息计数持久化失败');
     }
   }
 

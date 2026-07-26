@@ -387,6 +387,9 @@ export class Sprite {
         // ADR-015: 归档模式变更时应用到 Agent（setArchiveMode 内部有 _chatBusy 守卫）
         this.agent.setArchiveMode(mode as 'full' | 'insights-only' | 'manual');
       },
+      onPersistError: (reason) => {
+        this.proactiveEngine.addNotice('suggestion', reason, false, 'high');
+      },
     };
   }
 
@@ -542,6 +545,7 @@ export class Sprite {
       // error 事件：关闭并清理 watcher 句柄，避免目录被删除后 watcher 进入僵尸状态
       this.personaWatcher.on('error', (err) => {
         logger.warn({ err: toError(err).message, personasDir }, 'personas 目录监听器错误，热重载已停止');
+        this.proactiveEngine.addNotice('suggestion', `人物设定目录监听异常：${toError(err).message}`, false, 'high');
         try {
           this.personaWatcher?.close();
         } catch {
@@ -553,6 +557,7 @@ export class Sprite {
     } catch (err) {
       // 目录不存在或权限不足时优雅降级，不阻塞 start()
       logger.warn({ err: toError(err).message, personasDir }, 'personas 目录监听启动失败，跳过热重载');
+      this.proactiveEngine.addNotice('suggestion', `人物设定目录监听启动失败：${toError(err).message}`, false, 'high');
     }
   }
 
@@ -576,6 +581,7 @@ export class Sprite {
         .reloadConfig('persona')
         .catch((err) => {
           logger.warn({ err: toError(err).message }, 'personas 热重载失败');
+          this.proactiveEngine.addNotice('suggestion', `人物设定热重载失败：${toError(err).message}，面板数据可能不是最新`, false, 'high');
         })
         .finally(() => {
           // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
@@ -698,6 +704,7 @@ export class Sprite {
     } catch (err) {
       // 召回失败不影响后续 checkPending（错误隔离，与 PresenceController 的 try/catch 双重保护）
       logger.warn({ err, awayDurationMs }, '欢迎回来记忆召回失败');
+      this.proactiveEngine.addNotice('suggestion', '欢迎回来时记忆召回失败，部分近期记忆可能未捕获', false, 'high');
     }
   }
 
@@ -734,6 +741,7 @@ export class Sprite {
       // §7 P4 降级：项目切换失败不中断配置更新流程（catch-only-warn）
       // 配置已由 ConfigManager 持久化，运行时切换失败仅记录，下次启动重新应用
       logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败，保持当前项目');
+      this.proactiveEngine.addNotice('suggestion', `专注项目切换失败：${toError(err).message}`, false, 'high');
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
     } finally {
       span?.end();
@@ -813,6 +821,7 @@ export class Sprite {
         this.updateConfig('personaMode', mode);
       } catch (err) {
         logger.warn({ err: toError(err).message, mode }, 'personaMode 持久化失败');
+        this.proactiveEngine.addNotice('suggestion', `角色模式持久化失败，重启后可能恢复为默认模式`, false, 'high');
       }
     }
     return set;
@@ -994,6 +1003,7 @@ export class Sprite {
         { type, name, action, err: toError(err).message },
         '设定文件变更后的内核联动失败，下次 reloadConfig 时自然对齐',
       );
+      this.proactiveEngine.addNotice('suggestion', `设定文件"${name}"同步失败，将在下次重载时自动对齐`, false, 'high');
     }
   }
 

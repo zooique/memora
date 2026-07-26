@@ -144,6 +144,7 @@ export class TriggerBus {
         // 记录错误但不中断后续 handler 的分发
         const msg = toError(err).message;
         logger.error({ err: msg }, '[TriggerBus] handler 执行异常');
+        this.emitTriggerError({ triggerName: 'unknown', reason: '触发处理异常', error: msg });
       }
     }
   }

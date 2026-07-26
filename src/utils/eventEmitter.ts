@@ -38,6 +38,13 @@ export interface AgentEventMap {
     /** 失败原因摘要（error.message，截断 200 字符避免 payload 过大） */
     message: string;
   };
+  /** 上下文窗口截断（消息超出 token 上限被裁剪，宿主可通知用户消息被丢弃） */
+  contextTruncated: {
+    /** 被裁剪掉的消息数量 */
+    skippedCount: number;
+    /** 保留的消息数量 */
+    keptCount: number;
+  };
 }
 
 /** 事件名联合类型 */

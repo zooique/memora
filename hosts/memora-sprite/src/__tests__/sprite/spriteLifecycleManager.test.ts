@@ -168,6 +168,7 @@ function createSetup(opts?: {
 
   const mockProactiveEngine = {
     addNotice: vi.fn(),
+    setLastTriggerReason: vi.fn(),
   } as unknown as ProactiveEngine;
 
   const mockPerceptionCoordinator = {

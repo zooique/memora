@@ -128,12 +128,16 @@ export class ProactiveEngine {
   private lastRejectAt: number | null = null;
   /** 当前情感基调（Phase 2：个性化提示内容） */
   private affectState: AffectState | null = null;
+  /** 最近一次触发原因（用于在提示中暴露上下文） */
+  private lastTriggerReason: string | null = null;
 
   // ─── Phase 2+：模式驱动提示（PatternDetector 集成） ──────────────
   /** 检测到的用户模式（PatternDetector 最新结果） */
   private detectedPatterns: DetectedPattern[] = [];
   /** 已通过模式提示过的模式摘要（幂等保护，避免重复提示同一模式） */
   private promptedPatterns: Set<string> = new Set();
+  /** promptedPatterns 上限（防止无限增长） */
+  private static readonly MAX_PROMPTED_PATTERNS = 100;
 
   /**
    * @param config 主动提示配置
@@ -364,6 +368,18 @@ export class ProactiveEngine {
   }
 
   /**
+   * 注入最近一次触发原因（供 buildPrompt 在提示中暴露触发上下文）
+   *
+   * 由 SpriteLifecycleManager.handleTrigger 在非 fileWatcher 触发时调用。
+   * 不创建独立通知——仅在确实有提示产出时作为补充信息附加。
+   *
+   * @param reason 触发原因（如 "用户空闲超过 60 秒"）
+   */
+  setLastTriggerReason(reason: string): void {
+    this.lastTriggerReason = reason;
+  }
+
+  /**
    * 注入检测到的用户模式（Phase 2+：模式驱动提示）
    *
    * 由 Sprite 在每次 wakeup 推导后调用，将 PatternDetector 的结果注入。
@@ -482,6 +498,8 @@ export class ProactiveEngine {
 
     // silent 字段恒为 false（tryEmit 已在 silentMode 时 return）
     this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false, isMilestone: hasMilestone, lightweight });
+    // 清除已消费的触发原因（避免重复出现在后续提示中）
+    this.lastTriggerReason = null;
     // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
     this.suggestCount++;
 
@@ -533,7 +551,10 @@ export class ProactiveEngine {
     for (const pattern of newPatterns) {
       // 通过 addNotice 注入，保证 MAX_PENDING_NOTICES 上限保护生效
       this.addNotice('pattern', pattern.suggestion ?? pattern.summary);
-      // 标记为已提示（幂等保护）
+      // 标记为已提示（幂等保护），超出上限时清空旧缓存避免无限增长
+      if (this.promptedPatterns.size >= ProactiveEngine.MAX_PROMPTED_PATTERNS) {
+        this.promptedPatterns.clear();
+      }
       this.promptedPatterns.add(pattern.summary);
     }
   }
@@ -634,12 +655,18 @@ export class ProactiveEngine {
     // 默认：组装事件描述 + 最佳摘要 + 语气后缀
     const bestSummary = summaries.find((s) => s.length > 0);
     if (parts.length === 0) {
-      return '有些事情发生了变化，你可能想看看。';
+      // 无具体事件时：若已知触发原因，将其暴露给用户
+      const reasonPrefix = this.lastTriggerReason ? `（${this.lastTriggerReason}）` : '';
+      return `有些事情发生了变化，你可能想看看。${reasonPrefix}`;
     }
 
     let prompt = parts.join('，');
     if (bestSummary) {
       prompt += `（${bestSummary}）`;
+    }
+    // 暴露触发原因（如有）
+    if (this.lastTriggerReason) {
+      prompt += `\n触发来源：${this.lastTriggerReason}`;
     }
     // 基于情感基调选择结尾语气
     prompt += this.buildSuffix();

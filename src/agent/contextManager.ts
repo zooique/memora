@@ -35,6 +35,12 @@ interface ContextManagerOptions {
    * 未注入时降级为 NOOP_TRACER（静默丢弃所有 span，零开销）。
    */
   readonly tracer?: ITracer;
+  /**
+   * 截断事件回调（每次 truncateMessages 触发截断时调用）
+   *
+   * 未注入时静默忽略。宿主可通过此回调向用户通知上下文被截断。
+   */
+  readonly onContextTruncated?: (skippedCount: number, keptCount: number) => void;
 }
 
 /**
@@ -106,11 +112,14 @@ export class ContextManager {
   private contextSummaryMsgCount: number = 0;
   /** 截断次数统计（truncateMessages 实际触发截断 +1，供 getMetrics 读取） */
   private _truncationCount: number = 0;
+  /** 截断事件回调（宿主可注入以通知用户） */
+  private readonly onContextTruncated: ((skipped: number, kept: number) => void) | undefined;
 
   constructor(opts: ContextManagerOptions) {
     this.maxContextTokens = opts.maxContextTokens;
     this.provider = opts.provider;
     this.contextTruncatedFn = opts.contextTruncatedFn;
+    this.onContextTruncated = opts.onContextTruncated;
     // 未注入 tracer 时降级为 NOOP_TRACER（零开销）
     this.tracer = opts.tracer ?? NOOP_TRACER;
   }
@@ -236,6 +245,8 @@ export class ContextManager {
 
     // 截断次数统计：确实发生了截断（skipped > 0）
     this._truncationCount++;
+    // 通知宿主上下文被截断（如��回调）
+    this.onContextTruncated?.(skipped, tail.length);
 
     // 从被裁剪的消息中按重要性提取关键消息
     // 重要性权重：user > tool > assistant；内容较长的用户消息优先

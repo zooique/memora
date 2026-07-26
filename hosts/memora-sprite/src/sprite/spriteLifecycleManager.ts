@@ -247,6 +247,7 @@ export class SpriteLifecycleManager {
         { err: toError(err).message, threshold: threshold.toISOString() },
         '回收站自动清理失败',
       );
+      this.proactiveEngine.addNotice('suggestion', `回收站自动清理失败：${toError(err).message}`, false, 'high');
     }
   }
 
@@ -428,6 +429,7 @@ export class SpriteLifecycleManager {
         this.tryUpdateWorkProjection(payload.reason);
       } else {
         logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
+        this.proactiveEngine.setLastTriggerReason(payload.reason);
       }
 
       this.generateSmartSuggestions();
@@ -476,6 +478,7 @@ export class SpriteLifecycleManager {
         }
       } catch (err) {
         logger.warn({ err: toError(err).message, filePath: fullPath }, '作品投影更新失败');
+        this.proactiveEngine.addNotice('suggestion', `作品投影更新失败（${filename}），可尝试手动刷新`);
       }
     })();
   }
