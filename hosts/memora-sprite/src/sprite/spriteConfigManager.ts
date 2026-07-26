@@ -34,6 +34,8 @@ export interface ConfigSideEffects {
   onArchiveModeChanged: (mode: string) => void;
   /** 配置持久化失败（用于宿主通知用户） */
   onPersistError?: (reason: string) => void;
+  /** 配置变更通知（用于宿主向用户确认关键变更） */
+  onConfigChanged?: (key: string) => void;
 }
 
 /**
@@ -108,6 +110,9 @@ export class SpriteConfigManager {
     if (key === 'archiveMode') {
       this.sideEffects.onArchiveModeChanged(this.config.archiveMode);
     }
+
+    // 通用配置变更通知（宿主可用于向用户确认关键变更）
+    this.sideEffects.onConfigChanged?.(key);
   }
 
   /**

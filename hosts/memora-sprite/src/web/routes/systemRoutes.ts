@@ -112,12 +112,16 @@ export async function handleSystemRoute(
             : null,
         });
       } catch (error) {
-        // 配置读取失败时返回未配置状态，由前端引导用户进入设置页
-        logger.warn({ err: toError(error).message }, 'LLM 配置读取失败，返回未配置态');
+        // 区分：ENOENT=首次使用（正常），其他=配置文件损坏（需提示用户）
+        const isCorrupted = (error as NodeJS.ErrnoException).code !== 'ENOENT';
+        if (isCorrupted) {
+          logger.warn({ err: toError(error).message }, 'LLM 配置文件损坏，返回未配置态');
+        }
         sendJson(res, 200, {
           configured: false,
           config: null,
           embedding: null,
+          corrupted: isCorrupted,
         });
       }
       return;

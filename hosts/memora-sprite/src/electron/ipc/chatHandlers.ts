@@ -13,6 +13,7 @@
  */
 
 import { ipcMain } from 'electron';
+import { logger } from 'memora';
 import { IPC_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { handleUserInput } from './chatStreamHandler.js';
@@ -32,6 +33,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
   ipcMain.on(IPC_CHANNELS.USER_INPUT, (_event, text: string) => {
     // 校验用户输入长度，防止超大文本触发内存/CPU 耗尽
     if (!isValidContent(text)) {
+      logger.warn({ textLen: text?.length }, '用户输入校验失败，已拒绝');
       return;
     }
     void handleUserInput(text, ctx);

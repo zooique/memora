@@ -390,6 +390,16 @@ export class Sprite {
       onPersistError: (reason) => {
         this.proactiveEngine.addNotice('suggestion', reason, false, 'high');
       },
+      onConfigChanged: (key) => {
+        // 关键变更通知用户（theme/persona/project/silent 影响面大）
+        const NOTIFIABLE: string[] = ['theme', 'personaMode', 'projectMode', 'silentMode'];
+        if (NOTIFIABLE.includes(key)) {
+          const labels: Record<string, string> = {
+            theme: '主题', personaMode: '角色模式', projectMode: '专注模式', silentMode: '静默模式',
+          };
+          this.proactiveEngine.addNotice('event', `${labels[key] ?? key}已更新`);
+        }
+      },
     };
   }
 

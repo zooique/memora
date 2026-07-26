@@ -94,6 +94,9 @@ export class SpriteLifecycleManager {
   /** 运行状态（start/stop 控制） */
   private running = false;
 
+  /** 上次记忆增长趋势方向（用于检测变化并通知） */
+  private lastTrendDirection: 'growing' | 'stable' | 'declining' | null = null;
+
   constructor(deps: LifecycleDeps) {
     this.agent = deps.agent;
     this.triggerBus = deps.triggerBus;
@@ -414,6 +417,24 @@ export class SpriteLifecycleManager {
     if (profileCount === 0 && health.totalMemories > 10) {
       this.proactiveEngine.addNotice('suggestion', '还没有用户画像，告诉我更多关于你的信息吧，这样我能更好地帮助你');
     }
+
+    // 记忆库整体健康度降至 poor（<50）：主动提醒用户关注
+    if (health.scores.overall < 50 && health.totalMemories > 0) {
+      this.proactiveEngine.addNotice('suggestion', '记忆库健康度偏低，建议清理重复或过时记忆以提升检索质量', false, 'high');
+    }
+
+    // 记忆增长趋势方向变化检测（growing ↔ declining）
+    const review = this.memoryController.getReviewData();
+    const currentDirection = review.trend.direction;
+    if (this.lastTrendDirection && this.lastTrendDirection !== currentDirection) {
+      const msg = currentDirection === 'growing'
+        ? '近期记忆增长加速，知识库正在快速扩充'
+        : currentDirection === 'declining'
+          ? '���期记忆增长放缓，是否减少了使用频率？'
+          : '记忆增长趋于稳定';
+      this.proactiveEngine.addNotice('event', msg);
+    }
+    this.lastTrendDirection = currentDirection;
   }
 
   /** 处理触发器事件 */

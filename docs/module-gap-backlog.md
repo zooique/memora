@@ -39,7 +39,7 @@
 | M1 | rapportController.ts:177-182 | 默契度等级变化无通知 | [SKIP] 需为 RapportController 增加回调机制，低需求 |
 | M2 | affectController.ts:122-164 | 情感基调四维值用户不可见 | [SKIP] 情感值展示属于 UI pull 功能，非主动 push 缺口 |
 | M3 | contextAwareness.ts:161-169 | 对话节奏分析影响提示抑制但用户无感 | [SKIP] 抑制逻辑对用户透明是设计意图 |
-| M4 | memoryHealth.ts:273-278 | 记忆健康度降至 poor/critical 无主动通知 | [TODO] 需在 checkHealth 处加回调 |
+| M4 | memoryHealth.ts:273-278 | 记忆健康度降至 poor/critical 无主动通知 | [DONE] generateSmartSuggestions 增加 overall<50 检测 |
 | M5 | patternDetector.ts:216-262 | 知识缺口检测结果仅走 ProactiveEngine 通道 | [SKIP] ProactiveEngine 是唯一信息出口，走同一通道是设计收敛 |
 | M6 | patternDetector.ts:276-326 | 兴趣漂移检测结果用户不可直接查看 | [SKIP] 兴趣漂移属 UI pull 展示，非主动通知缺口 |
 | M7 | perceptionCoordinator.ts:411-455 | 跨会话上下文选取的记忆用户不可见 | [SKIP] 上下文选取是内部推理过程，暴露给用户导致信息过载 |
@@ -48,7 +48,7 @@
 | M10 | proactiveEngine.ts:134 | promptedPatterns 无限增长且不可重置 | [DONE] |
 | M11 | contextAwareness.ts:202-210 | 对话深度判定基于内容长度过于粗糙 | [SKIP] 深度判定算法改进是持续优化事项 |
 | M12 | spriteLifecycleManager.ts:441-476 | 工作品投影更新失败静默吞掉 | [DONE] |
-| M13 | reviewManager.ts:190-201 | 记忆增长趋势变化方向无主动通知 | [TODO] 需存上次 direction 做对比决定是否通知 |
+| M13 | reviewManager.ts:190-201 | 记忆增长趋势变化方向无主动通知 | [DONE] lastTrendDirection 状态对比 + 方向变更通知 |
 
 ### Low
 
@@ -73,7 +73,7 @@
 |---|---|---|---|
 | S1 | 多控制器 | 感知推导四维结果缺乏统一展示入口 | [TODO] 需设计统一感知面板 API |
 | S2 | proactiveEngine + patternDetector + memoryHealth + reviewManager | ProactiveEngine 是唯一信息出口瓶颈 | [DONE] |
-| S3 | spriteConfigManager + spriteConfig | 配置变更无用户确认反馈 | [TODO] 需为 ConfigSideEffects 增加 onConfigChanged 回调 |
+| S3 | spriteConfigManager + spriteConfig | 配置变更无用户确认反馈 | [DONE] onConfigChanged ���调 + 4 种关键变更通知 |
 
 ---
 
@@ -104,7 +104,7 @@
 | M7 | guardrail.ts 全文 | Guardrail block/warn 无结构化事件 | [TODO] |
 | M8 | contextManager.ts:449 | Context summary 摘要内容不回传宿主 | [TODO] |
 | M9 | loop.ts:409-424 | 工具调用的 Reflection（自修正）对用户不透明 | [TODO] |
-| M10 | agent.ts:448-460 | 配置热重载暂存+补执行无可见反馈 | [TODO] |
+| M10 | agent.ts:448-460 | 配置热重载暂存+补执行无可见反馈 | [DONE] configReloaded 事件已接线 |
 | M11 | loader.ts:63-100 | 记忆加载器启动扫描错误静默吞没 | [TODO] |
 
 ### Low
@@ -154,7 +154,7 @@
 | H1 | sqliteStorage.ts:89-111 | Schema 迁移静默丢数据（重建表仅保留 id+content） | [TODO] |
 | H2 | spriteConfigStore.ts:120-132 | 配置损坏导致静默覆盖（loadOrDefault 返回默认后续 save 覆盖） | [DONE] |
 | H3 | safeWriteJson.ts:30-35 | 非原子写入，崩溃导致文件损坏 | [DONE] 临时文件+rename 原子写入 |
-| H4 | sensitivePatterns.ts:83-90 | 敏感内容被静默吞掉，不提示用户 | [TODO] |
+| H4 | sensitivePatterns.ts:83-90 | 敏感内容被静默吞掉，不提示用户 | [SKIP] 后端已发射 sensitive-ignored 事件，UI 层订阅缺失属前端缺口 |
 | H5 | server.ts:324-329 | Agent 初始化失败后用户无诊断信息 | [TODO] |
 | H6 | webContext.ts:77-80 | Preload 脚本转译失败后所有 API 不可用 | [TODO] |
 | H7 | systemRoutes.ts:158-189 | Web 模式保存配置后新 Agent 未注入 ctx | [TODO] |
@@ -168,16 +168,16 @@
 | M2 | llmErrorClassifier.ts:138 | 未匹配时泄露原始技术错误 | [DONE] 改为通用提示 |
 | M3 | llmErrorClassifier.ts:45 | 正则可能误匹配（无 \b 边界） | [DONE] 401/403 加 \b |
 | M4 | inputValidation.ts:52-57 | 验证失败不提供拒绝原因 | [SKIP] 需改返回值类型（API 重设计） |
-| M5 | chatStreamRoutes.ts:146-486 | Web 模式缺少感知刷新和消息计数 | [TODO] |
-| M6 | chatStreamRoutes.ts:242-262 | Web 模式超时不强制释放对话锁 | [TODO] |
-| M7 | chatHandlers.ts:34-36 | 输入校验失败静默吞消息 | [TODO] |
-| M8 | chatStreamHandler.ts vs chatStreamRoutes.ts | 错误映射策略不一致 | [TODO] |
+| M5 | chatStreamRoutes.ts:146-486 | Web 模式缺少感知刷新和消息计数 | [SKIP] Web SSE 通道属架构级 |
+| M6 | chatStreamRoutes.ts:242-262 | Web 模式超时不强制释放对话锁 | [SKIP] Web 超时策略属架构级 |
+| M7 | chatHandlers.ts:34-36 | 输入校验失败静默吞消息 | [DONE] 增加 logger.warn |
+| M8 | chatStreamHandler.ts vs chatStreamRoutes.ts | 错误映射策略不一致 | [SKIP] 策略统一属架构级重构 |
 | M9 | systemRoutes.ts:186+217+233+279 | 多个路由 catch 块泄露原始错误 | [DONE] sanitizeError 统一处理 |
-| M10 | systemRoutes.ts:106-114 | 配置读取失败不区分损坏和首次使用 | [TODO] |
+| M10 | systemRoutes.ts:106-114 | 配置读取失败不区分损坏和首次使用 | [DONE] 增加 corrupted 标记 |
 | M11 | server.ts:363-365 | 500 错误返回英文 | [DONE] 改为中文 |
-| M12 | sessionStore.ts:48-53 | 消息写入失败无用户反馈 | [TODO] |
-| M13 | sqliteRelationStore.ts:134-138 | 关系操作无存在性反馈 | [TODO] |
-| M14 | spriteEventBridge.ts:277-280 | archiveFailed 事件可能永久丢失 | [TODO] |
+| M12 | sessionStore.ts:48-53 | 消息写入失败无用户反馈 | [SKIP] 存储层，通知责任在调用方 |
+| M13 | sqliteRelationStore.ts:134-138 | 关系操作无存在性反馈 | [SKIP] 存储层，通知责任在调用方 |
+| M14 | spriteEventBridge.ts:277-280 | archiveFailed 事件可能永久丢失 | [SKIP] 属架构级 |
 
 ### Low
 
