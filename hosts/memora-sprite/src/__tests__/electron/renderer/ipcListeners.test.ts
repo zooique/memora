@@ -299,7 +299,7 @@ interface CallbackSpies {
 
 /** 捕获的 IPC onXxx 注册回调（initIpcListeners 调用后由 mock electronAPI 捕获） */
 interface CapturedCallbacks {
-  onStreamStart: (msg: { messageId: string }) => void;
+  onStreamStart: (msg: { messageId: string; persona?: string }) => void;
   onStreamChunk: (msg: { messageId: string; text: string }) => void;
   onStreamEnd: (msg: { messageId: string }) => void;
   onStreamRecall: (msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => void;
@@ -411,7 +411,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
   const captured = {} as CapturedCallbacks;
 
   const api = {
-    onStreamStart: vi.fn((handler: (msg: { messageId: string }) => void) => { captured.onStreamStart = handler; }),
+    onStreamStart: vi.fn((handler: (msg: { messageId: string; persona?: string }) => void) => { captured.onStreamStart = handler; }),
     onStreamChunk: vi.fn((handler: (msg: { messageId: string; text: string }) => void) => { captured.onStreamChunk = handler; }),
     onStreamEnd: vi.fn((handler: (msg: { messageId: string }) => void) => { captured.onStreamEnd = handler; }),
     onStreamRecall: vi.fn((handler: (msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => void) => { captured.onStreamRecall = handler; }),
@@ -476,9 +476,14 @@ describe('initIpcListeners · 流式输出', () => {
     vi.restoreAllMocks();
   });
 
-  it('onStreamStart → 调用 startStreaming(messageId)', () => {
-    captured.onStreamStart({ messageId: 'msg-1' });
-    expect(spies.startStreaming).toHaveBeenCalledWith('msg-1');
+  it('onStreamStart → 调用 startStreaming(messageId, persona)', () => {
+    captured.onStreamStart({ messageId: 'msg-1', persona: 'coder' });
+    expect(spies.startStreaming).toHaveBeenCalledWith('msg-1', 'coder');
+  });
+
+  it('onStreamStart → 无 persona 时调用 startStreaming(messageId, undefined)', () => {
+    captured.onStreamStart({ messageId: 'msg-2' });
+    expect(spies.startStreaming).toHaveBeenCalledWith('msg-2', undefined);
   });
 
   it('onStreamRecall → 调用 setMemoryRecall(messageId, memories)', () => {

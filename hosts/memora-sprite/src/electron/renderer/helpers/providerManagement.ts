@@ -665,6 +665,7 @@ export async function setActiveProvider(ctx: ProviderManagementContext, key: str
  * 包含：
  * - 添加/保存/取消/测试按钮的 click 监听
  * - Provider 卡片列表的事件委托（activate/edit/delete）
+ * - 后台 Provider 下拉框 change 监听（持久化 + 注入 Agent）
  *
  * 事件委托一次性绑定到 providerListEl，避免每次 renderProviderList 重新绑定
  * 导致监听器累积泄漏。通过 EventTracker 统一管理，cleanup 时自动清理。
@@ -725,6 +726,20 @@ export function initProviderListeners(ctx: ProviderManagementContext): void {
         } finally {
           setButtonLoadingEl(btn, false);
         }
+      }
+    });
+  }
+
+  // 后台 Provider 下拉框选择 → 持久化到 config.json 并注入 Agent
+  // 用于角色自动匹配 LLM 辅助 + Insight 提取等后台任务
+  if (ctx.backgroundProviderSelect) {
+    ctx.events.addEventListener(ctx.backgroundProviderSelect, 'change', async () => {
+      const key = ctx.backgroundProviderSelect!.value;
+      const result = await window.electronAPI.saveBackgroundProvider(key);
+      if (result.success) {
+        ctx.host.showToast(key ? '后台 Provider 已更新' : '后台 Provider 已清除', 'success');
+      } else {
+        ctx.host.showToast(result.error ?? '保存失败', 'error');
       }
     });
   }

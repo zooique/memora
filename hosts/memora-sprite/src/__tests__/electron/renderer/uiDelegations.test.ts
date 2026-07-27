@@ -134,7 +134,13 @@ describe('chatDelegations', () => {
     chatDelegations.startStreaming.call(mock as UIManager, 'm1');
     expect(mock.chatPanel.updateStreamingMessage).toHaveBeenCalledWith('m1', 'text');
     expect(mock.chatPanel.finishStreamingMessage).toHaveBeenCalledWith('m1');
-    expect(mock.chatPanel.startStreaming).toHaveBeenCalledWith('m1');
+    expect(mock.chatPanel.startStreaming).toHaveBeenCalledWith('m1', undefined);
+  });
+
+  it('startStreaming 委托应透传 persona 到 chatPanel（消息底部角色标签）', () => {
+    const mock = createMockThis();
+    chatDelegations.startStreaming.call(mock as UIManager, 'm1', 'coder');
+    expect(mock.chatPanel.startStreaming).toHaveBeenCalledWith('m1', 'coder');
   });
 
   it('工具调用委托应透传完整参数', () => {

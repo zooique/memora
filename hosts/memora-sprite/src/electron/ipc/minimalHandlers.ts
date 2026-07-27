@@ -25,7 +25,7 @@ import { IPC_CHANNELS } from './channels.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { loadSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
-import { saveLlmConfig, reinitAgent, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
+import { saveLlmConfig, reinitAgent, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider, saveBackgroundProvider } from '../../index.js';
 import { isValidContent, isNonEmptyString, isValidLlmConfigInput } from './inputValidation.js';
 // 跨进程 LLM 错误分类器：将底层错误映射为用户友好提示（onboarding + 测试连接共用）
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
@@ -452,6 +452,41 @@ export function registerMinimalIpcHandlers(
         errorHandler.handle(err, {
           code: ErrorCode.INITIALIZATION_FAILED,
           context: '切换激活 Provider 失败',
+        });
+        return { success: false, error: toError(err).message };
+      }
+    },
+  );
+
+  // 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务）
+  // 持久化到 config.json + 运行时注入 bgProvider 到 Agent
+  ipcMain.handle(
+    IPC_CHANNELS.LLM_BACKGROUND_PROVIDER_SAVE,
+    async (_event, key: string) => {
+      if (typeof key !== 'string') {
+        return { success: false, error: '参数无效' };
+      }
+      try {
+        // 1. 持久化 background 配置到 config.json
+        await saveBackgroundProvider(key);
+
+        // 2. 运行时注入 bgProvider 到 Agent（若 Agent 已就绪）
+        const currentAgent = callbacks.getCurrentAgent();
+        if (currentAgent) {
+          const config: Config = await spriteConfigStore.load();
+          if (config.llm.background) {
+            const bgProvider = createProviderFromConfig('background', config.llm.background);
+            currentAgent.setBackgroundProvider(bgProvider);
+          } else {
+            currentAgent.setBackgroundProvider(null);
+          }
+        }
+
+        return { success: true, error: null };
+      } catch (err) {
+        errorHandler.handle(err, {
+          code: ErrorCode.INITIALIZATION_FAILED,
+          context: '保存后台 Provider 失败',
         });
         return { success: false, error: toError(err).message };
       }

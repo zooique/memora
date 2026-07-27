@@ -121,11 +121,13 @@ keywords: 文件,读取,打开
 
   // ─── match · SKILL_MATCH_MIN_SCORE 阈值边界 ─────────────────
   //
-  // 阈值 = 0.3，依据：
-  //   - 3 关键词命中 1 个 → 0.333 ≥ 0.3 → 激活
-  //   - 5 关键词命中 1 个 → 0.2 < 0.3 → 不激活
-  //   - 10 关键词命中 3 个 → 0.3 ≥ 0.3 → 激活（边界值）
-  //   - 10 关键词命中 2 个 → 0.2 < 0.3 → 不激活
+  // 阈值 = 0.3，评分公式：hitCount / Math.min(keywordList.length, 3)
+  // 分母上限 3 避免关键词多的技能被惩罚（与 persona 评分算法一致）：
+  //   - 3 关键词命中 1 个 → 1/3=0.333 ≥ 0.3 → 激活
+  //   - 5 关键词命中 1 个 → 1/3=0.333 ≥ 0.3 → 激活（分母上限 3，不再惩罚）
+  //   - 10 关键词命中 3 个 → 3/3=1.0 → 激活
+  //   - 10 关键词命中 2 个 → 2/3=0.667 ≥ 0.3 → 激活（分母上限 3，不再惩罚）
+  //   - 2 关键词命中 0 个 → 0/2=0 < 0.3 → 不激活
   describe('match · SKILL_MATCH_MIN_SCORE 阈值边界', () => {
     it('3 关键词命中 1 个（score=0.333）应激活', async () => {
       createSkillFile(skillsDir, 'three-kw.md', '---\nkeywords: 苹果,香蕉,橙子\n---\n# 三关键词技能');
@@ -138,7 +140,7 @@ keywords: 文件,读取,打开
       expect(match!.score).toBeCloseTo(1 / 3, 5);
     });
 
-    it('5 关键词命中 1 个（score=0.2）不应激活', async () => {
+    it('5 关键词命中 1 个（分母上限 3，score=0.333）应激活', async () => {
       createSkillFile(
         skillsDir,
         'five-kw.md',
@@ -147,8 +149,10 @@ keywords: 文件,读取,打开
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
+      // 分母上限 3：1/min(5,3)=1/3=0.333 ≥ 0.3 → 激活（不再因关键词多而惩罚）
       const match = skillManager.match('苹果');
-      expect(match).toBeNull();
+      expect(match).not.toBeNull();
+      expect(match!.score).toBeCloseTo(1 / 3, 5);
     });
 
     it('2 关键词命中 1 个（score=0.5）应激活', async () => {
@@ -161,7 +165,7 @@ keywords: 文件,读取,打开
       expect(match!.score).toBe(0.5);
     });
 
-    it('10 关键词命中 3 个（score=0.3）应激活（边界值）', async () => {
+    it('10 关键词命中 3 个（分母上限 3，score=1.0）应激活', async () => {
       createSkillFile(
         skillsDir,
         'ten-kw.md',
@@ -170,13 +174,13 @@ keywords: 文件,读取,打开
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      // 命中 3 个：苹果 + 橙子 + 西瓜
+      // 分母上限 3：3/min(10,3)=3/3=1.0
       const match = skillManager.match('苹果 橙子 西瓜');
       expect(match).not.toBeNull();
-      expect(match!.score).toBe(0.3);
+      expect(match!.score).toBe(1);
     });
 
-    it('10 关键词命中 2 个（score=0.2）不应激活', async () => {
+    it('10 关键词命中 2 个（分母上限 3，score=0.667）应激活', async () => {
       createSkillFile(
         skillsDir,
         'ten-kw-2.md',
@@ -185,8 +189,22 @@ keywords: 文件,读取,打开
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      // 命中 2 个：苹果 + 香蕉
+      // 分母上限 3：2/min(10,3)=2/3=0.667 ≥ 0.3 → 激活（不再因关键词多而惩罚）
       const match = skillManager.match('苹果 香蕉');
+      expect(match).not.toBeNull();
+      expect(match!.score).toBeCloseTo(2 / 3, 5);
+    });
+
+    it('关键词全部不命中应返回 null', async () => {
+      createSkillFile(
+        skillsDir,
+        'no-hit.md',
+        '---\nkeywords: 苹果,香蕉,橙子\n---\n# 三关键词技能',
+      );
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const match = skillManager.match('今天天气不错');
       expect(match).toBeNull();
     });
 

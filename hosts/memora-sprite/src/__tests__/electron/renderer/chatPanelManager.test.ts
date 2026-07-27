@@ -335,6 +335,34 @@ describe('startStreaming', () => {
     expect(msg.querySelector('.cursor')).toBeTruthy();
   });
 
+  it('携带 persona 时应在消息底部渲染角色标签 + 两端对齐结构', () => {
+    const { manager, messagesEl } = createManager();
+    manager.startStreaming('s1', 'coder');
+    const msg = messagesEl.querySelector('.message.streaming') as HTMLElement;
+    // 角色标签存在：左侧 .message-persona
+    const personaLabel = msg.querySelector('.message-persona');
+    expect(personaLabel).toBeTruthy();
+    // 蛇形命名转换为 "Coder"
+    expect(personaLabel?.textContent).toBe('Coder');
+    // 操作按钮组容器存在：右侧 .message-actions
+    expect(msg.querySelector('.message-actions')).toBeTruthy();
+  });
+
+  it('已知内部名 ai_agent_role 应映射为"精灵"', () => {
+    const { manager, messagesEl } = createManager();
+    manager.startStreaming('s1', 'ai_agent_role');
+    const personaLabel = messagesEl.querySelector('.message-persona');
+    expect(personaLabel?.textContent).toBe('精灵');
+  });
+
+  it('无 persona 时不渲染角色标签和 .message-actions 容器', () => {
+    const { manager, messagesEl } = createManager();
+    manager.startStreaming('s1');
+    const msg = messagesEl.querySelector('.message.streaming') as HTMLElement;
+    expect(msg.querySelector('.message-persona')).toBeNull();
+    expect(msg.querySelector('.message-actions')).toBeNull();
+  });
+
   it('应设置 streamingMessages + host.setStreaming(true) + 调用 updateSendButton', () => {
     const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');

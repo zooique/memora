@@ -251,6 +251,36 @@
 }
 
 /**
+ * 精灵消息含角色标签时 metaRow 两端对齐
+ * 左侧 .message-persona（角色名）+ 右侧 .message-actions（复制按钮 + 时间戳）
+ * 让用户一眼看到"这条消息是哪个角色回答的"，符合主动可见原则
+ */
+.message.assistant .message-meta:has(.message-persona) {
+  justify-content: space-between;
+}
+
+/**
+ * 角色标签：消息底部左侧轻量文字标识
+ * 与时间戳同字号同色，保持元信息层视觉一致
+ */
+.message-persona {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  user-select: none;
+  font-family: var(--font-sprite);
+}
+
+/**
+ * 操作按钮组：精灵消息含角色标签时，复制按钮 + 时间戳包裹为右侧组
+ * 保持原有 flex gap 紧凑排列，与无角色标签时的左对齐布局等价
+ */
+.message-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/**
  * 消息时间戳：元信息行内小字，浅色
  * 对齐聊天应用习惯，显示消息发送时间
  */

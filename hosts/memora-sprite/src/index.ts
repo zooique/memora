@@ -273,6 +273,27 @@ export async function setActiveLlmProvider(
   await store.saveProviders(providers, key, config);
 }
 
+/**
+ * 保存后台 Provider 选择
+ *
+ * 持久化后台 Provider 的 key 到 config.json（llm.background 字段）。
+ * bgProvider 注入由 IPC handler 调用本函数后通过 callbacks.getCurrentAgent() 完成。
+ *
+ * key 为空字符串时清除 background 配置（回退到"与实时对话相同"）。
+ *
+ * 消费点：providerManagement UI 下拉框 change 事件 → IPC → 此函数
+ *
+ * @param key Provider 别名（空字符串表示清除）
+ * @param configPath 配置文件路径
+ */
+export async function saveBackgroundProvider(
+  key: string,
+  configPath?: string,
+): Promise<void> {
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  await store.saveBackgroundProvider(key || null);
+}
+
 // ─── 启动精灵 ──────────────────────────────────────────
 
 /**

@@ -165,6 +165,8 @@ export const IPC_CHANNELS = {
   LLM_PROVIDER_DELETE: 'llm-provider-delete',
   /** 切换激活 Provider */
   LLM_PROVIDER_SET_ACTIVE: 'llm-provider-set-active',
+  /** 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务） */
+  LLM_BACKGROUND_PROVIDER_SAVE: 'llm-background-provider-save',
 
   // ─── Agent 状态 ───────────────────────────────────────
   /** 查询 Agent 是否就绪 */

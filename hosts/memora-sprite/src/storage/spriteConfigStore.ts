@@ -270,6 +270,49 @@ export class SpriteConfigStore {
 
     await safeWriteJson(this.configPath, config);
   }
+
+  /**
+   * 保存后台 Provider 选择
+   *
+   * 从 providers 映射表中解析完整配置，写入 llm.background。
+   * backgroundKey 为 null 或空字符串时清除 background 配置（回退到"与实时对话相同"）。
+   *
+   * 消费点：providerManagement UI 下拉框 change 事件 → IPC → 此方法
+   * 下游：index.ts 启动时读取 llm.background 注入 agent.setBackgroundProvider
+   *
+   * @param backgroundKey Provider 别名（空字符串/null 表示清除）
+   */
+  async saveBackgroundProvider(
+    backgroundKey: string | null,
+  ): Promise<void> {
+    const dir = resolve(this.configPath, '..');
+    await mkdir(dir, { recursive: true });
+
+    const existing = await this.loadOrDefault();
+    const config: Config = { ...existing };
+
+    if (backgroundKey && existing.llm.providers?.[backgroundKey]) {
+      const provider = existing.llm.providers[backgroundKey];
+      config.llm = {
+        ...existing.llm,
+        background: {
+          provider: provider.provider,
+          model: provider.model,
+          baseUrl: provider.baseUrl ?? '',
+          apiKey: provider.apiKey ?? '',
+          temperature: 0.5, // 后台任务默认 temperature，偏低更稳定
+        },
+      };
+    } else {
+      // 清除 background 配置（回退到"与实时对话相同"，无 bgProvider）
+      config.llm = {
+        ...existing.llm,
+      };
+      delete config.llm.background;
+    }
+
+    await safeWriteJson(this.configPath, config);
+  }
 }
 
 /** 默认配置存储器实例（单例，供 main.ts 直接使用） */

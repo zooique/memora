@@ -111,7 +111,9 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   }
 
   const messageId = randomUUID();
-  fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, { messageId });
+  // 角色名推迟到 agent.chat() 内部 tryAutoMatchPersona 执行后再捕获（见 for-await 循环开头），
+  // 确保消息底部显示的角色标签与实际回答使用的角色一致。
+  // SPRITE_STREAM_START 在收到首个 chunk 后发送，此时 persona 已匹配完毕。
 
   // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
   // 放在竞态/就绪检查通过后、流式开始前，确保只对真正发送的消息计数
@@ -178,9 +180,21 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   // 提升到 try 外部，finally 块需要访问以推送到浮动窗口
   let accumulatedText = '';
 
+  // SPRITE_STREAM_START 是否已发送（延迟到首个 chunk 后，确保 persona 已匹配）
+  let streamStarted = false;
+
   try {
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
     for await (const chunk of agent.chat(text, abortController.signal)) {
+      // 首个 chunk：此时 agent.chat() 内部的 tryAutoMatchPersona 已执行完毕，
+      // activePersona 就是本轮 LLM 回答实际使用的角色（匹配成功已切换，匹配失败保持原角色）。
+      // 在此发送 SPRITE_STREAM_START，确保消息底部角色标签与回答实际角色一致（P0-2 修复）。
+      if (!streamStarted) {
+        streamStarted = true;
+        const personaName = sprite.activePersona ?? undefined;
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, { messageId, persona: personaName });
+      }
+
       // 超时已被强制清理，或窗口销毁，则退出循环（break 会触发 generator return()）
       if (streamTimedOut || fullWindow.isDestroyed()) break;
       // 每个 chunk 到达即重置无进展定时器（chunk 到达代表 generator 有进展）
@@ -314,7 +328,9 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
       // SPRITE_STREAM_END 在 catch/正常路径之后发送（finally 在 catch 之后执行），
       // 保证错误/中断通知先于 END 到达渲染层。
-      if (!fullWindow.isDestroyed()) {
+      // streamStarted 守卫：generator 退出前若未 yield 任何 chunk（如 chat() 入口抛异常），
+      // 跳过 END，避免渲染层收到无对应 START 的 END 消息。
+      if (!fullWindow.isDestroyed() && streamStarted) {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
       }
       // P4-1：推送最后一条助手消息到浮动窗口（非空且非错误时）

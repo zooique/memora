@@ -89,8 +89,13 @@ function createMockIpcContext(options: {
     getAgent: () => ({
       getMetrics: () => ({ context: { truncationCount: 0 } }),
     }),
-    // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
-    getSprite: () => ({ incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() }),
+    // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
+    getSprite: () => ({
+      incrementDailyMessageCount: vi.fn(),
+      prepareForChat: vi.fn(),
+      // activePersona 返回 null 模拟"无激活角色"场景
+      get activePersona() { return null; },
+    }),
     getSessionStore: () => ({}),
     windowStateManager: {},
     windowManager: {
@@ -309,8 +314,13 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
         getAgent: () => ({
           getMetrics: () => ({ context: { truncationCount: 0 } }),
         }),
-        // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
-        getSprite: () => ({ incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() }),
+        // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
+        getSprite: () => ({
+          incrementDailyMessageCount: vi.fn(),
+          prepareForChat: vi.fn(),
+          // activePersona 返回 null 模拟"无激活角色"场景
+          get activePersona() { return null; },
+        }),
         getSessionStore: () => ({}),
         windowStateManager: {},
         windowManager: {

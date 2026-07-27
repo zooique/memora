@@ -23,6 +23,7 @@
 import { formatTimestamp, formatDateKey } from '../helpers/domHelpers.js';
 import { setIcon, setIconWithLabel } from '../helpers/icon.js';
 import { renderMarkdown } from '../components/markdown.js';
+import { formatPersonaDisplayName } from '../helpers/personaLabel.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
@@ -551,8 +552,27 @@ export class ChatPanelManager {
     contentWrapper.appendChild(bubble);
 
     // 元信息行：复制按钮 + 时间戳同行显示
+    // 精灵消息（assistant）含 persona 时采用两端对齐：左侧角色名，右侧操作按钮组
     const metaRow = document.createElement('div');
     metaRow.className = 'message-meta';
+
+    // 精灵消息且携带 persona：左侧显示角色名标签（让用户明确知道是哪个角色在回答）
+    // 历史消息不携带 persona，不显示角色标签（不持久化，符合"用户只需知道当前角色"决策）
+    if (message.role === 'assistant' && message.persona) {
+      const personaLabel = document.createElement('span');
+      personaLabel.className = 'message-persona';
+      personaLabel.textContent = formatPersonaDisplayName(message.persona);
+      metaRow.appendChild(personaLabel);
+    }
+
+    // 操作按钮组：复制按钮 + 时间戳（精灵消息有角色标签时包裹为右侧组，无角色标签时直接挂在 metaRow）
+    const hasPersonaLabel = message.role === 'assistant' && message.persona;
+    const actionsContainer = hasPersonaLabel
+      ? document.createElement('div')
+      : metaRow;
+    if (hasPersonaLabel) {
+      actionsContainer.className = 'message-actions';
+    }
 
     // 用户/精灵消息均添加复制按钮（hover 时显示）
     // 原仅精灵消息有复制按钮，用户消息需手动选择文本，体验不一致
@@ -567,7 +587,7 @@ export class ChatPanelManager {
       // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
       copyBtn.dataset.action = 'copy';
       copyBtn.dataset.content = message.content;
-      metaRow.appendChild(copyBtn);
+      actionsContainer.appendChild(copyBtn);
     }
 
     // 时间戳
@@ -576,7 +596,11 @@ export class ChatPanelManager {
     timeEl.className = 'message-time';
     // 剪枝：复用 domHelpers.formatTimestamp
     timeEl.textContent = formatTimestamp(timestamp);
-    metaRow.appendChild(timeEl);
+    actionsContainer.appendChild(timeEl);
+
+    if (hasPersonaLabel) {
+      metaRow.appendChild(actionsContainer);
+    }
 
     contentWrapper.appendChild(metaRow);
 
@@ -751,13 +775,19 @@ export class ChatPanelManager {
     updateToolCardResult(bubble, toolCallId, name, ok, summary);
   }
 
-  /** 开始流式输出 */
-  startStreaming(messageId: string): void {
+  /**
+   * 开始流式输出
+   *
+   * @param messageId 消息唯一 ID
+   * @param persona 本轮 LLM 调用使用的角色内部名（可选，用于消息底部角色标签显示）
+   */
+  startStreaming(messageId: string, persona?: string): void {
     const el = this.appendMessage({
       role: 'assistant',
       content: '',
       streaming: true,
       messageId,
+      persona,
     });
 
     this.streamingMessages.set(messageId, el);

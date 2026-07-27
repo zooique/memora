@@ -37,6 +37,12 @@ export interface Message {
   /** 消息时间戳（ISO 字符串，可选）。未提供时使用当前时间。 */
   timestamp?: string;
   /**
+   * 当前回答所用的角色内部名（仅精灵消息流式开始时携带）
+   * 渲染时通过 formatDisplayName 转为用户可读名（如 ai_agent_role → 精灵）
+   * 历史消息不携带此字段（不持久化到 SQLite），加载时不显示角色标签
+   */
+  persona?: string;
+  /**
    * 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall）
    * 数组结构，支持多条召回记忆展示，每条含 id/name/score/source
    * id 为 source:name 格式，用于点击跳转记忆详情

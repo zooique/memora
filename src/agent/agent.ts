@@ -366,6 +366,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const loop = this.loop!;
       loop.cleanTemporarySystemMessages();
 
+      // 角色自动匹配（回答前执行）：确保本轮 LLM 调用就用匹配到的角色
+      // 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）
+      // 原在 postProcess 中执行，导致本轮回答仍用旧角色，切换要到下一轮才生效
+      await this.tryAutoMatchPersona(input);
+
       // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };
       const recalledMemories = await this.recallAndInject(input);
@@ -607,38 +612,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 原 postProcess 逻辑完整保留于此，由外层 postProcess 负责 span 生命周期管理。
    */
   private async postProcessInner(input: string, assistantContent: string): Promise<void> {
-    // 角色自动匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
-    // 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）
-    // LLM 辅助匹配在 agent 层执行，遵循 backend_layers_rules §分层职责（persona/ 不直接调 LLM）
-    if (this.personaManager) {
-      try {
-        let matchedPersona: string | null = null;
-        if (this.personaManager.canAutoMatch()) {
-          matchedPersona = await this.personaManager.autoMatch(input);
-          // 关键词低置信度且 backgroundProvider 已注入 → LLM 辅助语义匹配
-          const bgProvider = this.#backgroundProvider;
-          if (!matchedPersona && bgProvider) {
-            matchedPersona = await matchPersonaByLlm(
-              bgProvider,
-              this.personaManager.list,
-              this.personaManager.activeName,
-              input,
-            );
-          }
-        }
-        if (matchedPersona) {
-          const prevName = this.personaManager.activeName;
-          this.personaManager.switchPersona(matchedPersona);
-          this.emit('personaSwitched', { from: prevName, to: matchedPersona });
-          // 刷新 AgentLoop 的角色前缀（与 switchPersona 共用同一段逻辑，ADR-017 枝叶层 2 次提取）
-          this.refreshPersonaPrefixOnLoop();
-          logger.info({ persona: matchedPersona }, '角色自动切换');
-        }
-      } catch (err) {
-        logger.warn({ err }, '角色自动匹配失败');
-      }
-    }
-
     // 技能关键词匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
     if (this.skillManager) {
       try {
@@ -1003,7 +976,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 组装规则：[personaPrompt, profilePrompt].filter(Boolean).join('\n\n') + 末尾分隔符 '---'
    *
    * 调用时机：
-   * - postProcessInner 中角色自动匹配成功后
+   * - tryAutoMatchPersona 中角色自动匹配成功后（chat() 回答前）
    * - switchPersona 手动切换成功后
    * - loop 为 null 时静默跳过（init 前或 close 后的边界场景）
    */
@@ -1015,6 +988,80 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
       ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
     this.loop.refreshPersonaPrefix(newPrefix);
+  }
+
+  /**
+   * 角色自动匹配（best-effort：失败不阻塞对话流程）
+   *
+   * 在 chat() 回答前执行，确保本轮 LLM 调用就用匹配到的角色 system prompt。
+   * 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）。
+   * LLM 辅助匹配在 agent 层执行，遵循 backend_layers_rules §分层职责（persona/ 不直接调 LLM）。
+   *
+   * 匹配成功时：切换角色 + 发射 personaSwitched 事件 + 刷新 AgentLoop 前缀。
+   * 匹配失败/异常时：静默降级，保持当前角色。
+   *
+   * @param input 用户输入文本
+   */
+  private async tryAutoMatchPersona(input: string): Promise<void> {
+    if (!this.personaManager) return;
+    try {
+      let matchedPersona: string | null = null;
+      if (this.personaManager.canAutoMatch()) {
+        matchedPersona = this.personaManager.autoMatch(input);
+        // 关键词低置信度且 backgroundProvider 已注入 → LLM 辅助语义匹配
+        const bgProvider = this.#backgroundProvider;
+        if (!matchedPersona && bgProvider) {
+          matchedPersona = await matchPersonaByLlm(
+            bgProvider,
+            this.personaManager.list,
+            this.personaManager.activeName,
+            input,
+          );
+        }
+      }
+      if (matchedPersona) {
+        const prevName = this.personaManager.activeName;
+        this.personaManager.switchPersona(matchedPersona);
+        this.emit('personaSwitched', { from: prevName, to: matchedPersona });
+        // 刷新 AgentLoop 的角色前缀（与 switchPersona 共用同一段逻辑，ADR-017 枝叶层 2 次提取）
+        this.refreshPersonaPrefixOnLoop();
+        logger.info({ persona: matchedPersona }, '角色自动切换');
+      } else {
+        // 关键词 + LLM 均未命中，且回退目标存在（当前非默认角色）→ 回退默认角色
+        // 解决"切过去回不来"：用户从默认切到散文作者后，输入无关话题应回到默认角色
+        const shouldFallback = this.shouldFallbackToDefault();
+        if (shouldFallback) {
+          const prevName = this.personaManager.activeName;
+          this.personaManager.switchPersona('default');
+          this.emit('personaSwitched', { from: prevName, to: 'default' });
+          this.refreshPersonaPrefixOnLoop();
+          logger.info({ persona: 'default' }, '角色回退默认');
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, '角色自动匹配失败');
+    }
+  }
+
+  /**
+   * 判断是否应回退到默认角色
+   *
+   * 回退条件（全部满足）：
+   *   1. 当前激活角色不是默认角色（已在默认角色则无需回退）
+   *   2. 角色管理器存在且非锁定状态（锁定时 switchPersona 也会被拦截，回退无意义）
+   *
+   * 注意：bgProvider 未配置时也会触发回退——因为关键词 + LLM 均未命中说明当前角色不匹配本轮对话，
+   * 回退默认角色比卡在错误角色上更合理。
+   *
+   * @returns 是否应回退到默认角色
+   */
+  private shouldFallbackToDefault(): boolean {
+    if (!this.personaManager) return false;
+    // manual 模式下不回退：用户明确固定了角色，回退会破坏其意图
+    if (this.personaManager.currentMode !== 'auto') return false;
+    const status = this.personaManager.getSwitchLockStatus();
+    if (status.locked) return false; // 锁定中不回退，避免无意义调用 switchPersona
+    return this.personaManager.activeName !== 'default';
   }
 
   /**

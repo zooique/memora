@@ -151,6 +151,8 @@ export const IPC_CHANNELS = {
   LLM_PROVIDER_DELETE: 'llm-provider-delete',
   /** 切换激活 Provider */
   LLM_PROVIDER_SET_ACTIVE: 'llm-provider-set-active',
+  /** 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务） */
+  LLM_BACKGROUND_PROVIDER_SAVE: 'llm-background-provider-save',
   AGENT_STATUS: 'agent-status',
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
   /** Phase 2.1：用户接受了主动提示（点击"查看"） */
@@ -485,7 +487,7 @@ export interface ElectronAPI {
   forkSession: (targetSession?: string) => Promise<{ success: boolean; newSession?: string; messageCount?: number; error?: string }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
-  onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
+  onStreamStart: (cb: (msg: { messageId: string; persona?: string }) => void) => void;
   onStreamChunk: (cb: (msg: { messageId: string; text: string }) => void) => void;
   onStreamEnd: (cb: (msg: { messageId: string }) => void) => void;
   /**
@@ -557,6 +559,8 @@ export interface ElectronAPI {
   deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
   /** 切换激活 Provider */
   setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null; warning?: string }>;
+  /** 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务） */
+  saveBackgroundProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
 
   // Agent 就绪通知（主进程 → 渲染进程）
   onAgentReady: (cb: () => void) => void;
@@ -1050,7 +1054,7 @@ const electronAPI: ElectronAPI = {
   // 流式监听
   // 注意：ipcRenderer.on 注册的监听器会累积，多次调用 on* 方法会导致同一事件触发多次。
   // 提供 remove* 方法供渲染进程在重新初始化或页面卸载时清理。
-  onStreamStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
+  onStreamStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, (_: IpcRendererEvent, msg: { messageId: string; persona?: string }) => cb(msg)),
   onStreamChunk: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
   onStreamEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   onStreamRecall: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, (_: IpcRendererEvent, msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => cb(msg)),
@@ -1110,6 +1114,7 @@ const electronAPI: ElectronAPI = {
   saveLlmProvider: (key, config, isEditing) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SAVE, key, config, isEditing),
   deleteLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_DELETE, key),
   setActiveLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE, key),
+  saveBackgroundProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_BACKGROUND_PROVIDER_SAVE, key),
 
   // Agent 就绪通知
   onAgentReady: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, () => cb()),

@@ -15,6 +15,7 @@
  */
 
 import { clearElement } from '../helpers/domHelpers.js';
+import { formatPersonaDisplayName } from '../helpers/personaLabel.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { PersonaItem } from '../types.js';
 
@@ -139,32 +140,11 @@ export class PersonaPanelManager {
   /**
    * 将内部角色名转换为用户友好的显示名
    *
-   * 规则：
-   * 1. 已知内部名（ai_agent_role → 精灵）使用固定映射
-   * 2. 蛇形命名（snake_case）转换为 空格分隔，每个单词首字母大写
-   * 3. 已经是中文或已有友好格式的名称保持不变
-   *
-   * @param internalName 角色内部名（如文件名 ai_agent_role）
-   * @returns 用户可读的显示名
+   * 实现已提取为共享纯函数 formatPersonaDisplayName（helpers/personaLabel.ts），
+   * 消息底部角色标签等场景可复用，避免重复实现。
    */
   private formatDisplayName(internalName: string): string {
-    // 已知内部角色名映射表
-    const KNOWN_NAMES: Record<string, string> = {
-      ai_agent_role: '精灵',
-      default: '精灵',
-      assistant: '助手',
-    };
-    if (KNOWN_NAMES[internalName]) {
-      return KNOWN_NAMES[internalName];
-    }
-    // 蛇形命名转换（snake_case → "Snake Case"，中文不转换）
-    if (/^[a-z][a-z0-9_]*$/.test(internalName)) {
-      return internalName
-        .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-    }
-    return internalName;
+    return formatPersonaDisplayName(internalName);
   }
 
   /** 关闭角色下拉菜单（统一管理 aria-expanded 状态） */

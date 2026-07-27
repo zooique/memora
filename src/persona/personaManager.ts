@@ -29,8 +29,15 @@ import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.j
 import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
 import { nowIso } from '@/utils/time.js';
 
-/** 关键词匹配高置信度阈值：≥ 此值直接返回（低置信度由 agent 层决定是否调 LLM） */
-const KEYWORD_HIGH_CONFIDENCE_THRESHOLD = 0.5;
+/**
+ * 关键词匹配高置信度阈值：≥ 此值直接返回（低置信度由 agent 层决定是否调 LLM）
+ *
+ * 设为 0.3 的依据：scoreByKeywords 分母上限为 3（KEYWORD_SCORE_DENOMINATOR_MAX），
+ * 命中 1 个关键词得分 1/3≈0.33 ≥ 0.3 → 高置信度命中。
+ * 这使关键词匹配真正生效——用户输入"写散文""写代码"等包含单个关键词的自然语言即可触发切换，
+ * 而非全部依赖 LLM 辅助匹配。
+ */
+const KEYWORD_HIGH_CONFIDENCE_THRESHOLD = 0.3;
 
 /**
  * 从 frontmatter 解析 traits.* 键值对
@@ -68,7 +75,7 @@ export class PersonaManager {
   private mode: PersonaMode = 'auto';
   /** 角色切换时间戳列表（用于时间窗口缓冲） */
   private switchTimestamps: number[] = [];
-  /** 缓冲区开关（60s 内 3 次切换后锁定） */
+  /** 缓冲区开关（30s 内 5 次切换后锁定） */
   private switchLocked = false;
   /** 锁定恢复计时器 */
   private unlockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,12 +87,12 @@ export class PersonaManager {
    */
   private unlockAt: number | null = null;
 
-  /** 时间窗口：60 秒 */
-  private static readonly SWITCH_WINDOW_MS = 60_000;
-  /** 窗口内最大切换次数 */
-  private static readonly MAX_SWITCHES_IN_WINDOW = 3;
-  /** 锁定后自动恢复时间：5 分钟 */
-  private static readonly AUTO_UNLOCK_MS = 300_000;
+  /** 时间窗口：30 秒（缩短窗口降低误锁定概率） */
+  private static readonly SWITCH_WINDOW_MS = 30_000;
+  /** 窗口内最大切换次数：5 次（提高阈值，允许用户测试时多轮对话不触发锁定） */
+  private static readonly MAX_SWITCHES_IN_WINDOW = 5;
+  /** 锁定后自动恢复时间：2 分钟（缩短锁定时长，加快恢复） */
+  private static readonly AUTO_UNLOCK_MS = 120_000;
 
   /**
    * @param configDir 配置目录（角色文件在 <configDir>/personas/ 下）
@@ -168,7 +175,7 @@ export class PersonaManager {
   switchPersona(name: string): string {
     // 缓冲区检查（限流保护，非错误）
     if (this.switchLocked) {
-      logger.info({ persona: name }, '角色切换已锁定（60s 内超过 3 次），保持当前');
+      logger.info({ persona: name }, '角色切换已锁定（30s 内超过 5 次），保持当前');
       return this.buildSystemPrompt();
     }
 
@@ -209,7 +216,7 @@ export class PersonaManager {
    * @param userInput 用户输入文本
    * @returns 匹配的角色名，无匹配返回 null
    */
-  async autoMatch(userInput: string): Promise<string | null> {
+  autoMatch(userInput: string): string | null {
     if (this.mode !== 'auto') return null;
     if (this.switchLocked) return null;
     if (this.personaList.length === 0) return null;
@@ -286,7 +293,7 @@ export class PersonaManager {
   /**
    * 获取角色切换锁定状态（供宿主 UI 展示剩余锁定时长，P0-2 用户体验打磨）
    *
-   * 锁定触发条件：60s 内切换 3 次后自动锁定 5 分钟（AUTO_UNLOCK_MS）。
+   * 锁定触发条件：30s 内切换 5 次后自动锁定 2 分钟（AUTO_UNLOCK_MS）。
    * 返回值用于宿主 IPC 透传到渲染层，区分"切换失败"原因。
    *
    * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
@@ -437,7 +444,7 @@ export class PersonaManager {
     this.switchTimestamps.push(now);
 
     if (this.switchTimestamps.length >= PersonaManager.MAX_SWITCHES_IN_WINDOW) {
-      logger.warn({ count: this.switchTimestamps.length }, '角色切换过于频繁，锁定 5 分钟');
+      logger.warn({ count: this.switchTimestamps.length }, '角色切换过于频繁，锁定 2 分钟');
       this.switchLocked = true;
       // 记录锁定自动恢复时间戳（供宿主 UI 展示剩余时长，P0-2 用户体验打磨）
       this.unlockAt = now + PersonaManager.AUTO_UNLOCK_MS;

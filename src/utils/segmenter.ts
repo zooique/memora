@@ -45,10 +45,18 @@ function tokenizeKeywords(input: string): string[] {
  * 匹配策略：先分词，再对每个关键词做子串搜索（tokens + 原文双保险）。
  * 大小写不敏感，中英文混合友好。
  *
+ * 评分公式：hitCount / Math.min(keywordList.length, KEYWORD_SCORE_DENOMINATOR_MAX)
+ *
+ * 分母上限 KEYWORD_SCORE_DENOMINATOR_MAX = 3，避免关键词多的角色被惩罚：
+ *   - 10 个 keywords 命中 2 个：原 2/10=0.2（被误判低置信度），现 2/3=0.67（高置信度）
+ *   - 2 个 keywords 命中 2 个：原 2/2=1.0，现 2/2=1.0（不变）
+ *
  * @param userInput - 用户输入文本
  * @param keywordList - 待匹配的关键词数组
  * @returns 匹配得分 (0~1)，0 表示无命中
  */
+/** 评分分母上限：防止关键词多的角色被惩罚（命中 2 个即视为强匹配） */
+const KEYWORD_SCORE_DENOMINATOR_MAX = 3;
 export function scoreByKeywords(userInput: string, keywordList: string[]): number {
   if (keywordList.length === 0) return 0;
 
@@ -63,7 +71,8 @@ export function scoreByKeywords(userInput: string, keywordList: string[]): numbe
     }
   }
 
-  return hitCount / keywordList.length;
+  // 分母取 min(关键词总数, 3)：命中 2+ 个即高置信度，不受关键词总量影响
+  return hitCount / Math.min(keywordList.length, KEYWORD_SCORE_DENOMINATOR_MAX);
 }
 
 /**

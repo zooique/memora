@@ -253,14 +253,18 @@ export function addCopyButtonToMessage(ctx: StreamingRendererContext, el: HTMLEl
   copyBtn.dataset.content = finalText;
 
   // 查找或创建 metaRow，将复制按钮插入到时间戳之前
+  // 精灵消息含 persona 标签时，metaRow 内有 .message-actions 容器包裹操作按钮组，复制按钮应插入到该容器内
   let metaRow = contentWrapper.querySelector('.message-meta');
   const timeEl = contentWrapper.querySelector('.message-time');
-  if (metaRow) {
-    // metaRow 已存在，插入到时间戳之前
+  // 优先使用 .message-actions 容器（精灵消息含 persona 时存在），否则回退到 metaRow
+  const actionsContainer = contentWrapper.querySelector('.message-actions');
+  const insertTarget = actionsContainer ?? metaRow;
+  if (insertTarget) {
+    // 容器已存在，插入到时间戳之前
     if (timeEl) {
-      metaRow.insertBefore(copyBtn, timeEl);
+      insertTarget.insertBefore(copyBtn, timeEl);
     } else {
-      metaRow.appendChild(copyBtn);
+      insertTarget.appendChild(copyBtn);
     }
   } else if (timeEl && timeEl.parentNode) {
     // metaRow 不存在（旧结构），创建并包裹时间戳

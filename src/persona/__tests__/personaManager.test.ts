@@ -353,9 +353,9 @@ name: 默认助手
       expect(status).toEqual({ locked: false, unlockAt: null });
     });
 
-    it('60s 内切换 3 次后应锁定并记录 unlockAt', async () => {
-      // 创建 4 个角色用于频繁切换测试
-      for (const name of ['角色A', '角色B', '角色C', '角色D']) {
+    it('30s 内切换 5 次后应锁定并记录 unlockAt', async () => {
+      // 创建 6 个角色用于频繁切换测试
+      for (const name of ['角色A', '角色B', '角色C', '角色D', '角色E', '角色F']) {
         createPersonaFile(
           personasDir,
           `${name}.md`,
@@ -371,25 +371,27 @@ ${name}内容`,
       vi.useFakeTimers();
       const now = Date.now();
       try {
-        // 3 次切换触发锁定（第 3 次 recordSwitch 时 length >= 3）
+        // 5 次切换触发锁定（第 5 次 recordSwitch 时 length >= 5）
         personaManager.switchPersona('角色B');
         personaManager.switchPersona('角色C');
         personaManager.switchPersona('角色D');
+        personaManager.switchPersona('角色E');
+        personaManager.switchPersona('角色F');
 
-        // 锁定后 getSwitchLockStatus 应返回 locked=true + unlockAt ≈ now + 300000
+        // 锁定后 getSwitchLockStatus 应返回 locked=true + unlockAt ≈ now + 120000
         const status = personaManager.getSwitchLockStatus();
         expect(status.locked).toBe(true);
         expect(status.unlockAt).toBeGreaterThan(now);
-        // unlockAt 应在 now+300000 附近（允许 1 秒误差）
-        expect(status.unlockAt! - now).toBeGreaterThanOrEqual(299_000);
-        expect(status.unlockAt! - now).toBeLessThanOrEqual(301_000);
+        // unlockAt 应在 now+120000 附近（允许 1 秒误差）
+        expect(status.unlockAt! - now).toBeGreaterThanOrEqual(119_000);
+        expect(status.unlockAt! - now).toBeLessThanOrEqual(121_000);
       } finally {
         vi.useRealTimers();
       }
     });
 
     it('setMode(auto) 解除锁定时应同步清空 unlockAt', async () => {
-      for (const name of ['角色A', '角色B', '角色C', '角色D']) {
+      for (const name of ['角色A', '角色B', '角色C', '角色D', '角色E', '角色F']) {
         createPersonaFile(
           personasDir,
           `${name}.md`,
@@ -406,6 +408,8 @@ ${name}内容`,
         personaManager.switchPersona('角色B');
         personaManager.switchPersona('角色C');
         personaManager.switchPersona('角色D');
+        personaManager.switchPersona('角色E');
+        personaManager.switchPersona('角色F');
         expect(personaManager.getSwitchLockStatus().locked).toBe(true);
 
         // 切到 manual 再切回 auto 解除锁定
@@ -421,7 +425,7 @@ ${name}内容`,
     });
 
     it('close() 应清空锁定状态字段（避免脏数据，P0-2 排雷雷点 5）', async () => {
-      for (const name of ['角色A', '角色B', '角色C', '角色D']) {
+      for (const name of ['角色A', '角色B', '角色C', '角色D', '角色E', '角色F']) {
         createPersonaFile(
           personasDir,
           `${name}.md`,
@@ -438,6 +442,8 @@ ${name}内容`,
         personaManager.switchPersona('角色B');
         personaManager.switchPersona('角色C');
         personaManager.switchPersona('角色D');
+        personaManager.switchPersona('角色E');
+        personaManager.switchPersona('角色F');
         expect(personaManager.getSwitchLockStatus().locked).toBe(true);
 
         personaManager.close();
@@ -543,7 +549,17 @@ keywords: 编程, 代码
       expect(matched).toBeNull();
     });
 
-    it('关键词命中 < 0.5 时应返回 null', async () => {
+    it('关键词命中 ≥ 0.3（高置信度阈值）时应返回匹配角色', async () => {
+      // 阈值 0.3：4 个关键词命中 1 个 → 1/min(4,3)=1/3≈0.33 ≥ 0.3 → 高置信度命中
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+你是一个通用AI助手。`,
+      );
       createPersonaFile(
         personasDir,
         'coder.md',
@@ -557,12 +573,39 @@ keywords: 编程, 代码, 架构, 设计
       const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
-      // 4 个关键词中只命中 1 个 → score = 0.25 < 0.5
+      // 当前激活"默认助手"，输入匹配"程序员助手"的关键词
+      // 4 个关键词中只命中 1 个（"代码"）→ score = 1/min(4,3) = 0.33 ≥ 0.3
       const matched = await personaManager.autoMatch('帮我写代码');
 
-      // 注意：默认助手在空目录下降级创建，keywords 为空，不会匹配
-      // coder 需要匹配到默认助手之外的 persona，但这里只加载了默认角色（降级）
-      // 所以 coder 的 autoMatch 需要 list 中有角色
+      expect(matched).toBe('程序员助手');
+    });
+
+    it('关键词全部不命中时应返回 null', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+你是一个通用AI助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, 架构, 设计
+---
+专业编程助手。`,
+      );
+
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('默认助手');
+
+      // 输入与关键词完全无关 → score = 0 < 0.3
+      const matched = await personaManager.autoMatch('今天天气不错');
+
       expect(matched).toBeNull();
     });
   });

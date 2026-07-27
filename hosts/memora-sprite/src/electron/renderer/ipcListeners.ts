@@ -872,7 +872,8 @@ export interface IpcListenerCallbacks {
 export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCallbacks): void {
   // ─── 流式输出 ──────────────────────────────────────────
   window.electronAPI.onStreamStart((msg) => {
-    uiManager.startStreaming(msg.messageId);
+    // 透传 persona 到 startStreaming：本轮 LLM 调用使用的角色名，用于消息底部显示
+    uiManager.startStreaming(msg.messageId, msg.persona);
   });
 
   // 召回透明度：在 text chunk 之前到达，注入召回记忆摘要到消息气泡

@@ -35,7 +35,7 @@ export interface WebElectronAPI {
   forkSession: (targetSession?: string) => Promise<{ success: boolean; newSession?: string; messageCount?: number; error?: string }>;
 
   // 流式监听（Phase 2 用 SSE 实现，Phase 1 预留空实现）
-  onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
+  onStreamStart: (cb: (msg: { messageId: string; persona?: string }) => void) => void;
   onStreamChunk: (cb: (msg: { messageId: string; text: string }) => void) => void;
   onStreamEnd: (cb: (msg: { messageId: string }) => void) => void;
   onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => void) => void;

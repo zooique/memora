@@ -24,7 +24,7 @@ export interface ChatDelegations {
   showTruncationNotice(messageId: string, count: number): void;
   showToolStart(messageId: string, toolCallId: string, name: string, args?: string): void;
   updateToolResult(messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void;
-  startStreaming(messageId: string): void;
+  startStreaming(messageId: string, persona?: string): void;
   stopAllStreaming(): void;
   clearMessages(): void;
   appendMessages(messages: Message[], prepend?: boolean): void;
@@ -86,8 +86,8 @@ export const chatDelegations: ChatDelegations = {
   updateToolResult(this: UIManager, messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void {
     this.chatPanel.updateToolResult(messageId, toolCallId, name, ok, summary);
   },
-  startStreaming(this: UIManager, messageId: string): void {
-    this.chatPanel.startStreaming(messageId);
+  startStreaming(this: UIManager, messageId: string, persona?: string): void {
+    this.chatPanel.startStreaming(messageId, persona);
   },
   stopAllStreaming(this: UIManager): void {
     this.chatPanel.stopAllStreaming();

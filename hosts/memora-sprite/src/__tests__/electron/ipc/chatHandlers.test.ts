@@ -150,10 +150,12 @@ function createMockCtx(overrides?: {
   const agent = hasAgent
     ? (overrides!.agent as ReturnType<IpcContext['getAgent']>)
     : createMockAgent();
-  // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+  // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
   const sprite = {
     incrementDailyMessageCount: vi.fn(),
     prepareForChat: vi.fn(),
+    // 公开 getter activePersona：返回 null 模拟"无激活角色"场景
+    get activePersona() { return null; },
   } as unknown as ReturnType<IpcContext['getSprite']>;
   const sessionStore = {} as ReturnType<IpcContext['getSessionStore']>;
   return {
@@ -606,9 +608,11 @@ describe('chatStreamHandler C1 流式主路径', () => {
       }),
     });
     // 覆盖 sprite mock（createMockCtx 内 sprite 是新建的，需重新指向）
+    // activePersona 返回 null 模拟"无激活角色"场景（消息底部不显示角色标签）
     (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: incrementDaily,
       prepareForChat,
+      get activePersona() { return null; },
     });
     (ctx as unknown as { setAbortController: unknown }).setAbortController = setAbortController;
     (ctx as unknown as { incrementUnreadCount: unknown }).incrementUnreadCount = incrementUnread;
@@ -868,8 +872,9 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
     (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: incrementDaily,
       prepareForChat,
+      // activePersona 返回 null 模拟"无激活角色"场景
+      get activePersona() { return null; },
     });
-    // setAbortController 真实写入 ref，让 getAbortController 能读到
     (ctx as unknown as { setAbortController: unknown }).setAbortController = vi.fn(
       (ctrl: AbortController | null) => {
         abortControllerRef.current = ctrl;
