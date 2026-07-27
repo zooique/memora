@@ -28,10 +28,11 @@ import { mkdir, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 // safeWriteJson 统一 JSON 写入 + 0o600 权限保护（ADR-017 枝叶层 2 次提取）
 import { safeWriteJson } from '../shared/safeWriteJson.js';
+// SPRITE_HOME_DIR_NAME：跨层共享路径常量，真理源在 shared/constants.ts
+import { SPRITE_HOME_DIR_NAME } from '../shared/constants.js';
 import { homedir } from 'node:os';
 import { loadConfig, logger, toError } from 'memora';
 import type { Config } from 'memora';
-import { SPRITE_HOME_DIR_NAME } from '../sprite/constants.js';
 
 /** 默认 LLM 配置文件路径（~/.memora-sprite/config.json） */
 export const DEFAULT_CONFIG_PATH = resolve(homedir(), SPRITE_HOME_DIR_NAME, 'config.json');
@@ -139,7 +140,8 @@ export class SpriteConfigStore {
       }
       return {
         llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
-        memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
+        // dataDir 必须是绝对路径——Node.js fs 不会自动展开 ~，字面量 ~ 会导致首次启动时写入无效路径
+        memory: { dataDir: resolve(homedir(), '.memora-sprite', 'data'), maxContextTokens: 120000 },
         security: { permission: 'owner', confirmWrites: false },
         allowedPaths: [],
       };

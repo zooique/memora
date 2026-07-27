@@ -37,14 +37,15 @@ import { randomUUID } from 'node:crypto';
 import { toError, logger } from 'memora';
 // formatErrorMessage 错误文案真理源（UX-13/14：替代 isNetworkError 二选一静态文案 + 直传 error.message）
 import { formatErrorMessage } from '../../shared/errorMessages.js';
-import { getLocalDate } from '../../sprite/constants.js';
+// 流式输出核心工具（跨宿主共享层）：超时常量 + 超时状态机 + 跨日重置
+import {
+  createStreamTimeoutGuard,
+  resetSessionIfNeeded,
+} from '../../shared/chatStreamCore.js';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, SECURITY_HEADERS } from './types.js';
 
 // ─── 常量 ──────────────────────────────────────────────────
-
-/** 流式输出"无进展"超时阈值（毫秒），与 chatStreamHandler.ts 保持一致 */
-const STREAM_NO_PROGRESS_TIMEOUT_MS = 60_000;
 
 /** SSE 事件名常量（与 MAIN_TO_RENDERER_CHANNELS 平行） */
 const SSE_EVENTS = {
@@ -175,25 +176,14 @@ async function handleChatStart(
     return;
   }
 
-  // 跨日/跨会话自动重置：确保新消息始终归当天主会话
-  const history = ctx.agent.agentHistory;
-  if (history) {
-    const todayDate = getLocalDate();
-    if (history.currentDateValue !== todayDate) {
-      const sessionManager = ctx.agent.sessionManager;
-      if (!sessionManager) {
-        sendError(res, 503, '会话管理器未初始化，请稍后重试');
-        return;
-      }
-      // 重置到当天 main 会话（先 switchSession 再 restoreSession，与其他路径一致）
-      sessionManager.switchSession('main');
-      const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
-      // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
-      if (restoredCount === 0 && ctx.agent.agentLoop) {
-        ctx.agent.agentLoop.restoreHistory([]);
-      }
-      logger.info({ todayDate, restoredCount }, '[Web SSE] 跨日自动重置到当天 main 会话');
-    }
+  // 跨日/跨会话自动重置：确保新消息始终归当天主会话（跨宿主共享逻辑）
+  const sessionReset = await resetSessionIfNeeded(ctx.agent);
+  if (!sessionReset.ok) {
+    sendError(res, 503, sessionReset.error);
+    return;
+  }
+  if (sessionReset.reset) {
+    logger.info('[Web SSE] 跨日自动重置到当天 main 会话');
   }
 
   // 创建 AbortController 供中断使用
@@ -232,18 +222,9 @@ async function handleChatStart(
     // 发送 start 事件
     writeSSE(res, SSE_EVENTS.START, { messageId });
 
-    // 无进展超时兜底定时器
-    let streamTimedOut = false;
-    let streamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
-
-    /** 重置无进展定时器（chunk 到达或对话开始时调用） */
-    const resetStreamTimeout = (): void => {
-      if (streamTimeoutTimer !== null) clearTimeout(streamTimeoutTimer);
-      streamTimeoutTimer = setTimeout(() => {
-        // 幂等保护：已超时或已清理则跳过
-        if (streamTimedOut) return;
-        streamTimedOut = true;
-        streamTimeoutTimer = null;
+    // 无进展超时状态机（跨宿主共享）：超时时 abort + 直接推送 ERROR/END + 清理（Web 路径在定时器内完成清理）
+    const timeoutGuard = createStreamTimeoutGuard({
+      onTimeout: () => {
         // 强制中断内核 generator
         abortController.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
         // 兜底清理：即使 generator 不响应 abort，也确保客户端收到 end 事件 + AbortController 释放
@@ -259,10 +240,10 @@ async function handleChatStart(
         }
         ctx.setAbortController(null);
         logger.warn({ context: '流式输出无进展超时' }, 'Web SSE 超时兜底触发');
-      }, STREAM_NO_PROGRESS_TIMEOUT_MS);
-    };
+      },
+    });
     // 启动首次计时
-    resetStreamTimeout();
+    timeoutGuard.reset();
 
     // 记录对话开始前的截断次数，对话结束后对比检测截断事件
     const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
@@ -275,12 +256,12 @@ async function handleChatStart(
       let accumulatedText = '';
       for await (const chunk of ctx.agent.chat(body.text, abortController.signal)) {
         // 超时已被强制清理，则退出循环（break 会触发 generator return()）
-        if (streamTimedOut) break;
+        if (timeoutGuard.isTimedOut()) break;
         // 客户端断开连接或响应已结束/销毁时退出
         // clientDisconnected 由 req 'close' 事件设置；writableEnded 由 res.end() 设置；destroyed 由 socket 关闭设置
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
         // 每个 chunk 到达即重置无进展定时器
-        resetStreamTimeout();
+        timeoutGuard.reset();
 
         if (chunk.type === 'text') {
           // 累积 delta 后发送完整文本
@@ -336,8 +317,9 @@ async function handleChatStart(
         }
       }
     } catch (error) {
-      // 超时已在定时器内完成清理，跳过 catch 后续逻辑（finally 仍会执行定时器清理）
-      if (streamTimedOut) return;
+      // 超时已在定时器内完成清理（onTimeout 已发送 ERROR/END + 清理 AbortController），
+      // 跳过 catch 后续逻辑（finally 仍会执行 timeoutGuard.cleanup() 释放定时器引用）
+      if (timeoutGuard.isTimedOut()) return;
       // 通过 AbortController.reason 判断是否用户主动中断
       const ctrl = ctx.getAbortController();
       const abortReason = ctrl?.signal.reason;
@@ -364,13 +346,10 @@ async function handleChatStart(
         logger.error({ err: toError(error).message }, 'Web SSE 对话流式输出失败');
       }
     } finally {
-      // 清理无进展超时定时器
-      if (streamTimeoutTimer !== null) {
-        clearTimeout(streamTimeoutTimer);
-        streamTimeoutTimer = null;
-      }
-      // 超时路径已在定时器内发送过 END + 清理 AbortController，此处跳过避免重复
-      if (!streamTimedOut) {
+      // 清理无进展超时定时器（幂等：状态机已 cleanup 过则再调无副作用）
+      timeoutGuard.cleanup();
+      // 超时路径已在 onTimeout 回调内发送过 END + 清理 AbortController，此处跳过避免重复
+      if (!timeoutGuard.isTimedOut()) {
         // 客户端未断开且响应未结束时，发送 END 事件并关闭响应
         // clientDisconnected 表示 TCP 连接已关闭，此时写入会抛错，直接跳过
         if (!clientDisconnected && !res.writableEnded) {

@@ -5,6 +5,7 @@
  * - 本文件只放纯值常量，禁止引入 Node.js 内置模块或任何运行时依赖
  * - 允许被渲染进程（Electron sandbox / 浏览器环境）安全导入
  * - 业务配置相关的常量请放到 spriteConfig.ts，不要反向依赖
+ * - SPRITE_HOME_DIR_NAME 真理源在 shared/constants.ts，本模块 re-export 保持调用方不变
  */
 
 // formatDateKey 本地日期格式化（ADR-017 枝叶层 2 次提取，shared/dateUtils.ts 真理源）
@@ -29,19 +30,8 @@ export const MS_PER_WEEK = 604_800_000;
 
 // ─── 路径常量 ──────────────────────────────────────────
 
-/**
- * Sprite 宿主目录名（Agent 级共享根目录）
- *
- * 所有 sprite 宿主持久化路径的真理源：~/{SPRITE_HOME_DIR_NAME}/
- * - data/       用户记忆（memora.db）
- * - config/     Agent 级配置（rules/skills/personas）
- * - config.json LLM 配置
- * - sprite.json 精灵配置
- *
- * 抽取目的：消除 4 处硬编码重复（index.ts / spriteConfigStore.ts / spriteConfig.ts），
- * 任一处改名会导致路径漂移。本常量为纯字符串，符合 constants.ts 零依赖原则。
- */
-export const SPRITE_HOME_DIR_NAME = '.memora-sprite';
+// SPRITE_HOME_DIR_NAME 真理源在 shared/constants.ts，re-export 保持调用方导入路径不变
+export { SPRITE_HOME_DIR_NAME } from '../shared/constants.js';
 
 // ─── 业务默认值常量 ────────────────────────────────────
 

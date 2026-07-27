@@ -2,46 +2,23 @@
  * 宿主层共享错误类型（P0 错误处理统一）
  *
  * 职责：
- * - 定义跨层共享的 ErrorCode 枚举（错误分类的真理源）
  * - 定义 SpriteError 结构化错误类（携带显式 code，替代字符串推断）
+ * - re-export ErrorCode 枚举（真理源在 shared/errorCodes.ts，保持调用方不变）
  *
  * 设计原则：
- * - 纯逻辑模块，零 electron 依赖，sprite/storage/electron 层均可导入
+ * - 纯逻辑模块，零 electron 依赖，sprite/electron 层均可导入
  * - SpriteError 继承 Error，不引入运行时副作用
  * - electron/errorHandler.ts 从本模块 re-export，保持公共 API 不变
  *
- * 架构方向：electron 依赖 sprite（不反向），因此错误类型定义在 sprite 层。
+ * 分层架构：
+ *   - ErrorCode 枚举：shared/errorCodes.ts（真理源）→ sprite/errors.ts re-export
+ *   - SpriteError 类：sprite/errors.ts（sprite 层错误类）
+ *   - StorageError 类：storage/storageError.ts（storage 层错误类，零 sprite 依赖）
+ *   - errorHandler.ts：鸭子类型读取 error.code，兼容 SpriteError + StorageError
  */
 
-// ─── 错误码枚举 ─────────────────────────────────────────
-
-/**
- * 错误代码枚举
- *
- * 用于 SpriteError.code 字段和 ErrorHandler.normalizeError 的错误分类。
- * 新增错误码时同步更新 electron/errorHandler.ts 的 getUserFriendlyMessage。
- */
-export enum ErrorCode {
-  // 通用错误
-  UNKNOWN = 'UNKNOWN',
-  INITIALIZATION_FAILED = 'INITIALIZATION_FAILED',
-  CONFIG_LOAD_FAILED = 'CONFIG_LOAD_FAILED',
-
-  // 窗口相关错误
-  WINDOW_CREATE_FAILED = 'WINDOW_CREATE_FAILED',
-
-  // 文件系统错误
-  FILE_READ_FAILED = 'FILE_READ_FAILED',
-
-  // 网络错误
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  API_ERROR = 'API_ERROR',
-
-  /** 存储层错误（存储不可用、写入失败等） */
-  STORAGE_ERROR = 'STORAGE_ERROR',
-  /** 数据校验错误（source 校验失败、参数非法、重复注册等） */
-  VALIDATION_ERROR = 'VALIDATION_ERROR',
-}
+// ErrorCode 真理源在 shared/errorCodes.ts，re-export 保持调用方导入路径不变
+export { ErrorCode } from '../shared/errorCodes.js';
 
 // ─── 结构化错误类 ───────────────────────────────────────
 
@@ -52,6 +29,8 @@ export enum ErrorCode {
  * 调用方通过 `throw new SpriteError(ErrorCode.FILE_READ_FAILED, '...')` 显式指定错误类型，
  * ErrorHandler.normalizeError 优先读取 error.code，仅在未携带 code 时降级到字符串匹配。
  */
+import { ErrorCode } from '../shared/errorCodes.js';
+
 export class SpriteError extends Error {
   /** 显式错误代码（优先于字符串推断） */
   readonly code: ErrorCode;

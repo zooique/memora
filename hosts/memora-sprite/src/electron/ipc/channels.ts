@@ -130,13 +130,28 @@ export const IPC_CHANNELS = {
   /** 查询当前角色匹配模式 */
   PERSONA_MODE_GET: 'persona-mode-get',
 
-  // ─── 角色文件 CRUD（精灵设定面板 Epic 3 · I1） ─────────
-  /** 读取角色文件内容（携带 name，返回 ConfigFileEntry | null） */
-  PERSONA_READ_FILE: 'persona-read-file',
+  // ─── 角色文件保存 ─────────────────────────────────────
+  // PERSONA_LIST/SWITCH/MODE 见上方"角色相关"段；LIST/READ/DELETE 已统一到 CONFIG_FILE_*
+  // PERSONA_SAVE_FILE 单独保留：SAVE 三通道（persona/rule/skill）因 SKILL_INSTALL 返回值
+  // 结构特殊（SkillInstallResult 含 hotReloaded/hotReloadError）未达同构提取阈值，
+  // 待自然生长触发（详见 HEAL-21 归档说明）
   /** 保存角色文件（新增/更新合并，携带 name + content） */
   PERSONA_SAVE_FILE: 'persona-save-file',
-  /** 删除角色文件（携带 name） */
-  PERSONA_DELETE_FILE: 'persona-delete-file',
+
+  // ─── 设定文件统一 CRUD（精灵设定面板 Epic 3 · I1/I2/I3） ─
+  // 统一入口：payload 携带 type: 'persona' | 'rule' | 'skill' 区分文件类型
+  // 合并自：PERSONA_READ_FILE + RULE_LIST/READ + SKILL_LIST/READ（共 8 通道 → 3 通道）
+  // PERSONA_LIST 不合并：返回 { personas: Array<{ name, description, active }> } 依赖内核
+  // PersonaManager 的 active 字段，与 ConfigFileEntry[] 文件元数据形态正交
+  /**
+   * 列出指定类型的设定文件（携带 type: 'rule' | 'skill'，返回 ConfigFileEntry[]，按 mtime 降序）
+   * 注意：type='persona' 不支持，角色列表走 PERSONA_LIST 通道（返回内核活跃角色清单）
+   */
+  CONFIG_FILE_LIST: 'config-file-list',
+  /** 读取设定文件内容（携带 type: ConfigFileType + name，返回 ConfigFileEntry | null） */
+  CONFIG_FILE_READ: 'config-file-read',
+  /** 删除设定文件（携带 type: ConfigFileType + name，返回 ConfigFileOperationResult） */
+  CONFIG_FILE_DELETE: 'config-file-delete',
 
   // ─── 项目 / 仪表盘 ────────────────────────────────────
   /** 列出已注册项目 */
@@ -236,27 +251,16 @@ export const IPC_CHANNELS = {
   /** 渲染进程 → 主进程：请求分析剪贴板内容（用户点击"分析"按钮触发） */
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
 
-  // ─── 技能安装（Phase 4.3） ────────────────────────────
-  /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容） */
-  SKILL_INSTALL: 'skill-install',
-
-  // ─── 设定文件 CRUD（精灵设定面板 Epic 3 · I2/I3） ───────
-  // 规则与技能的统一文件管理入口（角色文件 CRUD 见上方 PERSONA_READ_FILE 等）
-  // PERSONA_LIST 复用为角色列表通道，不新增 RULE_LIST 对应的 persona 通道
-  /** 列出所有规则文件（返回 ConfigFileEntry[]，按 mtime 降序） */
-  RULE_LIST: 'rule-list',
-  /** 读取规则文件内容（携带 name，返回 ConfigFileEntry | null） */
-  RULE_READ: 'rule-read',
+  // ─── 设定文件保存（精灵设定面板 Epic 3 · I2/I3） ───────
+  // SAVE 三通道独立保留：PERSONA_SAVE_FILE（见上方"角色文件保存"段）/ RULE_SAVE / SKILL_INSTALL
+  // 详见 HEAL-21 归档说明：SKILL_INSTALL 返回 SkillInstallResult（含 hotReloaded/hotReloadError），
+  // 与 ConfigFileOperationResult 结构不同，SAVE 三通道未达同构提取阈值
   /** 保存规则文件（新增/更新合并，携带 name + content） */
   RULE_SAVE: 'rule-save',
-  /** 删除规则文件（携带 name） */
-  RULE_DELETE: 'rule-delete',
-  /** 列出所有技能文件（返回 ConfigFileEntry[]，按 mtime 降序） */
-  SKILL_LIST: 'skill-list',
-  /** 读取技能文件内容（携带 name，返回 ConfigFileEntry | null） */
-  SKILL_READ: 'skill-read',
-  /** 删除技能文件（携带 name；新增/更新复用 SKILL_INSTALL 通道） */
-  SKILL_DELETE: 'skill-delete',
+
+  // ─── 技能安装（Phase 4.3） ────────────────────────────
+  /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容，返回 SkillInstallResult 含热重载状态） */
+  SKILL_INSTALL: 'skill-install',
 
   // ─── 快速输入补全（Phase 1 骨架） ─────────────────────
   /** 渲染进程 → 主进程：确认输入（携带文本，主进程写入剪贴板 + 关闭浮窗） */

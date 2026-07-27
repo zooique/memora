@@ -61,14 +61,19 @@ export class ErrorHandler {
    * 复用内核 toError 完成 unknown → Error 转换。
    * code 优先级：
    *   1. 调用方显式传入 explicitCode
-   *   2. SpriteError 携带的 error.code（结构化错误）
-   *   3. 从 error.message 字符串推断（降级 fallback，已废弃，新增错误应使用 SpriteError）
+   *   2. 错误对象携带的 error.code 字段（鸭子类型识别 SpriteError + StorageError）
+   *   3. 从 error.message 字符串推断（降级 fallback，已废弃，新增错误应使用 SpriteError/StorageError）
    *   4. UNKNOWN
+   *
+   * 鸭子类型读取 code 字段，兼容 sprite 层 SpriteError + storage 层 StorageError
+   * （两者均携带 code: ErrorCode 字段但互不继承，均从 shared/errorCodes.ts 导入枚举）。
    */
   private normalizeError(error: unknown, explicitCode?: ErrorCode, context?: string): AppError {
     const err = toError(error);
-    // 优先读取结构化错误码：SpriteError 实例携带 code 字段
-    const structCode = err instanceof SpriteError ? err.code : undefined;
+    // 鸭子类型读取 code 字段：兼容 SpriteError（sprite 层）+ StorageError（storage 层）
+    const structCode = (err instanceof Error && 'code' in err && typeof (err as { code?: unknown }).code === 'string')
+      ? (err as { code: ErrorCode }).code
+      : undefined;
     return {
       code: explicitCode ?? structCode ?? this.extractErrorCode(err),
       message: err.message,
@@ -81,11 +86,12 @@ export class ErrorHandler {
   /**
    * 从错误对象中提取错误代码（降级 fallback）
    *
-   * @deprecated 新增错误应使用 `throw new SpriteError(ErrorCode.XXX, msg)` 显式指定 code。
+   * @deprecated 新增错误应使用 `throw new SpriteError(ErrorCode.XXX, msg)` 或
+   *             `throw new StorageError(ErrorCode.XXX, msg)` 显式指定 code。
    *             此方法仅作为未携带 code 的遗留错误降级路径保留。
    *
    * 本降级路径仅覆盖遗留错误的关键词推断，STORAGE_ERROR / VALIDATION_ERROR
-   * 等新错误码必须通过 SpriteError 显式携带，不在此降级路径中追加关键词。
+   * 等新错误码必须通过 SpriteError/StorageError 显式携带，不在此降级路径中追加关键词。
    * 新增 throw 一律使用 `throw new SpriteError(ErrorCode.XXX, msg)`，
    * normalizeError 会优先读取 error.code，仅在未携带 code 时才回退到此方法。
    */

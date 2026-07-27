@@ -19,23 +19,14 @@ import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import { requireAgent, requireSprite } from './types.js';
 import type { IpcContext } from './types.js';
-import { getLocalDate } from '../../sprite/constants.js';
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
 import { formatErrorMessage } from '../../shared/errorMessages.js';
+// 流式输出核心工具（跨宿主共享层）：超时常量 + 超时状态机 + 跨日重置
+import {
+  createStreamTimeoutGuard,
+  resetSessionIfNeeded,
+} from '../../shared/chatStreamCore.js';
 import type { BrowserWindow } from 'electron';
-
-// ─── 流式输出超时兜底常量 ─────────────────────────────────
-
-/**
- * 流式输出"无进展"超时阈值（毫秒）
- *
- * 主进程兜底：每个 chunk 到达即重置定时器，超过此时长无任何 chunk
- * 则判定为 generator 挂起（LLM 卡死 / postProcess 阻塞 / abort 未响应等），
- * 强制清理宿主状态并通知渲染进程解锁，避免 AbortController 泄漏导致后续对话被竞态保护拒绝。
- *
- * 时长取舍：晚于渲染进程 30s 兜底（留出 abort 响应窗口），早于内核 3 分钟锁超时（CHAT_LOCK_TIMEOUT_MS = 180_000）。
- */
-const STREAM_NO_PROGRESS_TIMEOUT_MS = 60_000;
 
 // ─── 流式错误推送辅助函数 ─────────────────────────────────
 
@@ -91,9 +82,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   let streamStarted = false;
   // 中断通道已发送标志（确保 SPRITE_STREAM_ABORTED 只发送一次）
   let abortedNotified = false;
-  // 主进程无进展超时兜底相关变量
-  let streamTimedOut = false;
-  let streamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  // 无进展超时状态机（跨宿主共享）
+  let timeoutGuard: ReturnType<typeof createStreamTimeoutGuard> | null = null;
   // AbortController 和 messageId 在 try 块内创建，但 finally 块需要访问
   let abortController: AbortController | null = null;
   let messageId: string | null = null;
@@ -111,22 +101,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     abortController = new AbortController();
     ctx.setAbortController(abortController);
 
-    // 跨日/跨会话自动重置：确保新消息始终归当天主会话
-    const history = agent.agentHistory;
-    if (history) {
-      const todayDate = getLocalDate();
-      if (history.currentDateValue !== todayDate) {
-        const sessionManager = agent.sessionManager;
-        if (!sessionManager) {
-          emitStreamError(fullWindow, '会话管理器未初始化，请稍后重试', 'SessionManager 未初始化');
-          return;
-        }
-        sessionManager.switchSession('main');
-        const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
-        if (restoredCount === 0 && agent.agentLoop) {
-          agent.agentLoop.restoreHistory([]);
-        }
-      }
+    // 跨日/跨会话自动重置：确保新消息始终归当天主会话（跨宿主共享逻辑）
+    const sessionReset = await resetSessionIfNeeded(agent);
+    if (!sessionReset.ok) {
+      emitStreamError(fullWindow, sessionReset.error, 'SessionManager 未初始化');
+      return;
     }
 
     messageId = randomUUID();
@@ -140,20 +119,16 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
     ctx.trayManager?.setState('active');
 
-    /** 重置无进展定时器（chunk 到达或对话开始时调用） */
-    const resetStreamTimeout = (): void => {
-      if (streamTimeoutTimer !== null) clearTimeout(streamTimeoutTimer);
-      streamTimeoutTimer = setTimeout(() => {
-        if (streamTimedOut) return;
-        // 定时器回调仅设标志 + abort，IPC 发送统一到 finally 块，避免与主流程 for-await 共享状态的并发访问竞争
-        streamTimedOut = true;
-        streamTimeoutTimer = null;
+    // 创建无进展超时状态机：超时时 abort + forceReleaseChatLock，IPC 推送统一到 finally 块发送
+    // （避免与主流程 for-await 共享状态的并发访问竞争）
+    timeoutGuard = createStreamTimeoutGuard({
+      onTimeout: () => {
         abortController?.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
         agent.forceReleaseChatLock();
-      }, STREAM_NO_PROGRESS_TIMEOUT_MS);
-    };
+      },
+    });
     // 启动首次计时
-    resetStreamTimeout();
+    timeoutGuard.reset();
 
     // 记录对话开始前的截断次数，对话结束后对比检测截断事件
     const truncationBefore = agent.getMetrics().context.truncationCount;
@@ -169,9 +144,9 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       }
 
       // 超时已被强制清理，或窗口销毁，则退出循环（break 会触发 generator return()）
-      if (streamTimedOut || fullWindow.isDestroyed()) break;
+      if (timeoutGuard.isTimedOut() || fullWindow.isDestroyed()) break;
       // 每个 chunk 到达即重置无进展定时器（chunk 到达代表 generator 有进展）
-      resetStreamTimeout();
+      timeoutGuard.reset();
 
       if (chunk.type === 'text') {
         // 累积 delta 后发送完整文本，渲染层清空重渲染也不会丢失内容
@@ -259,8 +234,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       }
     }
   } catch (error) {
-    // 超时路径：定时器已设标志 + abort，IPC 通知与状态清理统一在 finally 块执行，跳过 catch 重复处理
-    if (streamTimedOut) return;
+    // 超时路径：状态机已设标志 + abort，IPC 通知与状态清理统一在 finally 块执行，跳过 catch 重复处理
+    if (timeoutGuard?.isTimedOut()) return;
     // 通过 AbortController.reason 判断是否用户主动中断
     const ctrl = ctx.getAbortController();
     const abortReason = ctrl?.signal.reason;
@@ -298,13 +273,10 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     }
   } finally {
     // 清理无进展超时定时器（正常结束 / 异常 / 中断均需清理）
-    if (streamTimeoutTimer !== null) {
-      clearTimeout(streamTimeoutTimer);
-      streamTimeoutTimer = null;
-    }
+    timeoutGuard?.cleanup();
     // 所有路径（含超时）统一在 finally 发送 IPC 与清理状态，避免定时器回调与主流程的并发访问竞争
     if (!fullWindow.isDestroyed()) {
-      if (streamTimedOut) {
+      if (timeoutGuard?.isTimedOut()) {
         // 超时路径：发送错误提示 + STREAM_END（仅在 streamStarted 后才发 END，避免无 START 的 END）
         if (messageId) {
           emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');

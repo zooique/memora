@@ -475,7 +475,7 @@ export class SpriteLifecycleManager {
       const msg = currentDirection === 'growing'
         ? '近期记忆增长加速，知识库正在快速扩充'
         : currentDirection === 'declining'
-          ? '���期记忆增长放缓，是否减少了使用频率？'
+          ? '近期记忆增长放缓，是否减少了使用频率？'
           : '记忆增长趋于稳定';
       this.proactiveEngine.addNotice('event', msg);
     }

@@ -16,6 +16,8 @@
  * - 传入临时路径避免依赖真实文件系统
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+// 引入 homedir 用于动态拼接期望路径——跨平台兼容（Windows/POSIX 路径分隔符差异）；resolve 已在下方导入
+import { homedir } from 'node:os';
 
 vi.mock('node:os', () => ({
   homedir: vi.fn(() => '/mock/home'),
@@ -133,7 +135,7 @@ describe('SpriteConfigStore', () => {
       expect(result.llm.provider).toBe('mock');
       expect(result.llm.model).toBe('mock-model');
       expect(result.llm.temperature).toBe(0.7);
-      expect(result.memory.dataDir).toBe('~/.memora-sprite/data');
+      expect(result.memory.dataDir).toBe(resolve(homedir(), '.memora-sprite', 'data'));
       expect(result.security.permission).toBe('owner');
       expect(result.allowedPaths).toEqual([]);
     });

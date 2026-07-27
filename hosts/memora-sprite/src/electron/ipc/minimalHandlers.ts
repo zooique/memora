@@ -355,6 +355,12 @@ export function registerMinimalIpcHandlers(
 
         // 删除的是当前 active Provider 时，运行时切换到新 active（deleteLlmProvider 已自动选首个剩余）
         if (wasActive && state.agentReady) {
+          // 中断进行中的对话：避免旧 Provider 流式输出残留到新 Provider（与 LLM_PROVIDER_SET_ACTIVE 行为一致）
+          if (state.currentAbortController) {
+            state.currentAbortController.abort();
+            state.currentAbortController = null;
+          }
+
           const configAfter: Config = await spriteConfigStore.load();
           const newActive = configAfter.llm.active ?? '';
           if (newActive) {
