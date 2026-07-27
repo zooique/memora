@@ -72,16 +72,36 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
-/** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
-// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（18 个事件）
-const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
-  'memoryAdded', 'personaSwitched', 'decayCompleted',
-  'memoryRecalled', 'sessionForked', 'insightExtracted',
-  'conflictDetected', 'projectSwitched', 'skillMatched',
-  'archiveFailed', 'contextTruncated', 'configReloaded',
-  'guardrailError', 'archiveModeChanged', 'personaSwitchLocked',
-  'workProjectionGenerated', 'boostPersistFailed', 'dedupCompleted',
-]);
+/**
+ * Agent 事件名常量（编译期类型安全 + 运行时校验）
+ *
+ * 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致。
+ * 使用此常量替代字符串字面量：拼写错误在编译期被捕获，
+ * 事件改名时只需修改此对象和 AgentEventMap，无需全局搜索替换。
+ */
+const AGENT_EVENTS = {
+  memoryAdded: 'memoryAdded',
+  personaSwitched: 'personaSwitched',
+  decayCompleted: 'decayCompleted',
+  memoryRecalled: 'memoryRecalled',
+  sessionForked: 'sessionForked',
+  insightExtracted: 'insightExtracted',
+  conflictDetected: 'conflictDetected',
+  projectSwitched: 'projectSwitched',
+  skillMatched: 'skillMatched',
+  archiveFailed: 'archiveFailed',
+  contextTruncated: 'contextTruncated',
+  configReloaded: 'configReloaded',
+  guardrailError: 'guardrailError',
+  archiveModeChanged: 'archiveModeChanged',
+  personaSwitchLocked: 'personaSwitchLocked',
+  workProjectionGenerated: 'workProjectionGenerated',
+  boostPersistFailed: 'boostPersistFailed',
+  dedupCompleted: 'dedupCompleted',
+} as const;
+
+/** 运行时校验用 Set（由 AGENT_EVENTS 派生，单一真理源） */
+const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_EVENTS));
 
 // ─── Agent 门面类 ───────────────────────────────────────
 
@@ -334,7 +354,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
       onDecayCompleted: (payload) => {
-        this.emit('decayCompleted', payload);
+        this.emit(AGENT_EVENTS.decayCompleted, payload);
         void this.evaluateTimeliness().catch((err: unknown) => {
           logger.warn({ err }, 'L2 时效性评估自动触发失败（已降级，不影响衰减循环）');
         });
@@ -515,7 +535,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     for (const src of pending) {
       try {
         await this.reloadConfig(src);
-        this.emit('configReloaded', { source: src });
+        this.emit(AGENT_EVENTS.configReloaded, { source: src });
       } catch (err) {
         logger.warn({ err, source: src }, '补执行配置重载失败');
       }
@@ -588,13 +608,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       recallSpan.end();
     }
     if (recalledMemories.length > 0) {
-      this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
+      this.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
       // FIX-P1-2：boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
       // boost 是软指标（每次 +0.05，上限 1.0），写入失败仅 log 不影响 chat 流程
       const ids = recalledMemories.map((m) => m.id);
       void boostScores(this.requirePctx.index, ids).catch((err: unknown) => {
         logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
-        this.emit('boostPersistFailed', { memoryId: ids.join(','), message: toError(err).message });
+        this.emit(AGENT_EVENTS.boostPersistFailed, { memoryId: ids.join(','), message: toError(err).message });
       });
     }
 
@@ -641,7 +661,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           this.loop.injectSystemMessage(skillPrompt);
           logger.debug({ skill: match.skill.name, score: match.score }, '技能 prompt 已注入（当轮生效）');
         }
-        this.emit('skillMatched', { skill: match.skill.name, score: match.score });
+        this.emit(AGENT_EVENTS.skillMatched, { skill: match.skill.name, score: match.score });
       }
     } catch (err) {
       logger.warn({ err }, '技能匹配失败');
@@ -700,7 +720,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         (err) => {
           const message = err instanceof Error ? err.message : String(err);
           logger.warn({ err, stage: 'profile' }, '归档失败');
-          this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
+          this.emit(AGENT_EVENTS.archiveFailed, { stage: 'profile', message: message.slice(0, 200) });
         },
       );
       history.registerPendingArchive(archiveFactsPromise);
@@ -717,7 +737,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         (err) => {
           const message = err instanceof Error ? err.message : String(err);
           logger.warn({ err, stage: 'insight' }, '归档失败');
-          this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
+          this.emit(AGENT_EVENTS.archiveFailed, { stage: 'insight', message: message.slice(0, 200) });
         },
       );
       history.registerPendingArchive(archiveInsightPromise);
@@ -808,7 +828,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 发射项目切换事件（供宿主 UI 刷新项目相关界面）
-    this.emit('projectSwitched', {
+    this.emit(AGENT_EVENTS.projectSwitched, {
       from: fromProjectPath,
       to: projectPath,
       projectName,
@@ -837,16 +857,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       enableContextSummary: this.#config.enableContextSummary,
       existingSkillManager: this.skillManager,
       onWorkProjectionGenerated: (sourcePath, summary) => {
-        this.emit('workProjectionGenerated', { sourcePath, summary });
+        this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
       },
       onContextTruncated: (skippedCount, keptCount) => {
-        this.emit('contextTruncated', { skippedCount, keptCount });
+        this.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });
       },
       onDedupCompleted: (report) => {
-        this.emit('dedupCompleted', { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
+        this.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
       },
       onGuardrailError: (rule, message) => {
-        this.emit('guardrailError', { rule, message });
+        this.emit(AGENT_EVENTS.guardrailError, { rule, message });
       },
     });
 
@@ -868,7 +888,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
     // 与 bindGetRecentHistory 同模式：解决 Agent 晚于 InsightExtractor 创建的时序循环依赖
     this.insightExtractor.bindOnConflict((info) => {
-      this.emit('conflictDetected', info);
+      this.emit(AGENT_EVENTS.conflictDetected, info);
     });
     // 注入 VectorStore 到 MemoryInspector，启用混合搜索
     if (this.memoryInspector && this.#config.vectorStore) {
@@ -901,7 +921,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private createSessionManager(): SessionManager {
     const forwardEvent = (event: string, data: Record<string, unknown>) => {
-      if (AGENT_EVENT_NAMES.has(event)) {
+      if (AGENT_EVENT_SET.has(event)) {
         this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
       }
     };
@@ -959,7 +979,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const prev = this.#config.archiveMode;
     if (prev === mode) return; // 幂等：无变更直接返回
     this.#config.archiveMode = mode;
-    this.emit('archiveModeChanged', { from: prev, to: mode });
+    this.emit(AGENT_EVENTS.archiveModeChanged, { from: prev, to: mode });
     logger.info({ from: prev, to: mode }, '归档模式已切换');
   }
 
@@ -1014,7 +1034,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.refreshPersonaPrefixOnLoop();
 
     // 发射切换事件，触发宿主 UI 刷新 + 感知重推导 + 通知队列记录
-    this.emit('personaSwitched', { from: prevName, to: name });
+    this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: name });
     logger.info({ from: prevName, to: name }, '角色手动切换');
     return this.personaManager.buildSystemPrompt();
   }
@@ -1089,7 +1109,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       if (matchedPersona) {
         const prevName = this.personaManager.activeName;
         this.personaManager.switchPersona(matchedPersona);
-        this.emit('personaSwitched', { from: prevName, to: matchedPersona });
+        this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: matchedPersona });
         // 刷新 AgentLoop 的角色前缀（与 switchPersona 共用同一段逻辑，ADR-017 枝叶层 2 次提取）
         this.refreshPersonaPrefixOnLoop();
         logger.info({ persona: matchedPersona }, '角色自动切换');
@@ -1102,7 +1122,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           const fallbackTarget = this.personaManager.list[0]?.name ?? 'default';
           const prevName = this.personaManager.activeName;
           this.personaManager.switchPersona(fallbackTarget);
-          this.emit('personaSwitched', { from: prevName, to: fallbackTarget });
+          this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: fallbackTarget });
           this.refreshPersonaPrefixOnLoop();
           logger.info({ persona: fallbackTarget }, '角色回退默认');
         }
