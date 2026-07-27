@@ -15,7 +15,7 @@
  * - AUDIT_LOG_LIST：auditManager 存在/null 降级 + limit 边界
  * - AUDIT_LOG_CLEAR：auditManager 存在/null 降级
  * - PROJECTS_LIST：始终返回空数组
- * - THEME_CHANGED：light/dark 主题 + windowManager undefined
+ * - THEME_CHANGED：light/dark 主题 + windowManager 未初始化
  * - RENDERER_LOG：warn/error 级别日志转发 + 参数校验
  *
  * Mock 策略：
@@ -125,6 +125,8 @@ import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
 import type { MinimalIpcState, MinimalIpcCallbacks } from '../../../electron/ipc/types.js';
 // AgentRuntime 真理源在 runtime/agentRuntime.ts
 import { AgentRuntime } from '../../../electron/runtime/agentRuntime.js';
+// WindowService 真理源在 runtime/windowService.ts
+import { WindowService } from '../../../electron/runtime/windowService.js';
 import { createProviderFromConfig } from 'memora';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
@@ -138,12 +140,12 @@ import { createProviderFromConfig } from 'memora';
 function createState(overrides?: Partial<MinimalIpcState>): MinimalIpcState {
   return {
     agentRuntime: new AgentRuntime(),
+    windowService: new WindowService(),
     agentReady: false,
     initErrorDetail: null,
     currentDataDir: '/tmp/test-data',
     pendingWriteConfirmations: new Map(),
     auditManager: null,
-    windowManager: undefined,
     ...overrides,
   };
 }
@@ -605,7 +607,10 @@ describe('registerMinimalIpcHandlers', () => {
     it('light 主题应设置浅色背景色', () => {
       const updateBackgroundColor = vi.fn();
       const windowManager = { updateBackgroundColor } as never;
-      const state = createState({ windowManager });
+      // 通过 WindowService 包装 windowManager，模拟实际运行时结构
+      const windowService = new WindowService();
+      windowService.windowManager = windowManager;
+      const state = createState({ windowService });
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
@@ -618,7 +623,9 @@ describe('registerMinimalIpcHandlers', () => {
     it('dark 主题应设置深色背景色', () => {
       const updateBackgroundColor = vi.fn();
       const windowManager = { updateBackgroundColor } as never;
-      const state = createState({ windowManager });
+      const windowService = new WindowService();
+      windowService.windowManager = windowManager;
+      const state = createState({ windowService });
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
@@ -628,8 +635,10 @@ describe('registerMinimalIpcHandlers', () => {
       expect(updateBackgroundColor).toHaveBeenCalledWith('#1e1e2e');
     });
 
-    it('windowManager=undefined 不应抛错', () => {
-      const state = createState({ windowManager: undefined });
+    it('windowManager 未初始化不应抛错', () => {
+      // WindowService 默认 windowManager 为 null!（definite assignment 未赋值状态），
+      // 可选链 ?. 在运行时安全降级，不抛错
+      const state = createState();
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 

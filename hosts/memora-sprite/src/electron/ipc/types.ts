@@ -53,6 +53,8 @@ import type { UsageStatsCollector } from '../../sprite/usage/usageStatsCollector
 import type { AuditManager } from '../../sprite/audit/auditManager.js';
 // AgentRuntime 用于 MinimalIpcState（封装 Agent 实例 + 流式控制 + LLM 缓存 9 个字段）
 import type { AgentRuntime } from '../runtime/agentRuntime.js';
+// WindowService 用于 MinimalIpcState（封装 windowStateManager + windowManager + interaction + trayManager 4 个字段）
+import type { WindowService } from '../runtime/windowService.js';
 
 /**
  * IPC 处理器上下文
@@ -287,6 +289,8 @@ export interface AppRuntime {
  * Agent 运行时相关字段（agent/sprite/sessionStore/closeSprite/currentAbortController/
  * lastProvider/lastModel/lastBaseUrl/lastApiKey）封装在 agentRuntime 中，
  * 通过 state.agentRuntime.xxx 访问。
+ * 窗口/托盘基础设施字段（windowStateManager/windowManager/interaction/trayManager）
+ * 封装在 windowService 中，通过 state.windowService.xxx 访问。
  */
 export interface MinimalIpcState {
   /** Agent 运行时状态容器（封装 Agent 实例 + 流式控制 + LLM 缓存 9 个字段） */
@@ -301,8 +305,8 @@ export interface MinimalIpcState {
   pendingWriteConfirmations: Map<string, (confirmed: boolean) => void>;
   /** 审计管理器（Agent 未就绪时审计日志查询降级用） */
   auditManager: AuditManager | null;
-  /** 窗口管理器（主题变更等通道需要获取窗口引用） */
-  windowManager: WindowManagerLike | undefined;
+  /** 窗口/托盘基础设施状态容器（封装 windowStateManager + windowManager + interaction + trayManager） */
+  windowService: WindowService;
 }
 
 /**

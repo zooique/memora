@@ -70,6 +70,8 @@ import { isSensitive } from '../shared/sensitivePatterns.js';
 import { safeSendToWindow } from './windows/windowUtils.js';
 // AgentRuntime：Agent 运行时状态容器（封装 Agent 实例 + 流式控制 + LLM 缓存 9 个字段）
 import { AgentRuntime } from './runtime/agentRuntime.js';
+// WindowService：窗口/托盘基础设施状态容器（封装 windowStateManager + windowManager + interaction + trayManager 4 个字段）
+import { WindowService } from './runtime/windowService.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -96,10 +98,11 @@ let mainIpcContext: IpcContext | null = null;
  *
  * appState 结构兼容 MinimalIpcState 接口，直接作为 MinimalIpcState 传入 minimalHandlers。
  * Agent 运行时相关 9 个字段封装在 agentRuntime 中。
+ * 窗口/托盘基础设施 4 个字段封装在 windowService 中。
  *
  * 初始化时序：
- *   - windowStateManager/windowManager/interaction 在 initializeApp 阶段 1 赋值（null! 表示使用前必定赋值）
- *   - trayManager/shortcutManager 在阶段 1 赋值（可能为 null：无托盘环境降级）
+ *   - windowService（windowStateManager/windowManager/interaction/trayManager）在 initializeApp 阶段 1 赋值
+ *   - shortcutManager 在阶段 1 赋值（可能为 null：快捷键注册失败降级）
  *   - agentRuntime 由 setAppRuntime 集中赋值（阶段 2 / reinitAgent）
  *   - auditManager/clipboardHandler 在 setupAgentReady / 阶段 2 赋值
  *   - agentReady/initErrorDetail/unreadCount/currentDataDir 运行时可变
@@ -111,16 +114,8 @@ const appState = {
   // ─── 领域 Service ───
   /** Agent 运行时状态容器（封装 agent/sprite/sessionStore/closeSprite + 流式控制 + LLM 缓存） */
   agentRuntime: new AgentRuntime(),
-
-  // ─── 窗口/托盘基础设施（阶段 1 初始化，下一轮提取 WindowService） ───
-  /** 窗口状态管理器（三态切换 + 持久化） */
-  windowStateManager: null! as WindowStateManager,
-  /** 窗口管理器（完整窗口 + 浮动窗口） */
-  windowManager: null! as WindowManager,
-  /** 交互层（ElectronInteraction，注入主窗口引用） */
-  interaction: null! as ElectronInteraction,
-  /** 系统托盘管理器（无托盘环境降级为 null） */
-  trayManager: null as TrayManager | null,
+  /** 窗口/托盘基础设施状态容器（封装 windowStateManager + windowManager + interaction + trayManager） */
+  windowService: new WindowService(),
 
   // ─── 应用级状态 ───
   /** Agent 是否已就绪 */
@@ -207,8 +202,8 @@ function persistWindowConfig(updates: Partial<SpriteConfig>): void {
 function exitSilentMode(): void {
   appState.agentRuntime.sprite?.updateConfig('silentMode', false);
   appState.agentRuntime.sprite?.updateConfig('silentModeExpiresAt', null);
-  appState.trayManager?.setState('idle');
-  appState.trayManager?.updateMenu();
+  appState.windowService.trayManager?.setState('idle');
+  appState.windowService.trayManager?.updateMenu();
 }
 
 /**
@@ -217,21 +212,21 @@ function exitSilentMode(): void {
  */
 function toggleSilentMode(silent: boolean): void {
   appState.agentRuntime.sprite?.updateConfig('silentMode', silent);
-  appState.trayManager?.setState(silent ? 'sleeping' : 'idle');
-  appState.trayManager?.updateMenu();
+  appState.windowService.trayManager?.setState(silent ? 'sleeping' : 'idle');
+  appState.windowService.trayManager?.updateMenu();
 }
 
 /** 增加未读计数并推送到浮动窗口 */
 function incrementUnreadCount(): void {
   appState.unreadCount++;
-  appState.windowManager?.getFloatWindow()?.setUnreadCount(appState.unreadCount);
+  appState.windowService.windowManager?.getFloatWindow()?.setUnreadCount(appState.unreadCount);
 }
 
 /** 清零未读计数并推送到浮动窗口 + 完整窗口 */
 function resetUnreadCount(): void {
   appState.unreadCount = 0;
-  appState.windowManager?.getFloatWindow()?.setUnreadCount(0);
-  const fullWindow = appState.windowManager?.getFullWindow();// 重置未读计数（浮窗关闭时调用）
+  appState.windowService.windowManager?.getFloatWindow()?.setUnreadCount(0);
+  const fullWindow = appState.windowService.windowManager?.getFullWindow();// 重置未读计数（浮窗关闭时调用）
   // 使用 safeSendToWindow 替代原始 isDestroyed 守卫
   safeSendToWindow(fullWindow, MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, 0);
 }
@@ -387,8 +382,8 @@ function notifyShortcutRegistrationFailures(
  * （programmer §2.2：复制的代码是技术债务，应接入调用链而非复制。）
  */
 function triggerShortcutAction(channel: string): void {
-  appState.windowManager.showFullWindow();
-  const fullWindow = appState.windowManager.getFullWindow();
+  appState.windowService.windowManager.showFullWindow();
+  const fullWindow = appState.windowService.windowManager.getFullWindow();
   // 用户主动快捷键触发：showFullWindow 后 isVisible 可能尚未翻转，
   // 仅需 null/destroyed 守卫，跳过 isVisible 避免单向触发事件丢失
   // （BUG-6 同类模式：单向触发事件，阻断即用户操作失效）
@@ -433,8 +428,8 @@ function createIpcContext(): IpcContext {
     getAgent: () => appState.agentRuntime.agent,
     getSprite: () => appState.agentRuntime.sprite,
     getSessionStore: () => appState.agentRuntime.sessionStore,
-    windowManager: appState.windowManager,
-    trayManager: appState.trayManager,
+    windowManager: appState.windowService.windowManager,
+    trayManager: appState.windowService.trayManager,
     // Phase 3.3：注入快捷键管理器供 configHandlers 触发热更新（可能为 null）
     shortcutManager: appState.shortcutManager,
     getAbortController: () => appState.agentRuntime.currentAbortController,
@@ -510,16 +505,16 @@ function setupAgentReady(
   // 3. 订阅精灵事件（主动提示分发）
   const spriteEventDeps: SpriteEventBridgeDeps = {
     sprite: activeSprite,
-    windowManager: appState.windowManager,
-    windowStateManager: appState.windowStateManager,
-    trayManager: appState.trayManager,
+    windowManager: appState.windowService.windowManager,
+    windowStateManager: appState.windowService.windowStateManager,
+    trayManager: appState.windowService.trayManager,
     incrementUnreadCount,
   };
   setupSpriteEventListeners(spriteEventDeps);
 
   // 4. 注册配置建议 + 写入确认 + 审计日志监听器
   const agentListenerDeps: AgentListenerDeps = {
-    windowManager: appState.windowManager,
+    windowManager: appState.windowService.windowManager,
     pendingWriteConfirmations: appState.pendingWriteConfirmations,
   };
   setupConfigSuggestionListener(activeAgent, agentListenerDeps);
@@ -528,20 +523,20 @@ function setupAgentReady(
   setupAuditListener(activeAgent, appState.auditManager);
 
   // 5. 补充注入浮动窗口 + 托盘右键菜单回调（需要 Agent 就绪后才能查询静默模式）
-  appState.windowManager.updateFloatCallbacks({
+  appState.windowService.windowManager.updateFloatCallbacks({
     onHideToTray: () => {
-      appState.windowStateManager.setShowFloatBubble(false);
+      appState.windowService.windowStateManager.setShowFloatBubble(false);
       persistWindowConfig({ showFloatBubble: false });
-      appState.trayManager?.updateMenu();
+      appState.windowService.trayManager?.updateMenu();
     },
     onQuit: () => {
-      appState.windowManager.setQuitting(true);
-      appState.windowManager.closeAll();
+      appState.windowService.windowManager.setQuitting(true);
+      appState.windowService.windowManager.closeAll();
       app.quit();
     },
     ...createSilentModeCallbacks(activeSprite),
   });
-  appState.trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
+  appState.windowService.trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
 
   // 6. 绑定在场状态控制器（移入 setupAgentReady 确保 reinitAgent 后也重新绑定）
   // powerMonitor 和 app 是 Electron 内置模块，在 main 进程可用
@@ -566,7 +561,7 @@ function setupAgentReady(
   // 7. 标记就绪 + 通知渲染进程
   appState.agentReady = true;
   appState.initErrorDetail = null;
-  const readyWindow = appState.windowManager.getFullWindow();
+  const readyWindow = appState.windowService.windowManager.getFullWindow();
   readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
 }
 
@@ -578,7 +573,7 @@ async function initializeApp(): Promise<void> {
     return;
   }
   app.on('second-instance', () => {
-    const fullWindow = appState.windowManager?.getFullWindow();
+    const fullWindow = appState.windowService.windowManager?.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed()) {
       if (fullWindow.isMinimized()) fullWindow.restore();
       fullWindow.focus();
@@ -608,7 +603,7 @@ async function initializeApp(): Promise<void> {
     // 多显示器断开外接时，持久化的位置可能位于已不存在的显示器区域内
     // 校验位置是否在某个显示器的工作区内，越界则复位到主显示器默认位置
     const floatPosition = clampFloatPositionToDisplay(rawFloatPosition);
-    appState.windowStateManager = new WindowStateManager({
+    appState.windowService.windowStateManager = new WindowStateManager({
       defaultState: spriteConfig.windowState,
       floatPosition,
       showFloatBubble: spriteConfig.showFloatBubble,
@@ -623,18 +618,18 @@ async function initializeApp(): Promise<void> {
     });
 
     // 3. 创建窗口管理器并创建所有窗口
-    appState.windowManager = new WindowManager(appState.windowStateManager, {
+    appState.windowService.windowManager = new WindowManager(appState.windowService.windowStateManager, {
       onExpandToFull: resetUnreadCount,
     });
 
     // 最小化 IPC 处理器已在 registerMinimalIpcHandlers() 阶段注册，此处无需重复
 
-    await appState.windowManager.createWindows();
+    await appState.windowService.windowManager.createWindows();
 
     // 恢复窗口边界（上次关闭时的位置和大小）
     // 多显示器断开外接时，持久化的边界可能位于已不存在的显示器区域内
     // 校验边界是否在某个显示器的工作区内，越界则复位到主显示器居中位置
-    const fullWindow = appState.windowManager.getFullWindow();
+    const fullWindow = appState.windowService.windowManager.getFullWindow();
     if (fullWindow && spriteConfig.windowBounds) {
       const safeBounds = clampFullWindowBoundsToDisplay(spriteConfig.windowBounds);
       fullWindow.setBounds(safeBounds);
@@ -676,23 +671,23 @@ async function initializeApp(): Promise<void> {
       .then(() => TRAY_ICON_PATH)
       .catch(() => '');
     try {
-      appState.trayManager = new TrayManager(iconPath, {
+      appState.windowService.trayManager = new TrayManager(iconPath, {
         onShowFull: () => {
-          appState.windowStateManager.transition('full');
+          appState.windowService.windowStateManager.transition('full');
           // 从托盘展开完整窗口时清零未读计数
           resetUnreadCount();
         },
         onToggleFloatBubble: (checked: boolean) => {
-          appState.windowStateManager.setShowFloatBubble(checked);
+          appState.windowService.windowStateManager.setShowFloatBubble(checked);
           // 勾选状态变更时持久化窗口配置
           persistWindowConfig({ showFloatBubble: checked });
           // 重建托盘菜单以反映勾选状态
-          appState.trayManager?.updateMenu();
+          appState.windowService.trayManager?.updateMenu();
         },
-        isFloatBubbleVisible: () => appState.windowStateManager.getShowFloatBubble(),
-        onHideToTray: () => appState.windowStateManager.transition('tray'),
+        isFloatBubbleVisible: () => appState.windowService.windowStateManager.getShowFloatBubble(),
+        onHideToTray: () => appState.windowService.windowStateManager.transition('tray'),
         onQuit: () => {
-          appState.windowManager.closeAll();
+          appState.windowService.windowManager.closeAll();
           app.quit();
         },
       });
@@ -702,20 +697,20 @@ async function initializeApp(): Promise<void> {
         code: ErrorCode.UNKNOWN,
         context: '托盘创建失败，降级为无托盘模式',
       });
-      appState.trayManager = null;
+      appState.windowService.trayManager = null;
     }
 
     // 5. 初始化交互层
-    appState.interaction = new ElectronInteraction();
-    const mainWindowForInteraction = appState.windowManager.getFullWindow();
+    appState.windowService.interaction = new ElectronInteraction();
+    const mainWindowForInteraction = appState.windowService.windowManager.getFullWindow();
     if (mainWindowForInteraction) {
-      appState.interaction.setMainWindow(mainWindowForInteraction);
+      appState.windowService.interaction.setMainWindow(mainWindowForInteraction);
     }
 
     // 6. 窗口创建完成，显示初始状态对应的窗口
     // 使用 showInitial() 而非 transition()——transition 在 state 已等于 target 时早返回，
     // 会导致首次启动窗口不显示（构造函数已设置 defaultState）
-    appState.windowStateManager.showInitial();
+    appState.windowService.windowStateManager.showInitial();
 
     // 7. Phase 3.3 初始化全局快捷键
     // 在窗口创建后、Agent 初始化前注册，确保快捷键尽早可用
@@ -725,7 +720,7 @@ async function initializeApp(): Promise<void> {
       config: spriteConfig.shortcuts ?? DEFAULT_SHORTCUT_CONFIG,
       handlers: {
         [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
-          appState.windowManager.toggleWindow();
+          appState.windowService.windowManager.toggleWindow();
         },
         [SHORTCUT_ACTIONS.QUICK_RECORD]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER),
         [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER),
@@ -808,7 +803,7 @@ function setupAgentIndependentResources(): void {
   // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
   appState.clipboardHandler = new ClipboardHandler(clipboard, {
     emit: (event: ClipboardEventType, payload?: unknown) => {
-      const fullWindow = appState.windowManager.getFullWindow();
+      const fullWindow = appState.windowService.windowManager.getFullWindow();
       // 将 ClipboardHandler 事件映射到 IPC 推送通道
       //
       // 设计决策（资深程序员思维 · 识别不可逆损失点）：
@@ -904,7 +899,7 @@ function setupAgentIndependentResources(): void {
   // STEP-4：浮球单击 → 呼出补全弹窗回调（连接 floatWindow → quickInputWindow）
   // 浮球单击后浮球成为前台窗口，通过 floatHwnd 排除浮球自身，
   // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+C 时捕获的应用）
-  appState.windowManager.updateFloatCallbacks({
+  appState.windowService.windowManager.updateFloatCallbacks({
     onShowQuickInput: (x, y, floatHwnd) => {
       void appState.quickInputWindow!.showAtPosition(x, y, floatHwnd);
     },
@@ -968,7 +963,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  appState.windowStateManager?.transition('full');
+  appState.windowService.windowStateManager?.transition('full');
 });
 
 /**
@@ -1000,11 +995,8 @@ function nullifyAllComponents(): void {
   appState.clipboardHandler = null;
   appState.quickInputWindow = null;
 
-  // ─── 窗口/托盘基础设施 ───
-  appState.windowStateManager = null!;
-  appState.windowManager = null!;
-  appState.interaction = null!;
-  appState.trayManager = null;
+  // ─── 窗口/托盘基础设施（4 字段集中清理） ───
+  appState.windowService.nullify();
 }
 
 app.on('before-quit', async (e) => {
@@ -1013,7 +1005,7 @@ app.on('before-quit', async (e) => {
   appState.isQuitting = true;
 
   // 标记窗口管理器正在退出，允许窗口真正关闭（而非 preventDefault 转为浮动）
-  appState.windowManager?.setQuitting(true);
+  appState.windowService.windowManager?.setQuitting(true);
 
   // 阻止立即退出，先清理资源
   e.preventDefault();
@@ -1021,7 +1013,7 @@ app.on('before-quit', async (e) => {
   try {
     // flush 窗口边界（resize/move 防抖定时器可能尚未触发）
     // 必须在任何清理之前执行，此时窗口和 sprite 都仍可用
-    const flushFullWindow = appState.windowManager?.getFullWindow();
+    const flushFullWindow = appState.windowService.windowManager?.getFullWindow();
     if (flushFullWindow && !flushFullWindow.isDestroyed()) {
       const flushBounds = flushFullWindow.getBounds();
       persistWindowConfig({
@@ -1047,9 +1039,9 @@ app.on('before-quit', async (e) => {
       await appState.agentRuntime.closeSprite();
     }
     // 显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
-    appState.trayManager?.destroy();
+    appState.windowService.trayManager?.destroy();
     // 销毁窗口管理器（含 fullWindow + floatWindow）
-    appState.windowManager?.closeAll();
+    appState.windowService.windowManager?.closeAll();
   } catch (error) {
     errorHandler.handle(error, {
       code: ErrorCode.UNKNOWN,

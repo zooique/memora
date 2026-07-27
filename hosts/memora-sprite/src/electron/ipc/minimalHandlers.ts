@@ -535,7 +535,7 @@ export function registerMinimalIpcHandlers(
   // 渲染进程通知主进程主题已变更，动态设置窗口背景色
   ipcMain.on(IPC_CHANNELS.THEME_CHANGED, (_event, theme: 'light' | 'dark') => {
     const bgColor = theme === 'dark' ? '#1e1e2e' : '#f0f0f2';
-    state.windowManager?.updateBackgroundColor(bgColor);
+    state.windowService.windowManager?.updateBackgroundColor(bgColor);
   });
 
   // 渲染进程日志上报（转发到主进程 logger）
