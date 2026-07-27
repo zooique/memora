@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import type { Agent, Config } from 'memora';
 import { toError } from 'memora';
-import { startSprite, PROVIDER_PRESETS } from './index.js';
+import { startSprite } from './index.js';
 import { DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
 import type { Sprite, SpriteConfigKey } from './index.js';
 import { CliInteraction } from './sprite/cli/interaction.js';
@@ -44,27 +44,16 @@ async function setupWizard(): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
   console.log('\n=== Memora Sprite 首次启动 ===\n');
-  console.log('请选择 LLM 提供商：');
-  console.log('  1. DeepSeek（推荐，性价比高）');
-  console.log('  2. OpenAI GPT-4o');
-  console.log('  3. OpenAI GPT-4o-mini');
-  console.log('  4. 自定义（任何 OpenAI 兼容端点）');
+  console.log('请配置 LLM 提供商（任何 OpenAI 兼容端点）：');
 
-  const choice = await ask(rl, '\n请输入选项 [1-4]（默认 1）：') || '1';
+  // 单一自定义入口：不内置预设，避免模型/厂商迭代后预设迅速过时
+  // 用户决策已确认：LLM Provider configuration must use a single custom entry
+  const provider = await ask(rl, '\n提供商名称（如 openai、deepseek、自定义）：');
+  const model = await ask(rl, '模型名称（如 deepseek-chat、gpt-4o、claude-3-opus）：');
+  const baseUrl = await ask(rl, 'API 地址（如 https://api.deepseek.com）：');
 
-  let providerConfig: { provider: string; model: string; baseUrl: string };
-
-  if (choice === '4') {
-    const provider = await ask(rl, '提供商名称（如 openai、deepseek、自定义）：');
-    const model = await ask(rl, '模型名称（如 deepseek-chat、gpt-4o）：');
-    const baseUrl = await ask(rl, 'API 地址（如 https://api.deepseek.com）：');
-    providerConfig = { provider, model, baseUrl };
-  } else {
-    // PROVIDER_PRESETS['1'] 是静态定义的兜底预设（index.ts L82），一定存在，用 ! 断言正视契约
-    const preset = PROVIDER_PRESETS[choice] ?? PROVIDER_PRESETS['1']!;
-    providerConfig = preset;
-    console.log(`\n已选择：${providerConfig.provider} / ${providerConfig.model}`);
-  }
+  const providerConfig = { provider, model, baseUrl };
+  console.log(`\n已选择：${providerConfig.provider} / ${providerConfig.model}`);
 
   const apiKey = await ask(rl, '\n请输入 API Key：');
 

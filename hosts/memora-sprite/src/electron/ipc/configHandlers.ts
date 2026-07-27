@@ -51,6 +51,21 @@ export function scheduleSilentRecovery(ctx: IpcContext): void {
   if (!config.silentMode || !config.silentModeExpiresAt) return;
 
   const expiresAtMs = new Date(config.silentModeExpiresAt).getTime();
+  // 防御非法日期字符串（用户手编 sprite.json 写入 "invalid" 等）：
+  // getTime() 返回 NaN，NaN <= 0 为 false 会跳过立即关闭分支，
+  // setTimeout(..., NaN) 被视为 0 触发高频循环 CPU 占满
+  if (!Number.isFinite(expiresAtMs)) {
+    logger.warn(
+      { silentModeExpiresAt: config.silentModeExpiresAt },
+      '[scheduleSilentRecovery] silentModeExpiresAt 不是有效日期，立即关闭静默模式',
+    );
+    sprite.updateConfig('silentMode', false);
+    sprite.updateConfig('silentModeExpiresAt', null);
+    ctx.trayManager?.setState('idle');
+    ctx.trayManager?.updateMenu();
+    return;
+  }
+
   const remainingMs = expiresAtMs - Date.now();
 
   if (remainingMs <= 0) {

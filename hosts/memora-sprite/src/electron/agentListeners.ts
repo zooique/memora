@@ -103,6 +103,23 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
     return;
   }
 
+  // 注册窗口关闭监听器：窗口销毁时立即拒绝所有 pending 确认，
+  // 避免 SecurityGuard 工具链阻塞 30s 等超时（窗口关闭后用户无法响应）
+  const fullWindowForClose = deps.windowManager.getFullWindow();
+  if (fullWindowForClose && !fullWindowForClose.isDestroyed()) {
+    fullWindowForClose.on('closed', () => {
+      if (deps.pendingWriteConfirmations.size === 0) return;
+      logger.warn(
+        { count: deps.pendingWriteConfirmations.size },
+        '[写入确认] 完整窗口关闭，自动拒绝所有 pending 写入确认',
+      );
+      for (const resolver of deps.pendingWriteConfirmations.values()) {
+        resolver(false);
+      }
+      deps.pendingWriteConfirmations.clear();
+    });
+  }
+
   // 写入确认超时（毫秒）：窗口关闭等异常情况下自动拒绝
 
   security.onWriteConfirmation(async (info) => {

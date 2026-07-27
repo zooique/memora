@@ -67,6 +67,9 @@ export const TOAST_LONG_MS = 4_000;
 /** 写入确认超时（agentListeners），超时后自动拒绝写入操作 */
 export const CONFIRMATION_TIMEOUT_MS = 30_000;
 
+/** 会话切换前归档超时（sessionHandlers），超时后降级为后台继续跑不阻塞切换 */
+export const ARCHIVE_TIMEOUT_MS = 5_000;
+
 /** 主动提示托盘重置超时（spriteEventBridge），超时后重置托盘图标未读计数 */
 export const PROACTIVE_TRAY_RESET_MS = 30_000;
 

@@ -218,7 +218,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
     it('isAgentReady()=true 且无进行中对话时正常进入对话流程', async () => {
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
-      const { ctx, sentMessages } = createMockIpcContext({
+      const { ctx, sentMessages, setAbortControllerCalls } = createMockIpcContext({
         isAgentReady: true,
         abortController: null,
       });
@@ -232,10 +232,11 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
       // agent.chat() 会因 mock agent 无 chat 方法而抛错，但前置检查应通过
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // 验证：发送了 SPRITE_STREAM_START（前置检查通过，对话已启动）
-      // 注意：agent 是空对象 {}，chat() 调用会抛错，但 STREAM_START 在 try 之前发送
-      const streamStartMessages = sentMessages.filter((m) => m.channel === 'sprite-stream-start');
-      expect(streamStartMessages).toHaveLength(1);
+      // 验证：前置检查通过 — setAbortController 被调用（HEAL-1 修复后，
+      // setAbortController 在 try 块早期同步调用，先于 agent.chat()）
+      // 注意：agent 是空对象 {}，chat() 调用会抛 TypeError，但 setAbortController
+      // 已在 chat() 之前执行，证明进入了 try 块（前置检查全部通过）
+      expect(setAbortControllerCalls.length).toBeGreaterThanOrEqual(1);
 
       // 验证：没有发送 "Agent 未就绪" 错误
       const errorMessages = sentMessages.filter((m) => m.channel === 'sprite-error');

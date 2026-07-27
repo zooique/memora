@@ -198,10 +198,15 @@ export class ClipboardManager {
 
   /**
    * 清空所有待处理条目（用户点击"全部忽略"后调用）
+   *
+   * 同时重置未读计数：用户主动清空列表表示不再关心这些条目，
+   * 角标应立即消失（否则清空后角标仍显示数字，UX 不合理）。
    */
   clearPendingItems(): void {
     if (this.pendingItems.length === 0) return;
     this.pendingItems = [];
+    this.unviewedCount = 0;
+    this.saveUnviewedCount();
     this.notifyAndSave();
   }
 

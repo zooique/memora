@@ -77,13 +77,6 @@ export const DEFAULT_DATA_DIR = resolve(homedir(), SPRITE_HOME_DIR_NAME, 'data')
 /** 默认配置目录（Agent 级共享，~/.memora-sprite/config/） */
 export const DEFAULT_CONFIG_DIR = resolve(homedir(), SPRITE_HOME_DIR_NAME, 'config');
 
-/** LLM 预设配置（导出供 Electron 设置面板和 CLI 向导使用） */
-export const PROVIDER_PRESETS: Record<string, { provider: string; model: string; baseUrl: string }> = {
-  '1': { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
-  '2': { provider: 'openai', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
-  '3': { provider: 'openai', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
-};
-
 /**
  * 保存 LLM 配置到 ~/.memora-sprite/config.json
  *

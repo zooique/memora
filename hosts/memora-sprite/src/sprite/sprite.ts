@@ -1080,6 +1080,16 @@ export class Sprite {
     return this.memoryController.purgeAll();
   }
 
+  /**
+   * 清空回收站中早于指定时间的记忆（按 deletedAt 过滤，保留未过期项）
+   *
+   * 与 purgeAllMemories（全清）不同，仅清理过期项。
+   * Web 路由 /api/memories/trash/purge 使用此方法实现 retentionDays 过滤。
+   */
+  purgeExpiredMemories(before: Date): Promise<number> {
+    return this.memoryController.purgeExpired(before);
+  }
+
   listDeletedMemories(limit = 50): { id: string; name: string; source: string; contentPreview: string; deletedAt: string }[] {
     return this.memoryController.listDeleted(limit);
   }

@@ -11,10 +11,10 @@
  */
 
 import { ipcMain } from 'electron';
-import { toError, logger } from 'memora';
+import { toError, logger, safeSetTimeout } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
-import { getLocalDate } from '../../sprite/constants.js';
+import { getLocalDate, ARCHIVE_TIMEOUT_MS } from '../../sprite/constants.js';
 import { isValidSessionName } from './inputValidation.js';
 import { requireAgent, requireSessionStore } from './types.js';
 import type { IpcContext } from './types.js';
@@ -124,11 +124,20 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       // best-effort：归档失败不阻塞会话切换（LLM 不可用/消息过少等场景静默跳过）
       const currentInfo = agent.sessionManager.getCurrentSessionInfo();
       if (currentInfo && (currentInfo.date !== query.date || currentInfo.session !== query.session)) {
-        // 异步归档，不阻塞切换（归档写入 memory storage，与 sessionStore 独立）
-        agent.archiveSessionContent(currentInfo.date, currentInfo.session, { autoTriggered: true }).catch((err) => {
-          // 归档失败仅记录日志，不影响会话切换
-          logger.warn({ err: toError(err).message }, '[sessionHandlers] 会话内容归档失败');
-        });
+        // 等待归档完成（带 5 秒超时降级）：
+        //   归档与切换串行化，避免崩溃时归档写入一半 + currentSession 已切换导致状态不一致；
+        //   超时则降级为后台继续跑（不阻塞用户切换），但日志记录归档未完成
+        try {
+          await Promise.race([
+            agent.archiveSessionContent(currentInfo.date, currentInfo.session, { autoTriggered: true }),
+            new Promise<void>((_, reject) =>
+              safeSetTimeout(() => reject(new Error('归档超时')), ARCHIVE_TIMEOUT_MS),
+            ),
+          ]);
+        } catch (err) {
+          // 归档失败仅记录日志，不影响会话切换（best-effort 降级）
+          logger.warn({ err: toError(err).message }, '[sessionHandlers] 会话内容归档失败（已降级，可能丢失部分归档）');
+        }
       }
 
       // 1. 切换 Agent 内部会话标识（更新 currentSession，后续 chat() 写入新会话）

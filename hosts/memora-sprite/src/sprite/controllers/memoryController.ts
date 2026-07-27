@@ -446,6 +446,43 @@ export class MemoryController {
   }
 
   /**
+   * 清空回收站中早于指定时间的记忆（按 deletedAt 过滤）
+   *
+   * 与 purgeAll（全清）不同，purgeExpired 仅清理已过期（deletedAt < before）的记忆，
+   * 保留回收站中尚未过期的项。Web 路由 /api/memories/trash/purge 调用此方法，
+   * 与 Electron IPC MEMORIES_PURGE_ALL（全清）语义不同。
+   *
+   * @param before 时间戳，早于此值的已删除记忆将被彻底清除
+   * @returns 成功清除的记忆数量
+   */
+  async purgeExpired(before: Date): Promise<number> {
+    const memory = this.agent.memory;
+    if (!memory) return 0;
+    const beforeMs = before.getTime();
+    let purged = 0;
+    for (const m of memory.listDeleted()) {
+      // deletedAt 字段为 ISO 字符串，解析为时间戳比较；非法日期跳过（不误删）
+      const deletedMs = new Date(m.deletedAt).getTime();
+      if (!Number.isFinite(deletedMs) || deletedMs >= beforeMs) continue;
+      try {
+        memory.writePurge(m.id);
+        if (this.vectorStore) {
+          try {
+            await this.vectorStore.delete(m.id);
+          } catch (err) {
+            logger.warn({ err, id: m.id }, '过期清理时向量索引删除失败');
+          }
+        }
+        memory.writeRemoveRelationsByMemoryId(m.id);
+        purged++;
+      } catch (err) {
+        logger.warn({ err, id: m.id }, '过期清理记忆失败');
+      }
+    }
+    return purged;
+  }
+
+  /**
    * 添加或更新记忆
    *
    * 同时异步更新向量索引，失败时降级为纯关键词召回。

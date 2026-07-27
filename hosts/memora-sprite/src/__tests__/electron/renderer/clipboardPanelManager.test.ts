@@ -291,20 +291,12 @@ describe('角标更新', () => {
     expect(badge.textContent).toBe('15');
   });
 
-  it(`count>${BADGE_MAX_DISPLAY} 时角标应显示 99+（通过 mock getPendingItems 绕过 FIFO 上限）`, () => {
+  it(`count>${BADGE_MAX_DISPLAY} 时角标应显示 99+（通过 mock getUnviewedCount 绕过 FIFO 上限）`, () => {
     const { clipboardManager } = createManagers();
-    // mock getPendingItems 返回 100 条假数据，模拟"未来 MAX_PENDING_ITEMS 调大后"的场景
-    // updateBadge 使用 items.length 而非 getPendingCount，故需 mock getPendingItems
-    const fakeItems = Array.from({ length: 100 }, (_, i) => ({
-      id: `fake-${i}`,
-      preview: `内容${i}`,
-      length: 1,
-      detectedAt: Date.now(),
-      isStale: false,
-    }));
-    vi.spyOn(clipboardManager, 'getPendingItems').mockReturnValue(fakeItems);
-    vi.spyOn(clipboardManager, 'getPendingCount').mockReturnValue(100);
-    // 触发 refresh 重新渲染角标
+    // mock getUnviewedCount 返回 100：updateBadge 用 getUnviewedCount() 而非 getPendingItems().length
+    // 真实 addPendingItem 受 MAX_PENDING_ITEMS 限制无法达到 100，故 mock 未读计数
+    vi.spyOn(clipboardManager, 'getUnviewedCount').mockReturnValue(100);
+    // addPendingItem 触发 onChange → refresh → updateBadge(100, false)
     clipboardManager.addPendingItem('触发刷新', 1);
     const badge = document.getElementById('clipboard-nav-badge')!;
     expect(badge.textContent).toBe('99+');

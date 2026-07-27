@@ -68,11 +68,12 @@ const mockLogger: ILogger = {
 
 // ─── Mock BrowserWindow 工厂 ─────────────────────────────
 
-/** Mock BrowserWindow 结构（含可见性检查 + webContents.send） */
+/** Mock BrowserWindow 结构（含可见性检查 + webContents.send + 事件监听） */
 interface MockWindow {
   isDestroyed: ReturnType<typeof vi.fn>;
   isVisible: ReturnType<typeof vi.fn>;
   isMinimized: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
   webContents: { send: ReturnType<typeof vi.fn> };
 }
 
@@ -89,6 +90,8 @@ function createMockWindow(opts?: {
     isDestroyed: vi.fn(() => opts?.destroyed ?? false),
     isVisible: vi.fn(() => opts?.visible ?? true),
     isMinimized: vi.fn(() => opts?.minimized ?? false),
+    // `on` 方法空实现：P0-5 修复新增 fullWindow.on('closed') 监听器，mock 中无需实际触发
+    on: vi.fn(),
     webContents: { send: vi.fn() },
   };
 }

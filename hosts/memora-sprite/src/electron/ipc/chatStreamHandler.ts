@@ -85,7 +85,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   }
 
   // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
-  // 提升到 try 外部，finally 块需要访问以推送到浮动窗口
+  // 声明在 try 之外：finally 块需访问以推送到浮动窗口
   let accumulatedText = '';
   // SPRITE_STREAM_START 是否已发送（延迟到首个 chunk 后，确保 persona 已匹配）
   let streamStarted = false;
@@ -105,6 +105,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     // 产生 unhandledRejection（chatHandlers.ts:39 使用 void handleUserInput()）
     const agent = requireAgent(ctx);
     const sprite = requireSprite(ctx);
+
+    // 在 await 之前同步占用 AbortController，避免 await 让渡点期间并发调用通过竞态检查
+    // （JavaScript 单线程同步代码不会被打断，"检查-占用"原子化）
+    abortController = new AbortController();
+    ctx.setAbortController(abortController);
 
     // 跨日/跨会话自动重置：确保新消息始终归当天主会话
     const history = agent.agentHistory;
@@ -135,25 +140,16 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
     ctx.trayManager?.setState('active');
 
-    // 创建 AbortController 供中断使用
-    abortController = new AbortController();
-    ctx.setAbortController(abortController);
-
     /** 重置无进展定时器（chunk 到达或对话开始时调用） */
     const resetStreamTimeout = (): void => {
       if (streamTimeoutTimer !== null) clearTimeout(streamTimeoutTimer);
       streamTimeoutTimer = setTimeout(() => {
         if (streamTimedOut) return;
+        // 定时器回调仅设标志 + abort，IPC 发送统一到 finally 块，避免与主流程 for-await 共享状态的并发访问竞争
         streamTimedOut = true;
         streamTimeoutTimer = null;
         abortController?.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
         agent.forceReleaseChatLock();
-        if (!fullWindow.isDestroyed() && messageId) {
-          emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
-          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
-        }
-        ctx.setAbortController(null);
-        ctx.trayManager?.setState('idle');
       }, STREAM_NO_PROGRESS_TIMEOUT_MS);
     };
     // 启动首次计时
@@ -165,7 +161,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     for await (const chunk of agent.chat(text, abortController.signal)) {
       // 首个 chunk：此时 agent.chat() 内部的 tryAutoMatchPersona 已执行完毕，
       // activePersona 就是本轮 LLM 回答实际使用的角色（匹配成功已切换，匹配失败保持原角色）。
-      // 在此发送 SPRITE_STREAM_START，确保消息底部角色标签与回答实际角色一致（P0-2 修复）。
+      // 在此发送 SPRITE_STREAM_START，确保消息底部角色标签与回答实际角色一致
       if (!streamStarted) {
         streamStarted = true;
         const personaName = sprite.activePersona ?? undefined;
@@ -263,7 +259,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       }
     }
   } catch (error) {
-    // 超时已在定时器内完成清理与通知，跳过 catch 后续逻辑（finally 仍会执行定时器清理）
+    // 超时路径：定时器已设标志 + abort，IPC 通知与状态清理统一在 finally 块执行，跳过 catch 重复处理
     if (streamTimedOut) return;
     // 通过 AbortController.reason 判断是否用户主动中断
     const ctrl = ctx.getAbortController();
@@ -306,36 +302,44 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       clearTimeout(streamTimeoutTimer);
       streamTimeoutTimer = null;
     }
-    // 超时路径已在定时器内发送过 STREAM_END + 清理 AbortController，此处跳过避免重复。
-    if (!streamTimedOut) {
-      // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
-      // SPRITE_STREAM_END 在 catch/正常路径之后发送（finally 在 catch 之后执行），
-      // 保证错误/中断通知先于 END 到达渲染层。
-      // streamStarted 守卫：generator 退出前若未 yield 任何 chunk（如 chat() 入口抛异常），
-      // 跳过 END，避免渲染层收到无对应 START 的 END 消息。
-      if (!fullWindow.isDestroyed() && streamStarted) {
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
-      }
-      // P4-1：推送最后一条助手消息到浮动窗口（非空且非错误时）
-      if (accumulatedText && !abortedNotified) {
-        const floatWin = ctx.windowManager.getFloatWindow();
-        if (floatWin) {
-          floatWin.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE, accumulatedText);
+    // 所有路径（含超时）统一在 finally 发送 IPC 与清理状态，避免定时器回调与主流程的并发访问竞争
+    if (!fullWindow.isDestroyed()) {
+      if (streamTimedOut) {
+        // 超时路径：发送错误提示 + STREAM_END（仅在 streamStarted 后才发 END，避免无 START 的 END）
+        if (messageId) {
+          emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
         }
-        // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
-        // 语义：未读 = "AI 回复后用户尚未查看"，仅当 AI 真正生成内容时计数；
-        // - accumulatedText 非空：AI 有实际回复内容（防止空回复计数）
-        // - !abortedNotified：用户主动中断或内核错误时不计数（中断后视为无新消息）
-        // - !fullWindow.isVisible()：完整窗口不可见时才计数（用户可见时不需提醒）
-        // 与 spriteEventBridge.ts proactivePrompt 的 incrementUnreadCount 配合，
-        // 都由 main.ts 的 onExpandToFull → resetUnreadCount 统一清除。
-        if (!fullWindow.isVisible()) {
-          ctx.incrementUnreadCount();
+        if (streamStarted && messageId) {
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+        }
+      } else {
+        // 正常 / 异常 / 中断路径：保证错误/中断通知先于 END 到达渲染层（catch 已发送过）
+        // streamStarted 守卫：generator 退出前若未 yield 任何 chunk（如 chat() 入口抛异常），
+        // 跳过 END，避免渲染层收到无对应 START 的 END 消息。
+        if (streamStarted && messageId) {
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+        }
+        // P4-1：推送最后一条助手消息到浮动窗口（非空且非错误时）
+        if (accumulatedText && !abortedNotified) {
+          const floatWin = ctx.windowManager.getFloatWindow();
+          if (floatWin) {
+            floatWin.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE, accumulatedText);
+          }
+          // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
+          // 语义：未读 = "AI 回复后用户尚未查看"，仅当 AI 真正生成内容时计数；
+          // - accumulatedText 非空：AI 有实际回复内容（防止空回复计数）
+          // - !abortedNotified：用户主动中断或内核错误时不计数（中断后视为无新消息）
+          // - !fullWindow.isVisible()：完整窗口不可见时才计数（用户可见时不需提醒）
+          // 与 spriteEventBridge.ts proactivePrompt 的 incrementUnreadCount 配合，
+          // 都由 main.ts 的 onExpandToFull → resetUnreadCount 统一清除。
+          if (!fullWindow.isVisible()) {
+            ctx.incrementUnreadCount();
+          }
         }
       }
-      ctx.setAbortController(null);
-      // 流式结束：托盘切回 idle 状态（绿色静态）
-      ctx.trayManager?.setState('idle');
     }
+    ctx.setAbortController(null);
+    // 流式结束：托盘切回 idle 状态（绿色静态）
+    ctx.trayManager?.setState('idle');
   }
 }

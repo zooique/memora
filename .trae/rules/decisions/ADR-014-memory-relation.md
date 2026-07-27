@@ -201,8 +201,8 @@ class MemoryInspector {
   getRelations(memoryId: string, direction?: RelationDirection): MemoryRelation[] { /* 透传 */ }
 }
 
-// IMemoryRelationStore（原子操作接口，6 方法——在 §2 原始 5 方法基础上
-// 新增 removeRelationsByMemoryId，用于记忆删除时批量清理孤儿边）
+// IMemoryRelationStore（原子操作接口，6 方法——addRelation/getRelations/getRelationsByType/
+// getAllRelations/removeRelation/removeRelationsByMemoryId，§2 已包含全部 6 方法）
 interface IMemoryRelationStore {
   addRelation(relation: MemoryRelation): void;  // 写操作（MemoryInspector.writeAddRelation 调用）
   getRelations(memoryId: string, direction?): MemoryRelation[];  // 原子读
@@ -213,10 +213,10 @@ interface IMemoryRelationStore {
 }
 ```
 
-> **澄清**：IMemoryRelationStore 接口在 §2 原始 5 方法基础上，
-> 新增第 6 个方法 `removeRelationsByMemoryId(memoryId): number`，
-> 用于记忆删除/物理清除时批量清理 memory_relations 表中的孤儿边，
-> 避免关系数据残留。其余原子查询方法（getRelations/getRelationsByType/getAllRelations）不收窄——
+> **澄清**：IMemoryRelationStore 接口共 6 个方法（§2 已同步更新），
+> 其中 `removeRelationsByMemoryId(memoryId): number` 是 2026-07-08 补充决策新增，
+> 用于记忆删除/物理清除时批量清理 memory_relations 表中的孤儿边，避免关系数据残留。
+> 其余原子查询方法（getRelations/getRelationsByType/getAllRelations）不收窄——
 > 它们是宿主实现 SqliteRelationStore 时需要的基础查询能力。
 > 关系查询的**编排逻辑**（BFS/DFS 遍历、路径查找）归属 MemoryInspector，
 > 但 IMemoryRelationStore 本身的原子查询方法（getRelations/getRelationsByType/getAllRelations）不收窄——

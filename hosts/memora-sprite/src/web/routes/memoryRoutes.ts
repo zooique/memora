@@ -254,12 +254,13 @@ export async function handleMemoryRoute(
       return;
     }
 
-    // POST /api/memories/trash/purge — 清空回收站过期记忆（批量清理）
+    // POST /api/memories/trash/purge — 清空回收站过期记忆（按 retentionDays 过滤）
     if (method === 'POST' && subPath === '/trash/purge') {
       const body = await parseJsonBody<{ retentionDays?: number }>(req);
       const retentionDays = body?.retentionDays ?? 30;
       const before = new Date(Date.now() - retentionDays * MS_PER_DAY);
-      const purgedCount = ctx.agent.memory?.writePurgeExpired(before) ?? 0;
+      // 通过 Sprite 门面调用，避免绕过门面直接访问 agent.memory（与 Electron IPC 一致）
+      const purgedCount = await ctx.sprite.purgeExpiredMemories(before);
       sendJson(res, 200, { purgedCount });
       return;
     }

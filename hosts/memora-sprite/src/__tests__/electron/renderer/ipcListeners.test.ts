@@ -1195,10 +1195,11 @@ describe('initIpcListeners · 剪贴板三重保护', () => {
     vi.restoreAllMocks();
   });
 
-  it('onClipboardChanged → clipboardManager.addPendingItem(preview, length)（v2 重构：被动累积）', () => {
+  it('onClipboardChanged → clipboardManager.addPendingItem(preview, length, content)（v2 重构：被动累积）', () => {
+    // payload.content 可选（敏感内容已脱敏时不传），addPendingItem 第三参数接收 undefined
     captured.onClipboardChanged({ preview: '剪贴板预览内容', length: 100 });
     expect(spies.clipboardManager.addPendingItem).toHaveBeenCalledTimes(1);
-    expect(spies.clipboardManager.addPendingItem).toHaveBeenCalledWith('剪贴板预览内容', 100);
+    expect(spies.clipboardManager.addPendingItem).toHaveBeenCalledWith('剪贴板预览内容', 100, undefined);
   });
 
   it('onClipboardSensitiveIgnored → clipboardManager.showSensitiveWarning(type)（保护性主动提醒）', () => {
