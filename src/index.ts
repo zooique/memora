@@ -77,6 +77,8 @@ export type { SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 export type { TimelinessVerdict, TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
 // L3 冲突检测类型（MemoryAdvisor）
 export type { ConflictVerdict, ConflictReport } from '@/agent/managers/memoryAdvisor.js';
+// 记忆治理统一门面
+export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 // 作品投影管理器类型
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 // TextPolishManager：文本润色管理器类型（agent.polish getter 返回值，消费者可独立标注变量类型）

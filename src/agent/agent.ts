@@ -61,6 +61,7 @@ import { chatBusyError, configError, isAbortError, toError } from '@/utils/error
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
+import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -152,6 +153,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * sourceHealth/suggest 仍由 inspector 转发以保持 agent.memory 统一入口语义。
    */
   private memoryAdvisor: MemoryAdvisor | null = null;
+  /** 记忆治理统一门面（L0/L1/L2/L3 + 诊断） */
+  private _governance: MemoryGovernance | null = null;
   private workProjection: WorkProjectionManager | null = null;
   /** AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
@@ -340,6 +343,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       index: pctx.index,
     });
     this.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
+
+    // 记忆治理统一门面（L0/L1/L2/L3 + 诊断）
+    this._governance = new MemoryGovernance(
+      this.dedupManager,
+      this.memoryDecayScheduler,
+      this.memoryAdvisor,
+    );
   }
 
   /**
@@ -1444,6 +1454,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.memoryInspector = null;
     this.dedupManager = null;
     this.memoryAdvisor = null;
+    this._governance = null;
     this.workProjection = null;
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
@@ -1514,6 +1525,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   get lastInteractionAt(): Date | null {
     return this._lastInteractionAt;
+  }
+
+  /**
+   * 记忆治理统一门面（L0 衰减 / L1 去重 / L2 时效性 / L3 冲突 / 诊断 / 推荐）
+   *
+   * 统一入口替代散落在 Agent 上的 6 个独立方法：
+   *   agent.governance.decay()           → 原 runMemoryDecayOnce()
+   *   agent.governance.deduplicate()     → 原 deduplicateMemories()
+   *   agent.governance.evaluateTimeliness() → 原 evaluateTimeliness()
+   *   agent.governance.detectConflicts() → 原 detectConflicts()
+   *   agent.governance.sourceHealth()    → 原 sourceHealth()
+   *   agent.governance.suggest()         → 原 suggest()
+   */
+  get governance(): MemoryGovernance | null {
+    return this._governance;
   }
 
   // ─── 运行时指标 ────────────────────────────────
@@ -1643,18 +1669,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param signal 可选的 AbortSignal（取消进行中的 LLM 判断）
    * @returns 去重报告（扫描数 / 降级 ID 列表 / 跳过原因）
    */
+  /**
+   * @deprecated 使用 agent.governance.deduplicate() 替代
+   */
   async deduplicateMemories(signal?: AbortSignal): Promise<DedupReport> {
-    const dedup = this.dedupManager;
-    if (!dedup) {
-      return {
-        scannedCount: 0,
-        pairCount: 0,
-        deduplicatedCount: 0,
-        demotedIds: [],
-        skippedReason: 'Agent 未初始化',
-      };
-    }
-    return dedup.deduplicateMemories(signal);
+    return this._governance?.deduplicate(signal) ?? {
+      scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化',
+    };
   }
 
   /**
@@ -1670,17 +1691,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param signal 可选的 AbortSignal
    * @returns 评估报告（扫描数 / 过时数 / 降级 ID 列表 / 跳过原因）
    */
+  /**
+   * @deprecated 使用 agent.governance.evaluateTimeliness() 替代
+   */
   async evaluateTimeliness(signal?: AbortSignal): Promise<TimelinessReport> {
-    const scheduler = this.memoryDecayScheduler;
-    if (!scheduler) {
-      return {
-        scannedCount: 0,
-        outdatedCount: 0,
-        demotedIds: [],
-        skippedReason: 'Agent 未初始化',
-      };
-    }
-    return scheduler.evaluateTimeliness(signal);
+    return this._governance?.evaluateTimeliness(signal) ?? {
+      scannedCount: 0, outdatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化',
+    };
   }
 
   /**
@@ -1689,8 +1706,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 执行纯 score 递减（无 LLM 调用），衰减完成后触发 decayCompleted 事件。
    * 供宿主 UI 手动触发（如仪表盘"立即衰减"按钮），与定时器自动触发路径一致。
    */
+  /**
+   * @deprecated 使用 agent.governance.decay() 替代
+   */
   runMemoryDecayOnce(): void {
-    this.memoryDecayScheduler?.runOnce();
+    this._governance?.decay();
   }
 
   /**
@@ -1705,11 +1725,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * @returns 健康诊断报告；advisor 未初始化时返回 null
    */
+  /**
+   * @deprecated 使用 agent.governance.sourceHealth() 替代
+   */
   sourceHealth(): SourceHealthReport | null {
-    // FIX-P1-3：直接持有 advisor 引用，无需经 inspector 转发
-    const advisor = this.memoryAdvisor;
-    if (!advisor) return null;
-    return advisor.sourceHealth();
+    return this._governance?.sourceHealth() ?? null;
   }
 
   /**
@@ -1725,11 +1745,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param options - 推荐选项（limit / excludeSources / recencyWeight）
    * @returns 推荐命中列表；advisor 未初始化时返回空数组
    */
+  /**
+   * @deprecated 使用 agent.governance.suggest() 替代
+   */
   suggest(query?: string, options?: SuggestOptions): SuggestHit[] {
-    // FIX-P1-3：直接持有 advisor 引用，无需经 inspector 转发
-    const advisor = this.memoryAdvisor;
-    if (!advisor) return [];
-    return advisor.suggest(query, options);
+    return this._governance?.suggest(query, options) ?? [];
   }
 
   /**
@@ -1744,19 +1764,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param signal 可选的 AbortSignal
    * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
    */
+  /**
+   * @deprecated 使用 agent.governance.detectConflicts() 替代
+   */
   async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
-    // v2 PROXY-1：直接持有 advisor 引用，无需经 inspector 转发
-    const advisor = this.memoryAdvisor;
-    if (!advisor) {
-      return {
-        scannedCount: 0,
-        pairCount: 0,
-        conflictCount: 0,
-        conflicts: [],
-        skippedReason: 'Agent 未初始化',
-      };
-    }
-    return advisor.detectConflicts(signal);
+    return this._governance?.detectConflicts(signal) ?? {
+      scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'Agent 未初��化',
+    };
   }
 
   /**
