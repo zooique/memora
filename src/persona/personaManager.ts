@@ -22,7 +22,6 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
@@ -270,7 +269,8 @@ export class PersonaManager {
 
     if (matches.length === 0) return null;
 
-    matches.sort(byScoreDesc);
+    // 主排序：得分降序；次排序：角色名字母序（保证同分时确定性）
+    matches.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
     return matches[0] ?? null;
   }
 

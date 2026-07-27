@@ -1027,15 +1027,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         this.refreshPersonaPrefixOnLoop();
         logger.info({ persona: matchedPersona }, '角色自动切换');
       } else {
-        // 关键词 + LLM 均未命中，且回退目标存在（当前非默认角色）→ 回退默认角色
-        // 解决"切过去回不来"：用户从默认切到散文作者后，输入无关话题应回到默认角色
+        // 关键词 + LLM 均未命中，且当前角色不是列表首个角色 → 回退到首个角色
+        // "切过去回不来"：用户从默认切到散文作者后，输入无关话题应回到默认角色
+        // 使用 list[0] 而非硬编码 'default'：防止 default 角色被删除后 fallback 抛异常
         const shouldFallback = this.shouldFallbackToDefault();
         if (shouldFallback) {
+          const fallbackTarget = this.personaManager.list[0]?.name ?? 'default';
           const prevName = this.personaManager.activeName;
-          this.personaManager.switchPersona('default');
-          this.emit('personaSwitched', { from: prevName, to: 'default' });
+          this.personaManager.switchPersona(fallbackTarget);
+          this.emit('personaSwitched', { from: prevName, to: fallbackTarget });
           this.refreshPersonaPrefixOnLoop();
-          logger.info({ persona: 'default' }, '角色回退默认');
+          logger.info({ persona: fallbackTarget }, '角色回退默认');
         }
       }
     } catch (err) {
@@ -1061,7 +1063,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.personaManager.currentMode !== 'auto') return false;
     const status = this.personaManager.getSwitchLockStatus();
     if (status.locked) return false; // 锁定中不回退，避免无意义调用 switchPersona
-    return this.personaManager.activeName !== 'default';
+    // 当前角色已是���表首个角色（"默认"角色）→ 无需回退
+    const defaultName = this.personaManager.list[0]?.name;
+    return defaultName !== undefined && this.personaManager.activeName !== defaultName;
   }
 
   /**

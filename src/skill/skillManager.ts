@@ -21,7 +21,6 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import type { SkillEntry, SkillMatch } from '@/skill/types.js';
 import { nowIso } from '@/utils/time.js';
@@ -119,8 +118,8 @@ export class SkillManager {
 
     if (matches.length === 0) return null;
 
-    // 得分从高到低排序，取第一个
-    matches.sort(byScoreDesc);
+    // 得分从高到低排序；同分时 name 字母序保证确定性
+    matches.sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name));
     const best = matches[0];
     if (!best) return null;
     logger.debug({ matched: best.skill.name, score: best.score }, '技能关键词匹配');

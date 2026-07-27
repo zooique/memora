@@ -484,7 +484,7 @@ keywords: 编程, 代码, TypeScript
       await personaManager.load('默认助手');
 
       // 用户输入包含编程关键词
-      const matched = await personaManager.autoMatch('帮我写一段 TypeScript 代码');
+      const matched = personaManager.autoMatch('帮我写一段 TypeScript 代码');
 
       expect(matched).toBe('程序员助手');
     });
@@ -504,7 +504,7 @@ keywords: 通用
       await personaManager.load('默认助手');
 
       // 关键词命中率太低
-      const matched = await personaManager.autoMatch('今天天气怎么样');
+      const matched = personaManager.autoMatch('今天天气怎么样');
 
       expect(matched).toBeNull();
     });
@@ -524,8 +524,8 @@ keywords: 编程, 代码
       await personaManager.load('程序员助手');
       personaManager.setMode('manual');
 
-      // manual 模式下 autoMatch 直接返回 null（Promise）→ 需 await
-      const matched = await personaManager.autoMatch('帮我写代码');
+      // manual 模式下 autoMatch 直接返回 null
+      const matched = personaManager.autoMatch('帮我写代码');
 
       expect(matched).toBeNull();
     });
@@ -544,7 +544,7 @@ keywords: 编程, 代码
       const personaManager = new PersonaManager(testDir);
       await personaManager.load('程序员助手');
 
-      const matched = await personaManager.autoMatch('帮我写代码');
+      const matched = personaManager.autoMatch('帮我写代码');
 
       expect(matched).toBeNull();
     });
@@ -575,7 +575,7 @@ keywords: 编程, 代码, 架构, 设计
 
       // 当前激活"默认助手"，输入匹配"程序员助手"的关键词
       // 4 个关键词中只命中 1 个（"代码"）→ score = 1/min(4,3) = 0.33 ≥ 0.3
-      const matched = await personaManager.autoMatch('帮我写代码');
+      const matched = personaManager.autoMatch('帮我写代码');
 
       expect(matched).toBe('程序员助手');
     });
@@ -604,7 +604,7 @@ keywords: 编程, 代码, 架构, 设计
       await personaManager.load('默认助手');
 
       // 输入与关键词完全无关 → score = 0 < 0.3
-      const matched = await personaManager.autoMatch('今天天气不错');
+      const matched = personaManager.autoMatch('今天天气不错');
 
       expect(matched).toBeNull();
     });
