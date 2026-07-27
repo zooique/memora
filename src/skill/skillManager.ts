@@ -19,12 +19,11 @@
 import { scoreByKeywords } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import type { SkillEntry, SkillMatch } from '@/skill/types.js';
-import { nowIso } from '@/utils/time.js';
 import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
+import { writeConfigItemsToIndex } from '@/utils/configIndexWriter.js';
 
 /**
  * 技能匹配最低激活阈值
@@ -37,9 +36,9 @@ import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/u
  *
  * 阈值取 0.3 的依据：
  * - 3 关键词技能命中 1 个 → 0.33 ≥ 0.3 → 激活（避免单关键词命中的技能被误判为噪音）
- * - 5 关键词技能命中 1 个 → 0.2 < 0.3 → 不激活（避免关键词过多导致误触）
- * - 与 PersonaManager 的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.5) 形成梯度：
- *   persona 切换是显式行为（0.5 严格），skill 注入是隐式辅助（0.3 宽松）
+ * - 分母上限 KEYWORD_SCORE_DENOMINATOR_MAX = 3，关键词多的技能不会因总量大而被惩罚
+ * - 与 PersonaManager 的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.3) 一致：
+ *   两者均为 0.3，因为关键词匹配是一套共享的评分算法（segmenter.scoreByKeywords）
  */
 const SKILL_MATCH_MIN_SCORE = 0.3;
 
@@ -230,45 +229,10 @@ export class SkillManager {
   // ── 私有方法 ──────────────────────────────────────
 
   /**
-   * 将所有技能写入 SQLite 索引
-   *
-   * 使用 try/catch 包裹每个 upsert 调用，防止单条写入失败阻断其余技能索引。
-   * IMemoryStorage.upsert 是同步方法，但可能因底层存储故障抛异常。
+   * 将所有技能写入 SQLite 索引（委托共享工具，与 PersonaManager 共用）
    */
   private writeAllToIndex(): void {
-    if (!this.index) return;
-    let failedCount = 0;
-    for (const skill of this.skills) {
-      try {
-        this.writeSkillToIndex(skill);
-      } catch (err) {
-        failedCount++;
-        logger.warn({ err, skill: skill.name }, '技能记忆写入 SQLite 失败');
-      }
-    }
-    if (failedCount > 0) {
-      logger.warn({ total: this.skills.length, failed: failedCount }, '部分技能记忆写入失败');
-    } else {
-      logger.info({ count: this.skills.length }, '技能记忆已写入 SQLite');
-    }
-  }
-
-  /**
-   * 将单个技能写入 SQLite 索引
-   */
-  private writeSkillToIndex(skill: SkillEntry): void {
-    if (!this.index) return;
-    const now = nowIso();
-    const memory: Memory = {
-      id: `skill:${skill.name}`,
-      content: skill.content,
-      source: SOURCE_LABELS.SKILL,
-      name: skill.name,
-      createdAt: now,
-      accessedAt: now,
-      score: 0.7,
-    };
-    this.index.upsert(memory);
+    writeConfigItemsToIndex(this.index, this.skills, SOURCE_LABELS.SKILL, 'skill:', 0.7, '技能');
   }
 
   /**

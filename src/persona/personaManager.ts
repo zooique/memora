@@ -20,13 +20,12 @@
 import { scoreByKeywords } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
-import { nowIso } from '@/utils/time.js';
+import { writeConfigItemsToIndex } from '@/utils/configIndexWriter.js';
 
 /**
  * 关键词匹配高置信度阈值：≥ 此值直接返回（低置信度由 agent 层决定是否调 LLM）
@@ -114,7 +113,7 @@ export class PersonaManager {
     if (this.personaList.length === 0) {
       logger.warn({ personaCount: 0 }, '未找到任何角色文件，将使用默认角色');
       this.activePersona = this.createDefaultPersona();
-      this.writePersonaToIndex(this.activePersona);
+      writeConfigItemsToIndex(this.index, [this.activePersona], SOURCE_LABELS.PERSONA, 'persona:', 1.0, '角色');
       return this.buildSystemPrompt();
     }
 
@@ -490,45 +489,10 @@ export class PersonaManager {
   /**
    * 将所有角色写入 SQLite 索引
    *
-   * 使用 try/catch 包裹每个 upsert 调用，防止单条写入失败阻断其余角色索引。
-   * IMemoryStorage.upsert 是同步方法，但可能因底层存储故障（磁盘满/权限错误）抛异常。
+   * 委托 writeConfigItemsToIndex 共享工具（与 SkillManager 共用）。
    */
   private writeAllToIndex(): void {
-    if (!this.index) return;
-    let failedCount = 0;
-    for (const persona of this.personaList) {
-      try {
-        this.writePersonaToIndex(persona);
-      } catch (err) {
-        failedCount++;
-        logger.warn({ err, persona: persona.name }, '角色记忆写入 SQLite 失败');
-      }
-    }
-    if (failedCount > 0) {
-      logger.warn({ total: this.personaList.length, failed: failedCount }, '部分角色记忆写入失败');
-    } else {
-      logger.info({ count: this.personaList.length }, '角色记忆已写入 SQLite');
-    }
-  }
-
-  /**
-   * 将单个角色写入 SQLite 索引
-   *
-   * 函数体无 await，作为同步函数实现。index.upsert 是同步方法。
-   */
-  private writePersonaToIndex(persona: Persona): void {
-    if (!this.index) return;
-    const now = nowIso();
-    const memory: Memory = {
-      id: persona.id,
-      content: persona.content,
-      source: SOURCE_LABELS.PERSONA,
-      name: persona.name,
-      createdAt: now,
-      accessedAt: now,
-      score: 1.0,
-    };
-    this.index.upsert(memory);
+    writeConfigItemsToIndex(this.index, this.personaList, SOURCE_LABELS.PERSONA, 'persona:', 1.0, '角色');
   }
 
   /**

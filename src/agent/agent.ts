@@ -89,7 +89,7 @@ const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
  *
  * **设计哲学**：单 Agent，单配置，单记忆。每个 Agent 实例拥有独立的
  * 对话管线（AgentLoop）、独立的消息历史（MessageHistory）和独立的
- * 运行时状态（activeSkill、chatBusy）。
+ * 运行时状态（chatBusy）。activeSkill 已移除——技能匹配改为当轮实时注入，无需跨轮状态缓存。
  *
  * **多实例**：宿主可通过 new Agent({ dataDir: './agent2' }) 创建
  * 独立实例。只要 dataDir 不同，它们拥有完全隔离的记忆库和会话。
@@ -162,8 +162,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
 
-  /** 当前激活的技能名（上一轮匹配，本轮注入） */
-  private activeSkill: string | null = null;
+  // activeSkill 字段已移除：matchAndInjectSkill 改为当轮实时匹配注入，无需跨轮状态缓存
 
   private _initialized = false;
   // 项目上下文（AgentContext 与 ProjectContext 等价，直接使用后者避免重复字段）
@@ -383,9 +382,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      // 注入上一轮匹配的技能 prompt
+      // 技能关键词/正则匹配（当轮立即注入生效，不延迟到下一轮）
+      // 与 persona 同模式：匹配 → 注入 → 本轮 LLM 调用即生效
       yield { type: 'thinking', phase: 'processing' };
-      this.injectActiveSkill();
+      this.matchAndInjectSkill(input);
 
       const history = this.history!;
       await history.appendUser(input);
@@ -566,16 +566,32 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 注入上一轮匹配的技能 prompt
+   * 匹配技能并立即注入本轮对话（当轮生效，不延迟到下一轮）
+   *
+   * 与 persona 的 tryAutoMatchPersona 同模式：匹配 → 注入 → 本轮 LLM 即生效。
+   * 原设计为 injectActiveSkill（注入上一轮匹配结果），导致用户说"写代码"的第一轮
+   * 得不到技能增强，需再发一条消息才生效。已改为实时匹配注入。
+   *
+   * 匹配策略：regex trigger 优先（score=1.0），其次关键词匹配（阈值 0.3）。
+   * 清理机制：cleanTemporarySystemMessages() 每轮开头清除临时 system 消息，
+   * 技能 prompt 自然不会累积到下一轮。
+   *
+   * @param input 用户输入文本
    */
-  private injectActiveSkill(): void {
-    if (this.activeSkill && this.skillManager && this.loop) {
-      const skillPrompt = this.skillManager.buildSystemPrompt(this.activeSkill);
-      if (skillPrompt) {
-        this.loop.injectSystemMessage(skillPrompt);
-        logger.debug({ skill: this.activeSkill }, '技能 prompt 已注入');
+  private matchAndInjectSkill(input: string): void {
+    if (!this.skillManager || !this.loop) return;
+    try {
+      const match = this.skillManager.match(input);
+      if (match) {
+        const skillPrompt = this.skillManager.buildSystemPrompt(match.skill.name);
+        if (skillPrompt) {
+          this.loop.injectSystemMessage(skillPrompt);
+          logger.debug({ skill: match.skill.name, score: match.score }, '技能 prompt 已注入（当轮生效）');
+        }
+        this.emit('skillMatched', { skill: match.skill.name, score: match.score });
       }
-      this.activeSkill = null;
+    } catch (err) {
+      logger.warn({ err }, '技能匹配失败');
     }
   }
 
@@ -612,20 +628,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 原 postProcess 逻辑完整保留于此，由外层 postProcess 负责 span 生命周期管理。
    */
   private async postProcessInner(input: string, assistantContent: string): Promise<void> {
-    // 技能关键词匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
-    if (this.skillManager) {
-      try {
-        const match = this.skillManager.match(input);
-        if (match) {
-          this.activeSkill = match.skill.name;
-          // 发射 skillMatched 事件：宿主 UI 可据此展示当前激活技能
-          this.emit('skillMatched', { skill: match.skill.name, score: match.score });
-          logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
-        }
-      } catch (err) {
-        logger.warn({ err }, '技能匹配失败');
-      }
-    }
+    // 技能匹配已迁移到 chat() 开头的 matchAndInjectSkill()（当轮实时生效），
+    // 与 persona 的 tryAutoMatchPersona 同模式，消除"第一轮无技能"的一轮延迟问题。
 
     // ADR-015 + FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator
     // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
@@ -1305,7 +1309,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._initialized = false;
     this.nullifyAllComponents();
     // 清理次要状态字段，防止 re-init 后残留上一会话状态
-    this.activeSkill = null;
     this._lastInteractionAt = null;
     this.pendingConfigReload.clear();
   }

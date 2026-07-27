@@ -767,17 +767,30 @@ describe('Agent · postProcess() · 对话后处理', () => {
     agent.off('personaSwitched', () => {});
   });
 
-  it('技能关键词匹配：输入匹配关键词后 activeSkill 应更新', async () => {
+  it('技能关键词匹配：输入匹配关键词后 skillMatched 事件应立即触发（当轮生效）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 输入包含技能关键词，应触发技能匹配
+    let matchedSkill: string | null = null;
+    let matchedScore: number = 0;
+    agent.on('skillMatched', (e) => {
+      matchedSkill = e.skill;
+      matchedScore = e.score;
+    });
+
+    // 输入包含技能关键词，应在 chat() 内实时匹配并注入
     await agent.chatSync('帮我审查一下代码质量');
 
-    // 验证技能已匹配（通过 skills 管理器验证）
+    // 验证 skillMatched 事件已在当轮触发（非延迟到下一轮）
+    expect(matchedSkill).toBe('代码审查');
+    expect(matchedScore).toBeGreaterThanOrEqual(0.3);
+
+    // 补充验证：SkillManager.match() 底层方法也确认匹配
     const match = agent.skills!.match('帮我审查一下代码质量');
     expect(match).not.toBeNull();
     expect(match!.skill.name).toBe('代码审查');
+
+    agent.off('skillMatched', () => {});
   });
 
   it('Insight 提取：classify 返回 extract 时应触发 extract', async () => {

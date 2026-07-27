@@ -290,10 +290,9 @@ export class ProjectManager {
     loadResult: LoadResult,
     configDir: string | undefined,
   ): ProjectContext {
-    // bootstrap 过滤：按 source 获取 rule + skill 必召记忆（跳过 persona，由 PersonaManager 管理）
+    // bootstrap 过滤：仅 Rule（跳过 Persona 由 PersonaManager 管理，跳过 Skill 由 matchAndInjectSkill 动态注入）
     const rules = index.getBySource(SOURCE_LABELS.RULE);
-    const skills = index.getBySource(SOURCE_LABELS.SKILL);
-    const bootstrapMemories = [...rules, ...skills];
+    const bootstrapMemories = [...rules];
 
     // 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
     const security = this.createSecurityGuard

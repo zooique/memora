@@ -417,18 +417,18 @@ export class ConfigManager {
   }
 
   /**
-   * 获取 bootstrap 记忆（rule + skill，供 AgentLoop 刷新 system prompt）
+   * 获取 bootstrap 记忆（仅 Rule，供 AgentLoop 刷新 system prompt）
    *
-   * AgentLoop 的 system prompt 中包含 bootstrap 段（rule + skill 记忆）。
+   * AgentLoop 的 system prompt 中包含 bootstrap 段（rule 记忆）。
+   * Skill 已迁移到 per-round matchAndInjectSkill 动态注入，不再放入 bootstrap。
    * 设定 CRUD 后调用 refreshBootstrapMemories 回调，回调内部调用此方法
-   * 获取最新的 rule + skill 记忆，传给 AgentLoop.refreshBootstrapMemories()。
+   * 获取最新的 rule 记忆，传给 AgentLoop.refreshBootstrapMemories()。
    *
-   * @returns rule + skill 活跃记忆数组
+   * @returns rule 活跃记忆数组
    */
   getBootstrapMemories(): Memory[] {
     return [
       ...this.index.getBySource(SOURCE_LABELS.RULE),
-      ...this.index.getBySource(SOURCE_LABELS.SKILL),
     ];
   }
 }
