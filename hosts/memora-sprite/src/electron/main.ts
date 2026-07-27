@@ -99,12 +99,14 @@ let mainIpcContext: IpcContext | null = null;
  * appState 结构兼容 MinimalIpcState 接口，直接作为 MinimalIpcState 传入 minimalHandlers。
  * Agent 运行时相关 9 个字段封装在 agentRuntime 中。
  * 窗口/托盘基础设施 4 个字段封装在 windowService 中。
+ * 快速输入/剪贴板基础设施 2 个字段封装在 quickInputService 中。
  *
  * 初始化时序：
  *   - windowService（windowStateManager/windowManager/interaction/trayManager）在 initializeApp 阶段 1 赋值
  *   - shortcutManager 在阶段 1 赋值（可能为 null：快捷键注册失败降级）
  *   - agentRuntime 由 setAppRuntime 集中赋值（阶段 2 / reinitAgent）
- *   - auditManager/clipboardHandler 在 setupAgentReady / 阶段 2 赋值
+ *   - quickInputService（clipboardHandler/quickInputWindow）在 setupAgentIndependentResources 阶段 2 赋值
+ *   - auditManager 在 setupAgentReady 赋值
  *   - agentReady/initErrorDetail/unreadCount/currentDataDir 运行时可变
  *   - pendingWriteConfirmations 为 const Map 引用（M1 写入确认映射表）
  *   - isQuitting 防止 before-quit 重复清理
@@ -116,6 +118,8 @@ const appState = {
   agentRuntime: new AgentRuntime(),
   /** 窗口/托盘基础设施状态容器（封装 windowStateManager + windowManager + interaction + trayManager） */
   windowService: new WindowService(),
+  /** 快速输入/剪贴板基础设施状态容器（封装 clipboardHandler + quickInputWindow） */
+  quickInputService: new QuickInputService(),
 
   // ─── 应用级状态 ───
   /** Agent 是否已就绪 */
@@ -129,19 +133,15 @@ const appState = {
    */
   ipcRegistered: false as boolean,
 
-  // ─── 功能模块 ───
+  // ─── 功能模块（独立，未达提取阈值） ───
   /** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
   pendingWriteConfirmations: new Map<string, (confirmed: boolean) => void>(),
   /** M2 审计日志：宿主单例（在 setupAgentReady 中创建） */
   auditManager: null as AuditManager | null,
   /** AUDIT-5-1 使用统计采集器：默认关闭，需显式开启（在 setupAgentReady 中创建） */
   usageStatsCollector: null as UsageStatsCollector | null,
-  /** Phase 3.3 全局快捷键管理器（在 initializeApp 阶段 1 创建） */
+  /** Phase 3.3 全局快捷键管理器（在 initializeApp 阶段 1 创建，保持独立：时序不同 + 3/4 handler 依赖 windowManager） */
   shortcutManager: null as ShortcutManager | null,
-  /** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
-  clipboardHandler: null as ClipboardHandler | null,
-  /** 快速输入浮窗（Phase 1 骨架：懒创建，快捷键 Ctrl+Shift+C 触发显示） */
-  quickInputWindow: null as QuickInputWindow | null,
 
   // ─── 其他 ───
   /** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
@@ -726,9 +726,10 @@ async function initializeApp(): Promise<void> {
         [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER),
         [SHORTCUT_ACTIONS.QUICK_INPUT]: () => {
           // 显示快速输入浮窗（独立于完整窗口，不切换窗口状态机）
-          // quickInputWindow 在 setupAgentReady 后创建（依赖 clipboardHandler 注入确认回调）
-          if (appState.quickInputWindow) {
-            appState.quickInputWindow.show();
+          // quickInputWindow 在 setupAgentIndependentResources 后创建（依赖 clipboardHandler 注入确认回调）
+          // shortcutManager 在阶段 1 创建，quickInputService 在阶段 2 创建，通过 if 守卫延迟读取避免时序问题
+          if (appState.quickInputService.quickInputWindow) {
+            appState.quickInputService.quickInputWindow.show();
           }
         },
       },
@@ -801,7 +802,7 @@ function setupAgentIndependentResources(): void {
   // Phase 3.1：集成剪贴板三重保护
   // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程
   // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
-  appState.clipboardHandler = new ClipboardHandler(clipboard, {
+  appState.quickInputService.clipboardHandler = new ClipboardHandler(clipboard, {
     emit: (event: ClipboardEventType, payload?: unknown) => {
       const fullWindow = appState.windowService.windowManager.getFullWindow();
       // 将 ClipboardHandler 事件映射到 IPC 推送通道
@@ -846,16 +847,16 @@ function setupAgentIndependentResources(): void {
   });
   // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
   ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
-    return appState.clipboardHandler?.analyze() ?? false;
+    return appState.quickInputService.clipboardHandler?.analyze() ?? false;
   });
   // 启动剪贴板变化检测轮询
-  appState.clipboardHandler.startPolling();
+  appState.quickInputService.clipboardHandler.startPolling();
 
   // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
   // 在 clipboardHandler 创建后实例化，确保 onConfirm 回调能调用 suppressNextChange()
   // onAfterConfirm 用于记忆沉淀：确认成功后异步写入 source:'quick-input' 记忆
-  appState.quickInputWindow = new QuickInputWindow({
-    onConfirm: createDefaultConfirmCallback(appState.clipboardHandler),
+  appState.quickInputService.quickInputWindow = new QuickInputWindow({
+    onConfirm: createDefaultConfirmCallback(appState.quickInputService.clipboardHandler),
     onAfterConfirm: (text) => {
       try {
         // 敏感内容过滤（与 clipboardHandler 剪贴板预填过滤对齐）
@@ -890,18 +891,18 @@ function setupAgentIndependentResources(): void {
     },
   });
   // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
-  appState.quickInputWindow.setSuppressNextChange(
-    () => appState.clipboardHandler?.suppressNextChange(),
+  appState.quickInputService.quickInputWindow.setSuppressNextChange(
+    () => appState.quickInputService.clipboardHandler?.suppressNextChange(),
   );
   // 预加载 nut-js（fire-and-forget）：消除首次快捷键唤起浮窗时的动态 import 延迟
-  appState.quickInputWindow.preloadInputInjector();
+  appState.quickInputService.quickInputWindow.preloadInputInjector();
 
   // STEP-4：浮球单击 → 呼出补全弹窗回调（连接 floatWindow → quickInputWindow）
   // 浮球单击后浮球成为前台窗口，通过 floatHwnd 排除浮球自身，
   // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+C 时捕获的应用）
   appState.windowService.windowManager.updateFloatCallbacks({
     onShowQuickInput: (x, y, floatHwnd) => {
-      void appState.quickInputWindow!.showAtPosition(x, y, floatHwnd);
+      void appState.quickInputService.quickInputWindow!.showAtPosition(x, y, floatHwnd);
     },
   });
 
@@ -992,8 +993,9 @@ function nullifyAllComponents(): void {
   appState.auditManager = null;
   appState.usageStatsCollector = null;
   appState.shortcutManager = null;
-  appState.clipboardHandler = null;
-  appState.quickInputWindow = null;
+
+  // ─── 快速输入/剪贴板基础设施（2 字段集中清理） ───
+  appState.quickInputService.nullify();
 
   // ─── 窗口/托盘基础设施（4 字段集中清理） ───
   appState.windowService.nullify();
@@ -1029,9 +1031,9 @@ app.on('before-quit', async (e) => {
     // Phase 3.3：注销全局快捷键，避免退出后残留占用
     appState.shortcutManager?.unregisterAll();
     // Phase 3.1：停止剪贴板轮询，清理定时器
-    appState.clipboardHandler?.stopPolling();
+    appState.quickInputService.clipboardHandler?.stopPolling();
     // 销毁快速输入浮窗，清理 IPC handler 和定时器
-    appState.quickInputWindow?.destroy();
+    appState.quickInputService.quickInputWindow?.destroy();
     // AUDIT-5-2：使用统计退出时写入 + 停止定时器
     appState.usageStatsCollector?.stopAutoFlush();
     await appState.usageStatsCollector?.flush();
