@@ -18,14 +18,11 @@
  *   - 目录名 personas/ 与代码 Persona 术语一致，区别于用户身份信息
  */
 import { scoreByKeywords } from '@/utils/segmenter.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
-import { writeConfigItemsToIndex } from '@/utils/configIndexWriter.js';
 
 /**
  * 关键词匹配高置信度阈值：≥ 此值直接返回（低置信度由 agent 层决定是否调 LLM）
@@ -94,11 +91,9 @@ export class PersonaManager {
 
   /**
    * @param configDir 配置目录（角色文件在 <configDir>/personas/ 下）
-   * @param index SQLite 索引（用于写入 persona 记忆）
    */
   constructor(
     private readonly configDir?: string,
-    private readonly index?: IMemoryStorage,
   ) {}
 
   /**
@@ -113,7 +108,6 @@ export class PersonaManager {
     if (this.personaList.length === 0) {
       logger.warn({ personaCount: 0 }, '未找到任何角色文件，将使用默认角色');
       this.activePersona = this.createDefaultPersona();
-      writeConfigItemsToIndex(this.index, [this.activePersona], SOURCE_LABELS.PERSONA, 'persona:', 1.0, '角色');
       return this.buildSystemPrompt();
     }
 
@@ -121,9 +115,6 @@ export class PersonaManager {
       { count: this.personaList.length, names: this.personaList.map((p) => p.name) },
       '角色文件加载完成',
     );
-
-    // 写入 SQLite 索引（persona 遵循万物皆记忆）
-    this.writeAllToIndex();
 
     // 激活指定角色
     if (activePersona) {
@@ -346,7 +337,6 @@ export class PersonaManager {
   async reload(): Promise<number> {
     const oldActiveName = this.activePersona?.name;
     this.personaList = await this.scanPersonas();
-    this.writeAllToIndex();
 
     // 保持当前激活角色（若仍存在），否则回退到第一个
     if (oldActiveName) {
@@ -391,19 +381,7 @@ export class PersonaManager {
       return false;
     }
 
-    const deleted = this.personaList[idx]!; // idx >= 0 已由上方 findIndex 检查保证
     this.personaList.splice(idx, 1);
-
-    // 软删除 SQLite 中的 persona 记忆（id 优先取 frontmatter，回退 persona:name）
-    const personaId = deleted.id ?? `persona:${name}`;
-    if (this.index) {
-      try {
-        this.index.delete(personaId);
-      } catch (err) {
-        // SQLite 删除失败不阻断内存删除（内存已是最新的）
-        logger.warn({ err, name, personaId }, '角色 SQLite 记忆软删除失败');
-      }
-    }
 
     // 若删除的是激活角色，回退到列表第一个或默认角色
     if (this.activePersona?.name === name) {
@@ -484,15 +462,6 @@ export class PersonaManager {
     }
 
     return list;
-  }
-
-  /**
-   * 将所有角色写入 SQLite 索引
-   *
-   * 委托 writeConfigItemsToIndex 共享工具（与 SkillManager 共用）。
-   */
-  private writeAllToIndex(): void {
-    writeConfigItemsToIndex(this.index, this.personaList, SOURCE_LABELS.PERSONA, 'persona:', 1.0, '角色');
   }
 
   /**

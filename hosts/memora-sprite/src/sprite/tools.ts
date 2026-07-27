@@ -216,7 +216,7 @@ function createConfigHandler(
       metadata.keywords = keywords;
     }
 
-    // 阶段 1：写入配置文件 + SQLite index（confirmConfigSuggestion）
+    // 阶段 1：写入配置文件（confirmConfigSuggestion 写 .md 文件 + 调用 reloadConfig 热重载）
     // 这一步失败属于真正的创建失败，返回错误
     try {
       await agent.config.confirmConfigSuggestion({

@@ -4,7 +4,36 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [2.0.0] - 2026-07-17
+## [2.0.2] - 2026-07-27
+
+设定模块（Persona/Skill/Rule）全链路审查与修复版本。核心收敛：角色/技能从 SQLite 记忆索引解耦、"万物皆记忆"升级为 v2 双轨模型、技能从延迟注入改为当轮实时生效。
+
+### Changed（变更）
+
+- **万物皆记忆 v2**：Persona 和 Skill 从 SQLite 索引解耦，改为纯文件 + 内存缓存（设定记忆不参与 recall 管线）
+- **Skill 当轮实时生效**：`matchAndInjectSkill()` 在 `chat()` 内 recall 后执行，匹配即注入，不再延迟到下一轮
+- **Persona 默认回退泛化**：`shouldFallbackToDefault()` 从硬编码 `'default'` 改为 `list[0]?.name`
+- **bootstrap 收敛**：`bootstrapMemories` 从 `rule + skill + persona` 收敛为仅 `rule`
+- **PersonaManager / SkillManager 去 SQLite 依赖**：移除 `IMemoryStorage` 构造参数，移除 `writeAllToIndex()` 调用
+- **自动匹配时机统一**：Persona 和 Skill 均在 `chat()` 开头执行匹配，LLM 当轮即用新设定
+
+### Fixed（修复）
+
+- **P0: Manual 模式角色回退**：`shouldFallbackToDefault()` 新增 mode 检查，manual 模式下不再自动回退
+- **P1: 消息角色标签不一致**：`chatStreamHandler` 的 `SPRITE_STREAM_START` 延迟到首个 chunk 后发送，确保 persona 已匹配
+- **Persona 切换参数同步**：锁定时长从 60s/3次/5分钟 更正为 30s/5次/2分钟（日志 + JSDoc + 测试）
+- **关键词匹配同分 tie-break**：Persona/Skill 匹配同分时增加 name 字母序二级排序
+
+### Internal（内部变更，不影响公共 API）
+
+- `PersonaManager.autoMatch()` 去 async（函数体无 await）
+- `configIndexWriter.ts` 移除（共享工具不再有消费者）
+- `skillManager.ts` 移除 `writeAllToIndex()` / `writeSkillToIndex()` 方法
+- `activeSkill` 字段移除（匹配改为当轮注入，无需跨轮状态）
+- `injectActiveSkill()` 方法移除（被 `matchAndInjectSkill()` 替代）
+- `personaManager.ts` / `skillManager.ts` 移除 `IMemoryStorage` 类型导入
+- 架构文档 `architecture_philosophy_rules.md` v0.8→v1.0（万物皆记忆 v2）
+- 分层文档 `backend_layers_rules.md` v1.1→v1.2（persona/skill 去 memory 依赖）
 
 从 1.0.1 到 2.0.0 的架构收敛版本。核心目标：读写统一、记忆治理 L1~L4 全链路、god function 拆分、可观测性补全。
 

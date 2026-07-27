@@ -1,8 +1,8 @@
-# Memora · 接入指南 v2.0.1
+# Memora · 接入指南 v2.0.2
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v2.0.1（最后更新：2026-07-26）
+> **版本**：v2.0.2（最后更新：2026-07-27）
 >
 > **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
 > - **Agent God Object 拆分（原 v3.0）**：记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference.md)。
@@ -14,7 +14,9 @@
 >
 > **v2.0.0 变更**：版本号提升（维护性质，无破坏性 API 变更）。
 >
-> **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
+> **v2.0.1 变更**：文���版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
+>
+> **v2.0.2 变更**：万物皆记忆 v2（双轨模型——设定记忆 + 对话记忆）。Persona/Skill 从 SQLite 索引解耦，改为纯文件 + 内存缓存。Skill 匹配改为当轮实时注入。详见 [CHANGELOG](../CHANGELOG.md)。
 
 ---
 
@@ -38,11 +40,11 @@
 
 **Memora 是一个无法独立运行的智能大脑内核。** 它只有接口，没有"形态"——宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**万物皆是记忆。** 角色、规则、技能、工具定义、对话历史——全部统一为「记忆」，通过 `source` 开放字符串区分。
+**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（Persona/Skill/Rule —— Agent 的骨骼，.md 文件 + 内存缓存，确定性注入不经过召回）和**对话记忆**（Conversation/Insight/UserProfile —— Agent 的血肉，SQLite + VectorStore，语义召回）。二者通过 `autoConfigRefiner` 连接——对话洞察可生长为设定文件。
 
 **单 Agent 模型。** 所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
 
-**配置文件是真理源，SQLite 是运行时索引。** `agent-config/` 下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite。
+**配置文件是真理源，对话记忆走 SQLite 索引。** Persona/Skill 为纯文件 + 内存缓存；Rule 文件写入 SQLite 供 bootstrap 读取；对话记忆（insight/profile）走 SQLite + 语义召回。
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 

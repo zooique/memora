@@ -3,27 +3,22 @@
  *
  * 职责：
  *   - 启动时扫描 configDir/skills/ 目录
- *   - 通过关键词匹配选择技能（初期阶段一/二）
- *   - 写入 SQLite 索引（source: skill，遵循"万物皆记忆"）
+ *   - 通过关键词匹配选择技能
  *   - 后期触发条件（≥15个技能 / 关键词命中率 <80%）→ 切换为 LLM 自主选择
  *
- * 设计原则（ADR-004 万物皆记忆）：
- *   - 技能遵循"万物皆记忆"——存入 SQLite 作为 skill 来源记忆
+ * 设计原则：
  *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
- *   - 与 PersonaManager 存储策略一致：文件加载 → 内存缓存 + SQLite 索引
+ *   - 与 PersonaManager 一致：文件加载 → 内存缓存（纯文件+内存，不依赖 SQLite 索引）
  *
  * 触发词说明：
  *   每个 skill 文件的 frontmatter 声明 keywords（逗号分隔）和 trigger（触发正则，可选）。
- *   skill 文件命名规范：`<技能名>.md`（如"去AI味.md""审视角.md""写代码.md"）。
+ *   skill 文件命名规范：`<技能名>.md`（如"去AI味.md""审视角.md""写代码.md"���。
  */
 import { scoreByKeywords } from '@/utils/segmenter.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import type { SkillEntry, SkillMatch } from '@/skill/types.js';
 import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
-import { writeConfigItemsToIndex } from '@/utils/configIndexWriter.js';
 
 /**
  * 技能匹配最低激活阈值
@@ -51,11 +46,9 @@ export class SkillManager {
 
   /**
    * @param configDir 配置目录（技能文件在 <configDir>/skills/ 下）
-   * @param index SQLite 索引（用于写入 skill 记忆）
    */
   constructor(
     private readonly configDir?: string,
-    private readonly index?: IMemoryStorage,
   ) {}
 
   /**
@@ -69,9 +62,6 @@ export class SkillManager {
       { count: this.skills.length, names: this.skills.map((s) => s.name) },
       '技能加载完成',
     );
-
-    // 写入 SQLite 索引（遵循"万物皆记忆"——与 PersonaManager 一致）
-    this.writeAllToIndex();
 
     return this.skills.length;
   }
@@ -178,7 +168,6 @@ export class SkillManager {
   async reload(): Promise<number> {
     const oldCount = this.skills.length;
     this.skills = await this.scanSkills();
-    this.writeAllToIndex();
     logger.info(
       { oldCount, newCount: this.skills.length, names: this.skills.map((s) => s.name) },
       '技能已重载',
@@ -227,13 +216,6 @@ export class SkillManager {
   }
 
   // ── 私有方法 ──────────────────────────────────────
-
-  /**
-   * 将所有技能写入 SQLite 索引（委托共享工具，与 PersonaManager 共用）
-   */
-  private writeAllToIndex(): void {
-    writeConfigItemsToIndex(this.index, this.skills, SOURCE_LABELS.SKILL, 'skill:', 0.7, '技能');
-  }
 
   /**
    * 扫描 configDir/skills/ 目录

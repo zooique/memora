@@ -1,10 +1,10 @@
-# Memora 内核 API 参考手册（v2.0.1）
+# Memora 内核 API 参考手册（v2.0.2）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v2.0.1（最后更新：2026-07-26，对应内核 v2.0.1）
+> **版本**：v2.0.2（最后更新：2026-07-27，对应内核 v2.0.2）
 >
 > **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
 > - **Agent God Object 拆分（原 v3.0）**：记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
@@ -77,7 +77,7 @@
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
 | `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索召回；内置实现 JsonVectorStore） |
-| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
+| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，设定记忆不参与语义召回，双重防御） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
@@ -250,7 +250,7 @@ agent.memory.snapshot(): MemorySnapshot
 | 层 | 键 | 内容 |
 |----|-----|------|
 | 第 1 层 | `snapshot.working` | `WorkingMemorySnapshot` — 当前 AgentLoop 消息（最近 5 条预览 + 总数） |
-| 第 2 层 | `snapshot.bootstrap` | `BootstrapSnapshot` — 规则 / 角色 / 技能记忆（名称 + 来源 + 权重） |
+| 第 2 层 | `snapshot.bootstrap` | `BootstrapSnapshot` — 规则记忆（名称 + 来源 + 权重，Persona/Skill 已解耦为设定记忆，不进 bootstrap） |
 | 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（insight + profile + work-projection）+ 当前会话信息 |
 
 ```typescript
@@ -695,11 +695,11 @@ await agent.config.addSimpleRule(
 
 | 方法 | 用途 | 写到哪里 |
 |------|------|----------|
-| `config.addSkill(memory)` | 添加技能（需 `source='skill'`，session-only） | SQLite + SkillManager |
+| `config.addSkill(memory)` | 添加技能（需 `source='skill'`，session-only） | SkillManager |
 | `config.addSimpleSkill(name, content, keywords?)` | 同上，简化版（session-only） | SQLite + SkillManager |
 
 ```typescript
-// 注入技能（session-only，同时写入 SQLite 索引以支持 recall() 检索，重启后丢失）
+// 注入技能（session-only，注入 SkillManager 内存缓存，重启后丢失）
 await agent.config.addSimpleSkill(
   '大纲生成',
   '当用户说“生成大纲”时，按三幕结构生成章节大纲……',
