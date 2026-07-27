@@ -715,7 +715,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
       // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-      const archiveFactsPromise = this.archiveCoordinator!.archiveProfileFacts(input, { autoTriggered: true }).then(
+      const archiveFactsPromise = this.requireArchiveCoordinator.archiveProfileFacts(input, { autoTriggered: true }).then(
         () => {},
         (err) => {
           const message = err instanceof Error ? err.message : String(err);
@@ -732,7 +732,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
       // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-      const archiveInsightPromise = this.archiveCoordinator!.archiveInsight(input, assistantContent, { autoTriggered: true }).then(
+      const archiveInsightPromise = this.requireArchiveCoordinator.archiveInsight(input, assistantContent, { autoTriggered: true }).then(
         () => {},
         (err) => {
           const message = err instanceof Error ? err.message : String(err);
@@ -780,7 +780,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   forkSession(targetSession?: string): AgentForkResult {
     this.assertInitialized('forkSession');
-    return this._sessionManager!.forkSession(targetSession);
+    return this.requireSessionManager.forkSession(targetSession);
   }
 
   /**
@@ -1173,7 +1173,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async archiveProfileFacts(input: string, options?: ArchiveTriggerOptions): Promise<UserProfileEntry[]> {
     this.assertInitialized('archiveProfileFacts');
-    return this.archiveCoordinator!.archiveProfileFacts(input, options);
+    return this.requireArchiveCoordinator.archiveProfileFacts(input, options);
   }
 
   /**
@@ -1199,7 +1199,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     options?: ArchiveTriggerOptions,
   ): Promise<Memory[]> {
     this.assertInitialized('archiveInsight');
-    return this.archiveCoordinator!.archiveInsight(input, assistantContent, options);
+    return this.requireArchiveCoordinator.archiveInsight(input, assistantContent, options);
   }
 
   /**
@@ -1225,7 +1225,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     options?: ArchiveTriggerOptions,
   ): Promise<SessionArchiveResult> {
     this.assertInitialized('archiveSessionContent');
-    return this.archiveCoordinator!.archiveSessionContent(date, session, options);
+    return this.requireArchiveCoordinator.archiveSessionContent(date, session, options);
   }
 
   // ─── 配置重载（事件驱动） ───────────────────────
@@ -1382,6 +1382,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private get requirePctx(): ProjectContext {
     if (!this.pctx) throw configError('ProjectContext 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
     return this.pctx;
+  }
+
+  private get requireArchiveCoordinator(): ArchiveCoordinator {
+    if (!this.archiveCoordinator) throw configError('ArchiveCoordinator 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    return this.archiveCoordinator;
+  }
+
+  private get requireSessionManager(): SessionManager {
+    if (!this._sessionManager) throw configError('SessionManager 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    return this._sessionManager;
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────

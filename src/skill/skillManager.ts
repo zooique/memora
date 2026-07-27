@@ -42,8 +42,6 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
 
   // ── 生命周期 ──────────────────────────────────────
 
-  // ── 生命周期 ──────────────────────────────────────
-
   /**
    * 启动时加载：扫描技能目录
    *
