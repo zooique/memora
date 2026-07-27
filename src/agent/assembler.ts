@@ -120,6 +120,116 @@ export interface AssembleOutput {
  * @param input 组装参数
  * @returns 所有组件引用
  */
+
+// ── 子工厂函数 ─────────────────────────────────────────────
+
+/**
+ * Phase 3：创建 AgentLoop 及其直接依赖
+ */
+async function createAgentLoopAndDeps(params: {
+  provider: LlmProvider;
+  backgroundProvider: LlmProvider | null;
+  pctx: ProjectContext;
+  personaPrompt: string;
+  userProfile: UserProfile;
+  toolExec: ToolExecutor;
+  maxContextTokens: number;
+  tracer?: ITracer;
+  messages?: UIMessages;
+  enableContextSummary: boolean;
+  relationStore?: IMemoryRelationStore;
+  sessionStore?: ISessionStore;
+  locale?: string;
+  onContextTruncated?: (skippedCount: number, keptCount: number) => void;
+  onGuardrailError?: (rule: string, message: string) => void;
+}) {
+  const {
+    provider, backgroundProvider, pctx, personaPrompt, userProfile, toolExec,
+    maxContextTokens, tracer, messages, enableContextSummary, relationStore,
+    sessionStore, locale, onContextTruncated, onGuardrailError,
+  } = params;
+
+  // 系统前缀：角色 + 用户画像 + 当前时间
+  const systemPrefixParts = [personaPrompt];
+  const profilePrompt = userProfile.buildSystemPrompt();
+  if (profilePrompt) systemPrefixParts.push(profilePrompt);
+  const now = new Date();
+  const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+  });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
+  const systemPromptPrefix =
+    systemPrefixParts.filter(Boolean).join('\n\n') +
+    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
+
+  const relationBuilder = new RelationBuilder(pctx.index, relationStore ?? null);
+  const insightExtractor = new InsightExtractor(provider, pctx.index, relationBuilder);
+  const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
+  const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
+
+  const loop = new AgentLoop({
+    provider,
+    bootstrapMemories: pctx.bootstrapMemories,
+    toolExecutor: (name: string, args: string) =>
+      toolExec.execute(name, args, insightExtractor.writeExtensions ?? undefined),
+    systemPromptPrefix,
+    toolDefinitions: toolExec.list,
+    maxContextTokens,
+    tracer,
+    messages,
+    enableContextSummary,
+    guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
+    onContextTruncated,
+    onGuardrailError,
+  });
+  insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
+  toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
+
+  return { loop, insightExtractor, sessionArchiver, textPolisher, relationBuilder };
+}
+
+/**
+ * Phase 4：创建依赖 Loop 的组件
+ */
+function createLoopDependentComponents(params: {
+  pctx: ProjectContext;
+  loop: AgentLoop;
+  history: MessageHistory;
+  skillManager: SkillManager;
+  configDir?: string;
+  backgroundProvider: LlmProvider | null;
+  relationStore?: IMemoryRelationStore;
+  onDedupCompleted?: (report: {
+    scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[];
+  }) => void;
+}) {
+  const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, onDedupCompleted } = params;
+
+  const configFileStore = configDir ? new FileStore(configDir) : null;
+  const configManager = new ConfigManager(
+    pctx.index,
+    skillManager,
+    (msg: string) => loop.injectSystemMessage(msg),
+    configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
+    () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
+  );
+
+  const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
+  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
+  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, onDedupCompleted);
+
+  const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
+    configManager.suggestionCallback?.(suggestion),
+  );
+  autoConfigRefiner.setBackgroundProvider(backgroundProvider);
+
+  return { configManager, memoryAdvisor, memoryInspector, dedupManager, autoConfigRefiner };
+}
+
+// ── 主组装函数 ─────────────────────────────────────────────
+
 export async function assembleComponents(
   pctx: ProjectContext,
   input: AssembleInput,
@@ -170,101 +280,40 @@ export async function assembleComponents(
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
 
-  // ── Phase 3: AgentLoop ──
+  // ── Phase 3: AgentLoop + 其直接依赖 ──
 
-  const systemPrefixParts = [personaPrompt];
-  const profilePrompt = userProfile.buildSystemPrompt();
-  if (profilePrompt) systemPrefixParts.push(profilePrompt);
-
-  // 注入当前时间（让 Agent 知道实时时间，避免 LLM 知识截止日期滞后）
-  // locale 可通过 AssembleInput.locale 注入（默认 'zh-CN'），实现国际化时间格式
-  const now = new Date();
-  const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZoneName: 'short',
-  });
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
-
-  const systemPromptPrefix =
-    systemPrefixParts.filter(Boolean).join('\n\n') +
-    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
-
-  // InsightExtractor 的 writeExtensions 在运行时由 Agent.chat() 设置
-  // getRecentHistory 在 AgentLoop 创建后通过 bindGetRecentHistory 注入（消除 loopRef 闭包）
-  // RelationBuilder 封装 ADR-014 关系构建逻辑，InsightExtractor 通过委托调用
-  // relationStore 可选注入 RelationBuilder，未注入时跳过关系构建（降级优先）
-  const relationBuilder = new RelationBuilder(pctx.index, relationStore ?? null);
-  const insightExtractor = new InsightExtractor(provider, pctx.index, relationBuilder);
-
-  // SessionArchiver（会话内容归档器，content 类记忆）
-  // 与 InsightExtractor 同模式：构造时注入 provider + storage + sessionStore
-  const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
-
-  // TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化）
-  // 优先后台 Provider（不阻塞前台对话），降级前台（参照 WorkProjectionManager）
-  const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
-
-  const loop = new AgentLoop({
-    provider,
-    bootstrapMemories: pctx.bootstrapMemories,
-    toolExecutor: (name: string, args: string) =>
-      toolExec.execute(name, args, insightExtractor.writeExtensions ?? undefined),
-    systemPromptPrefix,
-    toolDefinitions: toolExec.list,
-    maxContextTokens,
-    tracer,
-    messages,
-    enableContextSummary,
-    guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
-    onContextTruncated: input.onContextTruncated,
-    onGuardrailError: input.onGuardrailError,
-  });
-  insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
-
-  // 将 registerTool 的副作用链接到 AgentLoop，每次注册工具后自动刷新 system prompt 中的工具列表
-  toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
+  const { loop, insightExtractor, sessionArchiver, textPolisher } =
+    await createAgentLoopAndDeps({
+      provider,
+      backgroundProvider,
+      pctx,
+      personaPrompt,
+      userProfile,
+      toolExec,
+      maxContextTokens,
+      tracer,
+      messages,
+      enableContextSummary,
+      relationStore,
+      sessionStore,
+      locale,
+      onContextTruncated: input.onContextTruncated,
+      onGuardrailError: input.onGuardrailError,
+    });
 
   // ── Phase 4: 依赖 Loop 的组件 ──
 
-  // ConfigManager 的 writeConfigFile 回调必须使用 config 级 FileStore（configDir），
-  // 与设置面板 CRUD + personaWatcher 热重载路径一致，创建后立即可见
-  const configFileStore = configDir ? new FileStore(configDir) : null;
-  const configManager = new ConfigManager(
-    pctx.index,
-    skillManager,
-    (msg: string) => loop.injectSystemMessage(msg),
-    configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
-    // 设定 CRUD 同步回调：ConfigManager.deleteRule/updateRule/deleteSkill 执行后，
-    // 调用 loop.refreshBootstrapMemories 用最新的 rule+skill 记忆重建 system prompt bootstrap 段
-    // 闭包内引用 configManager 自身——TS 严格模式允许（闭包执行时机晚于 const 初始化）
-    () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
-  );
-
-  // MemoryAdvisor 在组合根装配（sourceHealth + suggest + detectConflicts 均由 Agent 直连）
-  // L3 冲突检测：注入 backgroundProvider 到 MemoryAdvisor（可选，未注入时 detectConflicts 静默跳过）
-  const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  // FIX-P1-3：MemoryInspector 不再注入 advisor，sourceHealth/suggest 由 Agent 直接委托 advisor
-  // SPLIT-3 后 inspector 已回归纯存储读写，构造参数仅剩 relationStore（可选侧车）
-  const memoryInspector = new MemoryInspector(
-    pctx.index,
-    loop,
-    history,
-    relationStore ?? null,
-  );
-  // L1 语义去重：注入 backgroundProvider 到 DedupManager（可选，未注入时 deduplicateMemories 静默跳过）
-  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, input.onDedupCompleted);
-
-  // AutoConfigRefiner（模式 3：Agent 智能总结）
-  const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
-    configManager.suggestionCallback?.(suggestion),
-  );
-  autoConfigRefiner.setBackgroundProvider(backgroundProvider);
+  const { configManager, memoryAdvisor, memoryInspector, dedupManager, autoConfigRefiner } =
+    createLoopDependentComponents({
+      pctx,
+      loop,
+      history,
+      skillManager,
+      configDir,
+      backgroundProvider,
+      relationStore,
+      onDedupCompleted: input.onDedupCompleted,
+    });
 
   return {
     history,

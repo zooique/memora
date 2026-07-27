@@ -250,7 +250,7 @@ describe('Agent · config.addRule() · Q-701', () => {
 
     await agent.config!.addRule(rule);
 
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     const lastMsg = messages[messages.length - 1];
     expect(lastMsg?.role).toBe('system');
     expect(lastMsg?.content).toContain('【项目规则】测试规则');
@@ -310,7 +310,7 @@ describe('Agent · agentLoop.getMessages()', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     expect(messages.length).toBeGreaterThanOrEqual(1);
     expect(messages[0]!.role).toBe('system');
   });
@@ -319,7 +319,7 @@ describe('Agent · agentLoop.getMessages()', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const before = agent.agentLoop!.getMessages().length;
+    const before = agent.getMessageCount();
     await agent.chatSync('你好');
     const after = agent.agentLoop!.getMessages().length;
 
@@ -620,7 +620,7 @@ describe('Agent · Manager 委托模式', () => {
 
     await agent.config!.addSimpleRule('E2E 测试规则', '这是一条 E2E 测试规则');
 
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     const lastSystem = [...messages].reverse().find((m) => m.role === 'system');
     expect(lastSystem?.content).toContain('E2E 测试规则');
   });
@@ -867,7 +867,7 @@ describe('Agent · switchProject() · 切换到已注册项目', () => {
     await agent.switchProject(tmpProjectB);
 
     expect(agent.agentLoop).not.toBeNull();
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     expect(messages.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -2320,7 +2320,7 @@ describe('Agent · chat() 中断保留文本', () => {
     }
 
     // 验证 history 中最后一条 assistant 消息包含已生成文本 + [已中断] 标记
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
     expect(lastAssistant).toBeDefined();
     expect(lastAssistant!.content).toContain('你好');
@@ -2351,7 +2351,7 @@ describe('Agent · chat() 中断保留文本', () => {
     // 期望只收到 aborted chunk，不应有 text chunk
     expect(chunks.some((c) => c.type === 'text')).toBe(false);
     // 验证 history 中没有 assistant 消息（assistantContent 为空，跳过 appendAssistant）
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     const hasAssistant = messages.some((m) => m.role === 'assistant');
     expect(hasAssistant).toBe(false);
   }, 15000);
@@ -2388,7 +2388,7 @@ describe('Agent · chat() 中断保留文本', () => {
     }
 
     // 验证 history 中使用自定义中断文案，而非默认的 [已中断]
-    const messages = agent.agentLoop!.getMessages();
+    const messages = agent.getMessages();
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
     expect(lastAssistant).toBeDefined();
     expect(lastAssistant!.content).toContain('部分内容');

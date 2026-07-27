@@ -16,8 +16,20 @@
 import { logger } from '@/logging/logger.js';
 import { networkError, configError, llmError, toError } from '@/utils/errors.js';
 import { mergeAbortSignals } from '@/llm/abortSignal.js';
-// EmbeddingOptions 定义在 memory/vectorStore.ts（消费者层），符合依赖倒置原则
-import type { EmbeddingOptions } from '@/memory/vectorStore.js';
+
+/**
+ * Embedding 调用选项（跨模块共享的基础设施级类型）
+ *
+ * 定义在 llm/（提供者层），memory/vectorStore.ts（消费者层）通过
+ * import type 引入。此类型是纯调用选项（signal + timeoutMs），
+ * 无业务语义，归属提供者层更符合分层架构。
+ */
+export interface EmbeddingOptions {
+  /** 外部取消信号（用户主动取消时传入） */
+  signal?: AbortSignal;
+  /** 超时毫秒数（超时自动 abort；默认 60s，可通过此字段覆盖） */
+  timeoutMs?: number;
+}
 
 /**
  * Embedding 配置（与 OpenAICompatibleConfig 共用 baseUrl/apiKey）

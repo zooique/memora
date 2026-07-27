@@ -18,6 +18,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { configError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
+import { logger } from '@/logging/logger.js';
 
 /**
  * 默认上下文 token 数（120K）
@@ -451,8 +453,12 @@ export async function loadConfig(configPath?: string): Promise<Config> {
   try {
     const config = await readJsonFile(projectPath);
     return expandEnvVars(mergeWithDefaults(config));
-  } catch {
-    // 项目级不存在，继续尝试用户级
+  } catch (err) {
+    // 项目级不可用（不存在/损坏/权限），继续尝试用户级
+    // 排除 ENOENT（正常情况），其他错误应暴露根因供诊断
+    if (!isEnoent(err)) {
+      logger.warn({ path: projectPath, err: toError(err) }, '项目级配置加载失败，回退到用户级');
+    }
   }
 
   // 3. 用户级
@@ -460,8 +466,11 @@ export async function loadConfig(configPath?: string): Promise<Config> {
   try {
     const config = await readJsonFile(userPath);
     return expandEnvVars(mergeWithDefaults(config));
-  } catch {
-    // 用户级不存在，使用默认值（单一真理源）
+  } catch (err) {
+    // 用户级不可用，使用默认值（单一真理源）
+    if (!isEnoent(err)) {
+      logger.warn({ path: userPath, err: toError(err) }, '用户级配置加载失败，使用默认值');
+    }
   }
 
   // 4. 内置默认：parseConfig({}) 让默认值生效
@@ -470,10 +479,28 @@ export async function loadConfig(configPath?: string): Promise<Config> {
 
 /**
  * 读取并解析 JSON 文件
+ *
+ * 将 JSON.parse 的 SyntaxError 包装为 configError，
+ * 防止裸 Error 通过显式 --config 路径传播。
  */
 async function readJsonFile(path: string): Promise<unknown> {
   const content = await readFile(path, 'utf-8');
-  return JSON.parse(content);
+  try {
+    return JSON.parse(content);
+  } catch (err) {
+    throw configError(
+      `配置文件 JSON 格式错误: ${path}`,
+      toError(err).message,
+      ['检查配置文件语法（逗号、引号配对、尾随逗号）'],
+    );
+  }
+}
+
+/**
+ * 判断错误是否为 ENOENT（文件不存在）
+ */
+function isEnoent(err: unknown): boolean {
+  return err instanceof Object && 'code' in err && (err as Record<string, unknown>).code === 'ENOENT';
 }
 
 /**

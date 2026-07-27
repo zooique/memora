@@ -63,7 +63,7 @@ import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
-import type { LlmProvider } from '@/llm/provider.js';
+import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
@@ -232,21 +232,39 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 初始化 Agent：加载索引、组装内部组件
    */
   async init(projectPathOverride?: string): Promise<ProjectContext> {
-    if (this._initialized) {
-      // close() 失败不应阻塞 init() 重建
-      // 原 close() 异常（如 awaitPendingArchives 超时）会传播到 init() 调用方，
-      // 导致 Agent 处于不可用状态。此处捕获后继续重建。
-      try {
-        await this.close();
-      } catch (err) {
-        logger.warn({ err }, 'init() 中 close() 旧实例失败，继续重建');
-      }
-    }
+    await this.disposePreviousInstance();
 
     if (projectPathOverride) {
       this.#config.projectPath = projectPathOverride;
     }
 
+    const pctx = await this.initializeProject();
+    await this.assembleComponents(pctx);
+    this.pctx = pctx;
+
+    this.validateCoreComponents();
+    this.createPostInitComponents(pctx);
+    this._initialized = true;
+
+    return pctx;
+  }
+
+  /**
+   * 关闭旧实例（如果已初始化），失败不阻塞重建
+   */
+  private async disposePreviousInstance(): Promise<void> {
+    if (!this._initialized) return;
+    try {
+      await this.close();
+    } catch (err) {
+      logger.warn({ err }, 'init() 中 close() 旧实例失败，继续重建');
+    }
+  }
+
+  /**
+   * 创建 ProjectManager 并初始化项目上下文
+   */
+  private async initializeProject(): Promise<ProjectContext> {
     this.projectManager = new ProjectManager({
       dataDir: this.#config.dataDir,
       storage: this.#config.storage,
@@ -269,16 +287,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ),
     });
 
-    const pctx = await this.projectManager.initProject(
+    return this.projectManager.initProject(
       this.#config.projectPath,
       undefined,
       this.#config.configDir,
     );
+  }
 
-    await this.assembleComponents(pctx);
-
-    this.pctx = pctx;
-
+  /**
+   * 校验核心组件（loop / history）非空
+   */
+  private validateCoreComponents(): void {
     if (!this.loop || !this.history) {
       throw configError(
         'Agent 初始化失败',
@@ -290,15 +309,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ],
       );
     }
+  }
 
+  /**
+   * 创建 init() 后期组件（初始化完成后才需要的组件）
+   */
+  private createPostInitComponents(pctx: ProjectContext): void {
     // chat() 并发锁管理器（生命周期与 Agent 实例一致）
     this.chatLockManager = new ChatLockManager();
 
-    this._initialized = true;
-
     // 归档操作委托给 ArchiveCoordinator
-    // 使用 getter 回调注入依赖，close 时 null 化字段后 getter 自然返回 null
-    // FIX-P1-4：注入 getArchiveMode，三态控制集中到 ArchiveCoordinator
     this.archiveCoordinator = new ArchiveCoordinator({
       getUserProfile: () => this.#userProfile,
       getInsightExtractor: () => this.insightExtractor,
@@ -308,17 +328,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     });
 
     // 记忆衰减职责委托给 MemoryDecayScheduler
-    // L2 时效性评估：注入 backgroundProvider + index（可选，未注入时 evaluateTimeliness 静默跳过）
     this.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
       onDecayCompleted: (payload) => {
         this.emit('decayCompleted', payload);
-        // G2 自动触发 L2 时效性评估：衰减完成后 fire-and-forget 调用 evaluateTimeliness。
-        // 不 await：衰减循环不应被 LLM 调用阻塞（LLM 可能 5-15 秒）。
-        // 失败静默降级：evaluateTimeliness 内部已捕获 LLM 异常并返回降级报告。
-        // 触发频次：每小时 1 次（DECAY_INTERVAL_MS=3_600_000），无频次压力。
         void this.evaluateTimeliness().catch((err: unknown) => {
-          // 仅记录日志，不抛错（与 onDecayCompleted 回调语义一致：不阻塞衰减循环）
           logger.warn({ err }, 'L2 时效性评估自动触发失败（已降级，不影响衰减循环）');
         });
       },
@@ -326,8 +340,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       index: pctx.index,
     });
     this.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
-
-    return pctx;
   }
 
   /**
@@ -335,44 +347,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
+    this.validateChatInput(input);
 
-    if (input.length > AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH) {
-      throw configError(
-        '输入过长',
-        `输入超过最大长度限制（${AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH / 1024}KB）`,
-        ['缩短输入内容', '分多次对话发送'],
-      );
-    }
-
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('发起新对话');
-    }
-    // 获取锁 + 分配 token + 创建内部 AbortController + 启动超时定时器
-    // token 用于 finally 校验，避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
-    // assertInitialized 已保证 chatLockManager/loop/history 非 null，此处用 ! 窄化类型
-    const chatLock = this.chatLockManager!;
-    const { token: myToken, internalAbort } = chatLock.acquire(
-      AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS,
-    );
-    // 合并外部 signal：外部 abort 时也触发内部
-    const cleanupExternalSignal = chatLock.attachExternalSignal(signal, internalAbort);
-    const combinedSignal = internalAbort.signal;
+    const lockCtx = this.acquireChatLock(signal);
+    const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
     try {
       this._lastInteractionAt = new Date();
 
-      // 清理上一轮注入的临时 system 消息（recentConversation/skill/recall/truncation）
-      // 防止多轮累积：每轮 chat() 开始前，只保留 messages[0] 和非 system 消息
-      const loop = this.loop!;
-      loop.cleanTemporarySystemMessages();
-
-      // 角色自动匹配（回答前执行）：确保本轮 LLM 调用就用匹配到的角色
-      // 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）
-      // 原在 postProcess 中执行，导致本轮回答仍用旧角色，切换要到下一轮才生效
-      await this.tryAutoMatchPersona(input);
-
-      // 基元驱动召回（双通道：语义 + 关键词）
-      yield { type: 'thinking', phase: 'recalling' };
-      const recalledMemories = await this.recallAndInject(input);
+      // 上下文准备：角色匹配 → 记忆召回 → 技能注入 → 历史追加
+      const recalledMemories = yield* this.prepareChatContext(input, combinedSignal);
 
       if (combinedSignal.aborted) {
         yield {
@@ -382,89 +365,149 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      // 技能关键词/正则匹配（当轮立即注入生效，不延迟到下一轮）
-      // 与 persona 同模式：匹配 → 注入 → 本轮 LLM 调用即生效
-      yield { type: 'thinking', phase: 'processing' };
-      this.matchAndInjectSkill(input);
-
-      const history = this.history!;
-      await history.appendUser(input);
-
-      let assistantContent = '';
-      let wasAborted = false;
-      // 把 provider 异常转为 yield error chunk，让宿主能优雅展示并清理 UI
-      // （裸 throw 会导致未处理 rejection，UI 收不到错误展示机会）
-      try {
-        for await (const chunk of loop.processUserInput(
-          input,
-          recalledMemories,
-          combinedSignal,
-        )) {
-          yield chunk;
-          if (chunk.type === 'text') {
-            assistantContent += chunk.content;
-          } else if (chunk.type === 'aborted') {
-            wasAborted = true;
-          }
-        }
-      } catch (err) {
-        // aborted 已由 loop.ts 内部 yield chunk 处理，此处只捕获真正的异常
-        // （如 LLM 超时、连接断开、AbortError 未被 loop 拦截等）
-        // 转为 error chunk 通知宿主，避免裸 throw 导致 UI 卡死
-        if (isAbortError(err)) {
-          // 必须 yield aborted chunk 让宿主能展示中断标记
-          // （仅设置 wasAborted 会导致 chatHandlers catch 不触发，渲染层收不到 ABORTED）
-          yield { type: 'aborted', reason: 'User cancelled the conversation' };
-          return;
-        } else {
-          yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
-          return;
-        }
-      }
-
-      if (wasAborted) {
-        // 流式中断时仍保留已生成的部分文本到历史，避免下一轮上下文丢失
-        // 追加 interrupted 标记让下一轮 LLM 和历史归档能识别这是中断响应（非完整回复）
-        // 与下方正常路径一致采用 best-effort 写入（失败不影响中断流程）
-        if (assistantContent.trim()) {
-          const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
-          try {
-            await history.appendAssistant(assistantContent + interruptedMark);
-          } catch (err) {
-            logger.warn({ err }, '中断消息历史写入失败');
-          }
-        }
-        return;
-      }
-
-      // 追加助手消息到历史（best-effort：失败不影响用户已收到的回答）
-      try {
-        await history.appendAssistant(assistantContent);
-      } catch (err) {
-        logger.warn({ err }, '助手消息历史写入失败');
-      }
-
-      // 后处理阶段
-      yield { type: 'thinking', phase: 'archiving' };
-      await this.postProcess(input, assistantContent);
+      // LLM 流式调用 → 助手消息写历史 → 后处理
+      yield* this.executeChatLoop(input, recalledMemories, combinedSignal);
     } finally {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
-      // 若 token 已变（超时释放后被新调用者获取），跳过清理避免误清新调用者的状态
       this.chatLockManager?.release(myToken);
       cleanupExternalSignal();
-      // 补执行对话期间暂存的配置重载请求（chatLock 释放后才能执行 reloadConfig）
-      // 兑现 tools.ts createConfigHandler 中"对话结束后自动加载"的承诺
-      if (this.pendingConfigReload.size > 0) {
-        const pending = Array.from(this.pendingConfigReload);
-        this.pendingConfigReload.clear();
-        for (const src of pending) {
-          try {
-            await this.reloadConfig(src);
-            this.emit('configReloaded', { source: src });
-          } catch (err) {
-            logger.warn({ err, source: src }, '补执行配置重载失败');
-          }
+      // 补执行对话期间暂存的配置重载请求
+      await this.flushPendingConfigReload();
+    }
+  }
+
+  /**
+   * 校验 chat 输入
+   */
+  private validateChatInput(input: string): void {
+    if (input.length > AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH) {
+      throw configError(
+        '输入过长',
+        `输入超过最大长度限制（${AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH / 1024}KB）`,
+        ['缩短输入内容', '分多次对话发送'],
+      );
+    }
+  }
+
+  /**
+   * 获取对话锁 — 返回锁上下文
+   */
+  private acquireChatLock(signal?: AbortSignal) {
+    if (this.chatLockManager?.isBusy) {
+      throw chatBusyError('发起新对话');
+    }
+    const chatLock = this.chatLockManager!;
+    const { token: myToken, internalAbort } = chatLock.acquire(
+      AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS,
+    );
+    const cleanupExternalSignal = chatLock.attachExternalSignal(signal, internalAbort);
+    return { myToken, internalAbort, cleanupExternalSignal, combinedSignal: internalAbort.signal };
+  }
+
+  /**
+   * 准备对话上下文：角色匹配 → 记忆召回 → 技能注入 → 用户消息写历史
+   * @returns 召回的记忆列表（供 loop.processUserInput 注入为 system 消息）
+   */
+  private async *prepareChatContext(
+    input: string,
+    combinedSignal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, Memory[], unknown> {
+    const loop = this.requireLoop;
+    loop.cleanTemporarySystemMessages();
+
+    // 角色自动匹配（回答前执行）
+    await this.tryAutoMatchPersona(input);
+
+    // 基元驱动召回（双通道：语义 + 关键词）
+    yield { type: 'thinking', phase: 'recalling' };
+    const recalledMemories = await this.recallAndInject(input);
+
+    if (combinedSignal.aborted) return recalledMemories;
+
+    // 技能关键词/正则匹配（当轮立即注入生效）
+    yield { type: 'thinking', phase: 'processing' };
+    this.matchAndInjectSkill(input);
+
+    const history = this.requireHistory;
+    await history.appendUser(input);
+
+    return recalledMemories;
+  }
+
+  /**
+   * 执行 LLM 流式循环 → 追加助手消息 → 触发后处理
+   */
+  private async *executeChatLoop(
+    input: string,
+    recalledMemories: Memory[],
+    combinedSignal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const loop = this.requireLoop;
+    const history = this.requireHistory;
+
+    let assistantContent = '';
+    let wasAborted = false;
+
+    try {
+      for await (const chunk of loop.processUserInput(
+        input,
+        recalledMemories,
+        combinedSignal,
+      )) {
+        yield chunk;
+        if (chunk.type === 'text') {
+          assistantContent += chunk.content;
+        } else if (chunk.type === 'aborted') {
+          wasAborted = true;
         }
+      }
+    } catch (err) {
+      if (isAbortError(err)) {
+        yield { type: 'aborted', reason: 'User cancelled the conversation' };
+        return;
+      } else {
+        yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+        return;
+      }
+    }
+
+    if (wasAborted) {
+      if (assistantContent.trim()) {
+        const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
+        try {
+          await history.appendAssistant(assistantContent + interruptedMark);
+        } catch (err) {
+          logger.warn({ err }, '中断消息历史写入失败');
+        }
+      }
+      return;
+    }
+
+    // 追加助手消息到历史（best-effort）
+    try {
+      await history.appendAssistant(assistantContent);
+    } catch (err) {
+      logger.warn({ err }, '助手消息历史写入失败');
+    }
+
+    // 后处理阶段
+    yield { type: 'thinking', phase: 'archiving' };
+    await this.postProcess(input, assistantContent);
+  }
+
+  /**
+   * 补执行对话期间暂存的配置重载请求
+   */
+  private async flushPendingConfigReload(): Promise<void> {
+    if (this.pendingConfigReload.size === 0) return;
+    const pending = Array.from(this.pendingConfigReload);
+    this.pendingConfigReload.clear();
+    for (const src of pending) {
+      try {
+        await this.reloadConfig(src);
+        this.emit('configReloaded', { source: src });
+      } catch (err) {
+        logger.warn({ err, source: src }, '补执行配置重载失败');
       }
     }
   }
@@ -519,7 +562,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     let recalledMemories: Memory[] = [];
     try {
       recalledMemories = await recall(
-        this.pctx!.index,
+        this.requirePctx.index,
         input,
         {
           limit: 5,
@@ -539,14 +582,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // FIX-P1-2：boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
       // boost 是软指标（每次 +0.05，上限 1.0），写入失败仅 log 不影响 chat 流程
       const ids = recalledMemories.map((m) => m.id);
-      void boostScores(this.pctx!.index, ids).catch((err: unknown) => {
+      void boostScores(this.requirePctx.index, ids).catch((err: unknown) => {
         logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
         this.emit('boostPersistFailed', { memoryId: ids.join(','), message: toError(err).message });
       });
     }
 
     // Layer 5: 最近对话注入
-    const loop = this.loop!;
+    const loop = this.requireLoop;
     const recentHistory = loop.getRecentHistory(3);
     if (recentHistory.length > 0) {
       const msgs = this.#config.messages;
@@ -636,7 +679,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     //   - manual 模式 → 跳过 profile/insight 自动归档（用户需手动调用）
     //   - full / insights-only 模式 → 执行
     // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
-    const history = this.history!;
+    const history = this.requireHistory;
 
     // 用户画像实时归档（委托 ArchiveCoordinator，与手动归档路径统一，消除 DRY 违反）
     try {
@@ -741,8 +784,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 记录源项目路径（用于事件），切换前 pctx 可能不存在（首次初始化）
     const fromProjectPath = this.pctx?.projectPath ?? null;
 
-    this.pctx = newPctx;
-    await this.rebuildComponentsWithCurrentCtx();
+    // 先尝试重建组件，失败时回滚 pctx 防止状态不一致
+    try {
+      this.pctx = newPctx;
+      await this.rebuildComponentsWithCurrentCtx();
+    } catch (err) {
+      // 回滚：恢复旧 pctx（若存在）
+      if (fromProjectPath) {
+        logger.warn({ err: toError(err) }, 'switchProject: 组件重建失败，回滚项目上下文');
+        this.pctx = { projectPath: fromProjectPath } as ProjectContext;
+      }
+      throw err;
+    }
 
     // 发射项目切换事件（供宿主 UI 刷新项目相关界面）
     this.emit('projectSwitched', {
@@ -1191,25 +1244,40 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     const result = { skill: 0, persona: 0 };
+    const errors: Error[] = [];
 
     // 按需重载：source 缺省时全量重载，否则只重载指定类型
     const shouldReloadSkill = !source || source === 'skill';
     const shouldReloadPersona = !source || source === 'persona';
 
     if (shouldReloadSkill && this.skillManager) {
-      result.skill = await this.skillManager.reload();
-    }
-
-    if (shouldReloadPersona && this.personaManager) {
-      result.persona = await this.personaManager.reload();
-      // 角色重载后，刷新 AgentLoop 的角色前缀（使新角色内容立即注入 system prompt）
-      if (this.loop) {
-        const newPrefix = this.personaManager.buildSystemPrompt();
-        this.loop.refreshPersonaPrefix(newPrefix);
+      try {
+        result.skill = await this.skillManager.reload();
+      } catch (err) {
+        errors.push(toError(err));
+        logger.warn({ err: toError(err) }, 'reloadConfig: skillManager.reload 失败');
       }
     }
 
-    logger.info({ source, ...result }, '配置已热重载');
+    if (shouldReloadPersona && this.personaManager) {
+      try {
+        result.persona = await this.personaManager.reload();
+        // 角色重载后，刷新 AgentLoop 的角色前缀（使新角色内容立即注入 system prompt）
+        if (this.loop) {
+          const newPrefix = this.personaManager.buildSystemPrompt();
+          this.loop.refreshPersonaPrefix(newPrefix);
+        }
+      } catch (err) {
+        errors.push(toError(err));
+        logger.warn({ err: toError(err) }, 'reloadConfig: personaManager.reload 失败');
+      }
+    }
+
+    if (errors.length > 0) {
+      logger.warn({ source, ...result, errorCount: errors.length }, '配置热重载部分失败');
+    } else {
+      logger.info({ source, ...result }, '配置已热重载');
+    }
     return result;
   }
 
@@ -1261,6 +1329,31 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
   }
 
+  /**
+   * 断言 getter：获取 loop，若 null 则抛出明确错误
+   * 替代 `this.loop!` 非空断言，提供更好的重构安全性
+   */
+  private get requireLoop(): AgentLoop {
+    if (!this.loop) throw configError('AgentLoop 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    return this.loop;
+  }
+
+  /**
+   * 断言 getter：获取 history，若 null 则抛出明确错误
+   */
+  private get requireHistory(): MessageHistory {
+    if (!this.history) throw configError('MessageHistory 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    return this.history;
+  }
+
+  /**
+   * 断言 getter：获取 pctx，若 null 则抛出明确错误
+   */
+  private get requirePctx(): ProjectContext {
+    if (!this.pctx) throw configError('ProjectContext 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    return this.pctx;
+  }
+
   // ─── 记忆生命周期 ───────────────────────────────────────
 
   // ─── runMemoryDecay 已迁移至 MemoryDecayScheduler.runOnce ─────
@@ -1280,12 +1373,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 防止 close 后 LLM 回调 upsert 已关闭的 storage
     if (this.memoryDecayScheduler) {
       this.memoryDecayScheduler.stop();
-      await this.memoryDecayScheduler.awaitInflight();
+      try {
+        await this.memoryDecayScheduler.awaitInflight();
+      } catch (err) {
+        logger.warn({ err: toError(err) }, 'close: memoryDecayScheduler.awaitInflight 失败');
+      }
       this.memoryDecayScheduler = null;
     }
     // FIX-P0-1：等待 WorkProjection 的 inflight LLM 生成完成，防止 close 后 upsert 已关闭的 storage
     if (this.workProjection) {
-      await this.workProjection.awaitInflight();
+      try {
+        await this.workProjection.awaitInflight();
+      } catch (err) {
+        logger.warn({ err: toError(err) }, 'close: workProjection.awaitInflight 失败');
+      }
     }
     // 清理 ArchiveCoordinator（无定时器，只需释放引用）
     this.archiveCoordinator = null;
@@ -1298,13 +1399,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 顺序敏感：若先 removeAllListeners，fire-and-forget 的归档 Promise 在 await 期间
     // reject 时 emit 会变成 no-op（listeners 已清空），archiveFailed 事件丢失
     if (this.history) {
-      await this.history.awaitPendingArchives(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
+      try {
+        await this.history.awaitPendingArchives(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
+      } catch (err) {
+        logger.warn({ err: toError(err) }, 'close: awaitPendingArchives 失败');
+      }
     }
     // pending archives 完成后再移除监听器，确保归档失败的 emit 能送达
     this.removeAllListeners();
 
     if (this.projectManager) {
-      await this.projectManager.shutdown();
+      try {
+        await this.projectManager.shutdown();
+      } catch (err) {
+        logger.warn({ err: toError(err) }, 'close: projectManager.shutdown 失败');
+      }
     }
     this._initialized = false;
     this.nullifyAllComponents();
@@ -1355,8 +1464,32 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.pctx;
   }
 
+  /**
+   * @deprecated 直接暴露 AgentLoop 破坏封装，将在下一主版本移除。
+   * 使用 getMessages() / getMessageCount() 等有界接口替代。
+   */
   get agentLoop(): AgentLoop | null {
     return this.loop;
+  }
+
+  /**
+   * 获取当前消息列表（只读副本，不可绕过 Agent 编排链路直接修改）
+   */
+  getMessages(): readonly Message[] {
+    return this.loop?.getMessages() ?? [];
+  }
+
+  /** 获取当前消息数量 */
+  getMessageCount(): number {
+    return this.loop?.getMessages().length ?? 0;
+  }
+
+  /**
+   * @deprecated 直接暴露 MessageHistory 破坏封装，将在下一主版本移除。
+   * 使用 Agent 的对话管理方法（chat/chatSync/forkSession）替代直接操作。
+   */
+  get agentHistory(): MessageHistory | null {
+    return this.history;
   }
 
   /**
@@ -1369,10 +1502,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   injectAffect(affectString: string): void {
     this.loop?.injectAffect(affectString);
-  }
-
-  get agentHistory(): MessageHistory | null {
-    return this.history;
   }
 
   get provider(): LlmProvider {

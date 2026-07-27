@@ -25,22 +25,7 @@ import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { cosineSimilarity } from '@/utils/math.js';
-
-/**
- * Embedding 调用选项（韧性补齐）
- *
- * 与 ChatOptions.signal/timeoutMs 同构，支持外部取消 + 超时中断。
- * 宿主在用户取消对话时传入 AbortSignal，或设置 timeoutMs 覆盖默认超时。
- *
- * 类型归属：定义在 memory/（消费者），llm/embedding.ts（提供者）通过
- * import type 引入，符合依赖倒置原则（消费者定义接口，提供者实现接口）。
- */
-export interface EmbeddingOptions {
-  /** 外部取消信号（用户主动取消时传入） */
-  signal?: AbortSignal;
-  /** 超时毫秒数（超时自动 abort；默认 60s，可通过此字段覆盖） */
-  timeoutMs?: number;
-}
+import type { EmbeddingOptions } from '@/llm/embedding.js';
 
 /**
  * 嵌入服务接口

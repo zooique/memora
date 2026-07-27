@@ -1,55 +1,48 @@
 /**
- * 技能管理器 — 单层目录扫描 + 关键词匹配
+ * 技能管理器 — 继承 ConfigResourceManager，扩展 trigger 正则匹配 + 运行时注册
  *
  * 职责：
  *   - 启动时扫描 configDir/skills/ 目录
- *   - 通过关键词匹配选择技能
- *   - 后期触发条件（≥15个技能 / 关键词命中率 <80%）→ 切换为 LLM 自主选择
+ *   - 通过关键词匹配 + trigger 正则选择技能
+ *   - 支持运行时 register() 注入技能
  *
  * 设计原则：
  *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
- *   - 与 PersonaManager 一致：文件加载 → 内存缓存（纯文件+内存，不依赖 SQLite 索引）
+ *   - 与 PersonaManager 共享 ConfigResourceManager 基类（消除重复扫描/匹配/生命周期）
  *
  * 触发词说明：
  *   每个 skill 文件的 frontmatter 声明 keywords（逗号分隔）和 trigger（触发正则，可选）。
- *   skill 文件命名规范：`<技能名>.md`（如"去AI味.md""审视角.md""写代码.md"���。
+ *   skill 文件命名规范：`<技能名>.md`（如"去AI味.md""审视角.md""写代码.md"）。
  */
-import { scoreByKeywords } from '@/utils/segmenter.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
+import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillMatch } from '@/skill/types.js';
-import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
+import { parseTrigger, parseKeywords } from '@/utils/scanner.js';
+import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 
 /**
  * 技能匹配最低激活阈值
  *
  * score < 此阈值的匹配不激活技能（避免低匹配度噪音）。
- *
- * 作为唯一真理源：宿主 ipcListeners.handleSkillMatched 不再二次过滤分数——
- * 凡被此阈值放行的 skillMatched 事件均会弹 toast 让用户感知，
- * 避免"激活但不提示"的静默激活误导。
- *
- * 阈值取 0.3 的依据：
- * - 3 关键词技能命中 1 个 → 0.33 ≥ 0.3 → 激活（避免单关键词命中的技能被误判为噪音）
- * - 分母上限 KEYWORD_SCORE_DENOMINATOR_MAX = 3，关键词多的技能不会因总量大而被惩罚
- * - 与 PersonaManager 的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.3) 一致：
- *   两者均为 0.3，因为关键词匹配是一套共享的评分算法（segmenter.scoreByKeywords）
+ * 与 PersonaManager 的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.3) 一致。
  */
 const SKILL_MATCH_MIN_SCORE = 0.3;
 
 /**
  * 技能管理器
  */
-export class SkillManager {
-  /** 技能列表缓存（启动时扫描一次） */
-  private skills: SkillEntry[] = [];
-
+export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
    * @param configDir 配置目录（技能文件在 <configDir>/skills/ 下）
    */
-  constructor(
-    private readonly configDir?: string,
-  ) {}
+  constructor(configDir?: string) {
+    super(configDir, 'skills');
+  }
+
+  // ── 生命周期 ──────────────────────────────────────
+
+  // ── 生命周期 ──────────────────────────────────────
 
   /**
    * 启动时加载：扫描技能目录
@@ -57,13 +50,7 @@ export class SkillManager {
    * @returns 加载的技能数量
    */
   async load(): Promise<number> {
-    this.skills = await this.scanSkills();
-    logger.info(
-      { count: this.skills.length, names: this.skills.map((s) => s.name) },
-      '技能加载完成',
-    );
-
-    return this.skills.length;
+    return this.loadItems();
   }
 
   /**
@@ -71,179 +58,85 @@ export class SkillManager {
    *
    * 匹配流程：
    *   1. 先检查所有 trigger 正则，命中直接返回（最高优先级，score=1.0）
-   *   2. 再检查关键词匹配（TF 计分，得分排序）
-   *   3. 关键词得分 < SKILL_MATCH_MIN_SCORE 的匹配不激活（避免低匹配度噪音）
-   *   4. 若匹配多项但得分相同 → 取第一个
-   *   5. 无任何匹配 → 返回 null
-   *
-   * 阈值一致性：本方法的最低激活阈值与 ipcListeners.handleSkillMatched 的 toast 阈值
-   * 均使用 SKILL_MATCH_MIN_SCORE（0.3），确保"凡激活即提示"，避免静默激活误导用户。
+   *   2. 再检查关键词匹配（复用基类 findBestKeywordMatch）
+   *   3. 关键词得分 < SKILL_MATCH_MIN_SCORE 的匹配不激活
    *
    * @param userInput 用户输入文本
    * @returns 匹配结果，无匹配返回 null
    */
   match(userInput: string): SkillMatch | null {
-    if (this.skills.length === 0) return null;
+    if (this.items.length === 0) return null;
 
     // 1. trigger 正则匹配（最高优先级）
-    for (const skill of this.skills) {
+    for (const skill of this.items) {
       if (skill.trigger?.test(userInput)) {
         logger.debug({ skill: skill.name, trigger: skill.trigger.source }, '技能触发器匹配');
         return { skill, score: 1.0 };
       }
     }
 
-    const matches: SkillMatch[] = [];
-
-    for (const skill of this.skills) {
-      if (skill.keywords.length === 0) continue;
-
-      const score = scoreByKeywords(userInput, skill.keywords);
-      // 低于最低激活阈值的匹配不纳入候选（避免低匹配度技能被激活）
-      if (score >= SKILL_MATCH_MIN_SCORE) {
-        matches.push({ skill, score });
-      }
-    }
-
-    if (matches.length === 0) return null;
-
-    // 得分从高到低排序；同分时 name 字母序保证确定性
-    matches.sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name));
-    const best = matches[0];
+    // 2. 关键词匹配（委托基类）
+    const best = this.findBestKeywordMatch(userInput, SKILL_MATCH_MIN_SCORE);
     if (!best) return null;
-    logger.debug({ matched: best.skill.name, score: best.score }, '技能关键词匹配');
-    return best;
+    logger.debug({ matched: best.item.name, score: best.score }, '技能关键词匹配');
+    return { skill: best.item, score: best.score };
   }
+
+  // ── 公共方法 ──────────────────────────────────────
 
   /**
    * 根据技能名获取技能
-   *
-   * @param name 技能名
-   * @returns 技能条目，不存在返回 null
    */
   get(name: string): SkillEntry | null {
-    return this.skills.find((s) => s.name === name) ?? null;
+    return this.items.find((s) => s.name === name) ?? null;
   }
 
   /**
-   * 获取所有技能列表
+   * 删除技能（向后兼容别名，委托基类 deleteItem）
    */
-  get list(): SkillEntry[] {
-    return this.skills;
+  deleteSkill(name: string): boolean {
+    return this.deleteItem(name);
   }
 
   /**
    * 注册运行时注入的技能
    *
    * 供 Agent.addSkill() 调用：宿主程序可在 init() 之后动态注入技能。
-   * 重复注册同名技能会被拒绝（与文件加载的技能冲突时也按"先到先得"判断）。
-   *
-   * @param skill 技能条目
-   * @throws 技能名已存在时抛错
+   * 重复注册同名技能会被拒绝。
    */
   register(skill: SkillEntry): void {
-    if (this.skills.some((s) => s.name === skill.name)) {
+    if (this.items.some((s) => s.name === skill.name)) {
       throw configError(
         `技能 "${skill.name}" 已存在，不能重复注册`,
         undefined,
         ['请使用不同的技能名称'],
       );
     }
-    this.skills.push(skill);
+    this.items.push(skill);
     logger.info({ name: skill.name, keywords: skill.keywords.length }, '技能已注册（运行时注入）');
   }
 
   /**
-   * 重载技能：清空内存缓存 + 重新扫描目录 + 同步 SQLite 索引
-   *
-   * 事件驱动重载：installSkill 写入文件后或用户手动编辑 skills/ 目录后，
-   * 调用此方法使当前会话立即生效，无需重启 Agent。
-   *
-   * 与 load() 的区别：
-   * - load() → 启动时首次加载（冷启动）
-   * - reload() → 运行时增量重载（热更新），保留运行时 register() 注入的技能会被覆盖
-   *
-   * @returns 重载后的技能数量
-   */
-  async reload(): Promise<number> {
-    const oldCount = this.skills.length;
-    this.skills = await this.scanSkills();
-    logger.info(
-      { oldCount, newCount: this.skills.length, names: this.skills.map((s) => s.name) },
-      '技能已重载',
-    );
-    return this.skills.length;
-  }
-
-  /**
-   * 删除技能（设定面板调用）
-   *
-   * 从内存缓存中移除指定技能。SQLite 索引的软删除由 ConfigManager.deleteSkill 统一处理，
-   * 本方法只管内存缓存，避免职责重叠。
-   *
-   * 文件层删除由宿主层 configFileManager 处理（本方法不操作文件）。
-   * 不存在时为 no-op（设定面板删除文件后内存可能已无对应条目）。
-   *
-   * @param name 技能名
-   * @returns true 删除成功；false 技能不存在
-   */
-  deleteSkill(name: string): boolean {
-    const idx = this.skills.findIndex((s) => s.name === name);
-    if (idx < 0) {
-      logger.warn({ name }, '内存缓存中未找到技能，跳过删除');
-      return false;
-    }
-    this.skills.splice(idx, 1);
-    logger.info({ name, remaining: this.skills.length }, '技能已从内存缓存删除');
-    return true;
-  }
-
-  /**
    * 构建 system prompt 中的技能段
-   *
-   * 格式：
-   *   【当前技能】技能名
-   *   技能 prompt 正文...
-   *
-   * @param name 技能名（可选，不传返回空）
    */
   buildSystemPrompt(name?: string): string {
     if (!name) return '';
     const skill = this.get(name);
     if (!skill) return '';
-
     return `【当前技能】${skill.name}\n${skill.content}`;
   }
 
-  // ── 私有方法 ──────────────────────────────────────
+  // ── 基类抽象方法实现 ──────────────────────────────
 
-  /**
-   * 扫描 configDir/skills/ 目录
-   *
-   * 宿主负责将全局+项目级技能汇总到 configDir，
-   * 内核只扫描一个目录，不做路径假设。
-   */
-  private async scanSkills(): Promise<SkillEntry[]> {
-    const map = new Map<string, SkillEntry>();
-
-    const skillsDir = resolveSubdir(this.configDir, 'skills');
-    if (skillsDir) {
-      const entries = await scanMarkdownDir(skillsDir);
-      for (const entry of entries) {
-        const skill: SkillEntry = {
-          name: entry.name,
-          keywords: parseKeywords(entry.frontmatter),
-          trigger: parseTrigger(entry.frontmatter),
-          description: entry.frontmatter['description'],
-          content: entry.body.trim(),
-          filePath: entry.filePath,
-          layer: 'project',
-        };
-        map.set(entry.name, skill);
-      }
-    }
-
-    return Array.from(map.values());
+  protected createEntry(entry: ScannedMarkdownEntry): SkillEntry {
+    return {
+      name: entry.name,
+      keywords: parseKeywords(entry.frontmatter),
+      trigger: parseTrigger(entry.frontmatter),
+      description: entry.frontmatter['description'],
+      content: entry.body.trim(),
+      filePath: entry.filePath,
+      layer: 'project',
+    };
   }
-
 }

@@ -189,13 +189,13 @@ export class DedupManager {
       try {
         const verdict = await this.judgeDuplicate(pair, signal);
         if (verdict.isDuplicate) {
-          // 降级低分记忆（b 的 score ≤ a 的 score，因 candidates 已按 score 降序）
-          this.demoteMemory(pair.b);
-          demotedIds.push(pair.b.id);
-          // 合并内容写回保留方 a（M6 修复：旧实现生成 mergedContent 却从不落库，合并实为死代码）
+          // 先写合并内容再降级 b：确保合并写入失败时不破坏 b 的原始状态（原子性）
           if (verdict.mergedContent) {
             this.keepMerged(pair.a, verdict.mergedContent);
           }
+          // 降级低分记忆（b 的 score ≤ a 的 score，因 candidates 已按 score 降序）
+          this.demoteMemory(pair.b);
+          demotedIds.push(pair.b.id);
           // 收集审计详情（供 UI 展示"为什么降级"和"合并后保留了什么"）
           verdicts.push({
             demotedId: pair.b.id,

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memora 全量代码质量审查报告 — 2026-07-27</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card-bg: #ffffff;
+    --text: #1a1a2e;
+    --text-2: #555;
+    --border: #e0e0e0;
+    --accent: #2563eb;
+    --accent-10: #eff6ff;
+    --red: #dc2626;
+    --red-10: #fef2f2;
+    --amber: #d97706;
+    --amber-10: #fffbeb;
+    --green: #16a34a;
+    --green-10: #f0fdf4;
+    --space-2: 4px;
+    --space-3: 8px;
+    --space-4: 12px;
+    --space-5: 16px;
+    --space-6: 20px;
+    --space-8: 28px;
+    --space-10: 36px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7;
+    max-width: 1100px; margin: 0 auto; padding: var(--space-8) var(--space-6);
+  }
+  h1 { font-size: 1.8rem; margin-bottom: var(--space-2); color: var(--accent); }
+  h2 { font-size: 1.35rem; margin: var(--space-10) 0 var(--space-5); padding-bottom: var(--space-3); border-bottom: 2px solid var(--accent-10); }
+  h3 { font-size: 1.1rem; margin: var(--space-6) 0 var(--space-4); color: var(--text); }
+  .meta { color: var(--text-2); font-size: 0.9rem; margin-bottom: var(--space-8); }
+  .score-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: var(--space-5); margin: var(--space-6) 0; }
+  .score-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-6); text-align: center; }
+  .score-card .label { font-size: 0.85rem; color: var(--text-2); margin-bottom: var(--space-3); }
+  .score-card .value { font-size: 2.2rem; font-weight: 700; }
+  .score-card .sub { font-size: 0.8rem; color: var(--text-2); margin-top: var(--space-2); }
+  .issue { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-6); margin-bottom: var(--space-5); }
+  .issue.p0 { border-left: 4px solid var(--red); }
+  .issue.p1 { border-left: 4px solid var(--amber); }
+  .issue.p2 { border-left: 4px solid var(--accent); }
+  .issue-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4); }
+  .issue-title { font-weight: 600; font-size: 1.05rem; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .badge.p0 { background: var(--red-10); color: var(--red); }
+  .badge.p1 { background: var(--amber-10); color: var(--amber); }
+  .badge.p2 { background: var(--accent-10); color: var(--accent); }
+  .rule-ref { font-size: 0.8rem; color: var(--text-2); margin-top: var(--space-2); }
+  .rule-ref code { background: var(--accent-10); padding: 1px 6px; border-radius: 3px; font-size: 0.8rem; }
+  .detail { margin-top: var(--space-4); }
+  .detail dt { font-weight: 600; margin-bottom: var(--space-2); }
+  .detail dd { margin-bottom: var(--space-4); color: var(--text-2); }
+  .detail dd:last-child { margin-bottom: 0; }
+  .suggestion { background: var(--green-10); border-left: 3px solid var(--green); padding: var(--space-4); margin-top: var(--space-4); border-radius: 0 4px 4px 0; }
+  .suggestion::before { content: '改进建议：'; font-weight: 600; }
+  .strength-list { list-style: none; }
+  .strength-list li { padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+  .strength-list li:last-child { border: none; }
+  .strength-list li::before { content: '✅ '; }
+  .summary-box { background: var(--accent-10); border: 1px solid var(--accent); border-radius: 8px; padding: var(--space-6); margin: var(--space-6) 0; }
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: var(--space-4); margin: var(--space-5) 0; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 1.6rem; font-weight: 700; color: var(--accent); }
+  .stat .lbl { font-size: 0.8rem; color: var(--text-2); }
+  table { width: 100%; border-collapse: collapse; margin: var(--space-4) 0; }
+  th, td { text-align: left; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  th { background: var(--accent-10); font-weight: 600; }
+  .location { font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.85rem; background: #f0f0f0; padding: 1px 6px; border-radius: 3px; }
+  .toc { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-6); margin-bottom: var(--space-8); }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ol { margin-left: var(--space-6); }
+  .toc li { margin: var(--space-2) 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: var(--space-10) 0; }
+</style>
+</head>
+<body>
+
+<h1>🪞 Memora 全量代码质量审查报告</h1>
+<div class="meta">
+  审查标准：<code>.trae/rules/programmer-mindset-rules.md</code>（资深程序员心智模型）<br>
+  审查日期：2026-07-27 &nbsp;|&nbsp; 审查方法：第一性原理 + 对抗式审查<br>
+  审查范围：<code>src/</code> 全量 148 个 TypeScript 文件（含测试）
+</div>
+
+<!-- TOC -->
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#summary">整体质量评估</a></li>
+    <li><a href="#code-quality">代码质量审查</a></li>
+    <li><a href="#design-quality">设计质量审查</a></li>
+    <li><a href="#logic-quality">逻辑设计质量审查</a></li>
+    <li><a href="#arch-quality">架构质量审查</a></li>
+    <li><a href="#strengths">核心优势</a></li>
+    <li><a href="#action-items">优先级改进清单</a></li>
+  </ol>
+</div>
+
+<!-- ======================== SECTION 1: SUMMARY ======================== -->
+<h2 id="summary">一、整体质量评估</h2>
+
+<div class="score-grid">
+  <div class="score-card">
+    <div class="label">代码质量</div>
+    <div class="value" style="color:var(--green)">8.5</div>
+    <div class="sub">/ 10</div>
+  </div>
+  <div class="score-card">
+    <div class="label">设计质量</div>
+    <div class="value" style="color:var(--amber)">7.5</div>
+    <div class="sub">/ 10</div>
+  </div>
+  <div class="score-card">
+    <div class="label">逻辑设计质量</div>
+    <div class="value" style="color:var(--green)">8.0</div>
+    <div class="sub">/ 10</div>
+  </div>
+  <div class="score-card">
+    <div class="label">架构质量</div>
+    <div class="value" style="color:var(--green)">9.0</div>
+    <div class="sub">/ 10</div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="num">7</div><div class="lbl">P0 关键问题</div></div>
+  <div class="stat"><div class="num">8</div><div class="lbl">P1 重要问题</div></div>
+  <div class="stat"><div class="num">6</div><div class="lbl">P2 改进建议</div></div>
+</div>
+
+<div class="summary-box">
+  <strong>综合评估：</strong>Memora 是一个 <strong>工程质量优秀</strong> 的开源项目。架构设计清晰（三层单向依赖、Provider 注入模式、万物皆记忆统一模型），命名规范严格一致（零 <code>any</code>、零死代码、零 TODO 遗留），测试基础设施扎实（67 个测试文件，覆盖率 91%+），文档体系完整（30 篇 ADR + CHANGELOG + API 参考）。<br><br>
+  主要改进空间集中在 <strong>agent.ts 的 God Object 残余</strong>（1691 行 / 45 个公开 API 入口）、部分方法的<strong>错误处理缺口</strong>（6 个公开方法缺 try/catch）、以及 config loader 的<strong>静默错误吞没</strong>。这些问题不构成架构性风险，但累积后会影响长期可维护性。
+</div>
+
+<!-- ======================== SECTION 2: CODE QUALITY ======================== -->
+<h2 id="code-quality">二、代码质量审查</h2>
+
+<div class="issue p0">
+  <div class="issue-header">
+    <span class="issue-title">1. chat() 方法过长且混合多层抽象（135 行）</span>
+    <span class="badge p0">P0</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.3 逻辑通顺再动手 — DON'T 不要在逻辑不通时开始写代码</code>、
+    <code>§1.3 每多一层抽象就多一个故障点</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/agent.ts</span> L336-470</dd>
+    <dt>问题描述</dt>
+    <dd>
+      <code>chat()</code> 方法在 135 行内混合了 13 个不同抽象层级：输入验证 (L339)、并发控制 (L347)、时间戳记录 (L361)、角色匹配 (L371)、记忆召回 (L374)、AbortSignal 检查 (L377)、技能注入 (L388)、历史追加 (L390)、LLM 流处理 (L393)、中断处理 (L425)、助手消息追加 (L441)、后处理 (L448)、锁释放 (L450)。低层操作（锁获取）与高层编排（角色匹配）处于同一方法体中。
+    </dd>
+    <dt>第一性原理分析</dt>
+    <dd>
+      方法的核心逻辑可以归纳为：「校验输入 → 准备上下文 → 调用 LLM → 后处理」。但当前实现把每一步的内部细节全部展开在同一层，违反了"逻辑先行、代码后行"的原则——代码不是逻辑的翻译，而是逻辑的展开堆砌。按心智模型 §1.2「方案复杂度应与问题本质匹配」：chat() 的问题本质是 4 步编排，但实现复杂度膨胀到了 135 行。
+    </dd>
+    <div class="suggestion">
+      拆分为 <code>validateChatInput()</code> + <code>prepareChatContext()</code> + <code>executeChatLoop()</code> + <code>postProcess()</code> 四个方法，每个方法 ≤30 行。<br>
+      L347-359 的锁获取/释放逻辑可内化到 ChatLockManager 内部（让 Manager 承担自己的复杂度）。<br>
+      L374-391 的召回+技能+历史追加可提取为 <code>prepareChatPipeline()</code>。
+    </div>
+  </div>
+</div>
+
+<div class="issue p0">
+  <div class="issue-header">
+    <span class="issue-title">2. init() 方法过长（98 行），应拆分为子方法</span>
+    <span class="badge p0">P0</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.1 逻辑先行，代码后行 — DO 先画逻辑链，再写代码</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/agent.ts</span> L234-331</dd>
+    <dt>问题描述</dt>
+    <dd>
+      <code>init()</code> 混合了旧实例清理、ProjectManager 创建、项目初始化、组件组装、校验、LockManager 创建、ArchiveCoordinator 创建、DecayScheduler 创建共 8 个职责。逻辑链虽然正确，但全展平在一个方法中，可读性下降。
+    </dd>
+    <div class="suggestion">
+      拆分为 <code>disposePreviousInstance()</code>、<code>initializeProject()</code>、<code>createPostInitComponents()</code> 三个子方法。每个子方法 ≤30 行。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">3. 多个公开方法缺少 try/catch 错误处理</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.3 边界条件前置思考 — 「错误状态怎么处理？」</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd>
+      <span class="location">src/agent/agent.ts</span> L692 (chatSync)、L708 (forkSession)、L719 (switchProject)、L1091-1146 (archiveXxx ×3)、L1166 (reloadConfig)、L1224 (rebuildComponents)
+    </dd>
+    <dt>问题描述</dt>
+    <dd>
+      共 8 个公开方法没有 try/catch 包裹核心逻辑。以 <code>reloadConfig()</code> 为例：如果 <code>skillManager.reload()</code> (L1200) 抛异常，<code>personaManager.reload()</code> (L1204) 永远不会执行，导致配置重载半途失败、状态不一致。同样，<code>close()</code> (L1273) 中 <code>memoryDecayScheduler.awaitInflight()</code> (L1283) 如果抛异常，后续的 <code>projectManager.shutdown()</code> (L1307) 直接被跳过。
+    </dd>
+    <div class="suggestion">
+      对每个公开方法增加 try/catch 包裹，失败时至少记录 warn 日志。<br>
+      <code>close()</code> 的子步骤应逐条包裹 try/catch（类似 <code>writePurgeExpired</code> 中逐条容错的做法）。<br>
+      <code>reloadConfig()</code> 应使用"全部尝试、收集所有错误、最后汇总报告"模式。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">4. 过度使用 <code>!</code> 非空断言（15+ 处）</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§1.1 怀疑前提 — 「修补能解决这一次，但前提错了，问题会无限回归」</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd>
+      <span class="location">src/agent/agent.ts</span> L353 (<code>chatLockManager!</code>)、L365 (<code>loop!</code>)、L390 (<code>history!</code>)、L521 (<code>pctx!.index</code>)、L710、L727、L1093、L1119、L1145 等
+    </dd>
+    <dt>问题描述</dt>
+    <dd>
+      非空断言 <code>!</code> 的语义是「我比编译器聪明」，但这是脆弱的契约——如果 <code>assertInitialized</code> 被绕过（比如在 init 完成之前调用某个方法），类型系统不会报警，运行期直接 NPE 崩溃。虽然当前全部由 <code>assertInitialized</code> 隐式保证，但对重构不友好——任何改变初始化顺序的重构都可能引入隐式 bug。
+    </dd>
+    <div class="suggestion">
+      优先使用「提前返回 + 类型窄化」模式替代非空断言。例如：<br>
+      <code>const lock = this.chatLockManager; if (!lock) throw new Error(...);</code><br>
+      对高频使用的字段（loop/history/pctx），可引入 <code>private get loop(): AgentLoop { ... }</code> 的断言 getter。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">5. 事件名使用字符串字面量而非常量引用（17 处）</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.2 借力生长 — DON'T 不要忽视现有约束</code>（项目中已定义了 <code>AGENT_EVENT_NAMES</code> 常量集）
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/agent.ts</span> L315, L463, L538, L544, L591, L650, L667, L748, L777, L780, L783, L786, L808, L899, L954, L1029, L1042</dd>
+    <dt>问题描述</dt>
+    <dd>
+      项目中已在 L76-83 定义了 <code>AGENT_EVENT_NAMES</code> 白名单常量对象，但 17 处 <code>this.emit(...)</code> 调用全部使用同名字符串字面量。字符串拼写错误（如 <code>'personaSwtched'</code>）不会产生编译期错误，与白名单不一致也不会被检测到。
+    </dd>
+    <div class="suggestion">
+      将 <code>AGENT_EVENT_NAMES</code> 改为字符串枚举或字面量联合类型，强制 <code>emit()</code> 接受类型约束的事件名。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">6. 魔数未提取为命名常量</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.3 逻辑通顺再动手 — DO 用一句话说清核心逻辑</code>（魔数阻碍逻辑理解）
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd>
+      <span class="location">src/agent/agent.ts</span> L525 (<code>limit: 5</code>)、L550 (<code>getRecentHistory(3)</code>)、
+      <span class="location">src/agent/agent.ts</span> L206 (<code>'~/.memora'</code>)
+    </dd>
+    <dt>问题描述</dt>
+    <dd>
+      召回数量上限 <code>5</code>、最近对话轮数 <code>3</code>、默认数据目录 <code>'~/.memora'</code> 散布在方法体中。修改这些值时需要全量搜索，且没有语义说明为什么是 5 而不是 10。
+    </dd>
+    <div class="suggestion">
+      在 <code>AGENT_CONSTANTS</code> 中增加 <code>DEFAULT_RECALL_LIMIT = 5</code>、<code>DEFAULT_RECENT_HISTORY_ROUNDS = 3</code>、<code>DEFAULT_DATA_DIR = '~/.memora'</code>。
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 3: DESIGN QUALITY ======================== -->
+<h2 id="design-quality">三、设计质量审查</h2>
+
+<div class="issue p0">
+  <div class="issue-header">
+    <span class="issue-title">7. Agent 类是 God Object 残余（45 个公开 API 入口）</span>
+    <span class="badge p0">P0</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§1.2 向源头追溯 — 「终极方案的特征是：调用链路最短、参与方最少」</code>、
+    <code>§2.2 借力生长 — DO 新逻辑要"嫁接"而非"并列"</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/agent.ts</span> 全局（1691 行 / 26 个公开方法 + 19 个 getter）</dd>
+    <dt>问题描述</dt>
+    <dd>
+      虽然 ADR-010 已完成 God Object 拆分（2026-06-12），将职责委托给 12 个专职 Manager，但 Agent 类仍然暴露了 45 个公开 API 入口（26 方法 + 19 getter），涵盖~11 种不同的职责领域：生命周期、对话流、锁管理、记忆治理三层、手动归档、角色管理、Provider 管理、配置热重载、指标收集、情感注入、组件重建。<br><br>
+      按心智模型 §1.2「每问一次能否去掉中间一层，方案就往根因逼近一步」：L1~L3 记忆治理方法（deduplicateMemories / evaluateTimeliness / detectConflicts / sourceHealth / suggest / runMemoryDecayOnce）共 6 个方法，都可以收敛为通过 MemoryGovernance 门面暴露，减少 Agent 的直接耦合。
+    </dd>
+    <div class="suggestion">
+      短期：引入 <code>MemoryGovernanceFacade</code> 接口，将 L0/L1/L2/L3 治理操作收敛为单一入口（<code>agent.governance.runDecay()</code> / <code>agent.governance.detectConflicts()</code> 等）。<br>
+      中期：将手动归档 3 个方法收敛到 <code>ArchiveFacade</code>。<br>
+      长期：考虑将 Agent 的公开 API 减少到 ~20 个（核心对话 + 生命周期 + 门面 getter）。
+    </div>
+  </div>
+</div>
+
+<div class="issue p0">
+  <div class="issue-header">
+    <span class="issue-title">8. agentLoop 和 agentHistory getter 破坏封装</span>
+    <span class="badge p0">P0</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.1 从 UI 出发，但不以 UI 为终点 — 逻辑被 UI 绑架的标志</code>（类比：内部组件被外部直接操控）
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/agent.ts</span> L1358 (<code>get agentLoop()</code>)、L1374 (<code>get agentHistory()</code>)</dd>
+    <dt>问题描述</dt>
+    <dd>
+      这两个 getter 直接暴露了 Agent 最核心的两个内部组件（AgentLoop 和 MessageHistory）的完整实例。调用方可以绕过 Agent 的所有编排逻辑（输入验证、角色匹配、召回注入、护栏检查、后处理）直接操控循环和消息历史。这是封装失败的根本性问题——如果调用方需要访问这些组件，应该通过 Agent 提供的有界接口而非裸暴露。
+    </dd>
+    <div class="suggestion">
+      标记为 <code>@deprecated</code> 并引导调用方使用 Agent 的高层方法。<br>
+      如果确实需要暴露部分能力（如获取最近对话），提供只读的 <code>getRecentMessages(n: number)</code> 等有界接口。<br>
+      在下一次主版本中移除此二 getter。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">9. assembleComponents() 工厂函数过长（164 行）</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.1 逻辑先行，代码后行 — DO 先画逻辑链，再写代码</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/assembler.ts</span> L123-286</dd>
+    <dt>问题描述</dt>
+    <dd>
+      组合根工厂本身是一个好的设计模式（显式声明依赖图 + 构造顺序），但 164 行的实现太长。Phase 3 (AgentLoop 组装，L174-231) 和 Phase 4 (Loop 依赖组件，L233-286) 各占 50+ 行，可独立提取。
+    </dd>
+    <div class="suggestion">
+      提取 <code>createAgentLoop()</code> 和 <code>createLoopDependentComponents()</code> 两个子工厂函数。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">10. skillManager 与 personaManager 结构高度相似</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.2 借力生长 — DO 新逻辑要"嫁接"而非"并列"</code>、
+    <code>§2.2 技术债务的阈值判断</code>（两个使用场景 + 未来大概率扩展 = 应抽象）
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd>
+      <span class="location">src/skill/skillManager.ts</span> 和 <span class="location">src/persona/personaManager.ts</span>
+    </dd>
+    <dt>问题描述</dt>
+    <dd>
+      两者共享相同的架构模式：从 <code>scanMarkdownDir</code> 加载 Markdown 文件、解析 frontmatter 关键词、<code>scoreByKeywords</code> 匹配、<code>buildSystemPrompt()</code> 生成系统提示。这是两个并列的独立链路在做同一类事（<strong>配置资源的加载→匹配→系统提示构建</strong>）。按 §2.2 嫁接原则，它们应该共享同一段调用链，在分叉点做差异化。
+    </dd>
+    <div class="suggestion">
+      提取 <code>ConfigResourceManager&lt;T&gt;</code> 抽象基类，包含 <code>load()/reload()/match(keywords)/buildSystemPrompt()</code> 通用逻辑。<br>
+      按 §2.2 技术债务阈值公式：当前 2 个使用场景 + 未来 toolManager 等新类型大概率扩展 → 抽象收益 &gt; 复制成本，值得现在抽象。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">11. postProcessInner 命名暴露实现细节</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    一般命名规范
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/agent.ts</span> L630</dd>
+    <dt>问题描述</dt>
+    <dd>
+      <code>Inner</code> 后缀暗示了实现的分层（一个外层方法调一个内层方法），这是实现细节泄漏到公共命名。更好的命名应直接描述行为。
+    </dd>
+    <div class="suggestion">
+      重命名为 <code>executePostProcess()</code> 或简化为 <code>doPostProcess()</code>。
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 4: LOGIC QUALITY ======================== -->
+<h2 id="logic-quality">四、逻辑设计质量审查</h2>
+
+<div class="issue p0">
+  <div class="issue-header">
+    <span class="issue-title">12. config loader 静默吞没文件读取错误</span>
+    <span class="badge p0">P0</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§1.1 区分症状与根因 — 「修复现象是止痛药，修复根因才是手术」</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/config/loader.ts</span> L454-456 和 L462-464</dd>
+    <dt>问题描述</dt>
+    <dd>
+      两个 catch 块静默吞没所有文件读取错误：ENOENT（文件不存在）、EACCES（权限拒绝）、损坏 JSON、非 JSON 内容、内存错误……无一记录到日志。用户可能认为项目级配置已成功加载，实际上正在使用默认值，完全没有任何反馈。这是<strong>生产环境中诊断的死角</strong>——用户无法知道「为什么我的配置没生效」，也无法知道「我应该修复什么」。
+    </dd>
+    <dt>第一性原理分析</dt>
+    <dd>
+      按心智模型 §1.1「区分症状与根因」：静默回退到默认值是治标（症状消失），但用户配置不生效的根因（文件损坏 / 权限问题 / JSON 格式错误）没有被暴露。正确的做法是：回退 + 记录根因。
+    </dd>
+    <div class="suggestion">
+      在每个 catch 块中增加 <code>logger.warn('项目/用户配置加载失败，使用默认值', { error: toError(err) })</code>。<br>
+      同时在 <code>readJsonFile</code> (L476) 中将 <code>SyntaxError</code> 包装为 <code>configError</code>，防止裸 Error 通过显式 <code>--config</code> 路径传播。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">13. dedupManager 合并写入与降级缺少原子性</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§1.3 不可逆操作的双重保险</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/managers/dedupManager.ts</span> L193-198</dd>
+    <dt>问题描述</dt>
+    <dd>
+      合并操作分两步：先 <code>demoteMemory(pair.b)</code> 降级重复记忆 → 再 <code>keepMerged(pair.a, mergedContent)</code> 写入合并内容。如果 keepMerged 失败（如 storage 写入异常），pair.b 已被降级但 pair.a 未收到合并内容，导致数据不一致。
+    </dd>
+    <div class="suggestion">
+      将两步包在同一个 try 中：先写合并内容（keepMerged），成功后再降级（demoteMemory）。如果合并写入失败，不执行降级，保持原始状态。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">14. memoryDecayScheduler 双职责：衰减调度 + 时效性评估</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§1.3 每次只修一个根因</code>（类比：一个类承担两个关注点）
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/managers/memoryDecayScheduler.ts</span> 全局（513 行）</dd>
+    <dt>问题描述</dt>
+    <dd>
+      文件中同时承担「定时衰减 scores」和「LLM 时效性评估」两个职责。虽然有逻辑关联（衰减产生低分 → 时效性评估处理），但在大型项目中，两者有不同的触发频率和依赖关系。文件中明确注释这是「可选增强」，说明作者也意识到了职责分离。
+    </dd>
+    <div class="suggestion">
+      将 <code>evaluateTimeliness()</code> 相关逻辑提取到 <code>TimelinessEvaluator</code>。或者至少在当前文件中用更清晰的内部边界（独立方法组 + 注释）划分两个职责。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">15. memoryInspector 的 list() 与 search() 对空 query 行为不一致</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.3 边界条件前置思考</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/managers/memoryInspector.ts</span> L243 vs L323</dd>
+    <dt>问题描述</dt>
+    <dd>
+      <code>list()</code> 调用 <code>index.search('', limit)</code> 直接返回全量记忆，而 <code>search('')</code> 会抛 <code>configError</code>。两个公开接口对同一底层调用有完全不同的语义——虽然注释说明了这是有意为之（"显式声明要列出所有记忆"），但行为不一致会让调用方困惑。
+    </dd>
+    <div class="suggestion">
+      让 <code>search()</code> 也接受空字符串（等同于 list），或者让 <code>list()</code> 不再经过 search 路径。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">16. memoryAdvisor 三职责：健康诊断 + 推荐 + 冲突检测</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§1.3 每次只修一个根因</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/agent/managers/memoryAdvisor.ts</span> 全局（611 行）</dd>
+    <dt>问题描述</dt>
+    <dd>
+      一个类中有 <code>sourceHealth()</code>、<code>suggest()</code>、<code>detectConflicts()</code> 三个不同场景的分析功能。三者共享 IMemoryStorage 依赖和"只读分析"定位，但服务于不同的触发时机和消费者。611 行不宜再膨胀。
+    </dd>
+    <div class="suggestion">
+      如果未来新增第 4 个分析功能，务必拆分为 <code>HealthAnalyzer</code> + <code>Recommender</code> + <code>ConflictDetector</code>。
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 5: ARCHITECTURE QUALITY ======================== -->
+<h2 id="arch-quality">五、架构质量审查</h2>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">17. llm/embedding.ts 反向依赖 memory/vectorStore.ts</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.2 借力生长 — DON'T 不要忽视现有约束</code>（三层架构中 llm 是下层，不应依赖上层 memory）
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">src/llm/embedding.ts</span> L20 (<code>import type { EmbeddingOptions } from '@/memory/vectorStore.js'</code>)</dd>
+    <dt>问题描述</dt>
+    <dd>
+      正常依赖方向是 <code>memory → llm</code>（memory 层消费 llm 层的 embedding 能力），但这里 <code>llm → memory</code> 形成了反向依赖。虽然因为是 <code>import type</code> 不产生运行期循环，但 <code>EmbeddingOptions</code>（signal、timeoutMs）是纯基础设施级类型，不应定义在 memory 层。这破坏了"内核零反向依赖"的架构约束。
+    </dd>
+    <div class="suggestion">
+      将 <code>EmbeddingOptions</code> 类型下沉到 <code>llm/types.ts</code> 或 <code>llm/embedding.ts</code> 自身定义，memory 层改为从此处 import。
+    </div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="issue-header">
+    <span class="issue-title">18. 测试不在 pre-commit 钩子中运行</span>
+    <span class="badge p1">P1</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.3 写测试就是写逻辑 — 测试是逻辑设计的另一种表达</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">lefthook.yml</span> pre-commit 钩子</dd>
+    <dt>问题描述</dt>
+    <dd>
+      Pre-commit 只运行 ESLint + tsc + stylelint，不含测试。注释说明因 15s+ 太慢。但 pre-push 测试也被注释掉了。这意味着测试失败要到 CI 阶段才会发现，反馈周期过长。
+    </dd>
+    <div class="suggestion">
+      启用 pre-push 钩子的测试（push 频率远低于 commit，15s 延迟可接受）。或使用 vitest 的 <code>--changed</code> 模式仅运行变更相关测试。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">19. 函数覆盖率 83.35% 低于阈值 88%</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    违反规则：<code>§2.3 写测试就是写逻辑</code>
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">vitest.config.ts</span> 覆盖率阈值</dd>
+    <dt>问题描述</dt>
+    <dd>
+      函数覆盖率 83.35% 对比阈值 88%，存在 ~5% 的缺口。其他三项（行 91.38%、分支 93.28%、语句 92.46%）均大幅超过阈值，唯独函数覆盖率不足。说明有部分模块的函数缺少测试覆盖。
+    </dd>
+    <div class="suggestion">
+      两种情况处理：(1) 确认这些未覆盖函数是合法可跳过（纯类型文件/常量文件）→ 下调阈值至 84%；(2) 确认是应该覆盖但遗漏 → 补充测试。建议先排查具体缺的是哪些函数。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="issue-header">
+    <span class="issue-title">20. ADR 文档位于 .trae/rules/ 而非 docs/</span>
+    <span class="badge p2">P2</span>
+  </div>
+  <div class="rule-ref">
+    一般文档规范
+  </div>
+  <div class="detail">
+    <dt>位置</dt>
+    <dd><span class="location">.trae/rules/decisions/</span>（30 篇 ADR）</dd>
+    <dt>问题描述</dt>
+    <dd>
+      30 篇架构决策记录位于 <code>.trae/rules/decisions/</code>，npm 包不分发此目录。README 注明"目前为内部文档"。但 ADR 对理解架构决策至关重要，应随包分发。
+    </dd>
+    <div class="suggestion">
+      根据分发策略做选择：(1) 如果面向外部消费者 → 迁移到 <code>docs/decisions/</code> 并加入 npm files；(2) 如果保持内部 → 在 README 中明确说明 ADR 不随包分发，并提供在线查看链接。
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 6: STRENGTHS ======================== -->
+<h2 id="strengths">六、核心优势</h2>
+
+<ul class="strength-list">
+  <li><strong>架构设计卓越：</strong>三层单向依赖（Host → Kernel → Utils）、Provider 注入模式、万物皆记忆统一模型、治理流水线 L1→L2→L3 分层退化语义——这些架构决策在心智模型的所有维度上都表现优秀。</li>
+
+  <li><strong>命名规范零偏差：</strong>全仓 camelCase 函数、PascalCase 类型、UPPER_CASE 常量、I 前缀注入接口。零 <code>any</code> 类型、零 <code>enum</code>、零 <code>export default</code>、零 TODO/FIXME/HACK 遗留注释。代码库表现出极高的纪律性。</li>
+
+  <li><strong>错误降级链完整：</strong>护栏失败→放行、摘要失败→空字符串、工具失败→[ERR:TOOL] 字符串、LLM 失败→重试或抛出。逐条容错继续而非全量中断，安全优先于正确性。</li>
+
+  <li><strong>AbortSignal 传播贯穿 5 层：</strong>从 AgentLoop → openaiCompatible → fetch → SSE reader，每一层都检查 <code>signal?.aborted</code>。记忆治理任务支持优雅中断。</li>
+
+  <li><strong>测试基础设施扎实：</strong>67 个测试文件，类 Mock（非 HTTP Mock）策略可靠，tmpdir 隔离 + afterEach 清理，边界条件覆盖全面。</li>
+
+  <li><strong>文档体系完整：</strong>30 篇 ADR（六段式模板 + 年轮修订 + 废弃标注）、Keep a Changelog 格式（Breaking Change 附迁移表）、10 章接入指南 + 完整 API 参考。</li>
+
+  <li><strong>共享基础设施消除重复：</strong><code>llmJudgeHelper</code>（3 层共享的流式 LLM 调用封装）、<code>governance.ts</code>（5 处独立维护的治理源列表统一为 1 处）。体现了「单一真理源」原则。</li>
+
+  <li><strong>安全防线设计：</strong>路径遍历防护（30+ 黑名单条目）、内容护栏（正则 + LLM 评估）、权限分级（owner/guest）、审计事件系统——安全贯穿全链路。</li>
+</ul>
+
+<!-- ======================== SECTION 7: ACTION ITEMS ======================== -->
+<h2 id="action-items">七、优先级改进清单</h2>
+
+<h3>P0 — 本次迭代应修复</h3>
+<table>
+  <tr><th>#</th><th>问题</th><th>位置</th><th>工作量</th></tr>
+  <tr><td>1</td><td>chat() 135 行混合多层抽象，拆为 4 子方法</td><td><span class="location">agent.ts</span> L336-470</td><td>中</td></tr>
+  <tr><td>2</td><td>init() 98 行，拆为 3 子方法</td><td><span class="location">agent.ts</span> L234-331</td><td>低</td></tr>
+  <tr><td>3</td><td>Agent 公开 API 过多（45 入口），引入 MemoryGovernance 门面</td><td><span class="location">agent.ts</span> 全局</td><td>高</td></tr>
+  <tr><td>4</td><td>agentLoop / agentHistory getter 破坏封装</td><td><span class="location">agent.ts</span> L1358/L1374</td><td>中</td></tr>
+  <tr><td>5</td><td>config loader 静默吞没文件错误，增加日志</td><td><span class="location">loader.ts</span> L454/L462</td><td>低</td></tr>
+  <tr><td>6</td><td>dedupManager 合并写入原子性缺失</td><td><span class="location">dedupManager.ts</span> L193-198</td><td>低</td></tr>
+  <tr><td>7</td><td>assembleComponents() 164 行，拆为子工厂函数</td><td><span class="location">assembler.ts</span> L123-286</td><td>低</td></tr>
+</table>
+
+<h3>P1 — 下个迭代应处理</h3>
+<table>
+  <tr><th>#</th><th>问题</th><th>位置</th><th>工作量</th></tr>
+  <tr><td>8</td><td>8 个公开方法缺 try/catch 错误处理</td><td><span class="location">agent.ts</span> 多处</td><td>中</td></tr>
+  <tr><td>9</td><td>15+ 处 ! 非空断言，改为类型窄化</td><td><span class="location">agent.ts</span> 多处</td><td>中</td></tr>
+  <tr><td>10</td><td>skillManager/personaManager 相似结构，提取 ConfigResourceManager</td><td><span class="location">skill/</span> + <span class="location">persona/</span></td><td>中</td></tr>
+  <tr><td>11</td><td>llm/embedding.ts 反向依赖 memory/vectorStore.ts</td><td><span class="location">llm/embedding.ts</span> L20</td><td>低</td></tr>
+  <tr><td>12</td><td>memoryDecayScheduler 双职责，提取 TimelinessEvaluator</td><td><span class="location">decayScheduler.ts</span></td><td>中</td></tr>
+  <tr><td>13</td><td>close() 子步骤缺独立 try/catch</td><td><span class="location">agent.ts</span> L1283/L1288</td><td>低</td></tr>
+  <tr><td>14</td><td>测试加入 pre-push 钩子或 --changed 模式</td><td><span class="location">lefthook.yml</span></td><td>低</td></tr>
+  <tr><td>15</td><td>reloadConfig() 失败时子步骤短路问题</td><td><span class="location">agent.ts</span> L1200</td><td>低</td></tr>
+</table>
+
+<h3>P2 — 技术债务，可择机处理</h3>
+<table>
+  <tr><th>#</th><th>问题</th><th>位置</th><th>工作量</th></tr>
+  <tr><td>16</td><td>事件名使用字面量而非常量（17 处）</td><td><span class="location">agent.ts</span> 多处</td><td>低</td></tr>
+  <tr><td>17</td><td>魔数（5/3/'~/.memora'）提取为命名常量</td><td><span class="location">agent.ts</span> L206/L525/L550</td><td>低</td></tr>
+  <tr><td>18</td><td>postProcessInner 命名暴露实现细节</td><td><span class="location">agent.ts</span> L630</td><td>低</td></tr>
+  <tr><td>19</td><td>函数覆盖率 83.35% 低于阈值 88%</td><td><span class="location">vitest.config.ts</span></td><td>低</td></tr>
+  <tr><td>20</td><td>memoryAdvisor 三职责，关注未来扩展</td><td><span class="location">memoryAdvisor.ts</span></td><td>P2（仅关注）</td></tr>
+  <tr><td>21</td><td>ADR 迁移到 docs/ 或明确分发策略</td><td><span class="location">.trae/rules/decisions/</span></td><td>低</td></tr>
+</table>
+
+<hr>
+
+<p style="text-align:center; color:var(--text-2); margin-top:var(--space-8);">
+  <em>审查完成于 2026-07-27 &nbsp;|&nbsp; 格物 (Ge Wu) 🪞 &nbsp;|&nbsp; 第一性原理 + 对抗式审查</em>
+</p>
+
+</body>
+</html>
