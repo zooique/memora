@@ -58,7 +58,6 @@ import { loadSpriteConfig, saveSpriteConfig, type SpriteConfig } from '../sprite
 import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/audit/auditManager.js';
 import { UsageStatsCollector } from '../sprite/usage/usageStatsCollector.js';
-import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from './shortcuts.js';
 // Phase 3.1：剪贴板三重保护处理器
 import { ClipboardHandler } from './clipboardHandler.js';
@@ -69,6 +68,8 @@ import { isSensitive } from '../shared/sensitivePatterns.js';
 // isFullWindowAccessible 仅用于请求-响应场景（如写入确认），main.ts 仅用 safeSendToWindow
 // 守卫单向推送 IPC（BUG-6 修复后统一策略：渲染层缓存隐藏窗口的 IPC，避免永久丢失）
 import { safeSendToWindow } from './windows/windowUtils.js';
+// AgentRuntime：Agent 运行时状态容器（封装 Agent 实例 + 流式控制 + LLM 缓存 9 个字段）
+import { AgentRuntime } from './runtime/agentRuntime.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -93,21 +94,25 @@ let mainIpcContext: IpcContext | null = null;
 /**
  * 主进程核心状态（集中管理，对齐 renderer.ts State 先例）
  *
- * 17 个可变状态集中到一个对象，提升状态可见性，消除 minimalIpcState 代理层
- * （appState 结构兼容 MinimalIpcState 接口，直接作为 MinimalIpcState 传入 minimalHandlers）。
+ * appState 结构兼容 MinimalIpcState 接口，直接作为 MinimalIpcState 传入 minimalHandlers。
+ * Agent 运行时相关 9 个字段封装在 agentRuntime 中。
  *
  * 初始化时序：
  *   - windowStateManager/windowManager/interaction 在 initializeApp 阶段 1 赋值（null! 表示使用前必定赋值）
  *   - trayManager/shortcutManager 在阶段 1 赋值（可能为 null：无托盘环境降级）
- *   - agent/sprite/sessionStore/closeSprite 由 setAppRuntime 集中赋值（阶段 2 / reinitAgent）
+ *   - agentRuntime 由 setAppRuntime 集中赋值（阶段 2 / reinitAgent）
  *   - auditManager/clipboardHandler 在 setupAgentReady / 阶段 2 赋值
- *   - currentAbortController/agentReady/initErrorDetail/unreadCount/currentDataDir 运行时可变
+ *   - agentReady/initErrorDetail/unreadCount/currentDataDir 运行时可变
  *   - pendingWriteConfirmations 为 const Map 引用（M1 写入确认映射表）
  *   - isQuitting 防止 before-quit 重复清理
  *   - ipcRegistered 标志：完整 IPC 仅首次注册，reinitAgent 通过 getter 复用
  */
 const appState = {
-  // ─── 窗口/托盘基础设施（阶段 1 初始化） ───
+  // ─── 领域 Service ───
+  /** Agent 运行时状态容器（封装 agent/sprite/sessionStore/closeSprite + 流式控制 + LLM 缓存） */
+  agentRuntime: new AgentRuntime(),
+
+  // ─── 窗口/托盘基础设施（阶段 1 初始化，下一轮提取 WindowService） ───
   /** 窗口状态管理器（三态切换 + 持久化） */
   windowStateManager: null! as WindowStateManager,
   /** 窗口管理器（完整窗口 + 浮动窗口） */
@@ -117,18 +122,7 @@ const appState = {
   /** 系统托盘管理器（无托盘环境降级为 null） */
   trayManager: null as TrayManager | null,
 
-  // ─── Agent 运行时（setAppRuntime 集中管理：4 个变量总是一起变化） ───
-  // AppRuntime 类型从 ipc/minimalHandlers.ts 导入，消除重复定义
-  /** Agent + Sprite 实例（由 startSprite 初始化，可能为 null——配置缺失时） */
-  agent: null as Agent | null,
-  sprite: null as Sprite | null,
-  sessionStore: null as SqliteSessionStore | null,
-  /** 关闭函数（清理 Agent + Sprite 资源） */
-  closeSprite: null as (() => Promise<void>) | null,
-
-  // ─── 流式/状态 ───
-  /** 当前对话的 AbortController（用于中断流式输出） */
-  currentAbortController: null as AbortController | null,
+  // ─── 应用级状态 ───
   /** Agent 是否已就绪 */
   agentReady: false as boolean,
   /** 初始化失败的具体错误信息（agentReady=false 时有效，区分配置缺失 vs 其他错误） */
@@ -136,7 +130,7 @@ const appState = {
   /**
    * FIX-P1-1：完整 IPC 是否已注册
    * 首次 setupAgentReady 调用时注册，后续 reinitAgent 路径跳过注册
-   * （IPC handler 通过 getter 实时访问 appState.agent，无需重注册）
+   * （IPC handler 通过 getter 实时访问 agentRuntime.agent，无需重注册）
    */
   ipcRegistered: false as boolean,
 
@@ -157,11 +151,6 @@ const appState = {
   // ─── 其他 ───
   /** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
   currentDataDir: DEFAULT_DATA_DIR as string,
-  /** LLM 配置缓存（用于判断是否需要重新初始化 Agent） */
-  lastProvider: null as string | null,
-  lastModel: null as string | null,
-  lastBaseUrl: null as string | null,
-  lastApiKey: null as string | null,
   /** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
   unreadCount: 0 as number,
   /** 防止 before-quit 重复触发清理 */
@@ -180,26 +169,15 @@ process.on('uncaughtException', (error) => {
 });
 
 /**
- * 设置 Agent 运行时状态（第三季：封装 4 变量集中赋值）
+ * 设置 Agent 运行时状态
  *
- * agent/sprite/sessionStore/closeSprite 在 3 处总是一起变化：
- * initializeApp 成功 / reinitAgent 成功 / reinitAgent 失败。
- * 提取为集中赋值函数，避免 4 个独立赋值遗漏。
+ * 委托给 agentRuntime.setRuntime()，集中管理 agent/sprite/sessionStore/closeSprite 四件套。
+ * 在 3 处调用：initializeApp 成功 / reinitAgent 成功 / reinitAgent 失败。
  *
- * @param runtime 运行时实例，传 null 清空所有引用
+ * @param runtime 运行时实例，传 null 清空四件套引用
  */
 function setAppRuntime(runtime: AppRuntime | null): void {
-  if (runtime) {
-    appState.agent = runtime.agent;
-    appState.sprite = runtime.sprite;
-    appState.sessionStore = runtime.sessionStore;
-    appState.closeSprite = runtime.close;
-  } else {
-    appState.agent = null;
-    appState.sprite = null;
-    appState.sessionStore = null;
-    appState.closeSprite = null;
-  }
+  appState.agentRuntime.setRuntime(runtime);
 }
 
 /**
@@ -212,8 +190,8 @@ function setAppRuntime(runtime: AppRuntime | null): void {
  * （均为 main.ts 直接管理的窗口层配置，Sprite 层不主动变更）
  */
 function persistWindowConfig(updates: Partial<SpriteConfig>): void {
-  if (appState.sprite) {
-    appState.sprite.updateConfigBatch(updates);
+  if (appState.agentRuntime.sprite) {
+    appState.agentRuntime.sprite.updateConfigBatch(updates);
   } else {
     saveSpriteConfig(updates);
   }
@@ -227,8 +205,8 @@ function persistWindowConfig(updates: Partial<SpriteConfig>): void {
  * programmer §2.2：同一语义应共享调用链，在分叉点差异化。）
  */
 function exitSilentMode(): void {
-  appState.sprite?.updateConfig('silentMode', false);
-  appState.sprite?.updateConfig('silentModeExpiresAt', null);
+  appState.agentRuntime.sprite?.updateConfig('silentMode', false);
+  appState.agentRuntime.sprite?.updateConfig('silentModeExpiresAt', null);
   appState.trayManager?.setState('idle');
   appState.trayManager?.updateMenu();
 }
@@ -238,7 +216,7 @@ function exitSilentMode(): void {
  * 手动拼接 setState 状态的重复。）
  */
 function toggleSilentMode(silent: boolean): void {
-  appState.sprite?.updateConfig('silentMode', silent);
+  appState.agentRuntime.sprite?.updateConfig('silentMode', silent);
   appState.trayManager?.setState(silent ? 'sleeping' : 'idle');
   appState.trayManager?.updateMenu();
 }
@@ -452,16 +430,16 @@ function createSilentModeCallbacks(activeSprite: Sprite): {
 function createIpcContext(): IpcContext {
   return {
     // 函数式 getter，与 getAbortController/isAgentReady 风格一致（可变状态实时查询）
-    getAgent: () => appState.agent,
-    getSprite: () => appState.sprite,
-    getSessionStore: () => appState.sessionStore,
+    getAgent: () => appState.agentRuntime.agent,
+    getSprite: () => appState.agentRuntime.sprite,
+    getSessionStore: () => appState.agentRuntime.sessionStore,
     windowManager: appState.windowManager,
     trayManager: appState.trayManager,
     // Phase 3.3：注入快捷键管理器供 configHandlers 触发热更新（可能为 null）
     shortcutManager: appState.shortcutManager,
-    getAbortController: () => appState.currentAbortController,
+    getAbortController: () => appState.agentRuntime.currentAbortController,
     setAbortController: (ctrl: AbortController | null) => {
-      appState.currentAbortController = ctrl;
+      appState.agentRuntime.currentAbortController = ctrl;
     },
     // 暴露 agentReady 状态，handleUserInput 据此拒绝 reinitAgent 失败后的对话请求
     isAgentReady: () => appState.agentReady,
@@ -522,7 +500,7 @@ function setupAgentReady(
 
   // 1. 注册完整 IPC 处理器
   // 首次注册后设置 ipcRegistered 标志，reinitAgent 路径跳过重注册
-  // IPC handler 通过 getter 实时访问 appState.agent，reinit 后自动看到新实例
+  // IPC handler 通过 getter 实时访问 agentRuntime.agent，reinit 后自动看到新实例
   if (!appState.ipcRegistered) {
     mainIpcContext = createIpcContext();
     registerIpcHandlers(mainIpcContext);
@@ -802,7 +780,7 @@ async function initializeApp(): Promise<void> {
 
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
     // bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
-    setupAgentReady(appState.agent!, appState.sprite!, appState.currentDataDir);
+    setupAgentReady(appState.agentRuntime.agent!, appState.agentRuntime.sprite!, appState.currentDataDir);
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
@@ -896,7 +874,7 @@ function setupAgentIndependentResources(): void {
         // name 用内容前 30 字符（与剪贴板记忆范式一致），upsertMemory 按 (source, name) 去重
         const name = text.slice(0, 30).replace(/\s+/g, ' ').trim() || '快速输入';
         // 无 Agent 时 sprite 为 null，可选链安全降级（跳过记忆写入）
-        appState.sprite?.upsertMemory('quick-input', name, text);
+        appState.agentRuntime.sprite?.upsertMemory('quick-input', name, text);
       } catch (error) {
         // 记忆写入失败仅记日志，不影响用户已拿到的剪贴板内容
         logger.warn({ error }, '快速输入记忆写入失败');
@@ -906,7 +884,7 @@ function setupAgentIndependentResources(): void {
       // 调用内核 TextPolishManager（agent.polish getter），
       // 润色失败时返回原文（降级，不阻塞用户操作）
       // 无 Agent 时 polisher 为 undefined，返回原文不阻塞用户操作
-      const polisher = appState.agent?.polish;
+      const polisher = appState.agentRuntime.agent?.polish;
       if (!polisher) return { polished: text, changed: false };
       try {
         return await polisher.polish(text);
@@ -941,9 +919,9 @@ function setupAgentIndependentResources(): void {
     const result = await installSkill(content, fileName, configDir);
     // 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
     // 无 Agent 时跳过热重载（hotReloaded 保持 undefined），用户配置后 reinitAgent 会读取已安装的技能
-    if (result.success && appState.agent) {
+    if (result.success && appState.agentRuntime.agent) {
       try {
-        await appState.agent.reloadConfig('skill');
+        await appState.agentRuntime.agent.reloadConfig('skill');
         // 热重载成功：技能当前会话立即生效
         result.hotReloaded = true;
       } catch (err) {
@@ -970,8 +948,8 @@ registerMinimalIpcHandlers(appState, {
   setAppRuntime,
   setupAgentReady,
   classifyInitError,
-  getCurrentAgent: () => appState.agent,
-  getCurrentSprite: () => appState.sprite,
+  getCurrentAgent: () => appState.agentRuntime.agent,
+  getCurrentSprite: () => appState.agentRuntime.sprite,
 });
 
 // ─── 应用生命周期 ─────────────────────────────────────────
@@ -1006,14 +984,10 @@ app.on('activate', () => {
  * 此处统一置 null 切断 appState 引用。pendingWriteConfirmations 是 const Map，仅 clear 不置 null。
  */
 function nullifyAllComponents(): void {
-  // ─── Agent 运行时 ───
-  appState.agent = null;
-  appState.sprite = null;
-  appState.sessionStore = null;
-  appState.closeSprite = null;
+  // ─── Agent 运行时（9 字段集中清理） ───
+  appState.agentRuntime.nullify();
 
-  // ─── 流式/状态 ───
-  appState.currentAbortController = null;
+  // ─── 应用级状态 ───
   appState.agentReady = false;
   appState.initErrorDetail = null;
 
@@ -1031,12 +1005,6 @@ function nullifyAllComponents(): void {
   appState.windowManager = null!;
   appState.interaction = null!;
   appState.trayManager = null;
-
-  // ─── LLM 配置缓存（敏感字段显式置 null 防止内存 dump 泄漏） ───
-  appState.lastProvider = null;
-  appState.lastModel = null;
-  appState.lastBaseUrl = null;
-  appState.lastApiKey = null;
 }
 
 app.on('before-quit', async (e) => {
@@ -1062,9 +1030,9 @@ app.on('before-quit', async (e) => {
     }
     // 先中断进行中的对话，避免 agent.close() 在对话进行中调用
     // 导致 AsyncGenerator 未正常退出、资源泄漏或状态不一致
-    if (appState.currentAbortController) {
-      appState.currentAbortController.abort();
-      appState.currentAbortController = null;
+    if (appState.agentRuntime.currentAbortController) {
+      appState.agentRuntime.currentAbortController.abort();
+      appState.agentRuntime.currentAbortController = null;
     }
     // Phase 3.3：注销全局快捷键，避免退出后残留占用
     appState.shortcutManager?.unregisterAll();
@@ -1075,8 +1043,8 @@ app.on('before-quit', async (e) => {
     // AUDIT-5-2：使用统计退出时写入 + 停止定时器
     appState.usageStatsCollector?.stopAutoFlush();
     await appState.usageStatsCollector?.flush();
-    if (appState.closeSprite) {
-      await appState.closeSprite();
+    if (appState.agentRuntime.closeSprite) {
+      await appState.agentRuntime.closeSprite();
     }
     // 显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
     appState.trayManager?.destroy();

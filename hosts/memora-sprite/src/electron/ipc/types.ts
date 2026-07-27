@@ -51,6 +51,8 @@ import type { ShortcutManager } from '../shortcuts.js';
 import type { UsageStatsCollector } from '../../sprite/usage/usageStatsCollector.js';
 // AuditManager 用于 MinimalIpcState（Agent 未就绪时审计日志降级处理）
 import type { AuditManager } from '../../sprite/audit/auditManager.js';
+// AgentRuntime 用于 MinimalIpcState（封装 Agent 实例 + 流式控制 + LLM 缓存 9 个字段）
+import type { AgentRuntime } from '../runtime/agentRuntime.js';
 
 /**
  * IPC 处理器上下文
@@ -281,32 +283,26 @@ export interface AppRuntime {
  *
  * 设计：main.ts 持有此对象引用，IPC 处理器内部通过闭包捕获。
  * main.ts 修改对象属性后，IPC 处理器立即可见。
+ *
+ * Agent 运行时相关字段（agent/sprite/sessionStore/closeSprite/currentAbortController/
+ * lastProvider/lastModel/lastBaseUrl/lastApiKey）封装在 agentRuntime 中，
+ * 通过 state.agentRuntime.xxx 访问。
  */
 export interface MinimalIpcState {
+  /** Agent 运行时状态容器（封装 Agent 实例 + 流式控制 + LLM 缓存 9 个字段） */
+  agentRuntime: AgentRuntime;
   /** Agent 是否就绪（reinit 失败后为 false，拒绝新对话避免使用已关闭 Agent） */
   agentReady: boolean;
   /** 初始化失败时的错误详情（agentReady=false 时向 UI 展示） */
   initErrorDetail: string | null;
-  /** 当前对话的 AbortController（中断时调用 abort） */
-  currentAbortController: AbortController | null;
   /** 当前数据目录（reinit 后更新，用于事件推送路径定位） */
   currentDataDir: string;
   /** 写入确认待处理回调表（requestId → 确认结果回调） */
   pendingWriteConfirmations: Map<string, (confirmed: boolean) => void>;
-  /** 精灵关闭句柄（reinit 前先调用以释放旧资源） */
-  closeSprite: (() => Promise<void>) | null;
   /** 审计管理器（Agent 未就绪时审计日志查询降级用） */
   auditManager: AuditManager | null;
   /** 窗口管理器（主题变更等通道需要获取窗口引用） */
   windowManager: WindowManagerLike | undefined;
-  /** LLM 配置缓存（用于判断是否需要重新初始化 Agent） */
-  lastProvider: string | null;
-  /** LLM 配置缓存：model */
-  lastModel: string | null;
-  /** LLM 配置缓存：baseUrl */
-  lastBaseUrl: string | null;
-  /** LLM 配置缓存：apiKey */
-  lastApiKey: string | null;
 }
 
 /**

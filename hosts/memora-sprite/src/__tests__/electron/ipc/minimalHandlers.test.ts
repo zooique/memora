@@ -123,23 +123,43 @@ import { registerMinimalIpcHandlers } from '../../../electron/ipc/minimalHandler
 import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
 // MinimalIpcState / MinimalIpcCallbacks 真理源在 ipc/types.ts
 import type { MinimalIpcState, MinimalIpcCallbacks } from '../../../electron/ipc/types.js';
+// AgentRuntime 真理源在 runtime/agentRuntime.ts
+import { AgentRuntime } from '../../../electron/runtime/agentRuntime.js';
 import { createProviderFromConfig } from 'memora';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
-/** 创建默认 MinimalIpcState */
+/**
+ * 创建默认 MinimalIpcState
+ *
+ * agentRuntime 默认创建新实例（所有字段为 null）；
+ * 需覆盖 agentRuntime 内部字段时，用 createRuntime() 辅助函数。
+ */
 function createState(overrides?: Partial<MinimalIpcState>): MinimalIpcState {
   return {
+    agentRuntime: new AgentRuntime(),
     agentReady: false,
     initErrorDetail: null,
-    currentAbortController: null,
     currentDataDir: '/tmp/test-data',
     pendingWriteConfirmations: new Map(),
-    closeSprite: null,
     auditManager: null,
     windowManager: undefined,
     ...overrides,
   };
+}
+
+/**
+ * 创建带字段覆盖的 AgentRuntime 实例
+ *
+ * 用于测试用例需要特定 lastProvider / currentAbortController 等字段的场景。
+ * 例：createRuntime({ lastProvider: 'openai', currentAbortController: ctrl })
+ */
+function createRuntime(overrides?: Partial<AgentRuntime>): AgentRuntime {
+  const runtime = new AgentRuntime();
+  if (overrides) {
+    Object.assign(runtime, overrides);
+  }
+  return runtime;
 }
 
 /** 创建默认 MinimalIpcCallbacks */
@@ -380,7 +400,7 @@ describe('registerMinimalIpcHandlers', () => {
     };
 
     it('成功应走完整链路：save → abort → reinit → setAppRuntime → setupAgentReady', async () => {
-      const state = createState({ currentAbortController: null });
+      const state = createState();
       const callbacks = createCallbacks();
       const reinitResult = {
         agent: { id: 'agent' },
@@ -417,7 +437,9 @@ describe('registerMinimalIpcHandlers', () => {
     it('有进行中对话时应先中断再重新初始化', async () => {
       const abortController = new AbortController();
       const abortSpy = vi.spyOn(abortController, 'abort');
-      const state = createState({ currentAbortController: abortController });
+      const state = createState({
+        agentRuntime: createRuntime({ currentAbortController: abortController }),
+      });
       const callbacks = createCallbacks();
       mockSaveLlmConfig.mockResolvedValue(undefined);
       mockReinitAgent.mockResolvedValue({
@@ -433,7 +455,7 @@ describe('registerMinimalIpcHandlers', () => {
       await callback({}, llmConfig);
 
       expect(abortSpy).toHaveBeenCalled();
-      expect(state.currentAbortController).toBeNull();
+      expect(state.agentRuntime.currentAbortController).toBeNull();
     });
 
     it('reinitAgent 失败应设置 agentReady=false + 调用 errorHandler + classifyInitError', async () => {
@@ -807,10 +829,12 @@ describe('registerMinimalIpcHandlers', () => {
       const mockAgent = { id: 'agent' };
       const state = createState({
         agentReady: true,
-        lastProvider: 'openai',
-        lastModel: 'gpt-4',
-        lastBaseUrl: 'https://api.openai.com/v1',
-        lastApiKey: 'sk-test',
+        agentRuntime: createRuntime({
+          lastProvider: 'openai',
+          lastModel: 'gpt-4',
+          lastBaseUrl: 'https://api.openai.com/v1',
+          lastApiKey: 'sk-test',
+        }),
       });
       const callbacks = createCallbacks({
         getCurrentAgent: vi.fn(() => mockAgent as never),
@@ -941,9 +965,9 @@ describe('registerMinimalIpcHandlers', () => {
       const result = await callback({}, 'key1', providerConfig);
 
       expect(mockReinitAgent).toHaveBeenCalled();
-      expect(state.lastProvider).toBe('openai');
-      expect(state.lastModel).toBe('gpt-4');
-      expect(state.lastApiKey).toBe('sk-test');
+      expect(state.agentRuntime.lastProvider).toBe('openai');
+      expect(state.agentRuntime.lastModel).toBe('gpt-4');
+      expect(state.agentRuntime.lastApiKey).toBe('sk-test');
       expect(callbacks.setupAgentReady).toHaveBeenCalled();
       expect(result).toEqual({ success: true, error: null });
     });
@@ -1196,7 +1220,7 @@ describe('registerMinimalIpcHandlers', () => {
       const mockAgent = { setProvider, setBackgroundProvider };
       const state = createState({
         agentReady: true,
-        currentAbortController: abortController,
+        agentRuntime: createRuntime({ currentAbortController: abortController }),
       });
       const callbacks = createCallbacks({
         getCurrentAgent: vi.fn(() => mockAgent as never),
@@ -1216,7 +1240,7 @@ describe('registerMinimalIpcHandlers', () => {
       await callback({}, 'key1');
 
       expect(abortSpy).toHaveBeenCalled();
-      expect(state.currentAbortController).toBeNull();
+      expect(state.agentRuntime.currentAbortController).toBeNull();
     });
   });
 

@@ -64,19 +64,19 @@ async function reinitAgentRuntime(
   cacheUpdate: { provider: string; model: string; baseUrl: string; apiKey: string },
 ): Promise<void> {
   // 1. 中断进行中的对话
-  if (state.currentAbortController) {
-    state.currentAbortController.abort();
-    state.currentAbortController = null;
+  if (state.agentRuntime.currentAbortController) {
+    state.agentRuntime.currentAbortController.abort();
+    state.agentRuntime.currentAbortController = null;
   }
 
   // 2. 重新初始化 Agent（reinitAgent 内部 loadConfig 读取最新配置）
-  const result = await reinitAgent(state.closeSprite);
+  const result = await reinitAgent(state.agentRuntime.closeSprite);
   state.currentDataDir = result.dataDir;
   // 更新配置缓存，用于下次比较
-  state.lastProvider = cacheUpdate.provider;
-  state.lastModel = cacheUpdate.model;
-  state.lastBaseUrl = cacheUpdate.baseUrl;
-  state.lastApiKey = cacheUpdate.apiKey;
+  state.agentRuntime.lastProvider = cacheUpdate.provider;
+  state.agentRuntime.lastModel = cacheUpdate.model;
+  state.agentRuntime.lastBaseUrl = cacheUpdate.baseUrl;
+  state.agentRuntime.lastApiKey = cacheUpdate.apiKey;
   callbacks.setAppRuntime({
     agent: result.agent,
     sprite: result.sprite,
@@ -250,10 +250,10 @@ export function registerMinimalIpcHandlers(
         // 仅当 provider/model/apiKey/baseUrl 变化时才重建，temperature 变化不需要
         const currentAgent = callbacks.getCurrentAgent();
         const needsReinit = !currentAgent ||
-          llmConfig.provider !== (state.lastProvider ?? '') ||
-          llmConfig.model !== (state.lastModel ?? '') ||
-          llmConfig.baseUrl !== (state.lastBaseUrl ?? '') ||
-          llmConfig.apiKey !== (state.lastApiKey ?? '');
+          llmConfig.provider !== (state.agentRuntime.lastProvider ?? '') ||
+          llmConfig.model !== (state.agentRuntime.lastModel ?? '') ||
+          llmConfig.baseUrl !== (state.agentRuntime.lastBaseUrl ?? '') ||
+          llmConfig.apiKey !== (state.agentRuntime.lastApiKey ?? '');
 
         if (needsReinit) {
           await reinitAgentRuntime(state, callbacks, {
@@ -356,9 +356,9 @@ export function registerMinimalIpcHandlers(
         // 删除的是当前 active Provider 时，运行时切换到新 active（deleteLlmProvider 已自动选首个剩余）
         if (wasActive && state.agentReady) {
           // 中断进行中的对话：避免旧 Provider 流式输出残留到新 Provider（与 LLM_PROVIDER_SET_ACTIVE 行为一致）
-          if (state.currentAbortController) {
-            state.currentAbortController.abort();
-            state.currentAbortController = null;
+          if (state.agentRuntime.currentAbortController) {
+            state.agentRuntime.currentAbortController.abort();
+            state.agentRuntime.currentAbortController = null;
           }
 
           const configAfter: Config = await spriteConfigStore.load();
@@ -399,9 +399,9 @@ export function registerMinimalIpcHandlers(
         await setActiveLlmProvider(key);
 
         // 2. 中断进行中的对话（避免旧 Provider 流式输出残留）
-        if (state.currentAbortController) {
-          state.currentAbortController.abort();
-          state.currentAbortController = null;
+        if (state.agentRuntime.currentAbortController) {
+          state.agentRuntime.currentAbortController.abort();
+          state.agentRuntime.currentAbortController = null;
         }
 
         // 3. 从配置读取新 Provider 的完整配置（含 apiKey）
@@ -443,12 +443,12 @@ export function registerMinimalIpcHandlers(
 
         // 同步更新 lastProvider 缓存，避免后续 saveLlmConfig 误判需要 reinit
         // 场景：用户运行时切换 Provider 后，再修改 temperature 等非关键字段时，
-        // reinit 判断逻辑会比较 llmConfig.provider 与 state.lastProvider，
+        // reinit 判断逻辑会比较 llmConfig.provider 与 state.agentRuntime.lastProvider，
         // 若缓存未同步，会误判为需要 reinit（实际 Agent 已切换完成）。
-        state.lastProvider = providerConfig.provider;
-        state.lastModel = providerConfig.model;
-        state.lastBaseUrl = providerConfig.baseUrl ?? '';
-        state.lastApiKey = providerConfig.apiKey ?? '';
+        state.agentRuntime.lastProvider = providerConfig.provider;
+        state.agentRuntime.lastModel = providerConfig.model;
+        state.agentRuntime.lastBaseUrl = providerConfig.baseUrl ?? '';
+        state.agentRuntime.lastApiKey = providerConfig.apiKey ?? '';
 
         return { success: true, error: null };
       } catch (err) {
