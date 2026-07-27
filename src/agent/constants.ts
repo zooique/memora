@@ -43,6 +43,15 @@ export const AGENT_CONSTANTS = {
    * 默认 'zh-CN' 是项目母语，宿主可注入其他 locale 实现国际化。
    */
   DEFAULT_LOCALE: 'zh-CN',
+
+  /** 召回记忆数量上限。5 条记忆兼顾上下文窗口与召回质量。 */
+  DEFAULT_RECALL_LIMIT: 5,
+
+  /** 最近对话历史注入轮数。3 轮（3 条 user + 3 条 assistant）。 */
+  DEFAULT_RECENT_HISTORY_ROUNDS: 3,
+
+  /** 默认数据目录（未通过 AgentOptions.dataDir 指定时使用）。 */
+  DEFAULT_DATA_DIR: '~/.memora',
 } as const;
 
 /**

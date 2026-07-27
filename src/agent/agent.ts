@@ -201,7 +201,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     super();
     this.#config = {
       projectPath: opts.projectPath,
-      dataDir: opts.dataDir ?? '~/.memora',
+      dataDir: opts.dataDir ?? AGENT_CONSTANTS.DEFAULT_DATA_DIR,
       registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
       personaName: opts.persona,
@@ -565,7 +565,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         this.requirePctx.index,
         input,
         {
-          limit: 5,
+          limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
           vectorStore: this.#config.vectorStore,
           excludeSources: this.#config.recallExcludeSources,
         },
@@ -590,7 +590,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // Layer 5: 最近对话注入
     const loop = this.requireLoop;
-    const recentHistory = loop.getRecentHistory(3);
+    const recentHistory = loop.getRecentHistory(AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS);
     if (recentHistory.length > 0) {
       const msgs = this.#config.messages;
       const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
@@ -659,7 +659,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     });
 
     try {
-      await this.postProcessInner(input, assistantContent);
+      await this.doPostProcess(input, assistantContent);
     } finally {
       span.end();
     }
@@ -670,7 +670,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 原 postProcess 逻辑完整保留于此，由外层 postProcess 负责 span 生命周期管理。
    */
-  private async postProcessInner(input: string, assistantContent: string): Promise<void> {
+  private async doPostProcess(input: string, assistantContent: string): Promise<void> {
     // 技能匹配已迁移到 chat() 开头的 matchAndInjectSkill()（当轮实时生效），
     // 与 persona 的 tryAutoMatchPersona 同模式，消除"第一轮无技能"的一轮延迟问题。
 
@@ -965,7 +965,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 手动切换角色（宿主 UI 角色选择器入口）
    *
-   * 与 postProcessInner 中的自动匹配走同一条事件链路，确保：
+   * 与 doPostProcess 中的自动匹配走同一条事件链路，确保：
    *   1. AgentLoop 的 systemPromptPrefix 立即刷新（下一次对话使用新角色 prompt）
    *   2. 发射 personaSwitched 事件，触发 spriteLifecycleManager 的完整副作用：
    *      - emit('personaChanged') 通知宿主 UI
@@ -1000,7 +1000,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 同步刷新 AgentLoop 的角色前缀（关键：否则下一次对话仍用旧角色 prompt）
-    // 与 postProcessInner 自动匹配共用同一段逻辑，ADR-017 枝叶层 2 次提取
+    // 与 doPostProcess 自动匹配共用同一段逻辑，ADR-017 枝叶层 2 次提取
     this.refreshPersonaPrefixOnLoop();
 
     // 发射切换事件，触发宿主 UI 刷新 + 感知重推导 + 通知队列记录
@@ -1029,7 +1029,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 刷新 AgentLoop 的 systemPromptPrefix（角色 prompt + profile prompt）
    *
-   * 提取自 postProcessInner 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
+   * 提取自 doPostProcess 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
    * 组装规则：[personaPrompt, profilePrompt].filter(Boolean).join('\n\n') + 末尾分隔符 '---'
    *
    * 调用时机：
