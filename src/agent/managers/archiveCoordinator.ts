@@ -138,16 +138,24 @@ export class ArchiveCoordinator {
     }
     const userProfile = this.getUserProfile();
     if (!userProfile) return [];
-    const turnIndex = `turn-${Date.now()}`;
-    const facts = extractUserFacts(input, turnIndex);
-    const entries = await userProfile.archiveFacts(facts);
-    // 发射 memoryAdded 事件：与自动归档路径一致，保持宿主 UI 行为统一
-    for (const entry of entries) {
-      if (entry.confirmed) {
-        this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
+    try {
+      const turnIndex = `turn-${Date.now()}`;
+      const facts = extractUserFacts(input, turnIndex);
+      const entries = await userProfile.archiveFacts(facts);
+      // 发射 memoryAdded 事件：与自动归档路径一致，保持宿主 UI 行为统一
+      for (const entry of entries) {
+        if (entry.confirmed) {
+          this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
+        }
       }
+      return entries;
+    } catch (err) {
+      // 记录根因到日志（UI 通知走 archiveFailed 事件，日志走 logger.error，两者不替代）
+      logger.error({ err, stage: 'profile' }, 'archiveProfileFacts 异常');
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
+      return [];
     }
-    return entries;
   }
 
   /**
@@ -177,16 +185,24 @@ export class ArchiveCoordinator {
     }
     const insightExtractor = this.getInsightExtractor();
     if (!insightExtractor) return [];
-    // 内部仍走 classify 判断，避免无价值输入浪费 LLM 调用
-    const shouldExtract = insightExtractor.classify(input);
-    if (shouldExtract !== 'extract') return [];
-    const memories = await insightExtractor.extract(input, assistantContent);
-    // 发射 memoryAdded + insightExtracted 事件：与自动归档路径一致
-    for (const memory of memories) {
-      this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
-      this.emit('insightExtracted', { source: memory.source, insight: memory.content });
+    try {
+      // 内部仍走 classify 判断，避免无价值输入浪费 LLM 调用
+      const shouldExtract = insightExtractor.classify(input);
+      if (shouldExtract !== 'extract') return [];
+      const memories = await insightExtractor.extract(input, assistantContent);
+      // 发射 memoryAdded + insightExtracted 事件：与自动归档路径一致
+      for (const memory of memories) {
+        this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+        this.emit('insightExtracted', { source: memory.source, insight: memory.content });
+      }
+      return memories;
+    } catch (err) {
+      // 记录根因到日志（UI 通知走 archiveFailed 事件，日志走 logger.error，两者不替代）
+      logger.error({ err, stage: 'insight' }, 'archiveInsight 异常');
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
+      return [];
     }
-    return memories;
   }
 
   /**
@@ -200,7 +216,9 @@ export class ArchiveCoordinator {
    * 错误传播契约：
    *   - SessionArchiver LLM 异常 / 写入失败向上抛出（不内部吞掉）。
    *   - 本方法 catch 异常并发射 archiveFailed({ stage: 'content' }) 事件，
-   *     让宿主 UI 可感知会话内容归档失败（与 profile / insight 阶段对齐）。
+   *     让宿主 UI 可感知会话内容归档失败。
+   *   - archiveProfileFacts / archiveInsight 同样 catch 并发射 archiveFailed
+   *     事件（stage 分别为 'profile' / 'insight'），三阶段统一闭环。
    *   - 失败时返回空降级结果，保证调用方（如 SESSION_SWITCH 自动归档）不中断主流程。
    *
    * @param date 会话日期 YYYY-MM-DD
@@ -233,7 +251,8 @@ export class ArchiveCoordinator {
       }
       return result;
     } catch (err) {
-      // LLM 异常 / 写入失败：发射 archiveFailed({ stage: 'content' }) 通知宿主 UI
+      // LLM 异常 / 写入失败：记录根因到日志 + 发射 archiveFailed({ stage: 'content' }) 通知宿主 UI
+      logger.error({ err, stage: 'content' }, 'archiveSessionContent 异常');
       const message = err instanceof Error ? err.message : String(err);
       this.emit('archiveFailed', { stage: 'content', message: message.slice(0, 200) });
       return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };

@@ -58,6 +58,12 @@ export interface IMemoryRelationStore {
   getAllRelations(): MemoryRelation[];
   /** 删除指定关系（sourceId+targetId+type 唯一定位） */
   removeRelation(sourceId: string, targetId: string, type: string): void;
+  /**
+   * 删除某记忆的所有关系（不论方向）
+   * 用于记忆删除/物理清除场景，防止关系表残留孤儿边。
+   * 必须原子执行，返回被删除的关系数量。
+   */
+  removeRelationsByMemoryId(memoryId: string): number;
 }
 ```
 
@@ -96,13 +102,15 @@ weight 表示关系强度（0-1），采用 **LLM 四档离散值 + 代码默认
 - 0.5 兜底避免 LLM 失败时关系数据缺失
 - 用户不可直接编辑 weight，保持 UI 简洁
 
-### 5. 构建时机（Sprite 层，不进内核）
+### 5. 构建时机与层属
+
+**层属说明**：关系构建的**机制层**（候选召回 + prompt 构建 + 关系写入 + 冲突检测）在内核 `src/agent/managers/relationBuilder.ts`，LLM 调用合并到 InsightExtractor 的单次 extract() 调用中（不增加 LLM 调用次数，见 §6）。宿主项目（Sprite 层）仅需注入 `IMemoryRelationStore` 实现，无需自行实现关系构建逻辑。
 
 ```
-InsightExtractor.extract() 完成后（fire-and-forget）
-  → 代码层：对新提取的 insight，召回 top-5 相关记忆
-  → LLM 层：判断新 insight 与每条相关记忆的关系类型
-  → 代码层：写入 IMemoryRelationStore
+InsightExtractor.extract() 流程中（fire-and-forget）
+  → RelationBuilder.recallRelationCandidates：召回 top-5 相关记忆（关键词搜索）
+  → 同一次 LLM 调用中，追加判断关系类型（不新增 LLM 调用）
+  → RelationBuilder.buildRelations：解析 LLM 输出并写入 IMemoryRelationStore
 ```
 
 遵循降级优先（[ADR-006](./ADR-006-security-model.md)）：关系构建失败不阻塞对话，仅记录日志。
@@ -193,17 +201,23 @@ class MemoryInspector {
   getRelations(memoryId: string, direction?: RelationDirection): MemoryRelation[] { /* 透传 */ }
 }
 
-// IMemoryRelationStore（原子操作接口，5 方法——与 §2 定义一致，未收窄）
+// IMemoryRelationStore（原子操作接口，6 方法——在 §2 原始 5 方法基础上
+// 新增 removeRelationsByMemoryId，用于记忆删除时批量清理孤儿边）
 interface IMemoryRelationStore {
   addRelation(relation: MemoryRelation): void;  // 写操作（MemoryInspector.writeAddRelation 调用）
   getRelations(memoryId: string, direction?): MemoryRelation[];  // 原子读
   getRelationsByType(type: string): MemoryRelation[];  // 按类型查询（冲突检测用）
   getAllRelations(): MemoryRelation[];  // 全量查询（拓扑可视化用）
-  removeRelation(sourceId: string, targetId: string, type: string): void;  // 写操作
+  removeRelation(sourceId: string, targetId: string, type: string): void;  // 单条删除
+  removeRelationsByMemoryId(memoryId: string): number;  // 批量删除（记忆删除时清理孤儿边）
 }
 ```
 
-> **澄清**：IMemoryRelationStore 接口保持 §2 定义的 5 方法不变。
+> **澄清**：IMemoryRelationStore 接口在 §2 原始 5 方法基础上，
+> 新增第 6 个方法 `removeRelationsByMemoryId(memoryId): number`，
+> 用于记忆删除/物理清除时批量清理 memory_relations 表中的孤儿边，
+> 避免关系数据残留。其余原子查询方法（getRelations/getRelationsByType/getAllRelations）不收窄——
+> 它们是宿主实现 SqliteRelationStore 时需要的基础查询能力。
 > 关系查询的**编排逻辑**（BFS/DFS 遍历、路径查找）归属 MemoryInspector，
 > 但 IMemoryRelationStore 本身的原子查询方法（getRelations/getRelationsByType/getAllRelations）不收窄——
 > 它们是宿主实现 SqliteRelationStore 时需要的基础查询能力。

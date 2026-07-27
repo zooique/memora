@@ -55,9 +55,30 @@ Memora 需要支持宿主项目接入：
 | SessionArchiver | `src/agent/managers/sessionArchiver.ts` | 会话内容摘要归档器（ADR-015 GAP-2） |
 | TextPolish | `src/agent/managers/textPolish.ts` | 文本润色 |
 | WorkProjection | `src/agent/managers/workProjection.ts` | 作品投影管理器 |
+| DedupManager | `src/agent/managers/dedupManager.ts` | L1 语义去重管理器（SPLIT-3 闭环：从 MemoryInspector 拆分出异步 LLM 去重职责） |
 | UserFactExtractor | `src/agent/userFactExtractor.ts` | 用户事实提取器（纯函数，非 Manager） |
 
-> 共 13 个专职 Manager/服务类（不含 UserFactExtractor 纯函数）。完整列表与 [project-rules.md §3](../project-rules.md) 一致。
+> 共 14 个专职 Manager/服务类（不含 UserFactExtractor 纯函数）。完整列表与 [project-rules.md §3](../project-rules.md) 一致。
+
+### Manager 访问器（Host API）
+
+Agent 通过只读 getter 暴露 Manager 实例供宿主调用：
+
+| 访问器 | 返回类型 | 用途 |
+| ------ | -------- | ---- |
+| `agent.persona` | PersonaManager | 角色切换 |
+| `agent.tools` | ToolExecutor | 工具执行 |
+| `agent.skills` | SkillManager | 技能匹配 |
+| `agent.config` | ConfigManager | 配置管理 |
+| `agent.insight` | InsightExtractor | 洞察提取 |
+| `agent.memory` | MemoryInspector | 记忆读写 + 查询入口 |
+| `agent.storage` | IMemoryStorage | 存储层 |
+| `agent.security` | SecurityGuard | 安全守卫（写入确认回调注册） |
+| `agent.works` | WorkProjectionManager | 作品投影 |
+| `agent.sessionManager` | SessionManager | 会话管理 |
+| `agent.polish` | TextPolishManager | 文本润色 |
+
+> **security 访问器**：2026-07-21 新增，宿主通过 `agent.security?.onWriteConfirmation(callback)` 注册写入确认回调，实现 M1 写入确认 UI 闭环。SecurityGuard 由 Agent 层创建并注入 ProjectContext，解除 memory→security 的反向依赖。
 
 ## 后果
 

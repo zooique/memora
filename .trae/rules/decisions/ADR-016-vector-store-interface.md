@@ -67,10 +67,14 @@ export interface IVectorStore {
    */
   batchUpsert(items: Array<{ id: string; text: string }>, options?: EmbeddingOptions): Promise<void>;
   /**
-   * 删除向量（实现决定是否立即持久化）
+   * 删除向量并立即持久化（异步）
+   *
+   * 与 upsert 标记 dirty 由调用方 save 不同，delete 是低频操作，
+   * 立即 save 可防止崩溃后已删除向量在下次冷启动复活（FIX-P0-9 加固）。
+   *
    * @param id 待删除的记忆 ID
    */
-  delete(id: string): void;
+  delete(id: string): Promise<void>;
   /**
    * 语义搜索：基于查询文本的向量，返回 topK 最相似的 ID
    * @param query 查询文本（内部嵌入为向量后搜索）
@@ -101,6 +105,7 @@ export interface IVectorStore {
  * - load() 增加 schema 校验（防止损坏文件污染内存索引）
  * - upsert/batchUpsert 增加维度一致性校验（防止维度错位导致相似度计算崩溃）
  * - save() 串行化（防止并发 save 互相覆盖丢失数据）
+ * - delete() 立即 save（FIX-P0-9：防止崩溃后已删除向量复活）
  */
 export class JsonVectorStore implements IVectorStore {
   constructor(

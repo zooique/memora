@@ -21,6 +21,7 @@ import { requireAgent, requireSprite } from './types.js';
 import type { IpcContext } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
+import { formatErrorMessage } from '../../shared/errorMessages.js';
 import type { BrowserWindow } from 'electron';
 
 // ─── 流式输出超时兜底常量 ─────────────────────────────────
@@ -83,107 +84,83 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     return;
   }
 
-  // 缓存 Agent / Sprite 实例：本函数内多次使用，统一取一次避免重复调用 getter；
-  // 同时锁定本次对话使用的实例引用（reinitAgent 后旧实例仍能完成本次对话的清理）
-  const agent = requireAgent(ctx);
-  const sprite = requireSprite(ctx);
-
-  // 跨日/跨会话自动重置：确保新消息始终归当天主会话
-  const history = agent.agentHistory;
-  if (history) {
-    const todayDate = getLocalDate();
-    if (history.currentDateValue !== todayDate) {
-      // 类型守卫：sessionManager 类型为 SessionManager | null，
-      // 初始化未完成或 close() 后为 null，跨日重置依赖 sessionManager 必须存在
-      const sessionManager = agent.sessionManager;
-      if (!sessionManager) {
-        emitStreamError(fullWindow, '会话管理器未初始化，请稍后重试', 'SessionManager 未初始化');
-        return;
-      }
-      // 重置到当天 main 会话（先 switchSession 再 restoreSession，与其他路径一致）
-      sessionManager.switchSession('main');
-      const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
-      // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
-      if (restoredCount === 0 && agent.agentLoop) {
-        agent.agentLoop.restoreHistory([]);
-      }
-    }
-  }
-
-  const messageId = randomUUID();
-  // 角色名推迟到 agent.chat() 内部 tryAutoMatchPersona 执行后再捕获（见 for-await 循环开头），
-  // 确保消息底部显示的角色标签与实际回答使用的角色一致。
-  // SPRITE_STREAM_START 在收到首个 chunk 后发送，此时 persona 已匹配完毕。
-
-  // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
-  // 放在竞态/就绪检查通过后、流式开始前，确保只对真正发送的消息计数
-  sprite.incrementDailyMessageCount();
-
-  // 对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
-  // 确保 LLM 在流式对话中也能拿到最新的感知数据（与 CLI 路径的 wakeup() 共享同一份刷新逻辑）
-  sprite.prepareForChat(text);
-
-  // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
-  ctx.trayManager?.setState('active');
-
-  // 创建 AbortController 供中断使用
-  const abortController = new AbortController();
-  ctx.setAbortController(abortController);
-
-  // 主进程无进展超时兜底：每个 chunk 到达即重置定时器，超时则强制清理（详见 STREAM_NO_PROGRESS_TIMEOUT_MS 注释）
-  let streamTimedOut = false;
-  let streamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 重置无进展定时器（chunk 到达或对话开始时调用） */
-  const resetStreamTimeout = (): void => {
-    if (streamTimeoutTimer !== null) clearTimeout(streamTimeoutTimer);
-    streamTimeoutTimer = setTimeout(() => {
-      // 幂等保护：已超时或已清理则跳过
-      if (streamTimedOut) return;
-      streamTimedOut = true;
-      streamTimeoutTimer = null;
-      // 强制中断内核 generator（若 generator 响应 abort 会抛 AbortError 退出）
-      abortController.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
-      // 强制释放内核对话锁
-      // 仅靠 abortController.abort() 无法中断不响应 signal 的 await 点（如第三方库），
-      // generator 仍卡住时 _chatBusy 锁未释放，用户再发消息会被 agent.chat() 竞态保护拒绝。
-      // forceReleaseChatLock 递增 token + 清理锁，让用户能立即发起新对话；
-      // 原 generator 的 finally 块通过 token 校验跳过清理，不影响新调用。
-      agent.forceReleaseChatLock();
-      // 兜底清理宿主状态：即使 generator 不响应 abort，也确保渲染进程解锁 + AbortController 释放
-      if (!fullWindow.isDestroyed()) {
-        emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
-      }
-      ctx.setAbortController(null);
-      ctx.trayManager?.setState('idle');
-    }, STREAM_NO_PROGRESS_TIMEOUT_MS);
-  };
-  // 启动首次计时
-  resetStreamTimeout();
-
-  // 记录对话开始前的截断次数，对话结束后对比检测截断事件
-  const truncationBefore = agent.getMetrics().context.truncationCount;
-
-  /**
-   * 中断通道已发送标志
-   *
-   * 内核 agent.chat() 有两条路径会产生中断：
-   * 1. for-await 循环中 yield { type: 'aborted' } chunk（内核主动 abort）
-   * 2. AbortController.abort() 导致 generator throw AbortError（外部 abort）
-   * 两条路径最终都会到达：路径1 break 后到 finally，路径2 进入 catch。
-   * 此标志确保 SPRITE_STREAM_ABORTED 只发送一次（单点路由原则），
-   * 避免渲染层重复嵌入中断标记。
-   */
-  let abortedNotified = false;
-
   // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
   // 提升到 try 外部，finally 块需要访问以推送到浮动窗口
   let accumulatedText = '';
-
   // SPRITE_STREAM_START 是否已发送（延迟到首个 chunk 后，确保 persona 已匹配）
   let streamStarted = false;
+  // 中断通道已发送标志（确保 SPRITE_STREAM_ABORTED 只发送一次）
+  let abortedNotified = false;
+  // 主进程无进展超时兜底相关变量
+  let streamTimedOut = false;
+  let streamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  // AbortController 和 messageId 在 try 块内创建，但 finally 块需要访问
+  let abortController: AbortController | null = null;
+  let messageId: string | null = null;
 
   try {
+    // 缓存 Agent / Sprite 实例：本函数内多次使用，统一取一次避免重复调用 getter；
+    // 同时锁定本次对话使用的实例引用（reinitAgent 后旧实例仍能完成本次对话的清理）
+    // 移入 try 块内：防止 isAgentReady() 通过后、reinitAgent 导致 requireAgent 抛异常时
+    // 产生 unhandledRejection（chatHandlers.ts:39 使用 void handleUserInput()）
+    const agent = requireAgent(ctx);
+    const sprite = requireSprite(ctx);
+
+    // 跨日/跨会话自动重置：确保新消息始终归当天主会话
+    const history = agent.agentHistory;
+    if (history) {
+      const todayDate = getLocalDate();
+      if (history.currentDateValue !== todayDate) {
+        const sessionManager = agent.sessionManager;
+        if (!sessionManager) {
+          emitStreamError(fullWindow, '会话管理器未初始化，请稍后重试', 'SessionManager 未初始化');
+          return;
+        }
+        sessionManager.switchSession('main');
+        const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
+        if (restoredCount === 0 && agent.agentLoop) {
+          agent.agentLoop.restoreHistory([]);
+        }
+      }
+    }
+
+    messageId = randomUUID();
+
+    // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
+    sprite.incrementDailyMessageCount();
+
+    // 对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
+    sprite.prepareForChat(text);
+
+    // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
+    ctx.trayManager?.setState('active');
+
+    // 创建 AbortController 供中断使用
+    abortController = new AbortController();
+    ctx.setAbortController(abortController);
+
+    /** 重置无进展定时器（chunk 到达或对话开始时调用） */
+    const resetStreamTimeout = (): void => {
+      if (streamTimeoutTimer !== null) clearTimeout(streamTimeoutTimer);
+      streamTimeoutTimer = setTimeout(() => {
+        if (streamTimedOut) return;
+        streamTimedOut = true;
+        streamTimeoutTimer = null;
+        abortController?.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
+        agent.forceReleaseChatLock();
+        if (!fullWindow.isDestroyed() && messageId) {
+          emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+        }
+        ctx.setAbortController(null);
+        ctx.trayManager?.setState('idle');
+      }, STREAM_NO_PROGRESS_TIMEOUT_MS);
+    };
+    // 启动首次计时
+    resetStreamTimeout();
+
+    // 记录对话开始前的截断次数，对话结束后对比检测截断事件
+    const truncationBefore = agent.getMetrics().context.truncationCount;
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
     for await (const chunk of agent.chat(text, abortController.signal)) {
       // 首个 chunk：此时 agent.chat() 内部的 tryAutoMatchPersona 已执行完毕，
@@ -264,10 +241,13 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         // 标记 abortedNotified 让 finally 不重复发 ABORTED
         abortedNotified = true;
         // 原始技术错误保留到日志便于排查，UI 仅展示友好映射文本
-        logger.error('chatStream chunk error:', chunk.message);
+        // LLM 错误优先走 classifyLlmError（LLM 专用分类），非 LLM 错误走 formatErrorMessage（通用错误分类）
+        const rawMsg = chunk.message ?? '';
+        logger.error('chatStream chunk error:', rawMsg);
+        const friendlyMessage = classifyLlmError(rawMsg);
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
           messageId,
-          reason: classifyLlmError(chunk.message ?? ''),
+          reason: friendlyMessage,
         });
         break;
       } else if (chunk.type === 'aborted') {
@@ -305,11 +285,14 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           abortedNotified = true;
         }
       } else {
-        // 原始错误保留到日志，UI 走 classifyLlmError 友好映射（未匹配回退到原始消息）
+        // 错误分类：与 chatStreamRoutes（Web 路由）统一使用 formatErrorMessage。
+        // chunk.type === 'error' 路径已由 classifyLlmError 处理 LLM 专用错误（401/403/429 等），
+        // catch 块覆盖的是 generator 外层异常（IPC/存储/未知等），走通用分类更合适。
         const rawMsg = toError(error).message;
         logger.error('chatStream catch error:', rawMsg);
+        const friendlyMessage = formatErrorMessage('对话', error);
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-          text: classifyLlmError(rawMsg),
+          text: friendlyMessage,
         });
       }
     }

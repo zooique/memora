@@ -10,9 +10,11 @@
  * - SqliteRelationStore：扩展 memory_relations 表，依赖 better-sqlite3
  * - InMemoryRelationStore：测试用实现，纯内存数组
  *
- * 关系构建时机（Sprite 层，不进内核）：
- * - InsightExtractor.extract() 完成后 fire-and-forget
- * - 代码层召回 top-5 相关记忆 → LLM 判断关系类型 → 写入 IMemoryRelationStore
+ * 关系构建时机与层属（ADR-014 §5）：
+ * - 机制层（候选召回 + prompt 构建 + 关系写入 + 冲突检测）在内核
+ *   src/agent/managers/relationBuilder.ts，LLM 调用合并到 InsightExtractor
+ *   单次 extract() 中，不增加 LLM 调用次数
+ * - 宿主项目（Sprite 层）仅需注入 IMemoryRelationStore 实现
  * - 遵循降级优先（ADR-006）：关系构建失败不阻塞对话，仅记录日志
  */
 import type { MemoryRelation, RelationDirection } from '@/memory/types.js';

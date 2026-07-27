@@ -20,7 +20,7 @@ date: 2026-07-26
 | -------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------- |
 | LLM 对话       | ✅ 提供 provider 抽象 + 流式协议                                        | —                                     | ✅ 已有       |
 | 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回                                                | —                                     | ✅ 已有       |
-| 记忆关系图谱   | ✅ 提供 IMemoryRelationStore 侧车接口 + InMemoryRelationStore 测试实现 | ✅ 实现 SqliteRelationStore + 关系构建逻辑 | ✅ 已有 |
+| 记忆关系图谱   | ✅ 提供 IMemoryRelationStore 侧车接口 + InMemoryRelationStore 测试实现 + RelationBuilder 构建机制 | ✅ 实现 SqliteRelationStore + 宿主 UI 关系图谱展示 | ✅ 已有 |
 | 安全           | ✅ 提供路径白名单 + 写入确认 + 权限模型                                 | —                                     | ✅ 已有       |
 | 通用文件 I/O   | ✅ 提供 4 个内置工具                                                    | —                                     | ✅ 已有       |
 | 工具注册机制   | ✅ 提供 `tools.registerTool()` + `tools.execute()`                       | ✅ 注册具体领域工具                   | ✅ 已有       |
@@ -103,7 +103,8 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 - `IMemoryRelationStore` 是独立接口，不依赖 `IMemoryStorage`
 - `InMemoryRelationStore`（测试用）仅依赖 `MemoryRelation` 类型
 - `SqliteRelationStore`（宿主实现）依赖 better-sqlite3，在宿主层
-- 关系构建逻辑（调用 LLM 判断关系类型）在宿主层，不在内核
+- 关系构建机制（RelationBuilder）在内核 `agent/managers/`，LLM 调用合并到 InsightExtractor 单次调用（不增加 LLM 调用次数）
+- 冲突检测嵌入 InsightExtractor.extract() 现有流程，宿主仅注入存储实现
 
 **禁止**：
 

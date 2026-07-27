@@ -229,6 +229,52 @@ describe('ArchiveCoordinator', () => {
       expect(result).toEqual([]);
       expect(emitSpy.events).toHaveLength(0);
     });
+
+    it('archiveFacts 抛出异常时应发射 archiveFailed({ stage: "profile" }) 事件并返回空数组', async () => {
+      const throwingProfile = {
+        archiveFacts: vi.fn().mockRejectedValue(new Error('归档失败')),
+      } as unknown as UserProfile;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => throwingProfile,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      const result = await coordinator.archiveProfileFacts('我叫张三');
+
+      expect(result).toEqual([]);
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'profile',
+        message: '归档失败',
+      });
+    });
+
+    it('archiveProfileFacts 异常 message 超过 200 字符时应截断后发射', async () => {
+      const longMessage = 'X'.repeat(300);
+      const throwingProfile = {
+        archiveFacts: vi.fn().mockRejectedValue(new Error(longMessage)),
+      } as unknown as UserProfile;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => throwingProfile,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      await coordinator.archiveProfileFacts('我叫张三');
+
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'profile',
+        message: longMessage.slice(0, 200),
+      });
+    });
   });
 
   describe('archiveInsight()', () => {
@@ -313,6 +359,80 @@ describe('ArchiveCoordinator', () => {
 
       expect(result).toEqual([]);
       expect(emitSpy.events).toHaveLength(0);
+    });
+
+    it('extract 抛出异常时应发射 archiveFailed({ stage: "insight" }) 事件并返回空数组', async () => {
+      const throwingExtractor = {
+        classify: vi.fn().mockReturnValue('extract'),
+        extract: vi.fn().mockRejectedValue(new Error('洞察提取失败')),
+      } as unknown as InsightExtractor;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => null,
+        getInsightExtractor: () => throwingExtractor,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      const result = await coordinator.archiveInsight('关键洞察', '助手回复');
+
+      expect(result).toEqual([]);
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'insight',
+        message: '洞察提取失败',
+      });
+    });
+
+    it('classify 抛出异常时应发射 archiveFailed({ stage: "insight" }) 事件并返回空数组', async () => {
+      const throwingExtractor = {
+        classify: vi.fn().mockImplementation(() => {
+          throw new Error('分类失败');
+        }),
+        extract: vi.fn(),
+      } as unknown as InsightExtractor;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => null,
+        getInsightExtractor: () => throwingExtractor,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      const result = await coordinator.archiveInsight('输入', '助手回复');
+
+      expect(result).toEqual([]);
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'insight',
+        message: '分类失败',
+      });
+    });
+
+    it('archiveInsight 异常 message 超过 200 字符时应截断后发射', async () => {
+      const longMessage = 'X'.repeat(300);
+      const throwingExtractor = {
+        classify: vi.fn().mockReturnValue('extract'),
+        extract: vi.fn().mockRejectedValue(new Error(longMessage)),
+      } as unknown as InsightExtractor;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => null,
+        getInsightExtractor: () => throwingExtractor,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      await coordinator.archiveInsight('关键洞察', '助手回复');
+
+      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(archiveFailedEvents).toHaveLength(1);
+      expect(archiveFailedEvents[0]!.payload).toEqual({
+        stage: 'insight',
+        message: longMessage.slice(0, 200),
+      });
     });
   });
 

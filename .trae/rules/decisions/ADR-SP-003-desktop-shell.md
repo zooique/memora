@@ -41,3 +41,4 @@ description: "memora-sprite 宿主：桌面壳分阶段策略"
 - ~~阶段一的 `package.json` 不包含 `electron`，只有 `memora` + `better-sqlite3`~~（阶段二已加入 `electron` ^40.10.6）
 - 阶段二引入 Electron 时需配置 `electron-rebuild`（已通过 `@electron/rebuild` 解决 ABI 兼容，详见 [ADR-SP-002](./ADR-SP-002-storage.md)）
 - CLI 交互层设计为可替换的 `IInteraction` 接口，阶段二替换为 Electron 渲染进程（已实施：`ElectronInteraction` 实现 `IInteraction`）
+- `IInteraction` 接口现已扩展至三种实现：CLI（`CliInteraction`）、Electron（`ElectronInteraction`）、Web（`WebInteraction`），统一处理用户输入输出，与业务逻辑解耦
