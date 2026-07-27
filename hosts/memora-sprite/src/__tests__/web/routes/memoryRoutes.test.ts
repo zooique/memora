@@ -7,7 +7,7 @@
  * - GET /api/memories/:id：查看记忆详情 + 输入验证（超长 ID 降级）
  * - DELETE /api/memories/:id：删除记忆 + 输入验证（超长 ID 降级）
  * - POST /api/memories：添加记忆 + 必填字段校验
- * - POST /api/memories/batch-delete：批量删除（循环调用 deleteMemory）
+ * - POST /api/memories/batch-delete：批量删除（委托 deleteMemoriesBatch，与 IPC 同一调用链）
  * - POST/DELETE/PUT /api/memories/relation：记忆关系增删改
  * - GET /api/memories/graph|health|review：图谱 / 健康度 / 回顾数据
  * - Agent 未就绪 → 503；路由未匹配 → 404；异常 → 500（safeRoute 兜底）
@@ -118,6 +118,7 @@ function createMockCtx(overrides?: {
   searchMemories?: ReturnType<typeof vi.fn>;
   showMemory?: ReturnType<typeof vi.fn>;
   deleteMemory?: ReturnType<typeof vi.fn>;
+  deleteMemoriesBatch?: ReturnType<typeof vi.fn>;
   upsertMemory?: ReturnType<typeof vi.fn>;
   getRelationGraph?: ReturnType<typeof vi.fn>;
   getHealthDashboard?: ReturnType<typeof vi.fn>;
@@ -134,6 +135,9 @@ function createMockCtx(overrides?: {
       searchMemories: overrides?.searchMemories ?? vi.fn(async () => []),
       showMemory: overrides?.showMemory ?? vi.fn(() => null),
       deleteMemory: overrides?.deleteMemory ?? vi.fn(() => false),
+      // 批量删除：与 IPC MEMORIES_DELETE_BATCH 共用同一调用链，默认返回 0 删除
+      deleteMemoriesBatch:
+        overrides?.deleteMemoriesBatch ?? vi.fn(() => ({ deleted: 0, total: 0 })),
       upsertMemory: overrides?.upsertMemory ?? vi.fn(() => 'new-id'),
       getRelationGraph: overrides?.getRelationGraph ?? vi.fn(() => ({ nodes: [], edges: [] })),
       getHealthDashboard: overrides?.getHealthDashboard ?? vi.fn(() => ({ score: 100 })),
@@ -325,9 +329,9 @@ describe('handleMemoryRoute', () => {
 
   // ─── POST /api/memories/batch-delete ───────────────────
 
-  it('POST /api/memories/batch-delete 应循环调用 deleteMemory', async () => {
-    const deleteMemory = vi.fn(() => true);
-    const ctx = createMockCtx({ deleteMemory });
+  it('POST /api/memories/batch-delete 应委托 deleteMemoriesBatch', async () => {
+    const deleteMemoriesBatch = vi.fn(() => ({ deleted: 3, total: 3 }));
+    const ctx = createMockCtx({ deleteMemoriesBatch });
     const req = createMockReq('POST', '/api/memories/batch-delete', {
       ids: ['id-1', 'id-2', 'id-3'],
     });
@@ -335,30 +339,28 @@ describe('handleMemoryRoute', () => {
 
     await handleMemoryRoute(req, res, ctx);
 
-    expect(deleteMemory).toHaveBeenCalledTimes(3);
-    expect(deleteMemory).toHaveBeenCalledWith('id-1');
-    expect(deleteMemory).toHaveBeenCalledWith('id-2');
-    expect(deleteMemory).toHaveBeenCalledWith('id-3');
+    // Web 层原样透传 ids 数组，校验统一在 MemoryController.deleteBatch 内
+    expect(deleteMemoriesBatch).toHaveBeenCalledWith(['id-1', 'id-2', 'id-3']);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ deleted: 3, total: 3 });
   });
 
   it('POST /api/memories/batch-delete 缺少 ids 数组应返回 400', async () => {
-    const deleteMemory = vi.fn(() => true);
-    const ctx = createMockCtx({ deleteMemory });
+    const deleteMemoriesBatch = vi.fn(() => ({ deleted: 0, total: 0 }));
+    const ctx = createMockCtx({ deleteMemoriesBatch });
     const req = createMockReq('POST', '/api/memories/batch-delete', { foo: 'bar' });
     const res = createMockRes();
 
     await handleMemoryRoute(req, res, ctx);
 
-    expect(deleteMemory).not.toHaveBeenCalled();
+    expect(deleteMemoriesBatch).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(400);
   });
 
-  it('POST /api/memories/batch-delete 应跳过超长 ID', async () => {
-    const deleteMemory = vi.fn(() => true);
-    const ctx = createMockCtx({ deleteMemory });
-    /** 构造长度 501 的 ID（超过 500 限制，应被跳过） */
+  it('POST /api/memories/batch-delete 应原样透传超长 ID（校验由内核 deleteBatch 负责）', async () => {
+    const deleteMemoriesBatch = vi.fn(() => ({ deleted: 1, total: 2 }));
+    const ctx = createMockCtx({ deleteMemoriesBatch });
+    /** 构造长度 501 的 ID（超过 isValidId 500 上限，Web 不再过滤，由内核统一校验） */
     const longId = 'a'.repeat(501);
     const req = createMockReq('POST', '/api/memories/batch-delete', {
       ids: ['valid-id', longId],
@@ -367,8 +369,9 @@ describe('handleMemoryRoute', () => {
 
     await handleMemoryRoute(req, res, ctx);
 
-    expect(deleteMemory).toHaveBeenCalledTimes(1);
-    expect(deleteMemory).toHaveBeenCalledWith('valid-id');
+    // Web 层原样透传完整数组，校验策略统一在 MemoryController.deleteBatch（typeof === 'string' && length > 0），
+    // 避免 Web/IPC 校验漂移（之前 Web 用 isValidId 500 上限、IPC 无上限）
+    expect(deleteMemoriesBatch).toHaveBeenCalledWith(['valid-id', longId]);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ deleted: 1, total: 2 });
   });

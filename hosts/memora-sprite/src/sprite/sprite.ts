@@ -10,6 +10,9 @@
  * 已拆分模块：
  *   - SpriteConfigManager：配置持久化 + 每日消息计数
  *   - SpriteLifecycleManager：生命周期 + Agent 事件 + 触发器 + 回收站
+ *   - PersonaWatcher：personas 目录热重载
+ *   - WelcomeBackRecaller：欢迎回来记忆召回
+ *   - ConfigFileSyncer：设定文件变更后的内核联动
  *   - 控制器：MemoryController / PersonaController / ProactiveEngine 等
  *
  * 设计原则（ADR-SP-004）：
@@ -20,14 +23,11 @@ import type { IVectorStore, ITracer } from 'memora';
 // Phase 5.1/5.2：路径追溯 + 邻居查询返回类型（内核纯数据形态，IPC 传输可序列化）
 import type { RelationPath, RelationNeighbor } from 'memora';
 import { logger, toError } from 'memora';
-import { watch } from 'node:fs';
-import { join } from 'node:path';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import { loadSpriteConfig, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
 import { PerceptionCoordinator } from './controllers/perceptionCoordinator.js';
-import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY } from './constants.js';
 import type { DashboardData, RapportAssessment, IPowerMonitor, IApp, ProactiveStats } from './controllers/index.js';
 import { AffectController } from './controllers/affectController.js';
 import type { AffectState } from './controllers/affectController.js';
@@ -49,17 +49,13 @@ import {
   type ConfigFileEntry,
   type ConfigFileOperationResult,
 } from './configFileManager.js';
+// personas 热重载 + 欢迎回来召回 + 设定文件联动
+import { PersonaWatcher } from './personaWatcher.js';
+import { WelcomeBackRecaller } from './welcomeBackRecaller.js';
+import { ConfigFileSyncer } from './configFileSyncer.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
-
-/**
- * personas 目录热重载防抖间隔（毫秒）
- *
- * 编辑器保存文件时可能触发多次 change 事件（写入 + 重命名），500ms 防抖合并为一次 reload。
- * 与 fileWatcherTrigger 的默认防抖（1000ms）保持同量级，但稍短以提升响应感。
- */
-const PERSONA_RELOAD_DEBOUNCE_MS = 500;
 
 /**
  * 启动摘要（迭代一：Welcome Back Digest）
@@ -227,14 +223,17 @@ export class Sprite {
    * 不传则跳过热重载（测试场景默认行为）
    */
   private configDir: string | null;
-  /** personas 目录 fs.watch 监听器句柄（start 时创建，stop 时关闭） */
-  private personaWatcher: ReturnType<typeof watch> | null = null;
-  /** personas 热重载防抖计时器（500ms 内多次变化合并为一次 reload） */
-  private personaReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── 拆分后的 Manager ────────────────────────────────
   private configManager: SpriteConfigManager;
   private lifecycleManager: SpriteLifecycleManager;
+  // ─── 协作模块 ────────────────────────────────
+  /** personas 目录热重载监听器（start 时启动，stop 时关闭） */
+  private personaWatcher: PersonaWatcher | null;
+  /** 欢迎回来记忆召回器（bindPresence 时注入到 PresenceController.onWelcomeBack） */
+  private welcomeBackRecaller: WelcomeBackRecaller;
+  /** 设定文件变更后的内核联动同步器（saveConfigFile/deleteConfigFile 时调用） */
+  private configFileSyncer: ConfigFileSyncer;
 
   // ─── 控制器（在 initControllers / initPerceptionStack 中初始化，使用 !: 断言） ───
   private memoryController!: MemoryController;
@@ -289,6 +288,46 @@ export class Sprite {
 
     // ─── 创建 LifecycleManager（生命周期编排） ───
     this.lifecycleManager = this.createLifecycleManager(config, options);
+
+    // ─── 协作模块：personaWatcher / welcomeBackRecaller / configFileSyncer ───
+    // personaWatcher 仅在 configDir 提供时构造，否则保持 null（start/stop 时跳过）
+    this.personaWatcher = this.configDir
+      ? new PersonaWatcher({
+          configDir: this.configDir,
+          reload: (source) => this.agent.reloadConfig(source),
+          onError: (reason) => {
+            this.proactiveEngine.addNotice('suggestion', reason, false, 'high');
+          },
+          onFilesChanged: (payload) => {
+            this.emitSprite('configFilesChanged', payload);
+          },
+        })
+      : null;
+
+    this.welcomeBackRecaller = new WelcomeBackRecaller({
+      listMemories: (limit) => {
+        // 复用 agent.memory（MemoryInspector），获取完整 Memory 对象
+        const inspector = this.agent.memory;
+        return inspector ? inspector.list(limit) : [];
+      },
+      notifyRecall: (type, summary, isMilestone, priority) => {
+        this.proactiveEngine.addNotice(type, summary, isMilestone, priority);
+      },
+    });
+
+    this.configFileSyncer = new ConfigFileSyncer({
+      agent: {
+        // getter 函数延迟访问——这些 Manager 在 Agent.init() 之后才可用
+        // Sprite 构造时 Agent 可能尚未 init，直接捕获引用会得到 null
+        getPersona: () => this.agent.persona,
+        getConfig: () => this.agent.config,
+        getSkills: () => this.agent.skills,
+        reloadConfig: (source) => this.agent.reloadConfig(source),
+      },
+      onError: (reason) => {
+        this.proactiveEngine.addNotice('suggestion', reason, false, 'high');
+      },
+    });
 
     // ─── 启动后注册 ───
     if (config.fileWatcherEnabled) {
@@ -522,7 +561,7 @@ export class Sprite {
 
     // 启动 personas 目录热重载（configDir 提供时）
     // 用户在编辑器中修改 personas/*.md 后，自动触发 agent.reloadConfig('persona') 刷新缓存
-    this.startPersonaWatcher();
+    this.personaWatcher?.start();
   }
 
   /** 停止精灵主控 */
@@ -532,93 +571,8 @@ export class Sprite {
     this.presenceController?.stop();
     this.spriteHandlers.clear();
     this.state = 'idle';
-    // 关闭 personas 目录热重载监听器 + 清理防抖计时器
-    this.stopPersonaWatcher();
-  }
-
-  /**
-   * 启动 personas 目录热重载监听器
-   *
-   * 监听 <configDir>/personas/ 目录的文件变化（新增/修改/删除 .md 文件），
-   * 500ms 防抖后触发 agent.reloadConfig('persona') 清空缓存重新扫描。
-   * 重载期间对话繁忙时跳过本次（用户可手动调 reloadConfig）。
-   *
-   * 设计要点：
-   * - 使用 fs.watch recursive 模式（Node 22 LTS 稳定支持）
-   * - 监听器 error 事件仅记录日志，不抛错（目录被删除/权限丢失时优雅降级）
-   * - configDir 未提供时直接跳过（测试场景默认行为）
-   */
-  private startPersonaWatcher(): void {
-    if (!this.configDir) return;
-    // 幂等守卫：已存在 watcher 则跳过，避免重复 start() 导致旧句柄泄漏
-    if (this.personaWatcher) return;
-
-    const personasDir = join(this.configDir, 'personas');
-    try {
-      this.personaWatcher = watch(personasDir, { recursive: true }, (_eventType, filename) => {
-        // 仅响应 .md 文件变化，忽略其他文件（如 .swp 临时文件）
-        if (!filename || !filename.endsWith('.md')) return;
-        this.schedulePersonaReload();
-      });
-      // error 事件：关闭并清理 watcher 句柄，避免目录被删除后 watcher 进入僵尸状态
-      this.personaWatcher.on('error', (err) => {
-        logger.warn({ err: toError(err).message, personasDir }, 'personas 目录监听器错误，热重载已停止');
-        this.proactiveEngine.addNotice('suggestion', `人物设定目录监听异常：${toError(err).message}`, false, 'high');
-        try {
-          this.personaWatcher?.close();
-        } catch {
-          // 二次错误（如句柄已损坏）忽略，避免 error handler 内抛错
-        }
-        this.personaWatcher = null;
-      });
-      logger.info({ personasDir }, 'personas 目录热重载已启动');
-    } catch (err) {
-      // 目录不存在或权限不足时优雅降级，不阻塞 start()
-      logger.warn({ err: toError(err).message, personasDir }, 'personas 目录监听启动失败，跳过热重载');
-      this.proactiveEngine.addNotice('suggestion', `人物设定目录监听启动失败：${toError(err).message}`, false, 'high');
-    }
-  }
-
-  /**
-   * 防抖调度 personas 重载
-   *
-   * 500ms 内多次文件变化合并为一次 reload，避免编辑器写入触发多次重载。
-   *
-   * reload 完成后（无论成功失败）发射 configFilesChanged 事件：
-   *   - 文件层已变化是事实（真理源），渲染层应据此刷新列表
-   *   - reload 失败仅影响内核同步，不影响文件层刷新通知
-   *   - name 为空字符串表示批量变更（防抖合并多次变化，无法确定具体文件名）
-   */
-  private schedulePersonaReload(): void {
-    if (this.personaReloadTimer) {
-      clearTimeout(this.personaReloadTimer);
-    }
-    this.personaReloadTimer = setTimeout(() => {
-      this.personaReloadTimer = null;
-      void this.agent
-        .reloadConfig('persona')
-        .catch((err) => {
-          logger.warn({ err: toError(err).message }, 'personas 热重载失败');
-          this.proactiveEngine.addNotice('suggestion', `人物设定热重载失败：${toError(err).message}，面板数据可能不是最新`, false, 'high');
-        })
-        .finally(() => {
-          // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
-          // type='persona' + name='' 表示批量变更，渲染层全量刷新 persona tab
-          this.emitSprite('configFilesChanged', { type: 'persona', action: 'save', name: '' });
-        });
-    }, PERSONA_RELOAD_DEBOUNCE_MS);
-  }
-
-  /** 关闭 personas 目录监听器 + 清理防抖计时器 */
-  private stopPersonaWatcher(): void {
-    if (this.personaWatcher) {
-      this.personaWatcher.close();
-      this.personaWatcher = null;
-    }
-    if (this.personaReloadTimer) {
-      clearTimeout(this.personaReloadTimer);
-      this.personaReloadTimer = null;
-    }
+    // 关闭 personas 目录热重载监听器
+    this.personaWatcher?.stop();
   }
 
   /**
@@ -648,82 +602,10 @@ export class Sprite {
         this.emitSprite(event, payload);
       },
       onWelcomeBack: (awayDurationMs) => {
-        this.welcomeBackRecall(awayDurationMs);
+        this.welcomeBackRecaller.recall(awayDurationMs);
       },
     });
     this.setPresenceController(controller);
-  }
-
-  /**
-   * 欢迎回来记忆召回（方向 A：遗忘召回）
-   *
-   * 长时间离开（>= 1 小时）后回来时，取离开期间产生的新记忆，
-   * 构造摘要后通过 proactiveEngine.addNotice('recalled', summary) 注入主动提示队列。
-   * 由 PresenceController.handlePresent 在 checkPending 之前触发，
-   * 这样 checkPending 能一并消费召回事件。
-   *
-   * 记忆选取策略：取 50 条 → 按 createdAt 过滤出离开期间的记忆 → 取前 5 条。
-   * 与 perceptionCoordinator.getCrossSessionContext 的选取范式相似（都先取 50 再按时间过滤），
-   * 但时间窗口语义不同——此处是"离开期间"，getCrossSessionContext 是"gapMs + 2h"。
-   * 不强行提取公共方法，因两处时间窗口语义不可统一。
-   *
-   * 零 LLM 调用，纯模板拼接。
-   *
-   * @param awayDurationMs 离开时长（毫秒），必定 >= WELCOME_BACK_THRESHOLD_MS
-   */
-  private welcomeBackRecall(awayDurationMs: number): void {
-    try {
-      // 复用 agent.memory（MemoryInspector），获取完整 Memory 对象
-      const inspector = this.agent.memory;
-      if (!inspector) return;
-
-      // 取 50 条活跃记忆（按 score 降序），再按 createdAt 过滤出离开期间产生的新记忆
-      // 离开期间的判定：createdAt >= (now - awayDurationMs)，即离开开始之后创建的记忆
-      const now = Date.now();
-      const awaySinceMs = now - awayDurationMs;
-      const allMemories = inspector.list(50);
-      const recentMemories = allMemories.filter((m) => {
-        const createdMs = new Date(m.createdAt).getTime();
-        return createdMs >= awaySinceMs;
-      }).slice(0, 5);
-
-      // 离开期间无新记忆则不提示（避免提示无关的旧记忆）
-      if (recentMemories.length === 0) {
-        logger.debug({ awayDurationMs }, '离开期间无新记忆，跳过召回');
-        return;
-      }
-
-      // 构造时长描述（分钟/小时/天），复用 constants.ts 时间常量（DRY）
-      // [SYNC-PERCEPTION-COORDINATOR] perceptionCoordinator.getCrossSessionContext 有相似的时长格式化，
-      // 两处语义不同（此处是"离开时长"，彼处是"对话间隔"），不强行提取公共方法
-      const minutes = Math.round(awayDurationMs / MS_PER_MINUTE);
-      const durationText = awayDurationMs < MS_PER_HOUR
-        ? `${minutes} 分钟`
-        : awayDurationMs < MS_PER_DAY
-          ? `${Math.round(awayDurationMs / MS_PER_HOUR)} 小时`
-          : `${Math.round(awayDurationMs / MS_PER_DAY)} 天`;
-
-      // 构造摘要：时长 + 数量 + 前 3 个 name（提升信息量）
-      // 第一人称文案：体现精灵主动感知（presenceController 检测离开 + 记忆系统主动归档）
-      const names = recentMemories
-        .map((m) => m.name)
-        .filter((n) => n.length > 0)
-        .slice(0, 3);
-      const nameList = names.length > 0 ? `（${names.join('、')}）` : '';
-      const summary = `我注意到你离开了 ${durationText}，期间我整理了 ${recentMemories.length} 条新记忆${nameList}`;
-
-      // 注入主动提示队列，type='recalled' 由 buildPrompt 专属分支处理
-      this.proactiveEngine.addNotice('recalled', summary);
-
-      logger.info(
-        { awayDurationMs, memoryCount: recentMemories.length, names },
-        '欢迎回来记忆召回已注入',
-      );
-    } catch (err) {
-      // 召回失败不影响后续 checkPending（错误隔离，与 PresenceController 的 try/catch 双重保护）
-      logger.warn({ err, awayDurationMs }, '欢迎回来记忆召回失败');
-      this.proactiveEngine.addNotice('suggestion', '欢迎回来时记忆召回失败，部分近期记忆可能未捕获', false, 'high');
-    }
   }
 
   /** 获取当前状态 */
@@ -909,7 +791,7 @@ export class Sprite {
     }
 
     // 内核层联动（同步 SQLite + 内存 + system prompt）
-    await this.syncConfigFileChange(type, name, content, 'save');
+    await this.configFileSyncer.sync(type, name, content, 'save');
 
     // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
     this.emitSprite('configFilesChanged', { type, action: 'save', name });
@@ -946,7 +828,7 @@ export class Sprite {
     }
 
     // 内核层联动（同步 SQLite + 内存 + system prompt）
-    await this.syncConfigFileChange(type, name, '', 'delete');
+    await this.configFileSyncer.sync(type, name, '', 'delete');
 
     // 发射 configFilesChanged 事件（IPC 层监听后广播 CONFIG_FILES_CHANGED 到渲染进程）
     this.emitSprite('configFilesChanged', { type, action: 'delete', name });
@@ -969,60 +851,6 @@ export class Sprite {
       return [];
     }
     return listFileEntries(type, this.configDir);
-  }
-
-  /**
-   * 设定文件变更后的内核联动同步
-   *
-   * 内部辅助方法，统一处理 save/delete 后的 Manager 同步逻辑。
-   * 联动失败不抛错（文件已是真理源，Manager 联动失败仅记录日志，下次 reloadConfig 时自然对齐）。
-   *
-   * @param type 配置类型
-   * @param name 配置名
-   * @param content 文件内容（delete 时为空字符串）
-   * @param action 操作类型 'save' | 'delete'
-   */
-  private async syncConfigFileChange(
-    type: ConfigFileType,
-    name: string,
-    content: string,
-    action: 'save' | 'delete',
-  ): Promise<void> {
-    try {
-      if (type === 'persona') {
-        if (action === 'delete') {
-          // 删除：清内存 + SQLite 软删除 + 激活角色回退（K3）
-          this.agent.persona?.deletePersona(name);
-        } else {
-          // 保存：重新扫描 personas/ 目录（保持激活角色，reload 内部处理）
-          // personaWatcher 也会触发，但显式调用确保即时生效（避免 500ms 防抖延迟）
-          await this.agent.reloadConfig('persona');
-        }
-      } else if (type === 'rule') {
-        if (action === 'delete') {
-          // 删除：SQLite 软删除 + bootstrap 段刷新（K1）
-          this.agent.config?.deleteRule(name);
-        } else {
-          // 保存：upsert SQLite + bootstrap 段刷新（K1，处理软删除复活）
-          this.agent.config?.updateRule(name, content);
-        }
-      } else if (type === 'skill') {
-        if (action === 'delete') {
-          // 删除：SQLite 软删除 + SkillManager 内存清理 + bootstrap 段刷新（K1 联动 K4）
-          this.agent.config?.deleteSkill(name);
-        } else {
-          // 保存：重新扫描 skills/ 目录（SkillManager.reload 内部同步 SQLite + 内存）
-          await this.agent.skills?.reload();
-        }
-      }
-    } catch (err) {
-      // 联动失败不阻断文件操作（文件已是真理源），下次 reloadConfig 时自然对齐
-      logger.warn(
-        { type, name, action, err: toError(err).message },
-        '设定文件变更后的内核联动失败，下次 reloadConfig 时自然对齐',
-      );
-      this.proactiveEngine.addNotice('suggestion', `设定文件"${name}"同步失败，将在下次重载时自动对齐`, false, 'high');
-    }
   }
 
   // ─── 项目管理 ──────────────────────────────────────────

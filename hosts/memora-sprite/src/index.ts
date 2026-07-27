@@ -39,12 +39,7 @@ import {
   CREATE_SKILL_TOOL,
   CREATE_RULE_TOOL,
   webSearchHandler,
-  memorySearchHandler,
-  createPersonaHandler,
-  createSkillHandler,
-  createRuleHandler,
-  setMemorySearcher,
-  setAgentRef,
+  createSpriteHandlers,
 } from './sprite/tools.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
 export { Sprite } from './sprite/sprite.js';
@@ -562,29 +557,40 @@ async function setupAgentPostInit(
     }
   }
 
-  // 注册宿主自定义工具（web_search + memory_search）
+  // 注册宿主自定义工具（web_search + memory_search + create_persona/skill/rule）
+  // 显式依赖注入（ADR-SP-019，原 HEAL-8）：通过 createSpriteHandlers 工厂构造
+  // 有状态 handler 闭包，消除模块级 agentRef / memorySearcher 全局状态
   if (agent.tools) {
-    setMemorySearcher(async (query, limit) => {
-      // 添加 memory null 检查
-      if (!agent.memory) return [];
-      const hits = await agent.memory.search(query, limit);
-      return hits.map((h: AgentSearchHit) => ({
-        name: h.name,
-        contentPreview: h.contentPreview ?? '',
-        score: h.score,
-      }));
-    });
+    // web_search 无状态依赖，始终注册
     agent.tools.registerTool(WEB_SEARCH_TOOL, webSearchHandler);
-    agent.tools.registerTool(MEMORY_SEARCH_TOOL, memorySearchHandler);
-    agent.tools.registerTool(CREATE_PERSONA_TOOL, createPersonaHandler);
-    agent.tools.registerTool(CREATE_SKILL_TOOL, createSkillHandler);
-    agent.tools.registerTool(CREATE_RULE_TOOL, createRuleHandler);
 
+    // memory_search + create_persona/skill/rule 需要完整 deps（agent.config + agent.memory）
     if (agent.config) {
-      setAgentRef({
-        config: agent.config,
-        reloadConfig: (source?: string) => agent.reloadConfig(source),
-      });
+      // memory_search 依赖：封装 agent.memory.search + 字段映射
+      const memorySearcher = async (query: string, limit: number) => {
+        // 添加 memory null 检查
+        if (!agent.memory) return [];
+        const hits = await agent.memory.search(query, limit);
+        return hits.map((h: AgentSearchHit) => ({
+          name: h.name,
+          contentPreview: h.contentPreview ?? '',
+          score: h.score,
+        }));
+      };
+      // create_persona/skill/rule 依赖：最小 Agent 接口（config + reloadConfig）
+      const { memorySearchHandler, createPersonaHandler, createSkillHandler, createRuleHandler } =
+        createSpriteHandlers({
+          agent: {
+            config: agent.config,
+            reloadConfig: (source?: string) => agent.reloadConfig(source),
+          },
+          memorySearcher,
+        });
+
+      agent.tools.registerTool(MEMORY_SEARCH_TOOL, memorySearchHandler);
+      agent.tools.registerTool(CREATE_PERSONA_TOOL, createPersonaHandler);
+      agent.tools.registerTool(CREATE_SKILL_TOOL, createSkillHandler);
+      agent.tools.registerTool(CREATE_RULE_TOOL, createRuleHandler);
     }
   }
 }

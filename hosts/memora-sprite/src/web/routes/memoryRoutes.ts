@@ -140,15 +140,11 @@ export async function handleMemoryRoute(
         sendError(res, 400, '请求体必须包含 ids 数组');
         return;
       }
-      // 循环调用 deleteMemory（与 IPC handler 实现一致，Sprite 无 deleteMemoriesBatch 方法）
-      // ID 校验统一使用 isValidId，过滤非法值
-      let deleted = 0;
-      for (const id of body.ids) {
-        if (isValidId(id)) {
-          if (ctx.sprite.deleteMemory(id)) deleted++;
-        }
-      }
-      sendJson(res, 200, { deleted, total: body.ids.length });
+      // 委托 Sprite.deleteMemoriesBatch（与 IPC MEMORIES_DELETE_BATCH 同一调用链）：
+      // 校验逻辑统一在 MemoryController.deleteBatch 内（typeof === 'string' && length > 0），
+      // 避免 Web/IPC 校验策略漂移（之前 Web 用 isValidId 500 字符上限、IPC 无上限）
+      const result = ctx.sprite.deleteMemoriesBatch(body.ids);
+      sendJson(res, 200, result);
       return;
     }
 

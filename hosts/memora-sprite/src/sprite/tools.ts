@@ -14,33 +14,54 @@
  *   - handler 复用 `index.ts` 现有的 execFile 跨平台逻辑
  *   - memorySearchTool 委托内核 searchMemories，避免重复实现
  *   - 节流/审计交给工具系统自然触发（每次调用走 SecurityGuard 审计日志）
+ *
+ * 依赖注入（ADR-SP-019）：
+ *   有状态 handler（memory_search + create_persona/skill/rule）改为由
+ *   `createSpriteHandlers(deps)` 工厂构造，闭包捕获依赖。
+ *   消除模块级 agentRef / memorySearcher 全局状态——多 Agent 实例并行
+ *   （测试 / Electron + Web）互不污染，handler 内无需 nullable 检查。
  */
 import { execFile } from 'node:child_process';
 import { logger, toError } from 'memora';
 import type { ToolDefinition, ToolHandler, ToolContext, ConfigSuggestion } from 'memora';
 
 /**
- * Agent 引用（由 index.ts 在 initAgentFromConfig 中注入）
+ * Agent 引用（创建角色/技能/规则工具的依赖）
  *
- * 用于工具处理器中调用 config.confirmConfigSuggestion 和 agent.reloadConfig。
- * 采用延迟注入模式，避免循环依赖。
+ * 显式依赖注入：替代模块级全局状态。
+ * 仅暴露工具处理器所需的最小接口（confirmConfigSuggestion + reloadConfig），
+ * 避免泄漏 Agent 全部 API。
  */
-type AgentRef = {
+export type AgentRef = {
+  /** 配置管理器（用于 confirmConfigSuggestion 写入 .md 文件） */
   config: {
     confirmConfigSuggestion: (suggestion: ConfigSuggestion) => Promise<void>;
   };
+  /** 重载配置（source 为 'persona' | 'skill' | 'rule'） */
   reloadConfig: (source?: string) => Promise<{ skill: number; persona: number }>;
 };
-let agentRef: AgentRef | null = null;
 
-/** 注入 Agent 引用（在 Agent 初始化完成后调用） */
-export function setAgentRef(agent: AgentRef): void {
-  agentRef = agent;
-}
+/**
+ * 记忆搜索器签名（memory_search 工具的依赖）
+ *
+ * 由宿主在创建工具处理器时注入，封装 agent.memory.search + 字段映射，
+ * 避免 tools.ts 反向依赖 Agent 全部 API。
+ */
+export type MemorySearcher = (
+  query: string,
+  limit: number,
+) => Promise<Array<{ name: string; contentPreview: string; score: number }>>;
 
-/** 获取当前 Agent 引用（handler 调用时使用） */
-function getAgentRef(): AgentRef | null {
-  return agentRef;
+/**
+ * 精灵自定义工具处理器依赖
+ *
+ * 由调用方（CLI / Electron / Web）独立构造一份注入 createSpriteHandlers。
+ */
+export interface SpriteHandlerDeps {
+  /** Agent 引用（create_persona / skill / rule 工具使用） */
+  agent: AgentRef;
+  /** 记忆搜索器（memory_search 工具使用） */
+  memorySearcher: MemorySearcher;
 }
 
 /**
@@ -102,7 +123,11 @@ export function webSearch(query: string): Promise<string> {
   });
 }
 
-/** web_search 工具处理器 */
+/**
+ * web_search 工具处理器（无状态，保持顶层导出）
+ *
+ * 不依赖任何运行时注入，多 Agent 实例共享同一函数引用无副作用。
+ */
 export const webSearchHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
   return webSearch(String(args.query ?? ''));
 };
@@ -128,124 +153,7 @@ export const MEMORY_SEARCH_TOOL: ToolDefinition = {
   },
 };
 
-/** memory_search 工具处理器 */
-export const memorySearchHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
-  const query = String(args.query ?? '').trim();
-  if (!query) {
-    return '错误：query 参数不能为空';
-  }
-  // limit 参数容错：解析失败时回退到默认 5
-  const limitRaw = Number(args.limit);
-  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 10) : 5;
-
-  // 委托给注册时绑定的 searcher，避免循环依赖
-  const searcher = getMemorySearcher();
-  if (!searcher) {
-    return '错误：记忆搜索器未初始化';
-  }
-
-  try {
-    const hits = await searcher(query, limit);
-    if (hits.length === 0) {
-      return `未找到与 "${query}" 相关的记忆`;
-    }
-    const lines = hits.map((h) => `- [${h.name}] ${h.contentPreview} (score: ${h.score.toFixed(2)})`);
-    return `找到 ${hits.length} 条相关记忆：\n${lines.join('\n')}`;
-  } catch (err) {
-    // 记忆搜索失败时返回错误信息给 LLM，同时记录警告便于排查
-    logger.warn({ err: toError(err).message, query }, '记忆搜索失败');
-    return `错误：记忆搜索失败：${toError(err).message}`;
-  }
-};
-
-/** 记忆搜索器引用（由 index.ts 在 initAgentFromConfig 中注入） */
-type MemorySearcher = (query: string, limit: number) => Promise<Array<{ name: string; contentPreview: string; score: number }>>;
-let memorySearcher: MemorySearcher | null = null;
-
-/** 注入记忆搜索器（在 Agent 初始化完成后调用） */
-export function setMemorySearcher(searcher: MemorySearcher): void {
-  memorySearcher = searcher;
-}
-
-/** 获取当前搜索器引用（handler 调用时使用） */
-function getMemorySearcher(): MemorySearcher | null {
-  return memorySearcher;
-}
-
 // ─── 创建角色和技能工具 ─────────────────────────────────────────
-
-/**
- * 创建角色/技能/规则的公共处理器工厂
- *
- * createPersonaHandler / createSkillHandler / createRuleHandler 的公共逻辑提取：
- * 参数提取 → 校验 → 内容拼接 → confirmConfigSuggestion → reloadConfig。
- * 仅 type 和消息文本不同，由参数区分。
- *
- * @param type 类型标识（'persona' | 'skill' | 'rule'）
- * @param label 中文标签（用于消息文本）
- */
-function createConfigHandler(
-  type: 'persona' | 'skill' | 'rule',
-  label: string,
-): ToolHandler {
-  return async (args: Record<string, unknown>, _ctx: ToolContext) => {
-    const agent = getAgentRef();
-    if (!agent) {
-      return '错误：Agent 引用未初始化';
-    }
-
-    const name = String(args.name ?? '').trim();
-    const description = String(args.description ?? '').trim();
-    const content = String(args.content ?? '').trim();
-    const keywords = String(args.keywords ?? '').trim();
-
-    if (!name) {
-      return `错误：${label}名称不能为空`;
-    }
-    if (!content) {
-      return `错误：${label}内容不能为空`;
-    }
-
-    // description/keywords 通过 metadata 传递，写入 frontmatter 供 PersonaManager/SkillManager 解析
-    // 不再拼接到 content 纯文本——避免 body 噪音，且 keywords 字段可被 parseKeywords 正确读取
-    const metadata: Record<string, string> = {};
-    if (description) {
-      metadata.description = description;
-    }
-    if (keywords) {
-      metadata.keywords = keywords;
-    }
-
-    // 阶段 1：写入配置文件（confirmConfigSuggestion 写 .md 文件 + 调用 reloadConfig 热重载）
-    // 这一步失败属于真正的创建失败，返回错误
-    try {
-      await agent.config.confirmConfigSuggestion({
-        type,
-        name,
-        content,
-        confidence: 0.95,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      });
-    } catch (err) {
-      logger.warn({ err: toError(err).message, name }, `创建${label}失败：配置文件写入异常`);
-      return `错误：创建${label}失败：${toError(err).message}`;
-    }
-
-    // 阶段 2：热重载内存（reloadConfig）
-    // 这一步在对话进行中会因 chatLock 冲突失败（"对话繁忙"），但文件已成功持久化，
-    // 不应掩盖创建成功的事实——降级为提示"重启后生效"
-    let reloadHint = '';
-    try {
-      await agent.reloadConfig(type);
-    } catch (err) {
-      const errMsg = toError(err).message;
-      logger.info({ err: errMsg, name, type }, `${label}文件已写入，热重载推迟（对话进行中）`);
-      reloadHint = '\n\n注意：当前对话进行中，新配置将在对话结束后自动加载，或重启后生效。';
-    }
-
-    return `${label} "${name}" 创建成功！已持久化到配置文件，重启后依然生效。${reloadHint}\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
-  };
-}
 
 /** create_persona 工具定义 */
 export const CREATE_PERSONA_TOOL: ToolDefinition = {
@@ -275,9 +183,6 @@ export const CREATE_PERSONA_TOOL: ToolDefinition = {
   },
 };
 
-/** create_persona 工具处理器（由公共工厂 createConfigHandler 生成） */
-export const createPersonaHandler: ToolHandler = createConfigHandler('persona', '角色');
-
 /** create_skill 工具定义 */
 export const CREATE_SKILL_TOOL: ToolDefinition = {
   name: 'create_skill',
@@ -305,9 +210,6 @@ export const CREATE_SKILL_TOOL: ToolDefinition = {
     required: ['name', 'content'],
   },
 };
-
-/** create_skill 工具处理器（由公共工厂 createConfigHandler 生成） */
-export const createSkillHandler: ToolHandler = createConfigHandler('skill', '技能');
 
 /** create_rule 工具定义 */
 export const CREATE_RULE_TOOL: ToolDefinition = {
@@ -338,5 +240,125 @@ export const CREATE_RULE_TOOL: ToolDefinition = {
   },
 };
 
-/** create_rule 工具处理器（由公共工厂 createConfigHandler 生成） */
-export const createRuleHandler: ToolHandler = createConfigHandler('rule', '规则');
+/**
+ * 创建精灵自定义工具处理器集合
+ *
+ * 显式依赖注入工厂（ADR-SP-019）：替代模块级 agentRef / memorySearcher
+ * 全局状态，让每个 Agent 实例拥有独立的 handler 闭包（多 Agent 并行互不污染）。
+ * 闭包捕获 deps 后 handler 内无需 nullable 检查（消除防御式编程反模式）。
+ *
+ * @param deps 注入依赖（agent + memorySearcher）
+ * @returns 4 个有状态 ToolHandler（memory_search + create_persona/skill/rule）。
+ *          webSearchHandler 因无状态保持顶层导出，不在此处生成。
+ */
+export function createSpriteHandlers(deps: SpriteHandlerDeps): {
+  memorySearchHandler: ToolHandler;
+  createPersonaHandler: ToolHandler;
+  createSkillHandler: ToolHandler;
+  createRuleHandler: ToolHandler;
+} {
+  const { agent, memorySearcher } = deps;
+
+  /**
+   * memory_search 工具处理器
+   *
+   * 闭包捕获 memorySearcher，无需 null 检查（依赖在工厂调用时已注入）。
+   */
+  const memorySearchHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
+    const query = String(args.query ?? '').trim();
+    if (!query) {
+      return '错误：query 参数不能为空';
+    }
+    // limit 参数容错：解析失败时回退到默认 5
+    const limitRaw = Number(args.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 10) : 5;
+
+    try {
+      const hits = await memorySearcher(query, limit);
+      if (hits.length === 0) {
+        return `未找到与 "${query}" 相关的记忆`;
+      }
+      const lines = hits.map((h) => `- [${h.name}] ${h.contentPreview} (score: ${h.score.toFixed(2)})`);
+      return `找到 ${hits.length} 条相关记忆：\n${lines.join('\n')}`;
+    } catch (err) {
+      // 记忆搜索失败时返回错误信息给 LLM，同时记录警告便于排查
+      logger.warn({ err: toError(err).message, query }, '记忆搜索失败');
+      return `错误：记忆搜索失败：${toError(err).message}`;
+    }
+  };
+
+  /**
+   * 创建角色/技能/规则的公共处理器工厂
+   *
+   * createPersonaHandler / createSkillHandler / createRuleHandler 的公共逻辑提取：
+   * 参数提取 → 校验 → 内容拼接 → confirmConfigSuggestion → reloadConfig。
+   * 仅 type 和消息文本不同，由参数区分。
+   *
+   * @param type 类型标识（'persona' | 'skill' | 'rule'）
+   * @param label 中文标签（用于消息文本）
+   */
+  function createConfigHandler(
+    type: 'persona' | 'skill' | 'rule',
+    label: string,
+  ): ToolHandler {
+    return async (args: Record<string, unknown>, _ctx: ToolContext) => {
+      const name = String(args.name ?? '').trim();
+      const description = String(args.description ?? '').trim();
+      const content = String(args.content ?? '').trim();
+      const keywords = String(args.keywords ?? '').trim();
+
+      if (!name) {
+        return `错误：${label}名称不能为空`;
+      }
+      if (!content) {
+        return `错误：${label}内容不能为空`;
+      }
+
+      // description/keywords 通过 metadata 传递，写入 frontmatter 供 PersonaManager/SkillManager 解析
+      // 不再拼接到 content 纯文本——避免 body 噪音，且 keywords 字段可被 parseKeywords 正确读取
+      const metadata: Record<string, string> = {};
+      if (description) {
+        metadata.description = description;
+      }
+      if (keywords) {
+        metadata.keywords = keywords;
+      }
+
+      // 阶段 1：写入配置文件（confirmConfigSuggestion 写 .md 文件 + 调用 reloadConfig 热重载）
+      // 这一步失败属于真正的创建失败，返回错误
+      try {
+        await agent.config.confirmConfigSuggestion({
+          type,
+          name,
+          content,
+          confidence: 0.95,
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        });
+      } catch (err) {
+        logger.warn({ err: toError(err).message, name }, `创建${label}失败：配置文件写入异常`);
+        return `错误：创建${label}失败：${toError(err).message}`;
+      }
+
+      // 阶段 2：热重载内存（reloadConfig）
+      // 这一步在对话进行中会因 chatLock 冲突失败（"对话繁忙"），但文件已成功持久化，
+      // 不应掩盖创建成功的事实——降级为提示"重启后生效"
+      let reloadHint = '';
+      try {
+        await agent.reloadConfig(type);
+      } catch (err) {
+        const errMsg = toError(err).message;
+        logger.info({ err: errMsg, name, type }, `${label}文件已写入，热重载推迟（对话进行中）`);
+        reloadHint = '\n\n注意：当前对话进行中，新配置将在对话结束后自动加载，或重启后生效。';
+      }
+
+      return `${label} "${name}" 创建成功！已持久化到配置文件，重启后依然生效。${reloadHint}\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
+    };
+  }
+
+  return {
+    memorySearchHandler,
+    createPersonaHandler: createConfigHandler('persona', '角色'),
+    createSkillHandler: createConfigHandler('skill', '技能'),
+    createRuleHandler: createConfigHandler('rule', '规则'),
+  };
+}

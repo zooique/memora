@@ -3,15 +3,17 @@
  *
  * 覆盖范围：
  * - webSearch：纯函数，execFile 跨平台浏览器打开
- * - webSearchHandler：ToolHandler 包装，参数容错
- * - memorySearchHandler：ToolHandler，委托注入的 memorySearcher
- * - setMemorySearcher：注入/默认状态验证
- * - WEB_SEARCH_TOOL / MEMORY_SEARCH_TOOL：ToolDefinition 常量校验
+ * - webSearchHandler：ToolHandler 包装，参数容错（无状态，顶层导出）
+ * - createSpriteHandlers：依赖注入工厂，返回 4 个有状态 ToolHandler
+ *   - memorySearchHandler：委托注入的 memorySearcher
+ *   - createPersonaHandler / createSkillHandler / createRuleHandler：写文件 + 热重载
+ * - WEB_SEARCH_TOOL / MEMORY_SEARCH_TOOL / CREATE_*_TOOL：ToolDefinition 常量校验
  *
  * 测试策略（对齐 memoryController.test.ts 范式）：
  * - mock execFile（vi.mock('node:child_process', ...)）
  * - mock logger（通过 setLogger 注入 mockLogger）
- * - 纯业务逻辑测试，无 I/O、无 LLM、无 DOM
+ * - 每个测试通过 createSpriteHandlers 工厂构造独立 handler 实例
+ *   （消除模块级全局状态，多 Agent 实例并行互不污染）
  * - 类型导入使用 import type（consistent-type-imports 规则）
  * - 禁止 @ts-ignore / as any / as unknown as
  */
@@ -31,12 +33,7 @@ vi.mock('node:child_process', () => ({
 import {
   webSearch,
   webSearchHandler,
-  memorySearchHandler,
-  setMemorySearcher,
-  setAgentRef,
-  createPersonaHandler,
-  createSkillHandler,
-  createRuleHandler,
+  createSpriteHandlers,
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
   CREATE_PERSONA_TOOL,
@@ -84,8 +81,7 @@ function createMockSearcher(
 /**
  * 创建 Mock AgentRef
  *
- * AgentRef 类型未从 tools.ts 导出，利用 TypeScript 结构化类型，
- * 构造形状兼容的对象即可通过 setAgentRef 的类型检查。
+ * 形状兼容 createSpriteHandlers 的 AgentRef 类型。
  * 返回类型由推断保留 Mock 方法（mockResolvedValue / mockRejectedValue 等）。
  */
 function createMockAgent() {
@@ -95,6 +91,28 @@ function createMockAgent() {
     },
     reloadConfig: vi.fn().mockResolvedValue({ skill: 0, persona: 0 }),
   };
+}
+
+/**
+ * 通过 createSpriteHandlers 工厂构造带 mock 依赖的 handlers
+ *
+ * 显式依赖注入测试范式：每个测试独立构造一份 handlers 实例，
+ * 避免 setAgentRef / setMemorySearcher 模块级状态泄漏。
+ *
+ * @param options 可选的 mock 覆盖（agent / searcher）
+ * @returns { handlers, mockAgent, mockSearch } — handlers + 注入的 mocks（用于断言）
+ */
+function createHandlersWithMocks(options?: {
+  agent?: ReturnType<typeof createMockAgent>;
+  searcher?: ReturnType<typeof createMockSearcher>;
+}) {
+  const mockAgent = options?.agent ?? createMockAgent();
+  const mockSearch = options?.searcher ?? createMockSearcher();
+  const handlers = createSpriteHandlers({
+    agent: mockAgent,
+    memorySearcher: mockSearch,
+  });
+  return { handlers, mockAgent, mockSearch };
 }
 
 // ─── 测试用例 ────────────────────────────────────────────
@@ -269,11 +287,13 @@ describe('tools', () => {
 
   describe('memorySearchHandler', () => {
     let mockSearch: ReturnType<typeof createMockSearcher>;
+    let memorySearchHandler: ReturnType<typeof createSpriteHandlers>['memorySearchHandler'];
 
     beforeEach(() => {
-      // 注入默认 mock 搜索器（返回空结果）
+      // 每个测试通过工厂构造独立 handlers（消除模块级状态）
       mockSearch = createMockSearcher();
-      setMemorySearcher(mockSearch);
+      const { handlers } = createHandlersWithMocks({ searcher: mockSearch });
+      memorySearchHandler = handlers.memorySearchHandler;
     });
 
     it('成功搜索应返回格式化结果"找到 N 条相关记忆：..."', async () => {
@@ -349,33 +369,40 @@ describe('tools', () => {
     });
   });
 
-  // ─── 4. setMemorySearcher（2 测试） ───────────────────
+  // ─── 4. createSpriteHandlers 工厂（替代原 setMemorySearcher 测试） ───
 
-  describe('setMemorySearcher', () => {
+  describe('createSpriteHandlers 工厂', () => {
     it('注入 searcher 后 memorySearchHandler 可正常调用', async () => {
       const mockSearch = createMockSearcher([
         { name: 'mem-a', contentPreview: '内容A', score: 0.9 },
       ]);
-      setMemorySearcher(mockSearch);
+      const { handlers } = createHandlersWithMocks({ searcher: mockSearch });
 
-      const result = await memorySearchHandler({ query: 'test' }, mockCtx);
+      const result = await handlers.memorySearchHandler({ query: 'test' }, mockCtx);
 
       expect(result).toContain('找到 1 条相关记忆：');
       expect(mockSearch).toHaveBeenCalledWith('test', 5);
     });
 
-    it('默认状态（未注入）应返回"错误：记忆搜索器未初始化"', async () => {
-      // 通过 resetModules 获取模块初始状态（memorySearcher === null）
-      vi.resetModules();
-      // 重新 mock child_process（resetModules 清除了之前的 mock）
-      vi.doMock('node:child_process', () => ({
-        execFile: vi.fn(),
-      }));
+    it('多实例并行：两次工厂调用产生独立 handlers 闭包（不共享 searcher）', async () => {
+      // 模拟多 Agent 实例并行场景（ADR-SP-019，原 HEAL-8 核心目标）
+      const mockSearch1 = createMockSearcher([
+        { name: 'mem-1', contentPreview: '内容1', score: 0.9 },
+      ]);
+      const mockSearch2 = createMockSearcher([
+        { name: 'mem-2', contentPreview: '内容2', score: 0.8 },
+      ]);
+      const { handlers: handlers1 } = createHandlersWithMocks({ searcher: mockSearch1 });
+      const { handlers: handlers2 } = createHandlersWithMocks({ searcher: mockSearch2 });
 
-      const freshMod = await import('../../sprite/tools.js');
-      const result = await freshMod.memorySearchHandler({ query: 'test' }, mockCtx);
+      const result1 = await handlers1.memorySearchHandler({ query: 'q1' }, mockCtx);
+      const result2 = await handlers2.memorySearchHandler({ query: 'q2' }, mockCtx);
 
-      expect(result).toBe('错误：记忆搜索器未初始化');
+      // 两个实例各自调用各自的 searcher，互不污染
+      expect(result1).toContain('[mem-1]');
+      expect(result2).toContain('[mem-2]');
+      expect(mockSearch1).toHaveBeenCalledWith('q1', 5);
+      expect(mockSearch2).toHaveBeenCalledWith('q2', 5);
     });
   });
 
@@ -446,9 +473,9 @@ describe('tools', () => {
       const mockSearch = createMockSearcher();
       // reject 一个非 Error 值，触发 err instanceof Error === false 分支
       mockSearch.mockRejectedValue('搜索服务不可用');
-      setMemorySearcher(mockSearch);
+      const { handlers } = createHandlersWithMocks({ searcher: mockSearch });
 
-      const result = await memorySearchHandler({ query: 'test' }, mockCtx);
+      const result = await handlers.memorySearchHandler({ query: 'test' }, mockCtx);
 
       // err instanceof Error === false → String(err) 分支
       expect(result).toBe('错误：记忆搜索失败：搜索服务不可用');
@@ -464,24 +491,13 @@ describe('tools', () => {
 
   describe('createPersonaHandler', () => {
     let mockAgent: ReturnType<typeof createMockAgent>;
+    let createPersonaHandler: ReturnType<typeof createSpriteHandlers>['createPersonaHandler'];
 
     beforeEach(() => {
+      // 每个测试通过工厂构造独立 handlers（消除模块级状态）
       mockAgent = createMockAgent();
-      setAgentRef(mockAgent);
-    });
-
-    it('Agent 未注入时应返回"错误：Agent 引用未初始化"', async () => {
-      // 通过 resetModules 获取模块初始状态（agentRef === null）
-      vi.resetModules();
-      vi.doMock('node:child_process', () => ({ execFile: vi.fn() }));
-
-      const freshMod = await import('../../sprite/tools.js');
-      const result = await freshMod.createPersonaHandler(
-        { name: '测试角色', content: '内容' },
-        mockCtx,
-      );
-
-      expect(result).toBe('错误：Agent 引用未初始化');
+      const { handlers } = createHandlersWithMocks({ agent: mockAgent });
+      createPersonaHandler = handlers.createPersonaHandler;
     });
 
     it('name 为空时应返回"错误：角色名称不能为空"', async () => {
@@ -618,10 +634,12 @@ describe('tools', () => {
 
   describe('createSkillHandler', () => {
     let mockAgent: ReturnType<typeof createMockAgent>;
+    let createSkillHandler: ReturnType<typeof createSpriteHandlers>['createSkillHandler'];
 
     beforeEach(() => {
       mockAgent = createMockAgent();
-      setAgentRef(mockAgent);
+      const { handlers } = createHandlersWithMocks({ agent: mockAgent });
+      createSkillHandler = handlers.createSkillHandler;
     });
 
     it('name 为空时应返回"错误：技能名称不能为空"', async () => {
@@ -678,10 +696,12 @@ describe('tools', () => {
 
   describe('createRuleHandler', () => {
     let mockAgent: ReturnType<typeof createMockAgent>;
+    let createRuleHandler: ReturnType<typeof createSpriteHandlers>['createRuleHandler'];
 
     beforeEach(() => {
       mockAgent = createMockAgent();
-      setAgentRef(mockAgent);
+      const { handlers } = createHandlersWithMocks({ agent: mockAgent });
+      createRuleHandler = handlers.createRuleHandler;
     });
 
     it('name 为空时应返回"错误：规则名称不能为空"', async () => {
@@ -803,10 +823,10 @@ describe('tools', () => {
   describe('参数 undefined 降级', () => {
     it('memorySearchHandler: args.query 未传 key 时应走 ?? "" 分支返回空值错误', async () => {
       const mockSearch = createMockSearcher();
-      setMemorySearcher(mockSearch);
+      const { handlers } = createHandlersWithMocks({ searcher: mockSearch });
 
       // 不传 query key → args.query 为 undefined → ?? '' 触发右操作数
-      const result = await memorySearchHandler({}, mockCtx);
+      const result = await handlers.memorySearchHandler({}, mockCtx);
 
       expect(result).toBe('错误：query 参数不能为空');
       expect(mockSearch).not.toHaveBeenCalled();
@@ -814,10 +834,10 @@ describe('tools', () => {
 
     it('createPersonaHandler: args.name 未传 key 时应走 ?? "" 分支返回名称错误', async () => {
       const mockAgent = createMockAgent();
-      setAgentRef(mockAgent);
+      const { handlers } = createHandlersWithMocks({ agent: mockAgent });
 
       // 不传 name key → args.name 为 undefined → ?? '' 触发右操作数
-      const result = await createPersonaHandler({ content: '内容' }, mockCtx);
+      const result = await handlers.createPersonaHandler({ content: '内容' }, mockCtx);
 
       expect(result).toBe('错误：角色名称不能为空');
       expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
@@ -825,10 +845,10 @@ describe('tools', () => {
 
     it('createPersonaHandler: args.content 未传 key 时应走 ?? "" 分支返回内容错误', async () => {
       const mockAgent = createMockAgent();
-      setAgentRef(mockAgent);
+      const { handlers } = createHandlersWithMocks({ agent: mockAgent });
 
       // 不传 content key → args.content 为 undefined → ?? '' 触发右操作数
-      const result = await createPersonaHandler({ name: '角色' }, mockCtx);
+      const result = await handlers.createPersonaHandler({ name: '角色' }, mockCtx);
 
       expect(result).toBe('错误：角色内容不能为空');
       expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();

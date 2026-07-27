@@ -461,8 +461,9 @@ export class MemoryController {
     const beforeMs = before.getTime();
     let purged = 0;
     for (const m of memory.listDeleted()) {
-      // deletedAt 字段为 ISO 字符串，解析为时间戳比较；非法日期跳过（不误删）
-      const deletedMs = new Date(m.deletedAt).getTime();
+      // deletedAt 为 ISO 字符串（listDeleted 仅返回已删除项，deletedAt 必然存在）；
+      // 解析为时间戳比较，非法日期跳过（不误删）
+      const deletedMs = new Date(m.deletedAt!).getTime();
       if (!Number.isFinite(deletedMs) || deletedMs >= beforeMs) continue;
       try {
         memory.writePurge(m.id);

@@ -14,6 +14,7 @@
  */
 
 import { ipcMain, shell } from 'electron';
+import { logger } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
