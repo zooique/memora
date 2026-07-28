@@ -154,13 +154,10 @@ describe('OpenAICompatibleProvider · 错误处理', () => {
     }).rejects.toThrow('服务端错误');
   });
 
-  it('缺少 apiKey 应该抛出配置错误', async () => {
+  it('apiKey 为空仍可创建并调用（内核不做校验——宿主层职责）', () => {
+    // apiKey 为空也可调用——校验是宿主层职责
     const provider = makeProvider('');
-    await expect(async () => {
-      for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
-        void chunk;
-      }
-    }).rejects.toThrow('API Key 未配置');
+    expect(provider.name).toBe('test');
   });
 
   it('网络错误应该抛出 LLM 服务连接失败', async () => {

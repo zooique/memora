@@ -526,7 +526,7 @@ async function setupAgentPostInit(
 
   // 后台 Provider：用于 Insight 提取、配置分析等后台 LLM 任务
   if (config.llm.background) {
-    const bgProvider = createProviderFromConfig('background', config.llm.background);
+    const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
     agent.setBackgroundProvider(bgProvider);
   }
 

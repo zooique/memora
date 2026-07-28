@@ -1653,9 +1653,17 @@
         <label for="cfg-provider-display">显示名称</label>
         <input type="text" id="cfg-provider-display" placeholder="DeepSeek V3" autocomplete="off" />
 
-        <label for="cfg-provider-provider">提供商（provider）</label>
-        <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" aria-required="true" aria-describedby="cfg-provider-provider-error" />
-        <p id="cfg-provider-provider-error" class="prompt-error hidden" role="alert"></p>
+        <fieldset class="cfg-provider-mode-toggle" aria-label="API 类型">
+          <legend class="cfg-provider-mode-legend">API 类型</legend>
+          <button type="button" class="cfg-provider-mode-btn active" role="radio" aria-checked="true" id="cfg-provider-mode-cloud" data-mode="cloud">
+            <span class="mode-icon" aria-hidden="true">☁️</span>
+            <span class="mode-label">网络 API</span>
+          </button>
+          <button type="button" class="cfg-provider-mode-btn" role="radio" aria-checked="false" id="cfg-provider-mode-local" data-mode="local">
+            <span class="mode-icon" aria-hidden="true">🖥️</span>
+            <span class="mode-label">本地 API</span>
+          </button>
+        </fieldset>
 
         <label for="cfg-provider-model">模型（model）</label>
         <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" aria-required="true" aria-describedby="cfg-provider-model-error" />
@@ -1836,7 +1844,7 @@
         <div class="onboarding-api-form">
           <div class="settings-row">
             <label for="onboarding-provider">提供商（provider）</label>
-            <input type="text" id="onboarding-provider" placeholder="如 deepseek / openai / anthropic" autocomplete="off" aria-required="true" aria-describedby="onboarding-provider-error" />
+            <input type="text" id="onboarding-provider" placeholder="如 deepseek / openai / ollama / anthropic" autocomplete="off" aria-required="true" aria-describedby="onboarding-provider-error" />
             <p id="onboarding-provider-error" class="onboarding-error hidden" role="alert"></p>
           </div>
           <div class="settings-row">

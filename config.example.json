@@ -10,7 +10,8 @@
       "openai": {
         "provider": "openai",
         "model": "gpt-4o",
-        "apiKey": "${MEMORA_OPENAI_API_KEY}"
+        "apiKey": "${MEMORA_OPENAI_API_KEY}",
+        "baseUrl": "https://api.openai.com/v1"
       }
     },
     "active": "deepseek",

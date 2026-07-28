@@ -14,7 +14,7 @@ import type { Config } from '@/config/loader.js';
 
 function makeConfig(dataDir?: string): Config {
   return {
-    llm: { provider: 'mock', apiKey: 'test', baseUrl: undefined, model: 'mock', temperature: 0.7 },
+    llm: { provider: 'mock', apiKey: 'test', baseUrl: 'https://mock.local', model: 'mock', temperature: 0.7 },
     memory: { dataDir: dataDir || join(tmpdir(), 'memora-pm-test'), maxContextTokens: 80000 },
     security: { permission: 'owner', confirmWrites: false },
     allowedPaths: [],

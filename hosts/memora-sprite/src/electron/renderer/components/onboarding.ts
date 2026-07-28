@@ -353,7 +353,7 @@ export class OnboardingManager {
   /**
    * 校验 API 配置表单：必填字段非空
    *
-   * 校验规则：provider / model / apiKey 必填，baseUrl 可空（部分 Provider 允许）
+   * 校验规则：provider / model / baseUrl / apiKey 均必填
    *
    * @param data 表单数据
    * @returns true 通过校验 / false 校验失败（已标记错误字段）
@@ -369,6 +369,9 @@ export class OnboardingManager {
     }
     if (!data.model) {
       firstErrorField ??= showFieldError('onboarding-model', '请填写模型');
+    }
+    if (!data.baseUrl) {
+      firstErrorField ??= showFieldError('onboarding-base-url', '请填写 API Base URL');
     }
     if (!data.apiKey) {
       firstErrorField ??= showFieldError('onboarding-api-key', '请填写 API Key');

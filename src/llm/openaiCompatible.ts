@@ -78,19 +78,6 @@ export class OpenAICompatibleProvider extends LlmProvider {
     // 注意：不能与 tools 同时使用（OpenAI 协议限制），调用方需自行保证互斥
     if (opts.response_format) body['response_format'] = opts.response_format;
 
-    // 校验 API Key（缺失时给友好提示，不暴露 undefined 报错）
-    if (!this.config.apiKey) {
-      throw configError(
-        'API Key 未配置',
-        `provider: ${this.name}，baseUrl: ${this.config.baseUrl}`,
-        [
-          '检查 ~/.memora/config.json 的 llm.apiKey 字段',
-          '确认已设置环境变量 MEMORA_LLM_API_KEY',
-          '查看文档：config.example.json',
-        ],
-      );
-    }
-
     // 合并 AbortSignal：外部取消信号 + 超时信号（mergeAbortSignals 集中维护，ADR-017 枝叶层 2 次提取）
     // 确保用户取消和请求超时都能中断 fetch 和流读取
     const abort = mergeAbortSignals(opts.signal, timeoutMs, 'LLM 请求超时');

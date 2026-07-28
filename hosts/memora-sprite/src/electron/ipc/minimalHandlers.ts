@@ -155,7 +155,7 @@ export function registerMinimalIpcHandlers(
         const provider = createProviderFromConfig('test', {
           provider: llmConfig.provider,
           model: llmConfig.model,
-          baseUrl: llmConfig.baseUrl || undefined,
+          baseUrl: llmConfig.baseUrl ?? "",
           apiKey: llmConfig.apiKey,
         });
 
@@ -369,7 +369,7 @@ export function registerMinimalIpcHandlers(
               const newProvider = createProviderFromConfig(newActive, {
                 provider: providerConfig.provider,
                 model: providerConfig.model,
-                baseUrl: providerConfig.baseUrl || undefined,
+                baseUrl: providerConfig.baseUrl ?? "",
                 apiKey: providerConfig.apiKey || '',
               });
               const currentAgent = callbacks.getCurrentAgent();
@@ -418,7 +418,7 @@ export function registerMinimalIpcHandlers(
         const newProvider = createProviderFromConfig(key, {
           provider: providerConfig.provider,
           model: providerConfig.model,
-          baseUrl: providerConfig.baseUrl || undefined,
+          baseUrl: providerConfig.baseUrl ?? "",
           apiKey: providerConfig.apiKey || '',
         });
 
@@ -435,7 +435,7 @@ export function registerMinimalIpcHandlers(
 
         // 同步切换后台 Provider（如果配置了）
         if (config.llm.background) {
-          const bgProvider = createProviderFromConfig('background', config.llm.background);
+          const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
           currentAgent.setBackgroundProvider(bgProvider);
         } else {
           currentAgent.setBackgroundProvider(null);
@@ -481,7 +481,7 @@ export function registerMinimalIpcHandlers(
         if (currentAgent) {
           const config: Config = await spriteConfigStore.load();
           if (config.llm.background) {
-            const bgProvider = createProviderFromConfig('background', config.llm.background);
+            const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
             currentAgent.setBackgroundProvider(bgProvider);
           } else {
             currentAgent.setBackgroundProvider(null);

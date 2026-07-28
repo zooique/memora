@@ -124,11 +124,11 @@ export class SettingsPanelManager {
   private providerModalTitleEl: HTMLElement | null;
   private providerAliasInput: HTMLInputElement | null;
   private providerDisplayInput: HTMLInputElement | null;
-  private providerProviderInput: HTMLInputElement | null;
   private providerModelInput: HTMLInputElement | null;
   private providerBaseUrlInput: HTMLInputElement | null;
   private providerApiKeyInput: HTMLInputElement | null;
   private providerTemperatureInput: HTMLInputElement | null;
+  private providerModeButtons: NodeListOf<HTMLButtonElement> | null;
   private btnAddProvider: HTMLButtonElement | null;
   // 后台归档 Provider 选择框
   private backgroundProviderSelect: HTMLSelectElement | null;
@@ -215,11 +215,11 @@ export class SettingsPanelManager {
     this.providerModalTitleEl = document.getElementById('provider-modal-title');
     this.providerAliasInput = getOptionalElement('cfg-provider-alias', 'input');
     this.providerDisplayInput = getOptionalElement('cfg-provider-display', 'input');
-    this.providerProviderInput = getOptionalElement('cfg-provider-provider', 'input');
     this.providerModelInput = getOptionalElement('cfg-provider-model', 'input');
     this.providerBaseUrlInput = getOptionalElement('cfg-provider-base-url', 'input');
     this.providerApiKeyInput = getOptionalElement('cfg-provider-api-key', 'input');
     this.providerTemperatureInput = getOptionalElement('cfg-provider-temperature', 'input');
+    this.providerModeButtons = document.querySelectorAll<HTMLButtonElement>('.cfg-provider-mode-btn');
     this.btnAddProvider = getOptionalElement('btn-add-provider', 'button');
     this.backgroundProviderSelect = getOptionalElement('cfg-background-provider', 'select');
     this.btnProviderSave = getOptionalElement('btn-provider-save', 'button');
@@ -703,11 +703,11 @@ export class SettingsPanelManager {
       providerModalTitleEl: this.providerModalTitleEl,
       providerAliasInput: this.providerAliasInput,
       providerDisplayInput: this.providerDisplayInput,
-      providerProviderInput: this.providerProviderInput,
       providerModelInput: this.providerModelInput,
       providerBaseUrlInput: this.providerBaseUrlInput,
       providerApiKeyInput: this.providerApiKeyInput,
       providerTemperatureInput: this.providerTemperatureInput,
+      providerModeButtons: this.providerModeButtons,
       btnAddProvider: this.btnAddProvider,
       backgroundProviderSelect: this.backgroundProviderSelect,
       btnProviderSave: this.btnProviderSave,

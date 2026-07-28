@@ -269,7 +269,7 @@ export async function handleSystemRoute(
           const newProvider = createProviderFromConfig(key, {
             provider: providerConfig.provider,
             model: providerConfig.model,
-            baseUrl: providerConfig.baseUrl || undefined,
+            baseUrl: providerConfig.baseUrl ?? '',
             apiKey: providerConfig.apiKey || '',
           });
 

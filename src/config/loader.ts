@@ -33,13 +33,13 @@ const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 
 // 单个 Provider 配置接口（用于 providers 映射表的值）
 interface ProviderConfig {
-  /** Provider 名称 */
-  provider: string;
+  /** Provider 标识（可选——仅用于日志，不影响路由） */
+  provider?: string;
   /** 模型名称 */
   model: string;
-  /** API 基础 URL（可选） */
+  /** API 基础 URL（可选——内核不做预设回退，缺失时工厂会报错） */
   baseUrl?: string;
-  /** API 密钥（可选，从环境变量读取） */
+  /** API 密钥（可选，从环境变量读取。本地 LLM 如 Ollama 可为空字符串） */
   apiKey?: string;
   /** 该 Provider 的 temperature，未配置时回退到全局 llm.temperature */
   temperature?: number;
@@ -82,7 +82,7 @@ interface LlmConfig {
   model: string;
   /** API 基础 URL（可选） */
   baseUrl?: string;
-  /** API 密钥（可选，从环境变量读取） */
+  /** API 密钥（可选，从环境变量读取。本地 LLM 可为空） */
   apiKey?: string;
   /** 采样温度（0-2） */
   temperature: number;
@@ -365,11 +365,11 @@ function parseProviders(value: unknown): Record<string, ProviderConfig> | undefi
     const p = providerValue as Record<string, unknown>;
 
     // 验证必需字段（断言失败抛 configError，返回值类型收窄为 string）
-    const providerName = assertString(p.provider, `providers.${key}.provider`);
+    // provider 为可选（仅日志标识，详见 ProviderConfig 接口注释）
+    const providerName = typeof p.provider === 'string' ? p.provider : undefined;
     const modelName = assertString(p.model, `providers.${key}.model`);
 
     providers[key] = {
-      provider: providerName,
       model: modelName,
       // 过滤空字符串：与 parseConfig 顶层逻辑保持一致
       baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
@@ -377,6 +377,10 @@ function parseProviders(value: unknown): Record<string, ProviderConfig> | undefi
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
       contextWindow: (typeof p.contextWindow === 'number' && Number.isFinite(p.contextWindow)) ? p.contextWindow : undefined,
     };
+    // 仅在显式配置 provider 时写入字段，避免在对象上保留 undefined 键
+    if (providerName !== undefined) {
+      providers[key].provider = providerName;
+    }
   }
 
   return Object.keys(providers).length > 0 ? providers : undefined;

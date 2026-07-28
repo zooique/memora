@@ -87,13 +87,48 @@ export interface LlmProvider {
       "openai": {
         "provider": "openai",
         "model": "gpt-4o-mini",
-        "apiKey": "${OPENAI_API_KEY}"
+        "apiKey": "${OPENAI_API_KEY}",
+        "baseUrl": "https://api.openai.com/v1"
       }
     },
     "active": "deepseek"
   }
 }
 ```
+
+### 年轮修订（2026-07-28）：内核纯透传化，删除 presets 预设表
+
+**背景**：原 `factory.ts` 内置 `presets` 表（deepseek/doubao/openai 三家的 `baseUrl` + `defaultModel`），在 `createProviderFromConfig` 中作为兜底回退。问题：
+
+1. **维护成本高**：厂商模型迭代频繁（如 doubao-pro-32k → doubao-pro-128k），presets 极易过期
+2. **违反领域无关原则**：内核 `src/llm/` 不应硬编码具体厂商信息，违反"核心库提供机制，宿主提供策略"分层边界（见 [backend_layers_rules.md §核心库 vs 宿主项目职责边界](../backend_layers_rules.md)）
+3. **掩盖配置缺失**：用户配置缺 baseUrl/model 时，presets 静默回退，导致运行时行为与配置文件不一致
+
+**决策**：
+
+| 项 | 旧 | 新 |
+|----|----|----|
+| `presets` 表 | 内核硬编码 3 家 | ❌ 删除 |
+| `ProviderConfig.baseUrl` | 可选（回退 presets） | ✅ 必填（宿主负责填充） |
+| `ProviderConfig.model` | 可选（回退 presets） | ✅ 必填 |
+| `ProviderConfig.provider` | 路由标识 | 仅日志标识（`cloud`/`local`/厂商名均可，不影响路由） |
+| `apiKey` 校验 | 内核强制非空 | ❌ 移除（本地 LLM 如 Ollama 可为空字符串；是否必需由下游 LLM 服务决定） |
+| `openaiCompatible.ts` chat() 中的 apiKey 校验 | 提前报错 | ❌ 移除（透传给 OpenAI SDK，由服务端返回 401） |
+
+**宿主层适配**：
+
+- 宿主调用 `createProviderFromConfig` 时必须显式填充 `baseUrl`（`?? ""` 兜底空字符串，避免 `undefined` 传入）
+- 宿主 UI（`providerManagement.ts`）新增"网络 API / 本地 API"模式切换：
+  - 网络 API：apiKey 必填，baseUrl 默认 `https://api.example.com`
+  - 本地 API：apiKey 可选，baseUrl 默认 `http://localhost:11434/v1`（Ollama）
+  - `provider` 字段由用户输入改为模式标记（`cloud`/`local`），驱动 UI 校验逻辑
+
+**影响**：
+
+- 内核 `src/llm/factory.ts` 净减 ~30 行（删除 presets 表 + 回退逻辑 + apiKey 校验）
+- 宿主 4 处调用点（`minimalHandlers.ts` / `index.ts`）`baseUrl || undefined` → `baseUrl ?? ""`
+- `config.example.json` openai 条目补 `baseUrl`
+- 用户配置文件无需迁移——旧配置若缺 baseUrl 会得到明确错误提示（"provider X 缺少 baseUrl"），而非静默回退到过期预设
 
 ### 多 Provider 管理 API
 

@@ -295,6 +295,7 @@ describe('步骤 2：通用表单校验', () => {
     nextBtn.click();
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-wrong';
 
     const saveBtn = document.getElementById('btn-onboarding-save-key') as HTMLButtonElement;
@@ -324,6 +325,7 @@ describe('步骤 2：测试连接按钮', () => {
     // 填写完整字段
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-test';
 
     const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;
@@ -335,7 +337,7 @@ describe('步骤 2：测试连接按钮', () => {
     expect(electronAPI.testLlmConfig).toHaveBeenCalledWith({
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: '',
+      baseUrl: 'https://api.deepseek.com/v1',
       apiKey: 'sk-test',
     });
 
@@ -357,6 +359,7 @@ describe('步骤 2：测试连接按钮', () => {
     nextBtn.click();
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-wrong';
 
     const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;

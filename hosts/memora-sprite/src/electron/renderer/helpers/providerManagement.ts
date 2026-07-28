@@ -47,7 +47,6 @@ import type { SettingsPanelHost } from '../panels/settingsPanelManager.js';
  */
 const PROVIDER_FORM_FIELD_IDS = [
   'cfg-provider-alias',
-  'cfg-provider-provider',
   'cfg-provider-model',
   'cfg-provider-api-key',
   'cfg-provider-temperature',
@@ -57,13 +56,12 @@ const PROVIDER_FORM_FIELD_IDS = [
  * Provider 表单必填字段 id 与中文标签映射
  *
  * 用于 attachRequiredBlurValidation 附加 blur 即时必填校验。
- * temperature 非必填（有默认值 0.7），不纳入 blur 校验。
+ * - temperature 非必填（有默认值 0.7），不纳入 blur 校验
+ * - apiKey 必填性依赖模式（网络必填 / 本地可选），blur 校验无法感知模式，由 validateProviderForm 在提交时校验
  */
 const PROVIDER_REQUIRED_FIELDS: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'cfg-provider-alias', label: '别名' },
-  { id: 'cfg-provider-provider', label: '提供商' },
   { id: 'cfg-provider-model', label: '模型' },
-  { id: 'cfg-provider-api-key', label: 'API Key' },
 ];
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
@@ -91,8 +89,6 @@ export interface ProviderManagementContext {
   readonly providerAliasInput: HTMLInputElement | null;
   /** Provider 显示名称输入框 */
   readonly providerDisplayInput: HTMLInputElement | null;
-  /** Provider 提供商标识输入框（如 deepseek / openai） */
-  readonly providerProviderInput: HTMLInputElement | null;
   /** Provider 模型名称输入框 */
   readonly providerModelInput: HTMLInputElement | null;
   /** Provider API Base URL 输入框 */
@@ -101,6 +97,8 @@ export interface ProviderManagementContext {
   readonly providerApiKeyInput: HTMLInputElement | null;
   /** Provider Temperature 输入框（0-2） */
   readonly providerTemperatureInput: HTMLInputElement | null;
+  /** Provider 模式按钮组（网络 API / 本地 API 互斥按钮） */
+  readonly providerModeButtons: NodeListOf<HTMLButtonElement> | null;
   /** "添加 API" 按钮 */
   readonly btnAddProvider: HTMLButtonElement | null;
   /** 后台归档 Provider 选择框 */
@@ -263,8 +261,15 @@ export function renderProviderList(
 
     const detailSpan = document.createElement('span');
     detailSpan.className = 'provider-detail';
-    detailSpan.textContent = `${p.provider} · ${p.model}`;
+    detailSpan.textContent = p.model;
     info.appendChild(detailSpan);
+
+    // 模式标签（网络 / 本地）
+    const mode = p.provider === 'local' ? 'local' : 'cloud';
+    const modeBadge = document.createElement('span');
+    modeBadge.className = `provider-mode-badge ${mode}`;
+    modeBadge.textContent = mode === 'local' ? '🖥️ 本地' : '☁️ 网络';
+    info.appendChild(modeBadge);
 
     card.appendChild(info);
 
@@ -336,27 +341,29 @@ export function showProviderForm(ctx: ProviderManagementContext, key: string = '
       ctx.providerAliasInput.disabled = true;
     }
     if (ctx.providerDisplayInput) ctx.providerDisplayInput.value = cached?.name ?? key;
-    if (ctx.providerProviderInput) ctx.providerProviderInput.value = cached?.provider ?? '';
     if (ctx.providerModelInput) ctx.providerModelInput.value = cached?.model ?? '';
     if (ctx.providerBaseUrlInput) ctx.providerBaseUrlInput.value = cached?.baseUrl ?? '';
-    // 编辑时 apiKey 字段清空 + placeholder 提示"留空保持不变"
-    // 渲染进程持有的 apiKey 是脱敏值（如 sk1****abcd），直接回填会被当真实 Key 保存导致 401
-    // 用户不修改 apiKey 时留空，saveLlmProvider 从旧 config 读取原值保留
+    if (ctx.providerTemperatureInput) ctx.providerTemperatureInput.value = String(cached?.temperature ?? 0.7);
+
+    const mode = detectModeFromBaseUrl(cached?.baseUrl ?? '');
+    applyProviderMode(ctx, mode);
+
     if (ctx.providerApiKeyInput) {
       ctx.providerApiKeyInput.value = '';
       ctx.providerApiKeyInput.placeholder = '留空保持不变（已配置）';
     }
-    if (ctx.providerTemperatureInput) ctx.providerTemperatureInput.value = String(cached?.temperature ?? 0.7);
   } else {
     // 新增模式：清空所有字段
     if (ctx.providerModalTitleEl) ctx.providerModalTitleEl.textContent = '添加 API';
     if (ctx.providerAliasInput) { ctx.providerAliasInput.value = ''; ctx.providerAliasInput.disabled = false; }
     if (ctx.providerDisplayInput) ctx.providerDisplayInput.value = '';
-    if (ctx.providerProviderInput) ctx.providerProviderInput.value = '';
     if (ctx.providerModelInput) ctx.providerModelInput.value = '';
     if (ctx.providerBaseUrlInput) ctx.providerBaseUrlInput.value = '';
     if (ctx.providerApiKeyInput) ctx.providerApiKeyInput.value = '';
     if (ctx.providerTemperatureInput) ctx.providerTemperatureInput.value = '';
+
+    // 新增模式：默认选中网络 API
+    applyProviderMode(ctx, 'cloud');
   }
 
   // 委托宿主 showModal 启用焦点陷阱 + 焦点保存 + 聚焦首元素
@@ -422,14 +429,66 @@ interface ProviderFormData {
  * @param ctx Provider 管理上下文
  * @returns 表单数据对象（未校验，可能含空字符串）
  */
+
+/**
+ * 根据 baseUrl 判定 Provider 模式
+ * - localhost / 127.0.0.1 → local
+ * - 其他 → cloud
+ */
+function detectModeFromBaseUrl(baseUrl: string): 'cloud' | 'local' {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)/.test(baseUrl) ? 'local' : 'cloud';
+}
+
+/**
+ * 应用 Provider 模式（驱动按钮高亮 + 字段默认值）
+ *
+ * 网络 API 模式：
+ *   - baseUrl 默认 https://
+ *   - apiKey 必填
+ * 本地 API 模式：
+ *   - baseUrl 默认 http://localhost:11434/v1（Ollama）
+ *   - apiKey 可选
+ */
+function applyProviderMode(ctx: ProviderManagementContext, mode: 'cloud' | 'local'): void {
+  if (ctx.providerModeButtons) {
+    ctx.providerModeButtons.forEach((btn) => {
+      const isActive = btn.dataset.mode === mode;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-checked', String(isActive));
+    });
+  }
+  if (!ctx.providerApiKeyInput || !ctx.providerBaseUrlInput) return;
+
+  if (mode === 'local') {
+    if (!ctx.providerBaseUrlInput.value) {
+      ctx.providerBaseUrlInput.value = 'http://localhost:11434/v1';
+    }
+    ctx.providerBaseUrlInput.placeholder = 'http://localhost:11434/v1';
+    ctx.providerApiKeyInput.placeholder = '本地服务无需填写';
+    ctx.providerApiKeyInput.removeAttribute('aria-required');
+  } else {
+    if (ctx.providerBaseUrlInput.value === 'http://localhost:11434/v1') {
+      ctx.providerBaseUrlInput.value = '';
+    }
+    ctx.providerBaseUrlInput.placeholder = 'https://api.example.com';
+    ctx.providerApiKeyInput.placeholder = 'sk-****';
+    ctx.providerApiKeyInput.setAttribute('aria-required', 'true');
+  }
+}
+
 function readProviderForm(ctx: ProviderManagementContext): ProviderFormData {
+  // 当前模式：取自被激活的 mode 按钮
+  let mode: 'cloud' | 'local' = 'cloud';
+  if (ctx.providerModeButtons) {
+    const active = Array.from(ctx.providerModeButtons).find((b) => b.classList.contains('active'));
+    if (active?.dataset.mode === 'local') mode = 'local';
+  }
   return {
     alias: ctx.providerAliasInput?.value.trim() ?? '',
-    provider: ctx.providerProviderInput?.value.trim() ?? '',
+    provider: mode,
     model: ctx.providerModelInput?.value.trim() ?? '',
     baseUrl: ctx.providerBaseUrlInput?.value.trim() || '',
     apiKey: ctx.providerApiKeyInput?.value.trim() ?? '',
-    // 空值表示使用默认值，不传 temperature 字段
     temperature: parseTemperature(ctx.providerTemperatureInput?.value.trim()),
   };
 }
@@ -445,13 +504,13 @@ function parseTemperature(raw: string | undefined): number | undefined {
  * 校验 Provider 表单：必填 + 格式
  *
  * 校验规则：
- * - 必填：alias / provider / model / apiKey（编辑模式下 apiKey 允许空，表示保留原值）
+ * - 必填：alias / model / apiKey（编辑模式/本地 API 允许 apiKey 为空）
  * - alias 格式：仅允许 ASCII 字母数字 . - _，长度 ≤ 50（作为持久化 key，限制 ASCII 避免 path traversal）
  * - temperature 范围：0-2（与 HTML input min/max 一致）
  *
  * 校验失败时通过 showFieldError 标记字段错误并聚焦，返回 false。
  *
- * @param data 表单数据
+ * @param data 表单数据（含 provider 模式字段 'cloud' | 'local'）
  * @param isEditing 是否编辑模式（编辑模式下 apiKey 允许空）
  * @returns true 通过校验 / false 校验失败（已标记错误字段）
  */
@@ -464,14 +523,11 @@ function validateProviderForm(data: ProviderFormData, isEditing: boolean): boole
   if (!data.alias) {
     firstErrorField = showFieldError('cfg-provider-alias', '请填写别名');
   }
-  if (!data.provider) {
-    firstErrorField ??= showFieldError('cfg-provider-provider', '请填写提供商');
-  }
   if (!data.model) {
     firstErrorField ??= showFieldError('cfg-provider-model', '请填写模型');
   }
-  // apiKey 必填：新增模式必填，编辑模式允许空（保留原值）
-  if (!data.apiKey && !isEditing) {
+  // apiKey 必填：网络 API 必填；本地 API 可选；编辑模式允许空
+  if (!data.apiKey && !isEditing && data.provider === 'cloud') {
     firstErrorField ??= showFieldError('cfg-provider-api-key', '请填写 API Key');
   }
   if (firstErrorField) {
@@ -568,13 +624,17 @@ async function persistProvider(ctx: ProviderManagementContext, data: ProviderFor
  * 测试时禁用按钮防止重复点击，完成后恢复。
  */
 export async function testProviderConnection(ctx: ProviderManagementContext): Promise<void> {
-  const provider = ctx.providerProviderInput?.value.trim();
+  const mode = ctx.providerModeButtons
+    ? Array.from(ctx.providerModeButtons).find((b) => b.classList.contains('active'))?.dataset.mode ?? 'cloud'
+    : 'cloud';
+  const provider = mode;
   const model = ctx.providerModelInput?.value.trim();
   const baseUrl = ctx.providerBaseUrlInput?.value.trim() || '';
   const apiKey = ctx.providerApiKeyInput?.value.trim();
 
-  if (!provider || !model || !apiKey) {
-    ctx.host.showToast('请填写提供商、模型和 API Key', 'error');
+  // provider（模式）总是已填，只需校验 model + apiKey
+  if (!model || !apiKey) {
+    ctx.host.showToast('请填写模型和 API Key', 'error');
     return;
   }
 
@@ -741,6 +801,16 @@ export function initProviderListeners(ctx: ProviderManagementContext): void {
       } else {
         ctx.host.showToast(result.error ?? '保存失败', 'error');
       }
+    });
+  }
+
+  // Provider 模式按钮组——点击切换网络 API / 本地 API（互斥单选）
+  if (ctx.providerModeButtons) {
+    ctx.providerModeButtons.forEach((btn) => {
+      ctx.events.addEventListener(btn, 'click', () => {
+        const mode = btn.dataset.mode === 'local' ? 'local' : 'cloud';
+        applyProviderMode(ctx, mode);
+      });
     });
   }
 

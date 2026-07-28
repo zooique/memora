@@ -45,7 +45,6 @@ const SETTINGS_HTML = `
     <!-- Provider 表单（多 Provider 管理；API Key 切换测试使用） -->
     <input id="cfg-provider-alias" type="text" />
     <input id="cfg-provider-display" type="text" />
-    <input id="cfg-provider-provider" type="text" />
     <input id="cfg-provider-model" type="text" />
     <input id="cfg-provider-base-url" type="text" />
     <input id="cfg-provider-api-key" type="password" />

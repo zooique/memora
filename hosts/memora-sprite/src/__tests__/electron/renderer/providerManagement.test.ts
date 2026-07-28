@@ -82,11 +82,11 @@ function setupDOM(): {
   providerModalTitleEl: HTMLElement;
   providerAliasInput: HTMLInputElement;
   providerDisplayInput: HTMLInputElement;
-  providerProviderInput: HTMLInputElement;
   providerModelInput: HTMLInputElement;
   providerBaseUrlInput: HTMLInputElement;
   providerApiKeyInput: HTMLInputElement;
   providerTemperatureInput: HTMLInputElement;
+  providerModeButtons: NodeListOf<HTMLButtonElement>;
   btnAddProvider: HTMLButtonElement;
   backgroundProviderSelect: HTMLSelectElement;
   btnProviderSave: HTMLButtonElement;
@@ -97,11 +97,11 @@ function setupDOM(): {
     <div id="provider-list"></div>
     <div id="provider-modal" class="hidden">
       <h3 id="provider-modal-title"></h3>
+      <button class="cfg-provider-mode-btn active" data-mode="cloud" id="cfg-provider-mode-cloud"></button>
+      <button class="cfg-provider-mode-btn" data-mode="local" id="cfg-provider-mode-local"></button>
       <input id="cfg-provider-alias" />
       <div id="cfg-provider-alias-error" class="hidden"></div>
       <input id="cfg-provider-display" />
-      <input id="cfg-provider-provider" />
-      <div id="cfg-provider-provider-error" class="hidden"></div>
       <input id="cfg-provider-model" />
       <div id="cfg-provider-model-error" class="hidden"></div>
       <input id="cfg-provider-api-key" />
@@ -122,11 +122,11 @@ function setupDOM(): {
     providerModalTitleEl: document.getElementById('provider-modal-title') as HTMLElement,
     providerAliasInput: document.getElementById('cfg-provider-alias') as HTMLInputElement,
     providerDisplayInput: document.getElementById('cfg-provider-display') as HTMLInputElement,
-    providerProviderInput: document.getElementById('cfg-provider-provider') as HTMLInputElement,
     providerModelInput: document.getElementById('cfg-provider-model') as HTMLInputElement,
     providerBaseUrlInput: document.getElementById('cfg-provider-base-url') as HTMLInputElement,
     providerApiKeyInput: document.getElementById('cfg-provider-api-key') as HTMLInputElement,
     providerTemperatureInput: document.getElementById('cfg-provider-temperature') as HTMLInputElement,
+    providerModeButtons: document.querySelectorAll<HTMLButtonElement>('.cfg-provider-mode-btn'),
     btnAddProvider: document.getElementById('btn-add-provider') as HTMLButtonElement,
     backgroundProviderSelect: document.getElementById('background-provider-select') as HTMLSelectElement,
     btnProviderSave: document.getElementById('btn-provider-save') as HTMLButtonElement,
@@ -155,11 +155,11 @@ function createCtx(dom: ReturnType<typeof setupDOM>, cachedProviders: LlmProvide
     providerModalTitleEl: dom.providerModalTitleEl,
     providerAliasInput: dom.providerAliasInput,
     providerDisplayInput: dom.providerDisplayInput,
-    providerProviderInput: dom.providerProviderInput,
     providerModelInput: dom.providerModelInput,
     providerBaseUrlInput: dom.providerBaseUrlInput,
     providerApiKeyInput: dom.providerApiKeyInput,
     providerTemperatureInput: dom.providerTemperatureInput,
+    providerModeButtons: dom.providerModeButtons,
     btnAddProvider: dom.btnAddProvider,
     backgroundProviderSelect: dom.backgroundProviderSelect,
     btnProviderSave: dom.btnProviderSave,
@@ -356,7 +356,6 @@ describe('showProviderForm', () => {
     expect(dom.providerAliasInput.value).toBe('');
     expect(dom.providerAliasInput.disabled).toBe(false);
     expect(dom.providerDisplayInput.value).toBe('');
-    expect(dom.providerProviderInput.value).toBe('');
     expect(dom.providerModelInput.value).toBe('');
     expect(dom.providerApiKeyInput.value).toBe('');
     expect(dom.providerTemperatureInput.value).toBe('');
@@ -375,7 +374,6 @@ describe('showProviderForm', () => {
     expect(dom.providerAliasInput.value).toBe('test-key');
     expect(dom.providerAliasInput.disabled).toBe(true);
     expect(dom.providerDisplayInput.value).toBe('Test');
-    expect(dom.providerProviderInput.value).toBe('openai');
     expect(dom.providerModelInput.value).toBe('gpt-4');
     expect(dom.providerBaseUrlInput.value).toBe('https://api.openai.com');
     // 编辑模式 apiKey 字段清空 + placeholder 提示"留空保持不变"（A1 修复：避免脱敏值被当真实 Key 保存）
@@ -393,7 +391,6 @@ describe('showProviderForm', () => {
     // displayInput 降级为 key
     expect(dom.providerDisplayInput.value).toBe('missing-key');
     // 其他字段为空
-    expect(dom.providerProviderInput.value).toBe('');
     expect(dom.providerModelInput.value).toBe('');
   });
 
@@ -446,7 +443,6 @@ describe('saveProvider', () => {
   it('缺少别名应显示字段错误', async () => {
     const dom = setupDOM();
     const { ctx, host } = createCtx(dom);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
@@ -454,32 +450,28 @@ describe('saveProvider', () => {
     expect(host.showToast).not.toHaveBeenCalled();
   });
 
-  it('缺少提供商应显示字段错误', async () => {
+  it('缺少别名应显示字段错误', async () => {
     const dom = setupDOM();
-    const { ctx, host } = createCtx(dom);
-    dom.providerAliasInput.value = 'test';
+    const { ctx } = createCtx(dom);
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
-    expect(dom.providerProviderInput.getAttribute('aria-invalid')).toBe('true');
-    expect(host.showToast).not.toHaveBeenCalled();
+    expect(dom.providerAliasInput.getAttribute('aria-invalid')).toBe('true');
   });
+
 
   it('缺少模型应显示字段错误', async () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'test';
-    dom.providerProviderInput.value = 'openai';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
     expect(dom.providerModelInput.getAttribute('aria-invalid')).toBe('true');
   });
-
   it('缺少 API Key 应显示字段错误', async () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'test';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     await saveProvider(ctx);
     expect(dom.providerApiKeyInput.getAttribute('aria-invalid')).toBe('true');
@@ -489,7 +481,6 @@ describe('saveProvider', () => {
     const dom = setupDOM();
     const { ctx, host } = createCtx(dom);
     dom.providerAliasInput.value = '中文别名';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
@@ -503,7 +494,6 @@ describe('saveProvider', () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'a'.repeat(51);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
@@ -514,7 +504,6 @@ describe('saveProvider', () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'test';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     dom.providerTemperatureInput.value = '3';
@@ -528,7 +517,6 @@ describe('saveProvider', () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'test';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     dom.providerTemperatureInput.value = '-0.5';
@@ -546,7 +534,6 @@ describe('saveProvider', () => {
     });
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'existing';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
@@ -561,7 +548,6 @@ describe('saveProvider', () => {
     showProviderForm(ctx, ''); // 显示弹窗（会清空字段）
     // 在 showProviderForm 之后设置输入值
     dom.providerAliasInput.value = 'new-provider';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
@@ -576,7 +562,6 @@ describe('saveProvider', () => {
     });
     const { ctx, host } = createCtx(dom);
     dom.providerAliasInput.value = 'new-provider';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await saveProvider(ctx);
@@ -587,7 +572,6 @@ describe('saveProvider', () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     dom.providerAliasInput.value = 'new-provider';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     const originalText = dom.btnProviderSave.textContent;
@@ -605,7 +589,6 @@ describe('saveProvider', () => {
     mockElectronAPI({ listLlmProviders: listCall });
     const { ctx, host } = createCtx(dom);
     dom.providerAliasInput.value = 'existing';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     // 设置 editKey 表示编辑模式
@@ -621,20 +604,17 @@ describe('saveProvider', () => {
 // ─── 5. testProviderConnection ─────────────────────────
 
 describe('testProviderConnection', () => {
-  it('缺少必填字段应提示错误', async () => {
+  it('填写缺少 API Key 时跳过测试并提示', async () => {
     const dom = setupDOM();
     const { ctx, host } = createCtx(dom);
-    dom.providerProviderInput.value = '';
     dom.providerModelInput.value = 'gpt-4';
-    dom.providerApiKeyInput.value = 'sk-xxx';
     await testProviderConnection(ctx);
-    expect(host.showToast).toHaveBeenCalledWith('请填写提供商、模型和 API Key', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('请填写模型和 API Key', 'error');
   });
 
   it('连接成功应显示成功 toast', async () => {
     const dom = setupDOM();
     const { ctx, host } = createCtx(dom);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await testProviderConnection(ctx);
@@ -647,7 +627,6 @@ describe('testProviderConnection', () => {
       testLlmConfig: vi.fn(async () => ({ success: false, error: '无效的 API Key' })),
     });
     const { ctx, host } = createCtx(dom);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await testProviderConnection(ctx);
@@ -660,7 +639,6 @@ describe('testProviderConnection', () => {
       testLlmConfig: vi.fn(async () => { throw new Error('Network error'); }),
     });
     const { ctx, host } = createCtx(dom);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await testProviderConnection(ctx);
@@ -670,7 +648,6 @@ describe('testProviderConnection', () => {
   it('测试按钮应禁用并在完成后恢复', async () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     const originalText = dom.btnProviderTest.textContent;
@@ -683,7 +660,6 @@ describe('testProviderConnection', () => {
     const dom = setupDOM();
     const { ctx } = createCtx(dom);
     (ctx as { btnProviderTest: HTMLButtonElement | null }).btnProviderTest = null;
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     await expect(testProviderConnection(ctx)).resolves.toBeUndefined();
@@ -873,7 +849,6 @@ describe('initProviderListeners', () => {
     const { ctx, events, host } = createCtx(dom);
     initProviderListeners(ctx);
     dom.providerAliasInput.value = 'test';
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     dom.btnProviderSave.click();
@@ -888,7 +863,6 @@ describe('initProviderListeners', () => {
     const dom = setupDOM();
     const { ctx, events, host } = createCtx(dom);
     initProviderListeners(ctx);
-    dom.providerProviderInput.value = 'openai';
     dom.providerModelInput.value = 'gpt-4';
     dom.providerApiKeyInput.value = 'sk-xxx';
     dom.btnProviderTest.click();

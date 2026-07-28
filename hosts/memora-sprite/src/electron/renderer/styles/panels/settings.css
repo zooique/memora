@@ -811,12 +811,14 @@
 
 
 
-/* Provider 信息区 */
+/* Provider 信息区——名字 / 模型 / 标签 横排 */
 .provider-info {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .provider-name {

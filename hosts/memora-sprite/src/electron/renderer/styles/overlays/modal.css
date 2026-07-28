@@ -443,6 +443,83 @@ kbd {
   margin-top: 0;
 }
 
+/* Provider 模式切换（网络 API / 本地 API，互斥按钮组） */
+.cfg-provider-mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4) 0;
+  padding: 0;
+  border: 0;
+}
+
+.cfg-provider-mode-legend {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  margin-bottom: var(--space-2);
+  width: 100%;
+}
+
+.cfg-provider-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--window-bg);
+  border: 2px solid var(--surface2);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.cfg-provider-mode-btn:hover {
+  border-color: var(--surface3);
+  background: var(--window-bg-2);
+}
+
+.cfg-provider-mode-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-10);
+  color: var(--text);
+}
+
+.cfg-provider-mode-btn .mode-icon {
+  font-size: var(--font-lg);
+}
+
+.cfg-provider-mode-btn .mode-label {
+  font-weight: 600;
+}
+
+/* Provider 列表卡片上的模式标签 */
+.provider-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
+.provider-mode-badge.local {
+  background: var(--accent-10);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.provider-mode-badge.cloud {
+  background: var(--surface3);
+  color: var(--text-2);
+  border: 1px solid var(--surface2);
+}
+
 .modal-body input[type="text"],
 .modal-body input[type="number"],
 .modal-body input[type="password"],
