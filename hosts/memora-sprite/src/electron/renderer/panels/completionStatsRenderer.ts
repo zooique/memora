@@ -19,6 +19,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { createEl } from '../helpers/domHelpers.js';
+import { setIcon } from '../helpers/icon.js';
 import { getCompletionMetrics, type CompletionEvent, type DailyAggregatedItem } from '../helpers/completionMetrics.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -121,6 +122,7 @@ export class CompletionStatsRenderer {
     closeBtn.title = '关闭补全统计';
     closeBtn.setAttribute('aria-label', '关闭补全统计');
     closeBtn.type = 'button';
+    setIcon(closeBtn, 'icon-close');
     actionsEl.appendChild(closeBtn);
 
     headerEl.appendChild(actionsEl);

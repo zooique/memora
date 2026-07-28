@@ -24,7 +24,10 @@ import { Notification } from 'electron';
 import { logger, toError } from 'memora';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
-import type { WindowManager } from './windows/windowManager.js';
+// windowManager 字段使用 WindowManagerLike 接口而非 WindowManager 类，
+// 切断 spriteEventBridge.ts → windowManager.ts → esmShim.ts 的类型追踪链，
+// 避免 preload（CJS 编译）追踪到 esmShim.ts（ESM 运行时）导致 import.meta.url 编译错误（TS1343）。
+import type { WindowManagerLike } from './runtime/windowService.js';
 import type { WindowStateManager } from './windows/windowState.js';
 import type { TrayManager } from './trayIcon.js';
 import { PROACTIVE_TRAY_RESET_MS } from '../sprite/constants.js';
@@ -41,7 +44,7 @@ export interface SpriteEventBridgeDeps {
   /** Sprite 实例 */
   sprite: Sprite;
   /** 窗口管理器（获取完整窗口引用） */
-  windowManager: WindowManager;
+  windowManager: WindowManagerLike;
   /** 窗口状态管理器（主动提示点击时切换到完整窗口） */
   windowStateManager: WindowStateManager;
   /** 托盘管理器（主动提示时脉冲） */

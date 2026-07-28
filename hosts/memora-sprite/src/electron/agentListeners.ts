@@ -20,7 +20,10 @@
 import type { Agent } from 'memora';
 import { logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
-import type { WindowManager } from './windows/windowManager.js';
+// windowManager 字段使用 WindowManagerLike 接口而非 WindowManager 类，
+// 切断 agentListeners.ts → windowManager.ts → esmShim.ts 的类型追踪链，
+// 避免 preload（CJS 编译）追踪到 esmShim.ts（ESM 运行时）导致 import.meta.url 编译错误（TS1343）。
+import type { WindowManagerLike } from './runtime/windowService.js';
 import type { AuditManager } from '../sprite/audit/auditManager.js';
 import { CONFIRMATION_TIMEOUT_MS } from '../sprite/constants.js';
 // isFullWindowAccessible 用于写入确认的请求-响应场景（窗口不可见时快速失败）
@@ -34,7 +37,7 @@ import { isFullWindowAccessible, safeSendToWindow } from './windows/windowUtils.
  */
 export interface AgentListenerDeps {
   /** 窗口管理器（获取完整窗口引用） */
-  windowManager: WindowManager;
+  windowManager: WindowManagerLike;
   /** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
   pendingWriteConfirmations: Map<string, (confirmed: boolean) => void>;
 }
