@@ -28,11 +28,11 @@ function makeConfig(overrides: Partial<Config['llm']> = {}): Config {
 /**
  * 辅助：构造多 Provider 格式配置（providers + active）
  *
- * ProviderConfig.provider 为可选（仅日志标识），故 providers 参数类型中 provider 字段也设为可选，
- * 与 loader.ts 的 ProviderConfig 接口保持结构化类型兼容。
+ * providers 参数类型与 loader.ts 的 ProviderConfig 接口对齐：
+ * provider 必填（仅日志标识，宿主 UI 用其存储 cloud/local 模式）
  */
 function makeMultiProviderConfig(
-  providers: Record<string, { provider?: string; model: string; apiKey?: string; baseUrl: string }>,
+  providers: Record<string, { provider: string; model: string; apiKey?: string; baseUrl: string }>,
   active?: string,
 ): Config {
   return {
@@ -118,8 +118,8 @@ describe('createLlmProvider · 多 Provider 映射表（providers + active）', 
   it('配置 providers + active 时应创建指定 active 的 Provider', () => {
     const config = makeMultiProviderConfig(
       {
-        ds: { model: 'deepseek-chat', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
-        oai: { model: 'gpt-4', apiKey: 'sk-oai', baseUrl: 'https://api.openai.com/v1' },
+        ds: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
+        oai: { provider: 'openai', model: 'gpt-4', apiKey: 'sk-oai', baseUrl: 'https://api.openai.com/v1' },
       },
       'oai',
     );
@@ -129,8 +129,8 @@ describe('createLlmProvider · 多 Provider 映射表（providers + active）', 
 
   it('active 缺失时应默认使用 providers 的第一个 key', () => {
     const config = makeMultiProviderConfig({
-      primeiro: { model: 'deepseek-chat', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
-      segundo: { model: 'gpt-4', apiKey: 'sk-oai', baseUrl: 'https://api.openai.com/v1' },
+      primeiro: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
+      segundo: { provider: 'openai', model: 'gpt-4', apiKey: 'sk-oai', baseUrl: 'https://api.openai.com/v1' },
     });
     const provider = createLlmProvider(config);
     expect(provider.name).toBe('primeiro');
@@ -139,7 +139,7 @@ describe('createLlmProvider · 多 Provider 映射表（providers + active）', 
   it('active 不在 providers 中时应抛出 configError', () => {
     const config = makeMultiProviderConfig(
       {
-        ds: { model: 'deepseek-chat', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
+        ds: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
       },
       'nonexistent',
     );
@@ -156,7 +156,7 @@ describe('createLlmProvider · 多 Provider 映射表（providers + active）', 
     const config = makeMultiProviderConfig(
       {
         mock1: { provider: 'mock', model: 'mock-model', baseUrl: 'https://mock.local' },
-        real: { model: 'deepseek-chat', apiKey: 'sk-real', baseUrl: 'https://api.deepseek.com/v1' },
+        real: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-real', baseUrl: 'https://api.deepseek.com/v1' },
       },
       'mock1',
     );
@@ -167,7 +167,7 @@ describe('createLlmProvider · 多 Provider 映射表（providers + active）', 
   it('多 Provider 中 apiKey 为空仍可创建（不校验——本地 LLM 场景）', () => {
     const config = makeMultiProviderConfig(
       {
-        local: { model: 'llama3', baseUrl: 'http://localhost:11434/v1' },
+        local: { provider: 'local', model: 'llama3', baseUrl: 'http://localhost:11434/v1' },
       },
       'local',
     );
