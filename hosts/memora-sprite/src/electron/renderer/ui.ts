@@ -73,9 +73,19 @@ import { SkillDropManager } from './panels/skillDropManager.js';
 // 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
-// 面板路由器拆分（面板切换 + 导航 + 键盘快捷键 + 窗口控制）
+// HEAL-12 PanelRouter 职责拆分（模式 B）：4 个并列 Controller
+// - PanelRouter：主面板切换 + 导航按钮点击
+// - WindowControlsController：最小化/最大化/关闭 + 最大化图标切换
+// - AuxSidebarManager：AUX 侧栏展开/收起 + tab 切换
+// - GlobalShortcutDispatcher：全局快捷键 + 快捷触发入口
 import { PanelRouter } from './panels/panelRouter.js';
 import type { PanelRouterHost } from './panels/panelRouter.js';
+import { WindowControlsController } from './panels/windowControlsController.js';
+import type { WindowControlsHost } from './panels/windowControlsController.js';
+import { AuxSidebarManager } from './panels/auxSidebarManager.js';
+import type { AuxSidebarHost } from './panels/auxSidebarManager.js';
+import { GlobalShortcutDispatcher } from './panels/globalShortcutDispatcher.js';
+import type { GlobalShortcutHost } from './panels/globalShortcutDispatcher.js';
 // 未读徽章拆分为独立 Manager（纯 DOM 渲染，不持有业务状态）
 import { BadgeManager } from './panels/badgeManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
@@ -119,7 +129,7 @@ export type {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost, SettingsManagerPanelHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost, WindowControlsHost, AuxSidebarHost, GlobalShortcutHost, SettingsManagerPanelHost {
   // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
   // 字段为 public：mixin 委托方法（helpers/ui-delegations/）需通过 this.xxx 访问
   /** Toast 通知管理器（独立管理定时器和清理） */
@@ -215,8 +225,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
   skillDropManager: SkillDropManager;
-  /** 面板路由器（面板切换 + 导航 + 键盘快捷键 + 窗口控制） */
+  /** 面板路由器（HEAL-12 瘦身后：仅面板切换 + 导航按钮点击） */
   panelRouter: PanelRouter;
+  /** 窗口控制 Controller（HEAL-12 拆分：最小化/最大化/关闭 + 最大化图标切换） */
+  windowControlsController: WindowControlsController;
+  /** 信息侧栏 Manager（HEAL-12 拆分：AUX 侧栏展开/收起 + tab 切换） */
+  auxSidebarManager: AuxSidebarManager;
+  /** 全局快捷键 Dispatcher（HEAL-12 拆分：键盘快捷键 + 快捷触发入口） */
+  globalShortcutDispatcher: GlobalShortcutDispatcher;
   /** 未读徽章管理器（纯 DOM 渲染，不持有业务状态） */
   badgeManager: BadgeManager;
   /** 滚动控制器（消息列表滚动 + rAF 节流） */
@@ -372,8 +388,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this as InputAreaHost,
     );
 
-    // 面板路由器（面板切换 + 导航 + 键盘快捷键 + 窗口控制）
+    // HEAL-12 PanelRouter 职责拆分（模式 B）：4 个并列 Controller
+    // - PanelRouter：主面板切换 + 导航按钮点击
+    // - WindowControlsController：最小化/最大化/关闭 + 最大化图标切换
+    // - AuxSidebarManager：AUX 侧栏展开/收起 + tab 切换
+    // - GlobalShortcutDispatcher：全局快捷键 + 快捷触发入口
     this.panelRouter = new PanelRouter(this);
+    this.windowControlsController = new WindowControlsController(this);
+    this.auxSidebarManager = new AuxSidebarManager(this);
+    this.globalShortcutDispatcher = new GlobalShortcutDispatcher(this);
 
     // 初始化 UI
     this.initEventListeners();
@@ -413,8 +436,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
 
-    // 导航事件、窗口控制按钮、全局键盘快捷键 → 委托到 PanelRouter.init()
+    // HEAL-12 拆分后 4 个 Controller 各自 init：
+    // - PanelRouter：.nav-btn 导航按钮 click
+    // - WindowControlsController：btn-minimize/maximize/close + onWindowStateChanged
+    // - AuxSidebarManager：btn-toggle-aux + .aux-tab + 初始 DOM 同步
+    // - GlobalShortcutDispatcher：document keydown
     this.panelRouter.init();
+    this.windowControlsController.init();
+    this.auxSidebarManager.init();
+    this.globalShortcutDispatcher.init();
 
     // 输入区平铺工具按钮：添加记忆
     const btnInputAddMemory = getOptionalElement('btn-input-add-memory', 'button');
@@ -470,8 +500,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.searchMessagesManager.cleanup();
     // 清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
-    // 清理面板路由器的事件监听器
+    // HEAL-12 拆分后 4 个 Controller 各自 cleanup：
+    // - PanelRouter：.nav-btn click 监听器
+    // - WindowControlsController：btn-minimize/maximize/close + onWindowStateChanged 监听器
+    // - AuxSidebarManager：btn-toggle-aux + .aux-tab click 监听器
+    // - GlobalShortcutDispatcher：document keydown 监听器
     this.panelRouter.cleanup();
+    this.windowControlsController.cleanup();
+    this.auxSidebarManager.cleanup();
+    this.globalShortcutDispatcher.cleanup();
     // 清理滚动控制器的 rAF 请求 + scroll 事件监听器
     this.scrollController.dispose();
     // 清理 ThemeManager 的系统主题变化监听器
@@ -559,9 +596,29 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 切换面板（委托到 PanelRouter）
    *
    * chat/memories/settings 三个面板均通过 .panel.active 控制显隐。
+   * 同时作为 GlobalShortcutHost 接口的 sugar API，供 GlobalShortcutDispatcher 调用。
    */
   async switchPanel(panel: string): Promise<void> {
     await this.panelRouter.switchPanel(panel);
+  }
+
+  /**
+   * 打开信息侧栏（HEAL-12 sugar API，委托到 AuxSidebarManager.open）
+   *
+   * 调用方：精灵状态条点击 / 命令面板 Ctrl+K / 主动触发（洞察/里程碑/模式/建议）。
+   * 由 UIManager 作为 composition root 暴露跨域 sugar API，避免外部调用方依赖 AuxSidebarManager 内部路径。
+   */
+  openAuxSidebar(tab?: 'perception' | 'dashboard'): void {
+    this.auxSidebarManager.open(tab);
+  }
+
+  /**
+   * 判断指定侧栏 tab 是否当前可见（HEAL-12 sugar API，委托到 AuxSidebarManager.isVisible）
+   *
+   * 调用方：onPersonaChanged 事件（感知面板可见时同步刷新）。
+   */
+  isAuxTabVisible(tab: 'perception' | 'dashboard'): boolean {
+    return this.auxSidebarManager.isVisible(tab);
   }
 
   /** 添加精灵状态条点击：打开信息侧栏并切到感知 tab（状态条数据来自感知系统） */
@@ -570,7 +627,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (spriteStatusBar) {
       this.events.addEventListener(spriteStatusBar, 'click', () => {
         // 2.1：感知面板迁至信息侧栏，点击状态条打开侧栏 + 激活感知 tab
-        this.panelRouter.openAuxSidebar('perception');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager
+        this.openAuxSidebar('perception');
       });
     }
   }

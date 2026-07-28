@@ -413,8 +413,9 @@ async function bootstrapRenderer(): Promise<void> {
       // 重新拉取角色列表：更新顶栏角色名 + 下拉菜单 active 标记 + 模式 badge
       void personaController.loadPersonaList();
       // 感知面板可见时同步刷新（perceptionCoordinator.refreshBeforeChat 已在主进程基于新角色 traits 重推导）
-      // 2.1：感知面板迁至信息侧栏，可见性由 PanelRouter.isAuxTabVisible 判断（侧栏展开 + 感知 tab 激活）
-      if (State.uiManager.panelRouter.isAuxTabVisible('perception')) {
+      // 2.1：感知面板迁至信息侧栏，可见性由 UIManager.isAuxTabVisible 判断（侧栏展开 + 感知 tab 激活）
+      // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.isVisible
+      if (State.uiManager.isAuxTabVisible('perception')) {
         void memoryController.loadPerception();
       }
     },
@@ -525,22 +526,26 @@ async function bootstrapRenderer(): Promise<void> {
         void State.uiManager.switchPanel('settings');
       } else if (triggers.includes('insight')) {
         // 有新洞察 → 跳转到仪表盘查看最近洞察列表（renderRecentInsights 区块）
-        void State.uiManager.panelRouter.openAuxSidebar('dashboard');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.open
+        void State.uiManager.openAuxSidebar('dashboard');
       } else if (triggers.includes('memory')) {
         // 有新记忆 → 跳转到记忆面板查看
         void State.uiManager.switchPanel('memory');
       } else if (triggers.includes('milestone')) {
         // 里程碑 → 跳转到仪表盘查看成就
-        void State.uiManager.panelRouter.openAuxSidebar('dashboard');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.open
+        void State.uiManager.openAuxSidebar('dashboard');
       } else if (triggers.includes('pattern')) {
         // 模式检测 → 跳转到仪表盘查看模式
-        void State.uiManager.panelRouter.openAuxSidebar('dashboard');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.open
+        void State.uiManager.openAuxSidebar('dashboard');
       } else if (triggers.includes('recalled')) {
         // 欢迎回来记忆召回 → 跳转到记忆面板查看召回的记忆
         void State.uiManager.switchPanel('memory');
       } else if (triggers.includes('suggestion')) {
         // 智能建议（健康度/回顾/画像）→ 跳转到仪表盘查看建议详情
-        void State.uiManager.panelRouter.openAuxSidebar('dashboard');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.open
+        void State.uiManager.openAuxSidebar('dashboard');
       } else {
         // 默认：确保对话面板可见
         void State.uiManager.switchPanel('chat');

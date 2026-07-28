@@ -55,7 +55,8 @@ export const miscDelegations: MiscDelegations = {
     this.scrollController.forceScrollToBottom();
   },
   updateMaximizeButton(this: UIManager, maximized: boolean): void {
-    this.panelRouter.updateMaximizeButton(maximized);
+    // HEAL-12：委托到 WindowControlsController（原 PanelRouter.updateMaximizeButton）
+    this.windowControlsController.updateMaximizeButton(maximized);
   },
   onDateNavJump(this: UIManager, cb: (date: string) => void): void {
     this.dateNavManager.onDateNavJump(cb);
@@ -79,10 +80,12 @@ export const miscDelegations: MiscDelegations = {
     await this.clipboardManager.showClipboardConfirmDialog(content);
   },
   async handleQuickRecordTrigger(this: UIManager): Promise<void> {
-    await this.panelRouter.handleQuickRecordTrigger();
+    // HEAL-12：委托到 GlobalShortcutDispatcher（原 PanelRouter.handleQuickRecordTrigger）
+    await this.globalShortcutDispatcher.handleQuickRecordTrigger();
   },
   async handleRecallMemoryTrigger(this: UIManager): Promise<void> {
-    await this.panelRouter.handleRecallMemoryTrigger();
+    // HEAL-12：委托到 GlobalShortcutDispatcher（原 PanelRouter.handleRecallMemoryTrigger）
+    await this.globalShortcutDispatcher.handleRecallMemoryTrigger();
   },
   prefillChatInput(this: UIManager, text: string): void {
     this.inputAreaManager.setValue(text);

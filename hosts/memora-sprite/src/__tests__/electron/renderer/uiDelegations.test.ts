@@ -703,18 +703,18 @@ describe('miscDelegations', () => {
     expect(mock.clipboardManager.showClipboardConfirmDialog).toHaveBeenCalledWith('内容');
   });
 
-  it('handleQuickRecordTrigger 应 async 委托到 panelRouter', async () => {
+  it('handleQuickRecordTrigger 应 async 委托到 globalShortcutDispatcher', async () => {
     const mock = createMockThis();
-    mock.panelRouter.handleQuickRecordTrigger.mockResolvedValue(undefined);
+    mock.globalShortcutDispatcher.handleQuickRecordTrigger.mockResolvedValue(undefined);
     await miscDelegations.handleQuickRecordTrigger.call(mock as UIManager);
-    expect(mock.panelRouter.handleQuickRecordTrigger).toHaveBeenCalled();
+    expect(mock.globalShortcutDispatcher.handleQuickRecordTrigger).toHaveBeenCalled();
   });
 
-  it('handleRecallMemoryTrigger 应 async 委托到 panelRouter', async () => {
+  it('handleRecallMemoryTrigger 应 async 委托到 globalShortcutDispatcher', async () => {
     const mock = createMockThis();
-    mock.panelRouter.handleRecallMemoryTrigger.mockResolvedValue(undefined);
+    mock.globalShortcutDispatcher.handleRecallMemoryTrigger.mockResolvedValue(undefined);
     await miscDelegations.handleRecallMemoryTrigger.call(mock as UIManager);
-    expect(mock.panelRouter.handleRecallMemoryTrigger).toHaveBeenCalled();
+    expect(mock.globalShortcutDispatcher.handleRecallMemoryTrigger).toHaveBeenCalled();
   });
 
   it('shouldShowOnboarding 应返回布尔结果', () => {
@@ -773,13 +773,13 @@ describe('miscDelegations', () => {
     expect(mock.scrollController.forceScrollToBottom).toHaveBeenCalled();
   });
 
-  // 测试目的：updateMaximizeButton 应透传 maximized 布尔值到 panelRouter
-  it('updateMaximizeButton 应透传 maximized 布尔值到 panelRouter', () => {
+  // 测试目的：updateMaximizeButton 应透传 maximized 布尔值到 windowControlsController
+  it('updateMaximizeButton 应透传 maximized 布尔值到 windowControlsController', () => {
     const mock = createMockThis();
     miscDelegations.updateMaximizeButton.call(mock as UIManager, true);
-    expect(mock.panelRouter.updateMaximizeButton).toHaveBeenCalledWith(true);
+    expect(mock.windowControlsController.updateMaximizeButton).toHaveBeenCalledWith(true);
     miscDelegations.updateMaximizeButton.call(mock as UIManager, false);
-    expect(mock.panelRouter.updateMaximizeButton).toHaveBeenCalledWith(false);
+    expect(mock.windowControlsController.updateMaximizeButton).toHaveBeenCalledWith(false);
   });
 
   // 测试目的：onDateNavJump 应透传日期跳转回调到 dateNavManager

@@ -93,7 +93,8 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '导航',
       action: () => {
         // 2.1：感知面板迁至信息侧栏，打开侧栏 + 激活感知 tab
-        uiManager.panelRouter.openAuxSidebar('perception');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.open
+        uiManager.openAuxSidebar('perception');
       },
     },
     {
@@ -103,7 +104,8 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '导航',
       action: () => {
         // 2.1：仪表盘迁至信息侧栏，打开侧栏 + 激活仪表盘 tab
-        uiManager.panelRouter.openAuxSidebar('dashboard');
+        // HEAL-12：通过 UIManager sugar API 委托到 AuxSidebarManager.open
+        uiManager.openAuxSidebar('dashboard');
       },
     },
 
