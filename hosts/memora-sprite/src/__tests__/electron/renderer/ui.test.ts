@@ -920,7 +920,7 @@ describe('handleRecallMemoryTrigger', () => {
     uiManager.switchPanel('settings');
 
     // 模拟有未保存修改
-    const settingsPanel = uiManager.settingsPanelManager;
+    const settingsPanel = uiManager.settingsCoordinator.settingsPanelManager;
     vi.spyOn(settingsPanel, 'isDirty').mockReturnValue(true);
 
     // 模拟用户确认离开
@@ -937,7 +937,7 @@ describe('handleRecallMemoryTrigger', () => {
     uiManager.switchPanel('settings');
 
     // 模拟有未保存修改
-    const settingsPanel = uiManager.settingsPanelManager;
+    const settingsPanel = uiManager.settingsCoordinator.settingsPanelManager;
     vi.spyOn(settingsPanel, 'isDirty').mockReturnValue(true);
 
     // 模拟用户取消

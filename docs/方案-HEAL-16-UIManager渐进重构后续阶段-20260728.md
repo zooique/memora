@@ -354,7 +354,7 @@ cd hosts/memora-sprite && npm run lint:css
 
 ### 10.4 后续演进
 
-UIManager 字段数从 ~29 降至 ~25（Phase 2）→ **~22（Phase 3，本日完成）**。Phase 4（SettingsCoordinator，3 → 1，~22 → ~20）等待涉足设置域时自然触发。
+UIManager 字段数从 ~29 降至 ~25（Phase 2）→ ~22（Phase 3）→ **~20（Phase 4，本日完成）**。已降至接近 15 阈值。
 
 ### 11. Phase 3 MemoryCoordinator 实施完成（2026-07-28 追加）
 
@@ -378,6 +378,23 @@ UIManager 字段数从 ~29 降至 ~25（Phase 2）→ **~22（Phase 3，本日�
 #### 额外发现
 
 无。本轮未踩 Phase 2 的同款初始化顺序坑（已在 Phase 2 经验中内化——协调器创建前置到子模块 init() 调用之前）。
+
+### Phase 4 SettingsCoordinator（2026-07-28 同日完成）
+
+- **验证**：tsc 0 错误 · ui.test.ts 87/87
+- **修改**：7 文件（新增 settingsCoordinator.ts + ui.ts + 2 mixin + renderer.ts + ui.test.ts）
+- **净减**：3→1，字段数 ~22→~20
+- **测试修复**：ui.test.ts 有 2 处 `uiManager.settingsPanelManager` 旧路径需改
+
+### UIManager 字段演变总结
+
+| Phase | 提取 | 净减 | 累计 |
+|-------|------|------|------|
+| HEAL-11 | PerceptionCoordinator (3→1) | -2 | ~29 |
+| Phase 2 | ChatCoordinator (5→1) | -4 | ~25 |
+| Phase 3 | MemoryCoordinator (4→1) | -3 | ~22 |
+| Phase 4 | SettingsCoordinator (3→1) | -2 | ~20 |
+| **总计** | **15→4 协调器** | **-11** | |
 
 ---
 

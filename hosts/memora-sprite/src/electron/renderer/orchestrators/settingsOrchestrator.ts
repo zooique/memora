@@ -216,7 +216,7 @@ export function createSettingsOrchestrator(uiManager: UIManager) {
     try {
       const data = await window.electronAPI.getLlmConfig();
       // 同步刷新 Provider 列表（onboarding 新增 / 设置面板内编辑/删除后保持一致）
-      void uiManager.settingsPanelManager.loadProviderList();
+      void uiManager.settingsCoordinator.settingsPanelManager.loadProviderList();
       // 加载 Embedding 配置到表单
       uiManager.loadEmbeddingConfig(data);
       uiManager.hideSettingsError();

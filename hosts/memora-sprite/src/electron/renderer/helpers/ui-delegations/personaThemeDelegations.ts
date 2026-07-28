@@ -51,7 +51,7 @@ export const personaThemeDelegations: PersonaThemeDelegations = {
     this.personaPanel.triggerMemoryRecallClick(memoryId);
   },
   onArchiveModeChange(this: UIManager, cb: (mode: 'full' | 'insights-only' | 'manual') => void): void {
-    this.settingsPanelManager.onArchiveModeChange(cb);
+    this.settingsCoordinator.settingsPanelManager.onArchiveModeChange(cb);
   },
   onThemeChange(this: UIManager, cb: (theme: 'light' | 'dark', source: 'user' | 'system') => void): void {
     this.themeManager.onThemeChange(cb);

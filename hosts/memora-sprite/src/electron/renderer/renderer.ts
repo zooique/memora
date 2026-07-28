@@ -109,9 +109,9 @@ async function bootstrapRenderer(): Promise<void> {
 
   // 精灵设定面板 - 持久化回调注册（与 settingsController.setupSettingsPanel 同模式）
   // 角色匹配模式 / 默认角色即时持久化，不走保存按钮（与主题、归档模式同模式）
-  // R4 迁移后 personaMode 持久化统一由 settingsManagerPanel.onPersonaModeChange 负责，
+  // R4 迁移后 personaMode 持久化统一由 settingsCoordinator.settingsManagerPanel.onPersonaModeChange 负责，
   // personaController 已退出该职责（仅保留 onPersonaSwitch + loadPersonaList），避免双面板竞争。
-  State.uiManager.settingsManagerPanel.onPersonaModeChange(async (mode) => {
+  State.uiManager.settingsCoordinator.settingsManagerPanel.onPersonaModeChange(async (mode) => {
     // 回调触发时 settingsManagerPanel 已乐观更新 currentPersonaMode + badge 为新模式，
     // 需在 IPC 调用前保存旧模式用于失败回滚（乐观更新 + 失败回滚模式）
     const previousMode = mode === 'manual' ? 'auto' : 'manual';
@@ -124,18 +124,18 @@ async function bootstrapRenderer(): Promise<void> {
       } else {
         // IPC 拒绝切换：回滚 radio + badge 到旧模式（badge 回滚不可遗漏，否则顶栏与 radio 不一致）
         State.uiManager.updatePersonaModeBadge(previousMode);
-        State.uiManager.settingsManagerPanel.setPersonaMode(previousMode);
+        State.uiManager.settingsCoordinator.settingsManagerPanel.setPersonaMode(previousMode);
         State.uiManager.showToast('角色匹配模式切换失败', 'error');
       }
     } catch (error) {
       // IPC 异常：回滚 radio + badge 到旧模式
       State.uiManager.updatePersonaModeBadge(previousMode);
-      State.uiManager.settingsManagerPanel.setPersonaMode(previousMode);
+      State.uiManager.settingsCoordinator.settingsManagerPanel.setPersonaMode(previousMode);
       reportError('sprite-settings.onPersonaModeChange', error);
       State.uiManager.showToast(formatErrorMessage('设置角色模式', error), 'error');
     }
   });
-  State.uiManager.settingsManagerPanel.onDefaultPersonaChange(async (value) => {
+  State.uiManager.settingsCoordinator.settingsManagerPanel.onDefaultPersonaChange(async (value) => {
     try {
       await window.electronAPI.updateConfig('defaultPersona', value);
     } catch (error) {
@@ -156,7 +156,7 @@ async function bootstrapRenderer(): Promise<void> {
     } else if (panel === 'sprite-settings') {
       // 切换到精灵设定面板时加载三类设定文件列表 + 同步角色匹配模式/默认角色
       // 列表与状态分离加载：列表由 loadAll 内部并行加载，状态由 syncSpriteSettingsState 同步
-      void State.uiManager.settingsManagerPanel.loadAll();
+      void State.uiManager.settingsCoordinator.settingsManagerPanel.loadAll();
       void syncSpriteSettingsState();
     } else if (panel === 'dashboard') {
       // 切换到仪表盘面板时刷新仪表盘数据（健康诊断 + 感知 + 运行指标）
@@ -318,7 +318,7 @@ async function bootstrapRenderer(): Promise<void> {
     // 同步角色匹配模式（独立 IPC，与 spriteConfig 解耦）
     try {
       const { mode } = await window.electronAPI.getPersonaMode();
-      State.uiManager.settingsManagerPanel.setPersonaMode(mode as 'auto' | 'manual');
+      State.uiManager.settingsCoordinator.settingsManagerPanel.setPersonaMode(mode as 'auto' | 'manual');
     } catch (error) {
       reportError('syncSpriteSettingsState-mode', error);
     }
@@ -326,7 +326,7 @@ async function bootstrapRenderer(): Promise<void> {
     try {
       const { config } = await window.electronAPI.getConfig();
       if (config) {
-        State.uiManager.settingsManagerPanel.setDefaultPersona(String(config.defaultPersona ?? ''));
+        State.uiManager.settingsCoordinator.settingsManagerPanel.setDefaultPersona(String(config.defaultPersona ?? ''));
       }
     } catch (error) {
       reportError('syncSpriteSettingsState-defaultPersona', error);
@@ -424,7 +424,7 @@ async function bootstrapRenderer(): Promise<void> {
     onConfigFilesChanged: (payload) => {
       // 广播到达后直接按 type 分发刷新对应列表（refreshByType 内部按 type 调用 loadXxxList）
       // 不再经过 handleConfigFilesChanged → configFilesChangedCallback 中间层，调用链路最短
-      void State.uiManager.settingsManagerPanel.refreshByType(payload.type);
+      void State.uiManager.settingsCoordinator.settingsManagerPanel.refreshByType(payload.type);
       // persona 列表变更时，同步刷新对话输入框的角色下拉菜单
       // 下拉菜单默认只订阅 personaChanged（角色切换）事件，角色"创建/删除"不触发切换事件，
       // 需在此补刷新，否则对话中新建的角色不会出现在下拉菜单中（设定面板已刷新但下拉菜单未刷新）
@@ -622,7 +622,7 @@ async function bootstrapRenderer(): Promise<void> {
 
   // ─── 技能文件拖入安装初始化 ──────────────
   // 注册安装成功回调：刷新仪表盘技能列表 + 计数
-  // 注：dropzone 事件监听已迁移到设定面板 settingsManagerPanel.initSkillDropzone（sprite-skill-dropzone）
+  // 注：dropzone 事件监听已迁移到设定面板 settingsCoordinator.settingsManagerPanel.initSkillDropzone（sprite-skill-dropzone）
   State.uiManager.onSkillInstalled(() => {
     void memoryController.loadDashboard();
   });
