@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继承）
+description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继承 + JS 层生命周期 + 声明式工厂）
 date: 2026-07-25
 ---
 
@@ -73,31 +73,126 @@ date: 2026-07-25
 | **DON'T** | **不要用「暂时就这样」的组件**——匆忙写一个特定场景的组件、计划"以后重构为通用组件"，这个"以后"不会到来。每一个新组件在创建时就该问：它的哪一部分是可复用的？如果不能回答，它就不该成为一个独立组件 |
 | **DON'T** | **叶子组件不承担布局责任，布局组件的职责就是布局**——Button、Input、Card 等叶子组件不应自设 `margin`（这等价于「假设自己总是在某个特定的上下文中」）。间距交给父容器或布局组件管理。但 Stack、Grid、Container 等布局型组件的全部职责就是管理子元素的排列和间距——它们设 `margin`/`gap` 是正确的。区分两种类型：叶子组件只管理自身，布局组件只管理子元素 |
 
+### §四.1 JS 层组件抽象——统一生命周期 API
+
+**原则**：CSS 层通过令牌 + BEM 实现了视觉复用，JS 层必须通过统一生命周期 API 实现行为复用。组件不只是 DOM 元素的包装，而是「挂载 → 更新 → 销毁」完整生命周期的自包含单元。每个 Manager 直接手写 `document.createElement` 是 DOM 操作类，不是组件——它知道太多 DOM 细节，外部使用者必须了解其内部结构才能调用。
+
+**与现有 Manager 模式的关系**：现有 Manager 的 `init() + cleanup()` 是生命周期的雏形，但缺少 `mount/update` 阶段，且 `init()` 与构造函数职责重叠。迁移目标：Manager 内部持有 Component 实例，不再直接 createElement；新代码优先用 Component，旧代码渐进迁移。
+
+| 类型 | 心智规则 |
+| ---- | ---- |
+| **DO** | **所有 JS 组件遵循统一生命周期四件套**——`new(options)` 构造函数（只合并配置，无副作用）/ `mount(container)` 挂载到 DOM / `update(options)` 增量更新内部状态 / `destroy()` 解绑事件 + 移除 DOM + nullify 引用。统一 API 让组件可替换、可测试、可组合——后端类比：组件是实现了某接口的类，生命周期方法是接口契约 |
+| **DO** | **`destroy()` 必须彻底清理**——解绑所有事件监听器（EventTracker / `removeEventListener`）、移除 DOM 元素（`el.remove()`）、nullify 所有字段引用、取消进行中的 Promise（`AbortController`）。残留引用 = 内存泄漏。现有 Manager 的 `cleanup()` 是 `destroy()` 的子集，迁移时 `destroy()` 应调用 `cleanup()` 再补充 DOM 移除和 nullify |
+| **DO** | **`update()` 只更新内部状态，不重建 DOM**——`update(options)` 应通过 `textContent` / `classList.toggle` / `setAttribute` 等增量操作更新，而非 `innerHTML = ...` 重建。重建会丢失焦点、滚动位置、过渡动画。当确实需要重建（结构变化）时，明确注释「结构变更，需重建」 |
+| **DO** | **组件根元素通过 `this.el` 暴露**——`mount()` 后 `this.el` 必须指向根 DOM 元素，外部通过 `component.el` 访问（如父组件 `appendChild(child.el)`）。但外部不应访问 `this.el.children` 或内部结构——`el` 是挂载锚点，不是内部 API |
+| **DON'T** | **不要在构造函数中做副作用**——构造函数只做配置合并 + 字段初始化，不查询 DOM、不绑定事件、不发起请求。副作用放在 `mount()` 后（DOM 已就绪）。基类 `Component` 的构造函数为 `protected`，强制子类显式声明 `public constructor`（避免基类被误实例化，与 `abstract` 双保险） |
+| **DON'T** | **不要让组件依赖外部 DOM 上下文**——组件不应通过 `document.getElementById('xxx')` 查找自己的内部元素，应通过 `this.el.querySelector(...)` 在自身子树内查询。依赖外部上下文 = 组件不可独立测试、不可复用 |
+
+### §四.2 声明式工厂——通过配置声明差异，而非重复造轮子
+
+**原则**：相同结构的页面/面板通过工厂声明差异（columns / actions / search / apiPath 等），工厂处理通用逻辑（分页、搜索、加载、空状态）。一个 ListPage 工厂 + 8 份配置，胜过 8 个手写的列表 Manager。这是「嫁接而非并列」原则在页面层的落地——通用结构是调用链，页面差异是分支点。
+
+**与 sprite 现状的关系**：sprite 的记忆面板、审计面板、设置面板有共同结构（标题 + 列表 + 详情）。当前每个 PanelManager 手写完整 DOM，差异点和共同点混在一起。迁移目标：抽离 ListPanel / DetailPanel 工厂，面板通过配置声明差异。
+
+| 类型 | 心智规则 |
+| ---- | ---- |
+| **DO** | **相同结构超过 3 次即应抽工厂**——当出现 3 个以上结构相似的页面/面板（如「列表 + 搜索 + 分页 + 行操作」），抽离工厂。少于 3 次时归档监控（对齐渐进式重构 §5.2 的 3 次阈值）。工厂接收配置声明，差异通过配置参数表达 |
+| **DO** | **工厂配置项应声明完整契约**——配置项的类型、是否必填、默认值、回调签名必须在工厂的 TypeScript 接口中明确声明。配置项是工厂的公共 API，破坏性变更需走 deprecation 周期（对齐 §二「通用组件的接口就是公共 API」） |
+| **DO** | **工厂处理通用逻辑，页面处理业务差异**——分页、搜索、加载状态、空状态、骨架屏、错误处理是工厂的职责；列定义、行操作、自定义渲染是页面的职责。工厂提供 `customRender` 逃生舱，当默认渲染无法满足时由页面接管 |
+| **DON'T** | **不要为「将来可能复用」提前抽工厂**——抽工厂的触发条件是「已有 3 处重复」，不是「将来可能有 3 处」。提前抽象是过度设计，且第一次抽象往往抓错重点（因为没有真实使用反馈） |
+| **DON'T** | **不要让工厂变成 God Object**——工厂只负责组装通用结构，不承担业务编排。业务逻辑（如「审批通过后刷新列表 + 发送通知」）由调用方或 Coordinator 处理。工厂 + 业务 = 不可复用 |
+
+### §四.3 组件分层与统一导出——依赖方向单向，导出口单一
+
+**原则**：组件按依赖方向分层，高层可依赖低层，低层不可依赖高层。统一导出口让 import 路径收敛，避免散乱。这与后端的分层架构同构——`controller → service → repository` 是单向依赖，前端 `data → navigation → form → feedback → base` 也是单向依赖。
+
+**与 sprite 现状的关系**：sprite 已有 controllers/helpers/panels/components 扁平分层，但缺少 `components/index.ts` 统一导出口，import 路径散乱。迁移目标：建立 base/feedback/form/navigation/data 五层（或 sprite 自定义的分层）+ 统一导出口。
+
+| 类型 | 心智规则 |
+| ---- | ---- |
+| **DO** | **按依赖方向分层**——base（Button / Icon）→ feedback（Toast / Modal / Confirm）→ form（Input / Select / FormBuilder）→ navigation（Layout / PageHeader / Tabs）→ data（DataTable / ListPage / SearchPanel）。高层可依赖低层，低层不可依赖高层。data 层可依赖 form + navigation + feedback，但 form 不可依赖 data |
+| **DO** | **提供统一导出口**——`components/index.ts` 集中导出所有公共组件，调用方通过 `import { Button, ListPage } from '@components'` 引用。禁止直接 `import Button from './base/Button/index.js'`——绕过统一导出口 = 失去重构自由 |
+| **DO** | **新增组件必须同步注册到导出口**——创建新组件后，立即在 `components/index.ts` 添加 export。未注册的组件 = 私有实现，不可被其他模块引用 |
+| **DON'T** | **不要跨层引用**——base 层组件不能 import data 层组件。如果 base 层确实需要 data 层能力，说明分层错误——要么提升到 data 层，要么将共享能力下沉到 base 层 |
+| **DON'T** | **不要在导出口做副作用**——`components/index.ts` 只做 `export`，不做初始化、不调用 API、不查询 DOM。导出口是声明性的，副作用属于使用方 |
+
+### §四.4 Manager 与 Component 的边界——编排与封装分离
+
+**原则**：Manager 负责业务编排（多组件协调、跨面板通信、状态管理），Component 负责视觉封装（DOM 结构、交互状态、事件处理）。Manager 持有 Component 实例，不直接 createElement。这是「单一职责」在 UI 层的落地——Manager 不应同时是状态容器 + DOM 操作类 + 事件总线。
+
+**与 sprite 现状的关系**：现有 PanelManager（如 ChatPanelManager ~900 行）同时承担业务编排和 DOM 操作，是审计报告 §四 6.0/10 的根因。迁移目标：Manager 持有 Component 实例，DOM 操作下沉到 Component，Manager 专注编排。
+
+| 类型 | 心智规则 |
+| ---- | ---- |
+| **DO** | **Manager 持有 Component，不直接操作 DOM**——Manager 通过 `this.listComponent.update(data)` 更新视图，不通过 `this.messagesEl.innerHTML = ...`。Manager 的代码应该是「业务逻辑 + 组件调用」，而非「业务逻辑 + DOM 操作」 |
+| **DO** | **Component 自包含交互**——Component 内部管理自己的事件、状态、过渡动画。Manager 只通过 `update(props)` 传递数据，不关心 Component 如何渲染。类比后端：Component 是 Service，Manager 是 Controller——Controller 调用 Service，不直接操作数据库 |
+| **DO** | **渐进迁移，不一次性重写**——现有 Manager 通过渐进式重构迁移：第一步抽出 DOM 操作为 Component，Manager 持有引用；第二步将事件处理迁入 Component；第三步 Manager 只剩业务编排。每步独立可验证（对齐渐进式重构规则 §5.1） |
+| **DON'T** | **不要让 Component 反向调用 Manager**——Component 通过回调（`onXxx` props）向上通信，不通过 `this.manager.xxx`。反向引用 = 紧耦合 = 不可独立测试。例外：Host 接口模式（如 `ChatPanelHost`）是显式的依赖注入，允许 Manager 作为 Host 被 Component 调用 |
+| **DON'T** | **不要让 Manager 知道 Component 的内部 DOM 结构**——Manager 不应通过 `component.el.querySelector('.xxx')` 操作 Component 内部。需要操作时，Component 暴露公共方法（如 `component.scrollToBottom()`），Manager 调用方法。内部结构是 Component 的实现细节，不是 Manager 的接口 |
+
 ---
 
 ## 五、前后端嫁接对照
 
 > 通用文件中的「嫁接」原则在前后端有同构的表达。
 
-| 维度 | 后端（调用链） | 前端（样式链） |
-| ---- | -------------- | -------------- |
-| **复用单位** | 函数 / 模块 / 调用链 | 令牌 / 通用组件基类 / 变体修饰符 |
-| **嫁接操作** | 在现有调用链上找挂载点，新增分支逻辑 | 在现有通用组件上新增 BEM 修饰符（`.btn--newvariant`） |
-| **避免并列** | 两个独立归档函数 → 合并为一个，用参数分叉 | 两个独立按钮样式 → 合并为通用 `.btn`，用 `--variant` 分叉 |
-| **差异化位置** | 分叉点（if/switch/策略模式） | 修饰符（BEM modifier） |
-| **单一真理源** | 同一段逻辑只在一处定义 | 同一类组件只在一个文件定义 |
-| **判断标准** |「这两个功能做的是不是同一类事？」 |「这两个组件是不是同一个类型的不同表现？」 |
+| 维度 | 后端（调用链） | 前端 CSS 层（样式链） | 前端 JS 层（组件链） |
+| ---- | -------------- | -------------- | -------------- |
+| **复用单位** | 函数 / 模块 / 调用链 | 令牌 / 通用组件基类 / 变体修饰符 | Component 类 / 工厂配置 / 声明式范式 |
+| **嫁接操作** | 在现有调用链上找挂载点，新增分支逻辑 | 在现有通用组件上新增 BEM 修饰符（`.btn--newvariant`） | 在现有 Component 上新增 props 变体；在现有工厂上新增配置项 |
+| **避免并列** | 两个独立归档函数 → 合并为一个，用参数分叉 | 两个独立按钮样式 → 合并为通用 `.btn`，用 `--variant` 分叉 | 两个手写 DOM 的 Manager → 合并为工厂 + 配置；两个相似 Component → 合并为基类 + props |
+| **差异化位置** | 分叉点（if/switch/策略模式） | 修饰符（BEM modifier） | 配置项（工厂 config）/ props（Component options） |
+| **单一真理源** | 同一段逻辑只在一处定义 | 同一类组件只在一个文件定义 | 同一结构只在一个工厂定义；同一生命周期只在一个 Component 基类定义 |
+| **判断标准** |「这两个功能做的是不是同一类事？」 |「这两个组件是不是同一个类型的不同表现？」 |「这两个 Manager 是不是同一结构的配置差异？」 |
 
 ---
 
 ## 六、速查表
 
-> 每次写 UI 代码前，过一遍这 5 个问题。
+> 每次写 UI 代码前，过一遍这 8 个问题。
+
+### CSS 层速查（§一 ~ §三）
 
 | # | 问题 | 对应章节 |
 |---|------|---------|
 | 1 | 这个视觉属性有对应的令牌吗？还是我在写裸值？ | §一 设计令牌 |
 | 2 | 这个组件是已有通用组件的变体吗？能不能继承基类而非新建？ | §二 通用组件 |
 | 3 | 如果必须有独特性，我的覆写范围是否最小？差异化有存在的理由吗？ | §三 独特性 |
-| 4 | 复杂 UI 能否通过组合已有组件实现，而非写一个巨型组件？ | §四 组件化 |
-| 5 | 这个修改会影响多少调用方？如果破坏兼容性，走 deprecation 周期了吗？ | §二 组件 API 稳定性 / [通用文件 §1.3](./programmer-mindset-rules.md) 不可逆操作 |
+
+### JS 层速查（§四.1 ~ §四.4）
+
+| # | 问题 | 对应章节 |
+|---|------|---------|
+| 4 | 新写的 JS 组件遵循 `create / mount / update / destroy` 四件套吗？还是手写 `document.createElement` + 散落的 `addEventListener`？ | §四.1 JS 层组件抽象 |
+| 5 | 这个 Manager 是不是手写了 DOM 结构？能不能改为持有 Component 实例 + 调用 `component.update(data)`？ | §四.4 Manager 与 Component 的边界 |
+| 6 | 是否已有 3 个以上结构相似的面板？能不能抽工厂，通过配置声明差异？ | §四.2 声明式工厂 |
+| 7 | 新增的组件注册到 `components/index.ts` 统一导出口了吗？依赖方向是单向的吗（base ← feedback ← form ← navigation ← data）？ | §四.3 组件分层 |
+
+### 影响面速查
+
+| # | 问题 | 对应章节 |
+|---|------|---------|
+| 8 | 这个修改会影响多少调用方？如果破坏兼容性，走 deprecation 周期了吗？ | §二 组件 API 稳定性 / [通用文件 §1.3](./programmer-mindset-rules.md) 不可逆操作 |
+
+### 判定流程图
+
+新增一个面板/页面时，按以下顺序判定：
+
+```
+1. 是否已有 3 个以上结构相似的面板？
+   ├─ 是 → 走声明式工厂（§四.2），通过配置声明差异
+   └─ 否 → 继续手写，但 Manager 内部必须用 Component（下一步）
+
+2. Manager 是否需要操作 DOM？
+   ├─ 是 → 抽出 Component（§四.1），Manager 持有实例
+   │       Component 遵循 create/mount/update/destroy 四件套
+   └─ 否 → 纯业务编排 Manager（如 SessionOrchestrator），无需 Component
+
+3. Component 是否可复用？
+   ├─ 是 → 注册到 components/index.ts（§四.3），按分层放置
+   └─ 否 → 作为 Manager 的私有内部实现，不导出
+
+4. 新增的视觉属性是否有对应令牌？
+   ├─ 是 → 引用令牌
+   └─ 否 → 先补令牌（§一），再写组件
+```

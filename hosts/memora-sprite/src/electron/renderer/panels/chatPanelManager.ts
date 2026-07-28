@@ -6,7 +6,7 @@
  * - 管理流式输出状态（startStreaming / updateStreamingMessage / finishStreamingMessage / stopAllStreaming）
  * - 管理工具调用卡片（showToolStart / updateToolResult）
  * - 管理思考阶段指示器（showThinkingPhase）
- * - 管理召回记忆展示（setMemoryRecall / createRecallContainer）
+ * - 管理召回记忆展示（setMemoryRecall，createRecallContainer 已下沉到 MessageBubbleComponent）
  * - 管理错误注入（injectErrorToStreamingMessages）
  * - 管理空状态引导（showEmptyState / hideEmptyState / initEmptyStateListeners / onSuggestionClick）
  * - 管理加载更多按钮（showLoadMore / hideLoadMore）
@@ -20,10 +20,10 @@
  * - 自管理内部状态（流式消息映射、RAF 状态、回调引用），提供 cleanup() 清理
  */
 
-import { formatTimestamp, formatDateKey } from '../helpers/domHelpers.js';
+import { formatDateKey } from '../helpers/domHelpers.js';
 import { setIcon, setIconWithLabel } from '../helpers/icon.js';
-import { renderMarkdown } from '../components/markdown.js';
-import { formatPersonaDisplayName } from '../helpers/personaLabel.js';
+// MessageBubbleComponent（HEAL-17 Phase 2）：单条消息气泡组件，承接原 buildMessageElement 的 DOM 构建逻辑
+import { MessageBubbleComponent } from '../components/messageBubbleComponent.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
@@ -39,9 +39,9 @@ import {
 } from './streamingRenderer.js';
 // 流式输出安全兜底定时器（30s/90s 二级兜底）提取到独立 helper
 import { StreamSafetyTimer } from '../helpers/streamSafetyTimer.js';
-// 消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
+// 消息装饰器（召回记忆渲染 + 思考阶段 + 截断提示）提取到独立 helper
+// 注：createRecallContainer 已下沉到 MessageBubbleComponent（HEAL-17 Phase 2）
 import {
-  createRecallContainer as buildRecallContainer,
   renderMemoryRecall,
   showThinkingPhase as renderThinkingPhase,
   showTruncationNotice as renderTruncationNotice,
@@ -498,130 +498,24 @@ export class ChatPanelManager {
   }
 
   /**
-   * 构建消息 DOM 元素（纯函数，无副作用）
+   * 构建消息 DOM 元素（薄委托，HEAL-17 Phase 2）
    *
-   * 从 appendMessage 中提取 DOM 构建逻辑，供 appendMessages 批量插入复用。
-   * 不处理 DOM 挂载、滚动、计数等副作用，仅返回完整元素。
+   * 原内联 DOM 构建逻辑（~110 行）已下沉到 MessageBubbleComponent（components/messageBubbleComponent.ts）。
+   * 本方法仅作为薄包装，返回 HTMLElement 供 appendMessage / appendMessages 使用。
    *
-   * Phase 1：分组模式下省略头像（同角色连续消息合并显示）。
+   * 设计理由（对齐 ui-engineering-mindset-rules §四.4 Manager 与 Component 边界）：
+   *   - Manager 负责消息列表编排（分组 / 日期 / 滚动）
+   *   - Component 负责单条消息 DOM 构建
+   *   - Manager 通过 `component.build()` 获取 HTMLElement 后自行决定挂载位置（message-group / messagesEl）
    *
    * @param message 消息对象
    * @param grouped 是否为分组消息（连续同角色，省略头像）
-   * @returns 完整的消息 DOM 元素
+   * @returns 完整的消息 DOM 元素（已构建但未挂载到真实容器，调用方自行 appendChild）
    */
   private buildMessageElement(message: Message, grouped: boolean = false): HTMLElement {
-    const el = document.createElement('div');
-    el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}${grouped ? ' grouped' : ''}`;
-    if (message.messageId) {
-      el.dataset.messageId = message.messageId;
-    }
-
-    if (message.role === 'system') {
-      // 系统消息：简单文本，居中无头像
-      el.textContent = message.content;
-      return el;
-    }
-
-    // 非系统消息可聚焦（tabindex=0），支持 Shift+F10/Menu 键触发右键菜单
-    el.tabIndex = 0;
-
-    // 用户/精灵消息：头像 + 气泡结构（分组模式下省略头像）
-    if (!grouped) {
-      const avatar = document.createElement('div');
-      avatar.className = 'message-avatar flex-shrink-0';
-      // 使用 SVG 图标替代 emoji，统一视觉风格
-      const iconId = message.role === 'user' ? 'icon-person' : 'icon-fairy';
-      setIcon(avatar, iconId);
-      el.appendChild(avatar);
-    }
-
-    // 消息内容容器（气泡 + 时间戳 + 操作按钮）
-    const contentWrapper = document.createElement('div');
-    contentWrapper.className = 'message-content';
-
-    const bubble = document.createElement('div');
-    bubble.className = 'message-bubble';
-
-    if (message.role === 'assistant') {
-      // 精灵消息：渲染 Markdown
-      bubble.appendChild(renderMarkdown(message.content));
-    } else {
-      // 用户消息：使用 textContent（防 XSS）
-      bubble.textContent = message.content;
-    }
-    contentWrapper.appendChild(bubble);
-
-    // 元信息行：复制按钮 + 时间戳同行显示
-    // 精灵消息（assistant）含 persona 时采用两端对齐：左侧角色名，右侧操作按钮组
-    const metaRow = document.createElement('div');
-    metaRow.className = 'message-meta';
-
-    // 精灵消息且携带 persona：左侧显示角色名标签（让用户明确知道是哪个角色在回答）
-    // 历史消息不携带 persona，不显示角色标签（不持久化，符合"用户只需知道当前角色"决策）
-    if (message.role === 'assistant' && message.persona) {
-      const personaLabel = document.createElement('span');
-      personaLabel.className = 'message-persona';
-      personaLabel.textContent = formatPersonaDisplayName(message.persona);
-      metaRow.appendChild(personaLabel);
-    }
-
-    // 操作按钮组：复制按钮 + 时间戳（精灵消息有角色标签时包裹为右侧组，无角色标签时直接挂在 metaRow）
-    const hasPersonaLabel = message.role === 'assistant' && message.persona;
-    const actionsContainer = hasPersonaLabel
-      ? document.createElement('div')
-      : metaRow;
-    if (hasPersonaLabel) {
-      actionsContainer.className = 'message-actions';
-    }
-
-    // 用户/精灵消息均添加复制按钮（hover 时显示）
-    // 原仅精灵消息有复制按钮，用户消息需手动选择文本，体验不一致
-    if (!message.streaming) {
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'message-copy-btn';
-      copyBtn.title = '复制';
-      // aria-label 为屏幕阅读器提供可访问名称（icon-only 按钮必需）
-      copyBtn.setAttribute('aria-label', '复制');
-      // 使用 SVG 图标替代 emoji
-      setIcon(copyBtn, 'icon-copy');
-      // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
-      copyBtn.dataset.action = 'copy';
-      copyBtn.dataset.content = message.content;
-      actionsContainer.appendChild(copyBtn);
-    }
-
-    // 时间戳
-    const timestamp = message.timestamp ?? new Date().toISOString();
-    const timeEl = document.createElement('div');
-    timeEl.className = 'message-time';
-    // 剪枝：复用 domHelpers.formatTimestamp
-    timeEl.textContent = formatTimestamp(timestamp);
-    actionsContainer.appendChild(timeEl);
-
-    if (hasPersonaLabel) {
-      metaRow.appendChild(actionsContainer);
-    }
-
-    contentWrapper.appendChild(metaRow);
-
-    el.appendChild(contentWrapper);
-
-    // 召回记忆提示（仅精灵消息）
-    const memoryRecall = message.memoryRecall;
-    if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
-      // 委托到 messageDecorations helper 构建召回记忆容器
-      const recallContainer = buildRecallContainer(memoryRecall);
-      bubble.appendChild(recallContainer);
-    }
-
-    // 流式消息光标
-    if (message.streaming) {
-      const cursor = document.createElement('span');
-      cursor.className = 'cursor';
-      bubble.appendChild(cursor);
-    }
-
-    return el;
+    /** 创建 Component 实例并构建 DOM（不挂载到真实容器，调用方自行 appendChild） */
+    const component = new MessageBubbleComponent({ message, grouped });
+    return component.build();
   }
 
   /**

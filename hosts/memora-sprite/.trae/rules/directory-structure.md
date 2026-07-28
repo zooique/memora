@@ -114,9 +114,13 @@ src/
 │       │       └── settingsModalDelegations.ts # 设置模态框委托方法（Provider/快捷键/隐私设置）
 │       │
 │       ├── components/         # 可复用 UI 组件
+│       │   ├── Component.ts         # Component 抽象基类（HEAL-17 Phase 0，统一生命周期 create/mount/update/destroy）
+│       │   ├── index.ts             # 组件库统一导出口（HEAL-17 Phase 0，对齐 ui-engineering-mindset-rules §四.3）
 │       │   ├── themeManager.ts      # 主题管理器（auto/light/dark 切换）
 │       │   ├── modal.ts             # 模态弹窗
-│       │   ├── toast.ts             # Toast 通知
+│       │   ├── toast.ts             # Toast 通知管理器（Manager 层，HEAL-17 Phase 1 委托 ToastComponent）
+│       │   ├── toastComponent.ts    # ToastComponent 单实例组件（HEAL-17 Phase 1，对齐 §四.1 生命周期）
+│       │   ├── messageBubbleComponent.ts # MessageBubbleComponent 单条消息气泡组件（HEAL-17 Phase 2，承接 ChatPanelManager.buildMessageElement 的 DOM 构建逻辑）
 │       │   ├── onboarding.ts        # 新手引导
 │       │   ├── proactiveBanner.ts   # 精灵主动提示横幅
 │       │   ├── suggestionCard.ts    # 建议卡片
