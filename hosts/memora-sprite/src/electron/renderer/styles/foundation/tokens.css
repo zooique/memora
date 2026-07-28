@@ -223,7 +223,7 @@
   /* 自然生长原则：3+ 次重复的 padding 模式提取为语义令牌，避免硬编码散落 */
   --pad-card:           var(--space-3) var(--space-4);  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
   --pad-card-compact:   var(--space-2) var(--space-3);  /* 紧凑卡片内边距（审计条目、时间线节点等只读紧凑卡片，与 --input-padding-md 数值相同但语义独立） */
-  --pad-section:   10px 16px;  /* 面板区块内边距（面板头部、引导项等） */
+  --pad-section:   var(--space-2-5) var(--space-4);  /* 面板区块内边距（面板头部、引导项等），对齐 4px 栅格 */
   --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距（prompt-input、filter 下拉等，禁止卡片场景借用） */
 
   /* 语义化背景变量（hover/次级背景） */
@@ -397,11 +397,11 @@
   /* emoji 文字阴影令牌（深色主题加重以保证可读性） */
   --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.4);
 
-  /* 统一动画时长变量（深色主题与浅色一致） */
-  --transition-fast: 0.12s;
+  /* 统一动画时长变量（双主题一致——深色用户感知延迟由 GPU 合成层处理，不降 CSS 时长） */
+  --transition-fast: 0.15s;
   --transition-base: 0.2s;
   --transition-slow: 0.3s;
-  --transition-xl:   0.5s;
+  --transition-xl:   0.3s;
 
   /* 动画播放时长令牌（深色主题与浅色一致） */
   --duration-spin:         0.8s;
@@ -456,7 +456,7 @@
   /* ─── 设计系统：语义内边距（与浅色主题一致，复用 --space-* 令牌） ─── */
   --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距 */
   --pad-card-compact:   var(--space-2) var(--space-3);  /* 紧凑卡片内边距（审计条目、时间线节点等） */
-  --pad-section:   10px 16px;  /* 面板区块内边距（10px 无令牌，保留） */
+  --pad-section:   var(--space-2-5) var(--space-4);  /* 面板区块内边距，对齐 4px 栅格 */
   --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距 */
 
   /* 语义化背景变量（深色主题下复用 surface1） */
