@@ -354,7 +354,30 @@ cd hosts/memora-sprite && npm run lint:css
 
 ### 10.4 后续演进
 
-UIManager 字段数从 ~29 降至 ~25。Phase 3（MemoryCoordinator）和 Phase 4（SettingsCoordinator）等待涉足对应域时自然触发。
+UIManager 字段数从 ~29 降至 ~25（Phase 2）→ **~22（Phase 3，本日完成）**。Phase 4（SettingsCoordinator，3 → 1，~22 → ~20）等待涉足设置域时自然触发。
+
+### 11. Phase 3 MemoryCoordinator 实施完成（2026-07-28 追加）
+
+#### 实际验证结果
+
+- **tsc --noEmit**: 0 错误
+- **ui.test.ts**: 87/87 通过
+- **memoryPanelManager.test.ts / profilePanelManager.test.ts**: 全部通过
+
+#### 实际修改文件清单
+
+| 文件 | 变更类型 | 改动点 |
+|------|---------|--------|
+| `coordination/memoryCoordinator.ts` | **新增** | MemoryCoordinator 类（56 行，对齐 PerceptionCoordinator / ChatCoordinator 模式） |
+| `ui.ts` | 修改 | 4 字段合并为 1 memoryCoordinator · 构造函数初始化前置 · cleanup 委托 |
+| `helpers/ui-delegations/memoryDelegations.ts` | 修改 | `this.memoryPanel.` → `this.memoryCoordinator.memoryPanel.`（45 处） |
+| `helpers/ui-delegations/dashboardDelegations.ts` | 修改 | `this.memoryPanel.` → `this.memoryCoordinator.memoryPanel.`（16 处） |
+| `helpers/ui-delegations/settingsModalDelegations.ts` | 修改 | `this.profilePanel.` / `this.workProjectionPanel.` / `this.auditPanel.` → memoryCoordinator 路径（9 处） |
+| `helpers/ui-delegations/miscDelegations.ts` | 修改 | `this.memoryPanel.` → `this.memoryCoordinator.memoryPanel.`（1 处） |
+
+#### 额外发现
+
+无。本轮未踩 Phase 2 的同款初始化顺序坑（已在 Phase 2 经验中内化——协调器创建前置到子模块 init() 调用之前）。
 
 ---
 

@@ -73,29 +73,29 @@ export const dashboardDelegations: DashboardDelegations = {
     this.perceptionCoordinator.dashboardPanel.renderReviewData(review);
   },
   showInsightsLoading(this: UIManager): void {
-    this.memoryPanel.showInsightsLoading();
+    this.memoryCoordinator.memoryPanel.showInsightsLoading();
   },
   renderInsights(this: UIManager, dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number }, graph: RelationGraphData): void {
-    this.memoryPanel.renderInsights(dashboard, graph);
+    this.memoryCoordinator.memoryPanel.renderInsights(dashboard, graph);
   },
   renderPartnerInsights(this: UIManager, memories: Array<{ id: string; name: string; source: string; contentPreview: string; createdAt?: string }>): void {
-    this.memoryPanel.renderPartnerInsights(memories);
+    this.memoryCoordinator.memoryPanel.renderPartnerInsights(memories);
   },
   onPartnerMemoryClick(this: UIManager, cb: (memoryId: string) => void): void {
-    this.memoryPanel.onPartnerMemoryClick(cb);
+    this.memoryCoordinator.memoryPanel.onPartnerMemoryClick(cb);
     this.perceptionCoordinator.perceptionPanel.onMemoryClick(cb);
   },
   showInsightsError(this: UIManager): void {
-    this.memoryPanel.showInsightsError();
+    this.memoryCoordinator.memoryPanel.showInsightsError();
   },
   showHealthLoading(this: UIManager): void {
-    this.memoryPanel.showHealthLoading();
+    this.memoryCoordinator.memoryPanel.showHealthLoading();
   },
   renderHealthDashboard(this: UIManager, data: HealthDashboardPayload): void {
-    this.memoryPanel.renderHealthDashboard(data);
+    this.memoryCoordinator.memoryPanel.renderHealthDashboard(data);
   },
   showHealthError(this: UIManager): void {
-    this.memoryPanel.showHealthError();
+    this.memoryCoordinator.memoryPanel.showHealthError();
   },
   showMemoryListError(this: UIManager, listEl: HTMLElement): void {
     this.perceptionCoordinator.dashboardPanel.showMemoryListError(listEl);
@@ -125,23 +125,23 @@ export const dashboardDelegations: DashboardDelegations = {
     this.perceptionCoordinator.perceptionPanel.updateNarrative();
   },
   onReloadInsights(this: UIManager, cb: () => void): void {
-    this.memoryPanel.onReloadInsights(cb);
+    this.memoryCoordinator.memoryPanel.onReloadInsights(cb);
   },
   onReloadHealth(this: UIManager, cb: () => void): void {
-    this.memoryPanel.onReloadHealth(cb);
+    this.memoryCoordinator.memoryPanel.onReloadHealth(cb);
   },
   // 补全统计面板委托
   renderCompletionStat(this: UIManager): void {
-    this.memoryPanel.renderCompletionStat();
+    this.memoryCoordinator.memoryPanel.renderCompletionStat();
   },
   onResetCompletionStats(this: UIManager, cb: () => void): void {
-    this.memoryPanel.onResetCompletionStats(cb);
+    this.memoryCoordinator.memoryPanel.onResetCompletionStats(cb);
   },
   onReloadMemoryList(this: UIManager, cb: () => void): void {
     this.perceptionCoordinator.dashboardPanel.onReloadMemoryList(cb);
   },
   repaintCanvasOnThemeChange(this: UIManager): void {
     this.perceptionCoordinator.dashboardPanel.repaintOnThemeChange();
-    this.memoryPanel.repaintOnThemeChange();
+    this.memoryCoordinator.memoryPanel.repaintOnThemeChange();
   },
 };

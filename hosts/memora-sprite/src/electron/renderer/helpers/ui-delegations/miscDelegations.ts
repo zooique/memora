@@ -97,6 +97,6 @@ export const miscDelegations: MiscDelegations = {
     this.onboardingManager.showOnboardingDialog();
   },
   scrollToMemory(this: UIManager, id: string): void {
-    this.memoryPanel.scrollToMemory(id);
+    this.memoryCoordinator.memoryPanel.scrollToMemory(id);
   },
 };

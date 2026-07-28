@@ -83,131 +83,131 @@ export interface MemoryDelegations {
 /** Memory 委托群实现——纯透传到 memoryPanel */
 export const memoryDelegations: MemoryDelegations = {
   dismissMemoryAnalysisPanels(this: UIManager): void {
-    this.memoryPanel.dismissAnalysisPanels();
+    this.memoryCoordinator.memoryPanel.dismissAnalysisPanels();
   },
   activateMemoryPanelView(this: UIManager): void {
-    this.memoryPanel.ensureActiveSectionVisible();
+    this.memoryCoordinator.memoryPanel.ensureActiveSectionVisible();
   },
   renderMemoryList(this: UIManager, memories: MemoryListItem[], searchQuery?: string): void {
-    this.memoryPanel.renderMemoryList(memories, searchQuery);
+    this.memoryCoordinator.memoryPanel.renderMemoryList(memories, searchQuery);
   },
   removeMemoryFromCache(this: UIManager, id: string): boolean {
-    return this.memoryPanel.removeMemoryFromCache(id);
+    return this.memoryCoordinator.memoryPanel.removeMemoryFromCache(id);
   },
   renderMemorySourceFilter(this: UIManager, sources: string[], currentValue: string): void {
-    this.memoryPanel.renderSourceFilter(sources, currentValue);
+    this.memoryCoordinator.memoryPanel.renderSourceFilter(sources, currentValue);
   },
   showMemoryDetail(this: UIManager, memory: MemoryDetail): void {
-    this.memoryPanel.showMemoryDetail(memory);
+    this.memoryCoordinator.memoryPanel.showMemoryDetail(memory);
   },
   showMemoryLineage(this: UIManager, path: RelationPath[]): void {
-    this.memoryPanel.showMemoryLineage(path);
+    this.memoryCoordinator.memoryPanel.showMemoryLineage(path);
   },
   showMemoryLineageError(this: UIManager, onRetry: () => void): void {
-    this.memoryPanel.showLineageError(onRetry);
+    this.memoryCoordinator.memoryPanel.showLineageError(onRetry);
   },
   showMemoryNeighbors(this: UIManager, neighbors: RelationNeighbor[]): void {
-    this.memoryPanel.showMemoryNeighbors(neighbors);
+    this.memoryCoordinator.memoryPanel.showMemoryNeighbors(neighbors);
   },
   showMemoryNeighborsError(this: UIManager, onRetry: () => void): void {
-    this.memoryPanel.showNeighborsError(onRetry);
+    this.memoryCoordinator.memoryPanel.showNeighborsError(onRetry);
   },
   clearAddMemoryForm(this: UIManager): void {
-    this.memoryPanel.clearAddMemoryForm();
+    this.memoryCoordinator.memoryPanel.clearAddMemoryForm();
   },
   getAddMemoryFormData(this: UIManager): { source: string; name: string; content: string } | null {
-    return this.memoryPanel.getAddMemoryFormData();
+    return this.memoryCoordinator.memoryPanel.getAddMemoryFormData();
   },
   getCurrentMemoryId(this: UIManager): string | null {
-    return this.memoryPanel.getCurrentMemoryId();
+    return this.memoryCoordinator.memoryPanel.getCurrentMemoryId();
   },
   onMemorySearch(this: UIManager, cb: (query: string) => void): void {
-    this.memoryPanel.onMemorySearch(cb);
+    this.memoryCoordinator.memoryPanel.onMemorySearch(cb);
   },
   onMemoryFilter(this: UIManager, cb: (source: string) => void): void {
-    this.memoryPanel.onMemoryFilter(cb);
+    this.memoryCoordinator.memoryPanel.onMemoryFilter(cb);
   },
   onMemoryClick(this: UIManager, cb: (id: string) => void): void {
-    this.memoryPanel.onMemoryClick(cb);
+    this.memoryCoordinator.memoryPanel.onMemoryClick(cb);
     // 感知面板（精灵状态/模式洞察）的"关联记忆"按钮复用同一跳转回调
     this.perceptionCoordinator.perceptionPanel.onMemoryClick(cb);
   },
   onMemoryDelete(this: UIManager, cb: () => void): void {
-    this.memoryPanel.onMemoryDelete(cb);
+    this.memoryCoordinator.memoryPanel.onMemoryDelete(cb);
   },
   onMemoryAdd(this: UIManager, cb: (data: { source: string; name: string; content: string }) => void): void {
-    this.memoryPanel.onMemoryAdd(cb);
+    this.memoryCoordinator.memoryPanel.onMemoryAdd(cb);
   },
   onMemoryEdit(this: UIManager, cb: (id: string, content: string) => void): void {
-    this.memoryPanel.onMemoryEdit(cb);
+    this.memoryCoordinator.memoryPanel.onMemoryEdit(cb);
   },
   onMemoryDiscuss(this: UIManager, cb: (memoryName: string) => void): void {
-    this.memoryPanel.onMemoryDiscuss(cb);
+    this.memoryCoordinator.memoryPanel.onMemoryDiscuss(cb);
   },
   loadGraphData(this: UIManager, data: RelationGraphData): void {
-    this.memoryPanel.loadGraphData(data);
+    this.memoryCoordinator.memoryPanel.loadGraphData(data);
   },
   switchMemoryView(this: UIManager, mode: 'list' | 'timeline' | 'graph'): void {
-    this.memoryPanel.switchView(mode);
+    this.memoryCoordinator.memoryPanel.switchView(mode);
   },
   hasGraphData(this: UIManager): boolean {
-    return this.memoryPanel.hasGraphData();
+    return this.memoryCoordinator.memoryPanel.hasGraphData();
   },
   invalidateGraphCache(this: UIManager): void {
-    this.memoryPanel.invalidateGraphCache();
+    this.memoryCoordinator.memoryPanel.invalidateGraphCache();
   },
   getViewMode(this: UIManager): 'list' | 'timeline' | 'graph' {
-    return this.memoryPanel.getViewMode();
+    return this.memoryCoordinator.memoryPanel.getViewMode();
   },
   highlightGraphNodes(this: UIManager, nodeIds: string[] | null): void {
-    this.memoryPanel.highlightGraphNodes(nodeIds);
+    this.memoryCoordinator.memoryPanel.highlightGraphNodes(nodeIds);
   },
   selectGraphNode(this: UIManager, nodeId: string | null): void {
-    this.memoryPanel.selectGraphNode(nodeId);
+    this.memoryCoordinator.memoryPanel.selectGraphNode(nodeId);
   },
   clearGraphHighlights(this: UIManager): void {
-    this.memoryPanel.clearGraphHighlights();
+    this.memoryCoordinator.memoryPanel.clearGraphHighlights();
   },
   onMoreMenuAction(this: UIManager, cb: (action: string) => void): void {
-    this.memoryPanel.onMoreMenuAction(cb);
+    this.memoryCoordinator.memoryPanel.onMoreMenuAction(cb);
   },
   onRecycleBinAction(this: UIManager, cb: (action: 'restore' | 'purge', id: string) => Promise<void>): void {
-    this.memoryPanel.onRecycleBinAction(cb);
+    this.memoryCoordinator.memoryPanel.onRecycleBinAction(cb);
   },
   onRecycleBinBatchAction(this: UIManager, cb: (action: 'restore-all' | 'purge-all') => Promise<void>): void {
-    this.memoryPanel.onRecycleBinBatchAction(cb);
+    this.memoryCoordinator.memoryPanel.onRecycleBinBatchAction(cb);
   },
   renderRecycleBinList(this: UIManager, memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void {
-    this.memoryPanel.renderRecycleBinList(memories);
+    this.memoryCoordinator.memoryPanel.renderRecycleBinList(memories);
   },
   onSortChange(this: UIManager, cb: () => void): void {
-    this.memoryPanel.onSortChange(cb);
+    this.memoryCoordinator.memoryPanel.onSortChange(cb);
   },
   onTimeRangeChange(this: UIManager, cb: () => void): void {
-    this.memoryPanel.onTimeRangeChange(cb);
+    this.memoryCoordinator.memoryPanel.onTimeRangeChange(cb);
   },
   onCleanupRequest(this: UIManager, cb: (type: 'duplicates' | 'stale' | 'all') => string[]): void {
-    this.memoryPanel.onCleanupRequest(cb);
+    this.memoryCoordinator.memoryPanel.onCleanupRequest(cb);
   },
   onCleanupConfirm(this: UIManager, cb: (ids: string[]) => Promise<void>): void {
-    this.memoryPanel.onCleanupConfirm(cb);
+    this.memoryCoordinator.memoryPanel.onCleanupConfirm(cb);
   },
   onLlmGovernance(this: UIManager, cb: (action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>): void {
-    this.memoryPanel.onLlmGovernance(cb);
+    this.memoryCoordinator.memoryPanel.onLlmGovernance(cb);
   },
   onViewSwitch(this: UIManager, cb: (mode: 'list' | 'timeline' | 'graph') => void): void {
-    this.memoryPanel.onViewSwitch(cb);
+    this.memoryCoordinator.memoryPanel.onViewSwitch(cb);
   },
   onGraphContextMenuAction(this: UIManager, cb: (action: string, nodeId: string) => void): void {
-    this.memoryPanel.onGraphContextMenuAction(cb);
+    this.memoryCoordinator.memoryPanel.onGraphContextMenuAction(cb);
   },
   onRelationEdit(this: UIManager, cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
-    this.memoryPanel.onRelationEdit(cb);
+    this.memoryCoordinator.memoryPanel.onRelationEdit(cb);
   },
   onRelationDelete(this: UIManager, cb: (sourceId: string, targetId: string, type: string) => void): void {
-    this.memoryPanel.onRelationDelete(cb);
+    this.memoryCoordinator.memoryPanel.onRelationDelete(cb);
   },
   onRelationCreate(this: UIManager, cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
-    this.memoryPanel.onRelationCreate(cb);
+    this.memoryCoordinator.memoryPanel.onRelationCreate(cb);
   },
 };

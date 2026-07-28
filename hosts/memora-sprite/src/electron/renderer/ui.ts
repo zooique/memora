@@ -113,6 +113,10 @@ import type { MiscDelegations } from './helpers/ui-delegations/miscDelegations.j
 import { PerceptionCoordinator } from './coordination/perceptionCoordinator.js';
 // Chat 域二级协调器（封装 chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
 import { ChatCoordinator } from './coordination/chatCoordinator.js';
+// Memory 域二级协调器（封装 memoryPanel + profilePanel + workProjectionPanel + auditPanel）
+import { MemoryCoordinator } from './coordination/memoryCoordinator.js';
+// Settings 域二级协调器（封装 settingsPanelManager + settingsManagerPanel + currentConfig）
+import { SettingsCoordinator } from './coordination/settingsCoordinator.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -146,25 +150,18 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // proactiveBanner 见 this.chatCoordinator.proactiveBanner
   /** 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式），已移入 ChatCoordinator（HEAL-16） */
   // suggestionCard 见 this.chatCoordinator.suggestionCard
-  /** 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
-  profilePanel = new ProfilePanelManager();
-  /** 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
-  workProjectionPanel = new WorkProjectionPanelManager();
-  /** M2 审计日志面板管理器（独立管理审计 tab 的加载/渲染/清空） */
-  auditPanel = new AuditPanelManager();
-  /** 设置面板管理器（独立管理设置面板 DOM 和事件） */
-  settingsPanelManager: SettingsPanelManager;
-  /**
-   * 精灵设定面板管理器（角色/规则/技能三类设定文件 CRUD）
-   *
-   * 与 SettingsPanelManager 的区别：
-   * - SettingsPanelManager 管理系统配置（LLM/精灵行为/项目/画像/审计/帮助）
-   * - SettingsManagerPanelManager 管理"人写的设定"（persona/rule/skill 文件）
-   * 二者通过 panel-sprite-settings / panel-settings 隔离，各自独立。
-   */
-  settingsManagerPanel: SettingsManagerPanelManager;
-  /** 缓存当前 SpriteConfig（供 getArchiveMode 查询，避免异步 IPC 调用） */
-  private currentConfig: SpriteConfigForm | null = null;
+  /** 用户画像面板管理器，已移入 MemoryCoordinator（HEAL-16） */
+  // profilePanel 见 this.memoryCoordinator.profilePanel
+  /** 作品投影面板管理器，已移入 MemoryCoordinator（HEAL-16） */
+  // workProjectionPanel 见 this.memoryCoordinator.workProjectionPanel
+  /** 审计日志面板管理器，已移入 MemoryCoordinator（HEAL-16） */
+  // auditPanel 见 this.memoryCoordinator.auditPanel
+  /** 设置面板管理器，已移入 SettingsCoordinator（HEAL-16） */
+  // settingsPanelManager 见 this.settingsCoordinator.settingsPanelManager
+  /** 精灵设定面板管理器，已移入 SettingsCoordinator（HEAL-16） */
+  // settingsManagerPanel 见 this.settingsCoordinator.settingsManagerPanel
+  /** 缓存当前 SpriteConfig，已移入 SettingsCoordinator（HEAL-16） */
+  // currentConfig 见 this.settingsCoordinator.currentConfig
 
   // ─── 面板管理器（聊天/记忆/角色/会话） ──
   /**
@@ -174,8 +171,18 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 子模块通过 chatCoordinator.xxx 路径访问，chatDelegations mixin 同步调整。
    */
   chatCoordinator: ChatCoordinator;
-  /** 记忆面板管理器（列表渲染、搜索过滤、详情弹窗） */
-  memoryPanel: MemoryPanelManager;
+  /**
+   * Memory 域协调器（封装 memoryPanel + profilePanel + workProjectionPanel + auditPanel）
+   *
+   * HEAL-16 Phase 3：将 4 个 Memory 域字段收敛为单一协调器（模式 A 纯状态容器）。
+   */
+  memoryCoordinator: MemoryCoordinator;
+  /**
+   * Settings 域协调器（封装 settingsPanelManager + settingsManagerPanel + currentConfig）
+   *
+   * HEAL-16 Phase 4：将 3 个 Settings 域字段收敛为单一协调器（模式 A 纯状态容器）。
+   */
+  settingsCoordinator: SettingsCoordinator;
   /** 感知/仪表盘域协调器（封装 dashboardPanel + perceptionPanel + spriteStatusPopover） */
   perceptionCoordinator: PerceptionCoordinator;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
@@ -314,11 +321,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 滚动控制器（独立管理消息列表滚动 + rAF 节流）
     this.scrollController = new ScrollController(this.messagesEl);
 
-    this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
-    // 精灵设定面板管理器（与 settingsPanelManager 同模式：host 接口注入）
-    // 注：onSkillInstall 方法在 settingsManagerPanel 内部按需调用，本调用时该回调未触发，
-    // 因此构造顺序无依赖（this.skillDropManager 在第 364 行创建，仅当用户实际触发安装时才需可用）
-    this.settingsManagerPanel = new SettingsManagerPanelManager(this as SettingsManagerPanelHost);
+    // Settings 域协调器（HEAL-16 Phase 4：3 字段收敛为单一协调器）
+    this.settingsCoordinator = new SettingsCoordinator();
+    this.settingsCoordinator.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
+    this.settingsCoordinator.settingsManagerPanel = new SettingsManagerPanelManager(this as SettingsManagerPanelHost);
 
     // Chat 域协调器（HEAL-16 Phase 2：5 字段收敛为单一协调器）
     // 必须在 suggestionCard/chatPanel 使用前创建
@@ -327,15 +333,22 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatCoordinator.proactiveBanner = new ProactiveBanner();
     this.chatCoordinator.streamingMessages = new Map();
 
+    // Memory 域协调器（HEAL-16 Phase 3：4 字段收敛为单一协调器）
+    // 必须在 profilePanel/auditPanel/memoryPanel 使用前创建
+    this.memoryCoordinator = new MemoryCoordinator();
+    this.memoryCoordinator.profilePanel = new ProfilePanelManager();
+    this.memoryCoordinator.workProjectionPanel = new WorkProjectionPanelManager();
+    this.memoryCoordinator.auditPanel = new AuditPanelManager();
+
     // 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
   // 注入 showToast 用于操作失败时给用户可见反馈
   this.chatCoordinator.suggestionCard.init((msg, type) => this.showToast(msg, type));
   // 初始化用户画像面板（绑定刷新按钮事件，注入确认对话框用于删除已确认画像的二次确认）
-  this.profilePanel.init((opts) => this.showConfirmDialog(opts));
+  this.memoryCoordinator.profilePanel.init((opts) => this.showConfirmDialog(opts));
   // 初始化作品投影面板（绑定刷新按钮事件）
-  this.workProjectionPanel.init();
+  this.memoryCoordinator.workProjectionPanel.init();
     // M2 初始化审计日志面板（绑定刷新/清空按钮事件，注入确认对话框用于清空二次确认）
-    this.auditPanel.init((opts) => this.showConfirmDialog(opts));
+    this.memoryCoordinator.auditPanel.init((opts) => this.showConfirmDialog(opts));
 
     // ─── 面板管理器初始化 ───
 
@@ -348,7 +361,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     );
 
     // 记忆面板管理器
-    this.memoryPanel = new MemoryPanelManager(
+    this.memoryCoordinator.memoryPanel = new MemoryPanelManager(
       this,
       getOptionalElement('memory-list', 'div'),
       getOptionalElement('memory-search', 'input'),
@@ -412,13 +425,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
     // 初始化 UI
     this.initEventListeners();
-    this.memoryPanel.initMemoryPanelListeners();
+    this.memoryCoordinator.memoryPanel.initMemoryPanelListeners();
     // 感知面板（精灵状态/模式洞察）需独立 EventTracker 以绑定动态"关联记忆"按钮点击
     this.perceptionCoordinator.perceptionPanel.init(new EventTracker());
     this.personaPanel.initPersonaSelectorListeners();
-    this.settingsPanelManager.initListeners();
+    this.settingsCoordinator.settingsPanelManager.initListeners();
     // 精灵设定面板管理器事件初始化（与 settingsPanelManager 同模式）
-    this.settingsManagerPanel.init();
+    this.settingsCoordinator.settingsManagerPanel.init();
     // init 需在 initEventListeners 之后（cmdk 按钮监听在 initEventListeners 中注册）
     this.commandPaletteManager.init();
     // 面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
@@ -481,17 +494,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.events.cleanup();
     // Chat 域协调器集中清理（5 子模块：chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
     this.chatCoordinator.cleanup();
-    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、SettingsPanel 监听器）
+    // Memory 域协调器集中清理（4 子模块：memoryPanel + profilePanel + workProjectionPanel + auditPanel）
+    this.memoryCoordinator.cleanup();
+    // Settings 域协调器集中清理（2 子模块：settingsPanelManager + settingsManagerPanel）
+    this.settingsCoordinator.cleanup();
+    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器）
     this.toastManager.cleanup();
     this.modalManager.cleanup();
-    this.profilePanel.cleanup(); // 清理用户画像面板事件监听器
-    this.workProjectionPanel.cleanup(); // 清理作品投影面板事件监听器
-    this.auditPanel.cleanup(); // M2 清理审计日志面板事件监听器
-    this.settingsPanelManager.cleanup();
-    // 精灵设定面板管理器清理（与 settingsPanelManager 同模式）
-    this.settingsManagerPanel.cleanup();
     // 清理面板管理器
-    this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     // 感知/仪表盘域协调器集中清理（3 子模块：dashboardPanel + perceptionPanel + spriteStatusPopover）
     this.perceptionCoordinator.cleanup();
     this.personaPanel.cleanup();
@@ -530,7 +540,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /** 查询当前归档模式（从缓存的 SpriteConfig 读取） */
   getArchiveMode(): 'full' | 'insights-only' | 'manual' {
-    return this.currentConfig?.archiveMode ?? 'full';
+    return this.settingsCoordinator.currentConfig?.archiveMode ?? 'full';
   }
   /** 一键归档：批量归档当前会话（委托 preload 调用 agent.archiveSessionContent） */
   async archiveSession(date: string, session: string): Promise<number> {
@@ -993,11 +1003,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     switch (tab) {
       case 'profile':
         // 作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
-        void this.profilePanel.load();
-        void this.workProjectionPanel.load();
+        void this.memoryCoordinator.profilePanel.load();
+        void this.memoryCoordinator.workProjectionPanel.load();
         break;
       case 'audit':
-        void this.auditPanel.load();
+        void this.memoryCoordinator.auditPanel.load();
         break;
       default:
         break;
@@ -1035,8 +1045,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 加载配置到表单（委托到 SettingsPanelManager） */
   loadConfigToForm(config: SpriteConfigForm): void {
     // 缓存当前配置，供 getArchiveMode 同步查询
-    this.currentConfig = config;
-    this.settingsPanelManager.loadConfigToForm(config);
+    this.settingsCoordinator.currentConfig = config;
+    this.settingsCoordinator.settingsPanelManager.loadConfigToForm(config);
   }
 
   /**

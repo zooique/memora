@@ -50,46 +50,46 @@ export interface SettingsModalDelegations {
 /** Settings / Profile / Modal / PanelError / SkillDrop 委托群实现——纯透传到各子模块 */
 export const settingsModalDelegations: SettingsModalDelegations = {
   async loadUserProfile(this: UIManager): Promise<void> {
-    await this.profilePanel.load();
+    await this.memoryCoordinator.profilePanel.load();
   },
   async loadWorkProjections(this: UIManager): Promise<void> {
-    await this.workProjectionPanel.load();
+    await this.memoryCoordinator.workProjectionPanel.load();
   },
   async loadAuditLog(this: UIManager): Promise<void> {
-    await this.auditPanel.load();
+    await this.memoryCoordinator.auditPanel.load();
   },
   setClearAuditLogCallback(this: UIManager, cb: () => Promise<void>): void {
-    this.auditPanel.setClearAuditLogCallback(cb);
+    this.memoryCoordinator.auditPanel.setClearAuditLogCallback(cb);
   },
   setConfirmProfileCallback(this: UIManager, cb: (id: string) => Promise<void>): void {
-    this.profilePanel.setConfirmProfileCallback(cb);
+    this.memoryCoordinator.profilePanel.setConfirmProfileCallback(cb);
   },
   setRejectProfileCallback(this: UIManager, cb: (id: string) => Promise<void>): void {
-    this.profilePanel.setRejectProfileCallback(cb);
+    this.memoryCoordinator.profilePanel.setRejectProfileCallback(cb);
   },
   onProviderChanged(this: UIManager): void {
     void this.chatCoordinator.inputAreaManager.loadProviderSelector();
   },
   loadEmbeddingConfig(this: UIManager, data: { embedding: { model: string; baseUrl: string; apiKey: string } | null }): void {
-    this.settingsPanelManager.loadEmbeddingConfig(data);
+    this.settingsCoordinator.settingsPanelManager.loadEmbeddingConfig(data);
   },
   loadProjectsToForm(this: UIManager, projects: Array<{ name: string; path: string }>, selectedPath: string): void {
-    this.settingsPanelManager.loadProjectsToForm(projects, selectedPath);
+    this.settingsCoordinator.settingsPanelManager.loadProjectsToForm(projects, selectedPath);
   },
   collectConfigFromForm(this: UIManager): SpriteConfigForm {
-    return this.settingsPanelManager.collectConfigFromForm();
+    return this.settingsCoordinator.settingsPanelManager.collectConfigFromForm();
   },
   onConfigSave(this: UIManager, cb: (config: SpriteConfigForm) => Promise<boolean>): void {
-    this.settingsPanelManager.onConfigSave(cb);
+    this.settingsCoordinator.settingsPanelManager.onConfigSave(cb);
   },
   resetSettingsFormDirty(this: UIManager): void {
-    this.settingsPanelManager.resetFormDirty();
+    this.settingsCoordinator.settingsPanelManager.resetFormDirty();
   },
   isSettingsDirty(this: UIManager): boolean {
-    return this.settingsPanelManager.isDirty();
+    return this.settingsCoordinator.settingsPanelManager.isDirty();
   },
   updateAgentStatusIndicator(this: UIManager, status: 'ready' | 'error' | 'unknown', message?: string): void {
-    this.settingsPanelManager.updateAgentStatusIndicator(status, message);
+    this.settingsCoordinator.settingsPanelManager.updateAgentStatusIndicator(status, message);
   },
   showPanelError(this: UIManager, panelId: string, message: string, retryCallback?: () => void): void {
     this.panelErrorBannerManager.showPanelError(panelId, message, retryCallback);
