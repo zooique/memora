@@ -360,7 +360,7 @@ renderer.ts (协调器)
 ## 后续行动
 
 已按 [progressive-refactor-rules.md](../../.trae/rules/progressive-refactor-rules.md) 推导重构方案：
-→ [方案-HEAL-16-UIManager渐进重构后续阶段-20260728.md](../docs/方案-HEAL-16-UIManager渐进重构后续阶段-20260728.md)
+→ [方案-HEAL-16-UIManager渐进重构后续阶段-20260728.md](../docs/方案归档/方案-HEAL-16-UIManager渐进重构后续阶段-20260728.md)
 
 **Phase 2（本轮）**：ChatCoordinator 提取（5 字段 → 1，净减 4，字段数 ~29 → ~25）
 **Phase 3-4（触发式）**：MemoryCoordinator / SettingsCoordinator（涉足对应域时自然触发）
