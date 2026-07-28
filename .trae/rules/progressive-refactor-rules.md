@@ -263,4 +263,5 @@ Refs: {任务来源说明}
 | HEAL-10B | A（容器提取） | WindowService（4 字段） | [方案-HEAL-10B-WindowService提取-20260727.md](../../docs/方案-HEAL-10B-WindowService提取-20260727.md) |
 | HEAL-10C | A（容器提取） | QuickInputService（2 字段） | [方案-HEAL-10C-QuickInputService提取-20260728.md](../../docs/方案-HEAL-10C-QuickInputService提取-20260728.md) |
 | HEAL-11 | A（容器提取） | PerceptionCoordinator（3 字段） | [方案-HEAL-11-PerceptionCoordinator提取-20260728.md](../../docs/方案-HEAL-11-PerceptionCoordinator提取-20260728.md) |
-| HEAL-12 | B（职责拆分） | PanelRouter → 4 Controller | 待启动 |
+| HEAL-12 | B（职责拆分） | PanelRouter → 4 Controller | [方案-HEAL-12-PanelRouter职责拆分-20260728.md](../../docs/方案-HEAL-12-PanelRouter职责拆分-20260728.md) |
+| HEAL-15 | 命名一致性重构 | renderer 侧 Controller → Orchestrator | [方案-HEAL-15-renderer侧Controller重命名Orchestrator-20260728.md](../../docs/方案-HEAL-15-renderer侧Controller重命名Orchestrator-20260728.md) |

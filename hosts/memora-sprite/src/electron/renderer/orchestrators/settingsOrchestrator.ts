@@ -24,7 +24,7 @@ import { MS_PER_HOUR } from '../../../sprite/constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
 
-/** silentRecoveryCallback 位于 createSettingsController 闭包内 */
+/** silentRecoveryCallback 位于 createSettingsOrchestrator 闭包内 */
 
 /**
  * 创建设置控制器
@@ -32,7 +32,7 @@ import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
  * @param uiManager UI 管理器实例
  * @returns 设置控制器接口（设置回调、加载配置）
  */
-export function createSettingsController(uiManager: UIManager) {
+export function createSettingsOrchestrator(uiManager: UIManager) {
   /** IPC 错误处理函数（绑定 uiManager） */
   const handleIpcError = createIpcErrorHandler(uiManager);
 

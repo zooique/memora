@@ -10,7 +10,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import type { createSettingsController } from './controllers/settingsController.js';
+import type { createSettingsOrchestrator } from './orchestrators/settingsOrchestrator.js';
 import { reportError } from './helpers/errorHelpers.js';
 
 /**
@@ -54,7 +54,7 @@ export function createSilentRecoveryScheduler(
  */
 export function showAgentInitError(
   uiManager: UIManager,
-  settingsController: ReturnType<typeof createSettingsController>,
+  settingsController: ReturnType<typeof createSettingsOrchestrator>,
   error: string,
 ): void {
   uiManager.appendMessage({

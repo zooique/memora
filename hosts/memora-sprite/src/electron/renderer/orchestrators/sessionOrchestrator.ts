@@ -58,7 +58,7 @@ function mapMessages(messages: Array<{ role: string; content: string; timestamp?
  * @param uiManager UI 管理器实例
  * @returns 会话控制器接口（加载历史、加载更多、加载更早日期、切换会话、获取当前 ID）
  */
-export function createSessionController(uiManager: UIManager) {
+export function createSessionOrchestrator(uiManager: UIManager) {
   /** 当前会话 ID（用于跨日检测和 LLM 工作记忆同步） */
   let currentSessionId = '';
 

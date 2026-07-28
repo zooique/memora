@@ -26,7 +26,7 @@
  * - 不依赖真实 DOM（控制器层纯逻辑，UI 委托给 uiManager）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createPersonaController } from '../../../electron/renderer/controllers/personaController.js';
+import { createPersonaOrchestrator } from '../../../electron/renderer/orchestrators/personaOrchestrator.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────
@@ -106,7 +106,7 @@ function createPersonas(opts?: { activeName?: string }): PersonaItem[] {
 
 // ─── 测试用例 ─────────────────────────────────────────────
 
-describe('createPersonaController', () => {
+describe('createPersonaOrchestrator', () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -126,7 +126,7 @@ describe('createPersonaController', () => {
     it('应注册 onPersonaSwitch 回调', () => {
       const { uiManager, captured } = createMockUiManager();
       mockElectronAPI();
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       controller.setupPersonaSelector();
 
@@ -140,7 +140,7 @@ describe('createPersonaController', () => {
       mockElectronAPI({
         switchPersona: vi.fn().mockResolvedValue({ switched: true, name: '教师' }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
       controller.setupPersonaSelector();
 
       // 手动触发回调
@@ -160,7 +160,7 @@ describe('createPersonaController', () => {
           reason: 'not_found',
         }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
       controller.setupPersonaSelector();
 
       await captured.personaSwitchCb!('不存在');
@@ -184,7 +184,7 @@ describe('createPersonaController', () => {
           unlockAt,
         }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
       controller.setupPersonaSelector();
 
       await captured.personaSwitchCb!('coder');
@@ -205,7 +205,7 @@ describe('createPersonaController', () => {
           reason: 'busy',
         }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
       controller.setupPersonaSelector();
 
       await captured.personaSwitchCb!('coder');
@@ -221,7 +221,7 @@ describe('createPersonaController', () => {
       mockElectronAPI({
         switchPersona: vi.fn().mockRejectedValue(new Error('IPC 失败')),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
       controller.setupPersonaSelector();
 
       await captured.personaSwitchCb!('教师');
@@ -240,7 +240,7 @@ describe('createPersonaController', () => {
       mockElectronAPI({
         listPersonas: vi.fn().mockResolvedValue({ personas }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       await controller.loadPersonaList();
 
@@ -253,7 +253,7 @@ describe('createPersonaController', () => {
       mockElectronAPI({
         listPersonas: vi.fn().mockResolvedValue({ personas }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       await controller.loadPersonaList();
 
@@ -270,7 +270,7 @@ describe('createPersonaController', () => {
       mockElectronAPI({
         listPersonas: vi.fn().mockResolvedValue({ personas }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       await controller.loadPersonaList();
 
@@ -283,7 +283,7 @@ describe('createPersonaController', () => {
         listPersonas: vi.fn().mockResolvedValue({ personas: createPersonas() }),
         getPersonaMode: vi.fn().mockResolvedValue({ mode: 'manual' }),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       await controller.loadPersonaList();
 
@@ -296,7 +296,7 @@ describe('createPersonaController', () => {
         listPersonas: vi.fn().mockResolvedValue({ personas: createPersonas({ activeName: '助手' }) }),
         getPersonaMode: vi.fn().mockRejectedValue(new Error('mode 加载失败')),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       // 不应抛出
       await expect(controller.loadPersonaList()).resolves.toBeUndefined();
@@ -313,7 +313,7 @@ describe('createPersonaController', () => {
       mockElectronAPI({
         listPersonas: vi.fn().mockRejectedValue(new Error('列表加载失败')),
       });
-      const controller = createPersonaController(uiManager);
+      const controller = createPersonaOrchestrator(uiManager);
 
       await controller.loadPersonaList();
 

@@ -9,7 +9,7 @@
  *
  * 测试策略：
  * - 轻量 mock：vi.mock domHelpers/errorHelpers，避免 JSDOM 重依赖
- * - MockUiManager 满足 createSettingsController 使用的 UIManager 方法子集
+ * - MockUiManager 满足 createSettingsOrchestrator 使用的 UIManager 方法子集
  * - mock window.electronAPI 控制各 IPC 返回值
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -36,7 +36,7 @@ vi.mock('../../../electron/renderer/helpers/errorHelpers.js', () => ({
 }));
 
 // 导入被测模块（在 mock 之后导入，确保 mock 生效）
-import { createSettingsController } from '../../../electron/renderer/controllers/settingsController.js';
+import { createSettingsOrchestrator } from '../../../electron/renderer/orchestrators/settingsOrchestrator.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 import type { SpriteConfigForm } from '../../../electron/renderer/types.js';
 
@@ -51,7 +51,7 @@ interface RegisteredCallbacks {
 /**
  * 创建 Mock UIManager
  *
- * 满足 createSettingsController 使用的 UIManager 方法子集。
+ * 满足 createSettingsOrchestrator 使用的 UIManager 方法子集。
  * 用 vi.fn() 记录调用，callbacks 参数捕获注册的回调供测试触发。
  */
 function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
@@ -115,13 +115,13 @@ function makeFormConfig(overrides: Partial<SpriteConfigForm> = {}): SpriteConfig
 describe('settingsController', () => {
   let uiManager: UIManager;
   let callbacks: RegisteredCallbacks;
-  let controller: ReturnType<typeof createSettingsController>;
+  let controller: ReturnType<typeof createSettingsOrchestrator>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     callbacks = {};
     uiManager = createMockUiManager(callbacks);
-    controller = createSettingsController(uiManager);
+    controller = createSettingsOrchestrator(uiManager);
     controller.setupSettingsPanel();
 
     // mock window.electronAPI（每个测试可在用例内覆盖具体返回值）

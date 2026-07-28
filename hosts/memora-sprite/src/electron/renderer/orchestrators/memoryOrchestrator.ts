@@ -84,7 +84,7 @@ function applyClientFilters(
  * @param uiManager UI 管理器实例
  * @returns 记忆控制器接口（设置回调、加载列表、加载仪表盘）
  */
-export function createMemoryController(uiManager: UIManager) {
+export function createMemoryOrchestrator(uiManager: UIManager) {
   /** IPC 错误处理函数（绑定 uiManager） */
   const handleIpcError = createIpcErrorHandler(uiManager);
 

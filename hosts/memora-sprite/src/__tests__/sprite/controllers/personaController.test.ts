@@ -2,7 +2,7 @@
  * PersonaController 单元测试 — 精灵层角色控制器
  *
  * 测试目标：src/sprite/controllers/personaController.ts（精灵层 PersonaController 类）
- * 注意：与 electron/renderer/controllers/personaController.ts（渲染器层工厂函数）同名但不同层
+ * 注意：与 electron/renderer/orchestrators/personaOrchestrator.ts（渲染器层 UI 编排器）同名但不同层
  *
  * 覆盖范围：
  * - 构造函数：Agent 依赖注入

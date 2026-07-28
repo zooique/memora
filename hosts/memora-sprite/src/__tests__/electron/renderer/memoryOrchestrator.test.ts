@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 // formatTokenCount 已迁移至 shared/numberUtils.ts（UX-12 术语统一）
 import { formatTokenCount } from '../../../shared/numberUtils.js';
-import { createMemoryController } from '../../../electron/renderer/controllers/memoryController.js';
+import { createMemoryOrchestrator } from '../../../electron/renderer/orchestrators/memoryOrchestrator.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 纯函数测试 ───────────────────────────────────────────
@@ -59,7 +59,7 @@ describe('formatTokenCount', () => {
 
 // ─── 推荐记忆点击事件委托 ────────────────
 
-/** 创建 mock uiManager（仅包含 createMemoryController 用到的方法） */
+/** 创建 mock uiManager（仅包含 createMemoryOrchestrator 用到的方法） */
 function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<typeof vi.fn> } {
   const spies = {
     onMemorySearch: vi.fn(),
@@ -195,7 +195,7 @@ describe('推荐记忆点击事件委托', () => {
   // 点击行为测试见 ui.test.ts 的 "推荐记忆点击事件委托" 描述块
 
   it('loadDashboard 应将仪表盘数据委托给 renderDashboardStats 渲染（推荐记忆数据由 Manager 渲染为 li[data-action]）', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
     await controller.loadDashboard();
 
@@ -262,7 +262,7 @@ describe('删除按钮 loading 保护', () => {
   });
 
   it('删除时应禁用按钮 + 显示"删除中..."', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     const btn = document.getElementById('btn-memory-delete') as HTMLButtonElement;
@@ -278,7 +278,7 @@ describe('删除按钮 loading 保护', () => {
   });
 
   it('删除成功后应恢复按钮状态', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     const btn = document.getElementById('btn-memory-delete') as HTMLButtonElement;
@@ -295,7 +295,7 @@ describe('删除按钮 loading 保护', () => {
     // mock deleteMemory 抛错
     (window.electronAPI.deleteMemory as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('网络错误'));
 
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     const btn = document.getElementById('btn-memory-delete') as HTMLButtonElement;
@@ -309,7 +309,7 @@ describe('删除按钮 loading 保护', () => {
   it('无记忆 ID 时不应触发删除 IPC', async () => {
     mockUiManager.getCurrentMemoryId.mockReturnValue(null);
 
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     await deleteCallback!();
@@ -405,7 +405,7 @@ describe('LLM 治理结果持久化展示', () => {
   });
 
   it('dedup 治理：应在 #health-llm-result 渲染降级列表 + 恢复按钮', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     expect(llmCallback).not.toBeNull();
@@ -423,7 +423,7 @@ describe('LLM 治理结果持久化展示', () => {
   });
 
   it('timeliness 治理：应在 #health-llm-result 渲染降级列表', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     await llmCallback!('timeliness');
@@ -434,7 +434,7 @@ describe('LLM 治理结果持久化展示', () => {
   });
 
   it('conflicts 治理：应在 #health-llm-result 渲染冲突对详情（无恢复按钮）', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     await llmCallback!('conflicts');
@@ -455,7 +455,7 @@ describe('LLM 治理结果持久化展示', () => {
   });
 
   it('降级列表恢复按钮点击应调用 boostMemory IPC', async () => {
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     await llmCallback!('dedup');
@@ -484,7 +484,7 @@ describe('LLM 治理结果持久化展示', () => {
       skippedReason: 'backgroundProvider 未注入',
     });
 
-    const controller = createMemoryController(mockUiManager);
+    const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
     await llmCallback!('dedup');

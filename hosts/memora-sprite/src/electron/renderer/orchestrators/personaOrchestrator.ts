@@ -20,7 +20,7 @@ import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
  * @param uiManager UI 管理器实例
  * @returns 角色控制器接口（设置回调、加载列表）
  */
-export function createPersonaController(uiManager: UIManager) {
+export function createPersonaOrchestrator(uiManager: UIManager) {
   /** IPC 错误处理函数（绑定 uiManager） */
   const handleIpcError = createIpcErrorHandler(uiManager);
 

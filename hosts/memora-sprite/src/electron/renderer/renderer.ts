@@ -14,10 +14,10 @@
  */
 
 import { UIManager } from './ui.js';
-import { createSessionController } from './controllers/sessionController.js';
-import { createMemoryController } from './controllers/memoryController.js';
-import { createPersonaController } from './controllers/personaController.js';
-import { createSettingsController } from './controllers/settingsController.js';
+import { createSessionOrchestrator } from './orchestrators/sessionOrchestrator.js';
+import { createMemoryOrchestrator } from './orchestrators/memoryOrchestrator.js';
+import { createPersonaOrchestrator } from './orchestrators/personaOrchestrator.js';
+import { createSettingsOrchestrator } from './orchestrators/settingsOrchestrator.js';
 import { initIpcListeners, consumeConflictTargetId } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
 // setButtonLoading 按钮异步操作 loading 状态（B7：forkBtn 异步反馈）
@@ -57,7 +57,7 @@ const State = {
   /** Agent 就绪流程幂等标志 */
   agentReadyHandled: false as boolean,
   /** 记忆控制器实例 */
-  memoryController: null as ReturnType<typeof createMemoryController> | null,
+  memoryController: null as ReturnType<typeof createMemoryOrchestrator> | null,
   /**
    * 渲染进程级事件跟踪器（统一管理 renderer.ts 直接注册的事件监听器）
    *
@@ -91,13 +91,13 @@ async function bootstrapRenderer(): Promise<void> {
   timeRefresher.start();
 
   // 创建各业务控制器（接收 State.uiManager 实例，通过闭包绑定）
-  const sessionController = createSessionController(State.uiManager);
+  const sessionController = createSessionOrchestrator(State.uiManager);
   // 注入会话 ID 提供者，供 ChatPanelManager 的一键归档按钮使用
   State.uiManager.setCurrentSessionIdProvider(() => sessionController.getCurrentSessionId());
-  const memoryController = createMemoryController(State.uiManager);
+  const memoryController = createMemoryOrchestrator(State.uiManager);
   State.memoryController = memoryController;
-  const personaController = createPersonaController(State.uiManager);
-  const settingsController = createSettingsController(State.uiManager);
+  const personaController = createPersonaOrchestrator(State.uiManager);
+  const settingsController = createSettingsOrchestrator(State.uiManager);
 
   // 设置业务逻辑回调
   setupBusinessLogic(State.uiManager, sessionController);
@@ -808,7 +808,7 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
  */
 function setupBusinessLogic(
   _uiManager: UIManager,
-  sessionController: ReturnType<typeof createSessionController>,
+  sessionController: ReturnType<typeof createSessionOrchestrator>,
 ): void {
   // 设置发送消息回调
   State.uiManager.onSendMessage(async () => {

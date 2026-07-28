@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { createSessionController } from '../../../electron/renderer/controllers/sessionController.js';
+import { createSessionOrchestrator } from '../../../electron/renderer/orchestrators/sessionOrchestrator.js';
 import { UIManager } from '../../../electron/renderer/ui.js';
 // 与源码同源 getLocalDate()，避免 UTC 跨天不一致
 import { getLocalDate } from '../../../sprite/constants.js';
@@ -130,14 +130,14 @@ describe('sessionController', () => {
 
   describe('getCurrentSessionId', () => {
     it('应该返回空字符串作为初始状态', () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       expect(controller.getCurrentSessionId()).toBe('');
     });
   });
 
   describe('loadSessionHistory', () => {
     it('应该加载历史消息到 UI 并设置当前会话 ID', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
 
       await controller.loadSessionHistory();
 
@@ -158,7 +158,7 @@ describe('sessionController', () => {
         hasMore: false,
       });
 
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       await controller.loadSessionHistory();
 
       // 角色应为 assistant（因为 unknown 会被回退）
@@ -167,7 +167,7 @@ describe('sessionController', () => {
     });
 
     it('当前会话无更多消息且有更早日期时，应显示"加载更早的对话"按钮', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
 
       await controller.loadSessionHistory();
 
@@ -179,7 +179,7 @@ describe('sessionController', () => {
 
   describe('switchSession', () => {
     it('应该阻止流式输出期间的切换', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
 
       // 模拟流式状态
       // 通过 uiManager.startStreaming 设置 isStreaming
@@ -194,7 +194,7 @@ describe('sessionController', () => {
     });
 
     it('应该成功切换会话并加载消息', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
 
       // 先加载历史以设置初始状态
       await controller.loadSessionHistory();
@@ -213,7 +213,7 @@ describe('sessionController', () => {
 
   describe('loadEarlierDay', () => {
     it('应该加载更早日期的对话并 prepend 到消息区顶部', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
 
       // 先加载当天历史
       await controller.loadSessionHistory();
@@ -241,7 +241,7 @@ describe('sessionController', () => {
     });
 
     it('没有更早日期时应隐藏加载按钮', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
 
       // mock listSessions 只返回当天会话（无更早日期）
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
@@ -261,7 +261,7 @@ describe('sessionController', () => {
 
   describe('deleteSession', () => {
     it('应该成功删除其他日期会话并返回 true', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       // 先加载历史（当前会话为 2026-06-21）
       await controller.loadSessionHistory();
       expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
@@ -279,7 +279,7 @@ describe('sessionController', () => {
     });
 
     it('删除当前查看日期后应重置状态并重新加载', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       // 先加载历史（当前会话为 2026-06-21）
       await controller.loadSessionHistory();
       expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
@@ -298,7 +298,7 @@ describe('sessionController', () => {
     });
 
     it('deleteSession 返回失败时应 toast 提示并返回 false', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       await controller.loadSessionHistory();
 
       // mock deleteSession 返回失败
@@ -321,7 +321,7 @@ describe('sessionController', () => {
 
   describe('loadDateList（S1 补测）', () => {
     it('应返回按日期降序排列的日期列表，始终包含今天', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       // mock listSessions 返回特定日期+消息数
       (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -348,7 +348,7 @@ describe('sessionController', () => {
     });
 
     it('同一天多个会话应聚合消息数', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
         sessions: [
@@ -366,7 +366,7 @@ describe('sessionController', () => {
     });
 
     it('今天无会话时应包含今天（messageCount=0）', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
         sessions: [
@@ -383,7 +383,7 @@ describe('sessionController', () => {
     });
 
     it('listSessions 异常时应返回空数组（不抛错）', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('网络错误'));
 
@@ -395,7 +395,7 @@ describe('sessionController', () => {
 
   describe('jumpToDate（S1 补测）', () => {
     it('应加载指定日期的会话消息并设置 currentSessionId', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       // 先加载默认历史
       await controller.loadSessionHistory();
       expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
@@ -420,7 +420,7 @@ describe('sessionController', () => {
     });
 
     it('流式输出期间应阻止跳转并显示 warning toast', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       await controller.loadSessionHistory();
 
       // mock isStreaming 返回 true
@@ -439,7 +439,7 @@ describe('sessionController', () => {
     });
 
     it('loadSession 异常时应显示错误 toast（不抛错）', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       await controller.loadSessionHistory();
 
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
@@ -454,7 +454,7 @@ describe('sessionController', () => {
 
   describe('renameSession（S1 补测）', () => {
     it('应成功重命名并显示 success toast', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { renameSession: ReturnType<typeof vi.fn> }).renameSession = vi.fn().mockResolvedValue({ success: true });
       const toastSpy = vi.spyOn(uiManager, 'showToast');
@@ -467,7 +467,7 @@ describe('sessionController', () => {
     });
 
     it('流式输出期间应阻止重命名', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       vi.spyOn(uiManager, 'isStreaming').mockReturnValue(true);
 
       const result = await controller.renameSession('2026-06-21-main', '新名称');
@@ -476,7 +476,7 @@ describe('sessionController', () => {
     });
 
     it('renameSession 返回失败应显示 error toast 并返回 false', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { renameSession: ReturnType<typeof vi.fn> }).renameSession = vi.fn().mockResolvedValue({
         success: false,
@@ -492,7 +492,7 @@ describe('sessionController', () => {
     });
 
     it('renameSession 异常应显示 error toast 并返回 false', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { renameSession: ReturnType<typeof vi.fn> }).renameSession = vi.fn().mockRejectedValue(new Error('网络错误'));
 
@@ -504,7 +504,7 @@ describe('sessionController', () => {
 
   describe('forkSession（S1 补测）', () => {
     it('应成功分叉并显示 success toast（含消息数）', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockResolvedValue({
         success: true,
@@ -524,7 +524,7 @@ describe('sessionController', () => {
     });
 
     it('指定 targetSession 时应传递给 IPC', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockResolvedValue({
         success: true,
@@ -538,7 +538,7 @@ describe('sessionController', () => {
     });
 
     it('流式输出期间应阻止分叉', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       vi.spyOn(uiManager, 'isStreaming').mockReturnValue(true);
 
       const result = await controller.forkSession();
@@ -547,7 +547,7 @@ describe('sessionController', () => {
     });
 
     it('forkSession 返回失败应显示 error toast 并返回 false', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockResolvedValue({
         success: false,
@@ -560,7 +560,7 @@ describe('sessionController', () => {
     });
 
     it('forkSession 异常应显示 error toast 并返回 false', async () => {
-      const controller = createSessionController(uiManager);
+      const controller = createSessionOrchestrator(uiManager);
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockRejectedValue(new Error('网络错误'));
 
