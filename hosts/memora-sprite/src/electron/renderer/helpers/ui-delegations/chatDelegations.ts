@@ -60,76 +60,76 @@ export interface ChatDelegations {
 /** Chat 委托群实现——纯透传到 chatPanel / proactiveBanner / toastManager */
 export const chatDelegations: ChatDelegations = {
   appendMessage(this: UIManager, message: Message): HTMLElement {
-    return this.chatPanel.appendMessage(message);
+    return this.chatCoordinator.chatPanel.appendMessage(message);
   },
   appendMilestoneBanner(this: UIManager, text: string): void {
-    this.chatPanel.appendMilestoneBanner(text);
+    this.chatCoordinator.chatPanel.appendMilestoneBanner(text);
   },
   updateStreamingMessage(this: UIManager, messageId: string, text: string): void {
-    this.chatPanel.updateStreamingMessage(messageId, text);
+    this.chatCoordinator.chatPanel.updateStreamingMessage(messageId, text);
   },
   finishStreamingMessage(this: UIManager, messageId: string): void {
-    this.chatPanel.finishStreamingMessage(messageId);
+    this.chatCoordinator.chatPanel.finishStreamingMessage(messageId);
   },
   setMemoryRecall(this: UIManager, messageId: string, memories: Array<{ id: string; name: string; score: number; source: string }>): void {
-    this.chatPanel.setMemoryRecall(messageId, memories);
+    this.chatCoordinator.chatPanel.setMemoryRecall(messageId, memories);
   },
   showThinkingPhase(this: UIManager, messageId: string, phase: string): void {
-    this.chatPanel.showThinkingPhase(messageId, phase);
+    this.chatCoordinator.chatPanel.showThinkingPhase(messageId, phase);
   },
   showTruncationNotice(this: UIManager, messageId: string, count: number): void {
-    this.chatPanel.showTruncationNotice(messageId, count);
+    this.chatCoordinator.chatPanel.showTruncationNotice(messageId, count);
   },
   showToolStart(this: UIManager, messageId: string, toolCallId: string, name: string, args?: string): void {
-    this.chatPanel.showToolStart(messageId, toolCallId, name, args);
+    this.chatCoordinator.chatPanel.showToolStart(messageId, toolCallId, name, args);
   },
   updateToolResult(this: UIManager, messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void {
-    this.chatPanel.updateToolResult(messageId, toolCallId, name, ok, summary);
+    this.chatCoordinator.chatPanel.updateToolResult(messageId, toolCallId, name, ok, summary);
   },
   startStreaming(this: UIManager, messageId: string, persona?: string): void {
-    this.chatPanel.startStreaming(messageId, persona);
+    this.chatCoordinator.chatPanel.startStreaming(messageId, persona);
   },
   stopAllStreaming(this: UIManager): void {
-    this.chatPanel.stopAllStreaming();
+    this.chatCoordinator.chatPanel.stopAllStreaming();
   },
   clearMessages(this: UIManager): void {
-    this.chatPanel.clearMessages();
+    this.chatCoordinator.chatPanel.clearMessages();
   },
   appendMessages(this: UIManager, messages: Message[], prepend?: boolean): void {
-    this.chatPanel.appendMessages(messages, prepend);
+    this.chatCoordinator.chatPanel.appendMessages(messages, prepend);
   },
   showLoadMore(this: UIManager, remaining: number, onClick: () => void): void {
-    this.chatPanel.showLoadMore(remaining, onClick);
+    this.chatCoordinator.chatPanel.showLoadMore(remaining, onClick);
   },
   hideLoadMore(this: UIManager): void {
-    this.chatPanel.hideLoadMore();
+    this.chatCoordinator.chatPanel.hideLoadMore();
   },
   showLoadEarlierDay(this: UIManager, onClick: () => void): void {
-    this.chatPanel.showLoadEarlierDay(onClick);
+    this.chatCoordinator.chatPanel.showLoadEarlierDay(onClick);
   },
   injectErrorToStreamingMessages(this: UIManager, errorText: string): void {
-    this.chatPanel.injectErrorToStreamingMessages(errorText);
+    this.chatCoordinator.chatPanel.injectErrorToStreamingMessages(errorText);
   },
   markStreamingAborted(this: UIManager, messageId: string, reason: string): void {
-    this.chatPanel.markStreamingAborted(messageId, reason);
+    this.chatCoordinator.chatPanel.markStreamingAborted(messageId, reason);
   },
   showEmptyState(this: UIManager): void {
-    this.chatPanel.showEmptyState();
+    this.chatCoordinator.chatPanel.showEmptyState();
   },
   hideEmptyState(this: UIManager): void {
-    this.chatPanel.hideEmptyState();
+    this.chatCoordinator.chatPanel.hideEmptyState();
   },
   onSuggestionClick(this: UIManager, cb: (text: string) => void): void {
-    this.chatPanel.onSuggestionClick(cb);
+    this.chatCoordinator.chatPanel.onSuggestionClick(cb);
   },
   onErrorRetry(this: UIManager, cb: () => void): void {
-    this.chatPanel.onErrorRetry(cb);
+    this.chatCoordinator.chatPanel.onErrorRetry(cb);
   },
   showProactiveBanner(this: UIManager, text: string, isMilestone = false, triggers: string[] = []): void {
-    this.proactiveBanner.showProactiveBanner(text, isMilestone, triggers);
+    this.chatCoordinator.proactiveBanner.showProactiveBanner(text, isMilestone, triggers);
   },
   hideProactiveBanner(this: UIManager): void {
-    this.proactiveBanner.hideProactiveBanner();
+    this.chatCoordinator.proactiveBanner.hideProactiveBanner();
   },
   initProactiveBannerButtons(this: UIManager, handlers: {
     onView: (triggers: string[]) => void;
@@ -137,7 +137,7 @@ export const chatDelegations: ChatDelegations = {
     onSilent: () => void;
     onDisable?: () => void;
   }): void {
-    this.proactiveBanner.initProactiveBannerButtons(handlers);
+    this.chatCoordinator.proactiveBanner.initProactiveBannerButtons(handlers);
   },
   showStartupSummary(this: UIManager, summary: {
     totalMemories: number;
@@ -147,10 +147,10 @@ export const chatDelegations: ChatDelegations = {
     perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
     healthStatus: 'healthy' | 'warning' | 'critical' | null;
   }): void {
-    this.chatPanel.showStartupSummary(summary);
+    this.chatCoordinator.chatPanel.showStartupSummary(summary);
   },
   showArchiveButton(this: UIManager): void {
-    this.chatPanel.showArchiveButton();
+    this.chatCoordinator.chatPanel.showArchiveButton();
   },
   showToast(this: UIManager, message: string, type: ToastType = 'info', duration?: number, options?: ToastOptions): void {
     this.toastManager.showToast(message, type, duration, options);

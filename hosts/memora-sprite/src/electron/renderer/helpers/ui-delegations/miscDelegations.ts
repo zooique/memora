@@ -43,10 +43,10 @@ export const miscDelegations: MiscDelegations = {
     this.commandPaletteManager.open();
   },
   refreshTokenUsage(this: UIManager): void {
-    void this.inputAreaManager.refreshTokenUsage();
+    void this.chatCoordinator.inputAreaManager.refreshTokenUsage();
   },
   showSuggestion(this: UIManager, suggestion: ConfigSuggestionPayload): void {
-    this.suggestionCard.showSuggestion(suggestion);
+    this.chatCoordinator.suggestionCard.showSuggestion(suggestion);
   },
   scrollToBottom(this: UIManager): void {
     this.scrollController.scrollToBottom();
@@ -88,7 +88,7 @@ export const miscDelegations: MiscDelegations = {
     await this.globalShortcutDispatcher.handleRecallMemoryTrigger();
   },
   prefillChatInput(this: UIManager, text: string): void {
-    this.inputAreaManager.setValue(text);
+    this.chatCoordinator.inputAreaManager.setValue(text);
   },
   shouldShowOnboarding(this: UIManager, hasProviders: boolean): boolean {
     return this.onboardingManager.shouldShowOnboarding(hasProviders);

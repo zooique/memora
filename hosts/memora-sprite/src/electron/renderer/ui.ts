@@ -111,6 +111,8 @@ import { miscDelegations } from './helpers/ui-delegations/miscDelegations.js';
 import type { MiscDelegations } from './helpers/ui-delegations/miscDelegations.js';
 // 感知/仪表盘域二级协调器（封装 dashboardPanel + perceptionPanel + spriteStatusPopover）
 import { PerceptionCoordinator } from './coordination/perceptionCoordinator.js';
+// Chat 域二级协调器（封装 chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
+import { ChatCoordinator } from './coordination/chatCoordinator.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -140,10 +142,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onboardingManager = new OnboardingManager(new EventTracker());
   /** 主题管理器（独立管理主题切换和持久化） */
   themeManager = new ThemeManager();
-  /** 主动提示横幅管理器（独立管理横幅按钮事件） */
-  proactiveBanner = new ProactiveBanner();
-  /** 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式） */
-  suggestionCard = new SuggestionCardManager();
+  /** 主动提示横幅管理器（独立管理横幅按钮事件），已移入 ChatCoordinator（HEAL-16） */
+  // proactiveBanner 见 this.chatCoordinator.proactiveBanner
+  /** 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式），已移入 ChatCoordinator（HEAL-16） */
+  // suggestionCard 见 this.chatCoordinator.suggestionCard
   /** 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
   profilePanel = new ProfilePanelManager();
   /** 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
@@ -165,8 +167,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private currentConfig: SpriteConfigForm | null = null;
 
   // ─── 面板管理器（聊天/记忆/角色/会话） ──
-  /** 聊天面板管理器（消息渲染、流式输出、思考指示器、工具调用卡片） */
-  chatPanel: ChatPanelManager;
+  /**
+   * Chat 域协调器（封装 chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
+   *
+   * HEAL-16 Phase 2：将 5 个紧密耦合的 Chat 域字段收敛为单一协调器（模式 A 纯状态容器）。
+   * 子模块通过 chatCoordinator.xxx 路径访问，chatDelegations mixin 同步调整。
+   */
+  chatCoordinator: ChatCoordinator;
   /** 记忆面板管理器（列表渲染、搜索过滤、详情弹窗） */
   memoryPanel: MemoryPanelManager;
   /** 感知/仪表盘域协调器（封装 dashboardPanel + perceptionPanel + spriteStatusPopover） */
@@ -237,8 +244,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   badgeManager: BadgeManager;
   /** 滚动控制器（消息列表滚动 + rAF 节流） */
   scrollController: ScrollController;
-  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver） */
-  inputAreaManager: InputAreaManager;
+  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver），已移入 ChatCoordinator（HEAL-16） */
+  // inputAreaManager 见 this.chatCoordinator.inputAreaManager
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -265,8 +272,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     hasProviders: false,
   };
 
-  /** 活跃的流式消息映射（messageId → DOM 元素），ChatPanelManager 共享引用 */
-  private streamingMessages = new Map<string, HTMLElement>();
+  /** 活跃的流式消息映射（messageId → DOM 元素），已移入 ChatCoordinator（HEAL-16） */
+  // streamingMessages 见 this.chatCoordinator.streamingMessages
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
 
@@ -313,9 +320,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 因此构造顺序无依赖（this.skillDropManager 在第 364 行创建，仅当用户实际触发安装时才需可用）
     this.settingsManagerPanel = new SettingsManagerPanelManager(this as SettingsManagerPanelHost);
 
+    // Chat 域协调器（HEAL-16 Phase 2：5 字段收敛为单一协调器）
+    // 必须在 suggestionCard/chatPanel 使用前创建
+    this.chatCoordinator = new ChatCoordinator();
+    this.chatCoordinator.suggestionCard = new SuggestionCardManager();
+    this.chatCoordinator.proactiveBanner = new ProactiveBanner();
+    this.chatCoordinator.streamingMessages = new Map();
+
     // 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
   // 注入 showToast 用于操作失败时给用户可见反馈
-  this.suggestionCard.init((msg, type) => this.showToast(msg, type));
+  this.chatCoordinator.suggestionCard.init((msg, type) => this.showToast(msg, type));
   // 初始化用户画像面板（绑定刷新按钮事件，注入确认对话框用于删除已确认画像的二次确认）
   this.profilePanel.init((opts) => this.showConfirmDialog(opts));
   // 初始化作品投影面板（绑定刷新按钮事件）
@@ -325,14 +339,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
     // ─── 面板管理器初始化 ───
 
-    // 每个面板持有独立的 EventTracker，避免 cleanup 时互相干扰
-    // 聊天面板管理器
-    // 通过 host.setStreaming/isStreaming 封装流式状态
-    this.chatPanel = new ChatPanelManager(
+    // 聊天面板管理器（消息渲染、流式输出、工具调用卡片、思考指示器）
+    this.chatCoordinator.chatPanel = new ChatPanelManager(
       this,
       this.messagesEl,
       new EventTracker(),
-      this.streamingMessages,
+      this.chatCoordinator.streamingMessages,
     );
 
     // 记忆面板管理器
@@ -381,7 +393,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
     // 输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
-    this.inputAreaManager = new InputAreaManager(
+    this.chatCoordinator.inputAreaManager = new InputAreaManager(
       this.inputEl,
       this.btnSend,
       new EventTracker(),
@@ -421,11 +433,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.searchMessagesManager.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
-    this.chatPanel.initEmptyStateListeners();
-    this.chatPanel.initScrollToBottomButton();
+    this.chatCoordinator.chatPanel.initEmptyStateListeners();
+    this.chatCoordinator.chatPanel.initScrollToBottomButton();
     this.scrollController.initListener();
     // 输入区域事件 + ResizeObserver 初始化（委托到 InputAreaManager）
-    this.inputAreaManager.init();
+    this.chatCoordinator.inputAreaManager.init();
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────
@@ -467,13 +479,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   cleanup(): void {
     // 清理所有事件监听器（通过 EventTracker 统一管理）
     this.events.cleanup();
-    // 输入区域管理器清理（ResizeObserver + 事件监听器，委托到 InputAreaManager）
-    this.inputAreaManager.cleanup();
-    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器、SettingsPanel 监听器）
+    // Chat 域协调器集中清理（5 子模块：chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
+    this.chatCoordinator.cleanup();
+    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、SettingsPanel 监听器）
     this.toastManager.cleanup();
     this.modalManager.cleanup();
-    this.proactiveBanner.cleanup();
-    this.suggestionCard.cleanup(); // 清理配置建议卡片事件监听器和 DOM
     this.profilePanel.cleanup(); // 清理用户画像面板事件监听器
     this.workProjectionPanel.cleanup(); // 清理作品投影面板事件监听器
     this.auditPanel.cleanup(); // M2 清理审计日志面板事件监听器
@@ -481,7 +491,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 精灵设定面板管理器清理（与 settingsPanelManager 同模式）
     this.settingsManagerPanel.cleanup();
     // 清理面板管理器
-    this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     // 感知/仪表盘域协调器集中清理（3 子模块：dashboardPanel + perceptionPanel + spriteStatusPopover）
     this.perceptionCoordinator.cleanup();
@@ -584,7 +593,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       return;
     }
     // 预填用户消息内容（自动调整输入框高度）
-    this.inputAreaManager.setValue(userMessage);
+    this.chatCoordinator.inputAreaManager.setValue(userMessage);
     this.sendMessageCallback?.();
   }
 
@@ -665,9 +674,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 空输入返回 null。
    */
   getUserInput(): string | null {
-    const text = this.inputAreaManager.getValue();
+    const text = this.chatCoordinator.inputAreaManager.getValue();
     if (!text) return null;
-    this.inputAreaManager.clearInput();
+    this.chatCoordinator.inputAreaManager.clearInput();
     return text;
   }
 
@@ -779,7 +788,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       setIcon(this.btnSend, 'icon-send');
       this.btnSend.title = '发送（Enter）';
       // 委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
-      this.inputAreaManager.refreshSendButtonState();
+      this.chatCoordinator.inputAreaManager.refreshSendButtonState();
     }
   }
 

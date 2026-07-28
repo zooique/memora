@@ -68,7 +68,7 @@ export const settingsModalDelegations: SettingsModalDelegations = {
     this.profilePanel.setRejectProfileCallback(cb);
   },
   onProviderChanged(this: UIManager): void {
-    void this.inputAreaManager.loadProviderSelector();
+    void this.chatCoordinator.inputAreaManager.loadProviderSelector();
   },
   loadEmbeddingConfig(this: UIManager, data: { embedding: { model: string; baseUrl: string; apiKey: string } | null }): void {
     this.settingsPanelManager.loadEmbeddingConfig(data);

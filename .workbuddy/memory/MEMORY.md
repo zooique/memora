@@ -52,3 +52,10 @@
 - **分级通知架构**：`priority: 'normal' | 'high' | 'critical'`，high 绕过节奏抑制（rapid rhythm），critical 绕过节奏+冷却。里程碑→high，健康警告→high，普通建议→normal。
 - **触发器错误回调链路**：`SpriteTrigger.setErrorCallback?()` → `TriggerBus.onError()` → `spriteLifecycleManager` 订阅 → `proactiveEngine.addNotice('suggestion', ..., false, 'high')`。三段式：触发器自报告→总线转发→宿主转通知。
 - **配置损坏保护模式**：catch 块先 `rename`/`renameSync` 备份为 `.corrupted.{timestamp}` 再返回默认值，区分 ENOENT（正常首次运行）和 JSON 解析错误（损坏）。两层实现：`loadSpriteConfig`（同步）+ `spriteConfigStore.loadOrDefault`（异步）。
+
+## HEAL-16 UIManager 渐进重构 Phase 2（2026-07-28）
+- ChatCoordinator 提取完成（模式 A 纯状态容器，对齐 PerceptionCoordinator 先例），5 字段 → 1（净减 4），字段数 ~29 → ~25。
+- 新增 coordination/chatCoordinator.ts（45 行），修改 6 文件（ui.ts + 5 个 mixin 委托文件）。
+- 验证：tsc 0 错误 · ui.test.ts 87/87 通过 · 全量无新增失败。
+- 踩坑：suggestionCard.init() 在协调器创建之前执行导致 TypeError——协调器初始化必须前置到 settingsManagerPanel 之后。
+- Phase 3/4（MemoryCoordinator/SettingsCoordinator）等待涉足对应域时触发；GlobalInfra/ClipboardDomain/UtilityDomain 已归档不提取。

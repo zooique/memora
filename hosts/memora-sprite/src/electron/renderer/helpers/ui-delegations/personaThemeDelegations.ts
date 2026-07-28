@@ -45,7 +45,7 @@ export const personaThemeDelegations: PersonaThemeDelegations = {
   },
   onMemoryRecallClick(this: UIManager, cb: (memoryId: string) => void): void {
     this.personaPanel.onMemoryRecallClick(cb);
-    this.chatPanel.setMemoryRecallClickCallback(cb);
+    this.chatCoordinator.chatPanel.setMemoryRecallClickCallback(cb);
   },
   triggerMemoryRecall(this: UIManager, memoryId: string): void {
     this.personaPanel.triggerMemoryRecallClick(memoryId);
