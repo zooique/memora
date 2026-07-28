@@ -33,6 +33,18 @@ import type { UIManager } from '../../../electron/renderer/ui.js';
 // ─── Mock 工厂 ─────────────────────────────────────────────
 
 /**
+ * 将 UIManager 的强类型属性安全地转为 vi.fn() Mock，用于调用 mockReturnValue 等 API。
+ *
+ * 背景：createMockThis() 返回 UIManager & Record<string, Mock> 交叉类型，
+ * UIManager 的具名字段（chatCoordinator / memoryCoordinator / clipboardManager 等）
+ * 优先解析为具体接口类型，TS 不识别 .mockReturnValue()。
+ * asMock() 显式向下转为 Mock，零运行时开销（纯类型体操）。
+ */
+function asMock<T>(fn: T): ReturnType<typeof vi.fn> {
+  return fn as unknown as ReturnType<typeof vi.fn>;
+}
+
+/**
  * 创建 mock UIManager 上下文
  *
  * 委托方法的 this 类型为 UIManager，实际只访问其持有的子模块实例。
@@ -63,7 +75,7 @@ function createDeepMock(): ReturnType<typeof vi.fn> & Record<string, ReturnType<
   const fn = vi.fn();
   const cache = new Map<string, ReturnType<typeof vi.fn> & Record<string, ReturnType<typeof vi.fn>>>();
   return new Proxy(fn, {
-    get(target, prop: string | symbol, receiver: any) {
+    get(target, prop: string | symbol, receiver: unknown) {
       // Symbol 属性和 thenable 检查属性从 target 获取（返回 undefined 避免被当作 Promise）
       if (typeof prop === 'symbol' || prop === 'then' || prop === 'catch' || prop === 'finally') {
         return Reflect.get(target, prop, receiver);
@@ -107,23 +119,23 @@ describe('chatDelegations', () => {
   it('appendMessage 应委托到 chatPanel.appendMessage 并返回 HTMLElement', () => {
     const mock = createMockThis();
     const fakeEl = document.createElement('div');
-    mock.chatPanel.appendMessage.mockReturnValue(fakeEl);
+    asMock(mock.chatCoordinator.chatPanel.appendMessage).mockReturnValue(fakeEl);
     const msg = { id: 'm1', role: 'user' as const, content: 'hi' };
     const result = chatDelegations.appendMessage.call(mock as UIManager, msg);
-    expect(mock.chatPanel.appendMessage).toHaveBeenCalledWith(msg);
+    expect(mock.chatCoordinator.chatPanel.appendMessage).toHaveBeenCalledWith(msg);
     expect(result).toBe(fakeEl);
   });
 
   it('showProactiveBanner 应使用默认参数委托到 proactiveBanner', () => {
     const mock = createMockThis();
     chatDelegations.showProactiveBanner.call(mock as UIManager, '提示');
-    expect(mock.proactiveBanner.showProactiveBanner).toHaveBeenCalledWith('提示', false, []);
+    expect(mock.chatCoordinator.proactiveBanner.showProactiveBanner).toHaveBeenCalledWith('提示', false, []);
   });
 
   it('showProactiveBanner 应透传完整参数', () => {
     const mock = createMockThis();
     chatDelegations.showProactiveBanner.call(mock as UIManager, '里程碑', true, ['t1']);
-    expect(mock.proactiveBanner.showProactiveBanner).toHaveBeenCalledWith('里程碑', true, ['t1']);
+    expect(mock.chatCoordinator.proactiveBanner.showProactiveBanner).toHaveBeenCalledWith('里程碑', true, ['t1']);
   });
 
   it('showToast 应使用默认 type=info 委托到 toastManager', () => {
@@ -134,8 +146,8 @@ describe('chatDelegations', () => {
 
   it('showToast 应透传完整参数', () => {
     const mock = createMockThis();
-    chatDelegations.showToast.call(mock as UIManager, '错误', 'error', 3000, { dismissible: true });
-    expect(mock.toastManager.showToast).toHaveBeenCalledWith('错误', 'error', 3000, { dismissible: true });
+    chatDelegations.showToast.call(mock as UIManager, '错误', 'error', 3000, { onRetry: vi.fn() });
+    expect(mock.toastManager.showToast).toHaveBeenCalledWith('错误', 'error', 3000, { onRetry: expect.any(Function) });
   });
 
   it('showStartupSummary 应委托到 chatPanel.showStartupSummary', () => {
@@ -149,14 +161,14 @@ describe('chatDelegations', () => {
       healthStatus: 'healthy' as const,
     };
     chatDelegations.showStartupSummary.call(mock as UIManager, summary);
-    expect(mock.chatPanel.showStartupSummary).toHaveBeenCalledWith(summary);
+    expect(mock.chatCoordinator.chatPanel.showStartupSummary).toHaveBeenCalledWith(summary);
   });
 
   it('initProactiveBannerButtons 应透传 handlers 对象', () => {
     const mock = createMockThis();
     const handlers = { onView: vi.fn(), onLater: vi.fn(), onSilent: vi.fn() };
     chatDelegations.initProactiveBannerButtons.call(mock as UIManager, handlers);
-    expect(mock.proactiveBanner.initProactiveBannerButtons).toHaveBeenCalledWith(handlers);
+    expect(mock.chatCoordinator.proactiveBanner.initProactiveBannerButtons).toHaveBeenCalledWith(handlers);
   });
 
   it('流式消息委托应正确透传 messageId 和 text', () => {
@@ -164,30 +176,30 @@ describe('chatDelegations', () => {
     chatDelegations.updateStreamingMessage.call(mock as UIManager, 'm1', 'text');
     chatDelegations.finishStreamingMessage.call(mock as UIManager, 'm1');
     chatDelegations.startStreaming.call(mock as UIManager, 'm1');
-    expect(mock.chatPanel.updateStreamingMessage).toHaveBeenCalledWith('m1', 'text');
-    expect(mock.chatPanel.finishStreamingMessage).toHaveBeenCalledWith('m1');
-    expect(mock.chatPanel.startStreaming).toHaveBeenCalledWith('m1', undefined);
+    expect(mock.chatCoordinator.chatPanel.updateStreamingMessage).toHaveBeenCalledWith('m1', 'text');
+    expect(mock.chatCoordinator.chatPanel.finishStreamingMessage).toHaveBeenCalledWith('m1');
+    expect(mock.chatCoordinator.chatPanel.startStreaming).toHaveBeenCalledWith('m1', undefined);
   });
 
   it('startStreaming 委托应透传 persona 到 chatPanel（消息底部角色标签）', () => {
     const mock = createMockThis();
     chatDelegations.startStreaming.call(mock as UIManager, 'm1', 'coder');
-    expect(mock.chatPanel.startStreaming).toHaveBeenCalledWith('m1', 'coder');
+    expect(mock.chatCoordinator.chatPanel.startStreaming).toHaveBeenCalledWith('m1', 'coder');
   });
 
   it('工具调用委托应透传完整参数', () => {
     const mock = createMockThis();
     chatDelegations.showToolStart.call(mock as UIManager, 'm1', 'tc1', 'search', '{"q":"x"}');
     chatDelegations.updateToolResult.call(mock as UIManager, 'm1', 'tc1', 'search', true, '找到 3 条');
-    expect(mock.chatPanel.showToolStart).toHaveBeenCalledWith('m1', 'tc1', 'search', '{"q":"x"}');
-    expect(mock.chatPanel.updateToolResult).toHaveBeenCalledWith('m1', 'tc1', 'search', true, '找到 3 条');
+    expect(mock.chatCoordinator.chatPanel.showToolStart).toHaveBeenCalledWith('m1', 'tc1', 'search', '{"q":"x"}');
+    expect(mock.chatCoordinator.chatPanel.updateToolResult).toHaveBeenCalledWith('m1', 'tc1', 'search', true, '找到 3 条');
   });
 
   // 测试目的：appendMilestoneBanner 应透传里程碑文本
   it('appendMilestoneBanner 应透传里程碑文本', () => {
     const mock = createMockThis();
     chatDelegations.appendMilestoneBanner.call(mock as UIManager, '达成里程碑');
-    expect(mock.chatPanel.appendMilestoneBanner).toHaveBeenCalledWith('达成里程碑');
+    expect(mock.chatCoordinator.chatPanel.appendMilestoneBanner).toHaveBeenCalledWith('达成里程碑');
   });
 
   // 测试目的：setMemoryRecall 应透传 messageId 和召回记忆数组
@@ -195,35 +207,35 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const memories = [{ id: 'm1', name: '记忆', score: 0.9, source: 'conv' }];
     chatDelegations.setMemoryRecall.call(mock as UIManager, 'msg-1', memories);
-    expect(mock.chatPanel.setMemoryRecall).toHaveBeenCalledWith('msg-1', memories);
+    expect(mock.chatCoordinator.chatPanel.setMemoryRecall).toHaveBeenCalledWith('msg-1', memories);
   });
 
   // 测试目的：showThinkingPhase 应透传 messageId 和阶段名称
   it('showThinkingPhase 应透传 messageId 和阶段名称', () => {
     const mock = createMockThis();
     chatDelegations.showThinkingPhase.call(mock as UIManager, 'm1', 'analyzing');
-    expect(mock.chatPanel.showThinkingPhase).toHaveBeenCalledWith('m1', 'analyzing');
+    expect(mock.chatCoordinator.chatPanel.showThinkingPhase).toHaveBeenCalledWith('m1', 'analyzing');
   });
 
   // 测试目的：showTruncationNotice 应透传 messageId 和截断数量
   it('showTruncationNotice 应透传 messageId 和截断数量', () => {
     const mock = createMockThis();
     chatDelegations.showTruncationNotice.call(mock as UIManager, 'm1', 5);
-    expect(mock.chatPanel.showTruncationNotice).toHaveBeenCalledWith('m1', 5);
+    expect(mock.chatCoordinator.chatPanel.showTruncationNotice).toHaveBeenCalledWith('m1', 5);
   });
 
   // 测试目的：stopAllStreaming 应委托到 chatPanel.stopAllStreaming
   it('stopAllStreaming 应委托到 chatPanel.stopAllStreaming', () => {
     const mock = createMockThis();
     chatDelegations.stopAllStreaming.call(mock as UIManager);
-    expect(mock.chatPanel.stopAllStreaming).toHaveBeenCalled();
+    expect(mock.chatCoordinator.chatPanel.stopAllStreaming).toHaveBeenCalled();
   });
 
   // 测试目的：clearMessages 应委托到 chatPanel.clearMessages
   it('clearMessages 应委托到 chatPanel.clearMessages', () => {
     const mock = createMockThis();
     chatDelegations.clearMessages.call(mock as UIManager);
-    expect(mock.chatPanel.clearMessages).toHaveBeenCalled();
+    expect(mock.chatCoordinator.chatPanel.clearMessages).toHaveBeenCalled();
   });
 
   // 测试目的：appendMessages 应透传消息数组（默认不前置）
@@ -231,7 +243,7 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const messages = [{ id: 'm1', role: 'user' as const, content: 'hi' }];
     chatDelegations.appendMessages.call(mock as UIManager, messages);
-    expect(mock.chatPanel.appendMessages).toHaveBeenCalledWith(messages, undefined);
+    expect(mock.chatCoordinator.chatPanel.appendMessages).toHaveBeenCalledWith(messages, undefined);
   });
 
   // 测试目的：appendMessages 应透传 prepend=true 场景
@@ -239,7 +251,7 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const messages = [{ id: 'm1', role: 'user' as const, content: 'hi' }];
     chatDelegations.appendMessages.call(mock as UIManager, messages, true);
-    expect(mock.chatPanel.appendMessages).toHaveBeenCalledWith(messages, true);
+    expect(mock.chatCoordinator.chatPanel.appendMessages).toHaveBeenCalledWith(messages, true);
   });
 
   // 测试目的：showLoadMore 应透传剩余数量和点击回调
@@ -247,14 +259,14 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const onClick = vi.fn();
     chatDelegations.showLoadMore.call(mock as UIManager, 10, onClick);
-    expect(mock.chatPanel.showLoadMore).toHaveBeenCalledWith(10, onClick);
+    expect(mock.chatCoordinator.chatPanel.showLoadMore).toHaveBeenCalledWith(10, onClick);
   });
 
   // 测试目的：hideLoadMore 应委托到 chatPanel.hideLoadMore
   it('hideLoadMore 应委托到 chatPanel.hideLoadMore', () => {
     const mock = createMockThis();
     chatDelegations.hideLoadMore.call(mock as UIManager);
-    expect(mock.chatPanel.hideLoadMore).toHaveBeenCalled();
+    expect(mock.chatCoordinator.chatPanel.hideLoadMore).toHaveBeenCalled();
   });
 
   // 测试目的：showLoadEarlierDay 应透传点击回调
@@ -262,35 +274,35 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const onClick = vi.fn();
     chatDelegations.showLoadEarlierDay.call(mock as UIManager, onClick);
-    expect(mock.chatPanel.showLoadEarlierDay).toHaveBeenCalledWith(onClick);
+    expect(mock.chatCoordinator.chatPanel.showLoadEarlierDay).toHaveBeenCalledWith(onClick);
   });
 
   // 测试目的：injectErrorToStreamingMessages 应透传错误文本
   it('injectErrorToStreamingMessages 应透传错误文本', () => {
     const mock = createMockThis();
     chatDelegations.injectErrorToStreamingMessages.call(mock as UIManager, '流式中断');
-    expect(mock.chatPanel.injectErrorToStreamingMessages).toHaveBeenCalledWith('流式中断');
+    expect(mock.chatCoordinator.chatPanel.injectErrorToStreamingMessages).toHaveBeenCalledWith('流式中断');
   });
 
   // 测试目的：markStreamingAborted 应透传 messageId 和原因
   it('markStreamingAborted 应透传 messageId 和原因', () => {
     const mock = createMockThis();
     chatDelegations.markStreamingAborted.call(mock as UIManager, 'm1', 'user-cancelled');
-    expect(mock.chatPanel.markStreamingAborted).toHaveBeenCalledWith('m1', 'user-cancelled');
+    expect(mock.chatCoordinator.chatPanel.markStreamingAborted).toHaveBeenCalledWith('m1', 'user-cancelled');
   });
 
   // 测试目的：showEmptyState 应委托到 chatPanel.showEmptyState
   it('showEmptyState 应委托到 chatPanel.showEmptyState', () => {
     const mock = createMockThis();
     chatDelegations.showEmptyState.call(mock as UIManager);
-    expect(mock.chatPanel.showEmptyState).toHaveBeenCalled();
+    expect(mock.chatCoordinator.chatPanel.showEmptyState).toHaveBeenCalled();
   });
 
   // 测试目的：hideEmptyState 应委托到 chatPanel.hideEmptyState
   it('hideEmptyState 应委托到 chatPanel.hideEmptyState', () => {
     const mock = createMockThis();
     chatDelegations.hideEmptyState.call(mock as UIManager);
-    expect(mock.chatPanel.hideEmptyState).toHaveBeenCalled();
+    expect(mock.chatCoordinator.chatPanel.hideEmptyState).toHaveBeenCalled();
   });
 
   // 测试目的：onSuggestionClick 应透传建议点击回调
@@ -298,7 +310,7 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     chatDelegations.onSuggestionClick.call(mock as UIManager, cb);
-    expect(mock.chatPanel.onSuggestionClick).toHaveBeenCalledWith(cb);
+    expect(mock.chatCoordinator.chatPanel.onSuggestionClick).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onErrorRetry 应透传错误重试回调
@@ -306,21 +318,21 @@ describe('chatDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     chatDelegations.onErrorRetry.call(mock as UIManager, cb);
-    expect(mock.chatPanel.onErrorRetry).toHaveBeenCalledWith(cb);
+    expect(mock.chatCoordinator.chatPanel.onErrorRetry).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：hideProactiveBanner 应委托到 proactiveBanner.hideProactiveBanner
   it('hideProactiveBanner 应委托到 proactiveBanner.hideProactiveBanner', () => {
     const mock = createMockThis();
     chatDelegations.hideProactiveBanner.call(mock as UIManager);
-    expect(mock.proactiveBanner.hideProactiveBanner).toHaveBeenCalled();
+    expect(mock.chatCoordinator.proactiveBanner.hideProactiveBanner).toHaveBeenCalled();
   });
 
   // 测试目的：showArchiveButton 应委托到 chatPanel.showArchiveButton
   it('showArchiveButton 应委托到 chatPanel.showArchiveButton', () => {
     const mock = createMockThis();
     chatDelegations.showArchiveButton.call(mock as UIManager);
-    expect(mock.chatPanel.showArchiveButton).toHaveBeenCalled();
+    expect(mock.chatCoordinator.chatPanel.showArchiveButton).toHaveBeenCalled();
   });
 });
 
@@ -338,7 +350,7 @@ describe('dashboardDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     dashboardDelegations.onPartnerMemoryClick.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onPartnerMemoryClick).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onPartnerMemoryClick).toHaveBeenCalledWith(cb);
     expect(mock.perceptionCoordinator.perceptionPanel.onMemoryClick).toHaveBeenCalledWith(cb);
   });
 
@@ -370,7 +382,7 @@ describe('dashboardDelegations', () => {
     const mock = createMockThis();
     dashboardDelegations.repaintCanvasOnThemeChange.call(mock as UIManager);
     expect(mock.perceptionCoordinator.dashboardPanel.repaintOnThemeChange).toHaveBeenCalled();
-    expect(mock.memoryPanel.repaintOnThemeChange).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.memoryPanel.repaintOnThemeChange).toHaveBeenCalled();
   });
 
   it('showMemoryListError 应透传 listEl 元素', () => {
@@ -393,22 +405,22 @@ describe('memoryDelegations', () => {
   it('getAddMemoryFormData 应返回 memoryPanel.getAddMemoryFormData 的结果', () => {
     const mock = createMockThis();
     const formData = { source: 'conv', name: 'n', content: 'c' };
-    mock.memoryPanel.getAddMemoryFormData.mockReturnValue(formData);
+    asMock(mock.memoryCoordinator.memoryPanel.getAddMemoryFormData).mockReturnValue(formData);
     const result = memoryDelegations.getAddMemoryFormData.call(mock as UIManager);
-    expect(mock.memoryPanel.getAddMemoryFormData).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.memoryPanel.getAddMemoryFormData).toHaveBeenCalled();
     expect(result).toBe(formData);
   });
 
   it('getCurrentMemoryId 应返回 memoryPanel.getCurrentMemoryId 的结果', () => {
     const mock = createMockThis();
-    mock.memoryPanel.getCurrentMemoryId.mockReturnValue('mem-1');
+    asMock(mock.memoryCoordinator.memoryPanel.getCurrentMemoryId).mockReturnValue('mem-1');
     const result = memoryDelegations.getCurrentMemoryId.call(mock as UIManager);
     expect(result).toBe('mem-1');
   });
 
   it('hasGraphData 应返回 memoryPanel.hasGraphData 的布尔结果', () => {
     const mock = createMockThis();
-    mock.memoryPanel.hasGraphData.mockReturnValue(true);
+    asMock(mock.memoryCoordinator.memoryPanel.hasGraphData).mockReturnValue(true);
     const result = memoryDelegations.hasGraphData.call(mock as UIManager);
     expect(result).toBe(true);
   });
@@ -416,22 +428,22 @@ describe('memoryDelegations', () => {
   it('switchMemoryView 应委托到 memoryPanel.switchView', () => {
     const mock = createMockThis();
     memoryDelegations.switchMemoryView.call(mock as UIManager, 'graph');
-    expect(mock.memoryPanel.switchView).toHaveBeenCalledWith('graph');
+    expect(mock.memoryCoordinator.memoryPanel.switchView).toHaveBeenCalledWith('graph');
   });
 
   it('renderMemoryList 应透传 memories 和可选 searchQuery', () => {
     const mock = createMockThis();
     const memories = [{ id: 'm1', name: 'n', source: 's' }] as never;
     memoryDelegations.renderMemoryList.call(mock as UIManager, memories, 'query');
-    expect(mock.memoryPanel.renderMemoryList).toHaveBeenCalledWith(memories, 'query');
+    expect(mock.memoryCoordinator.memoryPanel.renderMemoryList).toHaveBeenCalledWith(memories, 'query');
   });
 
   it('highlightGraphNodes 应透传 nodeIds（含 null 场景）', () => {
     const mock = createMockThis();
     memoryDelegations.highlightGraphNodes.call(mock as UIManager, ['n1', 'n2']);
-    expect(mock.memoryPanel.highlightGraphNodes).toHaveBeenCalledWith(['n1', 'n2']);
+    expect(mock.memoryCoordinator.memoryPanel.highlightGraphNodes).toHaveBeenCalledWith(['n1', 'n2']);
     memoryDelegations.highlightGraphNodes.call(mock as UIManager, null);
-    expect(mock.memoryPanel.highlightGraphNodes).toHaveBeenCalledWith(null);
+    expect(mock.memoryCoordinator.memoryPanel.highlightGraphNodes).toHaveBeenCalledWith(null);
   });
 
   it('onCleanupRequest 应透传回调', () => {
@@ -439,28 +451,28 @@ describe('memoryDelegations', () => {
     const cb = vi.fn();
     // 委托方法签名为 void，不返回值（仅验证委托调用正确）
     memoryDelegations.onCleanupRequest.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onCleanupRequest).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onCleanupRequest).toHaveBeenCalledWith(cb);
   });
 
   it('onRelationEdit 应透传 4 参数', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onRelationEdit.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onRelationEdit).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onRelationEdit).toHaveBeenCalledWith(cb);
   });
 
   it('renderRecycleBinList 应透传 memories 数组', () => {
     const mock = createMockThis();
     const memories = [{ id: 'm1', name: 'n', source: 's', contentPreview: 'p', deletedAt: '2026-07-12' }];
     memoryDelegations.renderRecycleBinList.call(mock as UIManager, memories);
-    expect(mock.memoryPanel.renderRecycleBinList).toHaveBeenCalledWith(memories);
+    expect(mock.memoryCoordinator.memoryPanel.renderRecycleBinList).toHaveBeenCalledWith(memories);
   });
 
   // 测试目的：dismissMemoryAnalysisPanels 应委托到 memoryPanel.dismissAnalysisPanels
   it('dismissMemoryAnalysisPanels 应委托到 memoryPanel.dismissAnalysisPanels', () => {
     const mock = createMockThis();
     memoryDelegations.dismissMemoryAnalysisPanels.call(mock as UIManager);
-    expect(mock.memoryPanel.dismissAnalysisPanels).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.memoryPanel.dismissAnalysisPanels).toHaveBeenCalled();
   });
 
   // 测试目的：showMemoryDetail 应透传 MemoryDetail 对象
@@ -477,7 +489,7 @@ describe('memoryDelegations', () => {
       relations: [],
     } as never;
     memoryDelegations.showMemoryDetail.call(mock as UIManager, detail);
-    expect(mock.memoryPanel.showMemoryDetail).toHaveBeenCalledWith(detail);
+    expect(mock.memoryCoordinator.memoryPanel.showMemoryDetail).toHaveBeenCalledWith(detail);
   });
 
   // 测试目的：showMemoryLineage 应透传 RelationPath 数组
@@ -485,7 +497,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const path = [{ sourceId: 's1', targetId: 't1', type: 'supports', weight: 0.8 }] as never;
     memoryDelegations.showMemoryLineage.call(mock as UIManager, path);
-    expect(mock.memoryPanel.showMemoryLineage).toHaveBeenCalledWith(path);
+    expect(mock.memoryCoordinator.memoryPanel.showMemoryLineage).toHaveBeenCalledWith(path);
   });
 
   // 测试目的：showMemoryLineageError 应透传 onRetry 回调（注意目标方法名为 showLineageError）
@@ -493,7 +505,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const retry = vi.fn();
     memoryDelegations.showMemoryLineageError.call(mock as UIManager, retry);
-    expect(mock.memoryPanel.showLineageError).toHaveBeenCalledWith(retry);
+    expect(mock.memoryCoordinator.memoryPanel.showLineageError).toHaveBeenCalledWith(retry);
   });
 
   // 测试目的：showMemoryNeighbors 应透传 RelationNeighbor 数组
@@ -501,7 +513,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const neighbors = [{ id: 'n1', name: '邻居', source: 'conv', relationType: 'supports' }] as never;
     memoryDelegations.showMemoryNeighbors.call(mock as UIManager, neighbors);
-    expect(mock.memoryPanel.showMemoryNeighbors).toHaveBeenCalledWith(neighbors);
+    expect(mock.memoryCoordinator.memoryPanel.showMemoryNeighbors).toHaveBeenCalledWith(neighbors);
   });
 
   // 测试目的：showMemoryNeighborsError 应透传 onRetry 回调（注意目标方法名为 showNeighborsError）
@@ -509,14 +521,14 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const retry = vi.fn();
     memoryDelegations.showMemoryNeighborsError.call(mock as UIManager, retry);
-    expect(mock.memoryPanel.showNeighborsError).toHaveBeenCalledWith(retry);
+    expect(mock.memoryCoordinator.memoryPanel.showNeighborsError).toHaveBeenCalledWith(retry);
   });
 
   // 测试目的：clearAddMemoryForm 应委托到 memoryPanel.clearAddMemoryForm
   it('clearAddMemoryForm 应委托到 memoryPanel.clearAddMemoryForm', () => {
     const mock = createMockThis();
     memoryDelegations.clearAddMemoryForm.call(mock as UIManager);
-    expect(mock.memoryPanel.clearAddMemoryForm).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.memoryPanel.clearAddMemoryForm).toHaveBeenCalled();
   });
 
   // 测试目的：onMemorySearch 应透传查询回调
@@ -524,7 +536,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemorySearch.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemorySearch).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemorySearch).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onMemoryFilter 应透传来源过滤回调
@@ -532,7 +544,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemoryFilter.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemoryFilter).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemoryFilter).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onMemoryClick 应透传点击回调
@@ -540,7 +552,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemoryClick.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemoryClick).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemoryClick).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onMemoryDelete 应透传删除回调
@@ -548,7 +560,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemoryDelete.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemoryDelete).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemoryDelete).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onMemoryAdd 应透传新增回调（含 source/name/content 字段）
@@ -556,7 +568,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemoryAdd.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemoryAdd).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemoryAdd).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onMemoryEdit 应透传编辑回调（id + content）
@@ -564,7 +576,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemoryEdit.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemoryEdit).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemoryEdit).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onMemoryDiscuss 应透传讨论回调
@@ -572,7 +584,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMemoryDiscuss.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMemoryDiscuss).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMemoryDiscuss).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：loadGraphData 应透传 RelationGraphData
@@ -580,23 +592,23 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const graphData = { nodes: [], edges: [] } as never;
     memoryDelegations.loadGraphData.call(mock as UIManager, graphData);
-    expect(mock.memoryPanel.loadGraphData).toHaveBeenCalledWith(graphData);
+    expect(mock.memoryCoordinator.memoryPanel.loadGraphData).toHaveBeenCalledWith(graphData);
   });
 
   // 测试目的：selectGraphNode 应透传 nodeId（含 null 场景）
   it('selectGraphNode 应透传 nodeId（含 null 场景）', () => {
     const mock = createMockThis();
     memoryDelegations.selectGraphNode.call(mock as UIManager, 'node-1');
-    expect(mock.memoryPanel.selectGraphNode).toHaveBeenCalledWith('node-1');
+    expect(mock.memoryCoordinator.memoryPanel.selectGraphNode).toHaveBeenCalledWith('node-1');
     memoryDelegations.selectGraphNode.call(mock as UIManager, null);
-    expect(mock.memoryPanel.selectGraphNode).toHaveBeenCalledWith(null);
+    expect(mock.memoryCoordinator.memoryPanel.selectGraphNode).toHaveBeenCalledWith(null);
   });
 
   // 测试目的：clearGraphHighlights 应委托到 memoryPanel.clearGraphHighlights
   it('clearGraphHighlights 应委托到 memoryPanel.clearGraphHighlights', () => {
     const mock = createMockThis();
     memoryDelegations.clearGraphHighlights.call(mock as UIManager);
-    expect(mock.memoryPanel.clearGraphHighlights).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.memoryPanel.clearGraphHighlights).toHaveBeenCalled();
   });
 
   // 测试目的：onMoreMenuAction 应透传 action 回调
@@ -604,7 +616,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onMoreMenuAction.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onMoreMenuAction).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onMoreMenuAction).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onRecycleBinAction 应透传 restore/purge + id 回调
@@ -612,7 +624,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onRecycleBinAction.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onRecycleBinAction).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onRecycleBinAction).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onRecycleBinBatchAction 应透传 restore-all/purge-all 回调
@@ -620,7 +632,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onRecycleBinBatchAction.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onRecycleBinBatchAction).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onRecycleBinBatchAction).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onSortChange 应透传排序变更回调
@@ -628,7 +640,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onSortChange.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onSortChange).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onSortChange).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onTimeRangeChange 应透传时间范围变更回调
@@ -636,7 +648,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onTimeRangeChange.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onTimeRangeChange).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onTimeRangeChange).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onCleanupConfirm 应透传清理确认回调（返回 Promise<void>）
@@ -644,7 +656,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onCleanupConfirm.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onCleanupConfirm).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onCleanupConfirm).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onViewSwitch 应透传视图切换回调
@@ -652,7 +664,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onViewSwitch.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onViewSwitch).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onViewSwitch).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onGraphContextMenuAction 应透传右键菜单 action + nodeId 回调
@@ -660,7 +672,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onGraphContextMenuAction.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onGraphContextMenuAction).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onGraphContextMenuAction).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onRelationDelete 应透传关系删除回调（sourceId + targetId + type）
@@ -668,7 +680,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onRelationDelete.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onRelationDelete).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onRelationDelete).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：onRelationCreate 应透传关系创建回调（含 weight）
@@ -676,7 +688,7 @@ describe('memoryDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     memoryDelegations.onRelationCreate.call(mock as UIManager, cb);
-    expect(mock.memoryPanel.onRelationCreate).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.memoryPanel.onRelationCreate).toHaveBeenCalledWith(cb);
   });
 });
 
@@ -691,35 +703,35 @@ describe('miscDelegations', () => {
 
   it('refreshTokenUsage 应 void 委托到 inputAreaManager.refreshTokenUsage', () => {
     const mock = createMockThis();
-    mock.inputAreaManager.refreshTokenUsage.mockReturnValue(Promise.resolve());
+    asMock(mock.chatCoordinator.inputAreaManager.refreshTokenUsage).mockReturnValue(Promise.resolve());
     miscDelegations.refreshTokenUsage.call(mock as UIManager);
-    expect(mock.inputAreaManager.refreshTokenUsage).toHaveBeenCalled();
+    expect(mock.chatCoordinator.inputAreaManager.refreshTokenUsage).toHaveBeenCalled();
   });
 
   it('showClipboardConfirmDialog 应 async 委托并 await', async () => {
     const mock = createMockThis();
-    mock.clipboardManager.showClipboardConfirmDialog.mockResolvedValue(undefined);
+    asMock(mock.clipboardManager.showClipboardConfirmDialog).mockResolvedValue(undefined);
     await miscDelegations.showClipboardConfirmDialog.call(mock as UIManager, '内容');
     expect(mock.clipboardManager.showClipboardConfirmDialog).toHaveBeenCalledWith('内容');
   });
 
   it('handleQuickRecordTrigger 应 async 委托到 globalShortcutDispatcher', async () => {
     const mock = createMockThis();
-    mock.globalShortcutDispatcher.handleQuickRecordTrigger.mockResolvedValue(undefined);
+    asMock(mock.globalShortcutDispatcher.handleQuickRecordTrigger).mockResolvedValue(undefined);
     await miscDelegations.handleQuickRecordTrigger.call(mock as UIManager);
     expect(mock.globalShortcutDispatcher.handleQuickRecordTrigger).toHaveBeenCalled();
   });
 
   it('handleRecallMemoryTrigger 应 async 委托到 globalShortcutDispatcher', async () => {
     const mock = createMockThis();
-    mock.globalShortcutDispatcher.handleRecallMemoryTrigger.mockResolvedValue(undefined);
+    asMock(mock.globalShortcutDispatcher.handleRecallMemoryTrigger).mockResolvedValue(undefined);
     await miscDelegations.handleRecallMemoryTrigger.call(mock as UIManager);
     expect(mock.globalShortcutDispatcher.handleRecallMemoryTrigger).toHaveBeenCalled();
   });
 
   it('shouldShowOnboarding 应返回布尔结果', () => {
     const mock = createMockThis();
-    mock.onboardingManager.shouldShowOnboarding.mockReturnValue(true);
+    asMock(mock.onboardingManager.shouldShowOnboarding).mockReturnValue(true);
     const result = miscDelegations.shouldShowOnboarding.call(mock as UIManager, true);
     expect(mock.onboardingManager.shouldShowOnboarding).toHaveBeenCalledWith(true);
     expect(result).toBe(true);
@@ -735,7 +747,7 @@ describe('miscDelegations', () => {
   it('prefillChatInput 应委托到 inputAreaManager.setValue', () => {
     const mock = createMockThis();
     miscDelegations.prefillChatInput.call(mock as UIManager, '预填文本');
-    expect(mock.inputAreaManager.setValue).toHaveBeenCalledWith('预填文本');
+    expect(mock.chatCoordinator.inputAreaManager.setValue).toHaveBeenCalledWith('预填文本');
   });
 
   it('onSearchResultClick 应委托到 searchMessagesManager.onResultClick', () => {
@@ -756,7 +768,7 @@ describe('miscDelegations', () => {
       source: 'auto-config-refiner',
     };
     miscDelegations.showSuggestion.call(mock as UIManager, suggestion);
-    expect(mock.suggestionCard.showSuggestion).toHaveBeenCalledWith(suggestion);
+    expect(mock.chatCoordinator.suggestionCard.showSuggestion).toHaveBeenCalledWith(suggestion);
   });
 
   // 测试目的：scrollToBottom 应委托到 scrollController.scrollToBottom
@@ -831,7 +843,7 @@ describe('miscDelegations', () => {
   it('scrollToMemory 应透传 memory id 到 memoryPanel.scrollToMemory', () => {
     const mock = createMockThis();
     miscDelegations.scrollToMemory.call(mock as UIManager, 'mem-1');
-    expect(mock.memoryPanel.scrollToMemory).toHaveBeenCalledWith('mem-1');
+    expect(mock.memoryCoordinator.memoryPanel.scrollToMemory).toHaveBeenCalledWith('mem-1');
   });
 });
 
@@ -843,12 +855,12 @@ describe('personaThemeDelegations', () => {
     const cb = vi.fn();
     personaThemeDelegations.onMemoryRecallClick.call(mock as UIManager, cb);
     expect(mock.personaPanel.onMemoryRecallClick).toHaveBeenCalledWith(cb);
-    expect(mock.chatPanel.setMemoryRecallClickCallback).toHaveBeenCalledWith(cb);
+    expect(mock.chatCoordinator.chatPanel.setMemoryRecallClickCallback).toHaveBeenCalledWith(cb);
   });
 
   it('getThemeMode 应返回 themeManager.getThemeMode 的结果', () => {
     const mock = createMockThis();
-    mock.themeManager.getThemeMode.mockReturnValue('dark');
+    asMock(mock.themeManager.getThemeMode).mockReturnValue('dark');
     const result = personaThemeDelegations.getThemeMode.call(mock as UIManager);
     expect(result).toBe('dark');
   });
@@ -863,7 +875,7 @@ describe('personaThemeDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     personaThemeDelegations.onArchiveModeChange.call(mock as UIManager, cb);
-    expect(mock.settingsPanelManager.onArchiveModeChange).toHaveBeenCalledWith(cb);
+    expect(mock.settingsCoordinator.settingsPanelManager.onArchiveModeChange).toHaveBeenCalledWith(cb);
   });
 
   it('renderPersonaDropdown 应透传 personas 数组', () => {
@@ -923,43 +935,43 @@ describe('personaThemeDelegations', () => {
 describe('settingsModalDelegations', () => {
   it('loadUserProfile 应 async 委托到 profilePanel.load', async () => {
     const mock = createMockThis();
-    mock.profilePanel.load.mockResolvedValue(undefined);
+    asMock(mock.memoryCoordinator.profilePanel.load).mockResolvedValue(undefined);
     await settingsModalDelegations.loadUserProfile.call(mock as UIManager);
-    expect(mock.profilePanel.load).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.profilePanel.load).toHaveBeenCalled();
   });
 
   it('loadWorkProjections 应 async 委托到 workProjectionPanel.load', async () => {
     const mock = createMockThis();
-    mock.workProjectionPanel.load.mockResolvedValue(undefined);
+    asMock(mock.memoryCoordinator.workProjectionPanel.load).mockResolvedValue(undefined);
     await settingsModalDelegations.loadWorkProjections.call(mock as UIManager);
-    expect(mock.workProjectionPanel.load).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.workProjectionPanel.load).toHaveBeenCalled();
   });
 
   it('loadAuditLog 应 async 委托到 auditPanel.load', async () => {
     const mock = createMockThis();
-    mock.auditPanel.load.mockResolvedValue(undefined);
+    asMock(mock.memoryCoordinator.auditPanel.load).mockResolvedValue(undefined);
     await settingsModalDelegations.loadAuditLog.call(mock as UIManager);
-    expect(mock.auditPanel.load).toHaveBeenCalled();
+    expect(mock.memoryCoordinator.auditPanel.load).toHaveBeenCalled();
   });
 
   it('onProviderChanged 应 void 委托到 inputAreaManager.loadProviderSelector', () => {
     const mock = createMockThis();
-    mock.inputAreaManager.loadProviderSelector.mockReturnValue(Promise.resolve());
+    asMock(mock.chatCoordinator.inputAreaManager.loadProviderSelector).mockReturnValue(Promise.resolve());
     settingsModalDelegations.onProviderChanged.call(mock as UIManager);
-    expect(mock.inputAreaManager.loadProviderSelector).toHaveBeenCalled();
+    expect(mock.chatCoordinator.inputAreaManager.loadProviderSelector).toHaveBeenCalled();
   });
 
   it('collectConfigFromForm 应返回 settingsPanelManager.collectConfigFromForm 的结果', () => {
     const mock = createMockThis();
     const form = { archiveMode: 'full' } as never;
-    mock.settingsPanelManager.collectConfigFromForm.mockReturnValue(form);
+    asMock(mock.settingsCoordinator.settingsPanelManager.collectConfigFromForm).mockReturnValue(form);
     const result = settingsModalDelegations.collectConfigFromForm.call(mock as UIManager);
     expect(result).toBe(form);
   });
 
   it('isSettingsDirty 应返回 settingsPanelManager.isDirty 的布尔结果', () => {
     const mock = createMockThis();
-    mock.settingsPanelManager.isDirty.mockReturnValue(true);
+    asMock(mock.settingsCoordinator.settingsPanelManager.isDirty).mockReturnValue(true);
     const result = settingsModalDelegations.isSettingsDirty.call(mock as UIManager);
     expect(result).toBe(true);
   });
@@ -979,7 +991,7 @@ describe('settingsModalDelegations', () => {
 
   it('showConfirmDialog 应返回 Promise<boolean>', async () => {
     const mock = createMockThis();
-    mock.modalManager.showConfirmDialog.mockResolvedValue(true);
+    asMock(mock.modalManager.showConfirmDialog).mockResolvedValue(true);
     const options = { message: '确认？' } as never;
     const result = await settingsModalDelegations.showConfirmDialog.call(mock as UIManager, options);
     expect(mock.modalManager.showConfirmDialog).toHaveBeenCalledWith(options);
@@ -988,7 +1000,7 @@ describe('settingsModalDelegations', () => {
 
   it('showInputDialog 应返回 Promise<string|null>', async () => {
     const mock = createMockThis();
-    mock.modalManager.showInputDialog.mockResolvedValue('用户输入');
+    asMock(mock.modalManager.showInputDialog).mockResolvedValue('用户输入');
     const options = { message: '请输入' };
     const result = await settingsModalDelegations.showInputDialog.call(mock as UIManager, options);
     expect(mock.modalManager.showInputDialog).toHaveBeenCalledWith(options);
@@ -998,7 +1010,7 @@ describe('settingsModalDelegations', () => {
   it('resetSettingsFormDirty 应委托到 settingsPanelManager.resetFormDirty', () => {
     const mock = createMockThis();
     settingsModalDelegations.resetSettingsFormDirty.call(mock as UIManager);
-    expect(mock.settingsPanelManager.resetFormDirty).toHaveBeenCalled();
+    expect(mock.settingsCoordinator.settingsPanelManager.resetFormDirty).toHaveBeenCalled();
   });
 
   // 测试目的：setClearAuditLogCallback 应透传清空审计日志回调到 auditPanel
@@ -1006,7 +1018,7 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     settingsModalDelegations.setClearAuditLogCallback.call(mock as UIManager, cb);
-    expect(mock.auditPanel.setClearAuditLogCallback).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.auditPanel.setClearAuditLogCallback).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：setConfirmProfileCallback 应透传确认画像回调到 profilePanel
@@ -1014,7 +1026,7 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     settingsModalDelegations.setConfirmProfileCallback.call(mock as UIManager, cb);
-    expect(mock.profilePanel.setConfirmProfileCallback).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.profilePanel.setConfirmProfileCallback).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：setRejectProfileCallback 应透传拒绝画像回调到 profilePanel
@@ -1022,7 +1034,7 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     settingsModalDelegations.setRejectProfileCallback.call(mock as UIManager, cb);
-    expect(mock.profilePanel.setRejectProfileCallback).toHaveBeenCalledWith(cb);
+    expect(mock.memoryCoordinator.profilePanel.setRejectProfileCallback).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：loadEmbeddingConfig 应透传 embedding 配置到 settingsPanelManager
@@ -1030,7 +1042,7 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const data = { embedding: { model: 'text-embedding-3', baseUrl: 'https://api', apiKey: 'k' } };
     settingsModalDelegations.loadEmbeddingConfig.call(mock as UIManager, data);
-    expect(mock.settingsPanelManager.loadEmbeddingConfig).toHaveBeenCalledWith(data);
+    expect(mock.settingsCoordinator.settingsPanelManager.loadEmbeddingConfig).toHaveBeenCalledWith(data);
   });
 
   // 测试目的：loadEmbeddingConfig 应透传 embedding=null 场景
@@ -1038,7 +1050,7 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const data = { embedding: null };
     settingsModalDelegations.loadEmbeddingConfig.call(mock as UIManager, data);
-    expect(mock.settingsPanelManager.loadEmbeddingConfig).toHaveBeenCalledWith(data);
+    expect(mock.settingsCoordinator.settingsPanelManager.loadEmbeddingConfig).toHaveBeenCalledWith(data);
   });
 
   // 测试目的：loadProjectsToForm 应透传项目列表和选中路径
@@ -1046,7 +1058,7 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const projects = [{ name: 'p1', path: '/p1' }];
     settingsModalDelegations.loadProjectsToForm.call(mock as UIManager, projects, '/p1');
-    expect(mock.settingsPanelManager.loadProjectsToForm).toHaveBeenCalledWith(projects, '/p1');
+    expect(mock.settingsCoordinator.settingsPanelManager.loadProjectsToForm).toHaveBeenCalledWith(projects, '/p1');
   });
 
   // 测试目的：onConfigSave 应透传配置保存回调到 settingsPanelManager
@@ -1054,16 +1066,16 @@ describe('settingsModalDelegations', () => {
     const mock = createMockThis();
     const cb = vi.fn();
     settingsModalDelegations.onConfigSave.call(mock as UIManager, cb);
-    expect(mock.settingsPanelManager.onConfigSave).toHaveBeenCalledWith(cb);
+    expect(mock.settingsCoordinator.settingsPanelManager.onConfigSave).toHaveBeenCalledWith(cb);
   });
 
   // 测试目的：updateAgentStatusIndicator 应透传状态和可选消息
   it('updateAgentStatusIndicator 应透传状态和可选消息', () => {
     const mock = createMockThis();
     settingsModalDelegations.updateAgentStatusIndicator.call(mock as UIManager, 'ready');
-    expect(mock.settingsPanelManager.updateAgentStatusIndicator).toHaveBeenCalledWith('ready', undefined);
+    expect(mock.settingsCoordinator.settingsPanelManager.updateAgentStatusIndicator).toHaveBeenCalledWith('ready', undefined);
     settingsModalDelegations.updateAgentStatusIndicator.call(mock as UIManager, 'error', '出错了');
-    expect(mock.settingsPanelManager.updateAgentStatusIndicator).toHaveBeenCalledWith('error', '出错了');
+    expect(mock.settingsCoordinator.settingsPanelManager.updateAgentStatusIndicator).toHaveBeenCalledWith('error', '出错了');
   });
 
   // 测试目的：showPanelError 应透传 panelId + message + retryCallback

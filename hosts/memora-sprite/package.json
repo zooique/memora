@@ -18,7 +18,7 @@
     "dev:web": "set NODE_ENV=development&& npm run build:electron && tsx src/web/server.ts",
     "start": "tsx src/cli.ts",
     "start:web": "set NODE_ENV=production&& npm run build:web && node dist-web/web/server.js",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "npm run check-configs && eslint . --ext .ts && npm run lint:css",

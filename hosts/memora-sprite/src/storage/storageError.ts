@@ -16,7 +16,7 @@
  * - storage 层抛 StorageError，sprite/electron 层抛 SpriteError，分层清晰
  */
 
-import { ErrorCode } from '../shared/errorCodes.js';
+import type { ErrorCode } from '../shared/errorCodes.js';
 
 /**
  * 存储层结构化错误类

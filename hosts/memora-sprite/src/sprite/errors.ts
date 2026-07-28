@@ -29,7 +29,7 @@ export { ErrorCode } from '../shared/errorCodes.js';
  * 调用方通过 `throw new SpriteError(ErrorCode.FILE_READ_FAILED, '...')` 显式指定错误类型，
  * ErrorHandler.normalizeError 优先读取 error.code，仅在未携带 code 时降级到字符串匹配。
  */
-import { ErrorCode } from '../shared/errorCodes.js';
+import type { ErrorCode } from '../shared/errorCodes.js';
 
 export class SpriteError extends Error {
   /** 显式错误代码（优先于字符串推断） */

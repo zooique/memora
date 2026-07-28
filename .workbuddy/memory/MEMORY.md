@@ -58,4 +58,5 @@
 - 新增 coordination/chatCoordinator.ts（45 行），修改 6 文件（ui.ts + 5 个 mixin 委托文件）。
 - 验证：tsc 0 错误 · ui.test.ts 87/87 通过 · 全量无新增失败。
 - 踩坑：suggestionCard.init() 在协调器创建之前执行导致 TypeError——协调器初始化必须前置到 settingsManagerPanel 之后。
-- Phase 3/4（MemoryCoordinator/SettingsCoordinator）等待涉足对应域时触发；GlobalInfra/ClipboardDomain/UtilityDomain 已归档不提取。
+- Phase 3（MemoryCoordinator）已于 14ca555e 完成；Phase 4（SettingsCoordinator）已于 ec50942c 完成。委托群（chatDelegations/dashboardDelegations/memoryDelegations/settingsModalDelegations/personaThemeDelegations）均已改为经协调器转发（this.chatCoordinator.chatPanel、this.memoryCoordinator.profilePanel/auditPanel/memoryPanel/workProjectionPanel、this.settingsCoordinator.settingsPanelManager、this.perceptionCoordinator.dashboardPanel/perceptionPanel/spriteStatusPopover）。GlobalInfra/ClipboardDomain/UtilityDomain 已归档不提取。
+- **可复用教训**：提取协调器后必须同步更新委托测试的断言路径（mock.X → mock.coordinator.X），否则深 Proxy mock 会把调用记在协调器路径但断言查旧路径→全部 "0 calls" 误报。本次 87 个失败（uiDelegations.test.ts 86 + settingsOrchestrator.test.ts 1）均为此模式，生产代码实际正确。修复: 12 类全局路径替换 + mock 加协调器嵌套层。

@@ -8,13 +8,13 @@
  * - loadLlmConfig：加载 Embedding 配置/加载失败错误横幅
  *
  * 测试策略：
- * - 轻量 mock：vi.mock domHelpers/errorHelpers，避免 JSDOM 重依赖
+ * - 轻量 mock：ReturnType<typeof vi.fn> domHelpers/errorHelpers，避免 JSDOM 重依赖
  * - MockUiManager 满足 createSettingsOrchestrator 使用的 UIManager 方法子集
  * - mock window.electronAPI 控制各 IPC 返回值
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ─── vi.hoisted 提升 mock 变量（vi.mock 工厂被提升到顶层，不能引用普通变量） ───
+// ─── vi.hoisted 提升 mock 变量（ReturnType<typeof vi.fn> 工厂被提升到顶层，不能引用普通变量） ───
 const { mockReportError, mockHandleIpcError } = vi.hoisted(() => ({
   mockReportError: vi.fn(),
   mockHandleIpcError: vi.fn(),
@@ -71,8 +71,8 @@ function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
     updateAgentStatusIndicator: vi.fn(),
     loadUserProfile: vi.fn().mockResolvedValue(undefined),
     loadAuditLog: vi.fn().mockResolvedValue(undefined),
-    // C1 修复：loadLlmConfig 成功时刷新 Provider 列表
-    settingsPanelManager: { loadProviderList: vi.fn().mockResolvedValue(undefined) },
+    // C1 修复：loadLlmConfig 成功时刷新 Provider 列表（经 settingsCoordinator 转发）
+    settingsCoordinator: { settingsPanelManager: { loadProviderList: vi.fn().mockResolvedValue(undefined) } },
     // F-P0 技术债偿还：回调注入方法（setupSettingsPanel 中调用）
     setClearAuditLogCallback: vi.fn(),
     setConfirmProfileCallback: vi.fn(),
@@ -125,8 +125,8 @@ describe('settingsController', () => {
     controller.setupSettingsPanel();
 
     // mock window.electronAPI（每个测试可在用例内覆盖具体返回值）
-    (globalThis as { window: unknown }).window = globalThis;
-    (globalThis as { electronAPI: unknown }).electronAPI = {
+    (globalThis as unknown as { window: unknown }).window = globalThis;
+    (globalThis as unknown as { electronAPI: unknown }).electronAPI = {
       updateConfigBatch: vi.fn().mockResolvedValue({ updated: true }),
       updateConfig: vi.fn().mockResolvedValue({ updated: true }),
       saveLlmConfig: vi.fn().mockResolvedValue({ success: true }),
@@ -136,7 +136,7 @@ describe('settingsController', () => {
       getLlmConfig: vi.fn().mockResolvedValue({ provider: 'openai', model: 'gpt-4' }),
       listProjects: vi.fn().mockResolvedValue({ projects: [] }),
     };
-    (globalThis as { window: { electronAPI: unknown } }).window = { electronAPI: (globalThis as { electronAPI: unknown }).electronAPI };
+    (globalThis as unknown as { window: { electronAPI: unknown } }).window = { electronAPI: (globalThis as unknown as { electronAPI: unknown }).electronAPI };
   });
 
   // ─── onConfigSave（事务性保护） ───────────
@@ -145,7 +145,7 @@ describe('settingsController', () => {
     const config = makeFormConfig();
     await callbacks.onConfigSave!(config);
 
-    const api = (globalThis as { window: { electronAPI: { updateConfigBatch: { mock: { calls: unknown[][] } } } } }).window.electronAPI.updateConfigBatch;
+    const api = (globalThis as unknown as { window: { electronAPI: { updateConfigBatch: { mock: { calls: unknown[][] } } } } }).window.electronAPI.updateConfigBatch;
     expect(api.mock.calls).toHaveLength(1);
     // 字段数演进：defaultPersona 独立持久化后降至 10，shortcuts + usageStatsEnabled 纳入后升至 12
     const updates = api.mock.calls[0]![0] as Record<string, unknown>;
@@ -161,7 +161,7 @@ describe('settingsController', () => {
   });
 
   it('事务失败（updated=false）应显示 error toast 含错误信息', async () => {
-    const api = (globalThis as { electronAPI: { updateConfigBatch: vi.Mock } }).electronAPI.updateConfigBatch;
+    const api = (globalThis as unknown as { electronAPI: { updateConfigBatch: ReturnType<typeof vi.fn> } }).electronAPI.updateConfigBatch;
     api.mockResolvedValueOnce({ updated: false, error: '配置值类型非法：proactiveThreshold' });
 
     await callbacks.onConfigSave!(makeFormConfig());
@@ -173,7 +173,7 @@ describe('settingsController', () => {
   });
 
   it('IPC 异常应调用 handleIpcError', async () => {
-    const api = (globalThis as { electronAPI: { updateConfigBatch: vi.Mock } }).electronAPI.updateConfigBatch;
+    const api = (globalThis as unknown as { electronAPI: { updateConfigBatch: ReturnType<typeof vi.fn> } }).electronAPI.updateConfigBatch;
     api.mockRejectedValueOnce(new Error('IPC 网络错误'));
 
     await callbacks.onConfigSave!(makeFormConfig());
@@ -201,7 +201,7 @@ describe('settingsController', () => {
 
   it('loadConfig 静默模式未过期应调用 silentRecoveryCallback', async () => {
     const futureTime = new Date(Date.now() + 60_000).toISOString();
-    const getConfig = (globalThis as { electronAPI: { getConfig: vi.Mock } }).electronAPI.getConfig;
+    const getConfig = (globalThis as unknown as { electronAPI: { getConfig: ReturnType<typeof vi.fn> } }).electronAPI.getConfig;
     getConfig.mockResolvedValueOnce({
       config: makeFormConfig({ silentMode: true, silentModeExpiresAt: futureTime } as unknown as SpriteConfigForm),
     });
@@ -219,11 +219,11 @@ describe('settingsController', () => {
 
   it('loadConfig 静默模式已过期应自动关闭静默模式', async () => {
     const pastTime = new Date(Date.now() - 60_000).toISOString();
-    const getConfig = (globalThis as { electronAPI: { getConfig: vi.Mock } }).electronAPI.getConfig;
+    const getConfig = (globalThis as unknown as { electronAPI: { getConfig: ReturnType<typeof vi.fn> } }).electronAPI.getConfig;
     getConfig.mockResolvedValueOnce({
       config: makeFormConfig({ silentMode: true, silentModeExpiresAt: pastTime } as unknown as SpriteConfigForm),
     });
-    const updateConfig = (globalThis as { electronAPI: { updateConfig: vi.Mock } }).electronAPI.updateConfig;
+    const updateConfig = (globalThis as unknown as { electronAPI: { updateConfig: ReturnType<typeof vi.fn> } }).electronAPI.updateConfig;
 
     await controller.loadConfig();
 
@@ -231,12 +231,12 @@ describe('settingsController', () => {
     expect(updateConfig).toHaveBeenCalledWith('silentMode', false);
     expect(updateConfig).toHaveBeenCalledWith('silentModeExpiresAt', null);
     const showToast = uiManager.showToast as unknown as { mock: { calls: unknown[][] } };
-    const recoveryToast = showToast.mock.calls.find((c) => c[0]?.includes?.('自动恢复'));
+    const recoveryToast = showToast.mock.calls.find((c) => (c[0] as string)?.includes?.('自动恢复'));
     expect(recoveryToast).toBeDefined();
   });
 
   it('loadConfig 加载失败应显示错误横幅', async () => {
-    const getConfig = (globalThis as { electronAPI: { getConfig: vi.Mock } }).electronAPI.getConfig;
+    const getConfig = (globalThis as unknown as { electronAPI: { getConfig: ReturnType<typeof vi.fn> } }).electronAPI.getConfig;
     getConfig.mockRejectedValueOnce(new Error('配置文件损坏'));
 
     await controller.loadConfig();
@@ -248,7 +248,7 @@ describe('settingsController', () => {
   // ─── loadLlmConfig ─────────────────────────────────────
 
   it('loadLlmConfig 加载失败应显示错误横幅', async () => {
-    const getLlmConfig = (globalThis as { electronAPI: { getLlmConfig: vi.Mock } }).electronAPI.getLlmConfig;
+    const getLlmConfig = (globalThis as unknown as { electronAPI: { getLlmConfig: ReturnType<typeof vi.fn> } }).electronAPI.getLlmConfig;
     getLlmConfig.mockRejectedValueOnce(new Error('LLM 配置缺失'));
 
     await controller.loadLlmConfig();
@@ -261,7 +261,7 @@ describe('settingsController', () => {
     await controller.loadLlmConfig();
 
     // Provider 列表应被刷新（C1 修复核心：每次 loadLlmConfig 都同步 loadProviderList）
-    expect(uiManager.settingsPanelManager.loadProviderList).toHaveBeenCalled();
+    expect(uiManager.settingsCoordinator.settingsPanelManager.loadProviderList).toHaveBeenCalled();
     // Embedding 配置也应加载
     expect(uiManager.loadEmbeddingConfig).toHaveBeenCalled();
     expect(uiManager.hideSettingsError).toHaveBeenCalled();
