@@ -67,7 +67,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
     const body: Record<string, unknown> = {
       model,
       messages: this.formatMessages(messages),
-      temperature: opts.temperature ?? 0.7,
+      // temperature 透传：未配置时省略该字段，由 LLM 服务端应用其默认值
+      temperature: opts.temperature,
       stream: true,
     };
 

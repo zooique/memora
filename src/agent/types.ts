@@ -178,7 +178,7 @@ export interface AgentOptions {
   backgroundProvider?: LlmProvider;
   /** 配置目录（personas/rules/skills） */
   configDir?: string;
-  /** 记忆数据目录（默认 ~/.memora） */
+  /** 记忆数据目录（由宿主显式注入） */
   dataDir?: string;
   /** 项目注册表目录（默认与 dataDir 相同）。设为用户级路径可避免每项目重复存储 */
   registryDir?: string;

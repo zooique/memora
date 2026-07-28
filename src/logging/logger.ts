@@ -173,8 +173,9 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     const { mkdirSync, createWriteStream, statSync, truncateSync } = await import('node:fs');
     const { expandHome } = await import('@/utils/path.js');
 
-    const dataDir = process.env['MEMORA_DATA_DIR'] ?? '~/.memora';
-    const resolvedDataDir = resolve(expandHome(dataDir));
+    // 日志目录由宿主通过 MEMORA_DATA_DIR 环境变量注入；未设置时跳过文件日志
+    const dataDir = process.env['MEMORA_DATA_DIR'];
+    const resolvedDataDir = dataDir ? resolve(expandHome(dataDir)) : null;
 
     // pino.StreamEntry 类型在 pino 未安装时不可用，用内联类型
     const streams: Array<{ level: string; stream: NodeJS.WritableStream }> = [];
@@ -186,7 +187,7 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
 
     // 文件流（结构化 JSON，方便后续分析）
     // 日志轮转保护——超过 10MB 时截断重写，防止长期运行生成巨大文件
-    if (fileEnabled) {
+    if (fileEnabled && resolvedDataDir) {
       try {
         const logsDir = resolve(resolvedDataDir, 'logs');
         mkdirSync(logsDir, { recursive: true });

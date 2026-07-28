@@ -43,7 +43,10 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    expect(Object.keys(AGENT_CONSTANTS)).toHaveLength(10);
+    // 9 个字段：CHAT_LOCK_TIMEOUT_MS / SHUTDOWN_ARCHIVE_TIMEOUT_MS / CHAT_INPUT_MAX_LENGTH /
+    // DECAY_INTERVAL_MS / DEFAULT_MAX_CONTEXT_TOKENS / DEFAULT_RECALL_EXCLUDE_SOURCES /
+    // DEFAULT_LOCALE / DEFAULT_RECALL_LIMIT / DEFAULT_RECENT_HISTORY_ROUNDS
+    expect(Object.keys(AGENT_CONSTANTS)).toHaveLength(9);
   });
 });
 

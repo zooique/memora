@@ -224,7 +224,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     super();
     this.#config = {
       projectPath: opts.projectPath,
-      dataDir: opts.dataDir ?? AGENT_CONSTANTS.DEFAULT_DATA_DIR,
+      dataDir: opts.dataDir!,
       registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
       personaName: opts.persona,

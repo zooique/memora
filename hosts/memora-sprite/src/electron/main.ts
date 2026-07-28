@@ -568,6 +568,9 @@ function setupAgentReady(
 }
 
 async function initializeApp(): Promise<void> {
+  // 注入日志目录到环境变量，供内核 pino logger 创建文件流
+  process.env['MEMORA_DATA_DIR'] = DEFAULT_DATA_DIR;
+
   // 安全：单实例锁
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {

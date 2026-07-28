@@ -1,11 +1,10 @@
 /**
  * 配置加载
  *
- * 优先级（高 → 低）：
- * 1. --config 命令行参数
+ * 查找顺序（高 → 低）：
+ * 1. 显式 configPath（由宿主传入，如用户级配置路径）
  * 2. 项目级 .memora/config.json
- * 3. 用户级 ~/.memora/config.json
- * 4. 内置默认值
+ * 3. 内置默认值（仅提供机制，不预设厂商/路径策略——ADR-002 + ADR-003）
  *
  * API Key 从环境变量读取（不写入配置文件）
  *
@@ -16,7 +15,6 @@
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { configError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
@@ -75,9 +73,9 @@ interface BackgroundConfig {
 /**
  * LLM 配置接口
  *
- * provider 允许任意字符串：预设（mock/deepseek/doubao/openai）开箱即用，
- * 自定义 provider（如 mimo、自部署模型）只要显式配 baseUrl + model 即可
- * 详见 ADR-003
+ * provider 允许任意字符串：内核仅内置 'mock' 一种机制（用于无 API Key 的测试/降级），
+ * 其他厂商 provider（deepseek/openai/doubao 等）需宿主或用户显式配置 baseUrl + model。
+ * 详见 ADR-003（内核只提供机制，不预设厂商策略）
  */
 interface LlmConfig {
   // 旧格式：单一 provider 扁平字段（向后兼容，providers 未配置时生效）
@@ -169,11 +167,13 @@ export interface Config {
 const DEFAULT_CONFIG: Config = {
   llm: {
     provider: 'mock',
-    model: 'deepseek-chat',
+    // model 留空：factory.ts 会校验并抛出 'LLM model 未配置'，由宿主显式填充
+    model: '',
     temperature: 0.7,
   },
   memory: {
-    dataDir: '~/.memora',
+    // dataDir 留空：由宿主显式注入，内核不硬编码具体目录路径（ADR-002 v0.6）
+    dataDir: '',
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   },
   security: {
@@ -444,6 +444,9 @@ function parseEmbedding(value: unknown): EmbeddingConfig | undefined {
  * 单一真理源：所有默认值由 DEFAULT_CONFIG 声明，
  * 不再维护独立的 schema（避免两处真理源打架）。
  *
+ * 查找顺序：显式 configPath → 项目级 .memora/config.json → 内置默认值。
+ * 用户级配置路径由宿主通过 configPath 显式传入。
+ *
  * @param configPath 显式指定的配置文件路径
  */
 export async function loadConfig(configPath?: string): Promise<Config> {
@@ -459,26 +462,14 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     const config = await readJsonFile(projectPath);
     return expandEnvVars(mergeWithDefaults(config));
   } catch (err) {
-    // 项目级不可用（不存在/损坏/权限），继续尝试用户级
+    // 项目级不可用（不存在/损坏/权限），使用内置默认值
     // 排除 ENOENT（正常情况），其他错误应暴露根因供诊断
     if (!isEnoent(err)) {
-      logger.warn({ path: projectPath, err: toError(err) }, '项目级配置加载失败，回退到用户级');
+      logger.warn({ path: projectPath, err: toError(err) }, '项目级配置加载失败，使用默认值');
     }
   }
 
-  // 3. 用户级
-  const userPath = resolve(homedir(), '.memora/config.json');
-  try {
-    const config = await readJsonFile(userPath);
-    return expandEnvVars(mergeWithDefaults(config));
-  } catch (err) {
-    // 用户级不可用，使用默认值（单一真理源）
-    if (!isEnoent(err)) {
-      logger.warn({ path: userPath, err: toError(err) }, '用户级配置加载失败，使用默认值');
-    }
-  }
-
-  // 4. 内置默认：parseConfig({}) 让默认值生效
+  // 3. 内置默认：parseConfig({}) 让默认值生效
   return expandEnvVars(parseConfig({}));
 }
 

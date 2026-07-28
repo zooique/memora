@@ -49,9 +49,6 @@ export const AGENT_CONSTANTS = {
 
   /** 最近对话历史注入轮数。3 轮（3 条 user + 3 条 assistant）。 */
   DEFAULT_RECENT_HISTORY_ROUNDS: 3,
-
-  /** 默认数据目录（未通过 AgentOptions.dataDir 指定时使用）。 */
-  DEFAULT_DATA_DIR: '~/.memora',
 } as const;
 
 /**

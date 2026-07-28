@@ -4,23 +4,11 @@
  * 覆盖 loadConfig / expandEnvVars / mergeWithDefaults
  * 未覆盖分支：expandEnvVars 空值分支、默认配置降级
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadConfig } from '@/config/loader.js';
-
-// ─── Mock node:os 模块（ESM 无法 spy 具名导出，改用 vi.mock） ──
-// hoisted 变量让每个测试可动态设置 homedir 返回值
-const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: { value: '' } }));
-vi.mock('node:os', async (importOriginal) => {
-  // 显式类型断言避免 spread types 报错（不用 as any，符合零容忍规则）
-  const actual = (await importOriginal()) as Record<string, unknown>;
-  return {
-    ...actual,
-    homedir: () => mockHomedir.value,
-  };
-});
 
 describe('config/loader · loadConfig', () => {
   let tmpHome: string;
@@ -451,7 +439,7 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
   });
 });
 
-describe('config/loader · K3 用户级回退与默认降级', () => {
+describe('config/loader · 默认配置降级', () => {
   let tmpHome: string;
   let originalCwd: () => string;
 
@@ -464,45 +452,20 @@ describe('config/loader · K3 用户级回退与默认降级', () => {
 
   afterEach(() => {
     process.cwd = originalCwd;
-    // 重置 homedir mock
-    mockHomedir.value = '';
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('项目级不存在时应回退到用户级配置', async () => {
-    // 写入用户级配置到 user-home/.memora/config.json
-    const userDir = join(tmpHome, 'user-home');
-    mkdirSync(join(userDir, '.memora'), { recursive: true });
-    writeFileSync(
-      join(userDir, '.memora', 'config.json'),
-      JSON.stringify({
-        llm: { provider: 'user-level', model: 'user-model' },
-      }),
-      'utf-8',
-    );
-
-    // 通过 hoisted 变量设置 homedir 返回值
-    mockHomedir.value = userDir;
-
+  it('项目级不存在时应返回内置默认值（机制不预设策略）', async () => {
+    // 内核只提供机制，不预设厂商/路径策略（ADR-002 + ADR-003）
+    // model/dataDir 留空：由宿主显式注入，factory.ts 会校验 model 非空
     const config = await loadConfig();
-    expect(config.llm.provider).toBe('user-level');
-    expect(config.llm.model).toBe('user-model');
-  });
-
-  it('项目级和用户级都不存在时应返回内置默认值', async () => {
-    // homedir 指向空目录（无 .memora/config.json）
-    const emptyHome = join(tmpHome, 'empty-home');
-    mkdirSync(emptyHome, { recursive: true });
-    mockHomedir.value = emptyHome;
-
-    const config = await loadConfig();
-    // 默认值断言（单一真理源：schema default）
-    // provider='mock'：无 API Key 时不调用真实 API
-    // model='deepseek-chat'：合理默认值，用户配 apiKey 后切换 provider 即可用
+    // provider='mock'：唯一内置机制，无 API Key 时不调用真实 API
     expect(config.llm.provider).toBe('mock');
-    expect(config.llm.model).toBe('deepseek-chat');
+    // model 留空：内核不预设厂商模型，由宿主显式填充
+    expect(config.llm.model).toBe('');
     expect(config.llm.temperature).toBe(0.7);
-    expect(config.memory.dataDir).toBe('~/.memora');
+    // dataDir 留空：由宿主通过 configPath 或显式注入，内核不硬编码路径（ADR-002）
+    expect(config.memory.dataDir).toBe('');
     expect(config.memory.maxContextTokens).toBe(120_000);
     expect(config.security.permission).toBe('owner');
     expect(config.security.confirmWrites).toBe(false);
