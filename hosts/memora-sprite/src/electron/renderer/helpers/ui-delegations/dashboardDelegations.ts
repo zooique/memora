@@ -58,19 +58,19 @@ export interface DashboardDelegations {
   repaintCanvasOnThemeChange(): void;
 }
 
-/** Dashboard + Perception 委托群实现——纯透传到 dashboardPanel / perceptionPanel / memoryPanel / spriteStatusPopover / settingsPanelManager */
+/** Dashboard + Perception 委托群实现——纯透传到 perceptionCoordinator 3 子模块（dashboardPanel/perceptionPanel/spriteStatusPopover）+ memoryPanel */
 export const dashboardDelegations: DashboardDelegations = {
   renderDashboardStats(this: UIManager, data: DashboardViewModel): void {
-    this.dashboardPanel.renderDashboardStats(data);
+    this.perceptionCoordinator.dashboardPanel.renderDashboardStats(data);
   },
   renderAgentMetrics(this: UIManager, metrics: AgentMetrics | null): void {
-    this.dashboardPanel.renderAgentMetrics(metrics);
+    this.perceptionCoordinator.dashboardPanel.renderAgentMetrics(metrics);
   },
   renderSourceHealth(this: UIManager, sourceHealth: SourceHealth | null): void {
-    this.dashboardPanel.renderSourceHealth(sourceHealth);
+    this.perceptionCoordinator.dashboardPanel.renderSourceHealth(sourceHealth);
   },
   renderReviewData(this: UIManager, review: ReviewDataPayload): void {
-    this.dashboardPanel.renderReviewData(review);
+    this.perceptionCoordinator.dashboardPanel.renderReviewData(review);
   },
   showInsightsLoading(this: UIManager): void {
     this.memoryPanel.showInsightsLoading();
@@ -83,7 +83,7 @@ export const dashboardDelegations: DashboardDelegations = {
   },
   onPartnerMemoryClick(this: UIManager, cb: (memoryId: string) => void): void {
     this.memoryPanel.onPartnerMemoryClick(cb);
-    this.perceptionPanel.onMemoryClick(cb);
+    this.perceptionCoordinator.perceptionPanel.onMemoryClick(cb);
   },
   showInsightsError(this: UIManager): void {
     this.memoryPanel.showInsightsError();
@@ -98,31 +98,31 @@ export const dashboardDelegations: DashboardDelegations = {
     this.memoryPanel.showHealthError();
   },
   showMemoryListError(this: UIManager, listEl: HTMLElement): void {
-    this.dashboardPanel.showMemoryListError(listEl);
+    this.perceptionCoordinator.dashboardPanel.showMemoryListError(listEl);
   },
   pulseCounter(this: UIManager, id: string): void {
-    this.dashboardPanel.pulseCounter(id);
+    this.perceptionCoordinator.dashboardPanel.pulseCounter(id);
   },
   updateAffectDisplay(this: UIManager, affect: AffectPayload): void {
-    this.perceptionPanel.updateAffectDisplay(affect);
-    this.spriteStatusPopover.updateAffect(affect);
+    this.perceptionCoordinator.perceptionPanel.updateAffectDisplay(affect);
+    this.perceptionCoordinator.spriteStatusPopover.updateAffect(affect);
   },
   updateRapportDisplay(this: UIManager, rapport: RapportPayload): void {
-    this.perceptionPanel.updateRapportDisplay(rapport);
-    this.spriteStatusPopover.updateRapport(rapport);
+    this.perceptionCoordinator.perceptionPanel.updateRapportDisplay(rapport);
+    this.perceptionCoordinator.spriteStatusPopover.updateRapport(rapport);
   },
   updateContextDisplay(this: UIManager, context: ContextPayload): void {
-    this.perceptionPanel.updateContextDisplay(context);
-    this.spriteStatusPopover.updateContext(context);
+    this.perceptionCoordinator.perceptionPanel.updateContextDisplay(context);
+    this.perceptionCoordinator.spriteStatusPopover.updateContext(context);
   },
   updatePatternsDisplay(this: UIManager, payload: PatternsPayload): void {
-    this.perceptionPanel.updatePatternsDisplay(payload);
+    this.perceptionCoordinator.perceptionPanel.updatePatternsDisplay(payload);
   },
   updatePresenceDisplay(this: UIManager, payload: PresencePayload): void {
-    this.perceptionPanel.updatePresenceDisplay(payload);
+    this.perceptionCoordinator.perceptionPanel.updatePresenceDisplay(payload);
   },
   updateNarrative(this: UIManager): void {
-    this.perceptionPanel.updateNarrative();
+    this.perceptionCoordinator.perceptionPanel.updateNarrative();
   },
   onReloadInsights(this: UIManager, cb: () => void): void {
     this.memoryPanel.onReloadInsights(cb);
@@ -138,10 +138,10 @@ export const dashboardDelegations: DashboardDelegations = {
     this.memoryPanel.onResetCompletionStats(cb);
   },
   onReloadMemoryList(this: UIManager, cb: () => void): void {
-    this.dashboardPanel.onReloadMemoryList(cb);
+    this.perceptionCoordinator.dashboardPanel.onReloadMemoryList(cb);
   },
   repaintCanvasOnThemeChange(this: UIManager): void {
-    this.dashboardPanel.repaintOnThemeChange();
+    this.perceptionCoordinator.dashboardPanel.repaintOnThemeChange();
     this.memoryPanel.repaintOnThemeChange();
   },
 };

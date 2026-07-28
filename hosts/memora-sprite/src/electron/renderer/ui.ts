@@ -99,6 +99,8 @@ import { settingsModalDelegations } from './helpers/ui-delegations/settingsModal
 import type { SettingsModalDelegations } from './helpers/ui-delegations/settingsModalDelegations.js';
 import { miscDelegations } from './helpers/ui-delegations/miscDelegations.js';
 import type { MiscDelegations } from './helpers/ui-delegations/miscDelegations.js';
+// 感知/仪表盘域二级协调器（封装 dashboardPanel + perceptionPanel + spriteStatusPopover）
+import { PerceptionCoordinator } from './coordination/perceptionCoordinator.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -157,12 +159,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   chatPanel: ChatPanelManager;
   /** 记忆面板管理器（列表渲染、搜索过滤、详情弹窗） */
   memoryPanel: MemoryPanelManager;
-  /** 仪表盘面板管理器（感知系统 + 仪表盘渲染） */
-  dashboardPanel: DashboardPanelManager;
-  /** 感知面板管理器（独立感知面板，完整版感知数据展示 + 叙事摘要） */
-  perceptionPanel: PerceptionPanelManager;
-  /** 精灵状态浮层（hover 弹出轻量感知摘要，与 PerceptionPanelManager 共享数据源） */
-  spriteStatusPopover: SpriteStatusPopover;
+  /** 感知/仪表盘域协调器（封装 dashboardPanel + perceptionPanel + spriteStatusPopover） */
+  perceptionCoordinator: PerceptionCoordinator;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   personaPanel: PersonaPanelManager;
   /**
@@ -331,14 +329,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       new EventTracker(),
     );
 
+    // 感知/仪表盘域协调器（3 字段集中初始化）
+    this.perceptionCoordinator = new PerceptionCoordinator();
     // 仪表盘面板管理器（感知系统 + 仪表盘渲染）
-    this.dashboardPanel = new DashboardPanelManager(new EventTracker());
-
+    this.perceptionCoordinator.dashboardPanel = new DashboardPanelManager(new EventTracker());
     // 感知面板管理器（独立感知面板，完整版感知数据展示）
-    this.perceptionPanel = new PerceptionPanelManager(this as PerceptionPanelHost);
-
+    this.perceptionCoordinator.perceptionPanel = new PerceptionPanelManager(this as PerceptionPanelHost);
     // 精灵状态浮层（hover 弹出轻量感知摘要）
-    this.spriteStatusPopover = new SpriteStatusPopover();
+    this.perceptionCoordinator.spriteStatusPopover = new SpriteStatusPopover();
 
     // 角色选择器面板管理器
     this.personaPanel = new PersonaPanelManager(
@@ -381,7 +379,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.initEventListeners();
     this.memoryPanel.initMemoryPanelListeners();
     // 感知面板（精灵状态/模式洞察）需独立 EventTracker 以绑定动态"关联记忆"按钮点击
-    this.perceptionPanel.init(new EventTracker());
+    this.perceptionCoordinator.perceptionPanel.init(new EventTracker());
     this.personaPanel.initPersonaSelectorListeners();
     this.settingsPanelManager.initListeners();
     // 精灵设定面板管理器事件初始化（与 settingsPanelManager 同模式）
@@ -455,9 +453,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 清理面板管理器
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
-    this.dashboardPanel.cleanup(); // 清理仪表盘脉冲定时器与重试按钮事件
-    this.perceptionPanel.cleanup(); // 清理感知面板资源
-    this.spriteStatusPopover.cleanup(); // 清理精灵状态浮层 hover 事件和定时器
+    // 感知/仪表盘域协调器集中清理（3 子模块：dashboardPanel + perceptionPanel + spriteStatusPopover）
+    this.perceptionCoordinator.cleanup();
     this.personaPanel.cleanup();
     // 清理命令面板的全局 keydown 监听器，避免页面重载后累积
     this.commandPaletteManager.cleanup();
@@ -910,7 +907,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       listEl.appendChild(loadingDiv);
     } else {
       // 错误态：复用 DashboardPanelManager 的 showMemoryListError（含重试按钮）
-      this.dashboardPanel.showMemoryListError(listEl);
+      this.perceptionCoordinator.dashboardPanel.showMemoryListError(listEl);
     }
   }
 
@@ -953,17 +950,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     proactiveStats?: ProactiveStats;
     presence?: { state: 'present' | 'away'; awayDurationMs?: number };
   }): void {
-    this.perceptionPanel.renderPerceptionSnapshot(snapshot);
+    this.perceptionCoordinator.perceptionPanel.renderPerceptionSnapshot(snapshot);
     // 同步更新精灵状态浮层：首次加载/切换面板时 popover 也需初始化数据，
     // 否则 hover 状态条时摘要为空（popover 仅缓存 affect/rapport/context 三类）
-    if (snapshot.affect) this.spriteStatusPopover.updateAffect(snapshot.affect as AffectPayload);
-    if (snapshot.rapport) this.spriteStatusPopover.updateRapport(snapshot.rapport as RapportPayload);
-    if (snapshot.context) this.spriteStatusPopover.updateContext(snapshot.context as ContextPayload);
+    if (snapshot.affect) this.perceptionCoordinator.spriteStatusPopover.updateAffect(snapshot.affect as AffectPayload);
+    if (snapshot.rapport) this.perceptionCoordinator.spriteStatusPopover.updateRapport(snapshot.rapport as RapportPayload);
+    if (snapshot.context) this.perceptionCoordinator.spriteStatusPopover.updateContext(snapshot.context as ContextPayload);
   }
   /** 更新主动提示统计展示（委托到 PerceptionPanelManager） */
   updateProactiveStatsDisplay(stats: unknown): void {
-    const typedStats = stats as Parameters<typeof this.perceptionPanel.updateProactiveStatsDisplay>[0];
-    this.perceptionPanel.updateProactiveStatsDisplay(typedStats);
+    const typedStats = stats as Parameters<typeof this.perceptionCoordinator.perceptionPanel.updateProactiveStatsDisplay>[0];
+    this.perceptionCoordinator.perceptionPanel.updateProactiveStatsDisplay(typedStats);
   }
 
   // ─── 设置面板（含业务逻辑的方法，纯透传委托见 settingsModalDelegations） ──

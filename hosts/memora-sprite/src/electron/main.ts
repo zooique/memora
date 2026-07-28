@@ -72,6 +72,8 @@ import { safeSendToWindow } from './windows/windowUtils.js';
 import { AgentRuntime } from './runtime/agentRuntime.js';
 // WindowService：窗口/托盘基础设施状态容器（封装 windowStateManager + windowManager + interaction + trayManager 4 个字段）
 import { WindowService } from './runtime/windowService.js';
+// QuickInputService：快速输入/剪贴板基础设施状态容器（封装 clipboardHandler + quickInputWindow 2 个字段）
+import { QuickInputService } from './runtime/quickInputService.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 

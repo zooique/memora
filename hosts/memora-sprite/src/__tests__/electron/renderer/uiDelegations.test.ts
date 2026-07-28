@@ -36,33 +36,65 @@ import type { UIManager } from '../../../electron/renderer/ui.js';
  * 创建 mock UIManager 上下文
  *
  * 委托方法的 this 类型为 UIManager，实际只访问其持有的子模块实例。
- * 用 Proxy 动态返回 vi.fn() 容器，避免手写所有子模块。
+ * 用深度 Proxy 动态返回 vi.fn() 容器，支持任意层级的属性访问
+ * （如 mock.perceptionCoordinator.dashboardPanel.xxx）。
+ *
+ * 每个 createDeepMock() 既是 vi.fn()（可调用、支持 mock API）又是 Proxy
+ * （属性访问返回新的 createDeepMock()），确保多级嵌套路径正确工作。
  */
-function createMockThis(): UIManager & Record<string, Record<string, ReturnType<typeof vi.fn>>> {
-  const cache = new Map<string, Record<string, ReturnType<typeof vi.fn>>>();
+
+// vi.fn() 的 mock API 属性集合——这些属性从 vi.fn() 自身获取，不返回嵌套 mock
+const MOCK_API_PROPS = new Set([
+  'mock', '_isMockFunction', 'mockReturnValue', 'mockReturnValueOnce',
+  'mockResolvedValue', 'mockResolvedValueOnce', 'mockRejectedValue', 'mockRejectedValueOnce',
+  'mockImplementation', 'mockImplementationOnce', 'mockReset', 'mockClear',
+  'mockRestore', 'getMockName', 'withImplementation',
+]);
+
+/**
+ * 创建深度嵌套的 mock 函数
+ *
+ * 返回一个既是 vi.fn() 又是 Proxy 的对象：
+ * - 可调用（vi.fn() 特性，记录调用用于断言）
+ * - mock API 属性（mockReturnValue 等）从 vi.fn() 获取
+ * - 其他属性访问返回新的 createDeepMock()，支持任意深度嵌套
+ */
+function createDeepMock(): ReturnType<typeof vi.fn> & Record<string, ReturnType<typeof vi.fn>> {
+  const fn = vi.fn();
+  const cache = new Map<string, ReturnType<typeof vi.fn> & Record<string, ReturnType<typeof vi.fn>>>();
+  return new Proxy(fn, {
+    get(target, prop: string | symbol, receiver: any) {
+      // Symbol 属性和 thenable 检查属性从 target 获取（返回 undefined 避免被当作 Promise）
+      if (typeof prop === 'symbol' || prop === 'then' || prop === 'catch' || prop === 'finally') {
+        return Reflect.get(target, prop, receiver);
+      }
+      // vi.fn() 的 mock API 从 target 获取
+      if (MOCK_API_PROPS.has(prop)) {
+        return Reflect.get(target, prop, receiver);
+      }
+      // 其他属性返回嵌套 mock（支持任意深度访问）
+      if (!cache.has(prop)) {
+        cache.set(prop, createDeepMock());
+      }
+      return cache.get(prop);
+    },
+  }) as ReturnType<typeof vi.fn> & Record<string, ReturnType<typeof vi.fn>>;
+}
+
+function createMockThis(): UIManager & Record<string, ReturnType<typeof vi.fn>> {
+  const cache = new Map<string, ReturnType<typeof vi.fn> & Record<string, ReturnType<typeof vi.fn>>>();
   const proxy = new Proxy(
     {},
     {
       get(_target, prop: string) {
         if (!cache.has(prop)) {
-          // 子模块本身是对象，其方法用 vi.fn 占位
-          cache.set(prop, new Proxy(
-            {},
-            {
-              get(_t, method: string) {
-                if (!(_t as Record<string, ReturnType<typeof vi.fn>>)[method]) {
-                  (_t as Record<string, ReturnType<typeof vi.fn>>)[method] = vi.fn();
-                }
-                return (_t as Record<string, ReturnType<typeof vi.fn>>)[method];
-              },
-            },
-          ) as Record<string, ReturnType<typeof vi.fn>>);
+          cache.set(prop, createDeepMock());
         }
         return cache.get(prop);
       },
     },
   );
-  return proxy as unknown as UIManager & Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+  return proxy as unknown as UIManager & Record<string, ReturnType<typeof vi.fn>>;
 }
 
 beforeEach(() => {
@@ -299,7 +331,7 @@ describe('dashboardDelegations', () => {
     const mock = createMockThis();
     const data = { totalMemories: 10 } as never;
     dashboardDelegations.renderDashboardStats.call(mock as UIManager, data);
-    expect(mock.dashboardPanel.renderDashboardStats).toHaveBeenCalledWith(data);
+    expect(mock.perceptionCoordinator.dashboardPanel.renderDashboardStats).toHaveBeenCalledWith(data);
   });
 
   it('onPartnerMemoryClick 应多目标委托到 memoryPanel 和 perceptionPanel', () => {
@@ -307,37 +339,37 @@ describe('dashboardDelegations', () => {
     const cb = vi.fn();
     dashboardDelegations.onPartnerMemoryClick.call(mock as UIManager, cb);
     expect(mock.memoryPanel.onPartnerMemoryClick).toHaveBeenCalledWith(cb);
-    expect(mock.perceptionPanel.onMemoryClick).toHaveBeenCalledWith(cb);
+    expect(mock.perceptionCoordinator.perceptionPanel.onMemoryClick).toHaveBeenCalledWith(cb);
   });
 
   it('updateAffectDisplay 应多目标委托到 perceptionPanel 和 spriteStatusPopover', () => {
     const mock = createMockThis();
     const affect = { warmth: 0.8 } as never;
     dashboardDelegations.updateAffectDisplay.call(mock as UIManager, affect);
-    expect(mock.perceptionPanel.updateAffectDisplay).toHaveBeenCalledWith(affect);
-    expect(mock.spriteStatusPopover.updateAffect).toHaveBeenCalledWith(affect);
+    expect(mock.perceptionCoordinator.perceptionPanel.updateAffectDisplay).toHaveBeenCalledWith(affect);
+    expect(mock.perceptionCoordinator.spriteStatusPopover.updateAffect).toHaveBeenCalledWith(affect);
   });
 
   it('updateRapportDisplay 应多目标委托到 perceptionPanel 和 spriteStatusPopover', () => {
     const mock = createMockThis();
     const rapport = { level: 'high' } as never;
     dashboardDelegations.updateRapportDisplay.call(mock as UIManager, rapport);
-    expect(mock.perceptionPanel.updateRapportDisplay).toHaveBeenCalledWith(rapport);
-    expect(mock.spriteStatusPopover.updateRapport).toHaveBeenCalledWith(rapport);
+    expect(mock.perceptionCoordinator.perceptionPanel.updateRapportDisplay).toHaveBeenCalledWith(rapport);
+    expect(mock.perceptionCoordinator.spriteStatusPopover.updateRapport).toHaveBeenCalledWith(rapport);
   });
 
   it('updateContextDisplay 应多目标委托到 perceptionPanel 和 spriteStatusPopover', () => {
     const mock = createMockThis();
     const ctx = { focus: 'coding' } as never;
     dashboardDelegations.updateContextDisplay.call(mock as UIManager, ctx);
-    expect(mock.perceptionPanel.updateContextDisplay).toHaveBeenCalledWith(ctx);
-    expect(mock.spriteStatusPopover.updateContext).toHaveBeenCalledWith(ctx);
+    expect(mock.perceptionCoordinator.perceptionPanel.updateContextDisplay).toHaveBeenCalledWith(ctx);
+    expect(mock.perceptionCoordinator.spriteStatusPopover.updateContext).toHaveBeenCalledWith(ctx);
   });
 
   it('repaintCanvasOnThemeChange 应多目标委托到 dashboardPanel 和 memoryPanel', () => {
     const mock = createMockThis();
     dashboardDelegations.repaintCanvasOnThemeChange.call(mock as UIManager);
-    expect(mock.dashboardPanel.repaintOnThemeChange).toHaveBeenCalled();
+    expect(mock.perceptionCoordinator.dashboardPanel.repaintOnThemeChange).toHaveBeenCalled();
     expect(mock.memoryPanel.repaintOnThemeChange).toHaveBeenCalled();
   });
 
@@ -345,13 +377,13 @@ describe('dashboardDelegations', () => {
     const mock = createMockThis();
     const el = document.createElement('div');
     dashboardDelegations.showMemoryListError.call(mock as UIManager, el);
-    expect(mock.dashboardPanel.showMemoryListError).toHaveBeenCalledWith(el);
+    expect(mock.perceptionCoordinator.dashboardPanel.showMemoryListError).toHaveBeenCalledWith(el);
   });
 
   it('pulseCounter 应透传 id', () => {
     const mock = createMockThis();
     dashboardDelegations.pulseCounter.call(mock as UIManager, 'counter-1');
-    expect(mock.dashboardPanel.pulseCounter).toHaveBeenCalledWith('counter-1');
+    expect(mock.perceptionCoordinator.dashboardPanel.pulseCounter).toHaveBeenCalledWith('counter-1');
   });
 });
 
