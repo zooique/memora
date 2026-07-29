@@ -1048,10 +1048,10 @@ export class SettingsPanelManager {
         // 勾选图标（绿色，CSS .save-status-indicator.saved 控制颜色）
         setIcon(iconEl, 'icon-check');
         textEl.textContent = '已保存';
-        // 8 秒后恢复为空闲状态（让用户有充足时间感知反馈）
+        // UX-16：3 秒后恢复为空闲状态（足以感知反馈，避免指示器长期占用视觉空间）
         this.timers.setTimeout(() => {
           this.updateSaveStatus('idle');
-        }, 8000);
+        }, 3000);
         break;
       case 'error':
         this.saveStatusEl.classList.add('error');

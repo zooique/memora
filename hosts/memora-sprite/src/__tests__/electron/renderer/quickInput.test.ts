@@ -867,6 +867,38 @@ describe('QuickInputController', () => {
 
       expect(api.closeQuickInput).toHaveBeenCalled();
     });
+
+    it('FUNC-3：提交中（isSubmitting）ESC 不关闭窗口（paste 不可逆，保留 Toast 反馈）', async () => {
+      const { inputField, api } = await createController({ inputValue: '测试' });
+      const confirmSpy = api.confirmQuickInput as ReturnType<typeof vi.fn>;
+
+      // 延迟 resolve，让 isSubmitting 状态可观测
+      let resolveConfirm!: (value: unknown) => void;
+      confirmSpy.mockReturnValueOnce(new Promise((r) => { resolveConfirm = r; }));
+
+      // 触发提交
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      inputField.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+      await vi.runAllTimersAsync();
+      await Promise.resolve();
+
+      // 提交中按 ESC
+      const escEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+      inputField.dispatchEvent(escEvent);
+      await vi.runAllTimersAsync();
+
+      // 验证 ESC 未触发关闭
+      expect(api.closeQuickInput).not.toHaveBeenCalled();
+
+      // 提交完成后 ESC 恢复关闭能力
+      resolveConfirm({ success: true, mode: 'copy' });
+      await vi.runAllTimersAsync();
+      await Promise.resolve();
+
+      inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await vi.runAllTimersAsync();
+      expect(api.closeQuickInput).toHaveBeenCalled();
+    });
   });
 
   // ─── cleanup ──────────────────────────────────────────

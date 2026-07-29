@@ -355,10 +355,15 @@
   background: transparent;
 }
 
-/* 归档中状态：禁用 + 降饱和（opacity 0.55 保持可辨识，避免对比度过低） */
+/* 归档中状态：禁用 + 降饱和 + 图标旋转反馈（UX-17：icon-only 按钮需 spinner） */
 .message-archive-btn.archiving {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* 归档中图标旋转动画（复用 --duration-spin 令牌，与全应用 spinner 节奏一致） */
+.message-archive-btn.archiving .icon {
+  animation: spin var(--duration-spin) linear infinite;
 }
 
 /* 已归档状态：绿色确认 */

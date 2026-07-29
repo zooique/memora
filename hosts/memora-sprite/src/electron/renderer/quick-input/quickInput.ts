@@ -249,6 +249,10 @@ export class QuickInputController {
         this.tabPressed = true;
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        // FUNC-3：提交中（isSubmitting）禁用 Esc 关闭
+        // paste 不可逆是技术限制，关闭窗口会让用户失去"粘贴中..."Toast 反馈
+        // 提交完成后（isSubmitting=false）自动恢复 Esc 关闭能力
+        if (this.isSubmitting) return;
         void this.handleClose();
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
         // Ctrl+L / Cmd+L 切换常驻模式（与图钉按钮等价，键盘流不中断）

@@ -959,9 +959,9 @@ describe('RelationGraphRenderer R6 颜色解析纯函数', () => {
       expect(color).toBe('#custom');
     });
 
-    it('未知变量应返回默认 fallback #7a7a82', () => {
+    it('未知变量应返回默认 fallback --muted 浅色值 #6a6a72', () => {
       const color = resolveCssVar('--unknown-var');
-      expect(color).toBe('#7a7a82');
+      expect(color).toBe('#6a6a72');
     });
   });
 });

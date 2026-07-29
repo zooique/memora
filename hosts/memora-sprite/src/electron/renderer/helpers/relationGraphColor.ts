@@ -91,8 +91,9 @@ export function resolveCssVar(varName: string, fallback?: string): string {
   const resolved = getComputedStyle(document.documentElement)
     .getPropertyValue(varName).trim();
   if (resolved) return resolved;
-  // 优先使用显式传入的 fallback，其次查常量表
-  return fallback ?? CSS_VAR_FALLBACKS[varName as keyof typeof CSS_VAR_FALLBACKS]?.() ?? '#7a7a82';
+  // 优先使用显式传入的 fallback，其次查常量表；最终兜底委托 --muted fallback
+  // —— 未知变量语义等同于"弱化色"，与 tokens.css --muted 自动保持同步（DRY）
+  return fallback ?? CSS_VAR_FALLBACKS[varName as keyof typeof CSS_VAR_FALLBACKS]?.() ?? CSS_VAR_FALLBACKS['--muted']();
 }
 
 /**
