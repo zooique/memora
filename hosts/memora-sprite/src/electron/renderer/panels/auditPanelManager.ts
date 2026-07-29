@@ -19,7 +19,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
-import { clearElement, createEl, formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+import { clearElement, createEmptyState, formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 // bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
 import { bindRefreshButton } from '../helpers/buttonHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
@@ -159,7 +159,7 @@ export class AuditPanelManager {
 
     if (entries.length === 0) {
       clearElement(this.listEl);
-      this.listEl.appendChild(createEl('div', 'profile-empty', '暂无审计记录'));
+      this.listEl.appendChild(createEmptyState({ title: '暂无审计记录' }));
       return;
     }
 

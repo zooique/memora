@@ -153,14 +153,6 @@
   margin-bottom: var(--space-2);
 }
 
-/* 全零数据空状态 */
-.completion-stats-trend-empty {
-  padding: var(--space-4) var(--space-2);
-  text-align: center;
-  color: var(--text-3);
-  font-size: var(--font-xs);
-  font-style: italic;
-}
 
 /* 图例行 */
 .completion-stats-trend-legend {
@@ -277,11 +269,3 @@
   font-family: var(--font-mono, monospace);
 }
 
-/* 空状态提示 */
-.completion-stats-empty {
-  padding: var(--space-6) var(--space-4);
-  text-align: center;
-  color: var(--text-2);
-  font-size: var(--font-sm);
-  font-style: italic;
-}

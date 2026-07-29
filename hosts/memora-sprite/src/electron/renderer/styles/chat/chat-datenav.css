@@ -243,13 +243,6 @@
   background: var(--red-20);
 }
 
-/* 空状态 */
-.date-nav-empty {
-  padding: var(--space-4);
-  text-align: center;
-  font-size: var(--font-xs);
-  color: var(--text-4);
-}
 
 /**
  * 主动提示 banner：浅色背景 + 底部分隔线

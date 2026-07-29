@@ -18,7 +18,7 @@
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
-import { createEl } from '../helpers/domHelpers.js';
+import { createEl, createEmptyState } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { getCompletionMetrics, type CompletionEvent, type DailyAggregatedItem } from '../helpers/completionMetrics.js';
 
@@ -193,7 +193,7 @@ export class CompletionStatsRenderer {
       eventsEl.appendChild(listEl);
       container.appendChild(eventsEl);
     } else {
-      container.appendChild(createEl('div', 'completion-stats-empty', '暂无统计数据，开始使用补全功能后将自动记录'));
+      container.appendChild(createEmptyState({ title: '暂无统计数据，开始使用补全功能后将自动记录' }));
     }
   }
 
@@ -275,7 +275,7 @@ export class CompletionStatsRenderer {
     // 全零数据空状态（避免渲染无意义空图）
     const hasData = daily.some(d => d.shown > 0 || d.adopted > 0 || d.chatTurns > 0 || d.recallMoments > 0);
     if (!hasData) {
-      trendEl.appendChild(createEl('div', 'completion-stats-trend-empty', '暂无趋势数据，使用 1-2 天后可见'));
+      trendEl.appendChild(createEmptyState({ title: '暂无趋势数据，使用 1-2 天后可见' }));
       return trendEl;
     }
 

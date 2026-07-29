@@ -89,13 +89,6 @@
   overflow-y: auto;
 }
 
-/* 脉络/邻居空状态文案（无数据时的友好提示） */
-.lineage-empty {
-  padding: var(--input-padding);
-  color: var(--text-3);
-  font-size: var(--font-sm);
-  text-align: center;
-}
 
 /* 脉络/邻居加载失败状态（文案 + 内联重试按钮） */
 .lineage-error {

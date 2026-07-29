@@ -24,7 +24,7 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "搜索失败，请重试" 模板化文案）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
-import { clearElement, createEl, escapeHtml, formatClock, formatDateKey, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
+import { clearElement, createEmptyState, escapeHtml, formatClock, formatDateKey, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 // 从 shared/ 导入 escapeRegExp（纯函数，跨进程共享，消除渲染进程本地实现）
@@ -441,7 +441,7 @@ export class SearchMessagesManager {
   private renderEmpty(message: string): void {
     if (!this.resultsEl) return;
     clearElement(this.resultsEl);
-    this.resultsEl.appendChild(createEl('div', 'search-messages-empty', message));
+    this.resultsEl.appendChild(createEmptyState({ title: message }));
   }
 
   /**

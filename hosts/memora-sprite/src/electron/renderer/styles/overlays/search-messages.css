@@ -172,13 +172,6 @@
   padding: 0 1px;
 }
 
-/* 空状态：初始/无结果 */
-.search-messages-empty {
-  padding: var(--space-6) var(--space-4);
-  text-align: center;
-  font-size: var(--font-sm);
-  color: var(--muted);
-}
 
 /* 加载中状态 */
 .search-messages-loading {

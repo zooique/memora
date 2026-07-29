@@ -624,13 +624,6 @@
   overflow-y: auto;
 }
 
-/* 空状态提示 */
-.work-projection-empty {
-  text-align: center;
-  color: var(--text-3);
-  font-size: var(--font-sm);
-  padding: var(--space-6) 0 var(--space-2);
-}
 
 .work-projection-empty-hint {
   text-align: center;

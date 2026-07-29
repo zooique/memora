@@ -21,6 +21,7 @@ import { reportError, toError } from '../helpers/errorHelpers.js';
 import {
   clearElement,
   createEl,
+  createEmptyState,
   formatTimeAgo,
   getOptionalElement,
   showPanelLoading,
@@ -144,7 +145,7 @@ export class WorkProjectionPanelManager {
 
     // 空列表提示
     if (entries.length === 0) {
-      const empty = createEl('div', 'work-projection-empty', '暂无作品投影');
+      const empty = createEmptyState({ title: '暂无作品投影' });
       const hint = createEl(
         'div',
         'work-projection-empty-hint',

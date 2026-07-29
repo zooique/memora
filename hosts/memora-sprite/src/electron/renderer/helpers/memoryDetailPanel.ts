@@ -22,7 +22,7 @@
  *   参照 memoryPanelEvents.ts 的提取模式，本次为记忆详情拆分
  */
 
-import { getOptionalElement, clearElement, createEl, formatTimeAgo } from './domHelpers.js';
+import { getOptionalElement, clearElement, createEmptyState, formatTimeAgo } from './domHelpers.js';
 import { getSourceColorClass } from './sourceColor.js';
 // getSourceLabel 将 source 字符串映射为中文标签（UX-2：详情弹窗 + 演化脉络中文化）
 import { getSourceLabel } from './sourceLabel.js';
@@ -199,7 +199,7 @@ function showLineageEmpty(): void {
   const lineageListEl = document.getElementById('memory-lineage-list');
   if (!lineageEl || !lineageListEl) return;
   clearElement(lineageListEl);
-  lineageListEl.appendChild(createEl('div', 'lineage-empty', '暂无演化脉络'));
+  lineageListEl.appendChild(createEmptyState({ title: '暂无演化脉络' }));
   lineageEl.classList.remove('hidden');
 }
 
@@ -337,7 +337,7 @@ function showNeighborsEmpty(): void {
   const neighborsListEl = document.getElementById('memory-neighbors-list');
   if (!neighborsEl || !neighborsListEl) return;
   clearElement(neighborsListEl);
-  neighborsListEl.appendChild(createEl('div', 'lineage-empty', '暂无关联邻居'));
+  neighborsListEl.appendChild(createEmptyState({ title: '暂无关联邻居' }));
   neighborsEl.classList.remove('hidden');
 }
 

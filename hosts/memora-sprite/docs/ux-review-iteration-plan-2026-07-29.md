@@ -48,12 +48,26 @@
 | 2-1 | M2 侧边栏 hover tooltip：sidebar.css 恢复 `data-tooltip` 伪元素 + index.html nav-btn 加 `data-tooltip` 属性 | 低（2 文件，~20 行 CSS + 4 属性） |
 | 2-2 | M1 加载态：为 dashboardPanelManager / perceptionPanelManager / profilePanelManager / workProjectionPanelManager 异步入口加 `showPanelLoading` 骨架 | 中（4 面板，需理解各异步加载入口） |
 
-### 迭代 3（架构级 · 需测试 · 中期）
+### 迭代 3 — 修正后（Type B 空态收口 · 9 处 · 低风险）
 
-| # | 内容 |
-|---|------|
-| 3-1 | M3 空态收口：`createEmptyState` 工厂收敛 10+ 手写空态 + 清理历史 `.xxx-empty` 自定义类 |
-| 3-2 | ListPanel/DetailPanel 工厂（按 §四.2）：记忆/审计/设置 3+ 面板共享结构抽取 |
+> **评审结论**（详见 `docs/ux-review-iteration-3-assessment.md`）：
+> - 3-1 缩小范围：Type A（DOM 引用 7 处）不可收口，仅收敛 **Type B 9 处** `createEl` 手写 → `createEmptyState`
+> - 3-2 **搁置**：三面板（memory/settings/audit）结构差异大，1458/1044/236 行，「标题+列表+详情」骨架是所有列表型面板的共性而非差异化配置，不满足工厂触发条件。延后至第 4 个列表型面板出现再评估。
+
+| # | 文件 | 修改 |
+|---|------|------|
+| 3-1 | `panels/auditPanelManager.ts:162` | `createEl('div', 'profile-empty', …)` → `createEmptyState({ title: '暂无审计记录' })` |
+| 3-1 | `panels/completionStatsRenderer.ts:196` | → `createEmptyState({ title: '暂无统计数据…' })` |
+| 3-1 | `panels/completionStatsRenderer.ts:278` | → `createEmptyState({ title: '暂无趋势数据…' })` |
+| 3-1 | `panels/dateNavManager.ts:238` | → `createEmptyState({ title: '暂无对话记录' })` |
+| 3-1 | `panels/llmGovernanceResultRenderer.ts:147` | → `createEmptyState({ title: '未发现语义冲突' })` |
+| 3-1 | `panels/llmGovernanceResultRenderer.ts:198` | → `createEmptyState({ title: '无需降级' })` |
+| 3-1 | `panels/partnerInsightsRenderer.ts:181` | → `createEmptyState` + 适配 `partner-empty-hint` |
+| 3-1 | `panels/partnerInsightsRenderer.ts:239` | 同上 |
+| 3-1 | `panels/profilePanelManager.ts:164` | → `createEmptyState({ title: '暂无待确认条目' })` |
+| 3-1 | `panels/searchMessagesManager.ts:444` | → `createEmptyState({ title: message })` |
+| 3-1 | `panels/workProjectionPanelManager.ts:147` | → `createEmptyState({ title: '暂无作品投影' })` |
+| 3-1 | `helpers/memoryDetailPanel.ts:202,340` | `lineage-empty` × 2 → `createEmptyState` |
 
 ---
 
@@ -69,4 +83,9 @@
   - 2-2 M1 加载态：`profilePanelManager.load()` / `workProjectionPanelManager.load()` / `memoryOrchestrator.loadDashboard()` / `memoryOrchestrator.loadPerception()` 共 4 处异步入口加 `showPanelLoading` 骨架
   - 修改文件：5 个（`sidebar.css`、`index.html`、`profilePanelManager.ts`、`workProjectionPanelManager.ts`、`memoryOrchestrator.ts`）
   - 验证：grep 确认所有修改落位 + `tsc --noEmit` 零错误通过
-- [ ] 迭代 3 — 评审后执行（M3 空态收口 + ListPanel 工厂）
+- [x] **迭代 3（修正后）** — ✅ 已完成（2026-07-29·方案A: CSS先行对齐+JS替换+删死CSS）
+  - 3-1 JS转换：7 文件 import + 10 处 `createEl` → `createEmptyState`（排除 `llm-result-empty`/`partner-empty-hint` 语义不同不转换）
+  - 3-1 CSS清理：6 个死规则删除（`.completion-stats-empty`/`-trend-empty`/`.date-nav-empty`/`.search-messages-empty`/`.work-projection-empty`/`.lineage-empty`）
+  - 保留 `.profile-empty`（HTML 预定义骨架需要）/ `.work-projection-empty-hint` / `.llm-result-empty` / `.partner-empty-hint`
+  - 验证：grep 旧模式零命中 + `tsc --noEmit` 零错误 + `stylelint` 零告警
+  - 迭1+2+3合计：17 文件 ~30 处修改
