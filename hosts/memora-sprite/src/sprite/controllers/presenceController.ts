@@ -356,7 +356,11 @@ export class PresenceController {
       reason,
     };
 
-    this.options.emit?.('presenceChanged', payload);
+    try {
+      this.options.emit?.('presenceChanged', payload);
+    } catch (err) {
+      logger.warn({ err, sender: 'presenceController.handlePresent' }, 'emit presenceChanged 失败（已隔离）');
+    }
     logger.info({ reason, awayDurationMs, timestamp: payload.timestamp }, '用户回来');
 
     // 长时间离开后回来：触发记忆召回（在 checkPending 之前，让召回结果先入队）
@@ -373,6 +377,12 @@ export class PresenceController {
     // 用户回来时触发 ProactiveEngine 检查累积事件
     // 例如用户离开期间积累了多条 memory/insight 事件，回来时统一提示
     // onWelcomeBack 注入的 recalled 事件也会在此被消费
-    this.options.proactiveEngine?.checkPending();
+    try {
+      this.options.proactiveEngine?.checkPending();
+    } catch (err) {
+      // checkPending 内部可能因事件累积触发栈溢出（Maximum call stack size exceeded），
+      // 此错误不应导致应用崩溃——捕获后静默降级，已累积事件在下次窗口激活时重试
+      logger.warn({ err, sender: 'presenceController.handlePresent' }, 'checkPending 失败（已隔离）');
+    }
   }
 }
