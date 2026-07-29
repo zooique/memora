@@ -228,6 +228,8 @@ jobs:
           retention-days: 30
 
   # ─── 发布 Release ──────────────────────────────────────────
+  # 闭源发布策略：源码在私有镜像仓，产物发布到独立公开发布仓 memora-sprite-releases
+  # 用户需先配置 secret RELEASE_TOKEN（GitHub PAT，权限 repo），见发布流程文档 §4
   release:
     name: Publish Release
     needs: [build-windows, build-macos, build-linux]
@@ -242,10 +244,11 @@ jobs:
         with:
           path: artifacts
 
-      - name: 发布 GitHub Release
+      - name: 发布到公开发布仓 memora-sprite-releases
         uses: softprops/action-gh-release@v2
         with:
+          repository: ${{ github.repository_owner }}/memora-sprite-releases
+          token: ${{ secrets.RELEASE_TOKEN }}
+          tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           files: artifacts/**/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
