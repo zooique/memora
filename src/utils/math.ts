@@ -1,6 +1,24 @@
 /**
  * 数学工具函数
  */
+
+/**
+ * 将数值四舍五入到指定小数位数
+ *
+ * 替代 `Math.round(x * 10^n) / 10^n` 惯用法，消除 4 处重复
+ * （ADR-017 枝叶层 2 次提取原则，3 次阈值已满足）。
+ *
+ * @param value - 待四舍五入的数值
+ * @param decimals - 保留的小数位数（0~20，默认 2）
+ * @returns 四舍五入后的数值；value 为 NaN/Infinity 时原样返回
+ */
+export function roundTo(value: number, decimals = 2): number {
+  // NaN/Infinity 不参与运算，避免 Math.round 返回意外结果
+  if (!Number.isFinite(value)) return value;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;
   let dot = 0;

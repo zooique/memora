@@ -820,7 +820,7 @@ describe('showMemoryLineage', () => {
     const lineageEl = document.getElementById('memory-detail-lineage')!;
     expect(lineageEl.classList.contains('hidden')).toBe(false);
     expect(document.querySelectorAll('.lineage-item').length).toBe(0);
-    const empty = lineageEl.querySelector('.lineage-empty');
+    const empty = lineageEl.querySelector('.empty-state');
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toBe('暂无演化脉络');
   });
@@ -835,7 +835,7 @@ describe('showMemoryLineage', () => {
 
     const lineageEl = document.getElementById('memory-detail-lineage')!;
     expect(lineageEl.classList.contains('hidden')).toBe(false);
-    expect(lineageEl.querySelector('.lineage-empty')?.textContent).toBe('暂无演化脉络');
+    expect(lineageEl.querySelector('.empty-state')?.textContent).toBe('暂无演化脉络');
   });
 
   it('多节点路径应渲染多个 .lineage-item 并显示脉络区域', () => {

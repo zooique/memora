@@ -173,7 +173,7 @@ describe('open / close', () => {
     const manager = new SearchMessagesManager();
     manager.init();
     manager.open();
-    const empty = dom.results.querySelector('.search-messages-empty');
+    const empty = dom.results.querySelector('.empty-state');
     expect(empty?.textContent).toContain('输入关键词搜索');
     manager.cleanup();
   });
@@ -200,7 +200,7 @@ describe('open / close', () => {
     manager.close();
     // 推进定时器不应触发搜索
     vi.advanceTimersByTime(300);
-    const empty = dom.results.querySelector('.search-messages-empty');
+    const empty = dom.results.querySelector('.empty-state');
     // 应仍是初始空状态，不是搜索中或搜索结果
     expect(empty?.textContent).toContain('输入关键词搜索');
     manager.cleanup();
@@ -241,7 +241,7 @@ describe('scheduleSearch / performSearch', () => {
     manager.init();
     typeAndTriggerSearch(manager, dom.input, 'a');
     expect(searchFn).not.toHaveBeenCalled();
-    const empty = dom.results.querySelector('.search-messages-empty');
+    const empty = dom.results.querySelector('.empty-state');
     expect(empty?.textContent).toContain('至少 2 个字符');
     manager.cleanup();
   });
@@ -314,7 +314,7 @@ describe('scheduleSearch / performSearch', () => {
     manager.init();
     typeAndTriggerSearch(manager, dom.input, 'test');
     await vi.waitFor(() => {
-      const empty = dom.results.querySelector('.search-messages-empty');
+      const empty = dom.results.querySelector('.empty-state');
       expect(empty?.textContent).toContain('搜索失败');
     });
     manager.cleanup();
@@ -409,7 +409,7 @@ describe('renderResults', () => {
     manager.init();
     typeAndTriggerSearch(manager, dom.input, 'nomatch');
     await vi.waitFor(() => {
-      const empty = dom.results.querySelector('.search-messages-empty');
+      const empty = dom.results.querySelector('.empty-state');
       expect(empty?.textContent).toContain('无匹配结果');
     });
     manager.cleanup();

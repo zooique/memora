@@ -20,6 +20,7 @@ import type { GuardrailUI } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isAbortError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
+import { roundTo } from '@/utils/math.js';
 import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
@@ -1074,7 +1075,7 @@ export class AgentLoop {
       recall: {
         totalCount: this.metricRecallTotalCount,
         hitCount: this.metricRecallHitCount,
-        hitRate: Math.round(hitRate * 1000) / 1000, // 保留 3 位小数
+        hitRate: roundTo(hitRate, 3), // 保留 3 位小数
       },
       tools: {
         callCount: this.metricToolCallCount,

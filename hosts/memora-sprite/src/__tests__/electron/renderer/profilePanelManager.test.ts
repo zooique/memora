@@ -188,8 +188,8 @@ describe('render · 分组与计数', () => {
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries: [] });
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('#profile-pending-list .profile-empty')!.textContent).toBe('暂无待确认条目');
-    expect(document.querySelector('#profile-confirmed-list .profile-empty')!.textContent).toBe('暂无已确认条目');
+    expect(document.querySelector('#profile-pending-list .empty-state')!.textContent).toBe('暂无待确认条目');
+    expect(document.querySelector('#profile-confirmed-list .empty-state')!.textContent).toBe('暂无已确认条目');
   });
 
   it('renderList 容器为 null 时应静默退出', async () => {

@@ -238,7 +238,7 @@ describe('updateAvailableDates · 可用日期更新', () => {
     createManager({ dates: [] });
     clickNavBtn();
 
-    const empty = document.querySelector('.date-nav-empty');
+    const empty = document.querySelector('.empty-state');
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toContain('暂无');
   });

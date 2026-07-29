@@ -150,7 +150,7 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('#audit-list .profile-empty')!.textContent).toBe('暂无审计记录');
+    expect(document.querySelector('#audit-list .empty-state')!.textContent).toBe('暂无审计记录');
   });
 
   it('失败时应显示错误提示', async () => {

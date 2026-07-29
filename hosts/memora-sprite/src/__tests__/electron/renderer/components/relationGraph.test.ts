@@ -888,8 +888,8 @@ describe('RelationGraphRenderer R6 颜色解析纯函数', () => {
 
     it('未知 source 应降级为 --muted fallback', () => {
       const color = getNodeColor('unknown-source');
-      // --muted 的 fallback 是 '#7a7a82'
-      expect(color).toBe('#7a7a82');
+      // --muted 的 fallback 是 '#6a6a72'（浅色主题，对齐 tokens.css 当前值）
+      expect(color).toBe('#6a6a72');
     });
   });
 
@@ -906,7 +906,7 @@ describe('RelationGraphRenderer R6 颜色解析纯函数', () => {
 
     it('未知 edgeType 应降级为 --muted fallback', () => {
       const color = getEdgeColor('unknown-type');
-      expect(color).toBe('#7a7a82');
+      expect(color).toBe('#6a6a72');
     });
   });
 
@@ -942,16 +942,16 @@ describe('RelationGraphRenderer R6 颜色解析纯函数', () => {
       expect(color).toBe('#ff9f0a');
     });
 
-    it('深色主题下 --text-3 应返回深色 fallback #a1a1a6', () => {
+    it('深色主题下 --text-3 应返回深色 fallback #b5bcd6', () => {
       document.documentElement.setAttribute('data-theme', 'dark');
       const color = resolveCssVar('--text-3');
-      expect(color).toBe('#a1a1a6');
+      expect(color).toBe('#b5bcd6');
     });
 
-    it('浅色主题下 --text-3 应返回浅色 fallback #7a7a82', () => {
+    it('浅色主题下 --text-3 应返回浅色 fallback #6a6a72', () => {
       document.documentElement.setAttribute('data-theme', 'light');
       const color = resolveCssVar('--text-3');
-      expect(color).toBe('#7a7a82');
+      expect(color).toBe('#6a6a72');
     });
 
     it('显式 fallback 优先于常量表', () => {

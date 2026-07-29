@@ -132,14 +132,17 @@ agent/
 ├── types.ts              # Agent 类型定义
 ├── userFactExtractor.ts  # 用户事实提取器（正则规则，纯函数模块，从 userProfile 迁入）
 ├── personaMatcher.ts     # 角色语义匹配器（LLM 辅助角色匹配纯函数，从 PersonaManager.matchByLlm 迁入，遵循 persona/ 不调 LLM 约束）
-├── managers/             # 专职 Manager/服务类子目录（13 个，含 12 个生命周期 Manager + 1 个无状态服务类）
+├── managers/             # 专职 Manager/服务类子目录（14 个 Manager + 1 个门面 + 1 个辅助：12 个生命周期 Manager + DedupManager + 1 个无状态服务类 + memoryGovernance 门面 + llmJudgeHelper 辅助）
 │   ├── archiveCoordinator.ts # 归档协调器（archiveMode 三态控制 + 归档流程编排）
 │   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
 │   ├── chatLockManager.ts    # 对话锁管理器（token 校验 + 超时释放 + race condition 防护）
 │   ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
+│   ├── dedupManager.ts       # 去重管理器（L0-L1 记忆去重）
 │   ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取 + 关系构建）
+│   ├── llmJudgeHelper.ts     # LLM 判定辅助（judgeWithLlm 高阶函数，纯函数模块，供 memoryAdvisor/relationBuilder 共享）
 │   ├── memoryAdvisor.ts      # 记忆顾问（记忆质量评估 + 归档价值判断）
 │   ├── memoryDecayScheduler.ts # 记忆衰减调度器（decayScores 定时执行 + 首次 init）
+│   ├── memoryGovernance.ts   # 记忆治理门面（聚合 L0-L3 治理委托，非新增 Manager，详见 architecture_philosophy_rules.md）
 │   ├── memoryInspector.ts    # 记忆管理器（快照 + 搜索 + 统计 + 关联推荐 + writeXxx 写操作）
 │   ├── relationBuilder.ts    # 关系构建器（候选召回 + prompt 构建 + 关系写入 + 冲突检测，ADR-014）
 │   ├── sessionArchiver.ts    # 会话归档器（content 类记忆归档，会话级摘要，区别于 InsightExtractor 的洞察提取）
@@ -153,9 +156,9 @@ utils/
 ├── toError.ts            # 纯逻辑 toError（零依赖，浏览器/Node 通用）
 ├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 6 事件）
 ├── frontmatter.ts        # Frontmatter 解析/序列化（从 memory/ 迁入，供 memory/persona/skill 共享）
-├── json.ts               # JSON 安全解析/序列化
+├── json.ts               # LLM JSON 安全解析（parseLlmJson：markdown 剥离 + 引号修复 + 正则回退，专用于 LLM 输出）
 ├── loggerHolder.ts       # Logger 持有者（utils/ 内部 getLogger，解耦 utils→logging 循环依赖）
-├── math.ts               # 数学工具（cosineSimilarity）
+├── math.ts               # 数学工具（cosineSimilarity + roundTo 四舍五入到指定小数位）
 ├── path.ts               # 路径工具（expandHome、basename）
 ├── safeTimer.ts          # 安全定时器（safeSetTimeout/safeSetInterval + 跟踪清理）
 ├── scanner.ts            # Markdown 目录扫描工具（供 persona/skill 共享）

@@ -19,6 +19,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { ONE_DAY_MS } from '@/memory/recall.js';
 import { nowIso } from '@/utils/time.js';
+import { roundTo } from '@/utils/math.js';
 // L3 冲突检测：可选注入 backgroundProvider
 import type { LlmProvider, Message } from '@/llm/provider.js';
 // LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
@@ -235,8 +236,8 @@ export class MemoryAdvisor {
       entries.push({
         source,
         count,
-        avgScore: Math.round(avgScore * 1000) / 1000,
-        daysSinceLastAccess: Math.round(daysSinceLastAccess * 10) / 10,
+        avgScore: roundTo(avgScore, 3),
+        daysSinceLastAccess: roundTo(daysSinceLastAccess, 1),
         status,
       });
     }
@@ -349,7 +350,7 @@ export class MemoryAdvisor {
       id: memory.id,
       name: memory.name,
       source: memory.source,
-      relevance: Math.round(relevance * 100) / 100,
+      relevance: roundTo(relevance, 2),
       contentPreview: truncate(memory.content, ADVISOR_PREVIEW_LEN),
       reason,
     }));

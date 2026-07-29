@@ -116,7 +116,7 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listWorkProjections = vi.fn().mockResolvedValue([]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.work-projection-empty')!.textContent).toBe('暂无作品投影');
+    expect(document.querySelector('.empty-state')!.textContent).toBe('暂无作品投影');
     expect(document.querySelector('.work-projection-empty-hint')!.textContent).toContain('精灵');
   });
 

@@ -22,6 +22,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';
+import { MemoraError } from '@/utils/errors.js';
 import { nowIso } from '@/utils/time.js';
 import { isPlainObject } from '@/utils/objects.js';
 
@@ -49,18 +50,31 @@ export interface ProjectEntry {
  * 设计意图：
  *   - register/unregister 路径必须让此错误向上传播，避免用空数据覆盖损坏文件
  *   - list getter 可捕获此错误降级返回空数组（只读操作，不破坏数据）
+ *
+ * 规则对齐（RULE-ALIGN-0729）：继承 MemoraError 而非 Error，统一错误体系
+ * （project-rules.md §7.1 + coding-convention-rules.md §2）。保留 registryPath
+ * 扩展字段以支持调用方备份/排查流程。
  */
-export class ProjectRegistryCorruptError extends Error {
+export class ProjectRegistryCorruptError extends MemoraError {
   /** 损坏文件的绝对路径，便于备份/排查 */
   readonly registryPath: string;
-  /** 底层错误（JSON 解析错误或类型校验错误），可能为 undefined */
-  readonly cause?: unknown;
 
   constructor(registryPath: string, cause?: unknown) {
-    super(`项目注册表损坏：${registryPath}`);
+    // cause 归一化为 Error 类型，符合 MemoraError.cause 契约
+    const causeError = cause instanceof Error ? cause : cause !== undefined ? new Error(String(cause)) : undefined;
+    super({
+      title: `项目注册表损坏：${registryPath}`,
+      detail: causeError?.message,
+      suggestions: [
+        '检查文件是否被外部程序修改',
+        '从备份恢复 projects.json',
+        '或删除该文件让精灵重建（会丢失历史项目记录）',
+      ],
+      category: 'config',
+      cause: causeError,
+    });
     this.name = 'ProjectRegistryCorruptError';
     this.registryPath = registryPath;
-    this.cause = cause;
   }
 }
 
