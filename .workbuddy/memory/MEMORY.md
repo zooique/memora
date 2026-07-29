@@ -33,3 +33,11 @@
 ## HEAL-16 UIManager 渐进重构
 - 协调器模式（Perception/Chat/Memory/Settings）已落地：委托群改经协调器转发，ui.ts 字段 ~29→~25。
 - 教训：提取协调器后须同步更新委托测试断言路径（mock.X→mock.coordinator.X），否则深 Proxy mock 记在协调器路径、断言查旧路径→全 "0 calls" 误报。协调器初始化须前置到 panel.init() 之前。
+
+## 发布/分发约定（闭源桌面端）
+- 主仓 Gitee，已配 **Gitee→GitHub 私有 push 镜像**（代码+tags 自动同步，作备份；**必须保持 private**，否则同步上去的源码泄露破闭源）。
+- exe 分发 + 版本检测走 **GitHub Releases（独立公开发布仓 `memora-sprite-releases`，只放 exe 不含源码）**：GitHub 单文件 <2GiB 限额对 ~130MB 充裕；公开仓 `GET /repos/{o}/{r}/releases/latest` **免鉴权**（匿名限速 60 次/小时/IP，按钮点击足够），客户端检测不必内嵌 token。
+- ⚠️ **镜像只同步 tag、不自动建 Release**：发版需「推 Gitee→等 tag 镜像同步→GitHub 侧手动建 Release 传 exe」半自动一步。客户端检查用 `fetch` + `User-Agent` 头，取 `tag_name` 数值比较、`html_url` 打开发布页。
+- 客户端版本 = 宿主 `package.json` `version`；tag 前缀 `v{x.y.z}`。内核打进 asar 随客户端冻结，"改内核免重装"对终端用户不成立（仅开发者发版流程成立）。
+- 国内加速备选：COS/OSS/R2 另放 exe 直链作「国内高速下载」（非必须）。
+- 详见 `tasks/发布流程-gitee-20260722.md` §1/§4/§5 + `tasks/STEP-发版前置-PRIVACY与更新检查.md`。

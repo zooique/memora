@@ -4,18 +4,18 @@
 > 关联文档：`发布流程-gitee-20260722.md` §0（P0 清单）、§5（检查更新）、§7（PRIVACY 要点）
 > 约束红线：**零新增 IPC 通道**（治理阈值 129/130 不变）。更新检查一律走「渲染层锚点 + 主进程 `will-navigate` 拦截」或 `window.electronAPI` 现有桥，**不新增 channels.ts 条目**。
 > 日期：2026-07-23
-> 核验：2026-07-28 联网核实 §5 所述 Gitee API / electron-builder 配置仍有效（详见主文档 §5「时效性核验」）；本卡约束与实现方式不变。
+> 核验：2026-07-29 主文档 §1/§4/§5 改为「GitHub Releases（独立公开发布仓）」承载 130MB exe + 版本检测（Gitee 私有镜像仓保持 private 防源码泄露；GitHub 单文件 <2GiB 限额对 130MB 充裕、公开仓 /releases/latest 免鉴权）；本卡约束（零新增 IPC、will-navigate 拦截）与实现方式不变，仅占位符改 GitHub 发布页。
 
 ---
 
 ## 决策前提（先填占位符）
 
-| 占位符 | 含义 | 路线 A（Gitee 发布仓库） | 路线 B（对象存储） |
-|---|---|---|---|
-| `{下载地址}` | 用户获取新版的页 | Gitee 仅作反馈（见 §6），不托管 exe | 对象存储落地页 / 你的下载页 |
-| `{隐私地址}` | 在线隐私白皮书 | 对象存储落地页 / 你的站点（与 exe 同桶或同站） | 落地页 URL |
+| 占位符 | 含义 | 取值（路线 A · GitHub Releases） |
+|---|---|---|
+| `{下载地址}` | 用户获取新版的页 | `https://github.com/{gh-user}/memora-sprite-releases/releases/latest` |
+| `{隐私地址}` | 在线隐私白皮书 | GitHub 发布页说明 / 你的站点（与 exe 同发布仓或同站） |
 
-> 当前 130MB 体积下默认 **路线 B（对象存储）**（Gitee 100MB 上限无法托管 exe，仅留作反馈 Issues）。下面 STEP 以路线 B 书写；`{下载地址}`=对象存储落地页。
+> 当前默认 **路线 A（GitHub Releases · 独立公开发布仓）**：130MB exe 走 GitHub（单文件 <2GiB 限额充裕），公开仓 `/releases/latest` 免鉴权，无需对象存储。下面 STEP 以路线 A 书写；`{下载地址}`=GitHub 发布页。
 
 ---
 
@@ -60,12 +60,12 @@ mainWindow.webContents.on('new-window', (e, url) => {
 
 ### STEP-3.3 手动验证
 - [ ] 设置面板出现「检查更新」「隐私白皮书」两个链接
-- [ ] 点击「检查更新」→ 系统浏览器打开对象存储落地页（应用内不导航）
+- [ ] 点击「检查更新」→ 系统浏览器打开 GitHub 发布页（应用内不导航）
 - [ ] 点击「隐私白皮书」→ 打开 PRIVACY.md
 
 ### STEP-3.4（可延后，非 P0）梯度 B 版本比对
-仅当想「有新版才提示」时做。**参考实现见 `发布流程-gitee-20260722.md` §5 梯度 B**（要点：下载与检测走对象存储 `version.json`，无 Gitee 100MB 限制、无 token、无 CORS；版本用数值比较器而非字符串/`!==`；有新版才 `shell.openExternal(page)`；本机客户端版本用 `app.getVersion()`）。
-> 约束：① 检查在**主进程**用 Node `fetch` 拉 `version.json`（对象存储公开读、无 CORS）；② IPC 红线 —— 复用**已有** `ipcRenderer.invoke` 通道触发，**不新增** `channels.ts` 条目。首版不做，避免碰 IPC 阈值。
+仅当想「有新版才提示」时做。**参考实现见 `发布流程-gitee-20260722.md` §5 梯度 B**（要点：检测走 GitHub 公开发布仓 `GET /releases/latest`，免鉴权、无需 token/CORS，Node `fetch` 加 `User-Agent` 头；版本用数值比较器而非字符串/`!==`；有新版才 `shell.openExternal(rel.html_url)` 打开发布页；本机客户端版本用 `app.getVersion()`）。
+> 约束：① 检查在**主进程**用 Node `fetch` 调 GitHub 公开 API（免鉴权、加 `User-Agent`）；② IPC 红线 —— 复用**已有** `ipcRenderer.invoke` 通道触发，**不新增** `channels.ts` 条目。首版不做，避免碰 IPC 阈值。
 
 ---
 
@@ -78,8 +78,7 @@ mainWindow.webContents.on('new-window', (e, url) => {
 - 记忆本机 SQLite、API Key 本机配置、度量仅哈希不出网
 
 ### STEP-5.2 随包发布
-- 路线 A（Gitee 仅反馈，不托管文件）：`PRIVACY.md` 放在对象存储落地页（路线 B）或你自己的站点，与直链并列。
-- 路线 B：放到落地页，与直链并列。
+- `PRIVACY.md` 放在 GitHub 发布页说明里（路线 A 发布仓）或你自己的站点，与 exe 下载并列。
 
 ### STEP-5.3 应用内可达（同 STEP-3.2 的「隐私白皮书」链接）
 已通过 `{隐私地址}` 锚点实现；若想要离线版，可加一个按钮用 `shell.openExternal('file://' + path.join(app.getPath('userData'), '..', 'PRIVACY.md'))` 打开本地副本（需主进程桥，复用现有 `electronAPI`，不加新通道）。
