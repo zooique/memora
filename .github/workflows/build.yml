@@ -39,17 +39,17 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: hosts/memora-sprite/package-lock.json
 
       - name: 缓存 Electron 二进制
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -91,7 +91,7 @@ jobs:
           ELECTRON_BUILDER_CACHE: ~\AppData\Local\electron-builder\Cache
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: memora-sprite-win-x64
           path: |
@@ -111,17 +111,17 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: hosts/memora-sprite/package-lock.json
 
       - name: 缓存 Electron 二进制
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/Library/Caches/electron
@@ -163,7 +163,7 @@ jobs:
           ELECTRON_BUILDER_CACHE: ~/Library/Caches/electron-builder
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: memora-sprite-mac
           path: |
@@ -183,17 +183,17 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: hosts/memora-sprite/package-lock.json
 
       - name: 缓存 Electron 二进制
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/electron
@@ -235,7 +235,7 @@ jobs:
           ELECTRON_BUILDER_CACHE: ~/.cache/electron-builder
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: memora-sprite-linux-x64
           path: hosts/memora-sprite/release/*.zip
@@ -254,9 +254,26 @@ jobs:
 
     steps:
       - name: 下载所有产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
+
+      - name: 列出下载的产物（诊断用）
+        run: |
+          echo "=== 产物列表 ==="
+          find artifacts -type f -exec ls -lh {} \;
+          echo "=== 产物总数 ==="
+          find artifacts -type f | wc -l
+
+      - name: 验证 RELEASE_TOKEN 已配置
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "❌ RELEASE_TOKEN 未配置！请在私有镜像仓 Settings → Secrets → Actions 添加"
+            exit 1
+          fi
+          echo "✓ RELEASE_TOKEN 已配置（长度: ${#RELEASE_TOKEN}）"
 
       - name: 发布到公开发布仓 memora-sprite-releases
         uses: softprops/action-gh-release@v2
