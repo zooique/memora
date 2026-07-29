@@ -337,11 +337,11 @@ export class PartnerInsightsRenderer {
       rootStyle.getPropertyValue(name).trim() || fallback;
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const bgColor = cssVar('--surface0', isDark ? '#1e1e2e' : '#ececee');
-    const accentColor = cssVar('--accent', '#0066ff');
-    // 复用设计系统的 --accent-20 令牌（浅色 0.1 / 深色 0.2），确保主题感知
-    const fillColor = cssVar('--accent-20', 'rgba(0, 102, 255, 0.1)');
-    // --text-3 fallback 与 base.css 保持一致：浅色 #7a7a82 / 深色 #a1a1a6
-    const textColor = cssVar('--text-3', isDark ? '#a1a1a6' : '#7a7a82');
+    const accentColor = cssVar('--accent', '#0d7377');
+    // 复用设计系统的 --accent-20 令牌（浅色 rgba(13,115,119,0.1) / 深色 rgba(45,181,187,0.2)），确保主题感知
+    const fillColor = cssVar('--accent-20', isDark ? 'rgba(45, 181, 187, 0.2)' : 'rgba(13, 115, 119, 0.1)');
+    // --text-3 fallback 与 tokens.css 保持一致：浅色 #6a6a72 / 深色 #b5bcd6
+    const textColor = cssVar('--text-3', isDark ? '#b5bcd6' : '#6a6a72');
     const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
     ctx.fillStyle = bgColor;

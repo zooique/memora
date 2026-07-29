@@ -17,7 +17,7 @@
 import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
-import { clearElement, createEl, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+import { clearElement, createEl, formatTimeAgo, getOptionalElement, setButtonLoadingEl, showPanelLoading } from '../helpers/domHelpers.js';
 // getSourceLabel 将 source 字符串映射为中文标签（UX-2：画像条目来源中文化）
 import { getSourceLabel } from '../helpers/sourceLabel.js';
 // bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
@@ -104,6 +104,7 @@ export class ProfilePanelManager {
    * 失败时显示错误提示（不阻塞面板其他功能）。
    */
   async load(): Promise<void> {
+    if (this.pendingListEl) showPanelLoading(this.pendingListEl, '加载用户画像…');
     // try 仅包裹 IPC 调用（IO），render（DOM 渲染）移出 try，
     // 避免 render 抛出的 DOM 错误被误当成 IO 错误处理
     let entries: UserProfileEntryPayload[];

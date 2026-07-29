@@ -3,8 +3,8 @@
  *
  * 侧边栏固定 64px 图标模式（不再展开），与顶部栏同色无边界。
  * 导航按钮复用 .nav-btn 类：键盘聚焦样式 + 里程碑联动高亮 + 剪贴板角标（nav-badge）。
- * 导航名称提示气泡（data-tooltip ::after）已弃用——64px icon 模式 + .active 态已足以表达位置，
- * 无障碍标签由 aria-label / aria-labelledby 提供。
+ * 64px icon 模式下 hover 显示面板名称提示气泡，兼顾紧凑布局与发现性；
+ * 无障碍标签由 aria-label 提供。
  */
 
 /* ─── 侧边栏（与顶部栏同色，无边界；默认 64px 图标模式） ─── */
@@ -142,8 +142,30 @@
   flex-shrink: 0;
 }
 
-/* 侧边栏导航不渲染名称提示气泡：64px icon 模式 + .active 态已表达当前面板位置，
- * 无障碍标签由 aria-label / aria-labelledby 提供；剪贴板角标（nav-badge）独立保留。 */
+/* ─── 导航按钮悬停提示气泡 ─────────────────────────────── */
+/* 64px 图标模式下 hover 显示面板名称，恢复发现性且不破坏紧凑布局 */
+.nav-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: var(--space-1) var(--space-2-5);
+  background: var(--surface1);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: var(--z-decoration);
+  box-shadow: var(--shadow);
+}
+
+.nav-btn:hover::after {
+  opacity: 1;
+}
 
 /* 导航按钮键盘聚焦可见样式 */
 .nav-btn:focus-visible {

@@ -15,7 +15,7 @@
  */
 
 import type { UIManager } from '../ui.js';
-import { setButtonLoading } from '../helpers/domHelpers.js';
+import { setButtonLoading, showPanelLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "XXX失败，请重试" 模板化文案）
@@ -815,6 +815,10 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
    * 所有渲染委托 DashboardPanelManager，Controller 仅做 IPC 编排和聚合。
    */
   async function loadDashboard(): Promise<void> {
+    // 加载态：仪表盘数据拉取前显示骨架（渲染时自然替换）
+    const dashboardBody = document.querySelector('#panel-dashboard .dashboard-body');
+    if (dashboardBody) showPanelLoading(dashboardBody, '加载仪表盘数据…');
+
     // 并发加载仪表盘数据、感知快照、对话回顾数据，减少总等待时间
     // 注意：getPerceptionSnapshot / getReviewData 可能不存在（如 Web 调试模式），需用 Promise.resolve + catch 确保安全
     // 这两个 Promise 自带错误兜底（.catch 返回 null），不会导致 Promise.all 整体 reject，放在 try 外不影响行为
@@ -879,6 +883,10 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
    * 感知面板显示占位值；切换到感知面板时需重新加载最新数据。
    */
   async function loadPerception(): Promise<void> {
+    // 加载态：感知数据拉取前显示骨架（渲染时自然替换）
+    const perceptionPanel = document.getElementById('panel-perception');
+    if (perceptionPanel) showPanelLoading(perceptionPanel, '加载感知数据…');
+
     try {
       const snapshot = await window.electronAPI.getPerceptionSnapshot?.();
       if (snapshot && Object.keys(snapshot).length > 0) {

@@ -65,14 +65,14 @@ export function isDarkTheme(): boolean {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
 
-/** 深浅色双 fallback 常量表（与 base.css 变量值保持同步） */
+/** 深浅色双 fallback 常量表（与 tokens.css 变量值保持同步） */
 export const CSS_VAR_FALLBACKS = {
-  '--accent': () => '#0066ff',
-  '--muted': () => '#7a7a82',
+  '--accent': () => '#0d7377',
+  '--muted': () => (isDarkTheme() ? '#b5bcd6' : '#6a6a72'),
   '--text': () => (isDarkTheme() ? '#cdd6f4' : '#1d1d1f'),
   '--white': () => '#ffffff',
   '--yellow': () => (isDarkTheme() ? '#f9e2af' : '#ff9f0a'),
-  '--text-3': () => (isDarkTheme() ? '#a1a1a6' : '#7a7a82'),
+  '--text-3': () => (isDarkTheme() ? '#b5bcd6' : '#6a6a72'),
   '--surface0': () => (isDarkTheme() ? '#1e1e2e' : '#ececee'),
 } as const;
 

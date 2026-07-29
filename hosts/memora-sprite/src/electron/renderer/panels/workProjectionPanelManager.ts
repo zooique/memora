@@ -23,6 +23,7 @@ import {
   createEl,
   formatTimeAgo,
   getOptionalElement,
+  showPanelLoading,
 } from '../helpers/domHelpers.js';
 // bindRefreshButton 统一"刷新按钮 → loading → 异步操作"绑定模式
 import { bindRefreshButton } from '../helpers/buttonHelpers.js';
@@ -110,6 +111,7 @@ export class WorkProjectionPanelManager {
    * 渲染为卡片列表。失败时显示错误提示。
    */
   async load(): Promise<void> {
+    if (this.listEl) showPanelLoading(this.listEl, '加载作品投影…');
     // try 仅包裹 IPC 调用（IO），render（DOM 渲染）移出 try，
     // 避免 render 抛出的 DOM 错误被误当成 IO 错误处理
     let entries: WorkProjectionPayload[];
