@@ -60,6 +60,9 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 同步内核 memora（编译内核到 node_modules/memora）
+        run: npm run sync-memora
+
       - name: 类型检查
         run: npx tsc -p tsconfig.electron.json --noEmit
 
@@ -124,6 +127,9 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 同步内核 memora（编译内核到 node_modules/memora）
+        run: npm run sync-memora
+
       - name: 类型检查
         run: npx tsc -p tsconfig.electron.json --noEmit
 
@@ -187,6 +193,9 @@ jobs:
 
       - name: 安装依赖
         run: npm ci
+
+      - name: 同步内核 memora（编译内核到 node_modules/memora）
+        run: npm run sync-memora
 
       - name: 类型检查
         run: npx tsc -p tsconfig.electron.json --noEmit
