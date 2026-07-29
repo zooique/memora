@@ -70,6 +70,7 @@
     "eslint": "^9.39.5",
     "lefthook": "^1.7.0",
     "msw": "^2.15.0",
+    "pino": "^9.7.0",
     "pino-pretty": "^11.2.0",
     "prettier": "^3.9.6",
     "rimraf": "^6.1.3",
