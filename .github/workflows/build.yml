@@ -60,6 +60,10 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 安装根目录依赖（内核编译所需）
+        working-directory: ${{ github.workspace }}
+        run: npm ci
+
       - name: 同步内核 memora（编译内核到 node_modules/memora）
         run: npm run sync-memora
 
@@ -127,6 +131,10 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 安装根目录依赖（内核编译所需）
+        working-directory: ${{ github.workspace }}
+        run: npm ci
+
       - name: 同步内核 memora（编译内核到 node_modules/memora）
         run: npm run sync-memora
 
@@ -192,6 +200,10 @@ jobs:
           restore-keys: ${{ runner.os }}-electron-
 
       - name: 安装依赖
+        run: npm ci
+
+      - name: 安装根目录依赖（内核编译所需）
+        working-directory: ${{ github.workspace }}
         run: npm ci
 
       - name: 同步内核 memora（编译内核到 node_modules/memora）
