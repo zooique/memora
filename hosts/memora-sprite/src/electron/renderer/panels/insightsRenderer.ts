@@ -80,8 +80,8 @@ export class InsightsRenderer {
   showLoading(): void {
     const distEl = document.getElementById('insights-distribution');
     const summaryEl = document.getElementById('insights-relations-summary');
-    if (distEl) showPanelLoading(distEl, '加载洞察数据...');
-    if (summaryEl) showPanelLoading(summaryEl, '加载关系数据...');
+    if (distEl) showPanelLoading(distEl, '加载洞察数据…');
+    if (summaryEl) showPanelLoading(summaryEl, '加载关系数据…');
   }
 
   /**

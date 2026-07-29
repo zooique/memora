@@ -85,7 +85,7 @@ export class HealthDashboardRenderer {
     const healthBar = document.getElementById('memory-health-bar');
     // 在 health-metrics 区域插入加载态（不影响 header 区域）
     const metricsEl = healthBar?.querySelector('.health-metrics');
-    if (metricsEl) showPanelLoading(metricsEl, '加载健康度数据...');
+    if (metricsEl) showPanelLoading(metricsEl, '加载健康度数据…');
   }
 
   /**

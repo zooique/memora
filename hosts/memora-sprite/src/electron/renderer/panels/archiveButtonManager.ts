@@ -24,6 +24,8 @@ import { setIcon } from '../helpers/icon.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "归档失败，请重试" 模板化文案）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
+// TOAST_SHORT_MS 主窗 Toast 时长真理源（UX-REVIEW-M3：替代硬编码 2000ms）
+import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -135,7 +137,7 @@ export class ArchiveButtonManager {
     // 向上查找前一条 user 消息（同一消息组或前一个消息组）
     const userMessageEl = this.findPreviousUserMessage(messageEl);
     if (!userMessageEl) {
-      this.host.showToast('未找到配对的用户消息，无法归档', 'error');
+      this.host.showToast('未找到配对的用户消息，无法归档', 'warning');
       return;
     }
 
@@ -143,7 +145,7 @@ export class ArchiveButtonManager {
     const userBubble = userMessageEl.querySelector('.message-bubble');
     const userInput = userBubble?.textContent ?? '';
     if (!userInput.trim()) {
-      this.host.showToast('用户消息为空，无法归档', 'error');
+      this.host.showToast('用户消息为空，无法归档', 'warning');
       return;
     }
 
@@ -174,7 +176,7 @@ export class ArchiveButtonManager {
         archiveBtn.title = '已归档';
       } else {
         // 未提取到有价值信息，恢复按钮允许重试
-        this.host.showToast('本轮对话无需归档（未提取到有价值信息）', 'info', 2000);
+        this.host.showToast('本轮对话无需归档（未提取到有价值信息）', 'info', TOAST_SHORT_MS);
         archiveBtn.removeAttribute('disabled');
         archiveBtn.classList.remove('archiving');
       }

@@ -48,14 +48,14 @@ export function handleRegenerate(ctx: MessageOperationContext, messageEl: HTMLEl
 
   const userMessageEl = findPreviousUserMessage(messageEl);
   if (!userMessageEl) {
-    ctx.host.showToast('找不到对应的用户消息', 'error');
+    ctx.host.showToast('找不到对应的用户消息', 'warning');
     return;
   }
 
   const userBubble = userMessageEl.querySelector('.message-bubble');
   const userContent = userBubble?.textContent ?? '';
   if (!userContent.trim()) {
-    ctx.host.showToast('用户消息内容为空', 'error');
+    ctx.host.showToast('用户消息内容为空', 'warning');
     return;
   }
 

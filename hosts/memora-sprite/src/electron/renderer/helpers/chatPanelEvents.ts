@@ -134,7 +134,7 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
       const content = copyBtn.dataset.content ?? '';
       navigator.clipboard.writeText(content).then(
         () => {
-          host.showToast('已复制到剪贴板', 'success', 1500);
+          host.showToast('已复制到剪贴板', 'success', TOAST_SHORT_MS);
           // 短暂内联反馈：切换为勾选图标，1s 后恢复复制图标
           setIcon(copyBtn, 'icon-check');
           copyBtn.classList.add('copied');

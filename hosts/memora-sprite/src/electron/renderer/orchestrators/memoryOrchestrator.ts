@@ -98,7 +98,7 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
   llmResultRenderer.onRestoreMemory(async (memoryId: string) => {
     await window.electronAPI.boostMemory(memoryId);
     await loadHealthDashboard();
-    uiManager.showToast('记忆 score 已恢复（+0.05）', 'success');
+    uiManager.showToast('记忆权重已恢复', 'success');
   });
 
   /**
@@ -521,7 +521,7 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
       const name = uiManager.getMemoryDetailMeta('memoryName');
       if (!source || !name) return;
 
-      setButtonLoading('btn-memory-edit-save', true, '保存中...');
+      setButtonLoading('btn-memory-edit-save', true, '保存中…');
       try {
         // 复用 addMemory（底层是 upsert，ID 相同时更新内容）
         await window.electronAPI.addMemory({ source, name, content });

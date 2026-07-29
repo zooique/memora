@@ -261,7 +261,7 @@ describe('删除按钮 loading 保护', () => {
     deleteCallback = null;
   });
 
-  it('删除时应禁用按钮 + 显示"删除中..."', async () => {
+  it('删除时应禁用按钮 + 显示"删除中…"', async () => {
     const controller = createMemoryOrchestrator(mockUiManager);
     controller.setupMemoryPanel();
 
@@ -470,7 +470,7 @@ describe('LLM 治理结果持久化展示', () => {
 
     expect(window.electronAPI.boostMemory).toHaveBeenCalledWith('insight:dup-1');
     expect(mockUiManager.showToast).toHaveBeenCalledWith(
-      '记忆 score 已恢复（+0.05）',
+      '记忆权重已恢复',
       'success',
     );
   });

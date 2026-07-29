@@ -38,6 +38,7 @@ import '../types.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "润色失败，请重试" 等模板化文案）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
+import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 // safeStorage 统一 localStorage 读写（ADR-017，字符串场景）
 import { safeGet, safeSet, safeGetJSON, safeSetJSON } from '../helpers/safeStorage.js';
 import { QuickInputCompletion } from './quickInputCompletion.js';
@@ -60,8 +61,8 @@ export type QuickInputElectronAPI = Pick<
   recaptureTarget: () => Promise<{ title: string | null } | null>;
 };
 
-/** Toast 显示时长（ms），统一所有模式的 Toast 时长 */
-const TOAST_DURATION_MS = 500;
+/** Toast 显示时长——对齐主窗 TOAST_SHORT_MS（2s），避免跨窗口体验不可预测 */
+const TOAST_DURATION_MS = TOAST_SHORT_MS;
 /** 输入区初始基础高度（px），与 CSS 对齐（textarea min-height 36px + padding 16px + footer ~20px + focus-bar 28px+4px margin ≈ 104px） */
 const INITIAL_BASE_HEIGHT = 104;
 /** 候选项高度基数（px），用于 resizeWindow 计算。

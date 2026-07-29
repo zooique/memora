@@ -25,6 +25,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { QuickInputElectronAPI } from '../../../electron/renderer/quick-input/quickInput.js';
 import { QuickInputController } from '../../../electron/renderer/quick-input/quickInput.js';
+// TOAST_SHORT_MS Toast 时长真理源（UX-REVIEW-M1：测试定时器推进对齐常量）
+import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 
 // ─── Mock 模块 ─────────────────────────────────────────────
 
@@ -312,7 +314,8 @@ describe('QuickInputController', () => {
       expect(inputField.classList.contains('copy-toast')).toBe(true);
 
       // 推进 Toast 定时器后输入框重置（连续输入）
-      vi.advanceTimersByTime(500);
+      // UX-REVIEW-M1：TOAST_DURATION_MS 对齐主窗 TOAST_SHORT_MS（2000ms）
+      vi.advanceTimersByTime(TOAST_SHORT_MS);
       await Promise.resolve();
       expect(inputField.value).toBe('');
     });

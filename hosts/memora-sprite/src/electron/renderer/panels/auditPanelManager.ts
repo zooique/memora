@@ -94,7 +94,7 @@ export class AuditPanelManager {
           });
           if (!confirmed) return;
         }
-        setButtonLoadingEl(this.clearBtn!, true, '清空中...');
+        setButtonLoadingEl(this.clearBtn!, true, '清空中…');
         try {
           await this.clearAuditLogCallback!();
           await this.load();

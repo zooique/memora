@@ -22,7 +22,7 @@ import { setButtonLoadingEl } from './domHelpers.js';
  * ```ts
  * if (this.refreshBtn) {
  *   this.events.addEventListener(this.refreshBtn, 'click', async () => {
- *     setButtonLoadingEl(this.refreshBtn!, true, '刷新中...');
+ *     setButtonLoadingEl(this.refreshBtn!, true, '刷新中…');
  *     try {
  *       await handler();
  *     } finally {

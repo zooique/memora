@@ -16,6 +16,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ArchiveButtonManager } from '../../../electron/renderer/panels/archiveButtonManager.js';
 import type { ArchiveButtonHost } from '../../../electron/renderer/panels/archiveButtonManager.js';
+// TOAST_SHORT_MS Toast 时长真理源（UX-REVIEW-M3：测试期望值对齐常量，避免硬编码 2000ms）
+import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -160,7 +162,7 @@ describe('handleClick · 归档流程', () => {
     assistantEl.appendChild(btn);
 
     await manager.handleClick(btn);
-    expect(host.showToast).toHaveBeenCalledWith('未找到配对的用户消息，无法归档', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('未找到配对的用户消息，无法归档', 'warning');
   });
 
   it('空 user 消息应显示 error toast', async () => {
@@ -189,7 +191,7 @@ describe('handleClick · 归档流程', () => {
     assistantEl.appendChild(btn);
 
     await manager.handleClick(btn);
-    expect(host.showToast).toHaveBeenCalledWith('用户消息为空，无法归档', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('用户消息为空，无法归档', 'warning');
   });
 
   it('未提取到有价值信息应恢复按钮', async () => {
@@ -200,7 +202,7 @@ describe('handleClick · 归档流程', () => {
     manager.maybeAddArchiveButton(assistantEl, assistantEl.querySelector('button')!, assistantEl.querySelector('.message-meta')!);
     const archiveBtn = assistantEl.querySelector('.message-archive-btn') as HTMLElement;
     await manager.handleClick(archiveBtn);
-    expect(host.showToast).toHaveBeenCalledWith('本轮对话无需归档（未提取到有价值信息）', 'info', 2000);
+    expect(host.showToast).toHaveBeenCalledWith('本轮对话无需归档（未提取到有价值信息）', 'info', TOAST_SHORT_MS);
     expect(archiveBtn.hasAttribute('disabled')).toBe(false);
   });
 

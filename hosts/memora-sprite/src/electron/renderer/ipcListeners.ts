@@ -31,7 +31,8 @@ import type { RapportLevel, PresenceState, RhythmType, CoherenceLevel, DepthLeve
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../shared/truncate.js';
 // getArchiveFailedMessage 归档失败文案真理源（UX-13：替代直传 msg.payload.message 到 Toast）
-import { getArchiveFailedMessage } from '../../shared/errorMessages.js';
+// formatErrorMessage 错误文案真理源（UX-REVIEW-M5：应用级 error toast 分类映射，避免暴露技术细节）
+import { getArchiveFailedMessage, formatErrorMessage } from '../../shared/errorMessages.js';
 
 /**
  * 主动提示 payload 结构
@@ -960,7 +961,8 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   // ─── 应用错误处理 ─────────────────────────────────────
   window.electronAPI.onAppError((error: SerializedAppError) => {
     // 应用级错误走 toast，不污染对话历史
-    uiManager.showToast(error.message, 'error');
+    // UX-13：分类映射为用户友好中文文案，避免暴露 IPC 错误码/堆栈等技术细节
+    uiManager.showToast(formatErrorMessage('应用操作', error), 'error');
     reportError(error.code, error);
   });
 
