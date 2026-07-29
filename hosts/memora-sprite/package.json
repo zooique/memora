@@ -85,6 +85,10 @@
     },
     "asar": true,
     "icon": "build/icons/icon.png",
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/zooique/memora-sprite-releases/releases/download/latest/"
+    },
     "win": {
       "target": [
         {

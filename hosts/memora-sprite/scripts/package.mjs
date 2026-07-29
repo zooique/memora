@@ -215,11 +215,13 @@ async function main() {
   }
 
   console.error(`\n[package] ${MAX_RETRIES} 次重试均失败`);
-  console.error('[package] 根因：杀毒软件（腾讯电脑管家、360 等）实时扫描 electron.exe 锁文件');
-  console.error('[package] 解决：在杀软设置里把 F:\\zooique\\memora 加入信任区/白名单');
+  // 诊断真实根因：检查是否为 publish 配置缺失导致的 null 引用
+  console.error('[package] 若错误为 "Cannot read property \'provider\' of null"，');
+  console.error('[package]   根因是 package.json build 配置缺少 publish 字段，已在 v1.4.0 修复');
+  console.error('[package] 若错误为 EPERM rename，根因是杀毒软件锁文件：');
   console.error('[package]   - 腾讯电脑管家：病毒查杀 → 信任区 → 添加文件夹');
   console.error('[package]   - 360 安全卫士：安全防护 → 信任与阻止 → 添加文件夹');
-  console.error('[package]   - Windows Defender（若启用）：Add-MpPreference -ExclusionPath "F:\\zooique\\memora"')
+  console.error('[package]   - Windows Defender：Add-MpPreference -ExclusionPath "项目目录"');
   process.exit(1);
 }
 
