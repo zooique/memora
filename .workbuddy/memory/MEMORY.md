@@ -1,7 +1,7 @@
 # 项目长期记忆（memora）
 
 ## 架构与质量基线
-- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，版本 1.3.0）。内核经 `scripts/sync-memora.mjs` 以 cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，运行期不单独更新**。
+- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，版本 1.4.0）。内核经 `scripts/sync-memora.mjs` 以 cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，运行期不单独更新**。
 - 真实质量门 = `tsc --noEmit` + `eslint` + `lint:css`(stylelint) + vitest；prettier --check 非门（勿批量 write 制造无关 diff）。
 
 ## 设计令牌（ADR）
@@ -36,8 +36,12 @@
 
 ## 发布/分发约定（闭源桌面端）
 - 主仓 Gitee，已配 **Gitee→GitHub 私有 push 镜像**（代码+tags 自动同步，作备份；**必须保持 private**，否则同步上去的源码泄露破闭源）。
+- **CI 全自动发版**：`build.yml` 监听 `v*` tag（经镜像同步到 GitHub）→ **仅 Windows** 构建（`electron-builder --win`）→ `Publish Release` job 用 secret `RELEASE_TOKEN`（细粒度 PAT，仅授权公开仓 `memora-sprite-releases` 的 Contents:write）自动在公开仓建 Release+传 exe。开发者零手动建 Release。
 - exe 分发 + 版本检测走 **GitHub Releases（独立公开发布仓 `memora-sprite-releases`，只放 exe 不含源码）**：GitHub 单文件 <2GiB 限额对 ~130MB 充裕；公开仓 `GET /repos/{o}/{r}/releases/latest` **免鉴权**（匿名限速 60 次/小时/IP，按钮点击足够），客户端检测不必内嵌 token。
-- ⚠️ **镜像只同步 tag、不自动建 Release**：发版需「推 Gitee→等 tag 镜像同步→GitHub 侧手动建 Release 传 exe」半自动一步。客户端检查用 `fetch` + `User-Agent` 头，取 `tag_name` 数值比较、`html_url` 打开发布页。
-- 客户端版本 = 宿主 `package.json` `version`；tag 前缀 `v{x.y.z}`。内核打进 asar 随客户端冻结，"改内核免重装"对终端用户不成立（仅开发者发版流程成立）。
+- 客户端检查用 `fetch` + `User-Agent` 头，取 `tag_name` 数值比较、`html_url` 打开发布页。
+- 版本：宿主 `memora-sprite` 当前 `1.4.0`、内核 `@zooique/memora` `2.0.2`，**独立维护**——发版只升宿主版本（如 1.4.0→1.5.0），内核无需同步升号。
+- ⚠️ **内核同步铁律**：sprite 不通过 `file:` 依赖内核（避免 Junction 把全仓打进 asar）；`scripts/sync-memora.mjs` 把内核 `dist/`+`package.json`+`LICENSE`+`README.md` cpSync 进 `hosts/memora-sprite/node_modules/memora/`。**改内核源码后必须 `npm run sync-memora`（编译+同步）再打包**，否则 exe 含旧内核（`node_modules/memora/dist/` 是独立副本）。
+- 内核打进 asar 随客户端冻结，"改内核免重装"对终端用户不成立（仅开发者发版流程成立）。
+- CI 构建在私有镜像仓跑，消耗私有仓 Actions 分钟（Free 2000/月，仅 Windows 余量足）；`RELEASE_TOKEN` 须最小权限、只存 Actions secret。
 - 国内加速备选：COS/OSS/R2 另放 exe 直链作「国内高速下载」（非必须）。
 - 详见 `tasks/发布流程-gitee-20260722.md` §1/§4/§5 + `tasks/STEP-发版前置-PRIVACY与更新检查.md`。

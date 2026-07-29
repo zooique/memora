@@ -17,10 +17,13 @@ import { safeSetTimeout } from '@/utils/safeTimer.js';
 
 /**
  * 单个 Provider 配置（用于 createProviderFromConfig）
+ *
+ * baseUrl 为可选：内核在 createProviderFromConfig 内部会做空值检查，
+ * 缺失时抛出 configError。这样 BackgroundConfig.baseUrl?: string 可以直接传入。
  */
 export interface ProviderConfig {
-  /** API 基础 URL（必填——内核不做预设回退，宿主应在消费前填充） */
-  baseUrl: string;
+  /** API 基础 URL（可选——内核在 createProviderFromConfig 内部做空值检查并报错） */
+  baseUrl?: string;
   /** 默认模型名称（必填） */
   model: string;
   /** API 密钥（本地 LLM 如 Ollama 可为空字符串；宿主负责决定） */
