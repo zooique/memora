@@ -1,13 +1,13 @@
 # Memora Sprite 自动化构建流水线
 #
 # 触发条件：
-#   1. 推送 v* 格式的 tag（正式发布）
-#   2. 手动触发（workflow_dispatch）
+#   1. 推送 v* 格式的 tag → 仅 Windows 自动构建打包
+#   2. 手动触发（workflow_dispatch）→ 可选 Windows / macOS / Linux
 #
 # 产物：
-#   - Windows: Memora-Sprite-win-x64.zip + NSIS 安装包（.exe）
-#   - macOS:   Memora-Sprite-mac-x64.zip + DMG
-#   - Linux:   Memora-Sprite-linux-x64.zip
+#   - Windows: Memora-Sprite-win-x64.zip + NSIS 安装包（.exe） ← 主要分发格式
+#   - macOS:   Memora-Sprite-mac-x64.zip + DMG（仅手动，未签名需自行处理 Gatekeeper）
+#   - Linux:   Memora-Sprite-linux-x64.zip（仅手动）
 #
 # 缓存策略：
 #   - npm 缓存（按 package-lock.json 哈希）
@@ -103,7 +103,8 @@ jobs:
   build-macos:
     name: Build macOS (x64 + arm64)
     runs-on: macos-latest
-    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac' || github.event_name == 'push'
+    # 暂不自动构建 macOS（未签名会被 Gatekeeper 拦），仅手动触发时可用
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac')
     defaults:
       run:
         working-directory: hosts/memora-sprite
@@ -174,7 +175,8 @@ jobs:
   build-linux:
     name: Build Linux x64
     runs-on: ubuntu-latest
-    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux' || github.event_name == 'push'
+    # 暂不自动构建 Linux（暂无用户需求），仅手动触发时可用
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux')
     defaults:
       run:
         working-directory: hosts/memora-sprite
@@ -241,10 +243,10 @@ jobs:
 
   # ─── 发布 Release ──────────────────────────────────────────
   # 闭源发布策略：源码在私有镜像仓，产物发布到独立公开发布仓 memora-sprite-releases
-  # 用户需先配置 secret RELEASE_TOKEN（GitHub PAT，权限 repo），见发布流程文档 §4
+  # 用户需先配置 secret RELEASE_TOKEN（GitHub 细粒度 PAT，仅公开仓 memora-sprite-releases 的 Contents:write），见发布流程文档 §4
   release:
     name: Publish Release
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
