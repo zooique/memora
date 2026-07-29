@@ -156,12 +156,35 @@ export class ErrorHandler {
 
   /** 输出结构化日志（替代 console.error，与项目日志规范一致） */
   private logError(error: AppError): void {
+    // 手动序列化 originalError：pino 默认对 Error 对象序列化为 {}（enumerable 属性为空），
+    // 需提取 name/message/cause/code 等关键字段，便于诊断网络层根因（DNS/SSL/代理等）。
+    // 典型场景：undici TypeError('fetch failed') 的 cause 字段含真正根因（ENOTFOUND/ECONNRESET），
+    // 不提取则日志丢失关键诊断信息。
+    const err = error.originalError;
+    const serializedErr = err
+      ? {
+          name: err.name,
+          message: err.message,
+          // undici fetch 错误的 cause 字段含网络层根因（ENOTFOUND/ECONNRESET/ETIMEDOUT 等）
+          cause:
+            err instanceof Error && 'cause' in err
+              ? String((err as { cause?: unknown }).cause)
+              : undefined,
+          // 系统错误码（DNS/网络层错误常携带 code 字段，如 ENOTFOUND）
+          // err 类型为 Error，但运行时可能携带 code 字段（如 Node 系统错误），
+          // 需先转 unknown 再断言为带 code 字段的对象，避免 TS 类型重叠检查报错
+          code:
+            typeof (err as unknown as { code?: unknown }).code === 'string'
+              ? (err as unknown as { code: string }).code
+              : undefined,
+        }
+      : undefined;
     // 使用 logger.error 结构化输出，便于日志聚合和过滤
     logger.error(
       {
         code: error.code,
         context: error.context,
-        originalError: error.originalError,
+        originalError: serializedErr,
       },
       error.message,
     );

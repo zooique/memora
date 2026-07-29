@@ -428,7 +428,13 @@ describe('logError 结构化日志', () => {
       expect.objectContaining({
         code: ErrorCode.NETWORK_ERROR,
         context: { description: 'API 请求阶段' },
-        originalError: err,
+        // logError 手动序列化 originalError：提取 name/message/cause/code 关键字段
+        // （pino 默认对 Error 序列化为 {}，需手动序列化保留诊断信息）
+        originalError: expect.objectContaining({
+          name: 'SpriteError',
+          message: '请求超时',
+          code: ErrorCode.NETWORK_ERROR,
+        }),
       }),
       '请求超时',
     );

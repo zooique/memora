@@ -98,7 +98,8 @@ export function showMemoryDetail(ctx: MemoryDetailPanelContext, memory: MemoryDe
     // source 标签颜色区分（与列表保持一致）
     sourceEl.className = `source-${getSourceColorClass(memory.source)}`;
   }
-  if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
+  // UX-REVIEW-11：score 格式化为百分比（0.85 → 85%），比原始小数对用户更直观
+  if (scoreEl) scoreEl.textContent = `${Math.round(memory.score * 100)}%`;
   // 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
   // data-timestamp 保留原始时间戳，供 timeRefresher 在窗口恢复焦点时统一刷新
   if (createdEl) {

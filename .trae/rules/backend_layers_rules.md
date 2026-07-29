@@ -127,6 +127,7 @@ agent/
 ├── builtinTools.ts       # 内置工具定义（BUILTIN_TOOLS 声明）
 ├── builtinToolHandlers.ts # 内置工具处理器（read_file/write_file/list_dir/search_memories 实现，从 ToolExecutor 提取）
 ├── contextManager.ts     # 上下文窗口管理器（token 估算 + 消息截断 + 关键消息提取 + 摘要生成，从 AgentLoop 提取）
+├── guardrail.ts          # 护栏模块（输入/输出内容安全检查，从 AgentLoop 提取，降级优先原则）
 ├── messageHistory.ts     # 消息持久化 + 会话归档
 ├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
 ├── types.ts              # Agent 类型定义
@@ -154,6 +155,9 @@ agent/
 utils/
 ├── errors.ts             # 错误类型（MemoraError + 工厂函数 + ToolErrorCode 10 种错误码 + re-export toError）
 ├── toError.ts            # 纯逻辑 toError（零依赖，浏览器/Node 通用）
+├── array.ts              # 数组工具（排序/去重/拷贝等纯函数）
+├── objects.ts            # 对象类型守卫工具（从 lockManager/projectRegistry/spriteConfig 提取的公共类型校验，ADR-017 枝叶层 2 次提取）
+├── configResourceManager.ts # 配置资源管理器抽象基类（消除 SkillManager 与 PersonaManager 重复结构，DRY 模式）
 ├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 6 事件）
 ├── frontmatter.ts        # Frontmatter 解析/序列化（从 memory/ 迁入，供 memory/persona/skill 共享）
 ├── json.ts               # LLM JSON 安全解析（parseLlmJson：markdown 剥离 + 引号修复 + 正则回退，专用于 LLM 输出）

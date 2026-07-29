@@ -982,7 +982,8 @@ describe('事件委托 · click 分发', () => {
     // 等待 Promise 微任务（clipboard.writeText 返回 resolved Promise）
     await Promise.resolve();
     await Promise.resolve();
-    expect(host.showToast).toHaveBeenCalledWith('已复制到剪贴板', 'success', 1500);
+    // TOAST_SHORT_MS = 2000（与源码 sprite/constants.ts 保持一致）
+    expect(host.showToast).toHaveBeenCalledWith('已复制到剪贴板', 'success', 2000);
   });
 
   it('clipboard.writeText 失败时应显示 error toast', async () => {

@@ -143,7 +143,7 @@ describe('renderMemoryList', () => {
     const item = document.querySelector('.memory-item')!;
     expect(item.querySelector('.name')?.textContent).toBe('测试名');
     expect(item.querySelector('.source-tag')?.textContent).toBe('profile');
-    expect(item.querySelector('.score')?.textContent).toBe('权重: 0.50');
+    expect(item.querySelector('.score')?.textContent).toBe('权重: 50%');
     expect(item.querySelector('.preview')?.textContent).toBe('预览文本');
   });
 
@@ -329,7 +329,7 @@ describe('showMemoryDetail', () => {
     expect(document.getElementById('memory-detail-name')?.textContent).toBe('详情名');
     // P0-1：source 经 sourceLabel.ts 映射为中文显示（insight → 洞察）
     expect(document.getElementById('memory-detail-source')?.textContent).toBe('洞察');
-    expect(document.getElementById('memory-detail-score')?.textContent).toBe('0.88');
+    expect(document.getElementById('memory-detail-score')?.textContent).toBe('88%');
     expect(document.getElementById('memory-detail-content')?.textContent).toBe('内容文本');
   });
 

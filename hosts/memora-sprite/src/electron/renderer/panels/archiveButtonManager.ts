@@ -168,10 +168,10 @@ export class ArchiveButtonManager {
       // 触发归档（profile facts + insight 一次性提取）
       const count = await this.host.archiveConversation(userInput, assistantContent);
       if (count > 0) {
-        // P1-1 用户体验打磨：内联反馈——在按钮下方插入"已归档 N 条"短暂提示，
-        // 让用户在消息上下文中立即看到结果，无需依赖右上角 toast
+        // 反馈策略（UX-REVIEW-09）：单一内联反馈——在按钮下方插入"已归档 N 条"短暂提示。
+        // 按钮状态同步变为 archived（视觉反馈），避免与右上角 toast 形成冗余双重反馈。
+        // 内联反馈紧贴消息上下文，比全局 toast 更"主动可见"，符合 UX 主动可见原则。
         this.showInlineArchiveFeedback(archiveBtn, count);
-        this.host.showToast(`已归档 ${count} 条记忆`, 'success', 2000);
         archiveBtn.classList.add('archived');
         archiveBtn.title = '已归档';
       } else {

@@ -1125,7 +1125,9 @@ describe('initIpcListeners · 错误与状态监听', () => {
   it('onAppError → showToast("error") + reportError', () => {
     const error = { code: 'ERR_001', message: '测试错误', timestamp: '2026-07-12T10:00:00Z' };
     captured.onAppError(error);
-    expect(spies.showToast).toHaveBeenCalledWith('测试错误', 'error');
+    // UX-REVIEW-M5：应用级 error toast 使用 formatErrorMessage 分类映射，避免暴露技术细节
+    // '测试错误' 不匹配任何已知错误模式，回退到通用文案
+    expect(spies.showToast).toHaveBeenCalledWith('应用操作失败，请稍后重试。如持续出现，请检查网络或重启应用', 'error');
     expect(console.error).toHaveBeenCalledWith('[ERR_001]', error);
   });
 

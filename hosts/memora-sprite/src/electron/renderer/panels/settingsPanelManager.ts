@@ -433,8 +433,9 @@ export class SettingsPanelManager {
               // dialog 关闭后用户可能已前往下载，静默处理
             } else if (result.reason === 'up-to-date') {
               this.host.showToast(`当前已是最新版本（${result.current}）`, 'success');
-            } else if (result.reason === 'error') {
-              this.host.showToast('检查更新失败，请检查网络连接', 'error');
+            } else if (result.reason === 'timeout' || result.reason === 'network' || result.reason === 'error') {
+              // 主进程已弹 dialog 提供"前往下载页"选项，renderer 不再重复 toast 错误
+              // 避免双重反馈（与 archiveButtonManager UX-REVIEW-09 同原则）
             } else {
               // no-release / invalid-tag → API 异常或尚无 Release
               this.host.showToast('未能获取版本信息，请稍后重试', 'info');

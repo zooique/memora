@@ -119,7 +119,7 @@ describe('handleRegenerate', () => {
     const assistantMsg = createMessageEl('assistant', '回复');
     document.body.appendChild(assistantMsg);
     handleRegenerate(ctx, assistantMsg);
-    expect(host.showToast).toHaveBeenCalledWith('找不到对应的用户消息', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('找不到对应的用户消息', 'warning');
     expect(host.regenerateLastMessage).not.toHaveBeenCalled();
   });
 
@@ -131,7 +131,7 @@ describe('handleRegenerate', () => {
     const assistantMsg = createMessageEl('assistant', '回复');
     buildConversation([[userMsg], [assistantMsg]]);
     handleRegenerate(ctx, assistantMsg);
-    expect(host.showToast).toHaveBeenCalledWith('用户消息内容为空', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('用户消息内容为空', 'warning');
     expect(host.regenerateLastMessage).not.toHaveBeenCalled();
   });
 
@@ -142,7 +142,7 @@ describe('handleRegenerate', () => {
     const assistantMsg = createMessageEl('assistant', '回复');
     buildConversation([[userMsg], [assistantMsg]]);
     handleRegenerate(ctx, assistantMsg);
-    expect(host.showToast).toHaveBeenCalledWith('用户消息内容为空', 'error');
+    expect(host.showToast).toHaveBeenCalledWith('用户消息内容为空', 'warning');
   });
 
   it('成功路径应删除精灵消息并调用 regenerateLastMessage', () => {

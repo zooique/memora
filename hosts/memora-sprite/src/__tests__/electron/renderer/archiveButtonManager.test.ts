@@ -123,7 +123,7 @@ describe('maybeAddArchiveButton · 渲染条件', () => {
 // ─── handleClick · 归档流程 ───────────────────────────────
 
 describe('handleClick · 归档流程', () => {
-  it('正常归档应调用 archiveConversation + 显示成功 toast', async () => {
+  it('正常归档应调用 archiveConversation + 显示内联反馈', async () => {
     const host = createMockHost();
     const { manager } = createManager(host);
     const { assistantEl } = buildMessageGroup();
@@ -133,7 +133,10 @@ describe('handleClick · 归档流程', () => {
     await manager.handleClick(archiveBtn);
     expect(host.archiveConversation).toHaveBeenCalledTimes(1);
     expect(host.archiveConversation).toHaveBeenCalledWith('用户输入内容', '助手回复内容');
-    expect(host.showToast).toHaveBeenCalledWith('已归档 3 条记忆', 'success', 2000);
+    // UX-REVIEW-09：成功反馈改为单一内联反馈（删除冗余 toast）
+    const feedback = assistantEl.querySelector('.archive-inline-feedback');
+    expect(feedback).toBeTruthy();
+    expect(feedback?.textContent).toBe('已归档 3 条');
   });
 
   it('归档成功应禁用按钮 + 添加 archived 类', async () => {

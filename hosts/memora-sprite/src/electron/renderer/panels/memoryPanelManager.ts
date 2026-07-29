@@ -509,7 +509,8 @@ export class MemoryPanelManager {
     const sourceTag = createEl('span', `source-tag source-${getSourceColorClass(mem.source)}`, mem.source);
     metaEl.appendChild(sourceTag);
 
-    const scoreEl = createEl('span', 'score', `权重: ${mem.score.toFixed(2)}`);
+    // UX-REVIEW-11：score 百分比化（0.85 → 85%），比原始小数对用户更直观
+    const scoreEl = createEl('span', 'score', `权重: ${Math.round(mem.score * 100)}%`);
     metaEl.appendChild(scoreEl);
 
     if (mem.createdAt) {

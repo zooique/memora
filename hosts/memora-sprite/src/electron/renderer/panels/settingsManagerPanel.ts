@@ -21,7 +21,7 @@
  *   - 二者通过 panel-sprite-settings / panel-settings 隔离，各自独立
  */
 
-import { clearElement, getOptionalElement } from '../helpers/domHelpers.js';
+import { clearElement, getOptionalElement, showPanelLoading } from '../helpers/domHelpers.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
@@ -246,6 +246,8 @@ export class SettingsManagerPanelManager {
 
   /** 加载角色文件列表并渲染 */
   private async loadPersonaList(): Promise<void> {
+    // UX-REVIEW-08：加载前显示 loading 反馈，与 profilePanel/healthDashboard 对齐
+    if (this.personaConfigList) showPanelLoading(this.personaConfigList, '加载角色列表…');
     try {
       // listPersonas 返回 { personas: Array<{ name, description, active }> }
       // 角色 active 状态由主进程维护，设定面板直接渲染（无需文件级 mtime）
@@ -259,6 +261,8 @@ export class SettingsManagerPanelManager {
 
   /** 加载规则文件列表并渲染 */
   private async loadRuleList(): Promise<void> {
+    // UX-REVIEW-08：加载前显示 loading 反馈，与 profilePanel/healthDashboard 对齐
+    if (this.ruleConfigList) showPanelLoading(this.ruleConfigList, '加载规则列表…');
     try {
       const entries = await window.electronAPI.listRules();
       this.renderRuleList(entries);
@@ -270,6 +274,8 @@ export class SettingsManagerPanelManager {
 
   /** 加载技能文件列表并渲染 */
   private async loadSkillList(): Promise<void> {
+    // UX-REVIEW-08：加载前显示 loading 反馈，与 profilePanel/healthDashboard 对齐
+    if (this.skillConfigList) showPanelLoading(this.skillConfigList, '加载技能列表…');
     try {
       const entries = await window.electronAPI.listSkills();
       this.renderSkillList(entries);

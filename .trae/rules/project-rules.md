@@ -160,6 +160,12 @@ chore: 升级 dependencies
 | [programmer-mindset-rules.md](./programmer-mindset-rules.md) | 资深程序员心智模型（Bug 修复 + 逻辑设计：根因 / 嫁接 / 逻辑先行） |
 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) | UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继承，继承自 programmer-mindset-rules.md） |
 
+### 6.7 重构规范类（按需读取，触发式加载）
+
+| 文件 | 用途 |
+|------|------|
+| [progressive-refactor-rules.md](./progressive-refactor-rules.md) | 渐进式重构规范（领域容器提取 模式 A + 职责拆分 模式 B，触发阈值：字段数 ≥15 / 职责数 ≥5 / 修改成本 ≥10 处无关代码，单轮一个领域 + 炼化归元收尾） |
+
 ## 7. AI 行为 DO/DON'T 速查表
 
 > 本节集中列出 AI 在编写/修改 memora 内核代码时的实施级 DO/DON'T 规则。

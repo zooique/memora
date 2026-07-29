@@ -133,6 +133,9 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   /** 格式化离开时长为人类可读字符串 */
   const formatAwayDuration = (ms: number): string => {
     const minutes = Math.floor(ms / 60_000);
+    // UX-REVIEW-12：< 1 分钟显示"刚刚离开"，与 perceptionPanelManager/narrativeGenerator 文案对齐
+    // 防御未来阈值调整（当前 AWAY_LABEL_THRESHOLD_MS=5min 不会触发，但保持边界一致性）
+    if (minutes < 1) return '刚刚离开';
     if (minutes < 60) return `离开 ${minutes} 分钟`;
     const hours = Math.floor(minutes / 60);
     return `离开 ${hours} 小时`;

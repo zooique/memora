@@ -279,9 +279,36 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       }
       return { hasUpdate: true, current: appVersion, remote: remoteVer };
     } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '检查更新失败' });
-      // AbortError → 超时；TypeError → 网络不通，统一归为 error
-      return { hasUpdate: false, reason: 'error', error: toError(error).message };
+      // 不显式传 code：让 extractErrorCode 根据 'fetch failed' 自动推断为 NETWORK_ERROR
+      // （显式传 UNKNOWN 会覆盖推断，导致 code 误报为 UNKNOWN）
+      errorHandler.handle(error, { context: '检查更新失败' });
+
+      // 错误分类：区分超时/网络，供 renderer 给用户更精准的提示
+      const err = toError(error);
+      const isTimeout = err.name === 'AbortError';
+      const isNetwork = err.name === 'TypeError' || err.message.includes('fetch');
+
+      // 网络失败时弹 dialog 提供"前往下载页"选项——api.github.com 国内不可达是常见情况，
+      // 让用户能直接打开 releases 页面手动查看，而非只看到 toast 提示束手无策
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        title: '检查更新失败',
+        message: isTimeout ? '检查更新超时' : '网络连接失败',
+        detail: isTimeout
+          ? `连接 GitHub API 超时（10 秒）。请检查网络或稍后重试。\n\n也可直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`
+          : `无法连接 GitHub API（可能是网络限制或 DNS 问题）。\n\n可尝试：\n• 配置代理后重试\n• 直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`,
+        buttons: ['关闭', '前往下载页'],
+        defaultId: 1,
+      });
+      if (response === 1) {
+        await shell.openExternal(`https://github.com/${GH_OWNER}/${GH_REPO}/releases`);
+      }
+
+      return {
+        hasUpdate: false,
+        reason: isTimeout ? 'timeout' : isNetwork ? 'network' : 'error',
+        error: err.message,
+      };
     }
   });
 }
