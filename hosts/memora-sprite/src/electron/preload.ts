@@ -107,12 +107,9 @@ export const IPC_CHANNELS = {
   MEMORIES_REVIEW_DATA: 'memories-review-data',
   /** 批量删除记忆（Phase 3：智能清理） */
   MEMORIES_DELETE_BATCH: 'memories-delete-batch',
-  /** 添加记忆关系（手动创建，关系图交互） */
-  MEMORIES_ADD_RELATION: 'memories-add-relation',
-  /** 删除记忆关系（关系图交互） */
-  MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
-  /** 更新记忆关系（关系图交互） */
-  MEMORIES_UPDATE_RELATION: 'memories-update-relation',
+  // 记忆关系 mutation 统一入口（IPC-COUNT-02 候选 1：合并 ADD/REMOVE/UPDATE 三通道）
+  // payload.action: 'add' | 'remove' | 'update' 区分操作；sugar API 保留向后兼容
+  MEMORIES_RELATION_MUTATE: 'memories-relation-mutate',
   /** 手动归档 profile facts（manual 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
   /** 手动归档 insight（manual 模式下供 UI 调用） */
@@ -612,11 +609,18 @@ export interface ElectronAPI {
   detectConflicts: () => Promise<ConflictReport>;
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
-  /** 添加记忆关系（手动创建，关系图交互） */
+  /**
+   * 记忆关系变更统一入口（IPC-COUNT-02 候选 1：合并 add/remove/update 三类 mutation）
+   *
+   * payload.action 区分操作类型，sourceId/targetId/type/weight 字段语义同原三通道。
+   * 新代码推荐使用本入口；addRelation/removeRelation/updateRelation 作为 sugar API 保留向后兼容。
+   */
+  mutateRelation: (data: { action: 'add' | 'remove' | 'update'; sourceId: string; targetId: string; type: string; weight?: number }) => Promise<{ success: boolean }>;
+  /** [sugar] 添加记忆关系（内部委托 mutateRelation，向后兼容） */
   addRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
-  /** 删除记忆关系（关系图交互） */
+  /** [sugar] 删除记忆关系（内部委托 mutateRelation，向后兼容） */
   removeRelation: (data: { sourceId: string; targetId: string; type: string }) => Promise<{ success: boolean }>;
-  /** 更新记忆关系（关系图交互） */
+  /** [sugar] 更新记忆关系（内部委托 mutateRelation，向后兼容） */
   updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
   /** 获取记忆关系路径（Phase 5.1：路径追溯，展示记忆演化脉络） */
   getRelationPath: (data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) => Promise<RelationPath[]>;
@@ -1172,15 +1176,22 @@ const electronAPI: ElectronAPI = {
   /** 获取记忆关系邻居（Phase 5.2：邻居查询，展示直接关联记忆） */
   getRelationNeighbors: (data: { memoryId: string; limit?: number }) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS, data),
-  /** 添加记忆关系（手动创建，关系图交互） */
+  /**
+   * 记忆关系变更统一入口（IPC-COUNT-02 候选 1）
+   *
+   * 新代码推荐入口。sugar API（addRelation/removeRelation/updateRelation）内部委托本方法。
+   */
+  mutateRelation: (data: { action: 'add' | 'remove' | 'update'; sourceId: string; targetId: string; type: string; weight?: number }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_MUTATE, data),
+  /** [sugar] 添加记忆关系（内部委托 mutateRelation，向后兼容） */
   addRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD_RELATION, data),
-  /** 删除记忆关系（关系图交互） */
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_MUTATE, { action: 'add' as const, ...data }),
+  /** [sugar] 删除记忆关系（内部委托 mutateRelation，向后兼容） */
   removeRelation: (data: { sourceId: string; targetId: string; type: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REMOVE_RELATION, data),
-  /** 更新记忆关系（关系图交互） */
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_MUTATE, { action: 'remove' as const, ...data }),
+  /** [sugar] 更新记忆关系（内部委托 mutateRelation，向后兼容） */
   updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_UPDATE_RELATION, data),
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_MUTATE, { action: 'update' as const, ...data }),
   archiveProfileFacts: (input: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE, { input }),
   archiveInsight: (input: string, assistantContent: string) =>

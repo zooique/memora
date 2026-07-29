@@ -1126,15 +1126,18 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ deleted: 0, total: 2 });
   });
 
-  // ─── MEMORIES_ADD_RELATION（添加关系） ─────────────
+  // ─── MEMORIES_RELATION_MUTATE（关系变更统一入口，IPC-COUNT-02 候选 1） ──
+  // 合并自 MEMORIES_ADD_RELATION + MEMORIES_REMOVE_RELATION + MEMORIES_UPDATE_RELATION
+  // 测试覆盖：action 分发正确性 + weight 校验（add/update 必填、remove 可选）+ 三元组校验 + 抛错降级
 
-  it('MEMORIES_ADD_RELATION 合法参数应返回 success: true', async () => {
+  it('MEMORIES_RELATION_MUTATE action=add 合法参数应委托 sprite.addRelation 并返回 success: true', async () => {
     const addRelation = vi.fn();
     const ctx = createMockCtx({ addRelation });
     registerMemoryHandlers(ctx);
 
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
     const result = await callback({}, {
+      action: 'add',
       sourceId: 'mem-1',
       targetId: 'mem-2',
       type: 'supports',
@@ -1145,67 +1148,14 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('MEMORIES_ADD_RELATION 非法 type（不在白名单）应拒绝（返回 success: false）', async () => {
-    const addRelation = vi.fn();
-    const ctx = createMockCtx({ addRelation });
-    registerMemoryHandlers(ctx);
-
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
-    const result = await callback({}, {
-      sourceId: 'mem-1',
-      targetId: 'mem-2',
-      type: 'invalid-type',
-      weight: 0.5,
-    });
-
-    expect(addRelation).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: false });
-  });
-
-  it('MEMORIES_ADD_RELATION 非法 sourceId（空字符串）应拒绝（返回 success: false）', async () => {
-    const addRelation = vi.fn();
-    const ctx = createMockCtx({ addRelation });
-    registerMemoryHandlers(ctx);
-
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
-    const result = await callback({}, {
-      sourceId: '',
-      targetId: 'mem-2',
-      type: 'supports',
-      weight: 0.5,
-    });
-
-    expect(addRelation).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: false });
-  });
-
-  it('MEMORIES_ADD_RELATION 抛错应降级返回 success: false', async () => {
-    const addRelation = vi.fn(() => {
-      throw new Error('关系写入失败');
-    });
-    const ctx = createMockCtx({ addRelation });
-    registerMemoryHandlers(ctx);
-
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
-    const result = await callback({}, {
-      sourceId: 'mem-1',
-      targetId: 'mem-2',
-      type: 'supports',
-      weight: 0.8,
-    });
-
-    expect(result).toEqual({ success: false });
-  });
-
-  // ─── MEMORIES_REMOVE_RELATION（删除关系） ──────────
-
-  it('MEMORIES_REMOVE_RELATION 合法参数应返回 success: true', async () => {
+  it('MEMORIES_RELATION_MUTATE action=remove 合法参数应委托 sprite.removeRelation（weight 可选，缺失时通过）', async () => {
     const removeRelation = vi.fn();
     const ctx = createMockCtx({ removeRelation });
     registerMemoryHandlers(ctx);
 
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_REMOVE_RELATION)!;
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
     const result = await callback({}, {
+      action: 'remove',
       sourceId: 'mem-1',
       targetId: 'mem-2',
       type: 'contradicts',
@@ -1215,31 +1165,14 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('MEMORIES_REMOVE_RELATION 非法 targetId（空字符串）应拒绝（返回 success: false）', async () => {
-    const removeRelation = vi.fn();
-    const ctx = createMockCtx({ removeRelation });
-    registerMemoryHandlers(ctx);
-
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_REMOVE_RELATION)!;
-    const result = await callback({}, {
-      sourceId: 'mem-1',
-      targetId: '',
-      type: 'supports',
-    });
-
-    expect(removeRelation).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: false });
-  });
-
-  // ─── MEMORIES_UPDATE_RELATION（更新关系） ──────────
-
-  it('MEMORIES_UPDATE_RELATION 合法参数应返回 success: true', async () => {
+  it('MEMORIES_RELATION_MUTATE action=update 合法参数应委托 sprite.updateRelation 并返回 success: true', async () => {
     const updateRelation = vi.fn();
     const ctx = createMockCtx({ updateRelation });
     registerMemoryHandlers(ctx);
 
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_UPDATE_RELATION)!;
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
     const result = await callback({}, {
+      action: 'update',
       sourceId: 'mem-1',
       targetId: 'mem-2',
       type: 'refines',
@@ -1250,20 +1183,152 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('MEMORIES_UPDATE_RELATION 非法 type 应拒绝（返回 success: false）', async () => {
+  it('MEMORIES_RELATION_MUTATE 非法 action（不在白名单）应拒绝且不调用任何 mutation', async () => {
+    const addRelation = vi.fn();
+    const removeRelation = vi.fn();
+    const updateRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation, removeRelation, updateRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    // 故意传入 'delete' 这种近义但不在白名单的 action，验证 action 严格枚举校验
+    const result = await callback({}, {
+      action: 'delete' as 'add',
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'supports',
+      weight: 0.5,
+    });
+
+    expect(addRelation).not.toHaveBeenCalled();
+    expect(removeRelation).not.toHaveBeenCalled();
+    expect(updateRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE action=add 缺失 weight 应拒绝（add 路径 weight 必填）', async () => {
+    const addRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    const result = await callback({}, {
+      action: 'add',
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'supports',
+      // weight 故意缺失
+    });
+
+    expect(addRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE action=update weight 非 number（字符串）应拒绝', async () => {
     const updateRelation = vi.fn();
     const ctx = createMockCtx({ updateRelation });
     registerMemoryHandlers(ctx);
 
-    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_UPDATE_RELATION)!;
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
     const result = await callback({}, {
+      action: 'update',
       sourceId: 'mem-1',
       targetId: 'mem-2',
-      type: 'not-a-valid-type',
-      weight: 0.5,
+      type: 'refines',
+      weight: '0.9' as unknown as number, // 模拟恶意渲染进程传入字符串
     });
 
     expect(updateRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE action=update weight=NaN 应拒绝（Number.isFinite 校验）', async () => {
+    const updateRelation = vi.fn();
+    const ctx = createMockCtx({ updateRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    const result = await callback({}, {
+      action: 'update',
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'refines',
+      weight: Number.NaN,
+    });
+
+    expect(updateRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE 非法 type（不在 ADR-014 白名单）应拒绝', async () => {
+    const addRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    const result = await callback({}, {
+      action: 'add',
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'invalid-type',
+      weight: 0.5,
+    });
+
+    expect(addRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE 非法 sourceId（空字符串）应拒绝', async () => {
+    const addRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    const result = await callback({}, {
+      action: 'add',
+      sourceId: '',
+      targetId: 'mem-2',
+      type: 'supports',
+      weight: 0.5,
+    });
+
+    expect(addRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE 非法 targetId（空字符串）应拒绝', async () => {
+    const removeRelation = vi.fn();
+    const ctx = createMockCtx({ removeRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    const result = await callback({}, {
+      action: 'remove',
+      sourceId: 'mem-1',
+      targetId: '',
+      type: 'supports',
+    });
+
+    expect(removeRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_RELATION_MUTATE 内核抛错应降级返回 success: false', async () => {
+    const addRelation = vi.fn(() => {
+      throw new Error('关系写入失败');
+    });
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
+    const result = await callback({}, {
+      action: 'add',
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'supports',
+      weight: 0.8,
+    });
+
     expect(result).toEqual({ success: false });
   });
 

@@ -84,12 +84,21 @@ export const IPC_CHANNELS = {
   MEMORIES_REVIEW_DATA: 'memories-review-data',
   /** 批量删除记忆（Phase 3：智能清理） */
   MEMORIES_DELETE_BATCH: 'memories-delete-batch',
-  /** 添加记忆关系（手动创建，关系图交互） */
-  MEMORIES_ADD_RELATION: 'memories-add-relation',
-  /** 删除记忆关系（关系图交互） */
-  MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
-  /** 更新记忆关系（关系图交互） */
-  MEMORIES_UPDATE_RELATION: 'memories-update-relation',
+  // ─── 记忆关系 mutation 统一入口（IPC-COUNT-02 候选 1，2026-07-29） ──
+  // 合并自：MEMORIES_ADD_RELATION + MEMORIES_REMOVE_RELATION + MEMORIES_UPDATE_RELATION（3 通道 → 1 通道）
+  // 三个 mutation 参数结构完全同构（sourceId/targetId/type/weight?），返回值统一 { success: boolean }
+  // payload.action: 'add' | 'remove' | 'update' 区分操作类型
+  // sugar API（addRelation/removeRelation/updateRelation）保留，preload 内部委托本通道
+  // 关系 query 三通道（RELATION_GRAPH/PATH/NEIGHBORS）参数与返回值异构，不合并（待后续候选评估）
+  /**
+   * 记忆关系变更（add/remove/update 三类 mutation 合并入口）
+   *
+   * payload: { action: 'add' | 'remove' | 'update', sourceId, targetId, type, weight? }
+   *   - action='add'/'update' 时 weight 必填（0-1 数值）
+   *   - action='remove' 时 weight 可选（忽略）
+   * 返回值: { success: boolean }
+   */
+  MEMORIES_RELATION_MUTATE: 'memories-relation-mutate',
   /** 获取记忆关系路径（Phase 5.1：路径追溯） */
   MEMORIES_RELATION_PATH: 'memories-relation-path',
   /** 获取记忆关系邻居（Phase 5.2：邻居查询） */

@@ -459,9 +459,11 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 | 方向 | 通道数 | 定义文件 |
 |------|--------|----------|
-| 渲染→主进程（`IPC_CHANNELS`） | 98 | `src/electron/ipc/channels.ts` |
+| 渲染→主进程（`IPC_CHANNELS`） | 96 | `src/electron/ipc/channels.ts` |
 | 主→渲染进程（`MAIN_TO_RENDERER_CHANNELS`） | 30 | 同上 |
-| **合计** | **128** | 单一真理源 |
+| **合计** | **126** | 单一真理源 |
+
+> IPC-COUNT-02 候选 1（2026-07-29）：合并 MEMORIES_ADD_RELATION + MEMORIES_REMOVE_RELATION + MEMORIES_UPDATE_RELATION 三通道为 MEMORIES_RELATION_MUTATE 统一入口（action: add/remove/update 分发），128 → 126。sugar API 保留向后兼容。
 
 #### 功能域分组（7 个领域 handler + 1 个降级 + 1 个流式核心）
 
@@ -469,7 +471,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 |--------------|--------|--------|
 | `chatHandlers.ts` | 对话域（USER_INPUT / CHAT_ABORT / 锁管理） | 3 |
 | `sessionHandlers.ts` | 会话管理（SESSION_*） | 8 |
-| `memoryHandlers.ts` | 记忆 CRUD（MEMORIES_* / ARCHIVE_*） | 22 |
+| `memoryHandlers.ts` | 记忆 CRUD（MEMORIES_* / ARCHIVE_*） | 23 |
 | `configHandlers.ts` | 配置 + 角色（CONFIG_* / PERSONA_*） | 7 |
 | `systemHandlers.ts` | 主动提示 + 项目 + 仪表盘 + 主题 | 12 |
 | `suggestionHandlers.ts` | 配置建议 + 用户画像 | 5 |
@@ -538,7 +540,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 - **通道合并**：不合并 STREAM_* 为统一通道。成本（preload API 重写 + 渲染层监听重写 + 测试更新 + 高频通道处理开销）远超收益
 - **版本管理**：不引入 v2 前缀。当前无通道需 v2 重构，三处同步（channels + preload + handler）增加复杂度
-- **未来触发时机**：通道数超 130 或出现跨领域 handler 时启动合并评估（阈值从 150 收紧至 130，对齐用户口径；当前 128，距阈值 2，建议下一轮迭代评估是否将阈值上调至 150）
+- **未来触发时机**：通道数超 130 或出现跨领域 handler 时启动合并评估（阈值从 150 收紧至 130，对齐用户口径；当前 126（IPC-COUNT-02 候选 1 已合并记忆关系 mutation 三通道），距阈值 4，后续 4 个候选待评估）
 
 #### 通道归属检查流程（AUDIT-6-3）
 
@@ -608,6 +610,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 - [x] INFO-ARCH-2.1: 信息架构重构双栏布局——(1) layout.css `#main-content` 改为 `display: grid`，`.aux-open` 状态下 `grid-template-columns: 1fr 1px var(--aux-sidebar-width)`（主面板区 + 1px 分隔线 + 280px 信息侧栏）；(2) index.html 新增 `#btn-toggle-aux` 单图标按钮（#icon-panel-right）+ `.main-panel-area` 包裹层 + `.aux-sidebar-divider` + `#aux-sidebar`（含 `.aux-sidebar-header` + 2 个 `.aux-tab` + `.aux-sidebar-content`）+ `.sidebar-divider` 视觉分隔线；(3) panelRouter.ts 扩展双维度路由：`switchPanel()` 主面板区（chat/memories/clipboard/settings，选择器限定 `.nav-btn[data-panel]` 排除 toggle 按钮）+ `switchAuxTab()`/`openAuxSidebar()`/`toggleAuxSidebar()` 信息侧栏（perception/dashboard，独立 `.aux-active` 类，与主面板 `.active` 互不干扰），新增 `auxSidebarOpen`/`activeAuxTab` 状态 + `isAuxTabVisible()` 替代 `getCurrentPanel()` 用于侧栏面板可见性判断；(4) #panel-perception/#panel-dashboard DOM 从 `.main-panel-area` 迁移到 `.aux-sidebar-content`；(5) tokens.css 新增 `--aux-sidebar-width: 280px`（浅色+深色双主题）；(6) 快捷键重编号 PANEL_SHORTCUT_MAP 从 6 项缩减为 4 项（Ctrl+1=chat/Ctrl+2=memories/Ctrl+3=clipboard/Ctrl+4=settings，移除 5/6），commandPaletteManager nav-perception/nav-dashboard 改为 `openAuxSidebar(tab)` 路径，shortcuts-modal + onboarding 文案同步更新；(7) 自动打开路径 3 条：精灵状态条点击 → `openAuxSidebar('perception')` + 命令面板 Ctrl+K → `openAuxSidebar(tab)` + 主动触发（洞察/里程碑/模式/建议）→ `openAuxSidebar('dashboard')`；(8) 渲染层 onPanelSwitch 回调扩展触发 switchAuxTab 数据刷新（perception→loadPerception，dashboard→loadDashboard），Canvas 重绘通过 getPanelSwitchCallback 触发（renderGrowthChart 在 `getBoundingClientRect().width === 0` 时跳过绘制）；(9) 智能决策：移除自动收起逻辑（min-width=640px 验证：280 侧栏 + 360 主面板 = 640，无需自动收起）；(10) 即时切换无动画（参考 VSCode 标准行为，`transition: width` 触发 reflow 性能差）（2026-07-22 2.1 阶段实施）
 - [x] CSS-R8: layout.css 聚合器拆分——原单体 1238 行（剪枝后）拆分为 6 文件（1 聚合器 + 5 子模块），参考 chat.css/memory.css 先例：(1) layout.css 降级为纯 @import 聚合器（22 行）；(2) titlebar.css（顶部栏 + 命令面板入口 + 窗口控制按钮 + 角色选择器，~253 行）；(3) sidebar.css（侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线，~201 行）；(4) app-grid.css（窗口骨架：#app Grid + #main-content 悬浮窗口 + .panel + 信息侧栏双栏布局 + 响应式 @media，~244 行）；(5) widgets.css（布局内嵌小部件：仪表盘 dash-item / 默契度 rapport / 里程碑 milestone / 技能拖入区 skill-dropzone / 通用下拉菜单 dropdown / 最近洞察列表，~290 行）；(6) web-mode.css（Web 模式适配 body.web-mode *，~210 行）；@import 顺序保证层叠等价（app-grid.css 含 @media 须在 titlebar/sidebar 之后加载以覆盖 #titlebar-drag / #sidebar 小屏响应式规则）；index.html link 路径不变（聚合器内部 @import 子模块）（2026-07-22 模块重思 + 炼化归元）
 - [x] RULE-ALIGN-0729: directory-structure.md 滞后补登 + §2.5 IPC 治理修正——文档滞后于实际实现，共补登 22 个未登记文件 + 修正 2 个错误描述：(1) §1 `controllers/` 段落替换为 `orchestrators/`（4 文件：memoryOrchestrator/personaOrchestrator/sessionOrchestrator/settingsOrchestrator，IPC 编排 + 数据加工，DOM 渲染委托 PanelManager；原 controllers/ 已不存在）+ 新增 `coordination/` 段落（4 文件：chatCoordinator/memoryCoordinator/perceptionCoordinator/settingsCoordinator，二级协调器纯状态容器 + cleanup 集中清理）；(2) §1 `helpers/` 补登 4 文件（createEl/personaLabel/sourceLabel/toolNameMap）；(3) §1 `panels/` 补登 4 文件（auxSidebarManager/globalShortcutDispatcher/settingsManagerPanel/windowControlsController，HEAL-12 从 PanelRouter 拆分的 3 个独立 Manager + 精灵设定面板管理器）；(4) §1 `styles/` 补登 6 文件（foundation/controls.css 共享控件层 + memory/analysis-panel.css 分析面板共享外壳 + memory/health.css 健康度诊断 + memory/insights.css 统计洞察栏 + memory/memory-rail.css 统一导航 rail + panels/sprite-settings.css 精灵设定面板）；(5) §2.4.1 CSS 表格文件数更新（foundation 3→4 / memory 9→13 / panels 4→5）；(6) §2.5 IPC 通道数修正（渲染→主进程 88→98 / 主→渲染 28→30 / 合计 116→128，对齐 channels.ts 实际定义）；(7) §2.5 清理机制修正——`HANDLE_CHANNELS`/`ON_CHANNELS` 数组描述实际不存在，改为 `appState.ipcRegistered` 标志 + `IpcContext` getter 机制（对齐 `ipc/index.ts` 实际实现：reinitAgent 后无需 removeHandler + 重注册，仅 `MINIMAL_HANDLERS_TO_TAKE_OVER` 数组中的 CONFIG_GET/PROJECTS_LIST 需先 removeHandler 避免与 minimalHandlers 冲突）；(8) 治理决策"当前 116，距阈值 14"更新为"当前 128，距阈值 2"（2026-07-29 规则对齐，纯文档修改零代码变更）
+- [x] IPC-COUNT-02-CAND-1: 记忆关系 mutation 三通道合并——合并 MEMORIES_ADD_RELATION + MEMORIES_REMOVE_RELATION + MEMORIES_UPDATE_RELATION 为 MEMORIES_RELATION_MUTATE 统一入口（payload.action: 'add' \| 'remove' \| 'update' 分发，参考 HEAL-21 设定文件 CRUD 合并先例）；channels.ts 删除 3 通道 + 新增 1 通道 + 合并说明注释；memoryHandlers.ts 删除 3 handler + 注册 1 个统一 handler（action 白名单 + isValidRelationParams 三元组 + add/update 路径 weight 必填且 Number.isFinite 校验）；preload.ts 同步内联通道常量 + 新增 mutateRelation 统一 API + 保留 addRelation/removeRelation/updateRelation 三个 sugar API 内部委托 mutateRelation（向后兼容零渲染层改动）；memoryHandlers.test.ts 重写 8→11 测试用例覆盖 action 分发正确性 + weight 校验（add/update 必填、remove 可选、字符串/NaN 拒绝）+ 三元组校验 + 抛错降级；§2.5 通道数 128→126（IPC_CHANNELS 98→96），memoryHandlers.ts 通道数 22→23（修正原记录偏差）；关系 query 三通道（RELATION_GRAPH/PATH/NEIGHBORS）参数与返回值异构不合并，待后续候选评估（2026-07-29 方案更新执行）
 
 ### 延后（非目录结构）
 

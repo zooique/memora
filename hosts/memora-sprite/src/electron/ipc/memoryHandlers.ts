@@ -212,38 +212,47 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     ),
   );
 
-  /** 添加记忆关系（手动创建，关系图交互） */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string; weight: number }) =>
-    safeHandle('添加记忆关系失败', { success: false }, () => {
-      // 参数校验：sourceId/targetId/type 三元组（ADR-014 白名单，统一 isValidRelationParams）
-      if (!isValidRelationParams(data)) {
-        return { success: false };
-      }
-      requireSprite(ctx).addRelation(data.sourceId, data.targetId, data.type, data.weight);
-      return { success: true };
-    }),
-  );
-
-  /** 删除记忆关系（关系图交互） */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_REMOVE_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string }) =>
-    safeHandle('删除记忆关系失败', { success: false }, () => {
-      if (!isValidRelationParams(data)) {
-        return { success: false };
-      }
-      requireSprite(ctx).removeRelation(data.sourceId, data.targetId, data.type);
-      return { success: true };
-    }),
-  );
-
-  /** 更新记忆关系（关系图交互） */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_UPDATE_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string; weight: number }) =>
-    safeHandle('更新记忆关系失败', { success: false }, () => {
-      if (!isValidRelationParams(data)) {
-        return { success: false };
-      }
-      requireSprite(ctx).updateRelation(data.sourceId, data.targetId, data.type, data.weight);
-      return { success: true };
-    }),
+  /**
+   * 记忆关系变更（IPC-COUNT-02 候选 1：合并 ADD/REMOVE/UPDATE 三通道为统一 mutation 入口）
+   *
+   * payload.action 区分三类操作，三者参数结构完全同构（sourceId/targetId/type/weight?）：
+   *   - 'add'    → sprite.addRelation(sourceId, targetId, type, weight)（weight 必填）
+   *   - 'remove' → sprite.removeRelation(sourceId, targetId, type)（weight 忽略）
+   *   - 'update' → sprite.updateRelation(sourceId, targetId, type, weight)（weight 必填）
+   *
+   * 校验链：isValidRelationParams（sourceId/targetId/type 三元组）+ add/update 时 weight 必填且为 number。
+   * 返回值统一 { success: boolean }，与原三通道完全等价。
+   *
+   * 渲染层调用 sugar API（addRelation/removeRelation/updateRelation），preload 内部委托本通道。
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.MEMORIES_RELATION_MUTATE,
+    async (_event, data: { action: 'add' | 'remove' | 'update'; sourceId: string; targetId: string; type: string; weight?: number }) =>
+      safeHandle('记忆关系变更失败', { success: false }, () => {
+        // action 白名单校验（防止恶意渲染进程传入任意字符串触发意外分支）
+        if (data?.action !== 'add' && data?.action !== 'remove' && data?.action !== 'update') {
+          return { success: false };
+        }
+        // sourceId/targetId/type 三元组统一校验（ADR-014 关系类型白名单）
+        if (!isValidRelationParams(data)) {
+          return { success: false };
+        }
+        // add/update 必须提供 weight（number 类型校验，防止 undefined/字符串传入内核）
+        if (data.action === 'add' || data.action === 'update') {
+          if (typeof data.weight !== 'number' || !Number.isFinite(data.weight)) {
+            return { success: false };
+          }
+        }
+        const sprite = requireSprite(ctx);
+        if (data.action === 'add') {
+          sprite.addRelation(data.sourceId, data.targetId, data.type, data.weight!);
+        } else if (data.action === 'remove') {
+          sprite.removeRelation(data.sourceId, data.targetId, data.type);
+        } else {
+          sprite.updateRelation(data.sourceId, data.targetId, data.type, data.weight!);
+        }
+        return { success: true };
+      }),
   );
 
   /** 获取记忆关系路径（Phase 5.1：路径追溯，用于展示记忆演化脉络） */
