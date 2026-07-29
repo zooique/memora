@@ -22,7 +22,7 @@ date: 2026-07-26
 **4 类允许**：
 
 - ✅ 项目目录（`process.cwd()`）
-- ✅ 数据目录（`~/.memora/` 内核 / `~/.memora-sprite/` 精灵宿主）
+- ✅ 数据目录（内核由宿主通过 `MEMORA_DATA_DIR` 环境变量注入 / `~/.memora-sprite/` 精灵宿主）
 - ✅ 用户显式白名单（`config.allowedPaths`）
 - ✅ stdout/stderr（不需要路径）
 

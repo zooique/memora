@@ -2,7 +2,7 @@
  * 项目注册表 — 多项目注册信息持久化
  *
  * 从 ProjectManager 拆分出来，专职管理 projects.json 注册表：
- *   - 读写项目注册表（~/.memora/projects.json 或宿主指定 registryDir）
+ *   - 读写项目注册表（registryDir 由宿主注入，默认位于宿主数据目录）
  *   - 注册/注销项目条目（Windows 大小写不敏感去重）
  *   - 从路径推断项目名称
  *   - 不可信磁盘 JSON 的运行时类型校验（QC-24，替代 `as` 类型断言）

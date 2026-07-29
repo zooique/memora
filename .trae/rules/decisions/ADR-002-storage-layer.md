@@ -280,14 +280,14 @@ export function setLogger(custom: ILogger | undefined): void {
 
 **澄清**：ADR-002 §Logger 懒初始化的"浏览器端 import 不再抛异常"**仅针对 logger 模块**，不构成"整个内核可在浏览器 import"的承诺。
 
-**事实**：`src/` 下以下 13 个生产文件直接 import `node:fs`/`node:path`/`node:os`/`node:crypto`，且这些依赖是**核心功能依赖**（非副作用泄漏），无法懒初始化：
+**事实**：`src/` 下以下 12 个生产文件直接 import `node:fs`/`node:path`/`node:os`/`node:crypto`，且这些依赖是**核心功能依赖**（非副作用泄漏），无法懒初始化：
 
 | 文件 | 依赖 | 功能性质 |
 |------|------|----------|
 | `src/security/pathGuard.ts` | `node:path` + `node:fs` realpathSync | 符号链接解析（安全核心，浏览器无此概念） |
 | `src/agent/builtinToolHandlers.ts` | `node:fs/promises` + `node:fs` constants + `node:path` | read_file/write_file/list_dir 内置工具（文件系统操作即核心职责） |
-| `src/memory/projectRegistry.ts` | `node:fs` 同步全家桶 | ~/.memora/projects.json 注册表读写（文件即数据源） |
-| `src/config/loader.ts` | `node:fs/promises` + `node:path` + `node:os` | 配置文件加载（从文件系统读取是核心职责） |
+| `src/memory/projectRegistry.ts` | `node:fs` 同步全家桶 | projects.json 注册表读写（由宿主指定 registryDir，文件即数据源） |
+| `src/config/loader.ts` | `node:fs/promises` + `node:path` | 配置文件加载（从文件系统读取是核心职责；node:os 已于 2026-07-28 移除，用户级路径由宿主通过 configPath 显式传入） |
 | `src/utils/scanner.ts` | `node:fs/promises` + `node:path` | Markdown 目录扫描（扫描即核心职责） |
 | `src/utils/path.ts` | `node:os` homedir | 家目录展开（浏览器无家目录概念） |
 | `src/agent/agent.ts` | `node:path` basename | 文件名提取（项目切换时推断项目名） |
@@ -297,6 +297,8 @@ export function setLogger(custom: ILogger | undefined): void {
 | `src/memory/projectManager.ts` | `node:path` + `node:fs/promises` | 项目目录创建 + 资源加载编排 |
 | `src/memory/vectorStore.ts` | `node:fs/promises` + `node:path` | JsonVectorStore 持久化 |
 | `src/memory/store.ts` | `node:fs/promises` + `node:path` | FileStore 配置类记忆文件扫描 |
+
+**2026-07-28 年轮修订**：ADR-002 + ADR-003 策略遗留修复移除了 `loader.ts` 的 `node:os` 依赖和 `~/.memora` 硬编码，内核数据目录改由宿主通过 `MEMORA_DATA_DIR` 环境变量注入。上表从 13 项降至 12 项。
 
 **定位结论**：memora 内核是 **Node.js 专用纯逻辑库**（零 native 编译依赖，但依赖 Node.js 运行时 API）。"浏览器可 import"不是内核目标，仅在 logger 等纯逻辑模块层面实现。宿主项目（如 memora-sprite）若需浏览器侧能力，应通过 IPC 委托给 Node.js 主进程。
 

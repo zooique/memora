@@ -31,6 +31,8 @@ import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
 import { SpriteError, ErrorCode } from './sprite/errors.js';
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
+// API Key 脱敏：统一真理源在 shared/apiKeyMask.ts（IPC + CLI/Web 共用）
+import { maskApiKey } from './shared/apiKeyMask.js';
 // 宿主自定义工具（web_search + memory_search + create_persona + create_skill + create_rule）
 import {
   WEB_SEARCH_TOOL,
@@ -121,12 +123,6 @@ export async function getLlmProviders(
   const config = await store.load();
   const providers = config.llm.providers ?? {};
 
-  // 脱敏 apiKey：仅显示前4后4位
-  const maskKey = (key: string | undefined): string => {
-    if (!key || key.length <= 8) return key ? '****' : '';
-    return key.slice(0, 4) + '****' + key.slice(-4);
-  };
-
   // 统一展开 providers 映射表（配置文件已收敛为 providers+active 单一格式）
   const providerList = Object.entries(providers).map(([key, p]) => {
     const providerData = p as { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number; contextWindow?: number };
@@ -136,7 +132,7 @@ export async function getLlmProviders(
       provider: providerData.provider,
       model: providerData.model,
       baseUrl: providerData.baseUrl ?? '',
-      apiKey: maskKey(providerData.apiKey),
+      apiKey: maskApiKey(providerData.apiKey),
       temperature: providerData.temperature ?? 0.7,
       contextWindow: providerData.contextWindow,
     };

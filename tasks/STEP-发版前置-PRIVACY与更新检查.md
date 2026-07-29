@@ -4,6 +4,7 @@
 > 关联文档：`发布流程-gitee-20260722.md` §0（P0 清单）、§5（检查更新）、§7（PRIVACY 要点）
 > 约束红线：**零新增 IPC 通道**（治理阈值 129/130 不变）。更新检查一律走「渲染层锚点 + 主进程 `will-navigate` 拦截」或 `window.electronAPI` 现有桥，**不新增 channels.ts 条目**。
 > 日期：2026-07-23
+> 核验：2026-07-28 联网核实 §5 所述 Gitee API / electron-builder 配置仍有效（详见主文档 §5「时效性核验」）；本卡约束与实现方式不变。
 
 ---
 
@@ -11,10 +12,10 @@
 
 | 占位符 | 含义 | 路线 A（Gitee 发布仓库） | 路线 B（对象存储） |
 |---|---|---|---|
-| `{下载地址}` | 用户获取新版的页 | `https://gitee.com/{owner}/memora-sprite-releases/releases` | COS/OSS 直链页 |
-| `{隐私地址}` | 在线隐私白皮书 | 同上仓库根 `PRIVACY.md` 的 raw/预览链接 | 落地页 URL |
+| `{下载地址}` | 用户获取新版的页 | Gitee 仅作反馈（见 §6），不托管 exe | 对象存储落地页 / 你的下载页 |
+| `{隐私地址}` | 在线隐私白皮书 | 对象存储落地页 / 你的站点（与 exe 同桶或同站） | 落地页 URL |
 
-> 当前默认路线 A（你用 Gitee、闭源）。下面 STEP 以路线 A 书写，路线 B 仅替换 URL。
+> 当前 130MB 体积下默认 **路线 B（对象存储）**（Gitee 100MB 上限无法托管 exe，仅留作反馈 Issues）。下面 STEP 以路线 B 书写；`{下载地址}`=对象存储落地页。
 
 ---
 
@@ -59,11 +60,12 @@ mainWindow.webContents.on('new-window', (e, url) => {
 
 ### STEP-3.3 手动验证
 - [ ] 设置面板出现「检查更新」「隐私白皮书」两个链接
-- [ ] 点击「检查更新」→ 系统浏览器打开 Gitee 发行版页（应用内不导航）
+- [ ] 点击「检查更新」→ 系统浏览器打开对象存储落地页（应用内不导航）
 - [ ] 点击「隐私白皮书」→ 打开 PRIVACY.md
 
 ### STEP-3.4（可延后，非 P0）梯度 B 版本比对
-仅当想「有新版才提示」时做。注意 CORS：渲染层 `fetch` Gitee raw/API 可能被跨域拦；稳妥做法是从主进程 `Node fetch` 取 `{下载地址}` 同仓库的 `version.json`，再用**已有的** main→renderer 通道推送结果（不新增通道）。**首版不做**，避免碰 IPC 阈值与 CORS 坑。
+仅当想「有新版才提示」时做。**参考实现见 `发布流程-gitee-20260722.md` §5 梯度 B**（要点：下载与检测走对象存储 `version.json`，无 Gitee 100MB 限制、无 token、无 CORS；版本用数值比较器而非字符串/`!==`；有新版才 `shell.openExternal(page)`；本机客户端版本用 `app.getVersion()`）。
+> 约束：① 检查在**主进程**用 Node `fetch` 拉 `version.json`（对象存储公开读、无 CORS）；② IPC 红线 —— 复用**已有** `ipcRenderer.invoke` 通道触发，**不新增** `channels.ts` 条目。首版不做，避免碰 IPC 阈值。
 
 ---
 
@@ -76,7 +78,7 @@ mainWindow.webContents.on('new-window', (e, url) => {
 - 记忆本机 SQLite、API Key 本机配置、度量仅哈希不出网
 
 ### STEP-5.2 随包发布
-- 路线 A：把 `PRIVACY.md` 复制进公开发布仓库 `memora-sprite-releases` 根目录，发行版说明里加一行「隐私说明见仓库 PRIVACY.md」。
+- 路线 A（Gitee 仅反馈，不托管文件）：`PRIVACY.md` 放在对象存储落地页（路线 B）或你自己的站点，与直链并列。
 - 路线 B：放到落地页，与直链并列。
 
 ### STEP-5.3 应用内可达（同 STEP-3.2 的「隐私白皮书」链接）

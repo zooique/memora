@@ -569,7 +569,8 @@ function setupAgentReady(
 
 async function initializeApp(): Promise<void> {
   // 注入日志目录到环境变量，供内核 pino logger 创建文件流
-  process.env['MEMORA_DATA_DIR'] = DEFAULT_DATA_DIR;
+  // ??= 仅当未设置时注入：测试 / 自托管场景可通过外部环境变量切换数据目录
+  process.env['MEMORA_DATA_DIR'] ??= DEFAULT_DATA_DIR;
 
   // 安全：单实例锁
   const gotLock = app.requestSingleInstanceLock();
@@ -631,79 +632,12 @@ async function initializeApp(): Promise<void> {
 
     await appState.windowService.windowManager.createWindows();
 
-    // 恢复窗口边界（上次关闭时的位置和大小）
-    // 多显示器断开外接时，持久化的边界可能位于已不存在的显示器区域内
-    // 校验边界是否在某个显示器的工作区内，越界则复位到主显示器居中位置
-    const fullWindow = appState.windowService.windowManager.getFullWindow();
-    if (fullWindow && spriteConfig.windowBounds) {
-      const safeBounds = clampFullWindowBoundsToDisplay(spriteConfig.windowBounds);
-      fullWindow.setBounds(safeBounds);
-    }
+    // 恢复窗口边界并注册持久化监听
+    setupWindowBoundsPersistence(spriteConfig);
 
-    // 监听窗口 resize/move 事件，持久化边界（防抖 500ms）
-    if (fullWindow) {
-      let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
-      const saveBounds = () => {
-        // 窗口可能已销毁，getBounds 前检查 isDestroyed
-        if (fullWindow.isDestroyed()) return;
-        const bounds = fullWindow.getBounds();
-        persistWindowConfig({
-          windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
-        });
-      };
-      fullWindow.on('resize', () => {
-        if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
-        boundsSaveTimer = safeSetTimeout(saveBounds, 500);
-      });
-      fullWindow.on('move', () => {
-        if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
-        boundsSaveTimer = safeSetTimeout(saveBounds, 500);
-      });
-      // 窗口销毁时清理防抖定时器，避免定时器触发时操作已销毁窗口
-      fullWindow.on('closed', () => {
-        if (boundsSaveTimer) {
-          clearSafeTimeout(boundsSaveTimer);
-          boundsSaveTimer = null;
-        }
-      });
-    }
 
-    // 4. 创建托盘
-    // 包裹 try/catch，无系统托盘环境（headless Linux/某些 Wayland 会话/远程桌面）
-    // 下 new Tray() 会抛异常，此处降级为 null（无托盘模式），应用仍可正常运行窗口模式
-    const iconPath = await fs
-      .access(TRAY_ICON_PATH)
-      .then(() => TRAY_ICON_PATH)
-      .catch(() => '');
-    try {
-      appState.windowService.trayManager = new TrayManager(iconPath, {
-        onShowFull: () => {
-          appState.windowService.windowStateManager.transition('full');
-          // 从托盘展开完整窗口时清零未读计数
-          resetUnreadCount();
-        },
-        onToggleFloatBubble: (checked: boolean) => {
-          appState.windowService.windowStateManager.setShowFloatBubble(checked);
-          // 勾选状态变更时持久化窗口配置
-          persistWindowConfig({ showFloatBubble: checked });
-          // 重建托盘菜单以反映勾选状态
-          appState.windowService.trayManager?.updateMenu();
-        },
-        isFloatBubbleVisible: () => appState.windowService.windowStateManager.getShowFloatBubble(),
-        onHideToTray: () => appState.windowService.windowStateManager.transition('tray'),
-        onQuit: () => {
-          appState.windowService.windowManager.closeAll();
-          app.quit();
-        },
-      });
-    } catch (error) {
-      // 降级为无托盘模式：应用仍可通过窗口和快捷键正常使用
-      errorHandler.handle(error, {
-        code: ErrorCode.UNKNOWN,
-        context: '托盘创建失败，降级为无托盘模式',
-      });
-      appState.windowService.trayManager = null;
-    }
+    // 4. 创建托盘（无系统托盘环境降级为无托盘模式）
+    appState.windowService.trayManager = await createTrayManager();
 
     // 5. 初始化交互层
     appState.windowService.interaction = new ElectronInteraction();
@@ -718,32 +652,7 @@ async function initializeApp(): Promise<void> {
     appState.windowService.windowStateManager.showInitial();
 
     // 7. Phase 3.3 初始化全局快捷键
-    // 在窗口创建后、Agent 初始化前注册，确保快捷键尽早可用
-    // toggle-window 动作委托给 windowManager.toggleWindow()
-    // quick-record / recall-memory 动作：先确保完整窗口可见，再推送触发事件到渲染进程
-    appState.shortcutManager = new ShortcutManager(globalShortcut, {
-      config: spriteConfig.shortcuts ?? DEFAULT_SHORTCUT_CONFIG,
-      handlers: {
-        [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
-          appState.windowService.windowManager.toggleWindow();
-        },
-        [SHORTCUT_ACTIONS.QUICK_RECORD]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER),
-        [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER),
-        [SHORTCUT_ACTIONS.QUICK_INPUT]: () => {
-          // 显示快速输入浮窗（独立于完整窗口，不切换窗口状态机）
-          // quickInputWindow 在 setupAgentIndependentResources 后创建（依赖 clipboardHandler 注入确认回调）
-          // shortcutManager 在阶段 1 创建，quickInputService 在阶段 2 创建，通过 if 守卫延迟读取避免时序问题
-          if (appState.quickInputService.quickInputWindow) {
-            appState.quickInputService.quickInputWindow.show();
-          }
-        },
-      },
-    });
-    appState.shortcutManager.registerAll();
-    // 通知用户快捷键注册失败（被其他应用占用）
-    // ADR-SP-017 §快捷键管理器 设计原则第 4 条：注册失败时提示用户
-    // 否则用户按了没反应会困惑，无法定位是快捷键被占用还是应用未响应
-    notifyShortcutRegistrationFailures(appState.shortcutManager.getRegistrationFailures());
+    appState.shortcutManager = initShortcutManager(spriteConfig);
   } catch (error) {
     // 窗口创建失败是致命错误
     errorHandler.handle(error, {
@@ -804,22 +713,150 @@ async function initializeApp(): Promise<void> {
  * 配置成功后 reinitAgent 走 setupAgentReady，无需重建这些资源。
  */
 function setupAgentIndependentResources(): void {
-  // Phase 3.1：集成剪贴板三重保护
-  // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程
-  // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
-  appState.quickInputService.clipboardHandler = new ClipboardHandler(clipboard, {
+  // Phase 3.1：集成剪贴板三重保护 + IPC handler + 启动轮询
+  appState.quickInputService.clipboardHandler = createClipboardHandlerWithIpc();
+  // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
+    return appState.quickInputService.clipboardHandler?.analyze() ?? false;
+  });
+  appState.quickInputService.clipboardHandler.startPolling();
+
+  // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
+  appState.quickInputService.quickInputWindow = createQuickInputWindow();
+  // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
+  appState.quickInputService.quickInputWindow.setSuppressNextChange(
+    () => appState.quickInputService.clipboardHandler?.suppressNextChange(),
+  );
+  // 预加载 nut-js（fire-and-forget）：消除首次快捷键唤起浮窗时的动态 import 延迟
+  appState.quickInputService.quickInputWindow.preloadInputInjector();
+
+  // STEP-4：浮球单击 → 呼出补全弹窗回调（连接 floatWindow → quickInputWindow）
+  // 浮球单击后浮球成为前台窗口，通过 floatHwnd 排除浮球自身，
+  // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+C 时捕获的应用）
+  appState.windowService.windowManager.updateFloatCallbacks({
+    onShowQuickInput: (x, y, floatHwnd) => {
+      void appState.quickInputService.quickInputWindow!.showAtPosition(x, y, floatHwnd);
+    },
+  });
+
+  // Phase 4.3：注册技能文件安装 IPC handler
+  registerSkillInstallHandler();
+}
+
+// ─── initializeApp 阶段 1 子方法 ──────
+
+/**
+ * 恢复窗口边界并注册 resize/move 持久化监听
+ *
+ * 多显示器断开外接时，持久化的边界可能位于已不存在的显示器区域内，
+ * 校验边界是否在某个显示器的工作区内，越界则复位到主显示器居中位置。
+ *
+ * 监听 resize/move 事件，防抖 500ms 持久化到 spriteConfig.windowBounds。
+ *
+ * @param spriteConfig 精灵配置（读取 windowBounds 字段）
+ */
+function setupWindowBoundsPersistence(spriteConfig: SpriteConfig): void {
+  const fullWindow = appState.windowService.windowManager?.getFullWindow();
+  if (!fullWindow) return;
+
+  // 恢复窗口边界（上次关闭时的位置和大小）
+  if (spriteConfig.windowBounds) {
+    const safeBounds = clampFullWindowBoundsToDisplay(spriteConfig.windowBounds);
+    fullWindow.setBounds(safeBounds);
+  }
+
+  // 监听 resize/move 事件，持久化边界（防抖 500ms）
+  let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  const saveBounds = () => {
+    // 窗口可能已销毁，getBounds 前检查 isDestroyed
+    if (fullWindow.isDestroyed()) return;
+    const bounds = fullWindow.getBounds();
+    persistWindowConfig({
+      windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+    });
+  };
+  fullWindow.on('resize', () => {
+    if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
+    boundsSaveTimer = safeSetTimeout(saveBounds, 500);
+  });
+  fullWindow.on('move', () => {
+    if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
+    boundsSaveTimer = safeSetTimeout(saveBounds, 500);
+  });
+  // 窗口销毁时清理防抖定时器，避免定时器触发时操作已销毁窗口
+  fullWindow.on('closed', () => {
+    if (boundsSaveTimer) {
+      clearSafeTimeout(boundsSaveTimer);
+      boundsSaveTimer = null;
+    }
+  });
+}
+
+/**
+ * 创建系统托盘管理器
+ *
+ * 无系统托盘环境（headless Linux/某些 Wayland 会话/远程桌面）下 new Tray() 抛异常，
+ * 此处降级为 null（无托盘模式），应用仍可正常运行窗口模式。
+ *
+ * @returns TrayManager 实例，或 null（无托盘环境降级）
+ */
+async function createTrayManager(): Promise<TrayManager | null> {
+  const iconPath = await fs
+    .access(TRAY_ICON_PATH)
+    .then(() => TRAY_ICON_PATH)
+    .catch(() => '');
+  try {
+    return new TrayManager(iconPath, {
+      onShowFull: () => {
+        appState.windowService.windowStateManager.transition('full');
+        // 从托盘展开完整窗口时清零未读计数
+        resetUnreadCount();
+      },
+      onToggleFloatBubble: (checked: boolean) => {
+        appState.windowService.windowStateManager.setShowFloatBubble(checked);
+        // 勾选状态变更时持久化窗口配置
+        persistWindowConfig({ showFloatBubble: checked });
+        // 重建托盘菜单以反映勾选状态
+        appState.windowService.trayManager?.updateMenu();
+      },
+      isFloatBubbleVisible: () => appState.windowService.windowStateManager.getShowFloatBubble(),
+      onHideToTray: () => appState.windowService.windowStateManager.transition('tray'),
+      onQuit: () => {
+        appState.windowService.windowManager.closeAll();
+        app.quit();
+      },
+    });
+  } catch (error) {
+    // 降级为无托盘模式：应用仍可通过窗口和快捷键正常使用
+    errorHandler.handle(error, {
+      code: ErrorCode.UNKNOWN,
+      context: '托盘创建失败，降级为无托盘模式',
+    });
+    return null;
+  }
+}
+
+/**
+ * 创建剪贴板三重保护 handler 并注册 IPC handler
+ *
+ * ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程。
+ * 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容。
+ *
+ * 设计决策（资深程序员思维 · 识别不可逆损失点）：
+ * - emit 回调不检查 isVisible / !isMinimized，只用 safeSendToWindow 守卫 null + isDestroyed。
+ * - 剪贴板变化是单向数据流：pendingItems 是渲染层会话级内存态，主进程不持久化。
+ *   若窗口隐藏时阻断 IPC，数据永久丢失——切换回完整窗口也无法补偿。
+ * - Electron 的 webContents.send 向隐藏窗口发送不抛异常，消息堆积在渲染进程事件队列，
+ *   窗口恢复可见后依次处理。剪贴板变化频率低（2 秒轮询），堆积风险可忽略。
+ * - 用户使用场景：浮动窗口模式下复制内容 → 期望切换回完整窗口后能看到。
+ *
+ * @returns ClipboardHandler 实例（调用方负责 startPolling）
+ */
+function createClipboardHandlerWithIpc(): ClipboardHandler {
+  return new ClipboardHandler(clipboard, {
     emit: (event: ClipboardEventType, payload?: unknown) => {
       const fullWindow = appState.windowService.windowManager.getFullWindow();
       // 将 ClipboardHandler 事件映射到 IPC 推送通道
-      //
-      // 设计决策（资深程序员思维 · 识别不可逆损失点）：
-      // - 此处不检查 isVisible / !isMinimized，只用 safeSendToWindow 守卫 null + isDestroyed。
-      // - 剪贴板变化是单向数据流：pendingItems 是渲染层会话级内存态，主进程不持久化。
-      //   若窗口隐藏时阻断 IPC，数据永久丢失——切换回完整窗口也无法补偿。
-      // - Electron 的 webContents.send 向隐藏窗口发送不抛异常，消息堆积在渲染进程事件队列，
-      //   窗口恢复可见后依次处理。剪贴板变化频率低（2 秒轮询），堆积风险可忽略。
-      // - 用户使用场景：浮动窗口模式下复制内容 → 期望切换回完整窗口后能看到。
-      //   原可见性守卫导致此场景失效。
       switch (event) {
         case 'changed': {
           // 读取剪贴板构造 {preview, length} payload，渲染层据此加入待处理列表 + 角标 +1
@@ -850,17 +887,72 @@ function setupAgentIndependentResources(): void {
       }
     },
   });
-  // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
-  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
-    return appState.quickInputService.clipboardHandler?.analyze() ?? false;
-  });
-  // 启动剪贴板变化检测轮询
-  appState.quickInputService.clipboardHandler.startPolling();
+}
 
-  // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
-  // 在 clipboardHandler 创建后实例化，确保 onConfirm 回调能调用 suppressNextChange()
-  // onAfterConfirm 用于记忆沉淀：确认成功后异步写入 source:'quick-input' 记忆
-  appState.quickInputService.quickInputWindow = new QuickInputWindow({
+// 消除 MinimalIpcState 代理层，appState 结构兼容 MinimalIpcState 接口，
+// 直接传入即可（结构子类型：appState 是 MinimalIpcState 的超集，TS 自动兼容）。
+// minimalHandlers 通过 state.xxx 读写直接作用于 appState，无需 getter/setter 代理。
+
+// 调用提取后的函数（在 initializeApp 阶段 1 中调用）
+registerMinimalIpcHandlers(appState, {
+  setAppRuntime,
+  setupAgentReady,
+  classifyInitError,
+  getCurrentAgent: () => appState.agentRuntime.agent,
+  getCurrentSprite: () => appState.agentRuntime.sprite,
+});
+
+// ─── initializeApp 阶段 1 子方法（续） ──────
+
+/**
+ * 初始化全局快捷键管理器
+ *
+ * 在窗口创建后、Agent 初始化前注册，确保快捷键尽早可用。
+ * toggle-window 动作委托给 windowManager.toggleWindow()；
+ * quick-record / recall-memory 动作：先确保完整窗口可见，再推送触发事件到渲染进程。
+ *
+ * @param spriteConfig 精灵配置（读取 shortcuts 字段，缺失时用默认配置）
+ * @returns ShortcutManager 实例（调用方负责 registerAll + 失败通知）
+ */
+function initShortcutManager(spriteConfig: SpriteConfig): ShortcutManager {
+  const manager = new ShortcutManager(globalShortcut, {
+    config: spriteConfig.shortcuts ?? DEFAULT_SHORTCUT_CONFIG,
+    handlers: {
+      [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
+        appState.windowService.windowManager.toggleWindow();
+      },
+      [SHORTCUT_ACTIONS.QUICK_RECORD]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER),
+      [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => triggerShortcutAction(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER),
+      [SHORTCUT_ACTIONS.QUICK_INPUT]: () => {
+        // 显示快速输入浮窗（独立于完整窗口，不切换窗口状态机）
+        // quickInputWindow 在 setupAgentIndependentResources 后创建（依赖 clipboardHandler 注入确认回调）
+        // shortcutManager 在阶段 1 创建，quickInputService 在阶段 2 创建，通过 if 守卫延迟读取避免时序问题
+        if (appState.quickInputService.quickInputWindow) {
+          appState.quickInputService.quickInputWindow.show();
+        }
+      },
+    },
+  });
+  manager.registerAll();
+  // 通知用户快捷键注册失败（被其他应用占用）
+  // ADR-SP-017 §快捷键管理器 设计原则第 4 条：注册失败时提示用户
+  // 否则用户按了没反应会困惑，无法定位是快捷键被占用还是应用未响应
+  notifyShortcutRegistrationFailures(manager.getRegistrationFailures());
+  return manager;
+}
+
+// ─── setupAgentIndependentResources 子方法 ──────
+
+/**
+ * 创建快速输入浮窗实例
+ *
+ * 注入 clipboardHandler 用于确认时抑制三重保护（在 clipboardHandler 创建后实例化）。
+ * onAfterConfirm 用于记忆沉淀：确认成功后异步写入 source:'quick-input' 记忆。
+ *
+ * @returns QuickInputWindow 实例（调用方负责 setSuppressNextChange + preloadInputInjector）
+ */
+function createQuickInputWindow(): QuickInputWindow {
+  return new QuickInputWindow({
     onConfirm: createDefaultConfirmCallback(appState.quickInputService.clipboardHandler),
     onAfterConfirm: (text) => {
       try {
@@ -895,30 +987,20 @@ function setupAgentIndependentResources(): void {
       }
     },
   });
-  // Phase 4：注入剪贴板三重保护抑制函数（自动粘贴流程的 suppressNextChange 需要）
-  appState.quickInputService.quickInputWindow.setSuppressNextChange(
-    () => appState.quickInputService.clipboardHandler?.suppressNextChange(),
-  );
-  // 预加载 nut-js（fire-and-forget）：消除首次快捷键唤起浮窗时的动态 import 延迟
-  appState.quickInputService.quickInputWindow.preloadInputInjector();
+}
 
-  // STEP-4：浮球单击 → 呼出补全弹窗回调（连接 floatWindow → quickInputWindow）
-  // 浮球单击后浮球成为前台窗口，通过 floatHwnd 排除浮球自身，
-  // capturePreviousWindow 保留上次有效捕获（如 Ctrl+Shift+C 时捕获的应用）
-  appState.windowService.windowManager.updateFloatCallbacks({
-    onShowQuickInput: (x, y, floatHwnd) => {
-      void appState.quickInputService.quickInputWindow!.showAtPosition(x, y, floatHwnd);
-    },
-  });
-
-  // Phase 4.3：注册技能文件安装 IPC handler
-  // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
+/**
+ * 注册技能文件安装 IPC handler
+ *
+ * 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/。
+ * 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）。
+ */
+function registerSkillInstallHandler(): void {
   ipcMain.handle(IPC_CHANNELS.SKILL_INSTALL, async (_event, fileName: string, content: string) => {
     const { installSkill } = await import('../sprite/skillInstaller.js');
     // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
     const configDir = DEFAULT_CONFIG_DIR;
     const result = await installSkill(content, fileName, configDir);
-    // 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
     // 无 Agent 时跳过热重载（hotReloaded 保持 undefined），用户配置后 reinitAgent 会读取已安装的技能
     if (result.success && appState.agentRuntime.agent) {
       try {
@@ -937,21 +1019,6 @@ function setupAgentIndependentResources(): void {
     return result;
   });
 }
-
-// ─── 最小化 IPC 处理器 ──────────────────────────────────────
-
-// 消除 MinimalIpcState 代理层，appState 结构兼容 MinimalIpcState 接口，
-// 直接传入即可（结构子类型：appState 是 MinimalIpcState 的超集，TS 自动兼容）。
-// minimalHandlers 通过 state.xxx 读写直接作用于 appState，无需 getter/setter 代理。
-
-// 调用提取后的函数（在 initializeApp 阶段 1 中调用）
-registerMinimalIpcHandlers(appState, {
-  setAppRuntime,
-  setupAgentReady,
-  classifyInitError,
-  getCurrentAgent: () => appState.agentRuntime.agent,
-  getCurrentSprite: () => appState.agentRuntime.sprite,
-});
 
 // ─── 应用生命周期 ─────────────────────────────────────────
 

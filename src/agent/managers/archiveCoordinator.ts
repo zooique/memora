@@ -150,10 +150,7 @@ export class ArchiveCoordinator {
       }
       return entries;
     } catch (err) {
-      // 记录根因到日志（UI 通知走 archiveFailed 事件，日志走 logger.error，两者不替代）
-      logger.error({ err, stage: 'profile' }, 'archiveProfileFacts 异常');
-      const message = err instanceof Error ? err.message : String(err);
-      this.emit('archiveFailed', { stage: 'profile', message: message.slice(0, 200) });
+      this.handleArchiveError('profile', err);
       return [];
     }
   }
@@ -197,10 +194,7 @@ export class ArchiveCoordinator {
       }
       return memories;
     } catch (err) {
-      // 记录根因到日志（UI 通知走 archiveFailed 事件，日志走 logger.error，两者不替代）
-      logger.error({ err, stage: 'insight' }, 'archiveInsight 异常');
-      const message = err instanceof Error ? err.message : String(err);
-      this.emit('archiveFailed', { stage: 'insight', message: message.slice(0, 200) });
+      this.handleArchiveError('insight', err);
       return [];
     }
   }
@@ -251,11 +245,26 @@ export class ArchiveCoordinator {
       }
       return result;
     } catch (err) {
-      // LLM 异常 / 写入失败：记录根因到日志 + 发射 archiveFailed({ stage: 'content' }) 通知宿主 UI
-      logger.error({ err, stage: 'content' }, 'archiveSessionContent 异常');
-      const message = err instanceof Error ? err.message : String(err);
-      this.emit('archiveFailed', { stage: 'content', message: message.slice(0, 200) });
+      this.handleArchiveError('content', err);
       return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
+  }
+
+  /**
+   * 统一处理归档异常：记录日志 + 发射 archiveFailed 事件
+   *
+   * 三段归档方法（profile/insight/content）的 catch 模板完全相同，
+   * 提取为私有方法消除重复（ADR-017 枝叶层 2 次提取原则，3 次阈值已满足）。
+   *
+   * @param stage 归档阶段标识（用于日志结构化字段 + archiveFailed 事件 payload）
+   * @param err 捕获的异常
+   */
+  private handleArchiveError(stage: 'profile' | 'insight' | 'content', err: unknown): void {
+    // 记录根因到日志（UI 通知走 archiveFailed 事件，日志走 logger.error，两者不替代）
+    // 首字母大写拼接方法名（profile → Profile）保持日志可读性
+    const label = stage.charAt(0).toUpperCase() + stage.slice(1);
+    logger.error({ err, stage }, `archive${label} 异常`);
+    const message = err instanceof Error ? err.message : String(err);
+    this.emit('archiveFailed', { stage, message: message.slice(0, 200) });
   }
 }

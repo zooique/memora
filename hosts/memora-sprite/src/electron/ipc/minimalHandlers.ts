@@ -29,21 +29,10 @@ import { saveLlmConfig, reinitAgent, getLlmProviders, saveLlmProvider, deleteLlm
 import { isValidContent, isNonEmptyString, isValidLlmConfigInput } from './inputValidation.js';
 // 跨进程 LLM 错误分类器：将底层错误映射为用户友好提示（onboarding + 测试连接共用）
 import { classifyLlmError } from '../../shared/llmErrorClassifier.js';
+// API Key 脱敏：统一真理源在 shared/apiKeyMask.ts（IPC + CLI/Web 共用）
+import { maskApiKey } from '../../shared/apiKeyMask.js';
 // AppRuntime / MinimalIpcState / MinimalIpcCallbacks 真理源在 ./types.ts
 import type { MinimalIpcState, MinimalIpcCallbacks } from './types.js';
-
-/**
- * 脱敏 API Key 供渲染进程显示
- *
- * 仅保留前 3 位 + 后 4 位，中间用 **** 替代。
- * 渲染进程只需知道"已配置"状态，不需要完整密钥。
- */
-function maskApiKey(key: string): string {
-  if (!key || key.length <= 8) {
-    return key ? '****' : '';
-  }
-  return `${key.slice(0, 3)}****${key.slice(-4)}`;
-}
 
 // ─── 共享函数 ──────────────────────────────────────────────
 

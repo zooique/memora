@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）+ helpers 补登 4 文件（buttonHelpers/completionHelpers/completionMetrics/safeStorage，v2.2 规则对齐）+ helpers 类形式例外显式标注（EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator）+ CSS-R7 样式层规则对齐（memory/completion-stats.css + panels/clipboard.css 规则补登记 + index.html 重复 link 清理 + float.html 浮窗三层加载补齐 + clipboard.css 死代码剪枝 + completion-stats.css 11 处裸 px 令牌化）。目录形态已对齐最终目标。
-> **版本**：v2.5（2026-07-19，STEP9 斩木除根同步：§1 preload-float→preloadFloat / preload-quick-input→preloadQuickInput（NAMING-2/3，camelCase 对齐 TS 规范）+ uiDelegations/→ui-delegations/（NAMING-1，文件夹 kebab-case 规范）+ shared/ 补登 5 文件（numberUtils/levelUtils/sensitivePatterns/llmErrorClassifier/spriteStats，STEP4-3 + STEP7 漏检补登）+ panels/ 补登 3 文件（clipboardPanelManager/completionStatsRenderer/llmGovernanceResultRenderer，STEP6-5）+ components/ 补登 startupSummaryBanner（STEP6-5）+ §3 迁移日志新增 STEP9-NAMING-1/2/3 + STEP9-DUP-1 + STEP9-DEP-1/2 + STEP4-3 + STEP6-5 + STEP7 漏检补登条目）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + ui-delegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（types/layout/color/geometry 四 helper，1206→889 行）+ sourceColor 提取（消除 helpers→panels 循环依赖）+ helpers 补登 4 文件（buttonHelpers/completionHelpers/completionMetrics/safeStorage，v2.2 规则对齐）+ helpers 类形式例外显式标注（EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator）+ CSS-R7 样式层规则对齐（memory/completion-stats.css + panels/clipboard.css 规则补登记 + index.html 重复 link 清理 + float.html 浮窗三层加载补齐 + clipboard.css 死代码剪枝 + completion-stats.css 11 处裸 px 令牌化）+ HEAL-12 PanelRouter 6 职责拆分（auxSidebarManager/globalShortcutDispatcher/windowControlsController 三个独立 Manager）+ 二级协调器层落地（coordination/ 4 个 Coordinator：chat/memory/perception/settings，纯状态容器 + cleanup 集中清理）+ controllers/ → orchestrators/ 重命名（4 个 Orchestrator：memory/persona/session/settings，IPC 编排 + 数据加工，DOM 渲染委托 PanelManager）+ CSS-R11 分析面板共享外壳（memory/analysis-panel.css + health.css + insights.css 三面板收口）+ memory-rail 统一导航（memory/memory-rail.css）+ foundation/controls.css 控件层单一真理源 + panels/sprite-settings.css 精灵设定面板样式。目录形态已对齐最终目标。
+> **版本**：v2.6（2026-07-29，规则对齐补登：§1 controllers/ 段落替换为 orchestrators/ + coordination/ 两个实际目录（controllers/ 已不存在，4 Orchestrator + 4 Coordinator 共 8 文件补登）+ helpers/ 补登 4 文件（createEl/personaLabel/sourceLabel/toolNameMap）+ panels/ 补登 4 文件（auxSidebarManager/globalShortcutDispatcher/settingsManagerPanel/windowControlsController）+ styles/ 补登 6 文件（foundation/controls.css + memory/analysis-panel.css + memory/health.css + memory/insights.css + memory/memory-rail.css + panels/sprite-settings.css）+ §2.4.1 CSS 表格文件数更新（foundation 3→4 / memory 9→13 / panels 4→5）+ §2.5 IPC 通道数修正（88→98 / 28→30 / 116→128）+ §2.5 清理机制修正（HANDLE_CHANNELS/ON_CHANNELS 数组描述改为 ipcRegistered 标志 + IpcContext getter 机制，对齐 ipc/index.ts 实际实现）+ §3 迁移日志新增 RULE-ALIGN-0729 条目）
 
 ---
 
@@ -60,11 +60,11 @@ src/
 │       ├── ipcListeners.ts     # 主进程 → 渲染进程 IPC 监听器
 │       ├── initHelpers.ts      # DOM 初始化辅助函数
 │       │
-│       ├── controllers/        # 面板控制器（业务逻辑，不含 DOM 操作）
-│       │   ├── settingsController.ts    # 设置面板控制器
-│       │   ├── sessionController.ts     # 会话面板控制器
-│       │   ├── memoryController.ts      # 记忆面板控制器（C-3 重命名，原 memoryPanelController.ts）
-│       │   └── personaController.ts     # 角色面板控制器（C-3 重命名，原 personaPanelController.ts）
+│       ├── orchestrators/    # 业务编排器（IPC 编排 + 数据加工，DOM 渲染委托 PanelManager；接收 UIManager 实例，不持有模块级状态；原 controllers/ 重命名）
+│       │   ├── memoryOrchestrator.ts    # 记忆编排器（记忆面板回调 + 列表加载 + 仪表盘/洞察/健康度 IPC 编排）
+│       │   ├── personaOrchestrator.ts   # 角色编排器（角色切换回调 + 角色列表/匹配模式加载）
+│       │   ├── sessionOrchestrator.ts   # 会话编排器（时间流式会话历史加载 + 跨天加载 + 删除/重命名/分叉）
+│       │   └── settingsOrchestrator.ts  # 设置编排器（精灵配置/LLM 配置保存回调 + 表单加载 + 连接测试）
 │       │
 │       ├── helpers/            # 渲染进程工具函数（不持有可变状态、可独立测试；类形式例外：EventTracker/SafeTimerTracker/ScrollController/StreamSafetyTimer/CompletionMetrics/NarrativeGenerator/TimeRefresher，状态封闭在实例内、职责单一）
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作/统一时间格式化/createEmptyState/setButtonLoadingEl）
@@ -78,6 +78,7 @@ src/
 │       │   ├── messageOperations.ts # 消息操作辅助（消息 CRUD 纯函数 + 跨 group 遍历）
 │       │   ├── narrativeGenerator.ts # 叙事生成器类（感知叙事文本生成，累积器模式持有 lastNarrative* 状态）
 │       │   ├── perceptionLabels.ts # 感知标签辅助（情感/默契/上下文标签文本）
+│       │   ├── personaLabel.ts # 角色名显示映射纯函数（内部名→中文显示名，消除 personaPanelManager/chatPanelManager 重复实现）
 │       │   ├── scrollController.ts # 滚动控制器类（消息列表自动滚动/锚定/rAF 节流）
 │       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
 │       │   ├── safeTimer.ts    # 安全定时器类（SafeTimerTracker，自动清理/防泄漏）
@@ -95,6 +96,7 @@ src/
 │       │   ├── memoryTimelineView.ts # 时间线视图辅助（按天分组渲染 + 日期标签格式化，从 memoryPanelManager 提取）
 │       │   ├── memoryViewSwitcher.ts # 视图切换辅助（视图显隐 + 互斥切换 + viewSwitchToken 竞态保护，从 memoryPanelManager 提取）
 │       │   ├── sourceColor.ts  # 记忆来源颜色映射纯函数（getSourceColorClass，从 memoryPanelManager 提取，消除 helpers→panels 循环依赖）
+│       │   ├── sourceLabel.ts  # 记忆来源中文标签映射纯函数（source→中文标签，8 处消费点统一，UX-2 消除"英文原值直显"）
 │       │   │
 │       │   ├── providerManagement.ts # Provider 管理辅助（10 纯函数 + ProviderManagementContext，从 settingsPanelManager 提取）
 │       │   ├── shortcutCapture.ts # 快捷键捕获辅助（2 纯函数 + ShortcutCaptureContext，从 settingsPanelManager 提取）
@@ -156,7 +158,17 @@ src/
 │       │   ├── spriteStatusPopover.ts    # 精灵状态浮层（在线状态/记忆量/主动行为提示）
 │       │   ├── streamingRenderer.ts      # 流式 RAF 渲染核心（context 注入纯函数，chatPanelManager 子模块，AUDIT-0716-3 从 helpers/ 迁入消除循环依赖）
 │       │   ├── memoryGraphPanel.ts       # 图谱视图子系统（memoryPanelManager 子模块：初始化/空状态/缓存/上下文菜单/关系弹窗，AUDIT-0716-3 从 helpers/ 迁入消除循环依赖）
-│       │   └── panelRouter.ts            # 面板路由器（双维度路由：switchPanel 主面板区 + switchAuxTab/openAuxSidebar/toggleAuxSidebar 信息侧栏；auxSidebarOpen/activeAuxTab 状态；isAuxTabVisible 替代 getCurrentPanel 用于侧栏面板可见性判断）
+│       │   ├── panelRouter.ts            # 面板路由器（HEAL-12 拆分后仅保留主面板区 switchPanel 路由；AUX 侧栏/快捷键/窗口控制已拆分到独立 Manager）
+│       │   ├── auxSidebarManager.ts      # 信息侧栏 Manager（HEAL-12 从 PanelRouter 拆分：auxSidebarOpen/activeAuxTab 状态 + btn-toggle-aux/.aux-tab 点击 + open/isVisible API）
+│       │   ├── globalShortcutDispatcher.ts # 全局快捷键 Dispatcher（HEAL-12 从 PanelRouter 拆分：document keydown 监听 + Esc/Ctrl+1-5/Ctrl+./Ctrl+/ + quick-record/recall-memory 入口）
+│       │   ├── settingsManagerPanel.ts   # 精灵设定面板管理器（角色/规则/技能三类设定文件统一 CRUD，精灵设定面板 Epic 4，与 SettingsPanelManager 隔离）
+│       │   └── windowControlsController.ts # 窗口控制 Controller（HEAL-12 从 PanelRouter 拆分：最小化/最大化/关闭按钮 + 最大化图标同步 + 未保存修改检查）
+│       │
+│       ├── coordination/     # 二级协调器（纯状态容器 + cleanup 集中清理，封装多个相关 PanelManager 子模块；UIManager 持有实例，delegations mixin 直接读写字段）
+│       │   ├── chatCoordinator.ts         # Chat 域二级协调器（chatPanel/inputAreaManager/proactiveBanner/suggestionCard/streamingMessages 5 子模块）
+│       │   ├── memoryCoordinator.ts       # Memory 域二级协调器（memoryPanel/profilePanel/workProjectionPanel/auditPanel 4 子模块）
+│       │   ├── perceptionCoordinator.ts   # 感知/仪表盘域二级协调器（dashboardPanel/perceptionPanel/spriteStatusPopover 3 子模块）
+│       │   └── settingsCoordinator.ts     # Settings 域二级协调器（settingsPanelManager/settingsManagerPanel/currentConfig 3 字段）
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
@@ -170,10 +182,11 @@ src/
 │       └── styles/             # CSS 样式表（详见 §2.4 CSS 架构规则，按功能域分组）
 │           ├── README.md       # CSS 架构文档（令牌所有权 + 聚合器模式 + 贡献约定 + 目录分组规则）
 │           │
-│           ├── foundation/    # 基础层（设计令牌 + 全局重置 + 工具类，三窗口共享）
+│           ├── foundation/    # 基础层（设计令牌 + 全局重置 + 工具类 + 控件层，三窗口共享）
 │           │   ├── tokens.css      # 设计令牌「单一真理源」（P0：双主题变量 + CJK 字体栈）
 │           │   ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 图标系统 / 通用组件基类
-│           │   └── utilities.css   # 通用工具类（flex-center / flex-col / surface-card / text-muted 等）
+│           │   ├── utilities.css   # 通用工具类（flex-center / flex-col / surface-card / text-muted 等）
+│           │   └── controls.css    # 共享控件层 L1 单一真理源（按钮/标签/卡片，跨面板复用，ADR-018 收口散落控件）
 │           │
 │           ├── layout/        # 布局层（窗口骨架 + 内嵌组件，聚合器 + 5 子模块）
 │           │   ├── layout.css      # 聚合器（@import 5 子模块，CSS-R8 拆分）
@@ -193,8 +206,8 @@ src/
 │           │   ├── chat-messages-input.css   # 输入区 / 补全 / 停止按钮 / 空状态（二级拆分）
 │           │   └── chat-messages-misc.css    # 思考指示器 / 工具卡片 / 动画 / 启动摘要 / 右键菜单（二级拆分）
 │           │
-│           ├── memory/        # 记忆功能域（聚合器 + 7 子模块 + 1 分析子面板）
-│           │   ├── memory.css             # 聚合器（@import 7 子模块 + 1 分析子面板，P2 拆分 + 二级拆分）
+│           ├── memory/        # 记忆功能域（聚合器 + 7 子模块 + 4 分析子面板 + 1 导航 rail）
+│           │   ├── memory.css             # 聚合器（@import 7 子模块 + 分析子面板，P2 拆分 + 二级拆分）
 │           │   ├── memory-list.css        # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
 │           │   ├── memory-detail.css      # 记忆详情弹窗 / 技能列表 / 全局·项目色
 │           │   ├── memory-views.css       # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
@@ -202,13 +215,18 @@ src/
 │           │   ├── memory-graph-search.css # 高级搜索 / 搜索高亮 / 洞察栏（二级拆分）
 │           │   ├── memory-graph-detail.css # 关联记忆 / 演化脉络 / 空状态 / 健康度仪表盘（二级拆分）
 │           │   ├── memory-graph-misc.css  # 增强 1-5 / 时间线 / 回收站（二级拆分）
-│           │   └── completion-stats.css  # 补全统计面板（记忆面板第 3 个 analysis panel，与 insights/health 互斥切换）
+│           │   ├── completion-stats.css  # 补全统计面板（记忆面板第 3 个 analysis panel，与 insights/health 互斥切换）
+│           │   ├── analysis-panel.css    # 分析面板共享外壳（三面板 insights/health/completion-stats 共用 .analysis-panel/.stat-card/.metric-track，CSS-R11 收口）
+│           │   ├── health.css            # 健康度诊断面板样式（CSS-R11 从 memory-graph-detail/misc 抽出，复用 analysis-panel 外壳）
+│           │   ├── insights.css          # 统计洞察栏样式（CSS-R11 收口，复用 analysis-panel 外壳）
+│           │   └── memory-rail.css       # 记忆面板统一导航 rail（取代 view-switch 分段控件 + more-menu，竖向 rail）
 │           │
 │           ├── panels/        # 独立面板样式（每个对应一个 .panel）
 │           │   ├── dashboard.css   # 仪表盘面板（概览+运行指标+记忆源健康+增长趋势）
 │           │   ├── perception.css  # 独立感知面板（覆盖 chat-perception.css 基础样式）
 │           │   ├── clipboard.css   # 剪贴板保护面板（待处理列表 + 引导气泡 + 空状态，clipboardPanelManager 使用）
-│           │   └── settings.css    # 设置面板
+│           │   ├── settings.css    # 设置面板（系统配置：LLM/精灵行为/项目/画像/审计/帮助）
+│           │   └── sprite-settings.css # 精灵设定面板（角色/规则/技能三类设定文件 CRUD，settingsManagerPanel 使用）
 │           │
 │           ├── overlays/      # 浮层组件（modal / toast / 命令面板 / 搜索弹窗）
 │           │   ├── modal.css           # 模态弹窗
@@ -359,7 +377,7 @@ src/
 | 冲突 | 解决方案 |
 |------|----------|
 | `renderer/ui.ts` vs `renderer/ui/` | `ui/` → 重命名为 `panels/`（面板管理器） |
-| `renderer/controllers/` vs `sprite/controllers/` | 同名不同层，职责清晰：渲染进程控制器 vs 精灵核心控制器 |
+| `renderer/orchestrators/` vs `sprite/controllers/` | 原 `renderer/controllers/` 已重命名为 `orchestrators/`（D-09 创建 → RULE-ALIGN-0729 重命名同步），消除与 `sprite/controllers/` 同名冲突；渲染进程编排器 vs 精灵核心控制器，职责清晰 |
 | `ipcChannels.ts` / `ipcHandlers.ts` 在 electron/ 根 | 移入 `ipc/` 子目录，与其他 IPC 文件同组 |
 
 ### 2.3 测试文件组织
@@ -377,11 +395,11 @@ styles/ 按**功能域**分组，与渲染进程代码组织（panels/components
 
 | 子目录 | 职责 | 加载顺序 | 文件数 |
 |--------|------|----------|--------|
-| `foundation/` | 设计令牌 + 全局重置 + 工具类（三窗口共享） | 1-3 | 3（tokens/base/utilities）|
+| `foundation/` | 设计令牌 + 全局重置 + 工具类 + 控件层（三窗口共享） | 1-4 | 4（tokens/base/utilities/controls）|
 | `layout/` | 窗口骨架 + 内嵌组件（聚合器 + 5 子模块：titlebar/sidebar/app-grid/widgets/web-mode） | 4 | 6 |
 | `chat/` | 对话功能域（聚合器 + 7 子模块） | 5-12 | 8 |
-| `memory/` | 记忆功能域（聚合器 + 7 子模块 + 1 分析子面板 completion-stats） | 13-21 | 9 |
-| `panels/` | 独立面板样式（dashboard/perception/clipboard/settings） | 22-25 | 4 |
+| `memory/` | 记忆功能域（聚合器 + 7 子模块 + 4 分析子面板 completion-stats/analysis-panel/health/insights + 1 导航 rail memory-rail） | 13-21 | 13 |
+| `panels/` | 独立面板样式（dashboard/perception/clipboard/settings/sprite-settings） | 22-25 | 5 |
 | `overlays/` | 浮层组件（modal/toast/命令面板/搜索弹窗） | 26-29 | 4 |
 | `content/` | 内容渲染样式（markdown） | 30 | 1 |
 | `windows/` | 独立窗口专属样式（float/quick-input，从原窗口目录迁入） | 浮窗独立引入 | 2 |
@@ -441,9 +459,9 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 | 方向 | 通道数 | 定义文件 |
 |------|--------|----------|
-| 渲染→主进程（`IPC_CHANNELS`） | 88 | `src/electron/ipc/channels.ts` |
-| 主→渲染进程（`MAIN_TO_RENDERER_CHANNELS`） | 28 | 同上 |
-| **合计** | **116** | 单一真理源 |
+| 渲染→主进程（`IPC_CHANNELS`） | 98 | `src/electron/ipc/channels.ts` |
+| 主→渲染进程（`MAIN_TO_RENDERER_CHANNELS`） | 30 | 同上 |
+| **合计** | **128** | 单一真理源 |
 
 #### 功能域分组（7 个领域 handler + 1 个降级 + 1 个流式核心）
 
@@ -520,7 +538,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 - **通道合并**：不合并 STREAM_* 为统一通道。成本（preload API 重写 + 渲染层监听重写 + 测试更新 + 高频通道处理开销）远超收益
 - **版本管理**：不引入 v2 前缀。当前无通道需 v2 重构，三处同步（channels + preload + handler）增加复杂度
-- **未来触发时机**：通道数超 130 或出现跨领域 handler 时启动合并评估（阈值从 150 收紧至 130，对齐用户口径；当前 116，距阈值 14）
+- **未来触发时机**：通道数超 130 或出现跨领域 handler 时启动合并评估（阈值从 150 收紧至 130，对齐用户口径；当前 128，距阈值 2，建议下一轮迭代评估是否将阈值上调至 150）
 
 #### 通道归属检查流程（AUDIT-6-3）
 
@@ -528,7 +546,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 
 1. **确定功能域**：新通道属于哪个功能域（对话/会话/记忆/配置/系统/建议/作品投影）？
 2. **handler 文件归属**：新通道的 handler 必须放在对应功能域的 handler 文件中（见上方"功能域分组"表）
-3. **通道清理注册**：`ipcMain.handle` 通道必须在 `ipc/index.ts` 的 `HANDLE_CHANNELS` 数组中添加；`ipcMain.on` 通道必须在 `ON_CHANNELS` 数组中添加（reinitAgent 重复注册时清理）
+3. **通道清理注册**：`registerIpcHandlers` 仅首次调用注册（`appState.ipcRegistered` 标志保证幂等）；`IpcContext` 通过 getter 实时访问 `appState.agent/sprite/sessionStore`，reinitAgent 后 IPC handler 自动看到新实例，无需 removeHandler + 重注册。唯一例外：`MINIMAL_HANDLERS_TO_TAKE_OVER` 数组中的通道（CONFIG_GET/PROJECTS_LIST）在完整 IPC 接管时需先 `ipcMain.removeHandler` 避免与 minimalHandlers 冲突（详见 `ipc/index.ts` 文件级注释）
 4. **preload 同步**：在 `preload.ts` 的内联通道常量中同步新增（sandbox 兼容性要求）
 5. **API 暴露**：在 `preload.ts` 的 `electronAPI` 对象中新增对应的 API 方法
 6. **通道校验**：运行 `npx tsx scripts/check-ipc-channels.ts` 验证 channels.ts 与 preload.ts 的双向一致性
@@ -537,7 +555,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 **PR review checklist**：
 
 - [ ] 新通道已归入正确功能域的 handler 文件
-- [ ] `HANDLE_CHANNELS` 或 `ON_CHANNELS` 已添加新通道
+- [ ] `appState.ipcRegistered` 标志保证 `registerIpcHandlers` 仅首次调用（如新通道属于 minimalHandlers 接管范围，确认已加入 `MINIMAL_HANDLERS_TO_TAKE_OVER` 数组）
 - [ ] `preload.ts` 内联通道常量已同步
 - [ ] `electronAPI` 已暴露对应 API 方法
 - [ ] `check-ipc-channels.ts` 校验通过
@@ -589,6 +607,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 - [x] STEP9-DEP-2: sprite 宿主 8 devDeps 非 Major 升级——@types/node 24.0.0→24.13.3 + @typescript-eslint/eslint-plugin 8.32.0→8.64.0 + @typescript-eslint/parser 8.32.0→8.64.0 + electron 40.10.5→40.10.6（需 npm run rebuild 重建 native 模块）+ eslint 9.27.0→9.39.5 + prettier 3.5.3→3.9.5 + tsx 4.19.2→4.23.1 + vitest 4.0.0→4.1.10（2026-07-19 斩木除根 DEP-2）
 - [x] INFO-ARCH-2.1: 信息架构重构双栏布局——(1) layout.css `#main-content` 改为 `display: grid`，`.aux-open` 状态下 `grid-template-columns: 1fr 1px var(--aux-sidebar-width)`（主面板区 + 1px 分隔线 + 280px 信息侧栏）；(2) index.html 新增 `#btn-toggle-aux` 单图标按钮（#icon-panel-right）+ `.main-panel-area` 包裹层 + `.aux-sidebar-divider` + `#aux-sidebar`（含 `.aux-sidebar-header` + 2 个 `.aux-tab` + `.aux-sidebar-content`）+ `.sidebar-divider` 视觉分隔线；(3) panelRouter.ts 扩展双维度路由：`switchPanel()` 主面板区（chat/memories/clipboard/settings，选择器限定 `.nav-btn[data-panel]` 排除 toggle 按钮）+ `switchAuxTab()`/`openAuxSidebar()`/`toggleAuxSidebar()` 信息侧栏（perception/dashboard，独立 `.aux-active` 类，与主面板 `.active` 互不干扰），新增 `auxSidebarOpen`/`activeAuxTab` 状态 + `isAuxTabVisible()` 替代 `getCurrentPanel()` 用于侧栏面板可见性判断；(4) #panel-perception/#panel-dashboard DOM 从 `.main-panel-area` 迁移到 `.aux-sidebar-content`；(5) tokens.css 新增 `--aux-sidebar-width: 280px`（浅色+深色双主题）；(6) 快捷键重编号 PANEL_SHORTCUT_MAP 从 6 项缩减为 4 项（Ctrl+1=chat/Ctrl+2=memories/Ctrl+3=clipboard/Ctrl+4=settings，移除 5/6），commandPaletteManager nav-perception/nav-dashboard 改为 `openAuxSidebar(tab)` 路径，shortcuts-modal + onboarding 文案同步更新；(7) 自动打开路径 3 条：精灵状态条点击 → `openAuxSidebar('perception')` + 命令面板 Ctrl+K → `openAuxSidebar(tab)` + 主动触发（洞察/里程碑/模式/建议）→ `openAuxSidebar('dashboard')`；(8) 渲染层 onPanelSwitch 回调扩展触发 switchAuxTab 数据刷新（perception→loadPerception，dashboard→loadDashboard），Canvas 重绘通过 getPanelSwitchCallback 触发（renderGrowthChart 在 `getBoundingClientRect().width === 0` 时跳过绘制）；(9) 智能决策：移除自动收起逻辑（min-width=640px 验证：280 侧栏 + 360 主面板 = 640，无需自动收起）；(10) 即时切换无动画（参考 VSCode 标准行为，`transition: width` 触发 reflow 性能差）（2026-07-22 2.1 阶段实施）
 - [x] CSS-R8: layout.css 聚合器拆分——原单体 1238 行（剪枝后）拆分为 6 文件（1 聚合器 + 5 子模块），参考 chat.css/memory.css 先例：(1) layout.css 降级为纯 @import 聚合器（22 行）；(2) titlebar.css（顶部栏 + 命令面板入口 + 窗口控制按钮 + 角色选择器，~253 行）；(3) sidebar.css（侧边栏容器 + 品牌区 + 导航图标 + 导航角标 + 视觉分隔线，~201 行）；(4) app-grid.css（窗口骨架：#app Grid + #main-content 悬浮窗口 + .panel + 信息侧栏双栏布局 + 响应式 @media，~244 行）；(5) widgets.css（布局内嵌小部件：仪表盘 dash-item / 默契度 rapport / 里程碑 milestone / 技能拖入区 skill-dropzone / 通用下拉菜单 dropdown / 最近洞察列表，~290 行）；(6) web-mode.css（Web 模式适配 body.web-mode *，~210 行）；@import 顺序保证层叠等价（app-grid.css 含 @media 须在 titlebar/sidebar 之后加载以覆盖 #titlebar-drag / #sidebar 小屏响应式规则）；index.html link 路径不变（聚合器内部 @import 子模块）（2026-07-22 模块重思 + 炼化归元）
+- [x] RULE-ALIGN-0729: directory-structure.md 滞后补登 + §2.5 IPC 治理修正——文档滞后于实际实现，共补登 22 个未登记文件 + 修正 2 个错误描述：(1) §1 `controllers/` 段落替换为 `orchestrators/`（4 文件：memoryOrchestrator/personaOrchestrator/sessionOrchestrator/settingsOrchestrator，IPC 编排 + 数据加工，DOM 渲染委托 PanelManager；原 controllers/ 已不存在）+ 新增 `coordination/` 段落（4 文件：chatCoordinator/memoryCoordinator/perceptionCoordinator/settingsCoordinator，二级协调器纯状态容器 + cleanup 集中清理）；(2) §1 `helpers/` 补登 4 文件（createEl/personaLabel/sourceLabel/toolNameMap）；(3) §1 `panels/` 补登 4 文件（auxSidebarManager/globalShortcutDispatcher/settingsManagerPanel/windowControlsController，HEAL-12 从 PanelRouter 拆分的 3 个独立 Manager + 精灵设定面板管理器）；(4) §1 `styles/` 补登 6 文件（foundation/controls.css 共享控件层 + memory/analysis-panel.css 分析面板共享外壳 + memory/health.css 健康度诊断 + memory/insights.css 统计洞察栏 + memory/memory-rail.css 统一导航 rail + panels/sprite-settings.css 精灵设定面板）；(5) §2.4.1 CSS 表格文件数更新（foundation 3→4 / memory 9→13 / panels 4→5）；(6) §2.5 IPC 通道数修正（渲染→主进程 88→98 / 主→渲染 28→30 / 合计 116→128，对齐 channels.ts 实际定义）；(7) §2.5 清理机制修正——`HANDLE_CHANNELS`/`ON_CHANNELS` 数组描述实际不存在，改为 `appState.ipcRegistered` 标志 + `IpcContext` getter 机制（对齐 `ipc/index.ts` 实际实现：reinitAgent 后无需 removeHandler + 重注册，仅 `MINIMAL_HANDLERS_TO_TAKE_OVER` 数组中的 CONFIG_GET/PROJECTS_LIST 需先 removeHandler 避免与 minimalHandlers 冲突）；(8) 治理决策"当前 116，距阈值 14"更新为"当前 128，距阈值 2"（2026-07-29 规则对齐，纯文档修改零代码变更）
 
 ### 延后（非目录结构）
 
