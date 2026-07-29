@@ -140,20 +140,40 @@ export function createEl<K extends keyof HTMLElementTagNameMap>(
 /**
  * 在指定容器中显示加载态
  *
- * 创建居中旋转圆环 + 文字提示，清空容器后插入加载元素。
- * 使用 clearElement + createEl 统一 DOM 操作模式。
+ * 追加覆盖层，**不调用 clearElement(container)**。早期实现会清空容器，但
+ * 这会破坏「update 模式」的渲染方法（如 renderDashboardStats 通过 getElementById
+ * 更新已有子节点），导致 loading 永驻、用户看不到数据。改为追加覆盖层后：
+ * - 容器原有子节点保留，渲染方法仍可通过 ID 找到目标
+ * - 加载层用 CSS position:absolute 浮在内容上方，不影响布局
+ * - 调用方需在渲染完成后调用 hidePanelLoading(container) 移除加载层
  *
- * @param container 目标容器元素
+ * @param container 目标容器元素（需 position:relative 才能正确定位覆盖层）
  * @param text 加载提示文字（默认 "加载中…"）
  */
 export function showPanelLoading(container: Element, text = '加载中…'): void {
-  clearElement(container);
+  // 清理已有加载层（避免重复叠加），但不清除其他子节点
+  const existing = container.querySelector('.panel-loading');
+  if (existing) existing.remove();
   const wrapper = createEl('div', 'panel-loading');
   const spinner = createEl('span', 'panel-loading-spinner flex-shrink-0');
   const label = createEl('span', undefined, text);
   wrapper.appendChild(spinner);
   wrapper.appendChild(label);
   container.appendChild(wrapper);
+}
+
+/**
+ * 移除 showPanelLoading 添加的加载层
+ *
+ * 调用方在渲染完成后调用此函数清理 loading 指示器。安全处理：容器中无
+ * loading 层时静默返回，不抛错。
+ *
+ * @param container 已显示 loading 的目标容器
+ */
+export function hidePanelLoading(container: Element | null): void {
+  if (!container) return;
+  const loading = container.querySelector('.panel-loading');
+  if (loading) loading.remove();
 }
 
 // ─── 时间格式化 ─────────────────────────────────────────

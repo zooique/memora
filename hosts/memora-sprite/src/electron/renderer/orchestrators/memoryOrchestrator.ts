@@ -15,7 +15,7 @@
  */
 
 import type { UIManager } from '../ui.js';
-import { setButtonLoading, showPanelLoading } from '../helpers/domHelpers.js';
+import { setButtonLoading, showPanelLoading, hidePanelLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 // formatErrorMessage 错误文案真理源（UX-14：替代 "XXX失败，请重试" 模板化文案）
@@ -845,6 +845,7 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
       reportError('loadDashboard', error);
       // 仪表盘涉及多子区域（统计/指标/技能/回顾/感知），整体失败时用 toast 兜底提示
       uiManager.showToast('仪表盘加载失败，请稍后重试', 'error');
+      hidePanelLoading(dashboardBody); // 错误态由 toast 承担，移除 loading
       return; // IO 失败后不执行渲染
     }
 
@@ -872,6 +873,9 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
     if (perceptionSnapshot && Object.keys(perceptionSnapshot).length > 0) {
       uiManager.renderPerceptionSnapshot(perceptionSnapshot);
     }
+
+    // 渲染完成，移除加载态
+    hidePanelLoading(dashboardBody);
   }
 
   /**
@@ -898,6 +902,9 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
       reportError('loadPerception', error);
       // 加载失败时显示面板错误横幅 + 重试按钮（与 loadMemoryList 错误反馈体系一致）
       uiManager.showPanelError('perception', '感知数据加载失败，请稍后重试', () => loadPerception());
+    } finally {
+      // 无论成功/失败都移除 loading 指示器（错误态由 showPanelError 横幅承担）
+      hidePanelLoading(perceptionPanel);
     }
   }
 

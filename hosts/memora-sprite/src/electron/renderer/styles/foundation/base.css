@@ -115,6 +115,10 @@ html, body {
 .icon-sm { width: 14px; height: 14px; }
 
 .panel-loading {
+  /* 覆盖层定位：不打乱容器原有 flex/grid 布局，子节点保留可被 update 模式 render 修改 */
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-decoration);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,7 +126,8 @@ html, body {
   color: var(--text-2);
   font-size: var(--font-sm);
   gap: var(--space-2-5);
-  /* 加载态作为独立元素，不使用 ::before 伪元素以兼容 clearElement */
+  background: var(--bg-80, var(--bg));
+  /* 容器需 position:relative 才能让覆盖层正确铺满 */
 }
 .panel-loading-spinner {
   display: inline-block;
