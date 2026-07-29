@@ -300,6 +300,10 @@ export const IPC_CHANNELS = {
   // ─── 配置目录（精灵设定面板辅助功能） ───────────────
   /** 渲染进程 → 主进程：打开配置文件目录（personas/skills/rules 所在目录） */
   CONFIG_DIR_OPEN: 'config-dir-open',
+
+  // ─── 应用更新 ───────────────────────────────────────
+  /** 渲染进程 → 主进程：检查应用更新（fetch GitHub Releases API + 版本比对 + dialog 提示） */
+  CHECK_UPDATE: 'check-update',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */

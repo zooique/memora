@@ -14,7 +14,7 @@
 
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, app } from 'electron';
 import { applyWindowSecurity } from './windowSecurity.js';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
@@ -140,6 +140,8 @@ export class WindowManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        // 传递应用版本号到 preload（renderer 通过 window.electronAPI.appVersion 读取）
+        additionalArguments: [`app-version=${app.getVersion()}`],
       },
     });
 

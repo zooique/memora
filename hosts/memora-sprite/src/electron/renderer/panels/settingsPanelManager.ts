@@ -227,6 +227,11 @@ export class SettingsPanelManager {
     this.btnProviderTest = getOptionalElement('btn-provider-test', 'button');
 
     // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 reportError 报告
+    // 填充应用版本号到"关于"分区（由 windowManager additionalArguments 注入）
+    const appVersionEl = document.getElementById('app-version');
+    if (appVersionEl) {
+      appVersionEl.textContent = window.electronAPI.appVersion;
+    }
     // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
     this.validateSettingsElements();
   }
@@ -299,6 +304,8 @@ export class SettingsPanelManager {
     const btnReset = getOptionalElement('btn-settings-reset', 'button');
     /** 强制释放对话锁按钮（应急恢复，与"恢复默认"同属危险操作区） */
     const btnForceRelease = getOptionalElement('btn-force-release-lock', 'button');
+    /** 检查更新按钮（设置 → 帮助 → 关于分区） */
+    const btnCheckUpdate = getOptionalElement('btn-check-update', 'button');
 
     // "稍后配置"按钮：首次配置时提供退出路径
     const btnSkip = getOptionalElement('btn-settings-skip', 'button');
@@ -408,6 +415,35 @@ export class SettingsPanelManager {
             this.host.showToast('强制释放失败，请稍后重试或重启应用', 'error');
           } finally {
             setButtonLoadingEl(btnForceRelease, false);
+          }
+        })();
+      });
+    }
+
+    // 检查更新按钮：点击后调用主进程检查 GitHub Releases，根据结果做 toast 反馈
+    if (btnCheckUpdate) {
+      this.events.addEventListener(btnCheckUpdate, 'click', () => {
+        void (async () => {
+          // 异步期间禁用按钮 + 显示"检查中…"，防止重复点击
+          setButtonLoadingEl(btnCheckUpdate, true, '检查中…');
+          try {
+            const result = await window.electronAPI.checkUpdate();
+            if (result.hasUpdate) {
+              // 有新版时主进程已弹 dialog，这里不再重复提示
+              // dialog 关闭后用户可能已前往下载，静默处理
+            } else if (result.reason === 'up-to-date') {
+              this.host.showToast(`当前已是最新版本（${result.current}）`, 'success');
+            } else if (result.reason === 'error') {
+              this.host.showToast('检查更新失败，请检查网络连接', 'error');
+            } else {
+              // no-release / invalid-tag → API 异常或尚无 Release
+              this.host.showToast('未能获取版本信息，请稍后重试', 'info');
+            }
+          } catch (error) {
+            reportError('checkUpdate', error);
+            this.host.showToast('检查更新失败，请检查网络连接', 'error');
+          } finally {
+            setButtonLoadingEl(btnCheckUpdate, false);
           }
         })();
       });

@@ -217,6 +217,8 @@ export const IPC_CHANNELS = {
   USAGE_STATS_EXPORT: 'usage-stats-export',
   // 清除使用统计数据（渲染进程 → 主进程）
   USAGE_STATS_CLEAR: 'usage-stats-clear',
+  /** 检查应用更新（与 ipc/channels.ts 同步） */
+  CHECK_UPDATE: 'check-update',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -748,6 +750,16 @@ export interface ElectronAPI {
    */
   openConfigDir: () => Promise<{ success: boolean; error: string | null }>;
   /**
+   * 检查应用更新
+   *
+   * 调用主进程 fetch GitHub Releases API 比对版本：
+   * - 有新版 → 主进程弹 dialog 提示，用户确认后打开下载页
+   * - 无新版/请求失败 → 静默返回，由调用方做 toast 反馈
+   */
+  checkUpdate: () => Promise<{ hasUpdate: boolean; reason?: string; current?: string; remote?: string; error?: string }>;
+  /** 应用版本号（由主进程 additionalArguments 注入，非 IPC 调用） */
+  appVersion: string;
+  /**
    * 监听设定文件变更广播
    *
    * 主进程在设定面板 CRUD 完成后 + personaWatcher 监听到外部编辑器修改时广播，
@@ -1234,6 +1246,8 @@ const electronAPI: ElectronAPI = {
   deleteSkill: (name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_DELETE, 'skill', name),
   /** 打开配置文件目录（personas/skills/rules 所在目录） */
   openConfigDir: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_DIR_OPEN),
+  /** 检查应用更新（主进程完成 fetch + 比对 + dialog + openExternal 全流程） */
+  checkUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.CHECK_UPDATE),
 
   // 设定文件变更监听设定文件变更广播监听（与 onClipboardChanged 模式一致）
   onConfigFilesChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED, (_: IpcRendererEvent, payload: ConfigFilesChangedPayload) => cb(payload)),
@@ -1382,6 +1396,8 @@ const electronAPI: ElectronAPI = {
   usageStatsExport: () => ipcRenderer.invoke(IPC_CHANNELS.USAGE_STATS_EXPORT),
   // 使用统计清除（清空所有计数器并重置 since 时间）
   usageStatsClear: () => ipcRenderer.invoke(IPC_CHANNELS.USAGE_STATS_CLEAR),
+  // 应用版本号（由 windowManager additionalArguments 注入，从 process.argv 解析）
+  appVersion: (process.argv.find((arg) => arg.startsWith('app-version='))?.split('=')[1]) ?? 'unknown',
 };
 
 // 条件保护——测试环境（vitest）无 contextBridge，直接调用会抛错阻断测试

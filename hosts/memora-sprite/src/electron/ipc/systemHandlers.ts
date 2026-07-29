@@ -6,14 +6,39 @@
  *   2. 项目列表（PROJECTS_LIST，供专注模式选择器使用）
  *   3. 仪表盘数据聚合（DASHBOARD_GET，对齐 CLI /dashboard）
  *   4. 主题变更广播（THEME_CHANGED，同步浮动窗口主题）
+ *   5. 应用更新检查（CHECK_UPDATE，fetch GitHub Releases API + 版本比对）
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, app, dialog, shell } from 'electron';
 import { logger, toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { throwingHandle, requireSprite, requireAgent } from './types.js';
 import type { IpcContext } from './types.js';
+
+/** 公开发布仓 owner（GitHub 用户名） */
+const GH_OWNER = 'zooique';
+/** 公开发布仓仓库名（只放 exe，不含源码） */
+const GH_REPO = 'memora-sprite-releases';
+
+/**
+ * 语义化版本比较器（数值比较，非字符串比较）
+ *
+ * "0.10.0" > "0.9.0" 字符串比较会返回 false（漏报），必须用数值比较。
+ * @param a 远程版本号（如 "1.5.0"）
+ * @param b 本地版本号（如 "1.4.0"）
+ * @returns a 是否严格大于 b
+ */
+function gtVersion(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
 
 /**
  * 注册系统级 IPC 处理器
@@ -199,6 +224,64 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       await collector.clear();
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '清除使用统计失败' });
+    }
+  });
+
+  // ─── 应用更新检查 ────────────────────────────────────────
+
+  /**
+   * 检查应用更新
+   *
+   * 流程：fetch GitHub Releases API → 比对版本 → 有新版弹 dialog → 用户确认后打开下载页
+   * - 公开仓 API 免鉴权（匿名限速 60 次/小时/IP，按钮触发足够）
+   * - 无新版/请求失败时静默返回，不打扰用户
+   * - 返回结果供 renderer 侧做 toast 反馈
+   */
+  ipcMain.handle(IPC_CHANNELS.CHECK_UPDATE, async () => {
+    /** 当前应用版本（宿主 package.json version） */
+    const appVersion = app.getVersion();
+    try {
+      // 10 秒超时保护：国内访问 api.github.com 可能很慢，避免按钮无限等待
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const res = await fetch(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases/latest`,
+        { headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'MemoraSprite' }, signal: controller.signal },
+      );
+      clearTimeout(timeoutId);
+      // 404=尚无 Release；403=匿名限速；网络错误 → 静默返回，不打扰用户
+      if (!res.ok) {
+        logger.debug({ status: res.status }, '检查更新：API 请求未成功');
+        return { hasUpdate: false, reason: 'no-release' };
+      }
+      const rel = (await res.json()) as { tag_name?: string; html_url?: string; body?: string };
+      /** 远程版本号（去掉 v 前缀） */
+      const remoteVer = String(rel.tag_name || '').replace(/^v/, '');
+      if (!remoteVer) {
+        return { hasUpdate: false, reason: 'invalid-tag' };
+      }
+      // 版本无更新 → 静默返回
+      if (!gtVersion(remoteVer, appVersion)) {
+        return { hasUpdate: false, reason: 'up-to-date', current: appVersion, remote: remoteVer };
+      }
+      // 有新版 → 弹 dialog 提示用户
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        title: '检测到新版本',
+        message: `当前 ${appVersion} → 最新 ${remoteVer}`,
+        detail: rel.body || '无更新日志',
+        buttons: ['稍后', '前往下载'],
+        defaultId: 1,
+      });
+      // 用户点击"前往下载" → 打开 GitHub 发布页
+      if (response === 1 && rel.html_url) {
+        await shell.openExternal(rel.html_url);
+      }
+      return { hasUpdate: true, current: appVersion, remote: remoteVer };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '检查更新失败' });
+      // AbortError → 超时；TypeError → 网络不通，统一归为 error
+      return { hasUpdate: false, reason: 'error', error: toError(error).message };
     }
   });
 }
