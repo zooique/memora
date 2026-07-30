@@ -974,6 +974,8 @@ export class SettingsManagerPanelManager {
   /**
    * 保存配置文件（按类型选择 IPC）
    *
+   * MIND2-A4：persona/rule 统一走 saveConfigFile 通道，skill 复用 installSkill（含热重载）
+   *
    * @param type 配置类型
    * @param name 配置名
    * @param content 文件内容
@@ -984,11 +986,9 @@ export class SettingsManagerPanelManager {
     name: string,
     content: string,
   ): Promise<ConfigFileOperationResult> {
-    if (type === 'persona') {
-      return window.electronAPI.savePersonaFile(name, content);
-    }
-    if (type === 'rule') {
-      return window.electronAPI.saveRule(name, content);
+    if (type === 'persona' || type === 'rule') {
+      // MIND2-A4：统一调用 saveConfigFile，type 参数区分 persona/rule
+      return window.electronAPI.saveConfigFile(type, name, content);
     }
     // skill 类型复用 installSkill 通道（已含热重载逻辑）
     const fileName = name.endsWith('.md') ? name : `${name}.md`;

@@ -301,8 +301,9 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   // ─── 设定文件 CRUD（精灵设定面板 Epic 3 · I2） ─────────────
   //
   // HEAL-21：LIST/READ/DELETE 三类合并为 CONFIG_FILE_* 统一入口（8 通道 → 3 通道）
-  // SAVE 三通道独立保留：PERSONA_SAVE_FILE/RULE_SAVE/SKILL_INSTALL（因 SKILL_INSTALL 返回
-  // SkillInstallResult 含 hotReloaded/hotReloadError，与 ConfigFileOperationResult 结构不同）
+  // MIND2-A4：SAVE 统一——PERSONA_SAVE_FILE + RULE_SAVE 合并为 CONFIG_FILE_SAVE（3→2 通道）
+  // SKILL_INSTALL 保持独立：返回 SkillInstallResult（含 hotReloaded/hotReloadError），
+  // 与 ConfigFileOperationResult 结构不同，异构合理不强行合并
   //
   // 统一委托 sprite.readConfigFile/deleteConfigFile/listConfigFiles，这些 wrapper 内部已封装：
   // 文件层操作（configFileManager）+ 内核层联动（同步 SQLite + 内存 + system prompt）。
@@ -346,14 +347,21 @@ export function registerConfigHandlers(ctx: IpcContext): void {
     ),
   );
 
-  /** 保存角色文件（新增/更新合并，携带 name + content） */
-  ipcMain.handle(IPC_CHANNELS.PERSONA_SAVE_FILE, async (_event, name: string, content: string) =>
-    throwingHandle('保存角色文件失败', () => requireSprite(ctx).saveConfigFile('persona', name, content)),
-  );
-
-  /** 保存规则文件（新增/更新合并，携带 name + content） */
-  ipcMain.handle(IPC_CHANNELS.RULE_SAVE, async (_event, name: string, content: string) =>
-    throwingHandle('保存规则文件失败', () => requireSprite(ctx).saveConfigFile('rule', name, content)),
+  /**
+   * 保存设定文件（MIND2-A4 合并自 PERSONA_SAVE_FILE + RULE_SAVE）
+   *
+   * payload: type: 'persona' | 'rule', name: string, content: string
+   * 返回值: ConfigFileOperationResult
+   *
+   * skill 类型不走此通道——SKILL_INSTALL 返回 SkillInstallResult（含热重载状态），
+   * 结构不同，异构保留独立通道。
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.CONFIG_FILE_SAVE,
+    async (_event, type: 'persona' | 'rule', name: string, content: string) =>
+      throwingHandle(`保存${type === 'persona' ? '角色' : '规则'}文件失败`, () =>
+        requireSprite(ctx).saveConfigFile(type, name, content),
+      ),
   );
 
   /**

@@ -853,7 +853,7 @@ export interface IpcListenerCallbacks {
    * 设定文件变更回调（精灵设定面板 Epic 3 · I4）
    *
    * 触发链路：
-   * - 内部：精灵设定面板 CRUD（saveRule/deleteSkill 等）→ 主进程写盘 → ConfigFileWatcher 检测
+   * - 内部：精灵设定面板 CRUD（saveConfigFile/deleteSkill 等）→ 主进程写盘 → ConfigFileWatcher 检测
    * - 外部：用户在文件系统中手动编辑 configDir/{personas,rules,skills}/ 下文件
    *
    * 渲染层职责：按 payload.type 分发到 settingsManagerPanel.handleConfigFilesChanged 刷新对应列表
@@ -1092,7 +1092,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * 监听 configDir/{personas,rules,skills}/ 下文件变更（外部编辑器或本面板 CRUD 触发）
    *
    * 触发链路：
-   * - 内部：本面板 saveRule/deleteSkill → 主进程 ConfigFileManager 写盘 → ConfigFileWatcher
+   * - 内部：本面板 saveConfigFile/deleteSkill → 主进程 ConfigFileManager 写盘 → ConfigFileWatcher
    * - 外部：用户在文件系统直接编辑设定文件
    *
    * 处理方式：按 payload.type 分发到 settingsManagerPanel.handleConfigFilesChanged，

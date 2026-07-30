@@ -139,19 +139,15 @@ export const IPC_CHANNELS = {
   /** 查询当前角色匹配模式 */
   PERSONA_MODE_GET: 'persona-mode-get',
 
-  // ─── 角色文件保存 ─────────────────────────────────────
-  // PERSONA_LIST/SWITCH/MODE 见上方"角色相关"段；LIST/READ/DELETE 已统一到 CONFIG_FILE_*
-  // PERSONA_SAVE_FILE 单独保留：SAVE 三通道（persona/rule/skill）因 SKILL_INSTALL 返回值
-  // 结构特殊（SkillInstallResult 含 hotReloaded/hotReloadError）未达同构提取阈值，
-  // 待自然生长触发（详见 HEAL-21 归档说明）
-  /** 保存角色文件（新增/更新合并，携带 name + content） */
-  PERSONA_SAVE_FILE: 'persona-save-file',
-
   // ─── 设定文件统一 CRUD（精灵设定面板 Epic 3 · I1/I2/I3） ─
   // 统一入口：payload 携带 type: 'persona' | 'rule' | 'skill' 区分文件类型
   // 合并自：PERSONA_READ_FILE + RULE_LIST/READ + SKILL_LIST/READ（共 8 通道 → 3 通道）
   // PERSONA_LIST 不合并：返回 { personas: Array<{ name, description, active }> } 依赖内核
   // PersonaManager 的 active 字段，与 ConfigFileEntry[] 文件元数据形态正交
+  //
+  // MIND2-A4：SAVE 统一——PERSONA_SAVE_FILE + RULE_SAVE 合并为 CONFIG_FILE_SAVE（3→2 通道）
+  // SKILL_INSTALL 保持独立：返回 SkillInstallResult（含 hotReloaded/hotReloadError），
+  // 与 ConfigFileOperationResult 结构不同，异构合理不强行合并
   /**
    * 列出指定类型的设定文件（携带 type: 'rule' | 'skill'，返回 ConfigFileEntry[]，按 mtime 降序）
    * 注意：type='persona' 不支持，角色列表走 PERSONA_LIST 通道（返回内核活跃角色清单）
@@ -159,6 +155,8 @@ export const IPC_CHANNELS = {
   CONFIG_FILE_LIST: 'config-file-list',
   /** 读取设定文件内容（携带 type: ConfigFileType + name，返回 ConfigFileEntry | null） */
   CONFIG_FILE_READ: 'config-file-read',
+  /** 保存设定文件（携带 type: 'persona' | 'rule' + name + content，返回 ConfigFileOperationResult） */
+  CONFIG_FILE_SAVE: 'config-file-save',
   /** 删除设定文件（携带 type: ConfigFileType + name，返回 ConfigFileOperationResult） */
   CONFIG_FILE_DELETE: 'config-file-delete',
 
@@ -259,13 +257,6 @@ export const IPC_CHANNELS = {
   // ─── 剪贴板（Phase 3.1：三重保护） ────────────────────
   /** 渲染进程 → 主进程：请求分析剪贴板内容（用户点击"分析"按钮触发） */
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
-
-  // ─── 设定文件保存（精灵设定面板 Epic 3 · I2/I3） ───────
-  // SAVE 三通道独立保留：PERSONA_SAVE_FILE（见上方"角色文件保存"段）/ RULE_SAVE / SKILL_INSTALL
-  // 详见 HEAL-21 归档说明：SKILL_INSTALL 返回 SkillInstallResult（含 hotReloaded/hotReloadError），
-  // 与 ConfigFileOperationResult 结构不同，SAVE 三通道未达同构提取阈值
-  /** 保存规则文件（新增/更新合并，携带 name + content） */
-  RULE_SAVE: 'rule-save',
 
   // ─── 技能安装（Phase 4.3） ────────────────────────────
   /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容，返回 SkillInstallResult 含热重载状态） */

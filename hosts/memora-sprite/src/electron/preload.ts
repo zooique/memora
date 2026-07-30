@@ -122,19 +122,18 @@ export const IPC_CHANNELS = {
   PERSONA_SWITCH: 'persona-switch',
   PERSONA_MODE: 'persona-mode',
   PERSONA_MODE_GET: 'persona-mode-get',
-  // ─── 角色文件保存（与 ipc/channels.ts 同步） ─────────
-  // PERSONA_LIST/SWITCH/MODE 见上方；LIST/READ/DELETE 已统一到 CONFIG_FILE_*
-  // PERSONA_SAVE_FILE 单独保留：SAVE 三通道因 SKILL_INSTALL 返回值结构特殊未达同构提取阈值
-  /** 保存角色文件（新增/更新合并，携带 name + content） */
-  PERSONA_SAVE_FILE: 'persona-save-file',
 
   // ─── 设定文件统一 CRUD（与 ipc/channels.ts 同步） ─────
   // 合并自：PERSONA_READ_FILE + RULE_LIST/READ + SKILL_LIST/READ（共 8 通道 → 3 通道）
+  // MIND2-A4：SAVE 统一——PERSONA_SAVE_FILE + RULE_SAVE 合并为 CONFIG_FILE_SAVE（3→2 通道）
+  // SKILL_INSTALL 保持独立：返回 SkillInstallResult（含热重载状态），结构不同不强行合并
   // PERSONA_LIST 不合并：返回 { personas: Array<{ name, description, active }> } 依赖内核 active 字段
   /** 列出指定类型的设定文件（携带 type: 'rule' | 'skill'，返回 ConfigFileEntry[]） */
   CONFIG_FILE_LIST: 'config-file-list',
   /** 读取设定文件内容（携带 type: ConfigFileType + name，返回 ConfigFileEntry | null） */
   CONFIG_FILE_READ: 'config-file-read',
+  /** 保存设定文件（携带 type: 'persona' | 'rule' + name + content，返回 ConfigFileOperationResult） */
+  CONFIG_FILE_SAVE: 'config-file-save',
   /** 删除设定文件（携带 type: ConfigFileType + name，返回 ConfigFileOperationResult） */
   CONFIG_FILE_DELETE: 'config-file-delete',
   /** 打开配置文件目录（personas/skills/rules 所在目录） */
@@ -190,12 +189,8 @@ export const IPC_CHANNELS = {
   AUDIT_LOG_CLEAR: 'audit-log-clear',
   // Phase 3.1：剪贴板三重保护
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
-  // ─── 设定文件保存（与 ipc/channels.ts 同步） ─────────
-  // SAVE 三通道独立保留：PERSONA_SAVE_FILE（见上方）/ RULE_SAVE / SKILL_INSTALL
-  // 详见 HEAL-21 归档说明：SKILL_INSTALL 返回 SkillInstallResult，与 ConfigFileOperationResult 结构不同
-  /** 保存规则文件（新增/更新合并，携带 name + content） */
-  RULE_SAVE: 'rule-save',
   // Phase 4.3：技能安装（渲染进程 → 主进程，返回 SkillInstallResult 含热重载状态）
+  // 注：persona/rule 保存走 CONFIG_FILE_SAVE 统一通道（见上方设定文件统一 CRUD 段）
   SKILL_INSTALL: 'skill-install',
   // 快速输入补全（Phase 1 骨架：确认 + 关闭 + Phase 2 调整高度）
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
@@ -706,20 +701,25 @@ export interface ElectronAPI {
    */
   deleteConfigFile: (type: ConfigFileType, name: string) => Promise<ConfigFileOperationResult>;
   /**
+   * 保存设定文件（统一 CRUD 入口，MIND2-A4 合并自 PERSONA_SAVE_FILE + RULE_SAVE）
+   *
+   * @param type 文件类型（'persona' | 'rule'；'skill' 走 installSkill 通道）
+   * @param name 配置名
+   * @param content 文件完整内容（含 frontmatter）
+   * @returns 操作结果（含校验错误信息）
+   */
+  saveConfigFile: (
+    type: 'persona' | 'rule',
+    name: string,
+    content: string,
+  ) => Promise<ConfigFileOperationResult>;
+  /**
    * 读取角色文件内容（sugar API：内部委托 readConfigFile('persona', name)）
    *
    * @param name 配置名（不含扩展名）
    * @returns ConfigFileEntry | null（文件不存在返回 null）
    */
   readPersonaFile: (name: string) => Promise<ConfigFileEntry | null>;
-  /**
-   * 保存角色文件（新增/更新合并，同名覆盖）
-   *
-   * @param name 配置名
-   * @param content 文件完整内容（含 frontmatter）
-   * @returns 操作结果（含校验错误信息）
-   */
-  savePersonaFile: (name: string, content: string) => Promise<ConfigFileOperationResult>;
   /**
    * 删除角色文件（sugar API：内部委托 deleteConfigFile('persona', name)）
    *
@@ -731,8 +731,6 @@ export interface ElectronAPI {
   listRules: () => Promise<ConfigFileEntry[]>;
   /** 读取规则文件内容（sugar API：内部委托 readConfigFile('rule', name)） */
   readRule: (name: string) => Promise<ConfigFileEntry | null>;
-  /** 保存规则文件（新增/更新合并） */
-  saveRule: (name: string, content: string) => Promise<ConfigFileOperationResult>;
   /** 删除规则文件（sugar API：内部委托 deleteConfigFile('rule', name)） */
   deleteRule: (name: string) => Promise<ConfigFileOperationResult>;
   /** 列出所有技能文件（sugar API：内部委托 listConfigFiles('skill')，按 mtime 降序） */
@@ -1236,16 +1234,16 @@ const electronAPI: ElectronAPI = {
 
   // 精灵设定面板 Epic 3：角色/规则/技能文件 CRUD（统一委托 sprite.configFileManager）
   // HEAL-21：LIST/READ/DELETE 统一入口 + sugar API 内部委托（调用方零改动）
+  // MIND2-A4：SAVE 统一——savePersonaFile/saveRule 合并为 saveConfigFile（调用方需传 type）
   listConfigFiles: (type) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_LIST, type),
   readConfigFile: (type, name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_READ, type, name),
   deleteConfigFile: (type, name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_DELETE, type, name),
+  saveConfigFile: (type, name, content) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_SAVE, type, name, content),
   // sugar API：保留原方法名避免调用方改动，内部委托统一入口
   readPersonaFile: (name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_READ, 'persona', name),
-  savePersonaFile: (name, content) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_SAVE_FILE, name, content),
   deletePersonaFile: (name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_DELETE, 'persona', name),
   listRules: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_LIST, 'rule'),
   readRule: (name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_READ, 'rule', name),
-  saveRule: (name, content) => ipcRenderer.invoke(IPC_CHANNELS.RULE_SAVE, name, content),
   deleteRule: (name) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_DELETE, 'rule', name),
   listSkills: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_FILE_LIST, 'skill'),
   /** 读取技能文件内容（sugar API：内部委托 readConfigFile('skill', name)） */

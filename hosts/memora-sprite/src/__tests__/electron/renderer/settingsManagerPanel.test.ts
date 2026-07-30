@@ -127,8 +127,8 @@ function mockElectronAPI(overrides?: {
       listSkills: overrides?.listSkills ?? defaultListSkills,
       readPersonaFile: vi.fn().mockResolvedValue('---\nname: 导师\n---\n正文'),
       readRule: vi.fn().mockResolvedValue('---\nname: 代码规范\n---\n正文'),
-      savePersonaFile: vi.fn().mockResolvedValue({ ok: true }),
-      saveRule: vi.fn().mockResolvedValue({ ok: true }),
+      // MIND2-A4：savePersonaFile/saveRule 合并为 saveConfigFile(type, name, content)
+      saveConfigFile: vi.fn().mockResolvedValue({ ok: true }),
       installSkill: vi.fn().mockResolvedValue({ ok: true, hotReloaded: true }),
       deletePersonaFile: vi.fn().mockResolvedValue({ ok: true }),
       deleteRule: vi.fn().mockResolvedValue({ ok: true }),

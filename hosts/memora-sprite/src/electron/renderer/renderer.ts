@@ -420,7 +420,7 @@ async function bootstrapRenderer(): Promise<void> {
       }
     },
     // 设定文件变更 → 精灵设定面板按 type 分发刷新对应列表
-    // 触发源：本面板 CRUD（saveRule/deleteSkill 等）或外部文件系统编辑
+    // 触发源：本面板 CRUD（saveConfigFile/deleteSkill 等）或外部文件系统编辑
     onConfigFilesChanged: (payload) => {
       // 广播到达后直接按 type 分发刷新对应列表（refreshByType 内部按 type 调用 loadXxxList）
       // 不再经过 handleConfigFilesChanged → configFilesChangedCallback 中间层，调用链路最短
