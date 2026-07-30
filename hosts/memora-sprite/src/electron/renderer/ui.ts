@@ -622,6 +622,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
+   * 给指定面板导航按钮添加 pulse 高亮（MIND2-D5：消除跨面板 DOM 耦合）
+   *
+   * 作为 ChatPanelHost 接口的 sugar API，委托到 PanelRouter.pulseNavButton。
+   * 调用方：里程碑 banner 触发时让 dashboard 导航按钮高亮。
+   */
+  pulseNavButton(panel: string): void {
+    this.panelRouter.pulseNavButton(panel);
+  }
+
+  /**
    * 打开信息侧栏（HEAL-12 sugar API，委托到 AuxSidebarManager.open）
    *
    * 调用方：精灵状态条点击 / 命令面板 Ctrl+K / 主动触发（洞察/里程碑/模式/建议）。

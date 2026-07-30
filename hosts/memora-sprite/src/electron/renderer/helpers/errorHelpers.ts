@@ -13,8 +13,9 @@
  * - createIpcErrorHandler 通过闭包绑定 uiManager，避免每个调用点重复传参
  */
 
-// toError 真理源在 memora 内核（src/index.ts 公开导出），渲染进程/Web 共用。MIND-D4：消除 shared/ 副本
-import { toError } from 'memora';
+// toError 从 shared 层导入（渲染进程是浏览器环境，无法解析裸模块标识符 'memora'）
+// MIND-D4 原始方案是创建 @memora/shared 零依赖包统一真理源，在该包创建之前使用 shared 层副本
+import { toError } from '../../../shared/toError.js';
 // formatErrorMessage 错误文案真理源（UX-13：替代直传 error.message 到 Toast，分类映射 + 两段式模板）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
 export { toError };
