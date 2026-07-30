@@ -161,8 +161,8 @@ export class InsightsRenderer {
         for (const edge of recentEdges) {
           const item = createEl('div', 'relation-item');
 
-          const sourceName = nodeNameMap.get(edge.sourceId) || edge.sourceId;
-          const targetName = nodeNameMap.get(edge.targetId) || edge.targetId;
+          const sourceName = nodeNameMap.get(edge.sourceId) ?? edge.sourceId;
+          const targetName = nodeNameMap.get(edge.targetId) ?? edge.targetId;
 
           const typeTag = createEl('span', `relation-type-tag relation-type-${edge.type}`, edge.type);
 

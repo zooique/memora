@@ -423,10 +423,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 获取对话锁 — 返回锁上下文
    */
   private acquireChatLock(signal?: AbortSignal) {
-    if (this.chatLockManager?.isBusy) {
+    const chatLock = this.chatLockManager;
+    if (!chatLock) throw configError('ChatLockManager', 'ChatLockManager 未初始化', []);
+    if (chatLock.isBusy) {
       throw chatBusyError('发起新对话');
     }
-    const chatLock = this.chatLockManager!;
     const { token: myToken, internalAbort } = chatLock.acquire(
       AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS,
     );
@@ -1542,7 +1543,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param affectString 情感描述文本，传空字符串清除注入
    */
   injectAffect(affectString: string): void {
-    this.loop?.injectAffect(affectString);
+    if (!this.loop) throw configError('AgentLoop', 'AgentLoop 未初始化，无法注入 affect', []);
+    this.loop.injectAffect(affectString);
   }
 
   get provider(): LlmProvider {

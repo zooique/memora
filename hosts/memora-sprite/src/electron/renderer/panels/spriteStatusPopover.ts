@@ -25,10 +25,10 @@ import { getRapportLevelLabel, describeRhythm, describeCoherence, AFFECT_TONE_TH
  * 由 UIManager 持有实例，在 IPC 感知事件到达时调用 update* 方法。
  */
 export class SpriteStatusPopover {
-  /** popover 容器 DOM 元素 */
-  private popoverEl: HTMLElement;
-  /** 状态条 DOM 元素（hover 触发源） */
-  private statusBarEl: HTMLElement;
+  /** popover 容器 DOM 元素（HTML 模板未加载时为 null） */
+  private popoverEl: HTMLElement | null;
+  /** 状态条 DOM 元素（hover 触发源，HTML 模板未加载时为 null） */
+  private statusBarEl: HTMLElement | null;
 
   /** 缓存的默契度数据（用于摘要合成） */
   private rapport: RapportPayload | null = null;
@@ -46,9 +46,9 @@ export class SpriteStatusPopover {
   private static readonly HOVER_DELAY_MS = 200;
 
   constructor() {
-    // 获取 DOM 元素（HTML 模板在页面加载时已存在，安全降级）
-    this.popoverEl = document.getElementById('sprite-status-popover')!;
-    this.statusBarEl = document.getElementById('sprite-status-bar')!;
+    // 获取 DOM 元素（HTML 模板在页面加载时已存在）
+    this.popoverEl = document.getElementById('sprite-status-popover');
+    this.statusBarEl = document.getElementById('sprite-status-bar');
 
     // 绑定 hover 事件到状态条（鼠标用户）
     if (this.statusBarEl) {
