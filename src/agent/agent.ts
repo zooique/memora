@@ -1218,6 +1218,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.requireArchiveCoordinator.archiveSessionContent(date, session, options);
   }
 
+  /**
+   * 获取 pending 归档队列长度（MIND2-C3）
+   *
+   * 返回待重试的失败归档数。归档失败时输入入队，下次同阶段归档调用时自动重试。
+   * 供宿主 UI 展示"N 条待补归档"提示，或判断是否需要手动触发重试。
+   *
+   * @returns pending 队列长度（0 表示无待补）
+   */
+  getPendingArchiveCount(): number {
+    this.assertInitialized('getPendingArchiveCount');
+    return this.requireArchiveCoordinator.getPendingArchiveCount();
+  }
+
   // ─── 配置重载（事件驱动） ───────────────────────
 
   /**

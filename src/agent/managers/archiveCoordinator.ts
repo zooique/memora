@@ -46,6 +46,24 @@ type EmitCallback = <K extends keyof AgentEventMap>(
   payload: AgentEventMap[K],
 ) => void;
 
+/**
+ * 待重试的归档项（MIND2-C3：归档失败不再永久丢失）
+ *
+ * 当 archiveProfileFacts / archiveInsight 失败时，将输入存入 pending 队列，
+ * 下次同阶段归档调用时先重试 pending 项。content 阶段从 session store 读取，
+ * 可手动重试，不进队列。
+ */
+interface PendingArchive {
+  /** 归档阶段（profile / insight，content 不进队列） */
+  readonly stage: 'profile' | 'insight';
+  /** 本轮用户输入（profile/insight 提取的源文本） */
+  readonly input: string;
+  /** 助手回复内容（仅 insight 阶段需要） */
+  readonly assistantContent?: string;
+  /** 入队时间戳（用于淘汰过旧项 + 日志追踪） */
+  readonly enqueuedAt: number;
+}
+
 /** ArchiveCoordinator 构造选项 */
 export interface ArchiveCoordinatorOptions {
   /** 获取 UserProfile（可能为 null，Agent 未初始化或未加载时） */
@@ -96,6 +114,9 @@ export interface ArchiveTriggerOptions {
  *   await coordinator.archiveProfileFacts(input, { autoTriggered: true });
  */
 export class ArchiveCoordinator {
+  /** pending 队列上限——超过则丢弃最旧项，避免 LLM 长时间不可用时无限增长 */
+  private static readonly MAX_PENDING = 50;
+
   /** 获取 UserProfile 的回调 */
   private readonly getUserProfile: () => UserProfile | null;
   /** 获取 InsightExtractor 的回调 */
@@ -106,6 +127,14 @@ export class ArchiveCoordinator {
   private readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调 */
   private readonly emit: EmitCallback;
+
+  /**
+   * 待重试归档队列（MIND2-C3）
+   *
+   * 归档失败时入队，下次同阶段归档调用时先重试。
+   * 仅 profile/insight 阶段入队（content 从 session store 读取，可手动重试）。
+   */
+  private readonly pendingArchives: PendingArchive[] = [];
 
   constructor(opts: ArchiveCoordinatorOptions) {
     this.getUserProfile = opts.getUserProfile;
@@ -138,6 +167,10 @@ export class ArchiveCoordinator {
     }
     const userProfile = this.getUserProfile();
     if (!userProfile) return [];
+
+    // MIND2-C3：先重试 pending 队列中同阶段的失败归档（LLM 恢复后自动补录）
+    await this.retryPendingArchives('profile');
+
     try {
       const turnIndex = `turn-${Date.now()}`;
       const facts = extractUserFacts(input, turnIndex);
@@ -151,6 +184,8 @@ export class ArchiveCoordinator {
       return entries;
     } catch (err) {
       this.handleArchiveError('profile', err);
+      // MIND2-C3：失败入队，下次同阶段归档时自动重试（不再永久丢失）
+      this.enqueuePending('profile', input);
       return [];
     }
   }
@@ -182,6 +217,10 @@ export class ArchiveCoordinator {
     }
     const insightExtractor = this.getInsightExtractor();
     if (!insightExtractor) return [];
+
+    // MIND2-C3：先重试 pending 队列中同阶段的失败归档（LLM 恢复后自动补录）
+    await this.retryPendingArchives('insight');
+
     try {
       // 内部仍走 classify 判断，避免无价值输入浪费 LLM 调用
       const shouldExtract = insightExtractor.classify(input);
@@ -195,6 +234,8 @@ export class ArchiveCoordinator {
       return memories;
     } catch (err) {
       this.handleArchiveError('insight', err);
+      // MIND2-C3：失败入队（含 assistantContent），下次同阶段归档时自动重试
+      this.enqueuePending('insight', input, assistantContent);
       return [];
     }
   }
@@ -266,5 +307,112 @@ export class ArchiveCoordinator {
     logger.error({ err, stage }, `archive${label} 异常`);
     const message = err instanceof Error ? err.message : String(err);
     this.emit('archiveFailed', { stage, message: message.slice(0, 200) });
+  }
+
+  // ─── MIND2-C3：pending 队列管理 ──────────────────────────
+
+  /**
+   * 将失败的归档输入入队（MIND2-C3）
+   *
+   * 仅 profile/insight 阶段入队——content 从 session store 读取可手动重试。
+   * 队列满时丢弃最旧项（FIFO 淘汰），避免 LLM 长时间不可用时无限增长。
+   *
+   * @param stage 归档阶段（profile / insight）
+   * @param input 本轮用户输入
+   * @param assistantContent 助手回复（仅 insight 阶段）
+   */
+  private enqueuePending(
+    stage: 'profile' | 'insight',
+    input: string,
+    assistantContent?: string,
+  ): void {
+    if (this.pendingArchives.length >= ArchiveCoordinator.MAX_PENDING) {
+      // 队列满，丢弃最旧项（shift 弹出队首）
+      const dropped = this.pendingArchives.shift();
+      logger.warn(
+        { droppedStage: dropped?.stage, queueSize: this.pendingArchives.length },
+        'pending 归档队列已满，丢弃最旧项',
+      );
+    }
+    this.pendingArchives.push({
+      stage,
+      input,
+      assistantContent,
+      enqueuedAt: Date.now(),
+    });
+    logger.info(
+      { stage, queueSize: this.pendingArchives.length },
+      '归档失败已入 pending 队列，下次同阶段归档时自动重试',
+    );
+  }
+
+  /**
+   * 重试 pending 队列中指定阶段的所有失败归档（MIND2-C3）
+   *
+   * 在 archiveProfileFacts / archiveInsight 入口调用，先清空同阶段 pending 项：
+   *   - 成功 → 从队列移除（补录完成）
+   *   - 失败 → 保留在队列（等下次再试，不无限重试——每次调用只重试一轮）
+   *
+   * 重试失败不发射 archiveFailed 事件（避免重复 toast 节流），仅 debug 日志。
+   * 重试成功正常发射 memoryAdded / insightExtracted 事件（与首次成功一致）。
+   *
+   * @param stage 要重试的阶段（profile / insight）
+   */
+  private async retryPendingArchives(stage: 'profile' | 'insight'): Promise<void> {
+    // 筛选同阶段的 pending 项（保留其他阶段的不动）
+    const pending = this.pendingArchives.filter((p) => p.stage === stage);
+    if (pending.length === 0) return;
+
+    logger.debug({ stage, count: pending.length }, '开始重试 pending 归档');
+
+    for (const item of pending) {
+      try {
+        if (stage === 'profile') {
+          const userProfile = this.getUserProfile();
+          if (!userProfile) continue; // UserProfile 仍不可用，保留在队列
+          const turnIndex = `turn-${item.enqueuedAt}`;
+          const facts = extractUserFacts(item.input, turnIndex);
+          const entries = await userProfile.archiveFacts(facts);
+          for (const entry of entries) {
+            if (entry.confirmed) {
+              this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
+            }
+          }
+        } else {
+          // stage === 'insight'
+          const insightExtractor = this.getInsightExtractor();
+          if (!insightExtractor) continue;
+          const shouldExtract = insightExtractor.classify(item.input);
+          if (shouldExtract !== 'extract') continue;
+          const memories = await insightExtractor.extract(
+            item.input,
+            item.assistantContent ?? '',
+          );
+          for (const memory of memories) {
+            this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+            this.emit('insightExtracted', { source: memory.source, insight: memory.content });
+          }
+        }
+        // 重试成功 → 从队列移除
+        const idx = this.pendingArchives.indexOf(item);
+        if (idx !== -1) this.pendingArchives.splice(idx, 1);
+        logger.info({ stage }, 'pending 归档重试成功，已从队列移除');
+      } catch (err) {
+        // 重试失败 → 保留在队列，下次再试（仅 debug 日志，不重复发射 archiveFailed）
+        logger.debug({ err, stage }, 'pending 归档重试仍失败，保留在队列');
+      }
+    }
+  }
+
+  /**
+   * 获取 pending 归档队列长度（MIND2-C3）
+   *
+   * 供宿主 UI 查询是否有待补归档，展示"N 条待补"提示。
+   * Agent 不直接消费此值——通过 IPC 暴露给渲染层。
+   *
+   * @returns pending 队列中的待重试归档数
+   */
+  getPendingArchiveCount(): number {
+    return this.pendingArchives.length;
   }
 }

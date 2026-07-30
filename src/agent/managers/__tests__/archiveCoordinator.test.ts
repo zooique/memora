@@ -837,4 +837,131 @@ describe('ArchiveCoordinator', () => {
       });
     });
   });
+
+  // ─── MIND2-C3：pending 归档队列 ──────────────────────────
+
+  describe('MIND2-C3: pending 归档队列', () => {
+    it('archiveProfileFacts 失败后应入 pending 队列', async () => {
+      const throwingProfile = {
+        archiveFacts: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
+      } as unknown as UserProfile;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => throwingProfile,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      // 初始队列为空
+      expect(coordinator.getPendingArchiveCount()).toBe(0);
+
+      // 归档失败 → 入队
+      const result = await coordinator.archiveProfileFacts('我叫张三');
+      expect(result).toEqual([]);
+      expect(coordinator.getPendingArchiveCount()).toBe(1);
+
+      // 应发射 archiveFailed 事件
+      const failedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]!.payload).toMatchObject({ stage: 'profile' });
+    });
+
+    it('下次 archiveProfileFacts 调用时应自动重试 pending 项（成功后移除）', async () => {
+      // 第一轮：archiveFacts 抛错 → 入队
+      const failingProfile = createMockUserProfile([]);
+      // mock 序列：1st reject（首次失败）→ 2nd resolve（重试成功）→ 3rd+ resolve([])（新输入无事实）
+      failingProfile.archiveFacts = vi.fn()
+        .mockRejectedValueOnce(new Error('LLM 不可用'))
+        .mockResolvedValueOnce([createEntry('p-retry', true)])
+        .mockResolvedValue([]);
+
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => failingProfile,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      // 第一次调用失败 → 入队
+      await coordinator.archiveProfileFacts('我叫张三');
+      expect(coordinator.getPendingArchiveCount()).toBe(1);
+
+      // 第二次调用：先重试 pending（成功）+ 再处理新输入
+      await coordinator.archiveProfileFacts('我喜欢简洁');
+      // 重试成功 → 队列清空
+      expect(coordinator.getPendingArchiveCount()).toBe(0);
+      // archiveFacts 被调用 3 次：1（首次失败）+ 1（重试）+ 1（新输入）
+      expect(failingProfile.archiveFacts).toHaveBeenCalledTimes(3);
+      // 重试成功应发射 memoryAdded 事件
+      const addedEvents = emitSpy.events.filter((e) => e.event === 'memoryAdded');
+      expect(addedEvents.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('archiveInsight 失败后应入 pending 队列（含 assistantContent）', async () => {
+      const throwingExtractor = {
+        classify: vi.fn().mockReturnValue('extract'),
+        extract: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
+      } as unknown as InsightExtractor;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => null,
+        getInsightExtractor: () => throwingExtractor,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      await coordinator.archiveInsight('用户输入', '助手回复');
+      expect(coordinator.getPendingArchiveCount()).toBe(1);
+    });
+
+    it('重试仍失败时 pending 项保留在队列（不无限重试）', async () => {
+      const alwaysFailingProfile = {
+        archiveFacts: vi.fn().mockRejectedValue(new Error('LLM 持续不可用')),
+      } as unknown as UserProfile;
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => alwaysFailingProfile,
+        getInsightExtractor: () => null,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      // 第一次失败 → 入队
+      await coordinator.archiveProfileFacts('输入1');
+      expect(coordinator.getPendingArchiveCount()).toBe(1);
+
+      // 第二次调用：重试 pending 仍失败 + 新输入也失败 → 队列应有 2 项
+      await coordinator.archiveProfileFacts('输入2');
+      // pending 1（重试失败保留）+ pending 2（新输入失败入队）
+      expect(coordinator.getPendingArchiveCount()).toBe(2);
+    });
+
+    it('profile 和 insight 的 pending 队列独立（互不干扰）', async () => {
+      const throwingProfile = {
+        archiveFacts: vi.fn().mockRejectedValue(new Error('profile 失败')),
+      } as unknown as UserProfile;
+      const throwingExtractor = {
+        classify: vi.fn().mockReturnValue('extract'),
+        extract: vi.fn().mockRejectedValue(new Error('insight 失败')),
+      } as unknown as InsightExtractor;
+
+      const coordinator = new ArchiveCoordinator({
+        getUserProfile: () => throwingProfile,
+        getInsightExtractor: () => throwingExtractor,
+        getSessionArchiver: () => null,
+        emit: emitSpy.emit,
+        getArchiveMode: () => 'full',
+      });
+
+      // profile 失败 → 入队
+      await coordinator.archiveProfileFacts('输入');
+      expect(coordinator.getPendingArchiveCount()).toBe(1);
+
+      // insight 失败 → 入队（不同阶段）
+      await coordinator.archiveInsight('输入', '回复');
+      expect(coordinator.getPendingArchiveCount()).toBe(2);
+    });
+  });
 });
