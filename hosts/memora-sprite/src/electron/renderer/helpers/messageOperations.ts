@@ -21,10 +21,13 @@ import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
  * 消息操作上下文（依赖注入）
  *
  * ChatPanelManager 通过此接口向提取的函数提供 host 回调。
+ *
+ * MIND2-D3：host 类型从 ChatPanelHost 收窄为 Pick（实际只用 4 方法），
+ * 涵盖 isStreaming（流式守卫）+ showToast（反馈）+ showConfirmDialog（忘记确认）+ regenerateLastMessage（重新生成）。
  */
 export interface MessageOperationContext {
-  /** ChatPanelManager 的 host 实例（提供流式状态查询 + toast + 重新生成 + 确认弹窗） */
-  host: ChatPanelHost;
+  /** ChatPanelManager 的 host 实例（MIND2-D3 收窄：仅依赖实际使用的 4 个方法） */
+  host: Pick<ChatPanelHost, 'isStreaming' | 'showToast' | 'showConfirmDialog' | 'regenerateLastMessage'>;
 }
 
 /**

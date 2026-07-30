@@ -58,16 +58,53 @@ import type { ConfirmDialogOptions, Message, ToastType } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
-/** 聊天面板管理器需要的宿主能力（跨模块关注点，由 UIManager 注入） */
-export interface ChatPanelHost {
+// ─── ChatPanelHost 拆分为 4 个窄接口（MIND2-D3） ─────────
+//
+// 设计原则（progressive-refactor-rules §6.1 契约接口同步）：
+// - 按职责分组：消息渲染 / 流式控制 / 归档操作 / 对话框交互
+// - ChatPanelHost 继承 4 个窄接口（向后兼容，现有调用方零改动）
+// - 依赖方（helpers / sub-managers）按实际使用收窄 host 类型
+//
+// 删除死方法：updateBadge（零调用方，UIManager 内部 updateUnreadCount
+// 直接调用 badgeManager.updateBadge，不经 host 接口暴露）。
+
+/**
+ * 消息渲染 + 反馈 + 跨面板高亮（ChatPanelHost 子接口）
+ *
+ * 涵盖：Toast 反馈、滚动控制、空状态切换、未读计数、跨面板导航高亮。
+ * 调用方：ChatPanelManager（消息渲染）+ chatPanelEvents（复制反馈）
+ */
+export interface ChatRenderHost {
   /** 显示 toast 通知 */
   showToast(message: string, type?: ToastType, duration?: number): void;
   /** 自动滚动到底部（用户在底部附近时） */
   scrollToBottom(): void;
   /** 强制滚动到底部（无视用户位置） */
   forceScrollToBottom(): void;
-  /** 更新发送/停止按钮状态 */
-  updateSendButton(): void;
+  /** 显示空状态引导（无消息时） */
+  showEmptyState(): void;
+  /** 隐藏空状态引导（有消息时） */
+  hideEmptyState(): void;
+  /** 未读计数 +1（完整窗口隐藏时，新精灵消息到达） */
+  updateUnreadCount(): void;
+  /**
+   * 给指定面板导航按钮添加 pulse 高亮（MIND2-D5：消除跨面板 DOM 耦合）
+   *
+   * 里程碑触发时让 dashboard 导航按钮高亮，提示用户有新成就可查看。
+   * 委托给 PanelRouter.pulseNavButton，避免直接操作其他面板的 DOM。
+   *
+   * @param panel 目标面板名（如 'dashboard'）
+   */
+  pulseNavButton(panel: string): void;
+}
+
+/**
+ * 流式状态机 + 按钮联动 + 兜底通知（ChatPanelHost 子接口）
+ *
+ * 涵盖：流式状态封装、按钮可见性切换、超时兜底主进程清理。
+ * 调用方：ChatPanelManager（streamRenderCtx）+ StreamSafetyTimer + messageOperations（isStreaming 守卫）
+ */
+export interface ChatStreamControlHost {
   /**
    * 设置流式输出状态（UIManager 作为 state 的唯一持有者，通过 host 方法封装）
    *
@@ -80,10 +117,27 @@ export interface ChatPanelHost {
    * @returns 当前是否正在流式输出
    */
   isStreaming(): boolean;
-  /** 更新未读标记（完整窗口隐藏时，新精灵消息到达） */
-  updateBadge(): void;
-  /** 显示空状态引导（无消息时） */
-  showEmptyState(): void;
+  /** 更新发送/停止按钮状态 */
+  updateSendButton(): void;
+  /**
+   * 流式输出超时兜底触发时通知宿主联动主进程清理
+   *
+   * 渲染进程 30s 无进展判定卡死后，仅重置 UI 状态不够——主进程 AbortController 仍可能泄漏，
+   * 导致下次发送被竞态保护拒绝。宿主通过此回调通知主进程 abort 当前对话，联动清理。
+   */
+  onStreamStuck(): void;
+}
+
+/**
+ * 归档操作契约（ChatPanelHost 子接口）
+ *
+ * 涵盖：归档模式查询、单轮归档（profile + insight）、批量归档、会话 ID 定位。
+ * 调用方：ChatPanelManager（showArchiveButton）+ ArchiveButtonManager（getArchiveMode + archiveConversation + showToast）
+ *
+ * 注意：ArchiveButtonManager 已有独立的 ArchiveButtonHost 接口（3 方法子集），
+ *      本接口保留 archiveSession + getCurrentSessionId 供 ChatPanelManager.showArchiveButton 使用。
+ */
+export interface ArchiveOperationHost {
   /**
    * 查询当前归档模式（manual 模式下显示"归档"按钮）
    *
@@ -102,17 +156,22 @@ export interface ChatPanelHost {
   archiveSession(date: string, session: string): Promise<number>;
   /** 获取当前会话 ID（格式：YYYY-MM-DD-sessionName） */
   getCurrentSessionId(): string;
-  /** 隐藏空状态引导（有消息时） */
-  hideEmptyState(): void;
-  /** 未读计数 +1（完整窗口隐藏时，新精灵消息到达） */
-  updateUnreadCount(): void;
+}
+
+/**
+ * 对话框交互（ChatPanelHost 子接口）
+ *
+ * 涵盖：忘记操作二次确认、重新生成上一条精灵消息。
+ * 调用方：messageOperations（handleForget / handleRegenerate）
+ */
+export interface ChatDialogHost {
   /**
-   * 流式输出超时兜底触发时通知宿主联动主进程清理
+   * 显示确认对话框（用于"忘记"等需二次确认的操作）
    *
-   * 渲染进程 30s 无进展判定卡死后，仅重置 UI 状态不够——主进程 AbortController 仍可能泄漏，
-   * 导致下次发送被竞态保护拒绝。宿主通过此回调通知主进程 abort 当前对话，联动清理。
+   * @param options 确认弹窗选项（标题/消息/按钮文案/danger 标记）
+   * @returns 用户是否点击确认
    */
-  onStreamStuck(): void;
+  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /**
    * 重新生成上一条精灵消息（右键菜单"重新生成"触发）
    *
@@ -122,23 +181,18 @@ export interface ChatPanelHost {
    * @param userMessage 对应用户消息内容（从 DOM 中提取，用于重新发送）
    */
   regenerateLastMessage(userMessage: string): void;
-  /**
-   * 显示确认对话框（用于"忘记"等需二次确认的操作）
-   *
-   * @param options 确认弹窗选项（标题/消息/按钮文案/danger 标记）
-   * @returns 用户是否点击确认
-   */
-  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
-  /**
-   * 给指定面板导航按钮添加 pulse 高亮（MIND2-D5：消除跨面板 DOM 耦合）
-   *
-   * 里程碑触发时让 dashboard 导航按钮高亮，提示用户有新成就可查看。
-   * 委托给 PanelRouter.pulseNavButton，避免直接操作其他面板的 DOM。
-   *
-   * @param panel 目标面板名（如 'dashboard'）
-   */
-  pulseNavButton(panel: string): void;
 }
+
+/**
+ * 聊天面板管理器需要的宿主能力（组合接口，向后兼容）
+ *
+ * MIND2-D3：拆分为 4 个窄接口（ChatRenderHost / ChatStreamControlHost /
+ * ArchiveOperationHost / ChatDialogHost），本接口仅作组合出口，保持现有调用方零改动。
+ *
+ * 删除死方法：updateBadge（零调用方，UIManager 内部 updateUnreadCount
+ * 直接调用 badgeManager.updateBadge，不经 host 接口暴露）。
+ */
+export interface ChatPanelHost extends ChatRenderHost, ChatStreamControlHost, ArchiveOperationHost, ChatDialogHost {}
 
 // ─── 聊天面板管理器类 ─────────────────────────────────────
 

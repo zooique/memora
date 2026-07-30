@@ -24,6 +24,8 @@ import { EventTracker } from './helpers/eventTracker.js';
 import { renderInitFailureToBody } from './helpers/initFailureCard.js';
 // 滚动控制拆分为独立 Controller（消息列表滚动 + rAF 节流）
 import { ScrollController } from './helpers/scrollController.js';
+// 核心交互元素容器（MIND2-D2：7 个 private DOM 字段提取为单一容器，模式 A 纯状态容器）
+import { CoreElements } from './helpers/coreElements.js';
 import { ToastManager } from './components/toast.js';
 import { ModalManager } from './components/modal.js';
 import { OnboardingManager } from './components/onboarding.js';
@@ -254,20 +256,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver），已移入 ChatCoordinator（HEAL-16） */
   // inputAreaManager 见 this.chatCoordinator.inputAreaManager
 
-  // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
-  private messagesEl: HTMLElement;
-  private inputEl: HTMLTextAreaElement;
-  private btnSend: HTMLButtonElement;
-  /** B2：停止生成浮动按钮（独立于发送按钮，流式态时可见，对齐 demo v3 .btn-stop-float） */
-  private btnStop: HTMLButtonElement;
-
-  // ─── 可选元素（缺失时降级，不阻塞其他功能） ────────────
-  /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
-  private badge: HTMLElement | null;
-  /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
-  private btnMaximize: HTMLButtonElement | null;
-  /** 聊天面板 Agent 状态指示器（输入区上方，门面体验：让用户看到初始化进度） */
-  private chatAgentStatusEl: HTMLElement | null;
+  // ─── 核心交互元素容器（MIND2-D2：7 个 private DOM 字段提取为单一容器） ──
+  // 纯状态容器（progressive-refactor-rules §4 模式 A），不持有业务逻辑
+  // 字段分类：必需元素（messagesEl/inputEl/btnSend/btnStop）+ 可选元素（badge/btnMaximize/chatAgentStatusEl）
+  // 安全前提：mixin 委托方法（helpers/ui-delegations/）不访问 private 字段，提取不影响 HEAL-13 红线
+  private coreElements = new CoreElements();
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -293,11 +286,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 保留 fast-fail 设计意图（不进入半初始化状态），同时避免用户看到空白无提示。
     try {
       // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
-      this.messagesEl = getRequiredElement('messages', 'div');
-      this.inputEl = getRequiredElement('input', 'textarea');
-      this.btnSend = getRequiredElement('btn-send', 'button');
+      this.coreElements.messagesEl = getRequiredElement('messages', 'div');
+      this.coreElements.inputEl = getRequiredElement('input', 'textarea');
+      this.coreElements.btnSend = getRequiredElement('btn-send', 'button');
       // B2：停止生成按钮（独立元素，流式态时通过 .visible 类显示）
-      this.btnStop = getRequiredElement('btn-stop', 'button');
+      this.coreElements.btnStop = getRequiredElement('btn-stop', 'button');
     } catch (err) {
       // 渲染初始化失败错误提示到 document.body（独立于 UIManager 自身，避免半初始化状态）
       renderInitFailureToBody(err);
@@ -305,10 +298,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     }
 
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
-    this.badge = document.getElementById('badge');
-    this.btnMaximize = getOptionalElement('btn-maximize', 'button');
+    this.coreElements.badge = document.getElementById('badge');
+    this.coreElements.btnMaximize = getOptionalElement('btn-maximize', 'button');
     // 聊天面板 Agent 状态指示器（缺失时降级，不影响其他功能）
-    this.chatAgentStatusEl = document.getElementById('chat-agent-status');
+    this.coreElements.chatAgentStatusEl = document.getElementById('chat-agent-status');
     // 初始化指示器状态
     this.updateChatAgentStatus();
     // 注入 Agent 就绪状态查询函数，供 onboarding step 4 完成消息感知初始化进度
@@ -317,9 +310,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.onboardingManager.setConfirmDialog((options) => this.showConfirmDialog(options));
 
     // 未读徽章管理器（纯 DOM 渲染，badge 可为 null）
-    this.badgeManager = new BadgeManager(this.badge);
+    this.badgeManager = new BadgeManager(this.coreElements.badge);
     // 滚动控制器（独立管理消息列表滚动 + rAF 节流）
-    this.scrollController = new ScrollController(this.messagesEl);
+    this.scrollController = new ScrollController(this.coreElements.messagesEl);
 
     // Settings 域协调器（HEAL-16 Phase 4：3 字段收敛为单一协调器）
     this.settingsCoordinator = new SettingsCoordinator();
@@ -355,7 +348,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 聊天面板管理器（消息渲染、流式输出、工具调用卡片、思考指示器）
     this.chatCoordinator.chatPanel = new ChatPanelManager(
       this,
-      this.messagesEl,
+      this.coreElements.messagesEl,
       new EventTracker(),
       this.chatCoordinator.streamingMessages,
     );
@@ -407,8 +400,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.skillDropManager = new SkillDropManager(this.toastManager);
     // 输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
     this.chatCoordinator.inputAreaManager = new InputAreaManager(
-      this.inputEl,
-      this.btnSend,
+      this.coreElements.inputEl,
+      this.coreElements.btnSend,
       new EventTracker(),
       this as InputAreaHost,
     );
@@ -459,7 +452,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private initEventListeners(): void {
     // 输入框 keydown/input + 发送按钮 click 事件已委托到 InputAreaManager.init()
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
-    this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
+    this.events.addEventListener(this.coreElements.btnStop, 'click', this.emitStopMessage.bind(this));
 
     // HEAL-12 拆分后 4 个 Controller 各自 init：
     // - PanelRouter：.nav-btn 导航按钮 click
@@ -766,7 +759,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       return;
     }
     // 空内容不发送
-    if (this.inputEl.value.trim().length === 0) return;
+    if (this.coreElements.inputEl.value.trim().length === 0) return;
     this.sendMessageCallback?.();
   }
 
@@ -797,16 +790,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   updateSendButton(): void {
     if (this.state.isStreaming) {
       // 流式态：显示停止浮动按钮，禁用发送按钮（避免流式中误触发送）
-      this.btnStop.classList.add('visible');
-      this.btnSend.disabled = true;
-      this.btnSend.classList.add('hidden');
+      this.coreElements.btnStop.classList.add('visible');
+      this.coreElements.btnSend.disabled = true;
+      this.coreElements.btnSend.classList.add('hidden');
     } else {
       // 空闲态：隐藏停止按钮，恢复发送按钮
-      this.btnStop.classList.remove('visible');
-      this.btnSend.classList.remove('hidden');
+      this.coreElements.btnStop.classList.remove('visible');
+      this.coreElements.btnSend.classList.remove('hidden');
       // 恢复发送图标（防御性：避免被其他逻辑污染）
-      setIcon(this.btnSend, 'icon-send');
-      this.btnSend.title = '发送（Enter）';
+      setIcon(this.coreElements.btnSend, 'icon-send');
+      this.coreElements.btnSend.title = '发送（Enter）';
       // 委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
       this.chatCoordinator.inputAreaManager.refreshSendButtonState();
     }
@@ -837,7 +830,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 流式态时通过 inline style 强制显示停止按钮
     // 兜底机制——即使 updateSendButton 因状态机异常未被调用，
     // setStreaming(true) 也会覆盖 CSS 的 display:none，确保用户始终能中断流式输出
-    this.btnStop.style.display = streaming ? 'flex' : '';
+    this.coreElements.btnStop.style.display = streaming ? 'flex' : '';
   }
 
   /**
@@ -876,7 +869,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 同步 initial state 后仍保持 hidden，直到 setHasProviders(true) 触发 unknown 显示）。
    */
   private updateChatAgentStatus(): void {
-    const indicator = this.chatAgentStatusEl;
+    const indicator = this.coreElements.chatAgentStatusEl;
     if (!indicator) return;
     indicator.classList.remove('ready', 'error', 'unknown');
     const textEl = indicator.querySelector('.agent-status-text');
@@ -913,17 +906,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /** 获取输入框元素（PanelRouterHost 接口） */
   getInputEl(): HTMLTextAreaElement {
-    return this.inputEl;
+    return this.coreElements.inputEl;
   }
 
   /** 获取停止按钮元素（PanelRouterHost 接口） */
   getBtnStop(): HTMLButtonElement {
-    return this.btnStop;
+    return this.coreElements.btnStop;
   }
 
   /** 获取最大化按钮元素（PanelRouterHost 接口） */
   getBtnMaximize(): HTMLButtonElement | null {
-    return this.btnMaximize;
+    return this.coreElements.btnMaximize;
   }
 
   // ─── 记忆面板（含业务逻辑的方法，纯透传委托见 memoryDelegations） ──

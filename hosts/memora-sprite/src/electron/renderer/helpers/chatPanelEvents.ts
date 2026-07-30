@@ -28,6 +28,7 @@ import { reportError } from './errorHelpers.js';
 import { handleRegenerate, handleForget } from './messageOperations.js';
 import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 import type { EventTracker } from './eventTracker.js';
+// MIND2-D3：收窄 host 类型（实际只用 showToast + 传给 messageOperations 的 4 方法）
 // STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 chatPanelManager 形成运行时循环依赖）
 import type { ChatPanelHost } from '../panels/chatPanelManager.js';
 
@@ -44,8 +45,14 @@ export interface ChatPanelEventContext {
   readonly messagesEl: HTMLElement;
   /** 事件跟踪器（统一管理监听器注册与清理） */
   readonly events: EventTracker;
-  /** 宿主能力（提供 showToast + 消息操作所需的 host 回调） */
-  readonly host: ChatPanelHost;
+  /**
+   * 宿主能力（MIND2-D3 收窄：直接用 showToast + 传给 messageOperations 的 4 方法）
+   *
+   * chatPanelEvents 自身只用 showToast（复制反馈），但通过 handleRegenerate/handleForget
+   * 将 host 透传给 messageOperations，因此需满足 messageOperations 的 host 契约
+   *（isStreaming + showToast + showConfirmDialog + regenerateLastMessage）。
+   */
+  readonly host: Pick<ChatPanelHost, 'isStreaming' | 'showToast' | 'showConfirmDialog' | 'regenerateLastMessage'>;
   /** 归档按钮管理器（处理 data-action="archive" 委托） */
   readonly archiveButtonManager: {
     handleClick(btn: HTMLElement): Promise<void>;
