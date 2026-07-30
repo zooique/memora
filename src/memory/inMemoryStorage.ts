@@ -18,6 +18,7 @@ import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { applyDecayToMemory } from '@/memory/recall.js';
 import { nowIso } from '@/utils/time.js';
+import { DECAY_FLOOR, SCORE_CEILING } from '@/memory/governance.js';
 
 /**
  * 内存存储实现
@@ -337,6 +338,45 @@ export class InMemoryStorage implements IMemoryStorage {
       }
     }
     return count;
+  }
+
+  /**
+   * 原子增加记忆 score（MIND2-L3：消除 boost read-modify-write 并发冲突）
+   *
+   * score = clamp(score + delta, DECAY_FLOOR, SCORE_CEILING)，同时更新 accessedAt。
+   * JS 单线程下与同步 storage 调用天然原子。
+   *
+   * @param id 记忆 ID
+   * @param delta 增量（正数 boost，负数可降级）
+   * @param now 当前时间（ISO 8601）
+   * @returns 记忆不存在/软删除时返回 false，成功返回 true
+   */
+  incrementScore(id: string, delta: number, now: string): boolean {
+    const memory = this.memories.get(id);
+    // 记忆不存在或已软删除 → 返回 false（与 boostScores 原有"静默跳过"语义一致）
+    if (!memory || memory.deletedAt !== undefined) return false;
+    // clamp 到 [DECAY_FLOOR, SCORE_CEILING]，与 boostScore 原逻辑一致
+    memory.score = Math.max(DECAY_FLOOR, Math.min(SCORE_CEILING, memory.score + delta));
+    memory.accessedAt = now;
+    return true;
+  }
+
+  /**
+   * 原子设置记忆 score 绝对值（MIND2-L3：消除 demote spread 旧快照覆盖其他字段）
+   *
+   * 直接设置 score = newScore，不 clamp（调用方负责传合法值）。同时更新 accessedAt。
+   *
+   * @param id 记忆 ID
+   * @param newScore 新 score 绝对值
+   * @param now 当前时间（ISO 8601）
+   * @returns 记忆不存在/软删除时返回 false，成功返回 true
+   */
+  setScore(id: string, newScore: number, now: string): boolean {
+    const memory = this.memories.get(id);
+    if (!memory || memory.deletedAt !== undefined) return false;
+    memory.score = newScore;
+    memory.accessedAt = now;
+    return true;
   }
 
   /**

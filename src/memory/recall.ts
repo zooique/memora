@@ -17,8 +17,8 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
-// 召回 score 提升量/上限：使用治理共享常量（v2 REPEAT-2 闭环，与 memoryInspector.writeBoost 同源）
-import { BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
+// 召回 score 提升量/上限/下限：使用治理共享常量（v2 REPEAT-2 闭环，与 memoryInspector.writeBoost 同源）
+import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR } from '@/memory/governance.js';
 
 // ─── 召回与衰减常量 ─────────────────────────────────────
 
@@ -30,9 +30,6 @@ const DECAY_AGE_DAYS = 7;
 
 /** 衰减：每过一个周期 score 降低量 */
 const DECAY_AMOUNT = 0.02;
-
-/** 衰减：score 下限 */
-const DECAY_FLOOR = 0.1;
 
 /** 一天对应的毫秒数 */
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -181,12 +178,10 @@ export async function boostScores(
   now: string = nowIso(),
 ): Promise<void> {
   for (const id of ids) {
-    const memory = storage.getById(id);
-    // 记忆可能已被删除（recall 后到 boost 前 window 内被清理）→ 静默跳过
-    if (!memory) continue;
-    const boosted = { ...memory };
-    boostScore(boosted, now);
-    storage.upsert(boosted);
+    // MIND2-L3：改用 incrementScore 原子操作，消除 read-modify-write 并发冲突
+    // 原 getById → boostScore → upsert 三步合并为存储层一条原子更新，
+    // 与 decayScores 同模式（避免与衰减/去重并发写时基于旧值覆盖）
+    storage.incrementScore(id, BOOST_INCREMENT, now);
   }
 }
 

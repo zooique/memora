@@ -114,25 +114,32 @@ function createMockLlmProvider(
 }
 
 /**
- * 构造 mock IMemoryStorage（仅实现 evaluateTimeliness 所需的 getBySource + upsert）
+ * 构造 mock IMemoryStorage（实现 evaluateTimeliness 所需的 getBySource + setScore）
+ *
+ * MIND2-L3：demoteOutdatedMemory 改用 setScore 原子操作（替代 spread + upsert），
+ * 因此 mock 重点记录 setScore 调用，upsert 仅保留供未来 keepMerged 类场景。
  *
  * @param memoriesBySource 按 source 分组的预设记忆
- * @returns mock IMemoryStorage 实例（upsertCalls 记录所有 upsert 调用）
+ * @returns mock IMemoryStorage 实例（setScoreCalls 记录所有 setScore 调用详情）
  */
 function createMockMemoryStorage(
   memoriesBySource: Record<string, Memory[]> = {},
-): IMemoryStorage & { upsertCalls: Memory[] } {
+): IMemoryStorage & { setScoreCalls: Array<{ id: string; score: number }> } {
   const store = new Map<string, Memory[]>(Object.entries(memoriesBySource));
-  const upsertCalls: Memory[] = [];
+  const setScoreCalls: Array<{ id: string; score: number }> = [];
   return {
     getBySource(source: string): Memory[] {
       return store.get(source) ?? [];
     },
-    upsert(memory: Memory): void {
-      upsertCalls.push(memory);
+    // MIND2-L3：setScore 记录调用详情（id + score），供断言降级行为
+    setScore(id: string, newScore: number): boolean {
+      setScoreCalls.push({ id, score: newScore });
+      return true;
     },
-    upsertCalls,
-  } as unknown as IMemoryStorage & { upsertCalls: Memory[] };
+    // upsert 保留 no-op，供未来 keepMerged 类场景扩展（当前 L2 流程不使用）
+    upsert(_memory: Memory): void {},
+    setScoreCalls,
+  } as unknown as IMemoryStorage & { setScoreCalls: Array<{ id: string; score: number }> };
 }
 
 /**
@@ -387,13 +394,13 @@ describe('MemoryDecayScheduler', () => {
         expect(report.scannedCount).toBe(1);
         expect(report.outdatedCount).toBe(1);
         expect(report.demotedIds).toEqual(['insight:old']);
-        // 验证降级写入：score 被设为 0.05，id 保持不变
-        expect(mockStorage.upsertCalls).toHaveLength(1);
-        expect(mockStorage.upsertCalls[0]!.score).toBe(0.05);
-        expect(mockStorage.upsertCalls[0]!.id).toBe('insight:old');
+        // MIND2-L3：验证降级写入——setScore 被调用一次，score 设为 0.05，id 匹配
+        expect(mockStorage.setScoreCalls).toHaveLength(1);
+        expect(mockStorage.setScoreCalls[0]!.score).toBe(0.05);
+        expect(mockStorage.setScoreCalls[0]!.id).toBe('insight:old');
       });
 
-      it('LLM 判定未过时时保持原 score（不调用 upsert）', async () => {
+      it('LLM 判定未过时时保持原 score（不调用 setScore）', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
             createMemory({ id: 'profile:1', name: '用户偏好', source: 'profile', score: 0.2, content: '用户偏好函数式编程' }),
@@ -412,8 +419,8 @@ describe('MemoryDecayScheduler', () => {
         const report = await l2Scheduler.evaluateTimeliness();
         expect(report.outdatedCount).toBe(0);
         expect(report.demotedIds).toEqual([]);
-        // 未过时 → 不应触发 upsert
-        expect(mockStorage.upsertCalls).toHaveLength(0);
+        // MIND2-L3：未过时 → 不应触发 setScore 降级写入
+        expect(mockStorage.setScoreCalls).toHaveLength(0);
       });
 
       it('多 source 低分记忆混合收集', async () => {
@@ -519,8 +526,8 @@ describe('MemoryDecayScheduler', () => {
         expect(report.scannedCount).toBe(1);
         expect(report.outdatedCount).toBe(0);
         expect(report.demotedIds).toEqual([]);
-        // 非法 JSON → 未降级 → 不应触发 upsert
-        expect(mockStorage.upsertCalls).toHaveLength(0);
+        // MIND2-L3：非法 JSON → 未降级 → 不应触发 setScore
+        expect(mockStorage.setScoreCalls).toHaveLength(0);
       });
 
       it('单条 LLM 调用抛错时不阻塞后续评估', async () => {
@@ -572,9 +579,9 @@ describe('MemoryDecayScheduler', () => {
         expect(report.scannedCount).toBe(3);
         expect(report.outdatedCount).toBe(1);
         expect(report.demotedIds).toEqual(['insight:outdated']);
-        // 仅过时记忆被降级写入
-        expect(mockStorage.upsertCalls).toHaveLength(1);
-        expect(mockStorage.upsertCalls[0]!.score).toBe(0.05);
+        // MIND2-L3：仅过时记忆被 setScore 降级写入
+        expect(mockStorage.setScoreCalls).toHaveLength(1);
+        expect(mockStorage.setScoreCalls[0]!.score).toBe(0.05);
       });
     });
 

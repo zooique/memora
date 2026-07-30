@@ -9,7 +9,7 @@
  */
 import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
-import { segmentLower, validateSource, logger } from 'memora';
+import { segmentLower, validateSource, logger, DECAY_FLOOR, SCORE_CEILING } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 // StorageError：storage 层结构化错误类（零 sprite 依赖，ErrorCode 从 shared 层导入）
 import { StorageError } from './storageError.js';
@@ -372,6 +372,48 @@ export class SqliteStorage implements IMemoryStorage {
     const params = [now.toISOString(), ...sources, now.toISOString()];
     const result = this.db.prepare(sql).run(...params);
     return result.changes;
+  }
+
+  /**
+   * 原子增加记忆 score（MIND2-L3：消除 boost read-modify-write 并发冲突）
+   *
+   * 一条 SQL UPDATE 完成 score += delta 并 clamp 到 [DECAY_FLOOR, SCORE_CEILING]，
+   * 同时更新 accessedAt。与 decayScores 同模式（避免读回内存）。
+   *
+   * @param id 记忆 ID
+   * @param delta 增量（正数 boost，负数可降级）
+   * @param now 当前时间（ISO 8601，用于更新 accessedAt）
+   * @returns 记忆不存在/软删除时返回 false，成功返回 true
+   */
+  incrementScore(id: string, delta: number, now: string): boolean {
+    // SQL MAX/MIN 双向 clamp：score = max(DECAY_FLOOR, min(SCORE_CEILING, score + delta))
+    const sql = `
+      UPDATE memories
+      SET score = MAX(?, MIN(?, score + ?)), accessedAt = ?
+      WHERE id = ? AND deleted_at IS NULL
+    `;
+    const result = this.db.prepare(sql).run(DECAY_FLOOR, SCORE_CEILING, delta, now, id);
+    return result.changes > 0;
+  }
+
+  /**
+   * 原子设置记忆 score 绝对值（MIND2-L3：消除 demote spread 旧快照覆盖其他字段）
+   *
+   * 直接设置 score = newScore，不 clamp（调用方负责传合法值）。同时更新 accessedAt。
+   *
+   * @param id 记忆 ID
+   * @param newScore 新 score 绝对值
+   * @param now 当前时间（ISO 8601，用于更新 accessedAt）
+   * @returns 记忆不存在/软删除时返回 false，成功返回 true
+   */
+  setScore(id: string, newScore: number, now: string): boolean {
+    const sql = `
+      UPDATE memories
+      SET score = ?, accessedAt = ?
+      WHERE id = ? AND deleted_at IS NULL
+    `;
+    const result = this.db.prepare(sql).run(newScore, now, id);
+    return result.changes > 0;
   }
 
   /**

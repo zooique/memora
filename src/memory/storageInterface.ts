@@ -169,6 +169,32 @@ export interface IMemoryStorage {
   decayScores(sources: string[], now: Date): number;
 
   /**
+   * 原子增加记忆 score（MIND2-L3：消除 boost 路径 read-modify-write 并发冲突）
+   *
+   * score = clamp(score + delta, DECAY_FLOOR, SCORE_CEILING)，同时更新 accessedAt 为 now。
+   * 与 decayScores 同模式：宿主实现用一条 SQL UPDATE 完成原子操作，避免读回内存。
+   *
+   * @param id 记忆 ID
+   * @param delta 增量（正数 boost，负数可降级）
+   * @param now 当前时间（ISO 8601，用于更新 accessedAt）
+   * @returns 记忆不存在/软删除时返回 false，成功返回 true
+   */
+  incrementScore(id: string, delta: number, now: string): boolean;
+
+  /**
+   * 原子设置记忆 score 绝对值（MIND2-L3：消除 demote 路径 spread 旧快照覆盖其他字段）
+   *
+   * 直接设置 score = newScore，不 clamp（调用方负责传合法值）。同时更新 accessedAt 为 now。
+   * 用于 demoteMemory / demoteOutdatedMemory 等设绝对值场景，避免 spread 旧快照覆盖 content 等字段。
+   *
+   * @param id 记忆 ID
+   * @param newScore 新 score 绝对值
+   * @param now 当前时间（ISO 8601，用于更新 accessedAt）
+   * @returns 记忆不存在/软删除时返回 false，成功返回 true
+   */
+  setScore(id: string, newScore: number, now: string): boolean;
+
+  /**
    * 获取所有 source 标签及其活跃记忆数量（不含已软删除的）
    *
    * 优化：替代 stats()/sourceHealth() 中的全量 search + 逐条遍历，

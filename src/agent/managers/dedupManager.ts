@@ -347,13 +347,9 @@ export class DedupManager {
    * @param memory 待降级的记忆（低分方）
    */
   private demoteMemory(memory: Memory): void {
-    const demoted: Memory = {
-      ...memory,
-      score: DEDUP_LOW_SCORE,
-      // 更新 accessedAt，标记最近被处理过
-      accessedAt: nowIso(),
-    };
-    this.index.upsert(demoted);
+    // MIND2-L3：改用 setScore 原子操作，消除 spread 旧快照覆盖其他字段的隐性 bug
+    // 原模式用 candidates 旧快照 spread 后整条 upsert，会覆盖期间被 boost/decay 改的 content 等字段
+    this.index.setScore(memory.id, DEDUP_LOW_SCORE, nowIso());
   }
 
   /**

@@ -45,7 +45,8 @@ import {
   RECALL_LIMIT_MULTIPLIER,
 } from '@/memory/hybridMerge.js';
 // LLM 治理共享常量（v2 REPEAT-1/2 闭环，消除 5 处独立维护的治理源列表 + 2 处 score 常量重复）
-import { BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
+// MIND2-L3：SCORE_CEILING 不再需要（incrementScore 内部 clamp），仅保留 BOOST_INCREMENT
+import { BOOST_INCREMENT } from '@/memory/governance.js';
 
 // 类型再导出，保持公共 API 不变（src/index.ts 通过本文件再导出这些类型）
 // FIX-P1-3：sourceHealth/suggest 实现已迁回 MemoryAdvisor 直连，类型仍在此再导出
@@ -633,7 +634,6 @@ export class MemoryInspector {
    *   - writeBoost：用户主动采纳时触发（主动）
    *
    * 设计原则：
-   *   - 复用现有 upsert 路径，不新增存储层接口
    *   - score 上限 1.0（与 recall.ts SCORE_CEILING 一致）
    *   - 同步更新 accessedAt，避免被衰减机制误降级
    *   - 记忆不存在时静默返回 false（补全候选可能来自对话历史，无对应记忆）
@@ -643,15 +643,9 @@ export class MemoryInspector {
    * @returns 是否成功提升（记忆不存在时返回 false）
    */
   writeBoost(id: string, increment: number = BOOST_INCREMENT): boolean {
-    const memory = this.index.getById(id);
-    if (!memory) return false;
-    const boosted: Memory = {
-      ...memory,
-      score: Math.min(SCORE_CEILING, memory.score + increment),
-      accessedAt: nowIso(),
-    };
-    this.index.upsert(boosted);
-    return true;
+    // MIND2-L3：改用 incrementScore 原子操作，消除 read-modify-write 并发冲突
+    // 原 getById → spread → boostScore → upsert 四步合并为存储层一条原子更新
+    return this.index.incrementScore(id, increment, nowIso());
   }
 
   /**

@@ -428,18 +428,14 @@ export class MemoryDecayScheduler {
    *
    * 安全设计：
    *   - 不物理删除，仅降低 score，保留可恢复性
-   *   - 通过 upsert 覆盖原记忆（保持 id/source/name/createdAt 不变）
    *   - 更新 accessedAt，标记最近被处理过
    *
    * @param memory 待降级的过时记忆
    */
   private demoteOutdatedMemory(memory: Memory): void {
-    const demoted: Memory = {
-      ...memory,
-      score: TIMELINESS_OUTDATED_SCORE,
-      accessedAt: nowIso(),
-    };
-    this.index!.upsert(demoted);
+    // MIND2-L3：改用 setScore 原子操作，消除 spread 旧快照覆盖其他字段
+    // 原模式 spread 旧快照后整条 upsert，会覆盖期间被 boost/decay 改的 content 等字段
+    this.index!.setScore(memory.id, TIMELINESS_OUTDATED_SCORE, nowIso());
   }
 }
 

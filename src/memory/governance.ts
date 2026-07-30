@@ -42,3 +42,12 @@ export const BOOST_INCREMENT = 0.05;
  * 消费者：recall.ts / memoryInspector.ts
  */
 export const SCORE_CEILING = 1.0;
+
+/**
+ * score 下限 — 衰减/demote 的底线（MIND2-L3：incrementScore clamp 下限）
+ *
+ * 消费者：
+ *   - recall.ts applyDecayToMemory（衰减下限）
+ *   - InMemoryStorage / SqliteStorage incrementScore（clamp 下限）
+ */
+export const DECAY_FLOOR = 0.1;
