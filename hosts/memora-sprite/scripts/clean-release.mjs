@@ -56,8 +56,8 @@ for (const entry of readdirSync(releaseDir)) {
 
 console.log(`[clean-release] 清理完成: ${cleanedCount} 项已删, ${failedCount} 项失败`);
 
-// 如果有删除失败的项，退出码 1 提醒用户
+// 删除失败时仅警告，不中断构建链——electron-builder 会自行处理残留目录
+// 避免 win-unpacked 被临时占用时（如资源管理器打开）导致整个 package 流程终止
 if (failedCount > 0) {
-  console.warn('[clean-release] 部分文件删除失败，建议关闭可能占用的程序后重试');
-  process.exit(1);
+  console.warn('[clean-release] 部分文件删除失败，electron-builder 将自行处理残留');
 }
