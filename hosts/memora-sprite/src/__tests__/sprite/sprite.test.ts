@@ -69,12 +69,15 @@ const mockAgent = {
   // B5：归档门面方法（archiveProfileFacts/archiveInsight 委托到 agent）
   archiveProfileFacts: vi.fn().mockResolvedValue([]),
   archiveInsight: vi.fn().mockResolvedValue([]),
-  // FIX-P1-3：sourceHealth/suggest 已迁至 Agent 门面直连 advisor（不再经 memory 转发）
+  // MIND2-D4：sourceHealth/suggest/decay 已迁至 governance 门面（不再经 agent 顶层方法）
   // memoryController.dashboard() / sprite.getStartupSummary() / sprite.sourceHealth() 均走此入口
-  sourceHealth: vi.fn().mockReturnValue(null),
-  suggest: vi.fn().mockReturnValue([]),
+  governance: {
+    sourceHealth: vi.fn().mockReturnValue(null),
+    suggest: vi.fn().mockReturnValue([]),
+    decay: vi.fn(),
+  },
   // memory 统一读写：只读方法 + writeXxx 写方法
-  // FIX-P1-3：sourceHealth/suggest 已迁至 Agent 门面（见上方 agent.sourceHealth/suggest），
+  // MIND2-D4：sourceHealth/suggest 已迁至 governance 门面（见上方 governance 字段），
   // memory 中不再保留这两个 mock 字段
   memory: {
     stats: vi.fn().mockReturnValue({ total: 0, bySource: {} }),
@@ -1836,7 +1839,7 @@ describe('Sprite 仪表盘门面（B5：dashboard 委托）', () => {
 
   it('dashboard 应返回仪表盘数据（含 total/bySource/suggestions）', () => {
     vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 10, bySource: { insight: 7, profile: 3 }, relationCount: 2 });
-    vi.mocked(mockAgent.suggest).mockReturnValue([]);
+    vi.mocked(mockAgent.governance!.suggest).mockReturnValue([]);
     vi.mocked(mockAgent.memory.getAllRelations).mockReturnValue([]);
     const data = sprite.dashboard();
     expect(data.total).toBe(10);
@@ -1860,15 +1863,15 @@ describe('Sprite 仪表盘门面（B5：dashboard 委托）', () => {
     expect(rapport.description).toContain('亲密');
   });
 
-  it('sourceHealth 在 agent.sourceHealth 返回 null 时返回 null', () => {
-    // FIX-P1-3：sourceHealth 已迁至 Agent 门面，mock agent.sourceHealth 而非 memory.sourceHealth
-    vi.mocked(mockAgent.sourceHealth).mockReturnValue(null);
+  it('sourceHealth 在 governance.sourceHealth 返回 null 时返回 null', () => {
+    // MIND2-D4：sourceHealth 已迁至 governance 门面，mock governance.sourceHealth
+    vi.mocked(mockAgent.governance!.sourceHealth).mockReturnValue(null);
     expect(sprite.sourceHealth()).toBeNull();
   });
 
-  it('sourceHealth 应委托到 agent.sourceHealth', () => {
-    // FIX-P1-3：sourceHealth 已迁至 Agent 门面直连 advisor，不再经 memory 转发
-    vi.mocked(mockAgent.sourceHealth).mockReturnValue({
+  it('sourceHealth 应委托到 governance.sourceHealth', () => {
+    // MIND2-D4：sourceHealth 已迁至 governance 门面（从 agent.sourceHealth 进一步迁移）
+    vi.mocked(mockAgent.governance!.sourceHealth).mockReturnValue({
       sources: [], overallStatus: 'healthy', diagnosedAt: '2026-07-12T00:00:00.000Z',
     });
     const health = sprite.sourceHealth();
@@ -1898,7 +1901,7 @@ describe('Sprite 仪表盘门面（B5：dashboard 委托）', () => {
 
   it('getReviewData 应返回回顾面板数据', () => {
     vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 5, bySource: { insight: 5 }, relationCount: 0 });
-    vi.mocked(mockAgent.suggest).mockReturnValue([]);
+    vi.mocked(mockAgent.governance!.suggest).mockReturnValue([]);
     vi.mocked(mockAgent.memory.getAllRelations).mockReturnValue([]);
     vi.mocked(mockAgent.memory.list).mockReturnValue([]);
     const review = sprite.getReviewData();
@@ -1930,10 +1933,10 @@ describe('Sprite 启动摘要（B5：getStartupSummary）', () => {
 
   it('getStartupSummary 在无感知快照时 perception 字段为 null', () => {
     vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 5, bySource: { 'llm:insight': 3, profile: 2 }, relationCount: 0 });
-    vi.mocked(mockAgent.suggest).mockReturnValue([]);
+    vi.mocked(mockAgent.governance!.suggest).mockReturnValue([]);
     vi.mocked(mockAgent.memory.getAllRelations).mockReturnValue([]);
     vi.mocked(mockAgent.memory.list).mockReturnValue([]);
-    vi.mocked(mockAgent.sourceHealth).mockReturnValue({
+    vi.mocked(mockAgent.governance!.sourceHealth).mockReturnValue({
       sources: [], overallStatus: 'warning', diagnosedAt: '2026-07-12T00:00:00.000Z',
     });
     vi.mocked(mockAgent.getMetrics).mockReturnValue({
@@ -1963,9 +1966,9 @@ describe('Sprite 启动摘要（B5：getStartupSummary）', () => {
       { id: '1', name: '记忆', source: 'insight', content: '内容', score: 0.5, createdAt: now } as never,
     ]);
     vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 1, bySource: { insight: 1 }, relationCount: 0 });
-    vi.mocked(mockAgent.suggest).mockReturnValue([]);
+    vi.mocked(mockAgent.governance!.suggest).mockReturnValue([]);
     vi.mocked(mockAgent.memory.getAllRelations).mockReturnValue([]);
-    vi.mocked(mockAgent.sourceHealth).mockReturnValue(null);
+    vi.mocked(mockAgent.governance!.sourceHealth).mockReturnValue(null);
     vi.mocked(mockAgent.getMetrics).mockReturnValue({
       llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0 },
       recall: { totalCount: 0, hitCount: 0, hitRate: 0 },
@@ -2072,7 +2075,7 @@ describe('Sprite getters + formatDashboard（B5）', () => {
 
   it('formatDashboard 应返回包含仪表盘信息的可读文本', () => {
     vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 5, bySource: { insight: 5 }, relationCount: 0 });
-    vi.mocked(mockAgent.suggest).mockReturnValue([]);
+    vi.mocked(mockAgent.governance!.suggest).mockReturnValue([]);
     vi.mocked(mockAgent.memory.getAllRelations).mockReturnValue([]);
     const text = sprite.formatDashboard();
     expect(text).toContain('记忆仪表盘');

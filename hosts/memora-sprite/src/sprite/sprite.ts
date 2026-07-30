@@ -961,7 +961,8 @@ export class Sprite {
    * 供 IPC handler 调用（手动触发）。定时器自动触发走 MemoryDecayScheduler 内部定时器，不经此处。
    */
   triggerDecayRun(): void {
-    this.agent.runMemoryDecayOnce();
+    // 委托 governance 门面（MIND2-D4：从 agent.runMemoryDecayOnce 迁移）
+    this.agent.governance?.decay();
   }
 
   /**
@@ -1041,8 +1042,8 @@ export class Sprite {
   }
 
   sourceHealth() {
-    // sourceHealth 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    return this.agent.sourceHealth() ?? null;
+    // 委托 governance 门面（MIND2-D4：从 agent.sourceHealth 迁移）
+    return this.agent.governance?.sourceHealth() ?? null;
   }
 
   getMetrics(): AgentMetrics {
@@ -1101,8 +1102,8 @@ export class Sprite {
     const dashboard = this.memoryController.dashboard();
     const metrics = this.agent.getMetrics();
     const snapshot = this.perceptionCoordinator.getSnapshot();
-    // sourceHealth 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    const sourceHealth = this.agent.sourceHealth();
+    // 委托 governance 门面（MIND2-D4：从 agent.sourceHealth 迁移）
+    const sourceHealth = this.agent.governance?.sourceHealth() ?? null;
     const skillCount = this.agent.skills?.list.length ?? 0;
 
     return {

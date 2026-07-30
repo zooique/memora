@@ -92,10 +92,12 @@ function createMockInspector(): Inspector {
 function createMockAgent(inspector: Inspector | null): Agent {
   const agent: Partial<Agent> = {
     memory: inspector,
-    // FIX-P1-3：suggest/sourceHealth 已迁至 Agent 门面直连 advisor
-    // mock 默认返回空数组/null，模拟 advisor 未初始化的降级场景
-    suggest: vi.fn(() => []),
-    sourceHealth: vi.fn(() => null),
+    // MIND2-D4：suggest/sourceHealth 已迁至 governance 门面
+    // mock 默认返回空数组/null，模拟 governance 未初始化的降级场景
+    governance: {
+      suggest: vi.fn(() => []),
+      sourceHealth: vi.fn(() => null),
+    } as never,
   };
   return agent as Agent;
 }
@@ -681,8 +683,8 @@ describe('MemoryController', () => {
       };
       const hits = [makeSuggestHit({ name: 'sugg-1' })];
       vi.mocked(mockInspector.stats).mockReturnValue(stats);
-      // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，mock 作用在 agent.suggest 而非 inspector.suggest
-      vi.mocked(mockAgent.suggest).mockReturnValue(hits);
+      // MIND2-D4：suggest 已迁至 governance 门面，mock 作用在 governance.suggest
+      vi.mocked(mockAgent.governance!.suggest).mockReturnValue(hits);
       const controller = new MemoryController(mockAgent);
       const result = controller.dashboard();
       expect(result.total).toBe(42);
@@ -696,8 +698,8 @@ describe('MemoryController', () => {
       vi.mocked(mockInspector.stats).mockReturnValue({ total: 0, bySource: {}, relationCount: 0 });
       const controller = new MemoryController(mockAgent);
       controller.dashboard();
-      // FIX-P1-3：验证 agent.suggest 调用（已从 inspector 迁至 Agent 门面）
-      expect(mockAgent.suggest).toHaveBeenCalledWith(undefined, { limit: 5 });
+      // MIND2-D4：验证 governance.suggest 调用（已从 agent.suggest 迁至 governance）
+      expect(mockAgent.governance!.suggest).toHaveBeenCalledWith(undefined, { limit: 5 });
     });
 
     it('inspector 为 null 时返回空仪表盘（降级而非崩溃）', () => {

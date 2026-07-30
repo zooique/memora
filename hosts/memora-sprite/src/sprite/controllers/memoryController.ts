@@ -555,7 +555,12 @@ export class MemoryController {
    * @returns 去重报告（扫描数 / 降级 ID 列表 / 跳过原因）
    */
   async deduplicateMemories(): Promise<DedupReport> {
-    return this.agent.deduplicateMemories();
+    // 委托 governance 门面（MIND2-D4：从 agent.deduplicateMemories 迁移）
+    const governance = this.agent.governance;
+    if (!governance) {
+      return { scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化' };
+    }
+    return governance.deduplicate();
   }
 
   /**
@@ -567,7 +572,12 @@ export class MemoryController {
    * @returns 评估报告（扫描数 / 过时数 / 降级 ID 列表 / 跳过原因）
    */
   async evaluateTimeliness(): Promise<TimelinessReport> {
-    return this.agent.evaluateTimeliness();
+    // 委托 governance 门面（MIND2-D4：从 agent.evaluateTimeliness 迁移）
+    const governance = this.agent.governance;
+    if (!governance) {
+      return { scannedCount: 0, outdatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化' };
+    }
+    return governance.evaluateTimeliness();
   }
 
   /**
@@ -578,7 +588,12 @@ export class MemoryController {
    * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
    */
   async detectConflicts(): Promise<ConflictReport> {
-    return this.agent.detectConflicts();
+    // 委托 governance 门面（MIND2-D4：从 agent.detectConflicts 迁移）
+    const governance = this.agent.governance;
+    if (!governance) {
+      return { scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'Agent 未初始化' };
+    }
+    return governance.detectConflicts();
   }
 
   // ─── 记忆搜索 ──────────────────────────────────────────
@@ -618,9 +633,9 @@ export class MemoryController {
       return { total: 0, bySource: {}, suggestions: [], relationCount: 0, conflictCount: 0 };
     }
     const stats = memory.stats();
-    // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    // agent.suggest 在 advisor 未初始化时返回空数组，无需额外降级
-    const suggestions = this.agent.suggest(undefined, { limit: 5 });
+    // 委托 governance 门面（MIND2-D4：从 agent.suggest 迁移）
+    // governance 未初始化时返回空数组，无需额外降级
+    const suggestions = this.agent.governance?.suggest(undefined, { limit: 5 }) ?? [];
     // 统计冲突关系数：遍历所有关系边，type === 'contradicts' 的即为冲突
     const allEdges = memory.getAllRelations();
     const conflictCount = allEdges.filter((e) => e.type === 'contradicts').length;

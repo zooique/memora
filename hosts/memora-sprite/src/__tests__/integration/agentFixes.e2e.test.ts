@@ -229,7 +229,8 @@ describe('M6 语义去重合并内容落库（真实 Agent）', () => {
       makeMemory({ id: 'insight:b', source: 'insight', score: 0.8, name: '用户偏好简洁UI', content: 'B原始' }),
     );
 
-    const report = await b.agent.deduplicateMemories();
+    // MIND2-D4：从 agent.deduplicateMemories() 迁移到 governance.deduplicate()
+    const report = await b.agent.governance!.deduplicate();
     expect(report.deduplicatedCount).toBeGreaterThanOrEqual(1);
 
     const kept = b.storage.getById('insight:a');

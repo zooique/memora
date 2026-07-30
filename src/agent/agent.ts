@@ -41,20 +41,8 @@ import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-// L1/L3 治理报告类型：用于 agent 委托方法的返回类型注解（不暴露 manager 实例）
-// SPLIT-3 闭环（2026-07-21）：DedupReport 类型来源已迁移至 DedupManager
-import type { DedupReport } from '@/agent/managers/dedupManager.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
-import type { TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
-import type { ConflictReport } from '@/agent/managers/memoryAdvisor.js';
-// FIX-P1-3：sourceHealth/suggest/detectConflicts 三件套均由 Agent 直连 advisor
-// MemoryAdvisor 类型注解：v2 PROXY-1 闭环 + FIX-P1-3 收尾
-import type {
-  MemoryAdvisor,
-  SourceHealthReport,
-  SuggestOptions,
-  SuggestHit,
-} from '@/agent/managers/memoryAdvisor.js';
+import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
 import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
@@ -355,7 +343,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       tracer: this.#config.tracer,
       onDecayCompleted: (payload) => {
         this.emit(AGENT_EVENTS.decayCompleted, payload);
-        void this.evaluateTimeliness().catch((err: unknown) => {
+        // MIND2-D4：从 agent.evaluateTimeliness() 迁移到 governance.evaluateTimeliness()
+        void this._governance?.evaluateTimeliness().catch((err: unknown) => {
           logger.warn({ err }, 'L2 时效性评估自动触发失败（已降级，不影响衰减循环）');
         });
       },
@@ -1680,129 +1669,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
-  }
-
-  // ─── LLM 记忆治理委托方法（G1：暴露能力但不暴露 manager 实例） ──
-  // 这三个方法是 sprite 层接入 L1~L3 治理能力的唯一入口。
-  // 委托内部 manager（memoryInspector / memoryDecayScheduler / memoryAdvisor），
-  // 不返回 manager 实例本身，保持封装（sprite 层不感知 manager 内部结构）。
-  // manager 未初始化时返回 skippedReason 报告，与 manager 内部"backgroundProvider
-  // 未注入时静默跳过"语义一致（向后兼容）。
-
-  /**
-   * L1 语义去重（委托 DedupManager.deduplicateMemories）
-   *
-   * 扫描名称相似的记忆对，调用 LLM 判断语义等价，降级低分记忆（score→0.1，不物理删除）。
-   * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
-   *
-   * SPLIT-3 闭环（2026-07-21）：委托对象从 MemoryInspector 改为 DedupManager，
-   * 语义去重职责独立，MemoryInspector 回归纯存储读写。
-   *
-   * @param signal 可选的 AbortSignal（取消进行中的 LLM 判断）
-   * @returns 去重报告（扫描数 / 降级 ID 列表 / 跳过原因）
-   */
-  /**
-   * @deprecated 使用 agent.governance.deduplicate() 替代
-   */
-  async deduplicateMemories(signal?: AbortSignal): Promise<DedupReport> {
-    return this._governance?.deduplicate(signal) ?? {
-      scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化',
-    };
-  }
-
-  /**
-   * L2 时效性评估（委托 MemoryDecayScheduler.evaluateTimeliness）
-   *
-   * 扫描低分记忆（score<0.3），调用 LLM 判断是否过时，降级过时记忆（score→0.05）。
-   * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
-   *
-   * 使用场景：
-   *   - G2 自动触发：onDecayCompleted 钩子内 fire-and-forget 调用
-   *   - 手动触发：宿主 UI 健康度面板"时效性评估"按钮
-   *
-   * @param signal 可选的 AbortSignal
-   * @returns 评估报告（扫描数 / 过时数 / 降级 ID 列表 / 跳过原因）
-   */
-  /**
-   * @deprecated 使用 agent.governance.evaluateTimeliness() 替代
-   */
-  async evaluateTimeliness(signal?: AbortSignal): Promise<TimelinessReport> {
-    return this._governance?.evaluateTimeliness(signal) ?? {
-      scannedCount: 0, outdatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化',
-    };
-  }
-
-  /**
-   * 手动触发一次 L0 记忆衰减（委托 MemoryDecayScheduler.runOnce）
-   *
-   * 执行纯 score 递减（无 LLM 调用），衰减完成后触发 decayCompleted 事件。
-   * 供宿主 UI 手动触发（如仪表盘"立即衰减"按钮），与定时器自动触发路径一致。
-   */
-  /**
-   * @deprecated 使用 agent.governance.decay() 替代
-   */
-  runMemoryDecayOnce(): void {
-    this._governance?.decay();
-  }
-
-  /**
-   * 记忆源健康诊断（委托 MemoryAdvisor.sourceHealth）
-   *
-   * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态），返回整体健康报告。
-   * 纯只读计算，不修改任何状态。
-   *
-   * FIX-P1-3（2026-07-24）：与 detectConflicts 同模式，Agent 直接委托 advisor，
-   * 不再经 MemoryInspector 转发（消除 3 层无意义代理）。
-   * 原调用方 `agent.memory.sourceHealth()` 应改为 `agent.sourceHealth()`。
-   *
-   * @returns 健康诊断报告；advisor 未初始化时返回 null
-   */
-  /**
-   * @deprecated 使用 agent.governance.sourceHealth() 替代
-   */
-  sourceHealth(): SourceHealthReport | null {
-    return this._governance?.sourceHealth() ?? null;
-  }
-
-  /**
-   * 关联推荐（委托 MemoryAdvisor.suggest）
-   *
-   * 基于 score + 时效性 + source 多样性推荐记忆。
-   * 纯只读计算，不修改任何状态。
-   *
-   * FIX-P1-3（2026-07-24）：与 detectConflicts 同模式，Agent 直接委托 advisor。
-   * 原调用方 `agent.memory.suggest(...)` 应改为 `agent.suggest(...)`。
-   *
-   * @param query - 可选的搜索关键词（提供时结合搜索结果推荐，省略时基于全局热度推荐）
-   * @param options - 推荐选项（limit / excludeSources / recencyWeight）
-   * @returns 推荐命中列表；advisor 未初始化时返回空数组
-   */
-  /**
-   * @deprecated 使用 agent.governance.suggest() 替代
-   */
-  suggest(query?: string, options?: SuggestOptions): SuggestHit[] {
-    return this._governance?.suggest(query, options) ?? [];
-  }
-
-  /**
-   * L3 冲突检测（委托 MemoryAdvisor.detectConflicts）
-   *
-   * 同 source 内配对，调用 LLM 判断语义冲突，仅检测不修复（需用户决策）。
-   * backgroundProvider 未注入或 Agent 未初始化时返回 skippedReason 报告，不抛错。
-   *
-   * v2 PROXY-1 闭环 + FIX-P1-3 收尾：sourceHealth / suggest / detectConflicts
-   * 三件套均由 Agent 直接委托 advisor，不再经 MemoryInspector 转发。
-   *
-   * @param signal 可选的 AbortSignal
-   * @returns 冲突报告（扫描数 / 冲突数 / 冲突详情列表 / 跳过原因）
-   */
-  /**
-   * @deprecated 使用 agent.governance.detectConflicts() 替代
-   */
-  async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
-    return this._governance?.detectConflicts(signal) ?? {
-      scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'Agent 未初��化',
-    };
   }
 
   /**

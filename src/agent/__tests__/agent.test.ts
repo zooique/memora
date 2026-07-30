@@ -555,7 +555,7 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    const results = agent.suggest();
+    const results = agent.governance!.suggest();
     expect(Array.isArray(results)).toBe(true);
     for (const hit of results) {
       expect(hit).toHaveProperty('name');
@@ -584,7 +584,7 @@ describe('Agent · Manager 委托模式', () => {
     });
 
     // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    const results = agent.suggest('TypeScript');
+    const results = agent.governance!.suggest('TypeScript');
     expect(results.length).toBeGreaterThan(0);
     // 搜索命中的应排在前面
     const firstHit = results[0]!;
@@ -597,7 +597,7 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    const results = agent.suggest(undefined, {
+    const results = agent.governance!.suggest(undefined, {
       excludeSources: ['insight', 'profile', 'work-projection', 'persona', 'rule', 'skill'],
       limit: 10,
     });
@@ -610,7 +610,7 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
-    const results = agent.suggest(undefined, { limit: 2 });
+    const results = agent.governance!.suggest(undefined, { limit: 2 });
     expect(results.length).toBeLessThanOrEqual(2);
   });
 
@@ -634,7 +634,8 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // 委托到 MemoryInspector.deduplicateMemories，未注入 backgroundProvider 时降级
-    const report = await agent.deduplicateMemories();
+    // MIND2-D4：从 agent.deduplicateMemories() 迁移到 governance.deduplicate()
+    const report = await agent.governance!.deduplicate();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('pairCount');
     expect(report).toHaveProperty('deduplicatedCount');
@@ -649,7 +650,8 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // 委托到 MemoryDecayScheduler.evaluateTimeliness，未注入 backgroundProvider 时降级
-    const report = await agent.evaluateTimeliness();
+    // MIND2-D4：从 agent.evaluateTimeliness() 迁移到 governance.evaluateTimeliness()
+    const report = await agent.governance!.evaluateTimeliness();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('outdatedCount');
     expect(report).toHaveProperty('demotedIds');
@@ -663,7 +665,8 @@ describe('Agent · Manager 委托模式', () => {
 
     // v2 PROXY-1 闭环：直接调用 MemoryAdvisor.detectConflicts（不经 MemoryInspector 转发），
     // 未注入 backgroundProvider 时降级返回 skippedReason
-    const report = await agent.detectConflicts();
+    // MIND2-D4：从 agent.detectConflicts() 迁移到 governance.detectConflicts()
+    const report = await agent.governance!.detectConflicts();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('pairCount');
     expect(report).toHaveProperty('conflictCount');
