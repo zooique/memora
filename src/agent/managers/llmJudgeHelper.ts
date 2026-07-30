@@ -14,6 +14,7 @@
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import { parseLlmJson } from '@/utils/json.js';
 import { configError } from '@/utils/errors.js';
+import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 /** LLM Judge 调用选项（流式 + 超时 + 取消信号） */
 export interface LlmJudgeOptions {
@@ -45,17 +46,13 @@ export async function judgeWithLlm<T extends object>(
   options: LlmJudgeOptions,
   errorTitle: string,
 ): Promise<T> {
-  let llmResponse = '';
-
-  // 流式累积模式（与 TextPolishManager / SessionArchiver 一致）
-  for await (const chunk of provider.chat(messages, {
+  // 流式累积（复用 accumulateStream 工具函数，消除重复模式）
+  const llmResponse = await accumulateStream(provider, messages, {
     maxTokens: options.maxTokens,
     temperature: 0,
     timeoutMs: options.timeoutMs,
     signal: options.signal,
-  })) {
-    if (chunk.content) llmResponse += chunk.content;
-  }
+  });
 
   // 解析 LLM 响应（JSON 格式），失败则抛 configError（统一 MemoraError 体系）
   const parsed = parseLlmJson<T>(llmResponse.trim());

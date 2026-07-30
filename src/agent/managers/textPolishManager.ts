@@ -20,6 +20,7 @@
  */
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import { logger } from '@/logging/logger.js';
+import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 /** 润色请求超时（ms），单次润色应快速完成 */
 const POLISH_TIMEOUT_MS = 15_000;
@@ -112,19 +113,15 @@ export class TextPolishManager {
 
     const messages = buildPolishMessages(truncated);
 
-    // 流式累积模式（与 WorkProjectionManager.generate / InsightExtractor.extract 一致）
+    // 流式累积模式（复用 accumulateStream 工具函数，与 WorkProjectionManager 等一致）
     let result = '';
     try {
-      for await (const chunk of this.provider.chat(messages, {
+      result = await accumulateStream(this.provider, messages, {
         maxTokens: 500,
         temperature: 0.3,
         timeoutMs: POLISH_TIMEOUT_MS,
         signal,
-      })) {
-        if (chunk.content) {
-          result += chunk.content;
-        }
-      }
+      });
     } catch (error) {
       logger.warn({ error }, '文本润色 LLM 调用失败');
       throw error;

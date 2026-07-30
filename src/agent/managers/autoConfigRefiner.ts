@@ -13,6 +13,7 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { ConfigSuggestion } from '@/agent/managers/configManager.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
+import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 /** AutoConfigRefiner 配置 */
 export interface AutoConfigRefinerOptions {
@@ -132,15 +133,10 @@ export class AutoConfigRefiner {
     ];
 
     try {
-      // 收集流式输出
-      let fullContent = '';
-      for await (const chunk of this.backgroundProvider.chat(messages, {
+      // 收集流式输出（复用 accumulateStream 工具函数）
+      const fullContent = await accumulateStream(this.backgroundProvider, messages, {
         temperature: 0.3,
-      })) {
-        if (chunk.content) {
-          fullContent += chunk.content;
-        }
-      }
+      });
 
       const parsed = parseLlmJson<RawSuggestion[] | { suggestions: RawSuggestion[] }>(
         fullContent || '[]',

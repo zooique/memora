@@ -31,6 +31,7 @@ import { getBaseName } from '@/utils/path.js';
 import { toError } from '@/utils/toError.js';
 import { parseLlmJson } from '@/utils/json.js';
 import { nowIso } from '@/utils/time.js';
+import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 /** 作品投影生成时内容截断长度（字符），控制 LLM token 消耗 */
 const CONTENT_TRUNCATE_CHARS = 3000;
@@ -244,10 +245,7 @@ export class WorkProjectionManager {
       { role: 'user', content: `# ${name}\n\n${truncated}` },
     ];
 
-    let result = '';
-    for await (const chunk of this.provider.chat(promptMessages, { maxTokens: 400 })) {
-      if (chunk.content) result += chunk.content;
-    }
+    const result = await accumulateStream(this.provider, promptMessages, { maxTokens: 400 });
 
     const parsed = parseLlmJson<{
       summary: string;

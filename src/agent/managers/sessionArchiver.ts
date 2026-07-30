@@ -33,6 +33,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
+import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 /** 会话归档结果 */
 export interface SessionArchiveResult {
@@ -190,10 +191,8 @@ ${dialogueText}
 === 会话结束 ===`;
 
     const llmMessages: Message[] = [{ role: 'user', content: summaryPrompt }];
-    let llmResponse = '';
-    for await (const chunk of this.provider.chat(llmMessages)) {
-      if (chunk.content) llmResponse += chunk.content;
-    }
+    // 流式累积（复用 accumulateStream 工具函数）
+    const llmResponse = await accumulateStream(this.provider, llmMessages);
 
     // 解析 LLM 响应
     const trimmed = llmResponse.trim();

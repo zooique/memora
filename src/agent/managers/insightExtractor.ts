@@ -24,6 +24,7 @@ import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
 import type { RelationBuilder, ConflictInfo } from '@/agent/managers/relationBuilder.js';
+import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -315,10 +316,8 @@ export class InsightExtractor {
       });
 
       const messages: Message[] = [{ role: 'user', content: extractionPrompt }];
-      let llmResponse = '';
-      for await (const chunk of this.provider.chat(messages)) {
-        if (chunk.content) llmResponse += chunk.content;
-      }
+      // 流式累积（复用 accumulateStream 工具函数）
+      const llmResponse = await accumulateStream(this.provider, messages);
 
       // 解析 LLM 响应
       const trimmedResponse = llmResponse.trim();
