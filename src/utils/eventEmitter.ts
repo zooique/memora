@@ -11,8 +11,36 @@
 import { getLogger } from '@/utils/loggerHolder.js';
 import { toError } from '@/utils/toError.js';
 
-/** Agent 事件映射表（事件名 → 事件载荷类型） */
-export interface AgentEventMap {
+/** Agent 事件名常量（运行时真理源，与下方 AgentEventMap 键集一致） */
+export const AGENT_EVENTS = {
+  memoryAdded: 'memoryAdded',
+  personaSwitched: 'personaSwitched',
+  decayCompleted: 'decayCompleted',
+  memoryRecalled: 'memoryRecalled',
+  sessionForked: 'sessionForked',
+  insightExtracted: 'insightExtracted',
+  conflictDetected: 'conflictDetected',
+  projectSwitched: 'projectSwitched',
+  skillMatched: 'skillMatched',
+  archiveFailed: 'archiveFailed',
+  contextTruncated: 'contextTruncated',
+  configReloaded: 'configReloaded',
+  guardrailError: 'guardrailError',
+  archiveModeChanged: 'archiveModeChanged',
+  personaSwitchLocked: 'personaSwitchLocked',
+  workProjectionGenerated: 'workProjectionGenerated',
+  boostPersistFailed: 'boostPersistFailed',
+  dedupCompleted: 'dedupCompleted',
+} as const;
+
+/** 事件名联合类型（由 AGENT_EVENTS 推导，单一真理源，新增事件只需在此对象加一项） */
+export type AgentEventName = keyof typeof AGENT_EVENTS;
+
+/** 运行时校验用 Set（由 AGENT_EVENTS 派生） */
+export const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_EVENTS));
+
+/** Agent 事件映射表（事件名 → 事件载荷类型），键集受 AgentEventName 约束 */
+export interface AgentEventMap extends Record<AgentEventName, unknown> {
   /** 记忆被写入存储（insight 提取、rule 注入、skill 注入等） */
   memoryAdded: { id: string; source: string; name: string };
   /** 角色被切换（自动匹配或手动指定） */
@@ -94,8 +122,7 @@ export interface AgentEventMap {
   };
 }
 
-/** 事件名联合类型 */
-export type AgentEventName = keyof AgentEventMap;
+// AgentEventName 已由上方 AGENT_EVENTS 推导（单一真理源）
 
 /** 事件处理器类型 */
 export type AgentEventHandler<T> = (event: T) => void;

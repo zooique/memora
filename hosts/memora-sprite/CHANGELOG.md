@@ -4,7 +4,9 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.5.0] - 2026-07-30
+
+> 本版本打包内核 `@zooique/memora` **2.0.2**（万物皆记忆 v2：Persona/Skill 从 SQLite 索引解耦、技能当轮实时生效；详见内核 CHANGELOG）。发版仅升宿主版本，内核独立维护、无需同步升号。
 
 ### Added
 

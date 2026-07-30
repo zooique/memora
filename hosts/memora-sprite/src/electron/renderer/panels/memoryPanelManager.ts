@@ -131,7 +131,7 @@ export class MemoryPanelManager {
   /** 洞察渲染器（统计卡片 / source 分布 / 关系摘要） */
   private insights = new InsightsRenderer();
   /** 补全统计渲染器（采纳率 / Top-1 命中率 / 事件流） */
-  private completionStats = new CompletionStatsRenderer();
+  private completionStats = new CompletionStatsRenderer(this.host);
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;

@@ -19,6 +19,9 @@
 import type { Memory } from 'memora';
 import { logger } from 'memora';
 import { MS_PER_WEEK } from '../constants.js';
+
+/** 知识缺口问题摘要截断字符数 */
+const QUESTION_SUMMARY_MAX_LEN = 30;
 import { getSourceDistribution } from './helpers.js';
 import { getSourceLabel } from '../../shared/sourceLabels.js';
 
@@ -247,7 +250,7 @@ export class PatternDetector {
         const questionText = question.content
           .replace(/[?？]/g, '')
           .trim()
-          .slice(0, 30); // 取前 30 字符作为摘要
+          .slice(0, QUESTION_SUMMARY_MAX_LEN); // 取前 N 字符作为摘要
 
         patterns.push({
           type: 'knowledge_gap',

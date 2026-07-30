@@ -26,6 +26,9 @@ import type { DetectedPattern } from './patternDetector.js';
 import type { ProactiveEngine } from './proactiveEngine.js';
 import { DEFAULT_LIST_LIMIT, MS_PER_DAY, MS_PER_HOUR } from '../constants.js';
 
+/** 记忆预览截断字符数（context 摘要，prompt 注入用） */
+const MEMORY_PREVIEW_MAX_LEN = 80;
+
 /**
  * 感知事件发射器回调集合
  *
@@ -445,8 +448,8 @@ export class PerceptionCoordinator {
       const label = mem.source === 'profile' ? '用户信息'
         : mem.source === 'insight' ? '洞察'
         : '记忆';
-      // 取 content 前 80 字作为摘要
-      const preview = mem.content.substring(0, 80);
+      // 取 content 前 N 字作为摘要（MEMORY_PREVIEW_MAX_LEN）
+      const preview = mem.content.substring(0, MEMORY_PREVIEW_MAX_LEN);
       lines.push(`- [${label}] ${mem.name}: ${preview}`);
     }
 

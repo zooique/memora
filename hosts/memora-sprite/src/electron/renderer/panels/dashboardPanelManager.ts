@@ -26,6 +26,7 @@ import type { ReviewDataPayload } from '../../preload.js';
 import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
 // Token 数量格式化纯函数（UX-12：从本文件原导出提取至 shared/numberUtils 真理源，消除与 inputAreaManager 的 K/k 大小写不一致）
 import { formatTokenCount } from '../../../shared/numberUtils.js';
+import { reportError } from '../helpers/errorHelpers.js';
 
 // Token 数量格式化函数由 shared/numberUtils.ts 提供，本模块仅消费（UX-12 术语统一）
 
@@ -211,8 +212,10 @@ export class DashboardPanelManager {
           if (result.success) {
             this.reloadMemoryListCallback?.();
           }
-        } catch {
+        } catch (err) {
+          reportError('DashboardDecay', err, 'warn');
           triggerDecayBtn.textContent = '失败';
+          this.host.showToast('触发记忆衰减失败', 'error');
         } finally {
           // 1.5 秒后恢复按钮文字和可用状态（跟踪定时器，cleanup 时统一清理）
           this.decayButtonTimer = window.setTimeout(() => {

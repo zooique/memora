@@ -18,7 +18,7 @@
 /**
  * source → 中文标签映射表
  *
- * 注意：映射表是 source 显示的"单一真理源"，新增 source 类型时同步更新。
+ * 注意：映射表是 source 显示标签的"单一真理源"（SOURCE_DISPLAY_LABELS），新增 source 类型时同步更新。
  *
  * 映射项（17 项）：
  * - profile / insight / rule / skill / guardrail / chat / file / work / memory / summary / note（11 项基础）
@@ -26,7 +26,7 @@
  *
  * 导出供 sourceColor.ts 派生 KNOWN_SOURCES（消除双真理源同步漂移风险）。
  */
-export const SOURCE_LABELS: Readonly<Record<string, string>> = {
+export const SOURCE_DISPLAY_LABELS: Readonly<Record<string, string>> = {
   profile: '个人偏好',
   insight: '洞察',
   rule: '规则',
@@ -53,5 +53,5 @@ export const SOURCE_LABELS: Readonly<Record<string, string>> = {
  * @returns 中文标签；未知 source 透传原值，避免信息丢失
  */
 export function getSourceLabel(source: string): string {
-  return SOURCE_LABELS[source] ?? source;
+  return SOURCE_DISPLAY_LABELS[source] ?? source;
 }

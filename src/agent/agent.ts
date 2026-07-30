@@ -51,7 +51,7 @@ import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
-import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
+import { TypedEventEmitter, type AgentEventMap, AGENT_EVENTS, AGENT_EVENT_SET } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
@@ -60,36 +60,7 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
-/**
- * Agent 事件名常量（编译期类型安全 + 运行时校验）
- *
- * 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致。
- * 使用此常量替代字符串字面量：拼写错误在编译期被捕获，
- * 事件改名时只需修改此对象和 AgentEventMap，无需全局搜索替换。
- */
-const AGENT_EVENTS = {
-  memoryAdded: 'memoryAdded',
-  personaSwitched: 'personaSwitched',
-  decayCompleted: 'decayCompleted',
-  memoryRecalled: 'memoryRecalled',
-  sessionForked: 'sessionForked',
-  insightExtracted: 'insightExtracted',
-  conflictDetected: 'conflictDetected',
-  projectSwitched: 'projectSwitched',
-  skillMatched: 'skillMatched',
-  archiveFailed: 'archiveFailed',
-  contextTruncated: 'contextTruncated',
-  configReloaded: 'configReloaded',
-  guardrailError: 'guardrailError',
-  archiveModeChanged: 'archiveModeChanged',
-  personaSwitchLocked: 'personaSwitchLocked',
-  workProjectionGenerated: 'workProjectionGenerated',
-  boostPersistFailed: 'boostPersistFailed',
-  dedupCompleted: 'dedupCompleted',
-} as const;
-
-/** 运行时校验用 Set（由 AGENT_EVENTS 派生，单一真理源） */
-const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_EVENTS));
+// AGENT_EVENTS / AGENT_EVENT_SET 已迁移至 utils/eventEmitter.ts（与 AgentEventMap 同处，单一真理源）
 
 // ─── Agent 门面类 ───────────────────────────────────────
 

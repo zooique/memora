@@ -810,25 +810,43 @@ function setupBusinessLogic(
   _uiManager: UIManager,
   sessionController: ReturnType<typeof createSessionOrchestrator>,
 ): void {
+  // 发送前守卫（两条发送路径共用）：流式防护 + Agent 就绪，未就绪时跳转设置面板
+  // 返回 true 表示可发送；false 表示已拦截并已提示用户
+  function guardBeforeSend(): boolean {
+    if (State.uiManager.isStreaming()) {
+      State.uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
+      return false;
+    }
+    if (!State.uiManager.isAgentReady()) {
+      State.uiManager.showToast('精灵未就绪，请先在设置面板配置 LLM', 'warning');
+      void State.uiManager.switchPanel('settings');
+      return false;
+    }
+    return true;
+  }
+
+  // 跨天切换：查看历史日期时静默切回今天 main 会话（存储层细节，不打扰用户）
+  async function ensureTodaySession(): Promise<void> {
+    const currentId = sessionController.getCurrentSessionId();
+    if (!currentId) return;
+    const todayPrefix = getLocalDate();
+    const sessionDate = currentId.slice(0, 10);
+    if (sessionDate !== todayPrefix) {
+      const todaySessionId = `${todayPrefix}-main`;
+      await sessionController.switchSession(todaySessionId);
+    }
+  }
+
   // 设置发送消息回调
   State.uiManager.onSendMessage(async () => {
     const text = State.uiManager.getUserInput();
     if (!text) return;
+    if (!guardBeforeSend()) return;
 
     // 存储最后用户输入，用于流式错误重试
     State.lastUserInput = text;
 
-    // 跨天检测：当前查看的是历史日期时，自动静默切换到今天的 main 会话
-    // 设计决策：跨天只是存储层细节，无需打扰用户确认，直接切换即可
-    const currentId = sessionController.getCurrentSessionId();
-    if (currentId) {
-      const todayPrefix = getLocalDate();
-      const sessionDate = currentId.slice(0, 10);
-      if (sessionDate !== todayPrefix) {
-        const todaySessionId = `${todayPrefix}-main`;
-        await sessionController.switchSession(todaySessionId);
-      }
-    }
+    await ensureTodaySession();
 
     // 显示用户消息
     State.uiManager.appendMessage({
@@ -844,30 +862,12 @@ function setupBusinessLogic(
 
   // 空状态示例问题回调：点击示例问题等同于用户输入并发送
   State.uiManager.onSuggestionClick(async (text) => {
-    // 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
-    if (State.uiManager.isStreaming()) {
-      State.uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
-      return;
-    }
-    // Agent 就绪守卫：与 emitSendMessage 一致，避免示例问题绕过校验导致消息残留 + 错误
-    if (!State.uiManager.isAgentReady()) {
-      State.uiManager.showToast('精灵未就绪，请先在设置面板配置 LLM', 'warning');
-      void State.uiManager.switchPanel('settings');
-      return;
-    }
+    if (!guardBeforeSend()) return;
+
     // 存储最后用户输入，用于流式错误重试
     State.lastUserInput = text;
 
-    // 跨天检测：查看历史日期时静默切换到今天 main 会话
-    const currentId = sessionController.getCurrentSessionId();
-    if (currentId) {
-      const todayPrefix = getLocalDate();
-      const sessionDate = currentId.slice(0, 10);
-      if (sessionDate !== todayPrefix) {
-        const todaySessionId = `${todayPrefix}-main`;
-        await sessionController.switchSession(todaySessionId);
-      }
-    }
+    await ensureTodaySession();
 
     // 显示用户消息
     State.uiManager.appendMessage({

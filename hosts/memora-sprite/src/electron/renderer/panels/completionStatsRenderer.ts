@@ -21,6 +21,8 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { createEl, createEmptyState } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { getCompletionMetrics, type CompletionEvent, type DailyAggregatedItem } from '../helpers/completionMetrics.js';
+import { reportError } from '../helpers/errorHelpers.js';
+import { getLocalDate } from '../../../sprite/constants.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -41,9 +43,17 @@ const DAILY_TREND_DAYS = 14;
  * 负责在 #completion-stats-bar 容器内渲染聚合统计 + 最近事件流。
  * 由 MemoryPanelManager 持有，打开面板时调用 render() 刷新数据。
  */
+/** 补全统计渲染器所需的宿主能力（跨模块关注点，由 MemoryPanelManager 注入） */
+interface CompletionStatsHost {
+  /** 显示 toast 通知（导出失败等场景反馈） */
+  showToast(message: string, type?: string, duration?: number): void;
+}
+
 export class CompletionStatsRenderer {
   /** 事件监听器跟踪器（统一管理重置按钮事件） */
   private events = new EventTracker();
+
+  constructor(private host?: CompletionStatsHost) {}
 
   /** 重置统计回调（用户点击"重置统计"按钮时触发，Controller 调 metrics.clear()） */
   private resetCallback: (() => void) | null = null;
@@ -229,13 +239,14 @@ export class CompletionStatsRenderer {
       const a = document.createElement('a');
       a.href = url;
       // 文件名含日期，便于多次导出归档
-      a.download = `memora-completion-stats-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `memora-completion-stats-${getLocalDate()}.json`;
       a.click();
       // 释放 Blob URL（避免内存泄漏）
       URL.revokeObjectURL(url);
-    } catch {
-      // 度量失败静默：不抛错、不阻塞、不影响主路径
-      // 沿用项目规则"度量不能影响功能"
+    } catch (err) {
+      // 导出失败须可观测 + 可感知：记录日志并提示用户（导出是可选度量回传，失败不应静默）
+      reportError('CompletionStatsExport', err, 'warn');
+      this.host?.showToast('统计导出失败', 'error');
     }
   }
 

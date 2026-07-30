@@ -18,4 +18,4 @@
  *   因为补全候选场景需要更短的标签（'作品' vs '作品投影'），不强制统一。
  */
 
-export { SOURCE_LABELS, getSourceLabel } from '../../../shared/sourceLabels.js';
+export { SOURCE_DISPLAY_LABELS, getSourceLabel } from '../../../shared/sourceLabels.js';

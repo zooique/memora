@@ -20,6 +20,11 @@ import type { Memory } from 'memora';
 import { logger } from 'memora';
 import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY } from './constants.js';
 
+/** 离开期间召回的最近记忆条数上限 */
+const RECENT_MEMORY_LIMIT = 5;
+/** 召回摘要中展示的命名记忆条数上限 */
+const RECALL_NAME_LIMIT = 3;
+
 /**
  * 记忆列表查询器签名
  *
@@ -85,7 +90,7 @@ export class WelcomeBackRecaller {
           const createdMs = new Date(m.createdAt).getTime();
           return createdMs >= awaySinceMs;
         })
-        .slice(0, 5);
+        .slice(0, RECENT_MEMORY_LIMIT);
 
       // 离开期间无新记忆则不提示（避免提示无关的旧记忆）
       if (recentMemories.length === 0) {
@@ -108,8 +113,8 @@ export class WelcomeBackRecaller {
       // 第一人称文案：体现精灵主动感知（presenceController 检测离开 + 记忆系统主动归档）
       const names = recentMemories
         .map((m) => m.name)
-        .filter((n) => n.length > 0)
-        .slice(0, 3);
+          .filter((n) => n.length > 0)
+          .slice(0, RECALL_NAME_LIMIT);
       const nameList = names.length > 0 ? `（${names.join('、')}）` : '';
       const summary = `我注意到你离开了 ${durationText}，期间我整理了 ${recentMemories.length} 条新记忆${nameList}`;
 

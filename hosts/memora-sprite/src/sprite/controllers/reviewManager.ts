@@ -16,6 +16,9 @@
 // STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryController 形成运行时循环依赖）
 import type { MemoryListItem, DashboardData } from './memoryController.js';
 import { MS_PER_DAY } from '../constants.js';
+
+/** 最近洞察展示条数 */
+const RECENT_INSIGHTS_LIMIT = 5;
 // formatDateKey 格式化日期为本地时区 YYYY-MM-DD（ADR-017 枝叶层 2 次提取）
 import { formatDateKey } from '../../shared/dateUtils.js';
 
@@ -225,7 +228,7 @@ function buildInsightSummary(allMemories: MemoryListItem[]): InsightSummary {
     const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return tb - ta;
   });
-  const recent = sortedInsights.slice(0, 5).map((m) => ({
+  const recent = sortedInsights.slice(0, RECENT_INSIGHTS_LIMIT).map((m) => ({
     name: m.name,
     contentPreview: m.contentPreview,
     createdAt: m.createdAt || '',
