@@ -1,12 +1,12 @@
 ---
 alwaysApply: false
-description: 存储层抽象：IMemoryStorage 接口 + 零 native 依赖内核
+description: 存储层抽象：IMemoryStorage 接口 + Node.js 专属 + 零第三方依赖内核
 ---
 
-# ADR-002 · 存储层抽象：IMemoryStorage 接口 + 零 native 依赖内核
+# ADR-002 · 存储层抽象：IMemoryStorage 接口 + Node.js 专属 + 零第三方依赖内核
 
-> **状态**：✅ 已实施 **日期**：2026-06-11 **版本**：v0.7（2026-07-08 补充 Logger 懒初始化）
-> **变更原因**：memora 定位为纯逻辑库——零 native 依赖，SqliteStorage/CLI 移出至宿主项目
+> **状态**：✅ 已实施 **日期**：2026-06-11 **版本**：v0.9（2026-07-30 定位定论：Node.js 专属 + 零第三方依赖）
+> **变更原因**：memora 定位为 Node.js 专属纯逻辑库——零第三方运行时依赖，依赖 Node.js 内置模块（fs/path/os/crypto 等），SqliteStorage/CLI 移出至宿主项目
 > **播种批次**：Memora 模式 A v1
 > **来源**：项目决策表 §二（历史文档已归档）
 
@@ -31,6 +31,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | v0.6 | 2026-06-10 | **移除全局路径硬编码**                   | 内核零硬编码路径，全局配置由宿主通过 configDir 管理 |
 | v0.7 | 2026-06-11 | **SqliteStorage 移出内核 + CLI 移出**    | 零 native 依赖，测试全量 InMemoryStorage         |
 | v0.8 | 2026-07-17 | **移除 zod 依赖**                        | 真正零依赖内核：zod 仅用于 37 处基础校验，替换为纯 TS 手写校验 |
+| v0.9 | 2026-07-30 | **定位定论：Node.js 专属 + 零第三方依赖** | 标题与正文对齐：承认依赖 Node.js 内置模块（fs/path/os/crypto），"零依赖"精确化为"零第三方运行时依赖"，消除"内核可脱离 node"的伪可移植性表述。详见 §定位定论（v0.9） |
 
 > v0.1 版本（better-sqlite3 + sqlite-vec 统一索引表）已被本文替代，v0.2 记录已合并到本文版本历史。
 
@@ -303,6 +304,51 @@ export function setLogger(custom: ILogger | undefined): void {
 **定位结论**：memora 内核是 **Node.js 专用纯逻辑库**（零 native 编译依赖，但依赖 Node.js 运行时 API）。"浏览器可 import"不是内核目标，仅在 logger 等纯逻辑模块层面实现。宿主项目（如 memora-sprite）若需浏览器侧能力，应通过 IPC 委托给 Node.js 主进程。
 
 **与原"零 native 依赖内核"目标的关系**：零 native 依赖目标仍然成立（better-sqlite3/electron/commander 等编译型/native 模块不进入内核），但"纯 JS 工具库"的范围明确为"Node.js 纯 JS"，不包括"浏览器纯 JS"。
+
+## 定位定论（v0.9，2026-07-30）
+
+> **来源**：第二次心智模型审计 · 内核零依赖问题系统化评审
+> **决策者**：用户确认接受"内核永远只在 Node 环境跑"定位
+
+### 背景
+
+v0.7~v0.8 的"零 native 依赖内核"表述在实施中暴露语义混淆：
+- **约束与实际脱节**——ADR 标题声称"零依赖"，但 12 个生产文件依赖 node:* 内置模块。约束本身错了（无浏览器消费者），导致 12 个文件成了"伪违反"
+- **催生补丁代码**——[logger.ts:172-173](file:///f:/zooique/memora/src/logging/logger.ts#L172-L173) 用动态 `await import('node:path'/'node:fs')` 规避静态分析，这是"约束与实际脱节"的产物
+- **掩盖真实价值**——"零第三方运行时依赖"（dependencies 为空）是真正有价值的约束，但被"零依赖"泛化表述掩盖
+
+### 决策
+
+**约束语义精确化**——从"零依赖内核"修正为"**Node.js 专属 + 零第三方运行时依赖**"：
+
+| 约束项 | 状态 | 说明 |
+|--------|------|------|
+| ✅ 依赖 `node:*` 内置模块 | 合法 | fs/path/os/crypto/http 等 Node.js 运行时 API，是 Node.js 专属内核的正常依赖 |
+| ✅ 可选 peerDep（pino） | 合法 | 通过动态 import 加载，宿主不装则 fallback 到 console |
+| ❌ 第三方运行时依赖 | 禁止 | `dependencies` 字段保持为空，保持内核纯净 |
+| ❌ native 编译模块 | 禁止 | better-sqlite3/electron 等需 C++ 编译的模块不进入内核 |
+| ❌ 宿主专属 API | 禁止 | Electron、browser API 等环境专属 API 不进入内核 |
+
+### 定论要点
+
+1. **承认依赖 Node.js 运行时**——所有宿主（Electron/CLI/Web 调试通道）都是 Node 环境，脱离 node 无实际消费者
+2. **保留"零第三方依赖"约束**——这是真正有价值的约束，保持 `dependencies` 为空
+3. **消除"内核可脱离 node"的伪可移植性表述**——不再为不存在的浏览器消费者预做接口化
+4. **logger.ts 动态 import 策略调整**——node:path/node:fs 改为静态 import（Node 内置模块永远可用），仅 pino 保持动态 import（可选 peerDep 语义需要）
+
+### 触发重新评估的条件
+
+以下任一条件出现时，本定论需重新评估：
+- 出现真实的浏览器直接运行 memora 内核需求（非通过宿主 Web 调试通道）
+- 出现非 Node 环境的宿主（如 Deno/Bun 原生运行，不通过 Node 兼容层）
+
+当前阶段（v1.0.2 收敛期）不满足任何条件，本定论锁定。
+
+### 与原"零 native 依赖"目标的关系
+
+- **保留**：better-sqlite3/electron/commander 等 native/编译型模块不进入内核（v0.7 决策不变）
+- **修正**：node:fs/path/os/crypto 等纯 JS 内置模块是合法依赖（v0.9 明确）
+- **放弃**："内核可脱离 node"的伪可移植性目标（无实际消费者，约束与实际脱节）
 
 ## 何时回顾
 
