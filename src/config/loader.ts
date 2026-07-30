@@ -194,13 +194,11 @@ const DEFAULT_CONFIG: Config = {
  * @throws 当类型不匹配时抛出错误
  */
 function parseConfig(raw: unknown): Config {
-  // 如果 raw 不是对象，使用空对象
-  const input = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
+  // 如果 raw 不是对象，使用空对象（MIND-C2：守卫+断言合一为 asRecordIfObject）
+  const input = asRecordIfObject(raw);
 
   // 解析 llm 配置
-  const llmInput = (input.llm && typeof input.llm === 'object' && !Array.isArray(input.llm))
-    ? input.llm as Record<string, unknown>
-    : {};
+  const llmInput = asRecordIfObject(input.llm);
 
   const llm: LlmConfig = {
     provider: typeof llmInput.provider === 'string' ? llmInput.provider : DEFAULT_CONFIG.llm.provider,
@@ -215,9 +213,7 @@ function parseConfig(raw: unknown): Config {
   };
 
   // 解析 memory 配置
-  const memoryInput = (input.memory && typeof input.memory === 'object' && !Array.isArray(input.memory))
-    ? input.memory as Record<string, unknown>
-    : {};
+  const memoryInput = asRecordIfObject(input.memory);
 
   const memory: MemoryConfig = {
     dataDir: typeof memoryInput.dataDir === 'string' ? memoryInput.dataDir : DEFAULT_CONFIG.memory.dataDir,
@@ -227,9 +223,7 @@ function parseConfig(raw: unknown): Config {
   };
 
   // 解析 security 配置
-  const securityInput = (input.security && typeof input.security === 'object' && !Array.isArray(input.security))
-    ? input.security as Record<string, unknown>
-    : {};
+  const securityInput = asRecordIfObject(input.security);
 
   const security: SecurityConfig = {
     permission: validatePermission(securityInput.permission),
@@ -253,6 +247,21 @@ function parseConfig(raw: unknown): Config {
     persona,
     embedding,
   };
+}
+
+/**
+ * 类型守卫辅助：非空对象 → Record，否则 → 空对象
+ *
+ * 收紧 MIND-C2 的 8 处 `as Record<string, unknown>` 隐式断言：
+ * 守卫与断言合一，避免守卫变更时编译器不报警的类型安全风险。
+ *
+ * @param value 待收窄的值
+ * @returns 非空对象返回 value as Record；否则返回空对象 {}
+ */
+function asRecordIfObject(value: unknown): Record<string, unknown> {
+  return (value && typeof value === 'object' && !Array.isArray(value))
+    ? value as Record<string, unknown>
+    : {};
 }
 
 /**
