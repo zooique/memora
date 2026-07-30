@@ -18,12 +18,24 @@ import type {
   RelationNeighbor,
 } from '../../types.js';
 import type { RelationGraphData } from '../../components/relationGraph.js';
+// MemorySection 类型：记忆面板区块标识（list/timeline/graph/insights/health/completion-stats/partner-insights）
+import type { MemorySection } from '../../helpers/memoryViewSwitcher.js';
 
 /** Memory 委托群方法签名（供 UIManager interface extends 类型合并） */
 export interface MemoryDelegations {
   dismissMemoryAnalysisPanels(): void;
   /** 进入记忆面板时确保当前激活区块视图可见 */
   activateMemoryPanelView(): void;
+  /**
+   * 切换记忆面板当前激活区块（MIND2-D5：消除跨面板 DOM 耦合）
+   *
+   * 原由 commandPaletteManager 直接 `document.querySelector('.memory-rail-item[data-section="..."]').click()`
+   * 操作 MemoryPanel 管辖的 DOM。现统一收口到 MemoryPanelManager.setSection，
+   * 外部通过此委托触发，避免跨面板 DOM 耦合（违反 §2.1「逻辑被 UI 绑架」）。
+   *
+   * @param section 目标区块（list/timeline/graph/insights/health/completion-stats/partner-insights）
+   */
+  setMemorySection(section: MemorySection): void;
   renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void;
   /**
    * 半乐观局部移除记忆项（避免全量 loadMemoryList 触发闪烁）
@@ -87,6 +99,10 @@ export const memoryDelegations: MemoryDelegations = {
   },
   activateMemoryPanelView(this: UIManager): void {
     this.memoryCoordinator.memoryPanel.ensureActiveSectionVisible();
+  },
+  setMemorySection(this: UIManager, section: MemorySection): void {
+    // MIND2-D5：委托到 MemoryPanelManager.setSection，避免跨面板 DOM 耦合
+    this.memoryCoordinator.memoryPanel.setSection(section);
   },
   renderMemoryList(this: UIManager, memories: MemoryListItem[], searchQuery?: string): void {
     this.memoryCoordinator.memoryPanel.renderMemoryList(memories, searchQuery);

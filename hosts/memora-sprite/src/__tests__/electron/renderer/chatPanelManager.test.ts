@@ -74,6 +74,8 @@ function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
     getArchiveMode: vi.fn(() => 'full' as const),
     // 忘记操作二次确认（默认直接确认）
     showConfirmDialog: vi.fn(async () => true),
+    // MIND2-D5：里程碑 banner 触发时给 dashboard 导航按钮加 pulse 高亮（委托到 PanelRouter）
+    pulseNavButton: vi.fn(),
     ...overrides,
   };
 }

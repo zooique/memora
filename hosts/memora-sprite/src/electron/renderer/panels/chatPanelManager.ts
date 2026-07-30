@@ -129,6 +129,15 @@ export interface ChatPanelHost {
    * @returns 用户是否点击确认
    */
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
+  /**
+   * 给指定面板导航按钮添加 pulse 高亮（MIND2-D5：消除跨面板 DOM 耦合）
+   *
+   * 里程碑触发时让 dashboard 导航按钮高亮，提示用户有新成就可查看。
+   * 委托给 PanelRouter.pulseNavButton，避免直接操作其他面板的 DOM。
+   *
+   * @param panel 目标面板名（如 'dashboard'）
+   */
+  pulseNavButton(panel: string): void;
 }
 
 // ─── 聊天面板管理器类 ─────────────────────────────────────
@@ -488,13 +497,8 @@ export class ChatPanelManager {
 
     // P1-3 用户体验打磨：里程碑触发时给 dashboard 导航按钮加 pulse 高亮，
     // 让用户知道仪表盘有新成就可查看（跨面板信息可见性）。
-    // 直接操作 DOM 避免引入事件总线（v2 不新增架构）。
-    const dashboardNav = document.querySelector('.nav-btn[data-panel="dashboard"]');
-    if (dashboardNav instanceof HTMLElement) {
-      dashboardNav.classList.add('pulse-highlight');
-      // 500ms 后移除高亮类（与 CSS 动画时长一致）
-      window.setTimeout(() => dashboardNav.classList.remove('pulse-highlight'), 500);
-    }
+    // MIND2-D5：委托给 PanelRouter.pulseNavButton，消除跨面板 DOM 耦合
+    this.host.pulseNavButton('dashboard');
   }
 
   /**

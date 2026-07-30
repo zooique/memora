@@ -194,4 +194,22 @@ export class PanelRouter {
       void this.switchPanel(panel);
     }
   }
+
+  /**
+   * 给指定面板的导航按钮添加 pulse 高亮动画（MIND2-D5：消除跨面板 DOM 耦合）
+   *
+   * 原由 chatPanelManager 直接 `document.querySelector('.nav-btn[data-panel="dashboard"]')`
+   * 操作 PanelRouter 管辖的 DOM。现统一收口到 PanelRouter，外部通过此方法触发，
+   * 避免跨面板 DOM 耦合（违反 §2.1「逻辑被 UI 绑架」）。
+   *
+   * @param panel 目标面板名（如 'dashboard'）
+   */
+  pulseNavButton(panel: string): void {
+    const navBtn = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
+    if (navBtn instanceof HTMLElement) {
+      navBtn.classList.add('pulse-highlight');
+      // 500ms 后移除高亮类（与 CSS 动画时长一致）
+      window.setTimeout(() => navBtn.classList.remove('pulse-highlight'), 500);
+    }
+  }
 }
