@@ -757,6 +757,12 @@ export interface ElectronAPI {
    * - 无新版/请求失败 → 静默返回，由调用方做 toast 反馈
    */
   checkUpdate: () => Promise<{ hasUpdate: boolean; reason?: string; current?: string; remote?: string; error?: string }>;
+  /**
+   * 打开 GitHub Releases 页面（用户手动判别版本）
+   * 替代 checkUpdate 的回退方案：公司代理/隐私环境下 api.github.com 不可达，
+   * 此接口绕开网络调用直接跳转到 releases 页面。
+   */
+  openReleasesUrl: () => Promise<{ url: string }>;
   /** 应用版本号（由主进程 additionalArguments 注入，非 IPC 调用） */
   appVersion: string;
   /**
@@ -1248,6 +1254,8 @@ const electronAPI: ElectronAPI = {
   openConfigDir: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_DIR_OPEN),
   /** 检查应用更新（主进程完成 fetch + 比对 + dialog + openExternal 全流程） */
   checkUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.CHECK_UPDATE),
+  /** 打开 GitHub Releases 页面（不调网络 API，纯浏览器跳转） */
+  openReleasesUrl: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_RELEASES_URL),
 
   // 设定文件变更监听设定文件变更广播监听（与 onClipboardChanged 模式一致）
   onConfigFilesChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CONFIG_FILES_CHANGED, (_: IpcRendererEvent, payload: ConfigFilesChangedPayload) => cb(payload)),

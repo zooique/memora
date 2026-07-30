@@ -420,33 +420,17 @@ export class SettingsPanelManager {
       });
     }
 
-    // 检查更新按钮：点击后调用主进程检查 GitHub Releases，根据结果做 toast 反馈
+    // 查看更新按钮：点击直接跳转到 GitHub Releases 页面（绕过 api.github.com fetch）
+    // 原因：企业代理/隐私环境下 fetch GitHub API 失败（TLS 证书或网络拦截），
+    // 此方案不调 API，让用户自己在浏览器中比较当前版本与最新版本号。
+    // 主进程 checkUpdate IPC（fetch + 版本比对 + dialog）保留备用——
+    // 未来如恢复使用仅需将本点击回调切回 checkUpdate，无需改 IPC/主进程。
     if (btnCheckUpdate) {
       this.events.addEventListener(btnCheckUpdate, 'click', () => {
-        void (async () => {
-          // 异步期间禁用按钮 + 显示"检查中…"，防止重复点击
-          setButtonLoadingEl(btnCheckUpdate, true, '检查中…');
-          try {
-            const result = await window.electronAPI.checkUpdate();
-            if (result.hasUpdate) {
-              // 有新版时主进程已弹 dialog，这里不再重复提示
-              // dialog 关闭后用户可能已前往下载，静默处理
-            } else if (result.reason === 'up-to-date') {
-              this.host.showToast(`当前已是最新版本（${result.current}）`, 'success');
-            } else if (result.reason === 'timeout' || result.reason === 'network' || result.reason === 'error') {
-              // 主进程已弹 dialog 提供"前往下载页"选项，renderer 不再重复 toast 错误
-              // 避免双重反馈（与 archiveButtonManager UX-REVIEW-09 同原则）
-            } else {
-              // no-release / invalid-tag → API 异常或尚无 Release
-              this.host.showToast('未能获取版本信息，请稍后重试', 'info');
-            }
-          } catch (error) {
-            reportError('checkUpdate', error);
-            this.host.showToast('检查更新失败，请检查网络连接', 'error');
-          } finally {
-            setButtonLoadingEl(btnCheckUpdate, false);
-          }
-        })();
+        void window.electronAPI.openReleasesUrl().catch((err: unknown) => {
+          reportError('openReleasesUrl', err);
+          this.host.showToast('打开更新页面失败', 'error');
+        });
       });
     }
 

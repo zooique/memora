@@ -346,8 +346,26 @@
 .settings-actions-buttons {
   display: flex;
   justify-content: flex-end;
+  align-items: center; /* 让 chip 与按钮垂直居中 */
   gap: var(--gap-compact);
   margin-left: auto; /* 推到右侧 */
+}
+
+/* 版本号 chip：胶囊样式与按钮视觉协调，使用 surface1+surface2 边框与按钮形成对比 */
+.settings-version-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2-5);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  font-style: normal;
+  color: var(--text-2);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  user-select: text;
+  cursor: default;
 }
 
 /* ─── 保存状态指示器（emoji 字符已替换为 SVG sprite 图标） ─── */

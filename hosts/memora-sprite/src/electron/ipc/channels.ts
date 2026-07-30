@@ -304,6 +304,8 @@ export const IPC_CHANNELS = {
   // ─── 应用更新 ───────────────────────────────────────
   /** 渲染进程 → 主进程：检查应用更新（fetch GitHub Releases API + 版本比对 + dialog 提示） */
   CHECK_UPDATE: 'check-update',
+  /** 渲染进程 → 主进程：直接打开 GitHub Releases 页面（不调 API，用户手动判别版本） */
+  OPEN_RELEASES_URL: 'open-releases-url',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */

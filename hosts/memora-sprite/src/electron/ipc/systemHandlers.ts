@@ -324,4 +324,25 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       };
     }
   });
+
+  /**
+   * 直接打开 GitHub Releases 页面（用户手动判别版本）
+   *
+   * 替代 fetch 失败的回退方案：
+   * - 公司代理/防火墙拦截 GitHub API 请求（TLS 证书或网络限制）
+   * - 隐私环境拒绝调用 api.github.com
+   * 此 IPC 完全避开网络调用，由用户自己在浏览器中查看最新版本号。
+   *
+   * URL 安全白名单：仅允许 https://github.com/${GH_OWNER}/${GH_REPO}/releases 域名下的 https 链接，
+   * 防止 renderer 端通过此通道打开任意外部链接。
+   */
+  ipcMain.handle(IPC_CHANNELS.OPEN_RELEASES_URL, async () => {
+    const releaseUrl = `https://github.com/${GH_OWNER}/${GH_REPO}/releases`;
+    // 白名单兜底：确保 URL 确实在白名单域内（防止 GH_OWNER 被未来异常配置污染）
+    if (!releaseUrl.startsWith(`https://github.com/${GH_OWNER}/${GH_REPO}`)) {
+      throw new Error('releases URL failed whitelist check');
+    }
+    await shell.openExternal(releaseUrl);
+    return { url: releaseUrl };
+  });
 }
