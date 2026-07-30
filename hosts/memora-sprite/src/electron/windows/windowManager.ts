@@ -14,7 +14,7 @@
 
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
-import { BrowserWindow, ipcMain, app } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { applyWindowSecurity } from './windowSecurity.js';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
@@ -23,6 +23,10 @@ import { injectThemeScript } from './themeInjector.js';
 import { errorHandler, ErrorCode, SpriteError } from '../errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
+import spritePackage from '../../../package.json' with { type: 'json' };
+
+/** Sprite 应用版本号（package.json 注入，区别于 Electron 自身的 process.versions.electron） */
+const SPRITE_VERSION = spritePackage.version;
 
 /** 完整窗口最小尺寸：侧边栏 240px + 主内容区至少 400px = 640px；高度 480px 保证核心内容可见 */
 const FULL_WINDOW_MIN_WIDTH = 640;
@@ -140,8 +144,10 @@ export class WindowManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
-        // 传递应用版本号到 preload（renderer 通过 window.electronAPI.appVersion 读取）
-        additionalArguments: [`app-version=${app.getVersion()}`],
+        // 传递应用版本号到 preload（renderer 通过 window.electronAPI.appVersion 读取）。
+        // 用 sprite 的 package.json 而非 Electron 自身的 process.versions.electron，
+        // 让帮助面板的"关于"显示用户应感知的产品版本（如 1.5.0），而非 Electron 运行时版本（如 40.10.6）。
+        additionalArguments: [`app-version=${SPRITE_VERSION}`],
       },
     });
 

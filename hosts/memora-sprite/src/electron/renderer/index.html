@@ -214,7 +214,7 @@
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
       <!-- 顶部高频区：对话 / 记忆 / 设定 / 剪贴板（工作区 + 设定管理 + 辅助操作型面板） -->
       <nav class="sidebar-nav sidebar-nav-top flex-shrink-0" aria-label="主导航">
-        <button class="nav-btn active" data-panel="chat" aria-label="对话面板">
+        <button class="nav-btn active" data-panel="chat" aria-label="对话" data-tooltip="对话">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
         <button class="nav-btn" data-panel="memories" aria-label="记忆" data-tooltip="记忆">
@@ -1145,22 +1145,11 @@
             </div>
           </div>
 
-          <!-- 关于分区（应用版本 + 检查更新） -->
+          <!-- 关于分区（应用版本显示；检查更新按钮已移动到 settings-actions 底部按钮排，避免与 FAQ 文档混杂） -->
           <div class="settings-group">
             <h3>关于</h3>
             <div class="settings-row">
               <span class="settings-hint">版本：<span id="app-version">—</span></span>
-              <button id="btn-check-update" class="btn-secondary" type="button" title="检查是否有新版本">检查更新</button>
-            </div>
-          </div>
-
-          <!-- 高级操作区（应急恢复按钮与帮助文档同区，降低误触） -->
-          <div class="settings-group">
-            <h3>高级</h3>
-            <p class="settings-hint">以下操作为应急恢复手段，仅在对话卡死且停止按钮无效时使用。</p>
-            <div class="settings-row">
-              <!-- 强制释放对话锁（应急恢复，对话卡死且停止按钮无效时使用） -->
-              <button id="btn-force-release-lock" class="btn-danger" title="当对话卡死且停止按钮无效时使用">强制释放锁</button>
             </div>
           </div>
         </div>
@@ -1180,6 +1169,10 @@
             <span class="save-status-text"></span>
           </div>
           <div class="settings-actions-buttons">
+          <!-- 强制释放对话锁（应急恢复，对话卡死且停止按钮无效时使用） -->
+          <button id="btn-force-release-lock" class="btn-danger" title="当对话卡死且停止按钮无效时使用">强制释放锁</button>
+          <!-- 检查更新按钮（从帮助面板的"关于"分区移出，统一放在底部按钮排） -->
+          <button id="btn-check-update" class="btn-secondary" type="button" title="检查是否有新版本">检查更新</button>
           <!-- 恢复默认按钮，重置所有配置（危险操作，使用 btn-danger 警示） -->
           <button id="btn-settings-reset" class="btn-danger">恢复精灵默认</button>
           <!-- 主操作按钮（btn-primary，作为底部按钮行的主操作区分） -->
