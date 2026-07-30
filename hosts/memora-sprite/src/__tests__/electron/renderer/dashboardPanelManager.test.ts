@@ -28,6 +28,7 @@ import { formatTokenCount } from '../../../shared/numberUtils.js';
 import type {
   AgentMetrics,
   DashboardViewModel,
+  DashboardPanelHost,
 } from '../../../electron/renderer/panels/dashboardPanelManager.js';
 import type { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
 import { EventTracker as EventTrackerImpl } from '../../../electron/renderer/helpers/eventTracker.js';
@@ -73,11 +74,16 @@ const DASHBOARD_HTML = `
   </section>
 `;
 
+/** 测试用宿主桩（DashboardPanelHost：仅 showToast，由 UIManager 在生产注入） */
+function createMockHost(): DashboardPanelHost {
+  return { showToast: vi.fn() };
+}
+
 /** 创建 DashboardPanelManager 实例（默认已设置 DOM） */
 function createManager(opts?: { html?: string }): { manager: DashboardPanelManager; events: EventTracker } {
   document.body.innerHTML = opts?.html ?? DASHBOARD_HTML;
   const events = new EventTrackerImpl();
-  const manager = new DashboardPanelManager(events);
+  const manager = new DashboardPanelManager(events, createMockHost());
   return { manager, events };
 }
 
@@ -457,7 +463,7 @@ describe('renderReviewData · 增长趋势', () => {
   it('DOM 容器缺失时应静默跳过（不抛错）', () => {
     document.body.innerHTML = '';
     const events = new EventTrackerImpl();
-    const manager = new DashboardPanelManager(events);
+    const manager = new DashboardPanelManager(events, createMockHost());
     // 不应抛错
     expect(() => manager.renderReviewData(createReviewData())).not.toThrow();
   });

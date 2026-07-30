@@ -366,7 +366,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 感知/仪表盘域协调器（3 字段集中初始化）
     this.perceptionCoordinator = new PerceptionCoordinator();
     // 仪表盘面板管理器（感知系统 + 仪表盘渲染）
-    this.perceptionCoordinator.dashboardPanel = new DashboardPanelManager(new EventTracker());
+    this.perceptionCoordinator.dashboardPanel = new DashboardPanelManager(new EventTracker(), this);
     // 感知面板管理器（独立感知面板，完整版感知数据展示）
     this.perceptionCoordinator.perceptionPanel = new PerceptionPanelManager(this as PerceptionPanelHost);
     // 精灵状态浮层（hover 弹出轻量感知摘要）

@@ -188,6 +188,8 @@ export class DashboardPanelManager {
   constructor(
     /** 事件监听器跟踪器（统一管理重试按钮事件，避免内存泄漏） */
     private events: EventTracker,
+    /** 宿主能力（showToast 跨模块关注点，由 UIManager 注入；UIManager 已实现 DashboardPanelHost） */
+    private host: DashboardPanelHost,
   ) {
     // 缓存渲染方法中重复查询的 DOM 元素（仪表盘 HTML 模板在页面加载时已存在）
     // 增长趋势区块 DOM 元素缓存

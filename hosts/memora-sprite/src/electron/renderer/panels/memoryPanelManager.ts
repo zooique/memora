@@ -131,7 +131,7 @@ export class MemoryPanelManager {
   /** 洞察渲染器（统计卡片 / source 分布 / 关系摘要） */
   private insights = new InsightsRenderer();
   /** 补全统计渲染器（采纳率 / Top-1 命中率 / 事件流） */
-  private completionStats = new CompletionStatsRenderer(this.host);
+  private completionStats!: CompletionStatsRenderer;
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;
@@ -201,7 +201,10 @@ export class MemoryPanelManager {
     private memoryDetailModal: HTMLElement | null,
     /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
     private events: EventTracker,
-  ) {}
+  ) {
+    // 参数属性（host）在字段初始化器之后才赋值，故子渲染器在此处初始化，确保 host 已就绪
+    this.completionStats = new CompletionStatsRenderer(this.host);
+  }
 
   // ─── 资源清理 ──────────────────────────────────────────
 
