@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM"],
     "outDir": "./dist-electron",
+    "rootDir": "./src",
     "declaration": false,
     "sourceMap": true
   },

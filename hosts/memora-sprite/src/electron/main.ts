@@ -24,6 +24,11 @@
 //       必须紧跟在第一条 import 之后、任何其他模块加载之前执行
 import { app, ipcMain, screen, globalShortcut, powerMonitor, clipboard, Notification } from 'electron';
 app.commandLine.appendSwitch('console-utf8');
+// 启用系统根证书作为 TLS 可信 CA：企业内部代理/防火墙常用自签根证书，
+// Node.js 默认 CA bundle 不包含；此开关让 main 进程 fetch() / ws / tls 模块
+// 都使用系统证书库，解决"unable to verify the first certificate"导致检查更新失败。
+// 注意：仅影响 Node.js 客户端；Chromium network stack（preload/渲染进程）不受此开关影响。
+app.commandLine.appendSwitch('use-system-ca');
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';

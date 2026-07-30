@@ -283,20 +283,33 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       // （显式传 UNKNOWN 会覆盖推断，导致 code 误报为 UNKNOWN）
       errorHandler.handle(error, { context: '检查更新失败' });
 
-      // 错误分类：区分超时/网络，供 renderer 给用户更精准的提示
+      // 错误分类：区分超时/网络/证书，供 renderer 给用户更精准的提示
       const err = toError(error);
       const isTimeout = err.name === 'AbortError';
-      const isNetwork = err.name === 'TypeError' || err.message.includes('fetch');
+      // TLS 证书错误：Node.js fetch 包装错误为 TypeError 时，cause.message 含 'unable to verify' / 'certificate'
+      const causeMsg = (err.cause as { message?: string } | undefined)?.message ?? '';
+      const isCertError = causeMsg.includes('unable to verify') || causeMsg.includes('certificate');
+      const isNetwork = !isTimeout && (err.name === 'TypeError' || err.message.includes('fetch'));
 
-      // 网络失败时弹 dialog 提供"前往下载页"选项——api.github.com 国内不可达是常见情况，
+      // 失败时弹 dialog 提供"前往下载页"选项——api.github.com 国内或企业代理环境下不可达是常见情况，
       // 让用户能直接打开 releases 页面手动查看，而非只看到 toast 提示束手无策
+      let detail: string;
+      let message: string;
+      if (isTimeout) {
+        message = '检查更新超时';
+        detail = `连接 GitHub API 超时（10 秒）。请检查网络或稍后重试。\n\n也可直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`;
+      } else if (isCertError) {
+        message = 'TLS 证书验证失败';
+        detail = `无法验证 GitHub API 服务器证书，可能是企业代理/防火墙自签根证书未被系统信任。\n\n可尝试：\n• 将企业代理根证书添加到系统受信 CA 库（推荐由 IT 协助）\n• 在「系统设置 → 代理」中配置代理并指向可达网关\n• 直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`;
+      } else {
+        message = '网络连接失败';
+        detail = `无法连接 GitHub API（可能是网络限制或 DNS 问题）。\n\n可尝试：\n• 配置代理后重试\n• 直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`;
+      }
       const { response } = await dialog.showMessageBox({
         type: 'warning',
         title: '检查更新失败',
-        message: isTimeout ? '检查更新超时' : '网络连接失败',
-        detail: isTimeout
-          ? `连接 GitHub API 超时（10 秒）。请检查网络或稍后重试。\n\n也可直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`
-          : `无法连接 GitHub API（可能是网络限制或 DNS 问题）。\n\n可尝试：\n• 配置代理后重试\n• 直接前往下载页查看最新版本：\nhttps://github.com/${GH_OWNER}/${GH_REPO}/releases`,
+        message,
+        detail,
         buttons: ['关闭', '前往下载页'],
         defaultId: 1,
       });
@@ -306,7 +319,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
       return {
         hasUpdate: false,
-        reason: isTimeout ? 'timeout' : isNetwork ? 'network' : 'error',
+        reason: isTimeout ? 'timeout' : isCertError ? 'cert-error' : isNetwork ? 'network' : 'error',
         error: err.message,
       };
     }
