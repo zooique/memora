@@ -8,12 +8,16 @@
  *   4. 删除记忆
  *   5. 添加/更新记忆
  *
- * 所有 handler 均委托给 Sprite 的 MemoryController，通过 safeHandle 统一错误兜底。
+ * 所有 handler 均委托给 Sprite 的 MemoryController。
+ * 错误处理统一用 throwingHandle（MIND2-C1）：
+ *   - 查询类：异常 re-throw 让渲染层显示错误态（toast / setPanelError）
+ *   - 写操作：内核异常 re-throw（如 requireSprite 抛 SpriteError），业务校验失败保持返回 success:false
+ *   - LLM 治理类：IPC 层故障 re-throw，内核 LLM 失败降级为空报告（业务态，UI 显示"治理完成 0 条"）
  */
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
-import { safeHandle, throwingHandle, requireSprite, requireAgent } from './types.js';
+import { throwingHandle, requireSprite, requireAgent } from './types.js';
 import { isValidContent, isValidId, isValidRelationParams, isValidSearchQuery } from './inputValidation.js';
 import { ErrorCode, SpriteError } from '../errorHandler.js';
 import type { IpcContext } from './types.js';
@@ -71,8 +75,10 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 删除记忆（软删除，移入回收站） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) =>
-    safeHandle('删除记忆失败', { deleted: false }, () => {
-      // 校验记忆 ID 类型和长度，防止非字符串或超长值传入内核
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / deleteMemory 失败）re-throw
+    // 业务校验失败（isValidId 不通过）保持返回 deleted:false（业务态）
+    throwingHandle('删除记忆失败', () => {
+      // 校验记忆 ID 类型和长度，防止非字符串或超长值传入内核（业务校验）
       if (!isValidId(id)) {
         return { deleted: false };
       }
@@ -82,7 +88,8 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 恢复软删除记忆（从回收站恢复） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RESTORE, async (_event, id: string) =>
-    safeHandle('恢复记忆失败', { restored: false }, () => {
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / restoreMemory 失败）re-throw
+    throwingHandle('恢复记忆失败', () => {
       if (!isValidId(id)) {
         return { restored: false };
       }
@@ -93,7 +100,8 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 物理删除记忆（回收站彻底删除） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE, async (_event, id: string) =>
-    safeHandle('彻底删除记忆失败', { purged: false }, async () => {
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / purgeMemory 失败）re-throw
+    throwingHandle('彻底删除记忆失败', async () => {
       if (!isValidId(id)) {
         return { purged: false };
       }
@@ -104,14 +112,16 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 批量恢复回收站所有记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RESTORE_ALL, async () =>
-    safeHandle('批量恢复记忆失败', { restored: 0, failed: 0 }, () => {
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / restoreAllMemories 失败）re-throw
+    throwingHandle('批量恢复记忆失败', () => {
       return requireSprite(ctx).restoreAllMemories();
     }),
   );
 
   /** 批量清空回收站所有记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE_ALL, async () =>
-    safeHandle('批量清空回收站失败', { purged: 0, failed: 0 }, async () => {
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / purgeAllMemories 失败）re-throw
+    throwingHandle('批量清空回收站失败', async () => {
       // purgeAllMemories 为 async：批量删除需等待所有 vectorStore.delete 完成
       return requireSprite(ctx).purgeAllMemories();
     }),
@@ -126,8 +136,9 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 添加记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD, async (_event, data: { source: string; name: string; content: string }) =>
-    safeHandle('添加记忆失败', { id: '' }, () => {
-      // 输入验证：拒绝超大内容，防止内存耗尽
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / upsertMemory 失败）re-throw
+    throwingHandle('添加记忆失败', () => {
+      // 输入验证：拒绝超大内容，防止内存耗尽（业务校验）
       if (!isValidContent(data.content)) {
         return { id: '' };
       }
@@ -142,8 +153,9 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 提升记忆 score（L2 采纳反哺内核） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_BOOST, async (_event, id: string) =>
-    safeHandle('提升记忆 score 失败', { success: false }, () => {
-      // 校验记忆 ID 类型（与 MEMORIES_SHOW/DELETE 一致）
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / boostMemory 失败）re-throw
+    throwingHandle('提升记忆 score 失败', () => {
+      // 校验记忆 ID 类型（与 MEMORIES_SHOW/DELETE 一致，业务校验）
       if (!isValidId(id)) {
         return { success: false };
       }
@@ -151,29 +163,26 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
-  // ─── LLM 记忆治理（L1~L3，G1：异步调用，safeHandle 降级） ──
-  // 这三个 handler 均为异步（调用 LLM，可能 5-15 秒），safeHandle 确保失败时返回
-  // 空报告而非抛错（与内核 manager 内部 LLM 失败降级语义一致）。
+  // ─── LLM 记忆治理（L1~L3，G1：异步调用，throwingHandle 透传错误） ──
+  // MIND2-C1：原 safeHandle 在 IPC 失败时返回空报告（与内核 manager LLM 降级语义一致），
+  // 但这会让 IPC 层故障伪装成"治理无内容"。改用 throwingHandle 后：
+  // - IPC 层故障（requireSprite 抛 SpriteError）→ re-throw → 渲染层 toast "治理失败"
+  // - LLM 失败（内核 manager 内部降级）→ 返回空报告 → UI 显示"治理完成 0 条"（业务态）
+  // 两者反馈区分明确，符合心智模型 §1.1「区分症状与根因」。
 
   /** L1 语义去重（扫描名称相似对 → LLM 判断 → 降级低分记忆） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DEDUP, async () =>
-    safeHandle('语义去重失败', { scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'IPC 失败' }, () =>
-      requireSprite(ctx).deduplicateMemories(),
-    ),
+    throwingHandle('语义去重失败', () => requireSprite(ctx).deduplicateMemories()),
   );
 
   /** L2 时效性评估（扫描低分记忆 → LLM 判断 → 降级过时记忆） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS, async () =>
-    safeHandle('时效性评估失败', { scannedCount: 0, outdatedCount: 0, demotedIds: [], skippedReason: 'IPC 失败' }, () =>
-      requireSprite(ctx).evaluateTimeliness(),
-    ),
+    throwingHandle('时效性评估失败', () => requireSprite(ctx).evaluateTimeliness()),
   );
 
   /** L3 冲突检测（同 source 配对 → LLM 判断 → 仅检测不修复） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS, async () =>
-    safeHandle('冲突检测失败', { scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'IPC 失败' }, () =>
-      requireSprite(ctx).detectConflicts(),
-    ),
+    throwingHandle('冲突检测失败', () => requireSprite(ctx).detectConflicts()),
   );
 
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
@@ -185,8 +194,10 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   ipcMain.handle(
     IPC_CHANNELS.ARCHIVE_SESSION,
     async (_event, params: { date: string; session: string }) =>
-      safeHandle('归档会话失败', { archivedCount: 0 }, async () => {
-        // 校验日期和会话名
+      // MIND2-C1：写操作改用 throwingHandle——内核异常（requireAgent / archiveSessionContent 失败）re-throw
+      // 业务校验失败（参数类型非法）保持返回 archivedCount:0（业务态）
+      throwingHandle('归档会话失败', async () => {
+        // 校验日期和会话名（业务校验）
         if (typeof params.date !== 'string' || typeof params.session !== 'string') {
           return { archivedCount: 0 };
         }
@@ -207,9 +218,8 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 批量删除记忆（智能清理） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE_BATCH, async (_event, ids: string[]) =>
-    safeHandle('批量删除记忆失败', { deleted: 0, total: ids.length }, async () =>
-      requireSprite(ctx).deleteMemoriesBatch(ids),
-    ),
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / deleteMemoriesBatch 失败）re-throw
+    throwingHandle('批量删除记忆失败', async () => requireSprite(ctx).deleteMemoriesBatch(ids)),
   );
 
   /**
@@ -228,8 +238,10 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   ipcMain.handle(
     IPC_CHANNELS.MEMORIES_RELATION_MUTATE,
     async (_event, data: { action: 'add' | 'remove' | 'update'; sourceId: string; targetId: string; type: string; weight?: number }) =>
-      safeHandle('记忆关系变更失败', { success: false }, () => {
-        // action 白名单校验（防止恶意渲染进程传入任意字符串触发意外分支）
+      // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / add|remove|updateRelation 失败）re-throw
+      // 业务校验失败（action 非法 / 参数无效 / weight 缺失）保持返回 success:false（业务态）
+      throwingHandle('记忆关系变更失败', () => {
+        // action 白名单校验（防止恶意渲染进程传入任意字符串触发意外分支，业务校验）
         if (data?.action !== 'add' && data?.action !== 'remove' && data?.action !== 'update') {
           return { success: false };
         }
@@ -282,8 +294,10 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
    * 从用户输入中提取个人偏好事实并归档。返回归档的条目数（精简后传输，避免大 payload）。
    */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE, async (_event, data: { input: string }) =>
-    safeHandle('归档个人偏好失败', { count: 0 }, async () => {
-      // 参数校验：input 必须通过 isValidContent（与 MEMORIES_ADD 一致，拒绝空/超大内容）
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / archiveProfileFacts 失败）re-throw
+    // 业务校验失败（input 非法）保持返回 count:0（业务态）
+    throwingHandle('归档个人偏好失败', async () => {
+      // 参数校验：input 必须通过 isValidContent（与 MEMORIES_ADD 一致，拒绝空/超大内容，业务校验）
       if (!isValidContent(data?.input)) {
         return { count: 0 };
       }
@@ -298,8 +312,9 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
    * 从对话中提取洞察并归档为记忆。内部走 classify 判断，无价值输入返回 count=0。
    */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT, async (_event, data: { input: string; assistantContent: string }) =>
-    safeHandle('归档洞察失败', { count: 0 }, async () => {
-      // 参数校验：input/assistantContent 必须通过 isValidContent
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / archiveInsight 失败）re-throw
+    throwingHandle('归档洞察失败', async () => {
+      // 参数校验：input/assistantContent 必须通过 isValidContent（业务校验）
       if (!isValidContent(data?.input) || !isValidContent(data?.assistantContent)) {
         return { count: 0 };
       }

@@ -95,10 +95,16 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
   const llmResultRenderer = new LlmGovernanceResultRenderer();
   // 注册恢复回调：调用 boostMemory IPC（score +0.05），与降级语义对称
   // 恢复后刷新健康度面板（score 变化 → 健康度数据变化，与治理动作回调 L332 对齐）
+  // MIND2-C1：boostMemory 改用 throwingHandle 后，内核异常会 re-throw，必须补 try/catch
+  // 避免未捕获 Promise rejection（原 safeHandle 时代 catch 不到，现在能 catch 真实错误）
   llmResultRenderer.onRestoreMemory(async (memoryId: string) => {
-    await window.electronAPI.boostMemory(memoryId);
-    await loadHealthDashboard();
-    uiManager.showToast('记忆权重已恢复', 'success');
+    try {
+      await window.electronAPI.boostMemory(memoryId);
+      await loadHealthDashboard();
+      uiManager.showToast('记忆权重已恢复', 'success');
+    } catch (error) {
+      handleIpcError('onRestoreMemory', error, '恢复记忆权重');
+    }
   });
 
   /**

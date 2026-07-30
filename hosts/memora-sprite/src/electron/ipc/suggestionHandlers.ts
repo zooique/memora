@@ -14,7 +14,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
-import { safeHandle, throwingHandle, requireAgent } from './types.js';
+import { throwingHandle, requireAgent } from './types.js';
 import { isValidConfigName, isValidContent, isValidId } from './inputValidation.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import type { IpcContext } from './types.js';
@@ -33,38 +33,38 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
   ipcMain.handle(
     IPC_CHANNELS.SUGGESTION_ACCEPT,
     async (_event, suggestion: { type: 'rule' | 'persona' | 'skill'; name: string; content: string; confidence: number; source?: string }) => {
-      return safeHandle(
-        'SUGGESTION_ACCEPT',
-        { success: false, error: '未知错误' },
-        async () => {
-          // 输入验证：拒绝含路径分隔符的配置名，防止路径遍历写入
-          if (!isValidConfigName(suggestion.name)) {
-            return { success: false, error: '无效的配置名称' };
+      // MIND2-C1：写操作改用 throwingHandle——内核异常（requireAgent 抛错 / confirmConfigSuggestion 失败）
+      // re-throw 让渲染层 catch 显示真实错误，业务校验失败仍返回 success:false（业务态，非异常）
+      return throwingHandle('SUGGESTION_ACCEPT', async () => {
+        // 输入验证：拒绝含路径分隔符的配置名，防止路径遍历写入（业务校验，返回业务失败态）
+        if (!isValidConfigName(suggestion.name)) {
+          return { success: false, error: '无效的配置名称' };
+        }
+        // 输入验证：拒绝超大内容，防止内存耗尽
+        if (!isValidContent(suggestion.content)) {
+          return { success: false, error: '内容过长' };
+        }
+        // 缓存 Agent 实例：本 handler 内多次调用，统一取一次避免重复调用 getter
+        // requireAgent 抛 SpriteError（Agent 未就绪）→ throwingHandle re-throw → 渲染层 catch
+        const agent = requireAgent(ctx);
+        const config = agent.config;
+        if (!config) {
+          // 配置管理器未就绪属于业务降级（Agent 已就绪但 config 未初始化），保持返回值
+          return { success: false, error: '配置管理器未就绪' };
+        }
+        await config.confirmConfigSuggestion(suggestion);
+        // 事件驱动重载：配置文件写入后立即热重载，当前会话生效（无需重启 Agent）
+        // rule 类型已由 confirmConfigSuggestion 内部即时注入 system prompt，无需重载
+        if (suggestion.type === 'skill' || suggestion.type === 'persona') {
+          try {
+            await agent.reloadConfig(suggestion.type);
+          } catch (err) {
+            // 重载失败不阻塞持久化结果（文件已写入，下次启动自动加载）——内层降级，不向上抛
+            errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '配置热重载失败' });
           }
-          // 输入验证：拒绝超大内容，防止内存耗尽
-          if (!isValidContent(suggestion.content)) {
-            return { success: false, error: '内容过长' };
-          }
-          // 缓存 Agent 实例：本 handler 内多次调用，统一取一次避免重复调用 getter
-          const agent = requireAgent(ctx);
-          const config = agent.config;
-          if (!config) {
-            return { success: false, error: '配置管理器未就绪' };
-          }
-          await config.confirmConfigSuggestion(suggestion);
-          // 事件驱动重载：配置文件写入后立即热重载，当前会话生效（无需重启 Agent）
-          // rule 类型已由 confirmConfigSuggestion 内部即时注入 system prompt，无需重载
-          if (suggestion.type === 'skill' || suggestion.type === 'persona') {
-            try {
-              await agent.reloadConfig(suggestion.type);
-            } catch (err) {
-              // 重载失败不阻塞持久化结果（文件已写入，下次启动自动加载）
-              errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '配置热重载失败' });
-            }
-          }
-          return { success: true };
-        },
-      );
+        }
+        return { success: true };
+      });
     },
   );
 
@@ -120,22 +120,21 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
    * 确认后条目持久化到 SQLite（source='profile'），后续 buildSystemPrompt 会包含。
    */
   ipcMain.handle(IPC_CHANNELS.USER_PROFILE_CONFIRM, async (_event, id: string) => {
-    return safeHandle(
-      'USER_PROFILE_CONFIRM',
-      { success: false, error: '未知错误' },
-      async () => {
-        // 校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
-        if (!isValidId(id)) {
-          return { success: false, error: '非法画像条目 ID' };
-        }
-        const profile = requireAgent(ctx).userProfile;
-        if (!profile) {
-          return { success: false, error: '用户画像管理器未就绪' };
-        }
-        await profile.confirm(id);
-        return { success: true };
-      },
-    );
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireAgent / profile.confirm 失败）re-throw
+    // 业务校验失败（isValidId / userProfile 未就绪）保持返回 success:false（业务态）
+    return throwingHandle('USER_PROFILE_CONFIRM', async () => {
+      // 校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核（业务校验）
+      if (!isValidId(id)) {
+        return { success: false, error: '非法画像条目 ID' };
+      }
+      const profile = requireAgent(ctx).userProfile;
+      if (!profile) {
+        // userProfile 未就绪属于业务降级（Agent 已就绪但 profile 未初始化），保持返回值
+        return { success: false, error: '用户画像管理器未就绪' };
+      }
+      await profile.confirm(id);
+      return { success: true };
+    });
   });
 
   /**
@@ -144,21 +143,20 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
    * 拒绝后条目不再出现在 systemPrompt 中，也不会被召回。
    */
   ipcMain.handle(IPC_CHANNELS.USER_PROFILE_REJECT, async (_event, id: string) => {
-    return safeHandle(
-      'USER_PROFILE_REJECT',
-      { success: false, error: '未知错误' },
-      async () => {
-        // 校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
-        if (!isValidId(id)) {
-          return { success: false, error: '非法画像条目 ID' };
-        }
-        const profile = requireAgent(ctx).userProfile;
-        if (!profile) {
-          return { success: false, error: '用户画像管理器未就绪' };
-        }
-        await profile.reject(id);
-        return { success: true };
-      },
-    );
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireAgent / profile.reject 失败）re-throw
+    // 业务校验失败（isValidId / userProfile 未就绪）保持返回 success:false（业务态）
+    return throwingHandle('USER_PROFILE_REJECT', async () => {
+      // 校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核（业务校验）
+      if (!isValidId(id)) {
+        return { success: false, error: '非法画像条目 ID' };
+      }
+      const profile = requireAgent(ctx).userProfile;
+      if (!profile) {
+        // userProfile 未就绪属于业务降级（Agent 已就绪但 profile 未初始化），保持返回值
+        return { success: false, error: '用户画像管理器未就绪' };
+      }
+      await profile.reject(id);
+      return { success: true };
+    });
   });
 }

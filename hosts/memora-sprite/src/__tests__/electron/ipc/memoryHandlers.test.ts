@@ -318,7 +318,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ deleted: true });
   });
 
-  it('MEMORIES_DELETE 抛错应降级返回 deleted: false', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw（不再降级返回 fallback）
+  it('MEMORIES_DELETE 抛错应 re-throw 让渲染层 catch', async () => {
     const deleteMemory = vi.fn(() => {
       throw new Error('删除失败');
     });
@@ -326,9 +327,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE)!;
-    const result = await callback({}, '1');
 
-    expect(result).toEqual({ deleted: false });
+    await expect(callback({}, '1')).rejects.toThrow('删除失败');
   });
 
   // 记忆 ID 校验失败路径
@@ -404,7 +404,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ id: '' });
   });
 
-  it('MEMORIES_ADD 抛错应降级返回空 ID', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_ADD 抛错应 re-throw 让渲染层 catch', async () => {
     const upsertMemory = vi.fn(() => {
       throw new Error('写入失败');
     });
@@ -412,13 +413,12 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD)!;
-    const result = await callback({}, {
+
+    await expect(callback({}, {
       source: 'insight',
       name: '新记忆',
       content: '合法内容',
-    });
-
-    expect(result).toEqual({ id: '' });
+    })).rejects.toThrow('写入失败');
   });
 
   // ─── MEMORIES_BOOST（L2 采纳反哺内核） ─────
@@ -460,7 +460,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ success: false });
   });
 
-  it('MEMORIES_BOOST 抛错应降级返回 success: false', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_BOOST 抛错应 re-throw 让渲染层 catch', async () => {
     const boostMemory = vi.fn(() => {
       throw new Error('存储不可用');
     });
@@ -468,9 +469,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_BOOST)!;
-    const result = await callback({}, 'insight:测试记忆');
 
-    expect(result).toEqual({ success: false });
+    await expect(callback({}, 'insight:测试记忆')).rejects.toThrow('存储不可用');
   });
 
   // ─── MEMORIES_DEDUP（L1 语义去重，G1） ─────
@@ -493,7 +493,10 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual(report);
   });
 
-  it('MEMORIES_DEDUP 抛错应降级返回空报告（不崩溃）', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，IPC 层故障 re-throw
+  // 注：内核 manager 内部 LLM 失败仍降级为空报告（业务态），此处 mock 模拟的是
+  // "manager 直接抛错"或"requireSprite 抛 SpriteError"——IPC 层应 re-throw
+  it('MEMORIES_DEDUP 抛错应 re-throw 让渲染层 catch', async () => {
     const deduplicateMemories = vi.fn(async () => {
       throw new Error('LLM 不可用');
     });
@@ -501,14 +504,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DEDUP)!;
-    const result = await callback({});
 
-    expect(result).toMatchObject({
-      scannedCount: 0,
-      deduplicatedCount: 0,
-      demotedIds: [],
-      skippedReason: expect.any(String),
-    });
+    await expect(callback({})).rejects.toThrow('LLM 不可用');
   });
 
   // ─── MEMORIES_EVALUATE_TIMELINESS（L2 时效性评估，G1） ─────
@@ -530,7 +527,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual(report);
   });
 
-  it('MEMORIES_EVALUATE_TIMELINESS 抛错应降级返回空报告', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，IPC 层故障 re-throw
+  it('MEMORIES_EVALUATE_TIMELINESS 抛错应 re-throw 让渲染层 catch', async () => {
     const evaluateTimeliness = vi.fn(async () => {
       throw new Error('LLM 不可用');
     });
@@ -538,14 +536,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_EVALUATE_TIMELINESS)!;
-    const result = await callback({});
 
-    expect(result).toMatchObject({
-      scannedCount: 0,
-      outdatedCount: 0,
-      demotedIds: [],
-      skippedReason: expect.any(String),
-    });
+    await expect(callback({})).rejects.toThrow('LLM 不可用');
   });
 
   // ─── MEMORIES_DETECT_CONFLICTS（L3 冲突检测，G1） ─────
@@ -576,7 +568,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual(report);
   });
 
-  it('MEMORIES_DETECT_CONFLICTS 抛错应降级返回空报告', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，IPC 层故障 re-throw
+  it('MEMORIES_DETECT_CONFLICTS 抛错应 re-throw 让渲染层 catch', async () => {
     const detectConflicts = vi.fn(async () => {
       throw new Error('LLM 不可用');
     });
@@ -584,14 +577,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DETECT_CONFLICTS)!;
-    const result = await callback({});
 
-    expect(result).toMatchObject({
-      scannedCount: 0,
-      conflictCount: 0,
-      conflicts: [],
-      skippedReason: expect.any(String),
-    });
+    await expect(callback({})).rejects.toThrow('LLM 不可用');
   });
 
   // ─── MEMORIES_ARCHIVE_PROFILE（手动归档） ─────
@@ -652,7 +639,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ count: 0 });
   });
 
-  it('MEMORIES_ARCHIVE_PROFILE 抛错应降级返回 count: 0', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_ARCHIVE_PROFILE 抛错应 re-throw 让渲染层 catch', async () => {
     const archiveProfileFacts = vi.fn(async () => {
       throw new Error('LLM 调用失败');
     });
@@ -660,9 +648,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
-    const result = await callback({}, { input: '合法输入' });
 
-    expect(result).toEqual({ count: 0 });
+    await expect(callback({}, { input: '合法输入' })).rejects.toThrow('LLM 调用失败');
   });
 
   it('MEMORIES_ARCHIVE_PROFILE 无价值输入应返回 count: 0（内核返回空数组）', async () => {
@@ -736,7 +723,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ count: 0 });
   });
 
-  it('MEMORIES_ARCHIVE_INSIGHT 抛错应降级返回 count: 0', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_ARCHIVE_INSIGHT 抛错应 re-throw 让渲染层 catch', async () => {
     const archiveInsight = vi.fn(async () => {
       throw new Error('归档失败');
     });
@@ -744,9 +732,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT)!;
-    const result = await callback({}, { input: '提问', assistantContent: '回复' });
 
-    expect(result).toEqual({ count: 0 });
+    await expect(callback({}, { input: '提问', assistantContent: '回复' })).rejects.toThrow('归档失败');
   });
 
   // ─── MEMORIES_LIST（补充：source 校验） ─────────────
@@ -799,7 +786,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ restored: false });
   });
 
-  it('MEMORIES_RESTORE 抛错应降级返回 restored: false', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_RESTORE 抛错应 re-throw 让渲染层 catch', async () => {
     const restoreMemory = vi.fn(() => {
       throw new Error('恢复失败');
     });
@@ -807,9 +795,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE)!;
-    const result = await callback({}, 'mem-1');
 
-    expect(result).toEqual({ restored: false });
+    await expect(callback({}, 'mem-1')).rejects.toThrow('恢复失败');
   });
 
   // ─── MEMORIES_PURGE（物理删除） ─────────────────────
@@ -838,7 +825,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ purged: false });
   });
 
-  it('MEMORIES_PURGE 抛错应降级返回 purged: false', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_PURGE 抛错应 re-throw 让渲染层 catch', async () => {
     const purgeMemory = vi.fn(() => {
       throw new Error('物理删除失败');
     });
@@ -846,9 +834,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE)!;
-    const result = await callback({}, 'mem-1');
 
-    expect(result).toEqual({ purged: false });
+    await expect(callback({}, 'mem-1')).rejects.toThrow('物理删除失败');
   });
 
   // ─── MEMORIES_RESTORE_ALL（批量恢复） ──────────────
@@ -865,7 +852,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ restored: 5, failed: 1 });
   });
 
-  it('MEMORIES_RESTORE_ALL 抛错应降级返回 { restored: 0, failed: 0 }', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_RESTORE_ALL 抛错应 re-throw 让渲染层 catch', async () => {
     const restoreAllMemories = vi.fn(() => {
       throw new Error('批量恢复失败');
     });
@@ -873,9 +861,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE_ALL)!;
-    const result = await callback({});
 
-    expect(result).toEqual({ restored: 0, failed: 0 });
+    await expect(callback({})).rejects.toThrow('批量恢复失败');
   });
 
   // ─── MEMORIES_PURGE_ALL（批量清空） ────────────────
@@ -892,7 +879,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ purged: 3, failed: 0 });
   });
 
-  it('MEMORIES_PURGE_ALL 抛错应降级返回 { purged: 0, failed: 0 }', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_PURGE_ALL 抛错应 re-throw 让渲染层 catch', async () => {
     const purgeAllMemories = vi.fn(() => {
       throw new Error('批量清空失败');
     });
@@ -900,9 +888,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE_ALL)!;
-    const result = await callback({});
 
-    expect(result).toEqual({ purged: 0, failed: 0 });
+    await expect(callback({})).rejects.toThrow('批量清空失败');
   });
 
   // ─── MEMORIES_LIST_DELETED（回收站列表） ───────────
@@ -1034,7 +1021,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ archivedCount: 0 });
   });
 
-  it('ARCHIVE_SESSION 抛错应降级返回 archivedCount: 0', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('ARCHIVE_SESSION 抛错应 re-throw 让渲染层 catch', async () => {
     const archiveSessionContent = vi.fn(async () => {
       throw new Error('归档失败');
     });
@@ -1042,9 +1030,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.ARCHIVE_SESSION)!;
-    const result = await callback({}, { date: '2026-07-12', session: '会话1' });
 
-    expect(result).toEqual({ archivedCount: 0 });
+    await expect(callback({}, { date: '2026-07-12', session: '会话1' })).rejects.toThrow('归档失败');
   });
 
   // ─── MEMORIES_HEALTH_DASHBOARD（健康度仪表盘） ─────
@@ -1113,7 +1100,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ deleted: 3, total: 5 });
   });
 
-  it('MEMORIES_DELETE_BATCH 抛错应降级返回 { deleted: 0, total: N }', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_DELETE_BATCH 抛错应 re-throw 让渲染层 catch', async () => {
     const deleteMemoriesBatch = vi.fn(async () => {
       throw new Error('批量删除失败');
     });
@@ -1121,9 +1109,8 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE_BATCH)!;
-    const result = await callback({}, ['id-1', 'id-2']);
 
-    expect(result).toEqual({ deleted: 0, total: 2 });
+    await expect(callback({}, ['id-1', 'id-2'])).rejects.toThrow('批量删除失败');
   });
 
   // ─── MEMORIES_RELATION_MUTATE（关系变更统一入口，IPC-COUNT-02 候选 1） ──
@@ -1313,7 +1300,8 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ success: false });
   });
 
-  it('MEMORIES_RELATION_MUTATE 内核抛错应降级返回 success: false', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw
+  it('MEMORIES_RELATION_MUTATE 内核抛错应 re-throw 让渲染层 catch', async () => {
     const addRelation = vi.fn(() => {
       throw new Error('关系写入失败');
     });
@@ -1321,15 +1309,14 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_MUTATE)!;
-    const result = await callback({}, {
+
+    await expect(callback({}, {
       action: 'add',
       sourceId: 'mem-1',
       targetId: 'mem-2',
       type: 'supports',
       weight: 0.8,
-    });
-
-    expect(result).toEqual({ success: false });
+    })).rejects.toThrow('关系写入失败');
   });
 
   // ─── MEMORIES_RELATION_PATH（关系路径） ────────────

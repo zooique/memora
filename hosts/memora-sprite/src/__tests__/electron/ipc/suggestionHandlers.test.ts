@@ -156,7 +156,8 @@ describe('registerSuggestionHandlers', () => {
     expect(result).toEqual({ success: false, error: '配置管理器未就绪' });
   });
 
-  it('confirmConfigSuggestion 抛错应降级返回未知错误', async () => {
+  // MIND2-C1：写操作改用 throwingHandle 后，内核抛错会 re-throw（不再降级返回 fallback）
+  it('confirmConfigSuggestion 抛错应 re-throw 让渲染层 catch', async () => {
     const confirmConfigSuggestion = vi.fn(async () => {
       throw new Error('写入失败');
     });
@@ -164,9 +165,8 @@ describe('registerSuggestionHandlers', () => {
     registerSuggestionHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.SUGGESTION_ACCEPT)!;
-    const result = await callback({}, createValidSuggestion());
 
-    expect(result).toEqual({ success: false, error: '未知错误' });
+    await expect(callback({}, createValidSuggestion())).rejects.toThrow('写入失败');
   });
 
   // ─── SUGGESTION_REJECT ─────────────────────────────────

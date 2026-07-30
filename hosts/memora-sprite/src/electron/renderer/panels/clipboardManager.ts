@@ -21,6 +21,8 @@ import type { ToastManager } from '../components/toast.js';
 import type { ModalManager } from '../components/modal.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../../shared/truncate.js';
+// reportError：渲染层统一错误日志（双通道：console + 主进程 logger），MIND2-C1 IPC 错误处理配套
+import { reportError } from '../helpers/errorHelpers.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 
@@ -336,12 +338,19 @@ export class ClipboardManager {
 
     if (confirmed) {
       // 用户确认后，通过 MEMORIES_ADD 写入记忆
-      await window.electronAPI.addMemory({
-        content,
-        source: 'clipboard',
-        name: `剪贴板记忆 ${new Date().toLocaleString()}`,
-      });
-      this.toastManager.showToast('已存为记忆', 'success');
+      // MIND2-C1：addMemory 改用 throwingHandle 后，内核异常会 re-throw，必须补 try/catch
+      // 避免未捕获 Promise rejection + 后续 showToast 误报"已存为记忆"
+      try {
+        await window.electronAPI.addMemory({
+          content,
+          source: 'clipboard',
+          name: `剪贴板记忆 ${new Date().toLocaleString()}`,
+        });
+        this.toastManager.showToast('已存为记忆', 'success');
+      } catch (error) {
+        reportError('ClipboardManager.saveClipboardAsMemory', error);
+        this.toastManager.showToast('存为记忆失败，请稍后重试', 'error');
+      }
     }
   }
 

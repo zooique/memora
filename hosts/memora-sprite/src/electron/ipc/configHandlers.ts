@@ -19,7 +19,7 @@ import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig, SpriteConfigKey } from '../../sprite/spriteConfig.js';
-import { safeHandle, throwingHandle, requireSprite } from './types.js';
+import { throwingHandle, requireSprite } from './types.js';
 import { isValidPersonaName, isValidShortcutConfig } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 // ConfigFileType：设定文件类型联合（'persona' | 'rule' | 'skill'），用于 CONFIG_FILE_* 统一 handler
@@ -281,9 +281,11 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 设置角色匹配模式 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') =>
-    safeHandle('设置角色模式失败', { set: false }, () => {
+    // MIND2-C1：写操作改用 throwingHandle——内核异常（requireSprite / setPersonaMode 失败）re-throw
+    // 业务校验失败（mode 非法）保持返回 set:false（业务态）
+    throwingHandle('设置角色模式失败', () => {
       // 运行期校验（TS 类型在编译期擦除，恶意渲染进程可传任意值）
-      // 仅允许 'auto' / 'manual'，其他值一律拒绝
+      // 仅允许 'auto' / 'manual'，其他值一律拒绝（业务校验）
       if (mode !== 'auto' && mode !== 'manual') {
         return { set: false };
       }
