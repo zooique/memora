@@ -102,7 +102,7 @@ export class BuiltinToolHandlers {
   /**
    * 生成配置目录路径提示
    *
-   * 当 configDir 已知时，告知 LLM 正确写入位置（如 C:\Users\SJ\.memora-sprite\config\personas\）；
+   * 当 configDir 已知时，告知 LLM 正确写入位置（如 <configDir>/personas/）；
    * 未知时回退到通用描述。用于拦截错误消息中，引导 LLM 使用专用工具而非 write_file。
    */
   private configPathHint(toolSuffix: string): string {

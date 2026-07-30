@@ -112,7 +112,8 @@ export type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor 
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 // 治理共享常量（MIND2-L3：宿主 SqliteStorage incrementScore/setScore 实现需要 clamp 边界）
-export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR } from '@/memory/governance.js';
+// 衰减常量同步导出：宿主 SqliteStorage.decayScores 与核心库 recall.ts 共用同一真理源（v2 神木回天 REPEAT-3 闭环）
+export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
 // 记忆关系存储侧车：宿主项目可实现 IMemoryRelationStore 接口注入 Agent
 export type { IMemoryRelationStore } from '@/memory/relationStore.js';
 export { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';

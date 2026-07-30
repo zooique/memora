@@ -754,9 +754,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('switchProject', ['projectManager', 'provider']);
 
     // 对话进行中切换项目会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('切换项目');
-    }
+    this.assertNotBusy('切换项目');
 
     const pm = this.projectManager!;
     const projects = pm.list;
@@ -901,9 +899,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   setProvider(provider: LlmProvider): void {
     // 对话进行中切换 Provider 会导致同一 processUserInput 循环内前后两次 LLM 调用命中不同 Provider
     // （模型上下文窗口假设不一致 → 可能导致上下文截断逻辑误判或 tool_call 格式不兼容）
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('切换 Provider');
-    }
+    this.assertNotBusy('切换 Provider');
     this.#provider = provider;
     if (this.loop) {
       this.loop.setProvider(provider);
@@ -913,9 +909,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   setBackgroundProvider(provider: LlmProvider | null): void {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('切换后台 Provider');
-    }
+    this.assertNotBusy('切换后台 Provider');
     this.#backgroundProvider = provider;
     // 同步更新 AutoConfigRefiner 的后台 Provider
     if (this.autoConfigRefiner) {
@@ -934,9 +928,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param mode 目标模式
    */
   setArchiveMode(mode: ArchiveMode): void {
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('切换归档模式');
-    }
+    this.assertNotBusy('切换归档模式');
     const prev = this.#config.archiveMode;
     if (prev === mode) return; // 幂等：无变更直接返回
     this.#config.archiveMode = mode;
@@ -970,9 +962,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   switchPersona(name: string): string | null {
     this.assertInitialized('switchPersona');
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('切换角色');
-    }
+    this.assertNotBusy('切换角色');
 
     if (!this.personaManager) return null;
 
@@ -1295,9 +1285,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async rebuildComponents(): Promise<void> {
     // 对话进行中重建组件会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
-    if (this.chatLockManager?.isBusy) {
-      throw chatBusyError('重建组件');
-    }
+    this.assertNotBusy('重建组件');
     await this.rebuildComponentsWithCurrentCtx();
   }
 
@@ -1330,6 +1318,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           `在 ${methodName}() 前调用 await agent.init()`,
         ]);
       }
+    }
+  }
+
+  /**
+   * 断言对话未进行中 — 统一守卫，避免在 chat() 进行中执行会破坏状态一致性的操作
+   *
+   * 提取原因：switchProject / setProvider / setBackgroundProvider / setArchiveMode /
+   * switchPersona / rebuildComponents 等 6 处方法均有相同的 `if (isBusy) throw chatBusyError('XXX')` 守卫，
+   * 违反 DRY 原则（v2 神木回天 REPEAT-4 闭环）。
+   *
+   * 注意：reloadConfig 不使用本方法——它在 isBusy 时需暂存 source 而非直接抛错。
+   *
+   * @param operation 操作名称（用于错误消息，如 "切换项目"）
+   */
+  private assertNotBusy(operation: string): void {
+    if (this.chatLockManager?.isBusy) {
+      throw chatBusyError(operation);
     }
   }
 

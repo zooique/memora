@@ -125,7 +125,7 @@ export class ToolExecutor {
   /**
    * 注册自定义工具
    *
-   * 宿主项目调用此方法注册领域专属工具（如 create_chapter、run_tests 等业务专属操作）。
+   * 宿主项目调用此方法注册领域专属工具（如 run_tests、query_database、send_email 等业务专属操作）。
    * 工具名不能与内置工具重复，也不能重复注册。
    * 注册后工具会出现在 `tools.list` 列表中，
    * LLM 可通过 tool_call 调用，execute() 会路由到 handler。

@@ -9,7 +9,7 @@
  */
 import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
-import { segmentLower, validateSource, logger, DECAY_FLOOR, SCORE_CEILING } from 'memora';
+import { segmentLower, validateSource, logger, DECAY_FLOOR, SCORE_CEILING, DECAY_AGE_DAYS, DECAY_AMOUNT } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 // StorageError：storage 层结构化错误类（零 sprite 依赖，ErrorCode 从 shared 层导入）
 import { StorageError } from './storageError.js';
@@ -348,7 +348,9 @@ export class SqliteStorage implements IMemoryStorage {
    * 衰减活跃记忆 score（跳过已软删除的）
    *
    * 衰减公式与 InMemoryStorage 对齐：
-   * daysSinceAccess > 7 时，score -= 0.02 * floor(daysSinceAccess / 7)，下限 0.1。
+   * daysSinceAccess > DECAY_AGE_DAYS 时，score -= DECAY_AMOUNT * floor(daysSinceAccess / DECAY_AGE_DAYS)，下限 DECAY_FLOOR。
+   *
+   * 常量来自 memora 包 governance.ts（单一真理源），与 recall.ts applyDecayToMemory 共用（v2 神木回天 REPEAT-3 闭环）。
    *
    * @param sources 需要衰减的 source 列表
    * @param now 当前时间（用于计算 daysSinceAccess）
@@ -359,15 +361,16 @@ export class SqliteStorage implements IMemoryStorage {
 
     const placeholders = sources.map(() => '?').join(',');
     // 衰减公式与 InMemoryStorage 对齐：
-    //   daysSinceAccess > 7 时，score -= 0.02 * floor(daysSinceAccess / 7)
-    //   score 下限 0.1
+    //   daysSinceAccess > DECAY_AGE_DAYS 时，score -= DECAY_AMOUNT * floor(daysSinceAccess / DECAY_AGE_DAYS)
+    //   score 下限 DECAY_FLOOR
+    // 常量为数字字面量，直接内联到 SQL（非用户输入，无注入风险）
     // 附加 deleted_at IS NULL 过滤，跳过软删除记忆
     const sql = `
       UPDATE memories
-      SET score = MAX(0.1, score - 0.02 * CAST((julianday(?) - julianday(accessedAt)) / 7 AS INTEGER))
+      SET score = MAX(${DECAY_FLOOR}, score - ${DECAY_AMOUNT} * CAST((julianday(?) - julianday(accessedAt)) / ${DECAY_AGE_DAYS} AS INTEGER))
       WHERE source IN (${placeholders})
         AND deleted_at IS NULL
-        AND (julianday(?) - julianday(accessedAt)) > 7
+        AND (julianday(?) - julianday(accessedAt)) > ${DECAY_AGE_DAYS}
     `;
     const params = [now.toISOString(), ...sources, now.toISOString()];
     const result = this.db.prepare(sql).run(...params);

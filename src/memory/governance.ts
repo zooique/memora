@@ -51,3 +51,25 @@ export const SCORE_CEILING = 1.0;
  *   - InMemoryStorage / SqliteStorage incrementScore（clamp 下限）
  */
 export const DECAY_FLOOR = 0.1;
+
+/**
+ * 衰减：未访问天数阈值（天）— 超过此天数才开始衰减
+ *
+ * 消费者：
+ *   - recall.ts applyDecayToMemory（内存衰减判断）
+ *   - SqliteStorage.decayScores（SQL 衰减 WHERE 条件）
+ *
+ * 修改时必须同步两处（v2 神木回天：消除跨层重复硬编码）
+ */
+export const DECAY_AGE_DAYS = 7;
+
+/**
+ * 衰减：每过一个周期 score 降低量
+ *
+ * 消费者：
+ *   - recall.ts applyDecayToMemory（内存衰减计算）
+ *   - SqliteStorage.decayScores（SQL 衰减 SET 计算）
+ *
+ * 修改时必须同步两处（v2 神木回天：消除跨层重复硬编码）
+ */
+export const DECAY_AMOUNT = 0.02;

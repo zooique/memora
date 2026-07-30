@@ -445,13 +445,15 @@ export class InsightExtractor {
    * @returns 语义化 name 字符串
    */
   private generateSemanticName(tagsRaw: unknown, insightId: string): string {
+    // 三种回退分支共用同一兜底名称（逻辑分叉但结果收敛，提取常量消除 3 处重复字面量）
+    const fallbackName = `insight-${insightId.slice(0, 8)}`;
     // 运行时校验：tags 必须是非空数组，且第一个元素为非空字符串
     if (!Array.isArray(tagsRaw) || tagsRaw.length === 0) {
-      return `insight-${insightId.slice(0, 8)}`;
+      return fallbackName;
     }
     const firstTag = tagsRaw[0];
     if (typeof firstTag !== 'string' || !firstTag.trim()) {
-      return `insight-${insightId.slice(0, 8)}`;
+      return fallbackName;
     }
     // 清洗 tag：保留中文/字母/数字/连字符，移除其他字符（防止注入和特殊字符）
     const cleanedTag = firstTag
@@ -460,7 +462,7 @@ export class InsightExtractor {
       .slice(0, 8);
     // 清洗后为空（如 tag 全是特殊字符），回退到 UUID 方案
     if (!cleanedTag) {
-      return `insight-${insightId.slice(0, 8)}`;
+      return fallbackName;
     }
     return `${cleanedTag}-${insightId.slice(0, 6)}`;
   }

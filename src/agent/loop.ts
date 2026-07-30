@@ -174,6 +174,10 @@ export class AgentLoop {
       outputBlockedByGuard:
         opts.messages?.outputBlockedByGuard ??
         ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
+      reflectionHint:
+        opts.messages?.reflectionHint ??
+        ((remaining: number) =>
+          `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${remaining}`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
 
@@ -443,7 +447,7 @@ export class AgentLoop {
         this.reflectionCountThisTurn++;
         this.messages.push({
           role: 'system',
-          content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - this.reflectionCountThisTurn}`,
+          content: this.ui.reflectionHint(this.maxReflectionRetries - this.reflectionCountThisTurn),
         });
       }
     }

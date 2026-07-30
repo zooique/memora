@@ -140,6 +140,15 @@ export interface UIMessages {
   guardrailWarningPrefix?: string;
   /** 输出被护栏阻断提示模板 */
   outputBlockedByGuard?: (rule: string) => string;
+  /**
+   * Reflection（反思/自修正）提示生成函数
+   *
+   * 工具调用失败且错误可重试时，在 LLM 上下文中追加此提示，帮助 LLM 聚焦于修正而非放弃。
+   *
+   * @param remaining 剩余反思次数
+   * @returns 系统消息内容
+   */
+  reflectionHint?: (remaining: number) => string;
 }
 
 // ─── 归档模式（ADR-015） ──────────────────────────────────

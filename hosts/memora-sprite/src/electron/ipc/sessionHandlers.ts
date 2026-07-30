@@ -20,6 +20,20 @@ import { requireAgent, requireSessionStore } from './types.js';
 import type { IpcContext } from './types.js';
 
 /**
+ * SESSION_LOAD handler 的空结果常量
+ *
+ * 提取原因：参数校验失败、target 解析失败、异常降级等 7 处返回相同的空对象字面量，
+ * 违反 DRY 原则（v2 神木回天 REPEAT-5 闭环）。
+ * 对象不可变，IPC 序列化传输时会自动复制，共享引用安全。
+ */
+const EMPTY_SESSION_RESULT = {
+  messages: [] as Array<{ role: string; content: string; timestamp?: string }>,
+  loadedSessionId: '',
+  total: 0,
+  hasMore: false,
+};
+
+/**
  * 注册会话管理 IPC 处理器
  *
  * @param ctx IPC 上下文
@@ -30,20 +44,20 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     try {
       // query 对象类型校验，防止 null/undefined 或非对象传入
       if (!query || typeof query !== 'object') {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        return EMPTY_SESSION_RESULT;
       }
       // date/session 可选但必须是字符串；limit/offset 可选但必须是数字
       if (query.date !== undefined && typeof query.date !== 'string') {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        return EMPTY_SESSION_RESULT;
       }
       if (query.session !== undefined && typeof query.session !== 'string') {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        return EMPTY_SESSION_RESULT;
       }
       if (query.limit !== undefined && typeof query.limit !== 'number') {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        return EMPTY_SESSION_RESULT;
       }
       if (query.offset !== undefined && typeof query.offset !== 'number') {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        return EMPTY_SESSION_RESULT;
       }
 
       let target: string;
@@ -60,7 +74,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
       if (!match || !match[1] || !match[2]) {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        return EMPTY_SESSION_RESULT;
       }
 
       // 分页加载：limit 和 offset 来自 query（默认 50 条）
@@ -80,7 +94,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '加载会话历史失败' });
-      return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+      return EMPTY_SESSION_RESULT;
     }
   });
 
