@@ -102,6 +102,8 @@ src/
 | 常量      | 全大写下划线（`BLOCKED_PATTERNS`）   |
 | 类型/接口 | 大驼峰（`Memory`、`ChatOptions`）    |
 
+> **I-prefix 例外**：由宿主项目注入的接口（依赖倒置契约面，如 `ILogger`/`IMemoryStorage`/`ITracer`）允许使用 `I` 前缀——注入契约在架构语义上不同于普通数据类型/接口，`I` 前缀在此处承载了「由外部实现」的架构意图，不作为 Hungarian notation 违规。非注入接口仍须遵循纯 PascalCase。
+
 ## 5. Git 提交规范
 
 ```

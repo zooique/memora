@@ -73,13 +73,14 @@ agent/      →  llm/         （对话调用 Provider）
             →  skill/       （技能管理，通过 SkillManager）
             →  security/    （路径校验，跨切）
 memory/     →  utils/       （frontmatter 解析 + segmenter 分词）
+            →  security/    （type-only：ProjectManager.init() 需 SecurityGuard 创建项目路径守卫）
             →  （relationStore 是侧车，独立于 IMemoryStorage，不反向依赖 agent/）
-            →  （EmbeddingService 接口定义在 memory/，llm/ 通过 import type 引入 EmbeddingOptions，属依赖倒置例外）
+            →  （依赖倒置例外：vectorStore.ts 通过 import type 引入 llm/embedding.js 的 EmbeddingOptions——类型定义在实现方 llm/，消费者 memory/ 以 type-only 引用。EmbeddingService 方向相反，见 llm/ 行）
 persona/    →  utils/       （frontmatter 解析 + segmenter 分词）
             →  （不依赖 memory/：PersonaManager 已从 SQLite 索引解耦，纯文件+内存缓存）
 skill/      →  utils/       （frontmatter 解析 + segmenter 分词 + scanner 扫描）
             →  （不依赖 memory/：SkillManager 已从 SQLite 索引解耦，纯文件+内存缓存）
-llm/        →  memory/      （type-only：EmbeddingOptions 类型引用，依赖倒置：消费者定义接口，提供者实现接口）
+llm/        →  memory/      （type-only：EmbeddingService 接口定义在 memory/、llm/ provider 实现。属依赖倒置：消费者 memory/ 定义接口契约，实现方 llm/ 遵守。EmbeddingOptions 方向相反，见 memory/ 例外行）
 config/     →  （被所有层调）
 logging/    →  （被所有层调）
 utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖

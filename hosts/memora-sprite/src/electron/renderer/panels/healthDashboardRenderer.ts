@@ -12,7 +12,7 @@
  * - 由 DashboardPanelManager 持有实例，外观方法委托调用
  */
 
-import { showPanelLoading } from '../helpers/domHelpers.js';
+import { showPanelLoading, hidePanelLoading } from '../helpers/domHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），4 处面板共用
 import { renderErrorState } from '../helpers/errorState.js';
 import { EventTracker } from '../helpers/eventTracker.js';
@@ -101,6 +101,12 @@ export class HealthDashboardRenderer {
    * @param data 健康度数据
    */
   render(data: HealthDashboardPayload): void {
+    // 清除 showLoading() 添加的 .panel-loading 覆盖层（修复 loading 永驻 bug）
+    // 必须在 setTextContent 前执行，否则覆盖层持续遮挡渲染结果
+    const healthBar = document.getElementById('memory-health-bar');
+    const metricsEl = healthBar?.querySelector('.health-metrics');
+    if (metricsEl) hidePanelLoading(metricsEl);
+
     // ─── 健康度评分（记忆面板 health-bar）+ 评分基数 ──────────────
     const scoreEl = document.getElementById('health-score');
     if (scoreEl) {

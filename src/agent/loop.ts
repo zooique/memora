@@ -639,13 +639,13 @@ export class AgentLoop {
           // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
           llmSpan.recordException(e);
           llmSpan.end();
-          throw err;
+          throw lastError;
         }
         if (attempt >= LOOP_CONSTANTS.MAX_LLM_RETRIES) {
           // 重试次数耗尽
           llmSpan.recordException(e);
           llmSpan.end();
-          throw err;
+          throw lastError;
         }
         // 继续重试（超时/网络错误等在流式开始前均可重试）
       }
