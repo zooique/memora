@@ -24,6 +24,7 @@
 import type { Memory } from 'memora';
 import { logger } from 'memora';
 import { MS_PER_HOUR } from '../constants.js';
+import { countBySource } from './helpers.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -176,10 +177,8 @@ export class ContextAwareness {
   private deriveCoherence(memories: Memory[]): CoherenceLevel {
     if (memories.length === 0) return 'none';
 
-    const sourceCounts = new Map<string, number>();
-    for (const m of memories) {
-      sourceCounts.set(m.source, (sourceCounts.get(m.source) ?? 0) + 1);
-    }
+    // MIND-D7：提取为共享纯函数 countBySource（见 helpers.ts）
+    const sourceCounts = countBySource(memories);
 
     // 找到最高频 source
     let maxCount = 0;
@@ -215,10 +214,8 @@ export class ContextAwareness {
   private getDominantSource(memories: Memory[]): string | null {
     if (memories.length === 0) return null;
 
-    const sourceCounts = new Map<string, number>();
-    for (const m of memories) {
-      sourceCounts.set(m.source, (sourceCounts.get(m.source) ?? 0) + 1);
-    }
+    // MIND-D7：提取为共享纯函数 countBySource（见 helpers.ts）
+    const sourceCounts = countBySource(memories);
 
     let maxSource: string | null = null;
     let maxCount = 0;

@@ -19,6 +19,8 @@
 import type { Memory } from 'memora';
 import { logger } from 'memora';
 import { MS_PER_WEEK } from '../constants.js';
+import { getSourceDistribution } from './helpers.js';
+import { getSourceLabel } from '../../shared/sourceLabels.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -185,7 +187,7 @@ export class PatternDetector {
         const ratio = count / groupTotal;
         if (ratio >= 0.5) {
           // 生成中文 source 标签
-          const sourceLabel = this.sourceLabel(source);
+          const sourceLabel = getSourceLabel(source);
           patterns.push({
             type: 'recurring_topic',
             summary: `你在 ${sourceLabel} 方面反复讨论「${keyword}」（${count}/${groupTotal} 次）`,
@@ -285,10 +287,9 @@ export class PatternDetector {
       return patterns;
     }
 
-    // 计算近期 source 分布
-    const recentSourceDist = this.getSourceDistribution(recentMemories);
-    // 计算远期 source 分布
-    const olderSourceDist = this.getSourceDistribution(olderMemories);
+    // MIND-D8：提取为共享纯函数 getSourceDistribution（见 helpers.ts）
+    const recentSourceDist = getSourceDistribution(recentMemories);
+    const olderSourceDist = getSourceDistribution(olderMemories);
 
     // 合并所有 source
     const allSources = new Set([
@@ -304,7 +305,7 @@ export class PatternDetector {
       // 只关注显著变化
       if (Math.abs(change) < this.options.minDriftRatio) continue;
 
-      const sourceLabel = this.sourceLabel(source);
+      const sourceLabel = getSourceLabel(source);
       const direction = change > 0 ? '增加' : '减少';
       const absChange = Math.abs(change);
 
@@ -354,52 +355,6 @@ export class PatternDetector {
     return new Map(
       [...keywordCounts.entries()].sort((a, b) => b[1] - a[1]),
     );
-  }
-
-  /**
-   * 计算 source 分布（每个 source 的占比）
-   *
-   * @param memories 记忆列表
-   * @returns source → 占比 映射
-   */
-  private getSourceDistribution(memories: Memory[]): Map<string, number> {
-    const distribution = new Map<string, number>();
-    const total = memories.length;
-    if (total === 0) return distribution;
-
-    for (const m of memories) {
-      distribution.set(m.source, (distribution.get(m.source) ?? 0) + 1);
-    }
-
-    // 转为占比
-    for (const [source, count] of distribution) {
-      distribution.set(source, count / total);
-    }
-
-    return distribution;
-  }
-
-  /**
-   * source 标签 → 中文友好名称
-   *
-   * @param source 原始 source 字符串
-   * @returns 中文标签
-   */
-  private sourceLabel(source: string): string {
-    const labels: Record<string, string> = {
-      profile: '个人偏好',
-      insight: '洞察',
-      rule: '规则',
-      skill: '技能',
-      guardrail: '安全',
-      chat: '对话',
-      file: '文件',
-      work: '工作',
-      memory: '记忆',
-      summary: '摘要',
-      note: '笔记',
-    };
-    return labels[source] ?? source;
   }
 
   /**
