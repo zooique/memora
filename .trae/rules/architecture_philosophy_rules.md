@@ -3,8 +3,6 @@ alwaysApply: false
 description:
   架构哲学原则（10
   条：万物皆记忆 v2、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型）
-version: v1.0
-date: 2026-07-27
 ---
 
 # 架构哲学原则
@@ -185,7 +183,7 @@ domain），其余在 Agent Loop 中按需检索。
 **在代码中的体现**：
 
 - `decayScores()` 衰减 insight/profile/work-projection 的 score（由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）
-- 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](./decisions/ADR-015-archive-mode.md)）
+- 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](../decisions/ADR-015-archive-mode.md)）
 - `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）
 - 物理清理：`purgeExpiredMemories(before)` 清理过期软删除记忆；回收站定时器默认保留 30 天
 

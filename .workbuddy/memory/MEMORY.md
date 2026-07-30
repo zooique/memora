@@ -1,7 +1,7 @@
 # 项目长期记忆（memora）
 
 ## 架构与质量基线
-- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，版本 1.4.0）。内核经 `scripts/sync-memora.mjs` 以 cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，运行期不单独更新**。
+- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，当前 sprite 版本 1.5.0，渲染 `appVersion` 走 `package.json` 而非 `process.versions.electron`）。内核经 `scripts/sync-memora.mjs` 以 cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，运行期不单独更新**。
 - 真实质量门 = `tsc --noEmit` + `eslint` + `lint:css`(stylelint) + vitest；prettier --check 非门（勿批量 write 制造无关 diff）。
 
 ## 设计令牌（ADR）

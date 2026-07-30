@@ -7,7 +7,7 @@ description: "跨进程非 ASCII 数据传递：文件 I/O 优于 stdout 管道 
 
 > **状态**：✅ 已接受
 > **日期**：2026-07-19
-> **来源**：窗口标题中文乱码修复（详见 [docs/案例-窗口标题中文乱码修复.md](../../../hosts/memora-sprite/docs/案例-窗口标题中文乱码修复.md)）
+> **来源**：窗口标题中文乱码修复（详见 [docs/案例-窗口标题中文乱码修复.md](../../hosts/memora-sprite/docs/案例-窗口标题中文乱码修复.md)）
 > **依赖**：[ADR-SP-003](./ADR-SP-003-desktop-shell.md)（Electron 桌面壳）、[ADR-SP-017](./ADR-SP-017-quick-input-architecture.md)（快速输入浮窗架构）
 
 ## 背景
@@ -116,6 +116,6 @@ function getForegroundWindowTitleViaPS(): string | null {
 
 ## 引用
 
-- 完整案例文档：[案例-窗口标题中文乱码修复.md](../../../hosts/memora-sprite/docs/案例-窗口标题中文乱码修复.md)
-- 相关代码：[pasteCoordinator.ts](../../../hosts/memora-sprite/src/electron/windows/pasteCoordinator.ts) `getWindowTitleViaPS()`
-- 相关代码：[inputInjector.ts](../../../hosts/memora-sprite/src/electron/inputInjector.ts) `ActiveWindow.hwnd`
+- 完整案例文档：[案例-窗口标题中文乱码修复.md](../../hosts/memora-sprite/docs/案例-窗口标题中文乱码修复.md)
+- 相关代码：[pasteCoordinator.ts](../../hosts/memora-sprite/src/electron/windows/pasteCoordinator.ts) `getWindowTitleViaPS()`
+- 相关代码：[inputInjector.ts](../../hosts/memora-sprite/src/electron/inputInjector.ts) `ActiveWindow.hwnd`

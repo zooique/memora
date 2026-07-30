@@ -3,9 +3,9 @@
 > **审查日期**：2026-07-19
 > **审查范围**：memora 内核 `src/` + sprite 宿主 `hosts/memora-sprite/src/`
 > **对照标准**：
-> - [ADR-001 运行时栈](../../.trae/rules/decisions/ADR-001-runtime-stack.md)（Node.js 22 LTS + TS 5 strict + ESM）
-> - [ADR-002 存储层抽象](../../.trae/rules/decisions/ADR-002-storage-layer.md)（零 native 依赖内核）
-> - [ADR-008 目录结构](../../.trae/rules/decisions/ADR-008-directory-structure.md)（按职责分层）
+> - [ADR-001 运行时栈](../../.trae/decisions/ADR-001-runtime-stack.md)（Node.js 22 LTS + TS 5 strict + ESM）
+> - [ADR-002 存储层抽象](../../.trae/decisions/ADR-002-storage-layer.md)（零 native 依赖内核）
+> - [ADR-008 目录结构](../../.trae/decisions/ADR-008-directory-structure.md)（按职责分层）
 > - [project-rules.md §1.6 零依赖内核](../../.trae/rules/project-rules.md)
 > - [backend_layers_rules.md](../../.trae/rules/backend_layers_rules.md)（src/ 各模块职责边界）
 > **审查性质**：仅审查记录，不修改任何文件

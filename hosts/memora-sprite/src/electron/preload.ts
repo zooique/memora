@@ -219,6 +219,8 @@ export const IPC_CHANNELS = {
   USAGE_STATS_CLEAR: 'usage-stats-clear',
   /** 检查应用更新（与 ipc/channels.ts 同步） */
   CHECK_UPDATE: 'check-update',
+  /** 打开 GitHub Releases 页面（与 ipc/channels.ts 同步） */
+  OPEN_RELEASES_URL: 'open-releases-url',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {

@@ -118,7 +118,7 @@ description: Memora 关键决策年轮
   ↓
 (历史设计文档已归档：项目决策表.md → 具体技术选型)
   ↓
-.trae/rules/decisions/    →  关键决策的不可逆约束（ADR）
+.trae/decisions/          →  关键决策的不可逆约束（ADR）
   ↓
 .trae/rules/              →  编码规范与架构约束
   ↓

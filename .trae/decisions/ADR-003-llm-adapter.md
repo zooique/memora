@@ -101,7 +101,7 @@ export interface LlmProvider {
 **背景**：原 `factory.ts` 内置 `presets` 表（deepseek/doubao/openai 三家的 `baseUrl` + `defaultModel`），在 `createProviderFromConfig` 中作为兜底回退。问题：
 
 1. **维护成本高**：厂商模型迭代频繁（如 doubao-pro-32k → doubao-pro-128k），presets 极易过期
-2. **违反领域无关原则**：内核 `src/llm/` 不应硬编码具体厂商信息，违反"核心库提供机制，宿主提供策略"分层边界（见 [backend_layers_rules.md §核心库 vs 宿主项目职责边界](../backend_layers_rules.md)）
+2. **违反领域无关原则**：内核 `src/llm/` 不应硬编码具体厂商信息，违反"核心库提供机制，宿主提供策略"分层边界（见 [backend_layers_rules.md §核心库 vs 宿主项目职责边界](../rules/backend_layers_rules.md)）
 3. **掩盖配置缺失**：用户配置缺 baseUrl/model 时，presets 静默回退，导致运行时行为与配置文件不一致
 
 **决策**：
@@ -146,7 +146,7 @@ export interface LlmProvider {
 
 ### CLI 命令
 
-> CLI 已移出至宿主项目（CLI 移出决策详见 [ADR-002](./ADR-002-storage-layer.md) v0.7 + [project-rules.md §1.6](../project-rules.md) 零依赖内核）。以下命令由宿主项目（如 `hosts/memora-sprite/`）实现。
+> CLI 已移出至宿主项目（CLI 移出决策详见 [ADR-002](./ADR-002-storage-layer.md) v0.7 + [project-rules.md §1.6](../rules/project-rules.md) 零依赖内核）。以下命令由宿主项目（如 `hosts/memora-sprite/`）实现。
 
 ```bash
 memora config-llm list          # 列出 Provider（宿主实现）

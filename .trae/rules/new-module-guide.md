@@ -1,8 +1,6 @@
 ---
 alwaysApply: false
 description: 新增模块的标准流程（防止随意加模块破坏架构）
-version: v0.3
-date: 2026-07-26
 ---
 
 # 新增模块指南
@@ -31,7 +29,7 @@ date: 2026-07-26
 - [ ] 它与哪些现有模块交互？
 - [ ] 它是否需要新的外部依赖？
 - [ ] 它是否需要新的 ADR？
-- [ ] 是否已回答 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md) 架构层 4 问（详见 [backend_layers_rules.md §判断标准](./backend_layers_rules.md)）？
+- [ ] 是否已回答 [ADR-017](../decisions/ADR-017-natural-growth-redefinition.md) 架构层 4 问（详见 [backend_layers_rules.md §判断标准](./backend_layers_rules.md)）？
 
 如果以上任何一项不明确——**暂停，回去问用户**。
 
@@ -76,7 +74,7 @@ src/<new-module>/
 
 ### 6. 新增面板的 CSS 检查项（精灵宿主）
 
-> **来源**：[ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)；CSS 三层作用域模型（L1/L2/L3、面板前缀、单一真理源）与完整约束见 [backend_layers_rules.md §前端 CSS 三层作用域模型](./backend_layers_rules.md)。
+> **来源**：[ADR-018 · CSS 作用域规范](../decisions/ADR-018-css-scoping-convention.md)；CSS 三层作用域模型（L1/L2/L3、面板前缀、单一真理源）与完整约束见 [backend_layers_rules.md §前端 CSS 三层作用域模型](./backend_layers_rules.md)。
 
 新增 `#panel-<name>` 面板时，必须完成以下 CSS 检查（动作项，模型定义不在此重复）：
 
@@ -90,7 +88,7 @@ src/<new-module>/
 
 ### 7. 新增 Agent Manager 检查清单
 
-> **来源**：不引入 ComponentRegistry，改为固化检查清单防止遗漏（详见 [ADR-010](./decisions/ADR-010-agent-facade.md)）。
+> **来源**：不引入 ComponentRegistry，改为固化检查清单防止遗漏（详见 [ADR-010](../decisions/ADR-010-agent-facade.md)）。
 
 新增 `src/agent/managers/` 下专职 Manager 时，按以下 9 处修改点检查（跨 [agent.ts](../../src/agent/agent.ts) 和 [assembler.ts](../../src/agent/assembler.ts) 2 文件）：
 

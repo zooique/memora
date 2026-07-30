@@ -7,7 +7,7 @@ description: 专注模式（应无所住而生其心）与记忆衰减机制
 
 > **状态**：✅ 已采纳
 > **日期**：2026-06-03（年轮审判补写，原始实现日期 2026-06-02）
-> **来源**：[architecture_philosophy_rules.md §9 专注模式](../architecture_philosophy_rules.md)（历史文档已归档）
+> **来源**：[architecture_philosophy_rules.md §9 专注模式](../rules/architecture_philosophy_rules.md)（历史文档已归档）
 
 ## 背景
 

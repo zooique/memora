@@ -1,15 +1,13 @@
 ---
 alwaysApply: false
 description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node 本地项目）
-version: v0.2
-date: 2026-07-13
 ---
 
 # 通用编码约束规则
 
 > **适用范围**：Memora 内核（`src/`）+ 精灵宿主（`hosts/memora-sprite/src/`）全部 TS/JS 代码
 > **与现有规则关系**：与 [backend_layers_rules.md §分层职责](./backend_layers_rules.md) 互补（前者定边界，本文件定写法）；与 [security_rules.md](./security_rules.md) 正交（前者管权限，本文件管健壮性）
-> **技术栈前提**：TypeScript 5 strict + ESM + Node.js ≥ 22（精灵宿主 Node.js 24），详见 [ADR-001](./decisions/ADR-001-runtime-stack.md) / [ADR-SP-001](./decisions/ADR-SP-001-runtime.md)
+> **技术栈前提**：TypeScript 5 strict + ESM + Node.js ≥ 22（精灵宿主 Node.js 24），详见 [ADR-001](../decisions/ADR-001-runtime-stack.md) / [ADR-SP-001](../decisions/ADR-SP-001-runtime.md)
 
 ## 1. 契约与入参校验
 
@@ -25,7 +23,7 @@ date: 2026-07-13
 | DON'T | 用 `??` 篡改核心业务标识类字段（主键、状态码、来源标记） |
 | DON'T | 复制粘贴 `if` 判断——相同校验逻辑出现 2 次即抽工具函数 |
 
-**Memora 适配**：`src/utils/` 下集中存放纯函数工具；记忆模型的 `source` 字段属核心标识，禁止兜底覆盖（详见 [ADR-004 · 记忆统一模型](./decisions/ADR-004-memory-unification.md)）。
+**Memora 适配**：`src/utils/` 下集中存放纯函数工具；记忆模型的 `source` 字段属核心标识，禁止兜底覆盖（详见 [ADR-004 · 记忆统一模型](../decisions/ADR-004-memory-unification.md)）。
 
 **DOM 元素校验决策标准**：
 - `instanceof` + `console.error`：用于 `document.getElementById()` 获取的静态 HTML 元素（缺失即 bug，需记录日志便于调试）
@@ -83,7 +81,7 @@ date: 2026-07-13
 ## 5. 数据与存储
 
 > **核心原则**：DAO 层隔离 SQL，业务层不裸写数据库操作。
-> **适配前提**：`better-sqlite3` 由宿主项目注入，内核零 native 依赖（详见 [ADR-002](./decisions/ADR-002-storage-layer.md)）。
+> **适配前提**：`better-sqlite3` 由宿主项目注入，内核零 native 依赖（详见 [ADR-002](../decisions/ADR-002-storage-layer.md)）。
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -114,7 +112,7 @@ date: 2026-07-13
 
 **Memora 适配**：命名规范详见 [project-rules.md §4](./project-rules.md)（文件夹连字符、TS 文件小驼峰、类大驼峰、常量全大写下划线）。
 
-**CSS 作用域与命名规范**：本文件不重复定义。统一规范见 [backend_layers_rules.md §前端 CSS 三层作用域模型](./backend_layers_rules.md)（L1/L2/L3 三层模型、面板前缀 + BEM、单一真理源约束），权威定义见 [ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)。
+**CSS 作用域与命名规范**：本文件不重复定义。统一规范见 [backend_layers_rules.md §前端 CSS 三层作用域模型](./backend_layers_rules.md)（L1/L2/L3 三层模型、面板前缀 + BEM、单一真理源约束），权威定义见 [ADR-018 · CSS 作用域规范](../decisions/ADR-018-css-scoping-convention.md)。
 
 ## 7. 分支与兜底取舍
 
@@ -128,7 +126,7 @@ date: 2026-07-13
 | DON'T | 核心业务主键、状态用兜底默认值覆盖——问题显性抛出 |
 | DON'T | 滥用兜底默认值掩盖参数错误、数据缺失 |
 
-**Memora 适配**：`archiveMode` 三态控制（full/insights-only/manual）属核心状态，禁止兜底为 `full`（详见 [ADR-015](./decisions/ADR-015-archive-mode.md)）。
+**Memora 适配**：`archiveMode` 三态控制（full/insights-only/manual）属核心状态，禁止兜底为 `full`（详见 [ADR-015](../decisions/ADR-015-archive-mode.md)）。
 
 ## 8. 工程分层
 

@@ -76,7 +76,7 @@ description: 规则文件生成指南
 └── {其他规则文件}             alwaysApply: false，按需加载
 ```
 
-> **ADR 规范**：架构决策记录统一存放在 `.trae/rules/decisions/`，文件命名格式 `{序号}-{描述}.md`。ADR 不得放在项目根目录。
+> **ADR 规范**：架构决策记录统一存放在 `.trae/decisions/`，文件命名格式 `{序号}-{描述}.md`。ADR 不得放在项目根目录。
 
 **不要包含：**
 - 具体产出示例（放在 architecture-quickref.md 和各专项规则中）

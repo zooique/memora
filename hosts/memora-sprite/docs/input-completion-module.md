@@ -459,7 +459,7 @@ npm run dev:electron
 
 - [用户体验闭环路线图](./用户体验闭环路线图.md) - 闭环 7：快速输入→记忆沉淀
 - [场景闭环设计](./场景闭环设计.md) - 快速输入浮窗场景设计
-- [ADR-017 自然生长原则](../.trae/rules/decisions/ADR-017-natural-growth-redefinition.md) - 分层适用原则
+- [ADR-017 自然生长原则](../.trae/decisions/ADR-017-natural-growth-redefinition.md) - 分层适用原则
 - [项目规则](../.trae/rules/project-rules.md) - 项目总则和技术栈
 
 ## 10. 维护指南

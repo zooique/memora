@@ -6,7 +6,7 @@ description: "memora-sprite 宿主：桌面壳分阶段策略"
 # ADR-SP-003 · 桌面壳
 
 > **状态**：✅ 已接受（2026-06-16）
-> **依赖**：CLI 移出至宿主项目 `hosts/memora-sprite/`（决策详见 [ADR-002](./ADR-002-storage-layer.md) v0.7 + [project-rules.md §1.6](../project-rules.md) 零依赖内核）
+> **依赖**：CLI 移出至宿主项目 `hosts/memora-sprite/`（决策详见 [ADR-002](./ADR-002-storage-layer.md) v0.7 + [project-rules.md §1.6](../rules/project-rules.md) 零依赖内核）
 
 ## 背景
 

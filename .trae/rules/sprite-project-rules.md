@@ -1,15 +1,13 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v2.2
-date: 2026-07-26
 ---
 
 # memora-sprite · 宿主项目总则
 
 > **设计哲学**：上下文感知，非内容感知 **核心矛盾**：被动响应 ←→ 主动进化
 > **定位**：memora 内核的第一个真实宿主——能自我进化的桌面精灵
-> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008 + ADR-SP-015~018
+> **决策追溯**：`.trae/decisions/` 下 ADR-SP-001~008 + ADR-SP-015~018
 >
 > **重构哲学**：底层设计优秀才能自然生长——不畏惧对底层架构动手术（功能定版后不盲目新增模块，但持续打磨架构与代码质量）。
 
@@ -29,7 +27,7 @@ date: 2026-07-26
 
 | 位置 | 用途 |
 |------|------|
-| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 30 个 ADR（内核 18 + 精灵 12） |
+| `memora/.trae/rules/` | **规则中枢**：12 个规则文件 + 30 个 ADR（内核 18 + 精灵 12） |
 | `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
 | `memora/tasks/` | **统一任务追踪**（唯一真理源）：内核 + 精灵健康度快照 + 待完成/已完成 + 打包前审查 + 归档 |
 
@@ -79,12 +77,12 @@ npm run package:win   # 自动：build:electron（含 sync-memora） → clean-r
 | 数据库 | better-sqlite3（native 模块，^12.10.0） | ADR-SP-002 |
 | 桌面壳 | CLI 起步，演进至 Electron 40 | ADR-SP-003 |
 | 感知层 | 上下文感知，非内容感知 | ADR-SP-004 |
-| 包管理 | npm + `sync-memora.mjs`（编译 → 最小化复制） + @electron/rebuild | [ADR-SP-005](./decisions/ADR-SP-005-package-management.md) v3 |
+| 包管理 | npm + `sync-memora.mjs`（编译 → 最小化复制） + @electron/rebuild | [ADR-SP-005](../decisions/ADR-SP-005-package-management.md) v3 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
 
 ## 4. 目录结构
 
-> 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md) 和 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（真理源，随迭代同步）
+> 详见 [ADR-SP-007](../decisions/ADR-SP-007-directory-structure.md) 和 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（真理源，随迭代同步）
 
 ### 4.1 渲染进程分层约束（C-8 确立）
 
@@ -148,7 +146,7 @@ npm run package:win   # 自动：build:electron（含 sync-memora） → clean-r
 /**
  * 剪贴板保护面板管理器
  *
- * C-5-2：从 UIManager 拆分（约 61 行），统一管理"剪贴板三重保护"的 UI 联动。
+ * 拆分来源：从 UIManager 拆分，统一管理"剪贴板三重保护"的 UI 联动。
  *
  * 职责：
  * - 被动检测到剪贴板变化时，显示带"分析"按钮的 Toast
@@ -184,7 +182,7 @@ export class ClipboardManager { ... }
 
 #### 4.2.3 PanelManager 必含的注释要素
 
-每个 PanelManager 文件必须包含以下注释要素（与 [ADR-SP-015](./decisions/ADR-SP-015-panel-manager-composition.md) 一致）：
+每个 PanelManager 文件必须包含以下注释要素（与 [ADR-SP-015](../decisions/ADR-SP-015-panel-manager-composition.md) 一致）：
 
 - **文件级**：① 模块职责 ② 拆分来源（如 C-5-x） ③ 设计原则（依赖注入模式）
 - **类级**：① 类的职责概述 ② 依赖（如 ToastManager / ModalManager / EventTracker） ③ 生命周期说明（init/cleanup 行为）
@@ -227,12 +225,12 @@ export class ClipboardManager { ... }
 
 ## 8. 能力扩展
 
-> **自然生长原则**（[ADR-017](./decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）遵循 2 次提取原则。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
+> **自然生长原则**（[ADR-017](../decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）遵循 2 次提取原则。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
 > **触发条件**：识别到"内核机制已建、宿主尚未接入"的能力缺口时，按架构层原则评估归属后接入，不闭门造接口。
 
 ### 8.1 工具注册（`agent.tools.registerTool`）
 
-**抽取阈值**：第 2 次出现时提取通用 helper（枝叶层 2 次提取原则，详见 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md)）。
+**抽取阈值**：第 2 次出现时提取通用 helper（枝叶层 2 次提取原则，详见 [ADR-017](../decisions/ADR-017-natural-growth-redefinition.md)）。
 
 **当前实现**（[hosts/memora-sprite/src/sprite/tools.ts](../../hosts/memora-sprite/src/sprite/tools.ts)）：
 
@@ -289,9 +287,8 @@ SecurityGuard.requestWriteConfirmation
 |------|------|------|------|
 | L1 热键 | 用户主动召唤 | 已实现 | Ctrl+Shift+Space |
 | L2 定时 | 周期性检查触发条件 | 已实现 | 每分钟检查 insight/profile |
-| L3 文件变化 | 监听项目文件修改 | 规划中 | chokidar on change |
-| L4 窗口上下文 | 获取活跃窗口标题/进程名 | 规划中 | active-win |
-| L5 日程模式 | 基于时间的主动问候 | 规划中 | 每日早安/工作日提醒 |
+
+> 其余层级（文件变化 / 窗口上下文 / 日程模式）为演进方向，不冻结于本规范，避免迭代路线图腐化契约。
 
 ### 9.2 永远禁止的感知方式
 
@@ -326,8 +323,8 @@ SecurityGuard.requestWriteConfirmation
 
 ## 10. 快速输入浮窗模块（quick-input）
 
-> **架构决策**：详见 [ADR-SP-017](./decisions/ADR-SP-017-quick-input-architecture.md)
-> **窗口标题编码**：详见 [ADR-SP-018](./decisions/ADR-SP-018-cross-process-encoding.md)（nut-js GetWindowTextA 编码 bug 绕过：提取 HWND + PowerShell GetWindowTextW + 文件 I/O 传递）
+> **架构决策**：详见 [ADR-SP-017](../decisions/ADR-SP-017-quick-input-architecture.md)
+> **窗口标题编码**：详见 [ADR-SP-018](../decisions/ADR-SP-018-cross-process-encoding.md)（nut-js GetWindowTextA 编码 bug 绕过：提取 HWND + PowerShell GetWindowTextW + 文件 I/O 传递）
 > **定位**：用户主动召唤的轻量级输入浮窗，不属于 §9 感知层（感知层是精灵主动感知，quick-input 是用户主动触发）
 
 ### 10.1 模块架构
@@ -337,11 +334,11 @@ SecurityGuard.requestWriteConfirmation
 | 窗口管理器 | `src/electron/windows/quickInputWindow.ts` | BrowserWindow 生命周期 + IPC 注册（内联模式）+ 剪贴板预填 + 粘贴协调 |
 | 交互控制器 | `src/electron/renderer/quick-input/quickInput.ts`（QuickInputController） | 键盘事件 / 常驻模式 / 展开收起 / LLM 润色 / 拖动 / 确认流程 / 布局调整 |
 | 补全逻辑 | `src/electron/renderer/quick-input/quickInputCompletion.ts`（QuickInputCompletion） | 防抖 / 并行搜索 / 合并去重 / 多样性过滤 / 采纳反馈 / ARIA |
-| 浮窗样式 | `src/electron/renderer/styles/windows/quick-input.css` | 独立窗口样式（CSS-R6 后迁入 windows/，详见 [ADR-019](./decisions/ADR-019-css-functional-grouping.md)） |
+| 浮窗样式 | `src/electron/renderer/styles/windows/quick-input.css` | 独立窗口样式（CSS-R6 后迁入 windows/，详见 [ADR-019](../decisions/ADR-019-css-functional-grouping.md)） |
 
 ### 10.2 IPC 通道清单（窗口管理器内联注册）
 
-> **例外说明**：quick-input 的 IPC 通道在 `quickInputWindow.ts` 内注册，而非 `ipc/` 下的 handler 文件。判定标准详见 [ADR-SP-017 §1](./decisions/ADR-SP-017-quick-input-architecture.md#1-窗口管理器内联-ipc-模式)。
+> **例外说明**：quick-input 的 IPC 通道在 `quickInputWindow.ts` 内注册，而非 `ipc/` 下的 handler 文件。判定标准详见 [ADR-SP-017 §1](../decisions/ADR-SP-017-quick-input-architecture.md#1-窗口管理器内联-ipc-模式)。
 
 | 通道 | 模式 | 职责 |
 |------|------|------|

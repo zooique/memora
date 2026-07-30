@@ -46,6 +46,8 @@ src/
 └── utils/                  # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
+> **实时结构以 [project-rules.md §3](../rules/project-rules.md) 为唯一真理源**：本「目录结构（当前）」块为决策时快照（截至 v0.2 / 2026-06-02），Manager 计数与具体文件可能已随后续演进漂移，仅供追溯，**不构成冻结契约**。
+
 > **已移出至精灵宿主项目**（详见 [ADR-SP-007](./ADR-SP-007-directory-structure.md)）：
 > - `cli/` → `hosts/memora-sprite/src/cli.ts`
 > - `SqliteStorage`（原 `memory/index.ts`） → `hosts/memora-sprite/src/storage/sqliteStorage.ts`

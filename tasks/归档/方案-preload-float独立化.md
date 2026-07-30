@@ -2,7 +2,7 @@
 
 > **来源**：2026-07-17 三模式联审（年轮审判+自动体检+自动安全）→ AUDIT-0717-1 触发方案设计
 > **架构归属**：精灵宿主 `hosts/memora-sprite/src/electron/`，无内核改动
-> **ADR 关联**：[ADR-SP-017](../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md) §影响 + §何时回顾
+> **ADR 关联**：[ADR-SP-017](../../.trae/decisions/ADR-SP-017-quick-input-architecture.md) §影响 + §何时回顾
 
 ## 背景与目标
 
@@ -23,7 +23,7 @@
 - 浮动窗口暴露面从 266 API → 11 API（**-96%**）
 - 高危 API（deleteMemory / installSkill / saveLlmProvider / clearAuditLog）不再暴露给浮动窗口
 - 参照已验证的 [preload-quick-input.ts](../../hosts/memora-sprite/src/electron/preload-quick-input.ts) 模式，技术风险低
-- 触发 [ADR-SP-017 §何时回顾](../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md) L105"当 quick-input 窗口数 > 1 时评估"——浮动窗口作为"第 2 个独立窗口"等价触发
+- 触发 [ADR-SP-017 §何时回顾](../../.trae/decisions/ADR-SP-017-quick-input-architecture.md) L105"当 quick-input 窗口数 > 1 时评估"——浮动窗口作为"第 2 个独立窗口"等价触发
 
 ## 涉及范围
 
@@ -31,7 +31,7 @@
 - **修改文件**：
   - [hosts/memora-sprite/src/electron/windows/floatWindow.ts](../../hosts/memora-sprite/src/electron/windows/floatWindow.ts) L69 — `preload.cjs` → `preload-float.cjs`
   - [hosts/memora-sprite/tsconfig.preload.json](../../hosts/memora-sprite/tsconfig.preload.json) L12 — `include` 数组新增 `preload-float.ts`
-  - [ADR-SP-017](../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md) §影响 — "100+ API" 更新为 "266 API"，§何时回顾 标注"浮动窗口 preload 独立化已实施"
+  - [ADR-SP-017](../../.trae/decisions/ADR-SP-017-quick-input-architecture.md) §影响 — "100+ API" 更新为 "266 API"，§何时回顾 标注"浮动窗口 preload 独立化已实施"
 - **数据库变更**：无
 - **内核变更**：无
 

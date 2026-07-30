@@ -109,7 +109,7 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 
 ### 决策
 
-在原有安全模型基础上，新增**渲染进程 CSP 与内联样式约束**，固化三条硬约束（详见 [security_rules.md §7](../security_rules.md)）：
+在原有安全模型基础上，新增**渲染进程 CSP 与内联样式约束**，固化三条硬约束（详见 [security_rules.md §7](../rules/security_rules.md)）：
 
 | 维度 | 设计 |
 |------|------|
@@ -130,11 +130,11 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 - 所有渲染进程 HTML 修改必须经过 CSP 兼容性检查
 - TS 文件动态 `innerHTML` 拼接产物必须避免 `style="` 字面量
 - 提交前审查新增 4 项 CSP 兼容性检查清单
-- ~~`float.html` 因独立悬浮窗场景，保留 `'unsafe-inline'` 不受此约束~~ → **2026-07-24 修正**：`float.html` 内联样式已全部外置为外部 stylesheet，CSP 收紧为严格 `style-src 'self'`（与 `index.html` 一致），原宽松例外作废（详见 [security_rules.md §7.2](../security_rules.md)）
+- ~~`float.html` 因独立悬浮窗场景，保留 `'unsafe-inline'` 不受此约束~~ → **2026-07-24 修正**：`float.html` 内联样式已全部外置为外部 stylesheet，CSP 收紧为严格 `style-src 'self'`（与 `index.html` 一致），原宽松例外作废（详见 [security_rules.md §7.2](../rules/security_rules.md)）
 
 ### 修正记录
 
-- **2026-07-24（年轮审判）**：`float.html` 的 CSP 已从宽松（`'unsafe-inline'`）收紧为严格（`style-src 'self'`）。原因：悬浮窗内联样式已全部外置为 `styles/foundation/*.css` + `styles/windows/float.css`（float.html 头部注释已记载此决策），Web 模式合规要求渲染进程统一收紧，且 `'unsafe-inline'` 是样式注入攻击面、不应为悬浮窗保留例外。原 §7「影响」末条宽松例外已作废，操作真相以 [security_rules.md §7.2](../security_rules.md) 为准。
+- **2026-07-24（年轮审判）**：`float.html` 的 CSP 已从宽松（`'unsafe-inline'`）收紧为严格（`style-src 'self'`）。原因：悬浮窗内联样式已全部外置为 `styles/foundation/*.css` + `styles/windows/float.css`（float.html 头部注释已记载此决策），Web 模式合规要求渲染进程统一收紧，且 `'unsafe-inline'` 是样式注入攻击面、不应为悬浮窗保留例外。原 §7「影响」末条宽松例外已作废，操作真相以 [security_rules.md §7.2](../rules/security_rules.md) 为准。
 
 ### 何时回顾
 

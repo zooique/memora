@@ -58,7 +58,7 @@ Memora 需要支持宿主项目接入：
 | DedupManager | `src/agent/managers/dedupManager.ts` | L1 语义去重管理器（SPLIT-3 闭环：从 MemoryInspector 拆分出异步 LLM 去重职责） |
 | UserFactExtractor | `src/agent/userFactExtractor.ts` | 用户事实提取器（纯函数，非 Manager） |
 
-> 共 14 个专职 Manager/服务类（不含 UserFactExtractor 纯函数）。完整列表与 [project-rules.md §3](../project-rules.md) 一致。
+> 共 14 个专职 Manager/服务类（不含 UserFactExtractor 纯函数）。完整列表与 [project-rules.md §3](../rules/project-rules.md) 一致。
 
 ### Manager 访问器（Host API）
 

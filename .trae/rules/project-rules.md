@@ -1,7 +1,6 @@
 ---
 alwaysApply: false
 description: Memora 项目总则、技术栈清单、目录结构
-date: 2026-07-26
 ---
 
 # Memora · 项目总则
@@ -9,33 +8,33 @@ date: 2026-07-26
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 30 个 ADR（内核 18 + 精灵 12）
+> **决策追溯**：`.trae/decisions/` 下 30 个 ADR（内核 18 + 精灵 12）
 
 ## 1. 不可违反的硬约束
 
-1. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/rules/decisions/`）
+1. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/decisions/`）
 2. **跨文档引用规范**：详见
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
 3. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
-   `source` 开放字符串区分（详见 [ADR-004](./decisions/ADR-004-memory-unification.md)）
+   `source` 开放字符串区分（详见 [ADR-004](../decisions/ADR-004-memory-unification.md)）
 4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
 5. **配置文件是真理源**：配置文件是持久化真理源，SQLite 仅作运行时索引（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
-6. **零依赖内核**：memora 是纯逻辑库，不依赖任何第三方包（包括 zod）和 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 为空。pino 作为可选 `peerDependencies`（`optional: true`）+ `optionalDependencies` 保留，零配置时宿主开箱即用，宿主也可注入自定义 `ILogger` 覆盖（详见 [ADR-002](./decisions/ADR-002-storage-layer.md) §理由）
+6. **零依赖内核**：memora 是纯逻辑库，不依赖任何第三方包（包括 zod）和 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 为空。pino 作为可选 `peerDependencies`（`optional: true`）+ `optionalDependencies` 保留，零配置时宿主开箱即用，宿主也可注入自定义 `ILogger` 覆盖（详见 [ADR-002](../decisions/ADR-002-storage-layer.md) §理由）
 
 ## 2. 技术栈清单
 
 | 类别   | 选型                                         | 决策                                                  |
 | ------ | -------------------------------------------- | ----------------------------------------------------- |
-| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](./decisions/ADR-001-runtime-stack.md)       |
-|        | （精灵宿主要求 Node.js 24 LTS，详见 [ADR-SP-001](./decisions/ADR-SP-001-runtime.md)） | |
-| 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
-| 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](./decisions/ADR-014-memory-relation.md)    |
-| 归档模式 | archiveMode 三态控制（full / insights-only / manual） | [ADR-015](./decisions/ADR-015-archive-mode.md)    |
-| LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |
-| 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.8](./decisions/ADR-002-storage-layer.md)  |
-| 安全   | 两级权限 + 路径白名单                        | [ADR-006](./decisions/ADR-006-security-model.md)      |
-| 测试   | Vitest + MSW Mock LLM + InMemoryStorage      | [ADR-007](./decisions/ADR-007-testing-strategy.md)    |
-| 目录   | 按职责分层                                   | [ADR-008](./decisions/ADR-008-directory-structure.md) |
+| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](../decisions/ADR-001-runtime-stack.md)       |
+|        | （精灵宿主要求 Node.js 24 LTS，详见 [ADR-SP-001](../decisions/ADR-SP-001-runtime.md)） | |
+| 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](../decisions/ADR-002-storage-layer.md)       |
+| 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](../decisions/ADR-014-memory-relation.md)    |
+| 归档模式 | archiveMode 三态控制（full / insights-only / manual） | [ADR-015](../decisions/ADR-015-archive-mode.md)    |
+| LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](../decisions/ADR-003-llm-adapter.md)         |
+| 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.8](../decisions/ADR-002-storage-layer.md)  |
+| 安全   | 两级权限 + 路径白名单                        | [ADR-006](../decisions/ADR-006-security-model.md)      |
+| 测试   | Vitest + MSW Mock LLM + InMemoryStorage      | [ADR-007](../decisions/ADR-007-testing-strategy.md)    |
+| 目录   | 按职责分层                                   | [ADR-008](../decisions/ADR-008-directory-structure.md) |
 
 ## 2.5 同仓库多 Package 结构（Monorepo）
 
@@ -67,7 +66,7 @@ memora/                          # Git 仓库根目录
 | 独立 package | 两个 package 各自 `npm install`、`npm test`、`npm run build`，互不依赖对方的 devDependencies |
 | 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
 | 内核零依赖 | memora 内核不依赖任何 native 模块（better-sqlite3、electron 等），所有 native 能力由精灵宿主注入 |
-| 精灵依赖内核 | 精灵通过 `sync-memora.mjs` 分发内核：编译内核 `src/` → `dist/`，最小化复制到精灵 `node_modules/memora/`（仅含 dist + 元数据）；源码 import 保持 `from 'memora'`。`file:../..` 已于 2026-07-17 废弃（Junction 会将全量仓库打入 asar，详见 [ADR-SP-005](./decisions/ADR-SP-005-package-management.md)） |
+| 精灵依赖内核 | 精灵通过 `sync-memora.mjs` 分发内核：编译内核 `src/` → `dist/`，最小化复制到精灵 `node_modules/memora/`（仅含 dist + 元数据）；源码 import 保持 `from 'memora'`。`file:../..` 已于 2026-07-17 废弃（Junction 会将全量仓库打入 asar，详见 [ADR-SP-005](../decisions/ADR-SP-005-package-management.md)） |
 | 规则分层 | 仓库级规则在 `.trae/rules/`，精灵专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束精灵宿主 |
 | 任务统一 | 根 `tasks/` 是唯一任务追踪目录（内核 + 精灵共享），`hosts/memora-sprite/tasks/` 已合并归档 |
 
@@ -76,7 +75,7 @@ memora/                          # Git 仓库根目录
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（13 个专职 Manager/服务类：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/RelationBuilder/Session/SessionArchiver/TextPolish/WorkProjection）+ 用户事实提取（纯函数）+ 对话快照 + 作品投影 + 关联推荐
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 用户事实提取（纯函数）+ 对话快照 + 作品投影 + 关联推荐
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
@@ -87,6 +86,8 @@ src/
 ├── eval/           # 评估框架（EvalScenario 类型 + 工具函数）
 └── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
 ```
+
+> **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./new-module-guide.md)，并经 ADR 记录）。模块**内部**的命名与拆分约定（index.ts / types.ts / core.ts / helpers.ts 等标准文件）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——若两处描述冲突，以本节为准。
 
 > **已移出**：`SqliteStorage`（→ 宿主项目）、`cli/`（→ 宿主项目）、`commander`（→ 宿主项目）、`better-sqlite3`（→ 宿主项目）
 
@@ -149,9 +150,9 @@ chore: 升级 dependencies
 
 > **宿主实现文档**位于 `hosts/memora-sprite/.trae/rules/`（仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)，描述 src/ 目录树），跟宿主项目走。任务追踪统一在根 `tasks/`（唯一真理源，精灵历史任务已归档至 `tasks/归档/sprite-*`）。详见 [sprite-project-rules.md §1.1](./sprite-project-rules.md)。
 
-### 6.5 决策记录类（decisions/ 目录，按需读取）
+### 6.5 决策记录类（`.trae/decisions/` 目录，按需读取）
 
-> 详见 [decisions/README.md](./decisions/README.md)。共 30 个 ADR：内核 ADR-001~004 + ADR-006~019（18 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015~018（12 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
+> 详见 [decisions/README.md](../decisions/README.md)。共 30 个 ADR：内核 ADR-001~004 + ADR-006~019（18 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015~018（12 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
 
 ### 6.6 心智模型类（按需读取，跨前后端通用）
 

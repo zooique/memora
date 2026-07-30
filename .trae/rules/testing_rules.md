@@ -1,13 +1,11 @@
 ---
 alwaysApply: false
 description: 测试规范（三层金字塔 + Mock LLM 策略）
-version: v0.5
-date: 2026-07-10
 ---
 
 # 测试规范
 
-> 详见 [ADR-007 · 测试策略](./decisions/ADR-007-testing-strategy.md)
+> 详见 [ADR-007 · 测试策略](../decisions/ADR-007-testing-strategy.md)
 
 ## 1. 三层金字塔
 

@@ -142,7 +142,7 @@ hosts/memora-sprite/
 - sprite/ 新增 4 个文件：spriteTracer.ts（可观测性）、constants.ts（常量集合）、auditManager.ts（审计日志）、tools.ts（宿主自定义工具）
 - electron/ 新增 2 项：ipcChannels.ts（IPC 通道常量）、utils/esmShim.ts（ESM 兼容垫片）
 - electron/renderer/ 从 5 文件扩展到 24 文件 + styles/ 子目录，反映 v8 UI 重构后的完整前端架构
-- styles/ 替代原 renderer.css，按功能域分组为 8 子目录（foundation/layout/chat/memory/panels/overlays/content/windows），详见 [ADR-019](./ADR-019-css-functional-grouping.md)。本 ADR 列出的 8 文件平铺结构已过时，真理源以 [styles/README.md](../../../hosts/memora-sprite/src/electron/renderer/styles/README.md) §1 目录结构为准
+- styles/ 替代原 renderer.css，按功能域分组为 8 子目录（foundation/layout/chat/memory/panels/overlays/content/windows），详见 [ADR-019](./ADR-019-css-functional-grouping.md)。本 ADR 列出的 8 文件平铺结构已过时，真理源以 [styles/README.md](../../hosts/memora-sprite/src/electron/renderer/styles/README.md) §1 目录结构为准
 - __tests__/ 从 4 文件扩展到 8 文件，新增 ipcHandlers/sessionController/float/ui 测试
 - 年轮审判发现规则文档严重滞后于产出（缺 20+ 文件），此次双向对齐
 
@@ -170,4 +170,4 @@ hosts/memora-sprite/
 **设计演进**：
 - C-5 拆分确立了 PanelManager 组合模式的完整约定，详见 [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md)
 - v0.3 表述"所有 PanelManager 通过 Host 接口注入"过绝对，修正为承认多种注入模式并存（Host 接口 / 共享 leaf 组件 / 共享 EventTracker / 自包含）
-- C-8 确立"控制器不直接操作 DOM"分层约束，详见 [sprite-project-rules.md §4](../sprite-project-rules.md)
+- C-8 确立"控制器不直接操作 DOM"分层约束，详见 [sprite-project-rules.md §4](../rules/sprite-project-rules.md)

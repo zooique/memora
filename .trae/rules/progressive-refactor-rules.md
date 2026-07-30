@@ -1,8 +1,6 @@
 ---
 alwaysApply: false
 description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆分"两类模式，指导上帝类/上帝对象的安全拆分
-version: v1.0
-date: 2026-07-28
 ---
 
 # 渐进式重构规范
@@ -64,7 +62,7 @@ date: 2026-07-28
 
 ## 3. 方案设计先行
 
-**强制流程**：先写方案文档，再改代码。方案文档路径 `docs/方案-{任务ID}-{简述}-{YYYYMMDD}.md`。
+**强制流程**：先写方案文档，再改代码。方案文档统一存放在 `tasks/`（与任务追踪同一真理源，避免分散到 `docs/` 后链接腐化），命名建议 `方案-{任务ID}-{简述}-{YYYYMMDD}.md`。
 
 ### 3.1 方案文档必备章节
 
@@ -255,13 +253,4 @@ Refs: {任务来源说明}
 
 ## 10. 案例索引
 
-> 以下案例已应用本规范，可作为参考。
-
-| 任务 ID | 模式 | 提取内容 | 案例文档 |
-|---------|------|---------|---------|
-| HEAL-10 | A（容器提取） | AgentRuntime（9 字段） | [方案-HEAL-10-appState领域拆分-20260727.md](../../docs/方案归档/方案-HEAL-10-appState领域拆分-20260727.md) |
-| HEAL-10B | A（容器提取） | WindowService（4 字段） | [方案-HEAL-10B-WindowService提取-20260727.md](../../docs/方案归档/方案-HEAL-10B-WindowService提取-20260727.md) |
-| HEAL-10C | A（容器提取） | QuickInputService（2 字段） | [方案-HEAL-10C-QuickInputService提取-20260728.md](../../docs/方案归档/方案-HEAL-10C-QuickInputService提取-20260728.md) |
-| HEAL-11 | A（容器提取） | PerceptionCoordinator（3 字段） | [方案-HEAL-11-PerceptionCoordinator提取-20260728.md](../../docs/方案归档/方案-HEAL-11-PerceptionCoordinator提取-20260728.md) |
-| HEAL-12 | B（职责拆分） | PanelRouter → 4 Controller | [方案-HEAL-12-PanelRouter职责拆分-20260728.md](../../docs/方案归档/方案-HEAL-12-PanelRouter职责拆分-20260728.md) |
-| HEAL-15 | 命名一致性重构 | renderer 侧 Controller → Orchestrator | [方案-HEAL-15-renderer侧Controller重命名Orchestrator-20260728.md](../../docs/方案归档/方案-HEAL-15-renderer侧Controller重命名Orchestrator-20260728.md) |
+> 本规范不在此维护案例索引——具体重构案例（HEAL 系列等）随任务归档至 `tasks/已完成任务.md` 与 `tasks/归档/`，作为单一真理源。避免在规范中嵌入审计事件 ID 与 `docs/` 链接，防止腐化。

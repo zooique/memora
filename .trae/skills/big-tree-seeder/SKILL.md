@@ -56,7 +56,7 @@ description: 大树模型项目播种机（匠码）。集成创意设计（矛�
 | 1 | 矛盾分析 | 先搞清楚"做什么"和"为什么做" | `docs/创意设计单页纸.md` | [soil-checklist](references/soil-analysis-checklist.md) |
 | 2 | 土壤分析 | 搞清楚项目环境 | `docs/土壤分析报告.md` | [soil-checklist](references/soil-analysis-checklist.md) |
 | 3 | 项目适配 | 基于土壤分析引导关键决策 | `docs/项目决策表.md` | — |
-| 4 | ADR 记录 | 关键决策留痕 | `.trae/rules/decisions/*.md` | [adr-template](references/adr-template.md) |
+| 4 | ADR 记录 | 关键决策留痕 | `.trae/decisions/*.md` | [adr-template](references/adr-template.md) |
 | 5 | Rules 生成 | 产出定制化规则文件 | `.trae/rules/` 全部规则文件 | [rules-guide](references/rules-generation-guide.md) |
 | 6 | 样板验证 | 最小可行产出验证可用性 | 最小可运行产出 | [sample-verification](references/sample-verification-guide.md)
 

@@ -107,7 +107,7 @@ L3 内容（content）：markdown
 |------|------|
 | **源头治理 vs 事后补救** | BARE 类污染的根因是作用域泄漏，perception.css 的 scoped 覆盖是事后补救，新增类时容易遗漏。面板前缀从源头隔离作用域 |
 | **与 PanelManager 对齐** | [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) 已确立 PanelManager 类的命名前缀（`PerceptionPanelManager`、`DashboardPanelManager`），CSS 前缀与 JS 前缀对齐，心智模型一致 |
-| **L1/L2/L3 与分层架构对齐** | 对应 [backend_layers_rules.md](../backend_layers_rules.md) 的"内核 → 宿主 → 组件"分层，CSS 也有"全局 → 面板 → 组件"三层 |
+| **L1/L2/L3 与分层架构对齐** | 对应 [backend_layers_rules.md](../rules/backend_layers_rules.md) 的"内核 → 宿主 → 组件"分层，CSS 也有"全局 → 面板 → 组件"三层 |
 | **降低心智负担** | 看到 `.perception-xxx` 一定属于感知面板，看到 `.dashboard-xxx` 一定属于仪表盘，无需翻找多个文件 |
 | **不引入 CSS Modules 的理由** | Electron 场景下 PostCSS 构建链增加复杂度，且 CSP 对 style-src 限制严格；BEM + 面板前缀是零成本方案 |
 | **保留 chat 主面板例外** | chat 是默认面板，其类被 index.html 直接使用且不跨面板复用，强制加 `chat-` 前缀收益低、改动量大 |
@@ -133,15 +133,15 @@ L3 内容（content）：markdown
 
 ### 长期影响
 
-- **新增面板**：必须遵循 `perception-xxx.css` 命名 + 面板前缀类名，[new-module-guide.md](../new-module-guide.md) 补充 CSS 检查项
+- **新增面板**：必须遵循 `perception-xxx.css` 命名 + 面板前缀类名，[new-module-guide.md](../rules/new-module-guide.md) 补充 CSS 检查项
 - **新增组件**：可复用组件迁到独立 `xxx.css`（L3 层），类名用组件名前缀
 - **代码审查**：[翠幕天罗](../../.trae/skills/big-tree-grower/references/modes-guide.md) 模式新增 CSS 作用域检查项
 - **健康度诊断**：[神木回天](../../.trae/skills/big-tree-grower/references/modes-guide.md) 模式可扫描 BARE 类跨面板使用情况
 
 ### 对其他规则的影响
 
-- [backend_layers_rules.md](../backend_layers_rules.md)：§前端分层补充 CSS 三层作用域模型引用
-- [coding-convention-rules.md](../coding-convention-rules.md)：§命名规范补充 CSS BEM 风格
+- [backend_layers_rules.md](../rules/backend_layers_rules.md)：§前端分层补充 CSS 三层作用域模型引用
+- [coding-convention-rules.md](../rules/coding-convention-rules.md)：§命名规范补充 CSS BEM 风格
 - [ADR-017](./ADR-017-natural-growth-redefinition.md)：枝叶层 2 次提取原则在 CSS 领域的具体化——同类样式重复 2 次必须提升为 L3 组件类或加面板前缀
 
 ## 何时回顾
@@ -155,6 +155,6 @@ L3 内容（content）：markdown
 
 本 ADR 影响以下文件：
 
-- [backend_layers_rules.md](../backend_layers_rules.md) §前端 CSS 三层作用域模型——补充 L1/L2/L3 三层 + 核心约束
-- [coding-convention-rules.md](../coding-convention-rules.md) §6 函数与变量规范 · CSS 命名规范——补充 BEM 风格 + 面板前缀约定
-- [new-module-guide.md](../new-module-guide.md) §6 新增面板的 CSS 检查项——补充 CSS 文件命名 + 类名前缀检查
+- [backend_layers_rules.md](../rules/backend_layers_rules.md) §前端 CSS 三层作用域模型——补充 L1/L2/L3 三层 + 核心约束
+- [coding-convention-rules.md](../rules/coding-convention-rules.md) §6 函数与变量规范 · CSS 命名规范——补充 BEM 风格 + 面板前缀约定
+- [new-module-guide.md](../rules/new-module-guide.md) §6 新增面板的 CSS 检查项——补充 CSS 文件命名 + 类名前缀检查

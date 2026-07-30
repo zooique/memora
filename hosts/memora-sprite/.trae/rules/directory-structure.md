@@ -516,7 +516,7 @@ foundation/tokens.css → foundation/base.css → foundation/utilities.css
 | WINDOW_MAXIMIZE | `ipcMain.on` | windowManager.ts | 操作 `this.fullWindow.maximize()`/`unmaximize()` |
 | WINDOW_CLOSE | `ipcMain.on` | windowManager.ts | 操作 `this.fullWindow.close()` |
 
-**判定标准**（详见 [ADR-SP-017 §1](../../../.trae/rules/decisions/ADR-SP-017-quick-input-architecture.md)）：当 IPC handler 需深度访问窗口实例状态（焦点/位置/可见性/blur 定时器/窗口状态机）时，在窗口管理器内注册；无状态数据操作放 `ipc/` 下。
+**判定标准**（详见 [ADR-SP-017 §1](../../../.trae/decisions/ADR-SP-017-quick-input-architecture.md)）：当 IPC handler 需深度访问窗口实例状态（焦点/位置/可见性/blur 定时器/窗口状态机）时，在窗口管理器内注册；无状态数据操作放 `ipc/` 下。
 
 #### 命名规范
 

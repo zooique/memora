@@ -1,13 +1,11 @@
 ---
 alwaysApply: false
 description: 安全规范（最小权限、显式允许、审计可追溯）
-version: v0.2
-date: 2026-07-26
 ---
 
 # 安全规范
 
-> 详见 [ADR-006 · 安全模型](./decisions/ADR-006-security-model.md)
+> 详见 [ADR-006 · 安全模型](../decisions/ADR-006-security-model.md)
 
 ## 1. 三条底层原则
 
@@ -74,7 +72,7 @@ date: 2026-07-26
 
 ## 7. 渲染进程 CSP 与内联样式约定
 
-> 详见 [ADR-006 · 安全模型补充说明（2026-07-02）](./decisions/ADR-006-security-model.md)
+> 详见 [ADR-006 · 安全模型补充说明（2026-07-02）](../decisions/ADR-006-security-model.md)
 
 ### 7.1 三条硬约束
 

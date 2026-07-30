@@ -61,7 +61,7 @@ description: "memora-sprite 宿主：包管理与依赖引用方式"
 - `build:electron` / `start:electron` 自动调用 `sync-memora`，无需手动操作
 - **打包流程**：`npm run package:win` 自动执行 build:electron（含 sync-memora） → electron-builder → verify
 - `.gitignore` 需添加 `hosts/memora-sprite/node_modules/`
-- > 详见 [sprite-project-rules.md §2](../sprite-project-rules.md)
+- > 详见 [sprite-project-rules.md §2](../rules/sprite-project-rules.md)
 
 ## 何时回顾
 

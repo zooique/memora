@@ -2,8 +2,8 @@
 
 > **审查日期**：2026-07-19
 > **审查范围**：memora 内核 `src/` + sprite 宿主 `hosts/memora-sprite/src/`
-> **对照标准**：[ADR-017 自然生长原则重新定义](../../.trae/rules/decisions/ADR-017-natural-growth-redefinition.md) §枝叶层 2 次提取原则
-> **硬约束**：[ADR-002 存储层抽象](../../.trae/rules/decisions/ADR-002-storage-layer.md) — 内核零依赖
+> **对照标准**：[ADR-017 自然生长原则重新定义](../../.trae/decisions/ADR-017-natural-growth-redefinition.md) §枝叶层 2 次提取原则
+> **硬约束**：[ADR-002 存储层抽象](../../.trae/decisions/ADR-002-storage-layer.md) — 内核零依赖
 > **审查性质**：仅审查记录，不修改任何文件
 
 ---

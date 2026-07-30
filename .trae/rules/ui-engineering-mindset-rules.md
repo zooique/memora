@@ -1,7 +1,6 @@
 ---
 alwaysApply: false
 description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继承 + JS 层生命周期 + 声明式工厂）
-date: 2026-07-25
 ---
 
 # UI 工程化心智模型
@@ -120,7 +119,7 @@ date: 2026-07-25
 
 **原则**：Manager 负责业务编排（多组件协调、跨面板通信、状态管理），Component 负责视觉封装（DOM 结构、交互状态、事件处理）。Manager 持有 Component 实例，不直接 createElement。这是「单一职责」在 UI 层的落地——Manager 不应同时是状态容器 + DOM 操作类 + 事件总线。
 
-**与 sprite 现状的关系**：现有 PanelManager（如 ChatPanelManager ~900 行）同时承担业务编排和 DOM 操作，是审计报告 §四 6.0/10 的根因。迁移目标：Manager 持有 Component 实例，DOM 操作下沉到 Component，Manager 专注编排。
+**与 sprite 现状的关系**：现有 PanelManager 同时承担业务编排和 DOM 操作，是 DOM 与编排耦合的反模式。迁移目标：Manager 持有 Component 实例，DOM 操作下沉到 Component，Manager 专注编排。
 
 | 类型 | 心智规则 |
 | ---- | ---- |

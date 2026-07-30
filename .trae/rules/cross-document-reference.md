@@ -1,8 +1,6 @@
 ---
 alwaysApply: false
 description: 跨文档交叉引用规范
-version: v0.4
-date: 2026-07-07
 ---
 
 # 跨文档交叉引用规范
@@ -51,7 +49,7 @@ date: 2026-07-07
 | 跨文档引用文件级 | `[memora-接入指南.md](../docs/memora-接入指南.md)` |
 | 跨文档引用章节级 | `[memora-接入指南.md §4.3 三种接入模式](../docs/memora-接入指南.md)` |
 | 同文档引用章节 | `§4.3 三种接入模式` |
-| 引用 ADR | `[ADR-007 §3 测试金字塔](./decisions/ADR-007-testing-strategy.md)` |
+| 引用 ADR | `[ADR-007 §3 测试金字塔](../decisions/ADR-007-testing-strategy.md)` |
 
 ---
 

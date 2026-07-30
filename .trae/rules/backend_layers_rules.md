@@ -1,15 +1,13 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v1.2
-date: 2026-07-27
 ---
 
 # 后端分层规范
 
 > 详见
-> [ADR-008 · 目录结构按"职责分层"](./decisions/ADR-008-directory-structure.md)
-> **记忆关系侧车**：详见 [ADR-014 · 记忆关系图谱](./decisions/ADR-014-memory-relation.md)
+> [ADR-008 · 目录结构按"职责分层"](../decisions/ADR-008-directory-structure.md)
+> **记忆关系侧车**：详见 [ADR-014 · 记忆关系图谱](../decisions/ADR-014-memory-relation.md)
 
 ## 核心库 vs 宿主项目职责边界
 
@@ -40,7 +38,7 @@ date: 2026-07-27
   └─ 否 → 该功能是否所有宿主项目都需要？
          ├─ 是 → 核心库（src/），但必须通过抽象接口提供
          │       例：registerTool()、write_file、search_memories
-         └─ 否 → 暂不实现，等 2 次以上重复需求再提取（枝叶层 2 次提取原则，详见 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md)）
+         └─ 否 → 暂不实现，等 2 次以上重复需求再提取（枝叶层 2 次提取原则，详见 [ADR-017](../decisions/ADR-017-natural-growth-redefinition.md)）
                  例：WebUI 框架、特定 LLM 厂商优化
 ```
 
@@ -89,7 +87,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 
 ## 存储层同步性约束（ADR-002 补充）
 
-> **来源**：详见 [ADR-002 §同步优先决策](./decisions/ADR-002-storage-layer.md)
+> **来源**：详见 [ADR-002 §同步优先决策](../decisions/ADR-002-storage-layer.md)
 
 | 项 | 约束 |
 |----|------|
@@ -113,7 +111,10 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 - ❌ `security/` 被宿主 `cli/` 绕过（所有写操作必须经 security 校验）
 - ❌ `memory/` 依赖 `persona/` 或 `skill/`（依赖方向不可逆）
 
-## 模块内文件命名
+## 模块内文件命名（命名约定 · 快照）
+
+> 本节的具名文件树用于**说明模块内部的命名与拆分约定**（每个模块 = index.ts / types.ts / core.ts / helpers.ts；agent/ 含 agent.ts / assembler.ts / loop.ts 等标准文件）。
+> **权威的顶层目录结构以 [project-rules.md §3](./project-rules.md) 为唯一真理源**；下方具体文件清单为快照性质、随重构可能漂移，**不构成冻结契约**。
 
 每个模块内部可细分为：
 
@@ -177,7 +178,7 @@ utils/
 
 ## 前端 CSS 三层作用域模型
 
-> **来源**：[ADR-018 · CSS 作用域规范](./decisions/ADR-018-css-scoping-convention.md)
+> **来源**：[ADR-018 · CSS 作用域规范](../decisions/ADR-018-css-scoping-convention.md)
 > **适用范围**：精灵宿主渲染进程（`hosts/memora-sprite/src/electron/renderer/styles/`）
 
 | 层级 | 作用域 | 命名规范 | 文件归属 |
