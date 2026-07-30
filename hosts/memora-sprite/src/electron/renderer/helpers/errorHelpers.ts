@@ -13,10 +13,8 @@
  * - createIpcErrorHandler 通过闭包绑定 uiManager，避免每个调用点重复传参
  */
 
-// toError 真理源在 shared/ 层（纯函数，无 Node 依赖），渲染进程和 Web 模式共用
-// 注意：必须 import 后再 export，不能直接 `export { toError } from '...'`——
-// 透传导出不会在当前模块作用域创建 toError 绑定，reportError/createIpcErrorHandler 内部使用会 ReferenceError
-import { toError } from '../../../shared/toError.js';
+// toError 真理源在 memora 内核（src/index.ts 公开导出），渲染进程/Web 共用。MIND-D4：消除 shared/ 副本
+import { toError } from 'memora';
 // formatErrorMessage 错误文案真理源（UX-13：替代直传 error.message 到 Toast，分类映射 + 两段式模板）
 import { formatErrorMessage } from '../../../shared/errorMessages.js';
 export { toError };
