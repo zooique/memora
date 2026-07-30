@@ -8,8 +8,8 @@
  * - SPRITE_HOME_DIR_NAME 真理源在 shared/constants.ts，本模块 re-export 保持调用方不变
  */
 
-// formatDateKey 本地日期格式化（ADR-017 枝叶层 2 次提取，shared/dateUtils.ts 真理源）
-import { formatDateKey } from '../shared/dateUtils.js';
+// formatDateKey 本地日期格式化（统一从内核 'memora' 导入，消除 shared/ 跨层副本）
+import { formatDateKey } from 'memora';
 
 // ─── 时间常量（毫秒） ──────────────────────────────────
 

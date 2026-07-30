@@ -20,8 +20,8 @@ import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { logger, toError } from 'memora';
-// formatDateKey 格式化日期为本地时区 YYYY-MM-DD（ADR-017 枝叶层 2 次提取）
-import { formatDateKey } from '../../shared/dateUtils.js';
+// formatDateKey 格式化日期为本地时区 YYYY-MM-DD（统一从内核 'memora' 导入，消除 shared/ 跨层副本）
+import { formatDateKey } from 'memora';
 // safeWriteJson 安全写入 JSON 文件（含 mkdir recursive + 0o600 权限保护，ADR-017 枝叶层 2 次提取）
 import { safeWriteJson } from '../../shared/safeWriteJson.js';
 

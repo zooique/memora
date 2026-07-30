@@ -19,8 +19,8 @@ import { MS_PER_DAY } from '../constants.js';
 
 /** 最近洞察展示条数 */
 const RECENT_INSIGHTS_LIMIT = 5;
-// formatDateKey 格式化日期为本地时区 YYYY-MM-DD（ADR-017 枝叶层 2 次提取）
-import { formatDateKey } from '../../shared/dateUtils.js';
+// formatDateKey 格式化日期为本地时区 YYYY-MM-DD（统一从内核 'memora' 导入，消除 shared/ 跨层副本）
+import { formatDateKey } from 'memora';
 
 // ─── 类型定义 ────────────────────────────────────────────
 

@@ -17,8 +17,8 @@ import { buildHealthDashboard } from './memoryHealth.js';
 import type { HealthDashboard } from './memoryHealth.js';
 import { buildReviewData } from './reviewManager.js';
 import type { ReviewData } from './reviewManager.js';
-// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
-import { truncate } from '../../shared/truncate.js';
+// 文本截断工具（统一从内核 'memora' 导入，消除 shared/ 跨层副本）
+import { truncate } from 'memora';
 // 数值精度工具（跨层共享，统一保留两位小数，ADR-017 枝叶层 2 次提取）
 import { round2 } from '../../shared/numberUtils.js';
 

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { UsageStatsCollector } from '../usageStatsCollector.js';
 import type { UsageStatsSnapshot } from '../usageStatsCollector.js';
 // formatDateKey 本地日期，与生产代码 usageStatsCollector 一致（修复 UTC 跨日导致测试期望值不匹配）
-import { formatDateKey } from '../../../shared/dateUtils.js';
+import { formatDateKey } from 'memora';
 
 describe('UsageStatsCollector', () => {
   let tempDir: string;

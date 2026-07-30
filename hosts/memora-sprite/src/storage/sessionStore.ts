@@ -6,8 +6,8 @@
  */
 import type { ISessionStore, SessionMessage } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
-// 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
-import { truncate } from '../shared/truncate.js';
+// 文本截断工具（统一从内核 'memora' 导入，消除 shared/ 跨层副本）
+import { truncate } from 'memora';
 
 /** 建表 SQL */
 const CREATE_TABLE_SQL = `
