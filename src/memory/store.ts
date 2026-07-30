@@ -42,7 +42,8 @@ export class FileStore {
    */
   async read(source: string, name: string): Promise<Memory | null> {
     const filePath = this.getFilePath(source, name);
-    // 异步读取：文件不存在时 readFile 抛 ENOENT，捕获后返回 null（避免 existsSync 的 TOCTOU 竞态）
+    // 异步读取：文件不存在时 readFile 抛 ENOENT，handleFsError 对 ENOENT 静默返回（read 返回 null）
+    // 其他错误（EACCES/EISDIR 等）由 handleFsError 重新抛出，让调用方感知故障
     let content: string;
     let fileStat: { mtime: Date };
     try {
@@ -50,7 +51,7 @@ export class FileStore {
       fileStat = await stat(filePath);
     } catch (err) {
       this.handleFsError(err, filePath, '记忆文件读取失败');
-      return null;
+      return null; // 仅 ENOENT 到达此处（其他错误已在 handleFsError 抛出）
     }
 
     // 从文件路径推断 source（frontmatter 可覆盖）
@@ -95,13 +96,14 @@ export class FileStore {
    */
   async list(source: string): Promise<string[]> {
     const dir = join(this.dataDir, this.sourceToDir(source));
-    // 异步读取：目录不存在时 readdir 抛 ENOENT，捕获后返回空数组（避免 existsSync 的 TOCTOU 竞态）
+    // 异步读取：目录不存在时 readdir 抛 ENOENT，handleFsError 对 ENOENT 静默返回（list 返回 []）
+    // 其他错误由 handleFsError 重新抛出，让调用方感知故障
     let files: string[];
     try {
       files = await readdir(dir);
     } catch (err) {
       this.handleFsError(err, dir, '记忆目录读取失败');
-      return [];
+      return []; // 仅 ENOENT 到达此处（其他错误已在 handleFsError 抛出）
     }
     return files.filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''));
   }
@@ -136,21 +138,27 @@ export class FileStore {
   /**
    * 文件系统错误统一处理
    *
-   * 消除 read() 和 list() 中 2 次重复的 ENOENT 错误处理模式
-   * （ADR-017 枝叶层 2 次提取原则，2 次重复已达阈值）。
+   * 区分两类错误：
+   *   - ENOENT（文件/目录不存在）：正常情况，静默返回
+   *   - 其他错误（EACCES/EISDIR 等）：真实故障，抛出异常让调用方感知
    *
-   * ENOENT 属正常情况（文件/目录不存在），静默返回；
-   * 其他错误（EACCES/EISDIR 等）记录警告。
+   * 之前所有错误统一返回 null/[]，导致磁盘故障伪装成"无数据"，
+   * 用户感知不到数据丢失。现区分：ENOENT 静默，其他抛错。
    *
    * @param err 捕获的异常
    * @param path 文件/目录路径（用于日志上下文）
    * @param label 日志标签（中文，如 "记忆文件读取失败"）
+   * @throws {NodeJS.ErrnoException} 非 ENOENT 错误时重新抛出
    */
   private handleFsError(err: unknown, path: string, label: string): void {
     const error = toError(err) as NodeJS.ErrnoException;
-    if (error.code !== 'ENOENT') {
-      logger.warn({ path, code: error.code, err: error.message }, label);
+    if (error.code === 'ENOENT') {
+      // 文件/目录不存在是正常情况（首次启动、新项目等），静默返回
+      return;
     }
+    // 非 ENOENT 错误：记录警告并重新抛出，让调用方区分"无数据"与"故障"
+    logger.warn({ path, code: error.code, err: error.message }, label);
+    throw error;
   }
 
   /**

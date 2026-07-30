@@ -285,6 +285,14 @@ export class DedupManager {
    * @returns 相似度（0=完全相似，1=完全不同）
    */
   private static computeNameSimilarity(nameA: string, nameB: string): number {
+    // 边界条件：空字符串防御
+    // 空名称会导致 includes("") 恒为 true 返回 0（完全相似），
+    // 让空名称记忆与所有记忆被判高度相似，浪费 LLM 调用并可能误降级。
+    // 此处前置拒绝，空名称与任何名称都视为完全不同（1.0）。
+    if (!nameA || !nameB) {
+      return 1;
+    }
+
     // 规则 2：包含关系（如 "用户偏好" vs "用户偏好设置"）
     if (nameA.includes(nameB) || nameB.includes(nameA)) {
       return 0;
@@ -292,7 +300,7 @@ export class DedupManager {
 
     // 规则 1：归一化 Levenshtein 距离
     const maxLen = Math.max(nameA.length, nameB.length);
-    if (maxLen === 0) return 0; // 两个空字符串视为完全相似
+    if (maxLen === 0) return 0; // 两个空字符串视为完全相似（已被上面拦截，此处防御）
     const distance = levenshtein(nameA, nameB);
     return distance / maxLen;
   }

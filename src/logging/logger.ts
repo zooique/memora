@@ -1,7 +1,9 @@
 /**
  * 结构化日志 — 全局单例 + 可替换 ILogger
  *
- * 内核零第三方依赖：pino 为可选 peerDependency，通过动态 import 加载。
+ * 内核 Node.js 专属 + 零第三方依赖（ADR-002 v0.9）：
+ *   - node:path/node:fs 是 Node.js 内置模块，静态 import（合法依赖）
+ *   - pino 为可选 peerDependency，通过动态 import 加载（未安装时降级 console）
  * 宿主可注入自定义 logger（setLogger），完全绕过 pino。
  *
  * 降级策略：
@@ -22,6 +24,10 @@ import { toError } from '@/utils/toError.js';
 // 桥接 utils 层 loggerHolder：utils 运行时不依赖 logging/，
 // 由本模块在加载和 setLogger 时反向注入 logger 实例。
 import { setLogger as setUtilsLogger } from '@/utils/loggerHolder.js';
+// Node.js 内置模块静态 import（ADR-002 v0.9：Node.js 内置模块是合法依赖）
+import { resolve } from 'node:path';
+import { mkdirSync, createWriteStream, statSync, truncateSync } from 'node:fs';
+import { expandHome } from '@/utils/path.js';
 
 /**
  * 从 unknown 值提取错误消息（复用零依赖的 toError，避免类型断言）
@@ -168,10 +174,9 @@ function wrapPinoAsLogger(pinoInst: {
  */
 async function tryCreatePinoLogger(): Promise<ILogger | null> {
   try {
+    // pino 为可选 peerDependency，必须动态 import（未安装时降级 console）
+    // node:path/node:fs 已在文件顶部静态 import（ADR-002 v0.9：Node.js 内置模块是合法依赖）
     const pino = (await import('pino')).default;
-    const { resolve } = await import('node:path');
-    const { mkdirSync, createWriteStream, statSync, truncateSync } = await import('node:fs');
-    const { expandHome } = await import('@/utils/path.js');
 
     // 日志目录由宿主通过 MEMORA_DATA_DIR 环境变量注入；未设置时跳过文件日志
     const dataDir = process.env['MEMORA_DATA_DIR'];

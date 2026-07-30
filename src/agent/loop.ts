@@ -466,19 +466,8 @@ export class AgentLoop {
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done', unknown> {
-    // 纯文本结束
-    if (llmResult.fullContent) {
-      this.messages.push({ role: 'assistant', content: llmResult.fullContent });
-    } else {
-      // LLM 返回空响应（既无文本也无工具调用）的兜底处理
-      // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
-      logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
-      const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
-      this.messages.push({ role: 'assistant', content: fallbackText });
-      yield { type: 'text', content: fallbackText };
-    }
-
     // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
+    // 注意：护栏检查必须在 messages.push 之前执行，否则被 block 的内容仍会进入下一轮 LLM 上下文
     const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
       ruleCount: this.guardrailRules.length,
     });
@@ -490,6 +479,7 @@ export class AgentLoop {
     if (outputGuardResult.blocked) {
       // P3: try/finally 确保 done 一定送达，即使 text yield 异常
       // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
+      // block 时不 push 到 messages——被 block 的内容不应进入下一轮 LLM 上下文
       try {
         yield {
           type: 'text',
@@ -501,6 +491,19 @@ export class AgentLoop {
       }
       return 'done';
     }
+
+    // 护栏通过后再 push 到对话历史——确保被 block/warn 的内容不污染 LLM 上下文
+    if (llmResult.fullContent) {
+      this.messages.push({ role: 'assistant', content: llmResult.fullContent });
+    } else {
+      // LLM 返回空响应（既无文本也无工具调用）的兜底处理
+      // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
+      logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
+      const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
+      this.messages.push({ role: 'assistant', content: fallbackText });
+      yield { type: 'text', content: fallbackText };
+    }
+
     if (outputGuardResult.warning) {
       yield {
         type: 'text',
@@ -782,18 +785,22 @@ export class AgentLoop {
     }
 
     // 创建 abort 监听 Promise（signal abort 时 resolve 错误字符串）
-    // 注意：工具先完成时，abort 监听器会残留在 signal 上直到 signal 触发或被 GC，
-    //   但 { once: true } 保证只触发一次，且无副作用，可接受。
+    // onAbort 提到外层，便于 race 结束后清理监听器
+    let onAbort: (() => void) | null = null;
     const abortPromise = new Promise<string>((resolve) => {
-      const onAbort = () => resolve('[ERR:TOOL:ABORTED] 错误：工具执行被中断');
+      onAbort = () => resolve('[ERR:TOOL:ABORTED] 错误：工具执行被中断');
       signal.addEventListener('abort', onAbort, { once: true });
     });
 
     // Promise.race 竞争：工具先完成返回结果，signal 先 abort 返回错误字符串
+    // race 结束后清理监听器，避免 N 次并发工具调用累积 N 个残留监听器
+    // （{ once: true } 只保证触发一次，不保证未触发时被移除）
     return Promise.race([
       this.opts.toolExecutor(name, args),
       abortPromise,
-    ]);
+    ]).finally(() => {
+      if (onAbort) signal.removeEventListener('abort', onAbort);
+    });
   }
 
   /**
