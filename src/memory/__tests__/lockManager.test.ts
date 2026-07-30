@@ -138,6 +138,40 @@ describe('LockManager · release 释放锁', () => {
     expect(existsSync(lockPath)).toBe(true);
     expect(lm.currentPath).toBe(lockPath);
   });
+
+  // MIND2-L5：release 前校验 PID 归属，锁被其他进程覆盖时不删除他人锁
+  it('锁文件被其他进程覆盖时 release 不删除他人锁', async () => {
+    const memoraDir = join(tmpDir, '.memora');
+    const lm = new LockManager();
+    await lm.acquire(memoraDir);
+    const lockPath = join(memoraDir, '.lock');
+
+    // 模拟锁文件被其他进程覆盖（写入不同 PID）
+    writeFileSync(lockPath, makeLockContent(99999999), 'utf-8');
+
+    await lm.release();
+
+    // 锁文件不应被删除（保护他人锁），但 currentPath 重置（本进程不再持有引用）
+    expect(existsSync(lockPath)).toBe(true);
+    expect(lm.currentPath).toBeNull();
+  });
+
+  // MIND2-L5：锁文件不存在时 release 视为已释放，不抛错
+  it('锁文件已被外部删除时 release 视为已释放不抛错', async () => {
+    const memoraDir = join(tmpDir, '.memora');
+    const lm = new LockManager();
+    await lm.acquire(memoraDir);
+    const lockPath = join(memoraDir, '.lock');
+
+    // 模拟锁文件已被外部删除（如手动清理）
+    rmSync(lockPath, { force: true });
+
+    await lm.release();
+
+    // 不抛错，currentPath 重置
+    expect(lm.currentPath).toBeNull();
+    expect(existsSync(lockPath)).toBe(false);
+  });
 });
 
 describe('LockManager · 残留锁处理', () => {

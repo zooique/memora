@@ -135,15 +135,41 @@ export class LockManager {
   }
 
   /**
-   * 释放锁文件
+   * 释放锁文件（MIND2-L5：双重保险——校验 PID 归属后再删除）
    *
-   * 删除当前持有的锁文件，并重置内部状态。
+   * 读取锁文件校验 PID 仍是本进程，匹配才删除；不匹配（锁已被其他进程覆盖）
+   * 则跳过删除保护他人锁。无论是否删除都重置内部状态（本进程不再持有引用）。
    * 未持有锁时为 no-op。
+   *
+   * 设计依据（§1.3 不可逆操作的双重保险）：
+   *   acquire 非阻塞（仅警告），两进程可同时持有「锁文件路径」。
+   *   若 release 不校验 PID，进程 A 会 unlink 进程 B 的锁——双重保险缺失。
    */
   async release(): Promise<void> {
-    if (this.currentLockPath) {
-      await this.safeUnlink(this.currentLockPath);
-      this.currentLockPath = null;
+    if (!this.currentLockPath) return;
+    const lockPath = this.currentLockPath;
+    // 无论后续校验结果如何，本进程不再持有该路径引用（先重置避免异常时残留）
+    this.currentLockPath = null;
+    try {
+      const raw = await readFile(lockPath, 'utf-8');
+      const parsed: unknown = JSON.parse(raw);
+      if (isLockInfo(parsed) && parsed.pid === process.pid) {
+        // PID 匹配——本进程持有的锁，安全删除
+        await this.safeUnlink(lockPath);
+      } else {
+        // PID 不匹配或锁文件结构改变——锁已被其他进程覆盖，不删除他人锁
+        logger.warn(
+          {
+            path: lockPath,
+            expectedPid: process.pid,
+            actualPid: parsed && typeof parsed === 'object' && 'pid' in parsed ? parsed.pid : null,
+          },
+          '锁文件已被其他进程覆盖，release 跳过删除（保护他人锁）',
+        );
+      }
+    } catch (err) {
+      // 锁文件不存在或损坏——视为已释放，仅 debug 记录
+      logger.debug({ path: lockPath, err: toError(err).message }, 'release 读取锁文件失败，视为已释放');
     }
   }
 
