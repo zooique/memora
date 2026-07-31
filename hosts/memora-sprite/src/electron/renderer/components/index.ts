@@ -39,6 +39,8 @@ export { HealthDashboardComponent } from '../panels/healthDashboardRenderer.js';
 export type { HealthDashboardOptions } from '../panels/healthDashboardRenderer.js';
 export { InsightsComponent } from '../panels/insightsRenderer.js';
 export type { InsightsOptions, InsightsDashboardData } from '../panels/insightsRenderer.js';
+export { PartnerInsightsComponent } from '../panels/partnerInsightsRenderer.js';
+export type { PartnerInsightsOptions } from '../panels/partnerInsightsRenderer.js';
 
 /* ========== 表单组件 ========== */
 // 待后续 Phase 填充

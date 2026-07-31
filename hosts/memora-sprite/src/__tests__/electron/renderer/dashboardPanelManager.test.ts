@@ -295,7 +295,7 @@ describe('错误状态与重试回调', () => {
 // 感知数据渲染（情感/默契/上下文/模式/在场）在独立的 PerceptionPanelManager 中覆盖，
 // 相关测试见 perceptionPanelManager.test.ts。
 
-// PartnerInsightsRenderer 归位到 MemoryPanelManager，
+// PartnerInsightsComponent 归位到 MemoryPanelManager，
 // 子渲染器行为测试在 partnerInsightsRenderer.test.ts 中覆盖。
 
 // ─── renderReviewData · 增长趋势（Phase 6.2） ─────────────

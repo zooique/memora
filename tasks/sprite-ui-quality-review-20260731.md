@@ -154,7 +154,7 @@ interface ListPanelConfig<T> {
 | 阶段 | 动作 | 风险 | 验收 |
 | --- | --- | --- | --- |
 | **Phase A（P1，低风险）** ✅ 已执行 | `ui.ts` 清理 3 处已移入协调器的 orphaned 死注释；`modal.ts` 把 `showConfirmDialog`/`showInputDialog` 的**内部元素**查找由全局 `getElementById` 收敛为 `modal.querySelector(...)`（模态根的 id 查找保留，因 `ModalManager` 非 Component、模态 DOM 为静态 HTML） | 极低 | typecheck:electron ✅ · stylelint ✅ · eslint ✅ · modal.test.ts 50/50 ✅ |
-| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 改造为继承 `Component`，Manager 持有实例（已完成 completionStats + healthDashboard + insights **3/6**，见 §9；剩余 partnerInsights / llmGovernanceResult / streaming） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试 |
+| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 改造为继承 `Component`，Manager 持有实例（已完成 completionStats + healthDashboard + insights + partnerInsights **4/6**，见 §9；剩余 llmGovernanceResult / streaming） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试 |
 | **Phase C（P2）** | 抽 `ListPanel` 工厂，先接入 `auditPanel`（最小）验证，再接 memory/profile/workProjection | 中高 | 四面板 DOM 行数下降、共性逻辑单测覆盖 |
 | **Phase D（P2）** | `tokens.css` L1/L2 注释分区；`components/index.ts` 随分层补全注册 | 低 | stylelint 无新增裸值 |
 | **Phase E（P3）** | 评估 mixin 是否回退为内联分区注释 | 中 | 调试可见性提升 |
@@ -274,4 +274,32 @@ interface ListPanelConfig<T> {
 - ESLint/tsc 首报 `INSIGHTS_CONTAINER_ID` 未使用（TS6133）：组件内不必要存容器常量——挂载容器由 holder 经 `ensureInsightsMounted` 传入字符串 `'#memory-insights-bar'`（与 health 同模式）。删除冗余常量后两门皆 0 错。
 
 #### 9.6.4 卡点
+- 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。
+
+### 9.7 执行记录（Phase B 第 4 个 · partnerInsightsRenderer，2026-07-31）
+
+#### 9.7.1 改动清单
+- `panels/partnerInsightsRenderer.ts`：`PartnerInsightsRenderer` → `PartnerInsightsComponent extends Component<PartnerInsightsOptions>`。
+  - 采纳 `index.html` 静态容器 `#partner-insights` 为 `this.el`（富骨架已含全部内部 id：`partner-insights-badge`/`.profile-cards`/`.gap-list`/`partner-growth-total`/`partner-growth-chart`），`mount()` 缓存 5 个内部引用，消除原 9 处 `document.getElementById` 查内部元素（§四.1 反模式）。CSS 关键耦合 `.partner-insights > .analysis-panel__header`（memory-views.css:125）是 child combinator——因本模式**不新增 wrapper**，直接子关系不变，零破坏。
+  - `render(memories)` → `update({memories})`，逻辑逐行等价（含空数据早返回不更新 `lastMemories` 的既有行为，保留未改）。
+  - 卡片点击监听由独立 `EventTracker` 改为经 `trackEvent(() => removeEventListener(...))` 收集（**移除 `EventTracker` 导入**），`destroy()` 内置清理；`repaintOnThemeChange()`、`onMemoryClick(cb)` 作为公开方法保留（holder 主题重绘与点击委托依赖）。
+  - `destroy()` 先 `this.el=null` 再 `super.destroy()`——`#partner-insights` 是共享静态容器（还被 `memoryViewSwitcher` 直接控制显隐），销毁时不可 `el.remove()` 误删。
+- `panels/memoryPanelManager.ts`：import/字段（`partnerInsights`→`partnerInsightsComponent`）/cleanup→destroy/主题委托，委托块新增 `ensurePartnerInsightsMounted`（首挂一次）+ `renderPartnerInsights` 改 `mount-or-update` 语义。
+- `components/index.ts`：统一导出 `PartnerInsightsComponent` + `PartnerInsightsOptions`。
+- `__tests__/.../partnerInsightsRenderer.test.ts`：重写为 Component 契约（mount/update/destroy），fixture 用 `#partner-insights` 包裹内部 id（含 `partner-insights` 类以匹配真实 DOM），25 例含挂载采纳/空数据隐藏/卡片 6 张截断/缺口/趋势图/主题重绘/destroy 监听移除+不删共享容器+幂等。
+- 注释同步：`perceptionPanelManager.test.ts:587`、`dashboardPanelManager.test.ts:298` 陈旧类名改为 `PartnerInsightsComponent`（均为注释，非代码导入）。
+
+#### 9.7.2 验证（本地可执行质量门，全部通过）
+| 质量门 | 结果 |
+|---|---|
+| `tsc -p tsconfig.electron.json --noEmit` | 0 错 |
+| `eslint`（改文件） | 0 错 |
+| `partnerInsightsRenderer.test.ts` | 25/25 |
+| memory 面板回归（Views 61 + Instance 56 + Events 66 + Orchestrator 18） | 201/201 |
+| dashboard + perception 面板测试 | 78/78 |
+
+#### 9.7.3 踩坑（对抗式，已修）
+- **测试 fixture 漏类**：初版 fixture 的 `#partner-insights` 只写 `class="hidden"`，漏掉真实 `partner-insights` 类，致"采纳为根元素"断言 `classList.contains('partner-insights')` 失败。修正为 `class="partner-insights analysis-bar hidden"` 镜像真实 DOM（组件采纳现有元素、不增删类）。**记忆点**：Renderer→Component 的测试 fixture 必须完整镜像 `index.html` 静态容器的 class 集合，否则验证失真。
+
+#### 9.7.4 卡点
 - 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。

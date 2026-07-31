@@ -584,7 +584,7 @@ describe('cleanup() · 资源清理', () => {
     expect(() => renderer.updateAffectDisplay(createAffect({ warmth: 0.5 })).not.toThrow());
   });
 
-  it('cleanup 应清理 onMemoryClickCallback（与 PartnerInsightsRenderer 一致）', () => {
+  it('cleanup 应清理 onMemoryClickCallback（与 PartnerInsightsComponent 一致）', () => {
     // cleanup 后点击关联按钮不应触发回调（回调引用已被置 null）
     const renderer = createRenderer();
     const cb = vi.fn();

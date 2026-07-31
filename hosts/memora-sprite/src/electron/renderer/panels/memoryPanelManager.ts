@@ -27,7 +27,7 @@ import type { RelationGraphRenderer, RelationGraphData } from '../components/rel
 // 健康度仪表盘数据载荷（renderHealthDashboard 委托方法签名需要）
 import type { HealthDashboardPayload } from '../../preload.js';
 // 记忆面板所属子渲染器（DOM 在 panel-memories 内，归 MemoryPanelManager 管理）
-import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
+import { PartnerInsightsComponent } from './partnerInsightsRenderer.js';
 import { HealthDashboardComponent } from './healthDashboardRenderer.js';
 import { InsightsComponent } from './insightsRenderer.js';
 // 补全统计面板组件（第 3 个 analysis panel，HEAL-17 Phase B 由 *Renderer 升级为 Component）
@@ -124,8 +124,8 @@ export class MemoryPanelManager {
   private cachedSelectedNodeId: string | null = null;
 
   // ─── 子渲染器（DOM 在 panel-memories 内，归本面板管理） ──
-  /** 伙伴洞察渲染器（profile 卡片 / 知识缺口 / 增长趋势图） */
-  private partnerInsights = new PartnerInsightsRenderer();
+  /** 伙伴洞察组件（profile 卡片 / 知识缺口 / 增长趋势图），Manager 持有 Component 实例（对齐 §四.4） */
+  private partnerInsightsComponent = new PartnerInsightsComponent();
   /** 健康度仪表盘组件（评分 / 徽章 / 三维度 / 清理按钮），Manager 持有 Component 实例（对齐 §四.4） */
   private healthDashboard = new HealthDashboardComponent();
   /** 洞察组件（统计卡片 / source 分布 / 关系摘要），Manager 持有 Component 实例（对齐 §四.4） */
@@ -220,7 +220,7 @@ export class MemoryPanelManager {
       this.graphRenderer = null;
     }
     // 清理子渲染器
-    this.partnerInsights.cleanup();
+    this.partnerInsightsComponent.destroy();
     this.healthDashboard.destroy();
     this.insights.destroy();
     this.completionStatsComponent.destroy();
@@ -1267,11 +1267,11 @@ export class MemoryPanelManager {
     }, { once: true });
   }
 
-  // ─── 子渲染器委托方法（InsightsComponent / HealthDashboardComponent / PartnerInsightsRenderer） ──
+  // ─── 子渲染器委托方法（InsightsComponent / HealthDashboardComponent / PartnerInsightsComponent） ──
 
   /** 主题切换时重绘子渲染器 Canvas 图表 */
   repaintOnThemeChange(): void {
-    this.partnerInsights.repaintOnThemeChange();
+    this.partnerInsightsComponent.repaintOnThemeChange();
   }
 
   // ─── InsightsComponent 委托 ──
@@ -1378,10 +1378,17 @@ export class MemoryPanelManager {
     this.completionStatsComponent.onResetStats(cb);
   }
 
-  // ─── PartnerInsightsRenderer 委托 ──
+  // ─── PartnerInsightsComponent 委托 ──
+
+  /** 确保伙伴洞察组件已挂载（首次打开面板时挂载到静态容器 #partner-insights，之后仅被 hidden 不销毁，故仅挂载一次；对齐 §四.1） */
+  private ensurePartnerInsightsMounted(): void {
+    if (!this.partnerInsightsComponent?.getElement()) {
+      this.partnerInsightsComponent.mount('#partner-insights');
+    }
+  }
 
   /**
-   * 渲染伙伴洞察面板（委托到 PartnerInsightsRenderer）
+   * 渲染伙伴洞察面板（委托到 PartnerInsightsComponent）
    *
    * @param memories 全量记忆列表（用于统计和趋势图）
    */
@@ -1392,14 +1399,15 @@ export class MemoryPanelManager {
     contentPreview: string;
     createdAt?: string;
   }>): void {
-    this.partnerInsights.render(memories);
+    this.ensurePartnerInsightsMounted();
+    this.partnerInsightsComponent.update({ memories });
   }
 
   /**
-   * 注册伙伴洞察面板记忆点击回调（委托到 PartnerInsightsRenderer）
+   * 注册伙伴洞察面板记忆点击回调（委托到 PartnerInsightsComponent）
    */
   onPartnerMemoryClick(cb: (memoryId: string) => void): void {
-    this.partnerInsights.onMemoryClick(cb);
+    this.partnerInsightsComponent.onMemoryClick(cb);
   }
 
   // ─── 视图切换 / 时间线子系统上下文构建 ─────────────

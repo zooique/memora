@@ -1,5 +1,5 @@
 /**
- * 伙伴洞察渲染器 — 仪表盘内"精灵对你的了解"子区域渲染
+ * 伙伴洞察组件 — 仪表盘内"精灵对你的了解"子区域渲染
  *
  * 职责：
  * - 渲染 profile 记忆卡片网格（展示精灵对用户的了解，最多 6 张）
@@ -7,10 +7,12 @@
  * - 渲染记忆累积趋势图（Canvas 折线图，零依赖，8 周数据）
  * - 自管理记忆数据缓存，主题切换时重绘 Canvas
  *
- * 设计原则（遵循 ADR-SP-015 组合模式）：
- * - 模式 D（自包含无注入）：不依赖 DashboardPanelManager 或 UIManager 实例
- * - 通过 onMemoryClick() 回调注册接口与外部协作（与 DateNavManager 同模式）
- * - 由 DashboardPanelManager 持有实例，外观方法委托调用
+ * 生命周期（升级为 Component，对齐 §四.1 / §四.4）：
+ * - 采纳 index.html 的静态容器 #partner-insights 为 this.el（富骨架，已含全部内部 id）
+ * - mount() 时缓存全部内部引用，消除原 9 处 document.getElementById 查内部元素
+ * - update() 增量刷新；趋势图按「结构变更，需重建」规则重绘 Canvas
+ * - destroy() 先置 this.el=null 再 super.destroy()，避免误删共享静态容器
+ *   （#partner-insights 还被 memoryViewSwitcher 直接控制显隐，销毁时不可 el.remove()）
  */
 
 import { setIcon } from '../helpers/icon.js';
@@ -19,8 +21,8 @@ import { clearElement, createEl, setCanvasSize } from '../helpers/domHelpers.js'
 import { reportError } from '../helpers/errorHelpers.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../../shared/truncate.js';
-// 事件监听器跟踪器（统一管理事件监听器注册与清理，防止内存泄漏）
-import { EventTracker } from '../helpers/eventTracker.js';
+// 组件生命周期基类（HEAL-17 Phase 0）
+import { Component } from '../components/Component.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -36,6 +38,12 @@ export interface PartnerMemory {
   contentPreview: string;
   /** 创建时间（用于趋势图按周统计，可选） */
   createdAt?: string;
+}
+
+/** 伙伴洞察组件配置（对齐 Component<P> 泛型契约；字段可选，由 update 传入） */
+export interface PartnerInsightsOptions {
+  /** 记忆数据（DashboardViewModel 子集） */
+  memories?: PartnerMemory[];
 }
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -66,25 +74,83 @@ const SOURCE_GAP_DESCRIPTIONS: Record<string, string> = {
   session: '精灵还没有会话总结',
 };
 
-// ─── 伙伴洞察渲染器 ────────────────────────────────────────
+// ─── 伙伴洞察组件 ────────────────────────────────────────
 
 /**
- * 伙伴洞察渲染器
+ * 伙伴洞察组件
  *
  * 负责仪表盘内"伙伴洞察"子区域的全部渲染逻辑。
- * 由 DashboardPanelManager 持有，通过外观方法委托调用。
+ * 由 MemoryPanelManager 持有，通过外观方法委托调用。
  */
-export class PartnerInsightsRenderer {
+export class PartnerInsightsComponent extends Component<PartnerInsightsOptions> {
   /** 记忆点击回调（点击 profile 卡片时通知 controller 跳转记忆详情） */
   private onMemoryClickCallback: ((memoryId: string) => void) | null = null;
 
   /** 缓存最近一次渲染的记忆数据，供主题切换时重绘 Canvas（避免重新拉取） */
   private lastMemories: PartnerMemory[] = [];
 
-  /** 事件监听器跟踪器（统一管理卡片点击事件，cleanup 时统一移除） */
-  private events = new EventTracker();
+  // 持久化的内部元素引用（mount 时缓存，替代 document.getElementById 查内部元素）
+  private badgeEl: HTMLElement | null = null;
+  private profileCardsContainer: HTMLElement | null = null;
+  private gapsContainer: HTMLElement | null = null;
+  private canvas: HTMLCanvasElement | null = null;
+  private totalEl: HTMLElement | null = null;
 
-  // ─── 回调注册 ──────────────────────────────────────────
+  constructor(options: PartnerInsightsOptions = {}) {
+    super(options);
+  }
+
+  // ─── 生命周期 ──────────────────────────────────────────
+
+  /**
+   * 挂载到静态容器 #partner-insights（采纳为 this.el，富骨架已含全部内部 id）
+   *
+   * @param container 容器元素或选择器（默认 '#partner-insights'）
+   */
+  mount(container: HTMLElement | string = '#partner-insights'): this {
+    const target = typeof container === 'string'
+      ? document.querySelector<HTMLElement>(container)
+      : container;
+    if (!target) return this;
+
+    this.el = target;
+    // 缓存内部引用（§四.1：组件不应再用 getElementById 找自己的内部元素）
+    this.badgeEl = this.el.querySelector<HTMLElement>('#partner-insights-badge');
+    this.profileCardsContainer = this.el.querySelector<HTMLElement>('.profile-cards');
+    this.gapsContainer = this.el.querySelector<HTMLElement>('.gap-list');
+    this.canvas = this.el.querySelector<HTMLCanvasElement>('#partner-growth-chart');
+    this.totalEl = this.el.querySelector<HTMLElement>('#partner-growth-total');
+
+    // 首屏渲染（空数据 → 隐藏面板）
+    this.update();
+    return this;
+  }
+
+  /**
+   * 增量更新（render 的 Component 等价物）
+   *
+   * @param newOptions 新配置（memories 由 holder 经渲染委托传入）
+   */
+  update(newOptions: Partial<PartnerInsightsOptions> = {}): this {
+    if (newOptions.memories !== undefined) {
+      this.options.memories = newOptions.memories;
+    }
+    this.renderInternal(this.options.memories ?? []);
+    return this;
+  }
+
+  /**
+   * 主题切换时重绘 Canvas 图表
+   *
+   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘。
+   * 使用缓存的记忆数据重新渲染增长趋势图，避免重新拉取数据。
+   */
+  repaintOnThemeChange(): void {
+    if (this.isDestroyed()) return;
+    if (this.lastMemories.length > 0) {
+      this.renderGrowthChart(this.lastMemories);
+    }
+  }
 
   /**
    * 注册记忆点击回调
@@ -95,7 +161,19 @@ export class PartnerInsightsRenderer {
     this.onMemoryClickCallback = cb;
   }
 
-  // ─── 主渲染入口 ────────────────────────────────────────
+  /**
+   * 销毁组件（清理回调引用 + 缓存 + 事件监听，并避免误删共享静态容器）
+   */
+  destroy(): void {
+    this.onMemoryClickCallback = null;
+    this.lastMemories = [];
+    // #partner-insights 是共享静态容器（还被 memoryViewSwitcher 控制显隐），
+    // 置 null 让基类 destroy() 跳过 el.remove()
+    this.el = null;
+    super.destroy();
+  }
+
+  // ─── 私有渲染方法（逻辑与原 PartnerInsightsRenderer 逐行等价） ──
 
   /**
    * 渲染伙伴洞察面板
@@ -107,11 +185,11 @@ export class PartnerInsightsRenderer {
    *
    * @param memories 全量记忆列表（用于统计和趋势图）
    */
-  render(memories: PartnerMemory[]): void {
-    const panel = document.getElementById('partner-insights');
-    if (!panel) return;
+  private renderInternal(memories: PartnerMemory[]): void {
+    if (!this.el) return;
+    const panel = this.el;
 
-    // 有数据时显示面板，无数据时保持隐藏
+    // 有数据时显示面板，无数据时保持隐藏（与原 render 一致：空数据不更新 lastMemories）
     if (memories.length === 0) {
       panel.classList.add('hidden');
       return;
@@ -124,48 +202,21 @@ export class PartnerInsightsRenderer {
     // 筛选 profile 记忆（精灵对你的了解）
     const profileMems = memories.filter((m) => m.source === 'profile');
     // 顶部状态徽章同步了解数（信息语义，固定青色 good）
-    const badgeEl = document.getElementById('partner-insights-badge');
-    if (badgeEl) badgeEl.textContent = `${profileMems.length} 条了解`;
-    const profileCardsContainer = panel.querySelector('.profile-cards');
-    if (profileCardsContainer) {
-      this.renderProfileCards(profileMems, profileCardsContainer as HTMLElement);
+    if (this.badgeEl) {
+      this.badgeEl.textContent = `${profileMems.length} 条了解`;
+    }
+    if (this.profileCardsContainer) {
+      this.renderProfileCards(profileMems, this.profileCardsContainer);
     }
 
     // 知识缺口检测
-    const gapsContainer = panel.querySelector('.gap-list');
-    if (gapsContainer) {
-      this.renderKnowledgeGaps(memories, gapsContainer as HTMLElement);
+    if (this.gapsContainer) {
+      this.renderKnowledgeGaps(memories, this.gapsContainer);
     }
 
     // 记忆累积趋势图
     this.renderGrowthChart(memories);
   }
-
-  /**
-   * 主题切换时重绘 Canvas 图表
-   *
-   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘。
-   * 使用缓存的记忆数据重新渲染增长趋势图，避免重新拉取数据。
-   */
-  repaintOnThemeChange(): void {
-    if (this.lastMemories.length > 0) {
-      this.renderGrowthChart(this.lastMemories);
-    }
-  }
-
-  /**
-   * 清理资源（释放回调引用，避免潜在的内存泄漏）
-   *
-   * 由 DashboardPanelManager.cleanup() 在统一时机调用。
-   */
-  cleanup(): void {
-    this.onMemoryClickCallback = null;
-    this.lastMemories = [];
-    // 清理所有卡片点击事件监听器
-    this.events.cleanup();
-  }
-
-  // ─── 私有渲染方法 ──────────────────────────────────────
 
   /**
    * 渲染 profile 记忆卡片网格
@@ -189,10 +240,12 @@ export class PartnerInsightsRenderer {
       const card = createEl('div', 'profile-card');
       card.title = mem.contentPreview;
 
-      // 卡片被点击时，通过回调通知 controller（使用 EventTracker 统一管理）
-      this.events.addEventListener(card, 'click', () => {
+      // 卡片被点击时，通过回调通知 controller（事件经 trackEvent 统一清理）
+      const handleClick = (): void => {
         this.onMemoryClickCallback?.(mem.id);
-      });
+      };
+      card.addEventListener('click', handleClick);
+      this.trackEvent(() => card.removeEventListener('click', handleClick));
 
       // 记忆名称
       const nameEl = createEl('div', 'profile-card-name', mem.name);
@@ -265,8 +318,8 @@ export class PartnerInsightsRenderer {
    * 颜色通过 CSS 变量动态读取，支持亮色/暗色主题切换。
    */
   private renderGrowthChart(memories: Array<{ createdAt?: string }>): void {
-    const canvas = document.getElementById('partner-growth-chart');
-    const totalEl = document.getElementById('partner-growth-total');
+    const canvas = this.canvas;
+    const totalEl = this.totalEl;
     if (!(canvas instanceof HTMLCanvasElement)) {
       reportError('PartnerInsights partner-growth-chart 元素缺失', new Error('图表渲染跳过：HTMLCanvasElement 校验失败'));
       return;
