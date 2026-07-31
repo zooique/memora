@@ -32,6 +32,7 @@ description: Memora 关键决策年轮
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
 | [ADR-018](./ADR-018-css-scoping-convention.md) | CSS 作用域规范：面板前缀 + BEM + 单一真理源（消除 BARE 类跨面板污染） | ✅ 已接受 | 前端 |
 | [ADR-019](./ADR-019-css-functional-grouping.md) | CSS-R6 功能域分组重构：8 子目录 + 浮窗统一迁入 windows/ + 聚合器相对路径 | ✅ 已接受 | 前端 |
+| [ADR-020](./ADR-020-error-handling-strategy.md) | 错误处理策略统一：按层 + 按边界分类（内核降级 / IPC 契约 / 主进程 throw / 渲染进程 reportError） | ✅ 已接受 | 工程 |
 
 ### 精灵宿主（SP 系列）
 

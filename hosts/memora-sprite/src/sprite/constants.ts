@@ -8,8 +8,10 @@
  * - SPRITE_HOME_DIR_NAME 真理源在 shared/constants.ts，本模块 re-export 保持调用方不变
  */
 
-// formatDateKey 本地日期格式化（统一从内核 'memora' 导入，消除 shared/ 跨层副本）
-import { formatDateKey } from 'memora';
+// formatDateKey 本地日期格式化（从 shared 层导入——本文件是跨层共享文件，被渲染进程 value-import）
+// 渲染进程是浏览器环境，无法解析裸模块标识符 'memora'，因此跨层共享文件必须从 shared/ 导入
+// shared/dateUtils.ts 是渲染进程侧的 formatDateKey 真理源（ADR-017 枝叶层 2 次提取）
+import { formatDateKey } from '../shared/dateUtils.js';
 
 // ─── 时间常量（毫秒） ──────────────────────────────────
 

@@ -183,6 +183,21 @@ export class PersonaPanelManager {
     // 安全清空容器（与 renderMemoryList 保持一致，使用 clearElement 封装）
     clearElement(dropdown);
 
+    // 空态引导：角色列表为空时显示提示文案，避免下拉菜单空白无引导
+    // 复用 .dropdown-item-hint 空态样式（widgets.css 已定义，降权显示）
+    if (personas.length === 0) {
+      const hint = document.createElement('div');
+      hint.className = 'dropdown-item dropdown-item-hint';
+      hint.textContent = '暂无角色，请在精灵设定中创建';
+      dropdown.appendChild(hint);
+      // 空态时角色计数归零
+      const countEl = document.getElementById('persona-count');
+      if (countEl) {
+        countEl.textContent = '0';
+      }
+      return;
+    }
+
     for (const p of personas) {
       const item = document.createElement('div');
       item.className = 'dropdown-item' + (p.active ? ' active' : '');

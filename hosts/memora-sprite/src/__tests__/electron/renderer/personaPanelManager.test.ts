@@ -347,9 +347,13 @@ describe('renderPersonaDropdown', () => {
   it('应清空已有内容', () => {
     const { manager, dropdown } = createManager();
     // 预填充垃圾内容
-    dropdown.innerHTML = '<div>残留内容</div>';
-    manager.renderPersonaDropdown([]);
-    expect(dropdown.children.length).toBe(0);
+    dropdown.innerHTML = '<div>残留内容</div><div>更多残留</div>';
+    // 用非空列表触发清空逻辑（空列表会渲染引导文案，单独测试）
+    manager.renderPersonaDropdown([
+      { name: '默认', description: '通用助手', active: true },
+    ]);
+    // 残留内容应被清空，只剩 1 个新渲染的 dropdown-item
+    expect(dropdown.children.length).toBe(1);
   });
 
   it('应为每个 persona 创建 dropdown-item', () => {
@@ -439,10 +443,14 @@ describe('renderPersonaDropdown', () => {
     ).not.toThrow();
   });
 
-  it('空列表应清空 dropdown 且 count 为 0', () => {
+  it('空列表应渲染引导文案且 count 为 0', () => {
     const { manager, dropdown, countEl } = createManager();
     manager.renderPersonaDropdown([]);
-    expect(dropdown.children.length).toBe(0);
+    // 空态引导：渲染 1 个提示项（复用 .dropdown-item-hint 样式）
+    expect(dropdown.children.length).toBe(1);
+    const hint = dropdown.children[0] as HTMLElement;
+    expect(hint.className).toContain('dropdown-item-hint');
+    expect(hint.textContent).toBe('暂无角色，请在精灵设定中创建');
     expect(countEl.textContent).toBe('0');
   });
 });
