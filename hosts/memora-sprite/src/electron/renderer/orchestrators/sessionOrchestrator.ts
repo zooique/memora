@@ -86,6 +86,8 @@ export function createSessionOrchestrator(uiManager: UIManager) {
    */
   async function loadSessionHistory(): Promise<void> {
     try {
+      // 异步加载期间显示 loading 指示器（SCAN-1）：在 fetch 之前显示，覆盖当前内容避免空白/卡死错觉
+      uiManager.showSessionLoading();
       const { messages, loadedSessionId, total, hasMore } = await window.electronAPI.loadSession({
         limit: PAGE_SIZE,
         offset: 0,
@@ -120,8 +122,12 @@ export function createSessionOrchestrator(uiManager: UIManager) {
       }
 
       uiManager.hidePanelError('chat');
+      // 加载完成，移除 loading 指示器
+      uiManager.hideSessionLoading();
     } catch (error) {
       reportError('loadSessionHistory', error);
+      // 出错也需移除 loading 指示器（错误横幅由 showPanelError 承担）
+      uiManager.hideSessionLoading();
       uiManager.showPanelError('chat', '加载会话历史失败，请检查连接后重试', () => loadSessionHistory());
     }
   }
@@ -290,6 +296,8 @@ export function createSessionOrchestrator(uiManager: UIManager) {
     try {
       // 清空当前消息区
       uiManager.clearMessages();
+      // 异步加载期间显示 loading 指示器（SCAN-1）
+      uiManager.showSessionLoading();
       // 重置分页和时间流状态
       currentOffset = 0;
       currentTotal = 0;
@@ -321,8 +329,12 @@ export function createSessionOrchestrator(uiManager: UIManager) {
       uiManager.setDateNavCurrentDate(date);
       // 切换成功后隐藏错误横幅
       uiManager.hidePanelError('chat');
+      // 加载完成，移除 loading 指示器
+      uiManager.hideSessionLoading();
     } catch (error) {
       reportError('switchSession', error);
+      // 出错也需移除 loading 指示器
+      uiManager.hideSessionLoading();
       // 失败时显示 toast 和错误横幅，提供重试（UX-14：用 formatErrorMessage 替代模板化"请重试"）
       uiManager.showToast(formatErrorMessage('切换会话', error), 'error');
       uiManager.showPanelError('chat', formatErrorMessage('切换会话', error), () => switchSession(sessionId));
@@ -432,6 +444,8 @@ export function createSessionOrchestrator(uiManager: UIManager) {
 
       // 清空当前消息区
       uiManager.clearMessages();
+      // 异步加载期间显示 loading 指示器（SCAN-1）
+      uiManager.showSessionLoading();
       // 重置分页和时间流状态
       currentOffset = 0;
       currentTotal = 0;
@@ -463,8 +477,12 @@ export function createSessionOrchestrator(uiManager: UIManager) {
       await updateLoadMoreButton(hasMore);
 
       uiManager.hidePanelError('chat');
+      // 加载完成，移除 loading 指示器
+      uiManager.hideSessionLoading();
     } catch (error) {
       reportError('jumpToDate', error);
+      // 出错也需移除 loading 指示器
+      uiManager.hideSessionLoading();
       uiManager.showToast('跳转到指定日期失败', 'error');
     }
   }

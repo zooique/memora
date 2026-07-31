@@ -11,6 +11,7 @@
  * - 管理空状态引导（showEmptyState / hideEmptyState / initEmptyStateListeners / onSuggestionClick）
  * - 管理加载更多按钮（showLoadMore / hideLoadMore）
  * - 管理加载更早日期按钮（showLoadEarlierDay，方案 B 时间流）
+ * - 管理会话异步加载指示器（showSessionLoading / hideSessionLoading，复用 domHelpers 单一真理源）
  * - 管理消息区域清空（clearMessages）
  * - B1：对话区内联里程碑 banner（appendMilestoneBanner，对齐 demo v3）
  *
@@ -20,7 +21,7 @@
  * - 自管理内部状态（流式消息映射、RAF 状态、回调引用），提供 cleanup() 清理
  */
 
-import { formatDateKey } from '../helpers/domHelpers.js';
+import { formatDateKey, showPanelLoading, hidePanelLoading } from '../helpers/domHelpers.js';
 import { setIcon, setIconWithLabel } from '../helpers/icon.js';
 // MessageBubbleComponent（HEAL-17 Phase 2）：单条消息气泡组件，承接原 buildMessageElement 的 DOM 构建逻辑
 import { MessageBubbleComponent } from '../components/messageBubbleComponent.js';
@@ -937,6 +938,30 @@ export class ChatPanelManager {
 
     // 插入到消息区顶部
     this.messagesEl.insertBefore(container, this.messagesEl.firstChild);
+  }
+
+  /**
+   * 显示会话异步加载指示器
+   *
+   * 在消息区覆盖一层 loading 指示（spinner + 文案），
+   * 用于 loadSessionHistory / switchSession / jumpToDate 等全量替换消息的异步加载期间，
+   * 避免用户看到空白或旧内容残留而误以为卡死。
+   *
+   * 复用 domHelpers.showPanelLoading（项目 loading 指示器单一真理源 .panel-loading），
+   * #messages 已 position:relative，覆盖层正确铺满消息区；调用方在加载完成后调 hideSessionLoading。
+   */
+  showSessionLoading(): void {
+    showPanelLoading(this.messagesEl, '加载会话历史…');
+  }
+
+  /**
+   * 移除会话异步加载指示器
+   *
+   * 与 showSessionLoading() 配对，加载成功或失败后调用。
+   * 安全处理：消息区无 loading 层时静默返回（hidePanelLoading 内部保证）。
+   */
+  hideSessionLoading(): void {
+    hidePanelLoading(this.messagesEl);
   }
 
   /**

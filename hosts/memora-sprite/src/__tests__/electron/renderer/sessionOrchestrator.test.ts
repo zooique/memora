@@ -177,6 +177,85 @@ describe('sessionController', () => {
     });
   });
 
+  describe('会话加载 loading 指示器 (SCAN-1)', () => {
+    it('loadSessionHistory 应在异步加载期间显示并在完成后移除 loading 指示器', async () => {
+      const controller = createSessionOrchestrator(uiManager);
+      const showSpy = vi.spyOn(uiManager, 'showSessionLoading');
+      const hideSpy = vi.spyOn(uiManager, 'hideSessionLoading');
+
+      await controller.loadSessionHistory();
+
+      // 加载开始时显示、结束时移除（各一次）
+      expect(showSpy).toHaveBeenCalledTimes(1);
+      expect(hideSpy).toHaveBeenCalledTimes(1);
+      // 加载完成后消息区内不应残留 loading 覆盖层
+      expect(dom.window.document.querySelector('#messages .panel-loading')).toBeNull();
+    });
+
+    it('switchSession 应显示并移除 loading 指示器', async () => {
+      const controller = createSessionOrchestrator(uiManager);
+      const showSpy = vi.spyOn(uiManager, 'showSessionLoading');
+      const hideSpy = vi.spyOn(uiManager, 'hideSessionLoading');
+
+      await controller.switchSession('2026-06-20-chat');
+
+      expect(showSpy).toHaveBeenCalledTimes(1);
+      expect(hideSpy).toHaveBeenCalledTimes(1);
+      expect(dom.window.document.querySelector('#messages .panel-loading')).toBeNull();
+    });
+
+    it('jumpToDate 应显示并移除 loading 指示器', async () => {
+      const controller = createSessionOrchestrator(uiManager);
+      const showSpy = vi.spyOn(uiManager, 'showSessionLoading');
+      const hideSpy = vi.spyOn(uiManager, 'hideSessionLoading');
+
+      await controller.jumpToDate('2026-06-20');
+
+      expect(showSpy).toHaveBeenCalledTimes(1);
+      expect(hideSpy).toHaveBeenCalledTimes(1);
+      expect(dom.window.document.querySelector('#messages .panel-loading')).toBeNull();
+    });
+
+    it('loadSessionHistory 出错时也应移除 loading 指示器', async () => {
+      const controller = createSessionOrchestrator(uiManager);
+      const hideSpy = vi.spyOn(uiManager, 'hideSessionLoading');
+      // 让 loadSession 抛错，验证错误路径同样清理 loading
+      (dom.window.electronAPI as Record<string, unknown>).loadSession = vi.fn().mockRejectedValueOnce(new Error('IPC 失败'));
+
+      await controller.loadSessionHistory();
+
+      expect(hideSpy).toHaveBeenCalledTimes(1);
+      expect(dom.window.document.querySelector('#messages .panel-loading')).toBeNull();
+    });
+
+    it('加载期间 #messages 内应挂载 .panel-loading 覆盖层', async () => {
+      const controller = createSessionOrchestrator(uiManager);
+      // 用 deferred promise 控制 loadSession 的解析时机，验证加载进行中覆盖层存在
+      let resolveLoad: (value: unknown) => void = () => {};
+      const deferred = new Promise<unknown>((resolve) => { resolveLoad = resolve; });
+      (dom.window.electronAPI as Record<string, unknown>).loadSession = vi.fn().mockReturnValue(deferred);
+
+      const pending = controller.loadSessionHistory();
+      // 让出事件循环，使 showSessionLoading 已执行（位于首个 await 之前）
+      await new Promise((r) => setTimeout(r, 0));
+
+      // 加载进行中：覆盖层应存在
+      expect(dom.window.document.querySelector('#messages .panel-loading')).not.toBeNull();
+
+      // 解析并完成
+      resolveLoad({
+        messages: makeSessionMessages(),
+        loadedSessionId: '2026-06-21-main',
+        total: 2,
+        hasMore: false,
+      });
+      await pending;
+
+      // 完成后覆盖层应被移除
+      expect(dom.window.document.querySelector('#messages .panel-loading')).toBeNull();
+    });
+  });
+
   describe('switchSession', () => {
     it('应该阻止流式输出期间的切换', async () => {
       const controller = createSessionOrchestrator(uiManager);

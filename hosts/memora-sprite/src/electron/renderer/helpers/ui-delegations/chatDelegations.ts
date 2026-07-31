@@ -31,6 +31,8 @@ export interface ChatDelegations {
   showLoadMore(remaining: number, onClick: () => void): void;
   hideLoadMore(): void;
   showLoadEarlierDay(onClick: () => void): void;
+  showSessionLoading(): void;
+  hideSessionLoading(): void;
   injectErrorToStreamingMessages(errorText: string): void;
   markStreamingAborted(messageId: string, reason: string): void;
   showEmptyState(): void;
@@ -106,6 +108,12 @@ export const chatDelegations: ChatDelegations = {
   },
   showLoadEarlierDay(this: UIManager, onClick: () => void): void {
     this.chatCoordinator.chatPanel.showLoadEarlierDay(onClick);
+  },
+  showSessionLoading(this: UIManager): void {
+    this.chatCoordinator.chatPanel.showSessionLoading();
+  },
+  hideSessionLoading(this: UIManager): void {
+    this.chatCoordinator.chatPanel.hideSessionLoading();
   },
   injectErrorToStreamingMessages(this: UIManager, errorText: string): void {
     this.chatCoordinator.chatPanel.injectErrorToStreamingMessages(errorText);
