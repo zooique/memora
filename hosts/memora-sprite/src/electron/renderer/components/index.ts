@@ -26,6 +26,18 @@ export type { ToastComponentOptions } from './toastComponent.js';
 export { MessageBubbleComponent } from './messageBubbleComponent.js';
 export type { MessageBubbleOptions } from './messageBubbleComponent.js';
 
+/*
+ * 面板子渲染器升级组件（HEAL-17 Phase B）
+ * ────────────────────────────────────────────
+ * 由 panels/*Renderer 升级而来的 Component 子类，统一经本入口导出以满足 §四.3「统一导出入口」。
+ * 物理文件暂留在 panels/（与尚未迁移的 5 个 *Renderer 同位），待 Phase D 分层定稿时
+ * 再整体迁至 components/ 并按 base←feedback←form←navigation←data 归类。
+ */
+export { CompletionStatsComponent } from '../panels/completionStatsRenderer.js';
+export type { CompletionStatsOptions, CompletionStatsHost } from '../panels/completionStatsRenderer.js';
+export { HealthDashboardComponent } from '../panels/healthDashboardRenderer.js';
+export type { HealthDashboardOptions } from '../panels/healthDashboardRenderer.js';
+
 /* ========== 表单组件 ========== */
 // 待后续 Phase 填充
 

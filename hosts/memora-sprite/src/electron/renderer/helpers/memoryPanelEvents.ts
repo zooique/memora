@@ -564,7 +564,7 @@ function initAnalysisPanelClose(ctx: MemoryPanelEventContext): void {
       ctx.hideAnalysisPanel();
     });
   }
-  // 补全统计面板关闭按钮：该按钮由 CompletionStatsRenderer 在面板打开时才动态注入 DOM，
+  // 补全统计面板关闭按钮：该按钮由 CompletionStatsComponent 在 mount 时构建并注入 DOM（仅一次），
   // init 阶段尚不存在，故在稳定容器 #completion-stats-bar 上做事件委托，
   // 命中 .panel-close-btn 即关闭面板（与列表点击委托同一手法）。
   const completionStatsBar = document.getElementById('completion-stats-bar');

@@ -1,17 +1,25 @@
 /**
- * 健康度仪表盘渲染器 — 仪表盘内"记忆健康度"子区域渲染
+ * 健康度仪表盘组件
  *
- * 职责：
+ * 职责（与原子健康度渲染器一致）：
  * - 显示健康度面板加载态（IPC 调用前）
  * - 渲染健康度仪表盘数据（迷你徽章/评分/等级徽章/三维度进度条/详情计数/清理按钮可见性）
  * - 显示加载失败状态（带重试按钮，触发回调重新拉取数据）
  *
- * 设计原则（遵循 ADR-SP-015 组合模式）：
- * - 模式 C（自包含 EventTracker）：重试按钮的事件通过 EventTracker 统一管理
- * - 模式 D 衍生：onReloadHealth() 回调注册接口与外部协作
- * - 由 DashboardPanelManager 持有实例，外观方法委托调用
+ * 组件化改造（HEAL-17 Phase B，对齐 ui-engineering-mindset-rules §四.1 / §四.4）：
+ * - 由 HealthDashboardRenderer 升级为 Component 子类，统一生命周期 mount/update/destroy
+ * - 采用「采纳静态容器」变体：#memory-health-bar 是 index.html 预留的富骨架静态容器
+ *   （header + 评分 + 维度 + 诊断 + 治理操作），mount() 直接将其采纳为 this.el 并缓存内部引用，
+ *   不再用 document.getElementById 查内部元素（规则 §四.1 消除「组件查自身外部 DOM」反模式）
+ * - update({data}) 增量刷新（textContent/style/classList，与原实现一致，本就无 innerHTML 重建）
+ * - destroy() 不移除静态容器：该容器是共享挂载点，亦承载 #health-llm-result 子区（后续 LLM 治理组件），
+ *   故销毁前将 this.el 置 null，使基类 destroy 跳过 el.remove()，仅清理事件与引用
+ *
+ * 由 MemoryPanelManager 持有实例（Manager 持有 Component，不直接操作 DOM，对齐 §四.4）。
+ * 关闭按钮 #btn-close-health 由 memoryPanelEvents 在 #memory-health-bar 上委托处理，组件不绑定。
  */
 
+import { Component } from '../components/Component.js';
 import { showPanelLoading, hidePanelLoading } from '../helpers/domHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），4 处面板共用
 import { renderErrorState } from '../helpers/errorState.js';
@@ -20,7 +28,7 @@ import type { HealthDashboardPayload } from '../../preload.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** 健康等级中文标签映射表（本渲染器的唯一真理源，已从 dashboardPanelManager 迁入） */
+/** 健康等级中文标签映射表（本组件的唯⼀真理源，已从 dashboardPanelManager 迁入） */
 const HEALTH_LABEL_MAP: Record<string, string> = {
   excellent: '优秀',
   good: '良好',
@@ -38,43 +46,113 @@ interface DimensionConfig {
   cssClass: string;
 }
 
-// ─── 健康度仪表盘渲染器 ────────────────────────────────────
+/** 三维度 id 列表（mount 时缓存对应内部引用，update 时原地写） */
+const DIMENSION_IDS = ['uniqueness', 'freshness', 'completeness'] as const;
+
+// ─── 选项 ────────────────────────────────────────────────
+
+/** HealthDashboardComponent 配置（对齐 Component<P> 泛型契约） */
+export interface HealthDashboardOptions {
+  /** 健康度数据（render 时的可变 prop，由 Controller 拉取后传入） */
+  data?: HealthDashboardPayload;
+}
+
+// ─── 组件 ────────────────────────────────────────────────
 
 /**
- * 健康度仪表盘渲染器
+ * 健康度仪表盘组件
  *
  * 负责仪表盘内"记忆健康度"子区域的全部渲染逻辑。
- * 由 DashboardPanelManager 持有，通过外观方法委托调用。
+ * 由 MemoryPanelManager 持有，通过外观方法委托调用。
  */
-export class HealthDashboardRenderer {
+export class HealthDashboardComponent extends Component<HealthDashboardOptions> {
   /** 事件监听器跟踪器（统一管理重试按钮事件，避免内存泄漏） */
   private events = new EventTracker();
 
   /** 重试加载健康度数据回调（用户点击重试按钮时触发） */
   private reloadCallback: (() => void) | null = null;
 
-  // ─── 回调注册 ──────────────────────────────────────────
+  // ─── 持久化内部引用（替代原 getElementById 内部查找，均为 #memory-health-bar 子树内元素） ──
+  private metricsEl: HTMLElement | null = null;
+  private scoreEl: HTMLElement | null = null;
+  private scoreSampleEl: HTMLElement | null = null;
+  private badgeEl: HTMLElement | null = null;
+  private dimFillEls: Record<string, HTMLElement | null> = {};
+  private dimValEls: Record<string, HTMLElement | null> = {};
+  private dupEl: HTMLElement | null = null;
+  private staleEl: HTMLElement | null = null;
+  private lowEl: HTMLElement | null = null;
+  private descEl: HTMLElement | null = null;
+  private dupBtn: HTMLElement | null = null;
+  private staleBtn: HTMLElement | null = null;
+  private allBtn: HTMLElement | null = null;
+  private actionsEl: HTMLElement | null = null;
 
   /**
-   * 注册重试加载健康度数据回调
+   * 构造函数——只合并配置，无副作用（对齐 §四.1）
    *
-   * 用户点击重试按钮时触发，由 Controller 重新拉取数据。
+   * @param options 组件配置（data 可选，由 update 传入）
    */
-  onReloadHealth(cb: () => void): void {
-    this.reloadCallback = cb;
+  constructor(options: HealthDashboardOptions = {}) {
+    super(options);
   }
-
-  // ─── 资源清理 ──────────────────────────────────────────
 
   /**
-   * 清理事件监听器（页面卸载时调用，避免回调在 DOM 销毁后触发）
+   * 挂载到容器——采纳静态容器为根 + 缓存内部引用
+   *
+   * #memory-health-bar 是 index.html 预留的富骨架（header + 评分 + 维度 + 诊断 + 治理操作），
+   * 组件直接将其采纳为 this.el（不新建 wrapper），并在子树内缓存各内部元素引用，
+   * 后续 update/showLoading/showError 仅通过这些引用原地操作，杜绝 getElementById。
+   * 容器缺失时安全降级（返回 this，el 保持 null）。
+   *
+   * @param container 容器元素或选择器（静态挂载点 #memory-health-bar）
+   * @returns this（链式调用）
    */
-  cleanup(): void {
-    this.events.cleanup();
-    this.reloadCallback = null;
+  mount(container: HTMLElement | string): this {
+    const target = typeof container === 'string'
+      ? document.querySelector<HTMLElement>(container)
+      : container;
+    if (!target) return this;
+
+    this.el = target;
+
+    // ─── 缓存内部引用（this.el 子树内查找） ──
+    this.metricsEl = this.el.querySelector('.health-metrics');
+    this.scoreEl = this.el.querySelector('#health-score');
+    this.scoreSampleEl = this.el.querySelector('#health-score-sample');
+    this.badgeEl = this.el.querySelector('#health-badge');
+    for (const id of DIMENSION_IDS) {
+      this.dimFillEls[id] = this.el.querySelector(`#health-${id}`);
+      this.dimValEls[id] = this.el.querySelector(`#health-${id}-val`);
+    }
+    this.dupEl = this.el.querySelector('#health-duplicates');
+    this.staleEl = this.el.querySelector('#health-stale');
+    this.lowEl = this.el.querySelector('#health-low-quality');
+    this.descEl = this.el.querySelector('#health-description');
+    this.dupBtn = this.el.querySelector('#health-cleanup-duplicates');
+    this.staleBtn = this.el.querySelector('#health-cleanup-stale');
+    this.allBtn = this.el.querySelector('#health-cleanup-all');
+    this.actionsEl = this.el.querySelector('#health-actions');
+
+    return this;
   }
 
-  // ─── 渲染方法 ──────────────────────────────────────────
+  /**
+   * 增量更新内部状态——不重建 DOM，仅刷新数据
+   *
+   * @param newOptions 新的配置项（data 变化时刷新渲染）
+   * @returns this（链式调用）
+   */
+  update(newOptions: Partial<HealthDashboardOptions> = {}): this {
+    if (newOptions.data !== undefined) {
+      this.options = { ...this.options, data: newOptions.data };
+    }
+    if (!this.el) return this;
+    const data = this.options.data;
+    if (!data) return this;
+    this._renderData(data);
+    return this;
+  }
 
   /**
    * 显示健康度面板加载态（IPC 调用前调用）
@@ -82,50 +160,35 @@ export class HealthDashboardRenderer {
    * 在 health-metrics 区域插入加载态占位，不影响 header 区域。
    */
   showLoading(): void {
-    const healthBar = document.getElementById('memory-health-bar');
-    // 在 health-metrics 区域插入加载态（不影响 header 区域）
-    const metricsEl = healthBar?.querySelector('.health-metrics');
-    if (metricsEl) showPanelLoading(metricsEl, '加载健康度数据…');
+    if (this.metricsEl) showPanelLoading(this.metricsEl, '加载健康度数据…');
   }
 
   /**
-   * 渲染记忆健康度仪表盘数据
-   *
-   * 接收 Controller 拉取的健康度数据，渲染：
-   * - 健康度评分（总分）+ 评分基数（N 条记忆）+ 健康等级徽章
-   * - 三维度进度条（uniqueness/freshness/completeness）
-   * - 详情计数（重复 + 平均相似度 / 过期 + 原因分类 + 最长闲置天数 / 低质量）
-   * - 健康描述文字
-   * - 清理按钮可见性（仅在有可清理项时显示）
+   * 渲染记忆健康度仪表盘数据（增量，无 innerHTML 重建）
    *
    * @param data 健康度数据
    */
-  render(data: HealthDashboardPayload): void {
+  private _renderData(data: HealthDashboardPayload): void {
     // 清除 showLoading() 添加的 .panel-loading 覆盖层（修复 loading 永驻 bug）
     // 必须在 setTextContent 前执行，否则覆盖层持续遮挡渲染结果
-    const healthBar = document.getElementById('memory-health-bar');
-    const metricsEl = healthBar?.querySelector('.health-metrics');
-    if (metricsEl) hidePanelLoading(metricsEl);
+    if (this.metricsEl) hidePanelLoading(this.metricsEl);
 
     // ─── 健康度评分（记忆面板 health-bar）+ 评分基数 ──────────────
-    const scoreEl = document.getElementById('health-score');
-    if (scoreEl) {
+    if (this.scoreEl) {
       // 评分：纯分数（样本量由 #health-score-sample 承载，CSS-R11 分离层级）
-      scoreEl.textContent = String(data.scores.overall);
+      this.scoreEl.textContent = String(data.scores.overall);
     }
-    const scoreSampleEl = document.getElementById('health-score-sample');
-    if (scoreSampleEl) {
+    if (this.scoreSampleEl) {
       // 样本量：基于 N 条记忆，muted 次级信息，不与分数争夺视觉权重
-      scoreSampleEl.textContent = `（${data.totalMemories} 条）`;
+      this.scoreSampleEl.textContent = `（${data.totalMemories} 条）`;
     }
 
     // ─── 健康等级徽章 ──────────────────────────────────
-    const badgeEl = document.getElementById('health-badge');
-    if (badgeEl) {
+    if (this.badgeEl) {
       // 清除旧等级类名
-      badgeEl.className = 'panel-badge';
-      badgeEl.classList.add(data.healthLabel);
-      badgeEl.textContent = HEALTH_LABEL_MAP[data.healthLabel] || data.healthLabel;
+      this.badgeEl.className = 'panel-badge';
+      this.badgeEl.classList.add(data.healthLabel);
+      this.badgeEl.textContent = HEALTH_LABEL_MAP[data.healthLabel] || data.healthLabel;
     }
 
     // ─── 三维度进度条 ──────────────────────────────────
@@ -135,8 +198,8 @@ export class HealthDashboardRenderer {
       { id: 'completeness', value: data.scores.completeness, cssClass: 'completeness' },
     ];
     for (const dim of dimensions) {
-      const fillEl = document.getElementById(`health-${dim.id}`);
-      const valEl = document.getElementById(`health-${dim.id}-val`);
+      const fillEl = this.dimFillEls[dim.id];
+      const valEl = this.dimValEls[dim.id];
       if (fillEl) {
         fillEl.style.width = `${dim.value}%`;
         fillEl.className = `metric-track__fill ${dim.cssClass}`;
@@ -146,8 +209,7 @@ export class HealthDashboardRenderer {
 
     // ─── 详情计数（重复/过期/低质量）+ 数据点补全 ──────────────────
     const duplicateCount = data.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
-    const dupEl = document.getElementById('health-duplicates');
-    if (dupEl) {
+    if (this.dupEl) {
       // 重复组追加平均相似度（payload 的 similarity 为 0-1，越小越相似，转为百分比展示）
       // 空值保护：similarity 为可选字段，未提供时不追加
       const similarities = data.duplicates
@@ -160,15 +222,14 @@ export class HealthDashboardRenderer {
       const dupText = avgSimilarity !== null
         ? `重复: ${duplicateCount}（相似度 ${avgSimilarity}%）`
         : `重复: ${duplicateCount}`;
-      dupEl.textContent = dupText;
+      this.dupEl.textContent = dupText;
       // title 悬停展示完整详情（避免单行溢出）
-      dupEl.title = duplicateCount > 0 ? `${duplicateCount} 条重复记忆，平均相似度 ${avgSimilarity ?? '未知'}%` : '';
-      dupEl.className = 'panel-chip';
-      if (duplicateCount > 0) dupEl.classList.add('warning');
+      this.dupEl.title = duplicateCount > 0 ? `${duplicateCount} 条重复记忆，平均相似度 ${avgSimilarity ?? '未知'}%` : '';
+      this.dupEl.className = 'panel-chip';
+      if (duplicateCount > 0) this.dupEl.classList.add('warning');
     }
 
-    const staleEl = document.getElementById('health-stale');
-    if (staleEl) {
+    if (this.staleEl) {
       // 过期记忆追加原因分类（old_age / low_score / both）+ 最长闲置天数
       // 原因分类让用户区分"长期未访问"与"低分"两类过期，针对性清理
       const reasonCounts = { old_age: 0, low_score: 0, both: 0 } as Record<string, number>;
@@ -189,38 +250,31 @@ export class HealthDashboardRenderer {
         // 最长闲置天数
         if (maxDays > 0) parts.push(`· 最长 ${maxDays} 天`);
       }
-      staleEl.textContent = parts.join('');
+      this.staleEl.textContent = parts.join('');
       // title 悬停展示完整详情
-      staleEl.title = staleCount > 0
+      this.staleEl.title = staleCount > 0
         ? `${staleCount} 条过期记忆：老化 ${reasonCounts.old_age ?? 0} / 低分 ${reasonCounts.low_score ?? 0} / 双重 ${reasonCounts.both ?? 0}，最长闲置 ${maxDays} 天`
         : '';
-      staleEl.className = 'panel-chip';
-      if (staleCount > 0) staleEl.classList.add('warning');
+      this.staleEl.className = 'panel-chip';
+      if (staleCount > 0) this.staleEl.classList.add('warning');
     }
 
-    const lowEl = document.getElementById('health-low-quality');
-    if (lowEl) {
-      lowEl.textContent = `低质量: ${data.lowQualityCount}`;
-      lowEl.className = 'panel-chip';
-      if (data.lowQualityCount > 0) lowEl.classList.add('warning');
+    if (this.lowEl) {
+      this.lowEl.textContent = `低质量: ${data.lowQualityCount}`;
+      this.lowEl.className = 'panel-chip';
+      if (data.lowQualityCount > 0) this.lowEl.classList.add('warning');
     }
 
     // ─── 健康描述 ──────────────────────────────────────
-    const descEl = document.getElementById('health-description');
-    if (descEl) descEl.textContent = data.healthDescription;
+    if (this.descEl) this.descEl.textContent = data.healthDescription;
 
     // ─── 清理按钮：仅在有可清理项时显示 ──────────────
     const staleCount = data.staleMemories.length;
     const hasCleanupTarget = duplicateCount > 0 || staleCount > 0;
-    const dupBtn = document.getElementById('health-cleanup-duplicates');
-    const staleBtn = document.getElementById('health-cleanup-stale');
-    const allBtn = document.getElementById('health-cleanup-all');
-    const actionsEl = document.getElementById('health-actions');
-
-    if (dupBtn) dupBtn.style.display = duplicateCount > 0 ? '' : 'none';
-    if (staleBtn) staleBtn.style.display = staleCount > 0 ? '' : 'none';
-    if (allBtn) allBtn.style.display = hasCleanupTarget ? '' : 'none';
-    if (actionsEl) actionsEl.style.display = hasCleanupTarget ? '' : 'none';
+    if (this.dupBtn) this.dupBtn.style.display = duplicateCount > 0 ? '' : 'none';
+    if (this.staleBtn) this.staleBtn.style.display = staleCount > 0 ? '' : 'none';
+    if (this.allBtn) this.allBtn.style.display = hasCleanupTarget ? '' : 'none';
+    if (this.actionsEl) this.actionsEl.style.display = hasCleanupTarget ? '' : 'none';
   }
 
   /**
@@ -231,15 +285,38 @@ export class HealthDashboardRenderer {
    * 用户点击重试按钮时触发 onReloadHealth 回调，由 Controller 重新拉取数据。
    */
   showError(): void {
-    const healthBar = document.getElementById('memory-health-bar');
-    const metricsEl = healthBar?.querySelector('.health-metrics');
-    if (metricsEl instanceof HTMLElement) {
-      renderErrorState(
-        metricsEl,
-        '加载失败',
-        () => this.reloadCallback?.(),
-        this.events,
-      );
-    }
+    if (!(this.metricsEl instanceof HTMLElement)) return;
+    renderErrorState(
+      this.metricsEl,
+      '加载失败',
+      () => this.reloadCallback?.(),
+      this.events,
+    );
+  }
+
+  /**
+   * 注册重试加载健康度数据回调
+   *
+   * 用户点击重试按钮时触发，由 Controller 重新拉取数据。
+   *
+   * @param cb 回调函数
+   */
+  onReloadHealth(cb: () => void): void {
+    this.reloadCallback = cb;
+  }
+
+  /**
+   * 销毁组件——彻底清理
+   *
+   * 先清理事件跟踪器（解绑重试按钮监听）与引用，再调用基类 destroy。
+   * 注意：静态容器 #memory-health-bar 为共享挂载点（亦承载 #health-llm-result 子区），
+   * destroy 不应移除它——故先置 this.el = null，使基类 destroy 跳过 el.remove()，
+   * 仅执行 _cleanups 与 this.el 置空。关闭按钮未直接绑定，交由 memoryPanelEvents 委托处理。
+   */
+  destroy(): void {
+    this.events.cleanup();
+    this.reloadCallback = null;
+    this.el = null;
+    super.destroy();
   }
 }

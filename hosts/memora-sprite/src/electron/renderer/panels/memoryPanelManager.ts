@@ -28,10 +28,10 @@ import type { RelationGraphRenderer, RelationGraphData } from '../components/rel
 import type { HealthDashboardPayload } from '../../preload.js';
 // 记忆面板所属子渲染器（DOM 在 panel-memories 内，归 MemoryPanelManager 管理）
 import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
-import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
+import { HealthDashboardComponent } from './healthDashboardRenderer.js';
 import { InsightsRenderer } from './insightsRenderer.js';
-// 补全统计面板渲染器（第 3 个 analysis panel）
-import { CompletionStatsRenderer } from './completionStatsRenderer.js';
+// 补全统计面板组件（第 3 个 analysis panel，HEAL-17 Phase B 由 *Renderer 升级为 Component）
+import { CompletionStatsComponent } from './completionStatsRenderer.js';
 // 事件监听器注册逻辑提取到独立 helper（降低本文件体量）
 import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';
@@ -126,12 +126,12 @@ export class MemoryPanelManager {
   // ─── 子渲染器（DOM 在 panel-memories 内，归本面板管理） ──
   /** 伙伴洞察渲染器（profile 卡片 / 知识缺口 / 增长趋势图） */
   private partnerInsights = new PartnerInsightsRenderer();
-  /** 健康度仪表盘渲染器（评分 / 徽章 / 三维度 / 清理按钮） */
-  private healthDashboard = new HealthDashboardRenderer();
+  /** 健康度仪表盘组件（评分 / 徽章 / 三维度 / 清理按钮），Manager 持有 Component 实例（对齐 §四.4） */
+  private healthDashboard = new HealthDashboardComponent();
   /** 洞察渲染器（统计卡片 / source 分布 / 关系摘要） */
   private insights = new InsightsRenderer();
-  /** 补全统计渲染器（采纳率 / Top-1 命中率 / 事件流） */
-  private completionStats!: CompletionStatsRenderer;
+  /** 补全统计组件（采纳率 / Top-1 命中率 / 事件流），Manager 持有 Component 实例（对齐 §四.4） */
+  private completionStatsComponent!: CompletionStatsComponent;
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;
@@ -203,7 +203,7 @@ export class MemoryPanelManager {
     private events: EventTracker,
   ) {
     // 参数属性（host）在字段初始化器之后才赋值，故子渲染器在此处初始化，确保 host 已就绪
-    this.completionStats = new CompletionStatsRenderer(this.host);
+    this.completionStatsComponent = new CompletionStatsComponent({ host: this.host });
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -221,9 +221,9 @@ export class MemoryPanelManager {
     }
     // 清理子渲染器
     this.partnerInsights.cleanup();
-    this.healthDashboard.cleanup();
+    this.healthDashboard.destroy();
     this.insights.cleanup();
-    this.completionStats.cleanup();
+    this.completionStatsComponent.destroy();
     this.events.cleanup();
   }
 
@@ -1267,7 +1267,7 @@ export class MemoryPanelManager {
     }, { once: true });
   }
 
-  // ─── 子渲染器委托方法（InsightsRenderer / HealthDashboardRenderer / PartnerInsightsRenderer） ──
+  // ─── 子渲染器委托方法（InsightsRenderer / HealthDashboardComponent / PartnerInsightsRenderer） ──
 
   /** 主题切换时重绘子渲染器 Canvas 图表 */
   repaintOnThemeChange(): void {
@@ -1304,42 +1304,65 @@ export class MemoryPanelManager {
     this.insights.onReloadInsights(cb);
   }
 
-  // ─── HealthDashboardRenderer 委托 ──
+  // ─── HealthDashboardComponent 委托 ──
 
-  /** 显示健康度面板加载态（委托到 HealthDashboardRenderer） */
+  /**
+   * 确保健康度组件已挂载（首次打开面板时挂载到静态容器 #memory-health-bar，
+   * 之后仅被 hidden 不销毁，故仅挂载一次；与 CompletionStatsComponent 同模式，对齐 §四.1）。
+   */
+  private ensureHealthDashboardMounted(): void {
+    if (!this.healthDashboard.getElement()) {
+      this.healthDashboard.mount('#memory-health-bar');
+    }
+  }
+
+  /** 显示健康度面板加载态（委托到 HealthDashboardComponent） */
   showHealthLoading(): void {
+    this.ensureHealthDashboardMounted();
     this.healthDashboard.showLoading();
   }
 
   /**
-   * 渲染记忆健康度仪表盘数据（委托到 HealthDashboardRenderer）
+   * 渲染记忆健康度仪表盘数据（委托到 HealthDashboardComponent）
    *
    * @param data 健康度数据
    */
   renderHealthDashboard(data: HealthDashboardPayload): void {
-    this.healthDashboard.render(data);
+    this.ensureHealthDashboardMounted();
+    this.healthDashboard.update({ data });
   }
 
-  /** 显示健康度面板加载失败状态（委托到 HealthDashboardRenderer） */
+  /** 显示健康度面板加载失败状态（委托到 HealthDashboardComponent） */
   showHealthError(): void {
+    this.ensureHealthDashboardMounted();
     this.healthDashboard.showError();
   }
 
-  /** 注册重试加载健康度数据回调（委托到 HealthDashboardRenderer） */
+  /** 注册重试加载健康度数据回调（委托到 HealthDashboardComponent） */
   onReloadHealth(cb: () => void): void {
     this.healthDashboard.onReloadHealth(cb);
   }
 
-  // ─── CompletionStatsRenderer 委托（F2） ──
+  // ─── CompletionStatsComponent 委托（F2） ──
 
-  /** 渲染补全统计面板（委托到 CompletionStatsRenderer，数据来自 localStorage） */
+  /**
+   * 渲染补全统计面板（委托到 CompletionStatsComponent，数据来自 localStorage）
+   *
+   * 首次打开：组件尚未挂载 → mount 构建骨架 + 首屏数据；
+   * 再次打开：组件已挂载（仅被 hidden，未销毁）→ update 增量刷新，避免重复重建与重绑按钮。
+   * 面板卸载由 cleanup() → component.destroy() 处理。
+   */
   renderCompletionStat(): void {
-    this.completionStats.render();
+    if (!this.completionStatsComponent?.getElement()) {
+      this.completionStatsComponent.mount('#completion-stats-bar');
+    } else {
+      this.completionStatsComponent.update();
+    }
   }
 
-  /** 注册重置补全统计回调（委托到 CompletionStatsRenderer） */
+  /** 注册重置补全统计回调（委托到 CompletionStatsComponent） */
   onResetCompletionStats(cb: () => void): void {
-    this.completionStats.onResetStats(cb);
+    this.completionStatsComponent.onResetStats(cb);
   }
 
   // ─── PartnerInsightsRenderer 委托 ──

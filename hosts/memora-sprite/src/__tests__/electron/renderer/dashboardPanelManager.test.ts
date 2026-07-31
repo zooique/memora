@@ -233,7 +233,7 @@ describe('renderAgentMetrics', () => {
   });
 });
 
-// InsightsRenderer / HealthDashboardRenderer 归位到 MemoryPanelManager，
+// InsightsRenderer / HealthDashboardComponent 归位到 MemoryPanelManager，
 // 子渲染器行为测试在 insightsRenderer.test.ts / healthDashboardRenderer.test.ts 中覆盖。
 
 // ─── pulseCounter ────────────────────────────────────────

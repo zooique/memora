@@ -1,33 +1,39 @@
 /**
- * 补全统计面板渲染器
+ * 补全统计面板组件
  *
- * 职责：
+ * 职责（与原子补全统计渲染器一致）：
  * - 渲染补全统计聚合数据（采纳率 / Top-1 命中率 / 平均位置 / 展示数 / 采纳数 / 激活率 / 召回时刻）
  * - 渲染最近事件流（展示/采纳/对话轮次/召回时刻事件，最近 50 条）
  * - 渲染按日趋势柱状图（最近 14 天，B2 纵向养成曲线）
  * - 提供"重置统计"入口（清空 localStorage 数据）
  *
- * 设计原则（遵循 ADR-SP-015 组合模式）：
- * - 模式 C（自包含 EventTracker）：重置按钮事件通过 EventTracker 统一管理
- * - 模式 D 衍生：onResetStats() 回调注册接口与外部协作（Controller 调 metrics.clear()）
- * - 由 MemoryPanelManager 持有实例，作为第 3 个 analysis panel
+ * 组件化改造（HEAL-17 Phase B 试点，对齐 ui-engineering-mindset-rules §四.1 / §四.4）：
+ * - 由 CompletionStatsRenderer 升级为 Component 子类，统一生命周期 mount/update/destroy
+ * - mount() 仅构建一次骨架（标题栏 + 6 张度量卡 + 趋势区 + 事件流区），并绑定导出/重置按钮（仅一次）
+ * - update() 增量刷新数据：6 张度量卡 value/hint 原地更新；趋势区/事件流区为可变长度结构，
+ *   按规则许可「结构变更，需重建」局部重建内部子节点（section 容器本身持久）
+ * - 消除原 render() 的 container.innerHTML='' 全量重建与每次重绑按钮（避免事件监听器重复绑定泄漏）
+ * - 消除原 render() 的 document.getElementById 内部元素查找，内部元素引用统一通过 this.el + 持久化子引用
  *
- * 数据来源：
- * - CompletionMetrics 单例（getCompletionMetrics()），localStorage 持久化
- * - 打开面板时实时调用 getAggregated() + getRecentEvents() + getDailyAggregated() 渲染
+ * 挂载点：#completion-stats-bar（index.html 预留的静态容器，默认 hidden），本组件根 el 为挂载其内的
+ *   独立 wrapper，故 destroy() 移除的是组件自身 wrapper，不会误删静态容器（区别于 ModalManager 的静态容器模式）。
+ *
+ * 宿主注入：CompletionStatsHost（showToast），由 MemoryPanelManager 注入，用于导出失败反馈。
  */
 
-import { EventTracker } from '../helpers/eventTracker.js';
+import { Component } from '../components/Component.js';
 import { createEl, createEmptyState } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
-import { getCompletionMetrics, type CompletionEvent, type DailyAggregatedItem } from '../helpers/completionMetrics.js';
+import {
+  getCompletionMetrics,
+  type CompletionEvent,
+  type CompletionAggregated,
+  type DailyAggregatedItem,
+} from '../helpers/completionMetrics.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { getLocalDate } from '../../../sprite/constants.js';
 
 // ─── 常量 ────────────────────────────────────────────────
-
-/** 统计面板根容器 DOM ID（index.html 中预留） */
-const STATS_CONTAINER_ID = 'completion-stats-bar';
 
 /** 最近事件展示条数 */
 const RECENT_EVENTS_LIMIT = 50;
@@ -35,98 +41,157 @@ const RECENT_EVENTS_LIMIT = 50;
 /** 按日趋势默认覆盖天数（B2 纵向养成曲线，2 周观察窗口） */
 const DAILY_TREND_DAYS = 14;
 
-// ─── 渲染器 ────────────────────────────────────────────────
+// ─── 选项 / 宿主接口 ──────────────────────────────────────
 
-/**
- * 补全统计面板渲染器
- *
- * 负责在 #completion-stats-bar 容器内渲染聚合统计 + 最近事件流。
- * 由 MemoryPanelManager 持有，打开面板时调用 render() 刷新数据。
- */
-/** 补全统计渲染器所需的宿主能力（跨模块关注点，由 MemoryPanelManager 注入） */
-interface CompletionStatsHost {
+/** 补全统计组件所需的宿主能力（跨模块关注点，由 MemoryPanelManager 注入） */
+export interface CompletionStatsHost {
   /** 显示 toast 通知（导出失败等场景反馈） */
   showToast(message: string, type?: string, duration?: number): void;
 }
 
-export class CompletionStatsRenderer {
-  /** 事件监听器跟踪器（统一管理重置按钮事件） */
-  private events = new EventTracker();
+/** CompletionStatsComponent 配置（对齐 Component<P> 泛型契约） */
+export interface CompletionStatsOptions {
+  /** 宿主能力（导出失败反馈等跨模块关注点，可选） */
+  host?: CompletionStatsHost;
+}
 
-  constructor(private host?: CompletionStatsHost) {}
+// ─── 度量卡定义（骨架 + 增量更新共用，固定 6 张，顺序即视觉顺序） ──
 
+interface MetricDef {
+  /** 卡片标签 */
+  label: string;
+  /** 是否强调色（R1 发布前提验证数，对应 .stat-card--accent） */
+  accent: boolean;
+  /** 由聚合数据计算展示值 + 副提示 */
+  compute: (agg: CompletionAggregated) => { value: string; hint: string };
+}
+
+// ─── 组件 ────────────────────────────────────────────────
+
+/**
+ * 补全统计面板组件
+ *
+ * 由 MemoryPanelManager 持有实例（Manager 持有 Component，不直接 createElement，对齐 §四.4）：
+ * - 面板首次打开：holder 调用 mount('#completion-stats-bar') 构建骨架并填充首屏数据
+ * - 面板再次打开：holder 调用 update() 增量刷新（不重建骨架、不重绑按钮）
+ * - 面板卸载：holder 调用 destroy() 移除 wrapper + 解绑事件
+ */
+export class CompletionStatsComponent extends Component<CompletionStatsOptions> {
   /** 重置统计回调（用户点击"重置统计"按钮时触发，Controller 调 metrics.clear()） */
   private resetCallback: (() => void) | null = null;
 
-  // ─── 回调注册 ──────────────────────────────────────────
+  // ─── 持久化的内部子元素引用（替代原 getElementById 内部查找） ──
+  /** 6 张度量卡的值/副提示元素（固定顺序，与 METRIC_DEFS 对齐，update 时原地写） */
+  private metricValueEls: HTMLElement[] = [];
+  private metricHintEls: HTMLElement[] = [];
+  /** 趋势区容器（update 时结构变更：按日条数可变，需重建内部） */
+  private trendSectionEl: HTMLElement | null = null;
+  /** 事件流区容器（update 时结构变更：事件条数可变，需重建内部） */
+  private eventsSectionEl: HTMLElement | null = null;
+
+  /** 度量卡定义（固定 6 张，顺序 = 视觉顺序：R1 组[激活率,召回时刻] + 效率组[采纳率,Top-1命中率,平均位置,展示数]） */
+  private readonly METRIC_DEFS: MetricDef[] = [
+    {
+      label: '激活率',
+      accent: true,
+      compute: (a) => ({
+        value: `${(a.activationRate * 100).toFixed(1)}%`,
+        hint: `展示 ${a.totalShown} / 对话 ${a.totalChatTurns}`,
+      }),
+    },
+    {
+      label: '召回时刻',
+      accent: true,
+      compute: (a) => ({
+        value: String(a.recallMoments),
+        hint: `"你教过我 X" 可感知次数`,
+      }),
+    },
+    {
+      label: '采纳率',
+      accent: false,
+      compute: (a) => ({
+        value: `${(a.adoptionRate * 100).toFixed(1)}%`,
+        hint: `${a.totalAdopted} / ${a.totalShown}`,
+      }),
+    },
+    {
+      label: 'Top-1 命中率',
+      accent: false,
+      compute: (a) => ({
+        value: `${(a.top1HitRate * 100).toFixed(1)}%`,
+        hint: `采纳中首位占比`,
+      }),
+    },
+    {
+      label: '平均采纳位置',
+      accent: false,
+      compute: (a) => ({
+        value: a.totalAdopted > 0 ? a.avgAdoptedPosition.toFixed(2) : '—',
+        hint: `0 = 首位（最佳）`,
+      }),
+    },
+    {
+      label: '展示次数',
+      accent: false,
+      compute: (a) => ({
+        value: String(a.totalShown),
+        hint: `候选列表展示给用户`,
+      }),
+    },
+  ];
 
   /**
-   * 注册重置统计回调
+   * 构造函数——只合并配置，无副作用（对齐 §四.1）
    *
-   * 用户点击"重置统计"按钮时触发，Controller 负责调用 metrics.clear() 并重新渲染。
-   *
-   * @param cb 回调函数
+   * @param options 组件配置（host 可选）
    */
-  onResetStats(cb: () => void): void {
-    this.resetCallback = cb;
+  constructor(options: CompletionStatsOptions = {}) {
+    super(options);
   }
 
-  // ─── 资源清理 ──────────────────────────────────────────
-
   /**
-   * 清理事件监听器（页面卸载时调用）
-   */
-  cleanup(): void {
-    this.events.cleanup();
-    this.resetCallback = null;
-  }
-
-  // ─── 渲染方法 ──────────────────────────────────────────
-
-  /**
-   * 渲染补全统计面板
+   * 挂载到容器——构建骨架 + 首次填充数据
    *
-   * 从 CompletionMetrics 单例读取聚合数据 + 最近事件流 + 按日趋势，渲染到容器。
-   * 每次打开面板时调用（实时刷新，无缓存）。
+   * 解析容器（字符串选择器 → HTMLElement），构建根 wrapper 后追加到容器；
+   * 骨架（标题栏 + 6 度量卡 + 趋势区 + 事件流区）仅在此构建一次，导出/重置按钮仅绑定一次。
+   *
+   * @param container 容器元素或选择器（静态挂载点 #completion-stats-bar）
+   * @returns this（链式调用）
    */
-  render(): void {
-    const container = document.getElementById(STATS_CONTAINER_ID);
-    if (!container) return;
+  mount(container: HTMLElement | string): this {
+    const target = typeof container === 'string'
+      ? document.querySelector<HTMLElement>(container)
+      : container;
+    if (!target) return this;
 
-    // 清空旧内容 + 清理旧事件
-    this.events.cleanup();
-    container.innerHTML = '';
+    // 根 wrapper：本组件自有根，区别于静态容器（destroy 仅移除 wrapper，不误删静态 #completion-stats-bar）
+    const el = document.createElement('div');
+    el.className = 'completion-stats-component';
 
-    const metrics = getCompletionMetrics();
-    const aggregated = metrics.getAggregated();
-    const recentEvents = metrics.getRecentEvents(RECENT_EVENTS_LIMIT);
-    const dailyTrend = metrics.getDailyAggregated(DAILY_TREND_DAYS);
-
-    // ─── 标题栏 + 导出/重置/关闭按钮（统一外壳 + 通用 .btn） ──
+    // ─── 标题栏 + 导出/重置/关闭按钮 ──
     const headerEl = createEl('div', 'completion-stats-header analysis-panel__header');
     headerEl.appendChild(createEl('span', 'completion-stats-title analysis-panel__title', '补全统计'));
 
-    // 按钮组容器（导出 + 重置 + 关闭并排，主动可见）
     const actionsEl = createEl('div', 'completion-stats-actions');
 
-    // 导出按钮：渲染层 Blob 下载，零新增 IPC，beta 用户可回传统计 JSON 闭合度量环
     const exportBtn = createEl('button', 'btn btn-primary btn-sm', '导出');
     exportBtn.title = '导出统计 JSON（含聚合+趋势+事件流，用于回传度量数据）';
     exportBtn.type = 'button';
-    this.events.addEventListener(exportBtn, 'click', () => {
-      this.exportStatsJson();
-    });
+    const onExport = () => this.exportStatsJson();
+    exportBtn.addEventListener('click', onExport);
+    this.trackEvent(() => exportBtn.removeEventListener('click', onExport));
     actionsEl.appendChild(exportBtn);
 
     const resetBtn = createEl('button', 'btn btn-secondary btn-sm', '重置统计');
     resetBtn.title = '清空所有补全统计数据';
     resetBtn.type = 'button';
-    this.events.addEventListener(resetBtn, 'click', () => {
-      this.resetCallback?.();
-    });
+    const onReset = () => this.resetCallback?.();
+    resetBtn.addEventListener('click', onReset);
+    this.trackEvent(() => resetBtn.removeEventListener('click', onReset));
     actionsEl.appendChild(resetBtn);
 
-    // 关闭按钮：复用 .panel-close-btn，经 memoryPanelEvents 在 #completion-stats-bar 上的事件委托触发 hideAnalysisPanel
+    // 关闭按钮：复用 .panel-close-btn，经 memoryPanelEvents 在 #completion-stats-bar 上的事件委托触发 hideAnalysisPanel（不在此直接绑定）
     const closeBtn = createEl('button', 'panel-close-btn icon-btn flex-shrink-0', '');
     closeBtn.id = 'btn-close-completion-stats';
     closeBtn.title = '关闭补全统计';
@@ -136,238 +201,223 @@ export class CompletionStatsRenderer {
     actionsEl.appendChild(closeBtn);
 
     headerEl.appendChild(actionsEl);
-    container.appendChild(headerEl);
+    el.appendChild(headerEl);
 
-    // ─── R1 度量卡片组（激活率 + 召回时刻） ──────────────
-    // 放在最前——R1 是"发布前提验证"的核心三数之一
+    // ─── R1 度量卡片组（激活率 + 召回时刻） ──
     const r1El = createEl('div', 'completion-stats-metrics completion-stats-metrics-r1');
-    r1El.appendChild(this.createMetricCard(
-      '激活率',
-      `${(aggregated.activationRate * 100).toFixed(1)}%`,
-      `展示 ${aggregated.totalShown} / 对话 ${aggregated.totalChatTurns}`,
-      true, // R1 = 发布前提验证数，数值用强调色（accent）
-    ));
-    r1El.appendChild(this.createMetricCard(
-      '召回时刻',
-      String(aggregated.recallMoments),
-      `"你教过我 X" 可感知次数`,
-      true,
-    ));
-    container.appendChild(r1El);
+    for (let i = 0; i < 2; i++) this.appendMetricCard(r1El, this.METRIC_DEFS[i]!);
+    el.appendChild(r1El);
 
-    // ─── 补全效率卡片组 ──────────────────────────────
+    // ─── 补全效率卡片组（采纳率 + Top-1 + 平均位置 + 展示数） ──
     const metricsEl = createEl('div', 'completion-stats-metrics');
+    for (let i = 2; i < 6; i++) this.appendMetricCard(metricsEl, this.METRIC_DEFS[i]!);
+    el.appendChild(metricsEl);
 
-    // 采纳率（核心指标）
-    metricsEl.appendChild(this.createMetricCard(
-      '采纳率',
-      `${(aggregated.adoptionRate * 100).toFixed(1)}%`,
-      `${aggregated.totalAdopted} / ${aggregated.totalShown}`,
-    ));
+    // ─── 趋势区（update 时局部重建内部） ──
+    this.trendSectionEl = createEl('div', 'completion-stats-trend-section');
+    el.appendChild(this.trendSectionEl);
 
-    // Top-1 命中率
-    metricsEl.appendChild(this.createMetricCard(
-      'Top-1 命中率',
-      `${(aggregated.top1HitRate * 100).toFixed(1)}%`,
-      `采纳中首位占比`,
-    ));
+    // ─── 事件流区（update 时局部重建内部） ──
+    this.eventsSectionEl = createEl('div', 'completion-stats-events-section');
+    el.appendChild(this.eventsSectionEl);
 
-    // 平均采纳位置
-    metricsEl.appendChild(this.createMetricCard(
-      '平均采纳位置',
-      aggregated.totalAdopted > 0 ? aggregated.avgAdoptedPosition.toFixed(2) : '—',
-      `0 = 首位（最佳）`,
-    ));
+    // 挂载到容器
+    target.appendChild(el);
+    this.el = el;
 
-    // 展示数
-    metricsEl.appendChild(this.createMetricCard(
-      '展示次数',
-      String(aggregated.totalShown),
-      `候选列表展示给用户`,
-    ));
+    // 首次填充数据
+    this._renderData();
 
-    container.appendChild(metricsEl);
+    return this;
+  }
 
-    // ─── B2 按日趋势柱状图（纵向养成曲线） ──────────────
-    container.appendChild(this.createDailyTrendEl(dailyTrend));
+  /**
+   * 追加一张度量卡到容器，并登记其 value/hint 元素引用（供 update 原地写）
+   *
+   * @param parent 卡片组容器
+   * @param def 度量卡定义（标签/强调色/计算函数）
+   */
+  private appendMetricCard(parent: HTMLElement, def: MetricDef): void {
+    const cardEl = createEl('div', def.accent ? 'stat-card stat-card--accent' : 'stat-card');
+    cardEl.appendChild(createEl('div', 'stat-card__label', def.label));
+    const valueEl = createEl('div', 'stat-card__value');
+    const hintEl = createEl('div', 'stat-card__hint');
+    cardEl.appendChild(valueEl);
+    cardEl.appendChild(hintEl);
+    parent.appendChild(cardEl);
+    this.metricValueEls.push(valueEl);
+    this.metricHintEls.push(hintEl);
+  }
 
-    // ─── 最近事件流 ──────────────────────────────────────
-    if (recentEvents.length > 0) {
-      const eventsEl = createEl('div', 'completion-stats-events');
-      eventsEl.appendChild(createEl('div', 'completion-stats-events-title', `最近 ${recentEvents.length} 条事件`));
-
-      const listEl = createEl('div', 'completion-stats-event-list');
-      for (const event of recentEvents) {
-        listEl.appendChild(this.createEventItemEl(event));
-      }
-      eventsEl.appendChild(listEl);
-      container.appendChild(eventsEl);
-    } else {
-      container.appendChild(createEmptyState({ title: '暂无统计数据，开始使用补全功能后将自动记录' }));
+  /**
+   * 增量更新内部状态——不重建骨架，仅刷新数据
+   *
+   * 6 张度量卡 value/hint 原地更新（固定结构）；
+   * 趋势区 / 事件流区为可变长度结构，按规则许可「结构变更，需重建」局部重建内部子节点。
+   *
+   * @param newOptions 新的配置项（可选，目前仅 host 可热更新）
+   * @returns this（链式调用）
+   */
+  update(newOptions: Partial<CompletionStatsOptions> = {}): this {
+    if (newOptions.host !== undefined) {
+      this.options = { ...this.options, host: newOptions.host };
     }
+    if (!this.el) return this;
+    this._renderData();
+    return this;
   }
 
-  // ─── 内部渲染方法 ──────────────────────────────────────
-
   /**
-   * 导出统计 JSON 并触发浏览器下载
+   * 渲染/刷新数据（骨架已就绪时调用）
    *
-   * 渲染层 Blob 下载，零新增 IPC、零遥测、零隐私冲突。
-   * beta 用户点击后获得 JSON 文件，可手动回传用于聚合真实度量数据。
-   *
-   * 导出内容：聚合统计 + 14 天趋势 + 全量事件流（最多 500 条，LRU 上限）。
-   * 失败静默：try-catch 包裹，度量功能不能影响主路径（沿用项目规则"度量失败静默"）。
+   * 读取 CompletionMetrics 单例的聚合 + 最近事件流 + 按日趋势，填入骨架。
+   * 由 mount（首屏）与 update（增量刷新）共用，避免逻辑重复。
    */
-  private exportStatsJson(): void {
-    try {
-      const metrics = getCompletionMetrics();
-      // 导出 payload：聚合 + 趋势 + 事件流（用于离线分析与回传）
-      const payload = {
-        // 导出时间戳（用于排序回传数据）
-        exportedAt: new Date().toISOString(),
-        // 聚合统计（R1 三数 + B2 召回时刻）
-        aggregated: metrics.getAggregated(),
-        // 14 天按日趋势（B2 纵向曲线）
-        dailyTrend: metrics.getDailyAggregated(DAILY_TREND_DAYS),
-        // 全量事件流（LRU 上限 500，用于深度分析）
-        events: metrics.getRecentEvents(500),
-      };
-      const json = JSON.stringify(payload, null, 2);
-      // Blob 下载：渲染层原生 API，无需主进程介入
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      // 文件名含日期，便于多次导出归档
-      a.download = `memora-completion-stats-${getLocalDate()}.json`;
-      a.click();
-      // 释放 Blob URL（避免内存泄漏）
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      // 导出失败须可观测 + 可感知：记录日志并提示用户（导出是可选度量回传，失败不应静默）
-      reportError('CompletionStatsExport', err, 'warn');
-      this.host?.showToast('统计导出失败', 'error');
+  private _renderData(): void {
+    const metrics = getCompletionMetrics();
+    const aggregated = metrics.getAggregated();
+    const recentEvents = metrics.getRecentEvents(RECENT_EVENTS_LIMIT);
+    const dailyTrend = metrics.getDailyAggregated(DAILY_TREND_DAYS);
+
+    // ─── 6 张度量卡：原地更新 value/hint（固定结构，零重建） ──
+    for (let i = 0; i < this.METRIC_DEFS.length; i++) {
+      const { value, hint } = this.METRIC_DEFS[i]!.compute(aggregated);
+      if (this.metricValueEls[i]) this.metricValueEls[i]!.textContent = value;
+      if (this.metricHintEls[i]) this.metricHintEls[i]!.textContent = hint;
     }
+
+    // ─── 趋势区：结构变更（按日条数可变），需重建内部 ──
+    this.renderTrendSection(dailyTrend);
+
+    // ─── 事件流区：结构变更（事件条数可变），需重建内部 ──
+    this.renderEventsSection(recentEvents);
   }
 
   /**
-   * 创建指标卡片元素（复用共享 .stat-card，避免三面板各自发明卡片样式）
+   * 渲染趋势区内部（清空后重建，结构可变）
    *
-   * @param label 指标名称
-   * @param value 指标值（主展示）
-   * @param hint 提示文本（副展示，小字）
-   * @param accent 是否用强调色渲染数值（R1 发布前提验证数，对应 .stat-card--accent）
+   * @param daily 按日聚合数据（升序）
    */
-  private createMetricCard(label: string, value: string, hint: string, accent = false): HTMLElement {
-    const cardEl = createEl('div', accent ? 'stat-card stat-card--accent' : 'stat-card');
-    cardEl.appendChild(createEl('div', 'stat-card__label', label));
-    cardEl.appendChild(createEl('div', 'stat-card__value', value));
-    cardEl.appendChild(createEl('div', 'stat-card__hint', hint));
-    return cardEl;
-  }
+  private renderTrendSection(daily: DailyAggregatedItem[]): void {
+    const section = this.trendSectionEl;
+    if (!section) return;
+    section.replaceChildren();
 
-  /**
-   * 创建按日趋势柱状图区块（B2 纵向养成曲线）
-   *
-   * 渲染最近 N 天的双指标柱状图：
-   * - 蓝色柱：当日展示数（左轴，归一化到全期最大值）
-   * - 橙色柱：当日召回时刻数（同图叠加，归一化到全期最大值）
-   * - 柱顶常驻显示数值（主动可见，不藏 hover）
-   * - 柱底显示日期（MM-DD）
-   *
-   * 全零数据时显示空状态提示，避免渲染无意义空图。
-   *
-   * @param daily 按日聚合数据（由 getDailyAggregated 返回，升序）
-   */
-  private createDailyTrendEl(daily: DailyAggregatedItem[]): HTMLElement {
     const trendEl = createEl('div', 'completion-stats-trend');
     trendEl.appendChild(createEl('div', 'completion-stats-trend-title', '最近 14 天趋势'));
 
-    // 全零数据空状态（避免渲染无意义空图）
     const hasData = daily.some(d => d.shown > 0 || d.adopted > 0 || d.chatTurns > 0 || d.recallMoments > 0);
     if (!hasData) {
       trendEl.appendChild(createEmptyState({ title: '暂无趋势数据，使用 1-2 天后可见' }));
-      return trendEl;
+      section.appendChild(trendEl);
+      return;
     }
 
-    // 归一化基准：取展示数和召回时刻数的最大值（分别归一化，避免召回数被展示数淹没）
     const maxShown = Math.max(1, ...daily.map(d => d.shown));
     const maxRecall = Math.max(1, ...daily.map(d => d.recallMoments));
 
-    // 图例
     const legendEl = createEl('div', 'completion-stats-trend-legend');
     legendEl.appendChild(createLegendItem('completion-stats-trend-legend-shown', '展示'));
     legendEl.appendChild(createLegendItem('completion-stats-trend-legend-recall', '召回时刻'));
     trendEl.appendChild(legendEl);
 
-    // 柱状图容器
     const chartEl = createEl('div', 'completion-stats-trend-chart');
     for (const item of daily) {
       chartEl.appendChild(this.createDailyBarEl(item, maxShown, maxRecall));
     }
     trendEl.appendChild(chartEl);
 
-    return trendEl;
+    section.appendChild(trendEl);
   }
 
   /**
-   * 创建单日柱组元素
+   * 渲染事件流区内部（清空后重建，结构可变）
    *
-   * 每日一组双柱（展示 + 召回），柱顶常驻数值，柱底日期。
-   * 柱高归一化到 4-100% 区间（最小 4% 保证零值也可见，便于辨识空日）。
-   *
-   * @param item 单日聚合数据
-   * @param maxShown 展示数归一化基准（全期最大值，至少为 1）
-   * @param maxRecall 召回时刻归一化基准（全期最大值，至少为 1）
+   * @param events 最近事件列表（降序）
    */
+  private renderEventsSection(events: CompletionEvent[]): void {
+    const section = this.eventsSectionEl;
+    if (!section) return;
+    section.replaceChildren();
+
+    if (events.length > 0) {
+      const eventsEl = createEl('div', 'completion-stats-events');
+      eventsEl.appendChild(createEl('div', 'completion-stats-events-title', `最近 ${events.length} 条事件`));
+      const listEl = createEl('div', 'completion-stats-event-list');
+      for (const event of events) {
+        listEl.appendChild(this.createEventItemEl(event));
+      }
+      eventsEl.appendChild(listEl);
+      section.appendChild(eventsEl);
+    } else {
+      section.appendChild(createEmptyState({ title: '暂无统计数据，开始使用补全功能后将自动记录' }));
+    }
+  }
+
+  // ─── 内部渲染方法（复用原私有方法，纯结构构建，无状态副作用） ──
+
+  /**
+   * 导出统计 JSON 并触发浏览器下载（同原实现，零新增 IPC）
+   */
+  private exportStatsJson(): void {
+    try {
+      const metrics = getCompletionMetrics();
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        aggregated: metrics.getAggregated(),
+        dailyTrend: metrics.getDailyAggregated(DAILY_TREND_DAYS),
+        events: metrics.getRecentEvents(500),
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `memora-completion-stats-${getLocalDate()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      reportError('CompletionStatsExport', err, 'warn');
+      this.options.host?.showToast('统计导出失败', 'error');
+    }
+  }
+
+  /** 创建单日柱组元素（同原实现） */
   private createDailyBarEl(item: DailyAggregatedItem, maxShown: number, maxRecall: number): HTMLElement {
     const barGroupEl = createEl('div', 'completion-stats-trend-bar-group');
-
-    // 双柱容器
     const barsEl = createEl('div', 'completion-stats-trend-bars');
 
-    // 展示数柱（蓝色）
     const shownBarEl = createEl('div', 'completion-stats-trend-bar shown');
     const shownHeightPct = item.shown > 0 ? 4 + (item.shown / maxShown) * 96 : 0;
     shownBarEl.style.height = `${shownHeightPct}%`;
     shownBarEl.title = `展示 ${item.shown} 次`;
     barsEl.appendChild(shownBarEl);
 
-    // 召回时刻柱（橙色）
     const recallBarEl = createEl('div', 'completion-stats-trend-bar recall');
     const recallHeightPct = item.recallMoments > 0 ? 4 + (item.recallMoments / maxRecall) * 96 : 0;
     recallBarEl.style.height = `${recallHeightPct}%`;
     recallBarEl.title = `召回时刻 ${item.recallMoments} 次`;
     barsEl.appendChild(recallBarEl);
 
-    // 柱顶数值（仅展示数 > 0 时显示，避免空柱顶堆零；主动可见不藏 hover）
     if (item.shown > 0) {
       barsEl.appendChild(createEl('div', 'completion-stats-trend-value', String(item.shown)));
     }
 
     barGroupEl.appendChild(barsEl);
 
-    // 柱底日期（MM-DD，省略年份节省宽度）
     const dateLabel = item.date.slice(5);
     barGroupEl.appendChild(createEl('div', 'completion-stats-trend-date', dateLabel));
 
     return barGroupEl;
   }
 
-  /**
-   * 创建事件列表项元素
-   *
-   * @param event 补全事件（展示/采纳/对话轮次/召回时刻）
-   */
+  /** 创建事件列表项元素（同原实现） */
   private createEventItemEl(event: CompletionEvent): HTMLElement {
     const itemEl = createEl('div', 'completion-stats-event-item');
-
-    // 事件类型徽章（按类型分色：展示/采纳/对话/召回）
     const typeBadge = this.getEventBadge(event.type);
     const typeEl = createEl('span', `completion-stats-event-type ${typeBadge.class} flex-shrink-0`, typeBadge.label);
     itemEl.appendChild(typeEl);
 
-    // 事件详情
     const detailEl = createEl('span', 'completion-stats-event-detail');
     switch (event.type) {
       case 'shown':
@@ -387,7 +437,6 @@ export class CompletionStatsRenderer {
     }
     itemEl.appendChild(detailEl);
 
-    // 时间戳
     const timeEl = createEl('span', 'completion-stats-event-time flex-shrink-0');
     const time = new Date(event.timestamp);
     timeEl.textContent = time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -397,13 +446,7 @@ export class CompletionStatsRenderer {
     return itemEl;
   }
 
-  /**
-   * 获取事件类型徽章的样式类与标签
-   *
-   * 4 种事件类型分色：展示=蓝 / 采纳=绿 / 对话=灰 / 召回=橙
-   *
-   * @param type 事件类型标识
-   */
+  /** 获取事件类型徽章的样式类与标签（同原实现） */
   private getEventBadge(type: CompletionEvent['type']): { class: string; label: string } {
     switch (type) {
       case 'shown':
@@ -416,10 +459,30 @@ export class CompletionStatsRenderer {
         return { class: 'recall-moment', label: '召回' };
     }
   }
+
+  /**
+   * 注册重置统计回调（由 MemoryPanelManager 委托转发）
+   *
+   * @param cb 回调函数
+   */
+  onResetStats(cb: () => void): void {
+    this.resetCallback = cb;
+  }
+
+  /**
+   * 销毁组件——彻底清理
+   *
+   * 先 nullify 组件自身引用，再调用基类 destroy()（移除 wrapper + 解绑导出/重置按钮监听）。
+   * 关闭按钮未直接绑定，交由 memoryPanelEvents 委托处理，无需在此清理。
+   */
+  destroy(): void {
+    this.resetCallback = null;
+    super.destroy();
+  }
 }
 
 /**
- * 创建图例项元素（模块级私有工具）
+ * 创建图例项元素（模块级私有工具，同原实现）
  *
  * @param colorClass 颜色样式类
  * @param label 图例文字

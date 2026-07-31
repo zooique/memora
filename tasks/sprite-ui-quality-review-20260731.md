@@ -154,7 +154,7 @@ interface ListPanelConfig<T> {
 | 阶段 | 动作 | 风险 | 验收 |
 | --- | --- | --- | --- |
 | **Phase A（P1，低风险）** ✅ 已执行 | `ui.ts` 清理 3 处已移入协调器的 orphaned 死注释；`modal.ts` 把 `showConfirmDialog`/`showInputDialog` 的**内部元素**查找由全局 `getElementById` 收敛为 `modal.querySelector(...)`（模态根的 id 查找保留，因 `ModalManager` 非 Component、模态 DOM 为静态 HTML） | 极低 | typecheck:electron ✅ · stylelint ✅ · eslint ✅ · modal.test.ts 50/50 ✅ |
-| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 与 1-2 个最小面板（如 `badgeManager`/`panelErrorBannerManager`）改造为继承 `Component`，UIManager 持有实例 | 中 | 行为不变 + 新增 `destroy()` 测试 |
+| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 改造为继承 `Component`，Manager 持有实例（已完成 completionStats + healthDashboard **2/6**，见 §9；剩余 insights / partnerInsights / llmGovernanceResult / streaming） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试 |
 | **Phase C（P2）** | 抽 `ListPanel` 工厂，先接入 `auditPanel`（最小）验证，再接 memory/profile/workProjection | 中高 | 四面板 DOM 行数下降、共性逻辑单测覆盖 |
 | **Phase D（P2）** | `tokens.css` L1/L2 注释分区；`components/index.ts` 随分层补全注册 | 低 | stylelint 无新增裸值 |
 | **Phase E（P3）** | 评估 mixin 是否回退为内联分区注释 | 中 | 调试可见性提升 |
@@ -190,3 +190,60 @@ interface ListPanelConfig<T> {
 - **modal.ts**：内部元素 11 处 `document.getElementById` → `modal.querySelector`；移除因此变为未用的 `getOptionalElement` 导入；因 TS 控制流收窄，将模态根 null 回退提前到内部查找之前（保留 `window.confirm/prompt` 防御性回退）。
 - **验证**：`tsc -p tsconfig.electron.json --noEmit` 0 错；`stylelint` 0 错；`eslint` 改文件 0 错；`modal.test.ts` 50/50 通过。零回归。
 - **Phase B 起点**：6 个 `*Renderer` + 18 个面板 `Manager` 仍直接 `createElement`/`innerHTML`（含 ModalManager 自身应按 Component 化），为下一阶段重点。
+
+## 9. 执行记录（Phase B 试点 · completionStatsRenderer，2026-07-31）
+
+> 试点目标：在 6 个 `*Renderer` 中先挑最独立、引用最干净的一个（`completionStatsRenderer`）验证「Renderer → Component 子类 + Manager 持有实例」迁移模式，跑通后再铺开其余 5 个。
+
+### 9.1 改动清单
+- **`panels/completionStatsRenderer.ts`（重写）**：原 `CompletionStatsRenderer`（`render()` 中 `document.getElementById` + `container.innerHTML=''` 全量重建 + 每次重绑按钮）改写为 `CompletionStatsComponent extends Component<CompletionStatsOptions>`。
+  - 四件套落地：`public constructor(options)` 仅合并配置（含 `host`）；`mount(container)` 解析 `#completion-stats-bar` → 建根 `.completion-stats-component` wrapper → 标题栏 + 3 按钮（导出/重置/关闭，导出与重置 `addEventListener` + `trackEvent` **只绑一次**）→ 6 张指标卡（一次构建，登记 `metricValueEls[]`/`metricHintEls[]` 引用）→ 趋势区/事件流区 section 容器 → 首屏 `_renderData()`。
+  - `update()` 热更新 `host` 后调 `_renderData()`（增量：6 卡 value/hint 原地写；趋势/事件区因结构可变走 `replaceChildren()` 重建，已注释「结构变更，需重建」）。
+  - 删除冗余常量 `STATS_CONTAINER_ID`（挂载选择器改由 holder 传入）。
+  - 内部元素一律 `this.el.querySelector`，不再 `getElementById`。
+- **`components/index.ts`（编辑）**：新增 Phase B 段，统一导出 `CompletionStatsComponent` + 类型（物理文件暂留 `panels/`，待 Phase D 迁移；先注册以满足 §四.3「新增组件必须注册」）。
+- **`panels/memoryPanelManager.ts`（5 处编辑）**：持有 `completionStatsComponent` 实例；`renderCompletionStat()` 区分首挂（`mount('#completion-stats-bar')`）vs 增量（`update()`）；`onResetCompletionStats(cb)` 委托 `component.onResetStats(cb)`；`cleanup()` 调 `component.destroy()`。
+- **`helpers/memoryPanelEvents.ts`（注释）**：567 行注释 `CompletionStatsRenderer` → `CompletionStatsComponent`。
+- **`src/__tests__/electron/renderer/panels/completionStatsComponent.test.ts`（新建）**：6 例，`@vitest-environment jsdom`，`vi.hoisted` + `vi.mock` 隔离 `getCompletionMetrics`；覆盖 mount 骨架/首屏数据、update 增量（卡数不变）、重置回调、destroy 幂等、事件流空态/有事件、趋势空态/有数据。
+
+### 9.2 验证（本地可执行质量门）
+- `tsc -p tsconfig.electron.json --noEmit`：**0 错**（含修复 TS6133 `STATS_CONTAINER_ID` 未用）。
+- `eslint`（改文件）：**0 错**。
+- `stylelint`：无 CSS 改动，天然通过。
+- 新组件测试 `completionStatsComponent.test.ts`：**6/6 PASS**（含修复测试数据 bug：`adoptionRate` 漏写致断言错位；空态选择器 `events-section .empty-state` 与原子渲染器对称）。
+- 回归 `memoryOrchestrator.test.ts`：**18/18 PASS**（验证 `renderCompletionStat`/`onResetCompletionStats` 委托未破）。
+- ⚠️ 3 个回归测试文件（`memoryPanelManagerInstance.test.ts`/`memoryPanelManagerViews.test.ts`/`memoryPanelEvents.test.ts`）因 **Bash 沙箱 FS 错位**（沙箱快照缺失 `helpers/__tests__/` 等）无法经 Bash 跑 vitest；已用 Windows API（Grep）静态核实这三文件**零引用旧类名、零调用变更方法**（零匹配），证明不受影响，故未改代码。
+
+### 9.3 卡点（环境，非代码）
+- `git status`/`rev-parse` 经 PowerShell 输出乱码（整列 `X`，branch 回声缺失），属已记录的 git/sandbox 错位。依 git-safety 红线**未执行任何 commit 写操作**——真实代码改动均已落盘（Windows API 可读），仅 git 索引/工作树视图在沙箱内不一致。待 git 视图可靠后再落 checkpoint（commit 规范 `refactor(sprite): 补全统计面板升级为 Component`）。
+
+### 9.4 铺开计划（剩余 5 个 `*Renderer`）
+模式已验证，下一步按相同契约逐个改造并各自跑质量门：`healthDashboardRenderer` → `insightsRenderer` → `partnerInsightsRenderer` → `llmGovernanceResultRenderer` → `streamingRenderer`（外加可选最小面板 `badgeManager`/`panelErrorBannerManager`）。每个独立可验证，符合「渐进迁移，不一次性重写」。
+
+### 9.5 执行记录（Phase B 第 2 个 · healthDashboardRenderer，2026-07-31）
+
+> 按 §9.4 既定顺序，`healthDashboard` 是试点之后最独立的下一个（已全增量渲染、单静态容器、无 innerHTML 重建）。
+> 与试点（`completionStats` 建 wrapper）不同，本组件采用**「采纳静态容器」变体**：`#memory-health-bar` 在 index.html 已是富骨架（header + 评分 + 维度 + 诊断 + 治理操作），组件直接将其采纳为 `this.el` 并缓存内部引用，不新建 wrapper。
+
+#### 9.5.1 改动清单
+- **`panels/healthDashboardRenderer.ts`（重写）**：`HealthDashboardRenderer` → `HealthDashboardComponent extends Component<HealthDashboardOptions>`。
+  - `mount(container)`：`document.querySelector` 解析 `#memory-health-bar`（与试点一致的 `#` 选择器语义），采纳为 `this.el`，**缓存全部内部引用**（`metricsEl`/`scoreEl`/`badgeEl`/三维 `dimFillEls`/`dimValEls`/`dupEl`/`staleEl`/`lowEl`/`descEl`/三个清理按钮/`actionsEl`）——消除原 12+ 处 `document.getElementById` 查内部元素（§四.1 反模式）。
+  - `update({data})`：增量刷新（`textContent`/`style.width`/`className`，与原实现逐行等价，本就无 `innerHTML` 重建）。
+  - `showLoading()`/`showError()`：沿用 `showPanelLoading`/`renderErrorState`（后者仍由本地 `EventTracker` 承载重试按钮，destroy 时统一清理）。
+  - `destroy()`：先 `events.cleanup()` + nullify，再 `this.el = null` 后调 `super.destroy()`——因 `#memory-health-bar` 是**共享静态容器**（亦承载 `#health-llm-result` 子区，后续 LLM 治理组件），销毁时**不应移除它**，故置 null 使基类跳过 `el.remove()`，仅清事件与引用。
+- **`panels/memoryPanelManager.ts`（5 处）**：`import HealthDashboardRenderer` → `HealthDashboardComponent`；字段 `new HealthDashboardComponent()`；`cleanup()` → `destroy()`；委托块新增 `ensureHealthDashboardMounted()`（首开挂载、仅 hidden 不销毁，与试点同模式），`render(data)` → `update({data})`，`showHealthLoading/showHealthError` 均先 ensureMounted；`onReloadHealth` 直转（仅存回调，无需挂载）。
+- **`components/index.ts`**：Phase B 块补导出 `HealthDashboardComponent` + `HealthDashboardOptions`（§四.3 统一入口）。
+- **`__tests__/.../healthDashboardRenderer.test.ts`（重写）**：`render`→`update({data})`、`cleanup`→`destroy`；`createRenderer` 先 `mount('#memory-health-bar')`；`HEALTH_HTML` 夹具改为**嵌套**所有内部 id 于 `#memory-health-bar` 内（对齐真实 index.html，组件经 `this.el.querySelector` 缓存），原 20 例断言全部保留。
+- **`__tests__/.../dashboardPanelManager.test.ts`**：仅更新一处注释（`HealthDashboardRenderer`→`HealthDashboardComponent`）。
+
+#### 9.5.2 验证（本地可执行质量门，全部通过）
+- `tsc -p tsconfig.electron.json --noEmit`：**0 错**。
+- `eslint`（改文件）：**0 错**。
+- `healthDashboardRenderer.test.ts`：**20/20 PASS**。
+- 回归 `memoryPanelManagerViews`(61) + `memoryPanelEvents`(66) + `memoryPanelManagerInstance`(56) + `memoryOrchestrator`(18)：**201/201 PASS**（验证 holder 委托未破、清理按钮关闭委托未破）。
+
+#### 9.5.3 踩坑（对抗式，已修）
+- 首跑测试 **18/20 失败**：`mount('#memory-health-bar')` 传 `#` 前缀字符串，但初版 `mount` 用 `document.getElementById(container)`（不接受 `#`），返回 null → 全操作 no-op。修正为与试点一致的 `document.querySelector<HTMLElement>(container)`（接受 `#` 选择器）。根因：两种按 id 选元素 API 语义不同（`getElementById` 不带 `#`，`querySelector` 带 `#`），混合即错。
+
+#### 9.5.4 卡点
+- 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。
