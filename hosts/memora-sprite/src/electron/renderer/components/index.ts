@@ -37,6 +37,8 @@ export { CompletionStatsComponent } from '../panels/completionStatsRenderer.js';
 export type { CompletionStatsOptions, CompletionStatsHost } from '../panels/completionStatsRenderer.js';
 export { HealthDashboardComponent } from '../panels/healthDashboardRenderer.js';
 export type { HealthDashboardOptions } from '../panels/healthDashboardRenderer.js';
+export { InsightsComponent } from '../panels/insightsRenderer.js';
+export type { InsightsOptions, InsightsDashboardData } from '../panels/insightsRenderer.js';
 
 /* ========== 表单组件 ========== */
 // 待后续 Phase 填充

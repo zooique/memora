@@ -29,7 +29,7 @@ import type { HealthDashboardPayload } from '../../preload.js';
 // 记忆面板所属子渲染器（DOM 在 panel-memories 内，归 MemoryPanelManager 管理）
 import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
 import { HealthDashboardComponent } from './healthDashboardRenderer.js';
-import { InsightsRenderer } from './insightsRenderer.js';
+import { InsightsComponent } from './insightsRenderer.js';
 // 补全统计面板组件（第 3 个 analysis panel，HEAL-17 Phase B 由 *Renderer 升级为 Component）
 import { CompletionStatsComponent } from './completionStatsRenderer.js';
 // 事件监听器注册逻辑提取到独立 helper（降低本文件体量）
@@ -128,8 +128,8 @@ export class MemoryPanelManager {
   private partnerInsights = new PartnerInsightsRenderer();
   /** 健康度仪表盘组件（评分 / 徽章 / 三维度 / 清理按钮），Manager 持有 Component 实例（对齐 §四.4） */
   private healthDashboard = new HealthDashboardComponent();
-  /** 洞察渲染器（统计卡片 / source 分布 / 关系摘要） */
-  private insights = new InsightsRenderer();
+  /** 洞察组件（统计卡片 / source 分布 / 关系摘要），Manager 持有 Component 实例（对齐 §四.4） */
+  private insights = new InsightsComponent();
   /** 补全统计组件（采纳率 / Top-1 命中率 / 事件流），Manager 持有 Component 实例（对齐 §四.4） */
   private completionStatsComponent!: CompletionStatsComponent;
 
@@ -222,7 +222,7 @@ export class MemoryPanelManager {
     // 清理子渲染器
     this.partnerInsights.cleanup();
     this.healthDashboard.destroy();
-    this.insights.cleanup();
+    this.insights.destroy();
     this.completionStatsComponent.destroy();
     this.events.cleanup();
   }
@@ -1267,22 +1267,33 @@ export class MemoryPanelManager {
     }, { once: true });
   }
 
-  // ─── 子渲染器委托方法（InsightsRenderer / HealthDashboardComponent / PartnerInsightsRenderer） ──
+  // ─── 子渲染器委托方法（InsightsComponent / HealthDashboardComponent / PartnerInsightsRenderer） ──
 
   /** 主题切换时重绘子渲染器 Canvas 图表 */
   repaintOnThemeChange(): void {
     this.partnerInsights.repaintOnThemeChange();
   }
 
-  // ─── InsightsRenderer 委托 ──
+  // ─── InsightsComponent 委托 ──
 
-  /** 显示洞察面板加载态（委托到 InsightsRenderer） */
+  /**
+   * 确保洞察组件已挂载（首次打开面板时挂载到静态容器 #memory-insights-bar，
+   * 之后仅被 hidden 不销毁，故仅挂载一次；与 HealthDashboardComponent 同模式，对齐 §四.1）。
+   */
+  private ensureInsightsMounted(): void {
+    if (!this.insights.getElement()) {
+      this.insights.mount('#memory-insights-bar');
+    }
+  }
+
+  /** 显示洞察面板加载态（委托到 InsightsComponent） */
   showInsightsLoading(): void {
+    this.ensureInsightsMounted();
     this.insights.showLoading();
   }
 
   /**
-   * 渲染记忆洞察数据（委托到 InsightsRenderer）
+   * 渲染记忆洞察数据（委托到 InsightsComponent）
    *
    * @param dashboard 仪表盘数据子集（total/bySource/conflictCount）
    * @param graph 关系图谱数据
@@ -1291,15 +1302,17 @@ export class MemoryPanelManager {
     dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
     graph: RelationGraphData,
   ): void {
-    this.insights.render(dashboard, graph);
+    this.ensureInsightsMounted();
+    this.insights.update({ dashboard, graph });
   }
 
-  /** 显示洞察面板加载失败状态（委托到 InsightsRenderer，带重试按钮） */
+  /** 显示洞察面板加载失败状态（委托到 InsightsComponent，带重试按钮） */
   showInsightsError(): void {
+    this.ensureInsightsMounted();
     this.insights.showError();
   }
 
-  /** 注册重试加载洞察数据回调（委托到 InsightsRenderer） */
+  /** 注册重试加载洞察数据回调（委托到 InsightsComponent） */
   onReloadInsights(cb: () => void): void {
     this.insights.onReloadInsights(cb);
   }

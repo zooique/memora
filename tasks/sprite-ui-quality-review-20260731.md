@@ -154,7 +154,7 @@ interface ListPanelConfig<T> {
 | 阶段 | 动作 | 风险 | 验收 |
 | --- | --- | --- | --- |
 | **Phase A（P1，低风险）** ✅ 已执行 | `ui.ts` 清理 3 处已移入协调器的 orphaned 死注释；`modal.ts` 把 `showConfirmDialog`/`showInputDialog` 的**内部元素**查找由全局 `getElementById` 收敛为 `modal.querySelector(...)`（模态根的 id 查找保留，因 `ModalManager` 非 Component、模态 DOM 为静态 HTML） | 极低 | typecheck:electron ✅ · stylelint ✅ · eslint ✅ · modal.test.ts 50/50 ✅ |
-| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 改造为继承 `Component`，Manager 持有实例（已完成 completionStats + healthDashboard **2/6**，见 §9；剩余 insights / partnerInsights / llmGovernanceResult / streaming） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试 |
+| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 改造为继承 `Component`，Manager 持有实例（已完成 completionStats + healthDashboard + insights **3/6**，见 §9；剩余 partnerInsights / llmGovernanceResult / streaming） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试 |
 | **Phase C（P2）** | 抽 `ListPanel` 工厂，先接入 `auditPanel`（最小）验证，再接 memory/profile/workProjection | 中高 | 四面板 DOM 行数下降、共性逻辑单测覆盖 |
 | **Phase D（P2）** | `tokens.css` L1/L2 注释分区；`components/index.ts` 随分层补全注册 | 低 | stylelint 无新增裸值 |
 | **Phase E（P3）** | 评估 mixin 是否回退为内联分区注释 | 中 | 调试可见性提升 |
@@ -217,8 +217,8 @@ interface ListPanelConfig<T> {
 ### 9.3 卡点（环境，非代码）
 - `git status`/`rev-parse` 经 PowerShell 输出乱码（整列 `X`，branch 回声缺失），属已记录的 git/sandbox 错位。依 git-safety 红线**未执行任何 commit 写操作**——真实代码改动均已落盘（Windows API 可读），仅 git 索引/工作树视图在沙箱内不一致。待 git 视图可靠后再落 checkpoint（commit 规范 `refactor(sprite): 补全统计面板升级为 Component`）。
 
-### 9.4 铺开计划（剩余 5 个 `*Renderer`）
-模式已验证，下一步按相同契约逐个改造并各自跑质量门：`healthDashboardRenderer` → `insightsRenderer` → `partnerInsightsRenderer` → `llmGovernanceResultRenderer` → `streamingRenderer`（外加可选最小面板 `badgeManager`/`panelErrorBannerManager`）。每个独立可验证，符合「渐进迁移，不一次性重写」。
+### 9.4 铺开计划（剩余 3 个 `*Renderer`）
+模式已验证，下一步按相同契约逐个改造并各自跑质量门：`partnerInsightsRenderer` → `llmGovernanceResultRenderer` → `streamingRenderer`（外加可选最小面板 `badgeManager`/`panelErrorBannerManager`）。每个独立可验证，符合「渐进迁移，不一次性重写」。
 
 ### 9.5 执行记录（Phase B 第 2 个 · healthDashboardRenderer，2026-07-31）
 
@@ -246,4 +246,32 @@ interface ListPanelConfig<T> {
 - 首跑测试 **18/20 失败**：`mount('#memory-health-bar')` 传 `#` 前缀字符串，但初版 `mount` 用 `document.getElementById(container)`（不接受 `#`），返回 null → 全操作 no-op。修正为与试点一致的 `document.querySelector<HTMLElement>(container)`（接受 `#` 选择器）。根因：两种按 id 选元素 API 语义不同（`getElementById` 不带 `#`，`querySelector` 带 `#`），混合即错。
 
 #### 9.5.4 卡点
+- 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。
+
+### 9.6 执行记录（Phase B 第 3 个 · insightsRenderer，2026-07-31）
+
+> 按 §9.4 既定顺序，`insights` 是 health 之后最独立的下一个（单静态容器 `#memory-insights-bar`、统计卡增量、仅分布/摘要列表重建、重试按钮委托模式 D）。
+> 沿用 health 验证过的**「采纳静态容器」变体**：`#memory-insights-bar` 在 index.html 已是富骨架（header + 统计卡 + 来源分布 + 最近关系），组件直接采纳为 `this.el` 并缓存内部引用，不新建 wrapper。
+
+#### 9.6.1 改动清单
+- **`panels/insightsRenderer.ts`（重写）**：`InsightsRenderer` → `InsightsComponent extends Component<InsightsOptions>`（`InsightsOptions = { dashboard?; graph? }`，字段可选，对齐 health）。
+  - 消除原 9 处 `document.getElementById` 查内部元素（§四.1 反模式）：`mount(container)` 经 `document.querySelector('#memory-insights-bar')` 采纳 `this.el`，缓存 `totalEl`/`relationsEl`/`conflictsEl`/`sourcesEl`/`totalBadgeEl`/`distEl`/`summaryEl`。
+  - `update({dashboard, graph})`：合并进 `this.options` 后增量渲染——统计卡原地写（`textContent`/`classList.toggle`）；source 分布与关系摘要属结构可变，按规则许可「结构变更，需重建」（`clearElement` 后重建子节点），逻辑与原 `render()` 逐行等价。
+  - `showLoading()`/`showError()`：沿用 `showPanelLoading`；重试按钮监听改经 `trackEvent` 收集（**移除原独立 `EventTracker` 导入**，对齐 Component「destroy 内置事件清理，无需额外 EventTracker」）。
+  - `destroy()`：先 nullify `reloadCallback`，再 `this.el = null` 后调 `super.destroy()`——`#memory-insights-bar` 是**共享静态容器**（面板仅 hidden 不销毁），销毁时不应移除它。
+- **`panels/memoryPanelManager.ts`（5 处）**：`import InsightsRenderer` → `InsightsComponent`；字段 `new InsightsComponent()`；`cleanup()` → `destroy()`；委托块新增 `ensureInsightsMounted()`（首开挂载、仅 hidden 不销毁），`render(dashboard, graph)` → `update({ dashboard, graph })`，`showInsightsLoading/showInsightsError` 均先 ensureMounted，`onReloadInsights` 直转（仅存回调）；section 注释同步。
+- **`components/index.ts`**：Phase B 块补导出 `InsightsComponent` + `InsightsOptions`/`InsightsDashboardData`（§四.3 统一入口）。
+- **`__tests__/.../insightsRenderer.test.ts`（重写）**：`render`→`update({dashboard, graph})`、`cleanup`→`destroy`；`createComponent` 先 `mount('#memory-insights-bar')`；`INSIGHTS_HTML` 夹具改为**嵌套**所有内部 id 于 `#memory-insights-bar` 内（对齐真实 index.html）；原覆盖（加载态/统计卡/分布条形图/关系摘要/失败重试/清理）全部保留并扩充为 **33 例**（含 mount 采纳容器、destroy 不删共享容器、destroy 幂等等）。
+- **`__tests__/.../ui.test.ts`**：仅更新一处注释（`InsightsRenderer`→`InsightsComponent`）。
+
+#### 9.6.2 验证（本地可执行质量门，全部通过）
+- `tsc -p tsconfig.electron.json --noEmit`：**0 错**。
+- `eslint`（改文件）：**0 错**。
+- `insightsRenderer.test.ts`：**33/33 PASS**。
+- 回归 `memoryPanelManagerViews`(61) + `memoryPanelManagerInstance`(56) + `memoryPanelEvents`(66) + `memoryOrchestrator`(18)：**201/201 PASS**（验证 holder 委托未破、关闭按钮委托未破）。
+
+#### 9.6.3 踩坑（对抗式，已修）
+- ESLint/tsc 首报 `INSIGHTS_CONTAINER_ID` 未使用（TS6133）：组件内不必要存容器常量——挂载容器由 holder 经 `ensureInsightsMounted` 传入字符串 `'#memory-insights-bar'`（与 health 同模式）。删除冗余常量后两门皆 0 错。
+
+#### 9.6.4 卡点
 - 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。

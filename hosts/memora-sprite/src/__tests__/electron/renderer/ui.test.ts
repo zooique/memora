@@ -412,7 +412,7 @@ function createMockElectronAPI() {
     getMemoryRelations: vi.fn().mockResolvedValue({ relations: [] }),
     deleteMemoryRelation: vi.fn().mockResolvedValue({ deleted: true }),
     addMemoryRelation: vi.fn().mockResolvedValue({ added: true }),
-    // 洞察相关（InsightsRenderer 调用）
+    // 洞察相关（InsightsComponent 调用）
     listInsights: vi.fn().mockResolvedValue({ insights: [] }),
     deleteInsight: vi.fn().mockResolvedValue({ deleted: true }),
     // 对话操作（SessionHandler 调用）
