@@ -219,7 +219,7 @@
   font-weight: var(--weight-semibold);
   color: var(--accent);
   background: var(--accent-soft);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-sm);
 }
 

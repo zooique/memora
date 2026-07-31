@@ -279,7 +279,7 @@
 
 .memory-meta code {
   background: var(--window-bg-2);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-sm);
   font-size: var(--font-xs);
 }

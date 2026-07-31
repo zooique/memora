@@ -83,7 +83,7 @@
 
 /* 复制按钮：主动可见（不依赖 hover），点击后短暂"已复制"反馈 */
 .message-bubble .md-code-copy {
-  padding: 1px var(--space-2);
+  padding: var(--space-0-25) var(--space-2);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -123,6 +123,7 @@
 
 /* 行内代码：浅色背景 + 等宽字体 */
 .message-bubble .md-code-inline {
+  /* 保留裸 1px/5px：行内代码紧凑padding，5px 不在间距刻度内，整体保留以保证视觉密度 */
   padding: 1px 5px;
   background: var(--surface2);
   border-radius: var(--radius-xs);
@@ -146,7 +147,7 @@
 }
 
 .message-bubble .md-li {
-  margin: 2px 0;
+  margin: var(--space-0-5) 0;
   line-height: 1.5;
 }
 

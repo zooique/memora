@@ -6,7 +6,7 @@
   background: var(--surface0);
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  padding: 2px var(--space-2) 2px var(--space-1-5);
+  padding: var(--space-0-5) var(--space-2) var(--space-0-5) var(--space-1-5);
   font-size: var(--font-xs);
   color: var(--accent);
   cursor: pointer;
@@ -111,7 +111,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 2px var(--space-2) 2px var(--space-1-5);
+  padding: var(--space-0-5) var(--space-2) var(--space-0-5) var(--space-1-5);
   font-size: var(--font-xs);
   color: var(--text-3);
   cursor: pointer;
@@ -173,7 +173,7 @@
 .date-nav-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 /* 单个日期选项 */
@@ -202,7 +202,7 @@
   font-size: var(--font-xs);
   color: var(--text-4);
   background: var(--surface1);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-md);
 }
 

@@ -214,7 +214,7 @@
 .onboarding-feature-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .onboarding-feature-text strong {
@@ -373,14 +373,15 @@
 /* kbd 键盘按键样式 */
 kbd {
   display: inline-block;
-  padding: 1px 5px;
+  /* 1px 5px：模拟真实键盘按键比例，5px 不对齐 4px 栅格（特殊场景保留） */
+  padding: var(--space-0-25) 5px;
   font-size: var(--font-2xs);
   font-family: var(--font-mono);
   color: var(--text);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
-  margin: 0 2px;
+  margin: 0 var(--space-0-5);
 }
 
 .modal-header {
@@ -500,7 +501,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-sm);
   font-size: var(--font-xs);
   font-weight: 600;

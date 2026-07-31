@@ -78,7 +78,7 @@
   font-size: var(--font-xs);
   color: var(--muted);
   background: var(--bg-hover);
-  padding: 2px var(--space-1-5);
+  padding: var(--space-0-5) var(--space-1-5);
   border-radius: var(--radius-xs);  /* 与 .command-palette-hint 圆角统一 */
   border: 1px solid var(--border);
   white-space: nowrap;
@@ -96,7 +96,7 @@
 
 /* 日期分组标题：粘性定位，滚动时固定顶部 */
 .search-messages-group {
-  padding: var(--space-1-5) var(--space-4) 2px;
+  padding: var(--space-1-5) var(--space-4) var(--space-0-5);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--accent);
@@ -132,7 +132,7 @@
 
 /* 角色徽章：用户/助手 双色区分 */
 .search-messages-role {
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-xs);
   font-weight: var(--weight-semibold);
   font-size: var(--font-2xs);
@@ -168,8 +168,8 @@
 .search-messages-content mark {
   background: var(--accent-20);
   color: var(--accent);
-  border-radius: 2px;
-  padding: 0 1px;
+  border-radius: var(--radius-2xs);
+  padding: 0 var(--space-0-25);
 }
 
 

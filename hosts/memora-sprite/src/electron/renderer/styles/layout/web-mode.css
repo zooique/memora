@@ -62,7 +62,7 @@ body.web-mode .cmdk-hint .icon {
 
 body.web-mode .cmdk-hint kbd {
   font-size: var(--font-xs);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
 }
 
 /* Web 模式：侧边栏品牌图标可点击（回到对话面板），增加视觉反馈 */

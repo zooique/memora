@@ -28,7 +28,7 @@
 /* 总体健康状态徽章（嵌在折叠标题右侧） */
 .source-health-overall-badge {
   display: inline-block;
-  padding: 1px var(--space-2);
+  padding: var(--space-0-25) var(--space-2);
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
@@ -55,7 +55,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px var(--space-2-5);
+  gap: var(--space-0-5) var(--space-2-5);
   margin-top: var(--space-1);
   font-size: var(--font-2xs);
   /* 折叠动画（迭代二）：max-height + opacity 过渡替代 display:none 硬切 */
@@ -68,7 +68,7 @@
 .perception-metrics-grid .dash-item {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
+  gap: 3px; /* 3px 紧凑 padding，不对齐 4px 栅格 */
   background: none;
   border: none;
   padding: 0;

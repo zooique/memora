@@ -303,7 +303,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px;
+  padding: var(--space-0-5);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -455,7 +455,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   background: var(--accent-soft);
   border: none;
   border-radius: var(--radius-sm);
@@ -505,7 +505,7 @@
 .memory-recall-container.expanded .memory-recall-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .memory-recall-container.expanded .memory-recall-header {
@@ -517,7 +517,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);

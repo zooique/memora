@@ -86,7 +86,7 @@
   font-size: var(--font-xs);
   color: var(--muted);
   background: var(--bg-hover);
-  padding: 2px var(--space-1-5);
+  padding: var(--space-0-5) var(--space-1-5);
   border-radius: var(--radius-xs);
   border: 1px solid var(--border);
   white-space: nowrap;
@@ -104,7 +104,7 @@
 /* 滚动条样式复用 base.css 全局 ::-webkit-scrollbar 规则，无需重复定义 */
 
 .command-palette-section {
-  padding: var(--space-1-5) var(--space-4) 2px;
+  padding: var(--space-1-5) var(--space-4) var(--space-0-5);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--accent);
@@ -141,16 +141,16 @@
 .command-palette-label mark {
   background: var(--accent-20);
   color: var(--accent);
-  border-radius: 2px;
-  padding: 0 1px;
+  border-radius: var(--radius-2xs);
+  padding: 0 var(--space-0-25);
 }
 
 .command-palette-shortcut {
   font-size: var(--font-2xs);
   color: var(--muted);
   background: var(--bg-hover);
-  padding: 1px var(--space-1-5);
-  border-radius: 4px;
+  padding: var(--space-0-25) var(--space-1-5);
+  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
   white-space: nowrap;
   margin-left: var(--space-3);

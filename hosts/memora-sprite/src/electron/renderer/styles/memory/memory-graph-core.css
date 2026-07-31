@@ -151,7 +151,7 @@
 .graph-tooltip-name {
   font-weight: var(--weight-semibold);
   font-size: var(--font-sm);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-0-5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

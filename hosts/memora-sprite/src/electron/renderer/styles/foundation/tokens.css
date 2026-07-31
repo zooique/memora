@@ -78,6 +78,7 @@
   --brand-grad:  linear-gradient(135deg, #0d7377 0%, #5fc6cb 100%);
 
   /* 圆角：整体收敛，更紧凑 */
+  --radius-2xs:    2px;     /* 极小圆角（进度条/填充条/mark 高亮） */
   --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
   --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
   --radius-md:     10px;
@@ -198,7 +199,10 @@
   --weight-bold:     700;  /* 大数值（仅 KPI 顶级，慎用） */
 
   /* ─── 设计系统：间距 4px 基线栅格（对标 Arco/Semi） ─── */
-  /* 覆盖 4/6/8/12/16/20/24/32，所有 gap/margin/padding 应优先使用这些令牌 */
+  /* 覆盖 1/2/4/6/8/12/16/20/24/32，所有 gap/margin/padding 应优先使用这些令牌 */
+  /* 次像素刻度（1px/2px）：徽章/标签/mark 等小元素的紧凑间距，不强制 4px 对齐 */
+  --space-0-25: 1px;   /* 次像素间距（徽章/标签上下 padding、mark 横向 padding） */
+  --space-0-5:  2px;   /* 紧凑间距（紧凑 gap、徽章/按钮上下 padding、kbd 间距） */
   --space-1:    4px;   /* 极小间距（图标与文字间隙） */
   --space-1-5:  6px;   /* 半级间距（卡片内元素紧凑 gap，对标 Arco padding-xs） */
   --space-2:    8px;   /* 紧凑间距（卡片内元素 gap） */
@@ -373,6 +377,7 @@
   --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
 
   /* 圆角（与浅色一致） */
+  --radius-2xs:    2px;     /* 极小圆角（进度条/填充条/mark 高亮） */
   --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
   --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
   --radius-md:     10px;

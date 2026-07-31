@@ -127,7 +127,7 @@
 .sprite-settings-badge {
   display: inline-block;
   margin-left: var(--space-2);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
   color: var(--text-3);
@@ -208,7 +208,7 @@
 .sprite-settings-item-active {
   display: inline-block;
   margin-left: var(--space-1-5);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
   color: var(--green);

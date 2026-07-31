@@ -51,8 +51,8 @@
 .memory-item .preview mark {
   background: var(--search-highlight-bg);
   color: var(--text);
-  border-radius: 2px;
-  padding: 0 1px;
+  border-radius: var(--radius-2xs);
+  padding: 0 var(--space-0-25);
 }
 
 /* 记忆洞察栏样式已迁至 memory/insights.css（CSS-R11，ADR-018 单一真理源）。 */

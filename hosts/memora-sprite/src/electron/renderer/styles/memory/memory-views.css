@@ -193,7 +193,7 @@
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  padding: 2px;
+  padding: var(--space-0-5);
   gap: 0;
 }
 

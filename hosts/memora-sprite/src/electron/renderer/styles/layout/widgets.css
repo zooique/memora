@@ -20,7 +20,7 @@
   transition: background var(--transition-fast);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .dash-item:hover {
@@ -90,7 +90,7 @@
 /* ─── 默契度展示（等级徽章 + 双进度条 + 描述） ──── */
 .rapport-level-badge {
   display: inline-block;
-  padding: 2px var(--space-2-5);
+  padding: var(--space-0-5) var(--space-2-5);
   border-radius: var(--radius-md);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
@@ -212,7 +212,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .dropzone-hint {
@@ -270,7 +270,7 @@
   font-size: var(--font-xs);
   color: var(--text-3);
   line-height: 1.3;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -309,7 +309,7 @@
 .recent-insight-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
@@ -324,7 +324,7 @@
 .recent-insight-time {
   font-size: var(--font-2xs);
   color: var(--text-3);
-  margin-top: 1px;
+  margin-top: var(--space-0-25);
 }
 
 .recent-insight-preview {

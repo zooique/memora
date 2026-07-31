@@ -33,7 +33,7 @@
 
 .truncation-notice {
   margin-bottom: var(--space-1);
-  padding: 2px var(--space-1-5);
+  padding: var(--space-0-5) var(--space-1-5);
   font-size: var(--font-2xs);
   color: var(--text-3);
   background: var(--yellow-10);
@@ -607,7 +607,7 @@
 .startup-banner-badge {
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-sm);
 }
 

@@ -146,7 +146,7 @@
   color: var(--text-3);
   margin-left: auto;
   background: var(--surface0);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-pill);
 }
 
@@ -208,7 +208,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   color: var(--text);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-0-5);
 }
 
 /* 元数据行 */
@@ -218,7 +218,7 @@
   gap: var(--space-1-5);
   font-size: var(--font-xs);
   color: var(--text-3);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-0-5);
 }
 
 /* 时间戳 */
@@ -305,7 +305,7 @@
 
 /* 操作按钮复用通用 .btn（紧凑小按钮，在 .btn-sm 基础上进一步收紧内边距以适配列表行高） */
 .recycle-bin-item-actions .btn {
-  padding: 3px var(--space-2);
+  padding: 3px var(--space-2); /* 3px 紧凑 padding，不对齐 4px 栅格 */
   font-size: var(--font-xs);
 }
 

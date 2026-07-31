@@ -262,7 +262,7 @@ body {
   font-size: var(--font-xs);
   color: var(--accent);
   background: var(--accent-10);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-sm);
   font-weight: var(--weight-medium);
   /* UX-QI-13：固定最小宽度 + 居中，保证任何长度的标签都让候选文本起点对齐 */
@@ -307,8 +307,8 @@ body {
 .completion-match {
   color: var(--accent);
   background: var(--accent-10);
-  border-radius: 2px;
-  padding: 0 1px;
+  border-radius: var(--radius-2xs);
+  padding: 0 var(--space-0-25);
   font-weight: var(--weight-medium);
 }
 

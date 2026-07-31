@@ -193,7 +193,7 @@
 .completion-stats-trend-chart {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
+  gap: var(--space-0-5);
   /* 72px 柱图区高度，按 14 天等宽分布 */
   height: 72px;
 }
@@ -212,7 +212,7 @@
 .completion-stats-trend-bars {
   display: flex;
   align-items: flex-end;
-  gap: 1px;
+  gap: var(--space-0-25);
   width: 100%;
   height: 100%;
   justify-content: center;

@@ -185,10 +185,10 @@
   align-items: center;
   gap: var(--gap-compact);
   font-size: var(--font-sm);
-  padding: 3px 0;
+  padding: 3px 0; /* 3px 紧凑 padding，不对齐 4px 栅格 */
 }
 .relation-type-tag {
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
   font-weight: var(--weight-medium);
@@ -205,7 +205,7 @@
 
 /* ─── 共享徽章 / 胶囊（替代 health-badge / health-detail-item） ── */
 .panel-badge {
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-pill);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
@@ -221,7 +221,7 @@
   background: var(--surface1);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-pill);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   white-space: nowrap;
 }
 .panel-chip.warning {

@@ -70,7 +70,7 @@
 /* 重试按钮：小号胶囊，accent 色调 */
 .toast-retry {
   align-self: flex-start;
-  padding: 2px var(--space-2-5);
+  padding: var(--space-0-5) var(--space-2-5);
   background: var(--accent);
   color: var(--accent-fg);
   border: none;
@@ -101,7 +101,7 @@
   border: none;
   color: var(--text-3);
   cursor: pointer;
-  padding: 2px;
+  padding: var(--space-0-5);
   display: flex;
   align-items: center;
   justify-content: center;

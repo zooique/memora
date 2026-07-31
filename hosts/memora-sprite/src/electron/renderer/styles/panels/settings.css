@@ -255,7 +255,7 @@
   border: none;
   cursor: pointer;
   font-size: var(--font-base);
-  padding: 2px var(--space-1);
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
   line-height: 1;
@@ -355,7 +355,7 @@
 .settings-version-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px var(--space-2-5);
+  padding: var(--space-0-5) var(--space-2-5);
   font-family: var(--font-mono, monospace);
   font-size: var(--font-xs);
   font-style: normal;
@@ -609,7 +609,7 @@
 /* 洞察/健康度子面板内联重试按钮（复用 panel-error-btn 样式，略缩小） */
 .inline-retry-btn {
   margin-left: var(--space-1-5);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   font-size: var(--font-xs);
 }
 
@@ -732,7 +732,7 @@
 }
 
 .work-projection-list li {
-  margin-bottom: 1px;
+  margin-bottom: var(--space-0-25);
 }
 
 /* 展开/折叠按钮 */
@@ -775,7 +775,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   color: var(--text);
-  margin-bottom: 1px;
+  margin-bottom: var(--space-0-25);
   line-height: 1.4;
 }
 
@@ -848,7 +848,7 @@
   font-size: var(--font-3xs);
   color: var(--green);
   font-weight: var(--weight-semibold);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border: 1px solid var(--green);
   border-radius: var(--radius-sm);
   margin-left: var(--gap-compact);
@@ -980,7 +980,7 @@
   font-family: var(--font-mono);
   font-size: var(--font-xs);
   background: var(--surface1);
-  padding: 1px 5px;
+  padding: var(--space-0-25) 5px; /* 5px 为行内 code 标签水平内边距，保留裸值不转 token */
   border-radius: var(--radius-xs);
   color: var(--accent);
 }

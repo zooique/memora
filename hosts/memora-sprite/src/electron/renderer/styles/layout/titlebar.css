@@ -65,7 +65,7 @@
   font-family: var(--font-mono);
   background: var(--surface2);
   color: var(--muted);
-  padding: 1px var(--space-1);
+  padding: var(--space-0-25) var(--space-1);
   border-radius: var(--radius-xs);
   border: 1px solid var(--surface2);
   margin-left: 2px;
@@ -176,7 +176,7 @@
 /* 角色匹配模式标签（角色选择器旁，显示当前模式） */
 .mode-badge {
   font-size: var(--font-2xs);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-sm);
   background: var(--surface1);
   color: var(--subtext);

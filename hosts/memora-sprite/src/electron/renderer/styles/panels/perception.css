@@ -159,13 +159,13 @@
   flex: none;
   height: 4px;
   background: var(--surface0);
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   overflow: hidden;
 }
 
 .affect-item .affect-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   transition: width var(--transition-slow) ease, background var(--transition-slow) ease;
   background: var(--accent);
 }
@@ -185,7 +185,7 @@
 
 .rapport-badge {
   display: inline-block;
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
@@ -225,13 +225,13 @@
   flex: 1;
   height: 4px;
   background: var(--surface0);
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   overflow: hidden;
 }
 
 .rapport-bar .progress-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   background: var(--accent);
   transition: width var(--transition-slow) ease;
 }
@@ -247,7 +247,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-1-5);
   background: var(--surface0);
   border-radius: var(--radius-sm);
@@ -281,7 +281,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   /* 紧凑内边距：4px 适配侧栏 5 列窄格，避免中文标签溢出 */
   padding: var(--space-2) var(--space-1);
   background: var(--surface0);
@@ -369,7 +369,7 @@
   color: var(--mauve);
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   /* 类型徽章基础样式：内边距 + 圆角（与 chat-perception.css 旧定义对齐） */
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-xs);
 }
 
@@ -394,7 +394,7 @@
   color: var(--muted);
   /* flex-shrink:0 复用 .flex-shrink-0 工具类（utilities.css，由 HTML/TS className 提供） */
   /* 置信度徽章基础样式：内边距 + 圆角 */
-  padding: 1px var(--space-1-5);
+  padding: var(--space-0-25) var(--space-1-5);
   border-radius: var(--radius-xs);
   font-weight: var(--weight-medium);
 }
@@ -413,7 +413,7 @@
 .perception-pattern-confidence.low {
   background: transparent;
   color: var(--muted);
-  padding: 1px 0;
+  padding: var(--space-0-25) 0;
 }
 
 .perception-pattern-text {
@@ -437,7 +437,7 @@
   display: inline-flex;
   align-items: center;
   margin-top: var(--space-1);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: transparent;

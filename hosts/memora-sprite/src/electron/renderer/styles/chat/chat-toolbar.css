@@ -59,7 +59,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border: none;
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
@@ -226,7 +226,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
-  padding: 3px var(--space-2);
+  padding: 3px var(--space-2); /* 3px 紧凑 padding，不对齐 4px 栅格 */
   background: var(--surface1);
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
@@ -281,7 +281,7 @@
   align-items: center;
   gap: var(--space-1);
   margin-left: var(--space-2);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
   color: var(--warning);
