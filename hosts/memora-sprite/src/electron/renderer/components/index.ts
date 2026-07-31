@@ -41,6 +41,8 @@ export { InsightsComponent } from '../panels/insightsRenderer.js';
 export type { InsightsOptions, InsightsDashboardData } from '../panels/insightsRenderer.js';
 export { PartnerInsightsComponent } from '../panels/partnerInsightsRenderer.js';
 export type { PartnerInsightsOptions } from '../panels/partnerInsightsRenderer.js';
+export { LlmGovernanceResultComponent } from '../panels/llmGovernanceResultRenderer.js';
+export type { LlmGovernanceOptions, LlmGovernanceReport } from '../panels/llmGovernanceResultRenderer.js';
 
 /* ========== 表单组件 ========== */
 // 待后续 Phase 填充

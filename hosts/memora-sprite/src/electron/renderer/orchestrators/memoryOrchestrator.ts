@@ -27,8 +27,8 @@ import type { HealthDashboardPayload } from '../../preload.js';
 import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth.js';
 // 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
 import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js';
-// LLM 治理结果渲染器（持久化展示治理报告 + 降级列表恢复入口）
-import { LlmGovernanceResultRenderer } from '../panels/llmGovernanceResultRenderer.js';
+// LLM 治理结果组件（持久化展示治理报告 + 降级列表恢复入口，HEAL-17 Phase B 升级为 Component）
+import { LlmGovernanceResultComponent } from '../panels/llmGovernanceResultRenderer.js';
 // 补全统计埋点（重置统计时调用 clear）
 import { getCompletionMetrics } from '../helpers/completionMetrics.js';
 
@@ -91,8 +91,8 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
   /** 存储当前健康度数据，供清理操作使用（闭包级，setupMemoryPanel 和 loadHealthDashboard 共享） */
   let currentHealthData: HealthDashboardPayload | null = null;
 
-  // LLM 治理结果渲染器实例（持久化展示治理报告 + 降级列表恢复入口）
-  const llmResultRenderer = new LlmGovernanceResultRenderer();
+  // LLM 治理结果组件实例（持久化展示治理报告 + 降级列表恢复入口，由 update({report}) 注入）
+  const llmResultRenderer = new LlmGovernanceResultComponent();
   // 注册恢复回调：调用 boostMemory IPC（score +0.05），与降级语义对称
   // 恢复后刷新健康度面板（score 变化 → 健康度数据变化，与治理动作回调 L332 对齐）
   // MIND2-C1：boostMemory 改用 throwingHandle 后，内核异常会 re-throw，必须补 try/catch
@@ -354,7 +354,7 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
             uiManager.showToast(`语义去重完成：扫描 ${report.scannedCount} 条，降级 ${report.deduplicatedCount} 条`, 'success');
           }
           // 持久化渲染去重报告（降级列表 + 恢复入口）
-          llmResultRenderer.renderDedupReport(report);
+          llmResultRenderer.update({ report: { type: 'dedup', data: report } });
         } else if (action === 'timeliness') {
           const report = await window.electronAPI.evaluateTimeliness();
           if (report.skippedReason) {
@@ -363,7 +363,7 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
             uiManager.showToast(`时效评估完成：扫描 ${report.scannedCount} 条，过时 ${report.outdatedCount} 条`, 'success');
           }
           // 持久化渲染时效报告（降级列表 + 恢复入口）
-          llmResultRenderer.renderTimelinessReport(report);
+          llmResultRenderer.update({ report: { type: 'timeliness', data: report } });
         } else {
           const report = await window.electronAPI.detectConflicts();
           if (report.skippedReason) {
@@ -372,7 +372,7 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
             uiManager.showToast(`冲突检测完成：扫描 ${report.scannedCount} 条，发现 ${report.conflictCount} 处冲突`, 'success');
           }
           // 持久化渲染冲突报告（冲突对详情，不提供恢复入口）
-          llmResultRenderer.renderConflictReport(report);
+          llmResultRenderer.update({ report: { type: 'conflicts', data: report } });
         }
         // 治理后刷新健康度面板（score 变化 → 健康度数据变化）
         await loadHealthDashboard();
@@ -1010,12 +1010,13 @@ export function createMemoryOrchestrator(uiManager: UIManager) {
     updatePresenceDisplay: (payload: PresencePayload) => {
       uiManager.updatePresenceDisplay(payload);
     },
-    /** 清理防抖定时器（由 renderer.ts beforeunload 调用） */
+    /** 清理防抖定时器 + LLM 治理组件（由 renderer.ts beforeunload 调用） */
     cleanup: () => {
       if (dashboardDebounceTimer !== null) {
         window.clearTimeout(dashboardDebounceTimer);
         dashboardDebounceTimer = null;
       }
+      llmResultRenderer.destroy();
     },
   };
 }

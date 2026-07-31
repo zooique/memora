@@ -154,7 +154,7 @@ interface ListPanelConfig<T> {
 | 阶段 | 动作 | 风险 | 验收 |
 | --- | --- | --- | --- |
 | **Phase A（P1，低风险）** ✅ 已执行 | `ui.ts` 清理 3 处已移入协调器的 orphaned 死注释；`modal.ts` 把 `showConfirmDialog`/`showInputDialog` 的**内部元素**查找由全局 `getElementById` 收敛为 `modal.querySelector(...)`（模态根的 id 查找保留，因 `ModalManager` 非 Component、模态 DOM 为静态 HTML） | 极低 | typecheck:electron ✅ · stylelint ✅ · eslint ✅ · modal.test.ts 50/50 ✅ |
-| **Phase B（P1→P2）** | 将 6 个 `*Renderer` 改造为继承 `Component`，Manager 持有实例（已完成 completionStats + healthDashboard + insights + partnerInsights **4/6**，见 §9；剩余 llmGovernanceResult / streaming） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试 |
+| **Phase B（P1→P2）** ✅ 面板渲染器完成 | 6 个 `*Renderer` 中 **5 个面板渲染器**已改造为 Component（completionStats/healthDashboard/insights/partnerInsights/llmGovernanceResult）；`streamingRenderer` 经对抗式审查**豁免**（非面板、无单根 `el`、在册架构已排除，见 §9.9） | 中 | 行为不变 + 新增/迁移 `destroy()` 测试；streaming 零改动、chat 测试 185/185 通过 |
 | **Phase C（P2）** | 抽 `ListPanel` 工厂，先接入 `auditPanel`（最小）验证，再接 memory/profile/workProjection | 中高 | 四面板 DOM 行数下降、共性逻辑单测覆盖 |
 | **Phase D（P2）** | `tokens.css` L1/L2 注释分区；`components/index.ts` 随分层补全注册 | 低 | stylelint 无新增裸值 |
 | **Phase E（P3）** | 评估 mixin 是否回退为内联分区注释 | 中 | 调试可见性提升 |
@@ -217,8 +217,8 @@ interface ListPanelConfig<T> {
 ### 9.3 卡点（环境，非代码）
 - `git status`/`rev-parse` 经 PowerShell 输出乱码（整列 `X`，branch 回声缺失），属已记录的 git/sandbox 错位。依 git-safety 红线**未执行任何 commit 写操作**——真实代码改动均已落盘（Windows API 可读），仅 git 索引/工作树视图在沙箱内不一致。待 git 视图可靠后再落 checkpoint（commit 规范 `refactor(sprite): 补全统计面板升级为 Component`）。
 
-### 9.4 铺开计划（剩余 3 个 `*Renderer`）
-模式已验证，下一步按相同契约逐个改造并各自跑质量门：`partnerInsightsRenderer` → `llmGovernanceResultRenderer` → `streamingRenderer`（外加可选最小面板 `badgeManager`/`panelErrorBannerManager`）。每个独立可验证，符合「渐进迁移，不一次性重写」。
+### 9.4 铺开计划（已执行完毕，streaming 经审查豁免）
+按相同契约逐个改造并各自跑质量门：`healthDashboardRenderer` → `insightsRenderer` → `partnerInsightsRenderer` → `llmGovernanceResultRenderer` → `streamingRenderer`。前 4 个面板渲染器已转换为 Component；第 6 个 `streamingRenderer` 经对抗式审查**豁免**（非面板、无单根 `el`、在册架构已刻意排除，详见 §9.9）。可选最小面板 `badgeManager`/`panelErrorBannerManager` 不属强制范围，留待后续评估。
 
 ### 9.5 执行记录（Phase B 第 2 个 · healthDashboardRenderer，2026-07-31）
 
@@ -303,3 +303,64 @@ interface ListPanelConfig<T> {
 
 #### 9.7.4 卡点
 - 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。
+
+---
+
+#### 9.8 第 5 个：`llmGovernanceResultRenderer` → `LlmGovernanceResultComponent`
+
+**Holder 差异（关键）**：前 4 个由 `memoryPanelManager` 持有（类字段），本组件由 `memoryOrchestrator`（工厂函数，`createMemoryOrchestrator(uiManager)`）以**闭包 `const`** 持有（line 95），`onRestoreMemory` 在 setup 注册一次，3 个 `render*` 在 `uiManager.onLlmGovernance` 回调内按 action 调用；**原 `cleanup()` 从未被调用**（泄漏）。工厂 `return { ..., cleanup }`（line 1014）仅清 debounce 定时器。
+
+**改造要点**：
+- 沿用「采纳静态容器」变体：`#health-llm-result` 是 `#memory-health-bar` 内**嵌套静态子区**（index.html:686，health 组件已设计为不移除共享容器），`mount()` 直接采纳为 `this.el`；`destroy()` 先置 `this.el=null` 不误删。
+- **升级为单一事件委托**：原 `EventTracker` 逐条绑定恢复按钮、每次 render 先 `events.cleanup()`。改为在 `mount` 对容器根绑一个 click 委托（捕获 `[data-action="restore-boost"]`，从 `data-memory-id` 取 id），彻底消除"每渲染重绑/监听器累积"——更贴合"容器静态、按钮动态重建"语义，且对齐项目关闭按钮委托惯例。
+- **单一 `update` 入口**：`update({report})` 接受判别联合 `{type:'dedup'|'timeliness'|'conflicts', data}`，内部 `_renderReport` 分发； orchestrator 三调用点改为 `update({ report: { type, data } })`（符合 §四.1 `update(newOptions)` 契约，原 3 个 `render*` 退为私有）。
+- 工厂 `cleanup` 接入 `llmResultRenderer.destroy()`（修复"从不清理"泄漏）。
+
+**改动文件**：`panels/llmGovernanceResultRenderer.ts`（重写：`LlmGovernanceResultComponent extends Component` + 委托 + 判别联合 `update` + `destroy`）、`orchestrators/memoryOrchestrator.ts`（import/实例/`update` 三调用点/`cleanup` 接 `destroy`）、`components/index.ts`（统一导出）。
+
+#### 9.8.1 验证（本地可执行质量门，全部通过）
+| 质量门 | 结果 |
+|---|---|
+| `tsc -p tsconfig.electron.json --noEmit` | 0 错 |
+| `eslint`（改文件） | 0 错 |
+| `memoryOrchestrator.test.ts`（含 LLM 治理 5 项 + 其余 13 项） | **18/18** |
+| memory 面板回归（Views 61 + Instance 56 + Events 66 + Orchestrator 18） | **201/201** |
+
+#### 9.8.2 踩坑（对抗式，已修）
+- **判别联合包裹层遗漏**：`update` 设计签名 `update(newOptions: Partial<LlmGovernanceOptions>)` 期望 `{ report: LlmGovernanceReport }`，但首版 orchestrator 调用写成 `update({ type:'dedup', data: report })`（少 `report` 包裹）。`newOptions.report` 为 `undefined` → `this._report` 恒 null → `_renderReport` 早返回 → 容器空白；**esbuild 不做类型检查故测试静默失败**（5 项全空）。修正为 `update({ report: { type, data } })` 后全绿。→ 记忆点：判别联合经 `update({report})` 传入时，orchestrator 调用必须补 `report` 包裹层，不能把 `LlmGovernanceReport` 直接当 options 传。
+
+#### 9.8.3 卡点
+- 同 §9.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动已落盘（Windows API 可读）。
+
+---
+
+### 9.9 第 6 个 `streamingRenderer`：对抗式审查 → **豁免 Component 改造（不改动）**
+
+> 本轮原计划按 Phase B 既定顺序处理第 6 个 `*Renderer`。但**先读真实文件而非套用计划**，发现它与其他 5 个架构角色根本不同，遂做对抗式判定而非盲目转换。
+
+#### 9.9.1 事实核查（不靠记忆）
+- `panels/streamingRenderer.ts` **不是类、不是面板**：导出 4 个**模块级纯函数** `updateStreamingMessage` / `finishStreamingMessage` / `addCopyButtonToMessage` / `cancelPendingRaf`，外加共享状态对象 `StreamingRendererContext`（持有 `streamingMessages: Map<string, HTMLElement>`、RAF 句柄、`latestStreamText` 等）。
+- 文件头注释自述（line 1-19）：从 `chatPanelManager.ts` 提取的**流式 RAF 核心 ~220 行**，设计为 **context 注入式无状态函数**以降低体量，状态通过 `StreamingRendererContext` 共享。
+- **无单根 `el`**：它操作一个**动态的 `Map<messageId, 气泡>`**——多条消息各自独立创建/销毁，不存在"一个根 DOM 元素"。
+- **无 Component 生命周期**：调用是 per-chunk（`updateStreamingMessage`）、per-message-end（`finishStreamingMessage`）、cleanup（`cancelPendingRaf`），与 `new/mount/update/destroy` 四件套语义不符。
+- **无 §四.1 反模式**：内部元素访问走 `ctx.streamingMessages.get(id)` + `el.querySelector(...)`，**未用 `document.getElementById` 查自身内部元素**（唯一 `document.getElementById('stream-live-region')` 是跨切面全局 live region，非自身内部元素，合理保留）。
+
+#### 9.9.2 在册架构决策（决定性证据）
+- `components/messageBubbleComponent.ts:18` 已明确写道：**"不接管流式渲染——streamingRenderer 已独立且成熟，Component 仅提供初始 streaming 光标"**。
+- 即项目自身架构**已刻意把流式渲染排除在 Component 模式之外**——`MessageBubbleComponent` 只负责初始气泡骨架与光标，流式期间的增量更新/收尾/复制按钮全部交由 `streamingRenderer` 的纯函数处理。
+
+#### 9.9.3 第一性原理判定（为何不转换）
+强行把 `streamingRenderer` 套成 `Component` 子类会同时违反两条铁律：
+1. **复杂度守恒（USER.md §3 / 规则「逻辑先于实现」）**：无单根 `el` 却要 fabricate 一个（或强行把 `messagesEl` 当 `this.el`），纯属为套模式而加的一层**零收益抽象**——它本就无状态、本就无内部元素查找反模式，套类不改任何行为，只多一个故障面。
+2. **Component 生命周期契约（§四.1）**：`mount/update/destroy` 要求单一根元素 + 增量 `update`；流式是**多消息、动态生灭、逐 chunk 节流**的引擎，与单根组件模型根本不兼容。
+3. **破坏既有架构（§四.4 反向调用禁忌 + 在册决策）**：`ChatPanelManager` 已持有 `streamRenderCtx` 并以纯函数调用；改写为 Component 需重构调用方以获得"零收益"。
+
+**结论**：`streamingRenderer` 不在 Component 改造对象之内。Phase B 的"6 个 `*Renderer`"是按**文件名模式**归纳的启发式，经逐个核实，其中 5 个是面板渲染器（已转换），第 6 个是流式引擎（**豁免**）。未改动任何代码。
+
+#### 9.9.4 验证（零改动，实测佐证）
+- `chatPanelManager.test.ts` + `ui.test.ts`：**185/185 通过**（EXIT=0）。流式子系统的既有覆盖（startStreaming / 逐 chunk rAF flush / finishStreamingMessage / 复制按钮 / stopAllStreaming / 90s 兜底）全绿，证明"不转换"未引入任何回归。
+- `tsc -p tsconfig.electron.json --noEmit`：0 错（无改动，基线保持）。
+- `eslint`：0 错（无改动）。
+
+#### 9.9.5 卡点
+- 同 §9.3/§9.8.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动（前 5 个组件 + 本报告）均已落盘（Windows API 可读）。
