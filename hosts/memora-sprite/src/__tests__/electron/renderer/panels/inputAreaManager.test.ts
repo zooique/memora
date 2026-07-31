@@ -832,9 +832,13 @@ describe('InputAreaManager', () => {
       const textEl = document.getElementById('token-usage-text')!;
       const fillEl = document.getElementById('token-usage-fill')!;
       const usageEl = document.getElementById('token-usage')!;
-      expect(textEl.textContent).toBe('--');
+      // UX-15 修订：空态显示「0/窗口」(0/32.8k)，比模糊的 '--' 更友好准确
+      expect(textEl.textContent).toBe('0/32.8k');
       expect(fillEl.style.width).toBe('0%');
       expect(usageEl.classList.contains('token-usage-compact')).toBe(true);
+      // 空态不应带错误标记，且 tooltip 已清除（语义自明）
+      expect(usageEl.classList.contains('token-usage-error')).toBe(false);
+      expect(usageEl.getAttribute('data-tooltip')).toBe('');
     });
 
     it('有 metrics.llm 时应显示已用/总量格式', async () => {
@@ -1008,7 +1012,7 @@ describe('InputAreaManager', () => {
 
       const usageEl = document.getElementById('token-usage')!;
       // UX-12：小写 k（1.5k / 2.0k / 32.8k）
-      expect(usageEl.getAttribute('data-tooltip')).toBe('输入 1.5k / 输出 2.0k / 上下文窗口 32.8k');
+      expect(usageEl.getAttribute('data-tooltip')).toBe('输入 1.5k / 输出 2.0k / 上下文 32.8k');
     });
 
     it('ratio 超过 100% 时进度条应截断到 100%', async () => {
@@ -1037,7 +1041,36 @@ describe('InputAreaManager', () => {
       const textEl = document.getElementById('token-usage-text')!;
       expect(textEl.textContent).toBe('--');
       expect(document.getElementById('token-usage')!.classList.contains('token-usage-compact')).toBe(true);
+      // UX-15：错误态应带 .token-usage-error 标记 + tooltip「用量加载失败」
+      const usageEl = document.getElementById('token-usage')!;
+      expect(usageEl.classList.contains('token-usage-error')).toBe(true);
+      expect(usageEl.getAttribute('data-tooltip')).toBe('用量加载失败');
       expect(reportError).toHaveBeenCalledWith('InputAreaManager.refreshTokenUsage', expect.any(Error));
+    });
+
+    it('UX-15：应先显示错误态，成功刷新后应清除错误态并恢复分解 tooltip', async () => {
+      // 先制造错误态
+      (mockApi.getDashboard as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 崩溃'));
+      await manager.refreshTokenUsage();
+      const usageEl = document.getElementById('token-usage')!;
+      expect(usageEl.classList.contains('token-usage-error')).toBe(true);
+      expect(usageEl.getAttribute('data-tooltip')).toBe('用量加载失败');
+
+      // 再成功刷新
+      (mockApi.getDashboard as ReturnType<typeof vi.fn>).mockResolvedValue({
+        metrics: { llm: { callCount: 5, totalInputTokens: 500, totalOutputTokens: 300 } },
+      });
+      (mockApi.listLlmProviders as ReturnType<typeof vi.fn>).mockResolvedValue({
+        active: 'openai',
+        providers: [
+          { key: 'openai', name: 'OpenAI', provider: 'openai', model: 'gpt-4', baseUrl: '', apiKey: '', temperature: 0.7, contextWindow: 32768 },
+        ],
+      });
+      await manager.refreshTokenUsage();
+
+      // 错误态已清除，tooltip 恢复为输入/输出分解
+      expect(usageEl.classList.contains('token-usage-error')).toBe(false);
+      expect(usageEl.getAttribute('data-tooltip')).toBe('输入 500 / 输出 300 / 上下文 32.8k');
     });
   });
 

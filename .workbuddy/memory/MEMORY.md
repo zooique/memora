@@ -52,3 +52,10 @@
 - **git 命令改用 PowerShell**：`Get-ChildItem`/`git mv`/`git rm`/`git status` 等走真实 Windows FS，不经 POSIX 沙箱挂载层。
 - **阶段完成后立即 `git add -A && git commit`**。不攒暂存改动。已提交的 HEAD 才是可恢复锚点；沙箱异常下暂存区不可靠。
 - **不可逆操作前双重核验**：移动/删除文件前，先用 Read/Glob 确认源和目标均存在，不做任何"看起来应该存在"的假设。
+
+## UI 占位符三态约定（可复用，2026-07-31）
+- 占位符/空态/错误态的视觉区分**用类修饰而非状态机**：项目既有 `quick-input.css` 三态先例——`.completion-loading`(默认 `--muted`)/`.completion-error`(`--yellow`)/`.completion-empty`(`--muted`)，靠颜色+tooltip 区分，不造状态机。
+- token 用量区 UX-15：错误态（真正未知）`.token-usage-error`(`color:var(--yellow)` + hover 保持)+ `data-tooltip="用量加载失败"` 显示 `--`；**空态/零用量显示 `0/上下文窗口`**（`providerList` 已在 Promise.all 取到，可算窗口，默认 32768→`0/32.8k`），`--` 仅留给失败态；成功路径 `classList.remove('token-usage-error')` 防残留。空态与零用量成功态统一为同一显示（单一真理源）。
+- **首屏同步陷阱**：`refreshTokenUsage()` 原本只在 `SPRITE_STREAM_END`（对话结束）触发，导致首屏永远停在 HTML 默认 `--`。必须在 `renderer.ts` 的 `onAgentReadyCallback` 中补一次 `void State.uiManager.refreshTokenUsage()`，否则空态友好化对用户不可见。
+- 用户曾提议 `0/0`，经对抗式审查修正为 `0/窗口`：`0/0` 分母=0 是假事实（上下文窗口是模型固定属性非 0）。吸收用户"用数字替代 `--`"的心智，但忠于项目实际语义。
+- 推回"需状态机设计"类假设：2 分支标签区分属"能去掉中间一层"的情况，加状态机即复杂度倒挂（复杂度守恒）。

@@ -379,6 +379,15 @@
   opacity: 1;
 }
 
+/* Token 用量错误态：与 quick-input 三态约定同构（error 用 warning 色区分），
+   仅视觉告警 + tooltip 说明，不阻断对话功能 */
+.token-usage.token-usage-error {
+  color: var(--yellow);
+}
+.token-usage.token-usage-error:hover {
+  color: var(--yellow);  /* 保持告警色，不被 .token-usage:hover 的 --text-2 削弱 */
+}
+
 /* 紧凑态：低使用时（<60%）隐藏进度条，仅显示图标 + 文字，减少视觉占用 */
 /* 高使用时（≥60%）移除此 class，进度条恢复显示，提供预警价值 */
 .token-usage-compact .token-usage-bar {

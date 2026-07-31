@@ -542,10 +542,21 @@ export class InputAreaManager {
 
       const metrics = dashboard?.metrics;
       if (!metrics?.llm) {
-        this.tokenUsageText.textContent = '--';
+        // 无用量数据 ≠ 未知。providerList 已在上方 Promise.all 取到，
+        // 直接算出上下文窗口，显示「0/窗口」——比模糊的 '--' 更友好、更准确。
+        // '--' 仅保留给下方 catch 的「加载失败」(真正未知) 态。
+        const activeProvider = providerList?.providers?.find(
+          (p) => p.key === providerList?.active,
+        );
+        const contextWindow = activeProvider?.contextWindow ?? InputAreaManager.DEFAULT_CONTEXT_TOKENS;
+        this.tokenUsageText.textContent = `0/${formatTokenCount(contextWindow)}`;
         this.tokenUsageFill.style.width = '0%';
-        // 无数据时使用紧凑态（隐藏进度条，仅显示 '--'）
+        // 无数据时使用紧凑态（隐藏进度条，仅显示「0/窗口」）
         this.tokenUsageEl?.classList.add('token-usage-compact');
+        // 空态清除历史错误标记（与失败态 '--' 区分）
+        this.tokenUsageEl?.classList.remove('token-usage-error');
+        // 空态语义已自明（0/窗口），清除可能残留的旧 tooltip
+        this.tokenUsageEl?.setAttribute('data-tooltip', '');
         return;
       }
 
@@ -588,9 +599,11 @@ export class InputAreaManager {
 
       // hover 时展示输入/输出 token 分解（CSS ::after tooltip，与侧边栏风格统一）
       if (this.tokenUsageEl) {
+        // 成功路径清除历史错误态（防止上一次失败态残留）
+        this.tokenUsageEl.classList.remove('token-usage-error');
         this.tokenUsageEl.setAttribute(
           'data-tooltip',
-          `输入 ${formatTokenCount(totalInputTokens)} / 输出 ${formatTokenCount(totalOutputTokens)} / 上下文窗口 ${windowK}`
+          `输入 ${formatTokenCount(totalInputTokens)} / 输出 ${formatTokenCount(totalOutputTokens)} / 上下文 ${windowK}`
         );
       }
     } catch (error) {
@@ -598,6 +611,9 @@ export class InputAreaManager {
       this.tokenUsageText.textContent = '--';
       // 失败时使用紧凑态（隐藏进度条，仅显示 '--'）
       this.tokenUsageEl?.classList.add('token-usage-compact');
+      // 错误态用 warning 色 + tooltip 区分「无数据」，与 quick-input 三态约定同构
+      this.tokenUsageEl?.classList.add('token-usage-error');
+      this.tokenUsageEl?.setAttribute('data-tooltip', '用量加载失败');
       reportError('InputAreaManager.refreshTokenUsage', error);
     }
   }

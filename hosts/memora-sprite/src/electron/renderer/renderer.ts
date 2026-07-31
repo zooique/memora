@@ -252,6 +252,8 @@ async function bootstrapRenderer(): Promise<void> {
     void memoryController.loadMemoryList();
     void personaController.loadPersonaList();
     void memoryController.loadDashboard();
+    // Agent 就绪后同步刷新 token 用量指示器，避免首屏永远停在 HTML 默认的 '--'
+    void State.uiManager.refreshTokenUsage();
     // 启动摘要（迭代一：Welcome Back Digest）
     void loadStartupSummary();
     setupSilentModeIndicator();
