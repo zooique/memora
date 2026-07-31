@@ -8,12 +8,12 @@
  * - 管理思考阶段指示器（showThinkingPhase）
  * - 管理召回记忆展示（setMemoryRecall，createRecallContainer 已下沉到 MessageBubbleComponent）
  * - 管理错误注入（injectErrorToStreamingMessages）
- * - 管理空状态引导（showEmptyState / hideEmptyState / initEmptyStateListeners / onSuggestionClick）
- * - 管理加载更多按钮（showLoadMore / hideLoadMore）
- * - 管理加载更早日期按钮（showLoadEarlierDay，方案 B 时间流）
+ * - 管理空状态引导（showEmptyState / hideEmptyState 保留；initEmptyStateListeners DOM 绑定下沉到 emptyState.ts）
+ * - 管理加载更多按钮（showLoadMore / hideLoadMore，DOM 构建下沉到 loadMoreControls.ts）
+ * - 管理加载更早日期按钮（showLoadEarlierDay，方案 B 时间流，DOM 构建下沉到 loadMoreControls.ts）
  * - 管理会话异步加载指示器（showSessionLoading / hideSessionLoading，复用 domHelpers 单一真理源）
  * - 管理消息区域清空（clearMessages）
- * - B1：对话区内联里程碑 banner（appendMilestoneBanner，对齐 demo v3）
+ * - B1：对话区内联里程碑 banner（appendMilestoneBanner，DOM 构建下沉到 milestoneBanner.ts 组件）
  *
  * 设计原则：
  * - 遵循 SettingsPanelManager 的组合模式，UIManager 持有实例并委托
@@ -51,9 +51,16 @@ import {
 import { ArchiveButtonManager } from './archiveButtonManager.js';
 // 启动摘要横幅逻辑提取到独立组件（纯展示函数，无状态依赖）
 import { showStartupSummary as renderStartupSummary } from '../components/startupSummaryBanner.js';
+// 里程碑 banner DOM 构建下沉到独立组件（HEAL-17-P4）
+import { createMilestoneBanner } from '../components/milestoneBanner.js';
 // 事件委托逻辑（click/contextmenu/keydown）提取到 helpers
 // 消息操作（regenerate/forget）由 chatPanelEvents 内部调用 messageOperations，本模块不再直接引用
 import { initChatPanelEvents } from '../helpers/chatPanelEvents.js';
+// 加载更多/更早控件 DOM 构建下沉到独立 helper（HEAL-17-P4）
+import { createLoadMoreContainer, createLoadEarlierDayContainer, removeLoadMoreControl } from '../helpers/loadMoreControls.js';
+// 回到底部浮动按钮 / 空状态引导事件绑定下沉到独立 helper（HEAL-17-P4）
+import { initScrollToBottomButton as initScrollToBottomButtonImpl } from '../helpers/scrollToBottomButton.js';
+import { initEmptyStateListeners as initEmptyStateListenersImpl } from '../helpers/emptyState.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { ConfirmDialogOptions, Message, ToastType } from '../types.js';
 
@@ -358,34 +365,9 @@ export class ChatPanelManager {
     this.events.cleanup();
   }
 
-  /**
-   * Phase 2：初始化回到底部浮动按钮
-   *
-   * 监听 messagesEl 的滚动事件，当用户向上滚动超过一屏时显示按钮。
-   * 点击按钮平滑滚动回消息区底部。
-   */
+  /** 回到底部浮动按钮（DOM 构建+事件绑定下沉到 scrollToBottomButton.ts） */
   initScrollToBottomButton(): void {
-    const btn = document.getElementById('scroll-to-bottom-btn');
-    if (!btn) return;
-
-    // 滚动监听：距离底部超过一屏时显示按钮
-    // CHAT-A05 优化：rAF 节流避免高频 scroll 事件触发强制 reflow
-    let scrollRafPending = false;
-    this.events.addEventListener(this.messagesEl, 'scroll', () => {
-      if (scrollRafPending) return;
-      scrollRafPending = true;
-      requestAnimationFrame(() => {
-        scrollRafPending = false;
-        const distanceFromBottom = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight;
-        const shouldShow = distanceFromBottom > this.messagesEl.clientHeight;
-        btn.classList.toggle('hidden', !shouldShow);
-      });
-    }, { passive: true });
-
-    // 点击回到底部
-    this.events.addEventListener(btn, 'click', () => {
-      this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight, behavior: 'smooth' });
-    });
+    initScrollToBottomButtonImpl(this.messagesEl, this.events);
   }
 
   // ─── 消息渲染 ─────────────────────────────────────────
@@ -501,24 +483,12 @@ export class ChatPanelManager {
   }
 
   /**
-   * B1：对话区内联里程碑 banner
+   * B1：对话区内联里程碑 banner（DOM 构建下沉到 milestoneBanner.ts 组件）
    *
    * 对齐 demo v3 `.milestone-banner` 设计：里程碑事件不再走顶部 #proactive-banner，
    * 而是作为对话流中的独立元素内联渲染，与消息同流，记录"对话中达成的成就"。
-   *
-   * DOM 结构：
-   *   <div class="milestone-banner">
-   *     <svg class="milestone-icon">…奖杯图标…</svg>
-   *     <span class="milestone-text">{text}</span>
-   *     <button class="milestone-close" data-action="close-milestone">
-   *       <svg class="icon">…关闭图标…</svg>
-   *     </button>
-   *   </div>
-   *
-   * 设计要点：
-   * - align-self: center 使其居中显示（不与用户/精灵消息对齐到某一侧）
-   * - 不参与消息分组（lastMessageRole 等状态不变）
-   * - 关闭按钮通过事件委托（messagesEl click 监听器，data-action="close-milestone"）
+   * 关闭按钮通过事件委托（data-action="close-milestone"）处理。
+   * 不参与消息分组（lastMessageRole 等状态不变）。
    *
    * @param text 里程碑文本（如"达成里程碑：首次完成 UI 布局重构方案"）
    */
@@ -526,26 +496,8 @@ export class ChatPanelManager {
     // 有内容时隐藏空状态引导
     this.host.hideEmptyState();
 
-    // 构建里程碑 banner DOM
-    const banner = document.createElement('div');
-    banner.className = 'milestone-banner text-truncate';
-    banner.setAttribute('role', 'status');
-    banner.setAttribute('aria-live', 'polite');
-
-    // 奖杯图标（复用 #icon-trophy symbol，与顶部 banner 一致）
-    banner.innerHTML = `
-      <svg class="milestone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><use href="#icon-trophy"/></svg>
-      <span class="milestone-text"></span>
-      <button class="milestone-close" data-action="close-milestone" type="button" aria-label="关闭里程碑提示">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><use href="#icon-close"/></svg>
-      </button>
-    `;
-    // 使用 textContent 设置文本，避免 XSS
-    const textEl = banner.querySelector<HTMLElement>('.milestone-text');
-    if (textEl) textEl.textContent = text;
-
-    // 追加到消息区末尾（不参与分组，作为独立元素）
-    this.messagesEl.appendChild(banner);
+    // DOM 构建下沉到 milestoneBanner.ts（纯展示函数，零行为变更）
+    this.messagesEl.appendChild(createMilestoneBanner(text));
 
     // 滚动到底部，确保用户看到新里程碑
     this.host.scrollToBottom();
@@ -871,12 +823,12 @@ export class ChatPanelManager {
   }
 
   /**
-   * 显示"加载更多"按钮
+   * 显示"加载更多"按钮（DOM 构建下沉到 loadMoreControls.ts，回调经事件委托分发）
    *
    * 在消息区顶部插入加载更多容器，包含按钮和剩余消息数提示。
    *
    * @param remaining 剩余消息数
-   * @param onClick 点击回调
+   * @param onClick 点击回调（由 chatPanelEvents 事件委托经 data-action="load-more" 分发）
    */
   showLoadMore(remaining: number, onClick: () => void): void {
     // 移除旧按钮（避免重复）
@@ -885,38 +837,26 @@ export class ChatPanelManager {
     // 保存回调引用，由构造函数中的事件委托统一处理
     this.loadMoreCallback = onClick;
 
-    const container = document.createElement('div');
-    container.id = 'load-more-container';
-    container.className = 'load-more-container';
-
-    const btn = document.createElement('button');
-    btn.className = 'load-more-btn';
-    btn.textContent = `加载更多消息（剩余 ${remaining} 条）`;
-    // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
-    btn.dataset.action = 'load-more';
-    container.appendChild(btn);
-
-    // 插入到消息区顶部
-    this.messagesEl.insertBefore(container, this.messagesEl.firstChild);
+    // DOM 构建下沉到 loadMoreControls.ts（纯函数，零行为变更）
+    this.messagesEl.insertBefore(createLoadMoreContainer(remaining), this.messagesEl.firstChild);
   }
 
   /**
-   * 隐藏"加载更多"按钮
+   * 隐藏"加载更多/加载更早"容器（DOM 构建下沉到 loadMoreControls.ts）
    *
    * 方案 B：同时适用于"加载更多"和"加载更早的对话"按钮（共用 #load-more-container）。
    */
   hideLoadMore(): void {
-    const existing = this.messagesEl.querySelector('#load-more-container');
-    if (existing) existing.remove();
+    removeLoadMoreControl(this.messagesEl);
   }
 
   /**
-   * 方案 B 显示"加载更早的对话"按钮
+   * 方案 B 显示"加载更早的对话"按钮（DOM 构建下沉到 loadMoreControls.ts）
    *
    * 在消息区顶部插入加载更早日期的容器，点击后加载前一天的对话。
    * 与 showLoadMore 共用 #load-more-container（互斥显示），通过 data-action 区分回调。
    *
-   * @param onClick 点击回调
+   * @param onClick 点击回调（由 chatPanelEvents 事件委托经 data-action="load-earlier-day" 分发）
    */
   showLoadEarlierDay(onClick: () => void): void {
     // 移除旧按钮（避免重复，同时清除可能存在的"加载更多"按钮）
@@ -925,19 +865,8 @@ export class ChatPanelManager {
     // 保存回调引用，由构造函数中的事件委托统一处理
     this.loadEarlierDayCallback = onClick;
 
-    const container = document.createElement('div');
-    container.id = 'load-more-container';
-    container.className = 'load-more-container';
-
-    const btn = document.createElement('button');
-    btn.className = 'load-more-btn';
-    btn.textContent = '加载更早的对话';
-    // 使用 data-action 区分回调（与 load-more 区分）
-    btn.dataset.action = 'load-earlier-day';
-    container.appendChild(btn);
-
-    // 插入到消息区顶部
-    this.messagesEl.insertBefore(container, this.messagesEl.firstChild);
+    // DOM 构建下沉到 loadMoreControls.ts（纯函数，零行为变更）
+    this.messagesEl.insertBefore(createLoadEarlierDayContainer(), this.messagesEl.firstChild);
   }
 
   /**
@@ -1145,24 +1074,13 @@ export class ChatPanelManager {
   // ─── 空状态引导 ─────────────────────────────────────────
 
   /**
-   * 初始化空状态引导的事件监听
+   * 初始化空状态引导的事件监听（DOM 绑定下沉到 emptyState.ts）
    *
    * 点击示例问题按钮时，将问题文本填入输入框并触发发送。
    * 对齐 user_rules "主动可见"：示例问题始终可见，引导新用户快速开始对话。
    */
   initEmptyStateListeners(): void {
-    const emptyState = document.getElementById('chat-empty-state');
-    if (!emptyState) return;
-
-    emptyState.querySelectorAll<HTMLElement>('.suggestion-btn').forEach((btn) => {
-      const suggestion = btn.dataset.suggestion;
-      if (suggestion) {
-        this.events.addEventListener(btn, 'click', () => {
-          // 将示例问题填入输入框并触发发送回调
-          this.suggestionClickCallback?.(suggestion);
-        });
-      }
-    });
+    initEmptyStateListenersImpl(this.events, () => this.suggestionClickCallback);
   }
 
   /** 显示空状态引导（无消息时） */
