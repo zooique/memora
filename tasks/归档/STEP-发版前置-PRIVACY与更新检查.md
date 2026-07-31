@@ -1,7 +1,7 @@
 # STEP 卡片：发版前置（P0-3 更新检查 + P0-5 隐私白皮书）
 
 > 目标：补齐发布 P0 清单里仅剩的两块硬缺口，使「可以发版测试」成立。
-> 关联文档：`发布流程-gitee-20260722.md` §0（P0 清单）、§5（检查更新）、§7（PRIVACY 要点）
+> 关联文档：`../发布流程-gitee-20260722.md` §0（P0 清单）、§5（检查更新）、§7（PRIVACY 要点）
 > 约束红线：**零新增 IPC 通道**（治理阈值 129/130 不变）。更新检查一律走「渲染层锚点 + 主进程 `will-navigate` 拦截」或 `window.electronAPI` 现有桥，**不新增 channels.ts 条目**。
 > 日期：2026-07-23
 > 核验：2026-07-29 主文档 §1/§4/§5 改为「GitHub Releases（独立公开发布仓）」承载 130MB exe + 版本检测（Gitee 私有镜像仓保持 private 防源码泄露；GitHub 单文件 <2GiB 限额对 130MB 充裕、公开仓 /releases/latest 免鉴权）；本卡约束（零新增 IPC、will-navigate 拦截）与实现方式不变，仅占位符改 GitHub 发布页。
@@ -64,7 +64,7 @@ mainWindow.webContents.on('new-window', (e, url) => {
 - [ ] 点击「隐私白皮书」→ 打开 PRIVACY.md
 
 ### STEP-3.4（可延后，非 P0）梯度 B 版本比对
-仅当想「有新版才提示」时做。**参考实现见 `发布流程-gitee-20260722.md` §5 梯度 B**（要点：检测走 GitHub 公开发布仓 `GET /releases/latest`，免鉴权、无需 token/CORS，Node `fetch` 加 `User-Agent` 头；版本用数值比较器而非字符串/`!==`；有新版才 `shell.openExternal(rel.html_url)` 打开发布页；本机客户端版本用 `app.getVersion()`）。
+仅当想「有新版才提示」时做。**参考实现见 `../发布流程-gitee-20260722.md` §5 梯度 B**（要点：检测走 GitHub 公开发布仓 `GET /releases/latest`，免鉴权、无需 token/CORS，Node `fetch` 加 `User-Agent` 头；版本用数值比较器而非字符串/`!==`；有新版才 `shell.openExternal(rel.html_url)` 打开发布页；本机客户端版本用 `app.getVersion()`）。
 > 约束：① 检查在**主进程**用 Node `fetch` 调 GitHub 公开 API（免鉴权、加 `User-Agent`）；② IPC 红线 —— 复用**已有** `ipcRenderer.invoke` 通道触发，**不新增** `channels.ts` 条目。首版不做，避免碰 IPC 阈值。
 
 ---

@@ -44,4 +44,11 @@
 - 内核打进 asar 随客户端冻结，"改内核免重装"对终端用户不成立（仅开发者发版流程成立）。
 - CI 构建在私有镜像仓跑，消耗私有仓 Actions 分钟（Free 2000/月，仅 Windows 余量足）；`RELEASE_TOKEN` 须最小权限、只存 Actions secret。
 - 国内加速备选：COS/OSS/R2 另放 exe 直链作「国内高速下载」（非必须）。
-- 详见 `tasks/发布流程-gitee-20260722.md` §1/§4/§5 + `tasks/STEP-发版前置-PRIVACY与更新检查.md`。
+- 详见 `tasks/发布流程-gitee-20260722.md` §1/§4/§5 + `tasks/归档/STEP-发版前置-PRIVACY与更新检查.md`。
+
+## Git 操作安全红线（2026-07-31 血训）
+- **禁止从 Bash 执行 git 写操作**（`git mv`/`git rm`/`git restore`/`git checkout --`）。Bash 工具运行在 POSIX 沙箱，其文件系统视图与 Windows 真实 FS 不同步——已两度导致 `tasks/` 中 11 个文件被沙箱视为"已删除"，污染 git 索引并触发用户的误报与恐慌。
+- **文件状态以 Read/Glob 工具（Windows API）为准**。Bash `ls` 与 Read/Glob 矛盾时：采信 Read/Glob，立即停止所有 Bash 操作。
+- **git 命令改用 PowerShell**：`Get-ChildItem`/`git mv`/`git rm`/`git status` 等走真实 Windows FS，不经 POSIX 沙箱挂载层。
+- **阶段完成后立即 `git add -A && git commit`**。不攒暂存改动。已提交的 HEAD 才是可恢复锚点；沙箱异常下暂存区不可靠。
+- **不可逆操作前双重核验**：移动/删除文件前，先用 Read/Glob 确认源和目标均存在，不做任何"看起来应该存在"的假设。
