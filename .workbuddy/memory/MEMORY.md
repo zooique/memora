@@ -59,3 +59,18 @@
 - **首屏同步陷阱**：`refreshTokenUsage()` 原本只在 `SPRITE_STREAM_END`（对话结束）触发，导致首屏永远停在 HTML 默认 `--`。必须在 `renderer.ts` 的 `onAgentReadyCallback` 中补一次 `void State.uiManager.refreshTokenUsage()`，否则空态友好化对用户不可见。
 - 用户曾提议 `0/0`，经对抗式审查修正为 `0/窗口`：`0/0` 分母=0 是假事实（上下文窗口是模型固定属性非 0）。吸收用户"用数字替代 `--`"的心智，但忠于项目实际语义。
 - 推回"需状态机设计"类假设：2 分支标签区分属"能去掉中间一层"的情况，加状态机即复杂度倒挂（复杂度守恒）。
+
+## Component 化判别铁律（Phase B 经验，2026-07-31）
+- 规则 `ui-engineering-mindset-rules.md` §四.1：Component = 单根 `this.el` + `new/mount/update/destroy` 四件套的自包含视觉单元；§四.4 中 Manager 持有 Component，**Manager 本身不是 Component**。
+- **仅当**某单元"持有单根 `this.el`（自建或采纳静态容器）+ 自身内部用 `getElementById` 查元素（§四.1 反模式）"时才 Component 化。
+- **默认豁免 / 保留为 Manager**：① 装饰注入元素（如 `BadgeManager` 收 `HTMLElement|null`，零 `getElementById`）；② 跨多面板协调分布式 DOM（如 `PanelErrorBannerManager` 跨 5 面板按 `${panelId}-error` 查找，合法跨切面查找非反模式）；③ 流式引擎（`streamingRenderer` 纯函数 + `Map<msgId,气泡>`，无单根 el、无生命周期）；④ 已按 `ADR-SP-015 §2` 的 `init/cleanup` 生命周期设计的既有 Manager。
+- **计划中的"批量清单"（如"6 个 *Renderer"）是按文件名归纳的启发式，须逐个对抗式核实架构角色**，不可盲套同一模板。类名含 `Manager` 且无单根 el → §四.4 Manager，默认不转。
+- 转换陷阱：判别联合 `update({report})` 调用方必须补 `report` 包裹层；Renderer→Component 的 `mount` 按 id 选元素用 `document.querySelector`（带 `#`），勿混 `getElementById`；测试 fixture 须完整镜像静态容器 class 集合（组件采纳现有元素不增删类）。
+
+## 声明式工厂前提核实铁律（Phase C 经验，2026-07-31）
+- 规则 §四.2「≥3 相似即抽工厂」的触发条件是**结构真实相似**，非文件名相似。抽工厂前须逐个读真实文件核实：是否真有 ≥3 个面板共享同一结构（list+search+detail 之类）。
+- **已抽进 helper 的共性（空/错/刷新/loading 等）不应重复计入"待抽工厂"的重复量**——它们已被 errorState/domHelpers/buttonHelpers 收口，剩余差异往往是真且小的，再抽一层收益有限却会冲击既有测试。
+- 若仅 1/N 满足完整结构（如本仓库 memory 独享 list+search+detail，其余 audit/profile/work 是扁平列表且共性已 helper 化），应**收窄为薄工厂**（覆盖真正相似的子集，配 `customRender` 逃生舱）或判定**不抽**（防 God Object），而非把异类强行纳入致 `customRender` 架空工厂。
+- 工厂配置须用**真实数据形态**（如本仓库 load 返回数组，非报告的 `{items,total}` 草拟）——草拟接口须据实修正，不可盲套文档。
+- **列表工厂接纳硬判据（已据实收敛）**：仅接纳「单容器 + 单 load 返回 `T[]` + 单计数」面板。**双列表**（无外层包裹、各自 count+交互按钮）、**IPC 返回 `{entries}`**、**单 fetch 分多组** 任一出现即异类排除——强行纳入需为单消费者撑大契约（双 count id/分组渲染/wrapper）→ God Object。本仓库最终：audit（试点）+ work（`customRender` 行内展开+空态 hint）接入；profile（双列表+`{entries}`）、memory（list+search+detail）排除。
+- `customRender` 逃生舱设计：**必须注入行级 EventTracker** 让行交互监听随每次渲染重建前清理、`destroy` 时随工厂清理（否则跨刷新累积泄漏/架空工厂）；`_renderItems` 须把 `customRender` 判断**提前到空态之前**（customRender 接管整段含空态），`renderRow` 随之改可选。

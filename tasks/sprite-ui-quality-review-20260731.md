@@ -362,5 +362,141 @@ interface ListPanelConfig<T> {
 - `tsc -p tsconfig.electron.json --noEmit`：0 错（无改动，基线保持）。
 - `eslint`：0 错（无改动）。
 
-#### 9.9.5 卡点
-- 同 §9.3/§9.8.3：`git` 视图仍乱码（sandbox 错位），**未 commit**。真实改动（前 5 个组件 + 本报告）均已落盘（Windows API 可读）。
+#### 9.9.5 卡点（已解除）
+- 原 §9.3/§9.8.3 的 `git` 视图乱码（sandbox 错位）**已解除**：用户手动 commit，前 5 个组件 + 本报告均已落盘；后续不再受 git 红线阻塞。
+
+---
+
+### 9.10 可选最小面板 `badgeManager` / `panelErrorBannerManager`：对抗式评估 → **保留为 Manager，不予 Component 化**
+
+> Phase B 原计划标注二者为"可选最小面板"。本轮先读真实文件（而非套用计划），判定二者均属 §四.4 意义上的 **Manager**（持有/协调 DOM，而非被持有的单根 Component）。强行 Component 化违反复杂度守恒与 Manager/Component 边界，故**保留现状、零改动**。
+
+#### 9.10.1 事实核查（读真实文件，不靠记忆）
+- `panels/badgeManager.ts`：`export class BadgeManager`，`constructor(private badge: HTMLElement | null)`——**接收注入的既有元素**（非自建根 el）；`updateBadge/clear/setCount` 仅 `textContent` + `classList.toggle('visible')`；**零 `getElementById`**；`cleanup()` 空实现（无监听器）。注释自述"纯 DOM 渲染，不持有业务状态"、"与 UIManager 其他子管理器同模式"。
+- `panels/panelErrorBannerManager.ts`：`export class PanelErrorBannerManager`，`init()` 为 5 个面板（`settings/memory/chat/dashboard/perception`）的 `${panelId}-error-retry` 绑 click（经 `EventTracker`）；`showPanelError(panelId,message,retry?)`/`hidePanelError(panelId)` 用 `getElementById(\`${panelId}-error\`)` 与 `${panelId}-error-msg`；`cleanup()` 清 `events` + `retryCallbacks`。**无单根 `this.el`**，管理的是**跨 5 个面板分布的横幅集合**。
+- 持有方：`ui.ts:292` `this.badgeManager = new BadgeManager(this.coreElements.badge)`；`ui.ts:365` `this.panelErrorBannerManager = new PanelErrorBannerManager()`（`:410 init()`、`:483 cleanup()`）。调用方 `settingsModalDelegations.ts:95-104` 用 `showPanelError(panelId,message,retryCallback)` / `hidePanelError(panelId)` 语义——**非单 `update(options)` 签名**。
+- 在册契约：BadgeManager 注释引用 `ADR-SP-015 §2 生命周期契约`——项目已建立**独立于 Component 的 Manager 生命周期（init/cleanup）**，与 Component 的 `mount/update/destroy` 并存。
+
+#### 9.10.2 第一性原理判定（为何不转换）
+1. **二者均无单根 `this.el`，是 §四.4 的 Manager 而非 Component**：
+   - BadgeManager **装饰注入元素**（不创建 DOM），是"管理器持有/操作一个既有元素"——正是 §四.4 描述的 Manager 角色。
+   - PanelErrorBannerManager **跨 5 个面板协调分布式横幅**——一个 Component 无法表达"管理 N 个根"，其 `getElementById` 是**合法的跨面板按动态 id 查找**（查各面板自有 DOM），**非 §四.1 反模式**（反模式是"查自身内部元素"）。
+2. **复杂度守恒**：两文件均极小、已正确、BadgeManager 零反模式。套 Component 需 fabricate 空壳 `mount` + 改 `showPanelError(panelId,...)` 为 `update({type:'show',panelId,...})`，**制造零收益抽象、多故障面、强制改动 6+ 调用点**（`ui.ts`/`settingsModalDelegations.ts`/测试 mock 语义）。
+3. **违反既有 Manager 契约**：二者已按 `ADR-SP-015 §2` 的 `init/cleanup` 设计，与 Component 的 `mount/update/destroy` 是**两套并存的契约**。强行统一会破坏项目刻意保留的 Manager 分层。
+
+#### 9.10.3 决策矩阵（可复用判别法）
+| 维度 | 应 Component 化 | 应保留 Manager / 豁免 |
+|---|---|---|
+| 是否持有单根 `this.el`（自建或采纳） | 是 | 否（装饰注入元素 / 跨多面板分布） |
+| §四.1 反模式（getElementById 查自身内部元素） | 有 → 改造消除 | 无，或仅为合法跨面板/跨切面查找 |
+| 语义 | 自包含视觉单元，状态→增量渲染 | 跨切面协调器 / 既有元素装饰器 |
+| 已有契约 | 未 Component 化 | 已按 Manager(init/cleanup) 设计 |
+
+→ **判别铁律**：类名含 `Manager` 且**无单根 el** 者（badge / panelErrorBanner / streaming 的协调本质），属 §四.4 Manager 角色，**默认不 Component 化**；仅当确有"单根视觉单元 + 自身内部元素反模式"时才转。Phase B"6 个 `*Renderer`"是按文件名归纳的启发式，须逐个核实架构角色。
+
+#### 9.10.4 结论与验证
+- **结论**：`badgeManager` 与 `panelErrorBannerManager` **不予 Component 化，保留为 Manager，零改动**。Phase B 至此完整闭环——5 个面板 `*Renderer`→Component（含 llmGovernance 单事件委托升级 + 修复泄漏），`streamingRenderer` 流式引擎豁免，2 个可选 `Manager` 评审后保留。
+- **验证**：零代码改动，基线保持——`tsc`/`eslint` 0 错；`uiDelegations.test.ts`（含 `panelErrorBannerManager` 委托断言）、`panelErrorBannerManager.test.ts`、badge 相关调用面均已存在且无需改动。
+- **卡点解除**：用户已手动 commit，git 视图错位不再阻塞；前 5 个组件 + 本报告 §9.1–§9.10 已随用户提交落盘。
+
+---
+
+### 9.11 Phase C 前提对抗式核查 → 原「ListPanel/DetailPanel 工厂」计划**过度泛化，须收窄**
+
+> 用户指令「继续 Phase C」。按第一性原理 + 对抗式审查，**先验证计划前提再执行**——而非盲套 §4.3/§5 的"四面板共享 list+detail"假设。
+
+#### 9.11.1 核查事实（读真实文件，不靠记忆）
+- `auditPanelManager.ts`(236) / `profilePanelManager.ts`(326) / `workProjectionPanelManager.ts`(281)：三者均为**扁平列表**，**无 search、无 detail 模态**；空态/错误态/刷新已分别抽入 `domHelpers.createEmptyState` / `errorState.renderErrorState` / `buttonHelpers.bindRefreshButton`（helper 已收口共性脚手架）。差异点在行 schema（`.audit-item`/`.profile-card`/`.work-projection-card`）、双列表(pending/confirmed)、行内展开、特殊动作（audit clear、profile 确认/拒绝、work 展开）。
+- `memoryPanelManager.ts`(1506)：**唯一具备 list+search+detail(分页+模态)**，且错误态走自有 `#memory-error` 横幅（**不走 renderErrorState**）、分页+缓存+委托 helper+timeline/graph/分析/回收站/治理多职责。与另 3 个**结构根本不同**。
+- 测试面：audit 有 328 行测试断言 `.audit-item` 选择器与 clear 二次确认流程；memory 有 Instance/Views/Events 三套大测试；profile/work 无测试（无安全网）。
+
+#### 9.11.2 第一性原理判定
+1. **「≥3 面板共享 list+search+detail」假设不成立**：4 个里仅 memory 满足；另 3 个是扁平列表，且真正共性（load/空/错/刷新）**已被 helper 抽走**。剩余重复仅为结构性样板（getElementById/计数/接线），体小低频。
+2. **完整 ListPanel/DetailPanel 工厂属过度抽象**：若按 §4.3 `ListPanelConfig<T>`（含 columns/search/detailRender/load→{items,total}）接入，memory 一个面板就需 `customRender` 逃生舱承载分页+委托详情+回收站+治理——等于架空工厂，违反 §四.2 DON'T「不要让工厂变成 God Object」。
+3. **真实可抽的命题更窄**：仅 audit/profile/work 三个**扁平列表**可抽一个薄"FlatListPanel"工厂（rootId/listContainerId/countElId?/refreshBtnId?/load/renderRow/emptyText/errorText + `customRender` 逃生舱）。但收益有限（脚手架已 helper 化），且 audit 现有测试会因选择器/流程变动受影响。
+
+#### 9.11.3 待决（用户拍板，不盲执行）
+- **路径 A**：抽薄 `FlatListPanel` 工厂，仅覆盖 audit/profile/work，先用 audit 做 PoC（有测试可验），再决定是否推广。——**收窄、有界、对抗式可行**。
+- **路径 B**：**不抽工厂**。理由：共性脚手架已 helper 化，剩余差异真且小；抽薄工厂收益有限却冲击 audit 现有测试（违反复杂度守恒 + §四.2「不要为过度抽象抽工厂」）。Phase C 结论改写为"经核查，完整工厂过度抽象、薄工厂收益不足，故不重构，仅文档化此判定"。
+- **路径 C（不推荐）**：按原 §4.3 完整工厂接入四面板，memory 走 `customRender`。—— 已知会架空工厂、高风险改 memory 大测试，违反 §四.2，建议否决。
+
+> 方法论沉淀：声明式工厂前必须核实"≥3 相似"是否**结构真实**（文件名相似 ≠ 结构相似）；已抽进 helper 的共性不应重复计入"待抽工厂"的重复量。此判据已并入 MEMORY.md「Component 化判别铁律」的姊妹原则。
+
+---
+
+### 9.12 执行记录（Phase C 试点 · FlatListPanel 工厂 + audit 接入，2026-07-31）
+
+> 用户选路径 A：抽薄 `FlatListPanel` 工厂，audit 先试点。先建工厂，再把 audit 接入，跑通质量门。
+
+#### 9.12.1 改动清单
+- **`components/flatListPanel.ts`（新建）**：`FlatListPanel<T> extends Component<FlatListPanelOptions<T>>` 声明式工厂（§四.2）。
+  - 采纳 `index.html` 静态列表容器为 `this.el`（与 Phase B 同"采纳静态容器"变体）；`destroy()` 先置 `this.el=null` 不误删共享容器。
+  - 共性入工厂：容器采纳 + 计数更新（`countElId`）+ 刷新绑定（`bindRefreshButton` 经 `trackEvent` 收集）+ 空态（`createEmptyState`）+ 错误态（`renderErrorState` 含重试→`load`）+ 事件清理（`destroy` 经 `trackEvent`）。
+  - 差异收敛为配置：`listContainerId / countElId? / refreshBtnId? / load:()=>Promise<T[]> / renderRow / emptyText / errorText? / customRender?`（逃生舱，供 profile 双列表 / work 行内展开）。
+  - 采用**真实数组 load 形态**（对齐 audit/profile/work IPC），非报告 §4.3 草拟的 `{items,total}`——后者是过度泛化，已据实修正。
+- **`panels/auditPanelManager.ts`（重写）**：列表/计数/空/错/刷新下沉到 `FlatListPanel`；audit 特有"清空 + 二次确认"保留在 Manager 层（`clearBtn` 经 `EventTracker`，`cleanup` 调 `listPanel.destroy()`）。`buildRow`/`getTypeSymbol` 作为审计专属行结构注入 `renderRow`。公开 API（init / setClearAuditLogCallback / load / cleanup）零签名变更。
+- **`components/index.ts`**：新增「声明式列表工厂（Phase C）」段，导出 `FlatListPanel` + `FlatListPanelOptions`（§四.3 统一入口）。
+
+#### 9.12.2 验证（本地可执行质量门，全部通过）
+| 质量门 | 结果 |
+|---|---|
+| `tsc -p tsconfig.electron.json --noEmit` | 0 错（含修 TS6133 `_items` 未用、TS2345 handler 需 `Promise<void>`） |
+| `eslint`（改文件） | 0 错 |
+| `auditPanelManager.test.ts` | **24/24**（`.audit-item` 结构 / 计数 / 5 图标映射 / `?` 降级 / 元信息拼接 / XSS / 空态`暂无审计记录` / 错误态`加载失败`·`清空审计日志失败` / 幂等 / cleanup 解绑 全部保持） |
+
+#### 9.12.3 对抗式核实（零回归依据）
+- grep 全 renderer：除测试外仅 `ui.ts`（构造）、`memoryCoordinator.ts`（type）、`settingsOrchestrator.ts`（注释）引用 `AuditPanelManager`；**无代码调用被移除的私有 `render`/`listEl`**，公开 API 签名未变 → 无外部破坏。
+- `index.html` 静态容器 `#audit-list`/`#audit-count`/`#btn-audit-refresh`/`#btn-audit-clear` 均存在，与工厂配置 id 完全对齐。
+
+#### 9.12.4 下一步
+- 路径 A 剩余：profile / work 接入 `FlatListPanel`（profile 双列表→`customRender`；work 行内展开→`customRender`）。二者**无测试**（profile/work），接入需补最小测试或静态核实。
+- memory 维持排除（异类，不纳入本工厂）。
+- 卡点解除：git 已解除（用户手动提交），本次改动可随时落 commit（建议 `refactor(sprite): 抽 FlatListPanel 工厂并接入审计面板`）。
+
+---
+
+## 9.13 Phase C · #2 work 接入 FlatListPanel（customRender）
+
+### 9.13.1 前提对抗式核实（work 是真单列表）
+- 读真实文件 + index.html：`workProjectionPanelManager` 的 IPC `listWorkProjections` **直接返回数组 T[]**（非 `{entries}`），与工厂 `load:()=>Promise<T[]>` 契约**精确匹配**。
+- DOM 结构（index.html:1020-1029）：`work-projection-list`（单容器）+ `work-projection-count`（单计数）+ `btn-work-projection-refresh`（单刷新）→ 与 audit **同构**，是真单列表。差异仅在行布局（卡片 + 行内展开 + 空态引导 hint）→ 适合 `customRender` 逃生舱。
+
+### 9.13.2 改动
+- `panels/workProjectionPanelManager.ts` 重写：列表/计数/刷新/空/错/销毁下沉 `FlatListPanel`；行内展开 + 空态引导 hint 经 `customRender` 接管整段渲染。公开 API（`init`/`load`/`cleanup`）**零签名变更**；保留 `showPanelLoading`（load 前经 `getElement()` 调，对齐原 UX）。
+- 工厂扩展（使 `customRender` 不架空工厂，落实 §四.2）：
+  - 新增 `_rowEvents` 行级追踪器；`customRender` 签名增第三参 `rowEvents: EventTracker` 注入，使行级交互（展开按钮）经其绑定，随每次 `_renderItems` 重建前清理、destroy 时随工厂清理（防跨刷新监听累积泄漏）。
+  - `_renderItems` 把 `customRender` 判断**提前到空态前** —— customRender 接管整段渲染（含空态 hint），消除"空态被默认分支覆盖"的初版缺陷。
+  - `renderError` 改用 `_rowEvents`（重试按钮随渲染重生，区别于 mount-once 的 `_events` 刷新按钮）。
+  - `renderRow` 改为**可选**（customRender 路径不必填）；默认分支加守卫 + 局部捕获，规避闭包内 TS 收窄失效（TS2722）。
+
+### 9.13.3 验证（全部通过）
+| 质量门 | 结果 |
+|---|---|
+| `tsc -p tsconfig.electron.json --noEmit` | 0 错 |
+| `eslint . --ext .ts`（全量） | 0 错 |
+| `workProjectionPanelManager.test.ts` | **24/24**（图标映射 / 文件名 / 概要 / 结构·决策 / XSS / 展开折叠 / cleanup 回调解绑全保持） |
+| 全 renderer 测试 `src/__tests__/electron/renderer/` | **2390/2390**（68 文件，零回归） |
+
+### 9.13.4 踩坑
+- 初版 `_renderItems` 空态分支在 `customRender` 前 `return` → work 空态 hint 丢失（测试 `空数组应显示…引导文字` 失败）→ 将 `customRender` 判断提前。
+- `renderRow` 误设必填 → work 缺 `renderRow` 编译失败（TS2345）→ 改可选 + 默认分支守卫 + `const renderRow = this.options.renderRow` 局部捕获（闭包内收窄失效 TS2722）。
+- 完整 `vitest run` 被 Bash 默认 120s 超时杀（e2e 单文件 28s），**非测试失败**；renderer 目录 2390 全过佐证零回归。
+
+---
+
+## 9.14 Phase C · #3 profile 对抗式排除（异类，与 memory 同级）
+
+### 9.14.1 事实（DOM + IPC 双核实）
+- index.html:1044-1057：`profile-pending-list` / `profile-confirmed-list` 是**两个并列容器**（各自 count + 交互按钮），**无外层包裹**；刷新 `btn-profile-refresh` 在两组之上。
+- `profilePanelManager.load()` 单次 fetch `listUserProfile` 返回 **`{entries}`**（非 T[]），按 `confirmed` 分组后渲染到两处。
+
+### 9.14.2 三重不匹配（硬排除证据）
+1. **双容器** vs 工厂单 `this.el`：强行纳入需为单消费者撑出"双 count id + 分组渲染 + wrapper"。
+2. **IPC 返回 `{entries}`** vs 工厂 `load:()=>Promise<T[]>` 契约：profile 形状与 audit/work 根本不同。
+3. **单 fetch 分两组** vs 工厂"单 load 单渲染"：若拆两个 FlatListPanel 会**重复 IPC fetch**（浪费且刷新按钮仅一个）。
+- 综合：为单消费者撑大工厂契约 → 违反 §四.2「不要让工厂变成 God Object」，正是"customRender 架空工厂"的反模式。
+
+### 9.14.3 结论与判别铁律补充
+- **profile 维持排除**，与 memory 同级（异类不强行纳入）。其双列表 + 确认/拒绝/删除交互已遵循 Manager + helper 良好结构，无需改造。
+- 判别铁律（已写入 MEMORY.md）：声明式列表工厂**仅接纳「单容器 + 单 load 返回 T[] + 单计数」面板**；遇 双列表 / `{entries}` 返回 / 无外层包裹 → **异类排除**，不可为单消费者撑大契约。
+- Phase C 收口：audit（试点）+ work（customRender）已接入；profile、memory 排除；工厂契约最小可行、未被撑大。

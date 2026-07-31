@@ -44,6 +44,12 @@ export type { PartnerInsightsOptions } from '../panels/partnerInsightsRenderer.j
 export { LlmGovernanceResultComponent } from '../panels/llmGovernanceResultRenderer.js';
 export type { LlmGovernanceOptions, LlmGovernanceReport } from '../panels/llmGovernanceResultRenderer.js';
 
+/* ========== 声明式列表工厂（Phase C） ========== */
+// FlatListPanel：扁平列表声明式工厂（§四.2），覆盖 audit/profile/work 三个结构相似面板。
+// 物理文件位于 components/（本就是新建的通用组件，非 panel 重命名），经本入口统一导出。
+export { FlatListPanel } from './flatListPanel.js';
+export type { FlatListPanelOptions } from './flatListPanel.js';
+
 /* ========== 表单组件 ========== */
 // 待后续 Phase 填充
 
