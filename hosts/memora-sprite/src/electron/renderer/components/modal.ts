@@ -14,7 +14,6 @@
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
-import { getOptionalElement } from '../helpers/domHelpers.js';
 import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 import type { ConfirmDialogOptions } from '../types.js';
 
@@ -222,11 +221,17 @@ export class ModalManager {
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     return new Promise((resolve) => {
       const modal = document.getElementById('confirm-modal');
-      const titleEl = document.getElementById('confirm-title');
-      const messageEl = document.getElementById('confirm-message');
-      const btnOk = document.getElementById('btn-confirm-ok');
-      const btnCancel = document.getElementById('btn-confirm-cancel');
-      if (!modal || !titleEl || !messageEl || !btnOk || !btnCancel) {
+      if (!modal) {
+        // 模态根缺失时回退为 window.confirm（防御性编程）
+        resolve(window.confirm(options.message));
+        return;
+      }
+      // 内部元素相对模态根查找（不再全局 getElementById），收敛 DOM 耦合（§四.1）
+      const titleEl = modal.querySelector<HTMLElement>('#confirm-title');
+      const messageEl = modal.querySelector<HTMLElement>('#confirm-message');
+      const btnOk = modal.querySelector<HTMLButtonElement>('#btn-confirm-ok');
+      const btnCancel = modal.querySelector<HTMLButtonElement>('#btn-confirm-cancel');
+      if (!titleEl || !messageEl || !btnOk || !btnCancel) {
         // 元素缺失时回退为 window.confirm（防御性编程）
         resolve(window.confirm(options.message));
         return;
@@ -462,14 +467,21 @@ export class ModalManager {
   }): Promise<string | null> {
     return new Promise((resolve) => {
       const modal = document.getElementById('prompt-modal');
-      const titleEl = document.getElementById('prompt-title');
-      const messageEl = document.getElementById('prompt-message');
-      const inputEl = getOptionalElement('prompt-input', 'input');
+      if (!modal) {
+        // 模态根缺失时回退为 window.prompt（防御性编程）
+        const fallback = window.prompt(options.message, options.defaultValue ?? '');
+        resolve(fallback?.trim() || null);
+        return;
+      }
+      // 内部元素相对模态根查找（不再全局 getElementById），收敛 DOM 耦合（§四.1）
+      const titleEl = modal.querySelector<HTMLElement>('#prompt-title');
+      const messageEl = modal.querySelector<HTMLElement>('#prompt-message');
+      const inputEl = modal.querySelector<HTMLInputElement>('#prompt-input');
       // 错误容器存在性检查（实际读写由 formValidation.ts 公共函数完成）
-      const errorElExists = document.getElementById('prompt-input-error') !== null;
-      const btnOk = document.getElementById('btn-prompt-ok');
-      const btnCancel = document.getElementById('btn-prompt-cancel');
-      if (!modal || !titleEl || !messageEl || !inputEl || !errorElExists || !btnOk || !btnCancel) {
+      const errorElExists = modal.querySelector('#prompt-input-error') !== null;
+      const btnOk = modal.querySelector<HTMLButtonElement>('#btn-prompt-ok');
+      const btnCancel = modal.querySelector<HTMLButtonElement>('#btn-prompt-cancel');
+      if (!titleEl || !messageEl || !inputEl || !errorElExists || !btnOk || !btnCancel) {
         // 元素缺失时回退为 window.prompt（防御性编程）
         const fallback = window.prompt(options.message, options.defaultValue ?? '');
         resolve(fallback?.trim() || null);

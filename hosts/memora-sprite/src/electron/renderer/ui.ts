@@ -148,22 +148,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onboardingManager = new OnboardingManager(new EventTracker());
   /** 主题管理器（独立管理主题切换和持久化） */
   themeManager = new ThemeManager();
-  /** 主动提示横幅管理器（独立管理横幅按钮事件），已移入 ChatCoordinator（HEAL-16） */
-  // proactiveBanner 见 this.chatCoordinator.proactiveBanner
-  /** 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式），已移入 ChatCoordinator（HEAL-16） */
-  // suggestionCard 见 this.chatCoordinator.suggestionCard
-  /** 用户画像面板管理器，已移入 MemoryCoordinator（HEAL-16） */
-  // profilePanel 见 this.memoryCoordinator.profilePanel
-  /** 作品投影面板管理器，已移入 MemoryCoordinator（HEAL-16） */
-  // workProjectionPanel 见 this.memoryCoordinator.workProjectionPanel
-  /** 审计日志面板管理器，已移入 MemoryCoordinator（HEAL-16） */
-  // auditPanel 见 this.memoryCoordinator.auditPanel
-  /** 设置面板管理器，已移入 SettingsCoordinator（HEAL-16） */
-  // settingsPanelManager 见 this.settingsCoordinator.settingsPanelManager
-  /** 精灵设定面板管理器，已移入 SettingsCoordinator（HEAL-16） */
-  // settingsManagerPanel 见 this.settingsCoordinator.settingsManagerPanel
-  /** 缓存当前 SpriteConfig，已移入 SettingsCoordinator（HEAL-16） */
-  // currentConfig 见 this.settingsCoordinator.currentConfig
 
   // ─── 面板管理器（聊天/记忆/角色/会话） ──
   /**
@@ -253,9 +237,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   badgeManager: BadgeManager;
   /** 滚动控制器（消息列表滚动 + rAF 节流） */
   scrollController: ScrollController;
-  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver），已移入 ChatCoordinator（HEAL-16） */
-  // inputAreaManager 见 this.chatCoordinator.inputAreaManager
-
   // ─── 核心交互元素容器（MIND2-D2：7 个 private DOM 字段提取为单一容器） ──
   // 纯状态容器（progressive-refactor-rules §4 模式 A），不持有业务逻辑
   // 字段分类：必需元素（messagesEl/inputEl/btnSend/btnStop）+ 可选元素（badge/btnMaximize/chatAgentStatusEl）
@@ -272,8 +253,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     hasProviders: false,
   };
 
-  /** 活跃的流式消息映射（messageId → DOM 元素），已移入 ChatCoordinator（HEAL-16） */
-  // streamingMessages 见 this.chatCoordinator.streamingMessages
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
 
