@@ -223,14 +223,14 @@ export class ClipboardManager { ... }
      采用三重保护方案（被动检测变化 + 主动触发读取 + 用户确认写入），
      仅在用户主动操作（复制/粘贴）时触发，且写入需用户显式确认。
 
-## 8. 能力扩展
+## 7. 能力扩展
 
-> **自然生长原则**（[ADR-017](../decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）遵循 2 次提取原则。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
+> **自然生长原则**（[ADR-017](../decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）中，**领域原语**（满足"领域动词 √ + 接口稳定 √ + 独立语义 √"三项判定标准）在设计期即提取，**技术性偶然相似**等 2+ 处重复再提取。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
 > **触发条件**：识别到"内核机制已建、宿主尚未接入"的能力缺口时，按架构层原则评估归属后接入，不闭门造接口。
 
-### 8.1 工具注册（`agent.tools.registerTool`）
+### 7.1 工具注册（`agent.tools.registerTool`）
 
-**抽取阈值**：领域原语 / 明确复用在**设计期即提取**通用 helper；出现 2+ 处重复作为"该抽却漏抽"的回溯补抽信号（ADR-017 Scenario A：新代码设计期抽取）。
+**抽取阈值**：领域原语 / 明确复用在**设计期即提取**通用 helper；出现 2+ 处重复作为"该抽却漏抽"的回溯补抽信号（ADR-017 Scenario A：新代码设计期抽取）。领域原语的判定标准（三项同时满足）详见 [coding-convention-rules.md §3 的 AI 编程范式补充](./coding-convention-rules.md)——领域动词测试 √ + 接口稳定性测试 √ + 独立语义测试 √。
 
 **当前实现**（[hosts/memora-sprite/src/sprite/tools.ts](../../hosts/memora-sprite/src/sprite/tools.ts)）：
 
@@ -243,7 +243,7 @@ export class ClipboardManager { ... }
 - 当工具数 ≥ 3 时，提取 `registerDefaultTools(agent)` helper
 - 当 ≥ 5 时，提取工具配置 schema + 启用/禁用开关
 
-### 8.2 事件订阅（L5 补全）
+### 7.2 事件订阅（L5 补全）
 
 **设计原则**：
 
@@ -257,12 +257,12 @@ export class ClipboardManager { ... }
 - 4 个 handler 集中定义在文件顶部
 - `onSpriteEvent` 统一入口 + type 分发（避免重复监听器）
 
-### 8.3 多 Provider 路由
+### 7.3 多 Provider 路由
 
 **配置入口**：`ConfigSchema.llm.background`（独立块，温度 0.5 默认）。  
 **路由策略**：`AgentOptions.backgroundProvider` 注入独立 LlmProvider 实例，workProjection / autoConfigRefiner 直接调用 `backgroundProvider.chat()`，不通过 `ChatOptions` 字段路由。
 
-### 8.4 写入确认闭环
+### 7.4 写入确认闭环
 
 **数据流**：
 
