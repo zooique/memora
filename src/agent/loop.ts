@@ -101,6 +101,21 @@ interface LlmCallResult {
   aborted: boolean;
 }
 
+/** AgentLoop 运行时指标纯状态容器（progressive-refactor §2.1 模式 A） */
+class LoopMetrics {
+  llmCallCount = 0;
+  totalInputTokens = 0;
+  totalOutputTokens = 0;
+  recallTotalCount = 0;
+  recallHitCount = 0;
+  toolCallCount = 0;
+  toolFailureCount = 0;
+
+  get hitRate(): number {
+    return this.recallTotalCount > 0 ? this.recallHitCount / this.recallTotalCount : 0;
+  }
+}
+
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -129,24 +144,8 @@ export class AgentLoop {
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
   private readonly contextManager: ContextManager;
 
-  // ─── 运行时指标统计字段 ──────────────────────────
-  // 累计值，从 AgentLoop 构造起累加，供 getMetrics() 返回快照。
-  // 设计为私有字段而非外部注入，保持 AgentLoop 自洽。
-
-  /** LLM 调用总次数（含重试，每次 provider.chat 调用 +1） */
-  private metricLlmCallCount: number = 0;
-  /** 累计输入 token 数（基于 estimateTokens 粗略估算） */
-  private metricTotalInputTokens: number = 0;
-  /** 累计输出 token 数（基于 estimateTokens 粗略估算） */
-  private metricTotalOutputTokens: number = 0;
-  /** 记忆召回总次数（每轮 processUserInput +1） */
-  private metricRecallTotalCount: number = 0;
-  /** 记忆召回命中次数（召回结果非空 +1） */
-  private metricRecallHitCount: number = 0;
-  /** 工具调用总次数 */
-  private metricToolCallCount: number = 0;
-  /** 工具调用失败次数（结果以 [ERR 开头） */
-  private metricToolFailureCount: number = 0;
+  // ─── 运行时指标统计 ──────────────────────────────
+  private metrics = new LoopMetrics();
   // metricTruncationCount 已移至 ContextManager.truncationCount
 
   constructor(private readonly opts: AgentLoopOptions) {
@@ -273,37 +272,8 @@ export class AgentLoop {
     userInput: string,
     recalledMemories: readonly Memory[] | undefined,
   ): AsyncGenerator<AgentChunk, boolean, unknown> {
-    // 注入记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
-    const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
-      recallCount: recalledMemories?.length ?? 0,
-    });
-    // 将召回记忆以 system 消息注入（优先级高、不污染 user 输入）
-    if (recalledMemories?.length) {
-      this.injectRecallAsSystem(recalledMemories);
-    }
-    // 补充 span 属性：让宿主监控面板能按命中/未命中过滤
-    recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
-    recallSpan.end();
-
-    // 召回命中率统计：每轮对话算一次召回，结果非空算命中
-    this.metricRecallTotalCount++;
-    if (recalledMemories && recalledMemories.length > 0) {
-      this.metricRecallHitCount++;
-    }
-
-    // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
-    // 暴露 id/name/score/source 摘要，不泄露完整 content
-    if (recalledMemories?.length) {
-      yield {
-        type: 'recall',
-        memories: recalledMemories.map((m) => ({
-          id: m.id,
-          name: m.name,
-          score: m.score,
-          source: m.source,
-        })),
-      };
-    }
+    // 注入记忆召回结果 + 统计 + 透明度通知（提取到 _injectRecall，编码约定 §6）
+    yield* this._injectRecall(recalledMemories);
 
     // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
     // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
@@ -569,36 +539,10 @@ export class AgentLoop {
       }
 
       if (attempt > 0) {
-        // 仅在流式输出前失败时重试（streamStarted = false）
-        const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-        logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
-        // 发射 retry chunk：让宿主 UI 显示"网络波动，重试中 N/M..."，消除 3 秒静默
-        yield {
-          type: 'retry',
-          attempt,
-          maxRetries: LOOP_CONSTANTS.MAX_LLM_RETRIES,
-          delayMs: delay,
-          error: lastError?.message ?? 'unknown error',
-        };
-        // 重试延迟期间支持 abort：用 Promise.race 替代单纯的 setTimeout
-        await new Promise<void>((resolve) => {
-          if (signal?.aborted) {
-            resolve();
-            return;
-          }
-          const timeoutId = safeSetTimeout(() => {
-            signal?.removeEventListener('abort', onAbort);
-            resolve();
-          }, delay);
-          const onAbort = () => {
-            clearTimeout(timeoutId);
-            resolve();
-          };
-          signal?.addEventListener('abort', onAbort, { once: true });
-        });
+        yield* this._waitForRetryWithAbort(attempt, lastError, signal);
+        // Reset streaming state after retry delay
         fullContent = '';
         toolCalls = undefined;
-        // 延迟后再次检查 abort
         if (signal?.aborted) {
           aborted = true;
           break;
@@ -607,8 +551,8 @@ export class AgentLoop {
 
       try {
         // LLM 指标统计：每次 provider.chat 调用 +1，输入 token 累计
-        this.metricLlmCallCount++;
-        this.metricTotalInputTokens += this.contextManager.estimateTokens(safeMessages);
+        this.metrics.llmCallCount++;
+        this.metrics.totalInputTokens += this.contextManager.estimateTokens(safeMessages);
 
         // safeMessages 为 readonly Message[]，provider.chat 期望 Message[]；
         // 通过浅拷贝转换为可变数组，避免类型断言。
@@ -627,7 +571,7 @@ export class AgentLoop {
           }
         }
         // 输出 token 统计：成功时累计输出 token
-        this.metricTotalOutputTokens += this.contextManager.estimateTokens([
+        this.metrics.totalOutputTokens += this.contextManager.estimateTokens([
           { role: 'assistant', content: fullContent },
         ]);
         break; // 成功，退出重试循环
@@ -709,7 +653,7 @@ export class AgentLoop {
     const toolPromises: Promise<string>[] = [];
     for (const tc of toolCalls) {
       // 工具调用统计：每次工具执行 +1
-      this.metricToolCallCount++;
+      this.metrics.toolCallCount++;
       yield { type: 'tool_start', toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments };
       // 并发发起工具执行（不 await，收集 Promise 由 Promise.all 统一等待）
       toolPromises.push(this.executeOneTool(tc, signal));
@@ -718,20 +662,13 @@ export class AgentLoop {
     // 2. 等待全部工具完成（真并发，总耗时 ≈ 最慢的工具而非所有工具之和）
     const results = await Promise.all(toolPromises);
 
-    // 3. 按原始顺序 push messages + yield tool_result
-    //    顺序确定保证：Reflection 的 slice(-toolCalls.length) 能取到本轮完整结果
+    // 3. 处理工具消息与失败统计
+    this._processToolResults(toolCalls, results);
+
+    // 4. 按原始顺序 yield tool_result
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
       const result = results[i]!;
-      this.messages.push({
-        role: 'tool',
-        content: result,
-        toolCallId: tc.id,
-      });
-      // 工具失败统计：结果以 [ERR 开头算失败
-      if (result.startsWith('[ERR')) {
-        this.metricToolFailureCount++;
-      }
       yield {
         type: 'tool_result',
         toolCallId: tc.id,
@@ -1072,25 +1009,20 @@ export class AgentLoop {
    * @returns AgentMetrics 快照（decay 字段为 null，由 Agent 层填充）
    */
   getMetrics(): AgentMetrics {
-    // 计算召回命中率：totalCount 为 0 时返回 0，避免除零
-    const hitRate = this.metricRecallTotalCount > 0
-      ? this.metricRecallHitCount / this.metricRecallTotalCount
-      : 0;
-
     return {
       llm: {
-        callCount: this.metricLlmCallCount,
-        totalInputTokens: this.metricTotalInputTokens,
-        totalOutputTokens: this.metricTotalOutputTokens,
+        callCount: this.metrics.llmCallCount,
+        totalInputTokens: this.metrics.totalInputTokens,
+        totalOutputTokens: this.metrics.totalOutputTokens,
       },
       recall: {
-        totalCount: this.metricRecallTotalCount,
-        hitCount: this.metricRecallHitCount,
-        hitRate: roundTo(hitRate, 3), // 保留 3 位小数
+        totalCount: this.metrics.recallTotalCount,
+        hitCount: this.metrics.recallHitCount,
+        hitRate: roundTo(this.metrics.hitRate, 3), // 保留 3 位小数
       },
       tools: {
-        callCount: this.metricToolCallCount,
-        failureCount: this.metricToolFailureCount,
+        callCount: this.metrics.toolCallCount,
+        failureCount: this.metrics.toolFailureCount,
       },
       context: {
         truncationCount: this.contextManager.truncationCount,
@@ -1183,10 +1115,83 @@ export class AgentLoop {
   private isRetryableToolError(result: string): boolean {
     const match = result.match(/^\[ERR:TOOL:(\w+)\]/);
     if (!match) return false;
-    // regex 捕获组保证 match[1] 非空，但使用空值兜底避免非空断言
     const codeStr = match[1] ?? '';
     if (!codeStr) return false;
     const code = codeStr as ToolErrorCodeValue;
     return isRetryableErrorCode(code);
+  }
+
+  /**
+   * 重试延迟 + abort 支持（从 callLlmWithRetry 提取，编码约定 §6 ≤60 行约束）
+   *
+   * 发射 retry chunk、等待指数退避延迟（支持中途 abort），返回 void。
+   * 调用方在延迟后自行检查 signal.aborted 决定是否退出重试循环。
+   */
+  private async *_waitForRetryWithAbort(
+    attempt: number,
+    lastError: Error | null,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
+    yield {
+      type: 'retry',
+      attempt,
+      maxRetries: LOOP_CONSTANTS.MAX_LLM_RETRIES,
+      delayMs: delay,
+      error: lastError?.message ?? 'unknown error',
+    };
+    await new Promise<void>((resolve) => {
+      if (signal?.aborted) { resolve(); return; }
+      const timeoutId = safeSetTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, delay);
+      const onAbort = () => { clearTimeout(timeoutId); resolve(); };
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  /**
+   * 处理工具执行结果：push messages + yield tool_result（从 executeToolCalls 提取）
+   */
+  private _processToolResults(
+    toolCalls: NonNullable<Message['toolCalls']>,
+    results: string[],
+  ): void {
+    for (let i = 0; i < toolCalls.length; i++) {
+      const tc = toolCalls[i]!;
+      const result = results[i]!;
+      this.messages.push({ role: 'tool', content: result, toolCallId: tc.id });
+      if (result.startsWith('[ERR')) { this.metrics.toolFailureCount++; }
+    }
+  }
+
+  /**
+   * 注入记忆召回结果 + 统计 + 透明度通知（从 handleRecallAndInputGuard 提取）
+   */
+  private async *_injectRecall(
+    recalledMemories: readonly Memory[] | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
+      recallCount: recalledMemories?.length ?? 0,
+    });
+    if (recalledMemories?.length) {
+      this.injectRecallAsSystem(recalledMemories);
+    }
+    recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
+    recallSpan.end();
+    this.metrics.recallTotalCount++;
+    if (recalledMemories && recalledMemories.length > 0) {
+      this.metrics.recallHitCount++;
+    }
+    if (recalledMemories?.length) {
+      yield {
+        type: 'recall',
+        memories: recalledMemories.map((m) => ({
+          id: m.id, name: m.name, score: m.score, source: m.source,
+        })),
+      };
+    }
   }
 }

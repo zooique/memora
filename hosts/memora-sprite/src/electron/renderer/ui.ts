@@ -156,44 +156,44 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * HEAL-16 Phase 2：将 5 个紧密耦合的 Chat 域字段收敛为单一协调器（模式 A 纯状态容器）。
    * 子模块通过 chatCoordinator.xxx 路径访问，chatDelegations mixin 同步调整。
    */
-  chatCoordinator: ChatCoordinator;
+  chatCoordinator!: ChatCoordinator;
   /**
    * Memory 域协调器（封装 memoryPanel + profilePanel + workProjectionPanel + auditPanel）
    *
    * HEAL-16 Phase 3：将 4 个 Memory 域字段收敛为单一协调器（模式 A 纯状态容器）。
    */
-  memoryCoordinator: MemoryCoordinator;
+  memoryCoordinator!: MemoryCoordinator;
   /**
    * Settings 域协调器（封装 settingsPanelManager + settingsManagerPanel + currentConfig）
    *
    * HEAL-16 Phase 4：将 3 个 Settings 域字段收敛为单一协调器（模式 A 纯状态容器）。
    */
-  settingsCoordinator: SettingsCoordinator;
+  settingsCoordinator!: SettingsCoordinator;
   /** 感知/仪表盘域协调器（封装 dashboardPanel + perceptionPanel + spriteStatusPopover） */
-  perceptionCoordinator: PerceptionCoordinator;
+  perceptionCoordinator!: PerceptionCoordinator;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
-  personaPanel: PersonaPanelManager;
+  personaPanel!: PersonaPanelManager;
   /**
    * 快捷命令面板管理器（Ctrl+K）
    *
    * 纳入 UIManager 组合体系，与其他子管理器同模式：
    * 构造函数创建、cleanup() 统一清理全局 keydown 监听器（避免页面重载后累积）。
    */
-  commandPaletteManager: CommandPaletteManager;
+  commandPaletteManager!: CommandPaletteManager;
   /**
    * 面板错误横幅管理器
    *
    * 统一管理 settings / memory / chat 三个面板的错误横幅。
    * UIManager 仅保留薄委托。
    */
-  panelErrorBannerManager: PanelErrorBannerManager;
+  panelErrorBannerManager!: PanelErrorBannerManager;
   /**
    * 剪贴板三重保护面板管理器
    *
    * 统一管理"剪贴板三重保护"的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager / ModalManager 实例，与 UIManager 共享同一引用。
    */
-  clipboardManager: ClipboardManager;
+  clipboardManager!: ClipboardManager;
   /**
    * 剪贴板待处理面板管理器（UI 渲染层）
    *
@@ -203,40 +203,40 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 单向依赖：PanelManager 依赖 Manager，Manager 通过 onChange 回调通知 PanelManager 刷新。
    * UIManager 作为 host 提供 showToast / showConfirmDialog，与 ClipboardPanelHost 接口对齐。
    */
-  clipboardPanelManager: ClipboardPanelManager;
+  clipboardPanelManager!: ClipboardPanelManager;
   /**
    * 日期导航面板管理器
    *
    * 统一管理"日期导航"功能的 UI 联动。UIManager 仅保留薄委托。
    * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
    */
-  dateNavManager: DateNavManager;
+  dateNavManager!: DateNavManager;
   /**
    * 对话内容搜索管理器
    *
    * 统一管理"跨会话关键词检索"功能的 UI 联动。UIManager 仅保留薄委托。
    * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
    */
-  searchMessagesManager: SearchMessagesManager;
+  searchMessagesManager!: SearchMessagesManager;
   /**
    * 技能拖入安装面板管理器
    *
    * 统一管理"技能文件拖入安装"功能的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
-  skillDropManager: SkillDropManager;
+  skillDropManager!: SkillDropManager;
   /** 面板路由器（HEAL-12 瘦身后：仅面板切换 + 导航按钮点击） */
-  panelRouter: PanelRouter;
+  panelRouter!: PanelRouter;
   /** 窗口控制 Controller（HEAL-12 拆分：最小化/最大化/关闭 + 最大化图标切换） */
-  windowControlsController: WindowControlsController;
+  windowControlsController!: WindowControlsController;
   /** 信息侧栏 Manager（HEAL-12 拆分：AUX 侧栏展开/收起 + tab 切换） */
-  auxSidebarManager: AuxSidebarManager;
+  auxSidebarManager!: AuxSidebarManager;
   /** 全局快捷键 Dispatcher（HEAL-12 拆分：键盘快捷键 + 快捷触发入口） */
-  globalShortcutDispatcher: GlobalShortcutDispatcher;
+  globalShortcutDispatcher!: GlobalShortcutDispatcher;
   /** 未读徽章管理器（纯 DOM 渲染，不持有业务状态） */
-  badgeManager: BadgeManager;
+  badgeManager!: BadgeManager;
   /** 滚动控制器（消息列表滚动 + rAF 节流） */
-  scrollController: ScrollController;
+  scrollController!: ScrollController;
   // ─── 核心交互元素容器（MIND2-D2：7 个 private DOM 字段提取为单一容器） ──
   // 纯状态容器（progressive-refactor-rules §4 模式 A），不持有业务逻辑
   // 字段分类：必需元素（messagesEl/inputEl/btnSend/btnStop）+ 可选元素（badge/btnMaximize/chatAgentStatusEl）
@@ -261,37 +261,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // isNearBottom 已移至 ScrollController
 
   constructor() {
-    // 核心元素预检——缺失时先渲染错误提示到 document.body，再 rethrow。
-    // 保留 fast-fail 设计意图（不进入半初始化状态），同时避免用户看到空白无提示。
-    try {
-      // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
-      this.coreElements.messagesEl = getRequiredElement('messages', 'div');
-      this.coreElements.inputEl = getRequiredElement('input', 'textarea');
-      this.coreElements.btnSend = getRequiredElement('btn-send', 'button');
-      // B2：停止生成按钮（独立元素，流式态时通过 .visible 类显示）
-      this.coreElements.btnStop = getRequiredElement('btn-stop', 'button');
-    } catch (err) {
-      // 渲染初始化失败错误提示到 document.body（独立于 UIManager 自身，避免半初始化状态）
-      renderInitFailureToBody(err);
-      throw err;
-    }
-
-    // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
-    this.coreElements.badge = document.getElementById('badge');
-    this.coreElements.btnMaximize = getOptionalElement('btn-maximize', 'button');
-    // 聊天面板 Agent 状态指示器（缺失时降级，不影响其他功能）
-    this.coreElements.chatAgentStatusEl = document.getElementById('chat-agent-status');
-    // 初始化指示器状态
-    this.updateChatAgentStatus();
-    // 注入 Agent 就绪状态查询函数，供 onboarding step 4 完成消息感知初始化进度
-    this.onboardingManager.setAgentReadyProvider(() => this.isAgentReady());
-    // 注入确认弹窗函数，供 onboarding 步骤 2 跳过时弹二次确认避免误触丢失输入
-    this.onboardingManager.setConfirmDialog((options) => this.showConfirmDialog(options));
-
-    // 未读徽章管理器（纯 DOM 渲染，badge 可为 null）
-    this.badgeManager = new BadgeManager(this.coreElements.badge);
-    // 滚动控制器（独立管理消息列表滚动 + rAF 节流）
-    this.scrollController = new ScrollController(this.coreElements.messagesEl);
+    this._initCoreElements();
 
     // Settings 域协调器（HEAL-16 Phase 4：3 字段收敛为单一协调器）
     this.settingsCoordinator = new SettingsCoordinator();
@@ -423,6 +393,27 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.scrollController.initListener();
     // 输入区域事件 + ResizeObserver 初始化（委托到 InputAreaManager）
     this.chatCoordinator.inputAreaManager.init();
+  }
+
+  /** 核心元素初始化（从构造函数提取，编码约定 §6） */
+  private _initCoreElements(): void {
+    try {
+      this.coreElements.messagesEl = getRequiredElement('messages', 'div');
+      this.coreElements.inputEl = getRequiredElement('input', 'textarea');
+      this.coreElements.btnSend = getRequiredElement('btn-send', 'button');
+      this.coreElements.btnStop = getRequiredElement('btn-stop', 'button');
+    } catch (err) {
+      renderInitFailureToBody(err);
+      throw err;
+    }
+    this.coreElements.badge = document.getElementById('badge');
+    this.coreElements.btnMaximize = getOptionalElement('btn-maximize', 'button');
+    this.coreElements.chatAgentStatusEl = document.getElementById('chat-agent-status');
+    this.updateChatAgentStatus();
+    this.onboardingManager.setAgentReadyProvider(() => this.isAgentReady());
+    this.onboardingManager.setConfirmDialog((options) => this.showConfirmDialog(options));
+    this.badgeManager = new BadgeManager(this.coreElements.badge);
+    this.scrollController = new ScrollController(this.coreElements.messagesEl);
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────
