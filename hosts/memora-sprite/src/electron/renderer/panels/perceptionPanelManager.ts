@@ -12,10 +12,10 @@
  * - 合成叙事摘要（一句话总结当前感知状态）
  *
  * 设计原则（遵循 ADR-SP-015 组合模式）：
- * - 自包含状态（5 个 lastNarrative* 字段仅供 generateNarrative 消费）
+ * - 自包含状态（NarrativeGenerator 管理感知状态）
  * - 通过 Host 接口与 UIManager 解耦
  * - 数据模型与精灵层控制器（AffectController/RapportController/ContextAwareness）保持一致
- * - 感知面板信息密度更高，是仪表盘感知区的"完整版"
+ * - DOM 操作委托给 Component 实例（ARCH-COMP-1 阶段 2）
  *
  * 与 DashboardPanelManager 的关系：
  * - 仪表盘保留概览区的默契度徽章（精简版，一眼可见）
@@ -34,17 +34,18 @@ import type {
   PresencePayload,
 } from '../ipcListeners.js';
 import type { ProactiveStats } from '../../../shared/spriteStats.js';
-import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import { NarrativeGenerator } from '../helpers/narrativeGenerator.js';
 // 感知标签映射（统一真理源，消除 6 个私有方法的重复实现）
 import {
   getAffectLevel,
   getAffectColor,
-  getRapportLevelLabel,
-  describeRhythm,
-  describeCoherence,
-  describeDepth,
 } from '../helpers/perceptionLabels.js';
+// 感知面板 Component（ARCH-COMP-1 阶段 2：封装 DOM 操作，替代直接查询）
+import { PerceptionAffectComponent } from '../components/data/perceptionAffectComponent.js';
+import { PerceptionRapportComponent } from '../components/data/perceptionRapportComponent.js';
+import { PerceptionContextComponent } from '../components/data/perceptionContextComponent.js';
+import { PerceptionProactiveComponent } from '../components/data/perceptionProactiveComponent.js';
+import { PerceptionPresenceComponent } from '../components/data/perceptionPresenceComponent.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -56,12 +57,6 @@ export interface PerceptionPanelHost {
   updateSpriteStatus(text: string, dotColor?: string): void;
 }
 
-// ─── 常量 ────────────────────────────────────────────────
-
-/** 接受率等级划分阈值：< 0.4 为低，< 0.7 为中，否则为高（与 confidence 徽章一致） */
-const ACCEPTANCE_LOW_THRESHOLD = 0.4;
-const ACCEPTANCE_MID_THRESHOLD = 0.7;
-
 // ─── 感知面板管理器类 ─────────────────────────────────────
 
 /**
@@ -69,6 +64,7 @@ const ACCEPTANCE_MID_THRESHOLD = 0.7;
  *
  * 负责独立感知面板的全部渲染与交互逻辑。
  * 由 UIManager 持有，通过外观方法委托调用。
+ * DOM 操作委托给 5 个 Component 实例（ARCH-COMP-1 阶段 2）。
  * 数据模型与精灵层控制器一致，DOM 元素 ID 前缀为 perception-*
  * （区别于仪表盘的 dashboard-* 前缀）。
  */
@@ -85,6 +81,18 @@ export class PerceptionPanelManager {
   /** 宿主能力（跨模块关注点注入：showToast + updateSpriteStatus 精灵状态条写入） */
   private _host: PerceptionPanelHost;
 
+  // ─── Component 实例（ARCH-COMP-1 阶段 2：封装 DOM 操作，替代直接查询） ─
+  /** 情感基调组件（四维进度条 + 雷达图） */
+  private affectComponent: PerceptionAffectComponent;
+  /** 默契度组件（等级徽章 + 双进度条 + 描述） */
+  private rapportComponent: PerceptionRapportComponent;
+  /** 对话上下文组件（节奏/话题/深度三卡片） */
+  private contextComponent: PerceptionContextComponent;
+  /** 主动提示统计组件（建议/接受/接受率/拒绝/冷却） */
+  private proactiveComponent: PerceptionProactiveComponent;
+  /** 在场状态组件（指示器 + 状态文本） */
+  private presenceComponent: PerceptionPresenceComponent;
+
   // ─── 构造 ──────────────────────────────────────────────
 
   /**
@@ -94,6 +102,13 @@ export class PerceptionPanelManager {
    */
   constructor(host: PerceptionPanelHost) {
     this._host = host;
+
+    // 创建 Component 实例并挂载到现有 HTML 模板元素
+    this.affectComponent = new PerceptionAffectComponent().mount('');
+    this.rapportComponent = new PerceptionRapportComponent().mount('');
+    this.contextComponent = new PerceptionContextComponent().mount('');
+    this.proactiveComponent = new PerceptionProactiveComponent().mount('');
+    this.presenceComponent = new PerceptionPresenceComponent().mount('');
   }
 
   // ─── 初始化 ────────────────────────────────────────────
@@ -124,6 +139,12 @@ export class PerceptionPanelManager {
     if (this.events) {
       this.events.cleanup();
     }
+    // 销毁 Component 实例（nullify 引用）
+    this.affectComponent.destroy();
+    this.rapportComponent.destroy();
+    this.contextComponent.destroy();
+    this.proactiveComponent.destroy();
+    this.presenceComponent.destroy();
     // 重置叙事生成器缓存，避免下次初始化时残留上个会话的感知数据
     this.narrativeGenerator.reset();
   }
@@ -196,11 +217,8 @@ export class PerceptionPanelManager {
   /**
    * 更新情感基调展示（四维进度条 + 等级 + 精灵状态条）
    *
-   * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
-   * 渲染到感知面板 (#perception-{dim}-fill / #perception-{dim}-level)。
-   * 同时通过 Host 接口更新精灵状态条（文字 + 脉冲点颜色），
-   * 让用户在对话面板也能一眼看到当前主导情感维度。
-   * 同时保存状态供叙事摘要合成。
+   * DOM 操作委托给 PerceptionAffectComponent。
+   * 精灵状态条更新（通过 Host 接口）和叙事摘要合成保留在 Manager。
    *
    * @param affect 四维情感基调数值
    */
@@ -208,60 +226,16 @@ export class PerceptionPanelManager {
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
     this.narrativeGenerator.updateAffect(affect);
 
-    // 定义四维映射：id 前缀 → 数值 + 中文标签
+    // 委托 DOM 操作到 Component
+    this.affectComponent.update(affect);
+
+    // ─── 精灵状态条（文字 + 脉冲点，通过 Host 接口委托到 UIManager 统一写入） ────
     const dimensions: Array<{ id: string; value: number; label: string }> = [
       { id: 'warmth', value: affect.warmth, label: '温暖' },
       { id: 'directness', value: affect.directness, label: '直接' },
       { id: 'initiative', value: affect.initiative, label: '主动' },
       { id: 'playfulness', value: affect.playfulness, label: '活泼' },
     ];
-
-    // ─── 感知面板情感进度条 ──────────────────────────
-    for (const dim of dimensions) {
-      const fillEl = document.getElementById(`perception-${dim.id}-fill`);
-      const levelEl = document.getElementById(`perception-${dim.id}-level`);
-      if (fillEl) {
-        const percent = Math.round(dim.value * 100);
-        // 低值时保证最小可见宽度（6%），避免 warmth=0.05 等低值时进度条视觉不可见
-        // 用户会误以为"未加载数据"，实际是数据值很低（如 profile 记忆不足导致 warmth 偏低）
-        const displayWidth = Math.max(6, percent);
-        fillEl.style.width = `${displayWidth}%`;
-        fillEl.style.background = getAffectColor(dim.value);
-        // title 显示精确百分比，避免最小宽度误导用户对实际数值的判断
-        fillEl.title = `${dim.label}：${percent}%`;
-      }
-      if (levelEl) {
-        // 等级文案追加精确百分比，让用户明确区分"未加载"与"值很低"
-        levelEl.textContent = `${getAffectLevel(dim.value)} · ${Math.round(dim.value * 100)}%`;
-      }
-    }
-
-    // ─── 情感雷达图（SVG 四维可视化） ──────────────────────
-    // 中心 (60,60)，最大半径 40，四方向：上(温暖)/右(直接)/下(主动)/左(活泼)
-    const RADAR_CENTER = 60;
-    const RADAR_RADIUS = 40;
-    const radarPoints: Array<[number, number]> = [
-      [RADAR_CENTER, RADAR_CENTER - affect.warmth * RADAR_RADIUS],
-      [RADAR_CENTER + affect.directness * RADAR_RADIUS, RADAR_CENTER],
-      [RADAR_CENTER, RADAR_CENTER + affect.initiative * RADAR_RADIUS],
-      [RADAR_CENTER - affect.playfulness * RADAR_RADIUS, RADAR_CENTER],
-    ];
-    const radarPolygon = document.getElementById('perception-affect-radar');
-    if (radarPolygon) {
-      radarPolygon.setAttribute('points', radarPoints.map(p => p.join(',')).join(' '));
-    }
-    // 更新四个顶点圆点位置
-    const dotIds = ['warmth', 'directness', 'initiative', 'playfulness'] as const;
-    for (let i = 0; i < dotIds.length; i++) {
-      const dot = document.getElementById(`radar-dot-${dotIds[i]}`);
-      const point = radarPoints[i];
-      if (dot && point) {
-        dot.setAttribute('cx', String(point[0]));
-        dot.setAttribute('cy', String(point[1]));
-      }
-    }
-
-    // ─── 精灵状态条（文字 + 脉冲点，通过 Host 接口委托到 UIManager 统一写入） ────
     const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
     this._host.updateSpriteStatus(
       `基调：${dominant.label}（${getAffectLevel(dominant.value)}）`,
@@ -275,82 +249,34 @@ export class PerceptionPanelManager {
   /**
    * 更新默契度展示（等级徽章 + 双进度条 + 描述）
    *
-   * 渲染到感知面板：等级徽章 (#perception-rapport-badge)、信任度进度条
-   * (#perception-trust-fill)、熟悉度进度条 (#perception-familiarity-fill)、
-   * 描述文本 (#perception-rapport-desc)。
-   * 由 rapportUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
-   * 同时保存状态供叙事摘要合成。
+   * DOM 操作委托给 PerceptionRapportComponent。
    *
    * @param rapport 默契度数据
    */
   updateRapportDisplay(rapport: RapportPayload): void {
-    // ─── 感知面板等级徽章 ────────────────────────────
-    const rapportBadge = document.getElementById('perception-rapport-badge');
-    if (rapportBadge) {
-      rapportBadge.textContent = getRapportLevelLabel(rapport.level);
-      rapportBadge.setAttribute('data-level', rapport.level);
-    }
-
-    // ─── 感知面板信任度进度条 ──────────────────────────
-    const trustPercent = Math.round(rapport.trust * 100);
-    const trustFill = document.getElementById('perception-trust-fill');
-    if (trustFill) {
-      trustFill.style.width = `${Math.max(6, trustPercent)}%`;
-      trustFill.style.background = getAffectColor(rapport.trust);
-      trustFill.title = `信任度 ${trustPercent}%`;
-    }
-
-    // ─── 感知面板熟悉度进度条 ──────────────────────────
-    const familiarityPercent = Math.round(rapport.familiarity * 100);
-    const familiarityFill = document.getElementById('perception-familiarity-fill');
-    if (familiarityFill) {
-      familiarityFill.style.width = `${Math.max(6, familiarityPercent)}%`;
-      familiarityFill.style.background = getAffectColor(rapport.familiarity);
-      familiarityFill.title = `熟悉度 ${familiarityPercent}%`;
-    }
-
-    // ─── 感知面板描述文本 ──────────────────────────────
-    const rapportDesc = document.getElementById('perception-rapport-desc');
-    if (rapportDesc) {
-      rapportDesc.textContent = rapport.description;
-    }
-
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
     this.narrativeGenerator.updateRapport(rapport);
+
+    // 委托 DOM 操作到 Component
+    this.rapportComponent.update(rapport);
+
     this.updateNarrative();
   }
 
   /**
    * 更新对话上下文展示（三卡片指标）
    *
-   * 渲染到感知面板：节奏 (#perception-pace-value)、话题 (#perception-topic-value)、
-   * 深度 (#perception-depth-value)。
-   * 由 contextUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
-   * 同时保存状态供叙事摘要合成。
+   * DOM 操作委托给 PerceptionContextComponent。
    *
    * @param context 对话上下文数据
    */
   updateContextDisplay(context: ContextPayload): void {
-    // ─── 感知面板节奏指标 ────────────────────────────
-    const paceEl = document.getElementById('perception-pace-value');
-    if (paceEl) {
-      paceEl.textContent = describeRhythm(context.rhythm);
-    }
-
-    // ─── 感知面板话题连贯性指标 ────────────────────────
-    const topicEl = document.getElementById('perception-topic-value');
-    if (topicEl) {
-      topicEl.textContent = describeCoherence(context.coherence);
-    }
-
-    // ─── 感知面板深度指标 ────────────────────────────
-    const depthEl = document.getElementById('perception-depth-value');
-    if (depthEl) {
-      depthEl.textContent = describeDepth(context.depth);
-    }
-
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
     this.narrativeGenerator.updateContext(context);
+
+    // 委托 DOM 操作到 Component
+    this.contextComponent.update(context);
+
     this.updateNarrative();
   }
 
@@ -358,8 +284,7 @@ export class PerceptionPanelManager {
    * 更新模式洞察面板（PatternDetector 检测结果）
    *
    * 由 patternsUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
-   * 渲染到感知面板 #perception-patterns-list 容器中，每个 pattern 包含
-   * 类型标签（repeat/gap/drift）、置信度徽章和摘要文本。
+   * 模式洞察涉及动态 DOM 创建和 EventTracker 事件绑定，保留在 Manager 中。
    * 同时保存状态供叙事摘要合成。
    *
    * @param payload 模式洞察 payload
@@ -484,79 +409,19 @@ export class PerceptionPanelManager {
   /**
    * 更新主动提示统计展示
    *
-   * 消费 ProactiveEngine.getStats() 返回的统计快照，在感知面板展示：
-   *   1. 历史反馈：建议数 / 接受数 / 接受率徽章（高/中/低 三色）
-   *   2. 当前生效冷却：连续拒绝数 + 生效冷却时长
-   *
-   * 空状态处理：suggestCount=0 时隐藏网格，显示友好提示文案。
+   * DOM 操作委托给 PerceptionProactiveComponent。
    *
    * @param stats 主动提示统计快照（null 时静默跳过，保持 DOM 默认值）
    */
   updateProactiveStatsDisplay(stats: ProactiveStats | null): void {
-    // 无数据时静默跳过（保持 DOM 默认占位值，不阻塞面板渲染）
-    if (!stats) return;
-
-    const gridEl = document.getElementById('perception-proactive-grid');
-    const emptyEl = document.getElementById('perception-proactive-empty');
-
-    // 空状态：suggestCount=0 时显示友好提示
-    if (stats.suggestCount === 0) {
-      if (gridEl) gridEl.classList.add('hidden');
-      if (emptyEl) emptyEl.classList.remove('hidden');
-      return;
-    }
-
-    // 有数据时显示网格，隐藏空状态
-    if (gridEl) gridEl.classList.remove('hidden');
-    if (emptyEl) emptyEl.classList.add('hidden');
-
-    // ─── 历史反馈：建议数 / 接受数 ──────────────────────
-    const suggestEl = document.getElementById('perception-proactive-suggest');
-    const acceptEl = document.getElementById('perception-proactive-accept');
-    if (suggestEl) suggestEl.textContent = String(stats.suggestCount);
-    if (acceptEl) acceptEl.textContent = String(stats.acceptCount);
-
-    // ─── 接受率徽章（高/中/低 三色，与 PatternDetector confidence 徽章一致） ──
-    const rateEl = document.getElementById('perception-proactive-rate');
-    if (rateEl) {
-      rateEl.textContent = `${Math.round(stats.acceptanceRate * 100)}%`;
-      rateEl.classList.remove('high', 'mid', 'low');
-      if (stats.acceptanceRate >= ACCEPTANCE_MID_THRESHOLD) {
-        rateEl.classList.add('high');
-      } else if (stats.acceptanceRate >= ACCEPTANCE_LOW_THRESHOLD) {
-        rateEl.classList.add('mid');
-      } else {
-        rateEl.classList.add('low');
-      }
-      rateEl.title = `接受率 ${Math.round(stats.acceptanceRate * 100)}%（${stats.acceptCount}/${stats.suggestCount}）`;
-    }
-
-    // ─── 连续拒绝数（>0 时高亮，提示用户精灵正在延长冷却） ──
-    const rejectsEl = document.getElementById('perception-proactive-rejects');
-    if (rejectsEl) {
-      rejectsEl.textContent = String(stats.consecutiveRejects);
-      rejectsEl.classList.toggle('warning', stats.consecutiveRejects > 0);
-      rejectsEl.title = stats.consecutiveRejects > 0
-        ? `连续拒绝 ${stats.consecutiveRejects} 次，冷却延长 ${Math.round((1 + stats.consecutiveRejects * 0.5) * 100)}%`
-        : '无连续拒绝（冷却正常）';
-    }
-
-    // ─── 生效冷却时长（与基础冷却对比，体现默契度 + 拒绝惩罚双调节） ──
-    const cooldownEl = document.getElementById('perception-proactive-cooldown');
-    if (cooldownEl) {
-      cooldownEl.textContent = this.formatCooldownMinutes(stats.effectiveCooldownMs);
-      // 生效冷却 > 基础冷却时高亮，提示用户当前处于惩罚状态
-      cooldownEl.classList.toggle('warning', stats.effectiveCooldownMs > stats.baseCooldownMs);
-      cooldownEl.title = `基础 ${this.formatCooldownMinutes(stats.baseCooldownMs)} → 生效 ${this.formatCooldownMinutes(stats.effectiveCooldownMs)}`;
-    }
+    // 委托 DOM 操作到 Component
+    this.proactiveComponent.update(stats);
   }
 
   /**
    * 更新在场状态展示
    *
-   * 统一入口：首屏主动查询（PRESENCE_GET）与被动事件（presenceChanged）均通过此方法接入。
-   * 将 PresencePayload 转换为内部 lastNarrativePresence 状态（state + awaySince），
-   * 供叙事摘要合成时使用（用户离开时叙事应体现"用户不在"）。
+   * DOM 操作委托给 PerceptionPresenceComponent。
    *
    * @param payload 在场状态事件载荷
    */
@@ -564,27 +429,8 @@ export class PerceptionPanelManager {
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
     this.narrativeGenerator.updatePresence(payload);
 
-    // 更新感知面板在场状态指示器 DOM
-    const presenceDot = document.getElementById('perception-presence-dot');
-    const presenceText = document.getElementById('perception-presence-text');
-    if (presenceDot && presenceText) {
-      if (payload.state === 'present') {
-        presenceDot.className = 'presence-dot present flex-shrink-0';
-        presenceText.textContent = '用户在场';
-      } else {
-        presenceDot.className = 'presence-dot away flex-shrink-0';
-        const awayDurationMs = payload.awayDurationMs ?? 0;
-        const awayMinutes = Math.floor(awayDurationMs / 60000);
-        if (awayMinutes < 1) {
-          presenceText.textContent = '用户刚离开';
-        } else if (awayMinutes < 60) {
-          presenceText.textContent = `用户已离开 ${awayMinutes} 分钟`;
-        } else {
-          const awayHours = Math.floor(awayMinutes / 60);
-          presenceText.textContent = `用户已离开 ${awayHours} 小时`;
-        }
-      }
-    }
+    // 委托 DOM 操作到 Component
+    this.presenceComponent.update(payload);
 
     this.updateNarrative();
   }
@@ -614,24 +460,5 @@ export class PerceptionPanelManager {
     if (!this.narrativeGenerator.isIdle()) {
       this._host.updateSpriteStatus(narrative);
     }
-  }
-
-  // ─── 私有辅助方法 ──────────────────────────────────────
-
-  /**
-   * 将毫秒冷却时长格式化为人类可读的分钟/小时字符串
-   *
-   * < 1 分钟显示秒级，< 1 小时显示分钟，否则显示小时。
-   * 用于主动提示生效冷却展示，让用户直观感知冷却长度。
-   *
-   * @param ms 冷却毫秒数
-   * @returns 格式化后的字符串（如 "30 分钟" / "1.5 小时"）
-   */
-  private formatCooldownMinutes(ms: number): string {
-    if (ms < MS_PER_MINUTE) return '< 1 分钟';
-    const minutes = Math.round(ms / MS_PER_MINUTE);
-    if (minutes < 60) return `${minutes} 分钟`;
-    const hours = Math.round((minutes / 60) * 10) / 10;
-    return `${hours} 小时`;
   }
 }
