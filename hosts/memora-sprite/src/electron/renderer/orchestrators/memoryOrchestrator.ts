@@ -28,7 +28,7 @@ import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth
 // 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
 import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js';
 // LLM 治理结果组件（持久化展示治理报告 + 降级列表恢复入口，HEAL-17 Phase B 升级为 Component）
-import { LlmGovernanceResultComponent } from '../panels/llmGovernanceResultRenderer.js';
+import { LlmGovernanceResultComponent } from '../components/data/llmGovernanceResultComponent.js';
 // 补全统计埋点（重置统计时调用 clear）
 import { getCompletionMetrics } from '../helpers/completionMetrics.js';
 

@@ -17,7 +17,7 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 // FlatListPanel：扁平列表声明式工厂（§四.2），覆盖 audit/profile/work 三个结构相似面板
-import { FlatListPanel } from '../components/flatListPanel.js';
+import { FlatListPanel } from '../components/base/flatListPanel.js';
 import type { ConfirmDialogOptions } from '../types.js';
 
 /**

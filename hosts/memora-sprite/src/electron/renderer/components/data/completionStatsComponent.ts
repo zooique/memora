@@ -21,17 +21,17 @@
  * 宿主注入：CompletionStatsHost（showToast），由 MemoryPanelManager 注入，用于导出失败反馈。
  */
 
-import { Component } from '../components/Component.js';
-import { createEl, createEmptyState } from '../helpers/domHelpers.js';
-import { setIcon } from '../helpers/icon.js';
+import { Component } from '../base/Component.js';
+import { createEl, createEmptyState } from '../../helpers/domHelpers.js';
+import { setIcon } from '../../helpers/icon.js';
 import {
   getCompletionMetrics,
   type CompletionEvent,
   type CompletionAggregated,
   type DailyAggregatedItem,
-} from '../helpers/completionMetrics.js';
-import { reportError } from '../helpers/errorHelpers.js';
-import { getLocalDate } from '../../../sprite/constants.js';
+} from '../../helpers/completionMetrics.js';
+import { reportError } from '../../helpers/errorHelpers.js';
+import { getLocalDate } from '../../../../sprite/constants.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 

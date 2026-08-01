@@ -1,54 +1,58 @@
 /**
- * components/index.ts - UI 组件库统一导出入口（HEAL-17 Phase 0）
+ * components/index.ts - UI 组件库统一导出入口（HEAL-17）
  *
- * 集中导出所有公共组件，便于页面统一导入。
+ * 集中导出所有公共组件，便于页面统一导入（对齐 ui-engineering-mindset-rules §四.3）。
  *
- * 依赖规则（对齐 ui-engineering-mindset-rules §四.3）：
- *   - 高层可依赖低层，低层不可依赖高层
- *   - 当前 sprite components/ 是平铺目录（directory-structure.md §1），
- *     未来达到 15+ 文件时再启动分层（base/feedback/form/navigation/data）
- *   - Phase 0 阶段：仅导出 Component 基类 + ToastComponent（待 Phase 1 完成）
+ * 目录分层约定（D-MIGRATE，2026-08-01 落地）：
+ *   components/
+ *   ├── index.ts          统一导出入口
+ *   ├── base/             Component 根基：抽象基类 + 声明式工厂基类
+ *   │   ├── Component.ts          抽象基类（mount/update/destroy 生命周期契约）
+ *   │   └── flatListPanel.ts      FlatListPanel<T> 声明式列表工厂基类（§四.2）
+ *   ├── feedback/         反馈 / 通知型 Component
+ *   │   ├── messageBubbleComponent.ts
+ *   │   └── toastComponent.ts
+ *   ├── data/             数据展示型面板 Component（Phase B 由 panels/*Renderer 升级迁入）
+ *   │   ├── completionStatsComponent.ts
+ *   │   ├── healthDashboardComponent.ts
+ *   │   ├── insightsComponent.ts
+ *   │   ├── partnerInsightsComponent.ts
+ *   │   └── llmGovernanceResultComponent.ts
+ *   └── （根保留非 Component 构件：Manager / Renderer / 工具）
+ *       toast.ts(ToastManager) themeManager.ts suggestionCard.ts proactiveBanner.ts
+ *       onboarding.ts modal.ts relationGraph.ts markdown.ts milestoneBanner.ts
+ *       startupSummaryBanner.ts —— 后续若增长再独立子目录
  *
- * 使用方式：
- *   import { Component, ToastComponent } from '../components/index.js';
+ * 分层规则（后续迭代遵循）：
+ *   - Component 子类按用途归入 base/feedback/data；基类与工厂入 base/。
+ *   - Manager / Renderer / 纯函数工具等非 Component 构件暂留根，不强行分层（复杂度守恒）。
+ *   - 新增面板 Component → data/；新增反馈型 Component → feedback/。
  *
- * @module components
+ * 依赖规则（对齐 §四.3）：高层可依赖低层，低层不可依赖高层。
  */
 
-/* ========== 基础组件（Phase 0） ========== */
-export { Component } from './Component.js';
+/* ========== 基础（base/） ========== */
+export { Component } from './base/Component.js';
+export { FlatListPanel } from './base/flatListPanel.js';
+export type { FlatListPanelOptions } from './base/flatListPanel.js';
 
-/* ========== 反馈组件（Phase 1） ========== */
-export { ToastComponent } from './toastComponent.js';
-export type { ToastComponentOptions } from './toastComponent.js';
+/* ========== 反馈组件（feedback/） ========== */
+export { ToastComponent } from './feedback/toastComponent.js';
+export type { ToastComponentOptions } from './feedback/toastComponent.js';
+export { MessageBubbleComponent } from './feedback/messageBubbleComponent.js';
+export type { MessageBubbleOptions } from './feedback/messageBubbleComponent.js';
 
-/* ========== 数据展示组件（Phase 2） ========== */
-export { MessageBubbleComponent } from './messageBubbleComponent.js';
-export type { MessageBubbleOptions } from './messageBubbleComponent.js';
-
-/*
- * 面板子渲染器升级组件（HEAL-17 Phase B）
- * ────────────────────────────────────────────
- * 由 panels/*Renderer 升级而来的 Component 子类，统一经本入口导出以满足 §四.3「统一导出入口」。
- * 物理文件暂留在 panels/（与尚未迁移的 5 个 *Renderer 同位），待 Phase D 分层定稿时
- * 再整体迁至 components/ 并按 base←feedback←form←navigation←data 归类。
- */
-export { CompletionStatsComponent } from '../panels/completionStatsRenderer.js';
-export type { CompletionStatsOptions, CompletionStatsHost } from '../panels/completionStatsRenderer.js';
-export { HealthDashboardComponent } from '../panels/healthDashboardRenderer.js';
-export type { HealthDashboardOptions } from '../panels/healthDashboardRenderer.js';
-export { InsightsComponent } from '../panels/insightsRenderer.js';
-export type { InsightsOptions, InsightsDashboardData } from '../panels/insightsRenderer.js';
-export { PartnerInsightsComponent } from '../panels/partnerInsightsRenderer.js';
-export type { PartnerInsightsOptions } from '../panels/partnerInsightsRenderer.js';
-export { LlmGovernanceResultComponent } from '../panels/llmGovernanceResultRenderer.js';
-export type { LlmGovernanceOptions, LlmGovernanceReport } from '../panels/llmGovernanceResultRenderer.js';
-
-/* ========== 声明式列表工厂（Phase C） ========== */
-// FlatListPanel：扁平列表声明式工厂（§四.2），覆盖 audit/profile/work 三个结构相似面板。
-// 物理文件位于 components/（本就是新建的通用组件，非 panel 重命名），经本入口统一导出。
-export { FlatListPanel } from './flatListPanel.js';
-export type { FlatListPanelOptions } from './flatListPanel.js';
+/* ========== 数据展示组件（data/，Phase B 升级迁入） ========== */
+export { CompletionStatsComponent } from './data/completionStatsComponent.js';
+export type { CompletionStatsOptions, CompletionStatsHost } from './data/completionStatsComponent.js';
+export { HealthDashboardComponent } from './data/healthDashboardComponent.js';
+export type { HealthDashboardOptions } from './data/healthDashboardComponent.js';
+export { InsightsComponent } from './data/insightsComponent.js';
+export type { InsightsOptions, InsightsDashboardData } from './data/insightsComponent.js';
+export { PartnerInsightsComponent } from './data/partnerInsightsComponent.js';
+export type { PartnerInsightsOptions } from './data/partnerInsightsComponent.js';
+export { LlmGovernanceResultComponent } from './data/llmGovernanceResultComponent.js';
+export type { LlmGovernanceOptions, LlmGovernanceReport } from './data/llmGovernanceResultComponent.js';
 
 /* ========== 表单组件 ========== */
 // 待后续 Phase 填充

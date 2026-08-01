@@ -27,11 +27,11 @@ import type { RelationGraphRenderer, RelationGraphData } from '../components/rel
 // 健康度仪表盘数据载荷（renderHealthDashboard 委托方法签名需要）
 import type { HealthDashboardPayload } from '../../preload.js';
 // 记忆面板所属子渲染器（DOM 在 panel-memories 内，归 MemoryPanelManager 管理）
-import { PartnerInsightsComponent } from './partnerInsightsRenderer.js';
-import { HealthDashboardComponent } from './healthDashboardRenderer.js';
-import { InsightsComponent } from './insightsRenderer.js';
+import { PartnerInsightsComponent } from '../components/data/partnerInsightsComponent.js';
+import { HealthDashboardComponent } from '../components/data/healthDashboardComponent.js';
+import { InsightsComponent } from '../components/data/insightsComponent.js';
 // 补全统计面板组件（第 3 个 analysis panel，HEAL-17 Phase B 由 *Renderer 升级为 Component）
-import { CompletionStatsComponent } from './completionStatsRenderer.js';
+import { CompletionStatsComponent } from '../components/data/completionStatsComponent.js';
 // 事件监听器注册逻辑提取到独立 helper（降低本文件体量）
 import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';

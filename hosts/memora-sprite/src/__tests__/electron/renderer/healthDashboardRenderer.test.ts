@@ -18,7 +18,7 @@
  * - 使用真实 EventTracker（验证事件注册与清理的完整生命周期）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { HealthDashboardComponent } from '../../../electron/renderer/panels/healthDashboardRenderer.js';
+import { HealthDashboardComponent } from '../../../electron/renderer/components/data/healthDashboardComponent.js';
 import type { HealthDashboardPayload } from '../../../electron/preload.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

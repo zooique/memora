@@ -15,14 +15,14 @@
  *   （#partner-insights 还被 memoryViewSwitcher 直接控制显隐，销毁时不可 el.remove()）
  */
 
-import { setIcon } from '../helpers/icon.js';
-import { clearElement, createEl, setCanvasSize } from '../helpers/domHelpers.js';
+import { setIcon } from '../../helpers/icon.js';
+import { clearElement, createEl, setCanvasSize } from '../../helpers/domHelpers.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
-import { reportError } from '../helpers/errorHelpers.js';
+import { reportError } from '../../helpers/errorHelpers.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
-import { truncate } from '../../../shared/truncate.js';
+import { truncate } from '../../../../shared/truncate.js';
 // 组件生命周期基类（HEAL-17 Phase 0）
-import { Component } from '../components/Component.js';
+import { Component } from '../base/Component.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 

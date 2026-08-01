@@ -24,7 +24,7 @@
 import { formatDateKey, showPanelLoading, hidePanelLoading } from '../helpers/domHelpers.js';
 import { setIcon, setIconWithLabel } from '../helpers/icon.js';
 // MessageBubbleComponent（HEAL-17 Phase 2）：单条消息气泡组件，承接原 buildMessageElement 的 DOM 构建逻辑
-import { MessageBubbleComponent } from '../components/messageBubbleComponent.js';
+import { MessageBubbleComponent } from '../components/feedback/messageBubbleComponent.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';

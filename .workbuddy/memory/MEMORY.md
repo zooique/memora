@@ -1,76 +1,68 @@
 # 项目长期记忆（memora）
 
 ## 架构与质量基线
-- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，当前 sprite 版本 1.5.0，渲染 `appVersion` 走 `package.json` 而非 `process.versions.electron`）。内核经 `scripts/sync-memora.mjs` 以 cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，运行期不单独更新**。
+- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，sprite 版本 1.5.0，渲染 `appVersion` 走 `package.json`）。内核经 `scripts/sync-memora.mjs` cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，改内核后必须 `npm run sync-memora` 再打包**。
 - 真实质量门 = `tsc --noEmit` + `eslint` + `lint:css`(stylelint) + vitest；prettier --check 非门（勿批量 write 制造无关 diff）。
 
 ## 设计令牌（ADR）
-- 三层 scope：L1 foundation/ 全局基础 · L2 面板前缀 · L3 组件；BEM；单文件单真理源。
-- 双主题：`:root` 浅 / `[data-theme="dark"]` 深；颜色/阴影/z-index 100% token 化。
-- 控件收口：`.card`、按钮、`.input`/`.input--pill`/`.input-with-action`、标签均在 `foundation/controls.css`（L1 单一真理源）。
+- 三层 scope：L1 foundation/ 全局基础 · L2 语义别名 · L3 组件覆写（在各面板 CSS）；BEM；单文件单真理源。
+- 双主题：`:root` 浅 / `[data-theme="dark"]` 深；颜色/阴影/z-index 100% token 化。控件收口在 `foundation/controls.css`（L1 单一真理源）。
 
-## 样式审计方法论（可复用，避免误报）
-- 统计硬编码色须排除 `tokens.css` 定义值：先 `var_re.sub('','text')` 去 `var(...)`(含 fallback)，遍历跳过 `foundation/tokens.css`，否则把定义值误计为泄露。
-- stylelint 插件 `stylelint-value-no-unknown-custom-properties`@6 **不跨 glob 聚合 `:root`**：跨文件 token 必须用 `importFrom` 绝对路径（`.mjs` 用 `fileURLToPath`）。整目录 glob 会误报合法 token（曾 3260 条）。验证守卫须注入幻影 token 确认能抓到（防假绿）。注：npm 无 `@csstools/` 作用域包，注册名是 `csstools/value-no-unknown-custom-properties`。
-- CSS 批量迁移脚本必须保留 `/* */` 注释定界符：按 `/*` 切分，注释段原样保留，仅对 code 段替换，跨行维护 in_comment 状态。
+## 样式审计方法论（可复用）
+- 统计硬编码色须排除 `tokens.css` 定义值：先去 `var(...)`(含 fallback)，遍历跳过 `foundation/tokens.css`。
+- stylelint 插件 `stylelint-value-no-unknown-custom-properties`@6 **不跨 glob 聚合 `:root`**：跨文件 token 须 `importFrom` 绝对路径（`.mjs` 用 `fileURLToPath`）。整目录 glob 会误报（曾 3260 条）。验证守卫须注入幻影 token 防假绿。npm 注册名 `csstools/value-no-unknown-custom-properties`（无 `@csstools/` 作用域）。
+- CSS 批量迁移脚本须保留 `/* */` 注释定界符（按 `/*` 切分，注释段原样保留，仅对 code 段替换，跨行维护 in_comment）。
 
 ## sprite 测试与集成模式（可复用）
-- `inputAreaManager.test.ts` 的 QuickInputCompletion mock 是字面量对象，补全类新增公开方法须手动补进 mock 工厂，否则 TypeError。Vitest 走 esbuild 不做 type-check：抽象类仅 `export type` 时注入桩用 `implements X`（剥离 `extends`+`super()`）+ 补 readonly 成员。
-- 内核未导出 Manager（ProjectManager/UserProfile/DedupManager/WorkProjectionManager）只能经真实 `Agent` 实例驱动（getter 返 `|null` 用 `!` 断言），不可直接 `new`。
-- 集成测试接真实实例时易暴露宿主层 Bug（如 SqliteStorage.upsert 展开 `Memory` 含 `metadata` 致 `Unknown named parameter`）——upsert 须显式绑定已知列、忽略 metadata。
-- **双写不同步判据**：JSON 配置某字段恰等于默认值但其他字段是真实用户值 → 必有一路径部分写入（读合并）、另一路径完整写入（内存快照）覆盖前者。统一走单一写入入口（如 sprite.updateConfig）。
+- `inputAreaManager.test.ts` 的 QuickInputCompletion mock 是字面量对象，补全类新增公开方法须手动补进 mock 工厂。Vitest 走 esbuild 不做 type-check：抽象类仅 `export type` 时注入桩用 `implements X`（剥离 `extends`+`super()`）+ 补 readonly 成员。
+- 内核未导出 Manager 只能经真实 `Agent` 实例驱动（getter 返 `|null` 用 `!` 断言），不可直接 `new`。
+- 集成测试接真实实例易暴露宿主 Bug（如 SqliteStorage.upsert 展开 `Memory` 含 `metadata` 致 `Unknown named parameter`）——upsert 须显式绑定已知列、忽略 metadata。
+- **双写不同步判据**：JSON 某字段恰等于默认值但其他字段是真实用户值 → 必有一路径部分写入（读合并）、另一路径完整写入（内存快照）覆盖。统一走单一写入入口。
 
 ## 代码孤儿/死导出分析（可复用）
-- 遍历 `src/**/*.ts` 建「模块→引用」「符→import」图，排除入口（main/cli/renderer/server/preload*/index 桶）。
-- 坑：NodeNext 显式 `.js` 扩展名须 `replace(/\.(js|ts|mjs|cjs)$/,'')` 再 resolve；Electron 多入口（preload.cjs / HTML script / preloadWeb esbuild / type barrel）须手工核对；类型导出删除一律人工确认（误报率高）。真死导出铁律：导出值且全仓（含 __tests__）零词边界引用。
+- 遍历 `src/**/*.ts` 建引用图，排除入口（main/cli/renderer/server/preload*/index 桶）。NodeNext 显式 `.js` 须 `replace(/\.(js|ts|mjs|cjs)$/,'')` 再 resolve；Electron 多入口须手工核对；类型导出删除一律人工确认。真死导出铁律：导出值且全仓（含 __tests__）零词边界引用。
 
 ## 感知/通知架构约定
 - 分级通知 `priority: normal|high|critical`：high 绕过节奏抑制，critical 绕过节奏+冷却。里程碑/健康警告→high。
 - 可选接口方法向后兼容：`setErrorCallback?(cb)`，调用方 `if(x.setErrorCallback)` 检测后调用。
 - 配置损坏保护：catch 内先 `rename` 备份 `.corrupted.{timestamp}` 再返默认，区分 ENOENT(首次) 与解析错误(损坏)。
-- vi.mock 工厂须覆盖所有被 import 的函数，新增 import 须同步补 mock，否则运行期 `undefined` TypeError。
+- vi.mock 工厂须覆盖所有被 import 的函数，新增 import 须同步补 mock。
 
 ## HEAL-16 UIManager 渐进重构
-- 协调器模式（Perception/Chat/Memory/Settings）已落地：委托群改经协调器转发，ui.ts 字段 ~29→~25。
-- 教训：提取协调器后须同步更新委托测试断言路径（mock.X→mock.coordinator.X），否则深 Proxy mock 记在协调器路径、断言查旧路径→全 "0 calls" 误报。协调器初始化须前置到 panel.init() 之前。
+- 协调器模式（Perception/Chat/Memory/Settings）已落地：委托群经协调器转发，ui.ts 字段 ~29→~25。提取后须同步更新委托测试断言路径（mock.X→mock.coordinator.X）；协调器初始化须前置到 panel.init() 之前。
 
 ## 发布/分发约定（闭源桌面端）
-- 主仓 Gitee，已配 **Gitee→GitHub 私有 push 镜像**（代码+tags 自动同步，作备份；**必须保持 private**，否则同步上去的源码泄露破闭源）。
-- **CI 全自动发版**：`build.yml` 监听 `v*` tag（经镜像同步到 GitHub）→ **仅 Windows** 构建（`electron-builder --win`）→ `Publish Release` job 用 secret `RELEASE_TOKEN`（细粒度 PAT，仅授权公开仓 `memora-sprite-releases` 的 Contents:write）自动在公开仓建 Release+传 exe。开发者零手动建 Release。
-- exe 分发 + 版本检测走 **GitHub Releases（独立公开发布仓 `memora-sprite-releases`，只放 exe 不含源码）**：GitHub 单文件 <2GiB 限额对 ~130MB 充裕；公开仓 `GET /repos/{o}/{r}/releases/latest` **免鉴权**（匿名限速 60 次/小时/IP，按钮点击足够），客户端检测不必内嵌 token。
-- 客户端检查用 `fetch` + `User-Agent` 头，取 `tag_name` 数值比较、`html_url` 打开发布页。
-- 版本：宿主 `memora-sprite` 当前 `1.4.0`、内核 `@zooique/memora` `2.0.2`，**独立维护**——发版只升宿主版本（如 1.4.0→1.5.0），内核无需同步升号。
-- ⚠️ **内核同步铁律**：sprite 不通过 `file:` 依赖内核（避免 Junction 把全仓打进 asar）；`scripts/sync-memora.mjs` 把内核 `dist/`+`package.json`+`LICENSE`+`README.md` cpSync 进 `hosts/memora-sprite/node_modules/memora/`。**改内核源码后必须 `npm run sync-memora`（编译+同步）再打包**，否则 exe 含旧内核（`node_modules/memora/dist/` 是独立副本）。
-- 内核打进 asar 随客户端冻结，"改内核免重装"对终端用户不成立（仅开发者发版流程成立）。
-- CI 构建在私有镜像仓跑，消耗私有仓 Actions 分钟（Free 2000/月，仅 Windows 余量足）；`RELEASE_TOKEN` 须最小权限、只存 Actions secret。
-- 国内加速备选：COS/OSS/R2 另放 exe 直链作「国内高速下载」（非必须）。
-- 详见 `tasks/发布流程-gitee-20260722.md` §1/§4/§5 + `tasks/归档/STEP-发版前置-PRIVACY与更新检查.md`。
+- 主仓 Gitee + **Gitee→GitHub 私有 push 镜像**（必须保持 private，否则源码泄露）。`build.yml` 监听 `v*` tag → 仅 Windows `electron-builder --win` → `Publish Release` job 用 `RELEASE_TOKEN` 细粒度 PAT（仅公开仓 `memora-sprite-releases` 的 Contents:write）自动建 Release+传 exe。开发者零手动。
+- exe 分发走独立公开发布仓 `memora-sprite-releases`（只放 exe 不含源码）：`GET /repos/{o}/{r}/releases/latest` **免鉴权**，客户端 `fetch`+`User-Agent` 取 `tag_name` 比较、`html_url` 打开发布页。国内加速备选 COS/OSS/R2 直链（非必须）。
+- 版本：宿主与内核**独立维护**——发版只升宿主版本（如 1.4.0→1.5.0）。内核同步铁律见上。详见 `tasks/发布流程-gitee-20260722.md` §1/§4/§5。
 
 ## Git 操作安全红线（2026-07-31 血训）
-- **禁止从 Bash 执行 git 写操作**（`git mv`/`git rm`/`git restore`/`git checkout --`）。Bash 工具运行在 POSIX 沙箱，其文件系统视图与 Windows 真实 FS 不同步——已两度导致 `tasks/` 中 11 个文件被沙箱视为"已删除"，污染 git 索引并触发用户的误报与恐慌。
-- **文件状态以 Read/Glob 工具（Windows API）为准**。Bash `ls` 与 Read/Glob 矛盾时：采信 Read/Glob，立即停止所有 Bash 操作。
-- **git 命令改用 PowerShell**：`Get-ChildItem`/`git mv`/`git rm`/`git status` 等走真实 Windows FS，不经 POSIX 沙箱挂载层。
-- **阶段完成后立即 `git add -A && git commit`**。不攒暂存改动。已提交的 HEAD 才是可恢复锚点；沙箱异常下暂存区不可靠。
-- **不可逆操作前双重核验**：移动/删除文件前，先用 Read/Glob 确认源和目标均存在，不做任何"看起来应该存在"的假设。
+- **禁止从 Bash 执行 git 写操作**（`git mv`/`git rm`/`git restore`）。Bash 运行在 POSIX 沙箱，FS 视图与 Windows 真实 FS 不同步——曾致 `tasks/` 11 文件被误判删除、污染 git 索引。
+- **文件状态以 Read/Glob（Windows API）为准**；git 命令（含移动/删除）一律用 **PowerShell** 走真实 FS。
+- **阶段完成立即 `git add -A && git commit`**；不可逆操作前用 Read/Glob 双重核验源与目标均存在。
 
-## UI 占位符三态约定（可复用，2026-07-31）
-- 占位符/空态/错误态的视觉区分**用类修饰而非状态机**：项目既有 `quick-input.css` 三态先例——`.completion-loading`(默认 `--muted`)/`.completion-error`(`--yellow`)/`.completion-empty`(`--muted`)，靠颜色+tooltip 区分，不造状态机。
-- token 用量区 UX-15：错误态（真正未知）`.token-usage-error`(`color:var(--yellow)` + hover 保持)+ `data-tooltip="用量加载失败"` 显示 `--`；**空态/零用量显示 `0/上下文窗口`**（`providerList` 已在 Promise.all 取到，可算窗口，默认 32768→`0/32.8k`），`--` 仅留给失败态；成功路径 `classList.remove('token-usage-error')` 防残留。空态与零用量成功态统一为同一显示（单一真理源）。
-- **首屏同步陷阱**：`refreshTokenUsage()` 原本只在 `SPRITE_STREAM_END`（对话结束）触发，导致首屏永远停在 HTML 默认 `--`。必须在 `renderer.ts` 的 `onAgentReadyCallback` 中补一次 `void State.uiManager.refreshTokenUsage()`，否则空态友好化对用户不可见。
-- 用户曾提议 `0/0`，经对抗式审查修正为 `0/窗口`：`0/0` 分母=0 是假事实（上下文窗口是模型固定属性非 0）。吸收用户"用数字替代 `--`"的心智，但忠于项目实际语义。
-- 推回"需状态机设计"类假设：2 分支标签区分属"能去掉中间一层"的情况，加状态机即复杂度倒挂（复杂度守恒）。
+## UI 占位符三态约定（2026-07-31）
+- 占位符/空态/错误态**用类修饰而非状态机**（先例 `quick-input.css`：`.completion-loading/error/empty` 靠颜色+tooltip 区分）。
+- token 用量 UX-15：错误态 `.token-usage-error`(`--yellow`+`data-tooltip`) 显示 `--`；空态/零用量显示 `0/上下文窗口`（默认 32768→`0/32.8k`），成功路径 `classList.remove('token-usage-error')` 防残留。分母=0（`0/0`）是假事实，经对抗式审查改为 `0/窗口`。
+- 首屏同步陷阱：`refreshTokenUsage()` 须在 `renderer.ts` 的 `onAgentReadyCallback` 补一次，否则首屏停在 HTML 默认 `--`。
 
-## Component 化判别铁律（Phase B 经验，2026-07-31）
-- 规则 `ui-engineering-mindset-rules.md` §四.1：Component = 单根 `this.el` + `new/mount/update/destroy` 四件套的自包含视觉单元；§四.4 中 Manager 持有 Component，**Manager 本身不是 Component**。
-- **仅当**某单元"持有单根 `this.el`（自建或采纳静态容器）+ 自身内部用 `getElementById` 查元素（§四.1 反模式）"时才 Component 化。
-- **默认豁免 / 保留为 Manager**：① 装饰注入元素（如 `BadgeManager` 收 `HTMLElement|null`，零 `getElementById`）；② 跨多面板协调分布式 DOM（如 `PanelErrorBannerManager` 跨 5 面板按 `${panelId}-error` 查找，合法跨切面查找非反模式）；③ 流式引擎（`streamingRenderer` 纯函数 + `Map<msgId,气泡>`，无单根 el、无生命周期）；④ 已按 `ADR-SP-015 §2` 的 `init/cleanup` 生命周期设计的既有 Manager。
-- **计划中的"批量清单"（如"6 个 *Renderer"）是按文件名归纳的启发式，须逐个对抗式核实架构角色**，不可盲套同一模板。类名含 `Manager` 且无单根 el → §四.4 Manager，默认不转。
-- 转换陷阱：判别联合 `update({report})` 调用方必须补 `report` 包裹层；Renderer→Component 的 `mount` 按 id 选元素用 `document.querySelector`（带 `#`），勿混 `getElementById`；测试 fixture 须完整镜像静态容器 class 集合（组件采纳现有元素不增删类）。
+## Component 化判别铁律（Phase B）
+- Component = 单根 `this.el` + `new/mount/update/destroy` 四件套自包含视觉单元；§四.4 中 Manager 持有 Component，**Manager 本身不是 Component**。
+- 默认豁免/保留 Manager：① 装饰注入元素（如 `BadgeManager` 收 `HTMLElement|null`，零 `getElementById`）；② 跨面板协调分布式 DOM（`PanelErrorBannerManager` 按 `${panelId}-error` 合法跨切面查找）；③ 流式引擎（`streamingRenderer` 纯函数+`Map`，无单根 el）；④ 既有 `init/cleanup` 生命周期 Manager。
+- "批量清单"（如"6 个 *Renderer"）须逐个对抗式核实架构角色，不可盲套模板。转换陷阱：`update({report})` 须补 `report` 包裹层；`mount` 用 `document.querySelector`(带 `#`)；测试 fixture 须完整镜像静态容器 class。
 
-## 声明式工厂前提核实铁律（Phase C 经验，2026-07-31）
-- 规则 §四.2「≥3 相似即抽工厂」的触发条件是**结构真实相似**，非文件名相似。抽工厂前须逐个读真实文件核实：是否真有 ≥3 个面板共享同一结构（list+search+detail 之类）。
-- **已抽进 helper 的共性（空/错/刷新/loading 等）不应重复计入"待抽工厂"的重复量**——它们已被 errorState/domHelpers/buttonHelpers 收口，剩余差异往往是真且小的，再抽一层收益有限却会冲击既有测试。
-- 若仅 1/N 满足完整结构（如本仓库 memory 独享 list+search+detail，其余 audit/profile/work 是扁平列表且共性已 helper 化），应**收窄为薄工厂**（覆盖真正相似的子集，配 `customRender` 逃生舱）或判定**不抽**（防 God Object），而非把异类强行纳入致 `customRender` 架空工厂。
-- 工厂配置须用**真实数据形态**（如本仓库 load 返回数组，非报告的 `{items,total}` 草拟）——草拟接口须据实修正，不可盲套文档。
-- **列表工厂接纳硬判据（已据实收敛）**：仅接纳「单容器 + 单 load 返回 `T[]` + 单计数」面板。**双列表**（无外层包裹、各自 count+交互按钮）、**IPC 返回 `{entries}`**、**单 fetch 分多组** 任一出现即异类排除——强行纳入需为单消费者撑大契约（双 count id/分组渲染/wrapper）→ God Object。本仓库最终：audit（试点）+ work（`customRender` 行内展开+空态 hint）接入；profile（双列表+`{entries}`）、memory（list+search+detail）排除。
-- `customRender` 逃生舱设计：**必须注入行级 EventTracker** 让行交互监听随每次渲染重建前清理、`destroy` 时随工厂清理（否则跨刷新累积泄漏/架空工厂）；`_renderItems` 须把 `customRender` 判断**提前到空态之前**（customRender 接管整段含空态），`renderRow` 随之改可选。
+## 声明式工厂前提核实铁律（Phase C / HEAL-17）
+- §四.2「≥3 相似即抽工厂」须**结构真实相似**非文件名相似；已抽进 helper 的共性（空/错/刷新/loading）不重复计入重复量。
+- **列表工厂接纳硬判据**：仅接纳「单容器 + 单 load 返回 `T[]` + 单计数」面板。**双列表**（无外层包裹、各自 count+交互）/ **IPC 返回 `{entries}`** / **单 fetch 分多组** → 异类排除（防 God Object / customRender 架空工厂）。本仓库：audit(试点)+work(`customRender` 行内展开) 接入；profile(双列表+`{entries}`)、memory(list+search+detail) 排除。
+- `customRender` 逃生舱：**必须注入行级 EventTracker** 随每次渲染重建前清理、`destroy` 时随工厂清理；`_renderItems` 须把 `customRender` 判断**提前到空态之前**（接管整段含空态），`renderRow` 改可选。工厂配置须用真实数据形态（load 返回数组，非 `{items,total}`）。
+
+## UI 组件库分层 / 复杂度守恒铁律（Phase D，2026-08-01 已落地）
+- **形状已定（components/）**：`base/`(Component 抽象基类 + FlatListPanel 声明式工厂基类) / `feedback/`(MessageBubble/ToastComponent) / `data/`(Phase B 5 个面板组件，文件名去 Renderer 后缀为 *Component) / 根保留 Manager·Renderer·工具等非 Component 构件（toast.ts/themeManager/suggestionCard/proactiveBanner/onboarding/modal/relationGraph/markdown/milestoneBanner/startupSummaryBanner）。
+- **分层规则（后续迭代遵循）**：Component 子类按用途归入 base/feedback/data；新增面板 Component→data/、新增反馈型→feedback/；Manager/Renderer/工具暂留根，不为空目录提前抽象（form/navigation 子目录待对应用途 Component 出现再建）。形状约定见 `components/index.ts` 头注释（单一真理源）。
+- **复杂度守恒仍成立**：不为空目录/合规而提前抽象；物理迁移须全量同步 import（含 `__tests__`，易漏）。
+- `tokens.css` L1/L2 分区**仅用注释**（顶部作用域模型横幅 + 语义别名块标 `[L2]` + `:root` 关闭处 L3 注记），**不拆文件**；`:root` 内 L1/L2 按主题交错，须逐块标注而非单一分隔带。
+
+## 长期观察（阈值驱动，见 `tasks/待完成任务.md`）
+- **UI-MIXIN-OBS**：ui.ts 行数（applyMixins 回退判据），2026-08-01 实测 1077 行，阈值 1500。HEAL-13 已判 mixin 为有意架构选择，仅当行数触发再评估回退内联分区。
+- **D-MIGRATE-OBS**：panels/→components/ 物理迁移**已实施**（2026-08-01）：components/ 已分层 base/feedback/data + 根保留非 Component；形状见 components/index.ts 注释。
+- **HEAL-17-P3**：已实现收窄版 FlatListPanel 工厂（覆盖 audit+work，profile/memory 排除）；**UI-AUDIT-P0-2**：Component 基类已落地（Phase B），FlatListPanel 为其首个工厂实例。

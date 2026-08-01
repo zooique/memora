@@ -18,7 +18,7 @@
  * - 无外部依赖注入（模式 D 自包含）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { PartnerInsightsComponent, type PartnerMemory } from '../../../electron/renderer/panels/partnerInsightsRenderer.js';
+import { PartnerInsightsComponent, type PartnerMemory } from '../../../electron/renderer/components/data/partnerInsightsComponent.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

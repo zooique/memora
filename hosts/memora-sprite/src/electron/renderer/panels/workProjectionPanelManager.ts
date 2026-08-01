@@ -19,7 +19,7 @@
 import type { WorkProjectionPayload } from '../../preload.js';
 import { clearElement, createEl, createEmptyState, formatTimeAgo, showPanelLoading } from '../helpers/domHelpers.js';
 // FlatListPanel：扁平列表声明式工厂（§四.2），覆盖 audit/work 两个结构相似面板
-import { FlatListPanel } from '../components/flatListPanel.js';
+import { FlatListPanel } from '../components/base/flatListPanel.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 
 /**

@@ -8,6 +8,24 @@
  * 浅色主题默认（:root），深色主题备选（[data-theme="dark"]）。
  */
 
+/* ============================================================================
+ * 令牌作用域分层（设计 ADR §一 / 审查方案 §4.5）：L1 / L2 / L3
+ *
+ *   L1  全局基础令牌（foundation primitives）
+ *       色板（基础原始色 + 透明度变体）、尺度（间距/字号/字重/圆角/阴影/
+ *       z-index/过渡/动画时长）、字体栈、品牌渐变。
+ *       —— 不可依赖任何更高层令牌，是 L2/L3 的单一真理源。
+ *
+ *   L2  语义 / 面板级令牌（semantic aliases）
+ *       统一经 var() 引用 L1，表达"激活态 / 语义背景 / 语义文字 / 标签配色 /
+ *       浮层"等跨面板语义角色。本文件 :root 内 L1/L2 按"主题"交错排列
+ *       （非按层级顺序），语义别名块以 [L2] 显式标注。
+ *
+ *   L3  组件级覆写令牌
+ *       保留在各面板 CSS（如 memory.css / chat.css），不在此文件。
+ *       组件覆写须引用 L1/L2，禁止在组件内硬编码裸值（见 stylelint 校验）。
+ * ========================================================================== */
+
 :root {
   color-scheme: light;
 
@@ -59,7 +77,7 @@
   /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
   --accent-fg:   #f0fafa;  /* 浅色主题：青蓝背景 + 极淡青白字，柔化视觉对比度 */
 
-  /* ─── 激活态语义令牌（统一 .active / .selected / .current 三套语义） ─── */
+  /* [L2] ─── 激活态语义令牌（统一 .active / .selected / .current 三套语义） ─── */
   /* 设计原则：激活态是"用户当前关注/选中"的视觉表达，统一走语义令牌而非散落 --accent-soft/--accent-20 */
   --active-bg:        var(--accent-soft);   /* 激活态浅底（nav-btn/dropdown-item/date-nav-item 等 .active 场景） */
   --active-bg-strong: var(--accent-20);      /* 激活态强底（completion-item.selected 等需要强指示的选中态） */
@@ -152,7 +170,7 @@
   --red-20:    rgba(255, 59, 48, 0.1);  /* 错误横幅背景色 */
   --warning-20: rgba(217, 119, 6, 0.1);  /* 警告色浅底 */
 
-  /* source 标签配色（记忆系统 source-tag + 用户画像 profile-category 共享，避免两处重复定义） */
+  /* [L2] source 标签配色（记忆系统 source-tag + 用户画像 profile-category 共享，避免两处重复定义） */
   --tag-profile-bg:   var(--green-20);   /* 用户身份/画像：绿色 */
   --tag-profile-fg:   var(--green);
   --tag-insight-bg:   var(--accent-20);  /* 洞察/偏好：强调色 */
@@ -223,27 +241,27 @@
   /* ─── 设计系统：输入框规范 ─── */
   --input-padding: 6px 10px;  /* 输入框统一内边距 */
 
-  /* ─── 设计系统：语义内边距（扩展，高频模式提取） ─── */
+  /* [L2] ─── 设计系统：语义内边距（扩展，高频模式提取） ─── */
   /* 自然生长原则：3+ 次重复的 padding 模式提取为语义令牌，避免硬编码散落 */
   --pad-card:           var(--space-3) var(--space-4);  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
   --pad-card-compact:   var(--space-2) var(--space-3);  /* 紧凑卡片内边距（审计条目、时间线节点等只读紧凑卡片，与 --input-padding-md 数值相同但语义独立） */
   --pad-section:   var(--space-2-5) var(--space-4);  /* 面板区块内边距（面板头部、引导项等），对齐 4px 栅格 */
   --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距（prompt-input、filter 下拉等，禁止卡片场景借用） */
 
-  /* 语义化背景变量（hover/次级背景） */
+  /* [L2] 语义化背景变量（hover/次级背景） */
   --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
   --bg-secondary: var(--surface1);     /* 次级背景（复用 surface1） */
   --hover:        var(--surface1);     /* hover 态背景简写别名（chat.css/layout.css 引用） */
 
-  /* 语义化文字颜色别名（供 layout.css 等引用，与 --text/--text-2 对齐） */
+  /* [L2] 语义化文字颜色别名（供 layout.css 等引用，与 --text/--text-2 对齐） */
   --text-primary:   var(--text);      /* 主文字色别名 */
 
-  /* 命令面板等浮层使用的变量（补全缺失定义，避免回退到浏览器默认值） */
+  /* [L2] 命令面板等浮层使用的变量（补全缺失定义，避免回退到浏览器默认值） */
   --surface:        var(--window-bg); /* 浮层表面背景 = 核心窗口背景 */
   --accent-10:      rgba(13, 115, 119, 0.05); /* 强调色 5% 透明度（hover 等更弱的强调场景） */
   --white:          #ffffff;         /* 纯白（红色按钮 hover 等场景） */
 
-  /* ─── 图谱浮层变量（深色主题自动适配） ─── */
+  /* [L2] ─── 图谱浮层变量（深色主题自动适配） ─── */
   /* 记忆图谱 tooltip/legend 使用半透明深色浮层，浅色/深色主题均可读 */
   --graph-overlay-bg:       rgba(0, 0, 0, 0.85);     /* 浮层背景 */
   --graph-overlay-fg:       rgba(255, 255, 255, 0.9); /* 浮层文字 */
@@ -251,13 +269,13 @@
   --graph-overlay-muted:    rgba(255, 255, 255, 0.6); /* 浮层弱化文字 */
   --graph-overlay-shadow:   0 4px 16px rgba(0, 0, 0, 0.3); /* 浮层阴影 */
 
-  /* 搜索高亮：黄色半透明背景，双主题通用 */
+  /* [L2] 搜索高亮：黄色半透明背景，双主题通用 */
   --search-highlight-bg:    rgba(255, 159, 10, 0.3);
 
-  /* 技能拖入错误态背景 */
+  /* [L2] 技能拖入错误态背景 */
   --dropzone-error-bg:      rgba(255, 59, 48, 0.08);
 
-  /* 里程碑庆祝渐变：浅色主题双色金→琥珀，强化"奖杯"语义 */
+  /* [L2] 里程碑庆祝渐变：浅色主题双色金→琥珀，强化"奖杯"语义 */
   --milestone-grad:         linear-gradient(135deg, #f9e2af 0%, #fab387 100%);
   --milestone-border:       #f9e2af;
   --milestone-text:         #5c4a1a;
@@ -268,13 +286,13 @@
   --milestone-close:        #8b7355;
   --milestone-close-hover-bg: rgba(255, 255, 255, 0.5);
 
-  /* 里程碑侧边栏徽章（小标签） */
+  /* [L2] 里程碑侧边栏徽章（小标签） */
   --milestone-badge-grad:   linear-gradient(135deg, rgba(249, 226, 175, 0.2), rgba(250, 179, 135, 0.2));
   --milestone-badge-border: rgba(249, 226, 175, 0.5);
   --milestone-badge-text:   #a67c00;
   --milestone-badge-icon:   #d4a017;
 
-  /* ─── 补齐未定义变量 ─── */
+  /* [L2] ─── 补齐未定义变量（语义别名为主，含少量 L1 原始透明度补齐） ─── */
   /* 集中定义此前被引用但未定义的变量，避免渲染回退 */
 
   /* 紧凑间距：Provider 列表/操作按钮/激活徽章间距（复用 --space-2 栅格令牌保持单一真理源） */
@@ -295,7 +313,7 @@
   /* 卡片 hover 边框色（.card.card-hoverable:hover，复用 muted 与其他卡片一致） */
   --border-hover: var(--muted);
 
-  /* UX-0713-15：浮动窗口专属令牌（从 float.css 迁入，保持单一真理源） */
+  /* [L2] UX-0713-15：浮动窗口专属令牌（从 float.css 迁入，保持单一真理源） */
   --badge-text:   #1e1e2e;
   --badge-border: #1e1e2e;
   --hint-bg:      rgba(30, 30, 46, 0.95);
@@ -308,10 +326,16 @@
   --float-window-size: 56px;  /* BrowserWindow 外尺寸 */
   --float-sphere-size: 48px;  /* 球体本体尺寸（#sphere） */
   --float-sphere-logo: 24px;  /* logo 在球体中的尺寸（#sphere-form img） */
+
+  /* L3 组件级覆写令牌保留在各面板 CSS（§一 / §4.5），不在此文件。组件覆写须引用上方 L1/L2。 */
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
+
+  /* [L1 + L2] 深色主题覆盖层：结构与 :root 对齐，覆盖 L1 基础令牌与 L2 语义令牌；
+     未在此覆盖的变量（如 --gap-compact / --error-10 / --padding-* / --border-hover）复用浅色定义。
+     L3 组件覆写仍在各面板 CSS，不在此块。 */
 
   /* 大底板色 */
   --bg:          #1e1e2e;

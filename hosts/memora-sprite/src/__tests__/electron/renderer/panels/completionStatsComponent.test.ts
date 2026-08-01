@@ -29,7 +29,7 @@ vi.mock('../../../../electron/renderer/helpers/completionMetrics.js', () => ({
 }));
 
 // 注意：必须在 vi.mock 之后 import（mock 工厂已被 hoist）
-import { CompletionStatsComponent } from '../../../../electron/renderer/panels/completionStatsRenderer.js';
+import { CompletionStatsComponent } from '../../../../electron/renderer/components/data/completionStatsComponent.js';
 import type { CompletionAggregated } from '../../../../electron/renderer/helpers/completionMetrics.js';
 
 /** 默认聚合数据（用于断言度量卡展示值） */

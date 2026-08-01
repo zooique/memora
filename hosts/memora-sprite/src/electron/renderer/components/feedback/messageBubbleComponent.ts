@@ -42,18 +42,18 @@
  *   <div class="message system">{content}</div>
  */
 
-import { Component } from './Component.js';
-import type { Message } from '../types.js';
+import { Component } from '../base/Component.js';
+import type { Message } from '../../types.js';
 // 复用 domHelpers 的时间格式化，避免逻辑重复
-import { formatTimestamp } from '../helpers/domHelpers.js';
+import { formatTimestamp } from '../../helpers/domHelpers.js';
 // 复用 icon helper 设置 SVG 图标，统一视觉风格
-import { setIcon } from '../helpers/icon.js';
+import { setIcon } from '../../helpers/icon.js';
 // 复用 markdown 渲染器，与 streamingRenderer 保持一致的渲染口径
-import { renderMarkdown } from './markdown.js';
+import { renderMarkdown } from '../markdown.js';
 // 复用角色名格式化，与现有 ChatPanelManager 行为一致
-import { formatPersonaDisplayName } from '../helpers/personaLabel.js';
+import { formatPersonaDisplayName } from '../../helpers/personaLabel.js';
 // 复用召回记忆容器构建逻辑，避免重复实现
-import { createRecallContainer as buildRecallContainer } from '../helpers/messageDecorations.js';
+import { createRecallContainer as buildRecallContainer } from '../../helpers/messageDecorations.js';
 
 /**
  * MessageBubbleComponent 配置

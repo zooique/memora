@@ -500,3 +500,59 @@ interface ListPanelConfig<T> {
 - **profile 维持排除**，与 memory 同级（异类不强行纳入）。其双列表 + 确认/拒绝/删除交互已遵循 Manager + helper 良好结构，无需改造。
 - 判别铁律（已写入 MEMORY.md）：声明式列表工厂**仅接纳「单容器 + 单 load 返回 T[] + 单计数」面板**；遇 双列表 / `{entries}` 返回 / 无外层包裹 → **异类排除**，不可为单消费者撑大契约。
 - Phase C 收口：audit（试点）+ work（customRender）已接入；profile、memory 排除；工厂契约最小可行、未被撑大。
+
+---
+
+## 9.15 Phase D（P2）· 令牌分区 + 注册核对（2026-07-31 续）
+
+### 9.15.1 范围对抗式厘清（报告内部张力）
+Phase D 在计划中有两处表述需先对齐，再执行：
+- 报告 line 159 Phase D 表：**`tokens.css` L1/L2 注释分区；`components/index.ts` 随分层补全注册**（验收：stylelint 无新增裸值）。
+- 报告 line 101 注（同一方案）："§四.3 统一导出口与 index.ts 自身「15+ 文件再分层」存在张力。项目**有意分阶段**，故 P2 而非 P0——**待真正分层时一并完成注册，勿为合规而合规地提前强制注册（复杂度守恒）**。"
+- 之前会话 summary 把「将 Phase B 的 `panels/` 组件物理迁至 `components/` + 建 base/feedback/data 子目录」也列入 Phase D。
+
+**第一性结论**：物理迁移 + 子目录分层 = line 101 明确警告的「为合规而合规提前强制分层」，违反复杂度守恒 → **本回合不做**，改为诚实修正过时注释。Phase D 实际交付 = tokens.css 注释分区（实质）+ index.ts 注册核对（注册早已在 Phase B/C 完成，仅修过时注释）。
+
+### 9.15.2 tokens.css L1/L2 注释分区（已执行）
+`styles/foundation/tokens.css` 改动**仅注释，不重排、不拆文件**（对齐 line 54/148「注释分区、不必拆文件」）：
+- 文件头与 `:root` 间插入**作用域模型横幅**：L1 全局基础（色板/尺度/字体/阴影/z-index/过渡，不可依赖高层）、L2 语义别名（经 var() 引用 L1）、L3 组件覆写（在各面板 CSS，不在此文件）。
+- 对 `:root` 内**语义别名块显式标 `[L2]`**（激活态 / source 标签配色 / 语义内边距 / 语义化背景 / 语义化文字别名 / 浮层 / 搜索高亮 / 技能错误态 / 里程碑 / 补齐变量 / 浮动窗口专属，共 13 处）。
+- `:root` 关闭处加 **L3 注记**：组件覆写须引用 L1/L2，禁止硬编码裸值。
+- `[data-theme="dark"]` 块加**覆盖横幅**：标注其覆盖 L1+L2，L3 仍在各面板 CSS。
+
+> 对抗式校正：`tokens.css` 的 `:root` 内 L1/L2 **按主题交错排列**（非 L1 在前 L2 在后），故采用「顶部模型横幅 + 对 L2 块逐块标注」而非单一分隔带，避免失真误导。
+
+### 9.15.3 components/index.ts 注册核对 + 过时注释修正
+- **注册已完整**：grep `extends Component` 得 8 个子类（HealthDashboard/CompletionStats/PartnerInsights/LlmGovernance/Insights/FlatListPanel/MessageBubble/Toast）+ 基类，均已在 `index.ts` 导出（Phase B/C 已完成）。原 P2「仅导出 3/≈13」项**早已解决**。
+- **修正 line 33-34 过时注释**：原「待 Phase D 迁移」与 line 101 的「有意分阶段、勿提前强制分层」判据冲突，属谎言注释。改为明示：物理留 `panels/` 为有意为之，未达 15+ 文件分层阈值前不强制 base/feedback/... 子目录归类，故 Phase D 不做物理迁移。
+
+### 9.15.4 质量门（全部通过）
+| 门 | 结果 |
+|---|---|
+| `stylelint "src/electron/renderer/styles/**/*.css"` | OK（无新增裸值、无未知令牌） |
+| `tsc -p tsconfig.electron.json --noEmit` | 0 错 |
+| 全 renderer 测试 `src/__tests__/electron/renderer/` | **2390/2390**（68 文件，零回归） |
+
+### 9.15.5 结论
+Phase D 收口：**tokens.css L1/L2/L3 注释分区落地（可审计的作用域模型）**；`index.ts` 注册核实完整 + 过时注释修正；**刻意递延** panels/→components/ 物理迁移（复杂度守恒，待 15+ 文件再分层）。验收「stylelint 无新增裸值」达成。
+
+### 9.16 Phase E（P3）· applyMixins 回退评估（2026-08-01 收口）
+
+- **实测触发条件**：`ui.ts` = **1077 行**（wc -l + grep 核验），远低于 1500 触发阈值。
+- **现状**：`applyMixins`（`helpers/applyMixins.ts`，纯运行时原型的 6 委托群注入）仍在用——`ui.ts:1066-1070` 将 6 个 `ui-delegations` 群复制到 `UIManager.prototype`；类型安全由 `interface extends` 保证（ADR-SP-016 确认 mixin 为有意架构选择，HEAL-13 已判不拆）。
+- **第一性结论**：未达「TS 单文件超 1500 行」触发条件 → **不回退**为内联分区注释。回退收益（断点可直接见方法来源、调试可见性）被代价（300+ 委托方法重新内联、重新制造 1500+ 行巨文件、丢失委托群物理隔离）抵消，违反复杂度守恒。
+- 与 HEAL-13 决策一致：mixin 因 `UIManager` 门面必然产物 + 委托群物理隔离需求而存在，维持监控不重构。
+- **验收**：「调试可见性提升」本为可触发项 → 因未触发，无动作；转为长期观察条目 `UI-MIXIN-OBS`（ui.ts 行数监控，阈值 1500）。
+
+---
+
+## 10. 闭环声明
+
+HEAL-17 渲染层渐进重构 review 全部 5 阶段（A–E）已收口：
+- **A**（P1）：`ui.ts` 3 处 orphaned 死注释清理；`modal.ts` 内部元素查找收敛为 `querySelector`。
+- **B**（P1→P2）：6 个 `*Renderer` 中 5 个面板渲染器升级 Component（completionStats/healthDashboard/insights/partnerInsights/llmGovernanceResult）；`streamingRenderer` 对抗式豁免。
+- **C**（P2）：抽 `FlatListPanel` 声明式工厂——audit（试点）+ work（customRender）接入；profile（双列表+`{entries}`）/ memory（list+search+detail）异类排除；暴露「单容器+单 load 返回 T[]+单计数」接纳判据。
+- **D**（P2）：`tokens.css` L1/L2/L3 注释分区落地；`components/index.ts` 注册核对完整 + 过时注释修正；**刻意递延** panels/→components/ 物理迁移（复杂度守恒，待 15+ 文件再分层）。
+- **E**（P3）：`applyMixins` 评估——未达 1500 行触发，**不回退**。
+
+报告闭环，归档至 `tasks/归档/`。未闭环项（递延 + 长期观察）已转入 `待完成任务.md`（UI-MIXIN-OBS、D-MIGRATE-OBS、HEAL-17-P3/UI-AUDIT-P0-2 状态刷新）。

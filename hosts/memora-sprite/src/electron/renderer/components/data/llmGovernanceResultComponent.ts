@@ -20,10 +20,10 @@
  * - L3 冲突检测 = 仅检测不修复，因此不提供"恢复/修复"按钮，需用户手动消歧
  */
 
-import { Component } from '../components/Component.js';
-import { createEl } from '../helpers/domHelpers.js';
+import { Component } from '../base/Component.js';
+import { createEl } from '../../helpers/domHelpers.js';
 // 截断工具（shared/ 层真理源，ADR-017 枝叶层 2 次提取产物）
-import { truncate } from '../../../shared/truncate.js';
+import { truncate } from '../../../../shared/truncate.js';
 import type { DedupReport, DedupVerdictSummary, TimelinessReport, ConflictReport } from 'memora';
 
 // ─── 常量 ────────────────────────────────────────────────

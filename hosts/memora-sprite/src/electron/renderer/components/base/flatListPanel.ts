@@ -17,10 +17,10 @@
  *   （与 memory 同级），否则需为单消费者撑大工厂契约 → God Object 风险（§四.2）。
  */
 import { Component } from './Component.js';
-import { EventTracker } from '../helpers/eventTracker.js';
-import { getOptionalElement, clearElement, createEmptyState } from '../helpers/domHelpers.js';
-import { bindRefreshButton } from '../helpers/buttonHelpers.js';
-import { renderErrorState } from '../helpers/errorState.js';
+import { EventTracker } from '../../helpers/eventTracker.js';
+import { getOptionalElement, clearElement, createEmptyState } from '../../helpers/domHelpers.js';
+import { bindRefreshButton } from '../../helpers/buttonHelpers.js';
+import { renderErrorState } from '../../helpers/errorState.js';
 
 /**
  * 扁平列表面板配置（§四.2「配置项应声明完整契约」）

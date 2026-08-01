@@ -16,8 +16,8 @@
  * - 组件自身通过 Component.trackEvent 管理重试按钮监听，destroy 时统一解绑
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { InsightsComponent } from '../../../electron/renderer/panels/insightsRenderer.js';
-import type { InsightsDashboardData } from '../../../electron/renderer/panels/insightsRenderer.js';
+import { InsightsComponent } from '../../../electron/renderer/components/data/insightsComponent.js';
+import type { InsightsDashboardData } from '../../../electron/renderer/components/data/insightsComponent.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

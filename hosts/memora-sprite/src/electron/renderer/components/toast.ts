@@ -25,7 +25,7 @@
  */
 
 import type { ToastType, ToastOptions } from '../types.js';
-import { ToastComponent } from './toastComponent.js';
+import { ToastComponent } from './feedback/toastComponent.js';
 
 /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
 const TOAST_MAX_VISIBLE = 5;
