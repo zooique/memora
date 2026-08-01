@@ -9,6 +9,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
+    // 全局 setup：jsdom 未实现的部分 SVG 类型补齐（如 SVGPolygonElement）
+    setupFiles: ['scripts/vitest-svg-setup.ts'],
     // 全局环境变量：测试时跳过 PowerShell 调用（inputInjector.readElectronFocusedWindowTitle）
     // 避免 captureActiveWindow 在测试环境真实调用 PowerShell 绕过 mock，导致断言失败
     env: {

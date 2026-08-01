@@ -32,34 +32,40 @@ import type {
 
 /** 感知面板完整 DOM 结构 */
 const PERCEPTION_HTML = `
-  <!-- 情感维度 -->
-  <div id="perception-warmth-fill" style="width:0%"></div>
-  <span id="perception-warmth-level"></span>
-  <div id="perception-directness-fill" style="width:0%"></div>
-  <span id="perception-directness-level"></span>
-  <div id="perception-initiative-fill" style="width:0%"></div>
-  <span id="perception-initiative-level"></span>
-  <div id="perception-playfulness-fill" style="width:0%"></div>
-  <span id="perception-playfulness-level"></span>
-  <span id="sprite-status-text-bar"></span>
-  <span id="sprite-status-dot-bar"></span>
-  <!-- 情感雷达图 SVG -->
-  <polygon id="perception-affect-radar" points="60,60 60,60 60,60 60,60"></polygon>
-  <circle id="radar-dot-warmth" cx="60" cy="60" r="3"></circle>
-  <circle id="radar-dot-directness" cx="60" cy="60" r="3"></circle>
-  <circle id="radar-dot-initiative" cx="60" cy="60" r="3"></circle>
-  <circle id="radar-dot-playfulness" cx="60" cy="60" r="3"></circle>
+  <!-- 情感基调 -->
+  <section id="perception-affect-section">
+    <div id="perception-warmth-fill" style="width:0%"></div>
+    <span id="perception-warmth-level"></span>
+    <div id="perception-directness-fill" style="width:0%"></div>
+    <span id="perception-directness-level"></span>
+    <div id="perception-initiative-fill" style="width:0%"></div>
+    <span id="perception-initiative-level"></span>
+    <div id="perception-playfulness-fill" style="width:0%"></div>
+    <span id="perception-playfulness-level"></span>
+    <span id="sprite-status-text-bar"></span>
+    <span id="sprite-status-dot-bar"></span>
+    <!-- 情感雷达图 SVG -->
+    <polygon id="perception-affect-radar" points="60,60 60,60 60,60 60,60"></polygon>
+    <circle id="radar-dot-warmth" cx="60" cy="60" r="3"></circle>
+    <circle id="radar-dot-directness" cx="60" cy="60" r="3"></circle>
+    <circle id="radar-dot-initiative" cx="60" cy="60" r="3"></circle>
+    <circle id="radar-dot-playfulness" cx="60" cy="60" r="3"></circle>
+  </section>
 
   <!-- 默契度 -->
-  <span id="perception-rapport-badge"></span>
-  <div id="perception-trust-fill" style="width:0%"></div>
-  <div id="perception-familiarity-fill" style="width:0%"></div>
-  <span id="perception-rapport-desc"></span>
+  <section id="perception-rapport-section">
+    <span id="perception-rapport-badge"></span>
+    <div id="perception-trust-fill" style="width:0%"></div>
+    <div id="perception-familiarity-fill" style="width:0%"></div>
+    <span id="perception-rapport-desc"></span>
+  </section>
 
-  <!-- 上下文 -->
-  <span id="perception-pace-value"></span>
-  <span id="perception-topic-value"></span>
-  <span id="perception-depth-value"></span>
+  <!-- 对话上下文 -->
+  <section id="perception-context-section">
+    <span id="perception-pace-value"></span>
+    <span id="perception-topic-value"></span>
+    <span id="perception-depth-value"></span>
+  </section>
 
   <!-- 模式洞察 -->
   <section id="perception-patterns-section" class="hidden">
@@ -67,8 +73,10 @@ const PERCEPTION_HTML = `
   </section>
 
   <!-- 在场状态 -->
-  <span id="perception-presence-dot"></span>
-  <span id="perception-presence-text"></span>
+  <section id="perception-presence-section">
+    <span id="perception-presence-dot"></span>
+    <span id="perception-presence-text"></span>
+  </section>
 
   <!-- 叙事摘要 -->
   <span id="perception-narrative-text"></span>
