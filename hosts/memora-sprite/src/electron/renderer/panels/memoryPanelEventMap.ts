@@ -26,8 +26,12 @@
  *   onRelationCreate     → 'relation-create'
  *   onRecycleBinAction   → 'recycle-bin-action'
  *   onRecycleBinBatchAction → 'recycle-bin-batch-action'
+ *
+ * 类型说明：使用 type 别名而非 interface——interface 缺少隐式字符串索引签名，
+ * 不满足 TypedEventBus 的 `Record<string, AnyListener>` 约束（TS2344）；
+ * type 别名是封闭类型，TS 为其推断隐式索引签名。
  */
-export interface MemoryPanelEventMap {
+export type MemoryPanelEventMap = {
   /** 搜索记忆（防抖后触发，query 为空表示清除搜索） */
   'memory-search': (query: string) => void;
   /** 来源筛选（空字符串表示全部来源） */
@@ -68,4 +72,4 @@ export interface MemoryPanelEventMap {
   'recycle-bin-action': (action: 'restore' | 'purge', id: string) => Promise<void>;
   /** 回收站批量操作（restore-all/purge-all） */
   'recycle-bin-batch-action': (action: 'restore-all' | 'purge-all') => Promise<void>;
-}
+};

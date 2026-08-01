@@ -45,9 +45,12 @@ export class TypedEventBus<TEventMap extends Record<string, AnyListener>> {
     event: K,
     ...args: Parameters<TEventMap[K]>
   ): ReturnType<TEventMap[K]> | undefined {
-    // Map.get 返回联合类型，此处断言为精确 K 签名（必要类型适配，AUDIT-TRIG-2 判定）
-    const handler = this.handlers.get(event) as TEventMap[K] | undefined;
-    return handler?.(...args);
+    const handler = this.handlers.get(event);
+    if (!handler) return undefined;
+    // Map.get 返回联合类型，断言为精确 K 签名后才能调用（必要类型适配，AUDIT-TRIG-2 判定）。
+    // 泛型 K 下 TS 将调用表达式推断为约束类型 AnyListener 的返回值（unknown），
+    // 无法自动收窄到 ReturnType<TEventMap[K]>，需显式断言（非 as any，目标类型精确）。
+    return (handler as TEventMap[K])(...args) as ReturnType<TEventMap[K]>;
   }
 
   /** 是否已注册 */
