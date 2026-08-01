@@ -1,7 +1,7 @@
 # Memora Sprite 自动化构建流水线
 #
 # 触发条件：
-#   1. 推送 v* 格式的 tag → 仅 Windows 自动构建打包
+#   1. 推送 sprite-v* 格式的 tag → 仅 Windows 自动构建打包（如 sprite-v1.6.0）
 #   2. 手动触发（workflow_dispatch）→ 可选 Windows / macOS / Linux
 #
 # 产物：
@@ -19,7 +19,7 @@ name: Build
 on:
   push:
     tags:
-      - 'v*'
+      - 'sprite-v*'
   workflow_dispatch:
     inputs:
       platform:
@@ -248,7 +248,7 @@ jobs:
     name: Publish Release
     needs: [build-windows]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/sprite-v')
     permissions:
       contents: write
 

@@ -1,6 +1,6 @@
 {
   "name": "@zooique/memora",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Node.js 专用 Agent 架构 — 本地、私有、领域无关，万物皆记忆（零第三方运行时依赖，依赖 Node.js 内置模块）",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,10 +13,14 @@
     "docs/memora-api-reference.md",
     "docs/memora-接入指南.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "repository": {
@@ -44,11 +48,24 @@
     "node": ">=22.0.0"
   },
   "keywords": [
+    "memora",
     "agent",
     "memory",
+    "agent-memory",
     "llm",
     "ai",
-    "local-first"
+    "local-first",
+    "local-ai",
+    "embedding",
+    "vector-search",
+    "rag",
+    "typescript",
+    "zero-dependency",
+    "semantic-search",
+    "knowledge-base",
+    "记忆",
+    "智能体",
+    "本地优先"
   ],
   "author": "Memora Contributors",
   "license": "MIT",

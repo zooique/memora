@@ -4,6 +4,20 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.3] - 2026-08-01
+
+npm 发布配置修复与质量加固版本。
+
+### Added（新增）
+
+- **`publishConfig.access = "public"`**：修复 scoped package 发布阻塞（@zooique/memora 是私有作用域，npm 默认拒绝发布）
+- **`keywords` 扩充至 18 个**：新增 memora / agent-memory / local-ai / embedding / vector-search / rag / zero-dependency / semantic-search / knowledge-base 及中文关键词，提升 npm 搜索曝光
+- **`exports` 增加 `default` 回退条件**：增强混合解析场景的兼容性
+
+### Internal（内部变更，不影响公共 API）
+
+- 版本号 v2.0.2 → v2.0.3
+
 ## [2.0.2] - 2026-07-27
 
 设定模块（Persona/Skill/Rule）全链路审查与修复版本。核心收敛：角色/技能从 SQLite 记忆索引解耦、"万物皆记忆"升级为 v2 双轨模型、技能从延迟注入改为当轮实时生效。

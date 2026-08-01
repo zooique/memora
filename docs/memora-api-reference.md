@@ -1,10 +1,10 @@
-# Memora 内核 API 参考手册（v2.0.2）
+# Memora 内核 API 参考手册（v2.0.3）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v2.0.2（最后更新：2026-07-27，对应内核 v2.0.2）
+> **版本**：v2.0.3（最后更新：2026-08-01，对应内核 v2.0.3）
 >
 > **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
 > - **Agent God Object 拆分（原 v3.0）**：记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
@@ -17,6 +17,8 @@
 > **v2.0.0 变更**：版本号提升（维护性质，无破坏性 API 变更）。
 >
 > **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
+>
+> **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
 
 ---
 
@@ -1051,7 +1053,7 @@ action: block
 
 ## 十八、类型导出
 
-> 以下导出与 `src/index.ts` 完全对齐（v2.0.1）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
+> 以下导出与 `src/index.ts` 完全对齐（v2.0.3）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
 
 ```typescript
 // Agent 与流式事件
@@ -1088,8 +1090,8 @@ export type {
 export type { DedupPair, DedupVerdict, DedupVerdictSummary, DedupReport } from '@zooique/memora';
 export type { TimelinessVerdict, TimelinessReport } from '@zooique/memora';
 export type { ConflictVerdict, ConflictReport } from '@zooique/memora';
-export type { SourceHealthStatus, SourceHealthEntry, SourceHealthReport } from '@zooique/memora';
-export type { SuggestOptions, SuggestHit } from '@zooique/memora';
+// 记忆治理统一门面
+export { MemoryGovernance } from '@zooique/memora';
 // 文本润色
 export type { PolishResult } from '@zooique/memora';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
@@ -1120,6 +1122,8 @@ export { inferSource, escapeLike, validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
+// 治理共享常量（衰减/提升/上限）
+export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
@@ -1183,9 +1187,12 @@ export { loadConfig } from '@zooique/memora';
 export type { Config } from '@zooique/memora';
 
 // 工具函数
-export { segmentText } from '@zooique/memora';
+export { segmentText, segmentLower } from '@zooique/memora';
 export { parseFrontmatter, serializeFrontmatter } from '@zooique/memora';
 export { safeSetTimeout, safeSetInterval, clearSafeTimeout, clearSafeInterval } from '@zooique/memora';
+export { isPlainObject } from '@zooique/memora';
+export { truncate } from '@zooique/memora';
+export { formatDateKey, todayDate } from '@zooique/memora';
 
 // 安全
 export type {
@@ -1223,6 +1230,6 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v2.0.1
-**最后更新**：2026-07-26
+**版本**：v2.0.3
+**最后更新**：2026-08-01
 **配套文档**：[memora-接入指南.md](./memora-接入指南.md)（步骤式教程）
