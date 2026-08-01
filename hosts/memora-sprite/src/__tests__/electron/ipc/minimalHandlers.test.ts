@@ -7,10 +7,7 @@
  * - LLM_CONFIG_TEST：连接成功 + 空响应 + 失败降级 + 参数校验
  * - LLM_CONFIG_GET：已配置 + 未配置 + 加载失败降级 + background/embedding 分支 + apiKey 脱敏
  * - LLM_CONFIG_SAVE：成功完整链路 + 中断进行中对话 + 失败降级 + 参数校验 + 跳过 reinit
- * - LLM_PROVIDER_LIST：成功 + 失败降级
- * - LLM_PROVIDER_SAVE：参数校验 + agentReady 分支 + reinit 成功/失败
- * - LLM_PROVIDER_DELETE：参数校验 + 非 active + active 切换 + 失败降级
- * - LLM_PROVIDER_SET_ACTIVE：参数校验 + Provider 不存在 + Agent 未就绪 + 前后台切换 + 失败降级
+ * - LLM_PROVIDER（统一入口 + action 分发）：list/save/delete/set-active 各分支
  * - WRITE_CONFIRMATION_RESPONSE：找到/未找到 requestId
  * - AUDIT_LOG_LIST：auditManager 存在/null 降级 + limit 边界
  * - AUDIT_LOG_CLEAR：auditManager 存在/null 降级
@@ -861,9 +858,9 @@ describe('registerMinimalIpcHandlers', () => {
     });
   });
 
-  // ─── LLM_PROVIDER_LIST ────────────────────────────────
+  // ─── LLM_PROVIDER（统一入口 + action 分发） ──────────
 
-  describe('LLM_PROVIDER_LIST', () => {
+  describe('LLM_PROVIDER list', () => {
     it('成功应返回 providers 列表', async () => {
       const state = createState();
       const callbacks = createCallbacks();
@@ -871,8 +868,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockGetLlmProviders.mockResolvedValue(providers);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_LIST)!;
-      const result = await callback();
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'list' });
 
       expect(result).toEqual(providers);
       expect(mockGetLlmProviders).toHaveBeenCalled();
@@ -884,17 +881,17 @@ describe('registerMinimalIpcHandlers', () => {
       mockGetLlmProviders.mockRejectedValue(new Error('读取失败'));
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_LIST)!;
-      const result = await callback();
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'list' });
 
       expect(result).toEqual({ active: '', providers: [] });
       expect(mockLogger.warn).toHaveBeenCalled();
     });
   });
 
-  // ─── LLM_PROVIDER_SAVE ───────────────────────────────
+  // ─── LLM_PROVIDER save ───────────────────────────────
 
-  describe('LLM_PROVIDER_SAVE', () => {
+  describe('LLM_PROVIDER save', () => {
     const providerConfig = {
       provider: 'openai',
       model: 'gpt-4',
@@ -907,8 +904,8 @@ describe('registerMinimalIpcHandlers', () => {
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
-      const result = await callback({}, '', providerConfig);
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'save', key: '', config: providerConfig });
 
       expect(result).toEqual({ success: false, error: '参数无效' });
       expect(mockSaveLlmProvider).not.toHaveBeenCalled();
@@ -919,9 +916,9 @@ describe('registerMinimalIpcHandlers', () => {
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
       // 新增模式：isEditing 未传（undefined），apiKey 为空应拒绝
-      const result = await callback({}, 'key1', { ...providerConfig, apiKey: '' });
+      const result = await callback({}, { action: 'save', key: 'key1', config: { ...providerConfig, apiKey: '' } });
 
       expect(result).toEqual({ success: false, error: 'API Key 不能为空' });
       expect(mockSaveLlmProvider).not.toHaveBeenCalled();
@@ -933,9 +930,9 @@ describe('registerMinimalIpcHandlers', () => {
       mockSaveLlmProvider.mockResolvedValue(undefined);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
       // 编辑模式：isEditing=true，apiKey 为空表示保留原值
-      const result = await callback({}, 'key1', { ...providerConfig, apiKey: '' }, true);
+      const result = await callback({}, { action: 'save', key: 'key1', config: { ...providerConfig, apiKey: '' }, isEditing: true });
 
       expect(mockSaveLlmProvider).toHaveBeenCalledWith('key1', { ...providerConfig, apiKey: '' });
       expect(mockReinitAgent).not.toHaveBeenCalled();
@@ -948,8 +945,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockSaveLlmProvider.mockResolvedValue(undefined);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
-      const result = await callback({}, 'key1', providerConfig);
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'save', key: 'key1', config: providerConfig });
 
       expect(mockSaveLlmProvider).toHaveBeenCalledWith('key1', providerConfig);
       expect(mockReinitAgent).not.toHaveBeenCalled();
@@ -970,8 +967,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockReinitAgent.mockResolvedValue(reinitResult);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
-      const result = await callback({}, 'key1', providerConfig);
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'save', key: 'key1', config: providerConfig });
 
       expect(mockReinitAgent).toHaveBeenCalled();
       expect(state.agentRuntime.lastProvider).toBe('openai');
@@ -990,8 +987,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockReinitAgent.mockRejectedValue(new Error('初始化失败'));
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SAVE)!;
-      const result = await callback({}, 'key1', providerConfig);
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'save', key: 'key1', config: providerConfig });
 
       expect(state.agentReady).toBe(false);
       expect(state.initErrorDetail).toBe('分类: 初始化失败');
@@ -1000,16 +997,16 @@ describe('registerMinimalIpcHandlers', () => {
     });
   });
 
-  // ─── LLM_PROVIDER_DELETE ─────────────────────────────
+  // ─── LLM_PROVIDER delete ─────────────────────────────
 
-  describe('LLM_PROVIDER_DELETE', () => {
+  describe('LLM_PROVIDER delete', () => {
     it('空 key 应返回参数无效', async () => {
       const state = createState();
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_DELETE)!;
-      const result = await callback({}, '');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'delete', key: '' });
 
       expect(result).toEqual({ success: false, error: '参数无效' });
       expect(mockDeleteLlmProvider).not.toHaveBeenCalled();
@@ -1026,8 +1023,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockDeleteLlmProvider.mockResolvedValue(undefined);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_DELETE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'delete', key: 'key1' });
 
       expect(mockDeleteLlmProvider).toHaveBeenCalledWith('key1');
       expect(createProviderFromConfig).not.toHaveBeenCalled();
@@ -1055,8 +1052,8 @@ describe('registerMinimalIpcHandlers', () => {
       vi.mocked(createProviderFromConfig).mockReturnValue({} as never);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_DELETE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'delete', key: 'key1' });
 
       expect(mockResolveProviderConfig).toHaveBeenCalled();
       expect(createProviderFromConfig).toHaveBeenCalledWith('key2', expect.objectContaining({
@@ -1074,23 +1071,23 @@ describe('registerMinimalIpcHandlers', () => {
       mockDeleteLlmProvider.mockRejectedValue(new Error('删除失败'));
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_DELETE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'delete', key: 'key1' });
 
       expect(result).toEqual({ success: false, error: '删除失败' });
     });
   });
 
-  // ─── LLM_PROVIDER_SET_ACTIVE ─────────────────────────
+  // ─── LLM_PROVIDER set-active ─────────────────────────
 
-  describe('LLM_PROVIDER_SET_ACTIVE', () => {
+  describe('LLM_PROVIDER set-active', () => {
     it('空 key 应返回参数无效', async () => {
       const state = createState();
       const callbacks = createCallbacks();
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      const result = await callback({}, '');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'set-active', key: '' });
 
       expect(result).toEqual({ success: false, error: '参数无效' });
       expect(mockSetActiveLlmProvider).not.toHaveBeenCalled();
@@ -1104,8 +1101,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockResolveProviderConfig.mockReturnValue(undefined);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      const result = await callback({}, 'missing-key');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'set-active', key: 'missing-key' });
 
       expect(result).toEqual({ success: false, error: 'Provider "missing-key" 不存在' });
     });
@@ -1125,8 +1122,8 @@ describe('registerMinimalIpcHandlers', () => {
       });
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'set-active', key: 'key1' });
 
       expect(result).toEqual({
         success: true,
@@ -1164,8 +1161,8 @@ describe('registerMinimalIpcHandlers', () => {
       vi.mocked(createProviderFromConfig).mockReturnValue({ id: 'provider' } as never);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'set-active', key: 'key1' });
 
       expect(setProvider).toHaveBeenCalled();
       expect(createProviderFromConfig).toHaveBeenCalledWith('background', expect.objectContaining({
@@ -1196,8 +1193,8 @@ describe('registerMinimalIpcHandlers', () => {
       vi.mocked(createProviderFromConfig).mockReturnValue({ id: 'provider' } as never);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'set-active', key: 'key1' });
 
       expect(setBackgroundProvider).toHaveBeenCalledWith(null);
       expect(result).toEqual({ success: true, error: null });
@@ -1211,8 +1208,8 @@ describe('registerMinimalIpcHandlers', () => {
       mockSetActiveLlmProvider.mockRejectedValue(new Error('切换失败'));
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      const result = await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      const result = await callback({}, { action: 'set-active', key: 'key1' });
 
       expect(state.agentReady).toBe(false);
       expect(callbacks.setAppRuntime).toHaveBeenCalledWith(null);
@@ -1245,8 +1242,8 @@ describe('registerMinimalIpcHandlers', () => {
       vi.mocked(createProviderFromConfig).mockReturnValue({ id: 'provider' } as never);
       registerMinimalIpcHandlers(state, callbacks);
 
-      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE)!;
-      await callback({}, 'key1');
+      const callback = handleCallbacks.get(IPC_CHANNELS.LLM_PROVIDER)!;
+      await callback({}, { action: 'set-active', key: 'key1' });
 
       expect(abortSpy).toHaveBeenCalled();
       expect(state.agentRuntime.currentAbortController).toBeNull();

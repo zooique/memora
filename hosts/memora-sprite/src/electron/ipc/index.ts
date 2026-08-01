@@ -11,7 +11,7 @@
  * minimalHandlers 通道接管：
  * - 启动期 minimalHandlers 注册了 onboarding 阶段必需的临时通道（如 CONFIG_GET、PROJECTS_LIST）
  * - 完整 IPC 接管时这些通道会被各领域 handler 重新注册，需先 removeHandler 避免冲突
- * - 持久通道（AGENT_STATUS、LLM_PROVIDER_LIST、AUDIT_LOG_*）完整 IPC 不重复注册，保留 minimalHandlers 的实现
+ * - 持久通道（AGENT_STATUS、LLM_PROVIDER、AUDIT_LOG_*）完整 IPC 不重复注册，保留 minimalHandlers 的实现
  */
 
 import { ipcMain } from 'electron';

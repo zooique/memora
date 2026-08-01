@@ -147,16 +147,8 @@ export const IPC_CHANNELS = {
   LLM_CONFIG_GET: 'llm-config-get',
   LLM_CONFIG_SAVE: 'llm-config-save',
   LLM_CONFIG_TEST: 'llm-config-test',
-  /** 获取 Provider 列表 */
-  LLM_PROVIDER_LIST: 'llm-provider-list',
-  /** 保存 Provider 配置（新增/更新） */
-  LLM_PROVIDER_SAVE: 'llm-provider-save',
-  /** 删除 Provider */
-  LLM_PROVIDER_DELETE: 'llm-provider-delete',
-  /** 切换激活 Provider */
-  LLM_PROVIDER_SET_ACTIVE: 'llm-provider-set-active',
-  /** 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务） */
-  LLM_BACKGROUND_PROVIDER_SAVE: 'llm-background-provider-save',
+  /** 多 Provider 管理（统一入口，通过 action 字段分发） */
+  LLM_PROVIDER: 'llm-provider',
   AGENT_STATUS: 'agent-status',
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
   /** Phase 2.1：用户接受了主动提示（点击"查看"） */
@@ -1152,12 +1144,12 @@ const electronAPI: ElectronAPI = {
   saveLlmConfig: (llmConfig, embeddingConfig) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_SAVE, llmConfig, embeddingConfig),
   testLlmConfig: (llmConfig) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_TEST, llmConfig),
 
-  // 多 Provider 管理
-  listLlmProviders: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_LIST),
-  saveLlmProvider: (key, config, isEditing) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SAVE, key, config, isEditing),
-  deleteLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_DELETE, key),
-  setActiveLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE, key),
-  saveBackgroundProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_BACKGROUND_PROVIDER_SAVE, key),
+  // 多 Provider 管理（统一入口，通过 action 字段分发）
+  listLlmProviders: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER, { action: 'list' }),
+  saveLlmProvider: (key, config, isEditing) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER, { action: 'save', key, config, isEditing }),
+  deleteLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER, { action: 'delete', key }),
+  setActiveLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER, { action: 'set-active', key }),
+  saveBackgroundProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER, { action: 'save-background', key }),
 
   // Agent 就绪通知
   onAgentReady: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, () => cb()),

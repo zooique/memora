@@ -29,6 +29,11 @@ const PRELOAD_PATH = resolve(import.meta.dirname, '../src/electron/preload.ts');
  * 使用正则匹配 `KEY: 'value'` 或 `KEY: "value"` 模式，
  * 跳过注释行和空行。
  *
+ * 注意：必须跳过注释行（// 和 /* * /），因为 JSDoc 中可能包含
+ * payload.action: 'list' 等模式，会污染键值对提取（如 LLM_PROVIDER
+ * 注释中的 action: 'list' vs MEMORIES_RELATION_MUTATE 注释中的
+ * action: 'add' 产生误报）。
+ *
  * @param source 源码字符串
  * @param objectName 对象变量名（如 'IPC_CHANNELS'）
  * @returns 键值对 Map
@@ -36,23 +41,29 @@ const PRELOAD_PATH = resolve(import.meta.dirname, '../src/electron/preload.ts');
 function extractChannels(source: string, objectName: string): Map<string, string> {
   const channels = new Map<string, string>();
 
+  // 先去除所有注释行（// 单行注释 和 /* ... */ 多行注释），避免 JSDoc 中的
+  // payload.action: 'list' 等模式污染键值对提取
+  const noComments = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')   // 去除 /* ... */ 多行注释
+    .replace(/\/\/.*$/gm, '');            // 去除 // 单行注释
+
   // 匹配模式：KEY: 'value' 或 KEY: "value"（忽略注释和空格）
   const regex = /(\w+):\s*['"]([^'"]+)['"]/g;
 
-  // 找到对象定义的起始位置
-  const objectStart = source.indexOf(`const ${objectName}`);
+  // 找到对象定义的起始位置（使用去注释后的源码，避免注释干扰位置定位）
+  const objectStart = noComments.indexOf(`const ${objectName}`);
   if (objectStart === -1) {
     console.error(`[check-ipc-channels] 错误：未找到 ${objectName} 定义`);
     process.exit(1);
   }
 
   // 找到对象定义的结束位置（下一个 export 或 const 之前）
-  const afterObject = source.slice(objectStart);
+  const afterObject = noComments.slice(objectStart);
   // 简单策略：找到下一个独立 const/export 声明作为边界
   const nextBoundary = afterObject.search(/\n(?:export\s+)?(?:const|interface|type)\s/);
   const objectBlock = nextBoundary === -1 ? afterObject : afterObject.slice(0, nextBoundary);
 
-  // 提取所有键值对
+  // 提取所有键值对（去注释后的内容，正则不会被 JSDoc 中的 payload.action: 'xxx' 污染）
   let match: RegExpExecArray | null;
   while ((match = regex.exec(objectBlock)) !== null) {
     const key = match[1];

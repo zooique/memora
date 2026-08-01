@@ -265,225 +265,190 @@ export function registerMinimalIpcHandlers(
     },
   );
 
-  // ─── 多 Provider 管理 IPC ──────────────────────────────
-
-  // Provider 列表
-  ipcMain.handle(IPC_CHANNELS.LLM_PROVIDER_LIST, async () => {
-    try {
-      return await getLlmProviders();
-    } catch (err) {
-      // ENOENT 是合法状态（首次启动/配置缺失），静默返回空列表不记 warn
-      // 其他错误（权限/JSON 损坏等）仍记 warn 便于排查
-      const errno = err as NodeJS.ErrnoException;
-      if (errno.code !== 'ENOENT') {
-        logger.warn({ err: toError(err).message }, '读取 LLM 提供商配置失败');
-      }
-      return { active: '', providers: [] };
-    }
-  });
-
-  // Provider 保存（新增/更新）
-  // 编辑场景下 apiKey 可为空（保留原值，由 saveLlmProvider 从旧 config 读取）
+  // ─── 多 Provider 管理 IPC（统一入口，action 分发） ──────
+  //
+  // 合并 LLM_PROVIDER_LIST/SAVE/DELETE/SET_ACTIVE/BACKGROUND_PROVIDER_SAVE
+  // 5 个独占通道为单一 LLM_PROVIDER 通道 + action 字段，降低 IPC 通道总数。
+  // 渲染进程通过 window.electronAPI.xxx() 调用，payload 格式：
+  //   { action: 'list' }
+  //   { action: 'save', key, config, isEditing }
+  //   { action: 'delete', key }
+  //   { action: 'set-active', key }
+  //   { action: 'save-background', key }
   ipcMain.handle(
-    IPC_CHANNELS.LLM_PROVIDER_SAVE,
-    async (
-      _event,
-      key: string,
-      config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
-      isEditing?: boolean,
-    ) => {
-      // 参数校验：key 必填；apiKey 仅新增模式必填（编辑模式允许空，保留原值）
-      if (!isNonEmptyString(key) || !config) {
-        return { success: false, error: '参数无效' };
-      }
-      if (!isEditing && !config.apiKey) {
-        return { success: false, error: 'API Key 不能为空' };
-      }
-      try {
-        await saveLlmProvider(key, config);
-        // 首次添加 Provider 时 Agent 尚未初始化，需触发 reinit 使其就绪
-        // saveLlmProvider 首次添加会自动设 active=key，reinitAgent loadConfig 即用此 Provider
-        // 编辑模式（agentReady=true）不触发 reinit，仅持久化字段变更
-        if (!state.agentReady) {
-          // 新增模式首次添加时 config.apiKey 必非空（已校验）
-          await reinitAgentRuntime(state, callbacks, {
-            provider: config.provider,
-            model: config.model,
-            baseUrl: config.baseUrl,
-            apiKey: config.apiKey,
-          });
-        }
-        return { success: true, error: null };
-      } catch (err) {
-        // reinit 失败时重置运行时状态，确保 UI 能感知并提示
-        if (!state.agentReady) {
-          handleReinitFailure(state, callbacks, toError(err).message, '首次初始化失败');
-        }
-        errorHandler.handle(err, {
-          code: ErrorCode.INITIALIZATION_FAILED,
-          context: '保存 Provider 并初始化 Agent 失败',
-        });
-        return { success: false, error: toError(err).message };
-      }
-    },
-  );
-
-  // Provider 删除
-  ipcMain.handle(
-    IPC_CHANNELS.LLM_PROVIDER_DELETE,
-    async (_event, key: string) => {
-      if (!isNonEmptyString(key)) {
-        return { success: false, error: '参数无效' };
-      }
-      try {
-        // 删除前记录当前 active，用于判断删除后是否需要运行时切换
-        const configBefore: Config = await spriteConfigStore.load();
-        const wasActive = configBefore.llm.active === key;
-
-        await deleteLlmProvider(key);
-
-        // 删除的是当前 active Provider 时，运行时切换到新 active（deleteLlmProvider 已自动选首个剩余）
-        if (wasActive && state.agentReady) {
-          // 中断进行中的对话：避免旧 Provider 流式输出残留到新 Provider（与 LLM_PROVIDER_SET_ACTIVE 行为一致）
-          if (state.agentRuntime.currentAbortController) {
-            state.agentRuntime.currentAbortController.abort();
-            state.agentRuntime.currentAbortController = null;
+    IPC_CHANNELS.LLM_PROVIDER,
+    async (_event, payload: {
+      action: 'list' | 'save' | 'delete' | 'set-active' | 'save-background';
+      key?: string;
+      config?: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number };
+      isEditing?: boolean;
+    }) => {
+      switch (payload.action) {
+        // ── list ──────────────────────────────────────────
+        case 'list': {
+          try {
+            return await getLlmProviders();
+          } catch (err) {
+            const errno = err as NodeJS.ErrnoException;
+            if (errno.code !== 'ENOENT') {
+              logger.warn({ err: toError(err).message }, '读取 LLM 提供商配置失败');
+            }
+            return { active: '', providers: [] };
           }
+        }
 
-          const configAfter: Config = await spriteConfigStore.load();
-          const newActive = configAfter.llm.active ?? '';
-          if (newActive) {
-            const providerConfig = resolveProviderConfig(configAfter, newActive);
-            if (providerConfig) {
-              const newProvider = createProviderFromConfig(newActive, {
-                provider: providerConfig.provider,
-                model: providerConfig.model,
-                baseUrl: providerConfig.baseUrl ?? "",
-                apiKey: providerConfig.apiKey || '',
+        // ── save ──────────────────────────────────────────
+        case 'save': {
+          const { key, config, isEditing } = payload;
+          if (!isNonEmptyString(key) || !config) {
+            return { success: false, error: '参数无效' };
+          }
+          if (!isEditing && !config.apiKey) {
+            return { success: false, error: 'API Key 不能为空' };
+          }
+          try {
+            await saveLlmProvider(key!, config);
+            if (!state.agentReady) {
+              await reinitAgentRuntime(state, callbacks, {
+                provider: config.provider,
+                model: config.model,
+                baseUrl: config.baseUrl,
+                apiKey: config.apiKey,
               });
-              const currentAgent = callbacks.getCurrentAgent();
-              if (currentAgent) {
-                currentAgent.setProvider(newProvider);
+            }
+            return { success: true, error: null };
+          } catch (err) {
+            if (!state.agentReady) {
+              handleReinitFailure(state, callbacks, toError(err).message, '首次初始化失败');
+            }
+            errorHandler.handle(err, {
+              code: ErrorCode.INITIALIZATION_FAILED,
+              context: '保存 Provider 并初始化 Agent 失败',
+            });
+            return { success: false, error: toError(err).message };
+          }
+        }
+
+        // ── delete ────────────────────────────────────────
+        case 'delete': {
+          const { key } = payload;
+          if (!isNonEmptyString(key)) {
+            return { success: false, error: '参数无效' };
+          }
+          try {
+            const configBefore: Config = await spriteConfigStore.load();
+            const wasActive = configBefore.llm.active === key;
+            await deleteLlmProvider(key!);
+            if (wasActive && state.agentReady) {
+              if (state.agentRuntime.currentAbortController) {
+                state.agentRuntime.currentAbortController.abort();
+                state.agentRuntime.currentAbortController = null;
+              }
+              const configAfter: Config = await spriteConfigStore.load();
+              const newActive = configAfter.llm.active ?? '';
+              if (newActive) {
+                const providerConfig = resolveProviderConfig(configAfter, newActive);
+                if (providerConfig) {
+                  const newProvider = createProviderFromConfig(newActive, {
+                    provider: providerConfig.provider,
+                    model: providerConfig.model,
+                    baseUrl: providerConfig.baseUrl ?? "",
+                    apiKey: providerConfig.apiKey || '',
+                  });
+                  const currentAgent = callbacks.getCurrentAgent();
+                  if (currentAgent) {
+                    currentAgent.setProvider(newProvider);
+                  }
+                }
               }
             }
+            return { success: true, error: null };
+          } catch (err) {
+            return { success: false, error: toError(err).message };
           }
         }
 
-        return { success: true, error: null };
-      } catch (err) {
-        return { success: false, error: toError(err).message };
-      }
-    },
-  );
-
-  // 切换激活 Provider + 即时生效（运行时切换，不重新初始化 Agent）
-  ipcMain.handle(
-    IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE,
-    async (_event, key: string) => {
-      if (!isNonEmptyString(key)) {
-        return { success: false, error: '参数无效' };
-      }
-      try {
-        // 1. 持久化 active 到 config.json
-        await setActiveLlmProvider(key);
-
-        // 2. 中断进行中的对话（避免旧 Provider 流式输出残留）
-        if (state.agentRuntime.currentAbortController) {
-          state.agentRuntime.currentAbortController.abort();
-          state.agentRuntime.currentAbortController = null;
-        }
-
-        // 3. 从配置读取新 Provider 的完整配置（含 apiKey）
-        const config: Config = await spriteConfigStore.load();
-
-        // 使用统一的向后兼容工具函数解析 Provider 配置
-        const providerConfig = resolveProviderConfig(config, key);
-
-        if (!providerConfig) {
-          return { success: false, error: `Provider "${key}" 不存在` };
-        }
-
-        // 4. 创建新的前台 Provider 实例
-        const newProvider = createProviderFromConfig(key, {
-          provider: providerConfig.provider,
-          model: providerConfig.model,
-          baseUrl: providerConfig.baseUrl ?? "",
-          apiKey: providerConfig.apiKey || '',
-        });
-
-        // 5. 运行时切换 Provider（不重新初始化 Agent）
-        // 内核 Agent 已支持 setProvider() 运行时切换，只需替换 API 出口
-        // getCurrentAgent 是 MinimalIpcCallbacks 的必选方法，无需可选链
-        const currentAgent = callbacks.getCurrentAgent();
-        if (!currentAgent) {
-          // Agent 未就绪时无法运行时切换，但 active 已持久化，下次 reinit 会自动应用
-          return { success: true, error: null, warning: 'Agent 尚未就绪，已保存为默认 Provider，将在下次初始化时生效' };
-        }
-
-        currentAgent.setProvider(newProvider);
-
-        // 同步切换后台 Provider（如果配置了）
-        if (config.llm.background) {
-          const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
-          currentAgent.setBackgroundProvider(bgProvider);
-        } else {
-          currentAgent.setBackgroundProvider(null);
-        }
-
-        // 同步更新 lastProvider 缓存，避免后续 saveLlmConfig 误判需要 reinit
-        // 场景：用户运行时切换 Provider 后，再修改 temperature 等非关键字段时，
-        // reinit 判断逻辑会比较 llmConfig.provider 与 state.agentRuntime.lastProvider，
-        // 若缓存未同步，会误判为需要 reinit（实际 Agent 已切换完成）。
-        state.agentRuntime.lastProvider = providerConfig.provider;
-        state.agentRuntime.lastModel = providerConfig.model;
-        state.agentRuntime.lastBaseUrl = providerConfig.baseUrl ?? '';
-        state.agentRuntime.lastApiKey = providerConfig.apiKey ?? '';
-
-        return { success: true, error: null };
-      } catch (err) {
-        state.agentReady = false;
-        callbacks.setAppRuntime(null);
-        state.initErrorDetail = callbacks.classifyInitError(toError(err).message, '切换 Provider 失败');
-        errorHandler.handle(err, {
-          code: ErrorCode.INITIALIZATION_FAILED,
-          context: '切换激活 Provider 失败',
-        });
-        return { success: false, error: toError(err).message };
-      }
-    },
-  );
-
-  // 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务）
-  // 持久化到 config.json + 运行时注入 bgProvider 到 Agent
-  ipcMain.handle(
-    IPC_CHANNELS.LLM_BACKGROUND_PROVIDER_SAVE,
-    async (_event, key: string) => {
-      if (typeof key !== 'string') {
-        return { success: false, error: '参数无效' };
-      }
-      try {
-        // 1. 持久化 background 配置到 config.json
-        await saveBackgroundProvider(key);
-
-        // 2. 运行时注入 bgProvider 到 Agent（若 Agent 已就绪）
-        const currentAgent = callbacks.getCurrentAgent();
-        if (currentAgent) {
-          const config: Config = await spriteConfigStore.load();
-          if (config.llm.background) {
-            const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
-            currentAgent.setBackgroundProvider(bgProvider);
-          } else {
-            currentAgent.setBackgroundProvider(null);
+        // ── set-active ────────────────────────────────────
+        case 'set-active': {
+          const { key } = payload;
+          if (!isNonEmptyString(key)) {
+            return { success: false, error: '参数无效' };
+          }
+          try {
+            await setActiveLlmProvider(key!);
+            if (state.agentRuntime.currentAbortController) {
+              state.agentRuntime.currentAbortController.abort();
+              state.agentRuntime.currentAbortController = null;
+            }
+            const config: Config = await spriteConfigStore.load();
+            const providerConfig = resolveProviderConfig(config, key!);
+            if (!providerConfig) {
+              return { success: false, error: `Provider "${key!}" 不存在` };
+            }
+            const newProvider = createProviderFromConfig(key!, {
+              provider: providerConfig.provider,
+              model: providerConfig.model,
+              baseUrl: providerConfig.baseUrl ?? "",
+              apiKey: providerConfig.apiKey || '',
+            });
+            const currentAgent = callbacks.getCurrentAgent();
+            if (!currentAgent) {
+              return { success: true, error: null, warning: 'Agent 尚未就绪，已保存为默认 Provider，将在下次初始化时生效' };
+            }
+            currentAgent.setProvider(newProvider);
+            if (config.llm.background) {
+              const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
+              currentAgent.setBackgroundProvider(bgProvider);
+            } else {
+              currentAgent.setBackgroundProvider(null);
+            }
+            state.agentRuntime.lastProvider = providerConfig.provider;
+            state.agentRuntime.lastModel = providerConfig.model;
+            state.agentRuntime.lastBaseUrl = providerConfig.baseUrl ?? '';
+            state.agentRuntime.lastApiKey = providerConfig.apiKey ?? '';
+            return { success: true, error: null };
+          } catch (err) {
+            state.agentReady = false;
+            callbacks.setAppRuntime(null);
+            state.initErrorDetail = callbacks.classifyInitError(toError(err).message, '切换 Provider 失败');
+            errorHandler.handle(err, {
+              code: ErrorCode.INITIALIZATION_FAILED,
+              context: '切换激活 Provider 失败',
+            });
+            return { success: false, error: toError(err).message };
           }
         }
 
-        return { success: true, error: null };
-      } catch (err) {
-        errorHandler.handle(err, {
-          code: ErrorCode.INITIALIZATION_FAILED,
-          context: '保存后台 Provider 失败',
-        });
-        return { success: false, error: toError(err).message };
+        // ── save-background ───────────────────────────────
+        case 'save-background': {
+          const { key } = payload;
+          if (typeof key !== 'string') {
+            return { success: false, error: '参数无效' };
+          }
+          try {
+            await saveBackgroundProvider(key);
+            const currentAgent = callbacks.getCurrentAgent();
+            if (currentAgent) {
+              const config: Config = await spriteConfigStore.load();
+              if (config.llm.background) {
+                const bgProvider = createProviderFromConfig('background', { ...config.llm.background, baseUrl: config.llm.background.baseUrl ?? '' });
+                currentAgent.setBackgroundProvider(bgProvider);
+              } else {
+                currentAgent.setBackgroundProvider(null);
+              }
+            }
+            return { success: true, error: null };
+          } catch (err) {
+            errorHandler.handle(err, {
+              code: ErrorCode.INITIALIZATION_FAILED,
+              context: '保存后台 Provider 失败',
+            });
+            return { success: false, error: toError(err).message };
+          }
+        }
+
+        default:
+          return { success: false, error: `未知 action: ${(payload as any).action}` };
       }
     },
   );

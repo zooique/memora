@@ -179,16 +179,14 @@ export const IPC_CHANNELS = {
   LLM_CONFIG_SAVE: 'llm-config-save',
   /** 测试 LLM 连接 */
   LLM_CONFIG_TEST: 'llm-config-test',
-  /** 获取 Provider 列表 */
-  LLM_PROVIDER_LIST: 'llm-provider-list',
-  /** 保存 Provider 配置（新增/更新） */
-  LLM_PROVIDER_SAVE: 'llm-provider-save',
-  /** 删除 Provider */
-  LLM_PROVIDER_DELETE: 'llm-provider-delete',
-  /** 切换激活 Provider */
-  LLM_PROVIDER_SET_ACTIVE: 'llm-provider-set-active',
-  /** 保存后台 Provider 选择（角色自动匹配 LLM 辅助 + Insight 提取等后台任务） */
-  LLM_BACKGROUND_PROVIDER_SAVE: 'llm-background-provider-save',
+  /**
+   * 多 Provider 管理（统一入口，通过 action 字段分发）
+   *
+   * action: 'list' | 'save' | 'delete' | 'set-active' | 'save-background'
+   * 合并 5 个独占通道为单一入口，降低 IPC 通道总数（IPC-COUNT 治理）。
+   * 详见 minimalHandlers.ts 中 LLM_PROVIDER handler 的 switch 分发。
+   */
+  LLM_PROVIDER: 'llm-provider',
 
   // ─── Agent 状态 ───────────────────────────────────────
   /** 查询 Agent 是否就绪 */
