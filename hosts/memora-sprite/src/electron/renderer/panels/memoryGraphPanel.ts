@@ -19,8 +19,7 @@
  *   - 纯函数模块，不持有状态，所有依赖通过 MemoryGraphPanelContext 注入
  *   - 图谱状态字段（graphRenderer/graphDataCache/cachedHighlightedNodeIds 等）通过 getter/setter 访问，
  *     保持 MemoryPanelManager 作为状态所有者
- *   - 回调（graphContextMenuCallback/relationEditCallback 等）通过 getter 读取
- *     （运行时获取最新值，因为 onXxx 注册晚于 init 调用）
+ *   - 回调统一经 TypedEventBus 触发（AUDIT-H6：事件触发时 emit 查最新回调，无时序问题）
  *   - type-only 导入 MemoryPanelHost 避免运行时循环依赖
  *
  * 先例：
@@ -32,6 +31,9 @@ import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // STEP9-IMPORTS-01 反向 type-only 引用：编译期擦除，禁止改为 value import（否则与 memoryPanelManager 形成运行时循环依赖）
 import type { MemoryPanelHost } from './memoryPanelManager.js';
+// AUDIT-H6：回调统一经 TypedEventBus 触发（签名单一真理源在 MemoryPanelEventMap）
+import type { TypedEventBus } from '../helpers/typedEventBus.js';
+import type { MemoryPanelEventMap } from './memoryPanelEventMap.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
@@ -71,17 +73,9 @@ export interface MemoryGraphPanelContext {
   /** 设置右键菜单键盘导航处理器 */
   setGraphContextMenuKeyHandler(handler: ((e: KeyboardEvent) => void) | null): void;
 
-  // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
-  /** 获取节点点击回调（点击图谱节点 → 显示记忆详情） */
-  getMemoryClickCallback(): ((id: string) => void) | null;
-  /** 获取上下文菜单操作回调（聚焦子图/查看详情等） */
-  getGraphContextMenuCallback(): ((action: string, nodeId: string) => void) | null;
-  /** 获取关系编辑回调（保存已有边的类型/权重修改） */
-  getRelationEditCallback(): ((sourceId: string, targetId: string, type: string, weight: number) => void) | null;
-  /** 获取关系删除回调（删除已有边） */
-  getRelationDeleteCallback(): ((sourceId: string, targetId: string, type: string) => void) | null;
-  /** 获取关系创建回调（新建关系） */
-  getRelationCreateCallback(): ((sourceId: string, targetId: string, type: string, weight: number) => void) | null;
+  // ─── 回调（AUDIT-H6：统一经 EventBus，事件触发时 emit 查最新回调） ───
+  /** 记忆面板事件总线（事件名→回调签名见 MemoryPanelEventMap） */
+  readonly bus: TypedEventBus<MemoryPanelEventMap>;
 }
 
 // ─── 图谱渲染器初始化 ────────────────────────────────────
@@ -109,7 +103,7 @@ export function initGraphRenderer(ctx: MemoryGraphPanelContext): void {
 
   // 节点点击回调：通过 memoryClickCallback 显示详情
   renderer.setOnNodeClick((nodeId: string) => {
-    ctx.getMemoryClickCallback()?.(nodeId);
+    ctx.bus.emit('memory-click', nodeId);
   });
 
   // 节点右键菜单回调：显示上下文菜单
@@ -209,7 +203,7 @@ export function showGraphContextMenu(ctx: MemoryGraphPanelContext, nodeId: strin
   // 绑定菜单项点击事件（用 onclick 覆盖赋值，确保每次打开是全新的单一监听器，无累积）
   const handler = (action: string) => {
     hideGraphContextMenu(ctx);
-    ctx.getGraphContextMenuCallback()?.(action, nodeId);
+    ctx.bus.emit('graph-context-menu', action, nodeId);
   };
 
   // 菜单项是静态模板元素，缺失即 bug，用 ! 断言正视契约
@@ -338,14 +332,14 @@ export function showRelationEditDialog(
   saveBtn.onclick = () => {
     const newType = typeSelect.value || type;
     const newWeight = parseFloat(weightInput.value);
-    ctx.getRelationEditCallback()?.(sourceId, targetId, newType, newWeight);
+    ctx.bus.emit('relation-edit', sourceId, targetId, newType, newWeight);
     hideRelationEditDialog();
   };
 
   // 绑定删除
   const deleteBtn = dialog.querySelector('#relation-edit-delete')! as HTMLElement;
   deleteBtn.onclick = () => {
-    ctx.getRelationDeleteCallback()?.(sourceId, targetId, type);
+    ctx.bus.emit('relation-delete', sourceId, targetId, type);
     hideRelationEditDialog();
   };
 
@@ -401,7 +395,7 @@ export function showRelationCreateDialog(
   saveBtn.onclick = () => {
     const newType = typeSelect.value || 'related';
     const newWeight = parseFloat(weightInput.value);
-    ctx.getRelationCreateCallback()?.(sourceId, targetId, newType, newWeight);
+    ctx.bus.emit('relation-create', sourceId, targetId, newType, newWeight);
     hideRelationEditDialog();
   };
 

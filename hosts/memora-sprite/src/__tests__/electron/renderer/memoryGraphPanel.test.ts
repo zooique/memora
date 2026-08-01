@@ -32,6 +32,9 @@ import {
 import { RelationGraphRenderer } from '../../../electron/renderer/components/relationGraph.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
 import type { MemoryPanelHost } from '../../../electron/renderer/panels/memoryPanelManager.js';
+// AUDIT-H6：回调统一经 TypedEventBus（测试用 bus.on 注册回调断言）
+import { TypedEventBus } from '../../../electron/renderer/helpers/typedEventBus.js';
+import type { MemoryPanelEventMap } from '../../../electron/renderer/panels/memoryPanelEventMap.js';
 
 // ─── Mock RelationGraphRenderer ──────────────────────────
 
@@ -99,11 +102,7 @@ function createCtx(overrides?: Partial<MemoryGraphPanelContext>): {
   cachedSelectedNodeId: string | null;
   contextMenuCloseHandler: ((e: MouseEvent) => void) | null;
   contextMenuKeyHandler: ((e: KeyboardEvent) => void) | null;
-  memoryClickCallback: ((id: string) => void) | null;
-  graphContextMenuCallback: ((action: string, nodeId: string) => void) | null;
-  relationEditCallback: ((s: string, t: string, ty: string, w: number) => void) | null;
-  relationDeleteCallback: ((s: string, t: string, ty: string) => void) | null;
-  relationCreateCallback: ((s: string, t: string, ty: string, w: number) => void) | null;
+  bus: TypedEventBus<MemoryPanelEventMap>;
 } {
   let graphRenderer: RelationGraphRenderer | null = null;
   let graphDataCache: RelationGraphData | null = null;
@@ -111,14 +110,12 @@ function createCtx(overrides?: Partial<MemoryGraphPanelContext>): {
   let cachedSelectedNodeId: string | null = null;
   let contextMenuCloseHandler: ((e: MouseEvent) => void) | null = null;
   let contextMenuKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-  const memoryClickCallback: ((id: string) => void) | null = null;
-  const graphContextMenuCallback: ((action: string, nodeId: string) => void) | null = null;
-  const relationEditCallback: ((s: string, t: string, ty: string, w: number) => void) | null = null;
-  const relationDeleteCallback: ((s: string, t: string, ty: string) => void) | null = null;
-  const relationCreateCallback: ((s: string, t: string, ty: string, w: number) => void) | null = null;
+  // AUDIT-H6：真实 EventBus（测试用 bus.on('event', cb) 注册回调断言）
+  const bus = new TypedEventBus<MemoryPanelEventMap>();
 
   const ctx: MemoryGraphPanelContext = {
     host: createMockHost() as unknown as MemoryPanelHost,
+    bus,
     getGraphRenderer: () => graphRenderer,
     setGraphRenderer: (r) => { graphRenderer = r; },
     getGraphDataCache: () => graphDataCache,
@@ -131,11 +128,6 @@ function createCtx(overrides?: Partial<MemoryGraphPanelContext>): {
     setGraphContextMenuCloseHandler: (h) => { contextMenuCloseHandler = h; },
     getGraphContextMenuKeyHandler: () => contextMenuKeyHandler,
     setGraphContextMenuKeyHandler: (h) => { contextMenuKeyHandler = h; },
-    getMemoryClickCallback: () => memoryClickCallback,
-    getGraphContextMenuCallback: () => graphContextMenuCallback,
-    getRelationEditCallback: () => relationEditCallback,
-    getRelationDeleteCallback: () => relationDeleteCallback,
-    getRelationCreateCallback: () => relationCreateCallback,
     ...overrides,
   };
 
@@ -147,11 +139,7 @@ function createCtx(overrides?: Partial<MemoryGraphPanelContext>): {
     get cachedSelectedNodeId() { return cachedSelectedNodeId; },
     get contextMenuCloseHandler() { return contextMenuCloseHandler; },
     get contextMenuKeyHandler() { return contextMenuKeyHandler; },
-    get memoryClickCallback() { return memoryClickCallback; },
-    get graphContextMenuCallback() { return graphContextMenuCallback; },
-    get relationEditCallback() { return relationEditCallback; },
-    get relationDeleteCallback() { return relationDeleteCallback; },
-    get relationCreateCallback() { return relationCreateCallback; },
+    get bus() { return bus; },
   };
 }
 
@@ -332,7 +320,7 @@ describe('showGraphContextMenu', () => {
   it('点击菜单项应触发回调并关闭菜单', () => {
     const { ctx } = createCtx();
     const callback = vi.fn();
-    ctx.getGraphContextMenuCallback = () => callback;
+    ctx.bus.on('graph-context-menu', callback);
     showGraphContextMenu(ctx, 'node-1', 0, 0);
     const detailItem = document.querySelector('[data-action="view-detail"]') as HTMLElement;
     detailItem.click();
@@ -424,7 +412,7 @@ describe('showRelationEditDialog', () => {
   it('保存按钮应触发 editCallback', () => {
     const { ctx } = createCtx();
     const callback = vi.fn();
-    ctx.getRelationEditCallback = () => callback;
+    ctx.bus.on('relation-edit', callback);
     showRelationEditDialog(ctx, 'node-1', 'node-2', 'related', 0.5);
     const saveBtn = document.getElementById('relation-edit-save') as HTMLElement;
     saveBtn.click();
@@ -436,7 +424,7 @@ describe('showRelationEditDialog', () => {
   it('删除按钮应触发 deleteCallback', () => {
     const { ctx } = createCtx();
     const callback = vi.fn();
-    ctx.getRelationDeleteCallback = () => callback;
+    ctx.bus.on('relation-delete', callback);
     showRelationEditDialog(ctx, 'node-1', 'node-2', 'similar', 0.8);
     const deleteBtn = document.getElementById('relation-edit-delete') as HTMLElement;
     deleteBtn.click();
@@ -500,7 +488,7 @@ describe('showRelationCreateDialog', () => {
   it('保存按钮应触发 createCallback', () => {
     const { ctx } = createCtx();
     const callback = vi.fn();
-    ctx.getRelationCreateCallback = () => callback;
+    ctx.bus.on('relation-create', callback);
     showRelationCreateDialog(ctx, 'node-1', 'node-2');
     const saveBtn = document.getElementById('relation-edit-save') as HTMLElement;
     saveBtn.click();

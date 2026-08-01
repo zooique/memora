@@ -70,6 +70,9 @@ import { renderTimeline as renderTimelineHelper } from '../helpers/memoryTimelin
 import type { MemoryTimelineContext } from '../helpers/memoryTimelineView.js';
 // source 颜色映射纯函数（从本文件提取到 helpers/sourceColor.ts，消除 helpers→panels 循环依赖）
 import { getSourceColorClass } from '../helpers/sourceColor.js';
+// AUDIT-H6：回调统一存储与分发（签名单一真理源在 memoryPanelEventMap.ts）
+import { TypedEventBus } from '../helpers/typedEventBus.js';
+import type { MemoryPanelEventMap } from './memoryPanelEventMap.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -133,48 +136,11 @@ export class MemoryPanelManager {
   /** 补全统计组件（采纳率 / Top-1 命中率 / 事件流），Manager 持有 Component 实例（对齐 §四.4） */
   private completionStatsComponent!: CompletionStatsComponent;
 
-  // ─── 回调 ────────────────────────────────────────────────
-  private memorySearchCallback: ((query: string) => void) | null = null;
-  private memoryFilterCallback: ((source: string) => void) | null = null;
-  private memoryClickCallback: ((id: string) => void) | null = null;
-  private memoryDeleteCallback: (() => void) | null = null;
-  private memoryAddCallback:
-    | ((data: { source: string; name: string; content: string }) => void)
-    | null = null;
-  /** 记忆编辑回调：携带记忆 ID 和新内容 */
-  private memoryEditCallback: ((id: string, content: string) => void) | null = null;
-  /** 记忆讨论回调：携带记忆名称，切换到对话面板预填讨论提示 */
-  private memoryDiscussCallback: ((memoryName: string) => void) | null = null;
+  // ─── 回调（AUDIT-H6：统一存储于 TypedEventBus，签名单一真理源在 MemoryPanelEventMap） ──
+  /** 事件总线：20 个面板回调的统一注册/触发入口（onXxx 兼容方法委托到此） */
+  private bus = new TypedEventBus<MemoryPanelEventMap>();
   /** 编辑模式状态：true 时显示保存/取消按钮，隐藏编辑/删除按钮 */
   private isEditing = false;
-
-  // ─── 工具栏/面板交互回调 ────────────────────────────────
-  /** 更多菜单项点击回调（advanced-search/insights/health） */
-  private moreMenuActionCallback: ((action: string) => void) | null = null;
-  /** 排序方式变更回调 */
-  private sortChangeCallback: (() => void) | null = null;
-  /** 时间范围变更回调 */
-  private timeRangeChangeCallback: (() => void) | null = null;
-  /** 清理按钮点击回调（duplicates/stale/all），返回待清理ID列表 */
-  private cleanupRequestCallback: ((type: 'duplicates' | 'stale' | 'all') => string[]) | null = null;
-  /** LLM 治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC） */
-  private llmGovernanceCallback: ((action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>) | null = null;
-  /** 清理确认回调（执行批量删除） */
-  private cleanupConfirmCallback: ((ids: string[]) => Promise<void>) | null = null;
-  /** 视图切换按钮状态更新回调（通知Controller同步按钮active状态） */
-  private viewSwitchCallback: ((mode: 'list' | 'timeline' | 'graph') => void) | null = null;
-  /** 图谱上下文菜单操作回调 */
-  private graphContextMenuCallback: ((action: string, nodeId: string) => void) | null = null;
-  /** 关系编辑回调 */
-  private relationEditCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
-  /** 关系删除回调 */
-  private relationDeleteCallback: ((sourceId: string, targetId: string, type: string) => void) | null = null;
-  /** 关系创建回调 */
-  private relationCreateCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
-  /** 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除（Promise 用于事件委托层包装 loading） */
-  private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => Promise<void>) | null = null;
-  /** 回收站批量操作回调：action='restore-all' 全部恢复 / action='purge-all' 全部清空（Promise 用于事件委托层包装 loading） */
-  private recycleBinBatchActionCallback: ((action: 'restore-all' | 'purge-all') => Promise<void>) | null = null;
   /** 回收站完整列表缓存（供分页使用，避免每次翻页重新请求 IPC） */
   private allRecycleBinMemories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }> = [];
   /** 回收站当前页码（从 1 开始，与记忆列表分页模式一致） */
@@ -224,6 +190,8 @@ export class MemoryPanelManager {
     this.healthDashboard.destroy();
     this.insights.destroy();
     this.completionStatsComponent.destroy();
+    // AUDIT-H6：清空回调引用（对齐 ADR-SP-015 §2 生命周期契约）
+    this.bus.clear();
     this.events.cleanup();
   }
 
@@ -268,24 +236,8 @@ export class MemoryPanelManager {
       switchView: (mode) => this.switchView(mode),
       setSection: (section) => this.setSection(section),
       showCleanupDialog: (message, ids) => this.showCleanupDialog(message, ids),
-      // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
-      getMemorySearchCallback: () => this.memorySearchCallback,
-      getMemoryFilterCallback: () => this.memoryFilterCallback,
-      getMemoryClickCallback: () => this.memoryClickCallback,
-      getMemoryDeleteCallback: () => this.memoryDeleteCallback,
-      getMemoryAddCallback: () => this.memoryAddCallback,
-      getMemoryDiscussCallback: () => this.memoryDiscussCallback,
-      getSortChangeCallback: () => this.sortChangeCallback,
-      getTimeRangeChangeCallback: () => this.timeRangeChangeCallback,
-      getCleanupRequestCallback: () => this.cleanupRequestCallback,
-      getCleanupConfirmCallback: () => this.cleanupConfirmCallback,
-      getLlmGovernanceCallback: () => this.llmGovernanceCallback,
-      getViewSwitchCallback: () => this.viewSwitchCallback,
-      // 回收站操作回调读取器
-      getRecycleBinActionCallback: () => this.recycleBinActionCallback,
-      getRecycleBinBatchActionCallback: () => this.recycleBinBatchActionCallback,
-      // 更多菜单操作回调读取器（insights/health/recycle-bin）
-      getMoreMenuActionCallback: () => this.moreMenuActionCallback,
+      // ─── 回调（AUDIT-H6：统一经 EventBus，事件触发时 emit 查最新回调，无时序问题） ───
+      bus: this.bus,
     };
     initMemoryPanelListenersImpl(ctx);
   }
@@ -776,7 +728,7 @@ export class MemoryPanelManager {
       return;
     }
 
-    this.memoryEditCallback?.(id, newContent);
+    this.bus.emit('memory-edit', id, newContent);
   }
 
   /**
@@ -1054,88 +1006,88 @@ export class MemoryPanelManager {
     initGraphRendererHelper(this.buildGraphPanelContext());
   }
 
-  // ─── 回调注册 ───────────────────────────────────────────
+  // ─── 回调注册（AUDIT-H6：onXxx 保留为兼容层，委托到 EventBus） ─────
 
   onMemorySearch(cb: (query: string) => void): void {
-    this.memorySearchCallback = cb;
+    this.bus.on('memory-search', cb);
   }
   onMemoryFilter(cb: (source: string) => void): void {
-    this.memoryFilterCallback = cb;
+    this.bus.on('memory-filter', cb);
   }
   onMemoryClick(cb: (id: string) => void): void {
-    this.memoryClickCallback = cb;
+    this.bus.on('memory-click', cb);
   }
   onMemoryDelete(cb: () => void): void {
-    this.memoryDeleteCallback = cb;
+    this.bus.on('memory-delete', cb);
   }
   onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void {
-    this.memoryAddCallback = cb;
+    this.bus.on('memory-add', cb);
   }
   /** 注册记忆编辑回调 */
   onMemoryEdit(cb: (id: string, content: string) => void): void {
-    this.memoryEditCallback = cb;
+    this.bus.on('memory-edit', cb);
   }
   /** 注册记忆讨论回调（记忆名称 → 切换到对话面板预填讨论提示） */
   onMemoryDiscuss(cb: (memoryName: string) => void): void {
-    this.memoryDiscussCallback = cb;
+    this.bus.on('memory-discuss', cb);
   }
   /** 注册更多菜单项点击回调（加载洞察/健康度数据） */
   onMoreMenuAction(cb: (action: string) => void): void {
-    this.moreMenuActionCallback = cb;
+    this.bus.on('more-menu-action', cb);
   }
   /** 注册排序变更回调 */
   onSortChange(cb: () => void): void {
-    this.sortChangeCallback = cb;
+    this.bus.on('sort-change', cb);
   }
   /** 注册时间范围变更回调 */
   onTimeRangeChange(cb: () => void): void {
-    this.timeRangeChangeCallback = cb;
+    this.bus.on('time-range-change', cb);
   }
   /** 注册清理请求回调（返回待清理ID列表） */
   onCleanupRequest(cb: (type: 'duplicates' | 'stale' | 'all') => string[]): void {
-    this.cleanupRequestCallback = cb;
+    this.bus.on('cleanup-request', cb);
   }
   /** 注册清理确认回调（执行批量删除IPC） */
   onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void {
-    this.cleanupConfirmCallback = cb;
+    this.bus.on('cleanup-confirm', cb);
   }
   /** 注册 LLM 治理回调（G3：dedup/timeliness/conflicts，由 Controller 调用 IPC） */
   onLlmGovernance(cb: (action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>): void {
-    this.llmGovernanceCallback = cb;
+    this.bus.on('llm-governance', cb);
   }
   /** 注册视图切换回调（通知Controller切换视图后的业务逻辑） */
   onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void {
-    this.viewSwitchCallback = cb;
+    this.bus.on('view-switch', cb);
   }
 
   /** 注册图谱上下文菜单操作回调 */
   onGraphContextMenuAction(cb: (action: string, nodeId: string) => void): void {
-    this.graphContextMenuCallback = cb;
+    this.bus.on('graph-context-menu', cb);
   }
 
   /** 注册关系编辑/创建回调（sourceId, targetId, type, weight） */
   onRelationEdit(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
-    this.relationEditCallback = cb;
+    this.bus.on('relation-edit', cb);
   }
 
   /** 注册关系删除回调 */
   onRelationDelete(cb: (sourceId: string, targetId: string, type: string) => void): void {
-    this.relationDeleteCallback = cb;
+    this.bus.on('relation-delete', cb);
   }
 
   /** 注册关系创建回调 */
   onRelationCreate(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
-    this.relationCreateCallback = cb;
+    this.bus.on('relation-create', cb);
   }
 
   /** 注册回收站操作回调（恢复/彻底删除） */
   onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => Promise<void>): void {
-    this.recycleBinActionCallback = cb;
+    this.bus.on('recycle-bin-action', cb);
   }
 
   /** 注册回收站批量操作回调（全部恢复/全部清空） */
   onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => Promise<void>): void {
-    this.recycleBinBatchActionCallback = cb;
+    this.bus.on('recycle-bin-batch-action', cb);
   }
 
   // ─── 回收站列表渲染 ───────────────────────────────
@@ -1437,7 +1389,7 @@ export class MemoryPanelManager {
       incrementViewSwitchToken: () => ++this.viewSwitchToken,
       onTimelineViewActivated: () => { this.renderTimeline(); },
       onGraphViewActivated: () => { this.activateGraphView(); },
-      getMoreMenuActionCallback: () => this.moreMenuActionCallback,
+      bus: this.bus,
     };
   }
 
@@ -1479,11 +1431,7 @@ export class MemoryPanelManager {
       setGraphContextMenuCloseHandler: (handler) => { this.graphContextMenuCloseHandler = handler; },
       getGraphContextMenuKeyHandler: () => this.graphContextMenuKeyHandler,
       setGraphContextMenuKeyHandler: (handler) => { this.graphContextMenuKeyHandler = handler; },
-      getMemoryClickCallback: () => this.memoryClickCallback,
-      getGraphContextMenuCallback: () => this.graphContextMenuCallback,
-      getRelationEditCallback: () => this.relationEditCallback,
-      getRelationDeleteCallback: () => this.relationDeleteCallback,
-      getRelationCreateCallback: () => this.relationCreateCallback,
+      bus: this.bus,
     };
   }
 
@@ -1500,7 +1448,7 @@ export class MemoryPanelManager {
       getIsEditing: () => this.isEditing,
       setIsEditing: (editing) => { this.isEditing = editing; },
       getMemoryDetailModal: () => this.memoryDetailModal,
-      getMemoryClickCallback: () => this.memoryClickCallback,
+      bus: this.bus,
     };
   }
 }

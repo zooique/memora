@@ -14,7 +14,7 @@
  *
  * 设计：
  *   - 纯函数模块，不持有状态，所有依赖通过 MemoryPanelEventContext 注入
- *   - 回调通过 getter 函数读取（运行时获取最新值，因为 onXxx 注册晚于 init 调用）
+ *   - 回调统一经 TypedEventBus 触发（AUDIT-H6：事件触发时 emit 查最新回调，无时序问题）
  *   - 状态（searchTimer 防抖定时器、pendingCleanupIds）通过 getter/setter 访问
  *   - 所有事件监听器纳入 EventTracker 统一管理，避免内存泄漏
  */
@@ -28,6 +28,9 @@ import type { ConfirmDialogOptions } from '../types.js';
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
 // 统一导航区块类型（rail 单一真相），type-only 引用避免运行时循环依赖
 import type { MemorySection } from './memoryViewSwitcher.js';
+// AUDIT-H6：回调统一经 TypedEventBus 触发（签名单一真理源在 MemoryPanelEventMap）
+import type { TypedEventBus } from './typedEventBus.js';
+import type { MemoryPanelEventMap } from '../panels/memoryPanelEventMap.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
@@ -128,26 +131,9 @@ export interface MemoryPanelEventContext {
   /** 显示清理确认对话框 */
   showCleanupDialog(message: string, ids: string[]): void;
 
-  // ─── 回调读取器（onXxx 注册晚于 init，故用 getter 读取最新值） ───
-  getMemorySearchCallback(): ((query: string) => void) | null;
-  getMemoryFilterCallback(): ((source: string) => void) | null;
-  getMemoryClickCallback(): ((id: string) => void) | null;
-  getMemoryDeleteCallback(): (() => void) | null;
-  getMemoryAddCallback(): ((data: { source: string; name: string; content: string }) => void) | null;
-  getMemoryDiscussCallback(): ((memoryName: string) => void) | null;
-  getSortChangeCallback(): (() => void) | null;
-  getTimeRangeChangeCallback(): (() => void) | null;
-  getCleanupRequestCallback(): ((type: 'duplicates' | 'stale' | 'all') => string[]) | null;
-  getCleanupConfirmCallback(): ((ids: string[]) => Promise<void>) | null;
-  getViewSwitchCallback(): ((mode: 'list' | 'timeline' | 'graph') => void) | null;
-  /** 回收站操作回调（恢复/彻底删除，Promise 用于事件委托层包装 loading） */
-  getRecycleBinActionCallback(): ((action: 'restore' | 'purge', id: string) => Promise<void>) | null;
-  /** 回收站批量操作回调（全部恢复/全部清空，Promise 用于事件委托层包装 loading） */
-  getRecycleBinBatchActionCallback(): ((action: 'restore-all' | 'purge-all') => Promise<void>) | null;
-  /** 更多菜单操作回调（insights/health/recycle-bin） */
-  getMoreMenuActionCallback(): ((action: string) => void) | null;
-  /** LLM 记忆治理回调（dedup/timeliness/conflicts，由 Controller 调用 IPC） */
-  getLlmGovernanceCallback(): ((action: 'dedup' | 'timeliness' | 'conflicts') => Promise<void>) | null;
+  // ─── 回调（AUDIT-H6：统一经 EventBus，事件触发时 emit 查最新回调） ───
+  /** 记忆面板事件总线（事件名→回调签名见 MemoryPanelEventMap） */
+  readonly bus: TypedEventBus<MemoryPanelEventMap>;
 }
 
 // ─── 事件监听器初始化主函数 ────────────────────────────────
@@ -206,7 +192,7 @@ function initLlmGovernanceActions(ctx: MemoryPanelEventContext): void {
       if (btn.disabled) return;
       setButtonLoadingEl(btn, true, loadingText);
       try {
-        await ctx.getLlmGovernanceCallback()?.(action);
+        await ctx.bus.emit('llm-governance', action);
       } catch (err) {
         // Controller 内部已 toast 反馈，此处仅记录日志兜底
         reportError('MemoryPanel llmGovernance', err);
@@ -243,7 +229,7 @@ function initListClickDelegation(ctx: MemoryPanelEventContext): void {
       const item = (e.target as HTMLElement).closest<HTMLElement>('[data-action="view-memory"]');
       if (item) {
         const memoryId = item.dataset.memoryId ?? '';
-        ctx.getMemoryClickCallback()?.(memoryId);
+        ctx.bus.emit('memory-click', memoryId);
       }
     });
     // 键盘可访问性——Enter/Space 触发与 click 等效的查看动作
@@ -255,7 +241,7 @@ function initListClickDelegation(ctx: MemoryPanelEventContext): void {
       if (item) {
         ke.preventDefault();
         const memoryId = item.dataset.memoryId ?? '';
-        ctx.getMemoryClickCallback()?.(memoryId);
+        ctx.bus.emit('memory-click', memoryId);
       }
     });
   }
@@ -276,14 +262,14 @@ function initSearchAndFilter(
     if (ctx.getSearchTimer()) clearTimeout(ctx.getSearchTimer()!);
     ctx.setSearchTimer(
       setTimeout(() => {
-        ctx.getMemorySearchCallback()?.(searchEl.value.trim());
+        ctx.bus.emit('memory-search', searchEl.value.trim());
       }, 300),
     );
   });
 
   // source 筛选变更
   ctx.events.addEventListener(filterSourceEl, 'change', () => {
-    ctx.getMemoryFilterCallback()?.(filterSourceEl.value);
+    ctx.bus.emit('memory-filter', filterSourceEl.value);
   });
 }
 
@@ -316,7 +302,7 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
           return;
         }
         clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
-        ctx.getMemoryAddCallback()?.(data);
+        ctx.bus.emit('memory-add', data);
       } else {
         // 字段级校验反馈：标记缺失字段并聚焦首个错误字段
         validateMemoryAddForm();
@@ -339,7 +325,7 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
             return;
           }
           clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
-          ctx.getMemoryAddCallback()?.(data);
+          ctx.bus.emit('memory-add', data);
         } else {
           // Ctrl+Enter 提交校验失败时同样给出字段级反馈
           validateMemoryAddForm();
@@ -397,7 +383,7 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
         danger: true,
       } satisfies ConfirmDialogOptions);
       if (!confirmed) return;
-      ctx.getMemoryDeleteCallback()?.();
+      ctx.bus.emit('memory-delete');
     });
   }
 
@@ -434,7 +420,7 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
       if (!canClose) return;
       const memoryName = ctx.memoryDetailModal?.dataset.memoryName ?? '';
       if (memoryName) {
-        ctx.getMemoryDiscussCallback()?.(memoryName);
+        ctx.bus.emit('memory-discuss', memoryName);
       }
     });
   }
@@ -525,7 +511,7 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
   const sortEl = document.getElementById('memory-sort-order');
   if (sortEl instanceof HTMLSelectElement) {
     ctx.events.addEventListener(sortEl, 'change', () => {
-      ctx.getSortChangeCallback()?.();
+      ctx.bus.emit('sort-change');
     });
   }
 
@@ -533,7 +519,7 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
   const timeRangeEl = document.getElementById('memory-time-range');
   if (timeRangeEl instanceof HTMLSelectElement) {
     ctx.events.addEventListener(timeRangeEl, 'change', () => {
-      ctx.getTimeRangeChangeCallback()?.();
+      ctx.bus.emit('time-range-change');
     });
   }
 }
@@ -584,9 +570,9 @@ function initAnalysisPanelClose(ctx: MemoryPanelEventContext): void {
  * 记忆面板统一导航 rail：事件委托处理所有区块切换。
  *
  * - [data-section] 项（list/timeline/graph/insights/health/completion-stats/partner-insights）
- *   委托到 ctx.setSection（统一导航单一入口）。数据视图额外触发 getViewSwitchCallback
+ *   委托到 ctx.setSection（统一导航单一入口）。数据视图额外触发 bus.emit('view-switch')
  *   以保持图谱/时间线激活等上游通知（与原 view-switch 按钮行为一致）。
- * - [data-action="recycle-bin"] 项：触发 getMoreMenuActionCallback('recycle-bin') 打开回收站模态。
+ * - [data-action="recycle-bin"] 项：触发 bus.emit('more-menu-action', 'recycle-bin') 打开回收站模态。
  */
 function initMemoryRail(ctx: MemoryPanelEventContext): void {
   const rail = document.getElementById('memory-rail');
@@ -602,14 +588,14 @@ function initMemoryRail(ctx: MemoryPanelEventContext): void {
       ctx.setSection(section as MemorySection);
       // 数据视图额外触发上游通知（图谱/时间线激活等），与原 view-switch 行为一致
       if (section === 'list' || section === 'timeline' || section === 'graph') {
-        ctx.getViewSwitchCallback()?.(section);
+        ctx.bus.emit('view-switch', section);
       }
       return;
     }
 
     const action = item.getAttribute('data-action');
     if (action === 'recycle-bin') {
-      ctx.getMoreMenuActionCallback()?.('recycle-bin');
+      ctx.bus.emit('more-menu-action', 'recycle-bin');
     }
   });
 }
@@ -618,8 +604,8 @@ function initMemoryRail(ctx: MemoryPanelEventContext): void {
 
 /**
  * 三类清理按钮（重复/过期/全部）+ 取消/确认对话框。
- * 清理前通过 ctx.getCleanupRequestCallback() 获取待清理 ID 列表，
- * 确认后通过 ctx.getCleanupConfirmCallback() 执行批量删除。
+ * 清理前通过 ctx.bus.emit('cleanup-request') 获取待清理 ID 列表，
+ * 确认后通过 ctx.bus.emit('cleanup-confirm') 执行批量删除。
  */
 function initCleanupDialog(ctx: MemoryPanelEventContext): void {
   const cleanupDupBtn = document.getElementById('health-cleanup-duplicates');
@@ -631,7 +617,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
 
   if (cleanupDupBtn) {
     ctx.events.addEventListener(cleanupDupBtn, 'click', () => {
-      const ids = ctx.getCleanupRequestCallback()?.('duplicates') ?? [];
+      const ids = ctx.bus.emit('cleanup-request', 'duplicates') ?? [];
       if (ids.length === 0) {
         ctx.host.showToast('没有可清理的重复记忆', 'info');
         return;
@@ -642,7 +628,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
 
   if (cleanupStaleBtn) {
     ctx.events.addEventListener(cleanupStaleBtn, 'click', () => {
-      const ids = ctx.getCleanupRequestCallback()?.('stale') ?? [];
+      const ids = ctx.bus.emit('cleanup-request', 'stale') ?? [];
       if (ids.length === 0) {
         ctx.host.showToast('没有可清理的过期记忆', 'info');
         return;
@@ -653,7 +639,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
 
   if (cleanupAllBtn) {
     ctx.events.addEventListener(cleanupAllBtn, 'click', () => {
-      const ids = ctx.getCleanupRequestCallback()?.('all') ?? [];
+      const ids = ctx.bus.emit('cleanup-request', 'all') ?? [];
       if (ids.length === 0) {
         ctx.host.showToast('没有可清理的问题记忆', 'info');
         return;
@@ -681,7 +667,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
         const ids = [...ctx.getPendingCleanupIds()];
         ctx.setPendingCleanupIds([]);
         try {
-          await ctx.getCleanupConfirmCallback()?.(ids);
+          await ctx.bus.emit('cleanup-confirm', ids);
         } catch (err) {
           // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
           // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
@@ -718,7 +704,7 @@ function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
       if (id && restoreBtn instanceof HTMLButtonElement) {
         setButtonLoadingEl(restoreBtn, true, '恢复中…');
         try {
-          await ctx.getRecycleBinActionCallback()?.('restore', id);
+          await ctx.bus.emit('recycle-bin-action', 'restore', id);
         } finally {
           setButtonLoadingEl(restoreBtn, false);
         }
@@ -732,7 +718,7 @@ function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
       if (id && purgeBtn instanceof HTMLButtonElement) {
         setButtonLoadingEl(purgeBtn, true, '删除中…');
         try {
-          await ctx.getRecycleBinActionCallback()?.('purge', id);
+          await ctx.bus.emit('recycle-bin-action', 'purge', id);
         } finally {
           setButtonLoadingEl(purgeBtn, false);
         }
@@ -756,7 +742,7 @@ function initRecycleBinBatchActions(ctx: MemoryPanelEventContext): void {
     ctx.events.addEventListener(restoreAllBtn, 'click', async () => {
       setButtonLoadingEl(restoreAllBtn, true, '恢复中…');
       try {
-        await ctx.getRecycleBinBatchActionCallback()?.('restore-all');
+        await ctx.bus.emit('recycle-bin-batch-action', 'restore-all');
       } finally {
         setButtonLoadingEl(restoreAllBtn, false);
       }
@@ -766,7 +752,7 @@ function initRecycleBinBatchActions(ctx: MemoryPanelEventContext): void {
     ctx.events.addEventListener(purgeAllBtn, 'click', async () => {
       setButtonLoadingEl(purgeAllBtn, true, '清空中…');
       try {
-        await ctx.getRecycleBinBatchActionCallback()?.('purge-all');
+        await ctx.bus.emit('recycle-bin-batch-action', 'purge-all');
       } finally {
         setButtonLoadingEl(purgeAllBtn, false);
       }

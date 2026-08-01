@@ -26,6 +26,10 @@
  *   参照 memoryGraphPanel.ts / memoryDetailPanel.ts 的 context 注入模式
  */
 
+// AUDIT-H6：回调统一经 TypedEventBus 触发（签名单一真理源在 MemoryPanelEventMap）
+import type { TypedEventBus } from './typedEventBus.js';
+import type { MemoryPanelEventMap } from '../panels/memoryPanelEventMap.js';
+
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
 /** 记忆视图模式：list（列表）、timeline（时间线）、graph（图谱） */
@@ -111,9 +115,9 @@ export interface MemoryViewSwitcherContext {
   /** 切换到 graph 视图后调用（触发图谱空状态更新 + 渲染器初始化 + 数据加载） */
   onGraphViewActivated(): void;
 
-  // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
-  /** 获取更多菜单操作回调（打开 insights/health 时触发数据加载） */
-  getMoreMenuActionCallback(): ((action: string) => void) | null;
+  // ─── 回调（AUDIT-H6：统一经 EventBus，事件触发时 emit 查最新回调） ───
+  /** 记忆面板事件总线（事件名→回调签名见 MemoryPanelEventMap） */
+  readonly bus: TypedEventBus<MemoryPanelEventMap>;
 }
 
 // ─── 视图过渡动画常量 ────────────────────────────────────
@@ -247,7 +251,7 @@ export function toggleAnalysisPanel(ctx: MemoryViewSwitcherContext, panel: Analy
   updateRailItemsActive(ctx);
 
   // 触发数据加载回调
-  ctx.getMoreMenuActionCallback()?.(panel);
+  ctx.bus.emit('more-menu-action', panel);
 }
 
 /**
@@ -454,7 +458,7 @@ export function togglePartnerInsights(ctx: MemoryViewSwitcherContext): void {
   updateRailItemsActive(ctx);
 
   // 触发数据加载（与 insights/health 同机制的回调入口）
-  ctx.getMoreMenuActionCallback()?.('partner-insights');
+  ctx.bus.emit('more-menu-action', 'partner-insights');
 }
 
 // ─── 统一导航入口（取代分段控件 + 更多菜单两套切换） ──────

@@ -17,6 +17,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { initMemoryPanelListeners } from '../../../electron/renderer/helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../../../electron/renderer/helpers/memoryPanelEvents.js';
 import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
+// AUDIT-H6：回调统一经 TypedEventBus（mock 预注册回调，断言 callbacks.xxx 不变）
+import { TypedEventBus } from '../../../electron/renderer/helpers/typedEventBus.js';
+import type { MemoryPanelEventMap } from '../../../electron/renderer/panels/memoryPanelEventMap.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -139,6 +142,7 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     recycleBinAction: ReturnType<typeof vi.fn>;
     recycleBinBatchAction: ReturnType<typeof vi.fn>;
     moreMenuAction: ReturnType<typeof vi.fn>;
+    llmGovernance: ReturnType<typeof vi.fn>;
   };
   host: ReturnType<typeof createMockHost>;
   events: EventTracker;
@@ -158,9 +162,27 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     recycleBinAction: vi.fn(),
     recycleBinBatchAction: vi.fn(),
     moreMenuAction: vi.fn(),
+    llmGovernance: vi.fn().mockResolvedValue(undefined),
   };
   const host = createMockHost();
   const events = new EventTracker();
+  // AUDIT-H6：真实 EventBus 预注册全部回调（等价旧 getter 读取语义）
+  const bus = new TypedEventBus<MemoryPanelEventMap>();
+  bus.on('memory-search', callbacks.search);
+  bus.on('memory-filter', callbacks.filter);
+  bus.on('memory-click', callbacks.click);
+  bus.on('memory-delete', callbacks.delete);
+  bus.on('memory-add', callbacks.add);
+  bus.on('memory-discuss', callbacks.discuss);
+  bus.on('sort-change', callbacks.sortChange);
+  bus.on('time-range-change', callbacks.timeRangeChange);
+  bus.on('cleanup-request', callbacks.cleanupRequest);
+  bus.on('cleanup-confirm', callbacks.cleanupConfirm);
+  bus.on('view-switch', callbacks.viewSwitch);
+  bus.on('recycle-bin-action', callbacks.recycleBinAction);
+  bus.on('recycle-bin-batch-action', callbacks.recycleBinBatchAction);
+  bus.on('more-menu-action', callbacks.moreMenuAction);
+  bus.on('llm-governance', callbacks.llmGovernance);
 
   // 状态访问器（防抖定时器 + pendingCleanupIds）
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -173,6 +195,7 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     memoryDetailModal: document.getElementById('memory-detail-modal'),
     events,
     host,
+    bus,
     getSearchTimer: () => searchTimer,
     setSearchTimer: (t) => { searchTimer = t; },
     getPendingCleanupIds: () => pendingCleanupIds,
@@ -190,20 +213,6 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     switchView: vi.fn(),
     setSection: vi.fn(),
     showCleanupDialog: vi.fn(),
-    getMemorySearchCallback: () => callbacks.search,
-    getMemoryFilterCallback: () => callbacks.filter,
-    getMemoryClickCallback: () => callbacks.click,
-    getMemoryDeleteCallback: () => callbacks.delete,
-    getMemoryAddCallback: () => callbacks.add,
-    getMemoryDiscussCallback: () => callbacks.discuss,
-    getSortChangeCallback: () => callbacks.sortChange,
-    getTimeRangeChangeCallback: () => callbacks.timeRangeChange,
-    getCleanupRequestCallback: () => callbacks.cleanupRequest,
-    getCleanupConfirmCallback: () => callbacks.cleanupConfirm,
-    getViewSwitchCallback: () => callbacks.viewSwitch,
-    getRecycleBinActionCallback: () => callbacks.recycleBinAction,
-    getRecycleBinBatchActionCallback: () => callbacks.recycleBinBatchAction,
-    getMoreMenuActionCallback: () => callbacks.moreMenuAction,
     ...overrides,
   };
 

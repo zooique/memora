@@ -15,7 +15,7 @@
  * 设计：
  *   - 纯函数模块，不持有状态，所有依赖通过 MemoryDetailPanelContext 注入
  *   - 编辑模式状态（isEditing）通过 getter/setter 访问
- *   - 回调（memoryClickCallback/memoryEditCallback/memoryDiscussCallback）通过 getter 读取
+ *   - 回调统一经 TypedEventBus 触发（AUDIT-H6：事件触发时 emit 查最新回调）
  *   - type-only 导入 MemoryPanelHost 避免运行时循环依赖
  *
  * 先例：
@@ -30,6 +30,9 @@ import { getSourceLabel } from './sourceLabel.js';
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
 import type { EventTracker } from './eventTracker.js';
 import type { MemoryDetail, RelationPath, RelationNeighbor } from '../types.js';
+// AUDIT-H6：回调统一经 TypedEventBus 触发（签名单一真理源在 MemoryPanelEventMap）
+import type { TypedEventBus } from './typedEventBus.js';
+import type { MemoryPanelEventMap } from '../panels/memoryPanelEventMap.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
@@ -53,9 +56,9 @@ export interface MemoryDetailPanelContext {
   /** 获取记忆详情模态框元素（可能为 null，缺失时详情功能降级） */
   getMemoryDetailModal(): HTMLElement | null;
 
-  // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
-  /** 获取记忆点击回调（点击关联记忆/脉络节点/邻居节点 → 显示对应记忆详情） */
-  getMemoryClickCallback(): ((id: string) => void) | null;
+  // ─── 回调（AUDIT-H6：统一经 EventBus，事件触发时 emit 查最新回调） ───
+  /** 记忆面板事件总线（事件名→回调签名见 MemoryPanelEventMap） */
+  readonly bus: TypedEventBus<MemoryPanelEventMap>;
 }
 
 // ─── 记忆详情渲染 ────────────────────────────────────────
@@ -146,7 +149,7 @@ export function showMemoryDetail(ctx: MemoryDetailPanelContext, memory: MemoryDe
 
         // 点击关联记忆 → 触发 memoryClickCallback 查看该记忆详情
         const openRelation = () => {
-          ctx.getMemoryClickCallback()?.(rel.targetId);
+          ctx.bus.emit('memory-click', rel.targetId);
         };
         ctx.events.addEventListener(item, 'click', openRelation);
         ctx.events.addEventListener(item, 'keydown', (e: Event) => {
@@ -297,7 +300,7 @@ export function showMemoryLineage(ctx: MemoryDetailPanelContext, path: RelationP
 
     // 点击节点 → 触发 memoryClickCallback 跳转查看该记忆详情
     const openNode = () => {
-      ctx.getMemoryClickCallback()?.(node.memoryId);
+      ctx.bus.emit('memory-click', node.memoryId);
     };
     ctx.events.addEventListener(item, 'click', openNode);
     ctx.events.addEventListener(item, 'keydown', (e: Event) => {
@@ -432,7 +435,7 @@ export function showMemoryNeighbors(ctx: MemoryDetailPanelContext, neighbors: Re
 
     // 点击节点 → 触发 memoryClickCallback 跳转查看该记忆详情
     const openNode = () => {
-      ctx.getMemoryClickCallback()?.(node.memoryId);
+      ctx.bus.emit('memory-click', node.memoryId);
     };
     ctx.events.addEventListener(item, 'click', openNode);
     ctx.events.addEventListener(item, 'keydown', (e: Event) => {
