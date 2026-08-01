@@ -41,6 +41,20 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v5
 
+      - name: 强制修正文件名大小写（解决TS1261）
+        run: |
+          # 确保 base/component.ts 为小写，删除大小写变体
+          BASE_DIR="hosts/memora-sprite/src/electron/renderer/components/base"
+          if [ -f "$BASE_DIR/Component.ts" ]; then
+            if [ ! -f "$BASE_DIR/component.ts" ]; then
+              mv "$BASE_DIR/Component.ts" "$BASE_DIR/component.ts"
+            else
+              rm -f "$BASE_DIR/Component.ts"
+            fi
+            echo "已强制修正 Component.ts → component.ts"
+          fi
+        shell: bash
+
       - name: 安装 Node.js
         uses: actions/setup-node@v5
         with:
@@ -113,6 +127,19 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v5
 
+      - name: 强制修正文件名大小写（解决TS1261）
+        run: |
+          BASE_DIR="hosts/memora-sprite/src/electron/renderer/components/base"
+          if [ -f "$BASE_DIR/Component.ts" ]; then
+            if [ ! -f "$BASE_DIR/component.ts" ]; then
+              mv "$BASE_DIR/Component.ts" "$BASE_DIR/component.ts"
+            else
+              rm -f "$BASE_DIR/Component.ts"
+            fi
+            echo "已强制修正 Component.ts → component.ts"
+          fi
+        shell: bash
+
       - name: 安装 Node.js
         uses: actions/setup-node@v5
         with:
@@ -184,6 +211,19 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
+
+      - name: 强制修正文件名大小写（解决TS1261）
+        run: |
+          BASE_DIR="hosts/memora-sprite/src/electron/renderer/components/base"
+          if [ -f "$BASE_DIR/Component.ts" ]; then
+            if [ ! -f "$BASE_DIR/component.ts" ]; then
+              mv "$BASE_DIR/Component.ts" "$BASE_DIR/component.ts"
+            else
+              rm -f "$BASE_DIR/Component.ts"
+            fi
+            echo "已强制修正 Component.ts → component.ts"
+          fi
+        shell: bash
 
       - name: 安装 Node.js
         uses: actions/setup-node@v5

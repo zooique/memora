@@ -24,6 +24,7 @@ import {
   SettingsManagerPanelManager,
   type SettingsManagerPanelHost,
 } from '../../../electron/renderer/panels/settingsManagerPanel.js';
+import { SettingsFileListComponent } from '../../../electron/renderer/components/data/settingsFileListComponent.js';
 import type { ConfigFileEntry } from '../../../sprite/configFileManager.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
@@ -209,9 +210,10 @@ describe('refreshByType · 按 type 分发刷新对应列表', () => {
 
 describe('createListItem · DOM 结构正确性', () => {
   it('persona 类型应渲染名称 + 描述 + active 标记 + 编辑/删除按钮', () => {
-    const { manager } = createManager();
-    // createListItem 是 private 方法，通过 [key] 访问测试
-    const item = (manager as unknown as {
+    // createListItem 是 SettingsFileListComponent 的 private 方法（AUDIT-H5 迁移）
+    // 通过 type assertion 访问，测试 DOM 结构正确性
+    const component = new SettingsFileListComponent();
+    const item = (component as unknown as {
       createListItem: (
         type: 'persona' | 'rule' | 'skill',
         name: string,
@@ -245,8 +247,8 @@ describe('createListItem · DOM 结构正确性', () => {
   });
 
   it('rule 类型 active=false 不应渲染 active 标记', () => {
-    const { manager } = createManager();
-    const item = (manager as unknown as {
+    const component = new SettingsFileListComponent();
+    const item = (component as unknown as {
       createListItem: (
         type: 'persona' | 'rule' | 'skill',
         name: string,
@@ -267,9 +269,9 @@ describe('createListItem · DOM 结构正确性', () => {
   });
 
   it('名称含 HTML 特殊字符应被 textContent 转义（防 XSS）', () => {
-    const { manager } = createManager();
+    const component = new SettingsFileListComponent();
     const maliciousName = '<script>alert(1)</script>';
-    const item = (manager as unknown as {
+    const item = (component as unknown as {
       createListItem: (
         type: 'persona' | 'rule' | 'skill',
         name: string,

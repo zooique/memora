@@ -277,8 +277,9 @@ describe('错误状态与重试回调', () => {
     const { manager } = createManager();
     const cb = vi.fn();
     manager.onReloadMemoryList(cb);
-    document.body.innerHTML += '<div id="test-list"></div>';
-    const listEl = document.getElementById('test-list')!;
+    const listEl = document.createElement('div');
+    listEl.id = 'test-list';
+    document.body.appendChild(listEl);
     manager.showMemoryListError(listEl);
     // 验证 dashboard 错误横幅显示
     const errorBanner = document.getElementById('dashboard-error');
