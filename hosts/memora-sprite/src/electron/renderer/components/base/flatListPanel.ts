@@ -16,7 +16,7 @@
  * - profile 因"双列表 + 单 fetch 返回 {entries} + 无外层包裹 + 双计数"被刻意排除
  *   （与 memory 同级），否则需为单消费者撑大工厂契约 → God Object 风险（§四.2）。
  */
-import { Component } from './Component.js';
+import { Component } from './component.js';
 import { EventTracker } from '../../helpers/eventTracker.js';
 import { getOptionalElement, clearElement, createEmptyState } from '../../helpers/domHelpers.js';
 import { bindRefreshButton } from '../../helpers/buttonHelpers.js';

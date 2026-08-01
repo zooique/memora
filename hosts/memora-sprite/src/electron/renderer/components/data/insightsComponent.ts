@@ -21,7 +21,7 @@
  * 关闭按钮 #btn-close-insights 由 memoryPanelEvents 在 #memory-insights-bar 上委托处理，组件不绑定。
  */
 
-import { Component } from '../base/Component.js';
+import { Component } from '../base/component.js';
 import { clearElement, createEl, showPanelLoading } from '../../helpers/domHelpers.js';
 // getSourceLabel 将 source 字符串映射为中文标签（UX-2：source 分布条形图标签中文化）
 import { getSourceLabel } from '../../helpers/sourceLabel.js';

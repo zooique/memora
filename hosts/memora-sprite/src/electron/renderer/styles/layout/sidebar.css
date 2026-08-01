@@ -185,7 +185,7 @@
   border-radius: 8px;
   background: var(--red);
   color: var(--bg);
-  font-size: 10px;
+  font-size: var(--font-2xs); /* 10px */
   font-weight: var(--weight-semibold);
   line-height: 16px;
   text-align: center;

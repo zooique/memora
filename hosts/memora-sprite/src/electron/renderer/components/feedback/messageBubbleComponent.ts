@@ -42,7 +42,7 @@
  *   <div class="message system">{content}</div>
  */
 
-import { Component } from '../base/Component.js';
+import { Component } from '../base/component.js';
 import type { Message } from '../../types.js';
 // 复用 domHelpers 的时间格式化，避免逻辑重复
 import { formatTimestamp } from '../../helpers/domHelpers.js';

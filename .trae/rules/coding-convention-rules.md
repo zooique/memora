@@ -43,11 +43,11 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 直接吞异常返回空对象/空数组——问题必须显性抛出 |
 | DON'T | 嵌套多层 `try/catch`——单一异常来源只配一层捕获 |
 
-**Memora 适配**：内核通过 `MemoraError` 统一错误体系（详见 [project-rules.md §7.1](./project-rules.md)）；AgentLoop 的 LLM 调用韧性（指数退避重试）是此规则的典型应用。
+**Memora 适配**：内核通过 `MemoraError` 统一错误体系（零裸 `Error`，见 [project-rules.md §1](./project-rules.md) / §7.1）；AgentLoop 的 LLM 调用韧性（指数退避重试）是此规则的典型应用。
 
 ## 3. 代码简洁与复用
 
-> **核心原则**：一个函数只做一件事，重复逻辑出现 2 次即抽象。
+> **核心原则**：一个函数只做一件事。**通用 / 领域原语逻辑在首次实现时即抽取为公共方法**（ADR-017 Scenario A：新代码设计期抽取——代码库即协调媒介，已存在的公共原语会被自然复用，缺失则 AI 就地复制）。纯臆测复用（"以后可能用到"）不抽。出现 2+ 处重复作为"该抽却漏抽"的回溯信号，而非唯一触发条件。
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -58,6 +58,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 无差别全量防御——契约约定合法入参后，内部不再冗余校验 |
 | DON'T | 魔法数字、魔法字符串散落业务代码 |
 | DON'T | 用 `export { x } from '...'` 透传导出后，在当前模块内部使用 `x`——透传导出不创建模块作用域绑定，会触发 `ReferenceError` |
+| DON'T | 复制粘贴 `if` 判断——相同校验逻辑出现 2 次即抽工具函数（对齐 ADR-017 Scenario A） |
 
 **Memora 适配**：禁止 `@ts-ignore` 或 `as any`（详见 [project-rules.md §7.1](./project-rules.md)）；常量用全大写下划线（如 `BLOCKED_PATTERNS`、`CHAT_LOCK_TIMEOUT_MS`）。
 
@@ -76,7 +77,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 打印完整数据库实体、API Key、用户隐私内容 |
 | DON'T | 用 `info` 记录异常——异常必须 `error` 级别 |
 
-**Memora 适配**：内核 `src/logging/` 提供 `ILogger` 接口 + console fallback（详见 [project-rules.md §3](./project-rules.md)）；可观测性通过 `ITracer`/`ISpan` 接口 + 4 个关键 Span 埋点实现。
+**Memora 适配**：内核 `src/logging/` 提供 `ILogger` 接口 + console fallback；可观测性通过 `ITracer`/`ISpan` 接口埋点实现。
 
 ## 5. 数据与存储
 
@@ -94,7 +95,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要，详见 [project-rules.md §7.3](./project-rules.md)） |
 | DON'T | 一次性全量加载大数据集 |
 
-**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建（详见 [project-rules.md §1.4](./project-rules.md)）；配置文件是真理源，SQLite 是运行时索引（详见 [project-rules.md §1.5](./project-rules.md)）；禁止在 SQLite 中存储原始工作内容（详见 [project-rules.md §7.3](./project-rules.md)）。
+**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建；配置文件是真理源，SQLite 是运行时索引（详见 [project-rules.md §1.4 / §1.5](./project-rules.md)）；禁止在 SQLite 中存储原始工作内容（见 [project-rules.md §7.3](./project-rules.md)）。
 
 ## 6. 函数与变量规范
 
@@ -166,7 +167,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | ---- | -------- | -------- |
 | 函数参数校验 | 入口处一次校验 + 抛业务异常 | 内部每处重复判空 |
 | IO 异常 | catch → 补上下文 → 包装业务异常抛出 | catch → 返回空对象 |
-| 重复逻辑 | 出现 2 次即抽工具函数 | 复制粘贴 if 判断 |
+| 重复逻辑 | 领域原语/明确复用 → 设计期即抽；2+ 处重复作为回溯补抽信号 | 纯臆测提前抽框架 / 复制粘贴 if 判断 |
 | 日志 | `ILogger.error()` + 上下文 | `console.log()` |
 | SQL | DAO 层 + 参数预编译 | 业务层裸写 + 字符串拼接 |
 | 嵌套 | 提前 return，≤3 层 | 深层 if/else 嵌套 |

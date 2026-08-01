@@ -38,7 +38,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
   └─ 否 → 该功能是否所有宿主项目都需要？
          ├─ 是 → 核心库（src/），但必须通过抽象接口提供
          │       例：registerTool()、write_file、search_memories
-         └─ 否 → 暂不实现，等 2 次以上重复需求再提取（枝叶层 2 次提取原则，详见 [ADR-017](../decisions/ADR-017-natural-growth-redefinition.md)）
+         └─ 否 → 无明确消费者时暂缓；等 ≥2 处真实复用再落地（[ADR-017](../decisions/ADR-017-natural-growth-redefinition.md) Scenario B 回溯提取；上帝对象拆分可取 ≥3 处调用，见 progressive-refactor-rules.md §5.2）
                  例：WebUI 框架、特定 LLM 厂商优化
 ```
 
@@ -112,66 +112,13 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 - ❌ `security/` 被宿主 `cli/` 绕过（所有写操作必须经 security 校验）
 - ❌ `memory/` 依赖 `persona/` 或 `skill/`（依赖方向不可逆）
 
-## 模块内文件命名（命名约定 · 快照）
+## 模块内文件命名（约定快照）
 
-> 本节的具名文件树用于**说明模块内部的命名与拆分约定**（每个模块 = index.ts / types.ts / core.ts / helpers.ts；agent/ 含 agent.ts / assembler.ts / loop.ts 等标准文件）。
-> **权威的顶层目录结构以 [project-rules.md §3](./project-rules.md) 为唯一真理源**；下方具体文件清单为快照性质、随重构可能漂移，**不构成冻结契约**。
+> 顶层目录结构以 [project-rules.md §3](./project-rules.md) 为唯一冻结契约；下方为**快照性质**的内部约定，随重构漂移、**不构成冻结契约**。
 
-每个模块内部可细分为：
+**模块内部通用结构**：每个模块 = `index.ts`（公共 API）+ `types.ts`（类型）+ `core.ts`/`helpers.ts`（实现）。`agent/` 含标准文件 `agent.ts`/`assembler.ts`/`loop.ts` + `managers/`（专职 Manager/服务类，当前约 14 个，清单以源码为准）；`utils/` 集中存放跨层共享纯函数（errors/array/objects/path/time/segmenter 等）。
 
-```
-agent/
-├── agent.ts              # Agent 门面类（对外入口，编排层）
-├── assembler.ts          # 组件组装器（Agent init 时组装各 Manager）
-├── constants.ts          # Agent/Loop 常量集合（AGENT_CONSTANTS + LOOP_CONSTANTS）
-├── loop.ts               # AgentLoop 主循环
-├── toolExecutor.ts       # 工具执行器（registerTool + execute + 校验分发）
-├── builtinTools.ts       # 内置工具定义（BUILTIN_TOOLS 声明）
-├── builtinToolHandlers.ts # 内置工具处理器（read_file/write_file/list_dir/search_memories 实现，从 ToolExecutor 提取）
-├── contextManager.ts     # 上下文窗口管理器（token 估算 + 消息截断 + 关键消息提取 + 摘要生成，从 AgentLoop 提取）
-├── guardrail.ts          # 护栏模块（输入/输出内容安全检查，从 AgentLoop 提取，降级优先原则）
-├── messageHistory.ts     # 消息持久化 + 会话归档
-├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
-├── types.ts              # Agent 类型定义
-├── userFactExtractor.ts  # 用户事实提取器（正则规则，纯函数模块，从 userProfile 迁入）
-├── personaMatcher.ts     # 角色语义匹配器（LLM 辅助角色匹配纯函数，从 PersonaManager.matchByLlm 迁入，遵循 persona/ 不调 LLM 约束）
-├── managers/             # 专职 Manager/服务类子目录（14 个 Manager + 1 个门面 + 1 个辅助：12 个生命周期 Manager + DedupManager + 1 个无状态服务类 + memoryGovernance 门面 + llmJudgeHelper 辅助）
-│   ├── archiveCoordinator.ts # 归档协调器（archiveMode 三态控制 + 归档流程编排）
-│   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
-│   ├── chatLockManager.ts    # 对话锁管理器（token 校验 + 超时释放 + race condition 防护）
-│   ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
-│   ├── dedupManager.ts       # 去重管理器（L0-L1 记忆去重）
-│   ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取 + 关系构建）
-│   ├── llmJudgeHelper.ts     # LLM 判定辅助（judgeWithLlm 高阶函数，纯函数模块，供 memoryAdvisor/relationBuilder 共享）
-│   ├── memoryAdvisor.ts      # 记忆顾问（记忆质量评估 + 归档价值判断）
-│   ├── memoryDecayScheduler.ts # 记忆衰减调度器（decayScores 定时执行 + 首次 init）
-│   ├── memoryGovernance.ts   # 记忆治理门面（聚合 L0-L3 治理委托，非新增 Manager，详见 architecture_philosophy_rules.md）
-│   ├── memoryInspector.ts    # 记忆管理器（快照 + 搜索 + 统计 + 关联推荐 + writeXxx 写操作）
-│   ├── relationBuilder.ts    # 关系构建器（候选召回 + prompt 构建 + 关系写入 + 冲突检测，ADR-014）
-│   ├── sessionArchiver.ts    # 会话归档器（content 类记忆归档，会话级摘要，区别于 InsightExtractor 的洞察提取）
-│   ├── sessionManager.ts     # 会话管理器（fork/switch/restore）
-│   ├── textPolishManager.ts  # 文本润色服务类（无状态，仅依赖 Provider，非生命周期 Manager，详见 ADR-SP-017 §3）
-│   └── workProjection.ts     # 作品投影管理器
-└── __tests__/            # 单元测试
-
-utils/
-├── errors.ts             # 错误类型（MemoraError + 工厂函数 + ToolErrorCode 10 种错误码 + re-export toError）
-├── toError.ts            # 纯逻辑 toError（零依赖，浏览器/Node 通用）
-├── array.ts              # 数组工具（排序/去重/拷贝等纯函数）
-├── objects.ts            # 对象类型守卫工具（从 lockManager/projectRegistry/spriteConfig 提取的公共类型校验，ADR-017 枝叶层 2 次提取）
-├── configResourceManager.ts # 配置资源管理器抽象基类（消除 SkillManager 与 PersonaManager 重复结构，DRY 模式）
-├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 6 事件）
-├── frontmatter.ts        # Frontmatter 解析/序列化（从 memory/ 迁入，供 memory/persona/skill 共享）
-├── json.ts               # LLM JSON 安全解析（parseLlmJson：markdown 剥离 + 引号修复 + 正则回退，专用于 LLM 输出）
-├── loggerHolder.ts       # Logger 持有者（utils/ 内部 getLogger，解耦 utils→logging 循环依赖）
-├── math.ts               # 数学工具（cosineSimilarity + roundTo 四舍五入到指定小数位）
-├── path.ts               # 路径工具（expandHome、basename）
-├── safeTimer.ts          # 安全定时器（safeSetTimeout/safeSetInterval + 跟踪清理）
-├── scanner.ts            # Markdown 目录扫描工具（供 persona/skill 共享）
-├── segmenter.ts          # 中文分词器（Intl.Segmenter，从 memory/ 迁入，供 memory/persona/skill 共享）
-├── strings.ts            # 字符串工具（slugify）
-└── time.ts               # 时间工具（nowIso、todayDate）
-```
+> **具体文件清单以 `src/` 实际代码为真理源**，不在本文冻结——避免随重构腐化的冗余快照。
 
 ## 新增模块流程
 

@@ -11,7 +11,7 @@
 
 import { ipcMain, app, dialog, shell } from 'electron';
 import { logger, toError } from 'memora';
-import { errorHandler, ErrorCode } from '../errorHandler.js';
+import { errorHandler, ErrorCode, SpriteError } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { throwingHandle, requireSprite, requireAgent } from './types.js';
 import type { IpcContext } from './types.js';
@@ -340,7 +340,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     const releaseUrl = `https://github.com/${GH_OWNER}/${GH_REPO}/releases`;
     // 白名单兜底：确保 URL 确实在白名单域内（防止 GH_OWNER 被未来异常配置污染）
     if (!releaseUrl.startsWith(`https://github.com/${GH_OWNER}/${GH_REPO}`)) {
-      throw new Error('releases URL failed whitelist check');
+      throw new SpriteError(ErrorCode.VALIDATION_ERROR, 'releases URL failed whitelist check');
     }
     await shell.openExternal(releaseUrl);
     return { url: releaseUrl };

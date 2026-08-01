@@ -32,7 +32,7 @@
  */
 
 /* ========== 基础（base/） ========== */
-export { Component } from './base/Component.js';
+export { Component } from './base/component.js';
 export { FlatListPanel } from './base/flatListPanel.js';
 export type { FlatListPanelOptions } from './base/flatListPanel.js';
 

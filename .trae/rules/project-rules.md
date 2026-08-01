@@ -121,53 +121,23 @@ chore: 升级 dependencies
 
 > 本节列出 `.trae/rules/` 下所有规则文件，方便按需加载。`alwaysApply: true` 的文件随会话自动加载，其余文件需 AI 主动读取。
 
-### 6.1 总则类（alwaysApply: false，按需加载）
+### 6.1 规则文件索引（按需加载）
 
-| 文件 | 用途 |
+| 类别 | 文件 |
 |------|------|
-| [project-rules.md](./project-rules.md) | 本文件——Memora 项目总则、技术栈、目录结构 |
+| 总则 / 硬约束 | [project-rules.md](./project-rules.md)（本文件） |
+| 架构哲学（10 原则） | [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) |
+| 后端分层 / 目录 | [backend_layers_rules.md](./backend_layers_rules.md) |
+| 通用编码约束 | [coding-convention-rules.md](./coding-convention-rules.md) |
+| 心智模型（Bug/逻辑） | [programmer-mindset-rules.md](./programmer-mindset-rules.md) |
+| UI 工程化心智 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) |
+| 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
+| 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
+| 精灵宿主 | [sprite-project-rules.md](./sprite-project-rules.md) |
+| 跨文档引用 / 新增模块 | [cross-document-reference.md](./cross-document-reference.md) / [new-module-guide.md](./new-module-guide.md) |
+| 决策记录（30 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
 
-### 6.2 架构与分层类（按需读取）
-
-| 文件 | 用途 |
-|------|------|
-| [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) | 架构哲学（专注模式、记忆衰减机制等 10 大原则） |
-| [backend_layers_rules.md](./backend_layers_rules.md) | 后端分层规范（src/ 各模块职责边界 + 核心库 vs 宿主项目边界） |
-| [coding-convention-rules.md](./coding-convention-rules.md) | 通用编码约束规则（契约校验、异常处理、日志、DAO 分层、稳定性等 9 大约束） |
-| [cross-document-reference.md](./cross-document-reference.md) | 跨文档交叉引用规范（"文档.§章节号"格式） |
-| [new-module-guide.md](./new-module-guide.md) | 新增模块标准流程（防止随意加模块破坏架构） |
-
-### 6.3 安全与测试类（按需读取）
-
-| 文件 | 用途 |
-|------|------|
-| [security_rules.md](./security_rules.md) | 安全规范（最小权限、显式允许、审计可追溯） |
-| [testing_rules.md](./testing_rules.md) | 测试规范（三层金字塔 + Mock LLM 策略） |
-
-### 6.4 精灵宿主类（按需读取，仅约束 memora-sprite）
-
-| 文件 | 用途 |
-|------|------|
-| [sprite-project-rules.md](./sprite-project-rules.md) | 精灵宿主项目总则、技术栈、目录结构、与内核关系（含 §9 感知层规范） |
-
-> **宿主实现文档**位于 `hosts/memora-sprite/.trae/rules/`（仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)，描述 src/ 目录树），跟宿主项目走。任务追踪统一在根 `tasks/`（唯一真理源，精灵历史任务已归档至 `tasks/归档/sprite-*`）。详见 [sprite-project-rules.md §1.1](./sprite-project-rules.md)。
-
-### 6.5 决策记录类（`.trae/decisions/` 目录，按需读取）
-
-> 详见 [decisions/README.md](../decisions/README.md)。共 30 个 ADR：内核 ADR-001~004 + ADR-006~019（18 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015~018（12 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
-
-### 6.6 心智模型类（按需读取，跨前后端通用）
-
-| 文件 | 用途 |
-|------|------|
-| [programmer-mindset-rules.md](./programmer-mindset-rules.md) | 资深程序员心智模型（Bug 修复 + 逻辑设计：根因 / 嫁接 / 逻辑先行） |
-| [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) | UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继承，继承自 programmer-mindset-rules.md） |
-
-### 6.7 重构规范类（按需读取，触发式加载）
-
-| 文件 | 用途 |
-|------|------|
-| [progressive-refactor-rules.md](./progressive-refactor-rules.md) | 渐进式重构规范（领域容器提取 模式 A + 职责拆分 模式 B，触发阈值：字段数 ≥15 / 职责数 ≥5 / 修改成本 ≥10 处无关代码，单轮一个领域 + 炼化归元收尾） |
+> 宿主实现文档位于 `hosts/memora-sprite/.trae/rules/`（仅 directory-structure.md）。任务追踪统一在根 `tasks/`（唯一真理源）。
 
 ## 7. AI 行为 DO/DON'T 速查表
 

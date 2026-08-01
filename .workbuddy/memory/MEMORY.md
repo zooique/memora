@@ -51,8 +51,9 @@
 - 默认豁免/保留 Manager：① 装饰注入元素（如 `BadgeManager` 收 `HTMLElement|null`，零 `getElementById`）；② 跨面板协调分布式 DOM（`PanelErrorBannerManager` 按 `${panelId}-error` 合法跨切面查找）；③ 流式引擎（`streamingRenderer` 纯函数+`Map`，无单根 el）；④ 既有 `init/cleanup` 生命周期 Manager。
 - "批量清单"（如"6 个 *Renderer"）须逐个对抗式核实架构角色，不可盲套模板。转换陷阱：`update({report})` 须补 `report` 包裹层；`mount` 用 `document.querySelector`(带 `#`)；测试 fixture 须完整镜像静态容器 class。
 
-## 声明式工厂前提核实铁律（Phase C / HEAL-17）
-- §四.2「≥3 相似即抽工厂」须**结构真实相似**非文件名相似；已抽进 helper 的共性（空/错/刷新/loading）不重复计入重复量。
+## 声明式工厂前提核实铁律（Phase C / HEAL-17，2026-08-01 经 ADR-017 AI 时代补充细化）
+- **抽取触发已从"计数阈值"改为"设计期意图 + 通用性门禁"**：领域原语（列表/详情/表单/搜索）或已有明确/近确定第二消费者 → **首次实现即抽最小公共原语**；纯臆测"以后可能用到"仍禁止（YAGNI，ADR-017 当年拒绝的"完全废除枝叶约束"风险）；2+ 处重复降级为"该抽却漏抽"的回溯补抽信号。理由：AI 编码时代代码库即协调媒介，已存在的公共原语被自然复用、缺失则 AI 就地复制。
+- 「结构真实相似」非文件名相似；已抽进 helper 的共性（空/错/刷新/loading）不重复计入重复量——此判据保留。
 - **列表工厂接纳硬判据**：仅接纳「单容器 + 单 load 返回 `T[]` + 单计数」面板。**双列表**（无外层包裹、各自 count+交互）/ **IPC 返回 `{entries}`** / **单 fetch 分多组** → 异类排除（防 God Object / customRender 架空工厂）。本仓库：audit(试点)+work(`customRender` 行内展开) 接入；profile(双列表+`{entries}`)、memory(list+search+detail) 排除。
 - `customRender` 逃生舱：**必须注入行级 EventTracker** 随每次渲染重建前清理、`destroy` 时随工厂清理；`_renderItems` 须把 `customRender` 判断**提前到空态之前**（接管整段含空态），`renderRow` 改可选。工厂配置须用真实数据形态（load 返回数组，非 `{items,total}`）。
 

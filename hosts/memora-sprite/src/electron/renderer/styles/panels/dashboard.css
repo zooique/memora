@@ -119,7 +119,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   position: absolute;
   top: 2px;
   right: 4px;
-  font-size: 9px;
+  font-size: var(--font-3xs); /* 9px */
   font-weight: var(--weight-semibold);
   color: var(--green);
   line-height: 1;

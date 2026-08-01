@@ -20,7 +20,7 @@
  *   - onRetry / onAction 回调由 Component 内部绑定，destroy 时自动解绑
  */
 
-import { Component } from '../base/Component.js';
+import { Component } from '../base/component.js';
 import type { ToastType, ToastOptions } from '../../types.js';
 // 复用 sprite 层共享常量，避免多处硬编码 Toast 时长导致口径不一致
 import { TOAST_LONG_MS } from '../../../../sprite/constants.js';

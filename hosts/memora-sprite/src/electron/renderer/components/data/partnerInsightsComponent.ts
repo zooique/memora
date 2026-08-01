@@ -22,7 +22,7 @@ import { reportError } from '../../helpers/errorHelpers.js';
 // 文本截断工具（跨层共享，统一 ellipsis 为 '…'，ADR-017 枝叶层 2 次提取）
 import { truncate } from '../../../../shared/truncate.js';
 // 组件生命周期基类（HEAL-17 Phase 0）
-import { Component } from '../base/Component.js';
+import { Component } from '../base/component.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 

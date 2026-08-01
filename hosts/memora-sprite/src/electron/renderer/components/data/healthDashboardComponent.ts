@@ -19,7 +19,7 @@
  * 关闭按钮 #btn-close-health 由 memoryPanelEvents 在 #memory-health-bar 上委托处理，组件不绑定。
  */
 
-import { Component } from '../base/Component.js';
+import { Component } from '../base/component.js';
 import { showPanelLoading, hidePanelLoading } from '../../helpers/domHelpers.js';
 // renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），4 处面板共用
 import { renderErrorState } from '../../helpers/errorState.js';

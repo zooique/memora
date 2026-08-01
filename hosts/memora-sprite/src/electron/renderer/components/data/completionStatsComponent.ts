@@ -21,7 +21,7 @@
  * 宿主注入：CompletionStatsHost（showToast），由 MemoryPanelManager 注入，用于导出失败反馈。
  */
 
-import { Component } from '../base/Component.js';
+import { Component } from '../base/component.js';
 import { createEl, createEmptyState } from '../../helpers/domHelpers.js';
 import { setIcon } from '../../helpers/icon.js';
 import {

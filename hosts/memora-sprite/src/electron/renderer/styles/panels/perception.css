@@ -116,7 +116,7 @@
 
 /* 雷达图标签文字 */
 .radar-label {
-  font-size: 8px;
+  font-size: var(--font-4xs); /* 8px */
   fill: var(--muted);
   user-select: none;
 }

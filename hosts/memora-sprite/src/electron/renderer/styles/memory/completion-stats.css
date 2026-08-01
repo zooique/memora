@@ -242,13 +242,13 @@
 .completion-stats-trend-value {
   position: absolute;
   top: -14px;
-  font-size: 9px;
+  font-size: var(--font-3xs); /* 9px */
   color: var(--text-2);
 }
 
 /* 柱底日期（MM-DD，省略年份节省宽度） */
 .completion-stats-trend-date {
-  font-size: 9px;
+  font-size: var(--font-3xs); /* 9px */
   color: var(--text-3);
   font-family: var(--font-mono, monospace);
   white-space: nowrap;
