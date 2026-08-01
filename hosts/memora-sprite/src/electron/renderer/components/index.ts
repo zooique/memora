@@ -55,7 +55,11 @@ export { LlmGovernanceResultComponent } from './data/llmGovernanceResultComponen
 export type { LlmGovernanceOptions, LlmGovernanceReport } from './data/llmGovernanceResultComponent.js';
 
 /* ========== 表单组件 ========== */
-// 待后续 Phase 填充
+export { EmbeddingConfigComponent } from './form/embeddingConfigComponent.js';
+export type { EmbeddingConfigData } from './form/embeddingConfigComponent.js';
+export { ShortcutConfigComponent } from './form/shortcutConfigComponent.js';
+export type { ShortcutConfigHost } from './form/shortcutConfigComponent.js';
+export { SpriteConfigComponent } from './form/spriteConfigComponent.js';
 
 /* ========== 导航组件 ========== */
 // 待后续 Phase 填充

@@ -11,6 +11,8 @@
  * - 遵循 ToastManager / ModalManager 的组合模式，UIManager 持有实例并委托
  * - 自管理事件监听器，提供 cleanup() 清理
  * - 跨模块关注点（setTheme / updatePersonaModeBadge / showConfirmDialog）通过 host 回调注入
+ * - AUDIT-H5：Embedding/快捷键/精灵配置三个职责域已提取到独立 Component，
+ *   SettingsPanelManager 作为编排者持有组件实例并委托具体操作
  */
 
 import { getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
@@ -21,7 +23,7 @@ import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
-import { MS_PER_MINUTE, MS_PER_HOUR } from '../../../sprite/constants.js';
+import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import type {
   SpriteConfigForm,
   ConfirmDialogOptions,
@@ -34,9 +36,11 @@ import {
   initProviderListeners as initProviderListenersHelper,
 } from '../helpers/providerManagement.js';
 import type { ProviderManagementContext } from '../helpers/providerManagement.js';
-// 快捷键捕获子系统（捕获式输入 + 冲突检测）提取到独立 helper
-import { initShortcutCapture as initShortcutCaptureHelper } from '../helpers/shortcutCapture.js';
-import type { ShortcutCaptureContext, ShortcutInputBinding } from '../helpers/shortcutCapture.js';
+// AUDIT-H5：三个职责域提取到独立 Component
+import { EmbeddingConfigComponent } from '../components/form/embeddingConfigComponent.js';
+import { ShortcutConfigComponent } from '../components/form/shortcutConfigComponent.js';
+import type { ShortcutConfigHost } from '../components/form/shortcutConfigComponent.js';
+import { SpriteConfigComponent } from '../components/form/spriteConfigComponent.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -85,38 +89,13 @@ export interface SettingsPanelHost {
 // ─── 设置面板管理器类 ─────────────────────────────────────
 
 export class SettingsPanelManager {
-  // ─── 设置面板 DOM 元素 - Embedding 配置 ─────────────────
-  private cfgEmbEnabled: HTMLInputElement | null;
-  private cfgEmbModel: HTMLInputElement | null;
-  private cfgEmbBaseUrl: HTMLInputElement | null;
-  private cfgEmbApiKey: HTMLInputElement | null;
-
-  // ─── 设置面板 DOM 元素 - 精灵配置 ───────────────────────
-  private cfgSilent: HTMLInputElement | null;
-  private cfgThreshold: HTMLInputElement | null;
-  private cfgCooldown: HTMLInputElement | null;
-  private cfgInterval: HTMLInputElement | null;
-  private cfgWatcherEnabled: HTMLInputElement | null;
-  private cfgWatcherPaths: HTMLInputElement | null;
-  private cfgWatcherDebounce: HTMLInputElement | null;
-  /** 文件监听忽略模式（glob 列表，逗号分隔输入） */
-  private cfgWatcherIgnore: HTMLInputElement | null;
-  /** 项目模式：专注项目选择下拉框 */
-  private cfgFocusProject: HTMLSelectElement | null;
-  /** 使用统计开关（隐私合规，默认关闭） */
-  private cfgUsageStats: HTMLInputElement | null;
-
-  // ─── 设置面板 DOM 元素 - 快捷键配置（Phase 3.3） ─────────
-  /** 快捷键总开关 */
-  private cfgShortcutsEnabled: HTMLInputElement | null;
-  /** 显示/隐藏窗口快捷键（捕获式输入） */
-  private cfgShortcutToggleWindow: HTMLInputElement | null;
-  /** 快速记录快捷键（捕获式输入） */
-  private cfgShortcutQuickRecord: HTMLInputElement | null;
-  /** 召回记忆快捷键（捕获式输入） */
-  private cfgShortcutRecallMemory: HTMLInputElement | null;
-  /** 快速输入浮窗快捷键（捕获式输入，对应 quick-input 全局快捷键） */
-  private cfgShortcutQuickInput: HTMLInputElement | null;
+  // ─── 子组件（AUDIT-H5 职责拆分） ─────────────────────────
+  /** Embedding 配置子组件（封装 Embedding 表单 DOM 操作） */
+  private readonly embeddingConfig: EmbeddingConfigComponent;
+  /** 快捷键配置子组件（封装快捷键表单 DOM 操作 + 捕获输入） */
+  private readonly shortcutConfig: ShortcutConfigComponent;
+  /** 精灵配置子组件（封装精灵配置表单 DOM 操作 + 状态指示器） */
+  private readonly spriteConfig: SpriteConfigComponent;
 
   // ─── 设置面板 DOM 元素 - 多 Provider 管理 ─────────────
   private providerListEl: HTMLElement | null;
@@ -138,17 +117,7 @@ export class SettingsPanelManager {
   private btnProviderCancel: HTMLButtonElement | null;
   private btnProviderTest: HTMLButtonElement | null;
 
-  // ─── 缓存 DOM 元素 - radio 按钮组（loadConfigToForm / collectConfigFromForm 中重复查询） ─
-  /** 项目模式单选按钮组（NodeList 静态快照，构造时获取一次） */
-  private projectModeRadios: NodeListOf<HTMLInputElement>;
-  /** 主题模式单选按钮组 */
-  private themeModeRadios: NodeListOf<HTMLInputElement>;
-  /** 归档模式单选按钮组 */
-  private archiveModeRadios: NodeListOf<HTMLInputElement>;
-
   // ─── 缓存 DOM 元素 - 重复查询的独立元素 ─
-  /** Agent 状态指示器元素（updateAgentStatusIndicator 中查询） */
-  private agentStatusEl: HTMLElement | null;
   /** 保存状态指示器元素（显示"保存中..."、"已保存"等状态） */
   private saveStatusEl: HTMLElement | null;
 
@@ -175,40 +144,11 @@ export class SettingsPanelManager {
   private debouncedAutoSave: (() => void) | null = null;
 
   constructor(private host: SettingsPanelHost) {
-    // 设置面板 - Embedding 配置
-    this.cfgEmbEnabled = getOptionalElement('cfg-emb-enabled', 'input');
-    this.cfgEmbModel = getOptionalElement('cfg-emb-model', 'input');
-    this.cfgEmbBaseUrl = getOptionalElement('cfg-emb-base-url', 'input');
-    this.cfgEmbApiKey = getOptionalElement('cfg-emb-api-key', 'input');
+    // AUDIT-H5：创建三个子组件，各自封装对应的 DOM 元素查询
+    this.embeddingConfig = new EmbeddingConfigComponent();
+    this.shortcutConfig = new ShortcutConfigComponent();
+    this.spriteConfig = new SpriteConfigComponent();
 
-    // 设置面板 - 精灵配置
-    this.cfgSilent = getOptionalElement('cfg-silent', 'input');
-    this.cfgThreshold = getOptionalElement('cfg-threshold', 'input');
-    this.cfgCooldown = getOptionalElement('cfg-cooldown', 'input');
-    this.cfgInterval = getOptionalElement('cfg-interval', 'input');
-    this.cfgWatcherEnabled = getOptionalElement('cfg-watcher-enabled', 'input');
-    this.cfgWatcherPaths = getOptionalElement('cfg-watcher-paths', 'input');
-    this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
-    this.cfgWatcherIgnore = getOptionalElement('cfg-watcher-ignore', 'input');
-    this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
-    this.cfgUsageStats = getOptionalElement('cfg-usage-stats', 'input');
-
-    // 设置面板 - 快捷键配置（Phase 3.3）
-    this.cfgShortcutsEnabled = getOptionalElement('cfg-shortcuts-enabled', 'input');
-    this.cfgShortcutToggleWindow = getOptionalElement('cfg-shortcut-toggle-window', 'input');
-    this.cfgShortcutQuickRecord = getOptionalElement('cfg-shortcut-quick-record', 'input');
-    this.cfgShortcutRecallMemory = getOptionalElement('cfg-shortcut-recall-memory', 'input');
-    this.cfgShortcutQuickInput = getOptionalElement('cfg-shortcut-quick-input', 'input');
-
-    // 缓存 radio 按钮组（loadConfigToForm / collectConfigFromForm / initListeners 中重复查询）
-    this.projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
-    this.themeModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
-    this.archiveModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
-
-    // 缓存重复查询的独立元素
-    this.agentStatusEl = document.getElementById('agent-status-indicator');
-    /** 保存状态指示器元素 */
-    this.saveStatusEl = document.getElementById('save-status-indicator');
     // 多 Provider 管理元素
     this.providerListEl = document.getElementById('provider-list');
     this.providerModalEl = document.getElementById('provider-modal');
@@ -225,6 +165,9 @@ export class SettingsPanelManager {
     this.btnProviderSave = getOptionalElement('btn-provider-save', 'button');
     this.btnProviderCancel = getOptionalElement('btn-provider-cancel', 'button');
     this.btnProviderTest = getOptionalElement('btn-provider-test', 'button');
+
+    // 保存状态指示器
+    this.saveStatusEl = document.getElementById('save-status-indicator');
 
     // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 reportError 报告
     // 填充应用版本号到"关于"分区（由 windowManager additionalArguments 注入）
@@ -244,29 +187,16 @@ export class SettingsPanelManager {
    *
    * 不抛异常（设置面板是非核心功能，缺失时降级而非阻断整个 UI），
    * 但通过显式错误日志让问题在开发阶段被发现，避免生产环境静默失效。
+   *
+   * AUDIT-H5：子组件的字段由各自组件的 getValidationFields() 提供，
+   * Manager 汇总所有校验结果一次性报告。
    */
   private validateSettingsElements(): void {
-    // 字段映射：[字段名, 元素引用, 期望 ID]
+    // 从三个子组件收集字段
     const fields: Array<[string, HTMLElement | null, string]> = [
-      ['cfgEmbEnabled', this.cfgEmbEnabled, 'cfg-emb-enabled'],
-      ['cfgEmbModel', this.cfgEmbModel, 'cfg-emb-model'],
-      ['cfgEmbBaseUrl', this.cfgEmbBaseUrl, 'cfg-emb-base-url'],
-      ['cfgEmbApiKey', this.cfgEmbApiKey, 'cfg-emb-api-key'],
-      ['cfgSilent', this.cfgSilent, 'cfg-silent'],
-      ['cfgThreshold', this.cfgThreshold, 'cfg-threshold'],
-      ['cfgCooldown', this.cfgCooldown, 'cfg-cooldown'],
-      ['cfgInterval', this.cfgInterval, 'cfg-interval'],
-      ['cfgWatcherEnabled', this.cfgWatcherEnabled, 'cfg-watcher-enabled'],
-      ['cfgWatcherPaths', this.cfgWatcherPaths, 'cfg-watcher-paths'],
-      ['cfgWatcherDebounce', this.cfgWatcherDebounce, 'cfg-watcher-debounce'],
-      ['cfgWatcherIgnore', this.cfgWatcherIgnore, 'cfg-watcher-ignore'],
-      ['cfgFocusProject', this.cfgFocusProject, 'cfg-focus-project'],
-      ['cfgUsageStats', this.cfgUsageStats, 'cfg-usage-stats'],
-      ['cfgShortcutsEnabled', this.cfgShortcutsEnabled, 'cfg-shortcuts-enabled'],
-      ['cfgShortcutToggleWindow', this.cfgShortcutToggleWindow, 'cfg-shortcut-toggle-window'],
-      ['cfgShortcutQuickRecord', this.cfgShortcutQuickRecord, 'cfg-shortcut-quick-record'],
-      ['cfgShortcutRecallMemory', this.cfgShortcutRecallMemory, 'cfg-shortcut-recall-memory'],
-      ['cfgShortcutQuickInput', this.cfgShortcutQuickInput, 'cfg-shortcut-quick-input'],
+      ...this.embeddingConfig.getValidationFields(),
+      ...this.spriteConfig.getValidationFields(),
+      ...this.shortcutConfig.getValidationFields(),
     ];
     // 收集缺失字段
     const missing = fields.filter(([, el]) => el === null).map(([name, , id]) => `${name} (#${id})`);
@@ -360,7 +290,7 @@ export class SettingsPanelManager {
             silentMode: false,
             proactiveThreshold: 3,
             proactiveCooldownMs: 300_000,
-            triggerIntervalMs: MS_PER_HOUR,
+            triggerIntervalMs: MS_PER_MINUTE,
             fileWatcherEnabled: false,
             fileWatcherPaths: ['.'],
             fileWatcherDebounceMs: 1000,
@@ -434,42 +364,33 @@ export class SettingsPanelManager {
       });
     }
 
-    // 项目模式单选按钮：切换时启用/禁用专注项目下拉框
-    this.projectModeRadios.forEach((radio) => {
-      this.events.addEventListener(radio, 'change', () => {
-        if (this.cfgFocusProject) {
-          this.cfgFocusProject.disabled = radio.value !== 'focus';
+    // AUDIT-H5：项目模式/主题/归档模式单选按钮绑定委托给 SpriteConfigComponent
+    // 通过 EventTracker 注册，确保 cleanup() 时能正确移除监听器
+    this.spriteConfig.registerRadioEvents(this.events, {
+      // 项目模式切换：启用/禁用专注项目下拉框
+      onProjectModeChange: (value) => {
+        this.spriteConfig.setFocusProjectDisabled(value !== 'focus');
+      },
+      // 主题模式切换：立即应用主题（无需等待保存按钮）
+      onThemeModeChange: (value) => {
+        if (value === 'light' || value === 'dark' || value === 'auto') {
+          this.host.setTheme(value);
         }
-      });
+      },
+      // 归档模式切换：即时应用（与主题一样即时生效，无需等保存按钮）
+      onArchiveModeChange: (value) => {
+        this.archiveModeChangeCallback?.(value);
+      },
     });
 
-    // ADR-SP-008 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
-    this.themeModeRadios.forEach((radio) => {
-      this.events.addEventListener(radio, 'change', () => {
-        if (radio.checked) {
-          // 支持 'auto' 跟随系统主题
-          const value = radio.value;
-          if (value === 'light' || value === 'dark' || value === 'auto') {
-            this.host.setTheme(value);
-          }
-        }
-      });
-    });
-
-    // ADR-015 归档模式切换：切换时即时应用（与主题一样即时生效，无需等保存按钮）
-    this.archiveModeRadios.forEach((radio) => {
-      this.events.addEventListener(radio, 'change', () => {
-        if (radio.checked) {
-          const value = radio.value;
-          if (value === 'full' || value === 'insights-only' || value === 'manual') {
-            this.archiveModeChangeCallback?.(value);
-          }
-        }
-      });
-    });
-
-    // Phase 3.3：初始化快捷键捕获式输入（四个动作 + 冲突检测）
-    this.initShortcutCapture();
+    // AUDIT-H5：快捷键捕获式输入委托给 ShortcutConfigComponent
+    this.shortcutConfig.initShortcutCapture(this.events, {
+      onDirtyChange: () => {
+        this.settingsFormDirty = true;
+        this.debouncedAutoSave?.();
+      },
+      showToast: (message, type, duration) => this.host.showToast(message, type, duration),
+    } satisfies ShortcutConfigHost);
 
     // 多 Provider 管理：事件监听器 + 初始加载列表
     this.initProviderListeners();
@@ -528,54 +449,6 @@ export class SettingsPanelManager {
         this.host.onSettingsTabSwitch?.(targetTab);
       });
     });
-  }
-
-  // ─── Phase 3.3 快捷键捕获式输入（委托到 shortcutCapture helper） ───
-
-  /**
-   * 初始化快捷键捕获式输入（委托到 helper）
-   *
-   * 捕获逻辑、accelerator 解析、冲突检测委托给 shortcutCapture.ts，
-   * 此处仅构建 context 并委托。helper 通过 ctx.events 注册监听器，
-   * cleanup 由主类统一管理。
-   */
-  private initShortcutCapture(): void {
-    initShortcutCaptureHelper(this.buildShortcutCaptureContext());
-  }
-
-  /**
-   * 构建快捷键捕获子系统的依赖注入容器
-   *
-   * 将 SettingsPanelManager 的快捷键输入框 DOM 元素、事件跟踪器和宿主回调
-   * 通过 context 暴露给 shortcutCapture helper，保持状态所有权在
-   * SettingsPanelManager，同时让 helper 能以纯函数方式访问状态和注册回调。
-   */
-  private buildShortcutCaptureContext(): ShortcutCaptureContext {
-    // 过滤掉 null 元素（HTML ID 拼写错误时降级，validateSettingsElements 已报告）
-    const inputs: ShortcutInputBinding[] = [
-      { input: this.cfgShortcutToggleWindow, action: 'toggle-window' },
-      { input: this.cfgShortcutQuickRecord, action: 'quick-record' },
-      { input: this.cfgShortcutRecallMemory, action: 'recall-memory' },
-      { input: this.cfgShortcutQuickInput, action: 'quick-input' },
-    ].filter((b): b is ShortcutInputBinding => b.input !== null);
-
-    return {
-      inputs,
-      events: this.events,
-      // 捕获/清除成功：标记表单为 dirty 并触发防抖自动保存
-      onCapture: () => {
-        this.settingsFormDirty = true;
-        this.debouncedAutoSave?.();
-      },
-      onClear: () => {
-        this.settingsFormDirty = true;
-        this.debouncedAutoSave?.();
-      },
-      // 冲突：显示警告 toast，helper 不会将值填入输入框
-      onConflict: (_action, accelerator) => {
-        this.host.showToast(`快捷键 ${accelerator} 与其他动作冲突，请使用其他组合`, 'warning');
-      },
-    };
   }
 
   /**
@@ -638,7 +511,7 @@ export class SettingsPanelManager {
   /**
    * 更新 Agent 连接状态指示器
    *
-   * 在设置面板顶部显示 Agent 当前连接状态，帮助用户快速识别配置是否生效。
+   * 委托给 SpriteConfigComponent 处理 DOM 更新。
    * 三种状态：
    * - ready（绿色）：Agent 已就绪，可正常对话
    * - error（红色）：Agent 未就绪，通常因 LLM 配置缺失或初始化失败
@@ -648,38 +521,19 @@ export class SettingsPanelManager {
    * @param message 可选的状态描述文本（未提供时使用默认文案）
    */
   updateAgentStatusIndicator(status: 'ready' | 'error' | 'unknown', message?: string): void {
-    const indicator = this.agentStatusEl;
-    if (!indicator) return;
-
-    // 更新状态类名（移除旧状态类，添加新状态类）
-    indicator.classList.remove('ready', 'error', 'unknown');
-    indicator.classList.add(status);
-
-    // 更新状态文本
-    const textEl = indicator.querySelector('.agent-status-text');
-    if (textEl) {
-      const defaultText = status === 'ready' ? '精灵已就绪' : status === 'error' ? '精灵未就绪' : '检测中...';
-      textEl.textContent = message ?? defaultText;
-    }
+    this.spriteConfig.updateAgentStatusIndicator(status, message);
   }
 
   /**
    * 加载 Embedding 配置到表单
    *
-   * 从主进程返回的 LLM 配置数据中提取 Embedding 部分，填充到 Embedding 表单字段。
+   * 委托给 EmbeddingConfigComponent 处理 DOM 更新。
    * Provider 配置由 loadProviderList 独立管理，此方法仅处理 Embedding。
    */
   loadEmbeddingConfig(data: {
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
   }): void {
-    if (data.embedding) {
-      if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = true;
-      if (this.cfgEmbModel) this.cfgEmbModel.value = data.embedding.model;
-      if (this.cfgEmbBaseUrl) this.cfgEmbBaseUrl.value = data.embedding.baseUrl;
-      if (this.cfgEmbApiKey) this.cfgEmbApiKey.value = data.embedding.apiKey;
-    } else {
-      if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = false;
-    }
+    this.embeddingConfig.loadEmbeddingConfig(data);
   }
 
   // ─── 多 Provider 管理（委托到 providerManagement helper） ───
@@ -798,50 +652,9 @@ export class SettingsPanelManager {
   loadConfigToForm(config: SpriteConfigForm): void {
     this.isLoadingConfig = true;
     try {
-      if (this.cfgSilent) this.cfgSilent.checked = config.silentMode;
-      if (this.cfgThreshold) this.cfgThreshold.value = String(config.proactiveThreshold);
-      if (this.cfgCooldown) this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
-      if (this.cfgInterval) this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
-      if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
-      if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
-      if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
-      if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
-      // 使用统计开关（隐私合规，默认关闭）
-      if (this.cfgUsageStats) this.cfgUsageStats.checked = config.usageStatsEnabled;
-
-      // ADR-015 同步归档模式 radio（即时生效字段，仅回显选中状态）
-      this.archiveModeRadios.forEach((radio) => {
-        radio.checked = radio.value === config.archiveMode;
-      });
-
-      // 项目模式（单选按钮 + 专注项目下拉框）
-      const projectModeRadio = Array.from(this.projectModeRadios).find(
-        (r) => r.value === config.projectMode,
-      );
-      if (projectModeRadio) {
-        projectModeRadio.checked = true;
-      }
-      if (this.cfgFocusProject) {
-        this.cfgFocusProject.disabled = config.projectMode !== 'focus';
-      }
-      // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
-
-      // Phase 3.3 快捷键配置（总开关 + 四个动作的 accelerator）
-      if (this.cfgShortcutsEnabled) {
-        this.cfgShortcutsEnabled.checked = config.shortcuts.enabled;
-      }
-      if (this.cfgShortcutToggleWindow) {
-        this.cfgShortcutToggleWindow.value = config.shortcuts.accelerators['toggle-window'] ?? '';
-      }
-      if (this.cfgShortcutQuickRecord) {
-        this.cfgShortcutQuickRecord.value = config.shortcuts.accelerators['quick-record'] ?? '';
-      }
-      if (this.cfgShortcutRecallMemory) {
-        this.cfgShortcutRecallMemory.value = config.shortcuts.accelerators['recall-memory'] ?? '';
-      }
-      if (this.cfgShortcutQuickInput) {
-        this.cfgShortcutQuickInput.value = config.shortcuts.accelerators['quick-input'] ?? '';
-      }
+      // AUDIT-H5：委托给子组件处理各自的 DOM 更新
+      this.spriteConfig.loadToForm(config);
+      this.shortcutConfig.loadToForm(config.shortcuts);
     } finally {
       this.isLoadingConfig = false;
     }
@@ -849,70 +662,33 @@ export class SettingsPanelManager {
 
   /** 加载项目列表到专注项目下拉框 */
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
-    if (!this.cfgFocusProject) return;
-
-    // 保留第一个占位选项
-    while (this.cfgFocusProject.options.length > 1) {
-      this.cfgFocusProject.remove(1);
-    }
-    for (const p of projects) {
-      const opt = document.createElement('option');
-      opt.value = p.path;
-      opt.textContent = `${p.name} (${p.path})`;
-      this.cfgFocusProject.appendChild(opt);
-    }
-    this.cfgFocusProject.value = selectedPath;
+    this.spriteConfig.loadProjectsToForm(projects, selectedPath);
   }
 
   /** 收集表单中的配置 */
   collectConfigFromForm(): SpriteConfigForm {
-    // 收集项目模式
-    const projectModeRadio = Array.from(this.projectModeRadios).find((r) => r.checked);
-    const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
-
-    // 收集主题（主题即时生效，onConfigSave 不保存 theme，此处仅满足类型契约）
-    const themeRadio = Array.from(this.themeModeRadios).find((r) => r.checked);
-    const theme = themeRadio?.value === 'dark' ? 'dark' : 'light';
-
-    // ADR-015 收集归档模式（即时生效，此处仅满足类型契约，实际持久化在 onArchiveModeChange）
-    const archiveModeChecked = Array.from(this.archiveModeRadios).find((r) => r.checked);
-    const archiveMode = (archiveModeChecked?.value as 'full' | 'insights-only' | 'manual') ?? 'full';
+    // AUDIT-H5：从各子组件收集配置，合并为完整 SpriteConfigForm
+    const spritePart = this.spriteConfig.collectFromForm();
+    const shortcuts = this.shortcutConfig.collectFromForm();
 
     return {
-      theme,
-      archiveMode,
-      silentMode: this.cfgSilent?.checked ?? false,
-      proactiveThreshold: parseInt(this.cfgThreshold?.value ?? '3', 10) || 3,
-      proactiveCooldownMs: (parseInt(this.cfgCooldown?.value ?? '5', 10) || 5) * MS_PER_MINUTE,
-      triggerIntervalMs: (parseInt(this.cfgInterval?.value ?? '60', 10) || 60) * MS_PER_MINUTE,
-      fileWatcherEnabled: this.cfgWatcherEnabled?.checked ?? false,
-      fileWatcherPaths: this.cfgWatcherPaths?.value
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0) ?? [],
-      // 收集文件监听忽略模式（逗号分隔字符串 → glob 列表，与 fileWatcherPaths 对称处理）
-      fileWatcherIgnore: this.cfgWatcherIgnore?.value
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0) ?? [],
-      fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce?.value ?? '1000', 10) || 1000,
-      // defaultPersona 由精灵设定面板独立持久化（onDefaultPersonaChange 即时生效），
-      // 设置面板不再管理此字段，此处返回空字符串仅满足 SpriteConfigForm 类型契约
-      defaultPersona: '',
-      projectMode,
-      focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
-      // 使用统计开关（隐私合规，默认关闭）
-      usageStatsEnabled: this.cfgUsageStats?.checked ?? false,
-      // Phase 3.3 快捷键配置（总开关 + 四个动作的 accelerator）
-      shortcuts: {
-        enabled: this.cfgShortcutsEnabled?.checked ?? true,
-        accelerators: {
-          'toggle-window': this.cfgShortcutToggleWindow?.value.trim() ?? '',
-          'quick-record': this.cfgShortcutQuickRecord?.value.trim() ?? '',
-          'recall-memory': this.cfgShortcutRecallMemory?.value.trim() ?? '',
-          'quick-input': this.cfgShortcutQuickInput?.value.trim() ?? '',
-        },
-      },
+      // spriteConfig 提供的字段
+      theme: spritePart.theme ?? 'light',
+      archiveMode: spritePart.archiveMode ?? 'full',
+      silentMode: spritePart.silentMode ?? false,
+      proactiveThreshold: spritePart.proactiveThreshold ?? 3,
+      proactiveCooldownMs: spritePart.proactiveCooldownMs ?? 300_000,
+      triggerIntervalMs: spritePart.triggerIntervalMs ?? 3600_000,
+      fileWatcherEnabled: spritePart.fileWatcherEnabled ?? false,
+      fileWatcherPaths: spritePart.fileWatcherPaths ?? [],
+      fileWatcherIgnore: spritePart.fileWatcherIgnore ?? [],
+      fileWatcherDebounceMs: spritePart.fileWatcherDebounceMs ?? 1000,
+      defaultPersona: spritePart.defaultPersona ?? '',
+      projectMode: spritePart.projectMode ?? 'smart',
+      focusProjectPath: spritePart.focusProjectPath ?? '',
+      usageStatsEnabled: spritePart.usageStatsEnabled ?? false,
+      // shortcutConfig 提供的字段
+      shortcuts,
     };
   }
 
