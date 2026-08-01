@@ -448,7 +448,7 @@ export function registerMinimalIpcHandlers(
         }
 
         default:
-          return { success: false, error: `未知 action: ${(payload as any).action}` };
+          return { success: false, error: `未知 action: ${(payload as { action: string }).action}` };
       }
     },
   );
