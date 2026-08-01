@@ -6,32 +6,32 @@
  * 日期按倒序排列（最新在前），每个日期显示会话数。
  *
  * 职责：
- * - 绑定 #date-nav-btn 点击事件，展开/收起下拉列表
- * - 接收 availableDates，渲染日期列表项
+ * - 编排日期导航下拉的展开/收起流程
+ * - 管理日期数据（availableDates / currentDate）
+ * - 通过 DateNavDropdownComponent 封装 DOM 操作与事件绑定
  * - 点击日期项触发跳转回调
- * - 点击外部区域关闭下拉
- * - 显示当前查看的日期（按钮文字）
  *
- * 设计原则：
- * - 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理
+ * 设计原则（对齐 ARCH-COMP-1 阶段 4「Manager 编排 + Component 封装」）：
+ * - Manager 持有 Component 实例，init() 创建并委托事件绑定，cleanup() 销毁
+ * - DOM 操作（getElementById / createElement / classList）全部下沉到 Component
+ * - 业务逻辑（selectDate 跳转、日期数据管理、Alt 翻日计算）保留在 Manager
  * - 与 UIManager 解耦，通过回调接口通信
  * - 日期数据来自 updateAvailableDates()，由外部（sessionController）提供
+ *
+ * 生命周期：
+ * - init() 创建并挂载 Component，委托绑定事件（支持 cleanup() 后重新 init 重建）
+ * - cleanup() 销毁 Component（解绑事件）+ 清空回调与日期数据
  */
-import { EventTracker } from '../helpers/eventTracker.js';
-import { createEmptyState, formatDateKey } from '../helpers/domHelpers.js';
-import { setIcon } from '../helpers/icon.js';
-// 渲染进程统一日志入口（替代散落的 console.error/warn）
-import { reportError } from '../helpers/errorHelpers.js';
-import { MS_PER_DAY } from '../../../sprite/constants.js';
+import { DateNavDropdownComponent } from '../components/data/dateNavDropdownComponent.js';
 
 /**
  * 日期导航管理器类
  *
- * 生命周期：init() 绑定事件 → cleanup() 清理事件 + 回调
+ * 生命周期：init() 创建 Component + 绑定事件 → cleanup() 销毁 Component + 清空回调
  */
 export class DateNavManager {
-  /** 事件监听器跟踪器 */
-  private events = new EventTracker();
+  /** 日期导航下拉组件（封装 DOM 操作与事件绑定；init 创建，cleanup 销毁） */
+  private dateNavComponent: DateNavDropdownComponent | null = null;
   /** 日期跳转回调（由 renderer.ts 注册，调用 sessionController.jumpToDate） */
   private jumpCallback: ((date: string) => void) | null = null;
   /** 有对话记录的日期集合（用于渲染下拉列表） */
@@ -46,261 +46,105 @@ export class DateNavManager {
   /**
    * 初始化事件监听器
    *
-   * 绑定日期按钮点击展开/收起，点击外部关闭。
-   * 在 UIManager 构造完成后调用。
+   * 创建并挂载 DateNavDropdownComponent，委托其绑定所有 DOM 事件。
+   * 业务决策通过回调注入 Component（toggle / selectDate / delete / backToToday / Alt 翻日）。
+   * 在 UIManager 构造完成后调用；支持 cleanup() 后重新调用以重建事件绑定。
    */
   init(): void {
-    const btn = document.getElementById('date-nav-btn');
-    const dropdown = document.getElementById('date-nav-dropdown');
-    const listEl = document.getElementById('date-nav-list');
-    if (!(btn instanceof HTMLButtonElement) || !(dropdown instanceof HTMLElement) || !(listEl instanceof HTMLElement)) {
-      reportError('DateNav DOM 元素缺失', new Error('日期导航不可用：btn/dropdown/list 校验失败'));
-      return;
-    }
-
-    // 点击按钮切换下拉
-    this.events.addEventListener(btn, 'click', (e) => {
-      e.stopPropagation();
-      const expanded = btn.getAttribute('aria-expanded') === 'true';
-      if (expanded) {
-        this.closeDropdown();
-      } else {
-        this.openDropdown();
-      }
-    });
-
-    // 点击外部关闭
-    this.events.addEventListener(document, 'click', (e) => {
-      const target = e.target as Node;
-      if (!dropdown.contains(target) && !btn.contains(target)) {
-        this.closeDropdown();
-      }
-    });
-
-    // Esc 关闭
-    this.events.addEventListener(document, 'keydown', (e) => {
-      if (e instanceof KeyboardEvent && e.key === 'Escape') {
-        this.closeDropdown();
-      }
-    });
-
-    // 键盘支持：Enter/Space 展开下拉（按钮上）
-    this.events.addEventListener(btn, 'keydown', (e) => {
-      const ke = e as KeyboardEvent;
-      if (ke.key === 'Enter' || ke.key === ' ') {
-        ke.preventDefault();
-        const expanded = btn.getAttribute('aria-expanded') === 'true';
-        if (expanded) {
+    // 创建并挂载组件（查询并缓存 5 个 DOM 元素引用，不创建新元素）
+    const component = new DateNavDropdownComponent().mount('');
+    this.dateNavComponent = component;
+    // 委托组件绑定 DOM 事件，注入业务回调
+    component.initEvents(
+      /* onToggle */ () => {
+        // 根据当前展开状态决定展开或收起
+        if (this.dateNavComponent?.isExpanded()) {
           this.closeDropdown();
         } else {
           this.openDropdown();
         }
-      }
-    });
-
-    // 键盘导航：在下拉菜单内用方向键移动焦点，Enter 选择
-    this.events.addEventListener(dropdown, 'keydown', (e) => {
-      const ke = e as KeyboardEvent;
-      const items = dropdown.querySelectorAll<HTMLElement>('.date-nav-item[data-date]');
-      if (items.length === 0) return;
-
-      const currentIdx = Array.from(items).findIndex(
-        (item) => item === document.activeElement,
-      );
-
-      if (ke.key === 'ArrowDown') {
-        ke.preventDefault();
-        const nextIdx = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
-        items[nextIdx]?.focus();
-      } else if (ke.key === 'ArrowUp') {
-        ke.preventDefault();
-        const prevIdx = currentIdx < 0 ? items.length - 1 : Math.max(currentIdx - 1, 0);
-        items[prevIdx]?.focus();
-      } else if (ke.key === 'Enter') {
-        ke.preventDefault();
-        if (currentIdx >= 0) {
-          const date = items[currentIdx]?.dataset.date;
-          if (date) {
-            this.selectDate(date);
-          }
-        }
-      } else if (ke.key === 'Escape') {
-        this.closeDropdown();
-        btn.focus();
-      }
-    });
-
-    // 事件委托：日期列表项点击（跳转）
-    // 避免每次 renderDateList 重建 DOM 时重复绑定事件监听器
-    this.events.addEventListener(listEl, 'click', (e) => {
-      const target = e.target as HTMLElement;
-      // 排除删除按钮的点击（删除按钮已单独处理）
-      if (target.closest('.date-nav-item-delete')) return;
-      // 找到日期项
-      const item = target.closest<HTMLElement>('.date-nav-item[data-date]');
-      if (item) {
-        const date = item.dataset.date;
-        if (date) {
-          this.selectDate(date);
-        }
-      }
-    });
-
-    // 事件委托：删除按钮点击
-    this.events.addEventListener(listEl, 'click', (e) => {
-      const target = e.target as HTMLElement;
-      const deleteBtn = target.closest<HTMLElement>('.date-nav-item-delete');
-      if (deleteBtn) {
-        const item = deleteBtn.closest<HTMLElement>('.date-nav-item[data-date]');
-        if (item) {
-          const date = item.dataset.date;
-          if (date && this.deleteCallback) {
-            this.deleteCallback(date);
-          }
-        }
-      }
-    });
-
-    // 回到今天按钮
-    const backToTodayBtn = document.getElementById('btn-back-to-today');
-    if (backToTodayBtn) {
-      this.events.addEventListener(backToTodayBtn, 'click', () => {
+      },
+      /* onSelectDate */ (date: string) => {
+        // 日期项点击/Enter：执行跳转业务逻辑
+        this.selectDate(date);
+      },
+      /* onDeleteDate */ (date: string) => {
+        // 删除按钮点击：触发删除回调
+        this.deleteCallback?.(date);
+      },
+      /* onBackToToday */ () => {
+        // 回到今天按钮点击：触发回到今天回调
         this.backToTodayCallback?.();
-      });
-    }
+      },
+      /* onGlobalAltArrow */ (e: KeyboardEvent) => {
+        // 全局 Alt+←/→ 翻日：基于已加载日期集合计算目标日期
+        this.handleAltArrow(e);
+      },
+    );
+  }
 
-    // 全局快捷键：Alt+←/→ 在有记录的日期间翻日
-    // 基于已加载的 availableDates 排序后查找前/后一天，无记录的日期自动跳过
-    this.events.addEventListener(document, 'keydown', (e) => {
-      if (!(e instanceof KeyboardEvent)) return;
-      // 仅响应 Alt + 左/右方向键
-      if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
-      // 无日期数据或未选中日期时跳过
-      if (this.availableDates.size === 0 || !this.currentDate) return;
+  /**
+   * 处理 Alt+←/→ 翻日快捷键
+   *
+   * 基于已加载的 availableDates 排序后查找前/后一天，无记录的日期自动跳过。
+   * Component 仅做按键过滤（确认是 Alt+方向键），具体日期计算在此完成。
+   *
+   * @param e 键盘事件（已确认为 Alt+ArrowLeft/ArrowRight）
+   */
+  private handleAltArrow(e: KeyboardEvent): void {
+    // 无日期数据或未选中日期时跳过
+    if (this.availableDates.size === 0 || !this.currentDate) return;
 
-      // 升序排列（旧→新），与 ArrowLeft=往前(更早)、ArrowRight=往后(更晚) 语义一致
-      const sortedDates = Array.from(this.availableDates.keys()).sort((a, b) =>
-        a.localeCompare(b),
-      );
-      const currentIdx = sortedDates.indexOf(this.currentDate);
-      if (currentIdx === -1) return;
+    // 升序排列（旧→新），与 ArrowLeft=往前(更早)、ArrowRight=往后(更晚) 语义一致
+    const sortedDates = Array.from(this.availableDates.keys()).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const currentIdx = sortedDates.indexOf(this.currentDate);
+    if (currentIdx === -1) return;
 
-      // 计算目标索引，越界时跳过（已在最早/最新日期）
-      const targetIdx = e.key === 'ArrowLeft' ? currentIdx - 1 : currentIdx + 1;
-      if (targetIdx < 0 || targetIdx >= sortedDates.length) return;
+    // 计算目标索引，越界时跳过（已在最早/最新日期）
+    const targetIdx = e.key === 'ArrowLeft' ? currentIdx - 1 : currentIdx + 1;
+    if (targetIdx < 0 || targetIdx >= sortedDates.length) return;
 
-      e.preventDefault();
-      // L190 已做边界检查（targetIdx ∈ [0, length)），sortedDates[targetIdx] 必有值
-      const targetDate = sortedDates[targetIdx]!;
-      this.selectDate(targetDate);
-    });
+    e.preventDefault();
+    // 边界检查已确保 targetIdx ∈ [0, length)，sortedDates[targetIdx] 必有值
+    const targetDate = sortedDates[targetIdx]!;
+    this.selectDate(targetDate);
   }
 
   /**
    * 展开下拉列表
+   *
+   * 委托 Component 设置 aria-expanded + 移除 hidden，随后重新渲染日期列表。
    */
   private openDropdown(): void {
-    const btn = document.getElementById('date-nav-btn');
-    const dropdown = document.getElementById('date-nav-dropdown');
-    if (!btn || !dropdown) return;
-
-    btn.setAttribute('aria-expanded', 'true');
-    dropdown.classList.remove('hidden');
+    this.dateNavComponent?.openDropdown();
     this.renderDateList();
   }
 
   /**
    * 收起下拉列表
+   *
+   * 委托 Component 重置 aria-expanded + 添加 hidden。
    */
   private closeDropdown(): void {
-    const btn = document.getElementById('date-nav-btn');
-    const dropdown = document.getElementById('date-nav-dropdown');
-    if (!btn || !dropdown) return;
-
-    btn.setAttribute('aria-expanded', 'false');
-    dropdown.classList.add('hidden');
+    this.dateNavComponent?.closeDropdown();
   }
 
   /**
    * 渲染日期列表
    *
-   * 按日期倒序排列，每个项显示日期 + 当天会话数。
+   * 委托 Component 按日期倒序排列渲染，每个项显示日期 + 当天会话数。
    * 当前选中日期高亮。
    */
   private renderDateList(): void {
-    const listEl = document.getElementById('date-nav-list');
-    if (!listEl) return;
-
-    listEl.innerHTML = '';
-
-    // 无数据时显示空状态
-    if (this.availableDates.size === 0) {
-      listEl.appendChild(createEmptyState({ title: '暂无对话记录' }));
-      return;
-    }
-
-    // 按日期倒序排列（最新在前）
-    const sortedDates = Array.from(this.availableDates.entries()).sort((a, b) =>
-      b[0].localeCompare(a[0]),
-    );
-
-    const today = formatDateKey(new Date());
-    const yesterday = formatDateKey(
-      new Date(Date.now() - MS_PER_DAY),
-    );
-
-    for (const [date, count] of sortedDates) {
-      const item = document.createElement('div');
-      item.className = 'date-nav-item flex-between';
-      item.setAttribute('role', 'option');
-      item.setAttribute('data-date', date);
-      // 添加 tabindex="-1" 支持键盘导航（由父容器事件委托处理）
-      item.setAttribute('tabindex', '-1');
-      // 补全 ARIA 可访问性：标记当前选中项（屏幕阅读器用户需感知）
-      item.setAttribute('aria-selected', date === this.currentDate ? 'true' : 'false');
-
-      if (date === this.currentDate) {
-        item.classList.add('active');
-      }
-
-      // 日期显示：今天/昨天 + 日期
-      let label = date;
-      if (date === today) {
-        label = `今天 · ${date}`;
-      } else if (date === yesterday) {
-        label = `昨天 · ${date}`;
-      }
-
-      const labelEl = document.createElement('span');
-      labelEl.className = 'date-nav-item-label';
-      labelEl.textContent = label;
-
-      const countEl = document.createElement('span');
-      countEl.className = 'date-nav-item-count';
-      countEl.textContent = `${count} 条`;
-
-      item.appendChild(labelEl);
-      item.appendChild(countEl);
-
-      // 删除按钮：今天不显示删除（避免删除当天进行中的对话）
-      const isToday = date === today;
-      if (!isToday) {
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'date-nav-item-delete flex-shrink-0';
-        deleteBtn.title = '删除该日期的对话记录';
-        deleteBtn.setAttribute('aria-label', `删除 ${date} 的对话记录`);
-        // 事件委托已处理删除按钮点击，此处无需绑定
-        setIcon(deleteBtn, 'icon-trash');
-        item.appendChild(deleteBtn);
-      }
-
-      // 事件委托已处理日期项点击，此处无需绑定
-      listEl.appendChild(item);
-    }
+    this.dateNavComponent?.renderDateList(this.availableDates, this.currentDate);
   }
 
   /**
    * 选择日期并跳转
+   *
+   * 业务逻辑：更新 currentDate + 更新按钮文字 + 关闭下拉 + 触发跳转回调。
    *
    * @param date 日期字符串（YYYY-MM-DD）
    */
@@ -316,30 +160,11 @@ export class DateNavManager {
 
   /**
    * 更新按钮显示的日期文字
+   *
+   * 委托 Component 更新按钮标签（今天/昨天/月日）。
    */
   private updateButtonLabel(): void {
-    const labelEl = document.getElementById('date-nav-label');
-    if (!labelEl) return;
-
-    if (!this.currentDate) {
-      labelEl.textContent = '选择日期';
-      return;
-    }
-
-    const today = formatDateKey(new Date());
-    const yesterday = formatDateKey(
-      new Date(Date.now() - MS_PER_DAY),
-    );
-
-    if (this.currentDate === today) {
-      labelEl.textContent = '今天';
-    } else if (this.currentDate === yesterday) {
-      labelEl.textContent = '昨天';
-    } else {
-      // 只显示月/日，节省空间
-      const parts = this.currentDate.split('-');
-      labelEl.textContent = `${parts[1]}/${parts[2]}`;
-    }
+    this.dateNavComponent?.updateButtonLabel(this.currentDate);
   }
 
   /**
@@ -408,22 +233,23 @@ export class DateNavManager {
   /**
    * 更新"回到今天"按钮的可见性
    *
-   * 仅当当前查看的日期不是今天时显示按钮。
+   * 委托 Component：仅当当前查看的日期不是今天时显示按钮。
    */
   private updateBackToTodayVisibility(): void {
-    const btn = document.getElementById('btn-back-to-today');
-    if (!btn) return;
-    const today = formatDateKey(new Date());
-    if (this.currentDate && this.currentDate !== today) {
-      btn.classList.remove('hidden');
-    } else {
-      btn.classList.add('hidden');
-    }
+    this.dateNavComponent?.updateBackToTodayVisibility(this.currentDate);
   }
 
-  /** 清理事件监听器 */
+  /**
+   * 清理事件监听器 + 销毁组件 + 清空回调
+   *
+   * 销毁 Component 会解绑所有 DOM 事件并 nullify 元素引用。
+   * 清空回调与日期数据，防止 cleanup 后误触发。
+   * 支持随后重新调用 init() 重建（创建新的 Component 实例）。
+   */
   cleanup(): void {
-    this.events.cleanup();
+    // 销毁组件（解绑所有 DOM 事件 + nullify 元素引用）
+    this.dateNavComponent?.destroy();
+    this.dateNavComponent = null;
     this.jumpCallback = null;
     this.deleteCallback = null;
     this.backToTodayCallback = null;

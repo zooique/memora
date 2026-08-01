@@ -44,11 +44,11 @@ export class PerceptionRapportComponent extends Component<Record<string, unknown
   /**
    * 增量更新——渲染默契度数据
    *
-   * @param rapport 默契度数据
+   * @param newOptions 默契度数据
    */
-  update(rapport: RapportPayload): this {
+  update(newOptions: Partial<RapportPayload>): this {
     if (!this.el) return this;
-    this.renderRapport(rapport);
+    this.renderRapport(newOptions as RapportPayload);
     return this;
   }
 

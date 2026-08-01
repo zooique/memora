@@ -25,7 +25,7 @@ const ACCEPTANCE_MID_THRESHOLD = 0.7;
  *
  * 由 PerceptionPanelManager 持有实例，替代原有 ~7 处 document.getElementById。
  */
-export class PerceptionProactiveComponent extends Component<Record<string, unknown>> {
+export class PerceptionProactiveComponent extends Component<ProactiveStats> {
   private gridEl: HTMLElement | null = null;
   private emptyEl: HTMLElement | null = null;
   private suggestEl: HTMLElement | null = null;
@@ -35,7 +35,7 @@ export class PerceptionProactiveComponent extends Component<Record<string, unkno
   private cooldownEl: HTMLElement | null = null;
 
   constructor() {
-    super({});
+    super({} as ProactiveStats);
   }
 
   /**
@@ -56,12 +56,12 @@ export class PerceptionProactiveComponent extends Component<Record<string, unkno
   /**
    * 增量更新——渲染主动提示统计数据
    *
-   * @param stats 主动提示统计快照（null 时静默跳过）
+   * @param newOptions 主动提示统计快照（null 时静默跳过）
    */
-  update(stats: ProactiveStats | null): this {
+  update(newOptions: Partial<ProactiveStats> | null): this {
     if (!this.el) return this;
-    if (stats) {
-      this.renderStats(stats);
+    if (newOptions) {
+      this.renderStats(newOptions as ProactiveStats);
     }
     return this;
   }

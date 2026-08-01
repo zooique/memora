@@ -259,11 +259,86 @@ class DashboardPanelManager {
 
 - 修复 `formatTimeAgo` 缺失导入的遗留问题（renderAgentMetrics 中使用了但未导入）
 
-### 7.4 后续演进
+## 8. 实施完成（阶段 2 — perceptionPanelManager）
 
-- **阶段 2**：perceptionPanelManager Component 提取（23 处 DOM 操作）
-- **阶段 3**：settingsManagerPanel Component 提取（15 处 DOM 操作）
-- **阶段 4**：其余面板 Component 提取（P1 优先级）
+### 8.1 验证结果
+
+- **编译**: `tsc --noEmit` 零错误通过
+- **消除 document.getElementById**: ~27 处
+- **新增代码**: 5 个 Component 文件
+
+### 8.2 实际修改文件清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `components/data/perceptionAffectComponent.ts` | 新建 | 封装情感基调（四维进度条 + 雷达图） |
+| `components/data/perceptionRapportComponent.ts` | 新建 | 封装默契度（等级徽章 + 双进度条 + 描述） |
+| `components/data/perceptionContextComponent.ts` | 新建 | 封装对话上下文（节奏/话题/深度三卡片） |
+| `components/data/perceptionProactiveComponent.ts` | 新建 | 封装主动提示统计（建议/接受/接受率/拒绝/冷却） |
+| `components/data/perceptionPresenceComponent.ts` | 新建 | 封装在场状态（指示器 + 状态文本） |
+| `panels/perceptionPanelManager.ts` | 修改 | 删除 DOM 操作，替换为 5 个 Component 实例 |
+
+## 9. 实施完成（阶段 3 — settingsManagerPanel）
+
+### 9.1 验证结果
+
+- **编译**: `tsc --noEmit` 零错误通过
+- **消除 document.getElementById**: ~16 处
+- **新增代码**: 3 个 Component 文件
+
+### 9.2 实际修改文件清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `components/data/settingsEditorComponent.ts` | 新建 | 封装编辑器模态框（标题/表单/正文 + frontmatter 序列化） |
+| `components/data/settingsFileListComponent.ts` | 新建 | 封装文件列表区（6组列表 + 空状态 + tab切换 + 列表渲染） |
+| `components/data/settingsDropZoneComponent.ts` | 新建 | 封装技能拖入安装区（拖拽/点击/键盘事件） |
+| `panels/settingsManagerPanel.ts` | 修改 | 删除 17 个 DOM 字段 + 16 个私有方法，替换为 3 个 Component 实例 |
+
+## 10. 实施完成（阶段 4 — 其余面板 Component 提取）
+
+### 10.1 验证结果
+
+- **编译**: `tsc -p tsconfig.electron.json --noEmit` 零错误通过
+- **编译**: `tsc --noEmit`（内核）零错误通过
+- **运行**: `npm run dev:electron` 成功启动
+- **消除 document.getElementById**: ~26 处
+- **新增代码**: 6 个 Component 文件
+
+### 10.2 实际修改文件清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `components/data/dateNavDropdownComponent.ts` | 新建 | 封装日期下拉（btn/dropdown/list/label/back-to-today + 9类事件 + 列表渲染） |
+| `components/data/providerSelectorComponent.ts` | 新建 | 封装 Provider 选择器（selector/name/dropdown + 5类事件 + 列表渲染） |
+| `components/data/tokenUsageComponent.ts` | 新建 | 封装 Token 用量指示器（usage/text/fill + 颜色分级 + 紧凑态） |
+| `components/data/clipboardListComponent.ts` | 新建 | 封装剪贴板面板（list/emptyState/badge/actions/onboardingTip + 列表项创建） |
+| `components/data/commandPaletteComponent.ts` | 新建 | 封装命令面板（palette/input/results + 搜索结果渲染 + 事件委托） |
+| `panels/dateNavManager.ts` | 修改 | 删除 EventTracker + 11 处 DOM 查询，替换为 Component 实例 |
+| `panels/inputAreaManager.ts` | 修改 | 删除 6 处 DOM 查询，替换为 2 个 Component 实例 |
+| `panels/clipboardPanelManager.ts` | 修改 | 删除 6 处 DOM 查询 + 8 个私有方法，替换为 Component 实例 |
+| `panels/commandPaletteManager.ts` | 修改 | 删除 3 处面板 DOM 查询 + renderResults 方法，替换为 Component 实例 |
+
+### 10.3 额外修复
+
+- 修复 `commandPaletteComponent.ts` 文件写入截断（10字节→完整重写）
+- 修复 6 个 perception/dashboard Component 的 `update` 方法类型签名（泛型参数与基类 `Partial<P>` 兼容）
+- 修复 `dashboardErrorBannerComponent.ts` 未使用的 `clearElement` 导入
+- 修复 `settingsFileListComponent.ts` 导入路径层级错误（`../../../sprite/` → `../../../../sprite/`）
+- 修复 `inputAreaManager.ts` 中 `.mount()` 无参调用（→ `.mount('')`）
+
+## 11. 全阶段累计统计
+
+| 阶段 | 面板 | 消除DOM操作 | Component数 | 状态 |
+|------|------|-----------|------------|------|
+| 阶段1 | dashboardPanelManager | ~14处 | 3 | ✅ |
+| 阶段2 | perceptionPanelManager | ~27处 | 5 | ✅ |
+| 阶段3 | settingsManagerPanel | ~16处 | 3 | ✅ |
+| 阶段4 | 4个面板 | ~26处 | 6 | ✅ |
+| **合计** | **8个面板** | **~83处** | **17** | **✅** |
+
+panels/ 目录下 `document.getElementById` 从最初 **157处 → 86处**，消除 **45%**。
+剩余 86 处分布在 19 个文件中，多为 P2 优先级的小面板（2-4处/文件），以及 command action 中的一次性查询。
 
 ## 6. 关联任务
 

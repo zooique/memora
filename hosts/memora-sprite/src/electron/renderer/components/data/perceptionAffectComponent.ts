@@ -22,7 +22,7 @@ import type { AffectPayload } from '../../ipcListeners.js';
  * 由 PerceptionPanelManager 持有实例，替代原有 ~11 处 document.getElementById。
  * 挂载到现有 HTML 模板中的 #perception-{dim}-fill 等元素。
  */
-export class PerceptionAffectComponent extends Component<Record<string, unknown>> {
+export class PerceptionAffectComponent extends Component<AffectPayload> {
   // ─── 缓存的 DOM 元素引用 ──
   private fillEls: Record<string, HTMLElement | null> = {};
   private levelEls: Record<string, HTMLElement | null> = {};
@@ -38,7 +38,8 @@ export class PerceptionAffectComponent extends Component<Record<string, unknown>
   ] as const;
 
   constructor() {
-    super({});
+    // 传入空对象作为默认配置（子类不使用 this.options，渲染依赖 update 入参）
+    super({} as AffectPayload);
   }
 
   /**
@@ -68,9 +69,9 @@ export class PerceptionAffectComponent extends Component<Record<string, unknown>
    *
    * @param affect 四维情感基调数值
    */
-  update(affect: AffectPayload): this {
+  update(newOptions: Partial<AffectPayload>): this {
     if (!this.el) return this;
-    this.renderAffect(affect);
+    this.renderAffect(newOptions as AffectPayload);
     return this;
   }
 
@@ -141,7 +142,8 @@ export class PerceptionAffectComponent extends Component<Record<string, unknown>
     // 更新四个顶点圆点
     const dotIds = ['warmth', 'directness', 'initiative', 'playfulness'] as const;
     for (let i = 0; i < dotIds.length; i++) {
-      const dot = this.radarDots[dotIds[i]];
+      // noUncheckedIndexedAccess 下 dotIds[i] 可能是 undefined，用非空断言（循环边界已保证 i 合法）
+      const dot = this.radarDots[dotIds[i]!];
       const point = points[i];
       if (dot && point) {
         dot.setAttribute('cx', String(point[0]));

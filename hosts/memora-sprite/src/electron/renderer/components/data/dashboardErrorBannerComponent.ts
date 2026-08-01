@@ -17,7 +17,6 @@
  */
 
 import { Component } from '../base/component.js';
-import { clearElement } from '../../helpers/domHelpers.js';
 
 // ─── 选项 / 宿主接口 ──────────────────────────────────────
 

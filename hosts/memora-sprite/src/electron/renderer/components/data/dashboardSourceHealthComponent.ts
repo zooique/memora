@@ -59,7 +59,7 @@ export interface DashboardSourceHealthOptions {
  * 由 DashboardPanelManager 持有实例，替代原有 4 处 document.getElementById 直接 DOM 操作。
  * 挂载到现有 HTML 模板中的 #dashboard-source-health 及相关元素。
  */
-export class DashboardSourceHealthComponent extends Component<DashboardSourceHealthOptions> {
+export class DashboardSourceHealthComponent extends Component<SourceHealthData> {
   // ─── 缓存的 DOM 元素引用（mount 时查询，destroy 时 nullify） ──
   /** 源健康 - 列表容器 */
   private listEl: HTMLElement | null = null;
@@ -72,11 +72,10 @@ export class DashboardSourceHealthComponent extends Component<DashboardSourceHea
 
   /**
    * 构造函数——只合并配置，无副作用
-   *
-   * @param options 组件配置
    */
-  constructor(options: DashboardSourceHealthOptions = {}) {
-    super(options);
+  constructor() {
+    // 传入空对象作为默认配置（子类不使用 this.options，渲染依赖 update 入参）
+    super({} as SourceHealthData);
   }
 
   /**
@@ -100,12 +99,12 @@ export class DashboardSourceHealthComponent extends Component<DashboardSourceHea
   /**
    * 增量更新——渲染记忆源健康诊断数据
    *
-   * @param sourceHealth 记忆源健康诊断数据（null 表示不可用）
+   * @param newOptions 记忆源健康诊断数据（null 表示不可用）
    * @returns this（链式调用）
    */
-  update(sourceHealth: SourceHealthData | null): this {
+  update(newOptions: Partial<SourceHealthData> | null): this {
     if (!this.el) return this;
-    this.renderSourceHealth(sourceHealth);
+    this.renderSourceHealth(newOptions as SourceHealthData | null);
     return this;
   }
 

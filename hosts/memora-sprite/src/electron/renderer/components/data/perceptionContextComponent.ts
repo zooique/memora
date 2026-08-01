@@ -18,13 +18,14 @@ import type { ContextPayload } from '../../ipcListeners.js';
  *
  * 由 PerceptionPanelManager 持有实例，替代原有 ~3 处 document.getElementById。
  */
-export class PerceptionContextComponent extends Component<Record<string, unknown>> {
+export class PerceptionContextComponent extends Component<ContextPayload> {
   private paceEl: HTMLElement | null = null;
   private topicEl: HTMLElement | null = null;
   private depthEl: HTMLElement | null = null;
 
   constructor() {
-    super({});
+    // 传入空对象作为默认配置（子类不使用 this.options，渲染依赖 update 入参）
+    super({} as ContextPayload);
   }
 
   /**
@@ -41,11 +42,11 @@ export class PerceptionContextComponent extends Component<Record<string, unknown
   /**
    * 增量更新——渲染对话上下文数据
    *
-   * @param context 对话上下文数据
+   * @param newOptions 对话上下文数据
    */
-  update(context: ContextPayload): this {
+  update(newOptions: Partial<ContextPayload>): this {
     if (!this.el) return this;
-    this.renderContext(context);
+    this.renderContext(newOptions as ContextPayload);
     return this;
   }
 

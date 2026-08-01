@@ -20,10 +20,12 @@ import { TOAST_SHORT_MS, MS_PER_HOUR } from '../../../sprite/constants.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
-// 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
-import { clearElement, escapeHtml, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
+// escapeHtml 用于高亮转义，lockBodyScroll/unlockBodyScroll 用于面板滚动锁定（跨面板协调）
+import { escapeHtml, lockBodyScroll, unlockBodyScroll } from '../helpers/domHelpers.js';
 // escapeRegExp 转义正则特殊字符（ADR-017 枝叶层 2 次提取）
 import { escapeRegExp } from '../../../shared/escapeRegExp.js';
+// 命令面板组件（封装面板自身 DOM 操作，对齐 ARCH-COMP-1 阶段 4）
+import { CommandPaletteComponent } from '../components/data/commandPaletteComponent.js';
 
 /** 命令项定义 */
 export interface Command {
@@ -402,12 +404,8 @@ export class CommandPaletteManager {
   private selectedIndex = 0;
   private isOpen = false;
 
-  /** 面板容器元素 */
-  private paletteEl: HTMLElement | null = null;
-  /** 搜索输入框 */
-  private inputEl: HTMLInputElement | null = null;
-  /** 搜索结果容器 */
-  private resultsEl: HTMLElement | null = null;
+  /** 命令面板组件实例（封装面板自身 DOM 操作，init 时 mount，cleanup 时 destroy） */
+  private paletteComponent: CommandPaletteComponent;
   /** 打开面板前的焦点元素，close() 时恢复，让键盘用户能继续从原位置 Tab 导航 */
   private previousFocus: HTMLElement | null = null;
   /** 事件监听器跟踪器（cleanup 时统一移除，避免 beforeunload 后监听器累积） */
@@ -417,38 +415,30 @@ export class CommandPaletteManager {
 
   constructor(uiManager: UIManager) {
     this.uiManager = uiManager;
+    // 构造时创建 Component 实例（无副作用），mount 延迟到 init() 中 DOM 就绪后执行
+    this.paletteComponent = new CommandPaletteComponent();
   }
 
-  /** 初始化命令面板（DOM 绑定 + 事件监听） */
+  /** 初始化命令面板（Component mount + 事件绑定 + 全局快捷键） */
   init(): void {
-    this.paletteEl = document.getElementById('command-palette');
-    const inputEl = document.getElementById('command-palette-input');
-    this.resultsEl = document.getElementById('command-palette-results');
+    // 挂载 Component（查询并缓存面板 DOM 元素引用）
+    this.paletteComponent.mount(document.body);
 
-    if (!(this.paletteEl instanceof HTMLElement) || !(inputEl instanceof HTMLInputElement) || !(this.resultsEl instanceof HTMLElement)) {
+    // 检查 mount 是否成功（三要素就绪才设置 this.el）
+    if (!this.paletteComponent.getElement()) {
       reportError('CommandPalette', '命令面板 DOM 元素缺失，功能降级', 'warn');
       return;
     }
-    this.inputEl = inputEl;
 
-    // 点击遮罩层关闭
-    this.events.addEventListener(this.paletteEl, 'click', (e) => {
-      if (e.target === this.paletteEl) {
-        this.close();
-      }
-    });
+    // 面板事件委托给 Component（通过 trackEvent 统一管理，destroy 时自动解绑）
+    this.paletteComponent.initEvents(
+      (value) => this.search(value),           // 输入时实时搜索
+      (e) => this.handleKeydown(e),            // 键盘导航（↑↓ / Enter / Esc）
+      () => this.close(),                       // 点击遮罩层关闭
+      (index) => this.executeCommand(index)     // 点击结果项执行命令
+    );
 
-    // 输入时实时搜索
-    this.events.addEventListener(this.inputEl, 'input', () => {
-      this.search(this.inputEl!.value);
-    });
-
-    // 键盘导航
-    this.events.addEventListener(this.inputEl, 'keydown', (e) => {
-      this.handleKeydown(e as KeyboardEvent);
-    });
-
-    // 注册全局快捷键 Ctrl+K
+    // 注册全局快捷键 Ctrl+K（document 级监听，不属于面板自身，保留在 Manager）
     this.events.addEventListener(document, 'keydown', (e) => {
       this.handleGlobalKeydown(e as KeyboardEvent);
     });
@@ -462,6 +452,8 @@ export class CommandPaletteManager {
    */
   cleanup(): void {
     this.events.cleanup();
+    // 销毁 Component（解绑面板事件 + nullify DOM 引用）
+    this.paletteComponent.destroy();
     // 清理待执行的命令延迟定时器（避免回调在面板已销毁后执行）
     if (this.executionTimer !== null) {
       clearTimeout(this.executionTimer);
@@ -505,14 +497,14 @@ export class CommandPaletteManager {
     }
 
     // 如果面板打开中，刷新搜索结果
-    if (this.isOpen && this.inputEl) {
-      this.search(this.inputEl.value);
+    if (this.isOpen) {
+      this.search(this.paletteComponent.getInputValue());
     }
   }
 
   /** 打开命令面板 */
   open(): void {
-    if (!this.paletteEl || !this.inputEl) return;
+    if (!this.paletteComponent.getElement()) return;
 
     // 保存打开前的焦点元素，close() 时恢复
     this.previousFocus = document.activeElement as HTMLElement | null;
@@ -520,18 +512,16 @@ export class CommandPaletteManager {
     // 先同步加载静态命令，确保面板立即显示
     this.commands = createStaticCommands(this.uiManager);
 
-    this.paletteEl.classList.remove('hidden');
-    // aria-modal 动态设置：通知屏幕阅读器进入对话框模式
-    this.paletteEl.setAttribute('aria-modal', 'true');
+    // DOM 操作委托给 Component（显示 + aria-modal + 清空输入 + 聚焦）
+    this.paletteComponent.open();
+
     this.isOpen = true;
     this.selectedIndex = 0;
 
-    // 清空输入并显示全部命令
-    this.inputEl.value = '';
+    // 显示全部命令（search 内部调用 Component.renderResults）
     this.search('');
-    this.inputEl.focus();
 
-    // 阻止背景滚动
+    // 阻止背景滚动（跨面板协调，保留在 Manager）
     lockBodyScroll();
 
     // 异步加载动态命令（角色列表），不阻塞面板打开
@@ -540,21 +530,16 @@ export class CommandPaletteManager {
 
   /** 关闭命令面板 */
   close(): void {
-    if (!this.paletteEl) return;
+    if (!this.paletteComponent.getElement()) return;
 
-    this.paletteEl.classList.add('hidden');
-    // 移除 aria-modal，避免屏幕阅读器误判隐藏的对话框仍为活跃状态
-    this.paletteEl.removeAttribute('aria-modal');
+    // DOM 操作委托给 Component（隐藏 + 移除 aria-modal + 清空输入）
+    this.paletteComponent.close();
+
     this.isOpen = false;
     this.selectedIndex = 0;
 
-    // 有条件恢复背景滚动——仅当没有其他浮层打开时才恢复（自身已隐藏，无需排除）
+    // 有条件恢复背景滚动——仅当没有其他浮层打开时才恢复（跨面板协调，保留在 Manager）
     unlockBodyScroll();
-
-    // 清空输入
-    if (this.inputEl) {
-      this.inputEl.value = '';
-    }
 
     // 恢复焦点到打开前的触发元素
     if (this.previousFocus && typeof this.previousFocus.focus === 'function') {
@@ -567,60 +552,26 @@ export class CommandPaletteManager {
   private search(query: string): void {
     this.results = searchCommands(this.commands, query);
     this.selectedIndex = 0;
-    this.renderResults();
+    this.refreshView();
   }
 
-  /** 渲染搜索结果列表 */
-  private renderResults(): void {
-    if (!this.resultsEl) return;
-
-    // 使用 clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
-    clearElement(this.resultsEl);
-
-    if (this.results.length === 0) {
-      this.resultsEl.innerHTML =
-        '<div class="command-palette-empty">无匹配命令</div>';
-      return;
-    }
-
-    // 按 section 分组渲染
-    let lastSection = '';
-    for (let i = 0; i < this.results.length; i++) {
-      const result = this.results[i];
-      if (!result) continue;
-      const { command } = result;
-
-      // 分组标题
-      if (command.section !== lastSection) {
-        lastSection = command.section;
-        const header = document.createElement('div');
-        header.className = 'command-palette-section';
-        header.textContent = command.section;
-        this.resultsEl.appendChild(header);
-      }
-
-      // 命令项
-      const item = document.createElement('div');
-      item.className = `command-palette-item flex-between${i === this.selectedIndex ? ' active' : ''}`;
-      item.setAttribute('data-index', String(i));
-      item.innerHTML = `
-        <span class="command-palette-label">${this.highlightMatch(command.label)}</span>
-        ${command.shortcut ? `<kbd class="command-palette-shortcut flex-shrink-0">${escapeHtml(command.shortcut)}</kbd>` : ''}
-      `;
-
-      // 点击执行（使用 EventTracker 统一管理，避免内存泄漏）
-      this.events.addEventListener(item, 'click', () => {
-        this.executeCommand(i);
-      });
-
-      this.resultsEl.appendChild(item);
-    }
+  /**
+   * 刷新结果视图——委托 Component 渲染
+   *
+   * 将 results / selectedIndex / highlightMatch 传递给 Component，
+   * 避免 search() 与 handleKeydown() 中重复书写相同的调用样板。
+   */
+  private refreshView(): void {
+    this.paletteComponent.renderResults(
+      this.results,
+      this.selectedIndex,
+      (text) => this.highlightMatch(text)
+    );
   }
 
   /** 高亮匹配的文本 */
   private highlightMatch(text: string): string {
-    if (!this.inputEl) return text;
-    const query = this.inputEl.value.trim();
+    const query = this.paletteComponent.getInputValue().trim();
     if (!query) return text;
 
     // 先转义候选文本，防止命令名/快捷键含特殊字符时被解析为 HTML
@@ -641,12 +592,12 @@ export class CommandPaletteManager {
       case 'ArrowDown':
         e.preventDefault();
         this.selectedIndex = Math.min(this.selectedIndex + 1, this.results.length - 1);
-        this.renderResults();
+        this.refreshView();
         break;
       case 'ArrowUp':
         e.preventDefault();
         this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
-        this.renderResults();
+        this.refreshView();
         break;
       case 'Enter':
         e.preventDefault();

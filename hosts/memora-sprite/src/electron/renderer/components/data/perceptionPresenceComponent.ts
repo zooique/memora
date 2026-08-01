@@ -17,12 +17,12 @@ import type { PresencePayload } from '../../ipcListeners.js';
  *
  * 由 PerceptionPanelManager 持有实例，替代原有 ~2 处 document.getElementById。
  */
-export class PerceptionPresenceComponent extends Component<Record<string, unknown>> {
+export class PerceptionPresenceComponent extends Component<PresencePayload> {
   private dotEl: HTMLElement | null = null;
   private textEl: HTMLElement | null = null;
 
   constructor() {
-    super({});
+    super({} as PresencePayload);
   }
 
   /**
@@ -38,11 +38,11 @@ export class PerceptionPresenceComponent extends Component<Record<string, unknow
   /**
    * 增量更新——渲染在场状态数据
    *
-   * @param payload 在场状态事件载荷
+   * @param newOptions 在场状态事件载荷
    */
-  update(payload: PresencePayload): this {
+  update(newOptions: Partial<PresencePayload>): this {
     if (!this.el) return this;
-    this.renderPresence(payload);
+    this.renderPresence(newOptions as PresencePayload);
     return this;
   }
 

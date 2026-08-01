@@ -22,16 +22,16 @@
  */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
-// clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
-import { clearElement } from '../helpers/domHelpers.js';
 // reportError 统一错误日志（双通道：console + 主进程 logger），替代散落的 console.error
 import { reportError } from '../helpers/errorHelpers.js';
 // 复用 quick-input 补全管理器（已泛化支持 textarea）
 import { QuickInputCompletion } from '../quick-input/quickInputCompletion.js';
 import type { CompletionItem } from '../quick-input/quickInputCompletion.js';
 import { fetchMemoryContent } from '../helpers/completionHelpers.js';
-// Token 数量格式化纯函数（UX-12：从本文件原闭包提取至 shared/numberUtils 真理源，消除与 dashboardPanelManager 的 K/k 大小写不一致）
-import { formatTokenCount } from '../../../shared/numberUtils.js';
+// Provider 选择器组件（封装 selector/name/dropdown DOM 操作，对齐 ARCH-COMP-1 阶段4）
+import { ProviderSelectorComponent } from '../components/data/providerSelectorComponent.js';
+// Token 用量指示器组件（封装 usage/text/fill DOM 操作，对齐 ARCH-COMP-1 阶段4）
+import { TokenUsageComponent } from '../components/data/tokenUsageComponent.js';
 
 /**
  * 输入区域宿主接口
@@ -66,14 +66,10 @@ export class InputAreaManager {
   /** 输入区 ResizeObserver（监听 #input-area 高度变化），null 表示元素缺失或环境不支持 */
   private resizeObserver: ResizeObserver | null = null;
 
-  /** Provider 选择器 DOM 元素 */
-  private providerSelector: HTMLElement | null = null;
-  private providerNameEl: HTMLElement | null = null;
-  private providerDropdown: HTMLElement | null = null;
-  /** Token 用量指示器 DOM 引用 */
-  private tokenUsageEl: HTMLElement | null = null;
-  private tokenUsageText: HTMLElement | null = null;
-  private tokenUsageFill: HTMLElement | null = null;
+  /** Provider 选择器组件（封装 selector/name/dropdown DOM 操作 + 事件 + 渲染） */
+  private providerSelectorComponent: ProviderSelectorComponent;
+  /** Token 用量指示器组件（封装 usage/text/fill DOM 操作 + 状态渲染） */
+  private tokenUsageComponent: TokenUsageComponent;
   /** 上下文窗口大小（token 数，不同模型不同，默认 32K） */
   private static readonly DEFAULT_CONTEXT_TOKENS = 32768;
 
@@ -94,14 +90,10 @@ export class InputAreaManager {
     private readonly events: EventTracker,
     private readonly host: InputAreaHost,
   ) {
-    // 延迟获取 Provider 选择器 DOM（可能尚未渲染到 DOM 中）
-    this.providerSelector = document.getElementById('provider-selector');
-    this.providerNameEl = document.getElementById('provider-name');
-    this.providerDropdown = document.getElementById('provider-dropdown');
-    // Token 用量指示器
-    this.tokenUsageEl = document.getElementById('token-usage');
-    this.tokenUsageText = document.getElementById('token-usage-text');
-    this.tokenUsageFill = document.getElementById('token-usage-fill');
+    // 创建并挂载 Provider 选择器组件（封装 DOM 引用 + 事件 + 渲染）
+    this.providerSelectorComponent = new ProviderSelectorComponent({}).mount('');
+    // 创建并挂载 Token 用量指示器组件（封装 DOM 引用 + 状态渲染）
+    this.tokenUsageComponent = new TokenUsageComponent({}).mount('');
   }
 
   /**
@@ -145,6 +137,10 @@ export class InputAreaManager {
       this.completion.cleanup();
       this.completion = null;
     }
+    // 销毁 Provider 选择器组件（解绑事件 + nullify 引用，不删除模板 DOM）
+    this.providerSelectorComponent.destroy();
+    // 销毁 Token 用量指示器组件（nullify 引用，不删除模板 DOM）
+    this.tokenUsageComponent.destroy();
     this.events.cleanup();
   }
 
@@ -368,100 +364,33 @@ export class InputAreaManager {
   /**
    * 初始化 Provider 选择器
    *
-   * 加载 Provider 列表，渲染下拉菜单，绑定切换事件。
-   * 初始状态下拉为隐藏（添加 hidden 类），点击按钮切换显示/隐藏。
+   * 初始隐藏下拉，事件绑定委托给 ProviderSelectorComponent，
+   * 最后加载 Provider 列表渲染下拉菜单。
+   * DOM 操作与事件绑定封装在 Component 中，本方法仅做编排 + 业务回调注入。
    */
   private async initProviderSelector(): Promise<void> {
-    if (!this.providerSelector || !this.providerDropdown) return;
+    // 元素缺失时跳过初始化（Component mount 时元素可能尚未渲染）
+    if (!this.providerSelectorComponent.getSelectorEl() || !this.providerSelectorComponent.getDropdownEl()) return;
 
     // 初始隐藏下拉菜单（HTML 中可能未带 hidden 类，确保初始态统一）
-    this.providerDropdown.classList.add('hidden');
+    this.providerSelectorComponent.closeDropdown();
 
-    // 点击 provider 按钮切换下拉
-    this.events.addEventListener(this.providerSelector, 'click', (e) => {
-      e.stopPropagation();
-      this.providerDropdown!.classList.toggle('hidden');
-    });
-
-    // 点击页面其他区域关闭下拉
-    this.events.addEventListener(document, 'click', () => {
-      this.providerDropdown?.classList.add('hidden');
-    });
-
-    // 事件委托：在 dropdown 容器上绑定一次点击事件，通过 data-provider-key 区分项
-    // 避免每次 loadProviderSelector 重建 DOM 时重复绑定事件监听器
-    this.events.addEventListener(this.providerDropdown, 'click', async (e) => {
-      const target = e.target as HTMLElement;
-      // Provider 项：切换激活
-      const item = target.closest<HTMLElement>('.dropdown-item[data-provider-key]');
-      if (item) {
-        const key = item.dataset.providerKey;
-        if (key) {
-          const result = await window.electronAPI.setActiveLlmProvider(key);
-          this.providerDropdown!.classList.add('hidden');
-          await this.loadProviderSelector();
-          // Agent 未就绪时 warning 提示已保存但需初始化，引导用户去设置页
-          if (result.warning) {
-            this.host.switchToSettings();
-          }
+    // 事件绑定委托给 Component（点击切换、外部关闭、键盘导航）
+    this.providerSelectorComponent.initEvents(
+      // 选择 Provider：IPC 切换激活 + 重新加载列表 + warning 时跳转设置
+      async (key) => {
+        const result = await window.electronAPI.setActiveLlmProvider(key);
+        await this.loadProviderSelector();
+        // Agent 未就绪时 warning 提示已保存但需初始化，引导用户去设置页
+        if (result.warning) {
+          this.host.switchToSettings();
         }
-        return;
-      }
-      // 空状态提示项：跳转到设置面板（data-action="goto-settings"）
-      const hint = target.closest<HTMLElement>('[data-action="goto-settings"]');
-      if (hint) {
-        this.providerDropdown!.classList.add('hidden');
+      },
+      // 空状态提示项：跳转到设置面板
+      () => {
         this.host.switchToSettings();
-      }
-    });
-
-    // 键盘支持：Escape 关闭下拉（Enter/Space 由原生 button click 自动触发，无需手动处理）
-    this.events.addEventListener(this.providerSelector, 'keydown', (e) => {
-      const ke = e as KeyboardEvent;
-      if (ke.key === 'Escape') {
-        this.providerDropdown?.classList.add('hidden');
-        this.providerSelector!.focus();
-      }
-    });
-
-    // 键盘导航：在下拉菜单内用方向键移动焦点，Enter 选择
-    this.events.addEventListener(this.providerDropdown, 'keydown', (e) => {
-      const ke = e as KeyboardEvent;
-      const items = this.providerDropdown!.querySelectorAll<HTMLElement>('.dropdown-item[data-provider-key]');
-      if (items.length === 0) return;
-
-      const currentIdx = Array.from(items).findIndex(
-        (item) => item === document.activeElement,
-      );
-
-      if (ke.key === 'ArrowDown') {
-        ke.preventDefault();
-        const nextIdx = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
-        items[nextIdx]?.focus();
-      } else if (ke.key === 'ArrowUp') {
-        ke.preventDefault();
-        const prevIdx = currentIdx < 0 ? items.length - 1 : Math.max(currentIdx - 1, 0);
-        items[prevIdx]?.focus();
-      } else if (ke.key === 'Enter') {
-        ke.preventDefault();
-        if (currentIdx >= 0) {
-          const key = items[currentIdx]?.dataset.providerKey;
-          if (key) {
-            void (async () => {
-              const result = await window.electronAPI.setActiveLlmProvider(key);
-              this.providerDropdown!.classList.add('hidden');
-              await this.loadProviderSelector();
-              if (result.warning) {
-                this.host.switchToSettings();
-              }
-            })();
-          }
-        }
-      } else if (ke.key === 'Escape') {
-        this.providerDropdown?.classList.add('hidden');
-        this.providerSelector!.focus();
-      }
-    });
+      },
+    );
 
     // 加载并渲染 Provider 列表
     await this.loadProviderSelector();
@@ -473,52 +402,32 @@ export class InputAreaManager {
    * 从主进程获取 Provider 列表，更新当前显示名称和下拉菜单。
    */
   async loadProviderSelector(): Promise<void> {
-    if (!this.providerNameEl || !this.providerDropdown) return;
+    // 元素缺失时静默返回（与原守卫等价，Component 内部方法亦对 null 做防御）
+    if (!this.providerSelectorComponent.getNameEl() || !this.providerSelectorComponent.getDropdownEl()) return;
 
     try {
       const data = await window.electronAPI.listLlmProviders();
       const { active, providers } = data;
 
       if (providers.length === 0) {
-        this.providerNameEl.textContent = '未配置';
-        this.providerSelector?.classList.remove('configured');
-        // 空状态提示项使用 <button> 元素：原生支持 Enter/Space 触发 click，键盘可访问
-        // 点击后跳转到设置面板，让用户快速到达 LLM 配置入口（符合"主动可见"原则）
-        // createElement 避免 innerHTML 拼接（与下方有数据态渲染模式一致）
-        clearElement(this.providerDropdown);
-        const hintBtn = document.createElement('button');
-        hintBtn.type = 'button';
-        hintBtn.className = 'dropdown-item dropdown-item-hint';
-        hintBtn.dataset.action = 'goto-settings';
-        hintBtn.textContent = '请在设置中添加 API';
-        this.providerDropdown.appendChild(hintBtn);
+        this.providerSelectorComponent.updateName('未配置');
+        this.providerSelectorComponent.setConfigured(false);
+        // 空状态提示项渲染委托给 Component（<button> 元素，原生支持 Enter/Space，键盘可访问）
+        this.providerSelectorComponent.renderEmpty();
         return;
       }
 
       // 更新当前显示名称
       const activeProvider = providers.find((p) => p.key === active) ?? providers[0]!;
-      this.providerNameEl.textContent = activeProvider.name;
-      this.providerSelector?.classList.add('configured');
+      this.providerSelectorComponent.updateName(activeProvider.name);
+      this.providerSelectorComponent.setConfigured(true);
+      // 渲染下拉菜单委托给 Component（createElement 防注入，tabindex/role 支持键盘导航）
+      this.providerSelectorComponent.renderProviders(providers, active);
 
-      // 渲染下拉菜单：使用 createElement 替代 innerHTML 拼接，防止 provider 名/key 含特殊字符导致 XSS
-      // 每个项添加 tabindex="-1" 和 role="option" 支持键盘导航
-      clearElement(this.providerDropdown);
-      for (const p of providers) {
-        const isActive = p.key === active;
-        const item = document.createElement('div');
-        item.className = `dropdown-item${isActive ? ' active' : ''}`;
-        item.dataset.providerKey = p.key; // dataset 自动转义，避免属性注入
-        item.tabIndex = -1;
-        item.setAttribute('role', 'option');
-        item.setAttribute('aria-selected', isActive ? 'true' : 'false');
-        item.textContent = p.name; // textContent 自动转义 HTML，防 XSS
-        this.providerDropdown.appendChild(item);
-      }
-
-      // 下拉项点击事件已通过 initProviderSelector 中的事件委托处理，此处无需重复绑定
+      // 下拉项点击事件已通过 Component initEvents 中的事件委托处理，此处无需重复绑定
     } catch (error) {
       // 加载失败时显示降级文案，UI 已有可见反馈（"加载失败"），此处仅记录日志便于排查
-      this.providerNameEl.textContent = '加载失败';
+      this.providerSelectorComponent.updateName('加载失败');
       reportError('InputAreaManager.loadProviderSelector', error);
     }
   }
@@ -531,7 +440,8 @@ export class InputAreaManager {
    * 流式结束后由外部调用（renderer.ts 的 SPRITE_STREAM_END 处理）。
    */
   async refreshTokenUsage(): Promise<void> {
-    if (!this.tokenUsageText || !this.tokenUsageFill) return;
+    // 元素缺失时静默返回（Component mount 时元素可能缺失，getElement 返回 usage 容器）
+    if (!this.tokenUsageComponent.getElement()) return;
 
     try {
       // 并行获取仪表盘数据和当前 Provider 配置（减少 IPC 往返）
@@ -549,14 +459,7 @@ export class InputAreaManager {
           (p) => p.key === providerList?.active,
         );
         const contextWindow = activeProvider?.contextWindow ?? InputAreaManager.DEFAULT_CONTEXT_TOKENS;
-        this.tokenUsageText.textContent = `0/${formatTokenCount(contextWindow)}`;
-        this.tokenUsageFill.style.width = '0%';
-        // 无数据时使用紧凑态（隐藏进度条，仅显示「0/窗口」）
-        this.tokenUsageEl?.classList.add('token-usage-compact');
-        // 空态清除历史错误标记（与失败态 '--' 区分）
-        this.tokenUsageEl?.classList.remove('token-usage-error');
-        // 空态语义已自明（0/窗口），清除可能残留的旧 tooltip
-        this.tokenUsageEl?.setAttribute('data-tooltip', '');
+        this.tokenUsageComponent.showEmpty(contextWindow);
         return;
       }
 
@@ -569,51 +472,11 @@ export class InputAreaManager {
       );
       const contextWindow = activeProvider?.contextWindow ?? InputAreaManager.DEFAULT_CONTEXT_TOKENS;
 
-      // 格式化由 shared/numberUtils.formatTokenCount 提供（UX-12：统一小写 k 后缀）
-      // 显示为「已用/总量」格式，比单独数字更有语义
-      const windowK = formatTokenCount(contextWindow);
-      this.tokenUsageText.textContent = `${formatTokenCount(total)}/${windowK}`;
-
-      // 进度条：基于上下文窗口大小计算填充比例（截断到 100%）
-      const ratio = Math.min(total / contextWindow, 1);
-      this.tokenUsageFill.style.width = `${Math.round(ratio * 100)}%`;
-
-      // 用量颜色分级：正常(0-70%)/警告(70-90%)/危险(90-100%)
-      this.tokenUsageFill.classList.remove('level-warning', 'level-danger');
-      if (ratio >= 0.9) {
-        this.tokenUsageFill.classList.add('level-danger');
-      } else if (ratio >= 0.7) {
-        this.tokenUsageFill.classList.add('level-warning');
-      }
-
-      // 上下文相关显现：低使用时（<60%）隐藏进度条仅显示紧凑文字，高使用时（≥60%）展开进度条
-      // 原理：日常对话 token 用量低，进度条信息价值有限且占用视觉空间；
-      //       接近阈值时进度条提供关键预警价值，应展开。阈值 60% 早于警告级（70%），给用户缓冲。
-      if (this.tokenUsageEl) {
-        if (ratio < 0.6) {
-          this.tokenUsageEl.classList.add('token-usage-compact');
-        } else {
-          this.tokenUsageEl.classList.remove('token-usage-compact');
-        }
-      }
-
-      // hover 时展示输入/输出 token 分解（CSS ::after tooltip，与侧边栏风格统一）
-      if (this.tokenUsageEl) {
-        // 成功路径清除历史错误态（防止上一次失败态残留）
-        this.tokenUsageEl.classList.remove('token-usage-error');
-        this.tokenUsageEl.setAttribute(
-          'data-tooltip',
-          `输入 ${formatTokenCount(totalInputTokens)} / 输出 ${formatTokenCount(totalOutputTokens)} / 上下文 ${windowK}`
-        );
-      }
+      // 渲染正常用量（含颜色分级、紧凑态、tooltip 分解）委托给 Component
+      this.tokenUsageComponent.showUsage(total, contextWindow, totalInputTokens, totalOutputTokens);
     } catch (error) {
       // Token 用量刷新失败不影响对话功能，UI 显示 '--' 降级，仅记录日志
-      this.tokenUsageText.textContent = '--';
-      // 失败时使用紧凑态（隐藏进度条，仅显示 '--'）
-      this.tokenUsageEl?.classList.add('token-usage-compact');
-      // 错误态用 warning 色 + tooltip 区分「无数据」，与 quick-input 三态约定同构
-      this.tokenUsageEl?.classList.add('token-usage-error');
-      this.tokenUsageEl?.setAttribute('data-tooltip', '用量加载失败');
+      this.tokenUsageComponent.showError();
       reportError('InputAreaManager.refreshTokenUsage', error);
     }
   }
