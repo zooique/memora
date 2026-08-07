@@ -868,6 +868,15 @@ export interface IpcListenerCallbacks {
    * @param reason 状态变更原因（可选）
    */
   onSessionStatusChanged?: (status: string, reason?: string) => void;
+  /**
+   * 澄清问题推送回调（P4 暂停询问）
+   *
+   * Agent 在 P1-P3 补全链无法填充槽位时，通过 SESSION_NEED_CLARIFY 通道
+   * 推送澄清问题到渲染进程。渲染层展示澄清面板，用户回答后恢复会话。
+   *
+   * @param questions 澄清问题数组（携带 slot/question/options）
+   */
+  onNeedClarify?: (questions: Array<{ slot: string; question: string; options?: string[] }>) => void;
 }
 
 /**
@@ -1121,5 +1130,17 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    */
   window.electronAPI.onSessionStatusChanged((payload) => {
     callbacks.onSessionStatusChanged?.(payload.status, payload.reason);
+  });
+
+  // ─── 澄清问题推送（P4 暂停询问） ──────────────────
+  /**
+   * 监听澄清问题推送（P4 暂停询问）
+   *
+   * 触发链路：Agent 检测到 P1-P3 补全链无法填充槽位 →
+   * needClarify 事件 → SESSION_NEED_CLARIFY IPC 推送
+   * 处理方式：调用 callbacks.onNeedClarify 展示澄清面板
+   */
+  window.electronAPI.onNeedClarify((questions) => {
+    callbacks.onNeedClarify?.(questions);
   });
 }

@@ -402,4 +402,158 @@
 .session-status-recover-btn:hover {
   background: var(--surface0);
 }
+
+/* ─── 澄清面板（P4 暂停询问：P1-P3 补全链无法填充槽位时展示） ── */
+
+/* 面板容器：插入到消息区顶部，动画滑入，与 session-status-banner 视觉一致 */
+.clarify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  animation: bannerSlideDown var(--transition-base) ease-out;
+  max-width: 480px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 面板标题栏：图标 + 标题文本 */
+.clarify-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--surface2);
+}
+
+/* 标题栏内的 SVG 图标 */
+.clarify-panel-header .icon {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* 单个问题卡片 */
+.clarify-question-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+}
+
+/* 问题文本 */
+.clarify-question-text {
+  font-size: var(--font-sm);
+  color: var(--text);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+}
+
+/* 选项按钮行（水平排列） */
+.clarify-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* 选项按钮 */
+.clarify-option-btn {
+  background: transparent;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.clarify-option-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 文本输入框 */
+.clarify-answer-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2);
+  font-size: var(--font-sm);
+  color: var(--text);
+  font-family: inherit;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 44px;
+  transition: border-color var(--transition-fast);
+}
+
+.clarify-answer-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.clarify-answer-input::placeholder {
+  color: var(--text-3);
+}
+
+/* 操作按钮行 */
+.clarify-actions-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--surface2);
+}
+
+/* 提交按钮 */
+.clarify-submit-btn {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.clarify-submit-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* 取消按钮 */
+.clarify-cancel-btn {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.clarify-cancel-btn:hover {
+  background: var(--surface1);
+  color: var(--text);
+}
 

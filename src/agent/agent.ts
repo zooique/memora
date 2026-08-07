@@ -798,6 +798,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           for (const q of composeResult.needClarify) {
             yield { type: 'text', content: `[需澄清] ${q.question}` };
           }
+          // 发射 needClarify 事件，宿主通过 IPC 转发到渲染进程展示澄清面板
+          this.emit(AGENT_EVENTS.needClarify, composeResult.needClarify.map((q) => ({
+            slot: q.slot,
+            question: q.question,
+            options: q.options,
+          })));
+          this.pause(`需要澄清：${composeResult.needClarify.map((q) => q.question).join('; ')}`, 'agent');
           yield { type: 'done' };
           return;
         }

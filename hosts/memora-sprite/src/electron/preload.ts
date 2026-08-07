@@ -41,7 +41,7 @@ import type {
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
 // L1~L3 LLM 治理报告类型（从内核 re-export 导入，用于 ElectronAPI 接口声明）
-import type { DedupReport, TimelinessReport, ConflictReport, SessionCheckpoint } from 'memora';
+import type { DedupReport, TimelinessReport, ConflictReport, SessionCheckpoint, ClarifyQuestion } from 'memora';
 // P5：从 sprite 层导入感知状态类型（真理源），修复 getPerceptionSnapshot 返回类型过宽问题
 import type { AffectState, RapportState, ContextState, DetectedPattern, ProactiveStats } from '../sprite/controllers/index.js';
 // 精灵设定面板 Epic 3：从 sprite 层 configFileManager 导入契约类型（真理源，编译时擦除）
@@ -221,6 +221,8 @@ export const IPC_CHANNELS = {
   GET_CHECKPOINT: 'get-checkpoint',
   /** 从检查点恢复会话 */
   RESTORE_CHECKPOINT: 'restore-checkpoint',
+  /** 用户回答澄清问题，携带 { slot: string; answer: string }[] */
+  SESSION_CLARIFY_ANSWER: 'session-clarify-answer',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -275,6 +277,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   // ─── 会话状态变更通知（不中断工作模型，与 ipc/channels.ts 同步） ──
   /** 会话状态变更通知（pause/resume/error/recover 时推送） */
   SESSION_STATUS_CHANGED: 'session-status-changed',
+  /** 主进程 → 渲染进程：推送澄清问题（P4 暂停询问），携带 ClarifyQuestion[] */
+  SESSION_NEED_CLARIFY: 'session-need-clarify',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -539,6 +543,25 @@ export interface ElectronAPI {
   onSessionStatusChanged: (cb: (payload: { status: string; reason?: string }) => void) => void;
   /** 移除会话状态变更监听器 */
   removeSessionStatusChangedListener: () => void;
+  /**
+   * 监听澄清问题推送（P4 暂停询问）
+   *
+   * Agent 在 P1-P3 补全链无法填充槽位时，发射 needClarify 事件，
+   * 主进程通过 SESSION_NEED_CLARIFY 通道转发到渲染进程。
+   * 渲染层展示澄清面板，用户回答后调用 sendClarifyAnswer 恢复会话。
+   */
+  onNeedClarify: (cb: (questions: ClarifyQuestion[]) => void) => void;
+  /** 移除澄清问题推送监听器 */
+  removeNeedClarifyListener: () => void;
+  /**
+   * 提交澄清问题回答（渲染进程 → 主进程）
+   *
+   * 用户回答澄清面板中的问题后，调用此方法将回答提交给主进程，
+   * 主进程构造 SessionEvent 调用 agent.processEvent 恢复会话。
+   *
+   * @param answers 用户回答数组，每个元素包含 slot 和 answer
+   */
+  sendClarifyAnswer: (answers: Array<{ slot: string; answer: string }>) => Promise<{ success: boolean }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string; persona?: string }) => void) => void;
@@ -1356,6 +1379,14 @@ const electronAPI: ElectronAPI = {
   removeSessionStatusChangedListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED);
   },
+  /** 监听澄清问题推送 */
+  onNeedClarify: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY, (_: IpcRendererEvent, questions: ClarifyQuestion[]) => cb(questions)),
+  /** 移除澄清问题推送监听器 */
+  removeNeedClarifyListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY);
+  },
+  /** 提交澄清问题回答 */
+  sendClarifyAnswer: (answers) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, answers),
 
   // 仪表盘
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),

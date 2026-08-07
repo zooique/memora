@@ -14,13 +14,13 @@
  */
 
 import { ipcMain } from 'electron';
-import { logger } from 'memora';
+import { logger, AGENT_EVENTS } from 'memora';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { requireAgent } from './types.js';
 import { handleUserInput } from './chatStreamHandler.js';
 import { isValidContent } from './inputValidation.js';
-import type { SessionCheckpoint } from 'memora';
+import type { SessionCheckpoint, ClarifyQuestion } from 'memora';
 
 /**
  * 注册对话相关 IPC 处理器
@@ -152,5 +152,37 @@ export function registerChatHandlers(ctx: IpcContext): void {
     const agent = requireAgent(ctx);
     const messageCount = await agent.restoreFromCheckpoint(checkpoint);
     return { restored: true, messageCount };
+  });
+
+  /**
+   * 注册 needClarify 事件监听：Agent 发射 needClarify 事件时，
+   * 通过 SESSION_NEED_CLARIFY 通道转发到渲染进程，触发澄清面板展示。
+   */
+  const agent = requireAgent(ctx);
+  agent.on(AGENT_EVENTS.needClarify, (questions: ClarifyQuestion[]) => {
+    const fullWindow = ctx.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY, questions);
+    }
+  });
+
+  /**
+   * 处理用户回答的澄清问题
+   *
+   * 渲染进程提交文案回答后，构造 SessionEvent 恢复会话。
+   * 将回答序列化为 JSON 字符串作为 clarify 事件的内容，
+   * 内核 Composer 的 P4 补全链会解析此内容并填入对应槽位。
+   */
+  ipcMain.handle(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, async (_event, answers: Array<{ slot: string; answer: string }>) => {
+    const agent = requireAgent(ctx);
+    const event: import('memora').SessionEvent = {
+      type: 'clarify',
+      content: JSON.stringify(answers),
+      delta: {},
+    };
+    // 使用 processEvent 将澄清回答注入到事件处理流
+    // 不等待流式输出（回答后由 Composer 补全槽位，继续 P1-P3 流程）
+    void agent.processEvent(event);
+    return { success: true };
   });
 }

@@ -309,6 +309,8 @@ export const IPC_CHANNELS = {
   GET_CHECKPOINT: 'get-checkpoint',
   /** 从检查点恢复会话 */
   RESTORE_CHECKPOINT: 'restore-checkpoint',
+  /** 渲染进程 → 主进程：用户回答澄清问题，携带 ClarifyAnswer[] */
+  SESSION_CLARIFY_ANSWER: 'session-clarify-answer',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */
@@ -435,4 +437,6 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   // ─── 会话状态变更通知（不中断工作模型） ─────────────
   /** 会话状态变更通知（pause/resume/error/recover 时推送，携带 { status: string, reason?: string }） */
   SESSION_STATUS_CHANGED: 'session-status-changed',
+  /** 主进程 → 渲染进程：推送澄清问题（P4 暂停询问），携带 ClarifyQuestion[] */
+  SESSION_NEED_CLARIFY: 'session-need-clarify',
 } as const;

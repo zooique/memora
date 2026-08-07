@@ -682,6 +682,23 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatCoordinator.chatPanel.updateSessionStatus(status, reason);
   }
 
+  /**
+   * 澄清问题处理（由 ipcListeners.ts 的 onNeedClarify 回调触发）
+   *
+   * Agent 在 P1-P3 补全链无法填充槽位时，转发到渲染进程展示澄清面板，
+   * 等待用户回答后恢复会话。
+   *
+   * @param questions 澄清问题数组（每个问题包含 slot/question/options）
+   */
+  onNeedClarify(questions: Array<{ slot: string; question: string; options?: string[] }>): void {
+    // 确保对话面板可见
+    if (this.getCurrentPanel() !== 'chat') {
+      void this.switchPanel('chat');
+    }
+    // 展示澄清面板
+    this.chatCoordinator.chatPanel.showClarifyPanel(questions);
+  }
+
   // ─── 未读计数（委托到 BadgeManager） ──────────────────
 
   /** 更新未读徽章显示（ChatPanelHost 回调） */

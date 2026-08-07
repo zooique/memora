@@ -275,6 +275,9 @@ export class ChatPanelManager {
   /** 会话状态横幅元素（不中断工作模型，暂停时在消息区顶部显示提示），null 表示未创建 */
   private sessionStatusEl: HTMLElement | null = null;
 
+  /** 澄清面板元素（P4 暂停询问，在消息区顶部展示问题列表），null 表示未创建 */
+  private clarifyPanelEl: HTMLElement | null = null;
+
   // ─── 事件清理 ──────────────────────────────────────────
 
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -1213,6 +1216,136 @@ export class ChatPanelManager {
           void window.electronAPI.recoverSession();
         });
       }
+    }
+  }
+
+  // ─── 澄清面板（P4 暂停询问） ──────────────────────────
+
+  /**
+   * 展示澄清面板（P4 暂停询问）
+   *
+   * Agent 在 P1-P3 补全链无法填充槽位时，发射 needClarify 事件，
+   * 主进程转发到渲染进程后调用此方法展示澄清问题。
+   * 面板插入到消息区顶部，包含问题列表 + 选项按钮 + 文本输入 + 提交按钮。
+   * 面板创建后复用，不重复创建（调用 hideClarifyPanel 移除）。
+   *
+   * @param questions 澄清问题数组（每个问题包含 slot/question/options）
+   */
+  showClarifyPanel(questions: Array<{ slot: string; question: string; options?: string[] }>): void {
+    // 移除旧面板（避免重复创建）
+    this.hideClarifyPanel();
+
+    const panel = document.createElement('div');
+    panel.className = 'clarify-panel';
+    panel.id = 'clarify-panel';
+
+    // 标题栏
+    const header = document.createElement('div');
+    header.className = 'clarify-panel-header';
+    header.innerHTML = '<svg class="icon"><use href="#icon-question"/></svg><span>需要补充信息</span>';
+    panel.appendChild(header);
+
+    // 存储各问题的输入元素引用，提交时读取
+    const inputMap: Map<string, HTMLTextAreaElement | HTMLInputElement> = new Map();
+
+    // 遍历每个问题，构建问题卡片
+    for (const q of questions) {
+      const card = document.createElement('div');
+      card.className = 'clarify-question-card';
+      card.dataset.slot = q.slot;
+
+      // 问题文本
+      const questionText = document.createElement('div');
+      questionText.className = 'clarify-question-text';
+      questionText.textContent = q.question;
+      card.appendChild(questionText);
+
+      // 选项按钮（若有）
+      if (q.options && q.options.length > 0) {
+        const optionsRow = document.createElement('div');
+        optionsRow.className = 'clarify-options-row';
+        for (const opt of q.options) {
+          const optBtn = document.createElement('button');
+          optBtn.className = 'clarify-option-btn';
+          optBtn.textContent = opt;
+          optBtn.type = 'button';
+          // 点击选项时填入输入框
+          optBtn.addEventListener('click', () => {
+            const input = inputMap.get(q.slot);
+            if (input) {
+              input.value = opt;
+              input.focus();
+            }
+          });
+          optionsRow.appendChild(optBtn);
+        }
+        card.appendChild(optionsRow);
+      }
+
+      // 文本输入框
+      const input = document.createElement('textarea');
+      input.className = 'clarify-answer-input';
+      input.placeholder = '请输入…';
+      input.rows = 2;
+      card.appendChild(input);
+      inputMap.set(q.slot, input);
+
+      panel.appendChild(card);
+    }
+
+    // 提交按钮行
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'clarify-actions-row';
+
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'clarify-submit-btn';
+    submitBtn.textContent = '提交回答';
+    submitBtn.addEventListener('click', () => {
+      // 收集所有问题的回答
+      const answers: Array<{ slot: string; answer: string }> = [];
+      for (const q of questions) {
+        const input = inputMap.get(q.slot);
+        const answer = input?.value.trim() ?? '';
+        if (answer) {
+          answers.push({ slot: q.slot, answer });
+        }
+      }
+      if (answers.length === 0) return; // 无回答时忽略
+      // 提交回答并关闭面板
+      void window.electronAPI.sendClarifyAnswer(answers);
+      this.hideClarifyPanel();
+    });
+    actionsRow.appendChild(submitBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'clarify-cancel-btn';
+    cancelBtn.textContent = '取消';
+    cancelBtn.addEventListener('click', () => {
+      this.hideClarifyPanel();
+    });
+    actionsRow.appendChild(cancelBtn);
+
+    panel.appendChild(actionsRow);
+
+    // 插入到消息区顶部（在 sessionStatusBanner 之后，消息之前）
+    if (this.sessionStatusEl) {
+      this.sessionStatusEl.after(panel);
+    } else {
+      this.messagesEl.insertBefore(panel, this.messagesEl.firstChild);
+    }
+
+    this.clarifyPanelEl = panel;
+  }
+
+  /**
+   * 隐藏澄清面板
+   *
+   * 用户提交回答或取消时调用，移除面板 DOM 元素并重置引用。
+   */
+  hideClarifyPanel(): void {
+    if (this.clarifyPanelEl) {
+      this.clarifyPanelEl.remove();
+      this.clarifyPanelEl = null;
     }
   }
 

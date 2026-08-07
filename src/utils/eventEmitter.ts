@@ -33,6 +33,7 @@ export const AGENT_EVENTS = {
   dedupCompleted: 'dedupCompleted',
   sessionPauseTimedOut: 'sessionPauseTimedOut',
   sessionResumeBlocked: 'sessionResumeBlocked',
+  needClarify: 'needClarify',
 } as const;
 
 /** 事件名联合类型（由 AGENT_EVENTS 推导，单一真理源，新增事件只需在此对象加一项） */
@@ -136,6 +137,15 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 阻止原因 */
     reason: string;
   };
+  /** 暂停询问（P4：需要用户澄清某个槽位） */
+  needClarify: {
+    /** 目标槽位 */
+    slot: string;
+    /** 问题文本 */
+    question: string;
+    /** 默认选项（可选） */
+    options?: string[];
+  }[];
 }
 
 // AgentEventName 已由上方 AGENT_EVENTS 推导（单一真理源）

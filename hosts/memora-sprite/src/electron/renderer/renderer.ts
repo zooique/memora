@@ -438,6 +438,10 @@ async function bootstrapRenderer(): Promise<void> {
     onSessionStatusChanged: (status, reason) => {
       State.uiManager.onSessionStatusChanged(status, reason);
     },
+    // 澄清问题推送 → 展示澄清面板
+    onNeedClarify: (questions) => {
+      State.uiManager.onNeedClarify(questions);
+    },
   });
 
   // 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
@@ -802,6 +806,9 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   // Phase 3.3 第二批：清理全局快捷键触发监听器
   window.electronAPI.removeQuickRecordTriggerListener();
   window.electronAPI.removeRecallMemoryTriggerListener();
+  // 不中断工作模型：清理会话状态变更监听器 + 澄清问题推送监听器
+  window.electronAPI.removeSessionStatusChangedListener();
+  window.electronAPI.removeNeedClarifyListener();
 });
 
 // ─── 业务逻辑设置（发送/停止/会话管理） ─────────────────────

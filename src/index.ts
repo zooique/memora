@@ -92,7 +92,7 @@ export { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 export type { OpenAICompatibleConfig } from '@/llm/openaiCompatible.js';
 export type { Config } from '@/config/loader.js';
 // 事件系统
-export { TypedEventEmitter } from '@/utils/eventEmitter.js';
+export { TypedEventEmitter, AGENT_EVENTS } from '@/utils/eventEmitter.js';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@/utils/eventEmitter.js';
 
 // ─── 可观测性导出 ────────────────────────────────────────
@@ -136,7 +136,7 @@ export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 // 不中断工作模型：检查点类型和增量事件类型（宿主 IPC 层需要用于类型声明）
-export type { SessionCheckpoint, SessionEvent, DeltaPayload, SlotRef } from '@/agent/types.js';
+export type { SessionCheckpoint, SessionEvent, DeltaPayload, SlotRef, ClarifyQuestion } from '@/agent/types.js';
 // 消息历史内部类型：MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 召回函数：简化关键词搜索
