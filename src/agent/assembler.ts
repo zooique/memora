@@ -78,6 +78,19 @@ export interface AssembleInput {
    * AgentLoop 处理 SessionEvent 时通知上层状态机。
    */
   onSessionEvent?: (eventType: string, detail: string) => void;
+  /**
+   * 工具执行完成回调（P3.3 执行计划管理·工具幂等）
+   *
+   * AgentLoop 每次工具执行完成后调用。
+   */
+  onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
+  /**
+   * 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
+   *
+   * AgentLoop 每次工具执行前调用，检查是否已执行过。
+   * 用于 outbox 模式：恢复时避免重复执行已完成的幂等工具。
+   */
+  preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -149,11 +162,14 @@ async function createAgentLoopAndDeps(params: {
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   onGuardrailError?: (rule: string, message: string) => void;
   onSessionEvent?: (eventType: string, detail: string) => void;
+  onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
+  preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
 }) {
   const {
     provider, backgroundProvider, pctx, personaPrompt, userProfile, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary, relationStore,
     sessionStore, locale, onContextTruncated, onGuardrailError, onSessionEvent,
+    onToolExecuted, preExecutionCheck,
   } = params;
 
   // 系统前缀：角色 + 用户画像 + 当前时间
@@ -191,7 +207,10 @@ async function createAgentLoopAndDeps(params: {
     onContextTruncated,
     onGuardrailError,
     onSessionEvent,
+    onToolExecuted,
+    preExecutionCheck,
   });
+
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
 
@@ -308,6 +327,8 @@ export async function assembleComponents(
       onContextTruncated: input.onContextTruncated,
       onGuardrailError: input.onGuardrailError,
       onSessionEvent: input.onSessionEvent,
+      onToolExecuted: input.onToolExecuted,
+      preExecutionCheck: input.preExecutionCheck,
     });
 
   // ── Phase 4: 依赖 Loop 的组件 ──

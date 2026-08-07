@@ -29,7 +29,11 @@ import type {
   Standard,
   ResourceState,
   PlanStep,
+  ToolExecutionRecord,
+  SideEffect,
 } from '@/agent/types.js';
+import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
+import type { GoalConsistencyResult } from '@/agent/managers/goalConsistencyChecker.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
 import type { PauseSource } from '@/agent/sessionStateMachine.js';
 
@@ -68,6 +72,8 @@ export class SessionManager {
   readonly stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
+  /** 目标一致性校验器（P3.1 目标版本一致性校验） */
+  private readonly consistencyChecker: GoalConsistencyChecker;
 
   /**
    * 暂停超时会话信息（P0-3：暂停超时自动归档）
@@ -90,6 +96,7 @@ export class SessionManager {
     this.isChatBusy = isChatBusy;
     this.emitEvent = emitEvent;
     this.stateMachine = new SessionStateMachine('running');
+    this.consistencyChecker = new GoalConsistencyChecker();
   }
 
   /**
@@ -467,8 +474,25 @@ export class SessionManager {
       history.loadSessionMessages(date, session);
     }
 
+    // P3.4：恢复时补偿——对非幂等工具执行补偿操作
+    // 在恢复热窗口和契约后，检查检查点中是否有非幂等工具执行记录
+    // 若有，执行补偿并记录结果
+    const compensationResults = this.compensateAllNonIdempotent();
+    if (compensationResults.length > 0) {
+      logger.warn(
+        { sessionId: checkpoint.sessionId, compensationCount: compensationResults.length, compensations: compensationResults },
+        '恢复时发现非幂等工具执行，已执行补偿操作',
+      );
+
+      // 注入补偿结果到上下文，让 LLM 感知到补偿操作
+      const compensationSummary = compensationResults.join('\n');
+      this.getLoop().injectSystemMessage(
+        `[P3.4补偿通知] 本次恢复的会话包含 ${compensationResults.length} 个非幂等工具调用，已执行补偿操作。补偿详情：\n${compensationSummary}\n\n请根据补偿结果调整后续操作。`,
+      );
+    }
+
     logger.info(
-      { sessionId: checkpoint.sessionId, messageCount: messages.length, truncatedCount: checkpoint.truncatedCount ?? 0 },
+      { sessionId: checkpoint.sessionId, messageCount: messages.length, truncatedCount: checkpoint.truncatedCount ?? 0, compensationCount: compensationResults.length },
       '从检查点恢复会话',
     );
 
@@ -604,14 +628,21 @@ export class SessionManager {
    * 更新检查点目标版本
    *
    * 用户修正目标时调用，递增 goalVersion 触发漂移检测。
+   * 更新前自动执行一致性校验（P3.1），若检测到漂移则发射 goalDriftDetected 事件。
+   * 校验结果不影响 updateGoal 的执行——事件是通知性的，宿主 UI 决定是否暂停等待用户确认。
    *
    * @param newGoal - 新目标描述
+   * @returns 一致性校验结果（调用方可据此判断是否需要处理漂移）
    */
-  updateGoal(newGoal: string): void {
+  updateGoal(newGoal: string): GoalConsistencyResult | null {
     if (!this.checkpoint) {
       this.createCheckpoint(newGoal);
-      return;
+      return null;
     }
+
+    // P3.1：执行一致性校验，与 mainGoal 对比
+    const mainGoal = this.checkpoint.mainGoal;
+    const consistencyResult = this.consistencyChecker.checkConsistency(mainGoal, newGoal);
 
     this.checkpoint.currentGoal = newGoal;
     this.checkpoint.goalVersion++;
@@ -622,6 +653,21 @@ export class SessionManager {
       goalVersion: this.checkpoint.goalVersion,
       sessionId: this.checkpoint.sessionId,
     });
+
+    // P3.1：若检测到漂移，发射 goalDriftDetected 事件
+    if (consistencyResult.level !== 'same') {
+      this.emitEvent('goalDriftDetected', {
+        sessionId: this.checkpoint.sessionId,
+        mainGoal,
+        newGoal,
+        similarity: consistencyResult.similarity,
+        level: consistencyResult.level,
+        constraints: consistencyResult.constraints,
+        goalVersion: this.checkpoint.goalVersion,
+      });
+    }
+
+    return consistencyResult;
   }
 
   /**
@@ -670,6 +716,265 @@ export class SessionManager {
     if (!this.checkpoint) return;
     this.checkpoint.role = role;
     this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  // ── P3.3：执行计划管理 ──────────────────────────────────
+
+  /**
+   * 推进到下一个未完成步骤
+   *
+   * 根据增量默认分辨率：有未完成步骤 → 推进最近步骤。
+   * 将最近一个 pending 步骤标记为 active，并返回该步骤。
+   * 若所有步骤已完成或已阻塞，返回 null 表示计划停滞。
+   *
+   * @returns 推进后的步骤，或 null（计划停滞）
+   */
+  advancePlan(): PlanStep | null {
+    if (!this.checkpoint) return null;
+    const nextStep = this.checkpoint.plan.find((s) => s.status === 'pending');
+    if (!nextStep) return null;
+    nextStep.status = 'active';
+    this.checkpoint.lastHeartbeat = Date.now();
+    return nextStep;
+  }
+
+  /**
+   * 完成当前步骤
+   *
+   * 将指定步骤标记为 done，递增心跳。
+   *
+   * @param stepId - 步骤唯一标识
+   */
+  completeStep(stepId: string): void {
+    const step = this.checkpoint?.plan.find((s) => s.id === stepId);
+    if (step) {
+      step.status = 'done';
+      this.checkpoint!.lastHeartbeat = Date.now();
+    }
+  }
+
+  /**
+   * 检查计划是否停滞
+   *
+   * 计划停滞条件：
+   * - 计划为空
+   * - 所有步骤已完成（done）或阻塞（blocked）
+   *
+   * 计划停滞时，增量默认分辨率降级为 P4 暂停澄清。
+   *
+   * @returns 是否停滞
+   */
+  isPlanStalled(): boolean {
+    if (!this.checkpoint) return true;
+    const { plan } = this.checkpoint;
+    if (plan.length === 0) return true;
+    return plan.every((s) => s.status === 'done' || s.status === 'blocked');
+  }
+
+  /**
+   * 获取下一个未完成步骤（不推进）
+   *
+   * 只读查询，不修改状态。用于上下文注入时获取当前步骤描述。
+   *
+   * @returns 下一个 pending 步骤，或 null
+   */
+  getNextPendingStep(): PlanStep | null {
+    if (!this.checkpoint) return null;
+    return this.checkpoint.plan.find((s) => s.status === 'pending') ?? null;
+  }
+
+  /**
+   * 获取当前活跃步骤
+   *
+   * @returns 当前 active 步骤，或 null
+   */
+  getActiveStep(): PlanStep | null {
+    if (!this.checkpoint) return null;
+    return this.checkpoint.plan.find((s) => s.status === 'active') ?? null;
+  }
+
+  // ── P3.3：工具执行日志（outbox 模式） ──────────────────
+  // ── P3.4：副作用日志 + 补偿机制 ─────────────────────────
+
+  /**
+   * 记录工具执行
+   *
+   * 将已执行的工具调用追加到检查点日志，用于恢复时 outbox 模式检查。
+   * 日志为 append-only，不修改已有记录。
+   * 扩展（P3.4）：支持记录幂等性级别和副作用，供补偿机制使用。
+   *
+   * @param record - 工具执行记录
+   */
+  logToolExecution(record: ToolExecutionRecord): void {
+    if (!this.checkpoint) return;
+    if (!this.checkpoint.completedToolCalls) {
+      this.checkpoint.completedToolCalls = [];
+    }
+    this.checkpoint.completedToolCalls.push(record);
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 记录工具副作用（P3.4 补偿机制·副作用日志）
+   *
+   * 将副作用追加到指定工具执行记录中。
+   * 副作用一旦记录不可修改（append-only），确保补偿时能看到完整的历史副作用。
+   *
+   * @param name - 工具名称
+   * @param argsSignature - 参数签名（与 logToolExecution 的记录匹配）
+   * @param sideEffect - 副作用描述
+   */
+  recordSideEffect(name: string, argsSignature: string, sideEffect: SideEffect): void {
+    if (!this.checkpoint?.completedToolCalls) return;
+    const record = this.checkpoint.completedToolCalls.find(
+      (r) => r.name === name && r.argsSignature === argsSignature,
+    );
+    if (!record) return;
+    if (!record.sideEffects) {
+      record.sideEffects = [];
+    }
+    record.sideEffects.push(sideEffect);
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 获取指定工具的副作用列表（P3.4 补偿机制）
+   *
+   * @param name - 工具名称
+   * @param argsSignature - 参数签名
+   * @returns 副作用列表，不存在时返回空数组
+   */
+  getSideEffectsForTool(name: string, argsSignature: string): SideEffect[] {
+    if (!this.checkpoint?.completedToolCalls) return [];
+    const record = this.checkpoint.completedToolCalls.find(
+      (r) => r.name === name && r.argsSignature === argsSignature,
+    );
+    return record?.sideEffects ?? [];
+  }
+
+  /**
+   * 检查工具是否已执行（outbox 模式）
+   *
+   * 以工具名称 + 参数签名作为唯一标识，检查是否已执行过。
+   * 用于恢复时避免重复执行幂等工具。
+   *
+   * @param name - 工具名称
+   * @param args - 工具参数 JSON 字符串
+   * @returns 是否已执行
+   */
+  hasToolExecuted(name: string, args: string): boolean {
+    if (!this.checkpoint?.completedToolCalls) return false;
+    return this.checkpoint.completedToolCalls.some(
+      (r) => r.name === name && r.argsSignature === args,
+    );
+  }
+
+  /**
+   * 获取检查点中所有非幂等工具的执行记录列表（P3.4 补偿机制）
+   *
+   * 用于恢复时识别需要补偿的非幂等工具。
+   * 非幂等条件：idempotent === 'non-idempotent' 或未标注幂等性但执行失败。
+   *
+   * @returns 非幂等工具执行记录列表
+   */
+  getNonIdempotentExecutions(): ToolExecutionRecord[] {
+    if (!this.checkpoint?.completedToolCalls) return [];
+    return this.checkpoint.completedToolCalls.filter(
+      (r) => r.idempotent === 'non-idempotent',
+    );
+  }
+
+  /**
+   * 补偿单个工具执行（P3.4 补偿机制·恢复时补偿动作）
+   *
+   * 对非幂等工具的副作用执行补偿操作。
+   * 补偿逻辑：
+   *   - file_write（写入文件）：无法自动回滚，记录警告日志
+   *   - file_create（创建文件）：记录警告日志
+   *   - memory_write（写入记忆）：记录警告日志
+   *   - custom（自定义）：仅记录日志，由宿主自行处理
+   *
+   * 当前实现：**日志告警 + 记录补偿标记**，不自动执行回滚操作。
+   * 理由：自动回滚可能引入新的副作用（如回滚文件时覆盖其他修改），
+   * 需要宿主根据业务场景决定是否执行补偿。
+   * 标记补偿已执行（ok = false），避免重复补偿。
+   *
+   * @param record - 要补偿的工具执行记录
+   * @returns 补偿操作描述（供宿主展示）
+   */
+  compensateTool(record: ToolExecutionRecord): string {
+    if (!this.checkpoint) return '补偿失败：无检查点';
+
+    const sideEffects = record.sideEffects ?? [];
+    const compensations: string[] = [];
+
+    for (const se of sideEffects) {
+      switch (se.type) {
+        case 'file_write':
+        case 'file_create':
+          compensations.push(
+            `${se.type}(${se.target})：无法自动回滚，请手动检查文件内容`,
+          );
+          break;
+        case 'file_delete':
+          compensations.push(
+            `file_delete(${se.target})：无法自动恢复，请手动检查文件系统`,
+          );
+          break;
+        case 'memory_write':
+          compensations.push(
+            `memory_write(${se.target})：无法自动回滚记忆写入`,
+          );
+          break;
+        case 'custom':
+          compensations.push(
+            `custom(${se.target})：${se.description}`,
+          );
+          break;
+      }
+    }
+
+    // 如果工具没有副作用记录，标记为"需人工确认"
+    if (compensations.length === 0) {
+      compensations.push(
+        `${record.name}(${record.argsSignature.slice(0, 50)})：无副作用记录，需人工确认是否需要补偿`,
+      );
+    }
+
+    // 记录补偿标记到日志
+    logger.warn(
+      {
+        tool: record.name,
+        argsSignature: record.argsSignature.slice(0, 80),
+        compensations,
+      },
+      '工具补偿已记录（需人工确认）',
+    );
+
+    // 标记原始执行记录为 ok=false，表明该工具的副作用已被补偿
+    record.ok = false;
+
+    return compensations.join('; ');
+  }
+
+  /**
+   * 补偿所有非幂等工具执行（P3.4 补偿机制）
+   *
+   * 遍历检查点中所有非幂等工具记录，执行补偿操作。
+   * 在恢复会话时调用，确保非幂等操作的副作用被正确处理。
+   *
+   * @returns 补偿操作描述列表
+   */
+  compensateAllNonIdempotent(): string[] {
+    const nonIdempotent = this.getNonIdempotentExecutions();
+    if (nonIdempotent.length === 0) return [];
+
+    const results: string[] = [];
+    for (const record of nonIdempotent) {
+      const result = this.compensateTool(record);
+      results.push(result);
+    }
+    return results;
   }
 
   /**

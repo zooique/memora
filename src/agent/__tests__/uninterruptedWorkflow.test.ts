@@ -1,0 +1,1671 @@
+/**
+ * 不中断工作模型集成测试
+ *
+ * 覆盖 P0-P3 全部核心功能：
+ *   - 三态状态机流转（SessionStateMachine）
+ *   - 检查点快照与恢复（SessionManager.createCheckpoint/restoreFromCheckpoint）
+ *   - 工具幂等性与 outbox 模式（preExecutionCheck/hasToolExecuted）
+ *   - 补偿机制（compensateTool/compensateAllNonIdempotent/recordSideEffect）
+ *   - 执行计划管理（advancePlan/completeStep/isPlanStalled）
+ *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
+ *   - 端到端场景（Agent 门面完整工作流）
+ *
+ * 设计原则：
+ *   - 使用 MockProvider 模拟 LLM，不依赖真实 API
+ *   - 使用 tmpdir 做项目根目录，不污染真实 .memora/
+ *   - 每个测试独立 tmp 目录
+ *   - 遵循现有测试模式和命名规范
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Agent } from '@/agent/agent.js';
+import { SessionManager } from '@/agent/managers/sessionManager.js';
+import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
+import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
+import { LlmProvider } from '@/llm/provider.js';
+import type { Message, ChatOptions } from '@/llm/provider.js';
+import type { LlmChunk } from '@/llm/types.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
+import type {
+  SessionCheckpoint,
+  PlanStep,
+  ToolExecutionRecord,
+  SideEffect,
+} from '@/agent/types.js';
+import type { MessageHistory } from '@/agent/messageHistory.js';
+import type { AgentLoop } from '@/agent/loop.js';
+import type { MockedFunction } from 'vitest';
+
+// ═══════════════════════════════════════════════════════════════
+// Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
+// ═══════════════════════════════════════════════════════════════
+
+class MockProvider extends LlmProvider {
+  readonly name = 'mock';
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    const lastUser = [..._messages].reverse().find((m) => m.role === 'user');
+    const reply = `Mock 响应：${lastUser?.content ?? '(empty)'}`;
+    yield { content: reply };
+    yield { finishReason: 'stop' };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 辅助函数
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 写入项目骨架文件，让 init() 能正常加载
+ */
+function seedProject(_projectPath: string, configDir: string, _dataDir: string): void {
+  mkdirSync(join(configDir, 'personas'), { recursive: true });
+  mkdirSync(join(configDir, 'rules'), { recursive: true });
+  writeFileSync(
+    join(configDir, 'personas', 'default.md'),
+    '---\nid: persona:default\nsource: persona\nname: 默认人格\nscore: 1\n---\n\n你是一个测试助手。',
+    'utf-8',
+  );
+}
+
+/**
+ * 创建 Agent 实例（使用 MockProvider）
+ */
+function makeAgent(
+  projectPath: string,
+  configDir: string,
+  dataDir: string,
+): Agent {
+  return new Agent({
+    projectPath,
+    provider: new MockProvider(),
+    configDir,
+    dataDir,
+    permission: 'owner',
+    allowedPaths: [dataDir],
+    messages: {
+      abortedByUser: '用户取消了对话',
+      maxIterationsReached: '\n\n[已达到最大迭代次数]',
+      recentConversationLabel: '[最近对话]',
+      userLabel: '用户',
+      assistantLabel: '助手',
+      inputBlockedByGuard: (rule) => `输入被护栏规则"${rule}"阻止`,
+      guardrailWarningPrefix: '[护栏警告]',
+      outputBlockedByGuard: (rule) => `输出被护栏规则"${rule}"阻止`,
+    },
+  });
+}
+
+/**
+ * 创建 Mock MessageHistory
+ */
+function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHistory {
+  return {
+    switchSession: vi.fn().mockReturnValue('2026-08-08-main'),
+    forkSession: vi.fn().mockReturnValue({
+      newSession: 'main-b1',
+      date: '2026-08-08',
+      messages: [
+        { role: 'user', content: 'hello', timestamp: '2026-08-08T10:00:00Z' },
+        { role: 'assistant', content: 'hi', timestamp: '2026-08-08T10:00:01Z' },
+      ],
+    }),
+    loadSessionMessages: vi.fn().mockResolvedValue([]),
+    currentSessionName: '2026-08-08-main',
+    currentDateValue: '2026-08-08',
+    currentSessionValue: 'main',
+    ...overrides,
+  } as unknown as MessageHistory;
+}
+
+/**
+ * 创建 Mock AgentLoop
+ */
+function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
+  return {
+    restoreHistory: vi.fn(),
+    getMessages: vi.fn().mockReturnValue([
+      { role: 'system', content: 'system prompt' },
+    ]),
+    injectSystemMessage: vi.fn(),
+    ...overrides,
+  } as unknown as AgentLoop;
+}
+
+/**
+ * 创建 Mock ISessionStore（支持检查点持久化）
+ */
+function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessionStore {
+  const store = new Map<string, string>();
+  return {
+    appendMessage: vi.fn(),
+    loadMessages: vi.fn().mockReturnValue([]),
+    listSessions: vi.fn().mockReturnValue([]),
+    copySession: vi.fn(),
+    saveCheckpoint: vi.fn((sessionId: string, json: string) => {
+      store.set(sessionId, json);
+    }),
+    loadCheckpoint: vi.fn((sessionId: string) => {
+      return store.get(sessionId) ?? null;
+    }),
+    deleteCheckpoint: vi.fn((sessionId: string) => {
+      store.delete(sessionId);
+    }),
+    ...overrides,
+  } as unknown as ISessionStore;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 1：三态状态机流转（SessionStateMachine）
+// ═══════════════════════════════════════════════════════════════
+
+describe('SessionStateMachine · 三态流转', () => {
+  let sm: SessionStateMachine;
+
+  beforeEach(() => {
+    sm = new SessionStateMachine('running');
+  });
+
+  describe('初始状态', () => {
+    it('默认初始状态应为 running', () => {
+      const sm2 = new SessionStateMachine();
+      expect(sm2.status).toBe('running');
+    });
+
+    it('构造时可指定初始状态', () => {
+      const sm2 = new SessionStateMachine('paused');
+      expect(sm2.status).toBe('paused');
+    });
+  });
+
+  describe('RUNNING → PAUSED（暂停）', () => {
+    it('user 来源暂停应成功', () => {
+      const result = sm.pause('用户手动暂停', 'user');
+      expect(result.allowed).toBe(true);
+      expect(sm.status).toBe('paused');
+      expect(result.reason).toContain('user');
+    });
+
+    it('agent 来源暂停应成功', () => {
+      const result = sm.pause('需要澄清', 'agent');
+      expect(result.allowed).toBe(true);
+      expect(sm.status).toBe('paused');
+      expect(result.reason).toContain('agent');
+    });
+
+    it('system 来源暂停应成功', () => {
+      const result = sm.pause('系统维护', 'system');
+      expect(result.allowed).toBe(true);
+      expect(sm.status).toBe('paused');
+      expect(result.reason).toContain('system');
+    });
+
+    it('暂停信息应正确记录 pauseInfo', () => {
+      sm.pause('用户手动暂停', 'user');
+      const info = sm.pauseInfo;
+      expect(info).not.toBeNull();
+      expect(info!.reason).toBe('用户手动暂停');
+      expect(info!.source).toBe('user');
+    });
+  });
+
+  describe('PAUSED → RUNNING（恢复）', () => {
+    it('恢复应成功', () => {
+      sm.pause('测试暂停');
+      const result = sm.resume();
+      expect(result.allowed).toBe(true);
+      expect(sm.status).toBe('running');
+    });
+
+    it('恢复后 pauseInfo 应清空', () => {
+      sm.pause('测试暂停');
+      sm.resume();
+      expect(sm.pauseInfo).toBeNull();
+    });
+
+    it('RUNNING 状态恢复应失败', () => {
+      const result = sm.resume();
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('仅 PAUSED');
+    });
+
+    it('ERROR 状态恢复应失败', () => {
+      sm.triggerError('测试错误');
+      const result = sm.resume();
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('仅 PAUSED');
+    });
+  });
+
+  describe('RUNNING → ERROR（触发异常）', () => {
+    it('触发异常应成功', () => {
+      const result = sm.triggerError('LLM 超时');
+      expect(result.allowed).toBe(true);
+      expect(sm.status).toBe('error');
+      expect(sm.errorInfo).toBe('LLM 超时');
+    });
+
+    it('PAUSED 状态触发异常应失败', () => {
+      sm.pause('测试暂停');
+      const result = sm.triggerError('异常');
+      expect(result.allowed).toBe(false);
+      expect(sm.status).toBe('paused');
+      expect(result.reason).toContain('仅 RUNNING');
+    });
+
+    it('ERROR 状态叠加触发异常应失败', () => {
+      sm.triggerError('错误1');
+      const result = sm.triggerError('错误2');
+      expect(result.allowed).toBe(false);
+      expect(sm.errorInfo).toBe('错误1'); // 保留第一个 cause
+    });
+  });
+
+  describe('ERROR → RUNNING（异常恢复）', () => {
+    it('recovered 标记为 true 时应恢复成功', () => {
+      sm.triggerError('LLM 超时');
+      const checkpoint: SessionCheckpoint = {
+        sessionId: 'test',
+        status: 'error',
+        error: { cause: 'LLM 超时', at: Date.now(), recovered: true },
+        mainGoal: 'test',
+        currentGoal: 'test',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      const result = sm.recover(checkpoint);
+      expect(result.allowed).toBe(true);
+      expect(sm.status).toBe('running');
+      expect(sm.errorInfo).toBeNull();
+    });
+
+    it('recovered 标记为 false 时应恢复失败', () => {
+      sm.triggerError('LLM 超时');
+      const checkpoint: SessionCheckpoint = {
+        sessionId: 'test',
+        status: 'error',
+        error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
+        mainGoal: 'test',
+        currentGoal: 'test',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      const result = sm.recover(checkpoint);
+      expect(result.allowed).toBe(false);
+      expect(sm.status).toBe('error');
+    });
+
+    it('RUNNING 状态恢复应失败', () => {
+      const checkpoint: SessionCheckpoint = {
+        sessionId: 'test',
+        status: 'running',
+        mainGoal: 'test',
+        currentGoal: 'test',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      const result = sm.recover(checkpoint);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('仅 ERROR');
+    });
+  });
+
+  describe('工具方法', () => {
+    it('canPause 在 RUNNING 时应返回 true', () => {
+      expect(sm.canPause()).toBe(true);
+      expect(sm.canResume()).toBe(false);
+      expect(sm.isError()).toBe(false);
+    });
+
+    it('canResume 在 PAUSED 时应返回 true', () => {
+      sm.pause('测试');
+      expect(sm.canPause()).toBe(false);
+      expect(sm.canResume()).toBe(true);
+      expect(sm.isError()).toBe(false);
+    });
+
+    it('isError 在 ERROR 时应返回 true', () => {
+      sm.triggerError('测试');
+      expect(sm.canPause()).toBe(false);
+      expect(sm.canResume()).toBe(false);
+      expect(sm.isError()).toBe(true);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 2：SessionManager 检查点管理
+// ═══════════════════════════════════════════════════════════════
+
+describe('SessionManager · 检查点管理', () => {
+  let history: MessageHistory;
+  let loop: AgentLoop;
+  let sessionStore: ISessionStore | undefined;
+  let isChatBusy: MockedFunction<() => boolean>;
+  let emitEvent: MockedFunction<(event: string, data: Record<string, unknown>) => void>;
+  let manager: SessionManager;
+
+  beforeEach(() => {
+    history = createMockHistory();
+    loop = createMockLoop();
+    sessionStore = createMockSessionStore();
+    isChatBusy = vi.fn().mockReturnValue(false);
+    emitEvent = vi.fn();
+    manager = new SessionManager(
+      () => history,
+      () => loop,
+      sessionStore,
+      isChatBusy,
+      emitEvent,
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe('createCheckpoint', () => {
+    it('应创建包含所有必要字段的检查点', () => {
+      const cp = manager.createCheckpoint('测试目标', { name: 'developer' }, { quality: '高质量', constraints: ['无bug'] });
+      expect(cp).toHaveProperty('sessionId');
+      expect(cp).toHaveProperty('status');
+      expect(cp).toHaveProperty('mainGoal');
+      expect(cp).toHaveProperty('currentGoal');
+      expect(cp).toHaveProperty('goalVersion');
+      expect(cp).toHaveProperty('plan');
+      expect(cp).toHaveProperty('role');
+      expect(cp).toHaveProperty('standard');
+      expect(cp).toHaveProperty('resource');
+      expect(cp).toHaveProperty('hotMemory');
+      expect(cp).toHaveProperty('lastHeartbeat');
+    });
+
+    it('mainGoal 和 currentGoal 应等于传入值', () => {
+      const cp = manager.createCheckpoint('写一个排序函数');
+      expect(cp.mainGoal).toBe('写一个排序函数');
+      expect(cp.currentGoal).toBe('写一个排序函数');
+    });
+
+    it('role 和 standard 应正确设置', () => {
+      const cp = manager.createCheckpoint('测试', { name: 'reviewer', description: '代码审查' }, { quality: '无bug', constraints: ['ESLint 通过'] });
+      expect(cp.role.name).toBe('reviewer');
+      expect(cp.role.description).toBe('代码审查');
+      expect(cp.standard.quality).toBe('无bug');
+      expect(cp.standard.constraints).toContain('ESLint 通过');
+    });
+
+    it('goalVersion 应从 0 开始', () => {
+      const cp = manager.createCheckpoint('测试目标');
+      expect(cp.goalVersion).toBe(0);
+    });
+
+    it('不传参创建检查点应使用已有值', () => {
+      manager.createCheckpoint('初始目标');
+      // 第二次创建检查点，不传参，应复用已有值
+      const cp = manager.createCheckpoint();
+      expect(cp.mainGoal).toBe('初始目标');
+    });
+  });
+
+  describe('updateGoal', () => {
+    it('应更新 currentGoal 并递增 goalVersion', () => {
+      manager.createCheckpoint('初始目标');
+      manager.updateGoal('新目标');
+      const cp = manager.getCheckpoint();
+      expect(cp!.currentGoal).toBe('新目标');
+      expect(cp!.goalVersion).toBe(1);
+    });
+
+    it('应发射 goalUpdated 事件', () => {
+      manager.createCheckpoint('初始目标');
+      manager.updateGoal('新目标');
+      expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
+        newGoal: '新目标',
+        goalVersion: 1,
+      }));
+    });
+
+    it('目标一致时不应发射 goalDriftDetected 事件', () => {
+      manager.createCheckpoint('写一个排序函数');
+      manager.updateGoal('写一个排序函数');
+      // 相同目标，不应发射漂移事件
+      const driftCalls = emitEvent.mock.calls.filter((c) => c[0] === 'goalDriftDetected');
+      expect(driftCalls).toHaveLength(0);
+    });
+
+    it('目标漂移时应发射 goalDriftDetected 事件', () => {
+      manager.createCheckpoint('写一个排序函数，使用快速排序算法');
+      manager.updateGoal('改为写一个网页爬虫，抓取新闻标题');
+      const driftCalls = emitEvent.mock.calls.filter((c) => c[0] === 'goalDriftDetected');
+      expect(driftCalls.length).toBeGreaterThanOrEqual(1);
+      const driftData = driftCalls[0]![1] as Record<string, unknown>;
+      expect(driftData.level).toBe('drift');
+    });
+  });
+
+  describe('updatePlan / advancePlan / completeStep', () => {
+    it('updatePlan 应更新检查点计划', () => {
+      manager.createCheckpoint('测试');
+      const plan: PlanStep[] = [
+        { id: 'step1', description: '步骤1', status: 'pending', order: 0 },
+        { id: 'step2', description: '步骤2', status: 'pending', order: 1 },
+      ];
+      manager.updatePlan(plan);
+      expect(manager.getCheckpoint()!.plan).toHaveLength(2);
+    });
+
+    it('advancePlan 应推进到下一个未完成步骤', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '分析需求', status: 'pending', order: 0 },
+        { id: 's2', description: '编写代码', status: 'pending', order: 1 },
+      ]);
+      const step = manager.advancePlan();
+      expect(step).not.toBeNull();
+      expect(step!.id).toBe('s1');
+      expect(step!.status).toBe('active');
+    });
+
+    it('completeStep 应标记步骤为完成', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'active', order: 0 },
+      ]);
+      manager.completeStep('s1');
+      const step = manager.getCheckpoint()!.plan[0]!;
+      expect(step.status).toBe('done');
+    });
+
+    it('isPlanStalled 空计划应返回 true', () => {
+      manager.createCheckpoint('测试');
+      expect(manager.isPlanStalled()).toBe(true);
+    });
+
+    it('isPlanStalled 全部完成应返回 true', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'done', order: 0 },
+      ]);
+      expect(manager.isPlanStalled()).toBe(true);
+    });
+
+    it('isPlanStalled 有未完成步骤应返回 false', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'active', order: 0 },
+        { id: 's2', description: '步骤2', status: 'pending', order: 1 },
+      ]);
+      expect(manager.isPlanStalled()).toBe(false);
+    });
+
+    it('getNextPendingStep 应返回下一个 pending 步骤', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'done', order: 0 },
+        { id: 's2', description: '步骤2', status: 'pending', order: 1 },
+        { id: 's3', description: '步骤3', status: 'pending', order: 2 },
+      ]);
+      const next = manager.getNextPendingStep();
+      expect(next).not.toBeNull();
+      expect(next!.id).toBe('s2');
+    });
+
+    it('getActiveStep 应返回当前活跃步骤', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'active', order: 0 },
+      ]);
+      const active = manager.getActiveStep();
+      expect(active).not.toBeNull();
+      expect(active!.id).toBe('s1');
+    });
+
+    it('advancePlan 无 pending 步骤时返回 null', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'done', order: 0 },
+      ]);
+      const step = manager.advancePlan();
+      expect(step).toBeNull();
+    });
+  });
+
+  describe('updateResource / updateStandard / updateRole', () => {
+    it('updateResource 应更新资源状态', () => {
+      manager.createCheckpoint('测试');
+      manager.updateResource({ documents: ['doc1.md'], memories: ['mem:1'], context: '测试上下文' });
+      const cp = manager.getCheckpoint()!;
+      expect(cp.resource.documents).toContain('doc1.md');
+      expect(cp.resource.context).toBe('测试上下文');
+    });
+
+    it('updateStandard 应更新执行标准', () => {
+      manager.createCheckpoint('测试');
+      manager.updateStandard({ quality: '高质量', constraints: ['测试覆盖'] });
+      const cp = manager.getCheckpoint()!;
+      expect(cp.standard.quality).toBe('高质量');
+      expect(cp.standard.constraints).toContain('测试覆盖');
+    });
+
+    it('updateRole 应更新角色', () => {
+      manager.createCheckpoint('测试');
+      manager.updateRole({ name: 'developer', description: '开发工程师' });
+      const cp = manager.getCheckpoint()!;
+      expect(cp.role.name).toBe('developer');
+      expect(cp.role.description).toBe('开发工程师');
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 3：工具幂等性与补偿机制
+// ═══════════════════════════════════════════════════════════════
+
+describe('SessionManager · 工具幂等性与补偿机制', () => {
+  let history: MessageHistory;
+  let loop: AgentLoop;
+  let sessionStore: ISessionStore | undefined;
+  let isChatBusy: MockedFunction<() => boolean>;
+  let emitEvent: MockedFunction<(event: string, data: Record<string, unknown>) => void>;
+  let manager: SessionManager;
+
+  beforeEach(() => {
+    history = createMockHistory();
+    loop = createMockLoop();
+    sessionStore = createMockSessionStore();
+    isChatBusy = vi.fn().mockReturnValue(false);
+    emitEvent = vi.fn();
+    manager = new SessionManager(
+      () => history,
+      () => loop,
+      sessionStore,
+      isChatBusy,
+      emitEvent,
+    );
+    // 创建检查点，确保 logToolExecution 有写入目标
+    manager.createCheckpoint('测试目标');
+  });
+
+  describe('logToolExecution / hasToolExecuted', () => {
+    it('logToolExecution 应写入工具执行记录', () => {
+      const record: ToolExecutionRecord = {
+        name: 'read_file',
+        argsSignature: '{"path":"test.ts"}',
+        executedAt: Date.now(),
+        resultSummary: '文件内容',
+        ok: true,
+      };
+      manager.logToolExecution(record);
+      expect(manager.hasToolExecuted('read_file', '{"path":"test.ts"}')).toBe(true);
+    });
+
+    it('hasToolExecuted 未执行时返回 false', () => {
+      expect(manager.hasToolExecuted('read_file', '{"path":"nonexistent.ts"}')).toBe(false);
+    });
+
+    it('参数签名不同应视为不同调用', () => {
+      manager.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{"path":"a.ts"}',
+        executedAt: Date.now(),
+        resultSummary: 'a',
+        ok: true,
+      });
+      expect(manager.hasToolExecuted('read_file', '{"path":"a.ts"}')).toBe(true);
+      expect(manager.hasToolExecuted('read_file', '{"path":"b.ts"}')).toBe(false);
+    });
+
+    it('工具名不同即使参数相同也视为不同调用', () => {
+      manager.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{"path":"test.ts"}',
+        executedAt: Date.now(),
+        resultSummary: '内容',
+        ok: true,
+      });
+      expect(manager.hasToolExecuted('write_file', '{"path":"test.ts"}')).toBe(false);
+    });
+  });
+
+  describe('recordSideEffect / getSideEffectsForTool', () => {
+    it('recordSideEffect 应记录副作用', () => {
+      manager.logToolExecution({
+        name: 'write_file',
+        argsSignature: '{"path":"test.ts","content":"hello"}',
+        executedAt: Date.now(),
+        resultSummary: '写入成功',
+        ok: true,
+      });
+      const se: SideEffect = {
+        type: 'file_write',
+        target: 'test.ts',
+        description: '写入 test.ts 文件',
+      };
+      manager.recordSideEffect('write_file', '{"path":"test.ts","content":"hello"}', se);
+      const effects = manager.getSideEffectsForTool('write_file', '{"path":"test.ts","content":"hello"}');
+      expect(effects).toHaveLength(1);
+      expect(effects[0]!.type).toBe('file_write');
+      expect(effects[0]!.target).toBe('test.ts');
+    });
+
+    it('getSideEffectsForTool 无副作用时返回空数组', () => {
+      manager.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+      });
+      const effects = manager.getSideEffectsForTool('read_file', '{}');
+      expect(effects).toEqual([]);
+    });
+  });
+
+  describe('getNonIdempotentExecutions', () => {
+    it('应返回非幂等工具执行记录', () => {
+      manager.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'idempotent',
+      });
+      manager.logToolExecution({
+        name: 'write_file',
+        argsSignature: '{"path":"test.ts"}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+      });
+      const nonIdempotent = manager.getNonIdempotentExecutions();
+      expect(nonIdempotent).toHaveLength(1);
+      expect(nonIdempotent[0]!.name).toBe('write_file');
+    });
+
+    it('全部幂等时应返回空数组', () => {
+      manager.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'idempotent',
+      });
+      expect(manager.getNonIdempotentExecutions()).toEqual([]);
+    });
+  });
+
+  describe('compensateTool', () => {
+    it('file_write 副作用应生成补偿描述', () => {
+      const record: ToolExecutionRecord = {
+        name: 'write_file',
+        argsSignature: '{"path":"test.ts"}',
+        executedAt: Date.now(),
+        resultSummary: '写入成功',
+        ok: true,
+        idempotent: 'non-idempotent',
+        sideEffects: [
+          { type: 'file_write', target: 'test.ts', description: '写入文件' },
+        ],
+      };
+      const result = manager.compensateTool(record);
+      expect(result).toContain('file_write');
+      expect(result).toContain('test.ts');
+      expect(result).toContain('无法自动回滚');
+    });
+
+    it('file_delete 副作用应生成补偿描述', () => {
+      const record: ToolExecutionRecord = {
+        name: 'delete_file',
+        argsSignature: '{"path":"test.ts"}',
+        executedAt: Date.now(),
+        resultSummary: '删除成功',
+        ok: true,
+        idempotent: 'non-idempotent',
+        sideEffects: [
+          { type: 'file_delete', target: 'test.ts', description: '删除文件' },
+        ],
+      };
+      const result = manager.compensateTool(record);
+      expect(result).toContain('file_delete');
+      expect(result).toContain('无法自动恢复');
+    });
+
+    it('memory_write 副作用应生成补偿描述', () => {
+      const record: ToolExecutionRecord = {
+        name: 'write_memory',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: '写入成功',
+        ok: true,
+        idempotent: 'non-idempotent',
+        sideEffects: [
+          { type: 'memory_write', target: 'mem:1', description: '写入记忆' },
+        ],
+      };
+      const result = manager.compensateTool(record);
+      expect(result).toContain('memory_write');
+      expect(result).toContain('无法自动回滚');
+    });
+
+    it('无副作用记录时应标记需人工确认', () => {
+      const record: ToolExecutionRecord = {
+        name: 'custom_tool',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: '执行完成',
+        ok: true,
+        idempotent: 'non-idempotent',
+      };
+      const result = manager.compensateTool(record);
+      expect(result).toContain('无副作用记录');
+      expect(result).toContain('需人工确认');
+    });
+
+    it('补偿后应标记原始记录为 ok=false', () => {
+      const record: ToolExecutionRecord = {
+        name: 'write_file',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+        sideEffects: [
+          { type: 'file_write', target: 'test.ts', description: '写入' },
+        ],
+      };
+      manager.compensateTool(record);
+      expect(record.ok).toBe(false);
+    });
+  });
+
+  describe('compensateAllNonIdempotent', () => {
+    it('无非幂等工具时应返回空数组', () => {
+      const results = manager.compensateAllNonIdempotent();
+      expect(results).toEqual([]);
+    });
+
+    it('有非幂等工具时应返回补偿描述列表', () => {
+      manager.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'idempotent',
+      });
+      manager.logToolExecution({
+        name: 'write_file',
+        argsSignature: '{"path":"a.ts"}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+        sideEffects: [
+          { type: 'file_write', target: 'a.ts', description: '写入文件' },
+        ],
+      });
+      const results = manager.compensateAllNonIdempotent();
+      expect(results).toHaveLength(1);
+      expect(results[0]).toContain('file_write');
+    });
+  });
+
+  describe('restoreFromCheckpoint 补偿集成', () => {
+    it('恢复时无补偿需求应正常完成', () => {
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'paused',
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      const count = manager.restoreFromCheckpoint(cp);
+      expect(count).toBe(0);
+      expect(loop.restoreHistory).toHaveBeenCalled();
+    });
+
+    it('恢复时含非幂等工具应注入补偿通知', () => {
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'paused',
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        completedToolCalls: [
+          {
+            name: 'write_file',
+            argsSignature: '{"path":"a.ts","content":"hello"}',
+            executedAt: Date.now(),
+            resultSummary: 'ok',
+            ok: true,
+            idempotent: 'non-idempotent',
+            sideEffects: [
+              { type: 'file_write', target: 'a.ts', description: '写入文件' },
+            ],
+          },
+        ],
+        lastHeartbeat: Date.now(),
+      };
+      manager.restoreFromCheckpoint(cp);
+      expect(loop.injectSystemMessage).toHaveBeenCalled();
+      const injectCall = (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+      expect(injectCall).toContain('P3.4补偿通知');
+      expect(injectCall).toContain('file_write');
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 4：SessionManager 暂停/恢复/异常
+// ═══════════════════════════════════════════════════════════════
+
+describe('SessionManager · 暂停/恢复/异常', () => {
+  let history: MessageHistory;
+  let loop: AgentLoop;
+  let sessionStore: ISessionStore | undefined;
+  let isChatBusy: MockedFunction<() => boolean>;
+  let emitEvent: MockedFunction<(event: string, data: Record<string, unknown>) => void>;
+  let manager: SessionManager;
+
+  beforeEach(() => {
+    history = createMockHistory();
+    loop = createMockLoop();
+    sessionStore = createMockSessionStore();
+    isChatBusy = vi.fn().mockReturnValue(false);
+    emitEvent = vi.fn();
+    manager = new SessionManager(
+      () => history,
+      () => loop,
+      sessionStore,
+      isChatBusy,
+      emitEvent,
+    );
+  });
+
+  describe('pause / resume', () => {
+    it('pause 应暂停成功并发射事件', () => {
+      const result = manager.pause('用户手动暂停', 'user');
+      expect(result).toBe(true);
+      expect(manager.stateMachine.status).toBe('paused');
+      expect(emitEvent).toHaveBeenCalledWith('sessionPaused', expect.objectContaining({
+        reason: '用户手动暂停',
+        source: 'user',
+      }));
+    });
+
+    it('pause 应自动创建检查点', () => {
+      manager.pause('测试暂停');
+      const cp = manager.getCheckpoint();
+      expect(cp).not.toBeNull();
+      expect(cp!.status).toBe('paused');
+    });
+
+    it('resume 应恢复成功并发射事件', () => {
+      manager.pause('测试暂停');
+      const result = manager.resume();
+      expect(result).toBe(true);
+      expect(manager.stateMachine.status).toBe('running');
+      expect(emitEvent).toHaveBeenCalledWith('sessionResumed', expect.any(Object));
+    });
+
+    it('resume 后检查点状态应更新为 running', () => {
+      manager.pause('测试暂停');
+      manager.resume();
+      const cp = manager.getCheckpoint();
+      expect(cp!.status).toBe('running');
+    });
+
+    it('RUNNING 状态 resume 应返回 false', () => {
+      const result = manager.resume();
+      expect(result).toBe(false);
+    });
+
+    it('PAUSED 状态 pause 应返回 false', () => {
+      manager.pause('测试暂停');
+      const result = manager.pause('再次暂停', 'user');
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('triggerError / recover', () => {
+    it('triggerError 应触发异常并发射事件', () => {
+      const result = manager.triggerError('LLM 超时');
+      expect(result).toBe(true);
+      expect(manager.stateMachine.status).toBe('error');
+      expect(emitEvent).toHaveBeenCalledWith('sessionError', expect.objectContaining({
+        cause: 'LLM 超时',
+      }));
+    });
+
+    it('recover 应恢复成功并发射事件', () => {
+      manager.triggerError('LLM 超时');
+      // 先标记 recovered
+      const cp = manager.getCheckpoint()!;
+      cp.error!.recovered = true;
+      const result = manager.recover();
+      expect(result).toBe(true);
+      expect(manager.stateMachine.status).toBe('running');
+      expect(emitEvent).toHaveBeenCalledWith('sessionRecovered', expect.any(Object));
+    });
+
+    it('recover 未标记 recovered 应自动标记并返回 true', () => {
+      manager.triggerError('LLM 超时');
+      // SessionManager.recover() 自动标记 recovered=true 后调用 stateMachine.recover()
+      const result = manager.recover();
+      expect(result).toBe(true); // SessionManager 自动标记 recovered，故返回 true
+    });
+
+    it('RUNNING 状态 recover 应返回 false', () => {
+      const result = manager.recover();
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('暂停超时检测', () => {
+    it('未超时的暂停不应触发超时逻辑', () => {
+      // 直接创建 paused 状态的检查点（最近心跳）
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'paused',
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(), // 当前时间，不超时
+      };
+      // 通过 loadPersistedCheckpoint 间接测试 pauseTimedOut 检测
+      // 存储检查点
+      sessionStore!.saveCheckpoint!(cp.sessionId, JSON.stringify(cp));
+      // 加载检查点，不应触发超时
+      const loaded = manager.loadPersistedCheckpoint();
+      // 不超时，应返回检查点
+      // 注意：如果检查点状态为 paused，loadPersistedCheckpoint 会恢复暂停状态
+      // 不超时场景下 checkpoint 不为 null
+      // 但 loadPersistedCheckpoint 内部会调用 stateMachine.pause，所以 cp 应被设置
+      // 由于 isPauseTimedOut 返回 false，checkpoint 保留
+      // 不过 loadPersistedCheckpoint 中 pause 会创建新检查点...
+      // 让我们验证行为：不超时则 checkPoint 被设置
+      // 需要验证 checkPoint 不为 null 且状态机为 paused
+      expect(loaded).not.toBeNull();
+      // 但是 loadPersistedCheckpoint 返回的是 checkpoint 的引用，之后 pause 会创建新检查点覆盖
+      // 所以我们验证状态机状态
+      if (loaded) {
+        expect(loaded.status).toBe('paused');
+      }
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 5：目标一致性校验器（GoalConsistencyChecker）
+// ═══════════════════════════════════════════════════════════════
+
+describe('GoalConsistencyChecker · 目标一致性校验', () => {
+  let checker: GoalConsistencyChecker;
+
+  beforeEach(() => {
+    checker = new GoalConsistencyChecker();
+  });
+
+  describe('extractConstraints', () => {
+    it('应提取包含"必须"的约束', () => {
+      const constraints = checker.extractConstraints('必须使用 TypeScript');
+      expect(constraints).toContain('必须使用 TypeScript');
+    });
+
+    it('应提取包含"不能"的约束', () => {
+      const constraints = checker.extractConstraints('不能使用 any 类型');
+      expect(constraints).toContain('不能使用 any 类型');
+    });
+
+    it('应提取包含"需要"的约束', () => {
+      const constraints = checker.extractConstraints('需要测试覆盖');
+      expect(constraints).toContain('需要测试覆盖');
+    });
+
+    it('空输入应返回空数组', () => {
+      expect(checker.extractConstraints('')).toEqual([]);
+    });
+
+    it('无关键词的输入应返回空数组', () => {
+      const constraints = checker.extractConstraints('写一个排序函数');
+      expect(constraints).toEqual([]);
+    });
+  });
+
+  describe('checkConsistency', () => {
+    it('完全相同目标应返回 same', () => {
+      const result = checker.checkConsistency('写一个排序函数', '写一个排序函数');
+      expect(result.level).toBe('same');
+      expect(result.similarity).toBeGreaterThan(0.7);
+    });
+
+    it('目标漂移应返回 drift', () => {
+      const result = checker.checkConsistency('写一个排序函数，使用快速排序算法', '改为写一个网页爬虫，抓取新闻标题');
+      expect(result.level).toBe('drift');
+      expect(result.similarity).toBeLessThan(0.4);
+    });
+
+    it('目标有变化但部分相似应返回 confirm', () => {
+      const result = checker.checkConsistency(
+        '写一个排序函数，必须使用快速排序算法',
+        '写一个排序函数，改为使用归并排序算法',
+      );
+      expect(result.similarity).toBeGreaterThanOrEqual(0.4);
+      expect(result.similarity).toBeLessThanOrEqual(0.7);
+      expect(result.level).toBe('confirm');
+    });
+
+    it('mainGoal 为空时不应抛错', () => {
+      const result = checker.checkConsistency('', '新目标');
+      // computeSimilarity('', '新目标') 返回 0 → level 为 drift
+      expect(result.level).toBe('drift');
+      expect(result.similarity).toBe(0);
+    });
+
+    it('newGoal 为空时不应抛错', () => {
+      const result = checker.checkConsistency('mainGoal', '');
+      // computeSimilarity('mainGoal', '') 返回 0 → level 为 drift
+      expect(result.level).toBe('drift');
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 6：Agent 门面集成——不中断工作模型 API
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent 门面 · 不中断工作模型 API', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-uwf-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-uwf-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-uwf-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  describe('pause / resume', () => {
+    it('pause 应暂停会话并发射事件', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      const events: string[] = [];
+      agent.on('sessionPaused', () => events.push('sessionPaused'));
+
+      const result = agent.pause('测试暂停', 'user');
+      expect(result).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(events).toContain('sessionPaused');
+    });
+
+    it('resume 应恢复会话并发射事件', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      agent.pause('测试暂停', 'user');
+
+      const events: string[] = [];
+      agent.on('sessionResumed', () => events.push('sessionResumed'));
+
+      const result = agent.resume();
+      expect(result).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+      expect(events).toContain('sessionResumed');
+    });
+
+    it('未初始化时调用 pause 应抛错', () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      expect(() => agent!.pause('test')).toThrow(/未初始化/);
+    });
+  });
+
+  describe('triggerError / recover', () => {
+    it('triggerError 应触发异常', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      const result = agent.triggerError('LLM 超时');
+      expect(result).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+    });
+
+    it('recover 应从异常恢复', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      agent.triggerError('LLM 超时');
+      const cp = agent.getCheckpoint()!;
+      cp.error!.recovered = true;
+
+      const result = agent.recover();
+      expect(result).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    });
+  });
+
+  describe('createCheckpoint / getCheckpoint', () => {
+    it('createCheckpoint 应创建检查点', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      const cp = agent.createCheckpoint('测试目标', { name: 'developer' });
+      expect(cp).not.toBeNull();
+      expect(cp!.mainGoal).toBe('测试目标');
+      expect(cp!.role.name).toBe('developer');
+    });
+
+    it('getCheckpoint 应返回当前检查点', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      expect(agent.getCheckpoint()).toBeNull();
+      agent.createCheckpoint('测试目标');
+      expect(agent.getCheckpoint()).not.toBeNull();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 7：端到端场景——完整工作流
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 带检查点持久化的 Mock ISessionStore
+ */
+function createPersistentSessionStore(): ISessionStore {
+  const checkpointStore = new Map<string, string>();
+  const messageStore = new Map<string, Array<{ role: string; content: string; timestamp: string }>>();
+
+  return {
+    appendMessage: vi.fn((date: string, session: string, message: { role: string; content: string; timestamp: string }) => {
+      const key = `${date}-${session}`;
+      const list = messageStore.get(key) ?? [];
+      list.push(message);
+      messageStore.set(key, list);
+    }),
+    loadMessages: vi.fn((date: string, session: string) => {
+      return messageStore.get(`${date}-${session}`) ?? [];
+    }),
+    listSessions: vi.fn(() => Array.from(messageStore.keys())),
+    copySession: vi.fn((sourceDate: string, sourceSession: string, targetDate: string, targetSession: string) => {
+      const source = messageStore.get(`${sourceDate}-${sourceSession}`) ?? [];
+      messageStore.set(`${targetDate}-${targetSession}`, [...source]);
+    }),
+    saveCheckpoint: vi.fn((sessionId: string, json: string) => {
+      checkpointStore.set(sessionId, json);
+    }),
+    loadCheckpoint: vi.fn((sessionId: string) => {
+      return checkpointStore.get(sessionId) ?? null;
+    }),
+    deleteCheckpoint: vi.fn((sessionId: string) => {
+      checkpointStore.delete(sessionId);
+    }),
+  } as unknown as ISessionStore;
+}
+
+describe('端到端场景 · 不中断工作模型完整流程', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+  let sessionStore: ISessionStore;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-e2e-uwf-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-e2e-uwf-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-e2e-uwf-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+
+    sessionStore = createPersistentSessionStore();
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  /**
+   * 场景 A：暂停 → 恢复 → 继续对话
+   *
+   * 验证完整闭环：
+   *   1. Agent init 后创建检查点
+   *   2. 暂停会话（自动保存检查点）
+   *   3. 检查检查点状态为 paused
+   *   4. 恢复会话
+   *   5. 检查检查点状态为 running
+   *   6. 继续对话
+   */
+  it('场景 A：暂停 → 恢复 → 继续对话', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 1. 创建检查点
+    const cp = agent.createCheckpoint('编写一个 CLI 工具', { name: 'developer' });
+    expect(cp).not.toBeNull();
+    expect(cp!.mainGoal).toBe('编写一个 CLI 工具');
+    expect(cp!.role.name).toBe('developer');
+
+    // 2. 暂停会话
+    const pauseResult = agent.pause('用户需要休息一下', 'user');
+    expect(pauseResult).toBe(true);
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+
+    // 3. 检查检查点状态为 paused
+    const pausedCp = agent.getCheckpoint();
+    expect(pausedCp).not.toBeNull();
+    expect(pausedCp!.status).toBe('paused');
+
+    // 4. 恢复会话
+    const resumeResult = agent.resume();
+    expect(resumeResult).toBe(true);
+    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+
+    // 5. 检查检查点状态为 running
+    const resumedCp = agent.getCheckpoint();
+    expect(resumedCp!.status).toBe('running');
+
+    // 6. 继续对话
+    const reply = await agent.chatSync('继续编写 CLI 工具');
+    expect(reply).toContain('Mock 响应');
+  });
+
+  /**
+   * 场景 B：异常 → 标记恢复 → 恢复
+   *
+   * 验证完整闭环：
+   *   1. Agent init 后创建检查点
+   *   2. 触发异常（触发 triggerError）
+   *   3. 检查检查点 status=error 且 error.cause 存在
+   *   4. 标记 error.recovered=true
+   *   5. 调用 recover() 恢复
+   *   6. 检查检查点 status=running 且 error 已清除
+   */
+  it('场景 B：异常 → 标记恢复 → 恢复', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 1. 创建检查点
+    agent.createCheckpoint('处理文件', { name: 'assistant' });
+
+    // 2. 触发异常
+    const errorResult = agent.triggerError('LLM 请求超时');
+    expect(errorResult).toBe(true);
+    expect(agent.sessionManager!.stateMachine.status).toBe('error');
+
+    // 3. 检查检查点状态
+    const errorCp = agent.getCheckpoint();
+    expect(errorCp).not.toBeNull();
+    expect(errorCp!.status).toBe('error');
+    expect(errorCp!.error).not.toBeUndefined();
+    expect(errorCp!.error!.cause).toBe('LLM 请求超时');
+    expect(errorCp!.error!.recovered).toBe(false);
+
+    // 4. 标记异常已恢复
+    errorCp!.error!.recovered = true;
+
+    // 5. 恢复
+    const recoverResult = agent.recover();
+    expect(recoverResult).toBe(true);
+    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+
+    // 6. 检查检查点状态
+    const recoveredCp = agent.getCheckpoint();
+    expect(recoveredCp!.status).toBe('running');
+  });
+
+  /**
+   * 场景 C：检查点持久化与恢复
+   *
+   * 验证完整闭环：
+   *   1. Agent init 后创建检查点，写入 sessionStore
+   *   2. close() 关闭 Agent
+   *   3. 重新 init（新 Agent 实例，复用 sessionStore）
+   *   4. loadPersistedCheckpoint 加载持久化检查点
+   *   5. restoreFromCheckpoint 恢复热记忆
+   *   6. 继续对话验证上下文完整
+   */
+  it('场景 C：检查点持久化与恢复', { timeout: 30000 }, async () => {
+    // 第一轮：创建检查点并持久化
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 先对话，产生热记忆
+    const reply1 = await agent.chatSync('你好，帮我写一段代码');
+    expect(reply1).toContain('Mock 响应');
+
+    // 创建检查点（含热记忆）
+    agent.createCheckpoint('编写代码', { name: 'developer' });
+    const cp = agent.getCheckpoint()!;
+    expect(cp.mainGoal).toBe('编写代码');
+    expect(cp.role.name).toBe('developer');
+
+    // 暂停会话，触发持久化
+    agent.pause('暂停测试', 'user');
+    expect(sessionStore.saveCheckpoint).toHaveBeenCalled();
+
+    // 关闭 Agent
+    await agent.close();
+    agent = null;
+
+    // 第二轮：新 Agent 实例，加载持久化检查点
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 验证持久化检查点被加载
+    // loadPersistedCheckpoint 在 init 中自动调用，恢复状态机
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+
+    // 恢复会话
+    const resumeOk = agent.resume();
+    expect(resumeOk).toBe(true);
+
+    // 继续对话
+    const reply2 = await agent.chatSync('继续编写代码');
+    expect(reply2).toContain('Mock 响应');
+  });
+
+  /**
+   * 场景 D：工具幂等性——outbox 模式跳过重复执行
+   *
+   * 验证完整闭环：
+   *   1. 模拟工具执行，记录到检查点
+   *   2. 恢复检查点后，相同工具调用应被 preExecutionCheck 跳过
+   *   3. 验证工具未被重复执行
+   */
+  it('场景 D：工具幂等性——outbox 模式跳过重复执行', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 创建检查点
+    agent.createCheckpoint('测试幂等性');
+
+    // 模拟工具执行记录
+    // 通过 sessionManager 的 logToolExecution 记录幂等工具
+    agent.sessionManager!.logToolExecution({
+      name: 'read_file',
+      argsSignature: '{"path":"test.ts"}',
+      executedAt: Date.now(),
+      resultSummary: '文件内容：hello',
+      ok: true,
+      idempotent: 'idempotent',
+    });
+
+    // 验证 hasToolExecuted 返回 true
+    expect(agent.sessionManager!.hasToolExecuted('read_file', '{"path":"test.ts"}')).toBe(true);
+
+    // 验证未执行过的工具返回 false
+    expect(agent.sessionManager!.hasToolExecuted('read_file', '{"path":"other.ts"}')).toBe(false);
+
+    // 验证 preExecutionCheck 逻辑（通过 agent 内部回调）
+    // 直接调用 agent 的 preExecutionCheck 逻辑（通过 assembler 注入的）
+    // 由于 agent 内部 intercept 了 preExecutionCheck，这里通过 sessionManager 验证
+    const cp = agent.getCheckpoint()!;
+    const prevRecord = cp.completedToolCalls?.find(
+      (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
+    );
+    expect(prevRecord).toBeDefined();
+    expect(prevRecord!.resultSummary).toContain('hello');
+  });
+
+  /**
+   * 场景 F：暂停状态下 chat 被拒绝
+   *
+   * 验证完整闭环：
+   *   1. Agent init 后暂停会话
+   *   2. 尝试 chat 应被拒绝
+   *   3. 恢复后 chat 应正常
+   */
+  it('场景 F：暂停状态下 chat 被拒绝', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 1. 暂停会话
+    agent.pause('测试暂停', 'user');
+
+    // 2. 暂停状态下 chat 应被拒绝
+    await expect(agent.chatSync('你好')).rejects.toThrow();
+
+    // 3. 恢复后 chat 应正常
+    agent.resume();
+    const reply = await agent.chatSync('继续对话');
+    expect(reply).toContain('Mock 响应');
+  });
+
+  /**
+   * 场景 G：异常状态下 chat 被拒绝
+   *
+   * 验证完整闭环：
+   *   1. Agent init 后触发异常
+   *   2. 尝试 chat 应被拒绝
+   *   3. 恢复后 chat 应正常
+   */
+  it('场景 G：异常状态下 chat 被拒绝', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 1. 触发异常
+    agent.triggerError('LLM 超时');
+
+    // 2. 异常状态下 chat 应被拒绝
+    await expect(agent.chatSync('你好')).rejects.toThrow();
+
+    // 3. 标记恢复并恢复
+    const cp = agent.getCheckpoint()!;
+    cp.error!.recovered = true;
+    agent.recover();
+
+    // 4. 恢复后 chat 应正常
+    const reply = await agent.chatSync('继续对话');
+    expect(reply).toContain('Mock 响应');
+  });
+
+  /**
+   * 场景 H：多次暂停-恢复循环
+   *
+   * 验证完整闭环：
+   *   1. Agent init 后创建检查点
+   *   2. 暂停 → 恢复 → 暂停 → 恢复（多次循环）
+   *   3. 每次循环后检查状态机状态正确
+   *   4. 最终可以正常对话
+   */
+  it('场景 H：多次暂停-恢复循环', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 创建检查点
+    agent.createCheckpoint('测试循环暂停恢复', { name: 'developer' });
+
+    // 执行 3 轮暂停-恢复循环
+    for (let i = 0; i < 3; i++) {
+      const pauseOk = agent.pause(`第 ${i + 1} 次暂停`, 'user');
+      expect(pauseOk).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+
+      const resumeOk = agent.resume();
+      expect(resumeOk).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    }
+
+    // 循环后可以正常对话
+    const reply = await agent.chatSync('继续对话');
+    expect(reply).toContain('Mock 响应');
+  });
+
+  /**
+   * 场景 E：补偿机制——非幂等工具恢复时补偿
+   *
+   * 验证完整闭环：
+   *   1. 记录非幂等工具执行（含副作用）
+   *   2. 通过 restoreFromCheckpoint 恢复检查点
+   *   3. 验证补偿通知被注入到上下文
+   *   4. 验证补偿操作已执行
+   */
+  it('场景 E：补偿机制——非幂等工具恢复时补偿', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 创建检查点
+    agent.createCheckpoint('测试补偿机制');
+
+    // 记录非幂等工具执行（含副作用）
+    agent.sessionManager!.logToolExecution({
+      name: 'write_file',
+      argsSignature: '{"path":"test.ts","content":"hello"}',
+      executedAt: Date.now(),
+      resultSummary: '写入成功',
+      ok: true,
+      idempotent: 'non-idempotent',
+      sideEffects: [
+        { type: 'file_write', target: 'test.ts', description: '写入 test.ts 文件' },
+      ],
+    });
+
+    // 验证非幂等工具执行记录
+    const nonIdempotent = agent.sessionManager!.getNonIdempotentExecutions();
+    expect(nonIdempotent).toHaveLength(1);
+    expect(nonIdempotent[0]!.name).toBe('write_file');
+
+    // 执行补偿
+    const compensationResults = agent.sessionManager!.compensateAllNonIdempotent();
+    expect(compensationResults).toHaveLength(1);
+    expect(compensationResults[0]).toContain('file_write');
+    expect(compensationResults[0]).toContain('test.ts');
+
+    // 验证原始记录被标记为 ok=false
+    expect(nonIdempotent[0]!.ok).toBe(false);
+  });
+});

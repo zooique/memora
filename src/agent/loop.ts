@@ -103,6 +103,32 @@ export interface AgentLoopOptions {
    * @param detail - 事件详情（如 pause reason、error cause）
    */
   onSessionEvent?: (eventType: SessionEvent['type'], detail: string) => void;
+  /**
+   * 工具执行完成回调（P3.3 执行计划管理·工具幂等）
+   *
+   * 每次工具执行完成后调用，供上层记录工具执行日志。
+   * 用于 outbox 模式：恢复时检查工具是否已执行过，避免重复执行。
+   * 未注入时静默忽略，保持向后兼容。
+   *
+   * @param name - 工具名称
+   * @param args - 工具参数 JSON 字符串
+   * @param result - 工具执行结果
+   * @param ok - 是否成功
+   */
+  onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
+  /**
+   * 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
+   *
+   * 每次工具执行前调用，检查该工具是否已在当前会话中执行过。
+   * 用于 outbox 模式：恢复时避免重复执行已完成的幂等工具。
+   * 返回 { skip: true, previousResult } 时跳过执行，直接返回已有结果。
+   * 未注入时正常执行，保持向后兼容。
+   *
+   * @param name - 工具名称
+   * @param args - 工具参数 JSON 字符串
+   * @returns 是否跳过执行及之前的结果
+   */
+  preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -914,9 +940,27 @@ export class AgentLoop {
     });
 
     try {
+      // ── P3.4 仅一次语义：执行前检查是否已执行过 ──────────
+      // 若检查回调返回 skip=true，跳过执行直接返回已有结果
+      // 避免恢复时重复执行已完成的幂等工具
+      const preCheck = this.opts.preExecutionCheck?.(tc.function.name, tc.function.arguments);
+      if (preCheck?.skip) {
+        const previousResult = preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
+        logger.debug(
+          { tool: tc.function.name, argsSignature: tc.function.arguments.slice(0, 80) },
+          '工具已执行，跳过（仅一次语义）',
+        );
+        toolSpan.setAttribute('skipped', true);
+        return previousResult;
+      }
+
       // 工具执行包裹 signal 中断，避免 abort 无法中断卡住的 generator
       // raceToolWithSignal 天然兼容并发：每个调用独立 race，{ once: true } 监听器无副作用
-      return await this.raceToolWithSignal(tc.function.name, tc.function.arguments, signal);
+      const result = await this.raceToolWithSignal(tc.function.name, tc.function.arguments, signal);
+      // 通知上层工具执行完成（P3.3 工具幂等 outbox 模式）
+      const ok = !result.startsWith('[ERR');
+      this.opts.onToolExecuted?.(tc.function.name, tc.function.arguments, result, ok);
+      return result;
     } catch (err) {
       // 工具执行可能因文件不存在、路径越界等原因失败
       // 捕获异常并转为结构化错误结果字符串，回传给 LLM 让其自行调整策略
@@ -930,10 +974,14 @@ export class AgentLoop {
           { tool: tc.function.name, errorCode: code, title: err.title },
           '工具执行失败，错误已回传给 LLM',
         );
+        // 通知上层工具执行失败
+        this.opts.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
         return result;
       } else {
         const result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
         logger.error({ tool: tc.function.name, err }, '工具执行异常');
+        // 通知上层工具执行异常
+        this.opts.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
         return result;
       }
     } finally {

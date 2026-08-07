@@ -1,9 +1,10 @@
 /**
- * 内置工具定义
+ * 内置工具定义 + 工具幂等契约（P3.4 补偿机制）
  *
  * 工具定义（schema/参数描述）与工具执行逻辑分离：
  * - 本文件只包含工具的"声明"（名称、描述、参数 schema）
  * - 工具的"执行"逻辑留在 toolExecutor.ts
+ * - 工具的幂等性映射（P3.4）在此定义，供补偿机制判断使用
  */
 
 /**
@@ -21,6 +22,40 @@ export interface ToolDefinition {
     required: string[];
   };
 }
+
+// ─── 工具幂等性映射（P3.4 补偿机制） ────────────────────────
+//
+// 幂等性定义：
+//   - idempotent：天然幂等（读操作），相同参数多次执行结果一致
+//   - idempotent-key：依赖业务唯一键实现幂等（写操作）
+//   - non-idempotent：非幂等，需补偿机制兜底
+//
+// 内置工具幂等性判断：
+//   - read_file / list_dir：读操作，天然幂等 ✅
+//   - search_memories：读操作，天然幂等 ✅
+//   - write_file（overwrite 模式）：全量覆盖，重复执行结果一致 ✅
+//   - write_file（append 模式）：追加写入，重复执行会追加多次 ❌
+//   - write_file（insert 模式）：行插入，重复执行会插入多次 ❌
+//
+// 注：write_file 的幂等性依赖于写入模式——overwrite 模式幂等，
+// append/insert 模式非幂等。当前统一标记为 'idempotent-key'，
+// 因 overwrite 是最常用模式，append/insert 的补偿应在调用方保证。
+// ──────────────────────────────────────────────────────────
+
+import type { IdempotencyLevel } from '@/agent/types.js';
+
+/**
+ * 内置工具幂等性映射
+ *
+ * key 为工具名，value 为幂等性级别。
+ * 供补偿机制和仅一次语义检查使用。
+ */
+export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
+  read_file: 'idempotent',
+  write_file: 'idempotent-key',
+  list_dir: 'idempotent',
+  search_memories: 'idempotent',
+};
 
 /**
  * 工具注册表

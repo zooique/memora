@@ -271,6 +271,59 @@ export interface PlanStep {
 }
 
 /**
+ * 工具幂等性级别（P3.4 补偿机制·工具幂等契约）
+ *
+ * 标记工具是否具有幂等性，以及幂等性的保证级别。
+ * - idempotent：天然幂等（读操作），相同参数多次执行结果一致
+ * - idempotent-key：依赖业务唯一键实现幂等（写操作，如 create_xxx 带唯一键）
+ * - non-idempotent：非幂等（如 append 模式写入），需补偿机制兜底
+ */
+export type IdempotencyLevel = 'idempotent' | 'idempotent-key' | 'non-idempotent';
+
+/**
+ * 工具副作用（P3.4 补偿机制·副作用日志）
+ *
+ * 描述一次工具执行对系统产生的副作用，用于恢复时补偿。
+ * 补偿动作：撤销副作用（如文件回滚、记忆删除），恢复系统到执行前的状态。
+ */
+export interface SideEffect {
+  /** 副作用类型 */
+  type: 'file_write' | 'file_create' | 'file_delete' | 'memory_write' | 'custom';
+  /** 受影响的目标标识（如文件路径、记忆 ID） */
+  target: string;
+  /** 操作前的状态（用于补偿恢复，如写入前的文件内容） */
+  before?: string;
+  /** 操作后的状态（如写入后的文件内容摘要） */
+  after?: string;
+  /** 副作用描述 */
+  description: string;
+}
+
+/**
+ * 工具执行记录（P3.3 执行计划管理·工具幂等 + P3.4 补偿机制）
+ *
+ * 记录已执行的工具调用，用于恢复时检查 outbox 模式。
+ * 以工具名称 + 参数签名作为唯一标识，避免重复执行。
+ * 扩展：记录副作用和幂等性级别，支持恢复时补偿。
+ */
+export interface ToolExecutionRecord {
+  /** 工具名称 */
+  name: string;
+  /** 参数签名（JSON 字符串化后的参数，用于精确匹配） */
+  argsSignature: string;
+  /** 执行时间戳 */
+  executedAt: number;
+  /** 执行结果摘要（前 100 字符） */
+  resultSummary: string;
+  /** 是否成功 */
+  ok: boolean;
+  /** 工具幂等性级别（P3.4，标注时供恢复时判断是否需要补偿） */
+  idempotent?: IdempotencyLevel;
+  /** 副作用列表（P3.4，非幂等工具执行后记录，用于恢复时补偿） */
+  sideEffects?: SideEffect[];
+}
+
+/**
  * 热记忆中的聊天消息
  *
  * 结构对齐 LLM Message 类型，用于会话检查点中存储截断后的热记忆窗口。
@@ -391,6 +444,8 @@ export interface SessionCheckpoint {
    * 0 或 undefined 表示未发生截断。
    */
   truncatedCount?: number;
+  /** 工具执行日志（P3.3 执行计划管理·工具幂等，outbox 模式） */
+  completedToolCalls?: ToolExecutionRecord[];
   /** 心跳时间戳（毫秒），防僵尸会话 */
   lastHeartbeat: number;
 }

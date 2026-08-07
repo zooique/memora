@@ -15,7 +15,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { BUILTIN_TOOLS, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
-export { BUILTIN_TOOLS } from '@/agent/builtinTools.js';
+export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
 type ToolResult = string;

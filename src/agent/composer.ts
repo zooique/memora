@@ -38,6 +38,16 @@ export interface ComposeResult {
   needClarify?: ClarifyQuestion[];
 }
 
+/** 计划上下文（P3.3 执行计划管理） */
+export interface PlanContext {
+  /** 计划是否停滞（所有步骤已完成/阻塞，或空计划） */
+  stalled: boolean;
+  /** 当前活跃步骤描述（有活跃步骤时） */
+  activeStep?: string;
+  /** 下一个待处理步骤描述（有 pending 步骤时） */
+  pendingStep?: string;
+}
+
 /** 系统内置默认值 */
 const SYSTEM_DEFAULTS = {
   /** 默认角色 */
@@ -61,11 +71,16 @@ export class Composer {
    * 对每个槽位独立执行补全链，返回完整 ResolvedDelta。
    * 若有槽位无法补全（到达 P4），返回 needClarify 并暂停。
    *
+   * 计划停滞感知（P3.3）：当 planCtx.stalled 为 true 时，
+   * 任务槽跳过 P2 记忆推断，直接降级 P4 暂停询问，
+   * 避免在计划已完成时盲目延续 currentGoal。
+   *
    * @param event - 增量事件（含用户输入和可选 delta）
    * @param checkpoint - 当前会话检查点（含历史状态）
+   * @param planCtx - 可选的计划上下文（P3.3 执行计划管理）
    * @returns 补全结果
    */
-  compose(event: SessionEvent, checkpoint: SessionCheckpoint): ComposeResult {
+  compose(event: SessionEvent, checkpoint: SessionCheckpoint, planCtx?: PlanContext): ComposeResult {
     const needClarify: ClarifyQuestion[] = [];
 
     // 每个槽位独立走补全链
@@ -77,13 +92,18 @@ export class Composer {
       needClarify,
     );
 
-    const taskSlot = this.resolveSlot(
-      'task',
-      event.delta?.task,
-      checkpoint.currentGoal,
-      '',
-      needClarify,
-    );
+    // 任务槽：计划停滞时跳过 P2，直接走 P4 澄清
+    // 场景：计划已完成/阻塞，用户未明确指定新任务时，
+    // 不应盲目延续 currentGoal，而应询问用户下一步方向
+    const taskSlot = planCtx?.stalled
+      ? this.resolveStalledTaskSlot(checkpoint.currentGoal, needClarify, planCtx)
+      : this.resolveSlot(
+          'task',
+          event.delta?.task,
+          checkpoint.currentGoal,
+          '',
+          needClarify,
+        );
 
     const standardSlot = this.resolveSlot(
       'standard',
@@ -243,6 +263,46 @@ export class Composer {
     if (typeof value === 'string') return value.trim() === '';
     if (Array.isArray(value)) return value.length === 0;
     return false;
+  }
+
+  /**
+   * 解析停滞状态下的任务槽（P3.3 执行计划管理）
+   *
+   * 当计划停滞时，任务槽跳过 P2 记忆推断，直接生成 P4 澄清问题。
+   * 问题包含当前活跃步骤和待处理步骤信息，辅助用户决策。
+   * 仅当 event.delta.task 未提供（无显式任务指定）时触发。
+   *
+   * @param currentGoal - 检查点当前目标（用于兜底）
+   * @param needClarify - 澄清问题收集数组
+   * @param planCtx - 计划上下文
+   * @returns 补全结果（P4 级别）
+   */
+  private resolveStalledTaskSlot(
+    currentGoal: string,
+    needClarify: ClarifyQuestion[],
+    planCtx: PlanContext,
+  ): { value: string; source: CompletionLevel } {
+    // 构建包含上下文信息的澄清问题
+    const contextParts: string[] = [];
+    if (planCtx.activeStep) {
+      contextParts.push(`当前步骤：${planCtx.activeStep}`);
+    }
+    if (planCtx.pendingStep) {
+      contextParts.push(`待处理：${planCtx.pendingStep}`);
+    }
+
+    const contextHint = contextParts.length > 0
+      ? `（${contextParts.join('；')}）`
+      : '';
+    const question = `所有计划步骤已完成${contextHint}，请指示下一步方向`;
+
+    needClarify.push({
+      slot: 'task',
+      question,
+    });
+
+    // 返回 currentGoal 作为占位值，调用方检查 needClarify 后暂停
+    return { value: currentGoal, source: 'P4-clarify' };
   }
 
   /**

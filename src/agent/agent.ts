@@ -25,9 +25,10 @@
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
-import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard } from '@/agent/types.js';
-import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
-import { Composer } from '@/agent/composer.js';
+import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard, IdempotencyLevel } from '@/agent/types.js';
+import type { SessionEvent, SessionCheckpoint, ResolvedDelta, ToolExecutionRecord } from '@/agent/types.js';
+import { BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
+import { Composer, type PlanContext } from '@/agent/composer.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
@@ -176,6 +177,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 用 Set 而非数组：同一 source 多次请求只需补执行一次（去重）。
    */
   private pendingConfigReload = new Set<string>();
+  /**
+   * 工具执行暂存队列（P3.3 工具幂等 outbox 模式）
+   *
+   * 因 assembler 中 loop 先于 sessionManager 创建，
+   * 工具执行完成回调无法立即写入 sessionManager。
+   * 暂存于此，待 assembleComponents 完成后的 flush 阶段统一写入。
+   */
+  private _pendingToolExecutions: ToolExecutionRecord[] = [];
 
   // ─── 衰减职责已拆分至 MemoryDecayScheduler ──────────
   // metricDecayRunCount / metricTotalDecayedCount / metricLastDecayAt 字段
@@ -364,6 +373,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
     this.validateChatInput(input);
+
+    // 不中断工作模型：暂停/异常状态下拒绝新的对话，防止状态不一致
+    const sm = this._sessionManager;
+    if (sm) {
+      const status = sm.stateMachine.status;
+      if (status === 'paused') {
+        throw configError('会话已暂停', '会话处于暂停状态，无法接收新消息', ['先调用 agent.resume() 恢复会话']);
+      }
+      if (status === 'error') {
+        throw configError('会话异常', '会话处于异常状态，无法接收新消息', ['先标记 error.recovered=true 并调用 agent.recover()']);
+      }
+    }
 
     const lockCtx = this.acquireChatLock(signal);
     const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
@@ -791,7 +812,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 四级补全：将 SessionEvent.delta 与当前检查点融合
       const checkpoint = this._sessionManager?.getCheckpoint();
       if (checkpoint && this.composer) {
-        const composeResult = this.composer.compose(event, checkpoint);
+        // 收集计划上下文（P3.3 执行计划管理）
+        const sm = this._sessionManager!;
+        const planCtx: PlanContext | undefined = checkpoint.plan.length > 0
+          ? {
+              stalled: sm.isPlanStalled(),
+              activeStep: sm.getActiveStep()?.description,
+              pendingStep: sm.getNextPendingStep()?.description,
+            }
+          : undefined;
+
+        const composeResult = this.composer.compose(event, checkpoint, planCtx);
 
         // 若有 P4 澄清问题，暂停并等待用户回答
         if (composeResult.needClarify && composeResult.needClarify.length > 0) {
@@ -813,6 +844,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 将 Composer 的增量解析结果写入 SessionManager 检查点，
         // 实现「增量事件 → 槽位级更新」的闭环
         this.applyResolvedDelta(composeResult.resolved);
+
+        // P3.3: 执行计划推进——当计划未停滞时，推进到下一个未完成步骤
+        // 并将当前步骤描述注入 LLM 上下文，让 LLM 感知当前执行位置
+        if (!planCtx?.stalled && event.type === 'chat') {
+          const advancedStep = sm.advancePlan();
+          if (advancedStep) {
+            // 注入当前步骤描述到 LLM 上下文，作为 system 消息
+            // 让 LLM 感知当前执行位置，聚焦于完成当前步骤
+            try {
+              this.requireLoop.injectSystemMessage(
+                `[当前执行步骤] ${advancedStep.description}（步骤 ${advancedStep.order + 1}/${checkpoint.plan.length}）`,
+              );
+            } catch (err) {
+              logger.warn({ err }, '计划步骤注入上下文失败');
+            }
+          }
+        }
       }
 
       // P1: 意图分类防污染——非 chat 事件不写 chat 历史
@@ -1340,6 +1388,46 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       onSessionEvent: (eventType, detail) => {
         this.handleSessionEvent(eventType, detail);
       },
+      // 工具执行完成回调（P3.3 工具幂等 outbox 模式 + P3.4 补偿机制）
+      // 记录已执行的工具调用到会话检查点，供恢复时检查重复执行
+      // 同时记录工具的幂等性级别，供补偿机制识别非幂等操作
+      onToolExecuted: (name, args, toolResult, ok) => {
+        // 查找工具的幂等性级别（内置工具查映射表，自定义工具默认非幂等）
+        const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
+        const record: ToolExecutionRecord = {
+          name,
+          argsSignature: args,
+          executedAt: Date.now(),
+          resultSummary: toolResult.slice(0, 100),
+          ok,
+          idempotent,
+        };
+        // 会话管理器可能尚未创建（assembler 中 loop 先于 sessionManager 创建）
+        // 暂存到队列，待 sessionManager 创建后统一写入
+        this._pendingToolExecutions.push(record);
+        // 若 sessionManager 已就绪，立即写入
+        this._sessionManager?.logToolExecution(record);
+      },
+      // 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
+      // 检查工具是否已在当前会话的检查点中执行过
+      // 仅对幂等工具生效（idempotent / idempotent-key），非幂等工具不跳过
+      preExecutionCheck: (name, args) => {
+        const sm = this._sessionManager;
+        if (!sm) return { skip: false };
+        const hasExecuted = sm.hasToolExecuted(name, args);
+        if (!hasExecuted) return { skip: false };
+        // 获取上次执行结果
+        const cp = sm.getCheckpoint();
+        const prevRecord = cp?.completedToolCalls?.find(
+          (r) => r.name === name && r.argsSignature === args,
+        );
+        return {
+          skip: true,
+          previousResult: prevRecord?.resultSummary
+            ? `[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过），上次结果：${prevRecord.resultSummary}`
+            : undefined,
+        };
+      },
     });
 
     this.history = result.history;
@@ -1368,6 +1456,28 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     // 创建会话管理器（提取 createSessionManager 辅助方法，消除重复）
     this._sessionManager = this.createSessionManager();
+    // 冲洗工具执行暂存队列：会话管理器已就绪，将暂存的执行记录写入检查点
+    this._flushPendingToolExecutions();
+  }
+
+  /**
+   * 冲洗工具执行暂存队列（P3.3 工具幂等 outbox 模式）
+   *
+   * 将 assembler 期间暂存的工具执行记录写入会话管理器检查点。
+   * 适用于首次组装和重建两种场景。
+   */
+  private _flushPendingToolExecutions(): void {
+    if (this._pendingToolExecutions.length === 0) return;
+    const sm = this._sessionManager;
+    if (!sm) {
+      logger.warn({ pending: this._pendingToolExecutions.length }, '冲洗工具执行队列失败：会话管理器未就绪');
+      return;
+    }
+    for (const record of this._pendingToolExecutions) {
+      sm.logToolExecution(record);
+    }
+    this._pendingToolExecutions = [];
+    logger.debug('工具执行暂存队列冲洗完成');
   }
 
   /**

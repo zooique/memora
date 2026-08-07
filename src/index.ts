@@ -43,6 +43,7 @@ export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode, RecalledMemory
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';
+export type { IdempotencyLevel, SideEffect, ToolExecutionRecord } from '@/agent/types.js';
 export type { PersonaMode, Persona } from '@/persona/types.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';

@@ -34,6 +34,15 @@ export const AGENT_EVENTS = {
   sessionPauseTimedOut: 'sessionPauseTimedOut',
   sessionResumeBlocked: 'sessionResumeBlocked',
   needClarify: 'needClarify',
+  goalDriftDetected: 'goalDriftDetected',
+  /** 会话暂停（用户/Agent/系统触发） */
+  sessionPaused: 'sessionPaused',
+  /** 会话恢复（暂停后恢复） */
+  sessionResumed: 'sessionResumed',
+  /** 会话异常（LLM 超时等） */
+  sessionError: 'sessionError',
+  /** 会话从异常恢复 */
+  sessionRecovered: 'sessionRecovered',
 } as const;
 
 /** 事件名联合类型（由 AGENT_EVENTS 推导，单一真理源，新增事件只需在此对象加一项） */
@@ -146,6 +155,54 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 默认选项（可选） */
     options?: string[];
   }[];
+  /**
+   * 目标漂移检测结果（P3.1 目标版本一致性校验）
+   *
+   * 当用户通过 correction 事件更新目标时，若检测到新目标与原始目标（mainGoal）
+   * 之间的差异超过阈值，发射此事件通知宿主 UI 展示确认提示。
+   */
+  goalDriftDetected: {
+    /** 会话标识 */
+    sessionId: string;
+    /** 原始目标（防漂移锚点） */
+    mainGoal: string;
+    /** 用户提出的新目标 */
+    newGoal: string;
+    /** 文本相似度（0-1） */
+    similarity: number;
+    /** 漂移等级 */
+    level: 'same' | 'confirm' | 'drift';
+    /** 关键约束列表 */
+    constraints: string[];
+    /** 当前目标版本号 */
+    goalVersion: number;
+  };
+  /** 会话暂停 */
+  sessionPaused: {
+    /** 暂停原因 */
+    reason: string;
+    /** 暂停来源 */
+    source: string;
+    /** 会话标识 */
+    sessionId?: string;
+  };
+  /** 会话恢复 */
+  sessionResumed: {
+    /** 会话标识 */
+    sessionId?: string;
+  };
+  /** 会话异常 */
+  sessionError: {
+    /** 异常原因 */
+    cause: string;
+    /** 会话标识 */
+    sessionId?: string;
+  };
+  /** 会话从异常恢复 */
+  sessionRecovered: {
+    /** 会话标识 */
+    sessionId?: string;
+  };
 }
 
 // AgentEventName 已由上方 AGENT_EVENTS 推导（单一真理源）
