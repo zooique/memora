@@ -26,6 +26,15 @@ const CREATE_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS idx_sessions_date_session ON sessions(date, session);
 `;
 
+/** 建表 SQL（检查点表） */
+const CREATE_CHECKPOINT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS checkpoints (
+  sessionId TEXT PRIMARY KEY,
+  checkpoint TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+`;
+
 /**
  * better-sqlite3 实现的 ISessionStore
  */
@@ -36,6 +45,7 @@ export class SqliteSessionStore implements ISessionStore {
     this.db = db;
     this.db.exec(CREATE_TABLE_SQL);
     this.db.exec(CREATE_INDEX_SQL);
+    this.db.exec(CREATE_CHECKPOINT_TABLE_SQL);
   }
 
   /**
@@ -353,6 +363,48 @@ export class SqliteSessionStore implements ISessionStore {
       preview: truncate(row.firstUserContent ?? '', MAX_PREVIEW_LENGTH),
       messageCount: row.messageCount,
     }));
+  }
+
+  // ─── 检查点持久化（P0-2：会话状态持久化） ────────────────
+
+  /**
+   * 保存会话检查点（ISessionStore 接口实现）
+   *
+   * 覆盖保存：同 sessionId 的检查点将被覆写。
+   * 使用 INSERT OR REPLACE 实现幂等写入。
+   *
+   * @param sessionId 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @param checkpoint 检查点 JSON 字符串
+   */
+  saveCheckpoint(sessionId: string, checkpoint: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare(
+      'INSERT OR REPLACE INTO checkpoints (sessionId, checkpoint, updatedAt) VALUES (?, ?, ?)'
+    ).run(sessionId, checkpoint, now);
+  }
+
+  /**
+   * 加载会话检查点（ISessionStore 接口实现）
+   *
+   * @param sessionId 会话标识
+   * @returns 检查点 JSON 字符串，不存在时返回 null
+   */
+  loadCheckpoint(sessionId: string): string | null {
+    const row = this.db.prepare(
+      'SELECT checkpoint FROM checkpoints WHERE sessionId = ?'
+    ).get(sessionId) as { checkpoint: string } | undefined;
+    return row?.checkpoint ?? null;
+  }
+
+  /**
+   * 删除会话检查点（ISessionStore 接口实现）
+   *
+   * 会话完成或关闭时清理持久化的检查点。
+   *
+   * @param sessionId 会话标识
+   */
+  deleteCheckpoint(sessionId: string): void {
+    this.db.prepare('DELETE FROM checkpoints WHERE sessionId = ?').run(sessionId);
   }
 
   /**

@@ -21,6 +21,7 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type {
   SessionCheckpoint,
   ChatMessage,
@@ -67,6 +68,14 @@ export class SessionManager {
   readonly stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
+
+  /**
+   * 暂停超时会话信息（P0-3：暂停超时自动归档）
+   *
+   * loadPersistedCheckpoint 检测到暂停超时后填充此字段，
+   * 供 Agent.init() 在后续流程中触发内容归档。
+   */
+  _pauseTimedOutSession: { sessionId: string; date: string; session: string } | null = null;
 
   constructor(
     getHistory: () => MessageHistory,
@@ -269,7 +278,7 @@ export class SessionManager {
    * 从当前运行时状态创建检查点
    *
    * 快照当前 AgentLoop 的消息历史、会话标识等运行时状态，
-   * 生成可序列化的 SessionCheckpoint。
+   * 生成可序列化的 SessionCheckpoint。同时持久化到存储层。
    *
    * @param mainGoal - 原始目标（首次创建时必填，后续调用可选）
    * @param role - 当前角色
@@ -311,7 +320,94 @@ export class SessionManager {
       lastHeartbeat: Date.now(),
     };
 
+    // 持久化检查点到存储层（P0-2：会话状态持久化）
+    this.persistCheckpoint();
+
     return this.checkpoint;
+  }
+
+  /**
+   * 持久化当前检查点到存储层
+   *
+   * 将检查点序列化为 JSON 字符串，写入 ISessionStore。
+   * 存储层不存在时静默跳过（降级为内存模式）。
+   */
+  private persistCheckpoint(): void {
+    if (!this.checkpoint || !this.sessionStore?.saveCheckpoint) return;
+    try {
+      const json = JSON.stringify(this.checkpoint);
+      this.sessionStore.saveCheckpoint(this.checkpoint.sessionId, json);
+    } catch (err) {
+      logger.warn({ err }, '检查点持久化失败（降级为内存模式，不影响会话运行）');
+    }
+  }
+
+  /**
+   * 加载持久化的检查点
+   *
+   * 从 ISessionStore 中加载最近会话的检查点，恢复到运行时状态。
+   * 用于 Agent 重启后恢复暂停/异常中的会话。
+   *
+   * @returns 加载的检查点，不存在时返回 null
+   */
+  loadPersistedCheckpoint(): SessionCheckpoint | null {
+    if (!this.sessionStore?.loadCheckpoint) return null;
+
+    try {
+      const history = this.getHistory();
+      const sessionId = history.currentSessionName;
+
+      const json = this.sessionStore.loadCheckpoint(sessionId);
+      if (!json) return null;
+
+      const checkpoint = JSON.parse(json) as SessionCheckpoint;
+      this.checkpoint = checkpoint;
+
+      // P0-3：暂停超时检测——超时会话自动清理检查点，不恢复暂停状态
+      if (this.isPauseTimedOut(checkpoint)) {
+        const pauseDuration = Date.now() - checkpoint.lastHeartbeat;
+        logger.warn(
+          { sessionId, pauseDuration, status: checkpoint.status },
+          '暂停超时，自动清理检查点（会话将继续，但不会恢复暂停状态）',
+        );
+
+        // 清理检查点：从存储层删除，防止下次 init 重复加载
+        this.sessionStore.deleteCheckpoint?.(sessionId);
+
+        // 重置运行时状态：不恢复暂停状态，状态机保持运行中
+        this.checkpoint = null;
+
+        // 记录超时会话信息，供 Agent.init() 在后续流程触发内容归档
+        const sessionParts = sessionId.split('-');
+        if (sessionParts.length >= 4) {
+          const date = sessionParts.slice(0, 3).join('-');
+          const session = sessionParts.slice(3).join('-');
+          this._pauseTimedOutSession = { sessionId, date, session };
+        }
+
+        // 发射事件，供宿主 UI 通知用户
+        this.emitEvent('sessionPauseTimedOut', { sessionId, pauseDuration });
+
+        return null;
+      }
+
+      // 恢复状态机状态
+      if (checkpoint.status === 'paused') {
+        this.stateMachine.pause('从持久化检查点恢复', 'system');
+      } else if (checkpoint.status === 'error' && checkpoint.error) {
+        this.stateMachine.triggerError(checkpoint.error.cause);
+      }
+      // running 状态不需要额外操作
+
+      logger.info(
+        { sessionId, status: checkpoint.status },
+        '已从持久化存储加载会话检查点',
+      );
+      return checkpoint;
+    } catch (err) {
+      logger.warn({ err }, '加载持久化检查点失败（降级为内存模式）');
+      return null;
+    }
   }
 
   /**
@@ -403,12 +499,26 @@ export class SessionManager {
    * @returns 是否恢复成功
    */
   resume(): boolean {
+    // P0-3：暂停超时阻止恢复——超时会话需要重新开始，不能恢复
+    if (this.checkpoint && this.isPauseTimedOut(this.checkpoint)) {
+      logger.warn(
+        { sessionId: this.checkpoint.sessionId },
+        '暂停超时，无法恢复会话（请重新开始）',
+      );
+      this.emitEvent('sessionResumeBlocked', {
+        sessionId: this.checkpoint.sessionId,
+        reason: 'pause_timed_out',
+      });
+      return false;
+    }
+
     const result = this.stateMachine.resume();
     if (result.allowed) {
-      // 更新检查点心跳
+      // 更新检查点心跳并持久化（P0-2：会话状态持久化）
       if (this.checkpoint) {
         this.checkpoint.lastHeartbeat = Date.now();
         this.checkpoint.status = 'running';
+        this.persistCheckpoint();
       }
       this.emitEvent('sessionResumed', {
         sessionId: this.checkpoint?.sessionId,
@@ -527,12 +637,52 @@ export class SessionManager {
   }
 
   /**
+   * 更新检查点执行标准（P1 增量解析）
+   *
+   * 标准变更时更新检查点，并递增心跳标识状态活性。
+   *
+   * @param standard - 新的执行标准
+   */
+  updateStandard(standard: Standard): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.standard = standard;
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 更新检查点角色（P1 增量解析）
+   *
+   * 角色变更时更新检查点，并递增心跳标识状态活性。
+   *
+   * @param role - 新角色
+   */
+  updateRole(role: Role): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.role = role;
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
    * 发送心跳，防僵尸会话
    */
   heartbeat(): void {
     if (this.checkpoint) {
       this.checkpoint.lastHeartbeat = Date.now();
     }
+  }
+
+  /**
+   * 检查暂停是否超时（P0-3：暂停超时自动归档）
+   *
+   * 仅对 paused 状态检查：当前时间距 lastHeartbeat 超过 PAUSE_TIMEOUT_MS 视为超时。
+   * 超时的暂停会话将被自动清理，不再恢复。
+   *
+   * @param checkpoint - 会话检查点
+   * @returns 是否超时
+   */
+  private isPauseTimedOut(checkpoint: SessionCheckpoint): boolean {
+    if (checkpoint.status !== 'paused') return false;
+    return Date.now() - checkpoint.lastHeartbeat > AGENT_CONSTANTS.PAUSE_TIMEOUT_MS;
   }
 
   /**

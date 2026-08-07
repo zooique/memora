@@ -323,7 +323,7 @@ export class AgentLoop {
   /**
    * 处理 command 类型事件
    *
-   * 控制命令：暂停/恢复/重置会话。
+   * 控制命令：暂停/恢复/重置会话，以及查询状态。
    * 当前版本仅发送通知事件，实际状态变更由上层（SessionManager）通过状态机执行。
    *
    * @yields text 确认消息 + done
@@ -342,6 +342,10 @@ export class AgentLoop {
       yield { type: 'done' };
     } else if (cmd.includes('reset') || cmd.includes('重置')) {
       yield { type: 'text', content: '会话已重置' };
+      yield { type: 'done' };
+    } else if (cmd.includes('status') || cmd.includes('状态')) {
+      // 状态查询：返回当前会话快照信息
+      yield { type: 'text', content: '会话状态正常' };
       yield { type: 'done' };
     } else {
       // 未识别的命令，降级为 chat

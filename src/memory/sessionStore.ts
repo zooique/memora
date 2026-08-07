@@ -73,6 +73,34 @@ export interface ISessionStore {
     targetDate: string,
     targetSession: string,
   ): void;
+
+  /**
+   * 保存会话检查点（可选，不实现则使用内存模式）
+   *
+   * 覆盖保存：同 sessionId 的检查点将被覆盖。
+   * 存储层将 JSON 字符串序列化后持久化，不关心内部结构。
+   *
+   * @param sessionId - 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @param checkpoint - 检查点 JSON 字符串
+   */
+  saveCheckpoint?(sessionId: string, checkpoint: string): void;
+
+  /**
+   * 加载会话检查点（可选，不实现返回 null）
+   *
+   * @param sessionId - 会话标识
+   * @returns 检查点 JSON 字符串，不存在时返回 null
+   */
+  loadCheckpoint?(sessionId: string): string | null;
+
+  /**
+   * 删除会话检查点（可选，不实现为 no-op）
+   *
+   * 会话完成或关闭时清理持久化的检查点。
+   *
+   * @param sessionId - 会话标识
+   */
+  deleteCheckpoint?(sessionId: string): void;
 }
 
 /**

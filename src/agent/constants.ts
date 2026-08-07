@@ -49,6 +49,9 @@ export const AGENT_CONSTANTS = {
 
   /** 最近对话历史注入轮数。3 轮（3 条 user + 3 条 assistant）。 */
   DEFAULT_RECENT_HISTORY_ROUNDS: 3,
+
+  /** 暂停超时阈值（毫秒）。30 分钟内无心跳则视为超时，自动归档清理。 */
+  PAUSE_TIMEOUT_MS: 30 * 60 * 1000,
 } as const;
 
 /**

@@ -31,6 +31,8 @@ export const AGENT_EVENTS = {
   workProjectionGenerated: 'workProjectionGenerated',
   boostPersistFailed: 'boostPersistFailed',
   dedupCompleted: 'dedupCompleted',
+  sessionPauseTimedOut: 'sessionPauseTimedOut',
+  sessionResumeBlocked: 'sessionResumeBlocked',
 } as const;
 
 /** 事件名联合类型（由 AGENT_EVENTS 推导，单一真理源，新增事件只需在此对象加一项） */
@@ -119,6 +121,20 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     deduplicatedCount: number;
     /** 被降级的记忆 ID 列表 */
     demotedIds: string[];
+  };
+  /** 暂停超时，检查点已自动清理（宿主可通知用户或触发归档） */
+  sessionPauseTimedOut: {
+    /** 超时的会话标识 */
+    sessionId: string;
+    /** 暂停持续时间（毫秒） */
+    pauseDuration: number;
+  };
+  /** 恢复被阻止（暂停超时后无法恢复，需重新开始） */
+  sessionResumeBlocked: {
+    /** 被阻止的会话标识 */
+    sessionId: string;
+    /** 阻止原因 */
+    reason: string;
   };
 }
 

@@ -26,7 +26,7 @@ import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard } from '@/agent/types.js';
-import type { SessionEvent, SessionCheckpoint } from '@/agent/types.js';
+import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
 import { Composer } from '@/agent/composer.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -232,6 +232,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     this.validateCoreComponents();
     this.createPostInitComponents(pctx);
+
+    // 加载持久化的会话检查点（P0-2：会话状态持久化）
+    // 若上次会话在暂停/异常状态中关闭，加载后恢复状态机
+    this._sessionManager?.loadPersistedCheckpoint();
+
+    // P0-3：暂停超时自动归档（fire-and-forget）
+    // loadPersistedCheckpoint 检测到超时会话后填充 _pauseTimedOutSession，
+    // 此处触发内容归档，将超时会话的原始对话内容归档为 memory 条目。
+    const timedOut = this._sessionManager?._pauseTimedOutSession;
+    if (timedOut) {
+      this.archiveCoordinator
+        ?.archiveSessionContent(timedOut.date, timedOut.session, { autoTriggered: true })
+        .catch((err) => {
+          logger.warn({ err, sessionId: timedOut.sessionId }, '暂停超时会话自动归档失败');
+        });
+    }
+
     this._initialized = true;
 
     return pctx;
@@ -784,9 +801,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           yield { type: 'done' };
           return;
         }
+
+        // P1: 应用增量解析结果到检查点（角色/任务/标准/资源）
+        // 将 Composer 的增量解析结果写入 SessionManager 检查点，
+        // 实现「增量事件 → 槽位级更新」的闭环
+        this.applyResolvedDelta(composeResult.resolved);
       }
 
-      // 意图路由：委托给 AgentLoop.processEvent
+      // P1: 意图分类防污染——非 chat 事件不写 chat 历史
+      // command/correction/clarify 属控制/元信息，不参与对话流：
+      //   - command: 控制信号（暂停/恢复/重置），写入历史会污染对话
+      //   - correction: 目标修正，写入历史会让 LLM 误以为这是普通对话
+      //   - clarify: 澄清回答，写入历史会与后续对话混淆
+      if (event.type !== 'chat') {
+        yield* this.handleNonChatEvent(event, combinedSignal);
+        return;
+      }
+
+      // ── chat 事件正常流程（写历史、后处理） ──────────────
       const loop = this.requireLoop;
       const recalledMemories = yield* this.prepareChatContext(event.content, combinedSignal);
 
@@ -798,7 +830,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      // 委托给 AgentLoop 的 processEvent（按意图分类路由）
+      // 委托给 AgentLoop 的 processEvent
       let assistantContent = '';
       let wasAborted = false;
 
@@ -847,6 +879,27 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.chatLockManager?.release(myToken);
       cleanupExternalSignal();
       await this.flushPendingConfigReload();
+    }
+  }
+
+  /**
+   * 处理非 chat 事件（P1 意图分类防污染）
+   *
+   * command/correction/clarify 事件不写 chat 历史，不触发后处理。
+   * 直接在 loop 层处理，通过 onSessionEvent 回调同步状态机。
+   * 避免控制信号/元信息污染对话流。
+   *
+   * @param event - 非 chat 类型的事件
+   * @param signal - 可选的 AbortSignal
+   */
+  private async *handleNonChatEvent(
+    event: SessionEvent,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 非 chat 事件不需要完整上下文准备（召回、角色匹配、技能注入、写历史等）
+    // 仅通过 onSessionEvent 回调同步状态机，loop 层处理具体响应
+    for await (const chunk of this.requireLoop.processEvent(event, undefined, signal)) {
+      yield chunk;
     }
   }
 
@@ -976,6 +1029,43 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         break;
       default:
         break;
+    }
+  }
+
+  /**
+   * 应用增量解析结果到检查点（P1 增量解析）
+   *
+   * 将 Composer 解析后的 ResolvedDelta 应用到 SessionManager 检查点，
+   * 实现增量事件的槽位级更新。
+   *
+   * 更新规则：
+   * - 角色、标准、任务、资源各槽位独立更新
+   * - P4 级别（澄清中）的槽位不应用（等待用户回答）
+   *
+   * @param resolved - Composer 解析后的增量结果
+   */
+  private applyResolvedDelta(resolved: ResolvedDelta): void {
+    const sm = this._sessionManager;
+    if (!sm) return;
+
+    // 应用角色槽（P1→P3 级别才更新，P4 等待用户回答）
+    if (resolved.role.source !== 'P4-clarify') {
+      sm.updateRole(resolved.role.value);
+    }
+
+    // 应用任务槽（currentGoal 更新）
+    if (resolved.task.source !== 'P4-clarify') {
+      sm.updateGoal(resolved.task.value);
+    }
+
+    // 应用标准槽
+    if (resolved.standard.source !== 'P4-clarify') {
+      sm.updateStandard(resolved.standard.value);
+    }
+
+    // 应用资源槽
+    if (resolved.resource.source !== 'P4-clarify') {
+      sm.updateResource(resolved.resource.value);
     }
   }
 
