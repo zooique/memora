@@ -272,6 +272,9 @@ export class ChatPanelManager {
   /** 归档按钮自动移除定时器（cleanup 时统一清理，避免回调在已销毁 DOM 上执行） */
   private archiveButtonTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** 会话状态横幅元素（不中断工作模型，暂停时在消息区顶部显示提示），null 表示未创建 */
+  private sessionStatusEl: HTMLElement | null = null;
+
   // ─── 事件清理 ──────────────────────────────────────────
 
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -1158,6 +1161,59 @@ export class ChatPanelManager {
     });
 
     this.messagesEl.insertBefore(btn, this.messagesEl.firstChild);
+  }
+
+  // ─── 会话状态横幅（不中断工作模型） ────────────────────
+
+  /**
+   * 更新会话状态横幅（暂停/恢复时在消息区顶部显示/隐藏提示）
+   *
+   * 暂停时：在消息区顶部插入一个提示横幅，告知用户会话已暂停。
+   * 恢复时：移除横幅。
+   * ERROR 态：显示错误提示（含恢复指引）。
+   * 横幅创建后复用，不重复创建。
+   *
+   * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param reason 状态变更原因（可选，用于错误提示文案）
+   */
+  updateSessionStatus(status: string, reason?: string): void {
+    if (status === 'running') {
+      // 恢复运行态：移除横幅
+      if (this.sessionStatusEl) {
+        this.sessionStatusEl.remove();
+        this.sessionStatusEl = null;
+      }
+      return;
+    }
+
+    // PAUSED/ERROR 态：创建或更新横幅
+    if (!this.sessionStatusEl) {
+      this.sessionStatusEl = document.createElement('div');
+      this.sessionStatusEl.className = 'session-status-banner';
+      this.messagesEl.insertBefore(this.sessionStatusEl, this.messagesEl.firstChild);
+    }
+
+    if (status === 'paused') {
+      this.sessionStatusEl.className = 'session-status-banner paused';
+      this.sessionStatusEl.innerHTML = `
+        <svg class="icon"><use href="#icon-pause"/></svg>
+        <span>会话已暂停${reason ? `：${reason}` : ''}</span>
+      `;
+    } else if (status === 'error') {
+      this.sessionStatusEl.className = 'session-status-banner error';
+      this.sessionStatusEl.innerHTML = `
+        <svg class="icon"><use href="#icon-warning"/></svg>
+        <span>会话异常${reason ? `：${reason}` : ''}</span>
+        <button class="session-status-recover-btn" data-action="recover-session">恢复</button>
+      `;
+      // 恢复按钮点击事件
+      const recoverBtn = this.sessionStatusEl.querySelector('[data-action="recover-session"]');
+      if (recoverBtn) {
+        recoverBtn.addEventListener('click', () => {
+          void window.electronAPI.recoverSession();
+        });
+      }
+    }
   }
 
   // ─── 回调注册 ───────────────────────────────────────────

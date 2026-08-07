@@ -11,7 +11,7 @@
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
-import type { AgentChunk, UIMessages } from '@/agent/types.js';
+import type { AgentChunk, UIMessages, SessionEvent } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
@@ -92,6 +92,17 @@ export interface AgentLoopOptions {
    * 未注入时仅记日志（降级优先原则，不阻断对话）。
    */
   onGuardrailError?: (rule: string, message: string) => void;
+  /**
+   * 会话事件回调（不中断工作模型 v2.0，P3）
+   *
+   * 当 AgentLoop 处理 SessionEvent 时，通过此回调通知上层
+   * 状态机状态变化（如 pause/resume/error 触发）。
+   * 未注入时静默忽略，保持向后兼容。
+   *
+   * @param eventType - 事件类型（command/correction/clarify/chat）
+   * @param detail - 事件详情（如 pause reason、error cause）
+   */
+  onSessionEvent?: (eventType: SessionEvent['type'], detail: string) => void;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -254,6 +265,131 @@ export class AgentLoop {
     } finally {
       responseSpan.end();
     }
+  }
+
+  /**
+   * 处理增量事件（不中断工作模型 v2.0，P3）
+   *
+   * 替代纯文本 processUserInput，接收结构化 SessionEvent 并按意图分类路由。
+   * 意图分类防污染：不同意图走不同处理路径，避免 chat 被误解析为 command。
+   *
+   * 路由规则：
+   *   - chat：委托给 processUserInput（现有对话逻辑，完全兼容）
+   *   - command：处理暂停/恢复/重置等控制命令
+   *   - correction：修正当前目标/计划（触发漂移检测）
+   *   - clarify：响应用户对澄清问题的回答
+   *
+   * @param event - 增量事件（含意图分类 + 内容 + 可选 delta）
+   * @param recalledMemories - 记忆召回结果（可选）
+   * @param signal - 可选的 AbortSignal
+   * @yields AgentChunk 事件流
+   */
+  async *processEvent(
+    event: SessionEvent,
+    recalledMemories?: readonly Memory[],
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 通知上层会话事件回调
+    this.opts.onSessionEvent?.(event.type, event.content);
+
+    switch (event.type) {
+      case 'chat':
+        // 对话意图：委托给现有的 processUserInput
+        yield* this.processUserInput(event.content, recalledMemories, signal);
+        break;
+
+      case 'command':
+        // 控制命令：暂停/恢复/重置
+        yield* this.handleCommand(event, signal);
+        break;
+
+      case 'correction':
+        // 修正意图：更新目标/计划，触发漂移检测
+        yield* this.handleCorrection(event, signal);
+        break;
+
+      case 'clarify':
+        // 澄清回答：用户对 P4 暂停询问的回答
+        yield* this.handleClarify(event, signal);
+        break;
+
+      default:
+        // 未知意图降级为 chat 处理
+        logger.warn({ eventType: (event as SessionEvent).type }, '未知 SessionEvent 类型，降级为 chat');
+        yield* this.processUserInput(event.content, recalledMemories, signal);
+    }
+  }
+
+  /**
+   * 处理 command 类型事件
+   *
+   * 控制命令：暂停/恢复/重置会话。
+   * 当前版本仅发送通知事件，实际状态变更由上层（SessionManager）通过状态机执行。
+   *
+   * @yields text 确认消息 + done
+   */
+  private async *handleCommand(
+    event: SessionEvent,
+    _signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const cmd = event.content.trim().toLowerCase();
+
+    if (cmd.includes('pause') || cmd.includes('暂停')) {
+      yield { type: 'text', content: '会话已暂停' };
+      yield { type: 'done' };
+    } else if (cmd.includes('resume') || cmd.includes('恢复') || cmd.includes('继续')) {
+      yield { type: 'text', content: '会话已恢复' };
+      yield { type: 'done' };
+    } else if (cmd.includes('reset') || cmd.includes('重置')) {
+      yield { type: 'text', content: '会话已重置' };
+      yield { type: 'done' };
+    } else {
+      // 未识别的命令，降级为 chat
+      yield* this.processUserInput(event.content, undefined, _signal);
+    }
+  }
+
+  /**
+   * 处理 correction 类型事件
+   *
+   * 用户修正当前目标/计划，触发漂移检测。
+   * 当前版本：将修正内容作为 system 消息注入上下文，让 LLM 感知到目标变更。
+   *
+   * @yields text 确认消息 + done
+   */
+  private async *handleCorrection(
+    event: SessionEvent,
+    _signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 注入修正提示到上下文
+    this.messages.push({
+      role: 'system',
+      content: `[目标修正] 用户更新了目标方向：${event.content}`,
+    });
+
+    yield { type: 'text', content: `已记录目标修正：${event.content}` };
+    yield { type: 'done' };
+  }
+
+  /**
+   * 处理 clarify 类型事件
+   *
+   * 用户对 P4 暂停询问的回答，将回答内容作为上下文注入。
+   *
+   * @yields text 确认消息 + done
+   */
+  private async *handleClarify(
+    event: SessionEvent,
+    _signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 注入澄清回答到上下文
+    this.messages.push({
+      role: 'system',
+      content: `[澄清回答] 用户补充说明：${event.content}`,
+    });
+
+    yield { type: 'text', content: `已记录补充说明：${event.content}` };
+    yield { type: 'done' };
   }
 
   /**

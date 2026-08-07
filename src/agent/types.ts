@@ -167,6 +167,249 @@ export interface UIMessages {
  */
 export type ArchiveMode = 'full' | 'insights-only' | 'manual';
 
+// ─── 不中断工作模型：增量事件 + 检查点（v2.0） ──────────
+//
+// 设计文档：docs/根基/不中断工作模型演进.html（v1.6）
+// 核心思路：从「一问一答」升级为「开启后常驻、仅暂停不终止」，
+// 输入从纯文本升级为增量事件（SessionEvent），会话从消息数组升级为
+// 状态机 + 检查点（SessionCheckpoint）。
+//
+// 三态状态机：RUNNING → PAUSED（双向暂停）→ ERROR（独立可见）
+// 恢复校验：ERROR → RUNNING 前须 error.recovered===true 且 cause 已解除
+// ──────────────────────────────────────────────────────────
+
+/**
+ * 四元组：角色 × 任务 × 标准 × 资源
+ *
+ * 不中断工作模型的核心输入结构，三源融合（P1 显式输入 → P2 记忆沉淀 → P3 系统内置）
+ * 逐级补全，缺省时有明确补全链。
+ */
+export interface FourTuple {
+  /** 角色定义（会话级，可中途变更） */
+  role: Role;
+  /** 任务描述（mainGoal 或 currentGoal） */
+  task: string;
+  /** 执行标准（质量标准 + 约束条件） */
+  standard: Standard;
+  /** 资源快照（当前引用的文档/记忆/上下文） */
+  resource: ResourceState;
+}
+
+/**
+ * 角色定义
+ *
+ * 会话级角色，定义 Agent 的行为边界和语气风格。
+ * 可中途变更（如从「开发」切换到「审查」）。
+ */
+export interface Role {
+  /** 角色名（如 "developer"、"reviewer"、"travel-planner"） */
+  name: string;
+  /** 角色描述（可选，用于 system prompt 注入） */
+  description?: string;
+}
+
+/**
+ * 执行标准
+ *
+ * 定义任务完成的质量标准和约束条件。
+ * 用户可随时更新标准（如"代码必须通过 ESLint"）。
+ */
+export interface Standard {
+  /** 质量标准描述（如 "代码必须通过所有测试"） */
+  quality: string;
+  /** 约束条件列表（如 ["不使用第三方库", "保持向后兼容"]） */
+  constraints: string[];
+}
+
+/**
+ * 资源状态快照
+ *
+ * 会话资源维度的快照——断点续跑时用于还原 Agent 当时引用的上下文。
+ * 与 B 篇「记忆覆盖四元组全集」对齐。
+ */
+export interface ResourceState {
+  /** 引用的文档路径列表 */
+  documents: string[];
+  /** 引用的记忆 ID 列表 */
+  memories: string[];
+  /** 当前上下文摘要（断点续跑还原用） */
+  context: string;
+}
+
+/**
+ * 计划步骤
+ *
+ * Agent 执行计划中的单个步骤，用于 goalVersion 漂移检测和进度追踪。
+ */
+export interface PlanStep {
+  /** 步骤唯一标识 */
+  id: string;
+  /** 步骤描述 */
+  description: string;
+  /** 步骤状态 */
+  status: 'pending' | 'active' | 'done' | 'blocked';
+  /** 执行顺序（从 0 开始） */
+  order: number;
+}
+
+/**
+ * 热记忆中的聊天消息
+ *
+ * 结构对齐 LLM Message 类型，用于会话检查点中存储截断后的热记忆窗口。
+ * 不含时间戳（与 SessionMessage 区分），仅保留 role + content 用于 LLM 上下文注入。
+ */
+export interface ChatMessage {
+  /** 消息角色 */
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  /** 消息内容 */
+  content: string;
+  /** 工具调用（assistant 消息，可选） */
+  toolCalls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  /** 工具调用 ID（tool 消息，可选） */
+  toolCallId?: string;
+}
+
+/**
+ * 增量事件类型
+ *
+ * 替代纯文本输入，为不中断工作模型提供结构化意图分类。
+ * 质变一的核心接口形态——从 Request 升级为 SessionEvent。
+ *
+ * 意图分类防污染：不同意图走不同处理路径，避免 chat 意图被误解析为 command。
+ */
+export interface SessionEvent {
+  /** 意图分类 */
+  type: 'command' | 'correction' | 'clarify' | 'chat';
+  /** 原始文本内容 */
+  content: string;
+  /**
+   * 槽位级增量（可选）
+   *
+   * 合并规则（槽位级）：
+   * - 增量槽引用：如「继续」→ 任务槽引用 currentGoal，不覆盖
+   * - 新值槽覆盖：如用户给出新标准 → 覆盖 standard 槽
+   * - 数组槽追加：如补充资源列表 → 追加到 resource 槽
+   */
+  delta?: Partial<FourTuple>;
+}
+
+/**
+ * 会话检查点
+ *
+ * 不中断工作模型的核心状态载体——质变二与新增维度的载体。
+ * 包含会话全部上下文，支持序列化后断点续跑。
+ *
+ * 三态说明（v1.6）：
+ * - running：Agent 正在执行中
+ * - paused：用户/Agent/系统主动暂停，区分 idle（主动暂停）和 error（异常暂停）
+ * - error：异常状态，独立可见不自动转 PAUSED，保留 cause 供用户检查
+ *   恢复前须校验 error.recovered===true 且 cause 已解除
+ */
+export interface SessionCheckpoint {
+  /** 会话唯一标识 */
+  sessionId: string;
+  /** 三态状态（v1.6）：ERROR 独立可见，不自动转 PAUSED */
+  status: 'running' | 'paused' | 'error';
+  /** 异常原因（仅 status==='error' 时有值，恢复前校验 recovered） */
+  error?: {
+    /** 异常原因描述 */
+    cause: string;
+    /** 异常发生时间戳（毫秒） */
+    at: number;
+    /** 是否已恢复（ERROR→RUNNING 前须为 true） */
+    recovered: boolean;
+  };
+  /** 原始目标（防漂移锚点，不随迭代改变） */
+  mainGoal: string;
+  /** 当前迭代目标（可随 plan 推进更新） */
+  currentGoal: string;
+  /**
+   * 目标版本号
+   *
+   * 每次 currentGoal 变更时递增，用于漂移检测。
+   * 一致性校验：确定性层（关键约束哈希 + 文本相似度）→ LLM 层（仅对需确认场景生成解释）。
+   * 关键约束为用户显式声明或确定性规则提取，不依赖 LLM 提取（防自我引用）。
+   */
+  goalVersion: number;
+  /** 执行计划步骤列表 */
+  plan: PlanStep[];
+  /** 当前角色（会话级，可中途变更） */
+  role: Role;
+  /** 当前执行标准（会话级，可更新） */
+  standard: Standard;
+  /** 资源快照（断点续跑还原用） */
+  resource: ResourceState;
+  /** 热记忆窗口（截断后的最近对话，防膨胀） */
+  hotMemory: ChatMessage[];
+  /** 心跳时间戳（毫秒），防僵尸会话 */
+  lastHeartbeat: number;
+}
+
+/**
+ * 状态转换结果
+ *
+ * 状态机 onEvent() 的返回值，描述一次状态转换是否合法及其原因。
+ */
+export interface StatusTransition {
+  /** 转换前状态 */
+  from: 'running' | 'paused' | 'error';
+  /** 转换后状态 */
+  to: 'running' | 'paused' | 'error';
+  /** 转换原因（如 "用户暂停"、"LLM 超时"、"恢复校验通过"） */
+  reason: string;
+  /** 转换是否被允许 */
+  allowed: boolean;
+}
+
+// ─── 四级补全：Composer 类型 ─────────────────────────────
+//
+// 三源融合（P1 显式 → P2 记忆 → P3 内置 → P4 暂停询问）
+// 四元组每个槽位独立走补全链，缺省时有明确来源。
+// ──────────────────────────────────────────────────────────
+
+/**
+ * 补全来源级别
+ *
+ * 标记四元组每个槽位的补全来源，用于可追溯性。
+ */
+export type CompletionLevel = 'P1-explicit' | 'P2-memory' | 'P3-builtin' | 'P4-clarify';
+
+/**
+ * 已解析的四元组增量
+ *
+ * Composer 补全链的输出——将 SessionEvent.delta 补全为完整的四元组增量。
+ * 每个槽位标注补全来源，确保可追溯。
+ */
+export interface ResolvedDelta {
+  /** 角色槽 */
+  role: { value: Role; source: CompletionLevel };
+  /** 任务槽 */
+  task: { value: string; source: CompletionLevel };
+  /** 标准槽 */
+  standard: { value: Standard; source: CompletionLevel };
+  /** 资源槽 */
+  resource: { value: ResourceState; source: CompletionLevel };
+}
+
+/**
+ * 澄清问题
+ *
+ * P4 补全级别：当 P1→P3 都无法补全某个槽位时，
+ * 生成澄清问题暂停等待用户回答。
+ */
+export interface ClarifyQuestion {
+  /** 目标槽位（role/task/standard/resource） */
+  slot: keyof FourTuple;
+  /** 问题文本 */
+  question: string;
+  /** 默认选项（可选，用户可快速选择） */
+  options?: string[];
+}
+
 // ─── Agent 门面类型 ─────────────────────────────────────
 
 import type { LlmProvider } from '@/llm/provider.js';

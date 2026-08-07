@@ -94,7 +94,7 @@
 <header>
   <h1>输入管道与触发链 · 工程落地设计</h1>
   <div class="sub">四层输入 · 单一渲染器 · 用户输入第一性 · 分级路径</div>
-  <div class="meta">沉淀日期：2026-08-07 · 方法：第一性原理 + 对抗式审查 · 版本：v1.5（提纯：保留最终核心思想） · 来源：B 篇《道生万物输入框架》三源融合的工程扩展 + memora 现状对照</div>
+  <div class="meta">沉淀日期：2026-08-07 · 方法：第一性原理 + 对抗式审查 · 版本：v1.6（交叉评审修复：SVG 图同步 Renderer/ContextManager 拆分） · 来源：B 篇《道生万物输入框架》三源融合的工程扩展 + memora 现状对照</div>
   <div class="declaration"><b>定位（叙事校准）</b>：本文为《落地体验输入系统梳理》（体验入口）中<b>机制族 A（输入理解）与 F（表达引擎）的工程落地</b>——体验篇「① 发起」推导出统一接口+缺省补全、「② 继续」推导出增量引用、「⑥ 信任」推导出契约分级路径，本文把这些机制展开为四层输入管道、触发链与分级路径。用户文档是「用户撰写的固定内容」，本质更近设定/记忆，按确定性等级分流（见 §04）——四层是 B 篇三源的<b>工程扩展</b>而非理论第四源。建议先读体验篇（理解为什么），再读 B 篇（结构命名）；如需独立阅读见文末术语简注。与框架篇的关系：体验在前，本文件为机制落地。</div>
 </header>
 
@@ -143,12 +143,13 @@
       <line x1="220" y1="220" x2="286" y2="190" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
       <line x1="220" y1="294" x2="286" y2="290" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
       <rect x="288" y="70" width="204" height="230" rx="12" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-      <text x="390" y="94" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">Renderer + ContextManager</text>
-      <text x="390" y="116" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">排版真理源 + 上下文管理（v1.3 拆分）</text>
+      <text x="390" y="94" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">Renderer</text>
+      <text x="390" y="116" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">排版真理源</text>
       <text x="390" y="150" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">稳定层前置 → 缓存命中</text>
       <text x="390" y="170" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">动态层后置 → 高注意力</text>
-      <text x="390" y="200" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">窗口/预算/恢复 → ContextManager</text>
-      <text x="390" y="230" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">优先级+同档仲裁（tiebreaker）</text>
+      <rect x="288" y="190" width="204" height="60" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="390" y="210" text-anchor="middle" dominant-baseline="central" font-size="13" font-weight="500" fill="#04342C">ContextManager</text>
+      <text x="390" y="230" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">窗口/预算/恢复</text>
       <line x1="492" y1="150" x2="540" y2="150" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
       <rect x="542" y="60" width="98" height="180" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
       <text x="591" y="84" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">排版文档</text>

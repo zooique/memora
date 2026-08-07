@@ -434,6 +434,10 @@ async function bootstrapRenderer(): Promise<void> {
         void personaController.loadPersonaList();
       }
     },
+    // 会话状态变更 → 更新暂停按钮禁用态 + 消息区状态横幅
+    onSessionStatusChanged: (status, reason) => {
+      State.uiManager.onSessionStatusChanged(status, reason);
+    },
   });
 
   // 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存

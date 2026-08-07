@@ -295,6 +295,20 @@ export const IPC_CHANNELS = {
   CHECK_UPDATE: 'check-update',
   /** 渲染进程 → 主进程：直接打开 GitHub Releases 页面（不调 API，用户手动判别版本） */
   OPEN_RELEASES_URL: 'open-releases-url',
+
+  // ─── 会话状态管理（不中断工作模型） ────────────────────
+  /** 暂停会话 */
+  SESSION_PAUSE: 'session-pause',
+  /** 恢复会话 */
+  SESSION_RESUME: 'session-resume',
+  /** 从异常恢复会话 */
+  SESSION_RECOVER: 'session-recover',
+  /** 创建会话检查点 */
+  CREATE_CHECKPOINT: 'create-checkpoint',
+  /** 获取当前检查点 */
+  GET_CHECKPOINT: 'get-checkpoint',
+  /** 从检查点恢复会话 */
+  RESTORE_CHECKPOINT: 'restore-checkpoint',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */
@@ -417,6 +431,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 渲染层监听后按 type 分发刷新（U8）。
    */
   CONFIG_FILES_CHANGED: 'config-files-changed',
-} as const;
 
-// IPC 数据传输类型（SerializedAppError / WorkProjectionPayload）见 ./types.ts
+  // ─── 会话状态变更通知（不中断工作模型） ─────────────
+  /** 会话状态变更通知（pause/resume/error/recover 时推送，携带 { status: string, reason?: string }） */
+  SESSION_STATUS_CHANGED: 'session-status-changed',
+} as const;

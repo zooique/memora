@@ -41,7 +41,7 @@ import type {
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
 // L1~L3 LLM 治理报告类型（从内核 re-export 导入，用于 ElectronAPI 接口声明）
-import type { DedupReport, TimelinessReport, ConflictReport } from 'memora';
+import type { DedupReport, TimelinessReport, ConflictReport, SessionCheckpoint } from 'memora';
 // P5：从 sprite 层导入感知状态类型（真理源），修复 getPerceptionSnapshot 返回类型过宽问题
 import type { AffectState, RapportState, ContextState, DetectedPattern, ProactiveStats } from '../sprite/controllers/index.js';
 // 精灵设定面板 Epic 3：从 sprite 层 configFileManager 导入契约类型（真理源，编译时擦除）
@@ -208,6 +208,19 @@ export const IPC_CHANNELS = {
   CHECK_UPDATE: 'check-update',
   /** 打开 GitHub Releases 页面（与 ipc/channels.ts 同步） */
   OPEN_RELEASES_URL: 'open-releases-url',
+  // ─── 会话状态管理（不中断工作模型，与 ipc/channels.ts 同步） ──
+  /** 暂停会话 */
+  SESSION_PAUSE: 'session-pause',
+  /** 恢复会话 */
+  SESSION_RESUME: 'session-resume',
+  /** 从异常恢复会话 */
+  SESSION_RECOVER: 'session-recover',
+  /** 创建会话检查点 */
+  CREATE_CHECKPOINT: 'create-checkpoint',
+  /** 获取当前检查点 */
+  GET_CHECKPOINT: 'get-checkpoint',
+  /** 从检查点恢复会话 */
+  RESTORE_CHECKPOINT: 'restore-checkpoint',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -259,6 +272,9 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 渲染层监听后按 type 分发刷新（U8）。
    */
   CONFIG_FILES_CHANGED: 'config-files-changed',
+  // ─── 会话状态变更通知（不中断工作模型，与 ipc/channels.ts 同步） ──
+  /** 会话状态变更通知（pause/resume/error/recover 时推送） */
+  SESSION_STATUS_CHANGED: 'session-status-changed',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -470,6 +486,59 @@ export interface ElectronAPI {
    * @returns 成功时返回新会话名和消息数；失败时返回 error
    */
   forkSession: (targetSession?: string) => Promise<{ success: boolean; newSession?: string; messageCount?: number; error?: string }>;
+  /**
+   * 暂停会话（不中断工作模型）
+   *
+   * 双向暂停：用户/Agent/系统均可触发。暂停前自动创建检查点保存当前状态。
+   *
+   * @param reason 暂停原因
+   * @returns paused 是否暂停成功
+   */
+  pauseSession: (reason?: string) => Promise<{ paused: boolean }>;
+  /**
+   * 恢复会话（不中断工作模型）
+   *
+   * 从 PAUSED 状态恢复到 RUNNING。
+   *
+   * @returns resumed 是否恢复成功
+   */
+  resumeSession: () => Promise<{ resumed: boolean }>;
+  /**
+   * 从异常恢复会话（不中断工作模型）
+   *
+   * 校验恢复条件：error.recovered === true 且 cause 已解除。
+   *
+   * @returns recovered 是否恢复成功
+   */
+  recoverSession: () => Promise<{ recovered: boolean }>;
+  /**
+   * 创建会话检查点（不中断工作模型）
+   *
+   * 快照当前运行时状态（热记忆、角色、标准等），生成可序列化的检查点。
+   *
+   * @param mainGoal 原始目标（首次创建时必填）
+   * @returns checkpoint 当前会话检查点，若未创建则返回 null
+   */
+  createCheckpoint: (mainGoal?: string) => Promise<{ checkpoint: SessionCheckpoint | null }>;
+  /**
+   * 获取当前检查点（不中断工作模型）
+   *
+   * @returns checkpoint 当前检查点快照，若未创建则返回 null
+   */
+  getCheckpoint: () => Promise<{ checkpoint: SessionCheckpoint | null }>;
+  /**
+   * 从检查点恢复会话（不中断工作模型）
+   *
+   * 将检查点中的热记忆恢复到 AgentLoop 工作记忆，并恢复状态机。
+   *
+   * @param checkpoint 要恢复的检查点
+   * @returns restored 是否恢复成功 + messageCount 恢复的消息数量
+   */
+  restoreFromCheckpoint: (checkpoint: SessionCheckpoint) => Promise<{ restored: boolean; messageCount: number }>;
+  /** 监听会话状态变更（pause/resume/error/recover 时触发） */
+  onSessionStatusChanged: (cb: (payload: { status: string; reason?: string }) => void) => void;
+  /** 移除会话状态变更监听器 */
+  removeSessionStatusChangedListener: () => void;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string; persona?: string }) => void) => void;
@@ -1268,6 +1337,25 @@ const electronAPI: ElectronAPI = {
   searchSessionMessages: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SEARCH, query),
   // 会话分叉：调用内核 Agent.forkSession()，返回新会话名和消息数
   forkSession: (targetSession?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, targetSession),
+  // ─── 会话状态管理（不中断工作模型） ─────────────────────
+  /** 暂停会话 */
+  pauseSession: (reason?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_PAUSE, reason),
+  /** 恢复会话 */
+  resumeSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESUME),
+  /** 从异常恢复会话 */
+  recoverSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RECOVER),
+  /** 创建会话检查点 */
+  createCheckpoint: (mainGoal?: string) => ipcRenderer.invoke(IPC_CHANNELS.CREATE_CHECKPOINT, mainGoal),
+  /** 获取当前检查点 */
+  getCheckpoint: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CHECKPOINT),
+  /** 从检查点恢复会话 */
+  restoreFromCheckpoint: (checkpoint: SessionCheckpoint) => ipcRenderer.invoke(IPC_CHANNELS.RESTORE_CHECKPOINT, checkpoint),
+  /** 监听会话状态变更 */
+  onSessionStatusChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, (_: IpcRendererEvent, payload: { status: string; reason?: string }) => cb(payload)),
+  /** 移除会话状态变更监听器 */
+  removeSessionStatusChangedListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED);
+  },
 
   // 仪表盘
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),

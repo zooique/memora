@@ -663,6 +663,25 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     return text;
   }
 
+  // ─── 会话状态管理（不中断工作模型） ──────────────────
+
+  /**
+   * 会话状态变更处理（由 ipcListeners.ts 的 onSessionStatusChanged 回调触发）
+   *
+   * 更新两个 UI 组件：
+   * 1. InputAreaManager：暂停/恢复按钮禁用态
+   * 2. ChatPanelManager：消息区状态横幅（暂停/异常提示）
+   *
+   * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param reason 状态变更原因（可选，用于异常提示文案）
+   */
+  onSessionStatusChanged(status: string, reason?: string): void {
+    // 更新暂停/恢复按钮禁用态
+    this.chatCoordinator.inputAreaManager.updateSessionStatus(status);
+    // 更新消息区状态横幅（暂停/异常提示）
+    this.chatCoordinator.chatPanel.updateSessionStatus(status, reason);
+  }
+
   // ─── 未读计数（委托到 BadgeManager） ──────────────────
 
   /** 更新未读徽章显示（ChatPanelHost 回调） */

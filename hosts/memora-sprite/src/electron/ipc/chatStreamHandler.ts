@@ -2,19 +2,20 @@
  * 对话流式输出处理器
  *
  * 职责：
- *   消费 agent.chat() AsyncGenerator，将流式 chunk 通过 IPC 推送到渲染进程。
+ *   消费 agent.processEvent() AsyncGenerator，将流式 chunk 通过 IPC 推送到渲染进程。
  *   包含无进展超时兜底、中断处理、错误降级等完整流式输出逻辑。
  *
  * 与 chatHandlers.ts 的关系：chatHandlers.ts 仅注册 IPC 通道，
  * 流式输出业务逻辑集中在本模块，职责分离便于维护和测试。
  *
  * 流式输出架构：
- *   主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk，
+ *   主进程通过 agent.processEvent() 处理结构化 SessionEvent，通过专用 IPC 通道发送 chunk，
  *   不走 IInteraction（IInteraction 仅负责非流式输出）。
  */
 
 import { randomUUID } from 'node:crypto';
 import { toError, logger } from 'memora';
+import type { SessionEvent } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import { requireAgent, requireSprite } from './types.js';
@@ -49,10 +50,10 @@ function emitStreamError(fullWindow: BrowserWindow, text: string, context: strin
 }
 
 /**
- * 处理用户输入 — 消费 agent.chat() AsyncGenerator 并推送流式 chunk
+ * 处理用户输入 — 消费 agent.processEvent() AsyncGenerator 并推送流式 chunk
  *
  * 实现方案 §6.2 流式输出架构：
- * - 主进程直接消费 agent.chat() 的 AsyncGenerator
+ * - 主进程通过 agent.processEvent() 处理结构化 SessionEvent，消费 AsyncGenerator
  * - 通过 sprite-stream-start / sprite-stream-chunk / sprite-stream-end 通道推送
  * - 支持 AbortController 中断
  *
@@ -130,11 +131,13 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     // 启动首次计时
     timeoutGuard.reset();
 
+    // 构造 SessionEvent，意图分类为 chat（普通对话）
+    const event: SessionEvent = { type: 'chat', content: text };
     // 记录对话开始前的截断次数，对话结束后对比检测截断事件
     const truncationBefore = agent.getMetrics().context.truncationCount;
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
-    for await (const chunk of agent.chat(text, abortController.signal)) {
-      // 首个 chunk：此时 agent.chat() 内部的 tryAutoMatchPersona 已执行完毕，
+    for await (const chunk of agent.processEvent(event, abortController.signal)) {
+      // 首个 chunk：此时 agent.processEvent() 内部的 tryAutoMatchPersona 已执行完毕，
       // activePersona 就是本轮 LLM 回答实际使用的角色（匹配成功已切换，匹配失败保持原角色）。
       // 在此发送 SPRITE_STREAM_START，确保消息底部角色标签与回答实际角色一致
       if (!streamStarted) {
@@ -193,7 +196,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
             count: truncationAfter - truncationBefore,
           });
         }
-        // done 后 agent.chat() 仍要执行 appendAssistant + postProcess
+        // done 后 agent.processEvent() 仍要执行 appendAssistant + postProcess
         // postProcess 是 fire-and-forget（所有 LLM 调用注册到 pendingArchives 不 await），
         // 本身执行很快（毫秒级），但 done 到 finally 之间仍有微小窗口期
         // 发 thinking keepalive（phase=archiving）让渲染层重置 safety timer，覆盖此窗口
@@ -203,7 +206,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           phase: 'archiving' as const,
         });
         // done 信号：不 break，让 for-await 自然结束。
-        // agent.chat() 在 done 后仍需执行 appendAssistant（保存助手消息）
+        // agent.processEvent() 在 done 后仍需执行 appendAssistant（保存助手消息）
         // 和 postProcess（归档后处理），break 会导致 return() 被调用，
         // 跳过这些关键步骤。finally 块会在 generator 自然结束后发送 SPRITE_STREAM_END。
       } else if (chunk.type === 'error') {

@@ -10,6 +10,7 @@
  * - 输入区 ResizeObserver（动态更新 --input-area-height CSS 变量）
  * - 输入清理 + 长度限制
  * - 输入补全集成（复用 QuickInputCompletion，输入时显示记忆/对话候选）
+ * - 暂停/恢复按钮管理（不中断工作模型，根据会话状态切换按钮禁用态）
  *
  * 设计原则：
  * - 依赖注入：通过 InputAreaHost 接口注入 UIManager 的状态查询和回调，
@@ -19,6 +20,8 @@
  * - Agent 就绪/空内容守卫保留在 UIManager.emitSendMessage 内部，
  *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
  * - 补全管理器复用 quick-input 模块的 QuickInputCompletion，零重复造轮子
+ * - 暂停/恢复按钮通过 onSessionStatusChanged 监听器同步状态，
+ *   按钮创建与监听器绑定在 init() 中完成，cleanup() 中清理
  */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -76,6 +79,11 @@ export class InputAreaManager {
   /** 输入补全管理器（复用 quick-input 模块，null 表示候选列表容器缺失时降级跳过） */
   private completion: QuickInputCompletion | null = null;
 
+  /** 暂停会话按钮（不中断工作模型，暂停态时禁用），null 表示元素缺失 */
+  private btnPause: HTMLButtonElement | null = null;
+  /** 恢复会话按钮（不中断工作模型，仅暂停态时启用），null 表示元素缺失 */
+  private btnResume: HTMLButtonElement | null = null;
+
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
    *
@@ -120,6 +128,9 @@ export class InputAreaManager {
 
     // 初始化输入补全（候选列表容器存在时才启用，让用户输入时即可发现此功能）
     this.initCompletion();
+
+    // 初始化暂停/恢复按钮（不中断工作模型，点击暂停/恢复会话，根据会话状态切换禁用态）
+    this.initSessionControlButtons();
   }
 
   /**
@@ -357,6 +368,69 @@ export class InputAreaManager {
   private async fillFromMemoryAsync(item: CompletionItem): Promise<void> {
     await fetchMemoryContent(item, window.electronAPI.showMemory, this.fillCompletionText.bind(this), 'InputArea:showMemory');
     this.completion?.clear();
+  }
+
+  // ─── 暂停/恢复按钮（不中断工作模型） ──────────────────
+
+  /**
+   * 初始化暂停/恢复按钮
+   *
+   * 在输入工具栏左侧（.input-actions-left）创建暂停和恢复按钮，
+   * 点击分别调用 pauseSession/resumeSession IPC。
+   * 通过 onSessionStatusChanged 监听器同步按钮禁用态：
+   *   - RUNNING：暂停可用，恢复禁用
+   *   - PAUSED：暂停禁用，恢复可用
+   *   - ERROR：两者均禁用
+   * 容器元素缺失时静默降级（不阻断初始化）。
+   */
+  private initSessionControlButtons(): void {
+    // 查找输入工具栏左侧容器，缺失时静默降级
+    const actionsLeft = document.querySelector('.input-actions-left');
+    if (!(actionsLeft instanceof HTMLElement)) return;
+
+    // 创建暂停按钮
+    this.btnPause = document.createElement('button');
+    this.btnPause.className = 'input-action session-control-btn session-pause-btn';
+    this.btnPause.title = '暂停会话（不中断，自动保存当前状态）';
+    this.btnPause.setAttribute('aria-label', '暂停会话');
+    // 使用 SVG 暂停图标
+    this.btnPause.innerHTML = '<svg class="icon"><use href="#icon-pause"/></svg>';
+    this.btnPause.addEventListener('click', () => {
+      void window.electronAPI.pauseSession('用户主动暂停');
+    });
+    actionsLeft.appendChild(this.btnPause);
+
+    // 创建恢复按钮（初始禁用，会话暂停时启用）
+    this.btnResume = document.createElement('button');
+    this.btnResume.className = 'input-action session-control-btn session-resume-btn';
+    this.btnResume.title = '恢复会话（从暂停状态继续）';
+    this.btnResume.setAttribute('aria-label', '恢复会话');
+    this.btnResume.disabled = true;
+    // 使用 SVG 播放/恢复图标
+    this.btnResume.innerHTML = '<svg class="icon"><use href="#icon-play"/></svg>';
+    this.btnResume.addEventListener('click', () => {
+      void window.electronAPI.resumeSession();
+    });
+    actionsLeft.appendChild(this.btnResume);
+
+    // 初始状态：暂停可用，恢复禁用（会话默认 RUNNING）
+    // 会话状态变更监听由 ipcListeners.ts 统一管理，通过 UIManager 委托到本方法
+  }
+
+  /**
+   * 更新暂停/恢复按钮状态（根据会话状态切换禁用态）
+   *
+   * @param status 会话状态：'running' | 'paused' | 'error'
+   */
+  updateSessionStatus(status: string): void {
+    if (this.btnPause) {
+      // RUNNING 态暂停可用，PAUSED/ERROR 态暂停禁用
+      this.btnPause.disabled = status !== 'running';
+    }
+    if (this.btnResume) {
+      // 仅 PAUSED 态恢复可用
+      this.btnResume.disabled = status !== 'paused';
+    }
   }
 
   // ─── Provider 选择器 ────────────────────────────────────

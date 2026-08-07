@@ -72,6 +72,12 @@ export interface AssembleInput {
   onDedupCompleted?: (report: { scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[] }) => void;
   /** 护栏规则正则编译失败回调（宿主可据此发射 guardrailError 事件通知用户） */
   onGuardrailError?: (rule: string, message: string) => void;
+  /**
+   * 会话事件回调（不中断工作模型 v2.0）
+   *
+   * AgentLoop 处理 SessionEvent 时通知上层状态机。
+   */
+  onSessionEvent?: (eventType: string, detail: string) => void;
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -142,11 +148,12 @@ async function createAgentLoopAndDeps(params: {
   locale?: string;
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   onGuardrailError?: (rule: string, message: string) => void;
+  onSessionEvent?: (eventType: string, detail: string) => void;
 }) {
   const {
     provider, backgroundProvider, pctx, personaPrompt, userProfile, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary, relationStore,
-    sessionStore, locale, onContextTruncated, onGuardrailError,
+    sessionStore, locale, onContextTruncated, onGuardrailError, onSessionEvent,
   } = params;
 
   // 系统前缀：角色 + 用户画像 + 当前时间
@@ -183,6 +190,7 @@ async function createAgentLoopAndDeps(params: {
     guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
     onContextTruncated,
     onGuardrailError,
+    onSessionEvent,
   });
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
@@ -299,6 +307,7 @@ export async function assembleComponents(
       locale,
       onContextTruncated: input.onContextTruncated,
       onGuardrailError: input.onGuardrailError,
+      onSessionEvent: input.onSessionEvent,
     });
 
   // ── Phase 4: 依赖 Loop 的组件 ──

@@ -6,6 +6,10 @@
  * 避免与 Agent 的 history/loop 引用生命周期耦合。
  *
  * Agent 通过组合方式持有 SessionManager 实例，将会话相关操作委托给它。
+ *
+ * 不中断工作模型 v2.0（P4）：
+ *   新增检查点模型——会话状态可序列化为 SessionCheckpoint，
+ *   支持暂停后断点续跑。状态机（SessionStateMachine）管理三态流转。
  */
 
 import { logger } from '@/logging/logger.js';
@@ -17,6 +21,16 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
+import type {
+  SessionCheckpoint,
+  ChatMessage,
+  Role,
+  Standard,
+  ResourceState,
+  PlanStep,
+} from '@/agent/types.js';
+import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
+import type { PauseSource } from '@/agent/sessionStateMachine.js';
 
 /**
  * Agent.forkSession() 返回值类型
@@ -48,6 +62,12 @@ export class SessionManager {
   /** 发射事件（委托给 Agent 的 TypedEventEmitter） */
   private emitEvent: (event: string, data: Record<string, unknown>) => void;
 
+  // ─── 不中断工作模型 v2.0（P4） ──────────────────────────
+  /** 会话状态机（三态流转） */
+  readonly stateMachine: SessionStateMachine;
+  /** 当前会话检查点（运行时状态快照） */
+  private checkpoint: SessionCheckpoint | null = null;
+
   constructor(
     getHistory: () => MessageHistory,
     getLoop: () => AgentLoop,
@@ -60,6 +80,7 @@ export class SessionManager {
     this.sessionStore = sessionStore;
     this.isChatBusy = isChatBusy;
     this.emitEvent = emitEvent;
+    this.stateMachine = new SessionStateMachine('running');
   }
 
   /**
@@ -240,5 +261,302 @@ export class SessionManager {
       content: tm.content,
     }));
     this.getLoop().restoreHistory(messages);
+  }
+
+  // ─── 不中断工作模型 v2.0：检查点 + 状态机（P4） ──────────
+
+  /**
+   * 从当前运行时状态创建检查点
+   *
+   * 快照当前 AgentLoop 的消息历史、会话标识等运行时状态，
+   * 生成可序列化的 SessionCheckpoint。
+   *
+   * @param mainGoal - 原始目标（首次创建时必填，后续调用可选）
+   * @param role - 当前角色
+   * @param standard - 当前执行标准
+   * @returns 当前会话检查点
+   */
+  createCheckpoint(
+    mainGoal?: string,
+    role?: Role,
+    standard?: Standard,
+  ): SessionCheckpoint {
+    const history = this.getHistory();
+
+    // 从 AgentLoop 获取热记忆（最近消息）
+    const hotMemory: ChatMessage[] = this.extractHotMemory();
+
+    // 复用已有检查点的目标信息（跨暂停保持）
+    const existingGoal = this.checkpoint?.mainGoal;
+    const existingGoalVersion = this.checkpoint?.goalVersion ?? 0;
+
+    this.checkpoint = {
+      sessionId: history.currentSessionName,
+      status: this.stateMachine.status,
+      error: this.stateMachine.errorInfo
+        ? {
+            cause: this.stateMachine.errorInfo,
+            at: Date.now(),
+            recovered: false,
+          }
+        : undefined,
+      mainGoal: mainGoal ?? existingGoal ?? '',
+      currentGoal: mainGoal ?? existingGoal ?? '',
+      goalVersion: existingGoalVersion,
+      plan: this.checkpoint?.plan ?? [],
+      role: role ?? this.checkpoint?.role ?? { name: 'assistant' },
+      standard: standard ?? this.checkpoint?.standard ?? { quality: '', constraints: [] },
+      resource: this.checkpoint?.resource ?? { documents: [], memories: [], context: '' },
+      hotMemory,
+      lastHeartbeat: Date.now(),
+    };
+
+    return this.checkpoint;
+  }
+
+  /**
+   * 获取当前检查点
+   *
+   * 返回当前运行时检查点快照，若未创建则返回 null。
+   */
+  getCheckpoint(): SessionCheckpoint | null {
+    return this.checkpoint;
+  }
+
+  /**
+   * 从检查点恢复会话
+   *
+   * 将检查点中的热记忆恢复到 AgentLoop 工作记忆，
+   * 并恢复状态机到检查点记录的状态。
+   *
+   * @param checkpoint - 要恢复的检查点
+   * @returns 恢复的消息数量
+   */
+  restoreFromCheckpoint(checkpoint: SessionCheckpoint): number {
+    this.checkpoint = checkpoint;
+
+    // 恢复热记忆到 AgentLoop
+    const messages: Message[] = checkpoint.hotMemory.map((cm) => ({
+      role: cm.role,
+      content: cm.content,
+      toolCalls: cm.toolCalls,
+      toolCallId: cm.toolCallId,
+    }));
+    this.getLoop().restoreHistory(messages);
+
+    // 恢复状态机：根据检查点状态设置状态机
+    if (checkpoint.status === 'error' && checkpoint.error) {
+      this.stateMachine.triggerError(checkpoint.error.cause);
+    } else if (checkpoint.status === 'paused') {
+      this.stateMachine.pause('从检查点恢复', 'system');
+    }
+    // running 状态不需要额外操作（状态机默认 running）
+
+    // 切换到检查点记录的会话
+    const history = this.getHistory();
+    const sessionParts = checkpoint.sessionId.split('-');
+    if (sessionParts.length >= 4) {
+      const date = sessionParts.slice(0, 3).join('-');
+      const session = sessionParts.slice(3).join('-');
+      history.loadSessionMessages(date, session);
+    }
+
+    logger.info(
+      { sessionId: checkpoint.sessionId, messageCount: messages.length },
+      '从检查点恢复会话',
+    );
+
+    return messages.length;
+  }
+
+  /**
+   * 暂停会话
+   *
+   * 双向暂停：用户/Agent/系统均可触发。
+   * 暂停前自动创建检查点保存当前状态。
+   *
+   * @param reason - 暂停原因
+   * @param source - 暂停来源
+   * @returns 是否暂停成功
+   */
+  pause(reason: string, source: PauseSource = 'user'): boolean {
+    const result = this.stateMachine.pause(reason, source);
+    if (result.allowed) {
+      // 暂停前保存检查点
+      this.createCheckpoint();
+      this.emitEvent('sessionPaused', {
+        reason,
+        source,
+        sessionId: this.checkpoint?.sessionId,
+      });
+      logger.info({ reason, source }, '会话已暂停');
+    }
+    return result.allowed;
+  }
+
+  /**
+   * 恢复会话
+   *
+   * 从 PAUSED 状态恢复到 RUNNING。
+   * 恢复前校验：无阻塞条件。
+   *
+   * @returns 是否恢复成功
+   */
+  resume(): boolean {
+    const result = this.stateMachine.resume();
+    if (result.allowed) {
+      // 更新检查点心跳
+      if (this.checkpoint) {
+        this.checkpoint.lastHeartbeat = Date.now();
+        this.checkpoint.status = 'running';
+      }
+      this.emitEvent('sessionResumed', {
+        sessionId: this.checkpoint?.sessionId,
+      });
+      logger.info('会话已恢复');
+    }
+    return result.allowed;
+  }
+
+  /**
+   * 触发异常
+   *
+   * 仅 RUNNING 状态可触发异常。
+   * 异常时自动创建检查点保存当前状态。
+   *
+   * @param cause - 异常原因
+   * @returns 是否触发成功
+   */
+  triggerError(cause: string): boolean {
+    const result = this.stateMachine.triggerError(cause);
+    if (result.allowed) {
+      // 异常前保存检查点
+      this.createCheckpoint();
+      if (this.checkpoint) {
+        this.checkpoint.status = 'error';
+        this.checkpoint.error = {
+          cause,
+          at: Date.now(),
+          recovered: false,
+        };
+      }
+      this.emitEvent('sessionError', {
+        cause,
+        sessionId: this.checkpoint?.sessionId,
+      });
+      logger.warn({ cause }, '会话异常');
+    }
+    return result.allowed;
+  }
+
+  /**
+   * 从异常恢复
+   *
+   * 校验恢复条件：error.recovered === true 且 cause 已解除。
+   * 恢复前标记 checkpoint.error.recovered = true。
+   *
+   * @returns 是否恢复成功
+   */
+  recover(): boolean {
+    if (!this.checkpoint || !this.checkpoint.error) {
+      logger.warn('无法恢复：无检查点或异常信息');
+      return false;
+    }
+
+    // 标记异常已恢复
+    this.checkpoint.error.recovered = true;
+
+    const result = this.stateMachine.recover(this.checkpoint);
+    if (result.allowed) {
+      if (this.checkpoint) {
+        this.checkpoint.status = 'running';
+        this.checkpoint.lastHeartbeat = Date.now();
+      }
+      this.emitEvent('sessionRecovered', {
+        sessionId: this.checkpoint?.sessionId,
+      });
+      logger.info('会话已从异常恢复');
+    }
+    return result.allowed;
+  }
+
+  /**
+   * 更新检查点目标版本
+   *
+   * 用户修正目标时调用，递增 goalVersion 触发漂移检测。
+   *
+   * @param newGoal - 新目标描述
+   */
+  updateGoal(newGoal: string): void {
+    if (!this.checkpoint) {
+      this.createCheckpoint(newGoal);
+      return;
+    }
+
+    this.checkpoint.currentGoal = newGoal;
+    this.checkpoint.goalVersion++;
+    this.checkpoint.lastHeartbeat = Date.now();
+
+    this.emitEvent('goalUpdated', {
+      newGoal,
+      goalVersion: this.checkpoint.goalVersion,
+      sessionId: this.checkpoint.sessionId,
+    });
+  }
+
+  /**
+   * 更新检查点计划步骤
+   *
+   * @param plan - 新的计划步骤列表
+   */
+  updatePlan(plan: PlanStep[]): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.plan = plan;
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 更新检查点资源状态
+   *
+   * @param resource - 新的资源状态
+   */
+  updateResource(resource: ResourceState): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.resource = resource;
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 发送心跳，防僵尸会话
+   */
+  heartbeat(): void {
+    if (this.checkpoint) {
+      this.checkpoint.lastHeartbeat = Date.now();
+    }
+  }
+
+  /**
+   * 从 AgentLoop 当前消息中提取热记忆
+   *
+   * 热记忆 = 截断后的最近对话窗口，用于检查点序列化。
+   * 仅保留 user/assistant/tool 消息，排除 system prompt。
+   */
+  private extractHotMemory(): ChatMessage[] {
+    const loop = this.getLoop();
+    const messages = loop.getMessages();
+
+    // 过滤 system 消息，仅保留 user/assistant/tool
+    return messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({
+        role: m.role as ChatMessage['role'],
+        content: m.content,
+        toolCalls: m.toolCalls?.map((tc) => ({
+          id: tc.id,
+          type: tc.type,
+          function: { name: tc.function.name, arguments: tc.function.arguments },
+        })),
+        toolCallId: m.toolCallId,
+      }));
   }
 }

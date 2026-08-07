@@ -25,7 +25,9 @@
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
-import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig } from '@/agent/types.js';
+import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard } from '@/agent/types.js';
+import type { SessionEvent, SessionCheckpoint } from '@/agent/types.js';
+import { Composer } from '@/agent/composer.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
@@ -143,6 +145,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private textPolisher: TextPolishManager | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
+
+  // ─── 不中断工作模型 v2.0 ───────────────────────────────
+  /** 四级补全器（四元组 + 三源融合） */
+  private composer: Composer | null = null;
 
   // activeSkill 字段已移除：matchAndInjectSkill 改为当轮实时匹配注入，无需跨轮状态缓存
 
@@ -299,6 +305,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private createPostInitComponents(pctx: ProjectContext): void {
     // chat() 并发锁管理器（生命周期与 Agent 实例一致）
     this.chatLockManager = new ChatLockManager();
+
+    // 四级补全器（不中断工作模型 v2.0）
+    this.composer = new Composer();
 
     // 归档操作委托给 ArchiveCoordinator
     this.archiveCoordinator = new ArchiveCoordinator({
@@ -733,6 +742,243 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return result;
   }
 
+  // ─── 不中断工作模型 v2.0：公开 API ──────────────────────
+
+  /**
+   * 处理增量事件（不中断工作模型核心入口）
+   *
+   * 替代 `chat()` 的结构化输入接口。接收 SessionEvent（含意图分类 + 内容 + delta），
+   * 按意图路由到不同处理路径。与 `chat()` 共享同一并发锁，互斥调用。
+   *
+   * 使用方式：
+   *   const event = { type: 'chat', content: '帮我写一个排序函数', delta: { task: '写排序函数' } };
+   *   for await (const chunk of agent.processEvent(event)) { ... }
+   *
+   * @param event - 增量事件（含意图分类 + 内容 + 可选四元组增量）
+   * @param signal - 可选的 AbortSignal
+   * @yields AgentChunk 事件流
+   */
+  async *processEvent(
+    event: SessionEvent,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    this.assertInitialized('processEvent');
+    this.validateChatInput(event.content);
+
+    const lockCtx = this.acquireChatLock(signal);
+    const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
+
+    try {
+      this._lastInteractionAt = new Date();
+
+      // 四级补全：将 SessionEvent.delta 与当前检查点融合
+      const checkpoint = this._sessionManager?.getCheckpoint();
+      if (checkpoint && this.composer) {
+        const composeResult = this.composer.compose(event, checkpoint);
+
+        // 若有 P4 澄清问题，暂停并等待用户回答
+        if (composeResult.needClarify && composeResult.needClarify.length > 0) {
+          for (const q of composeResult.needClarify) {
+            yield { type: 'text', content: `[需澄清] ${q.question}` };
+          }
+          yield { type: 'done' };
+          return;
+        }
+      }
+
+      // 意图路由：委托给 AgentLoop.processEvent
+      const loop = this.requireLoop;
+      const recalledMemories = yield* this.prepareChatContext(event.content, combinedSignal);
+
+      if (combinedSignal.aborted) {
+        yield {
+          type: 'aborted',
+          reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation',
+        };
+        return;
+      }
+
+      // 委托给 AgentLoop 的 processEvent（按意图分类路由）
+      let assistantContent = '';
+      let wasAborted = false;
+
+      try {
+        for await (const chunk of loop.processEvent(event, recalledMemories, combinedSignal)) {
+          yield chunk;
+          if (chunk.type === 'text') {
+            assistantContent += chunk.content;
+          } else if (chunk.type === 'aborted') {
+            wasAborted = true;
+          }
+        }
+      } catch (err) {
+        if (isAbortError(err)) {
+          yield { type: 'aborted', reason: 'User cancelled the conversation' };
+          return;
+        } else {
+          yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+          return;
+        }
+      }
+
+      if (wasAborted) {
+        if (assistantContent.trim()) {
+          const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
+          try {
+            await this.requireHistory.appendAssistant(assistantContent + interruptedMark);
+          } catch (err) {
+            logger.warn({ err }, '中断消息历史写入失败');
+          }
+        }
+        return;
+      }
+
+      // 追加助手消息到历史
+      try {
+        await this.requireHistory.appendAssistant(assistantContent);
+      } catch (err) {
+        logger.warn({ err }, '助手消息历史写入失败');
+      }
+
+      // 后处理
+      yield { type: 'thinking', phase: 'archiving' };
+      await this.postProcess(event.content, assistantContent);
+    } finally {
+      this.chatLockManager?.release(myToken);
+      cleanupExternalSignal();
+      await this.flushPendingConfigReload();
+    }
+  }
+
+  /**
+   * 暂停会话
+   *
+   * 双向暂停：用户/Agent/系统均可触发。
+   * 暂停前自动创建检查点保存当前状态。
+   *
+   * @param reason - 暂停原因
+   * @param source - 暂停来源（默认 'user'）
+   * @returns 是否暂停成功
+   */
+  pause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): boolean {
+    this.assertInitialized('pause');
+    return this.requireSessionManager.pause(reason, source);
+  }
+
+  /**
+   * 恢复会话
+   *
+   * 从 PAUSED 状态恢复到 RUNNING。
+   *
+   * @returns 是否恢复成功
+   */
+  resume(): boolean {
+    this.assertInitialized('resume');
+    return this.requireSessionManager.resume();
+  }
+
+  /**
+   * 触发异常
+   *
+   * 仅 RUNNING 状态可触发异常。异常时自动创建检查点保存当前状态。
+   *
+   * @param cause - 异常原因
+   * @returns 是否触发成功
+   */
+  triggerError(cause: string): boolean {
+    this.assertInitialized('triggerError');
+    return this.requireSessionManager.triggerError(cause);
+  }
+
+  /**
+   * 从异常恢复
+   *
+   * 校验恢复条件：error.recovered === true 且 cause 已解除。
+   *
+   * @returns 是否恢复成功
+   */
+  recover(): boolean {
+    this.assertInitialized('recover');
+    return this.requireSessionManager.recover();
+  }
+
+  /**
+   * 创建会话检查点
+   *
+   * 快照当前运行时状态（热记忆、角色、标准等），生成可序列化的检查点。
+   *
+   * @param mainGoal - 原始目标（首次创建时必填）
+   * @param role - 当前角色
+   * @param standard - 当前执行标准
+   * @returns 当前会话检查点
+   */
+  createCheckpoint(
+    mainGoal?: string,
+    role?: Role,
+    standard?: Standard,
+  ): SessionCheckpoint | null {
+    this.assertInitialized('createCheckpoint');
+    return this.requireSessionManager.createCheckpoint(mainGoal, role, standard);
+  }
+
+  /**
+   * 获取当前检查点
+   *
+   * @returns 当前检查点快照，若未创建则返回 null
+   */
+  getCheckpoint(): SessionCheckpoint | null {
+    this.assertInitialized('getCheckpoint');
+    return this.requireSessionManager.getCheckpoint();
+  }
+
+  /**
+   * 从检查点恢复会话
+   *
+   * 将检查点中的热记忆恢复到 AgentLoop 工作记忆，并恢复状态机。
+   *
+   * @param checkpoint - 要恢复的检查点
+   * @returns 恢复的消息数量
+   */
+  restoreFromCheckpoint(checkpoint: SessionCheckpoint): number {
+    this.assertInitialized('restoreFromCheckpoint');
+    return this.requireSessionManager.restoreFromCheckpoint(checkpoint);
+  }
+
+  /**
+   * 处理会话事件回调（从 AgentLoop 接收）
+   *
+   * 根据事件类型触发状态机转换或检查点更新。
+   */
+  private handleSessionEvent(eventType: string, detail: string): void {
+    const sm = this._sessionManager;
+    if (!sm) return;
+
+    switch (eventType) {
+      case 'command':
+        // 命令事件：检查暂停/恢复关键词
+        if (detail.includes('pause') || detail.includes('暂停')) {
+          sm.pause(detail, 'user');
+        } else if (detail.includes('resume') || detail.includes('恢复') || detail.includes('继续')) {
+          sm.resume();
+        }
+        break;
+      case 'correction':
+        // 修正事件：更新目标版本
+        sm.updateGoal(detail);
+        break;
+      case 'clarify':
+        // 澄清事件：记录心跳
+        sm.heartbeat();
+        break;
+      case 'chat':
+        // 对话事件：记录心跳
+        sm.heartbeat();
+        break;
+      default:
+        break;
+    }
+  }
+
   /**
    * 分叉当前会话（委托至 SessionManager）
    *
@@ -826,6 +1072,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       },
       onGuardrailError: (rule, message) => {
         this.emit(AGENT_EVENTS.guardrailError, { rule, message });
+      },
+      onSessionEvent: (eventType, detail) => {
+        this.handleSessionEvent(eventType, detail);
       },
     });
 

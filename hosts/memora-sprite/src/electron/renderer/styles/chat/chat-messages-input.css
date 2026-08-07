@@ -422,6 +422,40 @@
   outline-offset: 1px;
 }
 
+/* ─── 会话控制按钮（不中断工作模型：暂停/恢复） ─────── */
+
+/* 在 .input-action 基础上增加颜色区分 */
+.session-control-btn {
+  /* 继承 .input-action 基类 */
+}
+
+/* 暂停按钮：绿色激活态，hover 时绿色加深 */
+.session-pause-btn {
+  color: var(--text-2);
+}
+
+.session-pause-btn:hover:not(:disabled) {
+  color: var(--green);
+  background: var(--surface0);
+}
+
+/* 恢复按钮：绿色高亮（仅 PAUSED 态可用，暗示"可恢复"） */
+.session-resume-btn {
+  color: var(--green);
+}
+
+.session-resume-btn:hover:not(:disabled) {
+  color: var(--green-hover, var(--green));
+  background: var(--surface0);
+}
+
+/* 禁用态：灰色 + 不可点击 */
+.session-control-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* 右侧发送按钮区域 */
 .input-send-area {
   display: flex;

@@ -4,20 +4,23 @@
  * 职责：
  *   1. 注册 USER_INPUT 通道（委托到 chatStreamHandler.handleUserInput）
  *   2. 注册 CHAT_ABORT 通道（AbortController + reason 携带中断原因）
+ *   3. 注册会话状态管理通道（SESSION_PAUSE / SESSION_RESUME / SESSION_RECOVER / 检查点管理）
  *
  * 本文件仅负责 IPC 通道注册，流式输出业务逻辑由 chatStreamHandler.ts 承担。
  *
  * 流式输出架构：
- *   主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk，
+ *   主进程通过 agent.processEvent() 处理结构化 SessionEvent，通过专用 IPC 通道发送 chunk，
  *   不走 IInteraction（IInteraction 仅负责非流式输出）。
  */
 
 import { ipcMain } from 'electron';
 import { logger } from 'memora';
-import { IPC_CHANNELS } from './channels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
+import { requireAgent } from './types.js';
 import { handleUserInput } from './chatStreamHandler.js';
 import { isValidContent } from './inputValidation.js';
+import type { SessionCheckpoint } from 'memora';
 
 /**
  * 注册对话相关 IPC 处理器
@@ -77,5 +80,77 @@ export function registerChatHandlers(ctx: IpcContext): void {
     // 清理宿主侧的 AbortController 引用（与 chatStreamHandler finally 块职责对齐）
     ctx.setAbortController(null);
     return { released: hadActiveChat };
+  });
+
+  // ─── 会话状态管理（不中断工作模型） ─────────────────────
+
+  /** 暂停会话 */
+  ipcMain.handle(IPC_CHANNELS.SESSION_PAUSE, async (_event, reason: string) => {
+    const agent = requireAgent(ctx);
+    const result = agent.pause(reason ?? '用户主动暂停', 'user');
+    // 广播状态变更到渲染进程
+    if (result) {
+      const fullWindow = ctx.windowManager.getFullWindow();
+      if (fullWindow && !fullWindow.isDestroyed()) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+          status: 'paused',
+          reason: reason ?? '用户主动暂停',
+        });
+      }
+    }
+    return { paused: result };
+  });
+
+  /** 恢复会话 */
+  ipcMain.handle(IPC_CHANNELS.SESSION_RESUME, async () => {
+    const agent = requireAgent(ctx);
+    const result = agent.resume();
+    // 广播状态变更到渲染进程
+    if (result) {
+      const fullWindow = ctx.windowManager.getFullWindow();
+      if (fullWindow && !fullWindow.isDestroyed()) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+          status: 'running',
+        });
+      }
+    }
+    return { resumed: result };
+  });
+
+  /** 从异常恢复会话 */
+  ipcMain.handle(IPC_CHANNELS.SESSION_RECOVER, async () => {
+    const agent = requireAgent(ctx);
+    const result = agent.recover();
+    // 广播状态变更到渲染进程
+    if (result) {
+      const fullWindow = ctx.windowManager.getFullWindow();
+      if (fullWindow && !fullWindow.isDestroyed()) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+          status: 'running',
+        });
+      }
+    }
+    return { recovered: result };
+  });
+
+  /** 创建会话检查点 */
+  ipcMain.handle(IPC_CHANNELS.CREATE_CHECKPOINT, async (_event, mainGoal?: string) => {
+    const agent = requireAgent(ctx);
+    const checkpoint = agent.createCheckpoint(mainGoal);
+    return { checkpoint };
+  });
+
+  /** 获取当前检查点 */
+  ipcMain.handle(IPC_CHANNELS.GET_CHECKPOINT, async () => {
+    const agent = requireAgent(ctx);
+    const checkpoint = agent.getCheckpoint();
+    return { checkpoint };
+  });
+
+  /** 从检查点恢复会话 */
+  ipcMain.handle(IPC_CHANNELS.RESTORE_CHECKPOINT, async (_event, checkpoint: SessionCheckpoint) => {
+    const agent = requireAgent(ctx);
+    const messageCount = agent.restoreFromCheckpoint(checkpoint);
+    return { restored: true, messageCount };
   });
 }

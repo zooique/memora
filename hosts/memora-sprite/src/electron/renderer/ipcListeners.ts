@@ -859,6 +859,15 @@ export interface IpcListenerCallbacks {
    * 渲染层职责：按 payload.type 分发到 settingsManagerPanel.handleConfigFilesChanged 刷新对应列表
    */
   onConfigFilesChanged?: (payload: ConfigFilesChangedPayload) => void;
+  /**
+   * 会话状态变更回调（不中断工作模型）
+   *
+   * 暂停/恢复/异常时触发，渲染层更新 UI 状态（暂停按钮禁用态 + 消息区状态横幅）。
+   *
+   * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param reason 状态变更原因（可选）
+   */
+  onSessionStatusChanged?: (status: string, reason?: string) => void;
 }
 
 /**
@@ -1100,5 +1109,17 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    */
   window.electronAPI.onConfigFilesChanged((payload) => {
     callbacks.onConfigFilesChanged?.(payload);
+  });
+
+  // ─── 会话状态变更（不中断工作模型） ──────────────────
+  /**
+   * 监听会话状态变更（暂停/恢复/异常时触发）
+   *
+   * 触发链路：主进程 Agent 状态机状态变化 → SESSION_STATUS_CHANGED IPC 推送
+   * 处理方式：调用 callbacks.onSessionStatusChanged 更新 UI 状态
+   * （暂停按钮禁用态 + 消息区状态横幅）
+   */
+  window.electronAPI.onSessionStatusChanged((payload) => {
+    callbacks.onSessionStatusChanged?.(payload.status, payload.reason);
   });
 }
