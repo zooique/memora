@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>落地体验 · 输入系统梳理（体验优先）</title>
+<style>
+  :root {
+    --bg: #faf9f7;
+    --card: #ffffff;
+    --border: #e5e2da;
+    --text: #2c2c2a;
+    --muted: #5f5e5a;
+    --hint: #888780;
+    --accent: #0f6e56;
+    --accent-bg: #e1f5ee;
+    --purple: #534ab7;
+    --purple-bg: #eeedfe;
+    --amber: #854f0b;
+    --amber-bg: #faeeda;
+    --blue: #185fa5;
+    --blue-bg: #e6f1fb;
+    --red: #993c1d;
+    --red-bg: #faece7;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 40px 20px 80px;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+  header {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 36px;
+    margin-bottom: 28px;
+  }
+  header h1 { font-size: 26px; font-weight: 500; margin-bottom: 8px; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  header .meta {
+    margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border);
+    color: var(--hint); font-size: 12px;
+  }
+  .declaration {
+    margin-top: 14px; padding: 12px 16px; font-size: 13px; color: var(--muted);
+    background: var(--amber-bg); border: 1px solid #f0d9a8; border-radius: 10px;
+  }
+  .scope {
+    margin-top: 10px; padding: 10px 16px; font-size: 13px; color: var(--muted);
+    background: var(--blue-bg); border: 1px solid #b8d4ee; border-radius: 10px;
+  }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 36px;
+    margin-bottom: 20px;
+  }
+  h2 { font-size: 19px; font-weight: 500; margin-bottom: 6px; }
+  .tag { font-size: 12px; color: var(--hint); margin-bottom: 16px; }
+  h3 { font-size: 15px; font-weight: 500; margin: 20px 0 8px; }
+  p { font-size: 14px; margin-bottom: 10px; }
+  ul, ol { font-size: 14px; padding-left: 22px; margin-bottom: 10px; }
+  li { margin-bottom: 5px; }
+  .lead {
+    font-size: 14.5px; color: var(--text); padding: 14px 18px;
+    border-left: 3px solid var(--accent); background: var(--accent-bg);
+    border-radius: 0 10px 10px 0; margin-bottom: 16px;
+  }
+  .key {
+    font-size: 14px; padding: 14px 18px; background: var(--amber-bg);
+    border: 1px solid #f0d9a8; border-radius: 10px; margin: 16px 0;
+  }
+  .warnbox {
+    font-size: 14px; padding: 14px 18px; background: var(--red-bg);
+    border: 1px solid #ecc4b5; border-radius: 10px; margin: 16px 0;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 12px 0 16px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: #f4f2ec; font-weight: 500; }
+  svg { width: 100%; height: auto; display: block; margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+  .formula {
+    text-align: center; font-size: 15px; font-weight: 500; color: var(--accent);
+    padding: 18px 16px; border: 1px dashed var(--accent); border-radius: 10px; margin: 16px 0;
+  }
+  footer { text-align: center; color: var(--hint); font-size: 12px; margin-top: 8px; }
+  code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; background: #f4f2ec; padding: 1px 6px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>落地体验 · 输入系统梳理（体验优先）</h1>
+  <div class="sub">先问用户要什么体验，再推导需要什么机制，最后才用哲学语言收束</div>
+  <div class="meta">沉淀日期：2026-08-07 · 方法：第一性原理 + 对抗式审查 · 版本：v1.0 · 定位：体系梳理篇（体验入口）</div>
+  <div class="declaration"><b>叙事方向反转声明</b>：本文与《道生万物输入框架》的推导方向相反——<b>《道生万物》从「道」推导出「一/二/三/万物」</b>（哲学驱动设计）；<b>本文从用户使用体验出发，推导机制，最后才用道生万物语言收束</b>（体验驱动设计，哲学仅作叙事容器）。哲学是<b>命名容器</b>，不是<b>设计生成器</b>——先有体验与机制，后有哲学称谓；禁止用哲学反向生成新抽象。</div>
+  <div class="scope"><b>适用范围</b>：任何 Agent / LLM 应用的产品与输入设计。本文是体系的使用者视角入口——先读本文理解「为什么这样设计」，再读《道生万物输入框架》（理论收束）、《输入管道与触发链架构》（工程落地）、《不中断工作模型演进》（演进落地）看「怎么落地」。</div>
+</header>
+
+<section>
+  <h2>01 · 第一性：用户到底在做什么</h2>
+  <div class="tag">所有机制都从这六个体验场景长出来——它们是用户对 Agent 不可妥协的诉求</div>
+  <p>抛开一切抽象，用户与 Agent 交互时只有六个不可妥协的体验诉求。每个诉求都必然推导出至少一个机制；<b>没有对应体验诉求的机制，就是过度设计</b>。</p>
+  <table>
+    <tr><th style="width:14%">体验场景</th><th style="width:34%">用户诉求（第一性）</th><th style="width:30%">推导出的机制</th><th>违背时用户感受</th></tr>
+    <tr><td><b>① 发起</b></td><td>说一句话就开始干活，别让我配置</td><td>统一输入接口 + 缺省补全链（P1 显式 → P2 记忆 → P3 内置）</td><td>「为什么还要填这么多设置」</td></tr>
+    <tr><td><b>② 继续</b></td><td>说「继续」就能接着上次干，不失忆</td><td>对话记录 ∈ 资源层常驻 + 增量引用（任务槽引用 currentGoal）</td><td>「你怎么忘了刚才的事」</td></tr>
+    <tr><td><b>③ 纠正</b></td><td>中途说「不对，改成那样」能改向且不跑偏</td><td>增量事件（correction）+ 目标版本控制（goalVersion 防漂移）</td><td>「越改越离谱 / 改了没用」</td></tr>
+    <tr><td><b>④ 追问</b></td><td>系统不懂时问我，但少问、问到点子上</td><td>P4 暂停询问（可选·终极补全）+ 滥用抑制（连续 2 次后必须给方案）</td><td>「一直在问我，烦死了」</td></tr>
+    <tr><td><b>⑤ 恢复</b></td><td>关掉重开还能接着干，不重复劳动</td><td>检查点 + 恢复协议（快照→热窗→温召回→契约重注入→校验）</td><td>「重启就要重新来一遍」</td></tr>
+    <tr><td><b>⑥ 信任</b></td><td>能看见它在干什么、改了什么、为什么</td><td>状态机三态可见（RUNNING/PAUSED/ERROR）+ 事件意图分类 + 契约分级路径</td><td>「黑盒，不敢让它干」</td></tr>
+  </table>
+  <div class="lead">一句话：用户不关心你的四元组、不关心你的触发链——他关心的是「我说的话你能懂、你能记住、你能改对、你能问我、你能续上、我能看懂」。所有机制都只是这六个诉求的实现手段。</div>
+</section>
+
+<section>
+  <h2>02 · 机制推导：从体验长出来的设计</h2>
+  <div class="tag">六大机制族 —— 每个都对应至少一个体验场景</div>
+  <h3>机制族 A：输入理解（服务体验 ① 发起 + ② 继续）</h3>
+  <ul>
+    <li><b>统一输入接口</b>：一切输入走同一入口（协议族：Request 完整请求 / SessionEvent 增量事件）。体验含义：用户不需要知道系统内部怎么分类输入，怎么说都行。</li>
+    <li><b>缺省补全链 P1→P2→P3</b>：用户没说全（缺角色/缺标准/缺资源），系统用「显式 → 记忆 → 内置」补全。体验含义：用户说半句话也能干活。</li>
+    <li><b>增量引用（主路径）</b>：「继续」「把那个也加进来」这类输入是相对既有状态的增量，直接引用资源层会话状态推进，无需召回解析。体验含义：用户可以用最短的话表达最复杂的延续。</li>
+  </ul>
+  <h3>机制族 B：状态承载（服务体验 ② 继续 + ⑤ 恢复）</h3>
+  <ul>
+    <li><b>资源三层</b>：静态资源（文档/资料）+ 对话记录（原始历史）+ 会话状态（目标/计划/检查点）——全部在「资源」槽。体验含义：系统记得你说过的每句话，且知道当前干到哪。</li>
+    <li><b>检查点 + 恢复协议</b>：快照反序列化 → 热窗口载入 → 温记忆按需召回 → 契约重注入 → 恢复校验。体验含义：重启不失忆、不重复。</li>
+  </ul>
+  <h3>机制族 C：方向控制（服务体验 ③ 纠正）</h3>
+  <ul>
+    <li><b>增量事件 + 意图分类</b>：correction 类输入只更新变动的槽位，注入执行上下文。体验含义：用户一句话就能改向。</li>
+    <li><b>目标版本控制（goalVersion）</b>：每次重规划锚定原始目标，确定性校验偏差（约束哈希 + 相似度阈值），超阈值提示新会话。体验含义：改了不跑偏，跑偏能发现。</li>
+  </ul>
+  <h3>机制族 D：澄清协议（服务体验 ④ 追问）</h3>
+  <ul>
+    <li><b>P4 暂停询问</b>：前三层补全都不够时，Agent 主动暂停问一句。体验含义：问比猜好——猜错更烦。</li>
+    <li><b>滥用抑制</b>：信息缺失到无法推进才问；高风险操作才问；连续 2 次后必须给可执行方案。体验含义：少问、问到点子上。</li>
+  </ul>
+  <h3>机制族 E：可见性（服务体验 ⑥ 信任）</h3>
+  <ul>
+    <li><b>状态机三态</b>：RUNNING / PAUSED / ERROR，UI 可展示，ERROR 保留原因。体验含义：用户知道它活着、停了、还是出错了。</li>
+    <li><b>契约分级路径</b>：rule 等确定性契约 100% 在场（注入），persona/skill 输入驱动匹配后注入，经验内容按需召回。体验含义：安全规则永不丢——用户敢把重要约束交给你。</li>
+  </ul>
+  <h3>机制族 F：表达引擎（服务体验 ①-⑥ 共用的输出侧）</h3>
+  <ul>
+    <li><b>渲染器（排版）+ 上下文管理器（窗口/预算/恢复）</b>：把四层输入稳定排版为 Prompt，动态层后置高注意力。体验含义：用户输入永远是「最后说的话」，模型注意力最强处。</li>
+  </ul>
+  <div class="key">对抗式检查：机制族 A-F 与体验场景 ①-⑥ 一一对应，无孤儿机制、无覆盖不到的体验。若未来要新增机制，先问「它服务哪个体验场景」——答不上来就不加（复杂度守恒）。</div>
+</section>
+
+<section>
+  <h2>03 · 抽象收敛：13 → 7 核心 + 6 可选</h2>
+  <div class="tag">落地标准的第二刀：不是所有想清楚的抽象都要平铺，核心最小集 + 可选按需启用。13 = 机制族 A-F 推导抽象总数（增量事件与意图分类拆计）：统一输入接口 / 缺省补全链 / 增量引用 / 资源三层 / 检查点+恢复协议 / 增量事件 / 意图分类 / 目标版本控制 / P4 暂停询问 / 滥用抑制 / 状态机三态 / 契约分级路径 / 渲染器+上下文管理</div>
+  <table>
+    <tr><th style="width:20%">层级</th><th style="width:44%">抽象</th><th>说明</th></tr>
+    <tr><td rowspan="7"><b>核心 7 项</b><br>（任何落地必须有）</td><td>① 统一输入接口（协议族）</td><td>一切输入入口同构</td></tr>
+    <tr><td>② 缺省补全链 P1→P3（+P4 可选）</td><td>残缺输入可执行</td></tr>
+    <tr><td>③ 资源层（静态/对话/会话三层）</td><td>系统有记忆、有状态</td></tr>
+    <tr><td>④ 分级路径（契约注入/经验召回）</td><td>确定性契约不概率化</td></tr>
+    <tr><td>⑤ 增量引用 + 增量事件</td><td>最短表达延续，改向不漂移</td></tr>
+    <tr><td>⑥ 检查点 + 恢复协议</td><td>可恢复：快照→热窗→温召回→契约重注入→校验</td></tr>
+    <tr><td>⑦ 渲染器 + 上下文管理</td><td>排版真理源 + 窗口/预算/恢复</td></tr>
+    <tr><td rowspan="6"><b>可选 6 项</b><br>（按需启用）</td><td>触发链（粗召回→解析→精召回）</td><td>仅会话开启/冷恢复需要</td></tr>
+    <tr><td>目标版本控制（goalVersion）</td><td>长任务防漂移需要；短任务可省</td></tr>
+    <tr><td>事件意图分类（command/correction/clarify/chat）</td><td>上下文污染风险高时启用</td></tr>
+    <tr><td>状态机三态（RUNNING/PAUSED/ERROR）</td><td>不中断模型/长时运行时启用；ERROR 保留原因</td></tr>
+    <tr><td>tiebreaker 同档仲裁</td><td>同优先级冲突时启用（服务 ③ 纠正/⑥ 信任：冲突仲裁结果可见）</td></tr>
+    <tr><td>热记忆窗口截断策略</td><td>长会话防膨胀时启用（服务 ② 继续：持续会话不失控）</td></tr>
+  </table>
+  <div class="warnbox"><b>落地铁律</b>：最小可落地版本 = 核心 7 项，基线模型 = <b>一问一答 + 会话持久化（检查点）</b>——不做触发链、不做目标版本、不做意图分类、不做状态机三态也能跑通 ①-⑥ 全部体验（用最朴素的实现）。可选项只有在对应体验场景真正出现压力时才启用——<b>抽象是贷款，体验是抵押</b>，别提前透支。</div>
+</section>
+
+<section>
+  <h2>04 · 用户旅程（体验视角的端到端）</h2>
+  <div class="tag">一次完整交互的六个体验节点，标注每个节点动用了哪些机制</div>
+  <svg viewBox="0 0 680 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="用户旅程：发起、理解、执行、继续、纠正、恢复六个节点，标注各节点启用的机制">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+    <g>
+      <rect x="40" y="40" width="600" height="64" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+      <text x="340" y="62" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">① 发起：用户说半句话</text>
+      <text x="340" y="84" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#3C3489">机制：统一接口 + 缺省补全（P1→P2→P3）</text>
+      <line x1="340" y1="104" x2="340" y2="126" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="40" y="128" width="600" height="64" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+      <text x="340" y="150" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">② 理解：系统听懂并开始干活</text>
+      <text x="340" y="172" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">机制：渲染器排版 + 上下文管理（用户输入后置高注意力）</text>
+      <line x1="340" y1="192" x2="340" y2="214" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="40" y="216" width="600" height="64" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="340" y="238" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">③ 执行：状态可见地推进</text>
+      <text x="340" y="260" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">机制：状态机三态 + 对话记录/会话状态回流资源层</text>
+      <line x1="340" y1="280" x2="340" y2="302" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="40" y="304" width="600" height="64" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+      <text x="340" y="326" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#633806">④ 继续 / 纠正：最短表达延续或改向</text>
+      <text x="340" y="348" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#854F0B">机制：增量引用（任务槽引用 currentGoal）+ 增量事件（correction）</text>
+      <line x1="340" y1="368" x2="340" y2="390" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="40" y="392" width="600" height="64" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+      <text x="340" y="414" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#4A1B0C">⑤ 恢复：关掉重开接着干</text>
+      <text x="340" y="436" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#712B13">机制：检查点 + 恢复协议（快照→热窗→温召回→契约重注入→校验）</text>
+      <line x1="340" y1="456" x2="340" y2="478" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="40" y="480" width="600" height="40" rx="10" fill="#D3D1C7" stroke="#5F5E5A" stroke-width="0.5"/>
+      <text x="340" y="500" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#2C2C2A">⑥ 信任：全程可看见（状态可见 + 契约 100% 在场 + 分级路径）</text>
+    </g>
+  </svg>
+  <div class="key">每个节点都有对应的机制服务，每个机制都能回溯到它服务的体验节点——这是「体验优先」的检验标准：<b>从上往下问「这个机制服务谁」，从下往上问「这个体验靠什么实现」，两条链都要闭合</b>。</div>
+</section>
+
+<section>
+  <h2>05 · 哲学收束（最后一步：用道生万物语言命名）</h2>
+  <div class="tag">设计已经完成——现在才轮到哲学。收束 = 命名容器，不是推导来源</div>
+  <p>以上全部机制，最后用《道生万物输入框架》的语言收束为一个可记忆的整体：</p>
+  <table>
+    <tr><th style="width:22%">哲学层</th><th style="width:38%">本文推导出的机制（先有）</th><th>哲学命名（后有）</th></tr>
+    <tr><td><b>一 · 统一输入接口</b></td><td>协议族（Request / SessionEvent）+ 缺省补全链 + 增量引用</td><td>一切输入同构，从「一」进入</td></tr>
+    <tr><td><b>二 · 资源与动作</b></td><td>资源三层（静态/对话/会话）</td><td>系统只有「背景」与「指令」两类东西</td></tr>
+    <tr><td><b>三 · 角色/任务/标准</b></td><td>四元组结构（角色 × 任务 × 标准 × 资源）</td><td>每个请求的三个维度 + 物质基底</td></tr>
+    <tr><td><b>三生万物</b></td><td>缺省补全 + 组合生成 + 增量演化</td><td>从简单输入生成完整执行</td></tr>
+    <tr><td><b>复归于道</b></td><td>对话记录/会话状态回流资源层</td><td>万物沉淀为下一轮的资源</td></tr>
+    <tr><td><b>道</b></td><td>一次交互本身（信息流转）</td><td>体验的起点与终点</td></tr>
+  </table>
+  <div class="formula">先有用户体验，后有机制；先有机制，后有哲学。<br>哲学是记忆术，不是设计原理——用「道生万物」记住这套结构，但永远从体验出发设计</div>
+</section>
+
+<section>
+  <h2>06 · 与体系文档的关系</h2>
+  <div class="tag">本文是入口，其余四篇是支撑</div>
+  <table>
+    <tr><th style="width:26%">文档</th><th style="width:34%">在体系中的角色</th><th>阅读顺序</th></tr>
+    <tr><td><b>本文（落地体验梳理）</b></td><td>体验入口：为什么这样设计</td><td>第 1 本（用户视角）</td></tr>
+    <tr><td>《道生万物输入框架》</td><td>理论收束：结构命名与哲学收束</td><td>第 2 本（理论视角）</td></tr>
+    <tr><td>《输入管道与触发链架构》</td><td>工程落地：机制族 A/F 展开</td><td>第 3 本（工程视角）</td></tr>
+    <tr><td>《不中断工作模型演进》</td><td>演进落地：机制族 B/C/D/E 展开</td><td>第 4 本（演进视角）</td></tr>
+    <tr><td>《AI与Agent概念根基》</td><td>概念层：AI/LLM/Agent 边界</td><td>前置基础（概念视角）</td></tr>
+  </table>
+  <div class="key"><b>修正后的阅读方式</b>：以前从「道」读起（理论驱动）；现在从本文读起（体验驱动），需要细节再进理论/工程/演进篇。4 篇理论文档的价值不变——它们是把同一套结构讲深讲透；但<b>设计决策的源头永远在体验，不在哲学</b>。</div>
+</section>
+
+<footer>格物 · 第一性原理 + 对抗式审查 · docs/根基 知识沉淀 · 落地体验输入系统梳理 v1.0</footer>
+</div>
+</body>
+</html>

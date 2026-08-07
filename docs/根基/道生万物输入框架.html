@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>道生万物 · 通用交互输入框架</title>
+<style>
+  :root {
+    --bg: #faf9f7;
+    --card: #ffffff;
+    --border: #e5e2da;
+    --text: #2c2c2a;
+    --muted: #5f5e5a;
+    --hint: #888780;
+    --accent: #0f6e56;
+    --accent-bg: #e1f5ee;
+    --purple: #534ab7;
+    --purple-bg: #eeedfe;
+    --amber: #854f0b;
+    --amber-bg: #faeeda;
+    --blue: #185fa5;
+    --blue-bg: #e6f1fb;
+    --red: #993c1d;
+    --red-bg: #faece7;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 40px 20px 80px;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+  header {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 36px;
+    margin-bottom: 28px;
+  }
+  header h1 { font-size: 26px; font-weight: 500; margin-bottom: 8px; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  header .meta {
+    margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border);
+    color: var(--hint); font-size: 12px;
+  }
+  .declaration {
+    margin-top: 14px; padding: 12px 16px; font-size: 13px; color: var(--muted);
+    background: var(--amber-bg); border: 1px solid #f0d9a8; border-radius: 10px;
+  }
+  .scope {
+    margin-top: 10px; padding: 10px 16px; font-size: 13px; color: var(--muted);
+    background: var(--blue-bg); border: 1px solid #b8d4ee; border-radius: 10px;
+  }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 36px;
+    margin-bottom: 20px;
+  }
+  h2 { font-size: 19px; font-weight: 500; margin-bottom: 6px; }
+  .tag { font-size: 12px; color: var(--hint); margin-bottom: 16px; }
+  h3 { font-size: 15px; font-weight: 500; margin: 20px 0 8px; }
+  p { font-size: 14px; margin-bottom: 10px; }
+  ul, ol { font-size: 14px; padding-left: 22px; margin-bottom: 10px; }
+  li { margin-bottom: 5px; }
+  .lead {
+    font-size: 14.5px; color: var(--text); padding: 14px 18px;
+    border-left: 3px solid var(--purple); background: var(--purple-bg);
+    border-radius: 0 10px 10px 0; margin-bottom: 16px;
+  }
+  .key {
+    font-size: 14px; padding: 14px 18px; background: var(--amber-bg);
+    border: 1px solid #f0d9a8; border-radius: 10px; margin: 16px 0;
+  }
+  .warnbox {
+    font-size: 14px; padding: 14px 18px; background: var(--red-bg);
+    border: 1px solid #ecc4b5; border-radius: 10px; margin: 16px 0;
+  }
+  .appendix {
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 28px 36px;
+    margin-bottom: 20px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 12px 0 16px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: #f4f2ec; font-weight: 500; }
+  svg { width: 100%; height: auto; display: block; margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+  .formula {
+    text-align: center; font-size: 15px; font-weight: 500; color: var(--accent);
+    padding: 18px 16px; border: 1px dashed var(--accent); border-radius: 10px; margin: 16px 0;
+  }
+  footer { text-align: center; color: var(--hint); font-size: 12px; margin-top: 8px; }
+  code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; background: #f4f2ec; padding: 1px 6px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>道生万物 · 通用交互输入框架</h1>
+  <div class="sub">道 → 一（统一接口）→ 二（资源/动作）→ 三（角色/任务/标准）→ 万物 → 复归于道</div>
+  <div class="meta">沉淀日期：2026-08-07 · 方法：第一性原理 + 对抗式审查 · 版本：v2.6（提纯：保留最终核心思想） · 来源：基于 memora 项目（自家实例）+ 提示工程 / Web 语义 / 编程范式等独立惯例的通用化推演（详见附录）</div>
+  <div class="declaration"><b>借喻声明</b>：本文借道家「道生一，一生二，二生三，三生万物」之生成论形态，行工程建模之实。道家原义中「二」为阴阳、「三」为阴阳和合（冲气），本文的「二」为动静二分、「三」为三个并列维度，<b>属借喻性重构，非严格义理对应</b>——取「层层生成」之形，不取「阴阳和合」之义。同理，四元组 = <b>三元坐标 + 资源基底</b>——资源是生成的物质条件而非第四坐标，故称「三生万物」而非「四生万物」。</div>
+  <div class="scope"><b>定位（叙事校准）</b>：本文是《落地体验输入系统梳理》（体验入口）所推导机制的<b>结构命名与哲学收束</b>——体验篇先确立六个用户场景与机制族，本文再用「道 → 一 → 二 → 三 → 万物 → 复归于道」为同一套结构命名。本文<b>不是设计源头</b>，是命名容器；设计决策的检验标准在体验篇（「机制服务谁 / 体验靠什么实现」两条链闭合）。阅读顺序：先读体验篇，需要结构命名时再进本文。适用范围：任意 Agent / LLM 应用的输入设计——请求协议定义、提示词结构、工具调用约定、交互状态建模。本框架与具体项目解耦，不依赖任何特定实现；项目实例仅作验证参照（见附录）。</div>
+</header>
+
+<section>
+  <h2>框架总览</h2>
+  <div class="tag">一张图看清全部层级与闭环</div>
+  <svg viewBox="0 0 680 510" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="道生万物框架：道是交互之本，一是统一输入接口，二是资源与动作，三是角色任务标准，万物由三坐标与资源组合生成并复归于道">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+    <g>
+      <rect x="240" y="40" width="200" height="44" rx="10" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+      <text x="340" y="62" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">道 · 交互之本</text>
+      <line x1="340" y1="84" x2="340" y2="104" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="240" y="106" width="200" height="44" rx="10" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+      <text x="340" y="121" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">一 · 统一输入接口</text>
+      <text x="340" y="138" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">一切请求同构</text>
+      <path d="M340 150 L210 172" fill="none" stroke="#B4B2A9" stroke-width="1.5"/>
+      <path d="M340 150 L470 172" fill="none" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="120" y="172" width="180" height="56" rx="10" fill="#D3D1C7" stroke="#5F5E5A" stroke-width="0.5"/>
+      <text x="210" y="192" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">资源</text>
+      <text x="210" y="210" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#444441">静止 · 背景信息</text>
+      <rect x="380" y="172" width="180" height="56" rx="10" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="470" y="192" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">动作</text>
+      <text x="470" y="210" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">动态 · 指令</text>
+      <path d="M470 228 L170 262" fill="none" stroke="#B4B2A9" stroke-width="1.5"/>
+      <path d="M470 228 L340 262" fill="none" stroke="#B4B2A9" stroke-width="1.5"/>
+      <path d="M470 228 L510 262" fill="none" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="100" y="262" width="140" height="56" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+      <text x="170" y="282" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">角色</text>
+      <text x="170" y="300" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#3C3489">视角 · 身份</text>
+      <rect x="270" y="262" width="140" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="340" y="282" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">任务</text>
+      <text x="340" y="300" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">行为 · 对象</text>
+      <rect x="440" y="262" width="140" height="56" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+      <text x="510" y="282" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#633806">标准</text>
+      <text x="510" y="300" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#854F0B">目标 · 约束</text>
+      <path d="M170 318 L340 358" fill="none" stroke="#B4B2A9" stroke-width="1.5"/>
+      <path d="M340 318 L340 358" fill="none" stroke="#B4B2A9" stroke-width="1.5"/>
+      <path d="M510 318 L340 358" fill="none" stroke="#B4B2A9" stroke-width="1.5"/>
+      <rect x="140" y="360" width="400" height="56" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+      <text x="340" y="380" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">三生万物</text>
+      <text x="340" y="398" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">角色 × 任务 × 标准 × 资源 → 具体请求</text>
+      <rect x="140" y="452" width="400" height="40" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="340" y="472" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#085041">万物 → 归档为记忆 → 记忆即资源 → 复归于道</text>
+      <path d="M140 472 L80 472 L80 62 L240 62" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#a)"/>
+      <text x="72" y="270" text-anchor="middle" font-size="12" fill="#0F6E56" transform="rotate(-90 72 270)">闭环</text>
+    </g>
+  </svg>
+  <div class="formula">模型无状态（每次从道开始）· 记忆让万物回流 · 系统因此「连续演化」</div>
+</section>
+
+<section>
+  <h2>道 · 交互之本</h2>
+  <div class="tag">框架的起点：交互本身</div>
+  <p><b>道 = 一次交互本身（信息流转）</b>：输入 → 处理 → 输出。它是不可名状的本源，一切皆从这一次交互展开。对 LLM 应用而言，模型天然无状态——每一次交互都是从「道」重新开始，这正是框架闭环（复归于道）存在的原因。</p>
+</section>
+
+<section>
+  <h2>一 · 统一输入接口</h2>
+  <div class="tag">第一原则：一切请求走同一协议（输入侧）</div>
+  <ul>
+    <li><b>含义</b>：所有输入（任何来源、任何形式）经同一接口进入系统，结构同构。</li>
+    <li><b>边界</b>：此处指<b>输入侧协议</b>（请求如何进入系统），不是存储/输出侧契约。实例：<code>tool_call JSON</code>、<code>chat()</code> 签名、ChatCompletion 消息结构、HTTP 请求语义。</li>
+    <li><b>层面说明（协议族收敛 v2.3）</b>：本文的「一」是<b>协议族</b>而非单个协议——按交互模式分两个成员：<b>Request 协议</b>（一问一答：完整自包含请求）与 <b>SessionEvent 协议</b>（不中断模型：增量事件，见《不中断工作模型演进》）。二者共享同一输入侧位置（请求如何进入系统）、同一结构基底（四元组），差别在「完整 vs 增量」语义。工程落地时的 parse / renderer 是<b>协议族的实现组件</b>（输入解析器 + 排版器），不再是「一」本身——「一」= 协议形状约束，parse/renderer = 协议执行者。</li>
+    <li><b>为什么必须存在</b>：自然语言天然不完整（缺省普遍），接口的职责是「缺省补全」。没有统一接口，缺省无处补，万物无法生成（见「三生万物 · 机制②」）。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>二 · 资源与动作</h2>
+  <div class="tag">一生二：所有输入二分</div>
+  <table>
+    <tr><th style="width:22%">维度</th><th style="width:34%">资源</th><th>动作</th></tr>
+    <tr><td>本性</td><td>静止 · 被动</td><td>动态 · 主动</td></tr>
+    <tr><td>内容</td><td>背景信息、数据、上下文、记忆、历史</td><td>指令、意图、对资源的操作</td></tr>
+    <tr><td>计算机类比</td><td>数据（操作数）</td><td>代码（操作符）</td></tr>
+  </table>
+  <p><b>收拢规则</b>：所有非指令的内容都归为资源——一刀切断分类爆炸。</p>
+  <h3>资源的三层构成</h3>
+  <p>资源不是单一类型，按来源与生命周期分三层，<b>全部落在「资源」槽内</b>（不另立维度）：</p>
+  <table>
+    <tr><th style="width:22%">层</th><th style="width:34%">内容</th><th>说明</th></tr>
+    <tr><td><b>静态资源</b></td><td>用户文档、背景资料、参考库、知识库</td><td>低频变动；按确定性分级走注入/检索（见落地篇 §04）</td></tr>
+    <tr><td><b>对话记录</b>（原始历史）</td><td>完整交互历史（用户消息/Agent 消息/工具调用）</td><td><b>原始对话记录本身就是资源</b>——它是「记忆」的未提炼形态；会话内常驻于热窗口</td></tr>
+    <tr><td><b>会话状态</b>（检查点）</td><td>目标、计划、角色/标准、检查点、热窗口</td><td>不中断模型下新增成员；是「继续」类增量的引用对象（见「三源融合」补全链）</td></tr>
+  </table>
+  <p><b>「记忆即资源」的准确含义</b>：记忆 = 对话记录（原始）+ 提炼记忆（归档摘要）双层；二者都是资源的供给者——原始记录直接承载上下文，提炼记忆承载跨会话知识。</p>
+  <div class="key">核心洞察（书的比喻）：资源本身是静止的，没有动作它就是死数据；同一资源在不同「角色」下产出完全不同——这正是 LLM 的本质（同一上下文，不同角色设定产生不同输出）。</div>
+  <h3>资源 ⇄ 动作的递归性</h3>
+  <p>资源和动作<b>不是绝对的，是视角问题</b>：一段文本在解析前是资源，解析后是动作；任务的产出可成为下一轮的资源；「分析一段指令」本身就是把动作当作资源（LISP 的 code-as-data）。<b>这个递归性让二分无需新增类别就能覆盖无限场景</b>，也是「三生万物」生成侧的真正引擎。</p>
+</section>
+
+<section>
+  <h2>三 · 角色 / 任务 / 标准</h2>
+  <div class="tag">二生三：动作的三个近似正交维度</div>
+  <table>
+    <tr><th style="width:18%">要素</th><th style="width:30%">本质</th><th>示例（书）</th></tr>
+    <tr><td><b>角色</b>（定位/视角）</td><td>以什么身份解读资源</td><td>农民 → 当柴火烧；科学家 → 分析内容；作者 → 审校结构</td></tr>
+    <tr><td><b>任务</b>（行为 + 对象）</td><td>对资源做什么</td><td>读（默认）/ 背诵 / 只看片段 / 撕毁 / 引用第 3 章</td></tr>
+    <tr><td><b>标准</b>（目标/约束）</td><td>做到什么程度</td><td>背诵全书前 3 章 / 准确率 95% / 10 分钟内完成</td></tr>
+  </table>
+  <p><b>对象绑定</b>：动作需显式绑定「作用于哪个资源」——对象选择归入任务的参数（行为 = 动词 + 对象），标准负责范围/时限。</p>
+  <div class="warnbox"><b>「近似正交」而非「正交」</b>：三要素大体独立，但存在耦合——角色约束任务的可选集（农民不会「审校」），标准受任务类型约束（背诵的标准 ≠ 焚烧的标准）。</div>
+  <div class="key">跨领域一致性：此三分与提示工程「Role + Task + Constraint」三段式、自然语言理解的三问（谁 · 做什么 · 做到怎样）一致——多个独立领域收敛到同一结构，是框架通用性的佐证。</div>
+</section>
+
+<section>
+  <h2>三生万物 · 三个层次</h2>
+  <div class="tag">「生万物」拆分为三个层次：生成机制 / 运行闭环 / 边界条件</div>
+  <h3>A · 生成机制（如何从三到万物）</h3>
+  <ol>
+    <li><b>坐标组合</b>（最浅层）：三要素近似正交坐标轴，资源是物质。任意具体请求 = 四元组 <code>(角色, 任务, 标准, 资源)</code>。取值域叉乘，即生万物。</li>
+    <li><b>缺省补全</b>（接口的职责）：自然语言天然不完整——角色缺省补「通用助手」，标准缺省补「尽力而为」，资源缺省补「无」。万物 = 补全后的完整四元组。</li>
+    <li><b>资源 ⇄ 动作递归</b>（深层引擎）：见「二」节——递归性让二分覆盖无限场景，无需新增类别。</li>
+  </ol>
+  <h3>B · 运行闭环（不属于「生」，属于「归」）</h3>
+  <ol start="4">
+    <li><b>记忆回流</b>：交互的万物沉淀为记忆，记忆成为下一轮请求的资源——<b>万物复归于道</b>。模型无状态，记忆让系统连续演化。此条是时间维度的循环，与「生成」不同层次。</li>
+  </ol>
+  <h3>C · 边界条件（框架外依赖）</h3>
+  <ol start="5">
+    <li><b>涌现</b>：三坐标齐备时，模型组合能力产生超越输入的新信息。此属模型侧能力，框架只保证输入完整，不承诺涌现本身。</li>
+  </ol>
+</section>
+
+<section>
+  <h2>三源融合 · 统一接口的落地</h2>
+  <div class="tag">缺省补全的值从哪来：来源维度与结构维度分离</div>
+  <p>「一 · 统一输入接口」的职责是缺省补全——但补全的<b>值从哪里来</b>？答案是三个输入来源。核心原则：<b>来源是元信息，结构是本质</b>——三个来源<b>不是从「二/三」层延伸出来的，而是「一」的三个供给者</b>；「二/三」描述融合后四元组的结构，与值来自何处无关。若把来源塞进结构（如「资源分内置/记忆/用户三类」），四元组会爆炸为 81 种组合而本质不变——这正是「非指令皆资源」收拢规则要防止的分类爆炸。</p>
+  <table>
+    <tr><th style="width:20%">优先级</th><th style="width:22%">来源</th><th>供给的槽位</th></tr>
+    <tr><td><b>P1 显式</b>（现在）</td><td>用户输入</td><td>实时任务 + 实时标准 + 附带资源</td></tr>
+    <tr><td><b>P2 推断</b>（过去）</td><td>记忆沉淀（对话记录原始历史 + 提炼记忆）</td><td>历史角色偏好（角色）、历史目标（任务要素）、历史偏好（标准）、历史内容（资源）、对话记录（上下文）——目标/计划<b>语义上属「任务」维度</b>；其被存储于会话状态/检查点（见《不中断工作模型演进》）属存储位置问题，不改变语义归类</td></tr>
+    <tr><td><b>P3 兜底</b>（设计）</td><td>系统内置</td><td>角色默认、约束默认、能力模板（skill）</td></tr>
+  </table>
+  <div class="key">用户文档（用户主动撰写的固定内容）不是第四源——它按确定性等级<b>跨 P2/P3 两个渠道分流</b>：高确定性（用户声明「每轮必须遵守」）归 P3 系统内置侧（同 rule 确定性注入）；低确定性 / 长文（背景资料、参考库）归 P2 记忆侧（语义召回）。「三源」指供给渠道（现在/过去/设计），用户文档是「用户撰写的设定」，沿渠道分流而非新增渠道——否则四元组会再次分类爆炸。</div>
+  <h3>记忆全覆盖四元组</h3>
+  <p>记忆沉淀的是「历史完整四元组」——既是资源供给者（内容），也是动作要素供给者（历史目标、历史标准、历史角色偏好）。<b>记忆不是只覆盖资源侧，它覆盖四元组全集</b>——这正是「万物复归于道」的准确含义：万物（完整请求）归档为记忆，下次补全时从记忆中抽取填空。<b>载体说明</b>：角色偏好落 persona 设定文件、目标/计划落会话状态/检查点、内容/洞察落召回记忆——存储载体分属，语义同归四元组，不改变「记忆覆盖全集」的归类。</p>
+  <h3>融合器形态</h3>
+  <p>接口 = 一个入口 + 四槽位填充。补全链的核心规则（v2.3 修正）：<b>P1 显式优先，但分「完整覆盖」与「增量引用」两种输入形态</b>——</p>
+  <ul>
+    <li><b>完整覆盖（特例）</b>：输入是自包含请求（含完整角色/任务/标准/资源），P1 直接覆盖对应槽位，P2/P3 仅作缺省。</li>
+    <li><b>增量引用（主路径）</b>：输入是增量/指代（如「继续」「把那个也加进来」），P1 是<b>对资源层会话状态的引用</b>——「继续」= 任务槽增量（动作=continue，对象=currentGoal），直接引用常驻的对话记录/会话状态推进，<b>无需召回解析</b>。增量槽引用状态、新值槽覆盖，槽位级混合。</li>
+  </ul>
+  <div class="key"><b>v2.3 关键修正</b>：原「每槽独立走 P1→P2→P3 优先级链，互不干扰」的<b>覆盖模型仅适用于完整自包含输入</b>（特例）。真实交互以增量为主——用户输入常是相对既有状态的引用，「继续」类输入在会话状态常驻时直接引用资源层推进；仅当状态不在场（冷恢复/跨会话）才退回 P2 记忆召回解析（依赖式降级路径）。覆盖、增量、依赖三模型由此收敛为「增量为主、覆盖/依赖为特例」。</div>
+  <svg viewBox="0 0 680 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三源汇聚：系统内置、记忆沉淀、用户输入经统一接口融合为完整四元组，执行后归档为记忆回流">
+    <defs><marker id="b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+    <g>
+      <rect x="40" y="60" width="170" height="56" rx="10" fill="#D3D1C7" stroke="#5F5E5A" stroke-width="0.5"/>
+      <text x="125" y="80" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">系统内置</text>
+      <text x="125" y="98" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#444441">设计期 · P3 兜底</text>
+      <rect x="40" y="136" width="170" height="56" rx="10" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="125" y="156" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">记忆沉淀</text>
+      <text x="125" y="174" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">历史期 · P2 推断</text>
+      <rect x="40" y="212" width="170" height="56" rx="10" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+      <text x="125" y="232" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">用户输入</text>
+      <text x="125" y="250" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#3C3489">现在 · P1 最高</text>
+      <line x1="210" y1="88" x2="262" y2="120" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#b)"/>
+      <line x1="210" y1="164" x2="262" y2="160" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#b)"/>
+      <line x1="210" y1="240" x2="262" y2="200" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#b)"/>
+      <rect x="264" y="88" width="180" height="180" rx="12" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+      <text x="354" y="112" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">一 · 统一输入接口</text>
+      <text x="354" y="134" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">融合三源</text>
+      <text x="354" y="152" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">缺省补全</text>
+      <text x="354" y="170" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">P1 &gt; P2 &gt; P3</text>
+      <line x1="354" y1="190" x2="354" y2="212" stroke="#185FA5" stroke-width="1" stroke-dasharray="3 3"/>
+      <text x="354" y="230" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">按槽位分别填充</text>
+      <line x1="444" y1="150" x2="500" y2="150" stroke="#B4B2A9" stroke-width="1.5" marker-end="url(#b)"/>
+      <rect x="502" y="96" width="138" height="160" rx="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+      <text x="571" y="116" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">完整四元组</text>
+      <text x="571" y="142" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">角色</text>
+      <text x="571" y="162" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">任务</text>
+      <text x="571" y="182" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">标准</text>
+      <text x="571" y="202" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">资源</text>
+      <line x1="571" y1="256" x2="571" y2="330" stroke="#B4B2A9" stroke-width="1.5"/>
+      <rect x="440" y="332" width="200" height="40" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+      <text x="540" y="352" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#633806">执行 → 归档为记忆</text>
+      <path d="M440 352 L40 352 L40 164" fill="none" stroke="#0F6E56" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#b)"/>
+      <text x="220" y="344" text-anchor="middle" font-size="12" fill="#0F6E56">记忆全覆盖四元组（含动作要素）→ 回流</text>
+      <text x="125" y="20" text-anchor="middle" font-size="12" fill="#444441">来源维度（三源）</text>
+      <text x="354" y="20" text-anchor="middle" font-size="12" fill="#185FA5">一 · 融合器</text>
+      <text x="571" y="20" text-anchor="middle" font-size="12" fill="#5F5E5A">结构维度（四元组）</text>
+    </g>
+  </svg>
+  <div class="key">落地对应（通用）：现有 Agent 架构的「启动加载（内置）→ 按需召回（记忆）→ 实时输入（用户）」三机制即此结构的实例——理论命名先于实现，落地即确认。三源命名统一按优先级表述：P1 用户输入（显式·现在）&gt; P2 记忆沉淀（推断·过去）&gt; P3 系统内置（兜底·设计）。</div>
+</section>
+
+<div class="appendix">
+  <h2>附录 · 实例验证参照系</h2>
+  <div class="tag">以下为验证参照系，用于佐证框架的通用性，非理论本身</div>
+  <table>
+    <tr><th style="width:22%">参照系</th><th style="width:28%">对应关系</th><th>验证强度</th></tr>
+    <tr><td>memora 项目（自家实例）</td><td>角色↔persona；标准↔rule；任务↔currentGoal；资源↔记忆；统一接口↔chat()/ChatCompletion；记忆回流↔统一记忆模型；三源↔bootstrap（内置）/recall（记忆）/chat（用户）</td><td><b>自家项目实例</b>：佐证「可落地」，非独立验证。注意边界：存储接口 ≠ 输入接口；skill（能力模板）归 P3 系统内置（见「三源融合」：能力模板为 P3 供给，与《输入管道与触发链架构》程序设定层一致）</td></tr>
+    <tr><td>提示工程惯例</td><td>Role + Task + Constraint 三段式 = 三要素</td><td>独立惯例，强佐证</td></tr>
+    <tr><td>Web 语义</td><td>HTTP：资源（URI）+ 方法（动作）= 二分；请求头/状态码 ≈ 标准</td><td>成熟协议，强佐证</td></tr>
+    <tr><td>编程范式</td><td>LISP code-as-data = 资源⇄动作递归；数据/代码 = 二分</td><td>六十余年实践，强佐证</td></tr>
+    <tr><td>自然语言</td><td>谁（角色）· 做什么（任务）· 做到怎样（标准）</td><td>语言学常识，强佐证</td></tr>
+  </table>
+  <p><b>验证边界声明</b>：本框架的验证范围 = 单项目实例（memora，非独立）+ 通用提示工程惯例 + 成熟协议/范式类比。<b>「普适」断言缺乏独立第三方大规模验证支撑，不采用</b>；当前定位为「与多个独立领域高度一致、可在实践中复用的输入设计模式」。</p>
+</div>
+
+<section>
+  <h2>版本与来源</h2>
+  <div class="tag">本文档经多轮评审收敛至最终形态；过程记录见《根基交叉评审-20260807.md》与《根基设计质量评审-20260807.md》</div>
+  <p><b>当前版本</b>：v2.6（提纯：剔除演进过程，保留最终核心思想）。</p>
+  <p><b>版本沿革</b>：v1.0（首轮评审 5 条）→ v2.0（解耦通用化）→ v2.1（三源融合）→ v2.2（交叉评审术语收口）→ v2.3（增量主路径收敛）→ v2.4（协议族收敛）→ v2.5（叙事校准：体验篇收束）→ v2.6（提纯）。</p>
+  <p><b>来源</b>：基于 memora 项目（自家实例）+ 提示工程 / Web 语义 / 编程范式等独立惯例的通用化推演（详见附录）。</p>
+</section>
+
+<footer>格物 · 第一性原理 + 对抗式审查 · docs/根基 知识沉淀 · v2.6</footer>
+</div>
+</body>
+</html>
