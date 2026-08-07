@@ -903,6 +903,152 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
   }
 
+  // ─── P2.1：检查点恢复协议（温记忆按需召回 + 契约重注入） ──
+
+  /**
+   * 温记忆按需召回（P2.1 检查点恢复协议·步骤③）
+   *
+   * 以 mainGoal/currentGoal 为查询条件，从温记忆（归档 recall）召回窗口外的早期上下文，
+   * 合并到资源槽（resource.memories + resource.context），同时注入 AgentLoop 的 system message
+   * 作为早期上下文参考，让 Agent 恢复后能感知暂停前的完整上下文。
+   *
+   * 召回失败时静默降级，仅记录日志，不影响热窗口恢复和契约重注入。
+   *
+   * @param checkpoint - 当前检查点（含 mainGoal/currentGoal）
+   */
+  private async warmRecallForCheckpoint(checkpoint: SessionCheckpoint): Promise<void> {
+    // 以 mainGoal/currentGoal 拼接为查询条件
+    const query = [checkpoint.mainGoal, checkpoint.currentGoal]
+      .filter((s) => s && s.trim().length > 0)
+      .join(' ');
+
+    if (!query.trim()) {
+      logger.debug('温记忆按需召回：mainGoal/currentGoal 均为空，跳过');
+      return;
+    }
+
+    try {
+      const recalledMemories = await recall(
+        this.requirePctx.index,
+        query,
+        {
+          limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
+          vectorStore: this.#config.vectorStore,
+          excludeSources: this.#config.recallExcludeSources,
+        },
+      );
+
+      if (recalledMemories.length === 0) {
+        logger.debug({ query }, '温记忆按需召回：无相关记忆');
+        return;
+      }
+
+      // 将召回的温记忆 ID 合并到资源槽（去重）
+      const sm = this.requireSessionManager;
+      const currentResource = sm.getCheckpoint()?.resource;
+      if (currentResource) {
+        const existingIds = new Set(currentResource.memories);
+        const newIds = recalledMemories
+          .map((m) => m.id)
+          .filter((id) => !existingIds.has(id));
+        if (newIds.length > 0) {
+          sm.updateResource({
+            ...currentResource,
+            memories: [...currentResource.memories, ...newIds],
+            // 在 context 末尾追加温记忆召回摘要，标记召回来源
+            context:
+              currentResource.context +
+              (currentResource.context ? '\n' : '') +
+              `[温记忆召回: ${recalledMemories.map((m) => `${m.source}:${m.name || m.id}`).join(', ')}]`,
+          });
+        }
+      }
+
+      // 将温记忆注入为系统消息，让 Agent 感知暂停前的早期上下文
+      const loop = this.requireLoop;
+      const warmContext = recalledMemories
+        .map((m) => `[${m.source}:${m.name || m.id}] ${m.content}`)
+        .join('\n\n');
+      loop.injectSystemMessage(
+        `[恢复的早期上下文]\n以下为会话暂停前归档的早期上下文：\n\n${warmContext}`,
+      );
+
+      this.emit(AGENT_EVENTS.memoryRecalled, {
+        count: recalledMemories.length,
+        query,
+      });
+
+      logger.info(
+        { count: recalledMemories.length, query },
+        '温记忆按需召回完成，已合并到资源槽并注入参考上下文',
+      );
+    } catch (err) {
+      // 温记忆召回失败时静默降级：仅记录日志，不影响热窗口恢复和后续流程
+      logger.warn({ err }, '温记忆按需召回失败（降级：仅恢复热窗口和契约）');
+    }
+  }
+
+  /**
+   * 契约重注入（P2.1 检查点恢复协议·步骤④）
+   *
+   * 重新注入角色契约和技能契约，确保 Agent 恢复后的 system prompt 与暂停前一致：
+   * - 角色契约：根据检查点 role 信息切换 persona 并刷新系统 prompt
+   * - 技能契约：按资源槽文档路径尝试匹配技能注入
+   * - 规则契约：由 AgentLoop 的 bootstrap 机制（bootstrapMemories）自动注入，无需额外处理
+   *
+   * 角色不存在时静默降级（保持当前角色），技能匹配失败仅记录日志。
+   *
+   * @param checkpoint - 当前检查点（含 role/resource 信息）
+   */
+  private reinjectContracts(checkpoint: SessionCheckpoint): void {
+    // ① 角色契约重注入：根据检查点角色信息刷新系统 prompt
+    if (this.personaManager && checkpoint.role.name) {
+      try {
+        const prevName = this.personaManager.activeName;
+        if (prevName !== checkpoint.role.name) {
+          // 尝试按检查点角色名切换角色（角色不存在时 switchPersona 抛异常，由 catch 静默降级）
+          this.personaManager.switchPersona(checkpoint.role.name);
+          this.emit(AGENT_EVENTS.personaSwitched, {
+            from: prevName,
+            to: checkpoint.role.name,
+          });
+        }
+        // 刷新角色前缀（无论是否切换都执行，确保角色 prompt 被注入到 loop）
+        this.refreshPersonaPrefixOnLoop();
+      } catch (err) {
+        // 角色不存在时静默降级：保持当前角色，仅记录日志
+        logger.warn(
+          { err, roleName: checkpoint.role.name },
+          '契约重注入：角色切换失败，保持当前角色',
+        );
+      }
+    }
+
+    // ② 技能契约重注入：按资源槽文档路径尝试匹配技能
+    if (this.skillManager && this.loop) {
+      try {
+        for (const doc of checkpoint.resource.documents) {
+          this.matchAndInjectSkill(doc);
+        }
+      } catch (err) {
+        logger.warn({ err }, '契约重注入：技能重注入失败');
+      }
+    }
+
+    // ③ 规则契约：由 AgentLoop 的 bootstrap 机制（bootstrapMemories）自动注入
+    // 在 restoreFromCheckpoint 中 loop.restoreHistory(messages) 后，
+    // bootstrap 系统消息会在下一轮 processUserInput 时由 cleanTemporarySystemMessages 清理后重新注入
+    // 不需要额外处理
+
+    logger.info(
+      {
+        role: checkpoint.role.name,
+        skillDocCount: checkpoint.resource.documents.length,
+      },
+      '契约重注入完成',
+    );
+  }
+
   /**
    * 暂停会话
    *
@@ -985,16 +1131,37 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 从检查点恢复会话
+   * 从检查点恢复会话（完整恢复协议）
    *
-   * 将检查点中的热记忆恢复到 AgentLoop 工作记忆，并恢复状态机。
+   * 执行完整恢复协议：
+   * ① 快照反序列化 + ② 热窗口载入（由 SessionManager 完成）
+   * ③ 温记忆按需召回：以 mainGoal/currentGoal 为查询条件，从温记忆（归档 recall）召回早期上下文
+   * ④ 契约重注入：persona/skill 重新注入
+   * ⑤ 恢复校验：由状态机 ERROR 恢复时校验
+   *
+   * 温记忆召回失败时静默降级，仅恢复热窗口和契约，不影响用户继续对话。
    *
    * @param checkpoint - 要恢复的检查点
    * @returns 恢复的消息数量
    */
-  restoreFromCheckpoint(checkpoint: SessionCheckpoint): number {
+  async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
     this.assertInitialized('restoreFromCheckpoint');
-    return this.requireSessionManager.restoreFromCheckpoint(checkpoint);
+
+    // ① 快照反序列化 + ② 热窗口载入（由 SessionManager 完成）
+    const messageCount = this.requireSessionManager.restoreFromCheckpoint(checkpoint);
+
+    // ③ 温记忆按需召回：以 mainGoal/currentGoal 为查询条件，从温记忆召回早期上下文
+    await this.warmRecallForCheckpoint(checkpoint);
+
+    // ④ 契约重注入：persona/skill 重新注入
+    this.reinjectContracts(checkpoint);
+
+    logger.info(
+      { sessionId: checkpoint.sessionId, messageCount },
+      '检查点恢复协议完成（热窗口 + 温记忆 + 契约重注入）',
+    );
+
+    return messageCount;
   }
 
   /**

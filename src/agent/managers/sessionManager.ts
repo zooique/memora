@@ -292,8 +292,8 @@ export class SessionManager {
   ): SessionCheckpoint {
     const history = this.getHistory();
 
-    // 从 AgentLoop 获取热记忆（最近消息）
-    const hotMemory: ChatMessage[] = this.extractHotMemory();
+    // 从 AgentLoop 获取热记忆（最近消息，P2.2 支持 FIFO 截断 + 内容截断）
+    const { messages: hotMemory, truncatedCount } = this.extractHotMemory();
 
     // 复用已有检查点的目标信息（跨暂停保持）
     const existingGoal = this.checkpoint?.mainGoal;
@@ -317,6 +317,7 @@ export class SessionManager {
       standard: standard ?? this.checkpoint?.standard ?? { quality: '', constraints: [] },
       resource: this.checkpoint?.resource ?? { documents: [], memories: [], context: '' },
       hotMemory,
+      truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
       lastHeartbeat: Date.now(),
     };
 
@@ -440,6 +441,15 @@ export class SessionManager {
     }));
     this.getLoop().restoreHistory(messages);
 
+    // 注入截断一致性标记（P2.2：LLM 感知截断边界）
+    // 当检查点记录的热记忆被截断时，注入系统消息告知 LLM 有早期消息被截断，
+    // 避免 LLM 因上下文缺失而产生困惑，同时提示可触发温记忆召回获取更多上下文。
+    if (checkpoint.truncatedCount && checkpoint.truncatedCount > 0) {
+      this.getLoop().injectSystemMessage(
+        `[热记忆截断提示] 本次恢复的会话有 ${checkpoint.truncatedCount} 条早期消息已被截断。这些消息已不在当前上下文中，但相关信息已归档到温记忆中，可通过温记忆召回获取。`,
+      );
+    }
+
     // 恢复状态机：根据检查点状态设置状态机
     if (checkpoint.status === 'error' && checkpoint.error) {
       this.stateMachine.triggerError(checkpoint.error.cause);
@@ -458,7 +468,7 @@ export class SessionManager {
     }
 
     logger.info(
-      { sessionId: checkpoint.sessionId, messageCount: messages.length },
+      { sessionId: checkpoint.sessionId, messageCount: messages.length, truncatedCount: checkpoint.truncatedCount ?? 0 },
       '从检查点恢复会话',
     );
 
@@ -686,27 +696,52 @@ export class SessionManager {
   }
 
   /**
-   * 从 AgentLoop 当前消息中提取热记忆
+   * 从 AgentLoop 当前消息中提取热记忆（P2.2：支持 FIFO 截断 + 内容截断）
    *
    * 热记忆 = 截断后的最近对话窗口，用于检查点序列化。
+   * 采用 FIFO 策略：超过 HOT_MEMORY_MAX_ROUNDS 轮时，保留最近 N 轮。
+   * 单条消息内容超过 HOT_MEMORY_CONTENT_SLICE 时截断并追加标记。
+   *
    * 仅保留 user/assistant/tool 消息，排除 system prompt。
+   *
+   * @returns 截断后的热记忆消息列表 + 截断计数
    */
-  private extractHotMemory(): ChatMessage[] {
+  private extractHotMemory(): { messages: ChatMessage[]; truncatedCount: number } {
     const loop = this.getLoop();
     const messages = loop.getMessages();
 
     // 过滤 system 消息，仅保留 user/assistant/tool
-    return messages
-      .filter((m) => m.role !== 'system')
-      .map((m) => ({
-        role: m.role as ChatMessage['role'],
-        content: m.content,
-        toolCalls: m.toolCalls?.map((tc) => ({
-          id: tc.id,
-          type: tc.type,
-          function: { name: tc.function.name, arguments: tc.function.arguments },
-        })),
-        toolCallId: m.toolCallId,
-      }));
+    let hotMessages = messages.filter((m) => m.role !== 'system');
+
+    // 记录截断前的原始消息数
+    const originalCount = hotMessages.length;
+
+    // ① FIFO 轮数截断：超过最大轮数时，丢弃早期消息，保留最近 N 轮
+    // 每轮约 2 条消息（user + assistant），含 tool 消息时更多
+    const maxMessages = AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS * 2;
+    if (hotMessages.length > maxMessages) {
+      hotMessages = hotMessages.slice(-maxMessages);
+    }
+
+    // 计算被截断的早期消息数
+    const truncatedCount = originalCount - hotMessages.length;
+
+    // ② 内容截断：单条消息内容超过阈值时截断
+    const contentSlice = AGENT_CONSTANTS.HOT_MEMORY_CONTENT_SLICE;
+    const result = hotMessages.map((m) => ({
+      role: m.role as ChatMessage['role'],
+      content:
+        m.content.length > contentSlice
+          ? m.content.slice(0, contentSlice) + '\n\n[内容已截断]'
+          : m.content,
+      toolCalls: m.toolCalls?.map((tc) => ({
+        id: tc.id,
+        type: tc.type,
+        function: { name: tc.function.name, arguments: tc.function.arguments },
+      })),
+      toolCallId: m.toolCallId,
+    }));
+
+    return { messages: result, truncatedCount };
   }
 }

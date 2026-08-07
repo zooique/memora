@@ -31,7 +31,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
   /**
    * 用户输入处理 — 委托到 chatStreamHandler.handleUserInput
    *
-   * 流式输出架构：主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk。
+   * 流式输出架构：主进程通过 agent.processEvent() 处理结构化 SessionEvent，通过专用 IPC 通道发送 chunk，
    */
   ipcMain.on(IPC_CHANNELS.USER_INPUT, (_event, text: string) => {
     // 校验用户输入长度，防止超大文本触发内存/CPU 耗尽
@@ -150,7 +150,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
   /** 从检查点恢复会话 */
   ipcMain.handle(IPC_CHANNELS.RESTORE_CHECKPOINT, async (_event, checkpoint: SessionCheckpoint) => {
     const agent = requireAgent(ctx);
-    const messageCount = agent.restoreFromCheckpoint(checkpoint);
+    const messageCount = await agent.restoreFromCheckpoint(checkpoint);
     return { restored: true, messageCount };
   });
 }

@@ -59,7 +59,6 @@ Run-Step -Title "Force fix filename casing (fix TS1261)" -ScriptBlock {
     } else {
         Write-Host "  component.ts exists, no fix needed on Windows (case-insensitive FS)"
     }
-    exit 0
 }
 
 if ($script:failed) { exit 1 }

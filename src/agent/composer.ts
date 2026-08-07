@@ -27,6 +27,7 @@ import type {
   ResolvedDelta,
   ClarifyQuestion,
   CompletionLevel,
+  SlotRef,
 } from '@/agent/types.js';
 
 /** Composer 输出 */
@@ -109,16 +110,31 @@ export class Composer {
   }
 
   /**
+   * 判断值是否为 SlotRef 引用标记
+   *
+   * @param value - 待判断的值
+   * @returns 是否为 SlotRef
+   */
+  private isSlotRef(value: unknown): value is SlotRef {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      'ref' in value &&
+      typeof (value as SlotRef).ref === 'string'
+    );
+  }
+
+  /**
    * 解析单个槽位（通用槽位：role/task/standard）
    *
    * 补全链：
-   *   P1: event.delta 中有显式值 → 使用
+   *   P1: event.delta 中有显式值 → 使用（若是 SlotRef 引用标记 → 走引用模式）
    *   P2: checkpoint 中有历史值 → 延续
    *   P3: 系统内置默认值 → 兜底
    *   P4: 都无法补全 → 生成澄清问题
    *
    * @param slotName - 槽位名称
-   * @param deltaValue - 事件增量中的值
+   * @param deltaValue - 事件增量中的值（支持 SlotRef 引用标记）
    * @param checkpointValue - 检查点中的历史值
    * @param defaultVal - 系统内置默认值
    * @param needClarify - 澄清问题收集数组
@@ -126,13 +142,31 @@ export class Composer {
    */
   private resolveSlot<T>(
     slotName: keyof FourTuple,
-    deltaValue: T | undefined,
+    deltaValue: T | SlotRef | undefined,
     checkpointValue: T | undefined,
     defaultVal: T,
     needClarify: ClarifyQuestion[],
   ): { value: T; source: CompletionLevel } {
     // P1: 显式输入
     if (deltaValue !== undefined) {
+      // 处理 SlotRef 引用标记：如 { ref: 'currentGoal' } → 引用 checkpoint 值，不覆盖
+      if (this.isSlotRef(deltaValue)) {
+        // 引用标记：从 checkpoint 取历史值（P2 语义），不覆盖
+        if (checkpointValue !== undefined && !this.isEmpty(checkpointValue)) {
+          return { value: checkpointValue, source: 'P2-memory' };
+        }
+        // 引用标记但 checkpoint 为空 → 走 P3 兜底
+        if (defaultVal !== undefined && !this.isEmpty(defaultVal)) {
+          return { value: defaultVal, source: 'P3-builtin' };
+        }
+        // 引用标记且无兜底 → P4 暂停询问
+        needClarify.push({
+          slot: slotName,
+          question: this.clarifyQuestionFor(slotName),
+        });
+        return { value: defaultVal, source: 'P4-clarify' };
+      }
+      // 非引用标记：新值槽覆盖模式
       return { value: deltaValue, source: 'P1-explicit' };
     }
 
@@ -159,16 +193,26 @@ export class Composer {
    * 解析资源槽位（特殊处理：数组追加语义）
    *
    * 与通用槽位不同，资源槽的 delta 采用追加语义：
-   * - P1: delta 中的新资源 → 追加到现有资源列表
+   * - P1: delta 中的新资源（非 SlotRef）→ 追加到现有资源列表，不覆盖
+   * - P1: delta 为 SlotRef 引用标记 → 引用 checkpoint 资源，不追加
    * - P2: 检查点历史资源 → 延续
    * - P3: 空资源 → 兜底
    */
   private resolveResourceSlot(
-    deltaResource: Partial<ResourceState> | undefined,
+    deltaResource: Partial<ResourceState> | SlotRef | undefined,
     checkpointResource: ResourceState | undefined,
   ): { value: ResourceState; source: CompletionLevel } {
-    // P1: 显式输入（追加语义）
+    // P1: 显式输入
     if (deltaResource !== undefined) {
+      // 处理 SlotRef 引用标记：引用 checkpoint 资源，不追加
+      if (this.isSlotRef(deltaResource)) {
+        if (checkpointResource !== undefined) {
+          return { value: checkpointResource, source: 'P2-memory' };
+        }
+        return { value: SYSTEM_DEFAULTS.resource, source: 'P3-builtin' };
+      }
+
+      // 非引用标记：追加语义（数组追加，context 覆盖）
       const base = checkpointResource ?? SYSTEM_DEFAULTS.resource;
       return {
         value: {

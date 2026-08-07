@@ -196,6 +196,24 @@ export interface FourTuple {
 }
 
 /**
+ * 槽位引用标记
+ *
+ * 用于 SessionEvent.delta 的增量槽引用语义——当用户说「继续」时，
+ * 任务槽引用 currentGoal 而非覆盖。引用标记让调用方可以显式表示
+ * 「引用当前值」而非「提供新值」。
+ *
+ * 支持以下引用标识：
+ * - 'currentGoal'：引用当前会话目标（适用 task 槽）
+ * - 'currentRole'：引用当前角色（适用 role 槽）
+ * - 'currentStandard'：引用当前标准（适用 standard 槽）
+ * - 'currentResource'：引用当前资源（适用 resource 槽）
+ */
+export interface SlotRef {
+  /** 引用标识 */
+  ref: string;
+}
+
+/**
  * 角色定义
  *
  * 会话级角色，定义 Agent 的行为边界和语气风格。
@@ -290,11 +308,31 @@ export interface SessionEvent {
    * 槽位级增量（可选）
    *
    * 合并规则（槽位级）：
-   * - 增量槽引用：如「继续」→ 任务槽引用 currentGoal，不覆盖
-   * - 新值槽覆盖：如用户给出新标准 → 覆盖 standard 槽
-   * - 数组槽追加：如补充资源列表 → 追加到 resource 槽
+   * - 增量槽引用：使用 SlotRef 引用标记（如 `{ ref: 'currentGoal' }`），不覆盖
+   * - 新值槽覆盖：直接提供新值，覆盖对应槽位
+   * - 数组槽追加：resource 槽的 documents/memories 数组自动追加，非覆盖
+   * - 未提供字段（undefined）：走补全链 P2→P3→P4
    */
-  delta?: Partial<FourTuple>;
+  delta?: DeltaPayload;
+}
+
+/**
+ * 增量载荷
+ *
+ * 每个槽位支持两种模式：
+ * - 具体值 → 覆盖模式（新值槽覆盖）
+ * - SlotRef 引用标记 → 引用模式（增量槽引用，不覆盖）
+ * - undefined → 未提供，走补全链
+ */
+export interface DeltaPayload {
+  /** 角色增量（支持引用标记引用当前角色） */
+  role?: Role | SlotRef;
+  /** 任务增量（支持引用标记引用当前目标） */
+  task?: string | SlotRef;
+  /** 标准增量（支持引用标记引用当前标准） */
+  standard?: Standard | SlotRef;
+  /** 资源增量（支持引用标记引用当前资源，或提供新资源追加） */
+  resource?: ResourceState | SlotRef;
 }
 
 /**
@@ -345,6 +383,14 @@ export interface SessionCheckpoint {
   resource: ResourceState;
   /** 热记忆窗口（截断后的最近对话，防膨胀） */
   hotMemory: ChatMessage[];
+  /**
+   * 热记忆截断计数（P2.2 热记忆截断策略）
+   *
+   * 当热记忆超过 `HOT_MEMORY_MAX_ROUNDS` 轮时，FIFO 截断的早期消息数量。
+   * 用于恢复时注入一致性标记，让 LLM 感知截断边界。
+   * 0 或 undefined 表示未发生截断。
+   */
+  truncatedCount?: number;
   /** 心跳时间戳（毫秒），防僵尸会话 */
   lastHeartbeat: number;
 }

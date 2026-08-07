@@ -28,6 +28,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'dist-electron/**', 'node_modules/**', 'coverage/**', '*.config.js', '*.config.ts'],
+    ignores: ['dist/**', 'dist-electron/**', 'dist-web/**', 'node_modules/**', 'coverage/**', '*.config.js', '*.config.ts'],
   },
 ];

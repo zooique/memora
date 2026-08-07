@@ -112,12 +112,12 @@ function createMockWindowManager(webContents: ReturnType<typeof createMockWebCon
   };
 }
 
-/** 创建 mock agent（含 agentHistory/sessionManager/agentLoop/chat/getMetrics） */
+/** 创建 mock agent（含 agentHistory/sessionManager/agentLoop/processEvent/getMetrics） */
 function createMockAgent(overrides?: {
   agentHistory?: { currentDateValue: string } | null;
   sessionManager?: { restoreSession: ReturnType<typeof vi.fn> } | null;
   agentLoop?: { restoreHistory: ReturnType<typeof vi.fn> } | null;
-  chat?: ReturnType<typeof vi.fn>;
+  processEvent?: ReturnType<typeof vi.fn>;
   getMetrics?: ReturnType<typeof vi.fn>;
   forceReleaseChatLock?: ReturnType<typeof vi.fn>;
 }) {
@@ -125,7 +125,7 @@ function createMockAgent(overrides?: {
     agentHistory: overrides?.agentHistory ?? null,
     sessionManager: overrides?.sessionManager ?? null,
     agentLoop: overrides?.agentLoop ?? null,
-    chat: overrides?.chat ?? vi.fn(),
+    processEvent: overrides?.processEvent ?? vi.fn(),
     getMetrics: overrides?.getMetrics ?? vi.fn(() => ({ context: { truncationCount: 0 } })),
     // 超时兜底强制释放内核锁的 mock（默认 no-op，测试可覆盖验证调用）
     forceReleaseChatLock: overrides?.forceReleaseChatLock ?? vi.fn(),
@@ -351,7 +351,7 @@ describe('chatHandlers', () => {
           agentHistory: { currentDateValue: '2026-06-25' }, // 跨日
           sessionManager: { restoreSession, switchSession: vi.fn() },
           agentLoop: { restoreHistory },
-          chat: vi.fn(() => chatGen),
+          processEvent: vi.fn(() => chatGen),
         }),
       });
 
@@ -379,7 +379,7 @@ describe('chatHandlers', () => {
           agentHistory: { currentDateValue: '2026-06-25' },
           sessionManager: { restoreSession, switchSession: vi.fn() },
           agentLoop: { restoreHistory },
-          chat: vi.fn(() => chatGen),
+          processEvent: vi.fn(() => chatGen),
         }),
       });
 
@@ -400,7 +400,7 @@ describe('chatHandlers', () => {
       const ctx = createMockCtx({
         windowManager: wm,
         agent: createMockAgent({
-          chat: vi.fn(() => chatGen),
+          processEvent: vi.fn(() => chatGen),
         }),
       });
 
@@ -418,7 +418,7 @@ describe('chatHandlers', () => {
       const ctx = createMockCtx({
         windowManager: wm,
         agent: createMockAgent({
-          chat: vi.fn(() => chatGen),
+          processEvent: vi.fn(() => chatGen),
         }),
       });
 
@@ -450,7 +450,7 @@ describe('chatHandlers', () => {
         windowManager: wm,
         trayManager: { setState },
         agent: createMockAgent({
-          chat: vi.fn(() => chatGen),
+          processEvent: vi.fn(() => chatGen),
         }),
       });
 
@@ -551,7 +551,7 @@ describe('chatHandlers', () => {
       const ctx = createMockCtx({
         windowManager: wm,
         agent: createMockAgent({
-          chat: vi.fn(() => chatGen),
+          processEvent: vi.fn(() => chatGen),
         }),
       });
 
@@ -603,7 +603,7 @@ describe('chatStreamHandler C1 流式主路径', () => {
       getAbortController: vi.fn(() => null),
       trayManager: { setState: traySetState },
       agent: createMockAgent({
-        chat: vi.fn(() => chatGen),
+        processEvent: vi.fn(() => chatGen),
         getMetrics,
       }),
     });
@@ -772,7 +772,7 @@ describe('chatStreamHandler C1 流式主路径', () => {
       windowManager: wm,
       isAgentReady: vi.fn(() => true),
       getAbortController: vi.fn(() => null),
-      agent: createMockAgent({ chat: vi.fn(() => chatGen) }),
+      agent: createMockAgent({ processEvent: vi.fn(() => chatGen) }),
     });
     (ctx as unknown as { getSprite: () => unknown }).getSprite = () => ({
       incrementDailyMessageCount: vi.fn(),
@@ -864,8 +864,8 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
       getAbortController: vi.fn(() => abortControllerRef.current),
       trayManager: { setState: traySetState },
       agent: createMockAgent({
-        // chat mock 接收 (text, signal)，传给 factory 创建 generator
-        chat: vi.fn((_text: string, signal: AbortSignal) => chatGenFactory(signal)),
+        // processEvent mock 接收 (event, signal)，传给 factory 创建 generator
+        processEvent: vi.fn((_text: string, signal: AbortSignal) => chatGenFactory(signal)),
         getMetrics,
       }),
     });
@@ -1060,7 +1060,7 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
       isAgentReady: vi.fn(() => true),
       getAbortController: vi.fn(() => null),
       agent: createMockAgent({
-        chat: vi.fn(() => {
+        processEvent: vi.fn(() => {
           return (async function* () {
             yield { type: 'text' as const, content: '第一条' };
             yield { type: 'text' as const, content: '第二条' };
