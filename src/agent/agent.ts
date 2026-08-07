@@ -826,18 +826,37 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
         // 若有 P4 澄清问题，暂停并等待用户回答
         if (composeResult.needClarify && composeResult.needClarify.length > 0) {
-          for (const q of composeResult.needClarify) {
-            yield { type: 'text', content: `[需澄清] ${q.question}` };
+          // P4 防滥用检查：连续高风险暂停已达上限时，过滤高风险问题，使用 P3 兜底
+          // 低风险问题（lowRisk=true）仍可继续请求用户确认，不计入连续暂停计数
+          const sm = this._sessionManager;
+          if (sm && sm.isPauseLimitReached()) {
+            const highRiskQuestions = composeResult.needClarify.filter((q) => !q.lowRisk);
+            if (highRiskQuestions.length > 0) {
+              logger.warn(
+                { consecutivePauseCount: sm.getConsecutivePauseCount(), filteredCount: highRiskQuestions.length },
+                '连续高风险暂停已达上限，强制降级 P3 兜底',
+              );
+              // 过滤高风险问题，仅保留低风险问题继续请求用户确认
+              composeResult.needClarify = composeResult.needClarify.filter((q) => q.lowRisk);
+            }
           }
-          // 发射 needClarify 事件，宿主通过 IPC 转发到渲染进程展示澄清面板
-          this.emit(AGENT_EVENTS.needClarify, composeResult.needClarify.map((q) => ({
-            slot: q.slot,
-            question: q.question,
-            options: q.options,
-          })));
-          this.pause(`需要澄清：${composeResult.needClarify.map((q) => q.question).join('; ')}`, 'agent');
-          yield { type: 'done' };
-          return;
+
+          // 过滤后仍有剩余问题（低风险）→ 正常暂停流程
+          if (composeResult.needClarify.length > 0) {
+            for (const q of composeResult.needClarify) {
+              yield { type: 'text', content: `[需澄清] ${q.question}` };
+            }
+            // 发射 needClarify 事件，宿主通过 IPC 转发到渲染进程展示澄清面板
+            this.emit(AGENT_EVENTS.needClarify, composeResult.needClarify.map((q) => ({
+              slot: q.slot,
+              question: q.question,
+              options: q.options,
+            })));
+            this.pause(`需要澄清：${composeResult.needClarify.map((q) => q.question).join('; ')}`, 'agent');
+            yield { type: 'done' };
+            return;
+          }
+          // 所有高风险问题已被过滤降级，无剩余问题 → 继续执行（不暂停）
         }
 
         // P1: 应用增量解析结果到检查点（角色/任务/标准/资源）

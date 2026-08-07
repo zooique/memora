@@ -74,6 +74,14 @@ export class SessionManager {
   private checkpoint: SessionCheckpoint | null = null;
   /** 目标一致性校验器（P3.1 目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
+  /**
+   * 连续暂停计数（P4 防滥用机制）
+   *
+   * 每次高风险 P4 暂停时递增，恢复时重置。
+   * 连续 2 次后强制降级 P3，不再生成 P4 问题。
+   * 低风险决策（lowRisk=true）不计数。
+   */
+  private consecutivePauseCount: number = 0;
 
   /**
    * 暂停超时会话信息（P0-3：暂停超时自动归档）
@@ -504,22 +512,34 @@ export class SessionManager {
    *
    * 双向暂停：用户/Agent/系统均可触发。
    * 暂停前自动创建检查点保存当前状态。
+   * 高风险暂停计入连续暂停计数（P4 防滥用），低风险不计数。
    *
    * @param reason - 暂停原因
    * @param source - 暂停来源
+   * @param lowRisk - 是否低风险暂停（不计入连续暂停计数，默认 false）
    * @returns 是否暂停成功
    */
-  pause(reason: string, source: PauseSource = 'user'): boolean {
+  pause(reason: string, source: PauseSource = 'user', lowRisk: boolean = false): boolean {
     const result = this.stateMachine.pause(reason, source);
     if (result.allowed) {
       // 暂停前保存检查点
       this.createCheckpoint();
+      // 仅高风险暂停计入连续计数（低风险由 Agent 自动兜底，不累积）
+      if (!lowRisk) {
+        this.consecutivePauseCount++;
+        logger.debug(
+          { consecutivePauseCount: this.consecutivePauseCount, reason },
+          '高风险暂停已计入连续计数',
+        );
+      } else {
+        logger.debug({ reason }, '低风险暂停不计入连续计数（Agent 自动兜底）');
+      }
       this.emitEvent('sessionPaused', {
         reason,
         source,
         sessionId: this.checkpoint?.sessionId,
       });
-      logger.info({ reason, source }, '会话已暂停');
+      logger.info({ reason, source, lowRisk }, '会话已暂停');
     }
     return result.allowed;
   }
@@ -553,6 +573,11 @@ export class SessionManager {
         this.checkpoint.lastHeartbeat = Date.now();
         this.checkpoint.status = 'running';
         this.persistCheckpoint();
+      }
+      // 恢复时重置连续暂停计数（P4 防滥用：用户已响应，计数清零）
+      if (this.consecutivePauseCount > 0) {
+        this.consecutivePauseCount = 0;
+        logger.debug('连续暂停计数已重置（会话已恢复）');
       }
       this.emitEvent('sessionResumed', {
         sessionId: this.checkpoint?.sessionId,
@@ -591,6 +616,27 @@ export class SessionManager {
       logger.warn({ cause }, '会话异常');
     }
     return result.allowed;
+  }
+
+  // ── P4 防滥用：连续暂停计数 ─────────────────────────────
+
+  /**
+   * 检查连续暂停是否已达上限（P4 防滥用）
+   *
+   * 连续 2 次高风险暂停后强制降级 P3，不再生成 P4 问题。
+   * 低风险暂停（Agent 自动兜底）不计数。
+   *
+   * @returns 是否已达上限
+   */
+  isPauseLimitReached(): boolean {
+    return this.consecutivePauseCount >= 2;
+  }
+
+  /**
+   * 获取当前连续暂停计数
+   */
+  getConsecutivePauseCount(): number {
+    return this.consecutivePauseCount;
   }
 
   /**

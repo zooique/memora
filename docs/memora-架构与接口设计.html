@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memora 架构与接口设计</title>
+<style>
+  /* ═══════════════════════════════════════════════════════════
+     Memora 架构与接口设计 — 主题变量
+     ═══════════════════════════════════════════════════════════ */
+  :root {
+    --bg-primary: #0b0d12;
+    --bg-secondary: #11151c;
+    --bg-card: #161b24;
+    --bg-code: #0e121a;
+    --border: #1e2532;
+    --border-light: #2a3447;
+    --text-primary: #e2e8f0;
+    --text-secondary: #8892a4;
+    --text-muted: #5a6478;
+    --accent: #38bdf8;
+    --accent-dim: #1d4a6e;
+    --accent-glow: rgba(56, 189, 248, 0.08);
+    --green: #34d399;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --purple: #a78bfa;
+    --teal: #2dd4bf;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font-mono: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     字体加载
+     ═══════════════════════════════════════════════════════════ */
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+  /* ═══════════════════════════════════════════════════════════
+     基础重置
+     ═══════════════════════════════════════════════════════════ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  ::selection { background: var(--accent); color: var(--bg-primary); }
+
+  /* ═══════════════════════════════════════════════════════════
+     背景纹理
+     ═══════════════════════════════════════════════════════════ */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -20%, rgba(56,189,248,0.04) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 40% at 80% 80%, rgba(45,212,191,0.03) 0%, transparent 70%),
+      radial-gradient(ellipse 30% 30% at 20% 60%, rgba(167,139,250,0.02) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     导航栏
+     ═══════════════════════════════════════════════════════════ */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(11,13,18,0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  nav .logo {
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+  }
+  nav .logo span { color: var(--text-primary); }
+  nav .nav-links { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+  nav .nav-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+  }
+  nav .nav-links a:hover { color: var(--text-primary); background: var(--bg-card); }
+
+  /* ═══════════════════════════════════════════════════════════
+     布局容器
+     ═══════════════════════════════════════════════════════════ */
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 80px 1.5rem 6rem;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     Hero 区域
+     ═══════════════════════════════════════════════════════════ */
+  .hero {
+    padding: 4rem 0 3rem;
+    text-align: center;
+    position: relative;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 10%; right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+  }
+  .hero .badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 100px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-bottom: 1.25rem;
+    border: 1px solid rgba(56,189,248,0.15);
+  }
+  .hero h1 {
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.15;
+    margin-bottom: 1rem;
+  }
+  .hero h1 .highlight {
+    background: linear-gradient(135deg, var(--accent), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    max-width: 600px;
+    margin: 0 auto 0.5rem;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     通用章节
+     ═══════════════════════════════════════════════════════════ */
+  .section { padding: 3.5rem 0; }
+  .section-header {
+    margin-bottom: 2rem;
+  }
+  .section-header .tag {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .section-header .tag.arch { background: rgba(56,189,248,0.12); color: var(--accent); }
+  .section-header .tag.flow { background: rgba(45,212,191,0.12); color: var(--teal); }
+  .section-header .tag.iface { background: rgba(251,191,36,0.12); color: var(--amber); }
+  .section-header .tag.mem { background: rgba(167,139,250,0.12); color: var(--purple); }
+  .section-header h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+  }
+  .section-header p {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    max-width: 660px;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     卡片
+     ═══════════════════════════════════════════════════════════ */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .card:hover {
+    border-color: var(--border-light);
+    box-shadow: 0 0 0 1px rgba(56,189,248,0.04);
+  }
+  .card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .card h3 .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .card h3 .dot.blue { background: var(--accent); }
+  .card h3 .dot.green { background: var(--green); }
+  .card h3 .dot.amber { background: var(--amber); }
+  .card h3 .dot.rose { background: var(--rose); }
+  .card h3 .dot.purple { background: var(--purple); }
+  .card h3 .dot.teal { background: var(--teal); }
+  .card p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.7; }
+  .card p + p { margin-top: 0.5rem; }
+
+  /* ═══════════════════════════════════════════════════════════
+     代码块
+     ═══════════════════════════════════════════════════════════ */
+  .code-block {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.1rem;
+    margin: 0.75rem 0;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.65;
+    color: var(--text-primary);
+    overflow-x: auto;
+    position: relative;
+  }
+  .code-block .comment { color: var(--text-muted); }
+  .code-block .keyword { color: var(--accent); }
+  .code-block .type { color: var(--teal); }
+  .code-block .string { color: var(--amber); }
+  .code-block .fn { color: var(--purple); }
+  .code-block .param { color: var(--green); }
+
+  /* ═══════════════════════════════════════════════════════════
+     架构图（纯 SVG 内联）
+     ═══════════════════════════════════════════════════════════ */
+  .arch-diagram { margin: 1.5rem 0; }
+
+  /* 层级图 — 响应式表格 */
+  .layer-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 4px;
+    margin: 1rem 0;
+  }
+  .layer-table tr { transition: opacity 0.2s; }
+  .layer-table td {
+    padding: 0.85rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    vertical-align: top;
+  }
+  .layer-table td:first-child {
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    font-weight: 600;
+    width: 120px;
+    text-align: center;
+    border-left: 3px solid var(--border);
+  }
+  .layer-table td:last-child {
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--text-secondary);
+  }
+  .layer-table tr.layer-input td:first-child { border-left-color: var(--accent); color: var(--accent); }
+  .layer-table tr.layer-composer td:first-child { border-left-color: var(--teal); color: var(--teal); }
+  .layer-table tr.layer-agent td:first-child { border-left-color: var(--green); color: var(--green); }
+  .layer-table tr.layer-memory td:first-child { border-left-color: var(--purple); color: var(--purple); }
+  .layer-table tr.layer-storage td:first-child { border-left-color: var(--amber); color: var(--amber); }
+  .layer-table tr:hover td { border-color: var(--border-light); }
+
+  /* ═══════════════════════════════════════════════════════════
+     流程图 — 水平箭头
+     ═══════════════════════════════════════════════════════════ */
+  .flow-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1.5rem 0;
+    justify-content: center;
+  }
+  .flow-step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-align: center;
+    min-width: 90px;
+  }
+  .flow-step .sub { display: block; font-size: 0.65rem; color: var(--text-muted); font-weight: 400; margin-top: 0.15rem; }
+  .flow-step.primary { border-color: var(--accent-dim); background: rgba(56,189,248,0.06); }
+  .flow-arrow {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     补全链
+     ═══════════════════════════════════════════════════════════ */
+  .chain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .chain-step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    text-align: center;
+    position: relative;
+  }
+  .chain-step .level {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.35rem;
+  }
+  .chain-step .level.p1 { color: var(--accent); }
+  .chain-step .level.p2 { color: var(--teal); }
+  .chain-step .level.p3 { color: var(--green); }
+  .chain-step .level.p4 { color: var(--amber); }
+  .chain-step .desc { font-size: 0.8rem; color: var(--text-secondary); }
+  .chain-step .arrow-down {
+    display: block;
+    margin: 0.5rem auto 0;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     三态状态机
+     ═══════════════════════════════════════════════════════════ */
+  .state-machine {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin: 1.5rem 0;
+  }
+  .state-node {
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.5rem;
+    text-align: center;
+    min-width: 100px;
+  }
+  .state-node .icon { font-size: 1.3rem; margin-bottom: 0.25rem; }
+  .state-node .name { font-weight: 600; font-size: 0.9rem; }
+  .state-node.running { border-color: var(--green); }
+  .state-node.paused { border-color: var(--amber); }
+  .state-node.error { border-color: var(--rose); }
+  .state-arrow { color: var(--text-muted); font-size: 1.2rem; }
+
+  /* ═══════════════════════════════════════════════════════════
+     接口列表
+     ═══════════════════════════════════════════════════════════ */
+  .iface-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  @media (max-width: 700px) { .iface-grid { grid-template-columns: 1fr; } }
+  .iface-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.25rem;
+    cursor: default;
+    transition: all 0.2s;
+  }
+  .iface-card:hover { border-color: var(--border-light); }
+  .iface-card .iface-title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    margin-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .iface-card .iface-desc {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+  .iface-card .iface-meta {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     时间轴
+     ═══════════════════════════════════════════════════════════ */
+  .timeline { position: relative; padding-left: 2rem; margin: 1.5rem 0; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px; top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--border-light), var(--border));
+  }
+  .timeline-item {
+    position: relative;
+    padding: 0 0 1.5rem 1rem;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -1.75rem; top: 0.4rem;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 2px solid var(--accent);
+  }
+  .timeline-item .tl-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.2rem;
+  }
+  .timeline-item .tl-desc {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     动画
+     ═══════════════════════════════════════════════════════════ */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate { animation: fadeInUp 0.5s ease-out both; }
+  .delay-1 { animation-delay: 0.1s; }
+  .delay-2 { animation-delay: 0.2s; }
+  .delay-3 { animation-delay: 0.3s; }
+  .delay-4 { animation-delay: 0.4s; }
+
+  /* ═══════════════════════════════════════════════════════════
+     页脚
+     ═══════════════════════════════════════════════════════════ */
+  footer {
+    text-align: center;
+    padding: 3rem 0 2rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     响应式
+     ═══════════════════════════════════════════════════════════ */
+  @media (max-width: 600px) {
+    .container { padding: 64px 1rem 4rem; }
+    .hero h1 { font-size: 1.8rem; }
+    .section { padding: 2rem 0; }
+    nav .nav-links { display: none; }
+    .layer-table td { display: block; width: 100%; }
+    .layer-table td:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; border-left: none; border-bottom: none; }
+    .layer-table td:last-child { border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ 导航 ═══════════════ -->
+<nav>
+  <div class="logo">memora<span> 架构</span></div>
+  <div class="nav-links">
+    <a href="#overview">概览</a>
+    <a href="#layers">层级</a>
+    <a href="#inputs">输入接口</a>
+    <a href="#flow">触发流程</a>
+    <a href="#completion">补全链</a>
+    <a href="#state">状态机</a>
+    <a href="#dev-api">开发者 API</a>
+    <a href="#memory">记忆系统</a>
+  </div>
+</nav>
+
+<!-- ═══════════════ 内容 ═══════════════ -->
+<div class="container">
+
+  <!-- ── Hero ── -->
+  <section class="hero animate">
+    <div class="badge">v2.0 · 不中断工作模型</div>
+    <h1>Memora — <span class="highlight">万物皆记忆</span> 的 Agent 内核</h1>
+    <p>多层输入接口 × 四级补全链 × 三态状态机 × 记忆层级体系</p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第一节：设计哲学概览
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section animate delay-1" id="overview">
+    <div class="section-header">
+      <div class="tag arch">01 · 设计哲学</div>
+      <h2>万物皆记忆</h2>
+      <p>Memora 的核心哲学：一切元素都是记忆，区别仅在于持久化层级和生命周期不同。</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot blue"></span> 核心设计原则</h3>
+      <p><strong>用户实时输入是触发点</strong>。系统以用户输入为锚，从各层级召回相关资源，融合后生成响应。输入不再只是"发送消息"，而是携带结构化意图的增量事件（SessionEvent）。</p>
+      <p><strong>一切皆接口</strong>。开发人员定义接口（AgentOptions）、记忆系统接口（IMemoryStorage/ISessionStore/IVectorStore）、用户实时输入接口（SessionEvent/chat()）、用户自定义内容接口（Persona/Skill/Rule）——四层接口各自独立，职责清晰。</p>
+      <p><strong>不中断只暂停</strong>。从"一问一答"升级为"开启后常驻、仅暂停不终止"，支持检查点断点续跑。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第二节：五层架构
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section animate delay-2" id="layers">
+    <div class="section-header">
+      <div class="tag arch">02 · 系统层级</div>
+      <h2>五层架构设计</h2>
+      <p>从用户输入到底层存储，每一层都有明确的职责边界和接口契约。</p>
+    </div>
+
+    <table class="layer-table">
+      <tr class="layer-input">
+        <td>输入层</td>
+        <td>
+          <strong>SessionEvent + chat() / processEvent()</strong><br>
+          用户实时输入（文本/意图分类/四元组增量 delta）。宿主项目通过 <code>agent.chat()</code> 或 <code>agent.processEvent()</code> 输入。
+        </td>
+      </tr>
+      <tr class="layer-composer">
+        <td>补全层</td>
+        <td>
+          <strong>Composer</strong><br>
+          四级补全链（P1→P2→P3→P4）。将增量事件补全为完整四元组（角色×任务×标准×资源），缺省时有明确来源。
+        </td>
+      </tr>
+      <tr class="layer-agent">
+        <td>编排层</td>
+        <td>
+          <strong>Agent 门面 + AgentLoop</strong><br>
+          Agent 门面是宿主唯一入口。职责：角色匹配 → 记忆召回 → 技能注入 → 历史追加 → LLM 流式调用 → 后处理归档。管理检查点、状态机、计划推进。
+        </td>
+      </tr>
+      <tr class="layer-memory">
+        <td>记忆层</td>
+        <td>
+          <strong>recall() + MemoryGovernance + 各 Manager</strong><br>
+          双通道召回（语义+关键词）。L0 衰减 / L1 去重 / L2 时效性 / L3 冲突检测。用户画像、Insight、会话归档等专职 Manager。
+        </td>
+      </tr>
+      <tr class="layer-storage">
+        <td>存储层</td>
+        <td>
+          <strong>IMemoryStorage / ISessionStore / IVectorStore</strong><br>
+          宿主注入的存储接口。Memora 内核不依赖具体实现，宿主可提供 SQLite/文件系统/内存等任意实现。
+        </td>
+      </tr>
+    </table>
+
+    <div class="flow-row">
+      <span class="flow-step primary">用户输入<span class="sub">SessionEvent</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">补全层<span class="sub">Composer</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">编排层<span class="sub">Agent</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">记忆层<span class="sub">recall</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">LLM<span class="sub">LlmProvider</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">输出<span class="sub">AgentChunk</span></span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第三节：多层输入接口
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section animate delay-3" id="inputs">
+    <div class="section-header">
+      <div class="tag iface">03 · 输入接口体系</div>
+      <h2>四层输入接口</h2>
+      <p>用户实时输入、开发者 API、记忆系统、自定义内容——每层接口都有独立的设计目的和契约。</p>
+    </div>
+
+    <div class="iface-grid">
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--accent)">●</span> 用户实时输入接口</div>
+        <div class="iface-desc">文本 + 意图分类 + 四元组增量。支持 <code>chat</code> / <code>command</code> / <code>correction</code> / <code>clarify</code> 四种意图，独立路径防污染。</div>
+        <div class="iface-meta">SessionEvent · chat() · processEvent()</div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--teal)">●</span> 开发者 API 接口</div>
+        <div class="iface-desc">Agent 门面构造参数 + 生命周期方法。宿主一行代码接入，支持自定义 Provider、存储、安全策略。</div>
+        <div class="iface-meta">AgentOptions · Agent 类 · init() · close()</div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--purple)">●</span> 记忆系统接口</div>
+        <div class="iface-desc">存储抽象层。宿主注入任意实现（SQLite/文件系统/内存），Memora 不依赖具体后端。</div>
+        <div class="iface-meta">IMemoryStorage · ISessionStore · IVectorStore</div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--amber)">●</span> 用户自定义内容接口</div>
+        <div class="iface-desc">角色（Persona）、技能（Skill）、规则（Rule/RuleSet）的文件定义。通过配置文件目录热加载，无需重启。</div>
+        <div class="iface-meta">PersonaManager · SkillManager · ConfigManager</div>
+      </div>
+    </div>
+
+    <!-- 用户实时输入接口详解 -->
+    <div class="card" style="margin-top: 1.5rem;">
+      <h3><span class="dot blue"></span> 用户实时输入 — SessionEvent</h3>
+      <p>替代纯文本输入，升级为结构化增量事件。输入不再只是"发送消息"，而是携带意图分类和四元组增量的结构化事件包。</p>
+      <div class="code-block">
+<span class="comment">// 增量事件类型 — 用户实时输入的核心接口</span>
+<span class="keyword">interface</span> <span class="type">SessionEvent</span> {
+  type: <span class="string">'chat'</span> | <span class="string">'command'</span> | <span class="string">'correction'</span> | <span class="string">'clarify'</span>;  <span class="comment">// 意图分类</span>
+  content: <span class="type">string</span>;       <span class="comment">// 原始文本</span>
+  delta?: <span class="type">DeltaPayload</span>;  <span class="comment">// 四元组增量（可选）</span>
+}
+
+<span class="comment">// 四元组增量 — 角色×任务×标准×资源</span>
+<span class="keyword">interface</span> <span class="type">DeltaPayload</span> {
+  role?: <span class="type">Role</span> | <span class="type">SlotRef</span>;       <span class="comment">// 角色增量（支持引用当前值）</span>
+  task?: <span class="type">string</span> | <span class="type">SlotRef</span>;      <span class="comment">// 任务增量</span>
+  standard?: <span class="type">Standard</span> | <span class="type">SlotRef</span>;  <span class="comment">// 标准增量</span>
+  resource?: <span class="type">ResourceState</span> | <span class="type">SlotRef</span>; <span class="comment">// 资源增量</span>
+}
+      </div>
+      <p><strong>意图分类防污染</strong>：<code>command</code>/<code>correction</code>/<code>clarify</code> 不写 chat 历史，避免控制信号污染对话流。</p>
+    </div>
+
+    <!-- 开发者接口详解 -->
+    <div class="card">
+      <h3><span class="dot teal"></span> 开发者 API — Agent 门面</h3>
+      <p>一行代码接入。开发者只需提供 Provider 和项目路径，无需关心内部组件组装。</p>
+      <div class="code-block">
+<span class="comment">// 最简接入</span>
+<span class="keyword">const</span> agent = <span class="keyword">new</span> <span class="fn">Agent</span>({
+  projectPath: <span class="string">'./my-project'</span>,
+  provider: <span class="keyword">new</span> <span class="type">OpenAIProvider</span>({ apiKey: <span class="string">'...'</span> }),
+  dataDir: <span class="string">'./agent-data'</span>,
+});
+<span class="keyword">await</span> agent.<span class="fn">init</span>();
+
+<span class="comment">// 流式对话</span>
+<span class="keyword">for await</span> (<span class="keyword">const</span> chunk <span class="keyword">of</span> agent.<span class="fn">chat</span>(<span class="string">'你好'</span>)) {
+  <span class="keyword">if</span> (chunk.type === <span class="string">'text'</span>) process.stdout.<span class="fn">write</span>(chunk.content);
+}
+
+<span class="comment">// 高级：结构化事件输入（不中断工作模型）</span>
+<span class="keyword">const</span> event: <span class="type">SessionEvent</span> = {
+  type: <span class="string">'chat'</span>,
+  content: <span class="string">'帮我写一个排序函数'</span>,
+  delta: { task: <span class="string">'写排序函数'</span> },
+};
+<span class="keyword">for await</span> (<span class="keyword">const</span> chunk <span class="keyword">of</span> agent.<span class="fn">processEvent</span>(event)) { ... }
+      </div>
+      <p>Agent 门面暴露 12 个专职 Manager 的访问器（<code>agent.persona</code>、<code>agent.memory</code>、<code>agent.config</code> 等），供宿主直接操作。</p>
+    </div>
+
+    <!-- 记忆系统接口 -->
+    <div class="card">
+      <h3><span class="dot purple"></span> 记忆系统接口 — 存储抽象层</h3>
+      <p>宿主注入任意存储实现，Memora 内核零依赖具体后端。</p>
+      <div class="code-block">
+<span class="comment">// 宿主注入存储实现</span>
+<span class="keyword">interface</span> <span class="type">IMemoryStorage</span> {
+  <span class="fn">upsert</span>(memory: <span class="type">Memory</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;;
+  <span class="fn">search</span>(query: <span class="type">string</span>, opts?: <span class="type">SearchOptions</span>): <span class="type">Promise</span>&lt;<span class="type">Memory</span>[]&gt;;
+  <span class="fn">delete</span>(id: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;;
+}
+
+<span class="comment">// 会话存储</span>
+<span class="keyword">interface</span> <span class="type">ISessionStore</span> {
+  <span class="fn">listSessions</span>(): <span class="type">string</span>[];
+  <span class="fn">loadMessages</span>(date: <span class="type">string</span>, session: <span class="type">string</span>): <span class="type">SessionMessage</span>[];
+  <span class="fn">saveCheckpoint</span>(sessionId: <span class="type">string</span>, json: <span class="type">string</span>): <span class="type">void</span>;
+  <span class="fn">loadCheckpoint</span>(sessionId: <span class="type">string</span>): <span class="type">string</span> | <span class="type">null</span>;
+}
+
+<span class="comment">// 向量存储（可选，开启语义搜索）</span>
+<span class="keyword">interface</span> <span class="type">IVectorStore</span> {
+  <span class="fn">search</span>(query: <span class="type">string</span>, limit: <span class="type">number</span>): <span class="type">Promise</span>&lt;<span class="type">ScoredMemory</span>[]&gt;;
+}
+      </div>
+      <p>三层存储各自独立，按需注入。不注入时内核使用内存存储降级运行。</p>
+    </div>
+
+    <!-- 自定义内容接口 -->
+    <div class="card">
+      <h3><span class="dot amber"></span> 用户自定义内容 — 角色/技能/规则</h3>
+      <p>通过配置文件目录定义，热加载无需重启。开发者只需按规范编写文件，Memora 自动加载。</p>
+      <div class="code-block">
+<span class="comment">// 角色定义（personas/ 目录）</span>
+<span class="keyword">interface</span> <span class="type">PersonaDefinition</span> {
+  name: <span class="type">string</span>;          <span class="comment">// 角色名</span>
+  systemPrompt: <span class="type">string</span>;  <span class="comment">// 系统 prompt</span>
+  triggers?: <span class="type">string</span>[];    <span class="comment">// 关键词触发（自动匹配）</span>
+}
+
+<span class="comment">// 技能定义（skills/ 目录）</span>
+<span class="keyword">interface</span> <span class="type">SkillDefinition</span> {
+  name: <span class="type">string</span>;           <span class="comment">// 技能名</span>
+  triggers: <span class="type">RegExp</span>[];     <span class="comment">// 正则触发</span>
+  systemPrompt: <span class="type">string</span>;  <span class="comment">// 技能 prompt（当轮注入）</span>
+}
+
+<span class="comment">// 规则定义（rules/ 目录）</span>
+<span class="keyword">interface</span> <span class="type">RuleDefinition</span> {
+  name: <span class="type">string</span>;           <span class="comment">// 规则名</span>
+  content: <span class="type">string</span>;        <span class="comment">// 规则内容（注入 bootstrap）</span>
+}
+      </div>
+      <p>角色自动匹配（关键词+LLM辅助）、技能当轮实时注入、规则由 bootstrap 机制自动注入 —— 所有自定义内容即写即用。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第四节：触发流程
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section animate delay-4" id="flow">
+    <div class="section-header">
+      <div class="tag flow">04 · 触发流程</div>
+      <h2>用户输入 → 系统响应 完整链路</h2>
+      <p>用户实时输入是触发点，系统沿五层架构逐级处理，最终输出响应。</p>
+    </div>
+
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="tl-title">① 输入接收</div>
+        <div class="tl-desc"><code>agent.chat()</code> 或 <code>agent.processEvent()</code> 接收用户输入。校验输入长度、会话状态（暂停/异常中拒绝）。</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">② 四级补全</div>
+        <div class="tl-desc">Composer 将 SessionEvent.delta 补全为完整四元组（角色×任务×标准×资源）。P1→P2→P3→P4 逐级填充，缺省时暂停询问。</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">③ 上下文准备</div>
+        <div class="tl-desc">角色自动匹配 → 双通道记忆召回（语义+关键词）→ 技能当轮注入 → 最近对话注入 → 用户消息写入历史。</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">④ LLM 流式调用</div>
+        <div class="tl-desc">AgentLoop 执行 LLM 调用。支持工具调用循环、护栏规则检查、上下文窗口截断、反思重试。输出 AgentChunk 流。</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">⑤ 后处理归档</div>
+        <div class="tl-desc">助手消息写历史 → 用户画像归档 → Insight 提取 → AutoConfig 分析。所有操作为 fire-and-forget，不阻塞用户响应。</div>
+      </div>
+    </div>
+
+    <div class="flow-row">
+      <span class="flow-step primary">用户输入<span class="sub">SessionEvent</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">补全层<span class="sub">Composer</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">角色匹配<span class="sub">Persona</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">记忆召回<span class="sub">recall</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">技能注入<span class="sub">Skill</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">LLM<span class="sub">Loop</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">后处理<span class="sub">Archive</span></span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第五节：四级补全链
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="completion">
+    <div class="section-header">
+      <div class="tag flow">05 · 四级补全链</div>
+      <h2>三源融合 · 逐级补全</h2>
+      <p>四元组每个槽位独立走补全链，缺省时有明确来源和可追溯性。</p>
+    </div>
+
+    <div class="chain-grid">
+      <div class="chain-step">
+        <div class="level p1">P1 · 显式输入</div>
+        <div class="desc">用户通过 delta 明确提供值，或通过 SlotRef 引用当前值</div>
+        <span class="arrow-down">↓</span>
+      </div>
+      <div class="chain-step">
+        <div class="level p2">P2 · 记忆沉淀</div>
+        <div class="desc">从检查点历史值延续，保持上下文一致性</div>
+        <span class="arrow-down">↓</span>
+      </div>
+      <div class="chain-step">
+        <div class="level p3">P3 · 系统内置</div>
+        <div class="desc">代码内置默认值兜底（角色=assistant、标准=完成、资源=空）</div>
+        <span class="arrow-down">↓</span>
+      </div>
+      <div class="chain-step">
+        <div class="level p4">P4 · 暂停询问</div>
+        <div class="desc">以上都无法补全时，生成澄清问题暂停等待用户回答</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot teal"></span> 增量合并规则</h3>
+      <p><strong>增量槽引用</strong>：用户说「继续」时，任务槽引用 currentGoal，不覆盖。</p>
+      <p><strong>新值槽覆盖</strong>：用户提供新标准时，直接覆盖 standard 槽。</p>
+      <p><strong>数组槽追加</strong>：资源槽的 documents/memories 数组自动追加，非覆盖。</p>
+      <p><strong>未提供字段（undefined）</strong>：走 P2→P3→P4 补全链。</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot rose"></span> P4 防滥用机制</h3>
+      <p>连续 2 次高风险暂停后强制降级 P3，不再生成 P4 问题。低风险问题（lowRisk=true）由 Agent 自动兜底，不计入连续暂停计数。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第六节：不中断工作模型
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="state">
+    <div class="section-header">
+      <div class="tag flow">06 · 不中断工作模型</div>
+      <h2>三态状态机 + 检查点恢复协议</h2>
+      <p>从「一问一答」升级为「开启后常驻、仅暂停不终止」。</p>
+    </div>
+
+    <div class="state-machine">
+      <div class="state-node running">
+        <div class="icon">▶</div>
+        <div class="name">RUNNING</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">执行中</div>
+      </div>
+      <span class="state-arrow">⇄</span>
+      <div class="state-node paused">
+        <div class="icon">⏸</div>
+        <div class="name">PAUSED</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">暂停</div>
+      </div>
+      <span class="state-arrow">←</span>
+      <div class="state-node error">
+        <div class="icon">⚠</div>
+        <div class="name">ERROR</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">异常</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot blue"></span> 检查点（SessionCheckpoint）</h3>
+      <p>检查点是会话运行时的完整快照，包含：会话标识、三态状态、目标（mainGoal/currentGoal/goalVersion）、执行计划、角色、标准、资源、热记忆窗口、工具执行日志、心跳时间戳。</p>
+      <div class="code-block">
+<span class="keyword">interface</span> <span class="type">SessionCheckpoint</span> {
+  sessionId: <span class="type">string</span>;           <span class="comment">// 会话唯一标识</span>
+  status: <span class="string">'running'</span> | <span class="string">'paused'</span> | <span class="string">'error'</span>;  <span class="comment">// 三态</span>
+  mainGoal: <span class="type">string</span>;              <span class="comment">// 原始目标（防漂移锚点）</span>
+  currentGoal: <span class="type">string</span>;           <span class="comment">// 当前迭代目标</span>
+  goalVersion: <span class="type">number</span>;            <span class="comment">// 目标版本（每次更新递增）</span>
+  plan: <span class="type">PlanStep</span>[];                <span class="comment">// 执行计划</span>
+  hotMemory: <span class="type">ChatMessage</span>[];         <span class="comment">// 热记忆窗口（截断后）</span>
+  completedToolCalls?: <span class="type">ToolExecutionRecord</span>[];  <span class="comment">// 工具执行日志</span>
+  lastHeartbeat: <span class="type">number</span>;           <span class="comment">// 心跳（防僵尸会话）</span>
+}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot green"></span> 恢复协议（5 步恢复）</h3>
+      <p><strong>① 快照反序列化</strong> → <strong>② 热窗口载入</strong>（恢复最近对话到 AgentLoop）→ <strong>③ 温记忆按需召回</strong>（以 mainGoal 为查询条件，从温记忆召回早期上下文）→ <strong>④ 契约重注入</strong>（角色+技能重新注入）→ <strong>⑤ 恢复校验</strong>（ERROR 状态时校验 recovered 条件）。</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot purple"></span> 工具幂等性 + 补偿机制</h3>
+      <p>工具分三级幂等性：<code>idempotent</code>（天然幂等）、<code>idempotent-key</code>（依赖唯一键）、<code>non-idempotent</code>（需补偿）。恢复时对非幂等工具执行补偿操作，确保状态一致性。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第七节：开发者 API 全景
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="dev-api">
+    <div class="section-header">
+      <div class="tag iface">07 · 开发者 API 全景</div>
+      <h2>Agent 门面公开接口</h2>
+      <p>宿主项目通过 Agent 门面接入，所有功能通过统一入口访问。</p>
+    </div>
+
+    <div class="iface-grid">
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--accent)">●</span> 对话</div>
+        <div class="iface-desc"><code>chat()</code> 流式对话、<code>chatSync()</code> 同步对话、<code>processEvent()</code> 结构化事件输入</div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--teal)">●</span> 会话管理</div>
+        <div class="iface-desc"><code>pause()</code> / <code>resume()</code> / <code>recover()</code> / <code>triggerError()</code> / <code>forkSession()</code> / <code>switchProject()</code></div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--green)">●</span> 检查点</div>
+        <div class="iface-desc"><code>createCheckpoint()</code> / <code>getCheckpoint()</code> / <code>restoreFromCheckpoint()</code></div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--amber)">●</span> 配置</div>
+        <div class="iface-desc"><code>setProvider()</code> / <code>setArchiveMode()</code> / <code>reloadConfig()</code> / <code>switchPersona()</code></div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--purple)">●</span> 记忆治理</div>
+        <div class="iface-desc"><code>governance.decay()</code> / <code>governance.deduplicate()</code> / <code>governance.evaluateTimeliness()</code> / <code>governance.detectConflicts()</code></div>
+      </div>
+      <div class="iface-card">
+        <div class="iface-title"><span style="color:var(--rose)">●</span> 可观测性</div>
+        <div class="iface-desc"><code>getMetrics()</code> / <code>getMessages()</code> / <code>lastInteractionAt</code> / <code>isBusy</code></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="dot blue"></span> 12 个 Manager 访问器</h3>
+      <p><code>agent.persona</code> · <code>agent.tools</code> · <code>agent.skills</code> · <code>agent.config</code> · <code>agent.insight</code> · <code>agent.memory</code> · <code>agent.projects</code> · <code>agent.userProfile</code> · <code>agent.security</code> · <code>agent.works</code> · <code>agent.sessionManager</code> · <code>agent.polish</code></p>
+      <p>每个 Manager 职责单一，通过组合模式挂载到 Agent 门面下。宿主通过 <code>agent.memory?.search()</code> 等链式调用灵活访问。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       第八节：记忆系统
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="memory">
+    <div class="section-header">
+      <div class="tag mem">08 · 记忆系统体系</div>
+      <h2>记忆层级与治理</h2>
+      <p>万物皆记忆——不同持久化层级的记忆，各有不同的生命周期和治理策略。</p>
+    </div>
+
+    <table class="layer-table">
+      <tr class="layer-memory">
+        <td>热记忆</td>
+        <td>AgentLoop 工作记忆中的最近对话。FIFO 截断（默认 20 轮），单条内容截断（500 字符）。存储在内存中，随检查点序列化。</td>
+      </tr>
+      <tr class="layer-memory">
+        <td>温记忆</td>
+        <td>通过 recall() 双通道召回（语义+关键词）的归档记忆。存储在 IMemoryStorage 中，L0 衰减 / L1 去重 / L2 时效性 / L3 冲突检测治理。</td>
+      </tr>
+      <tr class="layer-memory">
+        <td>冷记忆</td>
+        <td>用户画像（UserProfile）、Insight（关键洞察）、会话归档（SessionArchive）。由专职 Manager 在 postProcess 阶段异步归档。</td>
+      </tr>
+      <tr class="layer-storage">
+        <td>配置记忆</td>
+        <td>角色（Persona）、技能（Skill）、规则（Rule）——通过配置文件目录加载，热重载无需重启。由 bootstrap 机制自动注入到 LLM 上下文。</td>
+      </tr>
+    </table>
+
+    <div class="card">
+      <h3><span class="dot purple"></span> 记忆治理四层模型</h3>
+      <p><strong>L0 衰减</strong>：按时间衰减记忆分数，久未命中的记忆逐渐降权。</p>
+      <p><strong>L1 去重</strong>：LLM 驱动的语义去重，相似记忆合并或降级。</p>
+      <p><strong>L2 时效性</strong>：评估记忆是否过时，过时记忆标记或降级。</p>
+      <p><strong>L3 冲突</strong>：检测互为矛盾的记忆（如"用户偏好 Python" vs "用户偏好 Rust"），标记冲突供用户确认。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       页脚
+       ═══════════════════════════════════════════════════════ -->
+  <footer>
+    <p>Memora Agent Kernel · 万物皆记忆 · 不中断工作模型 v2.0</p>
+    <p style="margin-top:0.3rem;">设计文档：<code>docs/根基/不中断工作模型演进.html</code></p>
+  </footer>
+
+</div>
+
+<!-- ═══════════════ 滚动动画 ═══════════════ -->
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.animationPlayState = 'running';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.section, .card, .iface-card, .chain-step, .layer-table tr, .timeline-item').forEach(el => {
+    el.style.animationPlayState = 'paused';
+    el.style.animation = 'fadeInUp 0.5s ease-out both';
+    observer.observe(el);
+  });
+
+  // 页面加载后立即播放可视区域内的动画
+  setTimeout(() => {
+    document.querySelectorAll('.animate').forEach(el => {
+      el.style.animationPlayState = 'running';
+    });
+  }, 100);
+</script>
+
+</body>
+</html>
