@@ -515,7 +515,7 @@
 
   <!-- ── Hero ── -->
   <section class="hero animate">
-    <div class="badge">v2.0 · 不中断工作模型</div>
+    <div class="badge">v2.2 · 申请暂停模型 · loop 任务内</div>
     <h1>Memora — <span class="highlight">万物皆记忆</span> 的 Agent 内核</h1>
     <p>多层输入接口 × 四级补全链 × 三态状态机 × 记忆层级体系</p>
   </section>
@@ -534,7 +534,7 @@
       <h3><span class="dot blue"></span> 核心设计原则</h3>
       <p><strong>用户实时输入是触发点</strong>。系统以用户输入为锚，从各层级召回相关资源，融合后生成响应。输入不再只是"发送消息"，而是携带结构化意图的增量事件（SessionEvent）。</p>
       <p><strong>一切皆接口</strong>。开发人员定义接口（AgentOptions）、记忆系统接口（IMemoryStorage/ISessionStore/IVectorStore）、用户实时输入接口（SessionEvent/chat()）、用户自定义内容接口（Persona/Skill/Rule）——四层接口各自独立，职责清晰。</p>
-      <p><strong>不中断只暂停</strong>。从"一问一答"升级为"开启后常驻、仅暂停不终止"，支持检查点断点续跑。</p>
+      <p><strong>不中断 = loop 任务内 + 申请暂停</strong>。一问一答保持核心交互；loop 长任务自然获得「用户申请暂停查看 / 注入补充 / 确认继续」——暂停 = 申请暂停（requestPause），进行中的问答回合结束后于 loop 迭代边界挂起（软暂停，messages 保留，可续跑），可继续（resumeExecution 原路径续跑）或注入新内容（自动恢复 + 融合继续）。</p>
     </div>
   </section>
 
@@ -870,6 +870,14 @@
     </div>
 
     <div class="card">
+      <h3><span class="dot amber"></span> 申请暂停模型（v2.2 最终定论）</h3>
+      <p><strong>定位</strong>：不中断对话思路是大厂（Trae/WorkBuddy 等）<b>已实现的功能</b>——loop 任务内，Agent 在问答回合间隙主动弹窗提问、用户直接输入内容即进入待输入形态，等 loop 最近一轮任务结束自然衔接。大厂未做的是<b>显式暂停/继续按钮</b>（为减用户心智负担而隐藏）。memora 在其上增加显式的<b>「暂停（申请暂停）」与「继续」按钮</b>。</p>
+      <p><strong>暂停 = 申请暂停（requestPause）</strong>：用户点击暂停 = 提交申请，内核置 pauseRequested，<b>进行中的问答回合自然结束后</b>于 loop 迭代边界挂起（messages 保留，可续跑），发射 <code>{type:'paused'}</code> chunk。非霸道中止——<b>硬停止（signal.abort）才是唯一霸道中止路径</b>（杀生成器、不可续跑）。</p>
+      <p><strong>暂停后可继续可注入</strong>：空输入 → <code>resumeExecution()</code> 直接续驱 loop 原路径；携带输入 → 自动恢复 + 补充注入融合继续。</p>
+      <p><strong>可续跑信号（canContinueWithoutInput()）</strong>：暂停态优先返回 true，否则 <code>isInAutonomousStep || hasPendingPlan</code>。宿主据此决定按钮形态——<b>简单轮（无续跑可能）只给停止，不给暂停</b>。</p>
+    </div>
+
+    <div class="card">
       <h3><span class="dot blue"></span> 检查点（SessionCheckpoint）</h3>
       <p>检查点是会话运行时的完整快照，包含：会话标识、三态状态、目标（mainGoal/currentGoal/goalVersion）、执行计划、角色、标准、资源、热记忆窗口、工具执行日志、心跳时间戳。</p>
       <div class="code-block">
@@ -915,7 +923,7 @@
       </div>
       <div class="iface-card">
         <div class="iface-title"><span style="color:var(--teal)">●</span> 会话管理</div>
-        <div class="iface-desc"><code>pause()</code> / <code>resume()</code> / <code>recover()</code> / <code>triggerError()</code> / <code>forkSession()</code> / <code>switchProject()</code></div>
+        <div class="iface-desc"><code>requestPause()</code>（申请暂停，等进行中的回合结束挂起）/ <code>resumeExecution()</code>（续驱 loop，可携带补充输入）/ <code>canContinueWithoutInput()</code>（可续跑信号，驱动暂停按钮显隐）/ <code>recover()</code> / <code>triggerError()</code> / <code>forkSession()</code> / <code>switchProject()</code></div>
       </div>
       <div class="iface-card">
         <div class="iface-title"><span style="color:var(--green)">●</span> 检查点</div>
@@ -984,7 +992,7 @@
        页脚
        ═══════════════════════════════════════════════════════ -->
   <footer>
-    <p>Memora Agent Kernel · 万物皆记忆 · 不中断工作模型 v2.0</p>
+    <p>Memora Agent Kernel · 万物皆记忆 · 不中断工作模型 v2.2（申请暂停模型）</p>
     <p style="margin-top:0.3rem;">设计文档：<code>docs/根基/不中断工作模型演进.html</code></p>
   </footer>
 

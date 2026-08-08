@@ -246,11 +246,13 @@
     <tr><td><code>init()</code></td><td>组件组装 + 配置加载 + 项目初始化</td></tr>
     <tr><td><code>chat(text)</code></td><td>核心对话编排 → LLM 调用 → 工具执行 → 记忆召回 → 循环</td></tr>
     <tr><td><code>forkSession(name)</code></td><td>分叉当前会话为新分支</td></tr>
-    <tr><td><code>pause() / resume() / recover()</code></td><td>不中断工作模型的状态管理</td></tr>
+    <tr><td><code>requestPause() / resumeExecution() / canContinueWithoutInput()</code></td><td>不中断工作模型（v2.2 申请暂停模型）：申请暂停（等进行中的问答回合结束后于 loop 边界挂起）/ 续驱 loop（可携带补充输入，自动恢复 + 融合）/ 可续跑信号（驱动暂停按钮显隐，简单轮只给停止）</td></tr>
+    <tr><td><code>recover()</code></td><td>ERROR → RUNNING 恢复校验（cause 已解除）</td></tr>
     <tr><td><code>close()</code></td><td>优雅关闭，释放资源</td></tr>
     <tr><td><code>registerTool()</code></td><td>注册自定义工具（如 web_search）</td></tr>
   </table>
   <p>Agent 内部委托给各专职 Manager：<code>Composer</code>（四级补全）、<code>ToolExecutor</code>（工具执行）、<code>SessionManager</code>（状态机）、<code>MemoryGovernance</code>（记忆治理）等。</p>
+  <p><strong>软暂停语义（v2.2 申请暂停模型）</strong>：不中断对话思路是大厂已实现的功能（loop 回合间隙 Agent 提问 + 用户直接输入续接），memora 仅增加显式暂停/继续按钮。<code>requestPause()</code> = 申请暂停——提交后等<b>进行中的问答回合结束</b>，于 loop 迭代边界挂起（messages 保留，发射 <code>{type:'paused'}</code> chunk，可续跑）；<code>resumeExecution(input?)</code> = 续驱 loop（空输入原路径继续、带输入自动恢复 + 补充注入融合）；<code>canContinueWithoutInput()</code> = 可续跑信号（paused 优先 true，否则自主步/有待续计划），宿主据此显暂停按钮（简单轮只给停止）。<b>硬停止（signal.abort）仍是唯一霸道中止路径</b>。</p>
 </div>
 
 <!-- ===== 2. 存储抽象层 ===== -->
@@ -316,7 +318,7 @@ agent.on(<span class="str">'conflictDetected'</span>, (e) =&gt; notification.war
     <tr><td><code>memoryAdded</code></td><td><code>{ id, source, name }</code></td></tr>
     <tr><td><code>personaSwitched</code></td><td><code>{ from, to }</code></td></tr>
     <tr><td><code>conflictDetected</code></td><td><code>{ newMemoryId, targetId, ... }</code></td></tr>
-    <tr><td><code>sessionPaused / Resumed / Error / Recovered</code></td><td>会话状态变更</td></tr>
+    <tr><td><code>sessionPaused / Resumed / Error / Recovered</code></td><td>会话状态变更（payload 含 resumable 可续跑信号，供 UI 决定暂停/继续按钮显隐）</td></tr>
     <tr><td><code>goalDriftDetected</code></td><td>目标漂移检测</td></tr>
   </table>
 </div>
