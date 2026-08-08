@@ -98,20 +98,11 @@ export function registerChatHandlers(ctx: IpcContext): void {
   /** 暂停会话（不中断工作模型 v2.1：软暂停 = 内核在 loop 边界挂起，保留 messages 可续跑） */
   ipcMain.handle(IPC_CHANNELS.SESSION_PAUSE, async (_event, reason: string) => {
     const agent = requireAgent(ctx);
-    // 软暂停：请求内核在 loop 下一迭代边界挂起生成器（不 abort，保留 this.messages），
-    // 内核内部翻状态机为 PAUSED（触发 sessionPaused 事件）。
+    // 软暂停：请求内核在 loop 下一迭代边界挂起生成器（不 abort，保留 this.messages）。
+    // 状态机翻 PAUSED 延后到 loop 边界真正挂起时（内核事实驱动，修 D1），
+    // 由下方 agent.on(AGENT_EVENTS.sessionPaused) 监听统一广播 SESSION_STATUS_CHANGED{paused}（与 resume 同构）。
     // 区别于硬停止（CHAT_ABORT 的 signal.abort）：硬停止杀生成器不可续跑，软暂停可经 resumeExecution 续跑。
     agent.requestPause(reason ?? '用户主动暂停', 'user');
-    // 广播状态变更到渲染进程（渲染层只订阅 SESSION_STATUS_CHANGED IPC，须显式广播）
-    const fullWindow = ctx.windowManager.getFullWindow();
-    if (fullWindow && !fullWindow.isDestroyed()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
-        status: 'paused',
-        reason: reason ?? '用户主动暂停',
-        // 暂停态必可续跑（空输入继续 / 补充输入修正后续轮）
-        resumable: agent.canContinueWithoutInput(),
-      });
-    }
     return { paused: true, resumable: agent.canContinueWithoutInput() };
   });
 
@@ -200,6 +191,24 @@ export function registerChatHandlers(ctx: IpcContext): void {
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
         status: 'running',
         // 恢复态的 resumable 反映当前会话是否仍可续跑（多轮任务 / 自主步）
+        resumable: agent.canContinueWithoutInput(),
+      });
+    }
+  });
+
+  /**
+   * P0-2：内核事实驱动暂停广播——与 sessionResumed 同构。
+   * 状态机在 loop 迭代边界真正挂起时翻 PAUSED（requestPause 不再同步翻转，修 D1），
+   * 内核经 forwardEvent 转发 sessionPaused 事件，此处统一广播 SESSION_STATUS_CHANGED{paused}。
+   */
+  agent.on(AGENT_EVENTS.sessionPaused, (payload) => {
+    const reason = (payload as { reason?: string } | undefined)?.reason ?? '用户主动暂停';
+    const fullWindow = ctx.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+        status: 'paused',
+        reason,
+        // 暂停态必可续跑（空输入继续 / 补充输入修正后续轮）
         resumable: agent.canContinueWithoutInput(),
       });
     }

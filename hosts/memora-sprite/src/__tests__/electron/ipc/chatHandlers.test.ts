@@ -110,6 +110,7 @@ vi.mock('../../../sprite/constants.js', () => ({
 
 // handleUserInput 已迁移到 chatStreamHandler.ts，registerChatHandlers 留在 chatHandlers.ts
 import { registerChatHandlers, CLARIFY_AUTO_RESOLVE_MS } from '../../../electron/ipc/chatHandlers.js';
+import { AGENT_EVENTS } from 'memora';
 import { handleUserInput } from '../../../electron/ipc/chatStreamHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../../electron/ipc/channels.js';
 import type { IpcContext } from '../../../electron/ipc/types.js';
@@ -313,7 +314,7 @@ describe('chatHandlers', () => {
   // ─── SESSION_PAUSE / SESSION_RESUME（软暂停 v2.1 接线） ─
 
   describe('SESSION_PAUSE / SESSION_RESUME（软暂停 v2.1 接线）', () => {
-    it('SESSION_PAUSE 应 requestPause（软暂停非 abort）+ 广播 paused+resumable，不杀生成器', async () => {
+    it('SESSION_PAUSE 应 requestPause（软暂停非 abort）+ 经 sessionPaused 事件广播 paused+resumable', async () => {
       const requestPause = vi.fn();
       const canContinueWithoutInput = vi.fn(() => true);
       const agent = createMockAgent({ requestPause, canContinueWithoutInput });
@@ -331,10 +332,22 @@ describe('chatHandlers', () => {
       // 关键：软暂停走 requestPause（内核边界挂起），不调用 ctrl.abort 杀生成器
       expect(requestPause).toHaveBeenCalledTimes(1);
       expect(requestPause).toHaveBeenCalledWith('用户主动暂停', 'user');
-      // 广播 SESSION_STATUS_CHANGED{paused, resumable}
+
+      // 广播不在此同步发生：SESSION_PAUSE 返回时尚未 emit SESSION_STATUS_CHANGED（修 D1，内核事实驱动）
+      const beforeSend = wc.sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED);
+      expect(beforeSend).toHaveLength(0);
+
+      // 内核在 loop 边界真正挂起时经 sessionPaused 事件驱动广播（与 resume 同构）
+      const pausedHandler = (agent.on as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c) => c[0] === AGENT_EVENTS.sessionPaused,
+      )?.[1];
+      expect(pausedHandler).toBeTypeOf('function');
+
+      pausedHandler!({ reason: '用户主动暂停' });
+
       const statusSends = wc.sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED);
       expect(statusSends).toHaveLength(1);
-      expect(statusSends[0].data).toEqual({ status: 'paused', reason: '用户主动暂停', resumable: true });
+      expect(statusSends[0]!.data).toEqual({ status: 'paused', reason: '用户主动暂停', resumable: true });
     });
 
     it('SESSION_RESUME 应驱动 handleResume 续跑（空 input = 纯恢复）', async () => {
@@ -1320,12 +1333,14 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
       prepareForChat: vi.fn(),
     });
     const fullWindow = wm.getFullWindow();
-    // 第一个 chunk 发送后标记窗口为已销毁（下次循环检查 isDestroyed 时 break）
+    // 第一个 CHUNK 发送后标记窗口为已销毁（下次循环检查 isDestroyed 时 break）
     (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(
       (channel: string, data: unknown) => {
         sends.push({ channel, data });
-        // 第一次 send 是 SPRITE_STREAM_START，第二次是 CHUNK，之后标记销毁
-        if (sends.length >= 2) {
+        // 按 CHUNK 通道计数触发销毁：START 与首个 CHUNK 之间还有一次
+        // SESSION_STATUS_CHANGED 广播，不能用 sends.length 阈值（否则会早于首个 CHUNK 误 break）。
+        // 首个 CHUNK 已 push 进 sends 后再翻转 isDestroyed，故本 CHUNK 仍被记录，第二个 chunk 不再发送。
+        if (channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK) {
           (fullWindow.isDestroyed as ReturnType<typeof vi.fn>).mockReturnValue(true);
         }
       },

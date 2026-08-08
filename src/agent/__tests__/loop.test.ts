@@ -1045,6 +1045,41 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     expect(loop.getMessages()).toHaveLength(6);
   });
 
+  it('requestPause 残留标志不跨轮泄漏（D2 修复：processUserInput 入口复位）', async () => {
+    // 两轮各单迭代完成：第一轮结束前请求暂停（本轮已 done，标志未消费），
+    // 验证第二轮不会因残留 pauseRequested 在首迭代边界立即误暂停
+    const provider = mockMultiTurnProvider([
+      [{ content: '第一轮完成' }],
+      [{ content: '第二轮完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 第一轮：流式产出文本后请求软暂停；本轮 LLM 已返回 stop，
+    // 在下一迭代边界前即以 done 结束 → pauseRequested 残留但未被本轮消费
+    const chunks1: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务A')) {
+      chunks1.push(chunk);
+      if (chunk.type === 'text') loop.requestPause();
+    }
+    expect(chunks1.some((c) => c.type === 'paused')).toBe(false);
+    expect(chunks1[chunks1.length - 1]!.type).toBe('done');
+
+    // 第二轮：若无 D2 修复（processUserInput 入口复位），残留 pauseRequested
+    // 会在第二轮首迭代边界立即暂停；修复后应正常完成而非暂停
+    const chunks2: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务B')) {
+      chunks2.push(chunk);
+    }
+    expect(chunks2.some((c) => c.type === 'paused')).toBe(false);
+    expect(chunks2[chunks2.length - 1]!.type).toBe('done');
+    // 第二轮应正常产出其文本（验证未误暂停导致截断）
+    expect(chunks2.some((c) => c.type === 'text' && c.content === '第二轮完成')).toBe(true);
+  });
+
   it('硬停止(abort) → 中断标记路径不变，产出 [已中断]', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '部分内容' }, { content: '不应出现' }]),

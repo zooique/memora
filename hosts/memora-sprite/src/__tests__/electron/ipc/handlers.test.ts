@@ -90,6 +90,11 @@ function createMockIpcContext(options: {
       getMetrics: () => ({ context: { truncationCount: 0 } }),
       // registerChatHandlers 注册 needClarify 事件监听时需要 agent.on
       on: vi.fn(),
+      // handleUserInput 进入 try 块后会调用 processEvent —— 提供空生成器让其完整跑完，
+      // 避免 L221「正常进入对话流程」用例因 agent 故意留空而抛出未处理 rejection。
+      // canContinueWithoutInput 在 forwardStream 首个 chunk 广播 resumable 时调用。
+      processEvent: vi.fn(async function* () {}),
+      canContinueWithoutInput: vi.fn(() => false),
     }),
     // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
     getSprite: () => ({

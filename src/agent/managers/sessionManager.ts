@@ -717,6 +717,7 @@ export class SessionManager {
   }
 
   /**
+   * @deprecated Phase 2 起由 completeRound / appendPlanStep 取代（SSOT 单一写点）。
    * 更新检查点计划步骤
    *
    * @param plan - 新的计划步骤列表
@@ -767,6 +768,7 @@ export class SessionManager {
   // ── P3.3：执行计划管理 ──────────────────────────────────
 
   /**
+   * @deprecated Phase 2 起由 completeRound / appendPlanStep 取代（SSOT 单一写点）。
    * 推进到下一个未完成步骤
    *
    * 根据增量默认分辨率：有未完成步骤 → 推进最近步骤。
@@ -785,6 +787,7 @@ export class SessionManager {
   }
 
   /**
+   * @deprecated Phase 2 起由 completeRound / appendPlanStep 取代（SSOT 单一写点）。
    * 完成当前步骤
    *
    * 将指定步骤标记为 done，递增心跳。

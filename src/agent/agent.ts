@@ -883,23 +883,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 将 Composer 的增量解析结果写入 SessionManager 检查点，
         // 实现「增量事件 → 槽位级更新」的闭环
         this.applyResolvedDelta(composeResult.resolved);
-
-        // P3.3: 执行计划推进——当计划未停滞时，推进到下一个未完成步骤
-        // 并将当前步骤描述注入 LLM 上下文，让 LLM 感知当前执行位置
-        if (!planCtx?.stalled && event.type === 'chat') {
-          const advancedStep = sm.advancePlan();
-          if (advancedStep) {
-            // 注入当前步骤描述到 LLM 上下文，作为 system 消息
-            // 让 LLM 感知当前执行位置，聚焦于完成当前步骤
-            try {
-              this.requireLoop.injectSystemMessage(
-                `[当前执行步骤] ${advancedStep.description}（步骤 ${advancedStep.order + 1}/${checkpoint.plan.length}）`,
-              );
-            } catch (err) {
-              logger.warn({ err }, '计划步骤注入上下文失败');
-            }
-          }
-        }
       }
 
       // P1: 意图分类防污染——非 chat 事件不写 chat 历史
@@ -934,6 +917,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       try {
         for await (const chunk of loop.processEvent(event, recalledMemories, combinedSignal)) {
+          // 内核事实驱动：loop 在迭代边界真正挂起时，状态机才翻 PAUSED（修 D1）
+          // 不再在 requestPause 同步翻转——避免"申请即暂停"错位
+          if (chunk.type === 'paused') {
+            this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource);
+            this._pendingPauseReason = undefined;
+            this._pendingPauseSource = 'user';
+          }
           yield chunk;
           if (chunk.type === 'text') {
             assistantContent += chunk.content;
@@ -1270,11 +1260,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.requireSessionManager.resume();
   }
 
+  // P0-2：软暂停申请时暂存的 reason/source，待 loop 迭代边界真正挂起（产出 {type:'paused'} chunk）时翻状态机使用
+  private _pendingPauseReason?: string;
+  private _pendingPauseSource: 'user' | 'agent' | 'system' = 'user';
+
   /**
    * 请求软暂停（不中断工作模型 v2.1）
    *
-   * 设置 loop 的 pauseRequested 标志（loop 在下一迭代边界挂起，不 abort），
-   * 同步翻转状态机为 PAUSED（触发 sessionPaused → 宿主转发 STATUS{paused}）。
+   * 仅设置 loop 的 pauseRequested 标志（loop 在下一迭代边界挂起，不 abort），
+   * 并暂存 reason/source。状态机翻 PAUSED **延后到 loop 边界真正挂起时**
+   * （见 chat() 对 {type:'paused'} chunk 的处理）——内核事实驱动，而非申请即翻转（修 D1）。
    * 与硬停止（signal.abort）严格区分：软暂停保留 this.messages，可经 resumeExecution 续跑。
    *
    * @param reason - 暂停原因（用于状态展示）
@@ -1282,8 +1277,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   requestPause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): void {
     this.assertInitialized('requestPause');
+    // 仅置标志 + 暂存，不在此同步翻状态机
+    this._pendingPauseReason = reason;
+    this._pendingPauseSource = source;
     this.requireLoop.requestPause();
-    this.pause(reason, source);
   }
 
   /**

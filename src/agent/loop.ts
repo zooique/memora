@@ -40,13 +40,13 @@ export interface AgentLoopOptions {
   /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
   /**
-   * 上下文窗口 token 上限（默认 32000）
+   * 上下文窗口 token 上限（默认 120_000，对齐 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）
    *
    * 桌面精灵等长运行场景下，messages 数组随对话轮次无限增长会爆 LLM 上下文窗口。
    * 当估算 token 数超过此阈值时，保留 system prompt + 最近 N 条消息，
    * 裁剪中间段，确保 LLM 请求不因上下文溢出而失败。
    *
-   * 保守默认值 32000 token 对多数模型安全（DeepSeek 128K / GPT-4o 128K / 豆包 8K），
+   * 保守默认值 120_000 token 对多数模型安全（DeepSeek 128K / GPT-4o 128K / 豆包 8K），
    * 宿主可通过 AgentLoopOptions 覆盖。
    */
   maxContextTokens?: number;
@@ -156,7 +156,7 @@ class LoopMetrics {
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
-  /** 上下文窗口 token 上限（默认 32000，约 96K 中文字符） */
+  /** 上下文窗口 token 上限（默认 120_000，约 360K 中文字符，对齐 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS） */
   private readonly maxContextTokens: number;
   /** 可观测性 Tracer（默认 NOOP_TRACER 零开销） */
   private readonly tracer: ITracer;
@@ -281,6 +281,8 @@ export class AgentLoop {
       this.reflectionCountThisTurn = 0;
       // 重置自主工具步标志（每轮用户输入独立计算）
       this.inAutonomousStep = false;
+      // P0-3：清残留软暂停标志，防上一轮以 done 结束后跨轮泄漏误触发暂停（D2）
+      this.pauseRequested = false;
 
       // 3. 迭代循环
       let iteration = 0;
@@ -367,6 +369,17 @@ export class AgentLoop {
   }
 
   /**
+   * 取消待处理的软暂停请求（清 pauseRequested 标志，修复跨轮泄漏 D2）
+   *
+   * processUserInput / continueAfterPause 入口调用：确保上一轮以 done 结束时，
+   * 残留的 pauseRequested 不会泄漏到下一轮误触发暂停。
+   * 同时为 Phase 2 的 SESSION_CANCEL_PAUSE IPC 预建可复用能力。
+   */
+  cancelPauseRequest(): void {
+    this.pauseRequested = false;
+  }
+
+  /**
    * 软暂停后续跑（不中断工作模型 v2.1）
    *
    * 在暂停边界（handleIteration 产出 {paused} 并 return）后调用：
@@ -388,6 +401,8 @@ export class AgentLoop {
     }
     // 重置本轮反思计数（与 processUserInput 一致）
     this.reflectionCountThisTurn = 0;
+    // P0-3：清残留软暂停标志（续跑前确保干净，防跨轮泄漏 D2）
+    this.pauseRequested = false;
     // 重新进入迭代循环，从保留的 this.messages 续跑
     let iteration = 0;
     while (iteration < this.maxIterations) {
