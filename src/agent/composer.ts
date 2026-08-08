@@ -76,18 +76,22 @@ export class Composer {
       needClarify,
     );
 
-    // 任务槽：计划停滞时，若用户已明确指定任务则走 P1 显式输入，否则走 P4 澄清
-    // 场景：计划已完成/阻塞，用户未明确指定新任务时，
-    // 不应盲目延续 currentGoal，而应询问用户下一步方向
-    const taskSlot = planCtx?.stalled && event.delta?.task === undefined
-      ? this.resolveStalledTaskSlot(checkpoint.currentGoal, needClarify, planCtx)
-      : this.resolveSlot(
-          'task',
-          event.delta?.task,
-          checkpoint.currentGoal,
-          '',
-          needClarify,
-        );
+    // 任务槽：chat 事件走确定性规则（content 即用户意图，语义判断交给 LLM），
+    // 永不触发 P4 澄清——「继续」「帮我写 X」都是自然语言任务，content 已携带；
+    // 非 chat 事件（command/correction/clarify）保留原补全链（含停滞时 P4 澄清）。
+    const taskSlot = event.type === 'chat'
+      ? this.resolveChatTaskSlot(event, checkpoint, needClarify)
+      : (planCtx?.stalled && event.delta?.task === undefined
+          // 场景：计划已完成/阻塞，用户未明确指定新任务时，
+          // 不应盲目延续 currentGoal，而应询问用户下一步方向
+          ? this.resolveStalledTaskSlot(checkpoint.currentGoal, needClarify, planCtx)
+          : this.resolveSlot(
+              'task',
+              event.delta?.task,
+              checkpoint.currentGoal,
+              '',
+              needClarify,
+            ));
 
     const standardSlot = this.resolveSlot(
       'standard',
@@ -247,6 +251,39 @@ export class Composer {
     if (typeof value === 'string') return value.trim() === '';
     if (Array.isArray(value)) return value.length === 0;
     return false;
+  }
+
+  /**
+   * 解析 chat 事件的任务槽（确定性规则，不做语义判断）
+   *
+   * chat 事件的 content 即用户此刻的意图——「继续」「改成那样」「帮我写总结」都是
+   * 自然语言任务描述。代码只做确定性补全，不做「这是新任务还是继续」的语义判断：
+   *   - delta.task 显式提供（含 SlotRef）：走通用补全链（P1/P2/P3/P4）
+   *   - 检查点已有目标（currentGoal 非空）：P2 延续，不覆盖
+   *     （「继续」类增量直接引用 currentGoal，避免 content 误覆盖目标）
+   *   - 检查点无目标（新会话/目标清空）：以 content 为初始目标（P1 显式）
+   * 永不因「无任务槽」触发 P4 澄清——内容是否需要澄清属语义判断，由 LLM 在对话流中完成。
+   *
+   * @param event - 增量事件（chat 类型）
+   * @param checkpoint - 当前会话检查点
+   * @param needClarify - 澄清问题收集数组（仅 SlotRef 引用不存在时可能产生）
+   * @returns 补全结果
+   */
+  private resolveChatTaskSlot(
+    event: SessionEvent,
+    checkpoint: SessionCheckpoint,
+    needClarify: ClarifyQuestion[],
+  ): { value: string; source: CompletionLevel } {
+    // P1: 显式 delta.task（结构化任务）优先，走通用补全链（含 SlotRef 处理）
+    if (event.delta?.task !== undefined) {
+      return this.resolveSlot('task', event.delta.task, checkpoint.currentGoal, '', needClarify);
+    }
+    // 已有目标：P2 延续（不覆盖，「继续」类增量直接引用 currentGoal）
+    if (checkpoint.currentGoal && checkpoint.currentGoal.trim().length > 0) {
+      return { value: checkpoint.currentGoal, source: COMPLETION_LEVELS.P2_MEMORY };
+    }
+    // 无目标：以 chat 内容为初始目标（P1 显式）
+    return { value: event.content, source: COMPLETION_LEVELS.P1_EXPLICIT };
   }
 
   /**

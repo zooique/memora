@@ -422,27 +422,13 @@
   outline-offset: 1px;
 }
 
-/* ─── 模式切换按钮（普通模式 ↔ 不中断模式） ───────── */
-
-/* 模式切换按钮：普通模式时灰色，激活时绿色高亮 */
-.mode-toggle-btn {
-  /* 继承 .input-action 基类 */
-}
-.mode-toggle-btn.active {
-  color: var(--green);
-}
-.mode-toggle-btn.active:hover {
-  color: var(--green-hover, var(--green));
-  background: var(--surface0);
-}
-
 /* ─── 暂停/恢复互斥按钮（不中断工作模型） ──────────── */
 
-/* 在 .input-action 基础上增加颜色区分，初始隐藏 */
+/* 在 .input-action 基础上增加颜色区分，始终可见 */
 .session-toggle-btn {
   /* 继承 .input-action 基类 */
 }
-/* 暂停态：绿色激活 */
+/* 暂停态：默认灰色，hover 绿色激活反馈 */
 .session-toggle-btn:not(.paused) {
   color: var(--text-2);
 }
@@ -450,7 +436,7 @@
   color: var(--green);
   background: var(--surface0);
 }
-/* 恢复态：绿色高亮，暗示可恢复 */
+/* 恢复态：绿色常亮，暗示会话已暂停可恢复 */
 .session-toggle-btn.paused {
   color: var(--green);
 }
@@ -458,7 +444,7 @@
   color: var(--green-hover, var(--green));
   background: var(--surface0);
 }
-/* 禁用态 */
+/* 禁用态（会话异常） */
 .session-toggle-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

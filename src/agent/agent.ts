@@ -886,11 +886,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
 
       // P1: 意图分类防污染——非 chat 事件不写 chat 历史
-      // command/correction/clarify 属控制/元信息，不参与对话流：
+      // command/correction 属控制/元信息，不参与对话流：
       //   - command: 控制信号（暂停/恢复/重置），写入历史会污染对话
       //   - correction: 目标修正，写入历史会让 LLM 误以为这是普通对话
-      //   - clarify: 澄清回答，写入历史会与后续对话混淆
-      if (event.type !== 'chat') {
+      // clarify 例外：回答已通过 compose 应用到检查点（applyResolvedDelta），
+      // 恢复会话后以 chat 语义继续执行——回答内容作为用户输入进入对话流，
+      // 驱动 LLM 完成原任务（否则提交回答后会话停在 PAUSED，用户看到「无反应」）。
+      // resume 失败（如暂停超时）时保留原行为：仅记录回答，不继续执行。
+      if (event.type === 'clarify') {
+        if (this.resume()) {
+          event = { type: 'chat', content: this.formatClarifyAnswers(event.content), delta: {} };
+        } else {
+          yield* this.handleNonChatEvent(event, combinedSignal);
+          return;
+        }
+      } else if (event.type !== 'chat') {
         yield* this.handleNonChatEvent(event, combinedSignal);
         return;
       }
@@ -978,6 +988,36 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     for await (const chunk of this.requireLoop.processEvent(event, undefined, signal)) {
       yield chunk;
     }
+  }
+
+  /**
+   * 将澄清回答 JSON 格式化为可读文本（clarify → chat 转换用）
+   *
+   * 宿主（chatHandlers）将用户回答序列化为 `[{slot, answer}, ...]` JSON 字符串，
+   * 此处解析为自然语言，写历史后用户可见、LLM 可理解。
+   * 解析失败时原样返回（降级不阻断）。
+   *
+   * @param content - 澄清回答的 JSON 字符串
+   * @returns 可读回答文本
+   */
+  private formatClarifyAnswers(content: string): string {
+    const slotLabels: Record<string, string> = {
+      role: '角色',
+      task: '任务',
+      standard: '标准',
+      resource: '资源',
+    };
+    try {
+      const answers = JSON.parse(content) as Array<{ slot: string; answer: string }>;
+      if (Array.isArray(answers) && answers.length > 0) {
+        return answers
+          .map((a) => `${slotLabels[a.slot] ?? a.slot}：${a.answer}`)
+          .join('；');
+      }
+    } catch {
+      // JSON 解析失败：原样返回，不阻断后续流程
+    }
+    return content;
   }
 
   // ─── P2.1：检查点恢复协议（温记忆按需召回 + 契约重注入） ──

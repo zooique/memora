@@ -155,16 +155,16 @@ describe('Composer · compose() 四元组补全', () => {
     expect(result.resolved.standard.value.quality).toBe('完成');
     expect(result.resolved.resource.source).toBe(COMPLETION_LEVELS.P3_BUILTIN);
     expect(result.resolved.resource.value.documents).toEqual([]);
-    // 任务槽无默认值，走 P4
-    expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P4_CLARIFY);
-    expect(result.needClarify).toBeDefined();
-    expect(result.needClarify!.length).toBe(1);
-    expect(result.needClarify![0]!.slot).toBe('task');
+    // chat 事件：无目标时以 content 为初始任务（P1），不弹 P4 澄清
+    expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P1_EXPLICIT);
+    expect(result.resolved.task.value).toBe('测试消息');
+    expect(result.needClarify).toBeUndefined();
   });
 
-  it('P4: 所有槽位均无法补全时生成澄清问题', () => {
+  it('P4: 所有槽位均无法补全时生成澄清问题（非 chat 事件）', () => {
     const composer = new Composer();
-    const event = createEvent();
+    // 非 chat 事件（correction）：content 不兜底 task 槽，缺失时走 P4
+    const event = createEvent({ type: 'correction' });
     const checkpoint = createCheckpoint({
       role: undefined as unknown as Role,
       standard: undefined as unknown as Standard,
@@ -174,6 +174,7 @@ describe('Composer · compose() 四元组补全', () => {
     // 模拟 P4 场景：让 task 也触发 P4
     // 此时 role 走 P3 内置，standard 走 P3 内置，resource 走 P3 内置
     // task 无 delta、无 checkpoint、无内置默认值 → P4
+    // （chat 事件永不因 task 缺失触发 P4——content 即任务，见 resolveChatTaskSlot）
 
     const result = composer.compose(event, checkpoint);
 
@@ -183,10 +184,10 @@ describe('Composer · compose() 四元组补全', () => {
     expect(result.needClarify![0]!.question).toContain('任务目标');
   });
 
-  it('P4: 多个槽位无法补全时生成多个澄清问题', () => {
+  it('P4: 多个槽位无法补全时生成多个澄清问题（非 chat 事件）', () => {
     const composer = new Composer();
-    // 未提供任何 delta 和 checkpoint 值
-    const event = createEvent();
+    // 非 chat 事件（correction）：未提供任何 delta 和 checkpoint 值
+    const event = createEvent({ type: 'correction' });
     // 利用 empty string 触发 isEmpty 为 true
     const checkpoint = createCheckpoint({
       role: undefined as unknown as Role,
@@ -278,9 +279,10 @@ describe('Composer · 资源槽（数组追加语义）', () => {
 });
 
 describe('Composer · 计划停滞感知（P3.3）', () => {
-  it('停滞 + 无显式任务 → P4 澄清', () => {
+  it('停滞 + 无显式任务（非 chat）→ P4 澄清', () => {
     const composer = new Composer();
-    const event = createEvent(); // 未提供 task
+    // 非 chat 事件（correction）：content 不兜底 task，停滞时走 P4
+    const event = createEvent({ type: 'correction' });
     const checkpoint = createCheckpoint({ currentGoal: '旧目标' });
     const planCtx = createPlanCtx({ stalled: true });
 
@@ -291,6 +293,21 @@ describe('Composer · 计划停滞感知（P3.3）', () => {
     expect(result.needClarify!.length).toBe(1);
     expect(result.needClarify![0]!.slot).toBe('task');
     expect(result.needClarify![0]!.question).toContain('下一步方向');
+  });
+
+  it('停滞 + chat（无显式任务）→ P2 延续不 P4（方向判断交 LLM）', () => {
+    const composer = new Composer();
+    const event = createEvent(); // chat：content 即用户意图
+    const checkpoint = createCheckpoint({ currentGoal: '旧目标' });
+    const planCtx = createPlanCtx({ stalled: true });
+
+    const result = composer.compose(event, checkpoint, planCtx);
+
+    // chat 事件停滞时不 P4：延续 currentGoal（不覆盖），
+    // 「继续还是新任务」的语义判断由 LLM 结合计划上下文完成
+    expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P2_MEMORY);
+    expect(result.resolved.task.value).toBe('旧目标');
+    expect(result.needClarify).toBeUndefined();
   });
 
   it('停滞 + 显式任务 → P1 优先于停滞（P1 修复验证）', () => {
@@ -340,9 +357,9 @@ describe('Composer · 计划停滞感知（P3.3）', () => {
     expect(result.needClarify).toBeUndefined();
   });
 
-  it('停滞 + activeStep 和 pendingStep 应包含在澄清问题中', () => {
+  it('停滞 + activeStep 和 pendingStep 应包含在澄清问题中（非 chat）', () => {
     const composer = new Composer();
-    const event = createEvent();
+    const event = createEvent({ type: 'correction' });
     const checkpoint = createCheckpoint({ currentGoal: '旧目标' });
     const planCtx = createPlanCtx({
       stalled: true,
@@ -359,9 +376,9 @@ describe('Composer · 计划停滞感知（P3.3）', () => {
     expect(result.needClarify![0]!.question).toContain('待处理步骤 B');
   });
 
-  it('停滞 + 无 activeStep/pendingStep 应生成简洁澄清问题', () => {
+  it('停滞 + 无 activeStep/pendingStep 应生成简洁澄清问题（非 chat）', () => {
     const composer = new Composer();
-    const event = createEvent();
+    const event = createEvent({ type: 'correction' });
     const checkpoint = createCheckpoint({ currentGoal: '旧目标' });
     const planCtx = createPlanCtx({ stalled: true });
 
@@ -373,9 +390,10 @@ describe('Composer · 计划停滞感知（P3.3）', () => {
 });
 
 describe('Composer · 边界条件', () => {
-  it('空字符串槽位应被 isEmpty 识别并触发下一级补全', () => {
+  it('空字符串槽位应被 isEmpty 识别并触发下一级补全（非 chat）', () => {
     const composer = new Composer();
-    const event = createEvent();
+    // 非 chat 事件（correction）：content 不兜底 task，空字符串 currentGoal 触发 P4
+    const event = createEvent({ type: 'correction' });
     // role/standard 是对象类型，isEmpty 只对字符串/数组/undefined 返回 true
     // 此处用 undefined 模拟空检查点，验证 task 的空字符串触发 P4
     const checkpoint = createCheckpoint({
@@ -391,7 +409,7 @@ describe('Composer · 边界条件', () => {
     expect(result.resolved.role.value.name).toBe('assistant');
     expect(result.resolved.standard.source).toBe(COMPLETION_LEVELS.P3_BUILTIN);
     expect(result.resolved.standard.value.quality).toBe('完成');
-    // task 空字符串 currentGoal → isEmpty 返回 true → P4
+    // task 空字符串 currentGoal → isEmpty 返回 true → P4（仅非 chat 事件）
     expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P4_CLARIFY);
   });
 
