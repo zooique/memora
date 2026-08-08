@@ -422,35 +422,44 @@
   outline-offset: 1px;
 }
 
-/* ─── 会话控制按钮（不中断工作模型：暂停/恢复） ─────── */
+/* ─── 模式切换按钮（普通模式 ↔ 不中断模式） ───────── */
 
-/* 在 .input-action 基础上增加颜色区分 */
-.session-control-btn {
+/* 模式切换按钮：普通模式时灰色，激活时绿色高亮 */
+.mode-toggle-btn {
   /* 继承 .input-action 基类 */
 }
-
-/* 暂停按钮：绿色激活态，hover 时绿色加深 */
-.session-pause-btn {
-  color: var(--text-2);
-}
-
-.session-pause-btn:hover:not(:disabled) {
-  color: var(--green);
-  background: var(--surface0);
-}
-
-/* 恢复按钮：绿色高亮（仅 PAUSED 态可用，暗示"可恢复"） */
-.session-resume-btn {
+.mode-toggle-btn.active {
   color: var(--green);
 }
-
-.session-resume-btn:hover:not(:disabled) {
+.mode-toggle-btn.active:hover {
   color: var(--green-hover, var(--green));
   background: var(--surface0);
 }
 
-/* 禁用态：灰色 + 不可点击 */
-.session-control-btn:disabled {
+/* ─── 暂停/恢复互斥按钮（不中断工作模型） ──────────── */
+
+/* 在 .input-action 基础上增加颜色区分，初始隐藏 */
+.session-toggle-btn {
+  /* 继承 .input-action 基类 */
+}
+/* 暂停态：绿色激活 */
+.session-toggle-btn:not(.paused) {
+  color: var(--text-2);
+}
+.session-toggle-btn:not(.paused):hover:not(:disabled) {
+  color: var(--green);
+  background: var(--surface0);
+}
+/* 恢复态：绿色高亮，暗示可恢复 */
+.session-toggle-btn.paused {
+  color: var(--green);
+}
+.session-toggle-btn.paused:hover:not(:disabled) {
+  color: var(--green-hover, var(--green));
+  background: var(--surface0);
+}
+/* 禁用态 */
+.session-toggle-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   pointer-events: none;

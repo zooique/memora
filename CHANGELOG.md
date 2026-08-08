@@ -4,6 +4,30 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.1.0] - 2026-08-08
+
+不中断工作模式 v2.0 与网络搜索接口版本。
+
+### Added（新增）
+
+- **不中断工作模式 v2.0**：支持会话暂停/恢复/分叉，通过检查点机制实现断点续跑；四级补全机制（P1-explicit / P2-memory / P3-builtin / P4-clarify）确保不中断场景下的输入完整性
+- **IWebSearchProvider 接口**：网络搜索能力抽象，宿主可注入自定义搜索引擎实现，内核提供默认降级策略
+- **FetchWebSearchProvider**：基于 DuckDuckGo HTML 的零依赖默认搜索实现，内置超时保护与错误降级
+- **web_search 工具**：条件性暴露，注入 IWebSearchProvider 时自动可用，未注入时 LLM 被告知搜索不可用
+
+### Fixed（修复）
+
+- **P1: Composer 停滞时忽略显式任务输入**：计划停滞路径前增加 `event.delta?.task === undefined` 判断，确保用户显式指定任务时优先走 P1 显式输入而非 P4 澄清
+
+### Internal（内部变更，不影响公共 API）
+
+- 版本号 v2.0.3 → v2.1.0
+- 新增 `src/web-search/` 模块（fetchWebSearchProvider.ts / webSearchProvider.ts / 类型定义）
+- `ToolExecutor` 扩展：支持 `IWebSearchProvider` 注入，条件性注册 `web_search` 工具
+- `builtinTools.ts` 新增 `WEB_SEARCH_TOOL` 定义与幂等性映射
+- 新增 16 个测试用例覆盖 web search 功能（工具结构完整性 / 执行逻辑 / provider 行为）
+- 测试文件总数增至 77 个，测试用例总数增至 1825 个
+
 ## [2.0.3] - 2026-08-01
 
 npm 发布配置修复与质量加固版本。

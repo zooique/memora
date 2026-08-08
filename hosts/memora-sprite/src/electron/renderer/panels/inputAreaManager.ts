@@ -10,7 +10,8 @@
  * - 输入区 ResizeObserver（动态更新 --input-area-height CSS 变量）
  * - 输入清理 + 长度限制
  * - 输入补全集成（复用 QuickInputCompletion，输入时显示记忆/对话候选）
- * - 暂停/恢复按钮管理（不中断工作模型，根据会话状态切换按钮禁用态）
+ * - 模式切换按钮（普通模式 / 不中断模式切换）
+ * - 暂停/恢复互斥按钮（不中断工作模型，单按钮切换暂停/恢复）
  *
  * 设计原则：
  * - 依赖注入：通过 InputAreaHost 接口注入 UIManager 的状态查询和回调，
@@ -20,8 +21,8 @@
  * - Agent 就绪/空内容守卫保留在 UIManager.emitSendMessage 内部，
  *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
  * - 补全管理器复用 quick-input 模块的 QuickInputCompletion，零重复造轮子
- * - 暂停/恢复按钮通过 onSessionStatusChanged 监听器同步状态，
- *   按钮创建与监听器绑定在 init() 中完成，cleanup() 中清理
+ * - 模式切换通过按钮激活态表示，不中断模式开启后显示暂停/恢复互斥按钮
+ * - 暂停/恢复为单个互斥按钮，根据会话状态切换图标和功能
  */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -79,10 +80,12 @@ export class InputAreaManager {
   /** 输入补全管理器（复用 quick-input 模块，null 表示候选列表容器缺失时降级跳过） */
   private completion: QuickInputCompletion | null = null;
 
-  /** 暂停会话按钮（不中断工作模型，暂停态时禁用），null 表示元素缺失 */
-  private btnPause: HTMLButtonElement | null = null;
-  /** 恢复会话按钮（不中断工作模型，仅暂停态时启用），null 表示元素缺失 */
-  private btnResume: HTMLButtonElement | null = null;
+  /** 暂停/恢复互斥按钮（不中断工作模型，单按钮切换暂停/恢复），null 表示元素缺失 */
+  private btnPauseResume: HTMLButtonElement | null = null;
+  /** 模式切换按钮（普通模式 / 不中断模式），null 表示元素缺失 */
+  private btnModeToggle: HTMLButtonElement | null = null;
+  /** 当前是否为不中断模式 */
+  private nonInterruptMode = false;
 
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
@@ -129,8 +132,11 @@ export class InputAreaManager {
     // 初始化输入补全（候选列表容器存在时才启用，让用户输入时即可发现此功能）
     this.initCompletion();
 
-    // 初始化暂停/恢复按钮（不中断工作模型，点击暂停/恢复会话，根据会话状态切换禁用态）
-    this.initSessionControlButtons();
+    // 初始化模式切换按钮（普通模式 / 不中断模式切换）
+    this.initModeToggle();
+
+    // 初始化暂停/恢复互斥按钮（不中断工作模型，单按钮切换暂停/恢复）
+    this.initPauseResumeButton();
   }
 
   /**
@@ -370,66 +376,121 @@ export class InputAreaManager {
     this.completion?.clear();
   }
 
-  // ─── 暂停/恢复按钮（不中断工作模型） ──────────────────
+  // ─── 模式切换 + 暂停/恢复互斥按钮（不中断工作模型） ──
 
   /**
-   * 初始化暂停/恢复按钮
+   * 初始化模式切换按钮
    *
-   * 在输入工具栏左侧（.input-actions-left）创建暂停和恢复按钮，
-   * 点击分别调用 pauseSession/resumeSession IPC。
-   * 通过 onSessionStatusChanged 监听器同步按钮禁用态：
-   *   - RUNNING：暂停可用，恢复禁用
-   *   - PAUSED：暂停禁用，恢复可用
-   *   - ERROR：两者均禁用
+   * 在输入工具栏左侧（.input-actions-left）创建模式切换按钮，
+   * 点击在普通模式和不中断模式之间切换：
+   *   - 普通模式：暂停/恢复按钮隐藏
+   *   - 不中断模式：暂停/恢复按钮显示
    * 容器元素缺失时静默降级（不阻断初始化）。
    */
-  private initSessionControlButtons(): void {
-    // 查找输入工具栏左侧容器，缺失时静默降级
+  private initModeToggle(): void {
     const actionsLeft = document.querySelector('.input-actions-left');
     if (!(actionsLeft instanceof HTMLElement)) return;
 
-    // 创建暂停按钮
-    this.btnPause = document.createElement('button');
-    this.btnPause.className = 'input-action session-control-btn session-pause-btn';
-    this.btnPause.title = '暂停会话（不中断，自动保存当前状态）';
-    this.btnPause.setAttribute('aria-label', '暂停会话');
-    // 使用 SVG 暂停图标
-    this.btnPause.innerHTML = '<svg class="icon"><use href="#icon-pause"/></svg>';
-    this.btnPause.addEventListener('click', () => {
-      void window.electronAPI.pauseSession('用户主动暂停');
+    // 创建模式切换按钮（抽屉开关）
+    this.btnModeToggle = document.createElement('button');
+    this.btnModeToggle.className = 'input-action mode-toggle-btn';
+    this.btnModeToggle.title = '切换不中断模式（暂停/继续会话）';
+    this.btnModeToggle.setAttribute('aria-label', '切换不中断模式');
+    // 初始为普通模式，显示标准聊天图标
+    this.btnModeToggle.innerHTML = '<svg class="icon"><use href="#icon-message-circle"/></svg>';
+    this.btnModeToggle.addEventListener('click', () => {
+      this.toggleMode();
     });
-    actionsLeft.appendChild(this.btnPause);
-
-    // 创建恢复按钮（初始禁用，会话暂停时启用）
-    this.btnResume = document.createElement('button');
-    this.btnResume.className = 'input-action session-control-btn session-resume-btn';
-    this.btnResume.title = '恢复会话（从暂停状态继续）';
-    this.btnResume.setAttribute('aria-label', '恢复会话');
-    this.btnResume.disabled = true;
-    // 使用 SVG 播放/恢复图标
-    this.btnResume.innerHTML = '<svg class="icon"><use href="#icon-play"/></svg>';
-    this.btnResume.addEventListener('click', () => {
-      void window.electronAPI.resumeSession();
-    });
-    actionsLeft.appendChild(this.btnResume);
-
-    // 初始状态：暂停可用，恢复禁用（会话默认 RUNNING）
-    // 会话状态变更监听由 ipcListeners.ts 统一管理，通过 UIManager 委托到本方法
+    actionsLeft.insertBefore(this.btnModeToggle, actionsLeft.firstChild);
   }
 
   /**
-   * 更新暂停/恢复按钮状态（根据会话状态切换禁用态）
+   * 切换输入模式
+   *
+   * 普通模式 ↔ 不中断模式：
+   * - 切换按钮图标和激活态
+   * - 显示/隐藏暂停/恢复互斥按钮
+   */
+  private toggleMode(): void {
+    this.nonInterruptMode = !this.nonInterruptMode;
+    if (!this.btnModeToggle || !this.btnPauseResume) return;
+
+    if (this.nonInterruptMode) {
+      // 切换到不中断模式：按钮高亮，显示暂停/恢复按钮
+      this.btnModeToggle.classList.add('active');
+      this.btnModeToggle.title = '当前：不中断模式（点击切换回普通模式）';
+      this.btnModeToggle.innerHTML = '<svg class="icon"><use href="#icon-pause-circle"/></svg>';
+      this.btnPauseResume.classList.remove('hidden');
+    } else {
+      // 切换到普通模式：按钮恢复，隐藏暂停/恢复按钮
+      this.btnModeToggle.classList.remove('active');
+      this.btnModeToggle.title = '切换不中断模式（暂停/继续会话）';
+      this.btnModeToggle.innerHTML = '<svg class="icon"><use href="#icon-message-circle"/></svg>';
+      this.btnPauseResume.classList.add('hidden');
+    }
+  }
+
+  /**
+   * 初始化暂停/恢复互斥按钮
+   *
+   * 在输入工具栏左侧（.input-actions-left）创建单个互斥按钮：
+   *   - RUNNING 态：显示暂停图标，点击暂停会话
+   *   - PAUSED 态：显示播放图标，点击恢复会话
+   *   - ERROR 态：禁用
+   * 初始隐藏（仅在切换到不中断模式后显示）。
+   * 容器元素缺失时静默降级（不阻断初始化）。
+   */
+  private initPauseResumeButton(): void {
+    const actionsLeft = document.querySelector('.input-actions-left');
+    if (!(actionsLeft instanceof HTMLElement)) return;
+
+    // 创建暂停/恢复互斥按钮（初始隐藏，不中断模式下显示）
+    this.btnPauseResume = document.createElement('button');
+    this.btnPauseResume.className = 'input-action session-toggle-btn hidden';
+    this.btnPauseResume.title = '暂停会话（不中断，自动保存当前状态）';
+    this.btnPauseResume.setAttribute('aria-label', '暂停/恢复会话');
+    // 初始为暂停图标（会话默认 RUNNING）
+    this.btnPauseResume.innerHTML = '<svg class="icon"><use href="#icon-pause"/></svg>';
+    this.btnPauseResume.addEventListener('click', () => {
+      // 根据当前会话状态切换暂停/恢复
+      if (this.btnPauseResume?.classList.contains('paused')) {
+        void window.electronAPI.resumeSession();
+      } else {
+        void window.electronAPI.pauseSession('用户主动暂停');
+      }
+    });
+    // 插在模式切换按钮之后
+    const modeToggle = actionsLeft.querySelector('.mode-toggle-btn');
+    if (modeToggle) {
+      modeToggle.after(this.btnPauseResume);
+    } else {
+      actionsLeft.appendChild(this.btnPauseResume);
+    }
+  }
+
+  /**
+   * 更新暂停/恢复互斥按钮状态（根据会话状态切换图标和功能）
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    */
   updateSessionStatus(status: string): void {
-    if (this.btnPause) {
-      // RUNNING 态暂停可用，PAUSED/ERROR 态暂停禁用
-      this.btnPause.disabled = status !== 'running';
-    }
-    if (this.btnResume) {
-      // 仅 PAUSED 态恢复可用
-      this.btnResume.disabled = status !== 'paused';
+    if (!this.btnPauseResume) return;
+    if (status === 'running') {
+      // RUNNING 态：显示暂停图标，可点击暂停
+      this.btnPauseResume.classList.remove('paused');
+      this.btnPauseResume.disabled = false;
+      this.btnPauseResume.title = '暂停会话（不中断，自动保存当前状态）';
+      this.btnPauseResume.innerHTML = '<svg class="icon"><use href="#icon-pause"/></svg>';
+    } else if (status === 'paused') {
+      // PAUSED 态：显示播放图标，可点击恢复
+      this.btnPauseResume.classList.add('paused');
+      this.btnPauseResume.disabled = false;
+      this.btnPauseResume.title = '恢复会话（从暂停状态继续）';
+      this.btnPauseResume.innerHTML = '<svg class="icon"><use href="#icon-play"/></svg>';
+    } else {
+      // ERROR 态：禁用
+      this.btnPauseResume.disabled = true;
+      this.btnPauseResume.title = '会话异常，无法操作';
     }
   }
 
