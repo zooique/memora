@@ -60,6 +60,8 @@ export interface WorkContext {
   pausePhase?: 'requesting' | 'suspended';
   /** 暂停原因 */
   pauseReason?: string;
+  /** P3-2: 暂停来源（仅 suspended 态有效，用于门控"存进度到记忆"按钮显隐） */
+  pauseSource?: 'user' | 'agent' | 'system';
   /** P2.5-2: 任务表由 LLM 生成，等待用户接受/丢弃（true = 展示接受/丢弃入口） */
   planGenerated?: boolean;
 }
@@ -84,6 +86,8 @@ export interface TaskTablePanelHost {
   acceptTaskTable(): Promise<void>;
   /** P2.5-2: 丢弃 LLM 生成的任务表（清空 plan + 注入 system 消息让 LLM 重试） */
   discardTaskTable(): Promise<void>;
+  /** P3-1: 归档当前会话并包含工作上下文（plan 快照，暂停态下"存进度到记忆"） */
+  archiveSessionWithContext(): Promise<{ archivedCount: number }>;
 }
 
 // ─── 面板管理器 ─────────────────────────────────────────
@@ -275,10 +279,11 @@ export class TaskTablePanelManager {
   }
 
   /**
-   * 渲染暂停/取消/继续按钮双态 + 任务表接受/丢弃入口
+   * 渲染暂停/取消/继续按钮双态 + 任务表接受/丢弃入口 + 存进度到记忆
    *
    * - pausePhase requesting: 显示「取消暂停」按钮
    * - pausePhase suspended: 显示「继续」按钮
+   * - P3-2: pausePhase suspended + pauseSource='user': 显示「存进度到记忆」按钮
    * - planGenerated = true: 显示「接受」/「丢弃」按钮
    * - 无暂停态且无 planGenerated: 隐藏按钮区
    *
@@ -291,8 +296,9 @@ export class TaskTablePanelManager {
     const oldBtns = this.tableContainerEl.querySelector('.task-table-actions');
     oldBtns?.remove();
 
-    // 无暂停态且无 planGenerated → 不显示任何按钮
-    if (!ctx.pausePhase && !ctx.planGenerated) return;
+    const showArchiveBtn = ctx.pausePhase === 'suspended' && ctx.pauseSource === 'user';
+    // 无任何按钮需展示时隐藏
+    if (!ctx.pausePhase && !ctx.planGenerated && !showArchiveBtn) return;
 
     const actionsEl = document.createElement('div');
     actionsEl.className = 'task-table-actions';
@@ -310,6 +316,15 @@ export class TaskTablePanelManager {
       resumeBtn.textContent = '继续';
       resumeBtn.addEventListener('click', () => this.handleResume());
       actionsEl.appendChild(resumeBtn);
+    }
+
+    // ── P3-2: 暂停来源为 user 时显示「存进度到记忆」按钮 ──
+    if (showArchiveBtn) {
+      const archiveBtn = document.createElement('button');
+      archiveBtn.className = 'task-table-btn task-table-btn-archive';
+      archiveBtn.textContent = '存进度到记忆';
+      archiveBtn.addEventListener('click', () => this.handleArchiveWithContext());
+      actionsEl.appendChild(archiveBtn);
     }
 
     // ── P2.5-2: 任务表接受/丢弃入口 ──
@@ -382,6 +397,21 @@ export class TaskTablePanelManager {
       this.host.showToast('任务表已接受', 'success');
     } catch (err) {
       this.host.showToast('接受任务表失败', 'error');
+    }
+  }
+
+  /**
+   * P3-2: 处理"存进度到记忆"
+   *
+   * 委托 host.archiveSessionWithContext() 归档当前会话并包含工作上下文，
+   * 让记忆包含 plan 快照信息。
+   */
+  private async handleArchiveWithContext(): Promise<void> {
+    try {
+      const result = await this.host.archiveSessionWithContext();
+      this.host.showToast(`已存档 ${result.archivedCount} 条记忆`, 'success');
+    } catch (err) {
+      this.host.showToast('存进度到记忆失败', 'error');
     }
   }
 

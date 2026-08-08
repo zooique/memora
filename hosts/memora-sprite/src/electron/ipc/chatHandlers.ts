@@ -185,7 +185,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
     return { abandoned: true };
   });
 
-  /** 获取工作上下文（plan + 暂停态 + planGenerated，供任务表面板渲染） */
+  /** 获取工作上下文（plan + 暂停态 + planGenerated + pauseSource，供任务表面板渲染） */
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT, async () => {
     const agent = requireAgent(ctx);
     const checkpoint = agent.getCheckpoint();
@@ -197,6 +197,8 @@ export function registerChatHandlers(ctx: IpcContext): void {
       activeStepOrder: activeStep?.order ?? -1,
       pausePhase: pauseMeta?.phase,
       pauseReason: pauseMeta?.reason,
+      /** P3-2: 暂停来源（仅 suspended 态有效，用于门控"存进度到记忆"按钮显隐） */
+      pauseSource: pauseMeta?.source,
       /** P2.5-2: 任务表由 LLM 生成，等待用户接受/丢弃 */
       planGenerated: agent.isPlanGenerated,
     };
@@ -231,6 +233,27 @@ export function registerChatHandlers(ctx: IpcContext): void {
       '用户未接受你生成的任务表，请重新规划任务步骤。如果不需要分步任务，请直接回答用户。',
     );
     return { discarded: true };
+  });
+
+  /** P3-1: 归档当前会话并包含工作上下文（计划快照，"存进度到记忆"） */
+  ipcMain.handle(IPC_CHANNELS.ARCHIVE_SESSION_WITH_CONTEXT, async () => {
+    const agent = requireAgent(ctx);
+    const checkpoint = agent.getCheckpoint();
+    const currentDate = agent.agentHistory?.currentDateValue;
+    const currentSession = agent.agentHistory?.currentSessionValue;
+    if (!currentDate || !currentSession) {
+      return { archivedCount: 0 };
+    }
+    // 从检查点提取 plan 快照
+    const plan = checkpoint?.plan ?? [];
+    const result = await agent.archiveSessionContent(currentDate, currentSession, {
+      includeWorkContext: true,
+      // 仅当前活会话传入 plan，历史会话降级纯消息
+      workContextPlan: plan.length > 0
+        ? plan.map((s) => ({ order: s.order, description: s.description, status: s.status }))
+        : undefined,
+    });
+    return { archivedCount: result.memories.length };
   });
 
   /**

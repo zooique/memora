@@ -277,3 +277,13 @@
 .task-table-btn-discard:hover {
   background: color-mix(in srgb, var(--red) 15%, transparent);
 }
+
+/* P3-2: "存进度到记忆"按钮 */
+.task-table-btn-archive {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.task-table-btn-archive:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}

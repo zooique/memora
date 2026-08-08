@@ -325,6 +325,8 @@ export const IPC_CHANNELS = {
   SESSION_ACCEPT_TASK_TABLE: 'session-accept-task-table',
   /** P2.5-2: 丢弃 LLM 生成的任务表（清空 plan + 注入 system 消息让 LLM 重试） */
   SESSION_DISCARD_TASK_TABLE: 'session-discard-task-table',
+  /** P3-1: 归档当前会话并包含工作上下文（plan 快照，暂停态下"存进度到记忆"） */
+  ARCHIVE_SESSION_WITH_CONTEXT: 'archive-session-with-context',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */

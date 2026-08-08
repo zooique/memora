@@ -87,6 +87,8 @@ export const IPC_CHANNELS = {
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
   /** 手动归档会话内容（一键归档） */
   ARCHIVE_SESSION: 'archive-session',
+  /** P3-1: 归档当前会话并包含工作上下文（plan 快照，"存进度到记忆"） */
+  ARCHIVE_SESSION_WITH_CONTEXT: 'archive-session-with-context',
   MEMORIES_ADD: 'memories-add',
   /** 提升记忆 score（L2 采纳反哺内核） */
   MEMORIES_BOOST: 'memories-boost',
@@ -754,6 +756,8 @@ export interface ElectronAPI {
   archiveInsight: (input: string, assistantContent: string) => Promise<{ count: number }>;
   /** 批量归档当前会话（一键归档） */
   archiveSession: (date: string, session: string) => Promise<{ archivedCount: number }>;
+  /** P3-1: 归档当前会话并包含工作上下文（plan 快照，"存进度到记忆"） */
+  archiveSessionWithContext: () => Promise<{ archivedCount: number }>;
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
   getHealthDashboard: () => Promise<HealthDashboardPayload>;
   /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
@@ -1342,6 +1346,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT, { input, assistantContent }),
   archiveSession: (date: string, session: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.ARCHIVE_SESSION, { date, session }),
+  /** P3-1: 归档当前会话并包含工作上下文（plan 快照，"存进度到记忆"） */
+  archiveSessionWithContext: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.ARCHIVE_SESSION_WITH_CONTEXT),
   getHealthDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD),
   getReviewData: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REVIEW_DATA),
   deleteMemoriesBatch: (ids) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE_BATCH, ids),

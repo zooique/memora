@@ -880,6 +880,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
+   * P3-1: 归档当前会话并包含工作上下文（TaskTablePanelHost 接口）
+   *
+   * 从检查点提取 plan 快照，调用 archiveSessionContent 时传入 includeWorkContext，
+   * 让归档内容包含工作进度信息。
+   */
+  async archiveSessionWithContext(): Promise<{ archivedCount: number }> {
+    return window.electronAPI.archiveSessionWithContext();
+  }
+
+  /**
    * P1-5: 消费待定草稿
    *
    * RUNNING 态流式结束后，将积压的草稿作为新一轮用户输入依次发送。

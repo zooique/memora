@@ -35,6 +35,24 @@ import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
+/** P3-1: 归档选项（用于归档时包含工作上下文） */
+export interface SessionArchiveOptions {
+  /**
+   * P3-1: 是否包含工作上下文（plan 快照）
+   *
+   * 为 true 时，归档内容会追加当前会话的 plan 步骤列表，
+   * 让记忆包含工作进度信息，便于恢复时了解任务上下文。
+   */
+  includeWorkContext?: boolean;
+  /**
+   * P3-1: 工作上下文 plan 快照（plan 步骤列表）
+   *
+   * 由调用方从 SessionManager.getCheckpoint().plan 提取后传入。
+   * includeWorkContext 为 true 时必填。
+   */
+  workContextPlan?: Array<{ order: number; description: string; status: string }>;
+}
+
 /** 会话归档结果 */
 export interface SessionArchiveResult {
   /** 写入/更新的记忆条目（通常为 1 条摘要，可能为空） */
@@ -101,7 +119,11 @@ export class SessionArchiver {
    * @returns 归档结果（memories 可能为空，表示无归档价值）
    * @throws LLM 调用或写入异常时抛出，由调用方决定 catch 策略
    */
-  async archiveSessionContent(date: string, session: string): Promise<SessionArchiveResult> {
+  async archiveSessionContent(
+    date: string,
+    session: string,
+    options?: SessionArchiveOptions,
+  ): Promise<SessionArchiveResult> {
     const sessionLabel = `${date}-${session}`;
     const emptyResult: SessionArchiveResult = {
       memories: [],
@@ -123,7 +145,7 @@ export class SessionArchiver {
     }
 
     // LLM 异常向上抛出，由 ArchiveCoordinator 统一 catch + emit archiveFailed
-    const memory = await this.generateSummary(messages, sessionLabel);
+    const memory = await this.generateSummary(messages, sessionLabel, options);
     if (!memory) {
       logger.debug({ sessionLabel }, 'SessionArchiver: LLM 判断无摘要价值');
       return { ...emptyResult, messageCount: messages.length };
@@ -156,6 +178,7 @@ export class SessionArchiver {
   private async generateSummary(
     messages: SessionMessage[],
     sessionLabel: string,
+    options?: SessionArchiveOptions,
   ): Promise<Memory | null> {
     // 截取最近的消息，防止超长会话撑爆 LLM 上下文
     const recentMessages = messages.slice(-MAX_MESSAGES_FOR_SUMMARY);
@@ -214,7 +237,12 @@ ${dialogueText}
     }
 
     // L4 综合提炼：将 keyDecisions 和 openQuestions 合并到 content，提升召回密度
-    const content = buildArchivedContent(summary, parsed?.keyDecisions, parsed?.openQuestions);
+    let content = buildArchivedContent(summary, parsed?.keyDecisions, parsed?.openQuestions);
+
+    // P3-1: 包含工作上下文时，追加 plan 快照到归档内容
+    if (options?.includeWorkContext && options?.workContextPlan && options.workContextPlan.length > 0) {
+      content += '\n\n[工作进度]\n' + buildWorkContextSection(options.workContextPlan);
+    }
 
     // 构造 content 类记忆条目
     const now = nowIso();
@@ -286,4 +314,34 @@ function buildArchivedContent(
   }
 
   return parts.join('\n');
+}
+
+/**
+ * P3-1: 构建工作上下文文本（plan 快照）
+ *
+ * 将 plan 步骤列表格式化为可读文本，追加到归档内容中。
+ * 格式：
+ *   任务步骤（2/3 已完成）：
+ *   1. [已完成] 步骤描述
+ *   2. [执行中] 步骤描述
+ *   3. [待办] 步骤描述
+ *
+ * @param plan - plan 步骤列表
+ * @returns 格式化后的工作上下文文本
+ */
+function buildWorkContextSection(
+  plan: Array<{ order: number; description: string; status: string }>,
+): string {
+  const doneCount = plan.filter((s) => s.status === 'done').length;
+  const lines: string[] = [`任务步骤（${doneCount}/${plan.length} 已完成）：`];
+
+  for (const step of plan) {
+    const statusLabel = step.status === 'done' ? '已完成'
+      : step.status === 'active' || step.status === 'in_progress' ? '执行中'
+      : step.status === 'blocked' ? '已阻塞'
+      : '待办';
+    lines.push(`${step.order + 1}. [${statusLabel}] ${step.description}`);
+  }
+
+  return lines.join('\n');
 }

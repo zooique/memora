@@ -477,7 +477,7 @@ describe('ArchiveCoordinator', () => {
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
 
       expect(result).toBe(archiveResult);
-      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 'session-1');
+      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 'session-1', undefined);
       const memoryAddedEvents = emitSpy.events.filter((e) => e.event === 'memoryAdded');
       expect(memoryAddedEvents).toHaveLength(2);
       expect(memoryAddedEvents[0]!.payload).toEqual({
@@ -743,7 +743,7 @@ describe('ArchiveCoordinator', () => {
         const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
 
         expect(result.memories).toHaveLength(1);
-        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1');
+        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1', { autoTriggered: true });
         expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(1);
       });
 
@@ -793,7 +793,7 @@ describe('ArchiveCoordinator', () => {
         const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
 
         expect(result.memories).toHaveLength(1);
-        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1');
+        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1', undefined);
       });
 
       it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {

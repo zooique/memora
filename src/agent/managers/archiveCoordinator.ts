@@ -95,6 +95,22 @@ export interface ArchiveTriggerOptions {
    * - false：用户通过 UI 主动触发归档
    */
   autoTriggered?: boolean;
+  /**
+   * P3-1: 是否包含工作上下文（plan 快照），仅当前活会话有效
+   *
+   * 为 true 时，归档内容会追加当前会话的 plan 步骤列表，
+   * 让记忆包含工作进度信息，便于恢复时了解任务上下文。
+   * 历史会话（非当前活会话）不应设置此标志。
+   */
+  includeWorkContext?: boolean;
+  /**
+   * P3-1: 工作上下文 plan 快照（由调用方从 getCheckpoint() 提取）
+   *
+   * 调用方（Agent / sprite handler）从 SessionManager.getCheckpoint().plan
+   * 提取后传入，避免 SessionArchiver 直接依赖 SessionManager。
+   * includeWorkContext 为 true 时必填。
+   */
+  workContextPlan?: Array<{ order: number; description: string; status: string }>;
 }
 
 /**
@@ -279,7 +295,7 @@ export class ArchiveCoordinator {
       return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     try {
-      const result = await sessionArchiver.archiveSessionContent(date, session);
+      const result = await sessionArchiver.archiveSessionContent(date, session, options);
       // 发射 memoryAdded 事件：与 insight 自动归档路径一致，宿主可据此刷新记忆面板
       for (const memory of result.memories) {
         this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
