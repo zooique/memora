@@ -321,6 +321,10 @@ export const IPC_CHANNELS = {
   SESSION_GET_WORK_CONTEXT: 'session-get-work-context',
   /** 追加计划步骤（用户侧追加任务到 plan 末尾） */
   SESSION_APPEND_TASK: 'session-append-task',
+  /** P2.5-2: 接受 LLM 生成的任务表（确认保留，关闭 planGenerated 标志） */
+  SESSION_ACCEPT_TASK_TABLE: 'session-accept-task-table',
+  /** P2.5-2: 丢弃 LLM 生成的任务表（清空 plan + 注入 system 消息让 LLM 重试） */
+  SESSION_DISCARD_TASK_TABLE: 'session-discard-task-table',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */
@@ -451,4 +455,13 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SESSION_NEED_CLARIFY: 'session-need-clarify',
   /** 主进程 → 渲染进程：澄清暂停超时自动续跑（Finding A），携带 { autoResolved: boolean }，渲染层插入系统提示 */
   CLARIFY_AUTO_RESOLVED: 'clarify-auto-resolved',
+
+  // ─── 任务表生成（P2.5-2：LLM 已生成任务表，通知渲染层展示接受/丢弃入口） ──
+  /**
+   * 任务表已生成通知
+   *
+   * 主进程在 tool_result 为 task_table_write 时推送，
+   * 携带 plan 摘要，渲染层显示接受/简化/丢弃按钮。
+   */
+  SPRITE_TASK_TABLE_GENERATED: 'sprite-task-table-generated',
 } as const;

@@ -60,6 +60,8 @@ export interface WorkContext {
   pausePhase?: 'requesting' | 'suspended';
   /** 暂停原因 */
   pauseReason?: string;
+  /** P2.5-2: 任务表由 LLM 生成，等待用户接受/丢弃（true = 展示接受/丢弃入口） */
+  planGenerated?: boolean;
 }
 
 // ─── 宿主接口 ───────────────────────────────────────────
@@ -78,6 +80,10 @@ export interface TaskTablePanelHost {
   resumeSession(): Promise<void>;
   /** P1-5: 删除指定草稿（委托 UIManager 从 pendingDrafts 中移除） */
   removeDraft(id: string): void;
+  /** P2.5-2: 接受 LLM 生成的任务表（确认保留，关闭接受入口） */
+  acceptTaskTable(): Promise<void>;
+  /** P2.5-2: 丢弃 LLM 生成的任务表（清空 plan + 注入 system 消息让 LLM 重试） */
+  discardTaskTable(): Promise<void>;
 }
 
 // ─── 面板管理器 ─────────────────────────────────────────
@@ -269,40 +275,56 @@ export class TaskTablePanelManager {
   }
 
   /**
-   * 渲染暂停/取消/继续按钮双态
+   * 渲染暂停/取消/继续按钮双态 + 任务表接受/丢弃入口
    *
-   * - requesting: 显示「取消暂停」按钮
-   * - suspended: 显示「继续」按钮
-   * - 无暂停态: 隐藏按钮
+   * - pausePhase requesting: 显示「取消暂停」按钮
+   * - pausePhase suspended: 显示「继续」按钮
+   * - planGenerated = true: 显示「接受」/「丢弃」按钮
+   * - 无暂停态且无 planGenerated: 隐藏按钮区
    *
    * @param ctx 工作上下文
    */
   private renderPauseButtons(ctx: WorkContext): void {
     if (!this.tableContainerEl) return;
 
-    // 移除旧按钮
+    // 移除旧按钮区
     const oldBtns = this.tableContainerEl.querySelector('.task-table-actions');
     oldBtns?.remove();
 
-    if (!ctx.pausePhase) return;
+    // 无暂停态且无 planGenerated → 不显示任何按钮
+    if (!ctx.pausePhase && !ctx.planGenerated) return;
 
     const actionsEl = document.createElement('div');
     actionsEl.className = 'task-table-actions';
 
+    // ── 暂停/继续按钮 ──
     if (ctx.pausePhase === 'requesting') {
-      // 取消暂停按钮
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'task-table-btn task-table-btn-cancel';
       cancelBtn.textContent = '取消暂停';
       cancelBtn.addEventListener('click', () => this.handleCancelPause());
       actionsEl.appendChild(cancelBtn);
     } else if (ctx.pausePhase === 'suspended') {
-      // 继续按钮
       const resumeBtn = document.createElement('button');
       resumeBtn.className = 'task-table-btn task-table-btn-resume';
       resumeBtn.textContent = '继续';
       resumeBtn.addEventListener('click', () => this.handleResume());
       actionsEl.appendChild(resumeBtn);
+    }
+
+    // ── P2.5-2: 任务表接受/丢弃入口 ──
+    if (ctx.planGenerated && ctx.plan.length > 0) {
+      const acceptBtn = document.createElement('button');
+      acceptBtn.className = 'task-table-btn task-table-btn-accept';
+      acceptBtn.textContent = '接受任务表';
+      acceptBtn.addEventListener('click', () => this.handleAcceptTaskTable());
+      actionsEl.appendChild(acceptBtn);
+
+      const discardBtn = document.createElement('button');
+      discardBtn.className = 'task-table-btn task-table-btn-discard';
+      discardBtn.textContent = '丢弃任务表';
+      discardBtn.addEventListener('click', () => this.handleDiscardTaskTable());
+      actionsEl.appendChild(discardBtn);
     }
 
     // 暂停原因
@@ -343,6 +365,40 @@ export class TaskTablePanelManager {
       this.loadData();
     } catch (err) {
       this.host.showToast('继续执行失败', 'error');
+    }
+  }
+
+  /**
+   * P2.5-2: 处理接受任务表
+   *
+   * 委托 host.acceptTaskTable() 确认保留 LLM 生成的任务表，
+   * 关闭接受入口，刷新面板。
+   */
+  private async handleAcceptTaskTable(): Promise<void> {
+    try {
+      await this.host.acceptTaskTable();
+      // 关闭 planGenerated 标志，接受入口消失
+      this.loadData();
+      this.host.showToast('任务表已接受', 'success');
+    } catch (err) {
+      this.host.showToast('接受任务表失败', 'error');
+    }
+  }
+
+  /**
+   * P2.5-2: 处理丢弃任务表
+   *
+   * 委托 host.discardTaskTable() 清空 plan + 注入 system 消息，
+   * 刷新面板。
+   */
+  private async handleDiscardTaskTable(): Promise<void> {
+    try {
+      await this.host.discardTaskTable();
+      // 刷新面板（plan 已清空，planGenerated 已关闭）
+      this.loadData();
+      this.host.showToast('任务表已丢弃，将重新生成', 'info');
+    } catch (err) {
+      this.host.showToast('丢弃任务表失败', 'error');
     }
   }
 

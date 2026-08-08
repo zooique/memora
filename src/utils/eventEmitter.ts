@@ -35,6 +35,8 @@ export const AGENT_EVENTS = {
   sessionResumeBlocked: 'sessionResumeBlocked',
   /** 会话恢复失败（resumeExecution 中 resume() 返回 false，宿主可据此 toast 提示） */
   sessionResumeFailed: 'sessionResumeFailed',
+  /** 任务表已生成（P2.5-2: LLM 通过 task_table_write 生成了任务表，宿主可展示接受/丢弃入口） */
+  taskTableGenerated: 'taskTableGenerated',
   needClarify: 'needClarify',
   goalDriftDetected: 'goalDriftDetected',
   /** 会话暂停（用户/Agent/系统触发） */

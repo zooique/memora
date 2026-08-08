@@ -255,6 +255,17 @@ async function forwardStream(
           ok: chunk.ok,
           summary: chunk.summary,
         });
+
+        // P2.5-2: LLM 通过 task_table_write 生成了任务表 → 标记内核 + 通知渲染层
+        if (chunk.name === 'task_table_write' && chunk.ok) {
+          // 标记内核：planGenerated = true，供 workContext 查询
+          agent.markPlanGenerated();
+          // 通知渲染层：展示接受/丢弃入口
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_TASK_TABLE_GENERATED, {
+            messageId,
+            plan: chunk.summary,
+          });
+        }
       } else if (chunk.type === 'thinking') {
         // 思考阶段指示：推送阶段名称，UI 显示"正在回忆.../处理.../归档..."
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, {

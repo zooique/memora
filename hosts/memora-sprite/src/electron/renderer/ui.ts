@@ -76,6 +76,7 @@ import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
 // P1-5: 任务表面板管理器（渲染 checkpoint plan + 草稿区）
 import { TaskTablePanelManager } from './panels/taskTablePanelManager.js';
+import type { TaskTablePanelHost, WorkContext } from './panels/taskTablePanelManager.js';
 import type { DraftItem } from './components/data/pendingDraftArea.js';
 // HEAL-12 PanelRouter 职责拆分（模式 B）：4 个并列 Controller
 // - PanelRouter：主面板切换 + 导航按钮点击
@@ -139,7 +140,7 @@ export type {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost, WindowControlsHost, AuxSidebarHost, GlobalShortcutHost, SettingsManagerPanelHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost, WindowControlsHost, AuxSidebarHost, GlobalShortcutHost, SettingsManagerPanelHost, TaskTablePanelHost {
   // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
   // 字段为 public：mixin 委托方法（helpers/ui-delegations/）需通过 this.xxx 访问
   /** Toast 通知管理器（独立管理定时器和清理） */
@@ -363,6 +364,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // P1-5: 任务表面板管理器（渲染 checkpoint plan + 草稿区）
     // 由 UIManager 作为 TaskTablePanelHost 注入，持有关联的 PendingDraftArea 实例
     this.chatCoordinator.taskTablePanelManager = new TaskTablePanelManager();
+    this.chatCoordinator.taskTablePanelManager.init(this as TaskTablePanelHost);
 
     // HEAL-12 PanelRouter 职责拆分（模式 B）：4 个并列 Controller
     // - PanelRouter：主面板切换 + 导航按钮点击
@@ -833,6 +835,48 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (idx === -1) return;
     this.pendingDrafts.splice(idx, 1);
     this.chatCoordinator.taskTablePanelManager?.updateDraftArea(this.pendingDrafts);
+  }
+
+  /**
+   * TaskTablePanelHost: 获取 Agent 状态字符串
+   */
+  getAgentStatus(): string {
+    return this.sessionStatus;
+  }
+
+  /**
+   * TaskTablePanelHost: 获取工作上下文（plan + 暂停态 + planGenerated）
+   */
+  async getWorkContext(): Promise<WorkContext> {
+    return window.electronAPI.getWorkContext();
+  }
+
+  /**
+   * TaskTablePanelHost: 取消暂停
+   */
+  async cancelPause(): Promise<void> {
+    await window.electronAPI.cancelPause();
+  }
+
+  /**
+   * TaskTablePanelHost: 恢复会话
+   */
+  async resumeSession(): Promise<void> {
+    await window.electronAPI.resumeSession();
+  }
+
+  /**
+   * P2.5-2: 接受 LLM 生成的任务表（TaskTablePanelHost 接口）
+   */
+  async acceptTaskTable(): Promise<void> {
+    await window.electronAPI.acceptTaskTable();
+  }
+
+  /**
+   * P2.5-2: 丢弃 LLM 生成的任务表（TaskTablePanelHost 接口）
+   */
+  async discardTaskTable(): Promise<void> {
+    await window.electronAPI.discardTaskTable();
   }
 
   /**

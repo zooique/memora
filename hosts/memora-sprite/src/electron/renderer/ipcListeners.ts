@@ -937,6 +937,11 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     callbacks.onConversationEnd?.();
   });
 
+  // P2.5-2: 任务表已生成通知 → 刷新任务表面板（展示接受/丢弃入口）
+  window.electronAPI.onTaskTableGenerated((msg) => {
+    uiManager.chatCoordinator.taskTablePanelManager?.loadData();
+  });
+
   // 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
   window.electronAPI.onStreamAborted((msg) => {
     uiManager.markStreamingAborted(msg.messageId, msg.reason);

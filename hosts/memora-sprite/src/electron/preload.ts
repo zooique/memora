@@ -232,6 +232,10 @@ export const IPC_CHANNELS = {
   SESSION_GET_WORK_CONTEXT: 'session-get-work-context',
   /** 追加计划步骤（用户侧追加任务到 plan 末尾） */
   SESSION_APPEND_TASK: 'session-append-task',
+  /** P2.5-2: 接受 LLM 生成的任务表 */
+  SESSION_ACCEPT_TASK_TABLE: 'session-accept-task-table',
+  /** P2.5-2: 丢弃 LLM 生成的任务表 */
+  SESSION_DISCARD_TASK_TABLE: 'session-discard-task-table',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -243,6 +247,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
   SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
   SPRITE_STREAM_ABORTED: 'sprite-stream-aborted',
+  SPRITE_TASK_TABLE_GENERATED: 'sprite-task-table-generated',
   SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
   SPRITE_OUTPUT: 'sprite-output',
   SPRITE_EVENT: 'sprite-event',
@@ -586,10 +591,14 @@ export interface ElectronAPI {
   cancelPause: () => Promise<{ canceled: boolean }>;
   /** P1-6: 放弃暂停（清暂停状态，会话回 idle） */
   abandonPause: () => Promise<{ abandoned: boolean }>;
-  /** P1-6: 获取工作上下文（plan + 暂停态，供任务表面板渲染） */
-  getWorkContext: () => Promise<{ plan: Array<{ order: number; description: string; status: string }>; activeStepOrder: number; pausePhase?: string; pauseReason?: string }>;
+  /** P1-6: 获取工作上下文（plan + 暂停态 + planGenerated，供任务表面板渲染） */
+  getWorkContext: () => Promise<{ plan: Array<{ order: number; description: string; status: string }>; activeStepOrder: number; pausePhase?: string; pauseReason?: string; planGenerated?: boolean }>;
   /** P1-6: 追加计划步骤 */
   appendTask: (description: string) => Promise<{ appended: boolean; totalSteps: number }>;
+  /** P2.5-2: 接受 LLM 生成的任务表 */
+  acceptTaskTable: () => Promise<{ accepted: boolean }>;
+  /** P2.5-2: 丢弃 LLM 生成的任务表（清空 plan + 注入 system 消息） */
+  discardTaskTable: () => Promise<{ discarded: boolean }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string; persona?: string }) => void) => void;
@@ -614,6 +623,8 @@ export interface ElectronAPI {
    * 渲染层在原助手气泡内嵌入中断标记，保留已生成的部分内容。
    */
   onStreamAborted: (cb: (msg: { messageId: string; reason: string }) => void) => void;
+  /** P2.5-2: 任务表已生成通知（LLM 通过 task_table_write 生成，渲染层展示接受/丢弃入口） */
+  onTaskTableGenerated: (cb: (msg: { messageId: string; plan?: string }) => void) => void;
   /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
   removeStreamListeners: () => void;
 
@@ -1220,6 +1231,8 @@ const electronAPI: ElectronAPI = {
   onContextTruncated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, (_: IpcRendererEvent, msg: { messageId: string; count: number }) => cb(msg)),
   /** 流式对话被中断监听 */
   onStreamAborted: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, (_: IpcRendererEvent, msg: { messageId: string; reason: string }) => cb(msg)),
+  /** P2.5-2: 任务表已生成通知 */
+  onTaskTableGenerated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_TASK_TABLE_GENERATED, (_: IpcRendererEvent, msg: { messageId: string; plan?: string }) => cb(msg)),
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
@@ -1230,6 +1243,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_TASK_TABLE_GENERATED);
   },
 
   // 精灵输出
@@ -1429,6 +1443,10 @@ const electronAPI: ElectronAPI = {
   getWorkContext: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT),
   /** P1-6: 追加计划步骤 */
   appendTask: (description) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_APPEND_TASK, description),
+  /** P2.5-2: 接受 LLM 生成的任务表 */
+  acceptTaskTable: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ACCEPT_TASK_TABLE),
+  /** P2.5-2: 丢弃 LLM 生成的任务表 */
+  discardTaskTable: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DISCARD_TASK_TABLE),
 
   // 仪表盘
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),

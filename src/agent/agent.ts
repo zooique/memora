@@ -149,6 +149,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private textPolisher: TextPolishManager | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
+  /** P2.5-2: 任务表是否由 LLM 生成并等待用户确认（true = 展示接受/丢弃入口） */
+  private _planGenerated = false;
 
   // ─── 不中断工作模型 v2.0 ───────────────────────────────
   /** 四级补全器（四元组 + 三源融合） */
@@ -912,6 +914,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
+      // P2.5-1: 预判是否提示 LLM 生成任务表（仅 plan 为空时触发）
+      if (this.shouldGenerateTaskTable(event, this._sessionManager?.getCheckpoint() ?? undefined)) {
+        loop.injectSystemMessage(
+          '如果需要分步完成任务，请使用 task_table_write 工具创建任务表，' +
+          '包含各步骤的描述（description）。每完成一步使用 task_table_update 工具更新对应步骤状态。' +
+          '任务表仅作参考，LLM 可自行决定执行顺序。',
+        );
+      }
+
       // 委托给 AgentLoop 的 processEvent
       let assistantContent = '';
       let wasAborted = false;
@@ -1344,6 +1355,36 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * P2.5-1: 预判是否应提示 LLM 生成任务表
+   *
+   * 保守默认 false，仅 plan 为空且用户输入含明确多步信号时返回 true。
+   * 候选信号：用户显式多步指示（步骤列举/顺序词/计划词）。
+   * 不依赖 composer 补全器，保持职责分离。
+   *
+   * @param event - 当前用户事件
+   * @param checkpoint - 当前检查点（可选）
+   * @returns 是否应提示 LLM 生成任务表
+   */
+  private shouldGenerateTaskTable(event: SessionEvent, checkpoint?: SessionCheckpoint): boolean {
+    // 已有任务表不再生成
+    if (!checkpoint || checkpoint.plan.length > 0) return false;
+
+    const content = event.content ?? '';
+
+    // 多步信号关键词（中英文，保守匹配）
+    const multiStepSignals = [
+      '第一步', '第二步', '步骤', '首先', '然后', '接下来',
+      '先做', '再做', '最后', '分步', '逐步',
+      'step 1', 'step1', 'step 2', 'step2',
+      'first', 'then', 'next', 'finally',
+      '计划', '规划', '安排', '任务表',
+      'plan', 'task list', 'todo',
+    ];
+
+    return multiStepSignals.some((signal) => content.includes(signal));
+  }
+
+  /**
    * 内核→宿主信号：当前会话是否可"无输入续跑"（决定 sprite 暂停按钮显隐 + 暂停后继续 UI）
    *
    * 真值条件（按优先级）：
@@ -1416,6 +1457,39 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   getCheckpoint(): SessionCheckpoint | null {
     this.assertInitialized('getCheckpoint');
     return this.requireSessionManager.getCheckpoint();
+  }
+
+  /**
+   * P2.5-2: 标记任务表已由 LLM 生成（等待用户确认）
+   *
+   * 在 chatStreamHandler 检测到 task_table_write 成功时调用。
+   * 渲染层轮询 workContext 时读取此标志，展示接受/丢弃入口。
+   */
+  markPlanGenerated(): void {
+    this._planGenerated = true;
+  }
+
+  /**
+   * P2.5-2: 确认任务表已接受（关闭 planGenerated 标志）
+   */
+  acceptPlanGenerated(): void {
+    this._planGenerated = false;
+  }
+
+  /**
+   * P2.5-2: 获取任务表是否由 LLM 生成并等待确认
+   */
+  get isPlanGenerated(): boolean {
+    return this._planGenerated;
+  }
+
+  /**
+   * P2.5-3: 向 loop 注入 system 消息（供 IPC handler 在丢弃任务表后调用）
+   *
+   * @param message - system 消息内容
+   */
+  injectSystemMessage(message: string): void {
+    this.requireLoop.injectSystemMessage(message);
   }
 
   /**
