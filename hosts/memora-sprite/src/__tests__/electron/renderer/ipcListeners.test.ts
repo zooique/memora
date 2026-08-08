@@ -326,6 +326,8 @@ interface CapturedCallbacks {
   onConfigFilesChanged: (payload: ConfigFilesChangedPayload) => void;
   /** 会话状态变更注册回调（SESSION_STATUS_CHANGED IPC 监听） */
   onSessionStatusChanged: (payload: { status: string; reason?: string }) => void;
+  /** 澄清问题推送注册回调（SESSION_NEED_CLARIFY IPC 监听） */
+  onNeedClarify: (questions: Array<{ slot: string; question: string }>) => void;
 }
 
 /** mock electronAPI（含主动调用的方法） */
@@ -438,6 +440,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onRecallMemoryTrigger: vi.fn((handler: () => void) => { captured.onRecallMemoryTrigger = handler; }),
     onConfigFilesChanged: vi.fn((handler: (payload: ConfigFilesChangedPayload) => void) => { captured.onConfigFilesChanged = handler; }),
     onSessionStatusChanged: vi.fn((handler: (payload: { status: string; reason?: string }) => void) => { captured.onSessionStatusChanged = handler; }),
+    onNeedClarify: vi.fn((handler: (questions: Array<{ slot: string; question: string }>) => void) => { captured.onNeedClarify = handler; }),
     removeSessionStatusChangedListener: vi.fn(),
     proactivePromptShown: vi.fn(),
     rendererLog: vi.fn(),

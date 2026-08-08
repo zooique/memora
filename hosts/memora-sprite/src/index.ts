@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, logger, toError } from 'memora';
+import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, FetchWebSearchProvider, logger, toError } from 'memora';
 import type { UIMessages, Config, ITracer, AgentSearchHit, IVectorStore } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -33,14 +33,12 @@ import { SpriteError, ErrorCode } from './sprite/errors.js';
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
 // API Key 脱敏：统一真理源在 shared/apiKeyMask.ts（IPC + CLI/Web 共用）
 import { maskApiKey } from './shared/apiKeyMask.js';
-// 宿主自定义工具（web_search + memory_search + create_persona + create_skill + create_rule）
+// 宿主自定义工具（memory_search + create_persona + create_skill + create_rule）
 import {
-  WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
   CREATE_PERSONA_TOOL,
   CREATE_SKILL_TOOL,
   CREATE_RULE_TOOL,
-  webSearchHandler,
   createSpriteHandlers,
 } from './sprite/tools.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
@@ -477,7 +475,11 @@ async function createAgentInstance(
   // 实例化可观测性 Tracer
   const tracer: ITracer = new SpriteTracer(dataDir);
 
-  // 实例化 Agent（注入 relationStore，启用 InsightExtractor 冲突检测）
+  // 创建 FetchWebSearchProvider 实例，让 memora 内核管理 web_search 工具
+  // 使用 DuckDuckGo 的 HTML 搜索接口（无需 API Key），作为默认网络搜索实现
+  const webSearchProvider = new FetchWebSearchProvider();
+
+  // 实例化 Agent（注入 webSearchProvider 启用内置 web_search 工具）
   const agent = new Agent({
     projectPath,
     configDir,
@@ -487,6 +489,7 @@ async function createAgentInstance(
     sessionStore,
     relationStore,
     vectorStore,
+    webSearchProvider,
     messages: ZH_MESSAGES,
     enableContextSummary: true,
     permission: config.security.permission,
@@ -553,13 +556,11 @@ async function setupAgentPostInit(
     }
   }
 
-  // 注册宿主自定义工具（web_search + memory_search + create_persona/skill/rule）
+  // 注册宿主自定义工具（memory_search + create_persona/skill/rule）
+  // web_search 已由 memora 内核通过 FetchWebSearchProvider 注入管理
   // 显式依赖注入（ADR-SP-019，原 HEAL-8）：通过 createSpriteHandlers 工厂构造
   // 有状态 handler 闭包，消除模块级 agentRef / memorySearcher 全局状态
   if (agent.tools) {
-    // web_search 无状态依赖，始终注册
-    agent.tools.registerTool(WEB_SEARCH_TOOL, webSearchHandler);
-
     // memory_search + create_persona/skill/rule 需要完整 deps（agent.config + agent.memory）
     if (agent.config) {
       // memory_search 依赖：封装 agent.memory.search + 字段映射

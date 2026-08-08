@@ -88,6 +88,8 @@ function createMockIpcContext(options: {
     // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
     getAgent: () => ({
       getMetrics: () => ({ context: { truncationCount: 0 } }),
+      // registerChatHandlers 注册 needClarify 事件监听时需要 agent.on
+      on: vi.fn(),
     }),
     // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
     getSprite: () => ({
@@ -314,6 +316,8 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
         // FIX-P1-7/FIX-P1-1：agent/sprite/sessionStore 改为函数式 getter，匹配 IpcContext 接口改造
         getAgent: () => ({
           getMetrics: () => ({ context: { truncationCount: 0 } }),
+          // registerChatHandlers 注册 needClarify 事件监听时需要 agent.on
+          on: vi.fn(),
         }),
         // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
         getSprite: () => ({

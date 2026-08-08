@@ -20,7 +20,7 @@ import type { IpcContext } from './types.js';
 import { requireAgent } from './types.js';
 import { handleUserInput } from './chatStreamHandler.js';
 import { isValidContent } from './inputValidation.js';
-import type { SessionCheckpoint, ClarifyQuestion } from 'memora';
+import type { SessionCheckpoint } from 'memora';
 
 /**
  * 注册对话相关 IPC 处理器
@@ -159,7 +159,9 @@ export function registerChatHandlers(ctx: IpcContext): void {
    * 通过 SESSION_NEED_CLARIFY 通道转发到渲染进程，触发澄清面板展示。
    */
   const agent = requireAgent(ctx);
-  agent.on(AGENT_EVENTS.needClarify, (questions: ClarifyQuestion[]) => {
+  // AgentEventMap.needClarify 的 slot 类型为 string（比 ClarifyQuestion 的 keyof FourTuple 更宽），
+  // 此处使用 AgentEventMap 的推断类型避免类型不兼容错误
+  agent.on(AGENT_EVENTS.needClarify, (questions: { slot: string; question: string; options?: string[] }[]) => {
     const fullWindow = ctx.windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed()) {
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY, questions);

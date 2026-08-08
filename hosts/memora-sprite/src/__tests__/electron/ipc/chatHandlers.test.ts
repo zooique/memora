@@ -64,6 +64,34 @@ vi.mock('memora', () => ({
     debug: vi.fn(),
   },
   toError: vi.fn((err: unknown) => err instanceof Error ? err : new Error(String(err))),
+  AGENT_EVENTS: {
+    memoryAdded: 'memoryAdded',
+    personaSwitched: 'personaSwitched',
+    decayCompleted: 'decayCompleted',
+    memoryRecalled: 'memoryRecalled',
+    sessionForked: 'sessionForked',
+    insightExtracted: 'insightExtracted',
+    conflictDetected: 'conflictDetected',
+    projectSwitched: 'projectSwitched',
+    skillMatched: 'skillMatched',
+    archiveFailed: 'archiveFailed',
+    contextTruncated: 'contextTruncated',
+    configReloaded: 'configReloaded',
+    guardrailError: 'guardrailError',
+    archiveModeChanged: 'archiveModeChanged',
+    personaSwitchLocked: 'personaSwitchLocked',
+    workProjectionGenerated: 'workProjectionGenerated',
+    boostPersistFailed: 'boostPersistFailed',
+    dedupCompleted: 'dedupCompleted',
+    sessionPauseTimedOut: 'sessionPauseTimedOut',
+    sessionResumeBlocked: 'sessionResumeBlocked',
+    needClarify: 'needClarify',
+    goalDriftDetected: 'goalDriftDetected',
+    sessionPaused: 'sessionPaused',
+    sessionResumed: 'sessionResumed',
+    sessionError: 'sessionError',
+    sessionRecovered: 'sessionRecovered',
+  },
 }));
 
 // ─── Mock getLocalDate 为固定日期（跨日逻辑测试稳定） ───
@@ -129,6 +157,9 @@ function createMockAgent(overrides?: {
     getMetrics: overrides?.getMetrics ?? vi.fn(() => ({ context: { truncationCount: 0 } })),
     // 超时兜底强制释放内核锁的 mock（默认 no-op，测试可覆盖验证调用）
     forceReleaseChatLock: overrides?.forceReleaseChatLock ?? vi.fn(),
+    // registerChatHandlers 注册 needClarify 事件监听时需要 agent.on/off
+    on: vi.fn(),
+    off: vi.fn(),
   } as unknown as ReturnType<IpcContext['getAgent']>;
 }
 
