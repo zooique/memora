@@ -1143,4 +1143,20 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   window.electronAPI.onNeedClarify((questions) => {
     callbacks.onNeedClarify?.(questions);
   });
+
+  // ─── 澄清暂停超时自动续跑提示（Finding A） ───────────────
+  /**
+   * 监听澄清超时自动续跑通知
+   *
+   * 触发链路：needClarify 计时器超时（用户长时间未响应）→
+   * CLARIFY_AUTO_RESOLVED IPC 推送
+   * 处理方式：在对话区插入一条系统消息，告知用户已自动继续（择优决策并收敛本轮），
+   * 与澄清面板被 SESSION_STATUS_CHANGED(running) 自动收起形成闭环。
+   */
+  window.electronAPI.onClarifyAutoResolved(() => {
+    uiManager.appendMessage({
+      role: 'system',
+      content: '⏱️ 暂停询问超时未响应，已自动继续：Agent 将基于现有信息择优决策，并收敛本轮回答。',
+    });
+  });
 }

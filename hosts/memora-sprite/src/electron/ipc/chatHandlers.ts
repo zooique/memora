@@ -249,6 +249,13 @@ export function registerChatHandlers(ctx: IpcContext): void {
           : autoDecisionText(q.slot, q.question),
     }));
     logger.info({ questionCount: questions.length }, '澄清暂停超时，自动择优续跑');
+    // 通知渲染进程插入系统提示（用户可感知超时自动继续，而非静默续跑）
+    const fullWindow = ctx.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLARIFY_AUTO_RESOLVED, {
+        autoResolved: true,
+      });
+    }
     const event: SessionEvent = {
       type: 'clarify',
       content: JSON.stringify(answers),

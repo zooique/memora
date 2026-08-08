@@ -648,6 +648,11 @@ describe('chatHandlers', () => {
 
         // 应自动注入澄清回答（processEvent(clarify)）
         expect(processEvent).toHaveBeenCalledTimes(1);
+        // 应通知渲染进程插入超时自动继续的系统提示
+        const autoResolvedSend = wc.sends.find(
+          (s) => s.channel === MAIN_TO_RENDERER_CHANNELS.CLARIFY_AUTO_RESOLVED,
+        );
+        expect(autoResolvedSend).toBeDefined();
         const evt = processEvent.mock.calls[0]![0] as {
           type: string;
           content: string;

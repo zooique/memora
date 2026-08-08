@@ -439,4 +439,6 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SESSION_STATUS_CHANGED: 'session-status-changed',
   /** 主进程 → 渲染进程：推送澄清问题（P4 暂停询问），携带 ClarifyQuestion[] */
   SESSION_NEED_CLARIFY: 'session-need-clarify',
+  /** 主进程 → 渲染进程：澄清暂停超时自动续跑（Finding A），携带 { autoResolved: boolean }，渲染层插入系统提示 */
+  CLARIFY_AUTO_RESOLVED: 'clarify-auto-resolved',
 } as const;

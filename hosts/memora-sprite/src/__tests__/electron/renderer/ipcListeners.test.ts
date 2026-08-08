@@ -328,6 +328,8 @@ interface CapturedCallbacks {
   onSessionStatusChanged: (payload: { status: string; reason?: string }) => void;
   /** 澄清问题推送注册回调（SESSION_NEED_CLARIFY IPC 监听） */
   onNeedClarify: (questions: Array<{ slot: string; question: string }>) => void;
+  /** 澄清暂停超时自动续跑通知注册回调（CLARIFY_AUTO_RESOLVED IPC 监听） */
+  onClarifyAutoResolved: (payload: { autoResolved: boolean }) => void;
 }
 
 /** mock electronAPI（含主动调用的方法） */
@@ -441,6 +443,7 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onConfigFilesChanged: vi.fn((handler: (payload: ConfigFilesChangedPayload) => void) => { captured.onConfigFilesChanged = handler; }),
     onSessionStatusChanged: vi.fn((handler: (payload: { status: string; reason?: string }) => void) => { captured.onSessionStatusChanged = handler; }),
     onNeedClarify: vi.fn((handler: (questions: Array<{ slot: string; question: string }>) => void) => { captured.onNeedClarify = handler; }),
+    onClarifyAutoResolved: vi.fn((handler: (payload: { autoResolved: boolean }) => void) => { captured.onClarifyAutoResolved = handler; }),
     removeSessionStatusChangedListener: vi.fn(),
     proactivePromptShown: vi.fn(),
     rendererLog: vi.fn(),
@@ -1154,6 +1157,15 @@ describe('initIpcListeners · 错误与状态监听', () => {
     captured.onAgentReady();
     expect(spies.showToast).toHaveBeenCalledWith('精灵已就绪，可以开始对话了', 'success');
     expect(cb.onAgentReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('onClarifyAutoResolved → 在对话区插入超时自动继续的系统提示', () => {
+    captured.onClarifyAutoResolved({ autoResolved: true });
+    expect(spies.appendMessage).toHaveBeenCalledTimes(1);
+    expect(spies.appendMessage).toHaveBeenCalledWith({
+      role: 'system',
+      content: expect.stringContaining('暂停询问超时未响应，已自动继续'),
+    });
   });
 });
 

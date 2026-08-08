@@ -279,6 +279,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SESSION_STATUS_CHANGED: 'session-status-changed',
   /** 主进程 → 渲染进程：推送澄清问题（P4 暂停询问），携带 ClarifyQuestion[] */
   SESSION_NEED_CLARIFY: 'session-need-clarify',
+  /** 主进程 → 渲染进程：澄清暂停超时自动续跑（Finding A），携带 { autoResolved: boolean }，渲染层插入系统提示 */
+  CLARIFY_AUTO_RESOLVED: 'clarify-auto-resolved',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -553,6 +555,15 @@ export interface ElectronAPI {
   onNeedClarify: (cb: (questions: ClarifyQuestion[]) => void) => void;
   /** 移除澄清问题推送监听器 */
   removeNeedClarifyListener: () => void;
+  /**
+   * 监听澄清暂停超时自动续跑通知（Finding A）
+   *
+   * 主进程在 needClarify 计时器超时（用户长时间未响应 Agent 询问）后，
+   * 通过 CLARIFY_AUTO_RESOLVED 通道推送，渲染层插入系统提示告知用户已自动继续。
+   */
+  onClarifyAutoResolved: (cb: (payload: { autoResolved: boolean }) => void) => void;
+  /** 移除澄清超时自动续跑通知监听器 */
+  removeClarifyAutoResolvedListener: () => void;
   /**
    * 提交澄清问题回答（渲染进程 → 主进程）
    *
@@ -1384,6 +1395,12 @@ const electronAPI: ElectronAPI = {
   /** 移除澄清问题推送监听器 */
   removeNeedClarifyListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY);
+  },
+  /** 监听澄清暂停超时自动续跑通知（Finding A） */
+  onClarifyAutoResolved: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLARIFY_AUTO_RESOLVED, (_: IpcRendererEvent, payload: { autoResolved: boolean }) => cb(payload)),
+  /** 移除澄清超时自动续跑通知监听器 */
+  removeClarifyAutoResolvedListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLARIFY_AUTO_RESOLVED);
   },
   /** 提交澄清问题回答 */
   sendClarifyAnswer: (answers) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, answers),
