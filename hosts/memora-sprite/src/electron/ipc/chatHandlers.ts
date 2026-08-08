@@ -84,9 +84,15 @@ export function registerChatHandlers(ctx: IpcContext): void {
 
   // ─── 会话状态管理（不中断工作模型） ─────────────────────
 
-  /** 暂停会话 */
+  /** 暂停会话（双通道模型 v2.0：暂停 = 停工作通道） */
   ipcMain.handle(IPC_CHANNELS.SESSION_PAUSE, async (_event, reason: string) => {
     const agent = requireAgent(ctx);
+    // 先中断当前流式输出（保留已生成文本 + [已中断] 标记）——暂停让 Agent 停下手头工作；
+    // 否则工作通道继续跑，isStreaming 保持 true，发送按钮被流式锁定（用户「能输入不能发送」）。
+    const ctrl = ctx.getAbortController();
+    if (ctrl) {
+      ctrl.abort(new DOMException('用户手动停止', 'AbortError'));
+    }
     const result = agent.pause(reason ?? '用户主动暂停', 'user');
     // 广播状态变更到渲染进程
     if (result) {
