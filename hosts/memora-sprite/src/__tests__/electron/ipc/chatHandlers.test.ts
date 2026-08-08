@@ -56,6 +56,8 @@ vi.mock('../../../electron/errorHandler.js', () => ({
 // emitStreamError 内部调用 logger.warn，需 mock 验证
 // vi.mock 是 hoisted 的，用 vi.hoisted 声明可在 factory 内引用的变量
 const { loggerWarn } = vi.hoisted(() => ({ loggerWarn: vi.fn() }));
+// 仅覆盖 handleResume（软暂停续跑入口），保留真实 handleUserInput（前置检查测试依赖真实行为）
+const handleResumeMock = vi.hoisted(() => vi.fn());
 vi.mock('memora', () => ({
   logger: {
     warn: loggerWarn,
@@ -93,6 +95,12 @@ vi.mock('memora', () => ({
     sessionRecovered: 'sessionRecovered',
   },
 }));
+
+// 仅 mock 软暂停续跑入口 handleResume（验证 SESSION_RESUME 接线），handleUserInput 保持真实
+vi.mock('../../../electron/ipc/chatStreamHandler.js', async () => {
+  const actual = await vi.importActual<typeof import('../../../electron/ipc/chatStreamHandler.js')>('../../../electron/ipc/chatStreamHandler.js');
+  return { ...actual, handleResume: handleResumeMock };
+});
 
 // ─── Mock getLocalDate 为固定日期（跨日逻辑测试稳定） ───
 const MOCK_TODAY = '2026-06-26';
@@ -148,6 +156,12 @@ function createMockAgent(overrides?: {
   processEvent?: ReturnType<typeof vi.fn>;
   getMetrics?: ReturnType<typeof vi.fn>;
   forceReleaseChatLock?: ReturnType<typeof vi.fn>;
+  // 软暂停 v2.1 接线测试所需方法
+  requestPause?: ReturnType<typeof vi.fn>;
+  canContinueWithoutInput?: ReturnType<typeof vi.fn>;
+  resume?: ReturnType<typeof vi.fn>;
+  pause?: ReturnType<typeof vi.fn>;
+  resumeExecution?: ReturnType<typeof vi.fn>;
 }) {
   return {
     agentHistory: overrides?.agentHistory ?? null,
@@ -157,6 +171,12 @@ function createMockAgent(overrides?: {
     getMetrics: overrides?.getMetrics ?? vi.fn(() => ({ context: { truncationCount: 0 } })),
     // 超时兜底强制释放内核锁的 mock（默认 no-op，测试可覆盖验证调用）
     forceReleaseChatLock: overrides?.forceReleaseChatLock ?? vi.fn(),
+    // 软暂停 v2.1：内核续跑信号与状态机方法（默认 no-op / false）
+    requestPause: overrides?.requestPause ?? vi.fn(),
+    canContinueWithoutInput: overrides?.canContinueWithoutInput ?? vi.fn(() => false),
+    resume: overrides?.resume ?? vi.fn(() => true),
+    pause: overrides?.pause ?? vi.fn(() => true),
+    resumeExecution: overrides?.resumeExecution ?? vi.fn(),
     // registerChatHandlers 注册 needClarify 事件监听时需要 agent.on/off
     on: vi.fn(),
     off: vi.fn(),
@@ -287,6 +307,62 @@ describe('chatHandlers', () => {
       expect(ctx.getAgent().forceReleaseChatLock).toHaveBeenCalledTimes(1);
       // 仍应清理 AbortController（防御性，确保状态一致）
       expect(ctx.setAbortController).toHaveBeenCalledWith(null);
+    });
+  });
+
+  // ─── SESSION_PAUSE / SESSION_RESUME（软暂停 v2.1 接线） ─
+
+  describe('SESSION_PAUSE / SESSION_RESUME（软暂停 v2.1 接线）', () => {
+    it('SESSION_PAUSE 应 requestPause（软暂停非 abort）+ 广播 paused+resumable，不杀生成器', async () => {
+      const requestPause = vi.fn();
+      const canContinueWithoutInput = vi.fn(() => true);
+      const agent = createMockAgent({ requestPause, canContinueWithoutInput });
+      const wc = createMockWebContents();
+      const wm = createMockWindowManager(wc);
+      const ctx = createMockCtx({ agent, windowManager: wm });
+
+      registerChatHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_PAUSE)!;
+      const result = await callback(undefined, '用户主动暂停');
+
+      // 返回 paused + resumable（暂停态必可续跑）
+      expect(result).toEqual({ paused: true, resumable: true });
+      // 关键：软暂停走 requestPause（内核边界挂起），不调用 ctrl.abort 杀生成器
+      expect(requestPause).toHaveBeenCalledTimes(1);
+      expect(requestPause).toHaveBeenCalledWith('用户主动暂停', 'user');
+      // 广播 SESSION_STATUS_CHANGED{paused, resumable}
+      const statusSends = wc.sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED);
+      expect(statusSends).toHaveLength(1);
+      expect(statusSends[0].data).toEqual({ status: 'paused', reason: '用户主动暂停', resumable: true });
+    });
+
+    it('SESSION_RESUME 应驱动 handleResume 续跑（空 input = 纯恢复）', async () => {
+      const agent = createMockAgent();
+      const ctx = createMockCtx({ agent });
+
+      registerChatHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_RESUME)!;
+      const result = await callback(undefined);
+
+      expect(result).toEqual({ resumed: true });
+      // 续跑入口经 handleResume（仅覆盖的 mock）驱动，verify 接线 + input 透传
+      expect(handleResumeMock).toHaveBeenCalledTimes(1);
+      expect(handleResumeMock).toHaveBeenCalledWith(undefined, ctx);
+    });
+
+    it('SESSION_RESUME 应透传补充 input 给 handleResume（注入修正后续轮）', async () => {
+      const agent = createMockAgent();
+      const ctx = createMockCtx({ agent });
+
+      registerChatHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_RESUME)!;
+      const result = await callback(undefined, '补充指令');
+
+      expect(result).toEqual({ resumed: true });
+      expect(handleResumeMock).toHaveBeenCalledWith('补充指令', ctx);
     });
   });
 

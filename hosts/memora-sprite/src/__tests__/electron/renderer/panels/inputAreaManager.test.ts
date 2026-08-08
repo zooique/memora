@@ -281,6 +281,44 @@ describe('InputAreaManager', () => {
     });
   });
 
+  // ─── updateSessionStatus · resumable 门控暂停按钮（软暂停 v2.1） ─
+
+  describe('updateSessionStatus · resumable 门控（软暂停 v2.1）', () => {
+    it('流式态 + resumable=false → 隐藏暂停按钮（仅停止可见）', () => {
+      host.mocks.isStreaming.mockReturnValue(true);
+      manager.init();
+      manager.updateSessionStatus('running', false);
+      // 暂停按钮隐藏：用户只能硬停止（单一霸道中止入口），简单轮不暴露暂停
+      expect(btnSend.style.display).toBe('none');
+    });
+
+    it('流式态 + resumable=true → 显示暂停按钮（点击触发 pauseSession）', () => {
+      host.mocks.isStreaming.mockReturnValue(true);
+      manager.init();
+      manager.updateSessionStatus('running', true);
+      expect(btnSend.style.display).not.toBe('none');
+      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
+      btnSend.click();
+      expect(mockApi.pauseSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('已暂停态 → 显示继续按钮（resumable 门控不影响 paused 模式）', () => {
+      host.mocks.isStreaming.mockReturnValue(false);
+      manager.init();
+      manager.updateSessionStatus('paused');
+      expect(btnSend.style.display).not.toBe('none');
+      expect(btnSend.getAttribute('aria-label')).toBe('继续会话（可附带补充输入）');
+    });
+
+    it('resumable 缺省（向后兼容）→ 视为可续跑，流式态显示暂停', () => {
+      host.mocks.isStreaming.mockReturnValue(true);
+      manager.init();
+      manager.updateSessionStatus('running');
+      expect(btnSend.style.display).not.toBe('none');
+      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
+    });
+  });
+
   // ─── handleKeydown · 键盘事件 ───────────────────────────
 
   describe('handleKeydown · 键盘事件', () => {

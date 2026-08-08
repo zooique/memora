@@ -500,7 +500,7 @@ export interface ElectronAPI {
    * @param reason 暂停原因
    * @returns paused 是否暂停成功
    */
-  pauseSession: (reason?: string) => Promise<{ paused: boolean }>;
+  pauseSession: (reason?: string) => Promise<{ paused: boolean; resumable: boolean }>;
   /**
    * 恢复会话（不中断工作模型）
    *
@@ -508,7 +508,7 @@ export interface ElectronAPI {
    *
    * @returns resumed 是否恢复成功
    */
-  resumeSession: () => Promise<{ resumed: boolean }>;
+  resumeSession: (input?: string) => Promise<{ resumed: boolean }>;
   /**
    * 从异常恢复会话（不中断工作模型）
    *
@@ -542,7 +542,7 @@ export interface ElectronAPI {
    */
   restoreFromCheckpoint: (checkpoint: SessionCheckpoint) => Promise<{ restored: boolean; messageCount: number }>;
   /** 监听会话状态变更（pause/resume/error/recover 时触发） */
-  onSessionStatusChanged: (cb: (payload: { status: string; reason?: string }) => void) => void;
+  onSessionStatusChanged: (cb: (payload: { status: string; reason?: string; resumable?: boolean }) => void) => void;
   /** 移除会话状态变更监听器 */
   removeSessionStatusChangedListener: () => void;
   /**
@@ -1375,7 +1375,7 @@ const electronAPI: ElectronAPI = {
   /** 暂停会话 */
   pauseSession: (reason?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_PAUSE, reason),
   /** 恢复会话 */
-  resumeSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESUME),
+  resumeSession: (input?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESUME, input),
   /** 从异常恢复会话 */
   recoverSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RECOVER),
   /** 创建会话检查点 */
@@ -1385,7 +1385,7 @@ const electronAPI: ElectronAPI = {
   /** 从检查点恢复会话 */
   restoreFromCheckpoint: (checkpoint: SessionCheckpoint) => ipcRenderer.invoke(IPC_CHANNELS.RESTORE_CHECKPOINT, checkpoint),
   /** 监听会话状态变更 */
-  onSessionStatusChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, (_: IpcRendererEvent, payload: { status: string; reason?: string }) => cb(payload)),
+  onSessionStatusChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, (_: IpcRendererEvent, payload: { status: string; reason?: string; resumable?: boolean }) => cb(payload)),
   /** 移除会话状态变更监听器 */
   removeSessionStatusChangedListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED);

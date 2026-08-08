@@ -83,6 +83,9 @@ export class InputAreaManager {
   /** 会话状态（驱动发送按钮三态：发送 / 暂停 / 继续） */
   private sessionStatus: 'running' | 'paused' | 'error' | 'idle' = 'idle';
 
+  /** 内核「可续跑」信号（canContinueWithoutInput）：决定流式态是否显示暂停按钮（简单轮隐藏，仅显停止） */
+  private canContinueWithoutInput = true;
+
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
    *
@@ -400,8 +403,11 @@ export class InputAreaManager {
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    */
-  updateSessionStatus(status: string): void {
+  updateSessionStatus(status: string, resumable?: boolean): void {
     this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
+    // resumable 默认 true（防御：缺失信息时倾向显示暂停，避免误隐藏）；
+    // 主进程始终显式下发 true/false，简单轮下发 false 则隐藏暂停按钮（仅停止）。
+    this.canContinueWithoutInput = resumable ?? true;
     this.renderButton();
   }
 
@@ -413,29 +419,38 @@ export class InputAreaManager {
    */
   private renderButton(): void {
     const streaming = this.host.isStreaming();
-    let mode: 'idle' | 'running' | 'paused' | 'error';
-    if (streaming) mode = 'running';
-    else if (this.sessionStatus === 'paused') mode = 'paused';
+    let mode: 'idle' | 'running' | 'paused' | 'error' | 'hide';
+    if (streaming) {
+      // 流式态：仅当内核可续跑（多轮任务 / 自主步）才显示暂停按钮；简单轮只显停止（隐藏暂停）
+      mode = this.canContinueWithoutInput ? 'running' : 'hide';
+    } else if (this.sessionStatus === 'paused') mode = 'paused';
     else if (this.sessionStatus === 'error') mode = 'error';
     else mode = 'idle';
     this.applyButtonMode(mode);
   }
 
   /** 按形态应用图标 / 标题 / 启用态 */
-  private applyButtonMode(mode: 'idle' | 'running' | 'paused' | 'error'): void {
+  private applyButtonMode(mode: 'idle' | 'running' | 'paused' | 'error' | 'hide'): void {
     const hasContent = this.inputEl.value.trim().length > 0;
+    if (mode === 'hide') {
+      // 简单轮流式态：隐藏暂停按钮（仅停止按钮可见），对齐「硬停止为唯一霸道中止」的单一入口
+      this.btnSend.style.display = 'none';
+      this.btnSend.classList.add('empty');
+      return;
+    }
+    // 非隐藏态：恢复按钮可见性（由 hide 切回时清除 display:none）
+    this.btnSend.style.display = '';
+    this.btnSend.classList.remove('empty');
     switch (mode) {
       case 'running':
         // 运行中：暂停姿态，始终可点
         this.setBtnSend('icon-pause', '暂停会话（不中断，保留当前进度）');
         this.btnSend.disabled = false;
-        this.btnSend.classList.remove('empty');
         break;
       case 'paused':
         // 已暂停：继续姿态，始终可点（空=纯恢复，有文本=注入补充）
         this.setBtnSend('icon-play', '继续会话（可附带补充输入）');
         this.btnSend.disabled = false;
-        this.btnSend.classList.remove('empty');
         break;
       case 'error':
         // 异常：禁用发送，等待恢复

@@ -172,6 +172,10 @@ export class AgentLoop {
    * 显式字段不受 messages 数组变动影响，状态机更健壮。
    */
   private reflectionCountThisTurn: number = 0;
+  /** 软暂停请求标志（不中断工作模型 v2.1：用户主动软暂停，区别于硬停止 signal.abort） */
+  private pauseRequested = false;
+  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
+  private inAutonomousStep = false;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 护栏规则正则编译失败回调（从 opts.onGuardrailError 提取，用于 GuardrailUI） */
@@ -275,13 +279,18 @@ export class AgentLoop {
 
       // 重置当前轮次的反思计数器（每轮用户输入独立计算反思次数）
       this.reflectionCountThisTurn = 0;
+      // 重置自主工具步标志（每轮用户输入独立计算）
+      this.inAutonomousStep = false;
 
       // 3. 迭代循环
       let iteration = 0;
       while (iteration < this.maxIterations) {
         iteration++;
         const result = yield* this.handleIteration(iteration, signal);
-        if (result === 'aborted' || result === 'done') return;
+        // 软暂停在迭代边界挂起后也必须终止本轮编排（与 continueAfterPause 一致），
+        // 否则 pauseRequested 被 handleIteration 消费后本轮不 return，loop 会继续跑下一轮迭代，
+        // 导致"用户点暂停却没停"——与 continueAfterPause 的 'paused' 处理保持一致。
+        if (result === 'aborted' || result === 'done' || result === 'paused') return;
       }
 
       // 4. 最大迭代兜底
@@ -344,6 +353,55 @@ export class AgentLoop {
         logger.warn({ eventType: (event as SessionEvent).type }, '未知 SessionEvent 类型，降级为 chat');
         yield* this.processUserInput(event.content, recalledMemories, signal);
     }
+  }
+
+  /**
+   * 请求软暂停（不中断工作模型 v2.1）
+   *
+   * 仅设置标志，由 handleIteration 在迭代边界（当前工具步完成后、下一次 LLM 调用前）
+   * 真正挂起生成器。保留 this.messages，不 abort——与硬停止（signal.abort）严格区分：
+   * 硬停止杀掉生成器无法续跑；软暂停可经 continueAfterPause 真正续跑。
+   */
+  requestPause(): void {
+    this.pauseRequested = true;
+  }
+
+  /**
+   * 软暂停后续跑（不中断工作模型 v2.1）
+   *
+   * 在暂停边界（handleIteration 产出 {paused} 并 return）后调用：
+   * 重新进入迭代循环，从保留的 this.messages 续跑。
+   * - 空输入：直接续跑原路径（内核沿用 currentGoal/PlanContext 推进下一步）
+   * - 有输入：先 push 为 user 消息，再续跑（用户补充修正后续轮）
+   *
+   * @param input - 可选的补充输入（用户暂停后填写的修正/补充）
+   * @param signal - 可选的 AbortSignal（硬停止仍走此路径）
+   * @yields AgentChunk 事件流
+   */
+  async *continueAfterPause(
+    input?: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 补充输入作为新 user 消息进入上下文（仅当有文本）
+    if (input && input.trim()) {
+      this.messages.push({ role: 'user', content: `<user_input>${input}</user_input>` });
+    }
+    // 重置本轮反思计数（与 processUserInput 一致）
+    this.reflectionCountThisTurn = 0;
+    // 重新进入迭代循环，从保留的 this.messages 续跑
+    let iteration = 0;
+    while (iteration < this.maxIterations) {
+      iteration++;
+      const result = yield* this.handleIteration(iteration, signal);
+      if (result === 'aborted' || result === 'done' || result === 'paused') return;
+    }
+    yield { type: 'text', content: this.ui.maxIterationsReached };
+    yield { type: 'done' };
+  }
+
+  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
+  get isInAutonomousStep(): boolean {
+    return this.inAutonomousStep;
   }
 
   /**
@@ -491,10 +549,16 @@ export class AgentLoop {
   private async *handleIteration(
     iteration: number,
     signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue', unknown> {
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
     logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
     // 每次迭代前检查是否已被取消
+    if (this.pauseRequested) {
+      // 软暂停：在迭代边界挂起生成器（不 abort，保留 this.messages 供续跑）
+      this.pauseRequested = false;
+      yield { type: 'paused' };
+      return 'paused';
+    }
     if (signal?.aborted) {
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
@@ -815,6 +879,9 @@ export class AgentLoop {
       return { aborted: true };
     }
 
+    // 标记进入自主工具步（供内核向宿主暴露"可续跑"信号）
+    this.inAutonomousStep = true;
+
     // 1. 批量 yield tool_start + 并发发起所有工具执行
     const toolPromises: Promise<string>[] = [];
     for (const tc of toolCalls) {
@@ -850,6 +917,7 @@ export class AgentLoop {
     if (signal?.aborted) {
       return { aborted: true };
     }
+    this.inAutonomousStep = false;
     return { aborted: false };
   }
 

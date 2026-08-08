@@ -981,6 +981,72 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 软暂停后续跑（不中断工作模型 v2.1）
+   *
+   * 内核软暂停在 loop 边界挂起后，用户点击"继续"触发：
+   * 翻状态机为 RUNNING（触发 sessionResumed → 宿主转发 STATUS{running}），
+   * 重新驱动 loop.continueAfterPause 续跑生成器并转发 chunk，
+   * 完成后追加助手消息历史 + 后处理（与 chat 尾处理一致）。
+   *
+   * 硬停止（signal.abort）仍是唯一霸道中止路径，与软暂停严格区分。
+   *
+   * @param input - 可选补充输入（空=续跑原路径；有=注入修正后续轮）
+   * @param signal - 可选 AbortSignal（硬停止仍走此路径）
+   */
+  async *resumeExecution(input?: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
+    if (this._sessionManager?.stateMachine.status !== 'paused') return;
+
+    // 翻状态机为 RUNNING（触发 sessionResumed，宿主据此转发 STATUS{running}）
+    if (!this.resume()) return;
+
+    const loop = this.requireLoop;
+    let assistantContent = '';
+    let wasAborted = false;
+
+    try {
+      for await (const chunk of loop.continueAfterPause(input, signal)) {
+        yield chunk;
+        if (chunk.type === 'text') {
+          assistantContent += chunk.content;
+        } else if (chunk.type === 'aborted') {
+          wasAborted = true;
+        }
+      }
+    } catch (err) {
+      if (isAbortError(err)) {
+        yield { type: 'aborted', reason: 'User cancelled the conversation' };
+        return;
+      } else {
+        yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+        return;
+      }
+    }
+
+    if (wasAborted) {
+      if (assistantContent.trim()) {
+        const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
+        try {
+          await this.requireHistory.appendAssistant(assistantContent + interruptedMark);
+        } catch (err) {
+          logger.warn({ err }, '中断消息历史写入失败');
+        }
+      }
+      return;
+    }
+
+    // 追加助手消息到历史
+    try {
+      await this.requireHistory.appendAssistant(assistantContent);
+    } catch (err) {
+      logger.warn({ err }, '助手消息历史写入失败');
+    }
+
+    // 后处理
+    yield { type: 'thinking', phase: 'archiving' };
+    await this.postProcess(input ?? '', assistantContent);
+  }
+
+  /**
    * 处理非 chat 事件（P1 意图分类防污染）
    *
    * command/correction/clarify 事件不写 chat 历史，不触发后处理。
@@ -1202,6 +1268,43 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   resume(): boolean {
     this.assertInitialized('resume');
     return this.requireSessionManager.resume();
+  }
+
+  /**
+   * 请求软暂停（不中断工作模型 v2.1）
+   *
+   * 设置 loop 的 pauseRequested 标志（loop 在下一迭代边界挂起，不 abort），
+   * 同步翻转状态机为 PAUSED（触发 sessionPaused → 宿主转发 STATUS{paused}）。
+   * 与硬停止（signal.abort）严格区分：软暂停保留 this.messages，可经 resumeExecution 续跑。
+   *
+   * @param reason - 暂停原因（用于状态展示）
+   * @param source - 暂停来源
+   */
+  requestPause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): void {
+    this.assertInitialized('requestPause');
+    this.requireLoop.requestPause();
+    this.pause(reason, source);
+  }
+
+  /**
+   * 内核→宿主信号：当前会话是否可"无输入续跑"（决定 sprite 暂停按钮显隐 + 暂停后继续 UI）
+   *
+   * 真值条件（按优先级）：
+   *  1. 状态机已处于 paused —— 已软暂停，必可经 resumeExecution 续跑（最高优先级）。
+   *     注意：pauseRequested 在 loop 下一迭代边界才真正挂起生成器，彼时 inAutonomousStep
+   *     已被重置为 false；若仅看 isInAutonomousStep 会在"刚暂停"瞬间误报 false。
+   *     故 paused 状态本身即"可续跑"的充分条件。
+   *  2. loop 正处于自主工具步（isInAutonomousStep）—— 流式进行中、有自主任务在跑，
+   *     此刻应暴露暂停按钮（用户可在边界挂起）。
+   *  3. 检查点存在未完成的计划步骤（hasPendingPlan）—— 多轮推进任务，可续跑下一轮。
+   *
+   * 三者皆否（纯单轮问答、无待续目标）→ 返回 false，sprite 对该轮隐藏暂停按钮（仅停止）。
+   */
+  canContinueWithoutInput(): boolean {
+    if (this._sessionManager?.stateMachine.status === 'paused') return true;
+    const hasPendingPlan =
+      this._sessionManager?.getCheckpoint()?.plan.some((s) => s.status !== 'done') ?? false;
+    return this.requireLoop.isInAutonomousStep || hasPendingPlan;
   }
 
   /**

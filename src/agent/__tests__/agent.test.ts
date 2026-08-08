@@ -2655,3 +2655,61 @@ describe('Agent · chat() 锁超时机制', () => {
     // 这里主要验证不抛错
   }, 30000);
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：软暂停信号 canContinueWithoutInput()（不中断工作模型 v2.1）
+// 决定 sprite 暂停按钮显隐 + 暂停后"继续"UI 的可续跑信号
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-cancont-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-cancont-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-cancont-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('RUNNING 且无待续目标时返回 false（简单问答不暴露暂停按钮）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    expect(agent.canContinueWithoutInput()).toBe(false);
+  });
+
+  it('已软暂停（paused 状态）时返回 true（必可经 resumeExecution 续跑）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 暂停前应为 false
+    expect(agent.canContinueWithoutInput()).toBe(false);
+
+    // 触发软暂停（requestPause 会翻状态机为 paused）
+    agent.requestPause('测试软暂停信号');
+
+    // 已暂停 → 必可续跑
+    expect(agent.canContinueWithoutInput()).toBe(true);
+
+    // 清理：恢复状态，避免影响 close()
+    agent.resume();
+    expect(agent.canContinueWithoutInput()).toBe(false);
+  });
+});

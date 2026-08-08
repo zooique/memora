@@ -933,3 +933,180 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
     expect(hints).toBe(1);
   }, 15000);
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：软暂停（不中断工作模型 v2.1）
+// 覆盖：边界挂起 / messages 保留 / {paused} / 空输入续跑 / 有输入续跑 /
+//       硬停止 [已中断] / isInAutonomousStep 信号
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
+  /**
+   * 构造「工具步 → 纯文本」双轮 Provider：
+   * 第一轮 LLM 返回 toolCalls（进入自主工具步），第二轮返回纯文本。
+   * 软暂停应在第一轮工具步完成后、第二轮 LLM 调用前的边界挂起。
+   */
+  function makeToolThenTextProvider(secondText: string) {
+    return mockMultiTurnProvider([
+      [{ toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+      [{ content: secondText }],
+    ]);
+  }
+
+  it('流式中点暂停 → 在下一迭代边界挂起、messages 保留、产出 {paused}', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: makeToolThenTextProvider('后续完成'),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      chunks.push(chunk);
+      // 第一轮工具步完成（tool_result）后请求软暂停，
+      // loop 会在下一迭代边界（handleIteration 开头）挂起
+      if (chunk.type === 'tool_result') {
+        loop.requestPause();
+      }
+    }
+
+    // 应产出 {paused} 事件
+    const paused = chunks.filter((c) => c.type === 'paused');
+    expect(paused).toHaveLength(1);
+
+    // messages 应保留：system + user + assistant(toolCalls) + tool = 4
+    const messages = loop.getMessages();
+    expect(messages).toHaveLength(4);
+    expect(messages[0]!.role).toBe('system');
+    expect(messages[1]!.role).toBe('user');
+    expect(messages[2]!.role).toBe('assistant');
+    expect(messages[2]!.toolCalls).toBeDefined();
+    expect(messages[3]!.role).toBe('tool');
+
+    // 不应执行到第二轮（'后续完成' 不应出现）
+    expect(loop.getMessages().some((m) => m.content.includes('后续完成'))).toBe(false);
+  });
+
+  it('空输入 resume → continueAfterPause 续跑产出后续文本', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: makeToolThenTextProvider('后续完成'),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 先软暂停
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') loop.requestPause();
+    }
+    expect(loop.getMessages()).toHaveLength(4);
+
+    // 空输入续跑
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      chunks.push(chunk);
+    }
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('后续完成');
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+
+    // messages 新增 assistant '后续完成'
+    const messages = loop.getMessages();
+    expect(messages).toHaveLength(5);
+    expect(messages[4]!.role).toBe('assistant');
+    expect(messages[4]!.content).toBe('后续完成');
+  });
+
+  it('有输入 resume → 注入 user 消息并续跑', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: makeToolThenTextProvider('已根据修正继续完成'),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') loop.requestPause();
+    }
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause('修正：改用 b.ts')) {
+      chunks.push(chunk);
+    }
+    expect(chunks.filter((c) => c.type === 'text').map((c) => c.content)).toContain('已根据修正继续完成');
+
+    // 注入的 user 消息应存在（含 <user_input> 包裹）
+    const injected = loop.getMessages().find(
+      (m) => m.role === 'user' && m.content.includes('修正：改用 b.ts'),
+    );
+    expect(injected).toBeDefined();
+    // messages: system + user(初始) + assistant(tc) + tool + user(修正) + assistant(续跑) = 6
+    expect(loop.getMessages()).toHaveLength(6);
+  });
+
+  it('硬停止(abort) → 中断标记路径不变，产出 [已中断]', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '部分内容' }, { content: '不应出现' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const ac = new AbortController();
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+      chunks.push(chunk);
+      if (chunk.type === 'text' && chunk.content === '部分内容') {
+        ac.abort();
+      }
+    }
+
+    // 应有 aborted chunk
+    expect(chunks.filter((c) => c.type === 'aborted').length).toBeGreaterThan(0);
+    // 不应产出 '不应出现'
+    expect(chunks.filter((c) => c.type === 'text').map((c) => c.content)).not.toContain('不应出现');
+    // 中断标记应追加到 assistant 消息
+    const assistantMsgs = loop.getMessages().filter((m) => m.role === 'assistant');
+    expect(assistantMsgs.length).toBeGreaterThan(0);
+    const last = assistantMsgs[assistantMsgs.length - 1]!;
+    expect(last.content).toContain('部分内容');
+    expect(last.content).toContain('[已中断]');
+  });
+
+  it('isInAutonomousStep 在工具步中为 true、整轮结束后为 false', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    const loop = new AgentLoop({
+      provider: makeToolThenTextProvider('完成'),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    let autonomousDuringTool = false;
+    let sawToolStart = false;
+    for await (const chunk of loop.processUserInput('读取')) {
+      if (chunk.type === 'tool_start') {
+        sawToolStart = true;
+        autonomousDuringTool = loop.isInAutonomousStep;
+      }
+    }
+    // inAutonomousStep 在 tool_result yield 之后、函数 return 之前复位，
+    // 故整轮结束后应观察到 false（在 tool_result chunk 当下仍为 true，属 generator 挂起时序）
+    expect(sawToolStart).toBe(true);
+    expect(autonomousDuringTool).toBe(true);
+    expect(loop.isInAutonomousStep).toBe(false);
+  });
+
+  it('纯文本轮 isInAutonomousStep 始终为 false（简单问答不应暴露暂停按钮）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '直接回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    let everAutonomous = false;
+    for await (const chunk of loop.processUserInput('你好')) {
+      void chunk;
+      if (loop.isInAutonomousStep) everAutonomous = true;
+    }
+    expect(everAutonomous).toBe(false);
+  });
+});

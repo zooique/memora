@@ -2,20 +2,20 @@
  * 对话流式输出处理器
  *
  * 职责：
- *   消费 agent.processEvent() AsyncGenerator，将流式 chunk 通过 IPC 推送到渲染进程。
- *   包含无进展超时兜底、中断处理、错误降级等完整流式输出逻辑。
+ *   消费 agent.processEvent() / agent.resumeExecution() AsyncGenerator，将流式 chunk 通过 IPC 推送到渲染进程。
+ *   包含无进展超时兜底、中断处理、错误降级、软暂停（paused chunk）与 finally 统一清理。
  *
  * 与 chatHandlers.ts 的关系：chatHandlers.ts 仅注册 IPC 通道，
  * 流式输出业务逻辑集中在本模块，职责分离便于维护和测试。
  *
  * 流式输出架构：
- *   主进程通过 agent.processEvent() 处理结构化 SessionEvent，通过专用 IPC 通道发送 chunk，
+ *   主进程通过 agent.processEvent()/resumeExecution() 处理结构化 SessionEvent，通过专用 IPC 通道发送 chunk，
  *   不走 IInteraction（IInteraction 仅负责非流式输出）。
  */
 
 import { randomUUID } from 'node:crypto';
 import { toError, logger } from 'memora';
-import type { SessionEvent } from 'memora';
+import type { SessionEvent, AgentChunk } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import { requireAgent, requireSprite } from './types.js';
@@ -57,6 +57,9 @@ function emitStreamError(fullWindow: BrowserWindow, text: string, context: strin
  * - 通过 sprite-stream-start / sprite-stream-chunk / sprite-stream-end 通道推送
  * - 支持 AbortController 中断
  *
+ * 流式 chunk 转发内核抽离到 forwardStream（handleUserInput 与 handleResume 共用），
+ * 本函数仅负责"新对话"专属准备（会话重置 / 计数 / 感知准备）。
+ *
  * @param text 用户输入文本
  * @param ctx IPC 上下文（提供 agent / windowManager / trayManager 等依赖）
  */
@@ -76,6 +79,112 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     return;
   }
 
+  // 在 await 之前同步占用 AbortController，避免 await 让渡点期间并发调用通过竞态检查
+  // （JavaScript 单线程同步代码不会被打断，"检查-占用"原子化）
+  const abortController = new AbortController();
+  ctx.setAbortController(abortController);
+
+  const agent = requireAgent(ctx);
+
+  // 跨日/跨会话自动重置：确保新消息始终归当天主会话（跨宿主共享逻辑）
+  const sessionReset = await resetSessionIfNeeded(agent);
+  if (!sessionReset.ok) {
+    emitStreamError(fullWindow, sessionReset.error, 'SessionManager 未初始化');
+    ctx.setAbortController(null);
+    return;
+  }
+
+  const messageId = randomUUID();
+
+  // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
+  requireSprite(ctx).incrementDailyMessageCount();
+
+  // 对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
+  requireSprite(ctx).prepareForChat(text);
+
+  // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
+  ctx.trayManager?.setState('active');
+
+  // 构造 SessionEvent，意图分类为 chat（普通对话）
+  const event: SessionEvent = { type: 'chat', content: text };
+  const generator = agent.processEvent(event, abortController.signal);
+  await forwardStream(generator, ctx, messageId, abortController);
+}
+
+/**
+ * 软暂停后续跑 — 镜像 handleUserInput，消费 agent.resumeExecution() AsyncGenerator
+ *
+ * 与 handleUserInput 的区别：复用以暂停的既有上下文（不重置会话 / 不计数 / 不重新 prepareForChat），
+ * 驱动内核 loop.continueAfterPause 续跑生成器。AbortController 仍由 ctx 管理（硬停止仍走 CHAT_ABORT）。
+ *
+ * @param input 可选补充输入（空=续跑原路径；有=注入修正后续轮）
+ * @param ctx IPC 上下文
+ */
+export async function handleResume(input: string | undefined, ctx: IpcContext): Promise<void> {
+  const fullWindow = ctx.windowManager.getFullWindow();
+  if (!fullWindow || fullWindow.isDestroyed()) return;
+
+  if (!ctx.isAgentReady()) {
+    emitStreamError(fullWindow, 'Agent 正在初始化中，请稍候后重试；若长时间无响应请在设置面板检查 LLM 配置', 'Agent 未就绪');
+    return;
+  }
+
+  // 竞态保护——续跑期间同样拒绝并发调用
+  if (ctx.getAbortController()) {
+    emitStreamError(fullWindow, '上一条消息仍在处理中，请等待完成或点击停止后再发送', '对话竞态保护');
+    return;
+  }
+
+  const abortController = new AbortController();
+  ctx.setAbortController(abortController);
+
+  const messageId = randomUUID();
+  // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
+  ctx.trayManager?.setState('active');
+
+  const agent = requireAgent(ctx);
+  const generator = agent.resumeExecution(input, abortController.signal);
+  await forwardStream(generator, ctx, messageId, abortController);
+}
+
+/**
+ * 广播会话状态变更（含 resumable 信号，供渲染层暂停按钮显隐）
+ *
+ * @param ctx IPC 上下文
+ * @param status 状态：running | paused | error
+ * @param reason 状态原因（可选）
+ * @param resumable 当前会话是否可"无输入续跑"（内核 canContinueWithoutInput 信号）
+ */
+function broadcastStatus(ctx: IpcContext, status: 'running' | 'paused' | 'error', reason?: string, resumable?: boolean): void {
+  const fullWindow = ctx.windowManager.getFullWindow();
+  if (!fullWindow || fullWindow.isDestroyed()) return;
+  fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, { status, reason, resumable });
+}
+
+/**
+ * 流式 chunk 转发内核（handleUserInput / handleResume 共用）
+ *
+ * 消费任意 AgentChunk 生成器，将 chunk 推送渲染进程，含无进展超时兜底、
+ * 中断处理、错误降级、软暂停（paused chunk）与 finally 统一清理。
+ * 抽离为单一真理源，避免 chat / resume 两条流式路径逻辑分叉。
+ *
+ * @param generator AgentChunk 生成器（chat 的 processEvent 或 resumeExecution）
+ * @param ctx IPC 上下文
+ * @param messageId 本次流式消息 ID（SPRITE_STREAM_START/CHUNK/END 共用）
+ * @param abortController 本次流式占用的 AbortController（超时/硬停止共用）
+ */
+async function forwardStream(
+  generator: AsyncGenerator<AgentChunk>,
+  ctx: IpcContext,
+  messageId: string,
+  abortController: AbortController,
+): Promise<void> {
+  const fullWindow = ctx.windowManager.getFullWindow();
+  if (!fullWindow || fullWindow.isDestroyed()) return;
+
+  const sprite = requireSprite(ctx);
+  const agent = requireAgent(ctx);
+
   // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
   // 声明在 try 之外：finally 块需访问以推送到浮动窗口
   let accumulatedText = '';
@@ -84,66 +193,29 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   // 中断通道已发送标志（确保 SPRITE_STREAM_ABORTED 只发送一次）
   let abortedNotified = false;
   // 无进展超时状态机（跨宿主共享）
-  let timeoutGuard: ReturnType<typeof createStreamTimeoutGuard> | null = null;
-  // AbortController 和 messageId 在 try 块内创建，但 finally 块需要访问
-  let abortController: AbortController | null = null;
-  let messageId: string | null = null;
+  const timeoutGuard = createStreamTimeoutGuard({
+    onTimeout: () => {
+      abortController?.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
+      agent.forceReleaseChatLock();
+    },
+  });
+  // 启动首次计时
+  timeoutGuard.reset();
+
+  // 记录对话开始前的截断次数，对话结束后对比检测截断事件
+  const truncationBefore = agent.getMetrics().context.truncationCount;
 
   try {
-    // 缓存 Agent / Sprite 实例：本函数内多次使用，统一取一次避免重复调用 getter；
-    // 同时锁定本次对话使用的实例引用（reinitAgent 后旧实例仍能完成本次对话的清理）
-    // 移入 try 块内：防止 isAgentReady() 通过后、reinitAgent 导致 requireAgent 抛异常时
-    // 产生 unhandledRejection（chatHandlers.ts:39 使用 void handleUserInput()）
-    const agent = requireAgent(ctx);
-    const sprite = requireSprite(ctx);
-
-    // 在 await 之前同步占用 AbortController，避免 await 让渡点期间并发调用通过竞态检查
-    // （JavaScript 单线程同步代码不会被打断，"检查-占用"原子化）
-    abortController = new AbortController();
-    ctx.setAbortController(abortController);
-
-    // 跨日/跨会话自动重置：确保新消息始终归当天主会话（跨宿主共享逻辑）
-    const sessionReset = await resetSessionIfNeeded(agent);
-    if (!sessionReset.ok) {
-      emitStreamError(fullWindow, sessionReset.error, 'SessionManager 未初始化');
-      return;
-    }
-
-    messageId = randomUUID();
-
-    // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
-    sprite.incrementDailyMessageCount();
-
-    // 对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
-    sprite.prepareForChat(text);
-
-    // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
-    ctx.trayManager?.setState('active');
-
-    // 创建无进展超时状态机：超时时 abort + forceReleaseChatLock，IPC 推送统一到 finally 块发送
-    // （避免与主流程 for-await 共享状态的并发访问竞争）
-    timeoutGuard = createStreamTimeoutGuard({
-      onTimeout: () => {
-        abortController?.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
-        agent.forceReleaseChatLock();
-      },
-    });
-    // 启动首次计时
-    timeoutGuard.reset();
-
-    // 构造 SessionEvent，意图分类为 chat（普通对话）
-    const event: SessionEvent = { type: 'chat', content: text };
-    // 记录对话开始前的截断次数，对话结束后对比检测截断事件
-    const truncationBefore = agent.getMetrics().context.truncationCount;
-    // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
-    for await (const chunk of agent.processEvent(event, abortController.signal)) {
+    for await (const chunk of generator) {
       // 首个 chunk：此时 agent.processEvent() 内部的 tryAutoMatchPersona 已执行完毕，
       // activePersona 就是本轮 LLM 回答实际使用的角色（匹配成功已切换，匹配失败保持原角色）。
-      // 在此发送 SPRITE_STREAM_START，确保消息底部角色标签与回答实际角色一致
+      // 同时首个 chunk 已越过内核 plan 创建点，此刻 canContinueWithoutInput 反映真实可续跑性，
+      // 广播 resumable 让渲染层正确决定暂停按钮显隐（多轮任务显暂停 / 简单轮只显停止）。
       if (!streamStarted) {
         streamStarted = true;
         const personaName = sprite.activePersona ?? undefined;
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, { messageId, persona: personaName });
+        broadcastStatus(ctx, 'running', undefined, agent.canContinueWithoutInput());
       }
 
       // 超时已被强制清理，或窗口销毁，则退出循环（break 会触发 generator return()）
@@ -172,6 +244,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           name: chunk.name,
           args: chunk.args,
         });
+        // 已进入自主工具步：内核 isInAutonomousStep 为 true，刷新 resumable 信号让暂停按钮显隐生效
+        broadcastStatus(ctx, 'running', undefined, agent.canContinueWithoutInput());
       } else if (chunk.type === 'tool_result') {
         // 工具调用结果：推送工具名、成功状态和摘要，UI 更新工具卡片状态
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, {
@@ -196,26 +270,17 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
             count: truncationAfter - truncationBefore,
           });
         }
-        // done 后 agent.processEvent() 仍要执行 appendAssistant + postProcess
-        // postProcess 是 fire-and-forget（所有 LLM 调用注册到 pendingArchives 不 await），
-        // 本身执行很快（毫秒级），但 done 到 finally 之间仍有微小窗口期
-        // 发 thinking keepalive（phase=archiving）让渲染层重置 safety timer，覆盖此窗口
-        // 对应 chatPanelManager.showThinkingPhase 的 _resetStreamSafetyTimer 调用
+        // done 后 agent 仍要执行 appendAssistant + postProcess（fire-and-forget，毫秒级），
+        // 但 done 到 finally 之间仍有微小窗口期；发 thinking keepalive（phase=archiving）
+        // 让渲染层重置 safety timer，覆盖此窗口。不 break，让 for-await 自然结束。
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, {
           messageId,
           phase: 'archiving' as const,
         });
-        // done 信号：不 break，让 for-await 自然结束。
-        // agent.processEvent() 在 done 后仍需执行 appendAssistant（保存助手消息）
-        // 和 postProcess（归档后处理），break 会导致 return() 被调用，
-        // 跳过这些关键步骤。finally 块会在 generator 自然结束后发送 SPRITE_STREAM_END。
       } else if (chunk.type === 'error') {
         // 内核 yield error chunk（如 LLM 超时、连接断开）
         // 复用 SPRITE_STREAM_ABORTED 通道展示错误（气泡内嵌错误提示）
-        // 标记 abortedNotified 让 finally 不重复发 ABORTED
         abortedNotified = true;
-        // 原始技术错误保留到日志便于排查，UI 仅展示友好映射文本
-        // LLM 错误优先走 classifyLlmError（LLM 专用分类），非 LLM 错误走 formatErrorMessage（通用错误分类）
         const rawMsg = chunk.message ?? '';
         logger.error('chatStream chunk error:', rawMsg);
         const friendlyMessage = classifyLlmError(rawMsg);
@@ -226,7 +291,6 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         break;
       } else if (chunk.type === 'aborted') {
         // 中断标记内嵌气泡：内核主动 yield aborted chunk 时通知渲染层
-        // 标记已发送，catch 块不再重复发送
         abortedNotified = true;
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
           messageId,
@@ -234,20 +298,21 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         });
         // aborted 信号：停止处理后续 chunk，由 finally 统一发送 SPRITE_STREAM_END
         break;
+      } else if (chunk.type === 'paused') {
+        // 软暂停：内核在 loop 边界挂起生成器（非 abort），保留 messages 可经 resumeExecution 续跑。
+        // 不发送 aborted/error（暂停非错误）；暂停前已生成的文本是真实内容，照常推送浮动窗口。
+        break;
       }
     }
   } catch (error) {
     // 超时路径：状态机已设标志 + abort，IPC 通知与状态清理统一在 finally 块执行，跳过 catch 重复处理
-    if (timeoutGuard?.isTimedOut()) return;
+    if (timeoutGuard.isTimedOut()) return;
     // 通过 AbortController.reason 判断是否用户主动中断
     const ctrl = ctx.getAbortController();
     const abortReason = ctrl?.signal.reason;
     const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';
 
-    // IPC 消息顺序保证：错误/中断通知必须在 SPRITE_STREAM_END 之前发送，
-    // 因为 END 会触发 finishStreamingMessage 清理 streamingMessages，
-    // 之后到达的 SPRITE_ERROR/ABORTED 找不到消息元素无法注入提示。
-    // finally 块在 catch 之后执行，SPRITE_STREAM_END 自然在最后发送，保证顺序正确。
+    // IPC 消息顺序保证：错误/中断通知必须在 SPRITE_STREAM_END 之前发送
     if (!fullWindow.isDestroyed()) {
       if (wasUserAborted) {
         // 仅当 aborted chunk 路径未发送过时才发送（避免双重通知）
@@ -259,9 +324,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           abortedNotified = true;
         }
       } else {
-        // 错误分类：与 chatStreamRoutes（Web 路由）统一使用 formatErrorMessage。
-        // chunk.type === 'error' 路径已由 classifyLlmError 处理 LLM 专用错误（401/403/429 等），
-        // catch 块覆盖的是 generator 外层异常（IPC/存储/未知等），走通用分类更合适。
+        // catch 块覆盖的是 generator 外层异常（IPC/存储/未知等），走通用分类
         const rawMsg = toError(error).message;
         logger.error('chatStream catch error:', rawMsg);
         const friendlyMessage = formatErrorMessage('对话', error);
@@ -275,11 +338,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
     }
   } finally {
-    // 清理无进展超时定时器（正常结束 / 异常 / 中断均需清理）
-    timeoutGuard?.cleanup();
+    // 清理无进展超时定时器（正常结束 / 异常 / 中断 / 暂停均需清理）
+    timeoutGuard.cleanup();
     // 所有路径（含超时）统一在 finally 发送 IPC 与清理状态，避免定时器回调与主流程的并发访问竞争
     if (!fullWindow.isDestroyed()) {
-      if (timeoutGuard?.isTimedOut()) {
+      if (timeoutGuard.isTimedOut()) {
         // 超时路径：发送错误提示 + STREAM_END（仅在 streamStarted 后才发 END，避免无 START 的 END）
         if (messageId) {
           emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
@@ -288,25 +351,17 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
         }
       } else {
-        // 正常 / 异常 / 中断路径：保证错误/中断通知先于 END 到达渲染层（catch 已发送过）
-        // streamStarted 守卫：generator 退出前若未 yield 任何 chunk（如 chat() 入口抛异常），
-        // 跳过 END，避免渲染层收到无对应 START 的 END 消息。
+        // 正常 / 异常 / 中断 / 暂停路径：保证错误/中断通知先于 END 到达渲染层（catch 已发送过）
         if (streamStarted && messageId) {
           fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
         }
-        // P4-1：推送最后一条助手消息到浮动窗口（非空且非错误时）
+        // 推送最后一条助手消息到浮动窗口（非空且非错误/中断时）
         if (accumulatedText && !abortedNotified) {
           const floatWin = ctx.windowManager.getFloatWindow();
           if (floatWin) {
             floatWin.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE, accumulatedText);
           }
           // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
-          // 语义：未读 = "AI 回复后用户尚未查看"，仅当 AI 真正生成内容时计数；
-          // - accumulatedText 非空：AI 有实际回复内容（防止空回复计数）
-          // - !abortedNotified：用户主动中断或内核错误时不计数（中断后视为无新消息）
-          // - !fullWindow.isVisible()：完整窗口不可见时才计数（用户可见时不需提醒）
-          // 与 spriteEventBridge.ts proactivePrompt 的 incrementUnreadCount 配合，
-          // 都由 main.ts 的 onExpandToFull → resetUnreadCount 统一清除。
           if (!fullWindow.isVisible()) {
             ctx.incrementUnreadCount();
           }

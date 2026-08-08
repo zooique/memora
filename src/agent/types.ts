@@ -96,6 +96,7 @@ export type AgentChunk =
   | { type: 'aborted'; reason: string }
   | { type: 'error'; message: string }
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
+  | { type: 'paused' }
   | { type: 'done' };
 
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────
