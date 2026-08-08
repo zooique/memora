@@ -1284,6 +1284,61 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 取消待处理的软暂停请求（P1-6: SESSION_CANCEL_PAUSE 落点）
+   *
+   * 清空 loop 的 pauseRequested 标志，让工作通道继续运行。
+   * 与 requestPause 对称：申请→loop 边界挂起，取消→清标志继续。
+   */
+  cancelPauseRequest(): void {
+    this.assertInitialized('cancelPauseRequest');
+    this.requireLoop.cancelPauseRequest();
+    this._pendingPauseReason = undefined;
+  }
+
+  /**
+   * 放弃暂停（P1-6: SESSION_ABANDON 落点）
+   *
+   * 清空暂停相关状态，重置状态机为 idle。
+   * 与 cancelPauseRequest 的区别：cancelPause 仅取消待处理的暂停请求，
+   * abandonPause 清理已挂起的暂停状态+暂停点，让会话回到空闲可对话状态。
+   */
+  abandonPause(): void {
+    this.assertInitialized('abandonPause');
+    // 清暂停标志
+    this.requireLoop.cancelPauseRequest();
+    this._pendingPauseReason = undefined;
+    // 如果已暂停，尝试恢复（resume 会翻状态机回 RUNNING）
+    if (this._sessionManager?.stateMachine.status === 'paused') {
+      this._sessionManager.stateMachine.resume();
+    }
+    // 清检查点暂停元数据
+    const cp = this._sessionManager?.getCheckpoint();
+    if (cp) {
+      (cp as { pauseMeta?: unknown }).pauseMeta = undefined;
+    }
+  }
+
+  /**
+   * 追加计划步骤（P1-6: SESSION_APPEND_TASK 落点）
+   *
+   * 在现有 plan 末尾追加一个新步骤。
+   * 简单实现：读取当前 plan，追加新步骤后调用 updatePlan。
+   *
+   * @param description 步骤描述
+   * @returns 追加后的步骤总数
+   */
+  appendPlanStep(description: string): number {
+    this.assertInitialized('appendPlanStep');
+    const sm = this.requireSessionManager;
+    const cp = sm.getCheckpoint();
+    const plan = cp?.plan ?? [];
+    const newOrder = plan.length;
+    plan.push({ id: crypto.randomUUID(), order: newOrder, description, status: 'pending' });
+    sm.updatePlan(plan);
+    return plan.length;
+  }
+
+  /**
    * 内核→宿主信号：当前会话是否可"无输入续跑"（决定 sprite 暂停按钮显隐 + 暂停后继续 UI）
    *
    * 真值条件（按优先级）：

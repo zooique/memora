@@ -17,6 +17,7 @@
 
 import type { ChatPanelManager } from '../panels/chatPanelManager.js';
 import type { InputAreaManager } from '../panels/inputAreaManager.js';
+import type { TaskTablePanelManager } from '../panels/taskTablePanelManager.js';
 import type { ProactiveBanner } from '../components/proactiveBanner.js';
 import type { SuggestionCardManager } from '../components/suggestionCard.js';
 
@@ -30,8 +31,10 @@ import type { SuggestionCardManager } from '../components/suggestionCard.js';
 export class ChatCoordinator {
   /** 聊天面板管理器（消息渲染、流式输出、工具卡片），UIManager 构造函数初始化 */
   chatPanel!: ChatPanelManager;
-  /** 输入区域��理器（输入框事件 + 发送按钮状态 + ResizeObserver），UIManager 构造函数初始化 */
+  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver），UIManager 构造函数初始化 */
   inputAreaManager!: InputAreaManager;
+  /** P1-5: 任务表面板管理器（渲染 checkpoint plan + 草稿区），UIManager 构造函数初始化 */
+  taskTablePanelManager!: TaskTablePanelManager;
   /** 主动提示横幅管理器（里程碑/建议），UIManager 构造函数初始化 */
   proactiveBanner!: ProactiveBanner;
   /** 配置建议卡片管理器，UIManager 构造函数初始化 */

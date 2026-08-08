@@ -53,6 +53,8 @@ export { PartnerInsightsComponent } from './data/partnerInsightsComponent.js';
 export type { PartnerInsightsOptions } from './data/partnerInsightsComponent.js';
 export { LlmGovernanceResultComponent } from './data/llmGovernanceResultComponent.js';
 export type { LlmGovernanceOptions, LlmGovernanceReport } from './data/llmGovernanceResultComponent.js';
+export { PendingDraftArea } from './data/pendingDraftArea.js';
+export type { PendingDraftAreaOptions, DraftItem, DraftActionCallbacks, DraftStatusText } from './data/pendingDraftArea.js';
 
 /* ========== 表单组件 ========== */
 export { EmbeddingConfigComponent } from './form/embeddingConfigComponent.js';

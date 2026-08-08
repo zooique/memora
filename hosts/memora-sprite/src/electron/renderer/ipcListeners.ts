@@ -931,6 +931,8 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
 
   window.electronAPI.onStreamEnd((msg) => {
     uiManager.finishStreamingMessage(msg.messageId);
+    // P1-5: 流式结束后自动消费草稿（RUNNING 态待定输入 → 新一轮用户输入）
+    uiManager.consumePendingDrafts();
     // 对话结束后刷新仪表盘，获取最新的 LLM 指标和记忆统计
     callbacks.onConversationEnd?.();
   });

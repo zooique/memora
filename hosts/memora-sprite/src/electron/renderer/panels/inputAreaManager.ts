@@ -52,6 +52,8 @@ export interface InputAreaHost {
   emitStopMessage(): void;
   /** 跳转到设置面板（Provider 未配置时由选择器空状态提示项触发） */
   switchToSettings(): void;
+  /** P1-4: 运行时输入入待定草稿区（RUNNING 态有文本时，点击发送/Enter 不发送，将文本推入草稿区） */
+  addToPendingDraft(text: string): void;
 }
 
 /** 输入内容最大长度（超出部分截断，防止超长输入撑爆 LLM 上下文） */
@@ -82,9 +84,6 @@ export class InputAreaManager {
 
   /** 会话状态（驱动发送按钮三态：发送 / 暂停 / 继续） */
   private sessionStatus: 'running' | 'paused' | 'error' | 'idle' = 'idle';
-
-  /** 内核「可续跑」信号（canContinueWithoutInput）：决定流式态是否显示暂停按钮（简单轮隐藏，仅显停止） */
-  private canContinueWithoutInput = true;
 
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
@@ -221,7 +220,14 @@ export class InputAreaManager {
       e.preventDefault();
       // 运行中：Enter = 停止（键盘快捷键，对齐 #btn-stop 鼠标点击）
       if (this.host.isStreaming()) {
-        this.host.emitStopMessage();
+        // P1-4: RUNNING 态有文本 → 入待定草稿区，不发送
+        const text = this.getValue();
+        if (text.length > 0) {
+          this.host.addToPendingDraft(text);
+          this.clearInput();
+        } else {
+          this.host.emitStopMessage();
+        }
       } else if (this.sessionStatus === 'paused') {
         // 已暂停：Enter = 继续；有输入则注入补充，无输入则纯恢复
         const text = this.getValue();
@@ -278,8 +284,14 @@ export class InputAreaManager {
       return;
     }
     if (this.host.isStreaming()) {
-      // 运行中：点击 = 暂停（中断工作通道，保留进度与检查点）
-      void window.electronAPI.pauseSession('用户主动暂停');
+      // P1-4: RUNNING 态点击 = 停止（移除原暂停按钮行为）；有文本→入待定草稿区
+      const text = this.getValue();
+      if (text.length > 0) {
+        this.host.addToPendingDraft(text);
+        this.clearInput();
+      } else {
+        this.host.emitStopMessage();
+      }
       return;
     }
     this.host.emitSendMessage();
@@ -403,11 +415,8 @@ export class InputAreaManager {
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    */
-  updateSessionStatus(status: string, resumable?: boolean): void {
+  updateSessionStatus(status: string, _resumable?: boolean): void {
     this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
-    // resumable 默认 true（防御：缺失信息时倾向显示暂停，避免误隐藏）；
-    // 主进程始终显式下发 true/false，简单轮下发 false 则隐藏暂停按钮（仅停止）。
-    this.canContinueWithoutInput = resumable ?? true;
     this.renderButton();
   }
 
@@ -415,14 +424,14 @@ export class InputAreaManager {
    * 推导并渲染发送按钮形态
    *
    * 优先级：流式态 > 已暂停 > 异常 > 空闲。
-   * 复用单一发送按钮承载 发送/暂停/继续 三态（不引入并列冗余按钮，单一真理源）。
+   * P1-4: 流式态始终显示停止按钮（移除原 canContinueWithoutInput 隐藏逻辑）。
    */
   private renderButton(): void {
     const streaming = this.host.isStreaming();
     let mode: 'idle' | 'running' | 'paused' | 'error' | 'hide';
     if (streaming) {
-      // 流式态：仅当内核可续跑（多轮任务 / 自主步）才显示暂停按钮；简单轮只显停止（隐藏暂停）
-      mode = this.canContinueWithoutInput ? 'running' : 'hide';
+      // P1-4: 流式态始终显示停止按钮，不依赖 canContinueWithoutInput 判断
+      mode = 'running';
     } else if (this.sessionStatus === 'paused') mode = 'paused';
     else if (this.sessionStatus === 'error') mode = 'error';
     else mode = 'idle';
@@ -433,18 +442,18 @@ export class InputAreaManager {
   private applyButtonMode(mode: 'idle' | 'running' | 'paused' | 'error' | 'hide'): void {
     const hasContent = this.inputEl.value.trim().length > 0;
     if (mode === 'hide') {
-      // 简单轮流式态：隐藏暂停按钮（仅停止按钮可见），对齐「硬停止为唯一霸道中止」的单一入口
+      // 隐藏态（当前不使用，保留为兜底）
       this.btnSend.style.display = 'none';
       this.btnSend.classList.add('empty');
       return;
     }
-    // 非隐藏态：恢复按钮可见性（由 hide 切回时清除 display:none）
+    // 非隐藏态：恢复按钮可见性
     this.btnSend.style.display = '';
     this.btnSend.classList.remove('empty');
     switch (mode) {
       case 'running':
-        // 运行中：暂停姿态，始终可点
-        this.setBtnSend('icon-pause', '暂停会话（不中断，保留当前进度）');
+        // P1-4: 运行中 = 停止按钮（移除原暂停行为，改为 hard stop）
+        this.setBtnSend('icon-stop', '停止流式输出');
         this.btnSend.disabled = false;
         break;
       case 'paused':
@@ -467,7 +476,7 @@ export class InputAreaManager {
   }
 
   /** 设置发送按钮图标 + 无障碍标签（保持圆形图标按钮形态，不引入文字标签破坏布局） */
-  private setBtnSend(icon: 'icon-send' | 'icon-pause' | 'icon-play', title: string): void {
+  private setBtnSend(icon: 'icon-send' | 'icon-pause' | 'icon-play' | 'icon-stop', title: string): void {
     this.btnSend.innerHTML = `<svg class="icon"><use href="#${icon}"/></svg>`;
     this.btnSend.title = title;
     this.btnSend.setAttribute('aria-label', title);

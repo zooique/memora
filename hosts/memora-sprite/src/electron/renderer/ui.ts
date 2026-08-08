@@ -74,6 +74,9 @@ import { SkillDropManager } from './panels/skillDropManager.js';
 // 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
+// P1-5: 任务表面板管理器（渲染 checkpoint plan + 草稿区）
+import { TaskTablePanelManager } from './panels/taskTablePanelManager.js';
+import type { DraftItem } from './components/data/pendingDraftArea.js';
 // HEAL-12 PanelRouter 职责拆分（模式 B）：4 个并列 Controller
 // - PanelRouter：主面板切换 + 导航按钮点击
 // - WindowControlsController：最小化/最大化/关闭 + 最大化图标切换
@@ -255,6 +258,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
 
+  /** P1-5: 待定草稿列表（RUNNING 态输入暂停时暂存，流式结束后自动消费） */
+  private pendingDrafts: DraftItem[] = [];
+
   // ─── UI 状态字段 ────────────────────────────────────────
   // panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
   // isNearBottom 已移至 ScrollController
@@ -353,6 +359,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       new EventTracker(),
       this as InputAreaHost,
     );
+
+    // P1-5: 任务表面板管理器（渲染 checkpoint plan + 草稿区）
+    // 由 UIManager 作为 TaskTablePanelHost 注入，持有关联的 PendingDraftArea 实例
+    this.chatCoordinator.taskTablePanelManager = new TaskTablePanelManager();
 
     // HEAL-12 PanelRouter 职责拆分（模式 B）：4 个并列 Controller
     // - PanelRouter：主面板切换 + 导航按钮点击
@@ -454,7 +464,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   cleanup(): void {
     // 清理所有事件监听器（通过 EventTracker 统一管理）
     this.events.cleanup();
-    // Chat 域协调器集中清理（5 子模块：chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
+    // Chat 域协调器集中清理（6 子模块：chatPanel + inputAreaManager + taskTablePanelManager + proactiveBanner + suggestionCard + streamingMessages）
     this.chatCoordinator.cleanup();
     // Memory 域协调器集中清理（4 子模块：memoryPanel + profilePanel + workProjectionPanel + auditPanel）
     this.memoryCoordinator.cleanup();
@@ -788,6 +798,59 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   switchToSettings(): void {
     void this.switchPanel('settings');
+  }
+
+  /**
+   * P1-5: 运行时输入入待定草稿区（InputAreaHost 接口）
+   *
+   * RUNNING 态有文本时，点击发送/Enter 不发送，将文本推入草稿区暂存。
+   * 草稿会在流式结束后自动消费（RUNNING 态）或由用户手动提交（PAUSED 态）。
+   *
+   * @param text 草稿文本
+   */
+  addToPendingDraft(text: string): void {
+    // 生成草稿条目
+    const draft: DraftItem = {
+      id: crypto.randomUUID(),
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    this.pendingDrafts.push(draft);
+    // 通知任务表面板更新草稿区
+    this.chatCoordinator.taskTablePanelManager?.updateDraftArea(this.pendingDrafts);
+  }
+
+  /**
+   * P1-5: 删除指定草稿
+   *
+   * 由 TaskTablePanelManager.handleDraftDelete 委托调用，
+   * 从 pendingDrafts 中移除并通知任务表面板更新 UI。
+   *
+   * @param id 草稿 ID
+   */
+  removeDraft(id: string): void {
+    const idx = this.pendingDrafts.findIndex((d) => d.id === id);
+    if (idx === -1) return;
+    this.pendingDrafts.splice(idx, 1);
+    this.chatCoordinator.taskTablePanelManager?.updateDraftArea(this.pendingDrafts);
+  }
+
+  /**
+   * P1-5: 消费待定草稿
+   *
+   * RUNNING 态流式结束后，将积压的草稿作为新一轮用户输入依次发送。
+   * 消费后清空草稿列表，通知任务表面板刷新。
+   */
+  consumePendingDrafts(): void {
+    if (this.pendingDrafts.length === 0) return;
+    // 取草稿文本（按创建顺序）
+    const drafts = this.pendingDrafts.splice(0);
+    // 通知任务表面板刷新（清空后）
+    this.chatCoordinator.taskTablePanelManager?.updateDraftArea(this.pendingDrafts);
+    // 合并草稿文本，填入输入框后触发发送
+    const combinedText = drafts.map((d) => d.text).join('\n---\n');
+    this.chatCoordinator.inputAreaManager.setValue(combinedText);
+    this.sendMessageCallback?.();
   }
 
   /**

@@ -223,6 +223,15 @@ export const IPC_CHANNELS = {
   RESTORE_CHECKPOINT: 'restore-checkpoint',
   /** 用户回答澄清问题，携带 { slot: string; answer: string }[] */
   SESSION_CLARIFY_ANSWER: 'session-clarify-answer',
+  // ─── 暂停模型 IPC（P1-6，与 ipc/channels.ts 同步） ──────────
+  /** 取消待处理的暂停请求 */
+  SESSION_CANCEL_PAUSE: 'session-cancel-pause',
+  /** 放弃暂停（清暂停状态+暂停点，会话回 idle） */
+  SESSION_ABANDON: 'session-abandon',
+  /** 获取工作上下文（plan + 暂停态，供任务表面板渲染） */
+  SESSION_GET_WORK_CONTEXT: 'session-get-work-context',
+  /** 追加计划步骤（用户侧追加任务到 plan 末尾） */
+  SESSION_APPEND_TASK: 'session-append-task',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -573,6 +582,14 @@ export interface ElectronAPI {
    * @param answers 用户回答数组，每个元素包含 slot 和 answer
    */
   sendClarifyAnswer: (answers: Array<{ slot: string; answer: string }>) => Promise<{ success: boolean }>;
+  /** P1-6: 取消待处理的暂停请求 */
+  cancelPause: () => Promise<{ canceled: boolean }>;
+  /** P1-6: 放弃暂停（清暂停状态，会话回 idle） */
+  abandonPause: () => Promise<{ abandoned: boolean }>;
+  /** P1-6: 获取工作上下文（plan + 暂停态，供任务表面板渲染） */
+  getWorkContext: () => Promise<{ plan: Array<{ order: number; description: string; status: string }>; activeStepOrder: number; pausePhase?: string; pauseReason?: string }>;
+  /** P1-6: 追加计划步骤 */
+  appendTask: (description: string) => Promise<{ appended: boolean; totalSteps: number }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string; persona?: string }) => void) => void;
@@ -1404,6 +1421,14 @@ const electronAPI: ElectronAPI = {
   },
   /** 提交澄清问题回答 */
   sendClarifyAnswer: (answers) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, answers),
+  /** P1-6: 取消待处理的暂停请求 */
+  cancelPause: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CANCEL_PAUSE),
+  /** P1-6: 放弃暂停 */
+  abandonPause: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ABANDON),
+  /** P1-6: 获取工作上下文 */
+  getWorkContext: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT),
+  /** P1-6: 追加计划步骤 */
+  appendTask: (description) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_APPEND_TASK, description),
 
   // 仪表盘
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),

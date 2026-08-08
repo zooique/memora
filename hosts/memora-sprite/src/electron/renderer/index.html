@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="styles/panels/dashboard.css" />
   <link rel="stylesheet" href="styles/panels/perception.css" />
   <link rel="stylesheet" href="styles/panels/clipboard.css" />
+  <link rel="stylesheet" href="styles/panels/tasks-panel.css" />
   <link rel="stylesheet" href="styles/panels/settings.css" />
   <link rel="stylesheet" href="styles/panels/sprite-settings.css" />
   <link rel="stylesheet" href="styles/overlays/modal.css" />
@@ -201,6 +202,8 @@
       <symbol id="icon-file-default" viewBox="0 0 24 24"><path d="M6 2h7l7 7v11a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><polyline points="13 2 13 9 20 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <!-- 信息侧栏 toggle（PanelRight：圆角矩形+右1/3分隔线，对齐 Lucide/VSCode 风格） -->
       <symbol id="icon-panel-right" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="15" y1="3" x2="15" y2="21" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- P1-1: 清单/任务表图标（List：3 条水平线+左侧竖线，对齐 Lucide 风格） -->
+      <symbol id="icon-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="6" x2="3.01" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="12" x2="3.01" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="18" x2="3.01" y2="18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
     </defs>
   </svg>
 
@@ -1353,6 +1356,10 @@
           <button class="aux-tab" data-aux-tab="dashboard" role="tab" aria-selected="false" aria-label="仪表盘" aria-controls="panel-dashboard" data-tooltip="运行仪表盘">
             <svg class="icon"><use href="#icon-chart"/></svg>
           </button>
+          <!-- P1-1: 任务表面板 tab（申请暂停模型 Phase 1） -->
+          <button class="aux-tab" data-aux-tab="tasks" role="tab" aria-selected="false" aria-label="任务表" aria-controls="panel-tasks" data-tooltip="任务表与草稿">
+            <svg class="icon"><use href="#icon-list"/></svg>
+          </button>
         </div>
         <!-- 侧栏内容区（panel 堆叠，复用 .panel 绝对定位，可见性由 .aux-active 控制） -->
         <div class="aux-sidebar-content">
@@ -1588,6 +1595,18 @@
                 <div class="source-health-list" id="dashboard-source-health-list"></div>
                 <div class="source-health-diagnosed" id="dashboard-source-health-diagnosed"></div>
               </section>
+            </div>
+          </div>
+          <!-- P1-1: 任务表面板（申请暂停模型 Phase 1，渲染 checkpoint plan + 草稿区） -->
+          <div id="panel-tasks" class="panel" aria-hidden="true" aria-labelledby="panel-title-tasks">
+            <div class="panel-header flex-shrink-0">
+              <span class="panel-title" id="panel-title-tasks">任务表</span>
+            </div>
+            <div class="tasks-panel-body">
+              <!-- 任务表内容由 taskTablePanelManager 动态渲染 -->
+              <div id="tasks-table-container"></div>
+              <!-- 草稿区由 pendingDraftArea 组件渲染 -->
+              <div id="tasks-draft-container"></div>
             </div>
           </div>
         </div>

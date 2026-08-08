@@ -40,8 +40,11 @@ export class AuxSidebarManager {
 
   /** 信息侧栏是否展开（默认 true，用户确认默认打开） */
   private auxSidebarOpen = true;
-  /** 当前激活的侧栏 tab（'perception' | 'dashboard'，默认 perception） */
-  private activeAuxTab: 'perception' | 'dashboard' = 'perception';
+  /**
+   * 当前激活的侧栏 tab
+   * P1-1: 新增 'tasks' 任务表面板 tab
+   */
+  private activeAuxTab: 'perception' | 'dashboard' | 'tasks' = 'perception';
 
   constructor(private host: AuxSidebarHost) {}
 
@@ -85,7 +88,7 @@ export class AuxSidebarManager {
    * 调用方：精灵状态条点击 / 命令面板 Ctrl+K / 主动触发（洞察/里程碑/模式/建议）
    * 由 UIManager.openAuxSidebar sugar API 委托到此。
    */
-  open(tab?: 'perception' | 'dashboard'): void {
+  open(tab?: 'perception' | 'dashboard' | 'tasks'): void {
     const tabChanged = tab && tab !== this.activeAuxTab;
     if (tab) {
       this.activeAuxTab = tab;
@@ -105,7 +108,7 @@ export class AuxSidebarManager {
    * 调用方：onPersonaChanged 事件（感知面板可见时同步刷新）
    * 由 UIManager.isAuxTabVisible sugar API 委托到此。
    */
-  isVisible(tab: 'perception' | 'dashboard'): boolean {
+  isVisible(tab: 'perception' | 'dashboard' | 'tasks'): boolean {
     return this.auxSidebarOpen && this.activeAuxTab === tab;
   }
 
@@ -121,7 +124,7 @@ export class AuxSidebarManager {
     const target = e.currentTarget;
     if (!(target instanceof HTMLElement)) return;
     const tab = target.dataset.auxTab;
-    if (tab === 'perception' || tab === 'dashboard') {
+    if (tab === 'perception' || tab === 'dashboard' || tab === 'tasks') {
       this.switchAuxTab(tab);
     }
   }
@@ -132,8 +135,8 @@ export class AuxSidebarManager {
     this.applyAuxSidebarState();
   }
 
-  /** 切换侧栏 tab（perception / dashboard，仅 .aux-tab 内部调用，无外部消费者） */
-  private switchAuxTab(tab: 'perception' | 'dashboard'): void {
+  /** 切换侧栏 tab（perception / dashboard / tasks，仅 .aux-tab 内部调用，无外部消费者） */
+  private switchAuxTab(tab: 'perception' | 'dashboard' | 'tasks'): void {
     if (this.activeAuxTab === tab && this.auxSidebarOpen) return; // 已激活且可见则跳过
     this.activeAuxTab = tab;
     this.applyAuxTabState();
@@ -170,10 +173,12 @@ export class AuxSidebarManager {
         tab.setAttribute('aria-selected', 'false');
       }
     });
-    // 面板（通过 id 匹配 tab：panel-perception / panel-dashboard）
+    // 面板（通过 id 匹配 tab：panel-perception / panel-dashboard / panel-tasks）
     const perceptionPanel = document.getElementById('panel-perception');
     const dashboardPanel = document.getElementById('panel-dashboard');
+    const tasksPanel = document.getElementById('panel-tasks');
     perceptionPanel?.classList.toggle('aux-active', this.activeAuxTab === 'perception');
     dashboardPanel?.classList.toggle('aux-active', this.activeAuxTab === 'dashboard');
+    tasksPanel?.classList.toggle('aux-active', this.activeAuxTab === 'tasks');
   }
 }

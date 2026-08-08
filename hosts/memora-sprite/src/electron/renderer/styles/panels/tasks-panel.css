@@ -1,0 +1,260 @@
+/**
+ * 任务表面板样式（申请暂停模型 Phase 1）
+ *
+ * 与感知/仪表盘面板同层，遵循侧栏紧凑布局风格。
+ * P1-1: 基础面板体容器；P1-2/P1-3 的草稿区/任务表组件样式将在此文件扩展。
+ *
+ * 设计原则：
+ * - 对齐 .perception-panel-body / .dashboard-body 的 gap/padding 体系
+ * - 所有组件样式依 WBS 迭代顺序自然生长，不提前造轮子
+ */
+
+/* ─── 面板体容器 ──────────────────────────────────────── */
+.tasks-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3) var(--space-3);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+}
+
+/* ─── 草稿区（P1-2：PendingDraftArea 组件） ───────────── */
+.pending-draft-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+/* 草稿区 header：标题 + 数量徽标 */
+.pending-draft-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) 0;
+}
+
+.pending-draft-heading {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--subtext);
+}
+
+/* 数量徽标（复用 nav-badge 视觉风格，默认隐藏，>0 时显示） */
+.pending-draft-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.pending-draft-badge.nav-badge-hidden {
+  display: none;
+}
+
+/* 草稿列表 */
+.pending-draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 单条草稿条目 */
+.pending-draft-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+
+/* 草稿文本（多行截断） */
+.pending-draft-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* 草稿操作按钮行 */
+.pending-draft-actions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.pending-draft-btn {
+  padding: 2px 8px;
+  font-size: 10px;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--subtext);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.pending-draft-btn:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+/* 空状态 */
+.pending-draft-empty {
+  padding: var(--space-3) 0;
+  text-align: center;
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  opacity: 0.6;
+}
+
+/* ─── 任务表（P1-3：TaskTablePanelManager） ───────────── */
+.task-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+/* 空任务表提示 */
+.task-table-empty {
+  padding: var(--space-3) 0;
+  text-align: center;
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  opacity: 0.6;
+}
+
+/* 进度行 */
+.task-table-progress {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--subtext);
+  padding: var(--space-1) 0;
+}
+
+/* 进度条 */
+.task-table-bar {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.task-table-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* 步骤列表 */
+.task-table-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 单条步骤 */
+.task-step {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  background: var(--surface0);
+}
+
+.task-step-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.task-step-status {
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* 步骤状态颜色 */
+.task-step-pending .task-step-status {
+  color: var(--subtext);
+  background: var(--surface2);
+}
+
+.task-step-in_progress .task-step-status {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.task-step-done .task-step-status {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+}
+
+.task-step-blocked .task-step-status {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+}
+
+/* 操作按钮区 */
+.task-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  padding-top: var(--space-1);
+  align-items: center;
+}
+
+.task-table-btn {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.task-table-btn:hover {
+  background: var(--surface0);
+}
+
+.task-table-btn-cancel {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.task-table-btn-resume {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+/* 暂停原因 */
+.task-table-pause-reason {
+  width: 100%;
+  font-size: 10px;
+  color: var(--subtext);
+  opacity: 0.7;
+}

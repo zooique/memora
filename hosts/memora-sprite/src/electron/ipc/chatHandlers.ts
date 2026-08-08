@@ -153,6 +153,60 @@ export function registerChatHandlers(ctx: IpcContext): void {
     return { restored: true, messageCount };
   });
 
+  // ─── P1-6: 暂停模型 IPC ──────────────────────────────────
+
+  /** 取消待处理的暂停请求（requesting 态 → 取消，loop 继续运行） */
+  ipcMain.handle(IPC_CHANNELS.SESSION_CANCEL_PAUSE, async () => {
+    const agent = requireAgent(ctx);
+    agent.cancelPauseRequest();
+    // 广播状态（取消暂停后状态回 running）
+    const fullWindow = ctx.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+        status: 'running',
+        resumable: agent.canContinueWithoutInput(),
+      });
+    }
+    return { canceled: true };
+  });
+
+  /** 放弃暂停（清暂停状态+暂停点，会话回 idle） */
+  ipcMain.handle(IPC_CHANNELS.SESSION_ABANDON, async () => {
+    const agent = requireAgent(ctx);
+    agent.abandonPause();
+    // 广播状态回 idle
+    const fullWindow = ctx.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+        status: 'idle',
+        resumable: false,
+      });
+    }
+    return { abandoned: true };
+  });
+
+  /** 获取工作上下文（plan + 暂停态，供任务表面板渲染） */
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT, async () => {
+    const agent = requireAgent(ctx);
+    const checkpoint = agent.getCheckpoint();
+    const plan = checkpoint?.plan ?? [];
+    const activeStep = plan.find((s) => s.status === 'active');
+    const pauseMeta = (checkpoint as { pauseMeta?: { phase?: string; reason?: string } } | undefined)?.pauseMeta;
+    return {
+      plan: plan.map((s) => ({ order: s.order, description: s.description, status: s.status })),
+      activeStepOrder: activeStep?.order ?? -1,
+      pausePhase: pauseMeta?.phase,
+      pauseReason: pauseMeta?.reason,
+    };
+  });
+
+  /** 追加计划步骤（用户侧追加任务到 plan 末尾） */
+  ipcMain.handle(IPC_CHANNELS.SESSION_APPEND_TASK, async (_event, description: string) => {
+    const agent = requireAgent(ctx);
+    const totalSteps = agent.appendPlanStep(description);
+    return { appended: true, totalSteps };
+  });
+
   /**
    * 注册 needClarify 事件监听：Agent 发射 needClarify 事件时，
    * 通过 SESSION_NEED_CLARIFY 通道转发到渲染进程，触发澄清面板展示。

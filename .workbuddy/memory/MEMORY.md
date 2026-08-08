@@ -1,7 +1,7 @@
 # 项目长期记忆（memora）
 
 ## 架构与质量基线
-- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，sprite 版本 1.5.0，渲染 `appVersion` 走 `package.json`）。内核经 `scripts/sync-memora.mjs` cpSync 覆盖同步进 `node_modules/memora` 并打进 asar——**内核随客户端打包冻结，改内核后必须 `npm run sync-memora` 再打包**。
+- 内核 `src/`（零 native/第三方依赖，仅暴露 `"."` 子路径，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，sprite 版本 1.5.0，渲染 `appVersion` 走 `package.json`）。内核同步用 **sprite 包的 `npm run sync-memora`**（= `hosts/memora-sprite/scripts/sync-memora.mjs`，**非 root 脚本**——root `package.json` 无此脚本、root `node_modules/memora` 不存在）编译内核（`tsc -p tsconfig.build.json`+`tsc-alias`）并 cpSync 覆盖进 `hosts/memora-sprite/node_modules/memora`（真实拷贝、非软链，memora 未声明为依赖）——**内核随客户端打包冻结，改内核后必须从 sprite 目录 `npm run sync-memora` 再打包**。
 - 真实质量门 = `tsc --noEmit` + `eslint` + `lint:css`(stylelint) + vitest；prettier --check 非门（勿批量 write 制造无关 diff）。
 
 ## 设计令牌（ADR）
