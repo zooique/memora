@@ -25,29 +25,12 @@ import type {
   Role,
   Standard,
   ResourceState,
-  ResolvedDelta,
   ClarifyQuestion,
   CompletionLevel,
   SlotRef,
+  ComposeResult,
+  PlanContext,
 } from '@/agent/types.js';
-
-/** Composer 输出 */
-export interface ComposeResult {
-  /** 已解析的四元组增量 */
-  resolved: ResolvedDelta;
-  /** 需要澄清的问题（仅 P4 级别时非空，此时应暂停等待用户回答） */
-  needClarify?: ClarifyQuestion[];
-}
-
-/** 计划上下文（P3.3 执行计划管理） */
-export interface PlanContext {
-  /** 计划是否停滞（所有步骤已完成/阻塞，或空计划） */
-  stalled: boolean;
-  /** 当前活跃步骤描述（有活跃步骤时） */
-  activeStep?: string;
-  /** 下一个待处理步骤描述（有 pending 步骤时） */
-  pendingStep?: string;
-}
 
 /** 系统内置默认值 */
 const SYSTEM_DEFAULTS = {

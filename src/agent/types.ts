@@ -536,6 +536,33 @@ export interface ClarifyQuestion {
   lowRisk?: boolean;
 }
 
+/**
+ * Composer 输出（SSOT 单一真理源）
+ *
+ * 从 composer.ts 迁移至此，与 ResolvedDelta、ClarifyQuestion 等
+ * 四级补全类型同处一处，消除跨文件类型追踪成本。
+ */
+export interface ComposeResult {
+  /** 已解析的四元组增量 */
+  resolved: ResolvedDelta;
+  /** 需要澄清的问题（仅 P4 级别时非空，此时应暂停等待用户回答） */
+  needClarify?: ClarifyQuestion[];
+}
+
+/**
+ * 计划上下文（P3.3 执行计划管理，SSOT 单一真理源）
+ *
+ * 从 composer.ts 迁移至此，与 ComposeResult 同处一处。
+ */
+export interface PlanContext {
+  /** 计划是否停滞（所有步骤已完成/阻塞，或空计划） */
+  stalled: boolean;
+  /** 当前活跃步骤描述（有活跃步骤时） */
+  activeStep?: string;
+  /** 下一个待处理步骤描述（有 pending 步骤时） */
+  pendingStep?: string;
+}
+
 // ─── Agent 门面类型 ─────────────────────────────────────
 
 import type { LlmProvider } from '@/llm/provider.js';
