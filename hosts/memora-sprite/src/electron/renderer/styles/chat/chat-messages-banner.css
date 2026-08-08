@@ -403,6 +403,35 @@
   background: var(--surface0);
 }
 
+/* 暂停横幅操作按钮（继续/放弃）：复用恢复按钮样式，增加间距 */
+.session-status-action-btn {
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast);
+  margin-left: var(--space-1);
+}
+
+.session-status-action-btn:hover {
+  background: var(--surface0);
+}
+
+/* 放弃按钮：红色态，暗示破坏性操作 */
+.session-status-abandon-btn {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.session-status-abandon-btn:hover {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
 /* ─── 澄清面板（P4 暂停询问：P1-P3 补全链无法填充槽位时展示） ── */
 
 /* 面板容器：插入到消息区顶部，动画滑入，与 session-status-banner 视觉一致 */

@@ -1202,7 +1202,23 @@ export class ChatPanelManager {
       this.sessionStatusEl.innerHTML = `
         <svg class="icon"><use href="#icon-pause"/></svg>
         <span>会话已暂停${reason ? `：${reason}` : ''}</span>
+        <button class="session-status-action-btn" data-action="resume-session">继续</button>
+        <button class="session-status-action-btn session-status-abandon-btn" data-action="abandon-pause">放弃</button>
       `;
+      // 继续按钮：恢复会话
+      const resumeBtn = this.sessionStatusEl.querySelector('[data-action="resume-session"]');
+      if (resumeBtn) {
+        resumeBtn.addEventListener('click', () => {
+          void window.electronAPI.resumeSession();
+        });
+      }
+      // 放弃按钮：清暂停态回 idle
+      const abandonBtn = this.sessionStatusEl.querySelector('[data-action="abandon-pause"]');
+      if (abandonBtn) {
+        abandonBtn.addEventListener('click', () => {
+          void window.electronAPI.abandonPause();
+        });
+      }
     } else if (status === 'error') {
       this.sessionStatusEl.className = 'session-status-banner error';
       this.sessionStatusEl.innerHTML = `
