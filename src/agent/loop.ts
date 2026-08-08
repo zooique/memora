@@ -176,6 +176,12 @@ export class AgentLoop {
   private pauseRequested = false;
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
+  /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
+  onPaused?: () => void;
+  /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
+  onRoundBoundary?: (roundInfo: { stepId?: string; summary: string; toolCallCount: number; assistantLength: number }) => void;
+  /** P2-8: 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
+  getTaskTable?: () => string;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 护栏规则正则编译失败回调（从 opts.onGuardrailError 提取，用于 GuardrailUI） */
@@ -571,6 +577,7 @@ export class AgentLoop {
     if (this.pauseRequested) {
       // 软暂停：在迭代边界挂起生成器（不 abort，保留 this.messages 供续跑）
       this.pauseRequested = false;
+      this.onPaused?.();
       yield { type: 'paused' };
       return 'paused';
     }
@@ -599,6 +606,12 @@ export class AgentLoop {
       this.messages = [...safeMessages];
     }
 
+    // P2-8: 注入收敛——每次迭代 LLM 调用前统一注入任务表（消除分散调用点）
+    const taskTable = this.getTaskTable?.();
+    if (taskTable) {
+      this.injectSystemMessage(taskTable);
+    }
+
     const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
 
     if (llmResult.aborted) {
@@ -614,6 +627,15 @@ export class AgentLoop {
       }
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
+    }
+
+    // P2-4: 回合边界回调（每次迭代完成后触发，用于 roundLog 记录）
+    if (this.onRoundBoundary) {
+      this.onRoundBoundary({
+        summary: llmResult.fullContent.slice(0, 200),
+        toolCallCount: llmResult.toolCalls?.length ?? 0,
+        assistantLength: llmResult.fullContent.length,
+      });
     }
 
     // 工具调用分支

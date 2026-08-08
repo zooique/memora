@@ -20,7 +20,7 @@ import type { IpcContext } from './types.js';
 import { requireAgent } from './types.js';
 import { handleUserInput, handleResume } from './chatStreamHandler.js';
 import { isValidContent } from './inputValidation.js';
-import type { SessionCheckpoint, SessionEvent } from 'memora';
+import type { SessionCheckpoint, SessionEvent, PauseMeta } from 'memora';
 
 /**
  * 澄清暂停超时自动续跑（Finding A）
@@ -191,7 +191,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
     const checkpoint = agent.getCheckpoint();
     const plan = checkpoint?.plan ?? [];
     const activeStep = plan.find((s) => s.status === 'active');
-    const pauseMeta = (checkpoint as { pauseMeta?: { phase?: string; reason?: string } } | undefined)?.pauseMeta;
+    const pauseMeta = (checkpoint as { pauseMeta?: PauseMeta } | undefined)?.pauseMeta;
     return {
       plan: plan.map((s) => ({ order: s.order, description: s.description, status: s.status })),
       activeStepOrder: activeStep?.order ?? -1,

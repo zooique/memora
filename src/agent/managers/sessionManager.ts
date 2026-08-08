@@ -31,6 +31,8 @@ import type {
   PlanStep,
   ToolExecutionRecord,
   SideEffect,
+  RoundOutcome,
+  PauseMeta,
 } from '@/agent/types.js';
 import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
 import type { GoalConsistencyResult } from '@/agent/managers/goalConsistencyChecker.js';
@@ -786,20 +788,107 @@ export class SessionManager {
     return nextStep;
   }
 
+  // ── Phase 2: SSOT 写点 ──────────────────────────────────
+
   /**
-   * @deprecated Phase 2 起由 completeRound / appendPlanStep 取代（SSOT 单一写点）。
-   * 完成当前步骤
+   * 追加计划步骤（P2-3: Phase 2 唯一写点）
    *
-   * 将指定步骤标记为 done，递增心跳。
+   * 在 plan 末尾追加一个新步骤，不重排已有 order。
+   * 替代旧的 updatePlan 直接赋值。
    *
-   * @param stepId - 步骤唯一标识
+   * @param description - 步骤描述
+   * @returns 追加后的步骤总数
    */
-  completeStep(stepId: string): void {
-    const step = this.checkpoint?.plan.find((s) => s.id === stepId);
-    if (step) {
-      step.status = 'done';
-      this.checkpoint!.lastHeartbeat = Date.now();
+  appendPlanStep(description: string): number {
+    if (!this.checkpoint) return 0;
+    const newOrder = this.checkpoint.plan.length;
+    const step: PlanStep = {
+      id: crypto.randomUUID(),
+      order: newOrder,
+      description,
+      status: 'pending',
+    };
+    this.checkpoint.plan.push(step);
+    this.checkpoint.lastHeartbeat = Date.now();
+    return this.checkpoint.plan.length;
+  }
+
+  /**
+   * 完成一个回合（P2-3: Phase 2 SSOT 唯一写点）
+   *
+   * 单函数内顺序写入 plan 步骤状态 + roundLog + heartbeat，
+   * 保证原子性。替代旧的 completeStep + 单独 updatePlan 分散调用。
+   *
+   * @param options - 回合完成信息
+   * @param options.stepId - 可选，本回合对应的计划步骤 ID
+   * @param options.summary - 回合摘要
+   * @param options.toolCallCount - 工具调用次数
+   * @param options.assistantLength - 助手回复长度（字符数）
+   */
+  completeRound(options: {
+    stepId?: string;
+    summary: string;
+    toolCallCount: number;
+    assistantLength: number;
+  }): void {
+    if (!this.checkpoint) return;
+
+    // 1. 标记步骤状态
+    const { stepId, summary, toolCallCount, assistantLength } = options;
+    if (stepId) {
+      const step = this.checkpoint.plan.find((s) => s.id === stepId);
+      if (step) {
+        step.status = 'done';
+      }
     }
+
+    // 2. 追加回合日志（FIFO cap）
+    const outcome: RoundOutcome = {
+      stepId,
+      summary,
+      toolCallCount,
+      assistantLength,
+      completedAt: Date.now(),
+    };
+    if (!this.checkpoint.roundLog) {
+      this.checkpoint.roundLog = [];
+    }
+    this.checkpoint.roundLog.push(outcome);
+    // FIFO 截断：超过 12 条时移除最早的
+    if (this.checkpoint.roundLog.length > 12) {
+      this.checkpoint.roundLog = this.checkpoint.roundLog.slice(-12);
+    }
+
+    // 3. 心跳
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 设置暂停元数据（P2-3: Phase 2 暂停模型）
+   *
+   * @param meta - 暂停元数据
+   */
+  setPauseMeta(meta: PauseMeta): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.pauseMeta = meta;
+    this.checkpoint.lastHeartbeat = Date.now();
+  }
+
+  /**
+   * 检查是否应在指定步骤边界暂停（P2-3: Phase 2 暂停模型）
+   *
+   * 机械判断：检查 checkpoint.pauseMeta 是否存在且 phase 为 'requesting'，
+   * 且当前步骤 ID 与暂停目标匹配（或任意步骤均可挂起）。
+   *
+   * @param stepId - 当前完成的步骤 ID
+   * @returns 是否应在此边界挂起
+   */
+  shouldPauseAtBoundary(stepId: string): boolean {
+    if (!this.checkpoint?.pauseMeta) return false;
+    if (this.checkpoint.pauseMeta.phase !== 'requesting') return false;
+    // 如果 pauseMeta 中没有指定目标步骤，任意边界均可挂起
+    if (!this.checkpoint.pauseMeta.targetStepId) return true;
+    return this.checkpoint.pauseMeta.targetStepId === stepId;
   }
 
   /**

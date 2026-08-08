@@ -33,6 +33,8 @@ export const AGENT_EVENTS = {
   dedupCompleted: 'dedupCompleted',
   sessionPauseTimedOut: 'sessionPauseTimedOut',
   sessionResumeBlocked: 'sessionResumeBlocked',
+  /** 会话恢复失败（resumeExecution 中 resume() 返回 false，宿主可据此 toast 提示） */
+  sessionResumeFailed: 'sessionResumeFailed',
   needClarify: 'needClarify',
   goalDriftDetected: 'goalDriftDetected',
   /** 会话暂停（用户/Agent/系统触发） */
@@ -144,6 +146,13 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 被阻止的会话标识 */
     sessionId: string;
     /** 阻止原因 */
+    reason: string;
+  };
+  /** 恢复失败（resumeExecution 中 resume() 返回 false，宿主可 toast 提示） */
+  sessionResumeFailed: {
+    /** 恢复失败的会话标识 */
+    sessionId?: string;
+    /** 失败原因 */
     reason: string;
   };
   /** 暂停询问（P4：需要用户澄清某个槽位） */

@@ -13,8 +13,8 @@ import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, type ToolDefinition } from '@/agent/bui
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 4 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(4);
+  it('应包含 6 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(6);
   });
 
   it('应包含 read_file / write_file / list_dir / search_memories', () => {

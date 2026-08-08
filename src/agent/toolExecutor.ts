@@ -107,6 +107,13 @@ export class ToolExecutor {
   /** 网络搜索提供者（可选，注入时启用 web_search 工具） */
   private readonly webSearchProvider?: IWebSearchProvider;
 
+  /** P2-6: 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
+  planManager?: {
+    writePlan: (mode: 'overwrite' | 'append' | 'update', steps: Array<{ description: string }>) => string;
+    updateStep: (stepId: string, status: 'done' | 'blocked') => string;
+    getPlan: () => Array<{ id: string; description: string; status: string; order: number }>;
+  };
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
@@ -314,6 +321,37 @@ export class ToolExecutor {
         return results
           .map((r, i) => `${i + 1}. ${r.title}\n   URL: ${r.url || '(无链接)'}\n   ${r.snippet.replace(/\n/g, ' ')}`)
           .join('\n\n');
+      }
+      case 'task_table_write': {
+        // P2-6: 写入任务表（overwrite / append / update）
+        if (!this.planManager) {
+          return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
+        }
+        const writeMode = strArg('mode', 'overwrite');
+        if (writeMode !== 'overwrite' && writeMode !== 'append' && writeMode !== 'update') {
+          return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/update`;
+        }
+        const stepsRaw = args.steps;
+        const steps = Array.isArray(stepsRaw) ? stepsRaw as Array<{ description: string }> : [];
+        if (steps.length === 0) {
+          return '[ERR:INVALID_ARG] steps 参数不能为空';
+        }
+        return this.planManager.writePlan(writeMode, steps);
+      }
+      case 'task_table_update': {
+        // P2-6: 更新任务状态
+        if (!this.planManager) {
+          return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
+        }
+        const stepId = strArg('step_id');
+        if (!stepId) {
+          return '[ERR:INVALID_ARG] step_id 不能为空';
+        }
+        const stepStatus = strArg('status', 'done');
+        if (stepStatus !== 'done' && stepStatus !== 'blocked') {
+          return `[ERR:INVALID_ARG] 不支持的状态 "${stepStatus}"，仅支持 done/blocked`;
+        }
+        return this.planManager.updateStep(stepId, stepStatus);
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map

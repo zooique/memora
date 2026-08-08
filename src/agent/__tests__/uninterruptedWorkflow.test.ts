@@ -483,14 +483,16 @@ describe('SessionManager · 检查点管理', () => {
       expect(step!.status).toBe('active');
     });
 
-    it('completeStep 应标记步骤为完成', () => {
+    it('completeRound 应标记步骤为完成并记录回合日志', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
       ]);
-      manager.completeStep('s1');
+      manager.completeRound({ stepId: 's1', summary: '测试回合', toolCallCount: 0, assistantLength: 10 });
       const step = manager.getCheckpoint()!.plan[0]!;
       expect(step.status).toBe('done');
+      expect(manager.getCheckpoint()!.roundLog).toHaveLength(1);
+      expect(manager.getCheckpoint()!.roundLog![0]!.summary).toBe('测试回合');
     });
 
     it('isPlanStalled 空计划应返回 true', () => {

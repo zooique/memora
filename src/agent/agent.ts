@@ -52,6 +52,7 @@ import { assembleComponents } from '@/agent/assembler.js';
 import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
 import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
+import { renderTaskTable } from '@/agent/taskTableRenderer.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
@@ -987,7 +988,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this._sessionManager?.stateMachine.status !== 'paused') return;
 
     // 翻状态机为 RUNNING（触发 sessionResumed，宿主据此转发 STATUS{running}）
-    if (!this.resume()) return;
+    if (!this.resume()) {
+      // P2-10: 「继续」防吞——resume() 返回 false 时发射事件，宿主可据此 toast 提示
+      this.emit(AGENT_EVENTS.sessionResumeFailed, {
+        sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
+        reason: 'resume() 返回 false，可能因暂停超时或状态机拒绝',
+      });
+      return;
+    }
 
     const loop = this.requireLoop;
     let assistantContent = '';
@@ -1263,6 +1271,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // P0-2：软暂停申请时暂存的 reason/source，待 loop 迭代边界真正挂起（产出 {type:'paused'} chunk）时翻状态机使用
   private _pendingPauseReason?: string;
   private _pendingPauseSource: 'user' | 'agent' | 'system' = 'user';
+  /** P2-11: 兜底停滞计数器——连续无 task_table_update 的回合数 */
+  private _stalledRoundCount = 0;
 
   /**
    * 请求软暂停（不中断工作模型 v2.1）
@@ -1314,7 +1324,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清检查点暂停元数据
     const cp = this._sessionManager?.getCheckpoint();
     if (cp) {
-      (cp as { pauseMeta?: unknown }).pauseMeta = undefined;
+      cp.pauseMeta = undefined;
     }
   }
 
@@ -1330,12 +1340,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   appendPlanStep(description: string): number {
     this.assertInitialized('appendPlanStep');
     const sm = this.requireSessionManager;
-    const cp = sm.getCheckpoint();
-    const plan = cp?.plan ?? [];
-    const newOrder = plan.length;
-    plan.push({ id: crypto.randomUUID(), order: newOrder, description, status: 'pending' });
-    sm.updatePlan(plan);
-    return plan.length;
+    return sm.appendPlanStep(description);
   }
 
   /**
@@ -1687,6 +1692,114 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._sessionManager = this.createSessionManager();
     // 冲洗工具执行暂存队列：会话管理器已就绪，将暂存的执行记录写入检查点
     this._flushPendingToolExecutions();
+
+    // P2-5: 装配 loop 回调 —— 接线 onPaused / onRoundBoundary
+    this.loop.onPaused = () => {
+      // onPaused 在 loop 边界真正挂起时触发
+      // 设置 pauseMeta 为 suspended 态，标记已挂起
+      this._sessionManager?.setPauseMeta({
+        phase: 'suspended',
+        reason: this._pendingPauseReason ?? '用户主动暂停',
+        source: this._pendingPauseSource ?? 'user',
+        pausedAt: Date.now(),
+      });
+    };
+    this.loop.onRoundBoundary = (roundInfo) => {
+      // onRoundBoundary 在每次迭代完成后触发
+      // 通过 SessionManager.completeRound 写入 roundLog
+      this._sessionManager?.completeRound({
+        summary: roundInfo.summary,
+        toolCallCount: roundInfo.toolCallCount,
+        assistantLength: roundInfo.assistantLength,
+      });
+
+      // P2-11: 兜底停滞检测——连续 3 轮无 task_table_update 且 plan 有未完任务
+      this._stalledRoundCount++;
+      if (this._stalledRoundCount >= 3) {
+        const sm = this._sessionManager;
+        const cp = sm?.getCheckpoint();
+        if (cp) {
+          const activeStep = cp.plan.find((s) => s.status === 'active');
+          const hasPending = cp.plan.some((s) => s.status === 'pending' || s.status === 'active');
+          if (activeStep && hasPending) {
+            // 标记当前 active 步骤为 blocked
+            activeStep.status = 'blocked';
+            cp.lastHeartbeat = Date.now();
+            // 注入 system 消息提示 LLM
+            this.loop?.injectSystemMessage(
+              `[系统] 检测到任务表停滞（连续 3 回合未更新步骤状态），已自动将步骤 "${activeStep.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
+            );
+          }
+        }
+        // 复位计数器（无论是否触发，防止无限触发）
+        this._stalledRoundCount = 0;
+      }
+    };
+
+    // P2-8: 装配任务表注入回调——每次迭代 LLM 调用前统一注入
+    this.loop.getTaskTable = () => {
+      const cp = this._sessionManager?.getCheckpoint();
+      if (!cp) return '';
+      return renderTaskTable(cp.plan, cp.roundLog);
+    };
+
+    // P2-6: 装配任务表工具回调（planManager）
+    this.toolExec.planManager = {
+      writePlan: (mode, steps) => {
+        const sm = this._sessionManager;
+        if (!sm) return '[ERR] 会话管理器未就绪';
+        const cp = sm.getCheckpoint();
+        const existingPlan = cp?.plan ?? [];
+
+        // 并发写入防护：overwrite 仅 plan 空时允许
+        if (mode === 'overwrite') {
+          if (existingPlan.length > 0) {
+            return '[ERR:PLAN_NOT_EMPTY] overwrite 模式仅允许在 plan 为空时使用，当前 plan 非空。请使用 append 或 update 模式';
+          }
+          // 全量覆盖
+          for (const step of steps) {
+            sm.appendPlanStep(step.description);
+          }
+        } else if (mode === 'append') {
+          for (const step of steps) {
+            sm.appendPlanStep(step.description);
+          }
+        } else if (mode === 'update') {
+          // 替换现有 plan（保留已有步骤 ID 和状态）
+          const updatedPlan = steps.map((s, i) => {
+            const existing = existingPlan[i];
+            return existing
+              ? { ...existing, description: s.description }
+              : { id: crypto.randomUUID(), order: i, description: s.description, status: 'pending' as const };
+          });
+          // 通过 updatePlan 替换（已标记 deprecated，但此处是唯一合理的用例）
+          sm.updatePlan(updatedPlan);
+        }
+
+        // 返回当前 plan 的 id 列表供 LLM 后续引用
+        const newPlan = sm.getCheckpoint()?.plan ?? [];
+        return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${
+          newPlan.map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`).join('\n')
+        }`;
+      },
+      updateStep: (stepId, status) => {
+        const sm = this._sessionManager;
+        if (!sm) return '[ERR] 会话管理器未就绪';
+        const cp = sm.getCheckpoint();
+        const step = cp?.plan.find((s) => s.id === stepId);
+        if (!step) return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
+        step.status = status;
+        cp!.lastHeartbeat = Date.now();
+        // P2-11: 兜底停滞计数器复位（LLM 调用了 task_table_update，说明未停滞）
+        this._stalledRoundCount = 0;
+        return `步骤 [${stepId.slice(0, 8)}] "${step.description}" 已标记为 ${status}`;
+      },
+      getPlan: () => {
+        const sm = this._sessionManager;
+        const cp = sm?.getCheckpoint();
+        return (cp?.plan ?? []).map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order }));
+      },
+    };
   }
 
   /**

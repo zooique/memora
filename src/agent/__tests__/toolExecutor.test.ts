@@ -17,7 +17,7 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { MemoraError, toolError } from '@/utils/errors.js';
 
-describe('工具执行器（4 个工具）', () => {
+describe('工具执行器（6 个工具）', () => {
   let tmpProject: string;
   let tmpData: string;
   let index: IMemoryStorage;
@@ -74,9 +74,9 @@ describe('工具执行器（4 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 4 个工具', () => {
+    it('应注册 6 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories']);
+      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories', 'task_table_write', 'task_table_update']);
     });
 
     it('每个工具应有 name + description + parameters（含 required 数组）', () => {

@@ -18,7 +18,7 @@ export interface ToolDefinition {
   description: string;
   parameters: {
     type: 'object';
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, { type: string; description: string; items?: { type: string; properties: Record<string, { type: string; description: string }>; required: string[] } }>;
     required: string[];
   };
 }
@@ -56,6 +56,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   list_dir: 'idempotent',
   search_memories: 'idempotent',
   web_search: 'idempotent',
+  task_table_write: 'idempotent-key',
+  task_table_update: 'idempotent',
 };
 
 /**
@@ -148,6 +150,48 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         mode: { type: 'string', description: '"match"（默认，任一）或 "near"（必须全部）' },
       },
       required: ['query'],
+    },
+  },
+  // ── P2-6: 任务表管理工具 ──────────────────────────────
+  {
+    name: 'task_table_write',
+    description:
+      '写入或更新任务表。overwrite 模式仅在 plan 为空时允许（全量覆盖）；' +
+      'append 模式追加新步骤到末尾；update 模式替换现有步骤。' +
+      '输出格式为 Markdown 表格，包含进度行和状态标记。',
+    parameters: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          description: '写入模式："overwrite"（仅 plan 空时可用）、"append"（追加）、"update"（替换）',
+        },
+        steps: {
+          type: 'array',
+          description: '步骤列表，每个步骤包含 description 字段',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string', description: '步骤描述' },
+            },
+            required: ['description'],
+          },
+        },
+      },
+      required: ['mode', 'steps'],
+    },
+  },
+  {
+    name: 'task_table_update',
+    description:
+      '更新任务表中指定步骤的状态。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        step_id: { type: 'string', description: '步骤 ID（task_table_write 返回的 id 列表中的 id）' },
+        status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
+      },
+      required: ['step_id', 'status'],
     },
   },
 ];

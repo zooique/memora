@@ -275,6 +275,43 @@ export interface PlanStep {
 }
 
 /**
+ * 回合结果（P2-1: Phase 2 回合折叠）
+ *
+ * 记录一次完整的 LLM 调用回合（迭代）的执行结果，用于上下文注入和进度追踪。
+ * 注入时标「非当前指令」防 LLM 误执行。
+ */
+export interface RoundOutcome {
+  /** 对应的计划步骤 ID（可为空，表示自由对话回合） */
+  stepId?: string;
+  /** 回合摘要（LLM 单句或截断处理） */
+  summary: string;
+  /** 工具调用次数 */
+  toolCallCount: number;
+  /** 助手回复长度（字符数） */
+  assistantLength: number;
+  /** 完成时间戳 */
+  completedAt: number;
+}
+
+/**
+ * 暂停元数据（P2-1: Phase 2 暂停模型）
+ *
+ * 存储暂停的上下文信息，用于渲染层展示和恢复决策。
+ */
+export interface PauseMeta {
+  /** 暂停阶段：requesting（申请中）/ suspended（已挂起） */
+  phase: 'requesting' | 'suspended';
+  /** 暂停原因 */
+  reason: string;
+  /** 暂停来源 */
+  source: 'user' | 'agent' | 'system';
+  /** 暂停时间戳 */
+  pausedAt: number;
+  /** 可选：暂停目标步骤 ID（仅申请时指定，在对应步骤边界挂起） */
+  targetStepId?: string;
+}
+
+/**
  * 工具幂等性级别（P3.4 补偿机制·工具幂等契约）
  *
  * 标记工具是否具有幂等性，以及幂等性的保证级别。
@@ -451,6 +488,10 @@ export interface SessionCheckpoint {
   truncatedCount?: number;
   /** 工具执行日志（P3.3 执行计划管理·工具幂等，outbox 模式） */
   completedToolCalls?: ToolExecutionRecord[];
+  /** 回合结果日志（P2-1: Phase 2 回合折叠，FIFO cap 10-12 条） */
+  roundLog?: RoundOutcome[];
+  /** 暂停元数据（P2-1: Phase 2 暂停模型） */
+  pauseMeta?: PauseMeta;
   /** 心跳时间戳（毫秒），防僵尸会话 */
   lastHeartbeat: number;
 }
