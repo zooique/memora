@@ -20,7 +20,7 @@ import type { IpcContext } from './types.js';
 import { requireAgent } from './types.js';
 import { handleUserInput } from './chatStreamHandler.js';
 import { isValidContent } from './inputValidation.js';
-import type { SessionCheckpoint } from 'memora';
+import type { SessionCheckpoint, SessionEvent } from 'memora';
 
 /**
  * 注册对话相关 IPC 处理器
@@ -107,19 +107,10 @@ export function registerChatHandlers(ctx: IpcContext): void {
     return { paused: result };
   });
 
-  /** 恢复会话 */
+  /** 恢复会话（状态广播统一由下方内核 sessionResumed 事件监听转发，避免双发） */
   ipcMain.handle(IPC_CHANNELS.SESSION_RESUME, async () => {
     const agent = requireAgent(ctx);
     const result = agent.resume();
-    // 广播状态变更到渲染进程
-    if (result) {
-      const fullWindow = ctx.windowManager.getFullWindow();
-      if (fullWindow && !fullWindow.isDestroyed()) {
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
-          status: 'running',
-        });
-      }
-    }
     return { resumed: result };
   });
 
@@ -175,6 +166,22 @@ export function registerChatHandlers(ctx: IpcContext): void {
   });
 
   /**
+   * Finding B 修复：内核 auto-resume（processEvent 内 PAUSED + 非 command 事件）
+   * 直接调 agent.resume() 仅发 sessionResumed 内核事件；渲染层只订阅 SESSION_STATUS_CHANGED IPC，
+   * 若不在此转发，暂停态注入后 UI 徽标会卡死在「已暂停」。
+   * 状态广播统一由内核事件驱动：显式 SESSION_RESUME 与 auto-resume 共用此监听器，
+   * 故 SESSION_RESUME handler 内不再手动 emit（避免双发）。
+   */
+  agent.on(AGENT_EVENTS.sessionResumed, () => {
+    const fullWindow = ctx.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+        status: 'running',
+      });
+    }
+  });
+
+  /**
    * 处理用户回答的澄清问题
    *
    * 渲染进程提交文案回答后，构造 SessionEvent 恢复会话。
@@ -183,7 +190,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, async (_event, answers: Array<{ slot: string; answer: string }>) => {
     const agent = requireAgent(ctx);
-    const event: import('memora').SessionEvent = {
+    const event: SessionEvent = {
       type: 'clarify',
       content: JSON.stringify(answers),
       delta: {},

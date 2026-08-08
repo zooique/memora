@@ -28,6 +28,17 @@
 - 配置损坏保护：catch 内先 `rename` 备份 `.corrupted.{timestamp}` 再返默认，区分 ENOENT(首次) 与解析错误(损坏)。
 - vi.mock 工厂须覆盖所有被 import 的函数，新增 import 须同步补 mock。
 
+## Composer P4 澄清触发边界（2026-08-08 定案，勿回改）
+- **chat 事件永不因 task 槽缺失触发 P4**（`resolveChatTaskSlot`）：chat 的 `content` 即用户意图——currentGoal 空则以 content 为初始目标（P1），非空则 P2 延续（不覆盖，「继续」不误覆盖目标）。「是否需澄清」是语义判断，归 LLM（架构哲学 §4）。
+- **P4 仅保留给非 chat 事件**（command/correction/clarify），含停滞 `resolveStalledTaskSlot`（计划完成问下一步方向）。
+- **clarify 回答 = 恢复会话 + 转 chat 继续执行**：agent.ts 中 resume() 成功后把回答 JSON 转可读文本（`formatClarifyAnswers`）走完整 chat 流程（写历史+召回+LLM 生成）；resume 失败（暂停超时）保留 handleClarify 只记录不执行。
+- 生产链路 `chatStreamHandler.ts` 构造 `{type:'chat', content}` **无 delta**——曾致每条新会话首消息必弹 P4（task 槽 defaultVal='' isEmpty=true）。
+
+## 网络搜索后端（2026-08-08 定案）
+- **DuckDuckGo 在中国大陆不可达**（实测 8s 超时）——`FetchWebSearchProvider` 默认降级链 = **Bing 优先 → DDG 备用**，每端点独立 10s 超时，构造函数可注入端点列表。
+- 端点 HTTP ok 但无命中 = 返回 `[]`（搜索成功无结果，safeSearch 不误报「暂不可用」）；全部端点失败才抛聚合错误。
+- Bing HTML 解析：`<h2><a href>` 标题 + `<p class="b_lineclamp*">` 摘要，URL `&amp;→&` 解码。
+
 ## HEAL-16 UIManager 渐进重构
 - 协调器模式（Perception/Chat/Memory/Settings）已落地：委托群经协调器转发，ui.ts 字段 ~29→~25。提取后须同步更新委托测试断言路径（mock.X→mock.coordinator.X）；协调器初始化须前置到 panel.init() 之前。
 

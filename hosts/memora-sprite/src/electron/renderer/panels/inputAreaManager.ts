@@ -12,17 +12,18 @@
  * - 输入补全集成（复用 QuickInputCompletion，输入时显示记忆/对话候选）
  * - 暂停/恢复互斥按钮（不中断工作模型，单按钮始终可见，按会话状态切换暂停/恢复）
  *
- * 设计原则：
- * - 依赖注入：通过 InputAreaHost 接口注入 UIManager 的状态查询和回调，
- *   与 ChatPanelManager/ClipboardManager 同模式
- * - 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理
- * - 不持有流式状态，通过 host.isStreaming() 查询
- * - Agent 就绪/空内容守卫保留在 UIManager.emitSendMessage 内部，
- *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
- * - 补全管理器复用 quick-input 模块的 QuickInputCompletion，零重复造轮子
- * - 暂停/恢复为单个互斥按钮，始终可见，根据会话状态切换图标和功能：
- *   RUNNING → 暂停图标（可点击暂停）；PAUSED → 播放图标（可点击恢复）；ERROR → 禁用
- */
+   * 设计原则：
+   * - 依赖注入：通过 InputAreaHost 接口注入 UIManager 的状态查询和回调，
+   *   与 ChatPanelManager/ClipboardManager 同模式
+   * - 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理
+   * - 不持有流式状态，通过 host.isStreaming() 查询
+   * - Agent 就绪/空内容守卫保留在 UIManager.emitSendMessage 内部，
+   *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
+   * - 补全管理器复用 quick-input 模块的 QuickInputCompletion，零重复造轮子
+   * - 不中断工作模型「运行/未运行」双态交互：单一发送按钮承载 发送/暂停/继续 三态，
+   *   复用同一按钮位置（不引入并列冗余按钮）：
+   *   idle → 发送；running → 暂停（中断工作通道，保留进度）；paused → 继续（空=纯恢复 / 有输入=注入补充）
+   */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
 // reportError 统一错误日志（双通道：console + 主进程 logger），替代散落的 console.error
@@ -79,8 +80,8 @@ export class InputAreaManager {
   /** 输入补全管理器（复用 quick-input 模块，null 表示候选列表容器缺失时降级跳过） */
   private completion: QuickInputCompletion | null = null;
 
-  /** 暂停/恢复互斥按钮（不中断工作模型，单按钮按会话状态切换暂停/恢复），null 表示元素缺失 */
-  private btnPauseResume: HTMLButtonElement | null = null;
+  /** 会话状态（驱动发送按钮三态：发送 / 暂停 / 继续） */
+  private sessionStatus: 'running' | 'paused' | 'error' | 'idle' = 'idle';
 
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
@@ -126,9 +127,6 @@ export class InputAreaManager {
 
     // 初始化输入补全（候选列表容器存在时才启用，让用户输入时即可发现此功能）
     this.initCompletion();
-
-    // 初始化暂停/恢复互斥按钮（始终可见，按会话状态切换暂停/恢复）
-    this.initPauseResumeButton();
   }
 
   /**
@@ -199,10 +197,8 @@ export class InputAreaManager {
    * 流式态下此方法无效（由 host.isStreaming() 守卫）。
    */
   refreshSendButtonState(): void {
-    if (this.host.isStreaming()) return; // 流式态由 UIManager.updateSendButton 处理
-    const hasContent = this.inputEl.value.trim().length > 0;
-    this.btnSend.disabled = !hasContent;
-    this.btnSend.classList.toggle('empty', !hasContent);
+    // 统一由 renderButton 根据（isStreaming, sessionStatus）推导按钮形态
+    this.renderButton();
   }
 
   /**
@@ -220,11 +216,20 @@ export class InputAreaManager {
       // isComposing 为 true 表示合成尚未提交，keyCode 229 是旧版浏览器兼容判断
       if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
-      // B2：流式态时 Enter 触发停止（键盘快捷键，对齐 #btn-stop 鼠标点击），空闲态触发发送
+      // 运行中：Enter = 停止（键盘快捷键，对齐 #btn-stop 鼠标点击）
       if (this.host.isStreaming()) {
         this.host.emitStopMessage();
+      } else if (this.sessionStatus === 'paused') {
+        // 已暂停：Enter = 继续；有输入则注入补充，无输入则纯恢复
+        const text = this.getValue();
+        if (text.length === 0) {
+          void window.electronAPI.resumeSession();
+        } else {
+          this.completion?.clear();
+          this.host.emitSendMessage();
+        }
       } else {
-        // 发送前清空补全候选列表，避免浮层遮挡输入区
+        // 空闲态：发送前清空补全候选列表，避免浮层遮挡输入区
         this.completion?.clear();
         this.host.emitSendMessage();
       }
@@ -259,6 +264,21 @@ export class InputAreaManager {
   private handleClick(): void {
     // 与 Enter 发送保持一致：点击发送按钮前清空补全候选列表
     this.completion?.clear();
+    if (this.sessionStatus === 'paused') {
+      // 已暂停：点击 = 继续；有输入则注入补充后恢复，无输入则纯恢复
+      const text = this.getValue();
+      if (text.length === 0) {
+        void window.electronAPI.resumeSession();
+      } else {
+        this.host.emitSendMessage();
+      }
+      return;
+    }
+    if (this.host.isStreaming()) {
+      // 运行中：点击 = 暂停（中断工作通道，保留进度与检查点）
+      void window.electronAPI.pauseSession('用户主动暂停');
+      return;
+    }
     this.host.emitSendMessage();
   }
 
@@ -368,64 +388,74 @@ export class InputAreaManager {
     this.completion?.clear();
   }
 
-  // ─── 暂停/恢复互斥按钮（不中断工作模型） ─────────────
+  // ─── 发送按钮三态（发送 / 暂停 / 继续） ──────────────
 
   /**
-   * 初始化暂停/恢复互斥按钮
+   * 更新发送按钮形态（根据会话状态 + 流式态推导）
    *
-   * 在输入工具栏左侧（.input-actions-left）创建单个始终可见的互斥按钮：
-   *   - RUNNING 态：显示暂停图标，点击暂停会话
-   *   - PAUSED 态：显示播放图标，点击恢复会话
-   *   - ERROR 态：禁用
-   * 按钮风格继承 .input-action（圆形工具按钮），通过 .paused 类切换绿色激活反馈。
-   * 容器元素缺失时静默降级（不阻断初始化）。
-   */
-  private initPauseResumeButton(): void {
-    const actionsLeft = document.querySelector('.input-actions-left');
-    if (!(actionsLeft instanceof HTMLElement)) return;
-
-    // 创建暂停/恢复互斥按钮（始终可见）
-    this.btnPauseResume = document.createElement('button');
-    this.btnPauseResume.className = 'input-action session-toggle-btn';
-    this.btnPauseResume.title = '暂停会话（不中断，自动保存当前状态）';
-    this.btnPauseResume.setAttribute('aria-label', '暂停/恢复会话');
-    // 初始为暂停图标（会话默认 RUNNING）
-    this.btnPauseResume.innerHTML = '<svg class="icon"><use href="#icon-pause"/></svg>';
-    this.btnPauseResume.addEventListener('click', () => {
-      // 根据当前会话状态切换暂停/恢复
-      if (this.btnPauseResume?.classList.contains('paused')) {
-        void window.electronAPI.resumeSession();
-      } else {
-        void window.electronAPI.pauseSession('用户主动暂停');
-      }
-    });
-    actionsLeft.insertBefore(this.btnPauseResume, actionsLeft.firstChild);
-  }
-
-  /**
-   * 更新暂停/恢复互斥按钮状态（根据会话状态切换图标和功能）
+   * 不中断工作模型「运行/未运行」双态交互：
+   * - running（流式生成中）：发送按钮 = 暂停（点击中断工作通道，保留进度与检查点）
+   * - paused（已暂停）：发送按钮 = 继续（空输入=纯恢复；有输入=注入补充后恢复）
+   * - idle / error（空闲或异常）：发送按钮 = 发送
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    */
   updateSessionStatus(status: string): void {
-    if (!this.btnPauseResume) return;
-    if (status === 'running') {
-      // RUNNING 态：显示暂停图标，可点击暂停
-      this.btnPauseResume.classList.remove('paused');
-      this.btnPauseResume.disabled = false;
-      this.btnPauseResume.title = '暂停会话（不中断，自动保存当前状态）';
-      this.btnPauseResume.innerHTML = '<svg class="icon"><use href="#icon-pause"/></svg>';
-    } else if (status === 'paused') {
-      // PAUSED 态：显示播放图标，可点击恢复
-      this.btnPauseResume.classList.add('paused');
-      this.btnPauseResume.disabled = false;
-      this.btnPauseResume.title = '恢复会话（从暂停状态继续）';
-      this.btnPauseResume.innerHTML = '<svg class="icon"><use href="#icon-play"/></svg>';
-    } else {
-      // ERROR 态：禁用
-      this.btnPauseResume.disabled = true;
-      this.btnPauseResume.title = '会话异常，无法操作';
+    this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
+    this.renderButton();
+  }
+
+  /**
+   * 推导并渲染发送按钮形态
+   *
+   * 优先级：流式态 > 已暂停 > 异常 > 空闲。
+   * 复用单一发送按钮承载 发送/暂停/继续 三态（不引入并列冗余按钮，单一真理源）。
+   */
+  private renderButton(): void {
+    const streaming = this.host.isStreaming();
+    let mode: 'idle' | 'running' | 'paused' | 'error';
+    if (streaming) mode = 'running';
+    else if (this.sessionStatus === 'paused') mode = 'paused';
+    else if (this.sessionStatus === 'error') mode = 'error';
+    else mode = 'idle';
+    this.applyButtonMode(mode);
+  }
+
+  /** 按形态应用图标 / 标题 / 启用态 */
+  private applyButtonMode(mode: 'idle' | 'running' | 'paused' | 'error'): void {
+    const hasContent = this.inputEl.value.trim().length > 0;
+    switch (mode) {
+      case 'running':
+        // 运行中：暂停姿态，始终可点
+        this.setBtnSend('icon-pause', '暂停会话（不中断，保留当前进度）');
+        this.btnSend.disabled = false;
+        this.btnSend.classList.remove('empty');
+        break;
+      case 'paused':
+        // 已暂停：继续姿态，始终可点（空=纯恢复，有文本=注入补充）
+        this.setBtnSend('icon-play', '继续会话（可附带补充输入）');
+        this.btnSend.disabled = false;
+        this.btnSend.classList.remove('empty');
+        break;
+      case 'error':
+        // 异常：禁用发送，等待恢复
+        this.setBtnSend('icon-send', '发送（Enter）');
+        this.btnSend.disabled = true;
+        this.btnSend.classList.add('empty');
+        break;
+      default:
+        // 空闲：有内容才启用
+        this.setBtnSend('icon-send', '发送（Enter）');
+        this.btnSend.disabled = !hasContent;
+        this.btnSend.classList.toggle('empty', !hasContent);
     }
+  }
+
+  /** 设置发送按钮图标 + 无障碍标签（保持圆形图标按钮形态，不引入文字标签破坏布局） */
+  private setBtnSend(icon: 'icon-send' | 'icon-pause' | 'icon-play', title: string): void {
+    this.btnSend.innerHTML = `<svg class="icon"><use href="#${icon}"/></svg>`;
+    this.btnSend.title = title;
+    this.btnSend.setAttribute('aria-label', title);
   }
 
   // ─── Provider 选择器 ────────────────────────────────────

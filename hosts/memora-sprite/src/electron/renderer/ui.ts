@@ -18,7 +18,6 @@
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
 import { getRequiredElement, getOptionalElement, formatDateKey } from './helpers/domHelpers.js';
-import { setIcon } from './helpers/icon.js';
 import { EventTracker } from './helpers/eventTracker.js';
 // UI 初始化失败错误卡片（独立于 UIManager，避免半初始化状态二次错误）
 import { renderInitFailureToBody } from './helpers/initFailureCard.js';
@@ -676,10 +675,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * @param reason 状态变更原因（可选，用于异常提示文案）
    */
   onSessionStatusChanged(status: string, reason?: string): void {
+    // 记录会话状态，驱动发送按钮三态（发送 / 暂停 / 继续）
+    this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
     // 更新暂停/恢复按钮禁用态
     this.chatCoordinator.inputAreaManager.updateSessionStatus(status);
     // 更新消息区状态横幅（暂停/异常提示）
     this.chatCoordinator.chatPanel.updateSessionStatus(status, reason);
+    // 同步发送/停止按钮可见性（暂停态需对称显示停止按钮的对应态）
+    this.updateSendButton();
   }
 
   /**
@@ -729,6 +732,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private stopMessageCallback: (() => void) | null = null;
   /** 面板切换回调（panel 为切换到的目标面板名） */
   private panelSwitchCallback: ((panel: string) => void) | null = null;
+
+  /** 会话状态（驱动发送按钮三态：发送 / 暂停 / 继续） */
+  private sessionStatus: 'running' | 'paused' | 'error' | 'idle' = 'idle';
 
   /** 设置发送消息回调 */
   onSendMessage(callback: () => void): void {
@@ -794,21 +800,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 拆分为独立按钮，语义更清晰，且与 demo v3 视觉设计一致。
    */
   updateSendButton(): void {
-    if (this.state.isStreaming) {
-      // 流式态：显示停止浮动按钮，禁用发送按钮（避免流式中误触发送）
-      this.coreElements.btnStop.classList.add('visible');
-      this.coreElements.btnSend.disabled = true;
-      this.coreElements.btnSend.classList.add('hidden');
-    } else {
-      // 空闲态：隐藏停止按钮，恢复发送按钮
-      this.coreElements.btnStop.classList.remove('visible');
-      this.coreElements.btnSend.classList.remove('hidden');
-      // 恢复发送图标（防御性：避免被其他逻辑污染）
-      setIcon(this.coreElements.btnSend, 'icon-send');
-      this.coreElements.btnSend.title = '发送（Enter）';
-      // 委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
-      this.chatCoordinator.inputAreaManager.refreshSendButtonState();
-    }
+    // 停止按钮：运行中或已暂停时可见（双态交互对称，暂停态用户仍可停止）
+    const showStop = this.state.isStreaming || this.sessionStatus === 'paused';
+    this.coreElements.btnStop.classList.toggle('visible', showStop);
+    // 发送按钮形态（发送 / 暂停 / 继续）统一委托 InputAreaManager 渲染
+    this.chatCoordinator.inputAreaManager.refreshSendButtonState();
   }
 
   // ─── 状态查询 ─────────────────────────────────────────
@@ -837,6 +833,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 兜底机制——即使 updateSendButton 因状态机异常未被调用，
     // setStreaming(true) 也会覆盖 CSS 的 display:none，确保用户始终能中断流式输出
     this.coreElements.btnStop.style.display = streaming ? 'flex' : '';
+    // 流式态切换后同步发送按钮形态（暂停 / 继续）
+    this.updateSendButton();
   }
 
   /**

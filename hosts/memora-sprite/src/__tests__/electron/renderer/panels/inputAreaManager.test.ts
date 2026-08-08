@@ -134,6 +134,8 @@ function createMockElectronAPI(): ElectronAPI {
     getDashboard: vi.fn().mockResolvedValue({ metrics: null }),
     searchMemories: vi.fn().mockResolvedValue({ hits: [] }),
     searchSessionMessages: vi.fn().mockResolvedValue({ results: [] }),
+    resumeSession: vi.fn().mockResolvedValue({ resumed: true }),
+    pauseSession: vi.fn().mockResolvedValue({ paused: true }),
   };
   // Partial<T> as T 单层断言（仅含子集方法，测试中按需覆盖返回值）
   return api as ElectronAPI;
@@ -253,12 +255,13 @@ describe('InputAreaManager', () => {
   // ─── refreshSendButtonState · 按钮状态 ──────────────────
 
   describe('refreshSendButtonState · 按钮状态', () => {
-    it('流式态时应直接返回（不更新按钮）', () => {
+    it('流式态时应切换为暂停姿态（启用）', () => {
       host.mocks.isStreaming.mockReturnValue(true);
       inputEl.value = '有内容';
-      // init 时 input 为空 → btnSend.disabled=true，流式态不更新
+      // renderButton 在流式态将发送按钮转为「暂停」，始终可点
       manager.refreshSendButtonState();
-      expect(btnSend.disabled).toBe(true);
+      expect(btnSend.disabled).toBe(false);
+      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
     });
 
     it('空闲态有内容时应启用按钮', () => {
@@ -382,6 +385,79 @@ describe('InputAreaManager', () => {
 
       expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
       expect(completionInstance!.clear).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── 发送按钮三态（暂停/继续） ─────────────────────
+
+  describe('发送按钮三态（暂停/继续）', () => {
+    it('updateSessionStatus(paused) 应转为继续姿态（启用）', () => {
+      manager.updateSessionStatus('paused');
+      expect(btnSend.disabled).toBe(false);
+      expect(btnSend.getAttribute('aria-label')).toBe('继续会话（可附带补充输入）');
+    });
+
+    it('updateSessionStatus(error) 应禁用发送', () => {
+      manager.updateSessionStatus('error');
+      expect(btnSend.disabled).toBe(true);
+    });
+
+    it('updateSessionStatus(running) 且非流式时应回到发送姿态', () => {
+      host.mocks.isStreaming.mockReturnValue(false);
+      manager.updateSessionStatus('running');
+      expect(btnSend.getAttribute('aria-label')).toBe('发送（Enter）');
+    });
+
+    it('点击：已暂停且空输入 → 纯恢复（resumeSession）', () => {
+      manager.init();
+      manager.updateSessionStatus('paused');
+      inputEl.value = '';
+      btnSend.click();
+      expect(mockApi.resumeSession).toHaveBeenCalledTimes(1);
+      expect(host.mocks.emitSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('点击：已暂停且有输入 → 注入补充（emitSendMessage）', () => {
+      manager.init();
+      manager.updateSessionStatus('paused');
+      inputEl.value = '补充指令';
+      btnSend.click();
+      expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
+      expect(mockApi.resumeSession).not.toHaveBeenCalled();
+    });
+
+    it('点击：运行中 → 暂停（pauseSession）', () => {
+      // 运行中需先渲染按钮（真实链路 setStreaming(true) 触发 renderButton 启用按钮）
+      host.mocks.isStreaming.mockReturnValue(true);
+      manager.init();
+      btnSend.click();
+      expect(mockApi.pauseSession).toHaveBeenCalledTimes(1);
+      expect(host.mocks.emitSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('Enter：已暂停且空输入 → 纯恢复', () => {
+      manager.init();
+      manager.updateSessionStatus('paused');
+      inputEl.value = '';
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(mockApi.resumeSession).toHaveBeenCalledTimes(1);
+      expect(host.mocks.emitSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('Enter：已暂停且有输入 → 注入补充', () => {
+      manager.init();
+      manager.updateSessionStatus('paused');
+      inputEl.value = '补充指令';
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
+      expect(mockApi.resumeSession).not.toHaveBeenCalled();
+    });
+
+    it('Enter：运行中 → 停止', () => {
+      manager.init();
+      host.mocks.isStreaming.mockReturnValue(true);
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(host.mocks.emitStopMessage).toHaveBeenCalledTimes(1);
     });
   });
 
