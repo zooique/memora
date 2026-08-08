@@ -573,6 +573,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { MessageRole } from '@/memory/types.js';
+import type { IWebSearchProvider } from '@/web-search/types.js';
 
 /** Agent 构造选项 */
 export interface AgentOptions {
@@ -622,6 +623,8 @@ export interface AgentOptions {
    * - 'manual'：所有归档都需手动触发
    */
   archiveMode?: ArchiveMode;
+  /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
+  webSearchProvider?: IWebSearchProvider;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -655,4 +658,6 @@ export interface AgentConfig {
   enableContextSummary: boolean;
   /** 归档模式（ADR-015，默认 'full'） */
   archiveMode: ArchiveMode;
+  /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
+  webSearchProvider: IWebSearchProvider | undefined;
 }

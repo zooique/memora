@@ -55,16 +55,39 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   write_file: 'idempotent-key',
   list_dir: 'idempotent',
   search_memories: 'idempotent',
+  web_search: 'idempotent',
 };
 
 /**
- * 工具注册表
- * 4 个内置工具：
+ * 工具注册表（4 个始终可用的内置工具）
+ *
+ * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用）：
  * - read_file：读取文件
  * - write_file：写入/创建文件（受写入二次确认保护）
  * - list_dir：列出目录内容
  * - search_memories：在记忆索引中搜索关键词
+ * - web_search：搜索互联网获取实时信息（条件性可用）
  */
+/**
+ * web_search 工具定义（独立导出，条件性包含）
+ *
+ * 与 BUILTIN_TOOLS 分离的原因：
+ * web_search 不是"始终可用"的内置工具——它仅在宿主注入了 IWebSearchProvider 时才暴露给 LLM。
+ * 独立导出让 ToolExecutor.get list() 可以条件性地包含它。
+ */
+export const WEB_SEARCH_TOOL: ToolDefinition = {
+  name: 'web_search',
+  description: '搜索互联网获取实时信息。当需要最新数据、新闻、文档或无法从记忆中找到答案时使用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: '搜索关键词，尽量具体精确' },
+      limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
+    },
+    required: ['query'],
+  },
+};
+
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',

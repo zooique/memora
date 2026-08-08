@@ -8,7 +8,7 @@
  *   - 工具名唯一性
  */
 import { describe, it, expect } from 'vitest';
-import { BUILTIN_TOOLS, type ToolDefinition } from '@/agent/builtinTools.js';
+import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
@@ -120,5 +120,49 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
       };
       expect(isValid.name).toBe(tool.name);
     }
+  });
+});
+
+describe('builtinTools · WEB_SEARCH_TOOL', () => {
+  it('应定义 web_search 工具', () => {
+    expect(WEB_SEARCH_TOOL).toBeDefined();
+    expect(WEB_SEARCH_TOOL.name).toBe('web_search');
+  });
+
+  it('应有非空 description', () => {
+    expect(WEB_SEARCH_TOOL.description).toBeTruthy();
+    expect(WEB_SEARCH_TOOL.description.length).toBeGreaterThan(10);
+  });
+
+  it('parameters.type 应为 "object"', () => {
+    expect(WEB_SEARCH_TOOL.parameters.type).toBe('object');
+  });
+
+  it('应定义 query 和 limit 参数', () => {
+    expect(WEB_SEARCH_TOOL.parameters.properties.query).toBeDefined();
+    expect(WEB_SEARCH_TOOL.parameters.properties.query!.type).toBe('string');
+    expect(WEB_SEARCH_TOOL.parameters.properties.limit).toBeDefined();
+    expect(WEB_SEARCH_TOOL.parameters.properties.limit!.type).toBe('string');
+  });
+
+  it('query 应为必填参数', () => {
+    expect(WEB_SEARCH_TOOL.parameters.required).toContain('query');
+  });
+
+  it('limit 应为可选参数（不在 required 中）', () => {
+    expect(WEB_SEARCH_TOOL.parameters.required).not.toContain('limit');
+  });
+
+  it('应符合 ToolDefinition 类型约束', () => {
+    const isValid: ToolDefinition = {
+      name: WEB_SEARCH_TOOL.name,
+      description: WEB_SEARCH_TOOL.description,
+      parameters: {
+        type: WEB_SEARCH_TOOL.parameters.type,
+        properties: WEB_SEARCH_TOOL.parameters.properties,
+        required: WEB_SEARCH_TOOL.parameters.required,
+      },
+    };
+    expect(isValid.name).toBe(WEB_SEARCH_TOOL.name);
   });
 });

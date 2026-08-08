@@ -36,6 +36,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { UIMessages } from '@/agent/types.js';
+import type { IWebSearchProvider } from '@/web-search/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
@@ -57,6 +58,8 @@ export interface AssembleInput {
   tracer: ITracer | undefined;
   messages: UIMessages | undefined;
   enableContextSummary: boolean;
+  /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
+  webSearchProvider?: IWebSearchProvider;
   /** 已有的 SkillManager（首次为 null，后续复用） */
   existingSkillManager: SkillManager | null;
   /**
@@ -292,6 +295,7 @@ export async function assembleComponents(
     projectPath,
     pctx.security,
     pctx.index,
+    input.webSearchProvider,
     workProjection,
     configDir,
   );

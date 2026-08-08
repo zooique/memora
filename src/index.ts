@@ -115,6 +115,14 @@ export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 // 治理共享常量（MIND2-L3：宿主 SqliteStorage incrementScore/setScore 实现需要 clamp 边界）
 // 衰减常量同步导出：宿主 SqliteStorage.decayScores 与核心库 recall.ts 共用同一真理源（v2 神木回天 REPEAT-3 闭环）
 export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
+
+// ─── 网络搜索导出 ──────────────────────────────────────────
+// IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎
+export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-search/types.js';
+// FetchWebSearchProvider：基于 DuckDuckGo 的默认搜索实现（零依赖，开箱即用）
+export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
+// safeSearch：带超时保护的搜索包装函数（宿主自定义实现也可复用此包装）
+export { safeSearch } from '@/web-search/webSearchProvider.js';
 // 记忆关系存储侧车：宿主项目可实现 IMemoryRelationStore 接口注入 Agent
 export type { IMemoryRelationStore } from '@/memory/relationStore.js';
 export { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';

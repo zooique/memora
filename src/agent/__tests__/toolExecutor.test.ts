@@ -89,6 +89,18 @@ describe('工具执行器（4 个工具）', () => {
     });
   });
 
+  describe('web_search（未注入提供者）', () => {
+    it('list 不应包含 web_search 工具', () => {
+      const names = executor.list.map((t) => t.name);
+      expect(names).not.toContain('web_search');
+    });
+
+    it('执行 web_search 应返回不可用提示', async () => {
+      const result = await executor.execute('web_search', JSON.stringify({ query: 'test' }));
+      expect(result).toContain('网络搜索功能未配置');
+    });
+  });
+
   describe('read_file', () => {
     it('应能读取项目内文件', async () => {
       const result = await executor.execute('read_file', JSON.stringify({ path: 'src/index.ts' }));
@@ -512,6 +524,36 @@ describe('工具执行器（4 个工具）', () => {
         // 应保留原始 title，不被包装为"自定义工具执行失败"
         expect((err as MemoraError).title).toBe('业务错误');
       }
+    });
+
+    it('未注入 webSearchProvider 时，宿主可注册 web_search 工具', () => {
+      const webSearchDef = {
+        name: 'web_search',
+        description: '宿主自定义 web_search（打开浏览器模式）',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      expect(() => executor.registerTool(webSearchDef, async () => '')).not.toThrow();
+      // 清理：移除已注册的工具，避免影响后续测试
+      executor.removeTool('web_search');
+    });
+
+    it('注入 webSearchProvider 后，注册 web_search 应抛错', () => {
+      const mockProvider = { search: async () => [] };
+      const executorWithProvider = new ToolExecutor(tmpProject, security, index, mockProvider);
+      const webSearchDef = {
+        name: 'web_search',
+        description: '试图覆盖内核 web_search',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      expect(() => executorWithProvider.registerTool(webSearchDef, async () => '')).toThrow(/不能覆盖内置工具/);
     });
   });
 });

@@ -219,6 +219,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       messages: opts.messages,
       enableContextSummary: opts.enableContextSummary ?? true,
       archiveMode: opts.archiveMode ?? 'full',
+      webSearchProvider: opts.webSearchProvider,
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -1393,6 +1394,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       tracer: this.#config.tracer,
       messages: this.#config.messages,
       enableContextSummary: this.#config.enableContextSummary,
+      webSearchProvider: this.#config.webSearchProvider,
       existingSkillManager: this.skillManager,
       onWorkProjectionGenerated: (sourcePath, summary) => {
         this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });

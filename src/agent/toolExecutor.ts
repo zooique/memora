@@ -13,8 +13,10 @@ import { logger } from '@/logging/logger.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
-import { BUILTIN_TOOLS, type ToolDefinition } from '@/agent/builtinTools.js';
+import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
+import type { IWebSearchProvider } from '@/web-search/types.js';
+import { safeSearch } from '@/web-search/webSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
@@ -102,15 +104,21 @@ export class ToolExecutor {
    */
   private onToolsChanged?: () => void;
 
+  /** 网络搜索提供者（可选，注入时启用 web_search 工具） */
+  private readonly webSearchProvider?: IWebSearchProvider;
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
     memoryIndex: IMemoryStorage,
+    /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
+    webSearchProvider?: IWebSearchProvider,
     /** 作品投影管理器（可选，读取文件时自动生成投影） */
     workProjection?: WorkProjectionManager,
     /** 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置） */
     configDir?: string,
   ) {
+    this.webSearchProvider = webSearchProvider;
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
     // 构造参数仅用于初始化 BuiltinToolHandlers，ToolExecutor 自身不再持有这些引用
     this.builtinHandlers = new BuiltinToolHandlers(
@@ -142,8 +150,15 @@ export class ToolExecutor {
         ['请检查工具名称是否符合命名规范'],
       );
     }
-    // 不允许覆盖内置工具
+    // 不允许覆盖已暴露的内置工具
     if (BUILTIN_TOOLS.some((t) => t.name === definition.name)) {
+      throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
+        '请使用不同的工具名称',
+      ]);
+    }
+    // web_search 仅当 webSearchProvider 已注入时由内核管理，不允许覆盖
+    // 未注入时宿主可自由注册自己的 web_search 实现（如 sprite 的"打开浏览器"模式）
+    if (this.webSearchProvider && definition.name === WEB_SEARCH_TOOL.name) {
       throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
         '请使用不同的工具名称',
       ]);
@@ -159,6 +174,21 @@ export class ToolExecutor {
     // 触发 AgentLoop 刷新 toolDefinitions 快照 + system prompt
     // 未设置回调时（如单元测试）静默跳过
     this.onToolsChanged?.();
+  }
+
+  /**
+   * 移除自定义工具
+   *
+   * 供测试场景使用，可在测试后清理已注册的自定义工具。
+   * 仅能移除通过 registerTool 注册的自定义工具，无法移除内置工具。
+   *
+   * @param name 工具名称
+   */
+  removeTool(name: string): void {
+    if (this.customTools.has(name)) {
+      this.customTools.delete(name);
+      this.onToolsChanged?.();
+    }
   }
 
   /**
@@ -179,7 +209,11 @@ export class ToolExecutor {
    * 获取所有工具定义（IX-02：统一为 getter 风格，与 persona/skill 一致）
    */
   get list(): ToolDefinition[] {
-    return [...BUILTIN_TOOLS, ...[...this.customTools.values()].map((e) => e.definition)];
+    // 条件性包含 web_search 工具：仅当注入了 webSearchProvider 时才暴露给 LLM
+    const tools = this.webSearchProvider
+      ? [...BUILTIN_TOOLS, WEB_SEARCH_TOOL]
+      : BUILTIN_TOOLS;
+    return [...tools, ...[...this.customTools.values()].map((e) => e.definition)];
   }
 
   /**
@@ -256,6 +290,31 @@ export class ToolExecutor {
           strArg('limit', '10'),
           strArg('mode', 'match'),
         );
+      case 'web_search': {
+        // web_search 由 ToolExecutor 直接处理，不经过 BuiltinToolHandlers（文件系统导向）
+        // 使用注入的 webSearchProvider 执行网络搜索，带超时保护
+        if (!this.webSearchProvider) {
+          return '[ERR:TOOL:NOT_AVAILABLE] 错误：网络搜索功能未配置，请先注入 IWebSearchProvider';
+        }
+        const query = strArg('query');
+        if (!query) {
+          throw toolError(
+            'web_search 工具调用缺少 query 参数',
+            'LLM 未传 query',
+            ['query 不能为空'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const limit = Math.min(Number.parseInt(strArg('limit', '5'), 10) || 5, 20);
+        const results = await safeSearch(this.webSearchProvider, query, { limit });
+        if (results.length === 0) {
+          return `（未找到与 "${query}" 相关的搜索结果）`;
+        }
+        return results
+          .map((r, i) => `${i + 1}. ${r.title}\n   URL: ${r.url || '(无链接)'}\n   ${r.snippet.replace(/\n/g, ' ')}`)
+          .join('\n\n');
+      }
       default: {
         // 自定义工具 fallback：查找 customTools Map
         const custom = this.customTools.get(name);
