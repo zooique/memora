@@ -76,10 +76,10 @@ export class Composer {
       needClarify,
     );
 
-    // 任务槽：计划停滞时跳过 P2，直接走 P4 澄清
+    // 任务槽：计划停滞时，若用户已明确指定任务则走 P1 显式输入，否则走 P4 澄清
     // 场景：计划已完成/阻塞，用户未明确指定新任务时，
     // 不应盲目延续 currentGoal，而应询问用户下一步方向
-    const taskSlot = planCtx?.stalled
+    const taskSlot = planCtx?.stalled && event.delta?.task === undefined
       ? this.resolveStalledTaskSlot(checkpoint.currentGoal, needClarify, planCtx)
       : this.resolveSlot(
           'task',
