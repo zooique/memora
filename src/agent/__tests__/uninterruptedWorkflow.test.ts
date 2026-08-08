@@ -1510,14 +1510,15 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 F：暂停状态下 chat 被拒绝
+   * 场景 F：暂停状态下 chat 自动恢复并继续（双通道模型 v2.0）
    *
    * 验证完整闭环：
    *   1. Agent init 后暂停会话
-   *   2. 尝试 chat 应被拒绝
-   *   3. 恢复后 chat 应正常
+   *   2. 暂停状态下 chat 不再被拒绝——输入通道永不冻结，
+   *      自动恢复工作通道 + 作为补充注入继续执行
+   *   3. 状态机已自动恢复为 running
    */
-  it('场景 F：暂停状态下 chat 被拒绝', { timeout: 30000 }, async () => {
+  it('场景 F：暂停状态下 chat 自动恢复并继续（双通道 v2.0）', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1532,13 +1533,12 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 1. 暂停会话
     agent.pause('测试暂停', 'user');
 
-    // 2. 暂停状态下 chat 应被拒绝
-    await expect(agent.chatSync('你好')).rejects.toThrow();
-
-    // 3. 恢复后 chat 应正常
-    agent.resume();
-    const reply = await agent.chatSync('继续对话');
+    // 2. 暂停状态下 chat 自动恢复 + 继续（不再拒绝，输入通道永不冻结）
+    const reply = await agent.chatSync('你好');
     expect(reply).toContain('Mock 响应');
+
+    // 3. 状态机已自动恢复为 running（工作通道随输入重启）
+    expect(agent.getCheckpoint()?.status).toBe('running');
   });
 
   /**

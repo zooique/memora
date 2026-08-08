@@ -377,15 +377,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('chat');
     this.validateChatInput(input);
 
-    // 不中断工作模型：暂停/异常状态下拒绝新的对话，防止状态不一致
+    // 双通道模型（v2.0）：暂停只停工作通道，输入通道永不冻结——
+    // PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
     const sm = this._sessionManager;
     if (sm) {
       const status = sm.stateMachine.status;
-      if (status === 'paused') {
-        throw configError('会话已暂停', '会话处于暂停状态，无法接收新消息', ['先调用 agent.resume() 恢复会话']);
-      }
       if (status === 'error') {
         throw configError('会话异常', '会话处于异常状态，无法接收新消息', ['先标记 error.recovered=true 并调用 agent.recover()']);
+      }
+      if (status === 'paused') {
+        this.resume();
       }
     }
 
@@ -806,6 +807,22 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('processEvent');
     this.validateChatInput(event.content);
 
+    // 双通道模型（v2.0，见 docs/根基/不中断工作模型演进.html §01）：
+    // 暂停只停「工作通道」，输入通道永不冻结——
+    // PAUSED 态收到用户事件（chat/correction/clarify）= 自动恢复工作通道 + 作为补充注入继续；
+    // 仅 command 事件（显式暂停/恢复命令）不触发自动恢复，保持状态机语义。
+    // ERROR 态仍拒绝（须先 recover，防止状态不一致）。
+    const statusGuard = this._sessionManager;
+    if (statusGuard) {
+      const status = statusGuard.stateMachine.status;
+      if (status === 'error') {
+        throw configError('会话异常', '会话处于异常状态，无法接收新消息', ['先标记 error.recovered=true 并调用 agent.recover()']);
+      }
+      if (status === 'paused' && event.type !== 'command') {
+        this.resume();
+      }
+    }
+
     const lockCtx = this.acquireChatLock(signal);
     const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
 
@@ -890,16 +907,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       //   - command: 控制信号（暂停/恢复/重置），写入历史会污染对话
       //   - correction: 目标修正，写入历史会让 LLM 误以为这是普通对话
       // clarify 例外：回答已通过 compose 应用到检查点（applyResolvedDelta），
-      // 恢复会话后以 chat 语义继续执行——回答内容作为用户输入进入对话流，
-      // 驱动 LLM 完成原任务（否则提交回答后会话停在 PAUSED，用户看到「无反应」）。
-      // resume 失败（如暂停超时）时保留原行为：仅记录回答，不继续执行。
+      // 入口已 auto-resume（双通道 v2.0），转 chat 语义继续执行——回答内容作为
+      // 用户输入进入对话流，驱动 LLM 完成原任务（否则提交回答后无反应）。
       if (event.type === 'clarify') {
-        if (this.resume()) {
-          event = { type: 'chat', content: this.formatClarifyAnswers(event.content), delta: {} };
-        } else {
-          yield* this.handleNonChatEvent(event, combinedSignal);
-          return;
-        }
+        event = { type: 'chat', content: this.formatClarifyAnswers(event.content), delta: {} };
       } else if (event.type !== 'chat') {
         yield* this.handleNonChatEvent(event, combinedSignal);
         return;
