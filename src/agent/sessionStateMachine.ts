@@ -15,13 +15,13 @@
  *
  * 单实例事件队列 + 串行处理，无并发写路径。
  */
-import type { SessionEvent, SessionCheckpoint, StatusTransition } from '@/agent/types.js';
+import type { SessionEvent, SessionCheckpoint, StatusTransition, SessionStatus } from '@/agent/types.js';
 
 /** 暂停来源 */
 export type PauseSource = 'user' | 'agent' | 'system';
 
-/** 会话状态 */
-export type SessionStatus = 'running' | 'paused' | 'error';
+/** 会话状态（从 agent/types.ts 导入，SSOT 单一真理源） */
+// SessionStatus 类型在 agent/types.ts 中定义，本文件直接导入使用
 
 /**
  * 会话状态机

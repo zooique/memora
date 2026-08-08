@@ -7,6 +7,16 @@
 
 import { configError } from '@/utils/errors.js';
 
+// ─── 共享类型：消息角色（SSOT 单一真理源） ──────────────
+
+/**
+ * 消息角色
+ *
+ * 统一 ChatMessage（agent/types.ts）和 SessionMessage（sessionStore.ts）的角色定义。
+ * 包含 tool 角色，用于 LLM 工具调用消息的持久化。
+ */
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
+
 // ─── 基元定义 ─────────────────────────────────────────────
 
 /**

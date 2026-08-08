@@ -17,6 +17,7 @@
  *   - 新值槽覆盖：如用户给出新标准 → 覆盖 standard 槽
  *   - 数组槽追加：如补充资源列表 → 追加到 resource 槽
  */
+import { COMPLETION_LEVELS } from '@/agent/types.js';
 import type {
   SessionEvent,
   SessionCheckpoint,
@@ -173,31 +174,31 @@ export class Composer {
       if (this.isSlotRef(deltaValue)) {
         // 引用标记：从 checkpoint 取历史值（P2 语义），不覆盖
         if (checkpointValue !== undefined && !this.isEmpty(checkpointValue)) {
-          return { value: checkpointValue, source: 'P2-memory' };
+          return { value: checkpointValue, source: COMPLETION_LEVELS.P2_MEMORY };
         }
         // 引用标记但 checkpoint 为空 → 走 P3 兜底
         if (defaultVal !== undefined && !this.isEmpty(defaultVal)) {
-          return { value: defaultVal, source: 'P3-builtin' };
+          return { value: defaultVal, source: COMPLETION_LEVELS.P3_BUILTIN };
         }
         // 引用标记且无兜底 → P4 暂停询问
         needClarify.push({
           slot: slotName,
           question: this.clarifyQuestionFor(slotName),
         });
-        return { value: defaultVal, source: 'P4-clarify' };
+        return { value: defaultVal, source: COMPLETION_LEVELS.P4_CLARIFY };
       }
       // 非引用标记：新值槽覆盖模式
-      return { value: deltaValue, source: 'P1-explicit' };
+      return { value: deltaValue, source: COMPLETION_LEVELS.P1_EXPLICIT };
     }
 
     // P2: 记忆推断（检查点历史值）
     if (checkpointValue !== undefined && !this.isEmpty(checkpointValue)) {
-      return { value: checkpointValue, source: 'P2-memory' };
+      return { value: checkpointValue, source: COMPLETION_LEVELS.P2_MEMORY };
     }
 
     // P3: 系统内置
     if (defaultVal !== undefined && !this.isEmpty(defaultVal)) {
-      return { value: defaultVal, source: 'P3-builtin' };
+      return { value: defaultVal, source: COMPLETION_LEVELS.P3_BUILTIN };
     }
 
     // P4: 暂停询问
@@ -206,7 +207,7 @@ export class Composer {
       question: this.clarifyQuestionFor(slotName),
     });
     // 返回空值占位，调用方检查 needClarify 后暂停
-    return { value: defaultVal, source: 'P4-clarify' };
+    return { value: defaultVal, source: COMPLETION_LEVELS.P4_CLARIFY };
   }
 
   /**
@@ -227,9 +228,9 @@ export class Composer {
       // 处理 SlotRef 引用标记：引用 checkpoint 资源，不追加
       if (this.isSlotRef(deltaResource)) {
         if (checkpointResource !== undefined) {
-          return { value: checkpointResource, source: 'P2-memory' };
+          return { value: checkpointResource, source: COMPLETION_LEVELS.P2_MEMORY };
         }
-        return { value: SYSTEM_DEFAULTS.resource, source: 'P3-builtin' };
+        return { value: SYSTEM_DEFAULTS.resource, source: COMPLETION_LEVELS.P3_BUILTIN };
       }
 
       // 非引用标记：追加语义（数组追加，context 覆盖）
@@ -240,17 +241,17 @@ export class Composer {
           memories: [...base.memories, ...(deltaResource.memories ?? [])],
           context: deltaResource.context ?? base.context,
         },
-        source: 'P1-explicit',
+        source: COMPLETION_LEVELS.P1_EXPLICIT,
       };
     }
 
     // P2: 记忆推断
     if (checkpointResource !== undefined) {
-      return { value: checkpointResource, source: 'P2-memory' };
+      return { value: checkpointResource, source: COMPLETION_LEVELS.P2_MEMORY };
     }
 
     // P3: 系统内置
-    return { value: SYSTEM_DEFAULTS.resource, source: 'P3-builtin' };
+    return { value: SYSTEM_DEFAULTS.resource, source: COMPLETION_LEVELS.P3_BUILTIN };
   }
 
   /**
@@ -302,7 +303,7 @@ export class Composer {
     });
 
     // 返回 currentGoal 作为占位值，调用方检查 needClarify 后暂停
-    return { value: currentGoal, source: 'P4-clarify' };
+    return { value: currentGoal, source: COMPLETION_LEVELS.P4_CLARIFY };
   }
 
   /**

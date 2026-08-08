@@ -1,3 +1,5 @@
+import type { MessageRole } from '@/memory/types.js';
+
 /**
  * 会话存储接口（ISessionStore）
  *
@@ -111,8 +113,8 @@ export interface ISessionStore {
  * - Message 不含时间戳，用于 LLM 通信
  */
 export interface SessionMessage {
-  /** 消息角色 */
-  role: 'user' | 'assistant' | 'system';
+  /** 消息角色（从 memory/types.ts 导入，SSOT 单一真理源） */
+  role: MessageRole;
   /** 消息内容 */
   content: string;
   /** 时间戳（ISO 8601） */

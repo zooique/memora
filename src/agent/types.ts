@@ -178,6 +178,9 @@ export type ArchiveMode = 'full' | 'insights-only' | 'manual';
 // 恢复校验：ERROR → RUNNING 前须 error.recovered===true 且 cause 已解除
 // ──────────────────────────────────────────────────────────
 
+/** 会话状态（三态状态机，SSOT 单一真理源） */
+export type SessionStatus = 'running' | 'paused' | 'error';
+
 /**
  * 四元组：角色 × 任务 × 标准 × 资源
  *
@@ -323,15 +326,16 @@ export interface ToolExecutionRecord {
   sideEffects?: SideEffect[];
 }
 
-/**
- * 热记忆中的聊天消息
+/** 热记忆中的聊天消息
  *
  * 结构对齐 LLM Message 类型，用于会话检查点中存储截断后的热记忆窗口。
  * 不含时间戳（与 SessionMessage 区分），仅保留 role + content 用于 LLM 上下文注入。
+ *
+ * role 类型从 memory/types.ts 的 MessageRole 导入（SSOT 单一真理源）。
  */
 export interface ChatMessage {
   /** 消息角色 */
-  role: 'system' | 'user' | 'assistant' | 'tool';
+  role: MessageRole;
   /** 消息内容 */
   content: string;
   /** 工具调用（assistant 消息，可选） */
@@ -404,7 +408,7 @@ export interface SessionCheckpoint {
   /** 会话唯一标识 */
   sessionId: string;
   /** 三态状态（v1.6）：ERROR 独立可见，不自动转 PAUSED */
-  status: 'running' | 'paused' | 'error';
+  status: SessionStatus;
   /** 异常原因（仅 status==='error' 时有值，恢复前校验 recovered） */
   error?: {
     /** 异常原因描述 */
@@ -473,11 +477,24 @@ export interface StatusTransition {
 // ──────────────────────────────────────────────────────────
 
 /**
- * 补全来源级别
+ * 补全来源级别常量（SSOT 单一真理源）
+ *
+ * 从常量对象推导 CompletionLevel 类型，新增级别只需加一项。
+ * composer.ts 和 agent.ts 引用此常量而非硬编码字符串。
+ */
+export const COMPLETION_LEVELS = {
+  P1_EXPLICIT: 'P1-explicit',
+  P2_MEMORY: 'P2-memory',
+  P3_BUILTIN: 'P3-builtin',
+  P4_CLARIFY: 'P4-clarify',
+} as const;
+
+/**
+ * 补全来源级别联合类型（由 COMPLETION_LEVELS 推导）
  *
  * 标记四元组每个槽位的补全来源，用于可追溯性。
  */
-export type CompletionLevel = 'P1-explicit' | 'P2-memory' | 'P3-builtin' | 'P4-clarify';
+export type CompletionLevel = (typeof COMPLETION_LEVELS)[keyof typeof COMPLETION_LEVELS];
 
 /**
  * 已解析的四元组增量
@@ -528,6 +545,7 @@ import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
+import type { MessageRole } from '@/memory/types.js';
 
 /** Agent 构造选项 */
 export interface AgentOptions {

@@ -25,6 +25,7 @@
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
+import { COMPLETION_LEVELS } from '@/agent/types.js';
 import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard, IdempotencyLevel } from '@/agent/types.js';
 import type { SessionEvent, SessionCheckpoint, ResolvedDelta, ToolExecutionRecord } from '@/agent/types.js';
 import { BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
@@ -1290,22 +1291,22 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!sm) return;
 
     // 应用角色槽（P1→P3 级别才更新，P4 等待用户回答）
-    if (resolved.role.source !== 'P4-clarify') {
+    if (resolved.role.source !== COMPLETION_LEVELS.P4_CLARIFY) {
       sm.updateRole(resolved.role.value);
     }
 
     // 应用任务槽（currentGoal 更新）
-    if (resolved.task.source !== 'P4-clarify') {
+    if (resolved.task.source !== COMPLETION_LEVELS.P4_CLARIFY) {
       sm.updateGoal(resolved.task.value);
     }
 
     // 应用标准槽
-    if (resolved.standard.source !== 'P4-clarify') {
+    if (resolved.standard.source !== COMPLETION_LEVELS.P4_CLARIFY) {
       sm.updateStandard(resolved.standard.value);
     }
 
     // 应用资源槽
-    if (resolved.resource.source !== 'P4-clarify') {
+    if (resolved.resource.source !== COMPLETION_LEVELS.P4_CLARIFY) {
       sm.updateResource(resolved.resource.value);
     }
   }
