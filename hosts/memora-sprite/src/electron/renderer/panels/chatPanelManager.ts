@@ -1181,11 +1181,12 @@ export class ChatPanelManager {
    */
   updateSessionStatus(status: string, reason?: string): void {
     if (status === 'running') {
-      // 恢复运行态：移除横幅
+      // 恢复运行态：移除状态横幅 + 清除可能残留的澄清面板（超时自动续跑后用户未手动关闭）
       if (this.sessionStatusEl) {
         this.sessionStatusEl.remove();
         this.sessionStatusEl = null;
       }
+      this.hideClarifyPanel();
       return;
     }
 

@@ -23,6 +23,17 @@ import { isValidContent } from './inputValidation.js';
 import type { SessionCheckpoint, SessionEvent } from 'memora';
 
 /**
+ * 澄清暂停超时自动续跑（Finding A）
+ *
+ * 仅 agent 主动询问（needClarify）触发计时；用户手动暂停走 SESSION_PAUSE，不发 needClarify，天然豁免。
+ * 超时后自动构造「择优决策」回答注入会话：内核 clarify→chat 转换 + Composer 补全链下，
+ * role/standard/resource 走 P3 兜底、task 延续 currentGoal 或取回答文本，回答非空即不 re-pause，
+ * agent 直接收敛本轮，不再永久卡在暂停。
+ */
+export const CLARIFY_AUTO_RESOLVE_MS = 5 * 60 * 1000;
+let clarifyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/**
  * 注册对话相关 IPC 处理器
  *
  * @param ctx IPC 上下文
@@ -163,6 +174,12 @@ export function registerChatHandlers(ctx: IpcContext): void {
     if (fullWindow && !fullWindow.isDestroyed()) {
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY, questions);
     }
+    // 武装超时自动续跑计时器（仅 agent 主动询问触发；用户手动暂停不发 needClarify，天然豁免）
+    clearTimeout(clarifyTimeout ?? undefined);
+    clarifyTimeout = setTimeout(() => {
+      clarifyTimeout = null;
+      autoResolveClarify(ctx, questions);
+    }, CLARIFY_AUTO_RESOLVE_MS);
   });
 
   /**
@@ -173,6 +190,11 @@ export function registerChatHandlers(ctx: IpcContext): void {
    * 故 SESSION_RESUME handler 内不再手动 emit（避免双发）。
    */
   agent.on(AGENT_EVENTS.sessionResumed, () => {
+    // 任意恢复路径（显式/手动回答/超时自动）均经此监听——清除可能待触发的澄清超时计时器
+    if (clarifyTimeout) {
+      clearTimeout(clarifyTimeout);
+      clarifyTimeout = null;
+    }
     const fullWindow = ctx.windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed()) {
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
@@ -189,6 +211,11 @@ export function registerChatHandlers(ctx: IpcContext): void {
    * 内核 Composer 的 P4 补全链会解析此内容并填入对应槽位。
    */
   ipcMain.handle(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, async (_event, answers: Array<{ slot: string; answer: string }>) => {
+    // 用户主动回答：取消待触发的澄清超时自动续跑计时器（不依赖下方 resume 必然经 sessionResumed 清除）
+    if (clarifyTimeout) {
+      clearTimeout(clarifyTimeout);
+      clarifyTimeout = null;
+    }
     const agent = requireAgent(ctx);
     const event: SessionEvent = {
       type: 'clarify',
@@ -200,4 +227,42 @@ export function registerChatHandlers(ctx: IpcContext): void {
     void agent.processEvent(event);
     return { success: true };
   });
+
+  /**
+   * 超时自动续跑（Finding A）
+   *
+   * needClarify 计时器触发：用户长时间未响应 agent 的澄清询问。
+   * 构造「择优决策」回答——有预置选项取首选项，否则按 slot 生成中性自动决策文本——
+   * 注入会话。内核 clarify→chat 转换 + Composer 补全链下，回答非空即不会 re-pause，
+   * agent 直接收敛本轮（详见顶部 CLARIFY_AUTO_RESOLVE_MS 注释）。
+   */
+  function autoResolveClarify(
+    ctx: IpcContext,
+    questions: { slot: string; question: string; options?: string[] }[],
+  ): void {
+    const agent = requireAgent(ctx);
+    const answers = questions.map((q) => ({
+      slot: q.slot,
+      answer:
+        q.options && q.options.length > 0
+          ? q.options[0]
+          : autoDecisionText(q.slot, q.question),
+    }));
+    logger.info({ questionCount: questions.length }, '澄清暂停超时，自动择优续跑');
+    const event: SessionEvent = {
+      type: 'clarify',
+      content: JSON.stringify(answers),
+      delta: {},
+    };
+    // 复用澄清回答注入逻辑：processEvent 内 PAUSED + 非 command 事件会触发 auto-resume
+    void agent.processEvent(event);
+  }
+
+  /** 超时自动决策文案（无预置选项时，按 slot 生成中性可收敛文本） */
+  function autoDecisionText(slot: string, question: string): string {
+    if (slot === 'task') {
+      return '沿用当前目标与上下文，由 Agent 自主推进（超时自动继续）';
+    }
+    return `由 Agent 基于上下文自主决策（超时未响应，已自动继续）：${question}`;
+  }
 }

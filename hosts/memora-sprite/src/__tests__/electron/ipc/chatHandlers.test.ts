@@ -101,7 +101,7 @@ vi.mock('../../../sprite/constants.js', () => ({
 }));
 
 // handleUserInput 已迁移到 chatStreamHandler.ts，registerChatHandlers 留在 chatHandlers.ts
-import { registerChatHandlers } from '../../../electron/ipc/chatHandlers.js';
+import { registerChatHandlers, CLARIFY_AUTO_RESOLVE_MS } from '../../../electron/ipc/chatHandlers.js';
 import { handleUserInput } from '../../../electron/ipc/chatStreamHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../../electron/ipc/channels.js';
 import type { IpcContext } from '../../../electron/ipc/types.js';
@@ -210,6 +210,7 @@ function createMockCtx(overrides?: {
 describe('chatHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.clearAllTimers();
     handleCallbacks.clear();
     onCallbacks.clear();
     loggerWarn.mockClear();
@@ -590,6 +591,139 @@ describe('chatHandlers', () => {
 
       // 正常流程不应触发 emitStreamError
       expect(loggerWarn).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── 澄清暂停超时自动续跑（Finding A） ──
+  //
+  // 覆盖目标：
+  //   - needClarify 应转发 SESSION_NEED_CLARIFY 到渲染进程，并武装超时计时器
+  //   - 超时前不自动续跑；超时后自动 processEvent(clarify) 注入「择优决策」回答收敛本轮
+  //   - 带 options 的澄清问题取首选项作为择优决策
+  //   - 手动回答（SESSION_CLARIFY_ANSWER）应取消计时器，超时不再自动续跑
+  //   - 用户手动暂停（不发 needClarify）天然豁免：本测试不涉及该路径
+
+  describe('澄清暂停超时自动续跑（Finding A）', () => {
+    /** 捕获 registerChatHandlers 注册的 needClarify 事件回调（模拟内核发射） */
+    function captureNeedClarifyCb(ctx: IpcContext) {
+      const onMock = ctx.getAgent().on as unknown as ReturnType<typeof vi.fn>;
+      const call = onMock.mock.calls.find((c) => c[0] === 'needClarify');
+      return call?.[1] as
+        | ((questions: { slot: string; question: string; options?: string[] }[]) => void)
+        | undefined;
+    }
+
+    it('emit needClarify 应转发渲染进程并武装计时器；超时后自动 processEvent(clarify) 收敛本轮', async () => {
+      vi.useFakeTimers();
+      try {
+        const wc = createMockWebContents();
+        const wm = createMockWindowManager(wc);
+        const processEvent = vi.fn();
+        const ctx = createMockCtx({
+          windowManager: wm,
+          agent: createMockAgent({ processEvent }),
+        });
+        registerChatHandlers(ctx);
+
+        const cb = captureNeedClarifyCb(ctx);
+        expect(cb).toBeTypeOf('function');
+
+        // 模拟内核发射 needClarify（无预置 options）
+        const questions = [
+          { slot: 'task', question: '请指示下一步方向' },
+          { slot: 'standard', question: '请指定完成标准' },
+        ];
+        cb!(questions);
+
+        // 应转发到渲染进程展示澄清面板
+        const needClarifySend = wc.sends.find(
+          (s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SESSION_NEED_CLARIFY,
+        );
+        expect(needClarifySend).toBeDefined();
+        // 超时前不应自动续跑
+        expect(processEvent).not.toHaveBeenCalled();
+
+        // 推进超过阈值（5 分钟）
+        await vi.advanceTimersByTimeAsync(CLARIFY_AUTO_RESOLVE_MS + 1);
+
+        // 应自动注入澄清回答（processEvent(clarify)）
+        expect(processEvent).toHaveBeenCalledTimes(1);
+        const evt = processEvent.mock.calls[0]![0] as {
+          type: string;
+          content: string;
+          delta: Record<string, unknown>;
+        };
+        expect(evt.type).toBe('clarify');
+        expect(evt.delta).toEqual({});
+        const answers = JSON.parse(evt.content) as Array<{ slot: string; answer: string }>;
+        expect(answers).toHaveLength(2);
+        // task 槽走专用中性文案；standard 走通用自动决策文案
+        expect(answers[0]).toEqual({
+          slot: 'task',
+          answer: '沿用当前目标与上下文，由 Agent 自主推进（超时自动继续）',
+        });
+        expect(answers[1].slot).toBe('standard');
+        expect(answers[1].answer).toContain('超时未响应，已自动继续');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('带 options 的澄清问题应取首选项作为择优决策', async () => {
+      vi.useFakeTimers();
+      try {
+        const wc = createMockWebContents();
+        const wm = createMockWindowManager(wc);
+        const processEvent = vi.fn();
+        const ctx = createMockCtx({
+          windowManager: wm,
+          agent: createMockAgent({ processEvent }),
+        });
+        registerChatHandlers(ctx);
+
+        const cb = captureNeedClarifyCb(ctx)!;
+        cb([{ slot: 'role', question: '请指定角色', options: ['开发者', '审查者', '旅行规划师'] }]);
+
+        await vi.advanceTimersByTimeAsync(CLARIFY_AUTO_RESOLVE_MS + 1);
+
+        expect(processEvent).toHaveBeenCalledTimes(1);
+        const evt = processEvent.mock.calls[0]![0] as { content: string };
+        const answers = JSON.parse(evt.content) as Array<{ slot: string; answer: string }>;
+        expect(answers[0]).toEqual({ slot: 'role', answer: '开发者' });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('手动回答（SESSION_CLARIFY_ANSWER）应取消计时器，超时不再自动续跑', async () => {
+      vi.useFakeTimers();
+      try {
+        const wc = createMockWebContents();
+        const wm = createMockWindowManager(wc);
+        const processEvent = vi.fn();
+        const ctx = createMockCtx({
+          windowManager: wm,
+          agent: createMockAgent({ processEvent }),
+        });
+        registerChatHandlers(ctx);
+
+        const cb = captureNeedClarifyCb(ctx)!;
+        cb([{ slot: 'task', question: '请指示下一步方向' }]);
+
+        // 推进 1 分钟（计时器仍待触发）
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        // 用户手动回答
+        const answerHandler = handleCallbacks.get(IPC_CHANNELS.SESSION_CLARIFY_ANSWER)!;
+        await answerHandler([{ slot: 'task', answer: '手动指定下一步' }]);
+        expect(processEvent).toHaveBeenCalledTimes(1);
+
+        // 再推进满 5 分钟，计时器应已被取消，不再自动续跑
+        await vi.advanceTimersByTimeAsync(CLARIFY_AUTO_RESOLVE_MS + 1);
+        expect(processEvent).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

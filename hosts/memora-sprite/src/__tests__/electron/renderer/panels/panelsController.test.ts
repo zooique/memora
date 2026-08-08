@@ -255,16 +255,16 @@ describe('InputAreaManager', () => {
   });
 
   describe('refreshSendButtonState 刷新按钮状态', () => {
-    it('流式态时应直接返回（不更新按钮）', () => {
+    it('流式态时应切换为暂停姿态且可点击（不锁定发送按钮）', () => {
       manager.init();
       host.mocks.isStreaming.mockReturnValue(true);
-      // init 时 input 为空 → btnSend.disabled=true，流式态下不更新此状态
       inputEl.value = '有内容';
 
       manager.refreshSendButtonState();
 
-      // 流式态下按钮状态不变（init 时因 input 为空已禁用）
-      expect(btnSend.disabled).toBe(true);
+      // 流式态下发送按钮变为暂停姿态，始终可点击（用户可中断工作通道）
+      expect(btnSend.disabled).toBe(false);
+      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
     });
 
     it('空闲态下应根据内容更新按钮状态', () => {
