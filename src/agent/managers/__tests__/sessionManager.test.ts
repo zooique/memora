@@ -624,6 +624,40 @@ describe('SessionManager', () => {
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
 
+    it('值未变时应幂等短路：不递增 goalVersion、不发射任何事件（T2-1）', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+
+      setupCheckpointWithGoal(mainGoal);
+      // 首次 updateGoal 创建检查点，goalVersion = 0
+      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+
+      // 值未变的 updateGoal（P2 记忆延续每轮重复喂入）→ 幂等短路
+      const result = manager.updateGoal(mainGoal);
+      expect(result).not.toBeNull();
+      expect(result!.level).toBe('same');
+      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+      expect(manager.stateMachine.status).toBe('running');
+      expect(emitEvent).not.toHaveBeenCalledWith('goalUpdated', expect.anything());
+      expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
+    });
+
+    it('连续多轮不改目标时 goalVersion 保持不变，真实修正仍递增（T2-1 防轮次计数退化）', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+
+      setupCheckpointWithGoal(mainGoal);
+      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+
+      // 模拟 3 轮「继续」类延续：每轮 updateGoal 相同的 currentGoal
+      for (let i = 0; i < 3; i++) {
+        manager.updateGoal(mainGoal);
+      }
+      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+
+      // 真实修正（不同目标）仍应递增
+      manager.updateGoal('改用 Python 重写计算器应用');
+      expect(manager.getCheckpoint()!.goalVersion).toBe(1);
+    });
+
     it('自动暂停应使用低风险（lowRisk=true），不增加连续暂停计数', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
       const driftedGoal = '今天纽约的天气怎么样适合出行吗';

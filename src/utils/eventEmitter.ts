@@ -171,6 +171,10 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
    *
    * 当用户通过 correction 事件更新目标时，若检测到新目标与原始目标（mainGoal）
    * 之间的差异超过阈值，发射此事件通知宿主 UI 展示确认提示。
+   *
+   * 注意：内核当前无此事件的监听方（宿主 UI 未建，SSOT 排雷 T2-1 复核确认）——
+   * 事件保留为通知钩子，drift 级自动暂停（sessionManager.updateGoal 内）是当前
+   * 唯一的实际处置路径。宿主接入「暂停 + 确认」UI 时须监听此事件。
    */
   goalDriftDetected: {
     /** 会话标识 */

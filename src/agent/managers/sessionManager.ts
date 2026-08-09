@@ -796,6 +796,19 @@ export class SessionManager {
       return null;
     }
 
+    // 幂等短路（SSOT 排雷 T2-1）：目标值未变时直接返回，不递增 goalVersion、不触发漂移检测。
+    // P2 记忆延续（composer 对「继续」类事件直接引用 currentGoal）每轮都会把相同的
+    // currentGoal 值喂入本方法——若无短路，goalVersion 将退化为轮次计数器。
+    // 返回值构造为 level='same'（值相同即无新漂移），调用方据此无需处理。
+    if (newGoal === this.checkpoint.currentGoal) {
+      return {
+        level: 'same',
+        similarity: 1,
+        constraints: this.consistencyChecker.extractConstraints(this.checkpoint.mainGoal),
+        constraintsConsistent: true,
+      };
+    }
+
     // P3.1：执行一致性校验，与 mainGoal 对比
     const mainGoal = this.checkpoint.mainGoal;
     const consistencyResult = this.consistencyChecker.checkConsistency(mainGoal, newGoal);
