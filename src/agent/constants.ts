@@ -77,6 +77,16 @@ export const AGENT_CONSTANTS = {
    * 500 字符 ≈ 200-350 tokens，覆盖大多数正常对话消息。
    */
   HOT_MEMORY_CONTENT_SLICE: 500,
+
+  // ─── P1-4：检查点 schema 版本（未来兼容公共前提）───
+  //
+  // 检查点以 SQLite 单 TEXT 列全量覆盖存储，无版本号时字段重命名/跨版本升级
+  // 必然爆（F2-1 的字段缺失场景会在下一次重命名爆发）。本常量标记当前内核的
+  // 检查点结构版本，`createCheckpoint` 写入、`parseCheckpoint` 比对。
+  //
+  // 迁移规则首版仅占位：高于当前版本的旧检查点按当前版本尽力恢复并 warn，
+  // 不做阻断（避免丢弃用户工作）；真正的版本化迁移逻辑未来按版本分支在此展开。
+  CURRENT_SCHEMA_VERSION: 1,
 } as const;
 
 /**

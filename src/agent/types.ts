@@ -513,6 +513,17 @@ export interface SessionCheckpoint {
   pauseMeta?: PauseMeta;
   /** 心跳时间戳（毫秒），防僵尸会话 */
   lastHeartbeat: number;
+  /**
+   * 检查点 schema 版本（T1-4，未来兼容公共前提）
+   *
+   * 标记本检查点结构所对应的内核版本。`createCheckpoint` 写入当前
+   * `CURRENT_SCHEMA_VERSION`；`parseCheckpoint`/`normalizeCheckpoint` 读取并比对，
+   * 高于当前版本时按当前版本尽力恢复并 warn、不阻断（避免丢弃用户工作）。
+   *
+   * 字段为必需项（非 optional）：任何直接构造检查点的代码都必须显式声明版本，
+   * 缺失即代表构造方未考虑未来兼容——由 tsc 在编译期拦下，而非运行时静默落盘。
+   */
+  schemaVersion: number;
 }
 
 /**

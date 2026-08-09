@@ -918,6 +918,7 @@ describe('SessionManager', () => {
           { role: 'assistant' as const, content: '消息2' },
         ],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
 
       const count = await mgr.restoreFromCheckpoint(checkpoint);
@@ -953,6 +954,7 @@ describe('SessionManager', () => {
         hotMemory: [{ role: 'user' as const, content: '消息' }],
         truncatedCount: 5, // 5 条早期消息被截断
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
 
       await mgr.restoreFromCheckpoint(checkpoint);
@@ -984,6 +986,7 @@ describe('SessionManager', () => {
         resource: { documents: [], memories: [], context: '' } as ResourceState,
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
 
       await mgr.restoreFromCheckpoint(checkpoint);

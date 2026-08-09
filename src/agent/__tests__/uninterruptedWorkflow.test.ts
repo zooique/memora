@@ -280,6 +280,7 @@ describe('SessionStateMachine · 三态流转', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       const result = sm.recover(checkpoint);
       expect(result.allowed).toBe(true);
@@ -302,6 +303,7 @@ describe('SessionStateMachine · 三态流转', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       const result = sm.recover(checkpoint);
       expect(result.allowed).toBe(false);
@@ -321,6 +323,7 @@ describe('SessionStateMachine · 三态流转', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       const result = sm.recover(checkpoint);
       expect(result.allowed).toBe(false);
@@ -910,6 +913,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       const count = await manager.restoreFromCheckpoint(cp);
       expect(count).toBe(0);
@@ -942,6 +946,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
           },
         ],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
       expect(loop.injectSystemMessage).toHaveBeenCalled();
@@ -976,6 +981,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
           },
         ],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
 
       await manager.restoreFromCheckpoint(cp);
@@ -1007,6 +1013,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
 
@@ -1034,6 +1041,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
 
@@ -1061,6 +1069,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
+        schemaVersion: 1,
       };
       // 旧实现：悬空 Promise + rejection 无人处理（unhandledRejection 污染进程）
       await manager.restoreFromCheckpoint(cp);
@@ -1197,6 +1206,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(), // 当前时间，不超时
+        schemaVersion: 1,
       };
       // 通过 loadPersistedCheckpoint 间接测试 pauseTimedOut 检测
       // 存储检查点

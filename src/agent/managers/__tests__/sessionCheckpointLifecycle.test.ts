@@ -14,6 +14,7 @@
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { SessionManager } from '@/agent/managers/sessionManager.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
@@ -99,6 +100,28 @@ describe('检查点字段生命周期', () => {
       vi.fn(),
     );
   });
+
+  /** 一份字段齐全的合法检查点，各用例只挖掉待测的那一处（归一化组与 schemaVersion 组共用） */
+  function intactCheckpoint(): Record<string, unknown> {
+    return {
+      sessionId: SESSION_ID,
+      status: 'running',
+      mainGoal: '主目标',
+      currentGoal: '主目标',
+      goalChangeSeq: 0,
+      plan: [],
+      role: { name: 'assistant' },
+      standard: { quality: '', constraints: [] },
+      resource: { documents: [], memories: [], context: '' },
+      hotMemory: [],
+      lastHeartbeat: Date.now(),
+    };
+  }
+
+  /** 往假磁盘直接种入任意结构的检查点 JSON（绕过 createCheckpoint 的字段保证） */
+  function seedDisk(raw: Record<string, unknown>): void {
+    disk.store.saveCheckpoint!(SESSION_ID, JSON.stringify(raw));
+  }
 
   /** 建立一个三个侧车字段均有值的检查点 */
   function seedCheckpointWithSidecars(): void {
@@ -338,28 +361,6 @@ describe('检查点字段生命周期', () => {
    * 不触碰 private 归一化方法：测私有实现会在重构时假红，测入口行为才锁得住契约。
    */
   describe('反序列化归一化（T0-1 回归）', () => {
-    /** 一份字段齐全的合法检查点，各用例只挖掉待测的那一处 */
-    function intactCheckpoint(): Record<string, unknown> {
-      return {
-        sessionId: SESSION_ID,
-        status: 'running',
-        mainGoal: '主目标',
-        currentGoal: '主目标',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        lastHeartbeat: Date.now(),
-      };
-    }
-
-    /** 往假磁盘直接种入任意结构的检查点 JSON（绕过 createCheckpoint 的字段保证） */
-    function seedDisk(raw: Record<string, unknown>): void {
-      disk.store.saveCheckpoint!(SESSION_ID, JSON.stringify(raw));
-    }
-
     it('磁盘检查点缺少 lastHeartbeat 时应补为有限时间戳', () => {
       const raw = intactCheckpoint();
       raw.status = 'paused';
@@ -455,6 +456,55 @@ describe('检查点字段生命周期', () => {
 
       expect(manager.loadPersistedCheckpoint()).toBeNull();
       expect(manager.getCheckpoint()).toBeNull();
+    });
+  });
+
+  /**
+   * 检查点 schemaVersion（T1-4 回归）
+   *
+   * 【本组存在的理由】
+   * 检查点以 SQLite 单 TEXT 列全量覆盖存储，无版本号时字段重命名/跨版本升级
+   * 必然爆（F2-1 的字段缺失场景会在下一次重命名爆发）。本组锁住两条契约：
+   *   1. 新检查点必须携带当前 schemaVersion（未来升级迁移的锚点）；
+   *   2. 旧内核产出的、无 schemaVersion 字段的检查点必须被补齐为当前版本、
+   *      不报错、不丢弃用户工作（降级而非阻断）。
+   */
+  describe('检查点 schemaVersion（T1-4 回归）', () => {
+    it('createCheckpoint 产出的检查点应携带当前 schemaVersion', () => {
+      const cp = manager.createCheckpoint('主目标');
+
+      expect(cp.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+
+      // 落盘快照同样应含 schemaVersion——迁移锚点必须落盘，否则重启后丢失
+      const onDisk = disk.readDisk()!;
+      expect(onDisk.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+    });
+
+    it('无 schemaVersion 字段的旧检查点经 loadPersistedCheckpoint 应补为当前版本', () => {
+      // intactCheckpoint() 模拟旧内核写出的完整检查点（不含 schemaVersion）
+      const raw = intactCheckpoint();
+      delete raw.schemaVersion; // 防御性：确保走「字段缺失」分支
+      seedDisk(raw);
+
+      const loaded = manager.loadPersistedCheckpoint();
+
+      // 修复前：schemaVersion 为 undefined，未来重命名字段时无处比对版本
+      expect(loaded).not.toBeNull();
+      expect(loaded!.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+    });
+
+    it('schemaVersion 高于当前内核版本的检查点应仍可按当前版本恢复（不阻断、不丢弃）', () => {
+      const raw = intactCheckpoint();
+      raw.schemaVersion = 999; // 来自更新版本的客户端
+      seedDisk(raw);
+
+      const loaded = manager.loadPersistedCheckpoint();
+
+      // 首版仅 warn 不阻断：用户工作优先于严格版本校验
+      expect(loaded).not.toBeNull();
+      expect(loaded!.status).toBe('running');
+      // 不强制降级为当前版本：保留原始版本号，交由上层迁移逻辑处理
+      expect(loaded!.schemaVersion).toBe(999);
     });
   });
 });

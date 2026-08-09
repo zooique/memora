@@ -37,6 +37,7 @@ function createCheckpoint(overrides?: Partial<SessionCheckpoint>): SessionCheckp
     resource: { documents: [], memories: [], context: '' },
     hotMemory: [],
     lastHeartbeat: Date.now(),
+    schemaVersion: 1,
     ...overrides,
   };
 }

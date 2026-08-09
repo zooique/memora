@@ -413,6 +413,8 @@ export class SessionManager {
       hotMemory,
       truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
       lastHeartbeat: Date.now(),
+      // schemaVersion 必需字段（T1-4）：每次写检查点都标当前内核版本，供未来升级迁移
+      schemaVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION,
     };
 
     // 检查点内容已整体重算，强制落盘（P0-2：会话状态持久化）
@@ -660,6 +662,20 @@ export class SessionManager {
     if (cp.status !== 'running' && cp.status !== 'paused' && cp.status !== 'error') {
       cp.status = 'running';
     }
+
+    // ── schemaVersion 补齐与跨版本迁移（T1-4）──
+    // 旧内核产出的检查点无 schemaVersion 字段 → 视其为当前版本，不阻断恢复
+    // （用户工作优先于严格版本校验）。来自更新版本客户端的检查点当前内核无法
+    // 完整理解，首版仅记录警告、不阻断；真正的版本化迁移逻辑未来在此按版本分支展开。
+    if (typeof cp.schemaVersion !== 'number' || !Number.isFinite(cp.schemaVersion)) {
+      cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
+    } else if (cp.schemaVersion > AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
+      logger.warn(
+        { checkpointVersion: cp.schemaVersion, currentVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION },
+        '检查点 schemaVersion 高于当前内核版本，尝试按当前版本恢复（可能丢失新版字段语义）',
+      );
+    }
+
     if (typeof cp.mainGoal !== 'string') cp.mainGoal = defaults.mainGoal;
     // currentGoal 缺失时继承 mainGoal，与 createCheckpoint 的 `?? prev?.mainGoal` 同语义
     if (typeof cp.currentGoal !== 'string') cp.currentGoal = cp.mainGoal;
