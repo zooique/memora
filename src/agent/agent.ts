@@ -851,6 +851,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
         const composeResult = this.composer.compose(event, checkpoint, planCtx);
 
+        // 先应用已确定槽位（P1→P3），再处理 P4 澄清——解析成果不随暂停丢失。
+        // applyResolvedDelta 对 P4_CLARIFY 槽位有守卫（等待用户回答，仅应用已确定槽位）；
+        // 且 needClarify 非空 ⟺ task 槽为 P4（唯一无默认值的槽位），被守卫跳过
+        // ⇒ 不会触发 updateGoal 的 drift 级自动暂停，外层澄清 pause 语义不受干扰。
+        // 若放在下方 needClarify 分支 return 之后（历史位置），本轮增量
+        // （如 correction 的 delta.role）随暂停丢弃，用户回答后只能依赖 LLM
+        // 重新解析回答文本碰运气恢复——解析成果丢弃（P1）。
+        this.applyResolvedDelta(composeResult.resolved);
+
         // 若有 P4 澄清问题，暂停并等待用户回答
         if (composeResult.needClarify && composeResult.needClarify.length > 0) {
           // P4 防滥用检查：连续高风险暂停已达上限时，过滤高风险问题，使用 P3 兜底
@@ -893,11 +902,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           }
           // 所有高风险问题已被过滤降级，无剩余问题 → 继续执行（不暂停）
         }
-
-        // P1: 应用增量解析结果到检查点（角色/任务/标准/资源）
-        // 将 Composer 的增量解析结果写入 SessionManager 检查点，
-        // 实现「增量事件 → 槽位级更新」的闭环
-        this.applyResolvedDelta(composeResult.resolved);
       }
 
       // P1: 意图分类防污染——非 chat 事件不写 chat 历史
