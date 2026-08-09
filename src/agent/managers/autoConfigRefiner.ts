@@ -21,6 +21,14 @@ export interface AutoConfigRefinerOptions {
   minConfidence?: number;
   /** 单次对话最大建议数 */
   maxSuggestions?: number;
+  /**
+   * 已有同名规则查重回调（T2-3 去重，可选，向后兼容）
+   *
+   * 返回 true 表示该 name 已存在同名 rule（落库 id=source:name 冲突面），
+   * 建议应被过滤——防「血肉结晶为骨骼」路径重复沉淀。
+   * 未注入时不做已有规则查重（仅做跨轮重复回调去重）。
+   */
+  isExistingRule?: (name: string) => boolean;
 }
 
 /** LLM 返回的建议结构（type 开放字符串，对齐 ADR-004） */
@@ -33,14 +41,28 @@ interface RawSuggestion {
   reason: string;
 }
 
-const DEFAULT_OPTIONS: Required<AutoConfigRefinerOptions> = {
+const DEFAULT_OPTIONS: Required<Omit<AutoConfigRefinerOptions, 'isExistingRule'>> = {
   minConfidence: 0.6,
   maxSuggestions: 3,
 };
 
+/** 解析后的选项：默认值 + 可选注入回调（isExistingRule 不属于默认配置） */
+type ResolvedOptions = Required<Omit<AutoConfigRefinerOptions, 'isExistingRule'>> & {
+  isExistingRule?: (name: string) => boolean;
+};
+
 export class AutoConfigRefiner {
-  private readonly options: Required<AutoConfigRefinerOptions>;
+  private readonly options: ResolvedOptions;
   private backgroundProvider: LlmProvider | null = null;
+  /**
+   * 已建议指纹集合（T2-3 去重，`type\0name`）
+   *
+   * analyze 每轮执行且无状态，同一建议会在多轮被重复提取并重复回调宿主。
+   * 记录已回调过的建议指纹，跨轮命中则跳过——防重复打扰用户、防重复沉淀。
+   * 指纹对齐落库 id（source:name）冲突面：同 name 重复回调本应幂等覆盖，
+   * 无谓地重复 notify 只会增加宿主 UI 噪音。
+   */
+  private readonly seenSuggestionKeys: Set<string> = new Set();
 
   constructor(
     private readonly onConfigSuggestion: (suggestion: ConfigSuggestion) => void,
@@ -73,9 +95,11 @@ export class AutoConfigRefiner {
       suggestions = this.analyzeWithHeuristics(userInput);
     }
 
-    // 过滤低置信度 + 限制数量
+    // 过滤低置信度 + 查重（已有同名 rule / 跨轮重复回调）+ 限制数量
+    // 注意：去重过滤在 slice 之前——已存在/已建议的不占 maxSuggestions 名额
     const filtered = suggestions
       .filter((s) => s.confidence >= this.options.minConfidence)
+      .filter((s) => !this.isDuplicateSuggestion(s))
       .slice(0, this.options.maxSuggestions);
 
     for (const raw of filtered) {
@@ -102,6 +126,31 @@ export class AutoConfigRefiner {
         );
       }
     }
+  }
+
+  /**
+   * 去重判据（T2-3）：建议是否应被过滤
+   *
+   * 两层去重：
+   * 1. 已有同名 rule（options.isExistingRule）——落库 id=source:name 冲突面，
+   *    同内容重复沉淀成多个 rule 文件是长期数据污染，生成阶段直接拦截。
+   * 2. 跨轮重复回调（seenSuggestionKeys，`type\0name` 指纹）——analyze 每轮执行，
+   *    同一建议会被反复提取，只通知宿主一次。
+   *
+   * 副作用说明：命中第二层时立即记录指纹（幂等语义——只要提取过就算「已建议」，
+   * 宿主是否成功接收由回调 try/catch 兜底；下轮 LLM 若以不同 name 重新提取，
+   * 指纹不同，仍会重新建议）。
+   */
+  private isDuplicateSuggestion(raw: RawSuggestion): boolean {
+    if (this.options.isExistingRule?.(raw.name)) {
+      return true;
+    }
+    const key = `${raw.type}\u0000${raw.name}`;
+    if (this.seenSuggestionKeys.has(key)) {
+      return true;
+    }
+    this.seenSuggestionKeys.add(key);
+    return false;
   }
 
   /** 使用后台 LLM 分析对话 */

@@ -744,3 +744,96 @@ describe('analyzeWithHeuristics 启发式路径', () => {
     expect(captured.length).toBeLessThanOrEqual(10);
   });
 });
+
+// ─── 建议去重（T2-3：同偏好重复触发不产生重复建议） ─────────────
+
+describe('建议去重（T2-3）', () => {
+  const LONG_INPUT = '用户输入足够长的对话内容，超过二十字符用于触发分析流程';
+  const LONG_REPLY = '助手回复足够长的对话内容，超过二十字符用于触发分析流程';
+
+  it('跨轮重复回调去重：同一建议第二次 analyze 不再回调宿主', async () => {
+    const callback = vi.fn();
+    const refiner = new AutoConfigRefiner(callback);
+    const userInput = '我喜欢用机械键盘打字，手感非常不错，工作效率提升很多';
+    const assistantContent = '好的，我了解您喜欢机械键盘，会在后续对话中考虑这一点。';
+
+    await refiner.analyze(userInput, assistantContent);
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    // analyze 每轮执行，下一轮会重复提取同一建议 → 指纹命中应跳过
+    await refiner.analyze(userInput, assistantContent);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('同轮重复建议去重：LLM 返回两条同名建议只回调一次', async () => {
+    const callback = vi.fn();
+    const refiner = new AutoConfigRefiner(callback);
+    const provider = createMockProvider([
+      { content: buildArrayJson([
+        { type: 'rule', name: 'TS偏好', content: '用户偏好 TypeScript', confidence: 0.8, reason: 'r1' },
+        { type: 'rule', name: 'TS偏好', content: '用户偏好 TypeScript', confidence: 0.8, reason: 'r2' },
+      ]) },
+    ]);
+    refiner.setBackgroundProvider(provider);
+
+    await refiner.analyze(LONG_INPUT, LONG_REPLY);
+    expect(callback).toHaveBeenCalledTimes(1);
+    const suggestion = callback.mock.calls[0]?.[0] as ConfigSuggestion;
+    expect(suggestion.name).toBe('TS偏好');
+  });
+
+  it('isExistingRule 查重：已有同名 rule 的建议被过滤', async () => {
+    const callback = vi.fn();
+    const refiner = new AutoConfigRefiner(callback, {
+      isExistingRule: (name) => name === 'TS偏好',
+    });
+    const provider = createMockProvider([
+      { content: buildArrayJson([
+        { type: 'rule', name: 'TS偏好', content: '用户偏好 TypeScript', confidence: 0.8, reason: 'r1' },
+        { type: 'rule', name: 'Python偏好', content: '用户偏好 Python', confidence: 0.8, reason: 'r2' },
+      ]) },
+    ]);
+    refiner.setBackgroundProvider(provider);
+
+    await refiner.analyze(LONG_INPUT, LONG_REPLY);
+    // TS偏好 已存在被过滤，仅 Python偏好 回调
+    expect(callback).toHaveBeenCalledTimes(1);
+    const suggestion = callback.mock.calls[0]?.[0] as ConfigSuggestion;
+    expect(suggestion.name).toBe('Python偏好');
+  });
+
+  it('去重不占 maxSuggestions 名额：已存在建议过滤后剩余建议仍可回调', async () => {
+    const callback = vi.fn();
+    const refiner = new AutoConfigRefiner(callback, {
+      maxSuggestions: 1,
+      isExistingRule: (name) => name === 'TS偏好',
+    });
+    const provider = createMockProvider([
+      { content: buildArrayJson([
+        { type: 'rule', name: 'TS偏好', content: '用户偏好 TypeScript', confidence: 0.8, reason: 'r1' },
+        { type: 'rule', name: 'Python偏好', content: '用户偏好 Python', confidence: 0.8, reason: 'r2' },
+        { type: 'rule', name: 'Go偏好', content: '用户偏好 Go', confidence: 0.8, reason: 'r3' },
+      ]) },
+    ]);
+    refiner.setBackgroundProvider(provider);
+
+    await refiner.analyze(LONG_INPUT, LONG_REPLY);
+    // 3 条建议：TS偏好 已存在被过滤 → 剩 2 条新 → maxSuggestions=1 回调 1 条，
+    // 且必须是新建议（若去重失效，slice(1) 会取到第一位的 TS偏好 → 本断言转红）
+    expect(callback).toHaveBeenCalledTimes(1);
+    const suggestion = callback.mock.calls[0]?.[0] as ConfigSuggestion;
+    expect(suggestion.name).not.toBe('TS偏好');
+  });
+
+  it('未注入 isExistingRule 时仅靠指纹去重（向后兼容，不抛错）', async () => {
+    const callback = vi.fn();
+    const refiner = new AutoConfigRefiner(callback);
+    const userInput = '我喜欢用机械键盘打字，手感非常不错，工作效率提升很多';
+    const assistantContent = '好的，我了解您喜欢机械键盘，会在后续对话中考虑这一点。';
+
+    await refiner.analyze(userInput, assistantContent);
+    await refiner.analyze(userInput, assistantContent);
+    // 未注入查重回调 → 跨轮指纹去重仍生效，仅回调 1 次
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+});
