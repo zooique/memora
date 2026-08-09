@@ -311,6 +311,23 @@ export class ProjectManager {
     projectResult: LoadResult,
     configResult: LoadResult | null,
   ): void {
+    // T0-2：扫描不完整时整体停用对账。
+    // errors 非空意味着有文件「存在但读不到」（EACCES/EISDIR 等），其 id 不可知
+    // ——既进不了 seenIds，又会被下面的差集判为孤儿。宁可让僵尸规则多活一轮，
+    // 也不能把用户磁盘上还在的规则软删掉：前者可被下次启动自愈，后者是数据损失。
+    const scanErrorCount = projectResult.errors.length + (configResult?.errors.length ?? 0);
+    if (scanErrorCount > 0) {
+      logger.warn(
+        { scanErrorCount },
+        '索引对账已跳过：本次扫描存在读取失败，文件集合不完整，无法安全判定孤儿规则',
+      );
+      return;
+    }
+
+    // 扫描无误时，loadedIds 才等价于「磁盘上有文件支撑的 id 集合」：
+    // 另两条 skip 路径（read 返回 null=ENOENT、内容为占位模板）不进 loadedIds
+    // 恰恰是对账想要的结果——前者文件真的没了，后者内容已被清空成空壳，
+    // 索引里的旧内容是陈旧副本，本就该软删。
     const fileBackedIds = new Set<string>([
       ...(projectResult.loadedIds ?? []),
       ...(configResult?.loadedIds ?? []),

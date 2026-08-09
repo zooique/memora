@@ -44,7 +44,18 @@ export interface LoadResult {
   skipped: number;
   /** 加载失败的详情 */
   errors: Array<{ file: string; error: string }>;
-  /** 本次加载写入索引的记忆 ID（供调用方追踪项目级记忆以支持关闭时撤销） */
+  /**
+   * 本次加载写入索引的记忆 ID
+   *
+   * 两个消费者，语义都必须是「已写入索引」：
+   *   - `ProjectManager.currentProjectMemoryIds`——关闭项目时撤销哪些记忆；
+   *   - `evictOrphanRules` 的存活集——配合 `errors` 判定孤儿（见下方注意）。
+   *
+   * **不要把它当作「磁盘上还有哪些文件」**。二者在 `errors` 非空时不等：
+   * 读取抛错的文件确实存在，但其 id 不可知（`FileStore` 允许 frontmatter 覆盖
+   * `${source}:${name}` 默认 id，见 store.ts:211），既进不了本集合也无法从文件名
+   * 推导。对账方必须先检查 `errors` 为空才可使用本集合做差集。
+   */
   loadedIds?: string[];
 }
 
@@ -69,10 +80,14 @@ export class MemoryLoader {
         try {
           const memory = await this.fileStore.read(source, name);
           if (!memory) {
+            // read 返回 null 仅在 ENOENT——list 到 read 之间文件被删。
+            // 此时「无文件支撑」为真，不进 loadedIds 正是对账想要的结果。
             result.skipped++;
             continue;
           }
           // 跳过空壳模板（新建项目时的占位文件，无实质规则内容）
+          // 不进 loadedIds 亦为正确：文件内容已被清空成占位，索引里的旧内容是陈旧副本，
+          // 交由对账软删除，避免「用户看文件已清空、system prompt 仍在注入旧规则」。
           if (isPlaceholderContent(memory)) {
             result.skipped++;
             continue;
@@ -87,6 +102,10 @@ export class MemoryLoader {
           result.loaded++;
           result.loadedIds!.push(memory.id);
         } catch (err) {
+          // 读取抛错（EACCES/EISDIR 等）：文件存在，但 id 不可知（frontmatter 可覆盖
+          // 默认 id，读不到就无从得知）。该条目既进不了 loadedIds，也无法被单独豁免
+          // ——只能由 errors 非空让下游 evictOrphanRules 整体停用对账，
+          // 避免把「暂时读不到」误判成「文件已删除」而软删用户的规则。
           result.skipped++;
           result.errors.push({
             file: `${source}/${name}`,
