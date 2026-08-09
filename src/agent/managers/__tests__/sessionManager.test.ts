@@ -498,6 +498,17 @@ describe('SessionManager', () => {
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
     });
 
+    it('T2-2：pause() 应在唯一状态转换点写入 pausedAt（覆盖空闲直翻与流中延迟翻）', () => {
+      manager.pause('测试暂停', 'user');
+      const cp = manager.getCheckpoint();
+      expect(cp).not.toBeNull();
+      // 修复前：无 pausedAt 字段 → undefined → 红
+      // 修复后：pause() 写 Date.now() → 绿
+      expect(cp!.pausedAt).toBeTypeOf('number');
+      expect(cp!.pausedAt!).toBeGreaterThan(0);
+      expect(cp!.pausedAt!).toBeLessThanOrEqual(Date.now());
+    });
+
     // ── T1-2：运行时超时也必须填充超时会话信息，通过事件载荷传递 ──
     // F1.3 广播式改造后，超时信息通过事件载荷传递，不再使用
     // consumePauseTimedOutSession() 一次性消费模式。以下测试改为验证
@@ -889,6 +900,49 @@ describe('SessionManager', () => {
         sessionId: '2026-06-27-main',
         date: '2026-06-27',
         session: 'main',
+      }));
+      vi.useRealTimers();
+    });
+
+    it('T2-2：暂停后 touchCheckpoint 刷新 lastHeartbeat 不应推迟超时判定（pausedAt 为准）', () => {
+      vi.useFakeTimers();
+      const loop = createMockLoopWithMessages([]);
+      // 核心契约：pausedAt 是暂停起点（31 分钟前 → 超时），
+      // lastHeartbeat 刚被 touchCheckpoint（如 updatePlanStepStatus）刷新（新鲜）。
+      // 修复前读 lastHeartbeat → 判不超时 → cp 非 null → 红。
+      // 修复后读 pausedAt → 判超时 → cp 为 null → 绿。
+      const oldPausedAt = Date.now() - AGENT_CONSTANTS.PAUSE_TIMEOUT_MS - 60_000;
+      const store = createMockSessionStore({
+        loadCheckpoint: vi.fn().mockReturnValue(JSON.stringify({
+          sessionId: '2026-06-27-main',
+          status: 'paused',
+          mainGoal: 'T2-2 测试',
+          currentGoal: 'T2-2 测试',
+          goalChangeSeq: 0,
+          plan: [],
+          role: { name: 'assistant' },
+          standard: { quality: '完成', constraints: [] },
+          resource: { documents: [], memories: [], context: '' },
+          hotMemory: [],
+          lastHeartbeat: Date.now(), // 新鲜：模拟暂停后 touchCheckpoint 刷新
+          pausedAt: oldPausedAt,     // 超时：暂停起点真实时间
+        })),
+      });
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        store,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const cp = mgr.loadPersistedCheckpoint();
+
+      expect(cp).toBeNull();
+      expect(mgr.getCheckpoint()).toBeNull();
+      expect(mgr.stateMachine.status).toBe('running');
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
+        sessionId: '2026-06-27-main',
       }));
       vi.useRealTimers();
     });

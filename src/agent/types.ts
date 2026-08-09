@@ -514,6 +514,18 @@ export interface SessionCheckpoint {
   /** 心跳时间戳（毫秒），防僵尸会话 */
   lastHeartbeat: number;
   /**
+   * 暂停起点时间戳（毫秒），与 lastHeartbeat 解耦（T2-2 / F1-1）
+   *
+   * 语义单一化：lastHeartbeat 仅承载「检查点写入时间」（touchCheckpoint 唯一写点，
+   * 任何内容变更都会刷新）；本字段专指「本检查点进入 paused 状态的时刻」，仅由
+   * SessionManager.pause() 在状态转换点写入，暂停后不再被 touchCheckpoint 刷新。
+   * 暂停超时判定（isPauseTimedOut / markSessionTimedOut / checkPauseTimeout）以此为准，
+   * 而非 lastHeartbeat——否则暂停后任意 touchCheckpoint（如 updatePlanStepStatus）
+   * 会刷新心跳、无限推迟超时判定。
+   * 可选：仅 paused 检查点有意义；缺失时超时判定回退到 lastHeartbeat。
+   */
+  pausedAt?: number;
+  /**
    * 检查点 schema 版本（T1-4，未来兼容公共前提）
    *
    * 标记本检查点结构所对应的内核版本。`createCheckpoint` 写入当前

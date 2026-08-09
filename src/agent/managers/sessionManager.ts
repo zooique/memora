@@ -497,7 +497,7 @@ export class SessionManager {
 
       // P0-3：暂停超时检测——超时会话自动清理检查点，不恢复暂停状态
       if (this.isPauseTimedOut(checkpoint)) {
-        const pauseDuration = Date.now() - checkpoint.lastHeartbeat;
+        const pauseDuration = Date.now() - (checkpoint.pausedAt ?? checkpoint.lastHeartbeat);
         logger.warn(
           { sessionId, pauseDuration, status: checkpoint.status },
           '暂停超时，自动清理检查点（会话将继续，但不会恢复暂停状态）',
@@ -685,6 +685,10 @@ export class SessionManager {
     if (typeof cp.lastHeartbeat !== 'number' || !Number.isFinite(cp.lastHeartbeat)) {
       // 用当前时刻而非 0：0 会被 isPauseTimedOut 判为超时 55 年，恢复即被清理
       cp.lastHeartbeat = Date.now();
+    }
+    // T2-2（F1-1）：暂停起点损坏时丢弃，回退到 lastHeartbeat，避免 NaN 比较导致永不超时
+    if (cp.pausedAt !== undefined && (typeof cp.pausedAt !== 'number' || !Number.isFinite(cp.pausedAt))) {
+      delete cp.pausedAt;
     }
     if (!Array.isArray(cp.plan)) cp.plan = defaults.plan;
     if (!Array.isArray(cp.hotMemory)) cp.hotMemory = defaults.hotMemory;
@@ -894,6 +898,15 @@ export class SessionManager {
     if (result.allowed) {
       // 暂停前保存检查点
       this.createCheckpoint();
+      // T2-2（F1-1）：记录暂停起点，与 lastHeartbeat 解耦。lastHeartbeat 现仅承载
+      // 「检查点写入时间」语义（touchCheckpoint 唯一写点），不再作为暂停超时基准，
+      // 避免暂停后 touchCheckpoint（如 updatePlanStepStatus）刷新心跳导致超时判定被无限推迟。
+      // pausedAt 在 pause() 唯一状态转换点写入，覆盖空闲直翻与流中延迟翻两条路径。
+      if (this.checkpoint) {
+        this.checkpoint.pausedAt = Date.now();
+        this.touchCheckpoint();
+        this.flushCheckpoint(true);
+      }
       // 仅高风险暂停记录时间戳（低风险由 Agent 自动兜底，不累积）
       if (!lowRisk) {
         this.consecutivePauseTimestamps.push(Date.now());
@@ -1677,7 +1690,7 @@ export class SessionManager {
 
     // 暂停超时，自动清理
     const sessionId = checkpoint.sessionId;
-    const pauseDuration = Date.now() - checkpoint.lastHeartbeat;
+    const pauseDuration = Date.now() - (checkpoint.pausedAt ?? checkpoint.lastHeartbeat);
 
     logger.warn(
       { sessionId, pauseDuration },
@@ -1715,7 +1728,9 @@ export class SessionManager {
   /**
    * 检查暂停是否超时（P0-3：暂停超时自动归档）
    *
-   * 仅对 paused 状态检查：当前时间距 lastHeartbeat 超过 PAUSE_TIMEOUT_MS 视为超时。
+   * 仅对 paused 状态检查：当前时间距 pausedAt（暂停起点）超过 PAUSE_TIMEOUT_MS 视为超时；
+   * pausedAt 缺失时回退到 lastHeartbeat。pausedAt 与 lastHeartbeat 解耦（T2-2 / F1-1），
+   * 避免暂停后 touchCheckpoint 刷新心跳导致超时判定被无限推迟。
    * 超时的暂停会话将被自动清理，不再恢复。
    *
    * @param checkpoint - 会话检查点
@@ -1723,7 +1738,8 @@ export class SessionManager {
    */
   private isPauseTimedOut(checkpoint: SessionCheckpoint): boolean {
     if (checkpoint.status !== 'paused') return false;
-    return Date.now() - checkpoint.lastHeartbeat > AGENT_CONSTANTS.PAUSE_TIMEOUT_MS;
+    const pauseStart = checkpoint.pausedAt ?? checkpoint.lastHeartbeat;
+    return Date.now() - pauseStart > AGENT_CONSTANTS.PAUSE_TIMEOUT_MS;
   }
 
   /**

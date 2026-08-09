@@ -185,15 +185,23 @@ describe('检查点字段生命周期', () => {
      * 它不枚举任何具体字段名——将来为 SessionCheckpoint 新增字段时，
      * 只要 createCheckpoint 退回白名单式重建，此断言即失败，
      * 无需任何人记得回来补充测试。
+     *
+     * T2-2（F1-1）修正：pause() 在 createCheckpoint 之后合法追加 pausedAt
+     * （暂停起点，与 lastHeartbeat 解耦）。故「完全一致」改为「不得收缩 +
+     * 新增键仅限 pausedAt」——前者保留原守卫（丢失既有字段即红），后者反向
+     * 锁定合法扩展（将来误加其他键会被发现，而非静默通过）。
      */
-    it('pause 前后检查点的键集合应完全一致', () => {
+    it('pause 前后检查点的键集合不得收缩，新增键仅限 pausedAt', () => {
       seedCheckpointWithSidecars();
       const before = Object.keys(manager.getCheckpoint()!).sort();
 
       manager.pause('测试暂停', 'user');
 
       const after = Object.keys(manager.getCheckpoint()!).sort();
-      expect(after).toEqual(before);
+      // 不得收缩：before 的每个键都必须仍在 after 中
+      expect(before.every((k) => after.includes(k))).toBe(true);
+      // 合法扩展仅限 pausedAt：防止将来误加键未被察觉
+      expect(after.filter((k) => !before.includes(k))).toEqual(['pausedAt']);
     });
 
     it('落盘快照不应丢失任何有值字段', () => {
