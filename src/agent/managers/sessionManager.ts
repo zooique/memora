@@ -997,16 +997,29 @@ export class SessionManager {
   /**
    * 设置暂停元数据（P2-3: Phase 2 暂停模型）
    *
-   * @param meta - 暂停元数据
+   * @param meta - 暂停元数据，传 undefined 清除
    */
-  setPauseMeta(meta: PauseMeta): void {
+  setPauseMeta(meta: PauseMeta | undefined): void {
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();
     // 必须落盘：本方法由 loop.onPaused 在 pause() 之后回调，
     // 是 pauseMeta 进入检查点的唯一时机。若不落盘，磁盘快照将永远缺少暂停元数据，
     // 宿主重启后只能回落到兜底文案「已暂停（重启恢复）」。
+    // P1-1: 传 undefined 时同样需要落盘，否则 abandonPause() 清除 pauseMeta 后
+    // 磁盘检查点的 pauseMeta 字段残留，与内存态分叉。
     this.flushCheckpoint();
+  }
+
+  /**
+   * 清除暂停元数据（P1-1: 落盘修复）
+   *
+   * 通过 setPauseMeta(undefined) 实现，确保清除操作经 touchCheckpoint →
+   * flushCheckpoint 链路落盘，而非直接修改内存对象后丢失。
+   * 适用于 abandonPause 等需要清除 pauseMeta 的场景。
+   */
+  clearPauseMeta(): void {
+    this.setPauseMeta(undefined);
   }
 
   /**
@@ -1059,6 +1072,14 @@ export class SessionManager {
    * 日志为 append-only，不修改已有记录。
    * 扩展（P3.4）：支持记录幂等性级别和副作用，供补偿机制使用。
    *
+   * 落盘策略（P3-1 批处理优化）：
+   * 只标记脏标记，不再即时落盘。`completeRound()` 在回合边界统一 flush，
+   * `createCheckpoint()` 在暂停/异常时强制落盘——两者构成了完整的持久化保障。
+   * 回合中途崩溃的最坏情况是最近一次工具执行记录丢失，outbox 模式会将其视为
+   * 「未执行」并在恢复后重新执行——对于幂等工具这是安全的，对于非幂等工具
+   * 补偿机制（P3.4）会在恢复时触发补偿操作。此权衡将 IO 次数从「每工具调用」
+   * 降为「每回合」，大幅减少写盘频率。
+   *
    * @param record - 工具执行记录
    */
   logToolExecution(record: ToolExecutionRecord): void {
@@ -1068,11 +1089,7 @@ export class SessionManager {
     }
     this.checkpoint.completedToolCalls.push(record);
     this.touchCheckpoint();
-    // 【必须立即落盘，不可延迟到回合边界】
-    // outbox 模式的前提是「执行事实先于崩溃被持久化」。若执行记录只驻留内存，
-    // 回合中途崩溃将使 hasToolExecuted() 在恢复后恒 false，非幂等工具被重复执行——
-    // 这正是 outbox 要消除的风险。回合边界对此粒度太粗（单回合可含多次工具调用）。
-    this.flushCheckpoint();
+    // P3-1：不再即时落盘，依赖 completeRound / createCheckpoint 在回合边界统一 flush
   }
 
   /**
@@ -1080,6 +1097,11 @@ export class SessionManager {
    *
    * 将副作用追加到指定工具执行记录中。
    * 副作用一旦记录不可修改（append-only），确保补偿时能看到完整的历史副作用。
+   *
+   * 落盘策略（P3-1 批处理优化）：
+   * 与 logToolExecution 对齐，只标记脏标记，依赖 completeRound 在回合边界统一 flush。
+   * 副作用记录在工具执行记录之后，工具执行记录已不再即时落盘，副作用单独落盘
+   * 无意义——两者必须在同一检查点快照中保持一致。
    *
    * @param name - 工具名称
    * @param argsSignature - 参数签名（与 logToolExecution 的记录匹配）
@@ -1096,8 +1118,7 @@ export class SessionManager {
     }
     record.sideEffects.push(sideEffect);
     this.touchCheckpoint();
-    // 与 logToolExecution 同理：补偿机制依赖副作用清单，丢失即无法回滚
-    this.flushCheckpoint();
+    // P3-1：与 logToolExecution 对齐，不再即时落盘
   }
 
   /**

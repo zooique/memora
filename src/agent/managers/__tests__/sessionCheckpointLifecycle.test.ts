@@ -189,21 +189,34 @@ describe('检查点字段生命周期', () => {
     });
   });
 
-  describe('outbox 落盘时机（工具幂等前提）', () => {
-    it('工具执行记录应立即落盘，不得延迟到回合边界', () => {
+  describe('outbox 落盘时机（P3-1 批处理优化）', () => {
+    it('工具执行记录应延迟到回合边界统一落盘', () => {
       manager.createCheckpoint('主目标');
+      const writesBefore = disk.writeCount();
 
       manager.logToolExecution(TOOL_RECORD);
 
-      // 尚未 completeRound，此刻若崩溃，磁盘必须已包含执行事实
+      // P3-1: logToolExecution 不再即时落盘，仅标记脏标记
+      // 尚未 completeRound，磁盘不应有执行记录
+      const writesAfterLog = disk.writeCount();
+      expect(writesAfterLog).toBe(writesBefore);
+
+      // 执行 completeRound 后，回合边界统一落盘
+      manager.completeRound({ summary: '测试回合', toolCallCount: 1, assistantLength: 10 });
+      const writesAfterRound = disk.writeCount();
+      expect(writesAfterRound).toBeGreaterThan(writesAfterLog);
+
       const onDisk = disk.readDisk();
       expect(onDisk!.completedToolCalls).toHaveLength(1);
       expect(onDisk!.completedToolCalls![0]!.argsSignature).toBe('{"path":"a.ts"}');
     });
 
-    it('副作用记录应立即落盘（补偿机制前提）', () => {
+    it('副作用记录应延迟到回合边界统一落盘', () => {
       manager.createCheckpoint('主目标');
       manager.logToolExecution(TOOL_RECORD);
+
+      // 先 completeRound 落盘第一轮（工具执行记录已在磁盘）
+      manager.completeRound({ summary: '第一轮', toolCallCount: 1, assistantLength: 10 });
 
       manager.recordSideEffect('write_file', '{"path":"a.ts"}', {
         type: 'file_write',
@@ -211,8 +224,15 @@ describe('检查点字段生命周期', () => {
         description: '写入文件',
       });
 
-      const onDisk = disk.readDisk();
-      expect(onDisk!.completedToolCalls![0]!.sideEffects).toHaveLength(1);
+      // P3-1: recordSideEffect 不再即时落盘，仅标记脏标记
+      // 磁盘上已有的检查点应**没有**副作用记录
+      const onDiskBefore = disk.readDisk();
+      expect(onDiskBefore!.completedToolCalls![0]!.sideEffects).toBeUndefined();
+
+      // 执行 completeRound 后，回合边界统一落盘，副作用记录出现
+      manager.completeRound({ summary: '第二轮', toolCallCount: 0, assistantLength: 5 });
+      const onDiskAfter = disk.readDisk();
+      expect(onDiskAfter!.completedToolCalls![0]!.sideEffects).toHaveLength(1);
     });
 
     it('恢复后应能凭磁盘记录识别出工具已执行', () => {

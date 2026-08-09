@@ -425,6 +425,11 @@ export class AgentLoop {
     return this.inAutonomousStep;
   }
 
+  /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
+  get isPauseRequested(): boolean {
+    return this.pauseRequested;
+  }
+
   /**
    * 处理 command 类型事件
    *

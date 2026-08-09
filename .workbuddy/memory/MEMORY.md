@@ -25,6 +25,13 @@
 - **区分「死字段」与「契约未兑现」**：联合类型某个取值零写入点（如 `phase:'requesting'`）≠ 字段死。真相是**契约与实现不一致**——类型承诺了 N 种状态、实现只兑现 1 种，下游会按契约写死分支。危害高于死代码，修法二选一：兑现取值 or 收窄类型（同步删下游分支），**禁止维持现状**。
 - grep 生产代码须 `| grep -v "__tests__"`，否则测试 fixture 会淹没真实调用点信号。
 
+## 事件闭环审计（可复用，2026-08-09）
+- 统计 `AGENT_EVENTS` 各事件在**内核+宿主生产代码**（排除 `__tests__`）的 emit/on 分布，找 dangling（emit>0 且 on=0）。
+- **emit/on 双正则必须同时匹配字符串字面量与 `AGENT_EVENTS.XXX` 常量引用**——sessionManager 用 `emitEvent('name')` 字面量、agent.ts 用 `this.emit(AGENT_EVENTS.name)` 常量、宿主 chatHandlers 用 `.on(AGENT_EVENTS.name)` 常量；只匹配一种会把 needClarify/sessionPaused 误判为 dangling。
+- 判 dangling 后须**核实旁路消费**（宿主 IPC 手动广播，如 SESSION_RECOVER 恢复成功手动 send SESSION_STATUS_CHANGED，不经事件）再定性——事件零监听 ≠ 功能无 UI，可能走了 IPC 直通。
+- 脚本模板：`C:\Users\SJ\AppData\Local\Temp\event_audit.mjs`（v3 版含常量双匹配）。
+- 2026-08-09 实测：28 事件中 19 闭环、8 dangling（P1：sessionResumeFailed/sessionError/contextTruncated/sessionRecovered 宿主旁路有、P2：sessionResumeBlocked/goalDriftDetected、P3：workProjectionGenerated/archiveModeChanged）、2 无引用（personaSwitchLocked/taskTableGenerated）。
+
 ## 感知/通知架构约定
 - 分级通知 `priority: normal|high|critical`：high 绕过节奏抑制，critical 绕过节奏+冷却。里程碑/健康警告→high。
 - 可选接口方法向后兼容：`setErrorCallback?(cb)`，调用方 `if(x.setErrorCallback)` 检测后调用。
