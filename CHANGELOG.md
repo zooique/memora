@@ -4,6 +4,32 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+SSOT 第三轮排雷：15 项契约/一致性缺陷清零，无公共 API 变更（内部修复）。
+
+### Fixed（修复）
+
+- **执行流单一收口**：`processEvent` / `executeChatLoop` / `resumeExecution` 统一走 `consumeExecutionStream`，清理放 finally；修复 async generator 被 `void` 调用导致函数体不执行（跨进程边界断裂）（T0-1）
+- **门面等宽**：`Agent.pause` 透传 `lowRisk`，连续暂停计数不再误计；`requestPause` 空闲态立即翻转、流中延迟翻转两端对称（T0-2 / T1-1 / T2-8）
+- **状态恢复强制归零**：`restoreFromCheckpoint` 统一 `resetToRunning()`，检查点与状态机不再分叉（T0-3）
+- **checkpoint schema 版本化**：`CURRENT_SCHEMA_VERSION` 写入/比对（T1-4）
+- **暂停超时信息事件化**：`sessionPauseTimedOut` 载荷携带 sessionId/date/session（T1-2）
+- **计划步骤状态唯一写点**：`completeRound` 改走 `updatePlanStepStatus`，消灭旁路直改（T2-1）
+- **暂停元数据时序修正**：`setPauseMeta` 首轮 checkpoint 兜底，注释纠正 onPaused 先于 pause()（T2-6）
+- **配置建议重建复活**：`confirmConfigSuggestion` upsert 前 restore 同名软删记忆 + name 白名单堵路径穿越（T2-4）
+- **暂停起点与心跳解耦**：新增 `checkpoint.pausedAt`，暂停后 touchCheckpoint 刷新不再推迟超时判定（T2-2）
+- **孤儿向量清理**：`writePurge` / `writePurgeExpired` 同步清理 vectorStore，消除 30 天自动清理后的孤儿向量（T2-5）
+
+### Removed（移除）
+
+- 零注册的 `onBootstrapSyncFailed` 死回调（失败可观测性由 logger.warn 承担）（T2-3）
+- `SessionStateMachine.onEvent` 空壳与失效注释（T2-7）
+
+### Internal（内部变更，不影响公共 API）
+
+- 测试用例总数 1949 → 1983（+34，80 个测试文件）
+
 ## [2.1.0] - 2026-08-08
 
 不中断工作模式 v2.0 与网络搜索接口版本。
