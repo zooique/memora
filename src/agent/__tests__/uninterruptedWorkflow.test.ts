@@ -834,7 +834,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
   });
 
   describe('restoreFromCheckpoint 补偿集成', () => {
-    it('恢复时无补偿需求应正常完成', () => {
+    it('恢复时无补偿需求应正常完成', async () => {
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
         status: 'paused',
@@ -848,12 +848,12 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         hotMemory: [],
         lastHeartbeat: Date.now(),
       };
-      const count = manager.restoreFromCheckpoint(cp);
+      const count = await manager.restoreFromCheckpoint(cp);
       expect(count).toBe(0);
       expect(loop.restoreHistory).toHaveBeenCalled();
     });
 
-    it('恢复时含非幂等工具应注入补偿通知', () => {
+    it('恢复时含非幂等工具应注入补偿通知', async () => {
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
         status: 'paused',
@@ -880,14 +880,14 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         ],
         lastHeartbeat: Date.now(),
       };
-      manager.restoreFromCheckpoint(cp);
+      await manager.restoreFromCheckpoint(cp);
       expect(loop.injectSystemMessage).toHaveBeenCalled();
       const injectCall = (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
       expect(injectCall).toContain('P3.4补偿通知');
       expect(injectCall).toContain('file_write');
     });
 
-    it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', () => {
+    it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
       // 先让状态机残留 paused（模拟跨会话恢复时的残留状态）
       manager.pause('测试暂停', 'user');
       expect(manager.stateMachine.status).toBe('paused');
@@ -905,7 +905,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         hotMemory: [],
         lastHeartbeat: Date.now(),
       };
-      manager.restoreFromCheckpoint(cp);
+      await manager.restoreFromCheckpoint(cp);
 
       // 修复前：resetToRunning 后状态机 running，但 `status==='error' && error` 两分支都不进
       // → checkpoint.status 保持 'error' → 永久分叉（断言红）
@@ -913,7 +913,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       expect(manager.getCheckpoint()!.status).toBe('running');
     });
 
-    it('T9：恢复 paused 检查点后应启动暂停超时定时器（修复前未启动 → 红）', () => {
+    it('T9：恢复 paused 检查点后应启动暂停超时定时器（修复前未启动 → 红）', async () => {
       const startSpy = vi.spyOn(
         manager as unknown as { startPauseTimeoutTimer: () => void },
         'startPauseTimeoutTimer',
@@ -932,7 +932,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         hotMemory: [],
         lastHeartbeat: Date.now(),
       };
-      manager.restoreFromCheckpoint(cp);
+      await manager.restoreFromCheckpoint(cp);
 
       // 修复前：恢复路径直接 stateMachine.pause 绕过 pause() → 定时器未启动 → 断言红
       // （恢复的 paused 会话本次运行期无超时检测，只能等下次重启）
@@ -960,7 +960,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         lastHeartbeat: Date.now(),
       };
       // 旧实现：悬空 Promise + rejection 无人处理（unhandledRejection 污染进程）
-      manager.restoreFromCheckpoint(cp);
+      await manager.restoreFromCheckpoint(cp);
 
       // 恢复主流程不受影响（热记忆已恢复、状态机已归位）
       expect(manager.stateMachine.status).toBe('running');
@@ -2154,7 +2154,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before + 1);
   });
 
-  it('P1：状态机残留 paused 时恢复 error 检查点，应正确落到 error', () => {
+  it('P1：状态机残留 paused 时恢复 error 检查点，应正确落到 error', async () => {
     const manager = new SessionManager(
       () => createMockHistory(),
       () => createMockLoop(),
@@ -2175,7 +2175,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
 
     // 修复前：triggerError 仅允许 running→error，残留 paused 使其静默失败 → 状态机停留 paused
     // 修复后：resetToRunning() 先归零，再 triggerError → error
-    manager.restoreFromCheckpoint(errorCheckpoint);
+    await manager.restoreFromCheckpoint(errorCheckpoint);
     expect(manager.stateMachine.status).toBe('error');
   });
 

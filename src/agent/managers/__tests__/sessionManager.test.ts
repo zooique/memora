@@ -498,26 +498,27 @@ describe('SessionManager', () => {
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
     });
 
-    // ── T1-2：运行时超时也必须填充超时会话（防回归）──────────
-    // 修复前运行时路径只发事件不填字段，且检查点已从磁盘删除，
-    // 导致下次启动也无从发现——会话内容永久丢失。
+    // ── T1-2：运行时超时也必须填充超时会话信息，通过事件载荷传递 ──
+    // F1.3 广播式改造后，超时信息通过事件载荷传递，不再使用
+    // consumePauseTimedOutSession() 一次性消费模式。以下测试改为验证
+    // emitEvent 调用含 date/session 字段。
 
-    it('运行时超时应填充可消费的超时会话信息', () => {
+    it('运行时超时应通过事件载荷传递超时会话信息', () => {
       manager.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(manager.consumePauseTimedOutSession()).toEqual({
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
         date: '2026-06-27',
         session: 'main',
-      });
+      }));
     });
 
-    it('超时会话信息消费一次后应清空', () => {
+    it('超时会话信息消费一次后应清空（consumePauseTimedOutSession 废弃后返回 null）', () => {
       manager.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(manager.consumePauseTimedOutSession()).not.toBeNull();
+      // consumePauseTimedOutSession 已废弃，始终返回 null
       expect(manager.consumePauseTimedOutSession()).toBeNull();
     });
 
@@ -536,11 +537,11 @@ describe('SessionManager', () => {
       mgr.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(mgr.consumePauseTimedOutSession()).toEqual({
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main-fork-1',
         date: '2026-06-27',
         session: 'main-fork-1',
-      });
+      }));
     });
 
     it('会话标识非日期开头时应跳过填充但仍发射事件', () => {
@@ -893,15 +894,15 @@ describe('SessionManager', () => {
       }));
       // T1-2：字段须在发射事件之前填好——监听器会同步消费，
       // 顺序颠倒会让归档消费到 null
-      expect(mgr.consumePauseTimedOutSession()).toEqual({
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
         date: '2026-06-27',
         session: 'main',
-      });
+      }));
       vi.useRealTimers();
     });
 
-    it('restoreFromCheckpoint 应恢复消息和状态机', () => {
+    it('restoreFromCheckpoint 应恢复消息和状态机', async () => {
       const loop = createMockLoopWithMessages([]);
       const mgr = new SessionManager(
         () => history,
@@ -928,7 +929,7 @@ describe('SessionManager', () => {
         lastHeartbeat: Date.now(),
       };
 
-      const count = mgr.restoreFromCheckpoint(checkpoint);
+      const count = await mgr.restoreFromCheckpoint(checkpoint);
 
       // 应恢复 2 条消息
       expect(count).toBe(2);
@@ -938,7 +939,7 @@ describe('SessionManager', () => {
       ]);
     });
 
-    it('restoreFromCheckpoint 截断时注入提示消息', () => {
+    it('restoreFromCheckpoint 截断时注入提示消息', async () => {
       const loop = createMockLoopWithMessages([]);
       const mgr = new SessionManager(
         () => history,
@@ -963,14 +964,14 @@ describe('SessionManager', () => {
         lastHeartbeat: Date.now(),
       };
 
-      mgr.restoreFromCheckpoint(checkpoint);
+      await mgr.restoreFromCheckpoint(checkpoint);
 
       expect(loop.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('5 条早期消息已被截断'),
       );
     });
 
-    it('restoreFromCheckpoint 恢复 paused 状态应设置状态机', () => {
+    it('restoreFromCheckpoint 恢复 paused 状态应设置状态机', async () => {
       const loop = createMockLoopWithMessages([]);
       const mgr = new SessionManager(
         () => history,
@@ -994,7 +995,7 @@ describe('SessionManager', () => {
         lastHeartbeat: Date.now(),
       };
 
-      mgr.restoreFromCheckpoint(checkpoint);
+      await mgr.restoreFromCheckpoint(checkpoint);
 
       expect(mgr.stateMachine.status).toBe('paused');
     });

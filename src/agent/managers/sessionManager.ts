@@ -448,6 +448,10 @@ export class SessionManager {
       if (!json) return null;
 
       const checkpoint = JSON.parse(json) as SessionCheckpoint;
+
+      // F2.2：检查点完整性校验——缺失字段记告警，不阻塞加载
+      SessionManager.validateCheckpointIntegrity(checkpoint);
+
       this.checkpoint = checkpoint;
       // 刚从磁盘读入，内存态与磁盘态一致
       this.checkpointDirty = false;
@@ -498,6 +502,70 @@ export class SessionManager {
   }
 
   /**
+   * 检查点完整性校验（F2.2）
+   *
+   * 校验检查点必需字段是否完整，缺失字段记录告警但不阻塞执行。
+   * 前向兼容：未知字段静默通过，仅新增必需字段时更新此列表。
+   *
+   * 持久化检查点缺失字段可能源自：
+   * - 旧版本创建的检查点（新增字段不存）
+   * - 存储层写盘截断（部分字段丢失）
+   * - 跨版本反序列化（字段名变更）
+   *
+   * @param checkpoint - 待校验的检查点
+   * @returns 是否通过完整性校验（true=完整，false=有字段缺失）
+   */
+  private static validateCheckpointIntegrity(checkpoint: SessionCheckpoint): boolean {
+    // 检查点必需字段列表（F2.2 真理源）
+    // 新增必需字段时同步更新此列表，确保旧检查点升级时能感知缺失
+    const REQUIRED_FIELDS: Array<keyof SessionCheckpoint> = [
+      'sessionId',
+      'status',
+      'mainGoal',
+      'currentGoal',
+      'goalChangeSeq',
+      'plan',
+      'role',
+      'standard',
+      'resource',
+      'hotMemory',
+      'lastHeartbeat',
+    ];
+
+    const missingFields: string[] = [];
+
+    for (const field of REQUIRED_FIELDS) {
+      const value = checkpoint[field];
+      if (value === undefined || value === null) {
+        missingFields.push(field);
+      }
+    }
+
+    // 可选字段类型校验：error 存在时必须有 cause/at/recovered
+    if (checkpoint.error) {
+      if (typeof checkpoint.error.cause !== 'string' || !checkpoint.error.cause) {
+        missingFields.push('error.cause');
+      }
+      if (typeof checkpoint.error.at !== 'number') {
+        missingFields.push('error.at');
+      }
+      if (typeof checkpoint.error.recovered !== 'boolean') {
+        missingFields.push('error.recovered');
+      }
+    }
+
+    if (missingFields.length > 0) {
+      logger.warn(
+        { sessionId: checkpoint.sessionId, missingFields },
+        '检查点完整性校验失败：缺失必需字段（来自旧版本或存储截断，以默认值填充后继续）',
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * 获取当前检查点
    *
    * 返回当前运行时检查点快照，若未创建则返回 null。
@@ -521,6 +589,9 @@ export class SessionManager {
    * @returns 恢复的消息数量
    */
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
+    // F2.2：检查点完整性校验——缺失字段记告警，不阻塞恢复
+    SessionManager.validateCheckpointIntegrity(checkpoint);
+
     this.checkpoint = checkpoint;
     // 检查点由外部整体注入，视为与来源一致；后续变更由 touchCheckpoint 标脏
     this.checkpointDirty = false;
