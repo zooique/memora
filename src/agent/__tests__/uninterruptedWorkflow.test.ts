@@ -2263,8 +2263,27 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     }
     expect(agent.sessionManager!.stateMachine.status).toBe('paused');
     // 契约：流中用户暂停与空闲暂停同一 lowRisk 契约（:1117 透传 true），计数保持 0
-    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-  });
+      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
+    });
+
+    it('T2-6：首轮无预建 checkpoint 的流中暂停，pauseMeta 必须落到检查点（防 F4-3 静默丢）', { timeout: 30000 }, async () => {
+      agent = makeMultiTurnAgent();
+      await agent.init();
+      // 关键：不预建 checkpoint，直接走流中暂停路径（真实内核路径，宿主未兜底）。
+      // setPauseMeta 由 loop.onPaused 在 pause() 翻状态机建 checkpoint 之前触发，
+      // 修复前会因「无 checkpoint」守卫静默丢弃 pauseMeta。
+      let sawPaused = false;
+      for await (const chunk of agent.chat('读取探针文件')) {
+        if (chunk.type === 'tool_result') agent.requestPause('首轮流中暂停', 'user');
+        if (chunk.type === 'paused') sawPaused = true;
+      }
+      expect(sawPaused).toBe(true);
+      const cp = agent.sessionManager!.getCheckpoint();
+      expect(cp).not.toBeNull();
+      // 契约：首轮暂停时 pauseMeta 必须已写入，而非静默丢失
+      expect(cp!.pauseMeta).toBeDefined();
+      expect(cp!.pauseMeta!.phase).toBe('suspended');
+    });
 
   it('P0-1：续跑过程中请求暂停，状态机应翻 paused（修复前停留 running）', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();

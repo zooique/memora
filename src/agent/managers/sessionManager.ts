@@ -1305,10 +1305,18 @@ export class SessionManager {
    * @param meta - 暂停元数据，传 undefined 清除
    */
   setPauseMeta(meta: PauseMeta | undefined): void {
+    // 首轮兜底（F4-3）：loop.onPaused 在 loop 迭代边界触发，早于 consumeExecutionStream
+    // 内 this.pause() 翻状态机 + createCheckpoint。若此时尚无 checkpoint（首轮会话、宿主
+    // 未预建），下方 `!this.checkpoint` 守卫会让 pauseMeta 静默丢弃 → 重启回落兜底文案。
+    // 仅当「要写入 pauseMeta 且无 checkpoint」时补建，不破坏「清除时若无 checkpoint 直接 return」。
+    if (!this.checkpoint && meta !== undefined) {
+      this.createCheckpoint();
+    }
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();
-    // 必须落盘：本方法由 loop.onPaused 在 pause() 之后回调，
+    // 必须落盘：本方法由 loop.onPaused 在 pause() 之前触发（原注释称「之后」与真实时序相反，
+    // 见 loop.ts:544-549 onPaused 早于 yield paused chunk，而翻状态机在 consumeExecutionStream:1117），
     // 是 pauseMeta 进入检查点的唯一时机。若不落盘，磁盘快照将永远缺少暂停元数据，
     // 宿主重启后只能回落到兜底文案「已暂停（重启恢复）」。
     // P1-1: 传 undefined 时同样需要落盘，否则 abandonPause() 清除 pauseMeta 后
