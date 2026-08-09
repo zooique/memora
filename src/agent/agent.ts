@@ -1114,7 +1114,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 内核事实驱动：loop 在迭代边界真正挂起时，状态机才翻 PAUSED（修 D1）
         // 不在 requestPause 同步翻转——避免"申请即暂停"错位
         if (chunk.type === 'paused') {
-          this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource);
+          // T2-8（F4-4）：延迟翻转挂起 = 用户暂停请求的消费端，与 requestPause 空闲分支同源，
+          // 必须传 lowRisk=true 保持同一暂停事件契约一致（否则流中暂停会被计入 P4 配额）。
+          this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource, true);
         }
         yield chunk;
         if (chunk.type === 'text') {
@@ -1447,7 +1449,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 且此时本就没有正在执行的工具需要「延迟到迭代边界挂起」。直接同步翻状态机，
     // 不产生悬挂副本（这是内核事实驱动延迟翻转的正当例外：无流可延迟）。
     if (!this._streamActive) {
-      this.pause(reason, source);
+      // T2-8（F4-4）：用户主动暂停不消耗 P4 连续暂停配额 → lowRisk=true
+      this.pause(reason, source, true);
       return true;
     }
 

@@ -1417,6 +1417,18 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(ok2).toBe(true);
       expect(agent.sessionManager!.stateMachine.status).toBe('paused');
     });
+
+    it('T2-8：用户空闲主动暂停（requestPause）应透传 lowRisk=true，不计入 P4 连续暂停配额', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
+
+      const ok = agent.requestPause('空闲暂停', 'user');
+      expect(ok).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      // 契约：用户主动暂停不消耗 P4 连续暂停配额 → 计数保持 0（不挤占 Agent 澄清额度）
+      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
+    });
   });
 
   describe('canContinueWithoutInput（T4 blocked 判据）', () => {
@@ -2237,6 +2249,21 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(statusRightAfterRequestPause).toBe('running');
     // 最终由 loop 边界挂起翻转
     expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+  });
+
+  it('T2-8：流中用户暂停（延迟翻转挂起 :1117）应透传 lowRisk=true，不计入 P4 配额', { timeout: 30000 }, async () => {
+    agent = makeMultiTurnAgent();
+    await agent.init();
+    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
+
+    // 流中（工具步后）用户请求暂停 → 走延迟翻转路径，consumeExecutionStream :1117 真正挂起
+    for await (const chunk of agent.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') agent.requestPause('流中暂停', 'user');
+      if (chunk.type === 'paused') break;
+    }
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    // 契约：流中用户暂停与空闲暂停同一 lowRisk 契约（:1117 透传 true），计数保持 0
+    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
   });
 
   it('P0-1：续跑过程中请求暂停，状态机应翻 paused（修复前停留 running）', { timeout: 30000 }, async () => {
