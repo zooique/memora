@@ -461,7 +461,7 @@ describe('SessionManager · 检查点管理', () => {
     });
   });
 
-  describe('updatePlan / advancePlan / completeStep', () => {
+  describe('updatePlan / completeRound', () => {
     it('updatePlan 应更新检查点计划', () => {
       manager.createCheckpoint('测试');
       const plan: PlanStep[] = [
@@ -470,18 +470,6 @@ describe('SessionManager · 检查点管理', () => {
       ];
       manager.updatePlan(plan);
       expect(manager.getCheckpoint()!.plan).toHaveLength(2);
-    });
-
-    it('advancePlan 应推进到下一个未完成步骤', () => {
-      manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '分析需求', status: 'pending', order: 0 },
-        { id: 's2', description: '编写代码', status: 'pending', order: 1 },
-      ]);
-      const step = manager.advancePlan();
-      expect(step).not.toBeNull();
-      expect(step!.id).toBe('s1');
-      expect(step!.status).toBe('active');
     });
 
     it('completeRound 应标记步骤为完成并记录回合日志', () => {
@@ -540,15 +528,7 @@ describe('SessionManager · 检查点管理', () => {
       expect(active!.id).toBe('s1');
     });
 
-    it('advancePlan 无 pending 步骤时返回 null', () => {
-      manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'done', order: 0 },
-      ]);
-      const step = manager.advancePlan();
-      expect(step).toBeNull();
     });
-  });
 
   describe('updateResource / updateStandard / updateRole', () => {
     it('updateResource 应更新资源状态', () => {

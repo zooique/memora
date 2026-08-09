@@ -2813,9 +2813,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
     // 否则启动路径的超时事件无人接收，归档静默丢失
     expect(spy).toHaveBeenCalledWith(todayDate(), 'main', { autoTriggered: true });
 
-    // 一次性消费语义：已被归档处理器取走，不应残留给下一次消费
-    expect(agent.sessionManager!.consumePauseTimedOutSession()).toBeNull();
-  });
+    });
 
   it('无超时会话时不应触发归档', async () => {
     const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSessionContent');

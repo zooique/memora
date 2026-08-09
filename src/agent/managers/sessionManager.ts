@@ -101,11 +101,6 @@ export class SessionManager {
   private static readonly CONSECUTIVE_PAUSE_DECAY_MS = 3_600_000;
 
   /**
-   * @deprecated F1.3 已废弃：暂停超时信息通过 sessionPauseTimedOut 事件载荷传递，
-   * 支持多监听器同时消费。不再使用私有字段 + 一次性消费模式。
-   */
-
-  /**
    * 会话标识解析模式：`YYYY-MM-DD-<会话名>`
    *
    * 会话标识由 MessageHistory.currentSessionName 以 `${date}-${session}` 构造，
@@ -1020,25 +1015,6 @@ export class SessionManager {
 
   // ── P3.3：执行计划管理 ──────────────────────────────────
 
-  /**
-   * @deprecated Phase 2 起由 completeRound / appendPlanStep 取代（SSOT 单一写点）。
-   * 推进到下一个未完成步骤
-   *
-   * 根据增量默认分辨率：有未完成步骤 → 推进最近步骤。
-   * 将最近一个 pending 步骤标记为 active，并返回该步骤。
-   * 若所有步骤已完成或已阻塞，返回 null 表示计划停滞。
-   *
-   * @returns 推进后的步骤，或 null（计划停滞）
-   */
-  advancePlan(): PlanStep | null {
-    if (!this.checkpoint) return null;
-    const nextStep = this.checkpoint.plan.find((s) => s.status === 'pending');
-    if (!nextStep) return null;
-    nextStep.status = 'active';
-    this.touchCheckpoint();
-    return nextStep;
-  }
-
   // ── Phase 2: SSOT 写点 ──────────────────────────────────
 
   /**
@@ -1410,14 +1386,6 @@ export class SessionManager {
     if (this.checkpoint) {
       this.touchCheckpoint();
     }
-  }
-
-  /**
-   * @deprecated F1.3 已废弃：暂停超时信息通过 sessionPauseTimedOut 事件载荷传递，
-   * 不再需要一次性消费方法。保留桩代码供编译期检测遗留调用方，将在下一清理周期移除。
-   */
-  consumePauseTimedOutSession(): { sessionId: string; date: string; session: string } | null {
-    return null;
   }
 
   /**

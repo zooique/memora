@@ -514,14 +514,6 @@ describe('SessionManager', () => {
       }));
     });
 
-    it('超时会话信息消费一次后应清空（consumePauseTimedOutSession 废弃后返回 null）', () => {
-      manager.pause('测试暂停', 'user');
-      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
-
-      // consumePauseTimedOutSession 已废弃，始终返回 null
-      expect(manager.consumePauseTimedOutSession()).toBeNull();
-    });
-
     it('会话名含连字符时应按日期锚定切分，不误切', () => {
       const forkedHistory = createMockHistory({
         currentSessionName: '2026-06-27-main-fork-1',
@@ -561,7 +553,6 @@ describe('SessionManager', () => {
       mgr.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(mgr.consumePauseTimedOutSession()).toBeNull();
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: 'proj-alpha-beta-gamma',
       }));
