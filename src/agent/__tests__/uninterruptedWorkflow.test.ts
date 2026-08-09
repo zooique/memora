@@ -487,6 +487,33 @@ describe('SessionManager · 检查点管理', () => {
       expect(manager.getCheckpoint()!.roundLog![0]!.summary).toBe('测试回合');
     });
 
+    it('T2-1：completeRound 必须走 updatePlanStepStatus 唯一写点（不得直改 status）', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'active', order: 0 },
+      ]);
+      // 契约级断言：直接锁住「写点收口」——未来若有人改回 step.status='done' 直改，此测试必红
+      const spy = vi.spyOn(
+        manager as unknown as { updatePlanStepStatus(id: string, s: string): boolean },
+        'updatePlanStepStatus',
+      );
+      manager.completeRound({ stepId: 's1', summary: '测试回合', toolCallCount: 0, assistantLength: 10 });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith('s1', 'done');
+      expect(manager.getCheckpoint()!.plan[0]!.status).toBe('done');
+      spy.mockRestore();
+    });
+
+    it('T2-1：无 stepId 的 completeRound 仍记录回合日志（收口不破无步骤路径）', () => {
+      manager.createCheckpoint('测试');
+      manager.completeRound({ summary: '自由对话回合', toolCallCount: 2, assistantLength: 30 });
+      const cp = manager.getCheckpoint()!;
+      expect(cp.roundLog).toHaveLength(1);
+      expect(cp.roundLog![0]!.summary).toBe('自由对话回合');
+      // 无 stepId 时不应触碰 plan 状态
+      expect(cp.plan).toHaveLength(0);
+    });
+
     it('isPlanStalled 空计划应返回 true', () => {
       manager.createCheckpoint('测试');
       expect(manager.isPlanStalled()).toBe(true);

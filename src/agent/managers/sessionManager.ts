@@ -1270,13 +1270,10 @@ export class SessionManager {
   }): void {
     if (!this.checkpoint) return;
 
-    // 1. 标记步骤状态
+    // 1. 标记步骤状态（经 updatePlanStepStatus 单一写点，避免旁路契约；F2-3/T2-1）
     const { stepId, summary, toolCallCount, assistantLength } = options;
     if (stepId) {
-      const step = this.checkpoint.plan.find((s) => s.id === stepId);
-      if (step) {
-        step.status = 'done';
-      }
+      this.updatePlanStepStatus(stepId, 'done');
     }
 
     // 2. 追加回合日志（FIFO cap）
