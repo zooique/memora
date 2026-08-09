@@ -261,7 +261,7 @@ export interface ResourceState {
 /**
  * 计划步骤
  *
- * Agent 执行计划中的单个步骤，用于 goalVersion 漂移检测和进度追踪。
+ * Agent 执行计划中的单个步骤，用于目标漂移检测（文本相似度）和进度追踪。
  */
 export interface PlanStep {
   /** 步骤唯一标识 */
@@ -461,13 +461,18 @@ export interface SessionCheckpoint {
   /** 当前迭代目标（可随 plan 推进更新） */
   currentGoal: string;
   /**
-   * 目标版本号
+   * 目标变更序号（原 goalVersion，T11 改名 2026-08-09）
    *
-   * 每次 currentGoal 变更时递增，用于漂移检测。
-   * 一致性校验：确定性层（关键约束哈希 + 文本相似度）→ LLM 层（仅对需确认场景生成解释）。
-   * 关键约束为用户显式声明或确定性规则提取，不依赖 LLM 提取（防自我引用）。
+   * 每次 currentGoal 变更时递增。**仅作事件序号**，不承担版本一致性校验——
+   * 漂移检测由 GoalConsistencyChecker 的文本相似度完成（Jaccard + bigram，
+   * 阈值 0.7 / 0.4），与本字段无关。
+   *
+   * 改名动机：旧名 goalVersion 误导后来人以为存在版本校验机制（"版本"暗示
+   * 可比较、可检测漂移），从而在需要一致性校验时误用本字段。实质是
+   * "目标变更事件序号"——goalUpdated / goalDriftDetected 事件的载荷。
+   * 多 Agent 乐观锁等真正的版本语义未来若需要，应新建独立字段 + 校验机制。
    */
-  goalVersion: number;
+  goalChangeSeq: number;
   /** 执行计划步骤列表 */
   plan: PlanStep[];
   /** 当前角色（会话级，可中途变更） */

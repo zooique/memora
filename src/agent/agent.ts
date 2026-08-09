@@ -339,6 +339,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           configDir ?? this.#config.configDir,
           agentDataDir ?? this.#config.dataDir,
         ),
+      // T13：closeProject 撤销项目级记忆时联动清理关系边（惰性读 this.memoryInspector——
+      // initializeProject 先于 assembleComponents，回调运行时 memoryInspector 已赋值）
+      removeRelationsByMemoryId: (memoryId: string) => {
+        this.memoryInspector?.writeRemoveRelationsByMemoryId(memoryId);
+      },
     });
 
     return this.projectManager.initProject(
@@ -826,14 +831,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // PAUSED 态收到用户事件（chat/correction/clarify）= 自动恢复工作通道 + 作为补充注入继续；
     // 仅 command 事件（显式暂停/恢复命令）不触发自动恢复，保持状态机语义。
     // ERROR 态仍拒绝（须先 recover，防止状态不一致）。
-    if (!this.autoResumeIfPaused(event.type)) {
-      throw configError('会话超时', '暂停超时无法自动恢复，请重新开始新对话', []);
-    }
-
+    // T5 修复：auto-resume 移入锁内——状态机翻转是副作用，必须先通过并发闸门。
+    // 旧顺序：autoResumeIfPaused 先于 acquireChatLock → 锁忙时状态机已翻 RUNNING
+    // 才抛 chatBusyError → PAUSED 态被静默吞掉（会话以为自己在跑，实际未获执行权）。
+    // 抛错路径由 finally 统一释放锁与外部 signal（与正常路径同构，无泄漏）。
     const lockCtx = this.acquireChatLock(signal);
     const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
 
     try {
+      if (!this.autoResumeIfPaused(event.type)) {
+        throw configError('会话超时', '暂停超时无法自动恢复，请重新开始新对话', []);
+      }
       this._lastInteractionAt = new Date();
 
       // 四级补全：将 SessionEvent.delta 与当前检查点融合
@@ -1014,7 +1022,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!input) {
       const sm = this._sessionManager!;
       if (sm.isPlanStalled() && !this.requireLoop.isInAutonomousStep) {
-        yield { type: 'text', content: '所有计划步骤已完成，请提供下一步指令' };
+        // T4 修复：区分"已完成"与"全部阻塞"——旧文案恒说"已完成"，
+        // 对全 blocked 计划撒谎（阻塞 ≠ 完成），用户被告知任务完成而实际一步未成。
+        const plan = sm.getCheckpoint()?.plan ?? [];
+        const allDone = plan.length > 0 && plan.every((s) => s.status === 'done');
+        const allBlocked = plan.length > 0 && plan.every((s) => s.status === 'blocked');
+        yield {
+          type: 'text',
+          content: allDone
+            ? '所有计划步骤已完成，请提供下一步指令'
+            : allBlocked
+              ? '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划'
+              : '所有计划步骤已完成，请提供下一步指令',
+        };
         yield { type: 'done' };
         return;
       }
@@ -1514,8 +1534,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   canContinueWithoutInput(): boolean {
     if (this._sessionManager?.stateMachine.status === 'paused') return true;
+    // T4 修复：仅 pending/active（可推进）步骤计入"可续跑"。
+    // 旧判据 `s.status !== 'done'` 把 blocked 也算可续 → 与 isPlanStalled 判据反向
+    // （sessionManager.ts:1056 视 blocked 为停滞）→ 全 blocked 计划按钮可点但
+    // resumeExecution 早退、点了没反应。blocked 步骤无法推进，不应展示"继续"。
     const hasPendingPlan =
-      this._sessionManager?.getCheckpoint()?.plan.some((s) => s.status !== 'done') ?? false;
+      this._sessionManager?.getCheckpoint()?.plan.some(
+        (s) => s.status === 'pending' || s.status === 'active',
+      ) ?? false;
     return this.requireLoop.isInAutonomousStep || hasPendingPlan;
   }
 
@@ -1901,7 +1927,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop.onRoundBoundary = (roundInfo) => {
       // onRoundBoundary 在每次迭代完成后触发
       // 通过 SessionManager.completeRound 写入 roundLog
+      // T12 修复：roundLog 关联 plan 步骤——取当前 active 步骤的 ID 传入。
+      // 此前不传 stepId（恒 undefined）→ roundLog 与 plan 无法关联，
+      // 「哪一回合推进了哪一步」不可追溯。单向引用：plan 仍是任务状态真理源，
+      // roundLog 成为 plan 的时间轴投影（不做双向同步，避免双写）。
+      const activeStepId = this._sessionManager?.getCheckpoint()?.plan.find(
+        (s) => s.status === 'active',
+      )?.id;
       this._sessionManager?.completeRound({
+        stepId: activeStepId,
         summary: roundInfo.summary,
         toolCallCount: roundInfo.toolCallCount,
         assistantLength: roundInfo.assistantLength,
@@ -1916,9 +1950,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           const activeStep = cp.plan.find((s) => s.status === 'active');
           const hasPending = cp.plan.some((s) => s.status === 'pending' || s.status === 'active');
           if (activeStep && hasPending) {
-            // 标记当前 active 步骤为 blocked
-            activeStep.status = 'blocked';
-            cp.lastHeartbeat = Date.now();
+            // T12 顺带收口：经 updatePlanStepStatus 标脏（此前直改 status + 手写心跳，
+            // 与 T3 同类——checkpointDirty 未置位 → 阻塞标记可能永不落盘）
+            sm?.updatePlanStepStatus(activeStep.id, 'blocked');
             // 注入 system 消息提示 LLM
             this.loop?.injectSystemMessage(
               `[系统] 检测到任务表停滞（连续 3 回合未更新步骤状态），已自动将步骤 "${activeStep.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
@@ -1979,14 +2013,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       updateStep: (stepId, status) => {
         const sm = this._sessionManager;
         if (!sm) return '[ERR] 会话管理器未就绪';
-        const cp = sm.getCheckpoint();
-        const step = cp?.plan.find((s) => s.id === stepId);
-        if (!step) return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
-        step.status = status;
-        cp!.lastHeartbeat = Date.now();
+        // T3 修复：plan 步骤状态变更收口到 SessionManager.updatePlanStepStatus
+        // （内部 touchCheckpoint 标脏 + 心跳，唯一写点）。
+        // 旧实现直改 step.status + 手写 lastHeartbeat → checkpointDirty 未置位 →
+        // 计划状态变更可能永不落盘（flushCheckpoint 见脏才写）。
+        if (!sm.updatePlanStepStatus(stepId, status)) {
+          return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
+        }
+        const step = sm.getCheckpoint()?.plan.find((s) => s.id === stepId);
         // P2-11: 兜底停滞计数器复位（LLM 调用了 task_table_update，说明未停滞）
         this._stalledRoundCount = 0;
-        return `步骤 [${stepId.slice(0, 8)}] "${step.description}" 已标记为 ${status}`;
+        return `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
       },
       getPlan: () => {
         const sm = this._sessionManager;

@@ -30,7 +30,7 @@ function createCheckpoint(overrides?: Partial<SessionCheckpoint>): SessionCheckp
     status: 'running',
     mainGoal: '测试主目标',
     currentGoal: '测试当前目标',
-    goalVersion: 1,
+    goalChangeSeq: 1,
     plan: [],
     role: { name: 'assistant', description: '通用助手' },
     standard: { quality: '完成', constraints: [] },

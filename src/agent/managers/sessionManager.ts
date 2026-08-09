@@ -84,12 +84,16 @@ export class SessionManager {
   /** 目标一致性校验器（P3.1 目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
-   * 连续暂停时间戳数组（P2-1：时间衰减机制）
+   * 连续暂停时间戳数组（P2-1：时间衰减机制）（T14 语义定案，2026-08-09）
    *
    * 每次高风险暂停时记录当前时间戳，超过衰减窗口（1 小时）的旧时间戳自动过期。
    * 代替旧的简单计数，防止早期暂停长时间锁死防滥用机制。
    * 连续 2 次（窗口内）后强制降级 P3，不再生成 P4 问题。
    * 低风险决策（lowRisk=true）不记录时间戳。
+   *
+   * ⚠ 进程内状态，**不入 SessionCheckpoint**——重启归零是设计而非缺陷：
+   * 计数器是"反滥用卫生状态"，不是执行状态；威胁模型是本机用户自残，
+   * 重启绕过无实际危害；1h 窗口衰减已是自愈式防线。勿为其引入持久化。
    */
   private consecutivePauseTimestamps: number[] = [];
 
@@ -372,7 +376,7 @@ export class SessionManager {
       mainGoal: mainGoal ?? prev?.mainGoal ?? '',
       // 不传 mainGoal 时保留已有 currentGoal（防止 pause() 内调用时覆盖 updateGoal 的更新）
       currentGoal: mainGoal ?? prev?.currentGoal ?? prev?.mainGoal ?? '',
-      goalVersion: prev?.goalVersion ?? 0,
+      goalChangeSeq: prev?.goalChangeSeq ?? 0,
       plan: prev?.plan ?? [],
       role: role ?? prev?.role ?? { name: 'assistant' },
       standard: standard ?? prev?.standard ?? { quality: '', constraints: [] },
@@ -477,6 +481,11 @@ export class SessionManager {
       // 恢复状态机状态
       if (checkpoint.status === 'paused') {
         this.stateMachine.pause('从持久化检查点恢复', 'system');
+        // T9 修复：恢复路径补启暂停超时定时器。startPauseTimeoutTimer 的唯一调用点原在
+        // pause()（:620），此处直接调 stateMachine.pause 绕过 → 恢复的 paused 会话在
+        // 本次运行期内无超时检测（只能等下次重启）。resetToRunning 后 canPause 必然通过。
+        // 已超时会话由 checkPauseTimeout 首次触发即清理，行为正确（本就不该恢复）。
+        this.startPauseTimeoutTimer();
       } else if (checkpoint.status === 'error' && checkpoint.error) {
         this.stateMachine.triggerError(checkpoint.error.cause);
       }
@@ -542,14 +551,31 @@ export class SessionManager {
     // 跨会话恢复时若状态机残留 paused/error 将静默失败（返回值未被检查）
     // → 磁盘检查点 status 与内存状态机分叉。
     this.stateMachine.resetToRunning();
-    if (checkpoint.status === 'error' && checkpoint.error) {
-      const transition = this.stateMachine.triggerError(checkpoint.error.cause);
-      if (!transition.allowed) {
-        logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点错误态恢复失败，状态机与检查点分叉');
+    if (checkpoint.status === 'error') {
+      if (checkpoint.error) {
+        const transition = this.stateMachine.triggerError(checkpoint.error.cause);
+        if (!transition.allowed) {
+          logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点错误态恢复失败，状态机与检查点分叉');
+        }
+      } else {
+        // T8 修复：error 字段缺失（旧版检查点 / 序列化丢字段）——无法重建 error 态。
+        // 旧实现复合条件 `status==='error' && error` 两分支都不进 → resetToRunning 后
+        // 状态机 running 而 checkpoint.status 保持 'error' → 永久分叉且无任何日志。
+        // 此处强制检查点状态跟随实际归零结果，并把"降级"显式记入日志。
+        checkpoint.status = this.stateMachine.status;
+        logger.warn(
+          { sessionId: checkpoint.sessionId },
+          '检查点 error 态缺少 error 字段，无法重建异常状态，已降级为 running',
+        );
       }
     } else if (checkpoint.status === 'paused') {
       const transition = this.stateMachine.pause('从检查点恢复', 'system');
-      if (!transition.allowed) {
+      if (transition.allowed) {
+        // T9 修复：恢复路径补启暂停超时定时器（与 loadPersistedCheckpoint 对称）。
+        // 原唯一调用点在 pause()（:620），此处直接调 stateMachine.pause 绕过 →
+        // 恢复的 paused 会话本次运行期无超时检测。
+        this.startPauseTimeoutTimer();
+      } else {
         logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点暂停态恢复失败，状态机与检查点分叉');
       }
     }
@@ -561,7 +587,14 @@ export class SessionManager {
     if (sessionParts.length >= 4) {
       const date = sessionParts.slice(0, 3).join('-');
       const session = sessionParts.slice(3).join('-');
-      history.loadSessionMessages(date, session);
+      // T10 修复：loadSessionMessages 是 async（messageHistory.ts:264），restoreFromCheckpoint
+      // 同步返回无法 await——旧实现悬空 Promise，rejection 无人处理（unhandledRejection）。
+      // 竞态窗口分析：会话切换在微任务队列中异步完成，restore 后到下一次 append 之间
+      // 无其他写入者（单 Agent 单线程），「最后写入者胜」语义下窗口极窄且无害。
+      // 显式 catch 吞掉加载失败（降级为不切换会话，热窗口已由 restoreHistory 恢复）。
+      void history.loadSessionMessages(date, session).catch((err) => {
+        logger.warn({ err, sessionId: checkpoint.sessionId }, '恢复检查点时切换会话失败（热记忆已恢复，继续运行）');
+      });
     }
 
     // P3.4：恢复时补偿——对非幂等工具执行补偿操作
@@ -794,7 +827,7 @@ export class SessionManager {
   /**
    * 更新检查点目标版本
    *
-   * 用户修正目标时调用，递增 goalVersion 触发漂移检测。
+   * 用户修正目标时调用，递增 goalChangeSeq 触发漂移检测。
    * 更新前自动执行一致性校验（P3.1），若检测到漂移则发射 goalDriftDetected 事件。
    *
    * 漂移处置由内核自兜底，不依赖宿主（SSOT 排雷：原注释承诺「宿主 UI 决定是否暂停」，
@@ -812,9 +845,9 @@ export class SessionManager {
       return null;
     }
 
-    // 幂等短路（SSOT 排雷 T2-1）：目标值未变时直接返回，不递增 goalVersion、不触发漂移检测。
+    // 幂等短路（SSOT 排雷 T2-1）：目标值未变时直接返回，不递增 goalChangeSeq、不触发漂移检测。
     // P2 记忆延续（composer 对「继续」类事件直接引用 currentGoal）每轮都会把相同的
-    // currentGoal 值喂入本方法——若无短路，goalVersion 将退化为轮次计数器。
+    // currentGoal 值喂入本方法——若无短路，goalChangeSeq 将退化为轮次计数器。
     // 返回值构造为 level='same'（值相同即无新漂移），调用方据此无需处理。
     if (newGoal === this.checkpoint.currentGoal) {
       return {
@@ -830,14 +863,14 @@ export class SessionManager {
     const consistencyResult = this.consistencyChecker.checkConsistency(mainGoal, newGoal);
 
     this.checkpoint.currentGoal = newGoal;
-    this.checkpoint.goalVersion++;
+    this.checkpoint.goalChangeSeq++;
     this.touchCheckpoint();
     // 目标变更是会话的语义骨架，立即落盘
     this.flushCheckpoint();
 
     this.emitEvent('goalUpdated', {
       newGoal,
-      goalVersion: this.checkpoint.goalVersion,
+      goalChangeSeq: this.checkpoint.goalChangeSeq,
       sessionId: this.checkpoint.sessionId,
     });
 
@@ -850,7 +883,7 @@ export class SessionManager {
         similarity: consistencyResult.similarity,
         level: consistencyResult.level,
         constraints: consistencyResult.constraints,
-        goalVersion: this.checkpoint.goalVersion,
+        goalChangeSeq: this.checkpoint.goalChangeSeq,
       });
 
       // P1-2：drift 级别自动暂停（强制用户确认），使用低风险暂停不计入连续计数
@@ -956,6 +989,26 @@ export class SessionManager {
     this.checkpoint.plan.push(step);
     this.touchCheckpoint();
     return this.checkpoint.plan.length;
+  }
+
+  /**
+   * 更新计划步骤状态（T3 SSOT 收口，2026-08-09）
+   *
+   * plan 步骤状态的**唯一写点**。此前由 Agent 工具 handler 直改
+   * `step.status` + 手写 lastHeartbeat，绕过 touchCheckpoint → checkpointDirty
+   * 未置位 → 计划状态变更可能永不落盘（flushCheckpoint 见脏才写）。
+   * 收口到本方法：状态变更与标脏/心跳在 SessionManager 内原子完成。
+   *
+   * @param stepId 步骤 ID
+   * @param status 新状态
+   * @returns 是否更新成功（false = 步骤不存在）
+   */
+  updatePlanStepStatus(stepId: string, status: PlanStep['status']): boolean {
+    const step = this.checkpoint?.plan.find((s) => s.id === stepId);
+    if (!step) return false;
+    step.status = status;
+    this.touchCheckpoint();
+    return true;
   }
 
   /**

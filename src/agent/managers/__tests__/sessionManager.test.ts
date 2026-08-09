@@ -567,9 +567,9 @@ describe('SessionManager', () => {
     });
   });
 
-  // ── P1-2：goalVersion 漂移强制暂停 ──────────────────────
+  // ── P1-2：goalChangeSeq 漂移强制暂停 ──────────────────────
 
-  describe('goalVersion drift auto-pause', () => {
+  describe('goalChangeSeq drift auto-pause', () => {
     /**
      * 辅助方法：创建带有 mainGoal 的检查点
      * 首次调用 updateGoal 会创建检查点（返回 null），第二次调用才会触发一致性校验
@@ -624,38 +624,38 @@ describe('SessionManager', () => {
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
 
-    it('值未变时应幂等短路：不递增 goalVersion、不发射任何事件（T2-1）', () => {
+    it('值未变时应幂等短路：不递增 goalChangeSeq、不发射任何事件（T2-1）', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
 
       setupCheckpointWithGoal(mainGoal);
-      // 首次 updateGoal 创建检查点，goalVersion = 0
-      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+      // 首次 updateGoal 创建检查点，goalChangeSeq = 0
+      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
 
       // 值未变的 updateGoal（P2 记忆延续每轮重复喂入）→ 幂等短路
       const result = manager.updateGoal(mainGoal);
       expect(result).not.toBeNull();
       expect(result!.level).toBe('same');
-      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
       expect(manager.stateMachine.status).toBe('running');
       expect(emitEvent).not.toHaveBeenCalledWith('goalUpdated', expect.anything());
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
 
-    it('连续多轮不改目标时 goalVersion 保持不变，真实修正仍递增（T2-1 防轮次计数退化）', () => {
+    it('连续多轮不改目标时 goalChangeSeq 保持不变，真实修正仍递增（T2-1 防轮次计数退化）', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
 
       setupCheckpointWithGoal(mainGoal);
-      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
 
       // 模拟 3 轮「继续」类延续：每轮 updateGoal 相同的 currentGoal
       for (let i = 0; i < 3; i++) {
         manager.updateGoal(mainGoal);
       }
-      expect(manager.getCheckpoint()!.goalVersion).toBe(0);
+      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
 
       // 真实修正（不同目标）仍应递增
       manager.updateGoal('改用 Python 重写计算器应用');
-      expect(manager.getCheckpoint()!.goalVersion).toBe(1);
+      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(1);
     });
 
     it('自动暂停应使用低风险（lowRisk=true），不增加连续暂停计数', () => {
@@ -726,7 +726,7 @@ describe('SessionManager', () => {
       expect(cp.sessionId).toBe('2026-06-27-main');
       expect(cp.mainGoal).toBe('测试主目标');
       expect(cp.currentGoal).toBe('测试主目标'); // 首次创建 currentGoal == mainGoal
-      expect(cp.goalVersion).toBe(0);
+      expect(cp.goalChangeSeq).toBe(0);
       expect(cp.status).toBe('running');
       expect(cp.hotMemory).toHaveLength(2);
       expect(cp.hotMemory[0]!.content).toBe('你好');
@@ -753,13 +753,13 @@ describe('SessionManager', () => {
       // 模拟 updateGoal 更新了 currentGoal
       const cp = mgr.getCheckpoint()!;
       cp.currentGoal = '用户调整后的目标';
-      cp.goalVersion = 1;
+      cp.goalChangeSeq = 1;
 
       // 再次 createCheckpoint（不传 mainGoal）→ currentGoal 应保留
       mgr.createCheckpoint(); // 无参数
       expect(mgr.getCheckpoint()!.mainGoal).toBe('原始目标');
       expect(mgr.getCheckpoint()!.currentGoal).toBe('用户调整后的目标');
-      expect(mgr.getCheckpoint()!.goalVersion).toBe(1);
+      expect(mgr.getCheckpoint()!.goalChangeSeq).toBe(1);
     });
 
     it('saveCheckpoint 应持久化检查点到 sessionStore', () => {
@@ -794,7 +794,7 @@ describe('SessionManager', () => {
           status: 'running',
           mainGoal: '加载测试',
           currentGoal: '加载测试',
-          goalVersion: 0,
+          goalChangeSeq: 0,
           plan: [],
           role: { name: 'assistant' },
           standard: { quality: '完成', constraints: [] },
@@ -828,7 +828,7 @@ describe('SessionManager', () => {
           status: 'paused',
           mainGoal: '暂停测试',
           currentGoal: '暂停测试',
-          goalVersion: 0,
+          goalChangeSeq: 0,
           plan: [],
           role: { name: 'assistant' },
           standard: { quality: '完成', constraints: [] },
@@ -864,7 +864,7 @@ describe('SessionManager', () => {
           status: 'paused',
           mainGoal: '超时测试',
           currentGoal: '超时测试',
-          goalVersion: 0,
+          goalChangeSeq: 0,
           plan: [],
           role: { name: 'assistant' },
           standard: { quality: '完成', constraints: [] },
@@ -916,7 +916,7 @@ describe('SessionManager', () => {
         status: 'running' as const,
         mainGoal: '恢复测试',
         currentGoal: '恢复测试',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' } as Role,
         standard: { quality: '完成', constraints: [] } as Standard,
@@ -953,7 +953,7 @@ describe('SessionManager', () => {
         status: 'running' as const,
         mainGoal: '截断测试',
         currentGoal: '截断测试',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' } as Role,
         standard: { quality: '完成', constraints: [] } as Standard,
@@ -985,7 +985,7 @@ describe('SessionManager', () => {
         status: 'paused' as const,
         mainGoal: '暂停恢复',
         currentGoal: '暂停恢复',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' } as Role,
         standard: { quality: '完成', constraints: [] } as Standard,

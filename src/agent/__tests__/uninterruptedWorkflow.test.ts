@@ -25,6 +25,7 @@ import { SessionManager } from '@/agent/managers/sessionManager.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
 import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
 import { LlmProvider } from '@/llm/provider.js';
+import { logger } from '@/logging/logger.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
@@ -272,7 +273,7 @@ describe('SessionStateMachine · 三态流转', () => {
         error: { cause: 'LLM 超时', at: Date.now(), recovered: true },
         mainGoal: 'test',
         currentGoal: 'test',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
@@ -294,7 +295,7 @@ describe('SessionStateMachine · 三态流转', () => {
         error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
         mainGoal: 'test',
         currentGoal: 'test',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
@@ -313,7 +314,7 @@ describe('SessionStateMachine · 三态流转', () => {
         status: 'running',
         mainGoal: 'test',
         currentGoal: 'test',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
@@ -388,7 +389,7 @@ describe('SessionManager · 检查点管理', () => {
       expect(cp).toHaveProperty('status');
       expect(cp).toHaveProperty('mainGoal');
       expect(cp).toHaveProperty('currentGoal');
-      expect(cp).toHaveProperty('goalVersion');
+      expect(cp).toHaveProperty('goalChangeSeq');
       expect(cp).toHaveProperty('plan');
       expect(cp).toHaveProperty('role');
       expect(cp).toHaveProperty('standard');
@@ -411,9 +412,9 @@ describe('SessionManager · 检查点管理', () => {
       expect(cp.standard.constraints).toContain('ESLint 通过');
     });
 
-    it('goalVersion 应从 0 开始', () => {
+    it('goalChangeSeq 应从 0 开始', () => {
       const cp = manager.createCheckpoint('测试目标');
-      expect(cp.goalVersion).toBe(0);
+      expect(cp.goalChangeSeq).toBe(0);
     });
 
     it('不传参创建检查点应使用已有值', () => {
@@ -425,12 +426,12 @@ describe('SessionManager · 检查点管理', () => {
   });
 
   describe('updateGoal', () => {
-    it('应更新 currentGoal 并递增 goalVersion', () => {
+    it('应更新 currentGoal 并递增 goalChangeSeq', () => {
       manager.createCheckpoint('初始目标');
       manager.updateGoal('新目标');
       const cp = manager.getCheckpoint();
       expect(cp!.currentGoal).toBe('新目标');
-      expect(cp!.goalVersion).toBe(1);
+      expect(cp!.goalChangeSeq).toBe(1);
     });
 
     it('应发射 goalUpdated 事件', () => {
@@ -438,7 +439,7 @@ describe('SessionManager · 检查点管理', () => {
       manager.updateGoal('新目标');
       expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
         newGoal: '新目标',
-        goalVersion: 1,
+        goalChangeSeq: 1,
       }));
     });
 
@@ -839,7 +840,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
@@ -858,7 +859,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
@@ -884,6 +885,90 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       const injectCall = (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
       expect(injectCall).toContain('P3.4补偿通知');
       expect(injectCall).toContain('file_write');
+    });
+
+    it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', () => {
+      // 先让状态机残留 paused（模拟跨会话恢复时的残留状态）
+      manager.pause('测试暂停', 'user');
+      expect(manager.stateMachine.status).toBe('paused');
+
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'error', // error 态但 error 字段缺失（旧版检查点 / 序列化丢字段）
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalChangeSeq: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      manager.restoreFromCheckpoint(cp);
+
+      // 修复前：resetToRunning 后状态机 running，但 `status==='error' && error` 两分支都不进
+      // → checkpoint.status 保持 'error' → 永久分叉（断言红）
+      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.getCheckpoint()!.status).toBe('running');
+    });
+
+    it('T9：恢复 paused 检查点后应启动暂停超时定时器（修复前未启动 → 红）', () => {
+      const startSpy = vi.spyOn(
+        manager as unknown as { startPauseTimeoutTimer: () => void },
+        'startPauseTimeoutTimer',
+      );
+
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'paused',
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalChangeSeq: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      manager.restoreFromCheckpoint(cp);
+
+      // 修复前：恢复路径直接 stateMachine.pause 绕过 pause() → 定时器未启动 → 断言红
+      // （恢复的 paused 会话本次运行期无超时检测，只能等下次重启）
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('T10：loadSessionMessages 失败时应显式降级（catch 挂 handler）而非悬空 rejection', async () => {
+      // mock 会话加载失败（磁盘损坏 / 会话不存在等）
+      (history.loadSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('会话消息加载失败'),
+      );
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'running',
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalChangeSeq: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+      // 旧实现：悬空 Promise + rejection 无人处理（unhandledRejection 污染进程）
+      manager.restoreFromCheckpoint(cp);
+
+      // 恢复主流程不受影响（热记忆已恢复、状态机已归位）
+      expect(manager.stateMachine.status).toBe('running');
+      // 让微任务队列排空，使 rejection 走完 handler 链
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // 修复前（无 catch）：warn 未被调 → 断言红
+      expect(warnSpy).toHaveBeenCalled();
+      expect(history.loadSessionMessages).toHaveBeenCalled();
     });
   });
 });
@@ -1002,7 +1087,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',
-        goalVersion: 0,
+        goalChangeSeq: 0,
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
@@ -1171,6 +1256,88 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('未初始化时调用 pause 应抛错', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       expect(() => agent!.pause('test')).toThrow(/未初始化/);
+    });
+  });
+
+  describe('canContinueWithoutInput（T4 blocked 判据）', () => {
+    it('全部 blocked 计划不应视为可续跑（修复前误判 true → 红）', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      agent.createCheckpoint('测试目标');
+      agent.getCheckpoint()!.plan.push(
+        { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
+        { id: 's2', description: '步骤2', status: 'blocked', order: 2 },
+      );
+      // 旧判据 `some(s => s.status !== 'done')` → blocked 也算可续 → true（红）
+      expect(agent.canContinueWithoutInput()).toBe(false);
+    });
+
+    it('存在 pending/active 步骤时应视为可续跑（防过度修复）', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      agent.createCheckpoint('测试目标');
+      agent.getCheckpoint()!.plan.push(
+        { id: 's1', description: '步骤1', status: 'done', order: 1 },
+        { id: 's2', description: '步骤2', status: 'pending', order: 2 },
+      );
+      expect(agent.canContinueWithoutInput()).toBe(true);
+    });
+
+    it('全部 done 计划不应视为可续跑', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      agent.createCheckpoint('测试目标');
+      agent.getCheckpoint()!.plan.push(
+        { id: 's1', description: '步骤1', status: 'done', order: 1 },
+      );
+      expect(agent.canContinueWithoutInput()).toBe(false);
+    });
+
+    it('全 blocked 计划无输入续跑应提示阻塞而非"已完成"（T4 文案防回归）', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      agent.createCheckpoint('测试目标');
+      agent.getCheckpoint()!.plan.push(
+        { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
+      );
+      // 暂停使 resumeExecution 可进入（状态机需 paused 才继续）
+      agent.pause('测试暂停', 'user');
+
+      const chunks: Array<{ type: string; content?: string }> = [];
+      for await (const chunk of agent.resumeExecution()) {
+        chunks.push(chunk as { type: string; content?: string });
+      }
+      const text = chunks.filter((c) => c.type === 'text').map((c) => c.content).join('');
+      // 旧文案恒说"所有计划步骤已完成" → 断言红
+      expect(text).toContain('阻塞');
+      expect(text).not.toContain('已完成');
+    });
+  });
+
+  describe('锁忙时的 auto-resume（T5 副作用先于校验修复）', () => {
+    it('锁忙时 processEvent 抛错且状态机不被静默翻转（修复前 running → 红）', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      // 暂停会话，状态机进入 PAUSED
+      agent.pause('测试暂停', 'user');
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+
+      // 模拟 chat 锁被其他执行流占用
+      (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+
+      // 修复前：autoResumeIfPaused 先执行（状态机翻 running）→ acquireChatLock 才抛错
+      // → PAUSED 被静默吞掉，会话以为自己在跑。修复后：锁先校验，状态机不动。
+      const gen = agent.processEvent({ type: 'chat', content: '你好' });
+      await expect(async () => {
+        // 迭代以驱动生成器执行（chunk 无消费者，仅触发函数体）
+        for await (const chunk of gen) {
+          void chunk;
+        }
+      }).rejects.toThrow(/对话繁忙/);
+
+      // 状态机必须保持 PAUSED（修复前为 running → 断言红）
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
     });
   });
 
@@ -1509,6 +1676,90 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     );
     expect(prevRecord).toBeDefined();
     expect(prevRecord!.resultSummary).toContain('hello');
+  });
+
+  /**
+   * 场景 E：task_table_update 更新步骤必须标脏（T3 防回归）
+   *
+   * 旧缺陷：updateStep 手写 lastHeartbeat 绕过 touchCheckpoint → checkpointDirty 未置位
+   * → 计划状态变更永不落盘（flushCheckpoint 见脏才写，sessionManager.ts:418）。
+   *
+   * 断言策略：直接 spy touchCheckpoint（运行时存在，TS private 仅编译期约束）。
+   * 行为级断言（updateStep 后触发 flush 看写盘）不可靠——chatSync 路径存在其他
+   * touchCheckpoint（如 updateGoal），会干扰 dirty 的归属，导致变异验证误绿。
+   * 契约级断言直接锁定「updateStep 必须走标脏路径」，修复前（手写心跳）→ 断言红。
+   */
+  it('场景 E：task_table_update 更新步骤必须标脏（T3 防回归）', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    // 创建检查点
+    agent.createCheckpoint('测试目标', { name: 'developer' });
+
+    // 模拟已存在的任务表：直接塞一个 pending 步骤
+    agent.getCheckpoint()!.plan.push({
+      id: 'step-1',
+      description: '测试步骤',
+      status: 'pending',
+      order: 1,
+    });
+
+    // spy touchCheckpoint（脏标记唯一置位点）
+    const sm = agent.sessionManager!;
+    const touchSpy = vi.spyOn(sm as unknown as { touchCheckpoint: () => void }, 'touchCheckpoint');
+
+    // LLM 经 task_table_update 工具将步骤标记为 done
+    const result = agent.tools!.planManager!.updateStep('step-1', 'done');
+    expect(result).toContain('已标记为 done');
+    expect(agent.getCheckpoint()!.plan[0]!.status).toBe('done');
+
+      // 修复前（手写 lastHeartbeat）：touchCheckpoint 未被调 → 断言红
+      expect(touchSpy).toHaveBeenCalledTimes(1);
+    });
+
+  /**
+   * 场景 G：roundLog 关联 active 步骤（T12 防回归）
+   *
+   * 旧缺陷：loop.onRoundBoundary → completeRound 不传 stepId（恒 undefined）→
+   * roundLog 与 plan 无法关联，「哪一回合推进了哪一步」不可追溯。
+   * 修复后：onRoundBoundary 取当前 active 步骤 ID 传入，roundLog 成为 plan 的时间轴投影。
+   */
+  it('场景 G：roundLog 应记录 active 步骤 ID（T12 防回归）', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+    });
+    await agent.init();
+
+    agent.createCheckpoint('测试目标');
+    const stepId = 'step-active-1';
+    agent.getCheckpoint()!.plan.push({
+      id: stepId,
+      description: '当前执行步骤',
+      status: 'active',
+      order: 1,
+    });
+
+    // 触发一轮对话 → loop 迭代边界 → onRoundBoundary → completeRound
+    await agent.chatSync('推进任务');
+
+    const roundLog = agent.getCheckpoint()!.roundLog ?? [];
+    expect(roundLog.length).toBeGreaterThan(0);
+    // 修复前：stepId 恒 undefined → 断言红
+    expect(roundLog[roundLog.length - 1]!.stepId).toBe(stepId);
   });
 
   /**

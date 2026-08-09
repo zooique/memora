@@ -189,8 +189,8 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     level: 'same' | 'confirm' | 'drift';
     /** 关键约束列表 */
     constraints: string[];
-    /** 当前目标版本号 */
-    goalVersion: number;
+    /** 目标变更序号（T11 改名：原 goalVersion，仅事件载荷不承担校验） */
+    goalChangeSeq: number;
   };
   /** 会话暂停 */
   sessionPaused: {

@@ -2754,7 +2754,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
       status: 'paused',
       mainGoal: '超时归档测试',
       currentGoal: '超时归档测试',
-      goalVersion: 0,
+      goalChangeSeq: 0,
       plan: [],
       role: { name: 'assistant' },
       standard: { quality: '完成', constraints: [] },
