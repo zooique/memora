@@ -570,6 +570,17 @@ function setupAgentReady(
   appState.initErrorDetail = null;
   const readyWindow = appState.windowService.windowManager.getFullWindow();
   readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
+
+  // P2: 重启后检查会话是否为暂停态，通知渲染层恢复暂停横幅
+  const checkpoint = activeAgent.getCheckpoint();
+  if (checkpoint?.status === 'paused') {
+    readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
+      status: 'paused',
+      reason: checkpoint.pauseMeta?.reason ?? '已暂停（重启恢复）',
+      source: checkpoint.pauseMeta?.source,
+      resumable: activeAgent.canContinueWithoutInput(),
+    });
+  }
 }
 
 async function initializeApp(): Promise<void> {

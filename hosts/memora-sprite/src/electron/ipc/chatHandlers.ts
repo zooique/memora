@@ -193,7 +193,8 @@ export function registerChatHandlers(ctx: IpcContext): void {
     const activeStep = plan.find((s) => s.status === 'active');
     const pauseMeta = (checkpoint as { pauseMeta?: PauseMeta } | undefined)?.pauseMeta;
     return {
-      plan: plan.map((s) => ({ order: s.order, description: s.description, status: s.status })),
+      // 映射 PlanStep.status（'active' → 'in_progress'）对齐 TaskStep 联合类型
+      plan: plan.map((s) => ({ order: s.order, description: s.description, status: s.status === 'active' ? 'in_progress' : s.status })),
       activeStepOrder: activeStep?.order ?? -1,
       pausePhase: pauseMeta?.phase,
       pauseReason: pauseMeta?.reason,
@@ -305,12 +306,16 @@ export function registerChatHandlers(ctx: IpcContext): void {
    * 内核经 forwardEvent 转发 sessionPaused 事件，此处统一广播 SESSION_STATUS_CHANGED{paused}。
    */
   agent.on(AGENT_EVENTS.sessionPaused, (payload) => {
-    const reason = (payload as { reason?: string } | undefined)?.reason ?? '用户主动暂停';
+    const p = payload as { reason?: string; source?: string } | undefined;
+    const reason = p?.reason ?? '用户主动暂停';
+    // P1: 暂停来源显式透传至 IPC 通道，供渲染层区分 user/agent/system 暂停
+    const source = p?.source;
     const fullWindow = ctx.windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed()) {
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
         status: 'paused',
         reason,
+        source,
         // 暂停态必可续跑（空输入继续 / 补充输入修正后续轮）
         resumable: agent.canContinueWithoutInput(),
       });

@@ -866,8 +866,9 @@ export interface IpcListenerCallbacks {
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    * @param reason 状态变更原因（可选）
+   * @param source 暂停来源（仅 paused 态有效，'user' | 'agent' | 'system'）
    */
-  onSessionStatusChanged?: (status: string, reason?: string, resumable?: boolean) => void;
+  onSessionStatusChanged?: (status: string, reason?: string, resumable?: boolean, source?: string) => void;
   /**
    * 澄清问题推送回调（P4 暂停询问）
    *
@@ -938,7 +939,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   });
 
   // P2.5-2: 任务表已生成通知 → 刷新任务表面板（展示接受/丢弃入口）
-  window.electronAPI.onTaskTableGenerated((msg) => {
+  window.electronAPI.onTaskTableGenerated((_msg) => {
     uiManager.chatCoordinator.taskTablePanelManager?.loadData();
   });
 
@@ -1136,7 +1137,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * （暂停按钮禁用态 + 消息区状态横幅）
    */
   window.electronAPI.onSessionStatusChanged((payload) => {
-    callbacks.onSessionStatusChanged?.(payload.status, payload.reason, payload.resumable);
+    callbacks.onSessionStatusChanged?.(payload.status, payload.reason, payload.resumable, payload.source);
   });
 
   // ─── 澄清问题推送（P4 暂停询问） ──────────────────

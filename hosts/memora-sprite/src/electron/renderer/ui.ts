@@ -685,14 +685,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    * @param reason 状态变更原因（可选，用于异常提示文案）
+   * @param source 暂停来源（仅 paused 态有效，'user' | 'agent' | 'system'）
    */
-  onSessionStatusChanged(status: string, reason?: string, resumable?: boolean): void {
+  onSessionStatusChanged(status: string, reason?: string, resumable?: boolean, source?: string): void {
     // 记录会话状态，驱动发送按钮三态（发送 / 暂停 / 继续）
     this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
     // 更新暂停/恢复按钮禁用态（含 resumable 信号：多轮任务显暂停 / 简单轮只显停止）
     this.chatCoordinator.inputAreaManager.updateSessionStatus(status, resumable);
-    // 更新消息区状态横幅（暂停/异常提示）
-    this.chatCoordinator.chatPanel.updateSessionStatus(status, reason);
+    // 更新消息区状态横幅（暂停/异常提示，携带暂停来源）
+    this.chatCoordinator.chatPanel.updateSessionStatus(status, reason, source);
     // 同步发送/停止按钮可见性（暂停态需对称显示停止按钮的对应态）
     this.updateSendButton();
   }
@@ -848,7 +849,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * TaskTablePanelHost: 获取工作上下文（plan + 暂停态 + planGenerated）
    */
   async getWorkContext(): Promise<WorkContext> {
-    return window.electronAPI.getWorkContext();
+    return window.electronAPI.getWorkContext() as Promise<WorkContext>;
   }
 
   /**

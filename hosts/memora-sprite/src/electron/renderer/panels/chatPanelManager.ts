@@ -1178,8 +1178,9 @@ export class ChatPanelManager {
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
    * @param reason 状态变更原因（可选，用于错误提示文案）
+   * @param source 暂停来源（仅 paused 态有效，'user' | 'agent' | 'system'）
    */
-  updateSessionStatus(status: string, reason?: string): void {
+  updateSessionStatus(status: string, reason?: string, source?: string): void {
     if (status === 'running') {
       // 恢复运行态：移除状态横幅 + 清除可能残留的澄清面板（超时自动续跑后用户未手动关闭）
       if (this.sessionStatusEl) {
@@ -1198,10 +1199,12 @@ export class ChatPanelManager {
     }
 
     if (status === 'paused') {
+      // P1: 暂停来源标签映射，供横幅展示区分 user/agent/system 暂停
+      const sourceLabel = source === 'agent' ? 'Agent 主动暂停' : source === 'system' ? '系统暂停' : '会话已暂停';
       this.sessionStatusEl.className = 'session-status-banner paused';
       this.sessionStatusEl.innerHTML = `
         <svg class="icon"><use href="#icon-pause"/></svg>
-        <span>会话已暂停${reason ? `：${reason}` : ''}</span>
+        <span>${sourceLabel}${reason ? `：${reason}` : ''}</span>
         <button class="session-status-action-btn" data-action="resume-session">继续</button>
         <button class="session-status-action-btn session-status-abandon-btn" data-action="abandon-pause">放弃</button>
       `;

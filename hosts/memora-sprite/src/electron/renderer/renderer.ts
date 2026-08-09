@@ -438,8 +438,8 @@ async function bootstrapRenderer(): Promise<void> {
       }
     },
     // 会话状态变更 → 更新暂停按钮禁用态 + 消息区状态横幅
-    onSessionStatusChanged: (status, reason, resumable) => {
-      State.uiManager.onSessionStatusChanged(status, reason, resumable);
+    onSessionStatusChanged: (status, reason, resumable, source) => {
+      State.uiManager.onSessionStatusChanged(status, reason, resumable, source);
     },
     // 澄清问题推送 → 展示澄清面板
     onNeedClarify: (questions) => {
