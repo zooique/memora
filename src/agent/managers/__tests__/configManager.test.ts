@@ -266,5 +266,48 @@ describe('ConfigManager', () => {
       // persona 类型不注入 system 消息
       expect(systemMessages).toHaveLength(0);
     });
+
+    it('rule 类型 confirmConfigSuggestion 应刷新 bootstrap 段（T2 防回归）', async () => {
+      const refreshSpy = vi.fn();
+      const managerWithWrite = new ConfigManager(
+        storage,
+        skillManager,
+        () => {},
+        refreshSpy,
+        async () => {},
+      );
+
+      await managerWithWrite.confirmConfigSuggestion({
+        type: 'rule',
+        name: 'T2规则',
+        content: '规则内容',
+        confidence: 0.8,
+      });
+
+      // 修复前（缺调用）：refreshSpy 未被调 → 断言红。
+      // 修复后：新规则已 upsert 进索引，refreshBootstrapMemories 替换式重建 bootstrap 段。
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('persona 类型 confirmConfigSuggestion 不应刷新 bootstrap 段（T2 防过度修复）', async () => {
+      const refreshSpy = vi.fn();
+      const managerWithWrite = new ConfigManager(
+        storage,
+        skillManager,
+        () => {},
+        refreshSpy,
+        async () => {},
+      );
+
+      await managerWithWrite.confirmConfigSuggestion({
+        type: 'persona',
+        name: '新角色',
+        content: '角色描述',
+        confidence: 0.8,
+      });
+
+      // persona 走 reloadConfig 路径（agent.reloadConfig('persona')），bootstrap 刷新是 rule 专属
+      expect(refreshSpy).not.toHaveBeenCalled();
+    });
   });
 });

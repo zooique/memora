@@ -202,6 +202,13 @@ export class ConfigManager {
     if (suggestion.type === 'rule') {
       const rulePrompt = `【项目规则】${suggestion.name}\n${suggestion.content}`;
       this.injectSystemMessage(rulePrompt);
+      // T2 修复：刷新 bootstrap 段（messages[0] 中的 rule 全集）。
+      // 与 deleteRule:346 / updateRule:393 / deleteSkill:430 对称——此前缺此调用，
+      // 且 agent.reloadConfig('rule') 是显式 no-op（agent.ts 内跳过），
+      // 导致确认的新规则只靠一条易被截断的临时 system 消息生效，重启前永进不了 bootstrap。
+      // upsert(:199) 已完成 → 回调内 getBootstrapMemories 经 getBySource(RULE) 必然包含新规则，
+      // loop.refreshBootstrapMemories 是替换式重建，幂等无副作用。
+      this.refreshBootstrapMemories();
     }
 
     logger.info(

@@ -18,9 +18,9 @@ import { logger, AGENT_EVENTS } from 'memora';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { requireAgent } from './types.js';
-import { handleUserInput, handleResume } from './chatStreamHandler.js';
+import { handleUserInput, handleResume, handleClarifyAnswer } from './chatStreamHandler.js';
 import { isValidContent } from './inputValidation.js';
-import type { SessionCheckpoint, SessionEvent, PauseMeta } from 'memora';
+import type { SessionCheckpoint, PauseMeta } from 'memora';
 
 /**
  * 澄清暂停超时自动续跑（Finding A）
@@ -335,15 +335,10 @@ export function registerChatHandlers(ctx: IpcContext): void {
       clearTimeout(clarifyTimeout);
       clarifyTimeout = null;
     }
-    const agent = requireAgent(ctx);
-    const event: SessionEvent = {
-      type: 'clarify',
-      content: JSON.stringify(answers),
-      delta: {},
-    };
-    // 使用 processEvent 将澄清回答注入到事件处理流
-    // 不等待流式输出（回答后由 Composer 补全槽位，继续 P1-P3 流程）
-    void agent.processEvent(event);
+    // T1 修复：必须完整迭代 processEvent 生成器（async generator 不迭代则函数体不执行）。
+    // 复用 forwardStream 全套模式——占用 AbortController 保持并发闸门有效，回答驱动一轮完整
+    // clarify→chat 续跑并将 LLM 输出推流到渲染层。await 确保返回 success 时澄清已实际处理完成。
+    await handleClarifyAnswer(answers, ctx);
     return { success: true };
   });
 
@@ -359,7 +354,6 @@ export function registerChatHandlers(ctx: IpcContext): void {
     ctx: IpcContext,
     questions: { slot: string; question: string; options?: string[] }[],
   ): void {
-    const agent = requireAgent(ctx);
     const answers = questions.map((q) => ({
       slot: q.slot,
       answer:
@@ -375,13 +369,12 @@ export function registerChatHandlers(ctx: IpcContext): void {
         autoResolved: true,
       });
     }
-    const event: SessionEvent = {
-      type: 'clarify',
-      content: JSON.stringify(answers),
-      delta: {},
-    };
-    // 复用澄清回答注入逻辑：processEvent 内 PAUSED + 非 command 事件会触发 auto-resume
-    void agent.processEvent(event);
+    // T1 修复：与用户主动回答同路径（handleClarifyAnswer 内构造 clarify 事件并完整迭代）。
+    // 不 await —— 超时回调本为 fire-and-forget，执行流经 forwardStream 独立推流；
+    // 但「不迭代则不执行」的历史缺陷由 handleClarifyAnswer 内部彻底消除。
+    void handleClarifyAnswer(answers, ctx).catch((err) => {
+      logger.error({ err }, '澄清超时自动续跑失败');
+    });
   }
 
   /** 超时自动决策文案（无预置选项时，按 slot 生成中性可收敛文本） */

@@ -162,6 +162,55 @@ function broadcastStatus(ctx: IpcContext, status: 'running' | 'paused' | 'error'
 }
 
 /**
+ * 处理用户回答的澄清问题 — 与 handleUserInput 同构（SSOT 排雷第二轮 T1）
+ *
+ * 历史缺陷：chatHandlers 曾以 `void agent.processEvent(event)` 消费 async generator，
+ * 而 async generator 不迭代则函数体一行不执行 → auto-resume / Composer 补槽 /
+ * clarify→chat 转换 / resetConsecutivePauseCount 全链路失效，且 IPC 照常返回 success。
+ * 此处复用 forwardStream 完整模式（AbortController 占用 → 迭代推流 → finally 释放），
+ * 既让澄清回答真正驱动内核执行，又保持并发闸门（ctx.getAbortController()）有效。
+ *
+ * 与 handleUserInput 的区别：不重置会话 / 不计数 / 不 prepareForChat（同 handleResume，
+ * 澄清回答是对既有会话的继续，不产生新消息计数）。
+ *
+ * @param answers 用户回答（slot → answer），序列化为 clarify 事件内容
+ * @param ctx IPC 上下文
+ */
+export async function handleClarifyAnswer(
+  answers: Array<{ slot: string; answer: string }>,
+  ctx: IpcContext,
+): Promise<void> {
+  const fullWindow = ctx.windowManager.getFullWindow();
+  if (!fullWindow || fullWindow.isDestroyed()) return;
+
+  if (!ctx.isAgentReady()) {
+    emitStreamError(fullWindow, 'Agent 正在初始化中，请稍候后重试', 'Agent 未就绪');
+    return;
+  }
+
+  // 竞态保护——澄清回答驱动的执行流同样占用 AbortController，防止并发进入
+  if (ctx.getAbortController()) {
+    emitStreamError(fullWindow, '上一条消息仍在处理中，请等待完成或点击停止后再发送', '对话竞态保护');
+    return;
+  }
+
+  const abortController = new AbortController();
+  ctx.setAbortController(abortController);
+
+  const messageId = randomUUID();
+  ctx.trayManager?.setState('active');
+
+  const agent = requireAgent(ctx);
+  const event: SessionEvent = {
+    type: 'clarify',
+    content: JSON.stringify(answers),
+    delta: {},
+  };
+  const generator = agent.processEvent(event, abortController.signal);
+  await forwardStream(generator, ctx, messageId, abortController);
+}
+
+/**
  * 流式 chunk 转发内核（handleUserInput / handleResume 共用）
  *
  * 消费任意 AgentChunk 生成器，将 chunk 推送渲染进程，含无进展超时兜底、
