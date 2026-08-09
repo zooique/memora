@@ -16,6 +16,7 @@ import { ConfigManager } from '@/agent/managers/configManager.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ConfigSuggestion } from '@/agent/managers/configManager.js';
+import { logger } from '@/logging/logger.js';
 
 describe('ConfigManager', () => {
   let storage: InMemoryStorage;
@@ -373,6 +374,35 @@ describe('ConfigManager', () => {
 
       // persona 走 reloadConfig 路径（agent.reloadConfig('persona')），bootstrap 刷新是 rule 专属
       expect(refreshSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── T2-3（F3-2）删除死回调后的失败降级 ──────────────────
+  // 根因：onBootstrapSyncFailed 定义完善但全仓零注册（死契约），失败可观测性已由
+  // logger.warn 承担（宿主日志链路消费）。删除该回调后，必须证明失败降级契约未退化：
+  // safeRefreshBootstrapMemories 吞掉 refreshBootstrapMemories 的异常、不向外抛出、
+  // 且经 logger.warn 暴露。此测试绑定两类回归——误删 try/catch（会抛 → 红）、误删 warn（调用 0 → 红）。
+  describe('safeRefreshBootstrapMemories（T2-3 删除死回调后失败降级）', () => {
+    it('refreshBootstrapMemories 抛错时不应抛出，且通过 logger.warn 暴露（无死回调分支）', () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const managerWithFailingRefresh = new ConfigManager(
+        storage,
+        skillManager,
+        (msg) => { systemMessages.push(msg); },
+        () => { throw new Error('simulated bootstrap desync'); },
+        undefined,
+      );
+
+      expect(() =>
+        (managerWithFailingRefresh as unknown as { safeRefreshBootstrapMemories(): void })
+          .safeRefreshBootstrapMemories(),
+      ).not.toThrow();
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [meta, msg] = warnSpy.mock.calls[0]!;
+      expect(String(msg)).toContain('bootstrap 记忆同步失败');
+      expect((meta as { err?: Error }).err?.message).toBe('simulated bootstrap desync');
+      warnSpy.mockRestore();
     });
   });
 });

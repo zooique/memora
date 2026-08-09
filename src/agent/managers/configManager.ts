@@ -87,28 +87,12 @@ export class ConfigManager {
   private suggestionHandler: ConfigSuggestionHandler | null = null;
 
   /**
-   * bootstrap 同步失败回调（F3.1 回调失败降级）
+   * 安全刷新 bootstrap 记忆（F3.2 失败降级）
    *
-   * refreshBootstrapMemories() 抛出异常时调用此回调，
-   * 宿主可据此重试或记录告警。
-   */
-  private onBootstrapSyncFailed: ((error: Error) => void) | null = null;
-
-  /**
-   * 注册 bootstrap 同步失败回调（F3.1）
-   *
-   * 当 refreshBootstrapMemories() 抛出异常时，本回调被触发。
-   * 宿主可在回调中实现重试逻辑（如指数退避重试 3 次）。
-   */
-  setOnBootstrapSyncFailed(handler: (error: Error) => void): void {
-    this.onBootstrapSyncFailed = handler;
-  }
-
-  /**
-   * 安全刷新 bootstrap 记忆（F3.1 回调失败降级）
-   *
-   * 包装 refreshBootstrapMemories() 调用，捕获异常并发射 onBootstrapSyncFailed 回调。
-   * 防止回调失败导致 system prompt 与存储不一致后静默吞没。
+   * 包装 refreshBootstrapMemories() 调用，捕获异常并通过 logger.warn 记录。
+   * 历史版本曾提供 onBootstrapSyncFailed 回调供宿主重试/告警，但全仓零注册
+   * （SSOT 排雷 T2-3 复核确认）——属「定义完善却永不兑现的死契约」，已删除。
+   * 失败可观测性统一由 logger.warn 承担（宿主日志链路已消费该告警）。
    * 所有 CRUD 操作中的 refreshBootstrapMemories 均通过此方法调用。
    */
   private safeRefreshBootstrapMemories(): void {
@@ -117,7 +101,6 @@ export class ConfigManager {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn({ err: error }, 'bootstrap 记忆同步失败（system prompt 与存储可能不一致）');
-      this.onBootstrapSyncFailed?.(error);
     }
   }
 
