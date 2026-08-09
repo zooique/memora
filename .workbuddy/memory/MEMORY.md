@@ -20,8 +20,15 @@
 - **快照内字段 vs 有运行时副本的字段**：只有别处有第二副本（hotMemory→loop、status→stateMachine）才需回灌 restore；纯 checkpoint 内字段整体赋值即完成 = SSOT 正确。
 - **门面窄化审计**：Facade 必须与被委托方参数面等宽（`Agent.pause` 两参 vs `SessionManager.pause` 三参 ⇒ lowRisk 不可达）。JS `.length` 忽略默认参，无法用 `.length` 断言等宽——改用行为断言锁死契约。
 - **注释即契约**：行为性注释须 grep 验证，无代码路径支撑等同撒谎且危害更大。
-- **dual-source 判据**：「删掉从库能否无损重建？」能=派生索引（合法），不能=反模式。一致性不是目的，正确性才是——推广修法前逐点核对语义。
+- **dual-source 判据**：「删掉从库能否无损重建？」能=派生索引（合法），不能=反模式。一致性不是目的，正确性才是——推广修法前逐点核对语义。**判据须分维度**：Rule 索引的「内容」可重建（合法派生），但「存在性」不可重建（`loader.ts` 只 add 不 evict，删文件后 SQLite 行永生）⇒ 同一字段可能一半合法一半泄漏。
+- **审查必须跨内核/宿主边界（2026-08-09 第二轮血训）**：只审 `src/` 会漏掉「宿主对内核契约的调用姿势」类缺陷——契约两端各自看都对，错在中间。最严重实例：`void agent.processEvent(event)` 调 async generator = 函数体一行不执行，而 tsc/eslint 全绿、IPC 照常返回 success、用户再发一条消息即掩盖断裂。**跨进程边界不要把 generator 作为唯一入口**，应提供内部自 drain 的非流式门面，把「记得迭代」变成类型上不可能错。
+- **对称性检查是缺失的工序**：反复出现的病灶不是某段代码，而是「方向性操作只写了一半」——归零无兜底 / 抄副作用漏主作用（`updateStep` 手写 lastHeartbeat 却漏 `touchCheckpoint`）/ 有 add 无 evict / 写了 `for await` 文档却 void 调用。任何增删、生产消费、读写、翻转归零的改动，评审必须回答「反方向在哪里」。
+- **修复本身可能引入新分叉**：`restoreFromCheckpoint` 加无条件 `resetToRunning()` 后，原本只是「不恢复」的 error 字段缺失场景变成「反向恢复」（状态机 running / 检查点 error 永久分叉且无日志）。强制归零必须同时归零所有镜像。
+- **同一数据缺陷两种崩法 = 降级设计缺失**：`loadPersistedCheckpoint` catch 吞掉（静默丢整个会话）vs `restoreFromCheckpoint` 直接抛（崩进程），无一是「降级但可用」。反序列化应收口为单一 `parseXxx()` 做字段补齐。
 - **防回归测试铁律**：必须能在修复前失败；同时补一条「修复后仍应通过」的绿测防过度修复。验证手段：临时中和生产分支跑测试应红，再精确还原。
+- **变异"误绿"要实测（2026-08-09 实证）**：行为级断言可能被无关路径干扰而误绿（T3 初次变异：chatSync 路径有其他 touchCheckpoint 置脏，写盘断言变异后仍绿）。对策：行为断言脆时改**契约级断言**（spy 私有方法 / spy logger.warn 确认 catch 已挂），直接锁「必须走哪个方法」。vitest 不把 unhandledRejection 转测试失败——测"悬空 Promise"要 spy 降级日志而非指望进程报错。
+- **tsc 与 vitest 的不对称是防线而非冗余**：vitest（esbuild）不查类型——Agent 调 SessionManager private 方法在测试里"绿"、`tsc --noEmit` 里"红"。改完必跑 tsc，别只信测试全绿。
+- **收口优于补漏（SSOT 修复的升级路径）**：`updateStep` 从"补 touchCheckpoint 调用"升级为「状态变更收口到 SessionManager 公共方法 `updatePlanStepStatus`」——消灭外部直改 checkpoint 的通道。凡是「外部直改被绕过路径」的修复，优先考虑把写入收进拥有者（单一真理源），而不是在调用点打补丁。
 - **测试 Provider 轮次计数陷阱（2026-08-09 实证）**：loop 在**迭代边界**检查 `pauseRequested` 才挂起（pause 触发后下一轮迭代开头才翻 PAUSED）。且 `postProcess` 的归档（ArchiveCoordinator）仍会调 `provider.chat`。故 MockProvider 按「chat 调用次数」决定产工具调用会被归档 LLM 调用污染轮次、导致续跑无法触发第二次暂停。正确做法：按「已产出工具步数」计数（文本型 LLM 调用不占预算），且测试关 `archiveMode:'manual'` 双保险。`resumeExecution` 无输入且计划停滞会短路、不走 `continueAfterPause`——续跑测试须传 input。
 
 ## 设计令牌与 UI 架构
