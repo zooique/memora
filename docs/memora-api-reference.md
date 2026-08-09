@@ -1,10 +1,10 @@
-# Memora 内核 API 参考手册（v2.0.3）
+# Memora 内核 API 参考手册（v2.1.0）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v2.0.3（最后更新：2026-08-01，对应内核 v2.0.3）
+> **版本**：v2.1.0（最后更新：2026-08-09，对应内核 v2.1.0）
 >
 > **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
 > - **Agent God Object 拆分（原 v3.0）**：记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
@@ -19,6 +19,8 @@
 > **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
 >
 > **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
+>
+> **v2.1.0 变更**：不中断工作模式 v2.0 与 SSOT 修复版本。新增 `IWebSearchProvider` 接口与 `FetchWebSearchProvider` 默认实现，`web_search` 工具条件性暴露；检查点完整性校验与异步恢复；Composer 非中断模式修复。新增 `AgentOptions.webSearchProvider` 注入字段。无 API 破坏性变更。
 
 ---
 
@@ -86,6 +88,7 @@
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
 | `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
 | `archiveMode` | `ArchiveMode` | ❌ | 归档模式（ADR-015，默认 `'full'`）。`'full'`：profile+insight 自动归档；`'insights-only'`：仅 profile+insight 自动，内容需手动；`'manual'`：全部手动 |
+| `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索提供者注入（提供时自动暴露 `web_search` 工具给 LLM，不传则不暴露） |
 
 > **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十八 类型导出），pino 升级为懒初始化（首次日志调用时触发，import 零副作用）。
 
@@ -534,6 +537,9 @@ const agent = new Agent({
 | `sessionManager.loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
 | `sessionManager.restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
 | `sessionManager.restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
+| `sessionManager.createCheckpoint(mainGoal?)` → `SessionCheckpoint \| null` | 创建当前会话检查点（含热记忆、目标、计划、状态机快照），首次调用返回完整检查点，后续调用合并增量 |
+| `sessionManager.restoreFromCheckpoint(checkpoint)` → `Promise<number>` | 从检查点恢复会话（恢复消息历史、状态机状态、截断时注入提示消息） |
+| `sessionManager.getCheckpoint()` → `SessionCheckpoint \| null` | 获取当前检查点（只读，不修改状态） |
 
 ```typescript
 // 项目列表
@@ -597,7 +603,7 @@ console.log(agent.persona.currentMode);               // 当前模式
 
 > 工具注册/执行走 `agent.tools.xxx()`，写入扩展/记忆关键词走 `agent.insight.xxx()`。
 
-### 8.1 内置工具（4 个）
+### 8.1 内置工具（5 个）
 
 | 工具名 | 用途 | 参数 |
 |--------|------|------|
@@ -605,6 +611,7 @@ console.log(agent.persona.currentMode);               // 当前模式
 | `write_file` | 写入/创建文件（支持 overwrite/append/insert 三种模式） | `path`, `content`, `mode?`, `insert_line?` |
 | `list_dir` | 列出目录内容（递归深度 ≤ 3） | `path?`, `recursive?`, `maxDepth?` |
 | `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` |
+| `web_search` | 搜索互联网（条件性暴露，仅在注入 `IWebSearchProvider` 时可用） | `query`, `limit?` |
 
 ### 8.2 `agent.tools` — ToolExecutor
 
@@ -647,7 +654,38 @@ agent.tools.registerTool(
 );
 ```
 
-### 8.3 `agent.insight` — InsightExtractor（写入扩展 + 关键词）
+### 8.3 `IWebSearchProvider` — 网络搜索注入接口
+
+> 宿主实现此接口并注入 `AgentOptions.webSearchProvider`，即可让 Agent 拥有网络搜索能力。
+> 未注入时，Agent 不会暴露 `web_search` 工具给 LLM，LLM 被告知搜索不可用。
+> 内核提供 `FetchWebSearchProvider` 作为基于 DuckDuckGo HTML 的零依赖默认实现。
+
+```typescript
+// 搜索结果
+interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+// 搜索选项
+interface WebSearchOptions {
+  limit?: number;  // 返回结果数量上限（默认 5）
+}
+
+// 网络搜索提供者接口
+interface IWebSearchProvider {
+  search(query: string, options?: WebSearchOptions): Promise<SearchResult[]>;
+}
+
+// 注入方式
+const agent = new Agent({
+  // ... 其他选项
+  webSearchProvider: new FetchWebSearchProvider(), // 使用内置默认实现
+});
+```
+
+### 8.4 `agent.insight` — InsightExtractor（写入扩展 + 关键词）
 
 | 方法 | 用途 |
 |------|------|
@@ -1071,6 +1109,7 @@ export type {
 } from '@zooique/memora';
 export { type AgentForkResult } from '@zooique/memora';
 export type { RecalledMemorySummary } from '@zooique/memora';
+export type { SessionCheckpoint } from '@zooique/memora';
 
 // 记忆快照与搜索（MemoryInspector）
 export type {
@@ -1167,6 +1206,10 @@ export { setLogger, logger } from '@zooique/memora';
 // 召回
 export { recall, extractKeywords } from '@zooique/memora';
 export type { RecallOptions } from '@zooique/memora';
+
+// 网络搜索
+export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@zooique/memora';
+export { FetchWebSearchProvider } from '@zooique/memora';
 
 // 角色
 export type { PersonaMode, Persona } from '@zooique/memora';
