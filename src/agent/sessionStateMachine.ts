@@ -25,7 +25,7 @@
  *
  * 单实例事件队列 + 串行处理，无并发写路径。
  */
-import type { SessionEvent, SessionCheckpoint, StatusTransition, SessionStatus } from '@/agent/types.js';
+import type { SessionCheckpoint, StatusTransition, SessionStatus } from '@/agent/types.js';
 
 /** 暂停来源 */
 export type PauseSource = 'user' | 'agent' | 'system';
@@ -221,30 +221,6 @@ export class SessionStateMachine {
       from: 'error',
       to: 'running',
       reason: `恢复完成：异常原因 "${checkpoint.error.cause}" 已解除`,
-      allowed: true,
-    };
-  }
-
-  /**
-   * 事件驱动转换（设计文档接口）
-   *
-   * 根据 SessionEvent 类型驱动状态转换：
-   * - command → 检查是否可恢复（若当前为 ERROR）
-   * - correction → 保持当前状态
-   * - clarify → 保持当前状态
-   * - chat → 保持当前状态
-   *
-   * @param _event - 增量事件（当前版本仅用于判断转换意图，保留参数供未来扩展）
-   * @param _checkpoint - 当前检查点（保留参数供未来扩展）
-   * @returns 状态转换结果
-   */
-  onEvent(_event: SessionEvent, _checkpoint: SessionCheckpoint): StatusTransition {
-    // 当前版本：事件驱动的自动转换仅限 ERROR→RUNNING 恢复场景
-    // 其他场景（pause/resume）由调用方显式调用 pause()/resume()
-    return {
-      from: this.currentStatus,
-      to: this.currentStatus,
-      reason: '事件不触发状态转换（pause/resume/error 由调用方显式触发）',
       allowed: true,
     };
   }

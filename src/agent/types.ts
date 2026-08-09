@@ -529,7 +529,8 @@ export interface SessionCheckpoint {
 /**
  * 状态转换结果
  *
- * 状态机 onEvent() 的返回值，描述一次状态转换是否合法及其原因。
+ * 状态机 pause()/resume()/triggerError()/recover() 等显式状态转换方法的返回值，
+ * 描述一次状态转换是否合法及其原因。
  */
 export interface StatusTransition {
   /** 转换前状态 */
