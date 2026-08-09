@@ -536,13 +536,24 @@ export class SessionManager {
       );
     }
 
-    // 恢复状态机：根据检查点状态设置状态机
+    // 恢复状态机：先强制归零，再按检查点重建。
+    // 原实现直接调 triggerError/pause，二者均仅允许从 running 出发
+    // （SessionStateMachine.triggerError 校验 from==='running'、canPause 同理），
+    // 跨会话恢复时若状态机残留 paused/error 将静默失败（返回值未被检查）
+    // → 磁盘检查点 status 与内存状态机分叉。
+    this.stateMachine.resetToRunning();
     if (checkpoint.status === 'error' && checkpoint.error) {
-      this.stateMachine.triggerError(checkpoint.error.cause);
+      const transition = this.stateMachine.triggerError(checkpoint.error.cause);
+      if (!transition.allowed) {
+        logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点错误态恢复失败，状态机与检查点分叉');
+      }
     } else if (checkpoint.status === 'paused') {
-      this.stateMachine.pause('从检查点恢复', 'system');
+      const transition = this.stateMachine.pause('从检查点恢复', 'system');
+      if (!transition.allowed) {
+        logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点暂停态恢复失败，状态机与检查点分叉');
+      }
     }
-    // running 状态不需要额外操作（状态机默认 running）
+    // running 状态由 resetToRunning() 承担，无需额外操作
 
     // 切换到检查点记录的会话
     const history = this.getHistory();
@@ -785,7 +796,12 @@ export class SessionManager {
    *
    * 用户修正目标时调用，递增 goalVersion 触发漂移检测。
    * 更新前自动执行一致性校验（P3.1），若检测到漂移则发射 goalDriftDetected 事件。
-   * 校验结果不影响 updateGoal 的执行——事件是通知性的，宿主 UI 决定是否暂停等待用户确认。
+   *
+   * 漂移处置由内核自兜底，不依赖宿主（SSOT 排雷：原注释承诺「宿主 UI 决定是否暂停」，
+   * 但宿主生产代码对该事件零监听，属契约未兑现，故收窄为以下语义）：
+   *   - drift 级：内核直接低风险暂停，强制用户确认
+   *   - minor 级：仅发射事件 + 日志，不打断执行（轻微偏移不值得打扰用户）
+   * goalDriftDetected 事件保留为可观测性出口，宿主可选订阅，不订阅不影响正确性。
    *
    * @param newGoal - 新目标描述
    * @returns 一致性校验结果（调用方可据此判断是否需要处理漂移）

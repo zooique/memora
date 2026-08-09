@@ -20,9 +20,10 @@
  * 详见 ADR-002 · 存储层抽象（向量检索备选方案）
  * 详见 ADR-013 · 记忆归档三步价值过滤
  */
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, mkdir, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
+import { atomicWriteFile } from '@/utils/atomicWrite.js';
 import { configError } from '@/utils/errors.js';
 import { cosineSimilarity } from '@/utils/math.js';
 import type { EmbeddingOptions } from '@/llm/embedding.js';
@@ -268,11 +269,9 @@ export class JsonVectorStore implements IVectorStore {
     };
 
     await mkdir(dirname(this.storePath), { recursive: true });
-    // M9 修复：先写临时文件再原子 rename，避免写一半崩溃导致 vectors.json 损坏、
+    // M9 修复：原子写，避免写一半崩溃导致 vectors.json 损坏、
     // 下次加载 isValidVectorStoreFile 失败而整库向量静默清空（向量索引昂贵且只能重算）。
-    const tmpPath = `${this.storePath}.tmp`;
-    await writeFile(tmpPath, JSON.stringify(data), 'utf-8');
-    await rename(tmpPath, this.storePath);
+    await atomicWriteFile(this.storePath, JSON.stringify(data));
     this.dirty = false;
     logger.info({ count: this.entries.size }, '向量索引持久化完成');
   }

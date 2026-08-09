@@ -4,10 +4,11 @@
  * 冷热分离中的"热"：文件承载记忆本体
  * 详见 ADR-002 · IMemoryStorage 接口与宿主注入模式
  */
-import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { readFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { SOURCE_LABELS, DEFAULT_MEMORY_SCORE, type Memory } from '@/memory/types.js';
 import { inferSource, validateSource } from '@/memory/sourceValidation.js';
+import { atomicWriteFile } from '@/utils/atomicWrite.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/toError.js';
@@ -85,7 +86,9 @@ export class FileStore {
       accessedAt: memory.accessedAt,
     });
     const content = `---\n${frontmatter}\n---\n\n${memory.content}`;
-    await writeFile(filePath, content, 'utf-8');
+    // 原子写：设定记忆的文件本身即唯一真理源（SQLite 仅为派生索引），
+    // 写入中途崩溃产生的半截文件无处可重建。
+    await atomicWriteFile(filePath, content);
   }
 
   /**

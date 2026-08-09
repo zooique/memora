@@ -518,31 +518,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const loop = this.requireLoop;
     const history = this.requireHistory;
 
-    let assistantContent = '';
-    let wasAborted = false;
-
-    try {
-      for await (const chunk of loop.processUserInput(
-        input,
-        recalledMemories,
-        combinedSignal,
-      )) {
-        yield chunk;
-        if (chunk.type === 'text') {
-          assistantContent += chunk.content;
-        } else if (chunk.type === 'aborted') {
-          wasAborted = true;
-        }
-      }
-    } catch (err) {
-      if (isAbortError(err)) {
-        yield { type: 'aborted', reason: 'User cancelled the conversation' };
-        return;
-      } else {
-        yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
-        return;
-      }
-    }
+    // 流消费收口于 consumeExecutionStream（与 processEvent / resumeExecution 共用同一实现，
+    // 杜绝 chat 主路径再持一份逐行同构的流消费逻辑——此前该副本漏了 paused 分支与
+    // finally 锁清理，导致 chat 暂停时状态机不翻 PAUSED、幂等锁泄漏）。
+    const streamResult = yield* this.consumeExecutionStream(
+      loop.processUserInput(input, recalledMemories, combinedSignal),
+    );
+    if (streamResult.failed) return;
+    const assistantContent = streamResult.content;
+    const wasAborted = streamResult.aborted;
 
     if (wasAborted) {
       if (assistantContent.trim()) {
@@ -895,7 +879,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
               question: q.question,
               options: q.options,
             })));
-            this.pause(`需要澄清：${composeResult.needClarify.map((q) => q.question).join('; ')}`, 'agent');
+            // 兑现 :873 的注释契约：剩余问题全为低风险时不计入连续暂停计数。
+            // 用 every 而非 some——只要存在一个高风险问题，本次暂停就确实在为高风险
+            // 决策索取用户确认，理应消耗配额；some 会让混合场景免费逃逸计数，反向打开滥用面。
+            const allLowRisk = composeResult.needClarify.every((q) => q.lowRisk);
+            this.pause(
+              `需要澄清：${composeResult.needClarify.map((q) => q.question).join('; ')}`,
+              'agent',
+              allLowRisk,
+            );
             yield { type: 'done' };
             return;
           }
@@ -946,34 +938,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         );
       }
 
-      // 委托给 AgentLoop 的 processEvent
-      let assistantContent = '';
-      let wasAborted = false;
-
-      try {
-        for await (const chunk of loop.processEvent(event, recalledMemories, combinedSignal)) {
-          // 内核事实驱动：loop 在迭代边界真正挂起时，状态机才翻 PAUSED（修 D1）
-          // 不再在 requestPause 同步翻转——避免"申请即暂停"错位
-          if (chunk.type === 'paused') {
-            this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource);
-            this._pendingPauseReason = undefined;
-          }
-          yield chunk;
-          if (chunk.type === 'text') {
-            assistantContent += chunk.content;
-          } else if (chunk.type === 'aborted') {
-            wasAborted = true;
-          }
-        }
-      } catch (err) {
-        if (isAbortError(err)) {
-          yield { type: 'aborted', reason: 'User cancelled the conversation' };
-          return;
-        } else {
-          yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
-          return;
-        }
-      }
+      // 委托给 AgentLoop 的 processEvent（流消费收口于 consumeExecutionStream）
+      const streamResult = yield* this.consumeExecutionStream(
+        loop.processEvent(event, recalledMemories, combinedSignal),
+      );
+      if (streamResult.failed) return;
+      const assistantContent = streamResult.content;
+      const wasAborted = streamResult.aborted;
 
       if (wasAborted) {
         if (assistantContent.trim()) {
@@ -1046,27 +1017,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     const loop = this.requireLoop;
-    let assistantContent = '';
-    let wasAborted = false;
 
-    try {
-      for await (const chunk of loop.continueAfterPause(input, signal)) {
-        yield chunk;
-        if (chunk.type === 'text') {
-          assistantContent += chunk.content;
-        } else if (chunk.type === 'aborted') {
-          wasAborted = true;
-        }
-      }
-    } catch (err) {
-      if (isAbortError(err)) {
-        yield { type: 'aborted', reason: 'User cancelled the conversation' };
-        return;
-      } else {
-        yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
-        return;
-      }
-    }
+    // 流消费与 chat 主路径共用同一实现，杜绝两条路径再次漂移
+    const streamResult = yield* this.consumeExecutionStream(loop.continueAfterPause(input, signal));
+    if (streamResult.failed) return;
+    const assistantContent = streamResult.content;
+    const wasAborted = streamResult.aborted;
 
     if (wasAborted) {
       if (assistantContent.trim()) {
@@ -1090,6 +1046,58 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 后处理
     yield { type: 'thinking', phase: 'archiving' };
     await this.postProcess(input ?? '', assistantContent);
+  }
+
+  /**
+   * 消费执行流的单一真理源
+   *
+   * chat 主路径（`loop.processEvent`）与续跑路径（`loop.continueAfterPause`）此前
+   * 各持一份逐行同构的消费逻辑，且已实证漂移——续跑路径漏了 `paused` 分支，导致
+   * loop 挂起时 pauseMeta 写成 suspended 而状态机/检查点停留 running（三方分叉）。
+   * 收口于此后，新增 chunk 类型只需改一处。
+   *
+   * 暂停幂等锁的释放放在 finally：清理是「退出本作用域的不变式」而非某条分支的动作，
+   * 使今后新增 return 分支不再有遗漏可能。
+   *
+   * @param source - 待消费的执行流（processEvent 或 continueAfterPause）
+   * @returns 消费结果；`failed` 为 true 时调用方应立即 return（错误 chunk 已 yield）
+   */
+  private async *consumeExecutionStream(
+    source: AsyncGenerator<AgentChunk, void, unknown>,
+  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; failed: boolean }, unknown> {
+    let content = '';
+    let aborted = false;
+
+    try {
+      for await (const chunk of source) {
+        // 内核事实驱动：loop 在迭代边界真正挂起时，状态机才翻 PAUSED（修 D1）
+        // 不在 requestPause 同步翻转——避免"申请即暂停"错位
+        if (chunk.type === 'paused') {
+          this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource);
+        }
+        yield chunk;
+        if (chunk.type === 'text') {
+          content += chunk.content;
+        } else if (chunk.type === 'aborted') {
+          aborted = true;
+        }
+      }
+    } catch (err) {
+      if (isAbortError(err)) {
+        yield { type: 'aborted', reason: 'User cancelled the conversation' };
+      } else {
+        yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+      }
+      return { content, aborted, failed: true };
+    } finally {
+      // 释放暂停幂等锁，覆盖正常结束 / abort / error 三路。
+      // 残留会让 requestPause 的 `_pendingPauseReason !== undefined` 检查
+      // 永久拒绝后续暂停请求（暂停按钮全失效）。
+      this._pendingPauseReason = undefined;
+      this._pendingPauseSource = 'user';
+    }
+
+    return { content, aborted, failed: false };
   }
 
   /**
@@ -1297,11 +1305,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * @param reason - 暂停原因
    * @param source - 暂停来源（默认 'user'）
+   * @param lowRisk - 低风险暂停不计入 P4 连续暂停计数（默认 false）
    * @returns 是否暂停成功
    */
-  pause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): boolean {
+  pause(
+    reason: string,
+    source: 'user' | 'agent' | 'system' = 'user',
+    lowRisk = false,
+  ): boolean {
     this.assertInitialized('pause');
-    return this.requireSessionManager.pause(reason, source);
+    return this.requireSessionManager.pause(reason, source, lowRisk);
   }
 
   /**
@@ -1406,6 +1419,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('cancelPauseRequest');
     this.requireLoop.cancelPauseRequest();
     this._pendingPauseReason = undefined;
+    this._pendingPauseSource = 'user'; // 与 abandonPause 对称，防残留污染下次暂停
   }
 
   /**
