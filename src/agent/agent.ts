@@ -1106,6 +1106,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; failed: boolean }, unknown> {
     let content = '';
     let aborted = false;
+    // T1-1：标记流活跃，使 requestPause 能据此判断「延迟翻转机制是否有消费方」
+    this._streamActive = true;
 
     try {
       for await (const chunk of source) {
@@ -1129,6 +1131,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       return { content, aborted, failed: true };
     } finally {
+      // T1-1：流结束，复位活跃标志
+      this._streamActive = false;
       // 释放暂停幂等锁，覆盖正常结束 / abort / error 三路。
       // 残留会让 requestPause 的 `_pendingPauseReason !== undefined` 检查
       // 永久拒绝后续暂停请求（暂停按钮全失效）。
@@ -1404,6 +1408,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // P0-2：软暂停申请时暂存的 reason/source，待 loop 迭代边界真正挂起（产出 {type:'paused'} chunk）时翻状态机使用
   private _pendingPauseReason?: string;
   private _pendingPauseSource: 'user' | 'agent' | 'system' = 'user';
+  // T1-1：是否有活跃的执行流正在消费延迟暂停请求（consumeExecutionStream 是 chat/processEvent/
+  // resumeExecution 的唯一 funnel，仅在此处置位与清理，单一真理源，避免与 chatLock 语义耦合）。
+  private _streamActive = false;
   /** P2-11: 兜底停滞计数器——连续无 task_table_update 的回合数 */
   private _stalledRoundCount = 0;
 
@@ -1433,6 +1440,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         logger.debug('requestPause 忽略：会话处于异常状态，无法暂停');
         return false;
       }
+    }
+
+    // T1-1（F4-1 双副本收口·最小修复）：无活跃流时，延迟翻转机制没有消费方——
+    // consumeExecutionStream 的 finally 不会执行，_pendingPauseReason 将永驻并锁死幂等，
+    // 且此时本就没有正在执行的工具需要「延迟到迭代边界挂起」。直接同步翻状态机，
+    // 不产生悬挂副本（这是内核事实驱动延迟翻转的正当例外：无流可延迟）。
+    if (!this._streamActive) {
+      this.pause(reason, source);
+      return true;
     }
 
     // 幂等：已存在待处理的暂停请求，重复调用不覆盖

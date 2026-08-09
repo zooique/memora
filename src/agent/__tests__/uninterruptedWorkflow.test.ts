@@ -1370,6 +1370,26 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       expect(() => agent!.pause('test')).toThrow(/未初始化/);
     });
+
+    it('T1-1 空闲态（无活跃流）点暂停应直接翻 PAUSED 且不残留 _pendingPauseReason', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      // 空闲态：无活跃执行流，consumeExecutionStream 未运行 → _streamActive 为 false
+      expect((agent as unknown as { _streamActive: boolean })._streamActive).toBe(false);
+
+      const ok = agent.requestPause('空闲暂停', 'user');
+      expect(ok).toBe(true);
+      // 无修复时走延迟路径：置位 _pendingPauseReason 但状态机不翻 PAUSED（点击无效）
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect((agent as unknown as { _pendingPauseReason?: string })._pendingPauseReason).toBeUndefined();
+
+      // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）
+      agent.abandonPause();
+      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+      const ok2 = agent.requestPause('再次暂停', 'user');
+      expect(ok2).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    });
   });
 
   describe('canContinueWithoutInput（T4 blocked 判据）', () => {
