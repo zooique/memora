@@ -251,6 +251,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 标记初始化完成，后续 restoreFromCheckpoint 需要此标志
     this._initialized = true;
 
+    // P0-3：暂停超时自动归档——注册唯一消费点
+    // 必须先于 loadPersistedCheckpoint()，否则启动路径的超时事件无人接收
+    this.registerPauseTimeoutArchiver();
+
     // 加载持久化的会话检查点（P0-2：会话状态持久化）
     // 若上次会话在暂停/异常状态中关闭，加载后恢复状态机
     // 若检查点状态为 paused，同时恢复热记忆（重启后上下文恢复），见 P0-4
@@ -261,19 +265,34 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       await this.restoreFromCheckpoint(persistedCheckpoint);
     }
 
-    // P0-3：暂停超时自动归档（fire-and-forget）
-    // loadPersistedCheckpoint 检测到超时会话后内部填充 _pauseTimedOutSession，
-    // 此处通过 consumePauseTimedOutSession 一次性消费并触发内容归档。
-    const timedOut = this._sessionManager?.consumePauseTimedOutSession();
-    if (timedOut) {
+    return pctx;
+  }
+
+  /**
+   * 注册暂停超时归档处理器（P0-3：超时会话内容的唯一消费点）
+   *
+   * SessionManager 的两条超时路径——启动加载（loadPersistedCheckpoint）与
+   * 运行时定时器（checkPauseTimeout）——都经 markSessionTimedOut() 填充超时
+   * 会话并发射 sessionPauseTimedOut。此处统一消费，消除「启动能归档、
+   * 运行时静默丢失」的不对称：运行时超时会删除磁盘检查点，若当场不归档，
+   * 下次启动也无从发现，会话内容将永久丢失。
+   *
+   * 注册位置在 init() 内而非构造器：close() 会 removeAllListeners()，
+   * 而 init() 起始必先 disposePreviousInstance()，故实例周期内恰好一个监听器。
+   * 监听器挂在 Agent（生命周期稳定）而非 SessionManager 上，
+   * rebuildComponentsWithCurrentCtx() 重建管理器后仍然有效。
+   */
+  private registerPauseTimeoutArchiver(): void {
+    this.on(AGENT_EVENTS.sessionPauseTimedOut, () => {
+      const timedOut = this._sessionManager?.consumePauseTimedOutSession();
+      if (!timedOut) return;
+      // fire-and-forget：归档失败不阻塞主流程，仅记录
       this.archiveCoordinator
         ?.archiveSessionContent(timedOut.date, timedOut.session, { autoTriggered: true })
         .catch((err) => {
           logger.warn({ err, sessionId: timedOut.sessionId }, '暂停超时会话自动归档失败');
         });
-    }
-
-    return pctx;
+    });
   }
 
   /**

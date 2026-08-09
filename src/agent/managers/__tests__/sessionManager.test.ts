@@ -497,6 +497,74 @@ describe('SessionManager', () => {
       expect(emitEvent).toHaveBeenCalledTimes(1 + 1); // sessionPaused + sessionPauseTimedOut
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
     });
+
+    // ── T1-2：运行时超时也必须填充超时会话（防回归）──────────
+    // 修复前运行时路径只发事件不填字段，且检查点已从磁盘删除，
+    // 导致下次启动也无从发现——会话内容永久丢失。
+
+    it('运行时超时应填充可消费的超时会话信息', () => {
+      manager.pause('测试暂停', 'user');
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+
+      expect(manager.consumePauseTimedOutSession()).toEqual({
+        sessionId: '2026-06-27-main',
+        date: '2026-06-27',
+        session: 'main',
+      });
+    });
+
+    it('超时会话信息消费一次后应清空', () => {
+      manager.pause('测试暂停', 'user');
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+
+      expect(manager.consumePauseTimedOutSession()).not.toBeNull();
+      expect(manager.consumePauseTimedOutSession()).toBeNull();
+    });
+
+    it('会话名含连字符时应按日期锚定切分，不误切', () => {
+      const forkedHistory = createMockHistory({
+        currentSessionName: '2026-06-27-main-fork-1',
+      } as Partial<MessageHistory>);
+      const mgr = new SessionManager(
+        () => forkedHistory,
+        () => loop,
+        sessionStore,
+        isChatBusy,
+        emitEvent,
+      );
+
+      mgr.pause('测试暂停', 'user');
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+
+      expect(mgr.consumePauseTimedOutSession()).toEqual({
+        sessionId: '2026-06-27-main-fork-1',
+        date: '2026-06-27',
+        session: 'main-fork-1',
+      });
+    });
+
+    it('会话标识非日期开头时应跳过填充但仍发射事件', () => {
+      // 旧的 split('-').length >= 4 判据会把 'proj-alpha-beta' 误当作日期，
+      // 归档到一个根本不存在的日期目录；日期锚定后应直接拒绝解析。
+      const customHistory = createMockHistory({
+        currentSessionName: 'proj-alpha-beta-gamma',
+      } as Partial<MessageHistory>);
+      const mgr = new SessionManager(
+        () => customHistory,
+        () => loop,
+        sessionStore,
+        isChatBusy,
+        emitEvent,
+      );
+
+      mgr.pause('测试暂停', 'user');
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+
+      expect(mgr.consumePauseTimedOutSession()).toBeNull();
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
+        sessionId: 'proj-alpha-beta-gamma',
+      }));
+    });
   });
 
   // ── P1-2：goalVersion 漂移强制暂停 ──────────────────────
@@ -789,6 +857,13 @@ describe('SessionManager', () => {
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
       }));
+      // T1-2：字段须在发射事件之前填好——监听器会同步消费，
+      // 顺序颠倒会让归档消费到 null
+      expect(mgr.consumePauseTimedOutSession()).toEqual({
+        sessionId: '2026-06-27-main',
+        date: '2026-06-27',
+        session: 'main',
+      });
       vi.useRealTimers();
     });
 

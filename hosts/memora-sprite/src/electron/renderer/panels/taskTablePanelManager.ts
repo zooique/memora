@@ -7,7 +7,7 @@
  * 职责：
  * - 渲染任务表（plan steps + 当前进度 + 上一回合）
  * - 持有 PendingDraftArea 实例，管理草稿区
- * - 管理暂停/取消/继续按钮双态（requesting→取消 / suspended→继续）
+ * - 管理暂停/继续按钮双态（suspended→显示「继续」）
  * - 通过 IPC 与内核交互（SESSION_PAUSE / SESSION_RESUME / SESSION_CANCEL_PAUSE）
  *
  * 设计原则：
@@ -56,8 +56,8 @@ export interface WorkContext {
   plan: TaskStep[];
   /** 当前在执行的步骤序号（-1 表示无活跃步骤） */
   activeStepOrder: number;
-  /** 暂停阶段（undefined=未暂停 / requesting=已申请 / suspended=已挂起） */
-  pausePhase?: 'requesting' | 'suspended';
+  /** 暂停阶段（undefined=未暂停 / suspended=已挂起） */
+  pausePhase?: 'suspended';
   /** 暂停原因 */
   pauseReason?: string;
   /** P3-2: 暂停来源（仅 suspended 态有效，用于门控"存进度到记忆"按钮显隐） */
@@ -281,7 +281,6 @@ export class TaskTablePanelManager {
   /**
    * 渲染暂停/取消/继续按钮双态 + 任务表接受/丢弃入口 + 存进度到记忆
    *
-   * - pausePhase requesting: 显示「取消暂停」按钮
    * - pausePhase suspended: 显示「继续」按钮
    * - P3-2: pausePhase suspended + pauseSource='user': 显示「存进度到记忆」按钮
    * - planGenerated = true: 显示「接受」/「丢弃」按钮
@@ -303,14 +302,8 @@ export class TaskTablePanelManager {
     const actionsEl = document.createElement('div');
     actionsEl.className = 'task-table-actions';
 
-    // ── 暂停/继续按钮 ──
-    if (ctx.pausePhase === 'requesting') {
-      const cancelBtn = document.createElement('button');
-      cancelBtn.className = 'task-table-btn task-table-btn-cancel';
-      cancelBtn.textContent = '取消暂停';
-      cancelBtn.addEventListener('click', () => this.handleCancelPause());
-      actionsEl.appendChild(cancelBtn);
-    } else if (ctx.pausePhase === 'suspended') {
+    // ── 暂停/继续按钮（当前仅 suspended 态；requesting 申请态已从契约移除，见 SSOT 排雷 T1-1）──
+    if (ctx.pausePhase === 'suspended') {
       const resumeBtn = document.createElement('button');
       resumeBtn.className = 'task-table-btn task-table-btn-resume';
       resumeBtn.textContent = '继续';
@@ -351,21 +344,6 @@ export class TaskTablePanelManager {
     }
 
     this.tableContainerEl.appendChild(actionsEl);
-  }
-
-  /**
-   * 处理取消暂停
-   *
-   * 委托 host.cancelPause()（P1-6: SESSION_CANCEL_PAUSE IPC）。
-   */
-  private async handleCancelPause(): Promise<void> {
-    try {
-      await this.host.cancelPause();
-      // 刷新面板
-      this.loadData();
-    } catch (err) {
-      this.host.showToast('取消暂停失败', 'error');
-    }
   }
 
   /**

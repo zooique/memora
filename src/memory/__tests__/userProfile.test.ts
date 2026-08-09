@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserProfile } from '@/memory/userProfile.js';
 import type { ExtractedFact } from '@/memory/userProfile.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 
@@ -39,6 +40,21 @@ const createMockStorage = (): IMemoryStorage => {
     ),
     close: vi.fn(),
   } as unknown as IMemoryStorage;
+};
+
+/**
+ * 创建 Mock IMemoryRelationStore（T1-3 防回归用）
+ * 仅 removeRelationsByMemoryId 需断言被调用，其余方法返回空实现。
+ */
+const createMockRelationStore = (): IMemoryRelationStore => {
+  return {
+    addRelation: vi.fn(),
+    getRelations: vi.fn(() => []),
+    getRelationsByType: vi.fn(() => []),
+    getAllRelations: vi.fn(() => []),
+    removeRelation: vi.fn(),
+    removeRelationsByMemoryId: vi.fn(() => 0),
+  } as unknown as IMemoryRelationStore;
 };
 
 describe('UserProfile', () => {
@@ -575,6 +591,57 @@ describe('UserProfile K1 深度补测', () => {
       ]);
       // upsertFact 返回 null → archiveFacts 返回空数组
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('关系侧车守门（T1-3 防回归 · 孤儿边清理）', () => {
+    it('reject 删除记忆前应先清理该记忆的关系边', async () => {
+      // Given：注入 relationStore 的 UserProfile
+      const relationStore = createMockRelationStore();
+      const profile = new UserProfile(mockStorage, relationStore);
+      await profile.load();
+
+      // When：归档一条身份记忆，再拒绝它
+      const written = await profile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ]);
+      const id = written[0]!.id;
+      await profile.reject(id);
+
+      // Then：关系侧车先被调用清边，再删记忆本身（顺序 = 先清关系后删，防孤儿边）
+      expect(relationStore.removeRelationsByMemoryId).toHaveBeenCalledWith(id);
+      expect(mockStorage.delete).toHaveBeenCalledWith(id);
+    });
+
+    it('冲突覆盖删除旧条目前应先清理旧条目的关系边', async () => {
+      // Given：注入 relationStore 的 UserProfile
+      const relationStore = createMockRelationStore();
+      const profile = new UserProfile(mockStorage, relationStore);
+      await profile.load();
+
+      // When：先归档「张三」，再归档同 category+fieldName 不同 value 的「李四」触发冲突覆盖
+      const v1 = await profile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ]);
+      const oldId = v1[0]!.id;
+      await profile.archiveFacts([
+        { category: 'identity', fieldName: '姓名', value: '姓名: 李四', sourceTurn: 'turn-2', confidence: 0.95 },
+      ]);
+
+      // Then：removeConflictingEntries 删除旧条目时应先清其关系边
+      expect(relationStore.removeRelationsByMemoryId).toHaveBeenCalledWith(oldId);
+    });
+
+    it('未注入 relationStore 时应退化为不守门（向后兼容，不抛错）', async () => {
+      // Given：按旧契约构造（无 relationStore）
+      const profile = new UserProfile(mockStorage);
+      await profile.load();
+
+      // When/Then：reject 不应因缺少 relationStore 而抛错
+      const written = await profile.archiveFacts([
+        { category: 'preference', fieldName: '主题', value: '偏好: 暗色', sourceTurn: 'turn-1', confidence: 0.95 },
+      ]);
+      await expect(profile.reject(written[0]!.id)).resolves.toBeUndefined();
     });
   });
 });

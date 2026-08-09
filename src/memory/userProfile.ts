@@ -15,6 +15,7 @@
  *   - identity / preference / expertise 实时归档，habit / history 每天归档时提炼
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
@@ -124,7 +125,17 @@ export class UserProfile {
   /** 内存缓存：启动时从 SQLite 全量加载 */
   private cache: Map<string, UserProfileEntry> = new Map();
 
-  constructor(private readonly index: IMemoryStorage) {}
+  /**
+   * @param index 记忆存储（profile source 的持久化）
+   * @param relationStore 关系侧车（可选）。传入后，任何画像记忆删除都会先清其关系边，
+   *   防止 memory_relations 表残留孤儿边（与 configManager / memoryInspector 的对齐约束一致）。
+   *   内核在 assembler Phase 2 创建 UserProfile 时直接注入 relationStore；
+   *   不传（null/undefined）则退化为不守门，保持向后兼容（既有测试用 `new UserProfile(storage)`）。
+   */
+  constructor(
+    private readonly index: IMemoryStorage,
+    private readonly relationStore?: IMemoryRelationStore | null,
+  ) {}
 
   /**
    * 启动时从 SQLite 加载所有已确认的画像条目
@@ -269,6 +280,9 @@ export class UserProfile {
    */
   async reject(id: string): Promise<void> {
     this.cache.delete(id);
+    // 先清关系侧车，避免 memory_relations 表残留孤儿边（与 configManager / memoryInspector 对齐）
+    // 置于 try 之前：无论 index 是否含该条目，关系边都应先清理（低置信度条目可能未落盘）
+    this.relationStore?.removeRelationsByMemoryId(id);
     try {
       this.index.delete(id);
     } catch (err) {
@@ -382,6 +396,8 @@ export class UserProfile {
         for (const m of conflicts) {
           const parsed = this.parseContentField(m.content, m.name);
           if (parsed.value !== fact.value) {
+            // 先清关系侧车，避免 memory_relations 表残留孤儿边（与 configManager / memoryInspector 对齐）
+            this.relationStore?.removeRelationsByMemoryId(m.id);
             this.index.delete(m.id);
             // 同步删除内存缓存中的旧条目，避免 storage 与 cache 不一致
             // 导致 getConfirmed() 仍返回已被替换的旧值

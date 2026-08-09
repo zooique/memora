@@ -99,11 +99,21 @@ export class SessionManager {
   /**
    * 暂停超时会话信息（P0-3：暂停超时自动归档）
    *
-   * loadPersistedCheckpoint 检测到暂停超时后填充此字段，
-   * 供 Agent.init() 在后续流程中触发内容归档。
+   * 启动路径（loadPersistedCheckpoint）与运行时路径（checkPauseTimeout）
+   * 均经 markSessionTimedOut() 填充此字段——该方法是唯一写点，
+   * 保证「超时被发现」与「归档被触发」在两条路径上语义一致。
    * 外部通过 consumePauseTimedOutSession() 方法访问（一次性消费）。
    */
   private _pauseTimedOutSession: { sessionId: string; date: string; session: string } | null = null;
+
+  /**
+   * 会话标识解析模式：`YYYY-MM-DD-<会话名>`
+   *
+   * 会话标识由 MessageHistory.currentSessionName 以 `${date}-${session}` 构造，
+   * 日期段定长，故日期锚定的正则可无歧义还原二元组——
+   * 即便会话名自身含连字符（如分叉分支 `main-fork-1`）也不会误切。
+   */
+  private static readonly SESSION_ID_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
 
   // ── P0-2：运行时暂停超时检测 ──────────────────────────
 
@@ -458,16 +468,8 @@ export class SessionManager {
         this.checkpoint = null;
         this.checkpointDirty = false;
 
-        // 记录超时会话信息，供 Agent.init() 在后续流程触发内容归档
-        const sessionParts = sessionId.split('-');
-        if (sessionParts.length >= 4) {
-          const date = sessionParts.slice(0, 3).join('-');
-          const session = sessionParts.slice(3).join('-');
-          this._pauseTimedOutSession = { sessionId, date, session };
-        }
-
-        // 发射事件，供宿主 UI 通知用户
-        this.emitEvent('sessionPauseTimedOut', { sessionId, pauseDuration });
+        // 记录超时会话 + 发射事件（唯一入口，与运行时路径共用）
+        this.markSessionTimedOut(sessionId, pauseDuration);
 
         return null;
       }
@@ -995,23 +997,6 @@ export class SessionManager {
   }
 
   /**
-   * 检查是否应在指定步骤边界暂停（P2-3: Phase 2 暂停模型）
-   *
-   * 机械判断：检查 checkpoint.pauseMeta 是否存在且 phase 为 'requesting'，
-   * 且当前步骤 ID 与暂停目标匹配（或任意步骤均可挂起）。
-   *
-   * @param stepId - 当前完成的步骤 ID
-   * @returns 是否应在此边界挂起
-   */
-  shouldPauseAtBoundary(stepId: string): boolean {
-    if (!this.checkpoint?.pauseMeta) return false;
-    if (this.checkpoint.pauseMeta.phase !== 'requesting') return false;
-    // 如果 pauseMeta 中没有指定目标步骤，任意边界均可挂起
-    if (!this.checkpoint.pauseMeta.targetStepId) return true;
-    return this.checkpoint.pauseMeta.targetStepId === stepId;
-  }
-
-  /**
    * 检查计划是否停滞
    *
    * 计划停滞条件：
@@ -1265,6 +1250,34 @@ export class SessionManager {
     return info;
   }
 
+  /**
+   * 标记会话暂停超时（超时事实的唯一写点）
+   *
+   * 启动路径（loadPersistedCheckpoint）与运行时定时器路径（checkPauseTimeout）
+   * 共用本方法：先填充 `_pauseTimedOutSession` 供归档消费，再发射事件。
+   * 顺序不可颠倒——事件监听器会同步调用 consumePauseTimedOutSession()，
+   * 若先发射则消费到 null，运行时超时的内容将静默丢失。
+   *
+   * 会话标识不符合 `YYYY-MM-DD-<会话名>` 约定时（如宿主自定义 id），
+   * 无法还原归档所需的二元组，跳过填充但仍发射事件通知宿主。
+   *
+   * @param sessionId - 超时的会话标识
+   * @param pauseDuration - 暂停持续时间（毫秒）
+   */
+  private markSessionTimedOut(sessionId: string, pauseDuration: number): void {
+    const matched = SessionManager.SESSION_ID_PATTERN.exec(sessionId);
+    if (matched) {
+      this._pauseTimedOutSession = { sessionId, date: matched[1]!, session: matched[2]! };
+    } else {
+      logger.warn(
+        { sessionId },
+        '暂停超时会话标识不符合 YYYY-MM-DD-<会话名> 约定，跳过自动归档',
+      );
+    }
+
+    this.emitEvent('sessionPauseTimedOut', { sessionId, pauseDuration });
+  }
+
   // ── P0-2：运行时暂停超时检测 ──────────────────────────
 
   /**
@@ -1327,8 +1340,9 @@ export class SessionManager {
     this.checkpointDirty = false;
     this.stateMachine.resetToRunning();
 
-    // 发射事件供宿主 UI 通知用户
-    this.emitEvent('sessionPauseTimedOut', { sessionId, pauseDuration });
+    // 记录超时会话 + 发射事件（唯一入口，与启动路径共用）
+    // 补齐前此处只发事件不填字段，运行时超时的会话内容永远不会被归档
+    this.markSessionTimedOut(sessionId, pauseDuration);
 
     // 停止定时器（超时后不再需要继续检测）
     this.stopPauseTimeoutTimer();

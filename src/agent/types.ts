@@ -299,16 +299,14 @@ export interface RoundOutcome {
  * 存储暂停的上下文信息，用于渲染层展示和恢复决策。
  */
 export interface PauseMeta {
-  /** 暂停阶段：requesting（申请中）/ suspended（已挂起） */
-  phase: 'requesting' | 'suspended';
+  /** 暂停阶段（当前仅 'suspended'：已挂起）。'requesting' 申请态从未被写入，已从契约移除（SSOT 排雷 T1-1） */
+  phase: 'suspended';
   /** 暂停原因 */
   reason: string;
   /** 暂停来源 */
   source: 'user' | 'agent' | 'system';
   /** 暂停时间戳 */
   pausedAt: number;
-  /** 可选：暂停目标步骤 ID（仅申请时指定，在对应步骤边界挂起） */
-  targetStepId?: string;
 }
 
 /**

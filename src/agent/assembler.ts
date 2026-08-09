@@ -310,7 +310,7 @@ export async function assembleComponents(
   const personaManager = new PersonaManager(configDir);
   const personaPrompt = await personaManager.load(personaName);
 
-  const userProfile = new UserProfile(pctx.index);
+  const userProfile = new UserProfile(pctx.index, relationStore ?? null);
   await userProfile.load();
 
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
