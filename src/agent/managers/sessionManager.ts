@@ -316,6 +316,43 @@ export class SessionManager {
   // ─── 不中断工作模型 v2.0：检查点 + 状态机（P4） ──────────
 
   /**
+   * 检查点必需字段的默认值工厂（T0-1：默认值单一真理源）
+   *
+   * 检查点的必需字段有两条产生路径——`createCheckpoint()` 新建/合并，
+   * `normalizeCheckpoint()` 反序列化补齐。二者若各写一套字面量默认值，
+   * 就构成一对必然漂移的并列副本：给 `Role` 增加必需字段时只改一处，
+   * 另一处会静默产出结构残缺的对象。此工厂是二者共同的真理源。
+   *
+   * **必须返回新实例**：数组与对象默认值若共享同一常量引用，
+   * 不同检查点会互相污染（一个会话 push 计划步骤，另一个凭空多出步骤）。
+   *
+   * 新增检查点必需字段时，同步更新此处与 `validateCheckpointIntegrity`
+   * 的 REQUIRED_FIELDS 列表。
+   */
+  private static checkpointDefaults(): Pick<
+    SessionCheckpoint,
+    | 'mainGoal'
+    | 'currentGoal'
+    | 'goalChangeSeq'
+    | 'plan'
+    | 'role'
+    | 'standard'
+    | 'resource'
+    | 'hotMemory'
+  > {
+    return {
+      mainGoal: '',
+      currentGoal: '',
+      goalChangeSeq: 0,
+      plan: [],
+      role: { name: 'assistant' },
+      standard: { quality: '', constraints: [] },
+      resource: { documents: [], memories: [], context: '' },
+      hotMemory: [],
+    };
+  }
+
+  /**
    * 从当前运行时状态创建检查点
    *
    * 快照当前 AgentLoop 的消息历史、会话标识等运行时状态，
@@ -337,6 +374,7 @@ export class SessionManager {
     const { messages: hotMemory, truncatedCount } = this.extractHotMemory();
 
     const prev = this.checkpoint;
+    const defaults = SessionManager.checkpointDefaults();
 
     // 合并语义（T0-1）：以已有检查点为基底展开，仅覆写本次快照需要重算的字段。
     //
@@ -363,14 +401,14 @@ export class SessionManager {
             recovered: false,
           }
         : undefined,
-      mainGoal: mainGoal ?? prev?.mainGoal ?? '',
+      mainGoal: mainGoal ?? prev?.mainGoal ?? defaults.mainGoal,
       // 不传 mainGoal 时保留已有 currentGoal（防止 pause() 内调用时覆盖 updateGoal 的更新）
-      currentGoal: mainGoal ?? prev?.currentGoal ?? prev?.mainGoal ?? '',
-      goalChangeSeq: prev?.goalChangeSeq ?? 0,
-      plan: prev?.plan ?? [],
-      role: role ?? prev?.role ?? { name: 'assistant' },
-      standard: standard ?? prev?.standard ?? { quality: '', constraints: [] },
-      resource: prev?.resource ?? { documents: [], memories: [], context: '' },
+      currentGoal: mainGoal ?? prev?.currentGoal ?? prev?.mainGoal ?? defaults.currentGoal,
+      goalChangeSeq: prev?.goalChangeSeq ?? defaults.goalChangeSeq,
+      plan: prev?.plan ?? defaults.plan,
+      role: role ?? prev?.role ?? defaults.role,
+      standard: standard ?? prev?.standard ?? defaults.standard,
+      resource: prev?.resource ?? defaults.resource,
       // hotMemory 与 truncatedCount 必须配套重算，不可从基底继承
       hotMemory,
       truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
@@ -442,10 +480,14 @@ export class SessionManager {
       const json = this.sessionStore.loadCheckpoint(sessionId);
       if (!json) return null;
 
-      const checkpoint = JSON.parse(json) as SessionCheckpoint;
-
-      // F2.2：检查点完整性校验——缺失字段记告警，不阻塞加载
-      SessionManager.validateCheckpointIntegrity(checkpoint);
+      // T0-1：反序列化收口——解析 + 字段补齐 + 完整性告警统一由 parseCheckpoint 承担。
+      // 原实现 `JSON.parse(json) as SessionCheckpoint` 的类型断言无运行时效力，
+      // 残缺检查点会在下游访问时抛错并被本函数外层 catch 吞掉（静默丢整个会话）。
+      const checkpoint = SessionManager.parseCheckpoint(json, sessionId);
+      if (!checkpoint) {
+        logger.warn({ sessionId }, '持久化检查点无法解析或不可修复，降级为内存模式');
+        return null;
+      }
 
       this.checkpoint = checkpoint;
       // 刚从磁盘读入，内存态与磁盘态一致
@@ -561,6 +603,126 @@ export class SessionManager {
   }
 
   /**
+   * 检查点归一化（T0-1：反序列化唯一收口）
+   *
+   * 【为什么必须存在】
+   * 反序列化此前各写各的，同一份残缺数据因此有两种崩法，无一是「降级但可用」：
+   *   - `loadPersistedCheckpoint`：`JSON.parse(json) as SessionCheckpoint` —— 类型断言
+   *     不提供任何运行时保证，后续访问被外层 catch 吞掉，**用户整个会话静默消失**；
+   *   - `restoreFromCheckpoint`：直接信任外部对象，`checkpoint.hotMemory.map()` 抛
+   *     TypeError 且本函数无 catch，**崩进程**。
+   * 更早的 `validateCheckpointIntegrity` 注释声称「以默认值填充后继续」，而实现只 warn
+   * 不填充——注释即契约，未兑现的契约比没有契约更危险。本方法兑现它。
+   *
+   * 【为什么原地改写入参而非返回副本】
+   * `restoreFromCheckpoint` 本就持有并改写同一引用（`this.checkpoint = checkpoint`、
+   * error 缺失时改写 `status`）。返回副本会让「调用方手里的对象」与「管理器持有的对象」
+   * 成为两份并列副本——正是本方法要消灭的病灶。
+   *
+   * 【校验与填充的顺序】
+   * 先 `validateCheckpointIntegrity` 再填充：校验反映磁盘上的真实缺失（日志才有诊断价值），
+   * 填充保证下游可无条件假设必需字段可用。反过来则永远校验通过，等于自欺。
+   *
+   * @param raw - 反序列化产物或外部传入的检查点（类型不可信）
+   * @param fallbackSessionId - sessionId 缺失时的回填值（调用方已知会话时提供）
+   * @returns 归一化后的检查点；结构不可修复时返回 null
+   */
+  private static normalizeCheckpoint(
+    raw: unknown,
+    fallbackSessionId?: string,
+  ): SessionCheckpoint | null {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      logger.warn(
+        { rawType: Array.isArray(raw) ? 'array' : typeof raw, fallbackSessionId },
+        '检查点归一化失败：内容不是对象（按无检查点处理）',
+      );
+      return null;
+    }
+
+    const cp = raw as Partial<SessionCheckpoint>;
+
+    // sessionId 是会话定位键，不可编造：本体缺失时只接受调用方已知的值
+    if (typeof cp.sessionId !== 'string' || !cp.sessionId) {
+      if (!fallbackSessionId) {
+        logger.warn('检查点归一化失败：缺少 sessionId 且调用方未提供回填值');
+        return null;
+      }
+      cp.sessionId = fallbackSessionId;
+    }
+
+    // 先诚实校验（日志反映磁盘真实状态），再填充
+    SessionManager.validateCheckpointIntegrity(cp as SessionCheckpoint);
+
+    const defaults = SessionManager.checkpointDefaults();
+
+    // 类型级校验而非仅 `??=`：存储截断/篡改会产生类型错误的值
+    // （`hotMemory` 为字符串时 `.map` 不存在），只判 null/undefined 拦不住。
+    if (cp.status !== 'running' && cp.status !== 'paused' && cp.status !== 'error') {
+      cp.status = 'running';
+    }
+    if (typeof cp.mainGoal !== 'string') cp.mainGoal = defaults.mainGoal;
+    // currentGoal 缺失时继承 mainGoal，与 createCheckpoint 的 `?? prev?.mainGoal` 同语义
+    if (typeof cp.currentGoal !== 'string') cp.currentGoal = cp.mainGoal;
+    if (typeof cp.goalChangeSeq !== 'number' || !Number.isFinite(cp.goalChangeSeq)) {
+      cp.goalChangeSeq = defaults.goalChangeSeq;
+    }
+    if (typeof cp.lastHeartbeat !== 'number' || !Number.isFinite(cp.lastHeartbeat)) {
+      // 用当前时刻而非 0：0 会被 isPauseTimedOut 判为超时 55 年，恢复即被清理
+      cp.lastHeartbeat = Date.now();
+    }
+    if (!Array.isArray(cp.plan)) cp.plan = defaults.plan;
+    if (!Array.isArray(cp.hotMemory)) cp.hotMemory = defaults.hotMemory;
+    if (typeof cp.role !== 'object' || cp.role === null) cp.role = defaults.role;
+    if (typeof cp.standard !== 'object' || cp.standard === null) cp.standard = defaults.standard;
+    if (typeof cp.resource !== 'object' || cp.resource === null) cp.resource = defaults.resource;
+
+    // error 侧车：结构不可用时整体清除，交由 restoreFromCheckpoint 的 T8 降级分支
+    // 显式记录「error 态无法重建」；部分缺失则补齐，保住「曾出错」这一事实。
+    if (cp.error !== undefined) {
+      if (typeof cp.error !== 'object' || cp.error === null) {
+        cp.error = undefined;
+      } else {
+        const err = cp.error as Partial<NonNullable<SessionCheckpoint['error']>>;
+        if (typeof err.cause !== 'string' || !err.cause) {
+          err.cause = '未知异常（检查点缺少 error.cause）';
+        }
+        if (typeof err.at !== 'number' || !Number.isFinite(err.at)) err.at = Date.now();
+        if (typeof err.recovered !== 'boolean') err.recovered = false;
+      }
+    }
+
+    return cp as SessionCheckpoint;
+  }
+
+  /**
+   * 检查点反序列化（T0-1：JSON 入口唯一收口）
+   *
+   * `JSON.parse` 的失败与「内容残缺」是两类不同故障，此前都被同一个外层 catch
+   * 吞成「加载失败」。此处显式区分：解析失败 → 内容损坏，按无检查点处理；
+   * 解析成功 → 交 `normalizeCheckpoint` 补齐后可用。
+   *
+   * @param json - 存储层读出的原始字符串
+   * @param fallbackSessionId - sessionId 缺失时的回填值
+   * @returns 归一化后的检查点；损坏或不可修复时返回 null
+   */
+  private static parseCheckpoint(
+    json: string,
+    fallbackSessionId?: string,
+  ): SessionCheckpoint | null {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(json);
+    } catch (err) {
+      logger.warn(
+        { err, fallbackSessionId },
+        '检查点 JSON 解析失败（内容损坏，按无检查点处理）',
+      );
+      return null;
+    }
+    return SessionManager.normalizeCheckpoint(raw, fallbackSessionId);
+  }
+
+  /**
    * 获取当前检查点
    *
    * 返回当前运行时检查点快照，若未创建则返回 null。
@@ -584,8 +746,17 @@ export class SessionManager {
    * @returns 恢复的消息数量
    */
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
-    // F2.2：检查点完整性校验——缺失字段记告警，不阻塞恢复
-    SessionManager.validateCheckpointIntegrity(checkpoint);
+    // T0-1：与 loadPersistedCheckpoint 共用同一归一化入口。原实现只 warn 不填充，
+    // 下方 `checkpoint.hotMemory.map()` 遇到缺字段的检查点会抛 TypeError；本函数无
+    // catch → 崩进程。归一化原地补齐后，下游可无条件假设必需字段可用。
+    if (!SessionManager.normalizeCheckpoint(checkpoint)) {
+      // 可选链非冗余：类型标注为非空，但外部（宿主 IPC / 旧版持久化）可能传入 null
+      logger.error(
+        { sessionId: checkpoint?.sessionId },
+        '检查点结构不可修复，恢复中止（会话保持当前状态，不做部分恢复）',
+      );
+      return 0;
+    }
 
     this.checkpoint = checkpoint;
     // 检查点由外部整体注入，视为与来源一致；后续变更由 touchCheckpoint 标脏

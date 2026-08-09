@@ -319,4 +319,142 @@ describe('检查点字段生命周期', () => {
       expect(memoryOnly.getCheckpoint()!.completedToolCalls).toHaveLength(1);
     });
   });
+
+  /**
+   * 反序列化归一化（T0-1 回归）
+   *
+   * 【本组存在的理由】
+   * 同一份残缺检查点此前有两种崩法，无一是「降级但可用」：
+   *   - loadPersistedCheckpoint 的裸 `JSON.parse(json) as SessionCheckpoint`——类型断言
+   *     无运行时效力，残缺数据一路下沉，异常被外层 catch 吞成「加载失败」→ 用户整个
+   *     会话静默消失；
+   *   - restoreFromCheckpoint 直接信任外部对象，`hotMemory.map()` 抛 TypeError 且本函数
+   *     无 catch → 崩进程。
+   * 更早的 validateCheckpointIntegrity 注释声称「以默认值填充后继续」，实现却只 warn
+   * 不填充——本组同时是那句注释的兑现凭证。
+   *
+   * 【断言原则】
+   * 只经公共入口（loadPersistedCheckpoint / restoreFromCheckpoint）投喂残缺输入，
+   * 不触碰 private 归一化方法：测私有实现会在重构时假红，测入口行为才锁得住契约。
+   */
+  describe('反序列化归一化（T0-1 回归）', () => {
+    /** 一份字段齐全的合法检查点，各用例只挖掉待测的那一处 */
+    function intactCheckpoint(): Record<string, unknown> {
+      return {
+        sessionId: SESSION_ID,
+        status: 'running',
+        mainGoal: '主目标',
+        currentGoal: '主目标',
+        goalChangeSeq: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+    }
+
+    /** 往假磁盘直接种入任意结构的检查点 JSON（绕过 createCheckpoint 的字段保证） */
+    function seedDisk(raw: Record<string, unknown>): void {
+      disk.store.saveCheckpoint!(SESSION_ID, JSON.stringify(raw));
+    }
+
+    it('磁盘检查点缺少 lastHeartbeat 时应补为有限时间戳', () => {
+      const raw = intactCheckpoint();
+      raw.status = 'paused';
+      delete raw.lastHeartbeat;
+      seedDisk(raw);
+
+      const loaded = manager.loadPersistedCheckpoint();
+
+      // 修复前：undefined 一路存活 → isPauseTimedOut 的 `Date.now() - undefined` 得 NaN，
+      // 任何比较恒 false → 僵尸暂停会话永不被超时清理。
+      expect(loaded).not.toBeNull();
+      expect(Number.isFinite(loaded!.lastHeartbeat)).toBe(true);
+    });
+
+    it('hotMemory 被截断成非数组时恢复应降级而非抛 TypeError', async () => {
+      const raw = intactCheckpoint();
+      raw.hotMemory = '存储截断后的残片';
+
+      // 修复前：`checkpoint.hotMemory.map is not a function`，restoreFromCheckpoint
+      // 无 catch → 异常穿透到调用栈顶。
+      await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+
+      expect(manager.getCheckpoint()!.hotMemory).toEqual([]);
+    });
+
+    it('error 侧车残缺时应补齐 cause，避免以 undefined 重建异常态', async () => {
+      const raw = intactCheckpoint();
+      raw.status = 'error';
+      raw.error = { at: 1 }; // 缺 cause / recovered
+
+      await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+
+      const cp = manager.getCheckpoint()!;
+      // 修复前：error 为 truthy 对象 → triggerError(undefined) → 异常态无可读原因
+      expect(typeof cp.error?.cause).toBe('string');
+      expect(cp.error!.cause.length).toBeGreaterThan(0);
+      expect(cp.error!.recovered).toBe(false);
+    });
+
+    it('status 为越界值时应归一化为 running', async () => {
+      const raw = intactCheckpoint();
+      raw.status = 'zombie';
+
+      await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+
+      // 修复前：'zombie' 原样留存 → 三个状态分支全不匹配 → 检查点与状态机永久分叉
+      expect(manager.getCheckpoint()!.status).toBe('running');
+      expect(manager.stateMachine.status).toBe('running');
+    });
+
+    it('补齐的默认值不得在多个检查点之间共享引用', async () => {
+      const first = intactCheckpoint();
+      delete first.plan;
+      await manager.restoreFromCheckpoint(first as unknown as SessionCheckpoint);
+      manager.getCheckpoint()!.plan.push({
+        id: 's1',
+        description: '第一份检查点的步骤',
+        status: 'pending',
+        order: 0,
+      });
+
+      const second = intactCheckpoint();
+      delete second.plan;
+      await manager.restoreFromCheckpoint(second as unknown as SessionCheckpoint);
+
+      // 默认值工厂若退化为共享常量，第二份检查点会凭空继承第一份的计划步骤
+      expect(manager.getCheckpoint()!.plan).toHaveLength(0);
+    });
+
+    it('归一化补齐的默认值应与 createCheckpoint 的默认值同源', async () => {
+      const fresh = manager.createCheckpoint('主目标');
+      const createDefaults = {
+        role: structuredClone(fresh.role),
+        standard: structuredClone(fresh.standard),
+        resource: structuredClone(fresh.resource),
+      };
+
+      const raw = intactCheckpoint();
+      delete raw.role;
+      delete raw.standard;
+      delete raw.resource;
+      await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+
+      // 两条路径各写一套字面量默认值＝必然漂移的并列副本；此断言把它们钉在同一真理源上
+      const restored = manager.getCheckpoint()!;
+      expect(restored.role).toEqual(createDefaults.role);
+      expect(restored.standard).toEqual(createDefaults.standard);
+      expect(restored.resource).toEqual(createDefaults.resource);
+    });
+
+    it('磁盘内容为畸形 JSON 时应返回 null 且不污染运行时检查点', () => {
+      disk.store.saveCheckpoint!(SESSION_ID, '{"sessionId":');
+
+      expect(manager.loadPersistedCheckpoint()).toBeNull();
+      expect(manager.getCheckpoint()).toBeNull();
+    });
+  });
 });
