@@ -764,7 +764,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       expect(result).toContain('需人工确认');
     });
 
-    it('补偿后应标记原始记录为 ok=false', () => {
+    it('补偿后应写 compensatedAt，且不得篡改执行结果 ok（T0-3）', () => {
       const record: ToolExecutionRecord = {
         name: 'write_file',
         argsSignature: '{}',
@@ -777,7 +777,9 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         ],
       };
       manager.compensateTool(record);
-      expect(record.ok).toBe(false);
+      expect(typeof record.compensatedAt).toBe('number');
+      // ok 的真理源是「执行是否成功」，补偿不是执行失败——旧实现把它改成 false 属语义劫持
+      expect(record.ok).toBe(true);
     });
   });
 
@@ -810,6 +812,87 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       const results = manager.compensateAllNonIdempotent();
       expect(results).toHaveLength(1);
       expect(results[0]).toContain('file_write');
+    });
+
+    it('T0-3：已补偿记录不得重复补偿', () => {
+      // 旧实现写 record.ok=false 表达「已补偿」，但过滤只看 idempotent、
+      // 从不读 ok —— 注释承诺的「避免重复补偿」是空头支票。
+      manager.logToolExecution({
+        name: 'write_file',
+        argsSignature: '{"path":"a.ts"}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+        sideEffects: [
+          { type: 'file_write', target: 'a.ts', description: '写入文件' },
+        ],
+      });
+
+      expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
+      // 第二次：同一记录已带 compensatedAt，应被跳过
+      expect(manager.compensateAllNonIdempotent()).toEqual([]);
+    });
+
+    it('T0-3：混合场景只补偿未补偿项（防过度修复）', () => {
+      manager.logToolExecution({
+        name: 'already_done',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+        compensatedAt: Date.now() - 1000,
+      });
+      manager.logToolExecution({
+        name: 'still_pending',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+      });
+
+      const results = manager.compensateAllNonIdempotent();
+      expect(results).toHaveLength(1);
+      expect(results[0]).toContain('still_pending');
+    });
+
+    it('T0-3：compensatedAt 被截断成非法值时应重新补偿，不得静默跳过', () => {
+      // 存储截断可能把 number 降级成字符串。真值判断会把 'corrupted' 当「已补偿」
+      // → 非幂等副作用永远得不到补偿告警（静默漏补，比重复补偿更危险）。
+      manager.logToolExecution({
+        name: 'corrupted_mark',
+        argsSignature: '{}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+        compensatedAt: 'corrupted' as unknown as number,
+      });
+
+      expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
+    });
+
+    it('T0-3：补偿必须标脏检查点，否则标记不落盘、重启后仍会重复补偿', () => {
+      manager.logToolExecution({
+        name: 'write_file',
+        argsSignature: '{"path":"b.ts"}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'non-idempotent',
+      });
+
+      // 契约级断言：无「纯 flush」公共入口可用于观察脏标记（任何能触发落盘的
+      // 公共方法都自带 touch，行为断言会被无关路径染绿），故直接锁「必须走 touchCheckpoint」。
+      const touchSpy = vi.spyOn(
+        manager as unknown as { touchCheckpoint: () => void },
+        'touchCheckpoint',
+      );
+      manager.compensateAllNonIdempotent();
+      expect(touchSpy).toHaveBeenCalled();
+      touchSpy.mockRestore();
     });
   });
 
@@ -865,6 +948,46 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       const injectCall = (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
       expect(injectCall).toContain('P3.4补偿通知');
       expect(injectCall).toContain('file_write');
+    });
+
+    it('T0-3：补偿标记随检查点序列化，模拟进程重启后不重复注入补偿通知', async () => {
+      const cp: SessionCheckpoint = {
+        sessionId: '2026-08-08-main',
+        status: 'paused',
+        mainGoal: '测试',
+        currentGoal: '测试',
+        goalChangeSeq: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        completedToolCalls: [
+          {
+            name: 'write_file',
+            argsSignature: '{"path":"a.ts","content":"hello"}',
+            executedAt: Date.now(),
+            resultSummary: 'ok',
+            ok: true,
+            idempotent: 'non-idempotent',
+            sideEffects: [
+              { type: 'file_write', target: 'a.ts', description: '写入文件' },
+            ],
+          },
+        ],
+        lastHeartbeat: Date.now(),
+      };
+
+      await manager.restoreFromCheckpoint(cp);
+      expect(loop.injectSystemMessage).toHaveBeenCalledTimes(1);
+
+      // 落盘 → 进程重启 → 反序列化。JSON 往返切断对象引用，
+      // 只有真正被写进检查点的字段能存活——若补偿标记只活在内存，此处必然重复补偿。
+      const persisted = JSON.parse(JSON.stringify(cp)) as SessionCheckpoint;
+      (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mockClear();
+
+      await manager.restoreFromCheckpoint(persisted);
+      expect(loop.injectSystemMessage).not.toHaveBeenCalled();
     });
 
     it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
@@ -1898,8 +2021,9 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     expect(compensationResults[0]).toContain('file_write');
     expect(compensationResults[0]).toContain('test.ts');
 
-    // 验证原始记录被标记为 ok=false
-    expect(nonIdempotent[0]!.ok).toBe(false);
+    // 验证原始记录被打上补偿完成标记（而非篡改 ok）
+    expect(typeof nonIdempotent[0]!.compensatedAt).toBe('number');
+    expect(nonIdempotent[0]!.ok).toBe(true);
   });
 });
 

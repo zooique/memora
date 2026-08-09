@@ -1448,8 +1448,10 @@ export class SessionManager {
   /**
    * 获取检查点中所有非幂等工具的执行记录列表（P3.4 补偿机制）
    *
-   * 用于恢复时识别需要补偿的非幂等工具。
-   * 非幂等条件：idempotent === 'non-idempotent' 或未标注幂等性但执行失败。
+   * **纯查询**：按幂等性级别筛选，**含已补偿记录**（`compensatedAt` 有值的也返回）。
+   * 之所以不在此处过滤已补偿项，是为了让方法名与行为一致——
+   * 「待补偿」是补偿流程的判据，不是「非幂等」这一事实的一部分。
+   * 需要「还需补偿哪些」请走 {@link compensateAllNonIdempotent}。
    *
    * @returns 非幂等工具执行记录列表
    */
@@ -1473,7 +1475,11 @@ export class SessionManager {
    * 当前实现：**日志告警 + 记录补偿标记**，不自动执行回滚操作。
    * 理由：自动回滚可能引入新的副作用（如回滚文件时覆盖其他修改），
    * 需要宿主根据业务场景决定是否执行补偿。
-   * 标记补偿已执行（ok = false），避免重复补偿。
+   *
+   * 补偿完成后写 `record.compensatedAt` 并标脏检查点，使标记随检查点落盘。
+   * 本方法是**执行者不是决策者**：无条件补偿并打标，不检查是否已补偿——
+   * 直接调用即表示「我明确要补偿这一条」。跳过已补偿记录的判据收口在
+   * {@link compensateAllNonIdempotent}，避免两处各自持有一份「是否该补偿」的判断。
    *
    * @param record - 要补偿的工具执行记录
    * @returns 补偿操作描述（供宿主展示）
@@ -1527,26 +1533,36 @@ export class SessionManager {
       '工具补偿已记录（需人工确认）',
     );
 
-    // 标记原始执行记录为 ok=false，表明该工具的副作用已被补偿
-    record.ok = false;
+    // 打补偿完成标记并标脏，使标记随检查点落盘（重启后不再重复补偿）。
+    // 原实现写 `record.ok = false` 表达「已补偿」——那是语义劫持：ok 的真理源是
+    // 「执行是否成功」，且无任何生产代码读它，注释承诺的「避免重复补偿」从未兑现。
+    record.compensatedAt = Date.now();
+    this.touchCheckpoint();
 
     return compensations.join('; ');
   }
 
   /**
-   * 补偿所有非幂等工具执行（P3.4 补偿机制）
+   * 补偿所有**尚未补偿过**的非幂等工具执行（P3.4 补偿机制）
    *
-   * 遍历检查点中所有非幂等工具记录，执行补偿操作。
    * 在恢复会话时调用，确保非幂等操作的副作用被正确处理。
+   * 已带 `compensatedAt` 的记录被跳过——补偿是一次性动作，
+   * 重复执行会向 LLM 重复注入同一条补偿通知（见 restoreFromCheckpoint），
+   * 使反复崩溃恢复的会话误以为发生了多次补偿。
    *
-   * @returns 补偿操作描述列表
+   * 类型级判断（`typeof === 'number'`）而非真值判断：存储截断可能把该字段
+   * 降级成字符串等非法值，真值判断会把它当作「已补偿」而静默漏补。
+   *
+   * @returns 本次实际执行的补偿操作描述列表（全部已补偿时为空数组）
    */
   compensateAllNonIdempotent(): string[] {
-    const nonIdempotent = this.getNonIdempotentExecutions();
-    if (nonIdempotent.length === 0) return [];
+    const pending = this.getNonIdempotentExecutions().filter(
+      (r) => typeof r.compensatedAt !== 'number',
+    );
+    if (pending.length === 0) return [];
 
     const results: string[] = [];
-    for (const record of nonIdempotent) {
+    for (const record of pending) {
       const result = this.compensateTool(record);
       results.push(result);
     }

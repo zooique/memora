@@ -354,12 +354,26 @@ export interface ToolExecutionRecord {
   executedAt: number;
   /** 执行结果摘要（前 100 字符） */
   resultSummary: string;
-  /** 是否成功 */
+  /**
+   * 工具执行本身是否成功。
+   *
+   * 仅由 `logToolExecution` 的调用方在记录执行结果时写入，补偿流程**不得**改写它——
+   * 该字段的真理源是「执行结果」，不是「补偿状态」。补偿状态见 `compensatedAt`。
+   */
   ok: boolean;
   /** 工具幂等性级别（P3.4，标注时供恢复时判断是否需要补偿） */
   idempotent?: IdempotencyLevel;
   /** 副作用列表（P3.4，非幂等工具执行后记录，用于恢复时补偿） */
   sideEffects?: SideEffect[];
+  /**
+   * 补偿完成时间戳（P3.4 补偿幂等标记，T0-3）
+   *
+   * `undefined` = 尚未补偿；`number` = 已于该时刻补偿过。
+   * 由 `SessionManager.compensateTool` 写入并随检查点落盘，
+   * 使「同一记录只补偿一次」的事实跨进程重启后仍然成立
+   * （反复崩溃恢复的会话不会向 LLM 重复注入同一条补偿通知）。
+   */
+  compensatedAt?: number;
 }
 
 /** 热记忆中的聊天消息
