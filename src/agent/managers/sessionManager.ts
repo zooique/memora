@@ -74,6 +74,13 @@ export class SessionManager {
   readonly stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
+  /**
+   * 检查点脏标记（T0-2：落盘收口）
+   *
+   * 内存态与磁盘态存在差异时为 true。由 touchCheckpoint() 置位，
+   * flushCheckpoint() 成功写盘后清除。
+   */
+  private checkpointDirty = false;
   /** 目标一致性校验器（P3.1 目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
@@ -325,13 +332,26 @@ export class SessionManager {
     // 从 AgentLoop 获取热记忆（最近消息，P2.2 支持 FIFO 截断 + 内容截断）
     const { messages: hotMemory, truncatedCount } = this.extractHotMemory();
 
-    // 复用已有检查点的目标信息（跨暂停保持）
-    const existingGoal = this.checkpoint?.mainGoal;
-    const existingGoalVersion = this.checkpoint?.goalVersion ?? 0;
+    const prev = this.checkpoint;
 
+    // 合并语义（T0-1）：以已有检查点为基底展开，仅覆写本次快照需要重算的字段。
+    //
+    // 【禁止改回对象字面量整体重建】
+    // 整体重建等价于「隐式字段白名单」——任何未被显式列出的字段都会在每次
+    // pause 时被静默丢弃。历史上 roundLog / completedToolCalls / pauseMeta
+    // 三个侧车字段正是因此在每次暂停时归零，导致：
+    //   1. hasToolExecuted() 恒 false → 非幂等工具在恢复后重复执行
+    //   2. compensateAllNonIdempotent() 过滤空数组 → 补偿机制空转
+    //   3. 宿主任务表回合历史归零
+    // 新增检查点字段时无需修改此处，合并语义会自动保留。
     this.checkpoint = {
+      ...(prev ?? {}),
+
+      // ── 以下字段由本次快照重算，覆写基底 ──
       sessionId: history.currentSessionName,
+      // 状态真理源是状态机，检查点只是其投影
       status: this.stateMachine.status,
+      // error 同样以状态机为准：状态机无异常即代表已脱离异常态，清除旧记录
       error: this.stateMachine.errorInfo
         ? {
             cause: this.stateMachine.errorInfo,
@@ -339,38 +359,64 @@ export class SessionManager {
             recovered: false,
           }
         : undefined,
-      mainGoal: mainGoal ?? existingGoal ?? '',
+      mainGoal: mainGoal ?? prev?.mainGoal ?? '',
       // 不传 mainGoal 时保留已有 currentGoal（防止 pause() 内调用时覆盖 updateGoal 的更新）
-      currentGoal: mainGoal ?? this.checkpoint?.currentGoal ?? existingGoal ?? '',
-      goalVersion: existingGoalVersion,
-      plan: this.checkpoint?.plan ?? [],
-      role: role ?? this.checkpoint?.role ?? { name: 'assistant' },
-      standard: standard ?? this.checkpoint?.standard ?? { quality: '', constraints: [] },
-      resource: this.checkpoint?.resource ?? { documents: [], memories: [], context: '' },
+      currentGoal: mainGoal ?? prev?.currentGoal ?? prev?.mainGoal ?? '',
+      goalVersion: prev?.goalVersion ?? 0,
+      plan: prev?.plan ?? [],
+      role: role ?? prev?.role ?? { name: 'assistant' },
+      standard: standard ?? prev?.standard ?? { quality: '', constraints: [] },
+      resource: prev?.resource ?? { documents: [], memories: [], context: '' },
+      // hotMemory 与 truncatedCount 必须配套重算，不可从基底继承
       hotMemory,
       truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
       lastHeartbeat: Date.now(),
     };
 
-    // 持久化检查点到存储层（P0-2：会话状态持久化）
-    this.persistCheckpoint();
+    // 检查点内容已整体重算，强制落盘（P0-2：会话状态持久化）
+    this.flushCheckpoint(true);
 
     return this.checkpoint;
   }
 
   /**
-   * 持久化当前检查点到存储层
+   * 标记检查点已变更（内存写点统一入口，T0-2）
+   *
+   * 刷新心跳并置脏标记。**所有修改 this.checkpoint 内容的方法都必须调用本方法**，
+   * 不得再直接赋值 `lastHeartbeat`——否则该次变更不会被后续 flush 感知，
+   * 内存态与磁盘态将静默分叉。
+   */
+  private touchCheckpoint(): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.lastHeartbeat = Date.now(); // 心跳唯一写点
+    this.checkpointDirty = true;
+  }
+
+  /**
+   * 冲洗检查点到存储层（落盘唯一入口，T0-2）
    *
    * 将检查点序列化为 JSON 字符串，写入 ISessionStore。
    * 存储层不存在时静默跳过（降级为内存模式）。
+   *
+   * 写盘失败时**保留脏标记**，使下一个语义边界自动重试——
+   * 单次 IO 抖动不会导致该次变更被永久丢弃。
+   *
+   * @param force - 为 true 时忽略脏标记强制落盘，用于检查点被整体替换的场景
    */
-  private persistCheckpoint(): void {
-    if (!this.checkpoint || !this.sessionStore?.saveCheckpoint) return;
+  private flushCheckpoint(force = false): void {
+    if (!this.checkpoint) return;
+    if (!force && !this.checkpointDirty) return;
+    if (!this.sessionStore?.saveCheckpoint) {
+      // 无存储层：降级为纯内存模式，清脏避免标记无意义累积
+      this.checkpointDirty = false;
+      return;
+    }
     try {
       const json = JSON.stringify(this.checkpoint);
       this.sessionStore.saveCheckpoint(this.checkpoint.sessionId, json);
+      this.checkpointDirty = false;
     } catch (err) {
-      logger.warn({ err }, '检查点持久化失败（降级为内存模式，不影响会话运行）');
+      logger.warn({ err }, '检查点持久化失败（保留脏标记，下个语义边界重试）');
     }
   }
 
@@ -394,6 +440,8 @@ export class SessionManager {
 
       const checkpoint = JSON.parse(json) as SessionCheckpoint;
       this.checkpoint = checkpoint;
+      // 刚从磁盘读入，内存态与磁盘态一致
+      this.checkpointDirty = false;
 
       // P0-3：暂停超时检测——超时会话自动清理检查点，不恢复暂停状态
       if (this.isPauseTimedOut(checkpoint)) {
@@ -408,6 +456,7 @@ export class SessionManager {
 
         // 重置运行时状态：不恢复暂停状态，状态机保持运行中
         this.checkpoint = null;
+        this.checkpointDirty = false;
 
         // 记录超时会话信息，供 Agent.init() 在后续流程触发内容归档
         const sessionParts = sessionId.split('-');
@@ -462,6 +511,8 @@ export class SessionManager {
    */
   restoreFromCheckpoint(checkpoint: SessionCheckpoint): number {
     this.checkpoint = checkpoint;
+    // 检查点由外部整体注入，视为与来源一致；后续变更由 touchCheckpoint 标脏
+    this.checkpointDirty = false;
 
     // 恢复热记忆到 AgentLoop
     const messages: Message[] = checkpoint.hotMemory.map((cm) => ({
@@ -592,9 +643,9 @@ export class SessionManager {
       this.stopPauseTimeoutTimer();
       // 更新检查点心跳并持久化（P0-2：会话状态持久化）
       if (this.checkpoint) {
-        this.checkpoint.lastHeartbeat = Date.now();
         this.checkpoint.status = 'running';
-        this.persistCheckpoint();
+        this.touchCheckpoint();
+        this.flushCheckpoint();
       }
       // 注意：连续暂停计数不在 resume() 中重置，而是在 Agent.processEvent()
       // 的 clarify 事件处理完成后由 resetConsecutivePauseCount() 显式重置。
@@ -619,16 +670,10 @@ export class SessionManager {
   triggerError(cause: string): boolean {
     const result = this.stateMachine.triggerError(cause);
     if (result.allowed) {
-      // 异常前保存检查点
+      // 异常前保存检查点。
+      // 状态机已在上一行置为 error 且记录 cause，createCheckpoint() 会从状态机
+      // 投影出 status 与 error 字段并落盘——此处不再手工赋值，避免并列真理源。
       this.createCheckpoint();
-      if (this.checkpoint) {
-        this.checkpoint.status = 'error';
-        this.checkpoint.error = {
-          cause,
-          at: Date.now(),
-          recovered: false,
-        };
-      }
       this.emitEvent('sessionError', {
         cause,
         sessionId: this.checkpoint?.sessionId,
@@ -712,13 +757,19 @@ export class SessionManager {
 
     // 标记异常已恢复
     this.checkpoint.error.recovered = true;
+    this.touchCheckpoint();
 
     const result = this.stateMachine.recover(this.checkpoint);
     if (result.allowed) {
       if (this.checkpoint) {
         this.checkpoint.status = 'running';
-        this.checkpoint.lastHeartbeat = Date.now();
+        this.touchCheckpoint();
       }
+      // T0-3：恢复必须落盘。
+      // stateMachine.recover() 的准入条件是 checkpoint.error.recovered === true，
+      // 该标记若只活在内存，进程崩溃重启后磁盘仍是未恢复的 error 快照，
+      // 恢复链将永久断裂——用户再也无法把会话救回 RUNNING。
+      this.flushCheckpoint();
       this.emitEvent('sessionRecovered', {
         sessionId: this.checkpoint?.sessionId,
       });
@@ -749,7 +800,9 @@ export class SessionManager {
 
     this.checkpoint.currentGoal = newGoal;
     this.checkpoint.goalVersion++;
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
+    // 目标变更是会话的语义骨架，立即落盘
+    this.flushCheckpoint();
 
     this.emitEvent('goalUpdated', {
       newGoal,
@@ -788,7 +841,7 @@ export class SessionManager {
   updatePlan(plan: PlanStep[]): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = plan;
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
   }
 
   /**
@@ -799,7 +852,7 @@ export class SessionManager {
   updateResource(resource: ResourceState): void {
     if (!this.checkpoint) return;
     this.checkpoint.resource = resource;
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
   }
 
   /**
@@ -812,7 +865,7 @@ export class SessionManager {
   updateStandard(standard: Standard): void {
     if (!this.checkpoint) return;
     this.checkpoint.standard = standard;
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
   }
 
   /**
@@ -825,7 +878,7 @@ export class SessionManager {
   updateRole(role: Role): void {
     if (!this.checkpoint) return;
     this.checkpoint.role = role;
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
   }
 
   // ── P3.3：执行计划管理 ──────────────────────────────────
@@ -845,7 +898,7 @@ export class SessionManager {
     const nextStep = this.checkpoint.plan.find((s) => s.status === 'pending');
     if (!nextStep) return null;
     nextStep.status = 'active';
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
     return nextStep;
   }
 
@@ -870,7 +923,7 @@ export class SessionManager {
       status: 'pending',
     };
     this.checkpoint.plan.push(step);
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
     return this.checkpoint.plan.length;
   }
 
@@ -920,8 +973,10 @@ export class SessionManager {
       this.checkpoint.roundLog = this.checkpoint.roundLog.slice(-12);
     }
 
-    // 3. 心跳
-    this.checkpoint.lastHeartbeat = Date.now();
+    // 3. 心跳 + 落盘。回合边界是天然的检查点语义边界：
+    // 此刻计划进度与回合日志均已定型，崩溃后可从此边界无损续跑。
+    this.touchCheckpoint();
+    this.flushCheckpoint();
   }
 
   /**
@@ -932,7 +987,11 @@ export class SessionManager {
   setPauseMeta(meta: PauseMeta): void {
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
+    // 必须落盘：本方法由 loop.onPaused 在 pause() 之后回调，
+    // 是 pauseMeta 进入检查点的唯一时机。若不落盘，磁盘快照将永远缺少暂停元数据，
+    // 宿主重启后只能回落到兜底文案「已暂停（重启恢复）」。
+    this.flushCheckpoint();
   }
 
   /**
@@ -1010,7 +1069,12 @@ export class SessionManager {
       this.checkpoint.completedToolCalls = [];
     }
     this.checkpoint.completedToolCalls.push(record);
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
+    // 【必须立即落盘，不可延迟到回合边界】
+    // outbox 模式的前提是「执行事实先于崩溃被持久化」。若执行记录只驻留内存，
+    // 回合中途崩溃将使 hasToolExecuted() 在恢复后恒 false，非幂等工具被重复执行——
+    // 这正是 outbox 要消除的风险。回合边界对此粒度太粗（单回合可含多次工具调用）。
+    this.flushCheckpoint();
   }
 
   /**
@@ -1033,7 +1097,9 @@ export class SessionManager {
       record.sideEffects = [];
     }
     record.sideEffects.push(sideEffect);
-    this.checkpoint.lastHeartbeat = Date.now();
+    this.touchCheckpoint();
+    // 与 logToolExecution 同理：补偿机制依赖副作用清单，丢失即无法回滚
+    this.flushCheckpoint();
   }
 
   /**
@@ -1181,7 +1247,7 @@ export class SessionManager {
    */
   heartbeat(): void {
     if (this.checkpoint) {
-      this.checkpoint.lastHeartbeat = Date.now();
+      this.touchCheckpoint();
     }
   }
 
@@ -1257,6 +1323,8 @@ export class SessionManager {
 
     // 重置运行时状态：清除检查点 + 状态机回到 running
     this.checkpoint = null;
+    // 检查点已从存储层删除，残留脏标记无对应内存态，一并清除
+    this.checkpointDirty = false;
     this.stateMachine.resetToRunning();
 
     // 发射事件供宿主 UI 通知用户

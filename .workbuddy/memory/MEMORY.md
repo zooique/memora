@@ -21,6 +21,9 @@
 
 ## 代码孤儿/死导出分析（可复用）
 - 遍历 `src/**/*.ts` 建引用图，排除入口（main/cli/renderer/server/preload*/index 桶）。NodeNext 显式 `.js` 须 `replace(/\.(js|ts|mjs|cjs)$/,'')` 再 resolve；Electron 多入口须手工核对；类型导出删除一律人工确认。真死导出铁律：导出值且全仓（含 __tests__）零词边界引用。
+- **判死代码必须跨宿主边界 grep**（2026-08-09 血训）：只搜 `src/` 会把「内核写、宿主读」的跨层活字段误判为死（`pauseMeta` 曾被误判——实际 `hosts/.../main.ts`+`chatHandlers.ts`+`taskTablePanelManager.ts` 三处消费）。
+- **区分「死字段」与「契约未兑现」**：联合类型某个取值零写入点（如 `phase:'requesting'`）≠ 字段死。真相是**契约与实现不一致**——类型承诺了 N 种状态、实现只兑现 1 种，下游会按契约写死分支。危害高于死代码，修法二选一：兑现取值 or 收窄类型（同步删下游分支），**禁止维持现状**。
+- grep 生产代码须 `| grep -v "__tests__"`，否则测试 fixture 会淹没真实调用点信号。
 
 ## 感知/通知架构约定
 - 分级通知 `priority: normal|high|critical`：high 绕过节奏抑制，critical 绕过节奏+冷却。里程碑/健康警告→high。
