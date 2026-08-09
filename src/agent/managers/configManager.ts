@@ -13,6 +13,14 @@
  *   - 独立于 Agent 生命周期，仅依赖 Storage / SkillManager / 回调
  *   - 不持有 LLM Provider（纯配置操作）
  *   - 不直接操作文件（文件 CRUD 由宿主层 configFileManager 处理，本类只管 SQLite + system prompt 同步）
+ *
+ * 文件层契约（SSOT 排雷 T3-2 定性，2026-08-09）：
+ *   配置文件是真理源，SQLite 是运行时检索索引，重启后由文件（MemoryLoader）自愈。
+ *   本类所有写 API（addRule/deleteRule/updateRule/deleteSkill）只同步 SQLite 层，
+ *   调用方必须先完成文件层写入/删除（如宿主 configFileSyncer 先写/删文件再调本方法）。
+ *   ⚠ 绕过文件层直接调用本类写 API 的写操作不持久——重启后会被文件恢复原状
+ *   （「重启复活」）。此旁路当前零生产调用者（宿主链路已正确排序），契约仅文档化，
+ *   不注入文件同步器（会与宿主文件层双写、且违背「不直接操作文件」原则）。
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -318,6 +326,10 @@ export class ConfigManager {
    * 文件层删除由宿主层 configFileManager 处理（本方法不操作文件）。
    * 删除后调用 refreshBootstrapMemories 回调，使 system prompt 立即同步。
    *
+   * ⚠ 文件层前置条件（T3-2）：调用方必须先删除配置文件（真理源）再调本方法，
+   * 否则本方法删除的只是 SQLite 索引，重启后由文件恢复原状（「重启复活」）。
+   * 宿主正确路径：configFileSyncer 先 deleteConfigFile 再调本方法。
+   *
    * @param name 规则名（与 frontmatter name 字段一致）
    * @returns true 删除成功；false 规则不存在
    */
@@ -345,6 +357,10 @@ export class ConfigManager {
    * 文件层更新由宿主层 configFileManager 处理（本方法不操作文件）。
    * 与 addRule 的区别：addRule 是新增（追加 system 消息），
    * updateRule 是覆盖更新（刷新 bootstrap 段，不追加 system 消息）。
+   *
+   * ⚠ 文件层前置条件（T3-2）：调用方必须先更新配置文件（真理源）再调本方法，
+   * 否则本方法更新的只是 SQLite 索引，重启后由文件恢复旧内容（「重启复活」）。
+   * 宿主正确路径：configFileSyncer 先 saveConfigFile 再调本方法。
    *
    * content 处理：调用方传入的是完整文件内容（含 frontmatter + body），
    * 本方法用 parseFrontmatter 解析后只存 body.trim()，
