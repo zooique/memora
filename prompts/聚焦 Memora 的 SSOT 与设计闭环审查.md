@@ -1,4 +1,6 @@
-聚焦 Memora 的 SSOT 与设计闭环审查，可直接复制到新对话中使用：
+聚焦 Memora 的 SSOT 与设计闭环审查（v2.0 · 2026-08-10），可直接复制到新对话中使用：
+
+> **版本说明**：v2.0 将各子系统描述对齐当前实现（执行流单一收口、暂停起点与心跳解耦、超时事件广播、检查点 schema 版本化、plan 步骤唯一写点），不再引用已废弃机制。本提示词保持通用——不绑定任何历史修复编号或完成状态，可长期复用。
 
 # 角色
 
@@ -24,48 +26,36 @@
 
 ```
 三态：RUNNING → PAUSED（双向暂停）→ RUNNING（恢复） RUNNING → ERROR（异常）→ RUNNING（恢复校验）
+```
 
-
-Plain Text
-
-
-- 状态机 `currentStatus` 是状态真理源，还是 `SessionCheckpoint.status` 是？
-- 当两者不一致时，谁优先？什么场景会导致不一致？
-- `consecutivePauseCount` 的防滥用机制：计数在 `pause()` 中递增，在 `clarify` 事件回答后由 `resetConsecutivePauseCount()` 重置。这个"递增→回答→重置"的闭环是否完整？用户不回答怎么办？
-- 暂停超时检测（`isPauseTimedOut`）后，`_pauseTimedOutSession` 通过 `consumePauseTimedOutSession()` 一次性消费——这个"生产→消费"模式是否有遗漏路径？
+- 状态机 `currentStatus` 是状态真理源，还是 `SessionCheckpoint.status` 是？当两者不一致时，谁优先？状态恢复路径（`restoreFromCheckpoint`）是否强制归零对齐，还是可能让两者永久分叉？
+- `consecutivePauseCount` 的防滥用机制：以时间戳数组 + 1 小时衰减窗口计数，低风险（用户主动）暂停不累积；澄清回答后由 `resetConsecutivePauseCount()` 显式清空。这个"递增→衰减→重置"的闭环是否完整？用户一直不回答（暂停超时归档）时计数如何收场？
+- 暂停超时检测（`isPauseTimedOut`）以 `checkpoint.pausedAt`（暂停起点，缺失时回退心跳时间）为基准——暂停起点与心跳解耦后，超时判定是否仍可能被无关写入推迟？超时后经 `sessionPauseTimedOut` 事件广播（载荷含 sessionId/date/session/pauseDuration，支持多监听器）——运行时定时器与冷启动恢复两条路径是否都完整触发，事件消费是否可靠？
 
 ### 2. 检查点模型（SessionCheckpoint）
-SessionCheckpoint 包含：sessionId, status, mainGoal, currentGoal, goalVersion, plan[], role, standard, resource, messages[], pauseMeta, error, etc.
 
+SessionCheckpoint 包含：sessionId, status, mainGoal, currentGoal, goalVersion, plan[], role, standard, resource, messages[], pauseMeta, error, schemaVersion, etc.
 
-Plain Text
-
-
-- 检查点序列化到 `ISessionStore.loadCheckpoint/saveCheckpoint`，反序列化后通过 `restoreFromCheckpoint` 恢复热记忆 + 温记忆 + 契约重注入。这个"快照→持久化→恢复"的完整协议是否有状态丢失风险？
-- `goalVersion` 每次 `currentGoal` 变更时递增，用于漂移检测。但谁负责校验版本一致性？校验失败如何降级？
-- 检查点中的 `plan[]` 与 `roundLog[]` 的关系：`roundLog` 记录每次迭代的摘要，`plan` 记录任务步骤。当 `plan` 通过 `task_table_update` 更新时，`roundLog` 是否需要同步更新？
+- 检查点序列化到 `ISessionStore.loadCheckpoint/saveCheckpoint`，带 `schemaVersion` 版本化写入/比对；反序列化经 `parseCheckpoint`/`normalizeCheckpoint` 做字段补齐，再通过 `restoreFromCheckpoint` 恢复热记忆 + 温记忆 + 契约重注入。这个"快照→持久化→恢复"的完整协议是否有状态丢失风险？版本不匹配（新读旧 / 旧读新）如何降级？
+- `goalVersion`（漂移序列号）每次 `currentGoal` 变更时递增，用于漂移检测。漂移检测发现后如何暂停/降级？校验失败与强制暂停之间是否有遗漏路径？
+- 检查点中的 `plan[]` 与 `roundLog[]` 的关系：`roundLog` 记录每次迭代的摘要，`plan` 记录任务步骤，步骤状态经 `updatePlanStepStatus` 单一写点变更。两者语义边界是否清晰？当 `plan` 通过工具更新时，`roundLog` 是否需要同步更新？旁路直改步骤状态是否仍可能发生？
 
 ### 3. 记忆分类与存储（Everything is Memory v2）
+
 设定记忆（Config Memory）：Persona（文件） / Rule（文件+SQLite索引） / Skill（文件） 对话记忆（Episodic Memory）：Content / Insight / Profile（SQLite + VectorStore）
 
-
-Plain Text
-
-
-- `Rule` 同时存在于文件（真理源）和 SQLite（索引），这是 SSOT 还是 dual-source 反模式？`ConfigManager.deleteRule/updateRule` 通过回调刷新 bootstrap 段，这个回调是否 100% 可靠？
-- `Persona/Skill` 已从 SQLite 解耦，纯文件 + 内存缓存。但 `autoConfigRefiner` 将对话洞察转化为设定文件——"血肉结晶为骨骼"的路径是否经过一致性校验？
-- 记忆关系（MemoryRelation）是侧车数据结构，独立于 Memory 7 字段。侧车与主数据的因果一致性由谁保证？
+- `Rule` 同时存在于文件（真理源）和 SQLite（索引），这是 SSOT 还是 dual-source 反模式？"索引内容可重建、索引存在性不可重建"这种半派生边界如何界定？CRUD 后 bootstrap 段刷新（system prompt 与存储同步）是否 100% 可靠，失败时可观测性由谁承担？
+- `Persona/Skill` 已从 SQLite 解耦，纯文件 + 内存缓存。但配置建议确认（`confirmConfigSuggestion`）将 LLM 生成的内容直落文件路径与索引——重建同名已软删记忆的复活语义是否完整？LLM 生成的名称直落文件路径时，是否有路径穿越/非法字符的校验面？
+- 记忆关系（MemoryRelation）是侧车数据结构，独立于 Memory 7 字段。侧车与主数据的因果一致性由谁保证？删除/过期清理时侧车是否同步清理？
 
 ### 4. 不中断工作模型的设计闭环
+
 Agent.processEvent → Composer.compose → (needClarify? → pause → clarify → resume → chat) → AgentLoop.processEvent → (chunk.type === 'paused' → pause) → applyResolvedDelta → postProcess
 
-
-Plain Text
-
-
+- 执行流收口：`processEvent` / `executeChatLoop` / `resumeExecution` 统一走单一消费入口（含 finally 清理）。异步生成器作为公共入口时，调用方"记得迭代"是否被类型系统强制？跨进程边界 `void` 调用生成器是否可能导致函数体一行不执行？
+- 申请暂停模型（requestPause → 空闲态立即翻转 / 流中延迟到 loop 迭代边界挂起 → 产出 paused chunk → 翻状态机）：这个"内核事实驱动"的延迟翻转机制，在边缘情况（如 paused chunk 被消费前 Agent 关闭）是否有状态残留？空闲直翻与流中延迟翻两条路径的语义（如 lowRisk 是否累积计数）是否对称一致？
 - 双通道模型：PAUSED 态收到 `chat/correction/clarify` 事件自动恢复工作通道，`command` 事件不触发自动恢复。这个"输入通道永不冻结"的设计是否有安全漏洞？（例如 PAUSED 态收到大量 chat 事件导致频繁 resume/pause 振荡）
 - `resumeExecution()` 的"继续"按钮 UX：`canContinueWithoutInput()` 判断条件（paused / isInAutonomousStep / hasPendingPlan）三者就够了吗？是否遗漏了"纯单轮问答无待续目标"以外的边界？
-- 申请暂停模型（requestPause → loop 边界挂起 → 产出 paused chunk → 翻状态机）：这个"内核事实驱动"的延迟翻转机制，与"申请即翻转"相比，在边缘情况（如 paused chunk 被消费前 Agent 关闭）是否有状态残留？
 
 ## 审查要求
 
@@ -89,11 +79,3 @@ Plain Text
 ---
 
 *注意：这是一个真实项目的架构审查请求。请以 DeepSeek 核心开发者的严谨态度，不迎合不讨好，客观评价。好的架构不怕批评，坏的设计才需要赞美。*
-这个提示词已经包含了：
-
-DeepSeek 核心开发者的心智模型预设
-未来 LLM/Agent 发展趋势视角
-具体的 4 个子系统审查范围
-4 维度评分体系
-格式化的输出要求
-客观务实的态度基调
