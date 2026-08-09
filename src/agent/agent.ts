@@ -1717,14 +1717,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!sm) return;
 
     switch (eventType) {
-      case 'command':
-        // 命令事件：检查暂停/恢复关键词
-        if (detail.includes('pause') || detail.includes('暂停')) {
-          sm.pause(detail, 'user');
-        } else if (detail.includes('resume') || detail.includes('恢复') || detail.includes('继续')) {
-          sm.resume();
-        }
-        break;
       case 'correction':
         // 修正事件：更新目标版本
         sm.updateGoal(detail);

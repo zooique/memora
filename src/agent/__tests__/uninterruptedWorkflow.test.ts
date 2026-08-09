@@ -2191,6 +2191,27 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     return sawPaused;
   }
 
+  it('D1 回归：流中 requestPause 不立即翻状态机（延迟到 loop 边界挂起才翻）', { timeout: 30000 }, async () => {
+    agent = makeMultiTurnAgent();
+    await agent.init();
+
+    // 在流进行中（_streamActive=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
+    // 直到 loop 在迭代边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
+    // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转（D1）。
+    let statusRightAfterRequestPause = '';
+    for await (const chunk of agent.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') {
+        agent.requestPause('流中暂停', 'user');
+        statusRightAfterRequestPause = agent.sessionManager!.stateMachine.status;
+      }
+      if (chunk.type === 'paused') break;
+    }
+
+    expect(statusRightAfterRequestPause).toBe('running');
+    // 最终由 loop 边界挂起翻转
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+  });
+
   it('P0-1：续跑过程中请求暂停，状态机应翻 paused（修复前停留 running）', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();
     await agent.init();
@@ -2264,6 +2285,44 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     }
 
     expect(agent.requestPause('崩溃后的暂停', 'user')).toBe(true);
+  });
+});
+
+describe('SSOT 排雷防回归 · 死 command 分支（T1-3 / F1-2）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-t13-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-t13-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-t13-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(() => {
+    agent = null;
+    rmSync(tmpData, { recursive: true, force: true });
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+  });
+
+  it('喂入 type:command 事件不应触发状态机翻转（死分支已删）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+
+    // command 事件经 agent.processEvent → loop.processEvent → onSessionEvent 回调。
+    // 死分支（agent.handleSessionEvent 的 case 'command' 调 sm.pause / loop.handleCommand）
+    // 已被删除，command 应降级为 default（chat），绝不应翻 PAUSED。
+    let sawPauseChunk = false;
+    for await (const chunk of agent.processEvent({ type: 'command', content: 'pause' })) {
+      if (chunk.type === 'text' && chunk.content.includes('会话已暂停')) sawPauseChunk = true;
+    }
+
+    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    expect(sawPauseChunk).toBe(false);
   });
 });
 

@@ -2716,19 +2716,21 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
     expect(agent.canContinueWithoutInput()).toBe(false);
   });
 
-  it('requestPause 不立即翻状态机（延迟到 loop 边界挂起才翻，修 D1）', async () => {
+  it('T1-1 空闲态 requestPause 应直接翻 PAUSED（不再延迟，修复悬挂锁）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     // RUNNING 且无待续目标 → 不可续跑
     expect(agent.canContinueWithoutInput()).toBe(false);
 
-    // 申请软暂停：仅置 pauseRequested 标志 + 暂存 reason/source，不在本调用同步翻状态机
-    agent.requestPause('测试延迟翻转');
+    // 空闲态申请软暂停：无活跃流可"延迟到 loop 边界挂起"，直接同步翻状态机（T1-1）。
+    // 旧行为在此走延迟路径 → 置位 _pendingPauseReason 但状态机不翻、且 finally 永不到达
+    // → 幂等锁死（暂停按钮失灵）。T1-1 修复为：空闲即立即翻 PAUSED。
+    agent.requestPause('空闲暂停');
 
-    // 关键断言：状态机仍为 RUNNING（未翻 PAUSED）→ 可续跑判定保持 false
-    // （若回归为"申请即暂停"，此处会误报 true）
-    expect(agent.canContinueWithoutInput()).toBe(false);
+    // 关键断言：空闲态应立即翻 PAUSED，且可续跑判定随之变为 true（UI 应展示"继续"）
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.canContinueWithoutInput()).toBe(true);
   });
 });
 

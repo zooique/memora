@@ -341,11 +341,6 @@ export class AgentLoop {
         yield* this.processUserInput(event.content, recalledMemories, signal);
         break;
 
-      case 'command':
-        // 控制命令：暂停/恢复/重置
-        yield* this.handleCommand(event, signal);
-        break;
-
       case 'correction':
         // 修正意图：更新目标/计划，触发漂移检测
         yield* this.handleCorrection(event, signal);
@@ -428,39 +423,6 @@ export class AgentLoop {
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
   get isPauseRequested(): boolean {
     return this.pauseRequested;
-  }
-
-  /**
-   * 处理 command 类型事件
-   *
-   * 控制命令：暂停/恢复/重置会话，以及查询状态。
-   * 当前版本仅发送通知事件，实际状态变更由上层（SessionManager）通过状态机执行。
-   *
-   * @yields text 确认消息 + done
-   */
-  private async *handleCommand(
-    event: SessionEvent,
-    _signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    const cmd = event.content.trim().toLowerCase();
-
-    if (cmd.includes('pause') || cmd.includes('暂停')) {
-      yield { type: 'text', content: '会话已暂停' };
-      yield { type: 'done' };
-    } else if (cmd.includes('resume') || cmd.includes('恢复') || cmd.includes('继续')) {
-      yield { type: 'text', content: '会话已恢复' };
-      yield { type: 'done' };
-    } else if (cmd.includes('reset') || cmd.includes('重置')) {
-      yield { type: 'text', content: '会话已重置' };
-      yield { type: 'done' };
-    } else if (cmd.includes('status') || cmd.includes('状态')) {
-      // 状态查询：返回当前会话快照信息
-      yield { type: 'text', content: '会话状态正常' };
-      yield { type: 'done' };
-    } else {
-      // 未识别的命令，降级为 chat
-      yield* this.processUserInput(event.content, undefined, _signal);
-    }
   }
 
   /**
