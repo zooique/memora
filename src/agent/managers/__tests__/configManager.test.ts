@@ -289,6 +289,71 @@ describe('ConfigManager', () => {
       expect(refreshSpy).toHaveBeenCalledTimes(1);
     });
 
+    it('同名已软删规则重建应复活索引而非抛错（T2-4 回归）', async () => {
+      const now = new Date().toISOString();
+      // 预置一条同名、已软删除的 rule 记忆（模拟「用户删过该规则后又确认同名建议」）
+      storage.upsert({
+        id: 'rule:同名规则',
+        content: '旧内容（应被覆盖）',
+        source: SOURCE_LABELS.RULE,
+        name: '同名规则',
+        createdAt: now,
+        accessedAt: now,
+        score: 1,
+        deletedAt: now, // 软删除态
+      });
+      expect(storage.getDeletedById('rule:同名规则')).not.toBeNull();
+
+      const written: Memory[] = [];
+      const managerWithWrite = new ConfigManager(
+        storage,
+        skillManager,
+        () => {},
+        vi.fn(),
+        async (memory) => { written.push(memory); },
+      );
+
+      const suggestion: ConfigSuggestion = {
+        type: 'rule',
+        name: '同名规则',
+        content: '新内容（重建）',
+        confidence: 0.8,
+      };
+
+      // 修复前（缺 restore）：upsert 会因「以活跃态覆盖软删除态」抛错，而磁盘已在上方写入 → 半成功分叉。
+      // 修复后：先 restore 再 upsert，索引复活、内容覆盖、无抛错。
+      await expect(managerWithWrite.confirmConfigSuggestion(suggestion)).resolves.toBeUndefined();
+
+      const revived = storage.getById('rule:同名规则');
+      expect(revived).not.toBeNull();
+      expect(revived!.deletedAt).toBeUndefined(); // 已复活
+      expect(revived!.content).toBe('新内容（重建）'); // 内容被新建议覆盖
+      expect(written).toHaveLength(1);
+      expect(written[0]!.id).toBe('rule:同名规则');
+    });
+
+    it('suggestion.name 含路径穿越字符应被白名单拒绝（T2-4 回归）', async () => {
+      const managerWithWrite = new ConfigManager(
+        storage,
+        skillManager,
+        () => {},
+        vi.fn(),
+        async () => {},
+      );
+
+      // 路径穿越面：'..' 可逃出 configDir；'a/b' 越级进子目录；空格/空串亦不在白名单内
+      for (const badName of ['../escape', 'a/b', '..\\win', 'name with space', '']) {
+        await expect(
+          managerWithWrite.confirmConfigSuggestion({
+            type: 'rule',
+            name: badName,
+            content: 'x',
+            confidence: 0.5,
+          }),
+        ).rejects.toThrow(/配置建议名称非法/);
+      }
+    });
+
     it('persona 类型 confirmConfigSuggestion 不应刷新 bootstrap 段（T2 防过度修复）', async () => {
       const refreshSpy = vi.fn();
       const managerWithWrite = new ConfigManager(

@@ -177,6 +177,18 @@ export class ConfigManager {
       ]);
     }
 
+    // T2-4（F3-3 路径穿越防御）：suggestion.name 直落 FileStore.getFilePath 的文件名
+    // （store.ts:118 `${name}.md`，未经 sanitize，仅 source 经 validateSource 校验，name 不校验）。
+    // LLM 生成的 name 若含 '/'、'..'、'\' 等即可路径遍历逃出 configDir。
+    // 在入口收口白名单，最早失败、早于一切副作用（磁盘写入 / SQLite upsert）。
+    if (!/^[\w\u4e00-\u9fa5-]{1,64}$/.test(suggestion.name)) {
+      throw configError(
+        '配置建议名称非法',
+        `name='${suggestion.name}' 含路径穿越字符或超长（仅允许字母/数字/下划线/中文/连字符，1-64 字）`,
+        ['使用安全的规则/技能/人设命名（如 my-rule、项目规范）'],
+      );
+    }
+
     // 根据建议类型映射到 source 标签（ADR-004：开放字符串，约定值走 sourceMap，扩展值走 memorySource）
     const sourceMap: Record<string, string> = {
       rule: SOURCE_LABELS.RULE,
@@ -231,6 +243,10 @@ export class ConfigManager {
     // 同步写入 SQLite index：当前会话的 search_memories / recall 可立即检索到新创建的配置
     // persona/skill 后续由 reloadConfig → SkillManager.reload / PersonaManager.reload 重新扫描覆盖，
     // 但 rule 的 reloadConfig 是 no-op（agent.ts 内跳过），必须在此显式同步
+    // T2-4（F3-3）：重建同名已软删记忆前先 restore，与 loader.ts:100 / updateRule 对称。
+    // 否则 upsert 会因「以活跃态覆盖软删除态」抛错，而磁盘文件已在上方 :216 写入，
+    // 造成「文件落盘 + SQLite 索引分叉」的半成功状态。restore 对活跃/不存在记忆为 no-op（loader.ts:85），安全。
+    this.index.restore(memory.id);
     this.index.upsert(memory);
 
     // 如果是规则，立即注入到 AgentLoop（当前会话生效，重启后由配置文件自动加载）
