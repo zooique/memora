@@ -376,6 +376,8 @@ export interface ChatMessage {
   role: MessageRole;
   /** 消息内容 */
   content: string;
+  /** 消息来源名称（可选，用于标识 function 调用等场景，与 LLM Message.name 对齐） */
+  name?: string;
   /** 工具调用（assistant 消息，可选） */
   toolCalls?: Array<{
     id: string;

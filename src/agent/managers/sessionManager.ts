@@ -77,21 +77,34 @@ export class SessionManager {
   /** 目标一致性校验器（P3.1 目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
-   * 连续暂停计数（P4 防滥用机制）
+   * 连续暂停时间戳数组（P2-1：时间衰减机制）
    *
-   * 每次高风险 P4 暂停时递增，恢复时重置。
-   * 连续 2 次后强制降级 P3，不再生成 P4 问题。
-   * 低风险决策（lowRisk=true）不计数。
+   * 每次高风险暂停时记录当前时间戳，超过衰减窗口（1 小时）的旧时间戳自动过期。
+   * 代替旧的简单计数，防止早期暂停长时间锁死防滥用机制。
+   * 连续 2 次（窗口内）后强制降级 P3，不再生成 P4 问题。
+   * 低风险决策（lowRisk=true）不记录时间戳。
    */
-  private consecutivePauseCount: number = 0;
+  private consecutivePauseTimestamps: number[] = [];
+
+  /** 连续暂停时间衰减窗口（毫秒）。1 小时前的暂停不计入连续计数。 */
+  private static readonly CONSECUTIVE_PAUSE_DECAY_MS = 3_600_000;
 
   /**
    * 暂停超时会话信息（P0-3：暂停超时自动归档）
    *
    * loadPersistedCheckpoint 检测到暂停超时后填充此字段，
    * 供 Agent.init() 在后续流程中触发内容归档。
+   * 外部通过 consumePauseTimedOutSession() 方法访问（一次性消费）。
    */
-  _pauseTimedOutSession: { sessionId: string; date: string; session: string } | null = null;
+  private _pauseTimedOutSession: { sessionId: string; date: string; session: string } | null = null;
+
+  // ── P0-2：运行时暂停超时检测 ──────────────────────────
+
+  /** 暂停超时检测定时器（只在 paused 状态时运行） */
+  private _pauseTimeoutTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** 暂停超时检测间隔（毫秒）。30 秒检查一次心跳。 */
+  private static readonly PAUSE_TIMEOUT_CHECK_INTERVAL = 30_000;
 
   constructor(
     getHistory: () => MessageHistory,
@@ -327,7 +340,8 @@ export class SessionManager {
           }
         : undefined,
       mainGoal: mainGoal ?? existingGoal ?? '',
-      currentGoal: mainGoal ?? existingGoal ?? '',
+      // 不传 mainGoal 时保留已有 currentGoal（防止 pause() 内调用时覆盖 updateGoal 的更新）
+      currentGoal: mainGoal ?? this.checkpoint?.currentGoal ?? existingGoal ?? '',
       goalVersion: existingGoalVersion,
       plan: this.checkpoint?.plan ?? [],
       role: role ?? this.checkpoint?.role ?? { name: 'assistant' },
@@ -453,6 +467,8 @@ export class SessionManager {
     const messages: Message[] = checkpoint.hotMemory.map((cm) => ({
       role: cm.role,
       content: cm.content,
+      // P2-2：恢复 name 字段（LLM 上下文一致性）
+      name: cm.name,
       toolCalls: cm.toolCalls,
       toolCallId: cm.toolCallId,
     }));
@@ -526,16 +542,18 @@ export class SessionManager {
     if (result.allowed) {
       // 暂停前保存检查点
       this.createCheckpoint();
-      // 仅高风险暂停计入连续计数（低风险由 Agent 自动兜底，不累积）
+      // 仅高风险暂停记录时间戳（低风险由 Agent 自动兜底，不累积）
       if (!lowRisk) {
-        this.consecutivePauseCount++;
+        this.consecutivePauseTimestamps.push(Date.now());
         logger.debug(
-          { consecutivePauseCount: this.consecutivePauseCount, reason },
-          '高风险暂停已计入连续计数',
+          { consecutivePauseCount: this.consecutivePauseTimestamps.length, reason },
+          '高风险暂停已记录时间戳',
         );
       } else {
-        logger.debug({ reason }, '低风险暂停不计入连续计数（Agent 自动兜底）');
+        logger.debug({ reason }, '低风险暂停不记录时间戳（Agent 自动兜底）');
       }
+      // P0-2：启动暂停超时检测定时器，防止暂停会话长时间占用资源
+      this.startPauseTimeoutTimer();
       this.emitEvent('sessionPaused', {
         reason,
         source,
@@ -570,17 +588,17 @@ export class SessionManager {
 
     const result = this.stateMachine.resume();
     if (result.allowed) {
+      // P0-2：恢复时停止暂停超时检测定时器
+      this.stopPauseTimeoutTimer();
       // 更新检查点心跳并持久化（P0-2：会话状态持久化）
       if (this.checkpoint) {
         this.checkpoint.lastHeartbeat = Date.now();
         this.checkpoint.status = 'running';
         this.persistCheckpoint();
       }
-      // 恢复时重置连续暂停计数（P4 防滥用：用户已响应，计数清零）
-      if (this.consecutivePauseCount > 0) {
-        this.consecutivePauseCount = 0;
-        logger.debug('连续暂停计数已重置（会话已恢复）');
-      }
+      // 注意：连续暂停计数不在 resume() 中重置，而是在 Agent.processEvent()
+      // 的 clarify 事件处理完成后由 resetConsecutivePauseCount() 显式重置。
+      // 避免用户回答前 resume() 过早清零导致防滥用机制无效（见 P4 防滥用死代码修复）。
       this.emitEvent('sessionResumed', {
         sessionId: this.checkpoint?.sessionId,
       });
@@ -623,22 +641,59 @@ export class SessionManager {
   // ── P4 防滥用：连续暂停计数 ─────────────────────────────
 
   /**
+   * 清理过期暂停时间戳（P2-1：时间衰减）
+   *
+   * 移除超过衰减窗口（1 小时）的旧暂停时间戳，
+   * 仅保留最近 CONSECUTIVE_PAUSE_DECAY_MS 内的暂停。
+   * 在每次查询计数时自动调用，无需手动维护。
+   */
+  private pruneStalePauseTimestamps(): void {
+    const cutoff = Date.now() - SessionManager.CONSECUTIVE_PAUSE_DECAY_MS;
+    const before = this.consecutivePauseTimestamps.length;
+    this.consecutivePauseTimestamps = this.consecutivePauseTimestamps.filter(
+      (ts) => ts > cutoff,
+    );
+    const pruned = before - this.consecutivePauseTimestamps.length;
+    if (pruned > 0) {
+      logger.debug({ pruned, remaining: this.consecutivePauseTimestamps.length }, '过期暂停时间戳已衰减');
+    }
+  }
+
+  /**
    * 检查连续暂停是否已达上限（P4 防滥用）
    *
+   * 先衰减过期时间戳，再检查窗口内暂停是否 >= 2 次。
    * 连续 2 次高风险暂停后强制降级 P3，不再生成 P4 问题。
    * 低风险暂停（Agent 自动兜底）不计数。
    *
    * @returns 是否已达上限
    */
   isPauseLimitReached(): boolean {
-    return this.consecutivePauseCount >= 2;
+    this.pruneStalePauseTimestamps();
+    return this.consecutivePauseTimestamps.length >= 2;
   }
 
   /**
-   * 获取当前连续暂停计数
+   * 获取当前连续暂停计数（P2-1：时间衰减）
+   *
+   * 先衰减过期时间戳，再返回窗口内有效暂停数。
    */
   getConsecutivePauseCount(): number {
-    return this.consecutivePauseCount;
+    this.pruneStalePauseTimestamps();
+    return this.consecutivePauseTimestamps.length;
+  }
+
+  /**
+   * 重置连续暂停计数（P4 防滥用）
+   *
+   * 用户在 clarify 事件中回答澄清问题后调用，表明用户已配合完成澄清流程，
+   * 连续暂停时间戳清空，下次 P4 暂停可正常触发。
+   * 与 resume() 分离：不在 resume() 中自动重置，而是由 Agent.processEvent 的
+   * clarify 处理路径显式调用，防止用户回答前过早清零导致防滥用机制无效。
+   */
+  resetConsecutivePauseCount(): void {
+    this.consecutivePauseTimestamps = [];
+    logger.debug('连续暂停时间戳已清空');
   }
 
   /**
@@ -702,7 +757,7 @@ export class SessionManager {
       sessionId: this.checkpoint.sessionId,
     });
 
-    // P3.1：若检测到漂移，发射 goalDriftDetected 事件
+    // P3.1：若检测到漂移，发射 goalDriftDetected 事件并自动暂停
     if (consistencyResult.level !== 'same') {
       this.emitEvent('goalDriftDetected', {
         sessionId: this.checkpoint.sessionId,
@@ -713,6 +768,12 @@ export class SessionManager {
         constraints: consistencyResult.constraints,
         goalVersion: this.checkpoint.goalVersion,
       });
+
+      // P1-2：drift 级别自动暂停（强制用户确认），使用低风险暂停不计入连续计数
+      if (consistencyResult.level === 'drift') {
+        const pauseReason = `目标漂移：新目标与原始目标不一致（相似度 ${consistencyResult.similarity.toFixed(2)}）`;
+        this.pause(pauseReason, 'system', true);
+      }
     }
 
     return consistencyResult;
@@ -1125,6 +1186,96 @@ export class SessionManager {
   }
 
   /**
+   * 消费暂停超时会话信息（一次性读取 + 清空）
+   *
+   * 供 Agent.init() 在触发内容归档前读取超时会话信息。
+   * 读取后清空内部字段，确保同一超时会话不会被重复消费。
+   *
+   * @returns 暂停超时会话信息，不存在时返回 null
+   */
+  consumePauseTimedOutSession(): { sessionId: string; date: string; session: string } | null {
+    const info = this._pauseTimedOutSession;
+    this._pauseTimedOutSession = null;
+    return info;
+  }
+
+  // ── P0-2：运行时暂停超时检测 ──────────────────────────
+
+  /**
+   * 启动暂停超时检测定时器
+   *
+   * 只在 paused 状态运行时生效，定期检查心跳是否超时。
+   * 超时后自动清理检查点、重置状态机、发射事件，防止暂停会话长时间占用资源。
+   * 调用前先 stop 确保不重复启动。
+   */
+  private startPauseTimeoutTimer(): void {
+    this.stopPauseTimeoutTimer(); // 确保不重复启动
+    this._pauseTimeoutTimer = setInterval(() => {
+      this.checkPauseTimeout();
+    }, SessionManager.PAUSE_TIMEOUT_CHECK_INTERVAL);
+    // 允许定时器不阻止进程退出（Node.js unref）
+    if (typeof this._pauseTimeoutTimer === 'object' && 'unref' in this._pauseTimeoutTimer) {
+      (this._pauseTimeoutTimer as NodeJS.Timeout).unref();
+    }
+  }
+
+  /**
+   * 停止暂停超时检测定时器
+   */
+  private stopPauseTimeoutTimer(): void {
+    if (this._pauseTimeoutTimer !== null) {
+      clearInterval(this._pauseTimeoutTimer);
+      this._pauseTimeoutTimer = null;
+    }
+  }
+
+  /**
+   * 检查暂停超时并在超时时自动清理
+   *
+   * 由定时器定期调用。检查当前检查点是否处于 paused 状态且已超时，
+   * 超时则清理检查点、重置状态机、发射事件并停止定时器。
+   */
+  private checkPauseTimeout(): void {
+    const checkpoint = this.checkpoint;
+    if (!checkpoint || checkpoint.status !== 'paused') return;
+
+    if (!this.isPauseTimedOut(checkpoint)) return;
+
+    // 暂停超时，自动清理
+    const sessionId = checkpoint.sessionId;
+    const pauseDuration = Date.now() - checkpoint.lastHeartbeat;
+
+    logger.warn(
+      { sessionId, pauseDuration },
+      '运行时检测到暂停超时，自动清理检查点',
+    );
+
+    // 清理检查点：从存储层删除
+    if (this.sessionStore?.deleteCheckpoint) {
+      this.sessionStore.deleteCheckpoint(sessionId);
+    }
+
+    // 重置运行时状态：清除检查点 + 状态机回到 running
+    this.checkpoint = null;
+    this.stateMachine.resetToRunning();
+
+    // 发射事件供宿主 UI 通知用户
+    this.emitEvent('sessionPauseTimedOut', { sessionId, pauseDuration });
+
+    // 停止定时器（超时后不再需要继续检测）
+    this.stopPauseTimeoutTimer();
+  }
+
+  /**
+   * 销毁 SessionManager，清理所有定时器
+   *
+   * 供 Agent 关闭时调用，防止定时器阻止进程退出或导致悬空回调。
+   */
+  destroy(): void {
+    this.stopPauseTimeoutTimer();
+  }
+
+  /**
    * 检查暂停是否超时（P0-3：暂停超时自动归档）
    *
    * 仅对 paused 状态检查：当前时间距 lastHeartbeat 超过 PAUSE_TIMEOUT_MS 视为超时。
@@ -1177,6 +1328,8 @@ export class SessionManager {
         m.content.length > contentSlice
           ? m.content.slice(0, contentSlice) + '\n\n[内容已截断]'
           : m.content,
+      // P2-2：透传 name 字段（LLM Message 可能携带 name，如 function 调用结果标识）
+      name: m.name,
       toolCalls: m.toolCalls?.map((tc) => ({
         id: tc.id,
         type: tc.type,

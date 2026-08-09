@@ -18,6 +18,7 @@ import type { AgentForkResult } from '@/agent/managers/sessionManager.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 
 /**
  * 创建 Mock MessageHistory
@@ -47,6 +48,7 @@ function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHist
 function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
   return {
     restoreHistory: vi.fn(),
+    getMessages: vi.fn().mockReturnValue([]),
     ...overrides,
   } as unknown as AgentLoop;
 }
@@ -60,6 +62,9 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
     copySession: vi.fn(),
+    saveCheckpoint: vi.fn(),
+    loadCheckpoint: vi.fn().mockReturnValue(null),
+    deleteCheckpoint: vi.fn(),
     ...overrides,
   };
 }
@@ -407,6 +412,276 @@ describe('SessionManager', () => {
       ]);
       await mgr.restoreSession('2026-06-27', 'main');
       expect(newLoop.restoreHistory).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── P0-2：运行时暂停超时检测 ──────────────────────────
+
+  describe('pauseTimeoutMonitor', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('暂停后超时，定时器应自动清理检查点并重置状态机', () => {
+      // 暂停会话，启动超时检测定时器
+      manager.pause('测试暂停', 'user');
+
+      // 验证暂停成功
+      expect(manager.stateMachine.status).toBe('paused');
+
+      // 验证检查点已创建
+      expect(manager.getCheckpoint()).not.toBeNull();
+
+      // 快进时间到超时阈值之前（29 分钟），应不触发超时清理
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS - 60_000);
+      expect(manager.getCheckpoint()).not.toBeNull();
+
+      // 快进时间超过超时阈值（再快进 2 分钟，确保超过 30 分钟）
+      vi.advanceTimersByTime(120_000);
+      expect(manager.getCheckpoint()).toBeNull();
+      expect(manager.stateMachine.status).toBe('running');
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
+        sessionId: expect.any(String),
+        pauseDuration: expect.any(Number),
+      }));
+    });
+
+    it('暂停后在超时前恢复，应不触发超时清理', () => {
+      manager.pause('测试暂停', 'user');
+      expect(manager.stateMachine.status).toBe('paused');
+
+      // 恢复会话（应在超时前）
+      manager.resume();
+      expect(manager.stateMachine.status).toBe('running');
+
+      // 快进时间超过超时阈值，应不触发超时清理
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+      // 检查点应存在（恢复后保留）
+      // 注意：resume() 不会清除检查点，只是标记为 running
+      expect(manager.getCheckpoint()).not.toBeNull();
+      // 不应发射超时事件
+      expect(emitEvent).not.toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
+    });
+
+    it('destroy 应清理定时器，使其不触发回调', () => {
+      manager.pause('测试暂停', 'user');
+      expect(manager.stateMachine.status).toBe('paused');
+
+      // 销毁 SessionManager，清理定时器
+      manager.destroy();
+
+      // 快进时间超过超时阈值，应不触发超时清理（定时器已被清除）
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+      expect(manager.getCheckpoint()).not.toBeNull();
+      expect(emitEvent).not.toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
+    });
+
+    it('连续 pause 不重复启动定时器', () => {
+      // 连续两次 pause（第二次应该不会启动新的定时器，因为状态机状态不匹配）
+      const firstResult = manager.pause('第一次暂停', 'user');
+      expect(firstResult).toBe(true);
+
+      // 状态机已经是 paused，第二次 pause 应返回 false
+      const secondResult = manager.pause('第二次暂停', 'user');
+      expect(secondResult).toBe(false);
+
+      // 快进时间超过超时阈值，应触发一次超时清理
+      vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
+
+      // 验证超时事件只发射一次（只启动了一个定时器）
+      expect(emitEvent).toHaveBeenCalledTimes(1 + 1); // sessionPaused + sessionPauseTimedOut
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
+    });
+  });
+
+  // ── P1-2：goalVersion 漂移强制暂停 ──────────────────────
+
+  describe('goalVersion drift auto-pause', () => {
+    /**
+     * 辅助方法：创建带有 mainGoal 的检查点
+     * 首次调用 updateGoal 会创建检查点（返回 null），第二次调用才会触发一致性校验
+     */
+    function setupCheckpointWithGoal(mainGoal: string): void {
+      // 第一次调用：创建检查点，mainGoal 设为目标值
+      const result = manager.updateGoal(mainGoal);
+      expect(result).toBeNull();
+      // 状态机应保持 running
+      expect(manager.stateMachine.status).toBe('running');
+    }
+
+    it('drift 级别时应自动暂停', () => {
+      // 用长文本确保使用 Jaccard 相似度
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
+
+      setupCheckpointWithGoal(mainGoal);
+
+      // 第二次调用 updateGoal，检测到漂移应自动暂停
+      const result = manager.updateGoal(driftedGoal);
+      expect(result).not.toBeNull();
+      expect(result!.level).toBe('drift');
+      // 状态机应为 paused
+      expect(manager.stateMachine.status).toBe('paused');
+    });
+
+    it('confirm 级别时应不自动暂停', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const confirmGoal = '编写一个计算器应用程序支持加减乘除运算';
+
+      setupCheckpointWithGoal(mainGoal);
+
+      const result = manager.updateGoal(confirmGoal);
+      expect(result).not.toBeNull();
+      expect(result!.level).toBe('confirm');
+      // confirm 级别不应暂停
+      expect(manager.stateMachine.status).toBe('running');
+    });
+
+    it('same 级别时应不触发任何事件', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+
+      setupCheckpointWithGoal(mainGoal);
+
+      const result = manager.updateGoal(mainGoal);
+      expect(result).not.toBeNull();
+      expect(result!.level).toBe('same');
+      // same 级别不应暂停
+      expect(manager.stateMachine.status).toBe('running');
+      // 不应发射 goalDriftDetected 事件
+      expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
+    });
+
+    it('自动暂停应使用低风险（lowRisk=true），不增加连续暂停计数', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
+
+      setupCheckpointWithGoal(mainGoal);
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+
+      const result = manager.updateGoal(driftedGoal);
+      expect(result!.level).toBe('drift');
+      // 低风险暂停不应增加连续暂停计数
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+    });
+
+    it('无检查点时 updateGoal 不触发暂停', () => {
+      // 首次调用 updateGoal，checkpoint 为 null，应创建检查点并返回 null
+      const result = manager.updateGoal('新的目标');
+      expect(result).toBeNull();
+      // 不应暂停
+      expect(manager.stateMachine.status).toBe('running');
+    });
+
+    it('drift 暂停时应发射 goalDriftDetected 事件', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
+
+      setupCheckpointWithGoal(mainGoal);
+
+      manager.updateGoal(driftedGoal);
+      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
+        mainGoal,
+        newGoal: driftedGoal,
+        level: 'drift',
+      }));
+    });
+  });
+
+  // ── P2-1：consecutivePauseCount 时间衰减 ────────────────
+
+  describe('consecutivePauseDecay (P2-1)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('暂停时间戳超过衰减窗口后应自动衰减', () => {
+      // 第一次高风险暂停
+      manager.pause('第一次暂停', 'user');
+      expect(manager.getConsecutivePauseCount()).toBe(1);
+
+      // 快进时间到衰减窗口之前（59 分钟），计数应仍为 1
+      // 注意：暂停超时检测（30 分钟）可能在此时已触发清理检查点，
+      // 但连续暂停计数的时间戳不受影响，衰减窗口为 60 分钟
+      vi.advanceTimersByTime(3_600_000 - 60_000);
+      expect(manager.getConsecutivePauseCount()).toBe(1);
+
+      // 快进时间超过衰减窗口（再快进 2 分钟），旧暂停应衰减
+      vi.advanceTimersByTime(120_000);
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+    });
+
+    it('多次暂停按时间衰减，只有窗口内的计数', () => {
+      // 第一次暂停
+      manager.pause('第一次暂停', 'user');
+      expect(manager.getConsecutivePauseCount()).toBe(1);
+
+      // 快进 10 分钟，恢复再暂停（模拟第二次暂停）
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      manager.resume();
+      manager.pause('第二次暂停', 'user');
+      expect(manager.getConsecutivePauseCount()).toBe(2);
+
+      // 快进 55 分钟，第一次暂停过期（总计 65 分钟），只剩第二次
+      vi.advanceTimersByTime(55 * 60 * 1000);
+      expect(manager.getConsecutivePauseCount()).toBe(1);
+
+      // 再快进 30 分钟，第二次暂停也过期
+      vi.advanceTimersByTime(30 * 60 * 1000);
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+    });
+
+    it('低风险暂停不记录时间戳，不影响衰减', () => {
+      // 高风险暂停
+      manager.pause('高风险暂停', 'user');
+      expect(manager.getConsecutivePauseCount()).toBe(1);
+
+      // 恢复后低风险暂停
+      manager.resume();
+      manager.pause('低风险暂停', 'system', true);
+      expect(manager.getConsecutivePauseCount()).toBe(1); // 仍为 1
+
+      // 快进时间超过衰减窗口，高风险暂停过期
+      vi.advanceTimersByTime(3_600_000 + 60_000);
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+    });
+
+    it('resetConsecutivePauseCount 应清空所有时间戳', () => {
+      manager.pause('第一次暂停', 'user');
+      expect(manager.getConsecutivePauseCount()).toBe(1);
+
+      // 恢复再暂停第二次
+      manager.resume();
+      manager.pause('第二次暂停', 'user');
+      expect(manager.getConsecutivePauseCount()).toBe(2);
+
+      // 重置
+      manager.resetConsecutivePauseCount();
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+      expect(manager.isPauseLimitReached()).toBe(false);
+    });
+
+    it('isPauseLimitReached 应基于衰减后的计数', () => {
+      expect(manager.isPauseLimitReached()).toBe(false);
+
+      manager.pause('第一次暂停', 'user');
+      expect(manager.isPauseLimitReached()).toBe(false); // 1 < 2
+
+      // 恢复再暂停第二次
+      manager.resume();
+      manager.pause('第二次暂停', 'user');
+      expect(manager.isPauseLimitReached()).toBe(true); // 2 >= 2
+
+      // 快进时间超过衰减窗口
+      vi.advanceTimersByTime(3_600_000 + 60_000);
+      expect(manager.isPauseLimitReached()).toBe(false); // 衰减后为 0
     });
   });
 });

@@ -9,7 +9,7 @@
  * - onSuggestion / suggestionCallback：注册和获取回调
  * - confirm：验证 writeConfigFile 未设置时抛错
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
@@ -31,6 +31,8 @@ describe('ConfigManager', () => {
       storage,
       skillManager,
       (msg) => { systemMessages.push(msg); },
+      vi.fn(),   // refreshBootstrapMemories（必选，P1-1，需在可选参数之前）
+      undefined, // writeConfigFile
     );
   });
 
@@ -216,6 +218,7 @@ describe('ConfigManager', () => {
         storage,
         skillManager,
         (msg) => { systemMessages.push(msg); },
+        vi.fn(),   // refreshBootstrapMemories（必选）
         async (memory) => { written.push(memory); },
       );
 
@@ -245,6 +248,7 @@ describe('ConfigManager', () => {
         storage,
         skillManager,
         (msg) => { systemMessages.push(msg); },
+        vi.fn(),   // refreshBootstrapMemories（必选）
         async (memory) => { written.push(memory); },
       );
 

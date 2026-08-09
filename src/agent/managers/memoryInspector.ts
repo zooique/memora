@@ -649,11 +649,18 @@ export class MemoryInspector {
   }
 
   /**
-   * 软删除记忆（写入 deletedAt）
+   * 软删除记忆（写入 deletedAt），自动清理关联关系边
+   *
+   * 覆盖 IMemoryStorage.delete() 的纯存储操作，在软删除记忆前
+   * 先清理关联的所有关系边，防止 memory_relations 表残留孤儿边。
+   * relationStore 未注入时降级为仅删除记忆（向后兼容）。
    *
    * @param id 记忆唯一标识（${source}:${name} 格式）
    */
   writeDelete(id: string): void {
+    // 先清理关系边（relationStore 未注入时降级）
+    this.writeRemoveRelationsByMemoryId(id);
+    // 再软删除记忆
     this.index.delete(id);
   }
 
@@ -667,11 +674,18 @@ export class MemoryInspector {
   }
 
   /**
-   * 物理删除记忆（不可恢复，用于回收站彻底删除）
+   * 物理删除记忆（不可恢复，用于回收站彻底删除），自动清理关联关系边
+   *
+   * 覆盖 IMemoryStorage.purge() 的纯存储操作，在物理删除记忆前
+   * 先清理关联的所有关系边，防止 memory_relations 表残留孤儿边。
+   * relationStore 未注入时降级为仅删除记忆（向后兼容）。
    *
    * @param id 记忆唯一标识
    */
   writePurge(id: string): void {
+    // 先清理关系边（relationStore 未注入时降级）
+    this.writeRemoveRelationsByMemoryId(id);
+    // 再物理删除记忆
     this.index.purge(id);
   }
 

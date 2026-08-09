@@ -8,6 +8,8 @@ import type { LlmChunk } from '@/llm/types.js';
 export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  // 消息来源名称（可选，用于 function 调用结果标识，与 OpenAI API 对齐）
+  name?: string;
   // 工具调用（assistant 消息）
   toolCalls?: Array<{
     id: string;

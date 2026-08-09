@@ -259,4 +259,17 @@ export class SessionStateMachine {
   isError(): boolean {
     return this.currentStatus === 'error';
   }
+
+  /**
+   * 强制重置状态机到 running 状态（用于暂停超时等强制清理场景）
+   *
+   * 注意：此方法跳过所有状态转换校验，仅用于强制清理。
+   * 正常场景应使用 pause()/resume()/triggerError()/recover()。
+   */
+  resetToRunning(): void {
+    this.currentStatus = 'running';
+    this.pauseReason = null;
+    this.pauseSource = null;
+    this.errorCause = null;
+  }
 }

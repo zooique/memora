@@ -82,17 +82,22 @@ export class ConfigManager {
    * @param index - 记忆存储（规则写入 SQLite）
    * @param skillManager - 技能管理器（运行时注入技能）
    * @param injectSystemMessage - 注入 system 消息的回调（来自 AgentLoop）
-   * @param writeConfigFile - 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖）
    * @param refreshBootstrapMemories - 刷新 AgentLoop system prompt 中 bootstrap 段的回调
    *   设定 CRUD（deleteRule/updateRule/deleteSkill）后调用，使 system prompt 中的
    *   rule/skill 段立即同步。由 Agent 在装配时注入（assembler.ts）。
+   *   必选参数：CRUD 操作后必须同步 bootstrap 段，否则 system prompt 与存储不一致（SSOT 违反）。
+   * @param writeConfigFile - 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖）
+   * @param removeRelationsByMemoryId - 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理）
+   *   传入 memoryInspector.writeRemoveRelationsByMemoryId 的绑定版本。
+   *   未注入时删除记忆不清理关系边（向后兼容，但可能残留孤儿边）。
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly skillManager: SkillManager,
     private readonly injectSystemMessage: (message: string) => void,
+    private readonly refreshBootstrapMemories: () => void,
     private readonly writeConfigFile?: (memory: Memory) => Promise<void>,
-    private readonly refreshBootstrapMemories?: () => void,
+    private readonly removeRelationsByMemoryId?: (memoryId: string) => number,
   ) {}
 
   // ─── 配置建议 ─────────────────────────────────────────
@@ -323,8 +328,10 @@ export class ConfigManager {
       logger.warn({ name, id }, '删除规则失败：规则不存在');
       return false;
     }
+    // P0-1：先清理关联关系边，防止 memory_relations 表残留孤儿边
+    this.removeRelationsByMemoryId?.(id);
     this.index.delete(id);
-    this.refreshBootstrapMemories?.();
+    this.refreshBootstrapMemories();
     logger.info({ name, id }, '规则已删除');
     return true;
   }
@@ -367,7 +374,7 @@ export class ConfigManager {
       this.index.restore(id);
     }
     this.index.upsert(memory);
-    this.refreshBootstrapMemories?.();
+    this.refreshBootstrapMemories();
     logger.info({ name, id }, '规则已更新');
   }
 
@@ -399,10 +406,12 @@ export class ConfigManager {
       logger.warn({ name, id }, '删除技能失败：技能不存在');
       return false;
     }
+    // P0-1：先清理关联关系边，防止 memory_relations 表残留孤儿边
+    this.removeRelationsByMemoryId?.(id);
     this.index.delete(id);
     // 同步清理 SkillManager 内存缓存（deleteSkill 内部处理 name 不存在的情况）
     this.skillManager.deleteSkill(name);
-    this.refreshBootstrapMemories?.();
+    this.refreshBootstrapMemories();
     logger.info({ name, id }, '技能已删除');
     return true;
   }

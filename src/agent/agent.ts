@@ -248,14 +248,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.validateCoreComponents();
     this.createPostInitComponents(pctx);
 
+    // 标记初始化完成，后续 restoreFromCheckpoint 需要此标志
+    this._initialized = true;
+
     // 加载持久化的会话检查点（P0-2：会话状态持久化）
     // 若上次会话在暂停/异常状态中关闭，加载后恢复状态机
-    this._sessionManager?.loadPersistedCheckpoint();
+    // 若检查点状态为 paused，同时恢复热记忆（重启后上下文恢复），见 P0-4
+    const persistedCheckpoint = this._sessionManager?.loadPersistedCheckpoint();
+    if (persistedCheckpoint && persistedCheckpoint.status === 'paused') {
+      // P0-4：恢复热记忆到 loop + 温记忆召回 + 契约重注入
+      // 确保重启后暂停会话的上下文完整，resumeExecution() 时 LLM 有历史上下文
+      await this.restoreFromCheckpoint(persistedCheckpoint);
+    }
 
     // P0-3：暂停超时自动归档（fire-and-forget）
-    // loadPersistedCheckpoint 检测到超时会话后填充 _pauseTimedOutSession，
-    // 此处触发内容归档，将超时会话的原始对话内容归档为 memory 条目。
-    const timedOut = this._sessionManager?._pauseTimedOutSession;
+    // loadPersistedCheckpoint 检测到超时会话后内部填充 _pauseTimedOutSession，
+    // 此处通过 consumePauseTimedOutSession 一次性消费并触发内容归档。
+    const timedOut = this._sessionManager?.consumePauseTimedOutSession();
     if (timedOut) {
       this.archiveCoordinator
         ?.archiveSessionContent(timedOut.date, timedOut.session, { autoTriggered: true })
@@ -263,8 +272,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           logger.warn({ err, sessionId: timedOut.sessionId }, '暂停超时会话自动归档失败');
         });
     }
-
-    this._initialized = true;
 
     return pctx;
   }
@@ -894,8 +901,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       //   - correction: 目标修正，写入历史会让 LLM 误以为这是普通对话
       // clarify 例外：回答已通过 compose 应用到检查点（applyResolvedDelta），
       // 入口已 auto-resume（双通道 v2.0），转 chat 语义继续执行——回答内容作为
-      // 用户输入进入对话流，驱动 LLM 完成原任务（否则提交回答后无反应）。
+      // 用户输入进入对话流，驱动 LLM 完成原任务（否则提交回答后无响应）。
+      // Phase 2：用户回答澄清问题后重置连续暂停计数，恢复防滥用机制（P4 防滥用死代码修复）
       if (event.type === 'clarify') {
+        // 用户回答了澄清问题，表明已配合完成澄清流程，重置连续暂停计数
+        this._sessionManager?.resetConsecutivePauseCount();
         event = { type: 'chat', content: this.formatClarifyAnswers(event.content), delta: {} };
       } else if (event.type !== 'chat') {
         yield* this.handleNonChatEvent(event, combinedSignal);
@@ -934,7 +944,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           if (chunk.type === 'paused') {
             this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource);
             this._pendingPauseReason = undefined;
-            this._pendingPauseSource = 'user';
           }
           yield chunk;
           if (chunk.type === 'text') {

@@ -854,7 +854,7 @@ describe('MemoryInspector', () => {
       expect(inspector.getDeletedById('rule:1')).toBeNull();
     });
 
-    it('FIX-P0-2：未过期记忆的关系边不应被清理', () => {
+    it('FIX-P0-2：未过期记忆的关系边在 writeDelete 时立即清理，writePurgeExpired 不清理非过期记忆', () => {
       // 准备：1 条已删除（未过期）+ 1 条活跃记忆 + 关系
       inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:a', source: 'insight', name: 'a' }));
       inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:b', source: 'insight', name: 'b' }));
@@ -862,15 +862,18 @@ describe('MemoryInspector', () => {
         sourceId: 'insight:a', targetId: 'insight:b',
         type: 'related', weight: 0.5, createdAt: '2026-06-27T10:00:00.000Z',
       });
+      // P0-1：writeDelete 会立即清理关系边，此时关系应已不存在
       inspectorWithRelation.writeDelete('insight:a');
+
+      // 断言：P0-1 修复后，writeDelete 立即清理了关系边（不再等到 purgeExpired）
+      expect(inspectorWithRelation.getAllRelations()).toHaveLength(0);
 
       // 执行：阈值为 1 小时前（deletedAt 晚于此值，未过期）
       const before = new Date(Date.now() - 60 * 60 * 1000);
       inspectorWithRelation.writePurgeExpired(before);
 
-      // 断言：未过期记忆未被清理，关系边保留（restore 后能恢复关系）
+      // 断言：未过期记忆未被清理（软删除状态保留）
       expect(inspectorWithRelation.getDeletedById('insight:a')).not.toBeNull();
-      expect(inspectorWithRelation.getAllRelations()).toHaveLength(1);
     });
 
     // ─── 关系写入 ───

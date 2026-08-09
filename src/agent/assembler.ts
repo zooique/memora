@@ -238,17 +238,22 @@ function createLoopDependentComponents(params: {
   const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, onDedupCompleted } = params;
 
   const configFileStore = configDir ? new FileStore(configDir) : null;
+
+  // P0-1：memoryInspector 需先创建（持有 relationStore），供 ConfigManager 清理关系边
+  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
+  const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
+  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, onDedupCompleted);
+
   const configManager = new ConfigManager(
     pctx.index,
     skillManager,
     (msg: string) => loop.injectSystemMessage(msg),
-    configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
+    // refreshBootstrapMemories 在 writeConfigFile 之前（必选参数不能位于可选之后）
     () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
+    configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
+    // P0-1：删除配置时自动清理关联关系边
+    (memoryId: string) => memoryInspector.writeRemoveRelationsByMemoryId(memoryId),
   );
-
-  const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
-  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, onDedupCompleted);
 
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
     configManager.suggestionCallback?.(suggestion),
