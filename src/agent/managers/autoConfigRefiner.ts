@@ -22,13 +22,13 @@ export interface AutoConfigRefinerOptions {
   /** 单次对话最大建议数 */
   maxSuggestions?: number;
   /**
-   * 已有同名规则查重回调（T2-3 去重，可选，向后兼容）
+   * 已有同名规则查重回调（F3.3 强制化，必填）
    *
    * 返回 true 表示该 name 已存在同名 rule（落库 id=source:name 冲突面），
    * 建议应被过滤——防「血肉结晶为骨骼」路径重复沉淀。
-   * 未注入时不做已有规则查重（仅做跨轮重复回调去重）。
+   * 必填：去重是核心语义，不可靠可选降级。
    */
-  isExistingRule?: (name: string) => boolean;
+  isExistingRule: (name: string) => boolean;
 }
 
 /** LLM 返回的建议结构（type 开放字符串，对齐 ADR-004） */

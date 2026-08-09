@@ -272,10 +272,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 注册暂停超时归档处理器（P0-3：超时会话内容的唯一消费点）
    *
    * SessionManager 的两条超时路径——启动加载（loadPersistedCheckpoint）与
-   * 运行时定时器（checkPauseTimeout）——都经 markSessionTimedOut() 填充超时
-   * 会话并发射 sessionPauseTimedOut。此处统一消费，消除「启动能归档、
-   * 运行时静默丢失」的不对称：运行时超时会删除磁盘检查点，若当场不归档，
-   * 下次启动也无从发现，会话内容将永久丢失。
+   * 运行时定时器（checkPauseTimeout）——都经 markSessionTimedOut() 发射
+   * sessionPauseTimedOut 事件（含 date/session 载荷）。此处统一消费。
+   *
+   * F1.3 广播式改造：从事件载荷 payload.date / payload.session 直接读取，
+   * 不再经 consumePauseTimedOutSession() 一次性消费。支持多监听器并行。
    *
    * 注册位置在 init() 内而非构造器：close() 会 removeAllListeners()，
    * 而 init() 起始必先 disposePreviousInstance()，故实例周期内恰好一个监听器。
@@ -283,7 +284,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * rebuildComponentsWithCurrentCtx() 重建管理器后仍然有效。
    */
   private registerPauseTimeoutArchiver(): void {
-    this.on(AGENT_EVENTS.sessionPauseTimedOut, () => {
+    this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
       // P2-2: 暂停超时后清理 Agent 残留的 pending 暂停状态。
       // checkPauseTimeout() 已清除 SessionManager 的检查点并复位状态机，
       // 但 Agent 的 _pendingPauseReason / _pendingPauseSource 可能仍残留
@@ -292,13 +293,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._pendingPauseReason = undefined;
       this._pendingPauseSource = 'user';
 
-      const timedOut = this._sessionManager?.consumePauseTimedOutSession();
-      if (!timedOut) return;
+      // F1.3：从事件载荷直接读取 date/session，不再经 consumePauseTimedOutSession()
+      const { sessionId, date, session } = payload;
+      if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录
       this.archiveCoordinator
-        ?.archiveSessionContent(timedOut.date, timedOut.session, { autoTriggered: true })
+        ?.archiveSessionContent(date, session, { autoTriggered: true })
         .catch((err) => {
-          logger.warn({ err, sessionId: timedOut.sessionId }, '暂停超时会话自动归档失败');
+          logger.warn({ err, sessionId }, '暂停超时会话自动归档失败');
         });
     });
   }
@@ -1656,7 +1658,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('restoreFromCheckpoint');
 
     // ① 快照反序列化 + ② 热窗口载入（由 SessionManager 完成）
-    const messageCount = this.requireSessionManager.restoreFromCheckpoint(checkpoint);
+    // F2.1：SessionManager.restoreFromCheckpoint 已改为 async，await 等待完成
+    const messageCount = await this.requireSessionManager.restoreFromCheckpoint(checkpoint);
 
     // ③ 温记忆按需召回：以 mainGoal/currentGoal 为查询条件，从温记忆召回早期上下文
     await this.warmRecallForCheckpoint(checkpoint);

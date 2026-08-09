@@ -101,14 +101,9 @@ export class SessionManager {
   private static readonly CONSECUTIVE_PAUSE_DECAY_MS = 3_600_000;
 
   /**
-   * 暂停超时会话信息（P0-3：暂停超时自动归档）
-   *
-   * 启动路径（loadPersistedCheckpoint）与运行时路径（checkPauseTimeout）
-   * 均经 markSessionTimedOut() 填充此字段——该方法是唯一写点，
-   * 保证「超时被发现」与「归档被触发」在两条路径上语义一致。
-   * 外部通过 consumePauseTimedOutSession() 方法访问（一次性消费）。
+   * @deprecated F1.3 已废弃：暂停超时信息通过 sessionPauseTimedOut 事件载荷传递，
+   * 支持多监听器同时消费。不再使用私有字段 + 一次性消费模式。
    */
-  private _pauseTimedOutSession: { sessionId: string; date: string; session: string } | null = null;
 
   /**
    * 会话标识解析模式：`YYYY-MM-DD-<会话名>`
@@ -516,11 +511,16 @@ export class SessionManager {
    *
    * 将检查点中的热记忆恢复到 AgentLoop 工作记忆，
    * 并恢复状态机到检查点记录的状态。
+   * 异步：内部 await loadSessionMessages 切换会话。
+   *
+   * F2.1 修复：消除 void 悬空。原实现同步返回，loadSessionMessages 异步调用
+   * 悬空未 await，rejection 无人处理（unhandledRejection）。改为 async 后
+   * 调用方 await 等待会话切换完成，消除竞态窗口。
    *
    * @param checkpoint - 要恢复的检查点
    * @returns 恢复的消息数量
    */
-  restoreFromCheckpoint(checkpoint: SessionCheckpoint): number {
+  async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
     this.checkpoint = checkpoint;
     // 检查点由外部整体注入，视为与来源一致；后续变更由 touchCheckpoint 标脏
     this.checkpointDirty = false;
@@ -587,14 +587,16 @@ export class SessionManager {
     if (sessionParts.length >= 4) {
       const date = sessionParts.slice(0, 3).join('-');
       const session = sessionParts.slice(3).join('-');
-      // T10 修复：loadSessionMessages 是 async（messageHistory.ts:264），restoreFromCheckpoint
-      // 同步返回无法 await——旧实现悬空 Promise，rejection 无人处理（unhandledRejection）。
+      // F2.1 修复：await loadSessionMessages 完成，消除 void 悬空。
+      // 原实现 sync 返回 → void 调用 → unhandledRejection 风险。
       // 竞态窗口分析：会话切换在微任务队列中异步完成，restore 后到下一次 append 之间
       // 无其他写入者（单 Agent 单线程），「最后写入者胜」语义下窗口极窄且无害。
-      // 显式 catch 吞掉加载失败（降级为不切换会话，热窗口已由 restoreHistory 恢复）。
-      void history.loadSessionMessages(date, session).catch((err) => {
+      // 切换失败时记录日志并降级（热记忆已由 restoreHistory 恢复，继续运行）。
+      try {
+        await history.loadSessionMessages(date, session);
+      } catch (err) {
         logger.warn({ err, sessionId: checkpoint.sessionId }, '恢复检查点时切换会话失败（热记忆已恢复，继续运行）');
-      });
+      }
     }
 
     // P3.4：恢复时补偿——对非幂等工具执行补偿操作
@@ -1340,37 +1342,37 @@ export class SessionManager {
   }
 
   /**
-   * 消费暂停超时会话信息（一次性读取 + 清空）
-   *
-   * 供 Agent.init() 在触发内容归档前读取超时会话信息。
-   * 读取后清空内部字段，确保同一超时会话不会被重复消费。
-   *
-   * @returns 暂停超时会话信息，不存在时返回 null
+   * @deprecated F1.3 已废弃：暂停超时信息通过 sessionPauseTimedOut 事件载荷传递，
+   * 不再需要一次性消费方法。保留桩代码供编译期检测遗留调用方，将在下一清理周期移除。
    */
   consumePauseTimedOutSession(): { sessionId: string; date: string; session: string } | null {
-    const info = this._pauseTimedOutSession;
-    this._pauseTimedOutSession = null;
-    return info;
+    return null;
   }
 
   /**
    * 标记会话暂停超时（超时事实的唯一写点）
    *
+   * F1.3 广播式改造：暂停超时信息通过事件载荷传递，支持多监听器同时消费。
+   * 不再使用私有字段 + 一次性消费模式（consumePauseTimedOutSession 已废弃）。
+   *
    * 启动路径（loadPersistedCheckpoint）与运行时定时器路径（checkPauseTimeout）
-   * 共用本方法：先填充 `_pauseTimedOutSession` 供归档消费，再发射事件。
-   * 顺序不可颠倒——事件监听器会同步调用 consumePauseTimedOutSession()，
-   * 若先发射则消费到 null，运行时超时的内容将静默丢失。
+   * 共用本方法：发射事件（含 date/session 载荷），供多个监听器独立消费。
+   *
+   * 事件监听器读取 payload.date / payload.session 而非 consumePauseTimedOutSession()，
+   * 消除了单监听器依赖——同一事件可被多个监听器独立处理，互不干扰。
    *
    * 会话标识不符合 `YYYY-MM-DD-<会话名>` 约定时（如宿主自定义 id），
-   * 无法还原归档所需的二元组，跳过填充但仍发射事件通知宿主。
+   * 无法还原归档所需的二元组，date/session 字段缺省，但事件仍发射通知宿主。
    *
    * @param sessionId - 超时的会话标识
    * @param pauseDuration - 暂停持续时间（毫秒）
    */
   private markSessionTimedOut(sessionId: string, pauseDuration: number): void {
     const matched = SessionManager.SESSION_ID_PATTERN.exec(sessionId);
+    const payload: Record<string, unknown> = { sessionId, pauseDuration };
     if (matched) {
-      this._pauseTimedOutSession = { sessionId, date: matched[1]!, session: matched[2]! };
+      payload.date = matched[1]!;
+      payload.session = matched[2]!;
     } else {
       logger.warn(
         { sessionId },
@@ -1378,7 +1380,7 @@ export class SessionManager {
       );
     }
 
-    this.emitEvent('sessionPauseTimedOut', { sessionId, pauseDuration });
+    this.emitEvent('sessionPauseTimedOut', payload);
   }
 
   // ── P0-2：运行时暂停超时检测 ──────────────────────────

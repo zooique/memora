@@ -139,12 +139,15 @@ export function configError(
  *
  * @param action 被拒绝的操作描述（如"切换项目"），拼接到"请等待其结束后再"之后
  * @returns MemoraError（config 类别）
+ *
+ * UX 优化（F4.1）：移除内部实现细节（AsyncGenerator/done 事件），
+ * 改用用户可理解的通用建议文本。
  */
 export function chatBusyError(action: string): MemoraError {
   return configError(
     '对话繁忙',
     `上一轮对话尚未完成，请等待其结束后再${action}`,
-    ['等待上一轮 chat() 的 AsyncGenerator 耗尽（收到 done 事件）'],
+    ['等待当前对话完成后重试'],
   );
 }
 

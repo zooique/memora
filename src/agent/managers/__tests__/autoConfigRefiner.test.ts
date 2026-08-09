@@ -95,6 +95,7 @@ describe('AutoConfigRefiner 构造与配置', () => {
     const refiner = new AutoConfigRefiner(callback, {
       minConfidence: 0.7,
       maxSuggestions: 1,
+      isExistingRule: () => false,
     });
     // 启发式偏好 confidence=0.65 < 0.7，应被过滤
     const userInput = '我喜欢用机械键盘打字，手感非常不错，工作效率提升很多';
@@ -405,7 +406,7 @@ describe('analyzeWithLlm 路径', () => {
 
   it('数量限制 maxSuggestions=3（超出截断）', async () => {
     const callback = vi.fn();
-    const refiner = new AutoConfigRefiner(callback, { maxSuggestions: 3 });
+    const refiner = new AutoConfigRefiner(callback, { maxSuggestions: 3, isExistingRule: () => false });
     const provider = createMockProvider([
       { content: buildArrayJson([
         { type: 'rule', name: '建议1', content: '内容', confidence: 0.9, reason: '理由' },

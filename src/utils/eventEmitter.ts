@@ -136,21 +136,41 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 被降级的记忆 ID 列表 */
     demotedIds: string[];
   };
-  /** 暂停超时，检查点已自动清理（宿主可通知用户或触发归档） */
+  /**
+   * 暂停超时，检查点已自动清理（唯一写点：SessionManager.markSessionTimedOut）
+   *
+   * 两条触发路径：启动加载（loadPersistedCheckpoint）与运行时定时器（checkPauseTimeout）。
+   * 唯一消费点：Agent.registerPauseTimeoutArchiver()——清理 Agent 残留暂停状态 + 触发归档。
+   * F1.3 广播式改造支持多监听器，不再依赖一次性消费模式。
+   */
   sessionPauseTimedOut: {
     /** 超时的会话标识 */
     sessionId: string;
     /** 暂停持续时间（毫秒） */
     pauseDuration: number;
+    /** 超时会话日期（YYYY-MM-DD，符合 SESSION_ID_PATTERN 时提供，供归档消费） */
+    date?: string;
+    /** 超时会话名（不含日期前缀，符合 SESSION_ID_PATTERN 时提供，供归档消费） */
+    session?: string;
   };
-  /** 恢复被阻止（暂停超时后无法恢复，需重新开始） */
+  /**
+   * 恢复被阻止（唯一写点：SessionManager.resume）
+   *
+   * 暂停超时后检查点已被清理，无法恢复，通知宿主"需重新开始"。
+   */
   sessionResumeBlocked: {
     /** 被阻止的会话标识 */
     sessionId: string;
     /** 阻止原因 */
     reason: string;
   };
-  /** 恢复失败（resumeExecution 中 resume() 返回 false，宿主可 toast 提示） */
+  /**
+   * 恢复失败（唯一写点：SessionManager.resumeExecution）
+   *
+   * resume() 返回 false 时发射，宿主可据此 toast 提示用户。
+   * 注意：与 sessionResumeBlocked 的区别——blocked 是超时拦截（检查点已清理），
+   * failed 是恢复操作本身执行失败（如存储层异常）。
+   */
   sessionResumeFailed: {
     /** 恢复失败的会话标识 */
     sessionId?: string;
@@ -169,8 +189,8 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   /**
    * 目标漂移检测结果（P3.1 目标版本一致性校验）
    *
-   * 当用户通过 correction 事件更新目标时，若检测到新目标与原始目标（mainGoal）
-   * 之间的差异超过阈值，发射此事件通知宿主 UI 展示确认提示。
+   * 唯一写点：SessionManager.updateGoal()——在 GoalConsistencyChecker 检测到
+   * 新目标与原始目标（mainGoal）差异超过阈值时发射。
    *
    * 注意：内核当前无此事件的监听方（宿主 UI 未建，SSOT 排雷 T2-1 复核确认）——
    * 事件保留为通知钩子，drift 级自动暂停（sessionManager.updateGoal 内）是当前
@@ -192,7 +212,12 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 目标变更序号（T11 改名：原 goalVersion，仅事件载荷不承担校验） */
     goalChangeSeq: number;
   };
-  /** 会话暂停 */
+  /**
+   * 会话暂停（唯一写点：SessionManager.requestPause）
+   *
+   * 暂停时 SessionManager 创建检查点、启动超时检测定时器后发射此事件。
+   * 内核内部无消费者——宿主通过 agent.on('sessionPaused') 监听作 UI 响应。
+   */
   sessionPaused: {
     /** 暂停原因 */
     reason: string;
@@ -201,19 +226,35 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 会话标识 */
     sessionId?: string;
   };
-  /** 会话恢复 */
+  /**
+   * 会话恢复（唯一写点：SessionManager.resume）
+   *
+   * 恢复成功后在 resume() 中发射。不包含旧状态——宿主可自行缓存。
+   * 内核内部无消费者——宿主监听用于 UI 刷新。
+   */
   sessionResumed: {
     /** 会话标识 */
     sessionId?: string;
   };
-  /** 会话异常 */
+  /**
+   * 会话异常（唯一写点：SessionManager 的 pause() 中 error→pause 路径）
+   *
+   * 状态机翻转至 error 后发射，内含异常原因。暂停超时路径不发射此事件——
+   * 超时直接进入 PAUSED 态，由 sessionPauseTimedOut 替代通知。
+   * 内核内部无消费者——宿主监听用于 toast 提示。
+   */
   sessionError: {
     /** 异常原因 */
     cause: string;
     /** 会话标识 */
     sessionId?: string;
   };
-  /** 会话从异常恢复 */
+  /**
+   * 会话从异常恢复（唯一写点：SessionManager 的 recoverFromError 路径）
+   *
+   * 恢复成功后在状态机翻转至 RUNNING 后发射。
+   * 内核内部无消费者——宿主监听用于 UI 刷新。
+   */
   sessionRecovered: {
     /** 会话标识 */
     sessionId?: string;

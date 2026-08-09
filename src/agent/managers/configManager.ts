@@ -87,6 +87,41 @@ export class ConfigManager {
   private suggestionHandler: ConfigSuggestionHandler | null = null;
 
   /**
+   * bootstrap 同步失败回调（F3.1 回调失败降级）
+   *
+   * refreshBootstrapMemories() 抛出异常时调用此回调，
+   * 宿主可据此重试或记录告警。
+   */
+  private onBootstrapSyncFailed: ((error: Error) => void) | null = null;
+
+  /**
+   * 注册 bootstrap 同步失败回调（F3.1）
+   *
+   * 当 refreshBootstrapMemories() 抛出异常时，本回调被触发。
+   * 宿主可在回调中实现重试逻辑（如指数退避重试 3 次）。
+   */
+  setOnBootstrapSyncFailed(handler: (error: Error) => void): void {
+    this.onBootstrapSyncFailed = handler;
+  }
+
+  /**
+   * 安全刷新 bootstrap 记忆（F3.1 回调失败降级）
+   *
+   * 包装 refreshBootstrapMemories() 调用，捕获异常并发射 onBootstrapSyncFailed 回调。
+   * 防止回调失败导致 system prompt 与存储不一致后静默吞没。
+   * 所有 CRUD 操作中的 refreshBootstrapMemories 均通过此方法调用。
+   */
+  private safeRefreshBootstrapMemories(): void {
+    try {
+      this.refreshBootstrapMemories();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn({ err: error }, 'bootstrap 记忆同步失败（system prompt 与存储可能不一致）');
+      this.onBootstrapSyncFailed?.(error);
+    }
+  }
+
+  /**
    * @param index - 记忆存储（规则写入 SQLite）
    * @param skillManager - 技能管理器（运行时注入技能）
    * @param injectSystemMessage - 注入 system 消息的回调（来自 AgentLoop）
@@ -208,7 +243,7 @@ export class ConfigManager {
       // 导致确认的新规则只靠一条易被截断的临时 system 消息生效，重启前永进不了 bootstrap。
       // upsert(:199) 已完成 → 回调内 getBootstrapMemories 经 getBySource(RULE) 必然包含新规则，
       // loop.refreshBootstrapMemories 是替换式重建，幂等无副作用。
-      this.refreshBootstrapMemories();
+      this.safeRefreshBootstrapMemories();
     }
 
     logger.info(
@@ -350,7 +385,7 @@ export class ConfigManager {
     // P0-1：先清理关联关系边，防止 memory_relations 表残留孤儿边
     this.removeRelationsByMemoryId?.(id);
     this.index.delete(id);
-    this.refreshBootstrapMemories();
+    this.safeRefreshBootstrapMemories();
     logger.info({ name, id }, '规则已删除');
     return true;
   }
@@ -397,7 +432,7 @@ export class ConfigManager {
       this.index.restore(id);
     }
     this.index.upsert(memory);
-    this.refreshBootstrapMemories();
+    this.safeRefreshBootstrapMemories();
     logger.info({ name, id }, '规则已更新');
   }
 
@@ -434,7 +469,7 @@ export class ConfigManager {
     this.index.delete(id);
     // 同步清理 SkillManager 内存缓存（deleteSkill 内部处理 name 不存在的情况）
     this.skillManager.deleteSkill(name);
-    this.refreshBootstrapMemories();
+    this.safeRefreshBootstrapMemories();
     logger.info({ name, id }, '技能已删除');
     return true;
   }
