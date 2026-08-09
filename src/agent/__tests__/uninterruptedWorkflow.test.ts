@@ -1927,4 +1927,35 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     manager.restoreFromCheckpoint(errorCheckpoint);
     expect(manager.stateMachine.status).toBe('error');
   });
+
+  it('P1：P4 澄清暂停前应先应用已确定槽位（防解析成果随暂停丢失）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 手动创建检查点：新会话（无磁盘检查点）时 checkpoint 为 null，
+    // processEvent 的 compose 分支（`if (checkpoint && this.composer)`）会被整体跳过，
+    // 增量解析（含 P4 澄清）不生效——该边界为既有缺口（见日志），本测试聚焦澄清分支本身。
+    agent.sessionManager!.createCheckpoint('', { name: 'initial-role', description: '初始角色' });
+    expect(agent.sessionManager!.getCheckpoint()!.currentGoal).toBe('');
+
+    // correction 事件：role 槽有显式增量（P1 确定），task 槽无 delta 且 currentGoal 为空
+    // → task 走 P4 澄清（needClarify 非空）→ 命中暂停分支。
+    // 修复前 applyResolvedDelta 在 needClarify 分支 return 之后 → role 增量随暂停丢弃；
+    // 修复后先应用已确定槽位再暂停 → 检查点应已含 expert。
+    const chunkTypes: string[] = [];
+    for await (const chunk of agent.processEvent({
+      type: 'correction',
+      content: '切换为专家模式',
+      delta: { role: { name: 'expert', description: '领域专家' } },
+    })) {
+      chunkTypes.push(chunk.type);
+    }
+
+    // 澄清暂停已发生
+    expect(chunkTypes).toContain('done');
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+
+    // 核心断言：已确定槽位（role）必须在暂停前落检查点
+    expect(agent.sessionManager!.getCheckpoint()!.role.name).toBe('expert');
+  });
 });
