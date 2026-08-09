@@ -9,6 +9,16 @@
  *   RUNNING → ERROR（异常：LLM 超时/工具失败/连接断开）
  *   ERROR → RUNNING（恢复校验：须 error.recovered===true 且 cause 已解除）
  *
+ * ERROR 态触发面（SSOT 排雷 T2-2 定性，2026-08-09）：
+ *   - 生产内部**无运行时自动触发者**——Agent 运行时异常（LLM 超时/工具失败等）
+ *     走 `yield { type: 'error' }` 事件流（agent.ts:540/979/1057），不翻状态机。
+ *   - 实际进入 ERROR 态的两条路径：
+ *     ① 公开 API `agent.triggerError()`（宿主显式调用，agent.ts:1444）；
+ *     ② 检查点恢复回填——磁盘/外部检查点 status='error' 时
+ *        （sessionManager.ts:481 loadPersistedCheckpoint / :541 restoreFromCheckpoint）。
+ *   因此 ERROR 态不可删：它是「崩溃残留 → 恢复前强制校验」语义的载体。
+ *   若未来要让运行时异常自动翻状态机，需在 yield error 处接线 triggerError（行为变更，需产品决策）。
+ *
  * 非法转换：
  *   PAUSED → ERROR（不允许：暂停中不应产生新异常）
  *   ERROR → PAUSED（不允许：异常状态独立可见，不自动降级）

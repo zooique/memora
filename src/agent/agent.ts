@@ -1434,9 +1434,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 触发异常
+   * 触发会话异常（公开 API，宿主显式调用）
    *
    * 仅 RUNNING 状态可触发异常。异常时自动创建检查点保存当前状态。
+   *
+   * 触发面说明（SSOT 排雷 T2-2 定性）：生产内部**无调用者**——
+   * 运行时异常（LLM 超时/工具失败等）走 `yield { type: 'error' }` 事件流
+   * （本文件 :540/:979/:1057），不翻状态机。本 API 供宿主在自定义异常
+   * 场景（如外部服务故障）显式触发，或经检查点恢复回填进入 ERROR 态
+   * （sessionManager.ts:481/:541）。
    *
    * @param cause - 异常原因
    * @returns 是否触发成功
