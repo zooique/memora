@@ -18,6 +18,7 @@ import type { AgentForkResult } from '@/agent/managers/sessionManager.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import type { Role, Standard, ResourceState } from '@/agent/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 
 /**
@@ -592,6 +593,333 @@ describe('SessionManager', () => {
   });
 
   // ── P2-1：consecutivePauseCount 时间衰减 ────────────────
+
+  // ── 检查点序列化/反序列化全路径 ──────────────────────────
+
+  describe('checkpoint create/load/restore cycle', () => {
+    /** 创建有内容的 mock Loop，使 extractHotMemory 返回非空热记忆 */
+    function createMockLoopWithMessages(msgs: Array<{ role: string; content: string }>): AgentLoop {
+      return {
+        restoreHistory: vi.fn(),
+        getMessages: vi.fn().mockReturnValue(msgs.map((m) => ({ ...m, name: undefined }))),
+        injectSystemMessage: vi.fn(),
+      } as unknown as AgentLoop;
+    }
+
+    it('createCheckpoint 首次创建应返回完整检查点', () => {
+      const loop = createMockLoopWithMessages([
+        { role: 'user', content: '你好' },
+        { role: 'assistant', content: '你好，有什么可以帮助的？' },
+      ]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const cp = mgr.createCheckpoint('测试主目标');
+
+      expect(cp.sessionId).toBe('2026-06-27-main');
+      expect(cp.mainGoal).toBe('测试主目标');
+      expect(cp.currentGoal).toBe('测试主目标'); // 首次创建 currentGoal == mainGoal
+      expect(cp.goalVersion).toBe(0);
+      expect(cp.status).toBe('running');
+      expect(cp.hotMemory).toHaveLength(2);
+      expect(cp.hotMemory[0]!.content).toBe('你好');
+      expect(cp.plan).toEqual([]);
+      expect(cp.lastHeartbeat).toBeGreaterThan(0);
+    });
+
+    it('createCheckpoint 后续调用应保留已有 currentGoal', () => {
+      const loop = createMockLoopWithMessages([
+        { role: 'user', content: '继续' },
+      ]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      // 首次创建：设 mainGoal
+      mgr.createCheckpoint('原始目标');
+      expect(mgr.getCheckpoint()!.currentGoal).toBe('原始目标');
+
+      // 模拟 updateGoal 更新了 currentGoal
+      const cp = mgr.getCheckpoint()!;
+      cp.currentGoal = '用户调整后的目标';
+      cp.goalVersion = 1;
+
+      // 再次 createCheckpoint（不传 mainGoal）→ currentGoal 应保留
+      mgr.createCheckpoint(); // 无参数
+      expect(mgr.getCheckpoint()!.mainGoal).toBe('原始目标');
+      expect(mgr.getCheckpoint()!.currentGoal).toBe('用户调整后的目标');
+      expect(mgr.getCheckpoint()!.goalVersion).toBe(1);
+    });
+
+    it('saveCheckpoint 应持久化检查点到 sessionStore', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      mgr.createCheckpoint('保存测试');
+
+      expect(sessionStore!.saveCheckpoint).toHaveBeenCalledWith(
+        '2026-06-27-main',
+        expect.any(String),
+      );
+      // 验证序列化后的 JSON 可反序列化
+      const savedJson = (sessionStore!.saveCheckpoint as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+      expect(() => JSON.parse(savedJson)).not.toThrow();
+    });
+
+    it('loadPersistedCheckpoint 应正常加载并恢复状态机', () => {
+      const loop = createMockLoopWithMessages([
+        { role: 'user', content: '历史消息' },
+      ]);
+      // mock loadCheckpoint 返回序列化检查点
+      const store = createMockSessionStore({
+        loadCheckpoint: vi.fn().mockReturnValue(JSON.stringify({
+          sessionId: '2026-06-27-main',
+          status: 'running',
+          mainGoal: '加载测试',
+          currentGoal: '加载测试',
+          goalVersion: 0,
+          plan: [],
+          role: { name: 'assistant' },
+          standard: { quality: '完成', constraints: [] },
+          resource: { documents: [], memories: [], context: '' },
+          hotMemory: [{ role: 'user', content: '历史消息' }],
+          lastHeartbeat: Date.now(),
+        })),
+      });
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        store,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const cp = mgr.loadPersistedCheckpoint();
+
+      expect(cp).not.toBeNull();
+      expect(cp!.mainGoal).toBe('加载测试');
+      expect(cp!.status).toBe('running');
+      // 状态机应为 running（不需要额外操作）
+      expect(mgr.stateMachine.status).toBe('running');
+    });
+
+    it('loadPersistedCheckpoint 应恢复 paused 状态', () => {
+      const loop = createMockLoopWithMessages([]);
+      const store = createMockSessionStore({
+        loadCheckpoint: vi.fn().mockReturnValue(JSON.stringify({
+          sessionId: '2026-06-27-main',
+          status: 'paused',
+          mainGoal: '暂停测试',
+          currentGoal: '暂停测试',
+          goalVersion: 0,
+          plan: [],
+          role: { name: 'assistant' },
+          standard: { quality: '完成', constraints: [] },
+          resource: { documents: [], memories: [], context: '' },
+          hotMemory: [],
+          lastHeartbeat: Date.now(),
+        })),
+      });
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        store,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const cp = mgr.loadPersistedCheckpoint();
+
+      expect(cp).not.toBeNull();
+      expect(cp!.status).toBe('paused');
+      // 状态机恢复为 paused
+      expect(mgr.stateMachine.status).toBe('paused');
+    });
+
+    it('loadPersistedCheckpoint 暂停超时应返回 null 并清理', () => {
+      vi.useFakeTimers();
+      const loop = createMockLoopWithMessages([]);
+      // 检查点 lastHeartbeat 设为 31 分钟前
+      const oldHeartbeat = Date.now() - AGENT_CONSTANTS.PAUSE_TIMEOUT_MS - 60_000;
+      const store = createMockSessionStore({
+        loadCheckpoint: vi.fn().mockReturnValue(JSON.stringify({
+          sessionId: '2026-06-27-main',
+          status: 'paused',
+          mainGoal: '超时测试',
+          currentGoal: '超时测试',
+          goalVersion: 0,
+          plan: [],
+          role: { name: 'assistant' },
+          standard: { quality: '完成', constraints: [] },
+          resource: { documents: [], memories: [], context: '' },
+          hotMemory: [],
+          lastHeartbeat: oldHeartbeat,
+        })),
+      });
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        store,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const cp = mgr.loadPersistedCheckpoint();
+
+      expect(cp).toBeNull();
+      expect(mgr.getCheckpoint()).toBeNull();
+      // 状态机应保持 running（超时清理后重置）
+      expect(mgr.stateMachine.status).toBe('running');
+      // 应发射超时事件
+      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
+        sessionId: '2026-06-27-main',
+      }));
+      vi.useRealTimers();
+    });
+
+    it('restoreFromCheckpoint 应恢复消息和状态机', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const checkpoint = {
+        sessionId: '2026-06-27-main',
+        status: 'running' as const,
+        mainGoal: '恢复测试',
+        currentGoal: '恢复测试',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' } as Role,
+        standard: { quality: '完成', constraints: [] } as Standard,
+        resource: { documents: [], memories: [], context: '' } as ResourceState,
+        hotMemory: [
+          { role: 'user' as const, content: '消息1' },
+          { role: 'assistant' as const, content: '消息2' },
+        ],
+        lastHeartbeat: Date.now(),
+      };
+
+      const count = mgr.restoreFromCheckpoint(checkpoint);
+
+      // 应恢复 2 条消息
+      expect(count).toBe(2);
+      expect(loop.restoreHistory).toHaveBeenCalledWith([
+        { role: 'user', content: '消息1', name: undefined, toolCalls: undefined, toolCallId: undefined },
+        { role: 'assistant', content: '消息2', name: undefined, toolCalls: undefined, toolCallId: undefined },
+      ]);
+    });
+
+    it('restoreFromCheckpoint 截断时注入提示消息', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const checkpoint = {
+        sessionId: '2026-06-27-main',
+        status: 'running' as const,
+        mainGoal: '截断测试',
+        currentGoal: '截断测试',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' } as Role,
+        standard: { quality: '完成', constraints: [] } as Standard,
+        resource: { documents: [], memories: [], context: '' } as ResourceState,
+        hotMemory: [{ role: 'user' as const, content: '消息' }],
+        truncatedCount: 5, // 5 条早期消息被截断
+        lastHeartbeat: Date.now(),
+      };
+
+      mgr.restoreFromCheckpoint(checkpoint);
+
+      expect(loop.injectSystemMessage).toHaveBeenCalledWith(
+        expect.stringContaining('5 条早期消息已被截断'),
+      );
+    });
+
+    it('restoreFromCheckpoint 恢复 paused 状态应设置状态机', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const checkpoint = {
+        sessionId: '2026-06-27-main',
+        status: 'paused' as const,
+        mainGoal: '暂停恢复',
+        currentGoal: '暂停恢复',
+        goalVersion: 0,
+        plan: [],
+        role: { name: 'assistant' } as Role,
+        standard: { quality: '完成', constraints: [] } as Standard,
+        resource: { documents: [], memories: [], context: '' } as ResourceState,
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+
+      mgr.restoreFromCheckpoint(checkpoint);
+
+      expect(mgr.stateMachine.status).toBe('paused');
+    });
+
+    it('sessionStore 未注入时 createCheckpoint 不应抛错', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        undefined, // 无 sessionStore
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      // 不应抛错
+      expect(() => mgr.createCheckpoint('无存储测试')).not.toThrow();
+      expect(mgr.getCheckpoint()).not.toBeNull();
+      expect(mgr.getCheckpoint()!.mainGoal).toBe('无存储测试');
+    });
+
+    it('sessionStore 未注入时 loadPersistedCheckpoint 应返回 null', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        undefined, // 无 sessionStore
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      const cp = mgr.loadPersistedCheckpoint();
+      expect(cp).toBeNull();
+    });
+  });
 
   describe('consecutivePauseDecay (P2-1)', () => {
     beforeEach(() => {

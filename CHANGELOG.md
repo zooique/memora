@@ -17,7 +17,13 @@
 
 ### Fixed（修复）
 
+- **P0-1: MemoryRelation 孤儿边清理**：`memoryInspector.writeDelete()` / `writePurge()` 前置清理关系边，防止记忆删除后关系边残留
+- **P0-2: 运行时暂停超时检测**：暂停状态启动定时器，30 秒检测一次心跳，超 30 分钟自动清理检查点并重置状态机
 - **P1: Composer 停滞时忽略显式任务输入**：计划停滞路径前增加 `event.delta?.task === undefined` 判断，确保用户显式指定任务时优先走 P1 显式输入而非 P4 澄清
+- **P1-1: refreshBootstrapMemories 改为必选参数**：修复 SSOT 违反——CRUD 操作后 system prompt 中的 bootstrap 段必须同步
+- **P1-2: goalVersion 漂移强制暂停**：`updateGoal()` 检测到 drift 级别时自动暂停（低风险，不计入连续暂停计数）
+- **P2-1: consecutivePauseCount 时间衰减**：用时间戳数组替代简单计数，1 小时衰减窗口，旧暂停自动过期
+- **P2-2: ChatMessage 增加 name 字段**：`extractHotMemory()` 和 `restoreFromCheckpoint()` 透传 name 字段，LLM 上下文一致性增强
 
 ### Internal（内部变更，不影响公共 API）
 
@@ -26,7 +32,8 @@
 - `ToolExecutor` 扩展：支持 `IWebSearchProvider` 注入，条件性注册 `web_search` 工具
 - `builtinTools.ts` 新增 `WEB_SEARCH_TOOL` 定义与幂等性映射
 - 新增 16 个测试用例覆盖 web search 功能（工具结构完整性 / 执行逻辑 / provider 行为）
-- 测试文件总数增至 77 个，测试用例总数增至 1825 个
+- SSOT 修复新增 17 个测试用例（Composer 边缘场景 + checkpoint 全路径 + FetchWebSearchProvider 降级场景）
+- 测试文件总数 79 个，测试用例总数增至 1901 个
 
 ## [2.0.3] - 2026-08-01
 

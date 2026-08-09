@@ -481,4 +481,49 @@ describe('Composer · 边界条件', () => {
     // resource 来自 P2 记忆推断
     expect(result.resolved.resource.source).toBe(COMPLETION_LEVELS.P2_MEMORY);
   });
+
+  it('planCtx 为 undefined 时不应触发停滞路径', () => {
+    const composer = new Composer();
+    // 非 chat 事件，无 delta.task，无 planCtx
+    const event = createEvent({ type: 'correction' });
+    const checkpoint = createCheckpoint({ currentGoal: '已有目标' });
+
+    const result = composer.compose(event, checkpoint); // 不传 planCtx
+
+    // planCtx?.stalled 为 undefined（falsy），走正常 resolveSlot
+    // P2: checkpoint 中有 currentGoal 延续
+    expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P2_MEMORY);
+    expect(result.resolved.task.value).toBe('已有目标');
+    expect(result.needClarify).toBeUndefined();
+  });
+
+  it('停滞 + 空字符串 delta.task 不应触发停滞路径（空字符串是显式值，走 P1）', () => {
+    const composer = new Composer();
+    // 非 chat 事件，delta.task 为空字符串（不是 undefined——空字符串是显式提供的值）
+    const event = createEvent({ type: 'correction', delta: { task: '' } });
+    const checkpoint = createCheckpoint({ currentGoal: '' });
+    const planCtx = createPlanCtx({ stalled: true });
+
+    const result = composer.compose(event, checkpoint, planCtx);
+
+    // event.delta?.task === undefined 为 false（空字符串 !== undefined），
+    // 走正常 resolveSlot，空字符串作为显式值走 P1
+    expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P1_EXPLICIT);
+    expect(result.resolved.task.value).toBe('');
+    expect(result.needClarify).toBeUndefined();
+  });
+
+  it('非停滞 + 非 chat + 无 delta.task → 正常 P2 记忆推断', () => {
+    const composer = new Composer();
+    const event = createEvent({ type: 'correction' });
+    const checkpoint = createCheckpoint({ currentGoal: '继续工作' });
+    const planCtx = createPlanCtx({ stalled: false });
+
+    const result = composer.compose(event, checkpoint, planCtx);
+
+    // 非停滞时走正常补全链，P2 延续 currentGoal
+    expect(result.resolved.task.source).toBe(COMPLETION_LEVELS.P2_MEMORY);
+    expect(result.resolved.task.value).toBe('继续工作');
+    expect(result.needClarify).toBeUndefined();
+  });
 });

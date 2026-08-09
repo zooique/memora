@@ -268,5 +268,48 @@ describe('FetchWebSearchProvider', () => {
       const options = fetchMock.mock.calls[0]![1] as RequestInit;
       expect(options.signal).toBeDefined();
     });
+
+    it('Bing 返回无结果 HTML 但 DDG 有结果时应降级', async () => {
+      // Bing 返回有标题但无摘要的残缺 HTML
+      const bingPartial = '<html><body><li class="b_algo"><h2><a href="https://x.com/1">标题</a></h2></li></body></html>';
+      globalThis.fetch = asFetch(createUrlDispatchFetch(
+        () => htmlResponse(bingPartial),
+        () => htmlResponse(MOCK_DDG_HTML),
+      ));
+
+      const results = await provider.search('测试');
+
+      // Bing 解析出的标题无摘要，仍视为有结果，不降级
+      expect(results).toHaveLength(1);
+      expect(results[0]!.title).toBe('标题');
+      expect(results[0]!.snippet).toBe('');
+    });
+
+    it('Bing 解析无任何匹配时降级 DDG', async () => {
+      // Bing 返回完全无关的 HTML（无 b_algo 结构）
+      const bingNoise = '<html><body><div>无关内容</div></body></html>';
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('bing.com/search')) return htmlResponse(bingNoise);
+        return htmlResponse(MOCK_DDG_HTML);
+      }) as unknown as typeof globalThis.fetch;
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await provider.search('测试');
+
+      // Bing 解析出 0 条结果 → 降级 DDG
+      expect(results).toHaveLength(2);
+      expect(results[0]!.title).toBe('测试结果标题一');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('query 为空字符串时应正常搜索（不抛错）', async () => {
+      globalThis.fetch = asFetch(createUrlDispatchFetch(
+        () => htmlResponse(MOCK_EMPTY_HTML),
+        () => htmlResponse(MOCK_EMPTY_HTML),
+      ));
+
+      // 空字符串 query 应被 encodeURIComponent 处理为 ''，不抛错
+      await expect(provider.search('')).resolves.toEqual([]);
+    });
   });
 });
