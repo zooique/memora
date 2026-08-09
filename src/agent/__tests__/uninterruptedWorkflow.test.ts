@@ -1425,6 +1425,19 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(text).toContain('阻塞');
       expect(text).not.toContain('已完成');
     });
+
+    it('错误态不应展示"继续"（T1-2 error 守卫）', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      agent.createCheckpoint('测试目标');
+      agent.getCheckpoint()!.plan.push(
+        { id: 's1', description: '步骤1', status: 'pending', order: 1 },
+      );
+      // 即便存在可推进的 pending 步骤，error 态也不应诱导用户点"继续"后静默无反应
+      agent.triggerError('LLM 超时');
+      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+      expect(agent.canContinueWithoutInput()).toBe(false);
+    });
   });
 
   describe('锁忙时的 auto-resume（T5 副作用先于校验修复）', () => {
@@ -1475,6 +1488,30 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       const result = agent.recover();
       expect(result).toBe(true);
       expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    });
+  });
+
+  describe('resumeExecution 错误态非静默（T1-2）', () => {
+    it('错误态续跑应 yield error chunk 且发射 sessionResumeFailed（非静默）', async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+      agent.createCheckpoint('测试目标');
+      agent.triggerError('LLM 超时');
+      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+
+      const events: unknown[] = [];
+      agent.on('sessionResumeFailed', (data: unknown) => events.push(data));
+
+      const chunks: Array<{ type: string }> = [];
+      for await (const chunk of agent.resumeExecution()) {
+        chunks.push(chunk as { type: string });
+      }
+
+      // 非静默：必须产出 error chunk 告知用户，状态保持 error（不误翻 running）
+      expect(chunks.some((c) => c.type === 'error')).toBe(true);
+      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+      // 必须通知宿主续跑失败，而非被 `status !== 'paused'` 的静默 return 吞没
+      expect(events.length).toBeGreaterThan(0);
     });
   });
 

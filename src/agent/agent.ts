@@ -1003,7 +1003,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param signal - 可选 AbortSignal（硬停止仍走此路径）
    */
   async *resumeExecution(input?: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
-    if (this._sessionManager?.stateMachine.status !== 'paused') return;
+    const resumeStatus = this._sessionManager?.stateMachine.status;
+    // T1-2：错误态续跑应明确失败而非静默吞没（点了没反应最伤信任）。
+    // error 态由检查点恢复回填进入（sessionManager.ts:481/:541），运行时异常走
+    // `yield { type: 'error' }` 不翻状态机，故生产链路不会自然离开 error 态，
+    // 必须显式提示用户重新开始，而非被 `status !== 'paused'` 的静默 return 吞没。
+    if (resumeStatus === 'error') {
+      this.emit(AGENT_EVENTS.sessionResumeFailed, {
+        sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
+        reason: '会话处于错误态，无法续跑',
+      });
+      yield { type: 'error', message: '当前会话处于错误态，无法续跑，请重新开始' };
+      return;
+    }
+    if (resumeStatus !== 'paused') return;
 
     // 翻状态机为 RUNNING（触发 sessionResumed，宿主据此转发 STATUS{running}）
     if (!this.resume()) {
@@ -1536,6 +1549,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   canContinueWithoutInput(): boolean {
     if (this._sessionManager?.stateMachine.status === 'paused') return true;
+    // T1-2：错误态不展示"继续"——error 态由检查点恢复回填进入，必须显式处理
+    // （重新开始或 recover），不应诱导用户点"继续"后静默无反应。
+    if (this._sessionManager?.stateMachine.status === 'error') return false;
     // T4 修复：仅 pending/active（可推进）步骤计入"可续跑"。
     // 旧判据 `s.status !== 'done'` 把 blocked 也算可续 → 与 isPlanStalled 判据反向
     // （sessionManager.ts:1056 视 blocked 为停滞）→ 全 blocked 计划按钮可点但
