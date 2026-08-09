@@ -685,6 +685,14 @@ export class MemoryInspector {
   writePurge(id: string): void {
     // 先清理关系边（relationStore 未注入时降级）
     this.writeRemoveRelationsByMemoryId(id);
+    // T2-5（F3-5 同类泄漏口）：手动 purge 同样清理向量，防止孤儿向量被语义召回。
+    // vectorStore.delete 为异步（内部立即 save），本方法同步签名（宿主 IPC 同步调用），
+    // 故 fire-and-forget + catch 降级——delete 首行同步 entries.delete，内存立即失效。
+    if (this.vectorStore) {
+      void this.vectorStore.delete(id).catch((err) => {
+        logger.warn({ err, memoryId: id }, '物理删除记忆的向量失败，可能残留孤儿向量');
+      });
+    }
     // 再物理删除记忆
     this.index.purge(id);
   }
@@ -739,7 +747,20 @@ export class MemoryInspector {
       }
     }
 
-    // 3. 物理删除记忆（IMemoryStorage.purgeExpired 返回被清理的数量）
+    // 3. 向量清理（T2-5 / F3-5）：防止 30 天自动清理产生孤儿向量被召回。
+    //    vectorStore 未注入时跳过（降级优先，与 relationStore 同策略）。
+    //    delete 为异步（内部立即 save），本方法保持同步签名（宿主定时器同步消费返回值），
+    //    故 fire-and-forget + catch 降级——delete 首行同步 entries.delete，内存立即失效，
+    //    持久化失败仅影响冷启动复活概率（vectorStore.delete 已 FIX-P0-9 立即 save 兜底）。
+    if (this.vectorStore && candidates.length > 0) {
+      for (const m of candidates) {
+        void this.vectorStore.delete(m.id).catch((err) => {
+          logger.warn({ err, memoryId: m.id }, '清理过期记忆的向量失败，可能残留孤儿向量');
+        });
+      }
+    }
+
+    // 4. 物理删除记忆（IMemoryStorage.purgeExpired 返回被清理的数量）
     return this.index.purgeExpired(before);
   }
 

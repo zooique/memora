@@ -797,6 +797,53 @@ describe('MemoryInspector', () => {
       expect(inspector.getDeletedById('rule:2')).toBeNull();
     });
 
+    it('T2-5：writePurgeExpired 应同步清理过期记忆的向量（防孤儿向量被召回）', () => {
+      const mem1 = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      const mem2 = createMemory({ id: 'rule:2', source: 'rule', name: 'r2' });
+      inspector.writeUpsert(mem1);
+      inspector.writeUpsert(mem2);
+      inspector.writeDelete('rule:1');
+      inspector.writeDelete('rule:2');
+
+      // 注入 vectorStore，delete 为 vi.fn（跟踪调用，语义上等同 JsonVectorStore.delete 的同步内存删除）
+      const del = vi.fn().mockResolvedValue(undefined);
+      inspector.setVectorStore({ size: 2, search: vi.fn(), delete: del } as unknown as IVectorStore);
+
+      const before = new Date(Date.now() + 1000);
+      const purgedCount = inspector.writePurgeExpired(before);
+      expect(purgedCount).toBe(2);
+      // 修复前（F3-5）：不清理向量 → del 调用 0 次 → 红
+      // 修复后：两个过期记忆的向量均删除 → 绿
+      expect(del).toHaveBeenCalledTimes(2);
+      expect(del).toHaveBeenCalledWith('rule:1');
+      expect(del).toHaveBeenCalledWith('rule:2');
+    });
+
+    it('T2-5：writePurge 应同步清理向量（手动 purge 不产生孤儿向量）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+
+      const del = vi.fn().mockResolvedValue(undefined);
+      inspector.setVectorStore({ size: 1, search: vi.fn(), delete: del } as unknown as IVectorStore);
+
+      inspector.writePurge('rule:1');
+      // 修复前：手动 purge 不碰 vectorStore → del 调用 0 次 → 红
+      // 修复后：向量同步删除 → 绿
+      expect(del).toHaveBeenCalledTimes(1);
+      expect(del).toHaveBeenCalledWith('rule:1');
+    });
+
+    it('T2-5：writePurgeExpired 在 vectorStore 未注入时应正常清理记忆（降级）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.writeUpsert(mem);
+      inspector.writeDelete('rule:1');
+
+      const before = new Date(Date.now() + 1000);
+      const purgedCount = inspector.writePurgeExpired(before);
+      expect(purgedCount).toBe(1);
+      expect(inspector.getDeletedById('rule:1')).toBeNull();
+    });
+
     it('writePurgeExpired 未过期的软删除记忆不应被清理', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.writeUpsert(mem);
