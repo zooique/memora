@@ -1671,3 +1671,260 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     expect(nonIdempotent[0]!.ok).toBe(false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试 8：SSOT 排雷防回归（2026-08-09）
+//   P0-1 续跑路径缺 paused 分支 → 三方分叉
+//   P0-2 暂停幂等锁未在 finally 释放 → 暂停按钮永久失效
+//   P0-3 Agent.pause 门面窄化丢弃 lowRisk → 高风险确认配额被挤占
+//   P1   restoreFromCheckpoint 状态迁移静默失败
+// 每条用例均须在修复前失败，否则不具备防回归价值。
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 「工具步 → 工具步 → 纯文本」多轮 Provider
+ *
+ * 设计要点（对抗式复核，防续跑轮次错位）：
+ * - 以「已产出的工具步数」(toolTurnsYielded) 而非「chat 被调用次数」决定再产工具调用。
+ *   后处理归档（ArchiveCoordinator）也会调用 provider.chat，若按调用次数计数会被污染，
+ *   导致 resume 时轮次错位、无法触发第二次暂停——本用例早期失败的真因即在此。
+ * - 文本型 LLM 调用（归档 / 角色匹配等）只产文本，不消耗工具步预算。
+ * - 续跑必须至少跨越一次迭代边界才会 yield paused，单轮 MockProvider 无法覆盖 P0-1。
+ */
+class ToolThenToolThenTextProvider extends LlmProvider {
+  readonly name = 'mock-multi-turn';
+  private toolTurnsYielded = 0;
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    if (this.toolTurnsYielded < 2) {
+      this.toolTurnsYielded += 1;
+      yield {
+        toolCalls: [
+          {
+            id: `call-${this.toolTurnsYielded}`,
+            type: 'function',
+            function: { name: 'read_file', arguments: '{"path":"probe.txt"}' },
+          },
+        ],
+      };
+      yield { finishReason: 'tool_calls' };
+      return;
+    }
+    yield { content: '续跑完成' };
+    yield { finishReason: 'stop' };
+  }
+}
+
+describe('SSOT 排雷防回归 · 暂停链路', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-ssot-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-ssot-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-ssot-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+    // read_file 探针文件，让内置工具走成功路径（失败亦可，仅需产出 tool_result）
+    writeFileSync(join(tmpData, 'probe.txt'), '探针内容', 'utf-8');
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  function makeMultiTurnAgent(): Agent {
+    return new Agent({
+      projectPath: tmpProject,
+      provider: new ToolThenToolThenTextProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      // 关闭自动归档：归档 LLM 调用会污染工具步计数，干扰续跑轮次（见 ToolThenToolThenTextProvider 注释）
+      archiveMode: 'manual',
+    });
+  }
+
+  /** 驱动首轮对话并在工具步后请求暂停，返回是否观察到 paused chunk */
+  async function pauseDuringFirstTurn(a: Agent): Promise<boolean> {
+    let sawPaused = false;
+    for await (const chunk of a.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') {
+        a.requestPause('第一次暂停', 'user');
+      }
+      if (chunk.type === 'paused') sawPaused = true;
+    }
+    return sawPaused;
+  }
+
+  it('P0-1：续跑过程中请求暂停，状态机应翻 paused（修复前停留 running）', { timeout: 30000 }, async () => {
+    agent = makeMultiTurnAgent();
+    await agent.init();
+
+    expect(await pauseDuringFirstTurn(agent)).toBe(true);
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+
+    // 续跑中再次暂停——此处正是原缺陷点：resumeExecution 只转发 paused chunk 不翻状态机
+    let sawPausedOnResume = false;
+    for await (const chunk of agent.resumeExecution('续跑：继续读取文件')) {
+      if (chunk.type === 'tool_result') agent.requestPause('续跑中第二次暂停', 'user');
+      if (chunk.type === 'paused') sawPausedOnResume = true;
+    }
+
+    expect(sawPausedOnResume).toBe(true);
+    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+  });
+
+  it('P0-1：续跑中暂停后检查点 status 应同步为 paused（防三方分叉）', { timeout: 30000 }, async () => {
+    agent = makeMultiTurnAgent();
+    await agent.init();
+
+    await pauseDuringFirstTurn(agent);
+    for await (const chunk of agent.resumeExecution('续跑：继续读取文件')) {
+      if (chunk.type === 'tool_result') agent.requestPause('续跑中第二次暂停', 'user');
+    }
+
+    // pauseMeta 由 loop.onPaused 回调写入，状态机与检查点必须与之一致
+    expect(agent.sessionManager!.getCheckpoint()!.status).toBe('paused');
+  });
+
+  it('P0-2：续跑结束后暂停幂等锁应已释放，可再次 requestPause', { timeout: 30000 }, async () => {
+    agent = makeMultiTurnAgent();
+    await agent.init();
+
+    await pauseDuringFirstTurn(agent);
+    for await (const chunk of agent.resumeExecution('续跑：继续读取文件')) {
+      if (chunk.type === 'tool_result') agent.requestPause('续跑中第二次暂停', 'user');
+    }
+
+    // 幂等锁若未在 finally 释放，此处将永久返回 false（暂停按钮全失效）
+    agent.resume();
+    expect(agent.requestPause('第三次暂停', 'user')).toBe(true);
+  });
+
+  it('P0-2：流抛出非 abort 错误后，暂停幂等锁仍应释放', { timeout: 30000 }, async () => {
+    class ExplodingProvider extends LlmProvider {
+      readonly name = 'exploding';
+      async *chat(_m: Message[], _o?: ChatOptions): AsyncIterable<LlmChunk> {
+        yield { content: '半句话' };
+        throw new Error('模拟 LLM provider 崩溃');
+      }
+    }
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new ExplodingProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 在流进行中设置暂停锁（不预先 requestPause，否则会在迭代边界先翻 PAUSED 而绕开错误路径）。
+    // provider 在首句后立即崩溃：此时 handleIteration 仍处于 yield* provider.chat 内部，
+    // 下一轮 pauseRequested 检查尚未执行，故状态机停留 running；错误由
+    // consumeExecutionStream 的 catch 转为 error chunk，finally 清理挂起的暂停锁。
+    // 若清理不在 finally，requestPause 将永久返回 false（暂停按钮全失效）。
+    for await (const chunk of agent.chat('触发崩溃')) {
+      if (chunk.type === 'text') agent.requestPause('崩溃前暂停', 'user');
+    }
+
+    expect(agent.requestPause('崩溃后的暂停', 'user')).toBe(true);
+  });
+});
+
+describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-ssot2-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-ssot2-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-ssot2-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('P0-3：Agent.pause 门面必须转发 lowRisk 到 SessionManager（防契约窄化）', async () => {
+    // 注释 (:902) 承诺：澄清问题全为低风险时不计入连续暂停计数。
+    // 门面窄化会让 lowRisk 从公共 API 静默不可达——若 Agent.pause 丢弃该参数
+    // （始终传 false），下方低风险用例将错误地计数，本用例随之失败。
+    // 注：结构性 `.length` 断言在此无效（source 形参带默认值，函数 .length 恒为 1），
+    // 故以行为断言锁死契约，与下方 P0-3 计数用例互为表里。
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const before = agent.sessionManager!.getConsecutivePauseCount();
+    agent.pause('低风险澄清', 'agent', true);
+    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before);
+  });
+
+  it('P0-3：低风险暂停不应计入连续暂停计数', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const before = agent.sessionManager!.getConsecutivePauseCount();
+    agent.pause('低风险澄清', 'agent', true);
+    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before);
+  });
+
+  it('P0-3：高风险暂停仍应计数（防过度修复）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const before = agent.sessionManager!.getConsecutivePauseCount();
+    agent.pause('高风险决策确认', 'agent');
+    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before + 1);
+  });
+
+  it('P1：状态机残留 paused 时恢复 error 检查点，应正确落到 error', () => {
+    const manager = new SessionManager(
+      () => createMockHistory(),
+      () => createMockLoop(),
+      createMockSessionStore(),
+      () => false,
+      () => {},
+    );
+
+    // 制造残留：管理器的状态机先进入 paused（模拟上一个会话未正常复位）
+    manager.stateMachine.pause('前一个会话的暂停', 'user');
+    expect(manager.stateMachine.status).toBe('paused');
+
+    const errorCheckpoint: SessionCheckpoint = {
+      ...manager.createCheckpoint('目标')!,
+      status: 'error',
+      error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
+    };
+
+    // 修复前：triggerError 仅允许 running→error，残留 paused 使其静默失败 → 状态机停留 paused
+    // 修复后：resetToRunning() 先归零，再 triggerError → error
+    manager.restoreFromCheckpoint(errorCheckpoint);
+    expect(manager.stateMachine.status).toBe('error');
+  });
+});
