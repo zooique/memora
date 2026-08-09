@@ -80,10 +80,13 @@ export class ConfigFileSyncer {
    * 联动逻辑（按 type 分支）：
    *   - persona:
    *     - save: agent.reloadConfig('persona') 重新扫描 personas/ 目录
-   *     - delete: agent.persona.deletePersona(name) 清内存 + SQLite 软删除 + 激活角色回退
+   *     - delete: agent.persona.deletePersona(name) 仅清内存缓存（T7 注释收窄：
+   *       实现只 splice 内存数组；SQLite 中的 persona 行是无召回消费者的展示镜像，
+   *       由 MemoryLoader 启动扫描写入，删除后残留无害，不作清理）
    *   - rule:
    *     - save: agent.config.updateRule(name, content) upsert SQLite + bootstrap 段刷新
    *     - delete: agent.config.deleteRule(name) SQLite 软删除 + bootstrap 段刷新
+   *     （无文件支撑的孤儿 rule 由内核启动对账 evictOrphanRules 兜底清理）
    *   - skill:
    *     - save: agent.skills.reload() 重新扫描 skills/ 目录
    *     - delete: agent.config.deleteSkill(name) SQLite 软删除 + SkillManager 内存清理 + bootstrap 段刷新

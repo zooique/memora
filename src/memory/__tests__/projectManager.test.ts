@@ -2,7 +2,7 @@
  * 项目管理器测试
  * 覆盖 initProject / closeProject / listProjects / registerProject / 锁文件
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -103,6 +103,76 @@ describe('ProjectManager · initProject', () => {
     expect(found).toBeDefined();
     expect(found?.name).toBe('test-project');
 
+    await pm.shutdown();
+  });
+
+  it('T6 对账：无文件支撑的孤儿 rule 在重开项目时被清理，文件规则保留', async () => {
+    const config = makeConfig(join(tmpHome, '.memora'));
+    const pm = new ProjectManager({
+      dataDir: config.memory.dataDir,
+      createSecurityGuard: (projectPath, memoraDir) =>
+        new SecurityGuard(projectPath, memoraDir, [], false, 'owner'),
+    });
+    const ctx = await pm.initProject(tmpDir);
+
+    // 模拟历史遗留：索引中有活跃的孤儿 rule（文件不存在）
+    const now = new Date().toISOString();
+    ctx.index.upsert({
+      id: 'rule:orphan',
+      content: '孤儿规则',
+      source: SOURCE_LABELS.RULE,
+      name: 'orphan',
+      createdAt: now,
+      accessedAt: now,
+      score: 0.8,
+    });
+
+    // 同时写入一个真实 rule 文件（对账后必须保留）
+    mkdirSync(join(tmpDir, '.memora', 'rules'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, '.memora', 'rules', 'real.md'),
+      '---\nid: rule:real\nsource: rule\nname: real\nscore: 0.8\n---\n\n真实规则',
+      'utf-8',
+    );
+
+    // 重开项目：重新触发 loadAllResources → 对账清理孤儿
+    const ctx2 = await pm.initProject(tmpDir);
+    const rules = ctx2.index.getBySource(SOURCE_LABELS.RULE);
+    const names = rules.map((r) => r.name);
+
+    // 修复前（无对账）：orphan 残留 → 断言红
+    expect(names).not.toContain('orphan');
+    // 文件规则必须保留（防过度修复）
+    expect(names).toContain('real');
+
+    await pm.shutdown();
+  });
+
+  it('T13：closeProject 撤销项目级记忆时应同步清理关系边', async () => {
+    const removeRelations = vi.fn();
+    const config = makeConfig(join(tmpHome, '.memora'));
+    const pm = new ProjectManager({
+      dataDir: config.memory.dataDir,
+      createSecurityGuard: (projectPath, memoraDir) =>
+        new SecurityGuard(projectPath, memoraDir, [], false, 'owner'),
+      removeRelationsByMemoryId: removeRelations,
+    });
+    await pm.initProject(tmpDir);
+
+    // 写入项目级规则文件，使其进入 currentProjectMemoryIds
+    mkdirSync(join(tmpDir, '.memora', 'rules'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, '.memora', 'rules', 'proj-rule.md'),
+      '---\nid: rule:proj-rule\nsource: rule\nname: proj-rule\nscore: 0.8\n---\n\n项目规则',
+      'utf-8',
+    );
+    await pm.initProject(tmpDir);
+
+    await pm.closeProject();
+
+    // 修复前（仅 delete 主记忆）：回调未被调 → 断言红
+    // （项目级 rule 被 insight 引用为关系对端时，索引删除不会级联清边 → 悬挂边）
+    expect(removeRelations).toHaveBeenCalledWith('rule:proj-rule');
     await pm.shutdown();
   });
 });

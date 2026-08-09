@@ -803,7 +803,9 @@ export class Sprite {
    * 删除设定文件
    *
    * 联动逻辑（文件删除成功后执行）：
-   *   - persona: agent.persona.deletePersona(name) 清内存 + SQLite 软删除 + 激活角色回退
+   *   - persona: agent.persona.deletePersona(name) 仅清内存缓存（T7 注释收窄：
+   *     实现只 splice 内存数组；SQLite 中的 persona 行是无召回消费者的展示镜像，
+   *     删除后残留无害，不作清理）
    *   - rule: agent.config.deleteRule(name) SQLite 软删除 + bootstrap 段刷新
    *   - skill: agent.config.deleteSkill(name) SQLite 软删除 + SkillManager 内存清理 + bootstrap 段刷新
    *

@@ -82,6 +82,16 @@ export interface ProjectManagerOptions {
     configDir?: string,
     agentDataDir?: string,
   ) => SecurityGuard;
+  /**
+   * 删除记忆时同步清理其关系边的回调（T13，2026-08-09）
+   *
+   * closeProject 撤销项目级记忆（软删除）时，若该项目级 rule/skill 被 insight
+   * 引用为关系对端，索引删除不会级联清理 memory_relations → 切换项目后留下悬挂边。
+   * 由调用方（Agent 层）注入关系清理实现（memoryInspector.writeRemoveRelationsByMemoryId），
+   * 与 ConfigManager 的 removeRelationsByMemoryId 回调同模式——解耦 ProjectManager
+   * 对关系存储的直接依赖。
+   */
+  removeRelationsByMemoryId?: (memoryId: string) => void;
 }
 
 // ─── 类 ──────────────────────────────────────────────────
@@ -106,6 +116,8 @@ export class ProjectManager {
   private currentProjectPath: string | null = null;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
+  /** T13：关系边清理回调（closeProject 撤销项目级记忆时联动，由 Agent 层注入） */
+  private readonly removeRelationsByMemoryId?: (memoryId: string) => void;
   /** SecurityGuard 工厂函数（由 Agent 层注入） */
   private readonly createSecurityGuard?: (
     projectPath: string,
@@ -121,7 +133,7 @@ export class ProjectManager {
   private currentProjectMemoryIds: Set<string> = new Set();
 
   constructor(options: ProjectManagerOptions) {
-    const { dataDir, storage, registryDir, createSecurityGuard } = options;
+    const { dataDir, storage, registryDir, createSecurityGuard, removeRelationsByMemoryId } = options;
     const memoraHome = resolve(expandHome(dataDir));
     this.agentDataDir = memoraHome;
     // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
@@ -130,6 +142,8 @@ export class ProjectManager {
     this.externalStorage = storage ?? null;
     // 保存 SecurityGuard 工厂函数
     this.createSecurityGuard = createSecurityGuard;
+    // T13：关系边清理回调（closeProject 撤销项目级记忆时联动）
+    this.removeRelationsByMemoryId = removeRelationsByMemoryId;
     // 委托注册表/锁文件管理给专职模块
     this.registry = new ProjectRegistry(join(registryHome, 'projects.json'));
     this.lockManager = new LockManager();
@@ -255,16 +269,59 @@ export class ProjectManager {
     this.currentProjectMemoryIds = new Set(projectResult.loadedIds ?? []);
 
     // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
+    let configResult: LoadResult | null = null;
     if (configDir) {
       const configFileStore = new FileStore(configDir);
       const configLoader = new MemoryLoader(configFileStore, index);
-      const configResult = await configLoader.loadAllToIndex();
+      configResult = await configLoader.loadAllToIndex();
       loadResult.loaded += configResult.loaded;
       loadResult.skipped += configResult.skipped;
       loadResult.errors.push(...configResult.errors);
     }
 
+    // T6 对账：两层扫描完成（文件集合完整）后清理无文件支撑的孤儿 rule。
+    // 必须在合并层执行——任一层单独对账都会误删另一层的规则。
+    this.evictOrphanRules(index, projectResult, configResult);
+
     return { index, loadResult, projectFileStore };
+  }
+
+  /**
+   * 对账：删除索引中"无任何文件支撑"的活跃 rule（T6，2026-08-09）
+   *
+   * 旧缺陷：loadAllToIndex 只 add 不 evict（loader.ts:63-100）→ 删除 rules/*.md 后
+   * SQLite 行永生，继续被 bootstrap 经 getBySource(RULE) 全量拉取注入 messages[0]
+   * （僵尸规则，文件面板不可见、用户不可删，但每一轮都在污染 system prompt）。
+   *
+   * 触发时机限定：仅本方法（项目切换 / 启动边界）——此处是文件集合唯一完整的时点。
+   * 运行时注入（addRule）不跨项目边界且宿主零调用，不在对账误删面内。
+   *
+   * 范围仅 rule 源：persona/skill 的索引行是无召回消费者的展示镜像
+   * （recall 排除、bootstrap 不取），由 T7 注释收窄为「重启自愈」，不对账。
+   * guardrail 由 AgentLoop 运行时读取，不受索引残留影响。
+   *
+   * 软删除（deletedAt）而非物理删除：保留回收站语义，误删可恢复。
+   *
+   * @param index 共享记忆索引
+   * @param projectResult 项目级扫描结果
+   * @param configResult Agent 级扫描结果（configDir 未配置时为 null）
+   */
+  private evictOrphanRules(
+    index: IMemoryStorage,
+    projectResult: LoadResult,
+    configResult: LoadResult | null,
+  ): void {
+    const fileBackedIds = new Set<string>([
+      ...(projectResult.loadedIds ?? []),
+      ...(configResult?.loadedIds ?? []),
+    ]);
+    const activeRules = index.getBySource(SOURCE_LABELS.RULE);
+    for (const memory of activeRules) {
+      if (!fileBackedIds.has(memory.id)) {
+        index.delete(memory.id);
+        logger.info({ id: memory.id }, '索引对账：无文件支撑的孤儿规则已软删除');
+      }
+    }
   }
 
   /**
@@ -339,6 +396,9 @@ export class ProjectManager {
     if (this.agentIndex) {
       for (const id of this.currentProjectMemoryIds) {
         try {
+          // T13 修复：先清关系边再软删主记忆——项目级 rule/skill 被 insight 引用时，
+          // 仅 delete 会留下悬挂关系边（sourceId/targetId 指向已撤销的记忆）。
+          this.removeRelationsByMemoryId?.(id);
           this.agentIndex.delete(id);
         } catch (err) {
           logger.warn({ err, id }, '撤销项目级记忆失败（软删除）');
