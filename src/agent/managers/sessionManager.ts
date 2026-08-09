@@ -965,8 +965,11 @@ export class SessionManager {
   }
 
   /**
-   * @deprecated Phase 2 起由 completeRound / appendPlanStep 取代（SSOT 单一写点）。
-   * 更新检查点计划步骤
+   * 全量替换检查点计划步骤
+   *
+   * 与 appendPlanStep（仅追加）不同，updatePlan 做全量替换，保留已有步骤 ID 和状态。
+   * 两者用途正交：appendPlanStep 用于追加新步骤，updatePlan 用于整体替换。
+   * 唯一生产调用点：agent.ts task_table_update 工具 handler（mode === 'update'）。
    *
    * @param plan - 新的计划步骤列表
    */
