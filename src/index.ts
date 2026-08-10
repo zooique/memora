@@ -106,6 +106,9 @@ export type { Memory } from '@/memory/types.js';
 // Source 校验工具（从 types.ts 拆分到 sourceValidation.ts，公共 API 不变）
 export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
+// source → 子目录映射与路径构造单一真理源（T-A1：宿主 configFileManager 等消费方共享，
+// 消灭 store.ts 私有 SOURCE_TO_DIR 与宿主 TYPE_TO_SUBDIR/硬编码的多处表达）
+export { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sourcePaths.js';
 // 记忆关系图谱（ADR-014 侧车模型）
 export { RELATION_TYPES, RELATION_WEIGHTS } from '@/memory/types.js';
 export type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor } from '@/memory/types.js';

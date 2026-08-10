@@ -26,7 +26,7 @@
  */
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { logger, parseFrontmatter, toError } from 'memora';
+import { logger, parseFrontmatter, toError, SOURCE_TO_DIR, resolveSourceFilePath } from 'memora';
 import { isValidConfigName } from '../shared/inputValidation.js';
 import { validateSkillFile } from './skillInstaller.js';
 
@@ -94,17 +94,11 @@ const MAX_CONFIG_FILE_SIZE = 64 * 1024;
 /** 设定文件扩展名 */
 const CONFIG_FILE_EXTENSION = '.md';
 
-/**
- * 类型 → 子目录映射
- *
- * 单一真理源：所有调用方通过此映射获取子目录名，
- * 避免散落的字符串拼接（如 'personas' / 'rules' / 'skills'）。
- */
-const TYPE_TO_SUBDIR: Record<ConfigFileType, string> = {
-  persona: 'personas',
-  rule: 'rules',
-  skill: 'skills',
-};
+// ─── source → 子目录映射 ──────────────────────────────────
+//
+// 单一真理源在内核 SOURCE_TO_DIR（memora 导出，T-A1）——本文件不再定义映射。
+// ConfigFileType 与 source 字符串同名（'persona'/'rule'/'skill'），索引 SOURCE_TO_DIR
+// 即得子目录名；此同名对应关系是显式契约（内核 SOURCE_LABELS.PERSONA/RULE/SKILL 值相同）。
 
 // ─── 纯函数校验 ────────────────────────────────────────────
 
@@ -207,23 +201,22 @@ function toFileName(name: string): string {
  * 构造目标文件绝对路径 + 校验路径穿越
  *
  * 内部辅助函数，统一路径拼接与安全校验。
+ * 委托内核 resolveSourceFilePath（T-A1 单一真理源：source 校验 + 目录内纵深防御），
+ * 本函数仅做 ConfigFileType 适配（type → source 字符串）与错误语义转换（抛错 → null）。
  *
  * @param type 配置类型
  * @param name 配置名
  * @param configDir 配置根目录
  * @returns 目标文件绝对路径；若路径穿越攻击返回 null
  */
-function resolveTargetPath(type: ConfigFileType, name: string, configDir: string): string | null {
-  const subdir = TYPE_TO_SUBDIR[type];
-  const targetDir = path.join(configDir, subdir);
-  const targetPath = path.join(targetDir, toFileName(name));
-  const resolvedTarget = path.resolve(targetPath);
-  const resolvedDir = path.resolve(targetDir);
-  // 路径穿越防护：目标路径必须在子目录内
-  if (!resolvedTarget.startsWith(resolvedDir + path.sep) && resolvedTarget !== resolvedDir) {
+export function resolveTargetPath(type: ConfigFileType, name: string, configDir: string): string | null {
+  try {
+    // name 可能已带 .md 扩展名（toFileName 兼容语义），委托前去除扩展名
+    return resolveSourceFilePath(configDir, type, name.replace(/\.md$/i, ''));
+  } catch {
+    // 路径穿越 / source 非法 → 与原实现返回 null 语义一致
     return null;
   }
-  return resolvedTarget;
 }
 
 /**
@@ -394,7 +387,9 @@ export async function listConfigFiles(
   type: ConfigFileType,
   configDir: string,
 ): Promise<ConfigFileEntry[]> {
-  const subdir = TYPE_TO_SUBDIR[type];
+  // 子目录名来自内核 SOURCE_TO_DIR（单一真理源，T-A1）；type 与 source 字符串同名（显式契约），
+  // 三类 key 在映射内必存在（noUncheckedIndexedAccess 下用非空断言）
+  const subdir = SOURCE_TO_DIR[type]!;
   const targetDir = path.join(configDir, subdir);
 
   try {

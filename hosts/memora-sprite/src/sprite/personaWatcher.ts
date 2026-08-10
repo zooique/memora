@@ -16,7 +16,7 @@
  */
 import { watch } from 'node:fs';
 import { join } from 'node:path';
-import { logger, toError } from 'memora';
+import { logger, toError, SOURCE_LABELS, SOURCE_TO_DIR } from 'memora';
 
 /**
  * personas 目录热重载防抖间隔（毫秒）
@@ -102,7 +102,9 @@ export class PersonaWatcher {
     // 幂等守卫：已存在 watcher 则跳过
     if (this.watcher) return;
 
-    const personasDir = join(this.deps.configDir, 'personas');
+    // 子目录名来自内核 SOURCE_TO_DIR（单一真理源，T-A1），与 configFileManager 共享同一映射；
+    // PERSONA key 在映射内必存在（noUncheckedIndexedAccess 下用非空断言）
+    const personasDir = join(this.deps.configDir, SOURCE_TO_DIR[SOURCE_LABELS.PERSONA]!);
     try {
       this.watcher = watch(personasDir, { recursive: true }, (_eventType, filename) => {
         // 仅响应 .md 文件变化，忽略其他文件（如 .swp 临时文件）

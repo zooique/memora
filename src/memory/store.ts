@@ -6,25 +6,15 @@
  */
 import { readFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { SOURCE_LABELS, DEFAULT_MEMORY_SCORE, type Memory } from '@/memory/types.js';
-import { inferSource, validateSource } from '@/memory/sourceValidation.js';
+import { DEFAULT_MEMORY_SCORE, type Memory } from '@/memory/types.js';
+import { inferSource } from '@/memory/sourceValidation.js';
+// sourceToDir / resolveSourceFilePath：source → 子目录映射与路径构造的单一真理源
+// （T-A1：从本文件提取至 sourcePaths.ts，宿主 configFileManager 等消费方共享）
+import { sourceToDir, resolveSourceFilePath } from '@/memory/sourcePaths.js';
 import { atomicWriteFile } from '@/utils/atomicWrite.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/toError.js';
-import { configError } from '@/utils/errors.js';
-
-/**
- * 已知 source 到文件系统目录的映射
- *
- * 仅覆盖配置类记忆（启动时扫描的 persona/rule/skill）；
- * 运行时产生的记忆（insight/profile/work-projection）不由 FileStore 管理
- */
-const SOURCE_TO_DIR: Record<string, string> = {
-  [SOURCE_LABELS.PERSONA]: 'personas',
-  [SOURCE_LABELS.RULE]: 'rules',
-  [SOURCE_LABELS.SKILL]: 'skills',
-};
 
 /**
  * 文件存储类
@@ -98,7 +88,7 @@ export class FileStore {
    * @returns 记忆名称列表（不含扩展名）
    */
   async list(source: string): Promise<string[]> {
-    const dir = join(this.dataDir, this.sourceToDir(source));
+    const dir = join(this.dataDir, sourceToDir(source));
     // 异步读取：目录不存在时 readdir 抛 ENOENT，handleFsError 对 ENOENT 静默返回（list 返回 []）
     // 其他错误由 handleFsError 重新抛出，让调用方感知故障
     let files: string[];
@@ -113,29 +103,12 @@ export class FileStore {
 
   /**
    * 获取文件路径
+   *
+   * 委托 resolveSourceFilePath（sourcePaths.ts 单一真理源，
+   * 含 source 校验 + 目录内纵深防御，与宿主 configFileManager 共享同一实现）。
    */
   private getFilePath(source: string, name: string): string {
-    return join(this.dataDir, this.sourceToDir(source), `${name}.md`);
-  }
-
-  /**
-   * source 到目录名的映射
-   *
-   * 已知 source 使用预定义目录，未知 source 直接用 source 字符串作目录名。
-   * 安全校验：调用 validateSource 拒绝路径遍历（`..`）、null 字节等危险字符，
-   * 防止未知 source 被构造为恶意路径绕过 SOURCE_TO_DIR 白名单。
-   */
-  private sourceToDir(source: string): string {
-    const result = validateSource(source);
-    if (result.severity === 'block') {
-      // 路径遍历 / null 字节 / 空字符串等安全边界违规，必须拒绝
-      throw configError(
-        'source 校验失败，拒绝映射到目录',
-        result.warning,
-        ['检查 source 字段是否包含路径遍历序列或特殊字符'],
-      );
-    }
-    return SOURCE_TO_DIR[source] ?? source;
+    return resolveSourceFilePath(this.dataDir, source, name);
   }
 
   /**

@@ -18,7 +18,7 @@
  */
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { logger, parseFrontmatter, toError } from 'memora';
+import { logger, parseFrontmatter, toError, SOURCE_LABELS, resolveSourceFilePath } from 'memora';
 
 /** 校验结果 */
 export interface SkillValidationResult {
@@ -154,18 +154,18 @@ export async function installSkill(
     return { success: false, error: validation.error };
   }
 
-  // 路径穿越防护：确保最终路径在 configDir/skills/ 内
-  const skillsDir = path.join(configDir, 'skills');
-  const targetPath = path.join(skillsDir, fileName);
-  const resolvedTarget = path.resolve(targetPath);
-  const resolvedSkillsDir = path.resolve(skillsDir);
-  if (!resolvedTarget.startsWith(resolvedSkillsDir + path.sep) && resolvedTarget !== resolvedSkillsDir) {
+  // 路径构造委托内核 resolveSourceFilePath（T-A1 单一真理源：
+  // source → 子目录映射 + validateSource 校验 + 目录内纵深防御，等价原 startsWith 防护）
+  let targetPath: string;
+  try {
+    targetPath = resolveSourceFilePath(configDir, SOURCE_LABELS.SKILL, fileName.replace(/\.md$/i, ''));
+  } catch {
     return { success: false, error: '路径穿越攻击' };
   }
 
   try {
-    // 确保目录存在
-    await fs.mkdir(skillsDir, { recursive: true });
+    // 确保目录存在（dirname = configDir/skills，与 resolveSourceFilePath 同一映射）
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
 
     // 写入文件（覆盖同名）
     await fs.writeFile(targetPath, content, 'utf-8');

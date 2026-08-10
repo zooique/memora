@@ -1,0 +1,75 @@
+/**
+ * sourcePaths 单元测试（T-A1 SSOT 单一化）
+ *
+ * 守护语义：
+ *   - SOURCE_TO_DIR 映射正确（persona/rule/skill → personas/rules/skills）
+ *   - 未知 source 透传作目录名（ADR-004 开放字符串，store.test.ts:127 同语义）
+ *   - source 非法（`..` 等）抛 configError（validateSource 校验）
+ *   - name 注入 `../` 逃逸子目录被目录内纵深防御拦截（原宿主 resolveTargetPath startsWith 防护）
+ *
+ * 变异验证点：中和 resolveSourceFilePath 的 startsWith 防御 → 逃逸用例转红。
+ */
+import { describe, it, expect } from 'vitest';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sourcePaths.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
+
+// 纯路径计算，不触碰文件系统；tmpdir 保证跨平台分隔符一致
+const BASE = join(tmpdir(), 'memora-sourcepaths-base');
+
+describe('sourcePaths · source → 目录映射与路径构造（T-A1 单一真理源）', () => {
+  describe('SOURCE_TO_DIR', () => {
+    it('应映射三类配置 source 到标准子目录', () => {
+      expect(SOURCE_TO_DIR[SOURCE_LABELS.PERSONA]).toBe('personas');
+      expect(SOURCE_TO_DIR[SOURCE_LABELS.RULE]).toBe('rules');
+      expect(SOURCE_TO_DIR[SOURCE_LABELS.SKILL]).toBe('skills');
+    });
+  });
+
+  describe('sourceToDir', () => {
+    it('已知 source 返回映射目录', () => {
+      expect(sourceToDir(SOURCE_LABELS.RULE)).toBe('rules');
+    });
+
+    it('未知 source 透传作目录名（开放字符串）', () => {
+      expect(sourceToDir('custom')).toBe('custom');
+    });
+
+    it('非法 source（路径遍历）应抛 configError', () => {
+      expect(() => sourceToDir('..')).toThrow(/source 校验失败/);
+      expect(() => sourceToDir('a/b')).toThrow(/source 校验失败/);
+    });
+  });
+
+  describe('resolveSourceFilePath', () => {
+    it('应构造 {baseDir}/{sourceDir}/{name}.md 路径', () => {
+      expect(resolveSourceFilePath(BASE, SOURCE_LABELS.RULE, 'my-rule')).toBe(
+        join(BASE, 'rules', 'my-rule.md'),
+      );
+    });
+
+    it('未知 source 透传目录（与 FileStore 开放语义一致）', () => {
+      expect(resolveSourceFilePath(BASE, 'custom', 'deep-tool')).toBe(
+        join(BASE, 'custom', 'deep-tool.md'),
+      );
+    });
+
+    it('name 注入 ../ 逃逸子目录应被目录内纵深防御拦截', () => {
+      // join(BASE, 'rules', '../evil.md') resolve 后 = BASE/evil.md，逃出 rules/
+      expect(() => resolveSourceFilePath(BASE, SOURCE_LABELS.RULE, '../evil')).toThrow(
+        /目标路径越界/,
+      );
+    });
+
+    it('name 含反斜杠路径段逃逸应被拦截（Windows 分隔符）', () => {
+      expect(() => resolveSourceFilePath(BASE, SOURCE_LABELS.SKILL, '..\\evil')).toThrow(
+        /目标路径越界/,
+      );
+    });
+
+    it('非法 source 应抛 configError（validateSource 前置校验）', () => {
+      expect(() => resolveSourceFilePath(BASE, 'a/b', 'x')).toThrow(/source 校验失败/);
+    });
+  });
+});

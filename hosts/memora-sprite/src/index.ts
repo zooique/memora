@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, FetchWebSearchProvider, logger, toError } from 'memora';
+import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, FetchWebSearchProvider, logger, toError, SOURCE_LABELS, SOURCE_TO_DIR } from 'memora';
 import type { UIMessages, Config, ITracer, AgentSearchHit, IVectorStore } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -31,6 +31,7 @@ import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
 import { SpriteError, ErrorCode } from './sprite/errors.js';
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
+import { resolveTargetPath } from './sprite/configFileManager.js';
 // API Key 脱敏：统一真理源在 shared/apiKeyMask.ts（IPC + CLI/Web 共用）
 import { maskApiKey } from './shared/apiKeyMask.js';
 // 宿主自定义工具（memory_search + create_persona + create_skill + create_rule）
@@ -452,9 +453,11 @@ async function createAgentInstance(
     dataDir,
     workspaceDir,
     configDir,
-    resolve(configDir, 'personas'),
-    resolve(configDir, 'skills'),
-    resolve(configDir, 'rules'),
+    // 子目录名来自内核 SOURCE_TO_DIR（单一真理源，T-A1），与 configFileManager 共享同一映射；
+    // 三类 key 在映射内必存在（noUncheckedIndexedAccess 下用非空断言）
+    resolve(configDir, SOURCE_TO_DIR[SOURCE_LABELS.PERSONA]!),
+    resolve(configDir, SOURCE_TO_DIR[SOURCE_LABELS.SKILL]!),
+    resolve(configDir, SOURCE_TO_DIR[SOURCE_LABELS.RULE]!),
   ];
   for (const dir of requiredDirs) {
     if (!existsSync(dir)) {
@@ -481,6 +484,7 @@ async function createAgentInstance(
 
   // 文件层前置条件断言回调——T5 两段式契约
   // 宿主先完成文件操作（真理源），再同步内核索引；此回调校验文件操作是否已完成
+  // 路径解析统一复用 configFileManager.resolveTargetPath，消除 SSOT 违反
   const fileConsistencyCheck = (id: string, expected: 'exists' | 'absent'): boolean => {
     // id 格式：rule:NAME 或 skill:NAME（由 ConfigManager.assertFileConsistency 构造）
     const colonIdx = id.indexOf(':');
@@ -488,9 +492,12 @@ async function createAgentInstance(
     if (colonIdx < 0) return true;
     const type = id.slice(0, colonIdx) as 'rule' | 'skill';
     const name = id.slice(colonIdx + 1);
-    // 映射到 config 文件路径：{configDir}/rules/NAME.md 或 {configDir}/skills/NAME.md
-    const subdir = type === 'rule' ? 'rules' : 'skills';
-    const filePath = resolve(configDir, subdir, `${name}.md`);
+    // 只处理 rule/skill 类型，其他类型放行
+    if (type !== 'rule' && type !== 'skill') return true;
+    // 复用 configFileManager 的统一路径解析，获得路径穿越防护
+    const filePath = resolveTargetPath(type, name, configDir);
+    // 路径穿越时放行（不阻挡正常流程，由 configFileManager 的写路径拦截）
+    if (!filePath) return true;
     const fileExists = existsSync(filePath);
     return expected === 'exists' ? fileExists : !fileExists;
   };
