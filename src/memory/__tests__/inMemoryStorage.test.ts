@@ -697,6 +697,41 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
+  // ─── sourceCountCache 增量不变量（T4 防回归加固）──────────
+  // 锁住「缓存派生计数 == 实时重算」，任何新增写路径若遗忘维护缓存即红。
+
+  describe('sourceCountCache 增量不变量（T4 防回归）', () => {
+    it('任意写序列（upsert/delete/restore/purgeExpired）后缓存计数应与实时重算一致', () => {
+      storage.upsert(makeMemory('r1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('r2', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('p1', SOURCE_LABELS.PERSONA));
+      storage.upsert(makeMemory('i1', 'insight'));
+
+      storage.delete('r1'); // 软删 r1
+      storage.delete('p1'); // 软删 p1
+      storage.restore('r1'); // 恢复 r1 → 存活 r1,r2,i1；p1 仍软删
+
+      // 让 p1 过期并物理清理
+      const deleted = storage.listDeleted();
+      const expired = new Date(Date.now() - 31 * ONE_DAY_MS).toISOString();
+      for (const m of deleted) storage.upsert({ ...m, deletedAt: expired });
+      storage.purgeExpired(new Date(Date.now() - 30 * ONE_DAY_MS));
+
+      // 不变量 1：缓存计数与实时重算（getBySource 长度）一致
+      for (const source of [SOURCE_LABELS.RULE, SOURCE_LABELS.PERSONA, 'insight']) {
+        expect(storage.countBySource(source)).toBe(storage.getBySource(source).length);
+      }
+      // 不变量 2：缓存总和 == 存活总数
+      const cacheSum = [...storage.getAllSources().values()].reduce((a, b) => a + b, 0);
+      expect(cacheSum).toBe(storage.count());
+
+      // 具体期望：p1 已物理清理，RULE 含 r1+r2
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(2);
+      expect(storage.countBySource(SOURCE_LABELS.PERSONA)).toBe(0);
+      expect(storage.countBySource('insight')).toBe(1);
+    });
+  });
+
   // ─── close 清理 ───────────────────────────────────────
 
   describe('close', () => {
