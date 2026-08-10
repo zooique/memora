@@ -853,10 +853,24 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
+   * TaskTablePanelHost: 暂停会话（软暂停：内核在 loop 边界挂起，保留消息可续跑）
+   */
+  async pauseSession(): Promise<void> {
+    await window.electronAPI.pauseSession();
+  }
+
+  /**
    * TaskTablePanelHost: 取消暂停
    */
   async cancelPause(): Promise<void> {
     await window.electronAPI.cancelPause();
+  }
+
+  /**
+   * TaskTablePanelHost: 取消/放弃暂停（清暂停态 + 暂停点，会话回 idle）
+   */
+  async abandonPause(): Promise<void> {
+    await window.electronAPI.abandonPause();
   }
 
   /**

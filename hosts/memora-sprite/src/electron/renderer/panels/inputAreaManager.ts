@@ -408,12 +408,13 @@ export class InputAreaManager {
   /**
    * 更新发送按钮形态（根据会话状态 + 流式态推导）
    *
-   * 不中断工作模型「运行/未运行」双态交互：
-   * - running（流式生成中）：发送按钮 = 暂停（点击中断工作通道，保留进度与检查点）
+   * 大厂设计（用户定案）：发送按钮不承载暂停——暂停/继续/取消暂停在任务清单列表。
+   * - running（流式生成中）：空输入 = 停止；有输入 = 发送（补充插入，结束后继续）
    * - paused（已暂停）：发送按钮 = 继续（空输入=纯恢复；有输入=注入补充后恢复）
    * - idle / error（空闲或异常）：发送按钮 = 发送
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param _resumable 保留参数（兼容旧调用方）；resumable 门控已随暂停按钮移入任务清单，本处忽略
    */
   updateSessionStatus(status: string, _resumable?: boolean): void {
     this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
@@ -452,8 +453,14 @@ export class InputAreaManager {
     this.btnSend.classList.remove('empty');
     switch (mode) {
       case 'running':
-        // P1-4: 运行中 = 停止按钮（移除原暂停行为，改为 hard stop）
-        this.setBtnSend('icon-stop', '停止流式输出');
+        // 大厂语义（用户设计定案）：运行态空输入 = 停止；有输入 = 发送（补充插入：
+        // 点击入待定草稿区，当前问答结束后由 consumePendingDrafts 基于插入内容继续后续任务）。
+        // 暂停/继续/取消暂停按钮已移至任务清单列表（taskTablePanelManager），发送按钮不承载暂停。
+        if (hasContent) {
+          this.setBtnSend('icon-send', '发送（补充插入，结束后继续）');
+        } else {
+          this.setBtnSend('icon-stop', '停止流式输出');
+        }
         this.btnSend.disabled = false;
         break;
       case 'paused':

@@ -115,6 +115,7 @@ function createMockHost(streaming = false): InputAreaHost & {
     emitSendMessage: ReturnType<typeof vi.fn>;
     emitStopMessage: ReturnType<typeof vi.fn>;
     switchToSettings: ReturnType<typeof vi.fn>;
+    addToPendingDraft: ReturnType<typeof vi.fn>;
   };
 } {
   const mocks = {
@@ -122,6 +123,7 @@ function createMockHost(streaming = false): InputAreaHost & {
     emitSendMessage: vi.fn(),
     emitStopMessage: vi.fn(),
     switchToSettings: vi.fn(),
+    addToPendingDraft: vi.fn(),
   };
   return { ...mocks, mocks };
 }
@@ -254,14 +256,22 @@ describe('InputAreaManager', () => {
 
   // ─── refreshSendButtonState · 按钮状态 ──────────────────
 
-  describe('refreshSendButtonState · 按钮状态', () => {
-    it('流式态时应切换为暂停姿态（启用）', () => {
+  describe('refreshSendButtonState · 按钮状态（大厂设计：运行态空=停止 / 有=发送补充）', () => {
+    it('流式态有内容时应切换为发送（补充插入）姿态', () => {
       host.mocks.isStreaming.mockReturnValue(true);
-      inputEl.value = '有内容';
-      // renderButton 在流式态将发送按钮转为「暂停」，始终可点
+      inputEl.value = '补充内容';
+      // 大厂语义：运行态有输入 = 发送（补充插入，当前问答结束后继续）
       manager.refreshSendButtonState();
       expect(btnSend.disabled).toBe(false);
-      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
+      expect(btnSend.getAttribute('aria-label')).toContain('补充');
+    });
+
+    it('流式态无内容时应切换为停止姿态', () => {
+      host.mocks.isStreaming.mockReturnValue(true);
+      inputEl.value = '';
+      manager.refreshSendButtonState();
+      expect(btnSend.disabled).toBe(false);
+      expect(btnSend.getAttribute('aria-label')).toBe('停止流式输出');
     });
 
     it('空闲态有内容时应启用按钮', () => {
@@ -281,28 +291,10 @@ describe('InputAreaManager', () => {
     });
   });
 
-  // ─── updateSessionStatus · resumable 门控暂停按钮（软暂停 v2.1） ─
+  // ─── updateSessionStatus · 会话状态（暂停/继续已移至任务清单，发送按钮不承载） ─
 
-  describe('updateSessionStatus · resumable 门控（软暂停 v2.1）', () => {
-    it('流式态 + resumable=false → 隐藏暂停按钮（仅停止可见）', () => {
-      host.mocks.isStreaming.mockReturnValue(true);
-      manager.init();
-      manager.updateSessionStatus('running', false);
-      // 暂停按钮隐藏：用户只能硬停止（单一霸道中止入口），简单轮不暴露暂停
-      expect(btnSend.style.display).toBe('none');
-    });
-
-    it('流式态 + resumable=true → 显示暂停按钮（点击触发 pauseSession）', () => {
-      host.mocks.isStreaming.mockReturnValue(true);
-      manager.init();
-      manager.updateSessionStatus('running', true);
-      expect(btnSend.style.display).not.toBe('none');
-      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
-      btnSend.click();
-      expect(mockApi.pauseSession).toHaveBeenCalledTimes(1);
-    });
-
-    it('已暂停态 → 显示继续按钮（resumable 门控不影响 paused 模式）', () => {
+  describe('updateSessionStatus · 发送按钮随会话状态（暂停门控在任务清单）', () => {
+    it('已暂停态 → 发送按钮显示继续（空输入=纯恢复；有输入=注入补充）', () => {
       host.mocks.isStreaming.mockReturnValue(false);
       manager.init();
       manager.updateSessionStatus('paused');
@@ -310,12 +302,17 @@ describe('InputAreaManager', () => {
       expect(btnSend.getAttribute('aria-label')).toBe('继续会话（可附带补充输入）');
     });
 
-    it('resumable 缺省（向后兼容）→ 视为可续跑，流式态显示暂停', () => {
+    it('流式态 → 发送按钮为停止/发送（空输入停止，有输入发送补充），不受 resumable 门控影响', () => {
+      // 发送按钮不承载暂停门控（暂停/继续/取消暂停在任务清单列表）：
+      // 无论 resumable 与否，运行态空输入=停止、有输入=发送补充
       host.mocks.isStreaming.mockReturnValue(true);
       manager.init();
-      manager.updateSessionStatus('running');
-      expect(btnSend.style.display).not.toBe('none');
-      expect(btnSend.getAttribute('aria-label')).toBe('暂停会话（不中断，保留当前进度）');
+      inputEl.value = '';
+      manager.updateSessionStatus('running', false);
+      expect(btnSend.getAttribute('aria-label')).toBe('停止流式输出');
+      inputEl.value = '补充';
+      manager.updateSessionStatus('running', true);
+      expect(btnSend.getAttribute('aria-label')).toContain('补充');
     });
   });
 
@@ -464,13 +461,26 @@ describe('InputAreaManager', () => {
       expect(mockApi.resumeSession).not.toHaveBeenCalled();
     });
 
-    it('点击：运行中 → 暂停（pauseSession）', () => {
-      // 运行中需先渲染按钮（真实链路 setStreaming(true) 触发 renderButton 启用按钮）
+    it('点击：运行中空输入 → 停止（emitStopMessage）', () => {
+      // 大厂语义：运行态空输入 = 停止（暂停按钮已移至任务清单，发送按钮不触发 pauseSession）
       host.mocks.isStreaming.mockReturnValue(true);
       manager.init();
+      inputEl.value = '';
       btnSend.click();
-      expect(mockApi.pauseSession).toHaveBeenCalledTimes(1);
+      expect(host.mocks.emitStopMessage).toHaveBeenCalledTimes(1);
       expect(host.mocks.emitSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('点击：运行中有输入 → 入待定草稿区（补充插入，问答结束后继续）', () => {
+      // 大厂语义：运行态有输入 = 发送（补充插入）——点击入待定草稿区并清输入，
+      // 当前问答结束后由 consumePendingDrafts 基于插入内容继续后续任务
+      host.mocks.isStreaming.mockReturnValue(true);
+      manager.init();
+      inputEl.value = '补充指令';
+      btnSend.click();
+      expect(host.mocks.addToPendingDraft).toHaveBeenCalledWith('补充指令');
+      expect(inputEl.value).toBe('');
+      expect(host.mocks.emitStopMessage).not.toHaveBeenCalled();
     });
 
     it('Enter：已暂停且空输入 → 纯恢复', () => {

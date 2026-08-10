@@ -76,8 +76,12 @@ export interface TaskTablePanelHost {
   getAgentStatus(): string;
   /** P1-6: 获取工作上下文（通过 IPC） */
   getWorkContext(): Promise<WorkContext>;
+  /** P1-6: 暂停会话（软暂停：内核在 loop 边界挂起，保留消息可续跑；通过 IPC） */
+  pauseSession(): Promise<void>;
   /** P1-6: 取消暂停（通过 IPC） */
   cancelPause(): Promise<void>;
+  /** 用户设计定案：取消/放弃暂停（清暂停态回 idle，通过 IPC） */
+  abandonPause(): Promise<void>;
   /** P1-6: 恢复会话（通过 IPC） */
   resumeSession(): Promise<void>;
   /** P1-5: 删除指定草稿（委托 UIManager 从 pendingDrafts 中移除） */
@@ -143,7 +147,7 @@ export class TaskTablePanelManager {
       const ctx = await this.host.getWorkContext();
       this.renderTaskTable(ctx);
       this.renderPauseButtons(ctx);
-    } catch (err) {
+    } catch {
       this.host.showToast('加载任务表失败', 'error');
     }
   }
@@ -273,7 +277,7 @@ export class TaskTablePanelManager {
       // 提交草稿：RUNNING 态自动消费 / PAUSED 态合并提交（P1-5 实现后接入）
       // 当前为占位
       this.host.showToast('草稿提交', 'info');
-    } catch (err) {
+    } catch {
       this.host.showToast('提交草稿失败', 'error');
     }
   }
@@ -302,13 +306,28 @@ export class TaskTablePanelManager {
     const actionsEl = document.createElement('div');
     actionsEl.className = 'task-table-actions';
 
-    // ── 暂停/继续按钮（当前仅 suspended 态；requesting 申请态已从契约移除，见 SSOT 排雷 T1-1）──
-    if (ctx.pausePhase === 'suspended') {
+    // ── 暂停控制组（用户设计定案：暂停/继续/取消暂停统一在任务清单列表）──
+    // - 无暂停态（运行/空闲）：显示「暂停」按钮（发起软暂停）
+    // - suspended（已挂起）：显示「继续」+「取消暂停」（放弃暂停回 idle）
+    if (!ctx.pausePhase) {
+      const pauseBtn = document.createElement('button');
+      pauseBtn.className = 'task-table-btn task-table-btn-pause';
+      pauseBtn.textContent = '暂停';
+      pauseBtn.addEventListener('click', () => this.handlePause());
+      actionsEl.appendChild(pauseBtn);
+    } else if (ctx.pausePhase === 'suspended') {
       const resumeBtn = document.createElement('button');
       resumeBtn.className = 'task-table-btn task-table-btn-resume';
       resumeBtn.textContent = '继续';
       resumeBtn.addEventListener('click', () => this.handleResume());
       actionsEl.appendChild(resumeBtn);
+
+      // 取消暂停：放弃已挂起的暂停（清暂停态 + 暂停点，会话回 idle）
+      const cancelPauseBtn = document.createElement('button');
+      cancelPauseBtn.className = 'task-table-btn task-table-btn-cancel-pause';
+      cancelPauseBtn.textContent = '取消暂停';
+      cancelPauseBtn.addEventListener('click', () => this.handleCancelPause());
+      actionsEl.appendChild(cancelPauseBtn);
     }
 
     // ── P3-2: 暂停来源为 user 时显示「存进度到记忆」按钮 ──
@@ -347,6 +366,35 @@ export class TaskTablePanelManager {
   }
 
   /**
+   * 处理暂停（发起软暂停）
+   *
+   * 委托 host.pauseSession()（SESSION_PAUSE IPC → agent.requestPause，
+   * 内核在 loop 边界挂起，保留消息可续跑）。
+   */
+  private async handlePause(): Promise<void> {
+    try {
+      await this.host.pauseSession();
+      this.loadData();
+    } catch {
+      this.host.showToast('暂停失败', 'error');
+    }
+  }
+
+  /**
+   * 处理取消暂停（放弃已挂起的暂停，会话回 idle）
+   *
+   * 委托 host.abandonPause()（SESSION_ABANDON IPC → agent.abandonPause）。
+   */
+  private async handleCancelPause(): Promise<void> {
+    try {
+      await this.host.abandonPause();
+      this.loadData();
+    } catch {
+      this.host.showToast('取消暂停失败', 'error');
+    }
+  }
+
+  /**
    * 处理继续执行
    *
    * 委托 host.resumeSession()（SESSION_RESUME IPC）。
@@ -356,7 +404,7 @@ export class TaskTablePanelManager {
       await this.host.resumeSession();
       // 刷新面板
       this.loadData();
-    } catch (err) {
+    } catch {
       this.host.showToast('继续执行失败', 'error');
     }
   }
@@ -373,7 +421,7 @@ export class TaskTablePanelManager {
       // 关闭 planGenerated 标志，接受入口消失
       this.loadData();
       this.host.showToast('任务表已接受', 'success');
-    } catch (err) {
+    } catch {
       this.host.showToast('接受任务表失败', 'error');
     }
   }
@@ -388,7 +436,7 @@ export class TaskTablePanelManager {
     try {
       const result = await this.host.archiveSessionWithContext();
       this.host.showToast(`已存档 ${result.archivedCount} 条记忆`, 'success');
-    } catch (err) {
+    } catch {
       this.host.showToast('存进度到记忆失败', 'error');
     }
   }
@@ -405,7 +453,7 @@ export class TaskTablePanelManager {
       // 刷新面板（plan 已清空，planGenerated 已关闭）
       this.loadData();
       this.host.showToast('任务表已丢弃，将重新生成', 'info');
-    } catch (err) {
+    } catch {
       this.host.showToast('丢弃任务表失败', 'error');
     }
   }
