@@ -193,7 +193,7 @@ const DEFAULT_CONFIG: Config = {
  * @returns 完整的 Config 对象
  * @throws 当类型不匹配时抛出错误
  */
-function parseConfig(raw: unknown): Config {
+export function parseConfig(raw: unknown): Config {
   // 如果 raw 不是对象，使用空对象（MIND-C2：守卫+断言合一为 asRecordIfObject）
   const input = asRecordIfObject(raw);
 

@@ -7,10 +7,12 @@
  * 跨模块一致性说明：
  * - AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 应与 config/loader.ts 的
  *   DEFAULT_MAX_CONTEXT_TOKENS 保持一致（两处独立声明，不跨层引用，详见
- *   config/loader.ts 文件头注释）。本测试不跨模块 import，一致性靠人工保证。
+ *   config/loader.ts 文件头注释）。下方用例通过 parseConfig({}) 默认合并路径
+ *   断言两处一致，将人工保证升级为自动回归（测试文件不在生产依赖图内，不破坏分层）。
  */
 import { describe, expect, it } from 'vitest';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
+import { parseConfig } from '@/config/loader.js';
 
 describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
   it('chat() 并发锁超时应为 180s（LLM 120s + 60s 缓冲）', () => {
@@ -31,6 +33,12 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
 
   it('默认上下文 token 数应为 120K', () => {
     expect(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS).toBe(120_000);
+  });
+
+  it('loader 默认 maxContextTokens 应与 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 一致（跨模块护栏）', () => {
+    // parseConfig({}) 走 DEFAULT_CONFIG 默认合并路径；若 loader 与 agent/constants
+    // 两处 120_000 任一被改而另一未同步，本用例将捕获漂移。
+    expect(parseConfig({}).memory.maxContextTokens).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
   });
 
   it('默认 recall 排除的 source 应为 persona/rule/skill（已由 bootstrap 注入）', () => {
