@@ -56,3 +56,32 @@ export function truncate(text: string, maxLen: number, suffix: string = '…'): 
   return text.slice(0, maxLen) + suffix;
 }
 
+// ─── 配置名白名单校验 ─────────────────────────────────
+
+/**
+ * 配置名默认最大长度（T-B1 数据核查：真实 configDir 最大名长 25，persona 现上限 100）
+ */
+export const MAX_CONFIG_NAME_LENGTH = 100;
+
+/**
+ * 配置名（规则/技能/角色文件名）白名单校验
+ *
+ * 统一前的三套规则（SSOT 违反 T-B2）：
+ *   - 内核 configManager.confirmConfigSuggestion 内联 `/^[\w\u4e00-\u9fa5-]{1,64}$/`（64 字）
+ *   - 宿主 shared/inputValidation.isValidConfigName `[\p{L}\p{N}_-]`（200 字）
+ *   - 宿主 isValidPersonaName ASCII 100 字（persona 领域独立，保留）
+ * 同一「配置名」概念行为分叉：100 字中文名面板可建、内核建议确认拒绝。
+ *
+ * 统一后：字符集取 `[\p{L}\p{N}_-]`（全 Unicode 字母数字，拒绝路径分隔符 / \、点号、空格），
+ * 长度默认 100。宿主 shared/inputValidation.ts 与内核保持同规则（renderer 无法 import memora，
+ * 两端各一份实现 + 宿主侧契约测试锁定一致——见 inputValidation.test.ts）。
+ *
+ * @param name 待校验的配置名
+ * @param maxLength 最大长度（默认 100）
+ * @returns 校验通过返回 true
+ */
+export function isValidConfigName(name: string, maxLength: number = MAX_CONFIG_NAME_LENGTH): boolean {
+  if (typeof name !== 'string' || name.length === 0 || name.length > maxLength) return false;
+  return /^[\p{L}\p{N}_-]+$/u.test(name);
+}
+

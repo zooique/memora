@@ -40,13 +40,22 @@ const MAX_ID_LENGTH = 500;
 const MAX_SEARCH_QUERY_LENGTH = 1000;
 
 /**
+ * 配置名（规则/技能/角色文件名）最大长度
+ *
+ * T-B3：与内核 utils/strings.ts `isValidConfigName` 默认阈值（MAX_CONFIG_NAME_LENGTH=100）同步。
+ * T-B1 数据核查：真实 configDir 最大名长 25；persona 现上限 100。100 是「文件名物理约束」
+ * （MAX_PATH）与命名自由的折中。
+ */
+const MAX_CONFIG_NAME_LENGTH = 100;
+
+/**
  * 验证名称类字符串（会话名/配置名）的公共校验逻辑
  *
  * 白名单：字母、数字、连字符、下划线、中文及常见 Unicode 字母。
  * 拒绝路径分隔符（/ \）、点号（..）、空格等危险字符。
  *
  * @param name 待验证的名称
- * @param maxLength 最大长度（默认 200）
+ * @param maxLength 最大长度（默认 200，会话名用）
  * @returns 验证通过返回 true，否则 false
  */
 function isValidName(name: string, maxLength: number = 200): boolean {
@@ -58,6 +67,8 @@ function isValidName(name: string, maxLength: number = 200): boolean {
 
 /**
  * 验证会话名 — 拒绝路径分隔符和特殊字符
+ *
+ * 会话名是 DB 记录名（无文件系统约束），长度保持 200（与配置名 100 解耦）。
  *
  * @param name 待验证的会话名
  * @returns 验证通过返回 true，否则 false
@@ -72,11 +83,15 @@ export function isValidSessionName(name: string): boolean {
  * 配置名用于构造文件路径（如 .memora/rules/{name}.md），
  * 必须严格限制为安全字符，防止路径遍历写入。
  *
+ * 与内核 `isValidConfigName`（utils/strings.ts，T-B2/B3）同规则：
+ * 字符集 NAME_PATTERN 一致 + 长度 100。renderer（浏览器环境）无法 import memora 裸模块，
+ * 故 shared/ 保留本实现；两端一致性由 inputValidation.test.ts 的契约测试锁定。
+ *
  * @param name 待验证的配置名
  * @returns 验证通过返回 true，否则 false
  */
 export function isValidConfigName(name: string): boolean {
-  return isValidName(name);
+  return isValidName(name, MAX_CONFIG_NAME_LENGTH);
 }
 
 /**

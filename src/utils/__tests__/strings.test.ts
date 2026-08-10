@@ -9,7 +9,7 @@
  *   - 截断到 40 字符
  */
 import { describe, expect, it } from 'vitest';
-import { slugify } from '@/utils/strings.js';
+import { slugify, isValidConfigName, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
 
 describe('utils/strings · slugify', () => {
   it('应将冒号和空白替换为连字符', () => {
@@ -67,5 +67,35 @@ describe('utils/strings · slugify', () => {
 
   it('数字应保留', () => {
     expect(slugify('version 2.0')).toBe('version-20');
+  });
+});
+
+describe('utils/strings · isValidConfigName（T-B2 配置名白名单）', () => {
+  it('应接受 ASCII 名', () => {
+    expect(isValidConfigName('my-rule')).toBe(true);
+    expect(isValidConfigName('project_规范')).toBe(true);
+    expect(isValidConfigName('rules123')).toBe(true);
+  });
+
+  it('应接受中文 / 日文 / 韩文名（Unicode 字母白名单）', () => {
+    expect(isValidConfigName('项目规范')).toBe(true);
+    expect(isValidConfigName('コード規約')).toBe(true);
+    expect(isValidConfigName('프로젝트규칙')).toBe(true);
+  });
+
+  it('应拒绝路径分隔符 / 点号 / 空格 / 空串（路径穿越面）', () => {
+    for (const bad of ['../escape', 'a/b', '..\\win', 'name with space', '', '..', 'a.b']) {
+      expect(isValidConfigName(bad)).toBe(false);
+    }
+  });
+
+  it('应拒绝超过 MAX_CONFIG_NAME_LENGTH 的 name（默认 100）', () => {
+    expect(isValidConfigName('a'.repeat(MAX_CONFIG_NAME_LENGTH))).toBe(true);
+    expect(isValidConfigName('a'.repeat(MAX_CONFIG_NAME_LENGTH + 1))).toBe(false);
+  });
+
+  it('maxLength 参数可覆盖默认阈值', () => {
+    expect(isValidConfigName('ab', 2)).toBe(true);
+    expect(isValidConfigName('ab', 1)).toBe(false);
   });
 });

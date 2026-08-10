@@ -30,6 +30,9 @@ import {
   isNonEmptyString,
   isValidShortcutConfig,
 } from '../../shared/inputValidation.js';
+// 契约测试（T-B3）：宿主 isValidConfigName 必须与内核 utils/strings.ts 同规则
+// （renderer 无法 import memora，两端各一份实现——此测试锁定行为一致，防分叉回归）
+import { isValidConfigName as kernelIsValidConfigName } from 'memora';
 
 // ─── isValidSessionName / isValidConfigName ──────────────
 
@@ -78,9 +81,52 @@ describe('isValidSessionName / isValidConfigName', () => {
     expect(isValidConfigName(long)).toBe(false);
   });
 
-  it('恰好 200 字符应通过', () => {
+  it('恰好 200 字符应通过（会话名）', () => {
     const exact = 'a'.repeat(200);
     expect(isValidSessionName(exact)).toBe(true);
+  });
+
+  it('配置名 100 字边界（与内核一致，T-B3）', () => {
+    expect(isValidConfigName('a'.repeat(100))).toBe(true);
+    expect(isValidConfigName('a'.repeat(101))).toBe(false);
+  });
+});
+
+// ─── isValidConfigName 与内核契约一致（T-B3） ─────────────
+
+describe('isValidConfigName · 与内核 utils/strings.ts 契约一致（T-B3）', () => {
+  // 覆盖合法/非法/边界样本：ASCII、中文、日文、路径穿越、点号、空格、空串、100/101 字
+  const samples = [
+    'my-rule',
+    '项目规范',
+    'コード規約',
+    '프로젝트규칙',
+    'config_001',
+    '../escape',
+    'a/b',
+    '..\\win',
+    'name with space',
+    '',
+    '..',
+    'a.b',
+    '.env',
+    'a'.repeat(100),
+    'a'.repeat(101),
+  ];
+
+  it('同一输入，宿主与内核判定一致（防两端规则分叉回归）', () => {
+    for (const s of samples) {
+      expect(isValidConfigName(s), `host !== kernel for: ${JSON.stringify(s)}`).toBe(
+        kernelIsValidConfigName(s),
+      );
+    }
+  });
+
+  it('两端共享 100 字边界', () => {
+    expect(isValidConfigName('a'.repeat(100))).toBe(true);
+    expect(kernelIsValidConfigName('a'.repeat(100))).toBe(true);
+    expect(isValidConfigName('a'.repeat(101))).toBe(false);
+    expect(kernelIsValidConfigName('a'.repeat(101))).toBe(false);
   });
 });
 

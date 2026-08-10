@@ -31,6 +31,9 @@ import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
 // parseFrontmatter：与 FileStore.parseMemory 保持一致的 content 处理（只存 body，去掉 frontmatter）
 import { parseFrontmatter } from '@/utils/frontmatter.js';
+// isValidConfigName：配置名白名单校验单一真理源（T-B2，从本文件内联正则提取至 utils/strings.ts，
+// 与宿主 shared/inputValidation.ts 同规则；字符集 [\p{L}\p{N}_-]、默认 100 字）
+import { isValidConfigName } from '@/utils/strings.js';
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -184,13 +187,14 @@ export class ConfigManager {
     }
 
     // 路径穿越防御：suggestion.name 直落 FileStore.getFilePath 的文件名
-    // （store.ts:118 `${name}.md`，未经 sanitize，仅 source 经 validateSource 校验，name 不校验）。
+    // （resolveSourceFilePath 的 `${name}.md`，name 不做字符白名单，仅 source 经 validateSource 校验）。
     // LLM 生成的 name 若含 '/'、'..'、'\' 等即可路径遍历逃出 configDir。
     // 在入口收口白名单，最早失败、早于一切副作用（磁盘写入 / SQLite upsert）。
-    if (!/^[\w\u4e00-\u9fa5-]{1,64}$/.test(suggestion.name)) {
+    // 规则单一真理源：isValidConfigName（utils/strings.ts，T-B2），与宿主 shared/inputValidation 同规则。
+    if (!isValidConfigName(suggestion.name)) {
       throw configError(
         '配置建议名称非法',
-        `name='${suggestion.name}' 含路径穿越字符或超长（仅允许字母/数字/下划线/中文/连字符，1-64 字）`,
+        `name='${suggestion.name}' 含路径穿越字符或超长（仅允许字母/数字/下划线/连字符/中文，1-100 字）`,
         ['使用安全的规则/技能/人设命名（如 my-rule、项目规范）'],
       );
     }
