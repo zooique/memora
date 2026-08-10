@@ -305,11 +305,10 @@ async function forwardStream(
           summary: chunk.summary,
         });
 
-        // P2.5-2: LLM 通过 task_table_write 生成了任务表 → 标记内核 + 通知渲染层
+        // 任务表生成即生效（用户定案 2026-08-10：无接受/丢弃确认，过渡设计已删）。
+        // 通知渲染层刷新任务面板展示新任务表；plan 后续更新由 onStreamToolResult
+        // 的 task_table_* 前缀刷新覆盖。
         if (chunk.name === 'task_table_write' && chunk.ok) {
-          // 标记内核：planGenerated = true，供 workContext 查询
-          agent.markPlanGenerated();
-          // 通知渲染层：展示接受/丢弃入口
           fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_TASK_TABLE_GENERATED, {
             messageId,
             plan: chunk.summary,

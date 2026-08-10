@@ -850,7 +850,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * TaskTablePanelHost: 获取工作上下文（plan + 暂停态 + planGenerated）
+   * TaskTablePanelHost: 获取工作上下文（plan + 暂停态）
    */
   async getWorkContext(): Promise<WorkContext> {
     return window.electronAPI.getWorkContext() as Promise<WorkContext>;
@@ -882,20 +882,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   async resumeSession(): Promise<void> {
     await window.electronAPI.resumeSession();
-  }
-
-  /**
-   * P2.5-2: 接受 LLM 生成的任务表（TaskTablePanelHost 接口）
-   */
-  async acceptTaskTable(): Promise<void> {
-    await window.electronAPI.acceptTaskTable();
-  }
-
-  /**
-   * P2.5-2: 丢弃 LLM 生成的任务表（TaskTablePanelHost 接口）
-   */
-  async discardTaskTable(): Promise<void> {
-    await window.electronAPI.discardTaskTable();
   }
 
   /**

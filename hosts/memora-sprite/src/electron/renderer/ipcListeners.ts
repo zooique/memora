@@ -944,7 +944,8 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     callbacks.onConversationEnd?.();
   });
 
-  // P2.5-2: 任务表已生成通知 → 刷新任务表面板（展示接受/丢弃入口）
+  // 任务表已生成（task_table_write 成功）→ 刷新任务表面板展示新任务表
+  // （用户定案 2026-08-10：任务表生成即生效，无接受/丢弃确认）
   window.electronAPI.onTaskTableGenerated((_msg) => {
     uiManager.chatCoordinator.taskTablePanelManager?.loadData();
   });

@@ -149,8 +149,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private textPolisher: TextPolishManager | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
-  /** P2.5-2: 任务表是否由 LLM 生成并等待用户确认（true = 展示接受/丢弃入口） */
-  private _planGenerated = false;
 
   // ─── 不中断工作模型 v2.0 ───────────────────────────────
   /** 四级补全器（四元组 + 三源融合） */
@@ -1670,31 +1668,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * P2.5-2: 标记任务表已由 LLM 生成（等待用户确认）
-   *
-   * 在 chatStreamHandler 检测到 task_table_write 成功时调用。
-   * 渲染层轮询 workContext 时读取此标志，展示接受/丢弃入口。
-   */
-  markPlanGenerated(): void {
-    this._planGenerated = true;
-  }
-
-  /**
-   * P2.5-2: 确认任务表已接受（关闭 planGenerated 标志）
-   */
-  acceptPlanGenerated(): void {
-    this._planGenerated = false;
-  }
-
-  /**
-   * P2.5-2: 获取任务表是否由 LLM 生成并等待确认
-   */
-  get isPlanGenerated(): boolean {
-    return this._planGenerated;
-  }
-
-  /**
-   * P2.5-3: 向 loop 注入 system 消息（供 IPC handler 在丢弃任务表后调用）
+   * P2.5-3: 向 loop 注入 system 消息
    *
    * @param message - system 消息内容
    */

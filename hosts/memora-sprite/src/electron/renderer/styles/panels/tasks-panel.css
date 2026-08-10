@@ -202,9 +202,32 @@
   background: var(--surface2);
 }
 
+/* 当前执行步骤：accent 高亮 + 左侧指示条 + 呼吸动画（实时任务进度反馈） */
+.task-step-in_progress {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface0));
+  border-left: 3px solid var(--accent);
+  animation: task-step-running 1.6s ease-in-out infinite;
+}
+
 .task-step-in_progress .task-step-status {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* 当前步骤呼吸动画：缓入缓出透明度脉动，明确「正在执行」的心智，不干扰文字阅读 */
+@keyframes task-step-running {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-step-in_progress {
+    animation: none;
+  }
 }
 
 .task-step-done .task-step-status {
@@ -257,25 +280,6 @@
   font-size: 10px;
   color: var(--subtext);
   opacity: 0.7;
-}
-
-/* P2.5-2: 接受/丢弃任务表按钮 */
-.task-table-btn-accept {
-  color: var(--green);
-  border-color: var(--green);
-}
-
-.task-table-btn-accept:hover {
-  background: color-mix(in srgb, var(--green) 15%, transparent);
-}
-
-.task-table-btn-discard {
-  color: var(--red);
-  border-color: var(--red);
-}
-
-.task-table-btn-discard:hover {
-  background: color-mix(in srgb, var(--red) 15%, transparent);
 }
 
 /* P3-2: "存进度到记忆"按钮 */

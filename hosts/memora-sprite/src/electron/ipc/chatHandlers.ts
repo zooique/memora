@@ -185,7 +185,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
     return { abandoned: true };
   });
 
-  /** 获取工作上下文（plan + 暂停态 + planGenerated + pauseSource，供任务表面板渲染） */
+  /** 获取工作上下文（plan + 暂停态 + pauseSource，供任务表面板渲染） */
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT, async () => {
     const agent = requireAgent(ctx);
     const checkpoint = agent.getCheckpoint();
@@ -205,8 +205,6 @@ export function registerChatHandlers(ctx: IpcContext): void {
        * 三态按钮区分依据：无申请→「暂停」；在途→「取消暂停」；已暂停→「继续」。
        */
       pausePending: agent.isPausePending(),
-      /** P2.5-2: 任务表由 LLM 生成，等待用户接受/丢弃 */
-      planGenerated: agent.isPlanGenerated,
     };
   });
 
@@ -215,30 +213,6 @@ export function registerChatHandlers(ctx: IpcContext): void {
     const agent = requireAgent(ctx);
     const totalSteps = agent.appendPlanStep(description);
     return { appended: true, totalSteps };
-  });
-
-  /** P2.5-2: 接受 LLM 生成的任务表（确认保留，关闭 planGenerated 标志） */
-  ipcMain.handle(IPC_CHANNELS.SESSION_ACCEPT_TASK_TABLE, async () => {
-    const agent = requireAgent(ctx);
-    agent.acceptPlanGenerated();
-    return { accepted: true };
-  });
-
-  /** P2.5-2: 丢弃 LLM 生成的任务表（清空 plan + 注入 system 消息让 LLM 重试） */
-  ipcMain.handle(IPC_CHANNELS.SESSION_DISCARD_TASK_TABLE, async () => {
-    const agent = requireAgent(ctx);
-    const checkpoint = agent.getCheckpoint();
-    if (checkpoint) {
-      // 清空 plan
-      checkpoint.plan = [];
-    }
-    // 关闭 planGenerated 标志
-    agent.acceptPlanGenerated();
-    // P2.5-3: 注入 system 消息提示 LLM 重新规划
-    agent.injectSystemMessage(
-      '用户未接受你生成的任务表，请重新规划任务步骤。如果不需要分步任务，请直接回答用户。',
-    );
-    return { discarded: true };
   });
 
   /** P3-1: 归档当前会话并包含工作上下文（计划快照，"存进度到记忆"） */

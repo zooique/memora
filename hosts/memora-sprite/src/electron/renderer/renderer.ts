@@ -168,7 +168,7 @@ async function bootstrapRenderer(): Promise<void> {
       // 切换到剪贴板面板时标记所有条目为已查看（角标清零）
       State.uiManager.clipboardManager.markAllViewed();
     } else if (panel === 'tasks') {
-      // P2.5-2: 切换到任务表面板时刷新数据（加载 plan + planGenerated）
+      // 切换到任务表面板时刷新数据（加载 plan + 暂停态 + 进度）
       void State.uiManager.chatCoordinator.taskTablePanelManager?.loadData();
     }
   });
