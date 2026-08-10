@@ -1861,11 +1861,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             ok,
             idempotent,
           };
-          // 会话管理器可能尚未创建（assembler 中 loop 先于 sessionManager 创建）
-          // 暂存到队列，待 sessionManager 创建后统一写入
-          this._pendingToolExecutions.push(record);
-          // 若 sessionManager 已就绪，立即写入
-          this._sessionManager?.logToolExecution(record);
+          // 会话管理器可能尚未创建（assembler 中 loop 先于 sessionManager 创建），
+          // 暂存到队列，待 sessionManager 就绪后由 _flushPendingToolExecutions 统一写入。
+          // 一旦就绪则直接写入：缓冲仅作装配期瞬态，避免「先 push 缓冲又直写」导致的
+          // 双写污染 completedToolCalls，以及稳态下缓冲无限增长（内存泄漏）。
+          if (!this._sessionManager) {
+            this._pendingToolExecutions.push(record);
+          } else {
+            this._sessionManager.logToolExecution(record);
+          }
         },
         // 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
         // 检查工具是否已在当前会话的检查点中执行过
