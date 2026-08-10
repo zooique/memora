@@ -2724,12 +2724,11 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
     expect(agent.canContinueWithoutInput()).toBe(false);
 
     // 空闲态申请软暂停：无活跃流可"延迟到 loop 边界挂起"，直接同步翻状态机（T1-1）。
-    // 旧行为在此走延迟路径 → 置位 _pendingPauseReason 但状态机不翻、且 finally 永不到达
-    // → 幂等锁死（暂停按钮失灵）。T1-1 修复为：空闲即立即翻 PAUSED。
+    // SSOT 收口后：空闲态 requestPause 直接翻 PAUSED，不再通过 pending 延迟。
     agent.requestPause('空闲暂停');
 
     // 关键断言：空闲态应立即翻 PAUSED，且可续跑判定随之变为 true（UI 应展示"继续"）
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
     expect(agent.canContinueWithoutInput()).toBe(true);
   });
 
@@ -2740,19 +2739,19 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
     // 初始：无在途申请
     expect(agent.isPausePending()).toBe(false);
 
-    // 流中在途：模拟申请已发（_pendingPauseReason 置位）但状态机未翻——
-    // 真实路径：流中 requestPause 置位标志，loop 边界挂起后由 finally 清理。
-    const agentAny = agent as unknown as { _pendingPauseReason?: string };
-    agentAny._pendingPauseReason = '流中暂停申请';
+    // 流中在途：通过 SessionStateMachine 模拟申请已发但状态机未翻
+    // 状态机初始为 running，直接 requestPause 设置 pending 状态
+    const sm = agent.sessionManager!;
+    sm.requestPause('流中暂停申请', 'user');
     expect(agent.isPausePending()).toBe(true);
 
     // 取消在途申请 → 标志清空 → false（宿主按钮切回「暂停」）
     agent.cancelPauseRequest();
     expect(agent.isPausePending()).toBe(false);
 
-    // 已暂停态：状态机守卫——即使残留标志也按 false（宿主显示「继续」）
+    // 已暂停态：状态机守卫——即使尝试设置 pending 也按 false（宿主显示「继续」）
     agent.pause('暂停', 'user');
-    agentAny._pendingPauseReason = '残留';
+    // 已暂停后状态机拒绝新 pending 申请（status !== 'running'）
     expect(agent.isPausePending()).toBe(false);
     agent.resume();
   });

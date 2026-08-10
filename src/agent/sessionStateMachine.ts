@@ -48,6 +48,17 @@ export class SessionStateMachine {
   private pauseSource: PauseSource | null = null;
   /** 异常原因（仅 ERROR 状态时有效） */
   private errorCause: string | null = null;
+  /**
+   * 待处理的暂停原因（SSOT 收口：四方冗余 → 状态机唯一持有）
+   *
+   * 流中 requestPause 置位，loop 边界真正挂起后由 consumePendingPause() 消费，
+   * cancelPendingPause() 主动清理。空闲态直翻 PAUSED 不置位。
+   * Agent._pendingPauseReason / Agent._pendingPauseSource / AgentLoop.pauseRequested
+   * 四方冗余在此收口为状态机私有字段。
+   */
+  private pendingPauseReason?: string;
+  /** 待处理的暂停来源（仅 pendingPauseReason 有值时有效） */
+  private pendingPauseSource: PauseSource = 'user';
 
   /**
    * @param initialStatus - 初始状态，默认 'running'
@@ -257,5 +268,77 @@ export class SessionStateMachine {
     this.pauseReason = null;
     this.pauseSource = null;
     this.errorCause = null;
+  }
+
+  // ─── pending 暂停请求管理（SSOT 收口） ────────────────
+
+  /**
+   * 获取待处理的暂停信息（只读，不消费）
+   *
+   * 返回当前 pending 暂停的原因和来源，不会清除 pending 状态。
+   * 用于 loop.onPaused 回调中读取暂停信息写 pauseMeta。
+   */
+  get pendingPauseInfo(): { reason: string; source: PauseSource } | null {
+    if (this.pendingPauseReason === undefined) return null;
+    return {
+      reason: this.pendingPauseReason,
+      source: this.pendingPauseSource,
+    };
+  }
+
+  /**
+   * 请求软暂停（仅 RUNNING 状态允许）
+   *
+   * 暂存暂停原因和来源，待 loop 边界真正挂起时由 consumePendingPause() 消费。
+   *
+   * @param reason - 暂停原因
+   * @param source - 暂停来源
+   * @returns true=请求已注册；false=状态机不接受（非 RUNNING）
+   */
+  requestPause(reason: string, source: PauseSource = 'user'): boolean {
+    if (this.currentStatus !== 'running') return false;
+    if (this.pendingPauseReason !== undefined) return false; // 幂等：已有在途申请
+    this.pendingPauseReason = reason;
+    this.pendingPauseSource = source;
+    return true;
+  }
+
+  /**
+   * 消费待处理的暂停请求（在 loop 边界真正挂起时调用）
+   *
+   * 返回并清除 pending 暂停信息。与 cancelPendingPause 互斥：
+   * 消费 = 暂停已发生，取消 = 暂停被撤销。
+   *
+   * @returns 消费的暂停信息，无在途申请时返回 null
+   */
+  consumePendingPause(): { reason: string; source: PauseSource } | null {
+    if (this.pendingPauseReason === undefined) return null;
+    const result = {
+      reason: this.pendingPauseReason,
+      source: this.pendingPauseSource,
+    };
+    this.pendingPauseReason = undefined;
+    this.pendingPauseSource = 'user';
+    return result;
+  }
+
+  /**
+   * 取消待处理的暂停请求（用户主动取消暂停时调用）
+   *
+   * 清除 pending 暂停信息，让工作通道继续运行。
+   * 与 consumePendingPause 互斥。
+   */
+  cancelPendingPause(): void {
+    this.pendingPauseReason = undefined;
+    this.pendingPauseSource = 'user';
+  }
+
+  /**
+   * 检查是否存在在途的暂停申请
+   *
+   * @returns true=暂停申请在途（状态机仍 running）；false=无在途申请或已暂停
+   */
+  isPausePending(): boolean {
+    return this.pendingPauseReason !== undefined && this.currentStatus !== 'paused';
   }
 }

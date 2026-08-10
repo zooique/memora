@@ -1026,7 +1026,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
       // 先让状态机残留 paused（模拟跨会话恢复时的残留状态）
       manager.pause('测试暂停', 'user');
-      expect(manager.stateMachine.status).toBe('paused');
+      expect(manager.status).toBe('paused');
 
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
@@ -1046,7 +1046,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
 
       // 修复前：resetToRunning 后状态机 running，但 `status==='error' && error` 两分支都不进
       // → checkpoint.status 保持 'error' → 永久分叉（断言红）
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       expect(manager.getCheckpoint()!.status).toBe('running');
     });
 
@@ -1102,7 +1102,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       await manager.restoreFromCheckpoint(cp);
 
       // 恢复主流程不受影响（热记忆已恢复、状态机已归位）
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       // 让微任务队列排空，使 rejection 走完 handler 链
       await new Promise((resolve) => setTimeout(resolve, 10));
       // 修复前（无 catch）：warn 未被调 → 断言红
@@ -1143,7 +1143,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
     it('pause 应暂停成功并发射事件', () => {
       const result = manager.pause('用户手动暂停', 'user');
       expect(result).toBe(true);
-      expect(manager.stateMachine.status).toBe('paused');
+      expect(manager.status).toBe('paused');
       expect(emitEvent).toHaveBeenCalledWith('sessionPaused', expect.objectContaining({
         reason: '用户手动暂停',
         source: 'user',
@@ -1161,7 +1161,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
       manager.pause('测试暂停');
       const result = manager.resume();
       expect(result).toBe(true);
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       expect(emitEvent).toHaveBeenCalledWith('sessionResumed', expect.any(Object));
     });
 
@@ -1188,7 +1188,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
     it('triggerError 应触发异常并发射事件', () => {
       const result = manager.triggerError('LLM 超时');
       expect(result).toBe(true);
-      expect(manager.stateMachine.status).toBe('error');
+      expect(manager.status).toBe('error');
       expect(emitEvent).toHaveBeenCalledWith('sessionError', expect.objectContaining({
         cause: 'LLM 超时',
       }));
@@ -1201,7 +1201,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
       cp.error!.recovered = true;
       const result = manager.recover();
       expect(result).toBe(true);
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       expect(emitEvent).toHaveBeenCalledWith('sessionRecovered', expect.any(Object));
     });
 
@@ -1374,7 +1374,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       const result = agent.pause('测试暂停', 'user');
       expect(result).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(agent.sessionManager!.status).toBe('paused');
       expect(events).toContain('sessionPaused');
     });
 
@@ -1389,7 +1389,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       const result = agent.resume();
       expect(result).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+      expect(agent.sessionManager!.status).toBe('running');
       expect(events).toContain('sessionResumed');
     });
 
@@ -1398,26 +1398,26 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(() => agent!.pause('test')).toThrow(/未初始化/);
     });
 
-    it('T1-1 空闲态（无活跃流）点暂停应直接翻 PAUSED 且不残留 _pendingPauseReason', async () => {
+    it('T1-1 空闲态（无活跃流）点暂停应直接翻 PAUSED 且不残留 pending 状态', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      // 空闲态：无活跃执行流，consumeExecutionStream 未运行 → _streamActive 为 false
-      expect((agent as unknown as { _streamActive: boolean })._streamActive).toBe(false);
+      // 空闲态：无活跃执行流，isBusy 为 false → requestPause 走直接暂停路径
 
       const ok = agent.requestPause('空闲暂停', 'user');
       expect(ok).toBe(true);
-      // 无修复时走延迟路径：置位 _pendingPauseReason 但状态机不翻 PAUSED（点击无效）
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
-      expect((agent as unknown as { _pendingPauseReason?: string })._pendingPauseReason).toBeUndefined();
+      // SSOT 收口后：空闲态直接翻 PAUSED，不经过 pending 延迟
+      expect(agent.sessionManager!.status).toBe('paused');
+      // 空闲态直接翻 PAUSED，不残留 pending 状态
+      expect(agent.sessionManager!.isPausePending()).toBe(false);
 
       // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）。
       // abandonPause 已删除（无生产调用方），改用 resume() 恢复（resume 同样清 pauseMeta）
       const resumed = agent.resume();
       expect(resumed).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+      expect(agent.sessionManager!.status).toBe('running');
       const ok2 = agent.requestPause('再次暂停', 'user');
       expect(ok2).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(agent.sessionManager!.status).toBe('paused');
     });
 
     it('T2-8：用户空闲主动暂停（requestPause）应透传 lowRisk=true，不计入 P4 连续暂停配额', async () => {
@@ -1427,7 +1427,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       const ok = agent.requestPause('空闲暂停', 'user');
       expect(ok).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(agent.sessionManager!.status).toBe('paused');
       // 契约：用户主动暂停不消耗 P4 连续暂停配额 → 计数保持 0（不挤占 Agent 澄清额度）
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
     });
@@ -1496,7 +1496,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       );
       // 即便存在可推进的 pending 步骤，error 态也不应诱导用户点"继续"后静默无反应
       agent.triggerError('LLM 超时');
-      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+      expect(agent.sessionManager!.status).toBe('error');
       expect(agent.canContinueWithoutInput()).toBe(false);
     });
   });
@@ -1508,7 +1508,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       // 暂停会话，状态机进入 PAUSED
       agent.pause('测试暂停', 'user');
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(agent.sessionManager!.status).toBe('paused');
 
       // 模拟 chat 锁被其他执行流占用
       (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
@@ -1524,7 +1524,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       }).rejects.toThrow(/对话繁忙/);
 
       // 状态机必须保持 PAUSED（修复前为 running → 断言红）
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(agent.sessionManager!.status).toBe('paused');
     });
   });
 
@@ -1535,7 +1535,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       const result = agent.triggerError('LLM 超时');
       expect(result).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+      expect(agent.sessionManager!.status).toBe('error');
     });
 
     it('recover 应从异常恢复', async () => {
@@ -1548,7 +1548,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       const result = agent.recover();
       expect(result).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+      expect(agent.sessionManager!.status).toBe('running');
     });
   });
 
@@ -1558,7 +1558,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       await agent.init();
       agent.createCheckpoint('测试目标');
       agent.triggerError('LLM 超时');
-      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+      expect(agent.sessionManager!.status).toBe('error');
 
       const events: unknown[] = [];
       agent.on('sessionResumeFailed', (data: unknown) => events.push(data));
@@ -1570,7 +1570,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 
       // 非静默：必须产出 error chunk 告知用户，状态保持 error（不误翻 running）
       expect(chunks.some((c) => c.type === 'error')).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('error');
+      expect(agent.sessionManager!.status).toBe('error');
       // 必须通知宿主续跑失败，而非被 `status !== 'paused'` 的静默 return 吞没
       expect(events.length).toBeGreaterThan(0);
     });
@@ -1698,7 +1698,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 2. 暂停会话
     const pauseResult = agent.pause('用户需要休息一下', 'user');
     expect(pauseResult).toBe(true);
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
 
     // 3. 检查检查点状态为 paused
     const pausedCp = agent.getCheckpoint();
@@ -1708,7 +1708,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 4. 恢复会话
     const resumeResult = agent.resume();
     expect(resumeResult).toBe(true);
-    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    expect(agent.sessionManager!.status).toBe('running');
 
     // 5. 检查检查点状态为 running
     const resumedCp = agent.getCheckpoint();
@@ -1748,7 +1748,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 2. 触发异常
     const errorResult = agent.triggerError('LLM 请求超时');
     expect(errorResult).toBe(true);
-    expect(agent.sessionManager!.stateMachine.status).toBe('error');
+    expect(agent.sessionManager!.status).toBe('error');
 
     // 3. 检查检查点状态
     const errorCp = agent.getCheckpoint();
@@ -1764,7 +1764,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 5. 恢复
     const recoverResult = agent.recover();
     expect(recoverResult).toBe(true);
-    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    expect(agent.sessionManager!.status).toBe('running');
 
     // 6. 检查检查点状态
     const recoveredCp = agent.getCheckpoint();
@@ -1827,7 +1827,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
 
     // 验证持久化检查点被加载
     // loadPersistedCheckpoint 在 init 中自动调用，恢复状态机
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
 
     // 恢复会话
     const resumeOk = agent.resume();
@@ -2069,11 +2069,11 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     for (let i = 0; i < 3; i++) {
       const pauseOk = agent.pause(`第 ${i + 1} 次暂停`, 'user');
       expect(pauseOk).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+      expect(agent.sessionManager!.status).toBe('paused');
 
       const resumeOk = agent.resume();
       expect(resumeOk).toBe(true);
-      expect(agent.sessionManager!.stateMachine.status).toBe('running');
+      expect(agent.sessionManager!.status).toBe('running');
     }
 
     // 循环后可以正常对话
@@ -2236,21 +2236,21 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     agent = makeMultiTurnAgent();
     await agent.init();
 
-    // 在流进行中（_streamActive=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
+    // 在流进行中（isBusy=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
     // 直到 loop 在迭代边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
     // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转（D1）。
     let statusRightAfterRequestPause = '';
     for await (const chunk of agent.chat('读取探针文件')) {
       if (chunk.type === 'tool_result') {
         agent.requestPause('流中暂停', 'user');
-        statusRightAfterRequestPause = agent.sessionManager!.stateMachine.status;
+        statusRightAfterRequestPause = agent.sessionManager!.status;
       }
       if (chunk.type === 'paused') break;
     }
 
     expect(statusRightAfterRequestPause).toBe('running');
     // 最终由 loop 边界挂起翻转
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
   });
 
   it('T2-8：流中用户暂停（延迟翻转挂起 :1117）应透传 lowRisk=true，不计入 P4 配额', { timeout: 30000 }, async () => {
@@ -2263,7 +2263,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       if (chunk.type === 'tool_result') agent.requestPause('流中暂停', 'user');
       if (chunk.type === 'paused') break;
     }
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
     // 契约：流中用户暂停与空闲暂停同一 lowRisk 契约（:1117 透传 true），计数保持 0
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
     });
@@ -2292,7 +2292,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     await agent.init();
 
     expect(await pauseDuringFirstTurn(agent)).toBe(true);
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
 
     // 续跑中再次暂停——此处正是原缺陷点：resumeExecution 只转发 paused chunk 不翻状态机
     let sawPausedOnResume = false;
@@ -2302,7 +2302,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     }
 
     expect(sawPausedOnResume).toBe(true);
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
   });
 
   it('P0-1：续跑中暂停后检查点 status 应同步为 paused（防三方分叉）', { timeout: 30000 }, async () => {
@@ -2386,7 +2386,7 @@ describe('SSOT 排雷防回归 · 死 command 分支（T1-3 / F1-2）', () => {
   it('喂入 type:command 事件不应触发状态机翻转（死分支已删）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
-    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    expect(agent.sessionManager!.status).toBe('running');
 
     // command 事件经 agent.processEvent → loop.processEvent → onSessionEvent 回调。
     // 死分支（agent.handleSessionEvent 的 case 'command' 调 sm.pause / loop.handleCommand）
@@ -2396,7 +2396,7 @@ describe('SSOT 排雷防回归 · 死 command 分支（T1-3 / F1-2）', () => {
       if (chunk.type === 'text' && chunk.content.includes('会话已暂停')) sawPauseChunk = true;
     }
 
-    expect(agent.sessionManager!.stateMachine.status).toBe('running');
+    expect(agent.sessionManager!.status).toBe('running');
     expect(sawPauseChunk).toBe(false);
   });
 });
@@ -2469,8 +2469,8 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     );
 
     // 制造残留：管理器的状态机先进入 paused（模拟上一个会话未正常复位）
-    manager.stateMachine.pause('前一个会话的暂停', 'user');
-    expect(manager.stateMachine.status).toBe('paused');
+    manager.pause('前一个会话的暂停', 'user');
+    expect(manager.status).toBe('paused');
 
     const errorCheckpoint: SessionCheckpoint = {
       ...manager.createCheckpoint('目标')!,
@@ -2481,7 +2481,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     // 修复前：triggerError 仅允许 running→error，残留 paused 使其静默失败 → 状态机停留 paused
     // 修复后：resetToRunning() 先归零，再 triggerError → error
     await manager.restoreFromCheckpoint(errorCheckpoint);
-    expect(manager.stateMachine.status).toBe('error');
+    expect(manager.status).toBe('error');
   });
 
   it('P1：P4 澄清暂停前应先应用已确定槽位（防解析成果随暂停丢失）', async () => {
@@ -2509,7 +2509,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
 
     // 澄清暂停已发生
     expect(chunkTypes).toContain('done');
-    expect(agent.sessionManager!.stateMachine.status).toBe('paused');
+    expect(agent.sessionManager!.status).toBe('paused');
 
     // 核心断言：已确定槽位（role）必须在暂停前落检查点
     expect(agent.sessionManager!.getCheckpoint()!.role.name).toBe('expert');

@@ -316,7 +316,7 @@ describe('检查点字段生命周期', () => {
       const loaded = revived.loadPersistedCheckpoint();
 
       expect(loaded!.status).toBe('running');
-      expect(revived.stateMachine.status).toBe('running');
+      expect(revived.status).toBe('running');
     });
   });
 
@@ -416,7 +416,7 @@ describe('检查点字段生命周期', () => {
 
       // 修复前：'zombie' 原样留存 → 三个状态分支全不匹配 → 检查点与状态机永久分叉
       expect(manager.getCheckpoint()!.status).toBe('running');
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
     });
 
     it('补齐的默认值不得在多个检查点之间共享引用', async () => {

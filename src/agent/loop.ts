@@ -172,8 +172,11 @@ export class AgentLoop {
    * 显式字段不受 messages 数组变动影响，状态机更健壮。
    */
   private reflectionCountThisTurn: number = 0;
-  /** 软暂停请求标志（不中断工作模型 v2.1：用户主动软暂停，区别于硬停止 signal.abort） */
-  private pauseRequested = false;
+  /** 软暂停请求标志（不中断工作模型 v2.1：用户主动软暂停，区别于硬停止 signal.abort）
+   *
+   * 由 Agent.requestPause() 设置，handleIteration 在迭代边界检查并挂起生成器。
+   * public 字段，SSOT 收口后 Agent 直接读写，不再通过方法包装。 */
+  pauseRequested = false;
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
@@ -356,28 +359,6 @@ export class AgentLoop {
         logger.warn({ eventType: (event as SessionEvent).type }, '未知 SessionEvent 类型，降级为 chat');
         yield* this.processUserInput(event.content, recalledMemories, signal);
     }
-  }
-
-  /**
-   * 请求软暂停（不中断工作模型 v2.1）
-   *
-   * 仅设置标志，由 handleIteration 在迭代边界（当前工具步完成后、下一次 LLM 调用前）
-   * 真正挂起生成器。保留 this.messages，不 abort——与硬停止（signal.abort）严格区分：
-   * 硬停止杀掉生成器无法续跑；软暂停可经 continueAfterPause 真正续跑。
-   */
-  requestPause(): void {
-    this.pauseRequested = true;
-  }
-
-  /**
-   * 取消待处理的软暂停请求（清 pauseRequested 标志，修复跨轮泄漏 D2）
-   *
-   * processUserInput / continueAfterPause 入口调用：确保上一轮以 done 结束时，
-   * 残留的 pauseRequested 不会泄漏到下一轮误触发暂停。
-   * 同时为 Phase 2 的 SESSION_CANCEL_PAUSE IPC 预建可复用能力。
-   */
-  cancelPauseRequest(): void {
-    this.pauseRequested = false;
   }
 
   /**

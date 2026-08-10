@@ -432,7 +432,7 @@ describe('SessionManager', () => {
       manager.pause('测试暂停', 'user');
 
       // 验证暂停成功
-      expect(manager.stateMachine.status).toBe('paused');
+      expect(manager.status).toBe('paused');
 
       // 验证检查点已创建
       expect(manager.getCheckpoint()).not.toBeNull();
@@ -444,7 +444,7 @@ describe('SessionManager', () => {
       // 快进时间超过超时阈值（再快进 2 分钟，确保超过 30 分钟）
       vi.advanceTimersByTime(120_000);
       expect(manager.getCheckpoint()).toBeNull();
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: expect.any(String),
         pauseDuration: expect.any(Number),
@@ -453,11 +453,11 @@ describe('SessionManager', () => {
 
     it('暂停后在超时前恢复，应不触发超时清理', () => {
       manager.pause('测试暂停', 'user');
-      expect(manager.stateMachine.status).toBe('paused');
+      expect(manager.status).toBe('paused');
 
       // 恢复会话（应在超时前）
       manager.resume();
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
 
       // 快进时间超过超时阈值，应不触发超时清理
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
@@ -470,7 +470,7 @@ describe('SessionManager', () => {
 
     it('destroy 应清理定时器，使其不触发回调', () => {
       manager.pause('测试暂停', 'user');
-      expect(manager.stateMachine.status).toBe('paused');
+      expect(manager.status).toBe('paused');
 
       // 销毁 SessionManager，清理定时器
       manager.destroy();
@@ -582,7 +582,7 @@ describe('SessionManager', () => {
       const result = manager.updateGoal(mainGoal);
       expect(result).toBeNull();
       // 状态机应保持 running
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
     }
 
     it('drift 级别时应自动暂停', () => {
@@ -597,7 +597,7 @@ describe('SessionManager', () => {
       expect(result).not.toBeNull();
       expect(result!.level).toBe('drift');
       // 状态机应为 paused
-      expect(manager.stateMachine.status).toBe('paused');
+      expect(manager.status).toBe('paused');
     });
 
     it('confirm 级别时应不自动暂停', () => {
@@ -610,7 +610,7 @@ describe('SessionManager', () => {
       expect(result).not.toBeNull();
       expect(result!.level).toBe('confirm');
       // confirm 级别不应暂停
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
     });
 
     it('same 级别时应不触发任何事件', () => {
@@ -622,7 +622,7 @@ describe('SessionManager', () => {
       expect(result).not.toBeNull();
       expect(result!.level).toBe('same');
       // same 级别不应暂停
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       // 不应发射 goalDriftDetected 事件
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
@@ -639,7 +639,7 @@ describe('SessionManager', () => {
       expect(result).not.toBeNull();
       expect(result!.level).toBe('same');
       expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
       expect(emitEvent).not.toHaveBeenCalledWith('goalUpdated', expect.anything());
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
@@ -679,7 +679,7 @@ describe('SessionManager', () => {
       const result = manager.updateGoal('新的目标');
       expect(result).toBeNull();
       // 不应暂停
-      expect(manager.stateMachine.status).toBe('running');
+      expect(manager.status).toBe('running');
     });
 
     it('drift 暂停时应发射 goalDriftDetected 事件', () => {
@@ -820,7 +820,7 @@ describe('SessionManager', () => {
       expect(cp!.mainGoal).toBe('加载测试');
       expect(cp!.status).toBe('running');
       // 状态机应为 running（不需要额外操作）
-      expect(mgr.stateMachine.status).toBe('running');
+      expect(mgr.status).toBe('running');
     });
 
     it('loadPersistedCheckpoint 应恢复 paused 状态', () => {
@@ -853,7 +853,7 @@ describe('SessionManager', () => {
       expect(cp).not.toBeNull();
       expect(cp!.status).toBe('paused');
       // 状态机恢复为 paused
-      expect(mgr.stateMachine.status).toBe('paused');
+      expect(mgr.status).toBe('paused');
     });
 
     it('loadPersistedCheckpoint 暂停超时应返回 null 并清理', () => {
@@ -889,7 +889,7 @@ describe('SessionManager', () => {
       expect(cp).toBeNull();
       expect(mgr.getCheckpoint()).toBeNull();
       // 状态机应保持 running（超时清理后重置）
-      expect(mgr.stateMachine.status).toBe('running');
+      expect(mgr.status).toBe('running');
       // 应发射超时事件
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
@@ -940,7 +940,7 @@ describe('SessionManager', () => {
 
       expect(cp).toBeNull();
       expect(mgr.getCheckpoint()).toBeNull();
-      expect(mgr.stateMachine.status).toBe('running');
+      expect(mgr.status).toBe('running');
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
       }));
@@ -1045,7 +1045,7 @@ describe('SessionManager', () => {
 
       await mgr.restoreFromCheckpoint(checkpoint);
 
-      expect(mgr.stateMachine.status).toBe('paused');
+      expect(mgr.status).toBe('paused');
     });
 
     it('sessionStore 未注入时 createCheckpoint 不应抛错', () => {

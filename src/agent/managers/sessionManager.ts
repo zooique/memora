@@ -24,6 +24,7 @@ import type { Message } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type {
   SessionCheckpoint,
+  SessionStatus,
   ChatMessage,
   Role,
   Standard,
@@ -70,8 +71,8 @@ export class SessionManager {
   private emitEvent: (event: string, data: Record<string, unknown>) => void;
 
   // ─── 不中断工作模型 v2.0（P4） ──────────────────────────
-  /** 会话状态机（三态流转） */
-  readonly stateMachine: SessionStateMachine;
+  /** 会话状态机（三态流转，private 封装，通过有界代理方法访问） */
+  private stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
   /**
@@ -137,6 +138,63 @@ export class SessionManager {
     this.emitEvent = emitEvent;
     this.stateMachine = new SessionStateMachine('running');
     this.consistencyChecker = new GoalConsistencyChecker();
+  }
+
+  // ─── SSOT 状态机代理（P0-2：封装 stateMachine，暴露有界接口） ───
+
+  /** 会话状态（状态机状态） */
+  get status(): SessionStatus {
+    return this.stateMachine.status;
+  }
+
+  /** 获取暂停信息（仅 PAUSED 时有效） */
+  get pauseInfo(): { reason: string; source: PauseSource } | null {
+    return this.stateMachine.pauseInfo;
+  }
+
+  /** 获取异常原因（仅 ERROR 时有效） */
+  get errorInfo(): string | null {
+    return this.stateMachine.errorInfo;
+  }
+
+  /** 获取待处理暂停信息（只读，不消费） */
+  get pendingPauseInfo(): { reason: string; source: PauseSource } | null {
+    return this.stateMachine.pendingPauseInfo;
+  }
+
+  /** 检查是否处于暂停态 */
+  isPaused(): boolean {
+    return this.stateMachine.status === 'paused';
+  }
+
+  /** 检查是否处于运行态 */
+  isRunning(): boolean {
+    return this.stateMachine.status === 'running';
+  }
+
+  /** 待处理暂停请求是否在等待中 */
+  isPausePending(): boolean {
+    return this.stateMachine.isPausePending();
+  }
+
+  /**
+   * 请求软暂停（仅 RUNNING 状态允许）
+   *
+   * 暂存暂停原因和来源，待 loop 边界真正挂起时由 consumePendingPause() 消费。
+   * 与 pause() 不同：pause() 立即翻状态机，requestPause() 仅注册待处理请求。
+   */
+  requestPause(reason: string, source: PauseSource = 'user'): boolean {
+    return this.stateMachine.requestPause(reason, source);
+  }
+
+  /** 消费待处理暂停请求（在 loop 边界真正挂起时调用） */
+  consumePendingPause(): { reason: string; source: PauseSource } | null {
+    return this.stateMachine.consumePendingPause();
+  }
+
+  /** 取消待处理暂停请求 */
+  cancelPendingPause(): void {
+    this.stateMachine.cancelPendingPause();
   }
 
   /**
@@ -930,16 +988,17 @@ export class SessionManager {
   pause(reason: string, source: PauseSource = 'user', lowRisk: boolean = false): boolean {
     const result = this.stateMachine.pause(reason, source);
     if (result.allowed) {
-      // 暂停前保存检查点
-      this.createCheckpoint();
-      // 记录暂停起点，与 lastHeartbeat 解耦。lastHeartbeat 现仅承载
-      // 「检查点写入时间」语义（touchCheckpoint 唯一写点），不再作为暂停超时基准，
-      // 避免暂停后 touchCheckpoint（如 updatePlanStepStatus）刷新心跳导致超时判定被无限推迟。
-      // pausedAt 在 pause() 唯一状态转换点写入，覆盖空闲直翻与流中延迟翻两条路径。
+      // 记录暂停起点，与 lastHeartbeat 解耦。在 createCheckpoint 前写入，
+      // 检查点通过 spread 继承 pausedAt，合并为单次落盘（P2-2）。
       if (this.checkpoint) {
         this.checkpoint.pausedAt = Date.now();
+      }
+      // 暂停前保存检查点（含 pausedAt，createCheckpoint 内部已落盘）
+      this.createCheckpoint();
+      // 首轮暂停时无现有检查点，pausedAt 未被 spread 继承，补设并标记脏
+      if (this.checkpoint && !this.checkpoint.pausedAt) {
+        this.checkpoint.pausedAt = Date.now();
         this.touchCheckpoint();
-        this.flushCheckpoint(true);
       }
       // 仅高风险暂停记录时间戳（低风险由 Agent 自动兜底，不累积）
       if (!lowRisk) {
@@ -991,7 +1050,8 @@ export class SessionManager {
       this.stopPauseTimeoutTimer();
       // 更新检查点心跳并持久化（P0-2：会话状态持久化）
       if (this.checkpoint) {
-        this.checkpoint.status = 'running';
+        // P2-1：从状态机投影 status，避免直接写死（SSOT 原则）
+        this.checkpoint.status = this.stateMachine.status;
         // SSOT 挂载物卸载（用户设计定案 2026-08-10：资源层 vs 状态层）：
         // pauseMeta 属于状态层挂载物（仅含展示信息 phase/reason/source/pausedAt），
         // 会话恢复（paused → running）即"回到运行"，挂载物应被卸载。
@@ -1116,7 +1176,8 @@ export class SessionManager {
     const result = this.stateMachine.recover(this.checkpoint);
     if (result.allowed) {
       if (this.checkpoint) {
-        this.checkpoint.status = 'running';
+        // 从状态机投影 status，遵循 SSOT 原则
+        this.checkpoint.status = this.stateMachine.status;
         this.touchCheckpoint();
       }
       // 恢复必须落盘。

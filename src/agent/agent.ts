@@ -286,11 +286,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
       // P2-2: 暂停超时后清理 Agent 残留的 pending 暂停状态。
       // checkPauseTimeout() 已清除 SessionManager 的检查点并复位状态机，
-      // 但 Agent 的 _pendingPauseReason / _pendingPauseSource 可能仍残留
+      // 但 SessionStateMachine 的 pendingPauseReason 可能仍残留
       // （如 requestPause 后 loop 尚未到达边界，超时先行触发）。
-      // 若不清理，下次 requestPause() 会被幂等检查 `_pendingPauseReason !== undefined` 静默忽略。
-      this._pendingPauseReason = undefined;
-      this._pendingPauseSource = 'user';
+      // 若不清理，下次 requestPause() 会被幂等检查静默忽略。
+      this._sessionManager?.cancelPendingPause();
 
       // F1.3：从事件载荷直接读取 date/session，不再经 consumePauseTimedOutSession()
       const { sessionId, date, session } = payload;
@@ -1000,7 +999,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param signal - 可选 AbortSignal（硬停止仍走此路径）
    */
   async *resumeExecution(input?: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
-    const resumeStatus = this._sessionManager?.stateMachine.status;
+    const resumeStatus = this._sessionManager?.status;
     // 错误态续跑应明确失败而非静默吞没——error 态由检查点恢复回填进入，运行时异常走
     // `yield { type: 'error' }` 不翻状态机，故生产链路不会自然离开 error 态，
     // 必须显式提示用户重新开始，而非被 `status !== 'paused'` 的静默 return 吞没。
@@ -1110,8 +1109,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; failed: boolean }, unknown> {
     let content = '';
     let aborted = false;
-    // 标记流活跃，使 requestPause 能据此判断「延迟翻转机制是否有消费方」
-    this._streamActive = true;
 
     try {
       for await (const chunk of source) {
@@ -1120,7 +1117,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (chunk.type === 'paused') {
           // 延迟翻转挂起 = 用户暂停请求的消费端，与 requestPause 空闲分支同源，
           // 必须传 lowRisk=true 保持同一暂停事件契约一致（否则流中暂停会被计入 P4 配额）。
-          this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource, true);
+          // 从 SessionStateMachine 消费 pending 暂停信息（SSOT 收口）
+          const pendingInfo = this._sessionManager?.consumePendingPause();
+          this.pause(pendingInfo?.reason ?? '用户主动暂停', pendingInfo?.source ?? 'user', true);
         }
         yield chunk;
         if (chunk.type === 'text') {
@@ -1137,13 +1136,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       return { content, aborted, failed: true };
     } finally {
-      // 流结束，复位活跃标志
-      this._streamActive = false;
       // 释放暂停幂等锁，覆盖正常结束 / abort / error 三路。
-      // 残留会让 requestPause 的 `_pendingPauseReason !== undefined` 检查
-      // 永久拒绝后续暂停请求（暂停按钮全失效）。
-      this._pendingPauseReason = undefined;
-      this._pendingPauseSource = 'user';
+      // 残留会让 requestPause 的幂等检查永久拒绝后续暂停请求（暂停按钮全失效）。
+      this._sessionManager?.cancelPendingPause();
+      // 同步清理 loop 的 pauseRequested 标志（P1-1：复用 isBusy 后，finally 块需显式清理）
+      this.requireLoop.pauseRequested = false;
     }
 
     return { content, aborted, failed: false };
@@ -1399,7 +1396,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private autoResumeIfPaused(eventType?: string): boolean {
     const sm = this._sessionManager;
     if (!sm) return true;
-    const status = sm.stateMachine.status;
+    const status = sm.status;
     if (status === 'error') {
       throw configError('会话异常', '会话处于异常状态，无法接收新消息', [
         '先标记 error.recovered=true 并调用 agent.recover()',
@@ -1411,12 +1408,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return true;
   }
 
-  // P0-2：软暂停申请时暂存的 reason/source，待 loop 迭代边界真正挂起（产出 {type:'paused'} chunk）时翻状态机使用
-  private _pendingPauseReason?: string;
-  private _pendingPauseSource: 'user' | 'agent' | 'system' = 'user';
-  // 是否有活跃的执行流正在消费延迟暂停请求（consumeExecutionStream 是 chat/processEvent/
-  // resumeExecution 的唯一 funnel，仅在此处置位与清理，单一真理源，避免与 chatLock 语义耦合）。
-  private _streamActive = false;
+  // P0-2：软暂停申请时暂存的 reason/source 已收口到 SessionStateMachine（SSOT 四方冗余修复 2026-08-10）
   /** P2-11: 兜底停滞计数器——连续无 task_table_update 的回合数 */
   private _stalledRoundCount = 0;
 
@@ -1424,7 +1416,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 请求软暂停（不中断工作模型 v2.1）
    *
    * 仅设置 loop 的 pauseRequested 标志（loop 在下一迭代边界挂起，不 abort），
-   * 并暂存 reason/source。状态机翻 PAUSED **延后到 loop 边界真正挂起时**
+   * 并暂存 reason/source 到 SessionStateMachine（SSOT 收口）。
+   * 状态机翻 PAUSED **延后到 loop 边界真正挂起时**
    * （见 chat() 对 {type:'paused'} chunk 的处理）——内核事实驱动，而非申请即翻转（修 D1）。
    * 与硬停止（signal.abort）严格区分：软暂停保留 this.messages，可经 resumeExecution 续跑。
    *
@@ -1435,39 +1428,38 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   requestPause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): boolean {
     this.assertInitialized('requestPause');
 
-    // 状态机阻止：已暂停/已异常时禁止再申请暂停
     const sm = this._sessionManager;
-    if (sm) {
-      if (sm.stateMachine.status === 'paused') {
-        logger.debug('requestPause 忽略：会话已处于暂停状态');
-        return false;
-      }
-      if (sm.stateMachine.status === 'error') {
-        logger.debug('requestPause 忽略：会话处于异常状态，无法暂停');
-        return false;
-      }
+    if (!sm) return false;
+
+    // 状态机阻止：已暂停/已异常时禁止再申请暂停
+    const status = sm.status;
+    if (status === 'paused') {
+      logger.debug('requestPause 忽略：会话已处于暂停状态');
+      return false;
+    }
+    if (status === 'error') {
+      logger.debug('requestPause 忽略：会话处于异常状态，无法暂停');
+      return false;
     }
 
-    // 无活跃流时，延迟翻转机制没有消费方——
-    // consumeExecutionStream 的 finally 不会执行，_pendingPauseReason 将永驻并锁死幂等，
+    // 无活跃流时（isBusy=false），延迟翻转机制没有消费方——
+    // consumeExecutionStream 的 finally 不会执行，pending 状态将永驻并锁死幂等，
     // 且此时本就没有正在执行的工具需要「延迟到迭代边界挂起」。直接同步翻状态机，
     // 不产生悬挂副本（这是内核事实驱动延迟翻转的正当例外：无流可延迟）。
-    if (!this._streamActive) {
+    if (!this.isBusy) {
       // 用户主动暂停不消耗 P4 连续暂停配额 → lowRisk=true
       this.pause(reason, source, true);
       return true;
     }
 
-    // 幂等：已存在待处理的暂停请求，重复调用不覆盖
-    if (this._pendingPauseReason !== undefined) {
+    // 委托给 SessionStateMachine 管理 pending 暂停状态（含幂等检查）
+    if (!sm.requestPause(reason, source)) {
       logger.debug('requestPause 忽略：已有待处理的暂停请求');
       return false;
     }
 
-    // 仅置标志 + 暂存，不在此同步翻状态机
-    this._pendingPauseReason = reason;
-    this._pendingPauseSource = source;
-    this.requireLoop.requestPause();
+    // 设置 loop 边界挂起标志
+    this.requireLoop.pauseRequested = true;
     return true;
   }
 
@@ -1476,12 +1468,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 清空 loop 的 pauseRequested 标志，让工作通道继续运行。
    * 与 requestPause 对称：申请→loop 边界挂起，取消→清标志继续。
+   * SessionStateMachine 的 pending 状态同步清理（SSOT 收口）。
    */
   cancelPauseRequest(): void {
     this.assertInitialized('cancelPauseRequest');
-    this.requireLoop.cancelPauseRequest();
-    this._pendingPauseReason = undefined;
-    this._pendingPauseSource = 'user'; // 防残留污染下次暂停（与 requestPause 对称）
+    this.requireLoop.pauseRequested = false;
+    this._sessionManager?.cancelPendingPause();
   }
 
   /**
@@ -1490,19 +1482,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 供宿主 UI 区分三态：运行中无申请（显示「暂停」）/ 申请已发未触发
    * （显示「取消暂停」）/ 已暂停（显示「继续」）。
    *
-   * 状态真理源：`_pendingPauseReason`——流中 requestPause 置位（:1470），
-   * loop 边界真正挂起后由 consumeExecutionStream finally 清理（:1147），
-   * cancelPauseRequest 主动清理。空闲态 requestPause 直接翻
-   * PAUSED（不置位 _pendingPauseReason），故 `!== undefined` 精确表达
-   * 「申请在途」。附加状态机守卫：已 PAUSED 时即使有残留也按已暂停处理。
+   * 状态真理源：SessionStateMachine.isPausePending()——流中 requestPause 置位，
+   * loop 边界真正挂起后由 consumePendingPause() 消费，
+   * cancelPauseRequest 主动清理。空闲态 requestPause 直接翻 PAUSED（不置位 pending），
+   * 故 `isPausePending()` 精确表达「申请在途」。
    *
    * @returns true=暂停申请在途（状态机仍 running）；false=无在途申请或已暂停
    */
   isPausePending(): boolean {
-    return (
-      this._pendingPauseReason !== undefined &&
-      this._sessionManager?.stateMachine.status !== 'paused'
-    );
+    return this._sessionManager?.isPausePending() ?? false;
   }
 
   /**
@@ -1576,10 +1564,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 三者皆否（纯单轮问答、无待续目标）→ 返回 false，sprite 对该轮隐藏暂停按钮（仅停止）。
    */
   canContinueWithoutInput(): boolean {
-    if (this._sessionManager?.stateMachine.status === 'paused') return true;
+    if (this._sessionManager?.status === 'paused') return true;
     // 错误态不展示"继续"——error 态由检查点恢复回填进入，必须显式处理
     // （重新开始或 recover），不应诱导用户点"继续"后静默无反应。
-    if (this._sessionManager?.stateMachine.status === 'error') return false;
+    if (this._sessionManager?.status === 'error') return false;
     // 仅 pending/active（可推进）步骤计入"可续跑"。
     // 旧判据 `s.status !== 'done'` 把 blocked 也算可续 → 与 isPlanStalled 判据反向
     // （sessionManager.ts:1056 视 blocked 为停滞）→ 全 blocked 计划按钮可点但
@@ -1936,10 +1924,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop.onPaused = () => {
       // onPaused 在 loop 边界真正挂起时触发
       // 设置 pauseMeta 为 suspended 态，标记已挂起
+      // 暂停原因/来源从 SessionStateMachine 读取（SSOT 收口）
+      const pendingInfo = this._sessionManager?.pendingPauseInfo;
       this._sessionManager?.setPauseMeta({
         phase: 'suspended',
-        reason: this._pendingPauseReason ?? '用户主动暂停',
-        source: this._pendingPauseSource ?? 'user',
+        reason: pendingInfo?.reason ?? '用户主动暂停',
+        source: pendingInfo?.source ?? 'user',
         pausedAt: Date.now(),
       });
     };
@@ -2621,22 +2611,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         logger.warn({ err: toError(err) }, 'close: workProjection.awaitInflight 失败');
       }
     }
-    // P0-2：处理 _pendingPauseReason 残留——关闭前确保状态机与检查点一致
+    // P0-2：处理 pending 暂停状态残留——关闭前确保状态机与检查点一致
     // 关闭时若仍有 pending 的暂停请求，记录警告并清理（暂停不会在关闭后被执行）
-    if (this._pendingPauseReason !== undefined) {
+    const sm = this._sessionManager;
+    if (sm?.isPausePending()) {
+      const pendingInfo = sm.pendingPauseInfo;
       logger.warn(
-        { reason: this._pendingPauseReason, source: this._pendingPauseSource },
+        { reason: pendingInfo?.reason, source: pendingInfo?.source },
         'close() 时存在未消费的暂停请求，已自动清理',
       );
       // 若状态机仍为 running（暂停请求尚未被 loop 边界消费或 processEvent 尚未翻状态机），
       // 同步翻状态机使检查点记录 paused 状态，确保磁盘快照准确。
       // 无需触发生成器挂起（close 后不再运行），仅修正状态机与检查点的一致性。
       // 系统清理暂停不消耗 P4 配额 → lowRisk=true（与 requestPause 空闲分支语义对齐）
-      if (this._sessionManager?.stateMachine.status === 'running') {
-        this._sessionManager.pause('close 清理残留暂停', 'system', true);
+      if (sm.status === 'running') {
+        sm.pause('close 清理残留暂停', 'system', true);
       }
       // 清理 pending 状态字段
-      this._pendingPauseReason = undefined;
+      sm.cancelPendingPause();
     }
 
     // 清理 SessionManager（停止暂停超时定时器，防止悬空定时器阻止进程退出）
