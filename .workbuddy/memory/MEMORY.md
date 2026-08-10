@@ -13,6 +13,17 @@
 - 语义：未知 source 透传作目录名（ADR-004 开放字符串）；source 经 validateSource 校验；name 不做字符白名单但做目录内 startsWith 纵深防御。
 - 坑：宿主 tsconfig 开 `noUncheckedIndexedAccess` → `SOURCE_TO_DIR[key]` 返回 `string | undefined`，索引 SOURCE_LABELS 固定 key 处须非空断言 `!`。
 
+## 配置名校验单一真理源（2026-08-10，T-B2~B3 落地）
+- 内核 `utils/strings.ts`：`isValidConfigName(name, maxLength=100)` + `MAX_CONFIG_NAME_LENGTH`（字符集 `[\p{L}\p{N}_-]`，拒分隔符/点号/空格）。
+- 宿主 `shared/inputValidation.ts`：isValidConfigName 同规则（长度 100），**isValidSessionName 保持 200**（会话名 DB 记录无文件约束）；renderer 无法 import memora 裸模块 → 两端各一份实现，**契约测试**（inputValidation.test.ts 16 样本）锁行为一致，禁止单端改规则不更新契约测试。
+- 变更规则：改字符集/长度须两端同步 + 契约测试样本同步 + 内核全量回归。
+
+## Agent 接口收敛（2026-08-10，T-C1~C3 落地）
+- `AgentConfig` = `Omit<AgentOptions, ...> & {...}` 派生（**字段名坑：AgentOptions 是 `persona`、AgentConfig 是 `personaName`**，Omit 列表须含 'persona' 再覆盖）。新增 AgentOptions 字段时：若构造处有 `?? 默认值` 解析，把字段加进 Omit 列表 + 覆盖类型。
+- `AssembleCallbacks`（assembler.ts）：8 个回调收敛为 `AssembleInput.callbacks` 组；`AssembleInput` 共享字段 `Pick<AgentConfig, ...>` 派生（AssembleRuntimeParams）。新增回调只改 AssembleCallbacks 一处。
+- `FileConsistencyCheck` 命名类型（types.ts）：`(id, expected: 'exists'|'absent') => boolean`，5 处签名收敛为 1 处引用。
+- 纯工厂回调透传由 tsc 类型锁字段存在性守护（变异验证无牙，接受类型层守护——补深链路行为测试 ROI < 成本）。
+
 ## SSOT 审查与修复（2026-08-09，已落地）
 报告 `tasks/SSOT与设计闭环审查-20260809.md`；方案 `tasks/SSOT修复方案-20260809.md`（以方案为准）。病灶统一是「对称的另一半没写完」。四个根因：
 - A 执行流消费双份并列 → 抽 `#consumeExecutionStream()` 收口 processEvent/executeChatLoop/resumeExecution，清理放 finally。
