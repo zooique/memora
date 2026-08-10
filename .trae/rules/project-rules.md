@@ -20,6 +20,8 @@ description: Memora 项目总则、技术栈清单、目录结构
 4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
 5. **配置文件是真理源**：配置文件是持久化真理源，SQLite 仅作运行时索引（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
 6. **内核 Node.js 专属 + 零第三方依赖**：memora 是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto` 等），但 `dependencies` 字段为空（零第三方运行时依赖）。不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（Electron/browser API 等）。pino 作为可选 `peerDependencies`（`optional: true`）+ `optionalDependencies` 保留，零配置时宿主开箱即用，宿主也可注入自定义 `ILogger` 覆盖（详见 [ADR-002 v0.9 定位定论](../decisions/ADR-002-storage-layer.md)）
+7. **文件层两段式契约**：ConfigManager 写 API（addRule/deleteRule/updateRule/deleteSkill）只同步 SQLite 索引层，**不操作文件**。文件层写入/删除由宿主 `configFileSyncer` 先完成，再调用 ConfigManager 同步索引。ConfigManager 通过可选 `fileConsistencyCheck` 回调前置断言文件操作状态，防止"重启复活"（详见 [configManager.ts](../../src/agent/managers/configManager.ts) 文件级注释）
+8. **检查点版本迁移机制**：`SessionCheckpoint.schemaVersion` 是检查点结构的版本标识，支持向前兼容的迁移。`SessionManager.checkpointMigrations` 静态分发表注册按版本号升序的迁移函数，`normalizeCheckpoint` 在加载时自动应用。新增检查点字段必须：① 递增 `CURRENT_SCHEMA_VERSION`；② 在 `checkpointMigrations` 中注册迁移（详见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts) 及 [constants.ts](../../src/agent/constants.ts) `AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION`）
 
 ## 2. 技术栈清单
 

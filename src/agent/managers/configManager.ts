@@ -114,9 +114,14 @@ export class ConfigManager {
    *   必选参数：CRUD 操作后必须同步 bootstrap 段，否则 system prompt 与存储不一致（SSOT 违反）。
    * @param writeConfigFile - 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖）
    * @param removeRelationsByMemoryId - 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理）
-   *   传入 memoryInspector.writeRemoveRelationsByMemoryId 的绑定版本。
-   *   未注入时删除记忆不清理关系边（向后兼容，但可能残留孤儿边）。
-   */
+ *   传入 memoryInspector.writeRemoveRelationsByMemoryId 的绑定版本。
+ *   未注入时删除记忆不清理关系边（向后兼容，但可能残留孤儿边）。
+ * @param fileConsistencyCheck - 文件层前置条件断言回调（可选，T5：两段式契约结构化）
+ *   注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
+ *   `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
+ *   校验失败抛 configError（fail-fast），未注入时完全降级为现状。
+ *   注意：此校验是快照断言，不保证文件操作与索引操作之间的原子性（本地文件架构固有边界）。
+ */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly skillManager: SkillManager,
@@ -124,7 +129,25 @@ export class ConfigManager {
     private readonly refreshBootstrapMemories: () => void,
     private readonly writeConfigFile?: (memory: Memory) => Promise<void>,
     private readonly removeRelationsByMemoryId?: (memoryId: string) => number,
+    private readonly fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean,
   ) {}
+
+  /**
+   * 文件层前置条件断言（T5：两段式契约结构化）
+   *
+   * 注入 `fileConsistencyCheck` 时，在校验失败时抛 configError（fail-fast）；
+   * 未注入时完全降级为现状（向后兼容）。
+   */
+  private assertFileConsistency(id: string, expected: 'exists' | 'absent'): void {
+    if (!this.fileConsistencyCheck) return;
+    if (!this.fileConsistencyCheck(id, expected)) {
+      throw configError(
+        '文件层前置条件未满足',
+        `文件层前置条件校验失败：${expected === 'absent' ? '文件应已被删除' : '文件应已存在'}（id: ${id}）`,
+        ['先经宿主 configFileSyncer 完成文件操作，再调用 ConfigManager'],
+      );
+    }
+  }
 
   // ─── 配置建议 ─────────────────────────────────────────
 
@@ -257,7 +280,9 @@ export class ConfigManager {
    * 新增项目规则记忆（Q-701 · v1.1）
    *
    * 宿主项目可通过此 API 在运行时动态注入规则记忆。
-   * 规则写入 SQLite 索引后，重启时由 bootstrap 自动召回。
+   * 规则写入 SQLite 索引后，仅写 SQLite 索引；
+   * 重启后无文件支撑，将在启动对账中被 evictOrphanRules 软删。
+   * 跨会话持久化请走 confirmConfigSuggestion 写配置文件。
    * 当前轮次以 system 消息注入 AgentLoop。
    */
   async addRule(memory: Memory): Promise<void> {
@@ -376,6 +401,8 @@ export class ConfigManager {
    */
   deleteRule(name: string): boolean {
     const id = `rule:${name}`;
+    // T5: 文件层前置条件断言——文件应已被宿主删除
+    this.assertFileConsistency(id, 'absent');
     const existing = this.index.getById(id);
     if (!existing) {
       logger.warn({ name, id }, '删除规则失败：规则不存在');
@@ -413,6 +440,8 @@ export class ConfigManager {
    */
   updateRule(name: string, content: string): void {
     const id = `rule:${name}`;
+    // T5: 文件层前置条件断言——文件应已由宿主写入
+    this.assertFileConsistency(id, 'exists');
     const existing = this.index.getById(id);
     const now = nowIso();
     // 与 FileStore.parseMemory 保持一致：只存 body（去掉 frontmatter），避免 system prompt 含噪音
@@ -458,6 +487,8 @@ export class ConfigManager {
    */
   deleteSkill(name: string): boolean {
     const id = `skill:${name}`;
+    // T5: 文件层前置条件断言——文件应已被宿主删除
+    this.assertFileConsistency(id, 'absent');
     const existing = this.index.getById(id);
     if (!existing) {
       logger.warn({ name, id }, '删除技能失败：技能不存在');

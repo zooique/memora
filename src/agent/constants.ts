@@ -78,6 +78,13 @@ export const AGENT_CONSTANTS = {
    */
   HOT_MEMORY_CONTENT_SLICE: 500,
 
+  // ─── T2：completedToolCalls FIFO 封顶 ─────────────────
+  //
+  // 工具执行日志无上限时，检查点序列化开销随会话寿命线性增长。
+  // 48 条 ≈ 多回合工具调用上限，远超单回合调用量。
+  // 截断策略：优先丢弃幂等或已补偿的记录，非幂等未补偿永不丢弃。
+  COMPLETED_TOOL_CALLS_MAX: 48,
+
   // ─── P1-4：检查点 schema 版本（未来兼容公共前提）───
   //
   // 检查点以 SQLite 单 TEXT 列全量覆盖存储，无版本号时字段重命名/跨版本升级

@@ -421,16 +421,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('chat');
     this.validateChatInput(input);
 
-    // P2-1: 双通道模型——使用统一 autoResumeIfPaused 方法处理 ERROR 态拒绝 + PAUSED 态自动恢复
-    // PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
-    if (!this.autoResumeIfPaused()) {
-      yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话' };
-      return;
-    }
-
     const lockCtx = this.acquireChatLock(signal);
     const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
     try {
+      // 状态机翻转是副作用，必须在并发闸门内执行——PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
+      if (!this.autoResumeIfPaused()) {
+        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话' };
+        return;
+      }
       this._lastInteractionAt = new Date();
 
       // 上下文准备：角色匹配 → 记忆召回 → 技能注入 → 历史追加
@@ -833,7 +831,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // PAUSED 态收到用户事件（chat/correction/clarify）= 自动恢复工作通道 + 作为补充注入继续；
     // 仅 command 事件（显式暂停/恢复命令）不触发自动恢复，保持状态机语义。
     // ERROR 态仍拒绝（须先 recover，防止状态不一致）。
-    // T5 修复：auto-resume 移入锁内——状态机翻转是副作用，必须先通过并发闸门。
+    // auto-resume 必须在锁内执行：状态机翻转是副作用，须先通过并发闸门。
     // 旧顺序：autoResumeIfPaused 先于 acquireChatLock → 锁忙时状态机已翻 RUNNING
     // 才抛 chatBusyError → PAUSED 态被静默吞掉（会话以为自己在跑，实际未获执行权）。
     // 抛错路径由 finally 统一释放锁与外部 signal（与正常路径同构，无泄漏）。
@@ -1004,8 +1002,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async *resumeExecution(input?: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     const resumeStatus = this._sessionManager?.stateMachine.status;
-    // T1-2：错误态续跑应明确失败而非静默吞没（点了没反应最伤信任）。
-    // error 态由检查点恢复回填进入（sessionManager.ts:481/:541），运行时异常走
+    // 错误态续跑应明确失败而非静默吞没——error 态由检查点恢复回填进入，运行时异常走
     // `yield { type: 'error' }` 不翻状态机，故生产链路不会自然离开 error 态，
     // 必须显式提示用户重新开始，而非被 `status !== 'paused'` 的静默 return 吞没。
     if (resumeStatus === 'error') {
@@ -1018,73 +1015,81 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     if (resumeStatus !== 'paused') return;
 
-    // 翻状态机为 RUNNING（触发 sessionResumed，宿主据此转发 STATUS{running}）
-    if (!this.resume()) {
-      // P1-2: resume() 返回 false 时 yield error chunk + 发射事件，
-      // 让调用方（宿主 generator 消费者）可感知失败原因而非静默吞没
-      this.emit(AGENT_EVENTS.sessionResumeFailed, {
-        sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
-        reason: 'resume() 返回 false，可能因暂停超时或状态机拒绝',
-      });
-      yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话' };
-      return;
-    }
-
-    // P0-1：预判短路——计划停滞 + 无新输入 + 非自主工具步 → 无需续跑，直接提示
-    // 避免 continueAfterPause 在无意义场景下调用 LLM 浪费 token
-    // 条件拆解：isPlanStalled() 需检查点存在（resume() 成功后必定存在），
-    // isInAutonomousStep 需 loop 存在（requireLoop 保证）。
-    if (!input) {
-      const sm = this._sessionManager!;
-      if (sm.isPlanStalled() && !this.requireLoop.isInAutonomousStep) {
-        // T4 修复：区分"已完成"与"全部阻塞"——旧文案恒说"已完成"，
-        // 对全 blocked 计划撒谎（阻塞 ≠ 完成），用户被告知任务完成而实际一步未成。
-        const plan = sm.getCheckpoint()?.plan ?? [];
-        const allDone = plan.length > 0 && plan.every((s) => s.status === 'done');
-        const allBlocked = plan.length > 0 && plan.every((s) => s.status === 'blocked');
-        yield {
-          type: 'text',
-          content: allDone
-            ? '所有计划步骤已完成，请提供下一步指令'
-            : allBlocked
-              ? '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划'
-              : '所有计划步骤已完成，请提供下一步指令',
-        };
-        yield { type: 'done' };
+    // resumeExecution 与 chat() 同构，必须加并发锁
+    const lockCtx = this.acquireChatLock(signal);
+    const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
+    try {
+      // 翻状态机为 RUNNING（触发 sessionResumed，宿主据此转发 STATUS{running}）
+      if (!this.resume()) {
+        // P1-2: resume() 返回 false 时 yield error chunk + 发射事件，
+        // 让调用方（宿主 generator 消费者）可感知失败原因而非静默吞没
+        this.emit(AGENT_EVENTS.sessionResumeFailed, {
+          sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
+          reason: 'resume() 返回 false，可能因暂停超时或状态机拒绝',
+        });
+        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话' };
         return;
       }
-    }
 
-    const loop = this.requireLoop;
-
-    // 流消费与 chat 主路径共用同一实现，杜绝两条路径再次漂移
-    const streamResult = yield* this.consumeExecutionStream(loop.continueAfterPause(input, signal));
-    if (streamResult.failed) return;
-    const assistantContent = streamResult.content;
-    const wasAborted = streamResult.aborted;
-
-    if (wasAborted) {
-      if (assistantContent.trim()) {
-        const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
-        try {
-          await this.requireHistory.appendAssistant(assistantContent + interruptedMark);
-        } catch (err) {
-          logger.warn({ err }, '中断消息历史写入失败');
+      // P0-1：预判短路——计划停滞 + 无新输入 + 非自主工具步 → 无需续跑，直接提示
+      // 避免 continueAfterPause 在无意义场景下调用 LLM 浪费 token
+      // 条件拆解：isPlanStalled() 需检查点存在（resume() 成功后必定存在），
+      // isInAutonomousStep 需 loop 存在（requireLoop 保证）。
+      if (!input) {
+        const sm = this._sessionManager!;
+        if (sm.isPlanStalled() && !this.requireLoop.isInAutonomousStep) {
+          // 区分"已完成"与"全部阻塞"——blocked ≠ done，用户被告知任务完成而实际一步未成。
+          const plan = sm.getCheckpoint()?.plan ?? [];
+          const allDone = plan.length > 0 && plan.every((s) => s.status === 'done');
+          const allBlocked = plan.length > 0 && plan.every((s) => s.status === 'blocked');
+          yield {
+            type: 'text',
+            content: allDone
+              ? '所有计划步骤已完成，请提供下一步指令'
+              : allBlocked
+                ? '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划'
+                : '所有计划步骤已完成，请提供下一步指令',
+          };
+          yield { type: 'done' };
+          return;
         }
       }
-      return;
-    }
 
-    // 追加助手消息到历史
-    try {
-      await this.requireHistory.appendAssistant(assistantContent);
-    } catch (err) {
-      logger.warn({ err }, '助手消息历史写入失败');
-    }
+      const loop = this.requireLoop;
 
-    // 后处理
-    yield { type: 'thinking', phase: 'archiving' };
-    await this.postProcess(input ?? '', assistantContent);
+      // 流消费与 chat 主路径共用同一实现，杜绝两条路径再次漂移
+      const streamResult = yield* this.consumeExecutionStream(loop.continueAfterPause(input, combinedSignal));
+      if (streamResult.failed) return;
+      const assistantContent = streamResult.content;
+      const wasAborted = streamResult.aborted;
+
+      if (wasAborted) {
+        if (assistantContent.trim()) {
+          const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
+          try {
+            await this.requireHistory.appendAssistant(assistantContent + interruptedMark);
+          } catch (err) {
+            logger.warn({ err }, '中断消息历史写入失败');
+          }
+        }
+        return;
+      }
+
+      // 追加助手消息到历史
+      try {
+        await this.requireHistory.appendAssistant(assistantContent);
+      } catch (err) {
+        logger.warn({ err }, '助手消息历史写入失败');
+      }
+
+      // 后处理
+      yield { type: 'thinking', phase: 'archiving' };
+      await this.postProcess(input ?? '', assistantContent);
+    } finally {
+      // 与 chat() 同构：释放锁 + 清理外部 signal
+      this.chatLockManager?.release(myToken);
+      cleanupExternalSignal();
+    }
   }
 
   /**
@@ -1106,7 +1111,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; failed: boolean }, unknown> {
     let content = '';
     let aborted = false;
-    // T1-1：标记流活跃，使 requestPause 能据此判断「延迟翻转机制是否有消费方」
+    // 标记流活跃，使 requestPause 能据此判断「延迟翻转机制是否有消费方」
     this._streamActive = true;
 
     try {
@@ -1114,7 +1119,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 内核事实驱动：loop 在迭代边界真正挂起时，状态机才翻 PAUSED（修 D1）
         // 不在 requestPause 同步翻转——避免"申请即暂停"错位
         if (chunk.type === 'paused') {
-          // T2-8（F4-4）：延迟翻转挂起 = 用户暂停请求的消费端，与 requestPause 空闲分支同源，
+          // 延迟翻转挂起 = 用户暂停请求的消费端，与 requestPause 空闲分支同源，
           // 必须传 lowRisk=true 保持同一暂停事件契约一致（否则流中暂停会被计入 P4 配额）。
           this.pause(this._pendingPauseReason ?? '用户主动暂停', this._pendingPauseSource, true);
         }
@@ -1133,7 +1138,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       return { content, aborted, failed: true };
     } finally {
-      // T1-1：流结束，复位活跃标志
+      // 流结束，复位活跃标志
       this._streamActive = false;
       // 释放暂停幂等锁，覆盖正常结束 / abort / error 三路。
       // 残留会让 requestPause 的 `_pendingPauseReason !== undefined` 检查
@@ -1410,7 +1415,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // P0-2：软暂停申请时暂存的 reason/source，待 loop 迭代边界真正挂起（产出 {type:'paused'} chunk）时翻状态机使用
   private _pendingPauseReason?: string;
   private _pendingPauseSource: 'user' | 'agent' | 'system' = 'user';
-  // T1-1：是否有活跃的执行流正在消费延迟暂停请求（consumeExecutionStream 是 chat/processEvent/
+  // 是否有活跃的执行流正在消费延迟暂停请求（consumeExecutionStream 是 chat/processEvent/
   // resumeExecution 的唯一 funnel，仅在此处置位与清理，单一真理源，避免与 chatLock 语义耦合）。
   private _streamActive = false;
   /** P2-11: 兜底停滞计数器——连续无 task_table_update 的回合数 */
@@ -1444,12 +1449,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    // T1-1（F4-1 双副本收口·最小修复）：无活跃流时，延迟翻转机制没有消费方——
+    // 无活跃流时，延迟翻转机制没有消费方——
     // consumeExecutionStream 的 finally 不会执行，_pendingPauseReason 将永驻并锁死幂等，
     // 且此时本就没有正在执行的工具需要「延迟到迭代边界挂起」。直接同步翻状态机，
     // 不产生悬挂副本（这是内核事实驱动延迟翻转的正当例外：无流可延迟）。
     if (!this._streamActive) {
-      // T2-8（F4-4）：用户主动暂停不消耗 P4 连续暂停配额 → lowRisk=true
+      // 用户主动暂停不消耗 P4 连续暂停配额 → lowRisk=true
       this.pause(reason, source, true);
       return true;
     }
@@ -1568,10 +1573,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   canContinueWithoutInput(): boolean {
     if (this._sessionManager?.stateMachine.status === 'paused') return true;
-    // T1-2：错误态不展示"继续"——error 态由检查点恢复回填进入，必须显式处理
+    // 错误态不展示"继续"——error 态由检查点恢复回填进入，必须显式处理
     // （重新开始或 recover），不应诱导用户点"继续"后静默无反应。
     if (this._sessionManager?.stateMachine.status === 'error') return false;
-    // T4 修复：仅 pending/active（可推进）步骤计入"可续跑"。
+    // 仅 pending/active（可推进）步骤计入"可续跑"。
     // 旧判据 `s.status !== 'done'` 把 blocked 也算可续 → 与 isPlanStalled 判据反向
     // （sessionManager.ts:1056 视 blocked 为停滞）→ 全 blocked 计划按钮可点但
     // resumeExecution 早退、点了没反应。blocked 步骤无法推进，不应展示"继续"。
@@ -1957,7 +1962,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop.onRoundBoundary = (roundInfo) => {
       // onRoundBoundary 在每次迭代完成后触发
       // 通过 SessionManager.completeRound 写入 roundLog
-      // T12 修复：roundLog 关联 plan 步骤——取当前 active 步骤的 ID 传入。
+      // roundLog 关联 plan 步骤——取当前 active 步骤的 ID 传入。
       // 此前不传 stepId（恒 undefined）→ roundLog 与 plan 无法关联，
       // 「哪一回合推进了哪一步」不可追溯。单向引用：plan 仍是任务状态真理源，
       // roundLog 成为 plan 的时间轴投影（不做双向同步，避免双写）。
@@ -1980,8 +1985,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           const activeStep = cp.plan.find((s) => s.status === 'active');
           const hasPending = cp.plan.some((s) => s.status === 'pending' || s.status === 'active');
           if (activeStep && hasPending) {
-            // T12 顺带收口：经 updatePlanStepStatus 标脏（此前直改 status + 手写心跳，
-            // 与 T3 同类——checkpointDirty 未置位 → 阻塞标记可能永不落盘）
+            // 经 updatePlanStepStatus 标脏——checkpointDirty 置位确保阻塞标记可落盘
             sm?.updatePlanStepStatus(activeStep.id, 'blocked');
             // 注入 system 消息提示 LLM
             this.loop?.injectSystemMessage(
@@ -2043,7 +2047,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       updateStep: (stepId, status) => {
         const sm = this._sessionManager;
         if (!sm) return '[ERR] 会话管理器未就绪';
-        // T3 修复：plan 步骤状态变更收口到 SessionManager.updatePlanStepStatus
+        // plan 步骤状态变更收口到 SessionManager.updatePlanStepStatus
         // （内部 touchCheckpoint 标脏 + 心跳，唯一写点）。
         // 旧实现直改 step.status + 手写 lastHeartbeat → checkpointDirty 未置位 →
         // 计划状态变更可能永不落盘（flushCheckpoint 见脏才写）。
@@ -2643,8 +2647,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 若状态机仍为 running（暂停请求尚未被 loop 边界消费或 processEvent 尚未翻状态机），
       // 同步翻状态机使检查点记录 paused 状态，确保磁盘快照准确。
       // 无需触发生成器挂起（close 后不再运行），仅修正状态机与检查点的一致性。
+      // 系统清理暂停不消耗 P4 配额 → lowRisk=true（与 requestPause 空闲分支语义对齐）
       if (this._sessionManager?.stateMachine.status === 'running') {
-        this._sessionManager.pause('close 清理残留暂停', 'system');
+        this._sessionManager.pause('close 清理残留暂停', 'system', true);
       }
       // 清理 pending 状态字段
       this._pendingPauseReason = undefined;
@@ -2653,6 +2658,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清理 SessionManager（停止暂停超时定时器，防止悬空定时器阻止进程退出）
     // 必须在 nullifyAllComponents 之前调用，因为 destroy() 需要访问 sessionManager 内部状态
     if (this._sessionManager) {
+      // flush 脏检查点落盘后再 destroy——覆盖 logToolExecution 标脏后、completeRound 之前关闭的窗口
+      this._sessionManager.flushOnShutdown();
       this._sessionManager.destroy();
     }
     // 清理 ArchiveCoordinator（无定时器，只需释放引用）

@@ -164,7 +164,7 @@ src/
 │   ├── toolExecutor.ts    # 工具注册与执行
 │   ├── contextManager.ts  # 上下文窗口管理（截断 + 摘要）
 │   ├── guardrail.ts       # 内容护栏（正则 + block/warn）
-│   └── managers/          # 15 个专职 Manager
+│   └── managers/          # 14 个专职 Manager + 辅助模块
 │       ├── archiveCoordinator.ts   # 归档协调（会话归档 + 洞察提取）
 │       ├── memoryInspector.ts      # 记忆读写（CRUD + 搜索 + 统计）
 │       ├── memoryGovernance.ts     # 治理统一门面（L1-L4）

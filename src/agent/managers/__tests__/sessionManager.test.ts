@@ -1093,14 +1093,17 @@ describe('SessionManager', () => {
       manager.pause('第一次暂停', 'user');
       expect(manager.getConsecutivePauseCount()).toBe(1);
 
-      // 快进时间到衰减窗口之前（59 分钟），计数应仍为 1
-      // 注意：暂停超时检测（30 分钟）可能在此时已触发清理检查点，
-      // 但连续暂停计数的时间戳不受影响，衰减窗口为 60 分钟
-      vi.advanceTimersByTime(3_600_000 - 60_000);
+      // 快进时间到暂停超时阈值之前（25 分钟），计数应仍为 1
+      vi.advanceTimersByTime(25 * 60 * 1000);
       expect(manager.getConsecutivePauseCount()).toBe(1);
 
-      // 快进时间超过衰减窗口（再快进 2 分钟），旧暂停应衰减
-      vi.advanceTimersByTime(120_000);
+      // 快进超过暂停超时阈值（再快进 10 分钟，总计 35 分钟）
+      // T6b: 暂停超时后 checkPauseTimeout 会重置连续暂停计数
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      expect(manager.getConsecutivePauseCount()).toBe(0);
+
+      // 再快进超过衰减窗口，计数仍为 0
+      vi.advanceTimersByTime(30 * 60 * 1000);
       expect(manager.getConsecutivePauseCount()).toBe(0);
     });
 
@@ -1115,12 +1118,14 @@ describe('SessionManager', () => {
       manager.pause('第二次暂停', 'user');
       expect(manager.getConsecutivePauseCount()).toBe(2);
 
-      // 快进 55 分钟，第一次暂停过期（总计 65 分钟），只剩第二次
-      vi.advanceTimersByTime(55 * 60 * 1000);
-      expect(manager.getConsecutivePauseCount()).toBe(1);
+      // 快进 25 分钟（总计 35 分钟），第二次暂停尚未超时（30 分钟阈值），
+      // 两次暂停均仍在衰减窗口内（60 分钟）
+      vi.advanceTimersByTime(25 * 60 * 1000);
+      expect(manager.getConsecutivePauseCount()).toBe(2);
 
-      // 再快进 30 分钟，第二次暂停也过期
-      vi.advanceTimersByTime(30 * 60 * 1000);
+      // 再快进 10 分钟（总计 45 分钟），第二次暂停已超时（30 分钟阈值）
+      // T6b: 暂停超时后 checkPauseTimeout 重置连续暂停计数
+      vi.advanceTimersByTime(10 * 60 * 1000);
       expect(manager.getConsecutivePauseCount()).toBe(0);
     });
 

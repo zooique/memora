@@ -15,7 +15,7 @@
  * error 事件：流式过程中发生错误（如 LLM 超时、连接断开），
  * 替代裸 throw 让宿主能优雅展示错误并清理 UI（避免未处理 rejection 静默卡死）。
  *
- * ─── agent/ 模块依赖图（最后更新：2026-07-16） ─────────────────
+ * ─── agent/ 模块依赖图（最后更新：2026-08-10） ─────────────────
  * 如需精确依赖关系，请阅读各文件 import 语句。本图仅展示高层模块关系。
  *
  *   agent.ts（门面，Agent 类）
@@ -26,24 +26,30 @@
  *     │    ├─ messageHistory.ts（历史消息存储）
  *     │    ├─ guardrail.ts（护栏规则）
  *     │    └─ tracer.ts（可观测性 span）
+ *     ├─ composer.ts（四级补全器，不中断工作模型）
  *     ├─ personaMatcher.ts（LLM 角色匹配，从 persona 迁入）
  *     ├─ userFactExtractor.ts（用户事实提取，纯函数）
  *     ├─ builtinToolHandlers.ts（内置工具处理器）
- *     └─ managers/（12 个专职 Manager）
+ *     └─ managers/（14 个专职 Manager + 4 辅助/聚合模块）
+ *          ├─ archiveCoordinator.ts（归档协调，emit archiveFailed）
+ *          ├─ autoConfigRefiner.ts（配置自动优化）
  *          ├─ chatLockManager.ts（并发锁，token 机制）
  *          ├─ configManager.ts（配置加载）
- *          ├─ contextManager.ts（上下文管理）
+ *          ├─ dedupManager.ts（L1 语义去重）
  *          ├─ insightExtractor.ts（LLM 提炼，prompt 独立函数）
- *          ├─ memoryInspector.ts（记忆读写统一入口，ADR-014）
+ *          ├─ memoryAdvisor.ts（L3 记忆建议）
  *          ├─ memoryDecayScheduler.ts（记忆衰减调度）
- *          ├─ memoryAdvisor.ts（记忆建议）
+ *          ├─ memoryInspector.ts（记忆读写统一入口，ADR-014）
  *          ├─ relationBuilder.ts（记忆关系构建，ADR-014 侧车）
- *          ├─ archiveCoordinator.ts（归档协调，emit archiveFailed）
  *          ├─ sessionArchiver.ts（会话归档）
- *          ├─ sessionManager.ts（会话状态）
+ *          ├─ sessionManager.ts（会话状态 + 检查点）
  *          ├─ textPolishManager.ts（文本润色）
- *          ├─ autoConfigRefiner.ts（配置自动优化）
  *          └─ workProjection.ts（作品投影）
+ *          ─ 辅助模块 ─
+ *          ├─ goalConsistencyChecker.ts（P3.1 目标一致性校验）
+ *          ├─ llmJudgeHelper.ts（LLM 判断辅助，供记忆衰减等使用）
+ *          ├─ memoryGovernance.ts（L0-L3 治理聚合门面）
+ *          └─ streamAccumulator.ts（流式累积辅助）
  *
  * 分层依赖方向（ADR-008）：
  *   agent/ → memory/ → storage/（不可反向）
@@ -505,7 +511,12 @@ export interface SessionCheckpoint {
    * 0 或 undefined 表示未发生截断。
    */
   truncatedCount?: number;
-  /** 工具执行日志（P3.3 执行计划管理·工具幂等，outbox 模式） */
+  /**
+   * 工具执行日志（P3.3 执行计划管理·工具幂等，outbox 模式）
+   *
+   * FIFO 策略：`logToolExecution` 在超过 COMPLETED_TOOL_CALLS_MAX 时触发截断，
+   * 优先丢弃「幂等或已补偿」的最早记录。非幂等未补偿记录永不丢弃（宁可检查点偏大，不可漏补偿）。
+   */
   completedToolCalls?: ToolExecutionRecord[];
   /** 回合结果日志（P2-1: Phase 2 回合折叠，FIFO cap 10-12 条） */
   roundLog?: RoundOutcome[];

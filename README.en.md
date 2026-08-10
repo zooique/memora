@@ -165,7 +165,7 @@ src/
 │   ├── toolExecutor.ts    # Tool registration & execution
 │   ├── contextManager.ts  # Context window management (truncation + summary)
 │   ├── guardrail.ts       # Content guardrails (regex + block/warn)
-│   └── managers/          # 15 specialized Managers
+│   └── managers/          # 14 specialized Managers + helper modules
 │       ├── archiveCoordinator.ts   # Archive coordination
 │       ├── memoryInspector.ts      # Memory read/write (CRUD + search + stats)
 │       ├── memoryGovernance.ts     # Governance unified facade (L1-L4)

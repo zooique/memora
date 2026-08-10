@@ -13,7 +13,7 @@
  */
 
 import { logger } from '@/logging/logger.js';
-import { chatBusyError } from '@/utils/errors.js';
+import { chatBusyError, configError } from '@/utils/errors.js';
 // 使用 todayDate() 替代 new Date().toISOString().slice(0,10)，修复 UTC 跨天 bug
 import { todayDate } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -117,6 +117,12 @@ export class SessionManager {
   /** 暂停超时检测间隔（毫秒）。30 秒检查一次心跳。 */
   private static readonly PAUSE_TIMEOUT_CHECK_INTERVAL = 30_000;
 
+  // ── schemaVersion 迁移分发表（骨架，当前为空表）──
+  //
+  // 注册迁移函数：key = 源版本号，value = 将 Partial<SessionCheckpoint> 从该版本迁移到下一版本。
+  // 新增字段不升版本；重命名/删除/改类型必须升 CURRENT_SCHEMA_VERSION 并在此注册迁移。
+  private static readonly checkpointMigrations = new Map<number, (cp: Partial<SessionCheckpoint>) => void>();
+
   constructor(
     getHistory: () => MessageHistory,
     getLoop: () => AgentLoop,
@@ -143,6 +149,20 @@ export class SessionManager {
     // 对话进行中切换会话会导致消息持久化分散
     if (this.isChatBusy()) {
       throw chatBusyError('切换会话');
+    }
+
+    // 暂停/错误态切换会话语义未定义，保守拒绝（与 fork/restore 的繁忙守卫同构）
+    if (this.stateMachine.status !== 'running') {
+      throw configError('切换会话', `会话处于 ${this.stateMachine.status} 态，无法切换`, [
+        '仅 running 态允许 switchSession',
+      ]);
+    }
+
+    // 检查点是当前会话的工作状态，切换时 flush 落盘并清空内存态
+    if (this.checkpoint && this.checkpoint.sessionId !== newSession) {
+      this.flushCheckpoint(true);
+      this.checkpoint = null;
+      this.checkpointDirty = false;
     }
 
     return this.getHistory().switchSession(newSession);
@@ -482,7 +502,7 @@ export class SessionManager {
       const json = this.sessionStore.loadCheckpoint(sessionId);
       if (!json) return null;
 
-      // T0-1：反序列化收口——解析 + 字段补齐 + 完整性告警统一由 parseCheckpoint 承担。
+      // 反序列化收口——解析 + 字段补齐 + 完整性告警统一由 parseCheckpoint 承担。
       // 原实现 `JSON.parse(json) as SessionCheckpoint` 的类型断言无运行时效力，
       // 残缺检查点会在下游访问时抛错并被本函数外层 catch 吞掉（静默丢整个会话）。
       const checkpoint = SessionManager.parseCheckpoint(json, sessionId);
@@ -510,6 +530,9 @@ export class SessionManager {
         this.checkpoint = null;
         this.checkpointDirty = false;
 
+        // 清理后重置连续暂停计数——与 checkPauseTimeout 对称
+        this.resetConsecutivePauseCount();
+
         // 记录超时会话 + 发射事件（唯一入口，与运行时路径共用）
         this.markSessionTimedOut(sessionId, pauseDuration);
 
@@ -519,7 +542,7 @@ export class SessionManager {
       // 恢复状态机状态
       if (checkpoint.status === 'paused') {
         this.stateMachine.pause('从持久化检查点恢复', 'system');
-        // T9 修复：恢复路径补启暂停超时定时器。startPauseTimeoutTimer 的唯一调用点原在
+        // 恢复路径补启暂停超时定时器。startPauseTimeoutTimer 的唯一调用点原在
         // pause()（:620），此处直接调 stateMachine.pause 绕过 → 恢复的 paused 会话在
         // 本次运行期内无超时检测（只能等下次重启）。resetToRunning 后 canPause 必然通过。
         // 已超时会话由 checkPauseTimeout 首次触发即清理，行为正确（本就不该恢复）。
@@ -663,10 +686,10 @@ export class SessionManager {
       cp.status = 'running';
     }
 
-    // ── schemaVersion 补齐与跨版本迁移（T1-4）──
+    // ── schemaVersion 补齐与跨版本迁移（T4）──
     // 旧内核产出的检查点无 schemaVersion 字段 → 视其为当前版本，不阻断恢复
     // （用户工作优先于严格版本校验）。来自更新版本客户端的检查点当前内核无法
-    // 完整理解，首版仅记录警告、不阻断；真正的版本化迁移逻辑未来在此按版本分支展开。
+    // 完整理解，首版仅记录警告、不阻断；真正的版本化迁移逻辑 future 在此按版本分支展开。
     if (typeof cp.schemaVersion !== 'number' || !Number.isFinite(cp.schemaVersion)) {
       cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
     } else if (cp.schemaVersion > AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
@@ -674,6 +697,17 @@ export class SessionManager {
         { checkpointVersion: cp.schemaVersion, currentVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION },
         '检查点 schemaVersion 高于当前内核版本，尝试按当前版本恢复（可能丢失新版字段语义）',
       );
+    } else if (cp.schemaVersion < AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
+      // 应用已注册的迁移（按版本号升序逐一执行）
+      let v = cp.schemaVersion;
+      while (v < AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
+        const migrate = SessionManager.checkpointMigrations.get(v);
+        if (migrate) {
+          migrate(cp);
+        }
+        v++;
+      }
+      cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
     }
 
     if (typeof cp.mainGoal !== 'string') cp.mainGoal = defaults.mainGoal;
@@ -686,7 +720,7 @@ export class SessionManager {
       // 用当前时刻而非 0：0 会被 isPauseTimedOut 判为超时 55 年，恢复即被清理
       cp.lastHeartbeat = Date.now();
     }
-    // T2-2（F1-1）：暂停起点损坏时丢弃，回退到 lastHeartbeat，避免 NaN 比较导致永不超时
+    // 暂停起点损坏时丢弃，回退到 lastHeartbeat，避免 NaN 比较导致永不超时
     if (cp.pausedAt !== undefined && (typeof cp.pausedAt !== 'number' || !Number.isFinite(cp.pausedAt))) {
       delete cp.pausedAt;
     }
@@ -766,7 +800,7 @@ export class SessionManager {
    * @returns 恢复的消息数量
    */
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
-    // T0-1：与 loadPersistedCheckpoint 共用同一归一化入口。原实现只 warn 不填充，
+    // 与 loadPersistedCheckpoint 共用同一归一化入口。原实现只 warn 不填充，
     // 下方 `checkpoint.hotMemory.map()` 遇到缺字段的检查点会抛 TypeError；本函数无
     // catch → 崩进程。归一化原地补齐后，下游可无条件假设必需字段可用。
     if (!SessionManager.normalizeCheckpoint(checkpoint)) {
@@ -815,7 +849,7 @@ export class SessionManager {
           logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点错误态恢复失败，状态机与检查点分叉');
         }
       } else {
-        // T8 修复：error 字段缺失（旧版检查点 / 序列化丢字段）——无法重建 error 态。
+        // error 字段缺失（旧版检查点 / 序列化丢字段）——无法重建 error 态。
         // 旧实现复合条件 `status==='error' && error` 两分支都不进 → resetToRunning 后
         // 状态机 running 而 checkpoint.status 保持 'error' → 永久分叉且无任何日志。
         // 此处强制检查点状态跟随实际归零结果，并把"降级"显式记入日志。
@@ -828,7 +862,7 @@ export class SessionManager {
     } else if (checkpoint.status === 'paused') {
       const transition = this.stateMachine.pause('从检查点恢复', 'system');
       if (transition.allowed) {
-        // T9 修复：恢复路径补启暂停超时定时器（与 loadPersistedCheckpoint 对称）。
+        // 恢复路径补启暂停超时定时器（与 loadPersistedCheckpoint 对称）。
         // 原唯一调用点在 pause()（:620），此处直接调 stateMachine.pause 绕过 →
         // 恢复的 paused 会话本次运行期无超时检测。
         this.startPauseTimeoutTimer();
@@ -898,7 +932,7 @@ export class SessionManager {
     if (result.allowed) {
       // 暂停前保存检查点
       this.createCheckpoint();
-      // T2-2（F1-1）：记录暂停起点，与 lastHeartbeat 解耦。lastHeartbeat 现仅承载
+      // 记录暂停起点，与 lastHeartbeat 解耦。lastHeartbeat 现仅承载
       // 「检查点写入时间」语义（touchCheckpoint 唯一写点），不再作为暂停超时基准，
       // 避免暂停后 touchCheckpoint（如 updatePlanStepStatus）刷新心跳导致超时判定被无限推迟。
       // pausedAt 在 pause() 唯一状态转换点写入，覆盖空闲直翻与流中延迟翻两条路径。
@@ -1079,7 +1113,7 @@ export class SessionManager {
         this.checkpoint.status = 'running';
         this.touchCheckpoint();
       }
-      // T0-3：恢复必须落盘。
+      // 恢复必须落盘。
       // stateMachine.recover() 的准入条件是 checkpoint.error.recovered === true，
       // 该标记若只活在内存，进程崩溃重启后磁盘仍是未恢复的 error 快照，
       // 恢复链将永久断裂——用户再也无法把会话救回 RUNNING。
@@ -1414,6 +1448,15 @@ export class SessionManager {
       this.checkpoint.completedToolCalls = [];
     }
     this.checkpoint.completedToolCalls.push(record);
+    // FIFO 封顶——优先丢弃幂等或已补偿的最早记录，非幂等未补偿永不丢弃
+    if (this.checkpoint.completedToolCalls.length > AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX) {
+      const discardable = this.checkpoint.completedToolCalls.findIndex(
+        (r) => r.idempotent || typeof r.compensatedAt === 'number',
+      );
+      if (discardable >= 0) {
+        this.checkpoint.completedToolCalls.splice(discardable, 1);
+      }
+    }
     this.touchCheckpoint();
     // P3-1：不再即时落盘，依赖 completeRound / createCheckpoint 在回合边界统一 flush
   }
@@ -1708,12 +1751,25 @@ export class SessionManager {
     this.checkpointDirty = false;
     this.stateMachine.resetToRunning();
 
+    // 清理后重置连续暂停计数——暂停超时意味着会话断裂，递增→衰减→重置闭合
+    this.resetConsecutivePauseCount();
+
     // 记录超时会话 + 发射事件（唯一入口，与启动路径共用）
     // 补齐前此处只发事件不填字段，运行时超时的会话内容永远不会被归档
     this.markSessionTimedOut(sessionId, pauseDuration);
 
     // 停止定时器（超时后不再需要继续检测）
     this.stopPauseTimeoutTimer();
+  }
+
+  /**
+   * 关闭时 flush 脏检查点落盘
+   *
+   * 供 Agent 关闭时、destroy() 之前调用。覆盖 logToolExecution 标脏后、
+   * completeRound 之前关闭的窗口，确保脏检查点不丢失。
+   */
+  flushOnShutdown(): void {
+    this.flushCheckpoint(true);
   }
 
   /**
