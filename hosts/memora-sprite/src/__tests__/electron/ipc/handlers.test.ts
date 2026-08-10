@@ -95,6 +95,8 @@ function createMockIpcContext(options: {
       // canContinueWithoutInput 在 forwardStream 首个 chunk 广播 resumable 时调用。
       processEvent: vi.fn(async function* () {}),
       canContinueWithoutInput: vi.fn(() => false),
+      // 流式结束 finally 卸载运行态挂载物（SSOT 模型）时调用
+      clearPlan: vi.fn(),
     }),
     // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat() + sprite.activePersona，mock 需提供方法
     getSprite: () => ({

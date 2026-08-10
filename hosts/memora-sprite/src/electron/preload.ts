@@ -228,8 +228,6 @@ export const IPC_CHANNELS = {
   // ─── 暂停模型 IPC（P1-6，与 ipc/channels.ts 同步） ──────────
   /** 取消待处理的暂停请求 */
   SESSION_CANCEL_PAUSE: 'session-cancel-pause',
-  /** 放弃暂停（清暂停状态+暂停点，会话回 idle） */
-  SESSION_ABANDON: 'session-abandon',
   /** 获取工作上下文（plan + 暂停态，供任务表面板渲染） */
   SESSION_GET_WORK_CONTEXT: 'session-get-work-context',
   /** 追加计划步骤（用户侧追加任务到 plan 末尾） */
@@ -587,8 +585,6 @@ export interface ElectronAPI {
   sendClarifyAnswer: (answers: Array<{ slot: string; answer: string }>) => Promise<{ success: boolean }>;
   /** P1-6: 取消待处理的暂停请求 */
   cancelPause: () => Promise<{ canceled: boolean }>;
-  /** P1-6: 放弃暂停（清暂停状态，会话回 idle） */
-  abandonPause: () => Promise<{ abandoned: boolean }>;
   /** P1-6: 获取工作上下文（plan + 暂停态，供任务表面板渲染） */
   getWorkContext: () => Promise<{ plan: Array<{ order: number; description: string; status: string }>; activeStepOrder: number; pausePhase?: string; pauseReason?: string; pauseSource?: string; pausePending?: boolean }>;
   /** P1-6: 追加计划步骤 */
@@ -1436,8 +1432,6 @@ const electronAPI: ElectronAPI = {
   sendClarifyAnswer: (answers) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLARIFY_ANSWER, answers),
   /** P1-6: 取消待处理的暂停请求 */
   cancelPause: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CANCEL_PAUSE),
-  /** P1-6: 放弃暂停 */
-  abandonPause: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ABANDON),
   /** P1-6: 获取工作上下文 */
   getWorkContext: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT),
   /** P1-6: 追加计划步骤 */

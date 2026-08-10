@@ -415,11 +415,13 @@ export class InputAreaManager {
    *   空输入=禁用，纯恢复请用任务清单「继续」按钮）
    * - idle / error（空闲或异常）：发送按钮 = 发送
    *
-   * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param status 会话状态：'idle' | 'running' | 'paused' | 'error'
    * @param _resumable 保留参数（兼容旧调用方）；resumable 门控已随暂停按钮移入任务清单，本处忽略
    */
   updateSessionStatus(status: string, _resumable?: boolean): void {
-    this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
+    // SSOT 挂载物模型（用户设计定案 2026-08-10）：idle 是资源层无挂载物的常态，
+    // 主进程任务结束后广播 idle，需保留而非映射为 running（否则输入框形态错乱）
+    this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : status === 'idle' ? 'idle' : 'running';
     this.renderButton();
   }
 
@@ -471,7 +473,7 @@ export class InputAreaManager {
         // 有输入 = 发送：内核 processEvent 对 PAUSED 会话 auto-resume（chatHandlers Finding B），
         //   携带新内容恢复执行（补充插入语义：基于插入内容继续后续任务）。
         // 空输入 = 禁用：纯恢复请用任务清单「继续」按钮。
-        this.setBtnSend('icon-send', '发送（恢复会话并继续）');
+        this.setBtnSend('icon-send', '发送（恢复会话后执行）');
         this.btnSend.disabled = !hasContent;
         this.btnSend.classList.toggle('empty', !hasContent);
         break;

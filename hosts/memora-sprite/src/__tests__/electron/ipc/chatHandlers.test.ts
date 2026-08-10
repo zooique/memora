@@ -178,6 +178,8 @@ function createMockAgent(overrides?: {
     resume: overrides?.resume ?? vi.fn(() => true),
     pause: overrides?.pause ?? vi.fn(() => true),
     resumeExecution: overrides?.resumeExecution ?? vi.fn(),
+    // 流式结束 finally 卸载运行态挂载物（SSOT 模型）时调用
+    clearPlan: vi.fn(),
     // registerChatHandlers 注册 needClarify 事件监听时需要 agent.on/off
     on: vi.fn(),
     off: vi.fn(),
@@ -707,7 +709,11 @@ describe('chatHandlers', () => {
       try {
         const wc = createMockWebContents();
         const wm = createMockWindowManager(wc);
-        const processEvent = vi.fn();
+        // 必须返回 async generator：autoResolveClarify 走 handleClarifyAnswer → forwardStream
+        // 完整迭代生成器。若返回 undefined，for-await 抛 TypeError 且该 fire-and-forget 的
+        // rejection 会被 .catch 吞掉但 errorHandler.handle 已异步调用 → 污染后续测试的
+        // 「errorHandler 未被调用」断言（chatHandlers.test.ts 全文件级污染，2026-08-10 定位）。
+        const processEvent = vi.fn(async function* () {});
         const ctx = createMockCtx({
           windowManager: wm,
           agent: createMockAgent({ processEvent }),
@@ -768,7 +774,9 @@ describe('chatHandlers', () => {
       try {
         const wc = createMockWebContents();
         const wm = createMockWindowManager(wc);
-        const processEvent = vi.fn();
+        // 返回空 async generator：避免 autoResolveClarify 的 fire-and-forget 迭代 undefined
+        // 抛 TypeError 污染后续测试（同 emit needClarify 用例注释）
+        const processEvent = vi.fn(async function* () {});
         const ctx = createMockCtx({
           windowManager: wm,
           agent: createMockAgent({ processEvent }),
@@ -794,7 +802,9 @@ describe('chatHandlers', () => {
       try {
         const wc = createMockWebContents();
         const wm = createMockWindowManager(wc);
-        const processEvent = vi.fn();
+        // 返回空 async generator：避免 autoResolveClarify 的 fire-and-forget 迭代 undefined
+        // 抛 TypeError 污染后续测试（同 emit needClarify 用例注释）
+        const processEvent = vi.fn(async function* () {});
         const ctx = createMockCtx({
           windowManager: wm,
           agent: createMockAgent({ processEvent }),
@@ -1065,6 +1075,45 @@ describe('chatStreamHandler C1 流式主路径', () => {
     // 托盘应先切 active 再切 idle
     expect(traySetState).toHaveBeenCalledWith('active');
     expect(traySetState).toHaveBeenCalledWith('idle');
+  });
+
+  it('任务流正常结束应广播 idle 并卸载运行态挂载物（clearPlan，SSOT 模型 2026-08-10）', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'text' as const, content: '回复' };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    // 渲染层据此把 sessionStatus 复位为 idle（卸载任务面板暂停按钮等挂载物）
+    const idle = sends.find(
+      (s) =>
+        s.channel === MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED &&
+        (s.data as { status: string }).status === 'idle',
+    );
+    expect(idle).toBeDefined();
+    // 内核同步卸载运行态任务状态：清空检查点 plan/roundLog（回到"空闲 = 无挂载物"常态）
+    expect(ctx.getAgent().clearPlan).toHaveBeenCalled();
+  });
+
+  it('暂停路径不应广播 idle（paused 态由 sessionPaused 事件广播，挂载物保留供续跑/归档）', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'paused' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    // 暂停场景跳过 idle 广播：paused 态由内核 sessionPaused 事件负责，
+    // idle 会覆盖它；plan 必须保留（供"存进度到记忆"归档提取快照）
+    const idle = sends.find(
+      (s) =>
+        s.channel === MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED &&
+        (s.data as { status: string }).status === 'idle',
+    );
+    expect(idle).toBeUndefined();
+    expect(ctx.getAgent().clearPlan).not.toHaveBeenCalled();
   });
 
   it('应调用 sprite.prepareForChat + sprite.incrementDailyMessageCount（对话前感知刷新 + 消息计数）', async () => {

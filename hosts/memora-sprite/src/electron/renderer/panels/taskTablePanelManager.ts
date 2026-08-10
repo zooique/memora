@@ -86,11 +86,9 @@ export interface TaskTablePanelHost {
   getWorkContext(): Promise<WorkContext>;
   /** P1-6: 暂停会话（软暂停：内核在 loop 边界挂起，保留消息可续跑；通过 IPC） */
   pauseSession(): Promise<void>;
-  /** P1-6: 取消暂停（通过 IPC） */
+  /** 取消暂停（通过 IPC） */
   cancelPause(): Promise<void>;
-  /** 用户设计定案：取消/放弃暂停（清暂停态回 idle，通过 IPC） */
-  abandonPause(): Promise<void>;
-  /** P1-6: 恢复会话（通过 IPC） */
+  /** 恢复会话（通过 IPC） */
   resumeSession(): Promise<void>;
   /** P1-5: 删除指定草稿（委托 UIManager 从 pendingDrafts 中移除） */
   removeDraft(id: string): void;
@@ -177,10 +175,13 @@ export class TaskTablePanelManager {
     clearElement(this.tableContainerEl);
 
     if (!ctx.plan || ctx.plan.length === 0) {
-      // 空任务表：显示提示
+      // 空任务表：区分"任务生成中"与"暂无任务"（用户实测纠偏 2026-08-10）：
+      // - 会话运行中（running）且 plan 为空 → LLM 正在生成任务表，提示"正在生成"
+      // - 会话空闲（idle）/ 其他 → 无任务可展示，提示"暂无任务"
+      const isGenerating = this.host.getAgentStatus() === 'running';
       const emptyEl = document.createElement('div');
       emptyEl.className = 'task-table-empty';
-      emptyEl.textContent = '暂无任务表';
+      emptyEl.textContent = isGenerating ? '正在生成任务表…' : '暂无任务';
       this.tableContainerEl.appendChild(emptyEl);
       return;
     }
@@ -310,17 +311,21 @@ export class TaskTablePanelManager {
 
     // ── 暂停控制组（用户设计定案：暂停/继续/取消暂停统一在任务清单列表）──
     // 三态互斥（2026-08-10 实测纠偏）：
-    // - 无暂停态且无在途申请：显示「暂停」（发起软暂停）
+    // - 无暂停态且无在途申请：显示「暂停」（发起软暂停）——但会话空闲（idle，无任务）
+    //   时暂停无意义，不显示（用户实测纠偏：任务执行完毕重启后不应出现暂停按钮）
     // - 无暂停态但在途申请：显示「取消暂停」（撤销申请 → SESSION_CANCEL_PAUSE）
     //   ——「暂停按钮按下去就直接显示取消暂停」，不等状态机翻转；
     //     已暂停态不再显示取消暂停（取消暂停只在申请未触发时有意义）
     // - suspended（已挂起）：显示「继续」（恢复执行），与取消暂停互斥
+    const hasActiveSession = this.host.getAgentStatus() === 'running' || this.host.getAgentStatus() === 'paused';
     if (!ctx.pausePhase && !ctx.pausePending) {
-      const pauseBtn = document.createElement('button');
-      pauseBtn.className = 'task-table-btn task-table-btn-pause';
-      pauseBtn.textContent = '暂停';
-      pauseBtn.addEventListener('click', () => this.handlePause());
-      actionsEl.appendChild(pauseBtn);
+      if (hasActiveSession) {
+        const pauseBtn = document.createElement('button');
+        pauseBtn.className = 'task-table-btn task-table-btn-pause';
+        pauseBtn.textContent = '暂停';
+        pauseBtn.addEventListener('click', () => this.handlePause());
+        actionsEl.appendChild(pauseBtn);
+      }
     } else if (!ctx.pausePhase && ctx.pausePending) {
       // 取消在途的暂停申请：loop 继续运行（SESSION_CANCEL_PAUSE → agent.cancelPauseRequest）
       const cancelPendingBtn = document.createElement('button');
@@ -352,6 +357,59 @@ export class TaskTablePanelManager {
       reasonEl.textContent = `暂停原因: ${ctx.pauseReason}`;
       actionsEl.appendChild(reasonEl);
     }
+
+    this.tableContainerEl.appendChild(actionsEl);
+  }
+
+  /**
+   * 根据会话状态同步更新暂停按钮（不依赖异步 IPC loadData）
+   *
+   * 由 onSessionStatusChanged 同步调用，确保按钮状态与会话状态即时同步。
+   * 解决"暂停已触发但按钮仍显示取消暂停"的异步竞态问题。
+   * 计划详情等异步数据仍由 loadData 刷新。
+   *
+   * @param status 会话状态：'running' | 'paused' | 'error' | 'idle'
+   * @param reason 暂停原因（可选）
+   * @param source 暂停来源（可选，仅 paused 态有效）
+   */
+  updatePauseByStatus(status: string, reason?: string, source?: string): void {
+    if (!this.tableContainerEl) return;
+
+    // 移除旧按钮区
+    const oldBtns = this.tableContainerEl.querySelector('.task-table-actions');
+    oldBtns?.remove();
+
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'task-table-actions';
+
+    if (status === 'paused') {
+      // 已暂停：显示"继续"（用户设计定案 2026-08-10：暂停已触发，取消暂停无意义）
+      const resumeBtn = document.createElement('button');
+      resumeBtn.className = 'task-table-btn task-table-btn-resume';
+      resumeBtn.textContent = '继续';
+      resumeBtn.addEventListener('click', () => this.handleResume());
+      actionsEl.appendChild(resumeBtn);
+
+      // 暂停来源为 user 时显示"存进度到记忆"
+      if (source === 'user') {
+        const archiveBtn = document.createElement('button');
+        archiveBtn.className = 'task-table-btn task-table-btn-archive';
+        archiveBtn.textContent = '存进度到记忆';
+        archiveBtn.addEventListener('click', () => this.handleArchiveWithContext());
+        actionsEl.appendChild(archiveBtn);
+      }
+
+      // 暂停原因
+      if (reason) {
+        const reasonEl = document.createElement('div');
+        reasonEl.className = 'task-table-pause-reason';
+        reasonEl.textContent = `暂停原因: ${reason}`;
+        actionsEl.appendChild(reasonEl);
+      }
+    }
+    // 其他状态（running/error/idle）不在此处理，由 loadData 异步刷新完整 WorkContext 后渲染
+    // 注意：running 态需要 pausePending 字段判断显示"暂停"还是"取消暂停"，
+    // 无法仅从 status 字符串推导，需等待 IPC 返回的 WorkContext
 
     this.tableContainerEl.appendChild(actionsEl);
   }

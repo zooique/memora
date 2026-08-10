@@ -1410,8 +1410,10 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(agent.sessionManager!.stateMachine.status).toBe('paused');
       expect((agent as unknown as { _pendingPauseReason?: string })._pendingPauseReason).toBeUndefined();
 
-      // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）
-      agent.abandonPause();
+      // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）。
+      // abandonPause 已删除（无生产调用方），改用 resume() 恢复（resume 同样清 pauseMeta）
+      const resumed = agent.resume();
+      expect(resumed).toBe(true);
       expect(agent.sessionManager!.stateMachine.status).toBe('running');
       const ok2 = agent.requestPause('再次暂停', 'user');
       expect(ok2).toBe(true);

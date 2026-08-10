@@ -1481,7 +1481,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('cancelPauseRequest');
     this.requireLoop.cancelPauseRequest();
     this._pendingPauseReason = undefined;
-    this._pendingPauseSource = 'user'; // 与 abandonPause 对称，防残留污染下次暂停
+    this._pendingPauseSource = 'user'; // 防残留污染下次暂停（与 requestPause 对称）
   }
 
   /**
@@ -1492,7 +1492,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 状态真理源：`_pendingPauseReason`——流中 requestPause 置位（:1470），
    * loop 边界真正挂起后由 consumeExecutionStream finally 清理（:1147），
-   * cancelPauseRequest / abandonPause 主动清理。空闲态 requestPause 直接翻
+   * cancelPauseRequest 主动清理。空闲态 requestPause 直接翻
    * PAUSED（不置位 _pendingPauseReason），故 `!== undefined` 精确表达
    * 「申请在途」。附加状态机守卫：已 PAUSED 时即使有残留也按已暂停处理。
    *
@@ -1503,33 +1503,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._pendingPauseReason !== undefined &&
       this._sessionManager?.stateMachine.status !== 'paused'
     );
-  }
-
-  /**
-   * 放弃暂停（P1-6: SESSION_ABANDON 落点）
-   *
-   * 清空暂停相关状态，重置状态机为 running。
-   * 与 cancelPauseRequest 的区别：cancelPause 仅取消待处理的暂停请求，
-   * abandonPause 清理已挂起的暂停状态+暂停点，让会话回到空闲可对话状态。
-   *
-   * 修复：改为通过 SessionManager 操作而非直接操作 stateMachine，
-   * 确保检查点状态同步、暂停超时定时器停止、事件发射等副作用完整执行。
-   */
-  abandonPause(): void {
-    this.assertInitialized('abandonPause');
-    // 清暂停标志
-    this.requireLoop.cancelPauseRequest();
-    this._pendingPauseReason = undefined;
-    this._pendingPauseSource = 'user'; // P1-3: 恢复默认值，防止残留污染下次暂停
-    // 如果已暂停，通过 SessionManager 恢复（而非直接操作 stateMachine）
-    // SessionManager.resume() 会处理：超时检查、检查点更新+落盘、定时器停止、事件发射
-    if (this._sessionManager?.stateMachine.status === 'paused') {
-      this._sessionManager.resume();
-    }
-    // P1-3: 清检查点暂停元数据并落盘，使用 clearPauseMeta() 而非直接修改内存对象，
-    // 确保清除操作经 touchCheckpoint → flushCheckpoint 链路持久化。
-    // resume() 已将状态机翻回 running，但 pauseMeta 是侧车字段，resume 不自动清除。
-    this._sessionManager?.clearPauseMeta();
   }
 
   /**
@@ -1545,6 +1518,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('appendPlanStep');
     const sm = this.requireSessionManager;
     return sm.appendPlanStep(description);
+  }
+
+  /**
+   * 卸载运行态挂载物：清空检查点计划与回合日志（SSOT 资源层 vs 状态层模型 2026-08-10）
+   *
+   * 宿主在任务流结束/停止/异常广播 idle 前调用，将运行期任务状态（plan/roundLog）
+   * 整体卸载，回到"空闲 = 无挂载物"的资源层常态；会话历史与记忆等资源层内容不受影响。
+   */
+  clearPlan(): void {
+    this.assertInitialized('clearPlan');
+    this.requireSessionManager.clearPlan();
   }
 
   /**

@@ -683,22 +683,26 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 1. InputAreaManager：暂停/恢复按钮禁用态
    * 2. ChatPanelManager：消息区状态横幅（暂停/异常提示）
    *
-   * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param status 会话状态：'idle' | 'running' | 'paused' | 'error'
    * @param reason 状态变更原因（可选，用于异常提示文案）
    * @param source 暂停来源（仅 paused 态有效，'user' | 'agent' | 'system'）
    */
   onSessionStatusChanged(status: string, reason?: string, resumable?: boolean, source?: string): void {
     // 记录会话状态，驱动发送按钮三态（发送 / 暂停 / 继续）
-    this.sessionStatus = status === 'paused' ? 'paused' : status === 'error' ? 'error' : 'running';
+    // SSOT 挂载物模型（用户设计定案 2026-08-10）：idle 是资源层无挂载物的常态，
+    // 任务流结束后主进程广播 idle，必须保留而非映射为 running，
+    // 否则任务面板会残留暂停按钮（"空闲态无挂载物"被破坏）。
+    this.sessionStatus =
+      status === 'paused' ? 'paused' : status === 'error' ? 'error' : status === 'idle' ? 'idle' : 'running';
     // 更新暂停/恢复按钮禁用态（含 resumable 信号：多轮任务显暂停 / 简单轮只显停止）
     this.chatCoordinator.inputAreaManager.updateSessionStatus(status, resumable);
     // 更新消息区状态横幅（暂停/异常提示，携带暂停来源）
     this.chatCoordinator.chatPanel.updateSessionStatus(status, reason, source);
     // 同步发送/停止按钮可见性（暂停态需对称显示停止按钮的对应态）
     this.updateSendButton();
-    // 状态变化（暂停触发 / 恢复 / 取消）后刷新任务清单面板：
-    // 暂停申请在途（pausePending=true）→ 取消暂停；已挂起（suspended）→ 继续；
-    // 否则 → 暂停。按钮三态由内核状态驱动，事件到达即刷新。
+    // 同步更新任务清单按钮状态（不依赖异步 IPC，防止"暂停已触发但按钮仍显示取消暂停"）
+    this.chatCoordinator.taskTablePanelManager?.updatePauseByStatus(status, reason, source);
+    // 异步刷新完整工作上下文（plan 详情等，失败时兜底按钮已由 updatePauseByStatus 同步更新）
     this.chatCoordinator.taskTablePanelManager?.loadData();
   }
 
@@ -871,13 +875,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * TaskTablePanelHost: 取消/放弃暂停（清暂停态 + 暂停点，会话回 idle）
-   */
-  async abandonPause(): Promise<void> {
-    await window.electronAPI.abandonPause();
-  }
-
-  /**
    * TaskTablePanelHost: 恢复会话
    */
   async resumeSession(): Promise<void> {
@@ -922,8 +919,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 拆分为独立按钮，语义更清晰，且与 demo v3 视觉设计一致。
    */
   updateSendButton(): void {
-    // 停止按钮：运行中或已暂停时可见（双态交互对称，暂停态用户仍可停止）
-    const showStop = this.state.isStreaming || this.sessionStatus === 'paused';
+    // 停止按钮：仅在流式生成中可见（用户设计定案 2026-08-10：暂停态不显示停止按钮，
+    // 暂停/继续/取消暂停统一在任务清单列表，输入框只有发送/停止两态）
+    const showStop = this.state.isStreaming;
     this.coreElements.btnStop.classList.toggle('visible', showStop);
     // 发送按钮形态（发送 / 暂停 / 继续）统一委托 InputAreaManager 渲染
     this.chatCoordinator.inputAreaManager.refreshSendButtonState();

@@ -170,21 +170,6 @@ export function registerChatHandlers(ctx: IpcContext): void {
     return { canceled: true };
   });
 
-  /** 放弃暂停（清暂停状态+暂停点，会话回 idle） */
-  ipcMain.handle(IPC_CHANNELS.SESSION_ABANDON, async () => {
-    const agent = requireAgent(ctx);
-    agent.abandonPause();
-    // 广播状态回 idle
-    const fullWindow = ctx.windowManager.getFullWindow();
-    if (fullWindow && !fullWindow.isDestroyed()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, {
-        status: 'idle',
-        resumable: false,
-      });
-    }
-    return { abandoned: true };
-  });
-
   /** 获取工作上下文（plan + 暂停态 + pauseSource，供任务表面板渲染） */
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_WORK_CONTEXT, async () => {
     const agent = requireAgent(ctx);

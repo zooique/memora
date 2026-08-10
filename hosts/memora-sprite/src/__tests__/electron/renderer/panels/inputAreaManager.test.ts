@@ -300,7 +300,7 @@ describe('InputAreaManager', () => {
       manager.updateSessionStatus('paused');
       expect(btnSend.style.display).not.toBe('none');
       // 输入框只有发送/停止两态（用户定案实测纠偏）：已暂停不显示「继续」，空输入禁用
-      expect(btnSend.getAttribute('aria-label')).toBe('发送（恢复会话并继续）');
+      expect(btnSend.getAttribute('aria-label')).toBe('发送（恢复会话后执行）');
       expect(btnSend.disabled).toBe(true);
       inputEl.value = '补充指令';
       manager.updateSessionStatus('paused');
@@ -434,7 +434,7 @@ describe('InputAreaManager', () => {
     it('updateSessionStatus(paused) 空输入应禁用发送（继续在任务清单，不显示继续姿态）', () => {
       manager.updateSessionStatus('paused');
       expect(btnSend.disabled).toBe(true);
-      expect(btnSend.getAttribute('aria-label')).toBe('发送（恢复会话并继续）');
+      expect(btnSend.getAttribute('aria-label')).toBe('发送（恢复会话后执行）');
     });
 
     it('updateSessionStatus(error) 应禁用发送', () => {

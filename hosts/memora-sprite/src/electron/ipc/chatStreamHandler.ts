@@ -150,12 +150,19 @@ export async function handleResume(input: string | undefined, ctx: IpcContext): 
 /**
  * 广播会话状态变更（含 resumable 信号，供渲染层暂停按钮显隐）
  *
+ * 状态层四态（用户设计定案 2026-08-10：资源层 vs 状态层模型）：
+ * - running：运行中（挂载了任务状态）
+ * - paused：已暂停（挂载物保留，可续跑）
+ * - error：异常
+ * - idle：空闲（资源层无挂载物，任务流结束/停止/异常后广播，
+ *   渲染层据此复位 sessionStatus，卸载任务面板的暂停按钮等挂载物）
+ *
  * @param ctx IPC 上下文
- * @param status 状态：running | paused | error
+ * @param status 状态：running | paused | error | idle
  * @param reason 状态原因（可选）
  * @param resumable 当前会话是否可"无输入续跑"（内核 canContinueWithoutInput 信号）
  */
-function broadcastStatus(ctx: IpcContext, status: 'running' | 'paused' | 'error', reason?: string, resumable?: boolean): void {
+function broadcastStatus(ctx: IpcContext, status: 'running' | 'paused' | 'error' | 'idle', reason?: string, resumable?: boolean): void {
   const fullWindow = ctx.windowManager.getFullWindow();
   if (!fullWindow || fullWindow.isDestroyed()) return;
   fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, { status, reason, resumable });
@@ -241,6 +248,9 @@ async function forwardStream(
   let streamStarted = false;
   // 中断通道已发送标志（确保 SPRITE_STREAM_ABORTED 只发送一次）
   let abortedNotified = false;
+  // 软暂停标志（paused chunk 已收到）：暂停由内核 sessionPaused 事件广播 paused 态，
+  // finally 必须跳过 idle 广播，避免覆盖暂停态（SSOT 挂载物模型 2026-08-10）
+  let pausedNotified = false;
   // 无进展超时状态机（跨宿主共享）
   const timeoutGuard = createStreamTimeoutGuard({
     onTimeout: () => {
@@ -360,6 +370,9 @@ async function forwardStream(
       } else if (chunk.type === 'paused') {
         // 软暂停：内核在 loop 边界挂起生成器（非 abort），保留 messages 可经 resumeExecution 续跑。
         // 不发送 aborted/error（暂停非错误）；暂停前已生成的文本是真实内容，照常推送浮动窗口。
+        // 标记暂停场景：状态广播由内核 sessionPaused 事件负责（paused 态），
+        // finally 据此刻跳过 idle 广播，避免覆盖暂停态（SSOT 挂载物模型 2026-08-10）。
+        pausedNotified = true;
         break;
       }
     }
@@ -430,5 +443,15 @@ async function forwardStream(
     ctx.setAbortController(null);
     // 流式结束：托盘切回 idle 状态（绿色静态）
     ctx.trayManager?.setState('idle');
+    // SSOT 挂载物卸载（用户设计定案 2026-08-10：资源层 vs 状态层模型）：
+    // 任务流结束/停止/异常后广播 idle，渲染层据此把 sessionStatus 复位为 idle，
+    // 卸载任务面板的暂停按钮等运行态挂载物（回到"空闲 = 无挂载物"的资源层常态）。
+    // 暂停场景跳过：paused 态由内核 sessionPaused 事件广播，idle 广播会覆盖它。
+    if (!pausedNotified && !fullWindow.isDestroyed()) {
+      // 卸载运行态任务状态：清空检查点 plan/roundLog（该场景与"存进度到记忆"天然互斥——
+      // 归档按钮门控在 paused 态，而 paused 已跳过本分支，plan 保留供归档提取快照）
+      agent.clearPlan();
+      broadcastStatus(ctx, 'idle');
+    }
   }
 }

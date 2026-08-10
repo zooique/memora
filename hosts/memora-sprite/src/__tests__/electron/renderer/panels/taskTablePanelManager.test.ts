@@ -26,7 +26,6 @@ function createMockHost(): TaskTablePanelHost & { mocks: Record<string, ReturnTy
     getWorkContext: vi.fn(),
     pauseSession: vi.fn().mockResolvedValue(undefined),
     cancelPause: vi.fn().mockResolvedValue(undefined),
-    abandonPause: vi.fn().mockResolvedValue(undefined),
     resumeSession: vi.fn().mockResolvedValue(undefined),
     removeDraft: vi.fn(),
     archiveSessionWithContext: vi.fn().mockResolvedValue({ archivedCount: 0 }),
@@ -54,8 +53,8 @@ describe('TaskTablePanelManager · 暂停控制组（用户设计：暂停/继�
     document.body.innerHTML = '';
   });
 
-  it('无暂停态（运行/空闲）→ 渲染「暂停」按钮，点击委托 pauseSession', async () => {
-    // 按钮区常显：暂停控制组与 plan 无关（删 planGenerated 后无需让按钮区可见的特殊守卫）
+  it('无暂停态且会话运行中（running）→ 渲染「暂停」按钮，点击委托 pauseSession', async () => {
+    // 运行中空 plan：长任务 LLM 正在生成任务表，暂停按钮仍有意义（可中断生成）
     const ctx: WorkContext = { plan: [], activeStepOrder: -1 };
     const { manager, host, container } = setup(ctx);
     await manager.loadData();
@@ -67,6 +66,18 @@ describe('TaskTablePanelManager · 暂停控制组（用户设计：暂停/继�
 
     pauseBtn!.click();
     expect(host.mocks.pauseSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('无暂停态且会话空闲（idle）→ 不渲染「暂停」按钮（任务执行完毕重启后无任务可暂停）', async () => {
+    const ctx: WorkContext = { plan: [], activeStepOrder: -1 };
+    const { manager, host, container } = setup(ctx);
+    // 模拟重启后会话空闲（无任务在执行）
+    host.mocks.getAgentStatus.mockReturnValue('idle');
+    await manager.loadData();
+
+    const btns = buttonsIn(container);
+    expect(btns.find((b) => b.textContent === '暂停')).toBeUndefined();
+    expect(btns.find((b) => b.textContent === '继续')).toBeUndefined();
   });
 
   it('suspended（已挂起）→ 只渲染「继续」，不再显示「取消暂停」（互斥）', async () => {

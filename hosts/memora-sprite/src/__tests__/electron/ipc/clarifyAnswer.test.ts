@@ -78,6 +78,8 @@ function createMockAgent(processEventImpl: (event: unknown) => AsyncGenerator<ne
     archiveSessionContent: vi.fn(async () => ({ memories: [] })),
     forceReleaseChatLock: vi.fn(),
     agentHistory: { currentDateValue: '2026-08-09', currentSessionValue: 'test' },
+    // 流式结束 finally 卸载运行态挂载物（SSOT 模型）时调用
+    clearPlan: vi.fn(),
   };
 }
 

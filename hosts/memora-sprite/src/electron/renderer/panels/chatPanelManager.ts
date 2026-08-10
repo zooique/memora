@@ -1175,14 +1175,16 @@ export class ChatPanelManager {
    * 恢复时：移除横幅。
    * ERROR 态：显示错误提示（含恢复指引）。
    * 横幅创建后复用，不重复创建。
+   * IDLE 态（用户设计定案 2026-08-10：资源层无挂载物的常态）：与 running 同
+   * 属"无暂停/异常"，任务流结束后移除横幅。
    *
-   * @param status 会话状态：'running' | 'paused' | 'error'
+   * @param status 会话状态：'idle' | 'running' | 'paused' | 'error'
    * @param reason 状态变更原因（可选，用于错误提示文案）
    * @param source 暂停来源（仅 paused 态有效，'user' | 'agent' | 'system'）
    */
   updateSessionStatus(status: string, reason?: string, source?: string): void {
-    if (status === 'running') {
-      // 恢复运行态：移除状态横幅 + 清除可能残留的澄清面板（超时自动续跑后用户未手动关闭）
+    if (status === 'running' || status === 'idle') {
+      // 恢复运行态/回到空闲态：移除状态横幅 + 清除可能残留的澄清面板（超时自动续跑后用户未手动关闭）
       if (this.sessionStatusEl) {
         this.sessionStatusEl.remove();
         this.sessionStatusEl = null;

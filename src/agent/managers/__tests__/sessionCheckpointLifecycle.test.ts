@@ -515,4 +515,59 @@ describe('检查点字段生命周期', () => {
       expect(loaded!.schemaVersion).toBe(999);
     });
   });
+
+  describe('运行态挂载物卸载（SSOT 资源层 vs 状态层模型 2026-08-10）', () => {
+    /**
+     * resume（paused → running）即"回到运行"：pauseMeta 属状态层挂载物，
+     * 只含展示信息（phase/reason/source/pausedAt），恢复时应被卸载。
+     * 若不清理，getWorkContext 会继续返回暂停态，任务面板残留「继续」按钮。
+     */
+    it('resume 应卸载 pauseMeta 挂载物（内存态与磁盘态一致）', () => {
+      manager.createCheckpoint('主目标');
+      manager.setPauseMeta({
+        phase: 'suspended',
+        reason: '用户主动暂停',
+        source: 'user',
+        pausedAt: Date.now(),
+      });
+      manager.pause('测试暂停', 'user');
+      expect(manager.getCheckpoint()!.pauseMeta).toBeDefined();
+
+      manager.resume();
+
+      const cp = manager.getCheckpoint()!;
+      expect(cp.pauseMeta).toBeUndefined();
+      // 磁盘态同样清除：重启后不得残留暂停态挂载物
+      expect(disk.readDisk()!.pauseMeta).toBeUndefined();
+    });
+
+    /**
+     * clearPlan 在运行→空闲切换时整体卸载 plan/roundLog：
+     * 任务流结束/停止/异常后由宿主调用，回到"空闲 = 无挂载物"常态，
+     * 只沉淀会话历史与记忆等资源层内容。
+     */
+    it('clearPlan 应清空 plan 与 roundLog（内存态与磁盘态一致）', () => {
+      manager.createCheckpoint('主目标');
+      manager.appendPlanStep('第一步');
+      manager.appendPlanStep('第二步');
+      manager.completeRound({ stepId: undefined, summary: '测试回合', toolCallCount: 1, assistantLength: 42 });
+      expect(manager.getCheckpoint()!.plan).toHaveLength(2);
+      expect(manager.getCheckpoint()!.roundLog).toHaveLength(1);
+
+      manager.clearPlan();
+
+      const cp = manager.getCheckpoint()!;
+      expect(cp.plan).toHaveLength(0);
+      expect(cp.roundLog).toBeUndefined();
+      // 磁盘态同样卸载：重启后不得残留旧任务表（用户实测纠偏 2026-08-10）
+      const onDisk = disk.readDisk()!;
+      expect(onDisk.plan).toHaveLength(0);
+      expect(onDisk.roundLog).toBeUndefined();
+    });
+
+    it('clearPlan 在无检查点时安全 no-op 不抛错', () => {
+      expect(() => manager.clearPlan()).not.toThrow();
+      expect(manager.getCheckpoint()).toBeNull();
+    });
+  });
 });

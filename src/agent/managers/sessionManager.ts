@@ -992,6 +992,12 @@ export class SessionManager {
       // 更新检查点心跳并持久化（P0-2：会话状态持久化）
       if (this.checkpoint) {
         this.checkpoint.status = 'running';
+        // SSOT 挂载物卸载（用户设计定案 2026-08-10：资源层 vs 状态层）：
+        // pauseMeta 属于状态层挂载物（仅含展示信息 phase/reason/source/pausedAt），
+        // 会话恢复（paused → running）即"回到运行"，挂载物应被卸载。
+        // 若不清理，getWorkContext 会继续返回暂停态，任务面板残留「继续」按钮。
+        // 超时检测依赖的是 checkpoint.pausedAt 独立字段，不受影响。
+        this.checkpoint.pauseMeta = undefined;
         this.touchCheckpoint();
         this.flushCheckpoint();
       }
@@ -1347,6 +1353,24 @@ export class SessionManager {
   }
 
   /**
+   * 卸载运行态挂载物：清空检查点计划与回合日志（SSOT 资源层 vs 状态层模型 2026-08-10）
+   *
+   * 任务流结束/停止/异常转入 idle 时调用，将运行期产生的 plan/roundLog 等
+   * 状态层挂载物卸载，只沉淀会话历史与记忆等资源层内容，回到"空闲 = 无挂载物"常态。
+   *
+   * 与 updatePlan/appendPlanStep 正交：后者在运行态维护计划，本方法在
+   * 运行→空闲切换时整体卸载。经 touchCheckpoint → flushCheckpoint 链路落盘，
+   * 保证内存态与磁盘态一致（重启后不残留旧任务表）。
+   */
+  clearPlan(): void {
+    if (!this.checkpoint) return;
+    this.checkpoint.plan = [];
+    this.checkpoint.roundLog = undefined;
+    this.touchCheckpoint();
+    this.flushCheckpoint();
+  }
+
+  /**
    * 设置暂停元数据（P2-3: Phase 2 暂停模型）
    *
    * @param meta - 暂停元数据，传 undefined 清除
@@ -1366,7 +1390,7 @@ export class SessionManager {
     // 见 loop.ts:544-549 onPaused 早于 yield paused chunk，而翻状态机在 consumeExecutionStream:1117），
     // 是 pauseMeta 进入检查点的唯一时机。若不落盘，磁盘快照将永远缺少暂停元数据，
     // 宿主重启后只能回落到兜底文案「已暂停（重启恢复）」。
-    // P1-1: 传 undefined 时同样需要落盘，否则 abandonPause() 清除 pauseMeta 后
+    // P1-1: 传 undefined 时同样需要落盘，否则清除 pauseMeta 后
     // 磁盘检查点的 pauseMeta 字段残留，与内存态分叉。
     this.flushCheckpoint();
   }
@@ -1376,7 +1400,7 @@ export class SessionManager {
    *
    * 通过 setPauseMeta(undefined) 实现，确保清除操作经 touchCheckpoint →
    * flushCheckpoint 链路落盘，而非直接修改内存对象后丢失。
-   * 适用于 abandonPause 等需要清除 pauseMeta 的场景。
+   * 适用于 resume() 恢复会话后清空 pauseMeta 等场景（SSOT 挂载物卸载，2026-08-10）。
    */
   clearPauseMeta(): void {
     this.setPauseMeta(undefined);

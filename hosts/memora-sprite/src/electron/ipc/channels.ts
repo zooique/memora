@@ -315,8 +315,6 @@ export const IPC_CHANNELS = {
   // ─── 暂停模型 IPC（P1-6：申请暂停模型 Phase 1） ──────────
   /** 取消待处理的暂停请求（requesting 态 → 取消，loop 继续运行） */
   SESSION_CANCEL_PAUSE: 'session-cancel-pause',
-  /** 放弃暂停（清暂停状态+暂停点，会话回 idle） */
-  SESSION_ABANDON: 'session-abandon',
   /** 获取工作上下文（plan + 暂停态 + 草稿，供任务表面板渲染） */
   SESSION_GET_WORK_CONTEXT: 'session-get-work-context',
   /** 追加计划步骤（用户侧追加任务到 plan 末尾） */
