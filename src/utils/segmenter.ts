@@ -39,6 +39,9 @@ function tokenizeKeywords(input: string): string[] {
   return [...new Set(tokens)];
 }
 
+/** 评分分母上限：防止关键词多的角色被惩罚（命中 2 个即视为强匹配） */
+const KEYWORD_SCORE_DENOMINATOR_MAX = 3;
+
 /**
  * 关键词匹配评分（Persona/Skill 共享逻辑）
  *
@@ -55,8 +58,6 @@ function tokenizeKeywords(input: string): string[] {
  * @param keywordList - 待匹配的关键词数组
  * @returns 匹配得分 (0~1)，0 表示无命中
  */
-/** 评分分母上限：防止关键词多的角色被惩罚（命中 2 个即视为强匹配） */
-const KEYWORD_SCORE_DENOMINATOR_MAX = 3;
 export function scoreByKeywords(userInput: string, keywordList: string[]): number {
   if (keywordList.length === 0) return 0;
 

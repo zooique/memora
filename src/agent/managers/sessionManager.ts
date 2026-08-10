@@ -765,7 +765,7 @@ export class SessionManager {
     // ── schemaVersion 补齐与跨版本迁移（T4）──
     // 旧内核产出的检查点无 schemaVersion 字段 → 视其为当前版本，不阻断恢复
     // （用户工作优先于严格版本校验）。来自更新版本客户端的检查点当前内核无法
-    // 完整理解，首版仅记录警告、不阻断；真正的版本化迁移逻辑 future 在此按版本分支展开。
+    // 完整理解，首版仅记录警告、不阻断；真正的版本化迁移逻辑见 SessionManager.checkpointMigrations（当前为空表，迁移挂载点已就绪，注册即生效）。
     if (typeof cp.schemaVersion !== 'number' || !Number.isFinite(cp.schemaVersion)) {
       cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
     } else if (cp.schemaVersion > AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {

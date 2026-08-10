@@ -2059,9 +2059,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 用当前 pctx 重建 history / loop
-   */
-  /**
    * 创建会话管理器（提取重复的 forwardEvent + SessionManager 构造逻辑）
    *
    * assembleComponents 与 rebuildComponents 共享同一套构造逻辑：

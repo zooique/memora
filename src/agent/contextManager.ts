@@ -348,19 +348,6 @@ export class ContextManager {
   }
 
   /**
-   * 获取或创建上下文摘要（带缓存管理）
-   *
-   * 缓存 TTL：消息数增长超过 SUMMARY_CACHE_TTL_MSGS 时缓存过期，需重新生成。
-   * 首次调用时生成摘要并缓存，后续调用复用缓存直到过期。
-   *
-   * signal 参数让摘要生成可被用户取消中断，
-   * 避免摘要 LLM 调用卡住时 generator 永久挂起（与 executeToolCalls 同源问题）。
-   *
-   * @param messages 当前消息数组（用于生成摘要和判断缓存过期）
-   * @param signal 可选的 AbortSignal，中断摘要生成
-   * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
-   */
-  /**
    * 作废摘要缓存（SSOT-R4-T9，2026-08-10）
    *
    * 缓存过期靠 `messages.length - contextSummaryMsgCount > TTL` 这个**单向**数值判断，
@@ -376,6 +363,19 @@ export class ContextManager {
     this.contextSummaryMsgCount = 0;
   }
 
+  /**
+   * 获取或创建上下文摘要（带缓存管理）
+   *
+   * 缓存 TTL：消息数增长超过 SUMMARY_CACHE_TTL_MSGS 时缓存过期，需重新生成。
+   * 首次调用时生成摘要并缓存，后续调用复用缓存直到过期。
+   *
+   * signal 参数让摘要生成可被用户取消中断，
+   * 避免摘要 LLM 调用卡住时 generator 永久挂起（与 executeToolCalls 同源问题）。
+   *
+   * @param messages 当前消息数组（用于生成摘要和判断缓存过期）
+   * @param signal 可选的 AbortSignal，中断摘要生成
+   * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
+   */
   async getOrCreateSummary(messages: readonly Message[], signal?: AbortSignal): Promise<string> {
     // 检查缓存是否有效
     const summaryExpired =
