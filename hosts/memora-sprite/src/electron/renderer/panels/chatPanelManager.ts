@@ -1202,26 +1202,12 @@ export class ChatPanelManager {
       // P1: 暂停来源标签映射，供横幅展示区分 user/agent/system 暂停
       const sourceLabel = source === 'agent' ? 'Agent 主动暂停' : source === 'system' ? '系统暂停' : '会话已暂停';
       this.sessionStatusEl.className = 'session-status-banner paused';
+      // 暂停控制组（继续/取消暂停）统一在任务清单列表（用户设计 2026-08-10），
+      // 横幅仅展示暂停状态与原因，不承载操作按钮
       this.sessionStatusEl.innerHTML = `
         <svg class="icon"><use href="#icon-pause"/></svg>
         <span>${sourceLabel}${reason ? `：${reason}` : ''}</span>
-        <button class="session-status-action-btn" data-action="resume-session">继续</button>
-        <button class="session-status-action-btn session-status-abandon-btn" data-action="abandon-pause">放弃</button>
       `;
-      // 继续按钮：恢复会话
-      const resumeBtn = this.sessionStatusEl.querySelector('[data-action="resume-session"]');
-      if (resumeBtn) {
-        resumeBtn.addEventListener('click', () => {
-          void window.electronAPI.resumeSession();
-        });
-      }
-      // 放弃按钮：清暂停态回 idle
-      const abandonBtn = this.sessionStatusEl.querySelector('[data-action="abandon-pause"]');
-      if (abandonBtn) {
-        abandonBtn.addEventListener('click', () => {
-          void window.electronAPI.abandonPause();
-        });
-      }
     } else if (status === 'error') {
       this.sessionStatusEl.className = 'session-status-banner error';
       this.sessionStatusEl.innerHTML = `
