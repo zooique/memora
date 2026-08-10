@@ -192,7 +192,7 @@ export class MemoryDecayScheduler {
       clearSafeInterval(this.decayTimer);
       this.decayTimer = null;
     }
-    // FIX-P0-1：abort 正在进行的 L2 评估，让 LLM 调用快速失败
+    // abort 正在进行的 L2 评估，让 LLM 调用快速失败
     if (this.evaluateAbortController) {
       this.evaluateAbortController.abort();
       this.evaluateAbortController = null;
@@ -307,7 +307,7 @@ export class MemoryDecayScheduler {
       };
     }
 
-    // FIX-P0-1：每次评估创建新的 AbortController，stop() 可主动 abort
+    // 每次评估创建新的 AbortController，stop() 可主动 abort
     this.evaluateAbortController = new AbortController();
     const internalSignal = this.evaluateAbortController.signal;
     // 外部 signal 与内部 signal 叠加：任一 abort 即触发

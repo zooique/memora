@@ -36,7 +36,7 @@ import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
-// FIX-P1-4：archiveMode 三态类型，本类作为模式判断的统一协调点
+// archiveMode 三态类型，本类作为模式判断的统一协调点
 import type { ArchiveMode } from '@/agent/types.js';
 import { logger } from '@/logging/logger.js';
 
@@ -176,7 +176,7 @@ export class ArchiveCoordinator {
     input: string,
     options?: ArchiveTriggerOptions,
   ): Promise<UserProfileEntry[]> {
-    // FIX-P1-4：自动触发 + manual 模式 → 跳过（原 Agent.postProcessInner 的 skipAutoArchive 逻辑）
+    // 自动触发 + manual 模式 → 跳过（原 Agent.postProcessInner 的 skipAutoArchive 逻辑）
     if (options?.autoTriggered && this.getArchiveMode() === 'manual') {
       logger.debug({ mode: 'manual', stage: 'profile' }, 'manual 模式跳过自动 profile 归档');
       return [];
@@ -226,7 +226,7 @@ export class ArchiveCoordinator {
     assistantContent: string,
     options?: ArchiveTriggerOptions,
   ): Promise<Memory[]> {
-    // FIX-P1-4：自动触发 + manual 模式 → 跳过（原 Agent.postProcessInner 的 skipAutoArchive 逻辑）
+    // 自动触发 + manual 模式 → 跳过（原 Agent.postProcessInner 的 skipAutoArchive 逻辑）
     if (options?.autoTriggered && this.getArchiveMode() === 'manual') {
       logger.debug({ mode: 'manual', stage: 'insight' }, 'manual 模式跳过自动 insight 归档');
       return [];
@@ -282,7 +282,7 @@ export class ArchiveCoordinator {
     session: string,
     options?: ArchiveTriggerOptions,
   ): Promise<SessionArchiveResult> {
-    // FIX-P1-4：自动触发 + 非 full 模式 → 跳过（原 sessionHandlers.ts 的外部判断逻辑）
+    // 自动触发 + 非 full 模式 → 跳过（原 sessionHandlers.ts 的外部判断逻辑）
     if (options?.autoTriggered && this.getArchiveMode() !== 'full') {
       logger.debug(
         { mode: this.getArchiveMode(), stage: 'content' },

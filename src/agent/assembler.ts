@@ -258,7 +258,7 @@ function createLoopDependentComponents(params: {
   const autoConfigRefiner = new AutoConfigRefiner(
     (suggestion) => configManager.suggestionCallback?.(suggestion),
     {
-      // T2-3：已有同名 rule 不再建议，防「血肉结晶为骨骼」重复沉淀
+      // 已有同名 rule 不再建议，防「血肉结晶为骨骼」重复沉淀
       isExistingRule: (name) => configManager.listRules().some((r) => r.name === name),
     },
   );

@@ -107,7 +107,7 @@ describe('MemoryInspector', () => {
     storage = new InMemoryStorage();
     loop = createMockLoop();
     history = createMockHistory();
-    // FIX-P1-3：advisor 参数已移除，inspector 不再持有 advisor 引用
+    // advisor 参数已移除，inspector 不再持有 advisor 引用
     // sourceHealth/suggest 由 Agent 门面直连 advisor，本测试不覆盖（见 memoryAdvisor.test.ts）
     inspector = new MemoryInspector(storage, loop, history, null);
   });
@@ -668,7 +668,7 @@ describe('MemoryInspector', () => {
   // 8. sourceHealth + suggest 委托（已迁移）
   // ════════════════════════════════════════════════════════
   //
-  // FIX-P1-3（2026-07-24）：sourceHealth / suggest 已从 MemoryInspector 删除，
+  // sourceHealth / suggest 已从 MemoryInspector 删除，
   // 迁移至 Agent 门面直连 MemoryAdvisor（与 detectConflicts 同模式）。
   // 相关测试见：
   //   - memoryAdvisor.test.ts（advisor 单元测试，覆盖 sourceHealth/suggest 全场景）

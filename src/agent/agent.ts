@@ -341,7 +341,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           configDir ?? this.#config.configDir,
           agentDataDir ?? this.#config.dataDir,
         ),
-      // T13：closeProject 撤销项目级记忆时联动清理关系边（惰性读 this.memoryInspector——
+      // closeProject 撤销项目级记忆时联动清理关系边（惰性读 this.memoryInspector——
       // initializeProject 先于 assembleComponents，回调运行时 memoryInspector 已赋值）
       removeRelationsByMemoryId: (memoryId: string) => {
         this.memoryInspector?.writeRemoveRelationsByMemoryId(memoryId);
@@ -641,7 +641,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     if (recalledMemories.length > 0) {
       this.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
-      // FIX-P1-2：boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
+      // boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
       // boost 是软指标（每次 +0.05，上限 1.0），写入失败仅 log 不影响 chat 流程
       const ids = recalledMemories.map((m) => m.id);
       void boostScores(this.requirePctx.index, ids).catch((err: unknown) => {
@@ -2618,7 +2618,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.chatLockManager?.dispose();
     this.chatLockManager = null;
     // 清理 MemoryDecayScheduler（含定时器和 storage 引用）
-    // FIX-P0-1：先 stop() abort L2 评估的 LLM 调用，再 awaitInflight() 等待 Promise 完成，
+    // 先 stop() abort L2 评估的 LLM 调用，再 awaitInflight() 等待 Promise 完成，
     // 防止 close 后 LLM 回调 upsert 已关闭的 storage
     if (this.memoryDecayScheduler) {
       this.memoryDecayScheduler.stop();
@@ -2629,7 +2629,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       this.memoryDecayScheduler = null;
     }
-    // FIX-P0-1：等待 WorkProjection 的 inflight LLM 生成完成，防止 close 后 upsert 已关闭的 storage
+    // 等待 WorkProjection 的 inflight LLM 生成完成，防止 close 后 upsert 已关闭的 storage
     if (this.workProjection) {
       try {
         await this.workProjection.awaitInflight();

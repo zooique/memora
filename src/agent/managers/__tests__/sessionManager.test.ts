@@ -894,7 +894,7 @@ describe('SessionManager', () => {
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
       }));
-      // T1-2：字段须在发射事件之前填好——监听器会同步消费，
+      // 字段须在发射事件之前填好——监听器会同步消费，
       // 顺序颠倒会让归档消费到 null
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
         sessionId: '2026-06-27-main',
@@ -1098,7 +1098,7 @@ describe('SessionManager', () => {
       expect(manager.getConsecutivePauseCount()).toBe(1);
 
       // 快进超过暂停超时阈值（再快进 10 分钟，总计 35 分钟）
-      // T6b: 暂停超时后 checkPauseTimeout 会重置连续暂停计数
+      // 暂停超时后 checkPauseTimeout 会重置连续暂停计数
       vi.advanceTimersByTime(10 * 60 * 1000);
       expect(manager.getConsecutivePauseCount()).toBe(0);
 
@@ -1124,7 +1124,7 @@ describe('SessionManager', () => {
       expect(manager.getConsecutivePauseCount()).toBe(2);
 
       // 再快进 10 分钟（总计 45 分钟），第二次暂停已超时（30 分钟阈值）
-      // T6b: 暂停超时后 checkPauseTimeout 重置连续暂停计数
+      // 暂停超时后 checkPauseTimeout 重置连续暂停计数
       vi.advanceTimersByTime(10 * 60 * 1000);
       expect(manager.getConsecutivePauseCount()).toBe(0);
     });

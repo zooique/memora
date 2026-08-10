@@ -556,7 +556,7 @@ describe('Agent · Manager 委托模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
     const results = agent.governance!.suggest();
     expect(Array.isArray(results)).toBe(true);
     for (const hit of results) {
@@ -585,7 +585,7 @@ describe('Agent · Manager 委托模式', () => {
       score: 0.9,
     });
 
-    // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
     const results = agent.governance!.suggest('TypeScript');
     expect(results.length).toBeGreaterThan(0);
     // 搜索命中的应排在前面
@@ -598,7 +598,7 @@ describe('Agent · Manager 委托模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
     const results = agent.governance!.suggest(undefined, {
       excludeSources: ['insight', 'profile', 'work-projection', 'persona', 'rule', 'skill'],
       limit: 10,
@@ -611,7 +611,7 @@ describe('Agent · Manager 委托模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // FIX-P1-3：suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
+    // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
     const results = agent.governance!.suggest(undefined, { limit: 2 });
     expect(results.length).toBeLessThanOrEqual(2);
   });

@@ -49,7 +49,7 @@ import {
 import { BOOST_INCREMENT } from '@/memory/governance.js';
 
 // 类型再导出，保持公共 API 不变（src/index.ts 通过本文件再导出这些类型）
-// FIX-P1-3：sourceHealth/suggest 实现已迁回 MemoryAdvisor 直连，类型仍在此再导出
+// sourceHealth/suggest 实现已迁回 MemoryAdvisor 直连，类型仍在此再导出
 // 以维持 src/index.ts 公共 API 兼容（类型定义本身在 memoryAdvisor.ts）
 export type {
   SourceHealthStatus,
@@ -607,7 +607,7 @@ export class MemoryInspector {
 
   // ─── 源健康诊断 + 关联推荐 ───
   //
-  // FIX-P1-3（2026-07-24）：sourceHealth() / suggest() 已从此处删除。
+  // sourceHealth() / suggest() 已从此处删除。
   // 调用方应通过 Agent 门面访问：
   //   - agent.sourceHealth()  →  MemoryAdvisor.sourceHealth()
   //   - agent.suggest(...)    →  MemoryAdvisor.suggest(...)
@@ -685,7 +685,7 @@ export class MemoryInspector {
   writePurge(id: string): void {
     // 先清理关系边（relationStore 未注入时降级）
     this.writeRemoveRelationsByMemoryId(id);
-    // T2-5（F3-5 同类泄漏口）：手动 purge 同样清理向量，防止孤儿向量被语义召回。
+    // 手动 purge 同样清理向量，防止孤儿向量被语义召回。
     // vectorStore.delete 为异步（内部立即 save），本方法同步签名（宿主 IPC 同步调用），
     // 故 fire-and-forget + catch 降级——delete 首行同步 entries.delete，内存立即失效。
     if (this.vectorStore) {

@@ -130,7 +130,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -148,7 +148,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -179,7 +179,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -201,7 +201,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -220,7 +220,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -284,7 +284,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -301,7 +301,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -320,7 +320,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -351,7 +351,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -443,7 +443,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => null,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -470,7 +470,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -499,7 +499,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -519,7 +519,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => throwingArchiver,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -551,7 +551,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => null,
         getSessionArchiver: () => throwingArchiver,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
@@ -584,7 +584,7 @@ describe('ArchiveCoordinator', () => {
         getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
-        // FIX-P1-4：默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
+        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 

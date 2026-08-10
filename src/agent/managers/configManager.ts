@@ -183,7 +183,7 @@ export class ConfigManager {
       ]);
     }
 
-    // T2-4（F3-3 路径穿越防御）：suggestion.name 直落 FileStore.getFilePath 的文件名
+    // 路径穿越防御：suggestion.name 直落 FileStore.getFilePath 的文件名
     // （store.ts:118 `${name}.md`，未经 sanitize，仅 source 经 validateSource 校验，name 不校验）。
     // LLM 生成的 name 若含 '/'、'..'、'\' 等即可路径遍历逃出 configDir。
     // 在入口收口白名单，最早失败、早于一切副作用（磁盘写入 / SQLite upsert）。
@@ -249,7 +249,7 @@ export class ConfigManager {
     // 同步写入 SQLite index：当前会话的 search_memories / recall 可立即检索到新创建的配置
     // persona/skill 后续由 reloadConfig → SkillManager.reload / PersonaManager.reload 重新扫描覆盖，
     // 但 rule 的 reloadConfig 是 no-op（agent.ts 内跳过），必须在此显式同步
-    // T2-4（F3-3）：重建同名已软删记忆前先 restore，与 loader.ts:100 / updateRule 对称。
+    // 重建同名已软删记忆前先 restore，与 loader.ts:100 / updateRule 对称。
     // 否则 upsert 会因「以活跃态覆盖软删除态」抛错，而磁盘文件已在上方 :216 写入，
     // 造成「文件落盘 + SQLite 索引分叉」的半成功状态。restore 对活跃/不存在记忆为 no-op（loader.ts:85），安全。
     this.index.restore(memory.id);
@@ -259,7 +259,7 @@ export class ConfigManager {
     if (suggestion.type === 'rule') {
       const rulePrompt = `【项目规则】${suggestion.name}\n${suggestion.content}`;
       this.injectSystemMessage(rulePrompt);
-      // T2 修复：刷新 bootstrap 段（messages[0] 中的 rule 全集）。
+      // 刷新 bootstrap 段（messages[0] 中的 rule 全集）。
       // 与 deleteRule:346 / updateRule:393 / deleteSkill:430 对称——此前缺此调用，
       // 且 agent.reloadConfig('rule') 是显式 no-op（agent.ts 内跳过），
       // 导致确认的新规则只靠一条易被截断的临时 system 消息生效，重启前永进不了 bootstrap。
@@ -401,14 +401,14 @@ export class ConfigManager {
    */
   deleteRule(name: string): boolean {
     const id = `rule:${name}`;
-    // T5: 文件层前置条件断言——文件应已被宿主删除
+    // 文件层前置条件断言——文件应已被宿主删除
     this.assertFileConsistency(id, 'absent');
     const existing = this.index.getById(id);
     if (!existing) {
       logger.warn({ name, id }, '删除规则失败：规则不存在');
       return false;
     }
-    // P0-1：先清理关联关系边，防止 memory_relations 表残留孤儿边
+    // 先清理关联关系边，防止 memory_relations 表残留孤儿边
     this.removeRelationsByMemoryId?.(id);
     this.index.delete(id);
     this.safeRefreshBootstrapMemories();
@@ -440,7 +440,7 @@ export class ConfigManager {
    */
   updateRule(name: string, content: string): void {
     const id = `rule:${name}`;
-    // T5: 文件层前置条件断言——文件应已由宿主写入
+    // 文件层前置条件断言——文件应已由宿主写入
     this.assertFileConsistency(id, 'exists');
     const existing = this.index.getById(id);
     const now = nowIso();
@@ -487,7 +487,7 @@ export class ConfigManager {
    */
   deleteSkill(name: string): boolean {
     const id = `skill:${name}`;
-    // T5: 文件层前置条件断言——文件应已被宿主删除
+    // 文件层前置条件断言——文件应已被宿主删除
     this.assertFileConsistency(id, 'absent');
     const existing = this.index.getById(id);
     if (!existing) {
