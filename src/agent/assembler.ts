@@ -94,6 +94,8 @@ export interface AssembleInput {
    * 用于 outbox 模式：恢复时避免重复执行已完成的幂等工具。
    */
   preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
+  /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
+  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -234,8 +236,10 @@ function createLoopDependentComponents(params: {
   onDedupCompleted?: (report: {
     scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[];
   }) => void;
+  /** 文件层前置条件断言回调（可选） */
+  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
 }) {
-  const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, onDedupCompleted } = params;
+  const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, onDedupCompleted, fileConsistencyCheck } = params;
 
   const configFileStore = configDir ? new FileStore(configDir) : null;
 
@@ -253,6 +257,7 @@ function createLoopDependentComponents(params: {
     configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
     // P0-1：删除配置时自动清理关联关系边
     (memoryId: string) => memoryInspector.writeRemoveRelationsByMemoryId(memoryId),
+    fileConsistencyCheck,
   );
 
   const autoConfigRefiner = new AutoConfigRefiner(
@@ -356,6 +361,7 @@ export async function assembleComponents(
       backgroundProvider,
       relationStore,
       onDedupCompleted: input.onDedupCompleted,
+      fileConsistencyCheck: input.fileConsistencyCheck,
     });
 
   return {

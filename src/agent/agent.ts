@@ -223,6 +223,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       enableContextSummary: opts.enableContextSummary ?? true,
       archiveMode: opts.archiveMode ?? 'full',
       webSearchProvider: opts.webSearchProvider,
+      fileConsistencyCheck: opts.fileConsistencyCheck,
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -1917,6 +1918,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             : undefined,
         };
       },
+      fileConsistencyCheck: this.#config.fileConsistencyCheck,
     });
 
     this.history = result.history;

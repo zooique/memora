@@ -356,9 +356,10 @@ export function registerChatHandlers(ctx: IpcContext): void {
   ): void {
     const answers = questions.map((q) => ({
       slot: q.slot,
+      // 已通过 length > 0 守卫确保 options[0] 存在，使用非空断言收窄 string | undefined → string
       answer:
         q.options && q.options.length > 0
-          ? q.options[0]
+          ? q.options[0]!
           : autoDecisionText(q.slot, q.question),
     }));
     logger.info({ questionCount: questions.length }, '澄清暂停超时，自动择优续跑');

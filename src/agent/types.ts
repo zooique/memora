@@ -721,6 +721,15 @@ export interface AgentOptions {
   archiveMode?: ArchiveMode;
   /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
   webSearchProvider?: IWebSearchProvider;
+  /**
+   * 文件层前置条件断言回调（可选，T5：两段式契约结构化）
+   *
+   * 注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
+   * `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
+   * 校验失败抛 configError（fail-fast），未注入时完全降级为现状。
+   * id 格式：`rule:NAME` 或 `skill:NAME`，宿主据此解析文件路径。
+   */
+  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -756,4 +765,6 @@ export interface AgentConfig {
   archiveMode: ArchiveMode;
   /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
   webSearchProvider: IWebSearchProvider | undefined;
+  /** 文件层前置条件断言回调（可选） */
+  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
 }

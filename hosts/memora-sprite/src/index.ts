@@ -479,6 +479,22 @@ async function createAgentInstance(
   // 使用 DuckDuckGo 的 HTML 搜索接口（无需 API Key），作为默认网络搜索实现
   const webSearchProvider = new FetchWebSearchProvider();
 
+  // 文件层前置条件断言回调——T5 两段式契约
+  // 宿主先完成文件操作（真理源），再同步内核索引；此回调校验文件操作是否已完成
+  const fileConsistencyCheck = (id: string, expected: 'exists' | 'absent'): boolean => {
+    // id 格式：rule:NAME 或 skill:NAME（由 ConfigManager.assertFileConsistency 构造）
+    const colonIdx = id.indexOf(':');
+    // 无法解析的 id 不拦截（向后兼容，非预期格式直接放行）
+    if (colonIdx < 0) return true;
+    const type = id.slice(0, colonIdx) as 'rule' | 'skill';
+    const name = id.slice(colonIdx + 1);
+    // 映射到 config 文件路径：{configDir}/rules/NAME.md 或 {configDir}/skills/NAME.md
+    const subdir = type === 'rule' ? 'rules' : 'skills';
+    const filePath = resolve(configDir, subdir, `${name}.md`);
+    const fileExists = existsSync(filePath);
+    return expected === 'exists' ? fileExists : !fileExists;
+  };
+
   // 实例化 Agent（注入 webSearchProvider 启用内置 web_search 工具）
   const agent = new Agent({
     projectPath,
@@ -490,6 +506,7 @@ async function createAgentInstance(
     relationStore,
     vectorStore,
     webSearchProvider,
+    fileConsistencyCheck,
     messages: ZH_MESSAGES,
     enableContextSummary: true,
     permission: config.security.permission,
