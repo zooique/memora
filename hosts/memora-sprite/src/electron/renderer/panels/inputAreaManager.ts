@@ -20,9 +20,11 @@
    * - Agent 就绪/空内容守卫保留在 UIManager.emitSendMessage 内部，
    *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
    * - 补全管理器复用 quick-input 模块的 QuickInputCompletion，零重复造轮子
-   * - 不中断工作模型「运行/未运行」双态交互：单一发送按钮承载 发送/暂停/继续 三态，
-   *   复用同一按钮位置（不引入并列冗余按钮）：
-   *   idle → 发送；running → 暂停（中断工作通道，保留进度）；paused → 继续（空=纯恢复 / 有输入=注入补充）
+ * - 不中断工作模型「运行/未运行」双态交互：单一发送按钮承载 发送/停止 两态
+ *   （用户设计定案 2026-08-10 实测纠偏：暂停/继续/取消暂停已移至任务清单列表，
+ *   输入框不再显示「继续」）：
+ *   idle → 发送；running → 停止（空输入）/ 发送补充插入（有输入）；paused → 发送（有输入，
+ *   内核 auto-resume 携带内容继续；空输入禁用，纯恢复用任务清单「继续」）
    */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -229,11 +231,10 @@ export class InputAreaManager {
           this.host.emitStopMessage();
         }
       } else if (this.sessionStatus === 'paused') {
-        // 已暂停：Enter = 继续；有输入则注入补充，无输入则纯恢复
+        // 已暂停：有输入 Enter = 发送（内核 auto-resume + 携带内容继续）；
+        // 空输入 = 无操作（纯恢复请用任务清单「继续」按钮）
         const text = this.getValue();
-        if (text.length === 0) {
-          void window.electronAPI.resumeSession();
-        } else {
+        if (text.length > 0) {
           this.completion?.clear();
           this.host.emitSendMessage();
         }
@@ -274,11 +275,10 @@ export class InputAreaManager {
     // 与 Enter 发送保持一致：点击发送按钮前清空补全候选列表
     this.completion?.clear();
     if (this.sessionStatus === 'paused') {
-      // 已暂停：点击 = 继续；有输入则注入补充后恢复，无输入则纯恢复
+      // 已暂停：有输入 = 发送（内核 auto-resume + 携带内容继续）；
+      // 空输入 = 无操作（纯恢复请用任务清单「继续」按钮，空输入时按钮已禁用）
       const text = this.getValue();
-      if (text.length === 0) {
-        void window.electronAPI.resumeSession();
-      } else {
+      if (text.length > 0) {
         this.host.emitSendMessage();
       }
       return;
@@ -408,9 +408,11 @@ export class InputAreaManager {
   /**
    * 更新发送按钮形态（根据会话状态 + 流式态推导）
    *
-   * 大厂设计（用户定案）：发送按钮不承载暂停——暂停/继续/取消暂停在任务清单列表。
+   * 大厂设计（用户定案，2026-08-10 实测纠偏）：输入框只有发送/停止两态——
+   * 暂停/继续/取消暂停在任务清单列表（taskTablePanelManager）。
    * - running（流式生成中）：空输入 = 停止；有输入 = 发送（补充插入，结束后继续）
-   * - paused（已暂停）：发送按钮 = 继续（空输入=纯恢复；有输入=注入补充后恢复）
+   * - paused（已暂停）：发送按钮 = 发送（有输入=内核 auto-resume 携带内容继续；
+   *   空输入=禁用，纯恢复请用任务清单「继续」按钮）
    * - idle / error（空闲或异常）：发送按钮 = 发送
    *
    * @param status 会话状态：'running' | 'paused' | 'error'
@@ -464,9 +466,14 @@ export class InputAreaManager {
         this.btnSend.disabled = false;
         break;
       case 'paused':
-        // 已暂停：继续姿态，始终可点（空=纯恢复，有文本=注入补充）
-        this.setBtnSend('icon-play', '继续会话（可附带补充输入）');
-        this.btnSend.disabled = false;
+        // 大厂语义（用户设计定案 2026-08-10 实测纠偏）：输入框只有「发送」/「停止」两态，
+        // 已暂停态不显示「继续」——继续/取消暂停在任务清单列表（taskTablePanelManager）。
+        // 有输入 = 发送：内核 processEvent 对 PAUSED 会话 auto-resume（chatHandlers Finding B），
+        //   携带新内容恢复执行（补充插入语义：基于插入内容继续后续任务）。
+        // 空输入 = 禁用：纯恢复请用任务清单「继续」按钮。
+        this.setBtnSend('icon-send', '发送（恢复会话并继续）');
+        this.btnSend.disabled = !hasContent;
+        this.btnSend.classList.toggle('empty', !hasContent);
         break;
       case 'error':
         // 异常：禁用发送，等待恢复

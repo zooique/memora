@@ -696,6 +696,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatCoordinator.chatPanel.updateSessionStatus(status, reason, source);
     // 同步发送/停止按钮可见性（暂停态需对称显示停止按钮的对应态）
     this.updateSendButton();
+    // 状态变化（暂停触发 / 恢复 / 取消）后刷新任务清单面板：
+    // 暂停申请在途（pausePending=true）→ 取消暂停；已挂起（suspended）→ 继续；
+    // 否则 → 暂停。按钮三态由内核状态驱动，事件到达即刷新。
+    this.chatCoordinator.taskTablePanelManager?.loadData();
   }
 
   /**

@@ -1487,6 +1487,27 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 是否存在待处理的暂停申请（申请已发、尚未在 loop 边界挂起）
+   *
+   * 供宿主 UI 区分三态：运行中无申请（显示「暂停」）/ 申请已发未触发
+   * （显示「取消暂停」）/ 已暂停（显示「继续」）。
+   *
+   * 状态真理源：`_pendingPauseReason`——流中 requestPause 置位（:1470），
+   * loop 边界真正挂起后由 consumeExecutionStream finally 清理（:1147），
+   * cancelPauseRequest / abandonPause 主动清理。空闲态 requestPause 直接翻
+   * PAUSED（不置位 _pendingPauseReason），故 `!== undefined` 精确表达
+   * 「申请在途」。附加状态机守卫：已 PAUSED 时即使有残留也按已暂停处理。
+   *
+   * @returns true=暂停申请在途（状态机仍 running）；false=无在途申请或已暂停
+   */
+  isPausePending(): boolean {
+    return (
+      this._pendingPauseReason !== undefined &&
+      this._sessionManager?.stateMachine.status !== 'paused'
+    );
+  }
+
+  /**
    * 放弃暂停（P1-6: SESSION_ABANDON 落点）
    *
    * 清空暂停相关状态，重置状态机为 running。

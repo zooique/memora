@@ -198,8 +198,13 @@ export function registerChatHandlers(ctx: IpcContext): void {
       activeStepOrder: activeStep?.order ?? -1,
       pausePhase: pauseMeta?.phase,
       pauseReason: pauseMeta?.reason,
-      /** P3-2: 暂停来源（仅 suspended 态有效，用于门控"存进度到记忆"按钮显隐） */
+      // P3-2: 暂停来源（仅 suspended 态有效，用于门控"存进度到记忆"按钮显隐）
       pauseSource: pauseMeta?.source,
+      /**
+       * 暂停申请是否在途（申请已发、loop 尚未挂起）。
+       * 三态按钮区分依据：无申请→「暂停」；在途→「取消暂停」；已暂停→「继续」。
+       */
+      pausePending: agent.isPausePending(),
       /** P2.5-2: 任务表由 LLM 生成，等待用户接受/丢弃 */
       planGenerated: agent.isPlanGenerated,
     };

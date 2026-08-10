@@ -294,12 +294,17 @@ describe('InputAreaManager', () => {
   // ─── updateSessionStatus · 会话状态（暂停/继续已移至任务清单，发送按钮不承载） ─
 
   describe('updateSessionStatus · 发送按钮随会话状态（暂停门控在任务清单）', () => {
-    it('已暂停态 → 发送按钮显示继续（空输入=纯恢复；有输入=注入补充）', () => {
+    it('已暂停态 → 发送按钮为发送形态（有输入启用，空输入禁用；不显示继续）', () => {
       host.mocks.isStreaming.mockReturnValue(false);
       manager.init();
       manager.updateSessionStatus('paused');
       expect(btnSend.style.display).not.toBe('none');
-      expect(btnSend.getAttribute('aria-label')).toBe('继续会话（可附带补充输入）');
+      // 输入框只有发送/停止两态（用户定案实测纠偏）：已暂停不显示「继续」，空输入禁用
+      expect(btnSend.getAttribute('aria-label')).toBe('发送（恢复会话并继续）');
+      expect(btnSend.disabled).toBe(true);
+      inputEl.value = '补充指令';
+      manager.updateSessionStatus('paused');
+      expect(btnSend.disabled).toBe(false);
     });
 
     it('流式态 → 发送按钮为停止/发送（空输入停止，有输入发送补充），不受 resumable 门控影响', () => {
@@ -426,10 +431,10 @@ describe('InputAreaManager', () => {
   // ─── 发送按钮三态（暂停/继续） ─────────────────────
 
   describe('发送按钮三态（暂停/继续）', () => {
-    it('updateSessionStatus(paused) 应转为继续姿态（启用）', () => {
+    it('updateSessionStatus(paused) 空输入应禁用发送（继续在任务清单，不显示继续姿态）', () => {
       manager.updateSessionStatus('paused');
-      expect(btnSend.disabled).toBe(false);
-      expect(btnSend.getAttribute('aria-label')).toBe('继续会话（可附带补充输入）');
+      expect(btnSend.disabled).toBe(true);
+      expect(btnSend.getAttribute('aria-label')).toBe('发送（恢复会话并继续）');
     });
 
     it('updateSessionStatus(error) 应禁用发送', () => {
@@ -443,12 +448,12 @@ describe('InputAreaManager', () => {
       expect(btnSend.getAttribute('aria-label')).toBe('发送（Enter）');
     });
 
-    it('点击：已暂停且空输入 → 纯恢复（resumeSession）', () => {
+    it('点击：已暂停且空输入 → 无操作（不 resume，纯恢复在任务清单「继续」）', () => {
       manager.init();
       manager.updateSessionStatus('paused');
       inputEl.value = '';
       btnSend.click();
-      expect(mockApi.resumeSession).toHaveBeenCalledTimes(1);
+      expect(mockApi.resumeSession).not.toHaveBeenCalled();
       expect(host.mocks.emitSendMessage).not.toHaveBeenCalled();
     });
 
@@ -456,6 +461,9 @@ describe('InputAreaManager', () => {
       manager.init();
       manager.updateSessionStatus('paused');
       inputEl.value = '补充指令';
+      // 真实用户输入路径：input 事件触发 renderButton 刷新（paused 态有内容 → 按钮启用）
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(btnSend.disabled).toBe(false);
       btnSend.click();
       expect(host.mocks.emitSendMessage).toHaveBeenCalledTimes(1);
       expect(mockApi.resumeSession).not.toHaveBeenCalled();
@@ -483,12 +491,12 @@ describe('InputAreaManager', () => {
       expect(host.mocks.emitStopMessage).not.toHaveBeenCalled();
     });
 
-    it('Enter：已暂停且空输入 → 纯恢复', () => {
+    it('Enter：已暂停且空输入 → 无操作（不 resume，纯恢复在任务清单「继续」）', () => {
       manager.init();
       manager.updateSessionStatus('paused');
       inputEl.value = '';
       inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      expect(mockApi.resumeSession).toHaveBeenCalledTimes(1);
+      expect(mockApi.resumeSession).not.toHaveBeenCalled();
       expect(host.mocks.emitSendMessage).not.toHaveBeenCalled();
     });
 

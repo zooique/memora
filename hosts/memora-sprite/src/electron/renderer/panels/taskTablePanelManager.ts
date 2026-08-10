@@ -58,6 +58,16 @@ export interface WorkContext {
   activeStepOrder: number;
   /** 暂停阶段（undefined=未暂停 / suspended=已挂起） */
   pausePhase?: 'suspended';
+  /**
+   * 暂停申请是否在途（申请已发、loop 尚未挂起）
+   *
+   * 三态按钮区分依据（用户设计定案 2026-08-10）：
+   * - 无暂停态且无在途申请 → 显示「暂停」（发起软暂停）
+   * - 无暂停态但在途申请 → 显示「取消暂停」（撤销申请，loop 继续运行）
+   * - suspended → 显示「继续」（已暂停，恢复执行；不再显示取消暂停）
+   * 「取消暂停」只在申请未触发时有意义——已暂停直接继续即可。
+   */
+  pausePending?: boolean;
   /** 暂停原因 */
   pauseReason?: string;
   /** P3-2: 暂停来源（仅 suspended 态有效，用于门控"存进度到记忆"按钮显隐） */
@@ -300,34 +310,38 @@ export class TaskTablePanelManager {
     oldBtns?.remove();
 
     const showArchiveBtn = ctx.pausePhase === 'suspended' && ctx.pauseSource === 'user';
-    // 无任何按钮需展示时隐藏
-    if (!ctx.pausePhase && !ctx.planGenerated && !showArchiveBtn) return;
+    // 无任何按钮需展示时隐藏（暂停控制组三态任一存在即显示：无申请→暂停 / 在途→取消暂停 / 已挂起→继续）
+    if (!ctx.pausePhase && !ctx.pausePending && !ctx.planGenerated && !showArchiveBtn) return;
 
     const actionsEl = document.createElement('div');
     actionsEl.className = 'task-table-actions';
 
     // ── 暂停控制组（用户设计定案：暂停/继续/取消暂停统一在任务清单列表）──
-    // - 无暂停态（运行/空闲）：显示「暂停」按钮（发起软暂停）
-    // - suspended（已挂起）：显示「继续」+「取消暂停」（放弃暂停回 idle）
-    if (!ctx.pausePhase) {
+    // 三态互斥（2026-08-10 实测纠偏）：
+    // - 无暂停态且无在途申请：显示「暂停」（发起软暂停）
+    // - 无暂停态但在途申请：显示「取消暂停」（撤销申请 → SESSION_CANCEL_PAUSE）
+    //   ——「暂停按钮按下去就直接显示取消暂停」，不等状态机翻转；
+    //     已暂停态不再显示取消暂停（取消暂停只在申请未触发时有意义）
+    // - suspended（已挂起）：显示「继续」（恢复执行），与取消暂停互斥
+    if (!ctx.pausePhase && !ctx.pausePending) {
       const pauseBtn = document.createElement('button');
       pauseBtn.className = 'task-table-btn task-table-btn-pause';
       pauseBtn.textContent = '暂停';
       pauseBtn.addEventListener('click', () => this.handlePause());
       actionsEl.appendChild(pauseBtn);
+    } else if (!ctx.pausePhase && ctx.pausePending) {
+      // 取消在途的暂停申请：loop 继续运行（SESSION_CANCEL_PAUSE → agent.cancelPauseRequest）
+      const cancelPendingBtn = document.createElement('button');
+      cancelPendingBtn.className = 'task-table-btn task-table-btn-cancel-pause';
+      cancelPendingBtn.textContent = '取消暂停';
+      cancelPendingBtn.addEventListener('click', () => this.handleCancelPendingPause());
+      actionsEl.appendChild(cancelPendingBtn);
     } else if (ctx.pausePhase === 'suspended') {
       const resumeBtn = document.createElement('button');
       resumeBtn.className = 'task-table-btn task-table-btn-resume';
       resumeBtn.textContent = '继续';
       resumeBtn.addEventListener('click', () => this.handleResume());
       actionsEl.appendChild(resumeBtn);
-
-      // 取消暂停：放弃已挂起的暂停（清暂停态 + 暂停点，会话回 idle）
-      const cancelPauseBtn = document.createElement('button');
-      cancelPauseBtn.className = 'task-table-btn task-table-btn-cancel-pause';
-      cancelPauseBtn.textContent = '取消暂停';
-      cancelPauseBtn.addEventListener('click', () => this.handleCancelPause());
-      actionsEl.appendChild(cancelPauseBtn);
     }
 
     // ── P3-2: 暂停来源为 user 时显示「存进度到记忆」按钮 ──
@@ -381,13 +395,15 @@ export class TaskTablePanelManager {
   }
 
   /**
-   * 处理取消暂停（放弃已挂起的暂停，会话回 idle）
+   * 处理取消在途的暂停申请（撤销申请，loop 继续运行）
    *
-   * 委托 host.abandonPause()（SESSION_ABANDON IPC → agent.abandonPause）。
+   * 委托 host.cancelPause()（SESSION_CANCEL_PAUSE → agent.cancelPauseRequest）。
+   * 与已暂停态的「放弃」（SESSION_ABANDON）区分：本方法只撤销未触发的申请；
+   * 已暂停态只有「继续」（resumeSession），不再提供放弃入口。
    */
-  private async handleCancelPause(): Promise<void> {
+  private async handleCancelPendingPause(): Promise<void> {
     try {
-      await this.host.abandonPause();
+      await this.host.cancelPause();
       this.loadData();
     } catch {
       this.host.showToast('取消暂停失败', 'error');

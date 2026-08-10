@@ -2732,6 +2732,30 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
     expect(agent.sessionManager!.stateMachine.status).toBe('paused');
     expect(agent.canContinueWithoutInput()).toBe(true);
   });
+
+  it('isPausePending：申请在途=true，已暂停/已取消=false（宿主三态按钮依据）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 初始：无在途申请
+    expect(agent.isPausePending()).toBe(false);
+
+    // 流中在途：模拟申请已发（_pendingPauseReason 置位）但状态机未翻——
+    // 真实路径：流中 requestPause 置位标志，loop 边界挂起后由 finally 清理。
+    const agentAny = agent as unknown as { _pendingPauseReason?: string };
+    agentAny._pendingPauseReason = '流中暂停申请';
+    expect(agent.isPausePending()).toBe(true);
+
+    // 取消在途申请 → 标志清空 → false（宿主按钮切回「暂停」）
+    agent.cancelPauseRequest();
+    expect(agent.isPausePending()).toBe(false);
+
+    // 已暂停态：状态机守卫——即使残留标志也按 false（宿主显示「继续」）
+    agent.pause('暂停', 'user');
+    agentAny._pendingPauseReason = '残留';
+    expect(agent.isPausePending()).toBe(false);
+    agent.resume();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

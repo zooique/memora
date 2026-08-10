@@ -1,12 +1,14 @@
 /**
- * TaskTablePanelManager 单元测试（暂停控制组：暂停/继续/取消暂停按钮）
+ * TaskTablePanelManager 单元测试（暂停控制组：暂停/取消暂停/继续三态按钮）
  *
- * 用户设计定案（2026-08-10）：暂停/继续/取消暂停统一在任务清单列表，
+ * 用户设计定案（2026-08-10 + 实测纠偏）：暂停/继续/取消暂停统一在任务清单列表，
  * 发送按钮不承载暂停（大厂语义：运行态空=停止/有=发送补充）。
  *
- * 守护：
- *   - 无暂停态（运行/空闲）：渲染「暂停」按钮，点击委托 host.pauseSession
- *   - suspended（已挂起）：渲染「继续」+「取消暂停」，点击分别委托 resumeSession/abandonPause
+ * 守护（三态互斥）：
+ *   - 无暂停态且无在途申请：渲染「暂停」按钮，点击委托 host.pauseSession
+ *   - 无暂停态但在途申请（pausePending）：渲染「取消暂停」，点击委托 host.cancelPause
+ *   - suspended（已挂起）：只渲染「继续」（不再显示「取消暂停」——取消暂停仅在
+ *     申请未触发时有意义，已暂停直接继续即可），点击委托 resumeSession
  *
  * 变异验证点：删除任一按钮渲染分支 → 对应用例转红。
  *
@@ -69,7 +71,7 @@ describe('TaskTablePanelManager · 暂停控制组（用户设计：暂停/继�
     expect(host.mocks.pauseSession).toHaveBeenCalledTimes(1);
   });
 
-  it('suspended → 渲染「继续」+「取消暂停」，点击分别委托 resumeSession / abandonPause', async () => {
+  it('suspended（已挂起）→ 只渲染「继续」，不再显示「取消暂停」（互斥）', async () => {
     const ctx: WorkContext = {
       plan: [],
       activeStepOrder: -1,
@@ -82,15 +84,33 @@ describe('TaskTablePanelManager · 暂停控制组（用户设计：暂停/继�
 
     const btns = buttonsIn(container);
     const resumeBtn = btns.find((b) => b.textContent === '继续');
-    const cancelPauseBtn = btns.find((b) => b.textContent === '取消暂停');
+    // 已暂停态：取消暂停按钮与继续互斥——取消暂停只在「申请未触发」时有意义
     expect(resumeBtn).toBeDefined();
-    expect(cancelPauseBtn).toBeDefined();
+    expect(btns.find((b) => b.textContent === '取消暂停')).toBeUndefined();
     expect(btns.find((b) => b.textContent === '暂停')).toBeUndefined();
 
     resumeBtn!.click();
     expect(host.mocks.resumeSession).toHaveBeenCalledTimes(1);
-    cancelPauseBtn!.click();
-    expect(host.mocks.abandonPause).toHaveBeenCalledTimes(1);
+  });
+
+  it('暂停申请在途（pausePending）→ 渲染「取消暂停」，点击委托 cancelPause（撤销申请）', async () => {
+    const ctx: WorkContext = {
+      plan: [],
+      activeStepOrder: -1,
+      pausePending: true,
+    };
+    const { manager, host, container } = setup(ctx);
+    await manager.loadData();
+
+    const btns = buttonsIn(container);
+    const cancelPendingBtn = btns.find((b) => b.textContent === '取消暂停');
+    expect(cancelPendingBtn).toBeDefined();
+    // 在途申请态不显示「暂停」（已申请）也不显示「继续」（未挂起）
+    expect(btns.find((b) => b.textContent === '暂停')).toBeUndefined();
+    expect(btns.find((b) => b.textContent === '继续')).toBeUndefined();
+
+    cancelPendingBtn!.click();
+    expect(host.mocks.cancelPause).toHaveBeenCalledTimes(1);
   });
 
   it('planGenerated=true 且无暂停态 → 暂停按钮不依赖 plan 内容（空 plan 也可显示）', async () => {
