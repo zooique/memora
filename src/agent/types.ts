@@ -671,6 +671,18 @@ import type { ProjectContext } from '@/memory/projectManager.js';
 import type { MessageRole } from '@/memory/types.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 
+/**
+ * 文件层前置条件断言回调（T5：两段式契约结构化）
+ *
+ * 注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
+ * `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
+ * id 格式：`rule:NAME` 或 `skill:NAME`（排雷 T-B4：保持字符串协议，宿主 index.ts 解析）。
+ *
+ * 命名类型（T-C1）：此前签名全文散落 5 处（types.ts×2 / assembler.ts×2 / configManager.ts），
+ * 提取为本类型统一引用。
+ */
+export type FileConsistencyCheck = (id: string, expected: 'exists' | 'absent') => boolean;
+
 /** Agent 构造选项 */
 export interface AgentOptions {
   /** 项目路径（必须） */
@@ -727,9 +739,8 @@ export interface AgentOptions {
    * 注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
    * `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
    * 校验失败抛 configError（fail-fast），未注入时完全降级为现状。
-   * id 格式：`rule:NAME` 或 `skill:NAME`，宿主据此解析文件路径。
    */
-  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
+  fileConsistencyCheck?: FileConsistencyCheck;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -742,29 +753,37 @@ export interface AgentProjectEntry {
   lastOpened: string;
 }
 
-/** Agent 内部配置（构造参数分组） */
-export interface AgentConfig {
+/**
+ * Agent 内部配置（构造参数解析默认值后的形态）
+ *
+ * T-C1 派生自 AgentOptions（消除 24 字段逐一手写镜像）：
+ *   - Omit 掉「不进入内部配置」的字段（provider/backgroundProvider 由 Agent 单独持有）
+ *   - 覆盖「构造时 `?? 默认值` 解析后必填」的字段（dataDir/maxContextTokens/permission/...）
+ *   - 其余字段继承 AgentOptions 的必填/可选性（与现手写声明逐字段等价）
+ * 新增 AgentOptions 字段时：若构造处有默认值解析，把该字段加进 Omit 列表 + 覆盖类型。
+ */
+export type AgentConfig = Omit<
+  AgentOptions,
+  | 'provider'
+  | 'backgroundProvider'
+  | 'dataDir'
+  | 'maxContextTokens'
+  | 'permission'
+  | 'allowedPaths'
+  | 'confirmWrites'
+  | 'recallExcludeSources'
+  | 'enableContextSummary'
+  | 'archiveMode'
+  | 'persona'
+> & {
   dataDir: string;
-  registryDir: string | undefined;
   maxContextTokens: number;
-  personaName: string | undefined;
   permission: 'owner' | 'guest';
   allowedPaths: string[];
   confirmWrites: boolean;
-  vectorStore: IVectorStore | undefined;
   recallExcludeSources: string[];
-  storage: IMemoryStorage | undefined;
-  relationStore: IMemoryRelationStore | undefined;
-  sessionStore: ISessionStore | undefined;
-  projectPath: string;
-  configDir: string | undefined;
-  tracer: ITracer | undefined;
-  messages: UIMessages | undefined;
   enableContextSummary: boolean;
-  /** 归档模式（ADR-015，默认 'full'） */
   archiveMode: ArchiveMode;
-  /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
-  webSearchProvider: IWebSearchProvider | undefined;
-  /** 文件层前置条件断言回调（可选） */
-  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
-}
+  /** 默认角色名（AgentOptions.persona 解析后的内部命名） */
+  personaName: string | undefined;
+};

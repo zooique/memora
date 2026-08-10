@@ -35,8 +35,7 @@ import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ITracer } from '@/agent/tracer.js';
-import type { UIMessages } from '@/agent/types.js';
-import type { IWebSearchProvider } from '@/web-search/types.js';
+import type { AgentConfig, FileConsistencyCheck, UIMessages } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
@@ -44,29 +43,13 @@ import { configError } from '@/utils/errors.js';
 // 供 ConfigManager.confirmConfigSuggestion 写入配置文件（真理源）
 import { FileStore } from '@/memory/store.js';
 
-/** 组装器输入参数 */
-export interface AssembleInput {
-  provider: LlmProvider;
-  backgroundProvider: LlmProvider | null;
-  projectPath: string;
-  configDir: string | undefined;
-  personaName: string | undefined;
-  maxContextTokens: number;
-  sessionStore: ISessionStore | undefined;
-  /** 记忆关系存储（可选，ADR-014 侧车模型，不传则跳过关系构建） */
-  relationStore: IMemoryRelationStore | undefined;
-  tracer: ITracer | undefined;
-  messages: UIMessages | undefined;
-  enableContextSummary: boolean;
-  /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
-  webSearchProvider?: IWebSearchProvider;
-  /** 已有的 SkillManager（首次为 null，后续复用） */
-  existingSkillManager: SkillManager | null;
-  /**
-   * systemPrompt 时间注入的 locale（默认 AGENT_CONSTANTS.DEFAULT_LOCALE = 'zh-CN'）。
-   * 注入此字段可覆盖默认 locale，实现国际化时间格式。
-   */
-  locale?: string;
+/**
+ * 组装器事件回调组
+ *
+ * T-C2 收敛：此前 8 个回调平铺在 AssembleInput 顶层 + 两个子工厂签名逐字段重复声明；
+ * 收进单字段 `callbacks`，新增回调只改本接口一处。
+ */
+export interface AssembleCallbacks {
   /** 作品投影生成/更新回调（宿主可据此发射事件通知用户） */
   onWorkProjectionGenerated?: (sourcePath: string, summary: string) => void;
   /** 上下文截断回调 */
@@ -95,7 +78,42 @@ export interface AssembleInput {
    */
   preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
   /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
-  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
+  fileConsistencyCheck?: FileConsistencyCheck;
+}
+
+/**
+ * 与 AgentConfig 同源的组装运行时参数
+ *
+ * T-C1/C2：Pick 派生自 AgentConfig（而 AgentConfig 又派生自 AgentOptions），
+ * 消除 AssembleInput 与 AgentConfig 之间 10 个字段的逐一手写重复。
+ */
+type AssembleRuntimeParams = Pick<
+  AgentConfig,
+  | 'projectPath'
+  | 'configDir'
+  | 'personaName'
+  | 'maxContextTokens'
+  | 'sessionStore'
+  | 'relationStore'
+  | 'tracer'
+  | 'messages'
+  | 'enableContextSummary'
+  | 'webSearchProvider'
+>;
+
+/** 组装器输入参数 */
+export interface AssembleInput extends AssembleRuntimeParams {
+  provider: LlmProvider;
+  backgroundProvider: LlmProvider | null;
+  /** 已有的 SkillManager（首次为 null，后续复用） */
+  existingSkillManager: SkillManager | null;
+  /**
+   * systemPrompt 时间注入的 locale（默认 AGENT_CONSTANTS.DEFAULT_LOCALE = 'zh-CN'）。
+   * 注入此字段可覆盖默认 locale，实现国际化时间格式。
+   */
+  locale?: string;
+  /** 事件回调组（T-C2：8 个平铺回调收敛为一组） */
+  callbacks?: AssembleCallbacks;
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -164,17 +182,12 @@ async function createAgentLoopAndDeps(params: {
   relationStore?: IMemoryRelationStore;
   sessionStore?: ISessionStore;
   locale?: string;
-  onContextTruncated?: (skippedCount: number, keptCount: number) => void;
-  onGuardrailError?: (rule: string, message: string) => void;
-  onSessionEvent?: (eventType: string, detail: string) => void;
-  onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
-  preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
+  callbacks?: AssembleCallbacks;
 }) {
   const {
     provider, backgroundProvider, pctx, personaPrompt, userProfile, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary, relationStore,
-    sessionStore, locale, onContextTruncated, onGuardrailError, onSessionEvent,
-    onToolExecuted, preExecutionCheck,
+    sessionStore, locale, callbacks,
   } = params;
 
   // 系统前缀：角色 + 用户画像 + 当前时间
@@ -209,11 +222,11 @@ async function createAgentLoopAndDeps(params: {
     messages,
     enableContextSummary,
     guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
-    onContextTruncated,
-    onGuardrailError,
-    onSessionEvent,
-    onToolExecuted,
-    preExecutionCheck,
+    onContextTruncated: callbacks?.onContextTruncated,
+    onGuardrailError: callbacks?.onGuardrailError,
+    onSessionEvent: callbacks?.onSessionEvent,
+    onToolExecuted: callbacks?.onToolExecuted,
+    preExecutionCheck: callbacks?.preExecutionCheck,
   });
 
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
@@ -233,20 +246,16 @@ function createLoopDependentComponents(params: {
   configDir?: string;
   backgroundProvider: LlmProvider | null;
   relationStore?: IMemoryRelationStore;
-  onDedupCompleted?: (report: {
-    scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[];
-  }) => void;
-  /** 文件层前置条件断言回调（可选） */
-  fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean;
+  callbacks?: AssembleCallbacks;
 }) {
-  const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, onDedupCompleted, fileConsistencyCheck } = params;
+  const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, callbacks } = params;
 
   const configFileStore = configDir ? new FileStore(configDir) : null;
 
   // P0-1：memoryInspector 需先创建（持有 relationStore），供 ConfigManager 清理关系边
   const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, onDedupCompleted);
+  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, callbacks?.onDedupCompleted);
 
   const configManager = new ConfigManager(
     pctx.index,
@@ -257,7 +266,7 @@ function createLoopDependentComponents(params: {
     configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
     // P0-1：删除配置时自动清理关联关系边
     (memoryId: string) => memoryInspector.writeRemoveRelationsByMemoryId(memoryId),
-    fileConsistencyCheck,
+    callbacks?.fileConsistencyCheck,
   );
 
   const autoConfigRefiner = new AutoConfigRefiner(
@@ -293,6 +302,7 @@ export async function assembleComponents(
     existingSkillManager,
     locale,
   } = input;
+  const callbacks = input.callbacks;
 
   // ── Phase 1: 无依赖组件 ──
 
@@ -303,7 +313,7 @@ export async function assembleComponents(
 
   const history = new MessageHistory(sessionStore);
 
-  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider, input.onWorkProjectionGenerated);
+  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider, callbacks?.onWorkProjectionGenerated);
 
   const toolExec = new ToolExecutor(
     projectPath,
@@ -342,11 +352,7 @@ export async function assembleComponents(
       relationStore,
       sessionStore,
       locale,
-      onContextTruncated: input.onContextTruncated,
-      onGuardrailError: input.onGuardrailError,
-      onSessionEvent: input.onSessionEvent,
-      onToolExecuted: input.onToolExecuted,
-      preExecutionCheck: input.preExecutionCheck,
+      callbacks,
     });
 
   // ── Phase 4: 依赖 Loop 的组件 ──
@@ -360,8 +366,7 @@ export async function assembleComponents(
       configDir,
       backgroundProvider,
       relationStore,
-      onDedupCompleted: input.onDedupCompleted,
-      fileConsistencyCheck: input.fileConsistencyCheck,
+      callbacks,
     });
 
   return {

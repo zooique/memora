@@ -1863,62 +1863,65 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       enableContextSummary: this.#config.enableContextSummary,
       webSearchProvider: this.#config.webSearchProvider,
       existingSkillManager: this.skillManager,
-      onWorkProjectionGenerated: (sourcePath, summary) => {
-        this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
+      // 事件回调组（T-C2 收敛：8 个平铺回调收进 callbacks，与 AssembleCallbacks 接口对齐）
+      callbacks: {
+        onWorkProjectionGenerated: (sourcePath, summary) => {
+          this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
+        },
+        onContextTruncated: (skippedCount, keptCount) => {
+          this.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });
+        },
+        onDedupCompleted: (report) => {
+          this.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
+        },
+        onGuardrailError: (rule, message) => {
+          this.emit(AGENT_EVENTS.guardrailError, { rule, message });
+        },
+        onSessionEvent: (eventType, detail) => {
+          this.handleSessionEvent(eventType, detail);
+        },
+        // 工具执行完成回调（P3.3 工具幂等 outbox 模式 + P3.4 补偿机制）
+        // 记录已执行的工具调用到会话检查点，供恢复时检查重复执行
+        // 同时记录工具的幂等性级别，供补偿机制识别非幂等操作
+        onToolExecuted: (name, args, toolResult, ok) => {
+          // 查找工具的幂等性级别（内置工具查映射表，自定义工具默认非幂等）
+          const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
+          const record: ToolExecutionRecord = {
+            name,
+            argsSignature: args,
+            executedAt: Date.now(),
+            resultSummary: toolResult.slice(0, 100),
+            ok,
+            idempotent,
+          };
+          // 会话管理器可能尚未创建（assembler 中 loop 先于 sessionManager 创建）
+          // 暂存到队列，待 sessionManager 创建后统一写入
+          this._pendingToolExecutions.push(record);
+          // 若 sessionManager 已就绪，立即写入
+          this._sessionManager?.logToolExecution(record);
+        },
+        // 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
+        // 检查工具是否已在当前会话的检查点中执行过
+        // 仅对幂等工具生效（idempotent / idempotent-key），非幂等工具不跳过
+        preExecutionCheck: (name, args) => {
+          const sm = this._sessionManager;
+          if (!sm) return { skip: false };
+          const hasExecuted = sm.hasToolExecuted(name, args);
+          if (!hasExecuted) return { skip: false };
+          // 获取上次执行结果
+          const cp = sm.getCheckpoint();
+          const prevRecord = cp?.completedToolCalls?.find(
+            (r) => r.name === name && r.argsSignature === args,
+          );
+          return {
+            skip: true,
+            previousResult: prevRecord?.resultSummary
+              ? `[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过），上次结果：${prevRecord.resultSummary}`
+              : undefined,
+          };
+        },
+        fileConsistencyCheck: this.#config.fileConsistencyCheck,
       },
-      onContextTruncated: (skippedCount, keptCount) => {
-        this.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });
-      },
-      onDedupCompleted: (report) => {
-        this.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
-      },
-      onGuardrailError: (rule, message) => {
-        this.emit(AGENT_EVENTS.guardrailError, { rule, message });
-      },
-      onSessionEvent: (eventType, detail) => {
-        this.handleSessionEvent(eventType, detail);
-      },
-      // 工具执行完成回调（P3.3 工具幂等 outbox 模式 + P3.4 补偿机制）
-      // 记录已执行的工具调用到会话检查点，供恢复时检查重复执行
-      // 同时记录工具的幂等性级别，供补偿机制识别非幂等操作
-      onToolExecuted: (name, args, toolResult, ok) => {
-        // 查找工具的幂等性级别（内置工具查映射表，自定义工具默认非幂等）
-        const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
-        const record: ToolExecutionRecord = {
-          name,
-          argsSignature: args,
-          executedAt: Date.now(),
-          resultSummary: toolResult.slice(0, 100),
-          ok,
-          idempotent,
-        };
-        // 会话管理器可能尚未创建（assembler 中 loop 先于 sessionManager 创建）
-        // 暂存到队列，待 sessionManager 创建后统一写入
-        this._pendingToolExecutions.push(record);
-        // 若 sessionManager 已就绪，立即写入
-        this._sessionManager?.logToolExecution(record);
-      },
-      // 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
-      // 检查工具是否已在当前会话的检查点中执行过
-      // 仅对幂等工具生效（idempotent / idempotent-key），非幂等工具不跳过
-      preExecutionCheck: (name, args) => {
-        const sm = this._sessionManager;
-        if (!sm) return { skip: false };
-        const hasExecuted = sm.hasToolExecuted(name, args);
-        if (!hasExecuted) return { skip: false };
-        // 获取上次执行结果
-        const cp = sm.getCheckpoint();
-        const prevRecord = cp?.completedToolCalls?.find(
-          (r) => r.name === name && r.argsSignature === args,
-        );
-        return {
-          skip: true,
-          previousResult: prevRecord?.resultSummary
-            ? `[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过），上次结果：${prevRecord.resultSummary}`
-            : undefined,
-        };
-      },
-      fileConsistencyCheck: this.#config.fileConsistencyCheck,
     });
 
     this.history = result.history;
