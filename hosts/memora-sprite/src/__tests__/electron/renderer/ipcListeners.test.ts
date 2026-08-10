@@ -278,6 +278,8 @@ interface UiManagerSpies {
   showClipboardConfirmDialog: ReturnType<typeof vi.fn>;
   handleQuickRecordTrigger: ReturnType<typeof vi.fn>;
   handleRecallMemoryTrigger: ReturnType<typeof vi.fn>;
+  /** P1-5：流式结束后消费待定草稿（ipcListeners.ts:936 调用；mock 曾缺失 → onStreamEnd 用例 TypeError） */
+  consumePendingDrafts: ReturnType<typeof vi.fn>;
 }
 
 /** 业务回调桩方法集合 */
@@ -330,6 +332,8 @@ interface CapturedCallbacks {
   onNeedClarify: (questions: Array<{ slot: string; question: string }>) => void;
   /** 澄清暂停超时自动续跑通知注册回调（CLARIFY_AUTO_RESOLVED IPC 监听） */
   onClarifyAutoResolved: (payload: { autoResolved: boolean }) => void;
+  /** 任务表格生成通知注册回调（SPRITE_TASK_TABLE_GENERATED IPC 监听，taskTablePanelManager 刷新） */
+  onTaskTableGenerated: (msg: { messageId: string; plan?: string }) => void;
 }
 
 /** mock electronAPI（含主动调用的方法） */
@@ -368,6 +372,7 @@ function createMockUiManager(): { uiManager: UIManager; spies: UiManagerSpies } 
     showClipboardConfirmDialog: vi.fn().mockResolvedValue(undefined),
     handleQuickRecordTrigger: vi.fn().mockResolvedValue(undefined),
     handleRecallMemoryTrigger: vi.fn().mockResolvedValue(undefined),
+    consumePendingDrafts: vi.fn(),
   };
   return { uiManager: spies as Partial<UIManager> as UIManager, spies };
 }
@@ -444,6 +449,9 @@ function setupIpcListeners(opts?: { currentPanel?: string }): {
     onSessionStatusChanged: vi.fn((handler: (payload: { status: string; reason?: string }) => void) => { captured.onSessionStatusChanged = handler; }),
     onNeedClarify: vi.fn((handler: (questions: Array<{ slot: string; question: string }>) => void) => { captured.onNeedClarify = handler; }),
     onClarifyAutoResolved: vi.fn((handler: (payload: { autoResolved: boolean }) => void) => { captured.onClarifyAutoResolved = handler; }),
+    // 任务表格生成通知（ipcListeners.ts:942 调用；mock 曾缺失导致 initIpcListeners 顶层抛 TypeError
+    // → 整个测试文件 setup 崩溃全红。preload 契约等宽原则：mock 须覆盖 ipcListeners 全部调用面）
+    onTaskTableGenerated: vi.fn((handler: (msg: { messageId: string; plan?: string }) => void) => { captured.onTaskTableGenerated = handler; }),
     removeSessionStatusChangedListener: vi.fn(),
     proactivePromptShown: vi.fn(),
     rendererLog: vi.fn(),
