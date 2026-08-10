@@ -63,9 +63,20 @@ describe('sourcePaths · source → 目录映射与路径构造（T-A1 单一真
     });
 
     it('name 含反斜杠路径段逃逸应被拦截（Windows 分隔符）', () => {
-      expect(() => resolveSourceFilePath(BASE, SOURCE_LABELS.SKILL, '..\\evil')).toThrow(
-        /目标路径越界/,
-      );
+      // 平台语义（第一性原理：路径遍历判别是平台相关的）：
+      //   - win32：\ 是路径分隔符，`..\evil.md` 被 resolve 弹出 skills/ → 真逃逸 → 纵深防御必须拦截
+      //   - POSIX：\ 是合法文件名字符，`..\evil.md` 是字面单段（不构成遍历），路径仍留在 skills/ 内
+      //     → 不抛是正确行为（拦截反而是过度收紧，会拒绝合法文件名）
+      // 跨平台遍历样本（`../`，/ 两平台都是分隔符）由上方「name 注入 ../」用例守护。
+      if (process.platform === 'win32') {
+        expect(() => resolveSourceFilePath(BASE, SOURCE_LABELS.SKILL, '..\\evil')).toThrow(
+          /目标路径越界/,
+        );
+      } else {
+        expect(resolveSourceFilePath(BASE, SOURCE_LABELS.SKILL, '..\\evil')).toBe(
+          join(BASE, 'skills', '..\\evil.md'),
+        );
+      }
     });
 
     it('非法 source 应抛 configError（validateSource 前置校验）', () => {
