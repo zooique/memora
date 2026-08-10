@@ -174,9 +174,12 @@ export class AgentLoop {
   private reflectionCountThisTurn: number = 0;
   /** 软暂停请求标志（不中断工作模型 v2.1：用户主动软暂停，区别于硬停止 signal.abort）
    *
-   * 由 Agent.requestPause() 设置，handleIteration 在迭代边界检查并挂起生成器。
-   * public 字段，SSOT 收口后 Agent 直接读写，不再通过方法包装。 */
-  pauseRequested = false;
+   * 由 requestPause() 置位，handleIteration 在迭代边界检查并挂起生成器。
+   *
+   * SSOT-R2-T6（2026-08-10）：恢复 private。此前为「SSOT 收口后 Agent 直接读写」而改成
+   * public 可写字段，属反向收口——把封装拆开换少一层包装，导致本类既提供只读 getter
+   * `isPauseRequested` 又允许外部随意赋值，不变式无处可守。写入口收敛为下方两个方法。 */
+  private pauseRequested = false;
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
@@ -404,6 +407,31 @@ export class AgentLoop {
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
   get isPauseRequested(): boolean {
     return this.pauseRequested;
+  }
+
+  /**
+   * 请求在下一迭代边界挂起（软暂停唯一写入口，SSOT-R2-T6）
+   *
+   * 仅置标志，由 handleIteration 在迭代边界（当前工具步完成后、下一次 LLM 调用前）
+   * 真正挂起生成器。保留 this.messages，不 abort——与硬停止（signal.abort）严格区分：
+   * 硬停止杀掉生成器无法续跑；软暂停可经 continueAfterPause 真正续跑。
+   *
+   * 注：状态机侧的 pendingPause（reason/source）由 Agent.requestPause 一并登记，
+   * 二者不是平行真理源——本标志控制生成器挂起时机，状态机持有暂停语义与持久化。
+   */
+  requestPause(): void {
+    this.pauseRequested = true;
+  }
+
+  /**
+   * 清除在途的软暂停申请（与 requestPause 对称，SSOT-R2-T6）
+   *
+   * 三类调用场景共用：用户取消暂停（SESSION_CANCEL_PAUSE）、
+   * 流结束 finally 清理（防残留导致后续 requestPause 幂等拒绝）、
+   * 暂停超时后的状态清扫。
+   */
+  clearPauseRequest(): void {
+    this.pauseRequested = false;
   }
 
   /**
@@ -1322,6 +1350,10 @@ export class AgentLoop {
       return;
     }
     this.messages = [systemPrompt, ...nonSystemMessages];
+    // SSOT-R4-T9：消息集合被整体替换，上一段会话的上下文摘要随之作废。
+    // 不作废的话，ContextManager 的单向长度判断在新历史更短时永不触发过期，
+    // 陈旧摘要会被注入新会话的 system prompt。
+    this.contextManager.resetSummary();
 
     logger.info({ messageCount: nonSystemMessages.length }, '恢复历史对话消息');
   }

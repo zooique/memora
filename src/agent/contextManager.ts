@@ -360,6 +360,22 @@ export class ContextManager {
    * @param signal 可选的 AbortSignal，中断摘要生成
    * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
    */
+  /**
+   * 作废摘要缓存（SSOT-R4-T9，2026-08-10）
+   *
+   * 缓存过期靠 `messages.length - contextSummaryMsgCount > TTL` 这个**单向**数值判断，
+   * 只覆盖「消息增长」。当消息集合被整体替换（`AgentLoop.restoreHistory` 恢复检查点）
+   * 且新历史更短时，差值为负 → 陈旧摘要永不过期，会把上一段会话的摘要注入新上下文。
+   *
+   * 修法不是把条件改成 `Math.abs`：truncateMessages 的正常裁剪同样让消息变少，
+   * 而那时摘要恰恰更该保留（它描述的就是被裁掉的历史）。真理源是「消息集合是否被替换」
+   * 这一事实，故由替换方显式作废，而非从长度差反推。
+   */
+  resetSummary(): void {
+    this.contextSummary = null;
+    this.contextSummaryMsgCount = 0;
+  }
+
   async getOrCreateSummary(messages: readonly Message[], signal?: AbortSignal): Promise<string> {
     // 检查缓存是否有效
     const summaryExpired =

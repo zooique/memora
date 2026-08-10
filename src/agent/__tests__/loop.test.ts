@@ -967,7 +967,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
       // 第一轮工具步完成（tool_result）后请求软暂停，
       // loop 会在下一迭代边界（handleIteration 开头）挂起
       if (chunk.type === 'tool_result') {
-        loop.pauseRequested = true;
+        loop.requestPause();
       }
     }
 
@@ -998,7 +998,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 
     // 先软暂停
     for await (const chunk of loop.processUserInput('读取文件')) {
-      if (chunk.type === 'tool_result') loop.pauseRequested = true;
+      if (chunk.type === 'tool_result') loop.requestPause();
     }
     expect(loop.getMessages()).toHaveLength(4);
 
@@ -1027,7 +1027,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     });
 
     for await (const chunk of loop.processUserInput('读取文件')) {
-      if (chunk.type === 'tool_result') loop.pauseRequested = true;
+      if (chunk.type === 'tool_result') loop.requestPause();
     }
 
     const chunks: AgentChunk[] = [];
@@ -1063,7 +1063,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     const chunks1: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('任务A')) {
       chunks1.push(chunk);
-      if (chunk.type === 'text') loop.pauseRequested = true;
+      if (chunk.type === 'text') loop.requestPause();
     }
     expect(chunks1.some((c) => c.type === 'paused')).toBe(false);
     expect(chunks1[chunks1.length - 1]!.type).toBe('done');

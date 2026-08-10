@@ -1057,9 +1057,12 @@ export class SessionManager {
         // 会话恢复（paused → running）即"回到运行"，挂载物应被卸载。
         // 若不清理，getWorkContext 会继续返回暂停态，任务面板残留「继续」按钮。
         // 超时检测依赖的是 checkpoint.pausedAt 独立字段，不受影响。
-        this.checkpoint.pauseMeta = undefined;
-        this.touchCheckpoint();
-        this.flushCheckpoint();
+        //
+        // SSOT-R1-T1（2026-08-10）：改走 setPauseMeta 唯一写入口，不再内联赋值。
+        // 内联赋值会绕过 setPauseMeta 的首轮兜底与落盘链路，形成第二条卸载路径；
+        // setPauseMeta 内部已含 touchCheckpoint + flushCheckpoint，故此处不再重复调用
+        // （上方 checkpoint.status 的改动会随同一次 flush 落盘）。
+        this.setPauseMeta(undefined);
       }
       // 注意：连续暂停计数不在 resume() 中重置，而是在 Agent.processEvent()
       // 的 clarify 事件处理完成后由 resetConsecutivePauseCount() 显式重置。
@@ -1459,9 +1462,9 @@ export class SessionManager {
   /**
    * 清除暂停元数据（P1-1: 落盘修复）
    *
-   * 通过 setPauseMeta(undefined) 实现，确保清除操作经 touchCheckpoint →
-   * flushCheckpoint 链路落盘，而非直接修改内存对象后丢失。
-   * 适用于 resume() 恢复会话后清空 pauseMeta 等场景（SSOT 挂载物卸载，2026-08-10）。
+   * @deprecated SSOT-R1-T1（2026-08-10）：本方法是 `setPauseMeta(undefined)` 的纯别名，
+   *   不构成独立写入口。全仓（src + hosts）零调用，保留仅为兼容第三方宿主，
+   *   下个破坏性版本移除。新代码一律直接调用 `setPauseMeta(undefined)`。
    */
   clearPauseMeta(): void {
     this.setPauseMeta(undefined);

@@ -1140,7 +1140,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 残留会让 requestPause 的幂等检查永久拒绝后续暂停请求（暂停按钮全失效）。
       this._sessionManager?.cancelPendingPause();
       // 同步清理 loop 的 pauseRequested 标志（P1-1：复用 isBusy 后，finally 块需显式清理）
-      this.requireLoop.pauseRequested = false;
+      this.requireLoop.clearPauseRequest();
     }
 
     return { content, aborted, failed: false };
@@ -1459,7 +1459,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 设置 loop 边界挂起标志
-    this.requireLoop.pauseRequested = true;
+    this.requireLoop.requestPause();
     return true;
   }
 
@@ -1472,7 +1472,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   cancelPauseRequest(): void {
     this.assertInitialized('cancelPauseRequest');
-    this.requireLoop.pauseRequested = false;
+    this.requireLoop.clearPauseRequest();
     this._sessionManager?.cancelPendingPause();
   }
 

@@ -101,6 +101,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    *
    * 供 Agent.addSkill() 调用：宿主程序可在 init() 之后动态注入技能。
    * 重复注册同名技能会被拒绝。
+   *
+   * SSOT-R3-T8（2026-08-10）：改走基类 registerRuntimeItem 登记。
+   * 此前直接 push 进 items，reload() 用磁盘扫描结果整体覆盖时会把注入技能抹除，
+   * 而 SQLite 的 `skill:<name>` 索引行仍在 → 内存查不到、recall 仍能召回，两侧分叉。
    */
   register(skill: SkillEntry): void {
     if (this.items.some((s) => s.name === skill.name)) {
@@ -110,7 +114,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
         ['请使用不同的技能名称'],
       );
     }
-    this.items.push(skill);
+    this.registerRuntimeItem(skill);
     logger.info({ name: skill.name, keywords: skill.keywords.length }, '技能已注册（运行时注入）');
   }
 

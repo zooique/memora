@@ -390,10 +390,14 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 关闭（内存实现无需关闭）
+   * 关闭（终结操作，调用后本实例不得再被读写）
+   *
+   * 内存即本实现的存储介质，故「关闭」等于丢弃全部记忆——不清空就是内存泄漏。
+   * 这符合 IMemoryStorage.close() 的终结语义，但**不可逆**：
+   * 会话暂停 / 检查点恢复等状态层动作绝不能调用本方法（详见接口契约注释）。
    */
   close(): void {
-    // 内存实现无需关闭，清空数据即可
+    // 内存实现无需关闭连接，释放数据即可（见上方契约说明）
     this.memories.clear();
     this.sourceCountCache.clear();
   }

@@ -51,6 +51,16 @@ export abstract class ConfigResourceManager<
   protected items: T[] = [];
 
   /**
+   * 运行时注入项的名字集合（SSOT-R3-T8）
+   *
+   * 「该资源是否有磁盘真理源」这一事实必须显式记账，不能从 `filePath` 反推——
+   * 注入方各自填的 filePath 五花八门（ConfigManager.addSkill 填 `''`，
+   * 直接调 register 的宿主可能填 `'<runtime>'`），是约定而非结构性保证。
+   * 由 `registerRuntimeItem()` 唯一登记，`deleteItem()` / `loadItems()` 同步注销。
+   */
+  private readonly runtimeNames = new Set<string>();
+
+  /**
    * @param configDir 配置目录（资源文件在 <configDir>/<subdir>/ 下）
    * @param subdir 资源子目录名（如 'skills'、'personas'）
    */
@@ -61,9 +71,16 @@ export abstract class ConfigResourceManager<
 
   // ── 公共 API ──────────────────────────────────────────
 
-  /** 获取资源列表 */
+  /**
+   * 获取资源列表（快照）
+   *
+   * SSOT-R2-T7（2026-08-10）：返回浅拷贝而非内部数组引用。
+   * 此前直接返回 `this.items`，外部可 push/splice 绕过 `register()` 的重名校验与
+   * `deleteItem()` 的记账日志，等于开了第二个写入口。
+   * 数组是拷贝，条目对象仍是共享引用（条目按只读语义使用，与 Memory 快照的约定一致）。
+   */
   get list(): T[] {
-    return this.items;
+    return [...this.items];
   }
 
   // ── 受保护的基础设施（子类调用） ─────────────────────────
@@ -76,6 +93,8 @@ export abstract class ConfigResourceManager<
    */
   protected async loadItems(options?: TOptions): Promise<number> {
     this.items = await this.scanAndBuild();
+    // load 是「重新初始化」而非「刷新」：items 被整体替换，运行时记账随之作废
+    this.runtimeNames.clear();
     this.onAfterLoad(this.items, options);
     logger.info(
       { count: this.items.length, names: this.items.map((i) => i.name), subdir: this.subdir },
@@ -85,16 +104,39 @@ export abstract class ConfigResourceManager<
   }
 
   /**
-   * 重载资源：重新扫描目录 → 更新缓存
+   * 重载资源：重新扫描目录 → 更新缓存（保留运行时注入项）
+   *
+   * SSOT-R3-T8（2026-08-10，方案 A「内存优先」）：
+   * 此前直接用扫描结果整体覆盖 `items`，会把运行时注入的资源（如 `Agent.addSkill()`
+   * 经 `SkillManager.register()` 注入的技能）抹除——而这类资源**没有磁盘真理源**，
+   * 抹除即永久丢失；与此同时 SQLite 侧的 `skill:<name>` 索引行仍然活跃，
+   * 两侧就此分叉（内存查不到、recall 仍能召回），且注释承诺的「当前会话内生效」失效。
+   *
+   * 判据取自 `runtimeNames` 显式记账（见该字段注释），不从 filePath 反推。
+   * 同名冲突以磁盘为准：磁盘可持久化，是更强的真理源，此时注入项的记账一并注销。
    *
    * @returns 重载后的资源数量
    */
   async reload(): Promise<number> {
     const oldCount = this.items.length;
-    this.items = await this.scanAndBuild();
+    const scanned = await this.scanAndBuild();
+    const scannedNames = new Set(scanned.map((i) => i.name));
+    const runtimeInjected = this.items.filter(
+      (i) => this.runtimeNames.has(i.name) && !scannedNames.has(i.name),
+    );
+    // 被同名磁盘文件接管的注入项：真理源已转移到磁盘，注销运行时记账
+    for (const name of this.runtimeNames) {
+      if (scannedNames.has(name)) this.runtimeNames.delete(name);
+    }
+    this.items = [...scanned, ...runtimeInjected];
     this.onAfterReload(this.items);
     logger.info(
-      { oldCount, newCount: this.items.length, subdir: this.subdir },
+      {
+        oldCount,
+        newCount: this.items.length,
+        retainedRuntime: runtimeInjected.length,
+        subdir: this.subdir,
+      },
       `${this.subdir} 资源已重载`,
     );
     return this.items.length;
@@ -113,8 +155,23 @@ export abstract class ConfigResourceManager<
       return false;
     }
     this.items.splice(idx, 1);
+    this.runtimeNames.delete(name);
     logger.info({ name, remaining: this.items.length, subdir: this.subdir }, '资源已从内存缓存删除');
     return true;
+  }
+
+  /**
+   * 登记运行时注入的资源（子类 register() 的唯一落点，SSOT-R3-T8）
+   *
+   * 与 `loadItems()` 从磁盘扫描出来的资源区别在于「没有磁盘真理源」，
+   * 因此必须记账，`reload()` 才知道不能把它当成"磁盘上已删除"而抹掉。
+   * 重名校验由子类在调用前完成（各自的语义不同：Skill 拒绝重名，Persona 无 register）。
+   *
+   * @param item 待注入的资源
+   */
+  protected registerRuntimeItem(item: T): void {
+    this.items.push(item);
+    this.runtimeNames.add(item.name);
   }
 
   // ── 关键词匹配（共享实现） ──────────────────────────────

@@ -159,7 +159,18 @@ export class InsightExtractor {
   private hostKeywords: MemoryKeywords | null = null;
 
   /** 写入扩展回调（宿主注入 diff 对比确认逻辑） */
-  public writeExtensions: WriteExtensions | null = null;
+  private _writeExtensions: WriteExtensions | null = null;
+
+  /**
+   * 写入扩展回调（只读投影）
+   *
+   * SSOT-R1-T3（2026-08-10）：原为 public 可写字段，与 setWriteExtensions() 并存构成
+   * 两个写入口。改为「private 字段 + 只读 getter + 唯一 setter」，
+   * 消费方（assembler.ts:241）读取语义不变。
+   */
+  get writeExtensions(): WriteExtensions | null {
+    return this._writeExtensions;
+  }
 
   /**
    * 关系构建器（ADR-014 关系构建委托给 RelationBuilder）
@@ -225,7 +236,7 @@ export class InsightExtractor {
    * 设置写入扩展回调
    */
   setWriteExtensions(ext: WriteExtensions | null): void {
-    this.writeExtensions = ext;
+    this._writeExtensions = ext;
     logger.info({ hasExtensions: !!ext }, '写入扩展已设置');
   }
 
@@ -351,9 +362,15 @@ export class InsightExtractor {
 
       if (existingMemory) {
         // 已有相似记忆，更新 accessedAt 和 score（取较高值）
-        existingMemory.score = Math.min(1.0, Math.max(existingMemory.score, score) + DEDUP_SCORE_BOOST);
-        existingMemory.accessedAt = nowIso();
-        this.index.upsert(existingMemory);
+        // SSOT-R1-T2（2026-08-10）：改用 setScore 原子写，替代「读快照 → 改字段 → 整条 upsert」。
+        // 与 dedupManager.demoteMemory / memoryDecayScheduler.demoteOutdatedMemory 同构（MIND2-L3）：
+        // search() 返回的是快照，整条 upsert 会把期间被 boost/decay/编辑改过的 content 等字段覆盖回旧值。
+        const boostedAt = nowIso();
+        const boostedScore = Math.min(1.0, Math.max(existingMemory.score, score) + DEDUP_SCORE_BOOST);
+        this.index.setScore(existingMemory.id, boostedScore, boostedAt);
+        // 同步本地快照字段，仅为让下方 written.push 的返回值与存储一致（不再回写存储）
+        existingMemory.score = boostedScore;
+        existingMemory.accessedAt = boostedAt;
         logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');
         // ADR-014：即使命中去重，也尝试构建关系（新 insight 与已有记忆可能存在关系）
         // 委托给 RelationBuilder

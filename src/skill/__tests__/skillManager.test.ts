@@ -351,6 +351,47 @@ keywords: 文件,读取
       expect(skillManager.list[0]!.name).toBe('skill-a');
     });
 
+    it('重载应保留运行时注入的技能（SSOT-R3-T8：注入项无磁盘真理源）', async () => {
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      skillManager.register({
+        name: 'runtime-skill',
+        content: '运行时注入技能',
+        keywords: ['运行时'],
+        trigger: undefined,
+        layer: 'agent',
+        filePath: '',
+      });
+      expect(skillManager.list).toHaveLength(2);
+
+      // reload 扫描磁盘只会看到 skill-a；注入项没有磁盘真理源，抹掉即永久丢失
+      const count = await skillManager.reload();
+      expect(count).toBe(2);
+      expect(skillManager.get('runtime-skill')?.content).toBe('运行时注入技能');
+      expect(skillManager.get('skill-a')).not.toBeNull();
+    });
+
+    it('同名磁盘文件出现后重载应以磁盘为准（SSOT-R3-T8）', async () => {
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      skillManager.register({
+        name: 'skill-a',
+        content: '注入版本',
+        keywords: [],
+        trigger: undefined,
+        layer: 'agent',
+        filePath: '',
+      });
+
+      // 磁盘上出现同名技能：真理源转移到磁盘，注入版本被接管而非并存
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 磁盘版本');
+      const count = await skillManager.reload();
+      expect(count).toBe(1);
+      expect(skillManager.get('skill-a')?.content).toBe('# 磁盘版本');
+    });
+
     it('重载应反映内容变更', async () => {
       createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: old\n---\n# 旧内容');
       const skillManager = new SkillManager(testDir);
@@ -450,12 +491,21 @@ keywords: 文件,读取
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
+      // SSOT-R2-T7：getter 返回浅拷贝，篡改快照不得改变内部真理源。
+      // （此前 getter 返回 this.items 本体，本测试被弱化为「长度稳定」的同义反复）
       const snapshot = skillManager.list;
-      const originalLength = snapshot.length;
-      // 修改 snapshot 不应影响 skillManager 内部状态
-      // 注：list getter 返回 this.skills 引用，但语义上应视为只读
-      // 此测试仅验证 getter 返回值长度稳定
-      expect(snapshot).toHaveLength(originalLength);
+      snapshot.push({
+        name: '越权注入',
+        keywords: [],
+        content: 'x',
+        filePath: '',
+        layer: 'agent',
+      });
+      snapshot.length = 0;
+
+      expect(skillManager.list).toHaveLength(1);
+      expect(skillManager.list[0]!.name).toBe('skill-a');
+      expect(skillManager.get('越权注入')).toBeNull();
     });
   });
 });

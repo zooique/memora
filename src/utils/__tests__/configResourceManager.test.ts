@@ -219,10 +219,23 @@ describe('ConfigResourceManager', () => {
       expect(manager.list).toEqual([]);
     });
 
-    it('返回 items 缓存引用', () => {
+    it('返回快照而非内部引用（SSOT-R2-T7）', () => {
       const res = createResource({ name: 'test' });
       setItems(manager, [res]);
-      expect(manager.list).toBe(manager.list); // 同一引用
+      // 每次返回新数组：外部无法通过 list 拿到内部数组本体
+      expect(manager.list).not.toBe(manager.list);
+      // 内容等价
+      expect(manager.list).toEqual([res]);
+    });
+
+    it('外部修改快照不污染内部状态（SSOT-R2-T7）', () => {
+      setItems(manager, [createResource({ name: 'test' })]);
+      const snapshot = manager.list;
+      snapshot.push(createResource({ name: '越权注入' }));
+      snapshot.splice(0, 1);
+      // 内部仍是唯一真理源，不受快照篡改影响
+      expect(manager.list).toHaveLength(1);
+      expect(manager.list[0]!.name).toBe('test');
     });
   });
 

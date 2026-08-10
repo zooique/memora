@@ -311,6 +311,28 @@ SecurityGuard.requestWriteConfirmation
 - 渲染层 `sessionStatus` 初始 `'idle'` 即资源层常态——无任务挂载，面板不应显示任务表或暂停按钮（实测纠偏 2026-08-10：重启后显示"正在生成任务表…"+ 暂停按钮即违反本模型，已修复）。
 - **沉淀动作的落点**：运行 → 空闲时，任务产物（记忆/上下文）写入资源层（记忆存储 / 会话归档），挂载物（plan/checkpoint）由状态层清理，两者不可混用。
 
+### 8.5 idle 只存在于宿主：卸载责任的分界（SSOT 审查固化 2026-08-10）
+
+> 本节是 §8.2「运行 → 空闲 = 卸载」在代码层的落点说明。不写清楚会反复误判——
+> 一次 SSOT 审查就曾据 §8.2 判定「内核缺少 plan 卸载点」，前提本身是错的。
+
+**事实**：内核 `SessionStateMachine` 只有 `running / paused / error` **三态，没有 idle**
+（`src/agent/sessionStateMachine.ts`，全文件 grep `idle` 零匹配）。
+「空闲」是宿主渲染层的概念——没有活跃任务挂载时的呈现状态，内核不建模、也观察不到。
+
+**推论：内核不存在「运行 → 空闲」这个状态转换，因而不可能在内核内部触发卸载。**
+
+| 职责 | 归属 | 落点 |
+|------|------|------|
+| 判定「任务流结束、回到空闲」 | **宿主** | `chatStreamHandler.ts` 在广播 `idle` 前调用 `agent.clearPlan()` |
+| 提供卸载能力 | 内核 | `Agent.clearPlan()` → `SessionManager.clearPlan()`（清 plan + roundLog 并落盘） |
+| 跨会话残留兜底 | 内核 | `SessionManager.switchSession()`：`flushCheckpoint(true)` + `checkpoint = null`，新会话 `createCheckpoint` 时 `plan` 必为 `[]` |
+| 暂停态挂载物卸载 | 内核 | `SessionManager.resume()` → `setPauseMeta(undefined)`（唯一写入口，含落盘） |
+
+**对非 Electron 宿主（CLI / 第三方集成）的约束**：
+若自行驱动 `Agent.chat()`，**必须**在任务流以非 paused 状态结束、界面回到空闲前调用 `agent.clearPlan()`；
+否则下一轮会看到上一轮的残留任务表。内核只保证跨**会话**干净（`switchSession`），不保证跨**轮次**干净。
+
 ## 9. 感知层规范（上下文感知而非内容感知）
 
 > **核心原则**：精灵知道你在做什么，不知道你在打什么。
