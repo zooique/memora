@@ -6,6 +6,13 @@
 - 质量门 = `tsc --noEmit` + `eslint --max-warnings 0` + `vitest run`。prettier --check 非门。
 - 版本：宿主与内核独立维护，发版只升宿主版本。
 
+## source→子目录映射单一真理源（2026-08-10，T-A1~A3 落地）
+- **位置**：`src/memory/sourcePaths.ts`（`SOURCE_TO_DIR`/`sourceToDir`/`resolveSourceFilePath`，经 `src/index.ts` 导出）。
+- 消费方全引用：内核 `FileStore`（store.ts 委托）；宿主 `configFileManager.ts`（resolveTargetPath 委托，catch 转 null 保签名；listConfigFiles 用 `SOURCE_TO_DIR[type]!`）、`skillInstaller.ts`、`personaWatcher.ts`、`index.ts` requiredDirs。
+- **铁律**：宿主严禁再定义子目录映射或硬编码 `'personas'/'rules'/'skills'`（新增 source 类型只改 sourcePaths.ts 一处）。
+- 语义：未知 source 透传作目录名（ADR-004 开放字符串）；source 经 validateSource 校验；name 不做字符白名单但做目录内 startsWith 纵深防御。
+- 坑：宿主 tsconfig 开 `noUncheckedIndexedAccess` → `SOURCE_TO_DIR[key]` 返回 `string | undefined`，索引 SOURCE_LABELS 固定 key 处须非空断言 `!`。
+
 ## SSOT 审查与修复（2026-08-09，已落地）
 报告 `tasks/SSOT与设计闭环审查-20260809.md`；方案 `tasks/SSOT修复方案-20260809.md`（以方案为准）。病灶统一是「对称的另一半没写完」。四个根因：
 - A 执行流消费双份并列 → 抽 `#consumeExecutionStream()` 收口 processEvent/executeChatLoop/resumeExecution，清理放 finally。
