@@ -570,4 +570,71 @@ describe('检查点字段生命周期', () => {
       expect(manager.getCheckpoint()).toBeNull();
     });
   });
+
+  describe('SessionManager · writePlan 模式分发（A3 盲区收敛）', () => {
+    let manager: SessionManager;
+    let disk: ReturnType<typeof createDiskBackedStore>;
+
+    beforeEach(() => {
+      disk = createDiskBackedStore();
+      manager = new SessionManager(
+        () => createMockHistory(),
+        () => createMockLoop(),
+        disk.store,
+        () => false,
+        vi.fn(),
+      );
+      manager.createCheckpoint('主目标');
+    });
+
+    it("'append' 应在现有 plan 上追加步骤", () => {
+      manager.appendPlanStep('已有步骤');
+      const result = manager.writePlan('append', [{ description: '新增A' }, { description: '新增B' }]);
+      expect(result).toHaveLength(3);
+      expect(result.map((s: { description: string }) => s.description)).toEqual([
+        '已有步骤',
+        '新增A',
+        '新增B',
+      ]);
+    });
+
+    it("'overwrite' 应等价于追加（不要求 plan 为空）", () => {
+      const result = manager.writePlan('overwrite', [{ description: '第一步' }, { description: '第二步' }]);
+      expect(result).toHaveLength(2);
+      expect(result.map((s: { description: string }) => s.description)).toEqual(['第一步', '第二步']);
+    });
+
+    it("'update' 应全量替换并保留已有步骤 id 与 status", () => {
+      manager.appendPlanStep('旧步骤1');
+      manager.appendPlanStep('旧步骤2');
+      const before = manager.getCheckpoint()!.plan;
+      const result = manager.writePlan('update', [{ description: '新步骤1' }, { description: '新步骤2' }]);
+      expect(result).toHaveLength(2);
+      expect(result.map((s: { description: string }) => s.description)).toEqual(['新步骤1', '新步骤2']);
+      expect(result[0]!.id).toBe(before[0]!.id);
+      expect(result[0]!.status).toBe('pending');
+    });
+
+    it("'update' 传入更多步骤时应新建后续步骤并保留前序 id", () => {
+      manager.appendPlanStep('旧步骤');
+      const result = manager.writePlan('update', [
+        { description: '新1' },
+        { description: '新2' },
+        { description: '新3' },
+      ]);
+      expect(result).toHaveLength(3);
+      expect(result[0]!.id).toBe(manager.getCheckpoint()!.plan[0]!.id);
+    });
+
+    it('无检查点时 writePlan 应安全返回空数组（no-op）', () => {
+      const bare = new SessionManager(
+        () => createMockHistory(),
+        () => createMockLoop(),
+        createDiskBackedStore().store,
+        () => false,
+        vi.fn(),
+      );
+      expect(bare.writePlan('append', [{ description: 'x' }])).toEqual([]);
+    });
+  });
 });
