@@ -149,7 +149,7 @@ describe('recall · 记忆召回', () => {
 
     const memories = await recall(mockStorage, '测试');
 
-    // FIX-P1-2：recall 只读，不再 upsert；boost 持久化由调用方 fire-and-forget 调用 boostScores
+    // recall 只读，不再 upsert；boost 持久化由调用方 fire-and-forget 调用 boostScores
     expect(mockStorage.upsert).not.toHaveBeenCalled();
     // 返回的 memory 应是 boost 后的副本（score 提升）
     expect(memories[0]).not.toBe(original);

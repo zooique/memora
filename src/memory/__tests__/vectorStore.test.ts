@@ -81,7 +81,7 @@ describe('JsonVectorStore · upsert + search', () => {
 
   it('删除向量后不应再搜索到', async () => {
     await store.upsert('mem:1', '文本A');
-    // FIX-P0-9：delete 改为 async + 立即 save
+    // delete 改为 async + 立即 save
     await store.delete('mem:1');
 
     const results = await store.search('文本A', 5, 0.0);
@@ -405,7 +405,7 @@ describe('JsonVectorStore · save 串行化', () => {
     await store.upsert('m1', '文本A');
     await store.save();
 
-    // FIX-P0-9：delete 改为 async + 立即 save，无需调用方显式 save
+    // delete 改为 async + 立即 save，无需调用方显式 save
     await store.delete('m1');
     expect(store.size).toBe(0);
 

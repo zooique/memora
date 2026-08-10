@@ -142,7 +142,7 @@ export class ProjectManager {
     this.externalStorage = storage ?? null;
     // 保存 SecurityGuard 工厂函数
     this.createSecurityGuard = createSecurityGuard;
-    // T13：关系边清理回调（closeProject 撤销项目级记忆时联动）
+    // 关系边清理回调（closeProject 撤销项目级记忆时联动）
     this.removeRelationsByMemoryId = removeRelationsByMemoryId;
     // 委托注册表/锁文件管理给专职模块
     this.registry = new ProjectRegistry(join(registryHome, 'projects.json'));
@@ -279,7 +279,7 @@ export class ProjectManager {
       loadResult.errors.push(...configResult.errors);
     }
 
-    // T6 对账：两层扫描完成（文件集合完整）后清理无文件支撑的孤儿 rule。
+    // 对账：两层扫描完成（文件集合完整）后清理无文件支撑的孤儿 rule。
     // 必须在合并层执行——任一层单独对账都会误删另一层的规则。
     this.evictOrphanRules(index, projectResult, configResult);
 
@@ -311,7 +311,7 @@ export class ProjectManager {
     projectResult: LoadResult,
     configResult: LoadResult | null,
   ): void {
-    // T0-2：扫描不完整时整体停用对账。
+    // 扫描不完整时整体停用对账。
     // errors 非空意味着有文件「存在但读不到」（EACCES/EISDIR 等），其 id 不可知
     // ——既进不了 seenIds，又会被下面的差集判为孤儿。宁可让僵尸规则多活一轮，
     // 也不能把用户磁盘上还在的规则软删掉：前者可被下次启动自愈，后者是数据损失。
@@ -413,7 +413,7 @@ export class ProjectManager {
     if (this.agentIndex) {
       for (const id of this.currentProjectMemoryIds) {
         try {
-          // T13 修复：先清关系边再软删主记忆——项目级 rule/skill 被 insight 引用时，
+          // 先清关系边再软删主记忆——项目级 rule/skill 被 insight 引用时，
           // 仅 delete 会留下悬挂关系边（sourceId/targetId 指向已撤销的记忆）。
           this.removeRelationsByMemoryId?.(id);
           this.agentIndex.delete(id);

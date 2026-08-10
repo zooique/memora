@@ -292,7 +292,7 @@ describe('ProjectManager · 项目注册表', () => {
     const projects = pm.listProjects();
     expect(projects).toHaveLength(0);
 
-    // FIX-P0-3：register 路径必须抛错，避免用空数据覆盖损坏文件导致数据永久丢失
+    // register 路径必须抛错，避免用空数据覆盖损坏文件导致数据永久丢失
     expect(() => pm.registerProject('/path/to/project-a', 'project-a')).toThrow(
       /项目注册表损坏/,
     );
