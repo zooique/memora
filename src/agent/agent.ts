@@ -1988,29 +1988,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       writePlan: (mode, steps) => {
         const sm = this._sessionManager;
         if (!sm) return '[ERR] 会话管理器未就绪';
-        const cp = sm.getCheckpoint();
-        const existingPlan = cp?.plan ?? [];
-
-        // 单一追加模式：overwrite 与 append 语义已合并为"追加"
-        // （不再限制 plan 必须为空；真正全量替换请用 'update' 模式）
-        if (mode === 'overwrite' || mode === 'append') {
-          for (const step of steps) {
-            sm.appendPlanStep(step.description);
-          }
-        } else if (mode === 'update') {
-          // 替换现有 plan（保留已有步骤 ID 和状态）
-          const updatedPlan = steps.map((s, i) => {
-            const existing = existingPlan[i];
-            return existing
-              ? { ...existing, description: s.description }
-              : { id: crypto.randomUUID(), order: i, description: s.description, status: 'pending' as const };
-          });
-          // 通过 updatePlan 全量替换（保留已有步骤 ID 与状态）
-          sm.updatePlan(updatedPlan);
-        }
-
-        // 返回当前 plan 的 id 列表供 LLM 后续引用
-        const newPlan = sm.getCheckpoint()?.plan ?? [];
+        // 分发逻辑归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
+        const newPlan = sm.writePlan(mode, steps);
         return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${
           newPlan.map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`).join('\n')
         }`;

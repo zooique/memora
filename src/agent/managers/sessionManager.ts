@@ -1368,6 +1368,41 @@ export class SessionManager {
   }
 
   /**
+   * 写入执行计划（P2-3: 计划写入口的唯一分发点）
+   *
+   * 模式语义（与 task_table_write / task_table_update 工具对齐）：
+   * - 'overwrite' | 'append'：均按"追加"处理，逐条 appendPlanStep（不要求 plan 为空）
+   * - 'update'：全量替换现有 plan，保留已有步骤 id / status，仅覆盖 description
+   * - 其它 mode：无操作（调用方已约束为三选一，此处兜底 no-op 不抛错）
+   *
+   * 唯一生产调用点：agent.ts planManager.writePlan 闭包委托本方法。
+   * 此前该分发逻辑嵌在 Agent 闭包内无法单测（历史审查 §9 盲区），
+   * 归位到 SessionManager 后由 sessionCheckpointLifecycle.test.ts 直接覆盖。
+   *
+   * @param mode 写入模式
+   * @param steps 待写入步骤（含 description）
+   * @returns 写入后的完整计划数组
+   */
+  writePlan(mode: 'overwrite' | 'append' | 'update', steps: Array<{ description: string }>): PlanStep[] {
+    if (!this.checkpoint) return [];
+    const existingPlan = this.checkpoint.plan;
+    if (mode === 'overwrite' || mode === 'append') {
+      for (const step of steps) {
+        this.appendPlanStep(step.description);
+      }
+    } else if (mode === 'update') {
+      const updatedPlan = steps.map((s, i) => {
+        const existing = existingPlan[i];
+        return existing
+          ? { ...existing, description: s.description }
+          : { id: crypto.randomUUID(), order: i, description: s.description, status: 'pending' as const };
+      });
+      this.updatePlan(updatedPlan);
+    }
+    return this.checkpoint.plan;
+  }
+
+  /**
    * 更新计划步骤状态（T3 SSOT 收口，2026-08-09）
    *
    * plan 步骤状态的**唯一写点**。此前由 Agent 工具 handler 直改
@@ -1477,17 +1512,6 @@ export class SessionManager {
     // P1-1: 传 undefined 时同样需要落盘，否则清除 pauseMeta 后
     // 磁盘检查点的 pauseMeta 字段残留，与内存态分叉。
     this.flushCheckpoint();
-  }
-
-  /**
-   * 清除暂停元数据（P1-1: 落盘修复）
-   *
-   * @deprecated SSOT-R1-T1（2026-08-10）：本方法是 `setPauseMeta(undefined)` 的纯别名，
-   *   不构成独立写入口。全仓（src + hosts）零调用，保留仅为兼容第三方宿主，
-   *   下个破坏性版本移除。新代码一律直接调用 `setPauseMeta(undefined)`。
-   */
-  clearPauseMeta(): void {
-    this.setPauseMeta(undefined);
   }
 
   /**
