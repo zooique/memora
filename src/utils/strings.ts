@@ -85,3 +85,20 @@ export function isValidConfigName(name: string, maxLength: number = MAX_CONFIG_N
   return /^[\p{L}\p{N}_-]+$/u.test(name);
 }
 
+/**
+ * 解析配置 ID（`rule:NAME` / `skill:NAME` 格式）为 {source, name}
+ *
+ * T-D：此前内核 ConfigManager 构造 id（`${source}:${name}`）与宿主 index.ts 手工
+ * `id.indexOf(':')` 解析是两套互为镜像的字符串逻辑，靠注释对齐（T5 契约）。
+ * 本函数收口解析侧：宿主 fileConsistencyCheck 回调改调用本函数，消除手工对齐。
+ *
+ * @param id 记忆 ID（source:name 格式，Memory.id 契约）
+ * @returns {source, name}；格式非法（无冒号）返回 null（调用方按放行处理）
+ */
+export function parseConfigId(id: string): { source: string; name: string } | null {
+  if (typeof id !== 'string') return null;
+  const colonIdx = id.indexOf(':');
+  if (colonIdx < 0) return null;
+  return { source: id.slice(0, colonIdx), name: id.slice(colonIdx + 1) };
+}
+

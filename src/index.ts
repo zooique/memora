@@ -189,7 +189,7 @@ export type { ToolErrorCodeValue } from '@/utils/errors.js';
 
 // ─── 通用工具导出 ────────────────────────────────────────
 // 宿主主进程统一从 'memora' 导入，消除 shared/ 跨层副本（渲染进程因浏览器环境保留副本）
-export { truncate, isValidConfigName, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
+export { truncate, isValidConfigName, parseConfigId, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
 export { formatDateKey, todayDate } from '@/utils/time.js';
 
 // ─── 评估框架导出（Mock Eval：Agent 行为回归测试，不调用真实 LLM） ───

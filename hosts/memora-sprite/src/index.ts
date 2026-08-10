@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, FetchWebSearchProvider, logger, toError, SOURCE_LABELS, SOURCE_TO_DIR } from 'memora';
+import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, FetchWebSearchProvider, logger, toError, SOURCE_LABELS, SOURCE_TO_DIR, parseConfigId } from 'memora';
 import type { UIMessages, Config, ITracer, AgentSearchHit, IVectorStore } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -485,13 +485,12 @@ async function createAgentInstance(
   // 文件层前置条件断言回调——T5 两段式契约
   // 宿主先完成文件操作（真理源），再同步内核索引；此回调校验文件操作是否已完成
   // 路径解析统一复用 configFileManager.resolveTargetPath，消除 SSOT 违反
+  // id 解析统一复用内核 parseConfigId（T-D，消除手工 indexOf 与内核构造逻辑的镜像对齐）
   const fileConsistencyCheck = (id: string, expected: 'exists' | 'absent'): boolean => {
-    // id 格式：rule:NAME 或 skill:NAME（由 ConfigManager.assertFileConsistency 构造）
-    const colonIdx = id.indexOf(':');
+    const parsed = parseConfigId(id);
     // 无法解析的 id 不拦截（向后兼容，非预期格式直接放行）
-    if (colonIdx < 0) return true;
-    const type = id.slice(0, colonIdx) as 'rule' | 'skill';
-    const name = id.slice(colonIdx + 1);
+    if (!parsed) return true;
+    const { source: type, name } = parsed;
     // 只处理 rule/skill 类型，其他类型放行
     if (type !== 'rule' && type !== 'skill') return true;
     // 复用 configFileManager 的统一路径解析，获得路径穿越防护

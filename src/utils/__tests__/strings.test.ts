@@ -9,7 +9,7 @@
  *   - 截断到 40 字符
  */
 import { describe, expect, it } from 'vitest';
-import { slugify, isValidConfigName, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
+import { slugify, isValidConfigName, parseConfigId, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
 
 describe('utils/strings · slugify', () => {
   it('应将冒号和空白替换为连字符', () => {
@@ -97,5 +97,24 @@ describe('utils/strings · isValidConfigName（T-B2 配置名白名单）', () =
   it('maxLength 参数可覆盖默认阈值', () => {
     expect(isValidConfigName('ab', 2)).toBe(true);
     expect(isValidConfigName('ab', 1)).toBe(false);
+  });
+});
+
+describe('utils/strings · parseConfigId（T-D 配置 ID 解析）', () => {
+  it('应解析 rule:NAME 为 {source, name}', () => {
+    expect(parseConfigId('rule:my-rule')).toEqual({ source: 'rule', name: 'my-rule' });
+  });
+
+  it('应解析 skill:NAME（含中文名）', () => {
+    expect(parseConfigId('skill:写作助手')).toEqual({ source: 'skill', name: '写作助手' });
+  });
+
+  it('无冒号的 id 应返回 null（宿主放行语义）', () => {
+    expect(parseConfigId('no-colon-id')).toBeNull();
+  });
+
+  it('非字符串输入应返回 null', () => {
+    expect(parseConfigId(null as unknown as string)).toBeNull();
+    expect(parseConfigId(undefined as unknown as string)).toBeNull();
   });
 });
