@@ -61,18 +61,6 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
 };
 
 /**
- * 工具注册表（6 个始终可用的内置工具）
- *
- * - read_file：读取文件
- * - write_file：写入/创建文件（受写入二次确认保护）
- * - list_dir：列出目录内容
- * - search_memories：在记忆索引中搜索关键词
- * - task_table_write：写入/更新任务表行（幂等键保护）
- * - task_table_update：更新任务表行（幂等保护）
- *
- * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用），见下方独立定义。
- */
-/**
  * web_search 工具定义（独立导出，条件性包含）
  *
  * 与 BUILTIN_TOOLS 分离的原因：
@@ -92,6 +80,18 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
   },
 };
 
+/**
+ * 工具注册表（6 个始终可用的内置工具）
+ *
+ * - read_file：读取文件
+ * - write_file：写入/创建文件（受写入二次确认保护）
+ * - list_dir：列出目录内容
+ * - search_memories：在记忆索引中搜索关键词
+ * - task_table_write：写入/更新任务表行（幂等键保护）
+ * - task_table_update：更新任务表行（幂等保护）
+ *
+ * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用），见下方独立定义。
+ */
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',
