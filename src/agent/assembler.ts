@@ -32,10 +32,7 @@ import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
-import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { IMemoryRelationStore } from '@/memory/relationStore.js';
-import type { ITracer } from '@/agent/tracer.js';
-import type { AgentConfig, FileConsistencyCheck, UIMessages } from '@/agent/types.js';
+import type { AgentConfig, FileConsistencyCheck } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
@@ -116,6 +113,48 @@ export interface AssembleInput extends AssembleRuntimeParams {
   callbacks?: AssembleCallbacks;
 }
 
+/**
+ * Phase 3 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
+ *
+ * T-C2 只收敛了顶层 AssembleInput；子工厂此前内联手写 14 字段（其中 10 个与
+ * AssembleInput 重复声明，locale 等后加字段曾同时改 3 处）。Pick 派生后
+ * 共享字段的类型由 AssembleInput 单一继承——新增字段只改 AssembleInput 一处，
+ * 且同一字段两处类型不可能漂移（tsc 锁死）。
+ */
+type LoopAndDepsParams = Pick<
+  AssembleInput,
+  | 'provider'
+  | 'backgroundProvider'
+  | 'maxContextTokens'
+  | 'tracer'
+  | 'messages'
+  | 'enableContextSummary'
+  | 'relationStore'
+  | 'sessionStore'
+  | 'locale'
+  | 'callbacks'
+> & {
+  pctx: ProjectContext;
+  personaPrompt: string;
+  userProfile: UserProfile;
+  toolExec: ToolExecutor;
+};
+
+/**
+ * Phase 4 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
+ *
+ * 同 LoopAndDepsParams（T-C2 收敛的第二半）。
+ */
+type LoopDependentParams = Pick<
+  AssembleInput,
+  'configDir' | 'backgroundProvider' | 'relationStore' | 'callbacks'
+> & {
+  pctx: ProjectContext;
+  loop: AgentLoop;
+  history: MessageHistory;
+  skillManager: SkillManager;
+};
+
 /** 组装器输出（所有创建的组件引用） */
 export interface AssembleOutput {
   history: MessageHistory;
@@ -168,22 +207,7 @@ export interface AssembleOutput {
 /**
  * Phase 3：创建 AgentLoop 及其直接依赖
  */
-async function createAgentLoopAndDeps(params: {
-  provider: LlmProvider;
-  backgroundProvider: LlmProvider | null;
-  pctx: ProjectContext;
-  personaPrompt: string;
-  userProfile: UserProfile;
-  toolExec: ToolExecutor;
-  maxContextTokens: number;
-  tracer?: ITracer;
-  messages?: UIMessages;
-  enableContextSummary: boolean;
-  relationStore?: IMemoryRelationStore;
-  sessionStore?: ISessionStore;
-  locale?: string;
-  callbacks?: AssembleCallbacks;
-}) {
+async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
     provider, backgroundProvider, pctx, personaPrompt, userProfile, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary, relationStore,
@@ -238,16 +262,7 @@ async function createAgentLoopAndDeps(params: {
 /**
  * Phase 4：创建依赖 Loop 的组件
  */
-function createLoopDependentComponents(params: {
-  pctx: ProjectContext;
-  loop: AgentLoop;
-  history: MessageHistory;
-  skillManager: SkillManager;
-  configDir?: string;
-  backgroundProvider: LlmProvider | null;
-  relationStore?: IMemoryRelationStore;
-  callbacks?: AssembleCallbacks;
-}) {
+function createLoopDependentComponents(params: LoopDependentParams) {
   const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, callbacks } = params;
 
   const configFileStore = configDir ? new FileStore(configDir) : null;
