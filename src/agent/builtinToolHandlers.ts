@@ -27,9 +27,6 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 
-/** 工具结果类型（字符串，LLM 直接消费） */
-type ToolResult = string;
-
 /**
  * 检测写入内容是否为配置文件（persona/skill/rule）
  *
@@ -73,7 +70,6 @@ export class BuiltinToolHandlers {
    * 通过 create_persona/create_skill/create_rule 工具创建会正确写入 configDir 并触发热重载。
    * write_file 写入 projectPath/personas/ 只会创建"孤儿文件"——不在配置目录中，不会被加载。
    */
-  /** 配置目录名（路径拦截用，第一级目录匹配） */
   static readonly CONFIG_DIRS: ReadonlySet<string> = new Set(['personas', 'skills', 'rules']);
 
   /**
@@ -158,7 +154,7 @@ export class BuiltinToolHandlers {
   /**
    * 读取文件（带路径白名单校验）
    */
-  async readFile(relativePath: string): Promise<ToolResult> {
+  async readFile(relativePath: string): Promise<string> {
     if (!relativePath) {
       throw toolError(
         'read_file 工具调用缺少 path 参数',
@@ -229,7 +225,7 @@ export class BuiltinToolHandlers {
     extensions?: WriteExtensions,
     mode: string = 'overwrite',
     insertLine?: string,
-  ): Promise<ToolResult> {
+  ): Promise<string> {
     if (!relativePath) {
       throw toolError(
         'write_file 工具调用缺少 path 参数',
@@ -474,7 +470,7 @@ export class BuiltinToolHandlers {
     relativePath: string,
     recursiveStr: string,
     maxDepthStr: string,
-  ): Promise<ToolResult> {
+  ): Promise<string> {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'list_dir');
 
@@ -605,7 +601,7 @@ export class BuiltinToolHandlers {
     query: string,
     limitStr: string,
     modeStr: string,
-  ): Promise<ToolResult> {
+  ): Promise<string> {
     if (!query) {
       throw toolError(
         'search_memories 工具调用缺少 query 参数',

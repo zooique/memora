@@ -20,8 +20,6 @@ import { safeSearch } from '@/web-search/webSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
-type ToolResult = string;
-
 /**
  * 写入扩展接口
  *
@@ -236,7 +234,7 @@ export class ToolExecutor {
    * @param extensions 写入扩展（可选，用于 diff 确认等）
    * @returns 工具结果的字符串描述
    */
-  async execute(name: string, argsJson: string, extensions?: WriteExtensions): Promise<ToolResult> {
+  async execute(name: string, argsJson: string, extensions?: WriteExtensions): Promise<string> {
     let args: Record<string, unknown>;
     try {
       args = JSON.parse(argsJson) as Record<string, unknown>;
