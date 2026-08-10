@@ -2,7 +2,7 @@
 
 ## 架构与质量基线
 - 内核 `src/`（零 native/第三方依赖，仅暴露 `"."`，不可深导入）；桌面端 `hosts/memora-sprite/`（Electron 40 + electron-builder 26，sprite 版本 1.6.0）。
-- **内核同步铁律**：改内核后必须从 sprite 目录跑 `npm run sync-memora`（**非 root 脚本**——`hosts/memora-sprite/scripts/sync-memora.mjs`）再打包——它编译内核并 cpSync 真实拷贝进 `hosts/.../node_modules/memora`（非软链，memora 未声明为依赖），内核随客户端冻结。
+- **内核同步铁律**：改内核后必须从 sprite 目录跑 `npm run sync-memora`（**非 root 脚本**——`hosts/memora-sprite/scripts/sync-memora.mjs`）再打包——它编译内核并 cpSync 真实拷贝进 `hosts/.../node_modules/memora`（非软链，memora 未声明为依赖），内核随客户端冻结。**EPERM 瞬时坑（2026-08-10）**：sync 编译 dist 偶发 `EPERM: open dist/xxx.d.ts`（前序进程残留句柄），重试即成功，非代码问题；判断成败看日志「同步完成 ✓」或 exit code，`| tail` 管道会吞退出码。
 - 质量门 = `tsc --noEmit` + `eslint --max-warnings 0` + `vitest run`。prettier --check 非门。
 - 版本：宿主与内核独立维护，发版只升宿主版本。
 
