@@ -1767,12 +1767,12 @@ export class SessionManager {
    * 标记会话暂停超时（超时事实的唯一写点）
    *
    * F1.3 广播式改造：暂停超时信息通过事件载荷传递，支持多监听器同时消费。
-   * 不再使用私有字段 + 一次性消费模式（consumePauseTimedOutSession 已废弃）。
+   * 暂停超时信息通过事件载荷传递，支持多监听器并行消费（不再依赖一次性消费模式）。
    *
    * 启动路径（loadPersistedCheckpoint）与运行时定时器路径（checkPauseTimeout）
    * 共用本方法：发射事件（含 date/session 载荷），供多个监听器独立消费。
    *
-   * 事件监听器读取 payload.date / payload.session 而非 consumePauseTimedOutSession()，
+   * 事件监听器读取 payload.date / payload.session，
    * 消除了单监听器依赖——同一事件可被多个监听器独立处理，互不干扰。
    *
    * 会话标识不符合 `YYYY-MM-DD-<会话名>` 约定时（如宿主自定义 id），
