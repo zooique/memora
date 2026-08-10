@@ -272,17 +272,17 @@ function createLoopDependentComponents(params: LoopDependentParams) {
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
   const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, callbacks?.onDedupCompleted);
 
-  const configManager = new ConfigManager(
-    pctx.index,
+  const configManager = new ConfigManager({
+    index: pctx.index,
     skillManager,
-    (msg: string) => loop.injectSystemMessage(msg),
-    // refreshBootstrapMemories 在 writeConfigFile 之前（必选参数不能位于可选之后）
-    () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
-    configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
+    injectSystemMessage: (msg: string) => loop.injectSystemMessage(msg),
+    // refreshBootstrapMemories 必须同步 bootstrap 段（SSOT：system prompt 与存储一致）
+    refreshBootstrapMemories: () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
+    writeConfigFile: configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
     // P0-1：删除配置时自动清理关联关系边
-    (memoryId: string) => memoryInspector.writeRemoveRelationsByMemoryId(memoryId),
-    callbacks?.fileConsistencyCheck,
-  );
+    removeRelationsByMemoryId: (memoryId: string) => memoryInspector.writeRemoveRelationsByMemoryId(memoryId),
+    fileConsistencyCheck: callbacks?.fileConsistencyCheck,
+  });
 
   const autoConfigRefiner = new AutoConfigRefiner(
     (suggestion) => configManager.suggestionCallback?.(suggestion),

@@ -28,13 +28,12 @@ describe('ConfigManager', () => {
     storage = new InMemoryStorage();
     skillManager = new SkillManager();
     systemMessages = [];
-    manager = new ConfigManager(
-      storage,
+    manager = new ConfigManager({
+      index: storage,
       skillManager,
-      (msg) => { systemMessages.push(msg); },
-      vi.fn(),   // refreshBootstrapMemories（必选，P1-1，需在可选参数之前）
-      undefined, // writeConfigFile
-    );
+      injectSystemMessage: (msg) => { systemMessages.push(msg); },
+      refreshBootstrapMemories: vi.fn(), // 必选（P1-1：CRUD 后须同步 bootstrap 段）
+    });
   });
 
   // ─── addRule ─────────────────────────────────────────
@@ -215,13 +214,13 @@ describe('ConfigManager', () => {
 
     it('writeConfigFile 已设置时应调用写入回调', async () => {
       const written: Memory[] = [];
-      const managerWithWrite = new ConfigManager(
-        storage,
+      const managerWithWrite = new ConfigManager({
+        index: storage,
         skillManager,
-        (msg) => { systemMessages.push(msg); },
-        vi.fn(),   // refreshBootstrapMemories（必选）
-        async (memory) => { written.push(memory); },
-      );
+        injectSystemMessage: (msg) => { systemMessages.push(msg); },
+        refreshBootstrapMemories: vi.fn(),
+        writeConfigFile: async (memory) => { written.push(memory); },
+      });
 
       const suggestion: ConfigSuggestion = {
         type: 'rule',
@@ -245,13 +244,13 @@ describe('ConfigManager', () => {
 
     it('persona 类型 confirmConfigSuggestion 不应注入 system 消息', async () => {
       const written: Memory[] = [];
-      const managerWithWrite = new ConfigManager(
-        storage,
+      const managerWithWrite = new ConfigManager({
+        index: storage,
         skillManager,
-        (msg) => { systemMessages.push(msg); },
-        vi.fn(),   // refreshBootstrapMemories（必选）
-        async (memory) => { written.push(memory); },
-      );
+        injectSystemMessage: (msg) => { systemMessages.push(msg); },
+        refreshBootstrapMemories: vi.fn(),
+        writeConfigFile: async (memory) => { written.push(memory); },
+      });
 
       const suggestion: ConfigSuggestion = {
         type: 'persona',
@@ -270,13 +269,13 @@ describe('ConfigManager', () => {
 
     it('rule 类型 confirmConfigSuggestion 应刷新 bootstrap 段（T2 防回归）', async () => {
       const refreshSpy = vi.fn();
-      const managerWithWrite = new ConfigManager(
-        storage,
+      const managerWithWrite = new ConfigManager({
+        index: storage,
         skillManager,
-        () => {},
-        refreshSpy,
-        async () => {},
-      );
+        injectSystemMessage: () => {},
+        refreshBootstrapMemories: refreshSpy,
+        writeConfigFile: async () => {},
+      });
 
       await managerWithWrite.confirmConfigSuggestion({
         type: 'rule',
@@ -306,13 +305,13 @@ describe('ConfigManager', () => {
       expect(storage.getDeletedById('rule:同名规则')).not.toBeNull();
 
       const written: Memory[] = [];
-      const managerWithWrite = new ConfigManager(
-        storage,
+      const managerWithWrite = new ConfigManager({
+        index: storage,
         skillManager,
-        () => {},
-        vi.fn(),
-        async (memory) => { written.push(memory); },
-      );
+        injectSystemMessage: () => {},
+        refreshBootstrapMemories: vi.fn(),
+        writeConfigFile: async (memory) => { written.push(memory); },
+      });
 
       const suggestion: ConfigSuggestion = {
         type: 'rule',
@@ -334,13 +333,13 @@ describe('ConfigManager', () => {
     });
 
     it('suggestion.name 含路径穿越字符应被白名单拒绝（T2-4 回归）', async () => {
-      const managerWithWrite = new ConfigManager(
-        storage,
+      const managerWithWrite = new ConfigManager({
+        index: storage,
         skillManager,
-        () => {},
-        vi.fn(),
-        async () => {},
-      );
+        injectSystemMessage: () => {},
+        refreshBootstrapMemories: vi.fn(),
+        writeConfigFile: async () => {},
+      });
 
       // 路径穿越面：'..' 可逃出 configDir；'a/b' 越级进子目录；空格/空串亦不在白名单内
       for (const badName of ['../escape', 'a/b', '..\\win', 'name with space', '']) {
@@ -357,13 +356,13 @@ describe('ConfigManager', () => {
 
     it('persona 类型 confirmConfigSuggestion 不应刷新 bootstrap 段（T2 防过度修复）', async () => {
       const refreshSpy = vi.fn();
-      const managerWithWrite = new ConfigManager(
-        storage,
+      const managerWithWrite = new ConfigManager({
+        index: storage,
         skillManager,
-        () => {},
-        refreshSpy,
-        async () => {},
-      );
+        injectSystemMessage: () => {},
+        refreshBootstrapMemories: refreshSpy,
+        writeConfigFile: async () => {},
+      });
 
       await managerWithWrite.confirmConfigSuggestion({
         type: 'persona',
@@ -385,13 +384,12 @@ describe('ConfigManager', () => {
   describe('safeRefreshBootstrapMemories（T2-3 删除死回调后失败降级）', () => {
     it('refreshBootstrapMemories 抛错时不应抛出，且通过 logger.warn 暴露（无死回调分支）', () => {
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-      const managerWithFailingRefresh = new ConfigManager(
-        storage,
+      const managerWithFailingRefresh = new ConfigManager({
+        index: storage,
         skillManager,
-        (msg) => { systemMessages.push(msg); },
-        () => { throw new Error('simulated bootstrap desync'); },
-        undefined,
-      );
+        injectSystemMessage: (msg) => { systemMessages.push(msg); },
+        refreshBootstrapMemories: () => { throw new Error('simulated bootstrap desync'); },
+      });
 
       expect(() =>
         (managerWithFailingRefresh as unknown as { safeRefreshBootstrapMemories(): void })

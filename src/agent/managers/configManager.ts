@@ -26,6 +26,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { SkillManager } from '@/skill/skillManager.js';
+import type { FileConsistencyCheck } from '@/agent/types.js';
 import { configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
@@ -83,6 +84,47 @@ export interface ConfigSuggestion {
 /** 配置建议回调函数类型 */
 export type ConfigSuggestionHandler = (suggestion: ConfigSuggestion) => void;
 
+/**
+ * ConfigManager 构造选项（M2：7 位置参数收敛为 options 对象）
+ *
+ * 4 必选 + 3 可选。此前位置参数存在「必选参数不能位于可选之后」的顺序约束
+ * （assembler 调用点注释），options 化后新增参数不再动调用点，字段自文档化。
+ */
+export interface ConfigManagerOptions {
+  /** 记忆存储（规则写入 SQLite） */
+  index: IMemoryStorage;
+  /** 技能管理器（运行时注入技能） */
+  skillManager: SkillManager;
+  /** 注入 system 消息的回调（来自 AgentLoop） */
+  injectSystemMessage: (message: string) => void;
+  /**
+   * 刷新 AgentLoop system prompt 中 bootstrap 段的回调
+   *
+   * 设定 CRUD（deleteRule/updateRule/deleteSkill）后调用，使 system prompt 中的
+   * rule/skill 段立即同步。由 Agent 在装配时注入（assembler.ts）。
+   * 必选：CRUD 操作后必须同步 bootstrap 段，否则 system prompt 与存储不一致（SSOT 违反）。
+   */
+  refreshBootstrapMemories: () => void;
+  /** 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖） */
+  writeConfigFile?: (memory: Memory) => Promise<void>;
+  /**
+   * 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理）
+   *
+   * 传入 memoryInspector.writeRemoveRelationsByMemoryId 的绑定版本。
+   * 未注入时删除记忆不清理关系边（向后兼容，但可能残留孤儿边）。
+   */
+  removeRelationsByMemoryId?: (memoryId: string) => number;
+  /**
+   * 文件层前置条件断言回调（可选，T5：两段式契约结构化）
+   *
+   * 注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
+   * `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
+   * 校验失败抛 configError（fail-fast），未注入时完全降级为现状。
+   * 注意：此校验是快照断言，不保证文件操作与索引操作之间的原子性（本地文件架构固有边界）。
+   */
+  fileConsistencyCheck?: FileConsistencyCheck;
+}
+
 // ─── 类 ──────────────────────────────────────────────────
 
 export class ConfigManager {
@@ -107,33 +149,33 @@ export class ConfigManager {
     }
   }
 
+  /** 记忆存储（规则写入 SQLite） */
+  private readonly index: IMemoryStorage;
+  /** 技能管理器（运行时注入技能） */
+  private readonly skillManager: SkillManager;
+  /** 注入 system 消息的回调（来自 AgentLoop） */
+  private readonly injectSystemMessage: (message: string) => void;
+  /** 刷新 AgentLoop system prompt 中 bootstrap 段的回调 */
+  private readonly refreshBootstrapMemories: () => void;
+  /** 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖） */
+  private readonly writeConfigFile?: (memory: Memory) => Promise<void>;
+  /** 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理） */
+  private readonly removeRelationsByMemoryId?: (memoryId: string) => number;
+  /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
+  private readonly fileConsistencyCheck?: FileConsistencyCheck;
+
   /**
-   * @param index - 记忆存储（规则写入 SQLite）
-   * @param skillManager - 技能管理器（运行时注入技能）
-   * @param injectSystemMessage - 注入 system 消息的回调（来自 AgentLoop）
-   * @param refreshBootstrapMemories - 刷新 AgentLoop system prompt 中 bootstrap 段的回调
-   *   设定 CRUD（deleteRule/updateRule/deleteSkill）后调用，使 system prompt 中的
-   *   rule/skill 段立即同步。由 Agent 在装配时注入（assembler.ts）。
-   *   必选参数：CRUD 操作后必须同步 bootstrap 段，否则 system prompt 与存储不一致（SSOT 违反）。
-   * @param writeConfigFile - 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖）
-   * @param removeRelationsByMemoryId - 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理）
- *   传入 memoryInspector.writeRemoveRelationsByMemoryId 的绑定版本。
- *   未注入时删除记忆不清理关系边（向后兼容，但可能残留孤儿边）。
- * @param fileConsistencyCheck - 文件层前置条件断言回调（可选，T5：两段式契约结构化）
- *   注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
- *   `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
- *   校验失败抛 configError（fail-fast），未注入时完全降级为现状。
- *   注意：此校验是快照断言，不保证文件操作与索引操作之间的原子性（本地文件架构固有边界）。
- */
-  constructor(
-    private readonly index: IMemoryStorage,
-    private readonly skillManager: SkillManager,
-    private readonly injectSystemMessage: (message: string) => void,
-    private readonly refreshBootstrapMemories: () => void,
-    private readonly writeConfigFile?: (memory: Memory) => Promise<void>,
-    private readonly removeRelationsByMemoryId?: (memoryId: string) => number,
-    private readonly fileConsistencyCheck?: (id: string, expected: 'exists' | 'absent') => boolean,
-  ) {}
+   * @param options - 构造选项（字段语义见 {@link ConfigManagerOptions}）
+   */
+  constructor(options: ConfigManagerOptions) {
+    this.index = options.index;
+    this.skillManager = options.skillManager;
+    this.injectSystemMessage = options.injectSystemMessage;
+    this.refreshBootstrapMemories = options.refreshBootstrapMemories;
+    this.writeConfigFile = options.writeConfigFile;
+    this.removeRelationsByMemoryId = options.removeRelationsByMemoryId;
+    this.fileConsistencyCheck = options.fileConsistencyCheck;
+  }
 
   /**
    * 文件层前置条件断言（T5：两段式契约结构化）
@@ -199,14 +241,16 @@ export class ConfigManager {
       );
     }
 
-    // 根据建议类型映射到 source 标签（ADR-004：开放字符串，约定值走 sourceMap，扩展值走 memorySource）
-    const sourceMap: Record<string, string> = {
-      rule: SOURCE_LABELS.RULE,
-      persona: SOURCE_LABELS.PERSONA,
-      skill: SOURCE_LABELS.SKILL,
-    };
-    // 优先级：memorySource（扩展值）> sourceMap[type]（约定值）
-    const source = suggestion.memorySource ?? sourceMap[suggestion.type];
+    // 约定 type 值（rule/persona/skill）与 SOURCE_LABELS 值同名（显式契约），
+    // type 直接作为 source 标签；扩展 type 必须提供 memorySource，否则抛错。
+    // L5：删字面量 sourceMap，消除 key 与 SOURCE_LABELS 的镜像（原 map key 硬编码 'rule'/'persona'/'skill'）。
+    const source = suggestion.memorySource ?? (
+      suggestion.type === SOURCE_LABELS.RULE ||
+      suggestion.type === SOURCE_LABELS.PERSONA ||
+      suggestion.type === SOURCE_LABELS.SKILL
+        ? suggestion.type
+        : undefined
+    );
     if (!source) {
       throw configError(
         '无法确定配置建议的 source 标签',
