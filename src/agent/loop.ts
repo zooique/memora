@@ -1350,12 +1350,17 @@ export class AgentLoop {
       return;
     }
     this.messages = [systemPrompt, ...nonSystemMessages];
-    // SSOT-R4-T9：消息集合被整体替换，上一段会话的上下文摘要随之作废。
-    // 不作废的话，ContextManager 的单向长度判断在新历史更短时永不触发过期，
-    // 陈旧摘要会被注入新会话的 system prompt。
-    this.contextManager.resetSummary();
 
     logger.info({ messageCount: nonSystemMessages.length }, '恢复历史对话消息');
+  }
+
+  /**
+   * 作废上下文摘要等 loop 级派生缓存（由 SessionManager 的会话替换 chokepoint 调用）
+   *
+   * 不暴露 ContextManager 实例，仅暴露「作废派生缓存」这一行为，保持边界有界。
+   */
+  resetContextSummary(): void {
+    this.contextManager.resetSummary();
   }
 
   /**

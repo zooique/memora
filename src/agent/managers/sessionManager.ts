@@ -198,6 +198,19 @@ export class SessionManager {
   }
 
   /**
+   * 会话替换 chokepoint：作废所有会话级派生缓存。
+   *
+   * 任何替换 loop 工作记忆（switch / fork / restore）的入口都必须经此，
+   * 新增派生缓存只需在此注册一处，避免「对称的另一半没写完」
+   * （SSOT-R4-T9 修了 restoreHistory 却漏了 switchSession，导致跨会话陈旧摘要）。
+   * 当前唯一派生缓存是 ContextManager 的上下文摘要。
+   */
+  private invalidateSessionDerivedState(): void {
+    // 可选调用：真实 loop 必有 resetContextSummary；测试 mock 可能未实现该协作方法，缺失时 no-op。
+    this.getLoop()?.resetContextSummary?.();
+  }
+
+  /**
    * 切换当前会话
    *
    * 与 forkSession() 对齐：底层 MessageHistory.switchSession 是纯同步操作（字段赋值），
@@ -223,7 +236,10 @@ export class SessionManager {
       this.checkpointDirty = false;
     }
 
-    return this.getHistory().switchSession(newSession);
+    const result = this.getHistory().switchSession(newSession);
+    // 会话已替换：作废上下文摘要等派生缓存，避免陈旧摘要注入新会话（SSOT-R4-T9 对称补全）
+    this.invalidateSessionDerivedState();
+    return result;
   }
 
   /**
@@ -389,6 +405,8 @@ export class SessionManager {
       content: tm.content,
     }));
     this.getLoop().restoreHistory(messages);
+    // 消息集合被整体替换：作废派生缓存（与 switchSession 共用同一 chokepoint）
+    this.invalidateSessionDerivedState();
   }
 
   // ─── 不中断工作模型 v2.0：检查点 + 状态机（P4） ──────────
@@ -884,6 +902,8 @@ export class SessionManager {
       toolCallId: cm.toolCallId,
     }));
     this.getLoop().restoreHistory(messages);
+    // 恢复路径同样替换了消息集合：作废派生缓存（与 switch/fork 共用同一 chokepoint）
+    this.invalidateSessionDerivedState();
 
     // 注入截断一致性标记（P2.2：LLM 感知截断边界）
     // 当检查点记录的热记忆被截断时，注入系统消息告知 LLM 有早期消息被截断，

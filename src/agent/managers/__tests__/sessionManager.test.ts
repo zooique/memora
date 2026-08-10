@@ -49,6 +49,7 @@ function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHist
 function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
   return {
     restoreHistory: vi.fn(),
+    resetContextSummary: vi.fn(),
     getMessages: vi.fn().mockReturnValue([]),
     ...overrides,
   } as unknown as AgentLoop;
@@ -124,6 +125,12 @@ describe('SessionManager', () => {
       const result = manager.switchSession('x');
       // 同步调用应直接返回字符串，非 Promise
       expect(typeof result).toBe('string');
+    });
+
+    it('SSOT 回归：切换会话应触发派生缓存失效（invalidateSessionDerivedState → resetContextSummary）', () => {
+      manager.switchSession('new-session');
+      // 会话替换后，上下文摘要等派生缓存必须作废，否则陈旧摘要注入新会话（SSOT-R4-T9 对称补全）
+      expect(loop.resetContextSummary).toHaveBeenCalledTimes(1);
     });
   });
 
