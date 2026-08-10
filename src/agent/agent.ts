@@ -275,12 +275,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * sessionPauseTimedOut 事件（含 date/session 载荷）。此处统一消费。
    *
    * F1.3 广播式改造：从事件载荷 payload.date / payload.session 直接读取，
-   * 不再经 consumePauseTimedOutSession() 一次性消费。支持多监听器并行。
+   * 从事件载荷直接读取，支持多监听器并行消费。
    *
    * 注册位置在 init() 内而非构造器：close() 会 removeAllListeners()，
    * 而 init() 起始必先 disposePreviousInstance()，故实例周期内恰好一个监听器。
    * 监听器挂在 Agent（生命周期稳定）而非 SessionManager 上，
-   * rebuildComponentsWithCurrentCtx() 重建管理器后仍然有效。
+   * rebuildComponents() 重建管理器后仍然有效。
    */
   private registerPauseTimeoutArchiver(): void {
     this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
@@ -291,7 +291,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 若不清理，下次 requestPause() 会被幂等检查静默忽略。
       this._sessionManager?.cancelPendingPause();
 
-      // F1.3：从事件载荷直接读取 date/session，不再经 consumePauseTimedOutSession()
+      // F1.3：从事件载荷直接读取 date/session
       const { sessionId, date, session } = payload;
       if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录
@@ -1790,7 +1790,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 先尝试重建组件，失败时回滚 pctx 防止状态不一致
     try {
       this.pctx = newPctx;
-      await this.rebuildComponentsWithCurrentCtx();
+      await this.rebuildComponents();
     } catch (err) {
       // 回滚：恢复旧 pctx（若存在）
       if (fromProjectPath) {
@@ -1991,16 +1991,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         const cp = sm.getCheckpoint();
         const existingPlan = cp?.plan ?? [];
 
-        // 并发写入防护：overwrite 仅 plan 空时允许
-        if (mode === 'overwrite') {
-          if (existingPlan.length > 0) {
-            return '[ERR:PLAN_NOT_EMPTY] overwrite 模式仅允许在 plan 为空时使用，当前 plan 非空。请使用 append 或 update 模式';
-          }
-          // 全量覆盖
-          for (const step of steps) {
-            sm.appendPlanStep(step.description);
-          }
-        } else if (mode === 'append') {
+        // 单一追加模式：overwrite 与 append 语义已合并为"追加"
+        // （不再限制 plan 必须为空；真正全量替换请用 'update' 模式）
+        if (mode === 'overwrite' || mode === 'append') {
           for (const step of steps) {
             sm.appendPlanStep(step.description);
           }
@@ -2012,7 +2005,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
               ? { ...existing, description: s.description }
               : { id: crypto.randomUUID(), order: i, description: s.description, status: 'pending' as const };
           });
-          // 通过 updatePlan 替换（已标记 deprecated，但此处是唯一合理的用例）
+          // 通过 updatePlan 全量替换（保留已有步骤 ID 与状态）
           sm.updatePlan(updatedPlan);
         }
 
@@ -2068,17 +2061,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 用当前 pctx 重建 history / loop
    */
-  private async rebuildComponentsWithCurrentCtx(): Promise<void> {
-    if (!this.pctx) return;
-    await this.assembleComponents(this.pctx);
-    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例（复用 createSessionManager）
-    this._sessionManager = this.createSessionManager();
-  }
-
   /**
    * 创建会话管理器（提取重复的 forwardEvent + SessionManager 构造逻辑）
    *
-   * assembleComponents 和 rebuildComponentsWithCurrentCtx 共享同一套构造逻辑：
+   * assembleComponents 与 rebuildComponents 共享同一套构造逻辑：
    * - 通过回调访问当前组件（支持 rebuild 后自动获取最新引用）
    * - 事件转发桥接：SessionManager 使用宽类型 (string, Record<string,unknown>)，
    *   Agent 内部桥接到 TypedEventEmitter 的强类型 emit
@@ -2494,7 +2480,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async rebuildComponents(): Promise<void> {
     // 对话进行中重建组件会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
     this.assertNotBusy('重建组件');
-    await this.rebuildComponentsWithCurrentCtx();
+    if (!this.pctx) return;
+    await this.assembleComponents(this.pctx);
+    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例（复用 createSessionManager）
+    this._sessionManager = this.createSessionManager();
   }
 
   // ─── 守卫方法 ───────────────────────────────────────────

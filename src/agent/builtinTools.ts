@@ -156,15 +156,15 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_write',
     description:
-      '写入或更新任务表。overwrite 模式仅在 plan 为空时允许（全量覆盖）；' +
-      'append 模式追加新步骤到末尾；update 模式替换现有步骤。' +
+      '写入或更新任务表。overwrite 与 append 均为追加新步骤（overwrite 不再限制 plan 必须为空）；' +
+      'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
       '输出格式为 Markdown 表格，包含进度行和状态标记。',
     parameters: {
       type: 'object',
       properties: {
         mode: {
           type: 'string',
-          description: '写入模式："overwrite"（仅 plan 空时可用）、"append"（追加）、"update"（替换）',
+          description: '写入模式："overwrite"/"append"（均为追加新步骤）、"update"（替换，保留步骤 ID 与状态）',
         },
         steps: {
           type: 'array',
