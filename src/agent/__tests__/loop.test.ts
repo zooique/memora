@@ -1248,3 +1248,122 @@ describe('AgentLoop · 多模型路由（P1-2）', () => {
     expect(loop.getMessages().length).toBeGreaterThan(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：L2 策略 setToolCallsBlocked（工具调用阻止）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
+  it('setToolCallsBlocked(true) 应阻止工具调用，仅保留文本回复', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('不应执行到这里');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            content: '我来调用工具',
+            toolCalls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 设置工具调用阻止
+    loop.setToolCallsBlocked(true);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      chunks.push(chunk);
+    }
+
+    // 工具应被阻止执行
+    expect(toolExecutor).not.toHaveBeenCalled();
+    // 应输出文本内容（LLM 的回复被保留）
+    const texts = chunks.filter((c) => c.type === 'text');
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts[0]!.content).toContain('我来调用工具');
+    // 最后一个是 done 事件
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+
+  it('setToolCallsBlocked(false) 应允许工具调用（默认行为）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('工具执行结果');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            content: '我来查一下',
+            toolCalls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '找到了文件内容' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 明确允许工具调用（默认值）
+    loop.setToolCallsBlocked(false);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      chunks.push(chunk);
+    }
+
+    // 工具应正常执行
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
+    const toolResults = chunks.filter((c) => c.type === 'tool_result');
+    expect(toolResults).toHaveLength(1);
+    // 最后一个是 done 事件
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+
+  it('工具调用阻止时 LLM 空回复应使用兜底文本', async () => {
+    const toolExecutor = vi.fn();
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            // 空内容 + 仅有 toolCalls 的 LLM 回复
+            toolCalls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{}' },
+              },
+            ],
+          },
+        ],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    loop.setToolCallsBlocked(true);
+
+    const texts: string[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      if (chunk.type === 'text') texts.push(chunk.content);
+    }
+
+    // 工具被阻止，LLM 空回复时使用兜底文本
+    expect(texts.some((t) => t.includes('当前角色不允许调用工具'))).toBe(true);
+    expect(toolExecutor).not.toHaveBeenCalled();
+  });
+});

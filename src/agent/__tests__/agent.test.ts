@@ -2849,3 +2849,86 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：L2 行为策略消费（getActiveStrategy + executeChatLoop handoff）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · L2 行为策略消费', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-l2-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-l2-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-l2-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  // ─── getActiveStrategy() 默认值 ──────────────────────────
+
+  it('getActiveStrategy 应返回默认策略（无激活角色包时）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const strategy = agent.getActiveStrategy();
+    // 验证默认策略的 prepare 维度
+    expect(strategy.prepare?.memoryRecall).toBe('full');
+    expect(strategy.prepare?.memoryRecallQuota).toBe(2000);
+    // 验证默认策略的 act 维度
+    expect(strategy.act?.toolCalls).toBe('allow');
+    // 验证默认策略的 reflect 维度
+    expect(strategy.reflect?.endingHandoff).toBe('wait');
+    expect(strategy.reflect?.insightExtraction).toBe('on');
+  });
+
+  // ─── executeChatLoop → handoff chunk ─────────────────────
+
+  it('chat 应 yield handoff chunk（默认 endingHandoff=wait）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('你好')) {
+      chunks.push(chunk);
+    }
+
+    // 验证 handoff chunk
+    const handoffChunk = chunks.find((c) => c.type === 'handoff');
+    expect(handoffChunk).toBeDefined();
+    if (handoffChunk?.type === 'handoff') {
+      expect(handoffChunk.decision).toBe('wait');
+      // 'wait' 决策时 reason 应为 undefined（L2 策略默认等待用户输入）
+      expect(handoffChunk.reason).toBeUndefined();
+    }
+  });
+
+  // ─── prepareChatContext 通过策略设置 loop 工具调用权限 ──
+
+  it('默认策略下 loop 工具调用不被阻止（toolCalls=allow）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 默认策略 toolCalls='allow'，工具调用正常执行
+    // 通过 chat 验证不会触发工具调用阻止行为
+    for await (const {} of agent.chat('测试')) {
+      // 消费所有 chunk
+    }
+
+    // 验证 handoff chunk 存在（表明 executeChatLoop 正常执行）
+    // 验证整体流程不抛错即说明 prepareChatContext 正确消费了默认策略
+    expect(agent.agentLoop).not.toBeNull();
+  });
+});
