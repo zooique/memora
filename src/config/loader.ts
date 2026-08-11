@@ -30,7 +30,7 @@ import { logger } from '@/logging/logger.js';
 const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 
 // 单个 Provider 配置接口（用于 providers 映射表的值）
-interface ProviderConfig {
+interface ProviderEntryConfig {
   /**
    * Provider 标识（仅用于日志，不影响路由）
    *
@@ -96,7 +96,7 @@ interface LlmConfig {
    * 配置后，旧扁平字段（provider/model/baseUrl/apiKey）被忽略。
    * 不配置时回退到旧的单 provider 行为——完全向后兼容。
    */
-  providers?: Record<string, ProviderConfig>;
+  providers?: Record<string, ProviderEntryConfig>;
   /**
    * 当前激活的 Provider 别名
    *
@@ -359,12 +359,12 @@ function validateAllowedPaths(value: unknown): string[] {
  * @returns 有效的 Provider 配置映射表或 undefined
  * @throws MemoraError 当 Provider 配置无效时抛出
  */
-function parseProviders(value: unknown): Record<string, ProviderConfig> | undefined {
+function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
   }
 
-  const providers: Record<string, ProviderConfig> = {};
+  const providers: Record<string, ProviderEntryConfig> = {};
   const entries = Object.entries(value as Record<string, unknown>);
 
   for (const [key, providerValue] of entries) {
@@ -536,7 +536,7 @@ function expandEnvVars(config: Config): Config {
   };
 
   // 展开 providers 映射表中的环境变量
-  const expandedProviders: Record<string, ProviderConfig> | undefined = config.llm.providers
+  const expandedProviders: Record<string, ProviderEntryConfig> | undefined = config.llm.providers
     ? Object.fromEntries(
         Object.entries(config.llm.providers).map(([key, p]) => [
           key,

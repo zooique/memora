@@ -28,7 +28,7 @@ function makeConfig(overrides: Partial<Config['llm']> = {}): Config {
 /**
  * 辅助：构造多 Provider 格式配置（providers + active）
  *
- * providers 参数类型与 loader.ts 的 ProviderConfig 接口对齐：
+ * providers 参数类型与 loader.ts 的 ProviderEntryConfig 接口对齐：
  * provider 必填（仅日志标识，宿主 UI 用其存储 cloud/local 模式）
  */
 function makeMultiProviderConfig(
