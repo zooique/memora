@@ -9,6 +9,7 @@
  * recalledMemories 参数注入。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
+import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import type { AgentChunk, UIMessages, SessionEvent } from '@/agent/types.js';
@@ -25,6 +26,8 @@ import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
+  /** Provider 路由选择器（P1-2 多模型路由基础，可选） */
+  providerRouter?: ProviderRouter;
   bootstrapMemories: Memory[]; // 永驻 + 领域记忆
   toolExecutor: (name: string, args: string) => Promise<string>;
   maxIterations?: number;
@@ -241,9 +244,11 @@ export class AgentLoop {
 
     // 上下文管理器（token 估算 + 截断 + 摘要）
     // 注入 tracer，让 generateContextSummary 有 span 埋点
+    // 注入 providerRouter，让摘要生成走 'summary' 路由（P1-2 多模型路由基础）
     this.contextManager = new ContextManager({
       maxContextTokens: this.maxContextTokens,
       provider: opts.provider,
+      providerRouter: opts.providerRouter,
       contextTruncatedFn: this.ui.contextTruncated,
       tracer: this.tracer,
       onContextTruncated: opts.onContextTruncated,
@@ -733,10 +738,42 @@ export class AgentLoop {
   }
 
   /**
+   * 确定当前回合的任务类型（P1-2 多模型路由基础）
+   *
+   * 基于当前消息特征做简单分类：
+   * 1. 用户消息中含代码块标记 → 'code'
+   * 2. 用户消息较长（>500 字符）→ 'reasoning'
+   * 3. 其他 → 'simple'
+   * 4. 摘要生成 → 'summary'（由 ContextManager 调用时显式传入）
+   *
+   * 此为初始实现，后续可扩展为更精确的语义分类。
+   *
+   * @param messages 当前消息数组（用于分析用户输入特征）
+   * @returns 任务类型
+   */
+  private determineTaskType(messages: readonly Message[]): TaskType {
+    // 从后向前查找最后一条 user 消息
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+    const content = lastUserMsg?.content ?? '';
+
+    // 代码相关关键词检测：含代码块标记
+    if (/```(?:ts|js|py|go|rust|java|css|html|sql)\b/i.test(content)) {
+      return 'code';
+    }
+    // 长文本复杂推理判定
+    if (content.length > 500) {
+      return 'reasoning';
+    }
+    return 'simple';
+  }
+
+  /**
    * 调用 LLM（带指数退避重试）
    *
    * 仅在流式输出前失败时重试（streamStarted = false），
    * 流式已开始则直接向上抛出（用户已看到部分结果）。
+   *
+   * P1-2 多模型路由：根据当前任务类型路由到对应 Provider。
    *
    * @param safeMessages - 截断后的消息数组
    * @param chatOpts - LLM 调用选项
@@ -765,9 +802,14 @@ export class AgentLoop {
       timeoutMs: LOOP_CONSTANTS.LLM_TIMEOUT_MS,
     };
 
+    // P1-2 多模型路由：根据当前任务类型选择 Provider
+    const effectiveProvider = this.opts.providerRouter
+      ? this.opts.providerRouter(this.determineTaskType(safeMessages))
+      : this.opts.provider;
+
     // LLM 调用 Span（涵盖重试循环）
     const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
-      model: this.opts.provider.name,
+      model: effectiveProvider.name,
       messageCount: safeMessages.length,
       iteration,
     });
@@ -799,7 +841,8 @@ export class AgentLoop {
 
         // safeMessages 为 readonly Message[]，provider.chat 期望 Message[]；
         // 通过浅拷贝转换为可变数组，避免类型断言。
-        for await (const chunk of this.opts.provider.chat([...safeMessages], effectiveOpts)) {
+        // P1-2 多模型路由：使用 effectiveProvider（由 providerRouter 根据任务类型选定）
+        for await (const chunk of effectiveProvider.chat([...safeMessages], effectiveOpts)) {
           streamStarted = true;
           if (signal?.aborted) {
             aborted = true;

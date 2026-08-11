@@ -326,30 +326,13 @@ export interface PauseMeta {
 export type IdempotencyLevel = 'idempotent' | 'idempotent-key' | 'non-idempotent';
 
 /**
- * 工具副作用（P3.4 补偿机制·副作用日志）
- *
- * 描述一次工具执行对系统产生的副作用，用于恢复时补偿。
- * 补偿动作：撤销副作用（如文件回滚、记忆删除），恢复系统到执行前的状态。
- */
-export interface SideEffect {
-  /** 副作用类型 */
-  type: 'file_write' | 'file_create' | 'file_delete' | 'memory_write' | 'custom';
-  /** 受影响的目标标识（如文件路径、记忆 ID） */
-  target: string;
-  /** 操作前的状态（用于补偿恢复，如写入前的文件内容） */
-  before?: string;
-  /** 操作后的状态（如写入后的文件内容摘要） */
-  after?: string;
-  /** 副作用描述 */
-  description: string;
-}
-
-/**
- * 工具执行记录（P3.3 执行计划管理·工具幂等 + P3.4 补偿机制）
+ * 工具执行记录（P3.3 执行计划管理·工具幂等，outbox 模式）
  *
  * 记录已执行的工具调用，用于恢复时检查 outbox 模式。
  * 以工具名称 + 参数签名作为唯一标识，避免重复执行。
- * 扩展：记录副作用和幂等性级别，支持恢复时补偿。
+ *
+ * 补偿管线已降级（P1-1 2026-08-11）：不再记录副作用和补偿时间戳，
+ * `compensateTool` / `compensateAllNonIdempotent` 降级为纯日志记录。
  */
 export interface ToolExecutionRecord {
   /** 工具名称 */
@@ -360,26 +343,10 @@ export interface ToolExecutionRecord {
   executedAt: number;
   /** 执行结果摘要（前 100 字符） */
   resultSummary: string;
-  /**
-   * 工具执行本身是否成功。
-   *
-   * 仅由 `logToolExecution` 的调用方在记录执行结果时写入，补偿流程**不得**改写它——
-   * 该字段的真理源是「执行结果」，不是「补偿状态」。补偿状态见 `compensatedAt`。
-   */
+  /** 工具执行是否成功 */
   ok: boolean;
-  /** 工具幂等性级别（P3.4，标注时供恢复时判断是否需要补偿） */
+  /** 工具幂等性级别（outbox 模式使用，决定恢复时是否跳过重复执行） */
   idempotent?: IdempotencyLevel;
-  /** 副作用列表（P3.4，非幂等工具执行后记录，用于恢复时补偿） */
-  sideEffects?: SideEffect[];
-  /**
-   * 补偿完成时间戳（P3.4 补偿幂等标记，T0-3）
-   *
-   * `undefined` = 尚未补偿；`number` = 已于该时刻补偿过。
-   * 由 `SessionManager.compensateTool` 写入并随检查点落盘，
-   * 使「同一记录只补偿一次」的事实跨进程重启后仍然成立
-   * （反复崩溃恢复的会话不会向 LLM 重复注入同一条补偿通知）。
-   */
-  compensatedAt?: number;
 }
 
 /** 热记忆中的聊天消息
@@ -670,6 +637,7 @@ import type { ITracer } from '@/agent/tracer.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { MessageRole } from '@/memory/types.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
+import type { ProviderRouter } from '@/llm/types.js';
 
 /**
  * 文件层前置条件断言回调（T5：两段式契约结构化）
@@ -691,6 +659,13 @@ export interface AgentOptions {
   provider: LlmProvider;
   /** 后台 LLM Provider（可选，用于投影等后台操作，不配时复用前台） */
   backgroundProvider?: LlmProvider;
+  /**
+   * Provider 路由选择器（P1-2 多模型路由基础）
+   *
+   * 根据任务类型返回对应的 Provider 实例。
+   * 不配置时所有任务类型使用同一个 Provider（完全向后兼容）。
+   */
+  providerRouter?: ProviderRouter;
   /** 配置目录（personas/rules/skills） */
   configDir?: string;
   /** 记忆数据目录（由宿主显式注入） */
@@ -766,6 +741,7 @@ export type AgentConfig = Omit<
   AgentOptions,
   | 'provider'
   | 'backgroundProvider'
+  | 'providerRouter'
   | 'dataDir'
   | 'maxContextTokens'
   | 'permission'

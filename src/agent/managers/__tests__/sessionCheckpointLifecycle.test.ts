@@ -242,30 +242,6 @@ describe('检查点字段生命周期', () => {
       expect(onDisk!.completedToolCalls![0]!.argsSignature).toBe('{"path":"a.ts"}');
     });
 
-    it('副作用记录应延迟到回合边界统一落盘', () => {
-      manager.createCheckpoint('主目标');
-      manager.logToolExecution(TOOL_RECORD);
-
-      // 先 completeRound 落盘第一轮（工具执行记录已在磁盘）
-      manager.completeRound({ summary: '第一轮', toolCallCount: 1, assistantLength: 10 });
-
-      manager.recordSideEffect('write_file', '{"path":"a.ts"}', {
-        type: 'file_write',
-        target: 'a.ts',
-        description: '写入文件',
-      });
-
-      // P3-1: recordSideEffect 不再即时落盘，仅标记脏标记
-      // 磁盘上已有的检查点应**没有**副作用记录
-      const onDiskBefore = disk.readDisk();
-      expect(onDiskBefore!.completedToolCalls![0]!.sideEffects).toBeUndefined();
-
-      // 执行 completeRound 后，回合边界统一落盘，副作用记录出现
-      manager.completeRound({ summary: '第二轮', toolCallCount: 0, assistantLength: 5 });
-      const onDiskAfter = disk.readDisk();
-      expect(onDiskAfter!.completedToolCalls![0]!.sideEffects).toHaveLength(1);
-    });
-
     it('恢复后应能凭磁盘记录识别出工具已执行', () => {
       manager.createCheckpoint('主目标');
       manager.logToolExecution(TOOL_RECORD);

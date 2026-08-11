@@ -59,6 +59,7 @@ import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap, AGENT_EVENTS, AGENT_EVENT_SET } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { ProviderRouter } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
@@ -107,6 +108,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   #provider: LlmProvider;
   /** 后台 Provider（独立字段，因 setBackgroundProvider() 可变） */
   #backgroundProvider: LlmProvider | null;
+  /** Provider 路由选择器（P1-2 多模型路由基础，可选） */
+  #providerRouter: ProviderRouter | null = null;
 
   // 运行时组件（init 后填充）
   private projectManager: ProjectManager | null = null;
@@ -225,6 +228,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
+    this.#providerRouter = opts.providerRouter ?? null;
     // 如需自定义日志，请在创建 Agent 前调用 `import { setLogger } from '@zooique/memora'` 全局设置
   }
 
@@ -1819,6 +1823,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const result = await assembleComponents(pctx, {
       provider: this.provider,
       backgroundProvider: this.#backgroundProvider,
+      providerRouter: this.#providerRouter,
       projectPath: this.#config.projectPath,
       configDir: this.#config.configDir,
       personaName: this.#config.personaName,

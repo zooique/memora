@@ -31,6 +31,7 @@ import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
+import type { ProviderRouter } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { AgentConfig, FileConsistencyCheck } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -102,6 +103,8 @@ type AssembleRuntimeParams = Pick<
 export interface AssembleInput extends AssembleRuntimeParams {
   provider: LlmProvider;
   backgroundProvider: LlmProvider | null;
+  /** Provider 路由选择器（P1-2 多模型路由基础，可选） */
+  providerRouter?: ProviderRouter | null;
   /** 已有的 SkillManager（首次为 null，后续复用） */
   existingSkillManager: SkillManager | null;
   /**
@@ -125,6 +128,7 @@ type LoopAndDepsParams = Pick<
   AssembleInput,
   | 'provider'
   | 'backgroundProvider'
+  | 'providerRouter'
   | 'maxContextTokens'
   | 'tracer'
   | 'messages'
@@ -209,7 +213,7 @@ export interface AssembleOutput {
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
-    provider, backgroundProvider, pctx, personaPrompt, userProfile, toolExec,
+    provider, backgroundProvider, providerRouter, pctx, personaPrompt, userProfile, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary, relationStore,
     sessionStore, locale, callbacks,
   } = params;
@@ -236,6 +240,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
 
   const loop = new AgentLoop({
     provider,
+    providerRouter: providerRouter ?? undefined,
     bootstrapMemories: pctx.bootstrapMemories,
     toolExecutor: (name: string, args: string) =>
       toolExec.execute(name, args, insightExtractor.writeExtensions ?? undefined),

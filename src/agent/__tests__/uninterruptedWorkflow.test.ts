@@ -5,7 +5,7 @@
  *   - 三态状态机流转（SessionStateMachine）
  *   - 检查点快照与恢复（SessionManager.createCheckpoint/restoreFromCheckpoint）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck/hasToolExecuted）
- *   - 补偿机制（compensateTool/compensateAllNonIdempotent/recordSideEffect）
+ *   - 补偿机制（compensateTool/compensateAllNonIdempotent，P1-1 降级后仅日志）
  *   - 执行计划管理（advancePlan/completeStep/isPlanStalled）
  *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
  *   - 端到端场景（Agent 门面完整工作流）
@@ -33,7 +33,6 @@ import type {
   SessionCheckpoint,
   PlanStep,
   ToolExecutionRecord,
-  SideEffect,
 } from '@/agent/types.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -657,78 +656,8 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     });
   });
 
-  describe('recordSideEffect / getSideEffectsForTool', () => {
-    it('recordSideEffect 应记录副作用', () => {
-      manager.logToolExecution({
-        name: 'write_file',
-        argsSignature: '{"path":"test.ts","content":"hello"}',
-        executedAt: Date.now(),
-        resultSummary: '写入成功',
-        ok: true,
-      });
-      const se: SideEffect = {
-        type: 'file_write',
-        target: 'test.ts',
-        description: '写入 test.ts 文件',
-      };
-      manager.recordSideEffect('write_file', '{"path":"test.ts","content":"hello"}', se);
-      const effects = manager.getSideEffectsForTool('write_file', '{"path":"test.ts","content":"hello"}');
-      expect(effects).toHaveLength(1);
-      expect(effects[0]!.type).toBe('file_write');
-      expect(effects[0]!.target).toBe('test.ts');
-    });
-
-    it('getSideEffectsForTool 无副作用时返回空数组', () => {
-      manager.logToolExecution({
-        name: 'read_file',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-      });
-      const effects = manager.getSideEffectsForTool('read_file', '{}');
-      expect(effects).toEqual([]);
-    });
-  });
-
-  describe('getNonIdempotentExecutions', () => {
-    it('应返回非幂等工具执行记录', () => {
-      manager.logToolExecution({
-        name: 'read_file',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'idempotent',
-      });
-      manager.logToolExecution({
-        name: 'write_file',
-        argsSignature: '{"path":"test.ts"}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-      });
-      const nonIdempotent = manager.getNonIdempotentExecutions();
-      expect(nonIdempotent).toHaveLength(1);
-      expect(nonIdempotent[0]!.name).toBe('write_file');
-    });
-
-    it('全部幂等时应返回空数组', () => {
-      manager.logToolExecution({
-        name: 'read_file',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'idempotent',
-      });
-      expect(manager.getNonIdempotentExecutions()).toEqual([]);
-    });
-  });
-
-  describe('compensateTool', () => {
-    it('file_write 副作用应生成补偿描述', () => {
+  describe('compensateTool（P1-1 降级后仅日志）', () => {
+    it('应生成包含工具名称的日志描述', () => {
       const record: ToolExecutionRecord = {
         name: 'write_file',
         argsSignature: '{"path":"test.ts"}',
@@ -736,90 +665,20 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resultSummary: '写入成功',
         ok: true,
         idempotent: 'non-idempotent',
-        sideEffects: [
-          { type: 'file_write', target: 'test.ts', description: '写入文件' },
-        ],
       };
       const result = manager.compensateTool(record);
-      expect(result).toContain('file_write');
-      expect(result).toContain('test.ts');
-      expect(result).toContain('无法自动回滚');
-    });
-
-    it('file_delete 副作用应生成补偿描述', () => {
-      const record: ToolExecutionRecord = {
-        name: 'delete_file',
-        argsSignature: '{"path":"test.ts"}',
-        executedAt: Date.now(),
-        resultSummary: '删除成功',
-        ok: true,
-        idempotent: 'non-idempotent',
-        sideEffects: [
-          { type: 'file_delete', target: 'test.ts', description: '删除文件' },
-        ],
-      };
-      const result = manager.compensateTool(record);
-      expect(result).toContain('file_delete');
-      expect(result).toContain('无法自动恢复');
-    });
-
-    it('memory_write 副作用应生成补偿描述', () => {
-      const record: ToolExecutionRecord = {
-        name: 'write_memory',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: '写入成功',
-        ok: true,
-        idempotent: 'non-idempotent',
-        sideEffects: [
-          { type: 'memory_write', target: 'mem:1', description: '写入记忆' },
-        ],
-      };
-      const result = manager.compensateTool(record);
-      expect(result).toContain('memory_write');
-      expect(result).toContain('无法自动回滚');
-    });
-
-    it('无副作用记录时应标记需人工确认', () => {
-      const record: ToolExecutionRecord = {
-        name: 'custom_tool',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: '执行完成',
-        ok: true,
-        idempotent: 'non-idempotent',
-      };
-      const result = manager.compensateTool(record);
-      expect(result).toContain('无副作用记录');
+      expect(result).toContain('write_file');
       expect(result).toContain('需人工确认');
     });
-
-    it('补偿后应写 compensatedAt，且不得篡改执行结果 ok（T0-3）', () => {
-      const record: ToolExecutionRecord = {
-        name: 'write_file',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-        sideEffects: [
-          { type: 'file_write', target: 'test.ts', description: '写入' },
-        ],
-      };
-      manager.compensateTool(record);
-      expect(typeof record.compensatedAt).toBe('number');
-      // ok 的真理源是「执行是否成功」，补偿不是执行失败——旧实现把它改成 false 属语义劫持
-      expect(record.ok).toBe(true);
-    });
   });
 
-  describe('compensateAllNonIdempotent', () => {
+  describe('compensateAllNonIdempotent（P1-1 降级后仅日志）', () => {
     it('无非幂等工具时应返回空数组', () => {
       const results = manager.compensateAllNonIdempotent();
       expect(results).toEqual([]);
     });
 
-    it('有非幂等工具时应返回补偿描述列表', () => {
+    it('有非幂等工具时应返回日志描述列表', () => {
       manager.logToolExecution({
         name: 'read_file',
         argsSignature: '{}',
@@ -835,18 +694,13 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resultSummary: 'ok',
         ok: true,
         idempotent: 'non-idempotent',
-        sideEffects: [
-          { type: 'file_write', target: 'a.ts', description: '写入文件' },
-        ],
       });
       const results = manager.compensateAllNonIdempotent();
       expect(results).toHaveLength(1);
-      expect(results[0]).toContain('file_write');
+      expect(results[0]).toContain('write_file');
     });
 
-    it('T0-3：已补偿记录不得重复补偿', () => {
-      // 旧实现写 record.ok=false 表达「已补偿」，但过滤只看 idempotent、
-      // 从不读 ok —— 注释承诺的「避免重复补偿」是空头支票。
+    it('所有非幂等工具都应生成日志（不再检查 compensatedAt）', () => {
       manager.logToolExecution({
         name: 'write_file',
         argsSignature: '{"path":"a.ts"}',
@@ -854,80 +708,15 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resultSummary: 'ok',
         ok: true,
         idempotent: 'non-idempotent',
-        sideEffects: [
-          { type: 'file_write', target: 'a.ts', description: '写入文件' },
-        ],
       });
-
+      // 降级后不再过滤已补偿记录，每次调用都返回所有非幂等工具
       expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
-      // 第二次：同一记录已带 compensatedAt，应被跳过
-      expect(manager.compensateAllNonIdempotent()).toEqual([]);
-    });
-
-    it('T0-3：混合场景只补偿未补偿项（防过度修复）', () => {
-      manager.logToolExecution({
-        name: 'already_done',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-        compensatedAt: Date.now() - 1000,
-      });
-      manager.logToolExecution({
-        name: 'still_pending',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-      });
-
-      const results = manager.compensateAllNonIdempotent();
-      expect(results).toHaveLength(1);
-      expect(results[0]).toContain('still_pending');
-    });
-
-    it('T0-3：compensatedAt 被截断成非法值时应重新补偿，不得静默跳过', () => {
-      // 存储截断可能把 number 降级成字符串。真值判断会把 'corrupted' 当「已补偿」
-      // → 非幂等副作用永远得不到补偿告警（静默漏补，比重复补偿更危险）。
-      manager.logToolExecution({
-        name: 'corrupted_mark',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-        compensatedAt: 'corrupted' as unknown as number,
-      });
-
       expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
-    });
-
-    it('T0-3：补偿必须标脏检查点，否则标记不落盘、重启后仍会重复补偿', () => {
-      manager.logToolExecution({
-        name: 'write_file',
-        argsSignature: '{"path":"b.ts"}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-      });
-
-      // 契约级断言：无「纯 flush」公共入口可用于观察脏标记（任何能触发落盘的
-      // 公共方法都自带 touch，行为断言会被无关路径染绿），故直接锁「必须走 touchCheckpoint」。
-      const touchSpy = vi.spyOn(
-        manager as unknown as { touchCheckpoint: () => void },
-        'touchCheckpoint',
-      );
-      manager.compensateAllNonIdempotent();
-      expect(touchSpy).toHaveBeenCalled();
-      touchSpy.mockRestore();
     });
   });
 
-  describe('restoreFromCheckpoint 补偿集成', () => {
-    it('恢复时无补偿需求应正常完成', async () => {
+  describe('restoreFromCheckpoint 非幂等工具日志（P1-1 降级后仅日志）', () => {
+    it('恢复时无非幂等工具应正常完成', async () => {
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
         status: 'paused',
@@ -947,7 +736,8 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       expect(loop.restoreHistory).toHaveBeenCalled();
     });
 
-    it('恢复时含非幂等工具应注入补偿通知', async () => {
+    it('恢复时含非幂等工具应记录日志（不再注入系统消息）', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
         status: 'paused',
@@ -967,62 +757,23 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
             resultSummary: 'ok',
             ok: true,
             idempotent: 'non-idempotent',
-            sideEffects: [
-              { type: 'file_write', target: 'a.ts', description: '写入文件' },
-            ],
           },
         ],
         lastHeartbeat: Date.now(),
         schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
-      expect(loop.injectSystemMessage).toHaveBeenCalled();
-      const injectCall = (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
-      expect(injectCall).toContain('P3.4补偿通知');
-      expect(injectCall).toContain('file_write');
-    });
-
-    it('T0-3：补偿标记随检查点序列化，模拟进程重启后不重复注入补偿通知', async () => {
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        status: 'paused',
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        completedToolCalls: [
-          {
-            name: 'write_file',
-            argsSignature: '{"path":"a.ts","content":"hello"}',
-            executedAt: Date.now(),
-            resultSummary: 'ok',
-            ok: true,
-            idempotent: 'non-idempotent',
-            sideEffects: [
-              { type: 'file_write', target: 'a.ts', description: '写入文件' },
-            ],
-          },
-        ],
-        lastHeartbeat: Date.now(),
-        schemaVersion: 1,
-      };
-
-      await manager.restoreFromCheckpoint(cp);
-      expect(loop.injectSystemMessage).toHaveBeenCalledTimes(1);
-
-      // 落盘 → 进程重启 → 反序列化。JSON 往返切断对象引用，
-      // 只有真正被写进检查点的字段能存活——若补偿标记只活在内存，此处必然重复补偿。
-      const persisted = JSON.parse(JSON.stringify(cp)) as SessionCheckpoint;
-      (loop.injectSystemMessage as ReturnType<typeof vi.fn>).mockClear();
-
-      await manager.restoreFromCheckpoint(persisted);
+      // 降级后不再注入系统消息，仅通过 logger.warn 记录
       expect(loop.injectSystemMessage).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ nonIdempotentCount: 1 }),
+        expect.stringContaining('非幂等工具'),
+      );
+      warnSpy.mockRestore();
     });
+  });
 
+  describe('restoreFromCheckpoint 恢复行为', () => {
     it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
       // 先让状态机残留 paused（模拟跨会话恢复时的残留状态）
       manager.pause('测试暂停', 'user');
@@ -2082,15 +1833,15 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 E：补偿机制——非幂等工具恢复时补偿
+   * 场景 E：补偿机制——非幂等工具恢复时日志（P1-1 降级后仅日志）
    *
-   * 验证完整闭环：
-   *   1. 记录非幂等工具执行（含副作用）
-   *   2. 通过 restoreFromCheckpoint 恢复检查点
-   *   3. 验证补偿通知被注入到上下文
-   *   4. 验证补偿操作已执行
+   * 验证降级后行为：
+   *   1. 记录非幂等工具执行
+   *   2. 通过 compensateAllNonIdempotent 生成日志描述
+   *   3. 验证日志描述包含工具名称
+   *   4. 不再检查 compensatedAt 标记
    */
-  it('场景 E：补偿机制——非幂等工具恢复时补偿', { timeout: 30000 }, async () => {
+  it('场景 E：补偿机制——非幂等工具恢复时日志（P1-1 降级）', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -2105,7 +1856,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 创建检查点
     agent.createCheckpoint('测试补偿机制');
 
-    // 记录非幂等工具执行（含副作用）
+    // 记录非幂等工具执行
     agent.sessionManager!.logToolExecution({
       name: 'write_file',
       argsSignature: '{"path":"test.ts","content":"hello"}',
@@ -2113,25 +1864,13 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       resultSummary: '写入成功',
       ok: true,
       idempotent: 'non-idempotent',
-      sideEffects: [
-        { type: 'file_write', target: 'test.ts', description: '写入 test.ts 文件' },
-      ],
     });
 
-    // 验证非幂等工具执行记录
-    const nonIdempotent = agent.sessionManager!.getNonIdempotentExecutions();
-    expect(nonIdempotent).toHaveLength(1);
-    expect(nonIdempotent[0]!.name).toBe('write_file');
-
-    // 执行补偿
+    // 执行补偿（降级后仅日志）
     const compensationResults = agent.sessionManager!.compensateAllNonIdempotent();
     expect(compensationResults).toHaveLength(1);
-    expect(compensationResults[0]).toContain('file_write');
-    expect(compensationResults[0]).toContain('test.ts');
-
-    // 验证原始记录被打上补偿完成标记（而非篡改 ok）
-    expect(typeof nonIdempotent[0]!.compensatedAt).toBe('number');
-    expect(nonIdempotent[0]!.ok).toBe(true);
+    expect(compensationResults[0]).toContain('write_file');
+    expect(compensationResults[0]).toContain('需人工确认');
   });
 });
 

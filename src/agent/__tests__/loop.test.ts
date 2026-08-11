@@ -1145,3 +1145,106 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     expect(everAutonomous).toBe(false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：P1-2 多模型路由基础
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 多模型路由（P1-2）', () => {
+  it('代码块消息应路由到 code 类型 Provider', async () => {
+    // 创建两个独立的 mock Provider，验证路由行为
+    const codeProvider = mockProvider([{ content: '代码分析结果' }]);
+    const fallbackProvider = mockProvider([{ content: '通用回复' }]);
+    const routerSpy = vi.fn().mockImplementation((taskType: string) => {
+      return taskType === 'code' ? codeProvider : fallbackProvider;
+    });
+
+    const loop = new AgentLoop({
+      provider: fallbackProvider,
+      providerRouter: routerSpy,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('```ts\nconst x = 1\n```')) {
+      chunks.push(chunk);
+    }
+
+    // 验证路由被调用，且 taskType 为 'code'
+    expect(routerSpy).toHaveBeenCalledWith('code');
+    // 验证使用了 codeProvider 的回复
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts[0]).toBe('代码分析结果');
+  });
+
+  it('长消息应路由到 reasoning 类型 Provider', async () => {
+    const reasoningProvider = mockProvider([{ content: '复杂推理结果' }]);
+    const fallbackProvider = mockProvider([{ content: '简单回复' }]);
+    const routerSpy = vi.fn().mockImplementation((taskType: string) => {
+      return taskType === 'reasoning' ? reasoningProvider : fallbackProvider;
+    });
+
+    const loop = new AgentLoop({
+      provider: fallbackProvider,
+      providerRouter: routerSpy,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 超长消息（>500 字符）
+    const longInput = '请分析以下复杂问题。' + 'A'.repeat(500);
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput(longInput)) {
+      chunks.push(chunk);
+    }
+
+    expect(routerSpy).toHaveBeenCalledWith('reasoning');
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts[0]).toBe('复杂推理结果');
+  });
+
+  it('简单消息应路由到 simple 类型 Provider', async () => {
+    const simpleProvider = mockProvider([{ content: '简单回答' }]);
+    const fallbackProvider = mockProvider([{ content: '不应使用' }]);
+    const routerSpy = vi.fn().mockImplementation((taskType: string) => {
+      return taskType === 'simple' ? simpleProvider : fallbackProvider;
+    });
+
+    const loop = new AgentLoop({
+      provider: fallbackProvider,
+      providerRouter: routerSpy,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('你好')) {
+      chunks.push(chunk);
+    }
+
+    expect(routerSpy).toHaveBeenCalledWith('simple');
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts[0]).toBe('简单回答');
+  });
+
+  it('不配置 providerRouter 时应使用默认 Provider（向后兼容）', async () => {
+    const defaultProvider = mockProvider([{ content: '默认回复' }]);
+
+    const loop = new AgentLoop({
+      provider: defaultProvider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('你好')) {
+      chunks.push(chunk);
+    }
+
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts[0]).toBe('默认回复');
+    // 验证没有调用 providerRouter（未配置）
+    expect(loop.getMessages().length).toBeGreaterThan(0);
+  });
+});

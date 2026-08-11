@@ -31,7 +31,6 @@ import type {
   ResourceState,
   PlanStep,
   ToolExecutionRecord,
-  SideEffect,
   RoundOutcome,
   PauseMeta,
 } from '@/agent/types.js';
@@ -479,8 +478,9 @@ export class SessionManager {
     // pause 时被静默丢弃。历史上 roundLog / completedToolCalls / pauseMeta
     // 三个侧车字段正是因此在每次暂停时归零，导致：
     //   1. hasToolExecuted() 恒 false → 非幂等工具在恢复后重复执行
-    //   2. compensateAllNonIdempotent() 过滤空数组 → 补偿机制空转
+    //   2. completedToolCalls 丢失 → 恢复时无法检测已执行工具
     //   3. 宿主任务表回合历史归零
+    // P1-1（2026-08-11）补偿管线已降级，compensateAllNonIdempotent 降为纯日志。
     // 新增检查点字段时无需修改此处，合并语义会自动保留。
     this.checkpoint = {
       ...(prev ?? {}),
@@ -968,25 +968,21 @@ export class SessionManager {
       }
     }
 
-    // P3.4：恢复时补偿——对非幂等工具执行补偿操作
-    // 在恢复热窗口和契约后，检查检查点中是否有非幂等工具执行记录
-    // 若有，执行补偿并记录结果
-    const compensationResults = this.compensateAllNonIdempotent();
-    if (compensationResults.length > 0) {
+    // P1-1：恢复时补偿降级（2026-08-11）
+    // 补偿管线已降级为纯日志记录，不再逐副作用执行补偿操作。
+    // 仅记录非幂等工具执行事实，供宿主或人工排查。
+    const nonIdempotentCount = this.checkpoint.completedToolCalls?.filter(
+      (r) => r.idempotent === 'non-idempotent',
+    ).length ?? 0;
+    if (nonIdempotentCount > 0) {
       logger.warn(
-        { sessionId: checkpoint.sessionId, compensationCount: compensationResults.length, compensations: compensationResults },
-        '恢复时发现非幂等工具执行，已执行补偿操作',
-      );
-
-      // 注入补偿结果到上下文，让 LLM 感知到补偿操作
-      const compensationSummary = compensationResults.join('\n');
-      this.getLoop().injectSystemMessage(
-        `[P3.4补偿通知] 本次恢复的会话包含 ${compensationResults.length} 个非幂等工具调用，已执行补偿操作。补偿详情：\n${compensationSummary}\n\n请根据补偿结果调整后续操作。`,
+        { sessionId: checkpoint.sessionId, nonIdempotentCount },
+        `恢复时发现 ${nonIdempotentCount} 个非幂等工具执行（补偿管线已降级，跳过自动补偿）`,
       );
     }
 
     logger.info(
-      { sessionId: checkpoint.sessionId, messageCount: messages.length, truncatedCount: checkpoint.truncatedCount ?? 0, compensationCount: compensationResults.length },
+      { sessionId: checkpoint.sessionId, messageCount: messages.length, truncatedCount: checkpoint.truncatedCount ?? 0 },
       '从检查点恢复会话',
     );
 
@@ -1506,8 +1502,9 @@ export class SessionManager {
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();
     // 必须落盘：本方法由 loop.onPaused 在 pause() 之前触发（原注释称「之后」与真实时序相反，
-    // 见 loop.ts:544-549 onPaused 早于 yield paused chunk，而翻状态机在 consumeExecutionStream:1117），
-    // 是 pauseMeta 进入检查点的唯一时机。若不落盘，磁盘快照将永远缺少暂停元数据，
+    // 见 AgentLoop.handleIteration 的 pauseRequested 分支（onPaused 早于 yield paused chunk），
+    // 而翻状态机在 consumeExecutionStream:1117），是 pauseMeta 进入检查点的唯一时机。
+    // 若不落盘，磁盘快照将永远缺少暂停元数据，
     // 宿主重启后只能回落到兜底文案「已暂停（重启恢复）」。
     // P1-1: 传 undefined 时同样需要落盘，否则清除 pauseMeta 后
     // 磁盘检查点的 pauseMeta 字段残留，与内存态分叉。
@@ -1555,22 +1552,20 @@ export class SessionManager {
   }
 
   // ── P3.3：工具执行日志（outbox 模式） ──────────────────
-  // ── P3.4：副作用日志 + 补偿机制 ─────────────────────────
+  // ── P1-1：补偿管线已降级（2026-08-11），以下仅保留日志 ──
 
   /**
    * 记录工具执行
    *
    * 将已执行的工具调用追加到检查点日志，用于恢复时 outbox 模式检查。
    * 日志为 append-only，不修改已有记录。
-   * 扩展（P3.4）：支持记录幂等性级别和副作用，供补偿机制使用。
    *
    * 落盘策略（P3-1 批处理优化）：
    * 只标记脏标记，不再即时落盘。`completeRound()` 在回合边界统一 flush，
    * `createCheckpoint()` 在暂停/异常时强制落盘——两者构成了完整的持久化保障。
    * 回合中途崩溃的最坏情况是最近一次工具执行记录丢失，outbox 模式会将其视为
-   * 「未执行」并在恢复后重新执行——对于幂等工具这是安全的，对于非幂等工具
-   * 补偿机制（P3.4）会在恢复时触发补偿操作。此权衡将 IO 次数从「每工具调用」
-   * 降为「每回合」，大幅减少写盘频率。
+   * 「未执行」并在恢复后重新执行——对于幂等工具这是安全的。
+   * 此权衡将 IO 次数从「每工具调用」降为「每回合」，大幅减少写盘频率。
    *
    * @param record - 工具执行记录
    */
@@ -1580,12 +1575,12 @@ export class SessionManager {
       this.checkpoint.completedToolCalls = [];
     }
     this.checkpoint.completedToolCalls.push(record);
-    // FIFO 封顶——优先丢弃幂等或已补偿的最早记录，非幂等未补偿永不丢弃
+    // FIFO 封顶——优先丢弃幂等工具的最早记录，非幂等永不丢弃（P1-1 补偿降级后不再检查 compensatedAt）
     // 注意：r.idempotent 是 IdempotencyLevel 字符串（'idempotent'/'idempotent-key'/'non-idempotent'），
     // 不能直接用 truthy 判断（'non-idempotent' 也是 truthy），必须显式排除 'non-idempotent'
     if (this.checkpoint.completedToolCalls.length > AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX) {
       const discardable = this.checkpoint.completedToolCalls.findIndex(
-        (r) => r.idempotent !== 'non-idempotent' || typeof r.compensatedAt === 'number',
+        (r) => r.idempotent !== 'non-idempotent',
       );
       if (discardable >= 0) {
         this.checkpoint.completedToolCalls.splice(discardable, 1);
@@ -1593,50 +1588,6 @@ export class SessionManager {
     }
     this.touchCheckpoint();
     // P3-1：不再即时落盘，依赖 completeRound / createCheckpoint 在回合边界统一 flush
-  }
-
-  /**
-   * 记录工具副作用（P3.4 补偿机制·副作用日志）
-   *
-   * 将副作用追加到指定工具执行记录中。
-   * 副作用一旦记录不可修改（append-only），确保补偿时能看到完整的历史副作用。
-   *
-   * 落盘策略（P3-1 批处理优化）：
-   * 与 logToolExecution 对齐，只标记脏标记，依赖 completeRound 在回合边界统一 flush。
-   * 副作用记录在工具执行记录之后，工具执行记录已不再即时落盘，副作用单独落盘
-   * 无意义——两者必须在同一检查点快照中保持一致。
-   *
-   * @param name - 工具名称
-   * @param argsSignature - 参数签名（与 logToolExecution 的记录匹配）
-   * @param sideEffect - 副作用描述
-   */
-  recordSideEffect(name: string, argsSignature: string, sideEffect: SideEffect): void {
-    if (!this.checkpoint?.completedToolCalls) return;
-    const record = this.checkpoint.completedToolCalls.find(
-      (r) => r.name === name && r.argsSignature === argsSignature,
-    );
-    if (!record) return;
-    if (!record.sideEffects) {
-      record.sideEffects = [];
-    }
-    record.sideEffects.push(sideEffect);
-    this.touchCheckpoint();
-    // P3-1：与 logToolExecution 对齐，不再即时落盘
-  }
-
-  /**
-   * 获取指定工具的副作用列表（P3.4 补偿机制）
-   *
-   * @param name - 工具名称
-   * @param argsSignature - 参数签名
-   * @returns 副作用列表，不存在时返回空数组
-   */
-  getSideEffectsForTool(name: string, argsSignature: string): SideEffect[] {
-    if (!this.checkpoint?.completedToolCalls) return [];
-    const record = this.checkpoint.completedToolCalls.find(
-      (r) => r.name === name && r.argsSignature === argsSignature,
-    );
-    return record?.sideEffects ?? [];
   }
 
   /**
@@ -1657,127 +1608,33 @@ export class SessionManager {
   }
 
   /**
-   * 获取检查点中所有非幂等工具的执行记录列表（P3.4 补偿机制）
+   * 记录非幂等工具执行（P1-1 补偿降级后仅日志）
    *
-   * **纯查询**：按幂等性级别筛选，**含已补偿记录**（`compensatedAt` 有值的也返回）。
-   * 之所以不在此处过滤已补偿项，是为了让方法名与行为一致——
-   * 「待补偿」是补偿流程的判据，不是「非幂等」这一事实的一部分。
-   * 需要「还需补偿哪些」请走 {@link compensateAllNonIdempotent}。
+   * 补偿管线已降级：不再逐副作用遍历执行补偿操作。
+   * 仅通过日志记录"非幂等工具执行"事实，供宿主或人工排查使用。
    *
-   * @returns 非幂等工具执行记录列表
-   */
-  getNonIdempotentExecutions(): ToolExecutionRecord[] {
-    if (!this.checkpoint?.completedToolCalls) return [];
-    return this.checkpoint.completedToolCalls.filter(
-      (r) => r.idempotent === 'non-idempotent',
-    );
-  }
-
-  /**
-   * 补偿单个工具执行（P3.4 补偿机制·恢复时补偿动作）
-   *
-   * 对非幂等工具的副作用执行补偿操作。
-   * 补偿逻辑：
-   *   - file_write（写入文件）：无法自动回滚，记录警告日志
-   *   - file_create（创建文件）：记录警告日志
-   *   - memory_write（写入记忆）：记录警告日志
-   *   - custom（自定义）：仅记录日志，由宿主自行处理
-   *
-   * 当前实现：**日志告警 + 记录补偿标记**，不自动执行回滚操作。
-   * 理由：自动回滚可能引入新的副作用（如回滚文件时覆盖其他修改），
-   * 需要宿主根据业务场景决定是否执行补偿。
-   *
-   * 补偿完成后写 `record.compensatedAt` 并标脏检查点，使标记随检查点落盘。
-   * 本方法是**执行者不是决策者**：无条件补偿并打标，不检查是否已补偿——
-   * 直接调用即表示「我明确要补偿这一条」。跳过已补偿记录的判据收口在
-   * {@link compensateAllNonIdempotent}，避免两处各自持有一份「是否该补偿」的判断。
-   *
-   * @param record - 要补偿的工具执行记录
-   * @returns 补偿操作描述（供宿主展示）
+   * @param record - 工具执行记录
+   * @returns 日志描述信息
    */
   compensateTool(record: ToolExecutionRecord): string {
-    if (!this.checkpoint) return '补偿失败：无检查点';
-
-    const sideEffects = record.sideEffects ?? [];
-    const compensations: string[] = [];
-
-    for (const se of sideEffects) {
-      switch (se.type) {
-        case 'file_write':
-        case 'file_create':
-          compensations.push(
-            `${se.type}(${se.target})：无法自动回滚，请手动检查文件内容`,
-          );
-          break;
-        case 'file_delete':
-          compensations.push(
-            `file_delete(${se.target})：无法自动恢复，请手动检查文件系统`,
-          );
-          break;
-        case 'memory_write':
-          compensations.push(
-            `memory_write(${se.target})：无法自动回滚记忆写入`,
-          );
-          break;
-        case 'custom':
-          compensations.push(
-            `custom(${se.target})：${se.description}`,
-          );
-          break;
-      }
-    }
-
-    // 如果工具没有副作用记录，标记为"需人工确认"
-    if (compensations.length === 0) {
-      compensations.push(
-        `${record.name}(${record.argsSignature.slice(0, 50)})：无副作用记录，需人工确认是否需要补偿`,
-      );
-    }
-
-    // 记录补偿标记到日志
-    logger.warn(
-      {
-        tool: record.name,
-        argsSignature: record.argsSignature.slice(0, 80),
-        compensations,
-      },
-      '工具补偿已记录（需人工确认）',
-    );
-
-    // 打补偿完成标记并标脏，使标记随检查点落盘（重启后不再重复补偿）。
-    // 原实现写 `record.ok = false` 表达「已补偿」——那是语义劫持：ok 的真理源是
-    // 「执行是否成功」，且无任何生产代码读它，注释承诺的「避免重复补偿」从未兑现。
-    record.compensatedAt = Date.now();
-    this.touchCheckpoint();
-
-    return compensations.join('; ');
+    const msg = `${record.name}(${record.argsSignature.slice(0, 50)})：非幂等工具，需人工确认是否需要补偿`;
+    logger.warn({ tool: record.name, argsSignature: record.argsSignature.slice(0, 80) }, msg);
+    return msg;
   }
 
   /**
-   * 补偿所有**尚未补偿过**的非幂等工具执行（P3.4 补偿机制）
+   * 记录所有非幂等工具执行（P1-1 补偿降级后仅日志）
    *
-   * 在恢复会话时调用，确保非幂等操作的副作用被正确处理。
-   * 已带 `compensatedAt` 的记录被跳过——补偿是一次性动作，
-   * 重复执行会向 LLM 重复注入同一条补偿通知（见 restoreFromCheckpoint），
-   * 使反复崩溃恢复的会话误以为发生了多次补偿。
+   * 不再检查 compensatedAt——直接记录所有非幂等工具的执行。
+   * 每条记录生成一条日志。
    *
-   * 类型级判断（`typeof === 'number'`）而非真值判断：存储截断可能把该字段
-   * 降级成字符串等非法值，真值判断会把它当作「已补偿」而静默漏补。
-   *
-   * @returns 本次实际执行的补偿操作描述列表（全部已补偿时为空数组）
+   * @returns 日志描述信息列表
    */
   compensateAllNonIdempotent(): string[] {
-    const pending = this.getNonIdempotentExecutions().filter(
-      (r) => typeof r.compensatedAt !== 'number',
-    );
-    if (pending.length === 0) return [];
-
-    const results: string[] = [];
-    for (const record of pending) {
-      const result = this.compensateTool(record);
-      results.push(result);
-    }
-    return results;
+    if (!this.checkpoint?.completedToolCalls) return [];
+    return this.checkpoint.completedToolCalls
+      .filter((r) => r.idempotent === 'non-idempotent')
+      .map((r) => this.compensateTool(r));
   }
 
   /**

@@ -16,6 +16,7 @@
  */
 
 import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { ProviderRouter } from '@/llm/types.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
@@ -27,6 +28,13 @@ interface ContextManagerOptions {
   readonly maxContextTokens: number;
   /** LLM Provider（用于生成上下文摘要） */
   readonly provider: LlmProvider;
+  /**
+   * Provider 路由选择器（P1-2 多模型路由基础，可选）
+   *
+   * 有配置时，摘要生成走 'summary' 路由，使用轻量模型。
+   * 不配置时回退到主 Provider（完全向后兼容）。
+   */
+  readonly providerRouter?: ProviderRouter;
   /** 截断时生成占位消息的文案函数（来自 UIMessages.contextTruncated） */
   readonly contextTruncatedFn: (skipped: number, kept: number) => string;
   /**
@@ -101,6 +109,13 @@ export class ContextManager {
   private readonly maxContextTokens: number;
   /** LLM Provider（用于 generateContextSummary） */
   private readonly provider: LlmProvider;
+  /**
+   * Provider 路由选择器（P1-2 多模型路由基础，可选）
+   *
+   * 有配置时，摘要生成走 'summary' 路由，使用轻量模型。
+   * 不配置时回退到主 Provider（完全向后兼容）。
+   */
+  private readonly providerRouter: ProviderRouter | undefined;
   /** 截断占位消息文案函数 */
   private readonly contextTruncatedFn: (skipped: number, kept: number) => string;
   /** 可观测性 Tracer（用于 generateContextSummary span 埋点，默认 NOOP） */
@@ -118,6 +133,7 @@ export class ContextManager {
   constructor(opts: ContextManagerOptions) {
     this.maxContextTokens = opts.maxContextTokens;
     this.provider = opts.provider;
+    this.providerRouter = opts.providerRouter;
     this.contextTruncatedFn = opts.contextTruncatedFn;
     this.onContextTruncated = opts.onContextTruncated;
     // 未注入 tracer 时降级为 NOOP_TRACER（零开销）
@@ -442,8 +458,13 @@ export class ContextManager {
         return '';
       }
 
+      // 选择摘要 Provider（P1-2 多模型路由：有 providerRouter 时走 'summary' 路由）
+      const summaryProvider = this.providerRouter
+        ? this.providerRouter('summary')
+        : this.provider;
+
       // 将 signal 注入 ChatOptions，让 provider 的 fetch/SSE 能被 abort 中断
-      const stream = this.provider.chat(
+      const stream = summaryProvider.chat(
         [
           {
             role: 'system',

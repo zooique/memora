@@ -11,6 +11,7 @@
  * 多 Provider 管理（v1.2）：
  *   - providers：命名 Provider 映射表，key 为别名（如 "deepseek"、"openai"）
  *   - active：当前激活的 Provider 别名
+ *   - taskRouter：任务类型到 Provider 别名的路由映射（P1-2 多模型路由基础）
  *   - 不配置 providers 时，回退到旧的单 provider 扁平字段（向后兼容）
  */
 import { readFile } from 'node:fs/promises';
@@ -112,6 +113,26 @@ interface LlmConfig {
    * 详见接入指南 §九
    */
   background?: BackgroundConfig;
+  /**
+   * 任务类型到 Provider 的路由映射（P1-2 多模型路由基础）
+   *
+   * 示例：
+   * ```yaml
+   * llm:
+   *   providers:
+   *     fast: { provider: 'openai', model: 'gpt-4o-mini', baseUrl: '...', apiKey: '...' }
+   *     smart: { provider: 'openai', model: 'gpt-4o', baseUrl: '...', apiKey: '...' }
+   *   taskRouter:
+   *     simple: fast
+   *     reasoning: smart
+   *     code: smart
+   *     summary: fast
+   * ```
+   *
+   * key 为任务类型，value 为 providers 映射表中的别名。
+   * 不配置时所有任务使用 active Provider（完全向后兼容）。
+   */
+  taskRouter?: Partial<Record<'simple' | 'reasoning' | 'code' | 'summary', string>>;
 }
 
 /** 内存配置接口 */
@@ -210,6 +231,7 @@ export function parseConfig(raw: unknown): Config {
     providers: parseProviders(llmInput.providers),
     active: typeof llmInput.active === 'string' ? llmInput.active : undefined,
     background: parseBackground(llmInput.background),
+    taskRouter: parseTaskRouter(llmInput.taskRouter),
   };
 
   // 解析 memory 配置
@@ -421,6 +443,32 @@ function parseBackground(value: unknown): BackgroundConfig | undefined {
     apiKey: typeof bg.apiKey === 'string' ? bg.apiKey : undefined,
     temperature: bg.temperature !== undefined ? validateTemperature(bg.temperature, 0.5) : 0.5,
   };
+}
+
+/**
+ * 解析 taskRouter 配置（P1-2 多模型路由基础）
+ *
+ * 验证任务类型映射表中的 key 和 value 均为字符串。
+ * 不配置时返回 undefined（向后兼容，所有任务使用 active Provider）。
+ *
+ * @param value 待解析的值
+ * @returns 有效的 taskRouter 映射或 undefined
+ */
+function parseTaskRouter(value: unknown): Partial<Record<string, string>> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const router: Record<string, string> = {};
+  for (const [taskType, providerName] of Object.entries(value as Record<string, unknown>)) {
+    // 验证任务类型（key）为字符串且非空
+    if (typeof taskType !== 'string' || !taskType) continue;
+    // 验证 provider 别名（value）为字符串且非空
+    if (typeof providerName !== 'string' || !providerName) continue;
+    router[taskType] = providerName;
+  }
+
+  return Object.keys(router).length > 0 ? router : undefined;
 }
 
 /**

@@ -237,9 +237,38 @@ describe('findPreviousUserMessage · 向前查找', () => {
     expect(result!.classList.contains('user')).toBe(true);
   });
 
-  // TODO: 此测试场景不成立——assistant 消息所在 group 内已有 user 消息时，
-  // findPreviousUserMessage 应返回同组内的 user 消息（正确行为），而非跨组查找。
-  // 待重新设计后补充。
+  it('跨组查找：本组无 user 时应向前跨组查找最近的 user 消息', () => {
+    const { manager } = createManager();
+    // 构造两个分离的 group：Group A 有 user，Group B 只有 assistant
+    const groupA = document.createElement('div');
+    groupA.className = 'message-group';
+    const userA = document.createElement('div');
+    userA.className = 'message user';
+    const userBubble = document.createElement('div');
+    userBubble.className = 'message-bubble';
+    userBubble.textContent = '用户问题';
+    userA.appendChild(userBubble);
+    groupA.appendChild(userA);
+    document.body.appendChild(groupA);
+
+    const groupB = document.createElement('div');
+    groupB.className = 'message-group';
+    const assistantB = document.createElement('div');
+    assistantB.className = 'message assistant';
+    const assistantBubble = document.createElement('div');
+    assistantBubble.className = 'message-bubble';
+    assistantBubble.textContent = '助手回复';
+    assistantB.appendChild(assistantBubble);
+    groupB.appendChild(assistantB);
+    document.body.appendChild(groupB);
+
+    // 从 Group B 的 assistant 向前查找，应找到 Group A 的 user
+    const result = (manager as unknown as {
+      findPreviousUserMessage(el: HTMLElement): HTMLElement | null;
+    }).findPreviousUserMessage(assistantB);
+    expect(result).not.toBeNull();
+    expect(result).toBe(userA);
+  });
 
   it('无匹配时应返回 null', () => {
     const { manager } = createManager();

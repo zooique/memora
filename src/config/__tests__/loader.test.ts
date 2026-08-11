@@ -234,6 +234,85 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
     });
   });
 
+  describe('taskRouter 多模型路由（P1-2）', () => {
+    it('配置 taskRouter 时应正确解析', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            fast: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-fast' },
+            smart: { provider: 'deepseek', model: 'deepseek-reasoner', apiKey: 'sk-smart' },
+          },
+          active: 'fast',
+          taskRouter: {
+            simple: 'fast',
+            reasoning: 'smart',
+            code: 'smart',
+            summary: 'fast',
+          },
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.taskRouter).toBeDefined();
+      expect(config.llm.taskRouter!.simple).toBe('fast');
+      expect(config.llm.taskRouter!.reasoning).toBe('smart');
+      expect(config.llm.taskRouter!.code).toBe('smart');
+      expect(config.llm.taskRouter!.summary).toBe('fast');
+    });
+
+    it('不配置 taskRouter 时应为 undefined（向后兼容）', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          apiKey: 'sk-test',
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.taskRouter).toBeUndefined();
+    });
+
+    it('taskRouter 为无效类型时应为 undefined', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: { fast: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-fast' } },
+          active: 'fast',
+          taskRouter: 'invalid', // 字符串类型，非对象
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.taskRouter).toBeUndefined();
+    });
+
+    it('taskRouter 中有无效项时应跳过', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: { fast: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-fast' } },
+          active: 'fast',
+          taskRouter: {
+            simple: 'fast',
+            reasoning: '', // 空字符串，应跳过
+            code: 123,     // 非字符串，应跳过
+          },
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.taskRouter).toBeDefined();
+      // simple 应保留（有效）
+      expect(config.llm.taskRouter!.simple).toBe('fast');
+      // reasoning 和 code 应被跳过
+      expect(config.llm.taskRouter!.reasoning).toBeUndefined();
+      expect(config.llm.taskRouter!.code).toBeUndefined();
+    });
+  });
+
   describe('background 后台通道配置', () => {
     it('配置 background 时应正确解析', async () => {
       const configPath = writeConfigFile({
