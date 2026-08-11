@@ -8,7 +8,14 @@
  *   - 工具名唯一性
  */
 import { describe, it, expect } from 'vitest';
-import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
+import {
+  BUILTIN_TOOLS,
+  BUILTIN_TOOL_IDEMPOTENCY,
+  shouldSkipForIdempotency,
+  WEB_SEARCH_TOOL,
+  type ToolDefinition,
+} from '@/agent/builtinTools.js';
+import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
@@ -164,5 +171,67 @@ describe('builtinTools · WEB_SEARCH_TOOL', () => {
       },
     };
     expect(isValid.name).toBe(WEB_SEARCH_TOOL.name);
+  });
+});
+
+describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY（J1 修复后契约）', () => {
+  it('task_table_write 应如实标记为 non-idempotent（追加语义，重复执行不幂等）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
+  });
+
+  it('task_table_update 应保持 idempotent（全量替换，真幂等）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_update).toBe('idempotent');
+  });
+});
+
+describe('builtinTools · shouldSkipForIdempotency（仅一次语义 SSOT，J1 修复）', () => {
+  const rec = (
+    name: string,
+    args: string,
+    ok: boolean,
+    idempotent: IdempotencyLevel,
+    resultSummary = 'ok',
+  ): ToolExecutionRecord => ({
+    name,
+    argsSignature: args,
+    executedAt: 0,
+    resultSummary,
+    ok,
+    idempotent,
+  });
+
+  it('non-idempotent 工具永不跳过（失败可原样重试）', () => {
+    const records = [rec('task_table_write', '{"x":1}', false, 'non-idempotent')];
+    expect(shouldSkipForIdempotency(records, 'task_table_write', '{"x":1}', 'non-idempotent')).toEqual({
+      skip: false,
+    });
+  });
+
+  it('幂等工具无历史记录时不跳过', () => {
+    expect(shouldSkipForIdempotency([], 'read_file', '{"path":"a.ts"}', 'idempotent')).toEqual({ skip: false });
+    expect(shouldSkipForIdempotency(undefined, 'read_file', '{"path":"a.ts"}', 'idempotent')).toEqual({
+      skip: false,
+    });
+  });
+
+  it('幂等工具上次执行成功（ok=true）时跳过并返回上次结果', () => {
+    const records = [rec('read_file', '{"path":"a.ts"}', true, 'idempotent', '文件内容')];
+    const result = shouldSkipForIdempotency(records, 'read_file', '{"path":"a.ts"}', 'idempotent');
+    expect(result.skip).toBe(true);
+    expect(result.previousResult).toContain('文件内容');
+  });
+
+  it('幂等工具上次执行失败（ok=false）时不跳过——失败可重试（J1 回归防线）', () => {
+    const records = [rec('write_file', '{"path":"a.ts"}', false, 'idempotent-key')];
+    expect(shouldSkipForIdempotency(records, 'write_file', '{"path":"a.ts"}', 'idempotent-key')).toEqual({
+      skip: false,
+    });
+  });
+
+  it('幂等工具成功但无 resultSummary 时跳过且 previousResult 为空', () => {
+    const records = [rec('read_file', '{"path":"a.ts"}', true, 'idempotent', '')];
+    const result = shouldSkipForIdempotency(records, 'read_file', '{"path":"a.ts"}', 'idempotent');
+    expect(result.skip).toBe(true);
+    expect(result.previousResult).toBeUndefined();
   });
 });
