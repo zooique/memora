@@ -28,7 +28,7 @@ import type { AgentLoop } from '@/agent/loop.js';
 import { COMPLETION_LEVELS } from '@/agent/types.js';
 import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard, IdempotencyLevel } from '@/agent/types.js';
 import type { SessionEvent, SessionCheckpoint, ResolvedDelta, ToolExecutionRecord } from '@/agent/types.js';
-import { BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
+import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
 import { Composer } from '@/agent/composer.js';
 import type { PlanContext } from '@/agent/types.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
@@ -1877,19 +1877,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         preExecutionCheck: (name, args) => {
           const sm = this._sessionManager;
           if (!sm) return { skip: false };
-          const hasExecuted = sm.hasToolExecuted(name, args);
-          if (!hasExecuted) return { skip: false };
-          // 获取上次执行结果
-          const cp = sm.getCheckpoint();
-          const prevRecord = cp?.completedToolCalls?.find(
-            (r) => r.name === name && r.argsSignature === args,
+          // 幂等契约判断委托 shouldSkipForIdempotency（builtinTools.ts SSOT）：
+          // - non-idempotent 不跳过（失败可重试，恢复由补偿机制兜底）
+          // - 幂等工具仅上次执行成功（ok === true）时跳过（J1 修复，与注释对齐）
+          const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
+          return shouldSkipForIdempotency(
+            sm.getCheckpoint()?.completedToolCalls,
+            name,
+            args,
+            idempotent,
           );
-          return {
-            skip: true,
-            previousResult: prevRecord?.resultSummary
-              ? `[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过），上次结果：${prevRecord.resultSummary}`
-              : undefined,
-          };
         },
         fileConsistencyCheck: this.#config.fileConsistencyCheck,
       },

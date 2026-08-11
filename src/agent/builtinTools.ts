@@ -40,9 +40,11 @@ export interface ToolDefinition {
 // 注：write_file 的幂等性依赖于写入模式——overwrite 模式幂等，
 // append/insert 模式非幂等。当前统一标记为 'idempotent-key'，
 // 因 overwrite 是最常用模式，append/insert 的补偿应在调用方保证。
+// task_table_write 为追加语义（appendPlanStep），重复执行不幂等，
+// 如实标记为 'non-idempotent'（J1 修复：不再被仅一次语义拦截重复追加）。
 // ──────────────────────────────────────────────────────────
 
-import type { IdempotencyLevel } from '@/agent/types.js';
+import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 
 /**
  * 内置工具幂等性映射
@@ -56,9 +58,43 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   list_dir: 'idempotent',
   search_memories: 'idempotent',
   web_search: 'idempotent',
-  task_table_write: 'idempotent-key',
+  task_table_write: 'non-idempotent',
   task_table_update: 'idempotent',
 };
+
+/**
+ * 判断幂等工具是否应跳过执行（仅一次语义，P3.4）
+ *
+ * 规则：
+ * - non-idempotent 工具永不跳过——失败后允许 LLM 原样重试，恢复时由补偿机制兜底；
+ * - 幂等工具（idempotent / idempotent-key）仅当上次执行**成功**（ok === true）时跳过；
+ *   上次失败（ok === false）不拦截重试，否则失败操作会被静默吞掉。
+ *
+ * 此判断是幂等契约的 SSOT：agent.ts preExecutionCheck 委托本函数，
+ * 避免闭包内重复实现导致契约漂移（J1 修复，2026-08-11）。
+ *
+ * @param records 检查点中的工具执行记录（completedToolCalls）
+ * @param name 工具名
+ * @param args 参数签名
+ * @param idempotent 工具的幂等性级别
+ * @returns 是否跳过及上次结果摘要
+ */
+export function shouldSkipForIdempotency(
+  records: readonly ToolExecutionRecord[] | undefined,
+  name: string,
+  args: string,
+  idempotent: IdempotencyLevel,
+): { skip: boolean; previousResult?: string } {
+  if (idempotent === 'non-idempotent') return { skip: false };
+  const record = records?.find((r) => r.name === name && r.argsSignature === args);
+  if (!record || record.ok !== true) return { skip: false };
+  return {
+    skip: true,
+    previousResult: record.resultSummary
+      ? `[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过），上次结果：${record.resultSummary}`
+      : undefined,
+  };
+}
 
 /**
  * web_search 工具定义（独立导出，条件性包含）
