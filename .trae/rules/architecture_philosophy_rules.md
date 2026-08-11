@@ -2,14 +2,14 @@
 alwaysApply: false
 description:
   架构哲学原则（10
-  条：万物皆记忆 v2、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型）
+  条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型）
 ---
 
 # 架构哲学原则
 
-## 1. 万物皆记忆 v2（Everything is Memory）
+## 1. 万物皆记忆（Everything is Memory）
 
-**原则**：Agent 接触的一切内容都是"记忆"。v2 将记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
+**原则**：Agent 接触的一切内容都是"记忆"。记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
 
 ### 1.1 两层记忆模型
 
@@ -89,8 +89,6 @@ description:
 | `content`   | 按相关度增量召回（归档模式三态控制，ADR-015） | 会话归档的工作内容投影 |
 | `insight`   | 按相关度增量召回        | 对话提取的洞察、历史话题归档 |
 | `profile`   | 按相关度增量召回        | 用户画像（身份、偏好、专长） |
-
-> **v2 变更**：`persona` 和 `skill` 已从 SQLite 索引解耦，改为纯文件 + 内存缓存。`recall()` 默认 excludeSources 仍然包含三者作为防御，但 persona/skill 在索引中不再存在。`rule` 保留在 SQLite，供 bootstrap 路径读取。
 
 **记忆关系（侧车，ADR-014）**：MemoryRelation 不参与永久性分级，是独立的侧车数据。关系数据在 InsightExtractor 归档时构建，召回时通过 `getRelations(memoryId)` 按需查询，不进入 bootstrap 加载。
 

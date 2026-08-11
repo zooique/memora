@@ -15,14 +15,14 @@ import { describe, it, expect } from 'vitest';
 import {
   hybridMerge,
   RECALL_LIMIT_MULTIPLIER,
+  DEFAULT_VECTOR_SCORE_WEIGHT,
+  DEFAULT_MEMORY_SCORE_WEIGHT,
   type HybridMergeEntry,
 } from '@/memory/hybridMerge.js';
 import type { Memory } from '@/memory/types.js';
 
-// VECTOR_SCORE_WEIGHT / MEMORY_SCORE_WEIGHT 为模块内部常量（非公共 API），
-// 测试硬编码验证算法公式的正确性（而非常量值本身）
-const VECTOR_SCORE_WEIGHT = 0.6;
-const MEMORY_SCORE_WEIGHT = 0.4;
+// 算法公式使用 DEFAULT_VECTOR_SCORE_WEIGHT / DEFAULT_MEMORY_SCORE_WEIGHT 公共常量
+// 测试中硬编码值（0.6 / 0.4）验证算法正确性
 
 /** 构造测试记忆对象 */
 function makeMemory(id: string, score: number): Memory {
@@ -47,12 +47,12 @@ describe('hybridMerge · 常量导出', () => {
     expect(RECALL_LIMIT_MULTIPLIER).toBe(2);
   });
 
-  it('应导出 VECTOR_SCORE_WEIGHT = 0.6', () => {
-    expect(VECTOR_SCORE_WEIGHT).toBe(0.6);
+  it('应导出 DEFAULT_VECTOR_SCORE_WEIGHT = 0.6', () => {
+    expect(DEFAULT_VECTOR_SCORE_WEIGHT).toBe(0.6);
   });
 
-  it('应导出 MEMORY_SCORE_WEIGHT = 0.4', () => {
-    expect(MEMORY_SCORE_WEIGHT).toBe(0.4);
+  it('应导出 DEFAULT_MEMORY_SCORE_WEIGHT = 0.4', () => {
+    expect(DEFAULT_MEMORY_SCORE_WEIGHT).toBe(0.4);
   });
 });
 
@@ -136,5 +136,61 @@ describe('hybridMerge · 融合排序', () => {
     const entries = [makeEntry('m1', 0.9, 0.9), makeEntry('m2', 0.5, 0.5)];
     const result = hybridMerge(entries, 100);
     expect(result).toHaveLength(2);
+  });
+});
+
+describe('hybridMerge · 自定义权重', () => {
+  it('不传 weights 时使用默认权重（0.6 / 0.4）', () => {
+    // m1: 0.9*0.6 + 0.2*0.4 = 0.62
+    // m2: 0.5*0.6 + 0.8*0.4 = 0.62
+    const entries = [makeEntry('m1', 0.2, 0.9), makeEntry('m2', 0.8, 0.5)];
+    const result = hybridMerge(entries, 2);
+    // 默认权重下 m1 和 m2 同分，保留输入顺序
+    expect(result).toHaveLength(2);
+    expect(result[0]!.memory.id).toBe('m1');
+  });
+
+  it('提高 memoryScoreWeight 后记忆 score 更高的应排前面', () => {
+    // m1: vectorScore=0.9, score=0.2 → 默认权重 0.62
+    // m2: vectorScore=0.5, score=0.8 → 默认权重 0.62
+    // 使用 weights={ vectorScoreWeight: 0.3, memoryScoreWeight: 0.7 }
+    // m1: 0.9*0.3 + 0.2*0.7 = 0.27 + 0.14 = 0.41
+    // m2: 0.5*0.3 + 0.8*0.7 = 0.15 + 0.56 = 0.71
+    // m2 应排前面
+    const entries = [makeEntry('m1', 0.2, 0.9), makeEntry('m2', 0.8, 0.5)];
+    const result = hybridMerge(entries, 2, { vectorScoreWeight: 0.3, memoryScoreWeight: 0.7 });
+    expect(result[0]!.memory.id).toBe('m2');
+    expect(result[1]!.memory.id).toBe('m1');
+  });
+
+  it('提高 vectorScoreWeight 后语义相似度更高的应排前面', () => {
+    // m1: vectorScore=0.9, score=0.2
+    // m2: vectorScore=0.5, score=0.8
+    // 使用 weights={ vectorScoreWeight: 0.9, memoryScoreWeight: 0.1 }
+    // m1: 0.9*0.9 + 0.2*0.1 = 0.81 + 0.02 = 0.83
+    // m2: 0.5*0.9 + 0.8*0.1 = 0.45 + 0.08 = 0.53
+    // m1 应排前面
+    const entries = [makeEntry('m1', 0.2, 0.9), makeEntry('m2', 0.8, 0.5)];
+    const result = hybridMerge(entries, 2, { vectorScoreWeight: 0.9, memoryScoreWeight: 0.1 });
+    expect(result[0]!.memory.id).toBe('m1');
+    expect(result[1]!.memory.id).toBe('m2');
+  });
+
+  it('vectorScoreWeight=0 时仅按 memory.score 排序', () => {
+    // m1: vectorScore=0.9, score=0.2 → 综合 0*0.9 + 0.2*1.0 = 0.20
+    // m2: vectorScore=0.5, score=0.8 → 综合 0*0.5 + 0.8*1.0 = 0.80
+    const entries = [makeEntry('m1', 0.2, 0.9), makeEntry('m2', 0.8, 0.5)];
+    const result = hybridMerge(entries, 2, { vectorScoreWeight: 0, memoryScoreWeight: 1.0 });
+    expect(result[0]!.memory.id).toBe('m2');
+    expect(result[1]!.memory.id).toBe('m1');
+  });
+
+  it('memoryScoreWeight=0 时仅按 vectorScore 排序', () => {
+    // m1: vectorScore=0.9, score=0.2 → 综合 0.9*1.0 + 0.2*0 = 0.90
+    // m2: vectorScore=0.5, score=0.8 → 综合 0.5*1.0 + 0.8*0 = 0.50
+    const entries = [makeEntry('m1', 0.2, 0.9), makeEntry('m2', 0.8, 0.5)];
+    const result = hybridMerge(entries, 2, { vectorScoreWeight: 1.0, memoryScoreWeight: 0 });
+    expect(result[0]!.memory.id).toBe('m1');
+    expect(result[1]!.memory.id).toBe('m2');
   });
 });

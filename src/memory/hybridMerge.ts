@@ -22,7 +22,7 @@ import type { Memory } from '@/memory/types.js';
 export const RECALL_LIMIT_MULTIPLIER = 2;
 
 /**
- * 综合排序时语义相似度权重（模块内部使用，非公共 API）
+ * 默认综合排序时语义相似度权重（0.6）
  *
  * 设计理由：向量通道权重高于记忆 score 通道（0.6 > 0.4），因为：
  *   - 语义相似度由嵌入模型实时计算，反映查询与内容的语义相关性
@@ -33,14 +33,32 @@ export const RECALL_LIMIT_MULTIPLIER = 2;
  *     2) 提升 score 高（频繁召回/人工标注重要）的记忆排名
  *   - 0.6/0.4 而非 0.7/0.3 是为避免向量通道压倒性优势，保留 score 通道的话语权
  */
-const VECTOR_SCORE_WEIGHT = 0.6;
+export const DEFAULT_VECTOR_SCORE_WEIGHT = 0.6;
 
 /**
- * 综合排序时记忆 score 权重（模块内部使用，非公共 API）
+ * 默认综合排序时记忆 score 权重（0.4）
  *
- * 与 VECTOR_SCORE_WEIGHT 互补（0.4 = 1 - 0.6），设计理由见 VECTOR_SCORE_WEIGHT 注释
+ * 与 DEFAULT_VECTOR_SCORE_WEIGHT 互补（0.4 = 1 - 0.6），设计理由见上
  */
-const MEMORY_SCORE_WEIGHT = 0.4;
+export const DEFAULT_MEMORY_SCORE_WEIGHT = 0.4;
+
+/**
+ * 混合检索权重配置
+ *
+ * 通过 recall() 的 RecallOptions.weights 传入，自定义双通道融合排序的权重。
+ * 不传时使用默认值（0.6 / 0.4）。
+ *
+ * 典型调优场景：
+ *   - 向量质量高（如使用更好的 embedding 模型）：提高 vectorScoreWeight（如 0.8）
+ *   - 记忆 score 可靠（如用户频繁标注重要性）：提高 memoryScoreWeight（如 0.6）
+ *   - 关键词搜索比向量搜索更准确：降低 vectorScoreWeight（如 0.4）
+ */
+export interface HybridWeights {
+  /** 语义相似度权重（0~1，默认 0.6） */
+  vectorScoreWeight?: number;
+  /** 记忆 score 权重（0~1，默认 0.4） */
+  memoryScoreWeight?: number;
+}
 
 // ─── 类型 ─────────────────────────────────────────────
 
@@ -62,8 +80,8 @@ export interface HybridMergeEntry {
 /**
  * 双通道融合排序的纯函数
  *
- * 算法：按 vectorScore * VECTOR_SCORE_WEIGHT + memory.score * MEMORY_SCORE_WEIGHT 降序排列，
- * 取前 limit 条。
+ * 算法：按 vectorScore * vectorScoreWeight + memory.score * memoryScoreWeight 降序排列，
+ * 取前 limit 条。权重可通过 options 自定义，默认 0.6 / 0.4。
  *
  * 输入：已去重的合并 Map 的 values（或任何可迭代的 HybridMergeEntry）
  * 输出：排序后的数组（前 limit 条）
@@ -74,17 +92,21 @@ export interface HybridMergeEntry {
  *
  * @param entries - 双通道合并后的条目（调用方负责去重）
  * @param limit - 返回数量上限
+ * @param weights - 可选的自定义权重配置
  * @returns 排序后的 HybridMergeEntry 数组
  */
 export function hybridMerge(
   entries: Iterable<HybridMergeEntry>,
   limit: number,
+  weights?: HybridWeights,
 ): HybridMergeEntry[] {
+  const vw = weights?.vectorScoreWeight ?? DEFAULT_VECTOR_SCORE_WEIGHT;
+  const mw = weights?.memoryScoreWeight ?? DEFAULT_MEMORY_SCORE_WEIGHT;
   return [...entries]
     .sort((a, b) => {
-      // 综合分数 = 向量相似度 * 0.6 + 记忆 score * 0.4
-      const scoreA = a.vectorScore * VECTOR_SCORE_WEIGHT + a.memory.score * MEMORY_SCORE_WEIGHT;
-      const scoreB = b.vectorScore * VECTOR_SCORE_WEIGHT + b.memory.score * MEMORY_SCORE_WEIGHT;
+      // 综合分数 = 向量相似度 * vectorScoreWeight + 记忆 score * memoryScoreWeight
+      const scoreA = a.vectorScore * vw + a.memory.score * mw;
+      const scoreB = b.vectorScore * vw + b.memory.score * mw;
       return scoreB - scoreA;
     })
     .slice(0, limit);

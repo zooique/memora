@@ -1069,7 +1069,7 @@ export class SessionManager {
         // P2-1：从状态机投影 status，避免直接写死（SSOT 原则）
         this.checkpoint.status = this.stateMachine.status;
         // SSOT 挂载物卸载（用户设计定案 2026-08-10：资源层 vs 状态层）：
-        // pauseMeta 属于状态层挂载物（仅含展示信息 phase/reason/source/pausedAt），
+        // pauseMeta 属于状态层挂载物（仅含展示信息 reason/source），
         // 会话恢复（paused → running）即"回到运行"，挂载物应被卸载。
         // 若不清理，getWorkContext 会继续返回暂停态，任务面板残留「继续」按钮。
         // 超时检测依赖的是 checkpoint.pausedAt 独立字段，不受影响。
@@ -1427,19 +1427,15 @@ export class SessionManager {
    * @param options - 回合完成信息
    * @param options.stepId - 可选，本回合对应的计划步骤 ID
    * @param options.summary - 回合摘要
-   * @param options.toolCallCount - 工具调用次数
-   * @param options.assistantLength - 助手回复长度（字符数）
    */
   completeRound(options: {
     stepId?: string;
     summary: string;
-    toolCallCount: number;
-    assistantLength: number;
   }): void {
     if (!this.checkpoint) return;
 
     // 1. 标记步骤状态（经 updatePlanStepStatus 单一写点，避免旁路契约；F2-3/T2-1）
-    const { stepId, summary, toolCallCount, assistantLength } = options;
+    const { stepId, summary } = options;
     if (stepId) {
       this.updatePlanStepStatus(stepId, 'done');
     }
@@ -1448,8 +1444,6 @@ export class SessionManager {
     const outcome: RoundOutcome = {
       stepId,
       summary,
-      toolCallCount,
-      assistantLength,
       completedAt: Date.now(),
     };
     if (!this.checkpoint.roundLog) {

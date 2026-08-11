@@ -311,14 +311,9 @@ SecurityGuard.requestWriteConfirmation
 - 渲染层 `sessionStatus` 初始 `'idle'` 即资源层常态——无任务挂载，面板不应显示任务表或暂停按钮（实测纠偏 2026-08-10：重启后显示"正在生成任务表…"+ 暂停按钮即违反本模型，已修复）。
 - **沉淀动作的落点**：运行 → 空闲时，任务产物（记忆/上下文）写入资源层（记忆存储 / 会话归档），挂载物（plan/checkpoint）由状态层清理，两者不可混用。
 
-### 8.5 idle 只存在于宿主：卸载责任的分界（SSOT 审查固化 2026-08-10）
+### 8.5 idle 只存在于宿主：卸载责任的分界
 
-> 本节是 §8.2「运行 → 空闲 = 卸载」在代码层的落点说明。不写清楚会反复误判——
-> 一次 SSOT 审查就曾据 §8.2 判定「内核缺少 plan 卸载点」，前提本身是错的。
-
-**事实**：内核 `SessionStateMachine` 只有 `running / paused / error` **三态，没有 idle**
-（`src/agent/sessionStateMachine.ts`，全文件 grep `idle` 零匹配）。
-「空闲」是宿主渲染层的概念——没有活跃任务挂载时的呈现状态，内核不建模、也观察不到。
+**核心事实**：内核 `SessionStateMachine` 只有 `running / paused / error` **三态，没有 idle**。「空闲」是宿主渲染层的概念——没有活跃任务挂载时的呈现状态，内核不建模、也观察不到。
 
 **推论：内核不存在「运行 → 空闲」这个状态转换，因而不可能在内核内部触发卸载。**
 
@@ -329,9 +324,7 @@ SecurityGuard.requestWriteConfirmation
 | 跨会话残留兜底 | 内核 | `SessionManager.switchSession()`：`flushCheckpoint(true)` + `checkpoint = null`，新会话 `createCheckpoint` 时 `plan` 必为 `[]` |
 | 暂停态挂载物卸载 | 内核 | `SessionManager.resume()` → `setPauseMeta(undefined)`（唯一写入口，含落盘） |
 
-**对非 Electron 宿主（CLI / 第三方集成）的约束**：
-若自行驱动 `Agent.chat()`，**必须**在任务流以非 paused 状态结束、界面回到空闲前调用 `agent.clearPlan()`；
-否则下一轮会看到上一轮的残留任务表。内核只保证跨**会话**干净（`switchSession`），不保证跨**轮次**干净。
+**对非 Electron 宿主（CLI / 第三方集成）的约束**：若自行驱动 `Agent.chat()`，**必须**在任务流以非 paused 状态结束、界面回到空闲前调用 `agent.clearPlan()`；否则下一轮会看到上一轮的残留任务表。内核只保证跨**会话**干净（`switchSession`），不保证跨**轮次**干净。
 
 ## 9. 感知层规范（上下文感知而非内容感知）
 
@@ -393,32 +386,13 @@ SecurityGuard.requestWriteConfirmation
 | 补全逻辑 | `src/electron/renderer/quick-input/quickInputCompletion.ts`（QuickInputCompletion） | 防抖 / 并行搜索 / 合并去重 / 多样性过滤 / 采纳反馈 / ARIA |
 | 浮窗样式 | `src/electron/renderer/styles/windows/quick-input.css` | 独立窗口样式（CSS-R6 后迁入 windows/，详见 [ADR-019](../decisions/ADR-019-css-functional-grouping.md)） |
 
-### 10.2 IPC 通道清单（窗口管理器内联注册）
+### 10.2 IPC 通道管理（窗口管理器内联注册）
 
-> **例外说明**：quick-input 的 IPC 通道在 `quickInputWindow.ts` 内注册，而非 `ipc/` 下的 handler 文件。判定标准详见 [ADR-SP-017 §1](../decisions/ADR-SP-017-quick-input-architecture.md#1-窗口管理器内联-ipc-模式)。
-
-| 通道 | 模式 | 职责 |
-|------|------|------|
-| QUICK_INPUT_SHOW | 主→渲染 | 浮窗唤起 + 剪贴板预填 + 常驻模式信号 |
-| QUICK_INPUT_FOCUS_CHANGE | 主→渲染 | 聚焦应用变化通知（联动 Tab 启用/禁用 + 提示栏更新） |
-| QUICK_INPUT_CONFIRM | `ipcMain.handle` | 确认输入（paste + 常驻锁抑制 blur） |
-| QUICK_INPUT_CLOSE | `ipcMain.handle` | 关闭浮窗 |
-| QUICK_INPUT_RESIZE | `ipcMain.handle` | 窗口高度自适应（104-600px 范围校验） |
-| MOVE_QUICK_INPUT | `ipcMain.on` | 拖动移动（clampPositionToWorkArea 边缘检测） |
-| QUICK_INPUT_POLISH | `ipcMain.handle` | LLM 文本润色（onPolish 回调注入，10000 字符截断） |
-| QUICK_INPUT_SET_PINNED_MODE | `ipcMain.handle` | 切换常驻模式（持久化 + AlwaysOnTop 联动） |
-| RECAPTURE_TARGET | `ipcMain.handle` | 手动重捕获前台窗口（聚焦栏点击触发） |
+> **例外说明**：quick-input 的 IPC 通道在 `quickInputWindow.ts` 内注册，而非 `ipc/` 下的 handler 文件。判定标准详见 [ADR-SP-017 §1](../decisions/ADR-SP-017-quick-input-architecture.md#1-窗口管理器内联-ipc-模式)。完整通道清单见源码 `quickInputWindow.ts`，此处不重复冻结。
 
 ### 10.3 状态持久化策略
 
-| 状态 | 存储位置 | 生命周期 |
-|------|---------|---------|
-| 展开模式（compact/expanded） | localStorage `memora-quick-input-expanded` | 跨会话持久 |
-| 常驻模式（pinned/default） | localStorage `memora-quick-input-pinned` | 跨会话持久 |
-| 最近提交历史 | localStorage `memora-quick-input-recent` | 跨会话持久（LRU 淘汰，上限 10 条） |
-| 流式模式（开/关） | 运行时状态 | 单次会话 |
-| 拖动位置 | 运行时状态 | 单次会话（每次唤起重置为光标跟随） |
-| 采纳反馈（adoptedTexts） | localStorage `memora-completion-adoptions` | 跨会话持久（LRU 淘汰，boost 上限 3） |
+quick-input 状态分两类：跨会话持久状态（展开模式、常驻模式、最近提交历史、采纳反馈）通过 `localStorage` 存储；运行时状态（流式模式、拖动位置）单次会话有效。完整策略详见 [ADR-SP-017](../decisions/ADR-SP-017-quick-input-architecture.md)。
 
 ## 11. 对话输入框与任务清单交互规范（用户设计定案 2026-08-10）
 
@@ -426,41 +400,23 @@ SecurityGuard.requestWriteConfirmation
 
 ### 11.1 输入框区域（#btn-send）
 
-遵循大厂设计，输入框只有 **一个按钮，两种互斥状态**：
+**核心原则**：输入框只有一个按钮，两种互斥状态——空闲时发送/运行时停止。关键语义：
 
-| 会话状态 | 空输入 | 有输入 |
-|----------|--------|--------|
-| **空闲（idle）** | 发送按钮禁用 | 显示发送按钮「发送（Enter）」 |
-| **运行中（running）** | 显示停止按钮「停止流式输出」 | 显示发送按钮「发送（补充插入，结束后继续）」 |
-| **已暂停（paused）** | 发送按钮禁用 | 显示发送按钮「发送（恢复会话并继续）」 |
-| **异常（error）** | 发送按钮禁用 | 发送按钮禁用 |
-
-**关键语义**：
 - **运行中有输入 → 发送 = 补充插入**：当前问答结束后，内核基于插入内容继续后续任务，不打断当前执行。
 - **已暂停有输入 → 发送 = auto-resume + 携带内容继续**：内核 processEvent 对 PAUSED 会话自动恢复，携带新内容执行。
 - **已暂停空输入 → 禁用**：纯恢复请用任务清单「继续」按钮，不在输入框承载此语义。
-
-**输入框严禁出现**：暂停、继续、取消暂停按钮。这些按钮统一在任务清单列表。
+- **输入框严禁出现**：暂停、继续、取消暂停按钮。这些按钮统一在任务清单列表。
 
 ### 11.2 任务清单列表（taskTablePanelManager）
 
 暂停/继续/取消暂停三态按钮放在任务清单列表，与输入框完全解耦。
 
-**三态互斥逻辑**：
-
-```
-无暂停态 + 无在途申请 → 显示「暂停」
-         ↓ 用户点击暂停
-无暂停态 + 在途申请   → 立即显示「取消暂停」（不等状态机翻转）
-         ↓ 系统触发暂停
-已暂停（suspended）   → 显示「继续」
-```
+**三态互斥逻辑**：无暂停态 + 无在途申请 → 显示「暂停」；点击后立即变为「取消暂停」；系统触发暂停后显示「继续」。
 
 **关键规则**：
-- **暂停是异步申请**：点击暂停后按钮**立刻**变为「取消暂停」，不等状态机翻转——给用户反悔窗口。
-- **取消暂停只在申请未触发时有意义**：一旦系统真正暂停了，就不需要取消暂停了，直接显示「继续」即可。
-- **暂停和继续互斥**：不会同时出现。
-- **继续和取消暂停互斥**：已暂停态只有「继续」，无「取消暂停」。
+- 暂停是异步申请，点击后按钮立刻变为「取消暂停」，不等状态机翻转——给用户反悔窗口。
+- 取消暂停只在申请未触发时有意义；已暂停态只有「继续」，无「取消暂停」。
+- 暂停和继续互斥，不会同时出现。
 
 ### 11.3 数据流
 

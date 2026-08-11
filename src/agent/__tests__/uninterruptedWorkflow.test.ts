@@ -479,7 +479,7 @@ describe('SessionManager · 检查点管理', () => {
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
       ]);
-      manager.completeRound({ stepId: 's1', summary: '测试回合', toolCallCount: 0, assistantLength: 10 });
+      manager.completeRound({ stepId: 's1', summary: '测试回合' });
       const step = manager.getCheckpoint()!.plan[0]!;
       expect(step.status).toBe('done');
       expect(manager.getCheckpoint()!.roundLog).toHaveLength(1);
@@ -496,7 +496,7 @@ describe('SessionManager · 检查点管理', () => {
         manager as unknown as { updatePlanStepStatus(id: string, s: string): boolean },
         'updatePlanStepStatus',
       );
-      manager.completeRound({ stepId: 's1', summary: '测试回合', toolCallCount: 0, assistantLength: 10 });
+      manager.completeRound({ stepId: 's1', summary: '测试回合' });
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy).toHaveBeenCalledWith('s1', 'done');
       expect(manager.getCheckpoint()!.plan[0]!.status).toBe('done');
@@ -505,7 +505,7 @@ describe('SessionManager · 检查点管理', () => {
 
     it('T2-1：无 stepId 的 completeRound 仍记录回合日志（收口不破无步骤路径）', () => {
       manager.createCheckpoint('测试');
-      manager.completeRound({ summary: '自由对话回合', toolCallCount: 2, assistantLength: 30 });
+      manager.completeRound({ summary: '自由对话回合' });
       const cp = manager.getCheckpoint()!;
       expect(cp.roundLog).toHaveLength(1);
       expect(cp.roundLog![0]!.summary).toBe('自由对话回合');
@@ -2023,7 +2023,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       expect(cp).not.toBeNull();
       // 契约：首轮暂停时 pauseMeta 必须已写入，而非静默丢失
       expect(cp!.pauseMeta).toBeDefined();
-      expect(cp!.pauseMeta!.phase).toBe('suspended');
+      expect(cp!.pauseMeta!.reason).toBeDefined();
     });
 
   it('P0-1：续跑过程中请求暂停，状态机应翻 paused（修复前停留 running）', { timeout: 30000 }, async () => {

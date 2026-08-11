@@ -291,10 +291,6 @@ export interface RoundOutcome {
   stepId?: string;
   /** 回合摘要（LLM 单句或截断处理） */
   summary: string;
-  /** 工具调用次数 */
-  toolCallCount: number;
-  /** 助手回复长度（字符数） */
-  assistantLength: number;
   /** 完成时间戳 */
   completedAt: number;
 }
@@ -305,14 +301,10 @@ export interface RoundOutcome {
  * 存储暂停的上下文信息，用于渲染层展示和恢复决策。
  */
 export interface PauseMeta {
-  /** 暂停阶段（当前仅 'suspended'：已挂起）。'requesting' 申请态从未被写入，已从契约移除（SSOT 排雷 T1-1） */
-  phase: 'suspended';
   /** 暂停原因 */
   reason: string;
   /** 暂停来源 */
   source: 'user' | 'agent' | 'system';
-  /** 暂停时间戳 */
-  pausedAt: number;
 }
 
 /**

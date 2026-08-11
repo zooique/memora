@@ -127,12 +127,10 @@ describe('检查点字段生命周期', () => {
   function seedCheckpointWithSidecars(): void {
     manager.createCheckpoint('主目标');
     manager.logToolExecution(TOOL_RECORD);
-    manager.completeRound({ summary: '第一回合', toolCallCount: 1, assistantLength: 42 });
+    manager.completeRound({ summary: '第一回合' });
     manager.setPauseMeta({
-      phase: 'suspended',
       reason: '用户主动暂停',
       source: 'user',
-      pausedAt: Date.now(),
     });
   }
 
@@ -233,7 +231,7 @@ describe('检查点字段生命周期', () => {
       expect(writesAfterLog).toBe(writesBefore);
 
       // 执行 completeRound 后，回合边界统一落盘
-      manager.completeRound({ summary: '测试回合', toolCallCount: 1, assistantLength: 10 });
+      manager.completeRound({ summary: '测试回合' });
       const writesAfterRound = disk.writeCount();
       expect(writesAfterRound).toBeGreaterThan(writesAfterLog);
 
@@ -495,16 +493,14 @@ describe('检查点字段生命周期', () => {
   describe('运行态挂载物卸载（SSOT 资源层 vs 状态层模型 2026-08-10）', () => {
     /**
      * resume（paused → running）即"回到运行"：pauseMeta 属状态层挂载物，
-     * 只含展示信息（phase/reason/source/pausedAt），恢复时应被卸载。
+     * 只含展示信息（reason/source），恢复时应被卸载。
      * 若不清理，getWorkContext 会继续返回暂停态，任务面板残留「继续」按钮。
      */
     it('resume 应卸载 pauseMeta 挂载物（内存态与磁盘态一致）', () => {
       manager.createCheckpoint('主目标');
       manager.setPauseMeta({
-        phase: 'suspended',
         reason: '用户主动暂停',
         source: 'user',
-        pausedAt: Date.now(),
       });
       manager.pause('测试暂停', 'user');
       expect(manager.getCheckpoint()!.pauseMeta).toBeDefined();
@@ -526,7 +522,7 @@ describe('检查点字段生命周期', () => {
       manager.createCheckpoint('主目标');
       manager.appendPlanStep('第一步');
       manager.appendPlanStep('第二步');
-      manager.completeRound({ stepId: undefined, summary: '测试回合', toolCallCount: 1, assistantLength: 42 });
+      manager.completeRound({ stepId: undefined, summary: '测试回合' });
       expect(manager.getCheckpoint()!.plan).toHaveLength(2);
       expect(manager.getCheckpoint()!.roundLog).toHaveLength(1);
 

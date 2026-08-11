@@ -12,11 +12,13 @@
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
+import type { IReranker } from '@/memory/reranker.js';
 import { logger } from '@/logging/logger.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
+import type { HybridWeights } from '@/memory/hybridMerge.js';
 // 召回 score 提升量/上限/下限 + 衰减常量：使用治理共享常量（v2 REPEAT-2/REPEAT-3 闭环）
 // 衰减常量与宿主 SqliteStorage.decayScores 共用同一真理源，消除跨层重复硬编码
 import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
@@ -64,6 +66,22 @@ export interface RecallOptions {
   vectorStore?: IVectorStore;
   /** 语义搜索相似度阈值（默认 0.3） */
   minSimilarity?: number;
+  /**
+   * 重排序器（可选，提供时在 hybridMerge 之后执行二次精排）
+   *
+   * 使用场景：hybridMerge 的线性加权无法满足需求时，
+   * 通过自定义重排序器实现更复杂的排序策略（如 MMR 去重、LLM 评分等）。
+   * 详见 src/memory/reranker.ts
+   */
+  reranker?: IReranker;
+  /**
+   * 双通道融合排序的权重配置（可选）
+   *
+   * 自定义语义相似度与记忆 score 的权重比。
+   * 不传时使用默认值（vectorScoreWeight=0.6, memoryScoreWeight=0.4）。
+   * 详见 src/memory/hybridMerge.ts HybridWeights
+   */
+  weights?: HybridWeights;
 }
 
 /**
@@ -93,6 +111,8 @@ export async function recall(
     excludeSources = [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
     vectorStore,
     minSimilarity = DEFAULT_MIN_SIMILARITY,
+    reranker,
+    weights,
   } = options;
 
   const merged = new Map<string, { memory: Memory; vectorScore: number }>();
@@ -136,14 +156,23 @@ export async function recall(
   // ── 无任何结果 ──
   if (merged.size === 0) return [];
 
-  // ── 综合排序：委托给 hybridMerge 纯函数 ──
-  const sorted = hybridMerge(merged.values(), limit);
+  // ── 综合排序：委托给 hybridMerge 纯函数（支持自定义权重） ──
+  const sorted = hybridMerge(merged.values(), limit, weights);
+
+  // ── 重排序：reranker 在 hybridMerge 之后执行二次精排（可选） ──
+  const reranked = reranker
+    ? await reranker.rerank(
+        query,
+        sorted.map((e) => e.memory),
+        { limit },
+      )
+    : sorted.map((e) => e.memory);
 
   // ── FIX-P1-2：拆分读/写，recall 只读 + boostScores 显式写 ──
   // 在副本上 boost，仅影响本轮上下文排序；持久化由调用方 fire-and-forget 调用 boostScores，
   // 不阻塞读路径，boost 写入失败不影响 chat 流程。
   const now = nowIso();
-  const result: Memory[] = sorted.map(({ memory }) => {
+  const result: Memory[] = reranked.map((memory) => {
     const copy = { ...memory };
     boostScore(copy, now);
     return copy;

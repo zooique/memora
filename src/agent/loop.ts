@@ -188,7 +188,7 @@ export class AgentLoop {
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;
   /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
-  onRoundBoundary?: (roundInfo: { stepId?: string; summary: string; toolCallCount: number; assistantLength: number }) => void;
+  onRoundBoundary?: (roundInfo: { stepId?: string; summary: string }) => void;
   /** P2-8: 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
@@ -614,8 +614,6 @@ export class AgentLoop {
     if (this.onRoundBoundary) {
       this.onRoundBoundary({
         summary: llmResult.fullContent.slice(0, 200),
-        toolCallCount: llmResult.toolCalls?.length ?? 0,
-        assistantLength: llmResult.fullContent.length,
       });
     }
 

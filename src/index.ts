@@ -168,6 +168,15 @@ export type { ForkResult } from '@/agent/messageHistory.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords } from '@/memory/recall.js';
 export type { RecallOptions } from '@/memory/recall.js';
+// 重排序 + 上下文压缩（RAG 管线增强）
+export { DefaultReranker, compressContext } from '@/memory/reranker.js';
+export type { IReranker, RerankerOptions, ContextCompressionOptions, CompressedContext } from '@/memory/reranker.js';
+// 多跳推理（RAG 管线增强）
+export { multiHopRecall, DefaultQueryExpander } from '@/memory/multiHop.js';
+export type { IQueryExpander, MultiHopOptions, MultiHopResult } from '@/memory/multiHop.js';
+// 混合检索权重配置（RAG 管线增强）
+export type { HybridWeights } from '@/memory/hybridMerge.js';
+export { DEFAULT_VECTOR_SCORE_WEIGHT, DEFAULT_MEMORY_SCORE_WEIGHT } from '@/memory/hybridMerge.js';
 
 // ─── 日志抽象 ────────────────────────────────────────────
 export type { ILogger } from '@/logging/loggerInterface.js';

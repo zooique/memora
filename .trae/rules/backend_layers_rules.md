@@ -56,6 +56,8 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
 | `logging/`  | 日志输出                                           | 业务逻辑                                        |
 | `eval/`     | Agent 行为评估场景定义（EvalScenario 类型 + 工具函数，仅测试用，不参与运行时） | 业务逻辑、运行时调用                             |
+| `role-pack/` | 角色包类型定义与行为策略基元（三层结构：L1 内容 + L2 策略 + L3 代码预留；纯类型与工具函数，不参与运行时 Agent Loop） | 运行时调用、依赖 LLM 或存储                     |
+| `web-search/` | 网络搜索抽象接口（IWebSearchProvider）与默认实现（FetchWebSearchProvider，零依赖）；通过 AgentOptions 条件注入，不参与强制内置 | 业务逻辑、领域耦合                              |
 
 **禁止**：
 
@@ -81,6 +83,9 @@ persona/    →  utils/       （frontmatter 解析 + segmenter 分词）
 skill/      →  utils/       （frontmatter 解析 + segmenter 分词 + scanner 扫描）
             →  （不依赖 memory/：SkillManager 已从 SQLite 索引解耦，纯文件+内存缓存）
 llm/        →  memory/      （type-only：EmbeddingService 接口定义在 memory/、llm/ provider 实现。属依赖倒置：消费者 memory/ 定义接口契约，实现方 llm/ 遵守。EmbeddingOptions 方向相反，见 memory/ 例外行）
+role-pack/  →  utils/       （类型工具函数，纯数据层，无其他依赖）
+web-search/ →  utils/       （errors.ts 使用 MemoraError，零网络依赖）
+            →  （被 agent/ 通过 AgentOptions 条件注入，不强制内置）
 config/     →  （被所有层调）
 logging/    →  （被所有层调）
 utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖

@@ -22,6 +22,7 @@ description: Memora 项目总则、技术栈清单、目录结构
 6. **内核 Node.js 专属 + 零第三方依赖**：memora 是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto` 等），但 `dependencies` 字段为空（零第三方运行时依赖）。不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（Electron/browser API 等）。pino 作为可选 `peerDependencies`（`optional: true`）+ `optionalDependencies` 保留，零配置时宿主开箱即用，宿主也可注入自定义 `ILogger` 覆盖（详见 [ADR-002 v0.9 定位定论](../decisions/ADR-002-storage-layer.md)）
 7. **文件层两段式契约**：ConfigManager 写 API（addRule/deleteRule/updateRule/deleteSkill）只同步 SQLite 索引层，**不操作文件**。文件层写入/删除由宿主 `configFileSyncer` 先完成，再调用 ConfigManager 同步索引。ConfigManager 通过可选 `fileConsistencyCheck` 回调前置断言文件操作状态，防止"重启复活"（详见 [configManager.ts](../../src/agent/managers/configManager.ts) 文件级注释）
 8. **检查点版本迁移机制**：`SessionCheckpoint.schemaVersion` 是检查点结构的版本标识，支持向前兼容的迁移。`SessionManager.checkpointMigrations` 静态分发表注册按版本号升序的迁移函数，`normalizeCheckpoint` 在加载时自动应用。新增检查点字段必须：① 递增 `CURRENT_SCHEMA_VERSION`；② 在 `checkpointMigrations` 中注册迁移（详见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts) 及 [constants.ts](../../src/agent/constants.ts) `AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION`）
+9. **IPC 通道数量治理**：精灵宿主 IPC 通道总数接近 150 条时应启动治理评估。新增 IPC 通道必须：① 确认是否可通过现有通道组合达成（避免重复注册）；② 在 `ipc/` 目录下统一注册（quick-input 窗口内联注册例外，见 [sprite-project-rules.md §10.2](./sprite-project-rules.md)）；③ 新增通道后更新通道计数（当前计数约 125 条，治理阈值 150 条）
 
 ## 2. 技术栈清单
 
@@ -81,11 +82,13 @@ src/
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
+├── role-pack/      # 角色包与行为策略定义（三层结构：L1 内容 + L2 策略 + L3 代码预留）
 ├── llm/            # LLM 适配层
 ├── security/       # 安全策略
 ├── config/         # 配置加载
 ├── logging/        # 日志（ILogger 接口 + console fallback）
 ├── eval/           # 评估框架（EvalScenario 类型 + 工具函数）
+├── web-search/     # 网络搜索抽象（IWebSearchProvider 接口 + FetchWebSearchProvider 实现）
 └── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
@@ -154,9 +157,8 @@ chore: 升级 dependencies
 | ---- | ---- |
 | DON'T | 使用 `@ts-ignore` 或 `as any`（零容忍） |
 | DON'T | 在生产文件中保留死代码 |
-| DON'T | 使用空 catch 块或裸 throw（统一 MemoraError 体系） |
-| DO | 核心模块保持 1:1 测试覆盖率（`__tests__/` 镜像 `src/`） |
 | DO | 提交前通过 pre-commit lint + typecheck + commitlint |
+| DO | 参考 [testing_rules.md §3 覆盖率目标](./testing_rules.md) 与 [coding-convention-rules.md §2 异常处理](./coding-convention-rules.md) |
 
 ### 7.2 内核独立性（补充 §1.6）
 
@@ -165,7 +167,6 @@ chore: 升级 dependencies
 | DON'T | 在 `src/` 下 import better-sqlite3 / electron / commander 等 native 或宿主专属模块 |
 | DON'T | 在 `src/` 下 import 任何 web 框架（Express / HTML / CSS） |
 | DON'T | 工具函数绑定特定第三方依赖（如 pino） |
-| DO | `src/` 可自由 import `node:*` 内置模块（fs/path/os/crypto 等）—— Node.js 专属内核的合法依赖 |
 
 ### 7.3 记忆与存储（补充 §1.3/§1.4）
 
@@ -174,7 +175,6 @@ chore: 升级 dependencies
 | DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要） |
 | DON'T | 混合技能定义与内存存储（技能通过 `skills/` 文件夹管理） |
 | DON'T | 直接修改 config schema（配置文件是真理源，§1.5） |
-| DON'T | 多 Agent 并发（单 Agent 模型，详见 §1.4） |
 | DO | 工作内容通过宿主工具访问，内核仅保留投影 |
 | DO | 切换项目用 `close()`，完全终止用 `shutdown()` |
 
@@ -193,8 +193,15 @@ chore: 升级 dependencies
 
 | 类型 | 规则 |
 | ---- | ---- |
-| DO | 功能开发先进行方案设计，不能直接编写代码 |
 | DO | 底层问题优先修复（架构/基础设施层面，避免积重难返） |
 | DO | 代码修复独立可回滚（每次修复独立提交） |
 | DO | 自动归档根据 `archiveMode` 执行（full / insights-only / manual 三态） |
 | DO | LLM 工具调用传递 `tools` 参数，SSE 流正确解析 `tool_calls` delta |
+
+### 7.6 代码组织与治理
+
+| 类型 | 规则 |
+| ---- | ---- |
+| DO | 新增 IPC 通道前确认是否可通过现有通道组合达成，避免重复注册 |
+| DO | IPC 通道总数接近 150 条时启动治理评估（当前约 125 条） |
+| DO | 新增模块前先走 [new-module-guide.md](./new-module-guide.md) 评估流程 |

@@ -68,8 +68,6 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
-// AGENT_EVENTS / AGENT_EVENT_SET 已迁移至 utils/eventEmitter.ts（与 AgentEventMap 同处，单一真理源）
-
 // ─── Agent 门面类 ───────────────────────────────────────
 
 /**
@@ -1933,14 +1931,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // P2-5: 装配 loop 回调 —— 接线 onPaused / onRoundBoundary
     this.loop.onPaused = () => {
       // onPaused 在 loop 边界真正挂起时触发
-      // 设置 pauseMeta 为 suspended 态，标记已挂起
+      // 设置 pauseMeta，标记已挂起（含暂停原因/来源）
       // 暂停原因/来源从 SessionStateMachine 读取（SSOT 收口）
       const pendingInfo = this._sessionManager?.pendingPauseInfo;
       this._sessionManager?.setPauseMeta({
-        phase: 'suspended',
         reason: pendingInfo?.reason ?? '用户主动暂停',
         source: pendingInfo?.source ?? 'user',
-        pausedAt: Date.now(),
       });
     };
     this.loop.onRoundBoundary = (roundInfo) => {
@@ -1956,8 +1952,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._sessionManager?.completeRound({
         stepId: activeStepId,
         summary: roundInfo.summary,
-        toolCallCount: roundInfo.toolCallCount,
-        assistantLength: roundInfo.assistantLength,
       });
 
       // P2-11: 兜底停滞检测——连续 3 轮无 task_table_update 且 plan 有未完任务
@@ -2505,7 +2499,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 提取原因：switchProject / setProvider / setBackgroundProvider / setArchiveMode /
    * switchPersona / rebuildComponents 等 6 处方法均有相同的 `if (isBusy) throw chatBusyError('XXX')` 守卫，
-   * 违反 DRY 原则（v2 神木回天 REPEAT-4 闭环）。
+   * 违反 DRY 原则。
    *
    * 注意：reloadConfig 不使用本方法——它在 isBusy 时需暂存 source 而非直接抛错。
    *
