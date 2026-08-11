@@ -185,6 +185,13 @@ export class AgentLoop {
   private pauseRequested = false;
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
+  /**
+   * 工具调用是否被 L2 策略阻止（策略 act.toolCalls === 'block' 时置 true）
+   *
+   * 由 Agent 在每轮对话开始前根据当前激活的角色包策略设置。
+   * 为 true 时 handleToolCalls 直接返回 'done'，跳过工具执行。
+   */
+  private toolCallsBlocked = false;
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;
   /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
@@ -407,6 +414,17 @@ export class AgentLoop {
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;
+  }
+
+  /**
+   * 设置工具调用是否被 L2 策略阻止
+   *
+   * 由 Agent 在每轮对话开始前根据当前激活的角色包策略设置。
+   *
+   * @param blocked true=阻止工具调用，LLM 仅输出文本
+   */
+  setToolCallsBlocked(blocked: boolean): void {
+    this.toolCallsBlocked = blocked;
   }
 
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
@@ -640,7 +658,16 @@ export class AgentLoop {
   private async *handleToolCalls(
     llmResult: LlmCallResult,
     signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'continue', unknown> {
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'continue' | 'done', unknown> {
+    // L2 策略阻止工具调用：跳过执行，仅保留文本内容
+    if (this.toolCallsBlocked) {
+      const blockedMsg = llmResult.fullContent.trim() || '（当前角色不允许调用工具）';
+      this.messages.push({ role: 'assistant', content: blockedMsg });
+      yield { type: 'text', content: blockedMsg };
+      yield { type: 'done' };
+      return 'done';
+    }
+
     const execResult = yield* this.executeToolCalls(
       llmResult.toolCalls!,
       llmResult.fullContent,

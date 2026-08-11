@@ -82,6 +82,16 @@ export interface RecalledMemorySummary {
   source: string;
 }
 
+/**
+ * Handoff 决策类型
+ *
+ * 回答后衔接决策，决定当前轮次结束后如何衔接下一轮：
+ * - 'wait'：等待用户输入（气口敞开，等待 Trigger）
+ * - 'loop'：自动续跑（由 Loop 模式驱动下一轮）
+ * - 'end'：终止当前会话
+ */
+export type HandoffDecision = 'wait' | 'loop' | 'end';
+
 export type AgentChunk =
   | { type: 'recall'; memories: RecalledMemorySummary[] }
   | { type: 'thinking'; phase: ThinkingPhase }
@@ -103,6 +113,13 @@ export type AgentChunk =
   | { type: 'error'; message: string }
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'paused' }
+  /**
+   * Handoff 衔接决策
+   *
+   * 回答后阶段基于 L2 策略的 endingHandoff 配置，决定当前轮次结束后
+   * 如何衔接下一轮。宿主可通过此 chunk 决定是否自动触发下一轮对话。
+   */
+  | { type: 'handoff'; decision: HandoffDecision; reason?: string }
   | { type: 'done' };
 
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────

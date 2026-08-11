@@ -41,6 +41,8 @@ import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
+import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
+import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
@@ -499,9 +501,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 角色自动匹配（回答前执行）
     await this.tryAutoMatchPersona(input);
 
-    // 基元驱动召回（双通道：语义 + 关键词）
+    // 基元驱动召回（双通道：语义 + 关键词），受 L2 策略控制
+    const strategy = this.getActiveStrategy();
+    const memoryRecallMode = strategy.prepare?.memoryRecall ?? 'full';
+
+    // 根据 L2 策略设置工具调用权限（影响整轮对话）
+    loop.setToolCallsBlocked(strategy.act?.toolCalls === 'block');
+
     yield { type: 'thinking', phase: 'recalling' };
-    const recalledMemories = await this.recallAndInject(input);
+    const recalledMemories = await this.recallAndInject(input, memoryRecallMode);
 
     if (combinedSignal.aborted) return recalledMemories;
 
@@ -558,6 +566,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 后处理阶段
     yield { type: 'thinking', phase: 'archiving' };
     await this.postProcess(input, assistantContent);
+
+    // Handoff 衔接决策：基于 L2 策略的 endingHandoff 配置
+    const handoffStrategy = this.getActiveStrategy().reflect?.endingHandoff ?? 'wait';
+    yield { type: 'handoff', decision: handoffStrategy, reason: handoffStrategy === 'wait' ? undefined : 'L2 策略自动衔接' };
   }
 
   /**
@@ -610,47 +622,60 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 召回记忆 + 注入最近对话上下文
    *
    * 从 chat() 中提取，职责：
-   *   1. 双通道召回（语义 + 关键词）
+   *   1. 双通道召回（语义 + 关键词），受 L2 策略 memoryRecall 模式控制
    *   2. Layer 5: 最近对话注入
    *
+   * 策略控制：
+   *   - 'full'：全量召回（当前默认行为）
+   *   - 'limited'：限额召回（使用 strategy.memoryRecallQuota 限制）
+   *   - 'none'：跳过召回，仅注入最近对话
+   *
    * @param input 用户输入
+   * @param memoryRecallMode L2 策略指定的记忆召回模式
    * @returns 召回的记忆列表
    */
-  private async recallAndInject(input: string): Promise<Memory[]> {
-    // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
-    const tracer = this.#config.tracer ?? NOOP_TRACER;
-    const recallSpan = tracer.startSpan(TRACE_SPANS.RECALL_ACTUAL, {
-      queryLength: input.length,
-      hasVectorStore: !!this.#config.vectorStore,
-    });
-
+  private async recallAndInject(input: string, memoryRecallMode: MemoryRecallMode): Promise<Memory[]> {
+    // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
     let recalledMemories: Memory[] = [];
-    try {
-      recalledMemories = await recall(
-        this.requirePctx.index,
-        input,
-        {
-          limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
-          vectorStore: this.#config.vectorStore,
-          excludeSources: this.#config.recallExcludeSources,
-        },
-      );
-    } catch (err) {
-      recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-      throw err;
-    } finally {
-      recallSpan.setAttribute('resultCount', recalledMemories.length);
-      recallSpan.end();
-    }
-    if (recalledMemories.length > 0) {
-      this.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
-      // boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
-      // boost 是软指标（每次 +0.05，上限 1.0），写入失败仅 log 不影响 chat 流程
-      const ids = recalledMemories.map((m) => m.id);
-      void boostScores(this.requirePctx.index, ids).catch((err: unknown) => {
-        logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
-        this.emit(AGENT_EVENTS.boostPersistFailed, { memoryId: ids.join(','), message: toError(err).message });
+
+    if (memoryRecallMode !== 'none') {
+      // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
+      const tracer = this.#config.tracer ?? NOOP_TRACER;
+      const recallSpan = tracer.startSpan(TRACE_SPANS.RECALL_ACTUAL, {
+        queryLength: input.length,
+        hasVectorStore: !!this.#config.vectorStore,
+        memoryRecallMode,
       });
+
+      try {
+        recalledMemories = await recall(
+          this.requirePctx.index,
+          input,
+          {
+            limit: memoryRecallMode === 'limited'
+              ? (this.getActiveStrategy().prepare?.memoryRecallQuota ?? AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT)
+              : AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
+            vectorStore: this.#config.vectorStore,
+            excludeSources: this.#config.recallExcludeSources,
+          },
+        );
+      } catch (err) {
+        recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+        throw err;
+      } finally {
+        recallSpan.setAttribute('resultCount', recalledMemories.length);
+        recallSpan.end();
+      }
+      if (recalledMemories.length > 0) {
+        this.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
+        // boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径
+        // boost 是软指标（每次 +0.05，上限 1.0），写入失败仅 log 不影响 chat 流程
+        const ids = recalledMemories.map((m) => m.id);
+        void boostScores(this.requirePctx.index, ids).catch((err: unknown) => {
+          logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
+          this.emit(AGENT_EVENTS.boostPersistFailed, { memoryId: ids.join(','), message: toError(err).message });
+        });
+      }
     }
 
     // Layer 5: 最近对话注入
@@ -764,20 +789,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 输入分类 → Insight 提取（委托 ArchiveCoordinator，与手动归档路径统一）
-    try {
-      // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
-      // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-      const archiveInsightPromise = this.requireArchiveCoordinator.archiveInsight(input, assistantContent, { autoTriggered: true }).then(
-        () => {},
-        (err) => {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.warn({ err, stage: 'insight' }, '归档失败');
-          this.emit(AGENT_EVENTS.archiveFailed, { stage: 'insight', message: message.slice(0, 200) });
-        },
-      );
-      history.registerPendingArchive(archiveInsightPromise);
-    } catch (err) {
-      logger.warn({ err }, 'Insight 提取初始化失败');
+    // 受 L2 策略的 reflect.insightExtraction 控制：'off' 时跳过洞察提取
+    const strategy = this.getActiveStrategy();
+    if (strategy.reflect?.insightExtraction !== 'off') {
+      try {
+        // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
+        // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
+        const archiveInsightPromise = this.requireArchiveCoordinator.archiveInsight(input, assistantContent, { autoTriggered: true }).then(
+          () => {},
+          (err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.warn({ err, stage: 'insight' }, '归档失败');
+            this.emit(AGENT_EVENTS.archiveFailed, { stage: 'insight', message: message.slice(0, 200) });
+          },
+        );
+        history.registerPendingArchive(archiveInsightPromise);
+      } catch (err) {
+        logger.warn({ err }, 'Insight 提取初始化失败');
+      }
     }
 
     // AutoConfigRefiner（模式 3：Agent 智能总结）
@@ -983,6 +1012,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 后处理
       yield { type: 'thinking', phase: 'archiving' };
       await this.postProcess(event.content, assistantContent);
+
+      // Handoff 衔接决策：基于 L2 策略的 endingHandoff 配置
+      const handoffDecision = this.getActiveStrategy().reflect?.endingHandoff ?? 'wait';
+      yield { type: 'handoff', decision: handoffDecision, reason: handoffDecision === 'wait' ? undefined : 'L2 策略自动衔接' };
     } finally {
       this.chatLockManager?.release(myToken);
       cleanupExternalSignal();
@@ -2555,6 +2588,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get rolePackManager(): RolePackManager | null {
     return this.rolePackManager_;
+  }
+
+  /**
+   * 获取当前激活的 L2 行为策略
+   *
+   * 从当前激活的角色包中读取策略声明，未激活时使用全局默认值。
+   * 供 Agent 内部各阶段（Prepare/Act/Reflect）按策略调整行为。
+   *
+   * @returns 完整的 L2 行为策略（所有维度都有值）
+   */
+  getActiveStrategy(): BehaviorStrategy {
+    return this.rolePackManager_?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
