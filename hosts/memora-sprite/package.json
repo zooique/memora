@@ -1,7 +1,7 @@
 {
   "name": "memora-sprite",
   "version": "1.6.0",
-  "description": "Memora 精灵桌面伴侣——能自我进化的本地 AI Agent",
+  "description": "Memora 功能展示项目——演示 memora 内核的 AI Agent 能力",
   "type": "module",
   "main": "./dist-electron/electron/main.js",
   "bin": {

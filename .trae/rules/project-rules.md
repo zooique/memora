@@ -53,13 +53,13 @@ memora/                          # Git 仓库根目录
 ├── tasks/                       # 统一任务追踪（内核 + 精灵共享，唯一真理源）
 │
 └── hosts/
-    └── memora-sprite/           # 精灵宿主项目（独立 package）
+    └── memora-sprite/           # 功能展示项目（独立 package，演示 memora 内核能力）
         ├── .trae/rules/         # 精灵专属规则（仅 directory-structure.md）
         ├── package.json         # 精灵独立 package（name: "memora-sprite"）
         ├── tsconfig.json        # 精灵独立 tsconfig（含 electron 多配置）
-        ├── src/                 # 精灵源码（electron + sprite + storage + web）
+        ├── src/                 # 展示项目源码（electron + renderer + storage + web）
         ├── assets/              # 精灵静态资源（icon.svg 是真理源，PNG 由脚本生成）
-        └── scripts/             # 精灵构建脚本（含 generate-icons.mjs）
+        └── scripts/             # 构建脚本（含 sync-memora.mjs、generate-icons.mjs）
 ```
 
 **关键约束**：
@@ -69,8 +69,8 @@ memora/                          # Git 仓库根目录
 | 独立 package | 两个 package 各自 `npm install`、`npm test`、`npm run build`，互不依赖对方的 devDependencies |
 | 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
 | 内核 Node.js 专属 | memora 内核是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（fs/path/os/crypto），但不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（详见 [ADR-002 v0.9](../decisions/ADR-002-storage-layer.md)） |
-| 精灵依赖内核 | 精灵通过 `sync-memora.mjs` 分发内核：编译内核 `src/` → `dist/`，最小化复制到精灵 `node_modules/memora/`（仅含 dist + 元数据）；源码 import 保持 `from 'memora'`。`file:../..` 已于 2026-07-17 废弃（Junction 会将全量仓库打入 asar，详见 [ADR-SP-005](../decisions/ADR-SP-005-package-management.md)） |
-| 规则分层 | 仓库级规则在 `.trae/rules/`，精灵专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束精灵宿主 |
+| 展示项目依赖内核 | 展示项目通过 `sync-memora.mjs` 分发内核：编译内核 `src/` → `dist/`，最小化复制到展示项目 `node_modules/memora/`（仅含 dist + 元数据）；源码 import 保持 `from 'memora'`。`file:../..` 已于 2026-07-17 废弃（Junction 会将全量仓库打入 asar，详见 [ADR-SP-005](../decisions/ADR-SP-005-package-management.md)） |
+| 规则分层 | 仓库级规则在 `.trae/rules/`，展示项目专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束展示项目 |
 | 任务统一 | 根 `tasks/` 是唯一任务追踪目录（内核 + 精灵共享），`hosts/memora-sprite/tasks/` 已合并归档 |
 
 ## 3. 目录结构（不允许修改）
