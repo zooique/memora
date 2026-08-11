@@ -1581,9 +1581,11 @@ export class SessionManager {
     }
     this.checkpoint.completedToolCalls.push(record);
     // FIFO 封顶——优先丢弃幂等或已补偿的最早记录，非幂等未补偿永不丢弃
+    // 注意：r.idempotent 是 IdempotencyLevel 字符串（'idempotent'/'idempotent-key'/'non-idempotent'），
+    // 不能直接用 truthy 判断（'non-idempotent' 也是 truthy），必须显式排除 'non-idempotent'
     if (this.checkpoint.completedToolCalls.length > AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX) {
       const discardable = this.checkpoint.completedToolCalls.findIndex(
-        (r) => r.idempotent || typeof r.compensatedAt === 'number',
+        (r) => r.idempotent !== 'non-idempotent' || typeof r.compensatedAt === 'number',
       );
       if (discardable >= 0) {
         this.checkpoint.completedToolCalls.splice(discardable, 1);

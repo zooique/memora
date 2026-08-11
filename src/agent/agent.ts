@@ -2682,8 +2682,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * @deprecated 直接暴露 AgentLoop 破坏封装，将在下一主版本移除。
-   * 使用 getMessages() / getMessageCount() 等有界接口替代。
+   * 获取 AgentLoop 实例（宿主集成面，用于会话恢复等底层操作）
+   *
+   * 有界替代方案：getMessages() / getMessageCount() 可覆盖只读场景，
+   * 但 restoreHistory() 等操作需要直接访问 loop，当前无替代接口。
+   * 若未来需要进一步封装，请注意：getMessages/getMessageCount 无法替代 restoreHistory。
    */
   get agentLoop(): AgentLoop | null {
     return this.loop;
@@ -2702,8 +2705,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * @deprecated 直接暴露 MessageHistory 破坏封装，将在下一主版本移除。
-   * 使用 Agent 的对话管理方法（chat/chatSync/forkSession）替代直接操作。
+   * 获取 MessageHistory 实例（宿主集成面，用于日期/会话判断等底层操作）
+   *
+   * 有界替代方案：chat/chatSync/forkSession 可覆盖对话管理场景，
+   * 但 currentDateValue/currentSessionValue 等只读属性当前无替代接口。
+   * 若未来需要进一步封装，请注意：对话管理方法无法替代日期/会话属性读取。
    */
   get agentHistory(): MessageHistory | null {
     return this.history;

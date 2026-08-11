@@ -1329,17 +1329,21 @@ export class AgentLoop {
   }
 
   /**
-   * 恢复历史消息（用于重启后恢复对话）
+   * 恢复历史消息（用于重启后恢复对话或清空工作记忆）
    * 会跳过 system 消息，只恢复 user/assistant/tool 消息
+   * 传入空数组时清空工作记忆（保留 system prompt），用于宿主切换会话时的旧上下文清理
    *
-   * @param historyMessages - 要恢复的历史消息列表
+   * @param historyMessages - 要恢复的历史消息列表，传空数组将清空工作记忆
    */
   restoreHistory(historyMessages: readonly Message[]): void {
     // 过滤掉 system 消息（我们已经有初始化的 system prompt 了）
     const nonSystemMessages = historyMessages.filter((m) => m.role !== 'system');
 
     if (nonSystemMessages.length === 0) {
-      logger.debug({ messageCount: 0 }, '没有需要恢复的历史消息');
+      // 宿主显式传入空数组 = 意图清空工作记忆（如跨日重置、切换到空会话）
+      // 保留 system prompt，清空其余消息，防止旧上下文残留注入 LLM
+      this.messages = this.messages[0] ? [this.messages[0]] : [];
+      logger.debug({ messageCount: 0 }, '已清空工作记忆（保留 system prompt）');
       return;
     }
 
