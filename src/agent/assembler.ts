@@ -40,6 +40,9 @@ import { configError } from '@/utils/errors.js';
 // FileStore 用于 configDir 存在时创建 config 级文件存储，
 // 供 ConfigManager.confirmConfigSuggestion 写入配置文件（真理源）
 import { FileStore } from '@/memory/store.js';
+// M1 角色包清单：装配层引入角色包管理器，为插卡式提供生长点
+// 当前与 PersonaManager + SkillManager 共存，未来可完全替代
+import { RolePackManager } from '@/role-pack/rolePackManager.js';
 
 /**
  * 组装器事件回调组
@@ -190,6 +193,14 @@ export interface AssembleOutput {
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
   textPolisher: TextPolishManager;
+  /**
+   * 角色包管理器（M1 清单抽象）
+   *
+   * 装配层引入角色包清单作为统一读取抽象。
+   * 当前与 PersonaManager + SkillManager 共存，行为不变。
+   * 未来角色包文件完备后，可替代独立通道。
+   */
+  rolePackManager: RolePackManager;
 }
 
 /**
@@ -355,6 +366,11 @@ export async function assembleComponents(
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
 
+  // M1 角色包清单：创建角色包管理器，装配层自此只认"清单"不认"来源"
+  // 当前角色包文件为可选，不存在时降级为 PersonaManager + SkillManager 联合
+  const rolePackManager = new RolePackManager(configDir);
+  await rolePackManager.load();
+
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
   const { loop, insightExtractor, sessionArchiver, textPolisher } =
@@ -405,5 +421,6 @@ export async function assembleComponents(
     autoConfigRefiner,
     sessionArchiver,
     textPolisher,
+    rolePackManager,
   };
 }

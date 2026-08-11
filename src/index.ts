@@ -45,6 +45,20 @@ export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 export type { PersonaMode, Persona } from '@/persona/types.js';
+// 角色包（Role Pack）类型：三层结构（L1 内容 + L2 策略 + L3 代码预留）
+export type {
+  RolePack, RolePackMeta, RolePackAssembly, RolePackManifest,
+  RolePackSkillRef, RolePackKnowledgeRef,
+  BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
+  UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
+  ToolCalls, ToolApproval, ToolReadonly, StreamingMode,
+  ProviderRouting, MultiStepReasoning, InputInterrupt,
+  EndingHandoff, LoopContinue, InsightExtraction,
+  MemoryWriteMode, SessionArchiveMode, UserFollowup,
+  ErrorHandling, SafetyRuleMode,
+} from '@/role-pack/types.js';
+export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/types.js';
+export { RolePackManager } from '@/role-pack/rolePackManager.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';
 // RelationBuilder 从 InsightExtractor 提取，封装 ADR-014 关系构建逻辑

@@ -166,14 +166,15 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 15 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 16 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 15 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
+      // 16 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
       // workProjection/skillManager/insightExtractor/configManager/memoryInspector/
-      // dedupManager/memoryAdvisor/autoConfigRefiner/sessionArchiver/textPolisher）
+      // dedupManager/memoryAdvisor/autoConfigRefiner/sessionArchiver/textPolisher/rolePackManager）
       // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
       // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
+      // ROLE-PACK：新增 rolePackManager，管理角色包生命周期
       const expectedKeys = [
         'history',
         'loop',
@@ -190,6 +191,7 @@ describe('assembleComponents', () => {
         'autoConfigRefiner',
         'sessionArchiver',
         'textPolisher',
+        'rolePackManager',
       ];
       expect(Object.keys(output).sort()).toEqual(expectedKeys.sort());
     });

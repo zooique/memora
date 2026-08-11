@@ -40,6 +40,7 @@ import { recall, boostScores } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
+import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
@@ -121,6 +122,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private personaManager: PersonaManager | null = null;
   #userProfile: UserProfile | null = null;
   private skillManager: SkillManager | null = null;
+  /** 角色包管理器（M1 清单抽象，为插卡式预留生长点） */
+  private rolePackManager_: RolePackManager | null = null;
 
   // 拆分出的专职 Manager
   private insightExtractor: InsightExtractor | null = null;
@@ -1903,6 +1906,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.personaManager = result.personaManager;
     this.#userProfile = result.userProfile;
     this.skillManager = result.skillManager;
+    this.rolePackManager_ = result.rolePackManager;
     this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
@@ -2546,6 +2550,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private get requireSessionManager(): SessionManager {
     if (!this._sessionManager) throw configError('SessionManager 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
     return this._sessionManager;
+  }
+
+  /**
+   * 获取角色包管理器（M1 清单抽象）
+   *
+   * 为插卡式角色包预留的生长点。
+   * 当前与 PersonaManager + SkillManager 共存。
+   * 返回 null 表示 Agent 未初始化。
+   */
+  get rolePackManager(): RolePackManager | null {
+    return this.rolePackManager_;
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
