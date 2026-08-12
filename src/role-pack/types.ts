@@ -74,8 +74,13 @@ export type Handoff = 'wait' | 'loop' | 'end';
 /** @deprecated 旧实现命名（P0 键集对齐前），标准键为 reflect.handoff，见 Handoff */
 export type EndingHandoff = Handoff;
 
-/** Loop 续跑开关 */
-export type LoopContinue = 'on' | 'off';
+/**
+ * Loop 续跑轮次（Phase 9：自审查轮次可配置）
+ *
+ * number 语义：0=关闭自审查续跑 / N=LLM 纯文本回复后最多自审查 N 轮。
+ * 由 `on|off` 自然生长为 number（旧值 'on' 视作 1 轮、'off' 视作 0 轮，见 agent.ts 归一化）。
+ */
+export type LoopContinue = number;
 
 /** 洞察提取开关 */
 export type InsightExtraction = 'on' | 'off';
@@ -168,7 +173,7 @@ export interface ActStrategy {
 export interface ReflectStrategy {
   /** 结束衔接模式（默认 wait；标准键 reflect.handoff，§六） */
   readonly handoff?: Handoff;
-  /** Loop 续跑开关（默认 off） */
+  /** Loop 续跑轮次（默认 0=关闭；0=关闭自审查 / N=最多自审查 N 轮） */
   readonly loopContinue?: LoopContinue;
   /** 洞察提取开关（默认 on） */
   readonly insightExtraction?: InsightExtraction;
@@ -432,7 +437,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   },
   reflect: {
     handoff: 'wait',
-    loopContinue: 'off',
+    loopContinue: 0,
     insightExtraction: 'on',
     summaryGeneration: 'on',
     memoryWrite: 'auto',

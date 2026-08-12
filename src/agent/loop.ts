@@ -183,10 +183,14 @@ export class AgentLoop {
    * public 可写字段，属反向收口——把封装拆开换少一层包装，导致本类既提供只读 getter
    * `isPauseRequested` 又允许外部随意赋值，不变式无处可守。写入口收敛为下方两个方法。 */
   private pauseRequested = false;
-  /** 自审查轮是否启用（由 Agent 根据 L2 策略 reflect.loopContinue 设置） */
-  private selfReviewEnabled = false;
-  /** 自审查轮是否已完成（每轮用户输入独立计算，限 1 轮） */
-  private selfReviewDone = false;
+  /**
+   * 自审查最大轮数（由 Agent 根据 L2 策略 reflect.loopContinue 设置，Phase 9）
+   *
+   * 0=关闭自审查；N=LLM 纯文本回复后最多自审查 N 轮。
+   */
+  private maxSelfReviewRounds = 0;
+  /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
+  private selfReviewRound = 0;
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
   /**
@@ -264,13 +268,13 @@ export class AgentLoop {
           `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${remaining}`),
       selfReviewPrompt:
         opts.messages?.selfReviewPrompt ??
-        `[SELF_REVIEW] 请审查你上一条回复的质量。检查：
+        ((round: number, total: number) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请审查你上一条回复的质量。检查：
 1. 是否准确回答了用户的问题？
 2. 是否有遗漏的关键信息？
 3. 表达是否清晰、有条理？
 
 如果满意，请确认并输出最终版本。
-如果需要改进，请直接输出改进后的完整回复。`,
+如果需要改进，请直接输出改进后的完整回复。`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
 
@@ -338,17 +342,17 @@ export class AgentLoop {
       this.inAutonomousStep = false;
       // P0-3：清残留软暂停标志，防上一轮以 done 结束后跨轮泄漏误触发暂停（D2）
       this.pauseRequested = false;
-      // 重置自审查轮标志（每轮用户输入独立计算，限 1 轮）
-      this.selfReviewDone = false;
+      // 重置自审查轮计数（每轮用户输入独立计算）
+      this.selfReviewRound = 0;
 
       // 3. 迭代循环
       let iteration = 0;
       while (iteration < this.maxIterations) {
         iteration++;
         const result = yield* this.handleIteration(iteration, signal);
-        // Phase 7：自审查轮开始前 emit selfReview chunk，让宿主可展示视觉反馈
-        if (result === 'done' && this.selfReviewEnabled && !this.selfReviewDone && !this.toolCallsBlocked) {
-          yield { type: 'selfReview', round: 1 };
+        // Phase 7+9：自审查轮开始前 emit selfReview chunk，让宿主可展示视觉反馈（round 从 1 起）
+        if (result === 'done' && this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
+          yield { type: 'selfReview', round: this.selfReviewRound + 1 };
         }
         // P3-1：共享的迭代结果处理（提取自 processUserInput / continueAfterPause 的重复逻辑）
         if (!this.handleIterationResult(result)) return;
@@ -435,16 +439,16 @@ export class AgentLoop {
     this.reflectionCountThisTurn = 0;
     // P0-3：清残留软暂停标志（续跑前确保干净，防跨轮泄漏 D2）
     this.pauseRequested = false;
-    // 重置自审查轮标志（与 processUserInput 一致）
-    this.selfReviewDone = false;
+    // 重置自审查轮计数（与 processUserInput 一致）
+    this.selfReviewRound = 0;
     // 重新进入迭代循环，从保留的 this.messages 续跑
     let iteration = 0;
     while (iteration < this.maxIterations) {
       iteration++;
       const result = yield* this.handleIteration(iteration, signal);
-      // Phase 7：自审查轮开始前 emit selfReview chunk（与 processUserInput 一致）
-      if (result === 'done' && this.selfReviewEnabled && !this.selfReviewDone && !this.toolCallsBlocked) {
-        yield { type: 'selfReview', round: 1 };
+      // Phase 7+9：自审查轮开始前 emit selfReview chunk（与 processUserInput 一致）
+      if (result === 'done' && this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
+        yield { type: 'selfReview', round: this.selfReviewRound + 1 };
       }
       // P3-1：共享的迭代结果处理（与 processUserInput 一致）
       if (!this.handleIterationResult(result)) return;
@@ -470,13 +474,13 @@ export class AgentLoop {
   }
 
   /**
-   * 设置自审查轮是否启用
+   * 设置自审查最大轮数
    *
    * 由 Agent 在每轮对话开始前根据 L2 策略 reflect.loopContinue 设置。
-   * 启用后，LLM 生成纯文本回复后会自动进入 1 轮自审查，检查回复质量。
+   * 0=关闭；N>0 时，LLM 生成纯文本回复后自动进入最多 N 轮自审查，检查回复质量。
    */
-  setSelfReviewEnabled(enabled: boolean): void {
-    this.selfReviewEnabled = enabled;
+  setMaxSelfReviewRounds(rounds: number): void {
+    this.maxSelfReviewRounds = rounds > 0 ? Math.floor(rounds) : 0;
   }
 
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
@@ -586,13 +590,14 @@ export class AgentLoop {
       return false;
     }
     // result === 'done'
-    // 自审查轮：LLM 生成纯文本回复后，若启用自审查且未执行，注入提示继续 1 轮
+    // 自审查轮：LLM 生成纯文本回复后，若配置了自审查轮次且未达上限，注入提示继续 1 轮
     // 当 toolCallsBlocked 时，'done' 来自系统占位文本而非 LLM 回复，跳过自审查（P4-2）
-    if (this.selfReviewEnabled && !this.selfReviewDone && !this.toolCallsBlocked) {
-      this.selfReviewDone = true;
+    if (this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
+      // Phase 9：轮次递增 + 提示携带当前轮次/总轮数
+      this.selfReviewRound++;
       this.messages.push({
         role: 'system',
-        content: this.ui.selfReviewPrompt,
+        content: this.ui.selfReviewPrompt(this.selfReviewRound, this.maxSelfReviewRounds),
       });
       return true;
     }

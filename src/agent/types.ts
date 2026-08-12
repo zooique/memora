@@ -182,12 +182,16 @@ export interface UIMessages {
    */
   reflectionHint?: (remaining: number) => string;
   /**
-   * 自审查提示（默认英文）
+   * 自审查提示生成函数（默认英文）
    *
    * LLM 生成纯文本回复后，注入此提示让 LLM 审查自身回复质量。
-   * 自审查仅执行 1 轮，审查后 LLM 可确认或改进回复。
+   * 自审查最多执行 maxSelfReviewRounds 轮（Phase 9 可配置）。
+   *
+   * @param round 当前是第几轮自审查（从 1 开始）
+   * @param total 本轮配置的自审查总轮数
+   * @returns 系统消息内容
    */
-  selfReviewPrompt?: string;
+  selfReviewPrompt?: (round: number, total: number) => string;
 }
 
 // ─── 归档模式（ADR-015） ──────────────────────────────────

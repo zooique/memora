@@ -509,8 +509,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 根据 L2 策略设置工具调用权限（影响整轮对话），标准键 act.toolMode（§六）
     loop.setToolCallsBlocked(strategy.act?.toolMode === 'block');
 
-    // 根据 L2 策略设置自审查轮（LLM 纯文本回复后自动审查 1 轮），标准键 reflect.loopContinue（§六）
-    loop.setSelfReviewEnabled(strategy.reflect?.loopContinue === 'on');
+    // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
+    // Phase 9：loopContinue 为 number（0=关闭，N=最多 N 轮）；兼容旧格式 'on'→1 轮 / 'off'→0 轮
+    const loopContinue = strategy.reflect?.loopContinue;
+    const maxSelfReviewRounds =
+      typeof loopContinue === 'number'
+        ? loopContinue
+        : loopContinue === 'on'
+          ? 1
+          : 0;
+    loop.setMaxSelfReviewRounds(maxSelfReviewRounds);
 
     // M2.1 换角色 → 工具集切换：按激活角色包的 capabilities 应用工具暴露面
     // （toolMode=block 全禁与此正交；未声明 capabilities 时保持全部暴露）

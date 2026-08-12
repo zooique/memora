@@ -1152,7 +1152,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 自审查轮（Self-Review）', () => {
-  it('自审查启用时，LLM 纯文本回复后应触发自审查轮', async () => {
+  it('自审查启用时（1 轮），LLM 纯文本回复后应触发自审查轮', async () => {
     // 双轮 provider：第一轮原始回复，第二轮自审查回复
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1163,7 +1163,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setSelfReviewEnabled(true);
+    loop.setMaxSelfReviewRounds(1);
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('用户问题')) {
@@ -1177,7 +1177,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     // 最后一个是 done 事件
     expect(chunks[chunks.length - 1]!.type).toBe('done');
 
-    // Phase 7：验证 selfReview chunk 被 emit
+    // Phase 7：验证 selfReview chunk 被 emit（round=1）
     const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
     expect(selfReviewChunks).toHaveLength(1);
     expect(selfReviewChunks[0]!).toEqual({ type: 'selfReview', round: 1 });
@@ -1185,14 +1185,13 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     const messages = loop.getMessages();
     // system + user + assistant(原始) + system(自审查提示) + assistant(改进) = 5
     expect(messages).toHaveLength(5);
-    // 自审查提示应存在
+    // 自审查提示应存在且携带轮次信息（第 1/1 轮）
     expect(messages[3]!.role).toBe('system');
     expect(messages[3]!.content).toContain('SELF_REVIEW');
+    expect(messages[3]!.content).toContain('1/1');
   });
 
-  it('自审查轮仅执行一次（selfReviewDone 标志控制）', async () => {
-    // 验证 selfReview chunk 在第二轮（自审查轮）前同样 emit
-    // 但第三轮不应再 emit（selfReviewDone 已为 true）
+  it('自审查轮仅执行一次（selfReviewRound 达到上限后停止）', async () => {
     // 3 轮都返回文本，但自审查只应触发 1 轮
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1204,7 +1203,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setSelfReviewEnabled(true);
+    loop.setMaxSelfReviewRounds(1);
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -1227,6 +1226,79 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(selfReviewMsgs).toHaveLength(1);
   });
 
+  it('Phase 9：多轮自审查（2 轮）应依次执行且 round 递增', async () => {
+    // 4 轮 provider：原始回复 + 审查1 + 审查2 + （第3轮不应触发）
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '初始回复' }],
+        [{ content: '第一轮审查后' }],
+        [{ content: '第二轮审查后' }],
+        [{ content: '第三轮（不应出现）' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    loop.setMaxSelfReviewRounds(2);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    // 文本：初始 + 审查1 + 审查2，第 4 轮不应出现（2 轮后 done 即结束）
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toEqual(['初始回复', '第一轮审查后', '第二轮审查后']);
+
+    // selfReview chunk 应 emit 2 次，round 依次为 1、2
+    const selfReviewChunks = chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'selfReview' }> => c.type === 'selfReview',
+    );
+    expect(selfReviewChunks).toHaveLength(2);
+    expect(selfReviewChunks[0]!.round).toBe(1);
+    expect(selfReviewChunks[1]!.round).toBe(2);
+
+    // 自审查 system 消息应只有 2 条，且提示分别携带 1/2 和 2/2
+    const messages = loop.getMessages();
+    const selfReviewMsgs = messages.filter(
+      (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
+    );
+    expect(selfReviewMsgs).toHaveLength(2);
+    expect(selfReviewMsgs[0]!.content).toContain('1/2');
+    expect(selfReviewMsgs[1]!.content).toContain('2/2');
+  });
+
+  it('Phase 9：0 轮（关闭）时不触发自审查', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '仅文本回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    loop.setMaxSelfReviewRounds(0);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    // 只有原始文本，没有自审查轮
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toEqual(['仅文本回复']);
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+
+    // 不应有 selfReview chunk
+    const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
+    expect(selfReviewChunks).toHaveLength(0);
+
+    // 不应有自审查 system 消息
+    const messages = loop.getMessages();
+    const selfReviewMsgs = messages.filter(
+      (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
+    );
+    expect(selfReviewMsgs).toHaveLength(0);
+  });
+
   it('toolCallsBlocked 时自审查被跳过', async () => {
     // toolCallsBlocked 时 'done' 来自系统兜底文本而非 LLM 回复，不应触发自审查
     const loop = new AgentLoop({
@@ -1236,7 +1308,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     });
 
     loop.setToolCallsBlocked(true);
-    loop.setSelfReviewEnabled(true);
+    loop.setMaxSelfReviewRounds(1);
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
