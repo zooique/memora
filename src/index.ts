@@ -59,6 +59,13 @@ export type {
 } from '@/role-pack/types.js';
 export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/types.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
+// 角色包格式校验器（role-pack-spec §八，跨实现一致性，独立于任何实现）
+// validateRolePack = role-pack.md 内容层（单文件全量 / 文件夹 frontmatter 键集 + 章节 + 策略 + skills + 红线注入）
+// validateManifest = manifest.json 元数据层（必填字段 + 版本语义 + 合规分档），与 validateRolePack 构成双文件校验闭环
+export { validateRolePack, validateRolePackText, validateManifest } from '@/role-pack/validator.js';
+export type {
+  RolePackValidationIssue, RolePackValidationResult, RolePackValidateInput, RolePackIssueSeverity,
+} from '@/role-pack/validator.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';
 // RelationBuilder 从 InsightExtractor 提取，封装 ADR-014 关系构建逻辑

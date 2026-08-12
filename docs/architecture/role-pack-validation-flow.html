@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<!--
+  文件：role-pack-validation-flow.html
+  用途：角色包双文件校验闭环时序图（role-pack-spec §八 配套文档）
+  内容：文件夹形态下 validateManifest（manifest.json 元数据层）与
+        validateRolePack（role-pack.md 内容层）的调用数据流，
+        突出 companion 状态注入关键节点（§七 第 5 条 红线双文件闭环）。
+  关联：validator.ts validateManifest / validateComplianceFields / validateIntimateRedline
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>角色包双文件校验闭环 · 时序图</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --surface: #F7F7F8;
+      --surface-muted: #EFEFF2;
+      --text: #171717;
+      --text-muted: #52525B;
+      --border: rgba(23, 23, 23, 0.12);
+      --brand: #4B3FE3;
+      --brand-soft: #F2F7FF;
+      --brand-soft-strong: #E5EAFF;
+      --brand-text: #1A1759;
+      --brand-on: #FFFFFF;
+      --chart-series-1: #3C2ECA;
+      --chart-series-2: #A9AEFF;
+      --chart-series-3: #6F6FFF;
+      --chart-series-4: #22A5F7;
+      --chart-other: #D3D4DA;
+      --accent: #27D2BF;
+      --accent-soft: #EAFBF8;
+      --accent-text: #0F766E;
+      --success: #1DC981;
+      --warning: #EFAA17;
+      --danger: #E8463A;
+      --radius: 8px;
+      --radius-card: 12px;
+      --radius-full: 999px;
+      --spacer-4: 4px;
+      --spacer-8: 8px;
+      --spacer-12: 12px;
+      --spacer-16: 16px;
+      --spacer-20: 20px;
+      --spacer-24: 24px;
+      --font-sans: "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-metric: "Inter", "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --weight-regular: 400;
+      --weight-medium: 500;
+      --weight-strong: 600;
+      --text-caption: 12px/18px;
+      --text-body: 14px/20px;
+      --text-title: 16px/24px;
+      --text-code: 13px/20px;
+    }
+
+    :root[data-widget-theme="dark"] {
+      color-scheme: dark;
+      --surface: #171717;
+      --surface-muted: #262626;
+      --text: #E5E5E5;
+      --text-muted: #A1A1AA;
+      --border: rgba(229, 229, 229, 0.12);
+      --brand: #6054F1;
+      --brand-soft: #1A1759;
+      --brand-soft-strong: #3C2ECA;
+      --brand-text: #CFD8FF;
+      --chart-series-1: #4B3FE3;
+      --chart-other: #D3D4DA;
+      --accent-soft: #123F3C;
+      --accent-text: #CCFBF1;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --surface: #171717;
+        --surface-muted: #262626;
+        --text: #E5E5E5;
+        --text-muted: #A1A1AA;
+        --border: rgba(229, 229, 229, 0.12);
+        --brand: #6054F1;
+        --brand-soft: #1A1759;
+        --brand-soft-strong: #3C2ECA;
+        --brand-text: #CFD8FF;
+        --chart-series-1: #4B3FE3;
+        --chart-other: #D3D4DA;
+        --accent-soft: #123F3C;
+        --accent-text: #CCFBF1;
+      }
+    }
+
+    body {
+      margin: 0;
+      padding: var(--spacer-24);
+      background: var(--surface-muted);
+      color: var(--text);
+      font: var(--weight-regular) var(--text-body) var(--font-sans);
+    }
+
+    .sequenceCard {
+      box-sizing: border-box;
+      max-width: 860px;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      padding: var(--spacer-20);
+    }
+
+    .sequenceHeader {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: var(--spacer-16);
+    }
+
+    .sequenceTitleGroup {
+      display: grid;
+      gap: var(--spacer-4);
+      min-width: 0;
+    }
+
+    .sequenceTitle {
+      margin: 0;
+      color: var(--text);
+      font: var(--weight-medium) var(--text-title) var(--font-sans);
+    }
+
+    .sequenceSubtitle {
+      margin: 0;
+      color: var(--text-muted);
+      font: var(--weight-regular) var(--text-caption) var(--font-sans);
+    }
+
+    .sequenceBadge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 var(--spacer-12);
+      color: var(--brand-text);
+      background: var(--surface-muted);
+      border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+      border-radius: var(--radius-full);
+      font: var(--weight-medium) var(--text-caption) var(--font-sans);
+    }
+
+    .sequenceCanvas {
+      margin-top: var(--spacer-16);
+      overflow: hidden;
+      background: var(--surface-muted);
+      border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+      border-radius: var(--radius);
+    }
+
+    .sequenceSvg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .participantBox {
+      fill: var(--surface);
+      stroke: color-mix(in srgb, var(--border) 92%, transparent);
+      stroke-width: 1;
+    }
+
+    .participant[data-role="focus"] .participantBox {
+      fill: color-mix(in srgb, var(--brand) 7%, var(--surface));
+      stroke: color-mix(in srgb, var(--brand) 72%, var(--border));
+    }
+
+    .participant[data-role="external"] .participantBox {
+      stroke: color-mix(in srgb, var(--text-muted) 42%, var(--border));
+    }
+
+    .participantLabel {
+      fill: var(--text);
+      font: var(--weight-medium) var(--text-body) var(--font-sans);
+    }
+
+    .participantCaption {
+      fill: var(--text-muted);
+      font: var(--weight-regular) var(--text-caption) var(--font-sans);
+    }
+
+    .participant[data-role="focus"] .participantLabel {
+      fill: var(--brand-text);
+    }
+
+    .participant[data-role="focus"] .participantCaption {
+      fill: var(--brand);
+    }
+
+    .lifeline {
+      fill: none;
+      stroke: color-mix(in srgb, var(--text-muted) 42%, transparent);
+      stroke-width: 1.2;
+      stroke-dasharray: 5 7;
+      stroke-linecap: round;
+    }
+
+    .activation {
+      fill: var(--surface);
+      stroke: color-mix(in srgb, var(--border) 92%, transparent);
+      stroke-width: 1;
+    }
+
+    .activation[data-role="focus"] {
+      fill: color-mix(in srgb, var(--brand) 8%, var(--surface));
+      stroke: color-mix(in srgb, var(--brand) 62%, var(--border));
+    }
+
+    .messagePath {
+      fill: none;
+      stroke: var(--text-muted);
+      stroke-width: 1.5;
+      stroke-linecap: butt;
+      stroke-linejoin: round;
+    }
+
+    .messagePath[data-type="return"] {
+      stroke-dasharray: 7 6;
+    }
+
+    .messagePath[data-focus="true"] {
+      stroke: var(--brand);
+      stroke-width: 1.8;
+    }
+
+    .arrowHeadPath {
+      fill: var(--text-muted);
+    }
+
+    .arrowHeadPath[data-focus="true"] {
+      fill: var(--brand);
+    }
+
+    .labelBg {
+      fill: var(--surface);
+      stroke: color-mix(in srgb, var(--border) 76%, transparent);
+    }
+
+    .labelBg[data-focus="true"] {
+      fill: var(--brand-soft);
+      stroke: color-mix(in srgb, var(--brand) 42%, var(--border));
+    }
+
+    .messageLabel {
+      fill: var(--text);
+      font: var(--weight-medium) var(--text-caption) var(--font-sans);
+    }
+
+    .messageLabel[data-focus="true"] {
+      fill: var(--brand-text);
+    }
+
+    .phaseChip {
+      fill: color-mix(in srgb, var(--surface-muted) 56%, var(--surface));
+      stroke: color-mix(in srgb, var(--border) 68%, transparent);
+    }
+
+    .phaseChip[data-focus="true"] {
+      fill: color-mix(in srgb, var(--brand) 9%, var(--surface));
+      stroke: color-mix(in srgb, var(--brand) 58%, var(--border));
+    }
+
+    .phaseText {
+      fill: var(--text-muted);
+      font: var(--weight-medium) var(--text-caption) var(--font-sans);
+    }
+
+    .phaseChip[data-focus="true"] .phaseText,
+    .phaseText[data-focus="true"] {
+      fill: var(--brand-text);
+    }
+
+    .companionBadge {
+      fill: var(--brand);
+    }
+
+    .companionBadgeText {
+      fill: var(--brand-on);
+      font: var(--weight-medium) var(--text-caption) var(--font-sans);
+    }
+
+    .funcNote {
+      fill: var(--text-muted);
+      font: var(--weight-regular) var(--text-caption) var(--font-sans);
+    }
+
+    .mobileSequence {
+      display: none;
+      margin-top: var(--spacer-16);
+    }
+
+    .mobileActors {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--spacer-8);
+    }
+
+    .mobileActor {
+      min-width: 0;
+      padding: var(--spacer-8) var(--spacer-12);
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+      border-radius: var(--radius);
+      font: var(--weight-medium) var(--text-caption) var(--font-sans);
+    }
+
+    .mobileActor[data-role="focus"] {
+      color: var(--brand-text);
+      border-color: color-mix(in srgb, var(--brand) 64%, var(--border));
+      background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+    }
+
+    .mobileMessages {
+      display: grid;
+      gap: var(--spacer-8);
+      margin-top: var(--spacer-12);
+    }
+
+    .mobileMessage {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: var(--spacer-8);
+      align-items: start;
+      padding: var(--spacer-8) var(--spacer-12);
+      background: var(--surface);
+      border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+      border-radius: var(--radius);
+    }
+
+    .mobileMessage[data-focus="true"] {
+      border-color: color-mix(in srgb, var(--brand) 54%, var(--border));
+      background: color-mix(in srgb, var(--brand) 5%, var(--surface));
+    }
+
+    .messageIndex {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      color: var(--text-muted);
+      background: var(--surface-muted);
+      border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+      border-radius: var(--radius-full);
+      font: var(--weight-medium) var(--text-caption) var(--font-sans);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mobileMessage[data-focus="true"] .messageIndex {
+      color: var(--brand-on);
+      background: var(--brand);
+      border-color: var(--brand);
+    }
+
+    .messageRoute {
+      color: var(--text-muted);
+      font: var(--weight-regular) var(--text-caption) var(--font-sans);
+    }
+
+    .messageName {
+      margin-top: var(--spacer-4);
+      color: var(--text);
+      font: var(--weight-medium) var(--text-body) var(--font-sans);
+    }
+
+    .messageType {
+      color: var(--text-muted);
+      font: var(--weight-regular) var(--text-caption) var(--font-sans);
+    }
+
+    @media (max-width: 560px) {
+      .sequenceCard {
+        padding: var(--spacer-16);
+      }
+
+      .sequenceHeader {
+        display: grid;
+      }
+
+      .sequenceBadge {
+        width: fit-content;
+      }
+
+      .sequenceCanvas {
+        display: none;
+      }
+
+      .mobileSequence {
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="sequenceCard" aria-label="角色包双文件校验闭环时序图">
+    <div class="sequenceHeader">
+      <div class="sequenceTitleGroup">
+        <h3 class="sequenceTitle">角色包双文件校验闭环 · 时序图</h3>
+        <p class="sequenceSubtitle">文件夹形态：manifest.json 元数据层 + role-pack.md 内容层（§2.4 / §七 / §八）</p>
+      </div>
+      <div class="sequenceBadge">4 messages</div>
+    </div>
+
+    <div class="sequenceCanvas">
+      <svg class="sequenceSvg" viewBox="0 0 720 452" role="img" aria-label="调用方、validateManifest、validateRolePack 三者间的双文件校验数据流，companion 状态注入为关键节点">
+        <defs>
+          <marker id="sequenceArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path class="arrowHeadPath" d="M1 1 L7 4 L1 7 Z" />
+          </marker>
+          <marker id="sequenceArrowFocus" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path class="arrowHeadPath" data-focus="true" d="M1 1 L7 4 L1 7 Z" />
+          </marker>
+        </defs>
+
+        <!-- 顶部阶段说明：companion 状态生命周期 -->
+        <rect class="phaseChip" x="38" y="16" width="212" height="26" rx="13" />
+        <text class="phaseText" x="144" y="34" text-anchor="middle">文件夹形态 · 双文件各司其职</text>
+        <rect class="phaseChip" data-focus="true" x="470" y="16" width="212" height="26" rx="13" />
+        <text class="phaseText" data-focus="true" x="576" y="34" text-anchor="middle">companion 状态：产生 → 注入</text>
+
+        <!-- 参与者 -->
+        <g class="participant" data-role="external" transform="translate(20 58)">
+          <rect class="participantBox" width="152" height="54" rx="8" />
+          <text class="participantLabel" x="76" y="23" text-anchor="middle">调用方</text>
+          <text class="participantCaption" x="76" y="42" text-anchor="middle">装载器 / CLI</text>
+        </g>
+        <g class="participant" data-role="focus" transform="translate(280 58)">
+          <rect class="participantBox" width="152" height="54" rx="8" />
+          <text class="participantLabel" x="76" y="23" text-anchor="middle">validateManifest</text>
+          <text class="participantCaption" x="76" y="42" text-anchor="middle">manifest.json 层</text>
+        </g>
+        <g class="participant" data-role="neutral" transform="translate(540 58)">
+          <rect class="participantBox" width="152" height="54" rx="8" />
+          <text class="participantLabel" x="76" y="23" text-anchor="middle">validateRolePack</text>
+          <text class="participantCaption" x="76" y="42" text-anchor="middle">role-pack.md 层</text>
+        </g>
+
+        <!-- 生命线 -->
+        <path class="lifeline" d="M96 118 V416" fill="none" />
+        <path class="lifeline" d="M356 118 V416" fill="none" />
+        <path class="lifeline" d="M616 118 V416" fill="none" />
+
+        <!-- 激活条 -->
+        <rect class="activation" data-role="focus" x="347" y="152" width="18" height="98" rx="6" />
+        <rect class="activation" x="607" y="304" width="18" height="86" rx="6" />
+
+        <!-- 消息 1：校验 manifest 元数据层 -->
+        <path class="messagePath" d="M96 162 H340" marker-end="url(#sequenceArrow)" fill="none" />
+        <rect class="labelBg" x="130" y="150" width="200" height="24" rx="8" />
+        <text class="messageLabel" x="230" y="167" text-anchor="middle">校验 manifest 元数据层</text>
+
+        <!-- 内部函数注释 1：companion 状态在此产生 -->
+        <text class="funcNote" x="372" y="202">validateComplianceFields 判定 interactionType</text>
+
+        <!-- 消息 2：返回合规判定（companion 状态产生） -->
+        <path class="messagePath" data-type="return" d="M356 238 H102" marker-end="url(#sequenceArrow)" fill="none" />
+        <rect class="labelBg" x="145" y="226" width="170" height="24" rx="8" />
+        <text class="messageLabel" x="230" y="243" text-anchor="middle">返回合规判定 + issues</text>
+
+        <!-- 消息 3：注入 manifestInteractionType（关键节点） -->
+        <path class="messagePath" data-focus="true" d="M96 314 H592" marker-end="url(#sequenceArrowFocus)" fill="none" />
+        <rect class="labelBg" data-focus="true" x="230" y="302" width="200" height="24" rx="8" />
+        <text class="messageLabel" data-focus="true" x="330" y="319" text-anchor="middle">注入 manifestInteractionType</text>
+        <rect class="companionBadge" x="440" y="304" width="96" height="20" rx="10" />
+        <text class="companionBadgeText" x="488" y="318" text-anchor="middle">关键节点</text>
+
+        <!-- 内部函数注释 2：注入状态驱动红线检测 -->
+        <text class="funcNote" x="452" y="360">validateIntimateRedline 检测 body 红线</text>
+
+        <!-- 消息 4：返回内容层 issues（含红线） -->
+        <path class="messagePath" data-type="return" d="M616 390 H102" marker-end="url(#sequenceArrow)" fill="none" />
+        <rect class="labelBg" x="245" y="378" width="210" height="24" rx="8" />
+        <text class="messageLabel" x="350" y="395" text-anchor="middle">返回内容层 issues（含红线）</text>
+      </svg>
+    </div>
+
+    <div class="mobileSequence" aria-label="紧凑消息列表">
+      <div class="mobileActors" aria-label="参与者">
+        <div class="mobileActor">调用方</div>
+        <div class="mobileActor" data-role="focus">validateManifest</div>
+        <div class="mobileActor">validateRolePack</div>
+      </div>
+      <div class="mobileMessages">
+        <div class="mobileMessage" data-type="request">
+          <span class="messageIndex">1</span>
+          <div>
+            <div class="messageRoute">调用方 → validateManifest</div>
+            <div class="messageName">校验 manifest 元数据层</div>
+            <div class="messageType">必填字段 + semver + 合规分档</div>
+          </div>
+        </div>
+        <div class="mobileMessage" data-type="return">
+          <span class="messageIndex">2</span>
+          <div>
+            <div class="messageRoute">validateManifest → 调用方</div>
+            <div class="messageName">返回合规判定 + issues</div>
+            <div class="messageType">companion 状态在此产生（validateComplianceFields）</div>
+          </div>
+        </div>
+        <div class="mobileMessage" data-focus="true" data-type="request">
+          <span class="messageIndex">3</span>
+          <div>
+            <div class="messageRoute">调用方 → validateRolePack · 关键节点</div>
+            <div class="messageName">注入 manifestInteractionType</div>
+            <div class="messageType">companion 状态注入，驱动 role-pack.md body 红线检测</div>
+          </div>
+        </div>
+        <div class="mobileMessage" data-type="return">
+          <span class="messageIndex">4</span>
+          <div>
+            <div class="messageRoute">validateRolePack → 调用方</div>
+            <div class="messageName">返回内容层 issues（含红线）</div>
+            <div class="messageType">章节 / 策略 / skills / 红线（validateIntimateRedline）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

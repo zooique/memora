@@ -43,6 +43,7 @@ import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
+import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
@@ -507,6 +508,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 根据 L2 策略设置工具调用权限（影响整轮对话）
     loop.setToolCallsBlocked(strategy.act?.toolCalls === 'block');
+
+    // M2.1 换角色 → 工具集切换：按激活角色包的 capabilities 应用工具暴露面
+    // （toolMode=block 全禁与此正交；未声明 capabilities 时保持全部暴露）
+    this.applyRolePackToolExposure();
 
     yield { type: 'thinking', phase: 'recalling' };
     const recalledMemories = await this.recallAndInject(input, memoryRecallMode);
@@ -2600,6 +2605,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   getActiveStrategy(): BehaviorStrategy {
     return this.rolePackManager_?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
+  }
+
+  /**
+   * 应用当前角色包的工具暴露面（M2.1：换角色 → 工具集切换）
+   *
+   * 范式主张（role-pack-spec §四 + mvp-scope 验收标准 7）：
+   * 「换装 = 换 Agent」——角色包声明的 capabilities（中立能力）经 capabilityMap
+   * 映射为 memora 工具白名单，控制 LLM 可见/可调的工具集。
+   *
+   * 规则：
+   * - 激活角色包声明了 capabilities → 白名单 = resolveCapabilityTools(capabilities)；
+   * - 激活角色包未声明 capabilities（或无角色包）→ 白名单 = null（全部暴露，保持现状）；
+   * - toolMode=block 已在 setToolCallsBlocked 处理（全禁），与白名单正交。
+   *
+   * 每轮 chat Prepare 阶段调用（与 setToolCallsBlocked 同位），角色包切换后
+   * 下一轮自动生效。变更经 setToolWhitelist → onToolsChanged → refreshToolDefinitions
+   * 链路同步 AgentLoop 快照与 system prompt。
+   */
+  private applyRolePackToolExposure(): void {
+    if (!this.toolExec) return;
+    const active = this.rolePackManager_?.getActive();
+    const whitelist = active ? resolveCapabilityTools(active.capabilities) : null;
+    this.toolExec.setToolWhitelist(whitelist);
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────

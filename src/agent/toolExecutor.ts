@@ -102,6 +102,19 @@ export class ToolExecutor {
    */
   private onToolsChanged?: () => void;
 
+  /**
+   * 工具白名单（capabilities → 工具映射产物，M2.1）
+   *
+   * - `null`（默认）：全部暴露——未声明 capabilities 的角色包/无角色包时保持现状；
+   * - `string[]`：只暴露白名单内的工具（内置 + web_search 按名单过滤，自定义工具不受限）；
+   * - `[]`：空白名单 = 无内置工具暴露（配合 toolMode=block 即全禁）。
+   *
+   * 语义（对齐 role-pack-spec §四）：角色包声明 capabilities 后，工具暴露面 = 该角色包
+   * 映射出的工具集——「换角色 → 工具集切换」范式验证的最小实现（mvp-scope 验收标准 7）。
+   * 白名单只控制**暴露面**（LLM 可见/可调），不改变 execute 路由。
+   */
+  private toolWhitelist: string[] | null = null;
+
   /** 网络搜索提供者（可选，注入时启用 web_search 工具） */
   private readonly webSearchProvider?: IWebSearchProvider;
 
@@ -211,14 +224,44 @@ export class ToolExecutor {
   }
 
   /**
+   * 设置工具白名单（M2.1：换角色 → 工具集切换）
+   *
+   * 角色包激活/切换时由 Agent 调用（getActiveCapabilities → resolveCapabilityTools），
+   * 把中立能力声明映射为 memora 工具白名单。变更后触发 onToolsChanged，
+   * AgentLoop 的 toolDefinitions 快照与 system prompt 自动刷新。
+   *
+   * @param whitelist 白名单工具名数组；null=全部暴露（默认，无能力声明时）
+   */
+  setToolWhitelist(whitelist: string[] | null): void {
+    this.toolWhitelist = whitelist;
+    this.onToolsChanged?.();
+  }
+
+  /** 获取当前工具白名单（null=全部暴露） */
+  get currentToolWhitelist(): string[] | null {
+    return this.toolWhitelist;
+  }
+
+  /**
    * 获取所有工具定义（IX-02：统一为 getter 风格，与 persona/skill 一致）
+   *
+   * 白名单语义（M2.1）：
+   * - toolWhitelist === null：全部暴露（内置 + web_search 条件 + 自定义工具）；
+   * - toolWhitelist === string[]：内置 + web_search 只保留名单内工具，自定义工具始终暴露
+   *   （自定义工具由宿主注册，属宿主能力面，角色包能力声明不越权过滤宿主工具）。
    */
   get list(): ToolDefinition[] {
     // 条件性包含 web_search 工具：仅当注入了 webSearchProvider 时才暴露给 LLM
-    const tools = this.webSearchProvider
+    const baseTools = this.webSearchProvider
       ? [...BUILTIN_TOOLS, WEB_SEARCH_TOOL]
       : BUILTIN_TOOLS;
-    return [...tools, ...[...this.customTools.values()].map((e) => e.definition)];
+
+    // 白名单过滤（仅内置/条件工具受控；自定义工具不受限）
+    const whitelisted = this.toolWhitelist
+      ? baseTools.filter((t) => this.toolWhitelist?.includes(t.name))
+      : baseTools;
+
+    return [...whitelisted, ...[...this.customTools.values()].map((e) => e.definition)];
   }
 
   /**

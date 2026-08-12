@@ -36,8 +36,8 @@
 
 ```
 我的角色包/                        ← 文件夹，zip 压缩分发
-├── role-pack.md                  # ★核心定义：meta + strategy + persona/rules + skills 声明（对齐 SKILL.md 的角色）
-├── skills/                       # 内嵌标准 skills 包（每个一个子文件夹，结构完全兼容 skills 生态）
+├── role-pack.md                  # ★核心定义：strategy + skills 声明 + persona/rules 正文（对齐 SKILL.md 的角色；文件夹形态下不含元数据字段）
+├── skills/                       # 内嵌标准 skills 包（每个一个子文件夹，SKILL.md 声明 capability 标签，与 §四 声明按 capability 去重合并）
 │   ├── write-file/
 │   │   ├── SKILL.md
 │   │   └── scripts/...
@@ -46,7 +46,7 @@
 ├── references/                   # 知识引用（对齐 skills 的 references/）
 ├── assets/                       # 资源（模板、图片、示例）
 ├── scripts/                      # L3 代码钩子（远期，沙箱隔离后启用）
-├── manifest.json                 # ★文件夹形态必填：formatVersion + 合规字段 + 分发元数据（单文件形态由 frontmatter 承担，§2.4）
+├── manifest.json                 # ★文件夹形态必填且为唯一权威：name / formatVersion / 合规字段 / 分发元数据（§2.4 单一真理源）
 └── com.memora/（可选）            # 反域名命名空间：memora 专有行为层（对齐 Agent Plugins 扩展惯例，其他实现忽略，§十）
 ```
 
@@ -63,6 +63,7 @@ keywords: [写作, 小说, 故事]
 trigger: [写作, 写一篇, 写个故事]
 author: memora
 version: 1.0.0
+# interactionType: tool_assistant（缺省即工具型，§七 分档校验）
 strategy:
   prepare:
     contextAssembly: hybrid
@@ -97,9 +98,10 @@ skills:
 
 ### 2.4 渐进升级规则
 
-- **单文件 → 文件夹**：role-pack.md 声明内嵌 `skills/` 或需要 `references/` 时，升级为文件夹包——**装载行为不变**（都以 role-pack.md 为入口）；
-- **manifest 双形态（对齐行业必填锚点）**：单文件形态下 **frontmatter 即 manifest**（`name`/`formatVersion`/合规字段都在 frontmatter，§2.3 即示范）；升级为文件夹后，frontmatter 中的 manifest 语义**迁移至 `manifest.json`**（内容不重复、避免双写），role-pack.md 保留 meta 摘要供快速匹配；文件夹形态下 `manifest.json` **必填**，缺失即拒绝加载；
-- **manifest 字段集（对齐 Agent Plugins plugin.json）**：`name`（必填）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规，§七）/ `extensions`（反域名命名空间对象）；
+- **单文件 → 文件夹**：角色包需要**内嵌 skills 包**（§四 绑定规则，单文件不可内嵌）或 `references/`/`assets/` 等资源目录时，升级为文件夹包——**装载行为不变**（都以 role-pack.md 为入口）；仅有 capabilities 声明、无内嵌资源的角色包保持单文件形态即可（L1 能力靠实现映射，不强制升级）；
+- **manifest 双形态（单一真理源）**：单文件形态下 **frontmatter 即 manifest**（元数据字段都在 frontmatter，§2.3 即示范）；升级为文件夹后，**`manifest.json` 成为唯一权威**——元数据字段（`name` / `formatVersion` / `version` / `description` / `author` / 合规字段等）整体迁入 `manifest.json`，**文件夹形态下 role-pack.md 的 frontmatter 只允许 `strategy` + `skills` 两个键**，其余元数据键出现即被校验器拒绝（见 §八）；文件夹形态下 `manifest.json` **必填**，缺失即拒绝加载；
+- **迁移即搬移，无合并歧义**：单文件 → 文件夹时，frontmatter 元数据段整体复制进 `manifest.json`，`strategy`/`skills` 保留在 role-pack.md；两个形态各自只有一份权威，同字段永不双写；
+- **manifest 字段集（对齐 Agent Plugins plugin.json）**：`name`（必填）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `extensions`（反域名命名空间对象）；
 - **加载规则**：装载器先找 `role-pack.md`（文件夹）或 `<名>.md`（单文件）；`skills/` 内嵌包按 skills 生态标准加载（复用现有解析器）；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 包建议 **≤10 个**（超出降级为引用已注册技能，避免 30+ skills 的启动税非线性恶化）；单个内嵌 SKILL.md 建议 **≤500 行**，详述放 `references/`；
 - 分发：文件夹 zip 压缩（对齐 skills 市场分发方式）。
@@ -118,7 +120,7 @@ skills:
 角色包（文件夹包 / 单文件最小形态）
 ├── role-pack.md（★核心定义 = 三层结构载体）
 │   ├── frontmatter（YAML 结构化内核）
-│   │   ├── 元数据：name / formatVersion / keywords / trigger / version ...
+│   │   ├── 元数据：name / formatVersion / keywords / trigger / version ...（仅单文件形态；文件夹形态下迁入 manifest.json，§2.4）
 │   │   ├── strategy：L2 行为策略（嵌套对象，见 §六）
 │   │   └── skills：能力声明数组（capability + description，见 §四）
 │   ├── L1 内容层（★必读 = 最小兼容面）
@@ -173,6 +175,8 @@ skills:
 - 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集；
 - `capability` 为必填、`description` 可选（供 LLM 与校验器理解）。
 
+**capabilities 与内嵌 skills 的绑定（单向）**：`skills/` 内嵌的每个 SKILL.md 必须在其 frontmatter 声明 `capability` 标签（如 `capability: web:search`），装载时**按 capability 去重合并**——同一能力声明与内嵌包并存时，以内嵌包为准（具体实现优先于抽象声明）；**单文件最小形态只能有 `capabilities` 声明、不能内嵌 skill**（内嵌是文件夹形态专属能力）；capabilities 未匹配到任何内嵌包时，按实现映射到自有工具（原规则不变）。
+
 **具体连接桥（L2 可选，`mcp.json`）**：capabilities 是**抽象能力声明**（要什么能力、实现无关）；当角色包需要**开箱即用**的具象连接时，可在文件夹根放 `mcp.json`（对齐 Agent Plugins 1.0 的 transport 声明：`stdio` / `streamable-http` / `http+sse`），由实现映射到自有运行时。两者不冲突：**capabilities 是 L1 中立契约，mcp.json 是 L2 可选实现加速**——不声明 mcp.json 的角色包仍可被任何实现按 capabilities 装载。
 
 ---
@@ -187,6 +191,7 @@ skills:
 | 未知能力 | 跳过（可选提示） |
 | `formatVersion` 不兼容 | 拒绝加载 + 提示按迁移规则升级（见下） |
 | `minKernelVersion` 高于实现版本 | 拒绝加载（或警告降级运行，由实现决定） |
+| 元数据双写（文件夹形态下 role-pack.md frontmatter 含 `name` 等元数据键） | **拒绝加载** + 提示"元数据权威在 manifest.json"（校验器检查，§八） |
 
 **formatVersion 迁移规则（对齐 Agent Plugins「schema URL 永不重指」）**：
 
@@ -225,9 +230,9 @@ skills:
 
 **标准级合规设计（角色包自带）**：
 
-1. **AI 身份标注**：角色包驱动的 Agent 必须向用户明确标注 AI 身份（新规红线之一）——`manifest` 声明 `aiIdentityDisclosure: true`（默认强制）；
+1. **AI 身份标注**：`manifest`/frontmatter 声明 `aiIdentityDisclosure`（`true` 默认值）——**标准级仅要求字段可声明**；**实现级强制生效**：memora 作为 reference implementation 必须向用户明确标注 AI 身份（新规红线之一），并对缺失该字段的 `companion` 角色包拒绝加载；
 2. **rule 段 = 内容红线载体**：`## Rules` 承载内容安全约束（不生成违法/低俗/侵权内容、不涉真实个人隐私、不诱导沉迷），随角色包装载即生效——**让"平台审核责任"落到结构化可校验的规则上**；
-3. **拟人化场景声明**：frontmatter 增加 `interactionType: tool_assistant | companion`（默认 `tool_assistant`）——声明本角色包是**工具型工作助手**（豁免区间）还是**拟人化陪伴**（落入《办法》管辖，需单独合规路径 + 物理隔离）；校验器检查该字段必填；
+3. **拟人化场景声明**：frontmatter/manifest 增加 `interactionType: tool_assistant | companion`（默认 `tool_assistant`）——声明本角色包是**工具型工作助手**（豁免区间）还是**拟人化陪伴**（落入《办法》管辖，需单独合规路径 + 物理隔离）。**分档校验**：标准级**可选**（缺省即 `tool_assistant`）；**仅当显式声明 `companion` 时**，校验器执行完整合规检查（虚拟亲密关系红线拒绝、强制 `aiIdentityDisclosure`、`minorProtection` 必填）；memora 实现级对未声明且缺失合规字段的装载默认放行但提示补全；
 4. **未成年人保护钩子**：`manifest` 声明 `minorProtection: required`（默认）——实现必须提供监护人管控入口（对应新规未成年人模式要求）；
 5. **禁止面向未成年人的虚拟亲密关系**：校验器拒绝 `companion` 类角色包携带"虚拟亲属/虚拟伴侣"特征（红线）。
 
@@ -237,7 +242,8 @@ skills:
 
 ## 八、校验（跨实现一致性）
 
-- 提供**格式校验器**（独立于任何实现）：校验必填字段、章节存在、键名合法性、版本语义、**合规字段（§七）**；
+- 提供**格式校验器**（独立于任何实现）：校验必填字段、章节存在、键名合法性、版本语义、**合规字段（§七，分档：仅 `companion` 角色包全量强校验，`tool_assistant` 默认值兜底）**；文件夹形态下额外检查 role-pack.md frontmatter 键集（仅允许 `strategy`/`skills`，§2.4 单一真理源）；
+- **双文件校验职责**（文件夹形态）：`manifest.json` 元数据层（必填字段 / 版本语义 / 合规分档）与 `role-pack.md` 内容层（章节 / strategy / skills / 红线）由校验器分开校验，`companion` 合规状态跨文件注入（§七 第 5 条红线闭环）——调用链与关键节点见配套时序图 [role-pack-validation-flow.html](role-pack-validation-flow.html)（补充图表，明暗双主题）；
 - 校验通过 = 任何实现可装载；校验失败 = 实现拒绝加载并给出原因；
 - 目标是生态内角色包**一次编写，处处装载**。
 
@@ -247,7 +253,7 @@ skills:
 
 | 项 | 说明 |
 |----|------|
-| memora | **reference implementation**（首个实现本标准的 Agent 内核） |
+| memora | **reference implementation**（首个实现本标准的 Agent 内核）；**合规从严执行**：标准级合规字段为可选 + 分档（§七），memora 实现级强制 AI 身份标注等合规义务 |
 | `role-packs/`（memora 仓库） | 示例角色包（翻译助手 / 技术文档工程师 / 项目总监） |
 | [README.md §9](README.md) | memora 视角的角色包体系（装载、匹配、粘性、冲突裁决） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
