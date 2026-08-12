@@ -152,10 +152,11 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     summary: { kind: 'enum', values: ['on', 'off'] }, // [草案]（memora 旧字段 summaryGeneration 为僵尸键）
     insightExtraction: { kind: 'enum', values: ['on', 'off'] },
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
+    userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
   },
   global: {
-    askOn: { kind: 'check', check: isAskOn }, // [草案]
-    askLimit: { kind: 'check', check: isPositiveInt }, // [草案]
+    askOn: { kind: 'check', check: isAskOn },
+    askLimit: { kind: 'check', check: isPositiveInt },
     errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] }, // [草案]
   },
 };

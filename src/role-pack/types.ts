@@ -100,6 +100,9 @@ export type ErrorHandling = 'retry' | 'degrade' | 'stop';
 /** 安全规则覆盖策略：inherit=不可被角色覆盖 / override=允许覆盖 */
 export type SafetyRuleMode = 'inherit' | 'override';
 
+/** 主动提问触发场景：ambiguity=模糊 / decision=需决策 / missing_info=缺信息 / confirm=确认 */
+export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm';
+
 // ── 策略集合接口 ──
 
 /**
@@ -193,6 +196,10 @@ export interface GlobalStrategy {
   readonly errorHandling?: ErrorHandling;
   /** 是否允许角色覆盖全局安全规则（默认 inherit=不可覆盖） */
   readonly safetyRule?: SafetyRuleMode;
+  /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
+  readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
+  /** 每轮主动提问次数上限（默认 3） */
+  readonly askLimit?: number;
 }
 
 /**
@@ -438,6 +445,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     costBudget: 0,
     errorHandling: 'retry',
     safetyRule: 'inherit',
+    askOn: ['ambiguity', 'decision', 'missing_info'],
+    askLimit: 3,
   },
 } as const;
 
@@ -466,15 +475,44 @@ export function mergeStrategy(
  * 将 RolePack 解析为 RolePackAssembly
  *
  * 将原始角色包解析为含完整策略的装载结果，供装配层直接使用。
+ * 同时根据策略中的 userFollowup/askOn/askLimit 注入主动提问指令到 persona prompt。
  *
  * @param pack 原始角色包
  * @returns 含完整策略的装载结果
  */
 export function assembleRolePack(pack: RolePack): RolePackAssembly {
+  // 先合并策略，后续构建 persona prompt 时需读取策略值
+  const strategy = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, pack.strategy);
+
   // 构建 persona prompt：身份设定 + 规则注入
-  const ruleLines = pack.rules.map((r) => `- ${r}`);
-  const personaPrompt = pack.personaContent +
-    (ruleLines.length > 0 ? `\n\n## 规则\n${ruleLines.join('\n')}` : '');
+  const promptParts: string[] = [pack.personaContent];
+
+  if (pack.rules.length > 0) {
+    promptParts.push(`## 规则\n${pack.rules.map((r) => `- ${r}`).join('\n')}`);
+  }
+
+  // 主动提问指令注入：userFollowup=ask 时，将 askOn/askLimit 转为 LLM 指令
+  if (strategy.reflect?.userFollowup === 'ask') {
+    const askOn = strategy.global?.askOn;
+    const askLimit = strategy.global?.askLimit ?? 3;
+    const triggerLabels: string[] = [];
+    const triggers = Array.isArray(askOn) ? askOn : (askOn ? [askOn] : []);
+    for (const t of triggers) {
+      switch (t) {
+        case 'ambiguity': triggerLabels.push('遇到模糊不清的情况'); break;
+        case 'decision': triggerLabels.push('需要用户做决策'); break;
+        case 'missing_info': triggerLabels.push('缺少关键信息'); break;
+        case 'confirm': triggerLabels.push('需要用户确认'); break;
+      }
+    }
+    if (triggerLabels.length > 0) {
+      promptParts.push(
+        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每轮最多提问 ${askLimit} 次`,
+      );
+    }
+  }
+
+  const personaPrompt = promptParts.join('\n\n');
 
   return {
     meta: pack.meta,
@@ -482,7 +520,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     resolvedSkills: pack.skills,
     capabilities: pack.capabilities,
     knowledgeRefs: pack.knowledgeRefs,
-    strategy: mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, pack.strategy),
+    strategy,
   };
 }
 
