@@ -1553,7 +1553,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 宿主（如精灵）的快捷输入框收到用户输入时调用此方法。
    *
    * 调用链：Agent.interject() → AgentLoop.interject() → abort interjectController
-   * → effectiveSignal.aborted → 子方法返回 → processUserInput 消费 pendingInterjection
+   * → effectiveSignal.aborted → 子方法返回 → processUserInput 消费 pendingInterjections
    * → 注入 user 消息 → 继续循环
    *
    * @param content 插话内容

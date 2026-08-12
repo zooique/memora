@@ -211,13 +211,14 @@ export class AgentLoop {
    */
   private interjectController = new AbortController();
   /**
-   * 待注入的插话内容（Phase 5：执行中插话）
+   * 待注入的插话内容队列（Phase 5：执行中插话）
    *
-   * interject() 设置，handleIteration/processUserInput 在迭代边界消费后清空。
+   * interject() 追加，handleIteration/processUserInput 在迭代边界消费后清空。
    * 与 interjectController 配对使用：controller 负责中断当前操作，
-   * pendingInterjection 携带中断后需要注入的内容。
+   * pendingInterjections 携带中断后需要注入的内容。
+   * 数组缓冲支持连续快速插话，消费时按序全部注入。
    */
-  private pendingInterjection: string | null = null;
+  private pendingInterjections: string[] = [];
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 护栏规则正则编译失败回调（从 opts.onGuardrailError 提取，用于 GuardrailUI） */
@@ -344,40 +345,8 @@ export class AgentLoop {
       while (iteration < this.maxIterations) {
         iteration++;
         const result = yield* this.handleIteration(iteration, signal);
-        // 软暂停在迭代边界挂起后也必须终止本轮编排（与 continueAfterPause 一致），
-        // 否则 pauseRequested 被 handleIteration 消费后本轮不 return，loop 会继续跑下一轮迭代，
-        // 导致"用户点暂停却没停"——与 continueAfterPause 的 'paused' 处理保持一致。
-        if (result === 'paused') return;
-        if (result === 'aborted') {
-          // Phase 5：检查是否因插话导致 abort
-          // 当 interject() 被调用时，interjectController 被 abort → effectiveSignal 被 abort
-          // → 子方法返回 aborted → handleIteration 返回 'aborted'。
-          // 此时 pendingInterjection 非空，需要注入插话内容并继续循环。
-          if (this.pendingInterjection) {
-            const content = this.pendingInterjection;
-            this.pendingInterjection = null;
-            // 重新创建插话控制器（旧的已被 abort，新 controller 供后续插话使用）
-            this.interjectController = new AbortController();
-            // 注入插话内容作为 user 消息，LLM 将在下一轮迭代中处理
-            this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
-            // 继续循环，进入下一轮迭代；LLM 将看到插话内容并响应
-            continue;
-          }
-          return;
-        }
-        if (result === 'done') {
-          // 自审查轮：LLM 生成纯文本回复后，若启用自审查且未执行，注入提示继续 1 轮审查
-          if (this.selfReviewEnabled && !this.selfReviewDone) {
-            this.selfReviewDone = true;
-            this.messages.push({
-              role: 'system',
-              content: this.ui.selfReviewPrompt,
-            });
-            // 不 return，继续循环进入自审查轮；LLM 将在下一轮审查自身回复
-            continue;
-          }
-          return;
-        }
+        // P3-1：共享的迭代结果处理（提取自 processUserInput / continueAfterPause 的重复逻辑）
+        if (!this.handleIterationResult(result)) return;
       }
 
       // 4. 最大迭代兜底
@@ -468,30 +437,8 @@ export class AgentLoop {
     while (iteration < this.maxIterations) {
       iteration++;
       const result = yield* this.handleIteration(iteration, signal);
-      if (result === 'paused') return;
-      if (result === 'aborted') {
-        // Phase 5：与 processUserInput 一致，检查是否因插话导致 abort
-        if (this.pendingInterjection) {
-          const content = this.pendingInterjection;
-          this.pendingInterjection = null;
-          this.interjectController = new AbortController();
-          this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
-          continue;
-        }
-        return;
-      }
-      if (result === 'done') {
-        // 自审查轮：与 processUserInput 一致，LLM 纯文本回复后注入审查提示继续 1 轮
-        if (this.selfReviewEnabled && !this.selfReviewDone) {
-          this.selfReviewDone = true;
-          this.messages.push({
-            role: 'system',
-            content: this.ui.selfReviewPrompt,
-          });
-          continue;
-        }
-        return;
-      }
+      // P3-1：共享的迭代结果处理（与 processUserInput 一致）
+      if (!this.handleIterationResult(result)) return;
     }
     yield { type: 'text', content: this.ui.maxIterationsReached };
     yield { type: 'done' };
@@ -566,12 +513,13 @@ export class AgentLoop {
    * 调用链：
    *   interject() → abort interjectController → handleIteration 检测到
    *   effectiveSignal.aborted → 子方法返回 → processUserInput 消费
-   *   pendingInterjection → 注入 user 消息 → 继续循环
+   *   pendingInterjections → 注入 user 消息 → 继续循环
    *
    * @param content 插话内容
    */
   interject(content: string): void {
-    this.pendingInterjection = content;
+    // 追加到队列（支持连续快速插话），然后 abort 控制器中断当前操作
+    this.pendingInterjections.push(content);
     this.interjectController.abort();
   }
 
@@ -581,6 +529,9 @@ export class AgentLoop {
    * 任意一个被 abort 时，合并后的 signal 也被 abort。
    * 无 signal 或仅一个 signal 时直接返回，不创建新 controller。
    * 用于将外部取消 signal 与内部插话控制器 signal 合并。
+   *
+   * 使用 AbortSignal.any() 替代手动 addEventListener，避免监听器累积泄漏
+   * （Node 22+ 原生支持，项目引擎要求 >=22.0.0）。
    */
   private static combineSignals(
     ...signals: (AbortSignal | undefined)[]
@@ -588,14 +539,55 @@ export class AgentLoop {
     const valid = signals.filter((s): s is AbortSignal => s !== undefined);
     if (valid.length === 0) return undefined;
     if (valid.length === 1) return valid[0];
-    // 如果任一已 abort，直接返回已 abort 的 signal
+    // 如果任一已 abort，直接返回已 abort 的 signal（短路避免创建新对象）
     const aborted = valid.find(s => s.aborted);
     if (aborted) return aborted;
-    const controller = new AbortController();
-    for (const s of valid) {
-      s.addEventListener('abort', () => controller.abort(), { once: true });
+    // AbortSignal.any() 自动管理组合信号，无需手动清理监听器
+    return AbortSignal.any(valid);
+  }
+
+  /**
+   * 处理一次迭代结果（processUserInput / continueAfterPause 共享，P3-1）
+   *
+   * 处理三种结果：
+   *   - 'continue'：工具结果已回填，无需特殊处理，继续循环
+   *   - 'aborted'：检查是否因插话导致 abort，消费插话队列后返回 true（继续循环）
+   *   - 'done'：检查是否启用自审查且未执行，注入审查提示后返回 true（继续循环）
+   *   - 'paused'：调用方应终止循环，返回 false
+   *
+   * @returns true=已消费可继续循环；false=调用方应终止循环
+   */
+  private handleIterationResult(
+    result: 'aborted' | 'done' | 'continue' | 'paused',
+  ): boolean {
+    // 'continue' 无需特殊处理，继续循环（工具结果已回填，下一轮 LLM 处理）
+    if (result === 'continue') return true;
+    if (result === 'paused') return false;
+    if (result === 'aborted') {
+      // Phase 5：检查是否因插话导致 abort
+      if (this.pendingInterjections.length > 0) {
+        // 消费所有待注入的插话内容，依次注入为 user 消息
+        const contents = this.pendingInterjections.splice(0);
+        this.interjectController = new AbortController();
+        for (const content of contents) {
+          this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
+        }
+        return true;
+      }
+      return false;
     }
-    return controller.signal;
+    // result === 'done'
+    // 自审查轮：LLM 生成纯文本回复后，若启用自审查且未执行，注入提示继续 1 轮
+    // 当 toolCallsBlocked 时，'done' 来自系统占位文本而非 LLM 回复，跳过自审查（P4-2）
+    if (this.selfReviewEnabled && !this.selfReviewDone && !this.toolCallsBlocked) {
+      this.selfReviewDone = true;
+      this.messages.push({
+        role: 'system',
+        content: this.ui.selfReviewPrompt,
+      });
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -727,7 +719,7 @@ export class AgentLoop {
     if (effectiveSignal?.aborted) {
       // 插话控制器在迭代边界被 abort 时，说明 interject() 在上一次迭代之后被调用
       // （如 pause 恢复后、continueAfterPause 中），此时在迭代边界直接返回 aborted，
-      // 由 processUserInput 消费 pendingInterjection
+      // 由 processUserInput 消费 pendingInterjections
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
     }
