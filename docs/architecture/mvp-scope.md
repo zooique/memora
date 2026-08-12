@@ -2,7 +2,7 @@
 
 > **定位**：MVP = 验证「先聊后干」主链路的第一个可用产品——陪用户聊出思路，拍板后自动生成文章并写入本地文件。
 > **原则**：MVP 是**全量设计的子集**。MVP 内不引入全量设计之外的新机制；砍掉的能力一律后置，不预埋接口、不半实现。
-> **关联**：[架构说明书](README.md)（全量设计）· [运行时架构](runtime-architecture.md) · [重构路线图](../refactoring-roadmap.md)（长期重构，与 MVP 并行）
+> **关联**：[role-pack-spec.md](role-pack-spec.md)（角色包标准本体）· [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md)（插卡机设计哲学）
 
 ---
 

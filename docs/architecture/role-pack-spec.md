@@ -377,7 +377,7 @@ export interface IMcpTransport {
 |----|------|
 | memora | **reference implementation**（首个实现本标准的 Agent 内核）；**合规从严执行**：标准级合规字段为可选 + 分档（§七），memora 实现级强制 AI 身份标注等合规义务 |
 | `role-packs/`（memora 仓库） | 示例角色包（翻译助手 / 技术文档工程师 / 项目总监） |
-| [README.md §9](README.md) | memora 视角的角色包体系（装载、匹配、粘性、冲突裁决） |
+| [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | memora 视角的角色包定位（插卡机模型，通用引擎 ↔ 专业卡） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 
 > 标准优先于实现（P0 键集对齐，2026-08-12）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
