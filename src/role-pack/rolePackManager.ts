@@ -590,6 +590,21 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 获取当前激活角色包的规则列表（Rule→guardrail 桥接用）
+   *
+   * 角色包规则是自然语言指令（如"不得擅自增删原文内容"），
+   * 与 guardrail 系统的 regex 规则格式不同，但纳入同一规则池后
+   * 未来可扩展自然语言规则匹配机制。
+   *
+   * @returns 规则字符串列表，无激活角色包时返回空数组
+   */
+  getActiveRules(): readonly string[] {
+    if (!this.activePackName) return [];
+    const pack = this.items.find((p) => p.meta.name === this.activePackName);
+    return pack?.rules ?? [];
+  }
+
+  /**
    * 按名称获取角色包装载结果
    *
    * @param name 角色包名

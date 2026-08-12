@@ -145,6 +145,8 @@ type LoopAndDepsParams = Pick<
   personaPrompt: string;
   userProfile: UserProfile;
   toolExec: ToolExecutor;
+  /** 角色包规则列表（Rule→guardrail 桥接），桥接到 guardrail 系统供运行时强制执行 */
+  rolePackRules: readonly string[];
 };
 
 /**
@@ -226,7 +228,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
     provider, backgroundProvider, providerRouter, pctx, personaPrompt, userProfile, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary, relationStore,
-    sessionStore, locale, callbacks,
+    sessionStore, locale, callbacks, rolePackRules,
   } = params;
 
   // 系统前缀：角色 + 用户画像 + 当前时间
@@ -249,6 +251,24 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
 
+  // Rule→guardrail 桥接：将角色包规则转换为 guardrail Memory 对象，
+  // 合并到从记忆索引加载的 guardrail 规则中，供运行时强制执行。
+  // 角色包规则是自然语言指令（如"不得擅自增删原文内容"），
+  // 与 guardrail 系统的 regex 规则格式不同，但纳入同一规则池后
+  // 未来可扩展自然语言规则匹配机制。
+  const indexGuardrailRules = pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL);
+  const nowIso = new Date().toISOString();
+  const rolePackGuardrailRules: Memory[] = rolePackRules.map((rule, i) => ({
+    id: `role-pack:guardrail-${i}`,
+    content: rule,
+    source: 'guardrail',
+    name: `role-pack-rule-${i}`,
+    createdAt: nowIso,
+    accessedAt: nowIso,
+    score: 1.0,
+  }));
+  const mergedGuardrailRules = [...indexGuardrailRules, ...rolePackGuardrailRules];
+
   const loop = new AgentLoop({
     provider,
     providerRouter: providerRouter ?? undefined,
@@ -261,7 +281,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     tracer,
     messages,
     enableContextSummary,
-    guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
+    guardrailRules: mergedGuardrailRules,
     onContextTruncated: callbacks?.onContextTruncated,
     onGuardrailError: callbacks?.onGuardrailError,
     onSessionEvent: callbacks?.onSessionEvent,
@@ -371,6 +391,10 @@ export async function assembleComponents(
   const rolePackManager = new RolePackManager(configDir);
   await rolePackManager.load();
 
+  // Rule→guardrail 桥接：提取当前激活角色包的规则列表，
+  // 传给 createAgentLoopAndDeps 合并到 guardrail 规则池。
+  const rolePackRules = rolePackManager.getActiveRules();
+
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
   const { loop, insightExtractor, sessionArchiver, textPolisher } =
@@ -389,6 +413,7 @@ export async function assembleComponents(
       sessionStore,
       locale,
       callbacks,
+      rolePackRules,
     });
 
   // ── Phase 4: 依赖 Loop 的组件 ──
