@@ -1,9 +1,10 @@
 # Memora 架构文档体系 · 第三方独立审查报告
 
 > 审查日期：2026-08-12
-> 审查对象：`docs/architecture/README.md`（核心闭环）、`docs/architecture/runtime-architecture.md`（运行时）、`.trae/rules/single-truth-source-mindset.md`（思维模型）、`docs/refactoring-roadmap.md`（路线图）
+> 审查对象：[docs/architecture/README.md](architecture/README.md)（核心闭环）、[docs/architecture/runtime-architecture.md](architecture/runtime-architecture.md)（运行时）、[.trae/rules/single-truth-source-mindset.md](../.trae/rules/single-truth-source-mindset.md)（思维模型）、[docs/refactoring-roadmap.md](refactoring-roadmap.md)（路线图）
 > 审查方法：**第一性原理 + 对抗式核查**。除通读 4 份文档外，对文档中的"现行代码评估"断言与 `src/` 实际代码、`project-rules.md` / `architecture_philosophy_rules.md` 两份项目级硬约束做了交叉验证（grep 实测，非凭记忆）。
 > 已知已修复项（第二轮审查 11 项）**不重复报告**。本报告仅列独立发现的新问题。
+> 修复状态：见文末 [六、修复状态追踪表](#六修复状态追踪表2026-08-12-更新)——**所有结论的修复状态以此表为准**。
 
 ---
 
@@ -210,3 +211,61 @@ Phase 6   性能预算 + 优化            ⚠️ 启动前解决 R2（degrade�
 ```
 
 **一句话结论**：文档体系成熟度约 80 分，哲学根基扎实、自审纪律好；3 个 🔴 均为"与项目自身冻结规则/代码冲突"而非推倒重来，可在对应 Phase 启动前定点修复；🟡 项随实施滚动消化。**可以开始重构，但 Phase 3/4 须先过 🔴 闸门。**
+
+---
+
+## 六、修复状态追踪表（2026-08-12 更新）
+
+> **本表是审查结论的实施状态入口**：状态以 `✅ 已修复` / `🟡 部分` / `⬜ 未修复` 标记，
+> 修复方式指向具体文档章节。新审查/新修复必须同步更新本表，防止结论与现状脱节。
+> 状态图例：✅ 已修复（文档已收口）· 🟡 部分修复 · ⬜ 未修复（待定案）。
+
+### 6.1 🔴 严重（3 项）
+
+| 结论 | 状态 | 修复方式 / 位置 | 日期 |
+|------|------|----------------|------|
+| R1 检查点平行机制 | ✅ | runtime §13.4.2 `HandoffCheckpoint` 收敛为 `SessionCheckpoint` 只读投影，删除平行版本号，`CheckpointStore.save/get` 改收 `SessionCheckpoint`；纪律 5 改写（对齐 project-rules §1.8） | 2026-08-12 |
+| R2 degrade 未定义 | ✅ | README §12.2 定案「降级优先（哲学 §7）」：维度表 + 确定性边界，宿主不得重定义；§8.7.5 `costOnExceeded` 默认单一化 stop | 2026-08-12 |
+| R3 角色包匹配矛盾 | ✅ | architecture_philosophy_rules §1.2 收敛为「触发词确定性匹配」（与 README §4.2 + 哲学 §4 自洽），附跨文档链接 | 2026-08-12 |
+
+### 6.2 🟡 中等（21 项）
+
+| 结论 | 状态 | 修复方式 / 位置 | 日期 |
+|------|------|----------------|------|
+| M1 L1 截断语义 | ✅ | README §8.3 L1 行改「窗口滑动：超 N 轮移出 L1 进 L2 摘要，窗口内不被截断算法裁减」 | 2026-08-12 |
+| M2 超时 vs 不中断 | ✅ | runtime §13.9.4 纪律 5 改「当前阶段边界收口」：不开启新阶段、等在飞 LLM 自然返回后停止 | 2026-08-12 |
+| M3 边界纪律过度宣称 | ⬜ | **待定案**（2026-08-12 第三方体系审查 🔴-1 同源）：RoundHooks 单向通知无法承载 Guardrail 阻断/成本终止等控制面；须先定「边界点（AgentLoop vs 门面）+ 观察面/决策面分离」 | — |
+| M4 exclusiveWith vs reject | ✅ | README §9.4.3 reject 收窄为「规则条目层不可合并」，角色包级互斥走 §9.4.5 自动替换 | 2026-08-12 |
+| M5 召回排序键 | ⬜ | **待消歧**（2026-08-12 第三方体系审查 🟡 同源）：§8.3 摘要「语义相关度 vs 时间序」、记忆「置信度」三处口径不一，装配阶段重排未定义 | — |
+| M6 双版本/双迁移 | 🟡 | §13.11.3 已声明版本格式边界（semver=外部交付物 / 单整数=内部持久化）；`MigrationHook`/`MigrationPlan` 两接口仍未收敛，随 Phase 5 实施 | 2026-08-12 |
+| M7 版本号方案不统一 | ✅ | §13.11.3 版本格式边界（semver 仅外部格式，单整数仅内部持久化，按格式分派） | 2026-08-12 |
+| M8 rollback 矛盾 | ✅ | §13.6.4 纪律 2 补「回滚通过发布内容等于旧版本的前向新版本实现，不反向减号」 | 2026-08-12 |
+| M9 TriggerQueue+Lock 冗余 | ✅ | §13.3.5 纪律 6 职责分界：队列=顺序调度，SessionLock=跨进程/多线程准入，单进程可省略 | 2026-08-12 |
+| M10 driftThreshold 缺席 | ✅ | README §9.2 回答前策略表补「漂移阈值 轮数（默认 5）」行 | 2026-08-12 |
+| M11 中断/暂停未设计 | ✅ | runtime 新增 §13.3.6 会话暂停/恢复最小契约（对齐代码既有 SessionManager.pause + 状态机 + 检查点），定义中断/暂停/恢复三机制边界 | 2026-08-12 |
+| M12 检查点 O(n²) | ✅ | §13.4.4 纪律 6 按需收口：脏标记驱动落盘 + 长会话增量序列化或热/冷分层 | 2026-08-12 |
+| M13 写隔离未强制 | ✅ | §13.7.2 `writeMemory` 强制校验归属 + §13.7.4 纪律 7 硬校验（越权写返回错误，共享写走资源锁） | 2026-08-12 |
+| M14 召回失败无降级 | ✅ | README §4.3 补「任一通道失败静默降级关键词（哲学 §6），不抛错不中断」 | 2026-08-12 |
+| M15 队列满下游未定义 | ⬜ | §13.3.5 纪律 4 仍「由触发者决定」，默认兜底策略（用户提示繁忙/系统退避重投）未定 | — |
+| M16 any 违 §7.1 | 🟡 | runtime 14 处 `any` 已全清（0 any）；roadmap Phase 1 示例残留 2 处已于 2026-08-12 补清 | 2026-08-12 |
+| M17 totalBudget 语义冲突 | ⬜ | §8.2 `totalBudget` 仍为必填，与「宿主传入、角色包可不声明」矛盾未消 | — |
+| M18 costOnExceeded degrade | ✅ | 随 R2：§8.7.5 `costOnExceeded` 默认单一化 stop，degrade 映射 §8.7.4 模型降级 | 2026-08-12 |
+| M19 checkQuota 无约束 | ⬜ | §13.7.2 `resource: string` 仍为自由字符串，未收敛 `QuotaResource` 联合类型 | — |
+| M20 getReport 双源 | ⬜ | §13.8.2 `getReport()` 仍无汇聚点，与事件流双通道关系未定义 | — |
+| M21 恢复报告携带存储 | ⬜ | §13.4.2 `RecoveryReport.checkpointStore` 仍未移除（2026-08-12 第三方体系审查 🟡 同源） | — |
+
+### 6.3 🟢 轻微（8 项）
+
+| 结论 | 状态 | 说明 |
+|------|------|------|
+| G1 onEvent 双事件面 | ⬜ | runtime §13.5.2 未注明 onEvent 与 AGENT_EVENTS 的分工 |
+| G2 Composer 无指向 | ⬜ | README §2.1 列出 Composer 但未指向 `docs/根基/申请暂停模型` |
+| G3 RoundHooks 回调计数 | ✅ | roadmap M1.1 已改「五个回调（含 onEvent）」 | 2026-08-12 |
+| G4 persona 合并异味 | ⬜ | §9.4.6 未标注「矛盾 persona 由宿主策略预防而非 LLM 调和」 |
+| G5 runtimeMs 静置 | ⬜ | `usage.runtimeMs` 与 `maxRuntimeMs` 未接线 |
+| G6 drain 悬挂 | ⬜ | `drain()` 返回队列与 §13.4 恢复流程未对接 |
+| G7 persona 粘性张力 | ⬜ | §9.4.4 persona 默认 latest 与粘性纪律张力未注明 |
+| G8 EventEmitter 泛型对齐 | ⬜ | §13.6.2 `EventEmitter['on']` 与 `TypedEventEmitter<EventMap>` 泛型未对齐 |
+
+> **实施状态入口**：本表由 [架构说明书](architecture/README.md)、[运行时架构](architecture/runtime-architecture.md)、[重构路线图](refactoring-roadmap.md)、[P1-实施计划](P1-实施计划.md) 的关联文档索引共同指向；
+> 未修复项（M3/M5/M15/M17/M19/M20/M21 + G 项）在对应 Phase 启动前消化（见 §五 闸门）。

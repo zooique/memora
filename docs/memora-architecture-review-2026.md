@@ -39,7 +39,7 @@ Memora 是一个架构纪律性强、工程品味高的项目。分层清晰、�
 
 **优点：**
 - 11 个顶层模块职责清晰（agent/memory/llm/persona/skill/config/logging/security/eval/utils/web-search）
-- 依赖方向单向：`agent → memory → utils`，`agent → llm`，`agent → security`（[index.ts](file:///f:/zooique/memora/src/index.ts) 类型依赖图注释明确标注）
+- 依赖方向单向：`agent → memory → utils`，`agent → llm`，`agent → security`（[index.ts](../src/index.ts) 类型依赖图注释明确标注）
 - 严格遵循"内核不反向依赖宿主"原则，所有宿主交互通过接口注入（`IMemoryStorage`、`ILogger`、`ITracer`）
 
 **问题：**
@@ -50,7 +50,7 @@ Memora 是一个架构纪律性强、工程品味高的项目。分层清晰、�
 
 **优点：**
 - 32 个 ADR 完整记录了主要架构决策，代码与设计基本一致
-- 规则文件（16 个）与 ADR 之间建立了交叉引用规范（[cross-document-reference.md](file:///f:/zooique/memora/.trae/rules/cross-document-reference.md)）
+- 规则文件（16 个）与 ADR 之间建立了交叉引用规范（[cross-document-reference.md](../.trae/rules/cross-document-reference.md)）
 - 此前发现的 7 项腐化问题（FIFO 谓词恒真、restoreHistory 空转等）已在 2026-08-11 修复闭环
 
 **问题：**
@@ -96,7 +96,7 @@ Memora 是一个架构纪律性强、工程品味高的项目。分层清晰、�
 - 记忆召回：双通道（语义 + 关键词）+ 混合排序（0.6/0.4 权重）+ 排除已注入记忆
 
 **浅尝处：**
-- **多模型路由**：仅支持单一 Provider 配置，无基于任务类型的动态模型选择（[factory.ts](file:///f:/zooique/memora/src/llm/factory.ts)）
+- **多模型路由**：仅支持单一 Provider 配置，无基于任务类型的动态模型选择（[factory.ts](../src/llm/factory.ts)）
 - **RAG 管线**：有基础双通道召回，但缺少 rerank、context compression、multi-hop reasoning、查询重写
 - **可观测性**：`ITracer` 接口设计合理，但缺少 trace tree（父子 span 关联）、token 消耗追踪、性能分析
 
@@ -189,7 +189,7 @@ Memora 是一个架构纪律性强、工程品味高的项目。分层清晰、�
 ### 14. 安全与韧性 — 5/5
 
 **优点：**
-- 路径白名单：4 类允许根 + 28 类禁止规则（[pathGuard.ts](file:///f:/zooique/memora/src/security/pathGuard.ts)）
+- 路径白名单：4 类允许根 + 28 类禁止规则（[pathGuard.ts](../src/security/pathGuard.ts)）
 - 符号链接逃逸防护（P0 漏洞防护）
 - 写入二次确认 + 审计日志，fail-closed 拒绝写入
 - 两级权限（read/write）分离

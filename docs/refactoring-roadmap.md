@@ -3,6 +3,11 @@
 > 基于 SSOT（单一真理源）哲学，从"闭环是种子"到"整个系统是一棵大树"。
 >
 > 本文档是实施计划，不是设计文档。设计文档见 [架构说明书](architecture/README.md) 和 [运行时架构](architecture/runtime-architecture.md)。
+>
+> **与一次性补丁计划的关系**：[P1-实施计划.md](P1-实施计划.md) 是 2026-08-11 架构审查确定的
+> 定点修复（最小化变更、不引入新功能），**独立于本路线图的 6 阶段序列**，可随时先行落地；
+> 本路线图是长期结构性重构。两者并行不冲突：P1 补丁不依赖本路线图，本路线图各阶段不重复 P1 已修项。
+> 实施状态以 [第三方独立审查追踪表](third-party-architecture-review-2026-08-12.md#六修复状态追踪表2026-08-12-更新) 为入口统一跟踪。
 
 ---
 
@@ -310,7 +315,7 @@ Phase 6: 学会跑 ── 性能预算 + 优化
 
 | 里程碑 | 产出 | 验收标准 |
 |--------|------|---------|
-| M1.1 RoundHooks 接口定义 | `RoundHooks` 接口，包含 `onPhaseStart/End`、`onHandoff`、`onError` 四个回调 | 接口不引用任何运行时类型，仅传递阶段名和上下文数据 |
+| M1.1 RoundHooks 接口定义 | `RoundHooks` 接口，包含 `onPhaseStart/End`、`onHandoff`、`onError`、`onEvent` 五个回调 | 接口不引用任何运行时类型，仅传递阶段名和上下文数据 |
 | M1.2 AgentLoop 接入 RoundHooks | AgentLoop 所有阶段边界调用 hooks 回调 | 所有现有测试通过，无行为变化 |
 | M1.3 测试基础设施 | `MockLlmProvider`、`RoundFixture` 格式、`ScenarioBuilder` | 可独立测试单轮闭环，无需真实 LLM |
 | M1.4 回归验证 | 用测试夹具覆盖核心闭环的全部路径 | 测试覆盖率 ≥ 90%（核心闭环路径） |
@@ -336,7 +341,7 @@ interface RoundHooks {
   /** 错误发生 */
   onError?(error: Error, phase: string): void;
   /** 事件记录（通用事件） */
-  onEvent?(type: string, data?: any): void;
+  onEvent?(type: string, data?: unknown): void;
 }
 
 interface PhaseStartData {
@@ -349,7 +354,7 @@ interface PhaseEndData {
   sessionId: string;
   roundId: string;
   durationMs: number;
-  result?: any;
+  result?: unknown;
 }
 ```
 
@@ -575,4 +580,6 @@ interface PhaseEndData {
 | 架构说明书（核心） | 核心闭环设计、角色包体系、上下文预算 | [docs/architecture/README.md](architecture/README.md) |
 | 运行时架构（设计） | 9 个运行时领域的接口定义 | [docs/architecture/runtime-architecture.md](architecture/runtime-architecture.md) |
 | 重构路线图（本文） | 实施阶段划分、里程碑、违规记录 | 本文 |
+| P1 修复实施计划 | 2026-08-11 审查的一次性补丁（独立于阶段序列，见头部关系声明） | [docs/P1-实施计划.md](P1-实施计划.md) |
+| 第三方独立审查 | 2026-08-12 架构文档体系审查（修复状态追踪表 = 实施状态入口） | [docs/third-party-architecture-review-2026-08-12.md](third-party-architecture-review-2026-08-12.md) |
 | 思维模型（方法论） | 单一真理源思维模型的完整规则 | [.trae/rules/single-truth-source-mindset.md](../.trae/rules/single-truth-source-mindset.md) |

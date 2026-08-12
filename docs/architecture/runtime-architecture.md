@@ -5,6 +5,11 @@
 > 核心闭环（第 1-12 章）回答了"Agent 如何工作"，本章回答"Agent 如何可靠地运行"。
 >
 > 与核心闭环的关系：**运行时是闭环的容器**——闭环不感知运行时的存在，但运行时确保闭环能在真实环境中正确执行。
+>
+> **设计状态说明**：本文描述的是**目标设计接口**（如 RoundHooks、TriggerQueue、Guardrail 等），部分接口尚未进入代码。
+> 已实现接口以 [docs/memora-api-reference.md](../memora-api-reference.md)（现状快照 v2.1.0）与 `src/` 源码为准；
+> 本文接口是否落地按 [docs/refactoring-roadmap.md](../refactoring-roadmap.md) 各阶段里程碑跟踪。
+> 修订沿革见 [CHANGELOG.md](../../CHANGELOG.md) 与各阶段实施记录。
 
 ---
 
@@ -284,12 +289,14 @@ src/agent/sessionStateMachine.ts）。本节补齐其运行时边界语义，不
 | 输入中断（§13.3.3） | 外部 Trigger 到达 | 提示闭环"外面有输入"，闭环自行决策 | Prepare 阶段读取，不打断在飞阶段 |
 | 会话暂停（Pause） | 宿主显式调用 | 挂起整个会话，等待恢复 | 阶段边界收口后进入 PAUSED，不掐断在飞 LLM 调用 |
 | 会话恢复（Resume） | 宿主显式调用 | 从检查点续跑 | 走恢复流程（§13.4） |
+| 硬停止（Abort） | 宿主显式调用 | 终止运行，不可续跑（唯一霸道中止） | 立即杀生成器（signal.abort） |
 
 **纪律**：
 
 1. **暂停与中断不混淆**：中断是"下一轮优先处理新输入"的提示；暂停是"整个会话挂起，等宿主恢复"。
 2. **暂停遵守"阶段边界收口"**（与 §13.9.4 纪律 5 一致）——不在 LLM 调用中途插入。
 3. **暂停状态持久化**：`SessionCheckpoint.status = 'paused'`（含 `pauseMeta`），恢复经 `normalizeCheckpoint` 迁移（project-rules §1.8）。
+4. **abort 的会话落点**：abort 后会话落回"待触发"态（等价 end 后），**必须卸载执行态**——`clearPlan` 清空 plan/roundLog（上下文保留为会话历史）；后续 Trigger 正常开新闭环。abort 与 pause 是互斥出口：暂停保留 plan 可续跑，abort 清 plan 不可续跑（详见 [README §12.1](README.md#十二远期锚点与已知缺口)）。
 
 ---
 
@@ -400,7 +407,7 @@ interface HandoffCheckpoint {
     | 'role'
     | 'standard'
     | 'resource'
-    | 'hotMemory'
+    | 'hotMemory' // 会话热记忆投影（高频短期记忆；读写机制归属记忆子系统设计，本文仅投影字段）
     | 'pauseMeta'
     | 'lastHeartbeat'
     | 'schemaVersion'
@@ -435,6 +442,23 @@ interface CheckpointMeta {
   handoffDecision: string;
   timestamp: number;
   sizeBytes: number;
+}
+
+/**
+ * 会话存储：完整对话消息的持久化接口（§13.4.2 引用的 ISessionStore 定义）
+ *
+ * 职责：保存/读取会话的完整消息序列（SerializedMessage[]），与检查点分离——
+ * 检查点只存执行状态投影（§13.4.2），消息归本接口；恢复时两者合并重建会话。
+ *
+ * 宿主实现（文件系统 / 数据库 / 内存）；追加收口，防并行写乱序。
+ */
+interface ISessionStore {
+  /** 追加消息（收口：消息写入唯一入口） */
+  appendMessage(sessionId: string, message: SerializedMessage): Promise<void>;
+  /** 读取会话完整消息（按时间正序） */
+  getMessages(sessionId: string): Promise<SerializedMessage[]>;
+  /** 删除会话消息（归档/清理时） */
+  deleteSession(sessionId: string): Promise<void>;
 }
 ```
 ```typescript
@@ -579,10 +603,17 @@ interface RoundHooks {
   onEvent?(type: string, data?: unknown): void;
 }
 
+/**
+ * 触发源：决定召回与角色包匹配行为（见 README §3.3「触发源决定召回行为」）
+ * - user / system / agent：外部输入 → 触发 recall() 与角色包匹配
+ * - loop：Loop 自循环（工具调用/自动续跑）→ 不触发 recall
+ */
+type TriggerSource = 'user' | 'system' | 'agent' | 'loop';
+
 interface PhaseStartData {
   sessionId: string;
   roundId: string;
-  triggerSource: string;
+  triggerSource: TriggerSource;
 }
 
 interface PhaseEndData {
@@ -976,7 +1007,7 @@ ConfigVersionManager.updateConfig('rolePack', newVersion)
   ├── 4. 迁移执行（如有）：MigrationHook.migrate()
   │     └── 迁移只影响"共享状态"（如记忆系统格式），不影响"会话级状态"
   │
-  └── 5. 事件通知：emit('system.config_changed', { configType, version })
+  └── 5. 事件通知：emit(AGENT_EVENTS.configReloaded, { configType, version })
 ```
 
 ### 13.6.4 设计纪律
@@ -984,8 +1015,9 @@ ConfigVersionManager.updateConfig('rolePack', newVersion)
 1. **配置变更不回溯**：已开始的闭环不受配置变更影响
 2. **版本号单调递增**：版本号是正整数，严格递增，不可回退（回滚通过发布新版本实现）
 3. **迁移是幂等的**：迁移操作可重复执行，多次执行结果相同
-4. **配置变更通过事件通知**：宿主可订阅 `system.config_changed` 事件感知变更
+4. **配置变更通过事件通知**：宿主可订阅 `AGENT_EVENTS.configReloaded` 事件感知变更（事件名以 §13.5.2 常量表为唯一真理源，禁止自造字面量）
 5. **热更新不覆盖文件**：运行时配置变更存储在内存中，宿主决定是否持久化到文件
+6. **生效边界告知**：由于"已有会话继续使用旧版本"（§13.6.3），配置变更后宿主**必须**向用户反馈生效范围（"新会话生效 / 当前会话继续用旧配置"）——防止"我改了模型怎么没变"的体验断档。`configReloaded` 事件携带新旧版本号，反馈文案由宿主呈现。
 
 ---
 
@@ -1071,8 +1103,19 @@ interface IsolatedContext {
   /** 只读：会话自己的角色包状态 */
   readonly rolePack: {
     packId: string;
+    /** 锁定时的角色包版本（对齐 §13.6 VersionedConfig.version）——热更新后本会话继续使用该版本，恢复/续跑按此取包 */
+    version: number;
     lockedAt: number;
+    /** 多角色合并列表（§README 9.4 非互斥合并时的共存包，含各自 priority）——空数组 = 未合并 */
+    merged: { packId: string; priority: number }[];
   };
+
+  /**
+   * 获取当前角色状态（用户侧可见性，§README 4.2/9.3）
+   * 返回当前锁定角色包 + 合并列表 + 锁定时间——供宿主展示"当前是什么角色"，
+   * 用户无需猜测自己是"工程师+总监"合并态还是单一角色。
+   */
+  getRoleState(): RoleState;
 
   /**
    * 安全读取记忆系统
@@ -1094,6 +1137,16 @@ type ShareScope =
   | 'session_only'    // 仅当前会话可见（默认）
   | 'user_global'     // 同一用户的所有会话可见
   | 'system_global';  // 所有会话可见（仅限系统级记忆）
+
+/** 角色状态快照（getRoleState 返回值，用户侧展示用） */
+interface RoleState {
+  /** 当前锁定角色包（无命中时为默认兜底 persona，§README 4.2） */
+  primary: { packId: string; version: number; lockedAt: number };
+  /** 合并角色包列表（空数组 = 未合并） */
+  merged: { packId: string; priority: number }[];
+  /** 粘性漂移状态：连续未命中触发词计数 / 漂移阈值 */
+  drift: { missCount: number; threshold: number };
+}
 ```
 
 ### 13.7.3 隔离模型
@@ -1172,6 +1225,8 @@ interface SecurityRule {
   description: string;
   /** 严重级别 */
   severity?: 'info' | 'warning' | 'error' | 'critical';
+  /** 执行优先级（数值越大越先执行，默认 0）——§13.8.3/§13.8.4「按优先级执行」以此字段为唯一依据 */
+  priority?: number;
 }
 
 /**
@@ -1217,7 +1272,7 @@ interface SecurityGuard {
 interface GuardrailInput {
   content: string;
   sessionId: string;
-  triggerSource: string;
+  triggerSource: TriggerSource;
   rawContent: string;
 }
 
@@ -1279,6 +1334,16 @@ rules:
     pattern: "file_write|file_delete|exec_command"
     action: BLOCK
     severity: error
+**执行顺序与规则来源**：
+
+- **检查时机在入队之后、闭环开始之前**：外部输入先经 TriggerQueue 入队（§13.3.3），
+  出队后、进入 Prepare 前执行 `checkInput`——BLOCK 的输入已消费队列位置，宿主将拦截信息
+  返回触发方即可（不重投队列）。
+- **P0 全局规则加载路径**：§9.4.2 的 P0 全局安全规则（宿主全局配置，不可被角色包覆盖）由
+  宿主在会话初始化时加载，与角色包 rule 段规则**合并注入**：
+  `loadRules([...P0 全局规则, ...角色包规则])`。合并顺序即执行顺序；P0 全局规则应设更高的
+  `priority`（见 SecurityRule.priority），确保先于角色包规则执行、不可被覆盖。
+
 ---
 
 ### 13.8.3 执行流程
@@ -1293,7 +1358,7 @@ SecurityGuard.checkInput()
       │
       └── BLOCK → 返回拦截信息，不进入闭环
              │
-             └── emit('guardrail.blocked', { type: 'input', reason })
+             └── emit(AGENT_EVENTS.guardrailBlocked, { type: 'input', reason })
 
 LLM 输出
   │
@@ -1304,7 +1369,7 @@ SecurityGuard.checkOutput()
       │
       └── BLOCK → 替换为"内容被拦截"消息
              │
-             └── emit('guardrail.blocked', { type: 'output', reason })
+             └── emit(AGENT_EVENTS.guardrailBlocked, { type: 'output', reason })
 ```
 
 ### 13.8.4 设计纪律
@@ -1391,6 +1456,14 @@ const DEFAULT_PERFORMANCE_BUDGET: PerformanceBudget = {
 /**
  * 吞吐量配置
  */
+/**
+ * 吞吐量配置：TriggerQueue（§13.3.3）宿主实现的容量/背压契约
+ *
+ * 消费方：宿主在实现 TriggerQueue 时读取——
+ * - maxQueueDepth / backpressureThreshold：队列容量上限与拒绝阈值（accepted:false，§13.3.5 纪律 4）
+ * - maxConcurrentRounds：跨会话并行上限（宿主调度器参考值，决定同时出队数）
+ * - targetRPS：性能目标（§13.9.1 度量口径），供宿主容量规划
+ */
 interface ThroughputProfile {
   /** 最大并发闭环数 */
   maxConcurrentRounds: number;
@@ -1441,6 +1514,7 @@ const LATENCY_TIER_MAP: Record<LatencyTier, Partial<PerformanceBudget>> = {
 3. **性能预算可配置**：宿主可根据部署环境调整性能目标
 4. **性能指标必须可观测**：所有性能指标通过 MetricCollector 收集
 5. **超时是硬限制**：`maxRoundDuration` 超过时，闭环在**当前阶段边界收口**——不再开启新阶段、等待在飞 LLM 调用自然返回后停止，并记为超时失败；不强行掐断在飞调用。这与 §13.3.5 纪律 1「不中断正在执行的闭环」、§13.4.4 纪律 1「软着陆」一致：并发准入与超时兜底都在阶段边界生效，不在执行中途插入操作。
+6. **暂停不计入运行时长**：`maxRoundDuration` 计时只计 RUNNING 态；会话进入 PAUSED（§13.3.6）期间计时冻结，恢复后续计——避免长暂停后 resume 立即超时。含暂停的总时长上限由宿主在会话级另行约束（`SessionScope.maxRuntimeMs` 亦不含暂停）。
 
 ---
 
@@ -1490,7 +1564,7 @@ interface RoundFixture {
     /** 用户输入 */
     content: string;
     /** 触发源 */
-    triggerSource?: string;
+    triggerSource?: TriggerSource;
     /** 额外参数 */
     metadata?: Record<string, unknown>;
   };
@@ -1521,6 +1595,8 @@ interface RoundFixture {
 }
 
 interface SessionState {
+  /** 会话 ID——RoundHooks.onHandoff 的 state 据此可被 TraceManager 按会话索引（getTrace(sessionId)） */
+  sessionId: string;
   messages: SerializedMessage[];
   rolePackId: string;
   contextBudget: number;
@@ -1893,4 +1969,8 @@ interface CompatibilityResult {
 | 运行时架构（本文） | 并发、关闭、可观测、热更新、隔离、护栏、性能、测试、版本 | 本文 |
 | 设计推导（叙事） | 从公理到完整的推导过程 | [docs/agent-design/README.md](../agent-design/README.md) |
 | 思维模型（方法论） | 单一真理源思维模型的完整规则 | [.trae/rules/single-truth-source-mindset.md](../../.trae/rules/single-truth-source-mindset.md) |
-| API 参考 | 接口和类型定义 | [docs/memora-api-reference.md](../memora-api-reference.md) |
+| API 参考 | 接口和类型定义（现状快照） | [docs/memora-api-reference.md](../memora-api-reference.md) |
+| 重构路线图（实施） | 6 阶段重构 + SSOT 违规记录（长期实施计划） | [docs/refactoring-roadmap.md](../refactoring-roadmap.md) |
+| P1 修复实施计划 | 2026-08-11 审查的一次性补丁方案（独立于阶段序列） | [docs/P1-实施计划.md](../P1-实施计划.md) |
+| 第三方独立审查 | 2026-08-12 架构文档体系审查（含修复状态追踪表） | [docs/third-party-architecture-review-2026-08-12.md](../third-party-architecture-review-2026-08-12.md) |
+| ADR 决策库 | 架构决策记录（决策真理源，`decisions/`） | [.trae/decisions/README.md](../../.trae/decisions/README.md) |
