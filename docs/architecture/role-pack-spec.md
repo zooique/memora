@@ -18,7 +18,9 @@
 
 ## 二、文件格式（文件夹包：单文件为最小形态，文件夹为完整形态）
 
-**格式决策（2026-08-12 定案）**：角色包采用 **文件夹包（bundle）** 形态，对齐 skills 生态（`SKILL.md` + `references/` + `scripts/` + `assets/`）——因为**角色包是 skills 的超集（见 §2.1），必须继承其分发形态**。单文件保留为**最小形态**（无资源时的极简卡），完整能力以文件夹承载。
+**格式决策（2026-08-12 定案，2026-08-12 行业校准）**：角色包采用 **文件夹包（bundle）** 形态，对齐 skills 生态（`SKILL.md` + `references/` + `scripts/` + `assets/`）——因为**角色包是 skills 的超集（见 §2.1），必须继承其分发形态**。单文件保留为**最小形态**（无资源时的极简卡），完整能力以文件夹承载。
+
+> **行业同构验证（2026-08-06）**：OpenAI / AWS / Microsoft / Vercel / Cursor 五方 + Google 发布的 **Agent Plugins 1.0.0**（文件夹=插件：`plugin.json` + `skills/` + `mcp.json` + 反域名扩展目录）与本节文件夹包骨架**独立收敛于同一设计**，证明本格式处于设计空间的收敛点。本规范在三点与其校准：① 文件夹形态 `manifest.json` **必填**（§2.2/§2.4）；② 预留 `mcp.json` 桥作 L2 可选，`capabilities` 仍为 L1 中立层（§四）；③ 未知键「**警告并忽略**」而非静默（§三/§五）。
 
 ### 2.1 角色包 vs Skills（代际关系）
 
@@ -44,7 +46,8 @@
 ├── references/                   # 知识引用（对齐 skills 的 references/）
 ├── assets/                       # 资源（模板、图片、示例）
 ├── scripts/                      # L3 代码钩子（远期，沙箱隔离后启用）
-└── manifest.json（可选）          # 分发元数据（名称/版本/作者，对齐 skill 市场 meta）
+├── manifest.json                 # ★文件夹形态必填：formatVersion + 合规字段 + 分发元数据（单文件形态由 frontmatter 承担，§2.4）
+└── com.memora/（可选）            # 反域名命名空间：memora 专有行为层（对齐 Agent Plugins 扩展惯例，其他实现忽略，§十）
 ```
 
 ### 2.3 最小形态（单文件）
@@ -95,7 +98,10 @@ skills:
 ### 2.4 渐进升级规则
 
 - **单文件 → 文件夹**：role-pack.md 声明内嵌 `skills/` 或需要 `references/` 时，升级为文件夹包——**装载行为不变**（都以 role-pack.md 为入口）；
+- **manifest 双形态（对齐行业必填锚点）**：单文件形态下 **frontmatter 即 manifest**（`name`/`formatVersion`/合规字段都在 frontmatter，§2.3 即示范）；升级为文件夹后，frontmatter 中的 manifest 语义**迁移至 `manifest.json`**（内容不重复、避免双写），role-pack.md 保留 meta 摘要供快速匹配；文件夹形态下 `manifest.json` **必填**，缺失即拒绝加载；
+- **manifest 字段集（对齐 Agent Plugins plugin.json）**：`name`（必填）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规，§七）/ `extensions`（反域名命名空间对象）；
 - **加载规则**：装载器先找 `role-pack.md`（文件夹）或 `<名>.md`（单文件）；`skills/` 内嵌包按 skills 生态标准加载（复用现有解析器）；
+- **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 包建议 **≤10 个**（超出降级为引用已注册技能，避免 30+ skills 的启动税非线性恶化）；单个内嵌 SKILL.md 建议 **≤500 行**，详述放 `references/`；
 - 分发：文件夹 zip 压缩（对齐 skills 市场分发方式）。
 
 **格式厚度的来源（三层，不在文件后缀）**：
@@ -139,7 +145,7 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 ### L2：行为策略层（键级渐进）
 
 - 枚举式行为开关，角色只"选择"不"定义"；
-- **已知键生效，未知键安全忽略**（不报错、不阻塞装载）。
+- **已知键生效，未知键警告并忽略（warn + ignore，不阻塞装载）**——杜绝拼写错误被静默吞掉（对齐 Agent Plugins「reported and ignored」，见 §五）。
 
 ### L3：代码层（远期）
 
@@ -167,6 +173,8 @@ skills:
 - 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集；
 - `capability` 为必填、`description` 可选（供 LLM 与校验器理解）。
 
+**具体连接桥（L2 可选，`mcp.json`）**：capabilities 是**抽象能力声明**（要什么能力、实现无关）；当角色包需要**开箱即用**的具象连接时，可在文件夹根放 `mcp.json`（对齐 Agent Plugins 1.0 的 transport 声明：`stdio` / `streamable-http` / `http+sse`），由实现映射到自有运行时。两者不冲突：**capabilities 是 L1 中立契约，mcp.json 是 L2 可选实现加速**——不声明 mcp.json 的角色包仍可被任何实现按 capabilities 装载。
+
 ---
 
 ## 五、兼容契约（其他 Agent 如何装载）
@@ -175,10 +183,17 @@ skills:
 |---------------|------|
 | L1（必读） | persona → system prompt；rules → 约束；skills → 能力清单 |
 | L2 已知键 | 对应行为开关生效 |
-| L2 未知键 | **忽略，不报错** |
+| L2 未知键 | **警告并忽略（warn + ignore），不阻塞装载**（杜绝拼写错误静默吞掉） |
 | 未知能力 | 跳过（可选提示） |
-| `formatVersion` 不兼容 | 拒绝加载 + 提示按迁移规则升级 |
+| `formatVersion` 不兼容 | 拒绝加载 + 提示按迁移规则升级（见下） |
 | `minKernelVersion` 高于实现版本 | 拒绝加载（或警告降级运行，由实现决定） |
+
+**formatVersion 迁移规则（对齐 Agent Plugins「schema URL 永不重指」）**：
+
+- 每个 `formatVersion` 绑定一个**固定 schema URL**（如 `https://role-pack.dev/schemas/1.0.0/role-pack.schema.json`），发布后**永不改变内容**——同一版本号不可能指向两份不同规范；
+- **minor 演进（1.0 → 1.1）**：仅新增 L2 键/可选字段——旧实现按「未知键警告并忽略」装载，新实现全量生效，**无需迁移**；
+- **major 演进（1.0 → 2.0）**：键名/语义变更或 L1 结构变化——提供**迁移器**（读旧版 → 写新版），装载器对旧 major 拒绝加载并提示迁移；
+- 校验器同时支持「声明格式版本校验」与「可迁移性检查」。
 
 ---
 
@@ -238,3 +253,15 @@ skills:
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 
 > 标准优先于实现：memora 内部键名（如旧 `strategy.act.tool_calls`）逐步对齐本规范的中立命名；规范演进以 `formatVersion` 控制，不破坏已装载的卡。
+
+---
+
+## 十、与行业标准的关系（Agent Skills / Agent Plugins）
+
+| 标准 | 定位 | 与角色包的关系 |
+|---|---|---|
+| Agent Skills（Anthropic 2025-12） | 能力单元（SKILL.md + scripts/references/assets，渐进披露） | 角色包**内嵌兼容**：`skills/` 即 Agent Skills 格式；L1/L2/L3 渐进披露同构（§2.4） |
+| Agent Plugins 1.0（2026-08-06，五方+Google） | 能力+工具连接的文件夹包（plugin.json + skills/ + mcp.json + 反域名扩展） | **骨架同构**（§二）：文件夹 + manifest + skills/ + 命名空间扩展；角色包在其上增加**行为层**（persona/rules/strategy）——行业可移植层目前**不含身份/行为**，这正是角色包的差异化空白 |
+| memora | 角色包的 reference implementation | 见 §九 |
+
+**竞争姿态（范式立场）**：不与 Agent Plugins 竞争「能力分发」，而是补齐其明确留白——**行为分发**（有身份的 Agent 行为单元）。Agent Plugins 把 persona 留给 client-specific 扩展（如 VS Code `agents/` 目录）；角色包把 persona/rules/strategy 做成**可移植核心（L1）**。反域名命名空间目录（`com.memora/`，§2.2）保证两者共存：**标准核心对齐行业，专有行为层进命名空间**——不绑死任何一家，也不放弃差异化。

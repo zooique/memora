@@ -1020,6 +1020,8 @@ IDLE ──trigger──▶ RUNNING ──pause──▶ PAUSED ──resume─�
 | MVP 边界 | 写作助手初版：全量设计的子集（含 Agent 提问 + Web 搜索） | [docs/architecture/mvp-scope.md](mvp-scope.md) |
 | P1 修复实施计划 | 2026-08-11 审查的一次性补丁方案（独立于阶段序列，见 roadmap 关系声明） | [docs/P1-实施计划.md](../P1-实施计划.md) |
 | ADR 决策库 | 架构决策记录（决策真理源，`decisions/`） | [.trae/decisions/README.md](../../.trae/decisions/README.md) |
+| 角色包标准 | 中立标准本体（文件夹包 + 三层结构 + 合规内建 + 行业关系） | [docs/architecture/role-pack-spec.md](role-pack-spec.md) |
+| 角色包战略推演 | 行为层成为事实标准的战略论证（标准权=采纳权，巨头空白） | [docs/architecture/role-pack-strategy.md](role-pack-strategy.md) |
 | API 参考 | 接口和类型定义 | [docs/memora-api-reference.md](../memora-api-reference.md) |
 | 项目总则 | 硬约束、技术栈、目录结构 | [.trae/rules/project-rules.md](../../.trae/rules/project-rules.md) |
 | 架构哲学 | 10 条架构原则 | [.trae/rules/architecture_philosophy_rules.md](../../.trae/rules/architecture_philosophy_rules.md) |
