@@ -183,6 +183,10 @@ export class AgentLoop {
    * public 可写字段，属反向收口——把封装拆开换少一层包装，导致本类既提供只读 getter
    * `isPauseRequested` 又允许外部随意赋值，不变式无处可守。写入口收敛为下方两个方法。 */
   private pauseRequested = false;
+  /** 自审查轮是否启用（由 Agent 根据 L2 策略 reflect.loopContinue 设置） */
+  private selfReviewEnabled = false;
+  /** 自审查轮是否已完成（每轮用户输入独立计算，限 1 轮） */
+  private selfReviewDone = false;
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
   /**
@@ -198,6 +202,22 @@ export class AgentLoop {
   onRoundBoundary?: (roundInfo: { stepId?: string; summary: string }) => void;
   /** P2-8: 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
+  /**
+   * 插话控制器（Phase 5：执行中插话）
+   *
+   * 宿主调用 interject() 时 abort 此 controller，中断当前 LLM 调用或工具执行。
+   * 与外部 signal 合并后传递给 handleIteration 的子方法。
+   * 消费后重新创建新 controller，支持多次插话。
+   */
+  private interjectController = new AbortController();
+  /**
+   * 待注入的插话内容（Phase 5：执行中插话）
+   *
+   * interject() 设置，handleIteration/processUserInput 在迭代边界消费后清空。
+   * 与 interjectController 配对使用：controller 负责中断当前操作，
+   * pendingInterjection 携带中断后需要注入的内容。
+   */
+  private pendingInterjection: string | null = null;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 护栏规则正则编译失败回调（从 opts.onGuardrailError 提取，用于 GuardrailUI） */
@@ -240,6 +260,15 @@ export class AgentLoop {
         opts.messages?.reflectionHint ??
         ((remaining: number) =>
           `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${remaining}`),
+      selfReviewPrompt:
+        opts.messages?.selfReviewPrompt ??
+        `[SELF_REVIEW] 请审查你上一条回复的质量。检查：
+1. 是否准确回答了用户的问题？
+2. 是否有遗漏的关键信息？
+3. 表达是否清晰、有条理？
+
+如果满意，请确认并输出最终版本。
+如果需要改进，请直接输出改进后的完整回复。`,
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
 
@@ -307,6 +336,8 @@ export class AgentLoop {
       this.inAutonomousStep = false;
       // P0-3：清残留软暂停标志，防上一轮以 done 结束后跨轮泄漏误触发暂停（D2）
       this.pauseRequested = false;
+      // 重置自审查轮标志（每轮用户输入独立计算，限 1 轮）
+      this.selfReviewDone = false;
 
       // 3. 迭代循环
       let iteration = 0;
@@ -316,7 +347,37 @@ export class AgentLoop {
         // 软暂停在迭代边界挂起后也必须终止本轮编排（与 continueAfterPause 一致），
         // 否则 pauseRequested 被 handleIteration 消费后本轮不 return，loop 会继续跑下一轮迭代，
         // 导致"用户点暂停却没停"——与 continueAfterPause 的 'paused' 处理保持一致。
-        if (result === 'aborted' || result === 'done' || result === 'paused') return;
+        if (result === 'paused') return;
+        if (result === 'aborted') {
+          // Phase 5：检查是否因插话导致 abort
+          // 当 interject() 被调用时，interjectController 被 abort → effectiveSignal 被 abort
+          // → 子方法返回 aborted → handleIteration 返回 'aborted'。
+          // 此时 pendingInterjection 非空，需要注入插话内容并继续循环。
+          if (this.pendingInterjection) {
+            const content = this.pendingInterjection;
+            this.pendingInterjection = null;
+            // 重新创建插话控制器（旧的已被 abort，新 controller 供后续插话使用）
+            this.interjectController = new AbortController();
+            // 注入插话内容作为 user 消息，LLM 将在下一轮迭代中处理
+            this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
+            // 继续循环，进入下一轮迭代；LLM 将看到插话内容并响应
+            continue;
+          }
+          return;
+        }
+        if (result === 'done') {
+          // 自审查轮：LLM 生成纯文本回复后，若启用自审查且未执行，注入提示继续 1 轮审查
+          if (this.selfReviewEnabled && !this.selfReviewDone) {
+            this.selfReviewDone = true;
+            this.messages.push({
+              role: 'system',
+              content: this.ui.selfReviewPrompt,
+            });
+            // 不 return，继续循环进入自审查轮；LLM 将在下一轮审查自身回复
+            continue;
+          }
+          return;
+        }
       }
 
       // 4. 最大迭代兜底
@@ -400,12 +461,37 @@ export class AgentLoop {
     this.reflectionCountThisTurn = 0;
     // P0-3：清残留软暂停标志（续跑前确保干净，防跨轮泄漏 D2）
     this.pauseRequested = false;
+    // 重置自审查轮标志（与 processUserInput 一致）
+    this.selfReviewDone = false;
     // 重新进入迭代循环，从保留的 this.messages 续跑
     let iteration = 0;
     while (iteration < this.maxIterations) {
       iteration++;
       const result = yield* this.handleIteration(iteration, signal);
-      if (result === 'aborted' || result === 'done' || result === 'paused') return;
+      if (result === 'paused') return;
+      if (result === 'aborted') {
+        // Phase 5：与 processUserInput 一致，检查是否因插话导致 abort
+        if (this.pendingInterjection) {
+          const content = this.pendingInterjection;
+          this.pendingInterjection = null;
+          this.interjectController = new AbortController();
+          this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
+          continue;
+        }
+        return;
+      }
+      if (result === 'done') {
+        // 自审查轮：与 processUserInput 一致，LLM 纯文本回复后注入审查提示继续 1 轮
+        if (this.selfReviewEnabled && !this.selfReviewDone) {
+          this.selfReviewDone = true;
+          this.messages.push({
+            role: 'system',
+            content: this.ui.selfReviewPrompt,
+          });
+          continue;
+        }
+        return;
+      }
     }
     yield { type: 'text', content: this.ui.maxIterationsReached };
     yield { type: 'done' };
@@ -425,6 +511,16 @@ export class AgentLoop {
    */
   setToolCallsBlocked(blocked: boolean): void {
     this.toolCallsBlocked = blocked;
+  }
+
+  /**
+   * 设置自审查轮是否启用
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 reflect.loopContinue 设置。
+   * 启用后，LLM 生成纯文本回复后会自动进入 1 轮自审查，检查回复质量。
+   */
+  setSelfReviewEnabled(enabled: boolean): void {
+    this.selfReviewEnabled = enabled;
   }
 
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
@@ -455,6 +551,51 @@ export class AgentLoop {
    */
   clearPauseRequest(): void {
     this.pauseRequested = false;
+  }
+
+  /**
+   * 执行中插话（Phase 5）
+   *
+   * 在 LLM 执行过程中插入用户输入，中断当前 LLM 调用 / 工具执行，
+   * 将插话内容注入下一轮迭代继续处理。
+   *
+   * 与 requestPause 的区别：
+   *   - requestPause 在迭代边界挂起，保留上下文待续跑
+   *   - interject 立即中断当前操作，注入新内容后继续
+   *
+   * 调用链：
+   *   interject() → abort interjectController → handleIteration 检测到
+   *   effectiveSignal.aborted → 子方法返回 → processUserInput 消费
+   *   pendingInterjection → 注入 user 消息 → 继续循环
+   *
+   * @param content 插话内容
+   */
+  interject(content: string): void {
+    this.pendingInterjection = content;
+    this.interjectController.abort();
+  }
+
+  /**
+   * 合并多个 AbortSignal 为一个（Phase 5）
+   *
+   * 任意一个被 abort 时，合并后的 signal 也被 abort。
+   * 无 signal 或仅一个 signal 时直接返回，不创建新 controller。
+   * 用于将外部取消 signal 与内部插话控制器 signal 合并。
+   */
+  private static combineSignals(
+    ...signals: (AbortSignal | undefined)[]
+  ): AbortSignal | undefined {
+    const valid = signals.filter((s): s is AbortSignal => s !== undefined);
+    if (valid.length === 0) return undefined;
+    if (valid.length === 1) return valid[0];
+    // 如果任一已 abort，直接返回已 abort 的 signal
+    const aborted = valid.find(s => s.aborted);
+    if (aborted) return aborted;
+    const controller = new AbortController();
+    for (const s of valid) {
+      s.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+    return controller.signal;
   }
 
   /**
@@ -580,7 +721,13 @@ export class AgentLoop {
       yield { type: 'paused' };
       return 'paused';
     }
-    if (signal?.aborted) {
+    // Phase 5：合并外部取消 signal 与内部插话控制器 signal，
+    // 让子方法（callLlmWithRetry / executeToolCalls）能同时响应两种中断
+    const effectiveSignal = AgentLoop.combineSignals(signal, this.interjectController.signal);
+    if (effectiveSignal?.aborted) {
+      // 插话控制器在迭代边界被 abort 时，说明 interject() 在上一次迭代之后被调用
+      // （如 pause 恢复后、continueAfterPause 中），此时在迭代边界直接返回 aborted，
+      // 由 processUserInput 消费 pendingInterjection
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
     }
@@ -595,8 +742,8 @@ export class AgentLoop {
       this.contextManager.shouldTruncate(this.messages)
     ) {
       // 摘要缓存管理已移至 ContextManager.getOrCreateSummary
-      // 传入 signal，让摘要生成可被用户取消中断（避免 generator 挂起）
-      contextSummary = await this.contextManager.getOrCreateSummary(this.messages, signal);
+      // 传入 effectiveSignal，让摘要生成可被用户取消或插话中断（避免 generator 挂起）
+      contextSummary = await this.contextManager.getOrCreateSummary(this.messages, effectiveSignal);
     }
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
     // 截断后同步替换工作记忆，防止 messages 数组无限增长
@@ -611,7 +758,7 @@ export class AgentLoop {
       this.injectSystemMessage(taskTable);
     }
 
-    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
+    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, effectiveSignal, iteration);
 
     if (llmResult.aborted) {
       // LLM 调用中断时仍保留已生成的部分文本到上下文消息列表
@@ -635,9 +782,9 @@ export class AgentLoop {
       });
     }
 
-    // 工具调用分支
+    // 工具调用分支（使用 effectiveSignal 让插话也能中断工具执行）
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-      return yield* this.handleToolCalls(llmResult, signal);
+      return yield* this.handleToolCalls(llmResult, effectiveSignal);
     }
 
     // 纯文本结束分支

@@ -509,6 +509,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 根据 L2 策略设置工具调用权限（影响整轮对话），标准键 act.toolMode（§六）
     loop.setToolCallsBlocked(strategy.act?.toolMode === 'block');
 
+    // 根据 L2 策略设置自审查轮（LLM 纯文本回复后自动审查 1 轮），标准键 reflect.loopContinue（§六）
+    loop.setSelfReviewEnabled(strategy.reflect?.loopContinue === 'on');
+
     // M2.1 换角色 → 工具集切换：按激活角色包的 capabilities 应用工具暴露面
     // （toolMode=block 全禁与此正交；未声明 capabilities 时保持全部暴露）
     this.applyRolePackToolExposure();
@@ -1534,6 +1537,30 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   isPausePending(): boolean {
     return this._sessionManager?.isPausePending() ?? false;
+  }
+
+  /**
+   * 执行中插话（Phase 5）
+   *
+   * 在 LLM 执行过程中插入用户输入，中断当前 LLM 调用 / 工具执行，
+   * 将插话内容注入下一轮迭代继续处理。
+   *
+   * 与 requestPause 的区别：
+   *   - requestPause 在迭代边界挂起，保留上下文待续跑
+   *   - interject 立即中断当前操作，注入新内容后继续，用户无感知中断
+   *
+   * 使用场景：Agent 正在生成长回答时用户补充关键信息，
+   * 宿主（如精灵）的快捷输入框收到用户输入时调用此方法。
+   *
+   * 调用链：Agent.interject() → AgentLoop.interject() → abort interjectController
+   * → effectiveSignal.aborted → 子方法返回 → processUserInput 消费 pendingInterjection
+   * → 注入 user 消息 → 继续循环
+   *
+   * @param content 插话内容
+   */
+  interject(content: string): void {
+    this.assertInitialized('interject');
+    this.requireLoop.interject(content);
   }
 
   /**
