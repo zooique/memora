@@ -271,6 +271,25 @@ TriggerQueue.enqueue(sessionId, trigger)
 3. **资源锁最小化**：记忆系统读取使用读锁共享，写入时才获取写锁
 4. **队列满不阻塞**：队列满时直接返回 `accepted: false`，由触发者决定如何处理
 5. **中断信号是提示，不是指令**：`signalPendingInput` 只是告知闭环"外面有输入"，闭环自行决定如何处理
+6. **队列与锁职责分界**：`TriggerQueue` 负责顺序调度（单会话串行出队），`SessionLock` 负责并发互斥（跨进程/多线程宿主下的准入）——单进程内存队列实现下 `SessionLock` 可省略，避免"双重保险"被误读为必需
+
+### 13.3.6 会话暂停 / 恢复（Pause）
+
+**现状**：暂停/恢复是内核既有能力（`SessionManager.pause()/resume()`，状态机
+`RUNNING → PAUSED → ERROR → RUNNING`，见 [README.md §12.1](README.md) 与
+src/agent/sessionStateMachine.ts）。本节补齐其运行时边界语义，不与中断信号混淆：
+
+| 机制 | 触发方 | 语义 | 生效时机 |
+|------|--------|------|---------|
+| 输入中断（§13.3.3） | 外部 Trigger 到达 | 提示闭环"外面有输入"，闭环自行决策 | Prepare 阶段读取，不打断在飞阶段 |
+| 会话暂停（Pause） | 宿主显式调用 | 挂起整个会话，等待恢复 | 阶段边界收口后进入 PAUSED，不掐断在飞 LLM 调用 |
+| 会话恢复（Resume） | 宿主显式调用 | 从检查点续跑 | 走恢复流程（§13.4） |
+
+**纪律**：
+
+1. **暂停与中断不混淆**：中断是"下一轮优先处理新输入"的提示；暂停是"整个会话挂起，等宿主恢复"。
+2. **暂停遵守"阶段边界收口"**（与 §13.9.4 纪律 5 一致）——不在 LLM 调用中途插入。
+3. **暂停状态持久化**：`SessionCheckpoint.status = 'paused'`（含 `pauseMeta`），恢复经 `normalizeCheckpoint` 迁移（project-rules §1.8）。
 
 ---
 
@@ -344,57 +363,63 @@ interface ShutdownReport {
 
 ```typescript
 /**
- * 检查点状态：Handoff 时持久化的会话状态格式
+ * 检查点投影：Handoff 时持久化的会话状态视图
  *
- * SSOT 纪律：检查点不是独立机制，是 Handoff 的自然延伸。
- * 每轮闭环的 Handoff 阶段自动持久化当前状态，恢复时从最后一个 Handoff 状态重建。
+ * SSOT 纪律：HandoffCheckpoint 不是独立机制——它是 `SessionCheckpoint`
+ * （见 src/agent/types.ts，执行状态的唯一真理源）在 Handoff 场景下的**只读投影**。
+ * 字段全部派生自 SessionCheckpoint 或运行时元数据：不新增字段、不持有独立版本号、
+ * 不建平行存储/迁移链。
  *
- * 挂载点：Handoff 阶段结束前自动创建
+ * - 版本兼容：由 `SessionCheckpoint.schemaVersion` + `SessionManager.checkpointMigrations`
+ *   承担（project-rules §1.8 硬约束）。新增检查点字段必须：① 递增
+ *   CURRENT_SCHEMA_VERSION；② 注册迁移函数。不得在此平行定义版本。
+ * - 消息恢复：完整对话由会话存储（ISessionStore）负责，不进入检查点。
+ * - 角色锁定 / 预算状态：属会话执行状态，走 SessionCheckpoint 既有字段
+ *   （role / resource）；如需新增字段，按 §1.8 流程扩展，不在此定义。
+ *
+ * 挂载点：Handoff 阶段结束前由 SessionManager 自动创建（touchCheckpoint 收口）
  */
 interface HandoffCheckpoint {
-  /** 检查点元数据 */
+  /** 运行时派生的索引元数据（不承载执行状态） */
   metadata: {
     checkpointId: string;
     sessionId: string;
     roundId: string;
     handoffDecision: 'wait' | 'loop' | 'end';
     timestamp: number;
-    /** 格式版本，用于恢复时的兼容性检查 */
-    version: number;
   };
 
-  /** 会话状态 */
-  session: {
-    messages: SerializedMessage[];
-    context: {
-      systemPrompt: string;
-      budgetStatus: {
-        tokenUsed: number;
-        tokenBudget: number;
-        costAccumulated: number;
-        costBudget?: number;
-      };
-    };
-    rolePack: {
-      packId: string;
-      lockedAt: number;
-      driftCount: number;
-    };
-  };
+  /** 会话状态投影：SessionCheckpoint 既有字段的直接引用（不新增字段） */
+  session: Pick<
+    SessionCheckpoint,
+    | 'sessionId'
+    | 'status'
+    | 'mainGoal'
+    | 'currentGoal'
+    | 'plan'
+    | 'role'
+    | 'standard'
+    | 'resource'
+    | 'hotMemory'
+    | 'pauseMeta'
+    | 'lastHeartbeat'
+    | 'schemaVersion'
+  >;
 }
 
 /**
- * 检查点存储：持久化 HandoffCheckpoint 的存储接口
+ * 检查点存储：持久化 `SessionCheckpoint`（HandoffCheckpoint 为其投影视图）的存储接口
  *
- * 宿主实现，负责将检查点写入持久化存储。
- * 存储策略由宿主决定（文件系统 / 数据库 / 内存），内核只定义格式。
+ * 宿主实现。持久化主体是 SessionCheckpoint 本体——投影不单独落盘、不建平行格式。
+ * 写入收口在 SessionManager（touchCheckpoint/flushCheckpoint），本接口描述的是
+ * 关闭/恢复场景下宿主侧的持久化职责面；存储策略（文件系统 / 数据库 / 内存）由宿主决定。
  */
 interface CheckpointStore {
   /** 保存检查点（Handoff 时自动调用） */
-  save(checkpoint: HandoffCheckpoint): Promise<void>;
+  save(checkpoint: SessionCheckpoint): Promise<void>;
 
   /** 获取指定会话的最后一个检查点 */
-  getLastCheckpoint(sessionId: string): Promise<HandoffCheckpoint | null>;
+  getLastCheckpoint(sessionId: string): Promise<SessionCheckpoint | null>;
 
   /** 列出指定会话的所有检查点 */
   listCheckpoints(sessionId: string): Promise<CheckpointMeta[]>;
@@ -420,7 +445,7 @@ interface CheckpointMeta {
 interface SerializedMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  tool_calls?: any[];
+  tool_calls?: unknown[];
   tool_call_id?: string;
   /** 元数据附加字段 */
   meta: {
@@ -436,7 +461,9 @@ interface SerializedMessage {
 /**
  * 恢复策略：定义从异常中恢复的行为
  *
- * 职责：决定系统启动后如何处理未完成的会话和闭环
+ * 职责：决定系统启动后如何处理未完成的会话和闭环。
+ * 恢复数据来源：CheckpointStore 中最近的 `SessionCheckpoint`；
+ * 版本迁移由 `normalizeCheckpoint` 自动应用（project-rules §1.8）。
  */
 interface RecoveryStrategy {
   /**
@@ -447,7 +474,7 @@ interface RecoveryStrategy {
 
   /**
    * 注册自定义恢复策略
-   * 宿主可覆盖默认策略
+   * 宿主可覆盖默认策略（恢复行为可配置，检查点格式不随之分叉）
    */
   setStrategy(
     sessionId: string,
@@ -483,7 +510,7 @@ ShutdownHook.shutdown(reason)
   │   └── 正在执行的闭环完成当前阶段后停止，不开启新阶段
   │
   ├── Phase 2: 检查点（对每个活跃会话执行 Handoff 持久化）
-  │   └── CheckpointStore.save(handoffCheckpoint)
+  │   └── CheckpointStore.save(sessionCheckpoint)
   │
   ├── Phase 3: 持久化（将快照写入持久化存储）
   │   └── 确保内存数据已写入磁盘
@@ -501,7 +528,12 @@ ShutdownHook.shutdown(reason)
 2. **检查点是 Handoff 的自然延伸**：每轮闭环的 Handoff 阶段自动创建检查点，关闭时只确保最后一个检查点已持久化
 3. **恢复策略可配置**：宿主可根据场景决定恢复行为（如 CLI 工具可能直接丢弃，GUI 应用可能自动恢复）
 4. **关闭顺序固定**：通知 → 检查点 → 持久化 → 释放 → 完成，不可颠倒
-5. **检查点版本化**：`HandoffCheckpoint.version` 用于恢复时的兼容性检查，版本不匹配时走恢复策略的 fallback
+5. **检查点版本化**：投影不含独立版本号；兼容性由 `SessionCheckpoint.schemaVersion`
+   递增 + `checkpointMigrations` 迁移承担（project-rules §1.8），恢复时经
+   `normalizeCheckpoint` 自动应用迁移
+6. **检查点写入按需收口**：脏标记（dirty flag，`touchCheckpoint` 置位 / `flushCheckpoint`
+   清位）驱动落盘，只在阶段边界与关键状态变更时写；长会话须避免每轮全量快照的
+   O(n²) 总写入量——变更字段增量序列化，或热状态高频小写 + 冷状态低频全量分层
 
 ---
 
@@ -544,7 +576,7 @@ interface RoundHooks {
   /** 错误发生 */
   onError?(error: Error, phase: string): void;
   /** 通用事件记录 */
-  onEvent?(type: string, data?: any): void;
+  onEvent?(type: string, data?: unknown): void;
 }
 
 interface PhaseStartData {
@@ -557,7 +589,7 @@ interface PhaseEndData {
   sessionId: string;
   roundId: string;
   durationMs: number;
-  result?: any;
+  result?: unknown;
 }
 ```
 
@@ -611,7 +643,7 @@ interface TraceEvent {
   timestamp: number;
   label: string;
   durationMs?: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface TraceFilter {
@@ -730,7 +762,7 @@ interface LogContext {
   phase?: string;
   durationMs?: number;
   error?: Error;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 ```
 
@@ -1051,7 +1083,9 @@ interface IsolatedContext {
 
   /**
    * 安全写入记忆系统
-   * 写入时自动标记 sessionId
+   * 写入时自动标记 sessionId，并**强制校验归属**：item 归属必须等于当前
+   * sessionId 或显式 ShareScope 声明的共享域，越权写返回错误而非静默放行
+   * （写隔离是硬校验，不是软标记，§13.7.4 纪律 7）
    */
   writeMemory(item: MemoryItem): Promise<void>;
 }
@@ -1097,6 +1131,7 @@ type ShareScope =
 4. **会话级配置覆盖不扩散**：会话的配置覆盖只影响本会话，不影响全局配置
 5. **隔离通过数据过滤实现**：不在代码中显式检查权限，而是通过 sessionId 自动过滤
 6. **全局资源管理由宿主实现**：内核不提供 ResourcePool 抽象，宿主通过 `LockManager` 自行管理全局资源
+7. **写隔离是硬校验**：`IsolatedContext.writeMemory` 必须校验写入目标归属（当前 sessionId 或显式共享域），越权写返回错误而非只打标记放行；跨会话共享写入按 §13.3 `LockManager` 资源锁（写锁）互斥执行，防双会话并发写同一记忆
 
 ---
 
@@ -1195,7 +1230,7 @@ interface GuardrailOutput {
 
 interface GuardrailToolCall {
   toolName: string;
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   sessionId: string;
   isReadonly: boolean;
 }
@@ -1405,7 +1440,7 @@ const LATENCY_TIER_MAP: Record<LatencyTier, Partial<PerformanceBudget>> = {
 2. **延迟目标分等级**：不同场景有不同的延迟要求（如对话模式需要 fast，后台摘要需要 background）
 3. **性能预算可配置**：宿主可根据部署环境调整性能目标
 4. **性能指标必须可观测**：所有性能指标通过 MetricCollector 收集
-5. **超时是硬限制**：`maxRoundDuration` 超过时，强制终止当前闭环
+5. **超时是硬限制**：`maxRoundDuration` 超过时，闭环在**当前阶段边界收口**——不再开启新阶段、等待在飞 LLM 调用自然返回后停止，并记为超时失败；不强行掐断在飞调用。这与 §13.3.5 纪律 1「不中断正在执行的闭环」、§13.4.4 纪律 1「软着陆」一致：并发准入与超时兜底都在阶段边界生效，不在执行中途插入操作。
 
 ---
 
@@ -1457,7 +1492,7 @@ interface RoundFixture {
     /** 触发源 */
     triggerSource?: string;
     /** 额外参数 */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 
   /** 期望输出 */
@@ -1471,7 +1506,7 @@ interface RoundFixture {
     /** 期望的上下文预算使用 */
     budgetUsage?: { tokenUsed?: number; summaryCount?: number; memoryCount?: number };
     /** 期望的状态变更 */
-    stateChanges?: Record<string, any>;
+    stateChanges?: Record<string, unknown>;
   };
 
   /** Mock 配置 */
@@ -1497,12 +1532,12 @@ interface TestRolePack {
   persona: string;
   rules: string[];
   skills: string[];
-  l2Config: Record<string, any>;
+  l2Config: Record<string, unknown>;
 }
 
 interface ExpectedToolCall {
   name: string;
-  args?: Record<string, any>;
+  args?: Record<string, unknown>;
   /** 是否期望此工具调用 */
   expect: 'called' | 'not_called';
   /** 调用次数 */
@@ -1517,14 +1552,14 @@ interface MockLlmResponse {
   /** 模拟的延迟（毫秒） */
   delayMs?: number;
   /** 模拟工具调用 */
-  toolCalls?: { name: string; args: Record<string, any> }[];
+  toolCalls?: { name: string; args: Record<string, unknown> }[];
 }
 
 interface MockToolResult {
   name: string;
   argsPattern?: RegExp;
   /** 模拟返回结果 */
-  result: any;
+  result: unknown;
   /** 模拟错误 */
   error?: string;
   /** 模拟延迟 */
@@ -1571,7 +1606,7 @@ interface LlmCallRecord {
   output: string;
   timestamp: number;
   durationMs: number;
-  toolCalls?: { name: string; args: Record<string, any> }[];
+  toolCalls?: { name: string; args: Record<string, unknown> }[];
 }
 ```
 
@@ -1828,7 +1863,17 @@ interface CompatibilityResult {
   schema_version（单一整数，单调递增）
   - 每次数据格式变更时递增
   - 旧数据在读取时自动迁移到新格式
+
+检查点与热更新配置：
+  schemaVersion / version（单一整数，单调递增）
+  - 检查点：SessionCheckpoint.schemaVersion，迁移经 checkpointMigrations（project-rules §1.8）
+  - 热更新配置：VersionedConfig.version（§13.6）
 ```
+
+**版本格式边界**：semver 仅用于**外部可交付物格式**（角色包格式、内核 API 契约），
+主版本相同即兼容；单一整数仅用于**内核内部持久化状态**（检查点 schemaVersion、
+热更新配置 version、记忆 schema_version），仅比较大小、迁移逐版执行。
+`VersionRegistry` 按组件记录其版本格式，兼容性检查按格式分派——两种格式不混用比较。
 
 ### 13.11.4 设计纪律
 

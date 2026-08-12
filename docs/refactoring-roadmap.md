@@ -57,7 +57,7 @@
 
 **修正**：通过 `RoundHooks` 收集指标数据。`MetricCollector` 订阅 `onPhaseEnd` 事件，从事件参数中提取时长等数据，自行记录指标。
 
-### 违规 3：StateSnapshot 是独立机制，而非 Handoff 的自然延伸
+### 违规 3：StateSnapshot 是独立机制，而非 Handoff 的自然延伸（已排雷 2026-08-12：runtime §13.4.2 的 HandoffCheckpoint/CheckpointStore 已收敛为 `SessionCheckpoint` 只读投影，不建平行存储/版本链）
 
 **问题**：SSOT 证明三（§2.3）明确指出：**"Handoff 边界是天然的暂停点/检查点"**。但运行时架构引入了独立的 `StateSnapshot`、`SnapshotManager`、`RecoveryStrategy` 三个接口——这是"引入新机制"的补丁思维。
 
@@ -258,7 +258,7 @@ SSOT 的核心公理是"单轮问答闭环是最小单元，一切复杂行为�
 |------|------|------|
 | 所有宿主都需要所有 9 个运行时领域 | 运行时架构为最复杂的宿主设计 | 轻量宿主（如 CLI）被过度设计拖累 |
 | 内核和运行时通过 RoundHooks 解耦就够了 | 一个接口足够承载所有运行时需求 | 如果 RoundHooks 需要扩展，可能破坏已有订阅者 |
-| 检查点版本化是必要的 | HandoffCheckpoint 包含 version 字段 | 版本兼容可能通过宿主层解决，不需要内核级别 |
+| 检查点版本化是必要的 | HandoffCheckpoint 包含 version 字段（已定案 2026-08-12：投影不持独立版本号，由 `SessionCheckpoint.schemaVersion` + `checkpointMigrations` 承担，见 runtime §13.4.2 / project-rules §1.8） | 版本兼容可能通过宿主层解决，不需要内核级别 |
 | 可观测性是运行时层的职责 | 核心闭环不需要知道自己在被追踪 | 这是正确的，但依赖模式设计需谨慎 |
 
 **结论**：这些假设需要在实际实施中验证。**如果某个宿主只需要 9 个领域中的 3 个，运行时架构应该允许"按需加载"**——而不是一次性加载所有运行时组件。这符合 SSOT 的"复杂度自然生长"原则：运行时复杂度应该"按需生长"，而非"预先设计"。
