@@ -1147,6 +1147,333 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：自审查轮（Self-Review）
+// 覆盖：启用自审查后触发 / 仅执行一次 / toolCallsBlocked 时跳过
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 自审查轮（Self-Review）', () => {
+  it('自审查启用时，LLM 纯文本回复后应触发自审查轮', async () => {
+    // 双轮 provider：第一轮原始回复，第二轮自审查回复
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '原始回复' }],
+        [{ content: '改进后的回复' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    loop.setSelfReviewEnabled(true);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('用户问题')) {
+      chunks.push(chunk);
+    }
+
+    // 验证文本块包含原始回复和改进后的自审查回复
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('原始回复');
+    expect(texts).toContain('改进后的回复');
+    // 最后一个是 done 事件
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+
+    const messages = loop.getMessages();
+    // system + user + assistant(原始) + system(自审查提示) + assistant(改进) = 5
+    expect(messages).toHaveLength(5);
+    // 自审查提示应存在
+    expect(messages[3]!.role).toBe('system');
+    expect(messages[3]!.content).toContain('SELF_REVIEW');
+  });
+
+  it('自审查轮仅执行一次（selfReviewDone 标志控制）', async () => {
+    // 3 轮都返回文本，但自审查只应触发 1 轮
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '第一轮' }],
+        [{ content: '第二轮' }],
+        [{ content: '第三轮' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    loop.setSelfReviewEnabled(true);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    // 应有第一轮 + 第二轮（自审查），第三轮不应出现（自审查后 done 即结束）
+    expect(texts).toEqual(['第一轮', '第二轮']);
+
+    const messages = loop.getMessages();
+    // 自审查 system 消息应只有 1 条
+    const selfReviewMsgs = messages.filter(
+      (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
+    );
+    expect(selfReviewMsgs).toHaveLength(1);
+  });
+
+  it('toolCallsBlocked 时自审查被跳过', async () => {
+    // toolCallsBlocked 时 'done' 来自系统兜底文本而非 LLM 回复，不应触发自审查
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '仅文本回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    loop.setToolCallsBlocked(true);
+    loop.setSelfReviewEnabled(true);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    // 只有原始文本，没有自审查轮
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toEqual(['仅文本回复']);
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+
+    // 不应有自审查 system 消息
+    const messages = loop.getMessages();
+    const selfReviewMsgs = messages.filter(
+      (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
+    );
+    expect(selfReviewMsgs).toHaveLength(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：执行中插话（Phase 5）
+// 覆盖：中断工具执行 / 中断 LLM 回复 / 连续插话队列 / 插话后继续
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 执行中插话（Phase 5）', () => {
+  it('interject() 应中断工具执行并注入插话内容', async () => {
+    // 工具执行耗时 100ms，interject 在 10ms 时触发
+    const toolExecutor = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+    );
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '好的，根据你的新要求处理' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    setTimeout(() => loop.interject('等等，我改主意了'), 10);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('帮我查资料')) {
+      chunks.push(chunk);
+    }
+
+    // 插话内容应被注入为 user 消息
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('等等，我改主意了'))).toBe(true);
+    // 应继续处理插话后的回复
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('好的，根据你的新要求处理');
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  }, 15000);
+
+  it('连续插话应全部按序消费', async () => {
+    const toolExecutor = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+    );
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '两次修正都收到了' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 连续两次插话（同步调用，都入队列）
+    setTimeout(() => {
+      loop.interject('第一次修正');
+      loop.interject('第二次修正');
+    }, 10);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      chunks.push(chunk);
+    }
+
+    const messages = loop.getMessages();
+    // 两次插话都应被注入
+    const firstInjected = messages.some(
+      (m) => m.role === 'user' && m.content.includes('第一次修正'),
+    );
+    const secondInjected = messages.some(
+      (m) => m.role === 'user' && m.content.includes('第二次修正'),
+    );
+    expect(firstInjected).toBe(true);
+    expect(secondInjected).toBe(true);
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  }, 15000);
+
+  it('interject() 后 interjectController 应重建，支持多次插话', async () => {
+    // 两轮工具执行，每轮都被插话中断
+    const toolExecutor = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+    );
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'tool_a', arguments: '{}' } },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              { id: 'c2', type: 'function', function: { name: 'tool_b', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '两次插话都处理完毕' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 第一次插话
+    setTimeout(() => loop.interject('第一次'), 10);
+    // 第二次插话（在第一次插话消费后重建的 controller 上触发）
+    setTimeout(() => loop.interject('第二次'), 50);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    const messages = loop.getMessages();
+    const firstInjected = messages.some(
+      (m) => m.role === 'user' && m.content.includes('第一次'),
+    );
+    const secondInjected = messages.some(
+      (m) => m.role === 'user' && m.content.includes('第二次'),
+    );
+    expect(firstInjected).toBe(true);
+    expect(secondInjected).toBe(true);
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  }, 15000);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：continueAfterPause 中插话
+// 覆盖：暂停后插话再 resume / 暂停后插话 + 输入 resume
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · continueAfterPause 中插话', () => {
+  it('暂停后 interject() 应被注入并在 resume 时处理', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('工具结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '暂停后插话，继续处理' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 先暂停（工具结果后请求暂停）
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') loop.requestPause();
+    }
+    expect(loop.getMessages()).toHaveLength(4);
+
+    // 暂停后插话（无 LLM 调用进行中，interjectController 在迭代边界被 abort）
+    loop.interject('暂停后插话');
+
+    // resume：首迭代检测到 interjectController 已 abort → 消费插话队列 → 继续
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      chunks.push(chunk);
+    }
+
+    // 插话内容应被注入为 user 消息
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('暂停后插话'))).toBe(true);
+    // 应继续执行后续 LLM 调用
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('暂停后插话，继续处理');
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+
+  it('暂停后 interject() 并结合 resume 输入', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('工具结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        // 插话 + resume 输入共 2 条 user 消息，LLM 需要处理它们
+        [{ content: 'resume 输入处理结果' }],
+        [{ content: '插话处理结果' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 先暂停
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') loop.requestPause();
+    }
+
+    // 暂停后插话
+    loop.interject('暂停后插话');
+
+    // resume 时带输入，两个输入应都被注入（插话队列 + resume 输入）
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause('resume 新输入')) {
+      chunks.push(chunk);
+    }
+
+    const messages = loop.getMessages();
+    // 插话内容应被注入
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('暂停后插话'))).toBe(true);
+    // resume 输入也应被注入
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('resume 新输入'))).toBe(true);
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：P1-2 多模型路由基础
 // ═══════════════════════════════════════════════════════════════
 
