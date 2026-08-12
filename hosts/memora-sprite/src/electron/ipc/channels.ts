@@ -362,6 +362,14 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    */
   SPRITE_STREAM_ABORTED: 'sprite-stream-aborted',
 
+  /**
+   * 流式对话 handoff 决策通知
+   *
+   * Agent 在对话循环结束时 yield handoff chunk，携带 decision（wait/loop/end）和 reason。
+   * 渲染层据此更新 UI 状态（如显示"自动续跑中..."）。主进程在 decision='loop' 时自动调用 handleResume 续跑。
+   */
+  SPRITE_STREAM_HANDOFF: 'sprite-stream-handoff',
+
   // ─── 精灵输出 / 错误 ──────────────────────────────────
   /** 精灵主动提示或系统消息 */
   SPRITE_OUTPUT: 'sprite-output',

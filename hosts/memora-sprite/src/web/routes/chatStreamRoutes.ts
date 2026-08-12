@@ -58,6 +58,7 @@ const SSE_EVENTS = {
   THINKING: 'thinking',
   TRUNCATED: 'truncated',
   ABORTED: 'aborted',
+  HANDOFF: 'handoff',
   ERROR: 'error',
 } as const;
 
@@ -314,6 +315,14 @@ async function handleChatStart(
           abortedNotified = true;
           writeSSE(res, SSE_EVENTS.ABORTED, { messageId, reason: chunk.reason });
           break;
+        } else if (chunk.type === 'handoff') {
+          // handoff 决策：通知客户端，由客户端决定是否继续
+          writeSSE(res, SSE_EVENTS.HANDOFF, {
+            messageId,
+            decision: chunk.decision,
+            reason: chunk.reason,
+          });
+          // 不 break，让 for-await 自然结束（handoff 是最后一个 chunk）
         }
       }
     } catch (error) {
@@ -418,6 +427,9 @@ async function handleChatStart(
       } else if (chunk.type === 'aborted') {
         abortedChunk = { reason: chunk.reason };
         break;
+      } else if (chunk.type === 'handoff') {
+        // handoff 决策：非流式模式下收集 handoff 信息供客户端判断
+        // 不 break，让 for-await 自然结束（handoff 是最后一个 chunk）
       }
     }
 

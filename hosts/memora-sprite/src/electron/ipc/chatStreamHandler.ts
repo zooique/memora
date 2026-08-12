@@ -65,7 +65,7 @@ function emitStreamError(fullWindow: BrowserWindow, text: string, context: strin
  */
 export async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
   const fullWindow = ctx.windowManager.getFullWindow();
-  if (!fullWindow || fullWindow.isDestroyed()) return;
+  if (!fullWindow || fullWindow.isDestroyed()) return false;
 
   // Agent 未就绪时拒绝：可能是首次配置后正在初始化，或配置缺失
   if (!ctx.isAgentReady()) {
@@ -108,7 +108,10 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   // 构造 SessionEvent，意图分类为 chat（普通对话）
   const event: SessionEvent = { type: 'chat', content: text };
   const generator = agent.processEvent(event, abortController.signal);
-  await forwardStream(generator, ctx, messageId, abortController);
+  // handoff 自动续跑：forwardStream 返回 true 表示 handoff decision='loop'，递归调用 handleResume 续跑
+  if (await forwardStream(generator, ctx, messageId, abortController)) {
+    await handleResume(undefined, ctx);
+  }
 }
 
 /**
@@ -122,7 +125,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
  */
 export async function handleResume(input: string | undefined, ctx: IpcContext): Promise<void> {
   const fullWindow = ctx.windowManager.getFullWindow();
-  if (!fullWindow || fullWindow.isDestroyed()) return;
+  if (!fullWindow || fullWindow.isDestroyed()) return false;
 
   if (!ctx.isAgentReady()) {
     emitStreamError(fullWindow, 'Agent 正在初始化中，请稍候后重试；若长时间无响应请在设置面板检查 LLM 配置', 'Agent 未就绪');
@@ -144,7 +147,10 @@ export async function handleResume(input: string | undefined, ctx: IpcContext): 
 
   const agent = requireAgent(ctx);
   const generator = agent.resumeExecution(input, abortController.signal);
-  await forwardStream(generator, ctx, messageId, abortController);
+  // handoff 自动续跑：forwardStream 返回 true 表示 handoff decision='loop'，递归调用自身续跑
+  if (await forwardStream(generator, ctx, messageId, abortController)) {
+    await handleResume(undefined, ctx);
+  }
 }
 
 /**
@@ -164,7 +170,7 @@ export async function handleResume(input: string | undefined, ctx: IpcContext): 
  */
 function broadcastStatus(ctx: IpcContext, status: 'running' | 'paused' | 'error' | 'idle', reason?: string, resumable?: boolean): void {
   const fullWindow = ctx.windowManager.getFullWindow();
-  if (!fullWindow || fullWindow.isDestroyed()) return;
+  if (!fullWindow || fullWindow.isDestroyed()) return false;
   fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SESSION_STATUS_CHANGED, { status, reason, resumable });
 }
 
@@ -188,7 +194,7 @@ export async function handleClarifyAnswer(
   ctx: IpcContext,
 ): Promise<void> {
   const fullWindow = ctx.windowManager.getFullWindow();
-  if (!fullWindow || fullWindow.isDestroyed()) return;
+  if (!fullWindow || fullWindow.isDestroyed()) return false;
 
   if (!ctx.isAgentReady()) {
     emitStreamError(fullWindow, 'Agent 正在初始化中，请稍候后重试', 'Agent 未就绪');
@@ -228,15 +234,16 @@ export async function handleClarifyAnswer(
  * @param ctx IPC 上下文
  * @param messageId 本次流式消息 ID（SPRITE_STREAM_START/CHUNK/END 共用）
  * @param abortController 本次流式占用的 AbortController（超时/硬停止共用）
+ * @returns true 表示 handoff decision='loop'，调用方应调用 handleResume 自动续跑
  */
 async function forwardStream(
   generator: AsyncGenerator<AgentChunk>,
   ctx: IpcContext,
   messageId: string,
   abortController: AbortController,
-): Promise<void> {
+): Promise<boolean> {
   const fullWindow = ctx.windowManager.getFullWindow();
-  if (!fullWindow || fullWindow.isDestroyed()) return;
+  if (!fullWindow || fullWindow.isDestroyed()) return false;
 
   const sprite = requireSprite(ctx);
   const agent = requireAgent(ctx);
@@ -248,6 +255,8 @@ async function forwardStream(
   let streamStarted = false;
   // 中断通道已发送标志（确保 SPRITE_STREAM_ABORTED 只发送一次）
   let abortedNotified = false;
+  // handoff 自动续跑标志（handoff decision='loop' 时由 finally 块触发续跑）
+  let handoffLoopRequested = false;
   // 软暂停标志（paused chunk 已收到）：暂停由内核 sessionPaused 事件广播 paused 态，
   // finally 必须跳过 idle 广播，避免覆盖暂停态（SSOT 挂载物模型 2026-08-10）
   let pausedNotified = false;
@@ -374,6 +383,21 @@ async function forwardStream(
         // finally 据此刻跳过 idle 广播，避免覆盖暂停态（SSOT 挂载物模型 2026-08-10）。
         pausedNotified = true;
         break;
+      } else if (chunk.type === 'handoff') {
+        // handoff 决策：Agent 对话循环结束时的退出决策（wait/loop/end）
+        // - wait：等待用户输入（默认）
+        // - loop：自动续跑（L2 策略触发，主进程自动调用 handleResume）
+        // - end：结束对话
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_HANDOFF, {
+          messageId,
+          decision: chunk.decision,
+          reason: chunk.reason,
+        });
+        // loop 模式：标记续跑标志，finally 块在清理后自动触发 handleResume
+        if (chunk.decision === 'loop') {
+          handoffLoopRequested = true;
+        }
+        // 不 break，让 for-await 自然结束（handoff 是最后一个 chunk）
       }
     }
   } catch (error) {
@@ -454,4 +478,6 @@ async function forwardStream(
       broadcastStatus(ctx, 'idle');
     }
   }
+  // 返回 handoff 续跑标志，供调用方决定是否自动续跑
+  return handoffLoopRequested;
 }

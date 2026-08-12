@@ -243,6 +243,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
   SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
   SPRITE_STREAM_ABORTED: 'sprite-stream-aborted',
+  SPRITE_STREAM_HANDOFF: 'sprite-stream-handoff',
   SPRITE_TASK_TABLE_GENERATED: 'sprite-task-table-generated',
   SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
   SPRITE_OUTPUT: 'sprite-output',
@@ -615,6 +616,15 @@ export interface ElectronAPI {
   onStreamAborted: (cb: (msg: { messageId: string; reason: string }) => void) => void;
   /** P2.5-2: 任务表已生成通知（LLM 通过 task_table_write 生成，渲染层展示接受/丢弃入口） */
   onTaskTableGenerated: (cb: (msg: { messageId: string; plan?: string }) => void) => void;
+  /**
+   * 流式对话 handoff 决策监听
+   *
+   * Agent 在对话循环结束时推送 handoff 决策（wait/loop/end），
+   * 渲染层据此更新 UI 状态（如显示"自动续跑中..."）。
+   */
+  onStreamHandoff: (cb: (msg: { messageId: string; decision: 'wait' | 'loop' | 'end'; reason?: string }) => void) => void;
+  /** 移除 handoff 决策监听器 */
+  removeStreamHandoffListener: () => void;
   /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
   removeStreamListeners: () => void;
 
@@ -1225,6 +1235,12 @@ const electronAPI: ElectronAPI = {
   onStreamAborted: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, (_: IpcRendererEvent, msg: { messageId: string; reason: string }) => cb(msg)),
   /** P2.5-2: 任务表已生成通知 */
   onTaskTableGenerated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_TASK_TABLE_GENERATED, (_: IpcRendererEvent, msg: { messageId: string; plan?: string }) => cb(msg)),
+  /** 流式对话 handoff 决策监听 */
+  onStreamHandoff: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_HANDOFF, (_: IpcRendererEvent, msg: { messageId: string; decision: 'wait' | 'loop' | 'end'; reason?: string }) => cb(msg)),
+  /** 移除 handoff 决策监听器 */
+  removeStreamHandoffListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_HANDOFF);
+  },
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
@@ -1236,6 +1252,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_TASK_TABLE_GENERATED);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_HANDOFF);
   },
 
   // 精灵输出

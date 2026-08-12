@@ -135,6 +135,7 @@ chore: 升级 dependencies
 | 后端分层 / 目录 | [backend_layers_rules.md](./backend_layers_rules.md) |
 | 通用编码约束 | [coding-convention-rules.md](./coding-convention-rules.md) |
 | 心智模型（Bug/逻辑） | [programmer-mindset-rules.md](./programmer-mindset-rules.md) |
+| 单一真理源思维模型 | [single-truth-source-mindset.md](./single-truth-source-mindset.md) |
 | UI 工程化心智 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) |
 | 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
 | 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
@@ -143,6 +144,8 @@ chore: 升级 dependencies
 | 决策记录（30 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
 
 > 宿主实现文档位于 `hosts/memora-sprite/.trae/rules/`（仅 directory-structure.md）。任务追踪统一在根 `tasks/`（唯一真理源）。
+>
+> **架构说明书**：集成设计哲学、闭环设计、数据模型、角色包体系、思维模式速查的完整参考文档，位于 [docs/architecture/README.md](../docs/architecture/README.md)。
 >
 > **架构定论**：不中断工作模型最终答案 = 「申请暂停模型」（不中断原则作用于 **loop 任务内**；memora 在大厂已有 loop 能力之上增加显式「申请暂停 / 继续」按钮——暂停 = 申请暂停，等进行中的问答回合结束于 loop 边界挂起，可继续或注入；硬停止 signal.abort 仍是唯一霸道中止）。完整记录见 `docs/根基/申请暂停模型-最终定论-20260808.md`，演进细节见 `docs/根基/不中断工作模型演进.html`（v2.2）。
 
