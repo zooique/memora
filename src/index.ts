@@ -48,7 +48,7 @@ export type { PersonaMode, Persona } from '@/persona/types.js';
 // 角色包（Role Pack）类型：三层结构（L1 内容 + L2 策略 + L3 代码预留）
 export type {
   RolePack, RolePackMeta, RolePackAssembly, RolePackManifest,
-  RolePackSkillRef, RolePackKnowledgeRef,
+  RolePackSkillRef, RolePackCapability, RolePackKnowledgeRef,
   BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
   UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
   ToolCalls, ToolApproval, ToolReadonly, StreamingMode,

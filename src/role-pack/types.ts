@@ -227,6 +227,20 @@ export interface RolePackSkillRef {
 }
 
 /**
+ * 能力声明（frontmatter.skills 数组项，新格式）
+ *
+ * 对齐 role-pack-spec §四：以中立能力命名空间声明（`file:write` / `web:search`），
+ * 由各实现映射到自有工具；不绑具体实现。与 RolePackSkillRef（旧 ## Skills 正文
+ * 引用已注册技能）并存：frontmatter.skills 优先，旧正文引用兼容解析。
+ */
+export interface RolePackCapability {
+  /** 中立能力名（如 `file:write` / `web:search` / `llm:summarize`） */
+  readonly capability: string;
+  /** 可选：能力说明（供 LLM 与校验器理解） */
+  readonly description?: string;
+}
+
+/**
  * 知识引用（角色包中的知识引用段）
  *
  * 角色包可声明外部知识来源，按需召回。
@@ -256,6 +270,14 @@ export interface RolePackMeta {
   readonly keywords?: readonly string[];
   /** 可选：作者/来源 */
   readonly author?: string;
+  /** 格式版本（role-pack-spec §五：schema URL 锚定，缺省按 1.0.0 处理） */
+  readonly formatVersion?: string;
+  /** 拟人化场景声明（合规 §七：tool_assistant=工具型默认 / companion=拟人化陪伴） */
+  readonly interactionType?: 'tool_assistant' | 'companion';
+  /** AI 身份标注（合规 §七：默认强制 true） */
+  readonly aiIdentityDisclosure?: boolean;
+  /** 未成年人保护（合规 §七：默认 required） */
+  readonly minorProtection?: 'required';
 }
 
 /**
@@ -296,6 +318,11 @@ export interface RolePack {
    */
   readonly skills: readonly RolePackSkillRef[];
   /**
+   * 能力声明列表（frontmatter.skills，新格式）
+   * 中立能力命名空间，由实现映射到自有工具
+   */
+  readonly capabilities: readonly RolePackCapability[];
+  /**
    * 知识引用列表
    * 外部资料引用，按需召回
    */
@@ -327,6 +354,8 @@ export interface RolePackAssembly {
   readonly personaPrompt: string;
   /** 解析后的技能引用列表（已去重） */
   readonly resolvedSkills: readonly RolePackSkillRef[];
+  /** 能力声明列表（新格式，与 resolvedSkills 并存） */
+  readonly capabilities: readonly RolePackCapability[];
   /** 知识引用列表 */
   readonly knowledgeRefs: readonly RolePackKnowledgeRef[];
   /**
@@ -445,6 +474,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     meta: pack.meta,
     personaPrompt,
     resolvedSkills: pack.skills,
+    capabilities: pack.capabilities,
     knowledgeRefs: pack.knowledgeRefs,
     strategy: mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, pack.strategy),
   };
