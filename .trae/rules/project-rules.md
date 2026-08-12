@@ -6,6 +6,7 @@ description: Memora 项目总则、技术栈清单、目录结构
 # Memora · 项目总则
 
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
+> **架构定位**：memora = 通用闭环引擎（插卡机），角色包 = 参数集（卡）。**通用性由内核保证，专业性由角色包驱动**。详见 [architecture_philosophy_rules.md §11](./architecture_philosophy_rules.md)
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
 > **决策追溯**：`.trae/decisions/` 下 30 个 ADR（内核 18 + 精灵 12）

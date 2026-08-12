@@ -227,6 +227,89 @@ domain），其余在 Agent Loop 中按需检索。
 
 **配置文件是真理源，SQLite 是运行时索引**：
 
+- configDir 下的配置文件（personas/rules/skills/tools）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
+- 项目级 projectPath/.memora/ 只放 rules/ 和 skills/，不放 memora.db
+- 用户记忆（dataDir）存放 memora.db + sessions/，纯数据，不含配置
+- `config.addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
+- `config.confirm()` 写入配置文件（持久化，重启后依然生效）
+
+**在代码中的体现**：
+
+- `ProjectManager.ensureAgentResources()`：确保 memora.db 只创建一次（Agent 级）
+- `ProjectManager.initProject()`：三层加载（项目级 → Agent 级配置），不重建数据库
+- `ProjectManager.shutdown()`：关闭 Agent 级数据库（仅在 Agent 整体关闭时调用）
+- `ProjectManager.closeProject()`：只释放项目锁，不关数据库
+
+**禁止**：
+
+- ❌ 每个子项目创建独立的 memora.db——记忆是 Agent 级的
+- ❌ 项目切换时关闭/重建数据库——记忆跨项目持久化
+- ❌ 将配置直接写入 SQLite 作为持久化存储——配置文件才是真理源
+
+## 11. 角色包是参数集，插卡解耦（通用引擎 ↔ 专业卡）
+
+**原则**：memora 内核是单轮问答闭环的通用引擎，角色包是参数集——persona（身份）、rules（规则）、capabilities（能力）、strategy（策略）四件套作为外部可注入的参数，将通用引擎配置为特定领域的专家。**通用性和专业性在此正交解耦**。
+
+### 11.1 插卡模型
+
+```
+memora 内核 = 插卡机（不变）         角色包 = 卡（可变）
+─────────────────────               ─────────────────────
+单轮闭环引擎                         persona → 身份设定
+Trigger → Prepare → Act              rules → 行为约束
+  → Reflect → Handoff               capabilities → 工具集
+独立的记忆归档与召回系统              strategy → 行为开关
+                                    knowledge → 知识背景
+```
+
+**memora 不需要知道自己是谁——它只需要知道"当前插的是什么卡"。**
+
+### 11.2 卡的核心属性
+
+| 属性 | 含义 | 设计体现 |
+|------|------|---------|
+| **可插拔** | 同一角色包可被不同 Agent 实现装载 | role-pack-spec 标准格式，实现无关 |
+| **可共享** | 角色包是纯文本文件，可分发、可版本管理 | 单文件 role-pack.md ↔ 文件夹包双形态 |
+| **可叠加** | 支持多角色包组合 | L1 必读 + L2 可选策略键级渐进 |
+| **不自洽** | 角色包不包含执行引擎 | 依赖宿主 Agent 的闭环引擎，自身是纯声明 |
+
+### 11.3 设计推导：角色包 = 单轮闭环的参数化配置
+
+角色包的最小单元不是文件，而是**一次角色注入**——在某轮闭环的 Prepare 阶段，一个角色包被装载到 Agent 的行为空间中：
+
+```
+function singleTurn(context: Context, rolePack: RolePack): Handoff {
+  // Prepare 阶段：rolePack.strategy.prepare 决定如何装配 context
+  // Act 阶段：    rolePack.strategy.act 决定如何执行
+  // Reflect 阶段：rolePack.strategy.reflect 决定如何沉淀
+  // Handoff:     rolePack.strategy.reflect.handoff 决定下一步
+}
+```
+
+在这个视角下：
+
+- **校验器不是独立系统**——校验是 Prepare 阶段输入检查的一部分
+- **管理器不是独立系统**——管理是 Handoff 阶段"匹配→切换"策略的一部分
+- **能力映射不是独立系统**——映射是 Act 阶段工具暴露面配置的一部分
+
+一切"看起来像独立模块"的东西，本质上都是闭环不同阶段的行为。**这与"单轮问答闭环是 Agent 最小完整单元"（single-truth-source-mindset.md）完全同构。**
+
+### 11.4 验证标准
+
+- 用户写一个 role-pack.md → memora 装载 → 变成翻译专家：不改 `src/` 一行代码
+- 用户换一个 role-pack.md → memora 装载 → 变成代码审查专家：同上
+- 用户把同一个 role-pack.md 给另一个兼容 Agent 装载 → 同样行为
+
+### 11.5 禁止
+
+- ❌ 角色包包含执行引擎逻辑（它是一次参数注入，不是子 Agent）
+- ❌ memora 内核 hardcode 任何领域知识（全部通过角色包参数化）
+- ❌ 角色包与 memora 内核版本强耦合（通过 formatVersion 兼容，而非版本绑定）
+
+**原则**：Memora 被宿主接入后，就是该程序的唯一 Agent。memora.db 是 Agent 级共享资源，不随子项目切换重建。
+
+**配置文件是真理源，SQLite 是运行时索引**：
+
 - configDir
   下的配置文件（personas/rules/skills/tools）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
 - 项目级 projectPath/.memora/ 只放 rules/ 和 skills/，不放 memora.db
