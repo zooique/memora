@@ -506,8 +506,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const strategy = this.getActiveStrategy();
     const memoryRecallMode = strategy.prepare?.memoryRecall ?? 'full';
 
-    // 根据 L2 策略设置工具调用权限（影响整轮对话）
-    loop.setToolCallsBlocked(strategy.act?.toolCalls === 'block');
+    // 根据 L2 策略设置工具调用权限（影响整轮对话），标准键 act.toolMode（§六）
+    loop.setToolCallsBlocked(strategy.act?.toolMode === 'block');
 
     // M2.1 换角色 → 工具集切换：按激活角色包的 capabilities 应用工具暴露面
     // （toolMode=block 全禁与此正交；未声明 capabilities 时保持全部暴露）
@@ -572,8 +572,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     yield { type: 'thinking', phase: 'archiving' };
     await this.postProcess(input, assistantContent);
 
-    // Handoff 衔接决策：基于 L2 策略的 endingHandoff 配置
-    const handoffStrategy = this.getActiveStrategy().reflect?.endingHandoff ?? 'wait';
+    // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六）
+    const handoffStrategy = this.getActiveStrategy().reflect?.handoff ?? 'wait';
     yield { type: 'handoff', decision: handoffStrategy, reason: handoffStrategy === 'wait' ? undefined : 'L2 策略自动衔接' };
   }
 
@@ -1018,8 +1018,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'archiving' };
       await this.postProcess(event.content, assistantContent);
 
-      // Handoff 衔接决策：基于 L2 策略的 endingHandoff 配置
-      const handoffDecision = this.getActiveStrategy().reflect?.endingHandoff ?? 'wait';
+      // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六）
+      const handoffDecision = this.getActiveStrategy().reflect?.handoff ?? 'wait';
       yield { type: 'handoff', decision: handoffDecision, reason: handoffDecision === 'wait' ? undefined : 'L2 策略自动衔接' };
     } finally {
       this.chatLockManager?.release(myToken);

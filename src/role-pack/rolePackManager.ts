@@ -57,6 +57,46 @@ const EXCLUDED_FILES = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
 const DEFAULT_FORMAT_VERSION = '1.0.0';
 
 /**
+ * L2 策略键别名映射（旧实现键 → 标准键，role-pack-spec §六 命名归标准）
+ *
+ * P0 键集对齐（2026-08-12）：memora 曾使用私有键名 act.toolCalls / reflect.endingHandoff，
+ * 标准键为 act.toolMode / reflect.handoff。存量角色包若仍写旧键，
+ * 装载时自动映射到标准键 + warn 提示（平滑迁移，不阻塞装载）。
+ * 映射在嵌套新格式与点号旧格式两条解析路径出口统一执行。
+ */
+const STRATEGY_KEY_ALIASES: Readonly<Record<string, string>> = {
+  'act.toolCalls': 'act.toolMode',
+  'reflect.endingHandoff': 'reflect.handoff',
+};
+
+/**
+ * 策略阶段键名规范化：旧实现键 → 标准键（spec §六 命名归标准）
+ *
+ * 未知键保留原样（键级渐进：已知生效、未知 warn 忽略由调用方/校验器处理）。
+ *
+ * @param stage 策略阶段（prepare / act / reflect / global）
+ * @param fields 该阶段的键值对（解析自嵌套或点号 frontmatter）
+ * @returns 规范化后的键值对
+ */
+function normalizeStageKeys(stage: string, fields: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    const legacyPath = `${stage}.${key}`;
+    const standardKey = STRATEGY_KEY_ALIASES[legacyPath];
+    if (standardKey) {
+      getLogger().warn(
+        { legacyKey: key, standardKey: standardKey.slice(stage.length + 1) },
+        `策略键 ${legacyPath} 为旧实现命名，已自动迁移到标准键 ${standardKey}（role-pack-spec §六 命名归标准）`,
+      );
+      normalized[standardKey.slice(stage.length + 1)] = value;
+    } else {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+/**
  * 从 body 中提取 `## 标题` 章节内容
  *
  * @param body Markdown 正文
@@ -146,7 +186,7 @@ function parseRules(sectionBody: string): string[] {
  *
  * frontmatter 中策略字段使用点号命名法：
  *   strategy.prepare.understandingConfirm: off
- *   strategy.act.toolCalls: block
+ *   strategy.act.toolMode: block
  *   strategy.global.errorHandling: stop
  *
  * @param fm frontmatter 键值对
@@ -178,7 +218,8 @@ function parseStrategyNested(strategyNode: unknown): BehaviorStrategy | undefine
       // 未知键保留原样（键级渐进：已知生效、未知 warn 忽略由调用方处理）
       fields[key] = value;
     }
-    if (Object.keys(fields).length > 0) stages[stage] = fields;
+    // 旧实现键 → 标准键 别名迁移（spec §六 命名归标准）
+    if (Object.keys(fields).length > 0) stages[stage] = normalizeStageKeys(stage, fields);
   }
 
   if (Object.keys(stages).length === 0) return undefined;
@@ -246,10 +287,10 @@ function parseStrategyLegacy(fm: Record<string, string>): BehaviorStrategy | und
   if (!hasStrategy) return undefined;
 
   return {
-    prepare: Object.keys(prepare).length > 0 ? (prepare as PrepareStrategyShim) : undefined,
-    act: Object.keys(act).length > 0 ? (act as ActStrategyShim) : undefined,
-    reflect: Object.keys(reflect).length > 0 ? (reflect as ReflectStrategyShim) : undefined,
-    global: Object.keys(global).length > 0 ? (global as GlobalStrategyShim) : undefined,
+    prepare: Object.keys(prepare).length > 0 ? (normalizeStageKeys('prepare', prepare) as PrepareStrategyShim) : undefined,
+    act: Object.keys(act).length > 0 ? (normalizeStageKeys('act', act) as ActStrategyShim) : undefined,
+    reflect: Object.keys(reflect).length > 0 ? (normalizeStageKeys('reflect', reflect) as ReflectStrategyShim) : undefined,
+    global: Object.keys(global).length > 0 ? (normalizeStageKeys('global', global) as GlobalStrategyShim) : undefined,
   };
 }
 

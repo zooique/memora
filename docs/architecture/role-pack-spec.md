@@ -200,27 +200,43 @@ skills:
 - **major 演进（1.0 → 2.0）**：键名/语义变更或 L1 结构变化——提供**迁移器**（读旧版 → 写新版），装载器对旧 major 拒绝加载并提示迁移；
 - 校验器同时支持「声明格式版本校验」与「可迁移性检查」。
 
+**双闸门演进（键级，P0 对账定案 2026-08-12）——新键进入标准的门槛**：
+
+任何键要进入标准正文（§六），必须依次通过两道闸门；未通过验证门的键只能以 `[草案]` 状态保留在 §六 征集实现验证：
+
+1. **验证门**：该键**必须有参考实现真实消费**（运行时读取并影响行为，而非仅有类型定义/默认值）。无参考实现的键不进标准——纸面设计不构成标准依据（§五 原则 ②）;
+2. **中立门**：通过验证门后，命名须中立（不绑任何实现的内部命名），命名与语义一并**冻结**；此后个别实现不得再为自身内部命名改标准（见 §九 对齐声明）。
+
+**僵尸键原则**：参考实现内部的已定义但零消费字段（如 memora `types.ts` 中的 `understandingConfirm`/`taskClassification` 等）属于实现内部技术债——**只标注不动，不剪枝、不进标准**；不得因"定义过"就主张其进入标准。
+
+**命名归标准原则**：实现内部旧命名（如 memora 旧 `act.toolCalls` / `reflect.endingHandoff`）通过解析层**别名迁移**到标准键名（旧键 → 新键，warn 降级提示），消费方一律读标准键——实现向标准看齐，而非标准向实现看齐（§九）。
+
 ---
 
 ## 六、L2 策略键集（中立命名，v1 最小集）
 
 > 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.contextAssembly`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
+>
+> **状态列含义（P0 键集对齐，2026-08-12）**：
+> - **冻结** = 有参考实现（memora）真实消费 + 语义/命名已归标准——任何实现应支持一致行为；
+> - **`[草案]`** = 尚无参考实现消费，保留在标准正文以征集实现验证（§五 双闸门演进：通过验证门才可冻结）——实现可装载（按未知键 warn + ignore 的键级渐进），但不承诺跨实现一致行为。
 
-| 组 | 键 | 取值（枚举） | 含义 |
-|----|----|------------|------|
-| prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 |
-| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数 |
-| prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 |
-| prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 |
-| act | `act.toolMode` | `allow` / `block` | 是否允许工具调用 |
-| act | `act.temperature` | 0.0~2.0 | 生成随机性 |
-| act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 |
-| reflect | `reflect.summary` | `on` / `off` | 摘要生成 |
-| reflect | `reflect.insightExtraction` | `on` / `off` | 洞察提炼 |
-| reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 |
-| global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） |
-| global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 |
-| global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 |
+| 组 | 键 | 取值（枚举） | 含义 | 状态 | 实现消费要求 |
+|----|----|------------|------|------|------------|
+| prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | `[草案]` | 无参考实现消费，待验证 |
+| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数 | `[草案]` | 无参考实现消费，待验证 |
+| prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
+| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token） | 冻结 | memora 消费（agent.ts 限额召回）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
+| prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |
+| act | `act.toolMode` | `allow` / `block` | 是否允许工具调用 | 冻结 | memora 消费（agent.ts 工具开关）；命名归标准（旧 `act.toolCalls`） |
+| act | `act.temperature` | 0.0~2.0 | 生成随机性 | `[草案]` | 无参考实现消费，待验证 |
+| act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 | `[草案]` | 无参考实现消费，待验证 |
+| reflect | `reflect.summary` | `on` / `off` | 摘要生成 | `[草案]` | 无参考实现消费，待验证（memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
+| reflect | `reflect.insightExtraction` | `on` / `off` | 洞察提炼 | 冻结 | memora 消费（agent.ts 沉淀阶段） |
+| reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 | 冻结 | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`） |
+| global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | `[草案]` | 无参考实现消费，待验证 |
+| global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | `[草案]` | 无参考实现消费，待验证 |
+| global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
 
 ---
 
@@ -258,7 +274,7 @@ skills:
 | [README.md §9](README.md) | memora 视角的角色包体系（装载、匹配、粘性、冲突裁决） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 
-> 标准优先于实现：memora 内部键名（如旧 `strategy.act.tool_calls`）逐步对齐本规范的中立命名；规范演进以 `formatVersion` 控制，不破坏已装载的卡。
+> 标准优先于实现（P0 键集对齐，2026-08-12）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 
 ---
 

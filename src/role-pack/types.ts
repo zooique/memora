@@ -42,8 +42,11 @@ export type AutoSwitch = 'on' | 'off';
 
 // ── 回答中（Act）：行动策略 ──
 
-/** 工具调用权限：allow=允许 / block=只回答不执行 */
-export type ToolCalls = 'allow' | 'block';
+/** 工具调用模式：allow=允许 / block=只回答不执行（role-pack-spec §六 标准键 act.toolMode） */
+export type ToolMode = 'allow' | 'block';
+
+/** @deprecated 旧实现命名（P0 键集对齐前），标准键为 act.toolMode，见 ToolMode */
+export type ToolCalls = ToolMode;
 
 /** 工具批准模式：auto=自动执行 / confirm=执行前征询用户 */
 export type ToolApproval = 'auto' | 'confirm';
@@ -65,8 +68,11 @@ export type InputInterrupt = 'allow' | 'block';
 
 // ── 回答后（Reflect）：沉淀策略 ──
 
-/** 结束衔接模式（对齐 Handoff 三选一）：wait=等待用户 / loop=自动续跑 / end=终止 */
-export type EndingHandoff = 'wait' | 'loop' | 'end';
+/** 结束衔接模式（对齐 Handoff 三选一，role-pack-spec §六 标准键 reflect.handoff）：wait=等待用户 / loop=自动续跑 / end=终止 */
+export type Handoff = 'wait' | 'loop' | 'end';
+
+/** @deprecated 旧实现命名（P0 键集对齐前），标准键为 reflect.handoff，见 Handoff */
+export type EndingHandoff = Handoff;
 
 /** Loop 续跑开关 */
 export type LoopContinue = 'on' | 'off';
@@ -127,8 +133,8 @@ export interface PrepareStrategy {
  * 回答中（Act）行动策略集合
  */
 export interface ActStrategy {
-  /** 工具调用权限（默认 allow） */
-  readonly toolCalls?: ToolCalls;
+  /** 工具调用模式（默认 allow；标准键 act.toolMode，§六） */
+  readonly toolMode?: ToolMode;
   /** 工具白名单，空数组=全部允许（默认 []） */
   readonly toolWhitelist?: readonly string[];
   /** 工具黑名单，空数组=无禁止（默认 []） */
@@ -157,8 +163,8 @@ export interface ActStrategy {
  * 回答后（Reflect）沉淀策略集合
  */
 export interface ReflectStrategy {
-  /** 结束衔接模式（默认 wait） */
-  readonly endingHandoff?: EndingHandoff;
+  /** 结束衔接模式（默认 wait；标准键 reflect.handoff，§六） */
+  readonly handoff?: Handoff;
   /** Loop 续跑开关（默认 off） */
   readonly loopContinue?: LoopContinue;
   /** 洞察提取开关（默认 on） */
@@ -404,7 +410,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     autoSwitch: 'on',
   },
   act: {
-    toolCalls: 'allow',
+    toolMode: 'allow',
     toolWhitelist: [],
     toolBlacklist: [],
     toolApproval: 'auto',
@@ -418,7 +424,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     inputInterrupt: 'allow',
   },
   reflect: {
-    endingHandoff: 'wait',
+    handoff: 'wait',
     loopContinue: 'off',
     insightExtraction: 'on',
     summaryGeneration: 'on',

@@ -171,6 +171,35 @@ describe('validateRolePack：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
 
+  it('memoryRecallQuota 合法正整数 → 通过（P0 提炼进标准的键）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, memoryRecallQuota: 2000 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('memoryRecallQuota 非正整数 → error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, memoryRecallQuota: -1 } },
+    });
+    const issue = findByCode(result.issues, 'INVALID_STRATEGY_VALUE');
+    expect(issue).toHaveLength(1);
+    expect(issue[0]?.path).toBe('strategy.prepare.memoryRecallQuota');
+    expect(result.valid).toBe(false);
+  });
+
+  it('旧实现键 act.toolCalls → 未知策略键 warning（键级渐进，不阻塞）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, toolCalls: 'block' } },
+    });
+    const issue = findByCode(result.issues, 'UNKNOWN_STRATEGY_KEY');
+    expect(issue.length).toBeGreaterThan(0);
+    expect(issue[0]?.path).toBe('strategy.act.toolCalls');
+    // 未知键 warning 不阻塞装载；标准键 toolMode 不受影响
+    expect(result.valid).toBe(true);
+  });
+
   it('temperature 越界（> 2.0）→ error', () => {
     const result = validate({
       strategy: { ...validStrategy, act: { ...validStrategy.act, temperature: 3.5 } },

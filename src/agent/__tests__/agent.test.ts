@@ -2887,16 +2887,16 @@ describe('Agent · L2 行为策略消费', () => {
     // 验证默认策略的 prepare 维度
     expect(strategy.prepare?.memoryRecall).toBe('full');
     expect(strategy.prepare?.memoryRecallQuota).toBe(2000);
-    // 验证默认策略的 act 维度
-    expect(strategy.act?.toolCalls).toBe('allow');
-    // 验证默认策略的 reflect 维度
-    expect(strategy.reflect?.endingHandoff).toBe('wait');
+    // 验证默认策略的 act 维度（标准键 act.toolMode，§六）
+    expect(strategy.act?.toolMode).toBe('allow');
+    // 验证默认策略的 reflect 维度（标准键 reflect.handoff，§六）
+    expect(strategy.reflect?.handoff).toBe('wait');
     expect(strategy.reflect?.insightExtraction).toBe('on');
   });
 
   // ─── executeChatLoop → handoff chunk ─────────────────────
 
-  it('chat 应 yield handoff chunk（默认 endingHandoff=wait）', async () => {
+  it('chat 应 yield handoff chunk（默认 handoff=wait）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 

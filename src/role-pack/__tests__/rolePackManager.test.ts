@@ -143,9 +143,10 @@ describe('RolePackManager（M2.1 嵌套 YAML + 双形态）', () => {
 
     expect(count).toBe(1);
     const active = manager.getActive();
-    // 点号 → camelCase 转换
+    // 点号 → camelCase 转换 + 旧实现键 → 标准键 别名迁移（tool_calls→toolCalls→toolMode）
     const act = active!.strategy.act as Record<string, unknown>;
-    expect(act['toolCalls']).toBe('allow');
+    expect(act['toolMode']).toBe('allow');
+    expect(act['toolCalls']).toBeUndefined();
     const prepare = active!.strategy.prepare as Record<string, unknown>;
     expect(prepare['contextAssembly']).toBe('hybrid');
     // 旧格式无 formatVersion → 默认 1.0.0

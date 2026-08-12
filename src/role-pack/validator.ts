@@ -131,28 +131,32 @@ function isAskOn(value: unknown): boolean {
   );
 }
 
-/** L2 策略键集（role-pack-spec §六 v1 最小集，camelCase 统一命名） */
+// L2 策略键集（role-pack-spec §六 v1 最小集 + P0 提炼键，camelCase 统一命名）
+// 状态标注（P0 键集对齐 2026-08-12）：无标注 = 冻结（memora 真实消费）；
+// `[草案]` = 尚无参考实现消费，保留以征集验证（spec §五 双闸门演进，仍校验语法但语义不承诺一致）
 const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
-    contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] },
-    recentRounds: { kind: 'check', check: isPositiveInt },
+    contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] }, // [草案]
+    recentRounds: { kind: 'check', check: isPositiveInt }, // [草案]
     memoryRecall: { kind: 'enum', values: ['full', 'limited', 'none'] },
-    summaryRecall: { kind: 'enum', values: ['on', 'off'] },
+    // P0 键集对齐（2026-08-12）：由实现提炼进标准的键（memora 真实消费，spec §六 提炼行）
+    memoryRecallQuota: { kind: 'check', check: isPositiveInt },
+    summaryRecall: { kind: 'enum', values: ['on', 'off'] }, // [草案]
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },
-    temperature: { kind: 'check', check: isTemperature },
-    streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] },
+    temperature: { kind: 'check', check: isTemperature }, // [草案]
+    streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] }, // [草案]
   },
   reflect: {
-    summary: { kind: 'enum', values: ['on', 'off'] },
+    summary: { kind: 'enum', values: ['on', 'off'] }, // [草案]（memora 旧字段 summaryGeneration 为僵尸键）
     insightExtraction: { kind: 'enum', values: ['on', 'off'] },
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
   },
   global: {
-    askOn: { kind: 'check', check: isAskOn },
-    askLimit: { kind: 'check', check: isPositiveInt },
-    errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
+    askOn: { kind: 'check', check: isAskOn }, // [草案]
+    askLimit: { kind: 'check', check: isPositiveInt }, // [草案]
+    errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] }, // [草案]
   },
 };
 
