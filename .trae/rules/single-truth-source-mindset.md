@@ -273,4 +273,4 @@ Loop：    Trigger → Prepare → Act → Reflect → Handoff(loop)
 > **关联文档**：
 > - [programmer-mindset-rules.md](./programmer-mindset-rules.md) —— 心智模型总纲，本文是"逻辑大师"的补充
 > - [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) —— 架构哲学原则
-> - `docs/agent-design/README.md` —— 单轮问答闭环的完整设计推导
+> - `docs/architecture/agent-design-philosophy.md` —— 单轮问答闭环的完整设计推导

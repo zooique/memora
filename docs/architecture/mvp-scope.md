@@ -100,9 +100,8 @@ l2:
 
 | 文档 | 关系 |
 |------|------|
-| [refactoring-roadmap.md](../refactoring-roadmap.md) | MVP 是**产品**，roadmap 是**长期重构**，二者并行；MVP 用到的机制（**角色包核心**、内置工具、暂停通道）**不依赖** roadmap 各阶段即可落地 |
-| [P1-实施计划.md](../P1-实施计划.md) | 独立补丁（2026-08-11 审查的定点修复），与 MVP 无耦合 |
-| [third-party-architecture-review-2026-08-12.md](../third-party-architecture-review-2026-08-12.md) | MVP 只落地其中**基础能力**（M11 暂停通道、G2 角色包指向等）；其余按追踪表在对应 Phase 消化 |
+| [role-pack-spec.md](role-pack-spec.md) | 角色包标准本体，MVP 是其中 L1 + 核心 L2 键子集 |
+| [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | 插卡机设计哲学，定义 MVP 的角色包定位（通用引擎 ↔ 专业卡） |
 
 ---
 

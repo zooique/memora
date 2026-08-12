@@ -146,9 +146,9 @@ chore: 升级 dependencies
 
 > 宿主实现文档位于 `hosts/memora-sprite/.trae/rules/`（仅 directory-structure.md）。任务追踪统一在根 `tasks/`（唯一真理源）。
 >
-> **架构说明书**：集成设计哲学、闭环设计、数据模型、角色包体系、思维模式速查的完整参考文档，位于 [docs/architecture/README.md](../../docs/architecture/README.md)。
+> **架构说明书**：集成设计哲学、闭环设计、数据模型、角色包体系、思维模式速查的完整参考文档，位于 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)。
 >
-> **架构定论**：不中断工作模型最终答案 = 「申请暂停模型」（不中断原则作用于 **loop 任务内**；memora 在大厂已有 loop 能力之上增加显式「申请暂停 / 继续」按钮——暂停 = 申请暂停，等进行中的问答回合结束于 loop 边界挂起，可继续或注入；硬停止 signal.abort 仍是唯一霸道中止）。完整记录见 `docs/根基/申请暂停模型-最终定论-20260808.md`，演进细节见 `docs/根基/不中断工作模型演进.html`（v2.2）。
+> **架构定论**：不中断工作模型最终答案 = 「申请暂停模型」（不中断原则作用于 **loop 任务内**；memora 在大厂已有 loop 能力之上增加显式「申请暂停 / 继续」按钮——暂停 = 申请暂停，等进行中的问答回合结束于 loop 边界挂起，可继续或注入；硬停止 signal.abort 仍是唯一霸道中止）。完整设计推导见 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §2.3（输入待定与气口接受）。
 
 ## 7. AI 行为 DO/DON'T 速查表
 

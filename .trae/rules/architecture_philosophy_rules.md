@@ -47,7 +47,7 @@ description:
 - 存储：`configDir/personas/*.md`（文件真理源）+ 内存缓存（Persona[]）
 - 注入：`systemPromptPrefix`（当轮生效，由 `refreshPersonaPrefix` 动态更新）
 - 匹配：触发词确定性匹配（精确/正则优先，score=1.0），在 `chat()` 开头执行；
-  匹配机制见 [README.md §4.2](../../docs/architecture/README.md)——角色包匹配是
+  匹配机制见 [agent-design-philosophy.md §6.2](../../docs/architecture/agent-design-philosophy.md#62-召回相关)——角色包匹配是
   确定性信号采集（见 §4「代码与模型分工」），语义理解不参与匹配
 - 模式：auto（自动匹配）/ manual（手动固定）
 - 回退：默认回到 `list[0]`（首个角色）
