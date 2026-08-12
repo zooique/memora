@@ -1177,6 +1177,11 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     // 最后一个是 done 事件
     expect(chunks[chunks.length - 1]!.type).toBe('done');
 
+    // Phase 7：验证 selfReview chunk 被 emit
+    const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
+    expect(selfReviewChunks).toHaveLength(1);
+    expect(selfReviewChunks[0]!).toEqual({ type: 'selfReview', round: 1 });
+
     const messages = loop.getMessages();
     // system + user + assistant(原始) + system(自审查提示) + assistant(改进) = 5
     expect(messages).toHaveLength(5);
@@ -1186,6 +1191,8 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
   });
 
   it('自审查轮仅执行一次（selfReviewDone 标志控制）', async () => {
+    // 验证 selfReview chunk 在第二轮（自审查轮）前同样 emit
+    // 但第三轮不应再 emit（selfReviewDone 已为 true）
     // 3 轮都返回文本，但自审查只应触发 1 轮
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1207,6 +1214,10 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
     // 应有第一轮 + 第二轮（自审查），第三轮不应出现（自审查后 done 即结束）
     expect(texts).toEqual(['第一轮', '第二轮']);
+
+    // Phase 7：selfReview chunk 应只 emit 1 次
+    const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
+    expect(selfReviewChunks).toHaveLength(1);
 
     const messages = loop.getMessages();
     // 自审查 system 消息应只有 1 条
@@ -1236,6 +1247,10 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
     expect(texts).toEqual(['仅文本回复']);
     expect(chunks[chunks.length - 1]!.type).toBe('done');
+
+    // Phase 7：不应有 selfReview chunk
+    const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
+    expect(selfReviewChunks).toHaveLength(0);
 
     // 不应有自审查 system 消息
     const messages = loop.getMessages();

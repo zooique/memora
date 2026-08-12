@@ -120,6 +120,14 @@ export type AgentChunk =
    * 如何衔接下一轮。宿主可通过此 chunk 决定是否自动触发下一轮对话。
    */
   | { type: 'handoff'; decision: HandoffDecision; reason?: string }
+  /**
+   * 自审查轮开始信号
+   *
+   * LLM 生成纯文本回复后，若启用自审查且未执行，在注入自审查提示前 emit。
+   * 宿主可据此展示"LLM 正在审查自身回复"的视觉反馈。
+   * round 表示当前是第几轮自审查（为 Phase 9 多轮可配置预留）。
+   */
+  | { type: 'selfReview'; round: number }
   | { type: 'done' };
 
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────

@@ -242,7 +242,8 @@ export class AgentLoop {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
       // 流式中断标记，追加到中断时已生成的部分文本末尾
-      interrupted: opts.messages?.interrupted ?? '\n\n[已中断]',
+      // Phase 10：追加断点摘要，让 LLM 明确知道"以上内容已输出，请继续，不要重复"
+      interrupted: opts.messages?.interrupted ?? '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
       contextTruncated:
         opts.messages?.contextTruncated ??
         ((skipped, kept) =>
@@ -345,6 +346,10 @@ export class AgentLoop {
       while (iteration < this.maxIterations) {
         iteration++;
         const result = yield* this.handleIteration(iteration, signal);
+        // Phase 7：自审查轮开始前 emit selfReview chunk，让宿主可展示视觉反馈
+        if (result === 'done' && this.selfReviewEnabled && !this.selfReviewDone && !this.toolCallsBlocked) {
+          yield { type: 'selfReview', round: 1 };
+        }
         // P3-1：共享的迭代结果处理（提取自 processUserInput / continueAfterPause 的重复逻辑）
         if (!this.handleIterationResult(result)) return;
       }
@@ -437,6 +442,10 @@ export class AgentLoop {
     while (iteration < this.maxIterations) {
       iteration++;
       const result = yield* this.handleIteration(iteration, signal);
+      // Phase 7：自审查轮开始前 emit selfReview chunk（与 processUserInput 一致）
+      if (result === 'done' && this.selfReviewEnabled && !this.selfReviewDone && !this.toolCallsBlocked) {
+        yield { type: 'selfReview', round: 1 };
+      }
       // P3-1：共享的迭代结果处理（与 processUserInput 一致）
       if (!this.handleIterationResult(result)) return;
     }
