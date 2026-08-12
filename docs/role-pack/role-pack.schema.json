@@ -53,6 +53,11 @@
       "type": "string",
       "description": "开源许可证标识"
     },
+    "minKernelVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "最低内核版本要求（semver），高于实现版本时实现拒绝加载或警告降级运行"
+    },
 
     "interactionType": {
       "type": "string",
