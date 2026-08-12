@@ -201,6 +201,90 @@ skills:
 2. **中立门**：冻结后的能力名不可重命名，语义不可变更——实现向标准看齐，而非标准向实现看齐；
 3. 已知能力名（不在本表内）按「未知能力跳过」装载（§四），不阻塞。
 
+### 四·二 MCP 集成设计（接口定义 + 角色包声明路径）
+
+> **定位**：MCP（Model Context Protocol）是 2026 年行业标准工具调用协议。角色包标准不要求任何实现必须支持 MCP，但支持 MCP 的实现应遵循本节定义的抽象接口和声明路径，以保证角色包跨实现可移植性。
+
+**核心原则**：MCP 是 L2 传输层细节，不是 L1 能力声明。
+
+- `capabilities` 声明角色包**需要什么能力**（L1，实现无关）；
+- `mcp.json` 声明角色包**如何通过 MCP 获得这些能力**（L2，可选实现加速）；
+- 同一能力声明与内嵌 MCP 服务器并存时，以 MCP 服务器为准（具体实现优先于抽象声明）；
+- 不声明 `mcp.json` 的角色包仍可被任何实现按 capabilities 装载（L1 兼容）。
+
+#### 角色包 MCP 声明格式（`mcp.json`）
+
+文件夹根部的 `mcp.json` 对齐 Agent Plugins 1.0 的 MCP 服务器声明格式：
+
+```json
+{
+  "mcpServers": {
+    "file-system": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"]
+    },
+    "web-search": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-web-search"]
+    }
+  }
+}
+```
+
+| 字段 | 必填 | 取值 | 说明 |
+|------|------|------|------|
+| `mcpServers` | 是 | 对象 | 服务器名字典，key 为服务器标识（角色包内唯一） |
+| `<key>.transport` | 是 | `stdio` / `streamable-http` / `http+sse` | 传输协议类型 |
+| `<key>.command` | 仅 `stdio` | 字符串 | 可执行文件路径或 npx 命令 |
+| `<key>.args` | 否 | 字符串数组 | 命令行参数 |
+| `<key>.env` | 否 | 对象 | 环境变量键值对 |
+
+**兼容性规则**：
+
+- 不认识 `mcp.json` 的实现：按「未知文件忽略」处理，退回到按 `capabilities` 映射自有工具（L1 兼容）；
+- 不认识某传输协议的实现：跳过该服务器声明，**不阻塞装载**（可选提示"某能力因传输协议不可用"）；
+- 单文件最小形态**不包含** `mcp.json`（MCP 声明是文件夹形态专属能力）。
+
+#### 参考实现接口（`IMcpTransport`）
+
+memora 内核通过以下接口抽象 MCP 通信，宿主注入具体客户端实现：
+
+```typescript
+/** MCP 工具描述 */
+export interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+/** MCP 工具执行结果 */
+export interface McpToolResult {
+  content: Array<{ type: 'text' | 'image' | 'resource'; text?: string; mimeType?: string }>;
+  isError?: boolean;
+}
+
+/** MCP 传输层抽象（宿主注入） */
+export interface IMcpTransport {
+  /** 列出指定 MCP 服务器的所有工具 */
+  listTools(serverName: string): Promise<McpTool[]>;
+  /** 调用指定 MCP 服务器的指定工具 */
+  callTool(serverName: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult>;
+  /** 关闭所有 MCP 连接（清理时调用） */
+  close(): Promise<void>;
+}
+```
+
+**宿主注入模式**（与 `ILogger` / `IMemoryStorage` 同构）：
+
+- `IMcpTransport` 是依赖倒置接口，由宿主实现，通过构造函数注入；
+- 内核不包含任何 MCP 客户端逻辑（零依赖原则）；
+- 宿主未注入时，按「MCP 能力不可用」处理，角色包仍能按 L1 装载；
+- 宿主实现可对接任意 MCP 客户端库（官方的、自实现的、或通过子进程启动的）。
+
+**实现边界**：`IMcpTransport` 当前只定义最小接口（`listTools` + `callTool` + `close`），不包含资源模板、提示模板、订阅通知等 MCP 高级特性——这些可在后续版本扩展，不破坏已有实现。
+
 ---
 
 ## 五、兼容契约（其他 Agent 如何装载）
@@ -309,3 +393,21 @@ skills:
 | memora | 角色包的 reference implementation | 见 §九 |
 
 **竞争姿态（范式立场）**：不与 Agent Plugins 竞争「能力分发」，而是补齐其明确留白——**行为分发**（有身份的 Agent 行为单元）。Agent Plugins 把 persona 留给 client-specific 扩展（如 VS Code `agents/` 目录）；角色包把 persona/rules/strategy 做成**可移植核心（L1）**。反域名命名空间目录（`com.memora/`，§2.2）保证两者共存：**标准核心对齐行业，专有行为层进命名空间**——不绑死任何一家，也不放弃差异化。
+
+---
+
+## 十一、A2A 协议预留
+
+> **定位**：A2A（Agent-to-Agent）是 Google/Microsoft 推动的智能体间通信协议。memora 当前定位为单 Agent 引擎，不实现 A2A 客户端；但角色包格式在设计上预留多 Agent 场景的可扩展性，为后续生态发展留出空间。
+
+**预留原则**：
+
+1. **角色包不自洽**（§11.2）：角色包不包含执行引擎，依赖宿主 Agent 的闭环引擎运行。这一特性天然适用于多 Agent 场景——每个角色包实例是一个独立 Agent，由宿主编排。
+2. **interactionType 扩展点**：`interactionType` 字段（§七）当前为 `tool_assistant` / `companion` 二分，未来可扩展 `gateway` 或 `coordinator` 等角色类型，由宿主注入 A2A 路由逻辑。
+3. **能力声明可路由**：`capabilities` 声明（§四）是中立能力名，多 Agent 宿主可基于能力名将子任务路由到对应角色包实例——memora 的插卡模型天然支持这种"Triage and Specialist"架构（2026 年行业标准，见 [§四·二 MCP 集成设计](#四二-mcp-集成设计接口定义--角色包声明路径)）。
+4. **当前不实现**：memora 内核不包含 A2A 客户端代码，不定义 A2A 传输接口。多 Agent 编排由宿主（如 memora-sprite）在闭环引擎之上实现，内核不感知。
+
+**未来演进方向**（非承诺）：
+
+- 当生态需要多角色包协作时，可定义 `A2A 声明` 字段（如 `dependsOn: ["role-pack-a", "role-pack-b"]`），由宿主负责解析依赖并启动对应的 Agent 实例；
+- A2A 传输层可复用 `IMcpTransport` 相同的注入模式（依赖倒置，宿主注入），不引入内核依赖。

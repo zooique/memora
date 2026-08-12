@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://role-pack.dev/schemas/1.0.0/role-pack.schema.json",
+  "title": "RolePack Spec v1.0.0",
+  "description": "角色包标准 v1.0.0 JSON Schema —— 可共享的 Agent 行为单元格式。适用于单文件 role-pack.md frontmatter 校验与文件夹形态 manifest.json 校验。",
+  "type": "object",
+  "required": ["name", "formatVersion"],
+
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "角色包名称，全局唯一标识"
+    },
+    "formatVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "角色包格式版本（semver），绑定固定 schema URL，发布后永不改变内容"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "角色包自身版本（semver），用于分发迭代"
+    },
+    "description": {
+      "type": "string",
+      "description": "角色包简短描述"
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "关键词列表，用于搜索与分类"
+    },
+    "trigger": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "触发词列表，用于角色包自动匹配"
+    },
+    "author": {
+      "type": "string",
+      "description": "角色包作者"
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri",
+      "description": "项目主页"
+    },
+    "repository": {
+      "type": "string",
+      "format": "uri",
+      "description": "源码仓库地址"
+    },
+    "license": {
+      "type": "string",
+      "description": "开源许可证标识"
+    },
+
+    "interactionType": {
+      "type": "string",
+      "enum": ["tool_assistant", "companion"],
+      "default": "tool_assistant",
+      "description": "交互类型：tool_assistant（工具型工作助手，豁免区间）/ companion（拟人化陪伴，需完整合规校验）"
+    },
+    "aiIdentityDisclosure": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否向用户明确标注 AI 身份"
+    },
+    "minorProtection": {
+      "type": "string",
+      "enum": ["required", "optional"],
+      "default": "required",
+      "description": "未成年人保护模式"
+    },
+
+    "strategy": {
+      "type": "object",
+      "description": "L2 行为策略（键级渐进，未知键 warn + ignore）",
+      "properties": {
+        "prepare": {
+          "type": "object",
+          "description": "回答前阶段策略",
+          "properties": {
+            "contextAssembly": {
+              "type": "string",
+              "enum": ["fixed", "query", "hybrid"],
+              "description": "最近轮次加载策略（[草案]）"
+            },
+            "recentRounds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "固定加载轮数（[草案]）"
+            },
+            "memoryRecall": {
+              "type": "string",
+              "enum": ["full", "limited", "none"],
+              "description": "长期记忆召回策略（冻结）"
+            },
+            "memoryRecallQuota": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "记忆召回限额 token（冻结，由实现提炼进标准）"
+            },
+            "summaryRecall": {
+              "type": "string",
+              "enum": ["on", "off"],
+              "description": "摘要召回开关（[草案]）"
+            }
+          },
+          "additionalProperties": false
+        },
+        "act": {
+          "type": "object",
+          "description": "回答中阶段策略",
+          "properties": {
+            "toolMode": {
+              "type": "string",
+              "enum": ["allow", "block"],
+              "description": "工具调用模式：allow=允许 / block=只回答不执行（冻结）"
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "生成随机性（[草案]）"
+            },
+            "streaming": {
+              "type": "string",
+              "enum": ["streaming", "non-streaming"],
+              "description": "输出方式（[草案]）"
+            }
+          },
+          "additionalProperties": false
+        },
+        "reflect": {
+          "type": "object",
+          "description": "回答后阶段策略",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "enum": ["on", "off"],
+              "description": "摘要生成开关（[草案]）"
+            },
+            "insightExtraction": {
+              "type": "string",
+              "enum": ["on", "off"],
+              "description": "洞察提炼开关（冻结）"
+            },
+            "handoff": {
+              "type": "string",
+              "enum": ["wait", "loop", "end"],
+              "description": "衔接决策：wait=等待用户 / loop=自动续跑 / end=终止（冻结）"
+            }
+          },
+          "additionalProperties": false
+        },
+        "global": {
+          "type": "object",
+          "description": "全局策略",
+          "properties": {
+            "askOn": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["ambiguity", "decision", "missing_info", "confirm"]
+              },
+              "description": "Agent 主动提问触发场景（[草案]）"
+            },
+            "askLimit": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "每任务提问上限（[草案]，默认 3）"
+            },
+            "errorHandling": {
+              "type": "string",
+              "enum": ["retry", "degrade", "stop"],
+              "description": "异常处理策略（[草案]）"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "skills": {
+      "type": "array",
+      "description": "能力声明列表（L1 中立契约）",
+      "items": {
+        "type": "object",
+        "required": ["capability"],
+        "properties": {
+          "capability": {
+            "type": "string",
+            "pattern": "^[a-z]+:[a-z][a-z-]*$",
+            "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`）"
+          },
+          "description": {
+            "type": "string",
+            "description": "能力描述（供 LLM 与校验器理解，可选）"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "extensions": {
+      "type": "object",
+      "description": "反域名命名空间扩展（如 `com.memora/`），其他实现忽略",
+      "additionalProperties": true
+    }
+  },
+
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "interactionType": { "const": "companion" } },
+        "required": ["interactionType"]
+      },
+      "then": {
+        "required": ["aiIdentityDisclosure", "minorProtection"],
+        "properties": {
+          "aiIdentityDisclosure": { "const": true }
+        }
+      }
+    }
+  ]
+}
