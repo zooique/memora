@@ -297,6 +297,34 @@ src/agent/sessionStateMachine.ts）。本节补齐其运行时边界语义，不
 2. **暂停遵守"阶段边界收口"**（与 §13.9.4 纪律 5 一致）——不在 LLM 调用中途插入。
 3. **暂停状态持久化**：`SessionCheckpoint.status = 'paused'`（含 `pauseMeta`），恢复经 `normalizeCheckpoint` 迁移（project-rules §1.8）。
 4. **abort 的会话落点**：abort 后会话落回"待触发"态（等价 end 后），**必须卸载执行态**——`clearPlan` 清空 plan/roundLog（上下文保留为会话历史）；后续 Trigger 正常开新闭环。abort 与 pause 是互斥出口：暂停保留 plan 可续跑，abort 清 plan 不可续跑（详见 [README §12.1](README.md#十二远期锚点与已知缺口)）。
+5. **Agent 主动提问 = by-agent 暂停**：Loop 执行中 Agent 需要用户输入（歧义/决策/缺信息/确认）时，发起 `requestPause({reason:'ask', source:'agent', question})`——与用户手动暂停共用同一通道，仅 `source` 区分发起方；用户答复经 `resumeExecution(答复)` 注入继续（不触发 recall/角色重匹配）。触发条件、交互形态、保护策略见 [README §6.4](README.md#64-agent-主动提问执行中向用户征询)。
+
+**PauseMeta 结构**（对齐 `src/agent/types.ts` 现状 + §6.4 扩展）：
+
+```typescript
+/**
+ * 暂停元数据
+ * 现状（代码 src/agent/types.ts 已实现）：reason / source —— 仅此两项。
+ * 设计扩展（文档定案、代码待实现，随 Phase 1/3 落地）：
+ *   - phase：申请暂停模型 §3.1 已定案（requesting/suspended）；
+ *   - question：§6.4 Agent 主动提问载荷。
+ * 本文档描述的是完整设计形态，实现状态以 api-reference 与代码为准。
+ */
+interface PauseMeta {
+  /** 暂停原因（Agent 提问时为 'ask'） */
+  reason: string;
+  /** 暂停来源：user=用户手动暂停；agent=Agent 主动提问；system=系统级 */
+  source: 'user' | 'agent' | 'system';
+  /** [设计扩展] 暂停阶段：requesting=已申请未挂起（按钮=取消）；suspended=已挂起（按钮=继续） */
+  phase: 'requesting' | 'suspended';
+  /** [设计扩展] Agent 提问载荷（source='agent' 且 reason='ask' 时携带） */
+  question?: {
+    text: string;
+    options: { label: string; description?: string }[];
+    allowFreeInput: boolean; // 是否开放补充输入窗口（默认 true）
+  };
+}
+```
 
 ---
 

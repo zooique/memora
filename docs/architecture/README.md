@@ -367,6 +367,52 @@ Agent 通过工具调用扩展行动能力：
 | Loop | 系统自动 | 自动续跑 | 目标/上限/中断 |
 | 目标（远期） | 对齐差距分析 | 自动续跑直至对齐 | 验收清单完成 |
 
+### 6.4 Agent 主动提问（执行中向用户征询）
+
+大厂已实现"Agent 收集问题主动弹窗提问"（见 [申请暂停模型 §1](../根基/申请暂停模型-最终定论-20260808.md) 现象观察），memora 以**既有暂停机制**实现，不引入新机制：
+
+**核心定案：Agent 提问 = Agent 发起的带问题载荷的暂停（`requestPause({reason:'ask', source:'agent', question})`）。** 与用户手动暂停共用同一通道，仅 `source` 区分发起方。
+> 命名说明：`source` 对齐代码现状（`src/agent/types.ts` 的 `PauseMeta.source: 'user'|'agent'|'system'`）；申请暂停模型 §3 的 `by` 为早期定论命名，本文档与代码统一为 `source`。
+
+**触发条件**（L2 策略 `askOn`，可组合）：
+
+| 触发 | 含义 | 示例 |
+|------|------|------|
+| `ambiguity` | 指令歧义，多解 | "写个文档"——给谁看？多长？ |
+| `decision` | 关键决策点，方案成本/方向差异大 | "用 A 方案还是 B 方案？" |
+| `missing_info` | 缺前置事实 | "项目地址是什么？" |
+| `confirm` | 任务级不可逆操作确认（与工具级 `checkToolCall` 护栏分工：工具级走 guardrail，任务级走提问） | "确认删除整个会话？" |
+
+**交互形态**：挂起后用户看到——问题文本 + **可选方案列表**（点击即答，每项带说明）+ **补充输入窗口**（自由文本）+ 「按默认继续」跳过 + 「停止」。
+**UI 归属**：与申请暂停模型 §3.1 一致——**不重画输入区**；提问卡片附着在任务表面板的任务项上（复用暂停位：`phase='suspended'` 时展示提问卡片），输入区保持原设计（可边看问题边输入答复）。
+
+**答复如何继续**：用户答复（选项或文本）→ `resumeExecution(答复)` → 答复作为**注入输入**继续原任务。
+**为什么答复不触发 recall/角色重匹配**：答复走**恢复通道（resumeExecution），不是 Trigger 通道**——它不产生新闭环触发、不进入 §3.3 触发源判定（TriggerSource 不增新值），只是把用户答案注入已挂起的任务上下文。这与"外部输入→触发 recall"（§3.3）不冲突：恢复 ≠ 新触发。若宿主选择把答复作为新 Trigger 处理，则按外部输入全流程走（含 recall），两种模式由宿主定，文档默认注入模式。
+
+**与既有机制的关系**：
+
+| 机制 | 关系 |
+|------|------|
+| 暂停（§runtime 13.3.6） | 同一 `requestPause`/`resumeExecution`，`source='agent'` vs `source='user'`；暂停按钮语义不变 |
+| 插话（§7.3 意图三分） | **镜像**——插话是用户主动，提问是 Agent 主动；答复走注入路径，不占插话队列 |
+| 意图三分 | 用户对提问的答复**不属于**插话/切换/新任务，走提问专用注入通道 |
+| 硬停止 | 提问挂起时用户仍可停止（abort），同 PAUSED 态 |
+
+**保护（防骚扰）**：
+- `askLimit`：每任务提问次数上限（默认 3），超限后**不得再提问**，改为按"默认/最稳妥方案继续"，并在输出中显式标注该处不确定性（不是无限硬猜，也不是无限打断）；
+- 问题文本过输出护栏（§runtime 13.8），不泄露敏感信息；
+- 提问可被「按默认继续」跳过，不阻塞任务；
+- 提问挂起期间同暂停：**不计入 `maxRoundDuration`**（§runtime 13.9.4 纪律 6，计时只计 RUNNING 态）。
+
+**L2 策略维度**（加入 §9.2 跨阶段策略表）：
+
+| 策略维度 | 可选值 | 含义 |
+|---------|--------|------|
+| 主动提问 | on / off（默认 on） | 执行中是否允许向用户征询 |
+| 提问触发 | ambiguity / decision / missing_info / confirm | 触发条件（可组合） |
+| 提问上限 | N（默认 3） | 每任务最大提问次数 |
+| 提问选项 | on / off（默认 on） | 是否提供可选方案列表 |
+
 ---
 
 ## 七、数据模型
@@ -653,6 +699,9 @@ Handoff 前检查：
 
 ### 9.1 三层结构
 
+> **范式定位**：角色包是 **Agent 的最小可插拔行为单元**——persona 决定"怎么看"、rule 决定"什么不能做"、skill 决定"能调什么工具"、L2 决定"怎么做"。**换装 = 换 Agent**：Agent 的专业性由装载的角色包决定，而非代码分支。
+> **标准定位（范式主张）**：角色包是一份**可共享的装载卡**——任何 Agent 实现都能装载；**memora 是首个实现（reference implementation），不是标准本身**。标准本体见 [role-pack-spec.md](role-pack-spec.md)（中立格式 + 渐进兼容 + 能力声明）。MVP 以角色包为第一公民落地该主链（见 [mvp-scope.md](mvp-scope.md) §二）。
+
 ```
 角色包三层结构
 ├── L1 内容层（文本）：persona / rule / skill / 知识引用
@@ -721,6 +770,10 @@ Handoff 前检查：
 | 成本预算 | 金额 | 单任务总成本上限 |
 | 错误处理 | retry / degrade / stop | 异常时的策略（retry=重试；degrade=降级优先，见 §12.2；stop=终止） |
 | 安全规则 | 继承/覆盖 | 是否允许角色覆盖全局 rule |
+| 主动提问 | on / off | 执行中是否允许向用户征询（触发/上限/选项见 §6.4） |
+| 提问触发 | ambiguity / decision / missing_info / confirm | Agent 主动提问的触发条件（可组合） |
+| 提问上限 | N（默认 3） | 每任务最大提问次数，超限自行决策 |
+| 提问选项 | on / off | 提问时是否提供可选方案列表 |
 
 ### 9.3 粘性匹配机制（参见 §4.2）
 
@@ -964,6 +1017,7 @@ IDLE ──trigger──▶ RUNNING ──pause──▶ PAUSED ──resume─�
 | 架构审查报告 | 2026-08-11 架构评估 | [docs/memora-architecture-review-2026.md](../memora-architecture-review-2026.md) |
 | 第三方独立审查 | 2026-08-12 架构文档体系审查（3🔴21🟡8🟢，含修复状态追踪表） | [docs/third-party-architecture-review-2026-08-12.md](../third-party-architecture-review-2026-08-12.md) |
 | 重构路线图（实施） | 6 阶段重构 + SSOT 违规记录（长期实施计划） | [docs/refactoring-roadmap.md](../refactoring-roadmap.md) |
+| MVP 边界 | 写作助手初版：全量设计的子集（含 Agent 提问 + Web 搜索） | [docs/architecture/mvp-scope.md](mvp-scope.md) |
 | P1 修复实施计划 | 2026-08-11 审查的一次性补丁方案（独立于阶段序列，见 roadmap 关系声明） | [docs/P1-实施计划.md](../P1-实施计划.md) |
 | ADR 决策库 | 架构决策记录（决策真理源，`decisions/`） | [.trae/decisions/README.md](../../.trae/decisions/README.md) |
 | API 参考 | 接口和类型定义 | [docs/memora-api-reference.md](../memora-api-reference.md) |
