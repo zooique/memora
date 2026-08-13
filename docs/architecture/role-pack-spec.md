@@ -4,6 +4,8 @@
 > **范式主张**：Agent = 最小闭环 + 装载卡。专业性来自装载的角色包，不来自代码分支；换装 = 换 Agent。
 > **memora 与本标准的关系**：memora 是**首个实现（reference implementation）**，本规范**不绑定 memora**。其他 Agent 实现本规范后即可装载生态中的角色包。
 > **类比**：USB-C（接口标准）/ Docker 镜像（可移植容器）/ HTML（浏览器兼容的文档标准）。
+>
+> **演进状态（2026-08-13）**：角色包标准当前处于**草案演进期**。memora 优先打磨内核基础（问答闭环 + 记忆系统），其运行不依赖角色包键；**角色包字段 v1 冻结延后至基础接口定型后**——避免标准字段随基础演进反复横跳。本章节中依赖未冻结基础或尚无参考实现消费的键一律以 `[草案]` 标注（§六状态列），不承诺跨实现一致行为。硬通货要素（签名 / 依赖声明 / 目录）作为远期演进方向随 v1 冻结一并规划，当前不设计。
 
 ---
 
@@ -148,6 +150,8 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 
 - 枚举式行为开关，角色只"选择"不"定义"；
 - **已知键生效，未知键警告并忽略（warn + ignore，不阻塞装载）**——杜绝拼写错误被静默吞掉（对齐 Agent Plugins「reported and ignored」，见 §五）。
+
+> **边界声明（2026-08-13）**：L2 枚举是**行为参数**层——角色在此只能"选择"预定义开关，不能"定义"逻辑，这保证可安全传播。**它不承诺"思维过程"的差异化**：真正决定角色专业性的，是 L1 内容层（persona/rules 知识）与远期 L3 代码层（自定义能力）。角色包的价值分层 = **L1 专业性 / L2 行为偏好 / L3（远期）能力扩展**。"角色包代替 skills"（§2.1）兑现的是"内容分发 + 行为分发"，"思维过程分发"依赖 L1/L3，非 L2 枚举职责。
 
 ### L3：代码层（远期）
 
@@ -338,7 +342,7 @@ export interface IMcpTransport {
 | act | `act.temperature` | 0.0~2.0 | 生成随机性 | `[草案]` | 无参考实现消费，待验证 |
 | act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 | `[草案]` | 无参考实现消费，待验证 |
 | reflect | `reflect.summary` | `on` / `off` | 摘要生成 | `[草案]` | 无参考实现消费，待验证（memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
-| reflect | `reflect.insightExtraction` | `on` / `off` | 洞察提炼 | 冻结 | memora 消费（agent.ts 沉淀阶段） |
+| reflect | `reflect.insightExtraction` | `on` / `off` | 洞察提炼 | 冻结（兼容） | **兼容键**：独立提炼层已随"记忆即摘要"演进移除（memory-as-summary §七），参考实现不再消费，保留供宿主兼容——新角色包应改用摘要 `type` 分类表达价值，不依赖本键 |
 | reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 | 冻结 | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`） |
 | global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | `[草案]` | 无参考实现消费，待验证 |
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | `[草案]` | 无参考实现消费，待验证 |
@@ -360,6 +364,8 @@ export interface IMcpTransport {
 
 **范式方向约束（最重要的一条）**：角色包生态的立身之本是**生产力**（工作助手、知识问答、工具执行）——**不做情感陪伴、不做虚拟恋人**。豆包/千问 2026-07 下线的是无工具、无决策、不可控的 UGC 陪聊 Bot；千问保留并加码的正是"协议化、工具化、能落地"的工具型 Agent——角色包标准站在这条政策允许且鼓励的赛道上。
 
+**安全审计（角色包发布前提，2026-08-13 声明）**：角色包是可下载、可共享的装载卡——是**供应链攻击载体**。行业实测：公开技能库中 **36% 含提示注入**（Snyk）、平均质量仅 6.2/12（SkillsBench）——无审计的开放目录是风险源。因此**安全审计是角色包进入可传播目录的前提**（不只合规）：角色包的 persona/rules/strategy/内嵌 skills 在发布前须经注入检测与质量审查；memora 作为 reference implementation 对下载角色包做基础注入扫描，发现恶意内容拒绝装载。签名/完整性校验（防篡改）随"硬通货"远期规划一并落地（见定位宣言演进状态）。**当前不实现，先确立硬门槛。**
+
 ---
 
 ## 八、校验（跨实现一致性）
@@ -379,6 +385,7 @@ export interface IMcpTransport {
 | `role-packs/`（memora 仓库） | 示例角色包（翻译助手 / 技术文档工程师 / 项目总监） |
 | [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | memora 视角的角色包定位（插卡机模型，通用引擎 ↔ 专业卡） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
+| 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（问答闭环 / 记忆系统）定型后——见本文档定位宣言 |
 
 > 标准优先于实现（P0 键集对齐，2026-08-12）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 
