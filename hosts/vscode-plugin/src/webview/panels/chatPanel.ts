@@ -1,20 +1,24 @@
 /**
- * 设计文档打磨面板 — Webview 侧（ADR-VC-001 决策 5：Webview 只做 UI，走 postMessage）
+ * 对话打磨面板 — Webview 侧（ADR-VC-001 决策 5：Webview 只做 UI，走 postMessage）
  *
  * 职责：
- *   - 渲染对话 UI（消息区 + 输入框）
+ *   - 渲染对话 UI（消息区 + 输入框）——切片 A
  *   - 将用户输入 postMessage 到 extension host，调 Agent.chat() 流式返回并渲染
  *
- * 阶段 0：最小对话 UI（文本气泡 + 输入）。后续阶段扩展自洽检查/骨架/记忆面板。
+ * 未来扩展：本面板演进为「对话打磨」主面板；自洽检查/骨架生成/记忆分属独立面板（panels/ 下）。
  */
 import * as vscode from 'vscode';
 import type { Agent, AgentChunk } from '@zooique/memora';
+import type {
+  WebviewToExtensionMessage,
+  ExtensionToWebviewMessage,
+} from '../../shared/protocol.js';
 
-/** 当前打开的面板（单例，聚焦复用） */
+/** 当前打开的对话面板（单例，聚焦复用） */
 let currentPanel: vscode.WebviewPanel | undefined;
 
-/** 打开设计文档打磨面板 */
-export function openDocReviewPanel(agent: Agent): void {
+/** 打开对话打磨面板 */
+export function openChatPanel(agent: Agent): void {
   // 已有面板则聚焦并返回
   if (currentPanel) {
     currentPanel.reveal(vscode.ViewColumn.Beside);
@@ -22,7 +26,7 @@ export function openDocReviewPanel(agent: Agent): void {
   }
 
   const panel = vscode.window.createWebviewPanel(
-    'memoraDocReview.panel',
+    'memoraDocReview.chat',
     'Memora 文档打磨',
     vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: true },
@@ -35,7 +39,7 @@ export function openDocReviewPanel(agent: Agent): void {
   });
 
   // 处理来自 Webview 的用户输入 → 流式对话
-  panel.webview.onDidReceiveMessage(async (msg: { type: string; text?: string }) => {
+  panel.webview.onDidReceiveMessage(async (msg: WebviewToExtensionMessage) => {
     if (msg.type === 'send' && msg.text) {
       await handleSend(panel, agent, msg.text);
     }
@@ -43,27 +47,32 @@ export function openDocReviewPanel(agent: Agent): void {
 }
 
 /** 处理一次用户输入：流式调用 Agent.chat 并回发 chunk */
-async function handleSend(panel: vscode.WebviewPanel, agent: Agent, input: string): Promise<void> {
-  // 通知 Webview：用户消息上屏 + 清空输入
-  panel.webview.postMessage({ type: 'user', text: input });
+async function handleSend(
+  panel: vscode.WebviewPanel,
+  agent: Agent,
+  input: string,
+): Promise<void> {
+  const post = (m: ExtensionToWebviewMessage) => {
+    void panel.webview.postMessage(m);
+  };
+
+  // 用户消息上屏
+  post({ type: 'user', text: input });
 
   let done = false;
   try {
     // 流式消费 Agent 输出
     for await (const chunk of agent.chat(input) as AsyncIterable<AgentChunk>) {
       if (chunk.type === 'text' && chunk.content) {
-        panel.webview.postMessage({ type: 'chunk', content: chunk.content });
+        post({ type: 'chunk', content: chunk.content });
       }
     }
     done = true;
   } catch (err) {
-    panel.webview.postMessage({
-      type: 'error',
-      message: err instanceof Error ? err.message : String(err),
-    });
+    post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
   }
   if (done) {
-    panel.webview.postMessage({ type: 'done' });
+    post({ type: 'done' });
   }
 }
 
@@ -115,7 +124,6 @@ function buildHtml(): string {
       if (msg.type === 'user') {
         append('user', msg.text);
       } else if (msg.type === 'chunk') {
-        // 流式：合并到最后一个 assistant 气泡
         const last = messages.lastElementChild;
         if (last && last.classList.contains('assistant')) {
           last.textContent += msg.content;
@@ -123,8 +131,6 @@ function buildHtml(): string {
           append('assistant', msg.content);
         }
         messages.scrollTop = messages.scrollHeight;
-      } else if (msg.type === 'done') {
-        // 结束：无需额外处理
       } else if (msg.type === 'error') {
         append('error', msg.message);
       }
