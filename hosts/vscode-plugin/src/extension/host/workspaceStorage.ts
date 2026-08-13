@@ -11,7 +11,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { IMemoryStorage, Memory } from '@zooique/memora';
+import { segmentLower, type IMemoryStorage, type Memory } from '@zooique/memora';
 
 /** 工作区记忆存储 */
 export class WorkspaceStorage implements IMemoryStorage {
@@ -114,15 +114,39 @@ export class WorkspaceStorage implements IMemoryStorage {
       .map((m) => ({ ...m }));
   }
 
+  /**
+   * 关键词搜索（复刻内核 InMemoryStorage.search 语义）
+   *
+   * 先对 query 分词，再逐个 token 匹配（任一 token 命中即返回），
+   * 避免"整串子串匹配"对多关键词短语召回失败（任务 D 实测暴露的缺陷）。
+   */
   search(query: string, limit = 10): Memory[] {
     const q = query.trim();
-    const hits = [...this.store.values()].filter((m) => {
-      if (!this.isActive(m)) return false;
-      if (!q) return true;
-      return m.content.includes(q) || m.name.includes(q);
+    const active = [...this.store.values()].filter((m) => this.isActive(m));
+    // 空查询：按 score 降序返回
+    if (!q) {
+      return this.topByScore(active, limit);
+    }
+    // 规范分词（与内核 recall.ts extractKeywords 共用 segmentText）
+    const tokens = segmentLower(q);
+    if (tokens.length === 0) {
+      return this.topByScore(active, limit);
+    }
+    const hits = active.filter((m) => {
+      const text = `${m.content} ${m.name}`.toLowerCase();
+      // 任一 token 命中即可
+      return tokens.some((t) => text.includes(t));
     });
-    hits.sort((a, b) => b.score - a.score);
-    return hits.slice(0, limit).map((m) => ({ ...m }));
+    return this.topByScore(hits, limit);
+  }
+
+  /** 按 score 降序排序并截断返回浅拷贝（消除 search 内重复排序逻辑） */
+  private topByScore(memories: Memory[], limit: number): Memory[] {
+    return memories
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((m) => ({ ...m }));
   }
 
   count(): number {

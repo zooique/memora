@@ -4,6 +4,11 @@
  * 职责：
  *   - 渲染对话 UI（消息区 + 输入框）——切片 A
  *   - 将用户输入 postMessage 到 extension host，调 Agent.chat() 流式返回并渲染
+ *   - 携带「当前打磨文档」上下文注入对话，引导 AI 围绕该文档打磨（任务 A）
+ *
+ * 设计说明（单一真理源）：
+ *   - 文档内容是「当前任务上下文」，不是记忆，不进入 recall 通道（避免污染跨会话召回）。
+ *   - 薄壳只做装配：读取文档文本 → 作为上下文前缀注入 chat() 输入，不改内核。
  *
  * 未来扩展：本面板演进为「对话打磨」主面板；自洽检查/骨架生成/记忆分属独立面板（panels/ 下）。
  */
@@ -18,7 +23,7 @@ import type {
 let currentPanel: vscode.WebviewPanel | undefined;
 
 /** 打开对话打磨面板 */
-export function openChatPanel(agent: Agent): void {
+export function openChatPanel(agent: Agent, docContext?: string): void {
   // 已有面板则聚焦并返回
   if (currentPanel) {
     currentPanel.reveal(vscode.ViewColumn.Beside);
@@ -41,16 +46,22 @@ export function openChatPanel(agent: Agent): void {
   // 处理来自 Webview 的用户输入 → 流式对话
   panel.webview.onDidReceiveMessage(async (msg: WebviewToExtensionMessage) => {
     if (msg.type === 'send' && msg.text) {
-      await handleSend(panel, agent, msg.text);
+      await handleSend(panel, agent, msg.text, docContext);
     }
   });
 }
 
-/** 处理一次用户输入：流式调用 Agent.chat 并回发 chunk */
+/**
+ * 处理一次用户输入：流式调用 Agent.chat 并回发 chunk
+ *
+ * @param docContext 当前打磨文档内容（可选）。非空时注入用户输入前缀，
+ *                   让 Agent 围绕该文档打磨；为空则退化为普通对话。
+ */
 async function handleSend(
   panel: vscode.WebviewPanel,
   agent: Agent,
   input: string,
+  docContext?: string,
 ): Promise<void> {
   const post = (m: ExtensionToWebviewMessage) => {
     void panel.webview.postMessage(m);
@@ -59,10 +70,15 @@ async function handleSend(
   // 用户消息上屏
   post({ type: 'user', text: input });
 
+  // 注入文档上下文：文档属于「当前任务上下文」，作为输入前缀，不进入记忆召回
+  const chatInput = docContext
+    ? `[当前打磨文档内容]\n${docContext}\n[/当前打磨文档内容]\n\n用户请求：${input}`
+    : input;
+
   let done = false;
   try {
     // 流式消费 Agent 输出
-    for await (const chunk of agent.chat(input) as AsyncIterable<AgentChunk>) {
+    for await (const chunk of agent.chat(chatInput) as AsyncIterable<AgentChunk>) {
       if (chunk.type === 'text' && chunk.content) {
         post({ type: 'chunk', content: chunk.content });
       }

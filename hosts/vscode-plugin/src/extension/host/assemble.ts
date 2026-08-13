@@ -11,6 +11,7 @@
  *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
  */
 import { Agent } from '@zooique/memora';
+import { join } from 'node:path';
 import { createDocReviewProvider } from './llmConfig.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
@@ -43,6 +44,8 @@ export async function assembleDocReviewAgent(options: AssembleDocReviewOptions):
   // 3. 装配 Agent（薄壳，全部复用内核）
   const agent = new Agent({
     projectPath,
+    // 记忆数据目录 = 工作区 .memora（注册表/锁文件落盘处，与存储同目录）
+    dataDir: join(projectPath, '.memora'),
     provider,
     storage,
     sessionStore,
