@@ -189,6 +189,7 @@ describe('assembleComponents', () => {
         'dedupManager',
         'memoryAdvisor',
         'autoConfigRefiner',
+        'roundSummaryGenerator',
         'sessionArchiver',
         'textPolisher',
         'rolePackManager',

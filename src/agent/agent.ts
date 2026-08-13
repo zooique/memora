@@ -47,6 +47,7 @@ import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
+import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -154,6 +155,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private sessionArchiver: SessionArchiver | null = null;
   /** TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化） */
   private textPolisher: TextPolishManager | null = null;
+  /** RoundSummaryGenerator（轮次摘要生成器，记忆即摘要架构 Phase 1） */
+  private roundSummaryGenerator: RoundSummaryGenerator | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
 
@@ -533,8 +536,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     yield { type: 'thinking', phase: 'processing' };
     this.matchAndInjectSkill(input);
 
+    // 生成当前轮次 ID（在 processUserInput 之前，供 appendUser 溯源使用）
+    const roundId = `round-${Date.now()}`;
+    loop.setCurrentRoundId(roundId);
+
     const history = this.requireHistory;
-    await history.appendUser(input);
+    await history.appendUser(input, roundId);
 
     return recalledMemories;
   }
@@ -564,7 +571,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       if (assistantContent.trim()) {
         const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
         try {
-          await history.appendAssistant(assistantContent + interruptedMark);
+          await history.appendAssistant(assistantContent + interruptedMark, loop.getCurrentRoundId());
         } catch (err) {
           logger.warn({ err }, '中断消息历史写入失败');
         }
@@ -574,7 +581,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 追加助手消息到历史（best-effort）
     try {
-      await history.appendAssistant(assistantContent);
+      await history.appendAssistant(assistantContent, loop.getCurrentRoundId());
     } catch (err) {
       logger.warn({ err }, '助手消息历史写入失败');
     }
@@ -673,6 +680,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
               : AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
             vectorStore: this.#config.vectorStore,
             excludeSources: this.#config.recallExcludeSources,
+            sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
           },
         );
       } catch (err) {
@@ -710,6 +718,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       loop.injectSystemMessage(recentPrompt);
       logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
     }
+
+    // ── Phase 2：跨窗口召回的摘要按 createdAt 升序排列 ──
+    // 帮助 LLM 自然识别"最近偏好"——时间线越早的记忆排在前面
+    recalledMemories = [...recalledMemories].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    );
 
     return recalledMemories;
   }
@@ -835,6 +849,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         history.registerPendingArchive(analyzePromise);
       } catch (err) {
         logger.warn({ err }, 'AutoConfigRefiner 初始化失败');
+      }
+    }
+
+    // 轮次摘要生成（记忆即摘要架构 Phase 1）
+    if (this.roundSummaryGenerator) {
+      try {
+        const roundId = this.requireLoop.getCurrentRoundId();
+        const sessionName = history.currentSessionName;
+        // fire-and-forget：不阻塞主流程，失败仅记日志
+        const summaryPromise = this.roundSummaryGenerator.generate(input, assistantContent, roundId, sessionName);
+        history.registerPendingArchive(summaryPromise);
+      } catch (err) {
+        logger.warn({ err }, '轮次摘要生成初始化失败');
       }
     }
   }
@@ -1010,7 +1037,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (assistantContent.trim()) {
           const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
           try {
-            await this.requireHistory.appendAssistant(assistantContent + interruptedMark);
+            await this.requireHistory.appendAssistant(assistantContent + interruptedMark, loop.getCurrentRoundId());
           } catch (err) {
             logger.warn({ err }, '中断消息历史写入失败');
           }
@@ -1020,7 +1047,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 追加助手消息到历史
       try {
-        await this.requireHistory.appendAssistant(assistantContent);
+        await this.requireHistory.appendAssistant(assistantContent, loop.getCurrentRoundId());
       } catch (err) {
         logger.warn({ err }, '助手消息历史写入失败');
       }
@@ -1119,7 +1146,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (assistantContent.trim()) {
           const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
           try {
-            await this.requireHistory.appendAssistant(assistantContent + interruptedMark);
+            await this.requireHistory.appendAssistant(assistantContent + interruptedMark, loop.getCurrentRoundId());
           } catch (err) {
             logger.warn({ err }, '中断消息历史写入失败');
           }
@@ -1129,7 +1156,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 追加助手消息到历史
       try {
-        await this.requireHistory.appendAssistant(assistantContent);
+        await this.requireHistory.appendAssistant(assistantContent, loop.getCurrentRoundId());
       } catch (err) {
         logger.warn({ err }, '助手消息历史写入失败');
       }
@@ -1987,6 +2014,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.workProjection = result.workProjection;
     this.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
+    this.roundSummaryGenerator = result.roundSummaryGenerator;
     // 绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
     // 与 bindGetRecentHistory 同模式：解决 Agent 晚于 InsightExtractor 创建的时序循环依赖
     this.insightExtractor.bindOnConflict((info) => {
@@ -2787,6 +2815,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
     this.textPolisher = null;
+    this.roundSummaryGenerator = null;
     this._sessionManager = null;
     // 项目管理
     this.projectManager = null;

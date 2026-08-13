@@ -19,6 +19,7 @@ import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 
@@ -647,5 +648,92 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     const result = await handlers.searchMemories('A', '10', 'match');
     // preview 应为 80 字符 + …
     expect(result).toContain('A'.repeat(80) + '…');
+  });
+});
+
+// ─── traceSummary 测试 ──────────────────────────────────
+
+describe('BuiltinToolHandlers.traceSummary', () => {
+  const SESSION = '2026-08-13-main';
+  const ROUND_A = 'round-1723456789000';
+  const ROUND_B = 'round-1723456789001';
+
+  beforeEach(() => {
+    // 灌入轮次摘要数据到 storage
+    storage.upsert(
+      createMemory({
+        id: `round-summary:${SESSION}:${ROUND_A}`,
+        content: '用户询问 TypeScript 的用法，助手解释了接口和类型',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        name: `轮次摘要 ${SESSION} ${ROUND_A}`,
+        score: 0.5,
+        isTraceable: true,
+        metadata: { summaryType: 'fact', sessionName: SESSION, roundId: ROUND_A },
+      }),
+    );
+    storage.upsert(
+      createMemory({
+        id: `round-summary:${SESSION}:${ROUND_B}`,
+        content: '用户表达了使用 React 的偏好，助手确认了技术选型方向',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        name: `轮次摘要 ${SESSION} ${ROUND_B}`,
+        score: 0.5,
+        isTraceable: true,
+        isModified: true,
+        metadata: { summaryType: 'preference', sessionName: SESSION, roundId: ROUND_B },
+      }),
+    );
+  });
+
+  it('空 sessionId 抛 ARGUMENT_ERROR', async () => {
+    await expect(handlers.traceSummary('')).rejects.toMatchObject({
+      errorCode: ToolErrorCode.ARGUMENT_ERROR,
+    });
+  });
+
+  it('指定 roundId 返回精确匹配', async () => {
+    const result = await handlers.traceSummary(SESSION, ROUND_A);
+    expect(result).toContain(SESSION);
+    expect(result).toContain(ROUND_A);
+    expect(result).toContain('TypeScript');
+    expect(result).toContain('可溯源');
+    // isModified 未设置，不应显示
+    expect(result).not.toContain('已手动修改');
+  });
+
+  it('isModified 标记在输出中显示', async () => {
+    const result = await handlers.traceSummary(SESSION, ROUND_B);
+    expect(result).toContain('已手动修改');
+    expect(result).toContain('preference');
+  });
+
+  it('不存在的 roundId 返回提示信息', async () => {
+    const result = await handlers.traceSummary(SESSION, 'round-nonexistent');
+    expect(result).toContain('未找到');
+  });
+
+  it('不指定 roundId 返回最近 N 条摘要', async () => {
+    const result = await handlers.traceSummary(SESSION);
+    expect(result).toContain(SESSION);
+    expect(result).toContain('2 条');
+    expect(result).toContain('TypeScript');
+    expect(result).toContain('React');
+  });
+
+  it('limit 控制返回数量', async () => {
+    const result = await handlers.traceSummary(SESSION, undefined, '1');
+    expect(result).toContain('1 条');
+    expect(result).not.toContain('React');
+  });
+
+  it('limit 最大 20', async () => {
+    // 数据只有 2 条，验证不抛错即可
+    const result = await handlers.traceSummary(SESSION, undefined, '100');
+    expect(result).toContain(SESSION);
+  });
+
+  it('无摘要的会话返回提示信息', async () => {
+    const result = await handlers.traceSummary('2026-01-01-other');
+    expect(result).toContain('暂无轮次摘要');
   });
 });

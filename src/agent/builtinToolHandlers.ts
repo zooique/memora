@@ -23,6 +23,7 @@ import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
@@ -644,5 +645,73 @@ export class BuiltinToolHandlers {
       return `${i + 1}. [${m.source}:${m.name}] (score=${m.score})\n   ${preview.replace(/\n/g, ' ')}`;
     });
     return `搜索 "${query}" 找到 ${results.length} 条（${mode} 模式）：\n${lines.join('\n')}`;
+  }
+
+  /**
+   * 追溯轮次摘要的原始对话内容
+   *
+   * 从记忆索引中查找 `source='round-summary'` 的记忆，
+   * 根据 sessionId 和 roundId 过滤。
+   * 返回格式化后的摘要列表，包含摘要内容、类型和溯源信息。
+   *
+   * @param sessionId 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @param roundId 轮次 ID（可选，不传则返回最近 N 条摘要）
+   * @param limitStr 返回结果数量上限（默认 "5"，最大 "20"）
+   */
+  async traceSummary(
+    sessionId: string,
+    roundId?: string,
+    limitStr?: string,
+  ): Promise<string> {
+    if (!sessionId) {
+      throw toolError(
+        'trace_summary 工具调用缺少 sessionId 参数',
+        'LLM 未传 sessionId',
+        ['sessionId 不能为空'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    let limit = Number.parseInt(limitStr ?? '5', 10);
+    if (Number.isNaN(limit) || limit < 1) limit = 5;
+    if (limit > 20) limit = 20;
+
+    // 获取所有 round-summary 类型的记忆
+    const allSummaries = this.memoryIndex.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
+
+    // 按 sessionId 过滤
+    const sessionPrefix = `round-summary:${sessionId}:`;
+    const matched = allSummaries.filter((m) => m.id.startsWith(sessionPrefix));
+
+    if (roundId) {
+      // 精确匹配轮次
+      const exact = matched.find((m) => m.id === `${sessionPrefix}${roundId}`);
+      if (!exact) {
+        return `（未找到会话 "${sessionId}" 中轮次 "${roundId}" 的摘要）`;
+      }
+      const summaryType = exact.metadata?.summaryType ?? 'general';
+      const traceInfo = exact.isTraceable ? '（可溯源）' : '（不可溯源，原始对话已删除）';
+      const modifiedInfo = exact.isModified ? '（已手动修改）' : '';
+      return `会话：${sessionId} | 轮次：${roundId} | 类型：${summaryType} ${traceInfo}${modifiedInfo}\n摘要：${exact.content}\n`;
+    }
+
+    // 未指定 roundId，返回最近 N 条（按 createdAt 降序）
+    if (matched.length === 0) {
+      return `（会话 "${sessionId}" 暂无轮次摘要）`;
+    }
+
+    matched.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const top = matched.slice(0, limit);
+
+    const lines = top.map((m, i) => {
+      const roundIdFromMeta = m.metadata?.roundId ?? 'unknown';
+      const summaryType = m.metadata?.summaryType ?? 'general';
+      const traceInfo = m.isTraceable ? '可溯源' : '不可溯源';
+      const preview = truncate(m.content, 120);
+      return `${i + 1}. [${summaryType}] 轮次 ${roundIdFromMeta} (${traceInfo})\n   ${preview.replace(/\n/g, ' ')}`;
+    });
+
+    return `会话 "${sessionId}" 的轮次摘要（最近 ${top.length} 条）：\n${lines.join('\n')}`;
   }
 }

@@ -119,4 +119,12 @@ export interface SessionMessage {
   content: string;
   /** 时间戳（ISO 8601） */
   timestamp: string;
+  /**
+   * 所属轮次 ID（可选）
+   *
+   * 用于 traceSummary 工具精确回溯到具体轮次。
+   * 为空时 `traceSummary` 只能返回整个会话的消息摘要。
+   * 向后兼容：现有宿主不传此字段不影响行为。
+   */
+  roundId?: string;
 }

@@ -105,6 +105,8 @@ export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 // TextPolishManager：文本润色管理器类型（agent.polish getter 返回值，消费者可独立标注变量类型）
 export type { PolishResult } from '@/agent/managers/textPolishManager.js';
+// RoundSummaryGenerator：轮次摘要生成器（记忆即摘要架构 Phase 1）
+export { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 export { loadConfig } from '@/config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';
@@ -123,7 +125,7 @@ export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS } from '@/memory/types.js';
-export type { Memory } from '@/memory/types.js';
+export type { Memory, SummaryType } from '@/memory/types.js';
 // Source 校验工具（从 types.ts 拆分到 sourceValidation.ts，公共 API 不变）
 export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
@@ -168,6 +170,8 @@ export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
 export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+// 轮次摘要追溯工具定义：宿主可条件性控制 trace_summary 工具的可见性
+export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 // 不中断工作模型：检查点类型和增量事件类型（宿主 IPC 层需要用于类型声明）
 export type { SessionCheckpoint, SessionEvent, DeltaPayload, SlotRef, ClarifyQuestion, PauseMeta, RoundOutcome, PlanStep } from '@/agent/types.js';
 // 消息历史内部类型：MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）

@@ -51,10 +51,35 @@ export interface Memory {
    * 典型场景：persona 的 keywords/description，供 PersonaManager 加载时解析。
    */
   metadata?: Record<string, string>;
+  /**
+   * 可选：记忆是否可溯源到原始对话记录
+   *
+   * 为 true 时，可通过 sessionId + roundId 回溯到原始对话。
+   * 为 false 时，表示原始对话已删除，无法追溯。
+   * 仅对 `source='round-summary'` 的记忆有意义，其他来源记忆默认为 false。
+   */
+  isTraceable?: boolean;
+  /**
+   * 可选：摘要是否被手动修改
+   *
+   * 为 true 时，表示摘要内容已被人工修改，可能与原始对话不完全一致。
+   * 仅对 `source='round-summary'` 的记忆有意义。
+   * isTraceable 独立于此字段——修改摘要不代表原始对话不存在。
+   */
+  isModified?: boolean;
 }
 
 /** 默认记忆权重（parseMemory 的默认值行为） */
 export const DEFAULT_MEMORY_SCORE = 0.5;
+
+/**
+ * 轮次摘要类型
+ *
+ * 用于标记 `source='round-summary'` 记忆的摘要类型。
+ * 在摘要生成时由 LLM 自动判断，不引入独立分类器。
+ * 'aggregated' 类型由聚合机制生成，非 LLM 直接产出。
+ */
+export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'general' | 'aggregated';
 
 /**
  * 记忆解析器 — 验证原始数据并转换为 Memory 类型
@@ -137,6 +162,8 @@ export function parseMemory(raw: unknown): Memory {
     accessedAt: obj.accessedAt as string,
     score: (obj.score as number) ?? DEFAULT_MEMORY_SCORE,
     deletedAt: obj.deletedAt as string | undefined,
+    isTraceable: obj.isTraceable as boolean | undefined,
+    isModified: obj.isModified as boolean | undefined,
   };
 }
 
@@ -168,6 +195,8 @@ export const SOURCE_LABELS = {
   WORK_PROJECTION: 'work-projection',
   /** 内容护栏规则（configDir/rules/guardrails/ 下的规则文件） */
   GUARDRAIL: 'guardrail',
+  /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
+  ROUND_SUMMARY: 'round-summary',
   /** 未知来源（inferSource 兜底值，文件路径未匹配已知目录时的默认标签） */
   UNKNOWN: 'unknown',
 } as const;

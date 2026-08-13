@@ -74,9 +74,9 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 6 个工具', () => {
+    it('应注册 7 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories', 'task_table_write', 'task_table_update']);
+      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories', 'trace_summary', 'task_table_write', 'task_table_update']);
     });
 
     it('每个工具应有 name + description + parameters（含 required 数组）', () => {

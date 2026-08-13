@@ -196,12 +196,16 @@ export class MessageHistory {
    *
    * 日期使用 todayDate() 动态获取，而非缓存的 this.currentDate，
    * 确保跨日后消息写入当天目录。
+   *
+   * @param content - 用户消息内容
+   * @param roundId - 当前轮次 ID（可选，用于 sessionStore 溯源）
    */
-  async appendUser(content: string): Promise<void> {
+  async appendUser(content: string, roundId?: string): Promise<void> {
     const message: SessionMessage = {
       role: 'user',
       content,
       timestamp: nowIso(),
+      ...(roundId ? { roundId } : {}),
     };
     // 使用 ISessionStore 持久化（如果已注入）
     if (this.sessionStore) {
@@ -220,13 +224,17 @@ export class MessageHistory {
    * 失败不抛出
    *
    * 日期使用 todayDate() 动态获取，确保跨日后消息写入当天目录。
+   *
+   * @param content - 助手消息内容
+   * @param roundId - 当前轮次 ID（可选，用于 sessionStore 溯源）
    */
-  async appendAssistant(content: string): Promise<void> {
+  async appendAssistant(content: string, roundId?: string): Promise<void> {
     if (!content.trim()) return;
     const message: SessionMessage = {
       role: 'assistant',
       content,
       timestamp: nowIso(),
+      ...(roundId ? { roundId } : {}),
     };
     // 使用 ISessionStore 持久化（如果已注入）
     if (this.sessionStore) {

@@ -82,6 +82,8 @@ export interface RecallOptions {
    * 详见 src/memory/hybridMerge.ts HybridWeights
    */
   weights?: HybridWeights;
+  /** 当前会话 ID，用于同窗口优先排序（可选） */
+  sessionId?: string;
 }
 
 /**
@@ -113,6 +115,7 @@ export async function recall(
     minSimilarity = DEFAULT_MIN_SIMILARITY,
     reranker,
     weights,
+    sessionId,
   } = options;
 
   const merged = new Map<string, { memory: Memory; vectorScore: number }>();
@@ -160,13 +163,33 @@ export async function recall(
   const sorted = hybridMerge(merged.values(), limit, weights);
 
   // ── 重排序：reranker 在 hybridMerge 之后执行二次精排（可选） ──
-  const reranked = reranker
+  let reranked = reranker
     ? await reranker.rerank(
         query,
         sorted.map((e) => e.memory),
         { limit },
       )
     : sorted.map((e) => e.memory);
+
+  // ── Phase 2：同窗口优先 + 聚合摘要优先排序 ──
+  // 同窗口优先：sessionId 匹配的记忆排在前面，提升上下文连续性
+  // 聚合摘要优先：type='aggregated' 的摘要排在前面，降低原始摘要数量对性能的影响
+  if (sessionId) {
+    reranked = [...reranked].sort((a, b) => {
+      const aIsSameWindow = a.metadata?.sessionName === sessionId;
+      const bIsSameWindow = b.metadata?.sessionName === sessionId;
+      if (aIsSameWindow !== bIsSameWindow) {
+        return aIsSameWindow ? -1 : 1;
+      }
+      // 同优先级内：聚合摘要优先
+      const aIsAggregated = a.metadata?.summaryType === 'aggregated';
+      const bIsAggregated = b.metadata?.summaryType === 'aggregated';
+      if (aIsAggregated !== bIsAggregated) {
+        return aIsAggregated ? -1 : 1;
+      }
+      return 0; // 保持原有相对顺序
+    });
+  }
 
   // ── FIX-P1-2：拆分读/写，recall 只读 + boostScores 显式写 ──
   // 在副本上 boost，仅影响本轮上下文排序；持久化由调用方 fire-and-forget 调用 boostScores，

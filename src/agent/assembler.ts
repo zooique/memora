@@ -30,6 +30,7 @@ import { DedupManager } from '@/agent/managers/dedupManager.js';
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
+import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -195,14 +196,15 @@ export interface AssembleOutput {
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
   textPolisher: TextPolishManager;
-  /**
-   * 角色包管理器（M1 清单抽象）
+  /** 角色包管理器（M1 清单抽象）
    *
    * 装配层引入角色包清单作为统一读取抽象。
    * 当前与 PersonaManager + SkillManager 共存，行为不变。
    * 未来角色包文件完备后，可替代独立通道。
    */
   rolePackManager: RolePackManager;
+  /** 轮次摘要生成器（记忆即摘要架构，Phase 1） */
+  roundSummaryGenerator: RoundSummaryGenerator;
 }
 
 /**
@@ -250,6 +252,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const insightExtractor = new InsightExtractor(provider, pctx.index, relationBuilder);
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
+  const roundSummaryGenerator = new RoundSummaryGenerator(provider, pctx.index);
 
   // Rule→guardrail 桥接：将角色包规则转换为 guardrail Memory 对象，
   // 合并到从记忆索引加载的 guardrail 规则中，供运行时强制执行。
@@ -292,7 +295,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
 
-  return { loop, insightExtractor, sessionArchiver, textPolisher, relationBuilder };
+  return { loop, insightExtractor, sessionArchiver, textPolisher, relationBuilder, roundSummaryGenerator };
 }
 
 /**
@@ -397,7 +400,7 @@ export async function assembleComponents(
 
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
-  const { loop, insightExtractor, sessionArchiver, textPolisher } =
+  const { loop, insightExtractor, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
       provider,
       backgroundProvider,
@@ -447,5 +450,6 @@ export async function assembleComponents(
     sessionArchiver,
     textPolisher,
     rolePackManager,
+    roundSummaryGenerator,
   };
 }

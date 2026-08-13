@@ -191,6 +191,14 @@ export class AgentLoop {
   private maxSelfReviewRounds = 0;
   /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
   private selfReviewRound = 0;
+  /**
+   * 当前轮次 ID（以 processUserInput 为粒度）
+   *
+   * 在 processUserInput 入口分配一次，所有 iteration 共享同一 roundId。
+   * 用于 RoundSummaryGenerator 生成溯源式摘要。
+   * 格式：`round-{Date.now()}`，一轮对话内唯一。
+   */
+  private currentRoundId = '';
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
   private inAutonomousStep = false;
   /**
@@ -330,6 +338,9 @@ export class AgentLoop {
     });
 
     try {
+      // 分配当前轮次 ID（以 processUserInput 为粒度，所有 iteration 共享）
+      this.currentRoundId = `round-${Date.now()}`;
+
       // 1. 召回注入 + 输入护栏（返回 true 表示已 block 并 yield done，应 return）
       if (yield* this.handleRecallAndInputGuard(userInput, recalledMemories)) return;
 
@@ -1547,6 +1558,30 @@ export class AgentLoop {
       role: m.role,
       content: m.content,
     }));
+  }
+
+  /**
+   * 获取当前轮次 ID
+   *
+   * 由 Agent 在 postProcess 中读取，传递给 RoundSummaryGenerator。
+   * 在 processUserInput 入口分配，多 iteration 共享同一值。
+   *
+   * @returns 当前轮次 ID（格式：`round-{timestamp}`），空字符串表示无活动轮次
+   */
+  getCurrentRoundId(): string {
+    return this.currentRoundId;
+  }
+
+  /**
+   * 设置当前轮次 ID（由 Agent 在 prepareChatContext 中提前生成）
+   *
+   * appendUser 在 processUserInput 之前调用，因此 roundId 需提前生成。
+   * processUserInput 内部仍会覆盖设置（值相同），确保自洽。
+   *
+   * @param roundId - 当前轮次 ID
+   */
+  setCurrentRoundId(roundId: string): void {
+    this.currentRoundId = roundId;
   }
 
   /**

@@ -13,10 +13,10 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { Memory } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
-  it('应该暴露 8 种 source 标签约定', () => {
+  it('应该暴露 9 种 source 标签约定', () => {
     // source 是开放字符串，SOURCE_LABELS 仅为当前约定
     // 含 UNKNOWN（inferSource 兜底值，文件路径未匹配已知目录时的默认标签）
-    expect(Object.keys(SOURCE_LABELS)).toHaveLength(8);
+    expect(Object.keys(SOURCE_LABELS)).toHaveLength(9);
     expect(SOURCE_LABELS.PERSONA).toBe('persona');
     expect(SOURCE_LABELS.RULE).toBe('rule');
     expect(SOURCE_LABELS.SKILL).toBe('skill');
@@ -25,6 +25,7 @@ describe('记忆类型定义', () => {
     expect(SOURCE_LABELS.WORK_PROJECTION).toBe('work-projection');
     expect(SOURCE_LABELS.GUARDRAIL).toBe('guardrail');
     expect(SOURCE_LABELS.UNKNOWN).toBe('unknown');
+    expect(SOURCE_LABELS.ROUND_SUMMARY).toBe('round-summary');
   });
 
   it('应该通过 schema 校验一个有效记忆', () => {

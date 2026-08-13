@@ -58,6 +58,7 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   list_dir: 'idempotent',
   search_memories: 'idempotent',
   web_search: 'idempotent',
+  trace_summary: 'idempotent',
   task_table_write: 'non-idempotent',
   task_table_update: 'idempotent',
 };
@@ -117,16 +118,38 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
 };
 
 /**
- * 工具注册表（6 个始终可用的内置工具）
+ * traceSummary 工具定义（独立导出，可供宿主条件性控制可见性）
+ *
+ * 用于从记忆索引中追溯轮次摘要的原始对话内容。
+ * 需要 sessionId 和可选的 roundId 参数。
+ */
+export const TRACE_SUMMARY_TOOL: ToolDefinition = {
+  name: 'trace_summary',
+  description: '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: '会话标识（格式：YYYY-MM-DD-sessionName，如 "2026-08-13-main"）' },
+      roundId: { type: 'string', description: '轮次 ID（可选，不传则返回该会话最近 N 条摘要对应的对话）' },
+      limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
+    },
+    required: ['sessionId'],
+  },
+};
+
+/**
+ * 工具注册表（8 个始终可用的内置工具）
  *
  * - read_file：读取文件
  * - write_file：写入/创建文件（受写入二次确认保护）
  * - list_dir：列出目录内容
  * - search_memories：在记忆索引中搜索关键词
+ * - trace_summary：追溯轮次摘要的原始对话
  * - task_table_write：写入/更新任务表行（幂等键保护）
  * - task_table_update：更新任务表行（幂等保护）
  *
  * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用），见下方独立定义。
+ * 另有 TRACE_SUMMARY_TOOL（始终可用，与 BUILTIN_TOOLS 中的 trace_summary 定义相同）。
  */
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
@@ -188,6 +211,21 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         mode: { type: 'string', description: '"match"（默认，任一）或 "near"（必须全部）' },
       },
       required: ['query'],
+    },
+  },
+  // ── Phase 1: 记忆即摘要·追溯工具 ──────────────────────
+  {
+    name: 'trace_summary',
+    description:
+      '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '会话标识（格式：YYYY-MM-DD-sessionName，如 "2026-08-13-main"）' },
+        roundId: { type: 'string', description: '轮次 ID（可选，不传则返回该会话最近 N 条摘要对应的对话）' },
+        limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
+      },
+      required: ['sessionId'],
     },
   },
   // ── P2-6: 任务表管理工具 ──────────────────────────────
