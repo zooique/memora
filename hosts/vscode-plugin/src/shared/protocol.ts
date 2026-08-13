@@ -114,6 +114,23 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'memory'; action: 'recalled'; count: number }
   | { type: 'memory'; action: 'added'; count: number; detail?: { id: string; source: string; name: string } }
+  /**
+   * 通用提示条（低扰 info / 错误级 error）
+   *
+   * 由 extension host 转发的非消息区通知，webview 用同一提示条分级呈现：
+   *   - info：记忆召回/沉淀、上下文截断、记忆冲突等低扰信息（短暂显示）
+   *   - error：会话异常/恢复失败/guardrail 失败等错误级反馈（醒目、停留更久）
+   * 统一走提示条而不插入消息区，避免污染对话历史（功能→UI 对齐排雷的雷-4 修正）。
+   */
+  | { type: 'notice'; level: 'info' | 'error'; message: string }
+  /**
+   * Chat Panel 当前激活 Skill（toolbar 技能徽章数据）
+   *
+   * 面板定位「文档打磨」，装配 doc-review skill。host 在就绪回放时推送，
+   * webview 据此在标题旁渲染技能徽章——主动可见：用户始终知道当前用哪个技能
+   * （不依赖 skillMatched 事件，避免普通对话不匹配技能时徽章永远不显示）。
+   */
+  | { type: 'chat_skill'; skill: string }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }

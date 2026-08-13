@@ -48,6 +48,9 @@ export async function openDocReviewCommand(
     // 注入 Agent + 当前 .md 文档上下文（任务 A）
     chatProvider.setAgent(agent);
     chatProvider.setDocContext(readActiveMarkdown());
+    // 声明当前激活技能 → toolbar 技能徽章（本命令装配 doc-review 打磨技能，
+    // 在装配处声明，保持「面板=文档打磨」的定位一致，主动可见）
+    chatProvider.setActiveSkill('doc-review');
     // 聚焦侧边栏视图
     void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
   } catch (err) {

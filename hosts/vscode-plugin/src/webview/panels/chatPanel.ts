@@ -19,6 +19,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
+import { createDocReviewProvider } from '../../extension/host/llmConfig.js';
 import { buildDropdownHtml, dropdownInitScript, dropdownStyles } from '../components/dropdown.js';
 import { toolCardScript } from '../components/toolCard.js';
 import { chatStyles } from '../styles/chatStyles.js';
@@ -42,6 +43,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 是否已尝试装配（避免面板每次展开都重复装配） */
   private _agentResolving = false;
+  /** 当前激活 Skill（对话面板装配的打磨技能，toolbar 徽章展示；装配时由 extension 注入） */
+  private _activeSkill: string | undefined;
 
   /**
    * @param sessionStore 会话存储（用于持久化/恢复对话历史）
@@ -56,14 +59,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._getAgent = getAgent;
   }
 
-  /** 由 extension 在装配 Agent 后注入 */
+  /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
   public setAgent(agent: Agent): void {
     this._agent = agent;
+    // 与 ensureAgent 懒装配路径保持一致：注入即绑定，确保事件通知两条路径都生效
+    // （bindAgentNoticeEvents 内部先 off 再 on，幂等，折叠展开重复注入不重复注册）
+    this.bindAgentNoticeEvents();
   }
 
   /** 设置当前打磨文档上下文（打开面板时调用） */
   public setDocContext(docContext: string | undefined): void {
     this._docContext = docContext;
+  }
+
+  /**
+   * 设置当前激活 Skill（由 extension 装配时注入）
+   *
+   * 对话面板定位「文档打磨」，装配 doc-review skill；skill 名在就绪回放时推送给
+   * webview 渲染 toolbar 徽章（主动可见：用户始终知道当前用哪个技能）。
+   *
+   * @param skill Skill 名（如 'doc-review'）
+   */
+  public setActiveSkill(skill: string): void {
+    this._activeSkill = skill;
+    // 视图已就绪时立即推送（而非等待下次 replaySession），保证徽章即时显示；
+    // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeSkill 推送）。
+    if (this._view) {
+      this.post({ type: 'chat_skill', skill });
+    }
   }
 
   /** 视图被解析（侧边栏展开）时初始化 */
@@ -122,12 +145,106 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       this._agent = await this._getAgent(ws);
+      // 装配成功后绑定会话级可观测事件 → 错误提示（会话异常/恢复失败等，不插入消息区）
+      this.bindAgentNoticeEvents();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
     } finally {
       this._agentResolving = false;
     }
+  }
+
+  // ─── 会话异常可观测出口（错误级 notice，功能→UI 对齐排雷 P1） ───
+  // 监听内核会话级事件并转发为错误提示条。错误不插入消息区，避免污染对话历史；
+  // 以下 handler 均为箭头函数属性，保证 off/on 引用一致（折叠展开防重复注册）。
+
+  /** sessionError：会话异常（LLM 超时等） */
+  private readonly onSessionError = (info: { cause: string }): void => {
+    this.post({ type: 'notice', level: 'error', message: `会话异常：${info.cause}` });
+  };
+
+  /** sessionResumeFailed：恢复操作执行失败（如存储层异常） */
+  private readonly onSessionResumeFailed = (info: { reason: string }): void => {
+    this.post({ type: 'notice', level: 'error', message: `会话恢复失败：${info.reason}` });
+  };
+
+  /** sessionResumeBlocked：恢复被阻止（暂停超时检查点已清理） */
+  private readonly onSessionResumeBlocked = (info: { reason: string }): void => {
+    this.post({ type: 'notice', level: 'error', message: `会话无法恢复：${info.reason}` });
+  };
+
+  /** sessionPauseTimedOut：暂停超时，需重新开始 */
+  private readonly onSessionPauseTimedOut = (): void => {
+    this.post({ type: 'notice', level: 'error', message: '会话暂停超时，请重新开始' });
+  };
+
+  /** guardrailError：安全规则正则编译失败（安全放行但规则未生效） */
+  private readonly onGuardrailError = (info: { message: string }): void => {
+    this.post({ type: 'notice', level: 'error', message: `安全规则未生效：${info.message}` });
+  };
+
+  // ─── 低扰信息出口（info 级 notice，P1 后续波） ───
+  // 上下文截断 / 记忆冲突 / 归档失败 / 权重持久化失败 —— 均为「知晓即可」的低频信息，
+  // 统一走 notice info 级提示条（语义分级单一通道，不插入消息区，不污染对话历史）。
+  // 提示条为独立元素，不随流式 chunk 重建，天然规避「截断提示被后续 chunk 覆盖」（排雷雷-6）。
+
+  /** contextTruncated：上下文窗口截断（消息超出 token 上限被裁剪） */
+  private readonly onContextTruncated = (info: { skippedCount: number; keptCount: number }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `上下文已截断：跳过 ${info.skippedCount} 条，保留 ${info.keptCount} 条`,
+    });
+  };
+
+  /** conflictDetected：新记忆与已有记忆冲突（contradicts 关系写入） */
+  private readonly onConflictDetected = (info: { newInsight: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `检测到记忆冲突，已记录：${info.newInsight}`,
+    });
+  };
+
+  /** archiveFailed：记忆归档失败（profile / insight / content 阶段） */
+  private readonly onArchiveFailed = (info: { stage: string; message: string }): void => {
+    this.post({ type: 'notice', level: 'info', message: `记忆归档失败（${info.stage}）：${info.message}` });
+  };
+
+  /** boostPersistFailed：boost score 持久化失败（记忆权重可能丢失） */
+  private readonly onBoostPersistFailed = (info: { message: string }): void => {
+    this.post({ type: 'notice', level: 'info', message: `记忆权重保存失败：${info.message}` });
+  };
+
+  /**
+   * 绑定会话级可观测事件 → 错误提示
+   *
+   * Agent 为单例跨面板展开共享，此处先 off 再 on（命名 handler 引用一致），
+   * 避免折叠/展开重建视图时重复注册导致重复通知。
+   */
+  private bindAgentNoticeEvents(): void {
+    if (!this._agent) return;
+    const a = this._agent;
+    a.off('sessionError', this.onSessionError);
+    a.on('sessionError', this.onSessionError);
+    a.off('sessionResumeFailed', this.onSessionResumeFailed);
+    a.on('sessionResumeFailed', this.onSessionResumeFailed);
+    a.off('sessionResumeBlocked', this.onSessionResumeBlocked);
+    a.on('sessionResumeBlocked', this.onSessionResumeBlocked);
+    a.off('sessionPauseTimedOut', this.onSessionPauseTimedOut);
+    a.on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
+    a.off('guardrailError', this.onGuardrailError);
+    a.on('guardrailError', this.onGuardrailError);
+    // P1 后续波：低扰信息（截断/冲突/归档失败/权重保存失败）→ info 级提示条
+    a.off('contextTruncated', this.onContextTruncated);
+    a.on('contextTruncated', this.onContextTruncated);
+    a.off('conflictDetected', this.onConflictDetected);
+    a.on('conflictDetected', this.onConflictDetected);
+    a.off('archiveFailed', this.onArchiveFailed);
+    a.on('archiveFailed', this.onArchiveFailed);
+    a.off('boostPersistFailed', this.onBoostPersistFailed);
+    a.on('boostPersistFailed', this.onBoostPersistFailed);
   }
 
   /**
@@ -165,6 +282,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
+    // 推送当前激活 Skill → toolbar 技能徽章（主动可见）
+    if (this._activeSkill) {
+      this.post({ type: 'chat_skill', skill: this._activeSkill });
+    }
     // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
   }
@@ -188,13 +309,33 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 处理用户切换激活 Provider（底部模型下拉框）
    *
+   * 除持久化激活态外，还做「热生效」：复用装配工厂 createDocReviewProvider（SSOT，
+   * 不重复构造）构造新 Provider 并注入 Agent，让后续对话立即使用新模型。
+   * 切换未生效时（对话进行中不可切换 / 配置缺失）回滚激活态并提示，避免
+   * UI 显示已切换但实际未生效（功能→UI 对齐排雷 P0）。
+   *
    * @param name 用户选中的 Provider 别名
    */
   private async handleSetProvider(name: string): Promise<void> {
+    // 备份当前激活名，切换失败时回滚（保持 UI 与真实生效状态一致）
+    const prev = this._providerStore.getActiveName();
     const r = await this._providerStore.setActive(name);
-    if (r.ok) {
-      // 切换成功，重新推送列表以刷新下拉框的选中态
+    if (!r.ok) return;
+    try {
+      // 热生效：Agent.setProvider 在对话进行中会抛 assertNotBusy，需捕获
+      if (this._agent) {
+        await this._agent.setProvider(await createDocReviewProvider(this._providerStore));
+      }
       await this.pushProviders();
+    } catch (err) {
+      // 切换未生效：回滚激活态 + 错误提示（不误导用户）
+      if (prev) await this._providerStore.setActive(prev);
+      await this.pushProviders();
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -346,9 +487,12 @@ function buildHtml(): string {
 <body>
   <div id="toolbar">
     <span class="title">文档打磨</span>
+    <span id="skillBadge" class="skill-badge" hidden title="当前技能"></span>
     ${buildDropdownHtml([{ id: 'clear', label: '清空对话', danger: true }])}
   </div>
   <div id="memoryBar" class="memory-bar" hidden></div>
+  <!-- 提示条（错误级 / 低扰 info）：不插入消息区，独立承载会话异常等通知 -->
+  <div id="noticeBar" class="notice-bar" hidden></div>
   <div id="messages">
     <div id="emptyState" class="empty-state" hidden>开始打磨你的设计文档<br>在下方输入你的想法，或粘贴要打磨的文档内容</div>
   </div>
@@ -380,6 +524,7 @@ function buildHtml(): string {
     const send = document.getElementById('send');
     const sendSpinner = send.querySelector('.send-spinner');
     const memoryBar = document.getElementById('memoryBar');
+    const noticeBar = document.getElementById('noticeBar');
     const inputBar = document.getElementById('inputBar');
     const clarifyBar = document.getElementById('clarifyBar');
     const clarifyText = document.getElementById('clarifyText');
@@ -521,6 +666,17 @@ function buildHtml(): string {
       memoryTimer = setTimeout(() => { memoryBar.hidden = true; }, 2500);
     }
 
+    // 提示条（错误级 / 低扰 info）：textContent 赋值防注入；
+    // 分级停留——error 醒目且停留更久，info 低扰短暂显示（对齐排雷雷-4 语义分离）
+    let noticeTimer = null;
+    function showNotice(level, message) {
+      noticeBar.className = 'notice-bar ' + level;
+      noticeBar.textContent = message;
+      noticeBar.hidden = false;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => { noticeBar.hidden = true; }, level === 'error' ? 8000 : 2500);
+    }
+
     window.addEventListener('message', (event) => {
       const msg = event.data;
       if (msg.type === 'status') {
@@ -573,6 +729,16 @@ function buildHtml(): string {
         currentProviders = msg.providers || [];
         currentActive = msg.activeName;
         renderModelPicker();
+      } else if (msg.type === 'chat_skill') {
+        // 当前技能徽章：textContent 赋值防注入，显示后主动可见
+        const badge = document.getElementById('skillBadge');
+        if (badge) {
+          badge.textContent = msg.skill;
+          badge.title = '当前技能：' + msg.skill;
+          badge.hidden = false;
+        }
+      } else if (msg.type === 'notice') {
+        showNotice(msg.level, msg.message);
       }
     });
 

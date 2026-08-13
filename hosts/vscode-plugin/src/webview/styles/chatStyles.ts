@@ -272,6 +272,59 @@ export const chatStyles = `
   .send-btn.loading .send-spinner { display: block; }
   @keyframes sendSpin { to { transform: rotate(360deg); } }
 
+  /* ============ Components：技能徽章 / 提示条 ============ */
+  /* 技能徽章（toolbar）：标题旁静态展示当前装配的 skill（doc-review / scaffold），
+   * 主动可见——用户始终知道当前对话由哪个技能驱动（功能→UI 对齐排雷 P1 第一波）。
+   * 圆点 =「技能已激活」指示，用 accent 品牌色（与发送按钮同一身份标记）。
+   * [hidden] 覆盖：display:inline-flex 会覆盖 HTML hidden 属性，需显式恢复。 */
+  .skill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    height: var(--control-h, 28px);
+    padding: 0 var(--sp-3, 8px);
+    box-sizing: border-box;
+    border-radius: var(--radius-pill, 999px);
+    background: var(--surface-card, #252526);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-md, 12px);
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .skill-badge::before {
+    content: '';
+    width: 6px; height: 6px; /* 装饰性圆点直径（非布局间距，铁律例外） */
+    border-radius: 50%;
+    background: var(--accent, #0e639c);
+    flex-shrink: 0;
+  }
+  .skill-badge[hidden] { display: none; }
+
+  /* 提示条（notice）：会话异常等错误级反馈独立于此条展示，不插入消息区，
+   * 不污染对话历史（排雷雷-4 修正：错误级与 memoryBar 低扰语义分离）。
+   * 分级：error 醒目（inputValidation error 色）、info 低扰（同 memoryBar 语义）。
+   * [hidden] 覆盖：display:flex 会覆盖 HTML hidden 属性，需显式恢复。 */
+  .notice-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    font-size: var(--font-md, 12px);
+    line-height: 1.5;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  .notice-bar[hidden] { display: none; }
+  .notice-bar.info {
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--vscode-inputValidation-infoBackground, rgba(21,126,251,.15));
+  }
+  .notice-bar.error {
+    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    background: var(--vscode-inputValidation-errorBackground, #442726);
+  }
+
   /* ============ Components：记忆条 / 主动提问条 ============ */
   /* 记忆条（想起/已沉淀） */
   .memory-bar {
