@@ -1,0 +1,7 @@
+# VS Code 插件产物与依赖
+dist/
+node_modules/
+*.vsix
+
+# 会话/记忆本地数据（Memora 工作区存储）
+.memora/
