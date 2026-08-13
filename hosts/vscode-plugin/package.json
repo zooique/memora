@@ -13,22 +13,57 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "memoraDocReview.open",
-        "title": "Memora: 打开设计文档打磨"
+        "title": "Memora: 打开设计文档打磨",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "memoraDocReview.review",
-        "title": "Memora: 审阅当前文档自洽性"
+        "title": "Memora: 审阅当前文档自洽性",
+        "icon": "$(checklist)"
       },
       {
         "command": "memoraDocReview.scaffold",
-        "title": "Memora: 根据设计文档生成代码骨架"
+        "title": "Memora: 根据设计文档生成代码骨架",
+        "icon": "$(repo-create)"
       }
-    ]
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "memoraDocReview.review",
+          "when": "view == memora.docReview.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "memoraDocReview.scaffold",
+          "when": "view == memora.docReview.chat",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "memora",
+          "title": "Memora",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "memora": [
+        {
+          "type": "webview",
+          "id": "memora.docReview.chat",
+          "name": "文档打磨"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

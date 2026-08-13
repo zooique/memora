@@ -18,6 +18,8 @@ export type WebviewToExtensionMessage =
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
   | { type: 'user'; text: string }
+  /** 历史/流式 assistant 消息（流式输出经 chunk 拼接，历史回放用 text 完整段） */
+  | { type: 'assistant'; text: string }
   | { type: 'chunk'; content: string }
   | { type: 'done' }
   | { type: 'error'; message: string }

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Memora：一颗由对话生长出的"记忆树" -->
+  <!-- 树干：三条斜线汇聚，象征对话沉淀 -->
+  <path d="M12 19V9" />
+  <path d="M12 9c0-3 2-5 5-5" />
+  <path d="M12 9c0-3-2-5-5-5" />
+  <!-- 树冠：两层圆点，象征记忆节点 -->
+  <circle cx="12" cy="6" r="1.6" />
+  <circle cx="17" cy="4" r="1.6" />
+  <circle cx="7" cy="4" r="1.6" />
+  <!-- 底座：会话承载 -->
+  <path d="M5 19h14" />
+</svg>

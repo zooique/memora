@@ -2,7 +2,7 @@
  * Memora Doc Review — VS Code 插件入口（ADR-VC-001 宿主）
  *
  * 职责：
- *   - 注册命令（委托到 commands/ 目录）
+ *   - 注册侧边栏视图（对话打磨）+ 命令（委托到 commands/ 目录）
  *   - 懒加载装配 Agent（getOrCreateAgent）
  *
  * 结构（未来目录规划见 docs/directory-structure.md）：
@@ -15,6 +15,8 @@
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { assembleDocReviewAgent } from './host/assemble.js';
+import { WorkspaceSessionStore } from './host/sessionStore.js';
+import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { openDocReviewCommand } from './commands/openDocReview.js';
 import { reviewDocumentCommand } from './commands/reviewDocument.js';
 import { scaffoldProjectCommand } from './commands/scaffoldProject.js';
@@ -36,10 +38,21 @@ function getOrCreateAgent(projectPath: string): Promise<Agent> {
 
 /** 插件激活入口 */
 export function activate(context: vscode.ExtensionContext): void {
-  // 命令：打开设计文档打磨面板
+  // 侧边栏视图：对话打磨面板（u1/u2 UX 改进）
+  // sessionStore 与 assemble 同路径（.memora/sessions.json），用于对话持久化/恢复
+  const sessionStore = new WorkspaceSessionStore(
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
+  );
+  sessionStore.load();
+  const chatProvider = new MemoraChatViewProvider(sessionStore);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
+  );
+
+  // 命令：打开设计文档打磨面板（聚焦侧边栏视图）
   context.subscriptions.push(
     vscode.commands.registerCommand('memoraDocReview.open', () =>
-      openDocReviewCommand(getOrCreateAgent),
+      openDocReviewCommand(getOrCreateAgent, chatProvider),
     ),
   );
 
