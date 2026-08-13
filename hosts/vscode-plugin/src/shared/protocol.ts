@@ -9,11 +9,45 @@
  *   - extension → Webview：Agent 流式输出（user/chunk/done/error）
  */
 
+/**
+ * LLM Provider 配置（大模型配置面板的数据模型）
+ *
+ * 对齐 memora-sprite 的 LlmProviderConfig 模式 + 内核 ProviderConfig：
+ * - name 为唯一别名（持久化 key，编辑时禁用）
+ * - apiKey 存 SecretStorage（不落盘 settings.json），模型/baseUrl 存 configuration
+ * - provider 标识（'cloud'|'local'），仅用于日志/模式展示
+ */
+export interface LlmProviderConfig {
+  /** 唯一别名（持久化 key，仅允许英文数字.-_） */
+  name: string;
+  /** 显示名称 */
+  displayName: string;
+  /** 模型标识（如 deepseek-chat） */
+  model: string;
+  /** OpenAI 兼容 API Base URL */
+  baseUrl: string;
+  /** API Key（SecretStorage 存储；传输给 webview 时为脱敏值或空） */
+  apiKey: string;
+  /** Provider 标识（'cloud' | 'local'） */
+  provider?: string;
+}
+
 /** Webview → extension 消息 */
 export type WebviewToExtensionMessage =
   | { type: 'send'; text: string }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
-  | { type: 'clarify_answer'; text: string };
+  | { type: 'clarify_answer'; text: string }
+  // ─── 大模型配置面板消息 ───
+  /** 请求加载 Provider 列表 */
+  | { type: 'cfg_load' }
+  /** 保存（新增/编辑）一个 Provider */
+  | { type: 'cfg_save'; config: LlmProviderConfig; isEditing: boolean }
+  /** 删除一个 Provider */
+  | { type: 'cfg_delete'; name: string }
+  /** 设为当前激活 Provider */
+  | { type: 'cfg_set_active'; name: string }
+  /** 测试 Provider 连接 */
+  | { type: 'cfg_test'; config: LlmProviderConfig };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -37,4 +71,9 @@ export type ExtensionToWebviewMessage =
    * 让开发者「看见」跨会话记忆在工作（主动可见，非黑盒）。
    * action: 'recalled' 表示本轮召回 N 条记忆；'added' 表示本轮沉淀记忆。
    */
-  | { type: 'memory'; action: 'recalled' | 'added'; count: number };
+  | { type: 'memory'; action: 'recalled' | 'added'; count: number }
+  // ─── 大模型配置面板消息 ───
+  /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
+  | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }
+  /** 配置操作结果（保存/删除/设当前/测试） */
+  | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' };

@@ -17,10 +17,14 @@ import { createDocReviewProvider } from './llmConfig.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 
+import type { ProviderStore } from '../providers/providerStore.js';
+
 /** 装配参数 */
 export interface AssembleDocReviewOptions {
   /** 工作区路径（memora projectPath） */
   projectPath: string;
+  /** 大模型配置存储（配置面板装配后注入） */
+  providerStore?: ProviderStore;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -43,10 +47,10 @@ function resolveSkillConfigDir(): string {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleDocReviewAgent(options: AssembleDocReviewOptions): Promise<Agent> {
-  const { projectPath, env } = options;
+  const { projectPath, providerStore, env } = options;
 
-  // 1. 创建 LLM Provider（宿主注入）
-  const provider = createDocReviewProvider(env ?? process.env);
+  // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
+  const provider = await createDocReviewProvider(providerStore, env ?? process.env);
 
   // 2. 创建工作区记忆存储 + 会话存储（宿主注入持久化）
   const storage = new WorkspaceStorage(projectPath);

@@ -16,7 +16,9 @@ import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { assembleDocReviewAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
+import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
+import { MemoraConfigViewProvider } from '../webview/panels/providerConfigPanel.js';
 import { openDocReviewCommand } from './commands/openDocReview.js';
 import { reviewDocumentCommand } from './commands/reviewDocument.js';
 import { scaffoldProjectCommand } from './commands/scaffoldProject.js';
@@ -25,9 +27,12 @@ import { scaffoldProjectCommand } from './commands/scaffoldProject.js';
 let agentPromise: Promise<Agent> | null = null;
 
 /** 获取（或创建）指定工作区的 Agent 实例 */
-function getOrCreateAgent(projectPath: string): Promise<Agent> {
+function getOrCreateAgent(
+  projectPath: string,
+  providerStore: ProviderStore,
+): Promise<Agent> {
   if (!agentPromise) {
-    agentPromise = assembleDocReviewAgent({ projectPath }).catch((err) => {
+    agentPromise = assembleDocReviewAgent({ projectPath, providerStore }).catch((err) => {
       // 装配失败则重置，下次命令重试
       agentPromise = null;
       throw err;
@@ -38,6 +43,9 @@ function getOrCreateAgent(projectPath: string): Promise<Agent> {
 
 /** 插件激活入口 */
 export function activate(context: vscode.ExtensionContext): void {
+  // 大模型配置存储（providerStore 供配置面板 + Agent 装配共用）
+  const providerStore = new ProviderStore(context.secrets);
+
   // 侧边栏视图：对话打磨面板（u1/u2 UX 改进）
   // sessionStore 与 assemble 同路径（.memora/sessions.json），用于对话持久化/恢复
   const sessionStore = new WorkspaceSessionStore(
@@ -49,24 +57,40 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
+  // 侧边栏视图：大模型配置面板
+  const configProvider = new MemoraConfigViewProvider(providerStore);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(MemoraConfigViewProvider.viewType, configProvider),
+  );
+
   // 命令：打开设计文档打磨面板（聚焦侧边栏视图）
   context.subscriptions.push(
     vscode.commands.registerCommand('memoraDocReview.open', () =>
-      openDocReviewCommand(getOrCreateAgent, chatProvider),
+      openDocReviewCommand(
+        (projectPath) => getOrCreateAgent(projectPath, providerStore),
+        chatProvider,
+      ),
     ),
   );
 
   // 命令：审阅当前文档自洽性（切片 B，复用 doc-review skill）
   context.subscriptions.push(
     vscode.commands.registerCommand('memoraDocReview.review', () =>
-      reviewDocumentCommand(getOrCreateAgent),
+      reviewDocumentCommand((projectPath) => getOrCreateAgent(projectPath, providerStore)),
     ),
   );
 
   // 命令：根据设计文档生成代码骨架（切片 C，复用 scaffold skill）
   context.subscriptions.push(
     vscode.commands.registerCommand('memoraDocReview.scaffold', () =>
-      scaffoldProjectCommand(getOrCreateAgent),
+      scaffoldProjectCommand((projectPath) => getOrCreateAgent(projectPath, providerStore)),
+    ),
+  );
+
+  // 命令：配置大模型（聚焦配置侧边栏视图）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memoraDocReview.configureModel', () =>
+      void vscode.commands.executeCommand(`${MemoraConfigViewProvider.viewType}.focus`),
     ),
   );
 }

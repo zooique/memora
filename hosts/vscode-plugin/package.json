@@ -30,8 +30,28 @@
         "command": "memoraDocReview.scaffold",
         "title": "Memora: 根据设计文档生成代码骨架",
         "icon": "$(repo-create)"
+      },
+      {
+        "command": "memoraDocReview.configureModel",
+        "title": "Memora: 配置大模型",
+        "icon": "$(gear)"
       }
     ],
+    "configuration": {
+      "title": "Memora",
+      "properties": {
+        "memoraDocReview.providers": {
+          "type": "array",
+          "default": [],
+          "description": "已配置的大模型服务商列表（不含 API Key，Key 存储在安全存储中）"
+        },
+        "memoraDocReview.activeProvider": {
+          "type": "string",
+          "default": "",
+          "description": "当前激活的大模型服务商别名"
+        }
+      }
+    },
     "menus": {
       "view/title": [
         {
@@ -61,6 +81,11 @@
           "type": "webview",
           "id": "memora.docReview.chat",
           "name": "文档打磨"
+        },
+        {
+          "type": "webview",
+          "id": "memora.docReview.config",
+          "name": "大模型配置"
         }
       ]
     }

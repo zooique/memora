@@ -72,7 +72,7 @@ async function main(): Promise<void> {
     projectPath: workspace,
     dataDir: join(workspace, '.memora'),
     configDir: join(process.cwd(), 'src', 'extension', 'skills'),
-    provider: createDocReviewProvider({ MEMORA_BASE_URL: baseUrl, MEMORA_MODEL: model, MEMORA_API_KEY: apiKey }),
+    provider: createDocReviewProvider(undefined, { MEMORA_BASE_URL: baseUrl, MEMORA_MODEL: model, MEMORA_API_KEY: apiKey }),
     storage,
     sessionStore,
     permission: 'owner',
