@@ -58,6 +58,15 @@ export type ExtensionToWebviewMessage =
   | { type: 'done' }
   | { type: 'error'; message: string }
   /**
+   * LLM 运行状态（P0-2 状态可视化）
+   *
+   * 让用户看见 Agent 正在做什么，而非静默等待：
+   *   - 'thinking'：Agent 正在生成（展示加载动画，输入框禁用）
+   *   - 'done'：本轮结束（恢复输入框）
+   * 与 done/error 配合，构成完整的「进行中 → 结束」状态机。
+   */
+  | { type: 'status'; state: 'thinking' | 'done' }
+  /**
    * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
    *
    * 由 extension host 监听内核 needClarify 事件后转发，触发 Agent 暂停（pause），

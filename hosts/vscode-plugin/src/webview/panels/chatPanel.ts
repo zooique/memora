@@ -143,7 +143,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.consumeFlow(this._agent.resumeExecution(input));
   }
 
-  /** 消费 Agent 流：转发 text chunk，监听主动提问事件 */
+  /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态 */
   private async consumeFlow(gen: AsyncGenerator<AgentChunk, void, unknown>): Promise<void> {
     if (!this._agent) return;
     // 监听主动提问事件 → 渲染提问框
@@ -153,6 +153,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._agent.on('questionPending', onPendingQuestion);
 
     let fullContent = '';
+    // P0-2：进入生成状态（webview 展示加载动画 + 禁用输入）
+    this.post({ type: 'status', state: 'thinking' });
     try {
       for await (const chunk of gen) {
         if (chunk.type === 'text' && chunk.content) {
@@ -167,6 +169,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } finally {
       this._agent.off('questionPending', onPendingQuestion);
     }
+    // 结束状态（恢复输入框）；错误时也恢复，避免卡死
+    this.post({ type: 'status', state: 'done' });
     this.post({ type: 'done' });
   }
 }
@@ -192,6 +196,11 @@ function buildHtml(): string {
   #input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--vscode-input-border, #ccc); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
   button { padding: 8px 14px; border-radius: 6px; border: none; background: var(--vscode-button-background, #1a73e8); color: var(--vscode-button-foreground, #fff); cursor: pointer; }
   .memory-bar { padding: 4px 12px; font-size: 12px; color: var(--vscode-descriptionForeground, #5f6368); background: var(--vscode-inputValidation-infoBackground, #e6f4ea); border-bottom: 1px solid var(--vscode-panel-border, #ceead6); }
+  /* P0-2：LLM 运行状态条（生成中动画） */
+  #statusBar { display: none; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; color: var(--vscode-descriptionForeground, #5f6368); border-bottom: 1px solid var(--vscode-panel-border, #ddd); }
+  #statusBar.visible { display: flex; }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--vscode-panel-border, #ccc); border-top-color: var(--vscode-button-background, #1a73e8); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   #clarifyBar { display: none; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--vscode-charts-yellow, #daa520); background: var(--vscode-inputValidation-warningBackground, #fff8e1); }
   #clarifyBar.visible { display: flex; }
   #clarifyText { font-size: 12px; color: var(--vscode-descriptionForeground, #6d5f00); }
@@ -201,6 +210,7 @@ function buildHtml(): string {
 </head>
 <body>
   <div id="memoryBar" class="memory-bar" hidden></div>
+  <div id="statusBar"><span class="spinner"></span><span id="statusText">Agent 思考中…</span></div>
   <div id="messages"></div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -219,11 +229,26 @@ function buildHtml(): string {
     const input = document.getElementById('input');
     const send = document.getElementById('send');
     const memoryBar = document.getElementById('memoryBar');
+    const statusBar = document.getElementById('statusBar');
     const inputBar = document.getElementById('inputBar');
     const clarifyBar = document.getElementById('clarifyBar');
     const clarifyText = document.getElementById('clarifyText');
     const clarifyInput = document.getElementById('clarifyInput');
     const clarifySend = document.getElementById('clarifySend');
+
+    // P0-2：切换 LLM 运行状态（thinking 显示状态条 + 禁用输入；done 恢复）
+    function setStatus(state) {
+      if (state === 'thinking') {
+        statusBar.classList.add('visible');
+        input.disabled = true;
+        send.disabled = true;
+      } else {
+        statusBar.classList.remove('visible');
+        input.disabled = false;
+        send.disabled = false;
+        input.focus();
+      }
+    }
 
     function append(role, text) {
       const div = document.createElement('div');
@@ -244,7 +269,9 @@ function buildHtml(): string {
 
     window.addEventListener('message', (event) => {
       const msg = event.data;
-      if (msg.type === 'user') {
+      if (msg.type === 'status') {
+        setStatus(msg.state);
+      } else if (msg.type === 'user') {
         append('user', msg.text);
       } else if (msg.type === 'assistant') {
         // 历史回放：完整 assistant 消息直接渲染（不进入流式拼接）
