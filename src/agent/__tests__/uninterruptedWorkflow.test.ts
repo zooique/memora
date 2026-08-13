@@ -1897,7 +1897,16 @@ class ToolThenToolThenTextProvider extends LlmProvider {
   readonly name = 'mock-multi-turn';
   private toolTurnsYielded = 0;
 
-  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+  async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    // RoundSummaryGenerator（记忆即摘要）在 postProcess 用主 provider 生成摘要——
+    // 识别摘要请求并返回有效 JSON，避免消耗主对话工具计数（否则污染后续续跑的 tool_call 序列，
+    // 导致 resume 时提前进入文本分支、requestPause 不触发）。
+    const sysContent = messages.find((m) => m.role === 'system')?.content;
+    if (typeof sysContent === 'string' && sysContent.includes('对话摘要生成器')) {
+      yield { content: JSON.stringify({ summary: '测试摘要', type: 'general' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
     if (this.toolTurnsYielded < 2) {
       this.toolTurnsYielded += 1;
       yield {
