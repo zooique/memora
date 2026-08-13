@@ -1781,3 +1781,79 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
     expect(toolExecutor).not.toHaveBeenCalled();
   });
 });
+
+describe('AgentLoop · 主动提问 [ASK] 解析', () => {
+  it('LLM 输出含 [ASK] 时 yield question_pending 并返回 paused', async () => {
+    const onPendingQuestion = vi.fn();
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '[ASK] 结尾想要什么基调？' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onPendingQuestion,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('写个故事')) {
+      chunks.push(chunk);
+    }
+
+    // 触发 onPendingQuestion 回调，携带解析出的问题
+    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
+    expect(onPendingQuestion).toHaveBeenCalledWith([
+      { slot: 'ask', question: '结尾想要什么基调？' },
+    ]);
+    // yield 结构化 question_pending chunk
+    const qp = chunks.filter((c) => c.type === 'question_pending');
+    expect(qp).toHaveLength(1);
+    if (qp[0]?.type === 'question_pending') {
+      expect(qp[0].questions[0]!.question).toBe('结尾想要什么基调？');
+    }
+    // 最后是 paused，而非 done（等待用户回答后续跑）
+    expect(chunks[chunks.length - 1]!.type).toBe('paused');
+  });
+
+  it('支持一行内多条 [ASK] 分别解析', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([
+        { content: '[ASK] 主角职业是？\n[ASK] 故事发生在哪个城市？' },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onPendingQuestion: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('写个故事')) {
+      chunks.push(chunk);
+    }
+
+    const qp = chunks.filter((c) => c.type === 'question_pending');
+    expect(qp).toHaveLength(2);
+    if (qp[0]?.type === 'question_pending') {
+      expect(qp[0].questions[0]!.question).toBe('主角职业是？');
+    }
+    if (qp[1]?.type === 'question_pending') {
+      expect(qp[1].questions[0]!.question).toBe('故事发生在哪个城市？');
+    }
+  });
+
+  it('普通输出不含 [ASK] 时走正常对话流（不误判）', async () => {
+    const onPendingQuestion = vi.fn();
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '好的，这是一个普通回复，没有提问。' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onPendingQuestion,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('打招呼')) {
+      chunks.push(chunk);
+    }
+
+    expect(onPendingQuestion).not.toHaveBeenCalled();
+    expect(chunks.some((c) => c.type === 'question_pending')).toBe(false);
+    // 最后是 done（正常结束）
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+});

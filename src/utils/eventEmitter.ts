@@ -38,6 +38,13 @@ export const AGENT_EVENTS = {
   /** 任务表已生成（P2.5-2: LLM 通过 task_table_write 生成了任务表，宿主可展示接受/丢弃入口） */
   taskTableGenerated: 'taskTableGenerated',
   needClarify: 'needClarify',
+  /**
+   * Agent 主动提问（回答中检测到 LLM 结构化输出 [ASK] 时触发）
+   *
+   * 与 needClarify 同构但触发源不同：needClarify 来自目标槽位补全链（P4），
+   * questionPending 来自回答中 LLM 输出解析。两者共享同一套暂停/恢复机制。
+   */
+  questionPending: 'questionPending',
   goalDriftDetected: 'goalDriftDetected',
   /** 会话暂停（用户/Agent/系统触发） */
   sessionPaused: 'sessionPaused',
@@ -185,6 +192,17 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     question: string;
     /** 默认选项（可选） */
     options?: string[];
+  }[];
+  /**
+   * Agent 主动提问（回答中 LLM 结构化输出 [ASK] 解析结果）
+   *
+   * 与 needClarify 载荷同构，宿主可渲染提问 UI；用户回答后经 resumeExecution 续跑。
+   */
+  questionPending: {
+    /** 目标槽位（当前统一为 'ask'，为未来多槽位预留） */
+    slot: string;
+    /** 问题文本 */
+    question: string;
   }[];
   /**
    * 目标漂移检测结果（P3.1 目标版本一致性校验）

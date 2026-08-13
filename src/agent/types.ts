@@ -114,6 +114,15 @@ export type AgentChunk =
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'paused' }
   /**
+   * 主动提问（mvp-scope §三：Agent 在歧义/决策/缺信息时征询用户）
+   *
+   * 回答中生成阶段检测到 LLM 结构化输出 `[ASK] 问题` 时 yield。
+   * 触发后 Agent 暂停（翻 PAUSED），等待用户在提问输入框回答。
+   * 宿主据此渲染提问 UI；用户回答走 resumeExecution 续跑（非 Trigger）。
+   * 与 needClarify（P4 目标槽位补全）同构但触发源不同：本事件来自回答中 LLM 输出。
+   */
+  | { type: 'question_pending'; questions: { slot: string; question: string }[] }
+  /**
    * Handoff 衔接决策
    *
    * 回答后阶段基于 L2 策略的 endingHandoff 配置，决定当前轮次结束后

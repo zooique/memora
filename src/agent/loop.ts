@@ -132,6 +132,13 @@ export interface AgentLoopOptions {
    * @returns 是否跳过执行及之前的结果
    */
   preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
+  /**
+   * 主动提问回调（当回答中检测到 LLM 结构化输出 `[ASK] 问题` 时调用）
+   *
+   * Agent 装配时由 Agent 注入，用于发射 questionPending 事件。
+   * loop 自身不处理 UI，仅把解析结果回调出去。
+   */
+  onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -183,6 +190,13 @@ export class AgentLoop {
    * public 可写字段，属反向收口——把封装拆开换少一层包装，导致本类既提供只读 getter
    * `isPauseRequested` 又允许外部随意赋值，不变式无处可守。写入口收敛为下方两个方法。 */
   private pauseRequested = false;
+  /**
+   * 主动提问回调（回答中检测到 LLM 结构化输出 `[ASK]` 时调用）
+   *
+   * 由 Agent 注入，用于 emit questionPending 事件 + 触发暂停。loop 自身不感知宿主。
+   * 传参为解析出的问题列表（slot/question）。
+   */
+  onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
   /**
    * 自审查最大轮数（由 Agent 根据 L2 策略 reflect.loopContinue 设置，Phase 9）
    *
@@ -250,6 +264,8 @@ export class AgentLoop {
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.guardrailRules = opts.guardrailRules ?? [];
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
+    // 主动提问回调（Agent 装配时注入，loop 只负责在检测到 [ASK] 时回调）
+    this.onPendingQuestion = opts.onPendingQuestion;
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
@@ -871,12 +887,12 @@ export class AgentLoop {
    *   - 输出护栏检查（block 时 yield text + done，warn 时 yield text）
    *   - yield done 结束本轮对话
    *
-   * @yields text（空响应兜底 / guardrail block/warn）/ done
-   * @returns 'done'（调用方收到后 return）
+   * @yields text（空响应兜底 / guardrail block/warn）/ question_pending / done
+   * @returns 'done'（调用方收到后 return）或 'paused'（检测到主动提问，需用户回答后续跑）
    */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
-  ): AsyncGenerator<AgentChunk, 'done', unknown> {
+  ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
     // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
     // 注意：护栏检查必须在 messages.push 之前执行，否则被 block 的内容仍会进入下一轮 LLM 上下文
     const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
@@ -903,6 +919,22 @@ export class AgentLoop {
       return 'done';
     }
 
+    // 主动提问检测：LLM 以结构化 `[ASK] 问题` 形式输出（mvp-scope §三 约定优于检测）
+    // 检测到主动提问时：不把问题文本作为普通对话推送，而是暂停等待用户回答后续跑。
+    // 约定：`[ASK]` 位于行首（可多条），每条占一行；`[ASK]` 之后直到行尾为问题文本。
+    const pendingQuestions = this.extractAskQuestions(llmResult.fullContent);
+    if (pendingQuestions.length > 0) {
+      // 回调（Agent 装配时注入）已在此时触发 pause（设 pauseRequested + 状态机 pendingPause），
+      // 因此 yield paused 后 consumeExecutionStream 会消费 pendingPause 并翻 PAUSED。
+      this.onPendingQuestion?.(pendingQuestions);
+      // yield question_pending 供宿主渲染提问 UI
+      for (const q of pendingQuestions) {
+        yield { type: 'question_pending', questions: [q] };
+      }
+      yield { type: 'paused' };
+      return 'paused';
+    }
+
     // 护栏通过后再 push 到对话历史——确保被 block/warn 的内容不污染 LLM 上下文
     if (llmResult.fullContent) {
       this.messages.push({ role: 'assistant', content: llmResult.fullContent });
@@ -924,6 +956,30 @@ export class AgentLoop {
 
     yield { type: 'done' };
     return 'done';
+  }
+
+  /**
+   * 从 LLM 输出中提取结构化主动提问（`[ASK] 问题`）
+   *
+   * 约定优于检测（mvp-scope §三）：LLM 提问时以结构化形式输出，
+   * 而非靠宿主从 text chunk 猜"是不是提问"。匹配规则：
+   *   - 行首出现 `[ASK]`（大小写不敏感），其后到行尾为问题文本
+   *   - 可多条，每条占一行
+   *   - 非提问的正常输出不含 `[ASK]`，返回空数组走正常对话流
+   *
+   * @param fullContent LLM 完整输出文本
+   * @returns 解析出的问题列表
+   */
+  private extractAskQuestions(fullContent: string): { slot: string; question: string }[] {
+    const questions: { slot: string; question: string }[] = [];
+    for (const line of fullContent.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      const match = /^\[ASK\][\s:：]*(.+)$/i.exec(trimmed);
+      if (match && match[1]?.trim()) {
+        questions.push({ slot: 'ask', question: match[1].trim() });
+      }
+    }
+    return questions;
   }
 
   /**

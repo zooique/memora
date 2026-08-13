@@ -2040,6 +2040,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         source: pendingInfo?.source ?? 'user',
       });
     };
+    // 主动提问（mvp-scope §三）：回答中检测到 LLM 结构化输出 [ASK] 时，
+    // 发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停，等待用户回答。
+    // 与 needClarify（P4 目标槽位补全）触发源不同，但共享 pause/resume 机制。
+    this.loop.onPendingQuestion = (questions) => {
+      if (questions.length === 0) return;
+      // 发射结构化事件，宿主据此渲染提问输入框
+      this.emit(AGENT_EVENTS.questionPending, questions);
+      // 触发软暂停：handleTextResponse 返回 'paused'，consumeExecutionStream 翻 PAUSED
+      // requestPause 已负责记录 reason/source 和状态检查
+      const reason = `需要澄清：${questions.map((q) => q.question).join('; ')}`;
+      this.requestPause(reason, 'agent');
+    };
     this.loop.onRoundBoundary = (roundInfo) => {
       // onRoundBoundary 在每次迭代完成后触发
       // 通过 SessionManager.completeRound 写入 roundLog

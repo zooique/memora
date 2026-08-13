@@ -62,16 +62,22 @@ export function openChatPanel(agent: Agent, docContext?: string): void {
     agent.off('memoryAdded', onAdded);
   });
 
-  // 处理来自 Webview 的用户输入 → 流式对话
+  // 处理来自 Webview 的用户输入 → 流式对话 / 主动提问回答
   panel.webview.onDidReceiveMessage(async (msg: WebviewToExtensionMessage) => {
     if (msg.type === 'send' && msg.text) {
       await handleSend(panel, agent, msg.text, docContext);
+    } else if (msg.type === 'clarify_answer' && msg.text) {
+      // 用户回答了 Agent 的主动提问 → resumeExecution 续跑原任务
+      await handleResume(panel, agent, msg.text);
     }
   });
 }
 
 /**
  * 处理一次用户输入：流式调用 Agent.chat 并回发 chunk
+ *
+ * 主动提问（need_clarify）时 chat() 会 yield done 并暂停（状态机翻 PAUSED），
+ * 用户在提问框回答后走 handleResume → resumeExecution 续跑，而非新开一轮 chat。
  *
  * @param docContext 当前打磨文档内容（可选）。非空时注入用户输入前缀，
  *                   让 Agent 围绕该文档打磨；为空则退化为普通对话。
@@ -94,10 +100,57 @@ async function handleSend(
     ? `[当前打磨文档内容]\n${docContext}\n[/当前打磨文档内容]\n\n用户请求：${input}`
     : input;
 
+  await consumeFlow(panel, agent, agent.chat(chatInput));
+}
+
+/**
+ * 处理用户对主动提问的回答：resumeExecution 续跑
+ *
+ * @param input 用户回答文本（作为补充输入注入，走恢复通道非 Trigger，不触发 recall/角色重匹配）
+ */
+async function handleResume(
+  panel: vscode.WebviewPanel,
+  agent: Agent,
+  input: string,
+): Promise<void> {
+  const post = (m: ExtensionToWebviewMessage) => {
+    void panel.webview.postMessage(m);
+  };
+
+  // 用户回答上屏（作为对话中的用户消息展示）
+  post({ type: 'user', text: input });
+
+  await consumeFlow(panel, agent, agent.resumeExecution(input));
+}
+
+/**
+ * 消费 Agent 流式输出，处理主动提问暂停
+ *
+ * 统一消费 chat() / resumeExecution() 的流：转发 text chunk，
+ * 并监听 needClarify 事件——事件触发时 Agent 已暂停，由 Webview 渲染提问框。
+ *
+ * @param gen Agent 流（chat 或 resumeExecution 的 AsyncGenerator）
+ */
+async function consumeFlow(
+  panel: vscode.WebviewPanel,
+  agent: Agent,
+  gen: AsyncGenerator<AgentChunk, void, unknown>,
+): Promise<void> {
+  const post = (m: ExtensionToWebviewMessage) => {
+    void panel.webview.postMessage(m);
+  };
+
+  // 监听主动提问事件：转发给 Webview 渲染提问输入框（薄壳，不改内核）
+  const onPendingQuestion = (questions: { slot: string; question: string }[]) => {
+    post({ type: 'need_clarify', questions });
+  };
+  agent.on('questionPending', onPendingQuestion);
+
   let done = false;
   try {
-    // 流式消费 Agent 输出
-    for await (const chunk of agent.chat(chatInput) as AsyncIterable<AgentChunk>) {
+    // 流式消费 Agent 输出；主动提问（questionPending）时流以 paused 结束并翻 PAUSED，
+    // 由 questionPending 事件驱动 Webview 渲染提问输入框，用户回答后经 resumeExecution 续跑
+    for await (const chunk of gen) {
       if (chunk.type === 'text' && chunk.content) {
         post({ type: 'chunk', content: chunk.content });
       }
@@ -105,6 +158,8 @@ async function handleSend(
     done = true;
   } catch (err) {
     post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+  } finally {
+    agent.off('questionPending', onPendingQuestion);
   }
   if (done) {
     post({ type: 'done' });
@@ -131,11 +186,24 @@ function buildHtml(): string {
   #input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
   button { padding: 8px 14px; border-radius: 6px; border: none; background: #1a73e8; color: #fff; cursor: pointer; }
   .memory-bar { padding: 4px 12px; font-size: 12px; color: #5f6368; background: #e6f4ea; border-bottom: 1px solid #ceead6; }
+  /* 主动提问输入框：Agent 暂停征询时显示，替代普通输入框 */
+  #clarifyBar { display: none; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid #daa520; background: #fff8e1; }
+  #clarifyBar.visible { display: flex; }
+  #clarifyText { font-size: 12px; color: #6d5f00; }
+  #clarifyRow { display: flex; gap: 6px; }
+  #clarifyInput { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
 </style>
 </head>
 <body>
   <div id="memoryBar" class="memory-bar" hidden></div>
   <div id="messages"></div>
+  <div id="clarifyBar">
+    <div id="clarifyText"></div>
+    <div id="clarifyRow">
+      <input id="clarifyInput" type="text" placeholder="回答 Agent 的问题，回车提交……" />
+      <button id="clarifySend">提交回答</button>
+    </div>
+  </div>
   <div id="inputBar">
     <input id="input" type="text" placeholder="在文档上打磨你的想法……" />
     <button id="send">发送</button>
@@ -146,6 +214,11 @@ function buildHtml(): string {
     const input = document.getElementById('input');
     const send = document.getElementById('send');
     const memoryBar = document.getElementById('memoryBar');
+    const inputBar = document.getElementById('inputBar');
+    const clarifyBar = document.getElementById('clarifyBar');
+    const clarifyText = document.getElementById('clarifyText');
+    const clarifyInput = document.getElementById('clarifyInput');
+    const clarifySend = document.getElementById('clarifySend');
 
     function append(role, text) {
       const div = document.createElement('div');
@@ -180,6 +253,14 @@ function buildHtml(): string {
         messages.scrollTop = messages.scrollHeight;
       } else if (msg.type === 'error') {
         append('error', msg.message);
+      } else if (msg.type === 'need_clarify') {
+        // 主动提问：显示提问框，隐藏普通输入框，等待用户回答
+        clarifyText.textContent =
+          'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
+        clarifyInput.value = '';
+        clarifyBar.classList.add('visible');
+        inputBar.hidden = true;
+        clarifyInput.focus();
       } else if (msg.type === 'memory') {
         // 记忆可观测出口：召回 / 沉淀提示
         if (msg.action === 'recalled') {
@@ -198,6 +279,18 @@ function buildHtml(): string {
     }
     send.addEventListener('click', sendMessage);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+    // 主动提问回答提交
+    function sendClarifyAnswer() {
+      const text = clarifyInput.value.trim();
+      if (!text) return;
+      clarifyInput.value = '';
+      clarifyBar.classList.remove('visible');
+      inputBar.hidden = false;
+      vscode.postMessage({ type: 'clarify_answer', text });
+    }
+    clarifySend.addEventListener('click', sendClarifyAnswer);
+    clarifyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendClarifyAnswer(); });
   </script>
 </body>
 </html>`;

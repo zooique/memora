@@ -10,11 +10,10 @@
  */
 
 /** Webview → extension 消息 */
-export type WebviewToExtensionMessage = {
-  type: 'send';
-  /** 用户输入文本 */
-  text: string;
-};
+export type WebviewToExtensionMessage =
+  | { type: 'send'; text: string }
+  /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
+  | { type: 'clarify_answer'; text: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -22,6 +21,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'chunk'; content: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
+  /**
+   * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
+   *
+   * 由 extension host 监听内核 needClarify 事件后转发，触发 Agent 暂停（pause），
+   * 等待用户在提问输入框回答；收到 clarify_answer 后调 resumeExecution 续跑。
+   */
+  | { type: 'need_clarify'; questions: { slot: string; question: string; options?: string[] }[] }
   /**
    * 记忆活动提示（任务 D 可观测出口）
    *
