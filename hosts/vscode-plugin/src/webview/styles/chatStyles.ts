@@ -158,10 +158,11 @@ export const chatStyles = `
    *     用 !important 表达「高层级覆盖低层级」的架构意图（对齐令牌铁律例外）
    *   - 显式接管所有伪元素 → 保证只有 1 个箭头
    *   - 菜单强制 left:0（向右展开），禁止 right:0（向左溢出）
-   *   - .model-picker 容器 flex:1 自适应填充 footer 空间
+   *   - 宽度智能自适应模型名（对齐 Trae）：不撑满 footer，
+   *     刚好完整显示模型名 + 箭头；超长名才触发省略兜底
    * ================================================= */
   .model-picker {
-    flex: 1 1 auto; /* 自适应填充 footer 空间 */
+    flex: 0 0 auto; /* 宽度由内容决定，不撑满 footer */
     min-width: 0;
   }
   /* 接管默认伪元素（清零），防止继承 dropdown 组件可能引入的箭头/圆点 */
@@ -172,14 +173,15 @@ export const chatStyles = `
     width: 0 !important;
     height: 0 !important;
   }
-  /* 触发按钮：实色胶囊，主动可见，基线严格对齐（L3 覆写 dropdown 默认图标按钮） */
+  /* 触发按钮：实色胶囊，主动可见，基线严格对齐（L3 覆写 dropdown 默认图标按钮）。
+   * 宽度随模型名自适应（width:auto），超长名由 max-width 兜底省略 */
   .model-picker .treedd__trigger {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1, 4px);
     height: var(--control-h, 28px);
-    width: 100%;
-    min-width: 80px;
+    width: auto; /* 由内容决定：刚好完整显示模型名 */
+    max-width: 200px; /* 超长模型名兜底，配合 dd-model-name 省略 */
     padding: 0 var(--sp-4, 10px);
     box-sizing: border-box;
     border-radius: var(--radius, 6px);
