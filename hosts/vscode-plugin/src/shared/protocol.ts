@@ -86,7 +86,8 @@ export type ExtensionToWebviewMessage =
    * 让开发者「看见」跨会话记忆在工作（主动可见，非黑盒）。
    * action: 'recalled' 表示本轮召回 N 条记忆；'added' 表示本轮沉淀记忆。
    */
-  | { type: 'memory'; action: 'recalled' | 'added'; count: number }
+  | { type: 'memory'; action: 'recalled'; count: number }
+  | { type: 'memory'; action: 'added'; count: number; detail?: { id: string; source: string; name: string } }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }

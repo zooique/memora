@@ -120,7 +120,8 @@ function buildHtml(): string {
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; font-size: 13px; color: var(--vscode-foreground); }
+  /* 主题兼容：body 显式绑定编辑器背景（亮/暗色主题自动跟随） */
+  body { font-family: system-ui, sans-serif; margin: 0; font-size: 13px; color: var(--vscode-foreground); background: var(--vscode-editor-background); }
   .header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   .header h2 { font-size: 14px; margin: 0; }
   .btn { padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; background: var(--vscode-button-background); color: var(--vscode-button-foreground); font-size: 12px; }

@@ -172,6 +172,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'need_clarify', questions });
     };
     this._agent.on('questionPending', onPendingQuestion);
+    // 监听记忆事件 → 转发到 webview 展示记忆条（recalled：「想起」/ added：「已沉淀」）
+    // 对齐 kernel 对称事件：memoryRecalled {count,query} / memoryAdded {id,source,name}
+    const onMemoryRecalled = (info: { count: number }) => {
+      this.post({ type: 'memory', action: 'recalled', count: info.count });
+    };
+    const onMemoryAdded = (info: { id: string; source: string; name: string }) => {
+      this.post({ type: 'memory', action: 'added', count: 1, detail: info });
+    };
+    this._agent.on('memoryRecalled', onMemoryRecalled);
+    this._agent.on('memoryAdded', onMemoryAdded);
 
     let fullContent = '';
     // P0-2：进入生成状态（webview 展示加载动画 + 禁用输入）
@@ -191,6 +201,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
     } finally {
       this._agent.off('questionPending', onPendingQuestion);
+      this._agent.off('memoryRecalled', onMemoryRecalled);
+      this._agent.off('memoryAdded', onMemoryAdded);
     }
     // 结束状态（恢复输入框）；错误时也恢复，避免卡死
     this.post({ type: 'status', state: 'done' });
@@ -209,7 +221,8 @@ function buildHtml(): string {
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; font-size: 13px; }
+  /* 主题兼容：body 显式绑定编辑器前景/背景变量（亮/暗色主题自动跟随，避免透出 webview 默认白底） */
+  body { font-family: system-ui, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; font-size: 13px; background: var(--vscode-editor-background); color: var(--vscode-foreground); }
   #messages { flex: 1; overflow-y: auto; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
   /* 消息基类：默认无气泡（对齐 sprite「AI 铺满」收敛设计），仅保留排版 */
   .msg { white-space: pre-wrap; word-break: break-word; line-height: 1.6; position: relative; }

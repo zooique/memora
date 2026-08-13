@@ -2020,6 +2020,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor.bindOnConflict((info) => {
       this.emit(AGENT_EVENTS.conflictDetected, info);
     });
+    // 绑定记忆写入回调：新记忆沉淀后 emit('memoryAdded')（memoryRecalled 的对称事件）
+    // 宿主（如插件「已沉淀」提示条）据此获得跨会话记忆沉淀的可观测出口
+    this.insightExtractor.bindOnMemoryAdded((info) => {
+      this.emit(AGENT_EVENTS.memoryAdded, info);
+    });
     // 注入 VectorStore 到 MemoryInspector，启用混合搜索
     if (this.memoryInspector && this.#config.vectorStore) {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);

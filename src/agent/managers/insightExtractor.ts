@@ -161,6 +161,9 @@ export class InsightExtractor {
   /** 写入扩展回调（宿主注入 diff 对比确认逻辑） */
   private _writeExtensions: WriteExtensions | null = null;
 
+  /** 记忆写入回调（宿主在 extractInsight 写入新记忆后 emit memoryAdded） */
+  private _onMemoryAdded: ((info: { id: string; source: string; name: string }) => void) | null = null;
+
   /**
    * 写入扩展回调（只读投影）
    *
@@ -217,6 +220,20 @@ export class InsightExtractor {
    */
   bindOnConflict(fn: ((info: ConflictInfo) => void) | null): void {
     this.relationBuilder?.bindOnConflict(fn);
+  }
+
+  /**
+   * 绑定记忆写入回调（memoryRecalled 的对称事件：新记忆沉淀后触发）
+   *
+   * 由 Agent.init() 在创建 InsightExtractor 后调用（与 bindOnConflict 同模式，
+   * 解决 Agent 实例晚于 InsightExtractor 创建的时序循环依赖）。
+   * extractInsight 写入新记忆时调用此回调，Agent 在回调中 emit('memoryAdded')，
+   * 宿主（如插件「已沉淀」提示条）据此获得跨会话记忆沉淀的可观测出口。
+   *
+   * @param fn 记忆写入回调（传入 null 可解除绑定）
+   */
+  bindOnMemoryAdded(fn: ((info: { id: string; source: string; name: string }) => void) | null): void {
+    this._onMemoryAdded = fn;
   }
 
   // ─── 配置 ─────────────────────────────────────────────
@@ -399,6 +416,8 @@ export class InsightExtractor {
       this.index.upsert(memory);
       logger.info({ id: memory.id, insight, quality, score }, 'extractInsight: 写入新记忆');
       written.push(memory);
+      // 触发记忆写入回调（memoryAdded 事件出口）：宿主动态展示「已沉淀」提示
+      this._onMemoryAdded?.({ id: memory.id, source: memory.source, name: memory.name });
 
       // ADR-014 关系构建：写入 insight 后，构建与已有记忆的关系
       // 降级策略：relationBuilder 未注入/relations 为空/构建失败 → 跳过，不阻塞主流程
