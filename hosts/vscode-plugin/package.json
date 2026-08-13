@@ -30,7 +30,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "typecheck": "tsc --noEmit -p ./"
+    "typecheck": "tsc --noEmit -p ./",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
