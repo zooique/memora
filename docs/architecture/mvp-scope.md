@@ -80,8 +80,8 @@ l2:
   - `ambiguity`：指令歧义（"结尾想要什么基调？"）
   - `decision`：关键决策点（"反转落在人身上还是猫身上？"）
   - `missing_info`：缺前置事实（"主角职业是？"）
-- **机制**：`requestPause({reason:'ask', source:'agent', question})`——复用暂停通道，仅 `source` 区分发起方（§README 6.4 / §runtime 13.3.6）
-- **MVP 形态**：问题文本 + 可选方案（2-3 个，点击即答）+ 补充输入窗口 + 「按默认继续」
+- **机制**：prompt 级指令注入——`assembleRolePack()` 将 `askOn`/`askLimit` 转为 LLM 指令（"当遇到模糊不清时主动提问"），LLM 以普通 `text` chunk 输出问题，用户自然回复。不引入运行时暂停通道，避免"检测提问 vs 陈述"的不可靠启发式问题（SSOT §2.2 输入触发）。
+- **MVP 形态**：问题文本 + 补充输入窗口（宿主 UI 可据 `text` chunk 内容展示"提问感"反馈）
 - **约束**：`askLimit` 默认 3（超限按默认方案继续并在输出标注不确定性）；问题文本过输出护栏；提问挂起不计入 `maxRoundDuration`
 - **答复继续**：`resumeExecution(答复)` 注入，走恢复通道非 Trigger 通道（不触发 recall/角色重匹配）
 
