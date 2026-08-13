@@ -9,8 +9,9 @@
  *   - LLM Provider：createDocReviewProvider（环境变量）
  *   - 记忆存储：WorkspaceStorage（.memora/memories.json）
  *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
+ *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
  */
-import { Agent } from '@zooique/memora';
+import { Agent, FetchWebSearchProvider } from '@zooique/memora';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDocReviewProvider } from './llmConfig.js';
@@ -68,6 +69,8 @@ export async function assembleDocReviewAgent(options: AssembleDocReviewOptions):
     provider,
     storage,
     sessionStore,
+    // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）
+    webSearchProvider: new FetchWebSearchProvider(),
     permission: 'owner',
     allowedPaths: [projectPath],
   });

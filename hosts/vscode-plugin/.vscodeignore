@@ -1,0 +1,26 @@
+# 源码（已编译到 dist）
+src/**
+scripts/**
+tsconfig.json
+vitest.config.ts
+esbuild.config.mjs
+
+# 版本控制
+.gitignore
+.git/**
+**/.gitkeep
+
+# 文档
+docs/**
+*.md
+!README.md
+
+# 依赖全部排除（esbuild 已内联内核到 dist/extension/extension.js）
+node_modules/**
+**/node_modules/**
+
+# 其他
+.vscode/test/**
+.svscodeignore
+*.vsix
+dist/**/*.map

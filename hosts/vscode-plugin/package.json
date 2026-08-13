@@ -92,17 +92,19 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node esbuild.config.mjs",
     "watch": "tsc -watch -p ./",
     "typecheck": "tsc --noEmit -p ./",
+    "package": "npm run compile && vsce package --out memora-doc-review.vsix",
     "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
-    "typescript": "^5.6.0"
-  },
-  "dependencies": {
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0",
     "@zooique/memora": "file:../.."
-  }
+  },
+  "dependencies": {}
 }
