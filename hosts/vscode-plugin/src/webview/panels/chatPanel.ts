@@ -210,11 +210,14 @@ function buildHtml(): string {
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; font-size: 13px; }
-  #messages { flex: 1; overflow-y: auto; padding: 12px; box-sizing: border-box; }
-  .msg { margin: 6px 0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; position: relative; }
-  .msg.user { background: var(--vscode-button-background, #e8f0fe); color: var(--vscode-button-foreground, #1a73e8); align-self: flex-end; }
-  .msg.assistant { background: var(--vscode-editor-inactiveSelectionBackground, #f1f3f4); }
-  .msg.error { background: var(--vscode-inputValidation-errorBackground, #fdecea); color: var(--vscode-inputValidation-errorForeground, #b3261e); }
+  #messages { flex: 1; overflow-y: auto; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+  /* 消息基类：默认无气泡（对齐 sprite「AI 铺满」收敛设计），仅保留排版 */
+  .msg { white-space: pre-wrap; word-break: break-word; line-height: 1.6; position: relative; }
+  /* 用户消息：右侧浅灰气泡（轻量身份标记，不抢 AI 回答的视觉重心，对齐 sprite .message.user） */
+  .msg.user { align-self: flex-end; max-width: 85%; background: var(--vscode-editor-inactiveSelectionBackground, #f1f3f4); color: var(--vscode-foreground, #1f1f1f); padding: 8px 12px; border-radius: 10px 10px 2px 10px; }
+  /* AI 回答：无气泡，内容全量铺开（透明 + 无内边距 + 无圆角，阅读体验优先，对齐 sprite .message.assistant） */
+  .msg.assistant { align-self: stretch; background: transparent; color: var(--vscode-foreground, #1f1f1f); padding: 0; border-radius: 0; border-top: 1px solid var(--vscode-panel-border, #ddd); }
+  .msg.error { align-self: stretch; background: var(--vscode-inputValidation-errorBackground, #fdecea); color: var(--vscode-inputValidation-errorForeground, #b3261e); padding: 8px 12px; border-radius: 8px; }
   /* P1-时间戳：右上角小字，hover 显示复制按钮 */
   .msg-time { font-size: 10px; color: var(--vscode-descriptionForeground, #9aa0a6); margin-top: 4px; text-align: right; }
   .msg-copy { position: absolute; top: 4px; right: 4px; display: none; padding: 2px 6px; font-size: 11px; border-radius: 4px; border: none; background: var(--vscode-button-secondaryBackground, #e0e0e0); color: var(--vscode-button-secondaryForeground, #333); cursor: pointer; }

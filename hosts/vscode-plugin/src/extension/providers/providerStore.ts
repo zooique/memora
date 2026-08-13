@@ -30,6 +30,21 @@ const SECRET_PREFIX = 'memoraDocReview.provider';
 const MASK = '••••••••';
 
 /**
+ * 生成 API Key 的脱敏展示串（仅用于编辑回显，绝不回传真实值）
+ *
+ * 规则：保留前 3 位 + 4 个掩码点 + 后 4 位（如 `sk-••••1234`）；
+ * 长度不足 8 位时整体掩码。
+ *
+ * @param key 真实 API Key
+ * @returns 脱敏串（空 key 返回空串）
+ */
+function maskKey(key: string): string {
+  if (!key) return '';
+  if (key.length <= 8) return MASK;
+  return `${key.slice(0, 3)}••••${key.slice(-4)}`;
+}
+
+/**
  * 大模型配置存储
  *
  * 依赖注入 vscode.SecretStorage（由 extension context.secrets 提供），
@@ -96,11 +111,17 @@ export class ProviderStore {
   /**
    * 列出全部 Provider（apiKey 脱敏，供 webview 展示）
    *
-   * @returns 脱敏 Provider 列表（apiKey 为 MASK 或空占位）
+   * 填充 maskedKey 供编辑表单回显（如 `sk-••••1234`），apiKey 字段恒为空。
+   *
+   * @returns 脱敏 Provider 列表（apiKey 为空，maskedKey 为脱敏串）
    */
   async listMasked(): Promise<LlmProviderConfig[]> {
     const configs = this.readConfig();
-    return configs.map((p) => ({ ...p, apiKey: p.name ? MASK : '' }));
+    // 逐个读取真实 key 生成脱敏串（不把真实值带出 store）
+    const withMasked = await Promise.all(
+      configs.map(async (p) => ({ ...p, apiKey: '', maskedKey: maskKey(await this.readApiKey(p.name)) })),
+    );
+    return withMasked;
   }
 
   /**

@@ -145,6 +145,12 @@ function buildHtml(): string {
   .field label { display: block; font-size: 12px; margin-bottom: 4px; color: var(--vscode-descriptionForeground); }
   .field input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); font-size: 13px; }
   .field input:disabled { opacity: 0.6; }
+  /* API Key 脱敏回显提示 */
+  .key-hint { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 4px; }
+  /* 测试连接内联结果（成功/失败带色块，主动可见） */
+  .test-result { font-size: 12px; padding: 6px 8px; border-radius: 6px; margin-bottom: 10px; word-break: break-all; }
+  .test-result.ok { background: var(--vscode-inputValidation-infoBackground, #e3f2fd); color: var(--vscode-inputValidation-infoForeground, #1565c0); }
+  .test-result.err { background: var(--vscode-inputValidation-errorBackground, #fdecea); color: var(--vscode-inputValidation-errorForeground, #b3261e); }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border-radius: 6px; font-size: 12px; color: #fff; opacity: 0; transition: opacity 0.2s; z-index: 20; max-width: 80%; }
   #toast.ok { background: var(--vscode-statusBarItem-prominentBackground, #2e7d32); }
@@ -184,7 +190,9 @@ function buildHtml(): string {
       <div class="field">
         <label>API Key（编辑时留空保持不变）</label>
         <input id="f-apikey" type="password" placeholder="sk-…" />
+        <div id="apikeyHint" class="key-hint" hidden></div>
       </div>
+      <div id="testResult" class="test-result" hidden></div>
       <div class="modal-actions">
         <button id="btnTest" class="btn btn-secondary">测试连接</button>
         <button id="btnCancel" class="btn btn-secondary">取消</button>
@@ -206,6 +214,8 @@ function buildHtml(): string {
     const fModel = document.getElementById('f-model');
     const fBaseUrl = document.getElementById('f-baseurl');
     const fApiKey = document.getElementById('f-apikey');
+    const apikeyHint = document.getElementById('apikeyHint');
+    const testResult = document.getElementById('testResult');
     const btnTest = document.getElementById('btnTest');
     const btnCancel = document.getElementById('btnCancel');
     const btnSave = document.getElementById('btnSave');
@@ -233,8 +243,13 @@ function buildHtml(): string {
     function openModal(name) {
       editName = name || '';
       modalTitle.textContent = editName ? '编辑 API' : '添加 API';
+      // 重置上一轮测试结果（每次打开表单都清空，避免残留误导）
+      testResult.hidden = true;
+      testResult.textContent = '';
+      testResult.className = 'test-result';
+      btnTest.disabled = false;
       if (editName) {
-        // 编辑：从当前列表预填非敏感字段
+        // 编辑：从当前列表预填非敏感字段 + 脱敏 key 回显
         const card = list.querySelector('div[data-name="' + CSS.escape(editName) + '"]');
         // 简化：通过 dataset 读取
         fName.value = editName;
@@ -243,7 +258,11 @@ function buildHtml(): string {
         fModel.value = card ? card.dataset.model : '';
         fBaseUrl.value = card ? card.dataset.baseurl : '';
         fApiKey.value = '';
-        fApiKey.placeholder = '留空保持不变（已配置）';
+        fApiKey.placeholder = '留空保持不变';
+        // 脱敏回显：标明已配置的 key（如 sk-••••1234），确认无需重新输入
+        const masked = card ? card.dataset.maskedkey : '';
+        apikeyHint.hidden = !masked;
+        apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
       } else {
         fName.value = '';
         fName.disabled = false;
@@ -252,6 +271,8 @@ function buildHtml(): string {
         fBaseUrl.value = '';
         fApiKey.value = '';
         fApiKey.placeholder = 'sk-…';
+        apikeyHint.hidden = true;
+        apikeyHint.textContent = '';
       }
       modal.classList.add('visible');
       fName.focus();
@@ -276,6 +297,7 @@ function buildHtml(): string {
         card.dataset.display = p.displayName || p.name;
         card.dataset.model = p.model;
         card.dataset.baseurl = p.baseUrl;
+        card.dataset.maskedkey = p.maskedKey || '';
 
         const info = document.createElement('div');
         info.className = 'card-info';
@@ -334,11 +356,19 @@ function buildHtml(): string {
       if (msg.type === 'cfg_loaded') {
         render(msg);
       } else if (msg.type === 'cfg_result') {
-        if (msg.ok) {
-          showToast(msg.message || (msg.action === 'test' ? '连接成功' : '操作成功'), true);
-          if (msg.action === 'save') closeModal();
+        if (msg.action === 'test') {
+          // 测试连接：内联展示结果（成功/失败带色块），比 Toast 更持久可见
+          btnTest.disabled = false;
+          testResult.hidden = false;
+          testResult.className = 'test-result ' + (msg.ok ? 'ok' : 'err');
+          testResult.textContent = (msg.ok ? '✅ 连接成功' : '❌ 连接失败') + (msg.message ? '：' + msg.message : '');
         } else {
-          showToast(msg.message || '操作失败', false);
+          if (msg.ok) {
+            showToast(msg.message || '操作成功', true);
+            if (msg.action === 'save') closeModal();
+          } else {
+            showToast(msg.message || '操作失败', false);
+          }
         }
       }
     });
@@ -350,6 +380,11 @@ function buildHtml(): string {
       vscode.postMessage({ type: 'cfg_save', config: config, isEditing: editName !== '' });
     });
     btnTest.addEventListener('click', function () {
+      // 测试进行中禁用按钮，避免重复提交；结果在 cfg_result 回来后恢复
+      btnTest.disabled = true;
+      testResult.hidden = false;
+      testResult.className = 'test-result';
+      testResult.textContent = '测试中…';
       vscode.postMessage({ type: 'cfg_test', config: readForm() });
     });
     // 点击遮罩关闭

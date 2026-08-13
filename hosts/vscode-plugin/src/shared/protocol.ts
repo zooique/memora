@@ -26,8 +26,10 @@ export interface LlmProviderConfig {
   model: string;
   /** OpenAI 兼容 API Base URL */
   baseUrl: string;
-  /** API Key（SecretStorage 存储；传输给 webview 时为脱敏值或空） */
+  /** API Key（SecretStorage 存储；传输给 webview 时不回传真实值） */
   apiKey: string;
+  /** 脱敏后的 API Key（仅 Host→Webview 传输时填充，如 `sk-••••1234`，供编辑回显） */
+  maskedKey?: string;
   /** Provider 标识（'cloud' | 'local'） */
   provider?: string;
 }
