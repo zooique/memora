@@ -21,4 +21,12 @@ export type ExtensionToWebviewMessage =
   | { type: 'user'; text: string }
   | { type: 'chunk'; content: string }
   | { type: 'done' }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /**
+   * 记忆活动提示（任务 D 可观测出口）
+   *
+   * 由 extension host 监听 Agent 的 memoryRecalled / memoryAdded 事件后转发，
+   * 让开发者「看见」跨会话记忆在工作（主动可见，非黑盒）。
+   * action: 'recalled' 表示本轮召回 N 条记忆；'added' 表示本轮沉淀记忆。
+   */
+  | { type: 'memory'; action: 'recalled' | 'added'; count: number };

@@ -43,6 +43,23 @@ export function openChatPanel(agent: Agent, docContext?: string): void {
     currentPanel = undefined;
   });
 
+  // 记忆可观测出口（任务 D）：监听 Agent 记忆活动事件，转发到 Webview 提示条
+  // 薄壳只做转发，不改内核；事件源为 memoryRecalled / memoryAdded
+  const postMemory = (payload: { action: 'recalled' | 'added'; count: number }) => {
+    void panel.webview.postMessage({ type: 'memory', ...payload });
+  };
+  const onRecalled = (e: { count: number; query: string }) =>
+    postMemory({ action: 'recalled', count: e.count });
+  const onAdded = (_e: { id: string; source: string; name: string }) =>
+    postMemory({ action: 'added', count: 1 });
+  agent.on('memoryRecalled', onRecalled);
+  agent.on('memoryAdded', onAdded);
+  panel.onDidDispose(() => {
+    // 面板关闭时移除监听，避免泄漏
+    agent.off('memoryRecalled', onRecalled);
+    agent.off('memoryAdded', onAdded);
+  });
+
   // 处理来自 Webview 的用户输入 → 流式对话
   panel.webview.onDidReceiveMessage(async (msg: WebviewToExtensionMessage) => {
     if (msg.type === 'send' && msg.text) {
@@ -111,9 +128,11 @@ function buildHtml(): string {
   #inputBar { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #ddd; }
   #input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
   button { padding: 8px 14px; border-radius: 6px; border: none; background: #1a73e8; color: #fff; cursor: pointer; }
+  .memory-bar { padding: 4px 12px; font-size: 12px; color: #5f6368; background: #e6f4ea; border-bottom: 1px solid #ceead6; }
 </style>
 </head>
 <body>
+  <div id="memoryBar" class="memory-bar" hidden></div>
   <div id="messages"></div>
   <div id="inputBar">
     <input id="input" type="text" placeholder="在文档上打磨你的想法……" />
@@ -124,6 +143,7 @@ function buildHtml(): string {
     const messages = document.getElementById('messages');
     const input = document.getElementById('input');
     const send = document.getElementById('send');
+    const memoryBar = document.getElementById('memoryBar');
 
     function append(role, text) {
       const div = document.createElement('div');
@@ -134,7 +154,16 @@ function buildHtml(): string {
       return div;
     }
 
-    // 接收 extension host 推送（用户消息 / 流式 chunk / done / error）
+    // 记忆提示条：短暂展示后自动隐藏（主动可见，不过度设计）
+    let memoryTimer = null;
+    function showMemory(text) {
+      memoryBar.textContent = text;
+      memoryBar.hidden = false;
+      clearTimeout(memoryTimer);
+      memoryTimer = setTimeout(() => { memoryBar.hidden = true; }, 2500);
+    }
+
+    // 接收 extension host 推送（用户消息 / 流式 chunk / done / error / memory）
     window.addEventListener('message', (event) => {
       const msg = event.data;
       if (msg.type === 'user') {
@@ -149,6 +178,13 @@ function buildHtml(): string {
         messages.scrollTop = messages.scrollHeight;
       } else if (msg.type === 'error') {
         append('error', msg.message);
+      } else if (msg.type === 'memory') {
+        // 记忆可观测出口：召回 / 沉淀提示
+        if (msg.action === 'recalled') {
+          showMemory('🧠 已召回 ' + msg.count + ' 条记忆');
+        } else if (msg.action === 'added') {
+          showMemory('📝 已沉淀 1 条记忆');
+        }
       }
     });
 
