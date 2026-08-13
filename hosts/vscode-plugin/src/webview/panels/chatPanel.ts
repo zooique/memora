@@ -19,8 +19,11 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { buildDropdownHtml, dropdownInitScript, dropdownStyles } from '../components/dropdown.js';
+import { toolCardScript } from '../components/toolCard.js';
 import { chatStyles } from '../styles/chatStyles.js';
+import { toolCardStyles } from '../styles/toolCard.js';
 import { fmtTimeScript } from '../helpers/fmtTime.js';
+import { toolNameMapScript } from '../helpers/toolNameMap.js';
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
@@ -196,6 +199,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         if (chunk.type === 'text' && chunk.content) {
           fullContent += chunk.content;
           this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs });
+        } else if (chunk.type === 'tool_start') {
+          // 工具调用开始 → webview 渲染「执行中」卡片
+          this.post({ type: 'tool_start', toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
+        } else if (chunk.type === 'tool_result') {
+          // 工具调用结束 → 更新卡片状态
+          this.post({
+            type: 'tool_result',
+            toolCallId: chunk.toolCallId,
+            name: chunk.name,
+            ok: chunk.ok,
+            summary: chunk.summary,
+          });
         }
       }
       // 流结束时持久化完整的 assistant 回复
@@ -225,6 +240,7 @@ function buildHtml(): string {
 <style>
   ${chatStyles}
   ${dropdownStyles}
+  ${toolCardStyles}
 </style>
 </head>
 <body>
@@ -244,7 +260,7 @@ function buildHtml(): string {
     </div>
   </div>
   <div id="inputBar">
-    <input id="input" type="text" placeholder="在文档上打磨你的想法……" />
+    <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）"></textarea>
     <button id="send">发送</button>
   </div>
   <script>
@@ -366,19 +382,37 @@ function buildHtml(): string {
       } else if (msg.type === 'memory') {
         if (msg.action === 'recalled') showMemory('🧠 已召回 ' + msg.count + ' 条记忆');
         else if (msg.action === 'added') showMemory('📝 已沉淀 1 条记忆');
+      } else if (msg.type === 'tool_start') {
+        // 工具调用开始：渲染「执行中」卡片（组件的 ToolCard.show）
+        window.ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
+      } else if (msg.type === 'tool_result') {
+        // 工具调用结束：更新卡片为成功/失败 + 结果摘要
+        window.ToolCard.update(messages, msg.toolCallId, msg.name, msg.ok, msg.summary);
       } else if (msg.type === 'clear_ok') {
         messages.innerHTML = '';
       }
     });
 
+    // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
+    function autoResize() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    }
     function sendMessage() {
       const text = input.value.trim();
       if (!text) return;
       input.value = '';
+      input.style.height = 'auto';
       vscode.postMessage({ type: 'send', text });
     }
     send.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+    input.addEventListener('input', autoResize);
 
     // P1-清空对话：收进「⋯」下拉菜单（危险操作），确认后发 clear 给 extension host
     window.__treeddOnSelect = function (id) {
@@ -399,6 +433,11 @@ function buildHtml(): string {
     }
     clarifySend.addEventListener('click', sendClarifyAnswer);
     clarifyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendClarifyAnswer(); });
+
+    // 工具名中文映射（helpers/toolNameMap.ts）
+    ${toolNameMapScript}
+    // 工具调用卡片组件（components/toolCard.ts）— 依赖上方 getToolDisplayName
+    ${toolCardScript}
 
     // 下拉菜单通用初始化（展开/收起 + 点击项转发，见 components/dropdown.ts）
     ${dropdownInitScript}

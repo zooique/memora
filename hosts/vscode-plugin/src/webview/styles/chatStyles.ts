@@ -61,7 +61,11 @@ export const chatStyles = `
     flex: 1; padding: 8px; border-radius: 6px;
     border: 1px solid var(--vscode-input-border, #ccc);
     background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+    font-family: inherit; font-size: 13px; line-height: 1.5;
+    resize: none; overflow-y: auto;
+    min-height: 16px; max-height: 120px; box-sizing: border-box;
   }
+  #input:focus { outline: 1px solid var(--vscode-focusBorder, #1a73e8); }
   button { padding: 8px 14px; border-radius: 6px; border: none; background: var(--vscode-button-background, #1a73e8); color: var(--vscode-button-foreground, #fff); cursor: pointer; }
   .memory-bar {
     padding: 4px 12px; font-size: 12px;

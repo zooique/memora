@@ -62,6 +62,21 @@ export type ExtensionToWebviewMessage =
   | { type: 'done' }
   | { type: 'error'; message: string }
   /**
+   * 工具调用开始（Agent 循环的步骤，手动具象化）
+   *
+   * 由 extension host 转发内核 tool_start chunk，webview 渲染「执行中」工具卡片。
+   * 卡片默认折叠，减少视觉干扰；toolCallId 用于和 tool_result 匹配更新。
+   */
+  | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
+  /** 工具调用结束（成功/失败 + 结果摘要），更新对应卡片状态 */
+  | {
+      type: 'tool_result';
+      toolCallId: string;
+      name: string;
+      ok: boolean;
+      summary?: string;
+    }
+  /**
    * LLM 运行状态（P0-2 状态可视化）
    *
    * 让用户看见 Agent 正在做什么，而非静默等待：

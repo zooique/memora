@@ -7,3 +7,4 @@ Webview 面板样式表（按面板/组件分组，对齐 memora-sprite 的 CSS 
 - `chatStyles.ts` — 对话打磨面板整体样式。
 - `configStyles.ts` — 大模型配置面板整体样式。
 - `dropdown.ts` — 下拉菜单组件样式（scoped 到 `.treedd`）。
+- `toolCard.ts` — 工具调用卡片组件样式（scoped 到 `.tool-card`）。
