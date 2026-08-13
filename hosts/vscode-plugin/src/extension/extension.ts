@@ -17,6 +17,7 @@ import type { Agent } from '@zooique/memora';
 import { assembleDocReviewAgent } from './host/assemble.js';
 import { openDocReviewCommand } from './commands/openDocReview.js';
 import { reviewDocumentCommand } from './commands/reviewDocument.js';
+import { scaffoldProjectCommand } from './commands/scaffoldProject.js';
 
 /** 懒加载的 Agent 单例（跨命令复用） */
 let agentPromise: Promise<Agent> | null = null;
@@ -46,6 +47,13 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('memoraDocReview.review', () =>
       reviewDocumentCommand(getOrCreateAgent),
+    ),
+  );
+
+  // 命令：根据设计文档生成代码骨架（切片 C，复用 scaffold skill）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memoraDocReview.scaffold', () =>
+      scaffoldProjectCommand(getOrCreateAgent),
     ),
   );
 }

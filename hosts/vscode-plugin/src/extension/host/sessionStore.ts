@@ -37,8 +37,10 @@ export class WorkspaceSessionStore implements ISessionStore {
       for (const [k, v] of Object.entries(data.checkpoints ?? {})) this.checkpoints.set(k, v);
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
+      // 注意：sessions 与 checkpoints 一并清空，避免跨会话回溯（trace_summary）读到脏检查点
       console.warn('Memora 会话文件读取失败，降级为空', err);
       this.store.clear();
+      this.checkpoints.clear();
     }
   }
 

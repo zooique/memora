@@ -28,8 +28,9 @@ export interface AssembleDocReviewOptions {
 /**
  * 定位插件内置 skills 目录（configDir）
  *
- * 编译后本文件位于 dist/extension/host/assemble.js，configDir = dist/extension/skills/，
- * 其下 skills/ 子目录供 SkillManager 加载 doc-review 技能（切片 B）。
+ * 编译后本文件位于 dist/extension/host/assemble.js，上一级即 dist/extension/，
+ * 因此 configDir = dist/extension/skills/（与 src/extension/skills/ 对应），
+ * 供 SkillManager 加载 doc-review / scaffold 技能（切片 B/C）。
  */
 function resolveSkillConfigDir(): string {
   const currentDir = dirname(fileURLToPath(import.meta.url));

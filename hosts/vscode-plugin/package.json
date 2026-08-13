@@ -23,6 +23,10 @@
       {
         "command": "memoraDocReview.review",
         "title": "Memora: 审阅当前文档自洽性"
+      },
+      {
+        "command": "memoraDocReview.scaffold",
+        "title": "Memora: 根据设计文档生成代码骨架"
       }
     ]
   },

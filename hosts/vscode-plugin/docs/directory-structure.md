@@ -21,15 +21,16 @@ hosts/vscode-plugin/
 │   │   ├── extension.ts       # ✅ 入口：activate + 命令注册（薄）
 │   │   ├── commands/          # 命令处理器（每命令一文件，逻辑不进 extension.ts）
 │   │   │   ├── openDocReview.ts    # ✅ 打开打磨面板（切片 A）
-│   │   │   ├── reviewDocument.ts   # 审阅当前文档（切片 B，阶段 2）
-│   │   │   └── scaffoldProject.ts  # 文档→代码骨架（切片 C，阶段 3）
+│   │   │   ├── reviewDocument.ts   # ✅ 审阅当前文档（切片 B，阶段 2）
+│   │   │   └── scaffoldProject.ts  # ✅ 文档→代码骨架（切片 C，阶段 3）
 │   │   ├── host/              # ✅ 薄壳装配层（注入 memora 内核，不重复实现）
 │   │   │   ├── assemble.ts         # new Agent + 注入
 │   │   │   ├── llmConfig.ts        # LLM Provider 配置
 │   │   │   ├── workspaceStorage.ts # IMemoryStorage（.memora/memories.json）
 │   │   │   └── sessionStore.ts     # ISessionStore（.memora/sessions.json）
 │   │   ├── skills/            # Agent Skill 能力层（形态无关，任何 agent 可加载）
-│   │   │   └── doc-review.md  # 文档自洽审阅技能（切片 B 载体，configDir/skills/ 单层约定）
+│   │   │   ├── doc-review.md  # ✅ 文档自洽审阅技能（切片 B 载体，configDir/skills/ 单层约定）
+│   │   │   └── scaffold.md    # ✅ 代码骨架生成技能（切片 C 载体）
 │   │   └── eventBridge.ts     # Agent 事件流 → 面板（可观察契约，philosophy §13.x）
 │   │
 │   ├── webview/               # Webview UI（浏览器环境，仅 postMessage，禁 node API）
