@@ -16,6 +16,7 @@ import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { assembleDocReviewAgent } from './host/assemble.js';
 import { openDocReviewCommand } from './commands/openDocReview.js';
+import { reviewDocumentCommand } from './commands/reviewDocument.js';
 
 /** 懒加载的 Agent 单例（跨命令复用） */
 let agentPromise: Promise<Agent> | null = null;
@@ -41,11 +42,11 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  // 命令：审阅当前文档自洽性（阶段 2 实现，当前占位）
+  // 命令：审阅当前文档自洽性（切片 B，复用 doc-review skill）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memoraDocReview.review', () => {
-      void vscode.window.showInformationMessage('文档自洽检查将在阶段 2 开放');
-    }),
+    vscode.commands.registerCommand('memoraDocReview.review', () =>
+      reviewDocumentCommand(getOrCreateAgent),
+    ),
   );
 }
 

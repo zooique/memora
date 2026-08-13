@@ -29,7 +29,7 @@ hosts/vscode-plugin/
 │   │   │   ├── workspaceStorage.ts # IMemoryStorage（.memora/memories.json）
 │   │   │   └── sessionStore.ts     # ISessionStore（.memora/sessions.json）
 │   │   ├── skills/            # Agent Skill 能力层（形态无关，任何 agent 可加载）
-│   │   │   └── doc-review/SKILL.md # 文档自洽审阅能力（切片 B 载体）
+│   │   │   └── doc-review.md  # 文档自洽审阅技能（切片 B 载体，configDir/skills/ 单层约定）
 │   │   └── eventBridge.ts     # Agent 事件流 → 面板（可观察契约，philosophy §13.x）
 │   │
 │   ├── webview/               # Webview UI（浏览器环境，仅 postMessage，禁 node API）
@@ -83,7 +83,7 @@ hosts/vscode-plugin/
 |---|---|---|
 | A 对话打磨 | 阶段 0（✅） | `commands/openDocReview.ts` + `webview/panels/chatPanel.ts` |
 | D 跨会话记忆 | 阶段 1 | `host/workspaceStorage.ts`/`sessionStore.ts`（✅ 已建）+ `webview/panels/memoryPanel.ts` |
-| B 文档自洽检查 | 阶段 2 | `commands/reviewDocument.ts` + `webview/panels/reviewPanel.ts` + `skills/doc-review/SKILL.md` |
+| B 文档自洽检查 | 阶段 2 | `commands/reviewDocument.ts` + `skills/doc-review.md` |
 | C 文档→骨架 | 阶段 3 | `commands/scaffoldProject.ts` + `webview/panels/scaffoldPanel.ts` |
 | 设置（LLM 配置 UI） | 阶段 1+ | `commands/openSettings.ts` + `webview/panels/settingsPanel.ts` |
 | 可观察事件流 | 长期 | `extension/eventBridge.ts`（agent 工具/步骤事件 → 面板） |

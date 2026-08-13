@@ -1,8 +1,8 @@
 ---
 name: doc-review
 description: 审阅设计文档的自洽性，找出矛盾、缺口与悬空引用
-capability: doc:review
-trigger: [审阅文档, 自洽检查, 文档 gap, review design]
+keywords: 审阅文档,自洽检查,文档gap,矛盾检测,缺口检测,悬空引用,review design,document review
+trigger: /(审阅文档|自洽检查|自洽性|矛盾检测|缺口检测|悬空引用|review design|reviewDesign)/i
 ---
 
 # 文档自洽审阅
