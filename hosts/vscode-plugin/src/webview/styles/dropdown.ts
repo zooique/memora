@@ -15,29 +15,29 @@ export const dropdownStyles = `
   .treedd__trigger {
     display: inline-flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; padding: 0;
-    border: none; border-radius: 6px; cursor: pointer;
-    background: transparent; color: var(--vscode-foreground, #1f1f1f);
-    font-size: 15px; line-height: 1;
+    border: none; border-radius: var(--radius, 6px); cursor: pointer;
+    background: transparent; color: var(--text-primary, #1f1f1f);
+    font-size: var(--font-lg, 14px); line-height: 1;
   }
-  .treedd__trigger:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); }
+  .treedd__trigger:hover { background: var(--surface-hover, rgba(128,128,128,.2)); }
   .treedd__menu {
-    position: absolute; right: 0; top: calc(100% + 4px);
+    position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
     min-width: 168px; z-index: 30;
-    padding: 4px; box-sizing: border-box;
+    padding: var(--sp-1, 4px); box-sizing: border-box;
     border: 1px solid var(--vscode-menu-border, #ccc);
-    border-radius: 8px;
+    border-radius: var(--radius-lg, 8px);
     background: var(--vscode-menu-background, #ffffff);
     color: var(--vscode-menu-foreground, #1f1f1f);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     display: none;
-    flex-direction: column; gap: 2px;
+    flex-direction: column; gap: var(--sp-0, 2px);
   }
   .treedd.is-open .treedd__menu { display: flex; }
   .treedd__item {
-    display: block; width: 100%; padding: 6px 10px; box-sizing: border-box;
-    border: none; border-radius: 6px; text-align: left;
+    display: block; width: 100%; padding: var(--sp-2, 6px) var(--sp-4, 10px); box-sizing: border-box;
+    border: none; border-radius: var(--radius, 6px); text-align: left;
     background: transparent; cursor: pointer;
-    font-size: 12px; line-height: 1.5;
+    font-size: var(--font-md, 12px); line-height: 1.5;
     color: var(--vscode-menu-foreground, #1f1f1f);
   }
   .treedd__item:hover,

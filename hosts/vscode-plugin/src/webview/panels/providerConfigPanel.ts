@@ -136,33 +136,37 @@ function buildHtml(): string {
   <div id="modal" class="modal-mask">
     <div class="modal">
       <h3 id="modalTitle">添加 API</h3>
-      <div class="field">
-        <label>别名（唯一，仅英文数字.-_）</label>
-        <input id="f-name" type="text" placeholder="如 deepseek" />
-      </div>
-      <div class="field">
-        <label>显示名称</label>
-        <input id="f-display" type="text" placeholder="如 DeepSeek" />
-      </div>
-      <div class="field">
-        <label>模型</label>
-        <input id="f-model" type="text" placeholder="如 deepseek-chat" />
-      </div>
-      <div class="field">
-        <label>API Base URL</label>
-        <input id="f-baseurl" type="text" placeholder="https://api.deepseek.com/v1" />
-      </div>
-      <div class="field">
-        <label>API Key（编辑时留空保持不变）</label>
-        <input id="f-apikey" type="password" placeholder="sk-…" />
-        <div id="apikeyHint" class="key-hint" hidden></div>
-      </div>
-      <div id="testResult" class="test-result" hidden></div>
-      <div class="modal-actions">
-        <button id="btnTest" class="btn btn-secondary">测试连接</button>
-        <button id="btnCancel" class="btn btn-secondary">取消</button>
-        <button id="btnSave" class="btn">保存</button>
-      </div>
+      <!-- 表单语义：label 与 input 用 for/id 关联（可点击聚焦 + 读屏识别），
+           支持 Enter 提交；非认证字段 autocomplete=off 避免密码管理器误触发。 -->
+      <form id="cfgForm">
+        <div class="field">
+          <label for="f-name">别名（唯一，仅英文数字.-_）</label>
+          <input id="f-name" name="name" type="text" placeholder="如 deepseek" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="f-display">显示名称</label>
+          <input id="f-display" name="displayName" type="text" placeholder="如 DeepSeek" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="f-model">模型</label>
+          <input id="f-model" name="model" type="text" placeholder="如 deepseek-chat" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="f-baseurl">API Base URL</label>
+          <input id="f-baseurl" name="baseUrl" type="url" placeholder="https://api.deepseek.com/v1" autocomplete="url" />
+        </div>
+        <div class="field">
+          <label for="f-apikey">API Key（编辑时留空保持不变）</label>
+          <input id="f-apikey" name="apiKey" type="password" placeholder="sk-…" autocomplete="new-password" />
+          <div id="apikeyHint" class="key-hint" hidden></div>
+        </div>
+        <div id="testResult" class="test-result" hidden></div>
+        <div class="modal-actions">
+          <button id="btnTest" type="button" class="btn btn-secondary">测试连接</button>
+          <button id="btnCancel" type="button" class="btn btn-secondary">取消</button>
+          <button id="btnSave" type="submit" class="btn">保存</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -183,7 +187,6 @@ function buildHtml(): string {
     const testResult = document.getElementById('testResult');
     const btnTest = document.getElementById('btnTest');
     const btnCancel = document.getElementById('btnCancel');
-    const btnSave = document.getElementById('btnSave');
     const toast = document.getElementById('toast');
 
     let editName = ''; // 当前编辑的 name（空=新增）
@@ -340,7 +343,9 @@ function buildHtml(): string {
 
     btnAdd.addEventListener('click', function () { openModal(''); });
     btnCancel.addEventListener('click', closeModal);
-    btnSave.addEventListener('click', function () {
+    // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
+    document.getElementById('cfgForm').addEventListener('submit', function (e) {
+      e.preventDefault();
       const config = readForm();
       vscode.postMessage({ type: 'cfg_save', config: config, isEditing: editName !== '' });
     });

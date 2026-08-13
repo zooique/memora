@@ -350,23 +350,23 @@ function buildHtml(): string {
   </div>
   <div id="memoryBar" class="memory-bar" hidden></div>
   <div id="messages">
-    <div id="emptyState" class="empty-state" hidden>✍️ 开始打磨你的设计文档<br>在下方输入你的想法，或粘贴要打磨的文档内容</div>
+    <div id="emptyState" class="empty-state" hidden>开始打磨你的设计文档<br>在下方输入你的想法，或粘贴要打磨的文档内容</div>
   </div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
     <div id="clarifyOptions"></div>
     <div id="clarifyRow">
-      <input id="clarifyInput" type="text" placeholder="回答 Agent 的问题，回车提交……" />
+      <input id="clarifyInput" type="text" placeholder="回答 Agent 的问题，回车提交……" aria-label="回答 Agent 的问题" />
       <button id="clarifySend">提交回答</button>
     </div>
   </div>
   <div id="inputBar">
     <div id="inputWrap">
-      <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）"></textarea>
+      <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        ${buildDropdownHtml([], { extraClass: 'model-picker' })}
-        <button id="send" class="send-btn" title="发送 (Enter)">
-          <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        ${buildDropdownHtml([], { extraClass: 'model-picker', onSelect: '__modelPickerOnSelect' })}
+        <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
+          <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
           <span class="send-spinner"></span>
         </button>
       </div>
@@ -429,22 +429,55 @@ function buildHtml(): string {
       emptyState.hidden = messages.querySelector('.msg') !== null;
     }
 
+    // 滚动到底部（rAF 节流）：流式渲染时每 chunk 都可能触发滚动，
+    // 用 requestAnimationFrame 合并为每帧一次，避免读写交错强制 reflow。
+    let scrollRafPending = false;
+    function scrollToBottom() {
+      if (scrollRafPending) return;
+      scrollRafPending = true;
+      requestAnimationFrame(function () {
+        scrollRafPending = false;
+        messages.scrollTop = messages.scrollHeight;
+      });
+    }
+
     // 渲染模型下拉框选项
     function renderModelPicker() {
       if (!modelPickerMenu) return;
-      const items = currentProviders.map(function (p) {
-        const isActive = p.name === currentActive;
-        return '<button class="treedd__item' + (isActive ? ' is-active' : '') + '" data-treedd-id="' + p.name + '">' + (p.displayName || p.name) + '</button>';
-      }).join('');
-      modelPickerMenu.innerHTML = items || '<div class="treedd__empty">未配置模型</div>';
-      // 更新触发器显示当前模型
+      // P0-1 防注入：模型名来自用户配置（displayName），禁止 innerHTML 拼接，
+      // 一律用 createElement + textContent 构建，杜绝 HTML 注入/破版。
+      modelPickerMenu.textContent = '';
+      const items = currentProviders;
+      if (items && items.length > 0) {
+        items.forEach(function (p) {
+          const isActive = p.name === currentActive;
+          const btn = document.createElement('button');
+          btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
+          btn.setAttribute('role', 'menuitem');
+          btn.setAttribute('data-treedd-id', p.name);
+          btn.textContent = p.displayName || p.name;
+          modelPickerMenu.appendChild(btn);
+        });
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'treedd__empty';
+        empty.textContent = '未配置模型';
+        modelPickerMenu.appendChild(empty);
+      }
+      // 更新触发器显示当前模型（同样用 textContent 防注入）
       // SSOT：用 <span class="dd-model-name"> 包裹名称，CSS 只对此 span 做 ellipsis 截断，
       // 而 ::after 下拉箭头 flex-shrink:0 永远外露，不会被挤掉或截断
       if (modelPickerTrigger) {
         const name = currentActive
           ? (currentProviders.find(function(p){return p.name===currentActive;}) || {}).displayName || currentActive
           : '选择模型';
-        modelPickerTrigger.innerHTML = '<span class="dd-model-name">' + name + '</span>';
+        modelPickerTrigger.textContent = '';
+        const span = document.createElement('span');
+        span.className = 'dd-model-name';
+        span.textContent = name;
+        modelPickerTrigger.appendChild(span);
+        // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）
+        modelPickerTrigger.setAttribute('aria-label', '选择模型：' + name);
       }
     }
 
@@ -475,7 +508,7 @@ function buildHtml(): string {
       }
       div.appendChild(footer);
       messages.appendChild(div);
-      messages.scrollTop = messages.scrollHeight;
+      scrollToBottom();
       updateEmptyState();
       return div;
     }
@@ -500,11 +533,14 @@ function buildHtml(): string {
         const last = messages.lastElementChild;
         if (last && last.classList.contains('assistant')) {
           const body = last.querySelector(':scope > .msg-body');
-          if (body) body.textContent += msg.content;
+          if (body) {
+            // 流式追加：用文本节点替代整体 textContent 重建，长回复避免 O(n²)
+            body.appendChild(document.createTextNode(msg.content));
+          }
         } else {
           append('assistant', msg.content, msg.ts);
         }
-        messages.scrollTop = messages.scrollHeight;
+        scrollToBottom();
       } else if (msg.type === 'error') {
         append('error', msg.message);
       } else if (msg.type === 'need_clarify') {
@@ -524,8 +560,8 @@ function buildHtml(): string {
         inputBar.hidden = true;
         clarifyInput.focus();
       } else if (msg.type === 'memory') {
-        if (msg.action === 'recalled') showMemory('🧠 已召回 ' + msg.count + ' 条记忆');
-        else if (msg.action === 'added') showMemory('📝 已沉淀 1 条记忆');
+        if (msg.action === 'recalled') showMemory('已召回 ' + msg.count + ' 条记忆');
+        else if (msg.action === 'added') showMemory('已沉淀 1 条记忆');
       } else if (msg.type === 'tool_start') {
         window.ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
       } else if (msg.type === 'tool_result') {
@@ -541,10 +577,12 @@ function buildHtml(): string {
     });
 
     // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
-    // SSOT: max-height 与 chatStyles.ts 中 #input { max-height: 140px } 必须保持一致
+    // SSOT：高度上限单一真理源 — 从 CSS 令牌(--input-max-h)的计算值读取，
+    // JS 与 CSS 共用同一上限，杜绝双源漂移。
+    const inputMaxHeight = parseInt(getComputedStyle(input).maxHeight, 10) || 140;
     function autoResize() {
       input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+      input.style.height = Math.min(input.scrollHeight, inputMaxHeight) + 'px';
     }
     function sendMessage() {
       const text = input.value.trim();
@@ -590,33 +628,6 @@ function buildHtml(): string {
     ${toolNameMapScript}
     ${toolCardScript}
     ${dropdownInitScript}
-
-    // 模型下拉框：事件委托绑定（选项是动态渲染的，不能用 forEach 一次性绑定）
-    (function () {
-      var picker = document.querySelector('.model-picker');
-      if (!picker) return;
-      var trigger = picker.querySelector('.treedd__trigger');
-      var menu = picker.querySelector('.treedd__menu');
-      // 点击触发器展开/收起（阻止冒泡，避免触发 document 关闭）
-      trigger.addEventListener('click', function (e) {
-        e.stopPropagation();
-        picker.classList.toggle('is-open');
-      });
-      // 点击外部关闭
-      document.addEventListener('click', function () { picker.classList.remove('is-open'); });
-      // 事件委托：菜单项动态渲染，用 closest 命中并转发
-      if (menu) {
-        menu.addEventListener('click', function (e) {
-          e.stopPropagation();
-          var el = e.target && e.target.closest ? e.target.closest('.treedd__item') : null;
-          if (el) {
-            picker.classList.remove('is-open');
-            var cb = window.__modelPickerOnSelect;
-            if (cb) cb(el.getAttribute('data-treedd-id'));
-          }
-        });
-      }
-    })();
 
     // 首屏刷新
     updateEmptyState();
