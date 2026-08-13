@@ -37,6 +37,8 @@ export type WebviewToExtensionMessage =
   | { type: 'send'; text: string }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
+  /** 清空当前会话对话（P1-体验：清空对话按钮） */
+  | { type: 'clear' }
   // ─── 大模型配置面板消息 ───
   /** 请求加载 Provider 列表 */
   | { type: 'cfg_load' }
@@ -51,10 +53,10 @@ export type WebviewToExtensionMessage =
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
-  | { type: 'user'; text: string }
+  | { type: 'user'; text: string; ts?: string }
   /** 历史/流式 assistant 消息（流式输出经 chunk 拼接，历史回放用 text 完整段） */
-  | { type: 'assistant'; text: string }
-  | { type: 'chunk'; content: string }
+  | { type: 'assistant'; text: string; ts?: string }
+  | { type: 'chunk'; content: string; ts?: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
   /**
@@ -66,6 +68,8 @@ export type ExtensionToWebviewMessage =
    * 与 done/error 配合，构成完整的「进行中 → 结束」状态机。
    */
   | { type: 'status'; state: 'thinking' | 'done' }
+  /** 清空会话完成（webview 收到后清空消息区） */
+  | { type: 'clear_ok' }
   /**
    * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
    *

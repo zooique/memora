@@ -68,6 +68,17 @@ export class WorkspaceSessionStore implements ISessionStore {
     return (this.store.get(key) ?? []).map((m) => ({ ...m }));
   }
 
+  /**
+   * 清空指定会话的消息（宿主扩展方法，供「清空对话」按钮调用）
+   *
+   * 非内核 ISessionStore 标准接口，仅在宿主侧使用。
+   */
+  clearSession(date: string, session: string): void {
+    const key = `${date}-${session}`;
+    this.store.delete(key);
+    this.save();
+  }
+
   listSessions(): string[] {
     return [...this.store.keys()];
   }
