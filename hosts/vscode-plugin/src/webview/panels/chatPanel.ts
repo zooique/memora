@@ -18,6 +18,9 @@ import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+import { buildDropdownHtml, dropdownInitScript, dropdownStyles } from '../components/dropdown.js';
+import { chatStyles } from '../styles/chatStyles.js';
+import { fmtTimeScript } from '../helpers/fmtTime.js';
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
@@ -220,51 +223,14 @@ function buildHtml(): string {
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
 <style>
-  :root { color-scheme: light dark; }
-  /* 主题兼容：body 显式绑定编辑器前景/背景变量（亮/暗色主题自动跟随，避免透出 webview 默认白底） */
-  body { font-family: system-ui, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; font-size: 13px; background: var(--vscode-editor-background); color: var(--vscode-foreground); }
-  #messages { flex: 1; overflow-y: auto; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
-  /* 消息基类：默认无气泡（对齐 sprite「AI 铺满」收敛设计），仅保留排版 */
-  .msg { white-space: pre-wrap; word-break: break-word; line-height: 1.6; position: relative; }
-  /* 用户消息：右侧浅灰气泡（轻量身份标记，不抢 AI 回答的视觉重心，对齐 sprite .message.user） */
-  .msg.user { align-self: flex-end; max-width: 85%; background: var(--vscode-editor-inactiveSelectionBackground, #f1f3f4); color: var(--vscode-foreground, #1f1f1f); padding: 8px 12px; border-radius: 10px 10px 2px 10px; }
-  /* AI 回答：无气泡，内容全量铺开（透明 + 无内边距 + 无圆角，阅读体验优先，对齐 sprite .message.assistant） */
-  .msg.assistant { align-self: stretch; background: transparent; color: var(--vscode-foreground, #1f1f1f); padding: 0; border-radius: 0; border-top: 1px solid var(--vscode-panel-border, #ddd); }
-  .msg.error { align-self: stretch; background: var(--vscode-inputValidation-errorBackground, #fdecea); color: var(--vscode-inputValidation-errorForeground, #b3261e); padding: 8px 12px; border-radius: 8px; }
-  /* P1-时间戳：右上角小字，hover 显示复制按钮 */
-  .msg-time { font-size: 10px; color: var(--vscode-descriptionForeground, #9aa0a6); margin-top: 4px; text-align: right; }
-  .msg-copy { position: absolute; top: 4px; right: 4px; display: none; padding: 2px 6px; font-size: 11px; border-radius: 4px; border: none; background: var(--vscode-button-secondaryBackground, #e0e0e0); color: var(--vscode-button-secondaryForeground, #333); cursor: pointer; }
-  .msg:hover .msg-copy { display: block; }
-  #inputBar { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--vscode-panel-border, #ddd); }
-  #input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--vscode-input-border, #ccc); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
-  button { padding: 8px 14px; border-radius: 6px; border: none; background: var(--vscode-button-background, #1a73e8); color: var(--vscode-button-foreground, #fff); cursor: pointer; }
-  .memory-bar { padding: 4px 12px; font-size: 12px; color: var(--vscode-descriptionForeground, #5f6368); background: var(--vscode-inputValidation-infoBackground, #e6f4ea); border-bottom: 1px solid var(--vscode-panel-border, #ceead6); }
-  /* P0-2：LLM 运行状态条（生成中动画） */
-  #statusBar { display: none; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; color: var(--vscode-descriptionForeground, #5f6368); border-bottom: 1px solid var(--vscode-panel-border, #ddd); }
-  #statusBar.visible { display: flex; }
-  .spinner { width: 12px; height: 12px; border: 2px solid var(--vscode-panel-border, #ccc); border-top-color: var(--vscode-button-background, #1a73e8); border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #clarifyBar { display: none; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--vscode-charts-yellow, #daa520); background: var(--vscode-inputValidation-warningBackground, #fff8e1); }
-  #clarifyBar.visible { display: flex; }
-  #clarifyText { font-size: 12px; color: var(--vscode-descriptionForeground, #6d5f00); }
-  #clarifyRow { display: flex; gap: 6px; }
-  #clarifyInput { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--vscode-input-border, #ccc); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
-  /* P1-主动提问：快捷选项按钮 */
-  #clarifyOptions { display: flex; flex-wrap: wrap; gap: 6px; }
-  .opt-btn { padding: 4px 10px; font-size: 12px; border-radius: 999px; border: 1px solid var(--vscode-charts-yellow, #daa520); background: transparent; color: var(--vscode-descriptionForeground, #6d5f00); cursor: pointer; }
-  .opt-btn:hover { background: var(--vscode-inputValidation-warningBackground, #fff8e1); }
-  /* 顶部工具按钮 */
-  #toolbar { display: flex; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border, #ddd); align-items: center; }
-  #toolbar .spacer { flex: 1; }
-  .tool-btn { padding: 4px 10px; font-size: 12px; border-radius: 6px; border: 1px solid var(--vscode-panel-border, #ccc); background: transparent; color: var(--vscode-descriptionForeground, #5f6368); cursor: pointer; }
-  .tool-btn:hover { background: var(--vscode-editor-inactiveSelectionBackground, #f1f3f4); }
+  ${chatStyles}
+  ${dropdownStyles}
 </style>
 </head>
 <body>
   <div id="toolbar">
-    <span style="font-weight:600;">文档打磨</span>
-    <span class="spacer"></span>
-    <button id="btnClear" class="tool-btn" title="清空当前对话">清空对话</button>
+    <span class="title">文档打磨</span>
+    ${buildDropdownHtml([{ id: 'clear', label: '清空对话', danger: true }])}
   </div>
   <div id="memoryBar" class="memory-bar" hidden></div>
   <div id="statusBar"><span class="spinner"></span><span id="statusText">Agent 思考中…</span></div>
@@ -294,7 +260,6 @@ function buildHtml(): string {
     const clarifyOptions = document.getElementById('clarifyOptions');
     const clarifyInput = document.getElementById('clarifyInput');
     const clarifySend = document.getElementById('clarifySend');
-    const btnClear = document.getElementById('btnClear');
 
     // P0-2：切换 LLM 运行状态（thinking 显示状态条 + 禁用输入；done 恢复）
     function setStatus(state) {
@@ -310,13 +275,8 @@ function buildHtml(): string {
       }
     }
 
-    // 格式化时间戳（ISO → HH:MM）
-    function fmtTime(ts) {
-      if (!ts) return '';
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return '';
-      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    }
+    // 时间格式化（自定义组件注入版本，见 helpers/fmtTime.ts）
+    ${fmtTimeScript}
 
     // 复制消息文本到剪贴板
     function copyText(text) {
@@ -420,12 +380,14 @@ function buildHtml(): string {
     send.addEventListener('click', sendMessage);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-    // P1-清空对话：确认后发 clear 给 extension host
-    btnClear.addEventListener('click', function () {
-      if (confirm('确定清空当前对话？此操作不可恢复。')) {
-        vscode.postMessage({ type: 'clear' });
+    // P1-清空对话：收进「⋯」下拉菜单（危险操作），确认后发 clear 给 extension host
+    window.__treeddOnSelect = function (id) {
+      if (id === 'clear') {
+        if (confirm('确定清空当前对话？此操作不可恢复。')) {
+          vscode.postMessage({ type: 'clear' });
+        }
       }
-    });
+    };
 
     function sendClarifyAnswer() {
       const text = clarifyInput.value.trim();
@@ -437,6 +399,9 @@ function buildHtml(): string {
     }
     clarifySend.addEventListener('click', sendClarifyAnswer);
     clarifyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendClarifyAnswer(); });
+
+    // 下拉菜单通用初始化（展开/收起 + 点击项转发，见 components/dropdown.ts）
+    ${dropdownInitScript}
   </script>
 </body>
 </html>`;
