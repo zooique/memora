@@ -18,7 +18,8 @@ export interface DropdownItem {
 }
 
 /** 生成下拉组件 HTML（默认触发器「⋯」） */
-export function buildDropdownHtml(items: DropdownItem[]): string {
+export function buildDropdownHtml(items: DropdownItem[], opts?: { extraClass?: string }): string {
+  const extra = opts?.extraClass ? ` ${opts.extraClass}` : '';
   const itemHtml = items
     .map(
       (it) =>
@@ -26,7 +27,7 @@ export function buildDropdownHtml(items: DropdownItem[]): string {
     )
     .join('');
   return `
-    <div class="treedd" data-treedd>
+    <div class="treedd${extra}" data-treedd>
       <button class="treedd__trigger" title="更多操作" aria-haspopup="menu">⋯</button>
       <div class="treedd__menu" role="menu">${itemHtml}</div>
     </div>`;

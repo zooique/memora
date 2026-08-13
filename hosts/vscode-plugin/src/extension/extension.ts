@@ -52,7 +52,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
   );
   sessionStore.load();
-  const chatProvider = new MemoraChatViewProvider(sessionStore);
+  const chatProvider = new MemoraChatViewProvider(sessionStore, providerStore);
+  // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用
+  chatProvider.setAgentFactory((projectPath) => getOrCreateAgent(projectPath, providerStore));
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );

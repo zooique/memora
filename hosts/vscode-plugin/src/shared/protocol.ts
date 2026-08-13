@@ -36,11 +36,15 @@ export interface LlmProviderConfig {
 
 /** Webview → extension 消息 */
 export type WebviewToExtensionMessage =
+  /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
+  | { type: 'ready' }
   | { type: 'send'; text: string }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
   /** 清空当前会话对话（P1-体验：清空对话按钮） */
   | { type: 'clear' }
+  /** Chat Panel 切换激活 Provider（底部模型下拉框） */
+  | { type: 'chat_set_provider'; name: string }
   // ─── 大模型配置面板消息 ───
   /** 请求加载 Provider 列表 */
   | { type: 'cfg_load' }
@@ -87,6 +91,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'status'; state: 'thinking' | 'done' }
   /** 清空会话完成（webview 收到后清空消息区） */
   | { type: 'clear_ok' }
+  /**
+   * Chat Panel Provider 列表同步（底部模型下拉框的数据）
+   *
+   * 扩展侧在渲染/切换时推送最新 Provider 列表及激活状态，
+   * webview 下拉框据此刷新选项。
+   */
+  | { type: 'chat_providers'; providers: { name: string; displayName: string }[]; activeName?: string }
   /**
    * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
    *
