@@ -4,6 +4,12 @@
   "description": "用 AI 打磨项目设计文档到自洽，再动手写代码（Memora 内核宿主）",
   "version": "0.0.1",
   "publisher": "zooique",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/zooique/memora.git"
+  },
+  "homepage": "https://gitee.com/zooique/memora#readme",
   "private": true,
   "type": "module",
   "engines": {

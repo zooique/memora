@@ -20,7 +20,9 @@ node_modules/**
 **/node_modules/**
 
 # 其他
-.vscode/test/**
+.vscode/**
 .svscodeignore
 *.vsix
 dist/**/*.map
+# 编译产物中的测试文件（tsc 会把 src/__tests__ 一并编译进 dist，分发时排除）
+**/__tests__/**
