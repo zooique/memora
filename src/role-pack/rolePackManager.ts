@@ -49,6 +49,7 @@ import type {
   BehaviorStrategy,
 } from '@/role-pack/types.js';
 import { assembleRolePack } from '@/role-pack/types.js';
+import { validateRolePack } from '@/role-pack/validator.js';
 
 /** 排除的文件名（不纳入扫描） */
 const EXCLUDED_FILES = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
@@ -476,14 +477,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
           const packFile = join(fullPath, 'role-pack.md');
           try {
             await access(packFile);
-            const pack = await this.parsePackFile(packFile, entry);
+            const pack = await this.parsePackFile(packFile, entry, 'folder');
             if (pack) map.set(pack.name, pack);
           } catch {
             // 文件夹无 role-pack.md：不是角色包，跳过
           }
         } else if (entry.endsWith('.md') && !EXCLUDED_FILES.has(entry)) {
           // 单文件最小形态
-          const pack = await this.parsePackFile(fullPath, basename(entry, '.md'));
+          const pack = await this.parsePackFile(fullPath, basename(entry, '.md'), 'single-file');
           if (pack) map.set(pack.name, pack);
         }
       } catch (err) {
@@ -503,10 +504,23 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   private async parsePackFile(
     filePath: string,
     fallbackName: string,
+    form: 'single-file' | 'folder' = 'single-file',
   ): Promise<RolePack | null> {
     try {
       const raw = await readFile(filePath, 'utf-8');
       const { frontmatter: fm, body } = parseRolePackFrontmatter(raw);
+
+      // A-2（role-pack-spec §八）：接入格式校验器——校验失败记录 warning，不阻塞装载
+      // 角色包当前处"草案演进期"，打断坏包会破坏现有装载；以 warn 暴露问题待修，
+      // 待标准 v1 冻结后再收紧为"拒绝加载"。
+      const validation = validateRolePack({ frontmatter: fm, body, form });
+      if (!validation.valid) {
+        const errors = validation.issues.filter((i) => i.severity === 'error');
+        getLogger().warn(
+          { file: filePath, errors: errors.map((e) => e.message) },
+          '角色包校验未通过（警告级，暂不拒绝装载）',
+        );
+      }
 
       // 解析元数据（嵌套 frontmatter：值可能为 string/number/boolean）
       const str = (v: unknown): string | undefined =>

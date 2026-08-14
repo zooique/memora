@@ -305,11 +305,13 @@ export class AgentLoop {
           `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${remaining}`),
       selfReviewPrompt:
         opts.messages?.selfReviewPrompt ??
-        ((round: number, total: number) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请审查你上一条回复的质量。检查：
-1. 是否准确回答了用户的问题？
-2. 是否有遗漏的关键信息？
-3. 表达是否清晰、有条理？
+        ((round: number, total: number) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——mvp-scope §三·一 防"自说自话"）。检查：
+1. 本轮目标点是否全部覆盖（用户明确要求的内容是否都处理了）？
+2. 是否遵守了 Rules 中的安全/边界约束（如"不写敏感信息"）？
+3. 产出结构是否完整（正文/代码/文档是否齐全）？
+4. 如有可运行项（格式/测试/语法），是否通过？
 
+只有存在可验证判据时才审查；无明确判据时不强行修改。
 如果满意，请确认并输出最终版本。
 如果需要改进，请直接输出改进后的完整回复。`),
     };

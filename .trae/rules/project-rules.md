@@ -54,7 +54,8 @@ memora/                          # Git 仓库根目录
 ├── tasks/                       # 统一任务追踪（内核 + 精灵共享，唯一真理源）
 │
 └── hosts/
-    └── memora-sprite/           # 功能展示项目（独立 package，演示 memora 内核能力）
+    ├── vscode-plugin/            # 第一宿主：VS Code 插件（当前主战场，演示 memora 内核能力）
+    └── memora-sprite/            # 早期桌面精灵宿主（已搁置，实现保留供参考）
         ├── .trae/rules/         # 精灵专属规则（仅 directory-structure.md）
         ├── package.json         # 精灵独立 package（name: "memora-sprite"）
         ├── tsconfig.json        # 精灵独立 tsconfig（含 electron 多配置）
