@@ -114,9 +114,35 @@ DeepSeek Harness（2026-08-13 开源，MIT）提出三大可借鉴点：
 
 ---
 
-## 五、后续落地（可选）
+## 五、内核设计思维对比（客观评价）
 
-- [ ] 建议 A：`preExecutionCheck` 返回值扩展为 `{ skip, previousResult?, overrideArgs?, denied? }`，供宿主实现审批/审计/参数改写
+> 本节脱离"落地工具属性"，只比较两者与 memora 同层级的内核设计思维。核心前提：**"一切皆插件"与"一切皆记忆"不在同一抽象层级**——前者是通用软件架构模式（微内核 + 插件 + 配置组合，套到 IDE/浏览器/CI 皆成立），后者是对"Agent 是什么"的本质回答（Agent 领域内核思维）。
+
+### 5.1 分层维度对比
+
+| 维度 | DeepSeek Harness | memora | 更优方 |
+|------|-----------------|--------|--------|
+| 可组合性 | 模型/沙箱/存储/Loop 整体可替换 | 仅替换边界（存储/LLM/向量/日志） | Harness |
+| 可追溯性 | "模型可见即已记录"是架构不变量（append-only 事件溯源） | 软链接溯源（`isTraceable`，对话删除即失效） | Harness |
+| 配置驱动扩展 | `cordis.patch.yml` 零代码叠加 | 注入需写代码 | Harness |
+| 设计原点纯度 | 最小单元是插件，但多元（Context/Service/Event 三抽象 + Loop 例外） | 单一最小单元（单轮闭环），一切皆其自然生长 | memora |
+| 认知负担 | 230+ workspace / 30+ Service / 三层事件瀑布 | 一套闭环 + 一套记忆模型 + 少量接口 | memora |
+| 抓住 Agent 本质 | 记忆降级为日志投影（无治理/去重/衰减/跨会话） | 记忆是一等公民（L1-L4 治理 / 双通道召回 / 跨会话） | memora |
+
+### 5.2 结论
+
+- **论"Agent 内核设计思维"本身**：memora 更优秀——设计原点更纯（单一真理源）、更本质（回答"Agent 是什么"而非"如何搭通用系统"）、更可预测（单 Agent 单记忆状态机）、认知负担更低。
+- **论"可追溯性不变量"这一个点**：Harness 更优秀，是 memora 唯一该真正吸收的内核级思想——但吸收方式是**抄思想不抄机制**：把"模型可见即已记录"作为可追溯性设计目标，用 ITracer 承载，而非照搬事件溯源（会破坏 memora 轻量哲学，见建议 C 排雷）。
+
+**一句话**：Harness 是更优秀的"平台"（可组合、可追溯、可配置），memora 是更优秀的"Agent 内核"（更本质、更纯、更可预测）。两者的"一切皆X"不构成同维竞争——一个回答"代码怎么组织"，一个回答"Agent 怎么记忆与决策"。
+
+---
+
+## 六、后续落地（可选）
+
+- [x] 建议 A：`preExecutionCheck` 返回值扩展为 `{ skip, previousResult?, overrideArgs?, denied? }`，供宿主实现审批/审计/参数改写
+  - **已落地（2026-08-15）**：三态返回收敛为 `PreExecutionResult` 接口（[types.ts](../../src/agent/types.ts)）；宿主回调经 [agent.ts](../../src/agent/agent.ts) 统一执行前检查点与内部幂等检查**组合**（先宿主审批 → 再幂等检查）；[loop.ts](../../src/agent/loop.ts) 消费三态——拒绝返回 `[ERR:TOOL:PERMISSION_DENIED]`（不可重试）、跳过返回 `previousResult`、放行使用 `overrideArgs` 改写参数。设计见 [agent-design-philosophy.md §7.2.1 工具执行的统一入口与执行前检查](../architecture/agent-design-philosophy.md)。
 - [ ] 若需"模型看到了什么"的可追溯，扩展 ITracer span 属性（attachedMemory / systemPromptHash），不入 sessionStore
+  - **设计意图已融合（2026-08-15）**：可追溯性边界（"模型看到了什么"由 ITracer 承载、不入 sessionStore）已在 [memory-as-summary.md §5.2.1 可追溯性边界](../architecture/memory-as-summary.md) 声明；**代码未落地**——按需扩展，非当前阻塞项。
 
 > 落地前需遵循项目既有流程：方案更新 → 补测试 → 测试回归 → 提交前审查。

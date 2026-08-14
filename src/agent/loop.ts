@@ -12,7 +12,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
-import type { AgentChunk, UIMessages, SessionEvent } from '@/agent/types.js';
+import type { AgentChunk, UIMessages, SessionEvent, PreExecutionResult } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
@@ -120,18 +120,20 @@ export interface AgentLoopOptions {
    */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
   /**
-   * 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
+   * 工具执行前检查回调（设计文档 §7.2.1，统一执行前检查点）
    *
-   * 每次工具执行前调用，检查该工具是否已在当前会话中执行过。
-   * 用于 outbox 模式：恢复时避免重复执行已完成的幂等工具。
-   * 返回 { skip: true, previousResult } 时跳过执行，直接返回已有结果。
+   * 每次工具执行前调用，是"执行前约束"（审批/审计/参数改写/幂等去重）的单一物理落地载体。
+   * 返回三态（PreExecutionResult）：
+   * - 放行（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数；
+   * - 跳过（skip=true, 无 denied）：返回 previousResult 让 LLM 继续生成（幂等去重/一次语义）；
+   * - 拒绝（skip=true, denied=true）：阻止执行，阻止该工具意图（审批否决/白名单/只读拦截）。
    * 未注入时正常执行，保持向后兼容。
    *
    * @param name - 工具名称
    * @param args - 工具参数 JSON 字符串
-   * @returns 是否跳过执行及之前的结果
+   * @returns 三态执行前检查结果
    */
-  preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
+  preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /**
    * 主动提问回调（当回答中检测到 LLM 结构化输出 `[ASK] 问题` 时调用）
    *
@@ -1332,10 +1334,22 @@ export class AgentLoop {
     });
 
     try {
-      // ── P3.4 仅一次语义：执行前检查是否已执行过 ──────────
-      // 若检查回调返回 skip=true，跳过执行直接返回已有结果
-      // 避免恢复时重复执行已完成的幂等工具
+      // ── 统一执行前检查点（设计文档 §7.2.1，三态）─────────────────
+      // 单一检查点承载全部执行前约束：审批/审计/参数改写（宿主）+ 幂等去重（内部）。
+      // 拒绝（denied）：阻止工具意图，返回结构化错误让 LLM 调整策略（而非重试）。
+      // 跳过（skip）：幂等去重，返回已有结果让 LLM 继续生成。
+      // 放行（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数。
       const preCheck = this.opts.preExecutionCheck?.(tc.function.name, tc.function.arguments);
+      if (preCheck?.denied) {
+        const reason = preCheck.reason ?? '工具调用被拒绝';
+        logger.warn(
+          { tool: tc.function.name, reason },
+          '工具调用被拒绝（执行前检查）',
+        );
+        toolSpan.setAttribute('denied', true);
+        // PERMISSION_DENIED 是不可重试错误码，LLM 见后会调整策略而非重试
+        return `[ERR:TOOL:PERMISSION_DENIED] ${reason}`;
+      }
       if (preCheck?.skip) {
         const previousResult = preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
         logger.debug(
@@ -1346,12 +1360,15 @@ export class AgentLoop {
         return previousResult;
       }
 
+      // 放行：若有改写参数则用改写后的参数执行（审计/审批参数改写）
+      const effectiveArgs = preCheck?.overrideArgs ?? tc.function.arguments;
+
       // 工具执行包裹 signal 中断，避免 abort 无法中断卡住的 generator
       // raceToolWithSignal 天然兼容并发：每个调用独立 race，{ once: true } 监听器无副作用
-      const result = await this.raceToolWithSignal(tc.function.name, tc.function.arguments, signal);
+      const result = await this.raceToolWithSignal(tc.function.name, effectiveArgs, signal);
       // 通知上层工具执行完成（P3.3 工具幂等 outbox 模式）
       const ok = !result.startsWith('[ERR');
-      this.opts.onToolExecuted?.(tc.function.name, tc.function.arguments, result, ok);
+      this.opts.onToolExecuted?.(tc.function.name, effectiveArgs, result, ok);
       return result;
     } catch (err) {
       // 工具执行可能因文件不存在、路径越界等原因失败

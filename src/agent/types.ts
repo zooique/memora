@@ -684,6 +684,32 @@ import type { ProviderRouter } from '@/llm/types.js';
  */
 export type FileConsistencyCheck = (id: string, expected: 'exists' | 'absent') => boolean;
 
+/**
+ * 工具执行前检查的三态结果（设计文档 §7.2.1）
+ *
+ * 所有工具调用经过统一执行入口，入口前由 preExecutionCheck 做执行前检查。
+ * 返回三态——"策略是枚举，检查是载体"（§14.3 的策略维度是声明层，本类型是机制层）：
+ *
+ * - **放行**（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数（审计/参数改写场景）。
+ * - **跳过**（skip=true, 无 denied）：不执行，返回 previousResult 让 LLM 继续生成（幂等去重/一次语义）。
+ * - **拒绝**（skip=true, denied=true）：阻止执行，阻止该工具意图（工具批准否决/白名单拦截/只读拦截）。
+ *
+ * 向后兼容：`{ skip: boolean; previousResult?: string }`（旧两态）仍是合法子集，
+ * 新增 overrideArgs / denied / reason 三个可选字段补齐三态，不破坏既有宿主实现。
+ */
+export interface PreExecutionResult {
+  /** 是否跳过执行（true = 跳过或拒绝，false = 放行） */
+  skip: boolean;
+  /** 跳过时返回的已有结果（幂等去重场景，供 LLM 继续生成） */
+  previousResult?: string;
+  /** 放行时可改写后的参数 JSON 字符串（审批/审计改写参数场景） */
+  overrideArgs?: string;
+  /** 拒绝标记（比 skip 更硬：阻止工具意图并告知 LLM 被拒，阻止其重试） */
+  denied?: boolean;
+  /** 拒绝原因（denied=true 时提供，回传给 LLM 让其调整策略而非重试） */
+  reason?: string;
+}
+
 /** Agent 构造选项 */
 export interface AgentOptions {
   /** 项目路径（必须） */
@@ -747,6 +773,15 @@ export interface AgentOptions {
    * 校验失败抛 configError（fail-fast），未注入时完全降级为现状。
    */
   fileConsistencyCheck?: FileConsistencyCheck;
+  /**
+   * 工具执行前检查回调（设计文档 §7.2.1，宿主审批/审计/参数改写通道，可选）
+   *
+   * 宿主注入时，Agent 在装配阶段将本回调与内部幂等检查**组合**为单一检查点
+   * （先宿主审批 → 再幂等检查），统一作用于所有工具调用。
+   * 支持三态返回（PreExecutionResult）：放行（可改写参数）/ 跳过（幂等去重）/ 拒绝（阻止工具意图）。
+   * 未注入时完全降级为现状（仅内部幂等检查），保持向后兼容。
+   */
+  preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */

@@ -34,7 +34,7 @@ const ROUND_SUMMARY_LOADER_MAX = 5;
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
-import type { AgentConfig, FileConsistencyCheck } from '@/agent/types.js';
+import type { AgentConfig, FileConsistencyCheck, PreExecutionResult } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
@@ -73,12 +73,12 @@ export interface AssembleCallbacks {
    */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
   /**
-   * 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
+   * 工具执行前检查回调（设计文档 §7.2.1，统一执行前检查点）
    *
-   * AgentLoop 每次工具执行前调用，检查是否已执行过。
-   * 用于 outbox 模式：恢复时避免重复执行已完成的幂等工具。
+   * AgentLoop 每次工具执行前调用，是"执行前约束"（审批/审计/参数改写/幂等去重）
+   * 的单一物理落地载体。返回三态（PreExecutionResult）：放行/跳过/拒绝。
    */
-  preExecutionCheck?: (name: string, args: string) => { skip: boolean; previousResult?: string };
+  preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
   fileConsistencyCheck?: FileConsistencyCheck;
 }

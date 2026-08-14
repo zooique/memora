@@ -27,6 +27,7 @@ import type { AgentLoop } from '@/agent/loop.js';
 import { COMPLETION_LEVELS } from '@/agent/types.js';
 import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard, IdempotencyLevel } from '@/agent/types.js';
 import type { SessionEvent, SessionCheckpoint, ResolvedDelta, ToolExecutionRecord } from '@/agent/types.js';
+import type { PreExecutionResult } from '@/agent/types.js';
 import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
 import { Composer } from '@/agent/composer.js';
 import type { PlanContext } from '@/agent/types.js';
@@ -239,6 +240,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       archiveMode: opts.archiveMode ?? 'full',
       webSearchProvider: opts.webSearchProvider,
       fileConsistencyCheck: opts.fileConsistencyCheck,
+      // 宿主审批/审计/参数改写通道（§7.2.1）：透传进内部配置，
+      // 供装配阶段与内部幂等检查组合为单一执行前检查点
+      preExecutionCheck: opts.preExecutionCheck,
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -1976,22 +1980,37 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             this._sessionManager.logToolExecution(record);
           }
         },
-        // 工具执行前检查回调（P3.4 补偿机制·仅一次语义）
-        // 检查工具是否已在当前会话的检查点中执行过
-        // 仅对幂等工具生效（idempotent / idempotent-key），非幂等工具不跳过
-        preExecutionCheck: (name, args) => {
+        // 工具执行前检查回调（设计文档 §7.2.1，统一执行前检查点）
+        // 组合宿主审批 + 内部幂等检查为单一检查点：
+        //   1. 宿主审批优先（可拒绝/跳过/改写参数）——denied 直接短路返回；
+        //   2. 宿主放行后，再做内部幂等检查（outbox 仅一次语义）。
+        // 未注入宿主回调时完全降级为现状（仅内部幂等检查）。
+        preExecutionCheck: (name, args): PreExecutionResult => {
+          // 1. 宿主审批（审批/审计/参数改写/白名单/只读拦截通道）
+          const hostResult = this.#config.preExecutionCheck?.(name, args);
+          if (hostResult?.denied) return hostResult; // 拒绝：直接短路，阻止工具意图
+          if (hostResult?.skip) return hostResult; // 跳过：宿主决定不执行
+          // 2. 内部幂等检查（P3.4 补偿机制·仅一次语义）
+          // 检查工具是否已在当前会话的检查点中执行过
+          // 仅对幂等工具生效（idempotent / idempotent-key），非幂等工具不跳过
           const sm = this._sessionManager;
-          if (!sm) return { skip: false };
+          if (!sm) return { skip: false, overrideArgs: hostResult?.overrideArgs };
           // 幂等契约判断委托 shouldSkipForIdempotency（builtinTools.ts SSOT）：
           // - non-idempotent 不跳过（失败可重试，恢复由补偿机制兜底）
           // - 幂等工具仅上次执行成功（ok === true）时跳过（J1 修复，与注释对齐）
           const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
-          return shouldSkipForIdempotency(
+          const idemResult = shouldSkipForIdempotency(
             sm.getCheckpoint()?.completedToolCalls,
             name,
             args,
             idempotent,
           );
+          // 组合：幂等跳过优先；放行时透传宿主的参数改写
+          return {
+            skip: idemResult.skip,
+            previousResult: idemResult.previousResult,
+            overrideArgs: hostResult?.overrideArgs,
+          };
         },
         fileConsistencyCheck: this.#config.fileConsistencyCheck,
       },

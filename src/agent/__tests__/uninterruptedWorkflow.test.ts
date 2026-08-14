@@ -33,6 +33,7 @@ import type {
   SessionCheckpoint,
   PlanStep,
   ToolExecutionRecord,
+  PreExecutionResult,
 } from '@/agent/types.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -1926,6 +1927,53 @@ class ToolThenToolThenTextProvider extends LlmProvider {
   }
 }
 
+/**
+ * 单工具调用后转为文本的 Mock Provider
+ *
+ * 首轮 LLM 调用返回一次 tool_call（name/args 可配置），后续轮次返回普通文本，
+ * 模拟 LLM 在拿到工具结果后继续作答。
+ * 用于验证执行前检查三态（放行/跳过/拒绝）对工具结果的影响（§7.2.1）。
+ *
+ * RoundSummaryGenerator（记忆即摘要）会用主 provider 生成摘要——识别摘要请求
+ * 并返回有效 JSON，避免污染工具轮次计数（与 ToolThenToolThenTextProvider 同策略）。
+ */
+class SingleToolThenTextProvider extends LlmProvider {
+  readonly name = 'mock-single-tool';
+  private toolTurnYielded = false;
+
+  constructor(
+    private toolName: string,
+    private toolArgs: string,
+  ) {
+    super();
+  }
+
+  async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    const sysContent = messages.find((m) => m.role === 'system')?.content;
+    if (typeof sysContent === 'string' && sysContent.includes('对话摘要生成器')) {
+      yield { content: JSON.stringify({ summary: '测试摘要', type: 'general' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    if (!this.toolTurnYielded) {
+      this.toolTurnYielded = true;
+      yield {
+        toolCalls: [
+          {
+            id: 'call-precheck-1',
+            type: 'function',
+            function: { name: this.toolName, arguments: this.toolArgs },
+          },
+        ],
+      };
+      yield { finishReason: 'tool_calls' };
+      return;
+    }
+    yield { content: '工具结果已处理' };
+    yield { finishReason: 'stop' };
+  }
+}
+
 describe('SSOT 排雷防回归 · 暂停链路', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2261,5 +2309,229 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
 
     // 核心断言：已确定槽位（role）必须在暂停前落检查点
     expect(agent.sessionManager!.getCheckpoint()!.role.name).toBe('expert');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 工具执行前检查三态（§7.2.1 统一执行前检查点 · 宿主审批通道）
+// ═══════════════════════════════════════════════════════════════
+
+describe('工具执行前检查三态（宿主审批通道 §7.2.1）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-precheck-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-precheck-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-precheck-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+    // 探针文件写入项目根（read_file 相对项目根解析）：
+    //   probe.txt —— LLM 原始参数指向的文件
+    //   rewritten.txt —— 宿主改写参数（overrideArgs）指向的文件（内容可区分，用于证明改写生效）
+    writeFileSync(join(tmpProject, 'probe.txt'), '原始文件内容', 'utf-8');
+    writeFileSync(join(tmpProject, 'rewritten.txt'), '改写后的文件内容', 'utf-8');
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  /**
+   * 驱动单工具对话，返回 tool_result chunks（三态断言的数据源）
+   *
+   * 经 Agent 门面注入宿主 preExecutionCheck（与内部幂等检查组合为单一检查点），
+   * 完整走 chat 流验证三态在真实执行链路上的落地。
+   */
+  async function runSingleToolChat(
+    opts: { preExecutionCheck?: (name: string, args: string) => PreExecutionResult },
+    toolName = 'read_file',
+    toolArgs = '{"path":"probe.txt"}',
+  ): Promise<Array<{ name: string; ok: boolean; summary?: string }>> {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SingleToolThenTextProvider(toolName, toolArgs),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpProject, tmpData],
+      // 关闭自动归档：避免归档 LLM 调用污染工具轮次计数
+      archiveMode: 'manual',
+      preExecutionCheck: opts.preExecutionCheck,
+    });
+    await agent.init();
+    const results: Array<{ name: string; ok: boolean; summary?: string }> = [];
+    for await (const chunk of agent.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') {
+        results.push({ name: chunk.name, ok: chunk.ok, summary: chunk.summary });
+      }
+    }
+    return results;
+  }
+
+  it('拒绝：denied=true 阻止工具执行，LLM 收到 PERMISSION_DENIED', { timeout: 30000 }, async () => {
+    const results = await runSingleToolChat({
+      preExecutionCheck: (name) =>
+        name === 'read_file'
+          ? { skip: true, denied: true, reason: '只读范围外的文件不可访问' }
+          : { skip: false },
+    });
+
+    // 单一 tool_result，且为拒绝错误（ok=false，不可重试错误码 + 拒绝原因）
+    expect(results).toHaveLength(1);
+    expect(results[0]!.name).toBe('read_file');
+    expect(results[0]!.ok).toBe(false);
+    expect(results[0]!.summary).toContain('[ERR:TOOL:PERMISSION_DENIED]');
+    expect(results[0]!.summary).toContain('只读范围外的文件不可访问');
+  });
+
+  it('跳过：skip=true 不执行工具，LLM 直接拿到已有结果', { timeout: 30000 }, async () => {
+    const results = await runSingleToolChat({
+      preExecutionCheck: () => ({ skip: true, previousResult: '宿主缓存的已有结果' }),
+    });
+
+    // skip 返回的 previousResult 原样透传（ok=true，非错误）
+    expect(results).toHaveLength(1);
+    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.summary).toContain('宿主缓存的已有结果');
+  });
+
+  it('放行+改写参数：skip=false 且 overrideArgs 以改写后的参数执行', { timeout: 30000 }, async () => {
+    const results = await runSingleToolChat({
+      // 宿主放行，并把路径从 probe.txt 改写为 rewritten.txt
+      preExecutionCheck: () => ({ skip: false, overrideArgs: '{"path":"rewritten.txt"}' }),
+    });
+
+    // 工具以改写参数实际执行：读到 rewritten.txt 的内容，而非 probe.txt 的内容
+    expect(results).toHaveLength(1);
+    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.summary).toContain('改写后的文件内容');
+    expect(results[0]!.summary).not.toContain('原始文件内容');
+  });
+
+  it('组合-拒绝短路：即使工具已执行过（幂等可跳），宿主 denied 仍优先', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpProject, tmpData],
+      archiveMode: 'manual',
+      preExecutionCheck: () => ({ skip: true, denied: true, reason: '宿主临时禁令' }),
+    });
+    await agent.init();
+
+    // 预置检查点 + 已完成的幂等工具记录：内部幂等本应跳过，但宿主 denied 必须优先短路
+    // （logToolExecution 在 checkpoint 为 null 时静默返回，必须先建检查点）
+    agent.createCheckpoint('测试拒绝短路');
+    agent.sessionManager!.logToolExecution({
+      name: 'read_file',
+      argsSignature: '{"path":"probe.txt"}',
+      executedAt: Date.now(),
+      resultSummary: '已有记录',
+      ok: true,
+      idempotent: 'idempotent',
+    });
+
+    const results: Array<{ ok: boolean; summary?: string }> = [];
+    for await (const chunk of agent.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') {
+        results.push({ ok: chunk.ok, summary: chunk.summary });
+      }
+    }
+
+    // 拒绝短路幂等：返回 PERMISSION_DENIED 而非 outbox 跳过标记
+    expect(results).toHaveLength(1);
+    expect(results[0]!.ok).toBe(false);
+    expect(results[0]!.summary).toContain('[ERR:TOOL:PERMISSION_DENIED]');
+    expect(results[0]!.summary).toContain('宿主临时禁令');
+  });
+
+  it('组合-放行后幂等生效：宿主 skip=false 放行，内部幂等仍按 outbox 语义跳过', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpProject, tmpData],
+      archiveMode: 'manual',
+      // 宿主纯放行（无改写），是否跳过完全交给内部幂等检查
+      preExecutionCheck: () => ({ skip: false }),
+    });
+    await agent.init();
+
+    // 预置检查点 + 已完成的幂等工具记录（read_file 为 'idempotent' 级别）
+    agent.createCheckpoint('测试放行后幂等');
+    agent.sessionManager!.logToolExecution({
+      name: 'read_file',
+      argsSignature: '{"path":"probe.txt"}',
+      executedAt: Date.now(),
+      resultSummary: '幂等上次结果',
+      ok: true,
+      idempotent: 'idempotent',
+    });
+
+    const results: Array<{ ok: boolean; summary?: string }> = [];
+    for await (const chunk of agent.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') {
+        results.push({ ok: chunk.ok, summary: chunk.summary });
+      }
+    }
+
+    // 宿主放行 → 内部幂等跳过：outbox 标记 + 上次结果
+    expect(results).toHaveLength(1);
+    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
+    expect(results[0]!.summary).toContain('幂等上次结果');
+  });
+
+  it('向后兼容：未注入宿主回调时，内部幂等检查照常工作', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpProject, tmpData],
+      archiveMode: 'manual',
+      // 不注入 preExecutionCheck：完全降级为现状（仅内部幂等检查）
+    });
+    await agent.init();
+
+    agent.createCheckpoint('测试向后兼容');
+    agent.sessionManager!.logToolExecution({
+      name: 'read_file',
+      argsSignature: '{"path":"probe.txt"}',
+      executedAt: Date.now(),
+      resultSummary: '现状幂等结果',
+      ok: true,
+      idempotent: 'idempotent',
+    });
+
+    const results: Array<{ ok: boolean; summary?: string }> = [];
+    for await (const chunk of agent.chat('读取探针文件')) {
+      if (chunk.type === 'tool_result') {
+        results.push({ ok: chunk.ok, summary: chunk.summary });
+      }
+    }
+
+    // 无宿主回调 → 幂等照常：outbox 标记 + 上次结果
+    expect(results).toHaveLength(1);
+    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
+    expect(results[0]!.summary).toContain('现状幂等结果');
   });
 });
