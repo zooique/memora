@@ -37,7 +37,6 @@ Memora is a **brain kernel that cannot run standalone** — it has interfaces bu
 | **Long-term Memory** | Cross-session, cross-topic memory persistence with intelligent recall |
 | **Dual-channel Recall** | Semantic vector search + keyword search, hybridMerge fusion ranking |
 | **Memory Governance L1-L4** | L1 semantic dedup → L2 timeliness eval → L3 conflict detection → L4 scheduled decay |
-| **Relation Graph** | contradicts / supports / follows / refines / caused — five relation types |
 | **Agent-Persona Separation** | Agent is a pure memory engine; persona is a personality vessel. Switch personas without losing memories |
 | **Unified Memory Model** | Everything is a "Memory" primitive, distinguished by open-string `source` — no closed enums |
 | **Domain-agnostic** | Same architecture, different memory configs → different domains |
@@ -148,7 +147,6 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 |-----------|---------------|------------------------|
 | `IMemoryStorage` | Memory CRUD + search + decay | `InMemoryStorage` |
 | `IVectorStore` | Semantic vector index | `JsonVectorStore` |
-| `IMemoryRelationStore` | Memory relation graph | `InMemoryRelationStore` |
 | `ISessionStore` | Session history persistence | None (host implements) |
 | `ILogger` | Logging output | console fallback |
 | `ITracer` | Observability spans | `NOOP_TRACER` |
@@ -165,7 +163,7 @@ src/
 │   ├── toolExecutor.ts    # Tool registration & execution
 │   ├── contextManager.ts  # Context window management (truncation + summary)
 │   ├── guardrail.ts       # Content guardrails (regex + block/warn)
-│   └── managers/          # 14 specialized Managers + helper modules
+│   └── managers/          # 13 specialized Managers + helper modules
 │       ├── archiveCoordinator.ts   # Archive coordination
 │       ├── memoryInspector.ts      # Memory read/write (CRUD + search + stats)
 │       ├── memoryGovernance.ts     # Governance unified facade (L1-L4)
@@ -173,7 +171,6 @@ src/
 │       ├── memoryDecayScheduler.ts # L4 scheduled decay + L2 timeliness
 │       ├── memoryAdvisor.ts        # L3 conflict detection + health diagnosis
 │       ├── insightExtractor.ts     # Conversation insight extraction
-│       ├── relationBuilder.ts      # Memory relation building (ADR-014)
 │       ├── sessionManager.ts       # Session management (fork/switch)
 │       ├── sessionArchiver.ts      # Session content archiving
 │       ├── configManager.ts        # Config management (hot-reload rules/skills)
@@ -182,14 +179,12 @@ src/
 │       ├── textPolishManager.ts    # Text polishing
 │       └── chatLockManager.ts      # Chat concurrency lock
 ├── memory/           # Memory engine
-│   ├── types.ts          # Memory primitive (8 fields) + relation types
+│   ├── types.ts          # Memory primitive (8 fields)
 │   ├── storageInterface.ts  # IMemoryStorage interface (16 methods)
 │   ├── recall.ts         # Dual-channel recall (semantic + keyword)
 │   ├── hybridMerge.ts    # Fusion ranking algorithm
 │   ├── vectorStore.ts    # IVectorStore + JsonVectorStore
-│   ├── relationStore.ts  # IMemoryRelationStore interface
 │   ├── governance.ts     # Governance shared constants (decay/boost/ceiling)
-│   ├── userProfile.ts    # User profile management
 │   └── projectManager.ts # Multi-project registry + lock management
 ├── llm/              # LLM adapter layer
 │   ├── provider.ts       # LlmProvider abstract class
@@ -214,7 +209,7 @@ src/
 | LLM Protocol | OpenAI Chat Completions compatible (streaming SSE + Tool Calling) | ADR-003 |
 | Memory Model | Open-string source primitive ("Everything is Memory" v2) | ADR-004 |
 | Vector Search | IVectorStore interface + built-in JsonVectorStore (pure JS cosine similarity) | ADR-002 |
-| Relation Graph | IMemoryRelationStore sidecar model (non-invasive to Memory primitive) | ADR-014 |
+| Conflict Resolution | Memory conflicts resolved via supersededBy boolean flag | ADR-021 |
 | Form Factor | Pure logic library (zero native deps, CLI/UI provided by host) | ADR-002 |
 | Security | Two-level permissions + path whitelist + audit log | ADR-006 |
 | Testing | Vitest + MSW Mock LLM + InMemoryStorage | ADR-007 |

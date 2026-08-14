@@ -90,9 +90,9 @@ description:
 | `skill`     | 设定记忆，不参与 recall  | 领域知识、能力技能 |
 | `content`   | 按相关度增量召回（归档模式三态控制，ADR-015） | 会话归档的工作内容投影 |
 | `insight`   | 按相关度增量召回        | 对话提取的洞察、历史话题归档 |
-| `profile`   | 按相关度增量召回        | 用户画像（身份、偏好、专长） |
+| `profile`   | 按相关度增量召回        | 用户画像（已随画像层收敛废弃，仅存量数据兼容，2026-08-14） |
 
-**记忆关系（侧车，ADR-014）**：MemoryRelation 不参与永久性分级，是独立的侧车数据。关系数据在 InsightExtractor 归档时构建，召回时通过 `getRelations(memoryId)` 按需查询，不进入 bootstrap 加载。
+**记忆关系图谱已移除（ADR-014 已废弃，2026-08-14）**：独立侧车模型（`MemoryRelation`/`IMemoryRelationStore`/`RelationBuilder`）判定为过度设计并整体移除。冲突检测改用 `supersededBy` 布尔标记（[ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) 写路径取代检测），用户画像收敛为 `round-summary` 的 `type=preference` 召回（见 [memory-as-summary.md](../architecture/memory-as-summary.md)）。
 
 ## 3. 冷热分离（File vs DB）
 
@@ -147,7 +147,7 @@ domain），其余在 Agent Loop 中按需检索。
 - 向量搜索失败时静默降级到关键词——保护专注态不被网络抖动打断
 - 单次增量召回 Token 预算不超过上下文窗口的 10%
 - 归档时走记忆归档三原则过滤，拒绝低价值重复信息
-- **记忆关系按需查询**：召回记忆后，可通过 `IMemoryRelationStore.getRelations(memoryId)` 查询该记忆的关系（矛盾/支持/衍生等），用于上下文增强和冲突提示。关系查询不进入 bootstrap，仅在需要时触发（ADR-014）
+- **冲突消解（ADR-021）**：记忆冲突通过 `supersededBy` 布尔标记表达（写路径取代检测，读时过滤），不再使用关系图谱侧车（ADR-014 已废弃）
 - `recall()` 默认 `excludeSources = [persona, rule, skill]`（设定记忆不进入召回，双重防御）
 
 **禁止**：

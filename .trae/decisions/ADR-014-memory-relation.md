@@ -5,9 +5,15 @@ description: 记忆关系图谱——独立侧车模型，开放字符串关系�
 
 # ADR-014 · 记忆关系图谱（侧车模型）
 
-> **状态**：✅ 已接受
-> **日期**：2026-06-25（2026-07-08 补充关系查询归属 + RelationBuilder 拆分）
+> **状态**：❌ 已废弃（2026-08-14 收敛移除）
+> **日期**：2026-06-25（2026-07-08 补充关系查询归属 + RelationBuilder 拆分；2026-08-14 判定为过度设计并移除）
 > **来源**：阶段二 Phase 1.1 排雷优化方案（原迭代规划文档已废弃，规划内容现以本 ADR 为准）
+
+> **⚠️ 废弃说明（2026-08-14）**：本 ADR 的独立侧车模型（`IMemoryRelationStore`/`RelationBuilder`/`MemoryRelation`）经审查判定为**过度设计**，已整体移除。原因：
+> - **矛盾检测简化**：语义冲突不再需要复杂的 `contradicts` 关系边 + 图遍历，改用 `supersededBy` 布尔标记（[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md) 写路径取代检测）——旧摘要被新摘要覆盖时标记，读时过滤，单字段即可表达。
+> - **因果结构价值未兑现**：预想中的"记忆有因果结构"差异化价值在真实使用中未形成刚需，复杂关系类型（`supports`/`follows`/`refines`/`caused`/`related`）带来的维护成本超过收益。
+> - **单一真理源**：记忆本就以"摘要即记忆"（[memory-as-summary.md](../architecture/memory-as-summary.md)）为最小单元，关系图谱是叠加在最小单元之上的旁路机制（侧车），应回归最小单元。
+> 移除后：`types.ts` 不再导出 `MemoryRelation` 等类型，`index.ts` 不再导出 `RelationBuilder`/`IMemoryRelationStore`/`InMemoryRelationStore`，`projectManager` 不再清理关系边。下文保留作为历史决策记录。
 
 ## 背景
 

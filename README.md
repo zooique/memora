@@ -37,7 +37,6 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 | **长期记忆沉淀** | 跨会话、跨话题的记忆持久化与智能召回 |
 | **双通道召回** | 语义向量搜索 + 关键词搜索，hybridMerge 融合排序 |
 | **记忆治理 L1-L4** | L1 语义去重 → L2 时效评估 → L3 冲突检测 → L4 定时衰减 |
-| **记忆关系图谱** | contradicts / supports / follows / refines / caused 五种关系类型 |
 | **Agent 与角色分离** | Agent 是纯记忆引擎，角色是人格载体。换角色不丢记忆 |
 | **统一记忆模型** | 一切统一为「记忆」，通过 `source` 开放字符串区分，无封闭枚举 |
 | **领域可插拔** | 同一套架构，加载不同记忆配置即可适配不同领域 |
@@ -134,7 +133,7 @@ await agent.close();
 │  │  - 记忆治理 L1-L4（去重/时效/冲突/衰减） │               │
 │  │  - 角色匹配 / 技能匹配 / 护栏检查        │               │
 │  │  - 工具注册 / 工具执行 / 反思重试        │               │
-│  │  - 会话归档 / 洞察提取 / 关系构建        │               │
+│  │  - 会话归档 / 洞察提取        │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -147,7 +146,6 @@ await agent.close();
 |------|------|----------|
 | `IMemoryStorage` | 记忆 CRUD + 搜索 + 衰减 | `InMemoryStorage` |
 | `IVectorStore` | 语义向量索引 | `JsonVectorStore` |
-| `IMemoryRelationStore` | 记忆关系图谱 | `InMemoryRelationStore` |
 | `ISessionStore` | 会话历史持久化 | 无（宿主实现） |
 | `ILogger` | 日志输出 | console fallback |
 | `ITracer` | 可观测性 span | `NOOP_TRACER` |
@@ -164,7 +162,7 @@ src/
 │   ├── toolExecutor.ts    # 工具注册与执行
 │   ├── contextManager.ts  # 上下文窗口管理（截断 + 摘要）
 │   ├── guardrail.ts       # 内容护栏（正则 + block/warn）
-│   └── managers/          # 14 个专职 Manager + 辅助模块
+│       └── managers/          # 13 个专职 Manager + 辅助模块
 │       ├── archiveCoordinator.ts   # 归档协调（会话归档 + 洞察提取）
 │       ├── memoryInspector.ts      # 记忆读写（CRUD + 搜索 + 统计）
 │       ├── memoryGovernance.ts     # 治理统一门面（L1-L4）
@@ -172,7 +170,6 @@ src/
 │       ├── memoryDecayScheduler.ts # L4 定时衰减 + L2 时效评估
 │       ├── memoryAdvisor.ts        # L3 冲突检测 + 健康诊断
 │       ├── insightExtractor.ts     # 对话洞察提取
-│       ├── relationBuilder.ts      # 记忆关系构建（ADR-014）
 │       ├── sessionManager.ts       # 会话管理（分叉/切换）
 │       ├── sessionArchiver.ts      # 会话内容归档
 │       ├── configManager.ts        # 配置管理（规则/技能热加载）
@@ -181,14 +178,12 @@ src/
 │       ├── textPolishManager.ts    # 文本润色
 │       └── chatLockManager.ts      # 对话并发锁
 ├── memory/           # 记忆引擎
-│   ├── types.ts          # Memory 基元（8 字段）+ 关系类型
+│   ├── types.ts          # Memory 基元（8 字段）
 │   ├── storageInterface.ts  # IMemoryStorage 接口（16 方法）
 │   ├── recall.ts         # 双通道召回（语义 + 关键词）
 │   ├── hybridMerge.ts    # 融合排序算法
 │   ├── vectorStore.ts    # IVectorStore + JsonVectorStore
-│   ├── relationStore.ts  # IMemoryRelationStore 接口
 │   ├── governance.ts     # 治理共享常量（衰减/提升/上限）
-│   ├── userProfile.ts    # 用户画像管理
 │   └── projectManager.ts # 多项目注册 + 锁管理
 ├── llm/              # LLM 适配层
 │   ├── provider.ts       # LlmProvider 抽象类
@@ -213,7 +208,7 @@ src/
 | LLM 协议 | OpenAI Chat Completions 兼容（流式 SSE + Tool Calling） | ADR-003 |
 | 记忆模型 | source 开放字符串基元驱动（万物皆记忆 v2） | ADR-004 |
 | 向量检索 | IVectorStore 接口 + 内置 JsonVectorStore（纯 JS 余弦相似度） | ADR-002 |
-| 关系图谱 | IMemoryRelationStore 侧车模型（不侵入 Memory 基元） | ADR-014 |
+| 冲突消解 | Memory 冲突改用 supersededBy 布尔标记 | ADR-021 |
 | 形态 | 纯逻辑库（零 native 依赖，CLI/UI 由宿主提供） | ADR-002 |
 | 安全 | 两级权限 + 路径白名单 + 审计日志 | ADR-006 |
 | 测试 | Vitest + MSW Mock LLM + InMemoryStorage | ADR-007 |

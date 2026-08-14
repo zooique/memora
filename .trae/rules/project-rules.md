@@ -32,7 +32,7 @@ description: Memora 项目总则、技术栈清单、目录结构
 | 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](../decisions/ADR-001-runtime-stack.md)       |
 |        | （精灵宿主要求 Node.js 24 LTS，详见 [ADR-SP-001](../decisions/ADR-SP-001-runtime.md)） | |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](../decisions/ADR-002-storage-layer.md)       |
-| 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](../decisions/ADR-014-memory-relation.md)    |
+| 冲突消解 | supersededBy 布尔标记（写路径取代检测，读时过滤） | [ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) |
 | 归档模式 | archiveMode 三态控制（full / insights-only / manual） | [ADR-015](../decisions/ADR-015-archive-mode.md)    |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](../decisions/ADR-003-llm-adapter.md)         |
 | 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.8](../decisions/ADR-002-storage-layer.md)  |
@@ -80,8 +80,8 @@ memora/                          # Git 仓库根目录
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 用户事实提取（纯函数）+ 对话快照 + 作品投影 + 关联推荐
-├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 对话快照 + 作品投影 + 关联推荐
+├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
 ├── role-pack/      # 角色包与行为策略定义（三层结构：L1 内容 + L2 策略 + L3 代码预留）

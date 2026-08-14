@@ -1,14 +1,14 @@
-# Memora · 接入指南 v2.0.3
+# Memora · 接入指南 v2.0.4
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v2.0.3（最后更新：2026-08-01）
+> **版本**：v2.0.4（最后更新：2026-08-14）
 >
 > **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
 > - **Agent God Object 拆分（原 v3.0）**：记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference.md)。
 > - **可观测性与护栏（原 v3.1）**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
-> - **关系图谱与画像（原 v3.2）**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
-> - **npm 正式包与基础工具（原 v3.3）**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
+> - **关系图谱与画像（原 v3.2）**：新增 WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。（原 ADR-014 记忆关系图谱 IMemoryRelationStore 与 UserProfile 用户画像已随 v2.0.4 收敛删除，见下方变更。）
+> - **npm 正式包与基础工具（原 v3.3）**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
 >
 > **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：DEFAULT_CONFIG 由 `config/loader.ts` 常量声明单一真理源（不再维护独立 schema）、IVectorStore 接口提取（JsonVectorStore 内置实现）、AbortSignal 合并工具、Logger 懒初始化（移除模块顶层副作用）、评估框架结构化信号（guardrailBlocked 替代文案匹配）、文档全量对齐（包名 @zooique/memora）。
 >
@@ -19,7 +19,9 @@
 > **v2.0.2 变更**：万物皆记忆 v2（双轨模型——设定记忆 + 对话记忆）。Persona/Skill 从 SQLite 索引解耦，改为纯文件 + 内存缓存。Skill 匹配改为当轮实时注入。详见 [CHANGELOG](../CHANGELOG.md)。
 >
 > **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
-
+>
+> **v2.0.4 变更**：移除记忆关系图谱与用户画像层。内核收敛删除 ADR-014 记忆关系图谱（IMemoryRelationStore/InMemoryRelationStore/MemoryRelation 侧车）与用户画像层（UserProfile）。用户画像收敛为 round-summary 的 `type=preference` 召回；关系冲突改用 `supersededBy` 布尔标记（ADR-021）。保留 WorkProjectionManager、AutoConfigRefiner、InsightExtractor、`SOURCELABELS.PROFILE`（存量兼容）。
+>
 ---
 
 ## 目录
@@ -42,15 +44,15 @@
 
 **Memora 是一个无法独立运行的智能大脑内核。** 它只有接口，没有"形态"——宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（Persona/Skill/Rule —— Agent 的骨骼，.md 文件 + 内存缓存，确定性注入不经过召回）和**对话记忆**（Conversation/Insight/UserProfile —— Agent 的血肉，SQLite + VectorStore，语义召回）。二者通过 `autoConfigRefiner` 连接——对话洞察可生长为设定文件。
+**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（Persona/Skill/Rule —— Agent 的骨骼，.md 文件 + 内存缓存，确定性注入不经过召回）和**对话记忆**（Conversation/Insight —— Agent 的血肉，SQLite + VectorStore，语义召回）。二者通过 `autoConfigRefiner` 连接——对话洞察可生长为设定文件。用户画像已收敛为 round-summary 的 `type=preference` 召回，不再作为独立记忆层。
 
 **单 Agent 模型。** 所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
 
-**配置文件是真理源，对话记忆走 SQLite 索引。** Persona/Skill 为纯文件 + 内存缓存；Rule 文件写入 SQLite 供 bootstrap 读取；对话记忆（insight/profile）走 SQLite + 语义召回。
+**配置文件是真理源，对话记忆走 SQLite 索引。** Persona/Skill 为纯文件 + 内存缓存；Rule 文件写入 SQLite 供 bootstrap 读取；对话记忆（insight）走 SQLite + 语义召回。
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式（1.0.0）。** Agent 面类只做编排，领域操作委托给 9 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory` / `agent.userProfile` / `agent.works` / `agent.polish`（文本润色）。
+**Manager 委托模式（1.0.0）。** Agent 面类只做编排，领域操作委托给 8 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory` / `agent.works` / `agent.polish`（文本润色）。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -63,7 +65,7 @@
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 9 个 Manager getter（委托模式，含文本润色）      │               │
+│  │  - 8 个 Manager getter（委托模式，含文本润色）      │               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
@@ -354,7 +356,6 @@ const result2 = agent.forkSession('experiment');
 **记忆处理策略**：
 - 已有记忆：全局共享（记忆是全局知识库，不属于单个会话）
 - 分叉后的 Insight：各自独立（不同分支探索不同方向）
-- 用户画像：全局共享（UserProfile 是全局的）
 
 **事件监听**：
 ```typescript
@@ -392,7 +393,6 @@ agent.on('sessionForked', (event) => {
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入 |
-| `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
 | `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索；内置实现 `JsonVectorStore`） |
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
@@ -436,13 +436,12 @@ agent.on('sessionForked', (event) => {
 
 | 路径 | Manager | 主要成员 |
 |------|---------|---------|
-| `agent.memory.xxx()` | MemoryInspector | 读：`snapshot()` / `search(q, n)` / `searchHybrid(q, n)` / `stats()` / `list()` / `getById(id)` / `listDeleted()` / 关系查询；写：`writeUpsert()` / `writeDelete()` / `writeRestore()` / `writePurge()` / `writeAddRelation()` 等（`writeXxx` 前缀）。`suggest()` / `sourceHealth()` 已上移至 `agent.suggest()` / `agent.sourceHealth()` |
+| `agent.memory.xxx()` | MemoryInspector | 读：`snapshot()` / `search(q, n)` / `searchHybrid(q, n)` / `stats()` / `list()` / `getById(id)` / `listDeleted()`；写：`writeUpsert()` / `writeDelete()` / `writeRestore()` / `writePurge()` 等（`writeXxx` 前缀）。`suggest()` / `sourceHealth()` 已上移至 `agent.suggest()` / `agent.sourceHealth()` |
 | `agent.config.xxx()` | ConfigManager | `addRule(m)` / `addSimpleRule(n, c)` / `addSkill(m)` / `addSimpleSkill(n, c, k?)` / `onSuggestion(h)` / `confirm(s)` |
 | `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` / `list` |
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
-| `agent.userProfile.xxx()` | UserProfile | `load()` / `archiveFacts(f)` / `getConfirmed()` / `getPending()` / `buildSystemPrompt()` / `confirm(id)` / `reject(id)` |
 | `agent.works.xxx()` | WorkProjectionManager | `ensureProjection(path, content)` / `getProjection(path)` / `loadAll()` |
 | `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `insightExtracted` / `conflictDetected` / `projectSwitched` / `skillMatched` / `archiveFailed` |
 
@@ -463,7 +462,6 @@ import {
   createProviderFromConfig,
   loadConfig,
   InMemoryStorage,
-  InMemoryRelationStore,
   JsonVectorStore,
   EmbeddingProvider,
   setLogger,
@@ -478,8 +476,6 @@ import {
   recall,
   extractKeywords,
   SOURCE_LABELS,
-  RELATION_TYPES,
-  RELATION_WEIGHTS,
   inferSource,
   escapeLike,
   validateSource,
@@ -497,9 +493,6 @@ import type {
   ProviderConfig,
   Config,
   IMemoryStorage,
-  IMemoryRelationStore,
-  MemoryRelation,
-  RelationDirection,
   ILogger,
   ISessionStore,
   SessionMessage,
@@ -537,9 +530,6 @@ import type {
   AutoConfigRefinerOptions,
   SessionArchiveResult,
   WorkProjectionEntry,
-  UserProfileEntry,
-  ProfileCategory,
-  ExtractedFact,
   PersonaMode,
   Persona,
   SkillEntry,
@@ -576,7 +566,6 @@ import type {
 | `createProviderFromConfig(name, config)` | 从命名配置创建 LlmProvider 实例 |
 | `loadConfig(path?)` | 加载 memora.json 配置文件 |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
-| `InMemoryRelationStore` | IMemoryRelationStore 的纯内存实现（测试用） |
 | `JsonVectorStore` | 向量存储内置实现（实现 IVectorStore 接口，宿主注入 EmbeddingService 后创建，启用语义搜索） |
 | `EmbeddingProvider` | OpenAI 兼容 Embedding 端点实现（满足 EmbeddingService 接口） |
 | `setLogger(logger)` | 替换全局日志实现 |
@@ -591,8 +580,6 @@ import type {
 | `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION / GUARDRAIL） |
-| `RELATION_TYPES` | 记忆关系类型常量（CONTRADICTS / SUPPORTS / FOLLOWS / REFINES / CAUSED / RELATED） |
-| `RELATION_WEIGHTS` | 关系强度常量（NONE / WEAK / UNDEFINED / STRONG / CERTAIN） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |

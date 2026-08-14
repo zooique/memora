@@ -17,8 +17,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 职能           | 核心库（`src/`）                                                        | 宿主项目（`hosts/` / 外部）           | 当前状态      |
 | -------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------- |
 | LLM 对话       | ✅ 提供 provider 抽象 + 流式协议                                        | —                                     | ✅ 已有       |
-| 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回                                                | —                                     | ✅ 已有       |
-| 记忆关系图谱   | ✅ 提供 IMemoryRelationStore 侧车接口 + InMemoryRelationStore 测试实现 + RelationBuilder 构建机制 | ✅ 实现 SqliteRelationStore + 宿主 UI 关系图谱展示 | ✅ 已有 |
+| 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回（用户画像已收敛为 round-summary 的 type=preference 召回，见 [memory-as-summary.md](../architecture/memory-as-summary.md)） | —                                     | ✅ 已有       |
 | 安全           | ✅ 提供路径白名单 + 写入确认 + 权限模型                                 | —                                     | ✅ 已有       |
 | 通用文件 I/O   | ✅ 提供 4 个内置工具                                                    | —                                     | ✅ 已有       |
 | 工具注册机制   | ✅ 提供 `tools.registerTool()` + `tools.execute()`                       | ✅ 注册具体领域工具                   | ✅ 已有       |
@@ -47,8 +46,8 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`（已移出内核，宿主项目自行实现） | 历史参考：解析命令、REPL 循环、用户交互（精灵宿主使用 Electron 主进程替代） | 直接调数据库（应通过 memory/ 层）             |
-| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（14 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/DedupManager/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/RelationBuilder/Session/SessionArchiver/TextPolish/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 辅助模块（llmJudgeHelper/streamAccumulator）+ 对话快照 + 作品投影 + 用户事实提取（userFactExtractor，纯函数模块，位于 agent/ 根级）<br>**注**：Agent 门面类总计持有约 **21 个组件字段**——除上述 14 专职 Manager 外，还包含来自其他层的 7 个引用（projectManager/history/loop/toolExec/personaManager/userProfile/skillManager）。新增 Manager 时请同步更新此计数。 | 直接调 LLM HTTP（通过 provider 接口）           |
-| `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选）+ 关系图谱侧车（IMemoryRelationStore 接口，独立于 IMemoryStorage） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
+| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（13 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/DedupManager/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/Session/SessionArchiver/TextPolish/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 辅助模块（llmJudgeHelper/streamAccumulator）+ 对话快照 + 作品投影<br>**注**：Agent 门面类总计持有约 **20 个组件字段**——除上述 13 专职 Manager 外，还包含来自其他层的 6 个引用（projectManager/history/loop/toolExec/personaManager/skillManager）。新增 Manager 时请同步更新此计数。 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入 | 直接调 LLM                                      |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
@@ -76,7 +75,6 @@ agent/      →  llm/         （对话调用 Provider）
             →  security/    （路径校验，跨切）
 memory/     →  utils/       （frontmatter 解析 + segmenter 分词）
             →  security/    （type-only：ProjectManager.init() 需 SecurityGuard 创建项目路径守卫）
-            →  （relationStore 是侧车，独立于 IMemoryStorage，不反向依赖 agent/）
             →  （依赖倒置例外：vectorStore.ts 通过 import type 引入 llm/embedding.js 的 EmbeddingOptions——类型定义在实现方 llm/，消费者 memory/ 以 type-only 引用。EmbeddingService 方向相反，见 llm/ 行）
 persona/    →  utils/       （frontmatter 解析 + segmenter 分词）
             →  （不依赖 memory/：PersonaManager 已从 SQLite 索引解耦，纯文件+内存缓存）
@@ -103,12 +101,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 | 异步存储后端 | 不支持。未来如需 IndexedDB 等异步后端，需先启动 IAsyncMemoryStorage 预研（触发条件见 ADR-002） |
 | VectorStore 例外 | 语义搜索 `search()` 返回 `Promise<Memory[]>`（网络调用必须异步），与 IMemoryStorage 同步接口并行无冲突 |
 
-**记忆关系侧车的依赖约束**（ADR-014）：
-- `IMemoryRelationStore` 是独立接口，不依赖 `IMemoryStorage`
-- `InMemoryRelationStore`（测试用）仅依赖 `MemoryRelation` 类型
-- `SqliteRelationStore`（宿主实现）依赖 better-sqlite3，在宿主层
-- 关系构建机制（RelationBuilder）在内核 `agent/managers/`，LLM 调用合并到 InsightExtractor 单次调用（不增加 LLM 调用次数）
-- 冲突检测嵌入 InsightExtractor.extract() 现有流程，宿主仅注入存储实现
+**记忆关系侧车已移除**（ADR-014 已于 2026-08-14 判定为过度设计并废弃）：内核不再提供 `IMemoryRelationStore`/`InMemoryRelationStore`/`RelationBuilder`，冲突检测改用 `supersededBy` 布尔标记（[ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) 写路径取代检测）。详见 [ADR-014](../decisions/ADR-014-memory-relation.md) 废弃说明。
 
 **禁止**：
 
