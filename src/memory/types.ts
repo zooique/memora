@@ -199,9 +199,9 @@ export const SOURCE_LABELS = {
   RULE: 'rule',
   /** 技能定义（agent-config/skills/*.md） */
   SKILL: 'skill',
-  /** 对话洞察（每轮问答结束后 LLM 提取） */
+  /** 对话洞察（存量数据兼容，独立提炼层已于 2026-08-14 移除，不再有新写入） */
   INSIGHT: 'insight',
-  /** 用户画像（每轮问答中 LLM 实时提取） */
+  /** 用户画像（存量数据兼容，画像层已于 2026-08-14 收敛移除，不再有新写入） */
   PROFILE: 'profile',
   /** 作品投影（Agent 读取用户作品时生成的概要） */
   WORK_PROJECTION: 'work-projection',
@@ -223,4 +223,5 @@ export const SOURCE_LABELS = {
 // - 独立侧车存储（IMemoryRelationStore / InMemoryRelationStore）
 // - 复杂关系类型（contradicts/supports/follows/refines/caused/related）
 // - 冲突检测改用 supersededBy 布尔标记（ADR-021 写路径取代检测）
-// 残留源：SOURCE_LABELS.PROFILE 仍保留（存量数据兼容），但不再有新写入。
+// 残留源：SOURCE_LABELS.INSIGHT（洞察层）与 SOURCE_LABELS.PROFILE（用户画像层）
+// 仍保留（存量数据兼容，供 GOVERNANCE 治理与计数），但不再有新写入——记忆收敛为 round-summary 单轨。

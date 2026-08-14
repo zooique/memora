@@ -161,6 +161,16 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
   },
 };
 
+/**
+ * 已弃用策略键集合（2026-08-14）
+ *
+ * 独立洞察层已随"记忆即摘要"移除，这些键不再驱动内核行为，仅保留供宿主兼容。
+ * 明确设置时给出 warning（可装载），新角色包应改用摘要 type 分类表达价值。
+ */
+const DEPRECATED_STRATEGY_KEYS: ReadonlySet<string> = new Set([
+  'strategy.reflect.insightExtraction',
+]);
+
 // ════════════════════════════════════════════════════════════
 // 校验实现
 // ════════════════════════════════════════════════════════════
@@ -368,6 +378,19 @@ function validateStrategy(
           code: 'INVALID_STRATEGY_VALUE',
           path: keyPath,
           message: `${keyPath} 取值 ${String(value)} 不符合约束（§六）`,
+        });
+      }
+
+      // 弃用键警告（2026-08-14）：独立洞察层已随"记忆即摘要"移除，
+      // reflect.insightExtraction 不驱动任何内核行为，仅保留供宿主兼容。
+      // 设为 warning（可装载）而非 error（拒绝），避免破坏存量角色包；
+      // 新角色包应改用 round-summary 的 type 分类表达价值，不依赖本键。
+      if (DEPRECATED_STRATEGY_KEYS.has(keyPath)) {
+        issues.push({
+          severity: 'warning',
+          code: 'DEPRECATED_STRATEGY_KEY',
+          path: keyPath,
+          message: `${keyPath} 已弃用（独立洞察层已移除，内核不再消费），保留仅供宿主兼容——新角色包请改用摘要 type 分类表达价值（memory-as-summary §3.2）`,
         });
       }
     }

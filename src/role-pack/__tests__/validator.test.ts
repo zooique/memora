@@ -9,7 +9,7 @@ import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 const validStrategy = {
   prepare: { contextAssembly: 'hybrid', recentRounds: 3, memoryRecall: 'full', summaryRecall: 'on' },
   act: { toolMode: 'allow', temperature: 0.7, streaming: 'streaming' },
-  reflect: { summary: 'on', insightExtraction: 'on', handoff: 'wait' },
+  reflect: { summary: 'on', handoff: 'wait' },
   global: { askOn: ['ambiguity', 'decision'], askLimit: 3, errorHandling: 'retry' },
 };
 
@@ -73,6 +73,17 @@ describe('validateRolePack：合法角色包', () => {
   it('文件夹形态：frontmatter 仅 strategy + skills 时校验通过', () => {
     const result = validate({ strategy: validStrategy, skills: validFrontmatter['skills'] }, validBody, 'folder', true);
     expect(result.valid).toBe(true);
+  });
+
+  it('弃用键 reflect.insightExtraction：warning（可装载）+ DEPRECATED_STRATEGY_KEY', () => {
+    const result = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, insightExtraction: 'on' } },
+    });
+    expect(result.valid).toBe(true); // 弃用键是 warning，不阻塞装载
+    const dep = findByCode(result.issues, 'DEPRECATED_STRATEGY_KEY');
+    expect(dep).toHaveLength(1);
+    expect(dep[0]!.severity).toBe('warning');
+    expect(dep[0]!.path).toBe('strategy.reflect.insightExtraction');
   });
 });
 

@@ -255,7 +255,7 @@ agent.memory.snapshot(): MemorySnapshot
 |----|-----|------|
 | 第 1 层 | `snapshot.working` | `WorkingMemorySnapshot` — 当前 AgentLoop 消息（最近 5 条预览 + 总数） |
 | 第 2 层 | `snapshot.bootstrap` | `BootstrapSnapshot` — 规则记忆（名称 + 来源 + 权重，Persona/Skill 已解耦为设定记忆，不进 bootstrap） |
-| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（insight + work-projection）+ 当前会话信息 |
+| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（round-summary + insight + profile + work-projection）+ 当前会话信息 |
 
 ```typescript
 interface MemorySnapshot {

@@ -4,7 +4,7 @@
  * 职责：
  *   1. 归档会话内容（archiveSessionContent）
  *   2. 归档完成事件发射（memoryAdded / archiveFailed）
- *   3. archiveMode 三态控制集中判断（FIX-P1-4）
+ *   3. archiveMode 二态控制集中判断（FIX-P1-4）
  *
  * 收敛说明（2026-08-14）：洞察层（InsightExtractor + archiveInsight + pending 队列）已移除，
  * 记忆收敛为 round-summary 单轨；本类仅保留 content 会话内容归档路径。
@@ -13,7 +13,7 @@
  *   agent.ts 原承担 15+ 职责，归档操作是独立的领域职责，
  *   拆分后 Agent 聚焦对话编排，ArchiveCoordinator 聚焦归档操作 + 模式判断。
  *
- * FIX-P1-4（2026-07-24）：archiveMode 三态控制集中到本类
+ * FIX-P1-4（2026-07-24）：archiveMode 二态控制集中到本类
  *   原实现三态判断散落在 3 处：
  *     - Agent.postProcessInner 判断 'manual' 跳过 insight 自动归档
  *     - 宿主 sessionHandlers.ts 判断 'full' 触发 content 自动归档
@@ -27,7 +27,7 @@
 
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
-// archiveMode 三态类型，本类作为模式判断的统一协调点
+// archiveMode 二态类型，本类作为模式判断的统一协调点
 import type { ArchiveMode } from '@/agent/types.js';
 import { logger } from '@/logging/logger.js';
 
@@ -42,7 +42,7 @@ export interface ArchiveCoordinatorOptions {
   /** 获取 SessionArchiver（可能为 null） */
   readonly getSessionArchiver: () => SessionArchiver | null;
   /**
-   * 获取当前 archiveMode（FIX-P1-4：三态控制集中到本类）
+   * 获取当前 archiveMode（FIX-P1-4：二态控制集中到本类）
    * Agent 注入 `() => this.#config.archiveMode`，本类据此判断自动触发是否跳过
    */
   readonly getArchiveMode: () => ArchiveMode;

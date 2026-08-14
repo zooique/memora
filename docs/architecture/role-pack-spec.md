@@ -342,7 +342,7 @@ export interface IMcpTransport {
 | act | `act.temperature` | 0.0~2.0 | 生成随机性 | `[草案]` | 无参考实现消费，待验证 |
 | act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 | `[草案]` | 无参考实现消费，待验证 |
 | reflect | `reflect.summary` | `on` / `off` | 摘要生成 | `[草案]` | 无参考实现消费，待验证（memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
-| reflect | `reflect.insightExtraction` | `on` / `off` | 洞察提炼 | 冻结（兼容） | **兼容键**：独立提炼层已随"记忆即摘要"演进移除（memory-as-summary §七），参考实现不再消费，保留供宿主兼容——新角色包应改用摘要 `type` 分类表达价值，不依赖本键 |
+| reflect | `reflect.insightExtraction` | `on` / `off` | 洞察提炼 | 冻结（兼容） | **兼容键**：独立提炼层已随"记忆即摘要"演进移除（memory-as-summary §七），参考实现不再消费，保留供宿主兼容——新角色包应改用摘要 `type` 分类表达价值，不依赖本键。明确设置时校验器给出 `DEPRECATED_STRATEGY_KEY` warning（可装载）。**计划移除**：随角色包 schema 下个大版本（schema v2）一并删除 |
 | reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 | 冻结 | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`） |
 | global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | `[草案]` | 无参考实现消费，待验证 |
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | `[草案]` | 无参考实现消费，待验证 |
