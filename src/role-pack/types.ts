@@ -299,6 +299,14 @@ export interface RolePackMeta {
   readonly aiIdentityDisclosure?: boolean;
   /** 未成年人保护（合规 §七：默认 required） */
   readonly minorProtection?: 'required';
+  /**
+   * 互斥角色包名列表（agent-design-philosophy §6.2 粘性匹配）
+   *
+   * 声明与该角色包互斥的其他角色包。粘性锁定时，仅当输入命中当前激活包
+   * 的互斥包（exclusiveWith 双向声明其一）才自动切换；非互斥命中不切换
+   * （多角色合并裁决为远期，见 role-pack-spec §14.2）。
+   */
+  readonly exclusiveWith?: readonly string[];
 }
 
 /**
@@ -406,6 +414,93 @@ export interface RolePackManifest {
 // ════════════════════════════════════════════════════════════
 
 /**
+ * 上下文固定加载轮数 N 的内核默认值（SSOT 单一默认真理源）
+ *
+ * 语义（memory-as-summary §4.3）：N ≡ 上下文固定加载的完整对话轮数，
+ * 互斥窗口（排除正文已加载轮次的摘要）与最近对话注入共享同一 N，
+ * 保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"严格一致。
+ * 角色包可经 `prepare.recentRounds` 覆盖；仅在角色包未声明或声明非法时
+ * 降级回本默认。agent 层 `AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS`
+ * 引用本常量，避免同一维度出现两套平行默认值。
+ */
+export const DEFAULT_RECENT_HISTORY_ROUNDS = 3;
+
+/**
+ * 解析上下文固定加载轮数 N（SSOT 单一来源）
+ *
+ * 规则：角色包声明的 `prepare.recentRounds` 为合法的"0 以上正整数"时，
+ * **一律采用角色包定义**；仅在缺失/不存在、非整数、<=0 等非法情形才降级
+ * 为内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`。
+ *
+ * 互斥窗口（`getRecentRoundIds`）与最近对话注入（`getRecentHistory`）必须共用
+ * 本函数返回值——二者任一单独取数都会造成"正文加载轮数与互斥排除轮数不一致"，
+ * 导致第 N 轮内摘要与正文重复注入（memory-as-summary §4.3 的严格相等被破坏）。
+ *
+ * @param strategy 已合并默认值的完整行为策略（无激活角色包时传 undefined）
+ * @returns 合法的固定加载轮数 N（>0 的整数）
+ */
+export function resolveRecentRounds(strategy: BehaviorStrategy | undefined): number {
+  // 角色包定义优先：仅当声明的 recentRounds 是"0 以上正整数"才采用
+  const candidate = strategy?.prepare?.recentRounds;
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0;
+  return valid ? candidate : DEFAULT_RECENT_HISTORY_ROUNDS;
+}
+
+/**
+ * 枚举值合法性收窄（SSOT 兜底）
+ *
+ * 角色包 L2 键是枚举开关，非法拼写/错误取值不应静默透传（handoff 会直接
+ * yield 给宿主，其他枚举会污染行为分支）。统一在此归位到内核默认。
+ *
+ * @param value 角色包声明的原始值
+ * @param allowed 合法枚举值集合
+ * @param fallback 非法/缺失时的内核默认
+ * @returns 合法值或内核默认
+ */
+function normalizeEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+/**
+ * 解析衔接策略（SSOT）：非法值（非 wait/loop/end）归位 'wait'
+ *
+ * handoff 是唯一会作为 chunk 直接暴露给宿主的枚举——非法值必须归位，
+ * 避免宿主收到无法识别的衔接决策。
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的 handoff 枚举值
+ */
+export function resolveHandoff(strategy: BehaviorStrategy | undefined): Handoff {
+  return normalizeEnum(strategy?.reflect?.handoff, ['wait', 'loop', 'end'], 'wait');
+}
+
+/**
+ * 解析记忆召回模式（SSOT）：非法值归位 'full'
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的记忆召回模式
+ */
+export function resolveMemoryRecallMode(strategy: BehaviorStrategy | undefined): MemoryRecallMode {
+  return normalizeEnum(strategy?.prepare?.memoryRecall, ['full', 'limited', 'none'], 'full');
+}
+
+/**
+ * 解析工具调用模式（SSOT）：非法值归位 'allow'
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的工具调用模式
+ */
+export function resolveToolMode(strategy: BehaviorStrategy | undefined): ToolMode {
+  return normalizeEnum(strategy?.act?.toolMode, ['allow', 'block'], 'allow');
+}
+
+/**
  * 行为策略全局默认值
  *
  * 设计纪律第 2 条：未配置的行为维度使用全局默认值。
@@ -416,7 +511,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   prepare: {
     understandingConfirm: 'off',
     contextAssembly: 'hybrid',
-    recentRounds: 3,
+    recentRounds: DEFAULT_RECENT_HISTORY_ROUNDS,
     memoryRecall: 'full',
     memoryRecallQuota: 2000,
     summaryRecall: 'on',
