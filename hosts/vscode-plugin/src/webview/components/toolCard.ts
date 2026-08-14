@@ -1,9 +1,9 @@
 /**
  * 工具调用卡片组件 — 可复用、不绑定面板，对齐 memora-sprite toolCallCard
  *
- * 阶段 B（对抗评估 P2-1）：从「window.ToolCard 注入字符串」演进为「模块导出对象
- * ToolCard」，供 chatView 直接 import（消除全局污染）。toolCardScript 字符串暂时
- * 保留（双轨），在 chatPanel 接线完成后删除。
+ * 阶段 B（对抗评估 P2-1）：由「window.ToolCard 注入字符串」演进为「模块导出对象
+ * ToolCard」，供 chatView 直接 import（消除全局污染）。原 toolCardScript 字符串
+ * 已随 chatPanel 接线完成删除。
  *
  * DOM 副作用安全：事件委托注册（ensureDelegated）延迟到首次 show() 时执行，模块
  * 顶层不做任何 DOM 操作——保证 extension 端 import 本模块（Node 环境）不崩溃。
@@ -128,97 +128,3 @@ function settleRunning(container: HTMLElement, label?: string): void {
 
 /** 工具调用卡片（chatView 直接 import 使用，去全局污染） */
 export const ToolCard: ToolCardApi = { show, update, settleRunning };
-
-// ─── [双轨] 以下字符串注入导出在 chatPanel 接线完成后删除 ───
-/** 注入脚本字符串（webview 内联注入版本，P2-1 阶段 B 过渡期保留） */
-export const toolCardScript = `
-window.ToolCard = (function () {
-  function findCard(container, id) {
-    var cards = container.querySelectorAll('.tool-card');
-    for (var i = 0; i < cards.length; i++) {
-      if (cards[i].getAttribute('data-tool-call-id') === id) return cards[i];
-    }
-    return null;
-  }
-  function show(container, id, name, args) {
-    var card = document.createElement('div');
-    card.className = 'tool-card is-running';
-    card.setAttribute('data-tool-call-id', id);
-
-    var header = document.createElement('button');
-    header.type = 'button';
-    header.className = 'tool-card__header';
-    var chevron = document.createElement('span');
-    chevron.className = 'tool-card__chevron';
-    chevron.textContent = '▾';
-    var nameSpan = document.createElement('span');
-    nameSpan.className = 'tool-card__name';
-    nameSpan.textContent = getToolDisplayName(name);
-    nameSpan.title = name;
-    var spinner = document.createElement('span');
-    spinner.className = 'tool-card__spinner';
-    var status = document.createElement('span');
-    status.className = 'tool-card__status';
-    status.textContent = '执行中…';
-    header.appendChild(chevron);
-    header.appendChild(nameSpan);
-    header.appendChild(spinner);
-    header.appendChild(status);
-    card.appendChild(header);
-
-    if (args) {
-      var argsDiv = document.createElement('div');
-      argsDiv.className = 'tool-card__args';
-      argsDiv.textContent = args;
-      card.appendChild(argsDiv);
-    }
-    container.appendChild(card);
-    container.scrollTop = container.scrollHeight;
-    return card;
-  }
-  function update(container, id, name, ok, summary) {
-    var card = findCard(container, id);
-    if (!card) return;
-    card.classList.remove('is-running');
-    card.classList.add(ok ? 'is-success' : 'is-failed');
-    var spinner = card.querySelector('.tool-card__spinner');
-    if (spinner) spinner.remove();
-    var status = card.querySelector('.tool-card__status');
-    if (status) status.textContent = (ok ? '✓ ' : '✗ ') + (ok ? '成功' : '失败');
-    if (summary) {
-      var resultDiv = document.createElement('div');
-      resultDiv.className = 'tool-card__result';
-      resultDiv.textContent = summary;
-      card.appendChild(resultDiv);
-    }
-    // 完成后自动折叠，减少视觉干扰（对齐 sprite）
-    card.classList.add('is-collapsed');
-  }
-  // 兜底终结：本轮流式结束后，把容器内所有残留「执行中」卡片标记为失败（中断态），
-  // 避免 tool_start 后流异常/中断（error/超时）时卡片永远停在 spinner（对抗评估 P1-1）。
-  // 幂等：无 is-running 卡片时无操作，可安全在 error 与 done 处重复调用。
-  function settleRunning(container, label) {
-    var cards = container.querySelectorAll('.tool-card.is-running');
-    for (var i = 0; i < cards.length; i++) {
-      cards[i].classList.remove('is-running');
-      cards[i].classList.add('is-failed');
-      var spinner = cards[i].querySelector('.tool-card__spinner');
-      if (spinner) spinner.remove();
-      var status = cards[i].querySelector('.tool-card__status');
-      if (status) status.textContent = label || '已中断';
-    }
-  }
-  // 折叠/展开：事件委托，一次性注册
-  if (!window.__toolCardDelegated) {
-    window.__toolCardDelegated = true;
-    document.addEventListener('click', function (e) {
-      var header = e.target && e.target.closest ? e.target.closest('.tool-card__header') : null;
-      if (header) {
-        var card = header.closest('.tool-card');
-        if (card) card.classList.toggle('is-collapsed');
-        e.stopPropagation();
-      }
-    });
-  }
-  return { show: show, update: update, settleRunning: settleRunning };
-})();`;

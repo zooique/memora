@@ -71,7 +71,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const workspacePath = resolveWorkspacePath();
   const sessionStore = new WorkspaceSessionStore(workspacePath);
   sessionStore.load();
-  const chatProvider = new MemoraChatViewProvider(sessionStore, providerStore);
+  const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
@@ -83,7 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // 侧边栏视图：大模型配置面板
-  const configProvider = new MemoraConfigViewProvider(providerStore);
+  const configProvider = new MemoraConfigViewProvider(context.extensionUri, providerStore);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraConfigViewProvider.viewType, configProvider),
   );

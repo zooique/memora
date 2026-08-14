@@ -27,9 +27,13 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
   private _view: vscode.WebviewView | undefined;
 
   /**
+   * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
    * @param store 大模型配置存储（extension 注入）
    */
-  constructor(private readonly store: ProviderStore) {}
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly store: ProviderStore,
+  ) {}
 
   /** 视图被解析（侧边栏展开）时初始化 */
   public resolveWebviewView(
@@ -38,10 +42,18 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
+    // 阶段 B（P2-1）：启用外部脚本（configView.js），localResourceRoots 指向 dist/webview
+    // 供 webview.asWebviewUri 解析（CSP script-src 'self'，不再用 'unsafe-inline' 注入脚本）
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+    };
 
-    // 渲染界面
-    webviewView.webview.html = buildHtml();
+    // 渲染界面（外部脚本 configView.js 提供交互）
+    const scriptUri = webviewView.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'scripts', 'configView.js'),
+    );
+    webviewView.webview.html = buildHtml(scriptUri);
 
     // 处理来自 webview 的配置操作
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
@@ -118,15 +130,16 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
-/** 生成 Webview HTML（Provider 列表 + 表单弹窗） */
-function buildHtml(): string {
+/** 生成 Webview HTML（Provider 列表 + 表单弹窗）
+ *  @param scriptUri 外部脚本 configView.js 的 asWebviewUri（CSP script-src 'self' 加载，阶段 B P2-1） */
+function buildHtml(scriptUri: vscode.Uri): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self';" />
 <style>
   ${configStyles}
 </style>
@@ -180,198 +193,8 @@ function buildHtml(): string {
 
   <div id="toast"></div>
 
-  <script>
-    const vscode = acquireVsCodeApi();
-    const list = document.getElementById('list');
-    const btnAdd = document.getElementById('btnAdd');
-    const modal = document.getElementById('modal');
-    const modalTitle = document.getElementById('modalTitle');
-    const fName = document.getElementById('f-name');
-    const fDisplay = document.getElementById('f-display');
-    const fModel = document.getElementById('f-model');
-    const fBaseUrl = document.getElementById('f-baseurl');
-    const fApiKey = document.getElementById('f-apikey');
-    const apikeyHint = document.getElementById('apikeyHint');
-    const testResult = document.getElementById('testResult');
-    const btnTest = document.getElementById('btnTest');
-    const btnCancel = document.getElementById('btnCancel');
-    const toast = document.getElementById('toast');
-
-    let editName = ''; // 当前编辑的 name（空=新增）
-    let activeName = undefined;
-    // 最近一次 cfg_loaded 的 Provider 列表 —— 编辑回填的单一数据源（内存，而非 DOM dataset）
-    let currentProviders = [];
-
-    function showToast(text, ok) {
-      toast.textContent = text;
-      toast.className = ok ? 'ok visible' : 'err visible';
-      setTimeout(function () { toast.className = ok ? 'ok' : 'err'; }, 2500);
-    }
-
-    function readForm() {
-      return {
-        name: fName.value.trim(),
-        displayName: fDisplay.value.trim(),
-        model: fModel.value.trim(),
-        baseUrl: fBaseUrl.value.trim(),
-        apiKey: fApiKey.value,
-      };
-    }
-
-    function openModal(name) {
-      editName = name || '';
-      modalTitle.textContent = editName ? '编辑 API' : '添加 API';
-      // 重置上一轮测试结果（每次打开表单都清空，避免残留误导）
-      testResult.hidden = true;
-      testResult.textContent = '';
-      testResult.className = 'test-result';
-      btnTest.disabled = false;
-      if (editName) {
-        // 编辑：从内存中的 providers 列表回填（单一真理源：cfg_loaded 数据，
-        // 而非从渲染结果 DOM dataset 读取，避免 DOM 作为数据源的数据流反向，
-        // 对抗评估 P1-5）
-        const target = currentProviders.find(function (p) { return p.name === editName; }) || {};
-        fName.value = editName;
-        fName.disabled = true;
-        fDisplay.value = target.displayName || '';
-        fModel.value = target.model || '';
-        fBaseUrl.value = target.baseUrl || '';
-        fApiKey.value = '';
-        fApiKey.placeholder = '留空保持不变';
-        // 脱敏回显：标明已配置的 key（如 sk-••••1234），确认无需重新输入
-        const masked = target.maskedKey || '';
-        apikeyHint.hidden = !masked;
-        apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
-      } else {
-        fName.value = '';
-        fName.disabled = false;
-        fDisplay.value = '';
-        fModel.value = '';
-        fBaseUrl.value = '';
-        fApiKey.value = '';
-        fApiKey.placeholder = 'sk-…';
-        apikeyHint.hidden = true;
-        apikeyHint.textContent = '';
-      }
-      modal.classList.add('visible');
-      fName.focus();
-    }
-
-    function closeModal() {
-      modal.classList.remove('visible');
-      editName = '';
-    }
-
-    function render(data) {
-      if (!data.providers || data.providers.length === 0) {
-        currentProviders = [];
-        list.innerHTML = '<p class="hint">暂未配置任何 API，点击右上角「添加 API」。</p>';
-        return;
-      }
-      activeName = data.activeName;
-      // 保存为内存数据源（openModal 编辑回填用；DOM dataset 不再作为数据源，P1-5）
-      currentProviders = data.providers;
-      list.innerHTML = '';
-      data.providers.forEach(function (p) {
-        const card = document.createElement('div');
-        card.className = 'card' + (p.name === activeName ? ' active' : '');
-
-        const info = document.createElement('div');
-        info.className = 'card-info';
-        const nameRow = document.createElement('div');
-        nameRow.className = 'card-name';
-        nameRow.textContent = (p.displayName || p.name) + (p.provider === 'local' ? '（本地）' : '');
-        if (p.name === activeName) {
-          const badge = document.createElement('span');
-          badge.className = 'badge';
-          badge.textContent = '当前';
-          nameRow.appendChild(badge);
-        }
-        const detail = document.createElement('div');
-        detail.className = 'card-detail';
-        detail.textContent = p.model + ' · ' + p.baseUrl;
-        info.appendChild(nameRow);
-        info.appendChild(detail);
-
-        const actions = document.createElement('div');
-        actions.className = 'card-actions';
-        if (p.name !== activeName) {
-          const actBtn = document.createElement('button');
-          actBtn.className = 'btn btn-secondary';
-          actBtn.textContent = '设为当前';
-          actBtn.addEventListener('click', function () {
-            vscode.postMessage({ type: 'cfg_set_active', name: p.name });
-          });
-          actions.appendChild(actBtn);
-        }
-        const editBtn = document.createElement('button');
-        editBtn.className = 'btn btn-secondary';
-        editBtn.textContent = '编辑';
-        editBtn.addEventListener('click', function () { openModal(p.name); });
-        actions.appendChild(editBtn);
-        if (p.name !== activeName) {
-          const delBtn = document.createElement('button');
-          delBtn.className = 'btn btn-danger';
-          delBtn.textContent = '删除';
-          delBtn.addEventListener('click', function () {
-            // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
-            // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
-            vscode.postMessage({ type: 'cfg_delete', name: p.name });
-          });
-          actions.appendChild(delBtn);
-        }
-
-        card.appendChild(info);
-        card.appendChild(actions);
-        list.appendChild(card);
-      });
-    }
-
-    // 消息接收
-    window.addEventListener('message', function (event) {
-      const msg = event.data;
-      if (msg.type === 'cfg_loaded') {
-        render(msg);
-      } else if (msg.type === 'cfg_result') {
-        if (msg.action === 'test') {
-          // 测试连接：内联展示结果（成功/失败带色块），比 Toast 更持久可见
-          btnTest.disabled = false;
-          testResult.hidden = false;
-          testResult.className = 'test-result ' + (msg.ok ? 'ok' : 'err');
-          testResult.textContent = (msg.ok ? '✅ 连接成功' : '❌ 连接失败') + (msg.message ? '：' + msg.message : '');
-        } else {
-          if (msg.ok) {
-            showToast(msg.message || '操作成功', true);
-            if (msg.action === 'save') closeModal();
-          } else {
-            showToast(msg.message || '操作失败', false);
-          }
-        }
-      }
-    });
-
-    btnAdd.addEventListener('click', function () { openModal(''); });
-    btnCancel.addEventListener('click', closeModal);
-    // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
-    document.getElementById('cfgForm').addEventListener('submit', function (e) {
-      e.preventDefault();
-      const config = readForm();
-      vscode.postMessage({ type: 'cfg_save', config: config, isEditing: editName !== '' });
-    });
-    btnTest.addEventListener('click', function () {
-      // 测试进行中禁用按钮，避免重复提交；结果在 cfg_result 回来后恢复
-      btnTest.disabled = true;
-      testResult.hidden = false;
-      testResult.className = 'test-result';
-      testResult.textContent = '测试中…';
-      vscode.postMessage({ type: 'cfg_test', config: readForm() });
-    });
-    // 点击遮罩关闭
-    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
-
-    // 初始加载
-    vscode.postMessage({ type: 'cfg_load' });
-  </script>
+  <!-- 阶段 B（P2-1）：运行时脚本由外部 configView.js 提供（CSP script-src 'self'） -->
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
 }

@@ -1,10 +1,9 @@
 /**
- * 工具名中文映射 — 纯函数 + webview 注入脚本（单一真源）
+ * 工具名中文映射 — 纯函数（webview 运行时脚本直接 import 使用）
  *
- * 阶段 A（对抗评估 P2-1）：逻辑以可测试的 TS 纯函数为单一真理源，注入脚本由
- * 函数源码序列化生成。webview 仍以内联字符串注入（CSP: script-src 'unsafe-inline'），
- * 把工具原始英文名（如 read_file）映射为用户可理解的中文标签；未知工具降级为原值。
- * 纯函数可被 vitest 直接测试。
+ * 阶段 B（对抗评估 P2-1）：原「字符串注入脚本」已由外部脚本 chatView.js + 模块
+ * 导入取代，getToolDisplayName 作为纯函数被 toolCard/chatView import，可直接
+ * vitest 测试。
  */
 
 /**
@@ -28,7 +27,3 @@ export function getToolDisplayName(name: string): string {
   };
   return map[name] || name;
 }
-
-/** webview 注入脚本：由纯函数源码序列化，与 getToolDisplayName 保持单一真源（P2-1 阶段 A） */
-export const toolNameMapScript = `
-${getToolDisplayName}`;

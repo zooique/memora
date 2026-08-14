@@ -20,12 +20,9 @@ import type {
 } from '../../shared/protocol.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createDocReviewProvider } from '../../extension/host/llmConfig.js';
-import { buildDropdownHtml, dropdownInitScript, dropdownStyles } from '../components/dropdown.js';
-import { toolCardScript } from '../components/toolCard.js';
+import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { toolCardStyles } from '../styles/toolCard.js';
-import { fmtTimeScript } from '../helpers/fmtTime.js';
-import { toolNameMapScript } from '../helpers/toolNameMap.js';
 import { stripDocContextPrefix } from '../helpers/docContext.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
@@ -75,10 +72,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _streaming = false;
 
   /**
+   * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
    * @param sessionStore 会话存储（用于持久化/恢复对话历史）
    * @param providerStore 大模型配置存储（用于底部模型下拉框）
    */
-  constructor(private readonly sessionStore: HostSessionStore, providerStore: ProviderStore) {
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly sessionStore: HostSessionStore,
+    providerStore: ProviderStore,
+  ) {
     this._providerStore = providerStore;
   }
 
@@ -127,7 +129,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 折叠/展开会触发 resolve 重建 HTML。不设 retainContextWhenHidden（避免 window
     // 全局标志残留与 document 重建的冲突），统一走「ready 回放」这一确定性机制：
     // 每次重建后，webview 脚本就绪发 ready，extension 再回放会话，保证数据不丢。
-    webviewView.webview.options = { enableScripts: true };
+    // 阶段 B（P2-1）：启用外部脚本（chatView.js），localResourceRoots 指向 dist/webview
+    // 供 webview.asWebviewUri 解析（CSP script-src 'self'，不再用 'unsafe-inline' 注入脚本）
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+    };
 
     // 仅设置 HTML（不在就绪前回放，避免消息在脚本监听器注册前丢失）
     this.render();
@@ -307,10 +314,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'clear_ok' });
   }
 
-  /** 仅渲染 HTML 骨架（历史/Provider 在 webview 就绪后经 replaySession 回放） */
+  /** 仅渲染 HTML 骨架（历史/Provider 在 webview 就绪后经 replaySession 回放）；
+   *  脚本由外部 chatView.js 提供（阶段 B P2-1，经 asWebviewUri 引用） */
   private render(): void {
     if (!this._view) return;
-    this._view.webview.html = buildHtml();
+    const scriptUri = this._view.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'scripts', 'chatView.js'),
+    );
+    this._view.webview.html = buildHtml(scriptUri);
   }
 
   /**
@@ -605,15 +616,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
-/** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框） */
-function buildHtml(): string {
+/** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框）
+ *  @param scriptUri 外部脚本 chatView.js 的 asWebviewUri（CSP script-src 'self' 加载，阶段 B P2-1） */
+function buildHtml(scriptUri: vscode.Uri): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self';" />
 <style>
   ${chatStyles}
   ${dropdownStyles}
@@ -653,349 +665,8 @@ function buildHtml(): string {
       </div>
     </div>
   </div>
-  <script>
-    const vscode = acquireVsCodeApi();
-    const messages = document.getElementById('messages');
-    const emptyState = document.getElementById('emptyState');
-    const input = document.getElementById('input');
-    const send = document.getElementById('send');
-    const sendSpinner = send.querySelector('.send-spinner');
-    const memoryBar = document.getElementById('memoryBar');
-    const noticeBar = document.getElementById('noticeBar');
-    const inputBar = document.getElementById('inputBar');
-    const clarifyBar = document.getElementById('clarifyBar');
-    const clarifyText = document.getElementById('clarifyText');
-    const clarifyOptions = document.getElementById('clarifyOptions');
-    const clarifyInput = document.getElementById('clarifyInput');
-    const clarifySend = document.getElementById('clarifySend');
-    // 底部模型下拉框（独立于顶部⋯菜单，用 extraClass=model-picker 修饰）
-    const modelPicker = document.querySelector('.model-picker');
-    const modelPickerMenu = modelPicker ? modelPicker.querySelector('.treedd__menu') : null;
-    const modelPickerTrigger = modelPicker ? modelPicker.querySelector('.treedd__trigger') : null;
-    // 顶部历史会话下拉框（用 extraClass=history-picker 修饰，可手动切换查看某天记录）
-    const historyPicker = document.querySelector('.history-picker');
-    const historyPickerMenu = historyPicker ? historyPicker.querySelector('.treedd__menu') : null;
-    const historyPickerTrigger = historyPicker ? historyPicker.querySelector('.treedd__trigger') : null;
-
-    // 当前 Provider 列表（由 chat_providers 消息填充）
-    let currentProviders = [];
-    let currentActive = undefined;
-    // 历史会话日期列表（由 chat_history_dates 消息填充，倒序最新在前）
-    let historyDates = [];
-
-    // 切换 LLM 运行状态：thinking → 发送按钮变 loading，禁用输入；done 恢复
-    function setStatus(state) {
-      if (state === 'thinking') {
-        send.classList.add('loading');
-        send.setAttribute('title', '思考中…');
-        input.disabled = true;
-      } else {
-        send.classList.remove('loading');
-        send.setAttribute('title', '发送 (Enter)');
-        input.disabled = false;
-        // 仅当用户没有正在与其他交互元素交互（焦点已回落 body —— disabled 的输入框
-        // 自然失焦后的默认状态）时才恢复输入焦点，避免 done 时强制 focus 打断用户
-        // 正在进行的其他操作（如阅读/操作下拉菜单，对抗评估 P1-4）
-        if (document.activeElement === document.body) input.focus();
-      }
-    }
-
-    // 时间格式化（自定义组件注入版本，见 helpers/fmtTime.ts）
-    ${fmtTimeScript}
-
-    // 复制消息文本到剪贴板
-    function copyText(text) {
-      navigator.clipboard.writeText(text).catch(function () {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      });
-    }
-
-    // 空状态开关：消息区无 .msg 时显示空状态提示，有消息则隐藏
-    function updateEmptyState() {
-      emptyState.hidden = messages.querySelector('.msg') !== null;
-    }
-
-    // 滚动到底部（rAF 节流）：流式渲染时每 chunk 都可能触发滚动，
-    // 用 requestAnimationFrame 合并为每帧一次，避免读写交错强制 reflow。
-    let scrollRafPending = false;
-    function scrollToBottom() {
-      if (scrollRafPending) return;
-      scrollRafPending = true;
-      requestAnimationFrame(function () {
-        scrollRafPending = false;
-        messages.scrollTop = messages.scrollHeight;
-      });
-    }
-
-    // 渲染模型下拉框选项
-    function renderModelPicker() {
-      if (!modelPickerMenu) return;
-      // P0-1 防注入：模型名来自用户配置（displayName），禁止 innerHTML 拼接，
-      // 一律用 createElement + textContent 构建，杜绝 HTML 注入/破版。
-      modelPickerMenu.textContent = '';
-      const items = currentProviders;
-      if (items && items.length > 0) {
-        items.forEach(function (p) {
-          const isActive = p.name === currentActive;
-          const btn = document.createElement('button');
-          btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
-          btn.setAttribute('role', 'menuitem');
-          btn.setAttribute('data-treedd-id', p.name);
-          btn.textContent = p.displayName || p.name;
-          modelPickerMenu.appendChild(btn);
-        });
-      } else {
-        const empty = document.createElement('div');
-        empty.className = 'treedd__empty';
-        empty.textContent = '未配置模型';
-        modelPickerMenu.appendChild(empty);
-      }
-      // 更新触发器显示当前模型（同样用 textContent 防注入）
-      // SSOT：用 <span class="dd-model-name"> 包裹名称，CSS 只对此 span 做 ellipsis 截断，
-      // 而 ::after 下拉箭头 flex-shrink:0 永远外露，不会被挤掉或截断
-      if (modelPickerTrigger) {
-        const name = currentActive
-          ? (currentProviders.find(function(p){return p.name===currentActive;}) || {}).displayName || currentActive
-          : '选择模型';
-        modelPickerTrigger.textContent = '';
-        const span = document.createElement('span');
-        span.className = 'dd-model-name';
-        span.textContent = name;
-        modelPickerTrigger.appendChild(span);
-        // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）
-        modelPickerTrigger.setAttribute('aria-label', '选择模型：' + name);
-      }
-    }
-
-    // 渲染历史会话下拉框选项（toolbar，可手动切换查看某天对话记录）
-    function renderHistoryPicker() {
-      if (!historyPickerMenu) return;
-      // 防注入：日期来自 sessionStore key（YYYY-MM-DD），textContent 构建
-      historyPickerMenu.textContent = '';
-      // 「全部历史」作为首项（跨天合并，默认视角）
-      const all = document.createElement('button');
-      all.className = 'treedd__item';
-      all.setAttribute('role', 'menuitem');
-      all.setAttribute('data-treedd-id', '');
-      all.textContent = '全部历史';
-      historyPickerMenu.appendChild(all);
-      // 按日期倒序列出各天对话
-      (historyDates || []).forEach(function (date) {
-        const btn = document.createElement('button');
-        btn.className = 'treedd__item';
-        btn.setAttribute('role', 'menuitem');
-        btn.setAttribute('data-treedd-id', date);
-        btn.textContent = date;
-        historyPickerMenu.appendChild(btn);
-      });
-      // 更新触发器显示当前查看范围（紧凑胶囊，与模型选择器同一视觉语言）
-      if (historyPickerTrigger) {
-        historyPickerTrigger.textContent = '';
-        const span = document.createElement('span');
-        span.className = 'dd-model-name';
-        span.textContent = '历史';
-        historyPickerTrigger.appendChild(span);
-        historyPickerTrigger.setAttribute('aria-label', '切换历史对话日期');
-      }
-    }
-
-    // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）
-    function append(role, text, ts) {
-      const div = document.createElement('div');
-      div.className = 'msg ' + role;
-      const body = document.createElement('div');
-      body.className = 'msg-body';
-      body.textContent = text;
-      div.appendChild(body);
-      const footer = document.createElement('div');
-      footer.className = 'msg-footer';
-      if (role === 'assistant') {
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'msg-copy';
-        copyBtn.textContent = '复制';
-        copyBtn.title = '复制消息';
-        copyBtn.addEventListener('click', function () { copyText(text); });
-        footer.appendChild(copyBtn);
-      }
-      const t = fmtTime(ts);
-      if (t) {
-        const timeEl = document.createElement('span');
-        timeEl.className = 'msg-time';
-        timeEl.textContent = t;
-        footer.appendChild(timeEl);
-      }
-      div.appendChild(footer);
-      messages.appendChild(div);
-      scrollToBottom();
-      updateEmptyState();
-      return div;
-    }
-
-    let memoryTimer = null;
-    function showMemory(text) {
-      memoryBar.textContent = text;
-      memoryBar.hidden = false;
-      clearTimeout(memoryTimer);
-      memoryTimer = setTimeout(() => { memoryBar.hidden = true; }, 2500);
-    }
-
-    // 提示条（错误级 / 低扰 info）：textContent 赋值防注入；
-    // 分级停留——error 醒目且停留更久，info 低扰短暂显示（对齐排雷雷-4 语义分离）
-    let noticeTimer = null;
-    function showNotice(level, message) {
-      noticeBar.className = 'notice-bar ' + level;
-      noticeBar.textContent = message;
-      noticeBar.hidden = false;
-      clearTimeout(noticeTimer);
-      noticeTimer = setTimeout(() => { noticeBar.hidden = true; }, level === 'error' ? 8000 : 2500);
-    }
-
-    window.addEventListener('message', (event) => {
-      const msg = event.data;
-      if (msg.type === 'status') {
-        setStatus(msg.state);
-      } else if (msg.type === 'user') {
-        append('user', msg.text, msg.ts);
-      } else if (msg.type === 'assistant') {
-        append('assistant', msg.text, msg.ts);
-      } else if (msg.type === 'chunk') {
-        const last = messages.lastElementChild;
-        if (last && last.classList.contains('assistant')) {
-          const body = last.querySelector(':scope > .msg-body');
-          if (body) {
-            // 流式追加：用文本节点替代整体 textContent 重建，长回复避免 O(n²)
-            body.appendChild(document.createTextNode(msg.content));
-          }
-        } else {
-          append('assistant', msg.content, msg.ts);
-        }
-        scrollToBottom();
-      } else if (msg.type === 'error') {
-        append('error', msg.message);
-      } else if (msg.type === 'done') {
-        // 本轮流式结束：兜底终结所有残留「执行中」工具卡片，避免 tool_start 后
-        // 流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。error 后必跟 done，
-        // 此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
-        window.ToolCard.settleRunning(messages, '已中断');
-      } else if (msg.type === 'need_clarify') {
-        clarifyText.textContent = 'Agent 需要你确认：' + msg.questions.map(function(q){return q.question;}).join('；');
-        clarifyInput.value = '';
-        clarifyOptions.innerHTML = '';
-        msg.questions.forEach(function (q) {
-          (q.options || []).forEach(function (opt) {
-            const b = document.createElement('button');
-            b.className = 'opt-btn';
-            b.textContent = opt;
-            b.addEventListener('click', function () { clarifyInput.value = opt; clarifyInput.focus(); });
-            clarifyOptions.appendChild(b);
-          });
-        });
-        clarifyBar.classList.add('visible');
-        inputBar.hidden = true;
-        clarifyInput.focus();
-      } else if (msg.type === 'memory') {
-        if (msg.action === 'recalled') showMemory('已召回 ' + msg.count + ' 条记忆');
-        else if (msg.action === 'added') showMemory('已沉淀 1 条记忆');
-      } else if (msg.type === 'tool_start') {
-        window.ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
-      } else if (msg.type === 'tool_result') {
-        window.ToolCard.update(messages, msg.toolCallId, msg.name, msg.ok, msg.summary);
-      } else if (msg.type === 'clear_ok') {
-        messages.querySelectorAll('.msg').forEach(function (el) { el.remove(); });
-        updateEmptyState();
-      } else if (msg.type === 'chat_providers') {
-        currentProviders = msg.providers || [];
-        currentActive = msg.activeName;
-        renderModelPicker();
-      } else if (msg.type === 'chat_skill') {
-        // 当前技能徽章：textContent 赋值防注入，显示后主动可见
-        const badge = document.getElementById('skillBadge');
-        if (badge) {
-          badge.textContent = msg.skill;
-          badge.title = '当前技能：' + msg.skill;
-          badge.hidden = false;
-        }
-      } else if (msg.type === 'chat_history_dates') {
-        // 历史会话日期列表（toolbar 历史下拉框）：刷新选项
-        historyDates = msg.dates || [];
-        renderHistoryPicker();
-      } else if (msg.type === 'notice') {
-        showNotice(msg.level, msg.message);
-      }
-    });
-
-    // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
-    // SSOT：高度上限单一真理源 — 从 CSS 令牌(--input-max-h)的计算值读取，
-    // JS 与 CSS 共用同一上限，杜绝双源漂移。
-    const inputMaxHeight = parseInt(getComputedStyle(input).maxHeight, 10) || 140;
-    function autoResize() {
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, inputMaxHeight) + 'px';
-    }
-    function sendMessage() {
-      const text = input.value.trim();
-      if (!text || send.classList.contains('loading')) return;
-      input.value = '';
-      input.style.height = 'auto';
-      vscode.postMessage({ type: 'send', text });
-    }
-    send.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-    input.addEventListener('input', autoResize);
-
-    // 顶部⋯菜单：清空对话（危险项）
-    window.__treeddOnSelect = function (id) {
-      if (id === 'clear') {
-        // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
-        // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
-        vscode.postMessage({ type: 'clear' });
-      }
-    };
-
-    // 底部模型下拉框：选择模型 → 通知 extension host 切换
-    window.__modelPickerOnSelect = function (id) {
-      vscode.postMessage({ type: 'chat_set_provider', name: id });
-    };
-
-    // 顶部历史下拉框：选择日期 → 通知 extension host 切换查看（空串 = 全部历史）
-    window.__historyPickerOnSelect = function (id) {
-      vscode.postMessage({ type: 'chat_switch_date', date: id || '' });
-    };
-
-    function sendClarifyAnswer() {
-      const text = clarifyInput.value.trim();
-      if (!text) return;
-      clarifyInput.value = '';
-      clarifyBar.classList.remove('visible');
-      inputBar.hidden = false;
-      vscode.postMessage({ type: 'clarify_answer', text });
-    }
-    clarifySend.addEventListener('click', sendClarifyAnswer);
-    clarifyInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendClarifyAnswer(); });
-
-    ${toolNameMapScript}
-    ${toolCardScript}
-    ${dropdownInitScript}
-
-    // 首屏刷新
-    updateEmptyState();
-    renderModelPicker();
-    renderHistoryPicker();
-
-    // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
-    // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）
-    vscode.postMessage({ type: 'ready' });
-  </script>
+  <!-- 阶段 B（P2-1）：运行时脚本由外部 chatView.js 提供（CSP script-src 'self'） -->
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
 }

@@ -78,34 +78,4 @@ export function initDropdowns(
   });
 }
 
-/** [双轨] 注入页面的脚本：通用展开/收起 + 事件委托转发（chatPanel 接线完成后删除） */
-export const dropdownInitScript = `
-(function () {
-  // 通用下拉初始化：遍历页面上所有 .treedd 实例（而非只取第一个，避免多实例漏绑）。
-  // 选择项用「事件委托」：菜单项可能动态渲染（模型列表），closest 命中即可转发。
-  var roots = document.querySelectorAll('.treedd');
-  roots.forEach(function (root) {
-    var trigger = root.querySelector('.treedd__trigger');
-    var menu = root.querySelector('.treedd__menu');
-    if (!trigger || !menu) return;
-    trigger.addEventListener('click', function (e) {
-      e.stopPropagation();
-      root.classList.toggle('is-open');
-    });
-    menu.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var el = e.target && e.target.closest ? e.target.closest('.treedd__item') : null;
-      if (!el) return;
-      root.classList.remove('is-open');
-      var cbName = root.getAttribute('data-on-select') || '__treeddOnSelect';
-      var cb = window[cbName];
-      if (cb) cb(el.getAttribute('data-treedd-id'));
-    });
-  });
-  // 点击任意位置关闭所有展开的下拉
-  document.addEventListener('click', function () {
-    document.querySelectorAll('.treedd.is-open').forEach(function (el) { el.classList.remove('is-open'); });
-  });
-})();`;
-
 export { dropdownStyles };

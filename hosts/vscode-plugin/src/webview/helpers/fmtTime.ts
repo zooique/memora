@@ -1,11 +1,8 @@
 /**
- * 时间格式化 — 纯函数 + webview 注入脚本（单一真源）
+ * 时间格式化 — 纯函数（webview 运行时脚本直接 import 使用）
  *
- * 阶段 A（对抗评估 P2-1）：逻辑以可测试的 TS 纯函数为单一真理源，注入脚本由
- * 函数源码序列化生成（toString）。webview 仍以内联字符串注入（CSP:
- * script-src 'unsafe-inline'），面板 buildHtml 拼进 <script> 后通过 fmtTime(ts)
- * 调用；纯函数可被 vitest 直接测试（此前是字符串，0 覆盖）。
- * 序列化依赖 esbuild minify:false + keepNames:true，保证 toString 返回可读函数源码。
+ * 阶段 B（对抗评估 P2-1）：原「字符串注入脚本 + 序列化」模式已由外部脚本
+ * chatView.js 取代，fmtTime 作为纯函数被 chatView import，可直接 vitest 测试。
  */
 
 /**
@@ -22,7 +19,3 @@ export function fmtTime(ts?: string): string {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
 }
-
-/** webview 注入脚本：由纯函数源码序列化，与 fmtTime 保持单一真源（P2-1 阶段 A） */
-export const fmtTimeScript = `
-${fmtTime}`;
