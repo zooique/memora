@@ -39,8 +39,8 @@ jobs:
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # 不指定 version，让 action 自动读取 package.json 的 packageManager 字段，
+        # 避免与 pnpm@10.29.2+sha512... 冲突（ERR_PNPM_BAD_PM_VERSION）
 
       - name: 安装 Node.js 22 LTS
         uses: actions/setup-node@v4
