@@ -14,6 +14,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { fmtTime } from '../helpers/fmtTime.js';
+import { scrollToBottom } from '../helpers/scrollToBottom.js';
 import { ToolCard } from '../components/toolCard.js';
 import { initDropdowns } from '../components/dropdown.js';
 
@@ -102,17 +103,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     emptyState.hidden = messages.querySelector('.msg') !== null;
   }
 
-  // 滚动到底部（rAF 节流）：流式渲染时每 chunk 都可能触发滚动，
-  // 用 requestAnimationFrame 合并为每帧一次，避免读写交错强制 reflow。
-  let scrollRafPending = false;
-  function scrollToBottom(): void {
-    if (scrollRafPending) return;
-    scrollRafPending = true;
-    window.requestAnimationFrame(() => {
-      scrollRafPending = false;
-      messages.scrollTop = messages.scrollHeight;
-    });
-  }
+  // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
+  // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
+  // 此处统一以 messages 为滚动容器，与 toolCard 共用同一 helper（SSOT 剪枝去重）。
+  // 原局部 scrollToBottom + scrollRafPending 已收敛到 helpers。
 
   // 渲染模型下拉框选项
   function renderModelPicker(): void {
@@ -219,7 +213,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
     if (role === 'assistant') activeAssistantEl = div;
     messages.appendChild(div);
-    scrollToBottom();
+    scrollToBottom(messages);
     updateEmptyState();
     return div;
   }
@@ -237,7 +231,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     div.appendChild(dot);
     div.appendChild(text);
     messages.appendChild(div);
-    scrollToBottom();
+    scrollToBottom(messages);
   }
 
   let memoryTimer: number | null = null;
@@ -286,7 +280,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         // 锚点失效（如清空后重放）→ 重建一条 assistant 消息（append 内会重置锚点）
         append('assistant', msg.content, msg.ts);
       }
-      scrollToBottom();
+      scrollToBottom(messages);
     } else if (msg.type === 'error') {
       append('error', msg.message);
     } else if (msg.type === 'done') {

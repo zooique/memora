@@ -15,6 +15,7 @@
  *   - 折叠/展开用事件委托 + closest，避免 CSS 选择器注入风险
  */
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
+import { scrollToBottom } from '../helpers/scrollToBottom.js';
 
 /** 工具调用卡片 API（chatView 直接调用） */
 export interface ToolCardApi {
@@ -39,15 +40,6 @@ function ensureDelegated(container: HTMLElement): void {
       header.closest('.tool-card')?.classList.toggle('is-collapsed');
       e.stopPropagation();
     }
-  });
-}
-
-/** 滚动容器到底部（rAF 节流）：与 chatView 的 scrollToBottom 同一策略，
- *  避免逐卡插入时同步写 scrollTop 强制 reflow（对抗评估 P2-5）。
- *  window 从容器 ownerDocument 派生，不引入全局引用。 */
-function scrollContainerToBottom(container: HTMLElement): void {
-  container.ownerDocument.defaultView?.requestAnimationFrame(() => {
-    container.scrollTop = container.scrollHeight;
   });
 }
 
@@ -98,7 +90,7 @@ function show(container: HTMLElement, id: string, name: string, args?: string): 
     card.appendChild(argsDiv);
   }
   container.appendChild(card);
-  scrollContainerToBottom(container);
+  scrollToBottom(container);
 }
 
 /** 更新工具卡片状态：成功/失败 + 结果摘要；完成后自动折叠 */
