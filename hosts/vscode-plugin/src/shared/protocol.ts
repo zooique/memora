@@ -53,6 +53,14 @@ export type WebviewToExtensionMessage =
    * webview 发来后，extension 回放对应日期的历史消息。
    */
   | { type: 'chat_switch_date'; date: string }
+  /**
+   * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
+   *
+   * 由 webview 停止按钮触发，host 调用 AbortController.abort() 中断进行中的
+   * chat() / resumeExecution() 流；流中断后 host 发送 interrupted 通知 webview。
+   * 可安全重复发送（无进行中流时 no-op）。
+   */
+  | { type: 'stop' }
   // ─── 大模型配置面板消息 ───
   /** 请求加载 Provider 列表 */
   | { type: 'cfg_load' }
@@ -73,6 +81,14 @@ export type ExtensionToWebviewMessage =
   | { type: 'chunk'; content: string; ts?: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
+  /**
+   * 流被用户中断（stop 的应答）
+   *
+   * host 在 AbortController.abort() 后发送：告知 webview 本轮输出已中止，
+   * 用于：(1) 恢复输入框/停止按钮状态；(2) 渲染「已停止」提示；
+   * (3) 区分「正常结束(done)」与「用户主动打断(interrupted)」。
+   */
+  | { type: 'interrupted' }
   /**
    * 工具调用开始（Agent 循环的步骤，手动具象化）
    *

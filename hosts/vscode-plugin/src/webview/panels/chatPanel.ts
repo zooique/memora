@@ -70,6 +70,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 是否正在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
    *  避免重放清空消息区后，进行中的 chunk 污染重放视图（对抗评估 P1-3） */
   private _streaming = false;
+  /**
+   * 当前进行中流的 AbortController（mvp-scope 打断能力）
+   *
+   * 停止按钮 / 生成中插话共用：abort() 中断 chat()/resumeExecution() 流，
+   * 内核在下一 await 点退出并 yield aborted chunk。无进行中流时为 undefined
+   * （stop 可安全 no-op）。
+   */
+  private _abortController: AbortController | undefined;
+  /** 当前进行中流的 promise：生成中插话需 await 旧流彻底结束再发新流，
+   *  避免 chatLock 未释放导致「发起新对话」busy 冲突 */
+  private _currentFlow: Promise<void> | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -163,6 +174,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'chat_switch_date') {
         // 历史会话切换：更新查看日期并重放对应历史
         this.handleSwitchDate(msg.date);
+      } else if (msg.type === 'stop') {
+        // 停止生成：中断当前流式输出（mvp-scope 打断能力）
+        this.handleStop();
       }
     });
   }
@@ -520,12 +534,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     void this._view?.webview.postMessage(msg);
   }
 
-  /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写） */
+  /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写）
+   *
+   * 插话语义（mvp-scope 打断能力）：生成中用户发送新消息 = 中断当前流 + 作为新消息重发。
+   * 必须 await 旧流彻底结束（chatLock 释放）再发起新 chat，否则触发 busy 冲突；等待期间
+   * 旧流 consumeFlow 会发送 interrupted 通知 webview（恢复输入框 + 渲染「已停止」提示）。 */
   private async handleSend(input: string): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
       return;
+    }
+    // 插话：生成中发送 → 中断当前流（abort() 同步置 signal.aborted，供 consumeFlow
+    // 判定并发送 interrupted），待旧流结束后走正常发送路径（此时 _streaming 已复位，
+    // 不会再次进入本分支）
+    if (this._streaming && this._abortController) {
+      this._abortController.abort();
+      await this._currentFlow;
     }
     const now = new Date().toISOString();
     // P1-1：若正查看历史日期，发送前回置到「全部历史（当前会话）」视图，
@@ -541,14 +566,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       ? `[当前打磨文档内容]\n${this._docContext}\n[/当前打磨文档内容]\n\n用户请求：${input}`
       : input;
 
-    try {
-      // chat() 若在生成器创建阶段同步抛错（如 agent 状态检查失败），不会进入 consumeFlow，
-      // 此时用户消息已上屏却无任何反馈；此处兜底给出可见错误（对抗评估 P1-2）。
-      // 因从未进入 thinking 状态，输入框未被禁用，无需再补发 status done。
-      await this.consumeFlow(this._agent.chat(chatInput));
-    } catch (err) {
-      this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
-    }
+    // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
+    await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
   }
 
   /** 处理用户对主动提问的回答：persist + resumeExecution 续跑 */
@@ -561,16 +580,57 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处由 UI 补写，避免回答丢失（内核 resume 能力缺口，宿主补丁）
     this.persist('user', input);
     this.post({ type: 'user', text: input, ts: now });
+    await this.runFlow((signal) => this._agent!.resumeExecution(input, signal));
+  }
+
+  /**
+   * 运行一轮 Agent 流（chat / resumeExecution 的统一入口）
+   *
+   * 抽取动机：handleSend / handleResume 原先各写一份「新建 AbortController +
+   * consumeFlow + catch 清理」样板，2 处重复构成该抽却漏抽的回溯信号
+   * （coding-convention §3）。内部新建本轮 controller（上一轮已在 consumeFlow
+   * finally 清理），以 factory 注入 signal 供内核流使用；同步抛错（如 chatLock
+   * busy）时兜底给出可见错误（对抗评估 P1-2）——因从未进入 thinking 状态，输入框
+   * 未被禁用，无需再补发 status done。
+   */
+  private async runFlow(
+    factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
+  ): Promise<void> {
+    this._abortController = new AbortController();
     try {
-      // 与 handleSend 同一缺陷模式（P1-2）：resumeExecution 同步抛错时无反馈，一并兜底
-      await this.consumeFlow(this._agent.resumeExecution(input));
+      this._currentFlow = this.consumeFlow(
+        factory(this._abortController.signal),
+        this._abortController,
+      );
+      await this._currentFlow;
     } catch (err) {
+      // 同步抛错路径：清理 controller，避免 AbortController 泄漏
+      this._abortController = undefined;
       this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
     }
   }
 
-  /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态 */
-  private async consumeFlow(gen: AsyncGenerator<AgentChunk, void, unknown>): Promise<void> {
+  /**
+   * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
+   *
+   * 无进行中流时 no-op（可安全重复点击）。abort 后内核 generator 在下一个
+   * await 点退出并 yield aborted chunk，consumeFlow 捕获后发送 interrupted
+   * 通知 webview（恢复输入框 + 渲染「已停止」提示）。
+   */
+  private handleStop(): void {
+    if (!this._streaming || !this._abortController) return;
+    // abort() 同步置 signal.aborted，consumeFlow 末尾据此判定发送 interrupted
+    this._abortController.abort();
+  }
+
+  /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态，支持用户打断
+   *  @param gen Agent 流（chat / resumeExecution）
+   *  @param controller 本轮 AbortController：stop / 插话经 abort() 中断流；
+   *         finally 中与本轮 controller 比对后清理（避免误清下一轮的 controller） */
+  private async consumeFlow(
+    gen: AsyncGenerator<AgentChunk, void, unknown>,
+    controller: AbortController,
+  ): Promise<void> {
     if (!this._agent) return;
     // 监听主动提问事件 → 渲染提问框
     const onPendingQuestion = (questions: { slot: string; question: string }[]) => {
@@ -596,6 +656,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     let firstChunkTs = new Date().toISOString();
     try {
       for await (const chunk of gen) {
+        if (chunk.type === 'aborted') {
+          // 用户 stop/插话 → 内核 abort 应答：提前退出，不再转发后续 chunk
+          //（中断通知统一由本方法末尾按 controller.signal.aborted 发出）
+          break;
+        }
         if (chunk.type === 'text' && chunk.content) {
           this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs });
         } else if (chunk.type === 'tool_start') {
@@ -625,10 +690,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agent.off('memoryAdded', onMemoryAdded);
       // 无论成败均清除生成态（恢复历史切换能力，P1-3）
       this._streaming = false;
+      // 清理本轮 AbortController：仅当仍是本轮的 controller（防止下一轮已创建新 controller）
+      if (this._abortController === controller) this._abortController = undefined;
     }
-    // 结束状态（恢复输入框）；错误时也恢复，避免卡死
+    // 结束状态：用户打断（abort() 已置 signal.aborted）→ interrupted（webview 渲染
+    // 「已停止」并恢复输入框）；正常结束 → done。两者均恢复输入框，仅提示语义不同。
+    if (controller.signal.aborted) {
+      this.post({ type: 'interrupted' });
+    } else {
+      this.post({ type: 'done' });
+    }
     this.post({ type: 'status', state: 'done' });
-    this.post({ type: 'done' });
   }
 }
 
@@ -676,7 +748,8 @@ function buildHtml(scriptUri: vscode.Uri): string {
         ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
         <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
           <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-          <span class="send-spinner"></span>
+          <!-- 生成中切换为停止方块（loading 类驱动）：点击 = 停止当前生成（mvp-scope 打断能力） -->
+          <svg class="stop-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
         </button>
       </div>
     </div>

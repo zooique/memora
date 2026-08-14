@@ -135,3 +135,66 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(assistants[0].querySelector('.msg-body')?.textContent).toBe('重放后');
   });
 });
+
+describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('生成中（status thinking）输入框保持可用（支持插话）', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    // 插话能力前提：生成中不禁用输入框，用户可输入新消息 → Enter 打断当前生成并重发
+    expect(input.disabled).toBe(false);
+  });
+
+  it('生成中发送按钮切换为停止态，点击发送 stop 消息', () => {
+    const { postMessage } = mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    expect(send.classList.contains('loading')).toBe(true);
+    expect(send.title).toBe('停止生成');
+    send.click();
+    // 生成中点击按钮 = 停止（不是发送），发 stop 消息由 host 中断当前流
+    expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
+  });
+
+  it('done 恢复发送态（loading 移除 + 发送提示）', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    dispatch({ type: 'status', state: 'done' });
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.title).toBe('发送 (Enter)');
+  });
+
+  it('空闲点击发送按钮发送输入内容', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    input.value = '打磨这段';
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '打磨这段' });
+  });
+
+  it('生成中按 Enter 仍发送（插话语义：打断当前生成并重发）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    input.value = '补充要求';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '补充要求' });
+  });
+
+  it('interrupted 渲染「已停止生成」提示条', () => {
+    mountChatView();
+    dispatch({ type: 'interrupted' });
+    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+    expect(noticeBar.hidden).toBe(false);
+    expect(noticeBar.textContent).toContain('已停止生成');
+  });
+});

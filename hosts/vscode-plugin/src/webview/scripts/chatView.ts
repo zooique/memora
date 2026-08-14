@@ -69,19 +69,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 仅作触发器回显，不参与任何业务判定（宿主 _historyDate 才是权威，webview 只镜像）。
   let currentHistoryDate = '';
 
-  // 切换 LLM 运行状态：thinking → 发送按钮变 loading，禁用输入；done 恢复
+  // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
+  // 输入框保持可用（支持插话）；done 恢复发送按钮。
   function setStatus(state: 'thinking' | 'done'): void {
     if (state === 'thinking') {
       send.classList.add('loading');
-      send.setAttribute('title', '思考中…');
-      input.disabled = true;
+      send.setAttribute('title', '停止生成');
+      send.setAttribute('aria-label', '停止生成');
+      // 生成中不禁用输入框：用户可输入新消息 → Enter 插话（打断当前生成并重发，
+      // mvp-scope 打断能力）。发送按钮此时承担「停止」职责，插话走 Enter 发送。
     } else {
       send.classList.remove('loading');
       send.setAttribute('title', '发送 (Enter)');
-      input.disabled = false;
-      // 仅当用户没有正在与其他交互元素交互（焦点已回落 body —— disabled 的输入框
-      // 自然失焦后的默认状态）时才恢复输入焦点，避免 done 时强制 focus 打断用户
-      // 正在进行的其他操作（如阅读/操作下拉菜单，对抗评估 P1-4）
+      send.setAttribute('aria-label', '发送');
+      // 输入框全程不禁用，无需恢复；仅当用户焦点已回落到 body（如刚完成其他操作）
+      // 时才恢复输入焦点，避免 done 时强制 focus 打断用户正在进行的操作（对抗评估 P1-4）
       if (document.activeElement === document.body) input.focus();
     }
   }
@@ -288,6 +290,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。error 后必跟 done，
       // 此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
       ToolCard.settleRunning(messages, '已中断');
+    } else if (msg.type === 'interrupted') {
+      // 用户主动停止（mvp-scope 打断能力）：兜底终结残留「执行中」工具卡片 +
+      // 低扰提示「已停止生成」，区分于正常 done。按钮状态恢复由紧随的 status done
+      // 处理（chatPanel 中断后发 interrupted + status done），此处独立兜底保证
+      // 消息顺序变化时 UI 仍可靠恢复。
+      ToolCard.settleRunning(messages, '已中断');
+      showNotice('info', '已停止生成');
     } else if (msg.type === 'need_clarify') {
       clarifyText.textContent =
         'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
@@ -364,12 +373,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
   function sendMessage(): void {
     const text = input.value.trim();
-    if (!text || send.classList.contains('loading')) return;
+    if (!text) return;
     input.value = '';
     input.style.height = 'auto';
     vscode.postMessage({ type: 'send', text });
   }
-  send.addEventListener('click', sendMessage);
+  // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
+  // mvp-scope 打断能力）。生成中插话走 Enter（见下方 keydown，不经此分支）。
+  send.addEventListener('click', () => {
+    if (send.classList.contains('loading')) {
+      vscode.postMessage({ type: 'stop' });
+    } else {
+      sendMessage();
+    }
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();

@@ -215,20 +215,14 @@ export const chatStyles = `
   }
   .send-btn:hover:not(.loading) { opacity: 0.92; filter: brightness(1.08); }
   .send-btn:active:not(.loading) { transform: scale(0.95); }
-  .send-btn.loading { cursor: not-allowed; opacity: 0.85; }
+  /* 生成中：按钮切换为「停止」方块（点击 = 停止当前生成，mvp-scope 打断能力）。
+   * cursor 保持 pointer（可点击的停止语义），不再用 not-allowed 误导「不可点」 */
+  .send-btn.loading { opacity: 0.9; }
   .send-btn .send-icon { display: block; }
+  .send-btn .stop-icon { display: none; }
+  /* loading 时图标切换：隐藏发送箭头，显示停止方块（语义：生成中此按钮 = 停止） */
   .send-btn.loading .send-icon { display: none; }
-  .send-btn .send-spinner {
-    display: none;
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255,255,255,.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: sendSpin 0.7s linear infinite;
-  }
-  .send-btn.loading .send-spinner { display: block; }
-  @keyframes sendSpin { to { transform: rotate(360deg); } }
+  .send-btn.loading .stop-icon { display: block; }
 
   /* ============ Components：技能徽章 / 提示条 ============ */
   /* 技能徽章（toolbar）：标题旁静态展示当前装配的 skill（doc-review / scaffold），
