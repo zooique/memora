@@ -26,6 +26,7 @@ import { chatStyles } from '../styles/chatStyles.js';
 import { toolCardStyles } from '../styles/toolCard.js';
 import { fmtTimeScript } from '../helpers/fmtTime.js';
 import { toolNameMapScript } from '../helpers/toolNameMap.js';
+import { stripDocContextPrefix } from '../helpers/docContext.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
@@ -602,34 +603,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'status', state: 'done' });
     this.post({ type: 'done' });
   }
-}
-
-/**
- * 剥离 user 消息中的「当前打磨文档内容」前缀（仅用于 UI 回显）
- *
- * 宿主在 handleSend 注入文档上下文到 chat 输入，内核 appendUser 持久化的 user 消息
- * 因此带 `[当前打磨文档内容]\n...\n[/当前打磨文档内容]\n\n用户请求：` 前缀。该前缀
- * 属于「当前任务上下文」，不属于用户实际输入，回放历史时应剥离，只显示用户请求原文。
- * 无前缀的普通 user 消息（resume 补写、无文档场景）原样返回。
- *
- * @param content 内核持久化的 user 消息原文
- * @returns 剥离前缀后的用户请求文本
- */
-function stripDocContextPrefix(content: string): string {
-  // 仅当消息确实以「当前打磨文档内容」标记开头才剥离（文档上下文注入的前缀），
-  // 普通对话（resume 补写、无文档场景）内容不含该标记，原样返回。
-  // 注入结构固定：`[当前打磨文档内容]\n{doc}\n[/当前打磨文档内容]\n\n用户请求：{input}`。
-  // 以「关闭标签」为锚点，在其后定位首个分隔 marker：注入的 marker 总紧跟在关闭
-  // 标签之后，而用户 input 中若含「用户请求：」字样必然出现在其后，因此不会误剥
-  // 用户内容（对抗评估 P1-6，替代原先 lastIndexOf 会误伤用户输入含该字样的缺陷）。
-  if (!content.startsWith('[当前打磨文档内容]')) return content;
-  const closeTag = '[/当前打磨文档内容]';
-  const closeIdx = content.indexOf(closeTag);
-  if (closeIdx < 0) return content;
-  const marker = '\n\n用户请求：';
-  const idx = content.indexOf(marker, closeIdx);
-  if (idx < 0) return content;
-  return content.slice(idx + marker.length);
 }
 
 /** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框） */
