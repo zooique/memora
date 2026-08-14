@@ -24,16 +24,15 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
-    it('应包含 INSIGHT / PROFILE / WORK_PROJECTION 三个 source', () => {
-      expect(GOVERNANCE_SOURCES).toHaveLength(3);
-      expect(GOVERNANCE_SOURCES).toContain(SOURCE_LABELS.INSIGHT);
+    it('应包含 PROFILE / WORK_PROJECTION 两个 source', () => {
+      expect(GOVERNANCE_SOURCES).toHaveLength(2);
       expect(GOVERNANCE_SOURCES).toContain(SOURCE_LABELS.PROFILE);
       expect(GOVERNANCE_SOURCES).toContain(SOURCE_LABELS.WORK_PROJECTION);
     });
 
     it('应与 SOURCE_LABELS 的字符串值对齐', () => {
       // 锁定具体字符串值，防止 SOURCE_LABELS 重命名后治理范围漂移
-      expect([...GOVERNANCE_SOURCES]).toEqual(['insight', 'profile', 'work-projection']);
+      expect([...GOVERNANCE_SOURCES]).toEqual(['profile', 'work-projection']);
     });
 
     it('不应包含配置型 source（persona / rule / skill）', () => {

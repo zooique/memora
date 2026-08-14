@@ -13,8 +13,7 @@
  *   拆分后 Agent 聚焦对话编排，MemoryDecayScheduler 聚焦记忆自然遗忘。
  *
  * 衰减范围：
- *   - insight（洞察记忆）
- *   - profile（用户画像记忆）
+ *   - profile（用户画像，存量兼容）
  *   - work-projection（作品投影）
  *   不衰减 persona/rule/skill（配置型记忆不应衰减）
  *
@@ -42,7 +41,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 // LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
 import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { truncate } from '@/utils/strings.js';
-// LLM 治理源列表（v2 REPEAT-1 闭环，消除 5 处独立维护的 [INSIGHT, PROFILE, WORK_PROJECTION] 列表）
+// LLM 治理源列表（v2 REPEAT-1 闭环，消除 5 处独立维护的 [PROFILE, WORK_PROJECTION] 列表）
 import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 /** 衰减完成的回调类型（Agent 注入 emit('decayCompleted', ...)） */
@@ -273,7 +272,7 @@ export class MemoryDecayScheduler {
    * 时效性评估：扫描低分记忆，调用 LLM 判断是否已过时
    *
    * 流程：
-   *   1. 从 insight/profile/work-projection 加载低分记忆（score < 0.3）
+   *   1. 从 profile/work-projection 加载低分记忆（score < 0.3）
    *   2. 对每条低分记忆（上限 20 条），调用 LLM 判断是否"已过时"
    *   3. 过时则进一步降级（score → 0.05，接近物理删除阈值但保留可恢复性）
    *   4. 返回评估报告

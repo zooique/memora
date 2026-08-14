@@ -2450,7 +2450,6 @@ describe('Agent · L2 行为策略消费', () => {
     expect(strategy.act?.toolMode).toBe('allow');
     // 验证默认策略的 reflect 维度（标准键 reflect.handoff，§六）
     expect(strategy.reflect?.handoff).toBe('wait');
-    expect(strategy.reflect?.insightExtraction).toBe('on');
   });
 
   // ─── executeChatLoop → handoff chunk ─────────────────────

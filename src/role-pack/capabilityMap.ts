@@ -33,7 +33,6 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'task:plan': ['task_table_write', 'task_table_update'],
   // 内核内部能力（无工具映射，仅声明存在；实现按自身能力实现）
   'llm:summarize': [],
-  'llm:insight': [],
 };
 
 /**

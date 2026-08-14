@@ -760,7 +760,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 对话后处理：用户画像归档、角色匹配、技能匹配、Insight 提取
+   * 对话后处理：round-summary 生成、角色匹配、技能匹配、AutoConfigRefiner
    *
    * 所有归档/匹配操作均为 best-effort：任何子步骤失败不应影响用户已收到的回答，
    * 失败仅记录日志，不向上抛出异常。

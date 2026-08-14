@@ -52,7 +52,7 @@ export type {
   UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
   ToolCalls, ToolApproval, ToolReadonly, StreamingMode,
   ProviderRouting, MultiStepReasoning, InputInterrupt,
-  EndingHandoff, LoopContinue, InsightExtraction,
+  EndingHandoff, LoopContinue,
   MemoryWriteMode, SessionArchiveMode, UserFollowup,
   ErrorHandling, SafetyRuleMode,
 } from '@/role-pack/types.js';

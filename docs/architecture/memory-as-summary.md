@@ -120,7 +120,7 @@ postProcess → 使用 round-5 生成摘要
 └──────────────────────────────────────────────────┘
 ```
 
-写入 `IMemoryStorage`，`source='round-summary'`。这是系统唯一的记忆产生层——洞察层/画像层已于 2026-08-14 收敛移除，当前即此目标态，无其他写入型 source 类型（`INSIGHT`/`PROFILE` 仅保留为存量数据治理，不再有新写入，见 §7）。
+写入 `IMemoryStorage`，`source='round-summary'`。这是系统唯一的记忆产生层——洞察层/画像层已于 2026-08-14 收敛移除，当前即此目标态，无其他写入型 source 类型（`PROFILE` 仅保留为存量数据治理，不再有新写入，见 §7）。
 
 ### 3.2 摘要类型（SummaryType）— 召回的标准
 
@@ -433,7 +433,7 @@ LLM 获得完整上下文
 > - **唯一记忆单元 = round-summary**：写入（RoundSummaryGenerator + type）→ 召回（type 时间窗口 + 会话窗口/时间排序）→ 治理（superseded 取代）闭环成立，无需独立洞察提炼层。
 > - **memoryAdded 事件由 round-summary 发射**——替代洞察的"已沉淀"通知出口，保持内核"新记忆产生必通知"契约。
 > - **SessionArchiver（content 会话归档）保留**——它是**会话归档**而非洞察：承载会话级综合提炼（关键决策/未解决问题/plan 快照）与 `ArchiveCoordinator` 的 content 路径，粒度（会话级）与 round-summary（轮次级）不同，非冗余。
-> - **代码已移除（2026-08-14）**：InsightExtractor 及其装配/自动抽取/手动 `archiveInsight`/`insight` getter/`insightExtracted` 事件从内核清除。
+> - **代码已移除（2026-08-14）**：InsightExtractor 及其装配/自动抽取/手动 `archiveInsight`/`insight` getter/`insightExtracted` 事件从内核清除；`SOURCE_LABELS.INSIGHT` 标签与 role-pack `reflect.insightExtraction` 键 / `llm:insight` 能力一并移除，memora 不残留任何洞察层痕迹。
 
 ### 七·一 承诺 vs 实现状态对照（如实声明）
 

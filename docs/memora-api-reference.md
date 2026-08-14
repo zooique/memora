@@ -161,15 +161,14 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 
 | 事件名 | 载荷 | 触发时机 |
 |--------|------|----------|
-| `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（insight 提取、rule 注入等） |
+| `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（round-summary 沉淀、rule 注入等） |
 | `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（自动匹配或手动指定） |
 | `decayCompleted` | `{ decayedCount }` | 记忆衰减完成（init 首次 + 每小时定时） |
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
 | `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
-| `insightExtracted` | `{ source: string; insight: string }` | 洞察被提取 |
 | `projectSwitched` | `{ from: string \| null, to: string, projectName: string }` | 项目切换（宿主 UI 可据此刷新项目相关界面） |
 | `skillMatched` | `{ skill: string, score: number }` | 技能被匹配（宿主 UI 可据此展示当前激活技能） |
-| `archiveFailed` | `{ stage: 'insight' \| 'content'; message: string }` | 归档操作失败（任一阶段失败，fire-and-forget catch 分支发射，宿主可通知用户） |
+| `archiveFailed` | `{ stage: 'content'; message: string }` | 归档操作失败（仅 content 阶段，fire-and-forget catch 分支发射，宿主可通知用户） |
 
 ```typescript
 // 使用示例
@@ -223,7 +222,7 @@ interface RecalledMemorySummary {
   id: string;       // 记忆唯一标识（source:name 格式，用于前端精准跳转详情）
   name: string;     // 记忆可读名称（点击跳转记忆详情用）
   score: number;    // 相似度分数（0-1）
-  source: string;   // 来源标签（开放字符串，如 'rule'、'insight'、'work-projection'）
+  source: string;   // 来源标签（开放字符串，如 'rule'、'round-summary'、'work-projection'）
 }
 ```
 
@@ -353,10 +352,10 @@ interface Memory {
 | `SOURCE_LABELS.PERSONA` | `'persona'` | 角色人格 |
 | `SOURCE_LABELS.RULE` | `'rule'` | 创作规则 |
 | `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义 |
-| `SOURCE_LABELS.INSIGHT` | `'insight'` | 对话洞察 |
-| `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像 |
+| `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像（存量数据兼容，不再新写入） |
 | `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
 | `SOURCE_LABELS.GUARDRAIL` | `'guardrail'` | 内容护栏规则 |
+| `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（当前唯一记忆产生源） |
 
 > source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
 

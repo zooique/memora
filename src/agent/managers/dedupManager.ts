@@ -131,7 +131,7 @@ export class DedupManager {
    * 语义去重：扫描名称高度相似的记忆对，调用 LLM 判断语义等价性
    *
    * 流程：
-   *   1. 从 insight/profile/work-projection 加载候选记忆（上限 50 条）
+   *   1. 从 profile/work-projection 加载候选记忆（上限 50 条）
    *   2. 按名称归一化 Levenshtein 距离筛选相似对（上限 10 对）
    *   3. 对每对调用 LLM 判断语义等价性（结构化 JSON 输出）
    *   4. 等价则降级低分记忆（score → 0.1，不物理删除，保留可恢复性）

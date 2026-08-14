@@ -13,7 +13,7 @@ import { toError } from '@/utils/toError.js';
 
 /**
  * 启动时全量扫描的 source 列表
- * - insight/profile/work-projection：运行时产生，不由 FileStore 管理
+ * - profile/work-projection：运行时产生，不由 FileStore 管理
  * - tool：由 registerTool() 注册为 tool_call，不再重复注入 system prompt
  * - guardrail：由 AgentLoop 运行时读取，不注入 system prompt
  */

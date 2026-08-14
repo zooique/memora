@@ -7,7 +7,7 @@ import type { MessageRole } from '@/memory/types.js';
  * memora 内核通过此接口读写会话记录，不直接依赖文件 I/O。
  *
  * 与 IMemoryStorage 的关系：
- * - IMemoryStorage：记忆索引（SQLite），存储提取后的 insight
+ * - IMemoryStorage：记忆索引（SQLite），存储 round-summary 等记忆
  * - ISessionStore：会话记录，存储原始对话消息
  *
  * 设计原则：

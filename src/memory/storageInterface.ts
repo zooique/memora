@@ -162,7 +162,7 @@ export interface IMemoryStorage {
    * 宿主实现（SqliteStorage）可用一条 SQL UPDATE 批量完成，
    * 避免内核逐条全量加载。
    *
-   * @param sources - 要衰减的来源标签列表（如 ['insight', 'profile']）
+   * @param sources - 要衰减的来源标签列表（如 ['profile', 'work-projection']）
    * @param now - 当前时间
    * @returns 受影响的记忆数量
    */

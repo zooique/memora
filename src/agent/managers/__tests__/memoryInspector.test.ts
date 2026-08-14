@@ -235,17 +235,14 @@ describe('MemoryInspector', () => {
       expect(sources).not.toContain('insight');
     });
 
-    it('归档层：round-summary + insight + profile + work-projection 计数', () => {
+    it('归档层：round-summary + profile + work-projection 计数', () => {
       storage.upsert(createMemory({ id: 'round-summary:s1:r1', source: 'round-summary', name: 'rs1' }));
       storage.upsert(createMemory({ id: 'round-summary:s1:r2', source: 'round-summary', name: 'rs2' }));
-      storage.upsert(createMemory({ id: 'insight:i1', source: 'insight', name: 'i1' }));
-      storage.upsert(createMemory({ id: 'insight:i2', source: 'insight', name: 'i2' }));
       storage.upsert(createMemory({ id: 'profile:p1', source: 'profile', name: 'p1' }));
       storage.upsert(createMemory({ id: 'work-projection:w1', source: 'work-projection', name: 'w1' }));
       const snap = inspector.snapshot();
-      expect(snap.archive.archiveCount).toBe(6);
+      expect(snap.archive.archiveCount).toBe(4);
       expect(snap.archive.stats['round-summary']).toBe(2);
-      expect(snap.archive.stats.insight).toBe(2);
       expect(snap.archive.stats.profile).toBe(1);
       expect(snap.archive.stats['work-projection']).toBe(1);
     });

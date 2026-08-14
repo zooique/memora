@@ -27,7 +27,7 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
  * - 1 个可选字段：deletedAt（软删除时间，undefined 表示活跃记忆）
  */
 export interface Memory {
-  /** 唯一标识（source:name，如 'rule:core'、'insight:1718083200000'） */
+  /** 唯一标识（source:name，如 'rule:core'、'round-summary:session:r1'） */
   id: string;
   /** 记忆内容（Markdown 文本） */
   content: string;
@@ -199,8 +199,6 @@ export const SOURCE_LABELS = {
   RULE: 'rule',
   /** 技能定义（agent-config/skills/*.md） */
   SKILL: 'skill',
-  /** 对话洞察（存量数据兼容，独立提炼层已于 2026-08-14 移除，不再有新写入） */
-  INSIGHT: 'insight',
   /** 用户画像（存量数据兼容，画像层已于 2026-08-14 收敛移除，不再有新写入） */
   PROFILE: 'profile',
   /** 作品投影（Agent 读取用户作品时生成的概要） */
@@ -223,5 +221,5 @@ export const SOURCE_LABELS = {
 // - 独立侧车存储（IMemoryRelationStore / InMemoryRelationStore）
 // - 复杂关系类型（contradicts/supports/follows/refines/caused/related）
 // - 冲突检测改用 supersededBy 布尔标记（ADR-021 写路径取代检测）
-// 残留源：SOURCE_LABELS.INSIGHT（洞察层）与 SOURCE_LABELS.PROFILE（用户画像层）
-// 仍保留（存量数据兼容，供 GOVERNANCE 治理与计数），但不再有新写入——记忆收敛为 round-summary 单轨。
+// 残留源：SOURCE_LABELS.PROFILE（用户画像层）仍保留（存量数据兼容，供 GOVERNANCE 治理与计数），
+// 但不再有新写入——记忆收敛为 round-summary 单轨。

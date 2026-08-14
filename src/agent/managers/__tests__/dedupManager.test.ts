@@ -77,7 +77,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     const storage = createMockStorage();
     const memA: Memory = {
       id: 'insight:a',
-      source: SOURCE_LABELS.INSIGHT,
+      source: SOURCE_LABELS.PROFILE,
       name: '用户偏好',
       content: '用户偏好简洁 UI',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -86,7 +86,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     };
     const memB: Memory = {
       id: 'insight:b',
-      source: SOURCE_LABELS.INSIGHT,
+      source: SOURCE_LABELS.PROFILE,
       name: '用户偏好设置',
       content: '用户偏好简洁界面',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -129,7 +129,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     const storage = createMockStorage();
     const memA: Memory = {
       id: 'insight:a',
-      source: SOURCE_LABELS.INSIGHT,
+      source: SOURCE_LABELS.PROFILE,
       name: '用户偏好',
       content: '原始A内容',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -138,7 +138,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     };
     const memB: Memory = {
       id: 'insight:b',
-      source: SOURCE_LABELS.INSIGHT,
+      source: SOURCE_LABELS.PROFILE,
       name: '用户偏好设置',
       content: '原始B内容',
       createdAt: '2026-01-01T00:00:00.000Z',

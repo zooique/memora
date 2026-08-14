@@ -579,7 +579,7 @@ import type {
 | `clearSafeInterval(id)` | 清除安全间隔器 |
 | `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
-| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION / GUARDRAIL） |
+| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / PROFILE / WORK_PROJECTION / GUARDRAIL / ROUND_SUMMARY） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |

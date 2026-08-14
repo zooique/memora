@@ -82,12 +82,6 @@ export type EndingHandoff = Handoff;
  */
 export type LoopContinue = number;
 
-/**
- * 洞察提取开关
- * @deprecated 独立洞察层已移除（2026-08-14），此类型仅随弃用的 insightExtraction 键保留供宿主兼容。
- */
-export type InsightExtraction = 'on' | 'off';
-
 /** 摘要生成开关 */
 export type SummaryGeneration = 'on' | 'off';
 
@@ -178,12 +172,6 @@ export interface ReflectStrategy {
   readonly handoff?: Handoff;
   /** Loop 续跑轮次（默认 0=关闭；0=关闭自审查 / N=最多自审查 N 轮） */
   readonly loopContinue?: LoopContinue;
-  /**
-   * 洞察提取开关（默认 on）
-   * @deprecated 独立洞察层已随"记忆即摘要"移除（2026-08-14），内核不再消费本键。
-   * 保留仅供宿主兼容；新角色包应改用摘要 type 分类表达价值（memory-as-summary §3.2）。
-   */
-  readonly insightExtraction?: InsightExtraction;
   /** 摘要生成开关（默认 on） */
   readonly summaryGeneration?: SummaryGeneration;
   /** 记忆写入模式（默认 auto） */
@@ -453,7 +441,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   reflect: {
     handoff: 'wait',
     loopContinue: 0,
-    insightExtraction: 'on',
     summaryGeneration: 'on',
     memoryWrite: 'auto',
     sessionArchive: 'auto',

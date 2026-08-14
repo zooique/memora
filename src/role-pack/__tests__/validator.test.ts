@@ -74,17 +74,6 @@ describe('validateRolePack：合法角色包', () => {
     const result = validate({ strategy: validStrategy, skills: validFrontmatter['skills'] }, validBody, 'folder', true);
     expect(result.valid).toBe(true);
   });
-
-  it('弃用键 reflect.insightExtraction：warning（可装载）+ DEPRECATED_STRATEGY_KEY', () => {
-    const result = validate({
-      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, insightExtraction: 'on' } },
-    });
-    expect(result.valid).toBe(true); // 弃用键是 warning，不阻塞装载
-    const dep = findByCode(result.issues, 'DEPRECATED_STRATEGY_KEY');
-    expect(dep).toHaveLength(1);
-    expect(dep[0]!.severity).toBe('warning');
-    expect(dep[0]!.path).toBe('strategy.reflect.insightExtraction');
-  });
 });
 
 describe('validateRolePack：必填字段', () => {

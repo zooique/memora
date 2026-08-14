@@ -25,7 +25,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
  * 已知 source 到文件系统目录的映射
  *
  * 仅覆盖配置类记忆（启动时扫描的 persona/rule/skill）；
- * 运行时产生的记忆（insight/profile/work-projection）不由 FileStore 管理。
+ * 运行时产生的记忆（profile/work-projection）不由 FileStore 管理。
  * 未知 source 由 sourceToDir 透传 source 字符串作目录名。
  */
 export const SOURCE_TO_DIR: Readonly<Record<string, string>> = {

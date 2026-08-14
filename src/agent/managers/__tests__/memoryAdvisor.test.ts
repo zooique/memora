@@ -28,7 +28,7 @@ function createMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:default',
     content: '默认内容',
-    source: SOURCE_LABELS.INSIGHT,
+    source: SOURCE_LABELS.PROFILE,
     name: 'default',
     createdAt: '2026-06-27T10:00:00.000Z',
     accessedAt: '2026-06-27T10:00:00.000Z',
@@ -117,24 +117,24 @@ describe('MemoryAdvisor.sourceHealth()', () => {
 
   describe('多 source 整体状态与排序', () => {
     it('overallStatus 取最差 source（healthy + critical → critical）', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', source: SOURCE_LABELS.INSIGHT, score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
       storage.upsert(createMemoryDaysAgo(40, { id: 'profile:1', source: SOURCE_LABELS.PROFILE, score: 0.7 }));
       const report = advisor.sourceHealth();
       expect(report.overallStatus).toBe('critical');
       // 排序：critical 在前，healthy 在后
       expect(report.sources[0]?.source).toBe(SOURCE_LABELS.PROFILE);
-      expect(report.sources[1]?.source).toBe(SOURCE_LABELS.INSIGHT);
+      expect(report.sources[1]?.source).toBe(SOURCE_LABELS.WORK_PROJECTION);
     });
 
     it('overallStatus 取最差 source（healthy + warning → warning）', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', source: SOURCE_LABELS.INSIGHT, score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
       storage.upsert(createMemoryDaysAgo(10, { id: 'profile:1', source: SOURCE_LABELS.PROFILE, score: 0.7 }));
       const report = advisor.sourceHealth();
       expect(report.overallStatus).toBe('warning');
     });
 
     it('多 source 同状态时保持插入顺序无关（按 status 排序）', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', source: SOURCE_LABELS.INSIGHT, score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'profile:1', source: SOURCE_LABELS.PROFILE, score: 0.8 }));
       const report = advisor.sourceHealth();
       expect(report.sources).toHaveLength(2);
@@ -200,7 +200,7 @@ describe('MemoryAdvisor.suggest()', () => {
 
     it('所有 source 被 excludeSources 排除：返回 []', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', score: 0.9 }));
-      const result = advisor.suggest(undefined, { excludeSources: [SOURCE_LABELS.INSIGHT] });
+      const result = advisor.suggest(undefined, { excludeSources: [SOURCE_LABELS.PROFILE] });
       expect(result).toEqual([]);
     });
   });
@@ -223,7 +223,7 @@ describe('MemoryAdvisor.suggest()', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', score: 0.5 }));
       const result = advisor.suggest();
       expect(result).toHaveLength(1);
-      expect(result[0]?.source).toBe(SOURCE_LABELS.INSIGHT);
+      expect(result[0]?.source).toBe(SOURCE_LABELS.PROFILE);
     });
 
     it('每个 source 采样 top-N（SUGGEST_TOP_PER_SOURCE=3）', () => {
@@ -275,10 +275,10 @@ describe('MemoryAdvisor.suggest()', () => {
 
   describe('limit 控制', () => {
     it('默认 limit=5', () => {
-      // 插入 7 条 insight（超过 SUGGEST_TOP_PER_SOURCE=3，但跨 source 可补足）
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:2', score: 0.8 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:3', score: 0.7 }));
+      // 插入 7 条（PROFILE×3 + WORK_PROJECTION×4，跨 source 补足）
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.9 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:2', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.8 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:3', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'profile:1', source: SOURCE_LABELS.PROFILE, score: 0.9 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'profile:2', source: SOURCE_LABELS.PROFILE, score: 0.8 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'profile:3', source: SOURCE_LABELS.PROFILE, score: 0.7 }));
@@ -349,9 +349,9 @@ describe('MemoryAdvisor.suggest()', () => {
 
     it('reason="${source} 推荐"（其他情况）', () => {
       // 5 天前访问 + score 0.5（不满足 ≥0.8，也不满足 <1 天）
-      storage.upsert(createMemoryDaysAgo(5, { id: 'insight:1', name: 'mid', score: 0.5 }));
+      storage.upsert(createMemoryDaysAgo(5, { id: 'profile:1', name: 'mid', score: 0.5 }));
       const result = advisor.suggest();
-      expect(result[0]?.reason).toBe('insight 推荐');
+      expect(result[0]?.reason).toBe('profile 推荐');
     });
   });
 
@@ -381,12 +381,12 @@ describe('MemoryAdvisor.suggest()', () => {
 
   describe('SuggestHit 字段完整性', () => {
     it('返回对象包含 name/source/relevance/contentPreview/reason 5 字段', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', name: 'test', source: SOURCE_LABELS.INSIGHT, content: '内容', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'insight:1', name: 'test', source: SOURCE_LABELS.PROFILE, content: '内容', score: 0.7 }));
       const result = advisor.suggest();
       expect(result).toHaveLength(1);
       const hit = result[0]!;
       expect(hit).toHaveProperty('name', 'test');
-      expect(hit).toHaveProperty('source', SOURCE_LABELS.INSIGHT);
+      expect(hit).toHaveProperty('source', SOURCE_LABELS.PROFILE);
       expect(hit).toHaveProperty('relevance');
       expect(hit).toHaveProperty('contentPreview', '内容');
       expect(hit).toHaveProperty('reason');

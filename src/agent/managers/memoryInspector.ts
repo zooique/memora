@@ -73,7 +73,7 @@ export interface MemorySnapshot {
   working: WorkingMemorySnapshot;
   /** 第 2 层：Bootstrap 记忆（永驻 + 领域） */
   bootstrap: BootstrapSnapshot;
-  /** 第 3 层：归档洞察（insight 记忆） */
+  /** 第 3 层：归档记忆（round-summary + profile + work-projection） */
   archive: ArchiveSnapshot;
 }
 
@@ -101,9 +101,9 @@ export interface BootstrapSnapshot {
   }>;
 }
 
-/** 第 3 层：归档记忆快照（round-summary + insight + profile + work-projection） */
+/** 第 3 层：归档记忆快照（round-summary + profile + work-projection） */
 export interface ArchiveSnapshot {
-  /** 归档记忆总数（round-summary + insight + profile + work-projection） */
+  /** 归档记忆总数（round-summary + profile + work-projection） */
   archiveCount: number;
   currentSession: string;
   /** 当前会话全名（含日期前缀） */
@@ -112,7 +112,6 @@ export interface ArchiveSnapshot {
   /** 归档记忆来源分布 */
   stats: {
     'round-summary': number;
-    insight: number;
     profile: number;
     'work-projection': number;
   };
@@ -257,14 +256,13 @@ export class MemoryInspector {
     const skills = this.index.getBySource(SOURCE_LABELS.SKILL);
     const bootstrap = [...rules, ...personas, ...skills];
 
-    // 第 3 层：归档记忆计数（round-summary + insight + profile + work-projection）
+    // 第 3 层：归档记忆计数（round-summary + profile + work-projection）
     // round-summary 是当前唯一记忆源（记忆即摘要单轨），计入归档层首要来源；
-    // insight/profile 保留为存量数据治理，不再有新写入。
+    // profile 保留为存量数据治理，不再有新写入。
     const roundSummaryCount = this.index.countBySource(SOURCE_LABELS.ROUND_SUMMARY);
-    const insightCount = this.index.countBySource(SOURCE_LABELS.INSIGHT);
     const profileCount = this.index.countBySource(SOURCE_LABELS.PROFILE);
     const workProjectionCount = this.index.countBySource(SOURCE_LABELS.WORK_PROJECTION);
-    const archiveTotal = roundSummaryCount + insightCount + profileCount + workProjectionCount;
+    const archiveTotal = roundSummaryCount + profileCount + workProjectionCount;
 
     return {
       working: {
@@ -294,7 +292,6 @@ export class MemoryInspector {
         hint: '调 listAllSessions() 获取文件清单',
         stats: {
           'round-summary': roundSummaryCount,
-          insight: insightCount,
           profile: profileCount,
           'work-projection': workProjectionCount,
         },

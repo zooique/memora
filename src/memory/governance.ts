@@ -2,7 +2,7 @@
  * 记忆治理共享常量 — LLM 治理源列表 + score 提升量/上限的统一真理源
  *
  * 设计原因：memoryInspector / memoryAdvisor / memoryDecayScheduler 三个治理模块
- * 各自维护同一份 `[INSIGHT, PROFILE, WORK_PROJECTION]` 列表，存在 5 处独立维护。
+ * 各自维护同一份 `[PROFILE, WORK_PROJECTION]` 列表，存在 5 处独立维护。
  * 提取到共享模块后，未来调整治理范围只需改 1 处（v2 年轮审判 REPEAT-1 闭环）。
  *
  * 同时收纳 score 提升量/上限常量（recall.ts 召回 boost + memoryInspector 采纳反哺 boost），
@@ -10,6 +10,9 @@
  *
  * 依赖方向：memory/governance.ts 是纯常量模块（零依赖，仅类型 import），
  * 被 agent/managers/ 多个模块消费，符合 agent → memory 单向依赖原则。
+ *
+ * 治理源收敛（2026-08-14）：洞察层已移除，INSIGHT 从治理范围剔除；
+ * 当前仅保留 PROFILE（存量数据兼容）与 WORK_PROJECTION。
  *
  * 详见 ADR-004（记忆统一模型）：所有 source 都是开放字符串，治理范围由本文件集中维护。
  */
@@ -22,7 +25,6 @@ import { SOURCE_LABELS } from '@/memory/types.js';
  * 不参与运行时治理。如未来扩展治理范围，仅需修改此数组。
  */
 export const GOVERNANCE_SOURCES: readonly string[] = [
-  SOURCE_LABELS.INSIGHT,
   SOURCE_LABELS.PROFILE,
   SOURCE_LABELS.WORK_PROJECTION,
 ];
