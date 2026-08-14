@@ -1,0 +1,214 @@
+/**
+ * chatView 测试 — clear_ok 消息区清理（对抗评估 P1-1 锁定）
+ *
+ * clear_ok 必须同时清 type=msg 消息与 .tool-card 工具卡片，否则切换历史/清空后
+ * 旧工具卡片残留 DOM（P1-1 修复）。本测试用 jsdom 环境 + 注入 mock acquireVsCodeApi，
+ * 直接通过 createChatView 工厂驱动真实消息分发，锁定清理行为。
+ */
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { createChatView } from '../scripts/chatView.js';
+
+/** 覆盖 createChatView 全部 getElementById 引用的最小 HTML 骨架 */
+const HTML = `
+  <div id="toolbar">
+    <span id="rolePackBadge" class="role-pack-badge" hidden title="当前角色"></span>
+  </div>
+  <div id="memoryBar" class="memory-bar" hidden></div>
+  <div id="noticeBar" class="notice-bar" hidden></div>
+  <div id="messages"><div id="emptyState" class="empty-state" hidden></div></div>
+  <div id="clarifyBar">
+    <div id="clarifyText"></div>
+    <div id="clarifyOptions"></div>
+    <div id="clarifyRow">
+      <input id="clarifyInput" />
+      <button id="clarifySend">提交</button>
+    </div>
+  </div>
+  <div id="inputBar">
+    <div id="inputWrap">
+      <textarea id="input"></textarea>
+      <div id="inputFooter">
+        <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+        <button id="send"></button>
+      </div>
+    </div>
+  </div>
+`;
+
+/** 挂载 createChatView 并返回 postMessage mock（ready 消息在此被捕获） */
+function mountChatView(): { postMessage: ReturnType<typeof vi.fn> } {
+  document.body.innerHTML = HTML;
+  const postMessage = vi.fn();
+  createChatView({
+    acquireVsCodeApi: () => ({ postMessage }),
+    window: window as unknown as Window,
+  });
+  return { postMessage };
+}
+
+/** 向 webview 分发一条 extension → webview 消息 */
+function dispatch(msg: unknown): void {
+  window.dispatchEvent(new MessageEvent('message', { data: msg }));
+}
+
+describe('chatView clear_ok 消息区清理', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('发送 ready 通知 extension 会话可安全回放', () => {
+    const { postMessage } = mountChatView();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
+  });
+
+  it('chat_role_pack 渲染当前角色徽章并主动可见（角色包定位承载）', () => {
+    mountChatView();
+    const badge = document.getElementById('rolePackBadge') as HTMLElement;
+    // 未推送前隐藏
+    expect(badge.hidden).toBe(true);
+
+    dispatch({ type: 'chat_role_pack', rolePack: 'doc-review' });
+
+    // textContent 赋值防注入 + 显示后主动可见（用户始终知道当前用哪个角色）
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('doc-review');
+    expect(badge.title).toBe('当前角色：doc-review');
+  });
+
+  it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    const emptyState = document.getElementById('emptyState') as HTMLElement;
+
+    // 预先塞入一条消息 + 一张工具卡片（模拟历史回放后的残留）
+    const msg = document.createElement('div');
+    msg.className = 'msg assistant';
+    messages.appendChild(msg);
+    const card = document.createElement('div');
+    card.className = 'tool-card is-failed';
+    messages.appendChild(card);
+    expect(messages.querySelectorAll('.msg, .tool-card')).toHaveLength(2);
+
+    dispatch({ type: 'clear_ok' });
+
+    // P1-1 修复锁定：两类节点都必须被清空，且空状态提示恢复显示
+    expect(messages.querySelectorAll('.msg, .tool-card')).toHaveLength(0);
+    expect(emptyState.hidden).toBe(false);
+  });
+
+  it('clear_ok 保留 #emptyState 占位（不整段清空 messages）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    dispatch({ type: 'clear_ok' });
+    // 占位节点不被删除，仅消息类节点被清理
+    expect(messages.querySelector('#emptyState')).not.toBeNull();
+  });
+
+  it('self_review 渲染过程性提示（自审查轮可见性，交叉审核观察 A）', () => {
+    mountChatView();
+    dispatch({ type: 'self_review', round: 1 });
+    const sr = document.querySelector('.self-review') as HTMLElement;
+    expect(sr).not.toBeNull();
+    expect(sr?.textContent).toContain('自审查轮 1');
+  });
+
+  it('流式 chunk 在工具卡片插入后仍追加到同一条 assistant 消息（P0-1 锚点）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // 模拟「文本 → 工具卡 → 文本」循环：工具卡片插入不应拆散同一条回复
+    dispatch({ type: 'chunk', content: '思考第一段' });
+    dispatch({ type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}' });
+    dispatch({ type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' });
+    dispatch({ type: 'chunk', content: '思考第二段' });
+    dispatch({ type: 'chunk', content: '思考第三段' });
+
+    // 同一条回复应只有一条 assistant 消息，三段文本拼接在其内
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].querySelector('.msg-body')?.textContent).toBe(
+      '思考第一段思考第二段思考第三段',
+    );
+  });
+
+  it('clear_ok 后流式锚点失效，后续 chunk 重建一条 assistant 消息（P0-1）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    dispatch({ type: 'chunk', content: '第一段' });
+    dispatch({ type: 'clear_ok' });
+    dispatch({ type: 'chunk', content: '重放后' });
+
+    // 清空后仅剩重建的一条 assistant 消息（旧锚点已失效，不残留）
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].querySelector('.msg-body')?.textContent).toBe('重放后');
+  });
+});
+
+describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('生成中（status thinking）输入框保持可用（支持插话）', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    // 插话能力前提：生成中不禁用输入框，用户可输入新消息 → Enter 打断当前生成并重发
+    expect(input.disabled).toBe(false);
+  });
+
+  it('生成中发送按钮切换为停止态，点击发送 stop 消息', () => {
+    const { postMessage } = mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    expect(send.classList.contains('loading')).toBe(true);
+    expect(send.title).toBe('停止生成');
+    send.click();
+    // 生成中点击按钮 = 停止（不是发送），发 stop 消息由 host 中断当前流
+    expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
+  });
+
+  it('done 恢复发送态（loading 移除 + 发送提示）', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    dispatch({ type: 'status', state: 'done' });
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.title).toBe('发送 (Enter)');
+  });
+
+  it('空闲点击发送按钮发送输入内容', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    input.value = '打磨这段';
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '打磨这段' });
+  });
+
+  it('生成中按 Enter 仍发送（插话语义：打断当前生成并重发）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    input.value = '补充要求';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '补充要求' });
+  });
+
+  it('interrupted 渲染「已停止生成」提示条', () => {
+    mountChatView();
+    dispatch({ type: 'interrupted' });
+    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+    expect(noticeBar.hidden).toBe(false);
+    expect(noticeBar.textContent).toContain('已停止生成');
+  });
+});

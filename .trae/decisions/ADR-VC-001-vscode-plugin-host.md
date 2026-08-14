@@ -40,7 +40,7 @@ memora 是 **Node.js 纯逻辑库**（零依赖，靠宿主注入存储/LLM/UI�
 ### 决策 4：骨架结构
 
 ```
-hosts/vscode-plugin/
+hosts/memora-vscode/
 ├── src/extension/          # extension host (Node)
 │   ├── extension.ts        # activate/deactivate + 命令注册
 │   └── host/
@@ -62,9 +62,9 @@ hosts/vscode-plugin/
 
 ### 决策 6：工程组织（2026-08-13 定案）——物理同仓库 + file: 本地路径依赖 + git 可拆
 
-- **物理布局**：放 memora 仓库 `hosts/vscode-plugin/`（与 memora-sprite 并列）——**方便开发期内核+宿主一起改**；
+- **物理布局**：放 memora 仓库 `hosts/memora-vscode/`（与 memora-sprite 并列）——**方便开发期内核+宿主一起改**；
 - **依赖方式**：开发期用 **`file:` 本地路径**指向 memora（`"@zooique/memora": "file:../../"` 指向仓库根），**不用 `npm link`**（符号链接会致重复依赖实例，破坏宿主注入接口的 `instanceof`/事件系统）；
-- **git 拆分**：物理同仓库但插件目录保持**可独立拆分**——包名、构建、.gitignore 边界清晰，后续需要独立分发/开源时，在 `hosts/vscode-plugin/` 单独初始化 git 仓库即可，避免拆仓手术；
+- **git 拆分**：物理同仓库但插件目录保持**可独立拆分**——包名、构建、.gitignore 边界清晰，后续需要独立分发/开源时，在 `hosts/memora-vscode/` 单独初始化 git 仓库即可，避免拆仓手术；
 - **发布期**：依赖切换为 `"@zooique/memora": "^x.y.z"`，插件独立发布到 VS Code Marketplace。
 
 ## 考虑的替代方案
@@ -91,7 +91,7 @@ hosts/vscode-plugin/
 
 ### 后续行动
 
-- [ ] 在 `hosts/vscode-plugin/` 建骨架，实现 `workspaceStorage`（IMemoryStorage）
+- [ ] 在 `hosts/memora-vscode/` 建骨架，实现 `workspaceStorage`（IMemoryStorage）
 - [ ] 装配 `new Agent()` 跑通切片 A（对话打磨）+ 切片 D（记忆）
 - [ ] 将"文档自洽检查"沉淀为 `doc-review/SKILL.md`（Agent Skill 能力层）
 
