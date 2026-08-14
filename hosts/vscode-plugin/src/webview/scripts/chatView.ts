@@ -287,7 +287,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'tool_result') {
       ToolCard.update(messages, msg.toolCallId, msg.name, msg.ok, msg.summary);
     } else if (msg.type === 'clear_ok') {
-      messages.querySelectorAll('.msg').forEach((el) => el.remove());
+      // 清空消息区须同时清 type=msg 消息与 .tool-card 工具卡片（对抗评估 P1-1）：
+      // 仅挑 .msg 会让切换历史/清空后旧工具卡片残留 DOM，污染重放视图。
+      // 不替换 messages 全部子节点（保留 #emptyState 占位），故按两类消息类型选择。
+      messages.querySelectorAll('.msg, .tool-card').forEach((el) => el.remove());
       updateEmptyState();
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];

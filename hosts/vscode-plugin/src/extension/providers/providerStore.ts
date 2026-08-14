@@ -223,6 +223,19 @@ export class ProviderStore {
   }
 
   /**
+   * 清空当前激活 Provider（回滚到「无激活」状态）
+   *
+   * 用于 handleSetProvider 热切换失败时，若原本无激活 Provider（靠 env 装配），
+   * 需把持久化激活态一并清空，否则 UI 显示新 provider 已激活但 agent 仍用 env，
+   * 造成功能↔UI 不一致（对抗评估 P1-3）。
+   */
+  async clearActive(): Promise<void> {
+    await vscode.workspace
+      .getConfiguration(CFG_SECTION)
+      .update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Workspace);
+  }
+
+  /**
    * 测试 Provider 连接（复用内核 createProviderFromConfig + chat）
    *
    * @param config 待测试的 Provider 配置（直接来自 webview 表单）
