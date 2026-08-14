@@ -16,15 +16,17 @@ hosts/memora-vscode/
 ├── media/                     # 静态资源（图标、logo、模板）
 │   └── icon.svg
 ├── docs/
-│   └── directory-structure.md # 本文件
+│   ├── directory-structure.md # 本文件
+│   └── plugin-alignment.md    # 插件与内核设计对齐方案（差距清单 + 分层实施 + 排雷结论）
 ├── src/
 │   ├── extension/             # extension host（Node 环境，可 node:fs）
 │   │   ├── extension.ts       # ✅ 入口：activate + 命令注册（薄）
 │   │   ├── commands/          # 命令处理器（每命令一文件，逻辑不进 extension.ts）
 │   │   │   └── openChat.ts        # ✅ 打开通用对话面板（唯一命令，角色包承载定位）
 │   │   ├── host/              # ✅ 薄壳装配层（注入 memora 内核，不重复实现）
-│   │   │   ├── assemble.ts         # new Agent + 注入
+│   │   │   ├── assemble.ts         # new Agent + 注入（含 UI 中文化 / preExecutionCheck / tracer）
 │   │   │   ├── llmConfig.ts        # LLM Provider 配置
+│   │   │   ├── tracer.ts           # ✅ VscodeTracer：ITracer 采集（指纹/指标，有界内存）
 │   │   │   ├── workspaceStorage.ts # IMemoryStorage（.memora/memories.json）
 │   │   │   └── sessionStore.ts     # ISessionStore（.memora/sessions.json）
 │   │   └── role-packs/        # 内置角色包（定位由角色包承载，非插件硬编码）

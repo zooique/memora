@@ -22,6 +22,7 @@ import type {
 } from '../../shared/protocol.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
+import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { toolCardStyles } from '../styles/toolCard.js';
@@ -664,7 +665,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           break;
         }
         if (chunk.type === 'text' && chunk.content) {
-          this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs });
+          // 转发 chunk（护栏阻断标记随 chunk 透传，webview 据此渲染提示条，§7.2.1；
+          // 不在此额外 post notice——避免与 webview 侧渲染形成双份提示）
+          this.post({
+            type: 'chunk',
+            content: chunk.content,
+            ts: firstChunkTs,
+            guardrailBlocked: chunk.guardrailBlocked,
+          });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → webview 渲染「执行中」卡片
           this.post({ type: 'tool_start', toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
@@ -680,6 +688,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else if (chunk.type === 'selfReview') {
           // 自审查轮开始 → 转发为过程性提示（活动透明，交叉审核观察 A）
           this.post({ type: 'self_review', round: chunk.round });
+        } else if (chunk.type === 'handoff') {
+          // 衔接决策 → 仅 loop 渲染「自动续跑」提示条（wait/end 静默，雷-4 低频）
+          if (chunk.decision === 'loop') {
+            this.post({ type: 'handoff', decision: chunk.decision, reason: chunk.reason });
+          }
+        } else if (chunk.type === 'retry') {
+          // LLM 失败重试 → 转发低扰提示条
+          this.post({
+            type: 'retry',
+            attempt: chunk.attempt,
+            maxRetries: chunk.maxRetries,
+            delayMs: chunk.delayMs,
+            error: chunk.error,
+          });
+        } else if (chunk.type === 'paused') {
+          // Agent 暂停（输入待定/迭代边界软暂停）→ 转发提示条
+          this.post({ type: 'paused' });
+        } else if (chunk.type === 'error') {
+          // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）
+          this.post({ type: 'error', message: chunk.message });
         }
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入 todayDate-main），
@@ -703,6 +731,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'done' });
     }
     this.post({ type: 'status', state: 'done' });
+    // 本轮流式结束 → 推送活动指标快照（P2：指纹 + 累计指标，默认折叠展示）
+    this.postMetrics();
+  }
+
+  /**
+   * 推送活动指标快照（P2：§13.x 透明面板 + §5.2.1 指纹可见）
+   *
+   * 从 vscodeTracer 提取最近一轮「模型看到了什么」指纹（只记 hash 不记内容），
+   * 从 agent.getMetrics() 取累计指标；推送 webview 折叠区展示。
+   * 指纹展示前 12 位（完整 hash 过长，仅作比对/调试抓手）。
+   */
+  private postMetrics(): void {
+    if (!this._agent) return;
+    const fp = vscodeTracer.getLatestFingerprints();
+    const m = this._agent.getMetrics();
+    this.post({
+      type: 'metrics',
+      fingerprints: {
+        systemPromptHash: fp.systemPromptHash ? fp.systemPromptHash.slice(0, 12) : undefined,
+        attachedMemoryCount: fp.attachedMemoryCount,
+      },
+      metrics: {
+        llmCallCount: m.llm.callCount,
+        recallHitRate: m.recall.hitRate,
+        toolFailureCount: m.tools.failureCount,
+        truncationCount: m.context.truncationCount,
+      },
+    });
   }
 }
 
@@ -732,6 +788,11 @@ function buildHtml(scriptUri: vscode.Uri): string {
   <div id="memoryBar" class="memory-bar" hidden></div>
   <!-- 提示条（错误级 / 低扰 info）：不插入消息区，独立承载会话异常等通知 -->
   <div id="noticeBar" class="notice-bar" hidden></div>
+  <!-- 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：默认折叠，收到 metrics 后更新内容 -->
+  <details id="metricsBox" class="metrics-box" hidden>
+    <summary>活动指标</summary>
+    <div id="metricsContent" class="metrics-content"></div>
+  </details>
   <div id="messages">
     <div id="emptyState" class="empty-state" hidden>开始打磨你的设计文档<br>在下方输入你的想法，或粘贴要打磨的文档内容</div>
   </div>

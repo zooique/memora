@@ -259,6 +259,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }, level === 'error' ? 8000 : 2500);
   }
 
+  /**
+   * 渲染活动指标折叠区（P2：§13.x 透明面板 + §5.2.1 指纹可见）
+   *
+   * 本轮指纹（系统提示 hash 前 12 位 + 附着记忆条数）+ 累计指标（LLM 调用 / 召回命中率
+   * / 工具失败 / 截断）。textContent 赋值防注入；折叠区默认隐藏，收到数据后显示。
+   */
+  function renderMetrics(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): void {
+    const box = document.getElementById('metricsBox') as HTMLElement;
+    const content = document.getElementById('metricsContent') as HTMLElement;
+    const fp = msg.fingerprints;
+    const lines = [
+      // 指纹行：只显示 hash 与计数，不显示内容（可追溯性边界）
+      '本轮指纹：' +
+        (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -') +
+        (typeof fp.attachedMemoryCount === 'number' ? ' · 附着记忆 ' + fp.attachedMemoryCount + ' 条' : ''),
+      // 累计指标行
+      '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 召回命中 ' +
+        Math.round(msg.metrics.recallHitRate * 100) + '% · 工具失败 ' +
+        msg.metrics.toolFailureCount + ' · 截断 ' + msg.metrics.truncationCount,
+    ];
+    content.textContent = lines.join('\n');
+    box.hidden = false;
+  }
+
   // 处理 extension → webview 消息（流式渲染 / 状态机 / 工具卡片 / 下拉数据）
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
@@ -271,6 +295,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'chunk') {
       // 流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
       // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
+      // guardrailBlocked 标记：护栏阻断的那一条 chunk 同时渲染「护栏阻断」提示条（§7.2.1）
+      if (msg.guardrailBlocked) {
+        showNotice('error', '输入被护栏阻断，本次请求未执行');
+      }
       const target =
         activeAssistantEl && activeAssistantEl.isConnected
           ? activeAssistantEl.querySelector(':scope > .msg-body')
@@ -283,6 +311,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         append('assistant', msg.content, msg.ts);
       }
       scrollToBottom(messages);
+    } else if (msg.type === 'handoff') {
+      // 衔接决策：仅 loop 渲染「自动续跑」提示条（wait/end 静默；雷-4 低频）
+      showNotice('info', 'Agent 将自动续跑…');
+    } else if (msg.type === 'retry') {
+      // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
+      showNotice('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
+    } else if (msg.type === 'paused') {
+      // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
+      showNotice('info', 'Agent 已暂停');
+    } else if (msg.type === 'metrics') {
+      // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新折叠区
+      renderMetrics(msg);
     } else if (msg.type === 'error') {
       append('error', msg.message);
     } else if (msg.type === 'done') {

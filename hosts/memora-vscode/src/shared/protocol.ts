@@ -76,9 +76,15 @@ export type WebviewToExtensionMessage =
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
   | { type: 'user'; text: string; ts?: string }
-  /** 历史/流式 assistant 消息（流式输出经 chunk 拼接，历史回放用 text 完整段） */
+  /** 历史/流式 assistant 消息（历史回放用 text 完整段） */
   | { type: 'assistant'; text: string; ts?: string }
-  | { type: 'chunk'; content: string; ts?: string }
+  /**
+   * 流式 assistant 消息（流式输出经 chunk 拼接）
+   *
+   * guardrailBlocked：对齐内核 text chunk 的护栏阻断标记（§7.2.1 结构化信号）。
+   * 仅护栏阻断的那一条 chunk 携带 true；webview 据此渲染「护栏阻断」提示条。
+   */
+  | { type: 'chunk'; content: string; ts?: string; guardrailBlocked?: boolean }
   | { type: 'done' }
   | { type: 'error'; message: string }
   /**
@@ -114,6 +120,46 @@ export type ExtensionToWebviewMessage =
    * 与 tool 卡片同一"过程性反馈"语义。
    */
   | { type: 'self_review'; round: number }
+  /**
+   * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
+   *
+   * 内核回答后阶段基于 L2 策略产出 handoff（decision: wait/loop/end）。
+   * webview 仅对 decision='loop' 渲染「自动续跑」提示条（活动透明，雷-4 低频）；
+   * wait/end 为默认/终止语义，静默不渲染。
+   */
+  | { type: 'handoff'; decision: 'wait' | 'loop' | 'end'; reason?: string }
+  /**
+   * LLM 调用重试（对齐内核 retry chunk，P1 事件流全量对齐）
+   *
+   * 内核在 LLM 失败重试时产出；webview 渲染低扰提示条「LLM 重试 n/m…」。
+   */
+  | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
+  /**
+   * Agent 暂停（对齐内核 paused chunk，P1 事件流全量对齐）
+   *
+   * 内核在输入待定/迭代边界软暂停时产出；webview 渲染提示条「Agent 已暂停」。
+   */
+  | { type: 'paused' }
+  /**
+   * 活动指标快照（P2：§13.x 透明面板 + §5.2.1 指纹可见）
+   *
+   * 每轮流式结束后由 extension host 推送：本轮指纹（系统提示 hash 前 12 位 + 附着记忆条数，
+   * 只记 hash 不记内容）+ 累计指标（LLM 调用 / 召回命中率 / 工具失败 / 截断）。
+   * webview 渲染为默认折叠的「活动指标」区。
+   */
+  | {
+      type: 'metrics';
+      fingerprints: {
+        systemPromptHash?: string;
+        attachedMemoryCount?: number;
+      };
+      metrics: {
+        llmCallCount: number;
+        recallHitRate: number;
+        toolFailureCount: number;
+        truncationCount: number;
+      };
+    }
   /**
    * LLM 运行状态（P0-2 状态可视化）
    *

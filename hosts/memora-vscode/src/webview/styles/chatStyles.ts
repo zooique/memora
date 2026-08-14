@@ -308,6 +308,24 @@ export const chatStyles = `
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
     flex-shrink: 0;
   }
+  /* 活动指标折叠区（P2：§13.x 透明面板 + §5.2.1 指纹可见） */
+  .metrics-box {
+    margin: var(--sp-3, 8px) var(--sp-5, 12px) 0; font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius, 6px);
+    flex-shrink: 0;
+  }
+  .metrics-box summary {
+    cursor: pointer; padding: var(--sp-2, 6px) var(--sp-3, 8px); user-select: none;
+    outline: none; border-radius: inherit;
+  }
+  .metrics-box summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .metrics-content {
+    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); line-height: 1.7;
+    white-space: pre-wrap; word-break: break-all;
+  }
+
   /* 主动提问条 */
   #clarifyBar {
     display: none; flex-direction: column; gap: var(--sp-2, 6px); padding: var(--sp-3, 8px);

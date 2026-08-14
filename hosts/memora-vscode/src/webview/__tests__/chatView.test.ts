@@ -16,6 +16,10 @@ const HTML = `
   </div>
   <div id="memoryBar" class="memory-bar" hidden></div>
   <div id="noticeBar" class="notice-bar" hidden></div>
+  <details id="metricsBox" class="metrics-box" hidden>
+    <summary>活动指标</summary>
+    <div id="metricsContent" class="metrics-content"></div>
+  </details>
   <div id="messages"><div id="emptyState" class="empty-state" hidden></div></div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -210,5 +214,69 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const noticeBar = document.getElementById('noticeBar') as HTMLElement;
     expect(noticeBar.hidden).toBe(false);
     expect(noticeBar.textContent).toContain('已停止生成');
+  });
+});
+
+describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('handoff(loop) 渲染「自动续跑」低扰提示条（活动透明，雷-4 低频）', () => {
+    mountChatView();
+    dispatch({ type: 'handoff', decision: 'loop', reason: '后续步骤' });
+    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+    expect(noticeBar.hidden).toBe(false);
+    expect(noticeBar.textContent).toContain('自动续跑');
+  });
+
+  it('retry 渲染「LLM 重试 n/m」低扰提示条', () => {
+    mountChatView();
+    dispatch({ type: 'retry', attempt: 1, maxRetries: 3, delayMs: 200, error: 'ECONNRESET' });
+    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+    expect(noticeBar.hidden).toBe(false);
+    expect(noticeBar.textContent).toContain('重试 1/3');
+  });
+
+  it('paused 渲染「Agent 已暂停」提示条', () => {
+    mountChatView();
+    dispatch({ type: 'paused' });
+    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+    expect(noticeBar.hidden).toBe(false);
+    expect(noticeBar.textContent).toContain('已暂停');
+  });
+
+  it('guardrailBlocked chunk 渲染「护栏阻断」提示条且文本正常追加（§7.2.1）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '被阻断的回复', guardrailBlocked: true });
+    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+    expect(noticeBar.hidden).toBe(false);
+    expect(noticeBar.textContent).toContain('护栏阻断');
+    // 文本仍正常追加到 assistant 消息（阻断 ≠ 丢弃内容，仅附加提示）
+    const body = document.querySelector('.msg.assistant .msg-body');
+    expect(body?.textContent).toBe('被阻断的回复');
+  });
+
+  it('metrics 渲染活动指标折叠区（指纹只显示 hash 与计数，不显示内容）', () => {
+    mountChatView();
+    const box = document.getElementById('metricsBox') as HTMLElement;
+    const content = document.getElementById('metricsContent') as HTMLElement;
+    // 未推送前默认隐藏
+    expect(box.hidden).toBe(true);
+
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'a1b2c3d4e5f6', attachedMemoryCount: 3 },
+      metrics: { llmCallCount: 5, recallHitRate: 0.8, toolFailureCount: 1, truncationCount: 0 },
+    });
+
+    expect(box.hidden).toBe(false);
+    expect(content.textContent).toContain('系统提示 a1b2c3d4e5f6');
+    expect(content.textContent).toContain('附着记忆 3 条');
+    expect(content.textContent).toContain('LLM 5 次');
+    expect(content.textContent).toContain('召回命中 80%');
   });
 });

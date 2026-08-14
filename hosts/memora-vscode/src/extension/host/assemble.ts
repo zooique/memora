@@ -13,14 +13,44 @@
  *   - 功能定位：configDir 下的内置角色包（role-packs/doc-review）承载
  */
 import { Agent, FetchWebSearchProvider } from '@zooique/memora';
-import type { ISessionStore } from '@zooique/memora';
+import type { ISessionStore, UIMessages } from '@zooique/memora';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createProvider } from './llmConfig.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
+import { vscodeTracer } from './tracer.js';
 
 import type { ProviderStore } from '../providers/providerStore.js';
+
+/**
+ * 宿主可覆盖的 UI 消息中文化（P0，激进对齐 UIMessages 契约）
+ *
+ * 内核默认英文 UI 文案（如 abortedByUser），插件为中文用户，全部覆盖为中文。
+ * 未启用的场景（如自审查 selfReviewPrompt）覆盖后无害——不触发即不消费。
+ */
+const CHINESE_MESSAGES: UIMessages = {
+  // 对话取消 / 达上限 / 流式中断（三者均为「对话末尾状态标记」）
+  abortedByUser: '用户取消了对话',
+  maxIterationsReached: '\n\n[已达最大迭代次数]',
+  interrupted: '\n\n[已中断]',
+  // 上下文窗口截断提示
+  contextTruncated: (skipped: number, kept: number) =>
+    `[上下文已截断：跳过 ${skipped} 条历史，保留 ${kept} 条]`,
+  // 上下文角色标签
+  recentConversationLabel: '[最近对话]',
+  userLabel: '[用户]',
+  assistantLabel: '[助手]',
+  // 护栏提示
+  inputBlockedByGuard: (rule: string) => `[输入被护栏阻断：${rule}]`,
+  guardrailWarningPrefix: '[护栏警告]',
+  outputBlockedByGuard: (rule: string) => `[输出被护栏阻断：${rule}]`,
+  // 工具失败重试 / 自审查（低频场景，覆盖保证中文化一致）
+  reflectionHint: (remaining: number) =>
+    `\n\n[工具调用失败，剩余 ${remaining} 次反思机会，请聚焦修正而非放弃]`,
+  selfReviewPrompt: (round: number, total: number) =>
+    `\n\n[请审查你上一轮的回答质量（第 ${round}/${total} 轮自审查），如发现问题请修正后重新输出]`,
+};
 
 /** 装配参数 */
 export interface AssembleOptions {
@@ -92,6 +122,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     sessionStore: store,
     // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）
     webSearchProvider: new FetchWebSearchProvider(),
+    // UI 消息中文化（P0：内核默认英文，覆盖为中文）
+    messages: CHINESE_MESSAGES,
+    // 执行前检查（P3：激进对齐 §7.2.1 统一检查点；收敛版仅放行——
+    // 工具审计已由 tool_start/tool_result chunk + tool.execute span 承担，不重复记录）
+    preExecutionCheck: () => ({ skip: false }),
+    // 可观测性 Tracer（P2：§5.2.1 指纹由 ITracer 承载，宿主采集不落盘）
+    tracer: vscodeTracer,
     permission: 'owner',
     allowedPaths: [projectPath],
   });
