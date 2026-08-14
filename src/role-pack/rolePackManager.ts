@@ -317,7 +317,44 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       return 0;
     }
     this.items = await this.buildFromDir(dir);
+    this.checkExclusiveSymmetry(this.items);
     return this.items.length;
+  }
+
+  /**
+   * 集合级互斥声明对称性检查（role-pack-spec §13 粘性匹配）
+   *
+   * 互斥是**双向关系**：角色包 A 声明 `exclusiveWith: ['B']`，则 B 应反向声明 A。
+   * 本方法在装载后扫描全部角色包，对非对称声明给出 warning——非对称不会导致
+   * 运行时错误（isExclusiveBetween 采用"单边命中即互斥"），但声明不完整会削弱
+   * 粘性切换的确定性，故提示作者补全。
+   *
+   * 检出的两类问题：
+   *   - 悬空引用：A 声明互斥 B，但角色包 B 不存在；
+   *   - 非对称：A 声明互斥 B，但 B 未反向声明 A。
+   *
+   * @param packs 已装载的角色包列表
+   */
+  private checkExclusiveSymmetry(packs: readonly RolePack[]): void {
+    const byName = new Map(packs.map((p) => [p.meta.name, p.meta.exclusiveWith ?? []]));
+    for (const pack of packs) {
+      const target = pack.meta.exclusiveWith;
+      if (!target || target.length === 0) continue;
+      for (const name of target) {
+        const peer = byName.get(name);
+        if (!peer) {
+          getLogger().warn(
+            { pack: pack.meta.name, target: name },
+            '角色包互斥声明指向不存在的角色包（悬空引用，role-pack-spec §13）',
+          );
+        } else if (!peer.includes(pack.meta.name)) {
+          getLogger().warn(
+            { pack: pack.meta.name, target: name },
+            '角色包互斥声明非对称：目标未反向声明本包（role-pack-spec §13），建议补全',
+          );
+        }
+      }
+    }
   }
 
   /**

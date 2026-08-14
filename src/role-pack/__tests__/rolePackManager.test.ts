@@ -275,6 +275,35 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
       expect(manager.autoMatch('翻译')).toBe('翻译助手');
     });
 
+    it('互斥声明非对称/悬空不阻塞装载，仍可正常激活', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      // 翻译助手声明互斥代码助手，但代码助手未反向声明（非对称）
+      await writePack(packsDir, '翻译助手', {
+        name: '翻译助手',
+        formatVersion: '1.0.0',
+        keywords: ['翻译'],
+        exclusiveWith: ['代码助手'],
+        persona: 'persona.md',
+      }, { persona: '你是翻译。' });
+      // 代码助手声明互斥不存在的"幻影助手"（悬空引用）
+      await writePack(packsDir, '代码助手', {
+        name: '代码助手',
+        formatVersion: '1.0.0',
+        keywords: ['编程'],
+        exclusiveWith: ['幻影助手'],
+        persona: 'persona.md',
+      }, { persona: '你是程序员。' });
+
+      const manager = new RolePackManager(dir);
+      // 对称性检查仅告警，不拒绝装载
+      expect(await manager.load()).toBe(2);
+      manager.activate('代码助手');
+      expect(manager.activeName).toBe('代码助手');
+      // 单边声明仍视为互斥（isExclusiveBetween 单边命中即互斥）
+      expect(manager.autoMatch('翻译内容')).toBe('翻译助手');
+    });
+
     it('未命中任何角色包时返回 null 且不锁定', async () => {
       await writeExclusivePacks();
       const manager = new RolePackManager(dir);

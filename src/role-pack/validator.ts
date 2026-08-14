@@ -399,6 +399,32 @@ function validateContentPaths(
 }
 
 /**
+ * 校验互斥声明格式（exclusiveWith，§13 粘性匹配）
+ *
+ * exclusiveWith 应为字符串数组（互斥角色包名列表）。声明为其他形状
+ * （字符串/数值/对象）为 error；空数组合法（= 无互斥声明）。
+ * 声明格式的**集合级**一致性（悬空引用/不对称）见 validateExclusiveSymmetry。
+ *
+ * @param manifest 嵌套 manifest 对象
+ * @param issues 收集校验问题
+ */
+function validateExclusiveWith(
+  manifest: Record<string, unknown>,
+  issues: RolePackValidationIssue[],
+): void {
+  const value = manifest['exclusiveWith'];
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || v.trim() === '')) {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_EXCLUSIVE_WITH',
+      path: 'exclusiveWith',
+      message: 'exclusiveWith 必须是字符串数组（互斥角色包名列表，§13 粘性匹配）',
+    });
+  }
+}
+
+/**
  * 校验 skills 注册（manifest.skills 对象数组，§4）
  *
  * 新形态下 skills 以**对象数组**注册，支持多个添加。每项结构：
@@ -499,6 +525,7 @@ export function validateManifest(
   validateComplianceFields(manifest, issues);
   validateStrategy(manifest['strategy'], issues);
   validateContentPaths(manifest, issues);
+  validateExclusiveWith(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };

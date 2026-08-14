@@ -115,6 +115,26 @@ describe('validateManifest：键名合法性', () => {
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
   });
 
+  it('exclusiveWith 非法形状（字符串/数值）→ INVALID_EXCLUSIVE_WITH error', () => {
+    const asString = validate({ exclusiveWith: '代码助手' });
+    const asNumber = validate({ exclusiveWith: 12 });
+    expect(asString.valid).toBe(false);
+    expect(asNumber.valid).toBe(false);
+    expect(
+      [...asString.issues, ...asNumber.issues].filter(
+        (i) => i.code === 'INVALID_EXCLUSIVE_WITH',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('exclusiveWith 合法字符串数组 / 空数组 → 通过', () => {
+    const validArr = validate({ exclusiveWith: ['代码助手', '翻译助手'] });
+    const emptyArr = validate({ exclusiveWith: [] });
+    expect(validArr.valid).toBe(true);
+    expect(emptyArr.valid).toBe(true);
+    expect(findByCode(validArr.issues, 'INVALID_EXCLUSIVE_WITH')).toHaveLength(0);
+  });
+
   it('未知策略阶段 → UNKNOWN_STRATEGY_STAGE warning', () => {
     const result = validate({ strategy: { ...validStrategy, postAct: { x: 1 } } });
     expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_STAGE')).toHaveLength(1);
