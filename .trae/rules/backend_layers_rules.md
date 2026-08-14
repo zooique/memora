@@ -7,7 +7,6 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 
 > 详见
 > [ADR-008 · 目录结构按"职责分层"](../decisions/ADR-008-directory-structure.md)
-> **记忆关系侧车**：详见 [ADR-014 · 记忆关系图谱](../decisions/ADR-014-memory-relation.md)
 
 ## 核心库 vs 宿主项目职责边界
 
@@ -46,7 +45,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`（已移出内核，宿主项目自行实现） | 历史参考：解析命令、REPL 循环、用户交互（精灵宿主使用 Electron 主进程替代） | 直接调数据库（应通过 memory/ 层）             |
-| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（13 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/DedupManager/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/Session/SessionArchiver/TextPolish/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 辅助模块（llmJudgeHelper/streamAccumulator）+ 对话快照 + 作品投影<br>**注**：Agent 门面类总计持有约 **20 个组件字段**——除上述 13 专职 Manager 外，还包含来自其他层的 6 个引用（projectManager/history/loop/toolExec/personaManager/skillManager）。新增 Manager 时请同步更新此计数。 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（17 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/DedupManager/GoalConsistencyChecker/LlmJudgeHelper/MemoryAdvisor/MemoryDecay/MemoryGovernance/MemoryInspector/RoundSummaryGenerator/SessionArchiver/SessionManager/StreamAccumulator/TextPolish/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 辅助模块（llmJudgeHelper/streamAccumulator）+ 对话快照 + 作品投影<br>**注**：Agent 门面类总计持有约 **23 个组件字段**——其中 14 个为直接持有的专职 Manager 字段（managers/ 下 17 个文件中另 3 个——goalConsistencyChecker/llmJudgeHelper/streamAccumulator——由 SessionManager 等内部组合持有），其余 9 个为来自其他层的引用（projectManager/history/loop/toolExec/personaManager/skillManager/rolePackManager/pctx/composer）。新增 Manager 时请同步更新此计数。 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入 | 直接调 LLM                                      |
@@ -69,7 +68,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 
 ```
 agent/      →  llm/         （对话调用 Provider）
-            →  memory/      （记忆存储 + 召回 + 关系图谱侧车）
+            →  memory/      （记忆存储 + 召回 + 冲突消解 supersededBy）
             →  persona/     （角色管理，通过 PersonaManager）
             →  skill/       （技能管理，通过 SkillManager）
             →  security/    （路径校验，跨切）
@@ -114,7 +113,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 
 > 顶层目录结构以 [project-rules.md §3](./project-rules.md) 为唯一冻结契约；下方为**快照性质**的内部约定，随重构漂移、**不构成冻结契约**。
 
-**模块内部通用结构**：每个模块 = `index.ts`（公共 API）+ `types.ts`（类型）+ `core.ts`/`helpers.ts`（实现）。`agent/` 含标准文件 `agent.ts`/`assembler.ts`/`loop.ts` + `managers/`（专职 Manager/服务类，当前约 14 个，清单以源码为准）；`utils/` 集中存放跨层共享纯函数（errors/array/objects/path/time/segmenter 等）。
+**模块内部通用结构**：每个模块 = `index.ts`（公共 API）+ `types.ts`（类型）+ `core.ts`/`helpers.ts`（实现）。`agent/` 含标准文件 `agent.ts`/`assembler.ts`/`loop.ts` + `managers/`（专职 Manager/服务类，当前 17 个，清单以源码为准）；`utils/` 集中存放跨层共享纯函数（errors/array/objects/path/time/segmenter 等）。
 
 > **具体文件清单以 `src/` 实际代码为真理源**，不在本文冻结——避免随重构腐化的冗余快照。
 

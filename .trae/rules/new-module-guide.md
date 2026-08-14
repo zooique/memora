@@ -50,7 +50,7 @@ src/<new-module>/
 - [ ] 至少 1 个集成测试
 - [ ] 在 [project-rules.md §3 目录结构](./project-rules.md) 中添加
 - [ ] 在 [backend_layers_rules.md](./backend_layers_rules.md) 的职责表中添加
-- [ ] 如引入新数据结构，评估是否需要 ADR（如 ADR-014 记忆关系图谱）
+- [ ] 如引入新数据结构，评估是否需要 ADR（如 ADR-021 记忆冲突取代检测）
 
 ### 4. ADR 触发条件
 

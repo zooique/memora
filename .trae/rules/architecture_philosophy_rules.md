@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description:
-  架构哲学原则（10
-  条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型）
+  架构哲学原则（12
+  条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型、角色包插卡、可观测性边界）
 ---
 
 # 架构哲学原则
@@ -28,8 +28,8 @@ description:
 
 ┌─ 对话记忆 (Episodic Memory) ────────────────────┐
 │  Conversation: "我们聊过什么"                     │
-│  Insight:      "我总结出什么规律"                  │
-│  UserProfile:  "用户偏好什么"                      │
+│  RoundSummary: "我总结出什么规律"                  │
+│  UserProfile:  "用户偏好什么（存量兼容）"            │
 │                                                  │
 │  访问：语义召回 (RAG)，相关度排序                  │
 │  存储：SQLite + VectorStore                       │
@@ -67,9 +67,9 @@ description:
 - CRUD：通过 `ConfigManager` 操作 SQLite + 回调刷新 system prompt
 - **保留在 SQLite**：bootstrap 路径通过 `getBySource('rule')` 读取，这是唯一合法的索引消费
 
-### 1.3 记忆关系图谱（侧车，ADR-014）
+### 1.3 记忆冲突消解（侧车模型已废弃）
 
-记忆之间的关系（contradicts/supports/follows/refines 等）是独立于 Memory 7 字段的侧车数据结构，不侵入基元模型。关系数据由 InsightExtractor 在归档时构建，用于冲突检测和因果追溯。
+记忆之间的关系侧车（ADR-014，contradicts/supports/follows/refines 等）已于 2026-08-14 判定为过度设计并整体移除。冲突检测改用 `supersededBy` 布尔标记（写路径取代检测，读时过滤），详见 [ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) 与 §2 召回策略表。
 
 ### 1.4 禁止
 
@@ -89,8 +89,9 @@ description:
 | `rule`      | 100% 启动加载（bootstrap） | 安全规则、编码规范 |
 | `skill`     | 设定记忆，不参与 recall  | 领域知识、能力技能 |
 | `content`   | 按相关度增量召回（归档模式三态控制，ADR-015） | 会话归档的工作内容投影 |
-| `insight`   | 按相关度增量召回        | 对话提取的洞察、历史话题归档 |
-| `profile`   | 按相关度增量召回        | 用户画像（已随画像层收敛废弃，仅存量数据兼容，2026-08-14） |
+| `work-projection` | 按相关度增量召回 | 作品投影（Agent 读取用户作品生成的概要） |
+| `round-summary` | 按相关度增量召回 | 轮次摘要（记忆即摘要，含 preference/fact/decision/intent/general 类型） |
+| `profile`   | 按相关度增量召回        | 用户画像（存量数据兼容，2026-08-14 起不再新写入） |
 
 **记忆关系图谱已移除（ADR-014 已废弃，2026-08-14）**：独立侧车模型（`MemoryRelation`/`IMemoryRelationStore`/`RelationBuilder`）判定为过度设计并整体移除。冲突检测改用 `supersededBy` 布尔标记（[ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) 写路径取代检测），用户画像收敛为 `round-summary` 的 `type=preference` 召回（见 [memory-as-summary.md](../architecture/memory-as-summary.md)）。
 
@@ -166,7 +167,7 @@ domain），其余在 Agent Loop 中按需检索。
 | ------ | ------------------ | -------------------- | --------------------------------------- |
 | P0     | 对话响应           | 不可降级             | Agent Loop 核心路径无 try/catch         |
 | P1     | 消息持久化         | 记日志，不抛异常     | `appendMessage()` catch-only-log        |
-| P2     | 话题归档           | 跳过本次，不阻塞     | `extractInsight()` fire-and-forget |
+| P2     | 轮次摘要归档       | 跳过本次，不阻塞     | `roundSummaryGenerator.generate()` fire-and-forget |
 | P3     | 启动补执归档       | 跳过，Agent 正常启动 | `awaitPendingArchives()` 5s 超时兜底    |
 | P4     | 项目切换（释放锁） | warn，继续切换       | `switchProject()` catch-only-warn       |
 
@@ -182,7 +183,7 @@ domain），其余在 Agent Loop 中按需检索。
 
 **在代码中的体现**：
 
-- `decayScores()` 衰减 insight/profile/work-projection 的 score（由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）
+- `decayScores()` 衰减 round-summary / profile（存量）/ work-projection 的 score（由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）
 - 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](../decisions/ADR-015-archive-mode.md)）
 - `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）
 - 物理清理：`purgeExpiredMemories(before)` 清理过期软删除记忆；回收站定时器默认保留 30 天
@@ -269,7 +270,7 @@ Trigger → Prepare → Act              rules → 行为约束
 | 属性 | 含义 | 设计体现 |
 |------|------|---------|
 | **可插拔** | 同一角色包可被不同 Agent 实现装载 | role-pack-spec 标准格式，实现无关 |
-| **可共享** | 角色包是纯文本文件，可分发、可版本管理 | 单文件 role-pack.md ↔ 文件夹包双形态 |
+| **可共享** | 角色包是纯文本文件，可分发、可版本管理 | 文件夹形态：manifest.json（唯一核心控制文件）+ persona.md/rules.md/skills/* 内容文件 |
 | **可叠加** | 支持多角色包组合 | L1 必读 + L2 可选策略键级渐进 |
 | **不自洽** | 角色包不包含执行引擎 | 依赖宿主 Agent 的闭环引擎，自身是纯声明 |
 
@@ -296,9 +297,9 @@ function singleTurn(context: Context, rolePack: RolePack): Handoff {
 
 ### 11.4 验证标准
 
-- 用户写一个 role-pack.md → memora 装载 → 变成翻译专家：不改 `src/` 一行代码
-- 用户换一个 role-pack.md → memora 装载 → 变成代码审查专家：同上
-- 用户把同一个 role-pack.md 给另一个兼容 Agent 装载 → 同样行为
+- 用户写一个角色包文件夹（manifest.json 声明元数据与策略 + persona.md/rules.md/skills/* 内容文件）→ memora 装载 → 变成翻译专家：不改 `src/` 一行代码
+- 用户换一个角色包文件夹 → memora 装载 → 变成代码审查专家：同上
+- 用户把同一个角色包文件夹给另一个兼容 Agent 装载 → 同样行为
 
 ### 11.5 禁止
 
@@ -306,26 +307,19 @@ function singleTurn(context: Context, rolePack: RolePack): Handoff {
 - ❌ memora 内核 hardcode 任何领域知识（全部通过角色包参数化）
 - ❌ 角色包与 memora 内核版本强耦合（通过 formatVersion 兼容，而非版本绑定）
 
-**原则**：Memora 被宿主接入后，就是该程序的唯一 Agent。memora.db 是 Agent 级共享资源，不随子项目切换重建。
+## 12. 可观测性边界（2026-08-15 建议 B 落地补充）
 
-**配置文件是真理源，SQLite 是运行时索引**：
-
-- configDir
-  下的配置文件（personas/rules/skills/tools）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
-- 项目级 projectPath/.memora/ 只放 rules/ 和 skills/，不放 memora.db
-- 用户记忆（dataDir）存放 memora.db + sessions/，纯数据，不含配置
-- `config.addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
-- `config.confirm()` 写入配置文件（持久化，重启后依然生效）
+**原则**："模型看到了什么"属可观测性诉求，由 ITracer 接口承载指纹 hash，**不入记忆存储（sessionStore）**。观测性与记忆职责分离——内核提供机制（埋点接口），宿主负责策略（是否启用、监控面板）。
 
 **在代码中的体现**：
 
-- `ProjectManager.ensureAgentResources()`：确保 memora.db 只创建一次（Agent 级）
-- `ProjectManager.initProject()`：三层加载（项目级 → Agent 级配置），不重建数据库
-- `ProjectManager.shutdown()`：关闭 Agent 级数据库（仅在 Agent 整体关闭时调用）
-- `ProjectManager.closeProject()`：只释放项目锁，不关数据库
+- `llm.call` span 记录 `systemPromptHash`（系统提示内容指纹）
+- `recall.recall` span 记录 `attachedMemoryCount` / `attachedMemoryFingerprint`（记忆条数与 ID 集合指纹）
+- 仅当宿主注入真实 Tracer 时计算指纹，NOOP 模式下零开销
+- 指纹生成使用 `utils/hash.ts` 的 `sha256Fingerprint` 纯函数，复用于作品投影 hash
 
 **禁止**：
 
-- ❌ 每个子项目创建独立的 memora.db——记忆是 Agent 级的
-- ❌ 项目切换时关闭/重建数据库——记忆跨项目持久化
-- ❌ 将配置直接写入 SQLite 作为持久化存储——配置文件才是真理源
+- ❌ 在 sessionStore 中存储完整上下文快照（"自然遗忘优于完美记忆"）
+- ❌ 未注入 Tracer 时执行指纹计算（NOOP 零开销）
+- ❌ 指纹 hash 与记忆内容存储耦合
