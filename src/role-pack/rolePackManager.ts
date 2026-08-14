@@ -10,7 +10,8 @@
  * 职责：
  *   - 从 configDir/role-packs/<名>/ 扫描含 manifest.json 的角色包
  *   - 解析 manifest.json（元数据 + L2 策略 + 内容路径注册 + 内嵌技能注册）
- *   - 按路径装载 persona.md / rules.md / skills 内容
+ *   - 按路径装载 persona.md / rules.md 正文；skills 仅转译注册形状（正文不装载，
+ *     capability 为内核唯一行为入口，见 role-pack-spec §四）
  *   - 提供角色包激活、粘性匹配、互斥切换功能
  *
  * 与 PersonaManager 的关系：
@@ -166,6 +167,7 @@ function parseExclusiveWith(raw: unknown): string[] | undefined {
  *
  * 每项结构：`{ file: string（必填）, name?, description?, capability? }`。
  * 承载转译为 RolePack.skills 的原始注册形状；capability 由 assembleRolePack 派生为能力声明。
+ * file 为**生态兼容指针**（§四）——仅记录路径供生态互认/移植，**正文不装载**。
  *
  * @param skillsNode manifest.skills 节点
  * @returns 技能注册列表

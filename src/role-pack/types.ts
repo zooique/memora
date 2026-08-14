@@ -140,9 +140,14 @@ export interface PrepareStrategy {
 export interface ActStrategy {
   /** 工具调用模式（默认 allow；标准键 act.toolMode，§六） */
   readonly toolMode?: ToolMode;
-  /** 工具白名单，空数组=全部允许（默认 []） */
+  /**
+   * @deprecated 僵尸键（未接入，role-pack-spec §五）：内核工具暴露面由 capabilities
+   * 派生（agent.ts applyRolePackToolExposure），不读本字段。空数组语义不参与运行时。
+   */
   readonly toolWhitelist?: readonly string[];
-  /** 工具黑名单，空数组=无禁止（默认 []） */
+  /**
+   * @deprecated 僵尸键（未接入，role-pack-spec §五）：同上，不参与运行时工具暴露。
+   */
   readonly toolBlacklist?: readonly string[];
   /** 工具批准模式（默认 auto） */
   readonly toolApproval?: ToolApproval;
@@ -207,6 +212,17 @@ export interface GlobalStrategy {
  *
  * 角色包通过此集合声明行为偏好，未配置的维度使用全局默认值。
  * 设计纪律：所有维度都是预定义的可选值，角色只做"选择"不做"定义"。
+ *
+ * ⚠️ 诚实化声明（僵尸键治理，role-pack-spec §五）：
+ * 本集合是"设计空间"，不是"承诺面"——**仅以下字段被内核实际消费并影响行为**：
+ *   - prepare：recentRounds / memoryRecall / memoryRecallQuota
+ *   - act：toolMode
+ *   - reflect：handoff / loopContinue / userFollowup
+ *   - global：askOn / askLimit
+ * 其余字段（含 toolWhitelist / toolBlacklist 已标 @deprecated）均为**僵尸键**：
+ * 角色包可声明，但内核当前不读取、声明不生效——它们承载未来行为分支的
+ * 设计空间全景（见 agent-design-philosophy 设计空间表格），尚未接入。消费方
+ * 参照此清单，避免误以为"声明即生效"。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */
@@ -385,7 +401,12 @@ export interface RolePackManifest {
  * 注册形状，装载时由 RolePackManager 转译为 RolePackSkillRef / RolePackCapability。
  */
 export interface RolePackManifestSkill {
-  /** 技能文件路径（相对角色包文件夹根）或已注册技能名 */
+  /**
+   * 技能文件路径（相对角色包文件夹根）或已注册技能名
+   *
+   * 生态兼容指针（role-pack-spec §四）：供主流 skills 生态互认/移植，内核**不装载正文**。
+   * 内核唯一行为入口是 `capability`（派生工具暴露面）；file 仅作元信息，不承诺执行。
+   */
   readonly file: string;
   /** 技能名（可选，缺省取文件名去扩展名） */
   readonly name?: string;

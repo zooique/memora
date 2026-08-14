@@ -84,7 +84,7 @@
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
 - **manifest 字段集**：`name`（必填）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
 - **skills 字段集**：`file`（必填，技能文件路径或已注册技能名）/ `name`（可选）/ `description`（可选）/ `capability`（可选，中立能力名 `域:动作`，§四）；
-- **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md / skills 内容；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
+- **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 仅转译为注册形状（正文不装载，§四 诚实声明）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 - **分发**：文件夹 zip 压缩（对齐 skills 市场分发方式）。
 
@@ -153,7 +153,9 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 - 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集；
 - `capability` 为可选、`description` 可选（供 LLM 与校验器理解）。
 
-**capabilities 与内嵌技能的绑定（单向）**：`skills/` 内嵌的技能文件在其 `manifest.skills` 项中声明 `capability` 标签（如 `capability: web:search`），装载时派生为能力声明；未声明 `capability` 的技能项不参与工具白名单映射。capabilities 未匹配到任何内嵌包时，按实现映射到自有工具（原规则不变）。
+**capability 是内核唯一行为入口**：`manifest.skills` 项中声明 `capability` 标签（如 `capability: web:search`）的，装载时派生为能力声明并映射到工具；未声明 `capability` 的技能项不参与工具白名单映射。capabilities 未匹配到任何内嵌包时，按实现映射到自有工具（原规则不变）。
+
+> **技能正文定位（诚实声明）**：`skills/{file}` 指向的技能文件正文**当前不装载、不就地执行**——`file` 是**生态兼容指针**（可与 Agent Skills 生态互认/移植），`capability` 才是内核行为入口。技能正文的"文本装载"（如把某技能文件当规则注入 prompt）是**宿主可选能力，非标准承诺**；标准契约只保证 `capability` 生效。
 
 **具体连接桥（L2 可选，`mcp.json`）**：capabilities 是**抽象能力声明**（要什么能力、实现无关）；当角色包需要**开箱即用**的具象连接时，可在文件夹根放 `mcp.json`（对齐 Agent Plugins 1.0 的 transport 声明：`stdio` / `streamable-http` / `http+sse`），由实现映射到自有运行时。两者不冲突：**capabilities 是 L1 中立契约，mcp.json 是 L2 可选实现加速**——不声明 mcp.json 的角色包仍可被任何实现按 capabilities 装载。
 
@@ -290,7 +292,7 @@ export interface IMcpTransport {
 1. **验证门**：该键**必须有参考实现真实消费**（运行时读取并影响行为，而非仅有类型定义/默认值）。无参考实现的键不进标准——纸面设计不构成标准依据（§五 原则 ②）;
 2. **中立门**：通过验证门后，命名须中立（不绑任何实现的内部命名），命名与语义一并**冻结**；此后个别实现不得再为自身内部命名改标准（见 §九 对齐声明）。
 
-**僵尸键原则**：参考实现内部的已定义但零消费字段（如 memora `types.ts` 中的 `understandingConfirm`/`taskClassification` 等）属于实现内部技术债——**只标注不动，不剪枝、不进标准**；不得因"定义过"就主张其进入标准。
+**僵尸键原则**：参考实现内部的已定义但零消费字段（如 memora `types.ts` 中的 `understandingConfirm`/`taskClassification`/`toolWhitelist`/`toolBlacklist` 等）属于实现内部技术债——**只标注不动，不剪枝、不进标准**；不得因"定义过"就主张其进入标准。完整僵尸键清单见 memora `types.ts` `BehaviorStrategy` 接口的诚实化声明。
 
 **命名归标准原则**：实现内部旧命名（如 memora 旧 `act.toolCalls` / `reflect.endingHandoff`）通过解析层**别名迁移**到标准键名（旧键 → 新键，warn 降级提示），消费方一律读标准键——实现向标准看齐，而非标准向实现看齐（§九）。
 
