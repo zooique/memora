@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: 强制修正文件名大小写（解决TS1261）
         run: |
@@ -127,7 +127,7 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: 强制修正文件名大小写（解决TS1261）
         run: |
@@ -214,7 +214,7 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: 强制修正文件名大小写（解决TS1261）
         run: |
