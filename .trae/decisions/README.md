@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：30（内核 18 + 精灵 12）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：36（内核 23 + 精灵 12 + 插件 1）
 
 ---
 
@@ -26,13 +26,17 @@ description: Memora 关键决策年轮
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
 | [ADR-012](./ADR-012-domain-switch.md)       | 领域切换（已废弃，由角色自动匹配替代）                    | ❌ 已废弃 | 架构   |
 | [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档管道（v2.0：单步 LLM 提取 + Jaccard 去重）        | ✅ 已接受 | 架构   |
-| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ✅ 已接受 | 架构   |
+| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ❌ 已废弃（2026-08-14） | 架构   |
 | [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual，GAP-2 已落地 2026-07-03）   | ✅ 已接受 | 架构   |
 | [ADR-016](./ADR-016-vector-store-interface.md) | 向量存储接口化（IVectorStore + JsonVectorStore）       | ✅ 已接受 | 数据层 |
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
+| [ADR-017-web-search](./ADR-017-web-search-module.md) | Web 搜索模块（IWebSearchProvider 接口 + FetchWebSearchProvider，条件暴露给 LLM） | ✅ 已接受 | 集成层 |
 | [ADR-018](./ADR-018-css-scoping-convention.md) | CSS 作用域规范：面板前缀 + BEM + 单一真理源（消除 BARE 类跨面板污染） | ✅ 已接受 | 前端 |
 | [ADR-019](./ADR-019-css-functional-grouping.md) | CSS-R6 功能域分组重构：8 子目录 + 浮窗统一迁入 windows/ + 聚合器相对路径 | ✅ 已接受 | 前端 |
 | [ADR-020](./ADR-020-error-handling-strategy.md) | 错误处理策略统一：按层 + 按边界分类（内核降级 / IPC 契约 / 主进程 throw / 渲染进程 reportError） | ✅ 已接受 | 工程 |
+| [ADR-021](./ADR-021-memory-conflict-supersede-write-path.md) | 记忆冲突消解（写路径取代检测）与闭环透明契约 | ✅ 已接受 | 架构 |
+| [ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md) | 上下文信任边界与 Agent 行为评估视角 | ✅ 已接受 | 架构 |
+| [ADR-023](./ADR-023-context-cost-injection-defense-loop-convergence.md) | 上下文成本重构、即时注入防御与最小闭环收敛 | ✅ 已接受 | 架构 |
 
 ### 精灵宿主（SP 系列）
 
@@ -51,7 +55,13 @@ description: Memora 关键决策年轮
 | [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) | 快速输入浮窗架构：窗口管理器内联 IPC + Controller/Completion 双类解耦 + LLM 回调注入 | ✅ 已接受 | 架构 |
 | [ADR-SP-018](./ADR-SP-018-cross-process-encoding.md) | 跨进程非 ASCII 数据传递：文件 I/O + 原始数据提取（绕过 nut-js 编码 bug + stdout 管道污染 + 竞态条件） | ✅ 已接受 | 工程 |
 
-> **跳号说明**：ADR-005（内核）和 ADR-SP-009~014（精灵）序号保留未使用——内核 005 跳号因初始设计被 ADR-004 合并；精灵 SP-009~014 跳号因精灵 ADR 编号策略与内核 SP 序号对齐，预留 SP-009~014 给未来与内核 SP 序号对齐的扩展。当前精灵 ADR 直接从 SP-008 跳到 SP-015。
+### 插件宿主（VC 系列）
+
+| ID                                                  | 标题                                              | 状态      | 类别   |
+| --------------------------------------------------- | ------------------------------------------------- | --------- | ------ |
+| [ADR-VC-001](./ADR-VC-001-vscode-plugin-host.md)   | VS Code 插件作为 memora 内核宿主（第二宿主，比 sprite 更薄） | ✅ 已接受 | 形态   |
+
+> **跳号说明**：ADR-005（内核）和 ADR-SP-009~014（精灵）序号保留未使用——内核 005 跳号因初始设计被 ADR-004 合并；精灵 SP-009~014 跳号因精灵 ADR 编号策略与内核 SP 序号对齐，预留 SP-009~014 给未来与内核 SP 序号对齐的扩展。当前精灵 ADR 直接从 SP-008 跳到 SP-015。ADR-017-web-search 为 ADR-017 的同号子模块决策（Web 搜索能力，2026-07-30 回溯补录）；ADR-VC 系列为插件宿主（VS Code）专用前缀，与内核 / 精灵序号互不占用。
 
 ---
 
@@ -61,13 +71,13 @@ description: Memora 关键决策年轮
 | ------ | ---- | -------------------- |
 | 运行时 | 2    | ADR-001, ADR-SP-001  |
 | 数据层 | 3    | ADR-002, ADR-016, ADR-SP-002 |
-| 集成层 | 1    | ADR-003              |
-| 架构   | 11   | ADR-004, ADR-009~015, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
+| 集成层 | 2    | ADR-003, ADR-017-web-search |
+| 架构   | 14   | ADR-004, ADR-009~015, ADR-021~023, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
 | 安全   | 2    | ADR-006, ADR-SP-004 |
 | 质量   | 2    | ADR-007, ADR-SP-006 |
-| 工程   | 5    | ADR-008, ADR-017, ADR-SP-005, ADR-SP-007, ADR-SP-018 |
+| 工程   | 6    | ADR-008, ADR-017, ADR-020, ADR-SP-005, ADR-SP-007, ADR-SP-018 |
 | 前端   | 3    | ADR-018, ADR-019, ADR-SP-008 |
-| 形态   | 1    | ADR-SP-003           |
+| 形态   | 2    | ADR-SP-003, ADR-VC-001 |
 
 ---
 
