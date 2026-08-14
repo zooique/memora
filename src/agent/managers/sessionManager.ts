@@ -269,7 +269,7 @@ export class SessionManager {
    * - 新分支拥有独立的消息历史，后续对话互不干扰
    * - 记忆索引（IMemoryStorage）全局共享，不受分叉影响
    *
-   * **注意**：fork 不隔离记忆。分支 A 中提取的 insight 会在分支 B
+   * **注意**：fork 不隔离记忆。分支 A 中沉淀的 round-summary 会在分支 B
    * 的召回中出现，反之亦然。如需要完全独立的记忆空间（如多用户场景），
    * 应创建独立 Agent 实例 + 独立 dataDir，而非 fork。
    *

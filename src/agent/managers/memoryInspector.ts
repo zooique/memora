@@ -210,7 +210,7 @@ export class MemoryInspector {
   /**
    * 按来源标签获取记忆列表
    *
-   * @param source 来源标签（如 'persona'、'rule'、'insight'）
+   * @param source 来源标签（如 'persona'、'rule'、'round-summary'）
    * @returns 该来源的所有记忆
    */
   getBySource(source: string): Memory[] {

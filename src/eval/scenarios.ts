@@ -65,7 +65,7 @@ export const EVAL_SCENARIOS: readonly EvalScenario[] = [
       {
         name: '架构设计讨论',
         content: '上次讨论了分层架构和模块解耦方案',
-        source: 'insight',
+        source: 'round-summary',
       },
     ],
     expect: {

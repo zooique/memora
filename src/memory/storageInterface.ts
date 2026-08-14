@@ -117,7 +117,7 @@ export interface IMemoryStorage {
   /**
    * 按来源标签获取活跃记忆（自动过滤已软删除的）
    *
-   * @param source - 来源标签（如 'persona'、'rule'、'insight'）
+   * @param source - 来源标签（如 'persona'、'rule'、'round-summary'）
    * @returns 该来源的所有活跃记忆
    */
   getBySource(source: string): Memory[];
@@ -201,7 +201,7 @@ export interface IMemoryStorage {
    * 宿主实现应使用 SQL `SELECT source, COUNT(*) FROM memories WHERE deleted_at IS NULL GROUP BY source`，
    * InMemoryStorage 维护增量更新的 source→count 缓存。
    *
-   * @returns source 标签到数量的映射（如 { persona: 3, insight: 12, ... }）
+   * @returns source 标签到数量的映射（如 { persona: 3, round-summary: 12, ... }）
    */
   getAllSources(): Map<string, number>;
 

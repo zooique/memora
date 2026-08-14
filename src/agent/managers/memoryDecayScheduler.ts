@@ -221,7 +221,7 @@ export class MemoryDecayScheduler {
   /**
    * 执行一次记忆衰减
    *
-   * 对 insight/profile/work-projection 记忆执行 score 衰减，
+   * 对 profile/work-projection 记忆执行 score 衰减，
    * 长期未访问的记忆 score 逐渐降低，体现"自然遗忘"。
    * 不影响 persona/rule/skill（这些是配置型记忆，不应衰减）。
    *

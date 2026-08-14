@@ -234,7 +234,7 @@ export class InMemoryStorage implements IMemoryStorage {
    *
    * 返回浅拷贝数组，避免调用方修改污染存储内部对象。
    *
-   * @param source - 来源标签（如 'persona'、'rule'、'insight'）
+   * @param source - 来源标签（如 'persona'、'rule'、'round-summary'）
    * @returns 该来源的所有活跃记忆（副本），按 score 降序排列
    */
   getBySource(source: string): Memory[] {

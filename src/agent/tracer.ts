@@ -108,8 +108,8 @@ export const TRACE_SPANS = {
   /**
    * 对话后归档处理
    *
-   * 触发条件：每轮 chat() 完成后调用 postProcess，含角色匹配、技能匹配、
-   * profile 归档、insight 提取、AutoConfigRefiner 五个子步骤。
+   * 触发条件：每轮 chat() 完成后调用 postProcess，含 round-summary 生成、
+   * AutoConfigRefiner、角色/技能匹配等子步骤。
    * 监控此 span 可观察归档耗时、失败率、各子步骤执行情况。
    */
   POST_PROCESS: 'archive.postProcess',

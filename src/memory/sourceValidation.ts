@@ -64,10 +64,10 @@ export function escapeLike(str: string): string {
 /**
  * 截取字符串前 maxLen 字符后转义 LIKE 通配符
  *
- * 用于将用户输入 / insight 文本作为关键词搜索 SQLite LIKE 查询的输入。
+ * 用于将用户输入 / round-summary 记忆文本作为关键词搜索 SQLite LIKE 查询的输入。
  * 截断避免超长输入导致 LIKE 解析性能问题，转义防止通配符注入。
  *
- * @param text - 原始文本（用户输入 / insight 内容）
+ * @param text - 原始文本（用户输入 / round-summary 内容）
  * @param maxLen - 最大截取长度，默认 50
  * @returns 截断 + 转义后的字符串
  */

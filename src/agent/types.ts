@@ -66,7 +66,7 @@ export type ThinkingPhase = 'recalling' | 'processing' | 'archiving';
  * 仅暴露 UI 展示所需字段，不包含 content（避免向 UI 层泄露完整记忆内容）。
  * - name：可读名称，点击跳转记忆详情
  * - score：相似度分数（0-1），展示召回质量
- * - source：来源标签，可选展示（如 rule/insight/profile）
+ * - source：来源标签，可选展示（如 rule/round-summary/profile）
  */
 export interface RecalledMemorySummary {
   /** 记忆唯一标识（source:name 格式，用于前端精准跳转详情） */
@@ -75,7 +75,7 @@ export interface RecalledMemorySummary {
   name: string;
   /** 相似度分数（0-1） */
   score: number;
-  /** 来源标签（开放字符串，如 'rule'、'insight'、'profile'） */
+  /** 来源标签（开放字符串，如 'rule'、'round-summary'、'profile'） */
   source: string;
 }
 

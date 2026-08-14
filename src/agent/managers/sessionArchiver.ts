@@ -251,7 +251,7 @@ ${dialogueText}
       source: 'content',
       name: sessionLabel,
       content,
-      score: 0.6, // content 类记忆初始分数低于 insight（0.7~1.0），可在召回时被 insight 优先覆盖
+      score: 0.6, // content 类会话归档记忆初始分数
       createdAt: now,
       accessedAt: now,
     };

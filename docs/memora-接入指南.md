@@ -20,7 +20,7 @@
 >
 > **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
 >
-> **v2.0.4 变更**：移除记忆关系图谱与用户画像层。内核收敛删除 ADR-014 记忆关系图谱（IMemoryRelationStore/InMemoryRelationStore/MemoryRelation 侧车）与用户画像层（UserProfile）。用户画像收敛为 round-summary 的 `type=preference` 召回；关系冲突改用 `supersededBy` 布尔标记（ADR-021）。保留 WorkProjectionManager、AutoConfigRefiner、InsightExtractor、`SOURCELABELS.PROFILE`（存量兼容）。
+> **v2.0.4 变更**：移除记忆关系图谱与用户画像层。内核收敛删除 ADR-014 记忆关系图谱（IMemoryRelationStore/InMemoryRelationStore/MemoryRelation 侧车）与用户画像层（UserProfile）。用户画像收敛为 round-summary 的 `type=preference` 召回；关系冲突改用 `supersededBy` 布尔标记（ADR-021）。保留 WorkProjectionManager、AutoConfigRefiner、InsightExtractor、`SOURCELABELS.PROFILE`（存量兼容）。（InsightExtractor 后于 2026-08-14 随洞察层收敛一并移除。）
 >
 ---
 
@@ -44,15 +44,15 @@
 
 **Memora 是一个无法独立运行的智能大脑内核。** 它只有接口，没有"形态"——宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（Persona/Skill/Rule —— Agent 的骨骼，.md 文件 + 内存缓存，确定性注入不经过召回）和**对话记忆**（Conversation/Insight —— Agent 的血肉，SQLite + VectorStore，语义召回）。二者通过 `autoConfigRefiner` 连接——对话洞察可生长为设定文件。用户画像已收敛为 round-summary 的 `type=preference` 召回，不再作为独立记忆层。
+**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（Persona/Skill/Rule —— Agent 的骨骼，.md 文件 + 内存缓存，确定性注入不经过召回）和**对话记忆**（round-summary —— 轮次摘要即记忆，Agent 的血肉，SQLite + VectorStore，语义召回）。二者通过 `autoConfigRefiner` 连接——对话记忆可生长为设定文件。用户画像已收敛为 round-summary 的 `type=preference` 召回，不再作为独立记忆层。
 
 **单 Agent 模型。** 所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
 
-**配置文件是真理源，对话记忆走 SQLite 索引。** Persona/Skill 为纯文件 + 内存缓存；Rule 文件写入 SQLite 供 bootstrap 读取；对话记忆（insight）走 SQLite + 语义召回。
+**配置文件是真理源，对话记忆走 SQLite 索引。** Persona/Skill 为纯文件 + 内存缓存；Rule 文件写入 SQLite 供 bootstrap 读取；对话记忆（round-summary）走 SQLite + 语义召回。
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式（1.0.0）。** Agent 面类只做编排，领域操作委托给 8 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory` / `agent.works` / `agent.polish`（文本润色）。
+**Manager 委托模式（1.0.0）。** Agent 面类只做编排，领域操作委托给 7 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.memory` / `agent.works` / `agent.polish`（文本润色）。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -208,25 +208,9 @@ agent.tools.registerTool(
 );
 ```
 
-### 5. 注入写入扩展 + 记忆关键词
+### 5. 记忆关键词与写入扩展（已移除）
 
-> 1.0.0：写入扩展和关键词走 `agent.insight.xxx()`。
-
-```typescript
-// 写入前 diff 确认回调
-agent.insight.setWriteExtensions({
-  onBeforeWrite: async (path, before, after) => {
-    showDiff(path, before, after);
-    return await userConfirm(`确认写入 ${path}？`);
-  },
-});
-
-// 记忆关键词（领域 + 用户专属）
-agent.insight.setKeywords({
-  domain: ['主角', '角色', '情节', '设定'],
-  personal: ['我', '我的', '记住', '帮我'],
-});
-```
+> 写入扩展与记忆关键词（`agent.insight.xxx()`）已于 2026-08-14 随洞察层移除，不再提供。记忆统一以 round-summary 沉淀，经 `agent.memory.writeUpsert()` 等 `writeXxx` 方法写入。
 
 ### 6. 注入项目规则
 
@@ -355,7 +339,7 @@ const result2 = agent.forkSession('experiment');
 
 **记忆处理策略**：
 - 已有记忆：全局共享（记忆是全局知识库，不属于单个会话）
-- 分叉后的 Insight：各自独立（不同分支探索不同方向）
+- 分叉后的 round-summary：各自独立（不同分支探索不同方向）
 
 **事件监听**：
 ```typescript
@@ -439,11 +423,10 @@ agent.on('sessionForked', (event) => {
 | `agent.memory.xxx()` | MemoryInspector | 读：`snapshot()` / `search(q, n)` / `searchHybrid(q, n)` / `stats()` / `list()` / `getById(id)` / `listDeleted()`；写：`writeUpsert()` / `writeDelete()` / `writeRestore()` / `writePurge()` 等（`writeXxx` 前缀）。`suggest()` / `sourceHealth()` 已上移至 `agent.suggest()` / `agent.sourceHealth()` |
 | `agent.config.xxx()` | ConfigManager | `addRule(m)` / `addSimpleRule(n, c)` / `addSkill(m)` / `addSimpleSkill(n, c, k?)` / `onSuggestion(h)` / `confirm(s)` |
 | `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` / `list` |
-| `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
 | `agent.works.xxx()` | WorkProjectionManager | `ensureProjection(path, content)` / `getProjection(path)` / `loadAll()` |
-| `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `insightExtracted` / `conflictDetected` / `projectSwitched` / `skillMatched` / `archiveFailed` |
+| `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `conflictDetected` / `projectSwitched` / `skillMatched` / `archiveFailed` |
 
 ### Provider 管理
 

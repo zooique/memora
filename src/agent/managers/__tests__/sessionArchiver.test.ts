@@ -8,7 +8,7 @@
  * - 消息截断（超长会话、超长单条消息）
  * - 记忆写入（source='content'、upsert 语义）
  *
- * 与 InsightExtractor.test.ts 同模式：MockProvider + InMemoryStorage
+ * 测试模式：MockProvider + InMemoryStorage
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
@@ -148,7 +148,7 @@ describe('SessionArchiver · archiveSessionContent 主流程', () => {
     expect(all[0]!.source).toBe('content');
   });
 
-  it('content 类记忆初始 score 应为 0.6（低于 insight）', async () => {
+  it('content 类记忆初始 score 应为 0.6', async () => {
     const result = await archiver.archiveSessionContent('2026-07-03', 'main');
     expect(result.memories[0]!.score).toBe(0.6);
   });

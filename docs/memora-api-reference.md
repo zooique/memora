@@ -42,13 +42,13 @@
 │  │  │  Agent 面类（编排层）                 ││               │
 │  │  │  - init/close · chat · switchProject ││               │
 │  │  │  - .persona / .tools / .skills       ││               │
-│  │  │  - .config / .insight / .memory      ││               │
+│  │  │  - .config / .memory                 ││               │
 │  │  └──────────┬───────────────────────────┘│               │
 │  │             │ 委托                         │               │
 │  │  ┌──────────┼───────────────────────────┐│               │
 │  │  │ PersonaManager / ToolExecutor        ││               │
 │  │  │ SkillManager / ConfigManager         ││               │
-│  │  │ InsightExtractor / MemoryInspector   ││               │
+│  │  │ MemoryInspector                      ││               │
 │  │  └──────────────────────────────────────┘│               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
@@ -121,7 +121,6 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.tools` | `ToolExecutor \| null` | 工具注册与执行 |
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
 | `agent.config` | `ConfigManager \| null` | 规则/技能注入 + 配置建议 |
-| `agent.insight` | `InsightExtractor \| null` | 输入分类 + 记忆提取 |
 | `agent.memory` | `MemoryInspector \| null` | 记忆查询 + 写入（`writeXxx` 前缀） |
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
@@ -254,7 +253,7 @@ agent.memory.snapshot(): MemorySnapshot
 |----|-----|------|
 | 第 1 层 | `snapshot.working` | `WorkingMemorySnapshot` — 当前 AgentLoop 消息（最近 5 条预览 + 总数） |
 | 第 2 层 | `snapshot.bootstrap` | `BootstrapSnapshot` — 规则记忆（名称 + 来源 + 权重，Persona/Skill 已解耦为设定记忆，不进 bootstrap） |
-| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（round-summary + insight + profile + work-projection）+ 当前会话信息 |
+| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（round-summary + profile + work-projection）+ 当前会话信息 |
 
 ```typescript
 interface MemorySnapshot {
@@ -507,9 +506,9 @@ console.log(agent.persona.currentMode);               // 当前模式
 
 ---
 
-## 八、工具注册（`agent.tools` · ToolExecutor + `agent.insight`）
+## 八、工具注册（`agent.tools` · ToolExecutor）
 
-> 工具注册/执行走 `agent.tools.xxx()`，写入扩展/记忆关键词走 `agent.insight.xxx()`。
+> 工具注册/执行走 `agent.tools.xxx()`。
 
 ### 8.1 内置工具（5 个）
 
@@ -590,31 +589,6 @@ interface IWebSearchProvider {
 const agent = new Agent({
   // ... 其他选项
   webSearchProvider: new FetchWebSearchProvider(), // 使用内置默认实现
-});
-```
-
-### 8.4 `agent.insight` — InsightExtractor（写入扩展 + 关键词）
-
-| 方法 | 用途 |
-|------|------|
-| `insight.setWriteExtensions(ext)` | 注入写入扩展回调（diff 对比确认） |
-| `insight.setKeywords(keywords)` | 设置记忆关键词（domain / personal 两类） |
-| `insight.classify(input)` → `'skip' \| 'extract'` | 输入分类（判断是否需要提取记忆） |
-| `insight.extract(userInput, assistantContent)` | 异步提取对话 insight（fire-and-forget） |
-
-```typescript
-// 写入扩展回调
-agent.insight.setWriteExtensions({
-  onBeforeWrite: async (path, before, after) => {
-    // 展示 diff，返回 true 允许写入 / false 拒绝
-    return confirmDialog(`确认写入 ${path}？`);
-  },
-});
-
-// 记忆关键词（用于输入分类 Layer 2）
-agent.insight.setKeywords({
-  domain: ['主角', '角色', '情节', '设定'],   // 领域关键词
-  personal: ['我', '我的', '记住', '帮我'],    // 用户专属关键词
 });
 ```
 
@@ -801,14 +775,14 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
 | 角色 | `switchPersona(name)` / `getPersonaSwitchLockStatus()` / `injectAffect(affectString)` |
-| 手动归档 | `archiveInsight(input, assistantContent, options?)` / `archiveSessionContent(date, session, options?)` |
+| 手动归档 | `archiveSessionContent(date, session, options?)` |
 | 配置热更新 | `reloadConfig(source?)` |
 | 记忆治理 | `deduplicateMemories(signal?)` / `evaluateTimeliness(signal?)` / `runMemoryDecayOnce()` / `sourceHealth()` / `suggest(query?, options?)` / `detectConflicts(signal?)` |
 | 指标 | `getMetrics()` |
 
 ### Agent 面类只读访问器
 
-`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `persona` / `tools` / `skills` / `config` / `insight` / `memory` / `works` / `polish`
+`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `persona` / `tools` / `skills` / `config` / `memory` / `works` / `polish`
 
 ### 各 Manager / 组件公开成员
 
@@ -818,7 +792,6 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.config` | `ConfigManager` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
-| `agent.insight` | `InsightExtractor` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeBoost()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
@@ -981,8 +954,7 @@ export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '
 // 配置建议
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@zooique/memora';
 
-// Insight
-export type { MemoryKeywords } from '@zooique/memora';
+// 记忆治理
 export type { ConflictInfo } from '@zooique/memora';
 
 // 会话归档
