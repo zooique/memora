@@ -346,7 +346,7 @@ export interface IMcpTransport {
 ## 八、校验（跨实现一致性）
 
 - 提供**格式校验器**（独立于任何实现）：校验 manifest.json 的必填字段（`name`/`formatVersion`）、键名合法性、版本语义、L2 策略键（§六）、内容路径注册（`persona`/`rules`）、skills 注册格式（§四）、**合规字段（§七，分档：仅 `companion` 角色包全量强校验，`tool_assistant` 默认值兜底）**；
-- **内容红线闭环（§七 第 5 条）**：正文在独立内容文件（persona.md/rules.md），校验器为纯函数不读文件——由装载方在读取内容后调用 `checkCompanionContentRedline` 检测 companion 虚拟亲密关系红线，触发即拒绝装载；`manifest.json` 层仅校验合规字段声明（interactionType / disclosure / minorProtection）；
+- **内容红线检测 = 装载边界的"守门提示"（§七 第 5 条，区别于格式校验器）**：正文在独立内容文件（persona.md/rules.md），格式校验器为**纯函数不读文件**——它只保证 manifest.json 的"格式正确"，是**正确性守门人**；而 companion 虚拟亲密关系红线是**安全守门人**，由装载方在读取内容后调用 `checkCompanionContentRedline` 检测，触发即拒绝装载。二者职责分离：**格式校验器管"合不合规范"，内容红线检测管"该不该放行"**——前者失败提示修正格式，后者失败（仅 `companion`）直接拦截，不作为格式问题混报；`manifest.json` 层仅校验合规字段声明（interactionType / disclosure / minorProtection）；
 - 校验通过 = 任何实现可装载；校验失败 = 实现拒绝加载并给出原因；
 - 目标是生态内角色包**一次编写，处处装载**。
 
