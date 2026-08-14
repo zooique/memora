@@ -13,7 +13,7 @@
  *   - 持久化复用内核 sessionStore 机制（date-session 组织消息）。
  */
 import * as vscode from 'vscode';
-import type { Agent, AgentChunk, ISessionStore } from '@zooique/memora';
+import { formatDateKey, type Agent, type AgentChunk, type ISessionStore } from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -30,6 +30,19 @@ import { toolNameMapScript } from '../helpers/toolNameMap.js';
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
+
+/** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（清空会话）。
+ *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5） */
+type HostSessionStore = ISessionStore & {
+  clearSession: (date: string, session: string) => void;
+};
+
+/** 技能内部名 → 中文显示名（与工具名中文化同一体验原则，对抗评估 P2-6）。
+ *  未知技能回退原值（内部名），保证未收录技能不显示为空白 */
+function skillDisplayName(skill: string): string {
+  const map: Record<string, string> = { 'doc-review': '文档打磨', scaffold: '代码骨架' };
+  return map[skill] || skill;
+}
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
@@ -64,7 +77,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param sessionStore 会话存储（用于持久化/恢复对话历史）
    * @param providerStore 大模型配置存储（用于底部模型下拉框）
    */
-  constructor(private readonly sessionStore: ISessionStore, providerStore: ProviderStore) {
+  constructor(private readonly sessionStore: HostSessionStore, providerStore: ProviderStore) {
     this._providerStore = providerStore;
   }
 
@@ -99,7 +112,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图已就绪时立即推送（而非等待下次 replaySession），保证徽章即时显示；
     // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeSkill 推送）。
     if (this._view) {
-      this.post({ type: 'chat_skill', skill });
+      this.post({ type: 'chat_skill', skill: skillDisplayName(skill) });
     }
   }
 
@@ -280,14 +293,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     );
     if (choice !== '清空') return;
     try {
-      const withClear = this.sessionStore as unknown as {
-        clearSession?: (d: string, s: string) => void;
-      };
       for (const key of this.sessionStore.listSessions()) {
         // key 格式：YYYY-MM-DD-session；lastIndexOf('-') 拆分日期与会话名
         const idx = key.lastIndexOf('-');
         if (idx <= 0) continue;
-        withClear.clearSession?.(key.slice(0, idx), key.slice(idx + 1));
+        // clearSession 为宿主扩展方法，类型已通过 HostSessionStore 收窄，无需断言（P2-5）
+        this.sessionStore.clearSession(key.slice(0, idx), key.slice(idx + 1));
       }
     } catch {
       // 清空失败不阻塞，仅清 webview UI
@@ -318,7 +329,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushHistoryDates();
     // 推送当前激活 Skill → toolbar 技能徽章（主动可见）
     if (this._activeSkill) {
-      this.post({ type: 'chat_skill', skill: this._activeSkill });
+      this.post({ type: 'chat_skill', skill: skillDisplayName(this._activeSkill) });
     }
     // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
@@ -473,9 +484,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** 当前会话的 date/session（默认当天 main，复用内核会话组织） */
-  private sessionInfo(): { date: string; session: string; store: ISessionStore } {
-    const now = new Date();
-    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  private sessionInfo(): { date: string; session: string; store: HostSessionStore } {
+    // 复用内核 formatDateKey（本地时区 YYYY-MM-DD），替代手写日期拼接（对抗评估 P2-5）
+    const date = formatDateKey(new Date());
     return { date, session: 'main', store: this.sessionStore };
   }
 
@@ -640,7 +651,7 @@ function buildHtml(): string {
   <div id="toolbar">
     <span class="title">文档打磨</span>
     <span id="skillBadge" class="skill-badge" hidden title="当前技能"></span>
-    ${buildDropdownHtml([], { extraClass: 'history-picker', onSelect: '__historyPickerOnSelect' })}
+    ${buildDropdownHtml([], { extraClass: 'history-picker treedd--capsule', onSelect: '__historyPickerOnSelect' })}
     ${buildDropdownHtml([{ id: 'clear', label: '清空对话', danger: true }])}
   </div>
   <div id="memoryBar" class="memory-bar" hidden></div>
@@ -661,7 +672,7 @@ function buildHtml(): string {
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        ${buildDropdownHtml([], { extraClass: 'model-picker', onSelect: '__modelPickerOnSelect' })}
+        ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
         <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
           <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
           <span class="send-spinner"></span>

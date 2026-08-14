@@ -53,7 +53,7 @@ export const chatStyles = `
   /* 用户消息：右侧浅灰气泡（轻量身份标记） */
   .msg.user {
     align-self: flex-end; max-width: 85%;
-    background: var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,.2));
+    background: var(--surface-user-bubble);
     color: var(--text-primary, #cccccc);
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px) var(--radius-lg, 8px);
@@ -67,8 +67,8 @@ export const chatStyles = `
   }
   .msg.error {
     align-self: stretch;
-    background: var(--vscode-inputValidation-errorBackground, #442726);
-    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    background: var(--feedback-error-bg);
+    color: var(--feedback-error-fg);
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px);
   }
@@ -154,82 +154,18 @@ export const chatStyles = `
     box-sizing: border-box;
   }
 
-  /* ============ Components：模型选择器 ============
-   * 约束：
-   *   - 本组件以 L3 组件身份覆写 L2 面板（dropdown.ts）默认样式，
-   *     用 !important 表达「高层级覆盖低层级」的架构意图（对齐令牌铁律例外）
-   *   - 显式接管所有伪元素 → 保证只有 1 个箭头
-   *   - 菜单强制 left:0（向右展开），禁止 right:0（向左溢出）
-   *   - 宽度智能自适应模型名（对齐 Trae）：不撑满 footer，
-   *     刚好完整显示模型名 + 箭头；超长名才触发省略兜底
-   * ================================================= */
+  /* ============ Components：模型选择器（capsule 变体差异定制） ============
+   * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
+   * 消除面板各自覆写组件默认样式带来的重复 + !important（对抗评估 P2-2/P2-4）。
+   * 本区块只做差异定制：宽度自适应模型名（对齐 Trae）+ 菜单尺寸 + 激活项高亮。
+   * 面板通过 extraClass="model-picker treedd--capsule" 启用变体。 */
   .model-picker {
     flex: 0 0 auto; /* 宽度由内容决定，不撑满 footer */
     min-width: 0;
-  }
-  /* 接管默认伪元素（清零），防止继承 dropdown 组件可能引入的箭头/圆点 */
-  .model-picker .treedd__trigger::before,
-  .model-picker .treedd__trigger::after {
-    content: none !important;
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-  }
-  /* 触发按钮：实色胶囊，主动可见，基线严格对齐（L3 覆写 dropdown 默认图标按钮）。
-   * 宽度随模型名自适应（width:auto），超长名由 max-width 兜底省略 */
-  .model-picker .treedd__trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1, 4px);
-    height: var(--control-h, 28px);
-    width: auto; /* 由内容决定：刚好完整显示模型名 */
-    max-width: 200px; /* 超长模型名兜底，配合 dd-model-name 省略 */
-    padding: 0 var(--sp-4, 10px);
-    box-sizing: border-box;
-    border-radius: var(--radius, 6px);
-    cursor: pointer;
-    background: var(--surface-card, #252526);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
-    color: var(--text-primary, #cccccc);
-    font-size: var(--font-md, 12px);
-    line-height: 1;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: visible; /* 由子 span.dd-model-name 负责截断 */
-  }
-  /* 模型名文本容器：负责截断，箭头（::after）不受影响 */
-  .model-picker .treedd__trigger .dd-model-name {
-    min-width: 0;      /* flex 收缩前提 */
-    flex: 1 1 auto;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    line-height: 1;
-  }
-  /* 下拉箭头：flex-shrink:0 保证即使名称被截断也永远外露 */
-  .model-picker .treedd__trigger::after {
-    content: '▾' !important;
-    display: inline-block !important;
-    flex-shrink: 0;
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    margin-left: 2px;
-  }
-  .model-picker .treedd__trigger:hover {
-    background: var(--surface-hover, rgba(128,128,128,.2));
-    border-color: var(--border-focus, #0e639c);
-  }
-  /* 模型下拉菜单：向上弹出 + 左对齐（覆盖 dropdown 默认右对齐，
-   * 避免菜单向右溢出面板右缘；!important 为 L3 覆写 L2 的架构意图） */
-  .model-picker .treedd__menu {
-    left: 0 !important;
-    right: auto !important;
-    top: auto !important;
-    bottom: calc(100% + var(--sp-2, 6px));
-    min-width: 200px;
-    max-width: min(280px, calc(100vw - 32px));
-    max-height: 260px;
-    overflow-y: auto;
+    /* 差异定制变量（capsule 变体读取）：超长模型名兜底省略 + 菜单尺寸 */
+    --dd-trigger-max-w: 200px;
+    --dd-menu-min-w: 200px;
+    --dd-menu-max-w: 280px;
   }
   .model-picker .treedd__item.is-active {
     color: var(--accent, #0e639c);
@@ -242,74 +178,24 @@ export const chatStyles = `
     text-align: center;
   }
 
-  /* ============ Components：历史会话选择器（toolbar） ============
-   * 精灵「按天归档 + 日期导航回溯」机制的插件版：用户可手动切换查看某天对话记录。
-   * 与底部模型选择器同一视觉语言（紧凑胶囊 + 接管默认伪元素），
-   * 显式覆盖 dropdown 默认箭头，保证只有 1 个箭头（L3 覆写 L2 架构意图）。 */
+  /* ============ Components：历史会话选择器（toolbar，capsule 变体差异定制） ============
+   * 精灵「按天归档 + 日期导航回溯」机制的插件版：与模型选择器同一胶囊视觉语言。
+   * 通用外观在 dropdown.ts 的 .treedd--capsule 变体；此处仅定制胶囊圆角 + 次要
+   * 文本色 + 菜单尺寸（对抗评估 P2-2/P2-4）。 */
   .history-picker {
     flex: 0 0 auto;
     min-width: 0;
+    /* 差异定制变量（capsule 变体读取）：历史日期胶囊更紧凑 + 菜单尺寸 */
+    --dd-trigger-max-w: 120px;
+    --dd-menu-min-w: 160px;
+    --dd-menu-max-w: 240px;
   }
-  /* 接管默认伪元素（清零），防止继承 dropdown 组件的箭头/圆点 */
-  .history-picker .treedd__trigger::before,
-  .history-picker .treedd__trigger::after {
-    content: none !important;
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-  }
-  /* 触发按钮：紧凑胶囊，与模型选择器同高、同视觉 */
-  .history-picker .treedd__trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1, 4px);
-    height: var(--control-h, 28px);
-    width: auto;
-    max-width: 120px;
-    padding: 0 var(--sp-4, 10px);
-    box-sizing: border-box;
+  /* 历史胶囊圆角更圆（pill）+ 次要文本色（工具栏工具属性）。
+   * 用 .history-picker.treedd--capsule 提高特异性，确保在 dropdown.ts 变体之后
+   * 仍能覆盖（不依赖样式拼接顺序，也不用 !important） */
+  .history-picker.treedd--capsule .treedd__trigger {
     border-radius: var(--radius-pill, 999px);
-    cursor: pointer;
-    background: var(--surface-card, #252526);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
     color: var(--text-secondary, #9aa0a6);
-    font-size: var(--font-md, 12px);
-    line-height: 1;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: visible;
-  }
-  .history-picker .treedd__trigger .dd-model-name {
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    line-height: 1;
-  }
-  /* 下拉箭头：flex-shrink:0 保证永远外露 */
-  .history-picker .treedd__trigger::after {
-    content: '▾' !important;
-    display: inline-block !important;
-    flex-shrink: 0;
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    margin-left: 2px;
-  }
-  .history-picker .treedd__trigger:hover {
-    background: var(--surface-hover, rgba(128,128,128,.2));
-    border-color: var(--border-focus, #0e639c);
-  }
-  /* 历史菜单：向上弹出 + 左对齐，避免向右溢出面板右缘 */
-  .history-picker .treedd__menu {
-    left: 0 !important;
-    right: auto !important;
-    top: auto !important;
-    bottom: calc(100% + var(--sp-2, 6px));
-    min-width: 160px;
-    max-width: min(240px, calc(100vw - 32px));
-    max-height: 260px;
-    overflow-y: auto;
   }
 
   /* ============ Components：发送按钮 ============ */
@@ -390,11 +276,11 @@ export const chatStyles = `
   .notice-bar[hidden] { display: none; }
   .notice-bar.info {
     color: var(--text-secondary, #9aa0a6);
-    background: var(--vscode-inputValidation-infoBackground, rgba(21,126,251,.15));
+    background: var(--feedback-info-bg);
   }
   .notice-bar.error {
-    color: var(--vscode-inputValidation-errorForeground, #f48771);
-    background: var(--vscode-inputValidation-errorBackground, #442726);
+    color: var(--feedback-error-fg);
+    background: var(--feedback-error-bg);
   }
 
   /* ============ Components：记忆条 / 主动提问条 ============ */
@@ -402,19 +288,19 @@ export const chatStyles = `
   .memory-bar {
     padding: var(--sp-1, 4px) var(--sp-5, 12px); font-size: var(--font-md, 12px);
     color: var(--text-secondary, #9aa0a6);
-    background: var(--vscode-inputValidation-infoBackground, rgba(21,126,251,.15));
+    background: var(--feedback-info-bg);
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
     flex-shrink: 0;
   }
   /* 主动提问条 */
   #clarifyBar {
     display: none; flex-direction: column; gap: var(--sp-2, 6px); padding: var(--sp-3, 8px);
-    border-top: 1px solid var(--vscode-charts-yellow, #d7ba7d);
-    background: var(--vscode-inputValidation-warningBackground, rgba(196,160,0,.15));
+    border-top: 1px solid var(--feedback-warn-accent);
+    background: var(--feedback-warn-bg);
     flex-shrink: 0;
   }
   #clarifyBar.visible { display: flex; }
-  #clarifyText { font-size: var(--font-md, 12px); color: var(--vscode-descriptionForeground, #d7ba7d); }
+  #clarifyText { font-size: var(--font-md, 12px); color: var(--feedback-warn-fg); }
   #clarifyRow { display: flex; gap: var(--sp-2, 6px); }
   #clarifyInput {
     flex: 1; padding: var(--sp-3, 8px); border-radius: var(--radius, 6px);
@@ -424,10 +310,10 @@ export const chatStyles = `
   #clarifyOptions { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
   .opt-btn {
     padding: var(--sp-1, 4px) var(--sp-4, 10px); font-size: var(--font-md, 12px); border-radius: var(--radius-pill, 999px);
-    border: 1px solid var(--vscode-charts-yellow, #d7ba7d);
-    background: transparent; color: var(--vscode-descriptionForeground, #d7ba7d); cursor: pointer;
+    border: 1px solid var(--feedback-warn-accent);
+    background: transparent; color: var(--feedback-warn-fg); cursor: pointer;
   }
-  .opt-btn:hover { background: var(--vscode-inputValidation-warningBackground, rgba(196,160,0,.15)); }
+  .opt-btn:hover { background: var(--feedback-warn-bg); }
 
   /* ============ Utilities：键盘焦点环（可访问性） ============ */
   /* 所有可交互控件：键盘 Tab 聚焦时显示品牌色外环。

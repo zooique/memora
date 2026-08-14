@@ -24,13 +24,13 @@ export const configStyles = `
   .header { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
   .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
   .btn { padding: var(--sp-2, 6px) var(--sp-5, 12px); border-radius: var(--radius, 6px); border: none; cursor: pointer; background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); }
-  .btn-secondary { background: var(--vscode-button-secondaryBackground, rgba(128,128,128,.3)); color: var(--vscode-button-secondaryForeground, #cccccc); }
-  .btn-danger { background: var(--vscode-statusBarItem-errorBackground, #b3261e); color: var(--accent-foreground, #ffffff); }
+  .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
+  .btn-danger { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   #list { padding: var(--sp-3, 8px); }
 
   /* ============ Components：Provider 卡片 ============ */
-  .card { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px); padding: var(--sp-4, 10px); margin-bottom: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-lg, 8px); background: var(--vscode-sideBar-background, #252526); }
+  .card { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px); padding: var(--sp-4, 10px); margin-bottom: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-lg, 8px); background: var(--surface-sidebar); }
   .card.active { border-color: var(--accent, #0e639c); }
   .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; }
   .card-name { font-weight: 600; }
@@ -56,13 +56,13 @@ export const configStyles = `
   .field input:disabled { opacity: 0.6; }
   .key-hint { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); margin-top: var(--sp-1, 4px); }
   .test-result { font-size: var(--font-md, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); margin-bottom: var(--sp-4, 10px); word-break: break-all; }
-  .test-result.ok { background: var(--vscode-inputValidation-infoBackground, rgba(21,126,251,.15)); color: var(--vscode-inputValidation-infoForeground, #75beff); }
-  .test-result.err { background: var(--vscode-inputValidation-errorBackground, #442726); color: var(--vscode-inputValidation-errorForeground, #f48771); }
+  .test-result.ok { background: var(--feedback-info-bg); color: var(--feedback-info-fg); }
+  .test-result.err { background: var(--feedback-error-bg); color: var(--feedback-error-fg); }
   .modal-actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; margin-top: var(--sp-5, 12px); }
 
   /* ============ Components：Toast ============ */
   #toast { position: fixed; bottom: var(--sp-6, 16px); left: 50%; transform: translateX(-50%); padding: var(--sp-3, 8px) var(--sp-5, 12px); border-radius: var(--radius, 6px); font-size: var(--font-md, 12px); color: var(--accent-foreground, #ffffff); opacity: 0; transition: opacity 0.2s; z-index: 20; max-width: 80%; }
-  #toast.ok { background: var(--vscode-statusBarItem-prominentBackground, #2e7d32); }
-  #toast.err { background: var(--vscode-statusBarItem-errorBackground, #b3261e); }
+  #toast.ok { background: var(--toast-ok-bg); }
+  #toast.err { background: var(--btn-danger-bg); }
   #toast.visible { opacity: 1; }
 `;

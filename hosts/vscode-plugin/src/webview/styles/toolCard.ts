@@ -18,9 +18,9 @@ export const toolCardStyles = `
   }
   /* 入场微位移：属动画细节，不在间距刻度内（对齐令牌铁律例外） */
   @keyframes toolCardIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-  .tool-card.is-running { border-left: 3px solid var(--vscode-editorInfo-foreground, #3794ff); background: var(--vscode-inputValidation-infoBackground, rgba(55,148,255,.12)); }
-  .tool-card.is-success { border-left: 3px solid var(--vscode-testing-iconPassed, #4ec9b0); background: var(--vscode-inputValidation-infoBackground, rgba(78,201,176,.12)); }
-  .tool-card.is-failed { border-left: 3px solid var(--vscode-errorForeground, #b3261e); background: var(--vscode-inputValidation-errorBackground, rgba(179,38,30,.12)); }
+  .tool-card.is-running { border-left: 3px solid var(--status-info); background: var(--feedback-info-bg); }
+  .tool-card.is-success { border-left: 3px solid var(--status-pass); background: var(--feedback-info-bg); }
+  .tool-card.is-failed { border-left: 3px solid var(--status-fail); background: var(--feedback-error-bg); }
   .tool-card__header {
     display: flex; align-items: center; gap: var(--sp-2, 6px); width: 100%;
     background: none; border: none; padding: 0; margin: 0;
@@ -33,7 +33,7 @@ export const toolCardStyles = `
   .tool-card__spinner {
     display: inline-block; width: 10px; height: 10px; margin-left: auto;
     border: 1.5px solid var(--border-panel, #ccc);
-    border-top-color: var(--vscode-editorInfo-foreground, #3794ff);
+    border-top-color: var(--status-info);
     border-radius: 50%; animation: toolSpin 0.8s linear infinite;
   }
   .tool-card.is-success .tool-card__spinner, .tool-card.is-failed .tool-card__spinner { display: none; }
@@ -41,10 +41,10 @@ export const toolCardStyles = `
   .tool-card__status { margin-left: auto; font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); }
   .tool-card__args, .tool-card__result {
     margin-top: var(--sp-1, 4px); padding: var(--sp-1, 4px) var(--sp-2, 6px); max-height: 120px; overflow: auto;
-    background: var(--vscode-widget-shadow, rgba(0,0,0,.08));
+    background: var(--surface-code);
     border-radius: var(--radius, 6px);
     font-family: ui-monospace, Consolas, monospace; font-size: var(--font-sm, 11px);
-    color: var(--vscode-descriptionForeground, #5f6368);
+    color: var(--text-secondary);
     white-space: pre-wrap; word-break: break-all;
     transition: max-height 0.15s ease, opacity 0.1s ease, margin 0.15s ease;
   }

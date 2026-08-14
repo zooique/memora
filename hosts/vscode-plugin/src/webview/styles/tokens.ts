@@ -56,6 +56,31 @@ export const tokens = `
     --accent: var(--vscode-button-background, #0e639c);
     --accent-foreground: var(--vscode-button-foreground, #ffffff);
 
+    /* === L2 语义令牌：反馈状态色（校验/信息/错误/警告） ===
+     * 供提示条 / 记忆条 / 主动提问条 / 测试结果 / 错误消息使用。
+     * 语义令牌集中映射 --vscode-*，样式文件只引用语义令牌（对抗评估 P2-3 层边界恢复） */
+    --feedback-info-bg: var(--vscode-inputValidation-infoBackground, rgba(21, 126, 251, 0.15));
+    --feedback-info-fg: var(--vscode-inputValidation-infoForeground, #75beff);
+    --feedback-error-bg: var(--vscode-inputValidation-errorBackground, #442726);
+    --feedback-error-fg: var(--vscode-inputValidation-errorForeground, #f48771);
+    --feedback-warn-bg: var(--vscode-inputValidation-warningBackground, rgba(196, 160, 0, 0.15));
+    --feedback-warn-fg: var(--vscode-descriptionForeground, #d7ba7d);
+    --feedback-warn-accent: var(--vscode-charts-yellow, #d7ba7d);
+
+    /* === L2 语义令牌：状态指示色（工具执行中/成功/失败） === */
+    --status-info: var(--vscode-editorInfo-foreground, #3794ff);
+    --status-pass: var(--vscode-testing-iconPassed, #4ec9b0);
+    --status-fail: var(--vscode-errorForeground, #b3261e);
+
+    /* === L2 语义令牌：控件（次级按钮/危险按钮/Toast/代码块底） === */
+    --btn-secondary-bg: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.3));
+    --btn-secondary-fg: var(--vscode-button-secondaryForeground, #cccccc);
+    --btn-danger-bg: var(--vscode-statusBarItem-errorBackground, #b3261e);
+    --toast-ok-bg: var(--vscode-statusBarItem-prominentBackground, #2e7d32);
+    --surface-sidebar: var(--vscode-sideBar-background, #252526);
+    --surface-code: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.08));
+    --surface-user-bubble: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
+
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     --input-wrap-min-h: 96px;  /* 输入卡片最小总高（textarea 64 + footer 32） */
     --input-min-h: 64px;       /* textarea 单行舒适高度（占总高 65%） */
