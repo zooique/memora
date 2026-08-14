@@ -71,6 +71,20 @@ window.ToolCard = (function () {
     // 完成后自动折叠，减少视觉干扰（对齐 sprite）
     card.classList.add('is-collapsed');
   }
+  // 兜底终结：本轮流式结束后，把容器内所有残留「执行中」卡片标记为失败（中断态），
+  // 避免 tool_start 后流异常/中断（error/超时）时卡片永远停在 spinner（对抗评估 P1-1）。
+  // 幂等：无 is-running 卡片时无操作，可安全在 error 与 done 处重复调用。
+  function settleRunning(container, label) {
+    var cards = container.querySelectorAll('.tool-card.is-running');
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.remove('is-running');
+      cards[i].classList.add('is-failed');
+      var spinner = cards[i].querySelector('.tool-card__spinner');
+      if (spinner) spinner.remove();
+      var status = cards[i].querySelector('.tool-card__status');
+      if (status) status.textContent = label || '已中断';
+    }
+  }
   // 折叠/展开：事件委托，一次性注册
   if (!window.__toolCardDelegated) {
     window.__toolCardDelegated = true;
@@ -83,5 +97,5 @@ window.ToolCard = (function () {
       }
     });
   }
-  return { show: show, update: update };
+  return { show: show, update: update, settleRunning: settleRunning };
 })();`;

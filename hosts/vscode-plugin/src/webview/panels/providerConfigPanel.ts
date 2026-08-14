@@ -66,6 +66,14 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'cfg_delete': {
+          // 危险操作：VSCode webview 禁用原生 confirm()，改由 host 侧弹原生 modal 确认，
+          // 避免「确认框静默失效 → 删除按钮无反应」的功能性缺陷（对抗评估 P0-2）
+          const choice = await vscode.window.showWarningMessage(
+            `确定删除服务商 "${msg.name}"？此操作不可恢复。`,
+            { modal: true },
+            '删除',
+          );
+          if (choice !== '删除') break;
           const r = await this.store.remove(msg.name);
           this.post({ type: 'cfg_result', ok: r.ok, message: r.message, action: 'delete' });
           if (r.ok) await this.load();
@@ -305,9 +313,9 @@ function buildHtml(): string {
           delBtn.className = 'btn btn-danger';
           delBtn.textContent = '删除';
           delBtn.addEventListener('click', function () {
-            if (confirm('确定删除服务商 "' + p.name + '"？')) {
-              vscode.postMessage({ type: 'cfg_delete', name: p.name });
-            }
+            // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
+            // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
+            vscode.postMessage({ type: 'cfg_delete', name: p.name });
           });
           actions.appendChild(delBtn);
         }

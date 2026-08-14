@@ -129,7 +129,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
         void this.handleResume(msg.text.trim());
       } else if (msg.type === 'clear') {
-        this.handleClear();
+        void this.handleClear();
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
       } else if (msg.type === 'chat_switch_date') {
@@ -258,12 +258,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 清空当前会话：清空全部持久化会话消息，并通知 webview 清空消息区
+   * 清空当前会话：确认后清空全部持久化会话消息，并通知 webview 清空消息区
    *
+   * 危险操作确认走 host 侧原生 modal（VSCode webview 禁用原生 confirm()，
+   * 避免「确认框静默失效 → 按钮无反应」的功能性缺陷，对抗评估 P0-2）。
    * 依赖 WorkspaceSessionStore.clearSession（宿主扩展方法，非内核 ISessionStore 标准接口）。
    * 遍历所有会话 key（YYYY-MM-DD-session）逐一清空，覆盖跨天归档的多个 key。
    */
-  private handleClear(): void {
+  private async handleClear(): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+      '确定清空当前对话？此操作不可恢复。',
+      { modal: true },
+      '清空',
+    );
+    if (choice !== '清空') return;
     try {
       const withClear = this.sessionStore as unknown as {
         clearSession?: (d: string, s: string) => void;
@@ -482,7 +490,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       ? `[当前打磨文档内容]\n${this._docContext}\n[/当前打磨文档内容]\n\n用户请求：${input}`
       : input;
 
-    await this.consumeFlow(this._agent.chat(chatInput));
+    try {
+      // chat() 若在生成器创建阶段同步抛错（如 agent 状态检查失败），不会进入 consumeFlow，
+      // 此时用户消息已上屏却无任何反馈；此处兜底给出可见错误（对抗评估 P1-2）。
+      // 因从未进入 thinking 状态，输入框未被禁用，无需再补发 status done。
+      await this.consumeFlow(this._agent.chat(chatInput));
+    } catch (err) {
+      this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   /** 处理用户对主动提问的回答：persist + resumeExecution 续跑 */
@@ -493,7 +508,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处由 UI 补写，避免回答丢失（内核 resume 能力缺口，宿主补丁）
     this.persist('user', input);
     this.post({ type: 'user', text: input, ts: now });
-    await this.consumeFlow(this._agent.resumeExecution(input));
+    try {
+      // 与 handleSend 同一缺陷模式（P1-2）：resumeExecution 同步抛错时无反馈，一并兜底
+      await this.consumeFlow(this._agent.resumeExecution(input));
+    } catch (err) {
+      this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态 */
@@ -843,6 +863,11 @@ function buildHtml(): string {
         scrollToBottom();
       } else if (msg.type === 'error') {
         append('error', msg.message);
+      } else if (msg.type === 'done') {
+        // 本轮流式结束：兜底终结所有残留「执行中」工具卡片，避免 tool_start 后
+        // 流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。error 后必跟 done，
+        // 此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
+        window.ToolCard.settleRunning(messages, '已中断');
       } else if (msg.type === 'need_clarify') {
         clarifyText.textContent = 'Agent 需要你确认：' + msg.questions.map(function(q){return q.question;}).join('；');
         clarifyInput.value = '';
@@ -917,9 +942,9 @@ function buildHtml(): string {
     // 顶部⋯菜单：清空对话（危险项）
     window.__treeddOnSelect = function (id) {
       if (id === 'clear') {
-        if (confirm('确定清空当前对话？此操作不可恢复。')) {
-          vscode.postMessage({ type: 'clear' });
-        }
+        // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
+        // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
+        vscode.postMessage({ type: 'clear' });
       }
     };
 

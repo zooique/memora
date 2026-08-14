@@ -132,7 +132,9 @@ export const chatStyles = `
     font-size: var(--font-base, 13px);
     line-height: 1.6;
     resize: none;
-    overflow-y: hidden; /* 由 JS autoResize() 控制高度 */
+    /* 高度由 JS autoResize() 控制；内容超过 --input-max-h 时内部滚动查看，
+     * 避免 overflow hidden 把超限内容裁掉导致长输入不可见（对抗评估 P0-1） */
+    overflow-y: auto;
     min-height: var(--input-min-h, 64px);
     max-height: var(--input-max-h, 140px);
     box-sizing: border-box;
