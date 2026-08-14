@@ -2495,24 +2495,27 @@ describe('Agent · L2 行为策略消费', () => {
   // ─── recentRounds 覆盖固定加载轮数（2026-08-14 消费接入）──
 
   it('角色包 prepare.recentRounds 应覆盖最近几轮固定加载轮数', async () => {
-    // 在 configDir 下写一个带 recentRounds:5 的角色包（init 自动扫描并激活第一个）
-    mkdirSync(join(tmpConfig, 'role-packs'), { recursive: true });
+    // 在 configDir 下写一个带 recentRounds:5 的角色包（manifest.json 文件夹形态，
+    // init 自动扫描并激活第一个）
+    const packDir = join(tmpConfig, 'role-packs', '精算师');
+    mkdirSync(packDir, { recursive: true });
     writeFileSync(
-      join(tmpConfig, 'role-packs', '精算师.md'),
-      `---
-name: 精算师
-formatVersion: 1.0.0
-description: recentRounds 覆盖验证
-keywords: [精算]
-strategy:
-  prepare:
-    recentRounds: 5
----
-## Persona
-
-你是一个精算师。`,
+      join(packDir, 'manifest.json'),
+      JSON.stringify(
+        {
+          name: '精算师',
+          formatVersion: '1.0.0',
+          description: 'recentRounds 覆盖验证',
+          keywords: ['精算'],
+          strategy: { prepare: { recentRounds: 5 } },
+          persona: 'persona.md',
+        },
+        null,
+        2,
+      ),
       'utf-8',
     );
+    writeFileSync(join(packDir, 'persona.md'), '你是一个精算师。', 'utf-8');
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
@@ -2533,23 +2536,25 @@ strategy:
   it('角色包声明非法 recentRounds（0）应降级内核默认，对话不抛错', async () => {
     // 非法值（0）经 mergeStrategy 覆盖默认 3，但消费处 resolveRecentRounds 检测到
     // 非"0 以上正整数"而降级回内核默认兜底——SSOT：开放参数必有硬编码兜底
-    mkdirSync(join(tmpConfig, 'role-packs'), { recursive: true });
+    const packDir = join(tmpConfig, 'role-packs', '非法轮数');
+    mkdirSync(packDir, { recursive: true });
     writeFileSync(
-      join(tmpConfig, 'role-packs', '非法轮数.md'),
-      `---
-name: 非法轮数
-formatVersion: 1.0.0
-description: 非法 recentRounds 降级验证
-keywords: [非法]
-strategy:
-  prepare:
-    recentRounds: 0
----
-## Persona
-
-你是一个测试角色。`,
+      join(packDir, 'manifest.json'),
+      JSON.stringify(
+        {
+          name: '非法轮数',
+          formatVersion: '1.0.0',
+          description: '非法 recentRounds 降级验证',
+          keywords: ['非法'],
+          strategy: { prepare: { recentRounds: 0 } },
+          persona: 'persona.md',
+        },
+        null,
+        2,
+      ),
       'utf-8',
     );
+    writeFileSync(join(packDir, 'persona.md'), '你是一个测试角色。', 'utf-8');
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
@@ -2563,34 +2568,36 @@ strategy:
   });
 
   it('角色包优先匹配：粘性 + 互斥切换（§6.2）', async () => {
-    // 写一对互斥角色包（翻译助手 ↔ 代码助手），验证角色包优先于 persona 匹配
+    // 写一对互斥角色包（翻译助手 ↔ 代码助手，manifest.json 文件夹形态），
+    // 验证角色包优先于 persona 匹配
     const packsDir = join(tmpConfig, 'role-packs');
-    mkdirSync(packsDir, { recursive: true });
-    writeFileSync(
-      join(packsDir, '翻译助手.md'),
-      `---
-name: 翻译助手
-keywords: [翻译, 英译中]
-exclusiveWith: [代码助手]
----
-## Persona
-你是翻译。
-## Rules
-- 保持语义`,
-      'utf-8',
+    const writePack = (dirName: string, manifest: object, persona: string) => {
+      const packDir = join(packsDir, dirName);
+      mkdirSync(packDir, { recursive: true });
+      writeFileSync(join(packDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+      writeFileSync(join(packDir, (manifest as { persona: string }).persona), persona, 'utf-8');
+    };
+    writePack(
+      '翻译助手',
+      {
+        name: '翻译助手',
+        formatVersion: '1.0.0',
+        keywords: ['翻译', '英译中'],
+        exclusiveWith: ['代码助手'],
+        persona: 'persona.md',
+      },
+      '你是翻译。',
     );
-    writeFileSync(
-      join(packsDir, '代码助手.md'),
-      `---
-name: 代码助手
-keywords: [编程, 写代码]
-exclusiveWith: [翻译助手]
----
-## Persona
-你是程序员。
-## Rules
-- 写好代码`,
-      'utf-8',
+    writePack(
+      '代码助手',
+      {
+        name: '代码助手',
+        formatVersion: '1.0.0',
+        keywords: ['编程', '写代码'],
+        exclusiveWith: ['翻译助手'],
+        persona: 'persona.md',
+      },
+      '你是程序员。',
     );
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);

@@ -1,58 +1,41 @@
 /**
  * 角色包管理器 — 继承 ConfigResourceManager，管理角色包的生命周期
  *
- * M2 中期实现（2026-08-11）：
- *   角色包文件格式 + 角色包管理器，复用 ConfigResourceManager 基类。
- *   继承式扩展，不动基类。
- *
- * M2.1 行业校准（2026-08-12，对齐 role-pack-spec §二/§四/§五）：
- *   - 扫描：自建扫描路径，同时支持**单文件最小形态**（`role-packs/*.md`）
- *     与**文件夹包完整形态**（`role-packs/<名>/role-pack.md`）——基类 scanMarkdownDir
- *     只扫 `*.md` 不递归，无法覆盖文件夹包，故子类自建扫描（基类生命周期/匹配复用）。
- *   - 解析：改用嵌套 YAML frontmatter 解析器（`frontmatter.ts`，轻量子集），
- *     支持 strategy 嵌套对象 + skills 能力声明数组（capabilities）。
- *   - 兼容：旧格式点号命名法（`strategy.prepare.understandingConfirm`）warn 降级解析；
- *     旧 `## Skills` 正文 `- skill: 名字` 引用仍兼容（capabilities 优先）。
- *   - 合规：meta 解析 formatVersion / interactionType / aiIdentityDisclosure / minorProtection。
+ * 2026-08-14 收敛形态（单一形态，无旧格式兼容）：
+ *   角色包统一为**文件夹形态**，`manifest.json` 是唯一核心控制文件。
+ *   内容文件（persona.md / rules.md / skills/*）独立于 manifest，由 manifest
+ *   按路径注册装载——用户既可独立移植内容文档，也可整体装载角色包。
+ *   系统此前未启用角色包（无存量包），故不保留单文件 .md / role-pack.md 旧格式。
  *
  * 职责：
- *   - 从 configDir/role-packs/*.md 与 configDir/role-packs/<名>/role-pack.md 扫描角色包
- *   - 解析嵌套 frontmatter（元数据 + 策略 + 能力声明）
- *   - 解析 body 中的结构化章节（Persona / Rules / Skills / Knowledge）
- *   - 提供角色包激活、匹配、切换功能
+ *   - 从 configDir/role-packs/<名>/ 扫描含 manifest.json 的角色包
+ *   - 解析 manifest.json（元数据 + L2 策略 + 内容路径注册 + 内嵌技能注册）
+ *   - 按路径装载 persona.md / rules.md / skills 内容
+ *   - 提供角色包激活、粘性匹配、互斥切换功能
  *
  * 与 PersonaManager 的关系：
  *   角色包是更上层的抽象，Persona 是角色包 L1 内容层的一部分。
- *   在 M2 阶段，角色包管理器作为可选组件，与 PersonaManager 共存。
- *   未来角色包管理器可完全替代 PersonaManager（M3 远期）。
+ *   当前角色包管理器为可选组件，与 PersonaManager 共存（M3 远期可替代）。
  *
  * 设计原则：
- *   - 继承 ConfigResourceManager 基类（消除重复匹配/生命周期）
- *   - 角色包特有状态（activeRolePack / 匹配逻辑 / 自建扫描）保留在子类
- *   - 与 PersonaManager + SkillManager 兼容，不破坏现有装载通道
+ *   - 继承 ConfigResourceManager 基类（复用关键词匹配 / 生命周期）
+ *   - 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描）保留在子类
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
-import { join, basename } from 'node:path';
+import { join } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import { resolveSubdir } from '@/utils/scanner.js';
-import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
-import { parseRolePackFrontmatter } from '@/role-pack/frontmatter.js';
+import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
 import type {
   RolePack,
   RolePackMeta,
-  RolePackSkillRef,
-  RolePackCapability,
-  RolePackKnowledgeRef,
+  RolePackManifestSkill,
   RolePackAssembly,
   BehaviorStrategy,
 } from '@/role-pack/types.js';
 import { assembleRolePack } from '@/role-pack/types.js';
-import { validateRolePack } from '@/role-pack/validator.js';
-
-/** 排除的文件名（不纳入扫描） */
-const EXCLUDED_FILES = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
 
 /** 合规字段默认值：formatVersion 缺省按 1.0.0（spec §五） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
@@ -63,23 +46,22 @@ const AUTO_MATCH_THRESHOLD = 0.3;
 /**
  * L2 策略键别名映射（旧实现键 → 标准键，role-pack-spec §六 命名归标准）
  *
- * P0 键集对齐（2026-08-12）：memora 曾使用私有键名 act.toolCalls / reflect.endingHandoff，
- * 标准键为 act.toolMode / reflect.handoff。存量角色包若仍写旧键，
- * 装载时自动映射到标准键 + warn 提示（平滑迁移，不阻塞装载）。
- * 映射在嵌套新格式与点号旧格式两条解析路径出口统一执行。
+ * 存量 manifest 若误写私有键名 act.toolCalls / reflect.endingHandoff，
+ * 装载时自动映射到标准键 + warn 提示（平滑兼容，不阻塞装载）。
  */
 const STRATEGY_KEY_ALIASES: Readonly<Record<string, string>> = {
   'act.toolCalls': 'act.toolMode',
   'reflect.endingHandoff': 'reflect.handoff',
 };
 
+/** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
+const EXCLUDED_FILES = new Set(['manifest.json']);
+
 /**
  * 策略阶段键名规范化：旧实现键 → 标准键（spec §六 命名归标准）
  *
- * 未知键保留原样（键级渐进：已知生效、未知 warn 忽略由调用方/校验器处理）。
- *
  * @param stage 策略阶段（prepare / act / reflect / global）
- * @param fields 该阶段的键值对（解析自嵌套或点号 frontmatter）
+ * @param fields 该阶段的键值对（来自 manifest.strategy）
  * @returns 规范化后的键值对
  */
 function normalizeStageKeys(stage: string, fields: Record<string, unknown>): Record<string, unknown> {
@@ -101,117 +83,15 @@ function normalizeStageKeys(stage: string, fields: Record<string, unknown>): Rec
 }
 
 /**
- * 从 body 中提取 `## 标题` 章节内容
+ * 从 manifest.strategy 节点解析策略声明（JSON 已是嵌套对象）
  *
- * @param body Markdown 正文
- * @param sectionName 章节标题（不含 ##）
- * @returns 章节内容，未找到返回空字符串
- */
-function extractSection(body: string, sectionName: string): string {
-  const regex = new RegExp(`##\\s*${sectionName}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|\\n*$)`, 'i');
-  const match = regex.exec(body);
-  if (!match) return '';
-  return match[1]?.trim() ?? '';
-}
-
-/**
- * 从章节内容中解析技能引用列表
- *
- * 格式：每一行 `- skill:技能名` 或 `- 技能名`
- *
- * @param sectionBody 技能章节内容
- * @returns 技能引用列表
- */
-function parseSkillRefs(sectionBody: string): RolePackSkillRef[] {
-  if (!sectionBody) return [];
-  const refs: RolePackSkillRef[] = [];
-  for (const line of sectionBody.split('\n')) {
-    const trimmed = line.trim();
-    // 支持 - skill:name 和 - name 两种格式
-    const match = /^-\s*(?:skill:\s*)?(.+)$/.exec(trimmed);
-    if (match) {
-      refs.push({ name: match[1]?.trim() ?? '' });
-    }
-  }
-  return refs;
-}
-
-/**
- * 从章节内容中解析知识引用列表
- *
- * 格式：每一行 `- path:路径` 或 `- memory:标识`
- *
- * @param sectionBody 知识章节内容
- * @returns 知识引用列表
- */
-function parseKnowledgeRefs(sectionBody: string): RolePackKnowledgeRef[] {
-  if (!sectionBody) return [];
-  const refs: RolePackKnowledgeRef[] = [];
-  for (const line of sectionBody.split('\n')) {
-    const trimmed = line.trim();
-    // 支持 - path:xxx 和 - memory:xxx 格式
-    const pathMatch = /^-\s*path:\s*(.+)$/.exec(trimmed);
-    if (pathMatch) {
-      refs.push({ type: 'path', target: pathMatch[1]?.trim() ?? '' });
-      continue;
-    }
-    const memoryMatch = /^-\s*memory:\s*(.+)$/.exec(trimmed);
-    if (memoryMatch) {
-      refs.push({ type: 'memory', target: memoryMatch[1]?.trim() ?? '' });
-    }
-  }
-  return refs;
-}
-
-/**
- * 从规则章节内容中解析规则列表
- *
- * 格式：`- 规则内容` 或 `* 规则内容`
- *
- * @param sectionBody 规则章节内容
- * @returns 规则字符串列表
- */
-function parseRules(sectionBody: string): string[] {
-  if (!sectionBody) return [];
-  const rules: string[] = [];
-  for (const line of sectionBody.split('\n')) {
-    const trimmed = line.trim();
-    // 匹配无序列表项：- 或 * 开头
-    const match = /^[-*]\s+(.+)$/.exec(trimmed);
-    if (match) {
-      rules.push(match[1]?.trim() ?? '');
-    }
-  }
-  return rules;
-}
-
-/**
- * 从 frontmatter 中解析 strategy 字段
- *
- * frontmatter 中策略字段使用点号命名法：
- *   strategy.prepare.understandingConfirm: off
- *   strategy.act.toolMode: block
- *   strategy.global.errorHandling: stop
- *
- * @param fm frontmatter 键值对
- * @returns 解析后的策略声明（只含声明值，未声明字段为 undefined）
- */
-// 运行时策略类型（用 Record 替代 readonly 接口，满足运行时动态赋值）
-interface PrepareStrategyShim extends Record<string, unknown> {}
-interface ActStrategyShim extends Record<string, unknown> {}
-interface ReflectStrategyShim extends Record<string, unknown> {}
-interface GlobalStrategyShim extends Record<string, unknown> {}
-
-/**
- * 从嵌套 frontmatter 解析 strategy（新格式，优先）
- *
- * 结构：`strategy: { prepare: { contextAssembly: hybrid, ... }, act: {...}, ... }`
  * 只取四阶段下声明过的键，未声明的阶段为 undefined（由 mergeStrategy 补默认值）。
+ * 旧实现键 → 标准键 别名迁移（spec §六 命名归标准）。
  *
- * @param strategyNode frontmatter.strategy 节点
+ * @param strategyNode manifest.strategy 节点
  * @returns 解析后的策略声明，无 strategy 返回 undefined
  */
-function parseStrategyNested(strategyNode: unknown): BehaviorStrategy | undefined {
+function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined {
   if (typeof strategyNode !== 'object' || strategyNode === null) return undefined;
 
   const stages: Record<string, Record<string, unknown>> = {};
@@ -219,126 +99,33 @@ function parseStrategyNested(strategyNode: unknown): BehaviorStrategy | undefine
     if (typeof node !== 'object' || node === null) continue;
     const fields: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-      // 未知键保留原样（键级渐进：已知生效、未知 warn 忽略由调用方处理）
       fields[key] = value;
     }
-    // 旧实现键 → 标准键 别名迁移（spec §六 命名归标准）
     if (Object.keys(fields).length > 0) stages[stage] = normalizeStageKeys(stage, fields);
   }
 
   if (Object.keys(stages).length === 0) return undefined;
 
   return {
-    prepare: stages['prepare'] as PrepareStrategyShim | undefined,
-    act: stages['act'] as ActStrategyShim | undefined,
-    reflect: stages['reflect'] as ReflectStrategyShim | undefined,
-    global: stages['global'] as GlobalStrategyShim | undefined,
-  };
+    prepare: stages['prepare'],
+    act: stages['act'],
+    reflect: stages['reflect'],
+    global: stages['global'],
+  } as BehaviorStrategy;
 }
 
 /**
- * 从点号 frontmatter 解析 strategy（旧格式，兼容降级）
+ * 从 manifest 解析 keywords（兼容数组与逗号字符串两种写法）
  *
- * 旧格式：`strategy.prepare.understandingConfirm: off`（点号平铺 + snake/camel 混合）。
- * M2.1 行业校准：新格式定案嵌套 YAML（camelCase），旧格式保留解析能力但 **warn 提示迁移**。
- *
- * @param fm frontmatter 键值对
- * @returns 解析后的策略声明（只含声明值，未声明字段为 undefined）
- */
-function parseStrategyLegacy(fm: Record<string, string>): BehaviorStrategy | undefined {
-  const prepare: Record<string, unknown> = {};
-  const act: Record<string, unknown> = {};
-  const reflect: Record<string, unknown> = {};
-  const global: Record<string, unknown> = {};
-
-  let hasStrategy = false;
-
-  for (const [key, rawValue] of Object.entries(fm)) {
-    if (!key.startsWith('strategy.')) continue;
-    hasStrategy = true;
-
-    // 去掉 'strategy.' 前缀，如 'strategy.prepare.understandingConfirm' → 'prepare.understandingConfirm'
-    const path = key.slice(9);
-    const dotIdx = path.indexOf('.');
-    if (dotIdx < 0) continue;
-
-    const stage = path.slice(0, dotIdx); // prepare / act / reflect / global
-    const field = path.slice(dotIdx + 1);
-
-    // 解析数值或保留字符串
-    const value: string | number | boolean = tryParseValue(rawValue);
-
-    // 字段名驼峰转换：understanding_confirm → understandingConfirm
-    const camelField = field.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-
-    // 按阶段填充
-    switch (stage) {
-      case 'prepare':
-        prepare[camelField] = value;
-        break;
-      case 'act':
-        act[camelField] = value;
-        break;
-      case 'reflect':
-        reflect[camelField] = value;
-        break;
-      case 'global':
-        global[camelField] = value;
-        break;
-    }
-  }
-
-  if (!hasStrategy) return undefined;
-
-  return {
-    prepare: Object.keys(prepare).length > 0 ? (normalizeStageKeys('prepare', prepare) as PrepareStrategyShim) : undefined,
-    act: Object.keys(act).length > 0 ? (normalizeStageKeys('act', act) as ActStrategyShim) : undefined,
-    reflect: Object.keys(reflect).length > 0 ? (normalizeStageKeys('reflect', reflect) as ReflectStrategyShim) : undefined,
-    global: Object.keys(global).length > 0 ? (normalizeStageKeys('global', global) as GlobalStrategyShim) : undefined,
-  };
-}
-
-/**
- * 从 frontmatter 解析 skills 能力声明数组（新格式，优先）
- *
- * 结构：`skills: [{ capability: 'file:write', description: '...' }, ...]`
- * 兼容旧 `## Skills` 正文引用（`- skill: 名字`），由 createEntry 兜底。
- *
- * @param skillsNode frontmatter.skills 节点
- * @returns 能力声明列表
- */
-function parseCapabilities(skillsNode: unknown): RolePackCapability[] {
-  if (!Array.isArray(skillsNode)) return [];
-  const caps: RolePackCapability[] = [];
-  for (const item of skillsNode) {
-    if (typeof item !== 'object' || item === null) continue;
-    const record = item as Record<string, unknown>;
-    const capability = record['capability'];
-    if (typeof capability !== 'string' || capability === '') continue;
-    const description = record['description'];
-    caps.push({
-      capability,
-      description: typeof description === 'string' ? description : undefined,
-    });
-  }
-  return caps;
-}
-
-/**
- * 从嵌套 frontmatter 解析 keywords（兼容数组与逗号字符串两种写法）
- *
- * 新格式：`keywords: [写作, 小说]`（数组）；旧格式：`keywords: 写作, 小说`（逗号串）。
  * 同时合并 `trigger` 数组（role-pack-spec §二/§三 字段）：
- *   仅声明 trigger 的角色包也能被自动匹配命中——匹配词只有一个来源 keywords，
- *   触发词统一汇入 keywords（单一真理源，见 types.ts RolePackMeta.trigger 注释）。
+ * 匹配词只有一个来源 keywords，触发词统一汇入（单一真理源）。
  *
- * @param fm 嵌套 frontmatter
+ * @param manifest 解析后的 manifest 对象
  * @returns 关键词数组（keywords ∪ trigger，去重）
  */
-function parseKeywordsAny(fm: Record<string, unknown>): string[] | undefined {
-  // 解析单个字段：数组原样、逗号串拆分、其余返回 undefined
+function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefined {
   const parseField = (key: string): string[] | undefined => {
-    const raw = fm[key];
+    const raw = manifest[key];
     if (Array.isArray(raw)) {
       return raw.map((k) => String(k)).filter(Boolean);
     }
@@ -350,16 +137,15 @@ function parseKeywordsAny(fm: Record<string, unknown>): string[] | undefined {
     }
     return undefined;
   };
-  // keywords 与 trigger 合并去重，保证匹配词唯一来源
   return [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
 }
 
 /**
  * 解析互斥声明数组（exclusiveWith）
  *
- * 支持数组（`exclusiveWith: [包A, 包B]`）与逗号串（`exclusiveWith: 包A, 包B`）两种写法。
+ * 支持数组与逗号串两种写法。
  *
- * @param raw frontmatter 中的 exclusiveWith 原始值
+ * @param raw manifest.exclusiveWith 原始值
  * @returns 互斥角色包名列表，未声明返回 undefined
  */
 function parseExclusiveWith(raw: unknown): string[] | undefined {
@@ -376,21 +162,68 @@ function parseExclusiveWith(raw: unknown): string[] | undefined {
 }
 
 /**
- * 尝试解析字符串值：数字优先，布尔其次，保留字符串
+ * 从 manifest.skills 数组解析技能注册（对象数组，支持多个添加）
  *
- * @param raw 原始字符串
- * @returns 解析后的值
+ * 每项结构：`{ file: string（必填）, name?, description?, capability? }`。
+ * 承载转译为 RolePack.skills 的原始注册形状；capability 由 assembleRolePack 派生为能力声明。
+ *
+ * @param skillsNode manifest.skills 节点
+ * @returns 技能注册列表
  */
-function tryParseValue(raw: string): string | number | boolean {
-  const trimmed = raw.trim();
-  // 尝试解析数字
-  const num = Number(trimmed);
-  if (!Number.isNaN(num) && trimmed !== '') return num;
-  // 尝试解析布尔
-  if (trimmed === 'true') return true;
-  if (trimmed === 'false') return false;
-  // 保留字符串
-  return trimmed;
+function parseManifestSkills(skillsNode: unknown): RolePackManifestSkill[] {
+  if (!Array.isArray(skillsNode)) return [];
+  const skills: RolePackManifestSkill[] = [];
+  for (const item of skillsNode) {
+    if (typeof item !== 'object' || item === null) continue;
+    const record = item as Record<string, unknown>;
+    const file = record['file'];
+    if (typeof file !== 'string' || file.trim() === '') continue;
+    const name = record['name'];
+    const description = record['description'];
+    const capability = record['capability'];
+    skills.push({
+      file,
+      name: typeof name === 'string' ? name : undefined,
+      description: typeof description === 'string' ? description : undefined,
+      capability: typeof capability === 'string' ? capability : undefined,
+    });
+  }
+  return skills;
+}
+
+/**
+ * 从 rules.md 内容解析规则列表（逐行 `- ` 无序列表）
+ *
+ * @param content rules 文件内容
+ * @returns 规则字符串列表
+ */
+function parseRules(content: string): string[] {
+  if (!content) return [];
+  const rules: string[] = [];
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    const match = /^[-*]\s+(.+)$/.exec(trimmed);
+    if (match) {
+      const rule = match[1]?.trim() ?? '';
+      if (rule) rules.push(rule);
+    }
+  }
+  return rules;
+}
+
+/**
+ * 安全读取内容文件（相对包根的路径），失败返回空串（内容文件可选）
+ *
+ * @param filePath 绝对路径
+ * @returns 文件内容，读取失败返回空串
+ */
+async function readContentSafe(filePath: string): Promise<string> {
+  try {
+    return await readFile(filePath, 'utf-8');
+  } catch {
+    getLogger().warn({ file: filePath }, '角色包内容文件读取失败，按缺省处理');
+    return '';
+  }
 }
 
 /**
@@ -411,7 +244,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   private stickyLocked = false;
 
   /**
-   * @param configDir 配置目录（角色包文件在 <configDir>/role-packs/ 下）
+   * @param configDir 配置目录（角色包在 <configDir>/role-packs/ 下）
    */
   constructor(configDir?: string) {
     super(configDir, 'role-packs');
@@ -420,10 +253,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── 生命周期 ──────────────────────────────────────
 
   /**
-   * 启动时加载：自建扫描角色包目录
+   * 启动时加载：扫描含 manifest.json 的角色包文件夹
    *
-   * 覆盖基类 loadItems()：基类扫描（scanMarkdownDir）只支持单文件 *.md 且用扁平
-   * frontmatter，无法覆盖文件夹包形态（role-packs/<名>/role-pack.md）与嵌套 YAML。
+   * 覆盖基类 loadItems()：基类扫描只支持单文件 *.md，无法覆盖文件夹包形态。
    * 生命周期（runtime 记账 / deleteItem / 匹配）仍复用基类。
    *
    * @param activePack 要激活的角色包名（可选）
@@ -445,7 +277,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 重载角色包（重新扫描 + 保持激活态）
    *
    * 覆盖基类 reload()：同 load() 原因，基类扫描无法覆盖文件夹包形态。
-   * 角色包无运行时注入（无 register 通道），故不涉及基类 runtime 记账保留逻辑。
    */
   async reload(): Promise<number> {
     const oldActiveName = this.activePackName;
@@ -472,12 +303,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 扫描角色包目录（单文件最小形态 + 文件夹包完整形态）
+   * 扫描角色包目录（仅 manifest.json 文件夹形态）
    *
-   * 双形态（role-pack-spec §二）：
-   *   - `role-packs/*.md` → 单文件最小形态（无资源零依赖装载 L1）
-   *   - `role-packs/<名>/role-pack.md` → 文件夹包完整形态（skills/ references/ 等）
-   * 命名：frontmatter.name 优先，其次文件夹名 / 文件名去 .md。
+   * 每个子目录为一个角色包，须含 manifest.json（核心控制文件）。
+   * 命名：manifest.name 优先，其次文件夹名。
    */
   private async scanRolePacks(): Promise<number> {
     const dir = resolveSubdir(this.configDir, this.subdir);
@@ -500,7 +329,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     try {
       await access(dir);
       entries = (await readdir(dir)).filter(
-        (f) => !f.startsWith('.') && !f.startsWith('_'),
+        (f) => !f.startsWith('.') && !f.startsWith('_') && !EXCLUDED_FILES.has(f),
       );
     } catch {
       getLogger().debug({ dir }, '角色包目录不存在，跳过');
@@ -512,21 +341,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       const fullPath = join(dir, entry);
       try {
         const st = await stat(fullPath);
-        if (st.isDirectory()) {
-          // 文件夹包：找 role-pack.md
-          const packFile = join(fullPath, 'role-pack.md');
-          try {
-            await access(packFile);
-            const pack = await this.parsePackFile(packFile, entry, 'folder');
-            if (pack) map.set(pack.name, pack);
-          } catch {
-            // 文件夹无 role-pack.md：不是角色包，跳过
-          }
-        } else if (entry.endsWith('.md') && !EXCLUDED_FILES.has(entry)) {
-          // 单文件最小形态
-          const pack = await this.parsePackFile(fullPath, basename(entry, '.md'), 'single-file');
-          if (pack) map.set(pack.name, pack);
-        }
+        if (!st.isDirectory()) continue; // 仅文件夹形态
+        const pack = await this.parseManifestPack(fullPath, entry);
+        if (pack) map.set(pack.name, pack);
       } catch (err) {
         getLogger().warn({ entry, err }, '扫描角色包失败');
       }
@@ -535,95 +352,102 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 解析单个角色包文件（嵌套 frontmatter + 章节）
+   * 解析单个角色包（manifest.json + 独立内容文件）
    *
-   * @param filePath role-pack.md 或 <名>.md 的绝对路径
-   * @param fallbackName 无 frontmatter.name 时的兜底名（文件夹名 / 文件名去 .md）
+   * @param packDir 角色包文件夹绝对路径
+   * @param fallbackName 无 manifest.name 时的兜底名（文件夹名）
    * @returns 角色包对象，解析失败返回 null
    */
-  private async parsePackFile(
-    filePath: string,
+  private async parseManifestPack(
+    packDir: string,
     fallbackName: string,
-    form: 'single-file' | 'folder' = 'single-file',
   ): Promise<RolePack | null> {
+    const manifestPath = join(packDir, 'manifest.json');
+
+    // 读取并解析 manifest.json
+    let manifest: Record<string, unknown>;
     try {
-      const raw = await readFile(filePath, 'utf-8');
-      const { frontmatter: fm, body } = parseRolePackFrontmatter(raw);
-
-      // A-2（role-pack-spec §八）：接入格式校验器——校验失败记录 warning，不阻塞装载
-      // 角色包当前处"草案演进期"，打断坏包会破坏现有装载；以 warn 暴露问题待修，
-      // 待标准 v1 冻结后再收紧为"拒绝加载"。
-      const validation = validateRolePack({ frontmatter: fm, body, form });
-      if (!validation.valid) {
-        const errors = validation.issues.filter((i) => i.severity === 'error');
-        getLogger().warn(
-          { file: filePath, errors: errors.map((e) => e.message) },
-          '角色包校验未通过（警告级，暂不拒绝装载）',
-        );
-      }
-
-      // 解析元数据（嵌套 frontmatter：值可能为 string/number/boolean）
-      const str = (v: unknown): string | undefined =>
-        typeof v === 'string' ? v : v === undefined || v === null ? undefined : String(v);
-      const meta: RolePackMeta = {
-        name: str(fm['name']) ?? fallbackName,
-        description: str(fm['description']),
-        version: str(fm['version']),
-        keywords: parseKeywordsAny(fm),
-        author: str(fm['author']),
-        formatVersion: str(fm['formatVersion']) ?? DEFAULT_FORMAT_VERSION,
-        interactionType: fm['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
-        aiIdentityDisclosure: fm['aiIdentityDisclosure'] === false ? false : true,
-        minorProtection: fm['minorProtection'] === undefined ? 'required' : 'required',
-        exclusiveWith: parseExclusiveWith(fm['exclusiveWith']),
-      };
-
-      // 解析结构化章节（L1 内容层）
-      const personaContent = extractSection(body, 'Persona');
-      const rulesSection = extractSection(body, 'Rules');
-      const skillsSection = extractSection(body, 'Skills');
-      const knowledgeSection = extractSection(body, 'Knowledge');
-
-      const rules = parseRules(rulesSection);
-      const skills = parseSkillRefs(skillsSection);
-      const knowledgeRefs = parseKnowledgeRefs(knowledgeSection);
-      // 能力声明：frontmatter.skills 数组优先（新格式），旧 ## Skills 正文引用兜底
-      const capabilities = parseCapabilities(fm['skills']);
-
-      // 策略：嵌套 frontmatter 优先（新格式），点号平铺兼容降级（旧格式 warn）
-      const strategy = parseStrategyNested(fm['strategy']) ?? (() => {
-        const legacy = parseStrategyLegacy(fm as unknown as Record<string, string>);
-        if (legacy) {
-          getLogger().warn(
-            { file: filePath },
-            '角色包使用旧格式点号策略声明，建议迁移为嵌套 YAML（role-pack-spec §二）',
-          );
-        }
-        return legacy;
-      })();
-
-      // 内容正文：优先使用 Persona 章节，无则回退到全量正文
-      const content = personaContent || body.trim();
-
-      return {
-        // ConfigResource 约束字段
-        name: meta.name,
-        keywords: meta.keywords ? [...meta.keywords] : [],
-        content,
-        filePath,
-        // 角色包特有字段
-        meta,
-        personaContent,
-        rules,
-        skills,
-        capabilities,
-        knowledgeRefs,
-        strategy,
-      };
+      manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as Record<string, unknown>;
     } catch (err) {
-      getLogger().warn({ filePath, err }, '解析角色包失败');
+      getLogger().warn({ manifestPath, err }, 'manifest.json 读取或解析失败，跳过该角色包');
       return null;
     }
+
+    // 接入格式校验器——校验失败记录 warning，不阻塞装载（草案演进期宽松容错）
+    const validation = validateManifest(manifest);
+    if (!validation.valid) {
+      const errors = validation.issues.filter((i) => i.severity === 'error');
+      getLogger().warn(
+        { file: manifestPath, errors: errors.map((e) => e.message) },
+        '角色包校验未通过（警告级，暂不拒绝装载）',
+      );
+    }
+
+    // 解析元数据（manifest 唯一权威）
+    const str = (v: unknown): string | undefined =>
+      typeof v === 'string' ? v : v === undefined || v === null ? undefined : String(v);
+    const meta: RolePackMeta = {
+      name: str(manifest['name']) ?? fallbackName,
+      description: str(manifest['description']),
+      version: str(manifest['version']),
+      keywords: parseKeywordsAny(manifest),
+      author: str(manifest['author']),
+      formatVersion: str(manifest['formatVersion']) ?? DEFAULT_FORMAT_VERSION,
+      interactionType: manifest['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
+      aiIdentityDisclosure: manifest['aiIdentityDisclosure'] === false ? false : true,
+      minorProtection: 'required',
+      exclusiveWith: parseExclusiveWith(manifest['exclusiveWith']),
+    };
+
+    // 解析 L2 策略
+    const strategy = parseStrategyNode(manifest['strategy']);
+
+    // 内容路径注册（persona 允许缺省；null = 未声明）
+    const personaPath =
+      typeof manifest['persona'] === 'string' && manifest['persona'].trim() !== ''
+        ? manifest['persona']
+        : null;
+    const rulesPath =
+      typeof manifest['rules'] === 'string' && manifest['rules'].trim() !== ''
+        ? manifest['rules']
+        : null;
+
+    // 装载独立内容文件
+    const personaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';
+    const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
+    const rules = parseRules(rulesContent);
+
+    // 内嵌技能注册（对象数组，支持多个）
+    const skills = parseManifestSkills(manifest['skills']);
+
+    // companion 内容红线（§七 第 5 条）：正文在独立内容文件，由装载方读取后检测
+    if (meta.interactionType === 'companion') {
+      const redline = checkCompanionContentRedline(personaContent + rulesContent);
+      if (redline.length > 0) {
+        getLogger().error(
+          { file: manifestPath, errors: redline.map((i) => i.message) },
+          'companion 角色包触发内容红线，拒绝装载',
+        );
+        return null;
+      }
+    }
+
+    // 内容正文：persona（无 persona 时为空串）
+    const content = personaContent;
+
+    return {
+      // ConfigResource 约束字段
+      name: meta.name,
+      keywords: meta.keywords ? [...meta.keywords] : [],
+      content,
+      filePath: manifestPath,
+      // 角色包特有字段
+      meta,
+      personaContent,
+      rules,
+      skills,
+      strategy,
+    };
   }
 
   // ── 角色包管理 ────────────────────────────────────
@@ -646,10 +470,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /**
    * 获取当前激活角色包的规则列表（Rule→guardrail 桥接用）
-   *
-   * 角色包规则是自然语言指令（如"不得擅自增删原文内容"），
-   * 与 guardrail 系统的 regex 规则格式不同，但纳入同一规则池后
-   * 未来可扩展自然语言规则匹配机制。
    *
    * @returns 规则字符串列表，无激活角色包时返回空数组
    */
@@ -692,12 +512,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    *
    * 粘性语义（状态粘性，非"永不切换"）：
    *   - 首次外部输入（未锁定）：全量关键词匹配，命中即锁定当前会话；
-   *   - 后续外部输入（已锁定）：**不**因无关输入重新全量匹配，仅当输入命中
-   *     与当前激活包互斥（exclusiveWith）的包时才自动切换；
+   *   - 后续外部输入（已锁定）：仅当输入命中与当前激活包互斥（exclusiveWith）
+   *     的包时才自动切换，否则保持当前；
    *   - 显式切换由宿主调用 activate() 完成，不经过本方法。
-   *
-   * 边界：本方法只返回目标包名，由调用方负责 activate() 与 system prompt 刷新。
-   * 非互斥的多角色合并裁决为远期（role-pack-spec §14.2），本期仅支持互斥切换。
    *
    * @param userInput 用户输入文本
    * @returns 需切换到的角色包名，无匹配/无需切换返回 null
@@ -733,8 +550,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /**
    * 判断两个角色包是否互斥（exclusiveWith 双向声明其一即互斥）
    *
-   * 用于粘性锁定后的自动切换裁决：仅互斥包命中才切换，避免无关输入频繁换角色。
-   *
    * @param a 角色包 A 名
    * @param b 角色包 B 名
    * @returns A 与 B 是否互斥
@@ -769,15 +584,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── 基类抽象方法实现 ──────────────────────────────
 
   /**
-   * 基类抽象方法实现（M2.1 起不再被调用）
+   * 基类抽象方法实现（不再被调用）
    *
-   * RolePackManager 覆写了 load()/reload() 使用自建扫描路径（parsePackFile），
+   * RolePackManager 覆写了 load()/reload() 使用自建扫描路径（parseManifestPack），
    * 基类 scanAndBuild() 依赖的 loadItems()/reload() 均被覆写，此方法不可达。
-   * 保留实现以满足抽象约束；若被（未来新增的）基类路径意外调用，显式报错而非静默错误。
+   * 保留实现以满足抽象约束；若被意外调用，显式报错而非静默错误。
    */
-  protected createEntry(_entry: ScannedMarkdownEntry): RolePack {
+  protected createEntry(): RolePack {
     throw new Error(
-      'RolePackManager 使用自建扫描路径（load/reload → parsePackFile），createEntry 不应被调用',
+      'RolePackManager 使用自建扫描路径（load/reload → parseManifestPack），createEntry 不应被调用',
     );
   }
 

@@ -44,10 +44,10 @@ export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 export type { PersonaMode, Persona } from '@/persona/types.js';
-// 角色包（Role Pack）类型：三层结构（L1 内容 + L2 策略 + L3 代码预留）
+// 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
   RolePack, RolePackMeta, RolePackAssembly, RolePackManifest,
-  RolePackSkillRef, RolePackCapability, RolePackKnowledgeRef,
+  RolePackCapability, RolePackManifestSkill, RolePackManifestFile,
   BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
   UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
   ToolCalls, ToolApproval, ToolReadonly, StreamingMode,
@@ -59,9 +59,9 @@ export type {
 export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/types.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
 // 角色包格式校验器（role-pack-spec §八，跨实现一致性，独立于任何实现）
-// validateRolePack = role-pack.md 内容层（单文件全量 / 文件夹 frontmatter 键集 + 章节 + 策略 + skills + 红线注入）
-// validateManifest = manifest.json 元数据层（必填字段 + 版本语义 + 合规分档），与 validateRolePack 构成双文件校验闭环
-export { validateRolePack, validateRolePackText, validateManifest } from '@/role-pack/validator.js';
+// validateManifest = manifest.json 唯一核心控制文件（元数据 + 策略 + 内容路径注册 + skills）
+// checkCompanionContentRedline = companion 内容红线检测（正文在独立内容文件，装载后调用）
+export { validateManifest, validateManifestText, checkCompanionContentRedline } from '@/role-pack/validator.js';
 export type {
   RolePackValidationIssue, RolePackValidationResult, RolePackValidateInput, RolePackIssueSeverity,
 } from '@/role-pack/validator.js';

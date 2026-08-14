@@ -3,26 +3,30 @@
  *
  * 定位：
  *   - **独立于任何实现**：不依赖 RolePackManager / types.ts 的运行时类型，
- *     只吃"解析后的 frontmatter + body"，按 role-pack-spec §五/§七 判定；
+ *     只吃"解析后的 manifest.json 对象"，按 role-pack-spec §五/§七 判定；
  *   - 消费方：角色包作者（CLI/IDE 校验）、各实现的装载前预检；
  *   - 与 rolePackManager 的关系：manager 是 memora 装载实现（宽松容错），
  *     本校验器是标准判定（严格按 spec），二者互补——manager 可先校验再装载。
  *
- * 校验维度（对应 spec §八）：
- *   1. 必填字段：name（唯一标识）
- *   2. 章节存在：L1 必读章节 ## Persona（身份）与 ## Rules（内容红线载体，§七 第 2 条）
- *   3. 键名合法性：顶层已知键 + strategy 各阶段已知键（§六 v1 键集），未知键 warning + 忽略（§五）
- *   4. 版本语义：formatVersion / version 需 semver
- *   5. 合规分档（§七）：interactionType 缺省 tool_assistant；仅显式 companion 时
- *      全量强校验（aiIdentityDisclosure / minorProtection / 虚拟亲密关系红线）
- *   6. 文件夹形态单一真理源（§2.4）：frontmatter 仅允许 strategy + skills，
- *      元数据键出现在 role-pack.md 即报错（拒绝加载）
- *   7. capabilities 格式（§四）：capability 必填且匹配 `域:动作`，description 可选
+ * 角色包统一为**文件夹形态**，manifest.json 是唯一核心控制文件（§2.2）：
+ *   元数据 + L2 策略 + 内容路径注册（persona/rules）+ 内嵌技能注册（skills）。
+ * 内容文件（persona.md / rules.md / skills/*）独立于 manifest，由路径注册装载。
  *
- * 零依赖、纯函数：不 import 任何 node 模块，仅复用同模块的 frontmatter 解析器。
+ * 校验维度（对应 spec §八）：
+ *   1. 必填字段：name / formatVersion（manifest 唯一权威）
+ *   2. 键名合法性：顶层已知键 + strategy 各阶段已知键（§六 v1 键集），未知键 warning + 忽略（§五）
+ *   3. 版本语义：formatVersion / version 需 semver
+ *   4. 合规分档（§七）：interactionType 缺省 tool_assistant；仅显式 companion 时
+ *      全量强校验（aiIdentityDisclosure / minorProtection / 虚拟亲密关系红线）
+ *   5. 内容路径注册：persona / rules 必须为字符串路径或 null（允许缺省）
+ *   6. capabilities 格式（§四）：skills 项可选 capability，声明则须匹配 `域:动作`
+ *
+ * companion 内容红线（§七 第 5 条）不在本校验器内判定——正文在独立的内容文件
+ * （persona.md/rules.md），本校验器为纯函数不读文件；由管理员在装载内容后调用
+ * `checkCompanionContentRedline` 检测（见函数文档）。
+ *
+ * 零依赖、纯函数：不 import 任何 node 模块。
  */
-
-import { parseRolePackFrontmatter } from '@/role-pack/frontmatter.js';
 
 /** 校验严重级别：error=拒绝加载 / warning=可装载但提示 */
 export type RolePackIssueSeverity = 'error' | 'warning';
@@ -45,44 +49,22 @@ export interface RolePackValidationResult {
   issues: readonly RolePackValidationIssue[];
 }
 
-/** 校验输入 */
+/** 校验输入（manifest.json 解析后的对象） */
 export interface RolePackValidateInput {
-  /** 解析后的嵌套 frontmatter（parseRolePackFrontmatter 产物） */
-  frontmatter: Record<string, unknown>;
-  /** frontmatter 之后的 Markdown 正文（含 ## 章节） */
-  body: string;
-  /** 形态：single-file=单文件（frontmatter 即 manifest）/ folder=文件夹包（manifest.json 为唯一权威，§2.4） */
-  form?: 'single-file' | 'folder';
-  /**
-   * 文件夹形态下的合规注入（§七 第 5 条 红线双文件闭环）：
-   * companion 状态在 manifest.json（由 validateManifest 校验），role-pack.md 层无此字段；
-   * 调用方先 validateManifest 取得 interactionType，再经本字段注入 validateRolePack，
-   * 使 role-pack.md 的 body 红线检测生效。单文件形态无需传入（frontmatter 自带）。
-   */
-  manifestInteractionType?: string;
+  /** 解析后的 manifest.json 对象 */
+  manifest: Record<string, unknown>;
 }
 
 // ════════════════════════════════════════════════════════════
 // 规则常量（对齐 role-pack-spec §五/§六/§七）
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（§2.3/§2.4 manifest 字段集 + strategy/skills） */
-const TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
+/** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能） */
+const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
-  'interactionType', 'aiIdentityDisclosure', 'minorProtection',
-  'strategy', 'skills',
-]);
-
-/** 文件夹形态下 role-pack.md frontmatter 允许的键（§2.4 单一真理源，修正 A） */
-const FOLDER_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(['strategy', 'skills']);
-
-/** manifest.json 字段集（§2.4，对齐 Agent Plugins plugin.json；文件夹形态元数据唯一权威） */
-const MANIFEST_KEYS: ReadonlySet<string> = new Set([
-  'name', 'formatVersion', 'version', 'description', 'author', 'homepage',
-  'repository', 'license', 'keywords',
-  'interactionType', 'aiIdentityDisclosure', 'minorProtection',
-  'extensions',
+  'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
+  'strategy', 'skills', 'persona', 'rules',
 ]);
 
 /** 合规 interactionType 枚举（§七 第 3 条） */
@@ -165,79 +147,49 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
 // ════════════════════════════════════════════════════════════
 
 /**
- * 顶层键校验模式：strict-allowed=不允许键集外的键（error）/ warn-unknown=未知键警告并忽略（§五）
- */
-type TopLevelKeyMode = 'strict-allowed' | 'warn-unknown';
-
-/**
- * 校验顶层键合法性
+ * 校验顶层键合法性（未知键 warning + 忽略，§五 键级渐进）
  *
- * 单文件 frontmatter / manifest：未知键 warning + 忽略（§五 键级渐进）；
- * 文件夹形态 role-pack.md frontmatter：仅允许 strategy/skills，其余键 error（§2.4 修正 A）。
- *
- * @param obj 待校验对象（frontmatter 或 manifest）
- * @param knownKeys 已知顶层键集合
- * @param mode 键集外键的处理模式
+ * @param manifest 待校验的 manifest 对象
  * @param issues 收集校验问题
  */
 function validateTopLevelKeys(
-  obj: Record<string, unknown>,
-  knownKeys: ReadonlySet<string>,
-  mode: TopLevelKeyMode,
+  manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
 ): void {
-  for (const key of Object.keys(obj)) {
-    if (knownKeys.has(key)) continue;
-    if (mode === 'strict-allowed') {
-      issues.push({
-        severity: 'error',
-        code: 'METADATA_IN_FRONTMATTER',
-        path: key,
-        message:
-          `文件夹形态下元数据权威在 manifest.json，role-pack.md frontmatter 不允许出现 "${key}"（§2.4 单一真理源）`,
-      });
-    } else {
-      issues.push({
-        severity: 'warning',
-        code: 'UNKNOWN_TOP_LEVEL_KEY',
-        path: key,
-        message: `未知顶层键 "${key}"，忽略（§五 未知键警告并忽略）`,
-      });
-    }
+  for (const key of Object.keys(manifest)) {
+    if (MANIFEST_KEYS.has(key)) continue;
+    issues.push({
+      severity: 'warning',
+      code: 'UNKNOWN_TOP_LEVEL_KEY',
+      path: key,
+      message: `未知顶层键 "${key}"，忽略（§五 未知键警告并忽略）`,
+    });
   }
 }
 
 /**
- * 校验必填字段与版本语义
+ * 校验必填字段与版本语义（manifest 唯一权威）
  *
- * 仅单文件形态执行（frontmatter 即 manifest）；文件夹形态下元数据权威在
- * manifest.json（§2.4），role-pack.md frontmatter 不允许出现元数据键，
- * 由 validateTopLevelKeys 的 METADATA_IN_FRONTMATTER 兜底。
- *
- * @param frontmatter 嵌套 frontmatter
- * @param form 角色包形态
+ * @param manifest 嵌套 manifest 对象
  * @param issues 收集校验问题
  */
 function validateMetaFields(
-  frontmatter: Record<string, unknown>,
-  form: 'single-file' | 'folder',
+  manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
 ): void {
-  if (form === 'folder') return;
-
   // name 必填（唯一标识）
-  const name = frontmatter['name'];
+  const name = manifest['name'];
   if (typeof name !== 'string' || name.trim() === '') {
     issues.push({
       severity: 'error',
       code: 'MISSING_NAME',
       path: 'name',
-      message: '缺少必填字段 name（唯一标识，§2.3）',
+      message: '缺少必填字段 name（唯一标识，§2.2）',
     });
   }
 
   // formatVersion：缺省按 1.0.0（§五），声明则必须 semver
-  const formatVersion = frontmatter['formatVersion'];
+  const formatVersion = manifest['formatVersion'];
   if (
     formatVersion !== undefined &&
     (typeof formatVersion !== 'string' || !SEMVER_PATTERN.test(formatVersion))
@@ -251,7 +203,7 @@ function validateMetaFields(
   }
 
   // version：语义性字段，格式不规范仅提示不阻塞
-  const version = frontmatter['version'];
+  const version = manifest['version'];
   if (
     version !== undefined &&
     (typeof version !== 'string' || !SEMVER_PATTERN.test(version))
@@ -266,29 +218,75 @@ function validateMetaFields(
 }
 
 /**
- * 校验 L1 必读章节存在性
+ * 校验合规元数据字段（§七，分档校验）
  *
- * ## Persona：身份设定（最小兼容面）；## Rules：内容红线载体（§七 第 2 条）。
+ * 标准级可选（缺省 tool_assistant）；仅显式 companion 时全量强校验：
+ *   1. aiIdentityDisclosure 必须为 true（缺失即拒绝）
+ *   2. minorProtection 必须为 required
+ * 正文虚拟亲密关系红线检测另见 checkCompanionContentRedline（归属内容文件层）。
  *
- * @param body Markdown 正文
+ * @param manifest 嵌套 manifest 对象
  * @param issues 收集校验问题
  */
-function validateSections(body: string, issues: RolePackValidationIssue[]): void {
-  if (!/^##\s*Persona\s*$/m.test(body)) {
+function validateComplianceFields(
+  manifest: Record<string, unknown>,
+  issues: RolePackValidationIssue[],
+): void {
+  // interactionType 枚举（缺省 tool_assistant）
+  const interactionType = manifest['interactionType'];
+  if (
+    interactionType !== undefined &&
+    (typeof interactionType !== 'string' || !INTERACTION_TYPES.has(interactionType))
+  ) {
     issues.push({
       severity: 'error',
-      code: 'MISSING_PERSONA',
-      path: 'body',
-      message: '缺少 L1 必读章节 "## Persona"（身份设定，最小兼容面）',
+      code: 'INVALID_INTERACTION_TYPE',
+      path: 'interactionType',
+      message: `interactionType 必须是 tool_assistant | companion（当前：${String(interactionType)}），§七 分档校验`,
     });
   }
-  if (!/^##\s*Rules\s*$/m.test(body)) {
+  const isCompanion = interactionType === 'companion';
+
+  // aiIdentityDisclosure 类型（缺省 true，§七 第 1 条）
+  const disclosure = manifest['aiIdentityDisclosure'];
+  if (disclosure !== undefined && typeof disclosure !== 'boolean') {
     issues.push({
       severity: 'error',
-      code: 'MISSING_RULES',
-      path: 'body',
-      message: '缺少 L1 必读章节 "## Rules"（内容红线载体，§七 第 2 条）',
+      code: 'INVALID_AI_DISCLOSURE',
+      path: 'aiIdentityDisclosure',
+      message: 'aiIdentityDisclosure 应为布尔值（缺省 true）',
     });
+  }
+
+  // minorProtection 取值（§七 第 4 条）
+  const minorProtection = manifest['minorProtection'];
+  if (minorProtection !== undefined && minorProtection !== 'required') {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_MINOR_PROTECTION',
+      path: 'minorProtection',
+      message: `minorProtection 仅支持 required（当前：${String(minorProtection)}），§七 未成年人保护钩子`,
+    });
+  }
+
+  // companion 全量强校验（§七 分档）
+  if (isCompanion) {
+    if (disclosure !== true) {
+      issues.push({
+        severity: 'error',
+        code: 'COMPANION_MISSING_AI_DISCLOSURE',
+        path: 'aiIdentityDisclosure',
+        message: 'companion 角色包必须强制声明 aiIdentityDisclosure: true（§七 第 1 条）',
+      });
+    }
+    if (minorProtection !== 'required') {
+      issues.push({
+        severity: 'error',
+        code: 'COMPANION_MISSING_MINOR_PROTECTION',
+        path: 'minorProtection',
+        message: 'companion 角色包必须声明 minorProtection: required（§七 第 4 条）',
+      });
+    }
   }
 }
 
@@ -298,7 +296,7 @@ function validateSections(body: string, issues: RolePackValidationIssue[]): void
  * 键级渐进（§五）：未知阶段/未知键 warning + 忽略；已知键但取值越界 = error
  * （策略维度是预定义枚举，角色只"选择"不"定义"）。
  *
- * @param strategyNode frontmatter.strategy 节点
+ * @param strategyNode manifest.strategy 节点
  * @param issues 收集校验问题
  */
 function validateStrategy(
@@ -374,14 +372,43 @@ function validateStrategy(
 }
 
 /**
- * 校验 skills 能力声明数组格式（§四）
+ * 校验内容路径注册（persona / rules）
  *
- * capability 必填且匹配 `域:动作`（中立能力命名空间）；description 可选字符串。
+ * 新形态下 persona 允许缺省（§2.2），rules 同样可选。声明值必须为文件路径字符串
+ * （相对包根）；null 表示未声明（合法）。其他类型（数字/对象/布尔）为 error。
  *
- * @param skillsNode frontmatter.skills 节点
+ * @param manifest 嵌套 manifest 对象
  * @param issues 收集校验问题
  */
-function validateCapabilities(
+function validateContentPaths(
+  manifest: Record<string, unknown>,
+  issues: RolePackValidationIssue[],
+): void {
+  for (const key of ['persona', 'rules'] as const) {
+    const value = manifest[key];
+    if (value === undefined || value === null) continue; // 未声明/显式 null：合法缺省
+    if (typeof value !== 'string' || value.trim() === '') {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_CONTENT_PATH',
+        path: key,
+        message: `${key} 必须为文件路径字符串（相对角色包根，声明则为必填；未声明或 null 表示缺省）`,
+      });
+    }
+  }
+}
+
+/**
+ * 校验 skills 注册（manifest.skills 对象数组，§4）
+ *
+ * 新形态下 skills 以**对象数组**注册，支持多个添加。每项结构：
+ *   `{ file: string（必填）, name?: string, description?: string, capability?: string }`
+ * capability 可选；声明则须匹配 `域:动作`（中立能力命名空间）。
+ *
+ * @param skillsNode manifest.skills 节点
+ * @param issues 收集校验问题
+ */
+function validateManifestSkills(
   skillsNode: unknown,
   issues: RolePackValidationIssue[],
 ): void {
@@ -391,7 +418,7 @@ function validateCapabilities(
       severity: 'error',
       code: 'SKILLS_NOT_ARRAY',
       path: 'skills',
-      message: 'skills 必须是能力声明数组（§四）',
+      message: 'skills 必须是对象数组（每项 { file, name?, description?, capability? }，§4）',
     });
     return;
   }
@@ -401,14 +428,41 @@ function validateCapabilities(
     if (typeof item !== 'object' || item === null) {
       issues.push({
         severity: 'error',
-        code: 'INVALID_CAPABILITY',
+        code: 'INVALID_MANIFEST_SKILL',
         path: itemPath,
         message: `skills[${index}] 必须是对象`,
       });
       return;
     }
     const record = item as Record<string, unknown>;
+
+    // file 必填（技能文件路径或已注册技能名）
+    const file = record['file'];
+    if (typeof file !== 'string' || file.trim() === '') {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_MANIFEST_SKILL',
+        path: `${itemPath}.file`,
+        message: `skills[${index}].file 必填：技能文件路径（相对包根）或已注册技能名`,
+      });
+    }
+
+    // name / description 可选字符串
+    for (const optKey of ['name', 'description'] as const) {
+      const opt = record[optKey];
+      if (opt !== undefined && typeof opt !== 'string') {
+        issues.push({
+          severity: 'warning',
+          code: 'INVALID_MANIFEST_SKILL',
+          path: `${itemPath}.${optKey}`,
+          message: `skills[${index}].${optKey} 应为字符串（可选）`,
+        });
+      }
+    }
+
+    // capability 可选，声明则须匹配 `域:动作`
     const capability = record['capability'];
+    if (capability === undefined) return;
     if (typeof capability !== 'string' || !CAPABILITY_PATTERN.test(capability)) {
       issues.push({
         severity: 'error',
@@ -418,121 +472,7 @@ function validateCapabilities(
           `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}（§四）`,
       });
     }
-    const description = record['description'];
-    if (description !== undefined && typeof description !== 'string') {
-      issues.push({
-        severity: 'warning',
-        code: 'INVALID_CAPABILITY_DESCRIPTION',
-        path: `${itemPath}.description`,
-        message: 'description 应为字符串（可选）',
-      });
-    }
   });
-}
-
-/**
- * 校验合规元数据字段（§七，分档校验）
- *
- * 仅在"frontmatter 即 manifest"的场景执行（单文件形态 / validateManifest）；
- * 文件夹形态下合规字段归属 manifest.json（§2.4 单一真理源），role-pack.md 层
- * 不检查——frontmatter 中即使出现合规键，也会被 METADATA_IN_FRONTMATTER 拒绝。
- * 标准级可选（缺省 tool_assistant）；仅显式 companion 时全量强校验：
- *   1. aiIdentityDisclosure 必须为 true（缺失即拒绝）
- *   2. minorProtection 必须为 required
- * （正文虚拟亲密关系红线检测另见 validateIntimateRedline，归属 role-pack.md 层）
- *
- * @param frontmatter 嵌套 frontmatter（或 manifest 对象）
- * @param issues 收集校验问题
- */
-function validateComplianceFields(
-  frontmatter: Record<string, unknown>,
-  issues: RolePackValidationIssue[],
-): void {
-  // interactionType 枚举（缺省 tool_assistant）
-  const interactionType = frontmatter['interactionType'];
-  if (
-    interactionType !== undefined &&
-    (typeof interactionType !== 'string' || !INTERACTION_TYPES.has(interactionType))
-  ) {
-    issues.push({
-      severity: 'error',
-      code: 'INVALID_INTERACTION_TYPE',
-      path: 'interactionType',
-      message: `interactionType 必须是 tool_assistant | companion（当前：${String(interactionType)}），§七 分档校验`,
-    });
-  }
-  const isCompanion = interactionType === 'companion';
-
-  // aiIdentityDisclosure 类型（缺省 true，§七 第 1 条）
-  const disclosure = frontmatter['aiIdentityDisclosure'];
-  if (disclosure !== undefined && typeof disclosure !== 'boolean') {
-    issues.push({
-      severity: 'error',
-      code: 'INVALID_AI_DISCLOSURE',
-      path: 'aiIdentityDisclosure',
-      message: 'aiIdentityDisclosure 应为布尔值（缺省 true）',
-    });
-  }
-
-  // minorProtection 取值（§七 第 4 条）
-  const minorProtection = frontmatter['minorProtection'];
-  if (minorProtection !== undefined && minorProtection !== 'required') {
-    issues.push({
-      severity: 'error',
-      code: 'INVALID_MINOR_PROTECTION',
-      path: 'minorProtection',
-      message: `minorProtection 仅支持 required（当前：${String(minorProtection)}），§七 未成年人保护钩子`,
-    });
-  }
-
-  // companion 全量强校验（§七 分档）
-  if (isCompanion) {
-    if (disclosure !== true) {
-      issues.push({
-        severity: 'error',
-        code: 'COMPANION_MISSING_AI_DISCLOSURE',
-        path: 'aiIdentityDisclosure',
-        message: 'companion 角色包必须强制声明 aiIdentityDisclosure: true（§七 第 1 条）',
-      });
-    }
-    if (minorProtection !== 'required') {
-      issues.push({
-        severity: 'error',
-        code: 'COMPANION_MISSING_MINOR_PROTECTION',
-        path: 'minorProtection',
-        message: 'companion 角色包必须声明 minorProtection: required（§七 第 4 条）',
-      });
-    }
-  }
-}
-
-/**
- * companion 虚拟亲密关系红线检测（§七 第 5 条）
- *
- * 红线特征在正文（body）里，归属 role-pack.md 层：
- *   - 单文件形态：companion 状态来自 frontmatter，本函数直接判定；
- *   - 文件夹形态：companion 状态在 manifest.json，由调用方经
- *     RolePackValidateInput.manifestInteractionType 注入后，本函数对
- *     role-pack.md 的 body 执行——两文件组合才构成完整合规闭环。
- *
- * @param isCompanion 是否为 companion 角色包
- * @param body Markdown 正文
- * @param issues 收集校验问题
- */
-function validateIntimateRedline(
-  isCompanion: boolean,
-  body: string,
-  issues: RolePackValidationIssue[],
-): void {
-  if (!isCompanion) return;
-  if (INTIMATE_REDLINE_PATTERN.test(body)) {
-    issues.push({
-      severity: 'error',
-      code: 'COMPANION_INTIMATE_REDLINE',
-      path: 'body',
-      message: 'companion 角色包不得携带虚拟亲属/虚拟伴侣特征（内容红线，§七 第 5 条）',
-    });
-  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -540,82 +480,76 @@ function validateIntimateRedline(
 // ════════════════════════════════════════════════════════════
 
 /**
- * 校验解析后的角色包（frontmatter + body）
+ * 校验 manifest.json（角色包文件夹形态唯一核心控制文件，§2.2）
  *
- * @param input 校验输入
- * @returns 校验结果（valid = 无 error；warning 提示但不阻塞装载）
- */
-export function validateRolePack(input: RolePackValidateInput): RolePackValidationResult {
-  const { frontmatter, body, form = 'single-file' } = input;
-  const issues: RolePackValidationIssue[] = [];
-
-  // 文件夹形态：role-pack.md frontmatter 键集严格限定（§2.4 单一真理源）；
-  // 单文件形态：未知顶层键警告忽略（§五 键级渐进）
-  validateTopLevelKeys(
-    frontmatter,
-    form === 'folder' ? FOLDER_FRONTMATTER_KEYS : TOP_LEVEL_KEYS,
-    form === 'folder' ? 'strict-allowed' : 'warn-unknown',
-    issues,
-  );
-  validateMetaFields(frontmatter, form, issues);
-  validateSections(body, issues);
-  validateStrategy(frontmatter['strategy'], issues);
-  validateCapabilities(frontmatter['skills'], issues);
-  // 合规分档（§七）：单文件形态下 frontmatter 即 manifest，全量字段校验；
-  // 文件夹形态下合规字段归属 manifest.json（validateManifest 负责），本层仅做
-  // 红线检测——companion 状态由 manifest 经 manifestInteractionType 注入（双文件闭环）
-  if (form !== 'folder') {
-    validateComplianceFields(frontmatter, issues);
-  }
-  const isCompanion =
-    (input.manifestInteractionType ?? frontmatter['interactionType']) === 'companion';
-  validateIntimateRedline(isCompanion, body, issues);
-
-  return { valid: issues.every((i) => i.severity !== 'error'), issues };
-}
-
-/**
- * 校验 manifest.json（文件夹形态元数据唯一权威，§2.4）
- *
- * 与 validateRolePack 的分工构成双文件校验闭环：
- *   - validateManifest = manifest.json 元数据层：必填字段（name/formatVersion）、
- *     版本语义、合规分档（§七 interactionType/disclosure/minorProtection + companion 强校验）；
- *   - validateRolePack(folder) = role-pack.md 内容层：strategy/skills/章节/frontmatter 键集；
- *   - 跨文件组合：validateManifest 判定 companion 状态后，经
- *     RolePackValidateInput.manifestInteractionType 注入 validateRolePack，
- *     完成 role-pack.md 正文的红线检测——单文件形态由 validateRolePack 一票全包。
- *
- * 复用说明：manifest 即"单文件形态下的 frontmatter"（§2.4 manifest 双形态同构），
- * 因此复用 validateMetaFields / validateComplianceFields 的单文件分支；manifest
- * 层无正文，红线检测天然不适用（归属 role-pack.md 层）。
+ * 校验维度：必填字段（name/formatVersion）、版本语义、合规分档（§七）、
+ * L2 策略键（§六）、内容路径注册、skills 注册格式（§4）。
+ * 未知键 / 未知策略键 warning + 忽略（§五 键级渐进）。
  *
  * @param manifest 解析后的 manifest.json 对象
  * @returns 校验结果（valid = 无 error；warning 提示但不阻塞装载）
  */
-export function validateManifest(manifest: Record<string, unknown>): RolePackValidationResult {
+export function validateManifest(
+  manifest: Record<string, unknown>,
+): RolePackValidationResult {
   const issues: RolePackValidationIssue[] = [];
 
-  // 未知键 warning + 忽略（§五 键级渐进；manifest 键集 §2.4）
-  validateTopLevelKeys(manifest, MANIFEST_KEYS, 'warn-unknown', issues);
-  // 必填字段与版本语义：name 必填 / formatVersion 必填且 semver / version 建议 semver
-  validateMetaFields(manifest, 'single-file', issues);
-  // 合规分档（§七）：interactionType 枚举（缺省 tool_assistant）+ companion 全量强校验
+  validateTopLevelKeys(manifest, issues);
+  validateMetaFields(manifest, issues);
   validateComplianceFields(manifest, issues);
+  validateStrategy(manifest['strategy'], issues);
+  validateContentPaths(manifest, issues);
+  validateManifestSkills(manifest['skills'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }
 
 /**
- * 校验原始 role-pack.md 文本（便捷入口，内部复用 frontmatter 解析器）
+ * 便捷入口：校验原始 manifest.json 文本
  *
- * @param raw 完整 markdown 文本（含 --- frontmatter）
- * @param form 角色包形态（默认 single-file）
+ * @param raw manifest.json 原始文本
  * @returns 校验结果
  */
-export function validateRolePackText(
-  raw: string,
-  form: 'single-file' | 'folder' = 'single-file',
-): RolePackValidationResult {
-  const { frontmatter, body } = parseRolePackFrontmatter(raw);
-  return validateRolePack({ frontmatter, body, form });
+export function validateManifestText(raw: string): RolePackValidationResult {
+  try {
+    const manifest = JSON.parse(raw) as Record<string, unknown>;
+    return validateManifest(manifest);
+  } catch {
+    return {
+      valid: false,
+      issues: [
+        {
+          severity: 'error',
+          code: 'INVALID_JSON',
+          path: 'manifest',
+          message: 'manifest.json 不是合法的 JSON',
+        },
+      ],
+    };
+  }
+}
+
+/**
+ * 校验 companion 角色包内容红线段（§七 第 5 条）
+ *
+ * 正文在独立内容文件（persona.md/rules.md），本校验器为纯函数不读文件，
+ * 故红线检测由装载方在读取内容后调用本函数。仅 companion 角色包需执行；
+ * tool_assistant 豁免（§七 分档）。
+ *
+ * @param content 已读取的 persona + rules 拼接内容
+ * @returns 红线违规问题列表（无违规返回空数组）
+ */
+export function checkCompanionContentRedline(content: string): RolePackValidationIssue[] {
+  if (!content) return [];
+  if (INTIMATE_REDLINE_PATTERN.test(content)) {
+    return [
+      {
+        severity: 'error',
+        code: 'COMPANION_INTIMATE_REDLINE',
+        path: 'persona',
+        message: 'companion 角色包不得携带虚拟亲属/虚拟伴侣特征（内容红线，§七 第 5 条）',
+      },
+    ];
+  }
+  return [];
 }

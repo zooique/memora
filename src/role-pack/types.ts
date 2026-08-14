@@ -224,27 +224,11 @@ export interface BehaviorStrategy {
 // ════════════════════════════════════════════════════════════
 
 /**
- * 技能引用（角色包中的 skill 段）
- *
- * 角色包不内嵌技能内容，而是引用已注册的技能名称。
- * 运行时由装配层解析引用，从 SkillManager 获取实际内容。
- */
-export interface RolePackSkillRef {
-  /** 技能名称（对应 SkillManager 中的技能名） */
-  readonly name: string;
-  /**
-   * 可选：角色包中的上下文补充
-   * 不覆盖技能内容，仅补充角色上下文（如"以工程师视角使用此技能"）
-   */
-  readonly contextHint?: string;
-}
-
-/**
- * 能力声明（frontmatter.skills 数组项，新格式）
+ * 能力声明（manifest.skills 中带 capability 的项派生）
  *
  * 对齐 role-pack-spec §四：以中立能力命名空间声明（`file:write` / `web:search`），
- * 由各实现映射到自有工具；不绑具体实现。与 RolePackSkillRef（旧 ## Skills 正文
- * 引用已注册技能）并存：frontmatter.skills 优先，旧正文引用兼容解析。
+ * 由各实现映射到自有工具；不绑具体实现（见 capabilityMap.ts SSOT 映射表）。
+ * 由 RolePackManager 从 manifest.skills 中筛选出声明了 capability 的项派生。
  */
 export interface RolePackCapability {
   /** 中立能力名（如 `file:write` / `web:search` / `llm:summarize`） */
@@ -254,21 +238,7 @@ export interface RolePackCapability {
 }
 
 /**
- * 知识引用（角色包中的知识引用段）
- *
- * 角色包可声明外部知识来源，按需召回。
- */
-export interface RolePackKnowledgeRef {
-  /** 引用类型：path=文件路径 / memory=记忆标识 */
-  readonly type: 'path' | 'memory';
-  /** 引用目标 */
-  readonly target: string;
-  /** 可选描述 */
-  readonly description?: string;
-}
-
-/**
- * 角色包元数据（frontmatter 解析结果）
+ * 角色包元数据（manifest.json 解析结果）
  *
  * 用于匹配、传播、版本管理。
  */
@@ -315,6 +285,10 @@ export interface RolePackMeta {
  * 设计文档第十三章定义的三层结构，当前实现 L1 + L2。
  * L3 代码层为远期预留，当前不设计。
  *
+ * 装载形状：从角色包文件夹的 manifest.json（核心控制文件）+ 独立内容文件
+ * （persona.md / rules.md / skills/*）装配而成。manifest 是元数据与策略的唯一权威，
+ * 内容文件按路径注册装载，用户可独立移植内容文档，也可整体装载角色包。
+ *
  * 实现 ConfigResource 约束（name/keywords/content/filePath）：
  * name 和 keywords 从 meta 派生，content 从 personaContent 派生，
  * 满足基类关键词匹配和 lifecycle 的需求。
@@ -326,41 +300,31 @@ export interface RolePack {
   readonly keywords: string[];
   /** 内容正文（派生自 personaContent，满足 ConfigResource 约束） */
   readonly content: string;
-  /** 来源文件路径（满足 ConfigResource 约束） */
+  /** 来源文件路径（manifest.json 绝对路径，满足 ConfigResource 约束） */
   readonly filePath: string;
 
-  /** 角色包元数据（frontmatter） */
+  /** 角色包元数据（manifest.json） */
   readonly meta: RolePackMeta;
 
-  // ── L1 内容层 ──
+  // ── L1 内容层（独立内容文件装载） ──
 
-  /** 角色身份设定正文（对应当前 Persona 的 content 字段） */
+  /** 角色身份设定正文（来自 persona.md；persona 允许缺省，此时为空串） */
   readonly personaContent: string;
   /**
-   * 确定性规则列表
+   * 确定性规则列表（来自 rules.md，逐行解析）
    * 安全规则，装载时全量注入，不可丢失
    */
   readonly rules: readonly string[];
   /**
-   * 技能引用列表
-   * 运行时按输入匹配激活，通过 SkillManager 解析
+   * 内嵌技能注册（manifest.skills 对象数组，支持多个添加）
+   * 每个对象引用包内技能文件（file 路径），可选声明 name/description/capability
    */
-  readonly skills: readonly RolePackSkillRef[];
-  /**
-   * 能力声明列表（frontmatter.skills，新格式）
-   * 中立能力命名空间，由实现映射到自有工具
-   */
-  readonly capabilities: readonly RolePackCapability[];
-  /**
-   * 知识引用列表
-   * 外部资料引用，按需召回
-   */
-  readonly knowledgeRefs: readonly RolePackKnowledgeRef[];
+  readonly skills: readonly RolePackManifestSkill[];
 
   // ── L2 策略层 ──
 
   /**
-   * 行为策略声明
+   * 行为策略声明（manifest.strategy）
    * 未配置的维度使用全局默认值。角色包可以只声明它想改变的部分。
    */
   readonly strategy?: BehaviorStrategy;
@@ -374,19 +338,18 @@ export interface RolePack {
  * 角色包装载结果
  *
  * 装配层将角色包解析为可直接注入 system prompt 的片段。
- * 与原始 RolePack 的区别：strategy 字段已合并默认值成为完整策略。
+ * 与原始 RolePack 的区别：strategy 字段已合并默认值成为完整策略，
+ * capabilities 已从 skills 中派生为能力声明列表。
  */
 export interface RolePackAssembly {
   /** 角色包元数据 */
   readonly meta: RolePackMeta;
-  /** 合并后的 persona prompt（含规则注入） */
+  /** 合并后的 persona prompt（含规则注入与主动提问指令） */
   readonly personaPrompt: string;
-  /** 解析后的技能引用列表（已去重） */
-  readonly resolvedSkills: readonly RolePackSkillRef[];
-  /** 能力声明列表（新格式，与 resolvedSkills 并存） */
+  /** 内嵌技能注册（manifest.skills，对象数组，支持多个） */
+  readonly skills: readonly RolePackManifestSkill[];
+  /** 能力声明列表（由 skills 中声明了 capability 的项派生） */
   readonly capabilities: readonly RolePackCapability[];
-  /** 知识引用列表 */
-  readonly knowledgeRefs: readonly RolePackKnowledgeRef[];
   /**
    * 完整行为策略（已合并默认值）
    * 与 RolePack.strategy 不同，此字段所有维度都有值（未声明的维度使用默认值）。
@@ -407,6 +370,51 @@ export interface RolePackManifest {
   readonly available: readonly RolePackAssembly[];
   /** 当前装载的卡槽数量（M2 多卡槽预留） */
   readonly slotCount: number;
+}
+
+// ════════════════════════════════════════════════════════════
+// manifest.json 内容注册（文件夹形态核心控制文件）
+// ════════════════════════════════════════════════════════════
+
+/**
+ * manifest.json 中注册的技能对象（角色包文件夹形态 §2.2）
+ *
+ * 新形态下 skills 以**对象数组**注册，支持多个添加。每个对象引用包内技能文件
+ * （相对包根的路径）或已注册技能名，并可选携带中立能力声明（capability）与说明。
+ * 与旧 `RolePackSkillRef`（仅 name+contextHint）的关系：本类型是 manifest 层的
+ * 注册形状，装载时由 RolePackManager 转译为 RolePackSkillRef / RolePackCapability。
+ */
+export interface RolePackManifestSkill {
+  /** 技能文件路径（相对角色包文件夹根）或已注册技能名 */
+  readonly file: string;
+  /** 技能名（可选，缺省取文件名去扩展名） */
+  readonly name?: string;
+  /** 技能说明（可选，供 LLM 与校验器理解） */
+  readonly description?: string;
+  /** 可选：中立能力声明（capability: '域:动作'，§四，如 file:write） */
+  readonly capability?: string;
+}
+
+/**
+ * manifest.json 解析结果（文件夹形态核心控制文件）
+ *
+ * manifest 是文件夹形态角色包的**唯一权威**（单一真理源）：承载元数据 + L2 策略 +
+ * 内容路径注册。内容文件（persona.md / rules.md / skills/*）独立于 manifest，
+ * 由 manifest 按路径注册装载——用户既可独立移植这些文档，也可整体装载角色包。
+ *
+ * persona 允许缺省（角色包可无身份设定，仅靠策略驱动行为）。
+ */
+export interface RolePackManifestFile {
+  /** 元数据（名称 / 版本 / 关键词 / 合规字段等） */
+  readonly meta: RolePackMeta;
+  /** 行为策略声明（L2，未配置维度由 mergeStrategy 补默认值） */
+  readonly strategy?: BehaviorStrategy;
+  /** persona 文件路径（相对包根；null = 未声明，persona 允许缺省） */
+  readonly persona: string | null;
+  /** rules 文件路径（相对包根；null = 未声明） */
+  readonly rules: string | null;
+  /** 内嵌技能注册（对象数组，支持多个添加） */
+  readonly skills: readonly RolePackManifestSkill[];
 }
 
 // ════════════════════════════════════════════════════════════
@@ -616,30 +624,16 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
 
   const personaPrompt = promptParts.join('\n\n');
 
+  // 能力声明：由 manifest.skills 中声明了 capability 的项派生（未声明能力 → 全部暴露）
+  const capabilities: RolePackCapability[] = pack.skills
+    .filter((s) => s.capability)
+    .map((s) => ({ capability: s.capability!, description: s.description }));
+
   return {
     meta: pack.meta,
     personaPrompt,
-    resolvedSkills: pack.skills,
-    capabilities: pack.capabilities,
-    knowledgeRefs: pack.knowledgeRefs,
+    skills: pack.skills,
+    capabilities,
     strategy,
   };
-}
-
-// ════════════════════════════════════════════════════════════
-// L3 代码层预留（远期）
-// ════════════════════════════════════════════════════════════
-
-/**
- * 自定义钩子（L3 代码层预留）
- *
- * 远期设计：允许角色包携带自定义逻辑，如预处理钩子、后处理钩子。
- * 当前不实现，仅定义接口形状以预留生长点。
- * 实现时需沙箱隔离（如 vm2/isolated-vm）防恶意代码。
- */
-export interface RolePackHooks {
-  /** 回答前钩子：可修改装配后的上下文 */
-  beforePrepare?: (context: unknown) => unknown;
-  /** 回答后钩子：可修改提炼结果 */
-  afterReflect?: (result: unknown) => unknown;
 }
