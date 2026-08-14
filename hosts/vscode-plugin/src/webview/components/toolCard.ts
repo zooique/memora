@@ -25,18 +25,29 @@ export interface ToolCardApi {
 }
 
 // 折叠/展开事件委托：模块级闭包防重复注册，延迟到首次 show 时执行（避免 extension
-// 端 import 触发 DOM 副作用）
+// 端 import 触发 DOM 副作用）。document 从调用方传入的 container 派生（ownerDocument），
+// 消除模块级全局 document 引用，与 chatView 依赖注入的环境隔离策略统一（对抗评估 P2-4）。
 let delegated = false;
-function ensureDelegated(): void {
+function ensureDelegated(container: HTMLElement): void {
   if (delegated) return;
   delegated = true;
-  document.addEventListener('click', (e) => {
+  const doc = container.ownerDocument;
+  doc.addEventListener('click', (e) => {
     const target = e.target as HTMLElement | null;
     const header = target?.closest ? target.closest('.tool-card__header') : null;
     if (header) {
       header.closest('.tool-card')?.classList.toggle('is-collapsed');
       e.stopPropagation();
     }
+  });
+}
+
+/** 滚动容器到底部（rAF 节流）：与 chatView 的 scrollToBottom 同一策略，
+ *  避免逐卡插入时同步写 scrollTop 强制 reflow（对抗评估 P2-5）。
+ *  window 从容器 ownerDocument 派生，不引入全局引用。 */
+function scrollContainerToBottom(container: HTMLElement): void {
+  container.ownerDocument.defaultView?.requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
   });
 }
 
@@ -52,24 +63,26 @@ function findCard(container: HTMLElement, id: string): HTMLElement | null {
 
 /** 渲染「执行中」工具卡片（默认折叠标题行，减少视觉干扰） */
 function show(container: HTMLElement, id: string, name: string, args?: string): void {
-  ensureDelegated();
-  const card = document.createElement('div');
+  ensureDelegated(container);
+  // 从容器派生 document：新建卡片与调用方同一文档上下文，消除全局 document 引用（P2-4）
+  const doc = container.ownerDocument;
+  const card = doc.createElement('div');
   card.className = 'tool-card is-running';
   card.setAttribute('data-tool-call-id', id);
 
-  const header = document.createElement('button');
+  const header = doc.createElement('button');
   header.type = 'button';
   header.className = 'tool-card__header';
-  const chevron = document.createElement('span');
+  const chevron = doc.createElement('span');
   chevron.className = 'tool-card__chevron';
   chevron.textContent = '▾';
-  const nameSpan = document.createElement('span');
+  const nameSpan = doc.createElement('span');
   nameSpan.className = 'tool-card__name';
   nameSpan.textContent = getToolDisplayName(name);
   nameSpan.title = name;
-  const spinner = document.createElement('span');
+  const spinner = doc.createElement('span');
   spinner.className = 'tool-card__spinner';
-  const status = document.createElement('span');
+  const status = doc.createElement('span');
   status.className = 'tool-card__status';
   status.textContent = '执行中…';
   header.appendChild(chevron);
@@ -79,13 +92,13 @@ function show(container: HTMLElement, id: string, name: string, args?: string): 
   card.appendChild(header);
 
   if (args) {
-    const argsDiv = document.createElement('div');
+    const argsDiv = doc.createElement('div');
     argsDiv.className = 'tool-card__args';
     argsDiv.textContent = args;
     card.appendChild(argsDiv);
   }
   container.appendChild(card);
-  container.scrollTop = container.scrollHeight;
+  scrollContainerToBottom(container);
 }
 
 /** 更新工具卡片状态：成功/失败 + 结果摘要；完成后自动折叠 */

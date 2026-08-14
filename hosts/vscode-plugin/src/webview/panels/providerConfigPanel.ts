@@ -117,11 +117,9 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
 
   /** 加载 Provider 列表并推送给 webview */
   private async load(): Promise<void> {
-    const [providers, activeName] = await Promise.all([
-      this.store.listMasked(),
-      Promise.resolve(this.store.getActiveName()),
-    ]);
-    this.post({ type: 'cfg_loaded', providers, activeName });
+    // getActiveName 为同步读取，无需 Promise 包装（对抗评估 P2-7a）
+    const providers = await this.store.listMasked();
+    this.post({ type: 'cfg_loaded', providers, activeName: this.store.getActiveName() });
   }
 
   /** 向 webview 发送消息 */

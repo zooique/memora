@@ -128,7 +128,13 @@ export function createConfigView({ acquireVsCodeApi, window }: ConfigViewDeps): 
   function render(data: ProvidersPayload): void {
     if (!data.providers || data.providers.length === 0) {
       currentProviders = [];
-      list.innerHTML = '<p class="hint">暂未配置任何 API，点击右上角「添加 API」。</p>';
+      // 空态提示：与下方卡片一样用 createElement + textContent 构建（对抗评估 P2-7b），
+      // 统一 DOM 构建模式，避免 innerHTML/createElement 双轨混用
+      list.textContent = '';
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = '暂未配置任何 API，点击右上角「添加 API」。';
+      list.appendChild(hint);
       return;
     }
     activeName = data.activeName;

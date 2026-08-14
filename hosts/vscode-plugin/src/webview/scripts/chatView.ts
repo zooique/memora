@@ -281,7 +281,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       clarifyInput.focus();
     } else if (msg.type === 'memory') {
       if (msg.action === 'recalled') showMemory('已召回 ' + msg.count + ' 条记忆');
-      else if (msg.action === 'added') showMemory('已沉淀 1 条记忆');
+      else if (msg.action === 'added') {
+        // 利用协议已携带的 detail.name 展示具体沉淀项（对抗评估 P2-6），
+        // 避免数据跨进程传输后在 UI 层被丢弃；无 name 时回退通用文案
+        showMemory('已沉淀：' + (msg.detail?.name || '1 条记忆'));
+      }
     } else if (msg.type === 'tool_start') {
       ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
     } else if (msg.type === 'tool_result') {
