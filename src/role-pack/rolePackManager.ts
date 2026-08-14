@@ -325,22 +325,30 @@ function parseCapabilities(skillsNode: unknown): RolePackCapability[] {
  * 从嵌套 frontmatter 解析 keywords（兼容数组与逗号字符串两种写法）
  *
  * 新格式：`keywords: [写作, 小说]`（数组）；旧格式：`keywords: 写作, 小说`（逗号串）。
+ * 同时合并 `trigger` 数组（role-pack-spec §二/§三 字段）：
+ *   仅声明 trigger 的角色包也能被自动匹配命中——匹配词只有一个来源 keywords，
+ *   触发词统一汇入 keywords（单一真理源，见 types.ts RolePackMeta.trigger 注释）。
  *
  * @param fm 嵌套 frontmatter
- * @returns 关键词数组
+ * @returns 关键词数组（keywords ∪ trigger，去重）
  */
 function parseKeywordsAny(fm: Record<string, unknown>): string[] | undefined {
-  const raw = fm['keywords'];
-  if (Array.isArray(raw)) {
-    return raw.map((k) => String(k)).filter(Boolean);
-  }
-  if (typeof raw === 'string') {
-    return raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  return undefined;
+  // 解析单个字段：数组原样、逗号串拆分、其余返回 undefined
+  const parseField = (key: string): string[] | undefined => {
+    const raw = fm[key];
+    if (Array.isArray(raw)) {
+      return raw.map((k) => String(k)).filter(Boolean);
+    }
+    if (typeof raw === 'string') {
+      return raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return undefined;
+  };
+  // keywords 与 trigger 合并去重，保证匹配词唯一来源
+  return [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
 }
 
 /**

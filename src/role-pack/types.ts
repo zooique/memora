@@ -286,6 +286,14 @@ export interface RolePackMeta {
   readonly version?: string;
   /** 触发关键词（用于自动匹配） */
   readonly keywords?: readonly string[];
+  /**
+   * 触发词（role-pack-spec §二/§三 字段）
+   *
+   * 与 keywords 语义互补：解析时合并进匹配词，保证仅声明 trigger 的角色包
+   * 也能被自动匹配命中（单一真理源：匹配词只有一个来源 keywords）。
+   * 本字段保留 spec 原始值供展示/校验，消费方统一读 keywords。
+   */
+  readonly trigger?: readonly string[];
   /** 可选：作者/来源 */
   readonly author?: string;
   /** 格式版本（role-pack-spec §五：schema URL 锚定，缺省按 1.0.0 处理） */
