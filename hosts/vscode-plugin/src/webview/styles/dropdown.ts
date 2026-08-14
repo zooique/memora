@@ -91,4 +91,10 @@ export const dropdownStyles = `
     max-width: min(var(--dd-menu-max-w, 240px), calc(100vw - 32px));
     max-height: 260px; overflow-y: auto;
   }
+  /* 自动翻转（SSOT 排雷 P1-2）：触发器贴近容器顶缘时向上放不下，由 applyDropDirection
+   * 加 .treedd--drop-down 切换为向下弹出，避免菜单溢出面板顶部被裁切。 */
+  .treedd--capsule.treedd--drop-down .treedd__menu {
+    top: calc(100% + var(--sp-2, 6px));
+    bottom: auto;
+  }
 `;

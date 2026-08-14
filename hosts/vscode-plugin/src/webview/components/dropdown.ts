@@ -52,6 +52,28 @@ export function buildDropdownHtml(items: DropdownItem[], opts?: { extraClass?: s
 function setDropdownOpen(el: HTMLElement, open: boolean): void {
   el.classList.toggle('is-open', open);
   el.querySelector('.treedd__trigger')?.setAttribute('aria-expanded', String(open));
+  if (open) applyDropDirection(el);
+}
+
+/**
+ * 自动翻转弹出方向（SSOT 排雷 P1-2）：胶囊变体默认向上弹出，但当触发器贴近容器
+ * 顶缘（如 toolbar 里的历史选择器）时向上会溢出被裁。以「菜单不溢出视口」为通用
+ * 规则，打开时测量可用空间决定方向——而非按容器位置场景化配置方向。
+ *
+ * 复用 .treedd--drop-down 类让 CSS 改为向下弹出（默认 .treedd__menu 本就是向下，
+ * capule 向上是特例，故翻转仅需覆盖 capsule 的 bottom 定位）。
+ *
+ * @param el 下拉容器（.treedd）
+ */
+function applyDropDirection(el: HTMLElement): void {
+  const trigger = el.querySelector<HTMLElement>('.treedd__trigger');
+  const menu = el.querySelector<HTMLElement>('.treedd__menu');
+  if (!trigger || !menu) return;
+  // 菜单已展开（is-open 已加），offsetHeight 反映实际高度；取不到时按最大高兜底
+  const menuH = menu.offsetHeight || 260;
+  // 触发器顶缘到视口顶部的距离 < 菜单高度 + 间距 → 向上放不下，改为向下弹
+  const flipDown = trigger.getBoundingClientRect().top < menuH + 6;
+  el.classList.toggle('treedd--drop-down', flipDown);
 }
 
 /** 当前展开状态下可聚焦的菜单项列表（事件委托场景下可能动态渲染，实时查询） */

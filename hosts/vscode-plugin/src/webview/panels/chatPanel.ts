@@ -286,12 +286,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 清空当前会话：确认后清空全部持久化会话消息，并通知 webview 清空消息区
+   * 清空当前会话：确认后清空会话消息，并通知 webview 清空消息区
    *
    * 危险操作确认走 host 侧原生 modal（VSCode webview 禁用原生 confirm()，
    * 避免「确认框静默失效 → 按钮无反应」的功能性缺陷，对抗评估 P0-2）。
    * 依赖 WorkspaceSessionStore.clearSession（宿主扩展方法，非内核 ISessionStore 标准接口）。
-   * 遍历所有会话 key（YYYY-MM-DD-session）逐一清空，覆盖跨天归档的多个 key。
+   *
+   * 收窄语义（SSOT 排雷 P1-1）：只清空「当前查看的会话」这一个 date-main 最小单元——
+   * 若正在查看某历史天（_historyDate）则清该天，否则清当天 main。绝不清空跨天全部
+   * 历史，避免「清空当前对话」实际清光全部历史的数据破坏错位。
    */
   private async handleClear(): Promise<void> {
     const choice = await vscode.window.showWarningMessage(
@@ -301,18 +304,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     );
     if (choice !== '清空') return;
     try {
-      for (const key of this.sessionStore.listSessions()) {
-        // key 格式：YYYY-MM-DD-session；lastIndexOf('-') 拆分日期与会话名
-        const idx = key.lastIndexOf('-');
-        if (idx <= 0) continue;
-        // clearSession 为宿主扩展方法，类型已通过 HostSessionStore 收窄，无需断言（P2-5）
-        this.sessionStore.clearSession(key.slice(0, idx), key.slice(idx + 1));
-      }
+      // 清空当前查看范围的 date-main 会话（_historyDate 存在则清该历史天，否则当天）
+      const date = this._historyDate ?? formatDateKey(new Date());
+      this.sessionStore.clearSession(date, 'main');
     } catch (err) {
       // 清空失败不阻塞展示（仅清 webview UI），但需记录（SSOT 不藏错）
       console.warn('Memora 清空会话失败', err);
     }
+    // 清空后回放当前查看范围，保证 UI 与存储一致（其余天历史保留）
     this.post({ type: 'clear_ok' });
+    const history = this.loadHistory(this._historyDate);
+    for (const m of history) {
+      this.post({ type: m.role, text: m.content, ts: m.ts });
+    }
   }
 
   /** 仅渲染 HTML 骨架（历史/Provider 在 webview 就绪后经 replaySession 回放）；

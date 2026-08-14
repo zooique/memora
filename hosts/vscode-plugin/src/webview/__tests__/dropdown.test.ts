@@ -130,4 +130,34 @@ describe('dropdown 键盘可访问性', () => {
     (document.getElementById('outside') as HTMLElement).click();
     expect(el.classList.contains('is-open')).toBe(false);
   });
+
+  it('自动翻转方向（P1-2）：贴近顶缘向下弹，远离顶缘保持向上', () => {
+    document.body.innerHTML = buildDropdownHtml([{ id: 'm', label: '模型A' }], {
+      onSelect: '__onSelect',
+      extraClass: 'treedd--capsule',
+    });
+    const onSelect = vi.fn();
+    initDropdowns(document, { __onSelect: onSelect });
+    const el = document.querySelector('.treedd') as HTMLElement;
+    const trigger = el.querySelector('.treedd__trigger') as HTMLElement;
+
+    // 场景1：触发器贴近容器顶缘（top=10）→ 向上放不下 → 翻转向下弹
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      top: 10, bottom: 36, left: 0, right: 50, width: 50, height: 26, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    trigger.click();
+    expect(el.classList.contains('treedd--drop-down')).toBe(true);
+
+    // 收起后换场景
+    trigger.click();
+
+    // 场景2：触发器远离顶缘（top=500）→ 向上空间足 → 保持向上弹（不翻转）
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      top: 500, bottom: 526, left: 0, right: 50, width: 50, height: 26, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    trigger.click();
+    expect(el.classList.contains('treedd--drop-down')).toBe(false);
+  });
 });

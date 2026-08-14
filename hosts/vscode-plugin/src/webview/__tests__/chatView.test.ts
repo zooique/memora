@@ -101,4 +101,37 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(sr).not.toBeNull();
     expect(sr?.textContent).toContain('自审查轮 1');
   });
+
+  it('流式 chunk 在工具卡片插入后仍追加到同一条 assistant 消息（P0-1 锚点）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // 模拟「文本 → 工具卡 → 文本」循环：工具卡片插入不应拆散同一条回复
+    dispatch({ type: 'chunk', content: '思考第一段' });
+    dispatch({ type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}' });
+    dispatch({ type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' });
+    dispatch({ type: 'chunk', content: '思考第二段' });
+    dispatch({ type: 'chunk', content: '思考第三段' });
+
+    // 同一条回复应只有一条 assistant 消息，三段文本拼接在其内
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].querySelector('.msg-body')?.textContent).toBe(
+      '思考第一段思考第二段思考第三段',
+    );
+  });
+
+  it('clear_ok 后流式锚点失效，后续 chunk 重建一条 assistant 消息（P0-1）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    dispatch({ type: 'chunk', content: '第一段' });
+    dispatch({ type: 'clear_ok' });
+    dispatch({ type: 'chunk', content: '重放后' });
+
+    // 清空后仅剩重建的一条 assistant 消息（旧锚点已失效，不残留）
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].querySelector('.msg-body')?.textContent).toBe('重放后');
+  });
 });

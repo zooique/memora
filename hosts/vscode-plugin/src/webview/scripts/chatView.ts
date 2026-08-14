@@ -54,6 +54,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const historyPickerMenu = historyPicker ? historyPicker.querySelector('.treedd__menu') : null;
   const historyPickerTrigger = historyPicker ? historyPicker.querySelector('.treedd__trigger') : null;
 
+  // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
+  // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
+  // 不会改变锚点，避免一次回复（含工具调用）被拆成多条消息。
+  let activeAssistantEl: HTMLElement | null = null;
+
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
@@ -184,8 +189,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
-  // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）
-  function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string): void {
+  // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
+  // 返回创建的 .msg 元素，供调用方作为流式锚点（排雷 P0-1）。
+  function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string): HTMLElement {
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     const body = document.createElement('div');
@@ -210,9 +216,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       footer.appendChild(timeEl);
     }
     div.appendChild(footer);
+    // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
+    if (role === 'assistant') activeAssistantEl = div;
     messages.appendChild(div);
     scrollToBottom();
     updateEmptyState();
+    return div;
   }
 
   // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
@@ -264,14 +273,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts);
     } else if (msg.type === 'chunk') {
-      const last = messages.lastElementChild;
-      if (last && last.classList.contains('assistant')) {
-        const body = last.querySelector(':scope > .msg-body');
-        if (body) {
-          // 流式追加：用文本节点替代整体 textContent 重建，长回复避免 O(n²)
-          body.appendChild(document.createTextNode(msg.content));
-        }
+      // 流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
+      // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
+      const target =
+        activeAssistantEl && activeAssistantEl.isConnected
+          ? activeAssistantEl.querySelector(':scope > .msg-body')
+          : null;
+      if (target) {
+        // 用文本节点追加替代整体 textContent 重建，长回复避免 O(n²)
+        target.appendChild(document.createTextNode(msg.content));
       } else {
+        // 锚点失效（如清空后重放）→ 重建一条 assistant 消息（append 内会重置锚点）
         append('assistant', msg.content, msg.ts);
       }
       scrollToBottom();
@@ -320,6 +332,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧工具卡片或自审查行
       // 残留 DOM，污染重放视图。不替换 messages 全部子节点（保留 #emptyState 占位）。
       messages.querySelectorAll('.msg, .tool-card, .self-review').forEach((el) => el.remove());
+      // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
+      activeAssistantEl = null;
       updateEmptyState();
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
