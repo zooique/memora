@@ -142,6 +142,8 @@ type LoopAndDepsParams = Pick<
 > & {
   pctx: ProjectContext;
   personaPrompt: string;
+  /** 激活角色包的 L1 persona prompt（角色包优先于 persona；无激活角色包时为空串） */
+  rolePackPrompt: string;
   toolExec: ToolExecutor;
   /** 角色包规则列表（Rule→guardrail 桥接），桥接到 guardrail 系统供运行时强制执行 */
   rolePackRules: readonly string[];
@@ -223,13 +225,14 @@ export interface AssembleOutput {
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
-    provider, backgroundProvider, providerRouter, pctx, personaPrompt, toolExec,
+    provider, backgroundProvider, providerRouter, pctx, personaPrompt, rolePackPrompt, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary,
     sessionStore, locale, callbacks, rolePackRules,
   } = params;
 
-  // 系统前缀：角色 + 当前时间（用户画像已收敛为 round-summary 召回，不再拼入 systemPrompt）
-  const systemPrefixParts = [personaPrompt];
+  // 系统前缀：角色包优先于 persona（角色包优先/persona 兜底）+ 当前时间
+  // （用户画像已收敛为 round-summary 召回，不再拼入 systemPrompt）
+  const systemPrefixParts = [rolePackPrompt || personaPrompt];
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -398,6 +401,8 @@ export async function assembleComponents(
   // Rule→guardrail 桥接：提取当前激活角色包的规则列表，
   // 传给 createAgentLoopAndDeps 合并到 guardrail 规则池。
   const rolePackRules = rolePackManager.getActiveRules();
+  // 激活角色包的 L1 persona（角色包优先于 persona；无激活角色包时为空串）
+  const rolePackPrompt = rolePackManager.buildSystemPrompt();
 
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
@@ -407,6 +412,7 @@ export async function assembleComponents(
       backgroundProvider,
       pctx,
       personaPrompt,
+      rolePackPrompt,
       toolExec,
       maxContextTokens,
       tracer,

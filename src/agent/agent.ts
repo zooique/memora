@@ -39,7 +39,13 @@ import { recall, boostScores } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
+import {
+  DEFAULT_BEHAVIOR_STRATEGY,
+  resolveRecentRounds,
+  resolveHandoff,
+  resolveMemoryRecallMode,
+  resolveToolMode,
+} from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -174,6 +180,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private chatLockManager: ChatLockManager | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
+  /**
+   * 最近一次角色包粘性匹配所属的会话 ID
+   *
+   * 会话切换时检测到变化 → 复位角色包粘性（粘性不跨会话，agent-design-philosophy §6.2）。
+   * 由 prepareChatContext 每轮比对并驱动 resetSticky()。
+   */
+  private lastStickySessionId: string | null = null;
   /**
    * 对话进行中暂存的配置重载请求集合（chatLock 释放后补执行）
    *
@@ -489,15 +502,25 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const loop = this.requireLoop;
     loop.cleanTemporarySystemMessages();
 
-    // 角色自动匹配（回答前执行）
-    await this.tryAutoMatchPersona(input);
+    // 会话切换时复位角色包粘性（粘性不跨会话，agent-design-philosophy §6.2）
+    const sessionId = this._sessionManager?.getCheckpoint()?.sessionId ?? '';
+    if (sessionId !== this.lastStickySessionId) {
+      this.rolePackManager_?.resetSticky();
+      this.lastStickySessionId = sessionId;
+    }
+
+    // 角色包优先匹配（粘性），persona 兜底（角色包优先/persona 兜底策略）
+    if (!this.tryAutoMatchRolePack(input)) {
+      await this.tryAutoMatchPersona(input);
+    }
 
     // 基元驱动召回（双通道：语义 + 关键词），受 L2 策略控制
     const strategy = this.getActiveStrategy();
-    const memoryRecallMode = strategy.prepare?.memoryRecall ?? 'full';
+    // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
+    const memoryRecallMode = resolveMemoryRecallMode(strategy);
 
     // 根据 L2 策略设置工具调用权限（影响整轮对话），标准键 act.toolMode（§六）
-    loop.setToolCallsBlocked(strategy.act?.toolMode === 'block');
+    loop.setToolCallsBlocked(resolveToolMode(strategy) === 'block');
 
     // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
     // Phase 9：loopContinue 为 number（0=关闭，N=最多 N 轮）；兼容旧格式 'on'→1 轮 / 'off'→0 轮
@@ -577,8 +600,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     yield { type: 'thinking', phase: 'archiving' };
     await this.postProcess(input, assistantContent);
 
-    // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六）
-    const handoffStrategy = this.getActiveStrategy().reflect?.handoff ?? 'wait';
+    // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六），
+    // 经 resolveHandoff 归位非法值，避免透传无法识别的衔接决策给宿主
+    const handoffStrategy = resolveHandoff(this.getActiveStrategy());
     yield { type: 'handoff', decision: handoffStrategy, reason: handoffStrategy === 'wait' ? undefined : 'L2 策略自动衔接' };
   }
 
@@ -648,11 +672,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
     let recalledMemories: Memory[] = [];
 
-    // 最近几轮固定加载轮数：角色包 prepare.recentRounds 覆盖，未配置回退内核默认 3（兜底）
-    // 最近几轮是真实上下文（memory-as-summary §4.3），优先于记忆/摘要召回；
-    // 默认策略 DEFAULT_BEHAVIOR_STRATEGY.prepare.recentRounds = 3，与内核默认一致。
-    const recentRounds =
-      this.getActiveStrategy().prepare?.recentRounds ?? AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS;
+    // 上下文固定加载轮数 N（SSOT 单一来源）：角色包 recentRounds 为合法"0 以上正整数"时
+    // 一律采用角色包定义，缺失/非法才降级内核默认。互斥窗口与最近对话注入共用同一 N，
+    // 保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"严格一致（memory-as-summary §4.3）。
+    const recentRounds = resolveRecentRounds(this.getActiveStrategy());
 
     if (memoryRecallMode !== 'none') {
       // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
@@ -673,7 +696,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
               : AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
             vectorStore: this.#config.vectorStore,
             excludeSources: this.#config.recallExcludeSources,
-            sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
+            // 会话窗口标识：与 round-summary 写入侧 metadata.sessionName 同源同值
+            // （currentSessionName = `${date}-${session}`），保证"同窗口优先"命中当前会话
+            sessionId: this.requireHistory.currentSessionName,
           },
         );
       } catch (err) {
@@ -698,8 +723,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // ── 互斥排除（memory-as-summary §4.3）──
     // 当前会话最近 N 轮正文已完整加载进上下文，其摘要不应再被召回注入（避免重复）。
     // 确定性判定：取最近 N 轮 roundId 集合（N ≡ 上下文固定加载轮数），过滤同轮摘要。
+    // 互斥窗口 N 与最近对话注入轮数 N 必须一致（同一 SSOT 来源 resolveRecentRounds）
     const recentRoundIds = new Set(
-      this.requireHistory.getRecentRoundIds(AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS),
+      this.requireHistory.getRecentRoundIds(recentRounds),
     );
     if (recentRoundIds.size > 0) {
       recalledMemories = recalledMemories.filter((m) => {
@@ -1027,8 +1053,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'archiving' };
       await this.postProcess(event.content, assistantContent);
 
-      // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六）
-      const handoffDecision = this.getActiveStrategy().reflect?.handoff ?? 'wait';
+      // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六），
+      // 经 resolveHandoff 归位非法值，避免透传无法识别的衔接决策给宿主
+      const handoffDecision = resolveHandoff(this.getActiveStrategy());
       yield { type: 'handoff', decision: handoffDecision, reason: handoffDecision === 'wait' ? undefined : 'L2 策略自动衔接' };
     } finally {
       this.chatLockManager?.release(myToken);
@@ -2271,11 +2298,36 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private refreshPersonaPrefixOnLoop(): void {
     if (!this.loop) return;
-    // 用户画像已收敛为 round-summary 召回（2026-08-14），前缀仅含 persona
-    const personaPrompt = this.personaManager?.buildSystemPrompt() ?? '';
+    // 角色包优先：激活角色包时用其 L1 persona，否则回退 personaManager（角色包优先/persona 兜底）
+    const rolePackPrompt = this.rolePackManager_?.buildSystemPrompt() ?? '';
+    const personaPrompt = rolePackPrompt || (this.personaManager?.buildSystemPrompt() ?? '');
     const newPrefix =
       personaPrompt ? `${personaPrompt}\n\n---\n\n` : '';
     this.loop.refreshPersonaPrefix(newPrefix);
+  }
+
+  /**
+   * 角色包自动匹配（粘性，角色包优先于 persona）
+   *
+   * 在 chat() 回答前执行，优先于 tryAutoMatchPersona。经 RolePackManager.autoMatch
+   * 的粘性语义匹配（§6.2）：首次外部输入命中即锁定当前会话，后续仅互斥包命中才切换。
+   * 命中后激活角色包并刷新 system prompt 前缀（装载其 L1 persona）。
+   *
+   * @param input 用户输入文本
+   * @returns 是否发生了角色包匹配/切换（true 时不再走 persona 兜底）
+   */
+  private tryAutoMatchRolePack(input: string): boolean {
+    const rpm = this.rolePackManager_;
+    if (!rpm) return false;
+    const matched = rpm.autoMatch(input); // 粘性匹配（含会话内锁定副作用）
+    if (!matched) return false;
+    const prevName = rpm.activeName;
+    rpm.activate(matched);
+    this.emit(AGENT_EVENTS.personaSwitched, { from: prevName ?? '', to: matched });
+    // 刷新 system prompt 前缀（角色包优先，装载其 L1 persona）
+    this.refreshPersonaPrefixOnLoop();
+    logger.info({ rolePack: matched }, '角色包自动切换');
+    return true;
   }
 
   /**
@@ -2608,7 +2660,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private applyRolePackToolExposure(): void {
     if (!this.toolExec) return;
     const active = this.rolePackManager_?.getActive();
-    const whitelist = active ? resolveCapabilityTools(active.capabilities) : null;
+    const capabilities = active?.capabilities;
+    // 仅角色包明确声明了能力（非空）时才限定工具白名单；未声明（空数组，parseCapabilities
+    // 对 undefined 返回 []）视为"全部暴露"（role-pack-spec §四 + mvp-scope 验收 7）。
+    // 否则空数组会解析为"空白名单=全禁"，误伤未声明能力的角色包。
+    const whitelist =
+      capabilities && capabilities.length > 0 ? resolveCapabilityTools(capabilities) : null;
     this.toolExec.setToolWhitelist(whitelist);
   }
 

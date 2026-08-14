@@ -57,6 +57,9 @@ const EXCLUDED_FILES = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
 /** 合规字段默认值：formatVersion 缺省按 1.0.0（spec §五） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
 
+/** 角色包自动匹配关键词置信度阈值（scoredByKeywords） */
+const AUTO_MATCH_THRESHOLD = 0.3;
+
 /**
  * L2 策略键别名映射（旧实现键 → 标准键，role-pack-spec §六 命名归标准）
  *
@@ -352,6 +355,27 @@ function parseKeywordsAny(fm: Record<string, unknown>): string[] | undefined {
 }
 
 /**
+ * 解析互斥声明数组（exclusiveWith）
+ *
+ * 支持数组（`exclusiveWith: [包A, 包B]`）与逗号串（`exclusiveWith: 包A, 包B`）两种写法。
+ *
+ * @param raw frontmatter 中的 exclusiveWith 原始值
+ * @returns 互斥角色包名列表，未声明返回 undefined
+ */
+function parseExclusiveWith(raw: unknown): string[] | undefined {
+  if (Array.isArray(raw)) {
+    return raw.map((k) => String(k)).filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return undefined;
+}
+
+/**
  * 尝试解析字符串值：数字优先，布尔其次，保留字符串
  *
  * @param raw 原始字符串
@@ -377,6 +401,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   private activePackName: string | null = null;
   /** 当前激活模式 */
   private mode: 'auto' | 'manual' = 'auto';
+  /**
+   * 粘性锁定标志（agent-design-philosophy §6.2 粘性匹配）
+   *
+   * 当前会话内首次 autoMatch 命中后置 true：后续外部输入不再全量重匹配，
+   * 仅当输入命中与当前激活包互斥（exclusiveWith）的包时才切换。
+   * 会话切换时由宿主调用 resetSticky() 复位——粘性不跨会话。
+   */
+  private stickyLocked = false;
 
   /**
    * @param configDir 配置目录（角色包文件在 <configDir>/role-packs/ 下）
@@ -543,6 +575,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         interactionType: fm['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
         aiIdentityDisclosure: fm['aiIdentityDisclosure'] === false ? false : true,
         minorProtection: fm['minorProtection'] === undefined ? 'required' : 'required',
+        exclusiveWith: parseExclusiveWith(fm['exclusiveWith']),
       };
 
       // 解析结构化章节（L1 内容层）
@@ -655,20 +688,63 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 根据用户输入匹配最合适的角色包（关键词匹配）
+   * 根据用户输入粘性匹配最合适的角色包（agent-design-philosophy §6.2）
+   *
+   * 粘性语义（状态粘性，非"永不切换"）：
+   *   - 首次外部输入（未锁定）：全量关键词匹配，命中即锁定当前会话；
+   *   - 后续外部输入（已锁定）：**不**因无关输入重新全量匹配，仅当输入命中
+   *     与当前激活包互斥（exclusiveWith）的包时才自动切换；
+   *   - 显式切换由宿主调用 activate() 完成，不经过本方法。
+   *
+   * 边界：本方法只返回目标包名，由调用方负责 activate() 与 system prompt 刷新。
+   * 非互斥的多角色合并裁决为远期（role-pack-spec §14.2），本期仅支持互斥切换。
    *
    * @param userInput 用户输入文本
-   * @returns 匹配的角色包名，无匹配返回 null
+   * @returns 需切换到的角色包名，无匹配/无需切换返回 null
    */
   autoMatch(userInput: string): string | null {
     if (this.mode !== 'auto') return null;
     if (this.items.length === 0) return null;
 
-    const best = this.findBestKeywordMatch(userInput, 0.3);
+    const best = this.findBestKeywordMatch(userInput, AUTO_MATCH_THRESHOLD);
     if (!best) return null;
-    if (this.activePackName === best.item.meta.name) return null;
+    const matchedName = best.item.meta.name;
 
-    return best.item.meta.name;
+    // 首次匹配：命中即锁定当前会话（即使命中当前激活包，也标记已锁定）
+    if (!this.stickyLocked) {
+      this.stickyLocked = true;
+      return this.activePackName === matchedName ? null : matchedName;
+    }
+
+    // 已锁定：仅当命中包与当前激活包互斥时才切换，否则保持当前
+    if (!this.activePackName || this.activePackName === matchedName) return null;
+    return this.isExclusiveBetween(this.activePackName, matchedName) ? matchedName : null;
+  }
+
+  /**
+   * 复位粘性锁定（会话切换时由宿主调用）
+   *
+   * 粘性不跨会话：新会话的首条外部输入重新进行全量匹配。幂等，可重复调用。
+   */
+  resetSticky(): void {
+    this.stickyLocked = false;
+  }
+
+  /**
+   * 判断两个角色包是否互斥（exclusiveWith 双向声明其一即互斥）
+   *
+   * 用于粘性锁定后的自动切换裁决：仅互斥包命中才切换，避免无关输入频繁换角色。
+   *
+   * @param a 角色包 A 名
+   * @param b 角色包 B 名
+   * @returns A 与 B 是否互斥
+   */
+  private isExclusiveBetween(a: string, b: string): boolean {
+    const packA = this.items.find((p) => p.meta.name === a);
+    const packB = this.items.find((p) => p.meta.name === b);
+    const aExcludesB = packA?.meta.exclusiveWith?.includes(b) ?? false;
+    const bExcludesA = packB?.meta.exclusiveWith?.includes(a) ?? false;
+    return aExcludesB || bExcludesA;
   }
 
   /** 设置激活模式 */

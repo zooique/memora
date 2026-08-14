@@ -2529,4 +2529,86 @@ strategy:
     }
     expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
   });
+
+  it('角色包声明非法 recentRounds（0）应降级内核默认，对话不抛错', async () => {
+    // 非法值（0）经 mergeStrategy 覆盖默认 3，但消费处 resolveRecentRounds 检测到
+    // 非"0 以上正整数"而降级回内核默认兜底——SSOT：开放参数必有硬编码兜底
+    mkdirSync(join(tmpConfig, 'role-packs'), { recursive: true });
+    writeFileSync(
+      join(tmpConfig, 'role-packs', '非法轮数.md'),
+      `---
+name: 非法轮数
+formatVersion: 1.0.0
+description: 非法 recentRounds 降级验证
+keywords: [非法]
+strategy:
+  prepare:
+    recentRounds: 0
+---
+## Persona
+
+你是一个测试角色。`,
+      'utf-8',
+    );
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 消费路径（recallAndInject → resolveRecentRounds）对非法值降级，整轮对话不抛错
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('你好')) {
+      chunks.push(chunk);
+    }
+    expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
+  });
+
+  it('角色包优先匹配：粘性 + 互斥切换（§6.2）', async () => {
+    // 写一对互斥角色包（翻译助手 ↔ 代码助手），验证角色包优先于 persona 匹配
+    const packsDir = join(tmpConfig, 'role-packs');
+    mkdirSync(packsDir, { recursive: true });
+    writeFileSync(
+      join(packsDir, '翻译助手.md'),
+      `---
+name: 翻译助手
+keywords: [翻译, 英译中]
+exclusiveWith: [代码助手]
+---
+## Persona
+你是翻译。
+## Rules
+- 保持语义`,
+      'utf-8',
+    );
+    writeFileSync(
+      join(packsDir, '代码助手.md'),
+      `---
+name: 代码助手
+keywords: [编程, 写代码]
+exclusiveWith: [翻译助手]
+---
+## Persona
+你是程序员。
+## Rules
+- 写好代码`,
+      'utf-8',
+    );
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const rpm = agent.rolePackManager!;
+    // 显式设定会话初始激活（不依赖扫描顺序）
+    rpm.activate('翻译助手');
+
+    // 首次外部输入命中代码助手 → 粘性匹配切换
+    for await (const {} of agent.chat('帮我写代码')) {}
+    expect(rpm.activeName).toBe('代码助手');
+
+    // 已锁定：命中互斥角色包 → 切换
+    for await (const {} of agent.chat('翻译这段话')) {}
+    expect(rpm.activeName).toBe('翻译助手');
+
+    // 已锁定：再次命中已激活角色包 → 不切换（粘性）
+    for await (const {} of agent.chat('翻译别的内容')) {}
+    expect(rpm.activeName).toBe('翻译助手');
+  });
 });

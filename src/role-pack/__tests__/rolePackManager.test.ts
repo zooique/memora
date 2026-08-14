@@ -184,4 +184,119 @@ describe('RolePackManager（M2.1 嵌套 YAML + 双形态）', () => {
     expect(manager.activeName).toBe('项目总监');
     expect(manager.getActive()!.meta.name).toBe('项目总监');
   });
+
+  describe('粘性匹配 · agent-design-philosophy §6.2', () => {
+    /** 写一个互斥角色包对（翻译助手 ↔ 代码助手） */
+    async function writeExclusivePacks(): Promise<void> {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writeFile(
+        join(packsDir, '翻译助手.md'),
+        `---
+name: 翻译助手
+keywords: [翻译, 英译中]
+exclusiveWith: [代码助手]
+---
+## Persona
+你是翻译。
+## Rules
+- 保持语义`,
+        'utf-8',
+      );
+      await writeFile(
+        join(packsDir, '代码助手.md'),
+        `---
+name: 代码助手
+keywords: [编程, 写代码]
+exclusiveWith: [翻译助手]
+---
+## Persona
+你是程序员。
+## Rules
+- 写好代码`,
+        'utf-8',
+      );
+    }
+
+    it('exclusiveWith 解析进 meta', async () => {
+      await writeExclusivePacks();
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      expect(manager.get('翻译助手')!.meta.exclusiveWith).toEqual(['代码助手']);
+      expect(manager.get('代码助手')!.meta.exclusiveWith).toEqual(['翻译助手']);
+    });
+
+    it('首次 autoMatch 命中即锁定当前会话，命中已激活包不重复切换', async () => {
+      await writeExclusivePacks();
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      // 显式设定会话初始激活（不依赖扫描顺序）
+      manager.activate('翻译助手');
+
+      // 首次外部输入命中代码助手 → 返回目标名并锁定
+      expect(manager.autoMatch('写代码')).toBe('代码助手');
+      manager.activate('代码助手');
+      expect(manager.activeName).toBe('代码助手');
+
+      // 已锁定：再次命中已激活包 → 不重复切换
+      expect(manager.autoMatch('我有个编程需求')).toBeNull();
+    });
+
+    it('已锁定后仅互斥包命中才切换，非互斥命中不切换', async () => {
+      await writeExclusivePacks();
+      // 额外加一个与两者都不互斥的通用助手
+      const packsDir = join(dir, 'role-packs');
+      await writeFile(
+        join(packsDir, '通用助手.md'),
+        `---
+name: 通用助手
+keywords: [通用, 闲聊]
+---
+## Persona
+你是通用助手。
+## Rules
+- 友好`,
+        'utf-8',
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      manager.activate('代码助手');
+
+      // 已锁定（代码助手）：命中互斥的翻译助手 → 切换
+      expect(manager.autoMatch('翻译一些内容')).toBe('翻译助手');
+      manager.activate('翻译助手');
+
+      // 已锁定（翻译助手）：命中非互斥的通用助手 → 不切换（保持翻译）
+      expect(manager.autoMatch('来闲聊两句')).toBeNull();
+      expect(manager.activeName).toBe('翻译助手');
+    });
+
+    it('resetSticky 复位后重新全量匹配（粘性不跨会话）', async () => {
+      await writeExclusivePacks();
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      manager.activate('翻译助手');
+
+      // 锁定后命中互斥代码助手可切
+      expect(manager.autoMatch('写代码')).toBe('代码助手');
+      manager.activate('代码助手');
+
+      // resetSticky：模拟新会话，重新全量匹配
+      manager.resetSticky();
+      expect(manager.autoMatch('翻译')).toBe('翻译助手');
+    });
+
+    it('未命中任何角色包时返回 null 且不锁定', async () => {
+      await writeExclusivePacks();
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      // 显式设定会话初始激活（不依赖扫描顺序）
+      manager.activate('翻译助手');
+      // 无关输入无命中，不锁定
+      expect(manager.autoMatch('今天天气不错')).toBeNull();
+      // 未锁定，后续仍可全量匹配
+      expect(manager.autoMatch('写代码')).toBe('代码助手');
+    });
+  });
 });

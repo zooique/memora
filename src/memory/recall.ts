@@ -95,7 +95,13 @@ export interface RecallOptions {
    * 详见 src/memory/hybridMerge.ts HybridWeights
    */
   weights?: HybridWeights;
-  /** 当前会话 ID，用于同窗口优先排序（可选） */
+  /**
+   * 会话窗口标识，用于"同会话窗口优先"排序（可选，memory-as-summary §4.4）
+   *
+   * 契约：本参数值与 round-summary 写入侧的 `metadata.sessionName` **同值同源**
+   * （均为 `${date}-${session}` 会话窗口名）。比较语义为
+   * `metadata.sessionName === sessionId`，即"当前会话窗口的摘要排最前"。
+   */
   sessionId?: string;
 }
 
