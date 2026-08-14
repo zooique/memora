@@ -66,7 +66,7 @@ afterEach(async () => {
  * 构造 mock LlmProvider
  *
  * chat 返回空 AsyncIterable（assembleComponents 不调用 chat，
- * 但 WorkProjectionManager / InsightExtractor 构造时会存储 provider 引用）
+ * 但 WorkProjectionManager 等构造时会存储 provider 引用）
  *
  * @param name - provider 名称
  * @returns mock LlmProvider
@@ -154,12 +154,14 @@ describe('assembleComponents', () => {
       const output = await assembleComponents(createPctx(), createInput());
 
       // 15 个字段全部存在（history/loop/toolExec/personaManager/
-      // workProjection/skillManager/insightExtractor/configManager/memoryInspector/
-      // dedupManager/memoryAdvisor/autoConfigRefiner/sessionArchiver/textPolisher/rolePackManager）
+      // workProjection/skillManager/configManager/memoryInspector/
+      // dedupManager/memoryAdvisor/autoConfigRefiner/roundSummaryGenerator/
+      // sessionArchiver/textPolisher/rolePackManager）
       // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
       // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
       // ROLE-PACK：新增 rolePackManager，管理角色包生命周期
       // 2026-08-14：移除 userProfile（用户画像收敛为 round-summary 召回）
+      // 2026-08-14：移除 insightExtractor（洞察层收敛，摘要即记忆单轨）
       const expectedKeys = [
         'history',
         'loop',
@@ -167,7 +169,6 @@ describe('assembleComponents', () => {
         'personaManager',
         'workProjection',
         'skillManager',
-        'insightExtractor',
         'configManager',
         'memoryInspector',
         'dedupManager',
@@ -190,7 +191,6 @@ describe('assembleComponents', () => {
       expect(output.personaManager).toBeDefined();
       expect(output.workProjection).toBeDefined();
       expect(output.skillManager).toBeDefined();
-      expect(output.insightExtractor).toBeDefined();
       expect(output.configManager).toBeDefined();
       expect(output.memoryInspector).toBeDefined();
       // v2 PROXY-1：新增 memoryAdvisor 实例验证

@@ -12,7 +12,7 @@
  *
  * 触发时机：
  *   - `full` 模式：会话切换前自动归档（由宿主 sessionHandlers 调用）
- *   - `insights-only` / `manual` 模式：用户手动触发（Agent.archiveSessionContent）
+ *   - `manual` 模式：用户手动触发（Agent.archiveSessionContent）
  *
  * 降级策略：
  *   - LLM 不可用：记录日志，不阻塞会话切换（best-effort）

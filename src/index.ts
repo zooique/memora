@@ -66,7 +66,6 @@ export type {
   RolePackValidationIssue, RolePackValidationResult, RolePackValidateInput, RolePackIssueSeverity,
 } from '@/role-pack/validator.js';
 // 类型从专职模块导出
-export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';
 export type {
   MemorySnapshot,
   WorkingMemorySnapshot,

@@ -89,6 +89,23 @@ export class RoundSummaryGenerator {
   ) {}
 
   /**
+   * 记忆写入回调（memoryAdded 事件出口）
+   *
+   * 新轮次摘要写入后触发，供 Agent 发射 memoryAdded 事件（宿主「已沉淀」提示）。
+   * 替代原洞察层（InsightExtractor）的记忆沉淀通知出口——摘要即记忆，新记忆产生必通知。
+   */
+  private _onMemoryAdded: ((info: { id: string; source: string; name: string }) => void) | null = null;
+
+  /**
+   * 绑定记忆写入回调（由 Agent.init() 调用）
+   *
+   * @param fn 写入回调（传入 null 可解除绑定）
+   */
+  setOnMemoryAdded(fn: ((info: { id: string; source: string; name: string }) => void) | null): void {
+    this._onMemoryAdded = fn;
+  }
+
+  /**
    * 生成并持久化轮次摘要
    *
    * 异步 fire-and-forget 模式，内部捕获所有异常。
@@ -152,6 +169,8 @@ export class RoundSummaryGenerator {
 
       // 5. 写入存储
       this.storage.upsert(memory);
+      // 5.1 触发记忆写入回调（memoryAdded 事件出口）：宿主「已沉淀」提示的可观测出口
+      this._onMemoryAdded?.({ id: memory.id, source: memory.source, name: memory.name });
       // 6. 写路径取代检测（ADR-021）：检测同 session 近期同主题摘要是否被本摘要覆盖
       this.supersedeSimilar(memory);
       logger.debug({ memoryId, summaryType, sessionName, roundId }, '轮次摘要已生成');

@@ -1,7 +1,7 @@
 /**
  * JSON 工具函数
  *
- * 从 InsightExtractor 和 WorkProjectionManager 提取的公共 JSON 解析函数，
+ * 从多个 Manager（如 WorkProjectionManager）提取的公共 JSON 解析函数，
  * 统一 LLM 输出的 JSON 解析策略。
  */
 

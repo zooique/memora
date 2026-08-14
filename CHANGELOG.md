@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+### Removed（洞察层移除，记忆收敛为 round-summary 单轨）
+
+基于"摘要即记忆"架构定案（memory-as-summary §七 最终形态），移除独立洞察提炼层——其能力被 round-summary 的 type 分类吸收，记忆收敛为单一存储层。同时移除用户画像层（已收敛为 `type=preference` 差异化召回）。
+
+- **移除 InsightExtractor 自动抽取**：`src/agent/managers/insightExtractor.ts` 删除，`assembler` 不再装配，`Agent.archiveInsight()` / `insight` getter 删除
+- **移除 `insightExtracted` 事件**：不再有发射方，从 `AGENT_EVENTS` 与 `AgentEventMap` 清除
+- **`archiveFailed.stage` 收敛为 `'content'`**：原 `'insight' | 'content'`，洞察阶段移除后仅剩 content
+- **`ArchiveMode` 三态收敛为二态 `'full' | 'manual'`**：原 `'insights-only'`（仅洞察自动）因洞察移除失去语义，与 `manual` 等价，一并移除
+- **memoryAdded 事件出口迁移**：由 RoundSummaryGenerator 在 round-summary 写入后发射（`setOnMemoryAdded`），替代原洞察层"已沉淀"通知
+- **SessionArchiver（content 会话归档）保留**：非洞察，承载会话级综合提炼，粒度（会话级）与 round-summary（轮次级）不同
+
+> ⚠️ **破坏性变更**：移除 `ArchiveMode` 的 `'insights-only'` 值与 `insightExtracted` 事件。宿主若使用需适配（sprite 适配另行处理）。
+
 ### Changed（架构文档排雷：角色包优先级后置）
 
 基于架构交叉审查（agent-design-philosophy / memory-as-summary / role-pack-spec / mvp-scope），确立**角色包优先级后置于内核基础**（问答闭环 + 记忆系统），并解除基础模块对未定型角色包键的耦合——避免角色包接口随基础演进反复横跳。纯文档/架构层变更，无公共 API 变更。

@@ -35,7 +35,6 @@
  *          ├─ chatLockManager.ts（并发锁，token 机制）
  *          ├─ configManager.ts（配置加载）
  *          ├─ dedupManager.ts（L1 语义去重）
- *          ├─ insightExtractor.ts（LLM 提炼，prompt 独立函数）
  *          ├─ memoryAdvisor.ts（L3 记忆建议）
  *          ├─ memoryDecayScheduler.ts（记忆衰减调度）
  *          ├─ memoryInspector.ts（记忆读写统一入口，ADR-014）
@@ -204,19 +203,18 @@ export interface UIMessages {
 // ─── 归档模式（ADR-015） ──────────────────────────────────
 
 /**
- * Agent 归档模式三态控制
+ * Agent 归档模式二态控制
  *
  * 详见 ADR-015-archive-mode.md。
  *
- * - `full`（默认）：insight + 对话原始内容（会话归档预留）全部自动归档
- * - `insights-only`：insight 自动归档，对话原始内容需手动归档
+ * - `full`（默认）：会话内容（content）在会话切换前自动归档
  * - `manual`：所有归档都需手动触发，postProcess 跳过所有自动归档分支
  *
- * 设计原则：insight 属"提炼类记忆"（从输入加工得到，非原始对话），
- * 归档行为保持一致——`insights-only` 下自动，`manual` 下需手动。
- * 用户画像归档已随画像存储层收敛移除（2026-08-14），仅剩 insight 阶段入 pending 队列。
+ * 收敛说明（2026-08-14）：洞察层（InsightExtractor）与用户画像层已移除，
+ * 记忆收敛为 round-summary 单轨；archiveMode 三态收敛为二态——
+ * 原 `insights-only`（仅洞察自动）因洞察移除而失去语义，与 `manual` 等价，一并移除。
  */
-export type ArchiveMode = 'full' | 'insights-only' | 'manual';
+export type ArchiveMode = 'full' | 'manual';
 
 // ─── 不中断工作模型：增量事件 + 检查点（v2.0） ──────────
 //
@@ -734,9 +732,9 @@ export interface AgentOptions {
   /**
    * 归档模式（ADR-015，默认 'full'）
    *
-   * - 'full'：insight 自动归档（对话原始内容待会话归档实现后自动）
-   * - 'insights-only'：insight 自动归档，对话原始内容需手动
+   * - 'full'：会话内容（content）在会话切换前自动归档
    * - 'manual'：所有归档都需手动触发
+   * （2026-08-14：洞察层移除后三态收敛为二态，原 'insights-only' 已移除）
    */
   archiveMode?: ArchiveMode;
   /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */

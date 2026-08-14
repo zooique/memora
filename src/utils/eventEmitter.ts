@@ -18,7 +18,6 @@ export const AGENT_EVENTS = {
   decayCompleted: 'decayCompleted',
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
-  insightExtracted: 'insightExtracted',
   projectSwitched: 'projectSwitched',
   skillMatched: 'skillMatched',
   archiveFailed: 'archiveFailed',
@@ -63,7 +62,7 @@ export const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_
 
 /** Agent 事件映射表（事件名 → 事件载荷类型），键集受 AgentEventName 约束 */
 export interface AgentEventMap extends Record<AgentEventName, unknown> {
-  /** 记忆被写入存储（insight 提取、rule 注入、skill 注入等） */
+  /** 记忆被写入存储（round-summary 沉淀、content 会话归档、rule/skill 注入等） */
   memoryAdded: { id: string; source: string; name: string };
   /** 角色被切换（自动匹配或手动指定） */
   personaSwitched: { from: string | null; to: string };
@@ -73,16 +72,14 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   memoryRecalled: { count: number; query: string };
   /** 会话被分叉 */
   sessionForked: { from: string; to: string; messageCount: number };
-  /** 洞察被提取 */
-  insightExtracted: { source: string; insight: string };
   /** 项目被切换（宿主 UI 可据此刷新项目相关界面） */
   projectSwitched: { from: string | null; to: string; projectName: string };
   /** 技能被匹配（宿主 UI 可据此展示当前激活技能） */
   skillMatched: { skill: string; score: number };
   /** 归档操作失败（fire-and-forget catch 分支发射，宿主可通知用户） */
   archiveFailed: {
-    /** 失败阶段：insight（洞察提取）/ content（会话内容归档），用户画像归档已收敛移除 */
-    stage: 'insight' | 'content';
+    /** 失败阶段：content（会话内容归档），洞察层已收敛移除 */
+    stage: 'content';
     /** 失败原因摘要（error.message，截断 200 字符避免 payload 过大） */
     message: string;
   };

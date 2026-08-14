@@ -489,7 +489,7 @@ RUNNING ──pause──▶ PAUSED ──resume──▶ RUNNING
 | 轮次摘要 | 对话记录元数据 | 每轮闭环完成后异步生成 | 截断替补 + 历史检索（唯一记忆单元） | 随对话记录持久化 |
 | 长期记忆 | — | 由摘要 `type` 分类标记价值，召回时按需聚合 | 跨会话召回 | — |
 
-三类数据不是平行关系，而是**加工链**（设计演进 2026-08-13：洞察层移除，长期记忆不再预先提炼。**范围收敛于 2026-08-14**：移除收敛为"仅 InsightExtractor 自动抽取"，SessionArchiver 会话归档保留为宿主基础设施；代码拆除因宿主耦合暂缓，当前仍双轨，待办见 [memory-as-summary.md §7](memory-as-summary.md)）：
+三类数据不是平行关系，而是**加工链**（设计演进 2026-08-13 洞察层移除定案，2026-08-14 落地：InsightExtractor 已移除，记忆收敛为 round-summary 单轨；SessionArchiver 会话归档保留，见 [memory-as-summary.md §7](memory-as-summary.md)）：
 
 ```
 对话记录 ──异步提炼──▶ 轮次摘要（唯一记忆单元，含 type 分类）

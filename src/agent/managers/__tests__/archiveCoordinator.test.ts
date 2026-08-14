@@ -1,20 +1,18 @@
 /**
  * ArchiveCoordinator 单元测试
  *
- * 覆盖范围：
- *   - archiveInsight：null 降级 + classify skip/extract 分支 + 事件发射
- *   - archiveSessionContent：null 降级 + memories 事件发射
- *   - emit 回调：所有归档路径事件正确转发
+ * 覆盖范围（洞察层已移除，2026-08-14）：
+ *   - archiveSessionContent：null 降级 + memories 事件发射 + 异常处理
+ *   - archiveMode 三态控制（content 自动/手动归档）
+ *   - emit 回调：内容归档路径事件正确转发
  *
  * 测试范式：
- *   - mock InsightExtractor（classify/extract 控制返回值）
  *   - mock SessionArchiver（archiveSessionContent 控制返回值）
  *   - 真实 ArchiveCoordinator 实例
  *   - spy emit 回调收集事件
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
-import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { Memory } from '@/memory/types.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
@@ -43,21 +41,6 @@ function createEmitSpy(): {
 }
 
 /**
- * 构造 mock InsightExtractor
- * @param classifyResult classify 返回值（'skip' 或 'extract'）
- * @param extractResult extract 返回值（Memory 数组）
- */
-function createMockInsightExtractor(
-  classifyResult: 'skip' | 'extract' = 'skip',
-  extractResult: Memory[] = [],
-): InsightExtractor {
-  return {
-    classify: vi.fn().mockReturnValue(classifyResult),
-    extract: vi.fn().mockResolvedValue(extractResult),
-  } as unknown as InsightExtractor;
-}
-
-/**
  * 构造 mock SessionArchiver
  * @param result archiveSessionContent 返回值
  */
@@ -70,7 +53,7 @@ function createMockSessionArchiver(result: SessionArchiveResult): SessionArchive
 /**
  * 构造 Memory 对象（用于测试）
  */
-function createMemory(id: string, source: string = 'insight'): Memory {
+function createMemory(id: string, source: string = 'content'): Memory {
   const now = '2026-07-04T00:00:00.000Z';
   return {
     id,
@@ -83,6 +66,21 @@ function createMemory(id: string, source: string = 'insight'): Memory {
   };
 }
 
+/**
+ * 构造 archiveMode 固定为 full 的 coordinator（content 测试基线）
+ */
+function createCoordinator(
+  emitSpy: ReturnType<typeof createEmitSpy>,
+  sessionArchiver: SessionArchiver | null = null,
+  mode: 'full' | 'manual' = 'full',
+): ArchiveCoordinator {
+  return new ArchiveCoordinator({
+    getSessionArchiver: () => sessionArchiver,
+    emit: emitSpy.emit,
+    getArchiveMode: () => mode,
+  });
+}
+
 // ─── 测试用例 ─────────────────────────────────────────────
 
 describe('ArchiveCoordinator', () => {
@@ -92,167 +90,9 @@ describe('ArchiveCoordinator', () => {
     emitSpy = createEmitSpy();
   });
 
-  describe('archiveInsight()', () => {
-    it('getInsightExtractor 返回 null 时应返回空数组且不发射事件', async () => {
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => null,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
-
-      const result = await coordinator.archiveInsight('输入', '助手回复');
-
-      expect(result).toEqual([]);
-      expect(emitSpy.events).toHaveLength(0);
-    });
-
-    it('classify 返回 skip 时应直接返回空数组，不调用 extract', async () => {
-      const insightExtractor = createMockInsightExtractor('skip', []);
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => insightExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
-
-      const result = await coordinator.archiveInsight('你好', '你好');
-
-      expect(result).toEqual([]);
-      expect(insightExtractor.extract).not.toHaveBeenCalled();
-      expect(emitSpy.events).toHaveLength(0);
-    });
-
-    it('classify 返回 extract 且 extract 返回多条时应发射 memoryAdded + insightExtracted 事件', async () => {
-      const memories = [createMemory('ins-1', 'insight'), createMemory('ins-2', 'insight')];
-      const insightExtractor = createMockInsightExtractor('extract', memories);
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => insightExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
-
-      const result = await coordinator.archiveInsight('关键洞察', '助手回复');
-
-      expect(result).toBe(memories);
-      expect(insightExtractor.extract).toHaveBeenCalledWith('关键洞察', '助手回复');
-      // 每条 memory 应发射 memoryAdded + insightExtracted
-      const memoryAddedEvents = emitSpy.events.filter((e) => e.event === 'memoryAdded');
-      const insightExtractedEvents = emitSpy.events.filter((e) => e.event === 'insightExtracted');
-      expect(memoryAddedEvents).toHaveLength(2);
-      expect(insightExtractedEvents).toHaveLength(2);
-      expect(memoryAddedEvents[0]!.payload).toEqual({
-        id: 'ins-1',
-        source: 'insight',
-        name: 'test-ins-1',
-      });
-      expect(insightExtractedEvents[0]!.payload).toEqual({
-        source: 'insight',
-        insight: '内容-ins-1',
-      });
-    });
-
-    it('classify 返回 extract 且 extract 返回空数组时不应发射事件', async () => {
-      const insightExtractor = createMockInsightExtractor('extract', []);
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => insightExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
-
-      const result = await coordinator.archiveInsight('输入', '助手回复');
-
-      expect(result).toEqual([]);
-      expect(emitSpy.events).toHaveLength(0);
-    });
-
-    it('extract 抛出异常时应发射 archiveFailed({ stage: "insight" }) 事件并返回空数组', async () => {
-      const throwingExtractor = {
-        classify: vi.fn().mockReturnValue('extract'),
-        extract: vi.fn().mockRejectedValue(new Error('洞察提取失败')),
-      } as unknown as InsightExtractor;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => throwingExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        getArchiveMode: () => 'full',
-      });
-
-      const result = await coordinator.archiveInsight('关键洞察', '助手回复');
-
-      expect(result).toEqual([]);
-      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
-      expect(archiveFailedEvents).toHaveLength(1);
-      expect(archiveFailedEvents[0]!.payload).toEqual({
-        stage: 'insight',
-        message: '洞察提取失败',
-      });
-    });
-
-    it('classify 抛出异常时应发射 archiveFailed({ stage: "insight" }) 事件并返回空数组', async () => {
-      const throwingExtractor = {
-        classify: vi.fn().mockImplementation(() => {
-          throw new Error('分类失败');
-        }),
-        extract: vi.fn(),
-      } as unknown as InsightExtractor;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => throwingExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        getArchiveMode: () => 'full',
-      });
-
-      const result = await coordinator.archiveInsight('输入', '助手回复');
-
-      expect(result).toEqual([]);
-      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
-      expect(archiveFailedEvents).toHaveLength(1);
-      expect(archiveFailedEvents[0]!.payload).toEqual({
-        stage: 'insight',
-        message: '分类失败',
-      });
-    });
-
-    it('archiveInsight 异常 message 超过 200 字符时应截断后发射', async () => {
-      const longMessage = 'X'.repeat(300);
-      const throwingExtractor = {
-        classify: vi.fn().mockReturnValue('extract'),
-        extract: vi.fn().mockRejectedValue(new Error(longMessage)),
-      } as unknown as InsightExtractor;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => throwingExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        getArchiveMode: () => 'full',
-      });
-
-      await coordinator.archiveInsight('关键洞察', '助手回复');
-
-      const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
-      expect(archiveFailedEvents).toHaveLength(1);
-      expect(archiveFailedEvents[0]!.payload).toEqual({
-        stage: 'insight',
-        message: longMessage.slice(0, 200),
-      });
-    });
-  });
-
   describe('archiveSessionContent()', () => {
     it('getSessionArchiver 返回 null 时应返回空降级结果', async () => {
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => null,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
+      const coordinator = createCoordinator(emitSpy);
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
 
@@ -272,13 +112,7 @@ describe('ArchiveCoordinator', () => {
         messageCount: 10,
       };
       const sessionArchiver = createMockSessionArchiver(archiveResult);
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => null,
-        getSessionArchiver: () => sessionArchiver,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver);
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
 
@@ -300,13 +134,7 @@ describe('ArchiveCoordinator', () => {
         messageCount: 0,
       };
       const sessionArchiver = createMockSessionArchiver(archiveResult);
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => null,
-        getSessionArchiver: () => sessionArchiver,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver);
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
 
@@ -319,13 +147,7 @@ describe('ArchiveCoordinator', () => {
       const throwingArchiver = {
         archiveSessionContent: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
       } as unknown as SessionArchiver;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => null,
-        getSessionArchiver: () => throwingArchiver,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
+      const coordinator = createCoordinator(emitSpy, throwingArchiver);
 
       const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
 
@@ -350,13 +172,7 @@ describe('ArchiveCoordinator', () => {
       const throwingArchiver = {
         archiveSessionContent: vi.fn().mockRejectedValue(new Error(longMessage)),
       } as unknown as SessionArchiver;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => null,
-        getSessionArchiver: () => throwingArchiver,
-        emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
-        getArchiveMode: () => 'full',
-      });
+      const coordinator = createCoordinator(emitSpy, throwingArchiver);
 
       await coordinator.archiveSessionContent('2026-07-04', 'session-1');
 
@@ -372,38 +188,30 @@ describe('ArchiveCoordinator', () => {
   describe('getter 回调动态求值', () => {
     it('getter 应每次调用时动态求值（模拟 Agent close 后字段 null 化）', async () => {
       // 模拟 Agent 字段在 close 后被 null 化的场景
-      let insightExtractor: InsightExtractor | null = createMockInsightExtractor('extract', [
-        createMemory('ins-1'),
-      ]);
+      // 注意：getter 必须闭包捕获外层 let 变量（而非 createCoordinator 的形参），
+      // 才能在重新赋值后让 getter 读到最新值（动态求值语义）。
       let sessionArchiver: SessionArchiver | null = createMockSessionArchiver({
         memories: [createMemory('c-1', 'content')],
         sessionLabel: 'd-s',
         messageCount: 1,
       });
-
       const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => insightExtractor,
         getSessionArchiver: () => sessionArchiver,
         emit: emitSpy.emit,
-        // 默认 full 模式，保持现有测试场景不变（manual/insights-only 三态控制在专属测试块验证）
         getArchiveMode: () => 'full',
       });
 
-      // close 前：所有归档正常工作
-      await coordinator.archiveInsight('关键洞察', '回复');
+      // close 前：归档正常工作
       await coordinator.archiveSessionContent('2026-07-04', 's-1');
       expect(emitSpy.events.length).toBeGreaterThan(0);
 
-      // 模拟 Agent close：所有字段 null 化
-      insightExtractor = null;
+      // 模拟 Agent close：字段 null 化
       sessionArchiver = null;
       emitSpy.events.length = 0; // 清空事件
 
-      // close 后：所有归档应降级返回空，不抛错
-      const insightResult = await coordinator.archiveInsight('关键洞察', '回复');
+      // close 后：归档应降级返回空，不抛错
       const sessionResult = await coordinator.archiveSessionContent('2026-07-04', 's-1');
 
-      expect(insightResult).toEqual([]);
       expect(sessionResult).toEqual({
         memories: [],
         sessionLabel: '2026-07-04-s-1',
@@ -414,214 +222,50 @@ describe('ArchiveCoordinator', () => {
   });
 
   // ─── FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator ───
-  describe('FIX-P1-4: archiveMode 三态控制', () => {
-    /**
-     * 辅助：构造指定 archiveMode 的 coordinator
-     * @param mode archiveMode
-     * @param insightExtractor 可选 InsightExtractor mock
-     * @param sessionArchiver 可选 SessionArchiver mock
-     */
-    function createCoordinatorWithMode(
-      mode: 'full' | 'insights-only' | 'manual',
-      insightExtractor: InsightExtractor | null = null,
-      sessionArchiver: SessionArchiver | null = null,
-    ): ArchiveCoordinator {
-      return new ArchiveCoordinator({
-        getInsightExtractor: () => insightExtractor,
-        getSessionArchiver: () => sessionArchiver,
-        emit: emitSpy.emit,
-        getArchiveMode: () => mode,
+  describe('FIX-P1-4: archiveMode 三态控制（content）', () => {
+    it('autoTriggered + full 模式 → 执行（调用 SessionArchiver）', async () => {
+      const memories = [createMemory('c-1', 'content')];
+      const sessionArchiver = createMockSessionArchiver({
+        memories,
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
       });
-    }
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'full');
 
-    describe('archiveInsight() 模式判断', () => {
-      it('autoTriggered + manual 模式 → 跳过（不调用 classify/extract）', async () => {
-        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
-        const coordinator = createCoordinatorWithMode('manual', insightExtractor);
+      const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
 
-        const result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
-
-        expect(result).toEqual([]);
-        expect(insightExtractor.classify).not.toHaveBeenCalled();
-        expect(insightExtractor.extract).not.toHaveBeenCalled();
-        expect(emitSpy.events).toHaveLength(0);
-      });
-
-      it('autoTriggered + full 模式 → 执行（走 classify 判断）', async () => {
-        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
-        const coordinator = createCoordinatorWithMode('full', insightExtractor);
-
-        const result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
-
-        expect(result).toHaveLength(1);
-        expect(insightExtractor.classify).toHaveBeenCalled();
-        expect(insightExtractor.extract).toHaveBeenCalledWith('关键洞察', '回复');
-      });
-
-      it('autoTriggered + insights-only 模式 → 执行（insight 是 insights-only 的核心）', async () => {
-        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
-        const coordinator = createCoordinatorWithMode('insights-only', insightExtractor);
-
-        const result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
-
-        expect(result).toHaveLength(1);
-        expect(insightExtractor.extract).toHaveBeenCalled();
-      });
-
-      it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {
-        const insightExtractor = createMockInsightExtractor('extract', [createMemory('ins-1')]);
-        const coordinator = createCoordinatorWithMode('manual', insightExtractor);
-
-        const result = await coordinator.archiveInsight('关键洞察', '回复');
-
-        expect(result).toHaveLength(1);
-        expect(insightExtractor.extract).toHaveBeenCalled();
-      });
+      expect(result.memories).toHaveLength(1);
+      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1', { autoTriggered: true });
+      expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(1);
     });
 
-    describe('archiveSessionContent() 模式判断', () => {
-      it('autoTriggered + full 模式 → 执行（调用 SessionArchiver）', async () => {
-        const memories = [createMemory('c-1', 'content')];
-        const sessionArchiver = createMockSessionArchiver({
-          memories,
-          sessionLabel: '2026-07-04-s-1',
-          messageCount: 5,
-        });
-        const coordinator = createCoordinatorWithMode('full', null, sessionArchiver);
-
-        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
-
-        expect(result.memories).toHaveLength(1);
-        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1', { autoTriggered: true });
-        expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(1);
+    it('autoTriggered + manual 模式 → 跳过', async () => {
+      const sessionArchiver = createMockSessionArchiver({
+        memories: [createMemory('c-1', 'content')],
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
       });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'manual');
 
-      it('autoTriggered + insights-only 模式 → 跳过（content 仅 full 模式自动归档）', async () => {
-        const sessionArchiver = createMockSessionArchiver({
-          memories: [createMemory('c-1', 'content')],
-          sessionLabel: '2026-07-04-s-1',
-          messageCount: 5,
-        });
-        const coordinator = createCoordinatorWithMode('insights-only', null, sessionArchiver);
+      const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
 
-        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
-
-        expect(result).toEqual({
-          memories: [],
-          sessionLabel: '2026-07-04-s-1',
-          messageCount: 0,
-        });
-        expect(sessionArchiver.archiveSessionContent).not.toHaveBeenCalled();
-        expect(emitSpy.events).toHaveLength(0);
-      });
-
-      it('autoTriggered + manual 模式 → 跳过', async () => {
-        const sessionArchiver = createMockSessionArchiver({
-          memories: [createMemory('c-1', 'content')],
-          sessionLabel: '2026-07-04-s-1',
-          messageCount: 5,
-        });
-        const coordinator = createCoordinatorWithMode('manual', null, sessionArchiver);
-
-        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
-
-        expect(result.memories).toEqual([]);
-        expect(sessionArchiver.archiveSessionContent).not.toHaveBeenCalled();
-      });
-
-      it('手动触发 + insights-only 模式 → 执行（用户意图优先，如"一键归档"按钮）', async () => {
-        const memories = [createMemory('c-1', 'content')];
-        const sessionArchiver = createMockSessionArchiver({
-          memories,
-          sessionLabel: '2026-07-04-s-1',
-          messageCount: 5,
-        });
-        const coordinator = createCoordinatorWithMode('insights-only', null, sessionArchiver);
-
-        // 不传 options（默认 autoTriggered=false）
-        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
-
-        expect(result.memories).toHaveLength(1);
-        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1', undefined);
-      });
-
-      it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {
-        const memories = [createMemory('c-1', 'content')];
-        const sessionArchiver = createMockSessionArchiver({
-          memories,
-          sessionLabel: '2026-07-04-s-1',
-          messageCount: 5,
-        });
-        const coordinator = createCoordinatorWithMode('manual', null, sessionArchiver);
-
-        const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
-
-        expect(result.memories).toHaveLength(1);
-        expect(sessionArchiver.archiveSessionContent).toHaveBeenCalled();
-      });
+      expect(result.memories).toEqual([]);
+      expect(sessionArchiver.archiveSessionContent).not.toHaveBeenCalled();
     });
 
-    describe('archiveMode 动态切换', () => {
-      it('getArchiveMode 每次调用动态求值（模拟运行时切换 archiveMode）', async () => {
-        let currentMode: 'full' | 'insights-only' | 'manual' = 'full';
-        const coordinator = new ArchiveCoordinator({
-          getInsightExtractor: () => null,
-          getSessionArchiver: () => null,
-          emit: emitSpy.emit,
-          getArchiveMode: () => currentMode,
-        });
-
-        // full 模式 + 自动触发 → 执行
-        let result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
-        expect(result).toEqual([]);
-
-        // 运行时切换到 manual 模式 + 自动触发 → 跳过
-        currentMode = 'manual';
-        result = await coordinator.archiveInsight('关键洞察', '回复', { autoTriggered: true });
-        expect(result).toEqual([]);
+    it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {
+      const memories = [createMemory('c-1', 'content')];
+      const sessionArchiver = createMockSessionArchiver({
+        memories,
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
       });
-    });
-  });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'manual');
 
-  // ─── MIND2-C3：pending 归档队列 ──────────────────────────
+      const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
 
-  describe('MIND2-C3: pending 归档队列', () => {
-    it('archiveInsight 失败后应入 pending 队列（含 assistantContent）', async () => {
-      const throwingExtractor = {
-        classify: vi.fn().mockReturnValue('extract'),
-        extract: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
-      } as unknown as InsightExtractor;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => throwingExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        getArchiveMode: () => 'full',
-      });
-
-      await coordinator.archiveInsight('用户输入', '助手回复');
-      expect(coordinator.getPendingArchiveCount()).toBe(1);
-    });
-
-    it('重试仍失败时 pending 项保留在队列（不无限重试）', async () => {
-      const alwaysFailingExtractor = {
-        classify: vi.fn().mockReturnValue('extract'),
-        extract: vi.fn().mockRejectedValue(new Error('LLM 持续不可用')),
-      } as unknown as InsightExtractor;
-      const coordinator = new ArchiveCoordinator({
-        getInsightExtractor: () => alwaysFailingExtractor,
-        getSessionArchiver: () => null,
-        emit: emitSpy.emit,
-        getArchiveMode: () => 'full',
-      });
-
-      // 第一次失败 → 入队
-      await coordinator.archiveInsight('输入1', '回复');
-      expect(coordinator.getPendingArchiveCount()).toBe(1);
-
-      // 第二次调用：重试 pending 仍失败 + 新输入也失败 → 队列应有 2 项
-      await coordinator.archiveInsight('输入2', '回复');
-      // pending 1（重试失败保留）+ pending 2（新输入失败入队）
-      expect(coordinator.getPendingArchiveCount()).toBe(2);
+      expect(result.memories).toHaveLength(1);
+      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalled();
     });
   });
 });

@@ -75,7 +75,7 @@
 重构后：对话记录（窗口级，仅展示） + 轮次摘要（全局，即唯一记忆）
 ```
 
-> **实现状态（如实声明）**：上图为**目标态**，非当前态。用户画像层（`UserProfile` + `userFactExtractor` + `archiveProfileFacts`）**已于 2026-08-14 收敛移除**——画像收敛为 `round-summary` 的 `type=preference` 差异化召回（§3.2）；但独立的洞察自动抽取（`InsightExtractor` + `archiveInsight`）**仍存在**——运行时仍经 [agent.ts](../../src/agent/agent.ts) 的 `postProcess` 活跃调用。当前系统实际是 **round-summary + insight 双轨运行**。洞察自动抽取收敛为单轨是待办，非已达成——范围收敛为"仅 InsightExtractor 自动抽取"（SessionArchiver 保留，见 §七），代码拆除因宿主耦合暂缓。另，对话记录**并非"仅展示"**——`traceSummary` 溯源依赖对话记录（§5.2 有说明），但当前实现尚未接上（见 §四 溯源）。
+> **实现状态（如实声明）**：上图为**目标态**。用户画像层（`UserProfile` + `userFactExtractor` + `archiveProfileFacts`）**已于 2026-08-14 收敛移除**——画像收敛为 `round-summary` 的 `type=preference` 差异化召回（§3.2）；洞察层（`InsightExtractor` + `archiveInsight`）亦于 **2026-08-14 移除**——其能力被 round-summary 吸收，记忆收敛为**单轨**（唯一记忆单元 = round-summary，见 §七）。当前系统即此目标态。另，对话记录**并非"仅展示"**——`traceSummary` 溯源依赖对话记录（§5.2 有说明），但当前实现尚未接上（见 §四 溯源）。
 
 > 注：`archiveCoordinator` 中的 `archiveRoundSummary` 已不存在（round-summary 改由 RoundSummaryGenerator 在 postProcess 直接生成），§七 该项实际已达成。
 
@@ -425,13 +425,15 @@ LLM 获得完整上下文
 
 | 组件 | 文件 | 理由 |
 |------|------|------|
-| InsightExtractor 自动抽取 | `src/agent/managers/insightExtractor.ts` | 每轮自动抽取长期记忆的能力已被 round-summary 的 type 分类吸收（preference/fact/decision），无需独立自动抽取 |
+| InsightExtractor | `src/agent/managers/insightExtractor.ts` | 洞察层（每轮自动抽取长期记忆）已被 round-summary 的 type 分类吸收（preference/fact/decision），冗余移除 |
+| insightExtracted 事件 | `src/utils/eventEmitter.ts` | 洞察移除后无发射方，事件一并移除 |
 | archiveCoordinator 中的 archiveRoundSummary | `src/agent/managers/archiveCoordinator.ts` | 冗余，round-summary 直接在 postProcess 生成 |
 
-> **范围收敛（2026-08-14）**：洞察层移除**收敛为"仅 InsightExtractor 自动抽取能力"**，而非整层删除。
-> - **SessionArchiver（content 会话归档）保留**——它是**宿主基础设施**而非洞察层：承载会话级综合提炼（关键决策/未解决问题/plan 快照）、`archiveMode` 三态、`archiveFailed` 事件与手动归档按钮（sprite `archiveButton`），且粒度（会话级）与 round-summary（轮次级）不同，无法被摘要直接替代。
-> - **InsightExtractor 类暂保留**供宿主手动归档入口（`archiveInsight` 门面）使用，但**停止 postProcess 自动抽取**。
-> - **代码拆除暂缓**：因宿主深度耦合（sprite 事件桥 `insightGained`/`memoryNoticed`、vscode-plugin `archiveFailed` 监听、`memoryRoutes.archiveSessionContent` API），本轮先**文档对齐**，代码拆除成果后单独推进。
+> **最终形态（2026-08-14 定案）**：聚焦 memora 内核，洞察层（InsightExtractor）**完整移除**，记忆收敛为**单轨**：
+> - **唯一记忆单元 = round-summary**：写入（RoundSummaryGenerator + type）→ 召回（type 时间窗口 + 会话窗口/时间排序）→ 治理（superseded 取代）闭环成立，无需独立洞察提炼层。
+> - **memoryAdded 事件由 round-summary 发射**——替代洞察的"已沉淀"通知出口，保持内核"新记忆产生必通知"契约。
+> - **SessionArchiver（content 会话归档）保留**——它是**会话归档**而非洞察：承载会话级综合提炼（关键决策/未解决问题/plan 快照）与 `ArchiveCoordinator` 的 content 路径，粒度（会话级）与 round-summary（轮次级）不同，非冗余。
+> - **代码已移除（2026-08-14）**：InsightExtractor 及其装配/自动抽取/手动 `archiveInsight`/`insight` getter/`insightExtracted` 事件从内核清除。
 
 ### 七·一 承诺 vs 实现状态对照（如实声明）
 
@@ -449,7 +451,7 @@ LLM 获得完整上下文
 | 写路径取代检测 superseded | §5.4 | ⏳ | ADR-021 已决策，实现列待办 `[ ]` |
 | 工具结果隔离 `<tool_result>` + 参数校验 + 返回净化 | （关联 ADR-023） | ⏳ | ADR-023 已决策，实现列待办 `[ ]` |
 | 截断优先用 round-summary | （关联 ADR-023） | ⏳ | ContextManager 仍现调 LLM 生成上下文摘要 |
-| 洞察自动抽取收敛（round-summary 单轨） | §2.3/§7 | ⏳ | 画像层已移除（2026-08-14）；InsightExtractor 自动抽取仍活跃，范围收敛为"仅自动抽取"（SessionArchiver 保留），代码待拆（宿主耦合，见 §7） |
+| 洞察层移除（摘要即记忆单轨） | §2.3/§7 | ✅ | 洞察层（InsightExtractor）已移除（2026-08-14），round-summary 单轨；SessionArchiver 会话归档保留（非洞察） |
 
 ---
 

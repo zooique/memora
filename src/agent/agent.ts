@@ -3,7 +3,7 @@
  *
  * 设计文档（ADR-010 · Agent 门面类）要求宿主项目通过 `import { Agent } from '@zooique/memora'`
  * 一行代码接入。本类负责组件组装和核心对话编排，
- * 领域专属操作委托给专职 Manager（PersonaManager / ToolExecutor / SkillManager / ConfigManager / InsightExtractor / MemoryInspector）。
+ * 领域专属操作委托给专职 Manager（PersonaManager / ToolExecutor / SkillManager / ConfigManager / MemoryInspector）。
  *
  * 使用方式（最简）：
  *   const agent = new Agent({ projectPath: './my-project', configDir: './agent-config' });
@@ -17,7 +17,6 @@
  *   const agent = new Agent({ projectPath: './my-project', provider: myProvider, configDir: './agent-config' });
  *
  * 2026-06-12 God Object 拆分：
- *   - Insight 提取 → InsightExtractor
  *   - 配置管理 → ConfigManager
  *   - 记忆查看 → MemoryInspector
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
@@ -43,7 +42,6 @@ import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
-import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
@@ -126,7 +124,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private rolePackManager_: RolePackManager | null = null;
 
   // 拆分出的专职 Manager
-  private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
   /**
@@ -383,9 +380,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 四级补全器（不中断工作模型 v2.0）
     this.composer = new Composer();
 
-    // 归档操作委托给 ArchiveCoordinator
+    // 归档操作委托给 ArchiveCoordinator（content 会话归档）
     this.archiveCoordinator = new ArchiveCoordinator({
-      getInsightExtractor: () => this.insightExtractor,
       getSessionArchiver: () => this.sessionArchiver,
       getArchiveMode: () => this.#config.archiveMode,
       emit: (event, payload) => this.emit(event, payload as never),
@@ -769,12 +765,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 所有归档/匹配操作均为 best-effort：任何子步骤失败不应影响用户已收到的回答，
    * 失败仅记录日志，不向上抛出异常。
    *
-   * ADR-015 归档模式控制：
+   * ADR-015 归档模式控制（2026-08-14 收敛为二态）：
    * - 角色匹配 + 技能匹配不受 archiveMode 影响（每轮都执行，非归档行为）
-   * - `manual` 模式跳过自动归档（insight），需用户手动调用
-   *   archiveInsight() 触发
-   * - `full` / `insights-only` 模式下 insight 自动归档
-   *   （会话归档实现后，`insights-only` 将跳过对话原始内容自动归档）
+   * - 洞察自动抽取已移除（2026-08-14），记忆收敛为 round-summary 单轨
+   * - `full` 模式：会话切换前自动归档会话内容（content）
+   * - `manual` 模式：跳过会话内容自动归档，需用户手动调用 archiveSessionContent()
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
     // postProcess 全流程 span（角色匹配 + 技能匹配 + 归档 + AutoConfigRefiner）
@@ -799,35 +794,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 技能匹配已迁移到 chat() 开头的 matchAndInjectSkill()（当轮实时生效），
     // 与 persona 的 tryAutoMatchPersona 同模式，消除"第一轮无技能"的一轮延迟问题。
 
-    // ADR-015 + FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator
+    // ADR-015 + FIX-P1-4: archiveMode 二态控制集中到 ArchiveCoordinator
     // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
-    //   - manual 模式 → 跳过 insight 自动归档（用户需手动调用）
-    //   - full / insights-only 模式 → 执行
+    //   - manual 模式 → 跳过 content 自动归档（用户需手动调用）
+    //   - full 模式 → 执行
     // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
     const history = this.requireHistory;
 
     // 用户画像已收敛为 round-summary 召回（2026-08-14），不再有独立画像归档路径。
-
-    // 输入分类 → Insight 提取（委托 ArchiveCoordinator，与手动归档路径统一）
-    // 受 L2 策略的 reflect.insightExtraction 控制：'off' 时跳过洞察提取
-    const strategy = this.getActiveStrategy();
-    if (strategy.reflect?.insightExtraction !== 'off') {
-      try {
-        // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
-        // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-        const archiveInsightPromise = this.requireArchiveCoordinator.archiveInsight(input, assistantContent, { autoTriggered: true }).then(
-          () => {},
-          (err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.warn({ err, stage: 'insight' }, '归档失败');
-            this.emit(AGENT_EVENTS.archiveFailed, { stage: 'insight', message: message.slice(0, 200) });
-          },
-        );
-        history.registerPendingArchive(archiveInsightPromise);
-      } catch (err) {
-        logger.warn({ err }, 'Insight 提取初始化失败');
-      }
-    }
+    // 洞察自动抽取已移除（2026-08-14）：其能力被 round-summary 吸收，记忆收敛为单轨。
 
     // AutoConfigRefiner（模式 3：Agent 智能总结）
     if (this.autoConfigRefiner) {
@@ -1993,7 +1968,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.personaManager = result.personaManager;
     this.skillManager = result.skillManager;
     this.rolePackManager_ = result.rolePackManager;
-    this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
     this.dedupManager = result.dedupManager;
@@ -2003,9 +1977,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
     this.roundSummaryGenerator = result.roundSummaryGenerator;
-    // 绑定记忆写入回调：新记忆沉淀后 emit('memoryAdded')（memoryRecalled 的对称事件）
-    // 宿主（如插件「已沉淀」提示条）据此获得跨会话记忆沉淀的可观测出口
-    this.insightExtractor.bindOnMemoryAdded((info) => {
+    // 绑定记忆写入回调：新记忆（round-summary）沉淀后 emit('memoryAdded')
+    // 替代原洞察层的「已沉淀」通知出口，保持内核"新记忆产生必通知"契约
+    this.roundSummaryGenerator?.setOnMemoryAdded((info) => {
       this.emit(AGENT_EVENTS.memoryAdded, info);
     });
     // 注入 VectorStore 到 MemoryInspector，启用混合搜索
@@ -2377,35 +2351,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 手动触发 insight 提取（manual 模式下使用）
-   *
-   * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
-   * 内部仍走 classify 判断（避免无价值输入浪费 LLM 调用）。
-   *
-   * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
-   * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
-   * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
-   *
-   * 归档逻辑已委托给 ArchiveCoordinator
-   *
-   * @param input 本轮用户输入
-   * @param assistantContent 本轮助手回复内容
-   * @param options 触发选项（autoTriggered 默认 false，即手动触发）
-   * @returns 写入/更新的 Memory 列表
-   */
-  async archiveInsight(
-    input: string,
-    assistantContent: string,
-    options?: ArchiveTriggerOptions,
-  ): Promise<Memory[]> {
-    this.assertInitialized('archiveInsight');
-    return this.requireArchiveCoordinator.archiveInsight(input, assistantContent, options);
-  }
-
-  /**
    * 手动归档会话内容（content 类记忆）
    *
-   * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
+   * 适用于 `manual` 模式下用户手动触发会话内容归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
    * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
@@ -2426,19 +2374,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): Promise<SessionArchiveResult> {
     this.assertInitialized('archiveSessionContent');
     return this.requireArchiveCoordinator.archiveSessionContent(date, session, options);
-  }
-
-  /**
-   * 获取 pending 归档队列长度（MIND2-C3）
-   *
-   * 返回待重试的失败归档数。归档失败时输入入队，下次同阶段归档调用时自动重试。
-   * 供宿主 UI 展示"N 条待补归档"提示，或判断是否需要手动触发重试。
-   *
-   * @returns pending 队列长度（0 表示无待补）
-   */
-  getPendingArchiveCount(): number {
-    this.assertInitialized('getPendingArchiveCount');
-    return this.requireArchiveCoordinator.getPendingArchiveCount();
   }
 
   // ─── 配置重载（事件驱动） ───────────────────────
@@ -2782,7 +2717,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 专职 Manager
     this.personaManager = null;
     this.skillManager = null;
-    this.insightExtractor = null;
     this.configManager = null;
     this.memoryInspector = null;
     this.dedupManager = null;
@@ -2970,15 +2904,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get config(): ConfigManager | null {
     return this.configManager;
-  }
-
-  /**
-   * Insight 提取器（可能为 null）—— 输入分类 + 记忆提取
-   *
-   * 返回 null 时表示 Agent 未初始化或 LLM Provider 未配置。
-   */
-  get insight(): InsightExtractor | null {
-    return this.insightExtractor;
   }
 
   /**

@@ -70,7 +70,7 @@ function makeAgent(
   projectPath: string,
   configDir: string,
   dataDir: string,
-  archiveMode?: 'full' | 'insights-only' | 'manual',
+  archiveMode?: 'full' | 'manual',
 ): Agent {
   return new Agent({
     projectPath,
@@ -363,7 +363,6 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.persona).toBeNull();
     expect(agent.tools).toBeNull();
     expect(agent.config).toBeNull();
-    expect(agent.insight).toBeNull();
     expect(agent.memory).toBeNull();
 
     // init
@@ -376,7 +375,6 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.persona).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.config).not.toBeNull();
-    expect(agent.insight).not.toBeNull();
     expect(agent.memory).not.toBeNull();
 
     // chat（流式）
@@ -410,7 +408,6 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.persona).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.config).not.toBeNull();
-    expect(agent.insight).not.toBeNull();
     expect(agent.memory).not.toBeNull();
     expect(agent.agentLoop).not.toBeNull();
     expect(agent.agentHistory).not.toBeNull();
@@ -432,7 +429,6 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.persona).toBeNull();
     expect(agent.tools).toBeNull();
     expect(agent.config).toBeNull();
-    expect(agent.insight).toBeNull();
     expect(agent.memory).toBeNull();
     expect(agent.projects).toBeNull();
     expect(agent.works).toBeNull();
@@ -791,17 +787,6 @@ describe('Agent · postProcess() · 对话后处理', () => {
     agent.off('skillMatched', () => {});
   });
 
-  it('Insight 提取：classify 返回 extract 时应触发 extract', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    // InsightExtractor.classify 对非 trivial 输入默认返回 'extract'
-    // 通过 chatSync 触发 postProcess → insightExtractor.classify → extract
-    // extract 是异步的（fire-and-forget），不会抛错即算通过
-    const reply = await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
-    expect(reply).toContain('Mock 响应');
-  });
-
   it('无 Manager 时不报错：postProcess 应正常完成', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
@@ -811,7 +796,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     const reply = await agent.chatSync('你好');
     expect(reply).toContain('Mock 响应');
 
-    // 再发一条 trivial 输入（classify 返回 'skip'），验证 skip 路径也不报错
+    // 再发一条 trivial 输入，验证简短的 postProcess 路径也不报错
     const reply2 = await agent.chatSync('好的');
     expect(reply2).toContain('Mock 响应');
   });
@@ -1252,10 +1237,10 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：archiveMode（ADR-015）· 三种归档模式
+// 测试：archiveMode（ADR-015）· 二态归档模式
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
+describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 洞察层收敛为 full|manual）', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -1298,8 +1283,8 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    agent.setArchiveMode('insights-only');
-    expect(agent.getArchiveMode()).toBe('insights-only');
+    agent.setArchiveMode('full');
+    expect(agent.getArchiveMode()).toBe('full');
 
     agent.setArchiveMode('manual');
     expect(agent.getArchiveMode()).toBe('manual');
@@ -1444,234 +1429,18 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
     agent.off('personaSwitched', () => {});
   });
 
-  // ─── full 模式（默认）自动归档 ──────────────────────────
-
-  it('full 模式：chatSync 后应触发 memoryAdded 事件（profile + insight）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
-    await agent.init();
-
-    // 监听 memoryAdded 事件
-    let memoryAddedCount = 0;
-    agent.on('memoryAdded', () => {
-      memoryAddedCount++;
-    });
-
-    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
-
-    // 等待异步归档完成（profile + insight 都 fire-and-forget）
-    await new Promise((r) => setTimeout(r, 200));
-
-    // full 模式应触发自动归档（至少 1 条，profile 或 insight）
-    expect(memoryAddedCount).toBeGreaterThan(0);
-
-    agent.off('memoryAdded', () => {});
-  });
-
-  // ─── insights-only 模式（当前与 full 等价） ──
-
-  it('insights-only 模式：profile + insight 自动归档（与 full 等价）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'insights-only');
-    await agent.init();
-
-    let memoryAddedCount = 0;
-    agent.on('memoryAdded', () => {
-      memoryAddedCount++;
-    });
-
-    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
-
-    await new Promise((r) => setTimeout(r, 200));
-
-    // insights-only 模式下 profile + insight 都自动归档（与 full 等价）
-    expect(memoryAddedCount).toBeGreaterThan(0);
-
-    agent.off('memoryAdded', () => {});
-  });
-
   // ─── 手动 API（manual 模式下使用） ─────────────────────
 
-  it('archiveInsight：手动触发 insight 提取', async () => {
+  it('archiveSessionContent：手动触发会话内容归档', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
     await agent.init();
 
-    let insightExtractedCount = 0;
-    agent.on('insightExtracted', () => {
-      insightExtractedCount++;
-    });
+    // 手动触发会话内容归档
+    const result = await agent.archiveSessionContent('2026-07-04', 'session-1');
 
-    // 手动触发 insight 提取
-    const memories = await agent.archiveInsight('我正在开发一个新项目，需要记住这个偏好', 'Mock 响应');
-
-    // 应返回 Memory 数组
-    expect(Array.isArray(memories)).toBe(true);
-
-    // 如果有写入，应触发 insightExtracted 事件
-    expect(insightExtractedCount).toBe(memories.length);
-
-    agent.off('insightExtracted', () => {});
-  });
-
-  it('archiveInsight：classify 返回 skip 时返回空数组', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
-    await agent.init();
-
-    // trivial 输入，classify 应返回 'skip'
-    const memories = await agent.archiveInsight('好的', 'Mock 响应');
-
-    expect(memories).toEqual([]);
-  });
-
-  // ─── 运行时切换 archiveMode ─────────────────────────────
-
-  it('运行时从 full 切换到 manual：后续对话不再自动归档', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
-    await agent.init();
-
-    // 第一轮：full 模式，应自动归档
-    let memoryAddedCount = 0;
-    agent.on('memoryAdded', () => {
-      memoryAddedCount++;
-    });
-
-    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
-    await new Promise((r) => setTimeout(r, 200));
-    const firstRoundCount = memoryAddedCount;
-    expect(firstRoundCount).toBeGreaterThan(0);
-
-    // 切换到 manual 模式
-    agent.setArchiveMode('manual');
-
-    // 第二轮：manual 模式，不应自动归档
-    memoryAddedCount = 0;
-    await agent.chatSync('我还需要记住另一个偏好');
-    await new Promise((r) => setTimeout(r, 200));
-
-    expect(memoryAddedCount).toBe(0);
-
-    agent.off('memoryAdded', () => {});
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
-// 测试：archiveFailed 事件（归档失败通知）
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * ArchiveCoordinator 实例的类型断言 helper
- *
- * agent.archiveCoordinator 是 private 字段，测试通过 as unknown as 访问。
- * 提取为 helper 避免在每个 it 中重复冗长的类型断言。
- */
-function getArchiveCoordinator(agent: Agent): {
-  archiveInsight: (input: string, assistantContent: string) => Promise<unknown>;
-} {
-  return (
-    agent as unknown as {
-      archiveCoordinator: {
-        archiveInsight: (input: string, assistantContent: string) => Promise<unknown>;
-      };
-    }
-  ).archiveCoordinator;
-}
-
-describe('Agent · archiveFailed 事件 · 归档失败通知', () => {
-  let tmpProject: string;
-  let tmpConfig: string;
-  let tmpData: string;
-  let agent: Agent | null = null;
-
-  beforeEach(() => {
-    tmpData = mkdtempSync(join(tmpdir(), 'memora-afail-data-'));
-    tmpProject = mkdtempSync(join(tmpdir(), 'memora-afail-proj-'));
-    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-afail-cfg-'));
-    seedProjectWithPersonasAndSkills(tmpProject, tmpConfig, tmpData);
-  });
-
-  afterEach(async () => {
-    if (agent) {
-      await agent.close();
-      agent = null;
-    }
-    rmSync(tmpProject, { recursive: true, force: true });
-    rmSync(tmpConfig, { recursive: true, force: true });
-    rmSync(tmpData, { recursive: true, force: true });
-  });
-
-  it('insight 归档失败时发射 archiveFailed 事件（stage=insight）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
-    await agent.init();
-
-    // 注入失败的 archiveInsight，模拟 LLM insight 提取异常
-    const coordinator = getArchiveCoordinator(agent);
-    coordinator.archiveInsight = vi.fn().mockRejectedValue(new Error('LLM insight 提取失败'));
-
-    const events: Array<{ stage: string; message: string }> = [];
-    agent.on('archiveFailed', (e) => events.push(e));
-
-    await agent.chatSync('我正在开发一个新项目');
-
-    await new Promise((r) => setTimeout(r, 200));
-
-    expect(events).toHaveLength(1);
-    expect(events[0]!.stage).toBe('insight');
-    expect(events[0]!.message).toContain('LLM insight 提取失败');
-  });
-
-  it('失败原因超长时截断至 200 字符（payload 防膨胀）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
-    await agent.init();
-
-    // 构造超长错误消息（500 字符），验证 catch 分支的 slice(0, 200) 截断
-    const longMessage = 'E'.repeat(500);
-    const coordinator = getArchiveCoordinator(agent);
-    coordinator.archiveInsight = vi.fn().mockRejectedValue(new Error(longMessage));
-
-    const events: Array<{ stage: string; message: string }> = [];
-    agent.on('archiveFailed', (e) => events.push(e));
-
-    await agent.chatSync('测试');
-
-    await new Promise((r) => setTimeout(r, 200));
-
-    expect(events).toHaveLength(1);
-    expect(events[0]!.message.length).toBe(200);
-  });
-
-  it('close() 期间归档失败仍能发射 archiveFailed（顺序敏感验证）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
-    await agent.init();
-
-    // 创建可控的 pending Promise：在 close() await 期间手动 reject
-    // 验证 close() 顺序（先 awaitPendingArchives 再 removeAllListeners）确保 emit 不丢失
-    let rejectArchive!: (err: Error) => void;
-    const pendingPromise = new Promise<never>((_resolve, reject) => {
-      rejectArchive = reject;
-    });
-
-    const coordinator = getArchiveCoordinator(agent);
-    coordinator.archiveInsight = vi.fn().mockReturnValue(pendingPromise);
-
-    const events: Array<{ stage: string; message: string }> = [];
-    agent.on('archiveFailed', (e) => events.push(e));
-
-    await agent.chatSync('测试');
-    // 此时 archiveInsight 的 Promise 仍 pending（reject 时机由测试控制）
-
-    // 触发 close()，它会进入 awaitPendingArchives 等待 pendingPromise
-    const closePromise = agent.close();
-    // 给 close() 一点时间进入 awaitPendingArchives
-    await new Promise((r) => setTimeout(r, 50));
-    // 此时 close() 正在 await pendingPromise，reject 它触发 catch 分支 emit
-    rejectArchive(new Error('close 期间归档失败'));
-    await closePromise;
-
-    // archiveFailed 事件应在 removeAllListeners 之前送达（顺序敏感性的核心验证点）
-    expect(events).toHaveLength(1);
-    expect(events[0]!.stage).toBe('insight');
-    expect(events[0]!.message).toContain('close 期间归档失败');
-
-    // 防止 afterEach 再次 close（已在测试中 close 完成）
-    agent = null;
+    // 应返回归档结果结构
+    expect(result).toHaveProperty('memories');
+    expect(result).toHaveProperty('sessionLabel', '2026-07-04-session-1');
   });
 });
 
@@ -2022,7 +1791,6 @@ describe('Agent · rebuildComponents() · 手动重建组件', () => {
     expect(agent.persona).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.config).not.toBeNull();
-    expect(agent.insight).not.toBeNull();
     expect(agent.memory).not.toBeNull();
   });
 });
@@ -2608,7 +2376,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
   });
 
   it('启动时发现超时会话应触发内容归档', async () => {
-    // 只监听不改实现：archiveMode 为 insights-only 时
+    // 只监听不改实现：archiveMode 为 manual 时
     // autoTriggered 的 content 归档会立即降级返回，不触碰 LLM
     const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSessionContent');
     const sessionId = `${todayDate()}-main`;
@@ -2620,7 +2388,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      archiveMode: 'insights-only',
+      archiveMode: 'manual',
       sessionStore: createTimedOutCheckpointStore(sessionId),
     });
     await agent.init();
@@ -2634,7 +2402,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
   it('无超时会话时不应触发归档', async () => {
     const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSessionContent');
 
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'insights-only');
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
     await agent.init();
 
     expect(spy).not.toHaveBeenCalled();

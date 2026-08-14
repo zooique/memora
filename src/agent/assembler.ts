@@ -18,7 +18,6 @@ import type { ProjectContext } from '@/memory/projectManager.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
-import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -171,7 +170,6 @@ export interface AssembleOutput {
   personaManager: PersonaManager;
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
-  insightExtractor: InsightExtractor;
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
   /**
@@ -211,7 +209,7 @@ export interface AssembleOutput {
  *   1. 无依赖组件：history, workProjection, toolExec
  *   2. 依赖 Provider 的组件：personaManager, skillManager
  *   3. AgentLoop（依赖 toolExec + systemPromptPrefix）
- *   4. 依赖 Loop 的组件：insightExtractor, configManager, memoryInspector
+ *   4. 依赖 Loop 的组件：configManager, memoryInspector
  *
  * @param pctx 项目上下文
  * @param input 组装参数
@@ -243,7 +241,6 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     systemPrefixParts.filter(Boolean).join('\n\n') +
     (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
 
-  const insightExtractor = new InsightExtractor(provider, pctx.index);
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
   const roundSummaryGenerator = new RoundSummaryGenerator(provider, pctx.index);
@@ -287,7 +284,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     providerRouter: providerRouter ?? undefined,
     bootstrapMemories: pctx.bootstrapMemories,
     toolExecutor: (name: string, args: string) =>
-      toolExec.execute(name, args, insightExtractor.writeExtensions ?? undefined),
+      toolExec.execute(name, args),
     systemPromptPrefix,
     toolDefinitions: toolExec.list,
     maxContextTokens,
@@ -303,10 +300,9 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     roundSummaryLoader,
   });
 
-  insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
 
-  return { loop, insightExtractor, sessionArchiver, textPolisher, roundSummaryGenerator };
+  return { loop, sessionArchiver, textPolisher, roundSummaryGenerator };
 }
 
 /**
@@ -405,7 +401,7 @@ export async function assembleComponents(
 
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
-  const { loop, insightExtractor, sessionArchiver, textPolisher, roundSummaryGenerator } =
+  const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
       provider,
       backgroundProvider,
@@ -442,7 +438,6 @@ export async function assembleComponents(
     personaManager,
     workProjection,
     skillManager,
-    insightExtractor,
     configManager,
     memoryInspector,
     dedupManager,
