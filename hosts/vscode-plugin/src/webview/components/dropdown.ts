@@ -40,7 +40,45 @@ export function buildDropdownHtml(items: DropdownItem[], opts?: { extraClass?: s
     </div>`;
 }
 
-/** 注入页面的脚本：通用展开/收起 + 事件委托转发（面板通过 data-on-select / __treeddOnSelect 接收） */
+/** 下拉初始化：绑定展开/收起 + 事件委托转发选择项。
+ *  阶段 B（对抗评估 P2-1）：显式函数替代原「window.__xxx 全局回调名」模式——
+ *  chatView 直接调用并传入回调映射，消除全局污染。data-on-select 属性值作为回调
+ *  键名（缺省 __treeddOnSelect），与 buildDropdownHtml 生成的 HTML 契约一致。
+ *  DOM 副作用仅在调用时执行（extension 端 import 安全）。
+ *  @param root webview 文档对象（document）
+ *  @param callbacks 回调映射：键为 data-on-select 属性值，值为选择项处理器 */
+export function initDropdowns(
+  root: Document,
+  callbacks: Record<string, (id: string) => void>,
+): void {
+  // 遍历 root 下所有 .treedd 实例（而非只取第一个，避免多实例漏绑）
+  root.querySelectorAll('.treedd').forEach((el) => {
+    const trigger = el.querySelector('.treedd__trigger');
+    const menu = el.querySelector('.treedd__menu');
+    if (!trigger || !menu) return;
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.classList.toggle('is-open');
+    });
+    // 选择项用「事件委托」：菜单项可能动态渲染（模型列表），closest 命中即可转发
+    menu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = e.target as HTMLElement | null;
+      const item = target?.closest ? target.closest('.treedd__item') : null;
+      if (!item) return;
+      el.classList.remove('is-open');
+      const cbName = el.getAttribute('data-on-select') || '__treeddOnSelect';
+      const cb = callbacks[cbName];
+      if (cb) cb(String(item.getAttribute('data-treedd-id')));
+    });
+  });
+  // 点击任意位置关闭所有展开的下拉
+  root.addEventListener('click', () => {
+    root.querySelectorAll('.treedd.is-open').forEach((el) => el.classList.remove('is-open'));
+  });
+}
+
+/** [双轨] 注入页面的脚本：通用展开/收起 + 事件委托转发（chatPanel 接线完成后删除） */
 export const dropdownInitScript = `
 (function () {
   // 通用下拉初始化：遍历页面上所有 .treedd 实例（而非只取第一个，避免多实例漏绑）。
