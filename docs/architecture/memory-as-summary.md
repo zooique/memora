@@ -101,11 +101,11 @@ postProcess → 使用 round-5 生成摘要
 
 ## 三、存储模型
 
-### 3.1 摘要表（唯一的记忆存储）
+### 3.1 摘要表（轮次级记忆存储）
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  轮次摘要（RoundSummary）—— 系统唯一的记忆存储   │
+│  轮次摘要（RoundSummary）—— 系统轮次级记忆存储    │
 ├──────────────────────────────────────────────────┤
 │  id:          string        // 全局唯一标识      │
 │  sessionName: string        // 所属对话窗口名称  │
@@ -120,7 +120,7 @@ postProcess → 使用 round-5 生成摘要
 └──────────────────────────────────────────────────┘
 ```
 
-写入 `IMemoryStorage`，`source='round-summary'`。这是系统唯一的记忆产生层——洞察层/画像层已于 2026-08-14 收敛移除，当前即此目标态，无其他写入型 source 类型（`PROFILE` 仅保留为存量数据治理，不再有新写入，见 §7）。
+写入 `IMemoryStorage`，`source='round-summary'`。这是系统**轮次级**的记忆产生层——洞察层/画像层已于 2026-08-14 收敛移除，当前即此目标态。**写入型 source 共两类**：`round-summary`（轮次摘要，本层）+ `content`（会话归档，[sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts) 写入，承载会话级综合提炼，见 §7）；`PROFILE` 仅保留为存量数据治理，不再有新写入。
 
 ### 3.2 摘要类型（SummaryType）— 召回的标准
 

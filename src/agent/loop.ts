@@ -359,11 +359,14 @@ export class AgentLoop {
    *   可选。传入时自动注入到上下文，实现"Agent 记忆召回结果"层
    * @param signal - 可选的 AbortSignal，用于取消正在进行的对话
    *   泊文等宿主 UI 传入 AbortController.signal，用户点击"取消"时触发 abort
+   * @param roundId - 可选的外部已分配轮次 ID（agent 层外部输入入口已先分配并写入 user 消息，
+   *   传入以保证 user/assistant/摘要同 roundId，SSOT）；未传时自生成兜底。
    */
   async *processUserInput(
     userInput: string,
     recalledMemories?: readonly Memory[],
     signal?: AbortSignal,
+    roundId?: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 创建顶层 response span，由 try/finally 统一管理生命周期
     const responseSpan = this.tracer.startSpan(TRACE_SPANS.RESPONSE, {
@@ -372,7 +375,10 @@ export class AgentLoop {
 
     try {
       // 分配当前轮次 ID（以 processUserInput 为粒度，所有 iteration 共享）
-      this.currentRoundId = `round-${Date.now()}`;
+      // 优先采用调用方传入的 roundId（agent 层外部输入入口已先分配并写入 user 消息，
+      // 此处以传入为准保证 appendUser/appendAssistant/摘要同源同值——SSOT）；
+      // 未传（测试/内部委托调用）时自生成兜底，每轮独立。
+      this.currentRoundId = roundId ?? `round-${Date.now()}`;
 
       // 1. 召回注入 + 输入护栏（返回 true 表示已 block 并 yield done，应 return）
       if (yield* this.handleRecallAndInputGuard(userInput, recalledMemories)) return;

@@ -215,7 +215,7 @@ describe('AgentLoop · 记忆召回命中率指标', () => {
       toolExecutor: vi.fn(),
     });
 
-    const recalledMemories: Memory[] = [makeMemory({ id: 'insight:1', source: 'insight' })];
+    const recalledMemories: Memory[] = [makeMemory({ id: 'content:1', source: 'content' })];
     await consumeGenerator(loop.processUserInput('你好', recalledMemories));
 
     const metrics = loop.getMetrics();
@@ -234,7 +234,7 @@ describe('AgentLoop · 记忆召回命中率指标', () => {
     // 第一轮：无召回
     await consumeGenerator(loop.processUserInput('第一轮'));
     // 第二轮：有召回
-    const recalled: Memory[] = [makeMemory({ id: 'insight:1' })];
+    const recalled: Memory[] = [makeMemory({ id: 'content:1' })];
     await consumeGenerator(loop.processUserInput('第二轮', recalled));
     // 第三轮：无召回
     await consumeGenerator(loop.processUserInput('第三轮'));
@@ -408,7 +408,7 @@ describe('AgentMetrics · 类型结构', () => {
       toolExecutor: vi.fn(),
     });
 
-    const recalled: Memory[] = [makeMemory({ id: 'insight:1' })];
+    const recalled: Memory[] = [makeMemory({ id: 'content:1' })];
     await consumeGenerator(loop.processUserInput('你好', recalled));
 
     const metrics = loop.getMetrics();

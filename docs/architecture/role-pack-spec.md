@@ -83,7 +83,7 @@
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
 - **manifest 字段集**：`name`（必填）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
-- **skills 字段集**：`file`（必填，技能文件路径或已注册技能名）/ `name`（可选）/ `description`（可选）/ `capability`（可选，中立能力名 `域:动作`，§四）；
+- **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
 - **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 仅转译为注册形状（正文不装载，§四 诚实声明）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 - **分发**：文件夹 zip 压缩（对齐 skills 市场分发方式）。
@@ -143,11 +143,13 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 "skills": [
   { "file": "skills/write.md", "name": "write", "capability": "file:write", "description": "把成稿写入本地文件" },
   { "file": "skills/search.md", "name": "search", "capability": "web:search", "description": "写作查资料" },
-  { "file": "skills/summarize.md", "name": "summarize", "capability": "llm:summarize" }
+  { "file": "skills/summarize.md", "name": "summarize", "capability": "llm:summarize" },
+  { "capability": "file:read", "description": "纯能力声明（无具体技能文件，仅声明可调用某中立能力）" }
 ]
 ```
 
-- **字段**：`file`（必填，技能文件路径或已注册技能名）/ `name`（可选）/ `description`（可选）/ `capability`（可选，中立能力名 `域:动作`）；
+- **字段**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`）**至少其一**；`name`（可选）/ `description`（可选）；
+- **纯能力声明**：仅声明 `capability`、无 `file` 的技能项合法——声明"角色可调用某中立能力"而无具体技能文件（如示例末项）；有 `file` 无 `capability` 时仅作生态指针，不参与工具白名单映射；
 - **实现映射**：memora 把 `file:write` 映射到内置 `writeFile` 工具；其他实现映射到自有工具；
 - **未知能力**：装载方跳过该能力（可选提示"能力不可用"），不阻塞；
 - 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集；
@@ -319,8 +321,9 @@ export interface IMcpTransport {
 | reflect | `reflect.summary` | `on` / `off` | 摘要生成 | `[草案]` | 无参考实现消费，待验证（memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
 | reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 | 冻结 | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`） |
 | reflect | `reflect.loopContinue` | 0 或正整数（兼容旧 'on'→1 / 'off'→0） | 自审查轮数：LLM 纯文本回复后自动审查 N 轮（0=关闭） | 冻结 | memora 消费（agent.ts 自审查轮数，mvp-scope §三·一）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
-| global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | `[草案]` | 无参考实现消费，待验证 |
-| global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | `[草案]` | 无参考实现消费，待验证 |
+| reflect | `reflect.userFollowup` | `ask` / `silent` | 用户追问策略：ask=主动引导对话 / silent=只等输入 | 冻结 | memora 消费（agent.ts 衔接 + types.ts 提问指令注入）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
+| global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | 冻结-条件消费 | memora 消费（types.ts `assembleRolePack` 提问指令注入，**仅 `reflect.userFollowup=ask` 时生效**）；条件消费 = 字段冻结，但行为仅在指定策略组合下激活 |
+| global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | 冻结-条件消费 | memora 消费（同上，userFollowup=ask 时生效，缺省 3） |
 | global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
 
 ---

@@ -195,6 +195,40 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
+
+  it('loopContinue 非负整数合法（0=关闭 / N=最多 N 轮）→ 通过（雷-3b）', () => {
+    const r0 = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 0 } },
+    });
+    const r2 = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 2 } },
+    });
+    expect(r0.valid).toBe(true);
+    expect(r2.valid).toBe(true);
+    expect(findByCode(r0.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+  });
+
+  it('loopContinue 负数/字符串 → INVALID_STRATEGY_VALUE error（雷-3b）', () => {
+    const neg = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: -1 } },
+    });
+    const str = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 'on' } },
+    });
+    expect(findByCode(neg.issues, 'INVALID_STRATEGY_VALUE').length).toBeGreaterThan(0);
+    expect(findByCode(str.issues, 'INVALID_STRATEGY_VALUE').length).toBeGreaterThan(0);
+  });
+
+  it('userFollowup 枚举合法（ask/silent）且非枚举 error（雷-3b）', () => {
+    const ok = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, userFollowup: 'ask' } },
+    });
+    const bad = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, userFollowup: 'chat' } },
+    });
+    expect(ok.valid).toBe(true);
+    expect(findByCode(bad.issues, 'INVALID_STRATEGY_VALUE').length).toBeGreaterThan(0);
+  });
 });
 
 describe('validateManifest：内容路径注册（persona / rules）', () => {
@@ -221,9 +255,15 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL')).toHaveLength(1);
   });
 
-  it('skills 项缺 file → INVALID_MANIFEST_SKILL error', () => {
+  it('skills 项缺 file 且缺 capability → INVALID_MANIFEST_SKILL error', () => {
     const result = validate({ skills: [{ name: 'no-file' }] });
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL').length).toBeGreaterThan(0);
+  });
+
+  it('纯 capability 声明（无 file 有 capability）合法（雷-3a）', () => {
+    const result = validate({ skills: [{ capability: 'file:read' }] });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL')).toHaveLength(0);
   });
 
   it('name/description 非字符串 → warning（不阻塞）', () => {

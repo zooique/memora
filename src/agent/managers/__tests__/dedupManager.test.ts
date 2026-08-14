@@ -73,10 +73,10 @@ const createMockProvider = (response: string): LlmProvider =>
 
 describe('DedupManager · M6 合并内容落库', () => {
   it('判定重复且提供 mergedContent 时，保留方 a 的内容应更新为合并内容', async () => {
-    // Given - 两条名称相似（"用户偏好" ⊂ "用户偏好设置" → 相似度 0）的 insight 记忆
+    // Given - 两条名称相似（"用户偏好" ⊂ "用户偏好设置" → 相似度 0）的 profile 记忆
     const storage = createMockStorage();
     const memA: Memory = {
-      id: 'insight:a',
+      id: 'content:a',
       source: SOURCE_LABELS.PROFILE,
       name: '用户偏好',
       content: '用户偏好简洁 UI',
@@ -85,7 +85,7 @@ describe('DedupManager · M6 合并内容落库', () => {
       score: 0.9, // 高分 → 保留方
     };
     const memB: Memory = {
-      id: 'insight:b',
+      id: 'content:b',
       source: SOURCE_LABELS.PROFILE,
       name: '用户偏好设置',
       content: '用户偏好简洁界面',
@@ -111,16 +111,16 @@ describe('DedupManager · M6 合并内容落库', () => {
 
     // Then - 报告正确
     expect(report.deduplicatedCount).toBe(1);
-    expect(report.demotedIds).toContain('insight:b');
+    expect(report.demotedIds).toContain('content:b');
     expect(report.verdicts?.[0]?.mergedContent).toBe('合并后的完整偏好：简洁 UI');
 
     // M6 核心：保留方 a 内容被合并内容覆盖（旧实现生成 mergedContent 却从不落库）
-    const kept = storage.getById('insight:a');
+    const kept = storage.getById('content:a');
     expect(kept).not.toBeNull();
     expect(kept!.content).toBe('合并后的完整偏好：简洁 UI');
 
     // 降级方 b score 降至低分（不物理删除，保留可恢复性）
-    const demoted = storage.getById('insight:b');
+    const demoted = storage.getById('content:b');
     expect(demoted!.score).toBe(0.1);
   });
 
@@ -128,7 +128,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     // Given - 同样两条相似记忆，但 LLM 未给 mergedContent
     const storage = createMockStorage();
     const memA: Memory = {
-      id: 'insight:a',
+      id: 'content:a',
       source: SOURCE_LABELS.PROFILE,
       name: '用户偏好',
       content: '原始A内容',
@@ -137,7 +137,7 @@ describe('DedupManager · M6 合并内容落库', () => {
       score: 0.9,
     };
     const memB: Memory = {
-      id: 'insight:b',
+      id: 'content:b',
       source: SOURCE_LABELS.PROFILE,
       name: '用户偏好设置',
       content: '原始B内容',
@@ -157,7 +157,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     await manager.deduplicateMemories();
 
     // Then - 保留方内容保持原样（仅降级方被降分）
-    expect(storage.getById('insight:a')!.content).toBe('原始A内容');
-    expect(storage.getById('insight:b')!.score).toBe(0.1);
+    expect(storage.getById('content:a')!.content).toBe('原始A内容');
+    expect(storage.getById('content:b')!.score).toBe(0.1);
   });
 });

@@ -29,7 +29,7 @@ function makeMemory(id: string, score: number): Memory {
   return {
     id,
     content: `内容-${id}`,
-    source: 'insight',
+    source: 'content',
     name: `名称-${id}`,
     createdAt: new Date().toISOString(),
     accessedAt: new Date().toISOString(),

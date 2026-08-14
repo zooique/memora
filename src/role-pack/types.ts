@@ -402,12 +402,14 @@ export interface RolePackManifest {
  */
 export interface RolePackManifestSkill {
   /**
-   * 技能文件路径（相对角色包文件夹根）或已注册技能名
+   * 技能文件路径（相对角色包文件夹根）或已注册技能名（可选）
    *
    * 生态兼容指针（role-pack-spec §四）：供主流 skills 生态互认/移植，内核**不装载正文**。
    * 内核唯一行为入口是 `capability`（派生工具暴露面）；file 仅作元信息，不承诺执行。
+   * 支持**纯能力声明**（仅 capability、无 file）：声明角色可调用某中立能力，无具体技能文件。
+   * file 与 capability 至少其一（§四）。
    */
-  readonly file: string;
+  readonly file?: string;
   /** 技能名（可选，缺省取文件名去扩展名） */
   readonly name?: string;
   /** 技能说明（可选，供 LLM 与校验器理解） */

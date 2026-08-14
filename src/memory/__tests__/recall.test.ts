@@ -15,7 +15,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:1',
     content: '测试内容',
-    source: 'insight',
+    source: 'content',
     name: 'test-memory',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',
@@ -72,7 +72,7 @@ describe('recall · 记忆召回', () => {
 
   it('应该基于查询搜索并返回结果', async () => {
     const results = [
-      makeMemory({ id: 'insight:1', source: 'insight', score: 0.9 }),
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
       makeMemory({ id: 'profile:1', source: 'profile', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
@@ -112,7 +112,7 @@ describe('recall · 记忆召回', () => {
 
   it('应该限制返回数量', async () => {
     const results = Array.from({ length: 10 }, (_, i) =>
-      makeMemory({ id: `insight:${i}`, source: 'insight', score: 0.5 + i * 0.05 }),
+      makeMemory({ id: `content:${i}`, source: 'content', score: 0.5 + i * 0.05 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -123,9 +123,9 @@ describe('recall · 记忆召回', () => {
 
   it('应该按 score 降序排列', async () => {
     const results = [
-      makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 }),
-      makeMemory({ id: 'insight:2', source: 'insight', score: 0.9 }),
-      makeMemory({ id: 'insight:3', source: 'insight', score: 0.7 }),
+      makeMemory({ id: 'content:1', source: 'content', score: 0.5 }),
+      makeMemory({ id: 'content:2', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:3', source: 'content', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -144,7 +144,7 @@ describe('recall · 记忆召回', () => {
   });
 
   it('FIX-P1-2：recall 只读不写，返回 boost 后的副本（不调用 upsert）', async () => {
-    const original = makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 });
+    const original = makeMemory({ id: 'content:1', source: 'content', score: 0.5 });
     vi.mocked(mockStorage.search).mockReturnValue([original]);
 
     const memories = await recall(mockStorage, '测试');
@@ -161,7 +161,7 @@ describe('recall · 记忆召回', () => {
 
   it('FIX-P1-2：boost 后 score 不应超过上限 1.0（在返回的副本上验证）', async () => {
     // 高分记忆（0.98）被召回后 boost +0.05 = 1.03，应被钳制到 1.0
-    const highScore = makeMemory({ id: 'insight:high', source: 'insight', score: 0.98 });
+    const highScore = makeMemory({ id: 'content:high', source: 'content', score: 0.98 });
     vi.mocked(mockStorage.search).mockReturnValue([highScore]);
 
     const memories = await recall(mockStorage, '测试');
@@ -196,13 +196,13 @@ describe('FIX-P1-2: boostScores · 批量持久化 boost', () => {
   });
 
   it('应对每个 id 调用 incrementScore 原子增量', async () => {
-    await boostScores(mockStorage, ['insight:1', 'insight:2']);
+    await boostScores(mockStorage, ['content:1', 'content:2']);
 
     // 应调用 2 次 incrementScore，传入 BOOST_INCREMENT 增量
     expect(mockStorage.incrementScore).toHaveBeenCalledTimes(2);
     const calls = vi.mocked(mockStorage.incrementScore).mock.calls;
-    expect(calls[0]![0]).toBe('insight:1');
-    expect(calls[1]![0]).toBe('insight:2');
+    expect(calls[0]![0]).toBe('content:1');
+    expect(calls[1]![0]).toBe('content:2');
     // delta 是 BOOST_INCREMENT（0.05），now 是 ISO 字符串
     expect(calls[0]![1]).toBe(0.05);
     expect(typeof calls[0]![2]).toBe('string');
@@ -212,7 +212,7 @@ describe('FIX-P1-2: boostScores · 批量持久化 boost', () => {
     vi.mocked(mockStorage.incrementScore).mockReturnValue(false);
 
     // boostScores 不检查返回值，fire-and-forget 由 storage 层静默处理
-    await expect(boostScores(mockStorage, ['insight:deleted'])).resolves.toBeUndefined();
+    await expect(boostScores(mockStorage, ['content:deleted'])).resolves.toBeUndefined();
   });
 
   it('空 ids 数组应直接返回，不调用 incrementScore', async () => {
@@ -250,17 +250,17 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
   it('vectorStore 有结果时应走语义搜索通道', async () => {
     // 语义搜索返回 1 条结果，关键词搜索返回 0 条
     vi.mocked(mockVectorStore.search).mockResolvedValue([
-      { id: 'insight:semantic-1', similarity: 0.9 },
+      { id: 'content:semantic-1', similarity: 0.9 },
     ]);
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'insight:semantic-1', source: 'insight', score: 0.8 }),
+      makeMemory({ id: 'content:semantic-1', source: 'content', score: 0.8 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([]);
 
     const memories = await recall(mockStorage, '测试查询', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(1);
-    expect(memories[0]!.id).toBe('insight:semantic-1');
+    expect(memories[0]!.id).toBe('content:semantic-1');
     // 语义搜索应被调用，topK = limit * RECALL_LIMIT_MULTIPLIER = 5 * 2 = 10
     expect(mockVectorStore.search).toHaveBeenCalledWith('测试查询', 10, 0.3);
   });
@@ -269,7 +269,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
     // size=0 时不应调用 vectorStore.search
     mockVectorStore.size = 0;
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 }),
+      makeMemory({ id: 'content:1', source: 'content', score: 0.5 }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
@@ -296,20 +296,20 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
   it('双通道融合去重（同一 id 不重复返回）', async () => {
     // 语义搜索 + 关键词搜索都返回同一 id，应去重为 1 条
     vi.mocked(mockVectorStore.search).mockResolvedValue([
-      { id: 'insight:dup', similarity: 0.9 },
+      { id: 'content:dup', similarity: 0.9 },
     ]);
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'insight:dup', source: 'insight', score: 0.8 }),
+      makeMemory({ id: 'content:dup', source: 'content', score: 0.8 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'insight:dup', source: 'insight', score: 0.8 }),
+      makeMemory({ id: 'content:dup', source: 'content', score: 0.8 }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     // 同一 id 应去重，仅返回 1 条
     expect(memories).toHaveLength(1);
-    expect(memories[0]!.id).toBe('insight:dup');
+    expect(memories[0]!.id).toBe('content:dup');
   });
 });
 
@@ -338,21 +338,21 @@ describe('recall · 双通道融合排序', () => {
     // 期望 A 排在 B 前面
     const mockVectorStore = {
       size: 10,
-      search: vi.fn().mockResolvedValue([{ id: 'insight:A', similarity: 0.9 }]),
+      search: vi.fn().mockResolvedValue([{ id: 'content:A', similarity: 0.9 }]),
     };
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'insight:A', source: 'insight', score: 0.5 }),
+      makeMemory({ id: 'content:A', source: 'content', score: 0.5 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'insight:B', source: 'insight', score: 0.9 }),
+      makeMemory({ id: 'content:B', source: 'content', score: 0.9 }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(2);
     // A 的综合分(0.74) > B 的综合分(0.36)，A 应排在前面
-    expect(memories[0]!.id).toBe('insight:A');
-    expect(memories[1]!.id).toBe('insight:B');
+    expect(memories[0]!.id).toBe('content:A');
+    expect(memories[1]!.id).toBe('content:B');
   });
 
   it('高 score 记忆可在融合排序中超越低 similarity 记忆', async () => {
@@ -361,21 +361,21 @@ describe('recall · 双通道融合排序', () => {
     // 期望 B 排在 A 前面（高 score 弥补了无 similarity）
     const mockVectorStore = {
       size: 10,
-      search: vi.fn().mockResolvedValue([{ id: 'insight:A', similarity: 0.4 }]),
+      search: vi.fn().mockResolvedValue([{ id: 'content:A', similarity: 0.4 }]),
     };
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'insight:A', source: 'insight', score: 0.3 }),
+      makeMemory({ id: 'content:A', source: 'content', score: 0.3 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'insight:B', source: 'insight', score: 0.95 }),
+      makeMemory({ id: 'content:B', source: 'content', score: 0.95 }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(2);
     // B 的综合分(0.38) > A 的综合分(0.36)，B 应排在前面
-    expect(memories[0]!.id).toBe('insight:B');
-    expect(memories[1]!.id).toBe('insight:A');
+    expect(memories[0]!.id).toBe('content:B');
+    expect(memories[1]!.id).toBe('content:A');
   });
 
   it('limit 应在融合排序后截断', async () => {
@@ -383,18 +383,18 @@ describe('recall · 双通道融合排序', () => {
     const mockVectorStore = {
       size: 10,
       search: vi.fn().mockResolvedValue([
-        { id: 'insight:v1', similarity: 0.9 },
-        { id: 'insight:v2', similarity: 0.8 },
-        { id: 'insight:v3', similarity: 0.7 },
+        { id: 'content:v1', similarity: 0.9 },
+        { id: 'content:v2', similarity: 0.8 },
+        { id: 'content:v3', similarity: 0.7 },
       ]),
     };
     vi.mocked(mockStorage.getById).mockImplementation((id: string) =>
-      makeMemory({ id, source: 'insight', score: 0.5 }),
+      makeMemory({ id, source: 'content', score: 0.5 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'insight:k1', source: 'insight', score: 0.4 }),
-      makeMemory({ id: 'insight:k2', source: 'insight', score: 0.3 }),
-      makeMemory({ id: 'insight:k3', source: 'insight', score: 0.2 }),
+      makeMemory({ id: 'content:k1', source: 'content', score: 0.4 }),
+      makeMemory({ id: 'content:k2', source: 'content', score: 0.3 }),
+      makeMemory({ id: 'content:k3', source: 'content', score: 0.2 }),
     ]);
 
     const memories = await recall(mockStorage, '测试', {
@@ -431,14 +431,14 @@ describe('recall · 降级策略', () => {
       search: vi.fn().mockRejectedValue(new Error('向量索引损坏')),
     };
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'insight:fallback', source: 'insight', score: 0.7 }),
+      makeMemory({ id: 'content:fallback', source: 'content', score: 0.7 }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     // 语义搜索失败，降级到关键词搜索，仍应返回结果
     expect(memories).toHaveLength(1);
-    expect(memories[0]!.id).toBe('insight:fallback');
+    expect(memories[0]!.id).toBe('content:fallback');
     // 关键词搜索应被调用
     expect(mockStorage.search).toHaveBeenCalled();
   });
@@ -447,10 +447,10 @@ describe('recall · 降级策略', () => {
     // storage.search 抛错，应仅返回语义搜索结果
     const mockVectorStore = {
       size: 10,
-      search: vi.fn().mockResolvedValue([{ id: 'insight:semantic', similarity: 0.9 }]),
+      search: vi.fn().mockResolvedValue([{ id: 'content:semantic', similarity: 0.9 }]),
     };
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'insight:semantic', source: 'insight', score: 0.8 }),
+      makeMemory({ id: 'content:semantic', source: 'content', score: 0.8 }),
     );
     vi.mocked(mockStorage.search).mockImplementation(() => {
       throw new Error('SQLite 锁定');
@@ -460,7 +460,7 @@ describe('recall · 降级策略', () => {
 
     // 关键词搜索失败，仅返回语义搜索结果
     expect(memories).toHaveLength(1);
-    expect(memories[0]!.id).toBe('insight:semantic');
+    expect(memories[0]!.id).toBe('content:semantic');
   });
 
   it('双通道都失败时应返回空数组', async () => {
@@ -635,8 +635,8 @@ describe('recall · type 时间窗口差异化召回（§4.2）', () => {
 
   it('未标记 summaryType 的记忆不受 type 时间窗口过滤', async () => {
     const unmarked = makeMemory({
-      id: 'insight:1',
-      source: 'insight',
+      id: 'content:1',
+      source: 'content',
       createdAt: daysAgoIso(30),
     });
     vi.mocked(mockStorage.search).mockReturnValue([unmarked]);
@@ -644,7 +644,7 @@ describe('recall · type 时间窗口差异化召回（§4.2）', () => {
     const memories = await recall(mockStorage, '测试');
 
     expect(memories).toHaveLength(1);
-    expect(memories[0]!.id).toBe('insight:1');
+    expect(memories[0]!.id).toBe('content:1');
   });
 });
 

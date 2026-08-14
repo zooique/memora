@@ -112,7 +112,7 @@ describe('降级策略 · P3 衰减降级', () => {
     // 模拟 runMemoryDecay 的降级逻辑
     let caught = false;
     try {
-      mockStorage.decayScores(['insight'], new Date());
+      mockStorage.decayScores(['content'], new Date());
     } catch {
       caught = true;
     }

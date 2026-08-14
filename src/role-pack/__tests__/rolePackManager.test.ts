@@ -40,6 +40,20 @@ const MANIFEST_MULTI_SKILL_NO_PERSONA = {
   ],
 };
 
+/** 纯能力声明包（skills 无 file，仅 capability，§4 雷-3a） */
+const MANIFEST_PURE_CAPABILITY = {
+  name: '项目总监',
+  formatVersion: '1.0.0',
+  keywords: ['项目管理'],
+  strategy: { act: { toolMode: 'allow' } },
+  persona: 'persona.md',
+  rules: 'rules.md',
+  skills: [
+    { capability: 'file:read', description: '读取项目文件' },
+    { capability: 'web:search', description: '查询行业资料' },
+  ],
+};
+
 /** 互斥角色包对（翻译助手 ↔ 代码助手） */
 const MANIFEST_TRANSLATOR = {
   name: '翻译助手',
@@ -155,6 +169,29 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     // 能力声明聚合（仅声明了 capability 的项）
     expect(active!.capabilities.map((c) => c.capability).sort()).toEqual([
       'file:write',
+      'web:search',
+    ]);
+  });
+
+  it('纯 capability 声明（skills 无 file）装载并派生能力（雷-3a）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '项目总监', MANIFEST_PURE_CAPABILITY, {
+      persona: '你是一位项目总监。',
+      rules: '- 风险前置识别',
+    });
+
+    const manager = new RolePackManager(dir);
+    expect(await manager.load()).toBe(1);
+
+    const active = manager.getActive();
+    expect(active!.meta.name).toBe('项目总监');
+    // 纯能力声明项保留（不因缺 file 被丢弃）
+    expect(active!.skills).toHaveLength(2);
+    expect(active!.skills[0]!.file).toBeUndefined();
+    // capability 正常派生为能力声明
+    expect(active!.capabilities.map((c) => c.capability).sort()).toEqual([
+      'file:read',
       'web:search',
     ]);
   });

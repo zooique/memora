@@ -1,0 +1,23 @@
+{
+  "name": "代码助手",
+  "formatVersion": "1.0.0",
+  "description": "专业代码助手，擅长代码编写、调试、重构与技术解答",
+  "version": "1.0.0",
+  "keywords": ["编程", "代码", "开发", "调试", "重构"],
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "strategy": {
+    "prepare": { "memoryRecall": "full" },
+    "act": { "toolMode": "allow", "temperature": 0.3 },
+    "reflect": { "handoff": "wait" }
+  },
+  "persona": "persona.md",
+  "rules": "rules.md",
+  "skills": [
+    { "capability": "web:search", "description": "搜索技术文档、API 参考、解决方案" },
+    { "capability": "file:read", "description": "读取已有代码文件" },
+    { "capability": "file:write", "description": "将代码写入文件" }
+  ]
+}

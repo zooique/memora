@@ -54,9 +54,10 @@ describe('validateSource 校验函数', () => {
     expect(validateSource('rule')).toEqual({ valid: true });
     expect(validateSource('persona')).toEqual({ valid: true });
     expect(validateSource('skill')).toEqual({ valid: true });
-    expect(validateSource('insight')).toEqual({ valid: true });
+    expect(validateSource('round-summary')).toEqual({ valid: true });
     expect(validateSource('profile')).toEqual({ valid: true });
     expect(validateSource('work-projection')).toEqual({ valid: true });
+    expect(validateSource('guardrail')).toEqual({ valid: true });
   });
 
   it('自定义 source（非已知标签）应返回 valid: true 且无警告', () => {
@@ -101,7 +102,7 @@ describe('validateSource 校验函数', () => {
   });
 
   it('null 字节应返回 valid: false, severity: block', () => {
-    const result = validateSource('insight\x00malicious');
+    const result = validateSource('content\x00malicious');
     expect(result.valid).toBe(false);
     expect(result.severity).toBe('block');
     expect(result.warning).toContain('null 字节');

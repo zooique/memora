@@ -165,7 +165,7 @@ function parseExclusiveWith(raw: unknown): string[] | undefined {
 /**
  * 从 manifest.skills 数组解析技能注册（对象数组，支持多个添加）
  *
- * 每项结构：`{ file: string（必填）, name?, description?, capability? }`。
+ * 每项结构：`{ file?, name?, description?, capability? }`，file 或 capability 至少其一。
  * 承载转译为 RolePack.skills 的原始注册形状；capability 由 assembleRolePack 派生为能力声明。
  * file 为**生态兼容指针**（§四）——仅记录路径供生态互认/移植，**正文不装载**。
  *
@@ -179,15 +179,19 @@ function parseManifestSkills(skillsNode: unknown): RolePackManifestSkill[] {
     if (typeof item !== 'object' || item === null) continue;
     const record = item as Record<string, unknown>;
     const file = record['file'];
-    if (typeof file !== 'string' || file.trim() === '') continue;
+    const capability = record['capability'];
+    // file（生态指针）或 capability（能力声明）至少其一（§四）：
+    // 纯能力声明项（无 file 但有 capability）不丢弃，保留能力暴露面（雷-3a）
+    const hasFile = typeof file === 'string' && file.trim() !== '';
+    const hasCapability = typeof capability === 'string' && capability.trim() !== '';
+    if (!hasFile && !hasCapability) continue;
     const name = record['name'];
     const description = record['description'];
-    const capability = record['capability'];
     skills.push({
-      file,
+      file: hasFile ? file : undefined,
       name: typeof name === 'string' ? name : undefined,
       description: typeof description === 'string' ? description : undefined,
-      capability: typeof capability === 'string' ? capability : undefined,
+      capability: hasCapability ? capability : undefined,
     });
   }
   return skills;

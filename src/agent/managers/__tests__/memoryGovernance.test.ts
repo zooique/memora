@@ -206,7 +206,7 @@ describe('MemoryGovernance', () => {
 
     it('suggest() 委托 memoryAdvisor.suggest() 并透传参数', () => {
       const expectedHits: SuggestHit[] = [
-        { id: 'mem:1', name: 'test', source: 'insight', relevance: 0.8, contentPreview: '预览', reason: '相关' },
+        { id: 'mem:1', name: 'test', source: 'content', relevance: 0.8, contentPreview: '预览', reason: '相关' },
       ];
       const mockAdvisor = createMockMemoryAdvisor(null, expectedHits);
       const governance = new MemoryGovernance(null, null, mockAdvisor);

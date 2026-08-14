@@ -111,7 +111,7 @@ describe('InMemoryStorage · source block 校验', () => {
 
   it('null 字节 source 应被 upsert 拒绝（throw）', () => {
     const store = new InMemoryStorage();
-    expect(() => store.upsert(makeMemory('insight\x00malicious'))).toThrow(/source 校验失败/);
+    expect(() => store.upsert(makeMemory('content\x00malicious'))).toThrow(/source 校验失败/);
   });
 
   it('空字符串 source 应被 upsert 拒绝（throw）', () => {

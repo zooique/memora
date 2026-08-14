@@ -571,7 +571,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 杜绝 chat 主路径再持一份逐行同构的流消费逻辑——此前该副本漏了 paused 分支与
     // finally 锁清理，导致 chat 暂停时状态机不翻 PAUSED、幂等锁泄漏）。
     const streamResult = yield* this.consumeExecutionStream(
-      loop.processUserInput(input, recalledMemories, combinedSignal),
+      // 传入当前轮次 ID（prepareChatContext 已分配 R1 并写入 user 消息），
+      // 保证 user/assistant/摘要同 roundId，traceSummary 溯源完整（排雷雷-1）
+      loop.processUserInput(input, recalledMemories, combinedSignal, loop.getCurrentRoundId()),
     );
     if (streamResult.failed) return;
     const assistantContent = streamResult.content;

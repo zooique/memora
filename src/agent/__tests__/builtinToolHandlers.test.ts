@@ -59,7 +59,7 @@ afterEach(async () => {
 });
 
 /**
- * 构造 Memory 对象（默认 source=insight, score=0.5）
+ * 构造 Memory 对象（默认 source=content, score=0.5）
  * @param overrides - 字段覆写
  * @returns 完整 Memory 对象
  */
@@ -67,7 +67,7 @@ function createMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:default',
     content: '默认内容',
-    source: 'insight',
+    source: 'content',
     name: 'default',
     createdAt: '2026-06-27T10:00:00.000Z',
     accessedAt: '2026-06-27T10:00:00.000Z',
@@ -268,9 +268,9 @@ describe('BuiltinToolHandlers.writeFile', () => {
       expect(result).not.toContain('create_');
     });
 
-    it('source: insight 不被拦截（非配置文件 source）', async () => {
-      const content = '---\nsource: insight\n---\n\n# 洞察内容';
-      const result = await handlers.writeFile('insight.md', content);
+    it('source: content 不被拦截（非配置文件 source）', async () => {
+      const content = '---\nsource: content\n---\n\n# 归档内容';
+      const result = await handlers.writeFile('content.md', content);
       expect(result).not.toContain('create_');
     });
 
@@ -570,19 +570,19 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     // 灌入测试数据
     storage.upsert(
       createMemory({
-        id: 'insight:1',
+        id: 'content:1',
         content: 'TypeScript 是一门语言',
         name: 'ts-note',
-        source: 'insight',
+        source: 'content',
         score: 0.8,
       }),
     );
     storage.upsert(
       createMemory({
-        id: 'insight:2',
+        id: 'content:2',
         content: 'Python 也很流行',
         name: 'py-note',
-        source: 'insight',
+        source: 'content',
         score: 0.6,
       }),
     );
@@ -601,7 +601,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
   });
 
   it('near 模式：所有关键词必须命中', async () => {
-    // "TypeScript 语言" 两个关键词，只有 insight:1 同时命中
+    // "TypeScript 语言" 两个关键词，只有 content:1 同时命中
     const result = await handlers.searchMemories('TypeScript 语言', '10', 'near');
     expect(result).toContain('ts-note');
     expect(result).not.toContain('py-note');
@@ -630,7 +630,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
 
   it('返回格式包含序号 + source:name + score + preview', async () => {
     const result = await handlers.searchMemories('TypeScript', '10', 'match');
-    expect(result).toContain('[insight:ts-note]');
+    expect(result).toContain('[content:ts-note]');
     expect(result).toContain('score=0.8');
     expect(result).toMatch(/1\.\s/);
   });
@@ -639,10 +639,10 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     const longContent = 'A'.repeat(100);
     storage.upsert(
       createMemory({
-        id: 'insight:long',
+        id: 'content:long',
         content: longContent,
         name: 'long-note',
-        source: 'insight',
+        source: 'content',
         score: 0.9,
       }),
     );

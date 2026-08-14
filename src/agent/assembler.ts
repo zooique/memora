@@ -145,8 +145,6 @@ type LoopAndDepsParams = Pick<
   /** 激活角色包的 L1 persona prompt（角色包优先于 persona；无激活角色包时为空串） */
   rolePackPrompt: string;
   toolExec: ToolExecutor;
-  /** 角色包规则列表（Rule→guardrail 桥接），桥接到 guardrail 系统供运行时强制执行 */
-  rolePackRules: readonly string[];
 };
 
 /**
@@ -227,7 +225,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
     provider, backgroundProvider, providerRouter, pctx, personaPrompt, rolePackPrompt, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary,
-    sessionStore, locale, callbacks, rolePackRules,
+    sessionStore, locale, callbacks,
   } = params;
 
   // 系统前缀：角色包优先于 persona（角色包优先/persona 兜底）+ 当前时间
@@ -248,23 +246,11 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
   const roundSummaryGenerator = new RoundSummaryGenerator(provider, pctx.index);
 
-  // Rule→guardrail 桥接：将角色包规则转换为 guardrail Memory 对象，
-  // 合并到从记忆索引加载的 guardrail 规则中，供运行时强制执行。
-  // 角色包规则是自然语言指令（如"不得擅自增删原文内容"），
-  // 与 guardrail 系统的 regex 规则格式不同，但纳入同一规则池后
-  // 未来可扩展自然语言规则匹配机制。
+  // guardrail 规则池：仅从记忆索引加载（SOURCE_LABELS.GUARDRAIL）。
+  // 角色包 rule 为自然语言指令，与 guardrail 的 regex 规则格式不兼容，
+  // 不并入规则池——rule 已作为 personaPrompt 文本生效（见 assembleRolePack），
+  // 避免"结构预埋但永不命中"的半实现桥（排雷雷-2）。
   const indexGuardrailRules = pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL);
-  const nowIso = new Date().toISOString();
-  const rolePackGuardrailRules: Memory[] = rolePackRules.map((rule, i) => ({
-    id: `role-pack:guardrail-${i}`,
-    content: rule,
-    source: 'guardrail',
-    name: `role-pack-rule-${i}`,
-    createdAt: nowIso,
-    accessedAt: nowIso,
-    score: 1.0,
-  }));
-  const mergedGuardrailRules = [...indexGuardrailRules, ...rolePackGuardrailRules];
 
   // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
   // 从记忆索引取最近 N 条 round-summary（按 createdAt 降序），拼接为历史摘要回退文本。
@@ -294,7 +280,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     tracer,
     messages,
     enableContextSummary,
-    guardrailRules: mergedGuardrailRules,
+    guardrailRules: indexGuardrailRules,
     onContextTruncated: callbacks?.onContextTruncated,
     onGuardrailError: callbacks?.onGuardrailError,
     onSessionEvent: callbacks?.onSessionEvent,
@@ -398,9 +384,6 @@ export async function assembleComponents(
   const rolePackManager = new RolePackManager(configDir);
   await rolePackManager.load();
 
-  // Rule→guardrail 桥接：提取当前激活角色包的规则列表，
-  // 传给 createAgentLoopAndDeps 合并到 guardrail 规则池。
-  const rolePackRules = rolePackManager.getActiveRules();
   // 激活角色包的 L1 persona（角色包优先于 persona；无激活角色包时为空串）
   const rolePackPrompt = rolePackManager.buildSystemPrompt();
 
@@ -421,7 +404,6 @@ export async function assembleComponents(
       sessionStore,
       locale,
       callbacks,
-      rolePackRules,
     });
 
   // ── Phase 4: 依赖 Loop 的组件 ──

@@ -93,7 +93,7 @@
             "recentRounds": {
               "type": "integer",
               "minimum": 1,
-              "description": "固定加载轮数（[草案]）"
+              "description": "固定加载轮数（冻结，memora 真实消费）"
             },
             "memoryRecall": {
               "type": "string",
@@ -149,6 +149,16 @@
               "type": "string",
               "enum": ["wait", "loop", "end"],
               "description": "衔接决策：wait=等待用户 / loop=自动续跑 / end=终止（冻结）"
+            },
+            "loopContinue": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "自审查最大轮数（0=关闭，N=最多 N 轮；冻结，memora 真实消费）"
+            },
+            "userFollowup": {
+              "type": "string",
+              "enum": ["ask", "silent"],
+              "description": "用户追问策略：ask=主动引导对话 / silent=只等输入（冻结，memora 真实消费）"
             }
           },
           "additionalProperties": false
@@ -163,12 +173,12 @@
                 "type": "string",
                 "enum": ["ambiguity", "decision", "missing_info", "confirm"]
               },
-              "description": "Agent 主动提问触发场景（[草案]）"
+              "description": "Agent 主动提问触发场景（冻结-条件消费：userFollowup=ask 时生效）"
             },
             "askLimit": {
               "type": "integer",
               "minimum": 1,
-              "description": "每任务提问上限（[草案]，默认 3）"
+              "description": "每任务提问上限（冻结-条件消费：userFollowup=ask 时生效，默认 3）"
             },
             "errorHandling": {
               "type": "string",
@@ -184,14 +194,17 @@
 
     "skills": {
       "type": "array",
-      "description": "内嵌技能注册（对象数组，支持多个添加）。每项引用包内技能文件，可选声明中立能力（capability）与说明。",
+      "description": "内嵌技能注册（对象数组，支持多个添加）。每项声明 file（生态指针）或 capability（能力声明）至少其一，可选说明。",
       "items": {
         "type": "object",
-        "required": ["file"],
+        "oneOf": [
+          { "required": ["file"] },
+          { "required": ["capability"] }
+        ],
         "properties": {
           "file": {
             "type": "string",
-            "description": "技能文件路径（相对角色包根）或已注册技能名（必填）"
+            "description": "技能文件路径（相对角色包根）或已注册技能名（可选，与 capability 至少其一）"
           },
           "name": {
             "type": "string",
@@ -203,7 +216,7 @@
           },
           "capability": {
             "type": "string",
-            "pattern": "^[a-z]+:[a-z][a-z-]*$",
+            "pattern": "^[a-z]+:[a-zA-Z0-9._-]+$",
             "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`，可选；声明则映射到实现工具）"
           }
         },

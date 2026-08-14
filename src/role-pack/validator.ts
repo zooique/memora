@@ -95,6 +95,11 @@ function isPositiveInt(value: unknown): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
+/** 非负整数断言（loopContinue，0=关闭自审查） */
+function isNonNegativeInt(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
 /** 温度断言：0.0~2.0 数字（act.temperature） */
 function isTemperature(value: unknown): boolean {
   return typeof value === 'number' && value >= 0 && value <= 2;
@@ -119,7 +124,7 @@ function isAskOn(value: unknown): boolean {
 const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
     contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] }, // [草案]
-    recentRounds: { kind: 'check', check: isPositiveInt }, // [草案]
+    recentRounds: { kind: 'check', check: isPositiveInt },
     memoryRecall: { kind: 'enum', values: ['full', 'limited', 'none'] },
     // P0 键集对齐（2026-08-12）：由实现提炼进标准的键（memora 真实消费，spec §六 提炼行）
     memoryRecallQuota: { kind: 'check', check: isPositiveInt },
@@ -133,6 +138,7 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
   reflect: {
     summary: { kind: 'enum', values: ['on', 'off'] }, // [草案]（memora 旧字段 summaryGeneration 为僵尸键）
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
+    loopContinue: { kind: 'check', check: isNonNegativeInt },
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
   },
   global: {
@@ -428,7 +434,7 @@ function validateExclusiveWith(
  * 校验 skills 注册（manifest.skills 对象数组，§4）
  *
  * 新形态下 skills 以**对象数组**注册，支持多个添加。每项结构：
- *   `{ file: string（必填）, name?: string, description?: string, capability?: string }`
+ *   `{ file?, name?, description?, capability? }`，file（生态指针）或 capability（能力声明）**至少其一**。
  * capability 可选；声明则须匹配 `域:动作`（中立能力命名空间）。
  *
  * @param skillsNode manifest.skills 节点
@@ -444,7 +450,7 @@ function validateManifestSkills(
       severity: 'error',
       code: 'SKILLS_NOT_ARRAY',
       path: 'skills',
-      message: 'skills 必须是对象数组（每项 { file, name?, description?, capability? }，§4）',
+      message: 'skills 必须是对象数组（每项 { file?, name?, description?, capability? }，§4）',
     });
     return;
   }
@@ -462,14 +468,17 @@ function validateManifestSkills(
     }
     const record = item as Record<string, unknown>;
 
-    // file 必填（技能文件路径或已注册技能名）
+    // file 或 capability 至少其一（§4：生态指针 / 能力声明）
     const file = record['file'];
-    if (typeof file !== 'string' || file.trim() === '') {
+    const capability = record['capability'];
+    const hasFile = typeof file === 'string' && file.trim() !== '';
+    const hasCapability = typeof capability === 'string' && capability.trim() !== '';
+    if (!hasFile && !hasCapability) {
       issues.push({
         severity: 'error',
         code: 'INVALID_MANIFEST_SKILL',
-        path: `${itemPath}.file`,
-        message: `skills[${index}].file 必填：技能文件路径（相对包根）或已注册技能名`,
+        path: itemPath,
+        message: `skills[${index}] 必须声明 file（技能文件路径/已注册技能名）或 capability（能力声明 \`域:动作\`）至少其一（§4）`,
       });
     }
 
@@ -487,8 +496,7 @@ function validateManifestSkills(
     }
 
     // capability 可选，声明则须匹配 `域:动作`
-    const capability = record['capability'];
-    if (capability === undefined) return;
+    if (!hasCapability) return;
     if (typeof capability !== 'string' || !CAPABILITY_PATTERN.test(capability)) {
       issues.push({
         severity: 'error',

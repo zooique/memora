@@ -118,7 +118,7 @@ keywords:
 
     expect(response1.length).toBeGreaterThan(0);
 
-    // 等待后处理完成（归档 + insight 提取）
+    // 等待后处理完成（归档 + 轮次摘要生成）
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // 第二轮对话：测试召回

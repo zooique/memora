@@ -563,11 +563,11 @@ describe('Agent · Manager 委托模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 写入一条 insight 记忆
+    // 写入一条 content 记忆
     agent.memory!['index'].upsert({
-      id: 'insight:suggest-test',
-      content: '关于 TypeScript 类型系统的洞察',
-      source: 'insight',
+      id: 'content:suggest-test',
+      content: '关于 TypeScript 类型系统的归档',
+      source: 'content',
       name: 'TypeScript 类型系统',
       createdAt: new Date().toISOString(),
       accessedAt: new Date().toISOString(),
@@ -579,7 +579,7 @@ describe('Agent · Manager 委托模式', () => {
     expect(results.length).toBeGreaterThan(0);
     // 搜索命中的应排在前面
     const firstHit = results[0]!;
-    expect(firstHit.source).toBe('insight');
+    expect(firstHit.source).toBe('content');
     expect(firstHit.reason).toBe('与搜索相关');
   });
 
@@ -589,7 +589,7 @@ describe('Agent · Manager 委托模式', () => {
 
     // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
     const results = agent.governance!.suggest(undefined, {
-      excludeSources: ['insight', 'profile', 'work-projection', 'persona', 'rule', 'skill'],
+      excludeSources: ['content', 'profile', 'work-projection', 'persona', 'rule', 'skill'],
       limit: 10,
     });
     // 排除所有 source 后应返回空

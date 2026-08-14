@@ -16,7 +16,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:1',
     content: '测试内容',
-    source: 'insight',
+    source: 'content',
     name: 'test-memory',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',
@@ -102,8 +102,8 @@ describe('multiHopRecall · 多跳推理', () => {
 
   it('单跳（maxHops=1）时等同于直接 recall', async () => {
     const results = [
-      makeMemory({ id: 'insight:1', source: 'insight', score: 0.9 }),
-      makeMemory({ id: 'insight:2', source: 'insight', score: 0.7 }),
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:2', source: 'content', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -120,12 +120,12 @@ describe('multiHopRecall · 多跳推理', () => {
     // 第 1 跳返回 2 条
     // 第 2 跳扩展查询后返回额外 2 条
     const firstHopResults = [
-      makeMemory({ id: 'insight:A', source: 'insight', content: 'TypeScript 编程 异步', score: 0.9 }),
-      makeMemory({ id: 'insight:B', source: 'insight', content: 'TypeScript 类型 系统', score: 0.8 }),
+      makeMemory({ id: 'content:A', source: 'content', content: 'TypeScript 编程 异步', score: 0.9 }),
+      makeMemory({ id: 'content:B', source: 'content', content: 'TypeScript 类型 系统', score: 0.8 }),
     ];
     const secondHopResults = [
-      makeMemory({ id: 'insight:C', source: 'insight', content: 'Promise 异步 编程', score: 0.7 }),
-      makeMemory({ id: 'insight:D', source: 'insight', content: '类型 安全 编程', score: 0.6 }),
+      makeMemory({ id: 'content:C', source: 'content', content: 'Promise 异步 编程', score: 0.7 }),
+      makeMemory({ id: 'content:D', source: 'content', content: '类型 安全 编程', score: 0.6 }),
     ];
 
     // 第一次调用 search 返回第 1 跳结果，第二次返回第 2 跳结果
@@ -160,7 +160,7 @@ describe('multiHopRecall · 多跳推理', () => {
   it('后续跳无新结果时应提前终止', async () => {
     // 第 1 跳返回结果，但第 2 跳扩展后无新结果
     const firstHopResults = [
-      makeMemory({ id: 'insight:A', source: 'insight', content: 'TypeScript 编程 异步', score: 0.9 }),
+      makeMemory({ id: 'content:A', source: 'content', content: 'TypeScript 编程 异步', score: 0.9 }),
     ];
 
     vi.mocked(mockStorage.search)
@@ -177,10 +177,10 @@ describe('multiHopRecall · 多跳推理', () => {
   it('应去重合并各跳结果', async () => {
     // 第 1 跳和第 2 跳返回相同 id，应去重
     const firstHopResults = [
-      makeMemory({ id: 'insight:dup', source: 'insight', content: 'TypeScript 编程 异步', score: 0.9 }),
+      makeMemory({ id: 'content:dup', source: 'content', content: 'TypeScript 编程 异步', score: 0.9 }),
     ];
     const secondHopResults = [
-      makeMemory({ id: 'insight:dup', source: 'insight', content: 'TypeScript 编程 异步', score: 0.9 }),
+      makeMemory({ id: 'content:dup', source: 'content', content: 'TypeScript 编程 异步', score: 0.9 }),
     ];
 
     vi.mocked(mockStorage.search)
@@ -196,7 +196,7 @@ describe('multiHopRecall · 多跳推理', () => {
 
   it('finalLimit 应控制最终返回数量', async () => {
     const results = Array.from({ length: 5 }, (_, i) =>
-      makeMemory({ id: `insight:${i}`, source: 'insight', score: 0.9 - i * 0.1 }),
+      makeMemory({ id: `content:${i}`, source: 'content', score: 0.9 - i * 0.1 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -212,10 +212,10 @@ describe('multiHopRecall · 多跳推理', () => {
     };
 
     const firstHopResults = [
-      makeMemory({ id: 'insight:A', source: 'insight', content: 'TypeScript 编程', score: 0.9 }),
+      makeMemory({ id: 'content:A', source: 'content', content: 'TypeScript 编程', score: 0.9 }),
     ];
     const secondHopResults = [
-      makeMemory({ id: 'insight:B', source: 'insight', content: '额外结果', score: 0.7 }),
+      makeMemory({ id: 'content:B', source: 'content', content: '额外结果', score: 0.7 }),
     ];
 
     vi.mocked(mockStorage.search)

@@ -51,7 +51,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
       expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(2);
       expect(storage.countBySource(SOURCE_LABELS.PERSONA)).toBe(1);
-      expect(storage.countBySource('insight')).toBe(0);
+      expect(storage.countBySource('content')).toBe(0);
     });
 
     it('更新同 id 同 source 时计数不变', () => {
@@ -152,9 +152,9 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
   describe('search', () => {
     it('空查询应按 score 降序返回（limit 限制）', () => {
-      storage.upsert(makeMemory('m1', 'insight', 0.5));
-      storage.upsert(makeMemory('m2', 'insight', 0.9));
-      storage.upsert(makeMemory('m3', 'insight', 0.3));
+      storage.upsert(makeMemory('m1', 'content', 0.5));
+      storage.upsert(makeMemory('m2', 'content', 0.9));
+      storage.upsert(makeMemory('m3', 'content', 0.3));
 
       const results = storage.search('', 2);
       expect(results).toHaveLength(2);
@@ -164,11 +164,11 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('应匹配 content 中的关键词', () => {
       storage.upsert({
-        ...makeMemory('m1', 'insight'),
+        ...makeMemory('m1', 'content'),
         content: '用户偏好使用 TypeScript 开发',
       });
       storage.upsert({
-        ...makeMemory('m2', 'insight'),
+        ...makeMemory('m2', 'content'),
         content: '完全无关的内容',
       });
 
@@ -179,7 +179,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('应匹配 name 中的关键词', () => {
       storage.upsert({
-        ...makeMemory('m1', 'insight'),
+        ...makeMemory('m1', 'content'),
         name: 'TypeScript 规则',
         content: '无关内容',
       });
@@ -191,11 +191,11 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('匹配结果应按 score 降序排列', () => {
       storage.upsert({
-        ...makeMemory('m1', 'insight', 0.3),
+        ...makeMemory('m1', 'content', 0.3),
         content: 'TypeScript 内容',
       });
       storage.upsert({
-        ...makeMemory('m2', 'insight', 0.9),
+        ...makeMemory('m2', 'content', 0.9),
         content: 'TypeScript 内容',
       });
 
@@ -207,7 +207,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     it('应尊重 limit 参数', () => {
       for (let i = 0; i < 5; i++) {
         storage.upsert({
-          ...makeMemory(`m${i}`, 'insight', 0.5),
+          ...makeMemory(`m${i}`, 'content', 0.5),
           content: `TypeScript 内容 ${i}`,
         });
       }
@@ -222,10 +222,10 @@ describe('InMemoryStorage · 内存存储契约', () => {
   describe('decayScores', () => {
     it('7 天内的记忆不应衰减', () => {
       const now = new Date();
-      storage.upsert(makeMemory('m1', 'insight', 0.8));
+      storage.upsert(makeMemory('m1', 'content', 0.8));
       // accessedAt 是 now，7 天内不衰减
 
-      const decayed = storage.decayScores(['insight'], now);
+      const decayed = storage.decayScores(['content'], now);
       expect(decayed).toBe(0);
       expect(storage.getById('m1')!.score).toBe(0.8);
     });
@@ -235,11 +235,11 @@ describe('InMemoryStorage · 内存存储契约', () => {
       // 14 天前访问的记忆（2 个周期）
       const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
       storage.upsert({
-        ...makeMemory('m1', 'insight', 0.8),
+        ...makeMemory('m1', 'content', 0.8),
         accessedAt: oldDate.toISOString(),
       });
 
-      const decayed = storage.decayScores(['insight'], now);
+      const decayed = storage.decayScores(['content'], now);
       expect(decayed).toBe(1);
       // 2 个周期：0.8 - 0.02 * 2 = 0.76
       expect(storage.getById('m1')!.score).toBeCloseTo(0.76, 5);
@@ -250,11 +250,11 @@ describe('InMemoryStorage · 内存存储契约', () => {
       // 1000 天前访问的记忆（约 142 个周期）
       const veryOldDate = new Date(now.getTime() - 1000 * ONE_DAY_MS);
       storage.upsert({
-        ...makeMemory('m1', 'insight', 0.8),
+        ...makeMemory('m1', 'content', 0.8),
         accessedAt: veryOldDate.toISOString(),
       });
 
-      storage.decayScores(['insight'], now);
+      storage.decayScores(['content'], now);
       // 0.8 - 0.02 * 142 = -2.04，应被 floor 到 0.1
       expect(storage.getById('m1')!.score).toBe(0.1);
     });
@@ -263,7 +263,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       const now = new Date();
       const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
       storage.upsert({
-        ...makeMemory('m1', 'insight', 0.8),
+        ...makeMemory('m1', 'content', 0.8),
         accessedAt: oldDate.toISOString(),
       });
       storage.upsert({
@@ -271,8 +271,8 @@ describe('InMemoryStorage · 内存存储契约', () => {
         accessedAt: oldDate.toISOString(),
       });
 
-      // 只衰减 insight，不衰减 rule
-      const decayed = storage.decayScores(['insight'], now);
+      // 只衰减 content，不衰减 rule
+      const decayed = storage.decayScores(['content'], now);
       expect(decayed).toBe(1);
       expect(storage.getById('m1')!.score).toBeCloseTo(0.76, 5);
       expect(storage.getById('m2')!.score).toBe(0.8); // rule 未衰减
@@ -347,8 +347,8 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('软删除后 search 应过滤已软删除的', () => {
-      storage.upsert({ ...makeMemory('m1', 'insight'), content: 'TypeScript 内容' });
-      storage.upsert({ ...makeMemory('m2', 'insight'), content: 'TypeScript 其他' });
+      storage.upsert({ ...makeMemory('m1', 'content'), content: 'TypeScript 内容' });
+      storage.upsert({ ...makeMemory('m2', 'content'), content: 'TypeScript 其他' });
       storage.delete('m1');
 
       const results = storage.search('TypeScript');
@@ -380,11 +380,11 @@ describe('InMemoryStorage · 内存存储契约', () => {
     it('软删除后 decayScores 应跳过已软删除的', () => {
       const now = new Date();
       const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
-      storage.upsert({ ...makeMemory('m1', 'insight', 0.8), accessedAt: oldDate.toISOString() });
-      storage.upsert({ ...makeMemory('m2', 'insight', 0.8), accessedAt: oldDate.toISOString() });
+      storage.upsert({ ...makeMemory('m1', 'content', 0.8), accessedAt: oldDate.toISOString() });
+      storage.upsert({ ...makeMemory('m2', 'content', 0.8), accessedAt: oldDate.toISOString() });
       storage.delete('m1');
 
-      const decayed = storage.decayScores(['insight'], now);
+      const decayed = storage.decayScores(['content'], now);
       // 只有 m2 被衰减，m1 已软删除跳过
       expect(decayed).toBe(1);
     });
@@ -406,13 +406,13 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('restore 后记忆应重新出现在 getBySource 和 search 中', () => {
-      storage.upsert({ ...makeMemory('m1', 'insight'), content: 'TypeScript 内容' });
+      storage.upsert({ ...makeMemory('m1', 'content'), content: 'TypeScript 内容' });
       storage.delete('m1');
       expect(storage.search('TypeScript')).toHaveLength(0);
 
       storage.restore('m1');
       expect(storage.search('TypeScript')).toHaveLength(1);
-      expect(storage.getBySource('insight')).toHaveLength(1);
+      expect(storage.getBySource('content')).toHaveLength(1);
     });
 
     it('restore 后 listDeleted 应不再包含该记忆', () => {
@@ -487,9 +487,9 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('应按 deletedAt 降序排列（最近删除的在前）', () => {
-      storage.upsert(makeMemory('m1', 'insight'));
-      storage.upsert(makeMemory('m2', 'insight'));
-      storage.upsert(makeMemory('m3', 'insight'));
+      storage.upsert(makeMemory('m1', 'content'));
+      storage.upsert(makeMemory('m2', 'content'));
+      storage.upsert(makeMemory('m3', 'content'));
 
       // 依次软删除并手动设置不同的 deletedAt（避免同毫秒时间戳导致排序不稳定）
       // m1 最早（10 天前），m2 居中（5 天前），m3 最近（刚刚）
@@ -508,7 +508,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('应尊重 limit 参数', () => {
       for (let i = 0; i < 5; i++) {
-        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.upsert(makeMemory(`m${i}`, 'content'));
         storage.delete(`m${i}`);
       }
 
@@ -520,7 +520,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     // 回归测试：修复 listDeleted(0) 触发 slice(0,0) 返回空数组的 JS 语义陷阱 bug
     it('limit=0 时返回全部已删除记忆（不设上限语义）', () => {
       for (let i = 0; i < 5; i++) {
-        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.upsert(makeMemory(`m${i}`, 'content'));
         storage.delete(`m${i}`);
       }
 
@@ -530,7 +530,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('limit=undefined 时返回全部已删除记忆（默认不设上限）', () => {
       for (let i = 0; i < 5; i++) {
-        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.upsert(makeMemory(`m${i}`, 'content'));
         storage.delete(`m${i}`);
       }
 
@@ -540,7 +540,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('limit=-1 时返回全部已删除记忆（负数视为不设上限）', () => {
       for (let i = 0; i < 5; i++) {
-        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.upsert(makeMemory(`m${i}`, 'content'));
         storage.delete(`m${i}`);
       }
 
@@ -550,7 +550,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('limit=NaN 时返回全部已删除记忆（NaN 视为不设上限）', () => {
       for (let i = 0; i < 5; i++) {
-        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.upsert(makeMemory(`m${i}`, 'content'));
         storage.delete(`m${i}`);
       }
 
@@ -631,8 +631,8 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
   describe('软删除：purgeExpired（过期清理）', () => {
     it('应清理 deletedAt 早于阈值的记忆', () => {
-      storage.upsert(makeMemory('m1', 'insight'));
-      storage.upsert(makeMemory('m2', 'insight'));
+      storage.upsert(makeMemory('m1', 'content'));
+      storage.upsert(makeMemory('m2', 'content'));
       storage.delete('m1');
       storage.delete('m2');
 
@@ -651,7 +651,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('应保留 deletedAt 晚于阈值的记忆', () => {
-      storage.upsert(makeMemory('m1', 'insight'));
+      storage.upsert(makeMemory('m1', 'content'));
       storage.delete('m1');
 
       // 阈值设为 60 天前：刚刚删除的应保留
@@ -663,8 +663,8 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('不应清理活跃记忆', () => {
-      storage.upsert(makeMemory('m1', 'insight'));
-      storage.upsert(makeMemory('m2', 'insight'));
+      storage.upsert(makeMemory('m1', 'content'));
+      storage.upsert(makeMemory('m2', 'content'));
 
       // 即便阈值很早，活跃记忆也不受影响
       const threshold = new Date(Date.now() - 365 * ONE_DAY_MS);
@@ -675,9 +675,9 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('应返回被清理的记忆数量', () => {
-      storage.upsert(makeMemory('m1', 'insight'));
-      storage.upsert(makeMemory('m2', 'insight'));
-      storage.upsert(makeMemory('m3', 'insight'));
+      storage.upsert(makeMemory('m1', 'content'));
+      storage.upsert(makeMemory('m2', 'content'));
+      storage.upsert(makeMemory('m3', 'content'));
       storage.delete('m1');
       storage.delete('m2');
       storage.delete('m3');
@@ -705,7 +705,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       storage.upsert(makeMemory('r1', SOURCE_LABELS.RULE));
       storage.upsert(makeMemory('r2', SOURCE_LABELS.RULE));
       storage.upsert(makeMemory('p1', SOURCE_LABELS.PERSONA));
-      storage.upsert(makeMemory('i1', 'insight'));
+      storage.upsert(makeMemory('i1', 'content'));
 
       storage.delete('r1'); // 软删 r1
       storage.delete('p1'); // 软删 p1
@@ -718,7 +718,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       storage.purgeExpired(new Date(Date.now() - 30 * ONE_DAY_MS));
 
       // 不变量 1：缓存计数与实时重算（getBySource 长度）一致
-      for (const source of [SOURCE_LABELS.RULE, SOURCE_LABELS.PERSONA, 'insight']) {
+      for (const source of [SOURCE_LABELS.RULE, SOURCE_LABELS.PERSONA, 'content']) {
         expect(storage.countBySource(source)).toBe(storage.getBySource(source).length);
       }
       // 不变量 2：缓存总和 == 存活总数
@@ -728,7 +728,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       // 具体期望：p1 已物理清理，RULE 含 r1+r2
       expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(2);
       expect(storage.countBySource(SOURCE_LABELS.PERSONA)).toBe(0);
-      expect(storage.countBySource('insight')).toBe(1);
+      expect(storage.countBySource('content')).toBe(1);
     });
   });
 

@@ -44,7 +44,7 @@ describe('collectAgentChunks', () => {
         type: 'recall',
         memories: [
           { id: 'rule:1', name: '规则1', score: 0.9, source: 'rule' },
-          { id: 'insight:2', name: '洞察2', score: 0.7, source: 'insight' },
+          { id: 'content:2', name: '归档2', score: 0.7, source: 'content' },
         ],
       },
     ];

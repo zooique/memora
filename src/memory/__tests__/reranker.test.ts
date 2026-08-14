@@ -15,7 +15,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:1',
     content: '测试内容',
-    source: 'insight',
+    source: 'content',
     name: 'test-memory',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',

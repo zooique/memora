@@ -194,7 +194,7 @@ describe('MemoryDecayScheduler', () => {
       scheduler.start(storage, 60_000);
       expect(storage.calls[0]!.sources).toContain('profile');
       expect(storage.calls[0]!.sources).toContain('work-projection');
-      expect(storage.calls[0]!.sources).not.toContain('insight');
+      expect(storage.calls[0]!.sources).not.toContain('content');
     });
 
     it('应传递当前时间作为 now 参数', () => {
@@ -358,7 +358,7 @@ describe('MemoryDecayScheduler', () => {
       it('无低分记忆时返回 skippedReason', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:1', name: 'm1', source: 'insight', score: 0.5 }),
+            createMemory({ id: 'content:1', name: 'm1', source: 'content', score: 0.5 }),
           ],
         });
         l2Scheduler = new MemoryDecayScheduler({
@@ -377,7 +377,7 @@ describe('MemoryDecayScheduler', () => {
       it('LLM 判定过时时降级 score 到 0.05', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:old', name: '旧版本记忆', source: 'insight', score: 0.15, content: '用户使用 React 16 开发' }),
+            createMemory({ id: 'content:old', name: '旧版本记忆', source: 'content', score: 0.15, content: '用户使用 React 16 开发' }),
           ],
         });
         mockProvider = createMockLlmProvider([
@@ -393,11 +393,11 @@ describe('MemoryDecayScheduler', () => {
         const report = await l2Scheduler.evaluateTimeliness();
         expect(report.scannedCount).toBe(1);
         expect(report.outdatedCount).toBe(1);
-        expect(report.demotedIds).toEqual(['insight:old']);
+        expect(report.demotedIds).toEqual(['content:old']);
         // MIND2-L3：验证降级写入——setScore 被调用一次，score 设为 0.05，id 匹配
         expect(mockStorage.setScoreCalls).toHaveLength(1);
         expect(mockStorage.setScoreCalls[0]!.score).toBe(0.05);
-        expect(mockStorage.setScoreCalls[0]!.id).toBe('insight:old');
+        expect(mockStorage.setScoreCalls[0]!.id).toBe('content:old');
       });
 
       it('LLM 判定未过时时保持原 score（不调用 setScore）', async () => {
@@ -456,7 +456,7 @@ describe('MemoryDecayScheduler', () => {
       it('超过 20 条时截断为 20', async () => {
         // 生成 25 条低分记忆（全部 score=0.1，低于 0.3 阈值）
         const memories: Memory[] = Array.from({ length: 25 }, (_, i) =>
-          createMemory({ id: `insight:${i}`, name: `m${i}`, source: 'insight', score: 0.1 }),
+          createMemory({ id: `content:${i}`, name: `m${i}`, source: 'content', score: 0.1 }),
         );
         mockStorage = createMockMemoryStorage({ [SOURCE_LABELS.PROFILE]: memories });
         mockProvider = createMockLlmProvider(
@@ -477,9 +477,9 @@ describe('MemoryDecayScheduler', () => {
       it('按 score 升序排列（最低分优先评估）', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:high', name: 'score较高的记忆', source: 'insight', score: 0.25 }),
-            createMemory({ id: 'insight:low', name: 'score最低的记忆', source: 'insight', score: 0.05 }),
-            createMemory({ id: 'insight:mid', name: 'score居中的记忆', source: 'insight', score: 0.15 }),
+            createMemory({ id: 'content:high', name: 'score较高的记忆', source: 'content', score: 0.25 }),
+            createMemory({ id: 'content:low', name: 'score最低的记忆', source: 'content', score: 0.05 }),
+            createMemory({ id: 'content:mid', name: 'score居中的记忆', source: 'content', score: 0.15 }),
           ],
         });
         mockProvider = createMockLlmProvider([
@@ -507,7 +507,7 @@ describe('MemoryDecayScheduler', () => {
       it('LLM 返回非法 JSON 时跳过该条', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:bad', name: '非法响应', source: 'insight', score: 0.1 }),
+            createMemory({ id: 'content:bad', name: '非法响应', source: 'content', score: 0.1 }),
           ],
         });
         mockProvider = createMockLlmProvider([
@@ -531,8 +531,8 @@ describe('MemoryDecayScheduler', () => {
       it('单条 LLM 调用抛错时不阻塞后续评估', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:err', name: '会抛错的记忆', source: 'insight', score: 0.05 }),
-            createMemory({ id: 'insight:ok', name: '正常的记忆', source: 'insight', score: 0.1 }),
+            createMemory({ id: 'content:err', name: '会抛错的记忆', source: 'content', score: 0.05 }),
+            createMemory({ id: 'content:ok', name: '正常的记忆', source: 'content', score: 0.1 }),
           ],
         });
         mockProvider = createMockLlmProvider([
@@ -549,16 +549,16 @@ describe('MemoryDecayScheduler', () => {
         const report = await l2Scheduler.evaluateTimeliness();
         expect(report.scannedCount).toBe(2);
         expect(report.outdatedCount).toBe(1);
-        expect(report.demotedIds).toEqual(['insight:ok']);
+        expect(report.demotedIds).toEqual(['content:ok']);
       });
 
       it('部分成功部分失败的混合场景', async () => {
         // 3 条记忆按 score 升序：outdated(0.05) → badjson(0.1) → valid(0.15)
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:outdated', name: '过时记忆', source: 'insight', score: 0.05 }),
-            createMemory({ id: 'insight:badjson', name: '非法JSON', source: 'insight', score: 0.1 }),
-            createMemory({ id: 'insight:valid', name: '有效记忆', source: 'insight', score: 0.15 }),
+            createMemory({ id: 'content:outdated', name: '过时记忆', source: 'content', score: 0.05 }),
+            createMemory({ id: 'content:badjson', name: '非法JSON', source: 'content', score: 0.1 }),
+            createMemory({ id: 'content:valid', name: '有效记忆', source: 'content', score: 0.15 }),
           ],
         });
         mockProvider = createMockLlmProvider([
@@ -576,7 +576,7 @@ describe('MemoryDecayScheduler', () => {
         const report = await l2Scheduler.evaluateTimeliness();
         expect(report.scannedCount).toBe(3);
         expect(report.outdatedCount).toBe(1);
-        expect(report.demotedIds).toEqual(['insight:outdated']);
+        expect(report.demotedIds).toEqual(['content:outdated']);
         // MIND2-L3：仅过时记忆被 setScore 降级写入
         expect(mockStorage.setScoreCalls).toHaveLength(1);
         expect(mockStorage.setScoreCalls[0]!.score).toBe(0.05);
@@ -596,7 +596,7 @@ describe('MemoryDecayScheduler', () => {
         // 这里用真实 storage + 真实 LlmProvider mock，模拟 stop() 中断 inflight
         const mockStorageForAbort = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:1', name: '记忆1', source: 'insight', score: 0.05 }),
+            createMemory({ id: 'content:1', name: '记忆1', source: 'content', score: 0.05 }),
           ],
         });
         // LLM 调用会因 abort 抛错（judgeWithLlm 内部 signal 传递给 provider）
@@ -637,7 +637,7 @@ describe('MemoryDecayScheduler', () => {
       it('多次 evaluateTimeliness 串行调用应正确清理 inflightEvaluate 引用', async () => {
         mockStorage = createMockMemoryStorage({
           [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'insight:1', name: '记忆1', source: 'insight', score: 0.1 }),
+            createMemory({ id: 'content:1', name: '记忆1', source: 'content', score: 0.1 }),
           ],
         });
         mockProvider = createMockLlmProvider([
