@@ -102,7 +102,7 @@ function update(
   card.classList.add(ok ? 'is-success' : 'is-failed');
   card.querySelector('.tool-card__spinner')?.remove();
   const status = card.querySelector('.tool-card__status');
-  if (status) status.textContent = (ok ? '✓ ' : '✗ ') + (ok ? '成功' : '失败');
+  if (status) status.textContent = ok ? '✓ 成功' : '✗ 失败';
   if (summary) {
     const resultDiv = document.createElement('div');
     resultDiv.className = 'tool-card__result';

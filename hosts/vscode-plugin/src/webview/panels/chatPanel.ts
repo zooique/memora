@@ -308,8 +308,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // clearSession 为宿主扩展方法，类型已通过 HostSessionStore 收窄，无需断言（P2-5）
         this.sessionStore.clearSession(key.slice(0, idx), key.slice(idx + 1));
       }
-    } catch {
-      // 清空失败不阻塞，仅清 webview UI
+    } catch (err) {
+      // 清空失败不阻塞展示（仅清 webview UI），但需记录（SSOT 不藏错）
+      console.warn('Memora 清空会话失败', err);
     }
     this.post({ type: 'clear_ok' });
   }
