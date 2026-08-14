@@ -156,6 +156,14 @@ export type ExtensionToWebviewMessage =
    * webview 历史下拉据此渲染选项；用户选中后经 chat_switch_date 回发切换查看。
    */
   | { type: 'chat_history_dates'; dates: string[] }
+  /**
+   * Chat Panel 当前查看的历史会话日期（toolbar 历史下拉框触发器回显，P1-2）
+   *
+   * 宿主权威回传当前查看范围（date 为 YYYY-MM-DD，空串 = 全部历史跨天合并），
+   * webview 据此更新触发器文本，避免「选中日期后触发器仍显示固定文案」的状态失焦。
+   * 由宿主在 replaySession / handleSwitchDate（含 P1-1 发送时回置）后推送。
+   */
+  | { type: 'chat_history_view'; date: string }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }

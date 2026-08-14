@@ -59,6 +59,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let currentActive: string | undefined;
   // 历史会话日期列表（由 chat_history_dates 消息填充，倒序最新在前）
   let historyDates: string[] = [];
+  // 当前查看的历史会话日期（由 chat_history_view 消息回传，空串 = 全部历史跨天合并）。
+  // 仅作触发器回显，不参与任何业务判定（宿主 _historyDate 才是权威，webview 只镜像）。
+  let currentHistoryDate = '';
 
   // 切换 LLM 运行状态：thinking → 发送按钮变 loading，禁用输入；done 恢复
   function setStatus(state: 'thinking' | 'done'): void {
@@ -166,14 +169,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       btn.textContent = date;
       historyPickerMenu.appendChild(btn);
     });
-    // 更新触发器显示当前查看范围（紧凑胶囊，与模型选择器同一视觉语言）
+    // 更新触发器显示当前查看范围（紧凑胶囊，与模型选择器同一视觉语言）。
+    // P1-2：选中日期后回显该天（如 08-13），全部历史/当前回退「历史」，状态主动可见
     if (historyPickerTrigger) {
       historyPickerTrigger.textContent = '';
       const span = document.createElement('span');
       span.className = 'dd-model-name';
-      span.textContent = '历史';
+      span.textContent = currentHistoryDate || '历史';
       historyPickerTrigger.appendChild(span);
-      historyPickerTrigger.setAttribute('aria-label', '切换历史对话日期');
+      historyPickerTrigger.setAttribute(
+        'aria-label',
+        currentHistoryDate ? `当前查看 ${currentHistoryDate} 的历史对话` : '切换历史对话日期',
+      );
     }
   }
 
@@ -309,10 +316,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'self_review') {
       appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
-      // 清空消息区须同时清 type=msg 消息与 .tool-card 工具卡片（对抗评估 P1-1）：
-      // 仅挑 .msg 会让切换历史/清空后旧工具卡片残留 DOM，污染重放视图。
-      // 不替换 messages 全部子节点（保留 #emptyState 占位），故按两类消息类型选择。
-      messages.querySelectorAll('.msg, .tool-card').forEach((el) => el.remove());
+      // 清空消息区须同时清 type=msg 消息、.tool-card 工具卡片与 .self-review 自审查提示
+      // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧工具卡片或自审查行
+      // 残留 DOM，污染重放视图。不替换 messages 全部子节点（保留 #emptyState 占位）。
+      messages.querySelectorAll('.msg, .tool-card, .self-review').forEach((el) => el.remove());
       updateEmptyState();
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
@@ -329,6 +336,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'chat_history_dates') {
       // 历史会话日期列表（toolbar 历史下拉框）：刷新选项
       historyDates = msg.dates || [];
+      renderHistoryPicker();
+    } else if (msg.type === 'chat_history_view') {
+      // P1-2：宿主权威回传当前查看日期 → 更新触发器回显（仅镜像，不做业务判定）
+      currentHistoryDate = msg.date || '';
       renderHistoryPicker();
     } else if (msg.type === 'notice') {
       showNotice(msg.level, msg.message);

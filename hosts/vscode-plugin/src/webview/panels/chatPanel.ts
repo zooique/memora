@@ -340,6 +340,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 推送历史会话日期列表 → toolbar 历史下拉框（主动可见，可手动切换查看）
     this.pushHistoryDates();
+    // P1-2：回传当前查看范围（宿主权威），webview 历史下拉触发器据此回显
+    this.post({ type: 'chat_history_view', date: this._historyDate ?? '' });
     // 推送当前激活 Skill → toolbar 技能徽章（主动可见）
     if (this._activeSkill) {
       this.post({ type: 'chat_skill', skill: skillDisplayName(this._activeSkill) });
@@ -385,6 +387,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     this._historyDate = date || undefined;
+    // P1-2：回传新查看范围，webview 历史下拉触发器据此回显当前日期
+    this.post({ type: 'chat_history_view', date: this._historyDate ?? '' });
     // 先清空 webview 消息区，再重放对应日期历史（复用 clear_ok 清空协议）
     this.post({ type: 'clear_ok' });
     const history = this.loadHistory(this._historyDate);
@@ -529,6 +533,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const now = new Date().toISOString();
+    // P1-1：若正查看历史日期，发送前回置到「全部历史（当前会话）」视图，
+    // 避免新消息持久化到今天却显示在历史日期视图的状态错位。
+    // handleSwitchDate('') 会清空消息区 + 回放当前 + 回传 chat_history_view('')
+    if (this._historyDate) this.handleSwitchDate('');
     // 用户消息持久化由内核 chat() → appendUser 完成（写入 todayDate-main），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
     this.post({ type: 'user', text: input, ts: now });
@@ -552,6 +560,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
+    // P1-1：与 handleSend 同一状态错位防护——正查看历史时回答，先回置到当前会话视图
+    if (this._historyDate) this.handleSwitchDate('');
     // resumeExecution 内核路径不写 user 消息（仅 appendAssistant），
     // 此处由 UI 补写，避免回答丢失（内核 resume 能力缺口，宿主补丁）
     this.persist('user', input);
