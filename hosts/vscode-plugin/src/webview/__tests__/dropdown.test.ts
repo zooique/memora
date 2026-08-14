@@ -1,0 +1,133 @@
+/**
+ * dropdown 组件测试 — 键盘可访问性（对抗评估 P1-2 锁定）
+ *
+ * 用 @vitest-environment jsdom 提供 DOM 环境（per-file，不污染仓库其余 node 测试）。
+ * 覆盖 initDropdowns 的：
+ *   - aria-expanded 状态与 .is-open 同步（开合一致性）
+ *   - 触发器 Arrow/Escape 键盘语义
+ *   - 菜单内方向键 / Home / End / Escape 导航
+ *   - 点击项触发回调 + 关闭；点击外部关闭
+ */
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { buildDropdownHtml, initDropdowns } from '../components/dropdown.js';
+
+/** 当前测试的挂载宏：构造一个带菜单的下拉 + 外部元素，返回可断言句柄 */
+type Mounted = {
+  el: HTMLElement;
+  trigger: HTMLButtonElement;
+  menu: HTMLElement;
+  items: HTMLElement[];
+  onSelect: ReturnType<typeof vi.fn>;
+};
+
+function mountDropdown(): Mounted {
+  document.body.innerHTML = `
+    ${buildDropdownHtml(
+      [
+        { id: 'a', label: '选项A' },
+        { id: 'b', label: '选项B' },
+        { id: 'c', label: '选项C' },
+      ],
+      { onSelect: '__onSelect' },
+    )}
+    <button id="outside">外部元素</button>
+  `;
+  const onSelect = vi.fn();
+  initDropdowns(document, { __onSelect: onSelect });
+  const el = document.querySelector('.treedd') as HTMLElement;
+  const trigger = el.querySelector('.treedd__trigger') as HTMLButtonElement;
+  const menu = el.querySelector('.treedd__menu') as HTMLElement;
+  const items = Array.from(menu.querySelectorAll('.treedd__item')) as HTMLElement[];
+  return { el, trigger, menu, items, onSelect };
+}
+
+/** 向目标元素派发一个键盘事件 */
+function key(el: HTMLElement, k: string): void {
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+}
+
+describe('dropdown 键盘可访问性', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('初始闭合态：aria-expanded=false 且菜单未展开', () => {
+    const { el, trigger, menu } = mountDropdown();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(el.classList.contains('is-open')).toBe(false);
+    expect((menu as HTMLElement).style.display).toBe('');
+  });
+
+  it('点击触发器展开：aria-expanded=true 且聚焦首项', () => {
+    const { el, trigger, items } = mountDropdown();
+    trigger.click();
+    expect(el.classList.contains('is-open')).toBe(true);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it('再次点击触发器收起：aria-expanded=false', () => {
+    const { el, trigger } = mountDropdown();
+    trigger.click();
+    trigger.click();
+    expect(el.classList.contains('is-open')).toBe(false);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('触发器 ArrowDown 直接展开并聚焦首项；ArrowUp 聚焦末项', () => {
+    const { el, trigger, items } = mountDropdown();
+    key(trigger, 'ArrowDown');
+    expect(el.classList.contains('is-open')).toBe(true);
+    expect(document.activeElement).toBe(items[0]);
+
+    // 关闭后 ArrowUp 聚焦末项
+    trigger.click();
+    key(trigger, 'ArrowUp');
+    expect(document.activeElement).toBe(items[items.length - 1]);
+  });
+
+  it('菜单内 ArrowDown / ArrowUp 在项间移动焦点', () => {
+    const { trigger, items } = mountDropdown();
+    key(trigger, 'ArrowDown'); // 聚焦首项
+    key(items[0], 'ArrowDown');
+    expect(document.activeElement).toBe(items[1]);
+    key(items[1], 'ArrowUp');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it('菜单内 Home 跳首项、End 跳末项', () => {
+    const { trigger, items } = mountDropdown();
+    key(trigger, 'ArrowDown');
+    key(items[0], 'End');
+    expect(document.activeElement).toBe(items[items.length - 1]);
+    key(items[items.length - 1], 'Home');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it('Escape 关闭菜单并聚焦回触发器', () => {
+    const { el, trigger, items } = mountDropdown();
+    key(trigger, 'ArrowDown');
+    expect(el.classList.contains('is-open')).toBe(true);
+    key(items[0], 'Escape');
+    expect(el.classList.contains('is-open')).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('点击菜单项触发对应回调并收起菜单', () => {
+    const { el, trigger, items, onSelect } = mountDropdown();
+    trigger.click();
+    items[1].click();
+    expect(onSelect).toHaveBeenCalledWith('b');
+    expect(el.classList.contains('is-open')).toBe(false);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('点击外部元素关闭已展开的下拉', () => {
+    const { el, trigger } = mountDropdown();
+    trigger.click();
+    expect(el.classList.contains('is-open')).toBe(true);
+    (document.getElementById('outside') as HTMLElement).click();
+    expect(el.classList.contains('is-open')).toBe(false);
+  });
+});
