@@ -529,3 +529,205 @@ describe('applyDecayToMemory · 衰减计算边界', () => {
     expect(memory.score).toBeCloseTo(0.78, 5);
   });
 });
+
+// ─── Phase 2：type 时间窗口差异化召回（§4.2） ──────────────
+
+describe('recall · type 时间窗口差异化召回（§4.2）', () => {
+  let mockStorage: IMemoryStorage;
+
+  beforeEach(() => {
+    mockStorage = {
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      getById: vi.fn(),
+      getBySource: vi.fn(),
+      search: vi.fn(),
+      count: vi.fn(() => 0),
+      countBySource: vi.fn(() => 0),
+      close: vi.fn(),
+    } as unknown as IMemoryStorage;
+  });
+
+  /** 构造指定天数前的 ISO 时间（相对当前时刻） */
+  const daysAgoIso = (daysAgo: number) =>
+    new Date(Date.now() - daysAgo * ONE_DAY_MS).toISOString();
+
+  it('intent 超期（>7天）不召回，近期 intent 召回', async () => {
+    const stale = makeMemory({
+      id: 'round-summary:stale-intent',
+      source: 'round-summary',
+      metadata: { summaryType: 'intent', sessionName: 's1', roundId: 'r1' },
+      createdAt: daysAgoIso(8),
+    });
+    const fresh = makeMemory({
+      id: 'round-summary:fresh-intent',
+      source: 'round-summary',
+      metadata: { summaryType: 'intent', sessionName: 's1', roundId: 'r2' },
+      createdAt: daysAgoIso(1),
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([stale, fresh]);
+
+    const memories = await recall(mockStorage, '计划');
+
+    // 超期 intent 被过滤，仅近期 intent 保留
+    expect(memories.map((m) => m.id)).toEqual(['round-summary:fresh-intent']);
+  });
+
+  it('general 超期（>7天）不召回', async () => {
+    // 6 天（明确在 7 天窗口内）应保留，8 天（超期）应过滤
+    // 用 6/8 而非 7/8 边界，避免毫秒级执行时差导致恰好 7 天的浮点边界误判
+    const recent = makeMemory({
+      id: 'round-summary:recent-general',
+      source: 'round-summary',
+      metadata: { summaryType: 'general', sessionName: 's1', roundId: 'r1' },
+      createdAt: daysAgoIso(6),
+    });
+    const stale = makeMemory({
+      id: 'round-summary:stale-general',
+      source: 'round-summary',
+      metadata: { summaryType: 'general', sessionName: 's1', roundId: 'r2' },
+      createdAt: daysAgoIso(8),
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([recent, stale]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    expect(memories.map((m) => m.id)).toEqual(['round-summary:recent-general']);
+  });
+
+  it('preference 远古（数月前）仍被召回（不限窗口）', async () => {
+    const oldPref = makeMemory({
+      id: 'round-summary:old-preference',
+      source: 'round-summary',
+      metadata: { summaryType: 'preference', sessionName: 's1', roundId: 'r1' },
+      createdAt: daysAgoIso(90), // 3 个月前
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([oldPref]);
+
+    const memories = await recall(mockStorage, '偏好');
+
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.id).toBe('round-summary:old-preference');
+  });
+
+  it('decision/fact 远古仍被召回（不限窗口）', async () => {
+    const oldDecision = makeMemory({
+      id: 'round-summary:old-decision',
+      source: 'round-summary',
+      metadata: { summaryType: 'decision', sessionName: 's1', roundId: 'r1' },
+      createdAt: daysAgoIso(60),
+    });
+    const oldFact = makeMemory({
+      id: 'round-summary:old-fact',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 's1', roundId: 'r2' },
+      createdAt: daysAgoIso(60),
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([oldDecision, oldFact]);
+
+    const memories = await recall(mockStorage, '决策事实');
+
+    expect(memories.map((m) => m.id).sort()).toEqual([
+      'round-summary:old-decision',
+      'round-summary:old-fact',
+    ]);
+  });
+
+  it('未标记 summaryType 的记忆不受 type 时间窗口过滤', async () => {
+    const unmarked = makeMemory({
+      id: 'insight:1',
+      source: 'insight',
+      createdAt: daysAgoIso(30),
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([unmarked]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.id).toBe('insight:1');
+  });
+});
+
+// ─── Phase 3：会话窗口优先 + 组内时间排序（§4.4） ──────────────
+
+describe('recall · 会话窗口优先 + 组内时间排序（§4.4）', () => {
+  let mockStorage: IMemoryStorage;
+
+  beforeEach(() => {
+    mockStorage = {
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      getById: vi.fn(),
+      getBySource: vi.fn(),
+      search: vi.fn(),
+      count: vi.fn(() => 0),
+      countBySource: vi.fn(() => 0),
+      close: vi.fn(),
+    } as unknown as IMemoryStorage;
+  });
+
+  it('同会话窗口优先，跨会话记忆次之', async () => {
+    const cross = makeMemory({
+      id: 'round-summary:cross',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 'other-session', roundId: 'r1' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const same = makeMemory({
+      id: 'round-summary:same',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 'current-session', roundId: 'r2' },
+      createdAt: '2026-01-02T00:00:00.000Z',
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([cross, same]);
+
+    const memories = await recall(mockStorage, '测试', { sessionId: 'current-session' });
+
+    // 会话窗口匹配的排前，跨会话的排后（即使跨会话的 createdAt 更早）
+    expect(memories[0]!.id).toBe('round-summary:same');
+    expect(memories[1]!.id).toBe('round-summary:cross');
+  });
+
+  it('同会话窗口内按 createdAt 升序', async () => {
+    const older = makeMemory({
+      id: 'round-summary:older',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 'cur', roundId: 'r1' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const newer = makeMemory({
+      id: 'round-summary:newer',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 'cur', roundId: 'r2' },
+      createdAt: '2026-01-03T00:00:00.000Z',
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([newer, older]);
+
+    const memories = await recall(mockStorage, '测试', { sessionId: 'cur' });
+
+    // 同窗口内时间升序：older 在前，newer 在后
+    expect(memories[0]!.id).toBe('round-summary:older');
+    expect(memories[1]!.id).toBe('round-summary:newer');
+  });
+
+  it('无 sessionId 时按 createdAt 升序', async () => {
+    const older = makeMemory({
+      id: 'round-summary:older',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 'a', roundId: 'r1' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const newer = makeMemory({
+      id: 'round-summary:newer',
+      source: 'round-summary',
+      metadata: { summaryType: 'fact', sessionName: 'b', roundId: 'r2' },
+      createdAt: '2026-01-02T00:00:00.000Z',
+    });
+    vi.mocked(mockStorage.search).mockReturnValue([newer, older]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    expect(memories[0]!.id).toBe('round-summary:older');
+    expect(memories[1]!.id).toBe('round-summary:newer');
+  });
+});

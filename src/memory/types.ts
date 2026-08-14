@@ -88,9 +88,9 @@ export const DEFAULT_MEMORY_SCORE = 0.5;
  *
  * 用于标记 `source='round-summary'` 记忆的摘要类型。
  * 在摘要生成时由 LLM 自动判断，不引入独立分类器。
- * 'aggregated' 类型由聚合机制生成，非 LLM 直接产出。
+ * 聚合记忆已取消（统一为单一摘要记忆），故无 aggregated 类型。
  */
-export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'general' | 'aggregated';
+export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'general';
 
 /**
  * 记忆解析器 — 验证原始数据并转换为 Memory 类型

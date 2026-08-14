@@ -31,31 +31,18 @@ const DEFAULT_MIN_SIMILARITY = 0.3;
 /** 一天对应的毫秒数 */
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-/** intent 摘召回的时间窗口（天）：intent 时效敏感，超期不召回（memory-as-summary §4.2） */
-const INTENT_RECALL_WINDOW_DAYS = 7;
-
 /**
- * 摘要类型价值权重（memory-as-summary §4.2 差异化召回）
+ * 摘要类型时间窗口策略表（memory-as-summary §4.2 差异化召回）
  *
- * decision/preference 是高价值记忆（决策锚点/用户画像），应优先呈现；
- * general 是低价值一般对话，权重最低。用于召回排序的 tie-break。
- * {未标记} 视为 general（默认低价值）。
+ * 每种类型拥有独立存活窗口：intent/general 时效敏感，超期不召回；
+ * preference/decision/fact 不限窗口（长期有效，可召回远古记忆）。
+ * 表中未列出的类型（或未标记 summaryType 的非 round-summary 记忆）**不过滤**，
+ * 仅命中窗口类型的摘要受时间约束。
  */
-function summaryTypeValue(type?: string): number {
-  switch (type) {
-    case 'decision':
-      return 5;
-    case 'preference':
-      return 4;
-    case 'fact':
-      return 3;
-    case 'intent':
-      return 2;
-    case 'general':
-    default:
-      return 1;
-  }
-}
+const RECALL_WINDOWS_DAYS: Readonly<Record<string, number>> = {
+  intent: 7,
+  general: 7,
+};
 
 /**
  * 从文本中提取关键词（用于记忆召回）
@@ -198,49 +185,34 @@ export async function recall(
     : sorted.map((e) => e.memory);
 
   // ── Phase 2：差异化召回（memory-as-summary §4.2）──
-  // intent 时效敏感：限定近期窗口，超期 intent 摘要不召回
+  // 按 type 查时间窗口策略表：preference/decision/fact 不限，intent/general 限近期
+  // 未标记 summaryType 的记忆不受 type 时间窗口约束（不命中表即不过滤）
   const nowMs = Date.now();
   reranked = reranked.filter((m) => {
-    if (m.metadata?.summaryType !== 'intent') return true;
+    const type = m.metadata?.summaryType;
+    const windowDays = type ? RECALL_WINDOWS_DAYS[type] : undefined;
+    if (windowDays === undefined) return true; // 不限窗口或未标记，不过滤
     const ageMs = nowMs - Date.parse(m.createdAt);
-    return !Number.isNaN(ageMs) && ageMs <= INTENT_RECALL_WINDOW_DAYS * ONE_DAY_MS;
+    return !Number.isNaN(ageMs) && ageMs <= windowDays * ONE_DAY_MS;
   });
 
-  // ── Phase 3：同窗口优先 + 聚合摘要优先 + type 价值排序 ──
-  // 同窗口优先：sessionId 匹配的记忆排在前面，提升上下文连续性
-  // 聚合摘要优先：type='aggregated' 的摘要排在前面，降低原始摘要数量对性能的影响
-  // type 价值：decision/preference 高价值优先，general 最低（§4.2 差异化召回）
-  if (sessionId) {
-    reranked = [...reranked].sort((a, b) => {
+  // ── Phase 3：会话窗口优先 + 组内时间排序（memory-as-summary §4.4）──
+  // 排序由两个正交维度构成，类型不参与排序：
+  //   维度一：同会话窗口（sessionName 匹配当前会话）优先 → 跨会话记忆次之
+  //   维度二：组内按 createdAt 升序，LLM 自然识别"最近偏好"
+  // 稳定排序（相等时保持原相对顺序），不破坏 hybridMerge 已选出的候选集
+  reranked = [...reranked].sort((a, b) => {
+    if (sessionId) {
       const aIsSameWindow = a.metadata?.sessionName === sessionId;
       const bIsSameWindow = b.metadata?.sessionName === sessionId;
-      if (aIsSameWindow !== bIsSameWindow) {
-        return aIsSameWindow ? -1 : 1;
-      }
-      // 同优先级内：聚合摘要优先
-      const aIsAggregated = a.metadata?.summaryType === 'aggregated';
-      const bIsAggregated = b.metadata?.summaryType === 'aggregated';
-      if (aIsAggregated !== bIsAggregated) {
-        return aIsAggregated ? -1 : 1;
-      }
-      // 其余按 type 价值降序（差异化召回 tie-break）
-      const aType = summaryTypeValue(a.metadata?.summaryType);
-      const bType = summaryTypeValue(b.metadata?.summaryType);
-      if (aType !== bType) return bType - aType;
-      return 0; // 保持原有相对顺序
-    });
-  } else {
-    // 无 sessionId 时（非常规路径），仍按 type 价值排序保证差异化生效
-    reranked = [...reranked].sort((a, b) => {
-      const aIsAggregated = a.metadata?.summaryType === 'aggregated';
-      const bIsAggregated = b.metadata?.summaryType === 'aggregated';
-      if (aIsAggregated !== bIsAggregated) return aIsAggregated ? -1 : 1;
-      const aType = summaryTypeValue(a.metadata?.summaryType);
-      const bType = summaryTypeValue(b.metadata?.summaryType);
-      if (aType !== bType) return bType - aType;
-      return 0;
-    });
-  }
+      if (aIsSameWindow !== bIsSameWindow) return aIsSameWindow ? -1 : 1;
+    }
+    // 同窗口内（或无 sessionId）：createdAt 升序
+    const aTime = Date.parse(a.createdAt);
+    const bTime = Date.parse(b.createdAt);
+    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
+    return 0;
+  });
 
   // ── 写路径取代过滤（ADR-021）：被 superseded 的摘要不再作为当前事实注入 ──
   // supersededBy 仅对 round-summary 有意义，其他来源无此字段，过滤安全。
