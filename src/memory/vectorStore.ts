@@ -50,8 +50,8 @@ export interface EmbeddingService {
  * 内核消费者（recall.ts / memoryInspector.ts / agent.ts）只依赖此接口，
  * 不耦合具体持久化方式（JSON / SQLite / 外部向量库）。
  *
- * 与 IMemoryStorage / IMemoryRelationStore / ILogger / ITracer 同属
- * 内核六大注入接口，遵循 ADR-002 存储层抽象原则。
+ * 与 IMemoryStorage / ILogger / ITracer 同属
+ * 内核注入接口，遵循 ADR-002 存储层抽象原则。
  *
  * 内核内置实现：JsonVectorStore（JSON 文件持久化，单用户本地场景）。
  */

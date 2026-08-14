@@ -108,13 +108,6 @@ export interface ConfigManagerOptions {
   /** 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖） */
   writeConfigFile?: (memory: Memory) => Promise<void>;
   /**
-   * 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理）
-   *
-   * 传入 memoryInspector.writeRemoveRelationsByMemoryId 的绑定版本。
-   * 未注入时删除记忆不清理关系边（向后兼容，但可能残留孤儿边）。
-   */
-  removeRelationsByMemoryId?: (memoryId: string) => number;
-  /**
    * 文件层前置条件断言回调（可选，T5：两段式契约结构化）
    *
    * 注入时，deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成文件操作。
@@ -159,8 +152,6 @@ export class ConfigManager {
   private readonly refreshBootstrapMemories: () => void;
   /** 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖） */
   private readonly writeConfigFile?: (memory: Memory) => Promise<void>;
-  /** 删除记忆时清理关联关系边的回调（可选，P0-1 孤儿边清理） */
-  private readonly removeRelationsByMemoryId?: (memoryId: string) => number;
   /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
   private readonly fileConsistencyCheck?: FileConsistencyCheck;
 
@@ -173,7 +164,6 @@ export class ConfigManager {
     this.injectSystemMessage = options.injectSystemMessage;
     this.refreshBootstrapMemories = options.refreshBootstrapMemories;
     this.writeConfigFile = options.writeConfigFile;
-    this.removeRelationsByMemoryId = options.removeRelationsByMemoryId;
     this.fileConsistencyCheck = options.fileConsistencyCheck;
   }
 
@@ -456,8 +446,6 @@ export class ConfigManager {
       logger.warn({ name, id }, '删除规则失败：规则不存在');
       return false;
     }
-    // 先清理关联关系边，防止 memory_relations 表残留孤儿边
-    this.removeRelationsByMemoryId?.(id);
     this.index.delete(id);
     this.safeRefreshBootstrapMemories();
     logger.info({ name, id }, '规则已删除');
@@ -542,8 +530,6 @@ export class ConfigManager {
       logger.warn({ name, id }, '删除技能失败：技能不存在');
       return false;
     }
-    // P0-1：先清理关联关系边，防止 memory_relations 表残留孤儿边
-    this.removeRelationsByMemoryId?.(id);
     this.index.delete(id);
     // 同步清理 SkillManager 内存缓存（deleteSkill 内部处理 name 不存在的情况）
     this.skillManager.deleteSkill(name);

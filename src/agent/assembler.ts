@@ -17,10 +17,8 @@ import { MessageHistory } from '@/agent/messageHistory.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
-import { UserProfile } from '@/memory/userProfile.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
-import { RelationBuilder } from '@/agent/managers/relationBuilder.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -99,7 +97,6 @@ type AssembleRuntimeParams = Pick<
   | 'personaName'
   | 'maxContextTokens'
   | 'sessionStore'
-  | 'relationStore'
   | 'tracer'
   | 'messages'
   | 'enableContextSummary'
@@ -140,14 +137,12 @@ type LoopAndDepsParams = Pick<
   | 'tracer'
   | 'messages'
   | 'enableContextSummary'
-  | 'relationStore'
   | 'sessionStore'
   | 'locale'
   | 'callbacks'
 > & {
   pctx: ProjectContext;
   personaPrompt: string;
-  userProfile: UserProfile;
   toolExec: ToolExecutor;
   /** 角色包规则列表（Rule→guardrail 桥接），桥接到 guardrail 系统供运行时强制执行 */
   rolePackRules: readonly string[];
@@ -160,7 +155,7 @@ type LoopAndDepsParams = Pick<
  */
 type LoopDependentParams = Pick<
   AssembleInput,
-  'configDir' | 'backgroundProvider' | 'relationStore' | 'callbacks'
+  'configDir' | 'backgroundProvider' | 'callbacks'
 > & {
   pctx: ProjectContext;
   loop: AgentLoop;
@@ -174,7 +169,6 @@ export interface AssembleOutput {
   loop: AgentLoop;
   toolExec: ToolExecutor;
   personaManager: PersonaManager;
-  userProfile: UserProfile;
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
   insightExtractor: InsightExtractor;
@@ -215,7 +209,7 @@ export interface AssembleOutput {
  *
  * 组件创建顺序（解决循环依赖）：
  *   1. 无依赖组件：history, workProjection, toolExec
- *   2. 依赖 Provider 的组件：personaManager, userProfile, skillManager
+ *   2. 依赖 Provider 的组件：personaManager, skillManager
  *   3. AgentLoop（依赖 toolExec + systemPromptPrefix）
  *   4. 依赖 Loop 的组件：insightExtractor, configManager, memoryInspector
  *
@@ -231,15 +225,13 @@ export interface AssembleOutput {
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
-    provider, backgroundProvider, providerRouter, pctx, personaPrompt, userProfile, toolExec,
-    maxContextTokens, tracer, messages, enableContextSummary, relationStore,
+    provider, backgroundProvider, providerRouter, pctx, personaPrompt, toolExec,
+    maxContextTokens, tracer, messages, enableContextSummary,
     sessionStore, locale, callbacks, rolePackRules,
   } = params;
 
-  // 系统前缀：角色 + 用户画像 + 当前时间
+  // 系统前缀：角色 + 当前时间（用户画像已收敛为 round-summary 召回，不再拼入 systemPrompt）
   const systemPrefixParts = [personaPrompt];
-  const profilePrompt = userProfile.buildSystemPrompt();
-  if (profilePrompt) systemPrefixParts.push(profilePrompt);
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -251,8 +243,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     systemPrefixParts.filter(Boolean).join('\n\n') +
     (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
 
-  const relationBuilder = new RelationBuilder(pctx.index, relationStore ?? null);
-  const insightExtractor = new InsightExtractor(provider, pctx.index, relationBuilder);
+  const insightExtractor = new InsightExtractor(provider, pctx.index);
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
   const roundSummaryGenerator = new RoundSummaryGenerator(provider, pctx.index);
@@ -315,19 +306,18 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
 
-  return { loop, insightExtractor, sessionArchiver, textPolisher, relationBuilder, roundSummaryGenerator };
+  return { loop, insightExtractor, sessionArchiver, textPolisher, roundSummaryGenerator };
 }
 
 /**
  * Phase 4：创建依赖 Loop 的组件
  */
 function createLoopDependentComponents(params: LoopDependentParams) {
-  const { pctx, loop, history, skillManager, configDir, backgroundProvider, relationStore, callbacks } = params;
+  const { pctx, loop, history, skillManager, configDir, backgroundProvider, callbacks } = params;
 
   const configFileStore = configDir ? new FileStore(configDir) : null;
 
-  // P0-1：memoryInspector 需先创建（持有 relationStore），供 ConfigManager 清理关系边
-  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
+  const memoryInspector = new MemoryInspector(pctx.index, loop, history);
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
   const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, callbacks?.onDedupCompleted);
 
@@ -338,8 +328,6 @@ function createLoopDependentComponents(params: LoopDependentParams) {
     // refreshBootstrapMemories 必须同步 bootstrap 段（SSOT：system prompt 与存储一致）
     refreshBootstrapMemories: () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
     writeConfigFile: configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
-    // P0-1：删除配置时自动清理关联关系边
-    removeRelationsByMemoryId: (memoryId: string) => memoryInspector.writeRemoveRelationsByMemoryId(memoryId),
     fileConsistencyCheck: callbacks?.fileConsistencyCheck,
   });
 
@@ -369,7 +357,6 @@ export async function assembleComponents(
     personaName,
     maxContextTokens,
     sessionStore,
-    relationStore,
     tracer,
     messages,
     enableContextSummary,
@@ -404,9 +391,6 @@ export async function assembleComponents(
   const personaManager = new PersonaManager(configDir);
   const personaPrompt = await personaManager.load(personaName);
 
-  const userProfile = new UserProfile(pctx.index, relationStore ?? null);
-  await userProfile.load();
-
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
 
@@ -427,13 +411,11 @@ export async function assembleComponents(
       backgroundProvider,
       pctx,
       personaPrompt,
-      userProfile,
       toolExec,
       maxContextTokens,
       tracer,
       messages,
       enableContextSummary,
-      relationStore,
       sessionStore,
       locale,
       callbacks,
@@ -450,7 +432,6 @@ export async function assembleComponents(
       skillManager,
       configDir,
       backgroundProvider,
-      relationStore,
       callbacks,
     });
 
@@ -459,7 +440,6 @@ export async function assembleComponents(
     loop,
     toolExec,
     personaManager,
-    userProfile,
     workProjection,
     skillManager,
     insightExtractor,

@@ -2,7 +2,7 @@
  * 项目管理器测试
  * 覆盖 initProject / closeProject / listProjects / registerProject / 锁文件
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -200,34 +200,6 @@ describe('ProjectManager · initProject', () => {
     // 文件集合不完整时不做任何驱逐判断，宁可让僵尸多活一轮。
     expect(names).toContain('probe');
 
-    await pm.shutdown();
-  });
-
-  it('T13：closeProject 撤销项目级记忆时应同步清理关系边', async () => {
-    const removeRelations = vi.fn();
-    const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager({
-      dataDir: config.memory.dataDir,
-      createSecurityGuard: (projectPath, memoraDir) =>
-        new SecurityGuard(projectPath, memoraDir, [], false, 'owner'),
-      removeRelationsByMemoryId: removeRelations,
-    });
-    await pm.initProject(tmpDir);
-
-    // 写入项目级规则文件，使其进入 currentProjectMemoryIds
-    mkdirSync(join(tmpDir, '.memora', 'rules'), { recursive: true });
-    writeFileSync(
-      join(tmpDir, '.memora', 'rules', 'proj-rule.md'),
-      '---\nid: rule:proj-rule\nsource: rule\nname: proj-rule\nscore: 0.8\n---\n\n项目规则',
-      'utf-8',
-    );
-    await pm.initProject(tmpDir);
-
-    await pm.closeProject();
-
-    // 修复前（仅 delete 主记忆）：回调未被调 → 断言红
-    // （项目级 rule 被 insight 引用为关系对端时，索引删除不会级联清边 → 悬挂边）
-    expect(removeRelations).toHaveBeenCalledWith('rule:proj-rule');
     await pm.shutdown();
   });
 });

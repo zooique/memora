@@ -236,16 +236,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   };
 
-  /** conflictDetected：新记忆与已有记忆冲突（contradicts 关系写入） */
-  private readonly onConflictDetected = (info: { newInsight: string }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `检测到记忆冲突，已记录：${info.newInsight}`,
-    });
-  };
+  /** conflictDetected 事件已随内核记忆关系图谱收敛移除（2026-08-14） */
 
-  /** archiveFailed：记忆归档失败（profile / insight / content 阶段） */
+  /** archiveFailed：记忆归档失败（insight / content 阶段） */
   private readonly onArchiveFailed = (info: { stage: string; message: string }): void => {
     this.post({ type: 'notice', level: 'info', message: `记忆归档失败（${info.stage}）：${info.message}` });
   };
@@ -274,11 +267,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
     a.off('guardrailError', this.onGuardrailError);
     a.on('guardrailError', this.onGuardrailError);
-    // P1 后续波：低扰信息（截断/冲突/归档失败/权重保存失败）→ info 级提示条
+    // P1 后续波：低扰信息（截断/归档失败/权重保存失败）→ info 级提示条
     a.off('contextTruncated', this.onContextTruncated);
     a.on('contextTruncated', this.onContextTruncated);
-    a.off('conflictDetected', this.onConflictDetected);
-    a.on('conflictDetected', this.onConflictDetected);
     a.off('archiveFailed', this.onArchiveFailed);
     a.on('archiveFailed', this.onArchiveFailed);
     a.off('boostPersistFailed', this.onBoostPersistFailed);

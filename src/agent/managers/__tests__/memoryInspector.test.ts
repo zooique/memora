@@ -9,16 +9,14 @@
  *   - search：关键词搜索（空 query 抛错 + limit 校验 + 内容截断）
  *   - searchHybrid：混合搜索（语义 + 关键词双通道 + 降级）
  *   - stats：记忆库统计
- *   - getRelations / getAllRelations / getRelationPath / getRelationNeighbors：关系查询
- *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired /
- *     writeAddRelation / writeRemoveRelation
+ *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *
  * FIX-P1-3（2026-07-24）：sourceHealth / suggest 已从此处迁移至 Agent 门面直连
  * MemoryAdvisor（与 detectConflicts 同模式），相关测试见 memoryAdvisor.test.ts +
  * agent.test.ts。本测试不再 import MemoryAdvisor。
  *
  * Mock 策略：
- *   - InMemoryStorage / InMemoryRelationStore 用真实实现（测试夹具，已被 store.test.ts 验证）
+ *   - InMemoryStorage 用真实实现（测试夹具，已被 store.test.ts 验证）
  *   - loop / history 用 Partial<T> as T 单层断言（仅实现被测方法）
  *   - VectorStore 用 mock 对象（search 返回固定结果）
  *   - 写操作测试通过 writeXxx 写入后用只读方法读取验证（读写同源）
@@ -26,7 +24,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-import { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
 import type { Message } from '@/llm/provider.js';
@@ -109,7 +106,7 @@ describe('MemoryInspector', () => {
     history = createMockHistory();
     // advisor 参数已移除，inspector 不再持有 advisor 引用
     // sourceHealth/suggest 由 Agent 门面直连 advisor，本测试不覆盖（见 memoryAdvisor.test.ts）
-    inspector = new MemoryInspector(storage, loop, history, null);
+    inspector = new MemoryInspector(storage, loop, history);
   });
 
   // ════════════════════════════════════════════════════════
@@ -124,12 +121,6 @@ describe('MemoryInspector', () => {
       expect(snap.working).toBeDefined();
       expect(snap.bootstrap).toBeDefined();
       expect(snap.archive).toBeDefined();
-    });
-
-    it('relationStore 默认为 null（关系查询方法降级返回空）', () => {
-      // 未注入 relationStore 时 getRelations 返回 []
-      expect(inspector.getRelations('any-id')).toEqual([]);
-      expect(inspector.getAllRelations()).toEqual([]);
     });
 
     it('setVectorStore 应注入向量存储（searchHybrid 启用语义通道）', () => {
@@ -216,7 +207,7 @@ describe('MemoryInspector', () => {
         { role: 'user', content: longContent },
       ];
       loop = createMockLoop(messages);
-      inspector = new MemoryInspector(storage, loop, history, null);
+      inspector = new MemoryInspector(storage, loop, history);
       const snap = inspector.snapshot();
       // total 是全部消息数
       expect(snap.working.total).toBe(7);
@@ -256,29 +247,10 @@ describe('MemoryInspector', () => {
       expect(snap.archive.stats['work-projection']).toBe(1);
     });
 
-    it('relationCount：relationStore 未注入时为 0', () => {
-      const snap = inspector.snapshot();
-      expect(snap.archive.relationCount).toBe(0);
-    });
-
-    it('relationCount：relationStore 已注入时返回关系边总数', () => {
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({
-        sourceId: 'a',
-        targetId: 'b',
-        type: 'related',
-        weight: 0.5,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-      const snap = inspector.snapshot();
-      expect(snap.archive.relationCount).toBe(1);
-    });
-
     it('currentSession/currentSessionName：null 时降级为 "(none)"', () => {
       loop = createMockLoop();
       history = createMockHistory(null, null);
-      inspector = new MemoryInspector(storage, loop, history, null);
+      inspector = new MemoryInspector(storage, loop, history);
       const snap = inspector.snapshot();
       expect(snap.archive.currentSession).toBe('(none)');
       expect(snap.archive.currentSessionName).toBe('(none)');
@@ -417,7 +389,7 @@ describe('MemoryInspector', () => {
   // ════════════════════════════════════════════════════════
 
   describe('stats', () => {
-    it('应返回 total + bySource + relationCount', () => {
+    it('应返回 total + bySource', () => {
       storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
       storage.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));
       storage.upsert(createMemory({ id: 'persona:1', source: 'persona', name: 'p1' }));
@@ -425,7 +397,6 @@ describe('MemoryInspector', () => {
       expect(stats.total).toBe(3);
       expect(stats.bySource.rule).toBe(2);
       expect(stats.bySource.persona).toBe(1);
-      expect(stats.relationCount).toBe(0);
     });
 
     it('bySource 应过滤 count=0 的来源', () => {
@@ -434,233 +405,6 @@ describe('MemoryInspector', () => {
       expect(stats.bySource.rule).toBe(1);
       // 未出现的来源不在 bySource 中
       expect(stats.bySource.insight).toBeUndefined();
-    });
-
-    it('relationCount：relationStore 已注入时返回关系边总数', () => {
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({
-        sourceId: 'a',
-        targetId: 'b',
-        type: 'related',
-        weight: 0.5,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      });
-      relationStore.addRelation({
-        sourceId: 'c',
-        targetId: 'd',
-        type: 'related',
-        weight: 0.3,
-        createdAt: '2026-06-27T11:00:00.000Z',
-      });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-      const stats = inspector.stats();
-      expect(stats.relationCount).toBe(2);
-    });
-  });
-
-  // ════════════════════════════════════════════════════════
-  // 7. 关系查询（4 测试）
-  // ════════════════════════════════════════════════════════
-
-  describe('关系查询', () => {
-    it('getRelations：relationStore 未注入时返回空数组', () => {
-      expect(inspector.getRelations('any-id')).toEqual([]);
-    });
-
-    it('getRelations：relationStore 已注入时透传 direction 参数', () => {
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({
-        sourceId: 'a',
-        targetId: 'b',
-        type: 'related',
-        weight: 0.5,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-      // direction='outgoing' 只查 sourceId='a' 的关系
-      const outgoing = inspector.getRelations('a', 'outgoing');
-      expect(outgoing).toHaveLength(1);
-      expect(outgoing[0]!.sourceId).toBe('a');
-      // direction='incoming' 只查 targetId='b' 的关系
-      const incoming = inspector.getRelations('b', 'incoming');
-      expect(incoming).toHaveLength(1);
-      expect(incoming[0]!.targetId).toBe('b');
-    });
-
-    it('getAllRelations：relationStore 未注入时返回空数组', () => {
-      expect(inspector.getAllRelations()).toEqual([]);
-    });
-
-    it('getAllRelations：relationStore 已注入时返回全部关系边', () => {
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({
-        sourceId: 'a',
-        targetId: 'b',
-        type: 'related',
-        weight: 0.5,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      });
-      relationStore.addRelation({
-        sourceId: 'c',
-        targetId: 'd',
-        type: 'refines',
-        weight: 0.7,
-        createdAt: '2026-06-27T11:00:00.000Z',
-      });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-      const all = inspector.getAllRelations();
-      expect(all).toHaveLength(2);
-    });
-  });
-
-  // ════════════════════════════════════════════════════════
-  // 7.1 关系路径追溯 getRelationPath（5 测试）
-  // ════════════════════════════════════════════════════════
-
-  describe('getRelationPath 路径追溯', () => {
-    it('relationStore 未注入时仅返回起点节点', () => {
-      const path = inspector.getRelationPath('insight:start');
-      expect(path).toHaveLength(1);
-      expect(path[0]!.memoryId).toBe('insight:start');
-      expect(path[0]!.depth).toBe(0);
-      expect(path[0]!.relationType).toBeNull();
-    });
-
-    it('direction=incoming 时沿 sourceId 方向追溯来源', () => {
-      // 构建链：a → b → c（a refines b, b refines c）
-      // 从 c 追溯来源，应得到 [c(0), b(1), a(2)]
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:c', name: 'c', source: 'insight' }));
-
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:c', type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      const path = inspector.getRelationPath('insight:c', 5, 'incoming');
-      expect(path).toHaveLength(3);
-      expect(path[0]!.memoryId).toBe('insight:c');
-      expect(path[0]!.depth).toBe(0);
-      expect(path[1]!.memoryId).toBe('insight:b');
-      expect(path[1]!.depth).toBe(1);
-      expect(path[1]!.relationType).toBe('refines');
-      expect(path[2]!.memoryId).toBe('insight:a');
-      expect(path[2]!.depth).toBe(2);
-    });
-
-    it('direction=outgoing 时沿 targetId 方向追溯去向', () => {
-      // 从 a 追溯去向，应得到 [a(0), b(1), c(2)]
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:c', name: 'c', source: 'insight' }));
-
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:c', type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      const path = inspector.getRelationPath('insight:a', 5, 'outgoing');
-      expect(path).toHaveLength(3);
-      expect(path[0]!.memoryId).toBe('insight:a');
-      expect(path[2]!.memoryId).toBe('insight:c');
-    });
-
-    it('maxDepth 限制路径深度，超出部分不返回', () => {
-      // 链：a → b → c → d → e
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:c', name: 'c', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:d', name: 'd', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:e', name: 'e', source: 'insight' }));
-
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:c', type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:c', targetId: 'insight:d', type: 'refines', weight: 0.7, createdAt: '2026-06-27T12:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:d', targetId: 'insight:e', type: 'refines', weight: 0.7, createdAt: '2026-06-27T13:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      // maxDepth=2，从 e 追溯，应只到 depth=2（c）
-      const path = inspector.getRelationPath('insight:e', 2, 'incoming');
-      expect(path).toHaveLength(3); // e(0), d(1), c(2)
-      expect(path[2]!.depth).toBe(2);
-      expect(path[2]!.memoryId).toBe('insight:c');
-    });
-
-    it('环关系不导致无限递归（visited 防环）', () => {
-      // 构建环：a → b → a
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
-
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'related', weight: 0.5, createdAt: '2026-06-27T10:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:a', type: 'related', weight: 0.5, createdAt: '2026-06-27T11:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      const path = inspector.getRelationPath('insight:a', 10, 'outgoing');
-      // 环应被 visited 阻断：a(0) → b(1)，a 已访问不再入队
-      expect(path).toHaveLength(2);
-      expect(path[0]!.memoryId).toBe('insight:a');
-      expect(path[1]!.memoryId).toBe('insight:b');
-    });
-  });
-
-  // ════════════════════════════════════════════════════════
-  // 7.2 关系邻居查询 getRelationNeighbors（4 测试）
-  // ════════════════════════════════════════════════════════
-
-  describe('getRelationNeighbors 邻居查询', () => {
-    it('relationStore 未注入时返回空数组', () => {
-      expect(inspector.getRelationNeighbors('any-id')).toEqual([]);
-    });
-
-    it('outgoing 关系：memoryId 是 sourceId，邻居是 targetId', () => {
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight', score: 0.8 }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight', score: 0.6 }));
-
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'supports', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      const neighbors = inspector.getRelationNeighbors('insight:a');
-      expect(neighbors).toHaveLength(1);
-      expect(neighbors[0]!.memoryId).toBe('insight:b');
-      expect(neighbors[0]!.direction).toBe('outgoing');
-      expect(neighbors[0]!.relationType).toBe('supports');
-      expect(neighbors[0]!.memoryScore).toBe(0.6);
-    });
-
-    it('incoming 关系：memoryId 是 targetId，邻居是 sourceId', () => {
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight', score: 0.8 }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight', score: 0.6 }));
-
-      const relationStore = new InMemoryRelationStore();
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'supports', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      // 从 b 视角看，a 是 incoming 邻居
-      const neighbors = inspector.getRelationNeighbors('insight:b');
-      expect(neighbors).toHaveLength(1);
-      expect(neighbors[0]!.memoryId).toBe('insight:a');
-      expect(neighbors[0]!.direction).toBe('incoming');
-      expect(neighbors[0]!.memoryScore).toBe(0.8);
-    });
-
-    it('同一邻居有多条关系时去重（seen Set）', () => {
-      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
-      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
-
-      const relationStore = new InMemoryRelationStore();
-      // a→b 两条关系（supports + related）
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'supports', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
-      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'related', weight: 0.3, createdAt: '2026-06-27T11:00:00.000Z' });
-      inspector = new MemoryInspector(storage, loop, history, relationStore);
-
-      // 从 a 看，b 只出现一次（第一条关系 supports）
-      const neighbors = inspector.getRelationNeighbors('insight:a');
-      expect(neighbors).toHaveLength(1);
-      expect(neighbors[0]!.relationType).toBe('supports');
     });
   });
 
@@ -680,16 +424,6 @@ describe('MemoryInspector', () => {
   // ════════════════════════════════════════════════════════
 
   describe('写操作（writeXxx）', () => {
-    /** 带 relationStore 的 inspector（用于关系写操作测试） */
-    let relationStore: InMemoryRelationStore;
-    /** 带 relationStore 的 inspector 实例 */
-    let inspectorWithRelation: MemoryInspector;
-
-    beforeEach(() => {
-      relationStore = new InMemoryRelationStore();
-      inspectorWithRelation = new MemoryInspector(storage, loop, history, relationStore);
-    });
-
     // ─── 记忆写入 ───
 
     it('writeUpsert 应写入记忆（写入后可读取）', () => {
@@ -853,121 +587,6 @@ describe('MemoryInspector', () => {
       const purgedCount = inspector.writePurgeExpired(before);
       expect(purgedCount).toBe(0);
       expect(inspector.getDeletedById('rule:1')).not.toBeNull();
-    });
-
-    // ─── FIX-P0-2：自动清理过期记忆时统一编排关系清理 ───
-
-    it('FIX-P0-2：writePurgeExpired 应同步清理过期记忆的关系边（防孤儿边）', () => {
-      // 准备：3 条记忆 + 2 条关系（a → b，b → c）
-      inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:a', source: 'insight', name: 'a' }));
-      inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:b', source: 'insight', name: 'b' }));
-      inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:c', source: 'insight', name: 'c' }));
-      inspectorWithRelation.writeAddRelation({
-        sourceId: 'insight:a', targetId: 'insight:b',
-        type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z',
-      });
-      inspectorWithRelation.writeAddRelation({
-        sourceId: 'insight:b', targetId: 'insight:c',
-        type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z',
-      });
-      // 软删除 a 和 b（让它们进入回收站）
-      inspectorWithRelation.writeDelete('insight:a');
-      inspectorWithRelation.writeDelete('insight:b');
-
-      // 执行：清理过期记忆（阈值稍晚于当前，确保覆盖 deletedAt）
-      const before = new Date(Date.now() + 1000);
-      const purgedCount = inspectorWithRelation.writePurgeExpired(before);
-
-      // 断言：2 条记忆被物理删除
-      expect(purgedCount).toBe(2);
-      expect(inspectorWithRelation.getDeletedById('insight:a')).toBeNull();
-      expect(inspectorWithRelation.getDeletedById('insight:b')).toBeNull();
-      // 关键断言：a 和 b 的关系边应被清理，仅剩 b → c 中涉及 c 的边（c 未被删除）
-      // a → b 边：两端都被物理删除，应清理
-      // b → c 边：b 被物理删除，应清理（防孤儿边）
-      const allRelations = inspectorWithRelation.getAllRelations();
-      expect(allRelations).toHaveLength(0);
-    });
-
-    it('FIX-P0-2：writePurgeExpired 在 relationStore 未注入时仍正常清理记忆（降级）', () => {
-      // inspector（无 relationStore）也应能正常清理记忆
-      inspector.writeUpsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
-      inspector.writeDelete('rule:1');
-
-      const before = new Date(Date.now() + 1000);
-      const purgedCount = inspector.writePurgeExpired(before);
-
-      expect(purgedCount).toBe(1);
-      expect(inspector.getDeletedById('rule:1')).toBeNull();
-    });
-
-    it('FIX-P0-2：未过期记忆的关系边在 writeDelete 时立即清理，writePurgeExpired 不清理非过期记忆', () => {
-      // 准备：1 条已删除（未过期）+ 1 条活跃记忆 + 关系
-      inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:a', source: 'insight', name: 'a' }));
-      inspectorWithRelation.writeUpsert(createMemory({ id: 'insight:b', source: 'insight', name: 'b' }));
-      inspectorWithRelation.writeAddRelation({
-        sourceId: 'insight:a', targetId: 'insight:b',
-        type: 'related', weight: 0.5, createdAt: '2026-06-27T10:00:00.000Z',
-      });
-      // P0-1：writeDelete 会立即清理关系边，此时关系应已不存在
-      inspectorWithRelation.writeDelete('insight:a');
-
-      // 断言：P0-1 修复后，writeDelete 立即清理了关系边（不再等到 purgeExpired）
-      expect(inspectorWithRelation.getAllRelations()).toHaveLength(0);
-
-      // 执行：阈值为 1 小时前（deletedAt 晚于此值，未过期）
-      const before = new Date(Date.now() - 60 * 60 * 1000);
-      inspectorWithRelation.writePurgeExpired(before);
-
-      // 断言：未过期记忆未被清理（软删除状态保留）
-      expect(inspectorWithRelation.getDeletedById('insight:a')).not.toBeNull();
-    });
-
-    // ─── 关系写入 ───
-
-    it('writeAddRelation 应透传 relationStore.addRelation', () => {
-      const relation = {
-        sourceId: 'insight:a',
-        targetId: 'insight:b',
-        type: 'supports',
-        weight: 0.7,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      };
-      inspectorWithRelation.writeAddRelation(relation);
-      const all = inspectorWithRelation.getAllRelations();
-      expect(all).toHaveLength(1);
-      expect(all[0]!.sourceId).toBe('insight:a');
-      expect(all[0]!.type).toBe('supports');
-    });
-
-    it('writeRemoveRelation 应透传 relationStore.removeRelation', () => {
-      const relation = {
-        sourceId: 'insight:a',
-        targetId: 'insight:b',
-        type: 'supports',
-        weight: 0.7,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      };
-      inspectorWithRelation.writeAddRelation(relation);
-      expect(inspectorWithRelation.getAllRelations()).toHaveLength(1);
-      inspectorWithRelation.writeRemoveRelation('insight:a', 'insight:b', 'supports');
-      expect(inspectorWithRelation.getAllRelations()).toHaveLength(0);
-    });
-
-    it('writeAddRelation 在 relationStore 未注入时应静默 no-op', () => {
-      // inspector（无 relationStore）调用写关系方法应静默
-      const relation = {
-        sourceId: 'a',
-        targetId: 'b',
-        type: 'related',
-        weight: 0.5,
-        createdAt: '2026-06-27T10:00:00.000Z',
-      };
-      expect(() => inspector.writeAddRelation(relation)).not.toThrow();
-    });
-
-    it('writeRemoveRelation 在 relationStore 未注入时应静默 no-op', () => {
-      expect(() => inspector.writeRemoveRelation('a', 'b', 'related')).not.toThrow();
     });
   });
 });

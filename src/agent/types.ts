@@ -28,7 +28,6 @@
  *     │    └─ tracer.ts（可观测性 span）
  *     ├─ composer.ts（四级补全器，不中断工作模型）
  *     ├─ personaMatcher.ts（LLM 角色匹配，从 persona 迁入）
- *     ├─ userFactExtractor.ts（用户事实提取，纯函数）
  *     ├─ builtinToolHandlers.ts（内置工具处理器）
  *     └─ managers/（14 个专职 Manager + 4 辅助/聚合模块）
  *          ├─ archiveCoordinator.ts（归档协调，emit archiveFailed）
@@ -40,7 +39,6 @@
  *          ├─ memoryAdvisor.ts（L3 记忆建议）
  *          ├─ memoryDecayScheduler.ts（记忆衰减调度）
  *          ├─ memoryInspector.ts（记忆读写统一入口，ADR-014）
- *          ├─ relationBuilder.ts（记忆关系构建，ADR-014 侧车）
  *          ├─ sessionArchiver.ts（会话归档）
  *          ├─ sessionManager.ts（会话状态 + 检查点）
  *          ├─ textPolishManager.ts（文本润色）
@@ -210,12 +208,13 @@ export interface UIMessages {
  *
  * 详见 ADR-015-archive-mode.md。
  *
- * - `full`（默认）：profile facts + insight + 对话原始内容（会话归档预留）全部自动归档
- * - `insights-only`：profile facts + insight 自动归档，对话原始内容需手动归档
+ * - `full`（默认）：insight + 对话原始内容（会话归档预留）全部自动归档
+ * - `insights-only`：insight 自动归档，对话原始内容需手动归档
  * - `manual`：所有归档都需手动触发，postProcess 跳过所有自动归档分支
  *
- * 设计原则：profile facts 与 insight 同属"提炼类记忆"（从输入加工得到，非原始对话），
- * 归档行为保持一致——`insights-only` 下都自动，`manual` 下都需手动。
+ * 设计原则：insight 属"提炼类记忆"（从输入加工得到，非原始对话），
+ * 归档行为保持一致——`insights-only` 下自动，`manual` 下需手动。
+ * 用户画像归档已随画像存储层收敛移除（2026-08-14），仅剩 insight 阶段入 pending 队列。
  */
 export type ArchiveMode = 'full' | 'insights-only' | 'manual';
 
@@ -668,7 +667,6 @@ export interface PlanContext {
 import type { LlmProvider } from '@/llm/provider.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
@@ -725,8 +723,6 @@ export interface AgentOptions {
   recallExcludeSources?: string[];
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
-  /** 外部注入的记忆关系存储（可选，ADR-014 侧车模型，不传则跳过关系构建） */
-  relationStore?: IMemoryRelationStore;
   /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
   sessionStore?: ISessionStore;
   /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
@@ -738,8 +734,8 @@ export interface AgentOptions {
   /**
    * 归档模式（ADR-015，默认 'full'）
    *
-   * - 'full'：profile facts + insight 自动归档（对话原始内容待会话归档实现后自动）
-   * - 'insights-only'：profile facts + insight 自动归档，对话原始内容需手动
+   * - 'full'：insight 自动归档（对话原始内容待会话归档实现后自动）
+   * - 'insights-only'：insight 自动归档，对话原始内容需手动
    * - 'manual'：所有归档都需手动触发
    */
   archiveMode?: ArchiveMode;

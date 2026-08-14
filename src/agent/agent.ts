@@ -38,7 +38,6 @@ import { SecurityGuard } from '@/security/pathGuard.js';
 import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
-import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
@@ -122,7 +121,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // 新模块
   private personaManager: PersonaManager | null = null;
-  #userProfile: UserProfile | null = null;
   private skillManager: SkillManager | null = null;
   /** 角色包管理器（M1 清单抽象，为插卡式预留生长点） */
   private rolePackManager_: RolePackManager | null = null;
@@ -223,7 +221,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES,
       ],
       storage: opts.storage,
-      relationStore: opts.relationStore,
       sessionStore: opts.sessionStore,
       configDir: opts.configDir,
       tracer: opts.tracer,
@@ -350,11 +347,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           configDir ?? this.#config.configDir,
           agentDataDir ?? this.#config.dataDir,
         ),
-      // closeProject 撤销项目级记忆时联动清理关系边（惰性读 this.memoryInspector——
-      // initializeProject 先于 assembleComponents，回调运行时 memoryInspector 已赋值）
-      removeRelationsByMemoryId: (memoryId: string) => {
-        this.memoryInspector?.writeRemoveRelationsByMemoryId(memoryId);
-      },
     });
 
     return this.projectManager.initProject(
@@ -393,7 +385,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 归档操作委托给 ArchiveCoordinator
     this.archiveCoordinator = new ArchiveCoordinator({
-      getUserProfile: () => this.#userProfile,
       getInsightExtractor: () => this.insightExtractor,
       getSessionArchiver: () => this.sessionArchiver,
       getArchiveMode: () => this.#config.archiveMode,
@@ -780,9 +771,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * ADR-015 归档模式控制：
    * - 角色匹配 + 技能匹配不受 archiveMode 影响（每轮都执行，非归档行为）
-   * - `manual` 模式跳过所有自动归档（profile + insight），需用户手动调用
-   *   archiveProfileFacts() / archiveInsight() 触发
-   * - `full` / `insights-only` 模式下 profile + insight 都自动归档
+   * - `manual` 模式跳过自动归档（insight），需用户手动调用
+   *   archiveInsight() 触发
+   * - `full` / `insights-only` 模式下 insight 自动归档
    *   （会话归档实现后，`insights-only` 将跳过对话原始内容自动归档）
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
@@ -810,27 +801,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // ADR-015 + FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator
     // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
-    //   - manual 模式 → 跳过 profile/insight 自动归档（用户需手动调用）
+    //   - manual 模式 → 跳过 insight 自动归档（用户需手动调用）
     //   - full / insights-only 模式 → 执行
     // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
     const history = this.requireHistory;
 
-    // 用户画像实时归档（委托 ArchiveCoordinator，与手动归档路径统一，消除 DRY 违反）
-    try {
-      // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
-      // 失败时发射 archiveFailed 事件，让宿主 UI 可通知用户（而非静默吞没）
-      const archiveFactsPromise = this.requireArchiveCoordinator.archiveProfileFacts(input, { autoTriggered: true }).then(
-        () => {},
-        (err) => {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.warn({ err, stage: 'profile' }, '归档失败');
-          this.emit(AGENT_EVENTS.archiveFailed, { stage: 'profile', message: message.slice(0, 200) });
-        },
-      );
-      history.registerPendingArchive(archiveFactsPromise);
-    } catch (err) {
-      logger.warn({ err }, '用户画像归档初始化失败');
-    }
+    // 用户画像已收敛为 round-summary 召回（2026-08-14），不再有独立画像归档路径。
 
     // 输入分类 → Insight 提取（委托 ArchiveCoordinator，与手动归档路径统一）
     // 受 L2 策略的 reflect.insightExtraction 控制：'off' 时跳过洞察提取
@@ -1944,7 +1920,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       personaName: this.#config.personaName,
       maxContextTokens: this.#config.maxContextTokens,
       sessionStore: this.#config.sessionStore,
-      relationStore: this.#config.relationStore,
       tracer: this.#config.tracer,
       messages: this.#config.messages,
       enableContextSummary: this.#config.enableContextSummary,
@@ -2016,7 +1991,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop = result.loop;
     this.toolExec = result.toolExec;
     this.personaManager = result.personaManager;
-    this.#userProfile = result.userProfile;
     this.skillManager = result.skillManager;
     this.rolePackManager_ = result.rolePackManager;
     this.insightExtractor = result.insightExtractor;
@@ -2029,11 +2003,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
     this.roundSummaryGenerator = result.roundSummaryGenerator;
-    // 绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
-    // 与 bindGetRecentHistory 同模式：解决 Agent 晚于 InsightExtractor 创建的时序循环依赖
-    this.insightExtractor.bindOnConflict((info) => {
-      this.emit(AGENT_EVENTS.conflictDetected, info);
-    });
     // 绑定记忆写入回调：新记忆沉淀后 emit('memoryAdded')（memoryRecalled 的对称事件）
     // 宿主（如插件「已沉淀」提示条）据此获得跨会话记忆沉淀的可观测出口
     this.insightExtractor.bindOnMemoryAdded((info) => {
@@ -2310,10 +2279,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 刷新 AgentLoop 的 systemPromptPrefix（角色 prompt + profile prompt）
+   * 刷新 AgentLoop 的 systemPromptPrefix（角色 prompt）
    *
    * 提取自 doPostProcess 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
-   * 组装规则：[personaPrompt, profilePrompt].filter(Boolean).join('\n\n') + 末尾分隔符 '---'
+   * 用户画像已收敛为 round-summary 召回（2026-08-14），前缀仅含 persona。
    *
    * 调用时机：
    * - tryAutoMatchPersona 中角色自动匹配成功后（chat() 回答前）
@@ -2322,11 +2291,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private refreshPersonaPrefixOnLoop(): void {
     if (!this.loop) return;
-    const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
+    // 用户画像已收敛为 round-summary 召回（2026-08-14），前缀仅含 persona
     const personaPrompt = this.personaManager?.buildSystemPrompt() ?? '';
     const newPrefix =
-      [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
-      ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+      personaPrompt ? `${personaPrompt}\n\n---\n\n` : '';
     this.loop.refreshPersonaPrefix(newPrefix);
   }
 
@@ -2406,27 +2374,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 当前角色已是���表首个角色（"默认"角色）→ 无需回退
     const defaultName = this.personaManager.list[0]?.name;
     return defaultName !== undefined && this.personaManager.activeName !== defaultName;
-  }
-
-  /**
-   * 手动触发 profile facts 归档（manual 模式下使用）
-   *
-   * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
-   * full / insights-only 模式下也可调用（会重复归档，但不推荐）。
-   *
-   * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
-   * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
-   * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
-   *
-   * 归档逻辑已委托给 ArchiveCoordinator
-   *
-   * @param input 本轮用户输入
-   * @param options 触发选项（autoTriggered 默认 false，即手动触发）
-   * @returns 写入/更新的 UserProfileEntry 列表
-   */
-  async archiveProfileFacts(input: string, options?: ArchiveTriggerOptions): Promise<UserProfileEntry[]> {
-    this.assertInitialized('archiveProfileFacts');
-    return this.requireArchiveCoordinator.archiveProfileFacts(input, options);
   }
 
   /**
@@ -2834,7 +2781,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.toolExec = null;
     // 专职 Manager
     this.personaManager = null;
-    this.#userProfile = null;
     this.skillManager = null;
     this.insightExtractor = null;
     this.configManager = null;
@@ -3052,19 +2998,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get projects(): ProjectManager | null {
     return this.projectManager;
-  }
-
-  /**
-   * 用户画像管理器（可能为 null）—— 实时归档 + 确认/拒绝
-   *
-   * 返回 null 时表示 Agent 未初始化。
-   * 宿主常用模式：
-   *   - `agent.userProfile?.getPending()` 查询待确认条目
-   *   - `await agent.userProfile?.confirm(id)` 确认条目
-   *   - `await agent.userProfile?.reject(id)` 拒绝条目
-   */
-  get userProfile(): UserProfile | null {
-    return this.#userProfile;
   }
 
   /**

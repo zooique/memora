@@ -83,15 +83,9 @@ export interface ProjectManagerOptions {
     agentDataDir?: string,
   ) => SecurityGuard;
   /**
-   * 删除记忆时同步清理其关系边的回调（T13，2026-08-09）
-   *
-   * closeProject 撤销项目级记忆（软删除）时，若该项目级 rule/skill 被 insight
-   * 引用为关系对端，索引删除不会级联清理 memory_relations → 切换项目后留下悬挂边。
-   * 由调用方（Agent 层）注入关系清理实现（memoryInspector.writeRemoveRelationsByMemoryId），
-   * 与 ConfigManager 的 removeRelationsByMemoryId 回调同模式——解耦 ProjectManager
-   * 对关系存储的直接依赖。
+   * 记忆关系图谱已收敛移除（2026-08-14）：原 removeRelationsByMemoryId 回调
+   * （closeProject 撤销项目级记忆时级联清理关系边）随关系存储一并删除。
    */
-  removeRelationsByMemoryId?: (memoryId: string) => void;
 }
 
 // ─── 类 ──────────────────────────────────────────────────
@@ -116,8 +110,6 @@ export class ProjectManager {
   private currentProjectPath: string | null = null;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
-  /** T13：关系边清理回调（closeProject 撤销项目级记忆时联动，由 Agent 层注入） */
-  private readonly removeRelationsByMemoryId?: (memoryId: string) => void;
   /** SecurityGuard 工厂函数（由 Agent 层注入） */
   private readonly createSecurityGuard?: (
     projectPath: string,
@@ -133,7 +125,7 @@ export class ProjectManager {
   private currentProjectMemoryIds: Set<string> = new Set();
 
   constructor(options: ProjectManagerOptions) {
-    const { dataDir, storage, registryDir, createSecurityGuard, removeRelationsByMemoryId } = options;
+    const { dataDir, storage, registryDir, createSecurityGuard } = options;
     const memoraHome = resolve(expandHome(dataDir));
     this.agentDataDir = memoraHome;
     // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
@@ -142,8 +134,6 @@ export class ProjectManager {
     this.externalStorage = storage ?? null;
     // 保存 SecurityGuard 工厂函数
     this.createSecurityGuard = createSecurityGuard;
-    // 关系边清理回调（closeProject 撤销项目级记忆时联动）
-    this.removeRelationsByMemoryId = removeRelationsByMemoryId;
     // 委托注册表/锁文件管理给专职模块
     this.registry = new ProjectRegistry(join(registryHome, 'projects.json'));
     this.lockManager = new LockManager();
@@ -413,9 +403,6 @@ export class ProjectManager {
     if (this.agentIndex) {
       for (const id of this.currentProjectMemoryIds) {
         try {
-          // 先清关系边再软删主记忆——项目级 rule/skill 被 insight 引用时，
-          // 仅 delete 会留下悬挂关系边（sourceId/targetId 指向已撤销的记忆）。
-          this.removeRelationsByMemoryId?.(id);
           this.agentIndex.delete(id);
         } catch (err) {
           logger.warn({ err, id }, '撤销项目级记忆失败（软删除）');

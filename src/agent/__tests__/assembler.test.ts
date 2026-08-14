@@ -7,7 +7,7 @@
  *   - systemPromptPrefix 组装（personaPrompt 内部非空 + 当前时间注入）
  *   - skillManager 复用（existingSkillManager 注入 vs 新建）
  *   - workProjection provider 选择（backgroundProvider vs provider 降级）
- *   - 配置透传（personaName / configDir / tracer / enableContextSummary / relationStore）
+ *   - 配置透传（personaName / configDir / tracer / enableContextSummary）
  *
  * 测试范式：真实 InMemoryStorage + 真实 SecurityGuard + mock LlmProvider（chat 返回空 AsyncIterable）+
  * mock fileStore + configDir=undefined 走降级路径，聚焦组装逻辑而非各组件自身行为（各组件已有独立测试）。
@@ -31,7 +31,6 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { Memory } from '@/memory/types.js';
-import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -95,7 +94,6 @@ function createInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     personaName: undefined,
     maxContextTokens: 1000,
     sessionStore: undefined,
-    relationStore: undefined,
     tracer: undefined,
     messages: undefined,
     enableContextSummary: false,
@@ -122,20 +120,6 @@ function createPctx(overrides: Partial<ProjectContext> = {}): ProjectContext {
     loadResult: { success: true, migrated: false },
     ...overrides,
   } as ProjectContext;
-}
-
-/**
- * 构造 mock IMemoryRelationStore（用于 relationStore 注入测试）
- * @returns mock IMemoryRelationStore
- */
-function createMockRelationStore(): IMemoryRelationStore {
-  return {
-    addRelation: vi.fn().mockResolvedValue(undefined),
-    getRelations: vi.fn().mockResolvedValue([]),
-    getAllRelations: vi.fn().mockResolvedValue([]),
-    removeRelation: vi.fn().mockResolvedValue(false),
-    stats: vi.fn().mockResolvedValue({ totalEdges: 0, byType: {} }),
-  } as unknown as IMemoryRelationStore;
 }
 
 // ─── security 校验 ────────────────────────────────────────
@@ -166,21 +150,21 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 16 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 15 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 16 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
+      // 15 个字段全部存在（history/loop/toolExec/personaManager/
       // workProjection/skillManager/insightExtractor/configManager/memoryInspector/
       // dedupManager/memoryAdvisor/autoConfigRefiner/sessionArchiver/textPolisher/rolePackManager）
       // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
       // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
       // ROLE-PACK：新增 rolePackManager，管理角色包生命周期
+      // 2026-08-14：移除 userProfile（用户画像收敛为 round-summary 召回）
       const expectedKeys = [
         'history',
         'loop',
         'toolExec',
         'personaManager',
-        'userProfile',
         'workProjection',
         'skillManager',
         'insightExtractor',
@@ -204,7 +188,6 @@ describe('assembleComponents', () => {
       expect(output.loop).toBeDefined();
       expect(output.toolExec).toBeDefined();
       expect(output.personaManager).toBeDefined();
-      expect(output.userProfile).toBeDefined();
       expect(output.workProjection).toBeDefined();
       expect(output.skillManager).toBeDefined();
       expect(output.insightExtractor).toBeDefined();
@@ -310,27 +293,6 @@ describe('assembleComponents', () => {
         createInput({ enableContextSummary: true }),
       );
       expect(output.loop).toBeDefined();
-    });
-
-    it('relationStore 注入时组装成功（InsightExtractor + MemoryInspector 接收）', async () => {
-      // 注入关系存储侧车，InsightExtractor 和 MemoryInspector 应接收
-      const relationStore = createMockRelationStore();
-      const output = await assembleComponents(
-        createPctx(),
-        createInput({ relationStore }),
-      );
-      expect(output.insightExtractor).toBeDefined();
-      expect(output.memoryInspector).toBeDefined();
-    });
-
-    it('relationStore=undefined 时组装成功（降级跳过关系构建）', async () => {
-      // 未注入关系存储时，组件应降级处理（relationStore ?? null）
-      const output = await assembleComponents(
-        createPctx(),
-        createInput({ relationStore: undefined }),
-      );
-      expect(output.insightExtractor).toBeDefined();
-      expect(output.memoryInspector).toBeDefined();
     });
   });
 

@@ -19,7 +19,6 @@ export const AGENT_EVENTS = {
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
   insightExtracted: 'insightExtracted',
-  conflictDetected: 'conflictDetected',
   projectSwitched: 'projectSwitched',
   skillMatched: 'skillMatched',
   archiveFailed: 'archiveFailed',
@@ -76,16 +75,14 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   sessionForked: { from: string; to: string; messageCount: number };
   /** 洞察被提取 */
   insightExtracted: { source: string; insight: string };
-  /** 记忆冲突被检测到（contradicts 关系写入时触发，宿主可通知用户） */
-  conflictDetected: { newMemoryId: string; newInsight: string; targetId: string; targetContent: string };
   /** 项目被切换（宿主 UI 可据此刷新项目相关界面） */
   projectSwitched: { from: string | null; to: string; projectName: string };
   /** 技能被匹配（宿主 UI 可据此展示当前激活技能） */
   skillMatched: { skill: string; score: number };
   /** 归档操作失败（fire-and-forget catch 分支发射，宿主可通知用户） */
   archiveFailed: {
-    /** 失败阶段：profile（用户画像）/ insight（洞察提取）/ content（会话内容归档） */
-    stage: 'profile' | 'insight' | 'content';
+    /** 失败阶段：insight（洞察提取）/ content（会话内容归档），用户画像归档已收敛移除 */
+    stage: 'insight' | 'content';
     /** 失败原因摘要（error.message，截断 200 字符避免 payload 过大） */
     message: string;
   };

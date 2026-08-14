@@ -4,7 +4,7 @@
  * 从 PersonaManager.matchByLlm 迁移至此，遵循 backend_layers_rules §分层职责：
  * persona/ 不直接调 LLM，agent/ 可通过 provider 接口调 LLM。
  *
- * 与 userFactExtractor.ts 同级，为 agent/ 根级纯函数模块（非有状态 Manager）。
+ * 为 agent/ 根级纯函数模块（非有状态 Manager）。
  */
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Persona } from '@/persona/types.js';

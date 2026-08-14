@@ -15,12 +15,11 @@
  *   agent/types.ts ─┬─→ llm/provider.ts (LlmProvider, ChatOptions)
  *                   ├─→ memory/vectorStore.ts (IVectorStore, EmbeddingService)
  *                   ├─→ memory/storageInterface.ts (IMemoryStorage)
- *                   ├─→ memory/relationStore.ts (IMemoryRelationStore)
  *                   ├─→ memory/sessionStore.ts (ISessionStore, SessionMessage)
  *                   ├─→ agent/tracer.ts (ITracer, ISpan, AgentMetrics)
  *                   └─→ memory/projectManager.ts (AgentProjectEntry)
  *
- *   memory/types.ts ──→ 纯类型定义（Memory, MemoryRelation, SOURCE_LABELS 等）
+ *   memory/types.ts ──→ 纯类型定义（Memory, SOURCE_LABELS 等）
  *
  *   llm/types.ts ─────→ 纯类型定义（LlmChunk）
  *
@@ -68,9 +67,6 @@ export type {
 } from '@/role-pack/validator.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';
-// RelationBuilder 从 InsightExtractor 提取，封装 ADR-014 关系构建逻辑
-export { RelationBuilder } from '@/agent/managers/relationBuilder.js';
-export type { ConflictInfo } from '@/agent/managers/relationBuilder.js';
 export type {
   MemorySnapshot,
   WorkingMemorySnapshot,
@@ -125,6 +121,7 @@ export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS } from '@/memory/types.js';
+// 记忆关系图谱（ADR-014 侧车模型）已于 2026-08-14 收敛移除：冲突检测改用 supersededBy（ADR-021）
 export type { Memory, SummaryType } from '@/memory/types.js';
 // Source 校验工具（从 types.ts 拆分到 sourceValidation.ts，公共 API 不变）
 export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
@@ -132,9 +129,6 @@ export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // source → 子目录映射与路径构造单一真理源（T-A1：宿主 configFileManager 等消费方共享，
 // 消灭 store.ts 私有 SOURCE_TO_DIR 与宿主 TYPE_TO_SUBDIR/硬编码的多处表达）
 export { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sourcePaths.js';
-// 记忆关系图谱（ADR-014 侧车模型）
-export { RELATION_TYPES, RELATION_WEIGHTS } from '@/memory/types.js';
-export type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor } from '@/memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
@@ -149,16 +143,11 @@ export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-s
 export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
 // safeSearch：带超时保护的搜索包装函数（宿主自定义实现也可复用此包装）
 export { safeSearch } from '@/web-search/webSearchProvider.js';
-// 记忆关系存储侧车：宿主项目可实现 IMemoryRelationStore 接口注入 Agent
-export type { IMemoryRelationStore } from '@/memory/relationStore.js';
-export { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
 // 项目注册表 + 锁文件管理（从 ProjectManager 提取）
 // 宿主可直接使用 ProjectRegistry/LockManager 管理多项目，或通过 ProjectManager 间接委托
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';
 export { LockManager } from '@/memory/lockManager.js';
-// 用户画像：宿主通过 agent.userProfile 访问，用于确认/拒绝待确认条目
-export type { UserProfileEntry, ProfileCategory, ExtractedFact } from '@/memory/userProfile.js';
 // 向量存储：宿主注入 EmbeddingService 后创建 JsonVectorStore，传入 AgentOptions 启用语义搜索
 // 宿主也可实现 IVectorStore 接口注入自定义向量库（如 SqliteVectorStore / LanceDBVectorStore）
 export { JsonVectorStore } from '@/memory/vectorStore.js';
