@@ -342,6 +342,7 @@ export interface IMcpTransport {
 | act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 | `[草案]` | 无参考实现消费，待验证 |
 | reflect | `reflect.summary` | `on` / `off` | 摘要生成 | `[草案]` | 无参考实现消费，待验证（memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
 | reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 | 冻结 | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`） |
+| reflect | `reflect.loopContinue` | 0 或正整数（兼容旧 'on'→1 / 'off'→0） | 自审查轮数：LLM 纯文本回复后自动审查 N 轮（0=关闭） | 冻结 | memora 消费（agent.ts 自审查轮数，mvp-scope §三·一）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
 | global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | `[草案]` | 无参考实现消费，待验证 |
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | `[草案]` | 无参考实现消费，待验证 |
 | global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
