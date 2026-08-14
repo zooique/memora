@@ -5,7 +5,10 @@
     "target": "ES2022",
     "outDir": "dist",
     "rootDir": "src",
-    "lib": ["ES2022"],
+    // DOM lib：webview 侧组件/脚本（toolCard/dropdown/chatView）模块化后含 DOM 操作，
+    // 且被 host 侧 import（import 依赖不受 exclude 约束），故主 tsconfig 必须能编译 DOM。
+    // 这是 webview 与 extension 同仓的标准做法；extension 层不会实际使用 DOM（运行时错误会暴露）。
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
