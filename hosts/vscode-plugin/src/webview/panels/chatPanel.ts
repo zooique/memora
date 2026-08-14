@@ -45,6 +45,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _agentResolving = false;
   /** 当前激活 Skill（对话面板装配的打磨技能，toolbar 徽章展示；装配时由 extension 注入） */
   private _activeSkill: string | undefined;
+  /**
+   * 当前查看的历史会话日期（YYYY-MM-DD，toolbar 历史下拉框）
+   *
+   * undefined = 查看全部历史（跨天合并，默认）；选定值 = 只看该天对话记录。
+   * 仅影响回放展示，不影响持久化写入（写入始终走当天 main，与内核一致）。
+   */
+  private _historyDate: string | undefined;
 
   /**
    * @param sessionStore 会话存储（用于持久化/恢复对话历史）
@@ -125,6 +132,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.handleClear();
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
+      } else if (msg.type === 'chat_switch_date') {
+        // 历史会话切换：更新查看日期并重放对应历史
+        this.handleSwitchDate(msg.date);
       }
     });
   }
@@ -248,15 +258,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 清空当前会话：清空该会话持久化消息，并通知 webview 清空消息区
+   * 清空当前会话：清空全部持久化会话消息，并通知 webview 清空消息区
    *
    * 依赖 WorkspaceSessionStore.clearSession（宿主扩展方法，非内核 ISessionStore 标准接口）。
+   * 遍历所有会话 key（YYYY-MM-DD-session）逐一清空，覆盖跨天归档的多个 key。
    */
   private handleClear(): void {
     try {
-      const { date, session, store } = this.sessionInfo();
-      const withClear = store as unknown as { clearSession?: (d: string, s: string) => void };
-      withClear.clearSession?.(date, session);
+      const withClear = this.sessionStore as unknown as {
+        clearSession?: (d: string, s: string) => void;
+      };
+      for (const key of this.sessionStore.listSessions()) {
+        // key 格式：YYYY-MM-DD-session；lastIndexOf('-') 拆分日期与会话名
+        const idx = key.lastIndexOf('-');
+        if (idx <= 0) continue;
+        withClear.clearSession?.(key.slice(0, idx), key.slice(idx + 1));
+      }
     } catch {
       // 清空失败不阻塞，仅清 webview UI
     }
@@ -270,24 +287,64 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 回放当前会话（历史消息 + Provider 列表）
+   * 回放当前会话（历史消息 + 历史日期列表 + Skill + Provider）
    *
    * 仅在 webview 发来 ready（脚本监听器已注册）后调用，避免 postMessage
    * 在监听器就绪前到达而被丢弃（折叠/展开重建 HTML 时尤其明显）。
    */
   private replaySession(): void {
     if (!this._view) return;
-    // 恢复历史消息（当前会话，含 user + assistant）
-    const history = this.loadHistory();
+    // 恢复历史消息（按当前查看日期过滤：_historyDate 或全部跨天合并）
+    const history = this.loadHistory(this._historyDate);
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
+    // 推送历史会话日期列表 → toolbar 历史下拉框（主动可见，可手动切换查看）
+    this.pushHistoryDates();
     // 推送当前激活 Skill → toolbar 技能徽章（主动可见）
     if (this._activeSkill) {
       this.post({ type: 'chat_skill', skill: this._activeSkill });
     }
     // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
+  }
+
+  /**
+   * 推送历史会话日期列表到 webview（toolbar 历史下拉框）
+   *
+   * 从 sessionStore 收集全部 `YYYY-MM-DD-main` 会话的日期，去重后倒序
+   * （最新在前），供用户手动切换查看某天对话记录（精灵「日期导航」机制的插件版）。
+   */
+  private pushHistoryDates(): void {
+    try {
+      const dates = new Set<string>();
+      for (const key of this.sessionStore.listSessions()) {
+        if (!key.endsWith('-main')) continue;
+        const idx = key.lastIndexOf('-');
+        if (idx > 0) dates.add(key.slice(0, idx));
+      }
+      this.post({ type: 'chat_history_dates', dates: [...dates].sort().reverse() });
+    } catch {
+      // 推送失败不阻塞主流程
+    }
+  }
+
+  /**
+   * 处理用户切换查看的历史会话日期（toolbar 历史下拉框）
+   *
+   * 更新当前查看日期，清空 webview 消息区后重放对应历史。date 传空串表示
+   * 查看全部历史（跨天合并，默认），否则只看该天对话。
+   *
+   * @param date 选中的日期（YYYY-MM-DD），空串 = 全部
+   */
+  private handleSwitchDate(date: string): void {
+    this._historyDate = date || undefined;
+    // 先清空 webview 消息区，再重放对应日期历史（复用 clear_ok 清空协议）
+    this.post({ type: 'clear_ok' });
+    const history = this.loadHistory(this._historyDate);
+    for (const m of history) {
+      this.post({ type: m.role, text: m.content, ts: m.ts });
+    }
   }
 
   /**
@@ -340,27 +397,52 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 从 sessionStore 恢复当前会话的完整历史（user + assistant）
+   * 从 sessionStore 恢复会话完整历史（user + assistant），跨天合并或按日期过滤
    *
    * 恢复策略：
-   *   - user 消息：直接回放原始内容
-   *   - assistant 消息：回放上一次流式输出的完整内容（避免拼接不完整流）
-   *   - 内核注入的 `<user_input>` 系统消息跳过（由 panel 持久化的 user 消息替代）
+   *   - 内核按 `YYYY-MM-DD-main` 归档（todayDate），跨天会落在不同 key；
+   *     默认遍历全部 `*-main` 会话合并加载，杜绝「隔天历史丢失」（用户实测发现）；
+   *     传入 date 时只加载该天的 main 会话（toolbar 历史下拉手动切换查看）。
+   *   - user 消息：回放剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
+   *     不属于用户实际输入，仅用于 LLM 上下文，不应回显）。
+   *   - assistant 消息：回放上一次流式输出的完整内容（避免拼接不完整流）。
+   *   - 内核注入的 `<user_input>` 系统消息跳过（由内核 appendUser 持久化的 user 消息替代）。
    *
-   * @returns 带 role/timestamp 标记的会话消息列表
+   * @param date 可选过滤日期（YYYY-MM-DD），缺省/空串 = 全部跨天合并
+   * @returns 带 role/timestamp 标记的会话消息列表（按时间升序）
    */
-  private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+  private loadHistory(date?: string): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
     try {
-      const { date, session, store } = this.sessionInfo();
-      const msgs = store.loadMessages(date, session) as { role?: string; content?: string; timestamp?: string }[];
-      return msgs
-        .filter((m) => m.content && !m.content.startsWith('<user_input>'))
-        .map((m) => ({
-          role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as 'user' | 'assistant',
-          content: m.content ?? '',
-          ts: m.timestamp,
-        }));
-    } catch {
+      const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
+      for (const key of this.sessionStore.listSessions()) {
+        // key 格式：YYYY-MM-DD-session；只取 main 会话（面板单会话模型）
+        if (!key.endsWith('-main')) continue;
+        const idx = key.lastIndexOf('-');
+        const keyDate = key.slice(0, idx);
+        // 指定查看日期时，跳过其他日期的会话
+        if (date && keyDate !== date) continue;
+        const msgs = this.sessionStore.loadMessages(keyDate, 'main') as {
+          role?: string;
+          content?: string;
+          timestamp?: string;
+        }[];
+        for (const m of msgs) {
+          if (!m.content || m.content.startsWith('<user_input>')) continue;
+          result.push({
+            role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
+              | 'user'
+              | 'assistant',
+            content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
+            ts: m.timestamp,
+          });
+        }
+      }
+      // 跨天合并后按时间升序（消息存储顺序可能因多次回放而乱序）
+      result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
+      return result;
+    } catch (err) {
+      // 读取失败不阻塞面板展示，但需记录（SSOT 不藏错，避免「历史空白」静默吞因）
+      console.warn('Memora 加载会话历史失败', err);
       return [];
     }
   }
@@ -383,7 +465,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     void this._view?.webview.postMessage(msg);
   }
 
-  /** 处理用户输入：持久化 + 面板上屏 + Agent 流式对话 */
+  /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写） */
   private async handleSend(input: string): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
@@ -391,7 +473,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const now = new Date().toISOString();
-    this.persist('user', input);
+    // 用户消息持久化由内核 chat() → appendUser 完成（写入 todayDate-main），
+    // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
     this.post({ type: 'user', text: input, ts: now });
 
     // 注入文档上下文（当前任务上下文，不进入记忆召回）
@@ -406,6 +489,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
+    // resumeExecution 内核路径不写 user 消息（仅 appendAssistant），
+    // 此处由 UI 补写，避免回答丢失（内核 resume 能力缺口，宿主补丁）
     this.persist('user', input);
     this.post({ type: 'user', text: input, ts: now });
     await this.consumeFlow(this._agent.resumeExecution(input));
@@ -430,7 +515,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._agent.on('memoryRecalled', onMemoryRecalled);
     this._agent.on('memoryAdded', onMemoryAdded);
 
-    let fullContent = '';
     // P0-2：进入生成状态（webview 展示加载动画 + 禁用输入）
     this.post({ type: 'status', state: 'thinking' });
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
@@ -438,7 +522,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       for await (const chunk of gen) {
         if (chunk.type === 'text' && chunk.content) {
-          fullContent += chunk.content;
           this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → webview 渲染「执行中」卡片
@@ -454,8 +537,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           });
         }
       }
-      // 流结束时持久化完整的 assistant 回复
-      if (fullContent.trim()) this.persist('assistant', fullContent);
+      // assistant 消息持久化由内核 appendAssistant 完成（写入 todayDate-main），
+      // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）
     } catch (err) {
       this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -467,6 +550,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'status', state: 'done' });
     this.post({ type: 'done' });
   }
+}
+
+/**
+ * 剥离 user 消息中的「当前打磨文档内容」前缀（仅用于 UI 回显）
+ *
+ * 宿主在 handleSend 注入文档上下文到 chat 输入，内核 appendUser 持久化的 user 消息
+ * 因此带 `[当前打磨文档内容]\n...\n[/当前打磨文档内容]\n\n用户请求：` 前缀。该前缀
+ * 属于「当前任务上下文」，不属于用户实际输入，回放历史时应剥离，只显示用户请求原文。
+ * 无前缀的普通 user 消息（resume 补写、无文档场景）原样返回。
+ *
+ * @param content 内核持久化的 user 消息原文
+ * @returns 剥离前缀后的用户请求文本
+ */
+function stripDocContextPrefix(content: string): string {
+  // 仅当消息确实以「当前打磨文档内容」标记开头才剥离（文档上下文注入的前缀），
+  // 普通对话（resume 补写、无文档场景）内容不含该标记，原样返回——避免误伤
+  // 用户输入中恰好包含「用户请求：」字样的消息。
+  if (!content.startsWith('[当前打磨文档内容]')) return content;
+  const marker = '\n\n用户请求：';
+  const idx = content.lastIndexOf(marker);
+  if (idx < 0) return content;
+  return content.slice(idx + marker.length);
 }
 
 /** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框） */
@@ -488,6 +593,7 @@ function buildHtml(): string {
   <div id="toolbar">
     <span class="title">文档打磨</span>
     <span id="skillBadge" class="skill-badge" hidden title="当前技能"></span>
+    ${buildDropdownHtml([], { extraClass: 'history-picker', onSelect: '__historyPickerOnSelect' })}
     ${buildDropdownHtml([{ id: 'clear', label: '清空对话', danger: true }])}
   </div>
   <div id="memoryBar" class="memory-bar" hidden></div>
@@ -535,10 +641,16 @@ function buildHtml(): string {
     const modelPicker = document.querySelector('.model-picker');
     const modelPickerMenu = modelPicker ? modelPicker.querySelector('.treedd__menu') : null;
     const modelPickerTrigger = modelPicker ? modelPicker.querySelector('.treedd__trigger') : null;
+    // 顶部历史会话下拉框（用 extraClass=history-picker 修饰，可手动切换查看某天记录）
+    const historyPicker = document.querySelector('.history-picker');
+    const historyPickerMenu = historyPicker ? historyPicker.querySelector('.treedd__menu') : null;
+    const historyPickerTrigger = historyPicker ? historyPicker.querySelector('.treedd__trigger') : null;
 
     // 当前 Provider 列表（由 chat_providers 消息填充）
     let currentProviders = [];
     let currentActive = undefined;
+    // 历史会话日期列表（由 chat_history_dates 消息填充，倒序最新在前）
+    let historyDates = [];
 
     // 切换 LLM 运行状态：thinking → 发送按钮变 loading，禁用输入；done 恢复
     function setStatus(state) {
@@ -623,6 +735,38 @@ function buildHtml(): string {
         modelPickerTrigger.appendChild(span);
         // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）
         modelPickerTrigger.setAttribute('aria-label', '选择模型：' + name);
+      }
+    }
+
+    // 渲染历史会话下拉框选项（toolbar，可手动切换查看某天对话记录）
+    function renderHistoryPicker() {
+      if (!historyPickerMenu) return;
+      // 防注入：日期来自 sessionStore key（YYYY-MM-DD），textContent 构建
+      historyPickerMenu.textContent = '';
+      // 「全部历史」作为首项（跨天合并，默认视角）
+      const all = document.createElement('button');
+      all.className = 'treedd__item';
+      all.setAttribute('role', 'menuitem');
+      all.setAttribute('data-treedd-id', '');
+      all.textContent = '全部历史';
+      historyPickerMenu.appendChild(all);
+      // 按日期倒序列出各天对话
+      (historyDates || []).forEach(function (date) {
+        const btn = document.createElement('button');
+        btn.className = 'treedd__item';
+        btn.setAttribute('role', 'menuitem');
+        btn.setAttribute('data-treedd-id', date);
+        btn.textContent = date;
+        historyPickerMenu.appendChild(btn);
+      });
+      // 更新触发器显示当前查看范围（紧凑胶囊，与模型选择器同一视觉语言）
+      if (historyPickerTrigger) {
+        historyPickerTrigger.textContent = '';
+        const span = document.createElement('span');
+        span.className = 'dd-model-name';
+        span.textContent = '历史';
+        historyPickerTrigger.appendChild(span);
+        historyPickerTrigger.setAttribute('aria-label', '切换历史对话日期');
       }
     }
 
@@ -737,6 +881,10 @@ function buildHtml(): string {
           badge.title = '当前技能：' + msg.skill;
           badge.hidden = false;
         }
+      } else if (msg.type === 'chat_history_dates') {
+        // 历史会话日期列表（toolbar 历史下拉框）：刷新选项
+        historyDates = msg.dates || [];
+        renderHistoryPicker();
       } else if (msg.type === 'notice') {
         showNotice(msg.level, msg.message);
       }
@@ -780,6 +928,11 @@ function buildHtml(): string {
       vscode.postMessage({ type: 'chat_set_provider', name: id });
     };
 
+    // 顶部历史下拉框：选择日期 → 通知 extension host 切换查看（空串 = 全部历史）
+    window.__historyPickerOnSelect = function (id) {
+      vscode.postMessage({ type: 'chat_switch_date', date: id || '' });
+    };
+
     function sendClarifyAnswer() {
       const text = clarifyInput.value.trim();
       if (!text) return;
@@ -798,6 +951,7 @@ function buildHtml(): string {
     // 首屏刷新
     updateEmptyState();
     renderModelPicker();
+    renderHistoryPicker();
 
     // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
     // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）

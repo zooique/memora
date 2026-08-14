@@ -13,6 +13,8 @@
  *   - shared/     extension ↔ webview 消息协议
  */
 import * as vscode from 'vscode';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { Agent } from '@zooique/memora';
 import { assembleDocReviewAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
@@ -22,6 +24,17 @@ import { MemoraConfigViewProvider } from '../webview/panels/providerConfigPanel.
 import { openDocReviewCommand } from './commands/openDocReview.js';
 import { reviewDocumentCommand } from './commands/reviewDocument.js';
 import { scaffoldProjectCommand } from './commands/scaffoldProject.js';
+
+/**
+ * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
+ *
+ * 取当前工作区文件夹路径；未打开工作区时回退用户主目录（绝对路径），
+ * 避免 `join('', '.memora', ...)` 生成相对路径 `.memora/...` 写到错误位置
+ * （相对路径基于进程 cwd，VS Code 扩展宿主 cwd 不可控，会导致会话文件写丢）。
+ */
+function resolveWorkspacePath(): string {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? join(homedir(), '.memora');
+}
 
 /** 懒加载的 Agent 单例（跨命令复用） */
 let agentPromise: Promise<Agent> | null = null;
@@ -55,13 +68,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 侧边栏视图：对话打磨面板（u1/u2 UX 改进）
   // sessionStore 与 assemble 同路径（.memora/sessions.json），用于对话持久化/恢复
-  const sessionStore = new WorkspaceSessionStore(
-    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
-  );
+  const workspacePath = resolveWorkspacePath();
+  const sessionStore = new WorkspaceSessionStore(workspacePath);
   sessionStore.load();
   const chatProvider = new MemoraChatViewProvider(sessionStore, providerStore);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
-  // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写
+  // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
+  // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
   chatProvider.setAgentFactory((projectPath) =>
     getOrCreateAgent(projectPath, providerStore, sessionStore),
   );

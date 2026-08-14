@@ -45,6 +45,14 @@ export type WebviewToExtensionMessage =
   | { type: 'clear' }
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
+  /**
+   * Chat Panel 切换查看的历史会话日期（toolbar 历史下拉框）
+   *
+   * 精灵主应用「按天归档 + 日期导航回溯」机制的插件版：用户手动选择要查看的
+   * 某天对话记录（date 格式 YYYY-MM-DD），或传空串查看全部历史（跨天合并）。
+   * webview 发来后，extension 回放对应日期的历史消息。
+   */
+  | { type: 'chat_switch_date'; date: string }
   // ─── 大模型配置面板消息 ───
   /** 请求加载 Provider 列表 */
   | { type: 'cfg_load' }
@@ -131,6 +139,13 @@ export type ExtensionToWebviewMessage =
    * （不依赖 skillMatched 事件，避免普通对话不匹配技能时徽章永远不显示）。
    */
   | { type: 'chat_skill'; skill: string }
+  /**
+   * Chat Panel 历史会话日期列表（toolbar 历史下拉框数据）
+   *
+   * host 在就绪回放 / 清空 / 新会话后推送全部有记录的日期（YYYY-MM-DD，倒序），
+   * webview 历史下拉据此渲染选项；用户选中后经 chat_switch_date 回发切换查看。
+   */
+  | { type: 'chat_history_dates'; dates: string[] }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }

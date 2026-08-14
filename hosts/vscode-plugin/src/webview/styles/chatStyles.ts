@@ -240,6 +240,76 @@ export const chatStyles = `
     text-align: center;
   }
 
+  /* ============ Components：历史会话选择器（toolbar） ============
+   * 精灵「按天归档 + 日期导航回溯」机制的插件版：用户可手动切换查看某天对话记录。
+   * 与底部模型选择器同一视觉语言（紧凑胶囊 + 接管默认伪元素），
+   * 显式覆盖 dropdown 默认箭头，保证只有 1 个箭头（L3 覆写 L2 架构意图）。 */
+  .history-picker {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  /* 接管默认伪元素（清零），防止继承 dropdown 组件的箭头/圆点 */
+  .history-picker .treedd__trigger::before,
+  .history-picker .treedd__trigger::after {
+    content: none !important;
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  /* 触发按钮：紧凑胶囊，与模型选择器同高、同视觉 */
+  .history-picker .treedd__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    height: var(--control-h, 28px);
+    width: auto;
+    max-width: 120px;
+    padding: 0 var(--sp-4, 10px);
+    box-sizing: border-box;
+    border-radius: var(--radius-pill, 999px);
+    cursor: pointer;
+    background: var(--surface-card, #252526);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-md, 12px);
+    line-height: 1;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: visible;
+  }
+  .history-picker .treedd__trigger .dd-model-name {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1;
+  }
+  /* 下拉箭头：flex-shrink:0 保证永远外露 */
+  .history-picker .treedd__trigger::after {
+    content: '▾' !important;
+    display: inline-block !important;
+    flex-shrink: 0;
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    margin-left: 2px;
+  }
+  .history-picker .treedd__trigger:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    border-color: var(--border-focus, #0e639c);
+  }
+  /* 历史菜单：向上弹出 + 左对齐，避免向右溢出面板右缘 */
+  .history-picker .treedd__menu {
+    left: 0 !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: calc(100% + var(--sp-2, 6px));
+    min-width: 160px;
+    max-width: min(240px, calc(100vw - 32px));
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
   /* ============ Components：发送按钮 ============ */
   .send-btn {
     flex-shrink: 0;
