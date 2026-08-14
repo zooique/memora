@@ -93,4 +93,12 @@ describe('chatView clear_ok 消息区清理', () => {
     // 占位节点不被删除，仅消息类节点被清理
     expect(messages.querySelector('#emptyState')).not.toBeNull();
   });
+
+  it('self_review 渲染过程性提示（自审查轮可见性，交叉审核观察 A）', () => {
+    mountChatView();
+    dispatch({ type: 'self_review', round: 1 });
+    const sr = document.querySelector('.self-review') as HTMLElement;
+    expect(sr).not.toBeNull();
+    expect(sr?.textContent).toContain('自审查轮 1');
+  });
 });

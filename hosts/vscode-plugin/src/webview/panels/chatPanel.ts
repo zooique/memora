@@ -605,6 +605,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ok: chunk.ok,
             summary: chunk.summary,
           });
+        } else if (chunk.type === 'selfReview') {
+          // 自审查轮开始 → 转发为过程性提示（活动透明，交叉审核观察 A）
+          this.post({ type: 'self_review', round: chunk.round });
         }
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入 todayDate-main），

@@ -208,6 +208,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     updateEmptyState();
   }
 
+  // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
+  // 渲染一条轻量提示让用户看见 Agent 正在复核产出。仅运行时显示，不持久化、不重放，
+  // 与 tool 卡片同一"过程性反馈"语义（活动透明，agent-design-philosophy §13.x）。
+  function appendSelfReview(round: number): void {
+    const div = document.createElement('div');
+    div.className = 'self-review';
+    const dot = document.createElement('span');
+    dot.className = 'self-review__dot';
+    const text = document.createElement('span');
+    text.textContent = `自审查轮 ${round}：正在复核本轮产出…`;
+    div.appendChild(dot);
+    div.appendChild(text);
+    messages.appendChild(div);
+    scrollToBottom();
+  }
+
   let memoryTimer: number | null = null;
   function showMemory(text: string): void {
     memoryBar.textContent = text;
@@ -290,6 +306,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
     } else if (msg.type === 'tool_result') {
       ToolCard.update(messages, msg.toolCallId, msg.name, msg.ok, msg.summary);
+    } else if (msg.type === 'self_review') {
+      appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
       // 清空消息区须同时清 type=msg 消息与 .tool-card 工具卡片（对抗评估 P1-1）：
       // 仅挑 .msg 会让切换历史/清空后旧工具卡片残留 DOM，污染重放视图。
