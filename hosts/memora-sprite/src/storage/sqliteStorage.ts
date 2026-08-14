@@ -15,17 +15,18 @@ import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 import { StorageError } from './storageError.js';
 import { ErrorCode } from '../shared/errorCodes.js';
 
-/** 建表 SQL（含 deleted_at 列支持软删除） */
+/** 建表 SQL（含 deleted_at 列支持软删除 + superseded_by 支持写路径取代检测） */
 const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS memories (
-  id         TEXT PRIMARY KEY,
-  content    TEXT NOT NULL,
-  source     TEXT NOT NULL,
-  name       TEXT NOT NULL,
-  createdAt  TEXT NOT NULL,
-  accessedAt TEXT NOT NULL,
-  score      REAL NOT NULL DEFAULT 0.5,
-  deleted_at TEXT
+  id            TEXT PRIMARY KEY,
+  content       TEXT NOT NULL,
+  source        TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  createdAt     TEXT NOT NULL,
+  accessedAt    TEXT NOT NULL,
+  score         REAL NOT NULL DEFAULT 0.5,
+  deleted_at    TEXT,
+  superseded_by TEXT
 );
 `;
 
@@ -46,16 +47,17 @@ CREATE INDEX IF NOT EXISTS idx_memories_score ON memories(score DESC);
 const REBUILD_TABLE_SQL = `
 BEGIN TRANSACTION;
 CREATE TABLE memories_new (
-  id         TEXT PRIMARY KEY,
-  content    TEXT NOT NULL,
-  source     TEXT NOT NULL DEFAULT 'unknown',
-  name       TEXT NOT NULL DEFAULT '',
+  id            TEXT PRIMARY KEY,
+  content       TEXT NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'unknown',
+  name          TEXT NOT NULL DEFAULT '',
   -- 使用 strftime 产出 ISO 8601 格式，与 Memory schema 的 z.string().datetime() 对齐
   -- datetime('now') 产出 'YYYY-MM-DD HH:MM:SS'（非 ISO 8601），会导致时区解析偏差
-  createdAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  accessedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  score      REAL NOT NULL DEFAULT 0.5,
-  deleted_at TEXT
+  createdAt     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  accessedAt    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  score         REAL NOT NULL DEFAULT 0.5,
+  deleted_at    TEXT,
+  superseded_by TEXT
 );
 INSERT INTO memories_new (id, content)
   SELECT id, content FROM memories;
@@ -110,6 +112,11 @@ export class SqliteStorage implements IMemoryStorage {
       logger.warn('[SqliteStorage] 补齐 deleted_at 列（软删除支持）');
       this.db.exec('ALTER TABLE memories ADD COLUMN deleted_at TEXT');
     }
+    // 若缺失 superseded_by（写路径取代检测，ADR-021），轻量 ALTER TABLE 补齐
+    if (!existingColumns.has('superseded_by')) {
+      logger.warn('[SqliteStorage] 补齐 superseded_by 列（写路径取代检测）');
+      this.db.exec('ALTER TABLE memories ADD COLUMN superseded_by TEXT');
+    }
   }
 
   /**
@@ -143,10 +150,11 @@ export class SqliteStorage implements IMemoryStorage {
       accessedAt: memory.accessedAt,
       score: memory.score,
       deletedAt: memory.deletedAt ?? null,
+      supersededBy: memory.supersededBy ?? null,
     };
     this.db.prepare(`
-      INSERT INTO memories (id, content, source, name, createdAt, accessedAt, score, deleted_at)
-      VALUES (@id, @content, @source, @name, @createdAt, @accessedAt, @score, @deletedAt)
+      INSERT INTO memories (id, content, source, name, createdAt, accessedAt, score, deleted_at, superseded_by)
+      VALUES (@id, @content, @source, @name, @createdAt, @accessedAt, @score, @deletedAt, @supersededBy)
       ON CONFLICT(id) DO UPDATE SET
         content = @content,
         source = @source,
@@ -154,7 +162,8 @@ export class SqliteStorage implements IMemoryStorage {
         createdAt = @createdAt,
         accessedAt = @accessedAt,
         score = @score,
-        deleted_at = @deletedAt
+        deleted_at = @deletedAt,
+        superseded_by = @supersededBy
     `).run(params);
   }
 
@@ -477,6 +486,8 @@ export class SqliteStorage implements IMemoryStorage {
       score: row.score,
       // deleted_at 为 NULL 时映射为 undefined（活跃态），非 NULL 时为 ISO 8601 字符串（软删除态）
       deletedAt: row.deleted_at ?? undefined,
+      // superseded_by 为 NULL 时映射为 undefined（未被取代），非 NULL 时为取代它的新摘要 id
+      supersededBy: row.superseded_by ?? undefined,
     };
   }
 }
@@ -492,4 +503,6 @@ interface MemoryRow {
   score: number;
   /** 软删除时间戳（NULL=活跃，非 NULL=已软删除） */
   deleted_at: string | null;
+  /** 写路径取代标记：取代本摘要的新摘要 id（NULL=未被取代，ADR-021） */
+  superseded_by: string | null;
 }

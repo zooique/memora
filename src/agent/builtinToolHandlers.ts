@@ -24,9 +24,15 @@ import { truncate } from '@/utils/strings.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
+
+/** trace_summary 溯源原始对话的最大消息数（memory-as-summary §4.6 规模控制） */
+const TRACE_MESSAGE_LIMIT = 5;
+/** trace_summary 单条消息的最大字符数（防长上下文注入，§4.6） */
+const TRACE_MESSAGE_CHAR_LIMIT = 2000;
 
 /**
  * 检测写入内容是否为配置文件（persona/skill/rule）
@@ -87,6 +93,7 @@ export class BuiltinToolHandlers {
    * @param memoryIndex 记忆索引（用于 search_memories 工具）
    * @param workProjection 作品投影管理器（可选，读取文件时自动生成投影）
    * @param configDir 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置）
+   * @param sessionStore 会话存储（可选，trace_summary 溯源原始对话用；未注入时回退为摘要文本）
    */
   constructor(
     private readonly projectPath: string,
@@ -94,6 +101,7 @@ export class BuiltinToolHandlers {
     private readonly memoryIndex: IMemoryStorage,
     private readonly workProjection?: WorkProjectionManager,
     private readonly configDir?: string,
+    private readonly sessionStore?: ISessionStore,
   ) {}
 
   /**
@@ -690,6 +698,17 @@ export class BuiltinToolHandlers {
       if (!exact) {
         return `（未找到会话 "${sessionId}" 中轮次 "${roundId}" 的摘要）`;
       }
+      // 溯源真实化（memory-as-summary §4.5/§4.6）：优先返回该轮次的原始对话
+      // 仅当宿主注入了 sessionStore 且能定位到对应轮次消息时返回原始对话，
+      // 否则回退为摘要文本（保证工具始终可用、不因缺注入而报错）。
+      const raw = this.loadRawRoundMessages(sessionId, roundId);
+      if (raw) {
+        const lines = raw.messages
+          .map((m) => `[${m.role}] ${truncate(m.content, TRACE_MESSAGE_CHAR_LIMIT)}`)
+          .join('\n');
+        const truncNote = raw.truncated ? '\n（对话已截断，仍有更多消息）' : '';
+        return `会话：${sessionId} | 轮次：${roundId} 原始对话：\n${lines}${truncNote}`;
+      }
       const summaryType = exact.metadata?.summaryType ?? 'general';
       const traceInfo = exact.isTraceable ? '（可溯源）' : '（不可溯源，原始对话已删除）';
       const modifiedInfo = exact.isModified ? '（已手动修改）' : '';
@@ -713,5 +732,40 @@ export class BuiltinToolHandlers {
     });
 
     return `会话 "${sessionId}" 的轮次摘要（最近 ${top.length} 条）：\n${lines.join('\n')}`;
+  }
+
+  /**
+   * 溯源指定轮次的原始对话消息（memory-as-summary §4.5/§4.6）
+   *
+   * 通过 sessionStore.loadMessages 定位该会话，按 SessionMessage.roundId 过滤出本轮消息。
+   * 规模控制：最多 5 条消息，超过则截断并标记 isTruncated。
+   *
+   * @param sessionId 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @param roundId 轮次 ID
+   * @returns 原始消息列表（≤5 条）+ 是否截断；会话存储不可用或未命中该轮次时返回 null
+   */
+  private loadRawRoundMessages(
+    sessionId: string,
+    roundId: string,
+  ): { messages: Array<{ role: string; content: string }>; truncated: boolean } | null {
+    if (!this.sessionStore) return null;
+    // 解析 date（前 10 位 YYYY-MM-DD）与 session（去掉 "YYYY-MM-DD-" 前缀）
+    const date = sessionId.slice(0, 10);
+    const session = sessionId.length > 11 ? sessionId.slice(11) : '';
+    if (!session) return null;
+    try {
+      const all = this.sessionStore.loadMessages(date, session);
+      const roundMsgs = all.filter((m) => m.roundId === roundId);
+      if (roundMsgs.length === 0) return null;
+      const truncated = roundMsgs.length > TRACE_MESSAGE_LIMIT;
+      return {
+        messages: roundMsgs.slice(0, TRACE_MESSAGE_LIMIT),
+        truncated,
+      };
+    } catch (err) {
+      // 会话存储异常时降级（不阻断工具），由调用方回退摘要文本
+      logger.warn({ err, sessionId, roundId }, 'trace_summary 读取原始对话失败，降级为摘要');
+      return null;
+    }
   }
 }

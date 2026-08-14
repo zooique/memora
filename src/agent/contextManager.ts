@@ -49,6 +49,22 @@ interface ContextManagerOptions {
    * 未注入时静默忽略。宿主可通过此回调向用户通知上下文被截断。
    */
   readonly onContextTruncated?: (skippedCount: number, keptCount: number) => void;
+  /**
+   * 已存轮次摘要加载器（ADR-023 C1，可选）
+   *
+   * 截断生成上下文摘要前，先尝试取已持久化的 round-summary（零成本、保真），
+   * 仅当没有已存摘要时才现调 LLM——让摘要生成退出截断关键路径。
+   * 返回空字符串/undefined 表示无已存摘要，回退 LLM 生成。
+   */
+  readonly roundSummaryLoader?: () => string;
+  /**
+   * 最少保留的最近原始对话轮数（ADR-023 C2，可选，默认 0）
+   *
+   * 截断时强制保留最近 N 轮完整原始对话（不被摘要替代），在此基础上再按 token 上限收集。
+   * 宿主可据 provider 的 prompt caching（KV cache 复用）能力放宽此值——多塞原始对话几乎
+   * 零成本且保真。0 表示不强制（保持纯 token 驱动截断）。
+   */
+  readonly minRecentRounds?: number;
 }
 
 /**
@@ -129,6 +145,10 @@ export class ContextManager {
   private _truncationCount: number = 0;
   /** 截断事件回调（宿主可注入以通知用户） */
   private readonly onContextTruncated: ((skipped: number, kept: number) => void) | undefined;
+  /** 已存轮次摘要加载器（ADR-023 C1，可选；截断时优先复用已存 round-summary） */
+  private readonly roundSummaryLoader: (() => string) | undefined;
+  /** 最少保留的最近原始对话轮数（ADR-023 C2，默认 0=不强制） */
+  private readonly minRecentRounds: number;
 
   constructor(opts: ContextManagerOptions) {
     this.maxContextTokens = opts.maxContextTokens;
@@ -136,6 +156,8 @@ export class ContextManager {
     this.providerRouter = opts.providerRouter;
     this.contextTruncatedFn = opts.contextTruncatedFn;
     this.onContextTruncated = opts.onContextTruncated;
+    this.roundSummaryLoader = opts.roundSummaryLoader;
+    this.minRecentRounds = Math.max(0, Math.floor(opts.minRecentRounds ?? 0));
     // 未注入 tracer 时降级为 NOOP_TRACER（零开销）
     this.tracer = opts.tracer ?? NOOP_TRACER;
   }
@@ -239,12 +261,27 @@ export class ContextManager {
     const tail: Message[] = [];
     let tailTokens = 0;
     let cutIndex = messages.length; // 被裁剪区域的起始索引
+    // C2（ADR-023）：强制保留最近 minRecentRounds 轮完整原始对话（不被摘要替代）
+    // 从尾部数 user 消息，每个 user 消息算一轮，其配套消息一并保留。
+    let forcedTailCount = 0;
+    if (this.minRecentRounds > 0) {
+      let userSeen = 0;
+      for (let i = messages.length - 1; i >= 1; i--) {
+        const msg = messages[i];
+        if (!msg) break;
+        if (msg.role === 'user') userSeen++;
+        if (userSeen > this.minRecentRounds) break;
+        forcedTailCount++;
+      }
+    }
     for (let i = messages.length - 1; i >= 1; i--) {
       // QC-17 移除非空断言：循环条件保证索引有效，null 检查兜底
       const msg = messages[i];
       if (!msg) break;
       const msgTokens = this.estimateTokens([msg]);
-      if (tailTokens + msgTokens > availableTokens) {
+      // 强制保留区内的消息不计入 token 上限（C2）；超出强制区才按 token 限制
+      const inForced = tail.length < forcedTailCount;
+      if (!inForced && tailTokens + msgTokens > availableTokens) {
         cutIndex = i + 1; // cutIndex 是第一条被保留的尾部消息
         break; // 再加这条就超了
       }
@@ -441,6 +478,17 @@ export class ContextManager {
       if (signal?.aborted) {
         summarySpan.setAttribute('aborted', true);
         return '';
+      }
+
+      // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
+      // 已存摘要是"每轮后台异步生成"的结构化产物，取用零成本、保真；仅无已存摘要才走 LLM。
+      if (this.roundSummaryLoader) {
+        const existing = this.roundSummaryLoader();
+        if (existing) {
+          summarySpan.setAttribute('source', 'round-summary');
+          logger.debug('上下文截断复用已存 round-summary，跳过 LLM 摘要生成');
+          return existing;
+        }
       }
 
       const messagesToSummarize = messages.slice(1);

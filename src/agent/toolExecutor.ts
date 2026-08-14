@@ -12,6 +12,7 @@ import { toolError, configError, MemoraError, ToolErrorCode, toError } from '@/u
 import { logger } from '@/logging/logger.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
@@ -19,6 +20,29 @@ import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
+
+// ─── web_search 注入防御常量（ADR-023 C2） ─────────────────
+
+/** web_search 查询串最大长度（防过长/恶意查询滥用） */
+const WEB_SEARCH_QUERY_MAX_LEN = 200;
+/** web_search 单条结果字段最大长度（防长上下文注入） */
+const WEB_SEARCH_RESULT_MAX_LEN = 500;
+
+/**
+ * 外部工具返回净化（ADR-023 C2）：去控制字符 + 长度上限
+ *
+ * web_search 返回的是外部不可信内容，注入 LLM 上下文前须净化：
+ * 去掉控制字符（防转义/终端注入），再按上限截断（防长上下文注入）。
+ *
+ * @param text 外部原始文本
+ * @param maxLen 最大长度
+ * @returns 净化后的文本
+ */
+function sanitizeExternalText(text: string, maxLen: number): string {
+  // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
+  const cleaned = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen)}…` : cleaned;
+}
 
 /**
  * 写入扩展接口
@@ -135,6 +159,8 @@ export class ToolExecutor {
     workProjection?: WorkProjectionManager,
     /** 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置） */
     configDir?: string,
+    /** 会话存储（可选，trace_summary 溯源原始对话用） */
+    sessionStore?: ISessionStore,
   ) {
     this.webSearchProvider = webSearchProvider;
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
@@ -145,6 +171,7 @@ export class ToolExecutor {
       memoryIndex,
       workProjection,
       configDir,
+      sessionStore,
     );
   }
 
@@ -360,13 +387,29 @@ export class ToolExecutor {
             ToolErrorCode.ARGUMENT_ERROR,
           );
         }
+        // 参数校验（ADR-023 C2）：query 当不可信输入，做长度上限（allow-list 优先）
+        if (query.length > WEB_SEARCH_QUERY_MAX_LEN) {
+          throw toolError(
+            'web_search query 参数过长',
+            `query 超过 ${WEB_SEARCH_QUERY_MAX_LEN} 字符上限`,
+            ['缩短搜索关键词'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
         const limit = Math.min(Number.parseInt(strArg('limit', '5'), 10) || 5, 20);
         const results = await safeSearch(this.webSearchProvider, query, { limit });
         if (results.length === 0) {
           return `（未找到与 "${query}" 相关的搜索结果）`;
         }
+        // 返回净化（ADR-023 C2）：外部内容去控制字符 + 长度上限，防长上下文注入
         return results
-          .map((r, i) => `${i + 1}. ${r.title}\n   URL: ${r.url || '(无链接)'}\n   ${r.snippet.replace(/\n/g, ' ')}`)
+          .map((r, i) => {
+            const title = sanitizeExternalText(r.title, WEB_SEARCH_RESULT_MAX_LEN);
+            const url = sanitizeExternalText(r.url || '(无链接)', WEB_SEARCH_RESULT_MAX_LEN);
+            const snippet = sanitizeExternalText(r.snippet.replace(/\n/g, ' '), WEB_SEARCH_RESULT_MAX_LEN);
+            return `${i + 1}. ${title}\n   URL: ${url}\n   ${snippet}`;
+          })
           .join('\n\n');
       }
       case 'task_table_write': {

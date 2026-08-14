@@ -31,6 +31,9 @@ import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
+
+/** C1 截断优先复用 round-summary 的最大条数（ADR-023） */
+const ROUND_SUMMARY_LOADER_MAX = 5;
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -272,6 +275,22 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   }));
   const mergedGuardrailRules = [...indexGuardrailRules, ...rolePackGuardrailRules];
 
+  // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
+  // 从记忆索引取最近 N 条 round-summary（按 createdAt 降序），拼接为历史摘要回退文本。
+  const roundSummaryLoader = (): string => {
+    try {
+      const summaries = pctx.index
+        .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, ROUND_SUMMARY_LOADER_MAX);
+      if (summaries.length === 0) return '';
+      return `[Earlier conversation summaries]\n${summaries.map((s) => `- ${s.content}`).join('\n')}`;
+    } catch {
+      // 记忆索引异常时降级为空（回退 LLM 摘要生成），不阻断截断
+      return '';
+    }
+  };
+
   const loop = new AgentLoop({
     provider,
     providerRouter: providerRouter ?? undefined,
@@ -290,6 +309,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     onSessionEvent: callbacks?.onSessionEvent,
     onToolExecuted: callbacks?.onToolExecuted,
     preExecutionCheck: callbacks?.preExecutionCheck,
+    roundSummaryLoader,
   });
 
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
@@ -376,6 +396,7 @@ export async function assembleComponents(
     input.webSearchProvider,
     workProjection,
     configDir,
+    sessionStore,
   );
 
   // ── Phase 2: 依赖 Provider 的组件 ──

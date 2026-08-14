@@ -75,6 +75,10 @@
 重构后：对话记录（窗口级，仅展示） + 轮次摘要（全局，即唯一记忆）
 ```
 
+> **实现状态（如实声明）**：上图为**目标态**，非当前态。独立的洞察/画像层（InsightExtractor + ArchiveCoordinator 的 `archiveProfileFacts`/`archiveInsight`）**尚未移除**——运行时仍经 [agent.ts](../../src/agent/agent.ts) 的 `postProcess` 活跃调用（见 §七「计划移除」）。当前系统实际是 **round-summary + insight/profile 双轨运行**，收敛为单轨是待办，非已达成。另，对话记录**并非"仅展示"**——`traceSummary` 溯源依赖对话记录（§5.2 有说明），但当前实现尚未接上（见 §四 溯源）。
+
+> 注：`archiveCoordinator` 中的 `archiveRoundSummary` 已不存在（round-summary 改由 RoundSummaryGenerator 在 postProcess 直接生成），§七 该项实际已达成。
+
 ### 2.4 Round 边界
 
 **一个 Round = 一次 `processUserInput` 调用，而非一次 `handleIteration`。**
@@ -330,6 +334,8 @@ LLM 获得完整上下文
 | 注入上下文 | `prepareChatContext` | 组装后的 system prompt | 是 |
 | 溯源 | `trace_summary` 工具 | 原始对话记录 | 是（LLM 可选调用） |
 
+> **实现状态（如实声明）**：上表为**目标态**。其中"按 type 差异化召回"当前仅落地了"同窗口优先 + 聚合摘要优先"（[recall.ts](../../src/memory/recall.ts)），§4.2 的 preference/intent/decision 差异化范围/窗口/权重**未实现**；"互斥过滤（排除正文已加载轮次）"**未实现**；"溯源返回原始对话记录"当前 `traceSummary` 实际返回**摘要文本**而非原始对话（[builtinToolHandlers.ts](../../src/agent/builtinToolHandlers.ts)），尚未接上对话记录。三者均为待办。
+
 **闭环验证**：每个环节的产出是下一个环节的输入，不存在断裂或外部依赖。
 
 ### 6.2 最小性验证
@@ -408,6 +414,26 @@ LLM 获得完整上下文
 | InsightExtractor | `src/agent/managers/insightExtractor.ts` | 逻辑已被 SummaryType 分类吸收，无存量数据需兼容 |
 | SessionArchiver | `src/agent/managers/sessionArchiver.ts` | 会话级摘要已被"摘要即记忆"替代，无存量数据需兼容 |
 | archiveCoordinator 中的 archiveRoundSummary | `src/agent/managers/archiveCoordinator.ts` | 冗余，round-summary 直接在 postProcess 生成 |
+
+> **状态注**：上表"计划移除"三项中，`archiveRoundSummary` 已实际移除（archiveCoordinator 中已不存在）；`InsightExtractor`/`SessionArchiver` 仍存在，且运行时仍经 ArchiveCoordinator 活跃调用（见 §2.3 注），尚未移除。
+
+### 七·一 承诺 vs 实现状态对照（如实声明）
+
+> 本节集中标注本文档各承诺的**真实落地状态**，避免"设计文档 = 已实现"的误读。`✅`=已实现，`⏳`=已决策/设计待实现（关联 ADR 待办）。
+
+| 承诺 | 文档出处 | 实现状态 | 说明 |
+|------|---------|---------|------|
+| RoundSummaryGenerator（round-summary + type） | §3/§7 | ✅ | [roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts) |
+| roundId 入口分配 + SessionMessage.roundId | §2.4/§3.4 | ✅ | [loop.ts](../../src/agent/loop.ts) |
+| createdAt 升序（唯一排序键） | §4.4 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` |
+| 同窗口优先 + 聚合摘要优先 | §4.7 | ✅ | [recall.ts](../../src/memory/recall.ts) |
+| 差异化召回（preference/intent/decision 范围/窗口/权重） | §4.2 | ⏳ | 仅落同窗口优先，未实现 type 差异化 |
+| 互斥排除（正文已加载轮次不召回） | §4.3 | ⏳ | `recallAndInject` 无该逻辑 |
+| traceSummary 返回原始对话（≤5 条/2000 字） | §4.5/§4.6 | ⏳ | 当前返回摘要文本，未接对话记录 |
+| 写路径取代检测 superseded | §5.4 | ⏳ | ADR-021 已决策，实现列待办 `[ ]` |
+| 工具结果隔离 `<tool_result>` + 参数校验 + 返回净化 | （关联 ADR-023） | ⏳ | ADR-023 已决策，实现列待办 `[ ]` |
+| 截断优先用 round-summary | （关联 ADR-023） | ⏳ | ContextManager 仍现调 LLM 生成上下文摘要 |
+| 洞察层移除（摘要即记忆单轨） | §2.3/§7 | ⏳ | 仍双轨运行（round-summary + insight/profile） |
 
 ---
 

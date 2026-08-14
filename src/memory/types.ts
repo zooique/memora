@@ -67,6 +67,17 @@ export interface Memory {
    * isTraceable 独立于此字段——修改摘要不代表原始对话不存在。
    */
   isModified?: boolean;
+  /**
+   * 可选：写路径取代检测（ADR-021）——是否有新摘要取代了本条
+   *
+   * 非 undefined 时表示本条摘要已被更新的决策/事实覆盖，不再作为当前事实注入召回
+   * （召回时确定性过滤）。值为取代它的新摘要 id（`round-summary:...`），本条保留以便
+   * `traceSummary` 回溯历史。仅对 `source='round-summary'` 的记忆有意义。
+   *
+   * 设计为**顶层持久化字段**而非 metadata：宿主 SqliteStorage 不持久化 metadata，
+   * 而 superseded 标记必须跨会话生效（"写时定、读时过滤"的持久语义）。
+   */
+  supersededBy?: string;
 }
 
 /** 默认记忆权重（parseMemory 的默认值行为） */
@@ -164,6 +175,7 @@ export function parseMemory(raw: unknown): Memory {
     deletedAt: obj.deletedAt as string | undefined,
     isTraceable: obj.isTraceable as boolean | undefined,
     isModified: obj.isModified as boolean | undefined,
+    supersededBy: obj.supersededBy as string | undefined,
   };
 }
 

@@ -31,6 +31,32 @@ const DEFAULT_MIN_SIMILARITY = 0.3;
 /** 一天对应的毫秒数 */
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
+/** intent 摘召回的时间窗口（天）：intent 时效敏感，超期不召回（memory-as-summary §4.2） */
+const INTENT_RECALL_WINDOW_DAYS = 7;
+
+/**
+ * 摘要类型价值权重（memory-as-summary §4.2 差异化召回）
+ *
+ * decision/preference 是高价值记忆（决策锚点/用户画像），应优先呈现；
+ * general 是低价值一般对话，权重最低。用于召回排序的 tie-break。
+ * {未标记} 视为 general（默认低价值）。
+ */
+function summaryTypeValue(type?: string): number {
+  switch (type) {
+    case 'decision':
+      return 5;
+    case 'preference':
+      return 4;
+    case 'fact':
+      return 3;
+    case 'intent':
+      return 2;
+    case 'general':
+    default:
+      return 1;
+  }
+}
+
 /**
  * 从文本中提取关键词（用于记忆召回）
  *
@@ -171,9 +197,19 @@ export async function recall(
       )
     : sorted.map((e) => e.memory);
 
-  // ── Phase 2：同窗口优先 + 聚合摘要优先排序 ──
+  // ── Phase 2：差异化召回（memory-as-summary §4.2）──
+  // intent 时效敏感：限定近期窗口，超期 intent 摘要不召回
+  const nowMs = Date.now();
+  reranked = reranked.filter((m) => {
+    if (m.metadata?.summaryType !== 'intent') return true;
+    const ageMs = nowMs - Date.parse(m.createdAt);
+    return !Number.isNaN(ageMs) && ageMs <= INTENT_RECALL_WINDOW_DAYS * ONE_DAY_MS;
+  });
+
+  // ── Phase 3：同窗口优先 + 聚合摘要优先 + type 价值排序 ──
   // 同窗口优先：sessionId 匹配的记忆排在前面，提升上下文连续性
   // 聚合摘要优先：type='aggregated' 的摘要排在前面，降低原始摘要数量对性能的影响
+  // type 价值：decision/preference 高价值优先，general 最低（§4.2 差异化召回）
   if (sessionId) {
     reranked = [...reranked].sort((a, b) => {
       const aIsSameWindow = a.metadata?.sessionName === sessionId;
@@ -187,15 +223,35 @@ export async function recall(
       if (aIsAggregated !== bIsAggregated) {
         return aIsAggregated ? -1 : 1;
       }
+      // 其余按 type 价值降序（差异化召回 tie-break）
+      const aType = summaryTypeValue(a.metadata?.summaryType);
+      const bType = summaryTypeValue(b.metadata?.summaryType);
+      if (aType !== bType) return bType - aType;
       return 0; // 保持原有相对顺序
     });
+  } else {
+    // 无 sessionId 时（非常规路径），仍按 type 价值排序保证差异化生效
+    reranked = [...reranked].sort((a, b) => {
+      const aIsAggregated = a.metadata?.summaryType === 'aggregated';
+      const bIsAggregated = b.metadata?.summaryType === 'aggregated';
+      if (aIsAggregated !== bIsAggregated) return aIsAggregated ? -1 : 1;
+      const aType = summaryTypeValue(a.metadata?.summaryType);
+      const bType = summaryTypeValue(b.metadata?.summaryType);
+      if (aType !== bType) return bType - aType;
+      return 0;
+    });
   }
+
+  // ── 写路径取代过滤（ADR-021）：被 superseded 的摘要不再作为当前事实注入 ──
+  // supersededBy 仅对 round-summary 有意义，其他来源无此字段，过滤安全。
+  // 被取代摘要仍保留于存储，可经 traceSummary 回溯历史（非删除）。
+  const active = reranked.filter((m) => !m.supersededBy);
 
   // ── FIX-P1-2：拆分读/写，recall 只读 + boostScores 显式写 ──
   // 在副本上 boost，仅影响本轮上下文排序；持久化由调用方 fire-and-forget 调用 boostScores，
   // 不阻塞读路径，boost 写入失败不影响 chat 流程。
   const now = nowIso();
-  const result: Memory[] = reranked.map((memory) => {
+  const result: Memory[] = active.map((memory) => {
     const copy = { ...memory };
     boostScore(copy, now);
     return copy;

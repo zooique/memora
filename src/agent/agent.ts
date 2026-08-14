@@ -702,6 +702,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
+    // ── 互斥排除（memory-as-summary §4.3）──
+    // 当前会话最近 N 轮正文已完整加载进上下文，其摘要不应再被召回注入（避免重复）。
+    // 确定性判定：取最近 N 轮 roundId 集合（N ≡ 上下文固定加载轮数），过滤同轮摘要。
+    const recentRoundIds = new Set(
+      this.requireHistory.getRecentRoundIds(AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS),
+    );
+    if (recentRoundIds.size > 0) {
+      recalledMemories = recalledMemories.filter((m) => {
+        const rid = m.metadata?.roundId;
+        // 无 roundId 的摘要（非 round-summary）不受互斥影响
+        return !rid || !recentRoundIds.has(rid);
+      });
+    }
+
     // Layer 5: 最近对话注入
     const loop = this.requireLoop;
     const recentHistory = loop.getRecentHistory(AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS);

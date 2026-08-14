@@ -72,6 +72,37 @@ export class MessageHistory {
   }
 
   /**
+   * 获取当前会话最近 N 轮的 roundId 集合（互斥排除用，memory-as-summary §4.3）
+   *
+   * 正文已完整加载进上下文的轮次（最近 N 轮），其摘要不应再被召回注入——避免
+   * 正文与摘要重复进上下文（浪费 token + 干扰 LLM 判断）。这是确定性判定：从
+   * sessionStore 加载当前会话消息，取 roundId 非空的最近 N 轮（去重）。
+   *
+   * @param rounds 最近轮数（N ≡ 上下文固定加载轮数）
+   * @returns roundId 唯一集合（按最近优先），无 roundId/sessionStore 不可用时为空数组
+   */
+  getRecentRoundIds(rounds: number): string[] {
+    if (!this.sessionStore || rounds <= 0) return [];
+    try {
+      const messages = this.sessionStore.loadMessages(this.currentDate, this.currentSession);
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      // 从后向前收集最近 rounds 轮的 roundId（去重，保最近）
+      for (let i = messages.length - 1; i >= 0 && ids.length < rounds; i--) {
+        const rid = messages[i]?.roundId;
+        if (rid && !seen.has(rid)) {
+          seen.add(rid);
+          ids.push(rid);
+        }
+      }
+      return ids;
+    } catch (err) {
+      logger.warn({ err }, '获取最近轮次 roundId 失败，跳过互斥排除');
+      return [];
+    }
+  }
+
+  /**
    * 获取当前会话标识
    */
   get session(): string {

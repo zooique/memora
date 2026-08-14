@@ -21,6 +21,7 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
@@ -735,5 +736,37 @@ describe('BuiltinToolHandlers.traceSummary', () => {
   it('无摘要的会话返回提示信息', async () => {
     const result = await handlers.traceSummary('2026-01-01-other');
     expect(result).toContain('暂无轮次摘要');
+  });
+
+  // ── 溯源真实化（memory-as-summary §4.5/§4.6）：注入 sessionStore 后返回原始对话 ──
+
+  it('sessionStore 可用时返回该轮次的原始对话', async () => {
+    const store: ISessionStore = {
+      appendMessage: () => {},
+      loadMessages: () => [
+        { role: 'user', content: '帮我解释 TypeScript 接口', timestamp: '2026-08-13T01:00:00Z', roundId: ROUND_A },
+        { role: 'assistant', content: '接口用于定义对象的形状', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
+      ],
+      listSessions: () => [SESSION],
+    };
+    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, undefined, store);
+    const result = await h.traceSummary(SESSION, ROUND_A);
+    // 返回原始对话消息，而非摘要文本
+    expect(result).toContain('原始对话');
+    expect(result).toContain('帮我解释 TypeScript 接口');
+    expect(result).not.toContain('摘要：');
+  });
+
+  it('sessionStore 未命中该轮次时回退为摘要文本（不报错）', async () => {
+    // loadMessages 返回空 → loadRawRoundMessages 返回 null → 回退摘要
+    const store: ISessionStore = {
+      appendMessage: () => {},
+      loadMessages: () => [],
+      listSessions: () => [SESSION],
+    };
+    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, undefined, store);
+    const result = await h.traceSummary(SESSION, ROUND_A);
+    expect(result).toContain('可溯源');
+    expect(result).toContain('TypeScript');
   });
 });
