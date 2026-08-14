@@ -42,42 +42,52 @@
 4. **rule 生效**：角色包 rule 段 → SecurityGuard 最小集（输入/输出过滤，§runtime 13.8）；
 5. **L2 生效**：已冻结核心维度随角色包生效——主动提问（askOn/askLimit）、工具允许（toolMode）、记忆召回（memoryRecall）等；草案维度（如 temperature）MVP 不承诺随包生效（spec §六 状态列）。
 
-**MVP 内置角色包样例**（骨架，对齐 role-pack-spec §2.3 最小形态：元数据+strategy+skills 在 frontmatter，Persona/Rules 为正文章节，skills 用 capability 中立命名）：
+**MVP 内置角色包样例**（骨架，对齐 role-pack-spec §2.2 文件夹形态：`manifest.json` 为核心控制文件，persona/rules 为独立内容文件，skills 用对象数组注册 + capability 中立命名）：
+
+```text
+role-packs/小说写作/
+├── manifest.json   # 元数据 + strategy + 内容路径注册 + skills 注册
+├── persona.md      # 身份设定（正文）
+└── rules.md        # 确定性规则（正文）
+```
+
+**manifest.json**：
+
+```json
+{
+  "name": "小说写作",
+  "formatVersion": "1.0.0",
+  "description": "短篇小说与文案写作助手",
+  "keywords": ["写作", "小说", "故事"],
+  "trigger": ["写作", "小说", "故事", "文案", "小作文"],
+  "author": "memora",
+  "version": "1.0.0",
+  "interactionType": "tool_assistant",
+  "strategy": {
+    "prepare": { "memoryRecall": "full" },
+    "act": { "toolMode": "allow" },
+    "reflect": { "handoff": "wait" },
+    "global": { "askOn": ["ambiguity", "decision", "missing_info"], "askLimit": 3 }
+  },
+  "persona": "persona.md",
+  "rules": "rules.md",
+  "skills": [
+    { "file": "skills/write.md", "name": "write", "capability": "file:write" },
+    { "file": "skills/read.md", "name": "read", "capability": "file:read" },
+    { "file": "skills/search.md", "name": "search", "capability": "web:search" }
+  ]
+}
+```
+
+**persona.md**：
 
 ```markdown
----
-name: 小说写作
-formatVersion: 1.0.0
-description: 短篇小说与文案写作助手
-keywords: [写作, 小说, 故事]
-trigger: [写作, 小说, 故事, 文案, 小作文]
-author: memora
-version: 1.0.0
-interactionType: tool_assistant
-strategy:
-  prepare:
-    memoryRecall: full
-  act:
-    toolMode: allow
-  reflect:
-    handoff: wait
-  global:
-    askOn: [ambiguity, decision, missing_info]
-    askLimit: 3
-skills:
-  - capability: file:write
-    description: 把成稿写入本地文件
-  - capability: file:read
-    description: 读回文件自审
-  - capability: web:search
-    description: 写作查资料
----
-## Persona
-
 你是一位擅长短篇小说与文案的写作助手，先与用户讨论思路，成稿时结构完整、有细节、结尾留余味。
+```
 
-## Rules
+**rules.md**：
 
+```markdown
 - 不写真实姓名、身份证号、手机号、银行卡等敏感信息
 - 结尾留白，不把反转写死
 ```

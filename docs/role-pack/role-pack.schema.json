@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://role-pack.dev/schemas/1.0.0/role-pack.schema.json",
   "title": "RolePack Spec v1.0.0",
-  "description": "角色包标准 v1.0.0 JSON Schema —— 可共享的 Agent 行为单元格式。适用于单文件 role-pack.md frontmatter 校验与文件夹形态 manifest.json 校验。",
+  "description": "角色包标准 v1.0.0 JSON Schema —— 可共享的 Agent 行为单元格式。适用于文件夹形态角色包的 manifest.json 校验（元数据 + strategy + 内容路径注册 + skills 注册）。",
   "type": "object",
   "required": ["name", "formatVersion"],
 
@@ -184,23 +184,45 @@
 
     "skills": {
       "type": "array",
-      "description": "能力声明列表（L1 中立契约）",
+      "description": "内嵌技能注册（对象数组，支持多个添加）。每项引用包内技能文件，可选声明中立能力（capability）与说明。",
       "items": {
         "type": "object",
-        "required": ["capability"],
+        "required": ["file"],
         "properties": {
-          "capability": {
+          "file": {
             "type": "string",
-            "pattern": "^[a-z]+:[a-z][a-z-]*$",
-            "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`）"
+            "description": "技能文件路径（相对角色包根）或已注册技能名（必填）"
+          },
+          "name": {
+            "type": "string",
+            "description": "技能名（可选，缺省取文件名去扩展名）"
           },
           "description": {
             "type": "string",
-            "description": "能力描述（供 LLM 与校验器理解，可选）"
+            "description": "技能说明（供 LLM 与校验器理解，可选）"
+          },
+          "capability": {
+            "type": "string",
+            "pattern": "^[a-z]+:[a-z][a-z-]*$",
+            "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`，可选；声明则映射到实现工具）"
           }
         },
         "additionalProperties": false
       }
+    },
+
+    "persona": {
+      "type": "string",
+      "description": "persona 内容文件路径（相对角色包根），允许缺省（不声明或 null）"
+    },
+    "rules": {
+      "type": "string",
+      "description": "rules 内容文件路径（相对角色包根），允许缺省"
+    },
+    "exclusiveWith": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "互斥角色包名列表（粘性匹配切换裁决，§6.2）"
     },
 
     "extensions": {
