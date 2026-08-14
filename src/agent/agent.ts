@@ -648,6 +648,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
     let recalledMemories: Memory[] = [];
 
+    // 最近几轮固定加载轮数：角色包 prepare.recentRounds 覆盖，未配置回退内核默认 3（兜底）
+    // 最近几轮是真实上下文（memory-as-summary §4.3），优先于记忆/摘要召回；
+    // 默认策略 DEFAULT_BEHAVIOR_STRATEGY.prepare.recentRounds = 3，与内核默认一致。
+    const recentRounds =
+      this.getActiveStrategy().prepare?.recentRounds ?? AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS;
+
     if (memoryRecallMode !== 'none') {
       // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
       const tracer = this.#config.tracer ?? NOOP_TRACER;
@@ -705,7 +711,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // Layer 5: 最近对话注入
     const loop = this.requireLoop;
-    const recentHistory = loop.getRecentHistory(AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS);
+    const recentHistory = loop.getRecentHistory(recentRounds);
     if (recentHistory.length > 0) {
       const msgs = this.#config.messages;
       const label = msgs?.recentConversationLabel ?? '[Recent conversation]';

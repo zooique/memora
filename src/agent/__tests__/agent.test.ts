@@ -2446,6 +2446,8 @@ describe('Agent · L2 行为策略消费', () => {
     // 验证默认策略的 prepare 维度
     expect(strategy.prepare?.memoryRecall).toBe('full');
     expect(strategy.prepare?.memoryRecallQuota).toBe(2000);
+    // 最近几轮固定加载轮数默认 3（角色包 recentRounds 未配置时的兜底）
+    expect(strategy.prepare?.recentRounds).toBe(3);
     // 验证默认策略的 act 维度（标准键 act.toolMode，§六）
     expect(strategy.act?.toolMode).toBe('allow');
     // 验证默认策略的 reflect 维度（标准键 reflect.handoff，§六）
@@ -2488,5 +2490,43 @@ describe('Agent · L2 行为策略消费', () => {
     // 验证 handoff chunk 存在（表明 executeChatLoop 正常执行）
     // 验证整体流程不抛错即说明 prepareChatContext 正确消费了默认策略
     expect(agent.agentLoop).not.toBeNull();
+  });
+
+  // ─── recentRounds 覆盖固定加载轮数（2026-08-14 消费接入）──
+
+  it('角色包 prepare.recentRounds 应覆盖最近几轮固定加载轮数', async () => {
+    // 在 configDir 下写一个带 recentRounds:5 的角色包（init 自动扫描并激活第一个）
+    mkdirSync(join(tmpConfig, 'role-packs'), { recursive: true });
+    writeFileSync(
+      join(tmpConfig, 'role-packs', '精算师.md'),
+      `---
+name: 精算师
+formatVersion: 1.0.0
+description: recentRounds 覆盖验证
+keywords: [精算]
+strategy:
+  prepare:
+    recentRounds: 5
+---
+## Persona
+
+你是一个精算师。`,
+      'utf-8',
+    );
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 角色包被激活，getActiveStrategy 返回其策略（消费入口：recallAndInject 读取此值）
+    const strategy = agent.getActiveStrategy();
+    expect(strategy.prepare?.recentRounds).toBe(5);
+
+    // 多轮对话走 recallAndInject，消费 recentRounds 不抛错即验证覆盖路径生效
+    // （默认 3 轮兜底已在上述"默认策略"测试断言）
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('你好')) {
+      chunks.push(chunk);
+    }
+    expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
   });
 });

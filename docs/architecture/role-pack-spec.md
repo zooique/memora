@@ -333,7 +333,7 @@ export interface IMcpTransport {
 | 组 | 键 | 取值（枚举） | 含义 | 状态 | 实现消费要求 |
 |----|----|------------|------|------|------------|
 | prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | `[草案]` | 无参考实现消费，待验证 |
-| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数 | `[草案]` | 无参考实现消费，待验证 |
+| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数 | 冻结 | memora 消费（agent.ts 互斥排除 + 最近对话注入轮数，未配置回退默认 3） |
 | prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
 | prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token） | 冻结 | memora 消费（agent.ts 限额召回）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
 | prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |

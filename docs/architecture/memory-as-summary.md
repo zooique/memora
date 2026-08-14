@@ -446,7 +446,7 @@ LLM 获得完整上下文
 | createdAt 升序（唯一排序键） | §4.4 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` |
 | 同会话窗口优先（sessionName 优先 + 组内 createdAt 升序） | §4.4/§4.7 | ✅ | [recall.ts](../../src/memory/recall.ts) |
 | 差异化召回（preference/intent/decision 范围/时间窗口） | §4.2 | ✅ | [recall.ts](../../src/memory/recall.ts) `RECALL_WINDOWS_DAYS`（intent/general 限 7 天，preference/decision/fact 不限） |
-| 互斥排除（正文已加载轮次不召回） | §4.3 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` 用最近 N 轮 roundId 过滤（N = 内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`；角色包 `recentRounds` 覆盖随角色包后置接入） |
+| 互斥排除（正文已加载轮次不召回） | §4.3 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` 用最近 N 轮 roundId 过滤（N = 角色包 `prepare.recentRounds` 覆盖，未配置回退内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`=3） |
 | traceSummary 返回原始对话（≤5 条/2000 字） | §4.5/§4.6 | ✅ | [builtinToolHandlers.ts](../../src/agent/builtinToolHandlers.ts) `loadRawRoundMessages`；未注入 sessionStore 时降级为摘要文本 |
 | 写路径取代检测 superseded | §5.4 | ✅ | [roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts) `supersedeSimilar` + [recall.ts](../../src/memory/recall.ts) 过滤 `supersededBy` |
 | 工具结果隔离 `<tool_result>` + 参数校验 + 返回净化 | （关联 ADR-023） | ✅ | [loop.ts](../../src/agent/loop.ts) `<tool_result>` 包裹 + 指令前缀；[toolExecutor.ts](../../src/agent/toolExecutor.ts) `sanitizeExternalText` 净化 |
