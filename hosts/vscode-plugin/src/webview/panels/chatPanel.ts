@@ -27,6 +27,10 @@ import { toolCardStyles } from '../styles/toolCard.js';
 import { fmtTimeScript } from '../helpers/fmtTime.js';
 import { toolNameMapScript } from '../helpers/toolNameMap.js';
 
+/** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
+ *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
+const MAX_HISTORY_MESSAGES = 200;
+
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'memora.docReview.chat';
@@ -457,7 +461,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       // 跨天合并后按时间升序（消息存储顺序可能因多次回放而乱序）
       result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
-      return result;
+      // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条（按时间升序取末段）。
+      // 单天历史通常远低于上限不受影响；跨天合并视图聚焦近期对话，避免长期
+      // 使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7）
+      return result.slice(-MAX_HISTORY_MESSAGES);
     } catch (err) {
       // 读取失败不阻塞面板展示，但需记录（SSOT 不藏错，避免「历史空白」静默吞因）
       console.warn('Memora 加载会话历史失败', err);
@@ -702,7 +709,10 @@ function buildHtml(): string {
         send.classList.remove('loading');
         send.setAttribute('title', '发送 (Enter)');
         input.disabled = false;
-        input.focus();
+        // 仅当用户没有正在与其他交互元素交互（焦点已回落 body —— disabled 的输入框
+        // 自然失焦后的默认状态）时才恢复输入焦点，避免 done 时强制 focus 打断用户
+        // 正在进行的其他操作（如阅读/操作下拉菜单，对抗评估 P1-4）
+        if (document.activeElement === document.body) input.focus();
       }
     }
 
