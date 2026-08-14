@@ -199,6 +199,8 @@ function buildHtml(): string {
 
     let editName = ''; // 当前编辑的 name（空=新增）
     let activeName = undefined;
+    // 最近一次 cfg_loaded 的 Provider 列表 —— 编辑回填的单一数据源（内存，而非 DOM dataset）
+    let currentProviders = [];
 
     function showToast(text, ok) {
       toast.textContent = text;
@@ -225,18 +227,19 @@ function buildHtml(): string {
       testResult.className = 'test-result';
       btnTest.disabled = false;
       if (editName) {
-        // 编辑：从当前列表预填非敏感字段 + 脱敏 key 回显
-        const card = list.querySelector('div[data-name="' + CSS.escape(editName) + '"]');
-        // 简化：通过 dataset 读取
+        // 编辑：从内存中的 providers 列表回填（单一真理源：cfg_loaded 数据，
+        // 而非从渲染结果 DOM dataset 读取，避免 DOM 作为数据源的数据流反向，
+        // 对抗评估 P1-5）
+        const target = currentProviders.find(function (p) { return p.name === editName; }) || {};
         fName.value = editName;
         fName.disabled = true;
-        fDisplay.value = card ? card.dataset.display : '';
-        fModel.value = card ? card.dataset.model : '';
-        fBaseUrl.value = card ? card.dataset.baseurl : '';
+        fDisplay.value = target.displayName || '';
+        fModel.value = target.model || '';
+        fBaseUrl.value = target.baseUrl || '';
         fApiKey.value = '';
         fApiKey.placeholder = '留空保持不变';
         // 脱敏回显：标明已配置的 key（如 sk-••••1234），确认无需重新输入
-        const masked = card ? card.dataset.maskedkey : '';
+        const masked = target.maskedKey || '';
         apikeyHint.hidden = !masked;
         apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
       } else {
@@ -261,19 +264,17 @@ function buildHtml(): string {
 
     function render(data) {
       if (!data.providers || data.providers.length === 0) {
+        currentProviders = [];
         list.innerHTML = '<p class="hint">暂未配置任何 API，点击右上角「添加 API」。</p>';
         return;
       }
       activeName = data.activeName;
+      // 保存为内存数据源（openModal 编辑回填用；DOM dataset 不再作为数据源，P1-5）
+      currentProviders = data.providers;
       list.innerHTML = '';
       data.providers.forEach(function (p) {
         const card = document.createElement('div');
         card.className = 'card' + (p.name === activeName ? ' active' : '');
-        card.dataset.name = p.name;
-        card.dataset.display = p.displayName || p.name;
-        card.dataset.model = p.model;
-        card.dataset.baseurl = p.baseUrl;
-        card.dataset.maskedkey = p.maskedKey || '';
 
         const info = document.createElement('div');
         info.className = 'card-info';

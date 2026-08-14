@@ -52,6 +52,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 仅影响回放展示，不影响持久化写入（写入始终走当天 main，与内核一致）。
    */
   private _historyDate: string | undefined;
+  /** 是否正在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
+   *  避免重放清空消息区后，进行中的 chunk 污染重放视图（对抗评估 P1-3） */
+  private _streaming = false;
 
   /**
    * @param sessionStore 会话存储（用于持久化/恢复对话历史）
@@ -346,6 +349,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param date 选中的日期（YYYY-MM-DD），空串 = 全部
    */
   private handleSwitchDate(date: string): void {
+    // 流式生成中禁止切换历史：重放会清空消息区，导致进行中的 chunk 追加进
+    // 重放后的视图，形成「历史 + 进行中流」混血（对抗评估 P1-3）。
+    // 约束放在 host 侧（流状态单一真理源），提示用户等待本轮生成完成。
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换历史' });
+      return;
+    }
     this._historyDate = date || undefined;
     // 先清空 webview 消息区，再重放对应日期历史（复用 clear_ok 清空协议）
     this.post({ type: 'clear_ok' });
@@ -537,6 +547,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
     // P0-2：进入生成状态（webview 展示加载动画 + 禁用输入）
     this.post({ type: 'status', state: 'thinking' });
+    // 置位生成态：handleSwitchDate 据此拒绝切换历史（P1-3）
+    this._streaming = true;
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
     let firstChunkTs = new Date().toISOString();
     try {
@@ -565,6 +577,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agent.off('questionPending', onPendingQuestion);
       this._agent.off('memoryRecalled', onMemoryRecalled);
       this._agent.off('memoryAdded', onMemoryAdded);
+      // 无论成败均清除生成态（恢复历史切换能力，P1-3）
+      this._streaming = false;
     }
     // 结束状态（恢复输入框）；错误时也恢复，避免卡死
     this.post({ type: 'status', state: 'done' });
@@ -585,11 +599,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
  */
 function stripDocContextPrefix(content: string): string {
   // 仅当消息确实以「当前打磨文档内容」标记开头才剥离（文档上下文注入的前缀），
-  // 普通对话（resume 补写、无文档场景）内容不含该标记，原样返回——避免误伤
-  // 用户输入中恰好包含「用户请求：」字样的消息。
+  // 普通对话（resume 补写、无文档场景）内容不含该标记，原样返回。
+  // 注入结构固定：`[当前打磨文档内容]\n{doc}\n[/当前打磨文档内容]\n\n用户请求：{input}`。
+  // 以「关闭标签」为锚点，在其后定位首个分隔 marker：注入的 marker 总紧跟在关闭
+  // 标签之后，而用户 input 中若含「用户请求：」字样必然出现在其后，因此不会误剥
+  // 用户内容（对抗评估 P1-6，替代原先 lastIndexOf 会误伤用户输入含该字样的缺陷）。
   if (!content.startsWith('[当前打磨文档内容]')) return content;
+  const closeTag = '[/当前打磨文档内容]';
+  const closeIdx = content.indexOf(closeTag);
+  if (closeIdx < 0) return content;
   const marker = '\n\n用户请求：';
-  const idx = content.lastIndexOf(marker);
+  const idx = content.indexOf(marker, closeIdx);
   if (idx < 0) return content;
   return content.slice(idx + marker.length);
 }
