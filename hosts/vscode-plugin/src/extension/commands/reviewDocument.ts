@@ -42,29 +42,69 @@ export async function reviewDocumentCommand(
     return;
   }
 
-  // 状态栏提示：自洽检查进行中
-  const status = vscode.window.setStatusBarMessage('$(sync~spin) Memora 正在做自洽检查…');
-  try {
-    const agent = await getAgent(workspaceFolder.uri.fsPath);
-    // 注入文档内容作为上下文，引导 Agent 围绕该文档审阅（同任务 A 模式）
-    const chatInput = `[待审阅文档]\n${docText}\n[/待审阅文档]\n\n${REVIEW_INSTRUCTION}`;
+  // 取消控制器：进度窗口的取消按钮 → AbortSignal → 内核 chat 中断（复用内核已落地的打断能力）
+  const controller = new AbortController();
 
-    let result = '';
-    for await (const chunk of agent.chat(chatInput) as AsyncIterable<{
-      type: string;
-      content?: string;
-    }>) {
-      if (chunk.type === 'text' && chunk.content) result += chunk.content;
-    }
+  // withProgress 提供进度反馈 + 可取消按钮，替代原先的阻塞式状态栏提示
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Memora 自洽检查',
+      cancellable: true,
+    },
+    async (progress, token) => {
+      // 进度窗口取消按钮 → 触发 AbortSignal
+      token.onCancellationRequested(() => controller.abort());
+      progress.report({ message: 'Agent 正在分析文档…' });
 
-    // 结果写入新 .md 文档并打开（主动可见）
-    await writeReviewResult(doc, result);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`Memora 自洽检查失败：${msg}`);
-  } finally {
-    status.dispose();
-  }
+      try {
+        const agent = await getAgent(workspaceFolder.uri.fsPath);
+        // 注入文档内容作为上下文，引导 Agent 围绕该文档审阅（同任务 A 模式）
+        const chatInput = `[待审阅文档]\n${docText}\n[/待审阅文档]\n\n${REVIEW_INSTRUCTION}`;
+
+        let result = '';
+        let cancelled = false;
+        // 进度消息节流时间戳：流式 chunk 频繁，避免每次更新导致通知 UI 抖动
+        let lastReportAt = 0;
+        for await (const chunk of agent.chat(chatInput, controller.signal) as AsyncIterable<{
+          type: string;
+          content?: string;
+        }>) {
+          // 用户取消：内核 yield aborted 后流结束，此处同样收敛退出
+          if (chunk.type === 'aborted') {
+            cancelled = true;
+            break;
+          }
+          if (chunk.type === 'text' && chunk.content) {
+            result += chunk.content;
+            // 节流更新进度（≥500ms 才刷新一次）
+            const now = Date.now();
+            if (now - lastReportAt > 500) {
+              lastReportAt = now;
+              progress.report({ message: `已生成 ${result.length} 字符…` });
+            }
+          }
+        }
+
+        // 取消时不落结果文档（避免写出空/半截报告）
+        if (cancelled) {
+          void vscode.window.showInformationMessage('Memora 自洽检查已取消');
+          return;
+        }
+
+        // 结果写入新 .md 文档并打开（主动可见）
+        await writeReviewResult(doc, result);
+      } catch (err) {
+        // 取消导致的异常（部分 provider 以 AbortError 抛错）同样按取消处理
+        if (controller.signal.aborted) {
+          void vscode.window.showInformationMessage('Memora 自洽检查已取消');
+          return;
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        void vscode.window.showErrorMessage(`Memora 自洽检查失败：${msg}`);
+      }
+    },
+  );
 }
 
 /**
