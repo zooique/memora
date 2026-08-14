@@ -142,7 +142,11 @@ DeepSeek Harness（2026-08-13 开源，MIT）提出三大可借鉴点：
 
 - [x] 建议 A：`preExecutionCheck` 返回值扩展为 `{ skip, previousResult?, overrideArgs?, denied? }`，供宿主实现审批/审计/参数改写
   - **已落地（2026-08-15）**：三态返回收敛为 `PreExecutionResult` 接口（[types.ts](../../src/agent/types.ts)）；宿主回调经 [agent.ts](../../src/agent/agent.ts) 统一执行前检查点与内部幂等检查**组合**（先宿主审批 → 再幂等检查）；[loop.ts](../../src/agent/loop.ts) 消费三态——拒绝返回 `[ERR:TOOL:PERMISSION_DENIED]`（不可重试）、跳过返回 `previousResult`、放行使用 `overrideArgs` 改写参数。设计见 [agent-design-philosophy.md §7.2.1 工具执行的统一入口与执行前检查](../architecture/agent-design-philosophy.md)。
-- [ ] 若需"模型看到了什么"的可追溯，扩展 ITracer span 属性（attachedMemory / systemPromptHash），不入 sessionStore
-  - **设计意图已融合（2026-08-15）**：可追溯性边界（"模型看到了什么"由 ITracer 承载、不入 sessionStore）已在 [memory-as-summary.md §5.2.1 可追溯性边界](../architecture/memory-as-summary.md) 声明；**代码未落地**——按需扩展，非当前阻塞项。
+- [x] 若需"模型看到了什么"的可追溯，扩展 ITracer span 属性（attachedMemory / systemPromptHash），不入 sessionStore
+  - **已落地（2026-08-15）**：可追溯性边界（"模型看到了什么"由 ITracer 承载、不入 sessionStore）已在 [memory-as-summary.md §5.2.1 可追溯性边界](../architecture/memory-as-summary.md) 声明并实现：
+    - `utils/hash.ts` 新增 `sha256Fingerprint` 纯函数，并消除 [workProjection.ts](../../src/agent/managers/workProjection.ts) 的重复 hash 实现
+    - `llm.call` span 记录 `systemPromptHash`（[loop.ts](../../src/agent/loop.ts) LLM_CALL 埋点）
+    - `recall.recall` span 记录 `attachedMemoryCount` + `attachedMemoryFingerprint`（[loop.ts](../../src/agent/loop.ts) 记忆注入点埋点）
+    - 宿主未注入 Tracer（NOOP）时不计算指纹，保持零开销边界
 
 > 落地前需遵循项目既有流程：方案更新 → 补测试 → 测试回归 → 提交前审查。

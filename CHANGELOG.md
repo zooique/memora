@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+### Added（建议B落地："模型看到了什么"的指纹可追溯）
+
+基于 Harness 排雷评估（harness-borrowing-assessment 建议B），落地可观测性指纹埋点——记录"模型看到了什么"的指纹 hash，**不记录全量内容、不入 sessionStore**（memory-as-summary §5.2.1 可追溯性边界）。
+
+- **新增 `sha256Fingerprint`**：`src/utils/hash.ts` 通用 SHA-256 指纹纯函数，并复用于 `workProjection.ts`（消除重复 createHash 实现）
+- **`llm.call` span 补 `systemPromptHash`**：最终发给模型的全部 system 消息内容指纹（loop.ts LLM_CALL 埋点）
+- **`recall.recall` span 补 `attachedMemoryCount` / `attachedMemoryFingerprint`**：附着进上下文的记忆条数与 ID 集合指纹（loop.ts 记忆注入点埋点）
+- **零开销边界**：宿主未注入 Tracer（NOOP）时不计算指纹；span 属性由宿主自行采集/落盘/展示（机制/策略分离）
+
+> 非破坏性变更：仅新增 span 属性与工具函数，无公共 API 变更。
+
 ### Removed（洞察层移除，记忆收敛为 round-summary 单轨）
 
 基于"摘要即记忆"架构定案（memory-as-summary §七 最终形态），移除独立洞察提炼层——其能力被 round-summary 的 type 分类吸收，记忆收敛为单一存储层。同时移除用户画像层（已收敛为 `type=preference` 差异化召回）。

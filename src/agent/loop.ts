@@ -20,6 +20,7 @@ import { runGuardrails } from '@/agent/guardrail.js';
 import type { GuardrailUI } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isAbortError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
+import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
 import { logger } from '@/logging/logger.js';
@@ -1086,6 +1087,18 @@ export class AgentLoop {
     // 补充 span 属性：让宿主监控面板能按 token 消耗过滤
     llmSpan.setAttribute('inputTokens', this.contextManager.estimateTokens(safeMessages));
 
+    // 建议B落地："模型看到了什么"的系统提示指纹（memory-as-summary §5.2.1）
+    // 边界约束：
+    //   - 只记录指纹 hash，不记录全量内容——可观测性职责（ITracer），不入 sessionStore
+    //   - 仅当宿主注入了真实 Tracer（非 NOOP）时计算，避免热路径无谓哈希开销
+    if (this.tracer !== NOOP_TRACER) {
+      const systemPrompt = safeMessages
+        .filter((m) => m.role === 'system')
+        .map((m) => m.content)
+        .join('\n');
+      llmSpan.setAttribute('systemPromptHash', sha256Fingerprint(systemPrompt));
+    }
+
     for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {
       // 每次重试前检查是否已被取消（用户点击停止）
       if (signal?.aborted) {
@@ -1839,6 +1852,14 @@ export class AgentLoop {
       this.injectRecallAsSystem(recalledMemories);
     }
     recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
+    // 建议B落地：记录"附着进上下文"的记忆条数与 ID 集合指纹（memory-as-summary §5.2.1）
+    // 边界约束：只记录 count + 指纹，不记录记忆内容——可观测性职责（ITracer），不入 sessionStore；
+    // 仅当宿主注入真实 Tracer 时计算，NOOP 下跳过无谓开销
+    if (this.tracer !== NOOP_TRACER && recalledMemories?.length) {
+      recallSpan.setAttribute('attachedMemoryCount', recalledMemories.length);
+      const memoryIds = recalledMemories.map((m) => m.id).join(',');
+      recallSpan.setAttribute('attachedMemoryFingerprint', sha256Fingerprint(memoryIds));
+    }
     recallSpan.end();
     this.metrics.recallTotalCount++;
     if (recalledMemories && recalledMemories.length > 0) {

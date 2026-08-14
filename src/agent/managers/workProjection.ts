@@ -20,13 +20,13 @@
  *   本模块位于 agent/ 层（非 memory/ 层），因为它依赖 LlmProvider 做内容生成。
  *   memory/ 层只做存储和召回，不做 LLM 调用（EmbeddingService 接口注入除外）。
  */
-import { createHash } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
+import { sha256Fingerprint } from '@/utils/hash.js';
 import { getBaseName } from '@/utils/path.js';
 import { toError } from '@/utils/toError.js';
 import { parseLlmJson } from '@/utils/json.js';
@@ -273,7 +273,8 @@ export class WorkProjectionManager {
    * 计算文件 SHA-256 hash
    */
   private computeHash(content: string): string {
-    return createHash('sha256').update(content, 'utf-8').digest('hex');
+    // 复用 utils/hash.ts 的通用指纹函数，消除重复实现
+    return sha256Fingerprint(content);
   }
 
   /**

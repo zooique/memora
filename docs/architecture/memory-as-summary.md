@@ -306,7 +306,7 @@ LLM 获得完整上下文
 - **打标而非硬删**：保留数据完整性，防止误删可通过恢复标记找回。
 - **`isModified` 与 `isTraceable` 独立**：修改摘要不代表原始对话不存在，两者不应耦合。
 
-#### 5.2.1 可追溯性边界（2026-08-14 融合）
+#### 5.2.1 可追溯性边界（2026-08-14 融合 · 2026-08-15 建议B落地）
 
 > **设计说明**：明确 memora 可追溯性的**边界**——它服务于"对话内容"的可回溯，不承诺"模型每次看到的完整上下文"的可重建。这是从 DeepSeek Harness"模型可见即已记录"（append-only 事件溯源）汲取思想后收敛的结论：**抄思想（可追溯性目标），不抄机制（事件溯源存储）**。
 
@@ -317,10 +317,15 @@ LLM 获得完整上下文
 
 **明确不追溯（边界声明）**：
 
-- **"模型看到了什么"（每次请求的完整上下文：系统提示、召回摘要、装配结果）** 不进入追溯范围。它是**可观测性诉求**，而非记忆诉求——由 **ITracer span** 承载（如记录召回摘要 hash / 系统提示 hash / 装配快照），**不入 sessionStore**。理由：
+- **"模型看到了什么"（每次请求的完整上下文：系统提示、召回摘要、装配结果）** 不进入追溯范围。它是**可观测性诉求**，而非记忆诉求——由 **ITracer span** 承载（已落地：`llm.call` span 记录 `systemPromptHash`，`recall.recall` span 记录 `attachedMemoryCount` + `attachedMemoryFingerprint`），**不入 sessionStore**。理由：
   1. **哲学一致**：架构哲学 §8"自然遗忘优于完美记忆"——记录"模型看到了什么"的全量快照会导致存储无界膨胀，与 memora 轻量定位冲突。
   2. **职责分离**：对话记录是"展示 + 溯源"（记忆系统职责），上下文快照是"调试/评估"（可观测性职责，ITracer），两者不混层。
   3. **投入产出**：memora 已有关键链路（摘要 → 原始对话 → trace_summary）覆盖可追溯的绝大部分价值；"模型看到了什么"仅在调试/评估场景需要，走 ITracer 即有界、可选。
+
+**建议B落地说明（2026-08-15）**：上述 ITracer 承载已实现，机制/策略分离——
+- **系统提示指纹**：`llm.call` span 的 `systemPromptHash` = 最终发给模型的全部 system 消息内容（persona + 规则 + 技能 + 召回注入）的 SHA-256 指纹，由 [utils/hash.ts](../../src/utils/hash.ts) 的 `sha256Fingerprint` 纯函数生成（同时复用于 [workProjection.ts](../../src/agent/managers/workProjection.ts) 的文件 hash，消除重复实现）。
+- **附着记忆指纹**：`recall.recall` span 的 `attachedMemoryCount` / `attachedMemoryFingerprint` = 附着进上下文的记忆条数 + 记忆 ID 集合指纹（[loop.ts](../../src/agent/loop.ts) 注入点埋点）。
+- **边界保持**：只记录 hash、不记录内容；宿主未注入 Tracer（NOOP）时不计算指纹（零开销边界）；span 属性由宿主自行采集/落盘/展示，内核不新增任何存储。
 
 **与 §5.1 删除规则的衔接**：`isTraceable = false` 语义保持——对话记录删除时，摘要仅标记不可溯源，不因"可追溯性目标"而承诺永不删除。**memora 的追溯是软追溯（允许失效降级），不是 Harness 式的强事件溯源（永不删除）**——这是有意取舍，非缺陷。
 

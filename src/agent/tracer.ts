@@ -138,6 +138,32 @@ export const TRACE_SPANS = {
   GUARDRAIL_OUTPUT: 'guardrail.output',
 } as const;
 
+/**
+ * Span 属性约定（宿主可据此构建监控/调试面板）
+ *
+ * 各 span 承载的关键属性（键 → 含义）：
+ *   - llm.call（LLM_CALL）
+ *       model            → 实际调用的模型名
+ *       messageCount     → 发送的消息条数
+ *       iteration        → 重试轮次
+ *       inputTokens      → 输入 token 估算值
+ *       systemPromptHash → 系统提示内容指纹（建议B："模型看到了什么"可追溯）
+ *   - recall.recall（RECALL，记忆注入点）
+ *       recallCount                → 召回注入条数
+ *       hit                        → 是否命中
+ *       attachedMemoryCount        → 附着进上下文的记忆条数（建议B）
+ *       attachedMemoryFingerprint  → 附着记忆 ID 集合指纹（建议B）
+ *   - recall.actual（RECALL_ACTUAL，实际召回函数）
+ *       queryLength / hasVectorStore / memoryRecallMode / resultCount
+ *   - guardrail.input / guardrail.output（GUARDRAIL_INPUT / GUARDRAIL_OUTPUT）
+ *       blocked / warned
+ *
+ * 边界声明：指纹类属性（systemPromptHash / attachedMemoryFingerprint）只记录 hash，
+ * 不记录内容——"模型看到了什么"属可观测性诉求（ITracer 承载），不入 sessionStore（记忆系统职责）。
+ * 内核只负责埋点产生数据，宿主负责采集、落盘与展示（机制/策略分离）。
+ * 详见 docs/architecture/memory-as-summary.md §5.2.1 可追溯性边界。
+ */
+
 // ─── 运行时指标快照类型（可观测性增强）────────
 
 /**

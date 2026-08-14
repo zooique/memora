@@ -7,6 +7,8 @@ import { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
+import { TRACE_SPANS, type ISpan, type ITracer } from '@/agent/tracer.js';
+import * as hashModule from '@/utils/hash.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -1858,5 +1860,101 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(false);
     // 最后是 done（正常结束）
     expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：建议B埋点（"模型看到了什么"可追溯）
+// 覆盖：LLM_CALL span 记录 systemPromptHash / RECALL span 记录 attachedMemory 指纹 /
+//       NOOP tracer 下跳过指纹计算（零开销边界）
+// 设计边界（memory-as-summary §5.2.1）：
+//   - 只记录指纹 hash，不记录全量内容——可观测性职责（ITracer），不入 sessionStore
+//   - 宿主未注入 Tracer（NOOP）时不做额外工作
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 捕获型 Tracer：按 span 名称记录每次 startSpan 的属性，
+ * 供断言"模型看到了什么"的指纹埋点是否落位。
+ */
+class CapturingTracer implements ITracer {
+  /** span 名称 → 属性记录列表（含 startSpan 初始属性与后续 setAttribute） */
+  private readonly records = new Map<string, Record<string, string | number | boolean>[]>();
+
+  startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
+    const list = this.records.get(name) ?? [];
+    const attrs: Record<string, string | number | boolean> = { ...attributes };
+    list.push(attrs);
+    this.records.set(name, list);
+    return {
+      setAttribute: (key, value) => {
+        attrs[key] = value;
+      },
+      end: () => {},
+      recordException: () => {},
+    };
+  }
+
+  /** 取指定 span 名称第 index 个实例的属性 */
+  attrs(name: string, index = 0): Record<string, string | number | boolean> | undefined {
+    return this.records.get(name)?.[index];
+  }
+}
+
+describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () => {
+  it('注入真实 Tracer 时，LLM_CALL span 记录 systemPromptHash 指纹', async () => {
+    const tracer = new CapturingTracer();
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复内容' }]),
+      bootstrapMemories: [makeMemory({ id: 'mem:base', name: '人格', content: '友好严谨' })],
+      toolExecutor: vi.fn(),
+      tracer,
+    });
+
+    for await (const _ of loop.processUserInput('你好')) {
+      void _;
+    }
+
+    // llm.call span 应带系统提示指纹（64 位 hex）
+    const llmAttrs = tracer.attrs(TRACE_SPANS.LLM_CALL);
+    expect(llmAttrs?.['systemPromptHash']).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('注入真实 Tracer 且传入 recalledMemories 时，RECALL span 记录条数与 ID 集合指纹', async () => {
+    const tracer = new CapturingTracer();
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复内容' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      tracer,
+    });
+
+    const mem1 = makeMemory({ id: 'mem:r1', content: '记忆A' });
+    const mem2 = makeMemory({ id: 'mem:r2', content: '记忆B' });
+    for await (const _ of loop.processUserInput('你好', [mem1, mem2])) {
+      void _;
+    }
+
+    // recall.recall span 应带附着记忆条数与 ID 集合指纹
+    const recallAttrs = tracer.attrs(TRACE_SPANS.RECALL);
+    expect(recallAttrs?.['attachedMemoryCount']).toBe(2);
+    expect(recallAttrs?.['attachedMemoryFingerprint']).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('未注入 Tracer（默认 NOOP）时不计算指纹，保持零开销边界', async () => {
+    // spy 验证 NOOP 下 sha256Fingerprint 不被调用（宿主未启用观测性 → 不做额外工作）
+    const hashSpy = vi.spyOn(hashModule, 'sha256Fingerprint');
+
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复内容' }]),
+      bootstrapMemories: [makeMemory({ id: 'mem:base', name: '人格', content: '友好严谨' })],
+      toolExecutor: vi.fn(),
+    });
+
+    for await (const _ of loop.processUserInput('你好', [makeMemory({ id: 'mem:r1', content: '记忆A' })])) {
+      void _;
+    }
+
+    expect(hashSpy).not.toHaveBeenCalled();
+    hashSpy.mockRestore();
   });
 });
