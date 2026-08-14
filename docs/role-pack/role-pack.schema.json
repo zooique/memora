@@ -194,10 +194,10 @@
 
     "skills": {
       "type": "array",
-      "description": "内嵌技能注册（对象数组，支持多个添加）。每项声明 file（生态指针）或 capability（能力声明）至少其一，可选说明。",
+      "description": "内嵌技能注册（对象数组，支持多个添加）。每项声明 file（生态指针）或 capability（能力声明）至少其一（可同时声明），可选说明。",
       "items": {
         "type": "object",
-        "oneOf": [
+        "anyOf": [
           { "required": ["file"] },
           { "required": ["capability"] }
         ],
