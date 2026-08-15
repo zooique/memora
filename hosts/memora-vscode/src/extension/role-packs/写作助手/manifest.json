@@ -1,5 +1,6 @@
 {
   "name": "写作助手",
+  "displayName": "写作助手",
   "formatVersion": "1.0.0",
   "description": "专业写作助手，擅长各类文体创作与润色，支持联网搜索查资料、文件读写",
   "version": "1.0.0",
