@@ -258,6 +258,28 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
+  /* 角色下拉项：名称 + 描述副标题两行结构（2026-08-15 UI 查看能力）
+   * 名称主行 + 描述灰色小字副行，让用户读懂每个角色包定位再决定切换 */
+  .role-picker .dd-item-name {
+    display: block;
+    color: inherit;
+    font-weight: inherit;
+  }
+  .role-picker .dd-item-desc {
+    display: block;
+    margin-top: var(--sp-0, 2px);
+    font-size: var(--font-sm, 11px);
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--text-secondary, #9aa0a6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px; /* 限制副标题宽度，超长省略 */
+  }
+  .role-picker .treedd__item.is-active .dd-item-desc {
+    color: var(--text-secondary, #9aa0a6); /* 激活项描述保持次级色，不随主行变色 */
+  }
   .treedd__empty {
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     font-size: var(--font-md, 12px);

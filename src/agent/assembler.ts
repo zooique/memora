@@ -94,6 +94,7 @@ type AssembleRuntimeParams = Pick<
   | 'projectPath'
   | 'configDir'
   | 'personaName'
+  | 'activeRolePack'
   | 'maxContextTokens'
   | 'sessionStore'
   | 'tracer'
@@ -340,6 +341,7 @@ export async function assembleComponents(
     projectPath,
     configDir,
     personaName,
+    activeRolePack,
     maxContextTokens,
     sessionStore,
     tracer,
@@ -381,8 +383,9 @@ export async function assembleComponents(
 
   // M1 角色包清单：创建角色包管理器，装配层自此只认"清单"不认"来源"
   // 当前角色包文件为可选，不存在时降级为 PersonaManager + SkillManager 联合
+  // activeRolePack：宿主注入持久化的用户角色包选择，优先激活；未配置/包不存在回退首个
   const rolePackManager = new RolePackManager(configDir);
-  await rolePackManager.load();
+  await rolePackManager.load(activeRolePack);
 
   // 激活角色包的 L1 persona（角色包优先于 persona；无激活角色包时为空串）
   const rolePackPrompt = rolePackManager.buildSystemPrompt();

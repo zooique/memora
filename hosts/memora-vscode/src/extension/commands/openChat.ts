@@ -15,8 +15,8 @@ import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 /**
  * 内置角色包名（面板徽章展示当前激活角色，在装配处声明，主动可见）
  *
- * 插件出厂携带唯一内置角色包 doc-review（文档打磨定位）；
- * 后续支持导入角色包时，此处由用户选择的角色包名动态替换。
+ * 兜底值：装配后以 agent 实际激活角色为准（由持久化的用户选择或内核默认首个决定），
+ * 仅当 agent 未装配/无角色包时回退此默认值。
  */
 const BUILTIN_ROLE_PACK = 'doc-review';
 
@@ -57,7 +57,8 @@ export async function openChatCommand(
     chatProvider.setAgent(agent);
     chatProvider.setDocContext(readActiveMarkdown());
     // 声明当前激活角色包 → toolbar 角色徽章（定位由角色包承载，主动可见）
-    chatProvider.setRolePack(BUILTIN_ROLE_PACK);
+    // 取 agent 实际激活角色（持久化用户选择 / 内核默认首个），未装配时回退默认
+    chatProvider.setRolePack(agent.rolePackManager?.activeName ?? BUILTIN_ROLE_PACK);
     // 聚焦侧边栏视图
     void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
   } catch (err) {

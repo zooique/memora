@@ -80,7 +80,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
   // 当前角色包列表 + 激活名（由 chat_role_packs 消息填充，身份条切换下拉数据源）
-  let currentRolePacks: { name: string; displayName: string }[] = [];
+  // description 为角色包定位描述（manifest.description，可选）——下拉副标题展示用
+  let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
   let currentActiveRolePack: string | undefined;
 
   // 思考折叠块（ui-redesign.md §7.1）：生成中/自审查的过程性反馈，不落库不重放
@@ -267,7 +268,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
       btn.setAttribute('role', 'menuitem');
       btn.setAttribute('data-treedd-id', p.name);
-      btn.textContent = p.displayName || p.name;
+      // 名称 + 可选描述副标题（textContent 构建防注入；无描述时仅显示名称）
+      const nameEl = document.createElement('span');
+      nameEl.className = 'dd-item-name';
+      nameEl.textContent = p.displayName || p.name;
+      btn.appendChild(nameEl);
+      if (p.description) {
+        const descEl = document.createElement('span');
+        descEl.className = 'dd-item-desc';
+        descEl.textContent = p.description;
+        btn.appendChild(descEl);
+      }
       rolePickerMenu.appendChild(btn);
     });
     // 触发器显示当前激活角色显示名（兼容旧字段：currentRoleName 与列表同步）

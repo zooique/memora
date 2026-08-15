@@ -127,6 +127,32 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(items[1]?.classList.contains('is-active')).toBe(true);
   });
 
+  it('chat_role_packs 携带 description 时渲染为下拉副标题（2026-08-15 UI 查看能力）', () => {
+    mountChatView();
+    const identityBar = document.getElementById('identityBar') as HTMLElement;
+    const roleMenu = identityBar.querySelector<HTMLElement>('.role-picker .treedd__menu');
+
+    dispatch({
+      type: 'chat_role_packs',
+      packs: [
+        { name: 'doc-review', displayName: '文档打磨', description: '技术文档写作与打磨助手' },
+        { name: '写作助手', displayName: '写作助手' }, // 无 description：验证旧包容错
+      ],
+      activeName: 'doc-review',
+    });
+
+    // 名称主行 + 描述副行分离（textContent 含两者，结构为独立子元素）
+    const items = Array.from(roleMenu?.querySelectorAll('.treedd__item') ?? []);
+    expect(items).toHaveLength(2);
+    const first = items[0] as HTMLElement;
+    expect(first.querySelector('.dd-item-name')?.textContent).toBe('文档打磨');
+    expect(first.querySelector('.dd-item-desc')?.textContent).toBe('技术文档写作与打磨助手');
+    // 无 description 的项仅渲染名称，不产生副标题（容错旧包）
+    const second = items[1] as HTMLElement;
+    expect(second.querySelector('.dd-item-name')?.textContent).toBe('写作助手');
+    expect(second.querySelector('.dd-item-desc')).toBeNull();
+  });
+
   it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;

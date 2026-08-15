@@ -227,11 +227,13 @@ export type ExtensionToWebviewMessage =
    * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）
    *
    * 由 host 在就绪回放时推送：全部角色包（displayName 供下拉展示）+ 当前激活名。
+   * description 为角色包定位描述（manifest.description，可选）——供下拉列表展示副标题，
+   * 让用户"查看内置角色包"时能读懂每个包的定位再决定切换（2026-08-15 UI 查看能力）。
    * webview 据此渲染身份条角色选择器选项；activeName 变化时高亮当前项。
    */
   | {
       type: 'chat_role_packs';
-      packs: { name: string; displayName: string }[];
+      packs: { name: string; displayName: string; description?: string }[];
       activeName: string;
     }
   // ─── 大模型配置面板消息 ───

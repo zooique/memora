@@ -727,6 +727,13 @@ export interface AgentOptions {
   providerRouter?: ProviderRouter;
   /** 配置目录（personas/rules/skills） */
   configDir?: string;
+  /**
+   * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化）
+   *
+   * 宿主注入用户上次选择/持久化的角色包名，内核 init 时优先激活该包；
+   * 未配置或包不存在时回退"默认激活首个角色包"（与现状一致）。
+   */
+  activeRolePack?: string;
   /** 记忆数据目录（由宿主显式注入） */
   dataDir?: string;
   /** 项目注册表目录（默认与 dataDir 相同）。设为用户级路径可避免每项目重复存储 */

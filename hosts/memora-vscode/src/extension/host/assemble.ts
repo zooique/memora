@@ -66,6 +66,13 @@ export interface AssembleOptions {
    * 会导致「UI 加载的会话记录不完整 / 互相覆盖丢消息」（无法加载会话记录根因）。
    */
   sessionStore?: ISessionStore;
+  /**
+   * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化）
+   *
+   * 宿主从 vscode workspaceState 读取用户上次选择的角色包注入，
+   * Agent init 时优先激活；未配置/包不存在回退首个角色包。
+   */
+  activeRolePack?: string;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -91,7 +98,7 @@ function resolveConfigDir(): string {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env } = options;
+  const { projectPath, providerStore, sessionStore, env, activeRolePack } = options;
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
@@ -115,8 +122,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 记忆数据目录 = 工作区 .memora（注册表/锁文件落盘处，与存储同目录）
     dataDir: join(projectPath, '.memora'),
     // 配置目录 = 插件内置配置（role-packs/doc-review 角色包承载文档打磨定位；
-    // 内核 init 自动扫描 <configDir>/role-packs/ 并激活首个角色包）
+    // 内核 init 自动扫描 <configDir>/role-packs/ 并激活 activeRolePack 或首个角色包）
     configDir: resolveConfigDir(),
+    // 启动时激活的角色包（用户上次选择，由 extension 从 workspaceState 注入持久化值）
+    activeRolePack,
     provider,
     storage,
     sessionStore: store,

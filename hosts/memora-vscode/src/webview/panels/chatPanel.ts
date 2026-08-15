@@ -32,6 +32,14 @@ import { stripDocContextPrefix } from '../helpers/docContext.js';
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
 
+/**
+ * 激活角色包的持久化键（vscode workspaceState，2026-08-15 角色包状态持久化）
+ *
+ * 与 extension.ts 中 ACTIVE_ROLE_PACK_KEY 保持同值。
+ * 用户切换角色包时写入，重启后恢复用户选择。
+ */
+const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
+
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（清空会话）。
  *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5） */
 type HostSessionStore = ISessionStore & {
@@ -63,6 +71,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _agentResolving = false;
   /** 当前激活角色包（对话面板承载的定位角色，toolbar 徽章展示；装配时由 extension 注入） */
   private _activeRolePack: string | undefined;
+  /**
+   * vscode 工作区状态（2026-08-15 角色包状态持久化）
+   *
+   * 由 extension 注入（setWorkspaceState）。角色包切换成功后写入，重启后恢复用户选择。
+   * 未注入时静默跳过（降级为不持久化，保持向后兼容）。
+   */
+  private _workspaceState: vscode.Memento | undefined;
   /**
    * 当前查看的历史会话日期（YYYY-MM-DD，toolbar 历史下拉框）
    *
@@ -101,6 +116,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
   public setAgentFactory(getAgent: (projectPath: string) => Promise<Agent>): void {
     this._getAgent = getAgent;
+  }
+
+  /**
+   * 注入 vscode 工作区状态（2026-08-15 角色包状态持久化）
+   *
+   * 由 extension.ts 注入 context.workspaceState，供角色包切换时持久化激活态。
+   *
+   * @param workspaceState vscode 工作区状态 Memento
+   */
+  public setWorkspaceState(workspaceState: vscode.Memento): void {
+    this._workspaceState = workspaceState;
   }
 
   /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
@@ -468,6 +494,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 从内核 RolePackManager 读取全部角色包（listMeta）+ 当前激活名（activeName），
    * 推送为 chat_role_packs 协议消息。agent 未装配或无角色包时列表为空（webview 隐藏切换入口）。
+   * description 取自 manifest.description（listMeta 已含，零额外读取），供下拉展示副标题。
    */
   private pushRolePacks(): void {
     const rpm = this._agent?.rolePackManager;
@@ -475,7 +502,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const packs = rpm
       .listMeta()
       .filter((p) => p.name) // 过滤无 name 的异常包
-      .map((p) => ({ name: p.name, displayName: rolePackDisplayName(p.name) }));
+      .map((p) => ({
+        name: p.name,
+        displayName: rolePackDisplayName(p.name),
+        description: p.description ?? '', // 角色包定位描述（manifest.description，可选）
+      }));
     if (packs.length === 0) return;
     // activeName 缺省时回退首个（与内核「默认激活首个」一致）
     const activeName = rpm.activeName ?? packs[0]!.name;
@@ -489,6 +520,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （A1 已绑定转发 chat_role_pack），UI 身份条 + AI 消息标签即时刷新。切换失败（角色
    * 不存在）时仅低扰提示，不误导用户。
    *
+   * 切换成功且已注入 workspaceState 时，将激活角色包写入持久化（重启后恢复用户选择，
+   * 2026-08-15 角色包状态持久化）；未注入则静默跳过（降级不持久化）。
+   *
    * @param name 用户选中的角色包名
    */
   private handleSetRolePack(name: string): void {
@@ -497,7 +531,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const ok = rpm.activate(name);
     // 刷新角色包列表（active 高亮变化；activate 成功时 personaSwitched 会刷新身份条文案）
     this.pushRolePacks();
-    if (!ok) {
+    if (ok) {
+      // 持久化激活角色包（用户选择的工作区级偏好）
+      this._workspaceState?.update(ACTIVE_ROLE_PACK_KEY, name);
+    } else {
       this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
     }
   }

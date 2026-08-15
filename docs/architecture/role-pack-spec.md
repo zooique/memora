@@ -367,6 +367,41 @@ export interface IMcpTransport {
 
 > 标准优先于实现（P0 键集对齐，2026-08-12）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 
+### 9.1 来源边界声明（2026-08-15 审查定案）
+
+> **问题**：角色包来源区分（内置 vs 插件贡献 vs 未来用户自定义）应该由谁承担？
+> **结论**：**内核不感知来源语义，多来源由宿主以多实例（multi-instance）承载**。此声明是"内核-宿主"职责边界的一部分，防止来源区分逻辑反向渗入内核。
+
+**职责划分**：
+
+| 职责 | 归属 | 说明 |
+|------|------|------|
+| 装载 `role-packs/` + 激活 | 内核（`RolePackManager`） | 构造入参 `configDir`，扫描 `<configDir>/role-packs/`；保持最小单元不变 |
+| 来源是什么、有几个来源 | 宿主 | 决定 configDir / 实例个数（每个来源一个 `RolePackManager` 实例） |
+| 来源分组展示、只读标记 | 宿主 | UI 策略（如"插件 A 贡献的角色包"分组） |
+| 用户自定义（未来） | 宿主 | 新增一个实例指向用户目录 |
+
+**关键事实（为什么内核不需要来源字段）**：
+
+1. **来源知识天然在宿主侧**：`configDir` 由宿主传入（如 memora-vscode `resolveConfigDir()` 返回 `dist/extension/`），宿主 100% 知道自己装了哪些角色包、来自哪个插件；
+2. **激活的角色包也是宿主指定**：宿主通过 `load(activePack)` / `activate(name)` 决定当前激活哪个包；
+3. **内核是"装载 + 激活"执行器**：不拥有来源概念。若内核加 `origin` 字段 = 复述宿主已知信息，形成数据冗余 + 边界错位。
+
+**未来多来源形态（不预埋，等到第二来源出现再落地）**：
+
+```
+插件 A → new RolePackManager(configDirA)   // role-packs/a/*
+插件 B → new RolePackManager(configDirB)   // role-packs/b/*
+用户   → new RolePackManager(userDir)      // 未来用户自定义
+```
+
+- **来源语义 = 哪个实例**：宿主聚合各实例 `listMeta()` 展示，按实例分组天然完成"哪个插件提供的"；
+- **命名冲突天然隔离**：同名角色包分属不同实例不冲突；
+- **只读/可编辑 = 宿主对实例的策略**：插件实例只读，用户实例可写；
+- **零内核改动**：内核保持"装载+激活"最小单元，不感知来源。
+
+**伏笔的正确形态**：不预埋字段，而是**明确边界让未来自然生长**（单一真理源）。未来开放用户自定义时，宿主只需：新目录放用户角色包 → 新建 `RolePackManager` 实例 → 聚合两实例列表展示。内核一行不改。
+
 ---
 
 ## 十、与行业标准的关系（Agent Skills / Agent Plugins）

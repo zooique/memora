@@ -234,6 +234,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       storage: opts.storage,
       sessionStore: opts.sessionStore,
       configDir: opts.configDir,
+      // 启动时激活的角色包名（宿主注入持久化值，init 时优先激活）
+      activeRolePack: opts.activeRolePack,
       tracer: opts.tracer,
       messages: opts.messages,
       enableContextSummary: opts.enableContextSummary ?? true,
@@ -1932,6 +1934,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       projectPath: this.#config.projectPath,
       configDir: this.#config.configDir,
       personaName: this.#config.personaName,
+      activeRolePack: this.#config.activeRolePack,
       maxContextTokens: this.#config.maxContextTokens,
       sessionStore: this.#config.sessionStore,
       tracer: this.#config.tracer,
