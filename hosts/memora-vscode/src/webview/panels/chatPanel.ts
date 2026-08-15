@@ -785,13 +785,13 @@ function buildHtml(scriptUri: vscode.Uri): string {
     ${buildDropdownHtml([], { extraClass: 'history-picker treedd--capsule', onSelect: '__historyPickerOnSelect' })}
     ${buildDropdownHtml([{ id: 'clear', label: '清空对话', danger: true }])}
   </div>
-  <div id="memoryBar" class="memory-bar" hidden></div>
-  <!-- 提示条（错误级 / 低扰 info）：不插入消息区，独立承载会话异常等通知 -->
-  <div id="noticeBar" class="notice-bar" hidden></div>
-  <!-- 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：默认折叠，收到 metrics 后更新内容 -->
-  <details id="metricsBox" class="metrics-box" hidden>
-    <summary>活动指标</summary>
-    <div id="metricsContent" class="metrics-content"></div>
+  <!-- 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
+       原 memoryBar + noticeBar + metricsBox 三条并列收敛为单一通道，SSOT 不互相覆盖 -->
+  <div id="activityBar" class="activity-bar" hidden></div>
+  <details id="activityDetail" class="activity-detail" hidden>
+    <summary>活动详情</summary>
+    <div id="activityList" class="activity-list"></div>
+    <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
   <div id="messages">
     <div id="emptyState" class="empty-state" hidden>开始打磨你的设计文档<br>在下方输入你的想法，或粘贴要打磨的文档内容</div>

@@ -253,11 +253,13 @@ export const chatStyles = `
   }
   .role-pack-badge[hidden] { display: none; }
 
-  /* 提示条（notice）：会话异常等错误级反馈独立于此条展示，不插入消息区，
-   * 不污染对话历史（排雷雷-4 修正：错误级与 memoryBar 低扰语义分离）。
-   * 分级：error 醒目（inputValidation error 色）、info 低扰（同 memoryBar 语义）。
+  /* ============ Components：活动状态区 · 主状态条（P0 错误 / P1 低扰） ============ */
+  /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
+   * 不污染对话历史（排雷雷-4 修正）。错误显示期间低扰不打断（优先级保护）；被覆盖的
+   * 提示进「活动详情」历史回溯（见下方 .activity-detail）。
+   * 分级：error 醒目（inputValidation error 色）、info 低扰（同记忆语义）。
    * [hidden] 覆盖：display:flex 会覆盖 HTML hidden 属性，需显式恢复。 */
-  .notice-bar {
+  .activity-bar {
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
@@ -267,12 +269,12 @@ export const chatStyles = `
     flex-shrink: 0;
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  .notice-bar[hidden] { display: none; }
-  .notice-bar.info {
+  .activity-bar[hidden] { display: none; }
+  .activity-bar.info {
     color: var(--text-secondary, #9aa0a6);
     background: var(--feedback-info-bg);
   }
-  .notice-bar.error {
+  .activity-bar.error {
     color: var(--feedback-error-fg);
     background: var(--feedback-error-bg);
   }
@@ -299,31 +301,35 @@ export const chatStyles = `
     50% { opacity: 0.35; }
   }
 
-  /* ============ Components：记忆条 / 主动提问条 ============ */
-  /* 记忆条（想起/已沉淀） */
-  .memory-bar {
-    padding: var(--sp-1, 4px) var(--sp-5, 12px); font-size: var(--font-md, 12px);
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--feedback-info-bg);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    flex-shrink: 0;
-  }
-  /* 活动指标折叠区（P2：§13.x 透明面板 + §5.2.1 指纹可见） */
-  .metrics-box {
+  /* ============ Components：活动状态区 · 详情折叠（历史 + 指标） ============ */
+  /* 活动详情折叠区：历史记录（error 标红 / info 灰显，带时间戳）+ 指标块。
+   * 被主状态条覆盖的提示不丢失，全部在此回溯（有界 MAX_ACTIVITY_HISTORY 条）。 */
+  .activity-detail {
     margin: var(--sp-3, 8px) var(--sp-5, 12px) 0; font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius, 6px);
     flex-shrink: 0;
   }
-  .metrics-box summary {
+  .activity-detail summary {
     cursor: pointer; padding: var(--sp-2, 6px) var(--sp-3, 8px); user-select: none;
     outline: none; border-radius: inherit;
   }
-  .metrics-box summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .metrics-content {
+  .activity-detail summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .activity-list { padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); }
+  .activity-list__row {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px);
+    padding: var(--sp-1, 4px) 0; line-height: 1.6;
+  }
+  .activity-list__row.error { color: var(--feedback-error-fg); }
+  .activity-list__time {
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    flex-shrink: 0;
+  }
+  .activity-metrics {
     padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); line-height: 1.7;
     white-space: pre-wrap; word-break: break-all;
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
 
   /* 主动提问条 */

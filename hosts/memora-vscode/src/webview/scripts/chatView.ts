@@ -38,8 +38,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const emptyState = document.getElementById('emptyState') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
-  const memoryBar = document.getElementById('memoryBar') as HTMLElement;
-  const noticeBar = document.getElementById('noticeBar') as HTMLElement;
+  // 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
+  const activityBar = document.getElementById('activityBar') as HTMLElement;
+  const activityDetail = document.getElementById('activityDetail') as HTMLElement;
+  const activityList = document.getElementById('activityList') as HTMLElement;
+  const activityMetrics = document.getElementById('activityMetrics') as HTMLElement;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
   const clarifyBar = document.getElementById('clarifyBar') as HTMLElement;
   const clarifyText = document.getElementById('clarifyText') as HTMLElement;
@@ -236,38 +239,82 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     scrollToBottom(messages);
   }
 
-  let memoryTimer: number | null = null;
-  function showMemory(text: string): void {
-    memoryBar.textContent = text;
-    memoryBar.hidden = false;
-    if (memoryTimer) window.clearTimeout(memoryTimer);
-    memoryTimer = window.setTimeout(() => {
-      memoryBar.hidden = true;
-    }, 2500);
+  // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
+  // 单一主状态条（#activityBar）同时只显示一条；被覆盖的提示不丢失，
+  // 全部进「▾ 活动详情」历史（最近 MAX_ACTIVITY_HISTORY 条，带时间戳）。
+  // 优先级策略：P0 错误显示期间，P1/P2 不打断它（错误优先保护）；P2 指标常驻详情。
+
+  /** 详情历史最大条数（有界，防长期使用累积） */
+  const MAX_ACTIVITY_HISTORY = 20;
+  /** 活动历史记录：level=error 时标红、info 时灰显；仅用于详情回溯，不含指标 */
+  interface ActivityRecord {
+    level: 'error' | 'info';
+    text: string;
+    ts: string;
+  }
+  const activityHistory: ActivityRecord[] = [];
+
+  let activityTimer: number | null = null;
+
+  /** 渲染「活动详情」列表（历史 + 指标），收到任何活动即显示详情折叠区 */
+  function renderActivityDetail(): void {
+    // 历史列表：textContent 构建防注入（全部来自内核/宿主文案或用户输入）
+    activityList.textContent = '';
+    for (const r of activityHistory) {
+      const row = document.createElement('div');
+      row.className = 'activity-list__row ' + r.level;
+      const text = document.createElement('span');
+      text.className = 'activity-list__text';
+      text.textContent = r.text;
+      const time = document.createElement('span');
+      time.className = 'activity-list__time';
+      time.textContent = r.ts;
+      row.appendChild(text);
+      row.appendChild(time);
+      activityList.appendChild(row);
+    }
+    // 详情折叠区有内容即显示（含指标）；无历史但仅有指标时也显示
+    activityDetail.hidden = activityHistory.length === 0 && activityMetrics.hidden;
   }
 
-  // 提示条（错误级 / 低扰 info）：textContent 赋值防注入；
-  // 分级停留——error 醒目且停留更久，info 低扰短暂显示（对齐排雷雷-4 语义分离）
-  let noticeTimer: number | null = null;
-  function showNotice(level: 'info' | 'error', message: string): void {
-    noticeBar.className = 'notice-bar ' + level;
-    noticeBar.textContent = message;
-    noticeBar.hidden = false;
-    if (noticeTimer) window.clearTimeout(noticeTimer);
-    noticeTimer = window.setTimeout(() => {
-      noticeBar.hidden = true;
+  /**
+   * 显示主状态条（P0 错误 / P1 低扰）
+   *
+   * 优先级：P0 显示期间 P1 不覆盖（错误优先保护，P1 仅记历史）；新 P0 覆盖旧 P0。
+   * 停留时长按档位分级——error 醒目停留更久，info 低扰短暂（对齐排雷雷-4 语义分离）。
+   */
+  function showActivity(level: 'error' | 'info', text: string): void {
+    // 全部活动先入历史（被覆盖的提示不丢失，详情可回溯）
+    const record: ActivityRecord = {
+      level,
+      text,
+      ts: fmtTime(new Date().toISOString()),
+    };
+    activityHistory.push(record);
+    if (activityHistory.length > MAX_ACTIVITY_HISTORY) activityHistory.shift();
+    renderActivityDetail();
+
+    // P0 保护：当前显示 error 时，后续 info 不打断（仅进历史，主条保持错误可见）
+    if (level === 'info' && activityBar.dataset.level === 'error') return;
+
+    activityBar.dataset.level = level;
+    activityBar.className = 'activity-bar ' + level;
+    activityBar.textContent = text;
+    activityBar.hidden = false;
+    if (activityTimer) window.clearTimeout(activityTimer);
+    activityTimer = window.setTimeout(() => {
+      activityBar.hidden = true;
+      delete activityBar.dataset.level;
     }, level === 'error' ? 8000 : 2500);
   }
 
   /**
-   * 渲染活动指标折叠区（P2：§13.x 透明面板 + §5.2.1 指纹可见）
+   * 渲染活动指标详情（P2：§13.x 透明面板 + §5.2.1 指纹可见）
    *
-   * 本轮指纹（系统提示 hash 前 12 位 + 附着记忆条数）+ 累计指标（LLM 调用 / 召回命中率
-   * / 工具失败 / 截断）。textContent 赋值防注入；折叠区默认隐藏，收到数据后显示。
+   * 指纹（系统提示 hash 前 12 位 + 附着记忆条数）+ 累计指标（LLM / 召回命中率 /
+   * 工具失败 / 截断）。textContent 赋值防注入；指标只进详情折叠区，不占用主状态条。
    */
   function renderMetrics(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): void {
-    const box = document.getElementById('metricsBox') as HTMLElement;
-    const content = document.getElementById('metricsContent') as HTMLElement;
     const fp = msg.fingerprints;
     const lines = [
       // 指纹行：只显示 hash 与计数，不显示内容（可追溯性边界）
@@ -279,8 +326,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         Math.round(msg.metrics.recallHitRate * 100) + '% · 工具失败 ' +
         msg.metrics.toolFailureCount + ' · 截断 ' + msg.metrics.truncationCount,
     ];
-    content.textContent = lines.join('\n');
-    box.hidden = false;
+    activityMetrics.textContent = lines.join('\n');
+    activityMetrics.hidden = false;
+    renderActivityDetail();
   }
 
   // 处理 extension → webview 消息（流式渲染 / 状态机 / 工具卡片 / 下拉数据）
@@ -297,7 +345,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
       // guardrailBlocked 标记：护栏阻断的那一条 chunk 同时渲染「护栏阻断」提示条（§7.2.1）
       if (msg.guardrailBlocked) {
-        showNotice('error', '输入被护栏阻断，本次请求未执行');
+        showActivity('error', '输入被护栏阻断，本次请求未执行');
       }
       const target =
         activeAssistantEl && activeAssistantEl.isConnected
@@ -313,15 +361,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       scrollToBottom(messages);
     } else if (msg.type === 'handoff') {
       // 衔接决策：仅 loop 渲染「自动续跑」提示条（wait/end 静默；雷-4 低频）
-      showNotice('info', 'Agent 将自动续跑…');
+      showActivity('info', 'Agent 将自动续跑…');
     } else if (msg.type === 'retry') {
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
-      showNotice('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
+      showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
-      showNotice('info', 'Agent 已暂停');
+      showActivity('info', 'Agent 已暂停');
     } else if (msg.type === 'metrics') {
-      // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新折叠区
+      // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
     } else if (msg.type === 'error') {
       append('error', msg.message);
@@ -336,7 +384,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 处理（chatPanel 中断后发 interrupted + status done），此处独立兜底保证
       // 消息顺序变化时 UI 仍可靠恢复。
       ToolCard.settleRunning(messages, '已中断');
-      showNotice('info', '已停止生成');
+      showActivity('info', '已停止生成');
     } else if (msg.type === 'need_clarify') {
       clarifyText.textContent =
         'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
@@ -358,11 +406,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       inputBar.hidden = true;
       clarifyInput.focus();
     } else if (msg.type === 'memory') {
-      if (msg.action === 'recalled') showMemory('已召回 ' + msg.count + ' 条记忆');
+      if (msg.action === 'recalled') showActivity('info', '已召回 ' + msg.count + ' 条记忆');
       else if (msg.action === 'added') {
         // 利用协议已携带的 detail.name 展示具体沉淀项（对抗评估 P2-6），
         // 避免数据跨进程传输后在 UI 层被丢弃；无 name 时回退通用文案
-        showMemory('已沉淀：' + (msg.detail?.name || '1 条记忆'));
+        showActivity('info', '已沉淀：' + (msg.detail?.name || '1 条记忆'));
       }
     } else if (msg.type === 'tool_start') {
       ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
@@ -399,7 +447,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       currentHistoryDate = msg.date || '';
       renderHistoryPicker();
     } else if (msg.type === 'notice') {
-      showNotice(msg.level, msg.message);
+      showActivity(msg.level, msg.message);
     }
   });
 

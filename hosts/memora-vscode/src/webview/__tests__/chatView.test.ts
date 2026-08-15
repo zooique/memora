@@ -14,11 +14,11 @@ const HTML = `
   <div id="toolbar">
     <span id="rolePackBadge" class="role-pack-badge" hidden title="当前角色"></span>
   </div>
-  <div id="memoryBar" class="memory-bar" hidden></div>
-  <div id="noticeBar" class="notice-bar" hidden></div>
-  <details id="metricsBox" class="metrics-box" hidden>
-    <summary>活动指标</summary>
-    <div id="metricsContent" class="metrics-content"></div>
+  <div id="activityBar" class="activity-bar" hidden></div>
+  <details id="activityDetail" class="activity-detail" hidden>
+    <summary>活动详情</summary>
+    <div id="activityList" class="activity-list"></div>
+    <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
   <div id="messages"><div id="emptyState" class="empty-state" hidden></div></div>
   <div id="clarifyBar">
@@ -211,9 +211,9 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
   it('interrupted 渲染「已停止生成」提示条', () => {
     mountChatView();
     dispatch({ type: 'interrupted' });
-    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
-    expect(noticeBar.hidden).toBe(false);
-    expect(noticeBar.textContent).toContain('已停止生成');
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    expect(activityBar.hidden).toBe(false);
+    expect(activityBar.textContent).toContain('已停止生成');
   });
 });
 
@@ -228,44 +228,44 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
   it('handoff(loop) 渲染「自动续跑」低扰提示条（活动透明，雷-4 低频）', () => {
     mountChatView();
     dispatch({ type: 'handoff', decision: 'loop', reason: '后续步骤' });
-    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
-    expect(noticeBar.hidden).toBe(false);
-    expect(noticeBar.textContent).toContain('自动续跑');
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    expect(activityBar.hidden).toBe(false);
+    expect(activityBar.textContent).toContain('自动续跑');
   });
 
   it('retry 渲染「LLM 重试 n/m」低扰提示条', () => {
     mountChatView();
     dispatch({ type: 'retry', attempt: 1, maxRetries: 3, delayMs: 200, error: 'ECONNRESET' });
-    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
-    expect(noticeBar.hidden).toBe(false);
-    expect(noticeBar.textContent).toContain('重试 1/3');
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    expect(activityBar.hidden).toBe(false);
+    expect(activityBar.textContent).toContain('重试 1/3');
   });
 
   it('paused 渲染「Agent 已暂停」提示条', () => {
     mountChatView();
     dispatch({ type: 'paused' });
-    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
-    expect(noticeBar.hidden).toBe(false);
-    expect(noticeBar.textContent).toContain('已暂停');
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    expect(activityBar.hidden).toBe(false);
+    expect(activityBar.textContent).toContain('已暂停');
   });
 
   it('guardrailBlocked chunk 渲染「护栏阻断」提示条且文本正常追加（§7.2.1）', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '被阻断的回复', guardrailBlocked: true });
-    const noticeBar = document.getElementById('noticeBar') as HTMLElement;
-    expect(noticeBar.hidden).toBe(false);
-    expect(noticeBar.textContent).toContain('护栏阻断');
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    expect(activityBar.hidden).toBe(false);
+    expect(activityBar.textContent).toContain('护栏阻断');
     // 文本仍正常追加到 assistant 消息（阻断 ≠ 丢弃内容，仅附加提示）
     const body = document.querySelector('.msg.assistant .msg-body');
     expect(body?.textContent).toBe('被阻断的回复');
   });
 
-  it('metrics 渲染活动指标折叠区（指纹只显示 hash 与计数，不显示内容）', () => {
+  it('metrics 渲染活动详情折叠区（指纹只显示 hash 与计数，不显示内容）', () => {
     mountChatView();
-    const box = document.getElementById('metricsBox') as HTMLElement;
-    const content = document.getElementById('metricsContent') as HTMLElement;
+    const detail = document.getElementById('activityDetail') as HTMLElement;
+    const metrics = document.getElementById('activityMetrics') as HTMLElement;
     // 未推送前默认隐藏
-    expect(box.hidden).toBe(true);
+    expect(detail.hidden).toBe(true);
 
     dispatch({
       type: 'metrics',
@@ -273,10 +273,47 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
       metrics: { llmCallCount: 5, recallHitRate: 0.8, toolFailureCount: 1, truncationCount: 0 },
     });
 
-    expect(box.hidden).toBe(false);
-    expect(content.textContent).toContain('系统提示 a1b2c3d4e5f6');
-    expect(content.textContent).toContain('附着记忆 3 条');
-    expect(content.textContent).toContain('LLM 5 次');
-    expect(content.textContent).toContain('召回命中 80%');
+    // metrics 只进详情折叠区，不占用主状态条（P2 不占主条）
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    expect(activityBar.hidden).toBe(true);
+    expect(detail.hidden).toBe(false);
+    expect(metrics.hidden).toBe(false);
+    expect(metrics.textContent).toContain('系统提示 a1b2c3d4e5f6');
+    expect(metrics.textContent).toContain('附着记忆 3 条');
+    expect(metrics.textContent).toContain('LLM 5 次');
+    expect(metrics.textContent).toContain('召回命中 80%');
+  });
+
+  it('P0 错误显示期间 P1 低扰不打断（错误优先保护，P1 仅进详情历史）', () => {
+    mountChatView();
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
+    const list = document.getElementById('activityList') as HTMLElement;
+    // 先发错误（P0）
+    dispatch({ type: 'notice', level: 'error', message: '会话异常：超时' });
+    expect(activityBar.textContent).toContain('会话异常');
+    expect(activityBar.className).toContain('error');
+    // 错误显示期间来低扰 info → 不覆盖主条，仅进历史
+    dispatch({ type: 'memory', action: 'recalled', count: 2 });
+    expect(activityBar.textContent).toContain('会话异常'); // 主条仍保持错误
+    expect(activityBar.className).toContain('error');
+    // 低扰信息进入详情历史（不丢失）
+    expect(list.textContent).toContain('已召回 2 条记忆');
+    // 新错误覆盖旧错误（P0 覆盖 P0）
+    dispatch({ type: 'notice', level: 'error', message: '护栏规则未生效' });
+    expect(activityBar.textContent).toContain('护栏规则未生效');
+  });
+
+  it('活动历史有界回溯：被覆盖的提示全部记录进详情（含时间戳）', () => {
+    mountChatView();
+    const list = document.getElementById('activityList') as HTMLElement;
+    dispatch({ type: 'retry', attempt: 1, maxRetries: 3, delayMs: 200, error: 'ECONNRESET' });
+    dispatch({ type: 'memory', action: 'added', count: 1, detail: { id: 'm1', source: 'round-summary', name: '决策：数据库用 PG' } });
+    dispatch({ type: 'paused' });
+    // 历史累积三条，全部可见（不互相覆盖丢失）
+    expect(list.textContent).toContain('重试 1/3');
+    expect(list.textContent).toContain('决策：数据库用 PG');
+    expect(list.textContent).toContain('已暂停');
+    // 每条带时间戳（.activity-list__time 存在）
+    expect(list.querySelectorAll('.activity-list__time').length).toBeGreaterThanOrEqual(3);
   });
 });
