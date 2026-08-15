@@ -1,5 +1,6 @@
 {
   "name": "doc-review",
+  "displayName": "文档打磨",
   "formatVersion": "1.0.0",
   "description": "设计文档审阅与代码骨架生成——检查文档自洽性、发现矛盾缺口悬空引用，并根据设计文档生成项目代码骨架",
   "keywords": [

@@ -12,7 +12,7 @@
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM 操作；
  *   - 持久化复用内核 sessionStore 机制（date-session 组织消息）；
  *   - 面板为通用对话宿主，功能定位由内置角色包（role-packs/doc-review）承载，
- *     消息区顶部徽章展示当前激活角色（主动可见）。
+ *     角色名在输入区 role-picker + AI 消息头部标签展示（SSOT 收敛身份条已删）。
  */
 import * as vscode from 'vscode';
 import { formatDateKey, type Agent, type AgentChunk, type ISessionStore } from '@zooique/memora';
@@ -27,31 +27,17 @@ import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { toolCardStyles } from '../styles/toolCard.js';
 import { stripDocContextPrefix } from '../helpers/docContext.js';
+import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
-
-/**
- * 激活角色包的持久化键（vscode workspaceState，2026-08-15 角色包状态持久化）
- *
- * 与 extension.ts 中 ACTIVE_ROLE_PACK_KEY 保持同值。
- * 用户切换角色包时写入，重启后恢复用户选择。
- */
-const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
 
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（清空会话）。
  *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5） */
 type HostSessionStore = ISessionStore & {
   clearSession: (date: string, session: string) => void;
 };
-
-/** 角色包内部名 → 中文显示名（与工具名中文化同一体验原则，对抗评估 P2-6）。
- *  未知角色回退原值（内部名），保证未收录角色不显示为空白 */
-function rolePackDisplayName(rolePack: string): string {
-  const map: Record<string, string> = { 'doc-review': '文档打磨' };
-  return map[rolePack] || rolePack;
-}
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
@@ -69,7 +55,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 是否已尝试装配（避免面板每次展开都重复装配） */
   private _agentResolving = false;
-  /** 当前激活角色包（对话面板承载的定位角色，toolbar 徽章展示；装配时由 extension 注入） */
+  /** 当前激活角色包（对话面板承载的定位角色；装配时由 extension 注入，切换时持久化） */
   private _activeRolePack: string | undefined;
   /**
    * vscode 工作区状态（2026-08-15 角色包状态持久化）
@@ -135,6 +121,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 与 ensureAgent 懒装配路径保持一致：注入即绑定，确保事件通知两条路径都生效
     // （bindAgentNoticeEvents 内部先 off 再 on，幂等，折叠展开重复注入不重复注册）
     this.bindAgentNoticeEvents();
+    // 装配注入后补推角色信息（时序竞态修复，2026-08-15）：
+    // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
+    // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
+    // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
+    this.refreshRoleInfoAfterAssemble();
   }
 
   /** 设置当前打磨文档上下文（打开面板时调用） */
@@ -143,19 +134,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 角色包内部名 → UI 展示名（SSOT，2026-08-15 演进）
+   *
+   * 从内核 RolePackManager.listMeta() 反查 manifest.displayName（与工具名中文化
+   * 同一体验原则）。displayName 缺省时回退内部名（name）——显示名单一来源 =
+   * `displayName ?? name`，替代原 UI 层硬编码 `rolePackDisplayName` 映射。
+   *
+   * @param rolePack 角色包内部名（如 'doc-review'）
+   * @returns UI 展示名（displayName 或回退 name）
+   */
+  private roleDisplayName(rolePack: string): string {
+    const meta = this._agent?.rolePackManager?.listMeta().find((m) => m.name === rolePack);
+    return meta?.displayName ?? rolePack;
+  }
+
+  /**
    * 设置当前激活角色包（由 extension 装配时注入）
    *
    * 对话面板为通用宿主，定位由内置角色包承载；角色包名在就绪回放时推送给
-   * webview 渲染 toolbar 徽章（主动可见：用户始终知道当前用哪个角色）。
+   * webview 的输入区 role-picker 触发器 + AI 消息头部标签（主动可见）。
    *
    * @param rolePack 角色包内部名（如 'doc-review'）
    */
   public setRolePack(rolePack: string): void {
     this._activeRolePack = rolePack;
-    // 视图已就绪时立即推送（而非等待下次 replaySession），保证徽章即时显示；
+    // 视图已就绪时立即推送（而非等待下次 replaySession），保证角色选择器即时刷新；
     // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeRolePack 推送）。
     if (this._view) {
-      this.post({ type: 'chat_role_pack', rolePack: rolePackDisplayName(rolePack) });
+      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(rolePack) });
     }
   }
 
@@ -203,7 +209,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
       } else if (msg.type === 'chat_set_role_pack') {
-        // A3（alignment-iteration.md）：身份条切换角色包 → 内核 activate
+        // A3（alignment-iteration.md）：输入区角色选择器切换 → 内核 activate
         void this.handleSetRolePack(msg.name);
       } else if (msg.type === 'stop') {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
@@ -230,6 +236,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agent = await this._getAgent(ws);
       // 装配成功后绑定会话级可观测事件 → 错误提示（会话异常/恢复失败等，不插入消息区）
       this.bindAgentNoticeEvents();
+      // 装配完成后补推角色信息（时序竞态修复，2026-08-15）：
+      // 与 setAgent 路径一致——ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
+      // 装配完成即补推，避免输入区角色选择器永久缺失；面板未就绪时 post 静默，
+      // 由 replaySession 兜底。
+      this.refreshRoleInfoAfterAssemble();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
@@ -297,14 +308,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * personaSwitched：角色包切换（内核 emit：粘性匹配自动切换 / 显式 activate / persona 切换）
    *
    * 三层对齐断点 A1（alignment-iteration.md）：内核在粘性匹配或显式激活切换角色包时
-   * emit personaSwitched，但插件此前未绑定 → UI 身份条不刷新（真实链路断裂）。
-   * 此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 身份条即时刷新。
+   * emit personaSwitched，但插件此前未绑定 → UI 角色选择器不刷新（真实链路断裂）。
+   * 此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
    */
   private readonly onPersonaSwitched = (info: { from: string | null; to: string }): void => {
-    // 仅转发切换后的角色显示名（to）+ 该角色联网能力（C1），触发身份条 + AI 消息标签 + 联网 chip 同步
+    // 仅转发切换后的角色显示名（to）+ 该角色联网能力（C1），触发角色选择器 + AI 消息标签 + 联网 chip 同步
     this.post({
       type: 'chat_role_pack',
-      rolePack: rolePackDisplayName(info.to),
+      rolePack: this.roleDisplayName(info.to),
       webSearch: this.currentRoleHasWebSearch(),
     });
   };
@@ -335,7 +346,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('archiveFailed', this.onArchiveFailed);
     a.off('boostPersistFailed', this.onBoostPersistFailed);
     a.on('boostPersistFailed', this.onBoostPersistFailed);
-    // A1（alignment-iteration.md）：角色包切换 → UI 身份条实时对齐（内核粘性切换/显式激活）
+    // A1（alignment-iteration.md）：角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('personaSwitched', this.onPersonaSwitched);
     a.on('personaSwitched', this.onPersonaSwitched);
   }
@@ -432,19 +443,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
-    // 推送当前激活角色包 → 消息区顶部角色徽章（主动可见）。
-    // toolbar 剪枝后：历史日期列表/查看范围由视图标题栏命令（QuickPick）承载，
-    // webview 无需再消费 chat_history_dates / chat_history_view
+    // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
+    // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
       this.post({
         type: 'chat_role_pack',
-        rolePack: rolePackDisplayName(this._activeRolePack),
+        rolePack: this.roleDisplayName(this._activeRolePack),
         webSearch: this.currentRoleHasWebSearch(),
       });
+    } else {
+      // 无激活角色包：推送空信息，让 webview 清除角色标签
+      this.post({ type: 'chat_role_pack', rolePack: '', webSearch: false });
     }
     // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
-    // A3（alignment-iteration.md）：推送角色包列表到身份条切换下拉
+    // A3（alignment-iteration.md）：推送角色包列表到输入区切换下拉
     this.pushRolePacks();
   }
 
@@ -490,34 +503,77 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 推送角色包列表到 webview（身份条角色切换下拉的数据，alignment-iteration.md A3）
+   * 装配完成后补推角色信息（时序竞态修复，2026-08-15）
+   *
+   * 懒装配路径（直接点活动栏面板图标）：ensureAgent 异步装配，webview ready 时
+   * _agent 往往尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或
+   * _activeRolePack 未设置（chat_role_pack，仅 open 命令路径的 setRolePack 会设置）
+   * 而跳过推送 → 输入区角色选择器永久缺失。装配完成即补推一次：
+   *   1. _activeRolePack 缺省时从 agent 实际激活角色补齐（懒装配路径没有 setRolePack）
+   *   2. 补推 chat_role_pack → 角色选择器 / AI 消息标签可见（即使无激活角色也推送，
+   *      让 webview 正确处理状态）
+   *   3. 补推 chat_role_packs → 角色切换入口数据
+   * 面板未就绪时 post 静默（_view 为空），由 replaySession 兜底；重复推送幂等。
+   */
+  private refreshRoleInfoAfterAssemble(): void {
+    if (!this._agent) return;
+    // 懒装配路径从未调用 setRolePack：从 agent 实际激活角色补齐（无角色包时为 undefined）
+    if (!this._activeRolePack) {
+      // ?? undefined：activeName 可能为 null（内核未激活任何角色包），归一并避免 null 赋值
+      this._activeRolePack = this._agent.rolePackManager?.activeName ?? undefined;
+    }
+    // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
+    if (this._view) {
+      if (this._activeRolePack) {
+        this.post({
+          type: 'chat_role_pack',
+          rolePack: this.roleDisplayName(this._activeRolePack),
+          webSearch: this.currentRoleHasWebSearch(),
+        });
+      } else {
+        // 无激活角色包时推送空信息，让 webview 清除角色标签
+        this.post({ type: 'chat_role_pack', rolePack: '', webSearch: false });
+      }
+    }
+    // 角色切换入口数据（webview 收到后自动显示输入区内下拉）
+    this.pushRolePacks();
+  }
+
+  /**
+   * 推送角色包列表到 webview（输入区角色切换下拉的数据，alignment-iteration.md A3）
    *
    * 从内核 RolePackManager 读取全部角色包（listMeta）+ 当前激活名（activeName），
-   * 推送为 chat_role_packs 协议消息。agent 未装配或无角色包时列表为空（webview 隐藏切换入口）。
+   * 推送为 chat_role_packs 协议消息。即使列表为空也发送消息，确保 webview 能正确
+   * 处理角色选择器的显示/隐藏状态（而非静默失败导致 UI 永远不更新）。
    * description 取自 manifest.description（listMeta 已含，零额外读取），供下拉展示副标题。
    */
   private pushRolePacks(): void {
     const rpm = this._agent?.rolePackManager;
-    if (!rpm) return;
-    const packs = rpm
-      .listMeta()
+    if (!rpm) {
+      // agent 未装配或无 rolePackManager：发送空列表，让 webview 正确隐藏角色选择器
+      this.post({ type: 'chat_role_packs', packs: [], activeName: '' });
+      return;
+    }
+    const metaList = rpm.listMeta();
+    const packs = metaList
       .filter((p) => p.name) // 过滤无 name 的异常包
       .map((p) => ({
         name: p.name,
-        displayName: rolePackDisplayName(p.name),
+        // SSOT：displayName 从 manifest 读取，缺省回退 name（单一来源）
+        displayName: p.displayName ?? p.name,
         description: p.description ?? '', // 角色包定位描述（manifest.description，可选）
       }));
-    if (packs.length === 0) return;
-    // activeName 缺省时回退首个（与内核「默认激活首个」一致）
-    const activeName = rpm.activeName ?? packs[0]!.name;
+    // 即使列表为空也发送消息，让 webview 正确处理显示/隐藏
+    // activeName 缺省时回退首个（与内核「默认激活首个」一致），无角色包时为空串
+    const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
     this.post({ type: 'chat_role_packs', packs, activeName });
   }
 
   /**
-   * 处理用户切换激活角色包（身份条角色下拉，alignment-iteration.md A3）
+   * 处理用户切换激活角色包（输入区角色下拉，alignment-iteration.md A3）
    *
    * 调内核 RolePackManager.activate(name) 切换角色；成功后内核 emit personaSwitched
-   * （A1 已绑定转发 chat_role_pack），UI 身份条 + AI 消息标签即时刷新。切换失败（角色
+   * （A1 已绑定转发 chat_role_pack），UI 角色选择器 + AI 消息标签即时刷新。切换失败（角色
    * 不存在）时仅低扰提示，不误导用户。
    *
    * 切换成功且已注入 workspaceState 时，将激活角色包写入持久化（重启后恢复用户选择，
@@ -529,7 +585,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const rpm = this._agent?.rolePackManager;
     if (!rpm) return;
     const ok = rpm.activate(name);
-    // 刷新角色包列表（active 高亮变化；activate 成功时 personaSwitched 会刷新身份条文案）
+    // 刷新角色包列表（active 高亮变化；activate 成功时 personaSwitched 会刷新角色选择器文案）
     this.pushRolePacks();
     if (ok) {
       // 持久化激活角色包（用户选择的工作区级偏好）
@@ -922,27 +978,19 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
 </style>
 </head>
 <body>
-  <!-- ① 身份条（改造 roleBar，ui-redesign.md §4.1 ①）：整合角色/模型/实时状态为一行，
-       主动可见 —— 用户始终知道当前对话由哪个角色、哪个模型驱动、是否在生成中。
-       avatar/role/model/status 文本由 chatView 在 chat_role_pack / chat_providers /
-       status 消息到达时填充。角色名用 role-picker 下拉承载（alignment-iteration.md A3）
-       —— 点击可切换角色包，空状态下拉隐藏（由 chatView 控制显隐）。 -->
-  <div id="identityBar" class="identity-bar" hidden>
-    <span class="identity-avatar" aria-hidden="true"></span>
-    ${buildDropdownHtml([], {
-      extraClass: 'role-picker treedd--capsule',
-      onSelect: '__rolePickerOnSelect',
-    })}
-    <span class="identity-model"></span>
-    <span class="identity-status" data-state="idle">待命</span>
-  </div>
+  <!-- SSOT 收敛（2026-08-15）：顶部身份条已删。
+       角色/模型/状态职责归位：角色切换 + 模型选择收敛到输入区 composer（role-picker /
+       model-picker 并排），生成状态由思考折叠块 + 发送按钮承载，「谁在回答」由 AI
+       消息头部标签 msg-ai-label 表达。面板结构收敛为三层：消息区 → 活动区 → 输入区。 -->
 
   <!-- ② 消息流：日期分隔线 + 消息 + 空状态引导（ui-redesign.md §4.1 ②） -->
   <div id="messages">
-    <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户） -->
+    <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
+         标题/提示加 id（P3，2026-08-15 空状态角色化）：由 chatView 随激活角色包动态更新，
+         切换角色不产生定位错位；示例 chips 保持通用打磨引导，不随角色特化。 -->
     <div id="emptyState" class="empty-state" hidden>
-      <div class="empty-title">开始打磨你的设计文档</div>
-      <div class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
+      <div id="emptyTitle" class="empty-title">开始打磨你的设计文档</div>
+      <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
       <div class="empty-suggestions">
         <button class="suggestion-chip" data-prompt="帮我审阅当前文档的架构合理性">审阅架构</button>
         <button class="suggestion-chip" data-prompt="帮我精简文档中的冗余表达">精简表达</button>
@@ -972,10 +1020,17 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        <!-- Composer 左侧弱化键盘提示（ui-redesign.md §7.3） -->
-        <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
-        <!-- Composer 右侧操作组：联网能力指示 + 模型选择 + 发送 -->
+        <!-- Composer 左侧角色提示 -->
+        <span class="composer-hint">角色模式</span>
+        <!-- Composer 右侧操作组：角色切换 + 联网能力指示 + 模型选择 + 发送
+             SSOT 收敛（2026-08-15）：角色切换与模型选择并排，统一为「发送前」操作 -->
         <div class="composer-actions">
+          <!-- 角色切换（role-picker，SSOT 收敛：身份条已删，角色切换与模型选择同级）：
+               无角色包列表时由 chatView 自动隐藏（hidden） -->
+          ${buildDropdownHtml([], {
+            extraClass: 'role-picker treedd--capsule',
+            onSelect: '__rolePickerOnSelect',
+          })}
           <!-- 联网能力 chip（alignment-iteration.md C1）：当前角色包声明 web:search 时显示，
               作为联网能力可见指示（由 chatView 依据 chat_role_pack.webSearch 控制显隐） -->
           <button id="webSearchChip" class="composer-chip" hidden title="当前角色支持联网搜索" aria-label="当前角色支持联网搜索">🔍 联网</button>

@@ -119,6 +119,17 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-primary, #cccccc);
   }
+  /* P1（2026-08-15 记忆附着可见）：AI 回复底部「基于 N 条记忆」弱标签。
+   * 灰字小字号 + 左侧细竖线（记忆语义），主动可见不打扰；
+   * margin-right:auto 使其靠左（信息性标签），复制/时间戳保持靠右（footer 为 flex-end）。 */
+  .memory-tag {
+    margin-right: auto;
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    padding-left: var(--sp-2, 6px);
+    user-select: none;
+  }
 
   /* ============ Components：底部输入卡片 ============
    * 结构（SSOT 单层视觉源）：
@@ -223,37 +234,17 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
-  /* ============ Components：身份条角色选择器（capsule 变体差异定制，alignment-iteration.md A3）
-   * 复用模型选择器同款 capsule 变体，但触发器弱化为「角色名 + ▾ 文本」融入身份条一行：
-   * 去背景/边框，仅保留文字色与箭头，不喧宾夺主（身份条本就高信息密度）。 */
+  /* ============ Components：角色选择器（capsule 变体差异定制，SSOT 收敛身份条已删）
+   * 复用模型选择器同款 capsule 变体（.treedd--capsule），位于输入区 composer 与 model-picker 并排。
+   * 差异定制：角色名更紧凑 + 菜单尺寸限制。hidden 时隐藏（无角色包列表时）。 */
   .role-picker {
     min-width: 0;
-    flex-shrink: 1;
     /* 差异定制变量（capsule 变体读取）：角色名紧凑截断 + 菜单尺寸 */
     --dd-trigger-max-w: 120px;
     --dd-menu-min-w: 160px;
     --dd-menu-max-w: 220px;
   }
   .role-picker[hidden] { display: none; }
-  .role-picker .treedd__trigger {
-    background: transparent;
-    border: none;
-    color: var(--text-primary, #cccccc);
-    font-weight: 500;
-    font-size: var(--font-md, 12px);
-    padding: 0;
-    height: auto;
-    line-height: 1.5;
-  }
-  .role-picker .treedd__trigger:hover {
-    background: transparent;
-    border-color: transparent;
-    color: var(--accent, #0e639c);
-  }
-  .role-picker .treedd__trigger::after {
-    color: var(--text-secondary, #9aa0a6);
-    margin-left: var(--sp-0, 2px);
-  }
   .role-picker .treedd__item.is-active {
     color: var(--accent, #0e639c);
     font-weight: 600;
@@ -313,50 +304,6 @@ export const chatStyles = `
   .send-btn.loading .send-icon { display: none; }
   .send-btn.loading .stop-icon { display: block; }
 
-  /* ============ Components：身份条（改造 roleBar，ui-redesign.md §4.1 ①） ============ */
-  /* 整合角色 / 模型 / 实时状态为一行，主动可见：用户始终知道当前对话由哪个角色、
-   * 哪个模型驱动、是否在生成中。结构：.identity-bar → [.identity-avatar][.role-picker]
-   * [.identity-model][.identity-status]（角色名由 role-picker 下拉承载，alignment-iteration.md A3）。
-   * 头像 = 角色名首字 + 品牌弱化底；模型名超长省略；状态圆点 idle=灰 / thinking=品牌色呼吸。 */
-  .identity-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2, 6px);
-    padding: var(--sp-2, 6px) var(--sp-5, 12px);
-    box-sizing: border-box;
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    font-size: var(--font-md, 12px);
-    line-height: 1.5;
-  }
-  .identity-bar[hidden] { display: none; }
-  .identity-avatar {
-    width: 20px; height: 20px; border-radius: var(--radius, 6px);
-    display: inline-flex; align-items: center; justify-content: center;
-    background: var(--surface-ai-avatar, rgba(14,99,156,0.25));
-    color: var(--accent-foreground, #ffffff);
-    font-size: var(--font-sm, 11px); font-weight: 600;
-    flex-shrink: 0; user-select: none;
-  }
-  
-  .identity-model {
-    color: var(--text-secondary, #9aa0a6); font-size: var(--font-sm, 11px);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .identity-status {
-    margin-left: auto;
-    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
-    color: var(--text-secondary, #9aa0a6); font-size: var(--font-sm, 11px);
-    flex-shrink: 0;
-  }
-  .identity-status::before {
-    content: ''; width: 6px; height: 6px; border-radius: 50%; /* 状态圆点直径（动画细节，令牌例外） */
-    background: var(--text-secondary, #9aa0a6); flex-shrink: 0;
-  }
-  /* 生成中：状态圆点转品牌色 + 呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
-  .identity-status[data-state="thinking"] { color: var(--accent, #0e639c); }
-  .identity-status[data-state="thinking"]::before { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
-
   /* ============ Components：活动状态区 · 主状态条（P0 错误 / P1 低扰） ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
    * 不污染对话历史（排雷雷-4 修正）。错误显示期间低扰不打断（优先级保护）；被覆盖的
@@ -408,6 +355,24 @@ export const chatStyles = `
   .thought-block.is-thinking .thought-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
   .thought-block__body { margin-top: var(--sp-1, 4px); white-space: pre-wrap; word-break: break-word; }
   .thought-block[hidden] { display: none; }
+  /* P2（2026-08-15 执行轨迹）：思考折叠块 body 内的三阶段轨迹（✓ 完成 / ● 进行中 / ○ 待执行）。
+   * 完成(--status-pass) / 进行中(--accent 品牌色呼吸) / 待执行(次级灰)。
+   * 轻量行式列表，延续思考块的降级视觉（灰字小字号、不抢主体）。 */
+  .thought-block__trace {
+    margin-top: var(--sp-2, 6px);
+    display: flex; flex-direction: column; gap: var(--sp-1, 4px);
+  }
+  .trace-step {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px); line-height: 1.5;
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .trace-step__mark { display: inline-flex; width: 12px; justify-content: center; flex-shrink: 0; font-size: var(--font-sm, 11px); }
+  .trace-step.done { color: var(--status-pass, #4ec9b0); }
+  .trace-step.done .trace-step__mark { color: var(--status-pass, #4ec9b0); }
+  .trace-step.active { color: var(--text-primary, #cccccc); }
+  .trace-step.active .trace-step__mark { color: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
+  .trace-step.pending { color: var(--text-secondary, #9aa0a6); }
 
   /* ============ Components：活动状态区 · 自审查轮提示（活动透明，交叉审核观察 A） ============ */
   /* Agent 自审查开始时插入的过程性反馈：轻量灰字 + 呼吸圆点，让用户看见

@@ -261,6 +261,14 @@ export interface RolePackCapability {
 export interface RolePackMeta {
   /** 角色包名称（唯一标识） */
   readonly name: string;
+  /**
+   * UI 展示名（可选，manifest.displayName）
+   *
+   * 与 name 的职责分离：name 是内部唯一标识（可英文），displayName 是面向用户的
+   * 本地化展示名。缺省回退 name（SSOT：显示名单一来源 = displayName ?? name）。
+   * 插件宿主从 listMeta() 读取，替代 UI 层硬编码角色名映射。
+   */
+  readonly displayName?: string;
   /** 角色包描述 */
   readonly description?: string;
   /** 版本号 */

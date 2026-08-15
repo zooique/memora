@@ -74,7 +74,7 @@ export const dropdownStyles = `
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
     color: var(--text-primary, #cccccc);
     font-size: var(--font-md, 12px); line-height: 1; font-weight: 500;
-    white-space: nowrap; overflow: visible; /* 由子 span.dd-model-name 负责截断 */
+    white-space: nowrap; overflow: visible; /* 由子 span.dd-trigger-name 负责截断 */
   }
   .treedd--capsule .treedd__trigger::before { content: none; } /* 显式清零，保证只有 1 个箭头 */
   /* 下拉箭头：flex-shrink:0 保证即使名称被截断也永远外露 */
@@ -82,8 +82,9 @@ export const dropdownStyles = `
     content: '▾'; display: inline-block; flex-shrink: 0;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-left: 2px;
   }
-  /* 名称文本容器：负责截断（配合触发器 max-width 兜底） */
-  .treedd--capsule .treedd__trigger .dd-model-name {
+  /* 名称文本容器：负责截断（配合触发器 max-width 兜底）。
+   * 通用语义类 dd-trigger-name（SSOT 剪枝：模型/角色共用），替代原模型专属 dd-model-name */
+  .treedd--capsule .treedd__trigger .dd-trigger-name {
     min-width: 0; flex: 1 1 auto; overflow: hidden;
     white-space: nowrap; text-overflow: ellipsis; line-height: 1;
   }

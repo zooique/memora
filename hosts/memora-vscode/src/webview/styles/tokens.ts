@@ -22,6 +22,7 @@ export const tokens = `
     --sp-0: 2px;  /* 紧凑间距下界（菜单项间距 / 紧凑 padding） */
     --sp-1: 4px;  --sp-2: 6px;  --sp-3: 8px;
     --sp-4: 10px; --sp-5: 12px; --sp-6: 16px;
+    --sp-8: 24px; /* 大留白（空态区上下 padding 等） */
 
     /* === L1 基础令牌：圆角刻度 === */
     --radius-sm: 2px; /* 紧凑圆角下界（用户消息气泡小角） */

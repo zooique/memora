@@ -14,8 +14,7 @@
  */
 import { Agent, FetchWebSearchProvider } from '@zooique/memora';
 import type { ISessionStore, UIMessages } from '@zooique/memora';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { createProvider } from './llmConfig.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
@@ -67,6 +66,15 @@ export interface AssembleOptions {
    */
   sessionStore?: ISessionStore;
   /**
+   * 插件内置配置目录（configDir，SSOT 修复 2026-08-15）
+   *
+   * 由 extension.ts 从 context.extensionUri 显式定位（join(extensionUri, 'dist', 'extension')），
+   * 而非 assemble 内用 import.meta.url 相对推断——后者在 esbuild bundle 后
+   * import.meta.url 指向 dist/extension/extension.js，dirname 再 join('..') 会漂移到 dist，
+   * 导致 role-packs 扫描为 0（内置角色包加载失败 bug）。显式注入消除路径漂移。
+   */
+  configDir: string;
+  /**
    * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化）
    *
    * 宿主从 vscode workspaceState 读取用户上次选择的角色包注入，
@@ -78,27 +86,12 @@ export interface AssembleOptions {
 }
 
 /**
- * 定位插件内置配置目录（configDir）
- *
- * 编译后本文件位于 dist/extension/host/assemble.js，上一级即 dist/extension/。
- * configDir 语义（SSOT，与内核对齐）：
- *   - 角色包在 <configDir>/role-packs/ 下（RolePackManager 扫描）；
- *   - 技能在 <configDir>/skills/ 下（SkillManager 扫描，当前无内置技能）。
- * 故此处返回 dist/extension/（而非 dist/extension/role-packs）——若多拼一层，
- * 实际扫描将落到 dist/extension/role-packs/role-packs/ 而读不到角色包。
- */
-function resolveConfigDir(): string {
-  const currentDir = dirname(fileURLToPath(import.meta.url));
-  return join(currentDir, '..');
-}
-
-/**
  * 装配并初始化 memora Agent（薄壳，功能定位由内置角色包承载）
  *
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env, activeRolePack } = options;
+  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir } = options;
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
@@ -123,7 +116,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     dataDir: join(projectPath, '.memora'),
     // 配置目录 = 插件内置配置（role-packs/doc-review 角色包承载文档打磨定位；
     // 内核 init 自动扫描 <configDir>/role-packs/ 并激活 activeRolePack 或首个角色包）
-    configDir: resolveConfigDir(),
+    configDir,
     // 启动时激活的角色包（用户上次选择，由 extension 从 workspaceState 注入持久化值）
     activeRolePack,
     provider,

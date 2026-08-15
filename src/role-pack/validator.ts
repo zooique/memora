@@ -61,7 +61,7 @@ export interface RolePackValidateInput {
 
 /** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能） */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
-  'name', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
+  'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
   'strategy', 'skills', 'persona', 'rules',

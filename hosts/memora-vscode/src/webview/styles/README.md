@@ -24,7 +24,7 @@ styles/
 
 ## 令牌刻度
 
-- **间距**：`--sp-0: 2px`（紧凑下界）→ `--sp-1: 4px` → `--sp-2: 6px` → `--sp-3: 8px` → `--sp-4: 10px` → `--sp-5: 12px` → `--sp-6: 16px`。
+- **间距**：`--sp-0: 2px`（紧凑下界）→ `--sp-1: 4px` → `--sp-2: 6px` → `--sp-3: 8px` → `--sp-4: 10px` → `--sp-5: 12px` → `--sp-6: 16px` → `--sp-8: 24px`（大留白）。
 - **圆角**：`--radius-sm: 2px`（紧凑下界）→ `--radius: 6px` → `--radius-lg: 8px` → `--radius-xl: 14px` → `--radius-pill: 999px`。
 - **字号**：`--font-xs: 10px` → `--font-sm: 11px` → `--font-md: 12px` → `--font-base: 13px` → `--font-lg: 14px`。
 

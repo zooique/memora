@@ -17,16 +17,12 @@ const HTML = `
     <div id="activityList" class="activity-list"></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
-  <div id="identityBar" class="identity-bar" hidden>
-    <span class="identity-avatar" aria-hidden="true"></span>
-    <div class="role-picker treedd--capsule" data-treedd data-on-select="__rolePickerOnSelect">
-      <button class="treedd__trigger"></button>
-      <div class="treedd__menu"></div>
+  <div id="messages">
+    <div id="emptyState" class="empty-state" hidden>
+      <div id="emptyTitle" class="empty-title"></div>
+      <div id="emptyHint" class="empty-hint"></div>
     </div>
-    <span class="identity-model"></span>
-    <span class="identity-status" data-state="idle">待命</span>
   </div>
-  <div id="messages"><div id="emptyState" class="empty-state" hidden></div></div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
     <div id="clarifyOptions"></div>
@@ -39,9 +35,15 @@ const HTML = `
     <div id="inputWrap">
       <textarea id="input"></textarea>
       <div id="inputFooter">
-        <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
-        <button id="webSearchChip" class="composer-chip" hidden>🔍 联网</button>
-        <button id="send"></button>
+        <div class="composer-actions">
+          <div class="role-picker treedd--capsule" data-treedd data-on-select="__rolePickerOnSelect">
+            <button class="treedd__trigger"></button>
+            <div class="treedd__menu"></div>
+          </div>
+          <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+          <button id="webSearchChip" class="composer-chip" hidden>🔍 联网</button>
+          <button id="send"></button>
+        </div>
       </div>
     </div>
   </div>
@@ -76,15 +78,14 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
   });
 
-  it('chat_role_pack 渲染当前角色到身份条并主动可见（角色包定位承载，ui-redesign.md §4.1 ①）', () => {
+  it('chat_role_pack 渲染当前角色到输入区角色选择器触发器（SSOT 收敛身份条已删）', () => {
     mountChatView();
-    const identityBar = document.getElementById('identityBar') as HTMLElement;
-    const roleTrigger = identityBar.querySelector<HTMLElement>('.role-picker .treedd__trigger');
-    const identityAvatar = identityBar.querySelector('.identity-avatar') as HTMLElement;
-    // 未推送前隐藏
-    expect(identityBar.hidden).toBe(true);
+    const rolePicker = document.querySelector<HTMLElement>('.role-picker');
+    const roleTrigger = rolePicker?.querySelector<HTMLElement>('.treedd__trigger');
+    // 无角色包列表时隐藏（chatView 控制显隐）
+    expect(rolePicker?.hidden).toBe(true);
 
-    // 真实回放流：先推角色包列表（身份条下拉数据源），再推当前角色（personaSwitched/回放）
+    // 真实回放流：先推角色包列表（下拉数据源），再推当前角色（personaSwitched/回放）
     dispatch({
       type: 'chat_role_packs',
       packs: [{ name: 'doc-review', displayName: '文档打磨' }],
@@ -92,21 +93,18 @@ describe('chatView clear_ok 消息区清理', () => {
     });
     dispatch({ type: 'chat_role_pack', rolePack: 'doc-review' });
 
-    // textContent 赋值防注入 + 显示后主动可见（用户始终知道当前用哪个角色）
-    expect(identityBar.hidden).toBe(false);
-    // 角色名承载在角色选择器触发器内，显示"显示名"（alignment-iteration.md A3）
+    // 有角色包列表 → 触发器显示激活角色显示名（textContent 赋值防注入）
+    expect(rolePicker?.hidden).toBe(false);
     expect(roleTrigger?.textContent).toBe('文档打磨');
-    expect(identityAvatar.textContent).toBe('d');
   });
 
-  it('chat_role_packs 渲染身份条角色切换下拉选项并高亮激活项（alignment-iteration.md A3）', () => {
+  it('chat_role_packs 渲染角色切换下拉选项并高亮激活项（alignment-iteration.md A3）', () => {
     mountChatView();
-    const identityBar = document.getElementById('identityBar') as HTMLElement;
-    const rolePicker = identityBar.querySelector<HTMLElement>('.role-picker');
+    const rolePicker = document.querySelector<HTMLElement>('.role-picker');
     const roleTrigger = rolePicker?.querySelector<HTMLElement>('.treedd__trigger');
     const roleMenu = rolePicker?.querySelector<HTMLElement>('.treedd__menu');
 
-    // 无列表时隐藏角色选择器（仅头像 + 模型 + 状态）
+    // 无列表时隐藏角色选择器（输入区不占位）
     expect(rolePicker?.hidden).toBe(true);
 
     dispatch({
@@ -129,8 +127,7 @@ describe('chatView clear_ok 消息区清理', () => {
 
   it('chat_role_packs 携带 description 时渲染为下拉副标题（2026-08-15 UI 查看能力）', () => {
     mountChatView();
-    const identityBar = document.getElementById('identityBar') as HTMLElement;
-    const roleMenu = identityBar.querySelector<HTMLElement>('.role-picker .treedd__menu');
+    const roleMenu = document.querySelector<HTMLElement>('.role-picker .treedd__menu');
 
     dispatch({
       type: 'chat_role_packs',
@@ -474,5 +471,80 @@ describe('chatView toolbar 剪枝（视图标题栏承载历史/清空）', () =
       dispatch({ type: 'chat_history_dates', dates: ['2026-08-15'] });
       dispatch({ type: 'chat_history_view', date: '2026-08-15' });
     }).not.toThrow();
+  });
+});
+
+describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('P1：metrics 到达后 AI 回复底部补「基于 N 条记忆」弱标签（记忆附着可见）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '你好', ts: new Date().toISOString() });
+    dispatch({ type: 'assistant', text: '回答', ts: new Date().toISOString() });
+    // 流式结束 → metrics 携带附着记忆数
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 3 },
+      metrics: { llmCallCount: 1, recallHitRate: 0.5, toolFailureCount: 0, truncationCount: 0 },
+    });
+    const tag = document.querySelector('.msg.assistant .memory-tag');
+    expect(tag).not.toBeNull();
+    expect(tag?.textContent).toBe('基于 3 条记忆');
+    // 一轮只补一次：重复 metrics 不产生重复标签
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 3 },
+      metrics: { llmCallCount: 1, recallHitRate: 0.5, toolFailureCount: 0, truncationCount: 0 },
+    });
+    expect(document.querySelectorAll('.msg.assistant .memory-tag').length).toBe(1);
+  });
+
+  it('P2：thinking 阶段渲染三阶段执行轨迹，phase 推进状态正确（执行过程可见）', () => {
+    mountChatView();
+    // 阶段 1：召回进行中，打磨/归档待执行
+    dispatch({ type: 'thinking', phase: 'recalling' });
+    const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
+    expect(tb).not.toBeNull();
+    const marks = () => [...tb.querySelectorAll('.trace-step')].map((el) => el.className);
+    expect(marks()[0]).toContain('active');
+    expect(marks()[1]).toContain('pending');
+    expect(marks()[2]).toContain('pending');
+    // 阶段 2：召回完成、打磨进行中
+    dispatch({ type: 'thinking', phase: 'processing' });
+    expect(marks()[0]).toContain('done');
+    expect(marks()[1]).toContain('active');
+    // 阶段 3：打磨完成、归档进行中
+    dispatch({ type: 'thinking', phase: 'archiving' });
+    expect(marks()[1]).toContain('done');
+    expect(marks()[2]).toContain('active');
+  });
+
+  it('P3：空状态标题/提示随激活角色包动态生成（切换角色不错位）', () => {
+    mountChatView();
+    const title = document.getElementById('emptyTitle') as HTMLElement;
+    const hint = document.getElementById('emptyHint') as HTMLElement;
+    // 未加载角色包：回退「AI」+ 默认引导
+    expect(title.textContent).toBe('开始与 AI 对话');
+    // 角色包列表 + 激活角色 → 空状态随角色生长（标题用角色名、提示用定位描述）
+    dispatch({
+      type: 'chat_role_packs',
+      packs: [
+        { name: 'doc-review', displayName: '文档打磨', description: '打磨文档结构、表达与一致性' },
+        { name: 'translator', displayName: '翻译助手', description: '中英互译与润色' },
+      ],
+      activeName: 'doc-review',
+    });
+    dispatch({ type: 'chat_role_pack', rolePack: '文档打磨', webSearch: false });
+    expect(title.textContent).toBe('开始与 文档打磨 对话');
+    expect(hint.textContent).toBe('打磨文档结构、表达与一致性');
+    // 切换角色 → 文案同步更新
+    dispatch({ type: 'chat_role_pack', rolePack: '翻译助手', webSearch: false });
+    expect(title.textContent).toBe('开始与 翻译助手 对话');
+    expect(hint.textContent).toBe('中英互译与润色');
   });
 });

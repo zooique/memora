@@ -431,6 +431,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       typeof v === 'string' ? v : v === undefined || v === null ? undefined : String(v);
     const meta: RolePackMeta = {
       name: str(manifest['name']) ?? fallbackName,
+      displayName: str(manifest['displayName']),
       description: str(manifest['description']),
       version: str(manifest['version']),
       keywords: parseKeywordsAny(manifest),

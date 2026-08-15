@@ -82,7 +82,7 @@
 ### 2.4 单一真理源与字段集
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
-- **manifest 字段集**：`name`（必填）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
+- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
 - **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
 - **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 仅转译为注册形状（正文不装载，§四 诚实声明）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
@@ -101,7 +101,7 @@
 ```
 角色包（文件夹包）
 ├── manifest.json（★核心控制文件 = 元数据 + L2 策略 + 内容路径注册 + skills 注册）
-│   ├── 元数据：name / formatVersion / keywords / trigger / version / 合规字段 ...
+│   ├── 元数据：name / displayName / formatVersion / keywords / trigger / version / 合规字段 ...
 │   ├── strategy：L2 行为策略（嵌套对象，见 §六）
 │   └── skills：技能注册对象数组（file / name / capability，见 §四）
 ├── persona.md（L1 内容层：身份与视角，可选，§2.3）

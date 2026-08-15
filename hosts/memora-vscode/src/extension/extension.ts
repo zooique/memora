@@ -22,6 +22,7 @@ import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraConfigViewProvider } from '../webview/panels/providerConfigPanel.js';
 import { openChatCommand } from './commands/openChat.js';
+import { ACTIVE_ROLE_PACK_KEY } from '../shared/constants.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -38,31 +39,32 @@ function resolveWorkspacePath(): string {
 let agentPromise: Promise<Agent> | null = null;
 
 /**
- * 激活角色包的持久化键（vscode workspaceState，2026-08-15 角色包状态持久化）
- *
- * 用户切换角色包时写入，Agent 装配时读取并优先激活，实现"重启后记住用户选择"。
- * 作用域为工作区级（workspaceState），符合"角色选择是工作区偏好"的语义。
- */
-const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
-
-/**
  * 获取（或创建）指定工作区的 Agent 实例
  *
  * @param projectPath 工作区路径
  * @param providerStore 大模型配置存储
  * @param sessionStore 会话存储单例（SSOT：与 UI 面板共享，杜绝双实例覆盖写导致会话记录加载不全）
  * @param workspaceState vscode 工作区状态（读取持久化的激活角色包，重启后恢复用户选择）
+ * @param configDir 插件内置配置目录（SSOT 修复：由 extension.extensionUri 显式定位，
+ *   而非 assemble 内 import.meta.url 相对推断——esbuild bundle 后路径漂移导致角色包加载失败）
  */
 function getOrCreateAgent(
   projectPath: string,
   providerStore: ProviderStore,
   sessionStore: WorkspaceSessionStore,
   workspaceState: vscode.Memento,
+  configDir: string,
 ): Promise<Agent> {
   if (!agentPromise) {
     // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核默认激活首个）
     const activeRolePack = workspaceState.get<string>(ACTIVE_ROLE_PACK_KEY);
-    agentPromise = assembleAgent({ projectPath, providerStore, sessionStore, activeRolePack }).catch(
+    agentPromise = assembleAgent({
+      projectPath,
+      providerStore,
+      sessionStore,
+      activeRolePack,
+      configDir,
+    }).catch(
       (err) => {
         // 装配失败则重置，下次命令重试
         agentPromise = null;
@@ -78,6 +80,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // 大模型配置存储（providerStore 供配置面板 + Agent 装配共用）
   const providerStore = new ProviderStore(context.secrets);
 
+  // 插件内置配置目录（SSOT 修复 2026-08-15）：从 extensionUri 显式定位，
+  // 指向 dist/extension（role-packs 等资源所在）。替代 assemble 内 import.meta.url
+  // 相对推断——esbuild bundle 后路径漂移导致内置角色包加载为 0。
+  const configDir = join(context.extensionUri.fsPath, 'dist', 'extension');
+
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
   const workspacePath = resolveWorkspacePath();
   const sessionStore = new WorkspaceSessionStore(workspacePath);
@@ -89,7 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
   chatProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.workspaceState),
+    getOrCreateAgent(projectPath, providerStore, sessionStore, context.workspaceState, configDir),
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
@@ -106,7 +113,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () =>
       openChatCommand(
         (projectPath) =>
-          getOrCreateAgent(projectPath, providerStore, sessionStore, context.workspaceState),
+          getOrCreateAgent(projectPath, providerStore, sessionStore, context.workspaceState, configDir),
         chatProvider,
       ),
     ),

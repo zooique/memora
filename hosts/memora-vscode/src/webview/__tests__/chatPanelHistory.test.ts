@@ -164,3 +164,42 @@ describe('chatPanel 历史切换（点击历史 → 加载查看）', () => {
     expect(items?.some((i) => (i as { date?: string }).date === '2026-08-15')).toBe(true);
   });
 });
+
+describe('chatPanel 角色包切换入口（时序竞态修复，2026-08-15）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('setAgent 装配完成后补推角色信息 → webview 收到 chat_role_pack + chat_role_packs（身份条与切换入口不缺失）', () => {
+    const { provider, posted } = setup();
+    // mock 已装配的 Agent：rolePackManager 返回角色包列表 + 激活名（bindAgentNoticeEvents 需 on/off）
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      rolePackManager: {
+        listMeta: () => [
+          { name: 'doc-review', displayName: '文档打磨', description: '打磨文档结构、表达与一致性' },
+          { name: '写作助手', displayName: '写作助手', description: '专业写作助手' },
+        ],
+        activeName: 'doc-review',
+        // currentRoleHasWebSearch 依赖 getActive 的 capabilities（C1 联网 chip 判定）
+        getActive: () => ({ capabilities: [] }),
+      },
+    } as never;
+    // 触发装配完成注入（open 命令路径 setAgent / 懒装配路径 ensureAgent 均走此补推）
+    provider.setAgent(agent);
+    // 补推 chat_role_pack → 身份条可见（_activeRolePack 自动补齐 + 发送）
+    const rolePacks = posted.filter((m) => (m as { type: string }).type === 'chat_role_pack');
+    expect(rolePacks.length).toBeGreaterThanOrEqual(1);
+    expect((rolePacks[0] as { rolePack: string }).rolePack).toBe('文档打磨');
+    // 补推 chat_role_packs → 角色切换入口数据
+    const packLists = posted.filter((m) => (m as { type: string }).type === 'chat_role_packs');
+    expect(packLists.length).toBeGreaterThanOrEqual(1);
+    const packMsg = packLists[packLists.length - 1] as {
+      packs: { name: string }[];
+      activeName: string;
+    };
+    expect(packMsg.packs.map((p) => p.name)).toContain('doc-review');
+    expect(packMsg.activeName).toBe('doc-review');
+  });
+});

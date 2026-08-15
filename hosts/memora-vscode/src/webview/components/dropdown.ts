@@ -3,13 +3,14 @@
  *
  * 设计（组件化，源码模块化，兼容 webview 内联字符串约束）：
  *   - 组件只负责「展开/收起」与「将点击项 id 转发给面板」的通用机制；
- *   - 面板通过全局回调接收命中项 id，自行处理业务：
- *       . 实例默认走 window.__treeddOnSelect(id)；
- *       . 也可在 buildDropdownHtml 传 onSelect 指定回调名（如模型选择器走 __modelPickerOnSelect）；
+ *   - 面板通过 initDropdowns 传入的显式回调映射接收命中项 id（SSOT 剪枝：
+ *     替代原 window.__treeddOnSelect 全局函数名模式，消除全局污染）：
+ *       . 回调键名 = buildDropdownHtml 的 data-on-select 属性值（缺省 __treeddOnSelect）；
+ *       . 键名与 HTML 契约一一对应（如模型选择器走 __modelPickerOnSelect）；
  *   - 选项点击采用「事件委托」（closest 命中 .treedd__item），
  *     支持动态渲染的选项（模型列表等），杜绝 forEach 静态绑定漏绑问题；
  *   - 初始化遍历所有 .treedd 实例，而非只取第一个；
- *   - 样式见 styles/dropdown.ts；本组件导出 HTML 模板 + 注入脚本两部分。
+ *   - 样式见 styles/dropdown.ts；本组件导出 HTML 模板 + 初始化绑定两部分。
  */
 import { dropdownStyles } from '../styles/dropdown.js';
 

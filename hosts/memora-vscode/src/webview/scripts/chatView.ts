@@ -36,6 +36,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const vscode = acquireVsCodeApi();
   const messages = document.getElementById('messages') as HTMLElement;
   const emptyState = document.getElementById('emptyState') as HTMLElement;
+  // 空状态标题/提示（P3，2026-08-15 空状态角色化）：随激活角色包动态生成，切换角色不产生定位错位
+  const emptyTitle = document.getElementById('emptyTitle') as HTMLElement;
+  const emptyHint = document.getElementById('emptyHint') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
   // 联网能力指示 chip（C1，alignment-iteration.md）：当前角色包声明 web:search 时显示
@@ -51,25 +54,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const clarifyOptions = document.getElementById('clarifyOptions') as HTMLElement;
   const clarifyInput = document.getElementById('clarifyInput') as HTMLInputElement;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
-  // ① 身份条（改造 roleBar，ui-redesign.md §4.1 ①）：整合角色/模型/状态为一行
-  // avatar/role/model/status 文本在 chat_role_pack / chat_providers / status 消息到达时填充
-  const identityBar = document.getElementById('identityBar') as HTMLElement;
-  const identityAvatar = identityBar.querySelector('.identity-avatar') as HTMLElement;
-  const identityModel = identityBar.querySelector('.identity-model') as HTMLElement;
-  const identityStatus = identityBar.querySelector('.identity-status') as HTMLElement;
-  // 角色选择器（身份条角色切换下拉，alignment-iteration.md A3）：触发器显示当前角色名，
-  // 菜单列出全部角色包供切换；无角色包列表时隐藏触发器（仅显示头像 + 模型 + 状态）
-  const rolePicker = identityBar.querySelector<HTMLElement>('.role-picker');
+  // 角色选择器（输入区 composer，SSOT 收敛：身份条已删，角色切换与模型选择同级）：
+  // 触发器显示当前角色名，菜单列出全部角色包供切换；无角色包列表时隐藏触发器
+  const rolePicker = document.querySelector<HTMLElement>('.role-picker');
   const rolePickerMenu = rolePicker ? rolePicker.querySelector<HTMLElement>('.treedd__menu') : null;
   const rolePickerTrigger = rolePicker
     ? rolePicker.querySelector<HTMLElement>('.treedd__trigger')
     : null;
-  // 当前角色显示名（身份条 + AI 消息头像首字共用；由 chat_role_pack 填充）
+  // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
   // 底部模型下拉框（用 extraClass=model-picker 修饰）
-  const modelPicker = document.querySelector('.model-picker');
-  const modelPickerMenu = modelPicker ? modelPicker.querySelector('.treedd__menu') : null;
-  const modelPickerTrigger = modelPicker ? modelPicker.querySelector('.treedd__trigger') : null;
+  const modelPicker = document.querySelector<HTMLElement>('.model-picker');
+  const modelPickerMenu = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__menu') : null;
+  const modelPickerTrigger = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -83,6 +80,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // description 为角色包定位描述（manifest.description，可选）——下拉副标题展示用
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
   let currentActiveRolePack: string | undefined;
+  // P1（2026-08-15 记忆附着可见）：最近一轮结束时的附着记忆条数（metrics.fingerprints 提供）。
+  // 流式结束后给 AI 回复补「基于 N 条记忆」弱标签，让记忆附着主动可见（memora 差异化价值）。
+  let lastAttachedMemoryCount: number | undefined;
 
   // 思考折叠块（ui-redesign.md §7.1）：生成中/自审查的过程性反馈，不落库不重放
   // details 元素：以 HTMLDetailsElement 承载 open 属性（折叠/展开态）
@@ -137,6 +137,55 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
+  /**
+   * P2（2026-08-15 执行轨迹）：把思考折叠块从单行文案升级为三阶段执行轨迹
+   *
+   * Agent 闭环 = Prepare(召回) → Act(打磨，含工具) → Reflect(归档)，三阶段即天然轨迹。
+   * 用 ✓ 完成 / ● 进行中 / ○ 待执行 呈现，让用户一眼看懂 Agent 当前执行到哪一步
+   * （对齐 Agent UI「执行过程可见」趋势）。纯前端从 thinking phase 聚合，不改内核协议。
+   * 工具调用保持独立卡片（Tertiary 层级），不塞进轨迹，避免信息过载。
+   */
+  function renderTrace(phase: 'recalling' | 'processing' | 'archiving'): void {
+    // 三阶段轨迹：召回记忆 → 理解打磨 → 归档记忆（对应闭环 Prepare/Act/Reflect）
+    const steps: { label: string; state: 'done' | 'active' | 'pending' }[] = [
+      { label: '召回记忆', state: 'pending' },
+      { label: '理解打磨', state: 'pending' },
+      { label: '归档记忆', state: 'pending' },
+    ];
+    const phaseIndex: Record<string, number> = { recalling: 0, processing: 1, archiving: 2 };
+    const idx = phaseIndex[phase];
+    steps.forEach((s, i) => {
+      // 当前阶段之前的步骤已完成，当前进行中，之后待执行
+      s.state = i < idx ? 'done' : i === idx ? 'active' : 'pending';
+    });
+    const tb = ensureThoughtBlock();
+    // 轨迹容器：首次创建挂到思考块，之后复用（textContent 构建防注入）
+    let trace = tb.querySelector('.thought-block__trace') as HTMLElement | null;
+    if (!trace) {
+      trace = document.createElement('div');
+      trace.className = 'thought-block__trace';
+      tb.appendChild(trace);
+    }
+    trace.textContent = '';
+    steps.forEach((s) => {
+      const row = document.createElement('div');
+      row.className = 'trace-step ' + s.state;
+      const mark = document.createElement('span');
+      mark.className = 'trace-step__mark';
+      mark.setAttribute('aria-hidden', 'true');
+      // ✓ 完成 / ● 进行中（呼吸）/ ○ 待执行
+      mark.textContent = s.state === 'done' ? '✓' : s.state === 'active' ? '●' : '○';
+      const label = document.createElement('span');
+      label.className = 'trace-step__label';
+      label.textContent = s.label;
+      row.appendChild(mark);
+      row.appendChild(label);
+      trace.appendChild(row);
+    });
+    // thinking 期间展开轨迹：用户正在等待，看见执行进度是主动可见的正反馈
+    tb.open = true;
+  }
+
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
   // 仅当本条消息日期与上一条不同才插入；divider 先于消息追加，形成「日期 → 消息」分组。
   function renderDateDivider(ts?: string): void {
@@ -159,11 +208,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
-  // 输入框保持可用（支持插话）；done 恢复发送按钮。同时同步①身份条状态与思考折叠块。
+  // 输入框保持可用（支持插话）；done 恢复发送按钮。同时同步思考折叠块。
+  // SSOT 收敛：身份条已删，生成中状态由思考折叠块（过程可见）+ 发送按钮（可操作）承载。
   function setStatus(state: 'thinking' | 'done'): void {
-    // ① 身份条状态圆点：thinking=品牌色呼吸「思考中」/ idle=灰「待命」
-    identityStatus.dataset.state = state === 'thinking' ? 'thinking' : 'idle';
-    identityStatus.textContent = state === 'thinking' ? '思考中' : '待命';
     if (state === 'thinking') {
       // 生成中：展示「思考中…」折叠块（过程透明，ui-redesign.md §7.1）
       setThoughtLabel('思考中…', { thinking: true });
@@ -207,89 +254,122 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     emptyState.hidden = messages.querySelector('.msg') !== null;
   }
 
+  /**
+   * P3（2026-08-15 空状态角色化）：空状态标题/提示随激活角色包动态生成
+   *
+   * 原空状态文案硬编码「开始打磨你的设计文档」（doc-review 定位），切换角色包后错位。
+   * 改为标题用角色显示名、提示用角色定位描述（manifest.description，可选），随角色生长。
+   * 示例提问 chips 保持通用引导，不随角色变化（避免为每条角色特化造成维护成本）。
+   */
+  function updateEmptyStateRole(): void {
+    const name = currentRoleName || 'AI';
+    emptyTitle.textContent = '开始与 ' + name + ' 对话';
+    // 角色定位描述优先；无描述时回退默认引导文案（textContent 赋值防注入）
+    const activePack = currentRolePacks.find((p) => p.displayName === currentRoleName);
+    emptyHint.textContent =
+      activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
+  }
+
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
   // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
   // 此处统一以 messages 为滚动容器，与 toolCard 共用同一 helper（SSOT 剪枝去重）。
   // 原局部 scrollToBottom + scrollRafPending 已收敛到 helpers。
 
-  // 渲染模型下拉框选项
-  function renderModelPicker(): void {
-    if (!modelPickerMenu) return;
-    // P0-1 防注入：模型名来自用户配置（displayName），禁止 innerHTML 拼接，
-    // 一律用 createElement + textContent 构建，杜绝 HTML 注入/破版。
-    modelPickerMenu.textContent = '';
-    if (currentProviders.length > 0) {
-      currentProviders.forEach((p) => {
-        const isActive = p.name === currentActive;
+  // ─── 下拉选择器渲染工厂（SSOT，剪枝收敛） ───
+  // renderModelPicker / renderRolePicker 原是两套几乎相同的「清空菜单 → 遍历建项 →
+  // 更新触发器」实现，仅差异在是否带描述副标题。收敛为单一渲染器：picker 通过
+  // { menu, trigger, items, activeName, 文案 } 配置声明差异（对齐 §四.2 声明式工厂）。
+
+  /** 下拉项数据（name 为事件 id，displayName 为展示名，description 可选副标题） */
+  interface PickerItem {
+    name: string;
+    displayName: string;
+    description?: string;
+  }
+
+  /** 渲染下拉选择器：构建菜单项 + 更新触发器文本 + 可访问性标签（textContent 防注入） */
+  function renderPicker(
+    menu: HTMLElement | null,
+    trigger: HTMLElement | null,
+    items: PickerItem[],
+    activeName: string | undefined,
+    opts: { emptyText?: string; labelFallback: string; ariaLabel: string },
+  ): void {
+    if (!menu) return;
+    // P0-1 防注入：名称来自用户配置/角色包，禁止 innerHTML 拼接，一律 createElement + textContent
+    menu.textContent = '';
+    if (items.length > 0) {
+      items.forEach((p) => {
+        const isActive = p.name === activeName;
         const btn = document.createElement('button');
         btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
         btn.setAttribute('role', 'menuitem');
         btn.setAttribute('data-treedd-id', p.name);
-        btn.textContent = p.displayName || p.name;
-        modelPickerMenu.appendChild(btn);
+        const nameEl = document.createElement('span');
+        nameEl.className = 'dd-item-name';
+        nameEl.textContent = p.displayName || p.name;
+        btn.appendChild(nameEl);
+        // 可选描述副标题（角色包定位，供下拉展示；无描述时仅显示名称）
+        if (p.description) {
+          const descEl = document.createElement('span');
+          descEl.className = 'dd-item-desc';
+          descEl.textContent = p.description;
+          btn.appendChild(descEl);
+        }
+        menu.appendChild(btn);
       });
-    } else {
+    } else if (opts.emptyText) {
       const empty = document.createElement('div');
       empty.className = 'treedd__empty';
-      empty.textContent = '未配置模型';
-      modelPickerMenu.appendChild(empty);
+      empty.textContent = opts.emptyText;
+      menu.appendChild(empty);
     }
-    // 更新触发器显示当前模型（同样用 textContent 防注入）
-    // SSOT：用 <span class="dd-model-name"> 包裹名称，CSS 只对此 span 做 ellipsis 截断，
-    // 而 ::after 下拉箭头 flex-shrink:0 永远外露，不会被挤掉或截断
-    if (modelPickerTrigger) {
-      const name = currentActive
-        ? currentProviders.find((p) => p.name === currentActive)?.displayName || currentActive
-        : '选择模型';
-      modelPickerTrigger.textContent = '';
+    // 更新触发器显示当前项（textContent 防注入）。
+    // SSOT：用 <span class="dd-trigger-name"> 包裹名称，CSS 只对此 span 做 ellipsis 截断，
+    // 而 ::after 下拉箭头 flex-shrink:0 永远外露（dd-trigger-name 为通用语义类，模型/角色共用）
+    if (trigger) {
+      const active = items.find((p) => p.name === activeName);
+      const label = active ? active.displayName : opts.labelFallback;
+      trigger.textContent = '';
       const span = document.createElement('span');
-      span.className = 'dd-model-name';
-      span.textContent = name;
-      modelPickerTrigger.appendChild(span);
+      span.className = 'dd-trigger-name';
+      span.textContent = label;
+      trigger.appendChild(span);
       // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）
-      modelPickerTrigger.setAttribute('aria-label', '选择模型：' + name);
+      trigger.setAttribute('aria-label', opts.ariaLabel + '：' + label);
     }
   }
 
-  // 渲染身份条角色选择器（alignment-iteration.md A3）：列出全部角色包，高亮当前激活项。
-  // 用 createElement + textContent 构建（防注入，与 renderModelPicker 同模式）。
-  // 无角色包列表时隐藏触发器（仅保留头像 + 模型 + 状态，避免空下拉占位）。
+  // 渲染模型下拉框选项
+  function renderModelPicker(): void {
+    renderPicker(modelPickerMenu, modelPickerTrigger, currentProviders, currentActive, {
+      emptyText: '未配置模型',
+      labelFallback: '选择模型',
+      ariaLabel: '选择模型',
+    });
+  }
+
+  // 渲染角色选择器（alignment-iteration.md A3）：列出全部角色包，高亮当前激活项。
+  // 无角色包列表时隐藏触发器（仅保留模型 + 状态，避免空下拉占位）。
   function renderRolePicker(): void {
-    if (!rolePicker || !rolePickerMenu || !rolePickerTrigger) return;
+    if (!rolePicker || !rolePickerMenu || !rolePickerTrigger) {
+      console.debug('[chatView] renderRolePicker: 元素引用缺失', {
+        rolePicker: !!rolePicker,
+        rolePickerMenu: !!rolePickerMenu,
+        rolePickerTrigger: !!rolePickerTrigger,
+      });
+      return;
+    }
     if (currentRolePacks.length === 0) {
       rolePicker.hidden = true;
       return;
     }
     rolePicker.hidden = false;
-    rolePickerMenu.textContent = '';
-    currentRolePacks.forEach((p) => {
-      const isActive = p.name === currentActiveRolePack;
-      const btn = document.createElement('button');
-      btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
-      btn.setAttribute('role', 'menuitem');
-      btn.setAttribute('data-treedd-id', p.name);
-      // 名称 + 可选描述副标题（textContent 构建防注入；无描述时仅显示名称）
-      const nameEl = document.createElement('span');
-      nameEl.className = 'dd-item-name';
-      nameEl.textContent = p.displayName || p.name;
-      btn.appendChild(nameEl);
-      if (p.description) {
-        const descEl = document.createElement('span');
-        descEl.className = 'dd-item-desc';
-        descEl.textContent = p.description;
-        btn.appendChild(descEl);
-      }
-      rolePickerMenu.appendChild(btn);
+    renderPicker(rolePickerMenu, rolePickerTrigger, currentRolePacks, currentActiveRolePack, {
+      // 触发器标签回退：列表未收录激活角色时回退 currentRoleName（兼容旧字段）
+      labelFallback: currentRoleName || '选择角色',
+      ariaLabel: '切换角色',
     });
-    // 触发器显示当前激活角色显示名（兼容旧字段：currentRoleName 与列表同步）
-    const active = currentRolePacks.find((p) => p.name === currentActiveRolePack);
-    const label = active ? active.displayName : currentRoleName || '选择角色';
-    rolePickerTrigger.textContent = '';
-    const span = document.createElement('span');
-    span.className = 'dd-model-name';
-    span.textContent = label;
-    rolePickerTrigger.appendChild(span);
-    rolePickerTrigger.setAttribute('aria-label', '切换角色：' + label);
   }
 
   // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
@@ -445,6 +525,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    */
   function renderMetrics(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): void {
     const fp = msg.fingerprints;
+    // P1（2026-08-15 记忆附着可见）：缓存本轮附着记忆数，供 AI 回复底部「基于 N 条记忆」弱标签
+    if (typeof fp.attachedMemoryCount === 'number') {
+      lastAttachedMemoryCount = fp.attachedMemoryCount;
+    }
     const lines = [
       // 指纹行：只显示 hash 与计数，不显示内容（可追溯性边界）
       '本轮指纹：' +
@@ -466,6 +550,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     activityMetrics.textContent = lines.join('\n');
     activityMetrics.hidden = false;
     renderActivityDetail();
+    // P1（2026-08-15 记忆附着可见）：本轮流式结束 → 给最后一条 AI 回复补记忆附着弱标签
+    applyMemoryTag();
+  }
+
+  /**
+   * P1（2026-08-15 记忆附着可见）：在最后一条 AI 回复底部补「基于 N 条记忆」弱标签
+   *
+   * memora 的差异化价值是记忆，但「附着记忆 N 条」此前只出现在活动详情折叠区（低可见）。
+   * 每轮 metrics 到达（流式结束）后，给本轮最后一条 assistant 消息补弱标签：
+   * 主动可见、不打扰（灰字小字号靠左），让用户直观感知「这条回复基于哪些记忆」。
+   * footer 内已存在 memory-tag 则跳过（一轮只补一次，防 metrics 多次触发重复）。
+   */
+  function applyMemoryTag(): void {
+    if (lastAttachedMemoryCount === undefined) return;
+    // 优先定位流式锚点（本轮最后一条 AI 回复），锚点失效时回退最后一条 assistant 消息
+    const target =
+      activeAssistantEl && activeAssistantEl.isConnected
+        ? activeAssistantEl
+        : (messages.querySelector('.msg.assistant:last-of-type') as HTMLElement | null);
+    if (!target) return;
+    const footer = target.querySelector(':scope .msg-footer') as HTMLElement | null;
+    if (!footer || footer.querySelector('.memory-tag')) return;
+    const tag = document.createElement('span');
+    tag.className = 'memory-tag';
+    tag.textContent = '基于 ' + lastAttachedMemoryCount + ' 条记忆';
+    footer.prepend(tag); // 信息性标签靠左（margin-right:auto），复制/时间戳保持靠右
   }
 
   // 处理 extension → webview 消息（流式渲染 / 状态机 / 工具卡片 / 下拉数据）
@@ -482,6 +592,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
             ? '处理中…'
             : '归档记忆中…';
       setThoughtLabel(label, { thinking: true });
+      // P2（2026-08-15 执行轨迹）：同步渲染三阶段执行轨迹（✓/●/○），执行过程可见
+      renderTrace(msg.phase);
     } else if (msg.type === 'user') {
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
@@ -580,25 +692,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
       renderModelPicker();
-      // ① 身份条模型名：与下拉触发器同步显示当前模型（无激活则不显示）
-      const active = currentActive
-        ? currentProviders.find((p) => p.name === currentActive)?.displayName || currentActive
-        : '';
-      identityModel.textContent = active;
+      // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
-      // ① 身份条：textContent 赋值防注入，显示后主动可见。
-      // 角色名 + 头像首字（ui-redesign.md §4.1 ①）
+      // textContent 赋值防注入。角色名由输入区 role-picker 触发器 + AI 消息头部标签 + 空状态标题共用
       currentRoleName = msg.rolePack;
       // 同步激活角色包内名（按显示名反查列表，供下拉高亮；A1 personaSwitched 也走此路径）
       const matchedRole = currentRolePacks.find((p) => p.displayName === msg.rolePack);
       if (matchedRole) currentActiveRolePack = matchedRole.name;
       renderRolePicker();
-      identityAvatar.textContent = currentRoleName ? currentRoleName.charAt(0) : 'AI';
-      identityBar.hidden = false;
       // C1（alignment-iteration.md）：联网能力指示 —— 角色包声明 web:search 时显示联网 chip
       webSearchChip.hidden = !msg.webSearch;
+      // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
+      updateEmptyStateRole();
     } else if (msg.type === 'chat_role_packs') {
-      // A3（alignment-iteration.md）：角色包列表 + 激活名 → 身份条切换下拉
+      // A3（alignment-iteration.md）：角色包列表 + 激活名 → 输入区角色切换下拉
       currentRolePacks = msg.packs || [];
       if (msg.activeName) currentActiveRolePack = msg.activeName;
       // 若当前角色名未同步到列表（如 displayName 未收录），回退为显示激活角色
@@ -679,6 +786,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 首屏刷新
   updateEmptyState();
+  updateEmptyStateRole(); // P3：空状态文案随当前角色生长（首屏可能已有角色推送）
   renderModelPicker();
   renderRolePicker(); // A3：身份条角色选择器（无列表时自动隐藏）
 

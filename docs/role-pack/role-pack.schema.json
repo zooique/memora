@@ -11,6 +11,10 @@
       "type": "string",
       "description": "角色包名称，全局唯一标识"
     },
+    "displayName": {
+      "type": "string",
+      "description": "UI 展示名（本地化，可选）。与 name 职责分离：name 为内部唯一标识，displayName 为面向用户的展示名，缺省回退 name"
+    },
     "formatVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",

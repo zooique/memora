@@ -126,6 +126,8 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     const active = manager.getActive();
     expect(active).not.toBeNull();
     expect(active!.meta.name).toBe('技术文档工程师');
+    // displayName 缺省时回退 name（SSOT：显示名单一来源 = displayName ?? name）
+    expect(active!.meta.displayName).toBeUndefined();
     expect(active!.meta.formatVersion).toBe('1.0.0');
     // 合规字段默认值
     expect(active!.meta.interactionType).toBe('tool_assistant');
@@ -143,6 +145,25 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     expect(active!.capabilities).toEqual([
       { capability: 'llm:summarize', description: undefined },
     ]);
+  });
+
+  it('displayName 显式声明时解析为 UI 展示名（与 name 职责分离，SSOT）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // name 为内部唯一标识（英文），displayName 为面向用户的本地化展示名
+    const manifest = { ...MANIFEST_TECH, name: 'doc-review', displayName: '文档打磨' };
+    await writePack(packsDir, 'doc-review', manifest, {
+      persona: '文档打磨定位',
+      rules: '- 保持文档自洽',
+    });
+
+    const manager = new RolePackManager(dir);
+    const count = await manager.load('doc-review');
+    expect(count).toBe(1);
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    expect(active!.meta.name).toBe('doc-review');
+    expect(active!.meta.displayName).toBe('文档打磨');
   });
 
   it('多技能注册 + persona 缺省（无 persona.md）', async () => {
