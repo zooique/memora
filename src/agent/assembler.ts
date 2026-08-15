@@ -390,6 +390,10 @@ export async function assembleComponents(
   // 激活角色包的 L1 persona（角色包优先于 persona；无激活角色包时为空串）
   const rolePackPrompt = rolePackManager.buildSystemPrompt();
 
+  // 渐进披露 L2：注入 read_skill 技能正文读取回调（read_skill 工具数据源）
+  // rolePackManager 在 toolExec 之后创建，用回调注入解耦时序（见 toolExecutor.readSkill 注释）
+  toolExec.readSkill = (skillName: string) => rolePackManager.readSkillContent(skillName);
+
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
   const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =

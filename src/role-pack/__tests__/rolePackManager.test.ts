@@ -372,4 +372,76 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
       expect(manager.autoMatch('写代码')).toBe('代码助手');
     });
   });
+
+  describe('渐进披露 · read_skill + buildSystemPrompt 技能清单', () => {
+    it('readSkillContent 按技能名读取内嵌技能正文（渐进披露 L2）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
+        persona: '你是一位技术文档工程师。',
+        rules: '- 术语保持一致',
+        skills: { 'skills/summarize.md': '## 提炼要点\n1. 识别核心\n2. 精简表达\n' },
+      });
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+
+      // 按 name（manifest.skills[].name）读取激活角色包技能正文
+      const content = await manager.readSkillContent('summarize');
+      expect(content).toContain('识别核心');
+      expect(content).toContain('精简表达');
+    });
+
+    it('readSkillContent 按文件名去扩展名匹配（无 name 时）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      // 纯能力声明包 skills 无 name 只有 file
+      await writePack(packsDir, '项目总监', {
+        name: '项目总监',
+        formatVersion: '1.0.0',
+        keywords: ['项目管理'],
+        persona: 'persona.md',
+        skills: [
+          { file: 'skills/review.md', capability: 'task:plan', description: '审查计划' },
+        ],
+      }, { persona: '你是项目总监。', skills: { 'skills/review.md': '## 审查流程\n' } });
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+
+      const content = await manager.readSkillContent('review');
+      expect(content).toContain('审查流程');
+    });
+
+    it('readSkillContent 技能不存在时返回 null', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
+        skills: { 'skills/summarize.md': '## 提炼要点\n' },
+      });
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+
+      expect(await manager.readSkillContent('不存在的技能')).toBeNull();
+    });
+
+    it('buildSystemPrompt 注入 L1 技能清单（渐进披露 L1）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
+        persona: '你是一位技术文档工程师。',
+        skills: { 'skills/summarize.md': '## 提炼要点\n' },
+      });
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+
+      const prompt = manager.buildSystemPrompt();
+      // L1 元数据：技能名 + 描述常驻
+      expect(prompt).toContain('可用技能');
+      expect(prompt).toContain('summarize');
+      expect(prompt).toContain('read_skill');
+    });
+  });
 });

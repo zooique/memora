@@ -74,9 +74,9 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 7 个工具', () => {
+    it('应注册 8 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories', 'trace_summary', 'task_table_write', 'task_table_update']);
+      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories', 'trace_summary', 'task_table_write', 'task_table_update', 'read_skill']);
     });
 
     it('每个工具应有 name + description + parameters（含 required 数组）', () => {
@@ -86,6 +86,32 @@ describe('工具执行器（6 个工具）', () => {
         expect(tool.parameters.type).toBe('object');
         expect(Array.isArray(tool.parameters.required)).toBe(true);
       }
+    });
+  });
+
+  describe('read_skill（渐进披露 L2）', () => {
+    it('未注入 readSkill 回调时返回不可用提示', async () => {
+      const result = await executor.execute('read_skill', JSON.stringify({ name: 'write' }));
+      expect(result).toContain('read_skill 不可用');
+    });
+
+    it('注入 readSkill 回调后返回技能正文', async () => {
+      executor.readSkill = async (name) => (name === 'write' ? '## 写作技能\n1. 起草\n2. 润色' : null);
+      const result = await executor.execute('read_skill', JSON.stringify({ name: 'write' }));
+      expect(result).toContain('起草');
+      expect(result).toContain('润色');
+    });
+
+    it('技能不存在时返回 SKILL_NOT_FOUND', async () => {
+      executor.readSkill = async () => null;
+      const result = await executor.execute('read_skill', JSON.stringify({ name: 'nope' }));
+      expect(result).toContain('SKILL_NOT_FOUND');
+    });
+
+    it('缺少 name 参数时应抛 MemoraError（必填参数校验）', async () => {
+      await expect(executor.execute('read_skill', JSON.stringify({}))).rejects.toThrow(
+        '工具参数缺失',
+      );
     });
   });
 

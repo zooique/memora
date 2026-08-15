@@ -23,7 +23,7 @@
  *   - 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描）保留在子类
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
@@ -653,6 +653,65 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!targetName) return '';
     const pack = this.items.find((p) => p.meta.name === targetName);
     if (!pack) return '';
-    return assembleRolePack(pack).personaPrompt;
+    const assembly = assembleRolePack(pack);
+
+    // L1 常驻元数据（渐进披露 L1）：暴露内嵌技能清单给 LLM（name + description）
+    // 每技能一行，省 token；LLM 据此判断何时调用 read_skill 读取正文（渐进披露 L2）。
+    // 复用 RolePackAssembly.skills 的既有数据，不新建数据源（SSOT）。
+    const listed = assembly.skills
+      .filter((s) => s.name || s.file)
+      .map((s) => {
+        const label = s.name ?? (s.file ? (s.file.split(/[\\/]/).pop() ?? '').replace(/\.(md|markdown)$/i, '') : '');
+        const desc = s.description ? `：${s.description}` : '';
+        return `- ${label}${desc}`;
+      });
+    const skillListBlock =
+      listed.length > 0 ? `\n\n【可用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}` : '';
+
+    return assembly.personaPrompt + skillListBlock;
+  }
+
+  /**
+   * 读取激活角色包内嵌技能正文（渐进披露 L2，read_skill 工具的数据源）
+   *
+   * 角色包 `manifest.skills` 的 `file` 指向包内技能文件（如 `skills/write.md`），
+   * 正文当前不预装载（role-pack-spec §四 诚实声明）。本方法在 LLM 按需调用
+   * read_skill 时按技能名读取对应正文——file 从"生态指针"变为"装载入口"。
+   *
+   * 路径安全：技能文件路径固定相对于角色包目录（manifest.json 所在目录），
+   * 不接外部输入路径，天然受限在角色包内，无需额外白名单校验。
+   *
+   * @param skillName 技能名（manifest.skills[].name，缺省取 fileName 去扩展名）
+   * @param packName 角色包名（可选，缺省用当前激活角色包）
+   * @returns 技能正文；技能不存在或读取失败返回 null
+   */
+  async readSkillContent(skillName: string, packName?: string): Promise<string | null> {
+    const targetName = packName ?? this.activePackName;
+    if (!targetName) return null;
+    const pack = this.items.find((p) => p.meta.name === targetName);
+    if (!pack) return null;
+
+    // 按技能名匹配 manifest.skills 项（name 优先，缺省按 fileName 去扩展名匹配）
+    const skill = pack.skills.find((s) => {
+      if (s.name && s.name === skillName) return true;
+      if (s.file) {
+        const base = s.file.split(/[\\/]/).pop() ?? '';
+        return base.replace(/\.(md|markdown)$/i, '') === skillName;
+      }
+      return false;
+    });
+    if (!skill?.file) return null;
+
+    // 技能文件路径相对角色包目录（manifest.json 所在目录）
+    const skillPath = join(dirname(pack.filePath), skill.file);
+    try {
+      return await readContentSafe(skillPath);
+    } catch (err) {
+      getLogger().warn(
+        { pack: targetName, skill: skillName, skillPath, err },
+        'read_skill 读取技能正文失败',
+      );
+      return null;
+    }
   }
 }

@@ -20,8 +20,8 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 7 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(7);
+  it('应包含 8 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(8);
   });
 
   it('应包含 read_file / write_file / list_dir / search_memories / trace_summary', () => {
@@ -31,6 +31,12 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(names).toContain('list_dir');
     expect(names).toContain('search_memories');
     expect(names).toContain('trace_summary');
+  });
+
+  it('read_skill 应注册为内置工具且标记幂等（渐进披露 L2）', () => {
+    const names = BUILTIN_TOOLS.map((t) => t.name);
+    expect(names).toContain('read_skill');
+    expect(BUILTIN_TOOL_IDEMPOTENCY.read_skill).toBe('idempotent');
   });
 
   it('工具名应唯一（无重复）', () => {

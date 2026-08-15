@@ -61,6 +61,7 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   trace_summary: 'idempotent',
   task_table_write: 'non-idempotent',
   task_table_update: 'idempotent',
+  read_skill: 'idempotent',
 };
 
 /**
@@ -147,6 +148,7 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
  * - trace_summary：追溯轮次摘要的原始对话
  * - task_table_write：写入/更新任务表行（幂等键保护）
  * - task_table_update：更新任务表行（幂等保护）
+ * - read_skill：读取激活角色包内嵌技能正文（渐进披露 L2，按需装载）
  *
  * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用），见下方独立定义。
  * 另有 TRACE_SUMMARY_TOOL（始终可用，与 BUILTIN_TOOLS 中的 trace_summary 定义相同）。
@@ -268,6 +270,19 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
       },
       required: ['step_id', 'status'],
+    },
+  },
+  // ── 渐进披露：角色包内嵌技能按需装载 ──────────────
+  {
+    name: 'read_skill',
+    description:
+      '读取激活角色包内嵌技能的完整正文（渐进披露 L2，按需装载）。当需要执行角色包声明的某项技能时，先读取其正文获取详细步骤。技能名来自角色包声明的技能清单。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '技能名（角色包 manifest.skills 中声明的 name，或技能文件名去扩展名）' },
+      },
+      required: ['name'],
     },
   },
 ];

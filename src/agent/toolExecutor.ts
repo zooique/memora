@@ -149,6 +149,16 @@ export class ToolExecutor {
     getPlan: () => Array<{ id: string; description: string; status: string; order: number }>;
   };
 
+  /**
+   * read_skill 技能正文读取回调（由 agent 装配时注入，处理 read_skill）
+   *
+   * 渐进披露 L2 数据源：读取激活角色包内嵌技能正文（manifest.skills 的 file 指向）。
+   * 委托 RolePackManager.readSkillContent，避免 ToolExecutor 与 rolePackManager 强耦合
+   * （装配顺序：rolePackManager 在 toolExec 之后创建，用回调注入解耦时序）。
+   * 未注入时 read_skill 返回不可用提示。
+   */
+  readSkill?: (skillName: string) => Promise<string | null>;
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
@@ -442,6 +452,18 @@ export class ToolExecutor {
           return `[ERR:INVALID_ARG] 不支持的状态 "${stepStatus}"，仅支持 done/blocked`;
         }
         return this.planManager.updateStep(stepId, stepStatus);
+      }
+      case 'read_skill': {
+        // 渐进披露 L2：读取激活角色包内嵌技能正文（readSkill 回调由 agent 装配注入）
+        // name 为必填参数，已由 validateAndCoerceArgs 校验，此处直接用
+        if (!this.readSkill) {
+          return '[ERR:TOOL:NOT_AVAILABLE] read_skill 不可用：未装配角色包技能读取回调';
+        }
+        const content = await this.readSkill(strArg('name'));
+        if (content === null) {
+          return `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包未声明该技能，或技能正文读取失败）`;
+        }
+        return content;
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map
