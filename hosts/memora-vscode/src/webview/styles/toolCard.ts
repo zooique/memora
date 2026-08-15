@@ -10,17 +10,23 @@
  * 折叠：卡片加 .is-collapsed 时隐藏 args/result 并旋转箭头。
  */
 export const toolCardStyles = `
+  /* 过程性反馈降级（编排对齐）：工具调用是 Agent 的过程步骤，不是对话主体。
+   * 无背景色（透明表面），仅左侧细边框 + 状态文字指示状态，字号更小更灰，
+   * 与用户/AI 消息明显区分——避免「每条都对、合起来乱」的密度失控。 */
   .tool-card {
-    margin-top: var(--sp-1, 4px); padding: var(--sp-2, 6px) var(--sp-4, 10px);
-    font-size: var(--font-md, 12px); line-height: 1.5;
+    margin-top: var(--sp-1, 4px); padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    font-size: var(--font-sm, 11px); line-height: 1.5;
     border-radius: var(--radius, 6px);
     animation: toolCardIn 0.15s ease-out;
+    border-left: 3px solid var(--border-panel, rgba(128,128,128,.4)); /* 默认中性细边框 */
+    background: transparent;
   }
   /* 入场微位移：属动画细节，不在间距刻度内（对齐令牌铁律例外） */
   @keyframes toolCardIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-  .tool-card.is-running { border-left: 3px solid var(--status-info); background: var(--feedback-info-bg); }
-  .tool-card.is-success { border-left: 3px solid var(--status-pass); background: var(--feedback-info-bg); }
-  .tool-card.is-failed { border-left: 3px solid var(--status-fail); background: var(--feedback-error-bg); }
+  /* 状态仅由左侧边框颜色 + 状态文字承载（不带背景色，不抢视觉） */
+  .tool-card.is-running { border-left-color: var(--status-info); }
+  .tool-card.is-success { border-left-color: var(--status-pass); }
+  .tool-card.is-failed { border-left-color: var(--status-fail); }
   .tool-card__header {
     display: flex; align-items: center; gap: var(--sp-2, 6px); width: 100%;
     background: none; border: none; padding: 0; margin: 0;
@@ -29,7 +35,10 @@ export const toolCardStyles = `
   }
   .tool-card__chevron { display: inline-flex; align-items: center; color: var(--text-secondary, #9aa0a6); transition: transform 0.15s ease; font-size: var(--font-xs, 10px); }
   .tool-card.is-collapsed .tool-card__chevron { transform: rotate(-90deg); }
-  .tool-card__name { font-weight: 600; color: var(--text-primary, #1f1f1f); font-family: ui-monospace, Consolas, monospace; font-size: var(--font-sm, 11px); }
+  .tool-card__name {
+    font-weight: 500; color: var(--text-secondary, #9aa0a6);
+    font-family: ui-monospace, Consolas, monospace; font-size: var(--font-sm, 11px);
+  }
   .tool-card__spinner {
     display: inline-block; width: 10px; height: 10px; margin-left: auto;
     border: 1.5px solid var(--border-panel, #ccc);

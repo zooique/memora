@@ -283,19 +283,20 @@ export const chatStyles = `
   }
 
   /* ============ Components：自审查轮提示（活动透明，交叉审核观察 A） ============ */
-  /* Agent 自审查开始时插入的过程性反馈：轻量浅色条 + 呼吸圆点，让用户看见
-   * 正在复核产出（agent-design-philosophy §13.x 可观察契约）。仅运行时显示。 */
+  /* Agent 自审查开始时插入的过程性反馈：轻量灰字 + 呼吸圆点，让用户看见
+   * 正在复核产出（agent-design-philosophy §13.x 可观察契约）。仅运行时显示。
+   * 过程性反馈降级（编排对齐）：无背景色，字号更小更灰，与对话主体明显区分。 */
   .self-review {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
-    padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    font-size: var(--font-md, 12px); line-height: 1.5;
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    font-size: var(--font-sm, 11px); line-height: 1.5;
     color: var(--text-secondary, #9aa0a6);
-    background: var(--feedback-info-bg);
-    border-radius: var(--radius, 6px);
+    background: transparent;
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4)); /* 中性细边框，不抢视觉 */
   }
   .self-review__dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--status-info, #3794ff);
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-secondary, #9aa0a6); /* 灰点替代品牌蓝，降级为次要反馈 */
     flex-shrink: 0;
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }
