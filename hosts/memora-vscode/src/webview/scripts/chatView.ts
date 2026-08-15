@@ -53,10 +53,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const modelPicker = document.querySelector('.model-picker');
   const modelPickerMenu = modelPicker ? modelPicker.querySelector('.treedd__menu') : null;
   const modelPickerTrigger = modelPicker ? modelPicker.querySelector('.treedd__trigger') : null;
-  // 顶部历史会话下拉框（用 extraClass=history-picker 修饰，可手动切换查看某天记录）
-  const historyPicker = document.querySelector('.history-picker');
-  const historyPickerMenu = historyPicker ? historyPicker.querySelector('.treedd__menu') : null;
-  const historyPickerTrigger = historyPicker ? historyPicker.querySelector('.treedd__trigger') : null;
+  // 顶部溢出菜单（⋯）：承载历史会话切换 + 清空对话（低频操作收敛，对齐编排方案。
+  // 原 history-picker + clear 两个下拉合并为单一下拉，用 extraClass=overflow-menu 修饰）
+  const overflowMenu = document.querySelector('.overflow-menu');
+  const overflowMenuEl = overflowMenu ? overflowMenu.querySelector('.treedd__menu') : null;
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -152,40 +152,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
-  // 渲染历史会话下拉框选项（toolbar，可手动切换查看某天对话记录）
-  function renderHistoryPicker(): void {
-    if (!historyPickerMenu) return;
-    // 防注入：日期来自 sessionStore key（YYYY-MM-DD），textContent 构建
-    historyPickerMenu.textContent = '';
-    // 「全部历史」作为首项（跨天合并，默认视角）
-    const all = document.createElement('button');
-    all.className = 'treedd__item';
-    all.setAttribute('role', 'menuitem');
-    all.setAttribute('data-treedd-id', '');
-    all.textContent = '全部历史';
-    historyPickerMenu.appendChild(all);
-    // 按日期倒序列出各天对话
-    historyDates.forEach((date) => {
+  // 渲染顶部溢出菜单（⋯）：历史会话切换 + 清空对话（低频操作收敛，对齐编排方案）
+  // 原 renderHistoryPicker 只渲染历史日期；现合并清空对话进同一菜单，减少 toolbar 元素。
+  function renderOverflowMenu(): void {
+    if (!overflowMenuEl) return;
+    // 防注入：日期来自 sessionStore key（YYYY-MM-DD），一律 textContent 构建
+    overflowMenuEl.textContent = '';
+    // 构造一个菜单项（历史日期 / 清空操作），返回按钮供回调映射
+    const makeItem = (id: string, label: string, opts?: { danger?: boolean; active?: boolean }): HTMLButtonElement => {
       const btn = document.createElement('button');
-      btn.className = 'treedd__item';
+      btn.className =
+        'treedd__item' + (opts?.danger ? ' is-danger' : '') + (opts?.active ? ' is-active' : '');
       btn.setAttribute('role', 'menuitem');
-      btn.setAttribute('data-treedd-id', date);
-      btn.textContent = date;
-      historyPickerMenu.appendChild(btn);
-    });
-    // 更新触发器显示当前查看范围（紧凑胶囊，与模型选择器同一视觉语言）。
-    // P1-2：选中日期后回显该天（如 08-13），全部历史/当前回退「历史」，状态主动可见
-    if (historyPickerTrigger) {
-      historyPickerTrigger.textContent = '';
-      const span = document.createElement('span');
-      span.className = 'dd-model-name';
-      span.textContent = currentHistoryDate || '历史';
-      historyPickerTrigger.appendChild(span);
-      historyPickerTrigger.setAttribute(
-        'aria-label',
-        currentHistoryDate ? `当前查看 ${currentHistoryDate} 的历史对话` : '切换历史对话日期',
-      );
-    }
+      btn.setAttribute('data-treedd-id', id);
+      btn.textContent = label;
+      return btn;
+    };
+    // 「全部历史」作为首项（跨天合并，默认视角）；当前查看全部时高亮
+    overflowMenuEl.appendChild(makeItem('', '全部历史', { active: currentHistoryDate === '' }));
+    // 按日期倒序列出各天对话（当前查看该天时高亮）
+    historyDates.forEach((date) =>
+      overflowMenuEl.appendChild(makeItem(date, date, { active: currentHistoryDate === date })),
+    );
+    // 分隔线 + 清空对话（危险操作）
+    const divider = document.createElement('div');
+    divider.className = 'treedd__divider';
+    overflowMenuEl.appendChild(divider);
+    overflowMenuEl.appendChild(makeItem('clear', '清空对话', { danger: true }));
   }
 
   // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
@@ -439,13 +432,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         badge.hidden = false;
       }
     } else if (msg.type === 'chat_history_dates') {
-      // 历史会话日期列表（toolbar 历史下拉框）：刷新选项
+      // 历史会话日期列表（顶部溢出菜单）：刷新选项（含当前查看高亮）
       historyDates = msg.dates || [];
-      renderHistoryPicker();
+      renderOverflowMenu();
     } else if (msg.type === 'chat_history_view') {
-      // P1-2：宿主权威回传当前查看日期 → 更新触发器回显（仅镜像，不做业务判定）
+      // P1-2：宿主权威回传当前查看日期 → 刷新菜单高亮（仅镜像，不做业务判定）
       currentHistoryDate = msg.date || '';
-      renderHistoryPicker();
+      renderOverflowMenu();
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     }
@@ -486,14 +479,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应
   initDropdowns(document, {
-    __treeddOnSelect: (id) => {
+    __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
+    // 顶部溢出菜单（⋯）：历史日期 id → 切换查看；clear → 清空对话
+    __overflowOnSelect: (id) => {
       // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
       // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
       if (id === 'clear') vscode.postMessage({ type: 'clear' });
+      else vscode.postMessage({ type: 'chat_switch_date', date: id || '' });
     },
-    __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
-    __historyPickerOnSelect: (id) =>
-      vscode.postMessage({ type: 'chat_switch_date', date: id || '' }),
   });
 
   // 主动提问回答：提交并续跑
@@ -513,7 +506,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 首屏刷新
   updateEmptyState();
   renderModelPicker();
-  renderHistoryPicker();
+  renderOverflowMenu();
 
   // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
   // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）

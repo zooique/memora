@@ -13,6 +13,7 @@ import { createChatView } from '../scripts/chatView.js';
 const HTML = `
   <div id="toolbar">
     <span id="rolePackBadge" class="role-pack-badge" hidden title="当前角色"></span>
+    <div class="treedd overflow-menu" data-on-select="__overflowOnSelect"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
   </div>
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
@@ -315,5 +316,64 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(list.textContent).toContain('已暂停');
     // 每条带时间戳（.activity-list__time 存在）
     expect(list.querySelectorAll('.activity-list__time').length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('chatView toolbar 溢出菜单（低频操作收敛）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('溢出菜单渲染历史日期（全部历史首项 + 各天）+ 清空对话分隔', () => {
+    mountChatView();
+    const menu = document.querySelector('.overflow-menu .treedd__menu') as HTMLElement;
+    // 初始：仅「全部历史」+ 分隔线 + 清空对话
+    expect(menu.textContent).toContain('全部历史');
+    expect(menu.textContent).toContain('清空对话');
+    // 推送历史日期后：日期项渲染进同一菜单（toolbar 收敛：原独立 history-picker 下拉并入 ⋯ 菜单）
+    dispatch({ type: 'chat_history_dates', dates: ['2026-08-15', '2026-08-14'] });
+    expect(menu.textContent).toContain('2026-08-15');
+    expect(menu.textContent).toContain('2026-08-14');
+    // 全部历史 + 日期 + 清空对话 + 分隔线：日期前有分隔
+    const items = menu.querySelectorAll('.treedd__item');
+    const texts = Array.from(items).map((el) => (el as HTMLElement).textContent);
+    expect(texts[0]).toBe('全部历史');
+    expect(texts).toContain('清空对话');
+  });
+
+  it('溢出菜单选中历史日期发送 chat_switch_date，选中清空发送 clear', () => {
+    const { postMessage } = mountChatView();
+    const menu = document.querySelector('.overflow-menu .treedd__menu') as HTMLElement;
+    dispatch({ type: 'chat_history_dates', dates: ['2026-08-15'] });
+    // 点击日期项（事件委托：closest .treedd__item）
+    const dateItem = Array.from(menu.querySelectorAll('.treedd__item')).find(
+      (el) => (el as HTMLElement).textContent === '2026-08-15',
+    ) as HTMLButtonElement;
+    dateItem.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'chat_switch_date', date: '2026-08-15' });
+    // 点击清空对话 → clear
+    const clearItem = Array.from(menu.querySelectorAll('.treedd__item')).find(
+      (el) => (el as HTMLElement).textContent === '清空对话',
+    ) as HTMLButtonElement;
+    clearItem.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clear' });
+  });
+
+  it('当前查看日期高亮：全部历史或指定日期的 is-active 标记', () => {
+    mountChatView();
+    const menu = document.querySelector('.overflow-menu .treedd__menu') as HTMLElement;
+    dispatch({ type: 'chat_history_dates', dates: ['2026-08-15', '2026-08-14'] });
+    // 默认查看全部历史 → 全部历史项高亮
+    let active = menu.querySelectorAll('.treedd__item.is-active');
+    expect(active.length).toBe(1);
+    expect((active[0] as HTMLElement).textContent).toBe('全部历史');
+    // 宿主回传查看 2026-08-15 → 该项高亮，全部历史取消高亮
+    dispatch({ type: 'chat_history_view', date: '2026-08-15' });
+    active = menu.querySelectorAll('.treedd__item.is-active');
+    expect(active.length).toBe(1);
+    expect((active[0] as HTMLElement).textContent).toBe('2026-08-15');
   });
 });

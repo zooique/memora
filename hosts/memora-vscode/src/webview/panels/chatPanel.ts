@@ -782,8 +782,7 @@ function buildHtml(scriptUri: vscode.Uri): string {
   <div id="toolbar">
     <span class="title">对话</span>
     <span id="rolePackBadge" class="role-pack-badge" hidden title="当前角色"></span>
-    ${buildDropdownHtml([], { extraClass: 'history-picker treedd--capsule', onSelect: '__historyPickerOnSelect' })}
-    ${buildDropdownHtml([{ id: 'clear', label: '清空对话', danger: true }])}
+    ${buildDropdownHtml([], { extraClass: 'overflow-menu', onSelect: '__overflowOnSelect' })}
   </div>
   <!-- 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
        原 memoryBar + noticeBar + metricsBox 三条并列收敛为单一通道，SSOT 不互相覆盖 -->

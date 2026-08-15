@@ -178,24 +178,27 @@ export const chatStyles = `
     text-align: center;
   }
 
-  /* ============ Components：历史会话选择器（toolbar，capsule 变体差异定制） ============
-   * 精灵「按天归档 + 日期导航回溯」机制的插件版：与模型选择器同一胶囊视觉语言。
-   * 通用外观在 dropdown.ts 的 .treedd--capsule 变体；此处仅定制胶囊圆角 + 次要
-   * 文本色 + 菜单尺寸（对抗评估 P2-2/P2-4）。 */
-  .history-picker {
+  /* ============ Components：顶部溢出菜单（⋯，toolbar 差异定制） ============
+   * 承载历史会话切换 + 清空对话（低频操作收敛，对齐编排方案）。
+   * 触发器默认 ⋯ 图标按钮（dropdown.ts 默认样式，无需 capsule 变体）；
+   * 此处仅定制菜单尺寸 + 分隔线 + 激活项高亮。 */
+  .overflow-menu {
     flex: 0 0 auto;
     min-width: 0;
-    /* 差异定制变量（capsule 变体读取）：历史日期胶囊更紧凑 + 菜单尺寸 */
-    --dd-trigger-max-w: 120px;
+    /* 差异定制变量：菜单宽度适配日期 + 清空操作 */
     --dd-menu-min-w: 160px;
     --dd-menu-max-w: 240px;
   }
-  /* 历史胶囊圆角更圆（pill）+ 次要文本色（工具栏工具属性）。
-   * 用 .history-picker.treedd--capsule 提高特异性，确保在 dropdown.ts 变体之后
-   * 仍能覆盖（不依赖样式拼接顺序，也不用 !important） */
-  .history-picker.treedd--capsule .treedd__trigger {
-    border-radius: var(--radius-pill, 999px);
-    color: var(--text-secondary, #9aa0a6);
+  /* 菜单内分隔线：历史日期 与 清空对话 分区 */
+  .overflow-menu .treedd__divider {
+    height: 1px;
+    margin: var(--sp-1, 4px) 0;
+    background: var(--border-panel, rgba(128,128,128,.4));
+  }
+  /* 激活项高亮：当前查看的历史日期（镜像宿主权威，仅视觉标识） */
+  .overflow-menu .treedd__item.is-active {
+    color: var(--accent, #0e639c);
+    font-weight: 600;
   }
 
   /* ============ Components：发送按钮 ============ */
