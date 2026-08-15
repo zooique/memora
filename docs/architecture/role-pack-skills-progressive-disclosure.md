@@ -1,7 +1,7 @@
 # 角色包 skills 演进方案 · 渐进披露（Progressive Disclosure）
 
 > **定位**：角色包 `manifest.skills` 从"能力声明"演进为"可装载技能系统"，对齐 Agent Skills 行业标准。
-> **状态**：设计定案（2026-08-15）——行业做法 + 角色包交互审查。**当前不落地**，memora 处于草案演进期（v1 字段冻结延后），本方案为后续实现的蓝本。
+> **状态**：**已实现**（2026-08-15）——read_skill 工具 + L1 元数据注入已落地（commit 179d6a78），本方案为实现蓝本与演进记录。
 > **关联**：[role-pack-spec.md](./role-pack-spec.md) §四（能力声明）/ §2.1（角色包 vs Skills）；样例见 [角色包 manifest 示例](./role-pack-spec.md)。
 
 ---
@@ -23,6 +23,8 @@
 - `name` / `description` → **不暴露给 LLM**（仅存于元数据）
 
 **缺口**：角色包声明了"有这篇技能"，但 LLM 既看不到它的存在（无 name/description 常驻），也无法读取它的正文（无装载工具）。`file` 是"挂着但没通"的指针。
+
+> **已解决（2026-08-15）**：本缺口经渐进披露实现关闭——L1 元数据常驻 + read_skill 工具按需装载正文（见 §五 落地清单）。本节为演进动因的历史记录。
 
 ### 1.2 演进目标
 
@@ -79,25 +81,25 @@
 ```
 manifest.skills
    ├─ capability ──→ resolveCapabilityTools ──→ 工具白名单（已有，不动）
-   ├─ file ──→ read_skill 工具 ──→ SkillManager 装载正文（复用）
+   ├─ file ──→ read_skill 工具 ──→ RolePackManager.readSkillContent（新增）
    └─ name+description ──→ L1 元数据注入 system prompt（新增）
 ```
 
-**关键**：复用现有 `SkillManager` 的扫描/装载能力（`SkillEntry` 已含 `content`/`filePath`），**不新建并行技能系统**。角色包内嵌技能注册进 `SkillManager` 即可被 read_skill 读取。
+**关键**：read_skill 直接读取激活角色包内嵌技能正文（`RolePackManager.readSkillContent`），**不新建并行技能系统、不混入宿主全局 SkillManager**——角色包内嵌技能与宿主全局技能来源分治（职责分离，SSOT）。
 
 ### 3.3 新增 `read_skill` 工具（内核）
 
 ```typescript
 /**
- * 渐进披露 L2：按需读取技能正文
+ * 渐进披露 L2：按需读取激活角色包内嵌技能正文
  * 参数：name（技能名，来自 L1 元数据）
- * 返回：技能正文（skills/*.md 内容）
+ * 返回：技能正文（manifest.skills 的 file 指向内容）
  */
 read_skill: {
   name: 'read_skill',
   description: '读取指定技能的完整正文（渐进披露，按需调用）',
   parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
-  handler: (args) => skillManager.get(args.name)?.content ?? '技能不存在',
+  handler: (name) => rolePackManager.readSkillContent(name) ?? '技能不存在',
 }
 ```
 
@@ -137,16 +139,16 @@ read_skill: {
 
 - 角色包 `skills/*.md` 即 Agent Skills 格式（同构，§十）；
 - `file` 指针指向的文件符合 Agent Skills 目录规范时，可被其他实现直接装载；
-- **不破坏**：当前"正文不装载"是 memora 的诚实声明，演进后变为"按需装载"，是能力增强非格式变更。
+- **兼容性**：演进为"正文按需装载"是能力增强，非格式变更——`file`/`capability`/`name` 字段语义不变，仅 `file` 由生态指针升级为装载入口。
 
 ### 4.2 SSOT 审查
 
 | 检查 | 结论 |
 |------|------|
-| 是否新建平行技能系统？ | ❌ 复用 `SkillManager`，`read_skill` 是工具接线 |
+| 是否新建平行技能系统？ | ❌ 复用 `RolePackManager.readSkillContent`，`read_skill` 是工具接线 |
 | 字段职责是否重叠？ | ✅ capability/file/name 三职责分离，单一真理源 |
 | 是否越层？ | ✅ 内核只产工具+元数据，宿主装配，UI 不动 |
-| 是否重复造轮子？ | ✅ `name+description` 复用 `RolePackCapability`，正文复用 `SkillEntry.content` |
+| 是否重复造轮子？ | ✅ `name+description` 复用 `RolePackAssembly.skills`，正文经 `readSkillContent` 按需读取 |
 
 ### 4.3 风险与边界
 
@@ -159,19 +161,23 @@ read_skill: {
 
 ---
 
-## 五、落地清单（后续实现时）
+## 五、落地清单（2026-08-15 已实现）
 
-- [ ] 内核：新增 `read_skill` 工具（注册 BUILTIN_TOOLS + 幂等映射）
-- [ ] 内核：L1 元数据注入（激活角色包的 skills name+description 入 system prompt）
-- [ ] 内核：角色包内嵌技能注册进 SkillManager（加载阶段）
-- [ ] 测试：read_skill 读取正文 / 元数据注入 / 白名单约束 / 幂等
-- [ ] 文档：role-pack-spec §四 更新"正文按需装载"声明
+- [x] 内核：新增 `read_skill` 工具（注册 BUILTIN_TOOLS + 幂等映射）——commit 179d6a78
+- [x] 内核：L1 元数据注入（`buildSystemPrompt` 暴露激活角色包 skills name+description）
+- [x] 内核：`RolePackManager.readSkillContent()` 读取内嵌技能正文（L2 数据源）
+- [x] 内核：`ToolExecutor.readSkill` 回调注入 + `read_skill` 执行分支
+- [x] 装配：`assembler.ts` 注入 readSkill 回调（rolePackManager → toolExec）
+- [x] 测试：read_skill 读正文 / 元数据注入 / 回调接线 / 幂等（84 文件 / 1986 测试全通过）
+- [x] 文档：role-pack-spec §四 更新"正文按需装载"声明（本文件同步）
 - [ ] 评估：与 matchAndInjectSkill 的长期统一策略
+
+> **实现决策（偏离原方案一处）**：原方案设想"角色包内嵌技能注册进 SkillManager"，实现时改为**直接经 `RolePackManager.readSkillContent()` 读取**，未混入宿主全局 SkillManager——保持角色包内嵌技能与宿主全局技能来源分治（职责分离，SSOT），read_skill 只读激活角色包的内嵌技能。
 
 ---
 
 ## 六、结论
 
-本方案将角色包 skills 从"能力声明"演进为"渐进披露的可装载技能系统"，对齐 Agent Skills 行业标准（L1 元数据常驻 + L2 按需装载）。**核心是复用现有 SkillManager，不新建平行系统**；`file` 指针从"空壳"变为 read_skill 的装载入口，`capability`/`file`/`name` 三者职责分离，单一真理源。
+本方案将角色包 skills 从"能力声明"演进为"渐进披露的可装载技能系统"，对齐 Agent Skills 行业标准（L1 元数据常驻 + L2 按需装载）。**核心是复用现有数据源，不新建平行系统**；`file` 指针从"生态指针"变为 read_skill 的装载入口，`capability`/`file`/`name` 三者职责分离，单一真理源。
 
-**决策**：当前仅记录为演进方向，不落地实现（memora 草案演进期）。用户确认后按 §五 清单实施。
+**决策**：已实现并提交（179d6a78）。剩余待办：与 matchAndInjectSkill 的长期统一策略评估。

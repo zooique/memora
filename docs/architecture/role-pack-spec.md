@@ -84,7 +84,7 @@
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
 - **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
 - **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
-- **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 仅转译为注册形状（正文不装载，§四 诚实声明）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
+- **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 转译为注册形状 + 派生态指针（正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 - **分发**：文件夹 zip 压缩（对齐 skills 市场分发方式）。
 
@@ -157,9 +157,10 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 
 **capability 是内核唯一行为入口**：`manifest.skills` 项中声明 `capability` 标签（如 `capability: web:search`）的，装载时派生为能力声明并映射到工具；未声明 `capability` 的技能项不参与工具白名单映射。capabilities 未匹配到任何内嵌包时，按实现映射到自有工具（原规则不变）。
 
-> **技能正文定位（诚实声明）**：`skills/{file}` 指向的技能文件正文**当前不装载、不就地执行**——`file` 是**生态兼容指针**（可与 Agent Skills 生态互认/移植），`capability` 才是内核行为入口。技能正文的"文本装载"（如把某技能文件当规则注入 prompt）是**宿主可选能力，非标准承诺**；标准契约只保证 `capability` 生效。
->
-> **演进方向（2026-08-15）**：正文"按需装载"（渐进披露）已设计定案，见 [role-pack-skills-progressive-disclosure.md](./role-pack-skills-progressive-disclosure.md)——`file` 从生态指针演进为 `read_skill` 工具的装载入口，`name+description` 作 L1 常驻元数据。当前不落地，草案演进期后实施。
+> **技能正文定位（渐进披露 L1/L2）**：`skills/{file}` 指向的技能文件正文默认**不预装载**，`capability` 是内核的**工具暴露入口**（映射工具白名单）。技能正文经**渐进披露**按需装载（对齐 Agent Skills 行业标准）：
+> - **L1 常驻元数据**：`manifest.skills` 的 `name` + `description` 暴露给 LLM（每技能一行，省 token），LLM 据此判断何时读取技能；
+> - **L2 按需装载**：LLM 调用 `read_skill` 工具，按技能名读取 `file` 指向的技能正文——`file` 从"生态指针"变为"装载入口"；
+> - **标准契约**：`capability` 保证生效（工具暴露面）；技能正文装载经 `read_skill` 按需提供，实现应支持 `read_skill` 以兑现渐进披露（memora 已实现，见 [role-pack-skills-progressive-disclosure.md](./role-pack-skills-progressive-disclosure.md)）。
 
 **具体连接桥（L2 可选，`mcp.json`）**：capabilities 是**抽象能力声明**（要什么能力、实现无关）；当角色包需要**开箱即用**的具象连接时，可在文件夹根放 `mcp.json`（对齐 Agent Plugins 1.0 的 transport 声明：`stdio` / `streamable-http` / `http+sse`），由实现映射到自有运行时。两者不冲突：**capabilities 是 L1 中立契约，mcp.json 是 L2 可选实现加速**——不声明 mcp.json 的角色包仍可被任何实现按 capabilities 装载。
 
