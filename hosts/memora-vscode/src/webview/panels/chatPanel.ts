@@ -741,9 +741,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 从 vscodeTracer 提取最近一轮「模型看到了什么」指纹（只记 hash 不记内容），
    * 从 agent.getMetrics() 取累计指标；推送 webview 折叠区展示。
    * 指纹展示前 12 位（完整 hash 过长，仅作比对/调试抓手）。
+   *
+   * 深度隐藏（编排对齐）：指标是开发者调试信息，默认不推送——仅当用户显式开启
+   * `memora.showMetrics` 配置时才推送，避免对普通用户造成噪音（不推送则 webview
+   * 详情区不显示指标块，彻底隐藏而非「显示后折叠」）。
    */
   private postMetrics(): void {
     if (!this._agent) return;
+    // 深度隐藏开关：默认 false（普通用户零噪音），调试可观测性时开启
+    const show = vscode.workspace.getConfiguration('memora').get<boolean>('showMetrics', false);
+    if (!show) return;
     const fp = vscodeTracer.getLatestFingerprints();
     const m = this._agent.getMetrics();
     this.post({
