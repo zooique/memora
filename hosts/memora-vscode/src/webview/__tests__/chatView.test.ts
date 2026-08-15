@@ -11,16 +11,18 @@ import { createChatView } from '../scripts/chatView.js';
 
 /** 覆盖 createChatView 全部 getElementById 引用的最小 HTML 骨架 */
 const HTML = `
-  <div id="toolbar">
-    <span id="rolePackBadge" class="role-pack-badge" hidden title="当前角色"></span>
-    <div class="treedd overflow-menu" data-on-select="__overflowOnSelect"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
-  </div>
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
     <div id="activityList" class="activity-list"></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
+  <div id="identityBar" class="identity-bar" hidden>
+    <span class="identity-avatar" aria-hidden="true"></span>
+    <span class="identity-role"></span>
+    <span class="identity-model"></span>
+    <span class="identity-status" data-state="idle">待命</span>
+  </div>
   <div id="messages"><div id="emptyState" class="empty-state" hidden></div></div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -70,18 +72,20 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
   });
 
-  it('chat_role_pack 渲染当前角色徽章并主动可见（角色包定位承载）', () => {
+  it('chat_role_pack 渲染当前角色到身份条并主动可见（角色包定位承载，ui-redesign.md §4.1 ①）', () => {
     mountChatView();
-    const badge = document.getElementById('rolePackBadge') as HTMLElement;
+    const identityBar = document.getElementById('identityBar') as HTMLElement;
+    const identityRole = identityBar.querySelector('.identity-role') as HTMLElement;
+    const identityAvatar = identityBar.querySelector('.identity-avatar') as HTMLElement;
     // 未推送前隐藏
-    expect(badge.hidden).toBe(true);
+    expect(identityBar.hidden).toBe(true);
 
     dispatch({ type: 'chat_role_pack', rolePack: 'doc-review' });
 
     // textContent 赋值防注入 + 显示后主动可见（用户始终知道当前用哪个角色）
-    expect(badge.hidden).toBe(false);
-    expect(badge.textContent).toBe('doc-review');
-    expect(badge.title).toBe('当前角色：doc-review');
+    expect(identityBar.hidden).toBe(false);
+    expect(identityRole.textContent).toBe('doc-review');
+    expect(identityAvatar.textContent).toBe('d');
   });
 
   it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {
@@ -113,12 +117,13 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(messages.querySelector('#emptyState')).not.toBeNull();
   });
 
-  it('self_review 渲染过程性提示（自审查轮可见性，交叉审核观察 A）', () => {
+  it('self_review 渲染过程性提示到思考折叠块（自审查轮可见性，ui-redesign.md §7.1）', () => {
     mountChatView();
     dispatch({ type: 'self_review', round: 1 });
-    const sr = document.querySelector('.self-review') as HTMLElement;
-    expect(sr).not.toBeNull();
-    expect(sr?.textContent).toContain('自审查轮 1');
+    const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
+    expect(tb).not.toBeNull();
+    expect(tb.textContent).toContain('自审查轮 1');
+    expect(tb.open).toBe(true);
   });
 
   it('流式 chunk 在工具卡片插入后仍追加到同一条 assistant 消息（P0-1 锚点）', () => {
@@ -319,7 +324,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
   });
 });
 
-describe('chatView toolbar 溢出菜单（低频操作收敛）', () => {
+describe('chatView toolbar 剪枝（视图标题栏承载历史/清空）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -327,53 +332,15 @@ describe('chatView toolbar 溢出菜单（低频操作收敛）', () => {
     vi.restoreAllMocks();
   });
 
-  it('溢出菜单渲染历史日期（全部历史首项 + 各天）+ 清空对话分隔', () => {
+  it('toolbar 剪枝后 webview 无溢出菜单元素（历史/清空迁至视图标题栏命令）', () => {
     mountChatView();
-    const menu = document.querySelector('.overflow-menu .treedd__menu') as HTMLElement;
-    // 初始：仅「全部历史」+ 分隔线 + 清空对话
-    expect(menu.textContent).toContain('全部历史');
-    expect(menu.textContent).toContain('清空对话');
-    // 推送历史日期后：日期项渲染进同一菜单（toolbar 收敛：原独立 history-picker 下拉并入 ⋯ 菜单）
-    dispatch({ type: 'chat_history_dates', dates: ['2026-08-15', '2026-08-14'] });
-    expect(menu.textContent).toContain('2026-08-15');
-    expect(menu.textContent).toContain('2026-08-14');
-    // 全部历史 + 日期 + 清空对话 + 分隔线：日期前有分隔
-    const items = menu.querySelectorAll('.treedd__item');
-    const texts = Array.from(items).map((el) => (el as HTMLElement).textContent);
-    expect(texts[0]).toBe('全部历史');
-    expect(texts).toContain('清空对话');
-  });
-
-  it('溢出菜单选中历史日期发送 chat_switch_date，选中清空发送 clear', () => {
-    const { postMessage } = mountChatView();
-    const menu = document.querySelector('.overflow-menu .treedd__menu') as HTMLElement;
-    dispatch({ type: 'chat_history_dates', dates: ['2026-08-15'] });
-    // 点击日期项（事件委托：closest .treedd__item）
-    const dateItem = Array.from(menu.querySelectorAll('.treedd__item')).find(
-      (el) => (el as HTMLElement).textContent === '2026-08-15',
-    ) as HTMLButtonElement;
-    dateItem.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'chat_switch_date', date: '2026-08-15' });
-    // 点击清空对话 → clear
-    const clearItem = Array.from(menu.querySelectorAll('.treedd__item')).find(
-      (el) => (el as HTMLElement).textContent === '清空对话',
-    ) as HTMLButtonElement;
-    clearItem.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clear' });
-  });
-
-  it('当前查看日期高亮：全部历史或指定日期的 is-active 标记', () => {
-    mountChatView();
-    const menu = document.querySelector('.overflow-menu .treedd__menu') as HTMLElement;
-    dispatch({ type: 'chat_history_dates', dates: ['2026-08-15', '2026-08-14'] });
-    // 默认查看全部历史 → 全部历史项高亮
-    let active = menu.querySelectorAll('.treedd__item.is-active');
-    expect(active.length).toBe(1);
-    expect((active[0] as HTMLElement).textContent).toBe('全部历史');
-    // 宿主回传查看 2026-08-15 → 该项高亮，全部历史取消高亮
-    dispatch({ type: 'chat_history_view', date: '2026-08-15' });
-    active = menu.querySelectorAll('.treedd__item.is-active');
-    expect(active.length).toBe(1);
-    expect((active[0] as HTMLElement).textContent).toBe('2026-08-15');
+    // toolbar 已剪：不再渲染 overflow-menu / role-pack-badge 等顶部栏元素
+    expect(document.querySelector('.overflow-menu')).toBeNull();
+    expect(document.querySelector('#toolbar')).toBeNull();
+    // chat_history_dates / chat_history_view 消息不再触发任何渲染（被静默忽略）
+    expect(() => {
+      dispatch({ type: 'chat_history_dates', dates: ['2026-08-15'] });
+      dispatch({ type: 'chat_history_view', date: '2026-08-15' });
+    }).not.toThrow();
   });
 });

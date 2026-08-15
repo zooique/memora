@@ -49,14 +49,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const clarifyOptions = document.getElementById('clarifyOptions') as HTMLElement;
   const clarifyInput = document.getElementById('clarifyInput') as HTMLInputElement;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
-  // 底部模型下拉框（独立于顶部⋯菜单，用 extraClass=model-picker 修饰）
+  // ① 身份条（改造 roleBar，ui-redesign.md §4.1 ①）：整合角色/模型/状态为一行
+  // avatar/role/model/status 文本在 chat_role_pack / chat_providers / status 消息到达时填充
+  const identityBar = document.getElementById('identityBar') as HTMLElement;
+  const identityAvatar = identityBar.querySelector('.identity-avatar') as HTMLElement;
+  const identityRole = identityBar.querySelector('.identity-role') as HTMLElement;
+  const identityModel = identityBar.querySelector('.identity-model') as HTMLElement;
+  const identityStatus = identityBar.querySelector('.identity-status') as HTMLElement;
+  // 当前角色显示名（身份条 + AI 消息头像首字共用；由 chat_role_pack 填充）
+  let currentRoleName = '';
+  // 底部模型下拉框（用 extraClass=model-picker 修饰）
   const modelPicker = document.querySelector('.model-picker');
   const modelPickerMenu = modelPicker ? modelPicker.querySelector('.treedd__menu') : null;
   const modelPickerTrigger = modelPicker ? modelPicker.querySelector('.treedd__trigger') : null;
-  // 顶部溢出菜单（⋯）：承载历史会话切换 + 清空对话（低频操作收敛，对齐编排方案。
-  // 原 history-picker + clear 两个下拉合并为单一下拉，用 extraClass=overflow-menu 修饰）
-  const overflowMenu = document.querySelector('.overflow-menu');
-  const overflowMenuEl = overflowMenu ? overflowMenu.querySelector('.treedd__menu') : null;
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -66,15 +71,97 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
-  // 历史会话日期列表（由 chat_history_dates 消息填充，倒序最新在前）
-  let historyDates: string[] = [];
-  // 当前查看的历史会话日期（由 chat_history_view 消息回传，空串 = 全部历史跨天合并）。
-  // 仅作触发器回显，不参与任何业务判定（宿主 _historyDate 才是权威，webview 只镜像）。
-  let currentHistoryDate = '';
+
+  // 思考折叠块（ui-redesign.md §7.1）：生成中/自审查的过程性反馈，不落库不重放
+  // details 元素：以 HTMLDetailsElement 承载 open 属性（折叠/展开态）
+  let thoughtEl: HTMLDetailsElement | null = null;
+  // 日期分隔线：跨天合并视图在日期交界插入分组（ui-redesign.md §4.1 ②）
+  let lastShownDate: string | undefined;
+
+  /** 本地时区 YYYY-MM-DD 日期键 */
+  function toDateKey(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
+  }
+
+  /** 确保思考折叠块存在并返回（过程透明，不落库不重放） */
+  function ensureThoughtBlock(): HTMLDetailsElement {
+    if (thoughtEl && thoughtEl.isConnected) return thoughtEl;
+    const tb = document.createElement('details');
+    tb.className = 'thought-block';
+    const summary = document.createElement('summary');
+    const dot = document.createElement('span');
+    dot.className = 'thought-block__dot';
+    const label = document.createElement('span');
+    label.className = 'thought-block__label';
+    summary.appendChild(dot);
+    summary.appendChild(label);
+    tb.appendChild(summary);
+    messages.appendChild(tb);
+    thoughtEl = tb;
+    scrollToBottom(messages);
+    return tb;
+  }
+
+  /** 更新思考折叠块：label 标题 + 可选 body 内容 + 思考中/展开态 */
+  function setThoughtLabel(
+    label: string,
+    opts: { thinking?: boolean; open?: boolean; body?: string } = {},
+  ): void {
+    const tb = ensureThoughtBlock();
+    tb.classList.toggle('is-thinking', opts.thinking ?? false);
+    tb.open = opts.open ?? false;
+    const labelEl = tb.querySelector('.thought-block__label') as HTMLElement;
+    if (labelEl) labelEl.textContent = label;
+    if (opts.body !== undefined) {
+      let bodyEl = tb.querySelector('.thought-block__body') as HTMLElement | null;
+      if (!bodyEl) {
+        bodyEl = document.createElement('div');
+        bodyEl.className = 'thought-block__body';
+        tb.appendChild(bodyEl);
+      }
+      bodyEl.textContent = opts.body;
+    }
+  }
+
+  // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
+  // 仅当本条消息日期与上一条不同才插入；divider 先于消息追加，形成「日期 → 消息」分组。
+  function renderDateDivider(ts?: string): void {
+    if (!ts) return;
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return;
+    const key = toDateKey(d);
+    if (key === lastShownDate) return;
+    lastShownDate = key;
+    const today = toDateKey(new Date());
+    const yesterday = toDateKey(new Date(Date.now() - 86400000));
+    const md = `${d.getMonth() + 1}月${d.getDate()}日`;
+    const label =
+      key === today ? `${md} · 今天` : key === yesterday ? `${md} · 昨天` : md;
+    const divider = document.createElement('div');
+    divider.className = 'date-divider';
+    divider.setAttribute('aria-hidden', 'true');
+    divider.textContent = label;
+    messages.appendChild(divider);
+  }
 
   // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
-  // 输入框保持可用（支持插话）；done 恢复发送按钮。
+  // 输入框保持可用（支持插话）；done 恢复发送按钮。同时同步①身份条状态与思考折叠块。
   function setStatus(state: 'thinking' | 'done'): void {
+    // ① 身份条状态圆点：thinking=品牌色呼吸「思考中」/ idle=灰「待命」
+    identityStatus.dataset.state = state === 'thinking' ? 'thinking' : 'idle';
+    identityStatus.textContent = state === 'thinking' ? '思考中' : '待命';
+    if (state === 'thinking') {
+      // 生成中：展示「思考中…」折叠块（过程透明，ui-redesign.md §7.1）
+      setThoughtLabel('思考中…', { thinking: true });
+    } else {
+      // 结束：折叠思考块并停止呼吸（保留折叠态，不落库不重放）
+      if (thoughtEl && thoughtEl.isConnected) {
+        thoughtEl.classList.remove('is-thinking');
+        thoughtEl.open = false;
+      }
+    }
     if (state === 'thinking') {
       send.classList.add('loading');
       send.setAttribute('title', '停止生成');
@@ -152,62 +239,60 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
-  // 渲染顶部溢出菜单（⋯）：历史会话切换 + 清空对话（低频操作收敛，对齐编排方案）
-  // 原 renderHistoryPicker 只渲染历史日期；现合并清空对话进同一菜单，减少 toolbar 元素。
-  function renderOverflowMenu(): void {
-    if (!overflowMenuEl) return;
-    // 防注入：日期来自 sessionStore key（YYYY-MM-DD），一律 textContent 构建
-    overflowMenuEl.textContent = '';
-    // 构造一个菜单项（历史日期 / 清空操作），返回按钮供回调映射
-    const makeItem = (id: string, label: string, opts?: { danger?: boolean; active?: boolean }): HTMLButtonElement => {
-      const btn = document.createElement('button');
-      btn.className =
-        'treedd__item' + (opts?.danger ? ' is-danger' : '') + (opts?.active ? ' is-active' : '');
-      btn.setAttribute('role', 'menuitem');
-      btn.setAttribute('data-treedd-id', id);
-      btn.textContent = label;
-      return btn;
-    };
-    // 「全部历史」作为首项（跨天合并，默认视角）；当前查看全部时高亮
-    overflowMenuEl.appendChild(makeItem('', '全部历史', { active: currentHistoryDate === '' }));
-    // 按日期倒序列出各天对话（当前查看该天时高亮）
-    historyDates.forEach((date) =>
-      overflowMenuEl.appendChild(makeItem(date, date, { active: currentHistoryDate === date })),
-    );
-    // 分隔线 + 清空对话（危险操作）
-    const divider = document.createElement('div');
-    divider.className = 'treedd__divider';
-    overflowMenuEl.appendChild(divider);
-    overflowMenuEl.appendChild(makeItem('clear', '清空对话', { danger: true }));
-  }
-
   // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
   // 返回创建的 .msg 元素，供调用方作为流式锚点（排雷 P0-1）。
+  // 跨天合并时先插入日期分隔线（ui-redesign.md §4.1 ②）；AI 消息带头像身份。
   function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string): HTMLElement {
+    // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
+    renderDateDivider(ts);
     const div = document.createElement('div');
     div.className = 'msg ' + role;
-    const body = document.createElement('div');
-    body.className = 'msg-body';
-    body.textContent = text;
-    div.appendChild(body);
-    const footer = document.createElement('div');
-    footer.className = 'msg-footer';
     if (role === 'assistant') {
+      // AI 消息：带头像身份（角色首字 + 品牌弱化底），正文/操作行收进 .msg-content
+      const avatar = document.createElement('span');
+      avatar.className = 'msg-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = currentRoleName ? currentRoleName.charAt(0) : 'AI';
+      div.appendChild(avatar);
+      const content = document.createElement('div');
+      content.className = 'msg-content';
+      const body = document.createElement('div');
+      body.className = 'msg-body';
+      body.textContent = text;
+      content.appendChild(body);
+      const footer = document.createElement('div');
+      footer.className = 'msg-footer';
       const copyBtn = document.createElement('button');
       copyBtn.className = 'msg-copy';
       copyBtn.textContent = '复制';
       copyBtn.title = '复制消息';
       copyBtn.addEventListener('click', () => copyText(text));
       footer.appendChild(copyBtn);
+      const t = fmtTime(ts);
+      if (t) {
+        const timeEl = document.createElement('span');
+        timeEl.className = 'msg-time';
+        timeEl.textContent = t;
+        footer.appendChild(timeEl);
+      }
+      content.appendChild(footer);
+      div.appendChild(content);
+    } else {
+      const body = document.createElement('div');
+      body.className = 'msg-body';
+      body.textContent = text;
+      div.appendChild(body);
+      const footer = document.createElement('div');
+      footer.className = 'msg-footer';
+      const t = fmtTime(ts);
+      if (t) {
+        const timeEl = document.createElement('span');
+        timeEl.className = 'msg-time';
+        timeEl.textContent = t;
+        footer.appendChild(timeEl);
+      }
+      div.appendChild(footer);
     }
-    const t = fmtTime(ts);
-    if (t) {
-      const timeEl = document.createElement('span');
-      timeEl.className = 'msg-time';
-      timeEl.textContent = t;
-      footer.appendChild(timeEl);
-    }
-    div.appendChild(footer);
     // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
     if (role === 'assistant') activeAssistantEl = div;
     messages.appendChild(div);
@@ -217,19 +302,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
-  // 渲染一条轻量提示让用户看见 Agent 正在复核产出。仅运行时显示，不持久化、不重放，
-  // 与 tool 卡片同一"过程性反馈"语义（活动透明，agent-design-philosophy §13.x）。
+  // 渲染进「思考折叠块」让用户看见 Agent 正在复核产出（ui-redesign.md §7.1）。
+  // 仅运行时显示，不持久化、不重放；结束后保留折叠态（setStatus done 收敛）。
   function appendSelfReview(round: number): void {
-    const div = document.createElement('div');
-    div.className = 'self-review';
-    const dot = document.createElement('span');
-    dot.className = 'self-review__dot';
-    const text = document.createElement('span');
-    text.textContent = `自审查轮 ${round}：正在复核本轮产出…`;
-    div.appendChild(dot);
-    div.appendChild(text);
-    messages.appendChild(div);
-    scrollToBottom(messages);
+    setThoughtLabel(`思考过程 · ${round} 步`, {
+      thinking: true,
+      open: true, // 自审查时展开显示步骤
+      body: `自审查轮 ${round}：正在复核本轮产出…`,
+    });
   }
 
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
@@ -342,7 +422,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       }
       const target =
         activeAssistantEl && activeAssistantEl.isConnected
-          ? activeAssistantEl.querySelector(':scope > .msg-body')
+          ? activeAssistantEl.querySelector(':scope .msg-body')
           : null;
       if (target) {
         // 用文本节点追加替代整体 textContent 重建，长回复避免 O(n²)
@@ -412,33 +492,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'self_review') {
       appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
-      // 清空消息区须同时清 type=msg 消息、.tool-card 工具卡片与 .self-review 自审查提示
-      // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧工具卡片或自审查行
-      // 残留 DOM，污染重放视图。不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .tool-card, .self-review').forEach((el) => el.remove());
+      // 清空消息区须同时清 type=msg 消息、.tool-card 工具卡片、.self-review 自审查提示、
+      // .thought-block 思考折叠块与 .date-divider 日期分隔线（对抗评估 P1-1/P1-4）：
+      // 不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
+      // 不替换 messages 全部子节点（保留 #emptyState 占位）。
+      messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider').forEach((el) => el.remove());
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
+      // 过程性状态复位：思考块引用失效 + 日期分隔线重新计算（重放从新日期开始）
+      thoughtEl = null;
+      lastShownDate = undefined;
       updateEmptyState();
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
       renderModelPicker();
+      // ① 身份条模型名：与下拉触发器同步显示当前模型（无激活则不显示）
+      const active = currentActive
+        ? currentProviders.find((p) => p.name === currentActive)?.displayName || currentActive
+        : '';
+      identityModel.textContent = active;
     } else if (msg.type === 'chat_role_pack') {
-      // 当前角色徽章：textContent 赋值防注入，显示后主动可见
-      const badge = document.getElementById('rolePackBadge');
-      if (badge) {
-        badge.textContent = msg.rolePack;
-        badge.title = '当前角色：' + msg.rolePack;
-        badge.hidden = false;
-      }
-    } else if (msg.type === 'chat_history_dates') {
-      // 历史会话日期列表（顶部溢出菜单）：刷新选项（含当前查看高亮）
-      historyDates = msg.dates || [];
-      renderOverflowMenu();
-    } else if (msg.type === 'chat_history_view') {
-      // P1-2：宿主权威回传当前查看日期 → 刷新菜单高亮（仅镜像，不做业务判定）
-      currentHistoryDate = msg.date || '';
-      renderOverflowMenu();
+      // ① 身份条：textContent 赋值防注入，显示后主动可见。
+      // 角色名 + 头像首字（ui-redesign.md §4.1 ①）
+      currentRoleName = msg.rolePack;
+      identityRole.textContent = msg.rolePack;
+      identityAvatar.textContent = currentRoleName ? currentRoleName.charAt(0) : 'AI';
+      identityBar.hidden = false;
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     }
@@ -476,17 +556,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   });
   input.addEventListener('input', autoResize);
 
+  // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）
+  document.querySelectorAll('.suggestion-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const prompt = (chip as HTMLElement).dataset.prompt || '';
+      input.value = prompt;
+      input.style.height = 'auto';
+      input.focus();
+      autoResize();
+    });
+  });
+
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
-  // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应
+  // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
+  // toolbar 剪枝后仅剩模型选择器（历史/清空已迁至视图标题栏命令）
   initDropdowns(document, {
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
-    // 顶部溢出菜单（⋯）：历史日期 id → 切换查看；clear → 清空对话
-    __overflowOnSelect: (id) => {
-      // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
-      // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
-      if (id === 'clear') vscode.postMessage({ type: 'clear' });
-      else vscode.postMessage({ type: 'chat_switch_date', date: id || '' });
-    },
   });
 
   // 主动提问回答：提交并续跑
@@ -506,7 +591,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 首屏刷新
   updateEmptyState();
   renderModelPicker();
-  renderOverflowMenu();
 
   // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
   // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）

@@ -143,8 +143,10 @@ function buildHtml(scriptUri: vscode.Uri): string {
 </style>
 </head>
 <body>
+  <!-- ① 顶栏（sticky）：统计 + 添加，对齐 ui-redesign.md §4.2 ① -->
   <div class="header">
     <h2>大模型配置</h2>
+    <span id="statBar" class="stat-bar" hidden></span>
     <button id="btnAdd" class="btn">添加 API</button>
   </div>
   <div id="list">

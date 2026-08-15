@@ -12,7 +12,7 @@
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM 操作；
  *   - 持久化复用内核 sessionStore 机制（date-session 组织消息）；
  *   - 面板为通用对话宿主，功能定位由内置角色包（role-packs/doc-review）承载，
- *     toolbar 徽章展示当前激活角色（主动可见）。
+ *     消息区顶部徽章展示当前激活角色（主动可见）。
  */
 import * as vscode from 'vscode';
 import { formatDateKey, type Agent, type AgentChunk, type ISessionStore } from '@zooique/memora';
@@ -171,12 +171,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
         void this.handleResume(msg.text.trim());
       } else if (msg.type === 'clear') {
-        void this.handleClear();
+        // 清空对话：toolbar 剪枝后由视图标题栏命令（memora.clearChat）触发，
+        // 此处保留 webview 兜底路径（协议兼容），复用同一清空逻辑
+        void this.clearFromCommand();
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
-      } else if (msg.type === 'chat_switch_date') {
-        // 历史会话切换：更新查看日期并重放对应历史
-        this.handleSwitchDate(msg.date);
       } else if (msg.type === 'stop') {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
         this.handleStop();
@@ -294,7 +293,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 清空当前会话：确认后清空会话消息，并通知 webview 清空消息区
+   * 清空当前会话（由视图标题栏「清空对话」命令触发）：确认后清空会话消息，
+   * 并通知 webview 清空消息区
    *
    * 危险操作确认走 host 侧原生 modal（VSCode webview 禁用原生 confirm()，
    * 避免「确认框静默失效 → 按钮无反应」的功能性缺陷，对抗评估 P0-2）。
@@ -304,7 +304,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 若正在查看某历史天（_historyDate）则清该天，否则清当天 main。绝不清空跨天全部
    * 历史，避免「清空当前对话」实际清光全部历史的数据破坏错位。
    */
-  private async handleClear(): Promise<void> {
+  public async clearFromCommand(): Promise<void> {
     const choice = await vscode.window.showWarningMessage(
       '确定清空当前对话？此操作不可恢复。',
       { modal: true },
@@ -325,6 +325,37 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
+  }
+
+  /**
+   * 切换历史会话（由视图标题栏「切换历史对话」命令触发）：QuickPick 列出全部
+   * 历史日期供选择，选中后复用 handleSwitchDate 重放对应历史
+   *
+   * 视图标题栏（view/title）按钮只能承载图标命令，无法内嵌下拉菜单；历史日期
+   * 选择由命令弹 QuickPick 实现（对齐 VS Code 原生交互）。「全部历史」作为首项。
+   */
+  public async switchHistoryFromCommand(): Promise<void> {
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换历史' });
+      return;
+    }
+    // 收集全部历史日期（倒序，最新在前），「全部历史」作为首项
+    const dates = new Set<string>();
+    for (const key of this.sessionStore.listSessions()) {
+      if (!key.endsWith('-main')) continue;
+      const idx = key.lastIndexOf('-');
+      if (idx > 0) dates.add(key.slice(0, idx));
+    }
+    const dateList = [...dates].sort().reverse();
+    const picked = await vscode.window.showQuickPick(
+      [
+        { label: '全部历史', description: '跨天合并', date: '' },
+        ...dateList.map((d) => ({ label: d, description: '该天对话', date: d })),
+      ],
+      { placeHolder: '选择要查看的历史对话日期' },
+    );
+    if (!picked) return; // 用户取消
+    this.handleSwitchDate(picked.date);
   }
 
   /** 仅渲染 HTML 骨架（历史/Provider 在 webview 就绪后经 replaySession 回放）；
@@ -350,11 +381,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
-    // 推送历史会话日期列表 → toolbar 历史下拉框（主动可见，可手动切换查看）
-    this.pushHistoryDates();
-    // P1-2：回传当前查看范围（宿主权威），webview 历史下拉触发器据此回显
-    this.post({ type: 'chat_history_view', date: this._historyDate ?? '' });
-    // 推送当前激活角色包 → toolbar 角色徽章（主动可见）
+    // 推送当前激活角色包 → 消息区顶部角色徽章（主动可见）。
+    // toolbar 剪枝后：历史日期列表/查看范围由视图标题栏命令（QuickPick）承载，
+    // webview 无需再消费 chat_history_dates / chat_history_view
     if (this._activeRolePack) {
       this.post({ type: 'chat_role_pack', rolePack: rolePackDisplayName(this._activeRolePack) });
     }
@@ -363,27 +392,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 推送历史会话日期列表到 webview（toolbar 历史下拉框）
-   *
-   * 从 sessionStore 收集全部 `YYYY-MM-DD-main` 会话的日期，去重后倒序
-   * （最新在前），供用户手动切换查看某天对话记录（精灵「日期导航」机制的插件版）。
-   */
-  private pushHistoryDates(): void {
-    try {
-      const dates = new Set<string>();
-      for (const key of this.sessionStore.listSessions()) {
-        if (!key.endsWith('-main')) continue;
-        const idx = key.lastIndexOf('-');
-        if (idx > 0) dates.add(key.slice(0, idx));
-      }
-      this.post({ type: 'chat_history_dates', dates: [...dates].sort().reverse() });
-    } catch {
-      // 推送失败不阻塞主流程
-    }
-  }
-
-  /**
-   * 处理用户切换查看的历史会话日期（toolbar 历史下拉框）
+   * 处理用户切换查看的历史会话日期（视图标题栏「切换历史」命令 → QuickPick 选择）
    *
    * 更新当前查看日期，清空 webview 消息区后重放对应历史。date 传空串表示
    * 查看全部历史（跨天合并，默认），否则只看该天对话。
@@ -399,8 +408,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     this._historyDate = date || undefined;
-    // P1-2：回传新查看范围，webview 历史下拉触发器据此回显当前日期
-    this.post({ type: 'chat_history_view', date: this._historyDate ?? '' });
     // 先清空 webview 消息区，再重放对应日期历史（复用 clear_ok 清空协议）
     this.post({ type: 'clear_ok' });
     const history = this.loadHistory(this._historyDate);
@@ -558,7 +565,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const now = new Date().toISOString();
     // P1-1：若正查看历史日期，发送前回置到「全部历史（当前会话）」视图，
     // 避免新消息持久化到今天却显示在历史日期视图的状态错位。
-    // handleSwitchDate('') 会清空消息区 + 回放当前 + 回传 chat_history_view('')
+    // handleSwitchDate('') 会清空消息区 + 回放当前
     if (this._historyDate) this.handleSwitchDate('');
     // 用户消息持久化由内核 chat() → appendUser 完成（写入 todayDate-main），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
@@ -786,12 +793,33 @@ function buildHtml(scriptUri: vscode.Uri): string {
 </style>
 </head>
 <body>
-  <div id="toolbar">
-    <span class="title">对话</span>
-    <span id="rolePackBadge" class="role-pack-badge" hidden title="当前角色"></span>
-    ${buildDropdownHtml([], { extraClass: 'overflow-menu', onSelect: '__overflowOnSelect' })}
+  <!-- ① 身份条（改造 roleBar，ui-redesign.md §4.1 ①）：整合角色/模型/实时状态为一行，
+       主动可见 —— 用户始终知道当前对话由哪个角色、哪个模型驱动、是否在生成中。
+       avatar/role/model/status 文本由 chatView 在 chat_role_pack / chat_providers /
+       status 消息到达时填充。 -->
+  <div id="identityBar" class="identity-bar" hidden>
+    <span class="identity-avatar" aria-hidden="true"></span>
+    <span class="identity-role"></span>
+    <span class="identity-model"></span>
+    <span class="identity-status" data-state="idle">待命</span>
   </div>
-  <!-- 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
+
+  <!-- ② 消息流：日期分隔线 + 消息 + 空状态引导（ui-redesign.md §4.1 ②） -->
+  <div id="messages">
+    <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户） -->
+    <div id="emptyState" class="empty-state" hidden>
+      <div class="empty-title">开始打磨你的设计文档</div>
+      <div class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
+      <div class="empty-suggestions">
+        <button class="suggestion-chip" data-prompt="帮我审阅当前文档的架构合理性">审阅架构</button>
+        <button class="suggestion-chip" data-prompt="帮我精简文档中的冗余表达">精简表达</button>
+        <button class="suggestion-chip" data-prompt="检查文档与代码实现是否一致">对齐实现</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 活动状态区（P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
+       从顶部迁到消息流下方、composer 上方 —— 不再顶置挤占消息区（ui-redesign.md §3.1 C7）。
        原 memoryBar + noticeBar + metricsBox 三条并列收敛为单一通道，SSOT 不互相覆盖 -->
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
@@ -799,9 +827,6 @@ function buildHtml(scriptUri: vscode.Uri): string {
     <div id="activityList" class="activity-list"></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
-  <div id="messages">
-    <div id="emptyState" class="empty-state" hidden>开始打磨你的设计文档<br>在下方输入你的想法，或粘贴要打磨的文档内容</div>
-  </div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
     <div id="clarifyOptions"></div>
@@ -814,12 +839,17 @@ function buildHtml(scriptUri: vscode.Uri): string {
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
-        <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
-          <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-          <!-- 生成中切换为停止方块（loading 类驱动）：点击 = 停止当前生成（mvp-scope 打断能力） -->
-          <svg class="stop-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
-        </button>
+        <!-- Composer 左侧弱化键盘提示（ui-redesign.md §7.3） -->
+        <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+        <!-- Composer 右侧操作组：模型选择 + 发送 -->
+        <div class="composer-actions">
+          ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
+          <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
+            <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            <!-- 生成中切换为停止方块（loading 类驱动）：点击 = 停止当前生成（mvp-scope 打断能力） -->
+            <svg class="stop-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>

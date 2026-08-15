@@ -81,6 +81,15 @@ export const tokens = `
     --surface-code: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.08));
     --surface-user-bubble: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
 
+    /* === L2 语义令牌：AI 原生 UI（身份条 / 思考块） ===
+     * 对齐 ui-redesign.md §5：仅新增真正需要的语义令牌，其余一律复用已有令牌。
+     *   --surface-ai-avatar：AI 头像底色（badge 背景，克制弱化的品牌色）
+     *   --surface-thought：思考折叠块底色（编辑器控件背景，与消息区分）
+     * 工具状态色复用 --status-info/pass/fail；日期分隔线复用 --text-secondary；
+     * composer 附加能力 chip 复用 --btn-secondary-bg —— 均不重复造令牌。 */
+    --surface-ai-avatar: var(--vscode-badge-background, rgba(14, 99, 156, 0.25));
+    --surface-thought: var(--vscode-editorWidget-background, #252526);
+
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     --input-wrap-min-h: 96px;  /* 输入卡片最小总高（textarea 64 + footer 32） */
     --input-min-h: 64px;       /* textarea 单行舒适高度（占总高 65%） */

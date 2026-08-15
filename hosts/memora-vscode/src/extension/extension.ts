@@ -101,6 +101,18 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.commands.executeCommand(`${MemoraConfigViewProvider.viewType}.focus`),
     ),
   );
+
+  // 命令：清空当前对话（视图标题栏按钮触发，toolbar 剪枝后替代原 webview 内清空入口）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.clearChat', () => void chatProvider.clearFromCommand()),
+  );
+
+  // 命令：切换历史对话（视图标题栏按钮触发，toolbar 剪枝后替代原 webview 内历史下拉）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.switchHistory', () =>
+      void chatProvider.switchHistoryFromCommand(),
+    ),
+  );
 }
 
 /** 插件停用入口 */

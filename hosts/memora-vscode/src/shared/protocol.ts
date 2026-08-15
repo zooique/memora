@@ -46,14 +46,6 @@ export type WebviewToExtensionMessage =
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**
-   * Chat Panel 切换查看的历史会话日期（toolbar 历史下拉框）
-   *
-   * 精灵主应用「按天归档 + 日期导航回溯」机制的插件版：用户手动选择要查看的
-   * 某天对话记录（date 格式 YYYY-MM-DD），或传空串查看全部历史（跨天合并）。
-   * webview 发来后，extension 回放对应日期的历史消息。
-   */
-  | { type: 'chat_switch_date'; date: string }
-  /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
    * 由 webview 停止按钮触发，host 调用 AbortController.abort() 中断进行中的
@@ -204,28 +196,13 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'notice'; level: 'info' | 'error'; message: string }
   /**
-   * Chat Panel 当前激活角色包（toolbar 角色徽章数据）
+   * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *
    * 面板为通用对话宿主，定位由内置角色包承载。host 在就绪回放时推送，
-   * webview 据此在标题旁渲染角色徽章——主动可见：用户始终知道当前用哪个角色
+   * webview 据此在消息区顶部渲染角色徽章——主动可见：用户始终知道当前用哪个角色
    * （不依赖角色匹配事件，避免普通对话不匹配时徽章永远不显示）。
    */
   | { type: 'chat_role_pack'; rolePack: string }
-  /**
-   * Chat Panel 历史会话日期列表（toolbar 历史下拉框数据）
-   *
-   * host 在就绪回放 / 清空 / 新会话后推送全部有记录的日期（YYYY-MM-DD，倒序），
-   * webview 历史下拉据此渲染选项；用户选中后经 chat_switch_date 回发切换查看。
-   */
-  | { type: 'chat_history_dates'; dates: string[] }
-  /**
-   * Chat Panel 当前查看的历史会话日期（toolbar 历史下拉框触发器回显，P1-2）
-   *
-   * 宿主权威回传当前查看范围（date 为 YYYY-MM-DD，空串 = 全部历史跨天合并），
-   * webview 据此更新触发器文本，避免「选中日期后触发器仍显示固定文案」的状态失焦。
-   * 由宿主在 replaySession / handleSwitchDate（含 P1-1 发送时回置）后推送。
-   */
-  | { type: 'chat_history_view'; date: string }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }

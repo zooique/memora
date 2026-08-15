@@ -35,6 +35,8 @@ export const toolCardStyles = `
   }
   .tool-card__chevron { display: inline-flex; align-items: center; color: var(--text-secondary, #9aa0a6); transition: transform 0.15s ease; font-size: var(--font-xs, 10px); }
   .tool-card.is-collapsed .tool-card__chevron { transform: rotate(-90deg); }
+  /* 工具图标（emoji）：装饰性元素，不随状态变化，与名称同灰阶 */
+  .tool-card__icon { display: inline-flex; align-items: center; font-size: var(--font-sm, 11px); line-height: 1; user-select: none; }
   .tool-card__name {
     font-weight: 500; color: var(--text-secondary, #9aa0a6);
     font-family: ui-monospace, Consolas, monospace; font-size: var(--font-sm, 11px);

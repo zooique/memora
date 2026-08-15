@@ -37,6 +37,7 @@ export function createConfigView({ acquireVsCodeApi, window }: ConfigViewDeps): 
   const document = window.document;
   const vscode = acquireVsCodeApi();
   const list = document.getElementById('list') as HTMLElement;
+  const statBar = document.getElementById('statBar') as HTMLElement;
   const btnAdd = document.getElementById('btnAdd') as HTMLButtonElement;
   const modal = document.getElementById('modal') as HTMLElement;
   const modalTitle = document.getElementById('modalTitle') as HTMLElement;
@@ -126,74 +127,113 @@ export function createConfigView({ acquireVsCodeApi, window }: ConfigViewDeps): 
   }
 
   function render(data: ProvidersPayload): void {
+    // 顶栏统计：已配置 N 个 API（ui-redesign.md §4.2 ①）
+    statBar.hidden = false;
+    statBar.textContent = `已配置 ${data.providers?.length ?? 0} 个 API`;
     if (!data.providers || data.providers.length === 0) {
       currentProviders = [];
-      // 空态提示：与下方卡片一样用 createElement + textContent 构建（对抗评估 P2-7b），
-      // 统一 DOM 构建模式，避免 innerHTML/createElement 双轨混用
+      // 空态引导：复刻对话面板 empty-state 样式（ui-redesign.md §6.2），
+      // 用 createElement + textContent 构建（对抗评估 P2-7b），统一 DOM 构建模式
       list.textContent = '';
-      const hint = document.createElement('p');
-      hint.className = 'hint';
-      hint.textContent = '暂未配置任何 API，点击右上角「添加 API」。';
-      list.appendChild(hint);
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('div');
+      title.className = 'empty-title';
+      title.textContent = '配置你的大模型';
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = '添加一个 API 后即可开始对话';
+      empty.appendChild(title);
+      empty.appendChild(hint);
+      list.appendChild(empty);
       return;
     }
     activeName = data.activeName;
     // 保存为内存数据源（openModal 编辑回填用；DOM dataset 不再作为数据源，P1-5）
     currentProviders = data.providers;
     list.innerHTML = '';
-    data.providers.forEach((p) => {
-      const card = document.createElement('div');
-      card.className = 'card' + (p.name === activeName ? ' active' : '');
+    // ② 激活 Provider 分区（置顶高亮）
+    const active = data.providers.filter((p) => p.name === activeName);
+    if (active.length > 0) {
+      list.appendChild(buildGroupTitle('激活 Provider'));
+      active.forEach((p) => list.appendChild(buildCard(p)));
+    }
+    // ③ 其他 Provider 分区
+    const others = data.providers.filter((p) => p.name !== activeName);
+    if (others.length > 0) {
+      list.appendChild(buildGroupTitle('其他 Provider'));
+      others.forEach((p) => list.appendChild(buildCard(p)));
+    }
+  }
 
-      const info = document.createElement('div');
-      info.className = 'card-info';
-      const nameRow = document.createElement('div');
-      nameRow.className = 'card-name';
-      nameRow.textContent = (p.displayName || p.name) + (p.provider === 'local' ? '（本地）' : '');
-      if (p.name === activeName) {
-        const badge = document.createElement('span');
-        badge.className = 'badge';
-        badge.textContent = '当前';
-        nameRow.appendChild(badge);
-      }
-      const detail = document.createElement('div');
-      detail.className = 'card-detail';
-      detail.textContent = p.model + ' · ' + p.baseUrl;
-      info.appendChild(nameRow);
-      info.appendChild(detail);
+  /** 构建分区标题（「激活 Provider」/「其他 Provider」，ui-redesign.md §4.2 ②③） */
+  function buildGroupTitle(text: string): HTMLElement {
+    const title = document.createElement('div');
+    title.className = 'group-title';
+    title.textContent = text;
+    return title;
+  }
 
-      const actions = document.createElement('div');
-      actions.className = 'card-actions';
-      if (p.name !== activeName) {
-        const actBtn = document.createElement('button');
-        actBtn.className = 'btn btn-secondary';
-        actBtn.textContent = '设为当前';
-        actBtn.addEventListener('click', () =>
-          vscode.postMessage({ type: 'cfg_set_active', name: p.name }),
-        );
-        actions.appendChild(actBtn);
-      }
-      const editBtn = document.createElement('button');
-      editBtn.className = 'btn btn-secondary';
-      editBtn.textContent = '编辑';
-      editBtn.addEventListener('click', () => openModal(p.name));
-      actions.appendChild(editBtn);
-      if (p.name !== activeName) {
-        const delBtn = document.createElement('button');
-        delBtn.className = 'btn btn-danger';
-        delBtn.textContent = '删除';
-        delBtn.addEventListener('click', () => {
-          // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
-          // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
-          vscode.postMessage({ type: 'cfg_delete', name: p.name });
-        });
-        actions.appendChild(delBtn);
-      }
+  /** 构建单个 Provider 卡片（含图标，ui-redesign.md §6.2） */
+  function buildCard(p: LlmProviderConfig): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'card' + (p.name === activeName ? ' active' : '');
 
-      card.appendChild(info);
-      card.appendChild(actions);
-      list.appendChild(card);
-    });
+    // 卡片图标：Provider 显示名首字（大写），提升扫读（ui-redesign.md §6.2）
+    const icon = document.createElement('div');
+    icon.className = 'cfg-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = (p.displayName || p.name).charAt(0).toUpperCase();
+
+    const info = document.createElement('div');
+    info.className = 'card-info';
+    const nameRow = document.createElement('div');
+    nameRow.className = 'card-name';
+    nameRow.textContent = (p.displayName || p.name) + (p.provider === 'local' ? '（本地）' : '');
+    if (p.name === activeName) {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = '当前';
+      nameRow.appendChild(badge);
+    }
+    const detail = document.createElement('div');
+    detail.className = 'card-detail';
+    detail.textContent = p.model + ' · ' + p.baseUrl;
+    info.appendChild(nameRow);
+    info.appendChild(detail);
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    if (p.name !== activeName) {
+      const actBtn = document.createElement('button');
+      actBtn.className = 'btn btn-secondary';
+      actBtn.textContent = '设为当前';
+      actBtn.addEventListener('click', () =>
+        vscode.postMessage({ type: 'cfg_set_active', name: p.name }),
+      );
+      actions.appendChild(actBtn);
+    }
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-secondary';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', () => openModal(p.name));
+    actions.appendChild(editBtn);
+    if (p.name !== activeName) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger';
+      delBtn.textContent = '删除';
+      delBtn.addEventListener('click', () => {
+        // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
+        // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
+        vscode.postMessage({ type: 'cfg_delete', name: p.name });
+      });
+      actions.appendChild(delBtn);
+    }
+
+    card.appendChild(icon);
+    card.appendChild(info);
+    card.appendChild(actions);
+    return card;
   }
 
   // 消息接收

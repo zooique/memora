@@ -4,8 +4,9 @@
  * 分层（对齐 ui-engineering-mindset-rules.md + ITCSS）：
  *   - 设计令牌（间距/圆角/字号/阴影/颜色）由 tokens.ts 单一真理源提供，
  *     本文件只引用令牌，禁止裸值；
- *   - 分区遵循 ITCSS：Base（body）→ Layout（toolbar/messages/inputBar）
- *     → Components（消息 / 输入卡片 / 模型选择器 / 发送按钮 / 提示条）；
+ *   - 分区遵循 ITCSS：Base（body）→ Layout（状态区/消息区/输入区）
+ *     → Components（消息 / 输入卡片 / 模型选择器 / 发送按钮 / 状态条）；
+ *     顶部标题栏已剪枝（视图标题栏 native 承载「对话」标题 + 清空/历史按钮）；
  *   - 操作按钮（复制等）「主动可见」，避免 hover-only；
  *   - 下拉菜单样式见 dropdown.ts（scoped 到 .treedd），工具卡片见 toolCard.ts。
  */
@@ -26,15 +27,9 @@ export const chatStyles = `
   }
 
   /* ============ Layout：面板骨架 ============ */
-  /* 顶部工具栏：标题 + 右侧紧凑工具（下拉） */
-  #toolbar {
-    display: flex; align-items: center; gap: var(--sp-2, 6px);
-    padding: var(--sp-2, 6px) var(--sp-5, 12px);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    flex-shrink: 0;
-  }
-  #toolbar .title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* 消息区：全量铺开 */
+  /* 顶部工具栏已剪枝（视图标题栏 native 承载「对话」标题 + 清空/历史按钮），
+   * 面板内不再有重复标题栏；body 直接进入状态区 → 消息区 → 输入区。
+   * 消息区：全量铺开 */
   #messages {
     flex: 1; overflow-y: auto; padding: var(--sp-5, 12px); box-sizing: border-box;
     display: flex; flex-direction: column; gap: var(--sp-4, 10px);
@@ -48,6 +43,27 @@ export const chatStyles = `
     font-size: var(--font-base, 13px); line-height: 1.7;
     padding: var(--sp-6, 16px);
   }
+  .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 500; margin-bottom: var(--sp-1, 4px); }
+  .empty-hint { margin-bottom: var(--sp-5, 12px); }
+  /* 示例提问 chips：点击填入输入框（ui-redesign.md §6.1 空状态引导），主动引导新用户 */
+  .empty-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2, 6px); }
+  .suggestion-chip {
+    padding: var(--sp-1, 4px) var(--sp-4, 10px); font-size: var(--font-md, 12px);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border-radius: var(--radius-pill, 999px);
+    background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
+  }
+  .suggestion-chip:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
+
+  /* ============ Components：日期分隔线（跨天合并分组，ui-redesign.md §7.4） ============ */
+  /* 跨天合并视图在日期交界插入弱化分隔：居中灰字 + 两侧细线，aria-hidden 装饰性。 */
+  .date-divider {
+    display: flex; align-items: center; gap: var(--sp-3, 8px);
+    margin: var(--sp-2, 6px) 0;
+    color: var(--text-secondary, #9aa0a6); font-size: var(--font-xs, 10px);
+    letter-spacing: 0.5px; user-select: none;
+  }
+  .date-divider::before, .date-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-panel, rgba(128,128,128,.4)); }
   /* 消息基类：默认无气泡（AI 铺满），正文与底部操作行分离 */
   .msg { display: flex; flex-direction: column; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
   /* 用户消息：右侧浅灰气泡（轻量身份标记） */
@@ -58,13 +74,26 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px) var(--radius-lg, 8px);
   }
-  /* AI 回答：无气泡，内容全量铺开，顶部细线区分 */
+  /* AI 回答：无气泡，带头像身份（ui-redesign.md §4.1 ②）。
+   * 结构：.msg.assistant → 行布局 [头像][.msg-content[正文+footer]]，
+   * 头像建立「谁在说」的视觉身份，替代原顶部细线的弱区分。 */
   .msg.assistant {
     align-self: stretch;
+    flex-direction: row; align-items: flex-start; gap: var(--sp-3, 8px);
     background: transparent; color: var(--text-primary, #cccccc);
     padding-top: var(--sp-3, 8px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
+  /* AI 头像：首字 + 品牌弱化底色（--surface-ai-avatar），装饰性元素 aria-hidden */
+  .msg-avatar {
+    width: 22px; height: 22px; border-radius: var(--radius, 6px);
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-ai-avatar, rgba(14,99,156,0.25));
+    color: var(--accent-foreground, #ffffff);
+    font-size: var(--font-sm, 11px); font-weight: 600;
+    flex-shrink: 0; user-select: none;
+  }
+  /* AI 正文容器：承接正文 + 底部操作行，与头像分离布局 */
+  .msg-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .msg.error {
     align-self: stretch;
     background: var(--feedback-error-bg);
@@ -153,6 +182,14 @@ export const chatStyles = `
     flex-shrink: 0;
     box-sizing: border-box;
   }
+  /* Composer 键盘提示：footer 左侧弱化提示 Enter 发送 / Shift+Enter 换行。
+   * 对齐大厂 composer 的「轻提示」惯例，不喧宾夺主（ui-redesign.md §7.3）。 */
+  .composer-hint {
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Composer 右侧操作组：模型选择器 + 发送按钮，与左侧提示分组（space-between 布局） */
+  .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
 
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
    * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
@@ -176,29 +213,6 @@ export const chatStyles = `
     font-size: var(--font-md, 12px);
     color: var(--text-secondary, #9aa0a6);
     text-align: center;
-  }
-
-  /* ============ Components：顶部溢出菜单（⋯，toolbar 差异定制） ============
-   * 承载历史会话切换 + 清空对话（低频操作收敛，对齐编排方案）。
-   * 触发器默认 ⋯ 图标按钮（dropdown.ts 默认样式，无需 capsule 变体）；
-   * 此处仅定制菜单尺寸 + 分隔线 + 激活项高亮。 */
-  .overflow-menu {
-    flex: 0 0 auto;
-    min-width: 0;
-    /* 差异定制变量：菜单宽度适配日期 + 清空操作 */
-    --dd-menu-min-w: 160px;
-    --dd-menu-max-w: 240px;
-  }
-  /* 菜单内分隔线：历史日期 与 清空对话 分区 */
-  .overflow-menu .treedd__divider {
-    height: 1px;
-    margin: var(--sp-1, 4px) 0;
-    background: var(--border-panel, rgba(128,128,128,.4));
-  }
-  /* 激活项高亮：当前查看的历史日期（镜像宿主权威，仅视觉标识） */
-  .overflow-menu .treedd__item.is-active {
-    color: var(--accent, #0e639c);
-    font-weight: 600;
   }
 
   /* ============ Components：发送按钮 ============ */
@@ -227,34 +241,49 @@ export const chatStyles = `
   .send-btn.loading .send-icon { display: none; }
   .send-btn.loading .stop-icon { display: block; }
 
-  /* ============ Components：角色徽章 / 提示条 ============ */
-  /* 角色徽章（toolbar）：标题旁静态展示当前装配的角色包（doc-review），
-   * 主动可见——用户始终知道当前对话由哪个角色驱动（功能→UI 对齐排雷 P1 第一波）。
-   * 圆点 =「角色已激活」指示，用 accent 品牌色（与发送按钮同一身份标记）。
-   * [hidden] 覆盖：display:inline-flex 会覆盖 HTML hidden 属性，需显式恢复。 */
-  .role-pack-badge {
-    display: inline-flex;
+  /* ============ Components：身份条（改造 roleBar，ui-redesign.md §4.1 ①） ============ */
+  /* 整合角色 / 模型 / 实时状态为一行，主动可见：用户始终知道当前对话由哪个角色、
+   * 哪个模型驱动、是否在生成中。结构：.identity-bar → [.identity-avatar][.identity-role]
+   * [.identity-model][.identity-status]。
+   * 头像 = 角色名首字 + 品牌弱化底；模型名超长省略；状态圆点 idle=灰 / thinking=品牌色呼吸。 */
+  .identity-bar {
+    display: flex;
     align-items: center;
-    gap: var(--sp-1, 4px);
-    height: var(--control-h, 28px);
-    padding: 0 var(--sp-3, 8px);
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
     box-sizing: border-box;
-    border-radius: var(--radius-pill, 999px);
-    background: var(--surface-card, #252526);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
-    color: var(--text-secondary, #9aa0a6);
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
     font-size: var(--font-md, 12px);
-    line-height: 1;
-    white-space: nowrap;
+    line-height: 1.5;
   }
-  .role-pack-badge::before {
-    content: '';
-    width: 6px; height: 6px; /* 装饰性圆点直径（非布局间距，铁律例外） */
-    border-radius: 50%;
-    background: var(--accent, #0e639c);
+  .identity-bar[hidden] { display: none; }
+  .identity-avatar {
+    width: 20px; height: 20px; border-radius: var(--radius, 6px);
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-ai-avatar, rgba(14,99,156,0.25));
+    color: var(--accent-foreground, #ffffff);
+    font-size: var(--font-sm, 11px); font-weight: 600;
+    flex-shrink: 0; user-select: none;
+  }
+  .identity-role { color: var(--text-primary, #cccccc); font-weight: 500; white-space: nowrap; }
+  .identity-model {
+    color: var(--text-secondary, #9aa0a6); font-size: var(--font-sm, 11px);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .identity-status {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
+    color: var(--text-secondary, #9aa0a6); font-size: var(--font-sm, 11px);
     flex-shrink: 0;
   }
-  .role-pack-badge[hidden] { display: none; }
+  .identity-status::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; /* 状态圆点直径（动画细节，令牌例外） */
+    background: var(--text-secondary, #9aa0a6); flex-shrink: 0;
+  }
+  /* 生成中：状态圆点转品牌色 + 呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
+  .identity-status[data-state="thinking"] { color: var(--accent, #0e639c); }
+  .identity-status[data-state="thinking"]::before { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
 
   /* ============ Components：活动状态区 · 主状态条（P0 错误 / P1 低扰） ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
@@ -282,7 +311,33 @@ export const chatStyles = `
     background: var(--feedback-error-bg);
   }
 
-  /* ============ Components：自审查轮提示（活动透明，交叉审核观察 A） ============ */
+  /* ============ Components：思考折叠块（过程透明，ui-redesign.md §7.1） ============ */
+  /* 生成中/自审查时展示的轻量折叠块：默认折叠，展开显示思考步骤。
+   * 过程性反馈降级：灰字小字号 + 左细边框，与对话主体明显区分。不落库不重放。 */
+  .thought-block {
+    margin-top: var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px); line-height: 1.5;
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-thought, #252526);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+  }
+  .thought-block summary {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    cursor: pointer; user-select: none; outline: none;
+  }
+  .thought-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .thought-block__dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    background: var(--text-secondary, #9aa0a6);
+  }
+  /* 思考中：圆点转品牌色 + 呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
+  .thought-block.is-thinking .thought-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
+  .thought-block__body { margin-top: var(--sp-1, 4px); white-space: pre-wrap; word-break: break-word; }
+  .thought-block[hidden] { display: none; }
+
+  /* ============ Components：活动状态区 · 自审查轮提示（活动透明，交叉审核观察 A） ============ */
   /* Agent 自审查开始时插入的过程性反馈：轻量灰字 + 呼吸圆点，让用户看见
    * 正在复核产出（agent-design-philosophy §13.x 可观察契约）。仅运行时显示。
    * 过程性反馈降级（编排对齐）：无背景色，字号更小更灰，与对话主体明显区分。 */
@@ -366,6 +421,7 @@ export const chatStyles = `
   .send-btn:focus-visible,
   .msg-copy:focus-visible,
   .opt-btn:focus-visible,
+  .suggestion-chip:focus-visible,
   .treedd__trigger:focus-visible,
   .model-picker .treedd__trigger:focus-visible,
   #clarifyInput:focus-visible {

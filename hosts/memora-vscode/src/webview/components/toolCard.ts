@@ -15,6 +15,7 @@
  *   - 折叠/展开用事件委托 + closest，避免 CSS 选择器注入风险
  */
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
+import { getToolIcon } from '../helpers/toolNameMap.js';
 import { scrollToBottom } from '../helpers/scrollToBottom.js';
 
 /** 工具调用卡片 API（chatView 直接调用） */
@@ -68,6 +69,11 @@ function show(container: HTMLElement, id: string, name: string, args?: string): 
   const chevron = doc.createElement('span');
   chevron.className = 'tool-card__chevron';
   chevron.textContent = '▾';
+  // 工具图标：按工具名映射 emoji，提升扫读识别度（ui-redesign.md §7.2）
+  const iconSpan = doc.createElement('span');
+  iconSpan.className = 'tool-card__icon';
+  iconSpan.setAttribute('aria-hidden', 'true');
+  iconSpan.textContent = getToolIcon(name);
   const nameSpan = doc.createElement('span');
   nameSpan.className = 'tool-card__name';
   nameSpan.textContent = getToolDisplayName(name);
@@ -78,6 +84,7 @@ function show(container: HTMLElement, id: string, name: string, args?: string): 
   status.className = 'tool-card__status';
   status.textContent = '执行中…';
   header.appendChild(chevron);
+  header.appendChild(iconSpan);
   header.appendChild(nameSpan);
   header.appendChild(spinner);
   header.appendChild(status);

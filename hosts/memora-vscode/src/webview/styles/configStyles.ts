@@ -21,23 +21,33 @@ export const configStyles = `
   }
 
   /* ============ Layout：面板骨架 ============ */
-  .header { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
+  .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
   .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
+  /* 顶栏统计：已配置 N 个 API（ui-redesign.md §4.2 ①） */
+  .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
   .btn { padding: var(--sp-2, 6px) var(--sp-5, 12px); border-radius: var(--radius, 6px); border: none; cursor: pointer; background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); }
   .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
   .btn-danger { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   #list { padding: var(--sp-3, 8px); }
+  /* 分区标题：「激活 Provider」/「其他 Provider」（ui-redesign.md §4.2 ②③） */
+  .group-title { font-size: var(--font-xs, 10px); letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary, #9aa0a6); margin: var(--sp-3, 8px) 0 var(--sp-1, 4px); }
 
   /* ============ Components：Provider 卡片 ============ */
   .card { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px); padding: var(--sp-4, 10px); margin-bottom: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-lg, 8px); background: var(--surface-sidebar); }
   .card.active { border-color: var(--accent, #0e639c); }
-  .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; }
+  /* 卡片图标：Provider 首字块（ui-redesign.md §6.2），装饰性元素 aria-hidden */
+  .cfg-icon { width: 26px; height: 26px; border-radius: var(--radius, 6px); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-ai-avatar); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); font-weight: 600; flex-shrink: 0; user-select: none; }
+  .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; flex: 1; }
   .card-name { font-weight: 600; }
   .card-detail { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .badge { font-size: var(--font-sm, 11px); padding: 1px var(--sp-2, 6px); border-radius: var(--radius-pill, 999px); background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); }
+  .badge { font-size: var(--font-sm, 11px); padding: 1px var(--sp-2, 6px); border-radius: var(--radius-pill, 999px); background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); margin-left: var(--sp-1, 4px); }
   .card-actions { display: flex; gap: var(--sp-1, 4px); flex-shrink: 0; }
   .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
+  /* 空态引导：复刻对话面板 empty-state（ui-redesign.md §6.2） */
+  .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
+  .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }
+  .empty-hint { font-size: var(--font-md, 12px); }
 
   /* ============ Components：表单弹窗 ============ */
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10; align-items: flex-start; justify-content: center; padding-top: 40px; }
