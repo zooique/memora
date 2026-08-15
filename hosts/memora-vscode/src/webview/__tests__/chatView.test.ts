@@ -19,7 +19,10 @@ const HTML = `
   </details>
   <div id="identityBar" class="identity-bar" hidden>
     <span class="identity-avatar" aria-hidden="true"></span>
-    <span class="identity-role"></span>
+    <div class="role-picker treedd--capsule" data-treedd data-on-select="__rolePickerOnSelect">
+      <button class="treedd__trigger"></button>
+      <div class="treedd__menu"></div>
+    </div>
     <span class="identity-model"></span>
     <span class="identity-status" data-state="idle">待命</span>
   </div>
@@ -37,6 +40,7 @@ const HTML = `
       <textarea id="input"></textarea>
       <div id="inputFooter">
         <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+        <button id="webSearchChip" class="composer-chip" hidden>🔍 联网</button>
         <button id="send"></button>
       </div>
     </div>
@@ -75,17 +79,52 @@ describe('chatView clear_ok 消息区清理', () => {
   it('chat_role_pack 渲染当前角色到身份条并主动可见（角色包定位承载，ui-redesign.md §4.1 ①）', () => {
     mountChatView();
     const identityBar = document.getElementById('identityBar') as HTMLElement;
-    const identityRole = identityBar.querySelector('.identity-role') as HTMLElement;
+    const roleTrigger = identityBar.querySelector<HTMLElement>('.role-picker .treedd__trigger');
     const identityAvatar = identityBar.querySelector('.identity-avatar') as HTMLElement;
     // 未推送前隐藏
     expect(identityBar.hidden).toBe(true);
 
+    // 真实回放流：先推角色包列表（身份条下拉数据源），再推当前角色（personaSwitched/回放）
+    dispatch({
+      type: 'chat_role_packs',
+      packs: [{ name: 'doc-review', displayName: '文档打磨' }],
+      activeName: 'doc-review',
+    });
     dispatch({ type: 'chat_role_pack', rolePack: 'doc-review' });
 
     // textContent 赋值防注入 + 显示后主动可见（用户始终知道当前用哪个角色）
     expect(identityBar.hidden).toBe(false);
-    expect(identityRole.textContent).toBe('doc-review');
+    // 角色名承载在角色选择器触发器内，显示"显示名"（alignment-iteration.md A3）
+    expect(roleTrigger?.textContent).toBe('文档打磨');
     expect(identityAvatar.textContent).toBe('d');
+  });
+
+  it('chat_role_packs 渲染身份条角色切换下拉选项并高亮激活项（alignment-iteration.md A3）', () => {
+    mountChatView();
+    const identityBar = document.getElementById('identityBar') as HTMLElement;
+    const rolePicker = identityBar.querySelector<HTMLElement>('.role-picker');
+    const roleTrigger = rolePicker?.querySelector<HTMLElement>('.treedd__trigger');
+    const roleMenu = rolePicker?.querySelector<HTMLElement>('.treedd__menu');
+
+    // 无列表时隐藏角色选择器（仅头像 + 模型 + 状态）
+    expect(rolePicker?.hidden).toBe(true);
+
+    dispatch({
+      type: 'chat_role_packs',
+      packs: [
+        { name: 'doc-review', displayName: '文档打磨' },
+        { name: '写作助手', displayName: '写作助手' },
+      ],
+      activeName: '写作助手',
+    });
+
+    // 有列表时显示，触发器显示激活角色显示名
+    expect(rolePicker?.hidden).toBe(false);
+    expect(roleTrigger?.textContent).toBe('写作助手');
+    // 菜单选项 + 激活项高亮
+    const items = Array.from(roleMenu?.querySelectorAll('.treedd__item') ?? []);
+    expect(items.map((i) => i.textContent)).toEqual(['文档打磨', '写作助手']);
+    expect(items[1]?.classList.contains('is-active')).toBe(true);
   });
 
   it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {
@@ -175,6 +214,55 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(messages.querySelector('.msg.user .msg-body')?.textContent).toBe('昨天的问题');
     expect(messages.querySelector('.msg.assistant .msg-body')?.textContent).toBe('昨天的回答');
     expect(emptyState.hidden).toBe(true);
+  });
+
+  it('thinking 阶段更新思考折叠块文案（alignment-iteration.md B）', () => {
+    mountChatView();
+    // 生成中先有 thinking 折叠块
+    dispatch({ type: 'thinking', phase: 'recalling' });
+    const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
+    expect(tb).not.toBeNull();
+    expect(tb.textContent).toContain('召回记忆中');
+    // 处理阶段切换文案
+    dispatch({ type: 'thinking', phase: 'processing' });
+    expect(tb.textContent).toContain('处理中');
+    dispatch({ type: 'thinking', phase: 'archiving' });
+    expect(tb.textContent).toContain('归档记忆中');
+  });
+
+  it('联网 chip 随角色包 web:search 能力显隐（alignment-iteration.md C1）', () => {
+    mountChatView();
+    const chip = document.getElementById('webSearchChip') as HTMLButtonElement;
+    // 默认隐藏（无角色推送）
+    expect(chip.hidden).toBe(true);
+    // 具备联网能力的角色 → 显示
+    dispatch({ type: 'chat_role_pack', rolePack: '技术文档工程师', webSearch: true });
+    expect(chip.hidden).toBe(false);
+    // 切换为无联网能力角色 → 隐藏
+    dispatch({ type: 'chat_role_pack', rolePack: '翻译助手', webSearch: false });
+    expect(chip.hidden).toBe(true);
+  });
+
+  it('metrics 渲染 token 用量与记忆衰减字段（alignment-iteration.md D）', () => {
+    mountChatView();
+    const metrics = document.getElementById('activityMetrics') as HTMLElement;
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 2 },
+      metrics: {
+        llmCallCount: 3,
+        recallHitRate: 0.5,
+        toolFailureCount: 1,
+        truncationCount: 0,
+        llmTokenIn: 1000,
+        llmTokenOut: 500,
+        decayRunCount: 4,
+      },
+    });
+    expect(metrics.hidden).toBe(false);
+    expect(metrics.textContent).toContain('入 1000');
+    expect(metrics.textContent).toContain('出 500');
+    expect(metrics.textContent).toContain('记忆衰减 4 次');
   });
 });
 

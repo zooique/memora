@@ -38,6 +38,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const emptyState = document.getElementById('emptyState') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
+  // 联网能力指示 chip（C1，alignment-iteration.md）：当前角色包声明 web:search 时显示
+  const webSearchChip = document.getElementById('webSearchChip') as HTMLButtonElement;
   // 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
@@ -53,9 +55,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // avatar/role/model/status 文本在 chat_role_pack / chat_providers / status 消息到达时填充
   const identityBar = document.getElementById('identityBar') as HTMLElement;
   const identityAvatar = identityBar.querySelector('.identity-avatar') as HTMLElement;
-  const identityRole = identityBar.querySelector('.identity-role') as HTMLElement;
   const identityModel = identityBar.querySelector('.identity-model') as HTMLElement;
   const identityStatus = identityBar.querySelector('.identity-status') as HTMLElement;
+  // 角色选择器（身份条角色切换下拉，alignment-iteration.md A3）：触发器显示当前角色名，
+  // 菜单列出全部角色包供切换；无角色包列表时隐藏触发器（仅显示头像 + 模型 + 状态）
+  const rolePicker = identityBar.querySelector<HTMLElement>('.role-picker');
+  const rolePickerMenu = rolePicker ? rolePicker.querySelector<HTMLElement>('.treedd__menu') : null;
+  const rolePickerTrigger = rolePicker
+    ? rolePicker.querySelector<HTMLElement>('.treedd__trigger')
+    : null;
   // 当前角色显示名（身份条 + AI 消息头像首字共用；由 chat_role_pack 填充）
   let currentRoleName = '';
   // 底部模型下拉框（用 extraClass=model-picker 修饰）
@@ -71,6 +79,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
+  // 当前角色包列表 + 激活名（由 chat_role_packs 消息填充，身份条切换下拉数据源）
+  let currentRolePacks: { name: string; displayName: string }[] = [];
+  let currentActiveRolePack: string | undefined;
 
   // 思考折叠块（ui-redesign.md §7.1）：生成中/自审查的过程性反馈，不落库不重放
   // details 元素：以 HTMLDetailsElement 承载 open 属性（折叠/展开态）
@@ -239,6 +250,37 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
+  // 渲染身份条角色选择器（alignment-iteration.md A3）：列出全部角色包，高亮当前激活项。
+  // 用 createElement + textContent 构建（防注入，与 renderModelPicker 同模式）。
+  // 无角色包列表时隐藏触发器（仅保留头像 + 模型 + 状态，避免空下拉占位）。
+  function renderRolePicker(): void {
+    if (!rolePicker || !rolePickerMenu || !rolePickerTrigger) return;
+    if (currentRolePacks.length === 0) {
+      rolePicker.hidden = true;
+      return;
+    }
+    rolePicker.hidden = false;
+    rolePickerMenu.textContent = '';
+    currentRolePacks.forEach((p) => {
+      const isActive = p.name === currentActiveRolePack;
+      const btn = document.createElement('button');
+      btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
+      btn.setAttribute('role', 'menuitem');
+      btn.setAttribute('data-treedd-id', p.name);
+      btn.textContent = p.displayName || p.name;
+      rolePickerMenu.appendChild(btn);
+    });
+    // 触发器显示当前激活角色显示名（兼容旧字段：currentRoleName 与列表同步）
+    const active = currentRolePacks.find((p) => p.name === currentActiveRolePack);
+    const label = active ? active.displayName : currentRoleName || '选择角色';
+    rolePickerTrigger.textContent = '';
+    const span = document.createElement('span');
+    span.className = 'dd-model-name';
+    span.textContent = label;
+    rolePickerTrigger.appendChild(span);
+    rolePickerTrigger.setAttribute('aria-label', '切换角色：' + label);
+  }
+
   // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
   // 返回创建的 .msg 元素，供调用方作为流式锚点（排雷 P0-1）。
   // 跨天合并时先插入日期分隔线（ui-redesign.md §4.1 ②）；AI 消息带头像身份。
@@ -401,6 +443,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 召回命中 ' +
         Math.round(msg.metrics.recallHitRate * 100) + '% · 工具失败 ' +
         msg.metrics.toolFailureCount + ' · 截断 ' + msg.metrics.truncationCount,
+      // D（alignment-iteration.md）：token 用量 + 记忆衰减（可选字段，缺省不显示）
+      'Tokens：' +
+        (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
+        ' / ' +
+        (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -') +
+        (typeof msg.metrics.decayRunCount === 'number'
+          ? ' · 记忆衰减 ' + msg.metrics.decayRunCount + ' 次'
+          : ''),
     ];
     activityMetrics.textContent = lines.join('\n');
     activityMetrics.hidden = false;
@@ -412,6 +462,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
+    } else if (msg.type === 'thinking') {
+      // B（alignment-iteration.md）：思考阶段 → 更新思考折叠块文案（真实 phase，非笼统"思考中"）
+      const label =
+        msg.phase === 'recalling'
+          ? '召回记忆中…'
+          : msg.phase === 'processing'
+            ? '处理中…'
+            : '归档记忆中…';
+      setThoughtLabel(label, { thinking: true });
     } else if (msg.type === 'user') {
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
@@ -519,9 +578,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // ① 身份条：textContent 赋值防注入，显示后主动可见。
       // 角色名 + 头像首字（ui-redesign.md §4.1 ①）
       currentRoleName = msg.rolePack;
-      identityRole.textContent = msg.rolePack;
+      // 同步激活角色包内名（按显示名反查列表，供下拉高亮；A1 personaSwitched 也走此路径）
+      const matchedRole = currentRolePacks.find((p) => p.displayName === msg.rolePack);
+      if (matchedRole) currentActiveRolePack = matchedRole.name;
+      renderRolePicker();
       identityAvatar.textContent = currentRoleName ? currentRoleName.charAt(0) : 'AI';
       identityBar.hidden = false;
+      // C1（alignment-iteration.md）：联网能力指示 —— 角色包声明 web:search 时显示联网 chip
+      webSearchChip.hidden = !msg.webSearch;
+    } else if (msg.type === 'chat_role_packs') {
+      // A3（alignment-iteration.md）：角色包列表 + 激活名 → 身份条切换下拉
+      currentRolePacks = msg.packs || [];
+      if (msg.activeName) currentActiveRolePack = msg.activeName;
+      // 若当前角色名未同步到列表（如 displayName 未收录），回退为显示激活角色
+      if (!currentRoleName && msg.activeName) {
+        const activePack = currentRolePacks.find((p) => p.name === msg.activeName);
+        if (activePack) currentRoleName = activePack.displayName;
+      }
+      renderRolePicker();
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     }
@@ -572,9 +646,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
-  // toolbar 剪枝后仅剩模型选择器（历史/清空已迁至视图标题栏命令）
+  // toolbar 剪枝后为模型选择器 + 身份条角色选择器（alignment-iteration.md A3）
   initDropdowns(document, {
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
+    __rolePickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_role_pack', name: id }),
   });
 
   // 主动提问回答：提交并续跑
@@ -594,6 +669,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 首屏刷新
   updateEmptyState();
   renderModelPicker();
+  renderRolePicker(); // A3：身份条角色选择器（无列表时自动隐藏）
 
   // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
   // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）

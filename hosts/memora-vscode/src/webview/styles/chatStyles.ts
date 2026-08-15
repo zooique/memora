@@ -193,6 +193,18 @@ export const chatStyles = `
   }
   /* Composer 右侧操作组：模型选择器 + 发送按钮，与左侧提示分组（space-between 布局） */
   .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
+  /* Composer 联网能力 chip（alignment-iteration.md C1）：当前角色包声明 web:search 时显示，
+   * 作为联网能力可见指示。次级按钮风格（复用 --btn-secondary-* 令牌），不喧宾夺主。 */
+  .composer-chip {
+    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
+    height: var(--control-h, 28px); padding: 0 var(--sp-3, 8px); box-sizing: border-box;
+    font-size: var(--font-md, 12px); line-height: 1;
+    border-radius: var(--radius, 6px);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    background: transparent; color: var(--accent, #0e639c);
+    cursor: default; flex-shrink: 0;
+  }
+  .composer-chip[hidden] { display: none; }
 
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
    * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
@@ -208,6 +220,41 @@ export const chatStyles = `
     --dd-menu-max-w: 280px;
   }
   .model-picker .treedd__item.is-active {
+    color: var(--accent, #0e639c);
+    font-weight: 600;
+  }
+  /* ============ Components：身份条角色选择器（capsule 变体差异定制，alignment-iteration.md A3）
+   * 复用模型选择器同款 capsule 变体，但触发器弱化为「角色名 + ▾ 文本」融入身份条一行：
+   * 去背景/边框，仅保留文字色与箭头，不喧宾夺主（身份条本就高信息密度）。 */
+  .role-picker {
+    min-width: 0;
+    flex-shrink: 1;
+    /* 差异定制变量（capsule 变体读取）：角色名紧凑截断 + 菜单尺寸 */
+    --dd-trigger-max-w: 120px;
+    --dd-menu-min-w: 160px;
+    --dd-menu-max-w: 220px;
+  }
+  .role-picker[hidden] { display: none; }
+  .role-picker .treedd__trigger {
+    background: transparent;
+    border: none;
+    color: var(--text-primary, #cccccc);
+    font-weight: 500;
+    font-size: var(--font-md, 12px);
+    padding: 0;
+    height: auto;
+    line-height: 1.5;
+  }
+  .role-picker .treedd__trigger:hover {
+    background: transparent;
+    border-color: transparent;
+    color: var(--accent, #0e639c);
+  }
+  .role-picker .treedd__trigger::after {
+    color: var(--text-secondary, #9aa0a6);
+    margin-left: var(--sp-0, 2px);
+  }
+  .role-picker .treedd__item.is-active {
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
@@ -246,8 +293,8 @@ export const chatStyles = `
 
   /* ============ Components：身份条（改造 roleBar，ui-redesign.md §4.1 ①） ============ */
   /* 整合角色 / 模型 / 实时状态为一行，主动可见：用户始终知道当前对话由哪个角色、
-   * 哪个模型驱动、是否在生成中。结构：.identity-bar → [.identity-avatar][.identity-role]
-   * [.identity-model][.identity-status]。
+   * 哪个模型驱动、是否在生成中。结构：.identity-bar → [.identity-avatar][.role-picker]
+   * [.identity-model][.identity-status]（角色名由 role-picker 下拉承载，alignment-iteration.md A3）。
    * 头像 = 角色名首字 + 品牌弱化底；模型名超长省略；状态圆点 idle=灰 / thinking=品牌色呼吸。 */
   .identity-bar {
     display: flex;
@@ -269,7 +316,7 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px); font-weight: 600;
     flex-shrink: 0; user-select: none;
   }
-  .identity-role { color: var(--text-primary, #cccccc); font-weight: 500; white-space: nowrap; }
+  
   .identity-model {
     color: var(--text-secondary, #9aa0a6); font-size: var(--font-sm, 11px);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

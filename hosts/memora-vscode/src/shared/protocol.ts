@@ -46,6 +46,13 @@ export type WebviewToExtensionMessage =
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**
+   * Chat Panel 切换激活角色包（身份条角色下拉，alignment-iteration.md A3）
+   *
+   * 由身份条角色选择器触发，host 调 agent.rolePackManager.activate(name) 切换角色；
+   * 切换后内核 emit personaSwitched → host 转发 chat_role_pack 刷新身份条（A1 已绑定）。
+   */
+  | { type: 'chat_set_role_pack'; name: string }
+  /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
    * 由 webview 停止按钮触发，host 调用 AbortController.abort() 中断进行中的
@@ -113,6 +120,14 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'self_review'; round: number }
   /**
+   * Agent 思考阶段（对齐内核 thinking chunk，alignment-iteration.md B）
+   *
+   * 内核在回答前/后阶段产出 thinking{phase}（recalling/processing/archiving），
+   * 标识 Agent 正在做什么。webview 据此更新思考折叠块文案（"召回记忆中/处理中/归档记忆中"），
+   * 是对 status"进行中"的细化——status 管状态机，thinking 管阶段，二者职责分离。
+   */
+  | { type: 'thinking'; phase: 'recalling' | 'processing' | 'archiving' }
+  /**
    * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
    *
    * 内核回答后阶段基于 L2 策略产出 handoff（decision: wait/loop/end）。
@@ -150,6 +165,11 @@ export type ExtensionToWebviewMessage =
         recallHitRate: number;
         toolFailureCount: number;
         truncationCount: number;
+        /** D（alignment-iteration.md）：LLM token 用量（输入/输出） */
+        llmTokenIn?: number;
+        llmTokenOut?: number;
+        /** D（alignment-iteration.md）：记忆衰减运行次数 */
+        decayRunCount?: number;
       };
     }
   /**
@@ -202,7 +222,18 @@ export type ExtensionToWebviewMessage =
    * webview 据此在消息区顶部渲染角色徽章——主动可见：用户始终知道当前用哪个角色
    * （不依赖角色匹配事件，避免普通对话不匹配时徽章永远不显示）。
    */
-  | { type: 'chat_role_pack'; rolePack: string }
+  | { type: 'chat_role_pack'; rolePack: string; webSearch?: boolean }
+  /**
+   * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）
+   *
+   * 由 host 在就绪回放时推送：全部角色包（displayName 供下拉展示）+ 当前激活名。
+   * webview 据此渲染身份条角色选择器选项；activeName 变化时高亮当前项。
+   */
+  | {
+      type: 'chat_role_packs';
+      packs: { name: string; displayName: string }[];
+      activeName: string;
+    }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }
