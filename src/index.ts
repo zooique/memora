@@ -41,6 +41,7 @@ export { Agent } from '@/agent/agent.js';
 export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode, RecalledMemorySummary, AgentOptions, AgentContext, AgentProjectEntry } from '@/agent/types.js';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
+export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 export type { PersonaMode, Persona } from '@/persona/types.js';
@@ -157,7 +158,7 @@ export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
 // EmbeddingOptions 归属 llm/（提供者层），符合分层架构依赖方向
 export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
-export type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 // 轮次摘要追溯工具定义：宿主可条件性控制 trace_summary 工具的可见性
 export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 // 不中断工作模型：检查点类型和增量事件类型（宿主 IPC 层需要用于类型声明）

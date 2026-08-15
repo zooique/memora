@@ -9,7 +9,7 @@ description: Memora 项目总则、技术栈清单、目录结构
 > **架构定位**：memora = 通用闭环引擎（插卡机），角色包 = 参数集（卡）。**通用性由内核保证，专业性由角色包驱动**。详见 [architecture_philosophy_rules.md §11](./architecture_philosophy_rules.md)
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/decisions/` 下 36 个 ADR（内核 23 + 精灵 12 + 插件 1）
+> **决策追溯**：`.trae/decisions/` 下 37 个 ADR（内核 24 + 精灵 12 + 插件 1）
 
 ## 1. 不可违反的硬约束
 
@@ -144,7 +144,7 @@ chore: 升级 dependencies
 | 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
 | 精灵宿主 | [sprite-project-rules.md](./sprite-project-rules.md) |
 | 跨文档引用 / 新增模块 | [cross-document-reference.md](./cross-document-reference.md) / [new-module-guide.md](./new-module-guide.md) |
-| 决策记录（36 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
+| 决策记录（37 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
 
 > 宿主实现文档位于 `hosts/memora-sprite/.trae/rules/`（仅 directory-structure.md）。任务追踪统一在根 `tasks/`（唯一真理源）。
 >

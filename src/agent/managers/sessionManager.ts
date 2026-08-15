@@ -19,7 +19,7 @@ import { todayDate } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
-import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type {
@@ -259,6 +259,31 @@ export class SessionManager {
       logger.debug({ err }, 'getCurrentSessionInfo: history 未就绪或读取失败，返回 null');
       return null;
     }
+  }
+
+  /**
+   * 读取会话标题元数据（ADR-024 会话标题层）
+   *
+   * 供宿主历史列表展示会话标题。容器查询需按 updatedAt 排序可调用 listSessionMetas。
+   * 宿主未注入 getSessionMeta 时返回 undefined，标题层静默失效。
+   *
+   * @param sessionId 会话标识（格式：YYYY-MM-DD-sessionName）
+   */
+  getSessionMeta(sessionId: string): SessionMeta | undefined {
+    return this.sessionStore?.getSessionMeta?.(sessionId);
+  }
+
+  /**
+   * 手动改名会话标题（ADR-024 会话标题层）
+   *
+   * 用户在历史列表的手动改名透传到存储层。标题是展示元数据，不参与会话身份。
+   * 宿主未注入 setSessionTitle 时静默 no-op。
+   *
+   * @param sessionId 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @param title 用户输入的新标题
+   */
+  renameSession(sessionId: string, title: string): void {
+    this.sessionStore?.setSessionTitle?.(sessionId, title);
   }
 
   /**

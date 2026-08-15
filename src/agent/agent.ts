@@ -50,6 +50,7 @@ import {
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
+import { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
@@ -155,6 +156,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private autoConfigRefiner: AutoConfigRefiner | null = null;
   /** SessionArchiver（会话内容归档器，content 类记忆） */
   private sessionArchiver: SessionArchiver | null = null;
+  /** 会话命名器（ADR-024：新建会话首次问答自动命名标题） */
+  private sessionNamer: SessionNamer | null = null;
   /** TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化） */
   private textPolisher: TextPolishManager | null = null;
   /** RoundSummaryGenerator（轮次摘要生成器，记忆即摘要架构 Phase 1） */
@@ -406,6 +409,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       emit: (event, payload) => this.emit(event, payload as never),
     });
 
+    // 会话命名器（ADR-024 会话标题层）：新建会话首次问答自动命名标题
+    // 惰性获取当前 provider（setProvider 切换后命名仍命中最新模型）
+    this.sessionNamer = new SessionNamer({
+      getProvider: () => this.#provider,
+      sessionStore: this.#config.sessionStore,
+    });
+
     // 记忆衰减职责委托给 MemoryDecayScheduler
     this.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
@@ -558,6 +568,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     const history = this.requireHistory;
     await history.appendUser(input, roundId);
+
+    // 会话标题自动命名（fire-and-forget，ADR-024）：
+    // 仅新建会话首次问答触发（SessionNamer 内部以"会话无标题"判定，不覆盖手动改名）
+    if (this.sessionNamer) {
+      void this.sessionNamer
+        .ensureSessionTitle(history.currentDateValue, history.currentSessionValue, input)
+        .catch((err: unknown) => {
+          logger.warn({ err }, '会话标题自动命名失败（best-effort，不阻塞对话）');
+        });
+    }
 
     return recalledMemories;
   }
@@ -2812,6 +2832,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.workProjection = null;
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
+    this.sessionNamer = null;
     this.textPolisher = null;
     this.roundSummaryGenerator = null;
     this._sessionManager = null;

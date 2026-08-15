@@ -67,6 +67,9 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
     saveCheckpoint: vi.fn(),
     loadCheckpoint: vi.fn().mockReturnValue(null),
     deleteCheckpoint: vi.fn(),
+    getSessionMeta: vi.fn().mockReturnValue(undefined),
+    setSessionTitle: vi.fn(),
+    listSessionMetas: vi.fn().mockReturnValue([]),
     ...overrides,
   };
 }
@@ -131,6 +134,33 @@ describe('SessionManager', () => {
       manager.switchSession('new-session');
       // 会话替换后，上下文摘要等派生缓存必须作废，否则陈旧摘要注入新会话（SSOT-R4-T9 对称补全）
       expect(loop.resetContextSummary).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getSessionMeta / renameSession（ADR-024 会话标题层）', () => {
+    it('getSessionMeta 应委托 store.getSessionMeta', () => {
+      manager.getSessionMeta('2026-06-27-main');
+      expect((sessionStore as ISessionStore).getSessionMeta).toHaveBeenCalledWith(
+        '2026-06-27-main',
+      );
+    });
+
+    it('getSessionMeta 未注入（sessionStore undefined）应返回 undefined', () => {
+      const mgr = new SessionManager(() => history, () => loop, undefined, isChatBusy, emitEvent);
+      expect(mgr.getSessionMeta('2026-06-27-main')).toBeUndefined();
+    });
+
+    it('renameSession 应委托 store.setSessionTitle', () => {
+      manager.renameSession('2026-06-27-main', '新标题');
+      expect((sessionStore as ISessionStore).setSessionTitle).toHaveBeenCalledWith(
+        '2026-06-27-main',
+        '新标题',
+      );
+    });
+
+    it('renameSession 未注入（sessionStore undefined）应静默 no-op', () => {
+      const mgr = new SessionManager(() => history, () => loop, undefined, isChatBusy, emitEvent);
+      expect(() => mgr.renameSession('2026-06-27-main', '新标题')).not.toThrow();
     });
   });
 

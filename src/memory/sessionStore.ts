@@ -103,6 +103,58 @@ export interface ISessionStore {
    * @param sessionId - 会话标识
    */
   deleteCheckpoint?(sessionId: string): void;
+
+  /**
+   * 读取会话标题元数据（可选，ADR-024 会话标题层）
+   *
+   * 会话标题是独立的展示元数据，与会话身份（date-session）解耦。
+   * 不实现则返回 undefined，命名管线按"无标题"处理。
+   *
+   * @param sessionId - 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @returns 会话元数据，不存在则返回 undefined
+   */
+  getSessionMeta?(sessionId: string): SessionMeta | undefined;
+
+  /**
+   * 设置会话标题（可选，ADR-024 会话标题层）
+   *
+   * 首轮闭环自动命名 / 用户手动改名均通过此方法写入。
+   * 不实现则标题层静默失效（不影响会话主流程）。
+   *
+   * @param sessionId - 会话标识（格式：YYYY-MM-DD-sessionName）
+   * @param title - 用户可读标题
+   */
+  setSessionTitle?(sessionId: string, title: string): void;
+
+  /**
+   * 列出所有会话的标题元数据（可选，ADR-024 会话标题层）
+   *
+   * 供宿主历史列表按 updatedAt 排序展示。
+   * 不实现则历史列表降级为 listSessions() 的原始会话标识。
+   *
+   * @returns 全部会话元数据列表
+   */
+  listSessionMetas?(): SessionMeta[];
+}
+
+/**
+ * 会话标题元数据（ADR-024 会话标题层）
+ *
+ * 会话身份（date-session）与展示标题解耦：
+ * - 身份：ISessionStore 以 date+session 为主键读写消息
+ * - 标题：本元数据独立承载用户可读标题，不污染会话主键
+ *
+ * sessionId 即 `${date}-${session}`，与 listSessions() 返回格式一致。
+ */
+export interface SessionMeta {
+  /** 会话标识（格式：YYYY-MM-DD-sessionName，与 listSessions 一致） */
+  sessionId: string;
+  /** 用户可读标题（首轮闭环自动命名或手动改名产生） */
+  title: string;
+  /** 最近活跃时间（ISO 8601，历史列表排序依据） */
+  updatedAt: string;
+  /** 会话消息条数（供命名信号与列表展示） */
+  messageCount: number;
 }
 
 /**

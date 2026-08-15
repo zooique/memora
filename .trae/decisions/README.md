@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：36（内核 23 + 精灵 12 + 插件 1）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：37（内核 24 + 精灵 12 + 插件 1）
 
 ---
 
@@ -37,6 +37,7 @@ description: Memora 关键决策年轮
 | [ADR-021](./ADR-021-memory-conflict-supersede-write-path.md) | 记忆冲突消解（写路径取代检测）与闭环透明契约 | ✅ 已接受 | 架构 |
 | [ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md) | 上下文信任边界与 Agent 行为评估视角 | ✅ 已接受 | 架构 |
 | [ADR-023](./ADR-023-context-cost-injection-defense-loop-convergence.md) | 上下文成本重构、即时注入防御与最小闭环收敛 | ✅ 已接受 | 架构 |
+| [ADR-024](./ADR-024-session-title-layer.md) | 会话标题层：身份与展示标题解耦，首轮闭环自动命名 + 手动改名透传 | ✅ 已接受 | 架构 |
 
 ### 精灵宿主（SP 系列）
 
@@ -72,7 +73,7 @@ description: Memora 关键决策年轮
 | 运行时 | 2    | ADR-001, ADR-SP-001  |
 | 数据层 | 3    | ADR-002, ADR-016, ADR-SP-002 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 14   | ADR-004, ADR-009~015, ADR-021~023, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
+| 架构   | 15   | ADR-004, ADR-009~015, ADR-021~024, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
 | 安全   | 2    | ADR-006, ADR-SP-004 |
 | 质量   | 2    | ADR-007, ADR-SP-006 |
 | 工程   | 6    | ADR-008, ADR-017, ADR-020, ADR-SP-005, ADR-SP-007, ADR-SP-018 |
