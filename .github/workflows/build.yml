@@ -113,7 +113,7 @@ jobs:
           path: |
             hosts/memora-sprite/release/*.zip
             hosts/memora-sprite/release/*.exe
-          retention-days: 30
+          retention-days: 3
 
   # ─── macOS 构建 ────────────────────────────────────────────
   build-macos:
@@ -200,7 +200,7 @@ jobs:
           path: |
             hosts/memora-sprite/release/*.zip
             hosts/memora-sprite/release/*.dmg
-          retention-days: 30
+          retention-days: 3
 
   # ─── Linux 构建 ────────────────────────────────────────────
   build-linux:
@@ -285,7 +285,7 @@ jobs:
         with:
           name: memora-sprite-linux-x64
           path: hosts/memora-sprite/release/*.zip
-          retention-days: 30
+          retention-days: 3
 
   # ─── 发布 Release ──────────────────────────────────────────
   # 闭源发布策略：源码在私有镜像仓，产物发布到独立公开发布仓 memora-sprite-releases
