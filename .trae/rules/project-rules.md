@@ -138,6 +138,7 @@ chore: 升级 dependencies
 | 通用编码约束 | [coding-convention-rules.md](./coding-convention-rules.md) |
 | 心智模型（Bug/逻辑） | [programmer-mindset-rules.md](./programmer-mindset-rules.md) |
 | 单一真理源思维模型 | [single-truth-source-mindset.md](./single-truth-source-mindset.md) |
+| 网络为土壤思维模型 | [network-soil-mindset.md](./network-soil-mindset.md) |
 | UI 工程化心智 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) |
 | 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
 | 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |

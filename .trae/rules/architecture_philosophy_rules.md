@@ -93,7 +93,7 @@ description:
 | `round-summary` | 按相关度增量召回 | 轮次摘要（记忆即摘要，含 preference/fact/decision/intent/general 类型） |
 | `profile`   | 按相关度增量召回        | 用户画像（存量数据兼容，2026-08-14 起不再新写入） |
 
-**记忆关系图谱已移除（ADR-014 已废弃，2026-08-14）**：独立侧车模型（`MemoryRelation`/`IMemoryRelationStore`/`RelationBuilder`）判定为过度设计并整体移除。冲突检测改用 `supersededBy` 布尔标记（[ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) 写路径取代检测），用户画像收敛为 `round-summary` 的 `type=preference` 召回（见 [memory-as-summary.md](../architecture/memory-as-summary.md)）。
+**记忆关系图谱已移除**：独立侧车模型（`MemoryRelation`/`IMemoryRelationStore`/`RelationBuilder`）判定为过度设计并整体移除（ADR-014 废弃，2026-08-14），冲突检测改用 `supersededBy` 布尔标记（见 §1.3）；用户画像收敛为 `round-summary` 的 `type=preference` 召回（见 [memory-as-summary.md](../architecture/memory-as-summary.md)）。
 
 ## 3. 冷热分离（File vs DB）
 
