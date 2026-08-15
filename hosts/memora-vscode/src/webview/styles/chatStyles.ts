@@ -29,10 +29,12 @@ export const chatStyles = `
   /* ============ Layout：面板骨架 ============ */
   /* 顶部工具栏已剪枝（视图标题栏 native 承载「对话」标题 + 清空/历史按钮），
    * 面板内不再有重复标题栏；body 直接进入状态区 → 消息区 → 输入区。
-   * 消息区：全量铺开 */
+   * 消息区：全量铺开；z-index 设为 1（底层），输入区 z-index:20（上层承载浮层）——
+   * 消除模型下拉菜单展开时「挤压对话区」的错觉：菜单是覆盖而非挤入布局。 */
   #messages {
     flex: 1; overflow-y: auto; padding: var(--sp-5, 12px); box-sizing: border-box;
     display: flex; flex-direction: column; gap: var(--sp-4, 10px);
+    position: relative; z-index: 1;
   }
 
   /* ============ Components：消息 ============ */
@@ -74,25 +76,25 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px) var(--radius-lg, 8px);
   }
-  /* AI 回答：无气泡，带头像身份（ui-redesign.md §4.1 ②）。
-   * 结构：.msg.assistant → 行布局 [头像][.msg-content[正文+footer]]，
-   * 头像建立「谁在说」的视觉身份，替代原顶部细线的弱区分。 */
+  /* AI 回答：顶部身份标签 + 正文铺满（对齐主流大厂 AI 对话设计）。
+   * 结构：.msg.assistant → 纵向 [.msg-ai-label[角色/模型名]][.msg-content[正文+footer]]。
+   * 不再用侧边头像（避免每条回复都挤占一行），改为顶部弱标签标「谁在说」，
+   * 正文直接铺满宽度，信息密度更高（ui-redesign 迭代）。 */
   .msg.assistant {
     align-self: stretch;
-    flex-direction: row; align-items: flex-start; gap: var(--sp-3, 8px);
+    flex-direction: column; align-items: stretch; gap: var(--sp-1, 4px);
     background: transparent; color: var(--text-primary, #cccccc);
-    padding-top: var(--sp-3, 8px);
+    padding-top: var(--sp-2, 6px);
   }
-  /* AI 头像：首字 + 品牌弱化底色（--surface-ai-avatar），装饰性元素 aria-hidden */
-  .msg-avatar {
-    width: 22px; height: 22px; border-radius: var(--radius, 6px);
-    display: inline-flex; align-items: center; justify-content: center;
-    background: var(--surface-ai-avatar, rgba(14,99,156,0.25));
-    color: var(--accent-foreground, #ffffff);
-    font-size: var(--font-sm, 11px); font-weight: 600;
-    flex-shrink: 0; user-select: none;
+  /* AI 身份标签：顶部一行，展示角色显示名（加载角色包时）或默认「AI」；
+   * 灰字小字号，弱于正文，仅作「谁在说」的轻量标注（对齐大厂 AI 消息头部）。 */
+  .msg-ai-label {
+    display: flex; align-items: center; gap: var(--sp-1, 4px);
+    font-size: var(--font-sm, 11px); font-weight: 500;
+    color: var(--text-secondary, #9aa0a6);
+    user-select: none;
   }
-  /* AI 正文容器：承接正文 + 底部操作行，与头像分离布局 */
+  /* AI 正文容器：承接正文 + 底部操作行，铺满宽度 */
   .msg-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .msg.error {
     align-self: stretch;
@@ -131,6 +133,7 @@ export const chatStyles = `
     border-top: none;
     flex-shrink: 0;
     background: transparent;
+    position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
   /* 唯一视觉卡片：边框 + 圆角 + 阴影 + 背景（全部集中在此） */
   #inputWrap {

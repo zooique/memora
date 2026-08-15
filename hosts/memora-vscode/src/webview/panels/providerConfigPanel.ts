@@ -53,7 +53,10 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
     const scriptUri = webviewView.webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'scripts', 'configView.js'),
     );
-    webviewView.webview.html = buildHtml(scriptUri);
+    // CSP script-src 用 webview.cspSource（本地资源源）而非 'self'：
+    // asWebviewUri 生成的外部脚本 URL 的 origin 是 https://*.vscode-resource.vscode-cdn.net，
+    // 与 webview 文档自身 origin 不同，'self' 无法匹配 → 脚本被 CSP 拦截（配置面板一直加载中根因）
+    webviewView.webview.html = buildHtml(scriptUri, webviewView.webview.cspSource);
 
     // 处理来自 webview 的配置操作
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
@@ -129,15 +132,16 @@ export class MemoraConfigViewProvider implements vscode.WebviewViewProvider {
 }
 
 /** 生成 Webview HTML（Provider 列表 + 表单弹窗）
- *  @param scriptUri 外部脚本 configView.js 的 asWebviewUri（CSP script-src 'self' 加载，阶段 B P2-1） */
-function buildHtml(scriptUri: vscode.Uri): string {
+ *  @param scriptUri 外部脚本 configView.js 的 asWebviewUri（CSP script-src cspSource 加载，阶段 B P2-1）
+ *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本） */
+function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self';" />
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src ${cspSource};" />
 <style>
   ${configStyles}
 </style>
@@ -193,7 +197,7 @@ function buildHtml(scriptUri: vscode.Uri): string {
 
   <div id="toast"></div>
 
-  <!-- 阶段 B（P2-1）：运行时脚本由外部 configView.js 提供（CSP script-src 'self'） -->
+  <!-- 阶段 B（P2-1）：运行时脚本由外部 configView.js 提供（CSP script-src cspSource 加载） -->
   <script src="${scriptUri}"></script>
 </body>
 </html>`;

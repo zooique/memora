@@ -248,12 +248,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     if (role === 'assistant') {
-      // AI 消息：带头像身份（角色首字 + 品牌弱化底），正文/操作行收进 .msg-content
-      const avatar = document.createElement('span');
-      avatar.className = 'msg-avatar';
-      avatar.setAttribute('aria-hidden', 'true');
-      avatar.textContent = currentRoleName ? currentRoleName.charAt(0) : 'AI';
-      div.appendChild(avatar);
+      // AI 消息：顶部身份标签（角色/模型名）+ 正文铺满（ui-redesign 迭代，对齐大厂 AI 对话）
+      // 标签展示加载角色包的显示名（currentRoleName），未加载时默认「AI」。
+      const label = document.createElement('div');
+      label.className = 'msg-ai-label';
+      const labelText = document.createElement('span');
+      labelText.className = 'msg-ai-label__name';
+      labelText.textContent = currentRoleName || 'AI';
+      label.appendChild(labelText);
+      div.appendChild(label);
       const content = document.createElement('div');
       content.className = 'msg-content';
       const body = document.createElement('div');

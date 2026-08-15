@@ -158,6 +158,24 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(assistants).toHaveLength(1);
     expect(assistants[0].querySelector('.msg-body')?.textContent).toBe('重放后');
   });
+
+  it('历史切换重建：clear_ok 后重放 user/assistant 消息正常渲染（ui-redesign 历史加载链路）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    const emptyState = document.getElementById('emptyState') as HTMLElement;
+
+    // 模拟 handleSwitchDate 的完整重放序列：先 clear_ok，再逐条 post user/assistant
+    dispatch({ type: 'clear_ok' });
+    dispatch({ type: 'user', text: '昨天的问题', ts: '2026-08-14T09:00:00.000Z' });
+    dispatch({ type: 'assistant', text: '昨天的回答', ts: '2026-08-14T09:00:30.000Z' });
+
+    // 重放的两条消息都应渲染，且空状态隐藏
+    const msgs = messages.querySelectorAll('.msg');
+    expect(msgs).toHaveLength(2);
+    expect(messages.querySelector('.msg.user .msg-body')?.textContent).toBe('昨天的问题');
+    expect(messages.querySelector('.msg.assistant .msg-body')?.textContent).toBe('昨天的回答');
+    expect(emptyState.hidden).toBe(true);
+  });
 });
 
 describe('chatView 打断能力（mvp-scope stop / 插话）', () => {

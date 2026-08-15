@@ -11,7 +11,10 @@
  * 激活态：容器加 .is-open 时菜单展开。
  */
 export const dropdownStyles = `
-  .treedd { position: relative; }
+  /* 下拉容器：inline-flex 使其在 flex 布局中只占触发器实际宽度，
+   * 避免 block 默认为 100% 父宽导致的「视觉挤压」（flex item 被撑大变行）。
+   * z-index:10 保证展开的菜单能浮于兄弟元素（如消息区）之上。 */
+  .treedd { position: relative; display: inline-flex; align-items: center; z-index: 10; }
   .treedd__trigger {
     display: inline-flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; padding: 0;
@@ -22,7 +25,7 @@ export const dropdownStyles = `
   .treedd__trigger:hover { background: var(--surface-hover, rgba(128,128,128,.2)); }
   .treedd__menu {
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
-    min-width: 168px; z-index: 30;
+    min-width: 168px; z-index: 100; /* 浮层高 z-index，确保覆盖而非挤压布局 */
     padding: var(--sp-1, 4px); box-sizing: border-box;
     border: 1px solid var(--vscode-menu-border, #ccc);
     border-radius: var(--radius-lg, 8px);
@@ -31,6 +34,11 @@ export const dropdownStyles = `
     box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     display: none;
     flex-direction: column; gap: var(--sp-0, 2px);
+    /* 关键：absolute 定位的浮层必须显式声明不参与布局、不触发父容器重排。
+     * 仅 position:absolute 理论上已脱离文档流，但部分 webview 渲染引擎
+     * 对 overflow:visible 的 relative 父容器仍存在重排 bug，
+     * 加 transform:translateZ(0) 强制提升为独立合成层，彻底隔离布局影响。 */
+    transform: translateZ(0);
   }
   .treedd.is-open .treedd__menu { display: flex; }
   .treedd__item {
@@ -83,13 +91,18 @@ export const dropdownStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     border-color: var(--border-focus, #0e639c);
   }
-  /* 菜单：向上弹出 + 左对齐（避免向右溢出面板右缘，替代面板级 !important 覆写） */
+  /* 菜单：当前为「向上弹出 + 向右对齐」（right:0）——
+   * 模型选择器位于输入区右侧操作组，贴近面板右缘，若 left:0 向左对齐会往右弹出
+   * 超出面板右缘被裁剪挤压宽度；right:0 使菜单右缘对齐触发器右缘、往左展开，
+   * 菜单整体留在面板内，宽度不被挤压（替代面板级 !important 覆写）。 */
   .treedd--capsule .treedd__menu {
-    left: 0; right: auto; top: auto;
+    right: 0; left: auto; top: auto;
     bottom: calc(100% + var(--sp-2, 6px));
     min-width: var(--dd-menu-min-w, 160px);
     max-width: min(var(--dd-menu-max-w, 240px), calc(100vw - 32px));
     max-height: 260px; overflow-y: auto;
+    z-index: 200; /* 模型选择器菜单最高层级，浮于所有内容之上（含消息区+输入卡片） */
+    transform: translateZ(0); /* 独立合成层：避免 webview 渲染引擎重排导致「挤压对话区」 */
   }
   /* 自动翻转（SSOT 排雷 P1-2）：触发器贴近容器顶缘时向上放不下，由 applyDropDirection
    * 加 .treedd--drop-down 切换为向下弹出，避免菜单溢出面板顶部被裁切。 */
