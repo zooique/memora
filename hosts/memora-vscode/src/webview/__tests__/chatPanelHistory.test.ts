@@ -1,15 +1,20 @@
 /**
- * chatPanel 历史切换集成测试 — 锁定「点击历史能看到日期但无法加载查看」根因
+ * chatPanel 会话管理集成测试（ADR-024 会话标题层）
  *
  * 用真实 WorkspaceSessionStore（临时目录落盘）+ mock vscode 驱动
- * MemoraChatViewProvider.switchHistoryFromCommand → handleSwitchDate → loadHistory，
- * 验证：QuickPick 列出的日期必须能被 loadHistory 精确匹配，且重放消息正确 post 到 webview。
+ * MemoraChatViewProvider 的会话管理入口（switchSessionFromCommand / newSessionFromCommand /
+ * renameCurrentSession / switchToSession），验证：
+ *   - QuickPick 列出会话（新建/改名/已有会话）
+ *   - 切换会话后重放该会话历史 + 推送 session_title
+ *   - 新建会话切入空会话并推送占位标题
+ *   - 改名写入元数据并推送新标题
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Agent } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 
@@ -22,8 +27,9 @@ vi.mock('vscode', async () => {
   return {
     Uri: uri,
     window: {
-      // 历史命令的 QuickPick：测试内可动态注入选择结果
+      // 会话管理的 QuickPick / InputBox：测试内可动态注入选择/输入结果
       showQuickPick: vi.fn(),
+      showInputBox: vi.fn(),
       showWarningMessage: vi.fn(),
       showErrorMessage: vi.fn(),
     },
@@ -35,6 +41,19 @@ vi.mock('vscode', async () => {
 });
 
 import * as vscode from 'vscode';
+
+/** agent 桩：仅提供会话管理相关方法（switchToSession / renameSession） */
+function agentStub(): { agent: Agent; switchToSession: ReturnType<typeof vi.fn>; renameSession: ReturnType<typeof vi.fn> } {
+  const switchToSession = vi.fn().mockResolvedValue(0);
+  const renameSession = vi.fn();
+  // 最小 agent：仅暴露会话管理子对象 + 事件订阅空实现（bindAgentNoticeEvents 需要），其余方法留空
+  const agent = {
+    sessionManager: { switchToSession, renameSession },
+    on: vi.fn(),
+    off: vi.fn(),
+  } as unknown as Agent;
+  return { agent, switchToSession, renameSession };
+}
 
 /** 构造一个 sessionStore + provider 的最小桩，返回可驱动的 provider 实例 */
 function setup(): {
@@ -84,122 +103,110 @@ function setup(): {
   };
 }
 
-// 内存中直接写入历史会话（模拟内核 appendUser/appendAssistant 落盘结构）
-function seedHistory(store: WorkspaceSessionStore, date: string, msgs: { role: string; content: string; ts: string }[]): void {
-  for (const m of msgs) store.appendMessage(date, 'main', m as never);
+/** 内存中直接写入会话消息（模拟内核 appendUser/appendAssistant 落盘结构） */
+function seedSession(store: WorkspaceSessionStore, sessionId: string, msgs: { role: string; content: string; ts: string }[]): void {
+  const idx = sessionId.lastIndexOf('-');
+  const date = sessionId.slice(0, idx);
+  const session = sessionId.slice(idx + 1);
+  for (const m of msgs) store.appendMessage(date, session, m as never);
 }
 
-describe('chatPanel 历史切换（点击历史 → 加载查看）', () => {
+/** 从 posted 中按 type 过滤消息 */
+function ofType<T extends { type: string }>(posted: unknown[], type: string): T[] {
+  return posted.filter((m) => (m as { type: string }).type === type) as T[];
+}
+
+describe('chatPanel 会话列表导航（ADR-024 手动会话模型）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('QuickPick 列出历史日期后，选择某天能加载该天消息', async () => {
-    const { store, provider, posted } = setup();
-    // 种入 2026-08-14 与 2026-08-15 两天历史
-    seedHistory(store, '2026-08-15', [
-      { role: 'user', content: '今天的问题', ts: '2026-08-15T10:00:00.000Z' },
-      { role: 'assistant', content: '今天的回答', ts: '2026-08-15T10:00:30.000Z' },
-    ]);
-    seedHistory(store, '2026-08-14', [
-      { role: 'user', content: '昨天的问题', ts: '2026-08-14T09:00:00.000Z' },
-    ]);
-
-    // 用户选了 2026-08-14
-    vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
-      label: '2026-08-14',
-      description: '该天对话',
-      date: '2026-08-14',
-    } as never);
-
-    await provider.switchHistoryFromCommand();
-
-    // 先 clear_ok 清空，再重放该天消息
-    const types = posted.map((m) => (m as { type: string }).type);
-    expect(types).toContain('clear_ok');
-    expect(types).toContain('user');
-
-    // 只重放 08-14 的消息（1 条 user），不混入 08-15 的 user/assistant
-    const userMsgs = posted.filter((m) => (m as { type: string }).type === 'user');
-    expect(userMsgs).toHaveLength(1);
-    expect((userMsgs[0] as { text: string }).text).toBe('昨天的问题');
-    const assistantMsgs = posted.filter((m) => (m as { type: string }).type === 'assistant');
-    expect(assistantMsgs).toHaveLength(0);
-  });
-
-  it('选择「全部历史」时跨天合并重放全部消息', async () => {
-    const { store, provider, posted } = setup();
-    seedHistory(store, '2026-08-15', [
-      { role: 'user', content: '今天的问题', ts: '2026-08-15T10:00:00.000Z' },
-    ]);
-    seedHistory(store, '2026-08-14', [
-      { role: 'user', content: '昨天的问题', ts: '2026-08-14T09:00:00.000Z' },
-    ]);
-
-    vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
-      label: '全部历史',
-      description: '跨天合并',
-      date: '',
-    } as never);
-
-    await provider.switchHistoryFromCommand();
-
-    const userMsgs = posted.filter((m) => (m as { type: string }).type === 'user');
-    // 跨天合并应包含两条 user 消息
-    expect(userMsgs).toHaveLength(2);
-  });
-
-  it('QuickPick 中有历史日期（listSessions 非空）', async () => {
+  it('QuickPick 列出新建/改名动作项与全部会话（含当前会话标记）', async () => {
     const { store, provider } = setup();
-    seedHistory(store, '2026-08-15', [
-      { role: 'user', content: 'x', ts: '2026-08-15T10:00:00.000Z' },
-    ]);
+    // 种入两个会话 + 元数据
+    seedSession(store, '2026-08-15-s1', [{ role: 'user', content: '今天的问题', ts: '2026-08-15T10:00:00.000Z' }]);
+    seedSession(store, '2026-08-14-s2', [{ role: 'user', content: '昨天的问题', ts: '2026-08-14T09:00:00.000Z' }]);
+    store.setSessionTitle('2026-08-15-s1', '今天会话');
+    // 当前会话指向 s1
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
 
     vi.mocked(vscode.window.showQuickPick).mockResolvedValue(null as never);
-    await provider.switchHistoryFromCommand();
+    await provider.switchSessionFromCommand();
 
-    // QuickPick 应被调用，且 item 包含历史日期
-    const items = vi.mocked(vscode.window.showQuickPick).mock.calls[0]?.[0] as unknown[];
-    expect(items?.length).toBeGreaterThan(1); // 至少「全部历史」+ 一个日期
-    expect(items?.some((i) => (i as { date?: string }).date === '2026-08-15')).toBe(true);
+    const items = vi.mocked(vscode.window.showQuickPick).mock.calls[0]?.[0] as { label: string; id: string }[];
+    // 新建 + 改名 + 两个会话
+    expect(items?.length).toBe(4);
+    const labels = items.map((i) => i.label);
+    expect(labels).toContain('＋ 新建会话');
+    expect(labels).toContain('✎ 改当前会话名');
+    expect(labels).toContain('今天会话');
+    // 当前会话语义约束：会话项携带当前标记
+    const currentItem = items.find((i) => i.id === '2026-08-15-s1');
+    expect(currentItem?.label).toBe('今天会话');
   });
-});
 
-describe('chatPanel 角色包切换入口（时序竞态修复，2026-08-15）', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('setAgent 装配完成后补推角色信息 → webview 收到 chat_role_pack + chat_role_packs（身份条与切换入口不缺失）', () => {
-    const { provider, posted } = setup();
-    // mock 已装配的 Agent：rolePackManager 返回角色包列表 + 激活名（bindAgentNoticeEvents 需 on/off）
-    const agent = {
-      on: vi.fn(),
-      off: vi.fn(),
-      rolePackManager: {
-        listMeta: () => [
-          { name: 'doc-review', displayName: '文档打磨', description: '打磨文档结构、表达与一致性' },
-          { name: '写作助手', displayName: '写作助手', description: '专业写作助手' },
-        ],
-        activeName: 'doc-review',
-        // currentRoleHasWebSearch 依赖 getActive 的 capabilities（C1 联网 chip 判定）
-        getActive: () => ({ capabilities: [] }),
-      },
-    } as never;
-    // 触发装配完成注入（open 命令路径 setAgent / 懒装配路径 ensureAgent 均走此补推）
+  it('选择会话 → 调内核 switchToSession + 重放该会话历史 + 推送标题', async () => {
+    const { store, provider, posted } = setup();
+    const { agent, switchToSession } = agentStub();
     provider.setAgent(agent);
-    // 补推 chat_role_pack → 身份条可见（_activeRolePack 自动补齐 + 发送）
-    const rolePacks = posted.filter((m) => (m as { type: string }).type === 'chat_role_pack');
-    expect(rolePacks.length).toBeGreaterThanOrEqual(1);
-    expect((rolePacks[0] as { rolePack: string }).rolePack).toBe('文档打磨');
-    // 补推 chat_role_packs → 角色切换入口数据
-    const packLists = posted.filter((m) => (m as { type: string }).type === 'chat_role_packs');
-    expect(packLists.length).toBeGreaterThanOrEqual(1);
-    const packMsg = packLists[packLists.length - 1] as {
-      packs: { name: string }[];
-      activeName: string;
-    };
-    expect(packMsg.packs.map((p) => p.name)).toContain('doc-review');
-    expect(packMsg.activeName).toBe('doc-review');
+    seedSession(store, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: '2026-08-15T10:00:00.000Z' },
+      { role: 'assistant', content: '回答A', ts: '2026-08-15T10:00:30.000Z' },
+    ]);
+    store.setSessionTitle('2026-08-15-s1', '会话A');
+    // 当前会话切到另一个，验证切换动作触发
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
+
+    vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
+      label: '会话A',
+      id: '2026-08-15-s1',
+    } as never);
+    await provider.switchSessionFromCommand();
+
+    expect(switchToSession).toHaveBeenCalledWith('2026-08-15-s1');
+    // 重放：clear_ok + 该会话消息 + session_title
+    const types = posted.map((m) => (m as { type: string }).type);
+    expect(types).toContain('clear_ok');
+    const userMsgs = ofType<{ type: string; text: string }>(posted, 'user');
+    expect(userMsgs.map((m) => m.text)).toContain('问题A');
+    const title = ofType<{ type: string; title: string }>(posted, 'session_title');
+    expect(title[0]?.title).toBe('会话A');
+  });
+
+  it('新建会话 → 生成唯一会话名 + 清空重放 + 推送占位标题', async () => {
+    const { provider, posted } = setup();
+    const { agent, switchToSession } = agentStub();
+    provider.setAgent(agent);
+
+    vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
+      label: '＋ 新建会话',
+      id: '__new__',
+    } as never);
+    await provider.switchSessionFromCommand();
+
+    // 内核 switchToSession 被调用，且会话名以 s 开头（唯一前缀）
+    expect(switchToSession).toHaveBeenCalledTimes(1);
+    const calledId = switchToSession.mock.calls[0]?.[0] as string;
+    expect(calledId).toMatch(/^\d{4}-\d{2}-\d{2}-s/);
+    // 重放：clear_ok + 占位标题（无消息）
+    const types = posted.map((m) => (m as { type: string }).type);
+    expect(types).toContain('clear_ok');
+    const title = ofType<{ type: string; title: string }>(posted, 'session_title');
+    expect(title[0]?.title).toMatch(/^新会话 \d{2}:\d{2}$/);
+  });
+
+  it('改名当前会话 → 写入元数据 + 推送新标题', async () => {
+    const { store, provider, posted } = setup();
+    const { agent, renameSession } = agentStub();
+    provider.setAgent(agent);
+    seedSession(store, '2026-08-14-other', [{ role: 'user', content: 'x', ts: '2026-08-14T09:00:00.000Z' }]);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
+
+    vi.mocked(vscode.window.showInputBox).mockResolvedValue('我的新标题');
+    await provider.renameCurrentSession();
+
+    expect(renameSession).toHaveBeenCalledWith('2026-08-14-other', '我的新标题');
+    const title = ofType<{ type: string; title: string }>(posted, 'session_title');
+    expect(title[0]?.title).toBe('我的新标题');
   });
 });

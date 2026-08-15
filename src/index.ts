@@ -159,6 +159,8 @@ export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
 export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
+// 会话占位标题：未命名会话的展示占位（宿主复用，单一真理源避免重复实现）
+export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNamer.js';
 // 轮次摘要追溯工具定义：宿主可条件性控制 trace_summary 工具的可见性
 export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 // 不中断工作模型：检查点类型和增量事件类型（宿主 IPC 层需要用于类型声明）

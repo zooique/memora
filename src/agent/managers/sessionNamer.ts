@@ -150,10 +150,11 @@ ${content}
  * 生成占位标题（LLM 不可用/失败/无价值时降级）
  *
  * 格式："新会话 HH:MM"（借鉴 WorkBuddy 占位式命名，best-effort 不阻塞）。
+ * 导出供宿主复用（宿主未命名会话的展示占位，单一真理源避免重复实现）。
  *
  * @returns 占位标题
  */
-function defaultTitle(): string {
+export function defaultTitle(): string {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');
   const mm = String(now.getMinutes()).padStart(2, '0');

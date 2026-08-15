@@ -184,6 +184,13 @@ export type ExtensionToWebviewMessage =
   /** 清空会话完成（webview 收到后清空消息区） */
   | { type: 'clear_ok' }
   /**
+   * 当前会话标题（ADR-024 会话标题层）
+   *
+   * host 在会话回放/新建/切换/改名时推送当前会话标题，webview 顶部展示，
+   * 让用户识别当前在哪个会话（主动可见）。title 为未命名会话时占位。
+   */
+  | { type: 'session_title'; title: string }
+  /**
    * Chat Panel Provider 列表同步（底部模型下拉框的数据）
    *
    * 扩展侧在渲染/切换时推送最新 Provider 列表及激活状态，

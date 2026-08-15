@@ -131,10 +131,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.clearChat', () => void chatProvider.clearFromCommand()),
   );
 
-  // 命令：切换历史对话（视图标题栏按钮触发，toolbar 剪枝后替代原 webview 内历史下拉）
+  // 命令：会话列表（新建/切换/改名，视图标题栏按钮触发，替代原按天历史切换）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.switchHistory', () =>
-      void chatProvider.switchHistoryFromCommand(),
+    vscode.commands.registerCommand('memora.switchSession', () =>
+      void chatProvider.switchSessionFromCommand(),
     ),
   );
 }

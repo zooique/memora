@@ -15,7 +15,14 @@
  *     角色名在输入区 role-picker + AI 消息头部标签展示（SSOT 收敛身份条已删）。
  */
 import * as vscode from 'vscode';
-import { formatDateKey, type Agent, type AgentChunk, type ISessionStore } from '@zooique/memora';
+import {
+  defaultSessionTitle,
+  formatDateKey,
+  type Agent,
+  type AgentChunk,
+  type ISessionStore,
+  type SessionMeta,
+} from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -33,10 +40,13 @@ import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
 
-/** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（清空会话）。
- *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5） */
+/** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（清空会话 + 会话标题元数据）。
+ *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5）。
+ *  listSessionMetas/getSessionMeta 为 ADR-024 会话标题层的宿主实现（会话列表导航依赖）。 */
 type HostSessionStore = ISessionStore & {
   clearSession: (date: string, session: string) => void;
+  listSessionMetas: () => SessionMeta[];
+  getSessionMeta: (sessionId: string) => SessionMeta | undefined;
 };
 
 /** 侧边栏视图提供者 */
@@ -65,12 +75,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _workspaceState: vscode.Memento | undefined;
   /**
-   * 当前查看的历史会话日期（YYYY-MM-DD，toolbar 历史下拉框）
+   * 当前活跃会话标识（YYYY-MM-DD-sessionName，ADR-024 会话标题层）
    *
-   * undefined = 查看全部历史（跨天合并，默认）；选定值 = 只看该天对话记录。
-   * 仅影响回放展示，不影响持久化写入（写入始终走当天 main，与内核一致）。
+   * 宿主从「按天 main 归档」升级为「手动创建会话」后，当前会话不再固定为
+   * 当天 main，而是用户在会话列表中选择/新建的会话。写入内核与回放展示均
+   * 以本会话为准（单一真理源），不再有跨天合并视图。
    */
-  private _historyDate: string | undefined;
+  private _currentSessionId: string;
   /** 是否正在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
    *  避免重放清空消息区后，进行中的 chunk 污染重放视图（对抗评估 P1-3） */
   private _streaming = false;
@@ -97,6 +108,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     providerStore: ProviderStore,
   ) {
     this._providerStore = providerStore;
+    // 初始会话：最近活跃会话（有历史时），否则当天 main 空会话（ADR-024）
+    this._currentSessionId =
+      this.sessionStore.listSessionMetas()[0]?.sessionId ??
+      `${formatDateKey(new Date())}-main`;
   }
 
   /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
@@ -359,62 +374,182 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 避免「确认框静默失效 → 按钮无反应」的功能性缺陷，对抗评估 P0-2）。
    * 依赖 WorkspaceSessionStore.clearSession（宿主扩展方法，非内核 ISessionStore 标准接口）。
    *
-   * 收窄语义（SSOT 排雷 P1-1）：只清空「当前查看的会话」这一个 date-main 最小单元——
-   * 若正在查看某历史天（_historyDate）则清该天，否则清当天 main。绝不清空跨天全部
-   * 历史，避免「清空当前对话」实际清光全部历史的数据破坏错位。
+   * 收窄语义（SSOT 排雷 P1-1）：只清空「当前活跃会话 _currentSessionId」这一个会话，
+   * 绝不清空其他会话，避免「清空当前对话」实际清光全部历史的数据破坏错位。
    */
   public async clearFromCommand(): Promise<void> {
     const choice = await vscode.window.showWarningMessage(
-      '确定清空当前对话？此操作不可恢复。',
+      `确定清空「${this.currentSessionTitle()}」？此操作不可恢复。`,
       { modal: true },
       '清空',
     );
     if (choice !== '清空') return;
     try {
-      // 清空当前查看范围的 date-main 会话（_historyDate 存在则清该历史天，否则当天）
-      const date = this._historyDate ?? formatDateKey(new Date());
-      this.sessionStore.clearSession(date, 'main');
+      // 清空当前活跃会话（ADR-024：同时删除会话标题元数据）
+      const { date, session } = this.parseSessionId(this._currentSessionId);
+      this.sessionStore.clearSession(date, session);
     } catch (err) {
       // 清空失败不阻塞展示（仅清 webview UI），但需记录（SSOT 不藏错）
       console.warn('Memora 清空会话失败', err);
     }
-    // 清空后回放当前查看范围，保证 UI 与存储一致（其余天历史保留）
-    this.post({ type: 'clear_ok' });
-    const history = this.loadHistory(this._historyDate);
-    for (const m of history) {
-      this.post({ type: m.role, text: m.content, ts: m.ts });
+    // 清空后重放当前会话（此时已空），保证 UI 与存储一致
+    this.replayCurrentSession();
+  }
+
+  /** 会话列表 QuickPick 动作项标识（vs showQuickPick 无内建 kind，用字符串常量区分） */
+  private static readonly ACTION_NEW = '__new__';
+  private static readonly ACTION_RENAME = '__rename__';
+
+  /**
+   * 会话列表导航（由视图标题栏「会话列表」命令触发）：QuickPick 列出全部会话
+   * （标题 + 日期描述），首项「新建会话」、次项「改当前会话名」，其余为可切换会话。
+   *
+   * 视图标题栏（view/title）按钮只能承载图标命令，无法内嵌下拉菜单；会话列表
+   * 由命令弹 QuickPick 实现（对齐 VS Code 原生交互）。选中会话 → 加载到对话框；
+   * 选中动作项 → 新建/改名。
+   */
+  public async switchSessionFromCommand(): Promise<void> {
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换会话' });
+      return;
+    }
+    const metas = this.sessionStore.listSessionMetas();
+    const current = this.sessionStore.getSessionMeta(this._currentSessionId);
+    const picked = await vscode.window.showQuickPick(
+      [
+        { label: '＋ 新建会话', description: '', id: MemoraChatViewProvider.ACTION_NEW },
+        {
+          label: '✎ 改当前会话名',
+          description: current?.title ?? this._currentSessionId,
+          id: MemoraChatViewProvider.ACTION_RENAME,
+        },
+        ...metas.map((m) => ({
+          label: m.title,
+          description: this.fmtSessionId(m.sessionId),
+          id: m.sessionId,
+          detail: m.sessionId === this._currentSessionId ? '当前会话' : undefined,
+        })),
+      ],
+      { placeHolder: '选择会话（回车加载，或选动作项）' },
+    );
+    if (!picked) return; // 用户取消
+    if (picked.id === MemoraChatViewProvider.ACTION_NEW) {
+      await this.newSessionFromCommand();
+    } else if (picked.id === MemoraChatViewProvider.ACTION_RENAME) {
+      await this.renameCurrentSession();
+    } else {
+      await this.switchToSession(picked.id);
     }
   }
 
   /**
-   * 切换历史会话（由视图标题栏「切换历史对话」命令触发）：QuickPick 列出全部
-   * 历史日期供选择，选中后复用 handleSwitchDate 重放对应历史
-   *
-   * 视图标题栏（view/title）按钮只能承载图标命令，无法内嵌下拉菜单；历史日期
-   * 选择由命令弹 QuickPick 实现（对齐 VS Code 原生交互）。「全部历史」作为首项。
+   * 新建会话（由「＋ 新建会话」触发）：生成唯一会话名，调内核 switchToSession
+   * 切入空会话（工作记忆清空），UI 清空消息区
    */
-  public async switchHistoryFromCommand(): Promise<void> {
+  public async newSessionFromCommand(): Promise<void> {
     if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换历史' });
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再新建会话' });
       return;
     }
-    // 收集全部历史日期（倒序，最新在前），「全部历史」作为首项
-    const dates = new Set<string>();
-    for (const key of this.sessionStore.listSessions()) {
-      if (!key.endsWith('-main')) continue;
-      const idx = key.lastIndexOf('-');
-      if (idx > 0) dates.add(key.slice(0, idx));
+    const agent = await this.getAgentOrWarn();
+    if (!agent) return;
+    // 生成唯一会话名（字母前缀，避免与数字日期混淆；标题层才是用户可读身份）
+    const name = `s${Date.now().toString(36)}`;
+    const sessionId = `${formatDateKey(new Date())}-${name}`;
+    try {
+      if (!agent.sessionManager) {
+        this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
+        return;
+      }
+      await agent.sessionManager.switchToSession(sessionId);
+      this._currentSessionId = sessionId;
+      this.replayCurrentSession();
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
-    const dateList = [...dates].sort().reverse();
-    const picked = await vscode.window.showQuickPick(
-      [
-        { label: '全部历史', description: '跨天合并', date: '' },
-        ...dateList.map((d) => ({ label: d, description: '该天对话', date: d })),
-      ],
-      { placeHolder: '选择要查看的历史对话日期' },
-    );
-    if (!picked) return; // 用户取消
-    this.handleSwitchDate(picked.date);
+  }
+
+  /**
+   * 改当前会话名（由「✎ 改当前会话名」触发）：InputBox 输入新标题，调内核
+   * renameSession 写入元数据（不改会话身份），UI 刷新标题
+   */
+  public async renameCurrentSession(): Promise<void> {
+    const title = await vscode.window.showInputBox({
+      prompt: '输入新的会话名称',
+      value: this.currentSessionTitle(),
+      validateInput: (v) => (v.trim() ? undefined : '会话名称不能为空'),
+    });
+    if (title === undefined || title === null) return; // 用户取消
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    // 会话管理未就绪时静默跳过落库（UI 刷新标题不阻塞，元数据由内核侧 SessionNamer 兜底）
+    this._agent?.sessionManager?.renameSession(this._currentSessionId, trimmed);
+    this.post({ type: 'session_title', title: trimmed });
+  }
+
+  /**
+   * 切换到指定会话：调内核 switchToSession（切换身份 + 同步工作记忆），
+   * 更新当前会话并回放其历史
+   *
+   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
+   */
+  public async switchToSession(sessionId: string): Promise<void> {
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换会话' });
+      return;
+    }
+    if (sessionId === this._currentSessionId) return; // 已在目标会话
+    const agent = await this.getAgentOrWarn();
+    if (!agent) return;
+    try {
+      if (!agent.sessionManager) {
+        this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
+        return;
+      }
+      await agent.sessionManager.switchToSession(sessionId);
+      this._currentSessionId = sessionId;
+      this.replayCurrentSession();
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /** 会话标识 → 用户可读日期描述（YYYY年M月D日，历史列表副标题） */
+  private fmtSessionId(sessionId: string): string {
+    const idx = sessionId.lastIndexOf('-');
+    const date = sessionId.slice(0, idx);
+    const [y, m, d] = date.split('-').map((n) => Number(n));
+    if (!y || !m || !d) return date;
+    return `${y}年${m}月${d}日`;
+  }
+
+  /** 确保 Agent 已装配（未装配时返回 undefined 并提示） */
+  private async getAgentOrWarn(): Promise<Agent | undefined> {
+    if (this._agent) return this._agent;
+    await this.ensureAgent();
+    if (!this._agent) {
+      void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候再试');
+      return undefined;
+    }
+    return this._agent;
+  }
+
+  /** 清空 webview 消息区并重放当前会话历史 + 刷新会话标题 */
+  private replayCurrentSession(): void {
+    this.post({ type: 'clear_ok' });
+    const history = this.loadHistory();
+    for (const m of history) {
+      this.post({ type: m.role, text: m.content, ts: m.ts });
+    }
+    this.post({ type: 'session_title', title: this.currentSessionTitle() });
   }
 
   /** 仅渲染 HTML 骨架（历史/Provider 在 webview 就绪后经 replaySession 回放）；
@@ -438,11 +573,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private replaySession(): void {
     if (!this._view) return;
-    // 恢复历史消息（按当前查看日期过滤：_historyDate 或全部跨天合并）
-    const history = this.loadHistory(this._historyDate);
+    // 恢复当前会话历史消息（ADR-024：只回放 _currentSessionId）
+    const history = this.loadHistory();
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
+    // 推送当前会话标题 → webview 顶部展示（主动可见，便于识别当前会话）
+    this.post({ type: 'session_title', title: this.currentSessionTitle() });
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
@@ -459,31 +596,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     void this.pushProviders();
     // A3（alignment-iteration.md）：推送角色包列表到输入区切换下拉
     this.pushRolePacks();
-  }
-
-  /**
-   * 处理用户切换查看的历史会话日期（视图标题栏「切换历史」命令 → QuickPick 选择）
-   *
-   * 更新当前查看日期，清空 webview 消息区后重放对应历史。date 传空串表示
-   * 查看全部历史（跨天合并，默认），否则只看该天对话。
-   *
-   * @param date 选中的日期（YYYY-MM-DD），空串 = 全部
-   */
-  private handleSwitchDate(date: string): void {
-    // 流式生成中禁止切换历史：重放会清空消息区，导致进行中的 chunk 追加进
-    // 重放后的视图，形成「历史 + 进行中流」混血（对抗评估 P1-3）。
-    // 约束放在 host 侧（流状态单一真理源），提示用户等待本轮生成完成。
-    if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换历史' });
-      return;
-    }
-    this._historyDate = date || undefined;
-    // 先清空 webview 消息区，再重放对应日期历史（复用 clear_ok 清空协议）
-    this.post({ type: 'clear_ok' });
-    const history = this.loadHistory(this._historyDate);
-    for (const m of history) {
-      this.post({ type: m.role, text: m.content, ts: m.ts });
-    }
   }
 
   /**
@@ -650,51 +762,42 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 从 sessionStore 恢复会话完整历史（user + assistant），跨天合并或按日期过滤
+   * 从 sessionStore 恢复当前会话的完整历史（user + assistant）
+   *
+   * 多会话模型（ADR-024）下只加载「当前会话 _currentSessionId」的消息，不再遍历
+   * main 会话跨天合并——每个会话独立展示，切换会话即替换回放视图。
    *
    * 恢复策略：
-   *   - 内核按 `YYYY-MM-DD-main` 归档（todayDate），跨天会落在不同 key；
-   *     默认遍历全部 `*-main` 会话合并加载，杜绝「隔天历史丢失」（用户实测发现）；
-   *     传入 date 时只加载该天的 main 会话（toolbar 历史下拉手动切换查看）。
    *   - user 消息：回放剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
    *     不属于用户实际输入，仅用于 LLM 上下文，不应回显）。
    *   - assistant 消息：回放上一次流式输出的完整内容（避免拼接不完整流）。
    *   - 内核注入的 `<user_input>` 系统消息跳过（由内核 appendUser 持久化的 user 消息替代）。
    *
-   * @param date 可选过滤日期（YYYY-MM-DD），缺省/空串 = 全部跨天合并
    * @returns 带 role/timestamp 标记的会话消息列表（按时间升序）
    */
-  private loadHistory(date?: string): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+  private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
     try {
+      const { date, session } = this.parseSessionId(this._currentSessionId);
       const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
-      for (const key of this.sessionStore.listSessions()) {
-        // key 格式：YYYY-MM-DD-session；只取 main 会话（面板单会话模型）
-        if (!key.endsWith('-main')) continue;
-        const idx = key.lastIndexOf('-');
-        const keyDate = key.slice(0, idx);
-        // 指定查看日期时，跳过其他日期的会话
-        if (date && keyDate !== date) continue;
-        const msgs = this.sessionStore.loadMessages(keyDate, 'main') as {
-          role?: string;
-          content?: string;
-          timestamp?: string;
-        }[];
-        for (const m of msgs) {
-          if (!m.content || m.content.startsWith('<user_input>')) continue;
-          result.push({
-            role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
-              | 'user'
-              | 'assistant',
-            content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
-            ts: m.timestamp,
-          });
-        }
+      const msgs = this.sessionStore.loadMessages(date, session) as {
+        role?: string;
+        content?: string;
+        timestamp?: string;
+      }[];
+      for (const m of msgs) {
+        if (!m.content || m.content.startsWith('<user_input>')) continue;
+        result.push({
+          role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
+            | 'user'
+            | 'assistant',
+          content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
+          ts: m.timestamp,
+        });
       }
-      // 跨天合并后按时间升序（消息存储顺序可能因多次回放而乱序）
+      // 按时间升序（消息存储顺序可能因多次回放而乱序）
       result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
       // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条（按时间升序取末段）。
-      // 单天历史通常远低于上限不受影响；跨天合并视图聚焦近期对话，避免长期
-      // 使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7）
+      // 避免超长会话逐条建 DOM 拖慢切换（对抗评估 P1-7）
       return result.slice(-MAX_HISTORY_MESSAGES);
     } catch (err) {
       // 读取失败不阻塞面板展示，但需记录（SSOT 不藏错，避免「历史空白」静默吞因）
@@ -703,11 +806,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 当前会话的 date/session（默认当天 main，复用内核会话组织） */
+  /**
+   * 解析会话标识（YYYY-MM-DD-sessionName）为日期 + 会话名
+   *
+   * 会话名可能含连字符（如 main-b1），故从最后一个 '-' 切分（日期固定 10 位）。
+   */
+  private parseSessionId(sessionId: string): { date: string; session: string } {
+    const idx = sessionId.lastIndexOf('-');
+    return { date: sessionId.slice(0, idx), session: sessionId.slice(idx + 1) };
+  }
+
+  /** 当前会话的 date/session（单真理源：始终解析 _currentSessionId，复用内核会话组织） */
   private sessionInfo(): { date: string; session: string; store: HostSessionStore } {
-    // 复用内核 formatDateKey（本地时区 YYYY-MM-DD），替代手写日期拼接（对抗评估 P2-5）
-    const date = formatDateKey(new Date());
-    return { date, session: 'main', store: this.sessionStore };
+    return { ...this.parseSessionId(this._currentSessionId), store: this.sessionStore };
+  }
+
+  /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */
+  private currentSessionTitle(): string {
+    return this.sessionStore.getSessionMeta(this._currentSessionId)?.title ?? defaultSessionTitle();
   }
 
   /** 持久化一条消息 */
@@ -739,12 +855,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._abortController.abort();
       await this._currentFlow;
     }
+    // 确保 Agent 对齐到当前会话（ADR-024）：用户可能打开面板后直接发送，未显式
+    // 切换会话。若 Agent 内部会话与 _currentSessionId 不一致，先 switchToSession 对齐，
+    // 否则内核 appendUser 会写入错误会话。会话一致时跳过（不重复加载工作记忆）。
+    const sessionManager = this._agent.sessionManager;
+    if (sessionManager) {
+      const info = sessionManager.getCurrentSessionInfo();
+      if (info && `${info.date}-${info.session}` !== this._currentSessionId) {
+        try {
+          await sessionManager.switchToSession(this._currentSessionId);
+        } catch (err) {
+          this.post({
+            type: 'notice',
+            level: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
+      }
+    }
     const now = new Date().toISOString();
-    // P1-1：若正查看历史日期，发送前回置到「全部历史（当前会话）」视图，
-    // 避免新消息持久化到今天却显示在历史日期视图的状态错位。
-    // handleSwitchDate('') 会清空消息区 + 回放当前
-    if (this._historyDate) this.handleSwitchDate('');
-    // 用户消息持久化由内核 chat() → appendUser 完成（写入 todayDate-main），
+    // 用户消息持久化由内核 chat() → appendUser 完成（写入当前会话 _currentSessionId），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
     this.post({ type: 'user', text: input, ts: now });
 
@@ -761,8 +892,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
-    // P1-1：与 handleSend 同一状态错位防护——正查看历史时回答，先回置到当前会话视图
-    if (this._historyDate) this.handleSwitchDate('');
     // resumeExecution 内核路径不写 user 消息（仅 appendAssistant），
     // 此处由 UI 补写，避免回答丢失（内核 resume 能力缺口，宿主补丁）
     this.persist('user', input);
@@ -837,7 +966,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
     // P0-2：进入生成状态（webview 展示加载动画 + 禁用输入）
     this.post({ type: 'status', state: 'thinking' });
-    // 置位生成态：handleSwitchDate 据此拒绝切换历史（P1-3）
+    // 置位生成态：会话切换/新建据此拒绝（P1-3，避免重放与进行中流混血）
     this._streaming = true;
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
     let firstChunkTs = new Date().toISOString();
@@ -984,6 +1113,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
        消息头部标签 msg-ai-label 表达。面板结构收敛为三层：消息区 → 活动区 → 输入区。 -->
 
   <!-- ② 消息流：日期分隔线 + 消息 + 空状态引导（ui-redesign.md §4.1 ②） -->
+  <!-- 会话标题条（ADR-024 会话标题层）：顶部展示当前会话标题，主动可见让用户识别
+      当前在哪个会话（由 chatView 依 session_title 消息更新；未命名会话显示占位标题） -->
+  <div id="sessionTitleBar" class="session-title-bar" title="当前会话">
+    <span id="sessionTitleText" class="session-title-bar__text"></span>
+  </div>
   <div id="messages">
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
          标题/提示加 id（P3，2026-08-15 空状态角色化）：由 chatView 随激活角色包动态更新，

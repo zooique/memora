@@ -39,16 +39,16 @@
         "enablement": "view == memora.chat"
       },
       {
-        "command": "memora.switchHistory",
-        "title": "Memora: 切换历史对话",
-        "icon": "$(history)",
+        "command": "memora.switchSession",
+        "title": "Memora: 会话列表（新建/切换/改名）",
+        "icon": "$(list-unordered)",
         "enablement": "view == memora.chat"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "memora.switchHistory",
+          "command": "memora.switchSession",
           "when": "view == memora.chat",
           "group": "navigation"
         },

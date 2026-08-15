@@ -37,6 +37,26 @@ export const chatStyles = `
     position: relative; z-index: 1;
   }
 
+  /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
+  /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
+   * 灰字小字号 + 左侧细竖线（会话语义，与 memory-tag 同语言），不挤占消息区；
+   * flex 非缩放：宽度铺满、高度自适应单行，置于消息区上方。 */
+  .session-title-bar {
+    display: flex; align-items: center;
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    background: var(--surface-page, #1e1e1e);
+    flex: 0 0 auto;
+  }
+  .session-title-bar__text {
+    font-size: var(--font-sm, 11px); font-weight: 500;
+    color: var(--text-secondary, #9aa0a6);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    padding-left: var(--sp-2, 6px);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    user-select: none;
+  }
+
   /* ============ Components：消息 ============ */
   /* 空状态：克制的中性提示，垂直居中 */
   .empty-state {

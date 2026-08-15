@@ -242,6 +242,40 @@ export class SessionManager {
   }
 
   /**
+   * 打开指定会话（新建空会话或切换到已有会话）：切换会话身份 + 同步工作记忆（ADR-024）
+   *
+   * 宿主在「新建会话 / 切换会话」时调用。这是 switchSession 的完整版：
+   * switchSession 只切换会话身份（currentSession 字段），不触碰 loop 工作记忆；
+   * 本方法在切换后同步 loadSessionMessages + restoreHistory，保证：
+   *   - 已有会话：恢复其历史到工作记忆（跨会话陈旧摘要已被 invalidate）
+   *   - 新建空会话：restoreHistory([]) 清空工作记忆（保留 system prompt），
+   *     避免旧会话上下文残留注入新会话首条消息
+   *
+   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   * @returns 恢复的消息数（0 表示新建空会话）
+   */
+  async switchToSession(sessionId: string): Promise<number> {
+    // 对话进行中切换会话会导致消息持久化分散
+    if (this.isChatBusy()) {
+      throw chatBusyError('打开会话');
+    }
+    const idx = sessionId.lastIndexOf('-');
+    if (idx <= 0) {
+      throw configError('打开会话', `会话标识格式错误：${sessionId}`, [
+        '格式应为 YYYY-MM-DD-sessionName',
+      ]);
+    }
+    const date = sessionId.slice(0, idx);
+    const session = sessionId.slice(idx + 1);
+    // 切换会话身份（内部含 busy/状态守卫 + 作废派生缓存）
+    this.switchSession(session);
+    // 加载/清空工作记忆：空会话 → restoreHistory([]) 清空（缓存已作废，无陈旧注入）
+    const messages = await this.getHistory().loadSessionMessages(date, session);
+    this.applySessionToLoop(messages);
+    return messages.length;
+  }
+
+  /**
    * 获取当前会话的日期和会话名
    *
    * 供宿主在 switchSession 前获取当前会话标识，用于触发 content 类归档。

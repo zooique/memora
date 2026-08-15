@@ -39,6 +39,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 空状态标题/提示（P3，2026-08-15 空状态角色化）：随激活角色包动态生成，切换角色不产生定位错位
   const emptyTitle = document.getElementById('emptyTitle') as HTMLElement;
   const emptyHint = document.getElementById('emptyHint') as HTMLElement;
+  // 会话标题条（ADR-024 会话标题层）——顶部展示当前会话标题，主动可见识别当前会话
+  const sessionTitleText = document.getElementById('sessionTitleText') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
   // 联网能力指示 chip（C1，alignment-iteration.md）：当前角色包声明 web:search 时显示
@@ -688,6 +690,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       thoughtEl = null;
       lastShownDate = undefined;
       updateEmptyState();
+    } else if (msg.type === 'session_title') {
+      // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；
+      // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。
+      sessionTitleText.textContent = msg.title;
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
