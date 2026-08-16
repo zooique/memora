@@ -113,6 +113,11 @@
               "type": "string",
               "enum": ["on", "off"],
               "description": "摘要召回开关（[草案]）"
+            },
+            "minFallback": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2，冻结，memora 真实消费）"
             }
           },
           "additionalProperties": false

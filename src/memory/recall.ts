@@ -19,6 +19,8 @@ import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { HybridWeights } from '@/memory/hybridMerge.js';
+// 召回保底下限默认值：跨层共享（role-pack 与 memory 均引用），SSOT 单一来源
+import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 // 召回 score 提升量/上限/下限 + 衰减常量：使用治理共享常量（v2 REPEAT-2/REPEAT-3 闭环）
 // 衰减常量与宿主 SqliteStorage.decayScores 共用同一真理源，消除跨层重复硬编码
 import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
@@ -43,6 +45,24 @@ const RECALL_WINDOWS_DAYS: Readonly<Record<string, number>> = {
   intent: 7,
   general: 7,
 };
+
+/**
+ * 差异化召回时间窗口谓词（memory-as-summary §4.2）
+ *
+ * 主召回流程与召回保底共用同一过滤规则：按 type 查窗口策略表，
+ * 未标记 summaryType 或不在表中的类型不过滤。避免两处维护平行逻辑。
+ *
+ * @param m - 待判定记忆
+ * @param nowMs - 当前时间戳（毫秒，调用方传入保证同一轮内一致）
+ * @returns 是否位于该类型的召回时间窗口内（或无窗口约束）
+ */
+function isWithinRecallWindow(m: Memory, nowMs: number): boolean {
+  const type = m.metadata?.summaryType;
+  const windowDays = type ? RECALL_WINDOWS_DAYS[type] : undefined;
+  if (windowDays === undefined) return true; // 不限窗口或未标记，不过滤
+  const ageMs = nowMs - Date.parse(m.createdAt);
+  return !Number.isNaN(ageMs) && ageMs <= windowDays * ONE_DAY_MS;
+}
 
 /**
  * 从文本中提取关键词（用于记忆召回）
@@ -103,6 +123,19 @@ export interface RecallOptions {
    * `metadata.sessionName === sessionId`，即"当前会话窗口的摘要排最前"。
    */
   sessionId?: string;
+  /**
+   * 召回保底下限（非负整数，可选，默认 2，memory-as-summary §4.7）
+   *
+   * 当语义召回结果少于该值时，用最近记忆补足，保证每轮至少获得阈值数量的记忆，
+   * 避免"零召回/极少召回"导致 LLM 完全无记忆可依。
+   *
+   * 设计（单一真理源）：
+   *   - 条件触发：仅结果不足 minFallback 才补，语义召回充足时不动作
+   *   - 数据源复用现有空查询通道 storage.search('', shortfall) 按 score 降序取最近记忆
+   *   - 补足项排语义命中之后，不抢占相关性结果；同样去 superseded
+   *   - 置 0 彻底关闭保底
+   */
+  minFallback?: number;
 }
 
 /**
@@ -175,55 +208,85 @@ export async function recall(
     }
   }
 
-  // ── 无任何结果 ──
-  if (merged.size === 0) return [];
-
-  // ── 综合排序：委托给 hybridMerge 纯函数（支持自定义权重） ──
-  const sorted = hybridMerge(merged.values(), limit, weights);
-
-  // ── 重排序：reranker 在 hybridMerge 之后执行二次精排（可选） ──
-  let reranked = reranker
-    ? await reranker.rerank(
-        query,
-        sorted.map((e) => e.memory),
-        { limit },
-      )
-    : sorted.map((e) => e.memory);
-
-  // ── Phase 2：差异化召回（memory-as-summary §4.2）──
-  // 按 type 查时间窗口策略表：preference/decision/fact 不限，intent/general 限近期
-  // 未标记 summaryType 的记忆不受 type 时间窗口约束（不命中表即不过滤）
+  // ── 无任何结果：active 置空，仍进入召回保底补足最近记忆 ──
+  // 保底是"每轮记忆下限"保障：零召回（新会话冷启动）与少召回同样需要最近记忆兜底，
+  // 避免 LLM 完全无记忆可依（memory-as-summary §4.7）。
   const nowMs = Date.now();
-  reranked = reranked.filter((m) => {
-    const type = m.metadata?.summaryType;
-    const windowDays = type ? RECALL_WINDOWS_DAYS[type] : undefined;
-    if (windowDays === undefined) return true; // 不限窗口或未标记，不过滤
-    const ageMs = nowMs - Date.parse(m.createdAt);
-    return !Number.isNaN(ageMs) && ageMs <= windowDays * ONE_DAY_MS;
-  });
+  let active: Memory[] = [];
+  if (merged.size > 0) {
+    // ── 综合排序：委托给 hybridMerge 纯函数（支持自定义权重） ──
+    const sorted = hybridMerge(merged.values(), limit, weights);
 
-  // ── Phase 3：会话窗口优先 + 组内时间排序（memory-as-summary §4.4）──
-  // 排序由两个正交维度构成，类型不参与排序：
-  //   维度一：同会话窗口（sessionName 匹配当前会话）优先 → 跨会话记忆次之
-  //   维度二：组内按 createdAt 升序，LLM 自然识别"最近偏好"
-  // 稳定排序（相等时保持原相对顺序），不破坏 hybridMerge 已选出的候选集
-  reranked = [...reranked].sort((a, b) => {
-    if (sessionId) {
-      const aIsSameWindow = a.metadata?.sessionName === sessionId;
-      const bIsSameWindow = b.metadata?.sessionName === sessionId;
-      if (aIsSameWindow !== bIsSameWindow) return aIsSameWindow ? -1 : 1;
+    // ── 重排序：reranker 在 hybridMerge 之后执行二次精排（可选） ──
+    let reranked = reranker
+      ? await reranker.rerank(
+          query,
+          sorted.map((e) => e.memory),
+          { limit },
+        )
+      : sorted.map((e) => e.memory);
+
+    // ── Phase 2：差异化召回（memory-as-summary §4.2）──
+    // 按 type 查时间窗口策略表：preference/decision/fact 不限，intent/general 限近期
+    // 未标记 summaryType 的记忆不受 type 时间窗口约束（不命中表即不过滤）
+    reranked = reranked.filter((m) => isWithinRecallWindow(m, nowMs));
+
+    // ── Phase 3：会话窗口优先 + 组内时间排序（memory-as-summary §4.4）──
+    // 排序由两个正交维度构成，类型不参与排序：
+    //   维度一：同会话窗口（sessionName 匹配当前会话）优先 → 跨会话记忆次之
+    //   维度二：组内按 createdAt 升序，LLM 自然识别"最近偏好"
+    // 稳定排序（相等时保持原相对顺序），不破坏 hybridMerge 已选出的候选集
+    reranked = [...reranked].sort((a, b) => {
+      if (sessionId) {
+        const aIsSameWindow = a.metadata?.sessionName === sessionId;
+        const bIsSameWindow = b.metadata?.sessionName === sessionId;
+        if (aIsSameWindow !== bIsSameWindow) return aIsSameWindow ? -1 : 1;
+      }
+      // 同窗口内（或无 sessionId）：createdAt 升序
+      const aTime = Date.parse(a.createdAt);
+      const bTime = Date.parse(b.createdAt);
+      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
+      return 0;
+    });
+
+    // ── 写路径取代过滤（ADR-021）：被 superseded 的摘要不再作为当前事实注入 ──
+    // supersededBy 仅对 round-summary 有意义，其他来源无此字段，过滤安全。
+    // 被取代摘要仍保留于存储，可经 traceSummary 回溯历史（非删除）。
+    active = reranked.filter((m) => !m.supersededBy);
+  }
+
+  // ── 召回保底（memory-as-summary §4.7 · recall fallback）──
+  // 语义召回过少时用最近记忆补足，保证每轮至少 minFallback 条记忆注入上下文。
+  // 条件触发：仅 active 不足 minFallback 才补；补足项排语义命中之后，不抢占相关性。
+  // 数据源复用空查询通道 storage.search('', n) 按 score 降序取最近记忆（score 已含 boost+衰减）。
+  // 补足项应用与主流程相同的过滤（excludeSources + 时间窗口 + 去 superseded），
+  // 避免重新注入本应被排除/超期/被取代的记忆。置 0 关闭。
+  const fallbackFloor = options.minFallback ?? DEFAULT_MIN_FALLBACK;
+  // 仅"有查询意图"（关键词非空）时保底：纯符号/噪声输入无召回价值，不补足最近记忆
+  if (fallbackFloor > 0 && keywords.length > 0 && active.length < fallbackFloor) {
+    const shortfall = fallbackFloor - active.length;
+    // 防御：空查询补足通道失败（搜索抛错/非法返回）时静默跳过，不阻塞主流程
+    let recent: Memory[] = [];
+    try {
+      const raw = storage.search('', shortfall * RECALL_LIMIT_MULTIPLIER);
+      recent = Array.isArray(raw) ? raw : [];
+    } catch (err) {
+      logger.debug({ err }, '召回保底：空查询补足失败，跳过');
     }
-    // 同窗口内（或无 sessionId）：createdAt 升序
-    const aTime = Date.parse(a.createdAt);
-    const bTime = Date.parse(b.createdAt);
-    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
-    return 0;
-  });
-
-  // ── 写路径取代过滤（ADR-021）：被 superseded 的摘要不再作为当前事实注入 ──
-  // supersededBy 仅对 round-summary 有意义，其他来源无此字段，过滤安全。
-  // 被取代摘要仍保留于存储，可经 traceSummary 回溯历史（非删除）。
-  const active = reranked.filter((m) => !m.supersededBy);
+    const existingIds = new Set(active.map((m) => m.id));
+    let remaining = shortfall;
+    for (const candidate of recent) {
+      if (remaining <= 0) break;
+      // 与主流程对齐的过滤：已命中 / 被取代 / 超期窗口 / 被排除来源 → 跳过
+      if (existingIds.has(candidate.id)) continue;
+      if (candidate.supersededBy) continue;
+      if (!isWithinRecallWindow(candidate, nowMs)) continue;
+      if (excludeSources.includes(candidate.source)) continue;
+      active.push(candidate);
+      existingIds.add(candidate.id);
+      remaining--;
+    }
+  }
 
   // ── FIX-P1-2：拆分读/写，recall 只读 + boostScores 显式写 ──
   // 在副本上 boost，仅影响本轮上下文排序；持久化由调用方 fire-and-forget 调用 boostScores，

@@ -17,6 +17,16 @@
 
 > 非破坏性变更：仅新增 span 属性与工具函数，无公共 API 变更。
 
+### Added（召回保底：兜底最近记忆，保证每轮记忆下限）
+
+基于会话冷启动评估收敛（放弃独立"固定注入摘要"、信任 recall）后的落地补充——当语义召回结果不足时，用最近记忆补足，避免"零召回/极少召回"导致 LLM 完全无记忆可依（memory-as-summary §4.7）。
+
+- **`recall` 新增 `minFallback` 选项**：语义召回结果少于阈值时，经 `storage.search('', n)` 空查询通道按 score 降序补足最近记忆；补足项排语义命中之后、与主流程同过滤（excludeSources + 差异化时间窗口 + 去 superseded）；置 0 彻底关闭
+- **角色包 `prepare.minFallback`**：宿主可配置召回保底下限，非法/缺失回退内核默认 2；`resolveMinFallback` SSOT 归位
+- **`DEFAULT_MIN_FALLBACK` 下沉 `utils/recallDefaults.ts`**：跨 role-pack 与 memory 共享同一默认值（SSOT 单一来源）
+
+> 非破坏性变更：仅新增可选参数与配置维度，默认值 2 保持原有召回行为，无公共 API 破坏。
+
 ### Removed（洞察层移除，记忆收敛为 round-summary 单轨）
 
 基于"摘要即记忆"架构定案（memory-as-summary §七 最终形态），移除独立洞察提炼层——其能力被 round-summary 的 type 分类吸收，记忆收敛为单一存储层。同时移除用户画像层（已收敛为 `type=preference` 差异化召回）。

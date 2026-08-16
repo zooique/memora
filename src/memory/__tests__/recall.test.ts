@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { recall, extractKeywords, applyDecayToMemory, boostScores, ONE_DAY_MS } from '@/memory/recall.js';
+import { RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
@@ -169,6 +170,116 @@ describe('recall · 记忆召回', () => {
     // 验证返回的副本 score 被钳制到 1.0（不再通过 upsert 验证）
     expect(memories[0]!.score).toBe(1.0);
     expect(mockStorage.upsert).not.toHaveBeenCalled();
+  });
+
+  // ── 召回保底（memory-as-summary §4.7 · recall fallback）──
+
+  it('保底：语义召回不足时用最近记忆补足至 minFallback', async () => {
+    // 关键词搜索仅返回 1 条（不足默认 minFallback=2）
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+    ]);
+    // 空查询补足通道：storage.search('', n) 返回最近记忆
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:recent1', source: 'content', score: 0.4 }),
+      makeMemory({ id: 'content:recent2', source: 'content', score: 0.3 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    // 语义命中 1 条 + 空查询补足 1 条 = 达到 minFallback=2
+    expect(memories).toHaveLength(2);
+    const ids = memories.map((m) => m.id);
+    expect(ids).toContain('content:1');
+    expect(ids).toContain('content:recent1');
+    // 空查询通道被调用：取 shortfall(1) * RECALL_LIMIT_MULTIPLIER 条
+    expect(mockStorage.search).toHaveBeenLastCalledWith('', 1 * RECALL_LIMIT_MULTIPLIER);
+  });
+
+  it('保底：语义召回充足时不做空查询补足', async () => {
+    // 关键词搜索返回 3 条（>= minFallback=2），无需补足
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:2', source: 'content', score: 0.8 }),
+      makeMemory({ id: 'content:3', source: 'content', score: 0.7 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    expect(memories).toHaveLength(3);
+    // 充足时不应触发空查询补足（无第二次 search 调用）
+    expect(mockStorage.search).toHaveBeenCalledTimes(1);
+  });
+
+  it('保底：补足项排在语义命中之后，不抢占相关性', async () => {
+    // 语义命中 1 条（高分），补足 1 条低分
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:high', source: 'content', score: 0.95 }),
+    ]);
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:recent', source: 'content', score: 0.2 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    // 语义命中项排最前，补足项紧随其后
+    expect(memories[0]!.id).toBe('content:high');
+    expect(memories[1]!.id).toBe('content:recent');
+  });
+
+  it('保底：补足项同样去 superseded，不注入被取代摘要', async () => {
+    // 语义命中 1 条（不足），补足通道返回 1 条被 superseded 的 + 1 条正常
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+    ]);
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:superseded', source: 'content', score: 0.5, supersededBy: 'content:2' }),
+      makeMemory({ id: 'content:valid', source: 'content', score: 0.3 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    const ids = memories.map((m) => m.id);
+    // 被取代项被过滤，仅补入正常项
+    expect(ids).toContain('content:1');
+    expect(ids).toContain('content:valid');
+    expect(ids).not.toContain('content:superseded');
+  });
+
+  it('保底：minFallback 置 0 时彻底关闭', async () => {
+    // 关键词搜索仅返回 1 条，但 minFallback=0 关闭保底
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', { minFallback: 0 });
+
+    expect(memories).toHaveLength(1);
+    // 关闭时不触发空查询补足
+    expect(mockStorage.search).toHaveBeenCalledTimes(1);
+  });
+
+  it('保底：零召回（新会话冷启动）时用最近记忆补足', async () => {
+    // 关键词搜索返回空（新会话无相关记忆）
+    vi.mocked(mockStorage.search).mockReturnValueOnce([]);
+    // 空查询补足通道返回最近记忆
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:recent1', source: 'content', score: 0.4 }),
+      makeMemory({ id: 'content:recent2', source: 'content', score: 0.3 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', { minFallback: 2 });
+
+    // 零召回时补足至 minFallback=2
+    expect(memories).toHaveLength(2);
+  });
+
+  it('保底：无关键词（纯符号/噪声）输入不触发空查询补足', async () => {
+    const memories = await recall(mockStorage, '！@#￥%');
+
+    // 无关键词时返回空数组，且不触发任何 search（含空查询补足）
+    expect(memories).toEqual([]);
+    expect(mockStorage.search).not.toHaveBeenCalled();
   });
 });
 

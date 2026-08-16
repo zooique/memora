@@ -13,6 +13,8 @@
  *   装配层引入"角色包清单"数据形状，把"角色 + 技能 + 规则"从三个独立源
  *   收拢为一个清单的读取抽象。行为不变，但装配层只认"清单"不认"来源"。
  */
+// 召回保底下限默认值：跨层共享（role-pack 与 memory 均引用），SSOT 单一来源
+import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 
 // ════════════════════════════════════════════════════════════
 // L2 策略层：行为策略枚举
@@ -126,6 +128,8 @@ export interface PrepareStrategy {
   readonly memoryRecallQuota?: number;
   /** 摘要召回开关（默认 on） */
   readonly summaryRecall?: SummaryRecall;
+  /** 召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2） */
+  readonly minFallback?: number;
   /** 召回结果相似度阈值 0.0~1.0（默认 0.6） */
   readonly recallConfidence?: number;
   /** 任务分类方式（默认 keyword） */
@@ -530,6 +534,22 @@ export function resolveMemoryRecallMode(strategy: BehaviorStrategy | undefined):
 }
 
 /**
+ * 解析召回保底下限（SSOT）：非负整数才采用，非法/缺失回退内核默认
+ *
+ * 角色包 `prepare.minFallback` 控制"语义召回不足时用最近记忆补足至该条数"的行为。
+ * 归位规则：仅当声明值是"非负整数"才采用；缺失、非整数、负数均回退
+ * `DEFAULT_MIN_FALLBACK`（默认 2）。置 0 表示彻底关闭保底。
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法召回保底下限（>=0 的整数）
+ */
+export function resolveMinFallback(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.prepare?.minFallback;
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return valid ? candidate : DEFAULT_MIN_FALLBACK;
+}
+
+/**
  * 解析工具调用模式（SSOT）：非法值归位 'allow'
  *
  * @param strategy 合并后的行为策略
@@ -554,6 +574,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     memoryRecall: 'full',
     memoryRecallQuota: 2000,
     summaryRecall: 'on',
+    minFallback: DEFAULT_MIN_FALLBACK,
     recallConfidence: 0.6,
     taskClassification: 'keyword',
     autoSwitch: 'on',

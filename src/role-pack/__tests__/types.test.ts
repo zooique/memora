@@ -15,12 +15,15 @@ import {
   resolveRecentRounds,
   resolveHandoff,
   resolveMemoryRecallMode,
+  resolveMinFallback,
   resolveToolMode,
   mergeStrategy,
   DEFAULT_BEHAVIOR_STRATEGY,
   DEFAULT_RECENT_HISTORY_ROUNDS,
   type BehaviorStrategy,
 } from '@/role-pack/types.js';
+// DEFAULT_MIN_FALLBACK 定义于 utils 共享层（SSOT），role-pack 与 memory 均引自此处
+import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 
 describe('resolveRecentRounds · 上下文字段固定加载轮数 N（SSOT 单一来源）', () => {
   it('角色包声明合法正整数时，一律采用角色包定义', () => {
@@ -119,6 +122,23 @@ describe('枚举键解析 · SSOT 非法值归位（不透传宿主）', () => {
     expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'all' } } as unknown as BehaviorStrategy)).toBe('full');
     expect(resolveMemoryRecallMode({ prepare: { memoryRecall: undefined } } as unknown as BehaviorStrategy)).toBe('full');
     expect(resolveMemoryRecallMode(undefined)).toBe('full');
+  });
+
+  it('resolveMinFallback 合法非负整数（含 0）一律采用', () => {
+    expect(resolveMinFallback({ prepare: { minFallback: 3 } } as unknown as BehaviorStrategy)).toBe(3);
+    expect(resolveMinFallback({ prepare: { minFallback: 0 } } as unknown as BehaviorStrategy)).toBe(0); // 0=彻底关闭
+  });
+
+  it('resolveMinFallback 非法/缺失归位内核默认', () => {
+    expect(resolveMinFallback(undefined)).toBe(DEFAULT_MIN_FALLBACK);
+    expect(resolveMinFallback({} as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
+    expect(resolveMinFallback({ prepare: {} } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
+  });
+
+  it('resolveMinFallback 负数/非整数/非数字归位内核默认', () => {
+    expect(resolveMinFallback({ prepare: { minFallback: -1 } } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
+    expect(resolveMinFallback({ prepare: { minFallback: 2.5 } } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
+    expect(resolveMinFallback({ prepare: { minFallback: '2' } } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
   });
 
   it('resolveToolMode 合法值 allow/block 一律采用', () => {

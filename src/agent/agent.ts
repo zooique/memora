@@ -45,6 +45,7 @@ import {
   resolveRecentRounds,
   resolveHandoff,
   resolveMemoryRecallMode,
+  resolveMinFallback,
   resolveToolMode,
 } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
@@ -727,6 +728,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             // 会话窗口标识：与 round-summary 写入侧 metadata.sessionName 同源同值
             // （currentSessionName = `${date}-${session}`），保证"同窗口优先"命中当前会话
             sessionId: this.requireHistory.currentSessionName,
+            // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
+            minFallback: resolveMinFallback(this.getActiveStrategy()),
           },
         );
       } catch (err) {
