@@ -706,6 +706,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"严格一致（memory-as-summary §4.3）。
     const recentRounds = resolveRecentRounds(this.getActiveStrategy());
 
+    // 互斥 roundId 集合（memory-as-summary §4.3）：当前会话最近 N 轮正文已完整加载进上下文，
+    // 其 round-summary 不应再被召回注入。前置传入 recall() 在 hybridMerge 取 limit 前过滤，
+    // 避免被排除摘要挤占 top-limit 预算（跨会话记忆补位）。
+    // 与最近对话注入共用同一 N（resolveRecentRounds），保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"。
+    const recentRoundIds = new Set(this.requireHistory.getRecentRoundIds(recentRounds));
+
     if (memoryRecallMode !== 'none') {
       // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
       const tracer = this.#config.tracer ?? NOOP_TRACER;
@@ -730,6 +736,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             sessionId: this.requireHistory.currentSessionName,
             // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
             minFallback: resolveMinFallback(this.getActiveStrategy()),
+            // 前置互斥排除（§4.3）：在 recall 内取 limit 前过滤当前会话最近 N 轮 round-summary
+            excludeRoundIds: recentRoundIds,
           },
         );
       } catch (err) {
@@ -749,21 +757,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           this.emit(AGENT_EVENTS.boostPersistFailed, { memoryId: ids.join(','), message: toError(err).message });
         });
       }
-    }
-
-    // ── 互斥排除（memory-as-summary §4.3）──
-    // 当前会话最近 N 轮正文已完整加载进上下文，其摘要不应再被召回注入（避免重复）。
-    // 确定性判定：取最近 N 轮 roundId 集合（N ≡ 上下文固定加载轮数），过滤同轮摘要。
-    // 互斥窗口 N 与最近对话注入轮数 N 必须一致（同一 SSOT 来源 resolveRecentRounds）
-    const recentRoundIds = new Set(
-      this.requireHistory.getRecentRoundIds(recentRounds),
-    );
-    if (recentRoundIds.size > 0) {
-      recalledMemories = recalledMemories.filter((m) => {
-        const rid = m.metadata?.roundId;
-        // 无 roundId 的摘要（非 round-summary）不受互斥影响
-        return !rid || !recentRoundIds.has(rid);
-      });
     }
 
     // Layer 5: 最近对话注入

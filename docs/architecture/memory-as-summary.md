@@ -227,7 +227,9 @@ type 差异化召回（§4.2）与角色包 L2 召回开关是**两层不同职�
 
 **为什么不用"正文是否已注入"作为判定**：那会引入召回与正文注入的时序耦合（谁先执行说不清），且依赖运行时状态，违反单一真理源。最近 N 轮窗口是纯确定性判定，只依赖摘要自身的 `sessionName + roundId`，与注入时机解耦。
 
-**互斥发生在"回答前 - 拉取记忆"阶段**：召回执行前先构造"已加载正文集合"（当前会话最近 N 轮的 roundId），召回结果中小于等于该集合的摘要被过滤。
+**互斥发生在"回答前 - 拉取记忆"阶段的 recall() 内部**：调用方（agent 层）先构造"已加载正文集合"（当前会话最近 N 轮的 roundId），作为 `excludeRoundIds` 传入 recall()；recall() 在 `hybridMerge` 排序取 limit **前**过滤命中该集合的摘要。
+
+**为什么过滤在 recall() 内取 limit 前（而非召回后）**：若在召回结果之后过滤，被排除的当前会话最近 N 轮摘要会**挤占 top-limit 预算**——单会话聚焦时它们最相关、排最前，跨会话记忆被挤到 limit 之外、永远取不到，导致跨会话召回失效。前置到取 limit 前过滤，剩余候选自然补位，跨会话记忆能进入 top-limit。`excludeRoundIds` 作为可选过滤条件由调用方传入，recall 保持纯检索、不查询会话状态（与 `excludeSources` 同语义），缺省为空集合时行为与纯检索完全一致。
 
 ### 4.4 排序：同会话窗口优先 + 时间
 
@@ -479,7 +481,7 @@ LLM 获得完整上下文
 | createdAt 升序（唯一排序键） | §4.4 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` |
 | 同会话窗口优先（sessionName 优先 + 组内 createdAt 升序） | §4.4/§4.7 | ✅ | [recall.ts](../../src/memory/recall.ts) |
 | 差异化召回（preference/intent/decision 范围/时间窗口） | §4.2 | ✅ | [recall.ts](../../src/memory/recall.ts) `RECALL_WINDOWS_DAYS`（intent/general 限 7 天，preference/decision/fact 不限） |
-| 互斥排除（正文已加载轮次不召回） | §4.3 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` 用最近 N 轮 roundId 过滤（N = 角色包 `prepare.recentRounds` 覆盖，未配置回退内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`=3） |
+| 互斥排除（正文已加载轮次不召回） | §4.3 | ✅ | [recall.ts](../../src/memory/recall.ts) `RecallOptions.excludeRoundIds` 过滤（N = 角色包 `prepare.recentRounds` 覆盖，未配置回退内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`=3） |
 | traceSummary 返回原始对话（≤5 条/2000 字） | §4.5/§4.6 | ✅ | [builtinToolHandlers.ts](../../src/agent/builtinToolHandlers.ts) `loadRawRoundMessages`；未注入 sessionStore 时降级为摘要文本 |
 | 写路径取代检测 superseded | §5.4 | ✅ | [roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts) `supersedeSimilar` + [recall.ts](../../src/memory/recall.ts) 过滤 `supersededBy` |
 | 工具结果隔离 `<tool_result>` + 参数校验 + 返回净化 | （关联 ADR-023） | ✅ | [loop.ts](../../src/agent/loop.ts) `<tool_result>` 包裹 + 指令前缀；[toolExecutor.ts](../../src/agent/toolExecutor.ts) `sanitizeExternalText` 净化 |

@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### Added（召回互斥前置过滤：跨会话记忆补位 top-limit）
+
+基于设计评审（recall-mutex-pre-filter）落地——把"召回后互斥排除"改为"recall 内取 limit 前过滤"，修复单会话聚焦时跨会话记忆被挤出 top-limit 的缺陷，补齐新会话 0 上下文时召回最近摘要的自然行为（memory-as-summary §4.3）。
+
+- **`recall` 新增 `excludeRoundIds` 选项**：在 `hybridMerge` 排序取 limit **前**过滤命中集合的 round-summary，让跨会话/更早轮次记忆补位；保底补足同样应用该过滤，避免把正文已加载的摘要补回（重复注入）
+- **`agent.ts` 移除后置互斥过滤块**：`recallAndInject` 把 `getRecentRoundIds(recentRounds)` 结果作为 `excludeRoundIds` 传入 recall()，去重职责收敛到 recall 一处（SSOT）
+- **向后兼容**：`excludeRoundIds` 缺省为空集合，纯检索调用方（multiHop、memoryInspector 等）行为完全不变
+
+> 非破坏性变更：仅新增可选参数；去重语义等价（同一 roundId 集合、同一 N 来源 `resolveRecentRounds`），跨会话召回能力修复。
+
 ### Added（建议B落地："模型看到了什么"的指纹可追溯）
 
 基于 Harness 排雷评估（harness-borrowing-assessment 建议B），落地可观测性指纹埋点——记录"模型看到了什么"的指纹 hash，**不记录全量内容、不入 sessionStore**（memory-as-summary §5.2.1 可追溯性边界）。

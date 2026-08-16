@@ -842,3 +842,94 @@ describe('recall · 会话窗口优先 + 组内时间排序（§4.4）', () => {
     expect(memories[1]!.id).toBe('round-summary:newer');
   });
 });
+
+describe('recall · 前置互斥排除（excludeRoundIds，memory-as-summary §4.3）', () => {
+  let mockStorage: IMemoryStorage;
+
+  beforeEach(() => {
+    mockStorage = {
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      getById: vi.fn(),
+      getBySource: vi.fn(),
+      search: vi.fn(),
+      count: vi.fn(() => 0),
+      countBySource: vi.fn(() => 0),
+      close: vi.fn(),
+    } as unknown as IMemoryStorage;
+  });
+
+  it('前置排除：命中 excludeRoundIds 的 round-summary 被过滤，跨会话记忆补位 top-limit', async () => {
+    // 语义召回返回：两个当前会话最近轮摘要（roundId 命中排除）+ 一个跨会话记忆
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({
+        id: 'round:A', source: 'round-summary', score: 0.9,
+        metadata: { roundId: 'r1', sessionName: 'cur', summaryType: 'fact' },
+      }),
+      makeMemory({
+        id: 'round:B', source: 'round-summary', score: 0.8,
+        metadata: { roundId: 'r2', sessionName: 'cur', summaryType: 'fact' },
+      }),
+      makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      limit: 2,
+      minFallback: 0, // 关闭保底，隔离前置排除逻辑
+      excludeRoundIds: new Set(['r1', 'r2']),
+    });
+
+    const ids = memories.map((m) => m.id);
+    // 当前会话最近轮摘要被前置过滤，不占 top-limit 预算
+    expect(ids).not.toContain('round:A');
+    expect(ids).not.toContain('round:B');
+    // 跨会话记忆补位
+    expect(ids).toContain('cross:1');
+  });
+
+  it('排除集合含 roundId 时，无 roundId 的记忆不受影响', async () => {
+    // 一个 round-summary（roundId 命中）+ 一个无 roundId 的 content 记忆
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({
+        id: 'round:A', source: 'round-summary', score: 0.9,
+        metadata: { roundId: 'r1', sessionName: 'cur', summaryType: 'fact' },
+      }),
+      makeMemory({ id: 'content:1', source: 'content', score: 0.7 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      minFallback: 0,
+      excludeRoundIds: new Set(['r1']),
+    });
+
+    const ids = memories.map((m) => m.id);
+    expect(ids).not.toContain('round:A');
+    expect(ids).toContain('content:1');
+  });
+
+  it('保底补足：excludeRoundIds 命中的 round-summary 不被补回（避免重复注入）', async () => {
+    // 语义召回不足（1 条），触发保底补足
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+    ]);
+    // 空查询补足通道返回：一个当前会话最近轮摘要（roundId 命中排除）+ 一个跨会话记忆
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({
+        id: 'round:A', source: 'round-summary', score: 0.5,
+        metadata: { roundId: 'r1', sessionName: 'cur', summaryType: 'fact' },
+      }),
+      makeMemory({ id: 'cross:1', source: 'content', score: 0.3 }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      minFallback: 2,
+      excludeRoundIds: new Set(['r1']),
+    });
+
+    const ids = memories.map((m) => m.id);
+    // 命中的 round-summary（正文已加载）不被补回
+    expect(ids).not.toContain('round:A');
+    // 跨会话记忆被补足
+    expect(ids).toContain('cross:1');
+  });
+});

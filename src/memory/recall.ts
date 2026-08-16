@@ -136,6 +136,20 @@ export interface RecallOptions {
    *   - 置 0 彻底关闭保底
    */
   minFallback?: number;
+  /**
+   * 排除的 roundId 集合（可选，互斥排除，memory-as-summary §4.3）
+   *
+   * 当前会话最近 N 轮正文已完整加载进上下文，其 round-summary 不应再被召回注入——
+   * 避免"正文与摘要重复进上下文"。与 `excludeSources` 一样是"过滤条件"，
+   * 由调用方（agent 层）计算传入，recall 保持纯检索，不查询会话状态。
+   *
+   * 设计（单一真理源）：
+   *   - 在 hybridMerge 排序取 limit **前**过滤，避免被排除的摘要挤占 top-limit 预算，
+   *     让跨会话/更早轮次记忆补位（修复跨会话召回被挤占缺陷）
+   *   - 仅 roundId 命中集合的 round-summary 被排除；无 roundId 的非 round-summary 不受影响
+   *   - 缺省为空集合 = 不过滤，对纯检索调用方完全向后兼容
+   */
+  excludeRoundIds?: ReadonlySet<string>;
 }
 
 /**
@@ -168,6 +182,7 @@ export async function recall(
     reranker,
     weights,
     sessionId,
+    excludeRoundIds,
   } = options;
 
   const merged = new Map<string, { memory: Memory; vectorScore: number }>();
@@ -214,8 +229,24 @@ export async function recall(
   const nowMs = Date.now();
   let active: Memory[] = [];
   if (merged.size > 0) {
+    // ── 前置排除（memory-as-summary §4.3 · 互斥排除）──
+    // 在 hybridMerge 排序取 limit **前**过滤当前会话最近 N 轮的 round-summary，
+    // 避免被排除的摘要挤占 top-limit 预算，让跨会话/更早轮次记忆补位。
+    // 无 roundId 的非 round-summary 不受影响；excludeRoundIds 缺省为空不过滤。
+    // 用 Array.from(merged, mapper) 从 Map 直接映射出 value 数组，
+    // 规避迭代器 spread 的可移植性问题（本轮测试环境 MapIterator spread 不可用）。
+    let candidates: { memory: Memory; vectorScore: number }[] = Array.from(
+      merged,
+      ([, v]) => v,
+    );
+    if (excludeRoundIds && excludeRoundIds.size > 0) {
+      candidates = candidates.filter(
+        (e) => !e.memory.metadata?.roundId || !excludeRoundIds.has(e.memory.metadata.roundId),
+      );
+    }
+
     // ── 综合排序：委托给 hybridMerge 纯函数（支持自定义权重） ──
-    const sorted = hybridMerge(merged.values(), limit, weights);
+    const sorted = hybridMerge(candidates, limit, weights);
 
     // ── 重排序：reranker 在 hybridMerge 之后执行二次精排（可选） ──
     let reranked = reranker
@@ -282,6 +313,9 @@ export async function recall(
       if (candidate.supersededBy) continue;
       if (!isWithinRecallWindow(candidate, nowMs)) continue;
       if (excludeSources.includes(candidate.source)) continue;
+      // 互斥排除（§4.3）：避免把当前会话最近 N 轮（正文已加载）的摘要补回造成重复
+      const rid = candidate.metadata?.roundId;
+      if (rid && excludeRoundIds?.has(rid)) continue;
       active.push(candidate);
       existingIds.add(candidate.id);
       remaining--;
