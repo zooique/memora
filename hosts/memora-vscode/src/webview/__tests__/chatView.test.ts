@@ -236,7 +236,10 @@ describe('chatView clear_ok 消息区清理', () => {
     const msgs = messages.querySelectorAll('.msg');
     expect(msgs).toHaveLength(2);
     expect(messages.querySelector('.msg.user .msg-body')?.textContent).toBe('昨天的问题');
-    expect(messages.querySelector('.msg.assistant .msg-body')?.textContent).toBe('昨天的回答');
+    // assistant 经 Markdown 渲染（marked 包 <p>）→ 修剪尾换行后比对原文
+    expect(messages.querySelector('.msg.assistant .msg-body')?.textContent?.trim()).toBe(
+      '昨天的回答',
+    );
     expect(emptyState.hidden).toBe(true);
   });
 
@@ -561,5 +564,116 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     // showcase 角色（方案设计师）：渲染专属"种子收敛"引导，一键体验 memora 设计魅力
     dispatch({ type: 'chat_role_pack', rolePack: '方案设计师', webSearch: true });
     expect(chipLabels()).toEqual(['设计知识库', '设计记忆系统', '找最小单元']);
+  });
+});
+
+describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('流式期间 body 带 is-streaming（末尾光标 ▋），done 后移除并渲染 Markdown', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '**加粗** 与 `code`' });
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    // 流式进行中：纯文本 + is-streaming 类（CSS ::after 显示闪烁光标）
+    expect(body.classList.contains('is-streaming')).toBe(true);
+    expect(body.textContent).toBe('**加粗** 与 `code`');
+
+    // done → 移除光标类，Markdown 渲染为 HTML（加粗/行内代码成元素）
+    dispatch({ type: 'done' });
+    expect(body.classList.contains('is-streaming')).toBe(false);
+    expect(body.querySelector('strong')).not.toBeNull();
+    expect(body.querySelector('code')).not.toBeNull();
+  });
+
+  it('流式结束后复制按钮使用完整原始文本（dataset.rawText 修复复制只复制首 chunk）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '第一段 ' });
+    dispatch({ type: 'chunk', content: '第二段' });
+    dispatch({ type: 'done' });
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    // 完整原始文本存在消息 dataset（复制按钮据此复制完整 Markdown 源）
+    expect(assistant.dataset.rawText).toBe('第一段 第二段');
+    // 复制按钮存在（主动可见）
+    expect(assistant.querySelector('.msg-copy')).not.toBeNull();
+  });
+
+  it('interrupted 同样 finalize：渲染 Markdown + 移除光标', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '- 列表项一' });
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(body.classList.contains('is-streaming')).toBe(true);
+    // 打断 → 渲染已累积的半截内容为 Markdown（列表成 <li>）
+    dispatch({ type: 'interrupted' });
+    expect(body.classList.contains('is-streaming')).toBe(false);
+    expect(body.querySelector('li')).not.toBeNull();
+  });
+
+  it('Markdown 渲染不注入 LLM 恶意脚本（DOMPurify 消毒）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '<img src=x onerror=alert(1)> 安全文本' });
+    dispatch({ type: 'done' });
+    // 消毒后 onerror 脚本被剥离，仅保留无害文本/元素
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(body.querySelector('img[onerror]')).toBeNull();
+    expect(body.textContent).toContain('安全文本');
+  });
+
+  it('历史回放的一次性 assistant 消息直接渲染 Markdown（无 is-streaming）', () => {
+    mountChatView();
+    dispatch({ type: 'assistant', text: '## 标题\n\n正文', ts: '2026-08-14T09:00:30.000Z' });
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），且无光标类
+    expect(body.classList.contains('is-streaming')).toBe(false);
+    expect(body.querySelector('h2')).not.toBeNull();
+  });
+});
+
+describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('用户消息底部有复制按钮（复制用户原始输入）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '你好，帮我打磨文档', ts: '2026-08-14T09:00:00.000Z' });
+    const copyBtn = document.querySelector('.msg.user .msg-copy') as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+    expect(copyBtn.textContent).toBe('复制');
+  });
+
+  it('AI 消息底部有复制 + 删除按钮（删除问答闭环入口）', () => {
+    mountChatView();
+    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    const msg = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(msg.querySelector('.msg-copy')).not.toBeNull();
+    const del = msg.querySelector('.msg-delete') as HTMLButtonElement;
+    expect(del).not.toBeNull();
+    // 有 timestamp 锚点时删除按钮可用
+    expect(del.disabled).toBe(false);
+  });
+
+  it('AI 消息删除按钮：携带该消息 ts 发送 delete_turn（host 确认后截断）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    const del = document.querySelector('.msg.assistant .msg-delete') as HTMLButtonElement;
+    del.click();
+    // 点删除 → 发 delete_turn（携带渲染时存的 dataset.ts 锚点）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_turn', ts: '2026-08-14T09:00:30.000Z' });
+  });
+
+  it('AI 消息无 timestamp 时删除按钮禁用（避免锚点失效）', () => {
+    mountChatView();
+    // 流式未完成即被清空：assistant 无 ts
+    dispatch({ type: 'chunk', content: '半截' });
+    const del = document.querySelector('.msg.assistant .msg-delete') as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
   });
 });

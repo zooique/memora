@@ -98,6 +98,51 @@ export class WorkspaceSessionStore implements ISessionStore {
     this.save();
   }
 
+  /**
+   * 截断指定会话（truncate-from-turn，宿主扩展方法，供「删除单个问答闭环」调用）
+   *
+   * 语义（对齐市面主流 ChatGPT 编辑重跑 / personal-ai）：删除【目标问答闭环及其之后所有
+   * 消息】，保证剩余上下文自洽（避免中间删除一个闭环导致后续 assistant 回复的上文断裂）。
+   *
+   * 锚点：删除按钮携带的 fromTs 有两种来源（SSOT 归一）：
+   *   - 流式：chatPanel 的 firstChunkTs（流开始时刻，早于该答存储时间戳）；
+   *   - 历史回放：存储的 assistant timestamp（精确值）。
+   * 故用「下界匹配」定位第一条 `role='assistant' && timestamp >= fromTs` 的消息，两种来源
+   * 都能命中目标答；再向前回退到最近一条 role='user' 的消息视为该问答的「问」，
+   * 删除从该「问」到会话末尾的全部消息。找不到锚点返回 false（no-op）。
+   *
+   * 非内核 ISessionStore 标准接口（内核接口坚持最小化），仅在宿主侧使用，与 clearSession 同模式。
+   *
+   * @param date 会话日期 YYYY-MM-DD
+   * @param session 会话标识
+   * @param fromTs 删除按钮携带的 timestamp（webview 渲染时存的 dataset.ts）
+   * @returns 是否截断成功（锚点消息未找到时返回 false）
+   */
+  truncateFrom(date: string, session: string, fromTs: string): boolean {
+    const key = `${date}-${session}`;
+    const list = this.store.get(key);
+    if (!list || list.length === 0) return false;
+    // 下界匹配定位第一条「timestamp >= fromTs 的 assistant」——兼容流式（fromTs=流开始时刻）
+    // 与历史回放（fromTs=精确 timestamp）两种锚点来源，根治「源不一致导致删除失效」。
+    const idx = list.findIndex((m) => m.role === 'assistant' && m.timestamp >= fromTs);
+    if (idx === -1) return false;
+    // 向前回退到最近一条 user 消息作为本轮起点（该问答的「问」）：
+    // 从 anchor 自身开始，只要当前不是 user 就前移，直到停在 user 或 0。
+    // 这样 anchor 对应的「问」也被一并删除（删了答也删问）。
+    let start = idx;
+    while (start > 0 && list[start].role !== 'user') start--;
+    // 删除 [start, list.length) 之后的全部消息（含本轮问答）
+    const truncated = list.slice(0, start);
+    this.store.set(key, truncated);
+    // 同步会话标题元数据：messageCount 更新为截断后条数（updatedAt 不变，非新增活跃事件）
+    const existing = this.metas.get(key);
+    if (existing) {
+      this.metas.set(key, { ...existing, messageCount: truncated.length });
+    }
+    this.save();
+    return true;
+  }
+
   listSessions(): string[] {
     return [...this.store.keys()];
   }

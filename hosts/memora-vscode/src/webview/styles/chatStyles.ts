@@ -116,6 +116,70 @@ export const chatStyles = `
   }
   /* AI 正文容器：承接正文 + 底部操作行，铺满宽度 */
   .msg-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  /* ============ Components：AI 回复 Markdown 渲染（吸收养分，2026-08-16） ============
+   * 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读。
+   * 流式期间纯文本 + 光标 ▋（is-streaming：pre-wrap 保真换行 + 末尾闪烁光标），
+   * 流结束后渲染 markdown 用 normal（markdown 自身处理换行）。表格 display:block + 横向
+   * 滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
+  .msg.assistant .msg-body { white-space: normal; }
+  .msg.assistant .msg-body.is-streaming { white-space: pre-wrap; }
+  /* 流式光标：只在 bubble 末尾显示闪烁块 ▋，指示内容正在生成（Claude 风格，最便宜的"活着"信号） */
+  .msg-body.is-streaming::after {
+    content: '▋';
+    display: inline-block; vertical-align: text-bottom;
+    margin-left: 2px; color: var(--accent, #0e639c);
+    animation: streamCaret 1s step-end infinite;
+  }
+  @keyframes streamCaret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .msg.assistant .msg-body p { margin: 0 0 var(--sp-3, 8px); }
+  .msg.assistant .msg-body > :last-child { margin-bottom: 0; }
+  .msg.assistant .msg-body h1,
+  .msg.assistant .msg-body h2,
+  .msg.assistant .msg-body h3 { font-weight: 600; line-height: 1.4; margin: var(--sp-4, 10px) 0 var(--sp-2, 6px); }
+  .msg.assistant .msg-body h1 { font-size: var(--font-lg, 14px); }
+  .msg.assistant .msg-body h2 { font-size: var(--font-base, 13px); }
+  .msg.assistant .msg-body h3 { font-size: var(--font-base, 13px); }
+  .msg.assistant .msg-body ul,
+  .msg.assistant .msg-body ol { padding-left: var(--sp-6, 16px); margin: 0 0 var(--sp-3, 8px); }
+  .msg.assistant .msg-body li { margin: var(--sp-1, 4px) 0; }
+  .msg.assistant .msg-body a { color: var(--accent, #0e639c); text-decoration: none; }
+  .msg.assistant .msg-body a:hover { text-decoration: underline; }
+  /* 行内代码 */
+  .msg.assistant .msg-body code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.92em;
+    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    padding: 1px 4px; border-radius: var(--radius-sm, 2px);
+  }
+  /* 代码块：横向滚动防撑爆，独立底色 */
+  .msg.assistant .msg-body pre {
+    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
+    border-radius: var(--radius, 6px);
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    overflow-x: auto; margin: 0 0 var(--sp-3, 8px);
+    white-space: pre;
+  }
+  .msg.assistant .msg-body pre code { background: transparent; padding: 0; font-size: var(--font-md, 12px); }
+  /* 表格防爆：display:block + 内部横向滚动，死活不让撑爆气泡 */
+  .msg.assistant .msg-body table {
+    display: block; width: 100%; overflow-x: auto;
+    border-collapse: collapse; margin: 0 0 var(--sp-3, 8px);
+  }
+  .msg.assistant .msg-body th,
+  .msg.assistant .msg-body td {
+    border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
+    padding: var(--sp-2, 6px) var(--sp-3, 8px); text-align: left;
+  }
+  .msg.assistant .msg-body th { font-weight: 600; background: var(--surface-hover, rgba(128, 128, 128, .2)); }
+  /* 引用块 */
+  .msg.assistant .msg-body blockquote {
+    margin: 0 0 var(--sp-3, 8px);
+    padding-left: var(--sp-3, 8px);
+    border-left: 2px solid var(--border-panel, rgba(128, 128, 128, .4));
+    color: var(--text-secondary, #9aa0a6);
+  }
   .msg.error {
     align-self: stretch;
     background: var(--feedback-error-bg);
@@ -139,6 +203,20 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-primary, #cccccc);
   }
+  /* 删除按钮（2026-08-16 对话闭环管理）：危险操作，文字用错误色标识破坏性。
+   * 与复制同尺寸，hover 时错误色背景更明显；禁用态灰显（无 timestamp 锚点时不可删）。
+   * 复用现有语义令牌 --status-fail（错误前景）+ --feedback-error-bg（错误背景），不新增冗余 token。 */
+  .msg-delete {
+    padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
+    border: none; border-radius: var(--radius, 6px);
+    background: transparent; color: var(--status-fail, #b3261e);
+    cursor: pointer;
+  }
+  .msg-delete:hover:not(:disabled) {
+    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
+    color: var(--status-fail, #b3261e);
+  }
+  .msg-delete:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
   /* P1（2026-08-15 记忆附着可见）：AI 回复底部「基于 N 条记忆」弱标签。
    * 灰字小字号 + 左侧细竖线（记忆语义），主动可见不打扰；
    * margin-right:auto 使其靠左（信息性标签），复制/时间戳保持靠右（footer 为 flex-end）。 */
@@ -477,6 +555,7 @@ export const chatStyles = `
    * 下拉菜单项已在 dropdown.ts 用背景色替换 outline，不在此重复。 */
   .send-btn:focus-visible,
   .msg-copy:focus-visible,
+  .msg-delete:focus-visible,
   .opt-btn:focus-visible,
   .suggestion-chip:focus-visible,
   .treedd__trigger:focus-visible,

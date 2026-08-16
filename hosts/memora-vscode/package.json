@@ -115,9 +115,12 @@
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.9.2",
+    "@zooique/memora": "file:../..",
     "esbuild": "^0.28.2",
-    "typescript": "^5.6.0",
-    "@zooique/memora": "file:../.."
+    "typescript": "^5.6.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "dompurify": "^3.4.13",
+    "marked": "^18.0.9"
+  }
 }

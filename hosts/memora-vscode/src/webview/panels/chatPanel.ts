@@ -45,6 +45,7 @@ const MAX_HISTORY_MESSAGES = 200;
  *  listSessionMetas/getSessionMeta 为 ADR-024 会话标题层的宿主实现（会话列表导航依赖）。 */
 type HostSessionStore = ISessionStore & {
   clearSession: (date: string, session: string) => void;
+  truncateFrom: (date: string, session: string, fromTs: string) => boolean;
   listSessionMetas: () => SessionMeta[];
   getSessionMeta: (sessionId: string) => SessionMeta | undefined;
 };
@@ -221,6 +222,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 清空对话：toolbar 剪枝后由视图标题栏命令（memora.clearChat）触发，
         // 此处保留 webview 兜底路径（协议兼容），复用同一清空逻辑
         void this.clearFromCommand();
+      } else if (msg.type === 'delete_turn') {
+        // 删除单个问答闭环（AI 消息「删除」按钮触发）：确认不可恢复后截断该问答及之后所有
+        void this.deleteTurnFrom(msg.ts);
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
       } else if (msg.type === 'chat_set_role_pack') {
@@ -393,6 +397,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       console.warn('Memora 清空会话失败', err);
     }
     // 清空后重放当前会话（此时已空），保证 UI 与存储一致
+    this.replayCurrentSession();
+  }
+
+  /**
+   * 删除单个问答闭环（AI 消息「删除」按钮，2026-08-16 对话闭环管理）
+   *
+   * 语义（truncate-from-turn，对齐市面主流）：删除【该问答及其之后所有】消息，保证剩余
+   * 上下文自洽。以目标 assistant 消息的 timestamp 作锚点，调宿主 sessionStore.truncateFrom
+   * 截断后重放当前会话刷新 UI。
+   *
+   * 依赖宿主扩展方法 truncateFrom（宿主 ISessionStore 实现，内核接口保持最小化）。
+   */
+  private async deleteTurnFrom(ts: string): Promise<void> {
+    // 破坏性操作：确认不可恢复（与「清空对话」同强度确认）
+    const choice = await vscode.window.showWarningMessage(
+      `确定删除该问答及之后的所有对话？此操作不可恢复。`,
+      { modal: true },
+      '删除',
+    );
+    if (choice !== '删除') return;
+    try {
+      const { date, session } = this.parseSessionId(this._currentSessionId);
+      this.sessionStore.truncateFrom(date, session, ts);
+    } catch (err) {
+      // 删除失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
+      console.warn('Memora 删除问答闭环失败', err);
+    }
+    // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
     this.replayCurrentSession();
   }
 

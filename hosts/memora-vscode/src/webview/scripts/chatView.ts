@@ -15,6 +15,7 @@ import type {
 } from '../../shared/protocol.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { scrollToBottom } from '../helpers/scrollToBottom.js';
+import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { ToolCard } from '../components/toolCard.js';
 import { initDropdowns } from '../components/dropdown.js';
 
@@ -106,6 +107,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
   // 不会改变锚点，避免一次回复（含工具调用）被拆成多条消息。
   let activeAssistantEl: HTMLElement | null = null;
+
+  // 流式状态（Markdown 渲染 + 光标，2026-08-16 吸收养分）：
+  //   streamingActive — 是否正在接收本轮流式（首个 chunk 置 true，done/interrupted 复位）；
+  //   streamingRaw — 本轮流式累积的原始文本（流结束后一次性渲染 Markdown + 供复制）。
+  // 用独立状态而非复用 activeAssistantEl：区分「流式进行中」（需光标 + 结束时渲染）
+  // 与「一次性 assistant 消息」（历史回放，直接渲染 Markdown）。
+  let streamingActive = false;
+  let streamingRaw = '';
 
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
@@ -436,38 +445,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     if (role === 'assistant') {
-      // AI 消息：顶部身份标签（角色/模型名）+ 正文铺满（ui-redesign 迭代，对齐大厂 AI 对话）
-      // 标签展示加载角色包的显示名（currentRoleName），未加载时默认「AI」。
-      const label = document.createElement('div');
-      label.className = 'msg-ai-label';
-      const labelText = document.createElement('span');
-      labelText.className = 'msg-ai-label__name';
-      labelText.textContent = currentRoleName || 'AI';
-      label.appendChild(labelText);
-      div.appendChild(label);
-      const content = document.createElement('div');
-      content.className = 'msg-content';
-      const body = document.createElement('div');
-      body.className = 'msg-body';
-      body.textContent = text;
-      content.appendChild(body);
-      const footer = document.createElement('div');
-      footer.className = 'msg-footer';
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'msg-copy';
-      copyBtn.textContent = '复制';
-      copyBtn.title = '复制消息';
-      copyBtn.addEventListener('click', () => copyText(text));
-      footer.appendChild(copyBtn);
-      const t = fmtTime(ts);
-      if (t) {
-        const timeEl = document.createElement('span');
-        timeEl.className = 'msg-time';
-        timeEl.textContent = t;
-        footer.appendChild(timeEl);
-      }
-      content.appendChild(footer);
-      div.appendChild(content);
+      // AI 消息：复用骨架构建（label + content + body + footer），
+      // 一次性消息（历史回放）直接渲染 Markdown（吸收养分，代码块/列表/表格可读）
+      const { body } = buildAssistantShell(div, ts);
+      // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
+      div.dataset.rawText = text;
+      body.innerHTML = renderMarkdown(text);
     } else {
       const body = document.createElement('div');
       body.className = 'msg-body';
@@ -475,6 +458,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       div.appendChild(body);
       const footer = document.createElement('div');
       footer.className = 'msg-footer';
+      // 用户消息复制按钮（2026-08-16 对话闭环管理）：与 AI 消息一致，复制用户原始输入。
+      // 仅 user 角色提供；error 提示无复制意义，不冗余。
+      if (role === 'user') {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'msg-copy';
+        copyBtn.textContent = '复制';
+        copyBtn.title = '复制消息';
+        copyBtn.addEventListener('click', () => copyText(text));
+        footer.appendChild(copyBtn);
+      }
       const t = fmtTime(ts);
       if (t) {
         const timeEl = document.createElement('span');
@@ -490,6 +483,108 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     scrollToBottom(messages);
     updateEmptyState();
     return div;
+  }
+
+  /**
+   * 构建 AI 消息骨架（label + content + body + footer[复制 + 时间戳]）
+   *
+   * assistant 一次性消息与流式消息共用骨架，差异仅在 body 内容（markdown 渲染 vs
+   * 纯文本 + 光标）。复制按钮读取 .msg 的 dataset.rawText（流式结束后更新为完整文本），
+   * 修复「流式复制只复制第一 chunk」的缺陷。
+   *
+   * @param div 已创建的空 .msg.assistant 元素
+   * @param ts 消息时间戳
+   * @returns body 元素（供调用方填充内容）
+   */
+  function buildAssistantShell(div: HTMLElement, ts?: string): { body: HTMLElement } {
+    // 顶部身份标签（角色/模型名）：展示加载角色包的显示名（currentRoleName），未加载时默认「AI」
+    const label = document.createElement('div');
+    label.className = 'msg-ai-label';
+    const labelText = document.createElement('span');
+    labelText.className = 'msg-ai-label__name';
+    labelText.textContent = currentRoleName || 'AI';
+    label.appendChild(labelText);
+    div.appendChild(label);
+    const content = document.createElement('div');
+    content.className = 'msg-content';
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+    content.appendChild(body);
+    const footer = document.createElement('div');
+    footer.className = 'msg-footer';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-copy';
+    copyBtn.textContent = '复制';
+    copyBtn.title = '复制消息';
+    // 复制按钮读取 .msg.dataset.rawText（原始 Markdown 源）；流式结束更新后即复制完整文本
+    copyBtn.addEventListener('click', () => copyText(div.dataset.rawText ?? ''));
+    footer.appendChild(copyBtn);
+    // 删除按钮（2026-08-16 对话闭环管理）：AI 消息承载「删除问答闭环」入口——删了答也删问。
+    // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
+    // 无 ts（如流式未完成即被清空）时禁用，避免删除锚点失效。
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'msg-delete';
+    deleteBtn.textContent = '删除';
+    deleteBtn.title = '删除该问答及之后所有对话';
+    deleteBtn.disabled = !ts;
+    deleteBtn.addEventListener('click', () => {
+      if (div.dataset.ts) vscode.postMessage({ type: 'delete_turn', ts: div.dataset.ts });
+    });
+    footer.appendChild(deleteBtn);
+    const t = fmtTime(ts);
+    if (t) {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'msg-time';
+      timeEl.textContent = t;
+      footer.appendChild(timeEl);
+    }
+    content.appendChild(footer);
+    div.appendChild(content);
+    // 记录消息 timestamp 供删除锚点（dataset.ts 供删除按钮读取）
+    div.dataset.ts = ts ?? '';
+    return { body };
+  }
+
+  /**
+   * 开始一轮流式：创建新的 assistant 消息（纯文本 body + 光标 ▋），并置流式状态
+   *
+   * 首个 chunk 到达时调用（streamingActive 为 false 时）。流式期间只有 .msg-body 的
+   * 纯文本节点累积 + 末尾闪烁光标，不渲染 Markdown——避免每 chunk 全量重渲染 markdown
+   * 的 O(n²) 性能损耗与「半截子」闪烁；流结束后由 finalizeStreaming 一次性渲染。
+   *
+   * @param ts 本轮流式第一条 chunk 的时间戳
+   */
+  function beginStreaming(ts?: string): void {
+    renderDateDivider(ts);
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    const { body } = buildAssistantShell(div, ts);
+    // 流式期间纯文本 + 光标（is-streaming 类驱动 CSS ::after 光标 + pre-wrap 保真换行）
+    body.classList.add('is-streaming');
+    activeAssistantEl = div;
+    messages.appendChild(div);
+    scrollToBottom(messages);
+    updateEmptyState();
+  }
+
+  /**
+   * 流式结束：一次性渲染 Markdown + 移除光标 + 更新复制源
+   *
+   * done / interrupted 消息统一调用（幂等：无流式时 no-op）。把流式期间累积的原始文本
+   * （streamingRaw）渲染为 Markdown，CSS 光标随 is-streaming 移除；复制按钮的原始文本源
+   * 同步更新为完整流式文本。
+   */
+  function finalizeStreaming(): void {
+    if (!streamingActive || !activeAssistantEl || activeAssistantEl.isConnected === false) return;
+    const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
+    if (body) {
+      body.classList.remove('is-streaming');
+      body.innerHTML = renderMarkdown(streamingRaw);
+    }
+    // 复制源更新为完整原始文本（.msg.dataset.rawText 供复制按钮读取）
+    activeAssistantEl.dataset.rawText = streamingRaw;
+    streamingActive = false;
+    streamingRaw = '';
   }
 
   // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
@@ -660,16 +755,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (msg.guardrailBlocked) {
         showActivity('error', '输入被护栏阻断，本次请求未执行');
       }
-      const target =
-        activeAssistantEl && activeAssistantEl.isConnected
-          ? activeAssistantEl.querySelector(':scope .msg-body')
-          : null;
+      // 首个 chunk：开始一轮新流式（beginStreaming 创建新消息 + 置 streamingActive），
+      // 避免追加到上一条历史 AI 消息（activeAssistantEl 可能仍指向旧锚点）
+      if (!streamingActive) {
+        beginStreaming(msg.ts);
+        streamingActive = true;
+        streamingRaw = '';
+      }
+      const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') : null;
       if (target) {
+        streamingRaw += msg.content;
         // 用文本节点追加替代整体 textContent 重建，长回复避免 O(n²)
         target.appendChild(document.createTextNode(msg.content));
-      } else {
-        // 锚点失效（如清空后重放）→ 重建一条 assistant 消息（append 内会重置锚点）
-        append('assistant', msg.content, msg.ts);
       }
       scrollToBottom(messages);
     } else if (msg.type === 'handoff') {
@@ -691,12 +788,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。error 后必跟 done，
       // 此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
       ToolCard.settleRunning(messages, '已中断');
+      // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
+      finalizeStreaming();
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：兜底终结残留「执行中」工具卡片 +
       // 低扰提示「已停止生成」，区分于正常 done。按钮状态恢复由紧随的 status done
       // 处理（chatPanel 中断后发 interrupted + status done），此处独立兜底保证
       // 消息顺序变化时 UI 仍可靠恢复。
       ToolCard.settleRunning(messages, '已中断');
+      // 流式收尾：半截内容也渲染 Markdown（取消 ≠ 丢弃，保留已生成内容，对齐 Trae canceled 语义）
+      finalizeStreaming();
       showActivity('info', '已停止生成');
     } else if (msg.type === 'need_clarify') {
       clarifyText.textContent =
@@ -739,6 +840,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider').forEach((el) => el.remove());
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
+      // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
+      streamingActive = false;
+      streamingRaw = '';
       // 过程性状态复位：思考块引用失效 + 日期分隔线重新计算（重放从新日期开始）
       thoughtEl = null;
       lastShownDate = undefined;

@@ -43,6 +43,14 @@ export type WebviewToExtensionMessage =
   | { type: 'clarify_answer'; text: string }
   /** 清空当前会话对话（P1-体验：清空对话按钮） */
   | { type: 'clear' }
+  /**
+   * 删除单个问答闭环（truncate-from-turn，2026-08-16 对话闭环管理）
+   *
+   * 由 AI 消息的「删除」按钮触发，携带该条 AI 消息的 timestamp 作锚点。host 调宿主
+   * sessionStore.truncateFrom 删除【该问答及其之后所有】消息，随后 replayCurrentSession
+   * 重放会话（保证剩余上下文自洽）。需 host 侧确认不可恢复后执行。
+   */
+  | { type: 'delete_turn'; ts: string }
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**
