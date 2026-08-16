@@ -26,6 +26,36 @@ export interface ChatViewDeps {
   window: Window;
 }
 
+/** 空状态示例提问项（点击填入输入框） */
+interface Suggestion {
+  /** 填入输入框的完整提问 */
+  prompt: string;
+  /** chip 展示文案 */
+  label: string;
+}
+
+/**
+ * 空状态示例提问集（SSOT，MVP 2026-08-16）
+ *
+ * ROLE_SUGGESTION_SETS 按角色显示名特化示例提问：命中展示专属示例，未命中回退通用。
+ * showcase 角色（方案设计师）展示"种子收敛"引导——让用户一键体验 memora 最吸引人的
+ * 「给模糊想法 → 引导收敛最小单元」设计魅力；其余角色保持通用打磨引导，
+ * 避免为每条角色特化造成维护成本（新增 showcase 角色时在此追加映射即可）。
+ */
+const DEFAULT_SUGGESTIONS: Suggestion[] = [
+  { prompt: '帮我审阅当前文档的架构合理性', label: '审阅架构' },
+  { prompt: '帮我精简文档中的冗余表达', label: '精简表达' },
+  { prompt: '检查文档与代码实现是否一致', label: '对齐实现' },
+];
+
+const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
+  方案设计师: [
+    { prompt: '我想做一个个人知识库，帮我设计一个方案', label: '设计知识库' },
+    { prompt: '我想做一个记忆系统，帮我找出最小单元', label: '设计记忆系统' },
+    { prompt: '我想做一个待办工具，帮我找出最小功能', label: '找最小单元' },
+  ],
+};
+
 /**
  * 初始化对话面板 webview 交互（替代原内联 <script>）
  *
@@ -39,6 +69,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 空状态标题/提示（P3，2026-08-15 空状态角色化）：随激活角色包动态生成，切换角色不产生定位错位
   const emptyTitle = document.getElementById('emptyTitle') as HTMLElement;
   const emptyHint = document.getElementById('emptyHint') as HTMLElement;
+  // 空状态示例提问容器（showcase 角色特化引导，MVP 2026-08-16）：由脚本按激活角色动态填充
+  const emptySuggestions = document.getElementById('emptySuggestions') as HTMLElement;
   // 会话标题条（ADR-024 会话标题层）——顶部展示当前会话标题，主动可见识别当前会话
   const sessionTitleText = document.getElementById('sessionTitleText') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
@@ -261,7 +293,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    *
    * 原空状态文案硬编码「开始打磨你的设计文档」（doc-review 定位），切换角色包后错位。
    * 改为标题用角色显示名、提示用角色定位描述（manifest.description，可选），随角色生长。
-   * 示例提问 chips 保持通用引导，不随角色变化（避免为每条角色特化造成维护成本）。
+   * 示例提问 chips 由 renderEmptySuggestions 随 showcase 角色动态渲染（MVP 2026-08-16）。
    */
   function updateEmptyStateRole(): void {
     const name = currentRoleName || 'AI';
@@ -270,6 +302,27 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const activePack = currentRolePacks.find((p) => p.displayName === currentRoleName);
     emptyHint.textContent =
       activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
+    // 示例提问随 showcase 角色特化（方案设计师展示"种子收敛"引导，其余回退通用）
+    renderEmptySuggestions(name);
+  }
+
+  /** 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
+   *
+   * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如方案设计师的"种子收敛"引导，
+   * 让 memora 设计魅力一键可体验）；未命中回退 DEFAULT_SUGGESTIONS 通用打磨引导
+   * （避免为每条角色特化造成维护成本）。textContent 赋值防注入。 */
+  function renderEmptySuggestions(name: string): void {
+    if (!emptySuggestions) return;
+    const set = ROLE_SUGGESTION_SETS[name] ?? DEFAULT_SUGGESTIONS;
+    emptySuggestions.textContent = '';
+    set.forEach((s) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'suggestion-chip';
+      chip.dataset.prompt = s.prompt;
+      chip.textContent = s.label;
+      emptySuggestions.appendChild(chip);
+    });
   }
 
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
@@ -757,15 +810,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   });
   input.addEventListener('input', autoResize);
 
-  // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）
-  document.querySelectorAll('.suggestion-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const prompt = (chip as HTMLElement).dataset.prompt || '';
-      input.value = prompt;
-      input.style.height = 'auto';
-      input.focus();
-      autoResize();
-    });
+  // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）。
+  // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。
+  document.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('.suggestion-chip');
+    if (!chip) return;
+    const prompt = chip.dataset.prompt || '';
+    input.value = prompt;
+    input.style.height = 'auto';
+    input.focus();
+    autoResize();
   });
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）

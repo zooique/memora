@@ -1121,15 +1121,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <div id="messages">
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
          标题/提示加 id（P3，2026-08-15 空状态角色化）：由 chatView 随激活角色包动态更新，
-         切换角色不产生定位错位；示例 chips 保持通用打磨引导，不随角色特化。 -->
+         切换角色不产生定位错位；示例 chips 由 chatView 随 showcase 角色动态渲染
+         （方案设计师展示"种子收敛"引导，其余角色回退通用打磨引导），容器留空由脚本填充。 -->
     <div id="emptyState" class="empty-state" hidden>
       <div id="emptyTitle" class="empty-title">开始打磨你的设计文档</div>
       <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
-      <div class="empty-suggestions">
-        <button class="suggestion-chip" data-prompt="帮我审阅当前文档的架构合理性">审阅架构</button>
-        <button class="suggestion-chip" data-prompt="帮我精简文档中的冗余表达">精简表达</button>
-        <button class="suggestion-chip" data-prompt="检查文档与代码实现是否一致">对齐实现</button>
-      </div>
+      <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
   </div>
 

@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+### Added（插件 MVP：方案设计师 showcase 体验——空状态示例提问随角色特化）
+
+插件 MVP 落地——让用户能通过插件一键体验 memora 最吸引人的设计魅力。审查插件与 memora 内核对齐情况后，聚焦「方案设计师 showcase」体验：把空状态示例提问从"文档打磨通用引导"升级为"随 showcase 角色动态渲染"，新用户切到方案设计师时，首屏即见「种子收敛」引导示例。
+
+- **空状态示例提问动态化（chatView.ts）**：新增 `ROLE_SUGGESTION_SETS`（SSOT 映射，key=角色显示名）+ `DEFAULT_SUGGESTIONS` 通用回退；`renderEmptySuggestions(name)` 按激活角色渲染示例 chips——方案设计师展示「设计知识库 / 设计记忆系统 / 找最小单元」种子收敛引导，其余角色回退「审阅架构 / 精简表达 / 对齐实现」通用打磨引导
+- **示例容器改造（chatPanel.ts）**：`#emptySuggestions` 从静态三个 chip 改为空容器，由脚本填充；HTML 注释同步更新
+- **事件委托**：chips 点击改为 document 级委托，兼容动态渲染新增元素（dropdown 同类惯例）
+- **测试**：chatView.test.ts 新增 showcase 特化用例（方案设计师专属 / 非 showcase 回退通用），测试骨架补 `#emptySuggestions` 容器
+
+> 非破坏性变更：仅插件 UI 层空状态引导演进，内核与角色包内容零改动；插件 typecheck / 66 测试 / esbuild 构建（webview 打包）全通过。
+
 ### Added（方案设计师角色包：memora 设计哲学沉淀为可复用装载卡）
 
 把 memora 的设计哲学（单一真理源 · 最小单元 · 网络为土壤）抽象为可复用的角色包「方案设计师」，供新开项目方案时直接装载复用——基于 `.trae/rules/` 的 `single-truth-source-mindset` / `network-soil-mindset` / `architecture_philosophy_rules` 提炼为 LLM 可执行的设计指令。
