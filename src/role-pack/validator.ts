@@ -105,6 +105,11 @@ function isTemperature(value: unknown): boolean {
   return typeof value === 'number' && value >= 0 && value <= 2;
 }
 
+/** 非空字符串断言（summaryFocus 提炼视角，空白视为未声明） */
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 /** askOn 断言：单枚举字符串 或 元素∈四枚举的数组（可组合，§六） */
 function isAskOn(value: unknown): boolean {
   const ASK_TRIGGERS: ReadonlySet<string> = new Set([
@@ -129,6 +134,8 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     // P0 键集对齐（2026-08-12）：由实现提炼进标准的键（memora 真实消费，spec §六 提炼行）
     memoryRecallQuota: { kind: 'check', check: isPositiveInt },
     summaryRecall: { kind: 'enum', values: ['on', 'off'] }, // [草案]
+    // P1 提炼键（2026-08-16 结构化保真，structured-fidelity）：领域无关机制，内容由角色包提供
+    summaryFocus: { kind: 'check', check: isNonEmptyString }, // [草案]
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },

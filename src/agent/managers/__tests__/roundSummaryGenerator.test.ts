@@ -65,6 +65,44 @@ describe('RoundSummaryGenerator', () => {
     expect(all[0]!.source).toBe(SOURCE_LABELS.ROUND_SUMMARY);
   });
 
+  it('focus 存在时系统 prompt 以角色包提炼视角替换通用视角，且保留 JSON 契约', async () => {
+    // 捕获传给 LLM 的 system content，验证角色包提炼视角已注入、JSON 硬契约保留
+    const focus = '以代码视角判断值得记的维度与代码片段保留';
+    let systemContent = '';
+    const provider = {
+      name: 'mock-provider',
+      chat: async function* (messages: { role: string; content: string }[]) {
+        systemContent = messages[0]!.content;
+        yield { content: JSON.stringify({ summary: '摘要', type: 'fact' }) };
+      },
+    } as unknown as LlmProvider;
+    const gen = new RoundSummaryGenerator(provider, storage);
+    await gen.generate('输入', '回复', 'round-1', 'session-a', focus);
+    // 提炼视角全文被替换注入
+    expect(systemContent).toContain(focus);
+    expect(systemContent).toContain('角色包提炼视角');
+    // 通用归纳框架不应叠加残留（完整下沉=替换，非追加）
+    expect(systemContent).not.toContain('摘要应包含：');
+    // JSON 硬契约（SummaryType 分类）固定保留，保证写路径 metadata 稳定
+    expect(systemContent).toContain('请以 JSON 格式输出');
+    expect(systemContent).toContain('preference|fact|decision|intent|general');
+  });
+
+  it('focus 缺省时系统 prompt 不含提炼视角段（零增量默认）', async () => {
+    let systemContent = '';
+    const provider = {
+      name: 'mock-provider',
+      chat: async function* (messages: { role: string; content: string }[]) {
+        systemContent = messages[0]!.content;
+        yield { content: JSON.stringify({ summary: '摘要', type: 'fact' }) };
+      },
+    } as unknown as LlmProvider;
+    const gen = new RoundSummaryGenerator(provider, storage);
+    await gen.generate('输入', '回复', 'round-2', 'session-a');
+    expect(systemContent).not.toContain('角色包提炼视角');
+    expect(systemContent).toContain('摘要应包含：');
+  });
+
   it('写路径取代：同 session 同主题旧摘要被标记 supersededBy', async () => {
     // 预置旧摘要：同 session、同主题（"深色主题 + 简洁"）
     seedSummary(storage, 'session-a', 'r1', '用户偏好深色主题界面的简洁风格', 'preference');

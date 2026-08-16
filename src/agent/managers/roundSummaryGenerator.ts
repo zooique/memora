@@ -49,15 +49,14 @@ const SUPERSEDE_OVERLAP_THRESHOLD = 0.5;
 /** LLM 温度参数（低温度确保摘要格式稳定） */
 const LLM_TEMPERATURE = 0.3;
 
-/** 摘要生成 system prompt */
-const SUMMARY_SYSTEM_PROMPT = `你是一个对话摘要生成器。请根据用户输入和助手回复，生成一段简洁的摘要。
-
-摘要应包含：
-1. 用户的核心意图或问题
-2. 助手的核心回答或结论
-3. 任何重要的决策、偏好或事实信息
-
-请以 JSON 格式输出：
+/**
+ * 摘要 JSON 输出契约（内核硬契约，角色包不可替换）
+ *
+ * 独立为常量：无论角色包是否声明提炼视角，summary 的输出格式与 SummaryType
+ * 分类必须稳定（摘要写路径读取 metadata.summaryType 且宿主依赖），故作为
+ * 不可替换的契约固守，角色包只可替换「提炼视角」（判断值得记什么）。
+ */
+const SUMMARY_JSON_CONTRACT = `请以 JSON 格式输出：
 {
   "summary": "摘要内容（1-3 句话，不超过 500 字）",
   "type": "摘要类型（preference|fact|decision|intent|general）"
@@ -69,6 +68,42 @@ const SUMMARY_SYSTEM_PROMPT = `你是一个对话摘要生成器。请根据用�
 - decision: 明确的决策或选择
 - intent: 用户的意图或计划
 - general: 一般性对话，无明确分类`;
+
+/**
+ * 默认提炼视角（无角色包声明时的通用判断）
+ *
+ * 判断「摘要应包含什么」的通用归纳框架：意图 / 回答 / 决策偏好事实。
+ * 当角色包声明 prepare.summaryFocus 时，本视角被角色包提炼视角**替换**；
+ * 未声明时沿用本通用视角（逐字节不变，零回归）。
+ */
+const DEFAULT_SUMMARY_PERSPECTIVE = `你是一个对话摘要生成器。请根据用户输入和助手回复，生成一段简洁的摘要。
+
+摘要应包含：
+1. 用户的核心意图或问题
+2. 助手的核心回答或结论
+3. 任何重要的决策、偏好或事实信息`;
+
+/** 摘要生成 system prompt（默认）= 通用提炼视角 + 硬契约（逐字节匹配旧 SUMMARY_SYSTEM_PROMPT） */
+const SUMMARY_SYSTEM_PROMPT = `${DEFAULT_SUMMARY_PERSPECTIVE}
+
+${SUMMARY_JSON_CONTRACT}`;
+
+/**
+ * 角色包提炼视角段（结构化信息保真 + 提炼侧视角下沉，见 docs/architecture/structured-fidelity.md）
+ *
+ * 当激活角色包声明 prepare.summaryFocus 时，以角色包视角**替换**通用提炼视角：
+ * 角色包据此判断「本轮值得记的信息维度与保留形式」（如编程卡声明保留代码/diff/表格，
+ * 覆盖目标/决策等维度）。领域无关机制：内核不预设视角，全文由角色包提供（{{FOCUS}} 占位替换）。
+ * JSON 硬契约（SUMMARY_JSON_CONTRACT）固定保留，SummaryType 分类不受影响。
+ * 未声明时摘要行为与现状完全一致（零增量成本）。
+ */
+const SUMMARY_PERSPECTIVE_PROMPT = (focus: string): string =>
+  `你是一个对话摘要生成器。请根据用户输入和助手回复，结合角色包提炼视角，生成一段简洁的摘要。
+
+<<角色包提炼视角>>（据此判断本轮值得记录的信息维度与保留形式）：
+${focus}
+
+${SUMMARY_JSON_CONTRACT}`;
 
 // ─── 类 ──────────────────────────────────────────────────
 
@@ -115,21 +150,26 @@ export class RoundSummaryGenerator {
    * @param assistantContent - 助手本轮回复
    * @param roundId - 当前轮次 ID（从 AgentLoop.getCurrentRoundId() 获取）
    * @param sessionName - 当前会话名称（从 MessageHistory.currentSessionName 获取）
+   * @param focus - 角色包提炼视角（可选，结构化保真 + 提炼侧视角下沉）：来自激活角色包
+   *   prepare.summaryFocus，undefined=通用浓缩；存在时以其视角替换「值得记什么」的判断主体，
+   *   JSON 硬契约（SummaryType 分类）固定保留
    */
   async generate(
     input: string,
     assistantContent: string,
     roundId: string,
     sessionName: string,
+    focus?: string,
   ): Promise<void> {
     // 轮次 ID 为空时跳过（兼容旧版本宿主）
     if (!roundId) return;
 
     try {
-      // 1. 准备 LLM 调用消息
+      // 1. 准备 LLM 调用消息（有关注点则以角色包提炼视角替换通用视角，JSON 契约固定保留）
       const userMessage = `用户输入：${truncate(input, USER_INPUT_LIMIT)}\n\n助手回复：${truncate(assistantContent, ASSISTANT_LIMIT)}`;
+      const systemContent = focus ? SUMMARY_PERSPECTIVE_PROMPT(focus) : SUMMARY_SYSTEM_PROMPT;
       const messages: Message[] = [
-        { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+        { role: 'system', content: systemContent },
         { role: 'user', content: userMessage },
       ];
 

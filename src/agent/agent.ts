@@ -46,6 +46,7 @@ import {
   resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
+  resolveSummaryFocus,
   resolveToolMode,
 } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
@@ -878,8 +879,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       try {
         const roundId = this.requireLoop.getCurrentRoundId();
         const sessionName = history.currentSessionName;
+        // 提炼视角（结构化保真 + 提炼侧视角下沉）：激活角色包 prepare.summaryFocus → 注入摘要生成。
+        // 领域无关机制，编程等结构化角色包声明后以该视角替换通用归纳框架，引导浓缩摘要保留领域结构。
+        const summaryFocus = resolveSummaryFocus(this.getActiveStrategy());
         // fire-and-forget：不阻塞主流程，失败仅记日志
-        const summaryPromise = this.roundSummaryGenerator.generate(input, assistantContent, roundId, sessionName);
+        const summaryPromise = this.roundSummaryGenerator.generate(input, assistantContent, roundId, sessionName, summaryFocus);
         history.registerPendingArchive(summaryPromise);
       } catch (err) {
         logger.warn({ err }, '轮次摘要生成初始化失败');

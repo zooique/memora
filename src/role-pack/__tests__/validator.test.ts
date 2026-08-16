@@ -182,6 +182,22 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(result.valid).toBe(true);
   });
 
+  it('summaryFocus 合法非空字符串 → 通过（P1 结构化保真提炼键）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: '高价值代码片段' } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+    expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_KEY')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('summaryFocus 空白字符串 → INVALID_STRATEGY_VALUE error（非空才合法）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: '   ' } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
   it('temperature 越界（> 2.0）→ error', () => {
     const result = validate({
       strategy: { ...validStrategy, act: { ...validStrategy.act, temperature: 3.5 } },

@@ -9,7 +9,10 @@
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
   "strategy": {
-    "prepare": { "memoryRecall": "full" },
+    "prepare": {
+      "memoryRecall": "full",
+      "summaryFocus": "以代码工作视角判断本轮值得记的维度：①用户意图/需求 ②技术决策与理由 ③关键错误与排查方案 ④配置/API schema；其中高价值代码片段、函数签名、关键 diff 用 Markdown 代码块/表格原样保留（摘要仍控制在 500 字内）"
+    },
     "act": { "toolMode": "allow", "temperature": 0.3 },
     "reflect": { "handoff": "wait" }
   },

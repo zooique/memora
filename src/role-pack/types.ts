@@ -134,6 +134,16 @@ export interface PrepareStrategy {
   readonly recallConfidence?: number;
   /** 任务分类方式（默认 keyword） */
   readonly taskClassification?: TaskClassification;
+  /**
+   * 角色包提炼视角（可选，默认 undefined=通用浓缩）
+   *
+   * 控制 round-summary 生成时「值得记什么」的判断视角（提炼侧视角下沉）。
+   * 领域无关机制：内核不预设内容，由角色包注入领域重视的信息维度与保留形式
+   * （如编程卡声明保留代码/diff/表格，覆盖意图/决策等维度；替换通用"意图/回答/
+   * 决策"归纳框架，JSON 输出与 SummaryType 硬契约保留）。非结构化领域不声明 →
+   * 摘要行为与现状完全一致。
+   */
+  readonly summaryFocus?: string;
   /** 角色自动匹配开关（默认 on） */
   readonly autoSwitch?: AutoSwitch;
 }
@@ -547,6 +557,21 @@ export function resolveMinFallback(strategy: BehaviorStrategy | undefined): numb
   const candidate = strategy?.prepare?.minFallback;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
   return valid ? candidate : DEFAULT_MIN_FALLBACK;
+}
+
+/**
+ * 解析角色包提炼视角（SSOT）：合法非空字符串采用，缺失/空白归位 undefined（通用浓缩）
+ *
+ * 领域无关机制：内核只提供"摘要提炼视角可被角色包注入"的通用能力，视角全文由角色包
+ * 提供（如编程卡声明代码/diff/表格 + 意图/决策等维度）。声明时替换通用"意图/回答/
+ * 决策"归纳框架（JSON 硬契约保留）；未声明 → undefined，round-summary 摘要行为与现状一致。
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 角色包提炼视角（无则 undefined=通用浓缩）
+ */
+export function resolveSummaryFocus(strategy: BehaviorStrategy | undefined): string | undefined {
+  const candidate = strategy?.prepare?.summaryFocus;
+  return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : undefined;
 }
 
 /**

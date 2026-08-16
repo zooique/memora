@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### Added（结构化信息保真 + 提炼侧视角下沉：`summaryFocus` 提炼视角机制）
+
+源自 LLM 视角 memora-as-agent 体感评估 P1 缺口「结构化信息保真」 + P2「提炼侧视角对齐」——代码/diff/表格等结构化信息经 round-summary 浓缩后保真度低，且提炼侧「值得记什么」仍为通用视角。沿内核哲学（领域无关 + 角色包插卡）落地的通用机制，让角色包声明「摘要提炼的视角（判断维度 + 结构保留形式）」。
+
+- **内核机制（`role-pack/types.ts`）**：`PrepareStrategy` 新增可选 `summaryFocus`（角色包提炼视角）；新增 `resolveSummaryFocus` 解析函数（合法非空字符串采用、缺失/空白归位 undefined=通用浓缩）
+- **摘要参数化（`roundSummaryGenerator.ts`）**：拆出 `SUMMARY_JSON_CONTRACT`（JSON 输出 + SummaryType 硬契约，角色包不可替换，写路径 metadata 稳定）与 `DEFAULT_SUMMARY_PERSPECTIVE`（通用"意图/回答/决策"归纳）；`generate` 第 5 参 `focus` 存在时以角色包提炼视角**替换**通用视角；缺省时逐字节零回归
+- **装配接线（`agent.ts`）**：postProcess 注入激活角色包的 `summaryFocus`（`resolveSummaryFocus(this.getActiveStrategy())`）
+- **验证器（`validator.ts`）**：`STRATEGY_KEY_RULES.prepare` 注册 `summaryFocus`（非空字符串校验），避免角色包声明产生未知键警告
+- **角色包消费者**：示例库 `代码助手`、两库 `方案设计师` 声明完整提炼视角（判断维度 + 结构保留，首个消费者，尚未触发「≥2 处复用」机制化提炼）
+
+> 非破坏性变更：内核零领域特化（提炼视角内容全由角色包提供，未 hardcode 代码/表格）；角色包未声明 `summaryFocus` 时摘要输出与升级前逐字节一致；typecheck + 全量测试通过。
+
 ### Added（插件 MVP：方案设计师 showcase 体验——空状态示例提问随角色特化）
 
 插件 MVP 落地——让用户能通过插件一键体验 memora 最吸引人的设计魅力。审查插件与 memora 内核对齐情况后，聚焦「方案设计师 showcase」体验：把空状态示例提问从"文档打磨通用引导"升级为"随 showcase 角色动态渲染"，新用户切到方案设计师时，首屏即见「种子收敛」引导示例。

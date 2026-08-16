@@ -16,6 +16,7 @@ import {
   resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
+  resolveSummaryFocus,
   resolveToolMode,
   mergeStrategy,
   DEFAULT_BEHAVIOR_STRATEGY,
@@ -150,5 +151,19 @@ describe('枚举键解析 · SSOT 非法值归位（不透传宿主）', () => {
     expect(resolveToolMode({ act: { toolMode: 'deny' } } as unknown as BehaviorStrategy)).toBe('allow');
     expect(resolveToolMode({ act: { toolMode: undefined } } as unknown as BehaviorStrategy)).toBe('allow');
     expect(resolveToolMode(undefined)).toBe('allow');
+  });
+
+  it('resolveSummaryFocus 合法非空字符串一律采用（去首尾空白）', () => {
+    expect(resolveSummaryFocus({ prepare: { summaryFocus: '高价值代码片段' } } as unknown as BehaviorStrategy)).toBe('高价值代码片段');
+    expect(resolveSummaryFocus({ prepare: { summaryFocus: '  表格关键结构  ' } } as unknown as BehaviorStrategy)).toBe('表格关键结构');
+  });
+
+  it('resolveSummaryFocus 缺失/空白/非字符串归位 undefined（通用浓缩）', () => {
+    expect(resolveSummaryFocus(undefined)).toBeUndefined();
+    expect(resolveSummaryFocus({} as unknown as BehaviorStrategy)).toBeUndefined();
+    expect(resolveSummaryFocus({ prepare: {} } as unknown as BehaviorStrategy)).toBeUndefined();
+    expect(resolveSummaryFocus({ prepare: { summaryFocus: '' } } as unknown as BehaviorStrategy)).toBeUndefined();
+    expect(resolveSummaryFocus({ prepare: { summaryFocus: '   ' } } as unknown as BehaviorStrategy)).toBeUndefined();
+    expect(resolveSummaryFocus({ prepare: { summaryFocus: 42 } } as unknown as BehaviorStrategy)).toBeUndefined();
   });
 });
