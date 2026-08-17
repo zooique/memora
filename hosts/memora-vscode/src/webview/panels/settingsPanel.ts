@@ -252,15 +252,16 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
   private async activateRole(name: string): Promise<boolean> {
     const agent = await this.ensureAgent();
-    const rpm = agent?.rolePackManager;
-    if (!rpm) return false;
-    const ok = rpm.activate(name);
+    if (!agent) return false;
+    // 走内核「单一切换入口」agent.switchRolePack：activate + emit personaSwitched + 刷新 loop 前缀。
+    // 角色视图刷新由 personaSwitched 事件驱动（onPersonaSwitched → loadRoles），不再显式
+    // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT 剪枝，2026-08-17）。
+    const ok = agent.switchRolePack(name);
     if (ok) {
       this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
     } else {
       this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
     }
-    void this.loadRoles();
     return ok;
   }
 

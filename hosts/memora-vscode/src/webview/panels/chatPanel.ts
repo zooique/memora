@@ -742,9 +742,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 处理用户切换激活角色包（输入区角色下拉，alignment-iteration.md A3）
    *
-   * 调内核 RolePackManager.activate(name) 切换角色；成功后内核 emit personaSwitched
-   * （A1 已绑定转发 chat_role_pack），UI 角色选择器 + AI 消息标签即时刷新。切换失败（角色
-   * 不存在）时仅低扰提示，不误导用户。
+   * 走内核「单一切换入口」agent.switchRolePack(name)：内部完成
+   * RolePackManager.activate + 发射 personaSwitched（onPersonaSwitched 已绑定，
+   * 同步 _activeRolePack + 转发 chat_role_pack，UI 徽章 / AI 消息标签即时刷新）
+   * + 刷新 AgentLoop 前缀（下一次对话即用新角色包 prompt）。切换失败（角色不存在）
+   * 时仅低扰提示，不误导用户。
    *
    * 切换成功且已注入 globalState 时，将激活角色包写入持久化（用户级，重启后恢复用户选择，
    * 2026-08-15 角色包状态持久化，2026-08-17 由 workspaceState 升为用户级）；未注入则静默跳过。
@@ -752,10 +754,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param name 用户选中的角色包名
    */
   private handleSetRolePack(name: string): void {
-    const rpm = this._agent?.rolePackManager;
-    if (!rpm) return;
-    const ok = rpm.activate(name);
-    // 刷新角色包列表（active 高亮变化；activate 成功时 personaSwitched 会刷新角色选择器文案）
+    const agent = this._agent;
+    if (!agent) return;
+    const ok = agent.switchRolePack(name);
+    // 刷新角色包列表（active 高亮；切换成功时 personaSwitched 已刷新徽章文案）
     this.pushRolePacks();
     if (ok) {
       // 持久化激活角色包（用户级偏好，跨项目共享）

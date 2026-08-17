@@ -90,8 +90,10 @@ export type WebviewToExtensionMessage =
   /**
    * 角色管理面板切换激活角色包（2026-08-17 独立视图）
    *
-   * 由角色管理视图的「设为当前」触发，host 调 agent.rolePackManager.activate(name) 切换；
-   * 成功后持久化用户级激活态并重推 roles_loaded（与 chat 面板的 personaSwitched 转发同源）。
+   * 由角色管理视图的「设为当前」触发，host 调 agent.switchRolePack(name) 切换（内核
+   * 单一切换入口：activate + emit personaSwitched + 刷新 loop 前缀）；成功后持久化
+   * 用户级激活态。各视图刷新统一由 personaSwitched 事件驱动（设置→loadRoles，对话→
+   * chat_role_pack），无并行推送路径。
    */
   | { type: 'roles_set_active'; name: string }
   /**
