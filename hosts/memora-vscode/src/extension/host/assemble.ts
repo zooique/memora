@@ -75,9 +75,9 @@ export interface AssembleOptions {
    */
   configDir: string;
   /**
-   * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化）
+   * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
    *
-   * 宿主从 vscode workspaceState 读取用户上次选择的角色包注入，
+   * 宿主从 vscode globalState 读取用户上次选择的角色包注入，
    * Agent init 时优先激活；未配置/包不存在回退首个角色包。
    */
   activeRolePack?: string;
@@ -117,7 +117,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 配置目录 = 插件内置配置（role-packs/doc-review 角色包承载文档打磨定位；
     // 内核 init 自动扫描 <configDir>/role-packs/ 并激活 activeRolePack 或首个角色包）
     configDir,
-    // 启动时激活的角色包（用户上次选择，由 extension 从 workspaceState 注入持久化值）
+    // 启动时激活的角色包（用户上次选择，由 extension 从 globalState 注入持久化值）
     activeRolePack,
     provider,
     storage,

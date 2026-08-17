@@ -44,7 +44,8 @@ let agentPromise: Promise<Agent> | null = null;
  * @param projectPath 工作区路径
  * @param providerStore 大模型配置存储
  * @param sessionStore 会话存储单例（SSOT：与 UI 面板共享，杜绝双实例覆盖写导致会话记录加载不全）
- * @param workspaceState vscode 工作区状态（读取持久化的激活角色包，重启后恢复用户选择）
+ * @param globalState vscode 全局状态（读取持久化的激活角色包，重启后恢复用户选择；
+ *   用户级而非工作区级——角色选择是用户偏好，2026-08-17 存储层级收敛）
  * @param configDir 插件内置配置目录（SSOT 修复：由 extension.extensionUri 显式定位，
  *   而非 assemble 内 import.meta.url 相对推断——esbuild bundle 后路径漂移导致角色包加载失败）
  */
@@ -52,12 +53,12 @@ function getOrCreateAgent(
   projectPath: string,
   providerStore: ProviderStore,
   sessionStore: WorkspaceSessionStore,
-  workspaceState: vscode.Memento,
+  globalState: vscode.Memento,
   configDir: string,
 ): Promise<Agent> {
   if (!agentPromise) {
     // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核默认激活首个）
-    const activeRolePack = workspaceState.get<string>(ACTIVE_ROLE_PACK_KEY);
+    const activeRolePack = globalState.get<string>(ACTIVE_ROLE_PACK_KEY);
     agentPromise = assembleAgent({
       projectPath,
       providerStore,
@@ -79,6 +80,9 @@ function getOrCreateAgent(
 export function activate(context: vscode.ExtensionContext): void {
   // 大模型配置存储（providerStore 供配置面板 + Agent 装配共用）
   const providerStore = new ProviderStore(context.secrets);
+  // 一次性迁移：工作区 settings.json 旧 Provider 配置 → 用户级（2026-08-17 存储层级收敛，
+  // 避免 Workspace 优先级覆盖 Global 新配置导致不生效）
+  void providerStore.migrateFromWorkspace();
 
   // 插件内置配置目录（SSOT 修复 2026-08-15）：从 extensionUri 显式定位，
   // 指向 dist/extension（role-packs 等资源所在）。替代 assemble 内 import.meta.url
@@ -90,13 +94,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionStore = new WorkspaceSessionStore(workspacePath);
   sessionStore.load();
   const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);
-  // 注入 workspaceState 供角色包切换时持久化激活态（重启后恢复用户选择）
-  chatProvider.setWorkspaceState(context.workspaceState);
+  // 注入 globalState 供角色包切换时持久化激活态（用户级，跨项目共享，2026-08-17）
+  chatProvider.setGlobalState(context.globalState);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
   chatProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.workspaceState, configDir),
+    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
@@ -113,7 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () =>
       openChatCommand(
         (projectPath) =>
-          getOrCreateAgent(projectPath, providerStore, sessionStore, context.workspaceState, configDir),
+          getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
         chatProvider,
       ),
     ),

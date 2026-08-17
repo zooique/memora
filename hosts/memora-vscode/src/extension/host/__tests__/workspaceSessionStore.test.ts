@@ -10,7 +10,7 @@
  *     - 锚点 ts 不存在 → no-op 返回 false
  *     - 空会话 / 全 tool 消息容错
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -166,11 +166,20 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   });
 
   it('listSessionMetas 按 updatedAt 降序（最新在前）', () => {
-    store.appendMessage('2026-08-16', 'main', msg('user', 'a', '2026-08-16T00:00:00.000Z'));
-    store.appendMessage('2026-08-17', 'main', msg('user', 'b', '2026-08-17T00:00:00.000Z'));
-    const metas = store.listSessionMetas();
-    expect(metas[0]?.sessionId).toBe('2026-08-17-main');
-    expect(metas[1]?.sessionId).toBe('2026-08-16-main');
+    // updatedAt = 写入时刻（new Date().toISOString()），非消息 timestamp——
+    // 用 fake timers 确定性制造两次写入的时间差，避免毫秒级竞态导致排序不稳定
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-16T10:00:00.000Z'));
+      store.appendMessage('2026-08-16', 'main', msg('user', 'a', '2026-08-16T00:00:00.000Z'));
+      vi.setSystemTime(new Date('2026-08-17T10:00:00.000Z'));
+      store.appendMessage('2026-08-17', 'main', msg('user', 'b', '2026-08-17T00:00:00.000Z'));
+      const metas = store.listSessionMetas();
+      expect(metas[0]?.sessionId).toBe('2026-08-17-main');
+      expect(metas[1]?.sessionId).toBe('2026-08-16-main');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('copySession：复制源会话到目标；目标已存在覆盖；源为空静默返回', () => {

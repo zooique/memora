@@ -70,12 +70,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前激活角色包（对话面板承载的定位角色；装配时由 extension 注入，切换时持久化） */
   private _activeRolePack: string | undefined;
   /**
-   * vscode 工作区状态（2026-08-15 角色包状态持久化）
+   * vscode 全局状态（2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
    *
-   * 由 extension 注入（setWorkspaceState）。角色包切换成功后写入，重启后恢复用户选择。
+   * 由 extension 注入（setGlobalState）。角色包切换成功后写入，重启后恢复用户选择。
    * 未注入时静默跳过（降级为不持久化，保持向后兼容）。
    */
-  private _workspaceState: vscode.Memento | undefined;
+  private _globalState: vscode.Memento | undefined;
   /**
    * 当前活跃会话标识（YYYY-MM-DD-sessionName，ADR-024 会话标题层）
    *
@@ -122,14 +122,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 注入 vscode 工作区状态（2026-08-15 角色包状态持久化）
+   * 注入 vscode 全局状态（2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
    *
-   * 由 extension.ts 注入 context.workspaceState，供角色包切换时持久化激活态。
+   * 由 extension.ts 注入 context.globalState，供角色包切换时持久化激活态。
+   * 用户级而非工作区级：角色选择是用户偏好，跨项目共享（存储层级收敛）。
    *
-   * @param workspaceState vscode 工作区状态 Memento
+   * @param globalState vscode 全局状态 Memento
    */
-  public setWorkspaceState(workspaceState: vscode.Memento): void {
-    this._workspaceState = workspaceState;
+  public setGlobalState(globalState: vscode.Memento): void {
+    this._globalState = globalState;
   }
 
   /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
@@ -700,8 +701,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （A1 已绑定转发 chat_role_pack），UI 角色选择器 + AI 消息标签即时刷新。切换失败（角色
    * 不存在）时仅低扰提示，不误导用户。
    *
-   * 切换成功且已注入 workspaceState 时，将激活角色包写入持久化（重启后恢复用户选择，
-   * 2026-08-15 角色包状态持久化）；未注入则静默跳过（降级不持久化）。
+   * 切换成功且已注入 globalState 时，将激活角色包写入持久化（用户级，重启后恢复用户选择，
+   * 2026-08-15 角色包状态持久化，2026-08-17 由 workspaceState 升为用户级）；未注入则静默跳过。
    *
    * @param name 用户选中的角色包名
    */
@@ -712,8 +713,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 刷新角色包列表（active 高亮变化；activate 成功时 personaSwitched 会刷新角色选择器文案）
     this.pushRolePacks();
     if (ok) {
-      // 持久化激活角色包（用户选择的工作区级偏好）
-      this._workspaceState?.update(ACTIVE_ROLE_PACK_KEY, name);
+      // 持久化激活角色包（用户级偏好，跨项目共享）
+      this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
     } else {
       this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
     }

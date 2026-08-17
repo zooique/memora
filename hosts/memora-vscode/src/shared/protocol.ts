@@ -14,7 +14,8 @@
  *
  * 对齐 memora-sprite 的 LlmProviderConfig 模式 + 内核 ProviderConfig：
  * - name 为唯一别名（持久化 key，编辑时禁用）
- * - apiKey 存 SecretStorage（不落盘 settings.json），模型/baseUrl 存 configuration
+ * - apiKey 存 SecretStorage（不落盘 settings.json），模型/baseUrl 存用户级 configuration
+ *   （ConfigurationTarget.Global，2026-08-17 由 Workspace 迁至 Global——Provider 是用户级偏好）
  * - provider 标识（'cloud'|'local'），仅用于日志/模式展示
  */
 export interface LlmProviderConfig {

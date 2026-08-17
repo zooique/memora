@@ -3,7 +3,8 @@
  *
  * 职责：
  *   - 非敏感字段（name/displayName/model/baseUrl/provider）存 VS Code configuration
- *     （写入工作区 settings.json 的 memora.providers）
+ *     （写入【用户级】settings.json 的 memora.providers；Provider 是用户级偏好，非项目级，
+ *     2026-08-17 由 Workspace 迁至 Global——避免污染 .vscode/settings.json 且跨项目共享）
  *   - 敏感字段 apiKey 存 SecretStorage（加密存储，不落盘 settings.json）
  *   - activeProvider 记录当前激活的 Provider name
  *   - 连接测试复用内核 createProviderFromConfig + chat()
@@ -77,7 +78,7 @@ export class ProviderStore {
     const stripped = providers.map(({ apiKey: _apiKey, ...rest }) => rest);
     await vscode.workspace
       .getConfiguration(CFG_SECTION)
-      .update(CFG_PROVIDERS, stripped, vscode.ConfigurationTarget.Workspace);
+      .update(CFG_PROVIDERS, stripped, vscode.ConfigurationTarget.Global);
   }
 
   /** SecretStorage 的 apiKey key */
@@ -218,7 +219,7 @@ export class ProviderStore {
     if (!exists) return { ok: false, message: `服务商 "${name}" 不存在` };
     await vscode.workspace
       .getConfiguration(CFG_SECTION)
-      .update(CFG_ACTIVE, name, vscode.ConfigurationTarget.Workspace);
+      .update(CFG_ACTIVE, name, vscode.ConfigurationTarget.Global);
     return { ok: true };
   }
 
@@ -232,7 +233,7 @@ export class ProviderStore {
   async clearActive(): Promise<void> {
     await vscode.workspace
       .getConfiguration(CFG_SECTION)
-      .update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Workspace);
+      .update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Global);
   }
 
   /**
@@ -266,5 +267,38 @@ export class ProviderStore {
         message: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  /**
+   * 一次性迁移：工作区 settings.json 旧残留 → 用户级（2026-08-17 存储层级收敛）
+   *
+   * 背景：Provider 配置原写入 Workspace（.vscode/settings.json），改为 Global（用户级）后，
+   * 若工作区仍残留旧配置，VS Code 配置合并时 Workspace 优先级高于 Global，会覆盖新值
+   * 导致用户新配置不生效。故 activate 时检测 workspaceValue 并并入 Global 后清除。
+   *
+   * 合并语义：按 name 去重——Global 已有则保留（用户新改的真源），Workspace 独有并入；
+   * activeProvider 仅在 Global 无值时迁移。apiKey 存 SecretStorage，不受配置层级影响，无需迁移。
+   */
+  async migrateFromWorkspace(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration(CFG_SECTION);
+    const provInspect = cfg.inspect<Omit<LlmProviderConfig, 'apiKey'>[]>(CFG_PROVIDERS);
+    const activeInspect = cfg.inspect<string | undefined>(CFG_ACTIVE);
+    const wsProviders = provInspect?.workspaceValue ?? [];
+    const wsActive = activeInspect?.workspaceValue;
+    // 无工作区残留 → 无迁移动作
+    if (wsProviders.length === 0 && wsActive === undefined) return;
+
+    const globalProviders = provInspect?.globalValue ?? [];
+    const names = new Set(globalProviders.map((p) => p.name));
+    const merged = [...globalProviders, ...wsProviders.filter((p) => !names.has(p.name))];
+    if (merged.length !== globalProviders.length) {
+      await cfg.update(CFG_PROVIDERS, merged, vscode.ConfigurationTarget.Global);
+    }
+    if (wsActive !== undefined && activeInspect?.globalValue === undefined) {
+      await cfg.update(CFG_ACTIVE, wsActive, vscode.ConfigurationTarget.Global);
+    }
+    // 清除工作区级残留（避免覆盖 Global 新配置）
+    await cfg.update(CFG_PROVIDERS, undefined, vscode.ConfigurationTarget.Workspace);
+    await cfg.update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Workspace);
   }
 }
