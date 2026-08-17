@@ -128,6 +128,25 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     return `【当前技能】${skill.name}\n${skill.content}`;
   }
 
+  /**
+   * 构建全局技能清单块（渐进披露 L1，与角色包技能清单同格式，2026-08-18）
+   *
+   * 全局 skills 与角色包 skills 统一渐进披露逻辑：清单（name + description）常驻
+   * system prompt，LLM 按需调用 read_skill 读取正文（L2）。两级技能同构——
+   * 通用技能全局激活（清单常驻），角色包技能随角色激活（清单随 rolePackPrompt）。
+   *
+   * @returns 技能清单块（无技能时返回空串）
+   */
+  buildSkillList(): string {
+    const listed = this.items.map((skill) => {
+      const desc = skill.description ? `：${skill.description}` : '';
+      return `- ${skill.name}${desc}`;
+    });
+    return listed.length > 0
+      ? `【通用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}`
+      : '';
+  }
+
   // ── 基类抽象方法实现 ──────────────────────────────
 
   protected createEntry(entry: ScannedMarkdownEntry): SkillEntry {

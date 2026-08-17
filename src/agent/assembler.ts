@@ -142,6 +142,8 @@ type LoopAndDepsParams = Pick<
   pctx: ProjectContext;
   /** 激活角色包的 L1 persona prompt（档 2-1 后角色包唯一；无激活角色包时为空串） */
   rolePackPrompt: string;
+  /** 全局技能管理器（构建通用技能清单 + read_skill 全局源，两级技能渐进披露） */
+  skillManager: SkillManager;
   toolExec: ToolExecutor;
 };
 
@@ -221,14 +223,17 @@ export interface AssembleOutput {
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
-    provider, backgroundProvider, providerRouter, pctx, rolePackPrompt, toolExec,
+    provider, backgroundProvider, providerRouter, pctx, rolePackPrompt, skillManager, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary,
     sessionStore, locale, callbacks,
   } = params;
 
   // 系统前缀：角色包唯一（ADR-025 档 2-1：persona 兜底已移除——设定记忆唯一归角色包，
   // 无激活角色包时降级为空串；PersonaManager 保留为宿主切换 API，不再注入 system prompt）
-  const systemPrefixParts = [rolePackPrompt];
+  // 全局通用技能清单并列拼入（两级技能统一渐进披露 L1，2026-08-18）：
+  // 通用技能全局激活（清单常驻），角色包技能随角色激活（清单在 rolePackPrompt 内）。
+  const globalSkillList = skillManager.buildSkillList();
+  const systemPrefixParts = [rolePackPrompt, globalSkillList].filter(Boolean);
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -383,8 +388,15 @@ export async function assembleComponents(
   const rolePackPrompt = rolePackManager.buildSystemPrompt();
 
   // 渐进披露 L2：注入 read_skill 技能正文读取回调（read_skill 工具数据源）
+  // 两级技能统一渐进披露（2026-08-18）：先查激活角色包内嵌技能，再查全局通用技能池。
   // rolePackManager 在 toolExec 之后创建，用回调注入解耦时序（见 toolExecutor.readSkill 注释）
-  toolExec.readSkill = (skillName: string) => rolePackManager.readSkillContent(skillName);
+  toolExec.readSkill = async (skillName: string) => {
+    const rolePackContent = await rolePackManager.readSkillContent(skillName);
+    if (rolePackContent) return rolePackContent;
+    // 全局通用技能：SkillManager 条目正文（已由 load() 装载）
+    const globalSkill = skillManager.get(skillName);
+    return globalSkill ? globalSkill.content : null;
+  };
 
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
@@ -394,6 +406,7 @@ export async function assembleComponents(
       backgroundProvider,
       pctx,
       rolePackPrompt,
+      skillManager,
       toolExec,
       maxContextTokens,
       tracer,

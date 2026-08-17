@@ -152,8 +152,9 @@ export class ToolExecutor {
   /**
    * read_skill 技能正文读取回调（由 agent 装配时注入，处理 read_skill）
    *
-   * 渐进披露 L2 数据源：读取激活角色包内嵌技能正文（manifest.skills 的 file 指向）。
-   * 委托 RolePackManager.readSkillContent，避免 ToolExecutor 与 rolePackManager 强耦合
+   * 渐进披露 L2 数据源（两级技能统一，2026-08-18）：先查激活角色包内嵌技能
+   * （manifest.skills 的 file 指向），再查全局通用技能池（SkillManager 条目）。
+   * 委托装配层注入的回调，避免 ToolExecutor 与 rolePackManager/skillManager 强耦合
    * （装配顺序：rolePackManager 在 toolExec 之后创建，用回调注入解耦时序）。
    * 未注入时 read_skill 返回不可用提示。
    */

@@ -314,6 +314,50 @@ keywords: 文件,读取
     });
   });
 
+  describe('buildSkillList（全局技能清单 · 渐进披露 L1，2026-08-18）', () => {
+    it('应列出所有技能（name + description）', async () => {
+      createSkillFile(
+        skillsDir,
+        'read-file.md',
+        `---
+name: 读文件
+description: 读取本地文件内容
+keywords: 文件,读取
+---
+
+# 读文件技能`,
+      );
+      createSkillFile(
+        skillsDir,
+        'web-search.md',
+        `---
+name: 搜索
+description: 联网搜索资料
+keywords: 搜索,查询
+---
+
+# 搜索技能`,
+      );
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const list = skillManager.buildSkillList();
+      expect(list).toContain('读文件');
+      expect(list).toContain('读取本地文件内容');
+      expect(list).toContain('搜索');
+      expect(list).toContain('联网搜索资料');
+      expect(list).toContain('read_skill'); // 引导 LLM 按需读取
+    });
+
+    it('无技能时返回空字符串', async () => {
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      expect(skillManager.buildSkillList()).toBe('');
+    });
+  });
+
   // ─── reload（事件驱动热重载） ─────────────────────
 
   describe('reload', () => {
