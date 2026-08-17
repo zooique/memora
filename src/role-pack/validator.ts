@@ -59,12 +59,12 @@ export interface RolePackValidateInput {
 // 规则常量（对齐 role-pack-spec §五/§六/§七）
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能） */
+/** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能 + 交接） */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
-  'strategy', 'skills', 'persona', 'rules',
+  'strategy', 'skills', 'persona', 'rules', 'handoffs',
 ]);
 
 /** 合规 interactionType 枚举（§七 第 3 条） */
@@ -516,6 +516,74 @@ function validateManifestSkills(
   });
 }
 
+/**
+ * 校验交接声明格式（manifest.handoffs，宿主侧键）
+ *
+ * 对齐 VS Code custom agents handoffs。handoffs 应为对象数组，每项必含
+ * label/target 非空字符串；prompt/send 可选（send 须布尔）。宿主侧键 = 内核
+ * 不消费（透传），格式问题仅 warning 不阻塞装载（宽容容错，对齐草案演进期）。
+ *
+ * @param handoffsNode manifest.handoffs 节点
+ * @param issues 收集校验问题
+ */
+function validateHandoffs(
+  handoffsNode: unknown,
+  issues: RolePackValidationIssue[],
+): void {
+  if (handoffsNode === undefined) return;
+  if (!Array.isArray(handoffsNode)) {
+    issues.push({
+      severity: 'warning',
+      code: 'HANDOFFS_NOT_ARRAY',
+      path: 'handoffs',
+      message: 'handoffs 应为对象数组（每项 { label, target, prompt?, send? }，宿主侧键）',
+    });
+    return;
+  }
+  handoffsNode.forEach((item, index) => {
+    const itemPath = `handoffs[${index}]`;
+    if (typeof item !== 'object' || item === null) {
+      issues.push({
+        severity: 'warning',
+        code: 'INVALID_HANDOFF',
+        path: itemPath,
+        message: `handoffs[${index}] 必须是对象（宿主侧键，格式错误该项不生效）`,
+      });
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    for (const reqKey of ['label', 'target'] as const) {
+      const v = record[reqKey];
+      if (typeof v !== 'string' || v.trim() === '') {
+        issues.push({
+          severity: 'warning',
+          code: 'INVALID_HANDOFF',
+          path: `${itemPath}.${reqKey}`,
+          message: `handoffs[${index}].${reqKey} 必须为非空字符串（宿主渲染交接按钮必需）`,
+        });
+      }
+    }
+    const prompt = record['prompt'];
+    if (prompt !== undefined && typeof prompt !== 'string') {
+      issues.push({
+        severity: 'warning',
+        code: 'INVALID_HANDOFF',
+        path: `${itemPath}.prompt`,
+        message: `handoffs[${index}].prompt 应为字符串（可选，预填衔接文本）`,
+      });
+    }
+    const send = record['send'];
+    if (send !== undefined && typeof send !== 'boolean') {
+      issues.push({
+        severity: 'warning',
+        code: 'INVALID_HANDOFF',
+        path: `${itemPath}.send`,
+        message: `handoffs[${index}].send 应为布尔值（可选，MVP 宿主不消费）`,
+      });
+    }
+  });
+}
+
 // ════════════════════════════════════════════════════════════
 // 公共入口
 // ════════════════════════════════════════════════════════════
@@ -542,6 +610,7 @@ export function validateManifest(
   validateContentPaths(manifest, issues);
   validateExclusiveWith(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
+  validateHandoffs(manifest['handoffs'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }

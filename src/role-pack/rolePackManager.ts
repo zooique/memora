@@ -33,6 +33,7 @@ import type {
   RolePack,
   RolePackMeta,
   RolePackManifestSkill,
+  RolePackHandoff,
   RolePackAssembly,
   BehaviorStrategy,
 } from '@/role-pack/types.js';
@@ -195,6 +196,39 @@ function parseManifestSkills(skillsNode: unknown): RolePackManifestSkill[] {
     });
   }
   return skills;
+}
+
+/**
+ * 从 manifest.handoffs 数组解析交接声明（宿主侧键，对齐 VS Code custom agents handoffs）
+ *
+ * 每项结构：`{ label?, target?, prompt?, send? }`，label 与 target 为必填非空字符串。
+ * 宽容解析（对齐 parseManifestSkills 范式）：非对象项 / 缺 label / 缺 target 的项跳过，
+ * 不阻塞装载（宿主渲染时再做 target 存在性过滤）。
+ *
+ * @param raw manifest.handoffs 原始节点
+ * @returns 交接声明列表（无合法项返回 undefined）
+ */
+function parseManifestHandoffs(raw: unknown): RolePackHandoff[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const handoffs: RolePackHandoff[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const record = item as Record<string, unknown>;
+    const label = record['label'];
+    const target = record['target'];
+    // label 与 target 必填非空字符串（宿主渲染必需；缺任一则跳过该项）
+    if (typeof label !== 'string' || label.trim() === '') continue;
+    if (typeof target !== 'string' || target.trim() === '') continue;
+    const prompt = record['prompt'];
+    const send = record['send'];
+    handoffs.push({
+      label,
+      target,
+      prompt: typeof prompt === 'string' && prompt.trim() !== '' ? prompt : undefined,
+      send: typeof send === 'boolean' ? send : undefined,
+    });
+  }
+  return handoffs.length > 0 ? handoffs : undefined;
 }
 
 /**
@@ -441,6 +475,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       aiIdentityDisclosure: manifest['aiIdentityDisclosure'] === false ? false : true,
       minorProtection: 'required',
       exclusiveWith: parseExclusiveWith(manifest['exclusiveWith']),
+      handoffs: parseManifestHandoffs(manifest['handoffs']),
     };
 
     // 解析 L2 策略

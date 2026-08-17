@@ -369,3 +369,57 @@ describe('checkCompanionContentRedline：companion 内容红线（§七 第 5 �
     expect(checkCompanionContentRedline('')).toEqual([]);
   });
 });
+
+describe('validateManifest：handoffs 交接声明（宿主侧键，对齐 VS Code custom agents）', () => {
+  it('合法 handoffs（label/target 必填 + prompt/send 可选）→ 无问题', () => {
+    const result = validate({
+      handoffs: [
+        { label: '交给技术文档工程师', target: 'tech-writer', prompt: '初稿已完成，请检查格式', send: false },
+        { label: '转代码审查', target: 'code-reviewer' },
+      ],
+    });
+    expect(findByCode(result.issues, 'HANDOFFS_NOT_ARRAY')).toHaveLength(0);
+    expect(findByCode(result.issues, 'INVALID_HANDOFF')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('handoffs 非数组 → HANDOFFS_NOT_ARRAY warning（不阻塞装载）', () => {
+    const result = validate({ handoffs: 'tech-writer' });
+    const issues = findByCode(result.issues, 'HANDOFFS_NOT_ARRAY');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.severity).toBe('warning');
+    expect(result.valid).toBe(true); // warning 不阻塞
+  });
+
+  it('handoffs 项缺 label / 缺 target → INVALID_HANDOFF warning（该项不生效）', () => {
+    const result = validate({
+      handoffs: [
+        { target: 'tech-writer' }, // 缺 label
+        { label: '交给代码审查' }, // 缺 target
+      ],
+    });
+    const issues = findByCode(result.issues, 'INVALID_HANDOFF');
+    expect(issues.length).toBe(2);
+    expect(issues.every((i) => i.severity === 'warning')).toBe(true);
+    expect(result.valid).toBe(true);
+  });
+
+  it('handoffs 项 prompt 非字符串 / send 非布尔 → INVALID_HANDOFF warning', () => {
+    const result = validate({
+      handoffs: [
+        { label: '交给技术文档工程师', target: 'tech-writer', prompt: 42, send: 'yes' },
+      ],
+    });
+    const issues = findByCode(result.issues, 'INVALID_HANDOFF');
+    expect(issues.length).toBe(2);
+    expect(issues.some((i) => i.path === 'handoffs[0].prompt')).toBe(true);
+    expect(issues.some((i) => i.path === 'handoffs[0].send')).toBe(true);
+    expect(result.valid).toBe(true);
+  });
+
+  it('handoffs 未声明 → 合法（可选）', () => {
+    const result = validate({ handoffs: undefined });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'INVALID_HANDOFF')).toHaveLength(0);
+  });
+});
