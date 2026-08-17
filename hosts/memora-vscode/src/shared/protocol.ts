@@ -208,8 +208,12 @@ export type ExtensionToWebviewMessage =
   /**
    * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
    *
-   * 由 extension host 监听内核 needClarify 事件后转发，触发 Agent 暂停（pause），
-   * 等待用户在提问输入框回答；收到 clarify_answer 后调 resumeExecution 续跑。
+   * 实际来源：extension host 监听内核 questionPending 事件（LLM 回答中 `[ASK]` 结构化输出路径）
+   * 后转发，触发 Agent 暂停（pause），等待用户在提问输入框回答；收到 clarify_answer 后调
+   * resumeExecution 续跑。
+   *
+   * 注：内核另有 needClarify 事件（P4 任务槽位补全，processEvent/composer 路径），插件当前
+   * 仅用 chat()/resumeExecution 不触达该路径，故不监听；如未来接入该路径需在此补监听。
    */
   | { type: 'need_clarify'; questions: { slot: string; question: string; options?: string[] }[] }
   /**

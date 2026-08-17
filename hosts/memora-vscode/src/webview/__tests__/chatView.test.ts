@@ -388,13 +388,13 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(activityBar.textContent).toContain('已暂停');
   });
 
-  it('guardrailBlocked chunk 渲染「护栏阻断」提示条且文本正常追加（§7.2.1）', () => {
+  it('guardrailBlocked chunk 不再弹提示条、文本正常追加（排雷 2026-08-17，阻断文案由内核 content 承载）', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '被阻断的回复', guardrailBlocked: true });
+    // 阻断提示不弹 banner（避免与消息体文案双份 + 输入/输出语义错位），提示条保持隐藏
     const activityBar = document.getElementById('activityBar') as HTMLElement;
-    expect(activityBar.hidden).toBe(false);
-    expect(activityBar.textContent).toContain('护栏阻断');
-    // 文本仍正常追加到 assistant 消息（阻断 ≠ 丢弃内容，仅附加提示）
+    expect(activityBar.hidden).toBe(true);
+    // 文本正常追加到 assistant 消息（阻断 ≠ 丢弃内容）
     const body = document.querySelector('.msg.assistant .msg-body');
     expect(body?.textContent).toBe('被阻断的回复');
   });

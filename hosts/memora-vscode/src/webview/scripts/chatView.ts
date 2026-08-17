@@ -751,10 +751,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'chunk') {
       // 流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
       // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
-      // guardrailBlocked 标记：护栏阻断的那一条 chunk 同时渲染「护栏阻断」提示条（§7.2.1）
-      if (msg.guardrailBlocked) {
-        showActivity('error', '输入被护栏阻断，本次请求未执行');
-      }
+      // guardrailBlocked 标记：护栏阻断文案已由内核 content 承载（[输入/输出被护栏阻断：rule]），
+      // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
+      // 字段仍随 chunk 透传，供未来结构化消费（eval / 日志）。
       // 首个 chunk：开始一轮新流式（beginStreaming 创建新消息 + 置 streamingActive），
       // 避免追加到上一条历史 AI 消息（activeAssistantEl 可能仍指向旧锚点）
       if (!streamingActive) {

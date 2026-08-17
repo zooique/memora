@@ -1004,14 +1004,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     let firstChunkTs = new Date().toISOString();
     try {
       for await (const chunk of gen) {
+        // 显式忽略的 chunk（取舍声明，排雷 2026-08-17）：
+        //   - recall：召回明细（id/name/score/source）不上 UI，召回透明度走 memoryRecalled 事件（仅条数）；
+        //   - question_pending：已由 questionPending 事件驱动 need_clarify，chunk 通道不重复消费。
         if (chunk.type === 'aborted') {
           // 用户 stop/插话 → 内核 abort 应答：提前退出，不再转发后续 chunk
           //（中断通知统一由本方法末尾按 controller.signal.aborted 发出）
           break;
         }
         if (chunk.type === 'text' && chunk.content) {
-          // 转发 chunk（护栏阻断标记随 chunk 透传，webview 据此渲染提示条，§7.2.1；
-          // 不在此额外 post notice——避免与 webview 侧渲染形成双份提示）
+          // 转发 chunk（护栏阻断标记随 chunk 透传；阻断文案由内核 content 承载，
+          // 不在此额外 post notice——避免双份提示，排雷 2026-08-17）
           this.post({
             type: 'chunk',
             content: chunk.content,

@@ -118,6 +118,11 @@
               "type": "integer",
               "minimum": 0,
               "description": "召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2，冻结，memora 真实消费）"
+            },
+            "summaryFocus": {
+              "type": "string",
+              "minLength": 1,
+              "description": "角色包提炼视角：控制 round-summary 生成时「值得记什么」的判断视角（冻结，memora 真实消费；非空字符串才合法，空白视为未声明）"
             }
           },
           "additionalProperties": false
