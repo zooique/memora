@@ -94,7 +94,9 @@ async function writePack(
     'utf-8',
   );
   if (content.persona !== undefined) {
-    await writeFile(join(packDir, manifest['persona'] as string), content.persona, 'utf-8');
+    // 未声明 persona 路径时回退约定文件名 persona.md（2026-08-18 简化）
+    const personaPath = (manifest['persona'] as string | undefined) ?? 'persona.md';
+    await writeFile(join(packDir, personaPath), content.persona, 'utf-8');
   }
   if (content.rules !== undefined) {
     // 未声明 rules 路径时回退约定文件名 rules.md（2026-08-18 简化）
@@ -196,6 +198,27 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     expect(active).not.toBeNull();
     // 约定 rules.md 被装载并注入 personaPrompt
     expect(active!.personaPrompt).toContain('术语保持一致');
+  });
+
+  it('manifest 未声明 persona 字段时回退约定文件名 persona.md（2026-08-18 简化）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 不含 persona 字段的 manifest——身份文件约定为 persona.md
+    const { persona: _omit, ...manifestNoPersona } = MANIFEST_TECH;
+    void _omit;
+    await writePack(packsDir, '技术文档工程师', manifestNoPersona, {
+      persona: '你是一位技术文档工程师。',
+      rules: '- 术语保持一致',
+    });
+
+    const manager = new RolePackManager(dir);
+    const count = await manager.load('技术文档工程师');
+    expect(count).toBe(1);
+
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    // 约定 persona.md 被装载并注入 personaPrompt
+    expect(active!.personaPrompt).toContain('技术文档工程师');
   });
 
   it('多技能注册 + persona 缺省（无 persona.md）', async () => {

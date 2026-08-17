@@ -67,6 +67,14 @@ const EXCLUDED_FILES = new Set(['manifest.json']);
 const DEFAULT_RULES_FILENAME = 'rules.md';
 
 /**
+ * 身份设定文件的约定文件名（2026-08-18 简化，与 rules.md 对称）
+ *
+ * persona.md 为角色包的**约定俗成身份文件**——manifest 未声明 persona 路径时回退此名。
+ * 仓库全部角色包均使用此名。
+ */
+const DEFAULT_PERSONA_FILENAME = 'persona.md';
+
+/**
  * 策略阶段键名规范化：旧实现键 → 标准键（spec §六 命名归标准）
  *
  * @param stage 策略阶段（prepare / act / reflect / global）
@@ -470,11 +478,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 解析 L2 策略
     const strategy = parseStrategyNode(manifest['strategy']);
 
-    // 内容路径注册（persona 允许缺省；null = 未声明）
-    const personaPath =
+    // 内容路径注册（persona 约定俗成为 persona.md，2026-08-18 简化）：
+    // manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名。
+    // 与 rules.md 对称——身份设定与规则均约定固定文件名，消除路径错误面。
+    const declaredPersonaPath =
       typeof manifest['persona'] === 'string' && manifest['persona'].trim() !== ''
         ? manifest['persona']
         : null;
+    const personaPath = declaredPersonaPath ?? DEFAULT_PERSONA_FILENAME;
     // rules 约定俗成为固定文件名 rules.md（2026-08-18 简化）：
     // manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名。
     // 消除「路径写错静默丢规则」错误面——规则本就约定在此文件。

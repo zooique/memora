@@ -462,7 +462,13 @@ export interface RolePackManifestFile {
   readonly meta: RolePackMeta;
   /** 行为策略声明（L2，未配置维度由 mergeStrategy 补默认值） */
   readonly strategy?: BehaviorStrategy;
-  /** persona 文件路径（相对包根；null = 未声明，persona 允许缺省） */
+  /**
+   * persona 文件路径（相对包根；null = 未声明）
+   *
+   * 2026-08-18 简化：persona 约定俗成为 `persona.md`（与 rules.md 对称）——
+   * 未声明时装载层回退约定名（rolePackManager DEFAULT_PERSONA_FILENAME）。
+   * persona 仍允许缺省（无身份设定，仅靠策略驱动行为）。
+   */
   readonly persona: string | null;
   /**
    * rules 文件路径（相对包根；null = 未声明）
