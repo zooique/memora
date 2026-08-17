@@ -11,6 +11,7 @@ styles/
 │                    #   + L3 组件令牌（输入区尺寸契约 --input-* / --control-h）
 ├── chatStyles.ts    # 对话打磨面板：Base → Layout → Components（只引用令牌，禁止裸值）
 ├── configStyles.ts  # 大模型配置面板：同上，令牌由 tokens.ts 提供
+├── rolesStyles.ts   # 角色管理面板：卡片列表 + 能力标签 chips（2026-08-17 独立视图）
 ├── dropdown.ts      # 下拉菜单组件样式（scoped 到 .treedd，引用令牌）
 └── toolCard.ts      # 工具调用卡片组件样式（scoped 到 .tool-card，引用令牌）
 ```

@@ -21,6 +21,7 @@ import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraConfigViewProvider } from '../webview/panels/providerConfigPanel.js';
+import { MemoraRolePackViewProvider } from '../webview/panels/rolePackPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { ACTIVE_ROLE_PACK_KEY } from '../shared/constants.js';
 
@@ -110,6 +111,18 @@ export function activate(context: vscode.ExtensionContext): void {
   const configProvider = new MemoraConfigViewProvider(context.extensionUri, providerStore);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraConfigViewProvider.viewType, configProvider),
+  );
+
+  // 侧边栏视图：角色管理面板（2026-08-17 独立视图）
+  // 角色切换是低频需求（决定定位与工具集），从对话输入区移出独立承载；
+  // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），切换持久化用户级激活态
+  const roleProvider = new MemoraRolePackViewProvider(context.extensionUri);
+  roleProvider.setAgentFactory((projectPath) =>
+    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
+  );
+  roleProvider.setGlobalState(context.globalState);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(MemoraRolePackViewProvider.viewType, roleProvider),
   );
 
   // 命令：打开对话面板（聚焦侧边栏视图）

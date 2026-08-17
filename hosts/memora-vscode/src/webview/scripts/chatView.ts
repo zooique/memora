@@ -94,13 +94,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const clarifyOptions = document.getElementById('clarifyOptions') as HTMLElement;
   const clarifyInput = document.getElementById('clarifyInput') as HTMLInputElement;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
-  // 角色选择器（输入区 composer，SSOT 收敛：身份条已删，角色切换与模型选择同级）：
-  // 触发器显示当前角色名，菜单列出全部角色包供切换；无角色包列表时隐藏触发器
-  const rolePicker = document.querySelector<HTMLElement>('.role-picker');
-  const rolePickerMenu = rolePicker ? rolePicker.querySelector<HTMLElement>('.treedd__menu') : null;
-  const rolePickerTrigger = rolePicker
-    ? rolePicker.querySelector<HTMLElement>('.treedd__trigger')
-    : null;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
   // 底部模型下拉框（用 extraClass=model-picker 修饰）
@@ -124,10 +117,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
-  // 当前角色包列表 + 激活名（由 chat_role_packs 消息填充，身份条切换下拉数据源）
-  // description 为角色包定位描述（manifest.description，可选）——下拉副标题展示用
+  // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
+  // 角色切换已独立到「角色」视图（2026-08-17），本面板仅消费角色名用于展示，不再承载切换。
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
-  let currentActiveRolePack: string | undefined;
   // P1（2026-08-15 记忆附着可见）：最近一轮结束时的附着记忆条数（metrics.fingerprints 提供）。
   // 流式结束后给 AI 回复补「基于 N 条记忆」弱标签，让记忆附着主动可见（memora 差异化价值）。
   let lastAttachedMemoryCount: number | undefined;
@@ -389,9 +381,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 原局部 scrollToBottom + scrollRafPending 已收敛到 helpers。
 
   // ─── 下拉选择器渲染工厂（SSOT，剪枝收敛） ───
-  // renderModelPicker / renderRolePicker 原是两套几乎相同的「清空菜单 → 遍历建项 →
-  // 更新触发器」实现，仅差异在是否带描述副标题。收敛为单一渲染器：picker 通过
-  // { menu, trigger, items, activeName, 文案 } 配置声明差异（对齐 §四.2 声明式工厂）。
+  // 原 renderModelPicker / renderRolePicker 是两套几乎相同的「清空菜单 → 遍历建项 →
+  // 更新触发器」实现；角色选择器已独立到「角色」视图（2026-08-17），此处收敛为单一渲染器：
+  // picker 通过 { menu, trigger, items, activeName, 文案 } 配置声明差异（对齐 §四.2 声明式工厂）。
 
   /** 下拉项数据（name 为事件 id，displayName 为展示名，description 可选副标题） */
   interface PickerItem {
@@ -459,29 +451,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       emptyText: '未配置模型',
       labelFallback: '选择模型',
       ariaLabel: '选择模型',
-    });
-  }
-
-  // 渲染角色选择器（alignment-iteration.md A3）：列出全部角色包，高亮当前激活项。
-  // 无角色包列表时隐藏触发器（仅保留模型 + 状态，避免空下拉占位）。
-  function renderRolePicker(): void {
-    if (!rolePicker || !rolePickerMenu || !rolePickerTrigger) {
-      console.debug('[chatView] renderRolePicker: 元素引用缺失', {
-        rolePicker: !!rolePicker,
-        rolePickerMenu: !!rolePickerMenu,
-        rolePickerTrigger: !!rolePickerTrigger,
-      });
-      return;
-    }
-    if (currentRolePacks.length === 0) {
-      rolePicker.hidden = true;
-      return;
-    }
-    rolePicker.hidden = false;
-    renderPicker(rolePickerMenu, rolePickerTrigger, currentRolePacks, currentActiveRolePack, {
-      // 触发器标签回退：列表未收录激活角色时回退 currentRoleName（兼容旧字段）
-      labelFallback: currentRoleName || '选择角色',
-      ariaLabel: '切换角色',
     });
   }
 
@@ -997,24 +966,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       renderModelPicker();
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
-      // textContent 赋值防注入。角色名由输入区 role-picker 触发器 + AI 消息头部标签 + 空状态标题共用
+      // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题共用
+      // （角色切换已独立到「角色」视图，2026-08-17）
       currentRoleName = msg.rolePack;
-      // 同步激活角色包内名（按显示名反查列表，供下拉高亮；A1 personaSwitched 也走此路径）
-      const matchedRole = currentRolePacks.find((p) => p.displayName === msg.rolePack);
-      if (matchedRole) currentActiveRolePack = matchedRole.name;
-      renderRolePicker();
       // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
       updateEmptyStateRole();
     } else if (msg.type === 'chat_role_packs') {
-      // A3（alignment-iteration.md）：角色包列表 + 激活名 → 输入区角色切换下拉
+      // 角色包列表（description 供空状态提示副文案）；切换入口已独立到「角色」视图（2026-08-17）
       currentRolePacks = msg.packs || [];
-      if (msg.activeName) currentActiveRolePack = msg.activeName;
-      // 若当前角色名未同步到列表（如 displayName 未收录），回退为显示激活角色
+      // 若当前角色名未同步到列表（如 displayName 未收录），回退为激活角色的显示名
       if (!currentRoleName && msg.activeName) {
         const activePack = currentRolePacks.find((p) => p.name === msg.activeName);
         if (activePack) currentRoleName = activePack.displayName;
       }
-      renderRolePicker();
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     }
@@ -1127,10 +1091,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
-  // toolbar 剪枝后为模型选择器 + 身份条角色选择器（alignment-iteration.md A3）
+  // toolbar 剪枝后为模型选择器（角色切换独立到「角色」视图，2026-08-17）
   initDropdowns(document, {
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
-    __rolePickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_role_pack', name: id }),
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
   });
@@ -1153,7 +1116,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   updateEmptyState();
   updateEmptyStateRole(); // P3：空状态文案随当前角色生长（首屏可能已有角色推送）
   renderModelPicker();
-  renderRolePicker(); // A3：身份条角色选择器（无列表时自动隐藏）
 
   // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
   // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）

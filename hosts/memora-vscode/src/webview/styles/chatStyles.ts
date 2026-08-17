@@ -409,43 +409,6 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
-  /* ============ Components：角色选择器（capsule 变体差异定制，SSOT 收敛身份条已删）
-   * 复用模型选择器同款 capsule 变体（.treedd--capsule），位于输入区 composer 与 model-picker 并排。
-   * 差异定制：角色名更紧凑 + 菜单尺寸限制。hidden 时隐藏（无角色包列表时）。 */
-  .role-picker {
-    min-width: 0;
-    /* 差异定制变量（capsule 变体读取）：角色名紧凑截断 + 菜单尺寸 */
-    --dd-trigger-max-w: 120px;
-    --dd-menu-min-w: 160px;
-    --dd-menu-max-w: 220px;
-  }
-  .role-picker[hidden] { display: none; }
-  .role-picker .treedd__item.is-active {
-    color: var(--accent, #0e639c);
-    font-weight: 600;
-  }
-  /* 角色下拉项：名称 + 描述副标题两行结构（2026-08-15 UI 查看能力）
-   * 名称主行 + 描述灰色小字副行，让用户读懂每个角色包定位再决定切换 */
-  .role-picker .dd-item-name {
-    display: block;
-    color: inherit;
-    font-weight: inherit;
-  }
-  .role-picker .dd-item-desc {
-    display: block;
-    margin-top: var(--sp-0, 2px);
-    font-size: var(--font-sm, 11px);
-    font-weight: 400;
-    line-height: 1.4;
-    color: var(--text-secondary, #9aa0a6);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 220px; /* 限制副标题宽度，超长省略 */
-  }
-  .role-picker .treedd__item.is-active .dd-item-desc {
-    color: var(--text-secondary, #9aa0a6); /* 激活项描述保持次级色，不随主行变色 */
-  }
   .treedd__empty {
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     font-size: var(--font-md, 12px);

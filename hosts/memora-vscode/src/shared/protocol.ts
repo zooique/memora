@@ -81,12 +81,19 @@ export type WebviewToExtensionMessage =
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**
-   * Chat Panel 切换激活角色包（身份条角色下拉，alignment-iteration.md A3）
+   * Chat Panel 切换激活角色包（历史遗留协议，2026-08-17 起无 webview 发送方）
    *
-   * 由身份条角色选择器触发，host 调 agent.rolePackManager.activate(name) 切换角色；
-   * 切换后内核 emit personaSwitched → host 转发 chat_role_pack 刷新身份条（A1 已绑定）。
+   * 输入区角色选择器已独立为「角色」管理视图（roles_set_active），本消息保留仅作
+   * 旧版 webview 实例的兼容兜底；新前端不再发送。
    */
   | { type: 'chat_set_role_pack'; name: string }
+  /**
+   * 角色管理面板切换激活角色包（2026-08-17 独立视图）
+   *
+   * 由角色管理视图的「设为当前」触发，host 调 agent.rolePackManager.activate(name) 切换；
+   * 成功后持久化用户级激活态并重推 roles_loaded（与 chat 面板的 personaSwitched 转发同源）。
+   */
+  | { type: 'roles_set_active'; name: string }
   /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
@@ -290,6 +297,18 @@ export type ExtensionToWebviewMessage =
   | {
       type: 'chat_role_packs';
       packs: { name: string; displayName: string; description?: string }[];
+      activeName: string;
+    }
+  // ─── 角色管理面板消息（2026-08-17 独立视图） ───
+  /** 角色能力项（capability 为中立能力名「域:动作」，label 为中文可读文案，由 host 生成） */
+  | {
+      type: 'roles_loaded';
+      packs: {
+        name: string;
+        displayName: string;
+        description?: string;
+        capabilities: { capability: string; label: string }[];
+      }[];
       activeName: string;
     }
   // ─── 大模型配置面板消息 ───

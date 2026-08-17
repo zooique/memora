@@ -85,6 +85,7 @@ async function main() {
   const webviewScripts = [
     { entry: 'chatViewMain.ts', out: 'chatView.js' },
     { entry: 'configViewMain.ts', out: 'configView.js' },
+    { entry: 'rolesViewMain.ts', out: 'rolesView.js' },
   ];
   for (const { entry, out } of webviewScripts) {
     await esbuild.build({

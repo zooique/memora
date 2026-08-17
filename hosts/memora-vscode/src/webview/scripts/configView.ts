@@ -13,6 +13,7 @@ import type {
   LlmProviderConfig,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ConfigViewDeps {
@@ -132,20 +133,9 @@ export function createConfigView({ acquireVsCodeApi, window }: ConfigViewDeps): 
     statBar.textContent = `已配置 ${data.providers?.length ?? 0} 个 API`;
     if (!data.providers || data.providers.length === 0) {
       currentProviders = [];
-      // 空态引导：复刻对话面板 empty-state 样式（ui-redesign.md §6.2），
-      // 用 createElement + textContent 构建（对抗评估 P2-7b），统一 DOM 构建模式
+      // 空态引导（SSOT：createEmptyState 纯函数，对齐 rolesView 列表级同构）
       list.textContent = '';
-      const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      const title = document.createElement('div');
-      title.className = 'empty-title';
-      title.textContent = '配置你的大模型';
-      const hint = document.createElement('div');
-      hint.className = 'empty-hint';
-      hint.textContent = '添加一个 API 后即可开始对话';
-      empty.appendChild(title);
-      empty.appendChild(hint);
-      list.appendChild(empty);
+      list.appendChild(createEmptyState(document, { title: '配置你的大模型', hint: '添加一个 API 后即可开始对话' }));
       return;
     }
     activeName = data.activeName;
@@ -155,23 +145,15 @@ export function createConfigView({ acquireVsCodeApi, window }: ConfigViewDeps): 
     // ② 激活 Provider 分区（置顶高亮）
     const active = data.providers.filter((p) => p.name === activeName);
     if (active.length > 0) {
-      list.appendChild(buildGroupTitle('激活 Provider'));
+      list.appendChild(createGroupTitle(document, '激活 Provider'));
       active.forEach((p) => list.appendChild(buildCard(p)));
     }
     // ③ 其他 Provider 分区
     const others = data.providers.filter((p) => p.name !== activeName);
     if (others.length > 0) {
-      list.appendChild(buildGroupTitle('其他 Provider'));
+      list.appendChild(createGroupTitle(document, '其他 Provider'));
       others.forEach((p) => list.appendChild(buildCard(p)));
     }
-  }
-
-  /** 构建分区标题（「激活 Provider」/「其他 Provider」，ui-redesign.md §4.2 ②③） */
-  function buildGroupTitle(text: string): HTMLElement {
-    const title = document.createElement('div');
-    title.className = 'group-title';
-    title.textContent = text;
-    return title;
   }
 
   /** 构建单个 Provider 卡片（含图标，ui-redesign.md §6.2） */

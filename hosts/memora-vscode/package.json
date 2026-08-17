@@ -71,6 +71,11 @@
         },
         {
           "type": "webview",
+          "id": "memora.roles",
+          "name": "角色"
+        },
+        {
+          "type": "webview",
           "id": "memora.config",
           "name": "大模型配置"
         }

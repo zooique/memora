@@ -48,10 +48,6 @@ const HTML = `
       <textarea id="input"></textarea>
       <div id="inputFooter">
         <div class="composer-actions">
-          <div class="role-picker treedd--capsule" data-treedd data-on-select="__rolePickerOnSelect">
-            <button class="treedd__trigger"></button>
-            <div class="treedd__menu"></div>
-          </div>
           <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
           <button id="send"></button>
         </div>
@@ -87,78 +83,6 @@ describe('chatView clear_ok 消息区清理', () => {
   it('发送 ready 通知 extension 会话可安全回放', () => {
     const { postMessage } = mountChatView();
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
-  });
-
-  it('chat_role_pack 渲染当前角色到输入区角色选择器触发器（SSOT 收敛身份条已删）', () => {
-    mountChatView();
-    const rolePicker = document.querySelector<HTMLElement>('.role-picker');
-    const roleTrigger = rolePicker?.querySelector<HTMLElement>('.treedd__trigger');
-    // 无角色包列表时隐藏（chatView 控制显隐）
-    expect(rolePicker?.hidden).toBe(true);
-
-    // 真实回放流：先推角色包列表（下拉数据源），再推当前角色（personaSwitched/回放）
-    dispatch({
-      type: 'chat_role_packs',
-      packs: [{ name: 'doc-review', displayName: '文档打磨' }],
-      activeName: 'doc-review',
-    });
-    dispatch({ type: 'chat_role_pack', rolePack: 'doc-review' });
-
-    // 有角色包列表 → 触发器显示激活角色显示名（textContent 赋值防注入）
-    expect(rolePicker?.hidden).toBe(false);
-    expect(roleTrigger?.textContent).toBe('文档打磨');
-  });
-
-  it('chat_role_packs 渲染角色切换下拉选项并高亮激活项（alignment-iteration.md A3）', () => {
-    mountChatView();
-    const rolePicker = document.querySelector<HTMLElement>('.role-picker');
-    const roleTrigger = rolePicker?.querySelector<HTMLElement>('.treedd__trigger');
-    const roleMenu = rolePicker?.querySelector<HTMLElement>('.treedd__menu');
-
-    // 无列表时隐藏角色选择器（输入区不占位）
-    expect(rolePicker?.hidden).toBe(true);
-
-    dispatch({
-      type: 'chat_role_packs',
-      packs: [
-        { name: 'doc-review', displayName: '文档打磨' },
-        { name: '写作助手', displayName: '写作助手' },
-      ],
-      activeName: '写作助手',
-    });
-
-    // 有列表时显示，触发器显示激活角色显示名
-    expect(rolePicker?.hidden).toBe(false);
-    expect(roleTrigger?.textContent).toBe('写作助手');
-    // 菜单选项 + 激活项高亮
-    const items = Array.from(roleMenu?.querySelectorAll('.treedd__item') ?? []);
-    expect(items.map((i) => i.textContent)).toEqual(['文档打磨', '写作助手']);
-    expect(items[1]?.classList.contains('is-active')).toBe(true);
-  });
-
-  it('chat_role_packs 携带 description 时渲染为下拉副标题（2026-08-15 UI 查看能力）', () => {
-    mountChatView();
-    const roleMenu = document.querySelector<HTMLElement>('.role-picker .treedd__menu');
-
-    dispatch({
-      type: 'chat_role_packs',
-      packs: [
-        { name: 'doc-review', displayName: '文档打磨', description: '技术文档写作与打磨助手' },
-        { name: '写作助手', displayName: '写作助手' }, // 无 description：验证旧包容错
-      ],
-      activeName: 'doc-review',
-    });
-
-    // 名称主行 + 描述副行分离（textContent 含两者，结构为独立子元素）
-    const items = Array.from(roleMenu?.querySelectorAll('.treedd__item') ?? []);
-    expect(items).toHaveLength(2);
-    const first = items[0] as HTMLElement;
-    expect(first.querySelector('.dd-item-name')?.textContent).toBe('文档打磨');
-    expect(first.querySelector('.dd-item-desc')?.textContent).toBe('技术文档写作与打磨助手');
-    // 无 description 的项仅渲染名称，不产生副标题（容错旧包）
-    const second = items[1] as HTMLElement;
-    expect(second.querySelector('.dd-item-name')?.textContent).toBe('写作助手');
-    expect(second.querySelector('.dd-item-desc')).toBeNull();
   });
 
   it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {

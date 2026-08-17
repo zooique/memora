@@ -12,7 +12,7 @@
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM 操作；
  *   - 持久化复用内核 sessionStore 机制（date-session 组织消息）；
  *   - 面板为通用对话宿主，功能定位由内置角色包（role-packs/doc-review）承载，
- *     角色名在输入区 role-picker + AI 消息头部标签展示（SSOT 收敛身份条已删）。
+ *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换已独立到「角色」视图，2026-08-17）。
  */
 import * as vscode from 'vscode';
 import {
@@ -197,7 +197,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 设置当前激活角色包（由 extension 装配时注入）
    *
    * 对话面板为通用宿主，定位由内置角色包承载；角色包名在就绪回放时推送给
-   * webview 的输入区 role-picker 触发器 + AI 消息头部标签（主动可见）。
+   * webview 的 AI 消息头部标签 + 空状态标题（角色切换入口已独立到「角色」视图，2026-08-17）。
    *
    * @param rolePack 角色包内部名（如 'doc-review'）
    */
@@ -268,7 +268,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
       } else if (msg.type === 'chat_set_role_pack') {
-        // A3（alignment-iteration.md）：输入区角色选择器切换 → 内核 activate
+        // 兼容兜底：旧版 webview 实例（含角色选择器）仍可能发送；新前端已走 roles_set_active
         void this.handleSetRolePack(msg.name);
       } else if (msg.type === 'stop') {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
@@ -1124,10 +1124,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
 </style>
 </head>
 <body>
-  <!-- SSOT 收敛（2026-08-15）：顶部身份条已删。
-       角色/模型/状态职责归位：角色切换 + 模型选择收敛到输入区 composer（role-picker /
-       model-picker 并排），生成状态由思考折叠块 + 发送按钮承载，「谁在回答」由 AI
-       消息头部标签 msg-ai-label 表达。面板结构收敛为三层：消息区 → 活动区 → 输入区。 -->
+  <!-- SSOT 收敛（2026-08-15）：顶部身份条已删；角色切换独立到「角色」视图（2026-08-17）。
+       角色/模型/状态职责归位：模型选择收敛到输入区 composer（model-picker），生成状态由
+       思考折叠块 + 发送按钮承载，「谁在回答」由 AI 消息头部标签 msg-ai-label 表达。
+       面板结构收敛为三层：消息区 → 活动区 → 输入区。 -->
 
   <!-- ② 消息流：日期分隔线 + 消息 + 空状态引导（ui-redesign.md §4.1 ②） -->
   <!-- 会话标题条（ADR-024 会话标题层 + 2026-08-17 会话管理重构）：
@@ -1190,17 +1190,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        <!-- Composer 左侧角色提示 -->
-        <span class="composer-hint">角色模式</span>
-        <!-- Composer 右侧操作组：角色切换 + 联网能力指示 + 模型选择 + 发送
-             SSOT 收敛（2026-08-15）：角色切换与模型选择并排，统一为「发送前」操作 -->
+        <!-- Composer 左侧键盘提示：Enter 发送 / Shift+Enter 换行（角色切换已移入独立「角色」视图） -->
+        <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+        <!-- Composer 右侧操作组：模型选择 + 发送（SSOT 收敛：角色切换已移至独立角色视图，
+             输入区只保留高频操作——模型切换与发送） -->
         <div class="composer-actions">
-          <!-- 角色切换（role-picker，SSOT 收敛：身份条已删，角色切换与模型选择同级）：
-               无角色包列表时由 chatView 自动隐藏（hidden） -->
-          ${buildDropdownHtml([], {
-            extraClass: 'role-picker treedd--capsule',
-            onSelect: '__rolePickerOnSelect',
-          })}
           ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
           <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
             <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
