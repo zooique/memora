@@ -1140,9 +1140,14 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <button id="newSessionBtn" class="session-title-bar__btn" title="新建会话" aria-label="新建会话">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     </button>
-    <button id="historyBtn" class="session-title-bar__btn" title="历史记录" aria-label="历史记录">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
-    </button>
+    <!-- 历史记录下拉（SSOT 剪枝 v2，2026-08-17）：复用 treedd 组件——trigger=历史按钮，
+         菜单紧挨按钮下方弹出（无遮罩、轻量），开合/外部关闭/Escape 由 initDropdowns 管理 -->
+    <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
+      <button id="historyBtn" class="treedd__trigger" title="历史记录" aria-label="历史记录" aria-haspopup="menu">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+      </button>
+      <div id="historyMenu" class="treedd__menu" role="menu"></div>
+    </div>
   </div>
   <div id="messages">
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
@@ -1199,21 +1204,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </button>
         </div>
       </div>
-    </div>
-  </div>
-  <!-- 历史记录模态浮层（2026-08-17 会话管理重构）：
-       对齐 Trae「历史会话」面板——标题条历史按钮触发，模态浮层列出非当前会话，
-       点击条目加载、条目垃圾桶删除（host 确认）、遮罩/关闭按钮退出。 -->
-  <div id="historyOverlay" class="history-overlay" hidden>
-    <div class="history-modal" role="dialog" aria-modal="true" aria-label="历史记录">
-      <div class="history-modal__header">
-        <span class="history-modal__title">历史记录</span>
-        <button id="historyCloseBtn" class="history-modal__close" title="关闭" aria-label="关闭历史记录">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div id="historyList" class="history-modal__list"></div>
-      <div id="historyEmpty" class="history-modal__empty" hidden>暂无历史会话，新建会话后自动归档到此</div>
     </div>
   </div>
   <!-- 阶段 B（P2-1）：运行时脚本由外部 chatView.js 提供（CSP script-src cspSource 加载） -->

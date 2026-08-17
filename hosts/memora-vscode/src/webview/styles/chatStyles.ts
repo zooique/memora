@@ -71,72 +71,39 @@ export const chatStyles = `
   }
   .session-title-bar__spacer { flex: 1 1 auto; }
 
-  /* ============ Components：历史记录模态浮层（2026-08-17 会话管理重构） ============ */
-  /* 对齐 Trae「历史会话」面板：模态浮层列出非当前会话，条目点击加载、悬浮垃圾桶删除。
-   * 遮罩居中弹窗；列表滚动；空态兜底；危险删除色复用 --status-fail（令牌 SSOT）。 */
-  .history-overlay {
-    position: fixed; inset: 0; z-index: 30;
-    background: rgba(0, 0, 0, .45);
-    display: flex; align-items: center; justify-content: center;
-    padding: var(--sp-6, 16px);
+  /* ============ Components：历史记录下拉（2026-08-17 会话管理重构 v2） ============ */
+  /* 复用 treedd 下拉组件（SSOT 剪枝：替代自造的居中 overlay/modal——原 modal 的
+   * display:flex 覆盖 hidden 属性导致「关不掉 + 遮罩常驻」bug，见 v1 教训）。
+   * 紧挨标题条历史按钮下方弹出（treedd 绝对定位浮层），无遮罩、轻量；
+   * 条目富内容：标题 + 相对时间 + 悬浮垃圾桶（删除 hover 复用 --status-fail 令牌）。 */
+  .session-history .treedd__trigger {
+    width: 20px; height: 20px; margin-left: var(--sp-1, 4px); /* 对齐标题条按钮组尺寸 */
   }
-  .history-modal {
-    width: min(320px, 90vw); max-height: 70vh;
-    display: flex; flex-direction: column;
-    background: var(--surface-page, #1e1e1e);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    border-radius: var(--radius-lg, 8px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
-    overflow: hidden;
+  .session-history .treedd__menu {
+    min-width: 240px; max-width: min(280px, calc(100vw - 24px));
+    max-height: 280px; overflow-y: auto;
   }
-  .history-modal__header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: var(--sp-3, 8px) var(--sp-4, 10px);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  .session-history .treedd__item {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
   }
-  .history-modal__title {
-    font-size: var(--font-sm, 11px); font-weight: 500;
-    color: var(--text-primary, #cccccc);
+  .session-history__item-title {
+    flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .history-modal__close {
+  .session-history__item-time {
+    flex: 0 0 auto; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+  }
+  .session-history__item-del {
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
-  }
-  .history-modal__close:hover {
-    background: var(--surface-hover, rgba(128,128,128,.2));
-    color: var(--text-primary, #cccccc);
-  }
-  .history-modal__list { overflow-y: auto; padding: var(--sp-1, 4px) 0; }
-  .history-modal__item {
-    display: flex; align-items: center; gap: var(--sp-2, 6px);
-    padding: var(--sp-2, 6px) var(--sp-4, 10px);
-    cursor: pointer;
-  }
-  .history-modal__item:hover { background: var(--surface-hover, rgba(128,128,128,.12)); }
-  .history-modal__item-title {
-    flex: 1 1 auto; font-size: var(--font-base, 13px);
-    color: var(--text-primary, #cccccc);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .history-modal__item-time {
-    flex: 0 0 auto; font-size: var(--font-sm, 11px);
-    color: var(--text-secondary, #9aa0a6);
-  }
-  .history-modal__item-del {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
-    background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
     opacity: 0; transition: opacity .15s ease; /* 悬浮条目才显示（对齐 Trae 悬浮删除） */
   }
-  .history-modal__item:hover .history-modal__item-del { opacity: 1; }
-  .history-modal__item-del:hover {
-    background: rgba(179, 38, 30, .15);
-    color: var(--status-fail, #b3261e);
-  }
-  .history-modal__empty {
-    padding: var(--sp-6, 16px); text-align: center;
-    font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6);
+  .session-history .treedd__item:hover .session-history__item-del { opacity: 1; }
+  .session-history__item-del:hover { color: var(--status-fail, #b3261e); }
+  .session-history__empty {
+    padding: var(--sp-4, 10px); text-align: center;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
 
   /* ============ Components：消息 ============ */

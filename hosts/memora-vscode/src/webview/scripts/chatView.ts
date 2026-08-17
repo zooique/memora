@@ -73,16 +73,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 空状态示例提问容器（showcase 角色特化引导，MVP 2026-08-16）：由脚本按激活角色动态填充
   const emptySuggestions = document.getElementById('emptySuggestions') as HTMLElement;
   // 会话标题条（ADR-024 会话标题层 + 2026-08-17 会话管理重构）——顶部展示当前会话标题，
-  // 主动可见识别当前会话；左侧改名笔、右侧新建「＋」+ 历史按钮（会话导航全量收敛于此）
+  // 主动可见识别当前会话；左侧改名笔、右侧新建「＋」+ 历史下拉（会话导航全量收敛于此）
   const sessionTitleText = document.getElementById('sessionTitleText') as HTMLElement;
   const renameSessionBtn = document.getElementById('renameSessionBtn') as HTMLButtonElement;
   const newSessionBtn = document.getElementById('newSessionBtn') as HTMLButtonElement;
+  // 历史记录下拉（SSOT 剪枝 v2）：复用 treedd 组件（trigger=历史按钮），
+  // 菜单容器为渲染目标，开合/外部关闭/Escape 由 initDropdowns 管理（无遮罩、轻量）
   const historyBtn = document.getElementById('historyBtn') as HTMLButtonElement;
-  // 历史记录模态浮层（2026-08-17 会话管理重构）：遮罩 + 列表 + 空态 + 关闭按钮
-  const historyOverlay = document.getElementById('historyOverlay') as HTMLElement;
-  const historyList = document.getElementById('historyList') as HTMLElement;
-  const historyEmpty = document.getElementById('historyEmpty') as HTMLElement;
-  const historyCloseBtn = document.getElementById('historyCloseBtn') as HTMLButtonElement;
+  const historyMenu = document.getElementById('historyMenu') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
   // 联网能力指示 chip（C1，alignment-iteration.md）：当前角色包声明 web:search 时显示
@@ -860,8 +858,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。
       sessionTitleText.textContent = msg.title;
     } else if (msg.type === 'session_list_data') {
-      // 历史会话列表（2026-08-17 会话管理重构）：渲染到历史模态浮层
-      renderHistoryList(msg.sessions);
+      // 历史会话列表（2026-08-17 会话管理重构 v2）：渲染到 treedd 历史下拉菜单
+      renderHistoryMenu(msg.sessions);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
@@ -925,7 +923,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   });
   input.addEventListener('input', autoResize);
 
-  // ─── 会话管理（2026-08-17 会话管理重构，标题条收敛全部入口）───
+  // ─── 会话管理（2026-08-17 会话管理重构 v2，标题条收敛全部入口）───
   // 相对时间（历史列表副标题，本地辅助；重复 3 次再提取 helper）
   function fmtRelativeTime(iso: string): string {
     const diff = Date.now() - new Date(iso).getTime();
@@ -939,56 +937,52 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (day < 30) return `${day} 天前`;
     return iso.slice(0, 10);
   }
-  // 历史记录模态浮层：打开请求列表 + 显示；关闭仅隐藏（列表保留，下次打开重拉）
-  function openHistory(): void {
-    vscode.postMessage({ type: 'session_list' });
-    historyOverlay.hidden = false;
-  }
-  function closeHistory(): void {
-    historyOverlay.hidden = true;
-  }
-  // 渲染历史列表（对 session_list_data 的应答）：条目点击加载、垃圾桶删除、空态兜底
-  function renderHistoryList(sessions: { sessionId: string; title: string; updatedAt: string }[]): void {
-    historyList.textContent = '';
-    historyEmpty.hidden = sessions.length > 0;
+  // 渲染历史菜单（对 session_list_data 的应答）：复用 treedd 组件——
+  // 条目为 .treedd__item（id=sessionId，点击走 initDropdowns 选择委托加载会话并收起）；
+  // 内嵌垃圾桶（span，点击 stopPropagation 阻断选择委托，仅发 delete_session，菜单保持展开）；
+  // 空态为非 item 文本（委托不命中，纯展示）。
+  function renderHistoryMenu(sessions: { sessionId: string; title: string; updatedAt: string }[]): void {
+    historyMenu.textContent = '';
+    if (sessions.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'session-history__empty';
+      empty.textContent = '暂无历史会话，新建会话后自动归档到此';
+      historyMenu.appendChild(empty);
+      return;
+    }
     for (const s of sessions) {
-      const item = document.createElement('div');
-      item.className = 'history-modal__item';
-      item.dataset.sessionId = s.sessionId;
-      const titleEl = document.createElement('div');
-      titleEl.className = 'history-modal__item-title';
+      const item = document.createElement('button');
+      item.className = 'treedd__item';
+      item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
+      item.setAttribute('role', 'menuitem');
+      const titleEl = document.createElement('span');
+      titleEl.className = 'session-history__item-title';
       titleEl.textContent = s.title; // textContent 防注入
-      const timeEl = document.createElement('div');
-      timeEl.className = 'history-modal__item-time';
+      const timeEl = document.createElement('span');
+      timeEl.className = 'session-history__item-time';
       timeEl.textContent = fmtRelativeTime(s.updatedAt);
-      const delBtn = document.createElement('button');
-      delBtn.className = 'history-modal__item-del';
+      // 删除用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
+      const delBtn = document.createElement('span');
+      delBtn.className = 'session-history__item-del';
       delBtn.title = '删除会话';
+      delBtn.setAttribute('role', 'button');
       delBtn.setAttribute('aria-label', '删除会话');
       delBtn.innerHTML =
         '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
       delBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // 不触发条目加载
+        e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
         vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });
       });
-      // 点击条目 → 加载该会话并关闭浮层
-      item.addEventListener('click', () => {
-        vscode.postMessage({ type: 'switch_session', sessionId: s.sessionId });
-        closeHistory();
-      });
       item.append(titleEl, timeEl, delBtn);
-      historyList.appendChild(item);
+      historyMenu.appendChild(item);
     }
   }
-  // 标题条按钮：改名笔 / 新建「＋」/ 历史（全部 W→E，host 处理）
+  // 标题条按钮：改名笔 / 新建「＋」
   renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
-  historyBtn.addEventListener('click', openHistory);
-  historyCloseBtn.addEventListener('click', closeHistory);
-  // 遮罩点击关闭（点到遮罩而非弹窗内容时关闭，对齐模态交互惯例）
-  historyOverlay.addEventListener('click', (e) => {
-    if (e.target === historyOverlay) closeHistory();
-  });
+  // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时请求最新列表」——
+  // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）
+  historyBtn.addEventListener('click', () => vscode.postMessage({ type: 'session_list' }));
 
   // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）。
   // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。
@@ -1008,6 +1002,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   initDropdowns(document, {
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
     __rolePickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_role_pack', name: id }),
+    // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
+    __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
   });
 
   // 主动提问回答：提交并续跑

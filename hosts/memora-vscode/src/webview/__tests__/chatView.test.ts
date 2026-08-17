@@ -16,16 +16,10 @@ const HTML = `
     <button id="renameSessionBtn"></button>
     <span class="session-title-bar__spacer"></span>
     <button id="newSessionBtn"></button>
-    <button id="historyBtn"></button>
   </div>
-  <div id="historyOverlay" hidden>
-    <div class="history-modal">
-      <div class="history-modal__header">
-        <button id="historyCloseBtn"></button>
-      </div>
-      <div id="historyList"></div>
-      <div id="historyEmpty" hidden></div>
-    </div>
+  <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
+    <button id="historyBtn" class="treedd__trigger"></button>
+    <div id="historyMenu" class="treedd__menu"></div>
   </div>
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
@@ -494,7 +488,7 @@ describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 
   });
 });
 
-describe('chatView 会话管理（2026-08-17 重构：标题条按钮 + 历史模态浮层）', () => {
+describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treedd 历史下拉）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -502,7 +496,7 @@ describe('chatView 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     vi.restoreAllMocks();
   });
 
-  it('标题条按钮：改名/新建/历史 分别发送对应 W→E 消息', () => {
+  it('标题条按钮：改名/新建 发送对应消息；历史按钮请求列表', () => {
     const { postMessage } = mountChatView();
     (document.getElementById('renameSessionBtn') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'rename_request' });
@@ -512,29 +506,29 @@ describe('chatView 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(postMessage).toHaveBeenCalledWith({ type: 'session_list' });
   });
 
-  it('历史按钮：打开浮层并请求列表', () => {
+  it('历史按钮：点击请求列表并展开菜单（treedd 开合）', () => {
     const { postMessage } = mountChatView();
-    (document.getElementById('historyBtn') as HTMLElement).click();
-    expect((document.getElementById('historyOverlay') as HTMLElement).hidden).toBe(false);
+    const dd = document.getElementById('historyDd') as HTMLElement;
+    const btn = document.getElementById('historyBtn') as HTMLElement;
+    expect(dd.classList.contains('is-open')).toBe(false);
+    btn.click();
+    // treedd 开合 + 本层请求列表（SSOT 单一职责协作）
     expect(postMessage).toHaveBeenCalledWith({ type: 'session_list' });
+    expect(dd.classList.contains('is-open')).toBe(true);
   });
 
-  it('session_list_data 渲染历史条目：标题+时间+垃圾桶；点击条目发送 switch_session 并关闭浮层', () => {
+  it('session_list_data 渲染历史条目（treedd__item 富内容）；点击条目走委托发送 switch_session', () => {
     const { postMessage } = mountChatView();
-    (document.getElementById('historyBtn') as HTMLElement).click();
     dispatch({
       type: 'session_list_data',
       sessions: [{ sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() }],
     });
-    const items = document.querySelectorAll('.history-modal__item');
+    const items = document.querySelectorAll('#historyMenu .treedd__item');
     expect(items.length).toBe(1);
-    expect(items[0]?.querySelector('.history-modal__item-title')?.textContent).toBe('会话A');
-    // 有条目时空态隐藏
-    expect((document.getElementById('historyEmpty') as HTMLElement).hidden).toBe(true);
-    // 点击条目 → switch_session + 关闭浮层
+    expect(items[0]?.querySelector('.session-history__item-title')?.textContent).toBe('会话A');
+    // 点击条目 → treedd 选择委托 → __historyOnSelect → switch_session
     (items[0] as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'switch_session', sessionId: '2026-08-15-s1' });
-    expect((document.getElementById('historyOverlay') as HTMLElement).hidden).toBe(true);
   });
 
   it('历史条目垃圾桶：点击发送 delete_session 且不触发条目加载', () => {
@@ -543,30 +537,28 @@ describe('chatView 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       type: 'session_list_data',
       sessions: [{ sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() }],
     });
-    const delBtn = document.querySelector('.history-modal__item-del') as HTMLElement;
+    const delBtn = document.querySelector('.session-history__item-del') as HTMLElement;
     delBtn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'delete_session', sessionId: '2026-08-15-s1' });
-    // stopPropagation：不触发条目加载
+    // stopPropagation：不触发条目加载（选择委托）
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'switch_session' }));
   });
 
-  it('session_list_data 空数组 → 显示空态', () => {
+  it('session_list_data 空数组 → 显示空态（非 item 文本）', () => {
     mountChatView();
     dispatch({ type: 'session_list_data', sessions: [] });
-    expect((document.getElementById('historyEmpty') as HTMLElement).hidden).toBe(false);
-    expect(document.querySelectorAll('.history-modal__item').length).toBe(0);
+    expect(document.querySelector('.session-history__empty')?.textContent).toContain('暂无历史会话');
+    expect(document.querySelectorAll('#historyMenu .treedd__item').length).toBe(0);
   });
 
-  it('关闭按钮隐藏浮层；遮罩点击隐藏浮层', () => {
+  it('点击外部区域收起历史菜单（treedd 外部关闭机制）', () => {
     mountChatView();
+    const dd = document.getElementById('historyDd') as HTMLElement;
     (document.getElementById('historyBtn') as HTMLElement).click();
-    (document.getElementById('historyCloseBtn') as HTMLElement).click();
-    expect((document.getElementById('historyOverlay') as HTMLElement).hidden).toBe(true);
-    // 再次打开，遮罩点击（target === overlay）关闭
-    (document.getElementById('historyBtn') as HTMLElement).click();
-    const overlay = document.getElementById('historyOverlay') as HTMLElement;
-    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(overlay.hidden).toBe(true);
+    expect(dd.classList.contains('is-open')).toBe(true);
+    // 点击外部（非下拉区域）→ treedd root 委托关闭
+    document.body.click();
+    expect(dd.classList.contains('is-open')).toBe(false);
   });
 });
 
