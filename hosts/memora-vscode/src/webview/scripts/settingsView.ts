@@ -80,8 +80,23 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   });
 
   // 挂载三个子视图（config/memory 先，roles 最后——roles 的 ready 握手在全部监听器
-  // 就绪后发出，host 据此补发待切选项卡；初始选项卡为「角色」，与 HTML 默认态一致）
-  createConfigView({ acquireVsCodeApi, window, root: roots.config });
-  createMemoryView({ acquireVsCodeApi, window, root: roots.memory });
-  createRolesView({ acquireVsCodeApi, window, root: roots.roles });
+  // 就绪后发出，host 据此补发待切选项卡并统一推送三个子视图数据；初始选项卡为「记忆」，
+  // 与 HTML 默认态一致，用户请求 2026-08-17）。
+  // 每个挂载独立 try/catch：任一子视图挂载异常不阻断其余子视图（避免「配置正常、角色/
+  // 记忆卡加载」的级联失败），错误输出到 webview console 便于诊断。
+  try {
+    createConfigView({ acquireVsCodeApi, window, root: roots.config });
+  } catch (err) {
+    console.error('[memora-settings] configView 挂载失败:', err);
+  }
+  try {
+    createMemoryView({ acquireVsCodeApi, window, root: roots.memory });
+  } catch (err) {
+    console.error('[memora-settings] memoryView 挂载失败:', err);
+  }
+  try {
+    createRolesView({ acquireVsCodeApi, window, root: roots.roles });
+  } catch (err) {
+    console.error('[memora-settings] rolesView 挂载失败:', err);
+  }
 }

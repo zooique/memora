@@ -14,14 +14,20 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createSettingsView } from '../scripts/settingsView.js';
 import type { MemoryItemDto } from '../../shared/protocol.js';
 
-/** 覆盖 createSettingsView 全部查询引用 + 三个子视图骨架的最小 HTML */
+/** 覆盖 createSettingsView 全部查询引用 + 三个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
 const HTML = `
   <div class="tabs">
-    <button class="tab-btn active" data-tab="roles">角色</button>
+    <button class="tab-btn active" data-tab="memory">记忆</button>
+    <button class="tab-btn" data-tab="roles">角色</button>
     <button class="tab-btn" data-tab="config">大模型</button>
-    <button class="tab-btn" data-tab="memory">记忆</button>
   </div>
-  <div id="roles-root">
+  <div id="memory-root">
+    <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
+    <div class="search-wrap"><input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" /></div>
+    <div id="list"><p class="hint">加载中…</p></div>
+    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
+  </div>
+  <div id="roles-root" hidden>
     <div class="header"><h2>角色</h2><span id="statBar" class="stat-bar" hidden></span></div>
     <div id="list"><p class="hint">加载中…</p></div>
     <p class="footer-hint">角色决定对话定位与可用能力，切换后长期生效。</p>
@@ -40,12 +46,6 @@ const HTML = `
       </div>
     </div>
     <div id="toast"></div>
-  </div>
-  <div id="memory-root" hidden>
-    <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
-    <div class="search-wrap"><input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" /></div>
-    <div id="list"><p class="hint">加载中…</p></div>
-    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
 `;
 
@@ -76,36 +76,36 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
   });
 
-  it('初始选项卡为「角色」：roles-root 可见，config/memory 隐藏', () => {
+  it('初始选项卡为「记忆」（默认首页）：memory-root 可见，roles/config 隐藏', () => {
     mountSettingsView();
-    expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(true);
     expect((document.getElementById('config-root') as HTMLElement).hidden).toBe(true);
-    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(true);
   });
 
-  it('点击选项卡按钮切换：config-root 显示、roles 隐藏、按钮高亮', () => {
+  it('点击选项卡按钮切换：config-root 显示、memory 隐藏、按钮高亮', () => {
     mountSettingsView();
     const configBtn = document.querySelector('.tab-btn[data-tab="config"]') as HTMLButtonElement;
     configBtn.click();
     expect((document.getElementById('config-root') as HTMLElement).hidden).toBe(false);
-    expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(true);
     expect(configBtn.classList.contains('active')).toBe(true);
     expect(configBtn.getAttribute('aria-selected')).toBe('true');
-    // 原激活按钮（角色）取消高亮
+    // 原激活按钮（记忆）取消高亮
     expect(
-      document.querySelector('.tab-btn[data-tab="roles"]')?.classList.contains('active'),
+      document.querySelector('.tab-btn[data-tab="memory"]')?.classList.contains('active'),
     ).toBe(false);
   });
 
   it('settings_switch_tab 消息切换选项卡（configureModel 命令路径）', () => {
     mountSettingsView();
     window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'settings_switch_tab', tab: 'memory' } }),
+      new MessageEvent('message', { data: { type: 'settings_switch_tab', tab: 'roles' } }),
     );
-    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(false);
-    expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(true);
     expect(
-      document.querySelector('.tab-btn[data-tab="memory"]')?.classList.contains('active'),
+      document.querySelector('.tab-btn[data-tab="roles"]')?.classList.contains('active'),
     ).toBe(true);
   });
 

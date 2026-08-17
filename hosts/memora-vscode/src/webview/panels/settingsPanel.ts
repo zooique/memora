@@ -90,7 +90,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   /** 处理 webview 发来的消息（ready 握手 + 三个子视图各自的消息路由） */
   private async handleMessage(msg: WebviewToExtensionMessage): Promise<void> {
-    // ready 握手：webview 脚本已就绪（监听器已注册）→ 补发待切选项卡 + 加载角色列表
+    // ready 握手：webview 脚本已就绪（全部子视图监听器已注册）→ 补发待切选项卡 + 统一推送三个子视图数据
     if (msg.type === 'ready') {
       // configureModel 命令可能在视图未就绪时触发：待切选项卡缓存在此，就绪后补发，
       // 保证命令落点与用户意图一致（对齐 chatPanel replaySession 的 ready 时序修复）
@@ -98,7 +98,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         this.post({ type: 'settings_switch_tab', tab: this._pendingTab });
         this._pendingTab = undefined;
       }
+      // 恢复独立面板「宿主主动推送」兜底：ready 握手保证所有监听器已注册，此时推送
+      // 三个子视图数据必然可达。即使 webview 拉取消息（cfg_load/memory_load）因时序
+      // 丢失，也不会让子视图停留「加载中…」（角色/记忆依赖 Agent 装配，配置/记忆拉取
+      // 可能早于装配完成；统一在就绪后推送一次是稳妥的收敛点）。
       void this.loadRoles();
+      void this.loadConfig();
+      void this.loadMemory();
       return;
     }
 
@@ -373,15 +379,30 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
 </style>
 </head>
 <body>
-  <!-- 选项卡栏：角色 / 大模型 / 记忆 -->
+  <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 -->
   <div class="tabs" role="tablist" aria-label="设置选项卡">
-    <button class="tab-btn active" data-tab="roles" role="tab" aria-selected="true">角色</button>
+    <button class="tab-btn active" data-tab="memory" role="tab" aria-selected="true">记忆</button>
+    <button class="tab-btn" data-tab="roles" role="tab" aria-selected="false">角色</button>
     <button class="tab-btn" data-tab="config" role="tab" aria-selected="false">大模型</button>
-    <button class="tab-btn" data-tab="memory" role="tab" aria-selected="false">记忆</button>
   </div>
 
-  <!-- 角色子视图（role-view 选项卡） -->
-  <div id="roles-root" role="tabpanel" aria-label="角色">
+  <!-- 记忆子视图（memory 选项卡，默认首页） -->
+  <div id="memory-root" role="tabpanel" aria-label="记忆">
+    <div class="header">
+      <h2>记忆</h2>
+      <span id="statBar" class="stat-bar" hidden></span>
+    </div>
+    <div class="search-wrap">
+      <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" aria-label="搜索记忆" />
+    </div>
+    <div id="list">
+      <p class="hint">加载中…</p>
+    </div>
+    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
+  </div>
+
+  <!-- 角色子视图（roles 选项卡） -->
+  <div id="roles-root" role="tabpanel" aria-label="角色" hidden>
     <div class="header">
       <h2>角色</h2>
       <span id="statBar" class="stat-bar" hidden></span>
@@ -438,21 +459,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </div>
     </div>
     <div id="toast"></div>
-  </div>
-
-  <!-- 记忆子视图（memory 选项卡） -->
-  <div id="memory-root" role="tabpanel" aria-label="记忆" hidden>
-    <div class="header">
-      <h2>记忆</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-    </div>
-    <div class="search-wrap">
-      <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" aria-label="搜索记忆" />
-    </div>
-    <div id="list">
-      <p class="hint">加载中…</p>
-    </div>
-    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
 
   <script src="${scriptUri}"></script>
