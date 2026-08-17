@@ -393,7 +393,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
    */
   private readonly onPersonaSwitched = (info: { from: string | null; to: string }): void => {
-    // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步
+    // SSOT 修复（2026-08-17）：从同一 personaSwitched 事件维护内部激活角色状态，
+    // 使其与内核 rolePackManager.activeName 一致，成为 replaySession 的单一真相源。
+    // 此前仅 post 给当时可能已被 dispose 的 webview（被静默忽略），未更新 _activeRolePack
+    // → 用户从「角色」视图切换后聚焦对话（chat 视图重解析），ensureAgent 因 _agent 已存在
+    // 提前返回、refreshRoleInfoAfterAssemble 不再跑 → replaySession 读到陈旧 _activeRolePack
+    // → 徽章显示旧角色（与设置视图不一致）。设置视图靠 activateRole 显式 loadRoles 才更新，
+    // 两视图真相源分叉即 SSOT 违反。现由同一事件驱动状态，重解析即推正确角色。
+    this._activeRolePack = info.to;
+    // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
     this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to) });
   };
 
