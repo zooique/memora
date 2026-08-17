@@ -2359,6 +2359,38 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 手动切换激活角色包（宿主 UI 角色视图 / 角色选择器入口）
+   *
+   * 角色包系统（rolePackManager）的「单一切换入口」：与 tryAutoMatchRolePack 自动
+   * 匹配共用同一条链路（ADR-017 枝叶层提取），确保任何切换路径都一致地：
+   *   1. RolePackManager.activate 更新激活态（单一真理源 activePackName）
+   *   2. 发射 personaSwitched 事件（from → to）——宿主各视图（设置/对话）订阅此事件刷新
+   *   3. refreshPersonaPrefixOnLoop 刷新 AgentLoop 前缀（下一次对话即用新角色包 L1 persona）
+   *
+   * 与 switchPersona 的区别：本方法操作角色包系统（rolePackManager），switchPersona
+   * 操作 persona 系统；角色包优先于 persona（refreshPersonaPrefixOnLoop 角色包优先）。
+   * 不做 assertNotBusy（与自动匹配一致）：切换只影响后续对话的 system prompt，不破坏
+   * 进行中生成。
+   *
+   * @param name 目标角色包名
+   * @returns 是否切换成功（角色包不存在返回 false 且不触发事件；同名切换幂等返回 true）
+   */
+  switchRolePack(name: string): boolean {
+    const rpm = this.rolePackManager_;
+    if (!rpm) return false;
+    const prevName = rpm.activeName;
+    // 同名切换幂等：不触发事件链路（对齐 switchPersona 语义）
+    if (prevName === name) return true;
+    const ok = rpm.activate(name);
+    if (!ok) return false;
+    this.emit(AGENT_EVENTS.personaSwitched, { from: prevName ?? '', to: name });
+    // 刷新 system prompt 前缀（角色包优先，装载其 L1 persona）
+    this.refreshPersonaPrefixOnLoop();
+    logger.info({ rolePack: name }, '角色包切换');
+    return true;
+  }
+
+  /**
    * 角色包自动匹配（粘性，角色包优先于 persona）
    *
    * 在 chat() 回答前执行，优先于 tryAutoMatchPersona。经 RolePackManager.autoMatch
@@ -2373,13 +2405,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!rpm) return false;
     const matched = rpm.autoMatch(input); // 粘性匹配（含会话内锁定副作用）
     if (!matched) return false;
-    const prevName = rpm.activeName;
-    rpm.activate(matched);
-    this.emit(AGENT_EVENTS.personaSwitched, { from: prevName ?? '', to: matched });
-    // 刷新 system prompt 前缀（角色包优先，装载其 L1 persona）
-    this.refreshPersonaPrefixOnLoop();
-    logger.info({ rolePack: matched }, '角色包自动切换');
-    return true;
+    // 与 switchRolePack 共用同一切换链路（activate + personaSwitched + 前缀刷新，
+    // ADR-017 枝叶层提取），autoMatch 保证 matched ≠ 当前激活名，不触发幂等分支
+    return this.switchRolePack(matched);
   }
 
   /**

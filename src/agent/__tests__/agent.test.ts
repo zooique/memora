@@ -1388,6 +1388,87 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
 
+  // ─── switchRolePack 手动切换（角色包系统，与自动匹配共享事件链路） ─────
+
+  it('switchRolePack 应切换角色包并发射 personaSwitched 事件', async () => {
+    // 写两个角色包（manifest.json 文件夹形态）
+    const packsDir = join(tmpConfig, 'role-packs');
+    const writePack = (dirName: string, manifest: object, persona: string) => {
+      const packDir = join(packsDir, dirName);
+      mkdirSync(packDir, { recursive: true });
+      writeFileSync(join(packDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+      writeFileSync(join(packDir, (manifest as { persona: string }).persona), persona, 'utf-8');
+    };
+    writePack('写作助手', { name: '写作助手', formatVersion: '1.0.0', persona: 'persona.md' }, '你是写作助手。');
+    writePack('技术文档工程师', { name: '技术文档工程师', formatVersion: '1.0.0', persona: 'persona.md' }, '你是技术文档工程师。');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const rpm = agent.rolePackManager!;
+    rpm.activate('写作助手');
+
+    // 监听 personaSwitched 事件
+    let switched: { from: string | null; to: string } | null = null;
+    agent.on('personaSwitched', (e) => {
+      switched = e;
+    });
+
+    const ok = agent.switchRolePack('技术文档工程师');
+    expect(ok).toBe(true);
+    expect(rpm.activeName).toBe('技术文档工程师');
+    expect(switched).toEqual({ from: '写作助手', to: '技术文档工程师' });
+
+    agent.off('personaSwitched', () => {});
+  });
+
+  it('switchRolePack 角色不存在：返回 false 且不发射事件', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const rpm = agent.rolePackManager!;
+
+    let switched = false;
+    agent.on('personaSwitched', () => {
+      switched = true;
+    });
+
+    const ok = agent.switchRolePack('不存在的角色');
+    expect(ok).toBe(false);
+    // 未加载任何角色包时 activeName 保持 null（rolePackManager.activePackName 初始 null）
+    expect(rpm.activeName).toBeNull();
+    expect(switched).toBe(false);
+
+    agent.off('personaSwitched', () => {});
+  });
+
+  it('switchRolePack 同名切换幂等：返回 true 且不发射事件', async () => {
+    const packsDir = join(tmpConfig, 'role-packs');
+    const packDir = join(packsDir, '写作助手');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({ name: '写作助手', formatVersion: '1.0.0', persona: 'persona.md' }, null, 2),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), '你是写作助手。', 'utf-8');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const rpm = agent.rolePackManager!;
+    rpm.activate('写作助手');
+
+    let switched = false;
+    agent.on('personaSwitched', () => {
+      switched = true;
+    });
+
+    const ok = agent.switchRolePack('写作助手');
+    expect(ok).toBe(true);
+    expect(rpm.activeName).toBe('写作助手');
+    expect(switched).toBe(false);
+
+    agent.off('personaSwitched', () => {});
+  });
+
   // ─── manual 模式跳过自动归档 ────────────────────────────
 
   it('manual 模式：chatSync 后不触发 memoryAdded 事件', async () => {
