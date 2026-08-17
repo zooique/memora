@@ -437,7 +437,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="list">
       <p class="hint">加载中…</p>
     </div>
-    <p class="footer-hint">角色决定对话定位与可用能力，切换后长期生效。</p>
+    <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>
   </div>
 
   <!-- 大模型配置子视图（config 选项卡） -->

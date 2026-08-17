@@ -22,7 +22,7 @@ const HTML = `
       <span id="statBar" class="stat-bar" hidden></span>
     </div>
     <div id="list"><p class="hint">加载中…</p></div>
-    <p class="footer-hint">角色决定对话定位与可用能力，切换后长期生效。</p>
+    <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>
   </div>
 `;
 
@@ -85,6 +85,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // 每张卡片都有「带入对话」按钮
     expect(cards[0]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
     expect(cards[1]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
+    // 按钮 title 提示：解释各自行为（对齐 chip.title 可发现性范式）
+    expect(cards[0]?.querySelector('.btn-primary')?.getAttribute('title')).toContain('跳到对话');
+    expect(cards[1]?.querySelector('.btn-secondary')?.getAttribute('title')).toContain('仅切换默认角色');
   });
 
   it('能力标签 chips：展示 host 翻译的中文 label，title 承载原始能力名', () => {
