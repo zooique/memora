@@ -40,6 +40,30 @@ import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
 
+/** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
+const MAX_DOC_CONTEXT_CHARS = 12000;
+
+/**
+ * 从活动编辑器快照「当前文档上下文」（2026-08-17 A 层：实时跟随活动编辑器）
+ *
+ * 返回内容含「文件名」首行 + 文档全文（超上限截断）。宿主在 handleSend 将其作为
+ * 「当前任务上下文」注入对话，让 Agent 能看到用户当前打开的文档，无需手动粘贴。
+ *
+ * @param editor 当前活动编辑器（无则返回 undefined → 不注入，退化为普通对话）
+ * @returns 注入文本（文件名首行 + 截断全文），或 undefined
+ */
+function snapshotDocContext(editor: vscode.TextEditor | undefined): string | undefined {
+  if (!editor) return undefined;
+  const doc = editor.document;
+  const name = doc.fileName.split(/[\\/]/).pop() || doc.fileName;
+  const content = doc.getText();
+  const truncated =
+    content.length > MAX_DOC_CONTEXT_CHARS
+      ? `${content.slice(0, MAX_DOC_CONTEXT_CHARS)}\n\n…[内容过长已截断]`
+      : content;
+  return `文件名：${name}\n${truncated}`;
+}
+
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
  *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5）。
  *  listSessionMetas/getSessionMeta 为 ADR-024 会话标题层的宿主实现（会话列表导航依赖）。
@@ -59,7 +83,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _view: vscode.WebviewView | undefined;
   /** 当前装配的 Agent（由 extension 装配后注入） */
   private _agent: Agent | undefined;
-  /** 当前打磨文档上下文（打开时快照） */
+  /** 当前打磨文档上下文（2026-08-17 A 层：实时跟随活动编辑器，非一次性快照） */
   private _docContext: string | undefined;
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
   private readonly _providerStore: ProviderStore;
@@ -114,6 +138,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._currentSessionId =
       this.sessionStore.listSessionMetas()[0]?.sessionId ??
       `${formatDateKey(new Date())}-main`;
+    // 跟随当前活动编辑器：实时注入「当前打开文档」为对话上下文（2026-08-17 A 层）
+    // 原 docContext 仅在 memora.open 命令路径注入一次快照，点活动栏图标打开面板完全
+    // 不注入 → Agent 看不到当前文档（bug 根因）。此处持续跟随 activeTextEditor，
+    // 任何打开方式（点图标/命令/首次就绪）都生效，切换文档自动更新。
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      this._docContext = snapshotDocContext(editor);
+    });
+    this._docContext = snapshotDocContext(vscode.window.activeTextEditor);
   }
 
   /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
@@ -144,11 +176,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
     // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
     this.refreshRoleInfoAfterAssemble();
-  }
-
-  /** 设置当前打磨文档上下文（打开面板时调用） */
-  public setDocContext(docContext: string | undefined): void {
-    this._docContext = docContext;
   }
 
   /**

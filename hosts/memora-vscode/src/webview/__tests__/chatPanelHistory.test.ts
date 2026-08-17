@@ -32,6 +32,9 @@ vi.mock('vscode', async () => {
       showInputBox: vi.fn(),
       showWarningMessage: vi.fn(),
       showErrorMessage: vi.fn(),
+      // 文档上下文跟随（2026-08-17 A 层）：provider 构造时注册监听 + 读初始 activeTextEditor
+      onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
+      activeTextEditor: undefined,
     },
     workspace: {
       workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
@@ -240,5 +243,23 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(renameSession).toHaveBeenCalledWith('2026-08-14-other', '我的新标题');
     const title = ofType<{ type: string; title: string }>(posted, 'session_title');
     expect(title[0]?.title).toBe('我的新标题');
+  });
+
+  it('跟随活动编辑器：编辑器变化实时更新文档上下文（A 层，2026-08-17）', () => {
+    const { provider } = setup();
+    // 捕获 provider 构造时注册的 onDidChangeActiveTextEditor 回调
+    const cb = vi.mocked(vscode.window.onDidChangeActiveTextEditor).mock.calls[0]?.[0];
+    expect(cb).toBeTypeOf('function');
+    // 切换到某文档编辑器 → docContext 含文件名 + 内容（超长截断兜底）
+    const editor = {
+      document: { fileName: '/workspace/docs/方案.md', getText: () => '文档内容A' },
+    } as never;
+    cb?.(editor);
+    const docContext = (provider as unknown as { _docContext: string | undefined })._docContext;
+    expect(docContext).toContain('文件名：方案.md');
+    expect(docContext).toContain('文档内容A');
+    // 无活动编辑器 → 清空（退化为普通对话）
+    cb?.(undefined);
+    expect((provider as unknown as { _docContext: string | undefined })._docContext).toBeUndefined();
   });
 });
