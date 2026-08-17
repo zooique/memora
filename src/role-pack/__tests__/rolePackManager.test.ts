@@ -54,19 +54,6 @@ const MANIFEST_PURE_CAPABILITY = {
   ],
 };
 
-/** 交接声明包（handoffs 宿主侧键，对齐 VS Code custom agents） */
-const MANIFEST_HANDOFFS = {
-  name: '写作助手',
-  formatVersion: '1.0.0',
-  keywords: ['写作'],
-  persona: 'persona.md',
-  handoffs: [
-    { label: '交给技术文档工程师', target: 'tech-writer', prompt: '初稿已完成，请检查格式', send: false },
-    { label: '转代码审查', target: 'code-reviewer' },
-    { target: '缺 label 的项应被过滤' },
-  ],
-};
-
 /** 互斥角色包对（翻译助手 ↔ 代码助手） */
 const MANIFEST_TRANSLATOR = {
   name: '翻译助手',
@@ -228,35 +215,6 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
       'file:read',
       'web:search',
     ]);
-  });
-
-  it('handoffs 声明透传：合法项保留，缺 label/target 项过滤（宿主侧键）', async () => {
-    const packsDir = join(dir, 'role-packs');
-    await mkdir(packsDir, { recursive: true });
-    await writePack(packsDir, '写作助手', MANIFEST_HANDOFFS, { persona: '你是一位写作助手。' });
-
-    const manager = new RolePackManager(dir);
-    expect(await manager.load()).toBe(1);
-
-    const handoffs = manager.getActive()!.meta.handoffs;
-    expect(handoffs).toHaveLength(2); // 缺 label 的项被过滤
-    expect(handoffs![0]).toEqual({
-      label: '交给技术文档工程师',
-      target: 'tech-writer',
-      prompt: '初稿已完成，请检查格式',
-      send: false,
-    });
-    expect(handoffs![1]).toEqual({ label: '转代码审查', target: 'code-reviewer' });
-  });
-
-  it('未声明 handoffs → meta.handoffs 为 undefined', async () => {
-    const packsDir = join(dir, 'role-packs');
-    await mkdir(packsDir, { recursive: true });
-    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
-
-    const manager = new RolePackManager(dir);
-    expect(await manager.load()).toBe(1);
-    expect(manager.getActive()!.meta.handoffs).toBeUndefined();
   });
 
   it('无 manifest.json 的文件夹不计入角色包', async () => {

@@ -315,36 +315,6 @@ export interface RolePackMeta {
    * （多角色合并裁决为远期，见 role-pack-spec §14.2）。
    */
   readonly exclusiveWith?: readonly string[];
-  /**
-   * 交接声明（宿主侧键，对齐 VS Code custom agents handoffs）
-   *
-   * 作者静态声明「任务完成后可移交给谁」（RolePackHandoff）。内核透传不消费，
-   * 宿主渲染交接按钮 + 预填衔接文本（target 不存在时按钮不渲染）。
-   */
-  readonly handoffs?: readonly RolePackHandoff[];
-}
-
-/**
- * 角色包交接声明（manifest.handoffs，宿主侧键，对齐 VS Code custom agents handoffs）
- *
- * 语义：角色包作者静态声明「我完成任务后可以把任务移交给谁」。内核**只透传不消费**
- * （单 Agent 模型下无 Agent 间转移语义，§10），由宿主消费——渲染交接按钮 + 预填衔接文本。
- * 与 strategy.reflect.handoff（wait/loop/end，单轮闭环内衔接决策）是两种不同维度：
- * 前者是「空间」——任务移交给另一个角色包；后者是「时间」——本轮闭环内下一步。
- *
- * 渐进兼容（§五）：不认识的实现按未知键 warn+ignore 装载，不阻塞。
- * target 指向的角色包在宿主环境不存在时，宿主**不渲染**该交接按钮（存在性过滤，
- * 非报错）；send 字段 MVP 宿主不消费（保持不自动发送），仅透传+校验 boolean。
- */
-export interface RolePackHandoff {
-  /** 按钮文案（必填，宿主渲染交接按钮） */
-  readonly label: string;
-  /** 目标角色包名（必填，跨包移交） */
-  readonly target: string;
-  /** 预填衔接文本（可选，宿主 prefill 输入框；缺省由宿主回退通用话术） */
-  readonly prompt?: string;
-  /** 是否自动发送（可选，默认 false；MVP 宿主不消费，仅透传+校验） */
-  readonly send?: boolean;
 }
 
 /**
