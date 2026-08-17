@@ -43,10 +43,18 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 
 ### 收敛路径（分档渐进）
 
-| 档 | 内容 | 风险 |
-|----|------|------|
-| 0 | 设计定案（本 ADR + 设计文档） | 零 |
-| 1 | loader 停扫三类 + configManager 停写索引（存量行保留） | 低 |
+| 档 | 内容 | 风险 | 状态 |
+|----|------|------|------|
+| 0 | 设计定案（本 ADR + 设计文档） | 零 | ✅ 2026-08-17 |
+| 1 | loader 停扫三类 + configManager 停写索引（存量行保留） | 低 | ✅ 2026-08-17 |
+| 2 | assembler 移除 persona 兜底 + configManager 读路径切角色包（需宿主 configFileSyncer 联动） | 中 | ⏳ |
+| 3 | rule 语义对齐（parseRules 扩展 markdown 解析） | 高 | ⏳ |
+
+**档 1 实现说明（2026-08-17）**：
+- `loader.ts` `STARTUP_SCAN_SOURCES` 清空 + `bootstrap()` 返回空数组；
+- `configManager.ts` 删除 `addRule`/`addSimpleRule`/`addSkill`/`addSimpleSkill`（全仓零调用死门面）；
+- guardrail 空转链一并摘除（档 1 顺带，见核心决策 5）；
+- 对抗式修正：原「configManager 写索引降级为仅写角色包文件」不成立——configManager 不写角色包文件（角色包由 RolePackManager 管），且宿主 configFileSyncer 依赖 `updateRule`/`deleteRule`/`confirmConfigSuggestion` 索引同步链路。档 1 只删死门面，读取切换归档 2。
 | 2 | assembler 移除 persona 兜底 + projectManager/memoryInspector 改读角色包 | 中 |
 | 3 | rule 语义对齐（parseRules 扩展 markdown 解析） | 高 |
 

@@ -58,15 +58,16 @@ memora 当前存在**双轨并存**：设定记忆既走 `agent-config` 目录 �
 ### 档 1：停止写入（低风险，向后兼容）
 
 1. `loader.ts` `STARTUP_SCAN_SOURCES` 移除 PERSONA/RULE/SKILL——索引不再新增设定记忆；存量行保留（软删兼容）。**【已完成 2026-08-17】**——`STARTUP_SCAN_SOURCES` 已清空。
-2. `configManager.ts` 写索引调用降级为「仅写角色包文件」（rule 即时注入改从角色包取）。
-3. 存量设定记忆数据由宿主提供一次性迁移脚本（文件已在角色包/agent-config 中，SQLite 索引行清空或标记兼容）。
+2. `configManager.ts` 删除 `addRule`/`addSimpleRule`/`addSkill`/`addSimpleSkill` 四个死门面（内核+宿主全仓零调用，`configManager.ts` + 测试同步删除）。**【已完成 2026-08-17 档 1b】**——「运行时注入写索引」是设定记忆进记忆库的最后入口，已移除。
+3. **对抗式修正（2026-08-17）**：原方案「configManager 写索引降级为仅写角色包文件」**不成立**——configManager 只写 configDir + 索引，不写角色包文件（角色包由 RolePackManager 管理）。且宿主 `configFileSyncer` 真实依赖 `updateRule`/`deleteRule`/`confirmConfigSuggestion` 的索引同步链路（保存规则→立即生效）。故档 1b 只删死门面，**读取切换（索引→角色包）归档 2**，需宿主 configFileSyncer 联动改造。
+4. 存量设定记忆数据由宿主提供一次性迁移脚本（文件已在角色包/agent-config 中，SQLite 索引行清空或标记兼容）。
 
-**验收**：新会话不再新增 source=rule/skill/persona 记忆；旧会话不受影响。
+**验收**：新会话不再新增 source=rule/skill/persona 记忆（loader 停扫 + configManager 无写索引入口）；`updateRule`/`deleteRule`/`confirmConfigSuggestion` 链路保持可用（宿主面板不回归）。
 
 ### 档 2：读取切换（中等风险）
 
 1. `assembler.ts` 移除 persona 兜底，`systemPrefixParts = [rolePackPrompt]` 唯一。
-2. `projectManager.ts` bootstrap / `evictOrphanRules` 对账基准从「loader 扫描产物」切到「角色包文件集」。
+2. `configManager.ts` 的 `updateRule`/`deleteRule`/`getBootstrapMemories`/`listRules` 数据源从索引切到角色包文件集（需宿主 `configFileSyncer` 联动改走角色包路径）。
 3. `memoryInspector.ts` snapshot/stats 改读角色包或移除设定记忆段。
 
 ### 档 3：语义对齐（高风险，需先行决策）

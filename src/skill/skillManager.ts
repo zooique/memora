@@ -99,8 +99,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
    * 注册运行时注入的技能
    *
-   * 供 Agent.addSkill() 调用：宿主程序可在 init() 之后动态注入技能。
-   * 重复注册同名技能会被拒绝。
+   * 供 SkillManager 运行态注册技能（如 confirmConfigSuggestion 持久化技能、
+   * 或宿主直接注入）。重复注册同名技能会被拒绝。
    *
    * SSOT-R3-T8（2026-08-10）：改走基类 registerRuntimeItem 登记。
    * 此前直接 push 进 items，reload() 用磁盘扫描结果整体覆盖时会把注入技能抹除，

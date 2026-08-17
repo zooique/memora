@@ -194,15 +194,15 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：config.addRule() · Q-701
+// 测试：config 门面
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · config.addRule() · Q-701', () => {
+describe('Agent · config 门面', () => {
   let agent: Agent;
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'memora-test-addrule-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-test-config-'));
     mkdirSync(join(tmpDir, 'personas'), { recursive: true });
     writeFileSync(
       join(tmpDir, 'personas', 'default.md'),
@@ -226,46 +226,6 @@ describe('Agent · config.addRule() · Q-701', () => {
     } catch {
       /* ignore */
     }
-  });
-
-  it('应成功写入 rule 记忆并注入 system 消息', async () => {
-    await agent.init();
-
-    const now = new Date().toISOString();
-    const rule: Memory = {
-      id: 'rule:test-add',
-      content: '这是一个测试规则内容。',
-      source: SOURCE_LABELS.RULE,
-      name: '测试规则',
-      createdAt: now,
-      accessedAt: now,
-      score: 1.0,
-    };
-
-    await agent.config!.addRule(rule);
-
-    const messages = agent.getMessages();
-    const lastMsg = messages[messages.length - 1];
-    expect(lastMsg?.role).toBe('system');
-    expect(lastMsg?.content).toContain('【项目规则】测试规则');
-    expect(lastMsg?.content).toContain('测试规则内容');
-  });
-
-  it('应拒绝 source≠rule 的记忆', async () => {
-    await agent.init();
-
-    const now = new Date().toISOString();
-    const badMem: Memory = {
-      id: 'persona:bad',
-      content: 'xx',
-      source: SOURCE_LABELS.PERSONA,
-      name: '不该出现',
-      createdAt: now,
-      accessedAt: now,
-      score: 1,
-    };
-
-    await expect(agent.config!.addRule(badMem)).rejects.toThrow(/无效来源/);
   });
 
   it('init 前 config 应为 null', () => {
@@ -602,15 +562,20 @@ describe('Agent · Manager 委托模式', () => {
     expect(results.length).toBeLessThanOrEqual(2);
   });
 
-  it('config 管理器：addSimpleRule 应注入规则', async () => {
+  it('config 管理器：confirmConfigSuggestion 应注入规则并刷新 bootstrap', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    await agent.config!.addSimpleRule('E2E 测试规则', '这是一条 E2E 测试规则');
+    await agent.config!.confirmConfigSuggestion({
+      type: 'rule',
+      name: 'E2E测试规则',
+      content: '这是一条 E2E 测试规则',
+      confidence: 0.9,
+    });
 
     const messages = agent.getMessages();
     const lastSystem = [...messages].reverse().find((m) => m.role === 'system');
-    expect(lastSystem?.content).toContain('E2E 测试规则');
+    expect(lastSystem?.content).toContain('E2E测试规则');
   });
 
   // ─── L1~L3 LLM 记忆治理委托（G1） ─────────────────────────

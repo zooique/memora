@@ -1,22 +1,25 @@
 /**
- * 配置管理器 — 规则/技能注入 + 配置建议持久化 + 设定 CRUD
+ * 配置管理器 — 设定 CRUD + 配置建议持久化
  *
  * 从 Agent 拆分出来，负责：
- *   - addRule / addSimpleRule：运行时规则注入（SQLite + System Prompt）
- *   - addSkill / addSimpleSkill：运行时技能注入（仅 SkillManager，session-only）
  *   - onConfigSuggestion / confirmConfigSuggestion：模式 3 配置建议回调 + 持久化
  *   - deleteRule / updateRule / listRules：规则单条 CRUD（SQLite + System Prompt 同步）
  *   - deleteSkill / listSkills：技能单条删除与列表（SQLite + SkillManager 内存同步）
- *   - getBootstrapMemories：获取 rule + skill 记忆（供 AgentLoop 刷新 system prompt）
+ *   - getBootstrapMemories：获取 rule 记忆（供 AgentLoop 刷新 system prompt）
  *
  * 设计原则：
  *   - 独立于 Agent 生命周期，仅依赖 Storage / SkillManager / 回调
  *   - 不持有 LLM Provider（纯配置操作）
  *   - 不直接操作文件（文件 CRUD 由宿主层 configFileManager 处理，本类只管 SQLite + system prompt 同步）
  *
+ * 收敛声明（ADR-025 · memory-role-pack-boundary，2026-08-17）：
+ *   addRule/addSkill 及 Simple 变体已删除（全仓零调用）；「运行时注入写索引」违反
+ *   「设定记忆归角色包、记忆库只剩摘要」边界。设定记忆的新增走 confirmConfigSuggestion
+ *   （写配置文件持久化）与角色包装载路径；本类 CRUD 仅服务设定面板的文件层联动。
+ *
  * 文件层契约（SSOT 排雷 T3-2 定性，2026-08-09）：
  *   配置文件是真理源，SQLite 是运行时检索索引，重启后由文件（MemoryLoader）自愈。
- *   本类所有写 API（addRule/deleteRule/updateRule/deleteSkill）只同步 SQLite 层，
+ *   本类所有写 API（deleteRule/updateRule/deleteSkill）只同步 SQLite 层，
  *   调用方必须先完成文件层写入/删除（如宿主 configFileSyncer 先写/删文件再调本方法）。
  *   ⚠ 绕过文件层直接调用本类写 API 的写操作不持久——重启后会被文件恢复原状
  *   （「重启复活」）。此旁路当前零生产调用者（宿主链路已正确排序），契约仅文档化，
@@ -45,8 +48,8 @@ import { isValidConfigName } from '@/utils/strings.js';
  * 宿主决定展示方式（桌宠气泡 / CLI 打印 / WebUI 弹窗），
  * 用户确认后调用 confirmConfigSuggestion() 写入配置文件。
  *
- * 与 addRule() 的区别：
- * - addRule() 写入 SQLite（运行时注入，会话级）
+ * 与已删除的 addRule() 的区别（历史参考）：
+ * - addRule() 曾写入 SQLite（运行时注入，会话级）——已删（ADR-025 档 1b）
  * - confirmConfigSuggestion() 写入配置文件（持久化，重启后依然生效）
  */
 export interface ConfigSuggestion {
@@ -207,8 +210,8 @@ export class ConfigManager {
    * 用户确认配置建议后，宿主调用此方法将建议持久化到 configDir/ 目录。
    * 写入的是配置文件（真理源），下次启动时 MemoryLoader 自动扫描加载到 SQLite。
    *
-   * 与 addRule() 的关键区别：
-   * - addRule() → 写入 SQLite（运行时注入，会话级，重启后需重新注入）
+   * 与已删除的 addRule() 的关键区别（历史参考）：
+   * - addRule() → 曾写入 SQLite（运行时注入，会话级）——已删（ADR-025 档 1b）
    * - confirmConfigSuggestion() → 写入配置文件（持久化，重启后自动加载）
    */
   async confirmConfigSuggestion(suggestion: ConfigSuggestion): Promise<void> {
@@ -312,114 +315,11 @@ export class ConfigManager {
     );
   }
 
-  // ─── 规则注入 ─────────────────────────────────────────
-
-  /**
-   * 新增项目规则记忆（Q-701 · v1.1）
-   *
-   * 宿主项目可通过此 API 在运行时动态注入规则记忆。
-   * 规则写入 SQLite 索引后，仅写 SQLite 索引；
-   * 重启后无文件支撑，将在启动对账中被 evictOrphanRules 软删。
-   * 跨会话持久化请走 confirmConfigSuggestion 写配置文件。
-   * 当前轮次以 system 消息注入 AgentLoop。
-   */
-  async addRule(memory: Memory): Promise<void> {
-    if (memory.source !== SOURCE_LABELS.RULE) {
-      throw configError('无效来源', `addRule 只接受 source='rule'，收到 '${memory.source}'`, [
-        '使用 SOURCE_LABELS.RULE 作为 source 字段',
-      ]);
-    }
-
-    this.index.upsert(memory);
-
-    const rulePrompt = `【项目规则】${memory.name}\n${memory.content}`;
-    this.injectSystemMessage(rulePrompt);
-
-    logger.info({ name: memory.name, source: memory.source }, '项目规则已注入');
-  }
-
-  /**
-   * 新增项目规则的便捷方法
-   *
-   * 宿主程序只需提供 name + content 两个业务字段，
-   * 内部自动填充 id / source / createdAt / accessedAt / score 等字段。
-   */
-  async addSimpleRule(name: string, content: string): Promise<void> {
-    const now = nowIso();
-    const memory: Memory = {
-      id: `rule:${name}`,
-      content,
-      source: SOURCE_LABELS.RULE,
-      name,
-      createdAt: now,
-      accessedAt: now,
-      score: 0.8,
-    };
-    await this.addRule(memory);
-  }
-
-  // ─── 技能注入 ─────────────────────────────────────────
-
-  /**
-   * 运行时动态注入技能（session-only）
-   *
-   * 技能在 Skill 的设计中属于"配置型记忆"——
-   * 由 SkillManager 在内存中管理，通过关键词匹配触发，
-   * 同时写入 SQLite 索引（source: skill）以支持 recall() 检索。
-   *
-   * 路径一（文件加载）：SkillManager.load() 扫描 configDir/skills/*.md → 内存 + SQLite
-   * 路径二（运行时注入）：addSkill() → SkillManager.register() → 内存 + SQLite
-   * 路径三（持久化新增）：config.confirmConfigSuggestion({type:'skill',...}) → 写配置文件 → 下次 load() 自动加载
-   *
-   * 注意：运行时注入的技能仅在当前会话内生效，重启后需重新注入。
-   * 如需跨会话持久化，宿主应调用 config.confirmConfigSuggestion() 写入配置文件。
-   */
-  async addSkill(memory: Memory): Promise<void> {
-    if (memory.source !== SOURCE_LABELS.SKILL) {
-      throw configError('无效来源', `addSkill 只接受 source='skill'，收到 '${memory.source}'`, [
-        '使用 SOURCE_LABELS.SKILL 作为 source 字段',
-      ]);
-    }
-
-    // 写入 SQLite 索引（遵循"万物皆记忆"——与 PersonaManager 一致）
-    this.index.upsert(memory);
-
-    // 同时注册到 SkillManager（内存缓存，用于关键词匹配）
-    this.skillManager.register({
-      name: memory.name,
-      keywords: [],
-      content: memory.content,
-      description: memory.content.slice(0, 80),
-      filePath: '',
-      layer: 'agent',
-    });
-
-    logger.info({ name: memory.name }, '技能已注入');
-  }
-
-  /**
-   * 运行时注入技能的便捷方法（session-only）
-   *
-   * 宿主程序只需提供 name + content 两个业务字段，
-   * 内部自动填充 id / source / createdAt / accessedAt / score。
-   * 注入后仅在当前会话生效，持久化需调用 config.confirmConfigSuggestion()。
-   */
-  async addSimpleSkill(name: string, content: string, keywords: string[] = []): Promise<void> {
-    void keywords; // 基元驱动模型下关键词暂不存储到 Memory，由 SkillManager 管理
-    const now = nowIso();
-    const memory: Memory = {
-      id: `skill:${name}`,
-      content,
-      source: SOURCE_LABELS.SKILL,
-      name,
-      createdAt: now,
-      accessedAt: now,
-      score: 0.7,
-    };
-    await this.addSkill(memory);
-  }
-
   // ─── 设定 CRUD（设定面板专用） ───────────────────────
+  // 注：addRule/addSkill 及 Simple 变体已于 2026-08-17 删除（ADR-025 档 1b）——
+  // 全仓（内核 + 宿主）零调用点，且「运行时注入写索引」违反「设定记忆归角色包、
+  // 记忆库只剩摘要」边界。规则/技能的新增走 confirmConfigSuggestion（写配置文件，
+  // 持久化路径）与角色包装载；本类 CRUD 仅服务设定面板的文件层联动（configFileSyncer）。
 
   /**
    * 删除规则（设定面板调用）
@@ -459,7 +359,7 @@ export class ConfigManager {
    * 并刷新 AgentLoop system prompt 中的 bootstrap 段。
    *
    * 文件层更新由宿主层 configFileManager 处理（本方法不操作文件）。
-   * 与 addRule 的区别：addRule 是新增（追加 system 消息），
+   * 与已删除的 addRule 的区别（历史参考）：addRule 曾新增（追加 system 消息），
    * updateRule 是覆盖更新（刷新 bootstrap 段，不追加 system 消息）。
    *
    * ⚠ 文件层前置条件（T3-2）：调用方必须先更新配置文件（真理源）再调本方法，
