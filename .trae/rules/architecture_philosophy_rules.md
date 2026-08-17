@@ -11,7 +11,7 @@ description:
 
 **原则**：Agent 接触的一切内容都是"记忆"。记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
 
-> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统只剩摘要（round-summary）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，正按档 0→3 收敛至目标态。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
+> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，正按档 0→3 收敛至目标态。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 1.1 两层记忆模型
 
@@ -28,15 +28,16 @@ description:
 │  哲学："Agent 的骨骼 —— 定义存在，而非累积经验"    │
 └──────────────────────────────────────────────────┘
 
-┌─ 对话记忆 (Episodic Memory) ────────────────────┐
-│  Conversation: "我们聊过什么"                     │
-│  RoundSummary: "我总结出什么规律"                  │
-│  UserProfile:  "用户偏好什么（存量兼容）"            │
+┌─ 对话记忆 (Episodic Memory · 摘要记忆本体) ─────┐
+│  RoundSummary: "这一轮聊了什么"（轮次级）          │
+│  Content:      "这一段会话沉淀了什么"（会话级）      │
 │                                                  │
-│  访问：语义召回 (RAG)，相关度排序                  │
+│  访问：双通道召回 (关键词+语义)，相关度排序         │
 │  存储：SQLite + VectorStore                       │
 │  真理源：memora.db（运行时索引）                   │
-│  变更：每轮对话自动归档                            │
+│  变更：每轮/会话结束自动生成摘要 + type 标签        │
+│  溯源：roundId + sessionId → 回溯原始对话          │
+│  自然遗忘：superseded 写时取代 + score 衰减        │
 │  哲学："Agent 的血肉 —— 经验累积，动态生长"        │
 └──────────────────────────────────────────────────┘
 ```
