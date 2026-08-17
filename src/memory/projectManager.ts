@@ -28,7 +28,7 @@ import type { LoadResult } from '@/memory/loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { expandHome } from '@/utils/path.js';
-import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
+import { type Memory } from '@/memory/types.js';
 import { ProjectRegistry, type ProjectEntry } from '@/memory/projectRegistry.js';
 import { LockManager } from '@/memory/lockManager.js';
 
@@ -256,6 +256,8 @@ export class ProjectManager {
     loadResult.skipped += projectResult.skipped;
     loadResult.errors.push(...projectResult.errors);
     // 记录本项目级记忆 ID，供 closeProject 撤销（修复跨项目隔离泄漏）
+    // 注：STARTUP_SCAN_SOURCES 已清空（ADR-025），loadedIds 恒为空——项目级记忆
+    // 由角色包激活/失活承载，不再由 loader 扫描写入索引。
     this.currentProjectMemoryIds = new Set(projectResult.loadedIds ?? []);
 
     // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
@@ -269,66 +271,11 @@ export class ProjectManager {
       loadResult.errors.push(...configResult.errors);
     }
 
-    // 对账：两层扫描完成（文件集合完整）后清理无文件支撑的孤儿 rule。
-    // 必须在合并层执行——任一层单独对账都会误删另一层的规则。
-    this.evictOrphanRules(index, projectResult, configResult);
+    // 对账：设定记忆不再经 loader 扫描进索引（ADR-025），无「文件支撑」判定基准，
+    // 孤儿规则对账已停用——rule 由角色包路径（assembleRolePack）承载。
+    // 存量 rule 索引行保留为兼容数据，由宿主迁移清理。
 
     return { index, loadResult, projectFileStore };
-  }
-
-  /**
-   * 对账：删除索引中"无任何文件支撑"的活跃 rule（T6，2026-08-09）
-   *
-   * 旧缺陷：loadAllToIndex 只 add 不 evict（loader.ts:63-100）→ 删除 rules/*.md 后
-   * SQLite 行永生，继续被 bootstrap 经 getBySource(RULE) 全量拉取注入 messages[0]
-   * （僵尸规则，文件面板不可见、用户不可删，但每一轮都在污染 system prompt）。
-   *
-   * 触发时机限定：仅本方法（项目切换 / 启动边界）——此处是文件集合唯一完整的时点。
-   * 运行时注入（addRule）不跨项目边界且宿主零调用，不在对账误删面内。
-   *
-   * 范围仅 rule 源：persona/skill 的索引行是无召回消费者的展示镜像
-   * （recall 排除、bootstrap 不取），由 T7 注释收窄为「重启自愈」，不对账。
-   * guardrail 由 AgentLoop 运行时读取，不受索引残留影响。
-   *
-   * 软删除（deletedAt）而非物理删除：保留回收站语义，误删可恢复。
-   *
-   * @param index 共享记忆索引
-   * @param projectResult 项目级扫描结果
-   * @param configResult Agent 级扫描结果（configDir 未配置时为 null）
-   */
-  private evictOrphanRules(
-    index: IMemoryStorage,
-    projectResult: LoadResult,
-    configResult: LoadResult | null,
-  ): void {
-    // 扫描不完整时整体停用对账。
-    // errors 非空意味着有文件「存在但读不到」（EACCES/EISDIR 等），其 id 不可知
-    // ——既进不了 seenIds，又会被下面的差集判为孤儿。宁可让僵尸规则多活一轮，
-    // 也不能把用户磁盘上还在的规则软删掉：前者可被下次启动自愈，后者是数据损失。
-    const scanErrorCount = projectResult.errors.length + (configResult?.errors.length ?? 0);
-    if (scanErrorCount > 0) {
-      logger.warn(
-        { scanErrorCount },
-        '索引对账已跳过：本次扫描存在读取失败，文件集合不完整，无法安全判定孤儿规则',
-      );
-      return;
-    }
-
-    // 扫描无误时，loadedIds 才等价于「磁盘上有文件支撑的 id 集合」：
-    // 另两条 skip 路径（read 返回 null=ENOENT、内容为占位模板）不进 loadedIds
-    // 恰恰是对账想要的结果——前者文件真的没了，后者内容已被清空成空壳，
-    // 索引里的旧内容是陈旧副本，本就该软删。
-    const fileBackedIds = new Set<string>([
-      ...(projectResult.loadedIds ?? []),
-      ...(configResult?.loadedIds ?? []),
-    ]);
-    const activeRules = index.getBySource(SOURCE_LABELS.RULE);
-    for (const memory of activeRules) {
-      if (!fileBackedIds.has(memory.id)) {
-        index.delete(memory.id);
-        logger.info({ id: memory.id }, '索引对账：无文件支撑的孤儿规则已软删除');
-      }
-    }
   }
 
   /**
@@ -354,9 +301,10 @@ export class ProjectManager {
     loadResult: LoadResult,
     configDir: string | undefined,
   ): ProjectContext {
-    // bootstrap 过滤：仅 Rule（跳过 Persona 由 PersonaManager 管理，跳过 Skill 由 matchAndInjectSkill 动态注入）
-    const rules = index.getBySource(SOURCE_LABELS.RULE);
-    const bootstrapMemories = [...rules];
+    // bootstrap 记忆：设定记忆（persona/rule/skill）唯一归角色包内容层（ADR-025），
+    // 不再从索引读取注入——由 assembler 的角色包路径（assembleRolePack → rolePackPrompt）接管。
+    // 存量 rule 索引行保留为兼容数据，不进 bootstrap。
+    const bootstrapMemories: Memory[] = [];
 
     // 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
     const security = this.createSecurityGuard

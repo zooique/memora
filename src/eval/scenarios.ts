@@ -3,7 +3,7 @@
  *
  * 定义标准 EvalScenario，用于 Agent 行为回归测试。
  * 场景定义是"期望契约"——描述 Agent 在特定输入下应有的行为特征，
- * 由 EvalRunner 负责构造条件（MockProvider 返回值 + guardrail 规则配置）执行验证。
+ * 由 EvalRunner 负责构造条件（MockProvider 返回值 + 预写入记忆）执行验证。
  *
  * 设计原则：
  *   - 场景通用，不耦合任何领域逻辑
@@ -11,13 +11,12 @@
  *   - input 是真实用户输入风格，非人造测试桩
  *   - expect 至少定义一项检查
  *
- * 当前覆盖的 EvalExpectation 维度（8 个场景）：
- *   - guardrailBlocked（场景 1, 5, 7）
- *   - toolsCalled + toolsNotCalled（场景 2, 5）
- *   - toolCallCount（场景 3）
- *   - recallCount（场景 4, 8）
- *   - done（场景 6, 7, 8）
- *   - recalledMemories 预设（场景 4）
+ * 当前覆盖的 EvalExpectation 维度（7 个场景）：
+ *   - toolsCalled + toolsNotCalled（场景 1, 4）
+ *   - toolCallCount（场景 2）
+ *   - recallCount（场景 3, 7）
+ *   - done（场景 5, 6, 7）
+ *   - recalledMemories 预设（场景 3）
  *
  * 未覆盖 recallSources：当前 evaluateResult 不检查该字段（见 evalTypes.ts 注释），
  * 待宿主层按需扩展。
@@ -26,20 +25,12 @@
 import type { EvalScenario } from './evalTypes.js';
 
 /**
- * 评估场景集（8 个场景）
+ * 评估场景集（7 个场景）
  *
- * 覆盖护栏阻断 / 工具调用决策 / 调用次数范围 / 召回数量 / 完成状态 / 长输入处理六个维度。
+ * 覆盖工具调用决策 / 调用次数范围 / 召回数量 / 完成状态 / 长输入处理五个维度。
  * EvalRunner 实现后可在 CI 中运行这些场景作为回归基线。
  */
 export const EVAL_SCENARIOS: readonly EvalScenario[] = [
-  {
-    name: 'empty-input-guardrail',
-    description: '空输入应被输入护栏阻断（需配置匹配空白输入的 guardrail 规则）',
-    input: '',
-    expect: {
-      guardrailBlocked: true,
-    },
-  },
   {
     name: 'read-file-tool-call',
     description: '用户请求读取文件时，Agent 应调用 read_file 且不调用 write_file',
@@ -73,12 +64,11 @@ export const EVAL_SCENARIOS: readonly EvalScenario[] = [
     },
   },
   {
-    name: 'readonly-query-guardrail',
-    description: '只读查询场景不应调用 write_file（防止误写），且不被护栏阻断',
+    name: 'readonly-query',
+    description: '只读查询场景不应调用 write_file（防止误写）',
     input: '查询当前项目的目录结构，列出所有文件',
     expect: {
       toolsNotCalled: ['write_file'],
-      guardrailBlocked: false,
     },
   },
   {
@@ -97,7 +87,6 @@ export const EVAL_SCENARIOS: readonly EvalScenario[] = [
       '系统需要支持高并发、低延迟的实时数据处理，同时保证数据一致性。'.repeat(200),
     expect: {
       done: true,
-      guardrailBlocked: false,
     },
   },
   {

@@ -296,33 +296,6 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── guardrailRules 注入 ───────────────────────────────
-
-  describe('guardrailRules 注入', () => {
-    it('storage 中有 guardrail 记录时组装成功（getBySource 调用）', async () => {
-      // 预置 guardrail 记忆，AgentLoop 构造时应通过 getBySource(SOURCE_LABELS.GUARDRAIL) 读取
-      const guardrailMemory: Memory = {
-        id: 'test:guardrail-1',
-        content: '禁止输出敏感信息',
-        source: 'guardrail',
-        name: 'safety-default',
-        createdAt: '2026-06-27T10:00:00.000Z',
-        accessedAt: '2026-06-27T10:00:00.000Z',
-        score: 1.0,
-      };
-      await storage.upsert(guardrailMemory);
-
-      const output = await assembleComponents(createPctx(), createInput());
-      expect(output.loop).toBeDefined();
-    });
-
-    it('storage 中无 guardrail 记录时组装成功（空数组降级）', async () => {
-      // 空 storage 时 getBySource 返回空数组，AgentLoop 仍能构造
-      const output = await assembleComponents(createPctx(), createInput());
-      expect(output.loop).toBeDefined();
-    });
-  });
-
   // ─── bootstrapMemories 透传 ────────────────────────────
 
   describe('bootstrapMemories 透传', () => {

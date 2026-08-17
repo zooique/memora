@@ -16,8 +16,6 @@ import type { AgentChunk, UIMessages, SessionEvent, PreExecutionResult } from '@
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
-import { runGuardrails } from '@/agent/guardrail.js';
-import type { GuardrailUI } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isAbortError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
@@ -57,14 +55,6 @@ export interface AgentLoopOptions {
   /** 可观测性 Tracer（宿主注入，默认 NOOP_TRACER 静默丢弃所有 span） */
   tracer?: ITracer;
   /**
-   * 内容护栏规则（启动时从 configDir 加载的 guardrail 记忆）
-   *
-   * 每条规则包含 pattern（正则字符串）和 action（block/warn）。
-   * 在对话输入和输出阶段分别检查，命中 block 时阻断对话。
-   * 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话。
-   */
-  guardrailRules?: readonly Memory[];
-  /**
    * Reflection（反思/自修正）最大重试次数（默认 2）
    *
    * 当工具执行失败且错误码标记为 retryable 时，
@@ -89,13 +79,6 @@ export interface AgentLoopOptions {
    * 未注入时静默忽略。
    */
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
-  /**
-   * 护栏规则正则编译失败回调（宿主可据此发射 guardrailError 事件通知用户）
-   *
-   * 每次 runGuardrails 遇到正则编译异常时调用。
-   * 未注入时仅记日志（降级优先原则，不阻断对话）。
-   */
-  onGuardrailError?: (rule: string, message: string) => void;
   /**
    * 会话事件回调（不中断工作模型 v2.0，P3）
    *
@@ -186,8 +169,6 @@ export class AgentLoop {
   private readonly maxContextTokens: number;
   /** 可观测性 Tracer（默认 NOOP_TRACER 零开销） */
   private readonly tracer: ITracer;
-  /** 内容护栏规则（启动时加载，运行时不可变） */
-  private readonly guardrailRules: readonly Memory[];
   /** Reflection 最大重试次数（默认 2） */
   private readonly maxReflectionRetries: number;
   /**
@@ -263,8 +244,6 @@ export class AgentLoop {
   private pendingInterjections: string[] = [];
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
-  /** 护栏规则正则编译失败回调（从 opts.onGuardrailError 提取，用于 GuardrailUI） */
-  private readonly guardrailUI: GuardrailUI;
   /** 上下文超限时是否自动生成摘要 */
   private readonly enableContextSummary: boolean;
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
@@ -278,7 +257,6 @@ export class AgentLoop {
     this.maxIterations = opts.maxIterations ?? 20;
     this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;
-    this.guardrailRules = opts.guardrailRules ?? [];
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
     // 主动提问回调（Agent 装配时注入，loop 只负责在检测到 [ASK] 时回调）
     this.onPendingQuestion = opts.onPendingQuestion;
@@ -295,13 +273,6 @@ export class AgentLoop {
       recentConversationLabel: opts.messages?.recentConversationLabel ?? '[Recent conversation]',
       userLabel: opts.messages?.userLabel ?? 'User',
       assistantLabel: opts.messages?.assistantLabel ?? 'Assistant',
-      inputBlockedByGuard:
-        opts.messages?.inputBlockedByGuard ??
-        ((rule: string) => `Input blocked by guardrail rule "${rule}"`),
-      guardrailWarningPrefix: opts.messages?.guardrailWarningPrefix ?? '[Guardrail Warning]',
-      outputBlockedByGuard:
-        opts.messages?.outputBlockedByGuard ??
-        ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
       reflectionHint:
         opts.messages?.reflectionHint ??
         ((remaining: number) =>
@@ -319,12 +290,6 @@ export class AgentLoop {
 如果需要改进，请直接输出改进后的完整回复。`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
-
-    // 护栏规则正则编译失败回调（从 opts 提取，供 GuardrailUI 使用）
-    this.guardrailUI = {
-      inputBlockedByGuard: this.ui.inputBlockedByGuard,
-      onRegexError: opts.onGuardrailError,
-    };
 
     // 上下文管理器（token 估算 + 截断 + 摘要）
     // 注入 tracer，让 generateContextSummary 有 span 埋点
@@ -352,7 +317,7 @@ export class AgentLoop {
    * 处理一轮用户输入（编排方法）
    *
    * 拆分为 4 个子方法：
-   *   - handleRecallAndInputGuard：召回注入 + 输入护栏
+   *   - handleRecallAndInject：召回注入
    *   - handleIteration：单次迭代编排（abort 检查 + LLM 调用 + 分支路由）
    *   - handleToolCalls：工具调用分支 + Reflection
    *   - handleTextResponse：纯文本结束 + 输出护栏
@@ -383,8 +348,8 @@ export class AgentLoop {
       // 未传（测试/内部委托调用）时自生成兜底，每轮独立。
       this.currentRoundId = roundId ?? `round-${Date.now()}`;
 
-      // 1. 召回注入 + 输入护栏（返回 true 表示已 block 并 yield done，应 return）
-      if (yield* this.handleRecallAndInputGuard(userInput, recalledMemories)) return;
+      // 1. 召回注入（guardrail 输入护栏已随 ADR-025 摘除，仅剩召回注入）
+      yield* this.handleRecallAndInject(recalledMemories);
 
       // 2. 用户消息 push（安全规范 §6：用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
       this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
@@ -701,55 +666,21 @@ export class AgentLoop {
   }
 
   /**
-   * 召回注入 + 输入护栏（processUserInput 子方法 1/4）
+   * 召回注入（processUserInput 子方法 1/4）
    *
    * 职责：
    *   - 注入记忆召回结果（system 消息，优先级高、不污染 user 输入）
    *   - 召回命中率统计（metricRecallTotalCount / metricRecallHitCount）
    *   - 通知上层 UI 召回透明度（yield recall chunk）
-   *   - 输入护栏检查（block 时 yield text + done，warn 时 yield text）
    *
-   * @yields recall / text（guardrail block/warn）/ done（block 时）
-   * @returns true 表示输入被 block 已 yield done，调用方应 return；false 表示继续
+   * @yields recall / text
+   * @returns true 表示调用方应 return；false 表示继续
    */
-  private async *handleRecallAndInputGuard(
-    userInput: string,
+  private async *handleRecallAndInject(
     recalledMemories: readonly Memory[] | undefined,
   ): AsyncGenerator<AgentChunk, boolean, unknown> {
     // 注入记忆召回结果 + 统计 + 透明度通知（提取到 _injectRecall，编码约定 §6）
     yield* this._injectRecall(recalledMemories);
-
-    // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
-    // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
-    const inputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_INPUT, {
-      ruleCount: this.guardrailRules.length,
-    });
-    const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.guardrailUI);
-    inputGuardSpan.setAttribute('blocked', inputGuardResult.blocked);
-    inputGuardSpan.setAttribute('warned', !!inputGuardResult.warning);
-    inputGuardSpan.end();
-
-    if (inputGuardResult.blocked) {
-      // P3: try/finally 确保 done 一定送达，即使 text yield 异常
-      // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
-      try {
-        yield {
-          type: 'text',
-          content: inputGuardResult.message ?? 'Input blocked by guardrail',
-          guardrailBlocked: true,
-        };
-      } finally {
-        yield { type: 'done' };
-      }
-      return true;
-    }
-    if (inputGuardResult.warning) {
-      // warn 级别只通知，不阻断
-      yield {
-        type: 'text',
-        content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}`,
-      };
-    }
     return false;
   }
 
@@ -906,45 +837,18 @@ export class AgentLoop {
   }
 
   /**
-   * 纯文本结束 + 输出护栏（processUserInput 子方法 4/4）
+   * 纯文本结束（processUserInput 子方法 4/4）
    *
    * 职责：
    *   - push assistant 消息（含空响应兜底）
-   *   - 输出护栏检查（block 时 yield text + done，warn 时 yield text）
    *   - yield done 结束本轮对话
    *
-   * @yields text（空响应兜底 / guardrail block/warn）/ question_pending / done
+   * @yields text（空响应兜底）/ question_pending / done
    * @returns 'done'（调用方收到后 return）或 'paused'（检测到主动提问，需用户回答后续跑）
    */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
-    // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
-    // 注意：护栏检查必须在 messages.push 之前执行，否则被 block 的内容仍会进入下一轮 LLM 上下文
-    const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
-      ruleCount: this.guardrailRules.length,
-    });
-    const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.guardrailUI);
-    outputGuardSpan.setAttribute('blocked', outputGuardResult.blocked);
-    outputGuardSpan.setAttribute('warned', !!outputGuardResult.warning);
-    outputGuardSpan.end();
-
-    if (outputGuardResult.blocked) {
-      // P3: try/finally 确保 done 一定送达，即使 text yield 异常
-      // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
-      // block 时不 push 到 messages——被 block 的内容不应进入下一轮 LLM 上下文
-      try {
-        yield {
-          type: 'text',
-          content: outputGuardResult.message ?? 'Output blocked by guardrail',
-          guardrailBlocked: true,
-        };
-      } finally {
-        yield { type: 'done' };
-      }
-      return 'done';
-    }
-
     // 主动提问检测：LLM 以结构化 `[ASK] 问题` 形式输出（mvp-scope §三 约定优于检测）
     // 检测到主动提问时：不把问题文本作为普通对话推送，而是暂停等待用户回答后续跑。
     // 约定：`[ASK]` 位于行首（可多条），每条占一行；`[ASK]` 之后直到行尾为问题文本。
@@ -971,13 +875,6 @@ export class AgentLoop {
       const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
       this.messages.push({ role: 'assistant', content: fallbackText });
       yield { type: 'text', content: fallbackText };
-    }
-
-    if (outputGuardResult.warning) {
-      yield {
-        type: 'text',
-        content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}`,
-      };
     }
 
     yield { type: 'done' };
@@ -1854,7 +1751,7 @@ export class AgentLoop {
   }
 
   /**
-   * 注入记忆召回结果 + 统计 + 透明度通知（从 handleRecallAndInputGuard 提取）
+   * 注入记忆召回结果 + 统计 + 透明度通知（提取自 handleRecallAndInject）
    */
   private async *_injectRecall(
     recalledMemories: readonly Memory[] | undefined,

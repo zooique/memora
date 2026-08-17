@@ -34,7 +34,6 @@ describe('collectAgentChunks', () => {
 
     expect(collected.toolsCalled).toEqual([]);
     expect(collected.recallCount).toBe(0);
-    expect(collected.guardrailBlocked).toBe(false);
     expect(collected.done).toBe(false);
   });
 
@@ -65,44 +64,6 @@ describe('collectAgentChunks', () => {
     expect(collected.toolsCalled).toEqual(['read_file', 'search_memories']);
   });
 
-  it('应从 text chunk 结构化标志检测护栏阻断（输入护栏）', async () => {
-    // 通过 AgentChunk.text.guardrailBlocked 结构化字段判断，而非文案匹配
-    const chunks: AgentChunk[] = [
-      { type: 'text', content: '输入被护栏规则阻断：检测到敏感内容', guardrailBlocked: true },
-    ];
-
-    const collected = await collectAgentChunks(mockChunkStream(chunks));
-    expect(collected.guardrailBlocked).toBe(true);
-  });
-
-  it('应从 text chunk 结构化标志检测护栏阻断（输出护栏）', async () => {
-    const chunks: AgentChunk[] = [
-      { type: 'text', content: '输出被护栏规则修正：移除了不安全内容', guardrailBlocked: true },
-    ];
-
-    const collected = await collectAgentChunks(mockChunkStream(chunks));
-    expect(collected.guardrailBlocked).toBe(true);
-  });
-
-  it('普通 text chunk（无 guardrailBlocked 标志）不应触发阻断', async () => {
-    const chunks: AgentChunk[] = [
-      { type: 'text', content: '这是正常的助手回复' },
-    ];
-
-    const collected = await collectAgentChunks(mockChunkStream(chunks));
-    expect(collected.guardrailBlocked).toBe(false);
-  });
-
-  it('即使护栏文案出现但 guardrailBlocked 未置 true 也不应误判', async () => {
-    // 反向验证：结构化标志是唯一信号，文案包含关键词不再触发
-    const chunks: AgentChunk[] = [
-      { type: 'text', content: '提到了输入被护栏规则字样但实为讨论' },
-    ];
-
-    const collected = await collectAgentChunks(mockChunkStream(chunks));
-    expect(collected.guardrailBlocked).toBe(false);
-  });
-
   it('done chunk 应标记 done=true', async () => {
     const collected = await collectAgentChunks(mockChunkStream([{ type: 'done' }]));
     expect(collected.done).toBe(true);
@@ -121,7 +82,6 @@ describe('collectAgentChunks', () => {
     expect(collected.recallCount).toBe(1);
     expect(collected.toolsCalled).toEqual(['read_file']);
     expect(collected.done).toBe(true);
-    expect(collected.guardrailBlocked).toBe(false);
   });
 });
 
@@ -132,7 +92,6 @@ describe('evaluateResult', () => {
   const baseCollected = {
     toolsCalled: ['read_file', 'search_memories'],
     recallCount: 2,
-    guardrailBlocked: false,
     done: true,
   };
 
@@ -141,7 +100,6 @@ describe('evaluateResult', () => {
       toolsCalled: ['read_file'],
       toolsNotCalled: ['write_file'],
       toolCallCount: { min: 1, max: 3 },
-      guardrailBlocked: false,
     };
 
     const result = evaluateResult('场景1', baseCollected, expectation);
@@ -188,16 +146,6 @@ describe('evaluateResult', () => {
     const result = evaluateResult('场景5', baseCollected, expectation);
     expect(result.passed).toBe(false);
     expect(result.failures[0]).toContain('> 期望最大值 1');
-  });
-
-  it('护栏阻断状态不匹配时应失败', () => {
-    const expectation: EvalExpectation = {
-      guardrailBlocked: true,
-    };
-
-    const result = evaluateResult('场景6', baseCollected, expectation);
-    expect(result.passed).toBe(false);
-    expect(result.failures[0]).toContain('期望护栏阻断=true');
   });
 
   it('空期望应直接通过', () => {

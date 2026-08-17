@@ -24,7 +24,7 @@ export interface EvalRunnerOptions {
   /**
    * Agent 工厂函数（每个场景创建新 Agent）
    *
-   * 工厂函数负责配置 MockProvider、guardrail 规则、预写入记忆等测试条件。
+   * 工厂函数负责配置 MockProvider、预写入记忆等测试条件。
    * EvalRunner 负责调用 init() / chat() / close() 管理 Agent 生命周期。
    */
   createAgent: () => Agent;
@@ -110,7 +110,6 @@ export class EvalRunner {
         collected: {
           toolsCalled: [],
           recallCount: 0,
-          guardrailBlocked: false,
           done: false,
         },
         failures: [

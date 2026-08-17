@@ -91,8 +91,8 @@ describe('NOOP_TRACER 单例', () => {
 // ─── TRACE_SPANS 预定义 Span 名称 ─────────────────────────
 
 describe('TRACE_SPANS 预定义 Span 名称常量', () => {
-  it('包含 10 个 AgentLoop 关键节点 Span 名称', () => {
-    expect(Object.keys(TRACE_SPANS)).toHaveLength(10);
+  it('包含 8 个 AgentLoop 关键节点 Span 名称', () => {
+    expect(Object.keys(TRACE_SPANS)).toHaveLength(8);
   });
 
   it('RECALL = "recall.recall"（记忆召回阶段）', () => {
@@ -125,14 +125,6 @@ describe('TRACE_SPANS 预定义 Span 名称常量', () => {
 
   it('RECALL_ACTUAL = "recall.actual"（实际记忆召回函数）', () => {
     expect(TRACE_SPANS.RECALL_ACTUAL).toBe('recall.actual');
-  });
-
-  it('GUARDRAIL_INPUT = "guardrail.input"（输入护栏检查）', () => {
-    expect(TRACE_SPANS.GUARDRAIL_INPUT).toBe('guardrail.input');
-  });
-
-  it('GUARDRAIL_OUTPUT = "guardrail.output"（输出护栏检查）', () => {
-    expect(TRACE_SPANS.GUARDRAIL_OUTPUT).toBe('guardrail.output');
   });
 
   it('所有 Span 名称采用 dot.notation 命名约定', () => {

@@ -57,7 +57,6 @@ describe('validateSource 校验函数', () => {
     expect(validateSource('round-summary')).toEqual({ valid: true });
     expect(validateSource('profile')).toEqual({ valid: true });
     expect(validateSource('work-projection')).toEqual({ valid: true });
-    expect(validateSource('guardrail')).toEqual({ valid: true });
   });
 
   it('自定义 source（非已知标签）应返回 valid: true 且无警告', () => {

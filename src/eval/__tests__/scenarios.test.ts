@@ -8,8 +8,8 @@ import { EVAL_SCENARIOS } from '@/eval/scenarios.js';
 import type { EvalExpectation } from '@/eval/evalTypes.js';
 
 describe('EVAL_SCENARIOS', () => {
-  it('应包含 8 个场景', () => {
-    expect(EVAL_SCENARIOS).toHaveLength(8);
+  it('应包含 7 个场景', () => {
+    expect(EVAL_SCENARIOS).toHaveLength(7);
   });
 
   it('每个场景应有非空 name 和 description', () => {
@@ -30,20 +30,12 @@ describe('EVAL_SCENARIOS', () => {
       expect.toolsCalled !== undefined ||
       expect.toolsNotCalled !== undefined ||
       expect.toolCallCount !== undefined ||
-      expect.guardrailBlocked !== undefined ||
       expect.recallCount !== undefined ||
       expect.done !== undefined;
 
     for (const scenario of EVAL_SCENARIOS) {
       expect(hasCheck(scenario.expect)).toBe(true);
     }
-  });
-
-  it('应覆盖 guardrailBlocked 维度', () => {
-    const hasGuardrail = EVAL_SCENARIOS.some(
-      (s) => s.expect.guardrailBlocked !== undefined,
-    );
-    expect(hasGuardrail).toBe(true);
   });
 
   it('应覆盖 toolsCalled 维度', () => {

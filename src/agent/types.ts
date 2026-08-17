@@ -24,7 +24,6 @@
  *     │    ├─ toolExecutor.ts（工具执行）
  *     │    ├─ contextManager.ts（上下文窗口管理）
  *     │    ├─ messageHistory.ts（历史消息存储）
- *     │    ├─ guardrail.ts（护栏规则）
  *     │    └─ tracer.ts（可观测性 span）
  *     ├─ composer.ts（四级补全器，不中断工作模型）
  *     ├─ personaMatcher.ts（LLM 角色匹配，从 persona 迁入）
@@ -95,14 +94,6 @@ export type AgentChunk =
   | {
       type: 'text';
       content: string;
-      /**
-       * 护栏阻断标志（结构化信号）
-       *
-       * 当输入/输出被护栏规则阻断时为 true，让 eval 框架和宿主 UI
-       * 能通过结构化字段判断护栏触发，而非依赖文案子串匹配。
-       * 非护栏场景的普通 text chunk 不携带此字段（undefined 等同 false）。
-       */
-      guardrailBlocked?: boolean;
     }
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
@@ -172,12 +163,6 @@ export interface UIMessages {
   userLabel?: string;
   /** 助手角色标签（默认 "Assistant"） */
   assistantLabel?: string;
-  /** 护栏阻断提示模板（{rule} 会被替换为规则名） */
-  inputBlockedByGuard?: (rule: string) => string;
-  /** 护栏警告前缀（默认 "[Guardrail Warning]"） */
-  guardrailWarningPrefix?: string;
-  /** 输出被护栏阻断提示模板 */
-  outputBlockedByGuard?: (rule: string) => string;
   /**
    * Reflection（反思/自修正）提示生成函数
    *

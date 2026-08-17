@@ -529,7 +529,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 获取当前激活角色包的规则列表（Rule→guardrail 桥接用）
+   * 获取当前激活角色包的规则列表（宿主 API：设定记忆归角色包后，规则以角色包为准）
    *
    * @returns 规则字符串列表，无激活角色包时返回空数组
    */

@@ -89,18 +89,6 @@ export interface EvalExpectation {
   toolCallCount?: { min?: number; max?: number };
 
   /**
-   * 期望护栏是否阻断
-   *
-   * true 表示期望护栏触发阻断（输入或输出被 block）；
-   * false 表示期望护栏不阻断；
-   * undefined 表示不检查（默认）。
-   *
-   * 与 collected.guardrailBlocked 比对，后者通过结构化标志
-   * AgentChunk.guardrailBlocked 收集，而非中文文案匹配。
-   */
-  guardrailBlocked?: boolean;
-
-  /**
    * 期望对话是否正常完成
    *
    * true 表示期望对话正常完成（收到 done chunk）；
@@ -124,7 +112,6 @@ export interface EvalResult {
   collected: {
     toolsCalled: string[];
     recallCount: number;
-    guardrailBlocked: boolean;
     done: boolean;
   };
   /** 失败原因（如果未通过） */
@@ -135,7 +122,7 @@ export interface EvalResult {
  * 从 AgentChunk 流中收集行为数据
  *
  * 消费 AgentLoop 的 AsyncGenerator 输出，
- * 提取工具调用名、召回数量、护栏状态等关键信息。
+ * 提取工具调用名、召回数量、完成状态等关键信息。
  *
  * @param chunks AgentChunk 异步迭代器
  * @returns 收集到的行为数据
@@ -146,7 +133,6 @@ export async function collectAgentChunks(
   const collected: EvalResult['collected'] = {
     toolsCalled: [],
     recallCount: 0,
-    guardrailBlocked: false,
     done: false,
   };
 
@@ -159,13 +145,6 @@ export async function collectAgentChunks(
       case 'tool_start':
         if (!collected.toolsCalled.includes(chunk.name)) {
           collected.toolsCalled.push(chunk.name);
-        }
-        break;
-      case 'text':
-        // 通过结构化标志判断护栏阻断（替代中文文案子串匹配）
-        // AgentChunk.text.guardrailBlocked 由 AgentLoop 在护栏 block 时显式置 true
-        if (chunk.guardrailBlocked) {
-          collected.guardrailBlocked = true;
         }
         break;
       case 'done':
@@ -228,15 +207,6 @@ export function evaluateResult(
     }
     if (expect.recallCount.max !== undefined && collected.recallCount > expect.recallCount.max) {
       failures.push(`召回数量 ${collected.recallCount} > 期望最大值 ${expect.recallCount.max}`);
-    }
-  }
-
-  // 检查护栏阻断
-  if (expect.guardrailBlocked !== undefined) {
-    if (expect.guardrailBlocked !== collected.guardrailBlocked) {
-      failures.push(
-        `期望护栏阻断=${expect.guardrailBlocked}，实际=${collected.guardrailBlocked}`,
-      );
     }
   }
 

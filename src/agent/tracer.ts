@@ -122,20 +122,6 @@ export const TRACE_SPANS = {
    * 此 span 在 recall() 函数内部埋点，可观察真实召回耗时与双通道命中分布。
    */
   RECALL_ACTUAL: 'recall.actual',
-  /**
-   * 输入护栏检查
-   *
-   * 触发条件：用户输入注入上下文前调用 runGuardrails 检查。
-   * 监控此 span 可观察护栏触发频率、阻断率、耗时。
-   */
-  GUARDRAIL_INPUT: 'guardrail.input',
-  /**
-   * 输出护栏检查
-   *
-   * 触发条件：LLM 响应返回给用户前调用 runGuardrails 检查。
-   * 监控此 span 可观察输出护栏触发频率、阻断率、耗时。
-   */
-  GUARDRAIL_OUTPUT: 'guardrail.output',
 } as const;
 
 /**
@@ -155,8 +141,6 @@ export const TRACE_SPANS = {
  *       attachedMemoryFingerprint  → 附着记忆 ID 集合指纹（建议B）
  *   - recall.actual（RECALL_ACTUAL，实际召回函数）
  *       queryLength / hasVectorStore / memoryRecallMode / resultCount
- *   - guardrail.input / guardrail.output（GUARDRAIL_INPUT / GUARDRAIL_OUTPUT）
- *       blocked / warned
  *
  * 边界声明：指纹类属性（systemPromptHash / attachedMemoryFingerprint）只记录 hash，
  * 不记录内容——"模型看到了什么"属可观测性诉求（ITracer 承载），不入 sessionStore（记忆系统职责）。

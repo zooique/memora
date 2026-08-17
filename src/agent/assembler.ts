@@ -58,8 +58,6 @@ export interface AssembleCallbacks {
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   /** 语义去重完成回调 */
   onDedupCompleted?: (report: { scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[] }) => void;
-  /** 护栏规则正则编译失败回调（宿主可据此发射 guardrailError 事件通知用户） */
-  onGuardrailError?: (rule: string, message: string) => void;
   /**
    * 会话事件回调（不中断工作模型 v2.0）
    *
@@ -247,12 +245,6 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
   const roundSummaryGenerator = new RoundSummaryGenerator(provider, pctx.index);
 
-  // guardrail 规则池：仅从记忆索引加载（SOURCE_LABELS.GUARDRAIL）。
-  // 角色包 rule 为自然语言指令，与 guardrail 的 regex 规则格式不兼容，
-  // 不并入规则池——rule 已作为 personaPrompt 文本生效（见 assembleRolePack），
-  // 避免"结构预埋但永不命中"的半实现桥（排雷雷-2）。
-  const indexGuardrailRules = pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL);
-
   // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
   // 从记忆索引取最近 N 条 round-summary（按 createdAt 降序），拼接为历史摘要回退文本。
   const roundSummaryLoader = (): string => {
@@ -281,9 +273,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     tracer,
     messages,
     enableContextSummary,
-    guardrailRules: indexGuardrailRules,
     onContextTruncated: callbacks?.onContextTruncated,
-    onGuardrailError: callbacks?.onGuardrailError,
     onSessionEvent: callbacks?.onSessionEvent,
     onToolExecuted: callbacks?.onToolExecuted,
     preExecutionCheck: callbacks?.preExecutionCheck,

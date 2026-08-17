@@ -203,8 +203,6 @@ export const SOURCE_LABELS = {
   PROFILE: 'profile',
   /** 作品投影（Agent 读取用户作品时生成的概要） */
   WORK_PROJECTION: 'work-projection',
-  /** 内容护栏规则（configDir/rules/guardrails/ 下的规则文件） */
-  GUARDRAIL: 'guardrail',
   /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
   ROUND_SUMMARY: 'round-summary',
   /** 未知来源（inferSource 兜底值，文件路径未匹配已知目录时的默认标签） */

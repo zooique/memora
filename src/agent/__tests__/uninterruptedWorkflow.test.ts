@@ -92,9 +92,6 @@ function makeAgent(
       recentConversationLabel: '[最近对话]',
       userLabel: '用户',
       assistantLabel: '助手',
-      inputBlockedByGuard: (rule) => `输入被护栏规则"${rule}"阻止`,
-      guardrailWarningPrefix: '[护栏警告]',
-      outputBlockedByGuard: (rule) => `输出被护栏规则"${rule}"阻止`,
     },
   });
 }

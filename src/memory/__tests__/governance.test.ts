@@ -42,9 +42,8 @@ describe('memory/governance · 常量契约', () => {
       expect(GOVERNANCE_SOURCES).not.toContain('skill');
     });
 
-    it('不应包含 guardrail / unknown', () => {
-      // guardrail 是护栏规则，unknown 是兜底来源，均不参与 LLM 治理
-      expect(GOVERNANCE_SOURCES).not.toContain('guardrail');
+    it('不应包含 unknown', () => {
+      // unknown 是兜底来源，不参与 LLM 治理
       expect(GOVERNANCE_SOURCES).not.toContain('unknown');
     });
   });

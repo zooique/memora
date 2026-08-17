@@ -8,21 +8,22 @@
  */
 import type { FileStore } from '@/memory/store.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
+import { type Memory } from '@/memory/types.js';
 import { toError } from '@/utils/toError.js';
 
 /**
  * 启动时全量扫描的 source 列表
+ *
+ * 设计收敛（ADR-025 · memory-role-pack-boundary）：
+ * 设定记忆（persona/rule/skill）唯一归角色包内容层，记忆系统只剩摘要，
+ * 不再由文件系统扫描进记忆库；guardrail 空转链已摘除（零规则、无扫描映射）。
+ * 当前无扫描项——本数组保留为空集合，作为「不扫描任何配置类记忆」的显式声明，
+ * 防止未来重新引入文件→索引的设定记忆写入路径。
+ *
  * - profile/work-projection：运行时产生，不由 FileStore 管理
  * - tool：由 registerTool() 注册为 tool_call，不再重复注入 system prompt
- * - guardrail：由 AgentLoop 运行时读取，不注入 system prompt
  */
-const STARTUP_SCAN_SOURCES: string[] = [
-  SOURCE_LABELS.PERSONA,
-  SOURCE_LABELS.RULE,
-  SOURCE_LABELS.SKILL,
-  SOURCE_LABELS.GUARDRAIL,
-];
+const STARTUP_SCAN_SOURCES: string[] = [];
 
 /**
  * 判断内容是否为空壳模板（仅含标题和 blockquote 占位说明）
@@ -120,22 +121,18 @@ export class MemoryLoader {
 
   /**
    * 启动时的完整引导流程
-   * 1. 扫描配置文件 → 写入索引
-   * 2. 从索引按 source 召回必召记忆（rule + skill）
    *
-   * 注：persona 记忆由 PersonaManager 单独处理，
-   * bootstrap 中自动跳过 persona（避免与 systemPromptPrefix 中的角色 prompt 重复）。
+   * 设计收敛（ADR-025 · memory-role-pack-boundary）：设定记忆（persona/rule/skill）
+   * 唯一归角色包内容层，不再经 loader 扫描进记忆库注入 system prompt——
+   * 该职责由角色包路径接管（assembler.ts 的 rolePackPrompt / assembleRolePack）。
+   * 本方法返回空数组（无记忆注入），保留签名以兼容调用方结构。
    *
-   * @returns 启动时必召的所有记忆（用于初始化 Agent Loop 的 system prompt）
+   * @returns 启动时必召的所有记忆（当前恒为空数组——设定记忆不再走此路径）
    */
   async bootstrap(): Promise<{ memories: Memory[]; loadResult: LoadResult }> {
     const loadResult = await this.loadAllToIndex();
-    // 按 source 获取 rule 和 skill 记忆（跳过 persona，由 PersonaManager 单独管理）
-    const rules = this.index.getBySource(SOURCE_LABELS.RULE);
-    const skills = this.index.getBySource(SOURCE_LABELS.SKILL);
-    const memories = [...rules, ...skills];
     return {
-      memories,
+      memories: [],
       loadResult,
     };
   }

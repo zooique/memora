@@ -86,9 +86,6 @@ function makeAgent(
       recentConversationLabel: '[最近对话]',
       userLabel: '用户',
       assistantLabel: '助手',
-      inputBlockedByGuard: (rule) => `输入被护栏规则"${rule}"阻止`,
-      guardrailWarningPrefix: '[护栏警告]',
-      outputBlockedByGuard: (rule) => `输出被护栏规则"${rule}"阻止`,
     },
   });
 }
@@ -1597,13 +1594,6 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     expect(result.persona).toBe(0);
   });
 
-  it('reloadConfig(guardrail) 应抛错（不支持热重载）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    await expect(agent.reloadConfig('guardrail')).rejects.toThrow(/guardrail 不支持热重载/);
-  });
-
   it('reloadConfig() 无参数应全量重载 skill + persona', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
@@ -2018,9 +2008,6 @@ describe('Agent · chat() 中断保留文本', () => {
         recentConversationLabel: '[最近对话]',
         userLabel: '用户',
         assistantLabel: '助手',
-        inputBlockedByGuard: (rule) => `输入被护栏规则"${rule}"阻止`,
-        guardrailWarningPrefix: '[护栏警告]',
-        outputBlockedByGuard: (rule) => `输出被护栏规则"${rule}"阻止`,
       },
     });
     await agent.init();

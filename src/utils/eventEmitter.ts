@@ -23,7 +23,6 @@ export const AGENT_EVENTS = {
   archiveFailed: 'archiveFailed',
   contextTruncated: 'contextTruncated',
   configReloaded: 'configReloaded',
-  guardrailError: 'guardrailError',
   archiveModeChanged: 'archiveModeChanged',
   personaSwitchLocked: 'personaSwitchLocked',
   workProjectionGenerated: 'workProjectionGenerated',
@@ -92,15 +91,8 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   };
   /** 配置热重载完成（含对话期间暂存后补执行的 reload） */
   configReloaded: {
-    /** 重载来源（persona/rule/skill/guardrail） */
+    /** 重载来源（persona/rule/skill） */
     source: string;
-  };
-  /** Guardrail 规则正则编译失败（安全放行但应通知用户规则未生效） */
-  guardrailError: {
-    /** 规则原文（截断 100 字符） */
-    rule: string;
-    /** 编译失败原因 */
-    message: string;
   };
   /** 归档模式切换 */
   archiveModeChanged: {

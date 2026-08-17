@@ -1981,9 +1981,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         onDedupCompleted: (report) => {
           this.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
         },
-        onGuardrailError: (rule, message) => {
-          this.emit(AGENT_EVENTS.guardrailError, { rule, message });
-        },
         onSessionEvent: (eventType, detail) => {
           this.handleSessionEvent(eventType, detail);
         },
@@ -2526,8 +2523,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * - 'skill' → SkillManager.reload() 清空缓存重新扫描 skills/ 目录
    * - 'persona' → PersonaManager.reload() 清空缓存重新扫描 personas/ 目录（保持激活角色）
    * - 'rule' → 无操作（rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段，详见 deleteRule/updateRule）
-   * - 'guardrail' → 抛错（guardrail 是 AgentLoop 的 readonly 数组，需 rebuildComponents 才能重载）
-   * - undefined → 重载 skill + persona（全量重载，不含 guardrail）
+   * - undefined → 重载 skill + persona（全量重载）
    *
    * @param source 配置类型，缺省时重载全部可热更新的配置
    * @returns 重载结果统计
@@ -2542,15 +2538,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         logger.info({ source }, '对话进行中，配置重载已暂存，将在对话结束后补执行');
       }
       throw chatBusyError('重载配置');
-    }
-
-    // guardrail 需重建 AgentLoop，不属于热重载范畴
-    if (source === 'guardrail') {
-      throw configError(
-        'guardrail 不支持热重载',
-        'guardrail 规则是 AgentLoop 的 readonly 数组，需调用 rebuildComponents() 重建',
-        ['使用 rebuildComponents() 重建组件（代价较高）'],
-      );
     }
 
     // rule 类型由 ConfigManager.deleteRule/updateRule CRUD 即时同步 bootstrap 段（refreshBootstrapMemories 回调），无需 reloadConfig

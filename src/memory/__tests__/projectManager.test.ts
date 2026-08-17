@@ -106,7 +106,7 @@ describe('ProjectManager · initProject', () => {
     await pm.shutdown();
   });
 
-  it('T6 对账：无文件支撑的孤儿 rule 在重开项目时被清理，文件规则保留', async () => {
+  it('T6 对账已停用：孤儿 rule 不再被清理（设定记忆归角色包，ADR-025）', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({
       dataDir: config.memory.dataDir,
@@ -127,7 +127,7 @@ describe('ProjectManager · initProject', () => {
       score: 0.8,
     });
 
-    // 同时写入一个真实 rule 文件（对账后必须保留）
+    // 同时写入一个真实 rule 文件（原对账逻辑会保留它）
     mkdirSync(join(tmpDir, '.memora', 'rules'), { recursive: true });
     writeFileSync(
       join(tmpDir, '.memora', 'rules', 'real.md'),
@@ -135,20 +135,22 @@ describe('ProjectManager · initProject', () => {
       'utf-8',
     );
 
-    // 重开项目：重新触发 loadAllResources → 对账清理孤儿
+    // 重开项目：原对账（清理无文件支撑的孤儿 rule）已停用——
+    // loader 不再扫描设定记忆进索引（ADR-025），「文件支撑」判定基准消失。
+    // 存量 rule 索引行保留为兼容数据，由宿主迁移清理。
     const ctx2 = await pm.initProject(tmpDir);
     const rules = ctx2.index.getBySource(SOURCE_LABELS.RULE);
     const names = rules.map((r) => r.name);
 
-    // 修复前（无对账）：orphan 残留 → 断言红
-    expect(names).not.toContain('orphan');
-    // 文件规则必须保留（防过度修复）
-    expect(names).toContain('real');
+    // 孤儿不再被自动清理（对账停用，不误删存量数据）
+    expect(names).toContain('orphan');
+    // 文件规则也不进索引（loader 停扫）——原对账会写入它，现在不会
+    expect(names).not.toContain('real');
 
     await pm.shutdown();
   });
 
-  it('T0-2 对账守卫：扫描出现读取失败时，磁盘上仍在的规则不得被当孤儿软删', async () => {
+  it('T0-2 对账守卫已随对账停用一并移除（扫描失败不影响索引）', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({
       dataDir: config.memory.dataDir,
@@ -159,46 +161,13 @@ describe('ProjectManager · initProject', () => {
     // 0) 先建立项目骨架（与 T6 用例同序：initProject 负责初始化 .memora 结构）
     await pm.initProject(tmpDir);
 
-    // 1) 再让 victim 规则以正常文件入索引
+    // 1) 项目级规则文件：loader 停扫后不应进索引
     const rulesDir = join(tmpDir, '.memora', 'rules');
     mkdirSync(rulesDir, { recursive: true });
     const victimPath = join(rulesDir, 'victim.md');
     writeFileSync(victimPath, '# 受害规则\n\n提交前必须跑质量门。\n', 'utf-8');
     const ctx1 = await pm.initProject(tmpDir);
-    expect(ctx1.index.getBySource(SOURCE_LABELS.RULE).map((r) => r.name)).toContain('victim');
-
-    // 2) 注入真实读取故障：把同名条目换成目录。
-    //    FileStore.list 只按 .md 后缀过滤、不校验类型，故仍会列出 victim；
-    //    read 时 readFile 抛 EISDIR，被 loader 记入 errors。
-    //    这等价于生产环境的 EACCES / 文件被占用——「文件还在，只是这一次读不到」。
-    rmSync(victimPath, { force: true });
-    mkdirSync(victimPath, { recursive: true });
-
-    // 3) 放一条「手动注入、无文件支撑」的规则作为对账探针。
-    //    它不在 currentProjectMemoryIds 内，因此不受项目切换的撤销逻辑影响，
-    //    能干净地反映 evictOrphanRules 这一次到底跑没跑。
-    const now = new Date().toISOString();
-    ctx1.index.upsert({
-      id: 'rule:probe',
-      content: '对账探针',
-      source: SOURCE_LABELS.RULE,
-      name: 'probe',
-      createdAt: now,
-      accessedAt: now,
-      score: 0.8,
-    });
-
-    const ctx2 = await pm.initProject(tmpDir);
-    const names = ctx2.index.getBySource(SOURCE_LABELS.RULE).map((r) => r.name);
-
-    // 前置条件：本次扫描确实发生了读取失败（否则本用例失去意义）
-    expect(ctx2.loadResult.errors.length).toBeGreaterThan(0);
-
-    // 修复前：errors 被完全忽略，对账照跑——而此刻 loadedIds 里少了所有读失败的文件，
-    // 差集因此偏大。修复后：扫描不完整即整体停用对账。
-    // 断言「孤儿被保留」不是在保护僵尸，而是声明 fail-safe 契约：
-    // 文件集合不完整时不做任何驱逐判断，宁可让僵尸多活一轮。
-    expect(names).toContain('probe');
+    expect(ctx1.index.getBySource(SOURCE_LABELS.RULE).map((r) => r.name)).not.toContain('victim');
 
     await pm.shutdown();
   });
@@ -405,7 +374,7 @@ accessedAt: 2026-01-01T00:00:00.000Z
     );
   };
 
-  it('关闭项目应撤销本项目级记忆，防止跨项目泄漏', async () => {
+  it('关闭项目：loader 停扫后无项目级记忆可撤销（设定记忆归角色包）', async () => {
     seedProjectRule();
 
     // 注入共享 Agent 级存储（InMemoryStorage），initProject 会把项目记忆加载进它
@@ -416,19 +385,28 @@ accessedAt: 2026-01-01T00:00:00.000Z
     });
     const ctx = await pm.initProject(tmpDir);
 
-    // 项目记忆已加载进共享 index
-    expect(ctx.index.getById('rule:proj-rule')).not.toBeNull();
-    expect(ctx.index.getBySource(SOURCE_LABELS.RULE).length).toBeGreaterThanOrEqual(1);
-
-    // S2 修复：关闭项目（不关闭 Agent 级 DB）应撤销本项目级记忆，
-    // 否则切换项目后旧项目规则仍注入新项目 system prompt 与召回结果（跨项目泄漏）。
-    await pm.closeProject();
-
+    // 设定记忆归角色包（ADR-025）：loader 不再把项目 rule 扫描进索引
+    // ——项目级记忆由角色包激活/失活承载，不经 loader 写入索引。
     expect(ctx.index.getById('rule:proj-rule')).toBeNull();
     expect(ctx.index.getBySource(SOURCE_LABELS.RULE).length).toBe(0);
+
+    // 手动注入的记忆不受 closeProject 管理（非 loader 扫描产物）——
+    // currentProjectMemoryIds 恒空，closeProject 撤销语义自然退化。
+    const now = new Date().toISOString();
+    ctx.index.upsert({
+      id: 'rule:proj-rule',
+      content: '手动注入',
+      source: 'rule',
+      name: 'proj-rule',
+      createdAt: now,
+      accessedAt: now,
+      score: 0.8,
+    });
+    await pm.closeProject();
+    expect(ctx.index.getById('rule:proj-rule')).not.toBeNull();
   });
 
-  it('重新打开同一项目应从磁盘重新加载恢复项目记忆', async () => {
+  it('重新打开同一项目：设定记忆不再经 loader 从磁盘恢复', async () => {
     seedProjectRule();
 
     const storage = new InMemoryStorage();
@@ -438,14 +416,13 @@ accessedAt: 2026-01-01T00:00:00.000Z
     });
 
     const ctx = await pm.initProject(tmpDir);
-    expect(ctx.index.getById('rule:proj-rule')).not.toBeNull();
-
-    // 关闭（软删除，文件本体仍在磁盘）
-    await pm.closeProject();
+    // 设定记忆归角色包：项目 rule 文件不再扫描进索引
     expect(ctx.index.getById('rule:proj-rule')).toBeNull();
 
-    // 重新打开同一项目：文件仍在，应重新 upsert 恢复
+    await pm.closeProject();
+
+    // 重开：同样不恢复（loader 停扫）
     const ctx2 = await pm.initProject(tmpDir);
-    expect(ctx2.index.getById('rule:proj-rule')).not.toBeNull();
+    expect(ctx2.index.getById('rule:proj-rule')).toBeNull();
   });
 });
