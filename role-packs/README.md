@@ -21,13 +21,9 @@
 
 ## 角色包清单
 
-| 角色包 | 说明 |
-|--------|------|
-| 代码助手 | 示例：编程/代码生成类角色包 |
-| 写作助手 | 示例：写作/内容创作类角色包 |
-| 翻译助手 | 示例：翻译/语言转换类角色包 |
-| 技术文档工程师 | 示例：技术文档/知识管理类角色包 |
-| 项目总监 | 示例：项目管理/任务监督类角色包 |
-| 方案设计师 | 示例：基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）从模糊想法设计自洽项目方案 |
+| 角色包 | 说明 | 覆盖能力面 |
+|--------|------|-----------|
+| 文档设计师 | 示例：工具型角色包——技术文档设计（API 文档 / 教程 / 架构说明） | 真实 skills/ 文件（read_skill L2）+ capabilities + strategy（toolMode:allow / 低温度）+ handoffPrompt |
+| 小说助手 | 示例：创作型角色包——小说写作（结构 / 人物 / 对白 / 伏笔） | 真实 skills/ 文件 + capabilities + strategy（高温度 / askOn 主动提问）+ handoffPrompt |
 
-> 完整角色包规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)。
+> 两个示例包**全面覆盖当前角色包设计**：persona.md / rules.md 约定文件名、顶层 capabilities（能力面）、skills 技能文件引用（内容面 + 渐进披露 L2）、strategy 策略、handoffPrompt 衔接提示词。完整角色包规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)。

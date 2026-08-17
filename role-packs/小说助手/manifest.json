@@ -1,0 +1,46 @@
+{
+  "name": "小说助手",
+  "displayName": "小说助手",
+  "formatVersion": "1.0.0",
+  "description": "小说创作助手：从故事构思到成文，覆盖人物设定、情节结构、对白与文风打磨",
+  "version": "1.0.0",
+  "keywords": ["小说", "故事", "写作", "创作", "情节", "人物"],
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "strategy": {
+    "prepare": {
+      "contextAssembly": "fixed",
+      "recentRounds": 3,
+      "memoryRecall": "limited",
+      "summaryRecall": "on"
+    },
+    "act": {
+      "toolMode": "allow",
+      "temperature": 0.9
+    },
+    "reflect": {
+      "summary": "on",
+      "handoff": "wait",
+      "userFollowup": "ask"
+    },
+    "global": {
+      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askLimit": 3
+    }
+  },
+  "persona": "persona.md",
+  "rules": "rules.md",
+  "handoffPrompt": "我已准备好开始小说创作。请告诉我：要写什么题材与篇幅、已有故事雏形吗？若承接上文，请先概述当前情节进度、主要人物与待推进的冲突。",
+  "skills": [
+    { "file": "skills/story-structure.md", "name": "story-structure", "description": "三幕结构与情节点规划：起承转合、激励事件、中点、高潮" },
+    { "file": "skills/character-sheet.md", "name": "character-sheet", "description": "人物设定卡：目标、动机、缺陷、弧光，让人物立体" },
+    { "file": "skills/dialogue-craft.md", "name": "dialogue-craft", "description": "对白写法：潜台词、语气区分、推进情节而非填充" },
+    { "file": "skills/foreshadow.md", "name": "foreshadow", "description": "伏笔与呼应：埋点、回收、可信度控制" }
+  ],
+  "capabilities": [
+    { "capability": "file:write", "description": "将章节与文稿写入文件" },
+    { "capability": "file:read", "description": "读取既有文稿与设定，保持连续性" }
+  ]
+}
