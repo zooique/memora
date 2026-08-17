@@ -140,56 +140,6 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'roles_handoff', name: 'translator' });
   });
 
-  it('handoffs 声明且 target 存在 → 渲染附加交接按钮（label），点击发 target+prompt', () => {
-    const { postMessage } = mountRolesView();
-    dispatchLoaded(
-      [
-        {
-          name: 'writer',
-          displayName: '写作助手',
-          capabilities: [],
-          handoffs: [
-            { label: '交给技术文档工程师', target: 'tech-writer', prompt: '初稿已完成，请检查格式', send: false },
-          ],
-        },
-        { name: 'tech-writer', displayName: '技术文档工程师', capabilities: [] },
-      ],
-      'writer',
-    );
-    const btn = document.querySelector('.card .btn-secondary') as HTMLButtonElement;
-    // 附加按钮文案 = 声明 label（非通用「设为当前」）
-    expect(btn.textContent).toBe('交给技术文档工程师');
-    btn.click();
-    expect(postMessage).toHaveBeenCalledWith({
-      type: 'roles_handoff',
-      name: 'tech-writer',
-      prompt: '初稿已完成，请检查格式',
-    });
-  });
-
-  it('handoffs target 不存在（单角色/未安装目标包）→ 不渲染附加按钮，仅「带入对话」', () => {
-    const { postMessage } = mountRolesView();
-    dispatchLoaded(
-      [
-        {
-          name: 'writer',
-          displayName: '写作助手',
-          capabilities: [],
-          handoffs: [{ label: '交给技术文档工程师', target: 'tech-writer' }],
-        },
-      ],
-      'writer',
-    );
-    const card = document.querySelector('.card') as HTMLElement;
-    // 仅「带入对话」按钮；handoff 附加按钮不渲染（target 不存在）
-    const btns = card.querySelectorAll('.btn');
-    expect(btns).toHaveLength(1);
-    expect(card.querySelector('.btn-primary')?.textContent).toBe('带入对话');
-    // 主按钮仍正常发消息（带入自己）
-    (card.querySelector('.btn-primary') as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_handoff', name: 'writer' });
-  });
-
   it('roles_loaded 空列表 → 渲染空态引导', () => {
     mountRolesView();
     dispatchLoaded([], '');

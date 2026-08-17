@@ -102,9 +102,8 @@ export type WebviewToExtensionMessage =
    * 由角色管理视图的「带入对话」触发：host 复用 activateRole 切换激活角色包（与
    * roles_set_active 同路径），随后聚焦对话视图（memora.chat.focus）。单 Agent 模型下
    * 上下文由共享记忆（round-summary）承载，角色切换即完成"上下文传递"，无需额外搬运。
-   * prompt 为角色包 handoffs 声明提供的预填衔接文本（可选，缺省由 host 回退通用话术）。
    */
-  | { type: 'roles_handoff'; name: string; prompt?: string }
+  | { type: 'roles_handoff'; name: string }
   /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
@@ -336,7 +335,6 @@ export type ExtensionToWebviewMessage =
         displayName: string;
         description?: string;
         capabilities: { capability: string; label: string }[];
-        handoffs?: { label: string; target: string; prompt?: string; send?: boolean }[];
       }[];
       activeName: string;
     }
