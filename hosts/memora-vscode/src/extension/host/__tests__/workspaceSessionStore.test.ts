@@ -186,6 +186,16 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(store.listSessions()).not.toContain('2026-08-17-dst2');
   });
 
+  it('deleteSession：删除消息 + meta + 检查点（连带清检查点防脏残留）', () => {
+    store.appendMessage('2026-08-17', 'main', msg('user', '你好', 't1'));
+    store.setSessionTitle?.('2026-08-17-main', '会话一');
+    store.saveCheckpoint?.('2026-08-17-main', '{"status":"paused"}');
+    store.deleteSession('2026-08-17-main');
+    expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
+    expect(store.listSessions()).not.toContain('2026-08-17-main');
+    expect(store.loadCheckpoint?.('2026-08-17-main')).toBeNull();
+  });
+
   it('会话文件损坏 → load 降级为空不抛错', () => {
     mkdirSync(join(dir, '.memora'), { recursive: true });
     writeFileSync(join(dir, '.memora', 'sessions.json'), '{invalid json', 'utf8');

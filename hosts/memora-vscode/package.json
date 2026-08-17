@@ -31,34 +31,8 @@
         "command": "memora.configureModel",
         "title": "Memora: 配置大模型",
         "icon": "$(gear)"
-      },
-      {
-        "command": "memora.clearChat",
-        "title": "Memora: 清空对话",
-        "icon": "$(trash)",
-        "enablement": "view == memora.chat"
-      },
-      {
-        "command": "memora.switchSession",
-        "title": "Memora: 会话列表（新建/切换/改名）",
-        "icon": "$(list-unordered)",
-        "enablement": "view == memora.chat"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "memora.switchSession",
-          "when": "view == memora.chat",
-          "group": "navigation"
-        },
-        {
-          "command": "memora.clearChat",
-          "when": "view == memora.chat",
-          "group": "navigation"
-        }
-      ]
-    },
     "configuration": {
       "title": "Memora",
       "properties": {

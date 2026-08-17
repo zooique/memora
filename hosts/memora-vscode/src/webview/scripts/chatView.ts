@@ -72,8 +72,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const emptyHint = document.getElementById('emptyHint') as HTMLElement;
   // 空状态示例提问容器（showcase 角色特化引导，MVP 2026-08-16）：由脚本按激活角色动态填充
   const emptySuggestions = document.getElementById('emptySuggestions') as HTMLElement;
-  // 会话标题条（ADR-024 会话标题层）——顶部展示当前会话标题，主动可见识别当前会话
+  // 会话标题条（ADR-024 会话标题层 + 2026-08-17 会话管理重构）——顶部展示当前会话标题，
+  // 主动可见识别当前会话；左侧改名笔、右侧新建「＋」+ 历史按钮（会话导航全量收敛于此）
   const sessionTitleText = document.getElementById('sessionTitleText') as HTMLElement;
+  const renameSessionBtn = document.getElementById('renameSessionBtn') as HTMLButtonElement;
+  const newSessionBtn = document.getElementById('newSessionBtn') as HTMLButtonElement;
+  const historyBtn = document.getElementById('historyBtn') as HTMLButtonElement;
+  // 历史记录模态浮层（2026-08-17 会话管理重构）：遮罩 + 列表 + 空态 + 关闭按钮
+  const historyOverlay = document.getElementById('historyOverlay') as HTMLElement;
+  const historyList = document.getElementById('historyList') as HTMLElement;
+  const historyEmpty = document.getElementById('historyEmpty') as HTMLElement;
+  const historyCloseBtn = document.getElementById('historyCloseBtn') as HTMLButtonElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
   // 联网能力指示 chip（C1，alignment-iteration.md）：当前角色包声明 web:search 时显示
@@ -850,6 +859,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；
       // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。
       sessionTitleText.textContent = msg.title;
+    } else if (msg.type === 'session_list_data') {
+      // 历史会话列表（2026-08-17 会话管理重构）：渲染到历史模态浮层
+      renderHistoryList(msg.sessions);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
@@ -912,6 +924,71 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   });
   input.addEventListener('input', autoResize);
+
+  // ─── 会话管理（2026-08-17 会话管理重构，标题条收敛全部入口）───
+  // 相对时间（历史列表副标题，本地辅助；重复 3 次再提取 helper）
+  function fmtRelativeTime(iso: string): string {
+    const diff = Date.now() - new Date(iso).getTime();
+    if (Number.isNaN(diff) || diff < 0) return '';
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return '刚刚';
+    if (min < 60) return `${min} 分钟前`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} 小时前`;
+    const day = Math.floor(hr / 24);
+    if (day < 30) return `${day} 天前`;
+    return iso.slice(0, 10);
+  }
+  // 历史记录模态浮层：打开请求列表 + 显示；关闭仅隐藏（列表保留，下次打开重拉）
+  function openHistory(): void {
+    vscode.postMessage({ type: 'session_list' });
+    historyOverlay.hidden = false;
+  }
+  function closeHistory(): void {
+    historyOverlay.hidden = true;
+  }
+  // 渲染历史列表（对 session_list_data 的应答）：条目点击加载、垃圾桶删除、空态兜底
+  function renderHistoryList(sessions: { sessionId: string; title: string; updatedAt: string }[]): void {
+    historyList.textContent = '';
+    historyEmpty.hidden = sessions.length > 0;
+    for (const s of sessions) {
+      const item = document.createElement('div');
+      item.className = 'history-modal__item';
+      item.dataset.sessionId = s.sessionId;
+      const titleEl = document.createElement('div');
+      titleEl.className = 'history-modal__item-title';
+      titleEl.textContent = s.title; // textContent 防注入
+      const timeEl = document.createElement('div');
+      timeEl.className = 'history-modal__item-time';
+      timeEl.textContent = fmtRelativeTime(s.updatedAt);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'history-modal__item-del';
+      delBtn.title = '删除会话';
+      delBtn.setAttribute('aria-label', '删除会话');
+      delBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // 不触发条目加载
+        vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });
+      });
+      // 点击条目 → 加载该会话并关闭浮层
+      item.addEventListener('click', () => {
+        vscode.postMessage({ type: 'switch_session', sessionId: s.sessionId });
+        closeHistory();
+      });
+      item.append(titleEl, timeEl, delBtn);
+      historyList.appendChild(item);
+    }
+  }
+  // 标题条按钮：改名笔 / 新建「＋」/ 历史（全部 W→E，host 处理）
+  renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
+  newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
+  historyBtn.addEventListener('click', openHistory);
+  historyCloseBtn.addEventListener('click', closeHistory);
+  // 遮罩点击关闭（点到遮罩而非弹窗内容时关闭，对齐模态交互惯例）
+  historyOverlay.addEventListener('click', (e) => {
+    if (e.target === historyOverlay) closeHistory();
+  });
 
   // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）。
   // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。

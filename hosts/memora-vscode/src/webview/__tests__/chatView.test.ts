@@ -11,6 +11,22 @@ import { createChatView } from '../scripts/chatView.js';
 
 /** 覆盖 createChatView 全部 getElementById 引用的最小 HTML 骨架 */
 const HTML = `
+  <div id="sessionTitleBar" class="session-title-bar">
+    <span id="sessionTitleText"></span>
+    <button id="renameSessionBtn"></button>
+    <span class="session-title-bar__spacer"></span>
+    <button id="newSessionBtn"></button>
+    <button id="historyBtn"></button>
+  </div>
+  <div id="historyOverlay" hidden>
+    <div class="history-modal">
+      <div class="history-modal__header">
+        <button id="historyCloseBtn"></button>
+      </div>
+      <div id="historyList"></div>
+      <div id="historyEmpty" hidden></div>
+    </div>
+  </div>
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
@@ -457,7 +473,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
   });
 });
 
-describe('chatView toolbar 剪枝（视图标题栏承载历史/清空）', () => {
+describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 重构）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -465,7 +481,7 @@ describe('chatView toolbar 剪枝（视图标题栏承载历史/清空）', () =
     vi.restoreAllMocks();
   });
 
-  it('toolbar 剪枝后 webview 无溢出菜单元素（历史/清空迁至视图标题栏命令）', () => {
+  it('toolbar 剪枝后 webview 无溢出菜单元素（历史/清空已由标题条按钮 + 历史浮层取代）', () => {
     mountChatView();
     // toolbar 已剪：不再渲染 overflow-menu / role-pack-badge 等顶部栏元素
     expect(document.querySelector('.overflow-menu')).toBeNull();
@@ -475,6 +491,82 @@ describe('chatView toolbar 剪枝（视图标题栏承载历史/清空）', () =
       dispatch({ type: 'chat_history_dates', dates: ['2026-08-15'] });
       dispatch({ type: 'chat_history_view', date: '2026-08-15' });
     }).not.toThrow();
+  });
+});
+
+describe('chatView 会话管理（2026-08-17 重构：标题条按钮 + 历史模态浮层）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('标题条按钮：改名/新建/历史 分别发送对应 W→E 消息', () => {
+    const { postMessage } = mountChatView();
+    (document.getElementById('renameSessionBtn') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'rename_request' });
+    (document.getElementById('newSessionBtn') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'new_session' });
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'session_list' });
+  });
+
+  it('历史按钮：打开浮层并请求列表', () => {
+    const { postMessage } = mountChatView();
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    expect((document.getElementById('historyOverlay') as HTMLElement).hidden).toBe(false);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'session_list' });
+  });
+
+  it('session_list_data 渲染历史条目：标题+时间+垃圾桶；点击条目发送 switch_session 并关闭浮层', () => {
+    const { postMessage } = mountChatView();
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [{ sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() }],
+    });
+    const items = document.querySelectorAll('.history-modal__item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.history-modal__item-title')?.textContent).toBe('会话A');
+    // 有条目时空态隐藏
+    expect((document.getElementById('historyEmpty') as HTMLElement).hidden).toBe(true);
+    // 点击条目 → switch_session + 关闭浮层
+    (items[0] as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'switch_session', sessionId: '2026-08-15-s1' });
+    expect((document.getElementById('historyOverlay') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('历史条目垃圾桶：点击发送 delete_session 且不触发条目加载', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [{ sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() }],
+    });
+    const delBtn = document.querySelector('.history-modal__item-del') as HTMLElement;
+    delBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_session', sessionId: '2026-08-15-s1' });
+    // stopPropagation：不触发条目加载
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'switch_session' }));
+  });
+
+  it('session_list_data 空数组 → 显示空态', () => {
+    mountChatView();
+    dispatch({ type: 'session_list_data', sessions: [] });
+    expect((document.getElementById('historyEmpty') as HTMLElement).hidden).toBe(false);
+    expect(document.querySelectorAll('.history-modal__item').length).toBe(0);
+  });
+
+  it('关闭按钮隐藏浮层；遮罩点击隐藏浮层', () => {
+    mountChatView();
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    (document.getElementById('historyCloseBtn') as HTMLElement).click();
+    expect((document.getElementById('historyOverlay') as HTMLElement).hidden).toBe(true);
+    // 再次打开，遮罩点击（target === overlay）关闭
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    const overlay = document.getElementById('historyOverlay') as HTMLElement;
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(overlay.hidden).toBe(true);
   });
 });
 

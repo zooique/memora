@@ -40,11 +40,12 @@ import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
 
-/** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（清空会话 + 会话标题元数据）。
+/** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
  *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5）。
- *  listSessionMetas/getSessionMeta 为 ADR-024 会话标题层的宿主实现（会话列表导航依赖）。 */
+ *  listSessionMetas/getSessionMeta 为 ADR-024 会话标题层的宿主实现（会话列表导航依赖）。
+ *  deleteSession 为 2026-08-17 会话管理重构（历史浮层删除会话记录，替代原 clearSession）。 */
 type HostSessionStore = ISessionStore & {
-  clearSession: (date: string, session: string) => void;
+  deleteSession: (sessionId: string) => void;
   truncateFrom: (date: string, session: string, fromTs: string) => boolean;
   listSessionMetas: () => SessionMeta[];
   getSessionMeta: (sessionId: string) => SessionMeta | undefined;
@@ -218,10 +219,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         void this.handleSend(msg.text.trim());
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
         void this.handleResume(msg.text.trim());
-      } else if (msg.type === 'clear') {
-        // 清空对话：toolbar 剪枝后由视图标题栏命令（memora.clearChat）触发，
-        // 此处保留 webview 兜底路径（协议兼容），复用同一清空逻辑
-        void this.clearFromCommand();
+      } else if (msg.type === 'new_session') {
+        // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史（2026-08-17 会话管理重构）
+        void this.newSessionFromCommand();
+      } else if (msg.type === 'session_list') {
+        // 标题条「历史」按钮 → 返回非当前会话列表供 webview 渲染模态浮层
+        this.pushSessionList();
+      } else if (msg.type === 'switch_session') {
+        // 历史浮层点击条目 → 切入该会话并回放
+        void this.switchToSession(msg.sessionId);
+      } else if (msg.type === 'delete_session') {
+        // 历史浮层垃圾桶删除 → host 确认不可恢复后删除会话记录
+        void this.handleDeleteSession(msg.sessionId);
+      } else if (msg.type === 'rename_request') {
+        // 标题条改名笔 → 弹 InputBox 输入新标题写入元数据
+        void this.renameCurrentSession();
       } else if (msg.type === 'delete_turn') {
         // 删除单个问答闭环（AI 消息「删除」按钮触发）：确认不可恢复后截断该问答及之后所有
         void this.deleteTurnFrom(msg.ts);
@@ -371,36 +383,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 清空当前会话（由视图标题栏「清空对话」命令触发）：确认后清空会话消息，
-   * 并通知 webview 清空消息区
-   *
-   * 危险操作确认走 host 侧原生 modal（VSCode webview 禁用原生 confirm()，
-   * 避免「确认框静默失效 → 按钮无反应」的功能性缺陷，对抗评估 P0-2）。
-   * 依赖 WorkspaceSessionStore.clearSession（宿主扩展方法，非内核 ISessionStore 标准接口）。
-   *
-   * 收窄语义（SSOT 排雷 P1-1）：只清空「当前活跃会话 _currentSessionId」这一个会话，
-   * 绝不清空其他会话，避免「清空当前对话」实际清光全部历史的数据破坏错位。
-   */
-  public async clearFromCommand(): Promise<void> {
-    const choice = await vscode.window.showWarningMessage(
-      `确定清空「${this.currentSessionTitle()}」？此操作不可恢复。`,
-      { modal: true },
-      '清空',
-    );
-    if (choice !== '清空') return;
-    try {
-      // 清空当前活跃会话（ADR-024：同时删除会话标题元数据）
-      const { date, session } = this.parseSessionId(this._currentSessionId);
-      this.sessionStore.clearSession(date, session);
-    } catch (err) {
-      // 清空失败不阻塞展示（仅清 webview UI），但需记录（SSOT 不藏错）
-      console.warn('Memora 清空会话失败', err);
-    }
-    // 清空后重放当前会话（此时已空），保证 UI 与存储一致
-    this.replayCurrentSession();
-  }
-
-  /**
    * 删除单个问答闭环（AI 消息「删除」按钮，2026-08-16 对话闭环管理）
    *
    * 语义（truncate-from-turn，对齐市面主流）：删除【该问答及其之后所有】消息，保证剩余
@@ -428,50 +410,57 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.replayCurrentSession();
   }
 
-  /** 会话列表 QuickPick 动作项标识（vs showQuickPick 无内建 kind，用字符串常量区分） */
-  private static readonly ACTION_NEW = '__new__';
-  private static readonly ACTION_RENAME = '__rename__';
+  /**
+   * 推送历史会话列表（对 session_list 的应答，2026-08-17 会话管理重构）
+   *
+   * 只返回非当前会话（设计收敛：当前会话不进历史记录），按 updatedAt 降序，
+   * 供 webview 渲染历史模态浮层。无历史时 sessions 为空数组（webview 显示空态）。
+   */
+  private pushSessionList(): void {
+    const metas = this.sessionStore
+      .listSessionMetas()
+      .filter((m) => m.sessionId !== this._currentSessionId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    this.post({
+      type: 'session_list_data',
+      sessions: metas.map((m) => ({
+        sessionId: m.sessionId,
+        title: m.title,
+        updatedAt: m.updatedAt,
+      })),
+    });
+  }
 
   /**
-   * 会话列表导航（由视图标题栏「会话列表」命令触发）：QuickPick 列出全部会话
-   * （标题 + 日期描述），首项「新建会话」、次项「改当前会话名」，其余为可切换会话。
+   * 删除指定历史会话（历史浮层垃圾桶触发，2026-08-17 会话管理重构）
    *
-   * 视图标题栏（view/title）按钮只能承载图标命令，无法内嵌下拉菜单；会话列表
-   * 由命令弹 QuickPick 实现（对齐 VS Code 原生交互）。选中会话 → 加载到对话框；
-   * 选中动作项 → 新建/改名。
+   * 危险操作确认走 host 侧原生 modal（对齐 delete_turn 的 P0-2 决策）。
+   * 当前会话不进历史记录（设计收敛），正常不会删除到当前会话；防御性保护：若目标是
+   * 当前会话则拒绝 + 提示（防未来 UI 变动误删当前会话导致空窗）。
+   * 删除后重推列表（webview 浮层同步移除该项）。
+   *
+   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
    */
-  public async switchSessionFromCommand(): Promise<void> {
-    if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换会话' });
+  private async handleDeleteSession(sessionId: string): Promise<void> {
+    const meta = this.sessionStore.getSessionMeta(sessionId);
+    const title = meta?.title ?? sessionId;
+    const choice = await vscode.window.showWarningMessage(
+      `确定删除会话「${title}」？此操作不可恢复。`,
+      { modal: true },
+      '删除',
+    );
+    if (choice !== '删除') return;
+    if (sessionId === this._currentSessionId) {
+      this.post({ type: 'notice', level: 'info', message: '当前会话不在历史记录，无法删除' });
       return;
     }
-    const metas = this.sessionStore.listSessionMetas();
-    const current = this.sessionStore.getSessionMeta(this._currentSessionId);
-    const picked = await vscode.window.showQuickPick(
-      [
-        { label: '＋ 新建会话', description: '', id: MemoraChatViewProvider.ACTION_NEW },
-        {
-          label: '✎ 改当前会话名',
-          description: current?.title ?? this._currentSessionId,
-          id: MemoraChatViewProvider.ACTION_RENAME,
-        },
-        ...metas.map((m) => ({
-          label: m.title,
-          description: this.fmtSessionId(m.sessionId),
-          id: m.sessionId,
-          detail: m.sessionId === this._currentSessionId ? '当前会话' : undefined,
-        })),
-      ],
-      { placeHolder: '选择会话（回车加载，或选动作项）' },
-    );
-    if (!picked) return; // 用户取消
-    if (picked.id === MemoraChatViewProvider.ACTION_NEW) {
-      await this.newSessionFromCommand();
-    } else if (picked.id === MemoraChatViewProvider.ACTION_RENAME) {
-      await this.renameCurrentSession();
-    } else {
-      await this.switchToSession(picked.id);
+    try {
+      this.sessionStore.deleteSession(sessionId);
+    } catch (err) {
+      // 删除失败不阻塞（重推列表仍可用），但需记录（SSOT 不藏错）
+      console.warn('Memora 删除会话记录失败', err);
     }
+    this.pushSessionList();
   }
 
   /**
@@ -552,15 +541,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         message: err instanceof Error ? err.message : String(err),
       });
     }
-  }
-
-  /** 会话标识 → 用户可读日期描述（YYYY年M月D日，历史列表副标题） */
-  private fmtSessionId(sessionId: string): string {
-    const idx = sessionId.lastIndexOf('-');
-    const date = sessionId.slice(0, idx);
-    const [y, m, d] = date.split('-').map((n) => Number(n));
-    if (!y || !m || !d) return date;
-    return `${y}年${m}月${d}日`;
   }
 
   /** 确保 Agent 已装配（未装配时返回 undefined 并提示） */
@@ -1061,7 +1041,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'error', message: chunk.message });
         }
       }
-      // assistant 消息持久化由内核 appendAssistant 完成（写入 todayDate-main），
+      // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）
     } catch (err) {
       this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
@@ -1148,10 +1128,21 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
        消息头部标签 msg-ai-label 表达。面板结构收敛为三层：消息区 → 活动区 → 输入区。 -->
 
   <!-- ② 消息流：日期分隔线 + 消息 + 空状态引导（ui-redesign.md §4.1 ②） -->
-  <!-- 会话标题条（ADR-024 会话标题层）：顶部展示当前会话标题，主动可见让用户识别
-      当前在哪个会话（由 chatView 依 session_title 消息更新；未命名会话显示占位标题） -->
+  <!-- 会话标题条（ADR-024 会话标题层 + 2026-08-17 会话管理重构）：
+       左侧 = 会话标题 + 改名笔；右侧 = 新建会话「＋」+ 历史记录按钮。
+       「清空对话」已移除（伪需求，删除会话记录覆盖），会话导航全量收敛到标题条。 -->
   <div id="sessionTitleBar" class="session-title-bar" title="当前会话">
     <span id="sessionTitleText" class="session-title-bar__text"></span>
+    <button id="renameSessionBtn" class="session-title-bar__btn" title="重命名会话" aria-label="重命名会话">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+    </button>
+    <span class="session-title-bar__spacer"></span>
+    <button id="newSessionBtn" class="session-title-bar__btn" title="新建会话" aria-label="新建会话">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <button id="historyBtn" class="session-title-bar__btn" title="历史记录" aria-label="历史记录">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+    </button>
   </div>
   <div id="messages">
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
@@ -1208,6 +1199,21 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </button>
         </div>
       </div>
+    </div>
+  </div>
+  <!-- 历史记录模态浮层（2026-08-17 会话管理重构）：
+       对齐 Trae「历史会话」面板——标题条历史按钮触发，模态浮层列出非当前会话，
+       点击条目加载、条目垃圾桶删除（host 确认）、遮罩/关闭按钮退出。 -->
+  <div id="historyOverlay" class="history-overlay" hidden>
+    <div class="history-modal" role="dialog" aria-modal="true" aria-label="历史记录">
+      <div class="history-modal__header">
+        <span class="history-modal__title">历史记录</span>
+        <button id="historyCloseBtn" class="history-modal__close" title="关闭" aria-label="关闭历史记录">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="historyList" class="history-modal__list"></div>
+      <div id="historyEmpty" class="history-modal__empty" hidden>暂无历史会话，新建会话后自动归档到此</div>
     </div>
   </div>
   <!-- 阶段 B（P2-1）：运行时脚本由外部 chatView.js 提供（CSP script-src cspSource 加载） -->

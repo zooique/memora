@@ -87,14 +87,20 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 清空指定会话的消息（宿主扩展方法，供「清空对话」按钮调用）
+   * 删除指定会话记录（历史浮层垃圾桶触发，2026-08-17 会话管理重构）
+   *
+   * 删除整条会话：消息 + 标题元数据 + 检查点（连带清检查点，防脏检查点残留污染
+   * trace_summary）。替代原 clearSession（清空当前会话）——清空为伪需求，由
+   * 「删除会话记录」覆盖（用户决策 2026-08-17）。
    *
    * 非内核 ISessionStore 标准接口，仅在宿主侧使用。
+   *
+   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
    */
-  clearSession(date: string, session: string): void {
-    const key = `${date}-${session}`;
-    this.store.delete(key);
-    this.metas.delete(key);
+  deleteSession(sessionId: string): void {
+    this.store.delete(sessionId);
+    this.metas.delete(sessionId);
+    this.checkpoints.delete(sessionId);
     this.save();
   }
 
@@ -111,7 +117,7 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 都能命中目标答；再向前回退到最近一条 role='user' 的消息视为该问答的「问」，
    * 删除从该「问」到会话末尾的全部消息。找不到锚点返回 false（no-op）。
    *
-   * 非内核 ISessionStore 标准接口（内核接口坚持最小化），仅在宿主侧使用，与 clearSession 同模式。
+   * 非内核 ISessionStore 标准接口（内核接口坚持最小化），仅在宿主侧使用，与 deleteSession 同模式。
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识

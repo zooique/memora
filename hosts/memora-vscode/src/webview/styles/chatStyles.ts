@@ -56,6 +56,88 @@ export const chatStyles = `
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     user-select: none;
   }
+  /* 会话标题条按钮组（2026-08-17 会话管理重构）：改名笔 + 新建「＋」+ 历史，
+   * 会话导航全量收敛到标题条；spacer 把按钮组推向右端（对齐 Trae 右上角历史入口） */
+  .session-title-bar__btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; margin-left: var(--sp-1, 4px);
+    padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    background: transparent; color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
+  }
+  .session-title-bar__btn:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-primary, #cccccc);
+  }
+  .session-title-bar__spacer { flex: 1 1 auto; }
+
+  /* ============ Components：历史记录模态浮层（2026-08-17 会话管理重构） ============ */
+  /* 对齐 Trae「历史会话」面板：模态浮层列出非当前会话，条目点击加载、悬浮垃圾桶删除。
+   * 遮罩居中弹窗；列表滚动；空态兜底；危险删除色复用 --status-fail（令牌 SSOT）。 */
+  .history-overlay {
+    position: fixed; inset: 0; z-index: 30;
+    background: rgba(0, 0, 0, .45);
+    display: flex; align-items: center; justify-content: center;
+    padding: var(--sp-6, 16px);
+  }
+  .history-modal {
+    width: min(320px, 90vw); max-height: 70vh;
+    display: flex; flex-direction: column;
+    background: var(--surface-page, #1e1e1e);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius-lg, 8px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    overflow: hidden;
+  }
+  .history-modal__header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  .history-modal__title {
+    font-size: var(--font-sm, 11px); font-weight: 500;
+    color: var(--text-primary, #cccccc);
+  }
+  .history-modal__close {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
+  }
+  .history-modal__close:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-primary, #cccccc);
+  }
+  .history-modal__list { overflow-y: auto; padding: var(--sp-1, 4px) 0; }
+  .history-modal__item {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-4, 10px);
+    cursor: pointer;
+  }
+  .history-modal__item:hover { background: var(--surface-hover, rgba(128,128,128,.12)); }
+  .history-modal__item-title {
+    flex: 1 1 auto; font-size: var(--font-base, 13px);
+    color: var(--text-primary, #cccccc);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .history-modal__item-time {
+    flex: 0 0 auto; font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .history-modal__item-del {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
+    opacity: 0; transition: opacity .15s ease; /* 悬浮条目才显示（对齐 Trae 悬浮删除） */
+  }
+  .history-modal__item:hover .history-modal__item-del { opacity: 1; }
+  .history-modal__item-del:hover {
+    background: rgba(179, 38, 30, .15);
+    color: var(--status-fail, #b3261e);
+  }
+  .history-modal__empty {
+    padding: var(--sp-6, 16px); text-align: center;
+    font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6);
+  }
 
   /* ============ Components：消息 ============ */
   /* 空状态：克制的中性提示，垂直居中 */

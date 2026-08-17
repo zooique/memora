@@ -126,17 +126,11 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  // 命令：清空当前对话（视图标题栏按钮触发，toolbar 剪枝后替代原 webview 内清空入口）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.clearChat', () => void chatProvider.clearFromCommand()),
-  );
-
-  // 命令：会话列表（新建/切换/改名，视图标题栏按钮触发，替代原按天历史切换）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.switchSession', () =>
-      void chatProvider.switchSessionFromCommand(),
-    ),
-  );
+  // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：
+  //   - 新建会话「＋」/ 历史记录（模态浮层）/ 改名笔 均由 webview 内按钮触发（W→E 消息）
+  //   - 原「清空对话」（clearChat）为伪需求，由「删除会话记录」覆盖（用户决策 2026-08-17）
+  //   - 原「会话列表」（switchSession，QuickPick 三合一）被标题条按钮 + 历史浮层取代
+  // 故 memora.clearChat / memora.switchSession 两命令不再注册。
 }
 
 /** 插件停用入口 */

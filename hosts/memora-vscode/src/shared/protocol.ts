@@ -41,8 +41,34 @@ export type WebviewToExtensionMessage =
   | { type: 'send'; text: string }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
-  /** 清空当前会话对话（P1-体验：清空对话按钮） */
-  | { type: 'clear' }
+  /**
+   * 新建会话（标题条「＋」按钮触发，2026-08-17 会话管理重构）
+   *
+   * 由标题条新建按钮触发，host 调 newSessionFromCommand 生成唯一会话名并切入空会话；
+   * 旧会话随之归档进历史记录（可经 session_list 弹窗加载回来或删除）。
+   */
+  | { type: 'new_session' }
+  /**
+   * 请求历史会话列表（标题条「历史」按钮触发，2026-08-17 会话管理重构）
+   *
+   * host 返回 session_list_data（非当前会话，按 updatedAt 降序），webview 渲染模态浮层。
+   */
+  | { type: 'session_list' }
+  /**
+   * 加载指定历史会话（历史浮层点击条目触发）：host 调 switchToSession 切入并回放
+   */
+  | { type: 'switch_session'; sessionId: string }
+  /**
+   * 删除指定历史会话（历史浮层条目垃圾桶触发）：host 侧确认不可恢复后删除该会话记录
+   *
+   * 当前会话不进历史记录（设计收敛 2026-08-17），故正常不会删除到当前会话；
+   * host 侧对目标是当前会话做保护（拒绝 + 提示）。
+   */
+  | { type: 'delete_session'; sessionId: string }
+  /**
+   * 重命名当前会话（标题条改名笔触发）：host 弹 InputBox 输入新标题写入元数据
+   */
+  | { type: 'rename_request' }
   /**
    * 删除单个问答闭环（truncate-from-turn，2026-08-16 对话闭环管理）
    *
@@ -198,6 +224,16 @@ export type ExtensionToWebviewMessage =
    * 让用户识别当前在哪个会话（主动可见）。title 为未命名会话时占位。
    */
   | { type: 'session_title'; title: string }
+  /**
+   * 历史会话列表（对 session_list 的应答，2026-08-17 会话管理重构）
+   *
+   * host 返回非当前会话的历史列表（按 updatedAt 降序），webview 据此渲染历史模态浮层。
+   * 当前会话不进历史记录（设计收敛），故 sessions 不含当前会话——天然规避「删除当前会话」边界。
+   */
+  | {
+      type: 'session_list_data';
+      sessions: { sessionId: string; title: string; updatedAt: string }[];
+    }
   /**
    * Chat Panel Provider 列表同步（底部模型下拉框的数据）
    *
