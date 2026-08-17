@@ -127,10 +127,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       if (ok) {
         void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
         const agent = await this.ensureAgent();
-        const displayName =
-          agent?.rolePackManager?.listMeta().find((m) => m.name === msg.name)?.displayName ??
-          msg.name;
-        this._chatProvider?.prefillInput(`继续以「${displayName}」的视角处理以上任务`);
+        const meta = agent?.rolePackManager?.listMeta().find((m) => m.name === msg.name);
+        const displayName = meta?.displayName ?? msg.name;
+        // 预填衔接文本：角色包自洽声明 handoffPrompt 优先（作者定制特色接手话术），
+        // 缺省回退通用话术。SSOT：提示词真理源在角色包 meta（内核透传），宿主仅兜底，
+        // 不引入跨包引用（角色包独立自洽，§11 插卡解耦）。
+        const fallback = `继续以「${displayName}」的视角处理以上任务`;
+        this._chatProvider?.prefillInput(meta?.handoffPrompt?.trim() ? meta.handoffPrompt : fallback);
       }
       return;
     }
