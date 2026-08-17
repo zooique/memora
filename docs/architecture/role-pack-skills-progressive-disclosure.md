@@ -10,17 +10,20 @@
 
 ### 1.1 现状（诚实缺口）
 
-角色包 `manifest.skills` 的 `file` 指针当前**不装载正文**，内核仅消费 `capability`（映射工具白名单）：
+角色包 `manifest.skills` 的 `file` 指针当前**不装载正文**；能力面独立为顶层 `capabilities`（C2，2026-08-18），映射工具白名单：
 
 ```json
 "skills": [
-  { "file": "skills/write.md", "name": "write", "capability": "file:write", "description": "把成稿写入本地文件" }
+  { "file": "skills/write.md", "name": "write", "description": "把成稿写入本地文件" }
+],
+"capabilities": [
+  { "capability": "file:write", "description": "写入文件" }
 ]
 ```
 
-- `capability: file:write` → 生效（映射 `write_file` 工具白名单）
-- `file: skills/write.md` → **不生效**（生态兼容指针，正文不装载）
-- `name` / `description` → **不暴露给 LLM**（仅存于元数据）
+- `capabilities[].capability: file:write` → 生效（映射 `write_file` 工具白名单）
+- `skills[].file: skills/write.md` → **不生效**（生态兼容指针，正文不装载）
+- `skills[].name` / `description` → L1 常驻暴露给 LLM（渐进披露 L1）
 
 **缺口**：角色包声明了"有这篇技能"，但 LLM 既看不到它的存在（无 name/description 常驻），也无法读取它的正文（无装载工具）。`file` 是"挂着但没通"的指针。
 

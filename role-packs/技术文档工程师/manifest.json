@@ -3,7 +3,13 @@
   "formatVersion": "1.0.0",
   "description": "专注技术文档写作，擅长 API 文档、教程、技术博客的结构化输出",
   "version": "1.0.0",
-  "keywords": ["文档", "写作", "技术文档", "API", "教程"],
+  "keywords": [
+    "文档",
+    "写作",
+    "技术文档",
+    "API",
+    "教程"
+  ],
   "author": "memora",
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
@@ -15,13 +21,26 @@
       "memoryRecall": "limited",
       "summaryRecall": "on"
     },
-    "act": { "toolMode": "block", "temperature": 0.3, "streaming": "streaming" },
-    "reflect": { "summary": "on", "handoff": "wait" },
-    "global": { "errorHandling": "retry" }
+    "act": {
+      "toolMode": "block",
+      "temperature": 0.3,
+      "streaming": "streaming"
+    },
+    "reflect": {
+      "summary": "on",
+      "handoff": "wait"
+    },
+    "global": {
+      "errorHandling": "retry"
+    }
   },
   "persona": "persona.md",
   "rules": "rules.md",
-  "skills": [
-    { "capability": "llm:summarize", "description": "提炼要点辅助文档结构规划" }
+  "skills": [],
+  "capabilities": [
+    {
+      "capability": "llm:summarize",
+      "description": "提炼要点辅助文档结构规划"
+    }
   ]
 }

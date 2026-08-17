@@ -67,8 +67,12 @@
   "persona": "persona.md",
   "rules": "rules.md",
   "skills": [
-    { "file": "skills/write.md", "name": "write", "capability": "file:write" },
-    { "file": "skills/search.md", "name": "search", "capability": "web:search" }
+    { "file": "skills/write.md", "name": "write" },
+    { "file": "skills/search.md", "name": "search" }
+  ],
+  "capabilities": [
+    { "capability": "file:write", "description": "写入文件" },
+    { "capability": "web:search", "description": "联网搜索" }
   ]
 }
 ```
@@ -84,8 +88,9 @@
 ### 2.4 单一真理源与字段集
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
-- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；均缺省回退约定名 `persona.md`/`rules.md`，§2.3）/ `skills`（技能注册对象数组，§四）；
-- **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
+- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；均缺省回退约定名 `persona.md`/`rules.md`，§2.3）/ `skills`（技能注册对象数组，§四）/ `capabilities`（能力声明顶层数组，§四 C2）；
+- **skills 字段集**：`file`（必填，技能文件路径或已注册技能名，生态指针）+ `name`（可选）/ `description`（可选）；能力声明请放顶层 `capabilities`（C2）；
+- **capabilities 字段集**：`capability`（必填，中立能力名 `域:动作`，§四）+ `description`（可选）；声明角色可调用的中立能力（工具白名单面）；
 - **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**（`rules` 未声明时回退约定名 `rules.md`）；skills 转译为注册形状 + 派生态指针（正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 - **分发**：文件夹 zip 压缩（对齐 skills 市场分发方式）。
@@ -122,7 +127,8 @@
 ├── manifest.json（★核心控制文件 = 元数据 + L2 策略 + 内容路径注册 + skills 注册）
 │   ├── 元数据：name / displayName / formatVersion / keywords / trigger / version / 合规字段 ...
 │   ├── strategy：L2 行为策略（嵌套对象，见 §六）
-│   └── skills：技能注册对象数组（file / name / capability，见 §四）
+│   └── skills：技能注册对象数组（file / name / description，§四）
+│   └── capabilities：能力声明顶层数组（capability / description，§四 C2）
 ├── persona.md（L1 内容层：身份与视角，可选，§2.3）
 ├── rules.md（L1 内容层：边界与安全约束，可选）
 ├── skills/       # 内嵌技能文件（manifest.skills 注册，兼容 skills 生态结构）
@@ -137,7 +143,8 @@
 |------|------|---------|
 | `persona.md` | 身份与视角 | 作为 system prompt 注入（允许缺省） |
 | `rules.md` | 边界与安全契约 | 作为安全约束生效（实现可对接自身护栏） |
-| `manifest.skills[].capability` | 能力清单 | 按 `capability` 映射到实现可用工具 |
+| `manifest.capabilities` | 能力清单 | 按 `capability` 映射到实现可用工具（工具白名单） |
+| `manifest.skills[].file` | 技能文件 | 渐进披露 L2 按需装载（read_skill） |
 
 L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1**（persona/rules 是独立 Markdown 正文；skills 是 manifest 结构化注册，机器可读），这就是"插上就能用"。
 
@@ -154,29 +161,31 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 
 ---
 
-## 四、能力声明（skills → capabilities）
+## 四、能力声明（capabilities 独立模块 + skills 技能注册）
 
-`manifest.skills` 以**对象数组**声明角色包需要的能力与内嵌技能，使用**中立能力命名空间**，不绑具体实现，**支持多个添加**：
+**C2 定案（2026-08-18）**：能力面与内容面分离——`manifest.capabilities`（顶层数组）声明**角色可调用的中立能力**（工具白名单面），`manifest.skills`（对象数组）回归**技能文件引用**（内容面）。不再混在一个数组里。
 
 ```json
 "skills": [
-  { "file": "skills/write.md", "name": "write", "capability": "file:write", "description": "把成稿写入本地文件" },
-  { "file": "skills/search.md", "name": "search", "capability": "web:search", "description": "写作查资料" },
-  { "file": "skills/summarize.md", "name": "summarize", "capability": "llm:summarize" },
-  { "capability": "file:read", "description": "纯能力声明（无具体技能文件，仅声明可调用某中立能力）" }
+  { "file": "skills/write.md", "name": "write", "description": "把成稿写入本地文件" },
+  { "file": "skills/search.md", "name": "search", "description": "写作查资料" }
+],
+"capabilities": [
+  { "capability": "file:write", "description": "写入文件" },
+  { "capability": "web:search", "description": "写作查资料" },
+  { "capability": "llm:summarize" }
 ]
 ```
 
-- **字段**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`）**至少其一**；`name`（可选）/ `description`（可选）；
-- **纯能力声明**：仅声明 `capability`、无 `file` 的技能项合法——声明"角色可调用某中立能力"而无具体技能文件（如示例末项）；有 `file` 无 `capability` 时仅作生态指针，不参与工具白名单映射；
+- **`capabilities`（顶层，能力面）**：每项 `{ capability: '域:动作', description? }`。声明角色可调用的中立能力，经 capabilityMap 映射为工具白名单（agent.ts applyRolePackToolExposure，「换装 = 换 Agent」）；
+- **`skills`（技能注册，内容面）**：每项 `{ file, name?, description? }`。`file` 为技能文件路径（生态指针），正文经渐进披露 L2（read_skill）按需装载；纯能力声明不再放 skills（放顶层 capabilities）；
 - **实现映射**：memora 把 `file:write` 映射到内置 `writeFile` 工具；其他实现映射到自有工具；
 - **未知能力**：装载方跳过该能力（可选提示"能力不可用"），不阻塞；
-- 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集；
-- `capability` 为可选、`description` 可选（供 LLM 与校验器理解）。
+- 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集。
 
-**capability 是内核唯一行为入口**：`manifest.skills` 项中声明 `capability` 标签（如 `capability: web:search`）的，装载时派生为能力声明并映射到工具；未声明 `capability` 的技能项不参与工具白名单映射。capabilities 未匹配到任何内嵌包时，按实现映射到自有工具（原规则不变）。
+**capability 是内核唯一行为入口**：`manifest.capabilities` 声明的能力（如 `web:search`）装载时映射到工具白名单；未声明 capabilities 的角色包 → 白名单为 null（全部暴露，保持现状）。
 
-> **技能正文定位（渐进披露 L1/L2）**：`skills/{file}` 指向的技能文件正文默认**不预装载**，`capability` 是内核的**工具暴露入口**（映射工具白名单）。技能正文经**渐进披露**按需装载（对齐 Agent Skills 行业标准）：
+> **技能正文定位（渐进披露 L1/L2）**：`skills/{file}` 指向的技能文件正文默认**不预装载**，`capabilities` 是内核的**工具暴露入口**（映射工具白名单）。技能正文经**渐进披露**按需装载（对齐 Agent Skills 行业标准）：
 > - **L1 常驻元数据**：`manifest.skills` 的 `name` + `description` 暴露给 LLM（每技能一行，省 token），LLM 据此判断何时读取技能；
 > - **L2 按需装载**：LLM 调用 `read_skill` 工具，按技能名读取 `file` 指向的技能正文——`file` 从"生态指针"变为"装载入口"；
 > - **标准契约**：`capability` 保证生效（工具暴露面）；技能正文装载经 `read_skill` 按需提供，实现应支持 `read_skill` 以兑现渐进披露（memora 已实现，见 [role-pack-skills-progressive-disclosure.md](./role-pack-skills-progressive-disclosure.md)）。

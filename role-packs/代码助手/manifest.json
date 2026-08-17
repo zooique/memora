@@ -3,7 +3,13 @@
   "formatVersion": "1.0.0",
   "description": "专业代码助手，擅长代码编写、调试、重构与技术解答",
   "version": "1.0.0",
-  "keywords": ["编程", "代码", "开发", "调试", "重构"],
+  "keywords": [
+    "编程",
+    "代码",
+    "开发",
+    "调试",
+    "重构"
+  ],
   "author": "memora",
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
@@ -13,14 +19,29 @@
       "memoryRecall": "full",
       "summaryFocus": "以代码工作视角判断本轮值得记的维度：①用户意图/需求 ②技术决策与理由 ③关键错误与排查方案 ④配置/API schema；其中高价值代码片段、函数签名、关键 diff 用 Markdown 代码块/表格原样保留（摘要仍控制在 500 字内）"
     },
-    "act": { "toolMode": "allow", "temperature": 0.3 },
-    "reflect": { "handoff": "wait" }
+    "act": {
+      "toolMode": "allow",
+      "temperature": 0.3
+    },
+    "reflect": {
+      "handoff": "wait"
+    }
   },
   "persona": "persona.md",
   "rules": "rules.md",
-  "skills": [
-    { "capability": "web:search", "description": "搜索技术文档、API 参考、解决方案" },
-    { "capability": "file:read", "description": "读取已有代码文件" },
-    { "capability": "file:write", "description": "将代码写入文件" }
+  "skills": [],
+  "capabilities": [
+    {
+      "capability": "web:search",
+      "description": "搜索技术文档、API 参考、解决方案"
+    },
+    {
+      "capability": "file:read",
+      "description": "读取已有代码文件"
+    },
+    {
+      "capability": "file:write",
+      "description": "将代码写入文件"
+    }
   ]
 }

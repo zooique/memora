@@ -64,7 +64,7 @@ const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
-  'strategy', 'skills', 'persona', 'rules', 'handoffPrompt',
+  'strategy', 'skills', 'capabilities', 'persona', 'rules', 'handoffPrompt',
 ]);
 
 /** 合规 interactionType 枚举（§七 第 3 条） */
@@ -482,7 +482,7 @@ function validateManifestSkills(
       severity: 'error',
       code: 'SKILLS_NOT_ARRAY',
       path: 'skills',
-      message: 'skills 必须是对象数组（每项 { file?, name?, description?, capability? }，§4）',
+      message: 'skills 必须是对象数组（每项 { file?, name?, description? }，§四；C2 后能力声明独立为顶层 capabilities）',
     });
     return;
   }
@@ -500,17 +500,15 @@ function validateManifestSkills(
     }
     const record = item as Record<string, unknown>;
 
-    // file 或 capability 至少其一（§4：生态指针 / 能力声明）
+    // C2 后 skills 仅技能文件引用：必须声明 file（§四 生态指针）
     const file = record['file'];
-    const capability = record['capability'];
     const hasFile = typeof file === 'string' && file.trim() !== '';
-    const hasCapability = typeof capability === 'string' && capability.trim() !== '';
-    if (!hasFile && !hasCapability) {
+    if (!hasFile) {
       issues.push({
         severity: 'error',
         code: 'INVALID_MANIFEST_SKILL',
         path: itemPath,
-        message: `skills[${index}] 必须声明 file（技能文件路径/已注册技能名）或 capability（能力声明 \`域:动作\`）至少其一（§4）`,
+        message: `skills[${index}] 必须声明 file（技能文件路径/已注册技能名）；能力声明请放顶层 capabilities（C2）`,
       });
     }
 
@@ -526,9 +524,46 @@ function validateManifestSkills(
         });
       }
     }
+  });
+}
 
-    // capability 可选，声明则须匹配 `域:动作`
-    if (!hasCapability) return;
+/**
+ * 校验顶层 capabilities（C2，2026-08-18 独立模块）
+ *
+ * capabilities 是角色能力面（工具白名单）声明，独立于 skills 技能文件。
+ * 每项须为 `{ capability: '域:动作', description? }`；capability 匹配中立能力名。
+ *
+ * @param capabilitiesNode manifest.capabilities 节点
+ * @param issues 收集校验问题
+ */
+function validateManifestCapabilities(
+  capabilitiesNode: unknown,
+  issues: RolePackValidationIssue[],
+): void {
+  if (capabilitiesNode === undefined) return;
+  if (!Array.isArray(capabilitiesNode)) {
+    issues.push({
+      severity: 'error',
+      code: 'CAPABILITIES_NOT_ARRAY',
+      path: 'capabilities',
+      message: 'capabilities 必须是对象数组（每项 { capability: "域:动作", description? }，§四）',
+    });
+    return;
+  }
+
+  capabilitiesNode.forEach((item, index) => {
+    const itemPath = `capabilities[${index}]`;
+    if (typeof item !== 'object' || item === null) {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_CAPABILITY',
+        path: itemPath,
+        message: `capabilities[${index}] 必须是对象`,
+      });
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    const capability = record['capability'];
     if (typeof capability !== 'string' || !CAPABILITY_PATTERN.test(capability)) {
       issues.push({
         severity: 'error',
@@ -536,6 +571,15 @@ function validateManifestSkills(
         path: `${itemPath}.capability`,
         message:
           `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}（§四）`,
+      });
+    }
+    const description = record['description'];
+    if (description !== undefined && typeof description !== 'string') {
+      issues.push({
+        severity: 'warning',
+        code: 'INVALID_CAPABILITY',
+        path: `${itemPath}.description`,
+        message: `capabilities[${index}].description 应为字符串（可选）`,
       });
     }
   });
@@ -568,6 +612,7 @@ export function validateManifest(
   validateExclusiveWith(manifest, issues);
   validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
+  validateManifestCapabilities(manifest['capabilities'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }

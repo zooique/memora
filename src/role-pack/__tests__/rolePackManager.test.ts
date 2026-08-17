@@ -22,7 +22,10 @@ const MANIFEST_TECH = {
   persona: 'persona.md',
   rules: 'rules.md',
   skills: [
-    { file: 'skills/summarize.md', name: 'summarize', capability: 'llm:summarize' },
+    { file: 'skills/summarize.md', name: 'summarize' },
+  ],
+  capabilities: [
+    { capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' },
   ],
 };
 
@@ -34,13 +37,17 @@ const MANIFEST_MULTI_SKILL_NO_PERSONA = {
   strategy: { act: { toolMode: 'block' } },
   rules: 'rules.md',
   skills: [
-    { file: 'skills/write.md', name: 'write', capability: 'file:write' },
-    { file: 'skills/search.md', name: 'search', capability: 'web:search' },
+    { file: 'skills/write.md', name: 'write' },
+    { file: 'skills/search.md', name: 'search' },
     { file: 'skills/read.md', name: 'read' },
+  ],
+  capabilities: [
+    { capability: 'file:write', description: '写入文件' },
+    { capability: 'web:search', description: '联网搜索' },
   ],
 };
 
-/** 纯能力声明包（skills 无 file，仅 capability，§4 雷-3a） */
+/** 纯能力声明包（顶层 capabilities，C2 后能力面独立于技能文件） */
 const MANIFEST_PURE_CAPABILITY = {
   name: '项目总监',
   formatVersion: '1.0.0',
@@ -48,7 +55,7 @@ const MANIFEST_PURE_CAPABILITY = {
   strategy: { act: { toolMode: 'allow' } },
   persona: 'persona.md',
   rules: 'rules.md',
-  skills: [
+  capabilities: [
     { capability: 'file:read', description: '读取项目文件' },
     { capability: 'web:search', description: '查询行业资料' },
   ],
@@ -151,12 +158,12 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     // L1 内容：persona + rules 从独立文件装载
     expect(active!.personaPrompt).toContain('技术文档工程师');
     expect(active!.personaPrompt).toContain('术语保持一致');
-    // 技能注册（对象数组）
+    // 技能注册（对象数组，skills 仅文件引用）
     expect(active!.skills).toHaveLength(1);
     expect(active!.skills[0]!.file).toBe('skills/summarize.md');
-    // 能力声明由 skills.capability 派生
+    // 能力声明由顶层 capabilities 派生（C2）
     expect(active!.capabilities).toEqual([
-      { capability: 'llm:summarize', description: undefined },
+      { capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' },
     ]);
   });
 
@@ -249,7 +256,7 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     ]);
   });
 
-  it('纯 capability 声明（skills 无 file）装载并派生能力（雷-3a）', async () => {
+  it('纯能力声明包：顶层 capabilities 独立装载（C2，能力面与技能文件分离）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
     await writePack(packsDir, '项目总监', MANIFEST_PURE_CAPABILITY, {
@@ -262,10 +269,9 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
 
     const active = manager.getActive();
     expect(active!.meta.name).toBe('项目总监');
-    // 纯能力声明项保留（不因缺 file 被丢弃）
-    expect(active!.skills).toHaveLength(2);
-    expect(active!.skills[0]!.file).toBeUndefined();
-    // capability 正常派生为能力声明
+    // C2 后纯能力声明在顶层 capabilities，skills 为空（无技能文件引用）
+    expect(active!.skills).toHaveLength(0);
+    // capabilities 独立派生（不再从 skills 过滤）
     expect(active!.capabilities.map((c) => c.capability).sort()).toEqual([
       'file:read',
       'web:search',

@@ -208,17 +208,14 @@
 
     "skills": {
       "type": "array",
-      "description": "内嵌技能注册（对象数组，支持多个添加）。每项声明 file（生态指针）或 capability（能力声明）至少其一（可同时声明），可选说明。",
+      "description": "内嵌技能注册（对象数组，支持多个添加）。每项声明 file（生态指针）技能文件引用（C2 后能力声明独立为顶层 capabilities），可选 name/description。",
       "items": {
         "type": "object",
-        "anyOf": [
-          { "required": ["file"] },
-          { "required": ["capability"] }
-        ],
+        "required": ["file"],
         "properties": {
           "file": {
             "type": "string",
-            "description": "技能文件路径（相对角色包根）或已注册技能名（可选，与 capability 至少其一）"
+            "description": "技能文件路径（相对角色包根）或已注册技能名（必填，生态指针）"
           },
           "name": {
             "type": "string",
@@ -227,11 +224,27 @@
           "description": {
             "type": "string",
             "description": "技能说明（供 LLM 与校验器理解，可选）"
-          },
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "capabilities": {
+      "type": "array",
+      "description": "能力声明（顶层数组，C2 独立模块，2026-08-18）。角色能力面（工具白名单）与技能内容面分离。",
+      "items": {
+        "type": "object",
+        "required": ["capability"],
+        "properties": {
           "capability": {
             "type": "string",
             "pattern": "^[a-z]+:[a-zA-Z0-9._-]+$",
-            "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`，可选；声明则映射到实现工具）"
+            "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`；声明则映射到实现工具白名单）"
+          },
+          "description": {
+            "type": "string",
+            "description": "能力说明（供 LLM 理解，可选）"
           }
         },
         "additionalProperties": false

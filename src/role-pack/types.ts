@@ -363,9 +363,17 @@ export interface RolePack {
   readonly rules: readonly string[];
   /**
    * 内嵌技能注册（manifest.skills 对象数组，支持多个添加）
-   * 每个对象引用包内技能文件（file 路径），可选声明 name/description/capability
+   * 每个对象引用包内技能文件（file 路径），可选声明 name/description。
+   * 能力声明已独立为顶层 capabilities（2026-08-18 C2）——skills 回归纯技能文件引用。
    */
   readonly skills: readonly RolePackManifestSkill[];
+  /**
+   * 能力声明（manifest.capabilities 顶层数组，2026-08-18 C2）
+   *
+   * 独立于 skills 的一级字段：声明角色可调用的中立能力（工具白名单面），
+   * 与技能文件解耦——「能力面（权限）」与「内容面（技能正文）」分离。
+   */
+  readonly capabilities: readonly RolePackCapability[];
 
   // ── L2 策略层 ──
 
@@ -435,17 +443,14 @@ export interface RolePackManifestSkill {
    * 技能文件路径（相对角色包文件夹根）或已注册技能名（可选）
    *
    * 生态兼容指针（role-pack-spec §四）：供主流 skills 生态互认/移植，内核**不装载正文**。
-   * 内核唯一行为入口是 `capability`（派生工具暴露面）；file 仅作元信息，不承诺执行。
-   * 支持**纯能力声明**（仅 capability、无 file）：声明角色可调用某中立能力，无具体技能文件。
-   * file 与 capability 至少其一（§四）。
+   * 技能正文经渐进披露 L2（read_skill）按需装载（2026-08-18 两级技能统一）。
+   * 能力声明已独立为 manifest 顶层 capabilities（C2）——skills 项不再携带 capability。
    */
   readonly file?: string;
   /** 技能名（可选，缺省取文件名去扩展名） */
   readonly name?: string;
   /** 技能说明（可选，供 LLM 与校验器理解） */
   readonly description?: string;
-  /** 可选：中立能力声明（capability: '域:动作'，§四，如 file:write） */
-  readonly capability?: string;
 }
 
 /**
@@ -720,10 +725,8 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
 
   const personaPrompt = promptParts.join('\n\n');
 
-  // 能力声明：由 manifest.skills 中声明了 capability 的项派生（未声明能力 → 全部暴露）
-  const capabilities: RolePackCapability[] = pack.skills
-    .filter((s) => s.capability)
-    .map((s) => ({ capability: s.capability!, description: s.description }));
+  // 能力声明：manifest 顶层 capabilities 直接派生（C2 后独立字段，不再从 skills 过滤）
+  const capabilities: readonly RolePackCapability[] = pack.capabilities ?? [];
 
   return {
     meta: pack.meta,

@@ -33,6 +33,7 @@ import type {
   RolePack,
   RolePackMeta,
   RolePackManifestSkill,
+  RolePackCapability,
   RolePackAssembly,
   BehaviorStrategy,
 } from '@/role-pack/types.js';
@@ -195,9 +196,11 @@ function parseHandoffPrompt(raw: unknown): string | undefined {
 /**
  * 从 manifest.skills 数组解析技能注册（对象数组，支持多个添加）
  *
- * 每项结构：`{ file?, name?, description?, capability? }`，file 或 capability 至少其一。
- * 承载转译为 RolePack.skills 的原始注册形状；capability 由 assembleRolePack 派生为能力声明。
- * file 为**生态兼容指针**（§四）——仅记录路径供生态互认/移植，**正文不装载**。
+ * 每项结构：`{ file?, name?, description? }`（C2 后不再携带 capability——能力声明
+ * 已独立为顶层 manifest.capabilities，见 parseManifestCapabilities）。
+ * 承载转译为 RolePack.skills 的原始注册形状。
+ * file 为**生态兼容指针**（§四）——仅记录路径供生态互认/移植，**正文不装载**
+ * （渐进披露 L2 read_skill 按需读，2026-08-18 两级技能统一）。
  *
  * @param skillsNode manifest.skills 节点
  * @returns 技能注册列表
@@ -209,22 +212,44 @@ function parseManifestSkills(skillsNode: unknown): RolePackManifestSkill[] {
     if (typeof item !== 'object' || item === null) continue;
     const record = item as Record<string, unknown>;
     const file = record['file'];
-    const capability = record['capability'];
-    // file（生态指针）或 capability（能力声明）至少其一（§四）：
-    // 纯能力声明项（无 file 但有 capability）不丢弃，保留能力暴露面（雷-3a）
     const hasFile = typeof file === 'string' && file.trim() !== '';
-    const hasCapability = typeof capability === 'string' && capability.trim() !== '';
-    if (!hasFile && !hasCapability) continue;
+    if (!hasFile) continue;
     const name = record['name'];
     const description = record['description'];
     skills.push({
-      file: hasFile ? file : undefined,
+      file,
       name: typeof name === 'string' ? name : undefined,
       description: typeof description === 'string' ? description : undefined,
-      capability: hasCapability ? capability : undefined,
     });
   }
   return skills;
+}
+
+/**
+ * 从 manifest.capabilities 顶层数组解析能力声明（C2，2026-08-18 独立模块）
+ *
+ * 能力面（工具白名单）与内容面（技能正文）分离：capabilities 是角色可调用的
+ * 中立能力声明，独立于 skills 技能文件。经 capabilityMap 映射为工具白名单
+ * （agent.ts applyRolePackToolExposure，「换装 = 换 Agent」）。
+ *
+ * @param capabilitiesNode manifest.capabilities 节点
+ * @returns 能力声明列表
+ */
+function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapability[] {
+  if (!Array.isArray(capabilitiesNode)) return [];
+  const capabilities: RolePackCapability[] = [];
+  for (const item of capabilitiesNode) {
+    if (typeof item !== 'object' || item === null) continue;
+    const record = item as Record<string, unknown>;
+    const capability = record['capability'];
+    if (typeof capability !== 'string' || capability.trim() === '') continue;
+    const description = record['description'];
+    capabilities.push({
+      capability,
+      description: typeof description === 'string' ? description : undefined,
+    });
+  }
+  return capabilities;
 }
 
 /**
@@ -500,8 +525,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
     const rules = parseRules(rulesContent);
 
-    // 内嵌技能注册（对象数组，支持多个）
+    // 内嵌技能注册（对象数组，支持多个；C2 后 skills 仅文件引用）
     const skills = parseManifestSkills(manifest['skills']);
+    // 能力声明（顶层数组，C2 独立模块——能力面与技能内容分离）
+    const capabilities = parseManifestCapabilities(manifest['capabilities']);
 
     // companion 内容红线（§七 第 5 条）：正文在独立内容文件，由装载方读取后检测
     if (meta.interactionType === 'companion') {
@@ -529,6 +556,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       personaContent,
       rules,
       skills,
+      capabilities,
       strategy,
     };
   }

@@ -32,8 +32,12 @@ const validManifest: Record<string, unknown> = {
   persona: 'persona.md',
   rules: 'rules.md',
   skills: [
-    { file: 'skills/write.md', name: 'write', description: '写文件', capability: 'file:write' },
+    { file: 'skills/write.md', name: 'write', description: '写文件' },
     { file: 'skills/search.md', name: 'search' },
+  ],
+  capabilities: [
+    { capability: 'file:write', description: '写文件' },
+    { capability: 'web:search', description: '搜索' },
   ],
 };
 
@@ -271,14 +275,15 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL')).toHaveLength(1);
   });
 
-  it('skills 项缺 file 且缺 capability → INVALID_MANIFEST_SKILL error', () => {
+  it('skills 项缺 file → INVALID_MANIFEST_SKILL error（C2 后 skills 仅文件引用）', () => {
     const result = validate({ skills: [{ name: 'no-file' }] });
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL').length).toBeGreaterThan(0);
   });
 
-  it('纯 capability 声明（无 file 有 capability）合法（雷-3a）', () => {
-    const result = validate({ skills: [{ capability: 'file:read' }] });
+  it('纯能力声明在顶层 capabilities（C2，不再放 skills）合法', () => {
+    const result = validate({ capabilities: [{ capability: 'file:read' }] });
     expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'INVALID_CAPABILITY')).toHaveLength(0);
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL')).toHaveLength(0);
   });
 
@@ -288,8 +293,8 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL').length).toBeGreaterThan(0);
   });
 
-  it('capability 非法格式 → INVALID_CAPABILITY error', () => {
-    const result = validate({ skills: [{ file: 'a.md', capability: 'writeFile' }] });
+  it('capabilities 非法格式 → INVALID_CAPABILITY error（C2 顶层校验）', () => {
+    const result = validate({ capabilities: [{ capability: 'writeFile' }] });
     expect(findByCode(result.issues, 'INVALID_CAPABILITY')).toHaveLength(1);
     expect(result.valid).toBe(false);
   });
@@ -298,8 +303,12 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
     const result = validate({
       skills: [
         { file: 'skills/a.md' },
-        { file: 'skills/b.md', capability: 'file:write' },
-        { file: 'skills/c.md', capability: 'web:search' },
+        { file: 'skills/b.md' },
+        { file: 'skills/c.md' },
+      ],
+      capabilities: [
+        { capability: 'file:write' },
+        { capability: 'web:search' },
       ],
     });
     expect(result.valid).toBe(true);
