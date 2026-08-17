@@ -987,12 +987,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       for await (const chunk of gen) {
         // 显式忽略的 chunk（取舍声明，排雷 2026-08-17）：
-        //   - recall：召回明细（id/name/score/source）不上 UI，召回透明度走 memoryRecalled 事件（仅条数）；
         //   - question_pending：已由 questionPending 事件驱动 need_clarify，chunk 通道不重复消费。
         if (chunk.type === 'aborted') {
           // 用户 stop/插话 → 内核 abort 应答：提前退出，不再转发后续 chunk
           //（中断通知统一由本方法末尾按 controller.signal.aborted 发出）
           break;
+        }
+        // Phase 1：召回明细转发（recall chunk 不走 memoryRecalled 事件，chunk 通道携带
+        // 完整的 id/name/score/source，映射为 recalled_items 可展开展示）
+        if (chunk.type === 'recall' && chunk.memories.length > 0) {
+          this.post({
+            type: 'memory',
+            action: 'recalled_items',
+            items: chunk.memories.map((m) => ({
+              id: m.id,
+              name: m.name,
+              source: m.source,
+              score: m.score,
+            })),
+          });
+          continue;
         }
         if (chunk.type === 'text' && chunk.content) {
           // 转发 chunk（护栏阻断标记随 chunk 透传；阻断文案由内核 content 承载，
@@ -1199,6 +1213,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
     <div id="activityList" class="activity-list"></div>
+    <!-- Phase 1（2026-08-17 召回可展开）：本次召回明细区，默认隐藏，recalled_items 到达时渲染 -->
+    <div id="recallDetail" class="recall-detail" hidden></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
   <div id="clarifyBar">

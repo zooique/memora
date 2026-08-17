@@ -602,6 +602,24 @@ export const chatStyles = `
     white-space: pre-wrap; word-break: break-all;
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
+  /* Phase 1（2026-08-17 召回可展开）：本次召回明细区（活动详情内，source/score 弱化） */
+  .recall-detail {
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  .recall-detail__title {
+    font-size: var(--font-xs, 10px); letter-spacing: 0.3px; margin-bottom: var(--sp-1, 4px);
+  }
+  .recall-detail__row {
+    display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3, 8px);
+    padding: var(--sp-1, 4px) 0; line-height: 1.6;
+  }
+  .recall-detail__name {
+    color: var(--text-primary, #cccccc); word-break: break-all;
+  }
+  .recall-detail__meta {
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0;
+  }
 
   /* 主动提问条 */
   #clarifyBar {

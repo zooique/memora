@@ -11,6 +11,7 @@
  */
 import type {
   ExtensionToWebviewMessage,
+  MemoryRecallItemDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { fmtTime } from '../helpers/fmtTime.js';
@@ -88,6 +89,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
   const activityList = document.getElementById('activityList') as HTMLElement;
   const activityMetrics = document.getElementById('activityMetrics') as HTMLElement;
+  // Phase 1（2026-08-17 召回可展开）：活动详情内「本次召回」明细区（name/source/score 列表）
+  const recallDetail = document.getElementById('recallDetail') as HTMLElement;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
   const clarifyBar = document.getElementById('clarifyBar') as HTMLElement;
   const clarifyText = document.getElementById('clarifyText') as HTMLElement;
@@ -780,7 +783,41 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       activityList.appendChild(row);
     }
     // 详情折叠区有内容即显示（含指标）；无历史但仅有指标时也显示
-    activityDetail.hidden = activityHistory.length === 0 && activityMetrics.hidden;
+    activityDetail.hidden =
+      activityHistory.length === 0 && activityMetrics.hidden && recallDetail.hidden;
+  }
+
+  /** Phase 1（2026-08-17 召回可展开）：渲染活动详情「本次召回」明细区
+   *
+   * 主状态条「已召回 N 条」仅即时反馈，具体来源进活动详情折叠区（不占主条、
+   * 不打断 P0 错误保护）；每条展示 name + source + score。空数组隐藏明细区
+   * （新轮 recalled 清空上轮，避免跨轮残留）。
+   */
+  function renderRecallDetail(items: MemoryRecallItemDto[]): void {
+    recallDetail.textContent = '';
+    recallDetail.hidden = items.length === 0;
+    if (items.length === 0) {
+      renderActivityDetail();
+      return;
+    }
+    const title = document.createElement('div');
+    title.className = 'recall-detail__title';
+    title.textContent = '本次召回 ' + items.length + ' 条';
+    recallDetail.appendChild(title);
+    for (const it of items) {
+      const row = document.createElement('div');
+      row.className = 'recall-detail__row';
+      const name = document.createElement('span');
+      name.className = 'recall-detail__name';
+      name.textContent = it.name || it.id;
+      const meta = document.createElement('span');
+      meta.className = 'recall-detail__meta';
+      meta.textContent = it.source + ' · ' + Math.round(it.score * 100) + '%';
+      row.appendChild(name);
+      row.appendChild(meta);
+      recallDetail.appendChild(row);
+    }
+    renderActivityDetail();
   }
 
   /**
@@ -975,8 +1012,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       inputBar.hidden = true;
       clarifyInput.focus();
     } else if (msg.type === 'memory') {
-      if (msg.action === 'recalled') showActivity('info', '已召回 ' + msg.count + ' 条记忆');
-      else if (msg.action === 'added') {
+      if (msg.action === 'recalled') {
+        // 新轮召回开始：清空上轮明细并隐藏（避免跨轮残留），再给即时反馈
+        renderRecallDetail([]);
+        showActivity('info', '已召回 ' + msg.count + ' 条记忆');
+      } else if (msg.action === 'recalled_items') {
+        // Phase 1（2026-08-17 召回可展开）：明细到达 → 渲染活动详情「本次召回」区
+        renderRecallDetail(msg.items);
+      } else if (msg.action === 'added') {
         // 利用协议已携带的 detail.name 展示具体沉淀项（对抗评估 P2-6），
         // 避免数据跨进程传输后在 UI 层被丢弃；无 name 时回退通用文案
         showActivity('info', '已沉淀：' + (msg.detail?.name || '1 条记忆'));
@@ -1008,6 +1051,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       clearArchivingFallback();
       thoughtEl = null;
       lastShownDate = undefined;
+      // Phase 1：清空活动详情「本次召回」明细区（切会话/清空后不残留上轮召回来源）
+      renderRecallDetail([]);
       updateEmptyState();
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；

@@ -283,6 +283,8 @@ export type ExtensionToWebviewMessage =
    * action: 'recalled' 表示本轮召回 N 条记忆；'added' 表示本轮沉淀记忆。
    */
   | { type: 'memory'; action: 'recalled'; count: number }
+  /** 召回明细（recall chunk 转发）：补充 recalled 的即时反馈，展示本轮召回的具体记忆来源 */
+  | { type: 'memory'; action: 'recalled_items'; items: MemoryRecallItemDto[] }
   | { type: 'memory'; action: 'added'; count: number; detail?: { id: string; source: string; name: string } }
   /**
    * 通用提示条（低扰 info / 错误级 error）
@@ -359,6 +361,18 @@ export type ExtensionToWebviewMessage =
    * 用户打断/异常时不推送（避免给不完整回复挂建议）。
    */
   | { type: 'suggestions'; items: FollowupSuggestionDto[] };
+
+/** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
+export interface MemoryRecallItemDto {
+  /** 记忆唯一标识（source:name 格式） */
+  id: string;
+  /** 记忆可读名称 */
+  name: string;
+  /** 来源标签（如 'round-summary'、'profile'、'rule'） */
+  source: string;
+  /** 相似度分数（0-1） */
+  score: number;
+}
 
 /** Follow-up 建议条目（T2，2026-08-17：回复后关联推荐）
  *

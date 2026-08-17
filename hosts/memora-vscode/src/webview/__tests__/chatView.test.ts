@@ -25,6 +25,7 @@ const HTML = `
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
     <div id="activityList" class="activity-list"></div>
+    <div id="recallDetail" class="recall-detail" hidden></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
   <div id="messages">
@@ -401,6 +402,61 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(list.textContent).toContain('已暂停');
     // 每条带时间戳（.activity-list__time 存在）
     expect(list.querySelectorAll('.activity-list__time').length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('chatView 召回可展开（Phase 1，2026-08-17：明细进活动详情）', () => {
+  it('recalled_items 渲染活动详情「本次召回」明细区（name/source/score，textContent 防注入）', () => {
+    mountChatView();
+    const detail = document.getElementById('activityDetail') as HTMLElement;
+    const recall = document.getElementById('recallDetail') as HTMLElement;
+    expect(recall.hidden).toBe(true);
+    dispatch({
+      type: 'memory',
+      action: 'recalled_items',
+      items: [
+        { id: 'round-summary:记忆A', name: '记忆A', source: 'round-summary', score: 0.9 },
+        { id: 'profile:记忆B', name: '记忆B', source: 'profile', score: 0.42 },
+      ],
+    });
+    // 明细区可见 + 展开标题 + 每条 name/source/score
+    expect(recall.hidden).toBe(false);
+    expect(recall.textContent).toContain('本次召回 2 条');
+    const rows = recall.querySelectorAll('.recall-detail__row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('记忆A');
+    expect(rows[0].textContent).toContain('round-summary · 90%');
+    expect(rows[1].textContent).toContain('记忆B');
+    expect(rows[1].textContent).toContain('profile · 42%');
+    // 活动详情折叠区因明细而显示
+    expect(detail.hidden).toBe(false);
+  });
+
+  it('新轮 recalled 清空上轮明细（不跨轮残留）', () => {
+    mountChatView();
+    dispatch({ type: 'memory', action: 'recalled_items', items: [{ id: 'a:1', name: '旧', source: 'a', score: 0.8 }] });
+    expect((document.getElementById('recallDetail') as HTMLElement).hidden).toBe(false);
+    // 新一轮召回开始（仅 count，明细未到）→ 明细区隐藏
+    dispatch({ type: 'memory', action: 'recalled', count: 1 });
+    const recall = document.getElementById('recallDetail') as HTMLElement;
+    expect(recall.hidden).toBe(true);
+    expect(recall.textContent).toBe('');
+  });
+
+  it('recalled_items 空数组不显示明细区（零残留）', () => {
+    mountChatView();
+    dispatch({ type: 'memory', action: 'recalled_items', items: [] });
+    expect((document.getElementById('recallDetail') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('clear_ok 清空活动详情「本次召回」明细区（切换会话不残留）', () => {
+    mountChatView();
+    dispatch({ type: 'memory', action: 'recalled_items', items: [{ id: 'a:1', name: '旧', source: 'a', score: 0.8 }] });
+    const recall = document.getElementById('recallDetail') as HTMLElement;
+    expect(recall.hidden).toBe(false);
+    dispatch({ type: 'clear_ok' });
+    expect(recall.hidden).toBe(true);
+    expect(recall.textContent).toBe('');
   });
 });
 
