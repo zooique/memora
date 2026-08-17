@@ -22,6 +22,7 @@ import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraConfigViewProvider } from '../webview/panels/providerConfigPanel.js';
 import { MemoraRolePackViewProvider } from '../webview/panels/rolePackPanel.js';
+import { MemoraMemoryViewProvider } from '../webview/panels/memoryPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { ACTIVE_ROLE_PACK_KEY } from '../shared/constants.js';
 
@@ -123,6 +124,17 @@ export function activate(context: vscode.ExtensionContext): void {
   roleProvider.setGlobalState(context.globalState);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraRolePackViewProvider.viewType, roleProvider),
+  );
+
+  // 侧边栏视图：记忆管理面板（独立视图）
+  // 记忆是插件核心价值，独立视图承载「资产全貌」——统计 + 列表（score 降序）+ 搜索；
+  // 数据源唯一 = 内核 MemoryInspector（list/stats/searchHybrid），装配复用同一单例（SSOT）
+  const memoryProvider = new MemoraMemoryViewProvider(context.extensionUri);
+  memoryProvider.setAgentFactory((projectPath) =>
+    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(MemoraMemoryViewProvider.viewType, memoryProvider),
   );
 
   // 命令：打开对话面板（聚焦侧边栏视图）

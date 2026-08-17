@@ -78,6 +78,11 @@
           "type": "webview",
           "id": "memora.config",
           "name": "大模型配置"
+        },
+        {
+          "type": "webview",
+          "id": "memora.memory",
+          "name": "记忆"
         }
       ]
     }

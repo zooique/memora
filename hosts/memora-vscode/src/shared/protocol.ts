@@ -112,7 +112,22 @@ export type WebviewToExtensionMessage =
   /** 设为当前激活 Provider */
   | { type: 'cfg_set_active'; name: string }
   /** 测试 Provider 连接 */
-  | { type: 'cfg_test'; config: LlmProviderConfig };
+  | { type: 'cfg_test'; config: LlmProviderConfig }
+  // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
+  /**
+   * 请求加载记忆列表（记忆视图打开/刷新时触发）
+   *
+   * host 调 MemoryInspector.list() + stats() 返回：记忆按 score 降序（越常用越重要），
+   * 附带按 source 分布统计；agent.memory 未就绪时返回空列表（webview 渲染空态）。
+   */
+  | { type: 'memory_load' }
+  /**
+   * 请求搜索记忆（记忆视图搜索框触发，query 非空才发送）
+   *
+   * host 调 MemoryInspector.searchHybrid(query, limit)（语义+关键词混合检索），
+   * 返回带 score/similarity 的命中列表。空 query 不应发送本消息（走 memory_load）。
+   */
+  | { type: 'memory_search'; query: string; limit?: number };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -315,4 +330,47 @@ export type ExtensionToWebviewMessage =
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
   | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }
   /** 配置操作结果（保存/删除/设当前/测试） */
-  | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' };
+  | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' }
+  // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
+  /**
+   * 记忆列表加载完成（对 memory_load 的应答）
+   *
+   * host 返回按 score 降序的记忆列表 + source 分布统计；agent.memory 未就绪时
+   * memories 为空、stats.total 为 0，webview 渲染空态引导。
+   */
+  | {
+      type: 'memory_loaded';
+      stats: MemoryStatsDto;
+      memories: MemoryItemDto[];
+    }
+  /**
+   * 记忆搜索结果（对 memory_search 的应答）
+   *
+   * hits 为 searchHybrid 命中（带 score/similarity），content 为截断预览
+   * （与列表的全文 content 区分——搜索场景看相关性即可）。
+   */
+  | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] };
+
+/** 记忆库统计（记忆视图顶栏，对齐内核 AgentStats 扁平化） */
+export interface MemoryStatsDto {
+  /** 按来源标签分组的记忆数量 */
+  bySource: Record<string, number>;
+  /** 记忆总数 */
+  total: number;
+}
+
+/** 记忆条目（记忆视图列表/搜索结果，host 从内核 Memory/AgentSearchHit 归一化） */
+export interface MemoryItemDto {
+  /** 记忆唯一标识（${source}:${name} 格式） */
+  id: string;
+  /** 记忆名称 */
+  name: string;
+  /** 来源标签（round-summary / profile / work-projection 等） */
+  source: string;
+  /** 权重（0-1） */
+  score: number;
+  /** 内容（列表=全文；搜索结果=截断预览，供详情展开展示） */
+  content: string;
+  /** 创建时间（ISO 8601，可选） */
+  createdAt?: string;
+}

@@ -68,6 +68,7 @@ export type {
 } from '@/role-pack/validator.js';
 // 类型从专职模块导出
 export type {
+  MemoryInspector,
   MemorySnapshot,
   WorkingMemorySnapshot,
   BootstrapSnapshot,
