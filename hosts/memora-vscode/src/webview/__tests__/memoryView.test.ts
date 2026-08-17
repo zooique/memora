@@ -37,7 +37,7 @@ function mountMemoryView(): { postMessage: ReturnType<typeof vi.fn> } {
   const postMessage = vi.fn();
   const root = document.getElementById('memory-root') as HTMLElement;
   createMemoryView({
-    acquireVsCodeApi: () => ({ postMessage }),
+    vscode: { postMessage },
     window: window as unknown as Window,
     root,
   });

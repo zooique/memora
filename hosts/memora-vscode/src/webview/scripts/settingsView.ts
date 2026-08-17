@@ -43,6 +43,9 @@ type SettingsTab = 'roles' | 'config' | 'memory';
  */
 export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDeps): void {
   const document = window.document;
+  // SSOT：acquireVsCodeApi 每个 webview 只能调用一次，此处获取一次并注入三个子视图，
+  // 避免子视图各自调用导致后续调用返回失效对象、postMessage 静默失败（角色/记忆卡加载根因）
+  const vscode = acquireVsCodeApi();
 
   // 选项卡按钮 + 三个子视图根容器（HTML 骨架固定 id，查询走全局 getElementById——
   // 根容器本身是唯一 id，只有根容器【内部】的子元素才做 root 内查询隔离）
@@ -79,24 +82,27 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     if (msg.type === 'settings_switch_tab') switchTab(msg.tab);
   });
 
-  // 挂载三个子视图（config/memory 先，roles 最后——roles 的 ready 握手在全部监听器
-  // 就绪后发出，host 据此补发待切选项卡并统一推送三个子视图数据；初始选项卡为「记忆」，
-  // 与 HTML 默认态一致，用户请求 2026-08-17）。
-  // 每个挂载独立 try/catch：任一子视图挂载异常不阻断其余子视图（避免「配置正常、角色/
-  // 记忆卡加载」的级联失败），错误输出到 webview console 便于诊断。
+  // 挂载三个子视图（config/memory 先，roles 后；全部用共享 vscode 实例）。
+  // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求 2026-08-17）。
+  // 每个挂载独立 try/catch：任一子视图挂载异常不阻断其余子视图，错误输出到 webview console。
   try {
-    createConfigView({ acquireVsCodeApi, window, root: roots.config });
+    createConfigView({ vscode, window, root: roots.config });
   } catch (err) {
     console.error('[memora-settings] configView 挂载失败:', err);
   }
   try {
-    createMemoryView({ acquireVsCodeApi, window, root: roots.memory });
+    createMemoryView({ vscode, window, root: roots.memory });
   } catch (err) {
     console.error('[memora-settings] memoryView 挂载失败:', err);
   }
   try {
-    createRolesView({ acquireVsCodeApi, window, root: roots.roles });
+    createRolesView({ vscode, window, root: roots.roles });
   } catch (err) {
     console.error('[memora-settings] rolesView 挂载失败:', err);
   }
+
+  // ready 握手：三个子视图全部挂载（消息监听器已注册）后，由容器统一通知 host 就绪；
+  // host 收到后统一推送三个子视图数据（对齐 chatPanel replaySession 的 ready 时序修复，
+  // 避免首帧推送在监听器注册前到达而被丢弃）
+  vscode.postMessage({ type: 'ready' });
 }

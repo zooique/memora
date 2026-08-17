@@ -2,7 +2,7 @@
  * configView — 大模型配置子视图 webview 运行时脚本（阶段 B P2-1）
  *
  * 由 settingsView.ts 挂载（设置视图选项卡合并后大模型子视图）：以工厂函数
- * createConfigView 接收依赖（acquireVsCodeApi / window / root）并初始化全部交互，
+ * createConfigView 接收依赖（vscode / window / root）并初始化全部交互，
  * 替代原「字符串注入脚本」，消除全局污染并具备可测性。
  *
  * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
@@ -17,8 +17,9 @@ import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ConfigViewDeps {
-  /** 获取 webview 通信 API（仅 webview 上下文合法） */
-  acquireVsCodeApi: () => { postMessage(msg: WebviewToExtensionMessage): void };
+  /** webview 通信 API（SSOT：由 settingsView 统一 acquireVsCodeApi() 一次后注入，
+   *  子视图不再各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
+  vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
   /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
@@ -34,11 +35,10 @@ interface ProvidersPayload {
 /**
  * 初始化大模型配置面板 webview 交互（替代原内联 <script>）
  *
- * @param deps 运行时依赖（acquireVsCodeApi + window）
+ * @param deps 运行时依赖（vscode 通信实例 + window + root）
  */
-export function createConfigView({ acquireVsCodeApi, window, root }: ConfigViewDeps): void {
+export function createConfigView({ vscode, window, root }: ConfigViewDeps): void {
   const document = window.document;
-  const vscode = acquireVsCodeApi();
   // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 roles/memory 子视图共存，
   // 各自根内都有 #list/#statBar 等，不做根内查询会冲突）
   const list = root.querySelector('#list') as HTMLElement;

@@ -2,7 +2,7 @@
  * rolesView — 角色子视图 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
  *
  * 由 settingsView.ts 挂载（设置视图选项卡合并后角色子视图）：以工厂函数 createRolesView
- * 接收依赖（acquireVsCodeApi / window / root）并初始化全部交互，替代「字符串注入脚本」。
+ * 接收依赖（vscode / window / root）并初始化全部交互，替代「字符串注入脚本」。
  *
  * 职责：
  *   - 渲染角色包卡片列表（激活徽章 + 定位描述 + 能力标签 chips）；
@@ -20,8 +20,9 @@ import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 
 /** rolesView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface RolesViewDeps {
-  /** 获取 webview 通信 API（仅 webview 上下文合法） */
-  acquireVsCodeApi: () => { postMessage(msg: WebviewToExtensionMessage): void };
+  /** webview 通信 API（SSOT：由 settingsView 统一 acquireVsCodeApi() 一次后注入，
+   *  子视图不再各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
+  vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
   /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
@@ -42,11 +43,10 @@ interface RolesPayload {
 /**
  * 初始化角色管理面板 webview 交互
  *
- * @param deps 运行时依赖（acquireVsCodeApi + window）
+ * @param deps 运行时依赖（vscode 通信实例 + window + root）
  */
-export function createRolesView({ acquireVsCodeApi, window, root }: RolesViewDeps): void {
+export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   const document = window.document;
-  const vscode = acquireVsCodeApi();
   // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 config/memory 子视图共存，
   // 各自根内都有 #list/#statBar，不做根内查询会冲突）
   const list = root.querySelector('#list') as HTMLElement;
@@ -153,8 +153,4 @@ export function createRolesView({ acquireVsCodeApi, window, root }: RolesViewDep
     const msg = event.data;
     if (msg.type === 'roles_loaded') render(msg);
   });
-
-  // ready 握手：通知 extension host 脚本已就绪（监听器已注册），host 收到后才推送
-  // roles_loaded——避免首帧推送在监听器注册前到达而被丢弃（时序竞态，对齐 chatPanel）
-  vscode.postMessage({ type: 'ready' });
 }

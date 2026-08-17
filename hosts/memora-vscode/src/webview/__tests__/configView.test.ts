@@ -49,7 +49,7 @@ function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
   const postMessage = vi.fn();
   const root = document.getElementById('config-root') as HTMLElement;
   createConfigView({
-    acquireVsCodeApi: () => ({ postMessage }),
+    vscode: { postMessage },
     window: window as unknown as Window,
     root,
   });

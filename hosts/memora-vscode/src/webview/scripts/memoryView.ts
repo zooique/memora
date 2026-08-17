@@ -2,7 +2,7 @@
  * memoryView — 记忆子视图 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
  *
  * 由 settingsView.ts 挂载（设置视图选项卡合并后记忆子视图）：以工厂函数 createMemoryView
- * 接收依赖（acquireVsCodeApi / window / root）并初始化全部交互，替代「字符串注入脚本」。
+ * 接收依赖（vscode / window / root）并初始化全部交互，替代「字符串注入脚本」。
  *
  * 职责：
  *   - 渲染记忆列表（按 score 降序，source 徽章 + score 圆点 + 单行预览）；
@@ -23,8 +23,9 @@ import { createEmptyState } from '../helpers/cardList.js';
 
 /** memoryView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface MemoryViewDeps {
-  /** 获取 webview 通信 API（仅 webview 上下文合法） */
-  acquireVsCodeApi: () => { postMessage(msg: WebviewToExtensionMessage): void };
+  /** webview 通信 API（SSOT：由 settingsView 统一 acquireVsCodeApi() 一次后注入，
+   *  子视图不再各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
+  vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
   /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
@@ -56,11 +57,10 @@ const SCORE_HIGH = 0.6;
 /**
  * 初始化记忆管理面板 webview 交互
  *
- * @param deps 运行时依赖（acquireVsCodeApi + window）
+ * @param deps 运行时依赖（vscode 通信实例 + window + root）
  */
-export function createMemoryView({ acquireVsCodeApi, window, root }: MemoryViewDeps): void {
+export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void {
   const document = window.document;
-  const vscode = acquireVsCodeApi();
   // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 roles/config 子视图共存，
   // 各自根内都有 #list/#statBar，不做根内查询会冲突）
   const list = root.querySelector('#list') as HTMLElement;
