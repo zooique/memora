@@ -12,41 +12,46 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createConfigView } from '../scripts/configView.js';
 
-/** 覆盖 createConfigView 全部 getElementById 引用的最小 HTML 骨架 */
+/** 覆盖 createConfigView 全部查询引用的最小 HTML 骨架（子视图挂载在 #config-root 根容器内，
+ *  与设置视图选项卡合并后的 id 空间隔离约定一致） */
 const HTML = `
-  <div class="header">
-    <h2>大模型配置</h2>
-    <span id="statBar" class="stat-bar" hidden></span>
-    <button id="btnAdd" class="btn">添加 API</button>
-  </div>
-  <div id="list"></div>
-  <div id="modal" class="modal-mask">
-    <div class="modal">
-      <h3 id="modalTitle"></h3>
-      <form id="cfgForm">
-        <input id="f-name" />
-        <input id="f-display" />
-        <input id="f-model" />
-        <input id="f-baseurl" />
-        <input id="f-apikey" />
-        <div id="apikeyHint" hidden></div>
-        <div id="testResult" hidden></div>
-        <button id="btnTest" type="button"></button>
-        <button id="btnCancel" type="button"></button>
-        <button id="btnSave" type="submit"></button>
-      </form>
+  <div id="config-root">
+    <div class="header">
+      <h2>大模型配置</h2>
+      <span id="statBar" class="stat-bar" hidden></span>
+      <button id="btnAdd" class="btn">添加 API</button>
     </div>
+    <div id="list"></div>
+    <div id="modal" class="modal-mask">
+      <div class="modal">
+        <h3 id="modalTitle"></h3>
+        <form id="cfgForm">
+          <input id="f-name" />
+          <input id="f-display" />
+          <input id="f-model" />
+          <input id="f-baseurl" />
+          <input id="f-apikey" />
+          <div id="apikeyHint" hidden></div>
+          <div id="testResult" hidden></div>
+          <button id="btnTest" type="button"></button>
+          <button id="btnCancel" type="button"></button>
+          <button id="btnSave" type="submit"></button>
+        </form>
+      </div>
+    </div>
+    <div id="toast"></div>
   </div>
-  <div id="toast"></div>
 `;
 
 /** 挂载 createConfigView 并返回 postMessage mock */
 function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
   document.body.innerHTML = HTML;
   const postMessage = vi.fn();
+  const root = document.getElementById('config-root') as HTMLElement;
   createConfigView({
     acquireVsCodeApi: () => ({ postMessage }),
     window: window as unknown as Window,
+    root,
   });
   return { postMessage };
 }

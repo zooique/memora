@@ -1,16 +1,16 @@
 /**
- * rolesView — 角色管理面板 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
+ * rolesView — 角色子视图 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
  *
- * 由 rolePackPanel.ts 的 buildHtml 引用：以工厂函数 createRolesView 接收依赖
- * （acquireVsCodeApi / window）并初始化全部交互，替代「字符串注入脚本」。
+ * 由 settingsView.ts 挂载（设置视图选项卡合并后角色子视图）：以工厂函数 createRolesView
+ * 接收依赖（acquireVsCodeApi / window / root）并初始化全部交互，替代「字符串注入脚本」。
  *
  * 职责：
  *   - 渲染角色包卡片列表（激活徽章 + 定位描述 + 能力标签 chips）；
  *   - 「设为当前」→ postMessage roles_set_active（host 切换 + 持久化 + 重推）；
  *   - 监听 roles_loaded 渲染（host resolve 时推送 + 切换后重推）。
  *
- * 由 esbuild 以 browser/iife 打包为 dist/webview/scripts/rolesView.js，经
- * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src cspSource）。
+ * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
+ * 入口），在 webview HTML 中 <script src> 引用（CSP script-src cspSource）。
  */
 import type {
   ExtensionToWebviewMessage,
@@ -24,6 +24,8 @@ export interface RolesViewDeps {
   acquireVsCodeApi: () => { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
+  /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
+  root: HTMLElement;
 }
 
 /** 角色列表加载完成载荷（roles_loaded）的最小结构 */
@@ -42,11 +44,13 @@ interface RolesPayload {
  *
  * @param deps 运行时依赖（acquireVsCodeApi + window）
  */
-export function createRolesView({ acquireVsCodeApi, window }: RolesViewDeps): void {
+export function createRolesView({ acquireVsCodeApi, window, root }: RolesViewDeps): void {
   const document = window.document;
   const vscode = acquireVsCodeApi();
-  const list = document.getElementById('list') as HTMLElement;
-  const statBar = document.getElementById('statBar') as HTMLElement;
+  // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 config/memory 子视图共存，
+  // 各自根内都有 #list/#statBar，不做根内查询会冲突）
+  const list = root.querySelector('#list') as HTMLElement;
+  const statBar = root.querySelector('#statBar') as HTMLElement;
 
   let activeName: string | undefined;
 

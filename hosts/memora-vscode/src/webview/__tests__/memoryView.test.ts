@@ -15,26 +15,31 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createMemoryView } from '../scripts/memoryView.js';
 import type { MemoryItemDto, MemoryStatsDto } from '../../shared/protocol.js';
 
-/** 覆盖 createMemoryView 全部 getElementById 引用的最小 HTML 骨架 */
+/** 覆盖 createMemoryView 全部查询引用的最小 HTML 骨架（子视图挂载在 #memory-root 根容器内，
+ *  与设置视图选项卡合并后的 id 空间隔离约定一致） */
 const HTML = `
-  <div class="header">
-    <h2>记忆</h2>
-    <span id="statBar" class="stat-bar" hidden></span>
+  <div id="memory-root">
+    <div class="header">
+      <h2>记忆</h2>
+      <span id="statBar" class="stat-bar" hidden></span>
+    </div>
+    <div class="search-wrap">
+      <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" />
+    </div>
+    <div id="list"><p class="hint">加载中…</p></div>
+    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
-  <div class="search-wrap">
-    <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" />
-  </div>
-  <div id="list"><p class="hint">加载中…</p></div>
-  <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
 `;
 
 /** 挂载 createMemoryView 并返回 postMessage mock（含首屏 memory_load 断言辅助） */
 function mountMemoryView(): { postMessage: ReturnType<typeof vi.fn> } {
   document.body.innerHTML = HTML;
   const postMessage = vi.fn();
+  const root = document.getElementById('memory-root') as HTMLElement;
   createMemoryView({
     acquireVsCodeApi: () => ({ postMessage }),
     window: window as unknown as Window,
+    root,
   });
   return { postMessage };
 }

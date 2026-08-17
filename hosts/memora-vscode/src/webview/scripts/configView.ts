@@ -1,12 +1,12 @@
 /**
- * configView — 大模型配置面板 webview 运行时脚本（阶段 B P2-1）
+ * configView — 大模型配置子视图 webview 运行时脚本（阶段 B P2-1）
  *
- * 由 providerConfigPanel.ts 的 buildHtml 内联 <script> 迁移而来：以工厂函数
- * createConfigView 接收依赖（acquireVsCodeApi / window）并初始化全部交互，
+ * 由 settingsView.ts 挂载（设置视图选项卡合并后大模型子视图）：以工厂函数
+ * createConfigView 接收依赖（acquireVsCodeApi / window / root）并初始化全部交互，
  * 替代原「字符串注入脚本」，消除全局污染并具备可测性。
  *
- * 由 esbuild 以 browser/iife 打包为 dist/webview/scripts/configView.js，经
- * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src 'self'）。
+ * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
+ * 入口），在 webview HTML 中 <script src> 引用（CSP script-src 'self'）。
  */
 import type {
   ExtensionToWebviewMessage,
@@ -21,6 +21,8 @@ export interface ConfigViewDeps {
   acquireVsCodeApi: () => { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
+  /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
+  root: HTMLElement;
 }
 
 /** 列表加载完成载荷（cfg_loaded）的最小结构 */
@@ -34,25 +36,27 @@ interface ProvidersPayload {
  *
  * @param deps 运行时依赖（acquireVsCodeApi + window）
  */
-export function createConfigView({ acquireVsCodeApi, window }: ConfigViewDeps): void {
+export function createConfigView({ acquireVsCodeApi, window, root }: ConfigViewDeps): void {
   const document = window.document;
   const vscode = acquireVsCodeApi();
-  const list = document.getElementById('list') as HTMLElement;
-  const statBar = document.getElementById('statBar') as HTMLElement;
-  const btnAdd = document.getElementById('btnAdd') as HTMLButtonElement;
-  const modal = document.getElementById('modal') as HTMLElement;
-  const modalTitle = document.getElementById('modalTitle') as HTMLElement;
-  const fName = document.getElementById('f-name') as HTMLInputElement;
-  const fDisplay = document.getElementById('f-display') as HTMLInputElement;
-  const fModel = document.getElementById('f-model') as HTMLInputElement;
-  const fBaseUrl = document.getElementById('f-baseurl') as HTMLInputElement;
-  const fApiKey = document.getElementById('f-apikey') as HTMLInputElement;
-  const apikeyHint = document.getElementById('apikeyHint') as HTMLElement;
-  const testResult = document.getElementById('testResult') as HTMLElement;
-  const btnTest = document.getElementById('btnTest') as HTMLButtonElement;
-  const btnCancel = document.getElementById('btnCancel') as HTMLButtonElement;
-  const toast = document.getElementById('toast') as HTMLElement;
-  const cfgForm = document.getElementById('cfgForm') as HTMLFormElement;
+  // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 roles/memory 子视图共存，
+  // 各自根内都有 #list/#statBar 等，不做根内查询会冲突）
+  const list = root.querySelector('#list') as HTMLElement;
+  const statBar = root.querySelector('#statBar') as HTMLElement;
+  const btnAdd = root.querySelector('#btnAdd') as HTMLButtonElement;
+  const modal = root.querySelector('#modal') as HTMLElement;
+  const modalTitle = root.querySelector('#modalTitle') as HTMLElement;
+  const fName = root.querySelector('#f-name') as HTMLInputElement;
+  const fDisplay = root.querySelector('#f-display') as HTMLInputElement;
+  const fModel = root.querySelector('#f-model') as HTMLInputElement;
+  const fBaseUrl = root.querySelector('#f-baseurl') as HTMLInputElement;
+  const fApiKey = root.querySelector('#f-apikey') as HTMLInputElement;
+  const apikeyHint = root.querySelector('#apikeyHint') as HTMLElement;
+  const testResult = root.querySelector('#testResult') as HTMLElement;
+  const btnTest = root.querySelector('#btnTest') as HTMLButtonElement;
+  const btnCancel = root.querySelector('#btnCancel') as HTMLButtonElement;
+  const toast = root.querySelector('#toast') as HTMLElement;
+  const cfgForm = root.querySelector('#cfgForm') as HTMLFormElement;
 
   let editName = ''; // 当前编辑的 name（空=新增）
   let activeName: string | undefined;

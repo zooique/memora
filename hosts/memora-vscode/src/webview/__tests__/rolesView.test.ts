@@ -13,23 +13,28 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createRolesView } from '../scripts/rolesView.js';
 
-/** 覆盖 createRolesView 全部 getElementById 引用的最小 HTML 骨架 */
+/** 覆盖 createRolesView 全部查询引用的最小 HTML 骨架（子视图挂载在 #roles-root 根容器内，
+ *  与设置视图选项卡合并后的 id 空间隔离约定一致） */
 const HTML = `
-  <div class="header">
-    <h2>角色</h2>
-    <span id="statBar" class="stat-bar" hidden></span>
+  <div id="roles-root">
+    <div class="header">
+      <h2>角色</h2>
+      <span id="statBar" class="stat-bar" hidden></span>
+    </div>
+    <div id="list"><p class="hint">加载中…</p></div>
+    <p class="footer-hint">角色决定对话定位与可用能力，切换后长期生效。</p>
   </div>
-  <div id="list"><p class="hint">加载中…</p></div>
-  <p class="footer-hint">角色决定对话定位与可用能力，切换后长期生效。</p>
 `;
 
 /** 挂载 createRolesView 并返回 postMessage mock */
 function mountRolesView(): { postMessage: ReturnType<typeof vi.fn> } {
   document.body.innerHTML = HTML;
   const postMessage = vi.fn();
+  const root = document.getElementById('roles-root') as HTMLElement;
   createRolesView({
     acquireVsCodeApi: () => ({ postMessage }),
     window: window as unknown as Window,
+    root,
   });
   return { postMessage };
 }

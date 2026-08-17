@@ -352,6 +352,14 @@ export type ExtensionToWebviewMessage =
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
+  // ─── 设置视图消息（2026-08-17 选项卡合并） ───
+  /**
+   * 切换设置视图的子选项卡（host → webview 指令）
+   *
+   * 由「配置大模型」命令触发：聚焦设置视图后切换到「大模型」子选项卡，
+   * 让命令落点与用户意图一致（而非停在默认的「角色」选项卡）。
+   */
+  | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' }
   // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───
   /**
    * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）

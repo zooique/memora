@@ -20,9 +20,7 @@ import { assembleAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
-import { MemoraConfigViewProvider } from '../webview/panels/providerConfigPanel.js';
-import { MemoraRolePackViewProvider } from '../webview/panels/rolePackPanel.js';
-import { MemoraMemoryViewProvider } from '../webview/panels/memoryPanel.js';
+import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { ACTIVE_ROLE_PACK_KEY } from '../shared/constants.js';
 
@@ -108,33 +106,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
-  // 侧边栏视图：大模型配置面板
-  const configProvider = new MemoraConfigViewProvider(context.extensionUri, providerStore);
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(MemoraConfigViewProvider.viewType, configProvider),
-  );
-
-  // 侧边栏视图：角色管理面板（2026-08-17 独立视图）
-  // 角色切换是低频需求（决定定位与工具集），从对话输入区移出独立承载；
-  // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），切换持久化用户级激活态
-  const roleProvider = new MemoraRolePackViewProvider(context.extensionUri);
-  roleProvider.setAgentFactory((projectPath) =>
+  // 侧边栏视图：设置面板（2026-08-17 选项卡合并：角色 / 大模型 / 记忆 合一）
+  // 三个子视图均为低频操作（角色切换、模型配置、记忆浏览），合并为单一「设置」视图、
+  // 内部按钮切换，避免活动栏底部 4 个选项卡拥挤（用户反馈 2026-08-17）。
+  // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），角色切换持久化用户级激活态；
+  // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
+  const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
+  settingsProvider.setAgentFactory((projectPath) =>
     getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
   );
-  roleProvider.setGlobalState(context.globalState);
+  settingsProvider.setGlobalState(context.globalState);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(MemoraRolePackViewProvider.viewType, roleProvider),
-  );
-
-  // 侧边栏视图：记忆管理面板（独立视图）
-  // 记忆是插件核心价值，独立视图承载「资产全貌」——统计 + 列表（score 降序）+ 搜索；
-  // 数据源唯一 = 内核 MemoryInspector（list/stats/searchHybrid），装配复用同一单例（SSOT）
-  const memoryProvider = new MemoraMemoryViewProvider(context.extensionUri);
-  memoryProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
-  );
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(MemoraMemoryViewProvider.viewType, memoryProvider),
+    vscode.window.registerWebviewViewProvider(MemoraSettingsViewProvider.viewType, settingsProvider),
   );
 
   // 命令：打开对话面板（聚焦侧边栏视图）
@@ -148,11 +131,14 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  // 命令：配置大模型（聚焦配置侧边栏视图）
+  // 命令：配置大模型（聚焦设置视图并切换到「大模型」子选项卡）
+  // 设置视图合并后（2026-08-17），先记录待切选项卡再聚焦；视图未就绪时由 settingsPanel
+  // 在 ready 握手后补发 settings_switch_tab，保证命令落点与用户意图一致。
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.configureModel', () =>
-      void vscode.commands.executeCommand(`${MemoraConfigViewProvider.viewType}.focus`),
-    ),
+    vscode.commands.registerCommand('memora.configureModel', () => {
+      settingsProvider.switchTab('config');
+      void vscode.commands.executeCommand(`${MemoraSettingsViewProvider.viewType}.focus`);
+    }),
   );
 
   // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：

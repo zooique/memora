@@ -1,36 +1,25 @@
 /**
- * 记忆管理面板样式 — 对齐 rolesStyles.ts 的卡片列表 + 搜索 + source 徽章
+ * 记忆子视图样式（设置视图选项卡内）— 对齐 rolesStyles.ts 的卡片列表 + 搜索 + source 徽章
  *
  * 分层（对齐 ITCSS + tokens.ts 单一真理源）：
- *   - 设计令牌由 tokens.ts 单一真理源提供，本文件只引用令牌，禁止裸值；
- *   - 分区：Base（body）→ Layout（header / search / list）→ Components（card / source-badge / detail）；
+ *   - 设计令牌由 tokens.ts 单一真理源提供，经 settingsStyles.ts 统一内嵌，本文件不再内嵌；
+ *   - 选择器统一以 `#memory-root` 前缀限定 —— 设置视图合并后三个子视图共存于同一文档，
+ *     共享类名（.header / .empty-state 等）靠根容器前缀隔离，避免跨子视图样式串扰；
+ *   - 分区：Layout（header / search / list）→ Components（card / source-badge / detail）；
  *   - source 徽章颜色约定：round-summary=accent，profile=中性，work-projection=灰色，
  *     未知 source 回退中性（开放字符串，不应穷举）。
  */
-import { tokens } from './tokens.js';
-
 export const memoryStyles = `
-  ${tokens}
-
-  /* ============ Base：元素级基础 ============ */
-  body {
-    font-family: system-ui, -apple-system, sans-serif;
-    margin: 0; box-sizing: border-box;
-    font-size: var(--font-base, 13px);
-    color: var(--text-primary, #cccccc);
-    background: var(--surface-page, #1e1e1e);
-  }
-
   /* ============ Layout：面板骨架 ============ */
-  .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
-  .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
-  .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
-  #list { padding: var(--sp-3, 8px); }
-  .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
-  .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
-  .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }
-  .empty-hint { font-size: var(--font-md, 12px); }
-  .footer-hint {
+  #memory-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
+  #memory-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
+  #memory-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
+  #memory-root #list { padding: var(--sp-3, 8px); }
+  #memory-root .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
+  #memory-root .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
+  #memory-root .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }
+  #memory-root .empty-hint { font-size: var(--font-md, 12px); }
+  #memory-root .footer-hint {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
@@ -39,8 +28,8 @@ export const memoryStyles = `
   }
 
   /* ============ Components：搜索框 ============ */
-  .search-wrap { padding: var(--sp-3, 8px); }
-  .search-input {
+  #memory-root .search-wrap { padding: var(--sp-3, 8px); }
+  #memory-root .search-input {
     width: 100%;
     box-sizing: border-box;
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
@@ -51,13 +40,13 @@ export const memoryStyles = `
     border-radius: var(--radius, 6px);
     outline: none;
   }
-  .search-input:focus {
+  #memory-root .search-input:focus {
     border-color: var(--border-focus, #0e639c);
   }
-  .search-input::placeholder { color: var(--text-secondary, #9aa0a6); }
+  #memory-root .search-input::placeholder { color: var(--text-secondary, #9aa0a6); }
 
   /* ============ Components：记忆条目卡片 ============ */
-  .mem-card {
+  #memory-root .mem-card {
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     margin-bottom: var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -66,17 +55,17 @@ export const memoryStyles = `
     cursor: pointer;
     transition: border-color 0.1s;
   }
-  .mem-card:hover { border-color: var(--text-secondary, #9aa0a6); }
-  .mem-card.expanded { border-color: var(--accent, #0e639c); }
+  #memory-root .mem-card:hover { border-color: var(--text-secondary, #9aa0a6); }
+  #memory-root .mem-card.expanded { border-color: var(--accent, #0e639c); }
 
   /* 卡片头部：名称 + source 徽章 + score */
-  .mem-card-head {
+  #memory-root .mem-card-head {
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
     margin-bottom: var(--sp-1, 4px);
   }
-  .mem-card-name {
+  #memory-root .mem-card-name {
     font-weight: 600;
     font-size: var(--font-md, 12px);
     white-space: nowrap;
@@ -87,7 +76,7 @@ export const memoryStyles = `
   }
 
   /* source 徽章：已知 3 种预设来源有颜色约定，其余回退中性（开放字符串制动） */
-  .source-badge {
+  #memory-root .source-badge {
     display: inline-block;
     padding: 0 var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
@@ -97,21 +86,21 @@ export const memoryStyles = `
     background: var(--surface-code, rgba(128,128,128,.12));
     color: var(--text-secondary, #9aa0a6);
   }
-  .source-badge-round-summary { background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); }
-  .source-badge-profile { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
-  .source-badge-work-projection { background: var(--surface-card, #252526); color: var(--text-secondary, #9aa0a6); }
+  #memory-root .source-badge-round-summary { background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); }
+  #memory-root .source-badge-profile { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
+  #memory-root .source-badge-work-projection { background: var(--surface-card, #252526); color: var(--text-secondary, #9aa0a6); }
 
   /* score 点：圆点指示记忆权重（越高越实心） */
-  .score-dot {
+  #memory-root .score-dot {
     width: 6px; height: 6px;
     border-radius: 50%;
     flex-shrink: 0;
     background: var(--text-secondary, #9aa0a6);
   }
-  .score-dot-high { background: var(--accent, #0e639c); }
+  #memory-root .score-dot-high { background: var(--accent, #0e639c); }
 
   /* 内容预览：单行截断，供快速扫读 */
-  .mem-card-preview {
+  #memory-root .mem-card-preview {
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     white-space: nowrap;
@@ -120,7 +109,7 @@ export const memoryStyles = `
   }
 
   /* 展开详情：全文 content + 元数据 */
-  .mem-card-detail {
+  #memory-root .mem-card-detail {
     margin-top: var(--sp-2, 6px);
     padding-top: var(--sp-2, 6px);
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -130,14 +119,14 @@ export const memoryStyles = `
     word-break: break-word;
     line-height: 1.5;
   }
-  .mem-card-meta {
+  #memory-root .mem-card-meta {
     margin-top: var(--sp-1, 4px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
   }
 
   /* ============ Components：搜索模式特定 ============ */
-  .search-summary {
+  #memory-root .search-summary {
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);

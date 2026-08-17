@@ -1,8 +1,8 @@
 /**
- * memoryView — 记忆管理面板 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
+ * memoryView — 记忆子视图 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
  *
- * 由 memoryPanel.ts 的 buildHtml 引用：以工厂函数 createMemoryView 接收依赖
- * （acquireVsCodeApi / window）并初始化全部交互，替代「字符串注入脚本」。
+ * 由 settingsView.ts 挂载（设置视图选项卡合并后记忆子视图）：以工厂函数 createMemoryView
+ * 接收依赖（acquireVsCodeApi / window / root）并初始化全部交互，替代「字符串注入脚本」。
  *
  * 职责：
  *   - 渲染记忆列表（按 score 降序，source 徽章 + score 圆点 + 单行预览）；
@@ -10,8 +10,8 @@
  *   - 搜索框输入（非空 → postMessage memory_search；清空 → 重新加载列表）；
  *   - 监听 memory_loaded / memory_search_result 渲染（host resolve 时推送 + 搜索应答）。
  *
- * 由 esbuild 以 browser/iife 打包为 dist/webview/scripts/memoryView.js，经
- * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src cspSource）。
+ * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
+ * 入口），在 webview HTML 中 <script src> 引用（CSP script-src cspSource）。
  */
 import type {
   ExtensionToWebviewMessage,
@@ -27,6 +27,8 @@ export interface MemoryViewDeps {
   acquireVsCodeApi: () => { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
+  /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
+  root: HTMLElement;
 }
 
 /** 记忆列表加载完成载荷（memory_loaded）的最小结构 */
@@ -56,12 +58,14 @@ const SCORE_HIGH = 0.6;
  *
  * @param deps 运行时依赖（acquireVsCodeApi + window）
  */
-export function createMemoryView({ acquireVsCodeApi, window }: MemoryViewDeps): void {
+export function createMemoryView({ acquireVsCodeApi, window, root }: MemoryViewDeps): void {
   const document = window.document;
   const vscode = acquireVsCodeApi();
-  const list = document.getElementById('list') as HTMLElement;
-  const statBar = document.getElementById('statBar') as HTMLElement;
-  const searchInput = document.getElementById('searchInput') as HTMLInputElement;
+  // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 roles/config 子视图共存，
+  // 各自根内都有 #list/#statBar，不做根内查询会冲突）
+  const list = root.querySelector('#list') as HTMLElement;
+  const statBar = root.querySelector('#statBar') as HTMLElement;
+  const searchInput = root.querySelector('#searchInput') as HTMLInputElement;
 
   /** 当前搜索词（非空表示处于搜索模式，列表模式为空串） */
   let activeQuery = '';
