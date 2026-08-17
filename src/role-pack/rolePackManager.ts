@@ -59,6 +59,14 @@ const STRATEGY_KEY_ALIASES: Readonly<Record<string, string>> = {
 const EXCLUDED_FILES = new Set(['manifest.json']);
 
 /**
+ * 规则文件的约定文件名（2026-08-18 简化）
+ *
+ * rules.md 为角色包的**约定俗成规则文件**——manifest 未声明 rules 路径时回退此名，
+ * 消除「路径写错静默丢规则」错误面。仓库全部角色包均使用此名。
+ */
+const DEFAULT_RULES_FILENAME = 'rules.md';
+
+/**
  * 策略阶段键名规范化：旧实现键 → 标准键（spec §六 命名归标准）
  *
  * @param stage 策略阶段（prepare / act / reflect / global）
@@ -467,10 +475,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       typeof manifest['persona'] === 'string' && manifest['persona'].trim() !== ''
         ? manifest['persona']
         : null;
-    const rulesPath =
+    // rules 约定俗成为固定文件名 rules.md（2026-08-18 简化）：
+    // manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名。
+    // 消除「路径写错静默丢规则」错误面——规则本就约定在此文件。
+    const declaredRulesPath =
       typeof manifest['rules'] === 'string' && manifest['rules'].trim() !== ''
         ? manifest['rules']
         : null;
+    const rulesPath = declaredRulesPath ?? DEFAULT_RULES_FILENAME;
 
     // 装载独立内容文件
     const personaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';

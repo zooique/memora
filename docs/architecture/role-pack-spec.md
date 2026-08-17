@@ -76,15 +76,16 @@
 ### 2.3 内容文件独立性与 persona 缺省
 
 - **persona.md / rules.md / skills/* 是独立 Markdown 文档**，由 manifest 按路径注册装载。用户可**独立移植**这些文档，也可**整体装载**角色包；
+- **rules.md 为约定文件名（2026-08-18 简化）**：rules 规则文件**约定俗成为 `rules.md`**——manifest 未声明 `rules` 字段时装载器回退约定名；声明路径仅为向后兼容的自由命名。消除「路径写错静默丢规则」错误面；
 - **persona 允许缺省**：省略 `persona` 字段（或指向文件不存在）时，角色包无身份设定，仅靠策略驱动行为；
 - 内容文件**不含 frontmatter**——元数据/策略单一真理源在 manifest.json，正文单一真理源在内容文件，二者不双写。
 
 ### 2.4 单一真理源与字段集
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
-- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
+- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；`rules` 缺省回退约定名 `rules.md`，§2.3）/ `skills`（技能注册对象数组，§四）；
 - **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
-- **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 转译为注册形状 + 派生态指针（正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
+- **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**（`rules` 未声明时回退约定名 `rules.md`）；skills 转译为注册形状 + 派生态指针（正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 - **分发**：文件夹 zip 压缩（对齐 skills 市场分发方式）。
 

@@ -97,7 +97,9 @@ async function writePack(
     await writeFile(join(packDir, manifest['persona'] as string), content.persona, 'utf-8');
   }
   if (content.rules !== undefined) {
-    await writeFile(join(packDir, manifest['rules'] as string), content.rules, 'utf-8');
+    // 未声明 rules 路径时回退约定文件名 rules.md（2026-08-18 简化）
+    const rulesPath = (manifest['rules'] as string | undefined) ?? 'rules.md';
+    await writeFile(join(packDir, rulesPath), content.rules, 'utf-8');
   }
   if (content.skills) {
     for (const [relPath, body] of Object.entries(content.skills)) {
@@ -173,6 +175,27 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     expect(active).not.toBeNull();
     expect(active!.meta.name).toBe('doc-review');
     expect(active!.meta.displayName).toBe('文档打磨');
+  });
+
+  it('manifest 未声明 rules 字段时回退约定文件名 rules.md（2026-08-18 简化）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 不含 rules 字段的 manifest——规则文件约定为 rules.md
+    const { rules: _omit, ...manifestNoRules } = MANIFEST_TECH;
+    void _omit;
+    await writePack(packsDir, '技术文档工程师', manifestNoRules, {
+      persona: '你是一位技术文档工程师。',
+      rules: '- 术语保持一致\n- 不编造 API',
+    });
+
+    const manager = new RolePackManager(dir);
+    const count = await manager.load('技术文档工程师');
+    expect(count).toBe(1);
+
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    // 约定 rules.md 被装载并注入 personaPrompt
+    expect(active!.personaPrompt).toContain('术语保持一致');
   });
 
   it('多技能注册 + persona 缺省（无 persona.md）', async () => {

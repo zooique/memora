@@ -464,7 +464,12 @@ export interface RolePackManifestFile {
   readonly strategy?: BehaviorStrategy;
   /** persona 文件路径（相对包根；null = 未声明，persona 允许缺省） */
   readonly persona: string | null;
-  /** rules 文件路径（相对包根；null = 未声明） */
+  /**
+   * rules 文件路径（相对包根；null = 未声明）
+   *
+   * 2026-08-18 简化：rules 约定俗成为 `rules.md`——未声明时装载层回退约定名
+   * （rolePackManager DEFAULT_RULES_FILENAME），manifest 声明仅为向后兼容的自由命名。
+   */
   readonly rules: string | null;
   /** 内嵌技能注册（对象数组，支持多个添加） */
   readonly skills: readonly RolePackManifestSkill[];
