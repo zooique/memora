@@ -70,8 +70,21 @@ set MEMORA_API_KEY=你的key
 
 ## 数据存储
 
-- 记忆 / 会话 / 检查点存于工作区 `.memora/` 目录
-- API Key 存 VS Code 安全存储（SecretStorage），**不会写入 settings.json 或进 git**
+插件数据分**项目级 / 用户级**两级存储（插件定义行为，全部走 VS Code 原生机制，不额外创建用户目录文件夹）：
+
+| 层级 | 位置 | 内容 |
+|------|------|------|
+| 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json` / 会话检查点（一个项目一份，随项目走） |
+| 用户级 | VS Code 用户设置 `settings.json` | 大模型 Provider 配置（别名 / 模型 / Base URL，**不含 API Key**） |
+| 用户级 | VS Code 全局存储 `globalStorage` | 激活角色包（跨项目共享） |
+| 用户级 | VS Code 安全存储 `SecretStorage` | API Key（加密存储） |
+
+补充说明：
+
+- **项目级 `.memora/`**：一个项目一份记忆，随项目工作区走（可提交或忽略由你决定）。
+- **用户级配置**在 VS Code 用户数据目录（Windows：`AppData/Roaming/Code/User/`）。Provider 配置存用户级而非项目级——跨项目共享，切换项目无需重配，且不污染项目 `.vscode/settings.json`。
+- **API Key 存 SecretStorage（VS Code 加密存储）**：不会写入 settings.json 或进 git。**找不到明文文件是正常的安全设计**，密钥本就不该以明文落盘。
+- 若此前旧版本把 Provider 配置写进了项目 `.vscode/settings.json`，插件启动时会自动迁移到用户级并清理残留。
 
 ## 构建 VSIX
 
