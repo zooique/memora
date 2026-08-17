@@ -109,6 +109,8 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(cards[1]?.querySelector('.score-dot')?.classList.contains('score-dot-high')).toBe(false);
     // 单行预览
     expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('确认采用独立记忆视图承载资产全貌。');
+    // 卡片 tooltip：提示可点击展开/收起（可发现性，对齐角色/配置卡）
+    expect(cards[0]?.getAttribute('title')).toBe('点击展开 / 收起详情');
   });
 
   it('点击卡片展开详情（全文 content + 创建时间），再点击收起', () => {

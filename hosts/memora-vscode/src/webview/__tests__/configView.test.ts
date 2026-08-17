@@ -148,4 +148,25 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     const detail = list.querySelector('.card-detail') as HTMLElement;
     expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1');
   });
+
+  it('卡片按钮 tooltip：解释各操作语义（可发现性，对齐角色卡）', () => {
+    mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek'), makeProvider('local', { displayName: '本地' })],
+      'deepseek',
+    );
+    const list = document.getElementById('list') as HTMLElement;
+    const cards = list.querySelectorAll('.card');
+    // 激活卡：仅「编辑」按钮带 tooltip
+    const activeCard = cards[0] as HTMLElement;
+    expect(activeCard?.querySelector('.btn-secondary')?.getAttribute('title')).toContain('修改该 API 的配置');
+    // 其他卡：设为当前 / 编辑 / 删除 均带 tooltip
+    const otherCard = cards[1] as HTMLElement;
+    const titles = Array.from(otherCard.querySelectorAll('.btn')).map((b) => b.getAttribute('title'));
+    expect(titles.some((t) => t && t.includes('默认使用的大模型'))).toBe(true);
+    expect(titles.some((t) => t && t.includes('不可恢复'))).toBe(true);
+    expect(titles.some((t) => t && t.includes('修改该 API 的配置'))).toBe(true);
+    // 头部「添加 API」按钮 tooltip
+    expect(document.getElementById('btnAdd')?.getAttribute('title')).toContain('新增一个大模型 API 配置');
+  });
 });

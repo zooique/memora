@@ -44,6 +44,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;
   const btnAdd = root.querySelector('#btnAdd') as HTMLButtonElement;
+  btnAdd.title = '新增一个大模型 API 配置';
   const modal = root.querySelector('#modal') as HTMLElement;
   const modalTitle = root.querySelector('#modalTitle') as HTMLElement;
   const fName = root.querySelector('#f-name') as HTMLInputElement;
@@ -194,6 +195,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       const actBtn = document.createElement('button');
       actBtn.className = 'btn btn-secondary';
       actBtn.textContent = '设为当前';
+      actBtn.title = '切换为默认使用的大模型（即时生效，后续对话用此模型）';
       actBtn.addEventListener('click', () =>
         vscode.postMessage({ type: 'cfg_set_active', name: p.name }),
       );
@@ -202,12 +204,14 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     const editBtn = document.createElement('button');
     editBtn.className = 'btn btn-secondary';
     editBtn.textContent = '编辑';
+    editBtn.title = '修改该 API 的配置（别名 / 模型 / Key 等）';
     editBtn.addEventListener('click', () => openModal(p.name));
     actions.appendChild(editBtn);
     if (p.name !== activeName) {
       const delBtn = document.createElement('button');
       delBtn.className = 'btn btn-danger';
       delBtn.textContent = '删除';
+      delBtn.title = '删除该 API 配置（不可恢复）';
       delBtn.addEventListener('click', () => {
         // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
         // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）

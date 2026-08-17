@@ -102,6 +102,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     card.className = 'mem-card';
     card.setAttribute('role', 'button');
     card.setAttribute('aria-expanded', 'false');
+    card.title = '点击展开 / 收起详情';
 
     // 头部：名称 + source 徽章 + score 圆点
     const head = document.createElement('div');
