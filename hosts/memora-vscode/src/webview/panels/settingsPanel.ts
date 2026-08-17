@@ -130,7 +130,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         const displayName =
           agent?.rolePackManager?.listMeta().find((m) => m.name === msg.name)?.displayName ??
           msg.name;
-        this._chatProvider?.prefillInput(`继续以「${displayName}」的视角处理以上任务`);
+        // 预填衔接文本：角色包 handoffs 声明优先（作者定制），缺省回退通用话术（SSOT：
+        // 声明即真理源，宿主仅兜底——见 rolesView 附加按钮携带 prompt）
+        const fallback = `继续以「${displayName}」的视角处理以上任务`;
+        this._chatProvider?.prefillInput(msg.prompt?.trim() ? msg.prompt : fallback);
       }
       return;
     }
@@ -284,6 +287,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           capabilities: (pack?.capabilities ?? []).map((c) => ({
             capability: c.capability,
             label: capabilityLabel(c.capability),
+          })),
+          // handoffs：角色包交接声明（宿主侧键，透传；webview 渲染时做 target 存在性过滤）
+          handoffs: m.handoffs?.map((h) => ({
+            label: h.label,
+            target: h.target,
+            prompt: h.prompt,
+            send: h.send,
           })),
         };
       });

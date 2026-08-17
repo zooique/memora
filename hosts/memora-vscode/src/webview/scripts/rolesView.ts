@@ -36,6 +36,7 @@ interface RolesPayload {
     displayName: string;
     description?: string;
     capabilities: { capability: string; label: string }[];
+    handoffs?: { label: string; target: string; prompt?: string; send?: boolean }[];
   }[];
   activeName: string;
 }
@@ -53,6 +54,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   const statBar = root.querySelector('#statBar') as HTMLElement;
 
   let activeName: string | undefined;
+  /** 已装载角色包名集合（handoffs target 存在性过滤：target 不存在则按钮不渲染） */
+  let packNames: ReadonlySet<string> = new Set();
 
   /** 渲染角色包列表：激活角色置顶高亮，其余按序展示（对齐 config 面板分组） */
   function render(data: RolesPayload): void {
@@ -70,6 +73,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       return;
     }
     activeName = data.activeName;
+    packNames = new Set(data.packs.map((p) => p.name));
     list.textContent = '';
     // 激活角色置顶（主动可见：用户一眼看到当前定位）
     const active = data.packs.filter((p) => p.name === activeName);
@@ -134,7 +138,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
 
     const actions = document.createElement('div');
     actions.className = 'card-actions';
-    // 「带入对话」：所有角色均可一键切换并跳转到对话（handoff，复用 activate 路径）
+    // 「带入对话」：所有角色均可一键切换并跳转到对话（原语 handoff，复用 activate 路径）
     const handoffBtn = document.createElement('button');
     handoffBtn.className = 'btn btn-primary';
     handoffBtn.textContent = '带入对话';
@@ -143,6 +147,21 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       vscode.postMessage({ type: 'roles_handoff', name: p.name }),
     );
     actions.appendChild(handoffBtn);
+    // 「handoffs 交接」：角色包作者声明的跨包移交（附加按钮，对齐 VS Code custom agents）。
+    // target 指向的角色包不存在于已装载列表时**不渲染**（存在性过滤，非报错）——
+    // 单角色/未安装目标包场景自然退化为仅「带入对话」。
+    const ho = p.handoffs?.[0];
+    if (ho && packNames.has(ho.target)) {
+      const hoBtn = document.createElement('button');
+      hoBtn.className = 'btn btn-secondary';
+      hoBtn.textContent = ho.label;
+      hoBtn.title =
+        `移交给「${ho.target}」角色包并预填交接文本（${ho.prompt ? '作者定制' : '通用话术'}，不自动发送）`;
+      hoBtn.addEventListener('click', () =>
+        vscode.postMessage({ type: 'roles_handoff', name: ho.target, prompt: ho.prompt }),
+      );
+      actions.appendChild(hoBtn);
+    }
     // 「设为当前」：仅非激活角色展示（对齐 config 面板「设为当前」交互）
     if (p.name !== activeName) {
       const actBtn = document.createElement('button');
