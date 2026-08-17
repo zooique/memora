@@ -1161,6 +1161,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
+    <!-- 一键到底（吸收养分：对齐 TRAE App / TraeWork「上滚后回到底部」）：
+         用户上滚阅读离开底部时浮现，点击回到最新消息位置；吸底时隐藏 -->
+    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden
+      title="回到底部" aria-label="回到底部">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+    </button>
   </div>
 
   <!-- ③ 活动状态区（P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）

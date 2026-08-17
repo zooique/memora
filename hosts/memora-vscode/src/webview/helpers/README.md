@@ -10,6 +10,7 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、文档
 - `fmtTime.ts` — 时间格式化（ISO → HH:MM），导出 `fmtTime`。
 - `toolNameMap.ts` — 工具名中文映射（read_file → 读取文件），导出 `getToolDisplayName`。
 - `docContext.ts` — 剥离宿主注入的「当前打磨文档内容」前缀，导出 `stripDocContextPrefix`。
-- `scrollToBottom.ts` — 滚动容器到底部（rAF 节流），chatView / toolCard 共用，导出 `scrollToBottom`。
+- `scrollToBottom.ts` — 智能吸底滚动（rAF 节流，仅吸底时滚动，上滚阅读不被拽走），
+  chatView / toolCard 共用；导出 `scrollToBottom` + `trackScroll`（滚动事件处理器，更新吸底状态）。
 
 未来扩展：markdown 渲染、更丰富的时间/日期格式化等。

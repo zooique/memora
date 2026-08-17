@@ -14,7 +14,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { fmtTime } from '../helpers/fmtTime.js';
-import { scrollToBottom } from '../helpers/scrollToBottom.js';
+import { scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { ToolCard } from '../components/toolCard.js';
 import { initDropdowns } from '../components/dropdown.js';
@@ -135,6 +135,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 思考折叠块（ui-redesign.md §7.1）：生成中/自审查的过程性反馈，不落库不重放
   // details 元素：以 HTMLDetailsElement 承载 open 属性（折叠/展开态）
   let thoughtEl: HTMLDetailsElement | null = null;
+  // 一键到底按钮（2026-08-17 吸底优化）：用户上滚阅读时浮现，点击回到底部
+  const scrollToBottomBtn = document.getElementById('scrollToBottomBtn') as HTMLButtonElement;
+  // 消息区滚动监听：更新吸底状态 + 一键到底按钮显隐
+  messages.addEventListener('scroll', () => {
+    const atBottom = trackScroll(messages);
+    scrollToBottomBtn.hidden = atBottom;
+  });
+  // 一键到底点击：滚动到底部并隐藏按钮
+  scrollToBottomBtn.addEventListener('click', () => {
+    messages.scrollTop = messages.scrollHeight;
+    scrollToBottomBtn.hidden = true;
+  });
   // 日期分隔线：跨天合并视图在日期交界插入分组（ui-redesign.md §4.1 ②）
   let lastShownDate: string | undefined;
 
@@ -488,6 +500,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
       div.dataset.rawText = text;
       body.innerHTML = renderMarkdown(text);
+      // 历史回放同样做代码块增强（语言标签 + 复制按钮）
+      enhanceCodeBlocks(body);
     } else {
       const body = document.createElement('div');
       body.className = 'msg-body';
@@ -585,9 +599,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   /**
    * 开始一轮流式：创建新的 assistant 消息（纯文本 body + 光标 ▋），并置流式状态
    *
-   * 首个 chunk 到达时调用（streamingActive 为 false 时）。流式期间只有 .msg-body 的
-   * 纯文本节点累积 + 末尾闪烁光标，不渲染 Markdown——避免每 chunk 全量重渲染 markdown
-   * 的 O(n²) 性能损耗与「半截子」闪烁；流结束后由 finalizeStreaming 一次性渲染。
+   * 首个 chunk 到达时调用（streamingActive 为 false 时）。流式期间按 markdown 增量
+   * 渲染（节流）+ 末尾闪烁光标；流结束后由 finalizeStreaming 收敛（去光标 + 代码块增强）。
    *
    * @param ts 本轮流式第一条 chunk 的时间戳
    */
@@ -596,32 +609,107 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const div = document.createElement('div');
     div.className = 'msg assistant';
     const { body } = buildAssistantShell(div, ts);
-    // 流式期间纯文本 + 光标（is-streaming 类驱动 CSS ::after 光标 + pre-wrap 保真换行）
+    // 流式期间：is-streaming 类驱动 CSS ::after 闪烁光标（markdown 由增量渲染填充）
     body.classList.add('is-streaming');
     activeAssistantEl = div;
+    streamBodyRendered = false;
     messages.appendChild(div);
     scrollToBottom(messages);
     updateEmptyState();
   }
 
+  // ─── 流式增量 Markdown 渲染（吸收养分：对齐 TraeWork 对话流实时格式化） ───
+  // 首 chunk 立即渲染（TTFT 即时反馈），后续节流重渲染（避免每 chunk 全量重绘 O(n²)）。
+  // 半截子补全由 renderMarkdown 内部 fixIncompleteMarkdown 承担（代码围栏/粗体闭合），
+  // 故流式期间列表/代码块实时成形，用户不再看到 **、``` 等原始记号。
+
+  /** 流式节流重渲染间隔：>1 帧，平衡「实时感」与「重绘成本」 */
+  const STREAM_RENDER_INTERVAL_MS = 150;
+  /** 流式重渲染节流定时器句柄 */
+  let streamRenderTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 本轮是否已渲染过 body（首个 chunk 立即渲染的标志） */
+  let streamBodyRendered = false;
+
+  /** 把当前累积的流式原文渲染为 Markdown（写 body.innerHTML，消毒后安全） */
+  function renderStreamBody(): void {
+    if (!streamingActive || !activeAssistantEl || !activeAssistantEl.isConnected) return;
+    const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
+    if (!body) return;
+    body.innerHTML = renderMarkdown(streamingRaw);
+    streamBodyRendered = true;
+  }
+
+  /** 调度流式重渲染（节流：已有挂起任务则跳过，避免频繁重绘） */
+  function scheduleStreamRender(): void {
+    if (streamRenderTimer) return;
+    streamRenderTimer = setTimeout(() => {
+      streamRenderTimer = undefined;
+      renderStreamBody();
+    }, STREAM_RENDER_INTERVAL_MS);
+  }
+
   /**
-   * 流式结束：一次性渲染 Markdown + 移除光标 + 更新复制源
+   * 代码块增强（吸收养分：对齐 TraeWork 代码块「语言标签 + 一键复制」）
    *
-   * done / interrupted 消息统一调用（幂等：无流式时 no-op）。把流式期间累积的原始文本
-   * （streamingRaw）渲染为 Markdown，CSS 光标随 is-streaming 移除；复制按钮的原始文本源
-   * 同步更新为完整流式文本。
+   * renderMarkdown 后调用：把每个 <pre> 包装为 .code-block（header[语言名 + 复制按钮] + pre）。
+   * 语言名取自 marked 渲染的 class="language-xxx"；无语言回退显示 code。复制按钮读取
+   * <pre> 内文本。仅最终渲染时增强一次（流式期间不包装，避免节流重绘反复重建 DOM）。
+   *
+   * @param container 已渲染 markdown 的消息正文容器
+   */
+  function enhanceCodeBlocks(container: HTMLElement): void {
+    container.querySelectorAll('pre').forEach((pre) => {
+      // 已增强（history 回放多次渲染防重复包装）
+      if (pre.parentElement?.classList.contains('code-block')) return;
+      const code = pre.querySelector('code');
+      const lang = (code?.className.match(/language-([\w-]+)/) ?? [])[1] ?? 'code';
+      const block = document.createElement('div');
+      block.className = 'code-block';
+      const header = document.createElement('div');
+      header.className = 'code-block__header';
+      const langEl = document.createElement('span');
+      langEl.className = 'code-block__lang';
+      langEl.textContent = lang;
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'code-block__copy';
+      copyBtn.textContent = '复制';
+      copyBtn.title = '复制代码';
+      copyBtn.addEventListener('click', () => copyText(code?.textContent ?? ''));
+      header.appendChild(langEl);
+      header.appendChild(copyBtn);
+      // 用 .code-block 包裹原 <pre>（replaceWith 把 pre 移入 block）
+      pre.replaceWith(block);
+      block.appendChild(header);
+      block.appendChild(pre);
+    });
+  }
+
+  /**
+   * 流式结束：收敛渲染 Markdown + 移除光标 + 代码块增强 + 更新复制源
+   *
+   * done / interrupted 消息统一调用（幂等：无流式时 no-op）。流式期间已按节流增量渲染，
+   * 此处做最终收敛：清定时器 + 终渲染 + 去光标（is-streaming）+ 代码块增强；复制按钮的
+   * 原始文本源同步更新为完整流式文本。
    */
   function finalizeStreaming(): void {
     if (!streamingActive || !activeAssistantEl || activeAssistantEl.isConnected === false) return;
+    if (streamRenderTimer) {
+      clearTimeout(streamRenderTimer);
+      streamRenderTimer = undefined;
+    }
     const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
     if (body) {
       body.classList.remove('is-streaming');
       body.innerHTML = renderMarkdown(streamingRaw);
+      // 最终渲染后做代码块增强（语言标签 + 复制按钮）
+      enhanceCodeBlocks(body);
     }
     // 复制源更新为完整原始文本（.msg.dataset.rawText 供复制按钮读取）
     activeAssistantEl.dataset.rawText = streamingRaw;
     streamingActive = false;
     streamingRaw = '';
+    streamBodyRendered = false;
   }
 
   // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
@@ -804,8 +892,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') : null;
       if (target) {
         streamingRaw += msg.content;
-        // 用文本节点追加替代整体 textContent 重建，长回复避免 O(n²)
-        target.appendChild(document.createTextNode(msg.content));
+        // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
+        // 相比旧的「纯文本节点追加 + 结束一次性渲染」，用户实时看到 markdown 成形
+        // （列表/代码块不再显示 **、``` 原始记号），对齐 TraeWork 对话流。
+        if (!streamBodyRendered) renderStreamBody();
+        else scheduleStreamRender();
       }
       scrollToBottom(messages);
     } else if (msg.type === 'handoff') {
@@ -882,6 +973,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
       streamingActive = false;
       streamingRaw = '';
+      if (streamRenderTimer) {
+        clearTimeout(streamRenderTimer);
+        streamRenderTimer = undefined;
+      }
+      streamBodyRendered = false;
       // 过程性状态复位：归档兜底定时器清除 + 思考块引用失效 + 日期分隔线重新计算
       // （重放从新日期开始）
       clearArchivingFallback();

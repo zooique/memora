@@ -33,6 +33,7 @@ const HTML = `
       <div id="emptyHint" class="empty-hint"></div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
+    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden></button>
   </div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -208,11 +209,13 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' });
     dispatch({ type: 'chunk', content: '思考第二段' });
     dispatch({ type: 'chunk', content: '思考第三段' });
+    // 流式结束（触发最终收敛渲染，节流渲染未到时也由 done 兜底）
+    dispatch({ type: 'done' });
 
     // 同一条回复应只有一条 assistant 消息，三段文本拼接在其内
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
-    expect(assistants[0].querySelector('.msg-body')?.textContent).toBe(
+    expect(assistants[0].querySelector('.msg-body')?.textContent?.trim()).toBe(
       '思考第一段思考第二段思考第三段',
     );
   });
@@ -228,7 +231,7 @@ describe('chatView clear_ok 消息区清理', () => {
     // 清空后仅剩重建的一条 assistant 消息（旧锚点已失效，不残留）
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
-    expect(assistants[0].querySelector('.msg-body')?.textContent).toBe('重放后');
+    expect(assistants[0].querySelector('.msg-body')?.textContent?.trim()).toBe('重放后');
   });
 
   it('历史切换重建：clear_ok 后重放 user/assistant 消息正常渲染（ui-redesign 历史加载链路）', () => {
@@ -397,7 +400,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(activityBar.hidden).toBe(true);
     // 文本正常追加到 assistant 消息（阻断 ≠ 丢弃内容）
     const body = document.querySelector('.msg.assistant .msg-body');
-    expect(body?.textContent).toBe('被阻断的回复');
+    expect(body?.textContent?.trim()).toBe('被阻断的回复');
   });
 
   it('metrics 渲染活动详情折叠区（指纹只显示 hash 与计数，不显示内容）', () => {
@@ -650,19 +653,55 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     vi.restoreAllMocks();
   });
 
-  it('流式期间 body 带 is-streaming（末尾光标 ▋），done 后移除并渲染 Markdown', () => {
+  it('流式期间 body 带 is-streaming + 增量渲染 Markdown，done 后收敛', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '**加粗** 与 `code`' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    // 流式进行中：纯文本 + is-streaming 类（CSS ::after 显示闪烁光标）
+    // 流式进行中：is-streaming 类（CSS ::after 显示闪烁光标）+ 首个 chunk 立即渲染 markdown
+    // （吸收养分：对齐 TraeWork 实时格式化，不再显示 ** ` 原始记号）
     expect(body.classList.contains('is-streaming')).toBe(true);
-    expect(body.textContent).toBe('**加粗** 与 `code`');
+    expect(body.textContent?.trim()).toBe('加粗 与 code');
+    expect(body.querySelector('strong')).not.toBeNull();
 
-    // done → 移除光标类，Markdown 渲染为 HTML（加粗/行内代码成元素）
+    // done → 移除光标类，Markdown 保持渲染（加粗/行内代码成元素）
     dispatch({ type: 'done' });
     expect(body.classList.contains('is-streaming')).toBe(false);
     expect(body.querySelector('strong')).not.toBeNull();
     expect(body.querySelector('code')).not.toBeNull();
+  });
+
+  it('代码块增强：语言标签 + 复制按钮（吸收养分：对齐 TraeWork 一键复制）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '```ts\nconst x = 1;\n```' });
+    dispatch({ type: 'done' });
+    // 流式收敛后代码块被包装为 .code-block（语言标签 + 复制按钮）
+    const block = document.querySelector('.msg.assistant .code-block') as HTMLElement;
+    expect(block).not.toBeNull();
+    const lang = block.querySelector('.code-block__lang') as HTMLElement;
+    expect(lang.textContent).toBe('ts');
+    const copyBtn = block.querySelector('.code-block__copy') as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+    expect(copyBtn.textContent).toBe('复制');
+    // 复制按钮承载的是代码文本（供点击复制）
+    expect(block.querySelector('code')?.textContent).toContain('const x = 1');
+  });
+
+  it('一键到底按钮：上滚离开底部显示，点击回到底部后隐藏（吸底优化）', () => {
+    mountChatView();
+    const btn = document.getElementById('scrollToBottomBtn') as HTMLButtonElement;
+    const messages = document.getElementById('messages') as HTMLElement;
+    // 默认吸底：按钮隐藏
+    expect(btn.hidden).toBe(true);
+    // 模拟上滚（scrollHeight > clientHeight + scrollTop + 阈值）→ 离开底部 → 按钮浮现
+    Object.defineProperty(messages, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(messages, 'clientHeight', { value: 100, configurable: true });
+    messages.scrollTop = 100;
+    messages.dispatchEvent(new Event('scroll'));
+    expect(btn.hidden).toBe(false);
+    // 点击一键到底 → 回到最新位置 + 按钮隐藏
+    btn.click();
+    expect(messages.scrollTop).toBe(1000);
+    expect(btn.hidden).toBe(true);
   });
 
   it('流式结束后复制按钮使用完整原始文本（dataset.rawText 修复复制只复制首 chunk）', () => {
@@ -677,7 +716,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(assistant.querySelector('.msg-copy')).not.toBeNull();
   });
 
-  it('interrupted 同样 finalize：渲染 Markdown + 移除光标', () => {
+  it('interrupted 同样 finalize：渲染 Markdown + 移除光标 + 代码块增强', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '- 列表项一' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
@@ -692,7 +731,8 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     mountChatView();
     dispatch({ type: 'chunk', content: '<img src=x onerror=alert(1)> 安全文本' });
     dispatch({ type: 'done' });
-    // 消毒后 onerror 脚本被剥离，仅保留无害文本/元素
+    // 消毒后 onerror 脚本被剥离（marked 透传原始 HTML，DOMPurify 负责剥离恶意属性），
+    // 仅保留无害文本/元素
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     expect(body.querySelector('img[onerror]')).toBeNull();
     expect(body.textContent).toContain('安全文本');

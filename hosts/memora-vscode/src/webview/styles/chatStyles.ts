@@ -36,6 +36,23 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-4, 10px);
     position: relative; z-index: 1;
   }
+  /* 一键到底按钮（吸收养分：对齐 TRAE App「上滚后回到底部」）：
+   * 用户上滚离开底部时浮现于消息区右下角，点击回到底部后隐藏。
+   * 圆形次级按钮：半透明表面 + 边框，不抢消息主体；z-index 高于消息、低于输入区。 */
+  .scroll-to-bottom {
+    position: absolute; right: var(--sp-4, 10px); bottom: var(--sp-4, 10px);
+    z-index: 5;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; padding: 0;
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border-radius: 50%;
+    background: var(--surface-input, #3c3c3c);
+    color: var(--text-secondary, #9aa0a6);
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
+    cursor: pointer;
+  }
+  .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
+  .scroll-to-bottom[hidden] { display: none; }
 
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
   /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
@@ -172,7 +189,9 @@ export const chatStyles = `
    * 流结束后渲染 markdown 用 normal（markdown 自身处理换行）。表格 display:block + 横向
    * 滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
   .msg.assistant .msg-body { white-space: normal; }
-  .msg.assistant .msg-body.is-streaming { white-space: pre-wrap; }
+  /* 流式期间 body 已按 markdown 增量渲染（非纯文本），white-space 保持 normal 由
+   * markdown 自行控制换行；is-streaming 仅承载末尾闪烁光标。 */
+  .msg.assistant .msg-body.is-streaming { white-space: normal; }
   /* 流式光标：只在 bubble 末尾显示闪烁块 ▋，指示内容正在生成（Claude 风格，最便宜的"活着"信号） */
   .msg-body.is-streaming::after {
     content: '▋';
@@ -211,6 +230,27 @@ export const chatStyles = `
     white-space: pre;
   }
   .msg.assistant .msg-body pre code { background: transparent; padding: 0; font-size: var(--font-md, 12px); }
+  /* 代码块增强（吸收养分：对齐 TraeWork 代码块「语言标签 + 一键复制」）：
+   * renderMarkdown 后由 enhanceCodeBlocks 把每个 <pre> 包装为 .code-block，
+   * header（语言名 + 复制按钮）置顶，与下方 pre 连成一体圆角容器。 */
+  .code-block { margin: 0 0 var(--sp-3, 8px); }
+  .code-block__header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
+    border-bottom: none; border-radius: var(--radius, 6px) var(--radius, 6px) 0 0;
+    user-select: none;
+  }
+  .code-block__header + pre { margin: 0; border-radius: 0 0 var(--radius, 6px) var(--radius, 6px); }
+  .code-block__lang { font-family: ui-monospace, Consolas, monospace; }
+  .code-block__copy {
+    padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
+    border: none; border-radius: var(--radius-sm, 2px);
+    background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
+  }
+  .code-block__copy:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
   /* 表格防爆：display:block + 内部横向滚动，死活不让撑爆气泡 */
   .msg.assistant .msg-body table {
     display: block; width: 100%; overflow-x: auto;
