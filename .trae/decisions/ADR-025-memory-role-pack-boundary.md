@@ -47,7 +47,7 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 - 内核实测：`rolePackManager.ts:287-290` 零角色包时 `activePackName = null`（不强制必有卡）；`buildSystemPrompt()` 无激活返回 `''`；`assembler.ts:234` persona 兜底。
 - 宿主：默认卡经 `<configDir>/role-packs/` 注入（role-pack-spec §9.1 多实例模式）。
 - 对齐：纯逻辑库（ADR-002）+ 领域无关（哲学§5）。
-- 档位影响：档 1b 移除 persona 兜底的前提 = 宿主已接入角色包（接入要求，非内核改动）。
+- 档位影响：persona 兜底已随档 2 移除（2026-08-18，纯内核）——零角色包激活时系统以「空角色包态」运行（无角色设定注入）；宿主接入角色包后通过 role-packs/ 注入默认卡。
 
 ### 收敛路径（分档渐进）
 
@@ -55,7 +55,7 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 |----|------|------|------|
 | 0 | 设计定案（本 ADR + 设计文档） | 零 | ✅ 2026-08-17 |
 | 1 | loader 停扫三类 + configManager 停写索引（存量行保留） | 低 | ✅ 2026-08-17 |
-| 2 | assembler 移除 persona 兜底 + configManager 读路径切角色包（需宿主 configFileSyncer 联动） | 中 | ⏳ |
+| 2 | assembler 移除 persona 兜底 + configManager 注入面切角色包（getBootstrapMemories 恒空，双轨消除） | 中 | ✅ 2026-08-18 |
 | 3 | rule 语义对齐（parseRules 扩展 markdown 解析） | 高 | ⏳ |
 
 **档 1 实现说明（2026-08-17）**：
@@ -63,8 +63,13 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 - `configManager.ts` 删除 `addRule`/`addSimpleRule`/`addSkill`/`addSimpleSkill`（全仓零调用死门面）；
 - guardrail 空转链一并摘除（档 1 顺带，见核心决策 5）；
 - 对抗式修正：原「configManager 写索引降级为仅写角色包文件」不成立——configManager 不写角色包文件（角色包由 RolePackManager 管），且宿主 configFileSyncer 依赖 `updateRule`/`deleteRule`/`confirmConfigSuggestion` 索引同步链路。档 1 只删死门面，读取切换归档 2。
-| 2 | assembler 移除 persona 兜底 + projectManager/memoryInspector 改读角色包 | 中 |
-| 3 | rule 语义对齐（parseRules 扩展 markdown 解析） | 高 |
+
+**档 2 实现说明（2026-08-18，纯内核、不依赖宿主联动）**：
+- `assembler.ts` 移除 persona 兜底——`systemPrefixParts = [rolePackPrompt]` 唯一（角色包承载规则注入，`assembleRolePack` 的 personaPrompt 含 rules）；
+- `agent.ts refreshPersonaPrefixOnLoop` 同步移除 persona 兜底（角色包唯一）；
+- `configManager.getBootstrapMemories()` 返回空数组——消除「角色包 rules + 索引 rule」双轨重复注入；`listRules` 保留为 autoConfigRefiner 写前查重（非注入面）；
+- `memoryInspector.snapshot` bootstrap 层标注存量兼容展示（不参与装配）；
+- 对抗式修正：memoryInspector 不强行改读角色包（需注入 RolePackManager，且角色包读取是宿主 UI 职责）；`isExistingRule` 不改比对角色包文本（规则无 name 语义，语义不对等）。
 
 **SSOT 自检（决策成立的前提）**：
 - ✅ 不新增存储层——复用角色包内容文件 + round-summary；

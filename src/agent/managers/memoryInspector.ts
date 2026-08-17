@@ -249,8 +249,10 @@ export class MemoryInspector {
     const workingTotal = workingFull.length;
     const working = workingFull.slice(-WORKING_PREVIEW);
 
-    // 第 2 层：Bootstrap 记忆（永驻 + 领域）
-    // 直接按 source 查询，避免 search('', 50) 全量扫描
+    // 第 2 层：Bootstrap 记忆（永驻 + 领域）——存量兼容展示
+    // ADR-025 档 2：设定记忆（persona/rule/skill）唯一归角色包，索引不再新增；
+    // 此处仅展示存量索引行（宿主迁移清理前保留），不再参与 system prompt 装配
+    // （getBootstrapMemories 已恒空，rolePackPrompt 承载规则注入）。
     const rules = this.index.getBySource(SOURCE_LABELS.RULE);
     const personas = this.index.getBySource(SOURCE_LABELS.PERSONA);
     const skills = this.index.getBySource(SOURCE_LABELS.SKILL);

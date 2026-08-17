@@ -64,11 +64,11 @@ memora 当前存在**双轨并存**：设定记忆既走 `agent-config` 目录 �
 
 **验收**：新会话不再新增 source=rule/skill/persona 记忆（loader 停扫 + configManager 无写索引入口）；`updateRule`/`deleteRule`/`confirmConfigSuggestion` 链路保持可用（宿主面板不回归）。
 
-### 档 2：读取切换（中等风险）
+### 档 2：读取切换（中等风险）**【已完成 2026-08-18 · 纯内核，不依赖宿主联动】**
 
-1. `assembler.ts` 移除 persona 兜底，`systemPrefixParts = [rolePackPrompt]` 唯一。
-2. `configManager.ts` 的 `updateRule`/`deleteRule`/`getBootstrapMemories`/`listRules` 数据源从索引切到角色包文件集（需宿主 `configFileSyncer` 联动改走角色包路径）。
-3. `memoryInspector.ts` snapshot/stats 改读角色包或移除设定记忆段。
+1. `assembler.ts` 移除 persona 兜底，`systemPrefixParts = [rolePackPrompt]` 唯一。**【完成】**——角色包承载规则注入（`assembleRolePack` 的 personaPrompt 含 rules），persona 不再兜底。
+2. `configManager.getBootstrapMemories()` 返回空数组——消除「角色包 rules + 索引 rule」双轨重复注入。**【完成】**——`updateRule`/`deleteRule`/`confirmConfigSuggestion` 的索引写保留（宿主面板联动），`listRules` 保留为 autoConfigRefiner 写前查重（非注入面）。
+3. `memoryInspector.ts` snapshot 的 bootstrap 层标注存量兼容展示（不参与装配），不强行改读角色包。**【完成·对抗式修正】**——角色包读取是宿主 UI 职责，memoryInspector 展示存量索引行供宿主迁移前核对。
 
 ### 档 3：语义对齐（高风险，需先行决策）
 
@@ -83,16 +83,16 @@ memora 当前存在**双轨并存**：设定记忆既走 `agent-config` 目录 �
 | D2 | 存量设定记忆数据 | A. 索引清空 / B. 标记兼容保留 | 决定宿主 SQLite 迁移脚本范围 |
 | D3 | skills 正文展示 | A. 渐进披露（readSkillContent 按需读） / B. 记忆库镜像保留 | 决定宿主 UI 是否改读角色包 |
 | D4 | content 会话归档 | 保留（粒度不同，非冗余） | 已定案，无需重议 |
-| D5 | **默认角色包归属**（2026-08-17 定案） | **宿主职责**。内核不内置默认卡；零激活时降级为「空角色包态」+ persona 兜底（当前已实现）；移除 persona 兜底的前提是宿主已接入角色包 | 决定档 1b 是否可移除 persona 兜底 |
+| D5 | **默认角色包归属**（2026-08-17 定案） | **宿主职责**。内核不内置默认卡；零激活时降级为「空角色包态」（persona 兜底已随档 2 移除，2026-08-18） | 决定档 2 是否移除 persona 兜底 |
 
 ### 5.1 默认角色包边界（D5 定案）
 
 > **结论：memora 内核不设计「默认角色包」，也不内置默认卡。**「默认激活哪张卡」是宿主决策；内核只保证「零角色包激活时系统可运行」。
 
-- **内核实测现状**：`role-pack/rolePackManager.ts:287-290` `load(activePack?)` 无 activePack 且 `items.length > 0` 才自动激活第一个，零角色包时 `activePackName = null`（不强制必有卡）；`buildSystemPrompt()` 无激活时返回 `''`（空串降级已存在）；`assembler.ts:234` `[rolePackPrompt \|\| personaPrompt]` 双保险兜底。
+- **内核实测现状**：`role-pack/rolePackManager.ts:287-290` `load(activePack?)` 无 activePack 且 `items.length > 0` 才自动激活第一个，零角色包时 `activePackName = null`（不强制必有卡）；`buildSystemPrompt()` 无激活时返回 `''`（空串降级已存在）；`assembler.ts` `systemPrefixParts = [rolePackPrompt]` 唯一（档 2 已移除 persona 兜底，2026-08-18）。
 - **宿主职责**：默认卡 = 领域决策（通用助手宿主放通用卡、文档宿主放文档卡），经 `<configDir>/role-packs/` 注入（role-pack-spec §9.1 多实例模式）。
 - **对齐哲学**：memora 是纯逻辑库（ADR-002）+ 领域无关（哲学§5），内置默认卡 = 内核耦合领域偏见。
-- **对档位的影响**：档 1b 移除 persona 兜底的前提 = 宿主已接入角色包（接入要求，非内核改动）。
+- **对档位的影响**：persona 兜底已随档 2 移除（2026-08-18，纯内核）——零角色包激活时系统以「空角色包态」运行（无角色设定注入）；宿主接入角色包后经 role-packs/ 注入默认卡。
 
 ### 5.2 content 融入与 type 去时效（D6/D7 定案，2026-08-17）
 

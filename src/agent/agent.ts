@@ -2347,11 +2347,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private refreshPersonaPrefixOnLoop(): void {
     if (!this.loop) return;
-    // 角色包优先：激活角色包时用其 L1 persona，否则回退 personaManager（角色包优先/persona 兜底）
+    // 档 2-1（ADR-025）：角色包唯一——无激活角色包时前缀为空（persona 兜底已移除）。
+    // persona 设定不再注入 system prompt，PersonaManager 保留为宿主切换 API。
     const rolePackPrompt = this.rolePackManager_?.buildSystemPrompt() ?? '';
-    const personaPrompt = rolePackPrompt || (this.personaManager?.buildSystemPrompt() ?? '');
     const newPrefix =
-      personaPrompt ? `${personaPrompt}\n\n---\n\n` : '';
+      rolePackPrompt ? `${rolePackPrompt}\n\n---\n\n` : '';
     this.loop.refreshPersonaPrefix(newPrefix);
   }
 

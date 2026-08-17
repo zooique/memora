@@ -140,8 +140,7 @@ type LoopAndDepsParams = Pick<
   | 'callbacks'
 > & {
   pctx: ProjectContext;
-  personaPrompt: string;
-  /** 激活角色包的 L1 persona prompt（角色包优先于 persona；无激活角色包时为空串） */
+  /** 激活角色包的 L1 persona prompt（档 2-1 后角色包唯一；无激活角色包时为空串） */
   rolePackPrompt: string;
   toolExec: ToolExecutor;
 };
@@ -222,14 +221,14 @@ export interface AssembleOutput {
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
-    provider, backgroundProvider, providerRouter, pctx, personaPrompt, rolePackPrompt, toolExec,
+    provider, backgroundProvider, providerRouter, pctx, rolePackPrompt, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary,
     sessionStore, locale, callbacks,
   } = params;
 
-  // 系统前缀：角色包优先于 persona（角色包优先/persona 兜底）+ 当前时间
-  // （用户画像已收敛为 round-summary 召回，不再拼入 systemPrompt）
-  const systemPrefixParts = [rolePackPrompt || personaPrompt];
+  // 系统前缀：角色包唯一（ADR-025 档 2-1：persona 兜底已移除——设定记忆唯一归角色包，
+  // 无激活角色包时降级为空串；PersonaManager 保留为宿主切换 API，不再注入 system prompt）
+  const systemPrefixParts = [rolePackPrompt];
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -366,7 +365,10 @@ export async function assembleComponents(
   // ── Phase 2: 依赖 Provider 的组件 ──
 
   const personaManager = new PersonaManager(configDir);
-  const personaPrompt = await personaManager.load(personaName);
+  // 档 2-1（ADR-025）：persona 不再注入 system prompt（角色包唯一）；
+  // load 仍执行以初始化目录扫描与激活状态（agent 门面 switchPersona/autoMatch 依赖），
+  // 返回值丢弃。
+  await personaManager.load(personaName);
 
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
@@ -386,12 +388,11 @@ export async function assembleComponents(
 
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
-  const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
+    const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
       provider,
       backgroundProvider,
       pctx,
-      personaPrompt,
       rolePackPrompt,
       toolExec,
       maxContextTokens,
