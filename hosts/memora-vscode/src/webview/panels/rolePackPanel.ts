@@ -77,12 +77,18 @@ export class MemoraRolePackViewProvider implements vscode.WebviewViewProvider {
       void this.handleMessage(msg);
     });
 
-    // 首次打开即装配 Agent 并加载角色列表
-    void this.load();
+    // 首次打开不立即加载：等待 webview 脚本就绪（ready 握手）后再推送角色列表，
+    // 避免 roles_loaded 在脚本 message 监听器注册前到达而被丢弃（时序竞态，对齐 chatPanel）。
   }
 
-  /** 处理 webview 发来的消息（当前仅切换激活角色） */
+  /** 处理 webview 发来的消息（ready 握手 + 切换激活角色） */
   private async handleMessage(msg: WebviewToExtensionMessage): Promise<void> {
+    // ready 握手：webview 脚本已就绪（message 监听器已注册）→ 加载角色列表，
+    // 保证 roles_loaded 在监听器就绪后才推送（时序竞态修复，对齐 chatPanel replaySession）
+    if (msg.type === 'ready') {
+      await this.load();
+      return;
+    }
     if (msg.type === 'roles_set_active') {
       const agent = await this.ensureAgent();
       const rpm = agent?.rolePackManager;

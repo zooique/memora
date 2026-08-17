@@ -121,4 +121,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(document.querySelector('.empty-title')?.textContent).toBe('暂无角色包');
     expect(document.querySelector('.empty-hint')?.textContent).toContain('打开一个工作区');
   });
+
+  it('挂载时发送 ready 握手（host 据此在监听器就绪后推送 roles_loaded）', () => {
+    const { postMessage } = mountRolesView();
+    // 脚本就绪即通知 host：message 监听器已注册，可安全推送（时序竞态修复）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
+  });
 });

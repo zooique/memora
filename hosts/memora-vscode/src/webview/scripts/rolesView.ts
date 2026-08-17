@@ -149,4 +149,8 @@ export function createRolesView({ acquireVsCodeApi, window }: RolesViewDeps): vo
     const msg = event.data;
     if (msg.type === 'roles_loaded') render(msg);
   });
+
+  // ready 握手：通知 extension host 脚本已就绪（监听器已注册），host 收到后才推送
+  // roles_loaded——避免首帧推送在监听器注册前到达而被丢弃（时序竞态，对齐 chatPanel）
+  vscode.postMessage({ type: 'ready' });
 }
