@@ -735,3 +735,61 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     expect(del.disabled).toBe(true);
   });
 });
+
+describe('chatView Follow-up 建议（T2，2026-08-17 回复后关联推荐）', () => {
+  it('suggestions 渲染「接下来可以探索」chips 块（textContent 防注入）', () => {
+    mountChatView();
+    dispatch({
+      type: 'suggestions',
+      items: [
+        { prompt: '继续深入：甲', label: '甲' },
+        { prompt: '继续深入：乙', label: '乙' },
+      ],
+    });
+    const block = document.querySelector('.followup');
+    expect(block).not.toBeNull();
+    expect(block?.querySelector('.followup__caption')?.textContent).toBe('接下来可以探索');
+    const chips = block?.querySelectorAll('.suggestion-chip');
+    expect(chips).toHaveLength(2);
+    // 标签与 prompt 均为 textContent 赋值，恶意 HTML 不被注入
+    expect(chips?.[0]?.textContent).toBe('甲');
+    expect((chips?.[0] as HTMLButtonElement).dataset.prompt).toBe('继续深入：甲');
+  });
+
+  it('点击 follow-up chip 填入输入框并聚焦（复用 .suggestion-chip 点击委托）', () => {
+    mountChatView();
+    dispatch({
+      type: 'suggestions',
+      items: [{ prompt: '继续深入：记忆甲', label: '记忆甲' }],
+    });
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const chip = document.querySelector('.followup .suggestion-chip') as HTMLButtonElement;
+    chip.click();
+    expect(input.value).toBe('继续深入：记忆甲');
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('多轮建议幂等：新 suggestions 覆盖旧块（不堆叠残影）', () => {
+    mountChatView();
+    dispatch({ type: 'suggestions', items: [{ prompt: '继续深入：旧', label: '旧' }] });
+    dispatch({ type: 'suggestions', items: [{ prompt: '继续深入：新', label: '新' }] });
+    const blocks = document.querySelectorAll('.followup');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].textContent).toContain('新');
+    expect(blocks[0].textContent).not.toContain('旧');
+  });
+
+  it('clear_ok 清除 follow-up 建议块（不残留污染重放视图）', () => {
+    mountChatView();
+    dispatch({ type: 'suggestions', items: [{ prompt: '继续深入：甲', label: '甲' }] });
+    expect(document.querySelector('.followup')).not.toBeNull();
+    dispatch({ type: 'clear_ok' });
+    expect(document.querySelector('.followup')).toBeNull();
+  });
+
+  it('空 items 不渲染建议块（记忆库为空/未装配时零残留）', () => {
+    mountChatView();
+    dispatch({ type: 'suggestions', items: [] });
+    expect(document.querySelector('.followup')).toBeNull();
+  });
+});

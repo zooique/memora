@@ -1062,6 +1062,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'interrupted' });
     } else {
       this.post({ type: 'done' });
+      // T2 Follow-up 建议：仅正常结束时推送（零 LLM、纯计算；打断/异常不给不完整回复挂建议）
+      this.postSuggestions();
     }
     this.post({ type: 'status', state: 'done' });
     // 本轮流式结束 → 推送活动指标快照（P2：指纹 + 累计指标，默认折叠展示）
@@ -1102,6 +1104,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         llmTokenOut: m.llm.totalOutputTokens,
         decayRunCount: m.decay?.runCount,
       },
+    });
+  }
+
+  /**
+   * 推送 Follow-up 建议（2026-08-17，T2：回复后关联推荐）
+   *
+   * 复用内核 governance.suggest()——零 LLM、纯计算（基于记忆库 score + 时效 + 多样性，
+   * 见 memoryAdvisor.suggest），把「与你当前关注相关但未直接搜到」的记忆映射为
+   * 「下一步可探索」chips 推给 webview。记忆名作 chip 标签（label），prompt 为填入输入框
+   * 的完整下一步提问。记忆库为空/未装配（governance null）时不推送（webview 无建议块）。
+   */
+  private postSuggestions(): void {
+    if (!this._agent) return;
+    const hits = this._agent.governance?.suggest(undefined, { limit: 3 }) ?? [];
+    if (hits.length === 0) return;
+    this.post({
+      type: 'suggestions',
+      items: hits.map((h) => ({
+        prompt: `继续深入：${h.name}`,
+        label: h.name,
+      })),
     });
   }
 }

@@ -394,6 +394,40 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     });
   }
 
+  /**
+   * 渲染 Follow-up 建议（2026-08-17，T2：回复后关联推荐）
+   *
+   * 在最新一条 AI 消息下方追加「接下来可以探索」chips 块；点击 chip 填入输入框并聚焦
+   * （与空状态示例 chips 共用 .suggestion-chip 点击委托，SSOT 复用同一交互）。
+   * 文案一律 textContent 防注入；渲染前先移除上一次的 follow-up 块（幂等，
+   * 避免多轮建议堆叠成「残影」，对齐 memoryView 搜索结果的竞态清理思路）。
+   */
+  function renderFollowUpSuggestions(items: { prompt: string; label: string }[]): void {
+    if (items.length === 0) return;
+    const prev = messages.querySelector('.followup');
+    if (prev) prev.remove();
+    const block = document.createElement('div');
+    block.className = 'followup';
+    const caption = document.createElement('div');
+    caption.className = 'followup__caption';
+    caption.textContent = '接下来可以探索';
+    block.appendChild(caption);
+    const row = document.createElement('div');
+    row.className = 'followup__chips';
+    items.forEach((s) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'suggestion-chip';
+      chip.dataset.prompt = s.prompt;
+      chip.title = s.prompt;
+      chip.textContent = s.label;
+      row.appendChild(chip);
+    });
+    block.appendChild(row);
+    messages.appendChild(block);
+    scrollToBottom(messages);
+  }
+
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
   // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
   // 此处统一以 messages 为滚动容器，与 toolCard 共用同一 helper（SSOT 剪枝去重）。
@@ -917,6 +951,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.settleRunning(messages, '已中断');
       finalizeStreaming();
       showActivity('info', '已停止生成');
+    } else if (msg.type === 'suggestions') {
+      // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
+      renderFollowUpSuggestions(msg.items);
     } else if (msg.type === 'need_clarify') {
       clarifyText.textContent =
         'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
@@ -952,10 +989,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
       // 清空消息区须同时清 type=msg 消息、.tool-card 工具卡片、.self-review 自审查提示、
-      // .thought-block 思考折叠块与 .date-divider 日期分隔线（对抗评估 P1-1/P1-4）：
-      // 不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
+      // .thought-block 思考折叠块、.date-divider 日期分隔线与 .followup 建议块
+      // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider, .followup').forEach((el) => el.remove());
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）

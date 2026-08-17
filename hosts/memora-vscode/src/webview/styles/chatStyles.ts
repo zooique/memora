@@ -142,6 +142,11 @@ export const chatStyles = `
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
   }
   .suggestion-chip:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
+  /* Follow-up 建议块（T2，2026-08-17 回复后关联推荐）：AI 回复下方「接下来可以探索」，
+     chips 与空状态示例共用 .suggestion-chip（左对齐，区别于空状态居中） */
+  .followup { padding: var(--sp-1, 4px) var(--sp-2, 6px) var(--sp-5, 12px); }
+  .followup__caption { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-bottom: var(--sp-2, 6px); letter-spacing: 0.3px; }
+  .followup__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
 
   /* ============ Components：日期分隔线（跨天合并分组，ui-redesign.md §7.4） ============ */
   /* 跨天合并视图在日期交界插入弱化分隔：居中灰字 + 两侧细线，aria-hidden 装饰性。 */

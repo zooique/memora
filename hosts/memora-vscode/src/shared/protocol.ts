@@ -349,7 +349,28 @@ export type ExtensionToWebviewMessage =
    * hits 为 searchHybrid 命中（带 score/similarity），content 为截断预览
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
-  | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] };
+  | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
+  // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───
+  /**
+   * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）
+   *
+   * host 在本轮流式正常结束后调 agent.governance.suggest()（零 LLM、纯计算，
+   * 基于记忆库 score+时效+多样性推荐），映射为「下一步可探索」chips 推给 webview；
+   * 用户打断/异常时不推送（避免给不完整回复挂建议）。
+   */
+  | { type: 'suggestions'; items: FollowupSuggestionDto[] };
+
+/** Follow-up 建议条目（T2，2026-08-17：回复后关联推荐）
+ *
+ * 由 host 对 governance.suggest() 的 SuggestHit 归一化：label 为 chip 展示文案（记忆名），
+ * prompt 为点击后填入输入框的完整下一步提问（「继续深入：{记忆名}」）。
+ */
+export interface FollowupSuggestionDto {
+  /** 填入输入框的完整提问 */
+  prompt: string;
+  /** chip 展示文案 */
+  label: string;
+}
 
 /** 记忆库统计（记忆视图顶栏，对齐内核 AgentStats 扁平化） */
 export interface MemoryStatsDto {
