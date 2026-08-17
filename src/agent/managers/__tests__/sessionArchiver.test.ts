@@ -153,6 +153,17 @@ describe('SessionArchiver · archiveSessionContent 主流程', () => {
     expect(result.memories[0]!.score).toBe(0.6);
   });
 
+  it('content 融入统一摘要模型：带 summaryType + sessionName + isTraceable（D6 定案）', async () => {
+    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+
+    const memory = result.memories[0]!;
+    expect(memory.metadata?.summaryType).toBe('decision'); // 会话级综合提炼归决策锚点
+    expect(memory.metadata?.sessionName).toBe('2026-07-03-main'); // 会话 id，溯源到整段会话
+    expect(memory.isTraceable).toBe(true);
+    // 会话级粒度无 roundId
+    expect(memory.metadata?.roundId).toBeUndefined();
+  });
+
   it('记忆 id 应包含 content 前缀和会话标识', async () => {
     const result = await archiver.archiveSessionContent('2026-07-03', 'main');
     expect(result.memories[0]!.id).toContain('content-2026-07-03-main');

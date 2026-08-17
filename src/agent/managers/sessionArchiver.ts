@@ -244,7 +244,10 @@ ${dialogueText}
       content += '\n\n[工作进度]\n' + buildWorkContextSection(options.workContextPlan);
     }
 
-    // 构造 content 类记忆条目
+    // 构造 content 类记忆条目（D6 定案：content = 会话 id 对应的摘要记忆，融入统一摘要模型）
+    // 标签固定为 decision——会话级综合提炼（关键决策/未解决问题/plan 快照）属决策锚点；
+    // sessionName = sessionLabel（会话 id，与 round-summary 同构）；无 roundId（会话级粒度）；
+    // isTraceable=true 支持溯源到整段会话。
     const now = nowIso();
     const memory: Memory = {
       id: `content-${sessionLabel}-${Date.now()}`,
@@ -254,6 +257,11 @@ ${dialogueText}
       score: 0.6, // content 类会话归档记忆初始分数
       createdAt: now,
       accessedAt: now,
+      isTraceable: true,
+      metadata: {
+        summaryType: 'decision' as const,
+        sessionName: sessionLabel,
+      },
     };
 
     // 写入记忆存储（upsert 语义：按 id 覆盖；id 含 Date.now()，同毫秒重复归档会覆盖）

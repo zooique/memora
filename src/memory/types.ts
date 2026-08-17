@@ -54,9 +54,9 @@ export interface Memory {
   /**
    * 可选：记忆是否可溯源到原始对话记录
    *
-   * 为 true 时，可通过 sessionId + roundId 回溯到原始对话。
+   * 为 true 时，可通过 sessionId（+ roundId，轮次级）回溯到原始对话。
    * 为 false 时，表示原始对话已删除，无法追溯。
-   * 仅对 `source='round-summary'` 的记忆有意义，其他来源记忆默认为 false。
+   * 对摘要记忆有意义（round-summary 轮次级 + content 会话级，D6 定案），其他来源记忆默认为 false。
    */
   isTraceable?: boolean;
   /**

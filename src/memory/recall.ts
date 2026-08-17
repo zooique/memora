@@ -34,35 +34,12 @@ const DEFAULT_MIN_SIMILARITY = 0.3;
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * 摘要类型时间窗口策略表（memory-as-summary §4.2 差异化召回）
+ * 召回常量（memory-as-summary §4）
  *
- * 每种类型拥有独立存活窗口：intent/general 时效敏感，超期不召回；
- * preference/decision/fact 不限窗口（长期有效，可召回远古记忆）。
- * 表中未列出的类型（或未标记 summaryType 的非 round-summary 记忆）**不过滤**，
- * 仅命中窗口类型的摘要受时间约束。
+ * type 时间窗口差异化召回已于 2026-08-17 移除（ADR-025 D7）：
+ * type 是纯语义标签，不设时效；自然遗忘由 superseded（写时取代）+
+ * score 衰减（decayScheduler）承担。见 memory-as-summary.md §4.2。
  */
-const RECALL_WINDOWS_DAYS: Readonly<Record<string, number>> = {
-  intent: 7,
-  general: 7,
-};
-
-/**
- * 差异化召回时间窗口谓词（memory-as-summary §4.2）
- *
- * 主召回流程与召回保底共用同一过滤规则：按 type 查窗口策略表，
- * 未标记 summaryType 或不在表中的类型不过滤。避免两处维护平行逻辑。
- *
- * @param m - 待判定记忆
- * @param nowMs - 当前时间戳（毫秒，调用方传入保证同一轮内一致）
- * @returns 是否位于该类型的召回时间窗口内（或无窗口约束）
- */
-function isWithinRecallWindow(m: Memory, nowMs: number): boolean {
-  const type = m.metadata?.summaryType;
-  const windowDays = type ? RECALL_WINDOWS_DAYS[type] : undefined;
-  if (windowDays === undefined) return true; // 不限窗口或未标记，不过滤
-  const ageMs = nowMs - Date.parse(m.createdAt);
-  return !Number.isNaN(ageMs) && ageMs <= windowDays * ONE_DAY_MS;
-}
 
 /**
  * 从文本中提取关键词（用于记忆召回）
@@ -226,7 +203,6 @@ export async function recall(
   // ── 无任何结果：active 置空，仍进入召回保底补足最近记忆 ──
   // 保底是"每轮记忆下限"保障：零召回（新会话冷启动）与少召回同样需要最近记忆兜底，
   // 避免 LLM 完全无记忆可依（memory-as-summary §4.7）。
-  const nowMs = Date.now();
   let active: Memory[] = [];
   if (merged.size > 0) {
     // ── 前置排除（memory-as-summary §4.3 · 互斥排除）──
@@ -258,9 +234,8 @@ export async function recall(
       : sorted.map((e) => e.memory);
 
     // ── Phase 2：差异化召回（memory-as-summary §4.2）──
-    // 按 type 查时间窗口策略表：preference/decision/fact 不限，intent/general 限近期
-    // 未标记 summaryType 的记忆不受 type 时间窗口约束（不命中表即不过滤）
-    reranked = reranked.filter((m) => isWithinRecallWindow(m, nowMs));
+    // 自然遗忘（ADR-025 D7）：type 不设时间窗口——记忆有效性由 superseded（写时取代）+
+    // score 衰减承担，不在读路径按时间过滤。见 memory-as-summary.md §4.2。
 
     // ── Phase 3：会话窗口优先 + 组内时间排序（memory-as-summary §4.4）──
     // 排序由两个正交维度构成，类型不参与排序：
@@ -290,8 +265,8 @@ export async function recall(
   // 语义召回过少时用最近记忆补足，保证每轮至少 minFallback 条记忆注入上下文。
   // 条件触发：仅 active 不足 minFallback 才补；补足项排语义命中之后，不抢占相关性。
   // 数据源复用空查询通道 storage.search('', n) 按 score 降序取最近记忆（score 已含 boost+衰减）。
-  // 补足项应用与主流程相同的过滤（excludeSources + 时间窗口 + 去 superseded），
-  // 避免重新注入本应被排除/超期/被取代的记忆。置 0 关闭。
+  // 补足项应用与主流程相同的过滤（excludeSources + 去 superseded），
+  // 避免重新注入本应被排除/被取代的记忆。置 0 关闭。
   const fallbackFloor = options.minFallback ?? DEFAULT_MIN_FALLBACK;
   // 仅"有查询意图"（关键词非空）时保底：纯符号/噪声输入无召回价值，不补足最近记忆
   if (fallbackFloor > 0 && keywords.length > 0 && active.length < fallbackFloor) {
@@ -308,10 +283,10 @@ export async function recall(
     let remaining = shortfall;
     for (const candidate of recent) {
       if (remaining <= 0) break;
-      // 与主流程对齐的过滤：已命中 / 被取代 / 超期窗口 / 被排除来源 → 跳过
+      // 与主流程对齐的过滤：已命中 / 被取代 / 被排除来源 → 跳过
+      // （type 时间窗口过滤已随 ADR-025 D7 移除）
       if (existingIds.has(candidate.id)) continue;
       if (candidate.supersededBy) continue;
-      if (!isWithinRecallWindow(candidate, nowMs)) continue;
       if (excludeSources.includes(candidate.source)) continue;
       // 互斥排除（§4.3）：避免把当前会话最近 N 轮（正文已加载）的摘要补回造成重复
       const rid = candidate.metadata?.roundId;
