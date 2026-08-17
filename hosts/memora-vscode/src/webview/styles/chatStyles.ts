@@ -351,18 +351,6 @@ export const chatStyles = `
   }
   /* Composer 右侧操作组：模型选择器 + 发送按钮，与左侧提示分组（space-between 布局） */
   .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
-  /* Composer 联网能力 chip（alignment-iteration.md C1）：当前角色包声明 web:search 时显示，
-   * 作为联网能力可见指示。次级按钮风格（复用 --btn-secondary-* 令牌），不喧宾夺主。 */
-  .composer-chip {
-    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
-    height: var(--control-h, 28px); padding: 0 var(--sp-3, 8px); box-sizing: border-box;
-    font-size: var(--font-md, 12px); line-height: 1;
-    border-radius: var(--radius, 6px);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
-    background: transparent; color: var(--accent, #0e639c);
-    cursor: default; flex-shrink: 0;
-  }
-  .composer-chip[hidden] { display: none; }
 
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
    * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），

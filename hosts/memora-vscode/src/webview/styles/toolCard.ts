@@ -50,6 +50,18 @@ export const toolCardStyles = `
   .tool-card.is-success .tool-card__spinner, .tool-card.is-failed .tool-card__spinner { display: none; }
   @keyframes toolSpin { to { transform: rotate(360deg); } }
   .tool-card__status { margin-left: auto; font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); }
+  /* 成功工具调用 → 单行胶囊（图标 + 名称 + ✓，无详情）。压缩成功反馈为一行，
+   * 不再占据垂直空间（对齐大厂 AI Chat「成功工具折叠为一行」惯例）。 */
+  .tool-card--capsule {
+    height: 24px; padding: 0 10px; margin-top: var(--sp-1, 4px);
+    display: inline-flex; align-items: center; gap: var(--sp-2, 6px);
+    border-radius: 12px; border-left: none;
+    background: var(--surface-code, rgba(128,128,128,.12));
+    font-size: var(--font-xs, 10px); line-height: 1;
+  }
+  .tool-card--capsule .tool-card__header { padding: 0; gap: var(--sp-1, 4px); cursor: default; }
+  .tool-card--capsule .tool-card__name { font-size: var(--font-xs, 10px); }
+  .tool-card--capsule .tool-card__status { margin-left: 0; color: var(--status-pass, #4ec9b0); }
   .tool-card__args, .tool-card__result {
     margin-top: var(--sp-1, 4px); padding: var(--sp-1, 4px) var(--sp-2, 6px); max-height: 120px; overflow: auto;
     background: var(--surface-code);

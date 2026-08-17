@@ -628,7 +628,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 后处理阶段
     yield { type: 'thinking', phase: 'archiving' };
-    await this.postProcess(input, assistantContent);
+    // 非阻塞后处理：即使 LLM 摘要生成慢（如网络抖动），generator 不阻塞，立即继续
+    // yield handoff + done，让 UI 能正常结束生成态。后处理结果在后台异步完成。
+    this.postProcess(input, assistantContent).catch((err) => {
+      logger.warn({ err }, '非阻塞后处理失败');
+    });
 
     // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六），
     // 经 resolveHandoff 归位非法值，避免透传无法识别的衔接决策给宿主
@@ -1077,9 +1081,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         logger.warn({ err }, '助手消息历史写入失败');
       }
 
-      // 后处理
+      // 后处理（非阻塞：不阻塞 generator 发送 handoff/done，UI 能正常结束生成态）
       yield { type: 'thinking', phase: 'archiving' };
-      await this.postProcess(event.content, assistantContent);
+      this.postProcess(event.content, assistantContent).catch((err) => {
+        logger.warn({ err }, '非阻塞后处理失败');
+      });
 
       // Handoff 衔接决策：基于 L2 策略的 handoff 配置（标准键 reflect.handoff，§六），
       // 经 resolveHandoff 归位非法值，避免透传无法识别的衔接决策给宿主
@@ -1187,9 +1193,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         logger.warn({ err }, '助手消息历史写入失败');
       }
 
-      // 后处理
+      // 后处理（非阻塞：不阻塞 generator 发送 handoff/done，UI 能正常结束生成态）
       yield { type: 'thinking', phase: 'archiving' };
-      await this.postProcess(input ?? '', assistantContent);
+      this.postProcess(input ?? '', assistantContent).catch((err) => {
+        logger.warn({ err }, '非阻塞后处理失败');
+      });
     } finally {
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.chatLockManager?.release(myToken);

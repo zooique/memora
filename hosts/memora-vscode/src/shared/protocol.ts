@@ -278,7 +278,7 @@ export type ExtensionToWebviewMessage =
    * webview 据此在消息区顶部渲染角色徽章——主动可见：用户始终知道当前用哪个角色
    * （不依赖角色匹配事件，避免普通对话不匹配时徽章永远不显示）。
    */
-  | { type: 'chat_role_pack'; rolePack: string; webSearch?: boolean }
+  | { type: 'chat_role_pack'; rolePack: string }
   /**
    * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）
    *

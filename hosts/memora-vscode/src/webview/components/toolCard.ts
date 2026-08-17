@@ -100,7 +100,7 @@ function show(container: HTMLElement, id: string, name: string, args?: string): 
   scrollToBottom(container);
 }
 
-/** 更新工具卡片状态：成功/失败 + 结果摘要；完成后自动折叠 */
+/** 更新工具卡片状态：成功降级为单行胶囊，失败保持卡片展示结果摘要 */
 function update(
   container: HTMLElement,
   id: string,
@@ -111,18 +111,30 @@ function update(
   const card = findCard(container, id);
   if (!card) return;
   card.classList.remove('is-running');
-  card.classList.add(ok ? 'is-success' : 'is-failed');
   card.querySelector('.tool-card__spinner')?.remove();
   const status = card.querySelector('.tool-card__status');
-  if (status) status.textContent = ok ? '✓ 成功' : '✗ 失败';
-  if (summary) {
-    const resultDiv = document.createElement('div');
-    resultDiv.className = 'tool-card__result';
-    resultDiv.textContent = summary;
-    card.appendChild(resultDiv);
+  if (ok) {
+    // 成功：压缩为单行胶囊（图标 + 名称 + ✓），移除参数/结果详情。
+    // 工具成功是过程性反馈，不值得占据垂直空间——对齐大厂 AI Chat 的
+    // 「成功工具调用折叠为一行」惯例（metacto AI Chat UX Patterns）。
+    card.classList.add('is-success', 'tool-card--capsule');
+    if (status) status.textContent = '✓';
+    card.querySelector('.tool-card__chevron')?.remove();
+    card.querySelector('.tool-card__args')?.remove();
+    card.querySelector('.tool-card__result')?.remove();
+  } else {
+    // 失败：保持卡片 + 结果摘要（可诊断），移除 spinner
+    card.classList.add('is-failed');
+    if (status) status.textContent = '✗ 失败';
+    if (summary) {
+      const resultDiv = document.createElement('div');
+      resultDiv.className = 'tool-card__result';
+      resultDiv.textContent = summary;
+      card.appendChild(resultDiv);
+    }
+    // 完成后自动折叠，减少视觉干扰（对齐 sprite）
+    card.classList.add('is-collapsed');
   }
-  // 完成后自动折叠，减少视觉干扰（对齐 sprite）
-  card.classList.add('is-collapsed');
 }
 
 /** 兜底终结：把所有残留「执行中」卡片标记为失败（中断态），避免状态悬挂（P1-1） */

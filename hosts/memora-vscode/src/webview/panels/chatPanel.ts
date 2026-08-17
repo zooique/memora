@@ -371,12 +371,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
    */
   private readonly onPersonaSwitched = (info: { from: string | null; to: string }): void => {
-    // 仅转发切换后的角色显示名（to）+ 该角色联网能力（C1），触发角色选择器 + AI 消息标签 + 联网 chip 同步
-    this.post({
-      type: 'chat_role_pack',
-      rolePack: this.roleDisplayName(info.to),
-      webSearch: this.currentRoleHasWebSearch(),
-    });
+    // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步
+    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to) });
   };
 
   /**
@@ -623,14 +619,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
-      this.post({
-        type: 'chat_role_pack',
-        rolePack: this.roleDisplayName(this._activeRolePack),
-        webSearch: this.currentRoleHasWebSearch(),
-      });
+      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack) });
     } else {
       // 无激活角色包：推送空信息，让 webview 清除角色标签
-      this.post({ type: 'chat_role_pack', rolePack: '', webSearch: false });
+      this.post({ type: 'chat_role_pack', rolePack: '' });
     }
     // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
@@ -677,14 +669,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
     if (this._view) {
       if (this._activeRolePack) {
-        this.post({
-          type: 'chat_role_pack',
-          rolePack: this.roleDisplayName(this._activeRolePack),
-          webSearch: this.currentRoleHasWebSearch(),
-        });
+        this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack) });
       } else {
         // 无激活角色包时推送空信息，让 webview 清除角色标签
-        this.post({ type: 'chat_role_pack', rolePack: '', webSearch: false });
+        this.post({ type: 'chat_role_pack', rolePack: '' });
       }
     }
     // 角色切换入口数据（webview 收到后自动显示输入区内下拉）
@@ -745,20 +733,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else {
       this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
     }
-  }
-
-  /**
-   * 当前激活角色包是否具备联网能力（alignment-iteration.md C1）
-   *
-   * 从内核 RolePackManager.getActive() 的 capabilities 判断是否声明 web:search。
-   * 角色包 manifest skills[].capability 声明能力（"换角色→工具集切换"范式），
-   * 联网 chip 作为该能力的可见指示，而非独立运行时开关。
-   *
-   * @returns 当前激活角色包声明了 web:search 能力
-   */
-  private currentRoleHasWebSearch(): boolean {
-    const active = this._agent?.rolePackManager?.getActive();
-    return active?.capabilities.some((c) => c.capability === 'web:search') ?? false;
   }
 
   /**
@@ -1221,9 +1195,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             extraClass: 'role-picker treedd--capsule',
             onSelect: '__rolePickerOnSelect',
           })}
-          <!-- 联网能力 chip（alignment-iteration.md C1）：当前角色包声明 web:search 时显示，
-              作为联网能力可见指示（由 chatView 依据 chat_role_pack.webSearch 控制显隐） -->
-          <button id="webSearchChip" class="composer-chip" hidden title="当前角色支持联网搜索" aria-label="当前角色支持联网搜索">🔍 联网</button>
           ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
           <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
             <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>

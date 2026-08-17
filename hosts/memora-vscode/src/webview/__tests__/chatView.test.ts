@@ -52,7 +52,6 @@ const HTML = `
             <div class="treedd__menu"></div>
           </div>
           <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
-          <button id="webSearchChip" class="composer-chip" hidden>🔍 联网</button>
           <button id="send"></button>
         </div>
       </div>
@@ -253,31 +252,23 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(emptyState.hidden).toBe(true);
   });
 
-  it('thinking 阶段更新思考折叠块文案（alignment-iteration.md B）', () => {
+  it('thinking 阶段更新思考折叠块文案 + 轨迹默认折叠（alignment-iteration.md B）', () => {
     mountChatView();
-    // 生成中先有 thinking 折叠块
+    // 生成中先有 thinking 折叠块（默认折叠，不撑开挤压内容——对齐 VS Code Chat 折叠惯例）
     dispatch({ type: 'thinking', phase: 'recalling' });
     const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
     expect(tb).not.toBeNull();
     expect(tb.textContent).toContain('召回记忆中');
+    expect(tb.open).toBe(false);
     // 处理阶段切换文案
     dispatch({ type: 'thinking', phase: 'processing' });
     expect(tb.textContent).toContain('处理中');
+    expect(tb.open).toBe(false);
     dispatch({ type: 'thinking', phase: 'archiving' });
     expect(tb.textContent).toContain('归档记忆中');
-  });
-
-  it('联网 chip 随角色包 web:search 能力显隐（alignment-iteration.md C1）', () => {
-    mountChatView();
-    const chip = document.getElementById('webSearchChip') as HTMLButtonElement;
-    // 默认隐藏（无角色推送）
-    expect(chip.hidden).toBe(true);
-    // 具备联网能力的角色 → 显示
-    dispatch({ type: 'chat_role_pack', rolePack: '技术文档工程师', webSearch: true });
-    expect(chip.hidden).toBe(false);
-    // 切换为无联网能力角色 → 隐藏
-    dispatch({ type: 'chat_role_pack', rolePack: '翻译助手', webSearch: false });
-    expect(chip.hidden).toBe(true);
+    expect(tb.open).toBe(false);
+    // 归档停滞兜底定时器由 done 清除（避免测试残留 15s 定时器）
+    dispatch({ type: 'done' });
   });
 
   it('metrics 渲染 token 用量与记忆衰减字段（alignment-iteration.md D）', () => {
@@ -627,11 +618,11 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
       ],
       activeName: 'doc-review',
     });
-    dispatch({ type: 'chat_role_pack', rolePack: '文档打磨', webSearch: false });
+    dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
     expect(title.textContent).toBe('开始与 文档打磨 对话');
     expect(hint.textContent).toBe('打磨文档结构、表达与一致性');
     // 切换角色 → 文案同步更新
-    dispatch({ type: 'chat_role_pack', rolePack: '翻译助手', webSearch: false });
+    dispatch({ type: 'chat_role_pack', rolePack: '翻译助手' });
     expect(title.textContent).toBe('开始与 翻译助手 对话');
     expect(hint.textContent).toBe('中英互译与润色');
   });
@@ -643,10 +634,10 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     // 未加载角色：回退通用打磨引导
     expect(chipLabels()).toEqual(['审阅架构', '精简表达', '对齐实现']);
     // 非 showcase 角色（文档打磨）：仍回退通用引导
-    dispatch({ type: 'chat_role_pack', rolePack: '文档打磨', webSearch: false });
+    dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
     expect(chipLabels()).toEqual(['审阅架构', '精简表达', '对齐实现']);
     // showcase 角色（方案设计师）：渲染专属"种子收敛"引导，一键体验 memora 设计魅力
-    dispatch({ type: 'chat_role_pack', rolePack: '方案设计师', webSearch: true });
+    dispatch({ type: 'chat_role_pack', rolePack: '方案设计师' });
     expect(chipLabels()).toEqual(['设计知识库', '设计记忆系统', '找最小单元']);
   });
 });

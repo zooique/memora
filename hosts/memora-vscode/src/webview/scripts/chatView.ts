@@ -83,8 +83,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const historyMenu = document.getElementById('historyMenu') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
-  // 联网能力指示 chip（C1，alignment-iteration.md）：当前角色包声明 web:search 时显示
-  const webSearchChip = document.getElementById('webSearchChip') as HTMLButtonElement;
   // 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
@@ -232,8 +230,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       row.appendChild(label);
       trace.appendChild(row);
     });
-    // thinking 期间展开轨迹：用户正在等待，看见执行进度是主动可见的正反馈
-    tb.open = true;
+    // 轨迹默认折叠：执行进度不是对话主体，不默认撑开挤压内容（对齐 VS Code Chat
+    // 「Completed N steps」折叠惯例 + 大厂 AI Chat「默认不展开思考」）。
+    // 用户可点击 summary 展开查看三阶段进度（主动可见仍保留，仅不强制展开）。
+    tb.open = false;
   }
 
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
@@ -257,6 +257,35 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     messages.appendChild(divider);
   }
 
+  // ─── 归档停滞兜底 ────────────────────────────────────────────
+  // 根因修复：内核 postProcess 已改非阻塞，正常路径 archiving 后立即收到 done 折叠。
+  // 此兜底仅覆盖后端异常挂起（宿主 forceReleaseChatLock 超时前），避免 UI 永久停留在
+  // 「归档记忆中…」呼吸动画——答案已完整输出，归档是后台动作，不应让用户无限等待。
+  const ARCHIVING_STALL_MS = 15000;
+
+  // 归档兜底定时器句柄（webview 环境 setTimeout 返回 number）
+  let archivingFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** 清除归档兜底定时器（幂等，done/中断/新轮次时调用） */
+  function clearArchivingFallback(): void {
+    if (archivingFallbackTimer !== undefined) {
+      clearTimeout(archivingFallbackTimer);
+      archivingFallbackTimer = undefined;
+    }
+  }
+
+  /** 调度归档停滞兜底：超时后折叠思考块并停止呼吸（与 setStatus('done') 同构） */
+  function scheduleArchivingFallback(): void {
+    clearArchivingFallback();
+    archivingFallbackTimer = setTimeout(() => {
+      archivingFallbackTimer = undefined;
+      if (thoughtEl && thoughtEl.isConnected) {
+        thoughtEl.classList.remove('is-thinking');
+        thoughtEl.open = false;
+      }
+    }, ARCHIVING_STALL_MS);
+  }
+
   // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
   // 输入框保持可用（支持插话）；done 恢复发送按钮。同时同步思考折叠块。
   // SSOT 收敛：身份条已删，生成中状态由思考折叠块（过程可见）+ 发送按钮（可操作）承载。
@@ -266,6 +295,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       setThoughtLabel('思考中…', { thinking: true });
     } else {
       // 结束：折叠思考块并停止呼吸（保留折叠态，不落库不重放）
+      clearArchivingFallback();
       if (thoughtEl && thoughtEl.isConnected) {
         thoughtEl.classList.remove('is-thinking');
         thoughtEl.open = false;
@@ -751,6 +781,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       setThoughtLabel(label, { thinking: true });
       // P2（2026-08-15 执行轨迹）：同步渲染三阶段执行轨迹（✓/●/○），执行过程可见
       renderTrace(msg.phase);
+      // 归档停滞兜底：archiving 激活即调度超时折叠；其他 phase（新轮次/回溯）清除定时器
+      if (msg.phase === 'archiving') scheduleArchivingFallback();
+      else clearArchivingFallback();
     } else if (msg.type === 'user') {
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
@@ -790,19 +823,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'error') {
       append('error', msg.message);
     } else if (msg.type === 'done') {
-      // 本轮流式结束：兜底终结所有残留「执行中」工具卡片，避免 tool_start 后
-      // 流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。error 后必跟 done，
-      // 此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
+      // 本轮流式结束：清除归档停滞兜底定时器 + 兜底终结所有残留「执行中」工具卡片，
+      // 避免 tool_start 后流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。
+      clearArchivingFallback();
+      // error 后必跟 done，此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
       ToolCard.settleRunning(messages, '已中断');
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
       finalizeStreaming();
     } else if (msg.type === 'interrupted') {
-      // 用户主动停止（mvp-scope 打断能力）：兜底终结残留「执行中」工具卡片 +
-      // 低扰提示「已停止生成」，区分于正常 done。按钮状态恢复由紧随的 status done
-      // 处理（chatPanel 中断后发 interrupted + status done），此处独立兜底保证
-      // 消息顺序变化时 UI 仍可靠恢复。
+      // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 兜底终结残留
+      // 「执行中」工具卡片 + 低扰提示「已停止生成」，区分于正常 done。
+      clearArchivingFallback();
+      // 兜底终结残留「执行中」工具卡片（P1-1）+ 流式收尾（取消 ≠ 丢弃，保留已生成内容）
       ToolCard.settleRunning(messages, '已中断');
-      // 流式收尾：半截内容也渲染 Markdown（取消 ≠ 丢弃，保留已生成内容，对齐 Trae canceled 语义）
       finalizeStreaming();
       showActivity('info', '已停止生成');
     } else if (msg.type === 'need_clarify') {
@@ -849,7 +882,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
       streamingActive = false;
       streamingRaw = '';
-      // 过程性状态复位：思考块引用失效 + 日期分隔线重新计算（重放从新日期开始）
+      // 过程性状态复位：归档兜底定时器清除 + 思考块引用失效 + 日期分隔线重新计算
+      // （重放从新日期开始）
+      clearArchivingFallback();
       thoughtEl = null;
       lastShownDate = undefined;
       updateEmptyState();
@@ -872,8 +907,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const matchedRole = currentRolePacks.find((p) => p.displayName === msg.rolePack);
       if (matchedRole) currentActiveRolePack = matchedRole.name;
       renderRolePicker();
-      // C1（alignment-iteration.md）：联网能力指示 —— 角色包声明 web:search 时显示联网 chip
-      webSearchChip.hidden = !msg.webSearch;
       // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
       updateEmptyStateRole();
     } else if (msg.type === 'chat_role_packs') {
