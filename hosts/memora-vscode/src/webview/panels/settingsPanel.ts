@@ -13,6 +13,7 @@
 import * as vscode from 'vscode';
 import type { Agent, MemoryInspector } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
+import { MemoraChatViewProvider } from './chatPanel.js';
 import type {
   ExtensionToWebviewMessage,
   MemoryItemDto,
@@ -110,16 +111,15 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
     // ─── 角色子视图消息 ───
     if (msg.type === 'roles_set_active') {
-      const agent = await this.ensureAgent();
-      const rpm = agent?.rolePackManager;
-      if (!rpm) return;
-      const ok = rpm.activate(msg.name);
+      await this.activateRole(msg.name);
+      return;
+    }
+    // 角色 handoff：切换激活角色包 + 聚焦对话视图（上下文由单 Agent 共享记忆承载）
+    if (msg.type === 'roles_handoff') {
+      const ok = await this.activateRole(msg.name);
       if (ok) {
-        this._globalState?.update(ACTIVE_ROLE_PACK_KEY, msg.name);
-      } else {
-        this.post({ type: 'notice', level: 'error', message: `角色包不存在：${msg.name}` });
+        void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
       }
-      void this.loadRoles();
       return;
     }
 
@@ -236,6 +236,21 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private readonly onPersonaSwitched = (): void => {
     void this.loadRoles();
   };
+
+  /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
+  private async activateRole(name: string): Promise<boolean> {
+    const agent = await this.ensureAgent();
+    const rpm = agent?.rolePackManager;
+    if (!rpm) return false;
+    const ok = rpm.activate(name);
+    if (ok) {
+      this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
+    } else {
+      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+    }
+    void this.loadRoles();
+    return ok;
+  }
 
   private async loadRoles(): Promise<void> {
     const agent = await this.ensureAgent();

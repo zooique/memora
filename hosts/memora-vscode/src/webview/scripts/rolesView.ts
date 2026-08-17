@@ -132,10 +132,18 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     card.appendChild(icon);
     card.appendChild(info);
 
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    // 「带入对话」：所有角色均可一键切换并跳转到对话（handoff，复用 activate 路径）
+    const handoffBtn = document.createElement('button');
+    handoffBtn.className = 'btn btn-primary';
+    handoffBtn.textContent = '带入对话';
+    handoffBtn.addEventListener('click', () =>
+      vscode.postMessage({ type: 'roles_handoff', name: p.name }),
+    );
+    actions.appendChild(handoffBtn);
     // 「设为当前」：仅非激活角色展示（对齐 config 面板「设为当前」交互）
     if (p.name !== activeName) {
-      const actions = document.createElement('div');
-      actions.className = 'card-actions';
       const actBtn = document.createElement('button');
       actBtn.className = 'btn btn-secondary';
       actBtn.textContent = '设为当前';
@@ -143,8 +151,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         vscode.postMessage({ type: 'roles_set_active', name: p.name }),
       );
       actions.appendChild(actBtn);
-      card.appendChild(actions);
     }
+    card.appendChild(actions);
     return card;
   }
 

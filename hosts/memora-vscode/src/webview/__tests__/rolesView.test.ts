@@ -78,10 +78,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // badge 内嵌于 .card-name（文本节点 + 徽章 span），名称部分包含「文档打磨」
     expect(cards[0]?.querySelector('.card-name')?.textContent).toContain('文档打磨');
     expect(cards[0]?.querySelector('.badge')?.textContent).toBe('当前');
-    // 激活角色无「设为当前」，其他角色有
-    expect(cards[0]?.querySelector('.btn')).toBeNull();
+    // 激活角色无「设为当前」（仅有「带入对话」），其他角色两者都有
+    expect(cards[0]?.querySelector('.btn-secondary')).toBeNull();
     expect(cards[1]?.querySelector('.card-name')?.textContent).toBe('翻译助手');
-    expect(cards[1]?.querySelector('.btn')?.textContent).toBe('设为当前');
+    expect(cards[1]?.querySelector('.btn-secondary')?.textContent).toBe('设为当前');
+    // 每张卡片都有「带入对话」按钮
+    expect(cards[0]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
+    expect(cards[1]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
   });
 
   it('能力标签 chips：展示 host 翻译的中文 label，title 承载原始能力名', () => {
@@ -115,9 +118,23 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       ],
       'doc-review',
     );
-    const btn = document.querySelector('.card:not(.active) .btn') as HTMLButtonElement;
+    const btn = document.querySelector('.card:not(.active) .btn-secondary') as HTMLButtonElement;
     btn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'roles_set_active', name: 'translator' });
+  });
+
+  it('「带入对话」→ postMessage roles_handoff（host 切换激活角色 + 聚焦对话视图）', () => {
+    const { postMessage } = mountRolesView();
+    dispatchLoaded(
+      [
+        { name: 'doc-review', displayName: '文档打磨', capabilities: [] },
+        { name: 'translator', displayName: '翻译助手', capabilities: [] },
+      ],
+      'doc-review',
+    );
+    const btn = document.querySelector('.card:not(.active) .btn-primary') as HTMLButtonElement;
+    btn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_handoff', name: 'translator' });
   });
 
   it('roles_loaded 空列表 → 渲染空态引导', () => {

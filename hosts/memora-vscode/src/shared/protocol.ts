@@ -95,6 +95,14 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_set_active'; name: string }
   /**
+   * 角色 handoff：将指定角色包带入对话（2026-08-17 后续）
+   *
+   * 由角色管理视图的「带入对话」触发：host 复用 activateRole 切换激活角色包（与
+   * roles_set_active 同路径），随后聚焦对话视图（memora.chat.focus）。单 Agent 模型下
+   * 上下文由共享记忆（round-summary）承载，角色切换即完成"上下文传递"，无需额外搬运。
+   */
+  | { type: 'roles_handoff'; name: string }
+  /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
    * 由 webview 停止按钮触发，host 调用 AbortController.abort() 中断进行中的
