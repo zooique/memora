@@ -82,11 +82,28 @@
 ### 2.4 单一真理源与字段集
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
-- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
+- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
 - **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
 - **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 转译为注册形状 + 派生态指针（正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 - **分发**：文件夹 zip 压缩（对齐 skills 市场分发方式）。
+
+### 2.5 接手衔接提示词（handoffPrompt，角色包自洽声明）
+
+**定位**：`handoffPrompt` 是该角色包**被宿主带入对话（激活 + 聚焦）时**预填输入框的特色衔接话术——作者为「这个角色接手任务时怎么说」定制的提示词。缺省由宿主回退通用话术。
+
+**设计边界（2026-08-17 定案）**：角色包是**独立自洽**的装载卡（§11 插卡解耦）——**只描述自己，不引用其他角色包**。跨包移交（A→B 交接链）属宿主层工作流编排（§十一 A2A 预留：依赖声明由宿主解析，远期非承诺），**不进角色包格式**；角色包之间的切换由用户主动通过宿主「带入对话」原语完成。
+
+```jsonc
+{
+  "name": "写作助手",
+  "handoffPrompt": "我已准备好开始写作任务，请告诉我主题与要求；若承接上文，请先概述当前进度。"
+}
+```
+
+**消费方**：宿主（如 memora-vscode 在 `roles_handoff` 处理中读取 `listMeta().handoffPrompt` 预填输入框，缺省回退通用话术）；内核仅透传 + 校验（非字符串 warning 不阻塞装载，§五 键级渐进）。
+
+**格式厚度**：schema 定义（类型/校验）+ 自描述语义，不引入结构嵌套——单字符串字段，复杂度匹配问题。
 
 **格式厚度的来源（三层，不在文件后缀）**：
 
