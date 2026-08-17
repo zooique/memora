@@ -383,12 +383,44 @@ export const chatStyles = `
     flex-shrink: 0;
     box-sizing: border-box;
   }
+  /* Composer 左侧组：键盘提示 + 当前角色徽章（与右侧操作组 space-between 分组） */
+  .composer-left {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3, 8px);
+    min-width: 0;
+  }
   /* Composer 键盘提示：footer 左侧弱化提示 Enter 发送 / Shift+Enter 换行。
    * 对齐大厂 composer 的「轻提示」惯例，不喧宾夺主（ui-redesign.md §7.3）。 */
   .composer-hint {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* Composer 当前角色只读徽章：胶囊 + accent 圆点，展示当前角色名让用户感知定位。
+   * 只读不承载切换（切换入口在「角色」视图）；textContent 赋值防注入（chatView 更新）。 */
+  .role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    max-width: 140px;
+    padding: 1px var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-code, rgba(128,128,128,.12));
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+  }
+  .role-badge::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent, #0e639c);
+    flex-shrink: 0;
+  }
+  .role-badge[hidden] { display: none; }
   /* Composer 右侧操作组：模型选择器 + 发送按钮，与左侧提示分组（space-between 布局） */
   .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
 

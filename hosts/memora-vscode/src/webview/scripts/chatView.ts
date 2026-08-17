@@ -101,6 +101,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const modelPickerMenu = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__menu') : null;
   const modelPickerTrigger = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
 
+  // 当前角色只读徽章（输入区左侧，展示角色名让用户感知当前定位；切换入口在独立「角色」视图）
+  const roleBadge = document.getElementById('currentRoleBadge') as HTMLElement | null;
+
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
   // 不会改变锚点，避免一次回复（含工具调用）被拆成多条消息。
@@ -336,6 +339,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 空状态开关：消息区无 .msg 时显示空状态提示，有消息则隐藏
   function updateEmptyState(): void {
     emptyState.hidden = messages.querySelector('.msg') !== null;
+  }
+
+  /**
+   * 更新输入区左侧「当前角色」只读徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
+   *
+   * 角色切换入口已独立到「角色」视图，此处仅做只读状态展示——让用户在输入前感知当前定位。
+   * 无角色名时隐藏徽章（保持输入区干净）；textContent 赋值防注入。
+   */
+  function updateRoleBadge(): void {
+    if (!roleBadge) return;
+    if (!currentRoleName) {
+      roleBadge.hidden = true;
+      return;
+    }
+    roleBadge.hidden = false;
+    roleBadge.textContent = currentRoleName;
   }
 
   /**
@@ -966,9 +985,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       renderModelPicker();
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
-      // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题共用
+      // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题 + 输入区角色徽章共用
       // （角色切换已独立到「角色」视图，2026-08-17）
       currentRoleName = msg.rolePack;
+      // 输入区左侧徽章：展示当前角色（只读状态，让用户感知当前定位）
+      updateRoleBadge();
       // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
       updateEmptyStateRole();
     } else if (msg.type === 'chat_role_packs') {
@@ -979,6 +1000,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         const activePack = currentRolePacks.find((p) => p.name === msg.activeName);
         if (activePack) currentRoleName = activePack.displayName;
       }
+      // 回退补齐后同步徽章（chat_role_packs 可能先于 chat_role_pack 到达）
+      updateRoleBadge();
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     }
@@ -1114,6 +1137,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 首屏刷新
   updateEmptyState();
+  updateRoleBadge(); // 输入区角色徽章（首屏可能有历史推送的角色名）
   updateEmptyStateRole(); // P3：空状态文案随当前角色生长（首屏可能已有角色推送）
   renderModelPicker();
 

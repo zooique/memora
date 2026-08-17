@@ -1190,8 +1190,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        <!-- Composer 左侧键盘提示：Enter 发送 / Shift+Enter 换行（角色切换已移入独立「角色」视图） -->
-        <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+        <!-- Composer 左侧组：键盘提示 + 当前角色只读徽章（让用户感知当前定位；切换入口独立在「角色」视图） -->
+        <div class="composer-left">
+          <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+          <span id="currentRoleBadge" class="role-badge"></span>
+        </div>
         <!-- Composer 右侧操作组：模型选择 + 发送（SSOT 收敛：角色切换已移至独立角色视图，
              输入区只保留高频操作——模型切换与发送） -->
         <div class="composer-actions">

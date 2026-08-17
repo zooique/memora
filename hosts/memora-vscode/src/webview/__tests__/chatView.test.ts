@@ -51,6 +51,7 @@ const HTML = `
           <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
           <button id="send"></button>
         </div>
+        <span id="currentRoleBadge" class="role-badge"></span>
       </div>
     </div>
   </div>
@@ -83,6 +84,24 @@ describe('chatView clear_ok 消息区清理', () => {
   it('发送 ready 通知 extension 会话可安全回放', () => {
     const { postMessage } = mountChatView();
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
+  });
+
+  it('chat_role_pack 渲染当前角色到输入区左侧角色徽章（只读状态展示，2026-08-17）', () => {
+    mountChatView();
+    const badge = document.getElementById('currentRoleBadge') as HTMLElement;
+    // 初始无角色名 → 徽章隐藏
+    expect(badge.hidden).toBe(true);
+
+    // 推送当前角色（personaSwitched / 会话回放路径）
+    dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
+
+    // 徽章显示角色显示名（textContent 赋值防注入）
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('文档打磨');
+
+    // 切回空名 → 徽章重新隐藏
+    dispatch({ type: 'chat_role_pack', rolePack: '' });
+    expect(badge.hidden).toBe(true);
   });
 
   it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {
