@@ -463,6 +463,7 @@ LLM 获得完整上下文
 | InsightExtractor | `src/agent/managers/insightExtractor.ts` | 洞察层（每轮自动抽取长期记忆）已被 round-summary 的 type 分类吸收（preference/fact/decision），冗余移除 |
 | insightExtracted 事件 | `src/utils/eventEmitter.ts` | 洞察移除后无发射方，事件一并移除 |
 | archiveCoordinator 中的 archiveRoundSummary | `src/agent/managers/archiveCoordinator.ts` | 冗余，round-summary 直接在 postProcess 生成 |
+| 设定记忆（persona/rule/skill）写入记忆库 | `src/memory/loader.ts` `STARTUP_SCAN_SOURCES` + `src/agent/managers/configManager.ts` CRUD | 设定记忆唯一归角色包内容层（L1），记忆库只剩摘要——见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) §四（待迁出，非本模块已完成项） |
 
 > **最终形态（2026-08-14 定案）**：聚焦 memora 内核，洞察层（InsightExtractor）**完整移除**，记忆收敛为**单轨**：
 > - **唯一记忆单元 = round-summary**：写入（RoundSummaryGenerator + type）→ 召回（type 时间窗口 + 会话窗口/时间排序）→ 治理（superseded 取代）闭环成立，无需独立洞察提炼层。
@@ -494,6 +495,7 @@ LLM 获得完整上下文
 > - [agent-design-philosophy.md](agent-design-philosophy.md) —— 单轮问答闭环公理
 > - [mvp-scope.md](mvp-scope.md) —— MVP 能力边界
 > - [role-pack-spec.md](role-pack-spec.md) —— 角色包标准（L2 召回键作为**后置覆盖**，不阻塞本模块）
+> - [memory-role-pack-boundary.md](memory-role-pack-boundary.md) —— 记忆系统 × 角色包边界收敛（设定记忆归角色包，记忆库只剩摘要）
 > - [ADR-021](../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.4）
 > - [ADR-023](../.trae/decisions/ADR-023-context-cost-injection-defense-loop-convergence.md) —— 摘要成本重构（截断优先用 round-summary）+ 即时注入防御
 > - `src/agent/managers/roundSummaryGenerator.ts` —— RoundSummaryGenerator 实现

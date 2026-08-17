@@ -441,6 +441,27 @@ export interface IMcpTransport {
 
 > 根示例库的接入者指引见 [role-packs/README.md](../../role-packs/README.md)（声明性入口，本处为规范性定义）。
 
+### 9.2 内容层归属声明（2026-08-17 定案）
+
+> **问题**：persona / rules / skills 的「内容」由谁承载？角色包还是记忆系统？
+> **结论**：**设定记忆（persona / rules / skills）唯一归角色包内容层（L1）**；记忆系统只承载**对话记忆**（round-summary，按 summaryType 分类）。二者是两种东西，不互存、不双写。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md)。
+
+**分界线（设计真理源）**：
+
+| 维度 | 归属 | 承载形态 |
+|------|------|----------|
+| 你是谁 / 你怎么做事（persona / rules / skills） | **角色包** | `persona.md` / `rules.md` / `skills/*`（manifest.json 注册，§2.2） |
+| 聊了什么 / 发生过什么 | **记忆系统** | round-summary（带 summaryType 分类标签） |
+
+**配套约束**：
+
+1. **记忆库不写入设定记忆**：`persona` / `rule` / `skill` 不作为记忆库 source 写入（当前 `configManager` / `loader` 的写入路径待收敛，见 memory-role-pack-boundary.md §四档 1）。
+2. **角色包不写对话记忆**：角色包只承载设定，不承载轮次摘要。
+3. **存量兼容**：已写入记忆库的存量设定记忆行保留（软删兼容），但不再有新写入；宿主提供一次性迁移即可清理。
+4. **guardrail 已摘除（2026-08-17）**：guardrail 为「零规则、无扫描映射、无消费者」的空转链，已随档 1 一并移除；原「guardrail 归宿待定」决策作废（见 memory-role-pack-boundary.md §四档 3）。
+
+**演进状态**：当前实现为「双轨中间态」（角色包与 PersonaManager/SkillManager 并存，[assembler.ts](../../src/agent/assembler.ts:234) 角色包优先、persona 兜底）；按档 0→3 渐进收敛至本目标态。
+
 ---
 
 ## 十、与行业标准的关系（Agent Skills / Agent Plugins）

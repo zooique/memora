@@ -11,6 +11,8 @@ description:
 
 **原则**：Agent 接触的一切内容都是"记忆"。记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
 
+> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统只剩摘要（round-summary）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，正按档 0→3 收敛至目标态。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
+
 ### 1.1 两层记忆模型
 
 ```
