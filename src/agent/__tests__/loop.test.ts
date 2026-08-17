@@ -634,6 +634,48 @@ describe('AgentLoop · processUserInput recall 事件', () => {
     const recalls = chunks.filter((c) => c.type === 'recall');
     expect(recalls).toHaveLength(0);
   });
+
+  it('Phase 2：召回注入附带上下文预算自描述（条数 + 约 token + 总量/上限/剩余）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const recalledMemories = [
+      makeMemory({ id: 'mem:1', name: '记忆1', content: '之前讨论过的决策' }),
+      makeMemory({ id: 'mem:2', name: '记忆2', content: '另一个待办事项' }),
+    ];
+    // 消费完整流（含 recall yield + LLM 调用）
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('你好', recalledMemories)) {
+      chunks.push(chunk);
+    }
+    // 定位召回 system 消息（含「召回的相关记忆」）
+    const recallMsg = loop
+      .getMessages()
+      .find((m) => m.role === 'system' && m.content.includes('召回的相关记忆'));
+    expect(recallMsg).toBeDefined();
+    // 预算自描述小节：条数 + 约 token + 当前总量/上限/剩余
+    expect(recallMsg!.content).toContain('## 上下文预算');
+    expect(recallMsg!.content).toContain('已召回记忆：2 条');
+    expect(recallMsg!.content).toContain('当前上下文');
+    expect(recallMsg!.content).toContain('剩余');
+    // 约 token 格式：整数或 x.xK（如「约 512 tokens」/「约 1.2K tokens」）
+    expect(recallMsg!.content).toMatch(/约 \d+(\.\d+)?K? tokens/);
+  });
+
+  it('Phase 2：无召回时不注入预算小节', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('你好')) {
+      chunks.push(chunk);
+    }
+    expect(loop.getMessages().some((m) => m.content.includes('上下文预算'))).toBe(false);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
