@@ -1,6 +1,6 @@
 ---
 alwaysApply: true
-description: 记忆系统 × 角色包边界纪律——设定记忆（persona/rules/skills）唯一归角色包内容层；记忆系统 = 摘要记忆（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）；新增设定记忆一律进角色包，记忆库禁止再写设定记忆
+description: 记忆系统 × 角色包边界纪律——设定记忆（persona/rules/skills）唯一归角色包内容层；记忆系统 = 摘要记忆（round-summary 轮次级 + content 会话级，summaryType 语义标签分类，type 不设时效）；角色包内容文件约定名（persona.md/rules.md）；能力声明独立顶层 capabilities（C2）；两级技能渐进披露（通用全局 + 角色包绑定）；新增设定记忆一律进角色包，记忆库禁止再写设定记忆
 ---
 
 # 记忆系统 × 角色包边界纪律
@@ -15,7 +15,7 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 
 | 维度 | 归属 | 承载形态 |
 |------|------|----------|
-| 你是谁 / 你怎么做事（persona / rules / skills） | **角色包** | `<configDir>/role-packs/<名>/` 下 `persona.md` / `rules.md` / `skills/*`（manifest.json 注册） |
+| 你是谁 / 你怎么做事（persona / rules / skills） | **角色包** | `<configDir>/role-packs/<名>/` 下 `persona.md` / `rules.md` / `skills/*`（manifest.json 注册）；**能力声明在顶层 `capabilities`**（C2） |
 | 聊了什么 / 发生过什么 | **记忆系统** | 摘要记忆：round-summary（轮次级，sessionName+roundId 双溯源）+ content（会话级，sessionName 溯源），带 `summaryType` 语义标签 |
 
 **两个"禁止"**：
@@ -42,12 +42,22 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 ### type 不设时效（R6）
 > `summaryType` 是**纯语义标签**，不携带时效性。禁止新增 type→时间窗口的过滤逻辑；记忆是否有效由 superseded（写时取代）+ score 衰减（自然沉底）判定，不由时间流逝判定。
 
+### 内容文件约定名（R7）
+> 角色包内容文件**约定俗成**：`persona.md`（身份）、`rules.md`（规则）——manifest 未声明时装载回退约定名（声明路径仅向后兼容）。禁止新增「路径写错静默丢内容」的自由命名字段。
+
+### 能力声明独立（R8）
+> 角色能力声明**只放 manifest 顶层 `capabilities`**（`{ capability: '域:动作', description? }`），skills 数组回归纯技能文件引用（`{ file, name?, description? }`）。禁止在 skills 项里塞 capability（C2）。
+
+### 两级技能渐进披露（R9）
+> 技能体系两级同构：**通用技能（全局池 `configDir/skills/`，全局激活）+ 角色包技能（`manifest.skills`，角色激活才激活）**，统一渐进披露（L1 元数据清单常驻 + L2 `read_skill` 按需读正文）。禁止把通用技能复制进每个角色包（R1 的边界）。
+
 ## 三、已知坑（对抗式核查实证）
 
 1. **rule 语义不对等**：角色包 `parseRules` 只认 `- `/`* ` 无序列表行（`role-pack/rolePackManager.ts`）；记忆库 rule 是任意 markdown。搬迁需转换器，否则丢内容。
 2. **skills 正文不预装载**：角色包 skill 是"生态指针"，正文靠 `readSkillContent` 按需读；依赖索引正文的宿主 UI 搬迁后会断供。
 3. **guardrail 已摘除（2026-08-17）**：guardrail 空转链（零规则/无扫描映射/无消费者）已随档 1 移除，不再新增 guardrail 相关代码。
 4. **宿主 SQLite schema 不可见**：宿主持有 `WHERE source='rule'` 等查询会静默失效，需宿主核对配合。
+5. **角色包 skills 当前零文件**（2026-08-18 诚实声明）：6 个示例包全是纯能力声明、`skills/` 目录为空——技能内容面是「设计就绪、零负载」，read_skill L2 实读链路待真实技能文件验证。
 
 ## 四、审查点（代码评审时检查）
 
@@ -56,4 +66,7 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 - [ ] 新增的"角色相关能力"是否绕开角色包另起通道？（违反插卡机模型 §11）
 - [ ] 新增记忆源是否带 `summaryType` + 结构化溯源？（违反 R5）
 - [ ] 是否出现 type→时间窗口的过滤逻辑？（违反 R6）
+- [ ] 是否在 manifest 声明非约定名内容文件路径？（违反 R7）
+- [ ] 是否在 skills 项里放 capability？（违反 R8）
+- [ ] 是否把通用技能复制进每个角色包？（违反 R9）
 - [ ] `assembler.ts` systemPrompt 装配是否仍存在 persona 兜底？（收敛完成后应唯一走 rolePackPrompt）

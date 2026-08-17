@@ -42,7 +42,7 @@
 4. **rule 生效**：角色包 rule 段 → SecurityGuard 最小集（输入/输出过滤，§runtime 13.8）；
 5. **L2 生效**：已冻结核心维度随角色包生效——主动提问（askOn/askLimit）、工具允许（toolMode）、记忆召回（memoryRecall）等；草案维度（如 temperature）MVP 不承诺随包生效（spec §六 状态列）。
 
-**MVP 内置角色包样例**（骨架，对齐 role-pack-spec §2.2 文件夹形态：`manifest.json` 为核心控制文件，persona/rules 为独立内容文件，skills 用对象数组注册 + capability 中立命名）：
+**MVP 内置角色包样例**（骨架，对齐 role-pack-spec §2.2 文件夹形态：`manifest.json` 为核心控制文件，persona/rules 为独立内容文件，skills 用对象数组注册技能文件 + 顶层 capabilities 声明能力，C2）：
 
 ```text
 role-packs/小说写作/
@@ -72,9 +72,14 @@ role-packs/小说写作/
   "persona": "persona.md",
   "rules": "rules.md",
   "skills": [
-    { "file": "skills/write.md", "name": "write", "capability": "file:write" },
-    { "file": "skills/read.md", "name": "read", "capability": "file:read" },
-    { "file": "skills/search.md", "name": "search", "capability": "web:search" }
+    { "file": "skills/write.md", "name": "write" },
+    { "file": "skills/read.md", "name": "read" },
+    { "file": "skills/search.md", "name": "search" }
+  ],
+  "capabilities": [
+    { "capability": "file:write" },
+    { "capability": "file:read" },
+    { "capability": "web:search" }
   ]
 }
 ```

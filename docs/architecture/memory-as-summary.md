@@ -523,6 +523,5 @@ LLM 获得完整上下文
 > - [ADR-021](../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.4）
 > - [ADR-023](../.trae/decisions/ADR-023-context-cost-injection-defense-loop-convergence.md) —— 摘要成本重构（截断优先用 round-summary）+ 即时注入防御
 > - `src/agent/managers/roundSummaryGenerator.ts` —— RoundSummaryGenerator 实现
-> - `tasks/归档/记忆即摘要升级方案-20260813.md` —— 实施计划与评审结论（已完结，归档）
 >
 > **模块边界（2026-08-13）**：本模块（摘要即记忆）是**内核基础，独立于角色包**——召回策略、互斥窗口 N、配额均由内核默认值驱动，可脱离角色包单独运行与测试。角色包 L2 召回键（`memoryRecall`/`summaryRecall`/`recentRounds` 等）是对本模块的**可选覆盖**，随角色包后置交付，不构成前置依赖（§4.2.1 / §4.3）。

@@ -1,7 +1,7 @@
 # 角色包 skills 演进方案 · 渐进披露（Progressive Disclosure）
 
 > **定位**：角色包 `manifest.skills` 从"能力声明"演进为"可装载技能系统"，对齐 Agent Skills 行业标准。
-> **状态**：**已实现**（2026-08-15）——read_skill 工具 + L1 元数据注入已落地（commit 179d6a78），本方案为实现蓝本与演进记录。
+> **状态**：**已实现**（2026-08-15 read_skill + L1；2026-08-18 两级技能统一 + C2 能力独立），本方案为实现蓝本与演进记录。
 > **关联**：[role-pack-spec.md](./role-pack-spec.md) §四（能力声明）/ §2.1（角色包 vs Skills）；样例见 [角色包 manifest 示例](./role-pack-spec.md)。
 
 ---
@@ -166,10 +166,11 @@ read_skill: {
 
 ## 五、落地清单（2026-08-15 已实现）
 
-- [x] 内核：新增 `read_skill` 工具（注册 BUILTIN_TOOLS + 幂等映射）——commit 179d6a78
+- [x] 内核：新增 `read_skill` 工具（注册 BUILTIN_TOOLS + 幂等映射）
 - [x] 内核：L1 元数据注入（`buildSystemPrompt` 暴露激活角色包 skills name+description）
 - [x] 内核：`RolePackManager.readSkillContent()` 读取内嵌技能正文（L2 数据源）
 - [x] 内核：`ToolExecutor.readSkill` 回调注入 + `read_skill` 执行分支
+- [x] 内核：两级技能统一（2026-08-18）——全局 `buildSkillList` L1 + `read_skill` 双源；C2 能力独立顶层 capabilities
 - [x] 装配：`assembler.ts` 注入 readSkill 回调（rolePackManager → toolExec）
 - [x] 测试：read_skill 读正文 / 元数据注入 / 回调接线 / 幂等（84 文件 / 1986 测试全通过）
 - [x] 文档：role-pack-spec §四 更新"正文按需装载"声明（本文件同步）
@@ -181,37 +182,35 @@ read_skill: {
 
 ## 六、结论
 
-本方案将角色包 skills 从"能力声明"演进为"渐进披露的可装载技能系统"，对齐 Agent Skills 行业标准（L1 元数据常驻 + L2 按需装载）。**核心是复用现有数据源，不新建平行系统**；`file` 指针从"生态指针"变为 read_skill 的装载入口，`capability`/`file`/`name` 三者职责分离，单一真理源。
+本方案将角色包 skills 演进为"渐进披露的可装载技能系统"，对齐 Agent Skills 行业标准（L1 元数据常驻 + L2 按需装载）。**核心是复用现有数据源，不新建平行系统**；`file` 指针从"生态指针"变为 read_skill 的装载入口。**C2 定案（2026-08-18）**：能力声明已独立为 manifest 顶层 `capabilities`（能力面=工具白名单），`skills` 回归纯技能文件引用（内容面）——`capabilities`/`file`/`name` 职责分离，单一真理源。
 
-**决策**：已实现并提交（179d6a78）。剩余待办：与 matchAndInjectSkill 的长期统一策略评估。
+**决策**：已实现。两级技能统一渐进披露（2026-08-18）：全局通用技能（buildSkillList）+ 角色包技能（manifest.skills）同构，read_skill 双源读取。
 
 ---
 
-## 七、与 matchAndInjectSkill 的统一策略评估（2026-08-15）
+## 七、与 matchAndInjectSkill 的统一策略评估（2026-08-15 定案，2026-08-18 两级技能演进）
 
-> **结论**：**维持双轨，不强行统一**。两套机制数据源不同、职责互补，统一会破坏单一真理源。
+> **结论**：两级技能统一渐进披露已实现（2026-08-18）——全局技能与角色包技能**同构**（L1 清单 + L2 read_skill），同时保留 `matchAndInjectSkill` 作为全局技能的可选确定性触发（双轨并存的演进路径，非强制统一）。
 
-### 7.1 两套机制对比
+### 7.1 演进后的事实（2026-08-18）
 
-| 维度 | `matchAndInjectSkill`（宿主全局技能） | `read_skill`（角色包内嵌技能） |
-|------|-----------------------------------------|-------------------------------|
-| 数据源 | `SkillManager`（`configDir/skills/`） | `RolePackManager.readSkillContent()`（角色包 `skills/*`） |
-| 判断权 | **宿主**（关键词/正则 `SkillManager.match`） | **LLM**（语义判断，渐进披露 L2） |
-| 触发时机 | 每轮 `processUserInput`，命中即注入整篇正文 | 按需，LLM 调用时读取 |
-| 上下文占用 | 命中即注入全文 | 仅 L1 元数据常驻，正文按需 |
-| 适用场景 | 需**确定性触发**的宿主全局技能 | 需**按需装载**的角色包内嵌技能 |
+| 机制 | 数据源 | 形态 |
+|------|--------|------|
+| `buildSkillList`（渐进披露 L1） | 全局 `SkillManager` + 角色包 `manifest.skills` | 两级技能清单常驻 system prompt |
+| `read_skill`（渐进披露 L2） | 双源：先角色包 `readSkillContent`，再全局 `skillManager.get()` | LLM 按需读正文 |
+| `matchAndInjectSkill` | 全局 `SkillManager.match` | 可选确定性触发（保留） |
 
-### 7.2 为什么不宜统一
+### 7.2 历史结论（保留为演进记录）
 
-1. **数据源天然分治**：宿主全局技能在 `configDir/skills/`，角色包内嵌技能在 `role-packs/<名>/skills/`，共享 configDir 但子目录不同，**无重叠**。统一需人为合并两套来源，属过度设计。
-2. **职责互补而非冗余**：matchAndInjectSkill 解决"宿主确定性触发"（全局技能该启用时必启用），read_skill 解决"LLM 按需装载"（角色包技能按任务加载）。两者不是同一功能的两份实现。
-3. **统一破坏 SSOT**：若把两套来源硬塞进一个机制，需引入"来源标签"区分，反而制造数据冗余与边界错位（与 role-pack-spec §9.1 来源边界声明同理）。
+1. 数据源天然分治：宿主全局技能在 `configDir/skills/`，角色包内嵌技能在 `role-packs/<名>/skills/`，共享 configDir 但子目录不同，无重叠。
+2. 职责互补而非冗余：matchAndInjectSkill 解决"宿主确定性触发"，read_skill 解决"LLM 按需装载"。
+3. 统一不能破坏 SSOT：两套来源并入一机制需引入"来源标签"，制造冗余（避免）。
 
-### 7.3 边界与演进建议
+### 7.3 边界
 
-- **边界**：宿主全局技能（确定性触发）走 `matchAndInjectSkill`；角色包内嵌技能（按需装载）走 `read_skill`。两者分治，不交叉。
-- **未来观察点**：若宿主全局技能出现"数量多、需按需装载"的场景（如技能库膨胀），可复用 `read_skill` 的装载路径为宿主全局技能提供 L2 渐进披露——但这是**宿主策略**，非内核统一，届时由宿主决定是否让全局技能也走按需装载。
-- **不做的事**：不删除 matchAndInjectSkill（宿主全局技能仍依赖其确定性触发），不合并两套来源，不引入来源标签。
+- **两级技能统一（已实现）**：全局 + 角色包同构渐进披露；
+- **matchAndInjectSkill 保留**：全局技能确定性触发，不删除；
+- **能力面独立（C2）**：capabilities 顶层声明（工具白名单），与技能内容面分离。
 
 ### 7.4 结论
 
@@ -223,4 +222,5 @@ read_skill: {
 
 | 日期 | 变更 |
 |------|------|
-| 2026-08-15 | read_skill 工具实现（commit 179d6a78）；spec 文档同步（commit 658b0eb7）；统一策略评估（本节） |
+| 2026-08-15 | read_skill 工具实现 + L1 元数据注入 + 统一策略评估 |
+| 2026-08-18 | 两级技能统一（全局 buildSkillList + read_skill 双源）；C2 能力独立顶层 capabilities |

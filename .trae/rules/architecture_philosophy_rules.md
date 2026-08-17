@@ -11,7 +11,7 @@ description:
 
 **原则**：Agent 接触的一切内容都是"记忆"。记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
 
-> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，正按档 0→3 收敛至目标态。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
+> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。**角色包内容收敛（2026-08-18）**：内容文件约定名（persona.md/rules.md）、能力声明独立顶层 capabilities（C2）、技能两级渐进披露（通用全局 + 角色包绑定，§11.5）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，正按档 0→3 收敛至目标态。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 1.1 两层记忆模型
 
@@ -303,6 +303,21 @@ function singleTurn(context: Context, rolePack: RolePack): Handoff {
 
 - 用户写一个角色包文件夹（manifest.json 声明元数据与策略 + persona.md/rules.md/skills/* 内容文件）→ memora 装载 → 变成翻译专家：不改 `src/` 一行代码
 - 用户换一个角色包文件夹 → memora 装载 → 变成代码审查专家：同上
+
+### 11.5 技能的两级性（2026-08-18 定案）
+
+技能不是角色包四件套（persona/rules/capabilities/strategy）之一，而是独立维度，**两级同构**：
+
+```
+通用技能（全局池 configDir/skills/）→ 全局激活（通用能力共享，不随角色变）
+角色包技能（manifest.skills）→ 角色激活才激活（角色专属内容）
+
+两级统一渐进披露：L1 元数据清单常驻 system prompt + L2 read_skill 按需读正文
+```
+
+- **能力面独立**（C2）：`manifest.capabilities` 顶层声明（工具白名单）与 `manifest.skills`（技能文件引用）分离——「能做什么」与「有什么技能正文」是两件事；
+- **避免复制**：通用技能全局一份，角色包不重复——「写小说的角色不需要加载写代码的通用技能」（用户设计原则）；
+- **内容文件约定名**：persona.md / rules.md 约定俗成（manifest 未声明回退约定名），消除路径错误面。
 - 用户把同一个角色包文件夹给另一个兼容 Agent 装载 → 同样行为
 
 ### 11.5 禁止
