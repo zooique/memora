@@ -82,7 +82,7 @@
 ### 2.4 单一真理源与字段集
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 注册全部在此，无第二份权威，同字段永不双写；
-- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffs`（交接声明，宿主侧键，§六·一）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
+- **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `persona`、`rules`（内容文件路径，可选）/ `skills`（技能注册对象数组，§四）；
 - **skills 字段集**：`file`（可选，技能文件路径或已注册技能名）与 `capability`（可选，中立能力名 `域:动作`，§四）**至少其一**；`name`（可选）/ `description`（可选）；
 - **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**；skills 转译为注册形状 + 派生态指针（正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
@@ -330,31 +330,6 @@ export interface IMcpTransport {
 | global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | 冻结-条件消费 | memora 消费（types.ts `assembleRolePack` 提问指令注入，**仅 `reflect.userFollowup=ask` 时生效**）；条件消费 = 字段冻结，但行为仅在指定策略组合下激活 |
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | 冻结-条件消费 | memora 消费（同上，userFollowup=ask 时生效，缺省 3） |
 | global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
-
-### 六·一 宿主侧键（host-side keys）：handoffs 交接声明
-
-**定义**：宿主侧键 = 内核**透传不消费**、由宿主（生态层）消费的 manifest 键。与 L2 策略键（§六，内核真实消费，冻结）的区别在于消费方：宿主侧键的验证门（§五 双闸门）由 memora 的宿主实现（如 memora-vscode）充当参考消费者，内核仅做格式校验与透传。
-
-**`handoffs`（交接声明，对齐 VS Code custom agents / Claude Code subagents）**：
-
-```jsonc
-"handoffs": [
-  { "label": "交给技术文档工程师", "target": "tech-writer", "prompt": "初稿已完成，请检查格式", "send": false }
-]
-```
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `label` | 是 | 交接按钮文案（宿主渲染） |
-| `target` | 是 | 目标角色包名（跨包移交；宿主渲染时做存在性过滤，目标不存在则按钮不渲染） |
-| `prompt` | 否 | 预填衔接文本（宿主 prefill 输入框；缺省由宿主回退通用话术） |
-| `send` | 否 | 是否自动发送（默认 false；MVP 宿主不消费，仅透传+校验 boolean） |
-
-**语义边界**：`handoffs`（空间维度：任务移交给另一个角色包）与 `strategy.reflect.handoff`（时间维度：单轮闭环内下一步 wait/loop/end）是两种不同概念，互不替代——前者由宿主编排（单 Agent 模型下切激活角色包 + 聚焦 + 预填），后者由内核消费（闭环衔接决策）。
-
-**状态**：`[草案]`（宿主侧键）——memora-vscode 已真实消费（角色视图按 `handoffs[0]` 渲染交接按钮），随宿主生态验证后写路径升级冻结。格式错误仅 warning 不阻塞装载（§五 键级渐进）。
-
-**渐进兼容**：不认识的实现按未知键 warn+ignore 装载（§五）；宿主未安装目标角色包时按钮不渲染，角色包仍可被「带入对话」（原语）正常装载使用。
 
 ---
 
