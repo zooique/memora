@@ -116,6 +116,8 @@ export function activate(context: vscode.ExtensionContext): void {
     getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
   );
   settingsProvider.setGlobalState(context.globalState);
+  // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
+  settingsProvider.setChatProvider(chatProvider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraSettingsViewProvider.viewType, settingsProvider),
   );

@@ -848,4 +848,12 @@ describe('chatView Follow-up 建议（T2，2026-08-17 回复后关联推荐）',
     dispatch({ type: 'suggestions', items: [] });
     expect(document.querySelector('.followup')).toBeNull();
   });
+
+  it('prefill_input 写入输入框并聚焦（角色 handoff 上下文传递，不自动发送）', () => {
+    mountChatView();
+    dispatch({ type: 'prefill_input', text: '继续以「技术文档工程师」的视角处理以上任务' });
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    expect(input.value).toBe('继续以「技术文档工程师」的视角处理以上任务');
+    expect(document.activeElement).toBe(input);
+  });
 });

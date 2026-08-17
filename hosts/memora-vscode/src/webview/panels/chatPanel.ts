@@ -81,6 +81,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 当前 webview（视图被关闭时 undefined） */
   private _view: vscode.WebviewView | undefined;
+  /** 角色 handoff 预填缓冲：对话视图未就绪时暂存，ready 后补发（消除时序竞态） */
+  private _pendingPrefill?: string;
   /** 当前装配的 Agent（由 extension 装配后注入） */
   private _agent: Agent | undefined;
   /** 当前打磨文档上下文（2026-08-17 A 层：实时跟随活动编辑器，非一次性快照） */
@@ -210,6 +212,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * 角色 handoff 预填：将提示文案填入对话输入框（不自动发送，用户可编辑后回车）
+   *
+   * 对话视图已就绪 → 立即投递；未就绪（用户从设置视图首次带入对话）→ 缓冲到
+   * _pendingPrefill，待 webview ready 后由 resolveWebviewView 补发，避免 postMessage
+   * 在 webview 脚本监听器注册前丢失。
+   */
+  public prefillInput(text: string): void {
+    if (this._view) {
+      this.post({ type: 'prefill_input', text });
+    } else {
+      this._pendingPrefill = text;
+    }
+  }
+
   /** 视图被解析（侧边栏展开）时初始化 */
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -243,6 +260,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (msg.type === 'ready') {
         // webview 脚本就绪后才回放会话（历史 + Provider 列表），消除时序竞态
         this.replaySession();
+        // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
+        if (this._pendingPrefill !== undefined) {
+          this.post({ type: 'prefill_input', text: this._pendingPrefill });
+          this._pendingPrefill = undefined;
+        }
       } else if (msg.type === 'send' && msg.text.trim()) {
         void this.handleSend(msg.text.trim());
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {

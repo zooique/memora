@@ -991,6 +991,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'suggestions') {
       // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
       renderFollowUpSuggestions(msg.items);
+    } else if (msg.type === 'prefill_input') {
+      // 角色 handoff 上下文传递：填入输入框并聚焦，不自动发送（用户可编辑后回车）
+      input.value = msg.text;
+      input.style.height = 'auto';
+      input.focus();
+      autoResize();
     } else if (msg.type === 'need_clarify') {
       clarifyText.textContent =
         'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');

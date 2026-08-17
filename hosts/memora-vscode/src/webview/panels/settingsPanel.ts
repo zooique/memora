@@ -47,6 +47,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _globalState: vscode.Memento | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
   private _pendingTab: 'roles' | 'config' | 'memory' | undefined;
+  /** 对话面板提供者（角色 handoff 预填需跨 webview 投递，由 extension 注入） */
+  private _chatProvider: MemoraChatViewProvider | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -65,6 +67,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 注入全局状态（持久化激活角色包，用户级，跨项目共享） */
   public setGlobalState(gs: vscode.Memento): void {
     this._globalState = gs;
+  }
+
+  /** 注入对话面板提供者（角色 handoff 预填跨 webview 投递，由 extension 装配时注入） */
+  public setChatProvider(p: MemoraChatViewProvider): void {
+    this._chatProvider = p;
   }
 
   /** 视图被解析（侧边栏展开）时初始化 */
@@ -119,6 +126,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       const ok = await this.activateRole(msg.name);
       if (ok) {
         void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
+        const agent = await this.ensureAgent();
+        const displayName =
+          agent?.rolePackManager?.listMeta().find((m) => m.name === msg.name)?.displayName ??
+          msg.name;
+        this._chatProvider?.prefillInput(`继续以「${displayName}」的视角处理以上任务`);
       }
       return;
     }

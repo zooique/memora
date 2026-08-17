@@ -376,7 +376,15 @@ export type ExtensionToWebviewMessage =
    * 基于记忆库 score+时效+多样性推荐），映射为「下一步可探索」chips 推给 webview；
    * 用户打断/异常时不推送（避免给不完整回复挂建议）。
    */
-  | { type: 'suggestions'; items: FollowupSuggestionDto[] };
+  | { type: 'suggestions'; items: FollowupSuggestionDto[] }
+  /**
+   * 预填输入框（角色 handoff 上下文传递，2026-08-17 后续）
+   *
+   * host 在 roles_handoff 切换激活角色包并聚焦对话视图后，推送一句"以新角色视角继续"的
+   * 提示文案填入对话输入框（不自动发送，用户可编辑后回车）。复用 chat 面板 post 通道；
+   * 对话视图未就绪时由 chatPanel 缓冲，待 webview ready 后补发（消除时序竞态）。
+   */
+  | { type: 'prefill_input'; text: string };
 
 /** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
 export interface MemoryRecallItemDto {
