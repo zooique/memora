@@ -59,12 +59,12 @@ export interface RolePackValidateInput {
 // 规则常量（对齐 role-pack-spec §五/§六/§七）
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能） */
+/** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能 + 接手衔接） */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
-  'strategy', 'skills', 'persona', 'rules',
+  'strategy', 'skills', 'persona', 'rules', 'handoffPrompt',
 ]);
 
 /** 合规 interactionType 枚举（§七 第 3 条） */
@@ -438,6 +438,31 @@ function validateExclusiveWith(
 }
 
 /**
+ * 校验接手衔接提示词（manifest.handoffPrompt，角色包自洽声明）
+ *
+ * 应为字符串（非空）。类型错误仅 warning 不阻塞装载（宿主消费，宽容容错）。
+ * 角色包只描述自己，不引用其他角色包（§11 插卡解耦）。
+ *
+ * @param manifest 嵌套 manifest 对象
+ * @param issues 收集校验问题
+ */
+function validateHandoffPrompt(
+  manifest: Record<string, unknown>,
+  issues: RolePackValidationIssue[],
+): void {
+  const value = manifest['handoffPrompt'];
+  if (value === undefined) return;
+  if (typeof value !== 'string' || value.trim() === '') {
+    issues.push({
+      severity: 'warning',
+      code: 'INVALID_HANDOFF_PROMPT',
+      path: 'handoffPrompt',
+      message: 'handoffPrompt 应为非空字符串（角色包被带入对话时预填的接手衔接提示词）',
+    });
+  }
+}
+
+/**
  * 校验 skills 注册（manifest.skills 对象数组，§4）
  *
  * 新形态下 skills 以**对象数组**注册，支持多个添加。每项结构：
@@ -541,6 +566,7 @@ export function validateManifest(
   validateStrategy(manifest['strategy'], issues);
   validateContentPaths(manifest, issues);
   validateExclusiveWith(manifest, issues);
+  validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };

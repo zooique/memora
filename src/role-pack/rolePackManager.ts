@@ -163,6 +163,20 @@ function parseExclusiveWith(raw: unknown): string[] | undefined {
 }
 
 /**
+ * 解析接手衔接提示词（manifest.handoffPrompt，角色包自洽声明）
+ *
+ * 该角色包被宿主「带入对话」时预填的特色话术。非字符串 / 空白视为未声明（undefined），
+ * 由宿主回退通用话术——角色包只描述自己，不引用其他角色包（§11 插卡解耦）。
+ *
+ * @param raw manifest.handoffPrompt 原始值
+ * @returns 非空提示词，未声明/非法返回 undefined
+ */
+function parseHandoffPrompt(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  return raw.trim();
+}
+
+/**
  * 从 manifest.skills 数组解析技能注册（对象数组，支持多个添加）
  *
  * 每项结构：`{ file?, name?, description?, capability? }`，file 或 capability 至少其一。
@@ -441,6 +455,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       aiIdentityDisclosure: manifest['aiIdentityDisclosure'] === false ? false : true,
       minorProtection: 'required',
       exclusiveWith: parseExclusiveWith(manifest['exclusiveWith']),
+      // 接手衔接提示词（自洽声明，宿主 prefill；空白视为未声明）
+      handoffPrompt: parseHandoffPrompt(manifest['handoffPrompt']),
     };
 
     // 解析 L2 策略

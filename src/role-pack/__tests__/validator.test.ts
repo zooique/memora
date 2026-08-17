@@ -369,3 +369,25 @@ describe('checkCompanionContentRedline：companion 内容红线（§七 第 5 �
     expect(checkCompanionContentRedline('')).toEqual([]);
   });
 });
+
+describe('validateManifest：handoffPrompt 接手衔接提示词（自洽声明）', () => {
+  it('合法字符串 → 无问题', () => {
+    const result = validate({ handoffPrompt: '我已准备好，请告诉我主题与要求。' });
+    expect(findByCode(result.issues, 'INVALID_HANDOFF_PROMPT')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('非字符串（数字/对象）→ INVALID_HANDOFF_PROMPT warning（不阻塞装载）', () => {
+    const result = validate({ handoffPrompt: 42 });
+    const issues = findByCode(result.issues, 'INVALID_HANDOFF_PROMPT');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.severity).toBe('warning');
+    expect(result.valid).toBe(true);
+  });
+
+  it('未声明 → 合法（可选）', () => {
+    const result = validate({ handoffPrompt: undefined });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'INVALID_HANDOFF_PROMPT')).toHaveLength(0);
+  });
+});

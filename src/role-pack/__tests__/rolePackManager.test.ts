@@ -54,6 +54,15 @@ const MANIFEST_PURE_CAPABILITY = {
   ],
 };
 
+/** 接手衔接提示词包（handoffPrompt 自洽声明，§11 角色包独立） */
+const MANIFEST_HANDOFF_PROMPT = {
+  name: '写作助手',
+  formatVersion: '1.0.0',
+  keywords: ['写作'],
+  persona: 'persona.md',
+  handoffPrompt: '我已准备好开始写作任务，请告诉我主题与要求；若承接上文，请先概述当前进度。',
+};
+
 /** 互斥角色包对（翻译助手 ↔ 代码助手） */
 const MANIFEST_TRANSLATOR = {
   name: '翻译助手',
@@ -215,6 +224,32 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
       'file:read',
       'web:search',
     ]);
+  });
+
+  it('handoffPrompt 自洽声明透传（角色包只描述自己，无跨包引用）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '写作助手', MANIFEST_HANDOFF_PROMPT, {
+      persona: '你是一位写作助手。',
+    });
+
+    const manager = new RolePackManager(dir);
+    expect(await manager.load()).toBe(1);
+
+    const meta = manager.getActive()!.meta;
+    expect(meta.handoffPrompt).toBe(
+      '我已准备好开始写作任务，请告诉我主题与要求；若承接上文，请先概述当前进度。',
+    );
+  });
+
+  it('未声明 handoffPrompt → meta.handoffPrompt 为 undefined', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+
+    const manager = new RolePackManager(dir);
+    expect(await manager.load()).toBe(1);
+    expect(manager.getActive()!.meta.handoffPrompt).toBeUndefined();
   });
 
   it('无 manifest.json 的文件夹不计入角色包', async () => {

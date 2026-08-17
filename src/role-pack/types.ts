@@ -315,6 +315,14 @@ export interface RolePackMeta {
    * （多角色合并裁决为远期，见 role-pack-spec §14.2）。
    */
   readonly exclusiveWith?: readonly string[];
+  /**
+   * 接手衔接提示词（可选，角色包自洽声明）
+   *
+   * 该角色包被宿主「带入对话」（激活 + 聚焦）时，预填输入框的特色衔接话术。
+   * 与跨包移交（handoff target）无关——角色包只描述自己，不引用其他角色包
+   * （角色包独立自洽，§11 插卡解耦）。缺省由宿主回退通用话术。
+   */
+  readonly handoffPrompt?: string;
 }
 
 /**
