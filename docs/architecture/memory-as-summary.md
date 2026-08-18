@@ -375,9 +375,39 @@ LLM 获得完整上下文
 
 - 每轮闭环完成后，生成摘要的同时，**检测新摘要与近期同类摘要是否疑似覆盖**；若覆盖，给旧摘要打确定性 `superseded` 标记并指向新摘要（**非删除**，保留可回溯）。
 - 读时（召回）按确定性过滤：`superseded` 摘要不再作为当前事实注入；需要历史时经 `traceSummary` 回溯。
-- **判断触发条件**：仅当新摘要与同会话旧摘要"主题相关"（关键词 Jaccard 重叠率 ≥ 阈值）时才触发取代，非每轮必做。
+- **判断触发条件**：仅当新摘要与同会话旧摘要"主题相关"时才触发取代，非每轮必做。
 
-> **实现状态（如实声明）**：设计意图是"type 相同且主题相关"，但**实现未按 type 判定**——`supersedeSimilar` 只做"主题相关"（关键词 Jaccard 重叠率的确定性判定，见 roundSummaryGenerator.ts），type 不参与。原因：宿主持久化层不持久化 `metadata`，`getBySource` 读回的摘要无 `metadata.summaryType`，type 无法作为**持久化**判定条件（仅 id 是持久化字段）。此为实现简化，非缺陷；若未来宿主持久化 metadata，可升级为"type 相同"前置过滤。
+#### 5.4.1 加权 Jaccard 取代检测算法（2026-08-18 优化）
+
+**核心改进**：采用加权 Jaccard 相似度替代标准 Jaccard，提升「多轮逐步细化」场景下的主题延续识别准确度。
+
+**标准 Jaccard**：
+```
+Jaccard(A, B) = |A ∩ B| / |A ∪ B|
+```
+
+**加权 Jaccard**：
+```
+WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
+```
+
+**关键词权重策略**：
+- **动作/意图词**（如「创建」、「删除」、「优化」）：权重 **2.0**
+- **实体/对象词**（以「器/表/函数/模块」等后缀结尾）：权重 **1.5**
+- **其他词汇**：权重 **1.0**
+
+**实现函数**：
+- `extractEnhancedKeywords(text)`：提取带权重的关键词列表（`src/utils/segmenter.ts`）
+- `calculateWeightedJaccard(keywordsA, keywordsB)`：计算加权 Jaccard 相似度（`src/utils/segmenter.ts`）
+
+**阈值**：`SUPERSEDE_OVERLAP_THRESHOLD = 0.5`（硬编码，确定性承诺）
+
+**设计理由（SSOT 合规）**：
+- **不引入动态阈值**：阈值保持硬编码，保证写时判定结果的确定性
+- **算法本身智能化**：通过权重设计让核心动作词和实体词在相似度计算中贡献更大，而非叠加外部判断规则
+- **下沉到工具层**：关键词提取和相似度计算统一在 `segmenter.ts` 工具层实现，避免业务逻辑层重复实现
+
+> **实现状态（如实声明）**：设计意图是"type 相同且主题相关"，但**实现未按 type 判定**——`supersedeSimilar` 只做"主题相关"（加权 Jaccard 重叠率的确定性判定，见 roundSummaryGenerator.ts），type 不参与。原因：宿主持久化层不持久化 `metadata`，`getBySource` 读回的摘要无 `metadata.summaryType`，type 无法作为**持久化**判定条件（仅 id 是持久化字段）。此为实现简化，非缺陷；若未来宿主持久化 metadata，可升级为"type 相同"前置过滤。
 
 **SSOT 自检**：此设计**不新增存储层**（仍复用 round-summary）、**不新增后台系统**（是 Reflect 的一步，与"生成摘要"同构，fire-and-forget）、**不新增记忆关系图**（仅一个布尔标记 + 指针）。它是**效率挪移**——冲突消解从读路径（高频、每次召回都猜）移到写路径（低频、每轮一次判断），写一次定、读时确定性过滤，比"读时靠 LLM 聚合猜"更符合"确定性优先"。
 

@@ -15,7 +15,7 @@
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory, SummaryType } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import { extractKeywords } from '@/memory/recall.js';
+import { extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
@@ -242,9 +242,9 @@ export class RoundSummaryGenerator {
       if (!sessionName) return;
       const sessionPrefix = `round-summary:${sessionName}:`;
 
-      // 新摘要关键词（无有效关键词时无法判定主题相关，跳过）
-      const newKeywords = extractKeywords(newMemory.content);
-      if (newKeywords.length === 0) return;
+      // 使用增强关键词提取（带权重），提升核心动作和实体在相似度计算中的区分度
+      const newWeightedKeywords = extractEnhancedKeywords(newMemory.content);
+      if (newWeightedKeywords.length === 0) return;
 
       const all = this.storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
       for (const old of all) {
@@ -255,15 +255,12 @@ export class RoundSummaryGenerator {
         // 已 superseded 的跳过（避免重复标记）
         if (old.supersededBy) continue;
 
-        // 主题相关判定：Jaccard 重叠率（交集 / 并集）
-        // 用 Jaccard 而非"交集/较小集合"：避免"用户/偏好"等高频共享词在短摘要中虚高重叠、
-        // 导致不同主题被误判为覆盖。Jaccard 被并集稀释，仅在真正同主题时接近 1。
-        const oldKeywords = extractKeywords(old.content);
-        if (oldKeywords.length === 0) continue;
-        const intersection = oldKeywords.filter((k) => newKeywords.includes(k)).length;
-        const union = oldKeywords.length + newKeywords.length - intersection;
-        if (union === 0) continue;
-        const overlap = intersection / union;
+        // 使用加权 Jaccard 计算主题相似度
+        // 相比标准 Jaccard，加权版本让动作词（权重 2.0）和实体词（权重 1.5）
+        // 在相似度计算中贡献更大，更准确地识别"多轮逐步细化"场景下的主题延续
+        const oldWeightedKeywords = extractEnhancedKeywords(old.content);
+        if (oldWeightedKeywords.length === 0) continue;
+        const overlap = calculateWeightedJaccard(newWeightedKeywords, oldWeightedKeywords);
         if (overlap >= SUPERSEDE_OVERLAP_THRESHOLD) {
           // 写时取代：标记旧摘要被新摘要覆盖（非删除，保留可回溯）
           this.storage.upsert({ ...old, supersededBy: newMemory.id });

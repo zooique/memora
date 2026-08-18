@@ -124,3 +124,126 @@ export const STOPWORDS = new Set([
   '能', '把', '被', '让', '给', '对', '从', '为', '比', '与', '或',
   '吗', '呢', '吧', '啊', '哦', '嗯', '呀', '哈',
 ]);
+
+// ─── 启发式词性规则（用于增强关键词权重） ──────────────────
+
+/**
+ * 动作/意图词汇表（粗略识别动词）
+ * 用于在关键词提取时提升核心动作的权重
+ */
+const ACTION_WORDS = new Set([
+  '创建', '删除', '修改', '更新', '查询', '搜索', '生成', '发送', '接收',
+  '处理', '计算', '分析', '评估', '测试', '运行', '部署', '配置', '安装',
+  '读取', '写入', '保存', '加载', '下载', '上传', '移动', '复制', '粘贴',
+  '打开', '关闭', '启动', '停止', '执行', '调用', '使用', '操作',
+  '添加', '移除', '检查', '验证', '确认', '提交', '撤销', '回滚',
+  '设计', '开发', '实现', '优化', '重构', '修复', '调试', '解释', '翻译',
+  '获取', '设置', '切换', '切换到', '打印', '输出', '输入',
+  '导出', '导入', '转换', '解析', '格式化', '加密', '解密',
+  '连接', '断开', '绑定', '解绑', '订阅', '发布', '监听', '触发',
+  '比较', '排序', '筛选', '过滤', '分组', '聚合', '统计', '汇总',
+  '构建', '编译', '打包', '集成', '交付',
+]);
+
+/**
+ * 实体/对象后缀（粗略识别名词）
+ * 以这些后缀结尾的词可能是重要实体
+ */
+const ENTITY_SUFFIXES = ['器', '表', '图', '库', '类', '型', '函数', '方法', '模块', '系统', '服务', '应用', '组件'];
+
+/**
+ * 增强关键词提取（带权重）
+ *
+ * 在 segmentLower 的基础上，对提取的关键词进行启发式词性分析：
+ * - 识别为动作/意图的词汇 → 权重 2.0
+ * - 识别为实体/对象的词汇 → 权重 1.5
+ * - 其他词汇 → 权重 1.0
+ *
+ * 用于取代检测等场景，使得核心动作和实体在相似度计算中更具区分度。
+ *
+ * @param input - 输入文本
+ * @returns 带权重的关键词列表 [{ word, weight }]
+ */
+export function extractEnhancedKeywords(input: string): { word: string; weight: number }[] {
+  const basicTokens = segmentLower(input);
+  const enriched: { word: string; weight: number }[] = [];
+
+  for (const token of basicTokens) {
+    // 过滤停用词和过短词
+    if (STOPWORDS.has(token) || token.length < 2) continue;
+
+    let weight = 1.0;
+    const tokenLower = token.toLowerCase();
+
+    // 1. 检查是否为动作/意图词
+    if (ACTION_WORDS.has(tokenLower) || ACTION_WORDS.has(token)) {
+      weight = 2.0;
+    } else {
+      // 2. 检查是否以实体后缀结尾（粗粒度名词识别）
+      for (const suffix of ENTITY_SUFFIXES) {
+        if (token.endsWith(suffix)) {
+          weight = 1.5;
+          break;
+        }
+      }
+    }
+
+    enriched.push({ word: token, weight });
+  }
+
+  return enriched;
+}
+
+/**
+ * 加权 Jaccard 相似度计算
+ *
+ * 标准 Jaccard: |A ∩ B| / |A ∪ B|
+ * 加权 Jaccard: Σ(intersection权重) / Σ(union权重)
+ *
+ * 用于取代检测场景：
+ * - 动作/意图词（权重 2.0）在相似度计算中贡献更大
+ * - 实体词（权重 1.5）次之
+ * - 其他词（权重 1.0）作为基础对比
+ *
+ * 这样在"多轮逐步细化"场景下（关键词重叠度低但意图延续），
+ * 核心动作词的重叠会显著提升相似度，更准确地识别主题延续。
+ *
+ * @param keywordsA - 第一组带权重关键词
+ * @param keywordsB - 第二组带权重关键词
+ * @returns 加权 Jaccard 相似度 (0~1)
+ */
+export function calculateWeightedJaccard(
+  keywordsA: { word: string; weight: number }[],
+  keywordsB: { word: string; weight: number }[],
+): number {
+  if (keywordsA.length === 0 && keywordsB.length === 0) return 0;
+
+  // 构建 Map 以便快速查找（word -> weight）
+  const mapB = new Map(keywordsB.map((k) => [k.word, k.weight]));
+
+  let intersectionWeight = 0;
+  let unionWeight = 0;
+
+  // 遍历 A，计算交集和并集权重
+  const processedWords = new Set<string>();
+  for (const { word, weight: weightA } of keywordsA) {
+    processedWords.add(word);
+    const weightB = mapB.get(word);
+    if (weightB !== undefined) {
+      // 交集：取较大权重
+      intersectionWeight += Math.max(weightA, weightB);
+    }
+    // 并集：取较大权重（A 的部分）
+    unionWeight += Math.max(weightA, weightB ?? 0);
+  }
+
+  // 遍历 B 中不在 A 里的词，补充并集权重
+  for (const { word, weight } of keywordsB) {
+    if (!processedWords.has(word)) {
+      unionWeight += weight;
+    }
+  }
+
+  if (unionWeight === 0) return 0;
+  return intersectionWeight / unionWeight;
+}
