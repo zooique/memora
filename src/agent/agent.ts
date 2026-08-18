@@ -2833,14 +2833,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 「换装 = 换 Agent」——角色包声明的 capabilities（中立能力）经 capabilityMap
    * 映射为 memora 工具白名单，控制 LLM 可见/可调的工具集。
    *
-   * 规则：
-   * - 激活角色包声明了 capabilities → 白名单 = resolveCapabilityTools(capabilities)；
-   * - 激活角色包未声明 capabilities（或无角色包）→ 白名单 = null（全部暴露，保持现状）；
-   * - toolMode=block 已在 setToolCallsBlocked 处理（全禁），与白名单正交。
+   * 规则（空数组 vs undefined 语义约定）：
+   *   - `undefined`（角色包未声明 capabilities 字段）: 视为"未声明能力"，放行所有工具（whitelist = null）。
+   *   - `[]`（角色包声明了 capabilities 但为空数组）: 同样视为"未声明能力"，放行所有工具（whitelist = null）。
+   *     这样设计避免了空数组被错误解释为"禁止所有工具"的歧义。
+   *   - `[{ capability: 'file:write' }]`（角色包声明了至少一个能力）: 视为"明确声明能力"，
+   *     通过 `resolveCapabilityTools` 解析为工具白名单，限制仅暴露允许的工具。
    *
-   * 每轮 chat Prepare 阶段调用（与 setToolCallsBlocked 同位），角色包切换后
-   * 下一轮自动生效。变更经 setToolWhitelist → onToolsChanged → refreshToolDefinitions
-   * 链路同步 AgentLoop 快照与 system prompt。
+   * 其他说明：
+   *   - toolMode=block 已在 setToolCallsBlocked 处理（全禁），与白名单正交。
+   *   - 每轮 chat Prepare 阶段调用（与 setToolCallsBlocked 同位），角色包切换后
+   *     下一轮自动生效。变更经 setToolWhitelist → onToolsChanged → refreshToolDefinitions
+   *     链路同步 AgentLoop 快照与 system prompt。
    */
   private applyRolePackToolExposure(): void {
     if (!this.toolExec) return;

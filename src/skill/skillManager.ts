@@ -132,6 +132,25 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
+   * 格式化单个技能为 Prompt 字符串
+   *
+   * SSOT：所有技能展示（System Prompt、Tool 回调）必须使用此方法，
+   * 确保格式统一（name + description + L3 tag）。
+   *
+   * @param skill 技能条目
+   * @param fallbackName 当 skill.name 缺失时的备选名称（如从文件名派生）
+   * @returns 格式化后的字符串（如 "- skillName：描述（含资源/脚本）"）
+   */
+  static formatSkillForPrompt(skill: { name?: string; description?: string; layer3?: { readonly resources: readonly unknown[]; readonly scripts: readonly unknown[] } } | undefined | null, fallbackName?: string): string {
+    const label = skill?.name || fallbackName || '';
+    if (!label) return '';
+    const desc = skill?.description ? `：${skill.description}` : '';
+    const hasL3 = skill?.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0);
+    const l3Tag = hasL3 ? '（含资源/脚本）' : '';
+    return `- ${label}${desc}${l3Tag}`;
+  }
+
+  /**
    * 构建全局技能清单块（渐进披露 L1，与角色包技能清单同格式，2026-08-18）
    *
    * 全局 skills 与角色包 skills 统一渐进披露逻辑：清单（name + description）常驻
@@ -143,14 +162,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * @returns 技能清单块（无技能时返回空串）
    */
   buildSkillList(): string {
-    const listed = this.items.map((skill) => {
-      const desc = skill.description ? `：${skill.description}` : '';
-      const l3Tag = skill.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0)
-        ? '（含资源/脚本）'
-        : '';
-      return `- ${skill.name}${desc}${l3Tag}`;
-    });
-    return listed.length > 0
+    const listed = this.items.map((skill) => SkillManager.formatSkillForPrompt(skill));
+    return listed.filter(Boolean).length > 0
       ? `【通用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}`
       : '';
   }

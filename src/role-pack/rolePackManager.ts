@@ -24,6 +24,8 @@ import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
+import { STRATEGY_KEY_ALIASES } from '@/role-pack/strategyKeys.js';
+import { SkillManager } from '@/skill/skillManager.js';
 import type {
   RolePack,
   RolePackMeta,
@@ -44,17 +46,6 @@ const DEFAULT_FORMAT_VERSION = '1.0.0';
 
 /** 角色包自动匹配关键词置信度阈值（scoredByKeywords） */
 const AUTO_MATCH_THRESHOLD = 0.3;
-
-/**
- * L2 策略键别名映射（旧实现键 → 标准键，role-pack-spec §六 命名归标准）
- *
- * 存量 manifest 若误写私有键名 act.toolCalls / reflect.endingHandoff，
- * 装载时自动映射到标准键 + warn 提示（平滑兼容，不阻塞装载）。
- */
-const STRATEGY_KEY_ALIASES: Readonly<Record<string, string>> = {
-  'act.toolCalls': 'act.toolMode',
-  'reflect.endingHandoff': 'reflect.handoff',
-};
 
 /** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
 const EXCLUDED_FILES = new Set(['manifest.json']);
@@ -889,11 +880,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── 基类抽象方法实现 ──────────────────────────────
 
   /**
-   * 基类抽象方法实现（不再被调用）
+   * 防呆设计：覆写基类的 createEntry 方法。
    *
    * RolePackManager 覆写了 load()/reload() 使用自建扫描路径（parseManifestPack），
    * 基类 scanAndBuild() 依赖的 loadItems()/reload() 均被覆写，此方法不可达。
    * 保留实现以满足抽象约束；若被意外调用，显式报错而非静默错误。
+   *
+   * 本管理器使用自定义的 `parseManifestPack` + `buildFromDir` 扫描逻辑
+   * （在 load/reload 方法中实现），不依赖基类默认的 `createEntry` + 目录扫描流程。
+   *
+   * @throws Error 始终抛出，提示使用 parseManifestPack 而非基类默认构建
    */
   protected createEntry(_entry: ScannedMarkdownEntry): RolePack {
     throw new Error(
@@ -930,18 +926,30 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
     const compressed = skillCount > L1_COMPRESSED_THRESHOLD;
     const listed = skills.map((s) => {
-      const label = s.name ?? (s.file ? this.deriveSkillNameFromFile(s.file) : '');
-      const l3Tag = s.layer3 && (s.layer3.resources.length > 0 || s.layer3.scripts.length > 0)
-        ? '（含资源/脚本）'
-        : '';
-      if (compressed) {
-        // 压缩模式：截断描述到 20 字
-        const shortDesc = s.description ? `：${s.description.slice(0, 20)}${s.description.length > 20 ? '…' : ''}` : '';
-        return `- ${label}${shortDesc}${l3Tag}`;
+      const fallbackName = s.file ? this.deriveSkillNameFromFile(s.file) : undefined;
+      let formatted = SkillManager.formatSkillForPrompt(s, fallbackName);
+      if (compressed && formatted) {
+        // 压缩模式：截断描述到 20 字 (简化处理，保留格式但截断内容)
+        formatted = formatted.replace(/：.*?（含资源\/脚本）$/, (match) => {
+          // 截取 "：" 到 "（" 之间的内容
+          const innerMatch = match.match(/^：(.*?)（含资源\/脚本）$/);
+          if (innerMatch) {
+            const captured = innerMatch[1] ?? '';
+            const shortDesc = captured.slice(0, 20) + (captured.length > 20 ? '…' : '');
+            return `：${shortDesc}（含资源/脚本）`;
+          }
+          return match;
+        });
+        // 处理没有 L3 标签的情况
+        if (!/（含资源\/脚本）$/.test(formatted)) {
+           formatted = formatted.replace(/：.*/, (match) => {
+             const shortDesc = match.slice(1, 21) + (match.length > 21 ? '…' : '');
+             return `：${shortDesc}`;
+           });
+        }
       }
-      const desc = s.description ? `：${s.description}` : '';
-      return `- ${label}${desc}${l3Tag}`;
-    });
+      return formatted;
+    }).filter(Boolean);
 
     const modeNote = compressed ? '（技能较多，描述已压缩至 20 字，可用 read_skill 读取完整正文）' : '（按需调用 read_skill 读取正文）';
     const skillListBlock =

@@ -34,14 +34,6 @@ const DEFAULT_MIN_SIMILARITY = 0.3;
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * 召回常量（memory-as-summary §4）
- *
- * type 时间窗口差异化召回已于 2026-08-17 移除（ADR-025 D7）：
- * type 是纯语义标签，不设时效；自然遗忘由 superseded（写时取代）+
- * score 衰减（decayScheduler）承担。见 memory-as-summary.md §4.2。
- */
-
-/**
  * 从文本中提取关键词（用于记忆召回）
  *
  * 基于 segmentText() 精确分词，叠加停用词过滤 + 英文词补充 + 去重。

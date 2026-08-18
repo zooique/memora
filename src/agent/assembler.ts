@@ -462,17 +462,13 @@ export async function assembleComponents(
     return JSON.stringify(globalResources.map((r) => ({ path: r.path, size: r.size })), null, 2);
   };
 
-  // 渐进披露 L1 补充：注入 list_skills 技能清单回调
+  // 渐进披露 L1 补充：注入 list_skills 技能清单回调 (使用 SkillManager.formatSkillForPrompt SSOT)
   toolExec.listSkills = async () => {
     const lines: string[] = ['【全局通用技能】'];
     const allGlobalSkills = skillManager.list;
     for (const skill of allGlobalSkills) {
-      const label = skill.name || '';
-      const desc = skill.description ? `：${skill.description}` : '';
-      const l3Tag = skill.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0)
-        ? '（含资源/脚本）'
-        : '';
-      lines.push(`- ${label}${desc}${l3Tag}`);
+      const formatted = SkillManager.formatSkillForPrompt(skill);
+      if (formatted) lines.push(formatted);
     }
     const activePackName = rolePackManager.activeName;
     if (activePackName) {
@@ -482,13 +478,9 @@ export async function assembleComponents(
       const assembly = rolePackManager.getActive();
       const skills = assembly?.skills ?? [];
       for (const skill of skills) {
-        const label = skill.name ?? (skill.file ? rolePackManager.deriveSkillNameFromFile(skill.file) : '');
-        if (!label) continue;
-        const desc = skill.description ? `：${skill.description}` : '';
-        const l3Tag = skill.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0)
-          ? '（含资源/脚本）'
-          : '';
-        lines.push(`- ${label}${desc}${l3Tag}`);
+        const fallbackName = skill.file ? rolePackManager.deriveSkillNameFromFile(skill.file) : undefined;
+        const formatted = SkillManager.formatSkillForPrompt(skill, fallbackName);
+        if (formatted) lines.push(formatted);
       }
     }
     return lines.join('\n');
