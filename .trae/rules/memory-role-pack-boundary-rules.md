@@ -42,11 +42,11 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 ### type 不设时效（R6）
 > `summaryType` 是**纯语义标签**，不携带时效性。禁止新增 type→时间窗口的过滤逻辑；记忆是否有效由 superseded（写时取代）+ score 衰减（自然沉底）判定，不由时间流逝判定。
 
-### 内容文件约定名（R7）
-> 角色包内容文件**约定俗成**：`persona.md`（身份）、`rules.md`（规则）——manifest 未声明时装载回退约定名（声明路径仅向后兼容）。禁止新增「路径写错静默丢内容」的自由命名字段。
+### 内容文件零声明（R7）
+> 角色包内容文件**全部约定俗成**：`persona.md`（身份）、`rules.md`（规则）——manifest **不声明**即回退约定名；`skills/` 目录动态扫描（C3）。manifest 不承载任何内容路径注册。禁止新增「路径写错静默丢内容」的自由命名字段。
 
 ### 能力声明独立（R8）
-> 角色能力声明**只放 manifest 顶层 `capabilities`**（`{ capability: '域:动作', description? }`），skills 数组回归纯技能文件引用（`{ file, name?, description? }`）。禁止在 skills 项里塞 capability（C2）。
+> 角色能力声明**只放 manifest 顶层 `capabilities`**（`{ capability: '域:动作', description? }`）。禁止在技能文件或 skills 项里塞 capability（C2）。
 
 ### 两级技能渐进披露（R9）
 > 技能体系两级同构：**通用技能（全局池 `configDir/skills/`，全局激活）+ 角色包技能（`manifest.skills`，角色激活才激活）**，统一渐进披露（L1 元数据清单常驻 + L2 `read_skill` 按需读正文）。禁止把通用技能复制进每个角色包（R1 的边界）。

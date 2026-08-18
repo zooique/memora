@@ -40,8 +40,6 @@
       "askLimit": 3
     }
   },
-  "persona": "persona.md",
-  "rules": "rules.md",
   "handoffPrompt": "我已准备好开始文档设计。请告诉我：文档受众是谁、要覆盖什么主题、期望的交付形态（API 参考 / 教程 / 架构说明）。若承接上文，请先概述当前已定的文档结构与待补内容。",
   "capabilities": [
     {
