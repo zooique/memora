@@ -3,7 +3,7 @@
  *
  * 设计文档（ADR-010 · Agent 门面类）要求宿主项目通过 `import { Agent } from '@zooique/memora'`
  * 一行代码接入。本类负责组件组装和核心对话编排，
- * 领域专属操作委托给专职 Manager（PersonaManager / ToolExecutor / SkillManager / ConfigManager / MemoryInspector）。
+ * 领域专属操作委托给专职 Manager（PersonaManager[过渡期] / ToolExecutor / SkillManager / ConfigManager / MemoryInspector）。
  *
  * 使用方式（最简）：
  *   const agent = new Agent({ projectPath: './my-project', configDir: './agent-config' });
@@ -20,6 +20,10 @@
  *   - 配置管理 → ConfigManager
  *   - 记忆查看 → MemoryInspector
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
+ *
+ * 2026-08-18 PersonaManager 过渡期清理：
+ *   - PersonaManager 不再注入 system prompt（角色包唯一）
+ *   - 仅承载宿主 API：角色切换/防抖/关键词匹配/traits 提取
  */
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
@@ -2276,7 +2280,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 手动切换角色（宿主 UI 角色选择器入口）
    *
    * 与 doPostProcess 中的自动匹配走同一条事件链路，确保：
-   *   1. AgentLoop 的 systemPromptPrefix 立即刷新（下一次对话使用新角色 prompt）
+   *   1. refreshPersonaPrefixOnLoop 刷新 system prompt（角色包优先）
    *   2. 发射 personaSwitched 事件，触发 spriteLifecycleManager 的完整副作用：
    *      - emit('personaChanged') 通知宿主 UI
    *      - proactiveEngine.addNotice('persona', ...) 记录通知
@@ -2285,7 +2289,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 对话进行中切换角色会破坏当前 system prompt，与项目切换一致拒绝。
    *
    * @param name 目标角色名
-   * @returns 切换成功返回新角色的 system prompt 段；角色不存在或切换失败返回 null
+   * @returns 切换成功返回角色名；角色不存在或切换失败返回 null
    */
   switchPersona(name: string): string | null {
     this.assertInitialized('switchPersona');
@@ -2293,9 +2297,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     if (!this.personaManager) return null;
 
-    // 同名切换幂等：直接返回当前 prompt，不触发事件链路
+    // 同名切换幂等：直接返回角色名，不触发事件链路
     if (this.personaManager.activeName === name) {
-      return this.personaManager.buildSystemPrompt();
+      return name;
     }
 
     const prevName = this.personaManager.activeName;
@@ -2308,19 +2312,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 同步刷新 AgentLoop 的角色前缀（关键：否则下一次对话仍用旧角色 prompt）
-    // 与 doPostProcess 自动匹配共用同一段逻辑，ADR-017 枝叶层 2 次提取
+    // refreshPersonaPrefixOnLoop 内部用 rolePackManager_ 取角色包 prompt（角色包优先）
     this.refreshPersonaPrefixOnLoop();
 
     // 发射切换事件，触发宿主 UI 刷新 + 感知重推导 + 通知队列记录
     this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: name });
     logger.info({ from: prevName, to: name }, '角色手动切换');
-    return this.personaManager.buildSystemPrompt();
+    return name;
   }
 
   /**
-   * 获取角色切换锁定状态（透传 PersonaManager，P0-2 用户体验打磨）
+   * 获取角色切换锁定状态（透传 PersonaManager，过渡期宿主 API）
    *
-   * 与 switchPersona 分离：switchPersona 仍返回 string | null 不变，
+   * 与 switchPersona 分离：switchPersona 返回角色名 | null，
    * 锁定原因查询走独立路径，避免破坏既有契约（cli.ts、sprite.test.ts 等消费者无感）。
    *
    * 宿主 IPC 层调用此方法前置判断锁定状态，区分"切换失败"原因
@@ -2335,14 +2339,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 刷新 AgentLoop 的 systemPromptPrefix（角色 prompt）
+   * 刷新 AgentLoop 的 systemPromptPrefix（角色包唯一）
    *
    * 提取自 doPostProcess 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
-   * 用户画像已收敛为 round-summary 召回（2026-08-14），前缀仅含 persona。
+   * 角色包（RolePackManager）是 system prompt 的唯一注入源。
+   * PersonaManager 不再参与 prompt 构建，仅负责宿主切换 API。
    *
    * 调用时机：
-   * - tryAutoMatchPersona 中角色自动匹配成功后（chat() 回答前）
-   * - switchPersona 手动切换成功后
+   * - tryAutoMatchRolePack / tryAutoMatchPersona 匹配成功后
+   * - switchPersona / switchRolePack 手动切换成功后
+   * - reloadConfig 重载后
    * - loop 为 null 时静默跳过（init 前或 close 后的边界场景）
    */
   private refreshPersonaPrefixOnLoop(): void {
@@ -2364,8 +2370,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *   2. 发射 personaSwitched 事件（from → to）——宿主各视图（设置/对话）订阅此事件刷新
    *   3. refreshPersonaPrefixOnLoop 刷新 AgentLoop 前缀（下一次对话即用新角色包 L1 persona）
    *
-   * 与 switchPersona 的区别：本方法操作角色包系统（rolePackManager），switchPersona
-   * 操作 persona 系统；角色包优先于 persona（refreshPersonaPrefixOnLoop 角色包优先）。
+   * 与 switchPersona 的区别：本方法操作角色包系统（rolePackManager），是 system prompt 唯一注入源；
+   * switchPersona 操作 PersonaManager（过渡期宿主 API 层），不再注入 prompt。
    * 不做 assertNotBusy（与自动匹配一致）：切换只影响后续对话的 system prompt，不破坏
    * 进行中生成。
    *
@@ -2410,7 +2416,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 角色自动匹配（best-effort：失败不阻塞对话流程）
    *
-   * 在 chat() 回答前执行，确保本轮 LLM 调用就用匹配到的角色 system prompt。
+   * 在 chat() 回答前执行，角色包匹配优先（tryAutoMatchRolePack）。
    * 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）。
    * LLM 辅助匹配在 agent 层执行，遵循 backend_layers_rules §分层职责（persona/ 不直接调 LLM）。
    *
@@ -2522,7 +2528,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 支持的 source：
    * - 'skill' → SkillManager.reload() 清空缓存重新扫描 skills/ 目录
    * - 'persona' → PersonaManager.reload() 清空缓存重新扫描 personas/ 目录（保持激活角色）
-   * - 'rule' → 无操作（rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段，详见 deleteRule/updateRule）
+   *   角色重载后自动刷新 AgentLoop 前缀（角色包优先）
+   * - 'rule' → 无操作（rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段）
    * - undefined → 重载 skill + persona（全量重载）
    *
    * @param source 配置类型，缺省时重载全部可热更新的配置
@@ -2565,10 +2572,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (shouldReloadPersona && this.personaManager) {
       try {
         result.persona = await this.personaManager.reload();
-        // 角色重载后，刷新 AgentLoop 的角色前缀（使新角色内容立即注入 system prompt）
+        // 角色重载后，刷新 AgentLoop 的角色前缀（角色包优先注入 system prompt）
         if (this.loop) {
-          const newPrefix = this.personaManager.buildSystemPrompt();
-          this.loop.refreshPersonaPrefix(newPrefix);
+          this.refreshPersonaPrefixOnLoop();
         }
       } catch (err) {
         errors.push(toError(err));
@@ -2689,7 +2695,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 获取角色包管理器（M1 清单抽象）
    *
    * 为插卡式角色包预留的生长点。
-   * 当前与 PersonaManager + SkillManager 共存。
+   * 角色包是 system prompt 的唯一注入源（ADR-025 档 2-1）。
+   * PersonaManager 为过渡期宿主 API 层，角色包承载全部设定记忆。
    * 返回 null 表示 Agent 未初始化。
    */
   get rolePackManager(): RolePackManager | null {
@@ -2800,6 +2807,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清理 ArchiveCoordinator（无定时器，只需释放引用）
     this.archiveCoordinator = null;
     // 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
+    // PersonaManager 为过渡期宿主 API 层，需清理其内部定时器
     if (this.personaManager) {
       this.personaManager.close();
     }
@@ -3001,9 +3009,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 宿主项目使用访问器时需自行判空，或使用门面方法获得自动错误处理。
 
   /**
-   * 角色管理器（可能为 null）
+   * 角色管理器（过渡期宿主 API 层，可能为 null）
    *
-   * 返回 null 时表示 Agent 未初始化或角色系统未加载。
+   * ADR-025 档 2-1 后，PersonaManager 不再注入 system prompt（角色包唯一）。
+   * 保留为宿主 API 层：角色切换/防抖/关键词匹配/traits 提取。
    * 链式调用建议使用可选链：`agent.persona?.activeName`
    */
   get persona(): PersonaManager | null {

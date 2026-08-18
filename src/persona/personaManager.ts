@@ -1,17 +1,25 @@
 /**
- * 角色管理器 — 继承 ConfigResourceManager，扩展角色特定逻辑
+ * 角色管理器 — 过渡期宿主 API 层
  *
- * 职责：
- *   - 从 configDir/personas/*.md 加载角色文件（委托基类扫描）
- *   - 解析 frontmatter（name / keywords / description / traits.*）
- *   - 将激活角色注入到 system prompt 顶部
- *   - 支持运行时切换角色 + 关键词自动匹配
- *   - 角色切换时间窗口缓冲（防抖锁）
+ * 职责（ADR-025 档 2-1 后）：
+ *   - 宿主角色切换 API：switchPersona / autoMatch / setMode
+ *   - 角色切换防抖（30s 内 5 次后锁定 2 分钟）
+ *   - 关键词高置信度匹配（autoMatch）
+ *   - 角色 traits 提取（供 affectController 等宿主情感计算）
+ *
+ * 历史职责（已移除）：
+ *   - 从 configDir/personas/*.md 加载角色 → 角色包（RolePackManager）唯一承载
+ *   - 将角色内容注入 system prompt → 角色包唯一注入
  *
  * 设计原则：
- *   - Persona 遵循"万物皆记忆"——角色提示作为 system prompt 注入
- *   - 与 SkillManager 共享 ConfigResourceManager 基类（消除重复扫描/匹配/生命周期）
- *   - 角色特有状态（activePersona/mode/切换缓冲）保留在子类
+ *   - 过渡期只读模式：PersonaManager 不再写 system prompt，仅承载宿主 API
+ *   - 关键词/ traits 仍需从 personas/*.md 解析（角色包目前未承载此能力）
+ *   - 未来目标：角色包承载关键词 + traits 后，PersonaManager 可完全删除
+ *
+ * 与角色包的关系：
+ *   - RolePackManager.buildSystemPrompt() → 唯一 system prompt 注入源
+ *   - PersonaManager.switchPersona() → 宿主切换 API，同时通知 RolePackManager 激活
+ *   - 两者并行存在，角色包优先
  */
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
@@ -289,6 +297,10 @@ export class PersonaManager extends ConfigResourceManager<Persona, string> {
 
   /**
    * 构建 system prompt 中的角色段
+   *
+   * @deprecated ADR-025 档 2-1 后，system prompt 注入唯一由 RolePackManager 承载。
+   * 本方法仅保留为宿主 API 层返回值（switchPersona 返回的字符串），不再注入实际 prompt。
+   * 未来版本将移除。
    */
   buildSystemPrompt(name?: string): string {
     const p = name ? this.items.find((item) => item.name === name) : this.activePersona;

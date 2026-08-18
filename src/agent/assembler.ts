@@ -9,6 +9,9 @@
  *   - 纯工厂逻辑，不持有状态
  *   - Agent 门面类通过 assembleComponents() 获取组件引用
  *   - 组件间的依赖关系在此处显式声明
+ *
+ * 注：PersonaManager 在 ADR-025 档 2-1 后为过渡期宿主 API 层，
+ * 不再注入 system prompt（角色包唯一），仅承载切换/防抖/关键词匹配。
  */
 
 import { AgentLoop } from '@/agent/loop.js';
@@ -167,6 +170,12 @@ export interface AssembleOutput {
   history: MessageHistory;
   loop: AgentLoop;
   toolExec: ToolExecutor;
+  /**
+   * 角色管理器（过渡期宿主 API 层）
+   *
+   * ADR-025 档 2-1 后不再注入 system prompt（角色包唯一），
+   * 仅承载宿主 API：角色切换/防抖/关键词匹配/traits 提取。
+   */
   personaManager: PersonaManager;
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
@@ -371,8 +380,8 @@ export async function assembleComponents(
 
   const personaManager = new PersonaManager(configDir);
   // 档 2-1（ADR-025）：persona 不再注入 system prompt（角色包唯一）；
-  // load 仍执行以初始化目录扫描与激活状态（agent 门面 switchPersona/autoMatch 依赖），
-  // 返回值丢弃。
+  // load 仅初始化目录扫描与激活状态（宿主 API 依赖：switchPersona/autoMatch/traits），
+  // 返回值丢弃。PersonaManager 为过渡期宿主 API 层。
   await personaManager.load(personaName);
 
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
