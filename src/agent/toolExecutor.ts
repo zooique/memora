@@ -176,6 +176,20 @@ export class ToolExecutor {
    */
   runSkillScript?: (skillName: string, scriptPath: string, args: string[]) => Promise<string | null>;
 
+  /**
+   * list_resources 资源清单回调（由 agent 装配时注入）
+   *
+   * 渐进披露 L3：列出技能的 resources/ 目录下所有资源文件。
+   */
+  listResources?: (skillName: string) => Promise<string>;
+
+  /**
+   * list_skills 技能清单回调（由 agent 装配时注入）
+   *
+   * 渐进披露 L1 补充：列出当前可用的所有技能清单。
+   */
+  listSkills?: () => Promise<string>;
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
@@ -502,12 +516,27 @@ export class ToolExecutor {
         }
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
-        const scriptArgs = strArg('args') ? strArg('args').split(/\s+/) : [];
+        const scriptArgs = Array.isArray(args['args']) ? args['args'] as string[] : [];
         const result = await this.runSkillScript(skillName, scriptPath, scriptArgs);
         if (result === null) {
           return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
         }
         return result;
+      }
+      case 'list_resources': {
+        // 渐进披露 L3：列出技能的资源清单
+        if (!this.listResources) {
+          return '[ERR:TOOL:NOT_AVAILABLE] list_resources 不可用';
+        }
+        const skillName = strArg('skill_name');
+        return await this.listResources(skillName);
+      }
+      case 'list_skills': {
+        // 渐进披露 L1 补充：列出所有技能清单（>50 技能时使用）
+        if (!this.listSkills) {
+          return '[ERR:TOOL:NOT_AVAILABLE] list_skills 不可用';
+        }
+        return await this.listSkills();
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map

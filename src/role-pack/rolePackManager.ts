@@ -16,6 +16,7 @@
  *   - 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描 / 切换防抖）保留在子类
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
@@ -32,6 +33,11 @@ import type {
   BehaviorStrategy,
 } from '@/role-pack/types.js';
 import { assembleRolePack } from '@/role-pack/types.js';
+
+/** L1 阈值保护：技能数超过此值时压缩 L1 描述为 20 字摘要 */
+const L1_COMPRESSED_THRESHOLD = 30;
+/** L1 阈值保护：技能数超过此值时切换为 list_skills 工具动态查询 */
+const L1_LIST_TOOL_THRESHOLD = 50;
 
 /** 合规字段默认值：formatVersion 缺省按 1.0.0（spec §五） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
@@ -857,22 +863,35 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!pack) return '';
     const assembly = assembleRolePack(pack);
 
-    // L1 常驻元数据（渐进披露 L1）：暴露内嵌技能清单给 LLM（name + description）
-    // 每技能一行，省 token；LLM 据此判断何时调用 read_skill 读取正文（渐进披露 L2）。
-    // 若技能含 L3 资源/脚本，附加 "(含资源/脚本)" 提示，引导 LLM 利用 L3 能力。
-    const listed = assembly.skills
-      .filter((s) => s.name || s.file)
-      .map((s) => {
-        // 优先使用 frontmatter name，回退到从 file 路径提取（兼容无 name 的旧技能）
-        const label = s.name ?? (s.file ? this.deriveSkillNameFromFile(s.file) : '');
-        const desc = s.description ? `：${s.description}` : '';
-        const l3Tag = s.layer3 && (s.layer3.resources.length > 0 || s.layer3.scripts.length > 0)
-          ? '（含资源/脚本）'
-          : '';
-        return `- ${label}${desc}${l3Tag}`;
-      });
+    const skills = assembly.skills.filter((s) => s.name || s.file);
+    const skillCount = skills.length;
+
+    // L1 阈值保护（token 经济性）：
+    //   ≤ 30 技能：完整 L1（name + full description + L3 tag）
+    //   31-50 技能：压缩 L1（name + 20 字摘要）
+    //   > 50 技能：切换 list_skills 工具动态查询，不在 system prompt 枚举
+    if (skillCount > L1_LIST_TOOL_THRESHOLD) {
+      return assembly.personaPrompt + `\n\n【可用技能（${skillCount} 个，数量较多，使用 list_skills 工具查询具体清单）】`;
+    }
+
+    const compressed = skillCount > L1_COMPRESSED_THRESHOLD;
+    const listed = skills.map((s) => {
+      const label = s.name ?? (s.file ? this.deriveSkillNameFromFile(s.file) : '');
+      const l3Tag = s.layer3 && (s.layer3.resources.length > 0 || s.layer3.scripts.length > 0)
+        ? '（含资源/脚本）'
+        : '';
+      if (compressed) {
+        // 压缩模式：截断描述到 20 字
+        const shortDesc = s.description ? `：${s.description.slice(0, 20)}${s.description.length > 20 ? '…' : ''}` : '';
+        return `- ${label}${shortDesc}${l3Tag}`;
+      }
+      const desc = s.description ? `：${s.description}` : '';
+      return `- ${label}${desc}${l3Tag}`;
+    });
+
+    const modeNote = compressed ? '（技能较多，描述已压缩至 20 字，可用 read_skill 读取完整正文）' : '（按需调用 read_skill 读取正文）';
     const skillListBlock =
-      listed.length > 0 ? `\n\n【可用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}` : '';
+      listed.length > 0 ? `\n\n【可用技能（渐进披露 L1）${modeNote}】\n${listed.join('\n')}` : '';
 
     return assembly.personaPrompt + skillListBlock;
   }
@@ -1009,6 +1028,18 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 列出技能的 L3 资源清单
+   *
+   * @param skillName 技能名
+   * @param packName 角色包名（可选）
+   * @returns 资源列表，无资源返回空数组
+   */
+  listSkillResources(skillName: string, packName?: string): ReadonlyArray<{ readonly path: string; readonly size: number }> {
+    const found = this.findSkillByName(skillName, packName);
+    return found?.skill.layer3?.resources ?? [];
+  }
+
+  /**
    * 获取技能的 L3 脚本完整路径
    *
    * @param skillName 技能名
@@ -1070,20 +1101,18 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
  */
 function statSyncSafe(path: string): { isDirectory(): boolean } | null {
   try {
-    const fs = require('node:fs');
-    return fs.statSync(path);
+    return statSync(path);
   } catch {
     return null;
   }
 }
 
 /**
- * 安全的 access 同步调用（内部工具，不对外导出）
+ * 安全的 exists 同步调用（内部工具，不对外导出）
  */
 function accessSyncSafe(path: string): boolean {
   try {
-    const fs = require('node:fs');
-    return fs.existsSync(path);
+    return existsSync(path);
   } catch {
     return false;
   }

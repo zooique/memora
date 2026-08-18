@@ -423,6 +423,44 @@ export async function assembleComponents(
     return null;
   };
 
+  // 渐进披露 L3：注入 list_resources 资源清单回调
+  toolExec.listResources = async (skillName: string) => {
+    // 先查激活角色包，再查全局通用技能
+    const roleResources = rolePackManager.listSkillResources(skillName);
+    if (roleResources.length > 0) {
+      return JSON.stringify(roleResources.map((r) => ({ path: r.path, size: r.size })), null, 2);
+    }
+    const globalResources = skillManager.listResources(skillName);
+    return JSON.stringify(globalResources.map((r) => ({ path: r.path, size: r.size })), null, 2);
+  };
+
+  // 渐进披露 L1 补充：注入 list_skills 技能清单回调
+  toolExec.listSkills = async () => {
+    const lines: string[] = ['【全局通用技能】'];
+    const allGlobalSkills = skillManager.list;
+    for (const skill of allGlobalSkills) {
+      const label = skill.name || '';
+      const desc = skill.description ? `：${skill.description}` : '';
+      const l3Tag = skill.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0)
+        ? '（含资源/脚本）'
+        : '';
+      lines.push(`- ${label}${desc}${l3Tag}`);
+    }
+    const activePackName = rolePackManager.activeName;
+    if (activePackName) {
+      lines.push('');
+      lines.push(`【激活角色包技能（${activePackName}）】`);
+      // 复用 buildSystemPrompt 的技能清单
+      const prompt = rolePackManager.buildSystemPrompt();
+      const skillSectionMatch = prompt.match(/【可用技能[^\n]*】\n([\s\S]*)/);
+      if (skillSectionMatch && skillSectionMatch[1]) {
+        const skillLines = skillSectionMatch[1].trim().split('\n').filter(Boolean);
+        lines.push(...skillLines);
+      }
+    }
+    return lines.join('\n');
+  };
+
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
     const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =

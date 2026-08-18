@@ -188,6 +188,17 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
+   * 列出技能的 L3 资源
+   *
+   * @param skillName 技能名
+   * @returns 资源列表，无资源返回空数组
+   */
+  listResources(skillName: string): SkillLayer3['resources'] {
+    const skill = this.get(skillName);
+    return skill?.layer3?.resources ?? [];
+  }
+
+  /**
    * 列出技能的 L3 脚本
    *
    * @param skillName 技能名

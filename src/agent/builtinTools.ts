@@ -310,9 +310,35 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       properties: {
         skill_name: { type: 'string', description: '技能名' },
         script_path: { type: 'string', description: '相对 scripts/ 的路径（如 "lint.ts"）' },
-        args: { type: 'string', description: '传递给脚本的参数，空格分隔（可选）' },
+        args: {
+          type: 'array',
+          description: '传递给脚本的参数数组（可选）',
+          items: { type: 'string', properties: {}, required: [] },
+        },
       },
       required: ['skill_name', 'script_path'],
+    },
+  },
+  {
+    name: 'list_resources',
+    description:
+      '列出技能的 L3 资源清单（渐进披露 L3）。返回 resources/ 目录下所有资源文件列表。',
+    parameters: {
+      type: 'object',
+      properties: {
+        skill_name: { type: 'string', description: '技能名' },
+      },
+      required: ['skill_name'],
+    },
+  },
+  {
+    name: 'list_skills',
+    description:
+      '列出当前可用的所有技能清单（渐进披露 L1 补充）。当技能数量较多（>50）时使用此工具查询。',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
     },
   },
 ];
