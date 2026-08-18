@@ -187,3 +187,139 @@ export function resolveSubdir(configDir: string | undefined, sub: string): strin
   if (!configDir) return undefined;
   return resolve(configDir, sub);
 }
+
+/** L3 资源/脚本发现结果 */
+export interface DiscoveredLayer3 {
+  /** 资源列表（resources/ 目录下的文件） */
+  resources: Array<{ path: string; size: number }>;
+  /** 脚本列表（scripts/ 目录下的文件） */
+  scripts: Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }>;
+}
+
+/** 可执行脚本扩展名 → runtime 映射 */
+const SCRIPT_RUNTIME_MAP: Record<string, 'node' | 'python' | 'shell'> = {
+  '.ts': 'node',
+  '.js': 'node',
+  '.mjs': 'node',
+  '.cjs': 'node',
+  '.py': 'python',
+  '.sh': 'shell',
+  '.bash': 'shell',
+  '.zsh': 'shell',
+};
+
+/** 资源文件扩展名（纳入 resources 索引） */
+const RESOURCE_EXTENSIONS = new Set([
+  '.md', '.markdown', '.json', '.yaml', '.yml', '.txt', '.csv',
+  '.xml', '.html', '.sql', '.toml', '.ini', '.env',
+]);
+
+/**
+ * 发现技能目录下的 L3 资源（resources/）和脚本（scripts/）
+ *
+ * 三级渐进披露 L3 层扫描：
+ *   - resources/ 目录下的文件 → 资源列表
+ *   - scripts/ 目录下的可执行文件 → 脚本列表（按扩展名推断 runtime）
+ *
+ * @param skillDir 技能目录路径（如 configDir/skills/my-skill/）
+ * @returns 发现的资源和脚本列表
+ */
+export async function discoverLayer3(skillDir: string): Promise<DiscoveredLayer3> {
+  const result: DiscoveredLayer3 = { resources: [], scripts: [] };
+
+  // 扫描 resources/ 目录
+  const resourcesDir = join(skillDir, 'resources');
+  try {
+    await access(resourcesDir);
+    const files = await readResourceFiles(resourcesDir);
+    result.resources = files;
+  } catch {
+    // resources/ 目录不存在，跳过
+  }
+
+  // 扫描 scripts/ 目录
+  const scriptsDir = join(skillDir, 'scripts');
+  try {
+    await access(scriptsDir);
+    const files = await readScriptFiles(scriptsDir);
+    result.scripts = files;
+  } catch {
+    // scripts/ 目录不存在，跳过
+  }
+
+  return result;
+}
+
+/**
+ * 递归扫描 resources/ 目录下的资源文件
+ *
+ * @param dir resources 目录路径
+ * @param basePath 相对路径前缀（用于递归）
+ */
+async function readResourceFiles(
+  dir: string,
+  basePath = '',
+): Promise<Array<{ path: string; size: number }>> {
+  const results: Array<{ path: string; size: number }> = [];
+  const entries = await readdir(dir);
+
+  for (const entry of entries) {
+    if (entry.startsWith('.') || entry.startsWith('_')) continue;
+
+    const fullPath = join(dir, entry);
+    const relPath = basePath ? `${basePath}/${entry}` : entry;
+    const statInfo = await stat(fullPath);
+
+    if (statInfo.isDirectory()) {
+      const subResults = await readResourceFiles(fullPath, relPath);
+      results.push(...subResults);
+    } else if (RESOURCE_EXTENSIONS.has(getExt(entry))) {
+      results.push({ path: relPath, size: statInfo.size });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * 递归扫描 scripts/ 目录下的可执行脚本
+ *
+ * @param dir scripts 目录路径
+ * @param basePath 相对路径前缀（用于递归）
+ */
+async function readScriptFiles(
+  dir: string,
+  basePath = '',
+): Promise<Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }>> {
+  const results: Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }> = [];
+  const entries = await readdir(dir);
+
+  for (const entry of entries) {
+    if (entry.startsWith('.') || entry.startsWith('_')) continue;
+
+    const fullPath = join(dir, entry);
+    const relPath = basePath ? `${basePath}/${entry}` : entry;
+    const statInfo = await stat(fullPath);
+
+    if (statInfo.isDirectory()) {
+      const subResults = await readScriptFiles(fullPath, relPath);
+      results.push(...subResults);
+    } else {
+      const ext = getExt(entry);
+      const runtime = SCRIPT_RUNTIME_MAP[ext];
+      if (runtime) {
+        results.push({ path: relPath, runtime, size: statInfo.size });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * 获取文件扩展名（小写）
+ */
+function getExt(filename: string): string {
+  const dotIndex = filename.lastIndexOf('.');
+  return dotIndex >= 0 ? filename.slice(dotIndex).toLowerCase() : '';
+}

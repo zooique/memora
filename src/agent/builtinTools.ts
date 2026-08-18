@@ -62,6 +62,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   task_table_write: 'non-idempotent',
   task_table_update: 'idempotent',
   read_skill: 'idempotent',
+  read_resource: 'idempotent',
+  run_skill_script: 'non-idempotent',
 };
 
 /**
@@ -283,6 +285,34 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         name: { type: 'string', description: '技能名（角色包 manifest.skills 中声明的 name，或技能文件名去扩展名）' },
       },
       required: ['name'],
+    },
+  },
+  // ── 渐进披露 L3：资源/脚本分离 ──────────────────
+  {
+    name: 'read_resource',
+    description:
+      '读取技能的参考资源文件（渐进披露 L3，按需调用）。当技能含 resources/ 目录时，可通过此工具读取参考资料。资源路径相对技能的 resources/ 目录。',
+    parameters: {
+      type: 'object',
+      properties: {
+        skill_name: { type: 'string', description: '技能名' },
+        resource_path: { type: 'string', description: '相对 resources/ 的路径（如 "api-spec.md"）' },
+      },
+      required: ['skill_name', 'resource_path'],
+    },
+  },
+  {
+    name: 'run_skill_script',
+    description:
+      '执行技能的可执行脚本（渐进披露 L3）。脚本源码不进入上下文，仅执行结果返回。当技能含 scripts/ 目录时可调用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        skill_name: { type: 'string', description: '技能名' },
+        script_path: { type: 'string', description: '相对 scripts/ 的路径（如 "lint.ts"）' },
+        args: { type: 'string', description: '传递给脚本的参数，空格分隔（可选）' },
+      },
+      required: ['skill_name', 'script_path'],
     },
   },
 ];

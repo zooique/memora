@@ -160,6 +160,22 @@ export class ToolExecutor {
    */
   readSkill?: (skillName: string) => Promise<string | null>;
 
+  /**
+   * read_resource 资源读取回调（由 agent 装配时注入，处理 read_resource）
+   *
+   * 渐进披露 L3：读取技能的 resources/ 目录下的参考资料。
+   * 委托装配层注入的回调，避免 ToolExecutor 与 rolePackManager/skillManager 强耦合。
+   */
+  readResource?: (skillName: string, resourcePath: string) => Promise<string | null>;
+
+  /**
+   * run_skill_script 脚本执行回调（由 agent 装配时注入，处理 run_skill_script）
+   *
+   * 渐进披露 L3：执行技能的 scripts/ 目录下的可执行脚本。
+   * 脚本源码不进入 LLM 上下文，仅执行结果返回。
+   */
+  runSkillScript?: (skillName: string, scriptPath: string, args: string[]) => Promise<string | null>;
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
@@ -465,6 +481,33 @@ export class ToolExecutor {
           return `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包未声明该技能，或技能正文读取失败）`;
         }
         return content;
+      }
+      case 'read_resource': {
+        // 渐进披露 L3：读取技能的参考资源文件
+        if (!this.readResource) {
+          return '[ERR:TOOL:NOT_AVAILABLE] read_resource 不可用：未装配 L3 资源读取回调';
+        }
+        const skillName = strArg('skill_name');
+        const resourcePath = strArg('resource_path');
+        const resourceContent = await this.readResource(skillName, resourcePath);
+        if (resourceContent === null) {
+          return `[ERR:RESOURCE_NOT_FOUND] 未找到资源 "${resourcePath}"（技能 "${skillName}" 无此资源，或资源读取失败）`;
+        }
+        return resourceContent;
+      }
+      case 'run_skill_script': {
+        // 渐进披露 L3：执行技能的可执行脚本（脚本源码不进上下文，仅结果返回）
+        if (!this.runSkillScript) {
+          return '[ERR:TOOL:NOT_AVAILABLE] run_skill_script 不可用：未装配 L3 脚本执行回调';
+        }
+        const skillName = strArg('skill_name');
+        const scriptPath = strArg('script_path');
+        const scriptArgs = strArg('args') ? strArg('args').split(/\s+/) : [];
+        const result = await this.runSkillScript(skillName, scriptPath, scriptArgs);
+        if (result === null) {
+          return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
+        }
+        return result;
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map

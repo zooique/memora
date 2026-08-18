@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir, discoverLayer3, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
 import type {
@@ -232,28 +232,40 @@ async function scanPackSkills(
 ): Promise<RolePackManifestSkill[]> {
   const scanned = await scanMarkdownDir(join(packDir, 'skills'));
   // 用 entry.filePath 计算相对路径（支持单文件 .md 和文件夹 SKILL.md 两种形式）
-  const skills = scanned.map((entry) => {
+  const skills = scanned.map(async (entry) => {
     // 从绝对路径计算相对于 packDir 的路径，统一用正斜杠
     const absPath = entry.filePath;
     let relPath = absPath.slice(packDir.length);
     if (relPath.startsWith('/') || relPath.startsWith('\\')) relPath = relPath.slice(1);
     relPath = relPath.replace(/\\/g, '/');
+
+    // L3 发现：扫描技能目录下的 resources/ 和 scripts/
+    // 技能目录：SKILL.md 在文件夹内 → 文件夹根；单文件 .md → 文件所在目录
+    const skillDir = dirname(absPath);
+    const l3 = await discoverLayer3(skillDir);
+    const hasL3 = l3.resources.length > 0 || l3.scripts.length > 0;
+
     return {
       file: relPath,
       name: entry.name,
       description: entry.frontmatter['description'] ?? undefined,
+      layer3: hasL3 ? {
+        resources: l3.resources.map((r) => ({ path: r.path, size: r.size })),
+        scripts: l3.scripts.map((s) => ({ path: s.path, runtime: s.runtime, size: s.size })),
+      } : undefined,
     };
   });
+  const resolved = await Promise.all(skills);
   // manifest.skills 声明时按 file 过滤（白名单语义）；未声明返回全部
-  if (!Array.isArray(skillsNode)) return skills;
+  if (!Array.isArray(skillsNode)) return resolved;
   const allowedFiles = new Set(
     skillsNode
       .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
       .map((record) => record['file'])
       .filter((f): f is string => typeof f === 'string' && f.trim() !== ''),
   );
-  if (allowedFiles.size === 0) return skills;
-  return skills.filter((s) => allowedFiles.has(s.file));
+  if (allowedFiles.size === 0) return resolved;
+  return resolved.filter((s) => s.file && allowedFiles.has(s.file));
 }
 
 /**
@@ -819,7 +831,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 基类 scanAndBuild() 依赖的 loadItems()/reload() 均被覆写，此方法不可达。
    * 保留实现以满足抽象约束；若被意外调用，显式报错而非静默错误。
    */
-  protected createEntry(): RolePack {
+  protected createEntry(_entry: ScannedMarkdownEntry): RolePack {
     throw new Error(
       'RolePackManager 使用自建扫描路径（load/reload → parseManifestPack），createEntry 不应被调用',
     );
@@ -842,7 +854,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
     // L1 常驻元数据（渐进披露 L1）：暴露内嵌技能清单给 LLM（name + description）
     // 每技能一行，省 token；LLM 据此判断何时调用 read_skill 读取正文（渐进披露 L2）。
-    // 复用 RolePackAssembly.skills 的既有数据，不新建数据源（SSOT）。
+    // 若技能含 L3 资源/脚本，附加 "(含资源/脚本)" 提示，引导 LLM 利用 L3 能力。
     const listed = assembly.skills
       .filter((s) => s.name || s.file)
       .map((s) => {
@@ -860,7 +872,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
           }
         }
         const desc = s.description ? `：${s.description}` : '';
-        return `- ${label}${desc}`;
+        const l3Tag = s.layer3 && (s.layer3.resources.length > 0 || s.layer3.scripts.length > 0)
+          ? '（含资源/脚本）'
+          : '';
+        return `- ${label}${desc}${l3Tag}`;
       });
     const skillListBlock =
       listed.length > 0 ? `\n\n【可用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}` : '';
@@ -917,5 +932,137 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       );
       return null;
     }
+  }
+
+  // ── L3 资源/脚本访问 ──────────────────────────────────
+
+  /**
+   * 解析技能所在目录（供 L3 资源/脚本访问使用）
+   *
+   * 与 readSkillContent 共享相同的技能定位逻辑：
+   *   - 按技能名匹配 manifest.skills 项（name 优先，缺省按路径推导）
+   *   - 返回技能文件所在目录（SKILL.md 所在目录或 .md 文件所在目录）
+   */
+  private resolveSkillDir(skillName: string, packName?: string): string | null {
+    const targetName = packName ?? this.activePackName;
+    if (!targetName) return null;
+    const pack = this.items.find((p) => p.meta.name === targetName);
+    if (!pack) return null;
+
+    const skill = pack.skills.find((s) => {
+      if (s.name && s.name === skillName) return true;
+      if (!s.file) return false;
+      const parts = s.file.split(/[\\/]/);
+      const last = parts.pop() ?? '';
+      let derivedName: string;
+      if (last === 'SKILL.md' || last === 'SKILL.MD') {
+        derivedName = parts.pop() ?? '';
+      } else {
+        derivedName = last.replace(/\.(md|markdown)$/i, '');
+      }
+      return derivedName === skillName;
+    });
+    if (!skill?.file) return null;
+
+    const skillFilePath = join(dirname(pack.filePath), skill.file);
+    // 技能目录：SKILL.md 在文件夹内 → 文件夹根；单文件 .md → 文件所在目录
+    const skillStat = statSyncSafe(skillFilePath);
+    if (skillStat?.isDirectory()) {
+      return skillFilePath; // 文件夹形式：skills/my-skill/SKILL.md → skills/my-skill/
+    }
+    return dirname(skillFilePath); // 单文件形式：skills/write.md → skills/
+  }
+
+  /**
+   * 读取技能的 L3 资源文件（渐进披露 L3）
+   *
+   * @param skillName 技能名
+   * @param resourcePath 相对 resources/ 的路径
+   * @param packName 角色包名（可选，默认激活角色包）
+   * @returns 资源文件内容，不存在返回 null
+   */
+  async readSkillResource(skillName: string, resourcePath: string, packName?: string): Promise<string | null> {
+    const skillDir = this.resolveSkillDir(skillName, packName);
+    if (!skillDir) return null;
+
+    const resourceFullPath = join(skillDir, 'resources', resourcePath);
+    try {
+      return await readContentSafe(resourceFullPath);
+    } catch (err) {
+      getLogger().warn(
+        { skill: skillName, resourcePath, err },
+        'read_resource 读取技能资源失败',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * 获取技能的 L3 脚本完整路径
+   *
+   * @param skillName 技能名
+   * @param scriptPath 相对 scripts/ 的路径
+   * @param packName 角色包名（可选）
+   * @returns 脚本完整路径，不存在返回 null
+   */
+  getSkillScriptPath(skillName: string, scriptPath: string, packName?: string): string | null {
+    const skillDir = this.resolveSkillDir(skillName, packName);
+    if (!skillDir) return null;
+
+    const fullPath = join(skillDir, 'scripts', scriptPath);
+    if (accessSyncSafe(fullPath)) {
+      return fullPath;
+    }
+    return null;
+  }
+
+  /**
+   * 获取技能的 L3 脚本元信息（runtime、timeout）
+   *
+   * 从脚本扩展名推断 runtime，或从 SKILL.md frontmatter 的 scripts 声明获取。
+   *
+   * @param skillName 技能名
+   * @param scriptPath 相对 scripts/ 的路径
+   * @param packName 角色包名（可选）
+   * @returns 脚本元信息，不存在返回 null
+   */
+  getSkillScriptInfo(
+    _skillName: string,
+    scriptPath: string,
+    _packName?: string,
+  ): { runtime: 'node' | 'python' | 'shell'; timeout?: number } | null {
+    const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
+    const runtimeMap: Record<string, 'node' | 'python' | 'shell'> = {
+      '.ts': 'node', '.js': 'node', '.mjs': 'node', '.cjs': 'node',
+      '.py': 'python',
+      '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell',
+    };
+    const runtime = runtimeMap[ext];
+    if (!runtime) return null;
+    return { runtime };
+  }
+}
+
+/**
+ * 安全的 stat 同步调用（内部工具，不对外导出）
+ */
+function statSyncSafe(path: string): { isDirectory(): boolean } | null {
+  try {
+    const fs = require('node:fs');
+    return fs.statSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 安全的 access 同步调用（内部工具，不对外导出）
+ */
+function accessSyncSafe(path: string): boolean {
+  try {
+    const fs = require('node:fs');
+    return fs.existsSync(path);
+  } catch {
+    return false;
   }
 }

@@ -218,10 +218,12 @@ export abstract class ConfigResourceManager<
   /**
    * 从扫描条目构建资源对象（子类实现差异化字段解析）
    *
+   * 支持同步或异步实现（如 SkillManager 需异步 discoverLayer3 扫描 L3 资源）。
+   *
    * @param entry 扫描器返回的原始条目
-   * @returns 子类资源类型
+   * @returns 子类资源类型（或 Promise）
    */
-  protected abstract createEntry(entry: ScannedMarkdownEntry): T;
+  protected abstract createEntry(entry: ScannedMarkdownEntry): T | Promise<T>;
 
   // ── 生命周期钩子（子类可选覆写） ──────────────────────────
 
@@ -251,7 +253,7 @@ export abstract class ConfigResourceManager<
 
     const entries = await scanMarkdownDir(dir);
     for (const entry of entries) {
-      const item = this.createEntry(entry);
+      const item = await this.createEntry(entry);
       map.set(entry.name, item);
     }
     return Array.from(map.values());

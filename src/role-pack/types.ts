@@ -453,6 +453,16 @@ export interface RolePackManifestSkill {
   readonly name?: string;
   /** 技能说明（可选，供 LLM 与校验器理解） */
   readonly description?: string;
+  /**
+   * L3 层数据（资源 + 脚本，可选）
+   *
+   * 由 scanPackSkills 在装载时自动发现（扫描技能目录下的 resources/ 和 scripts/）。
+   * 三级渐进披露：L3 内容不进 system prompt，由 read_resource / run_skill_script 按需调用。
+   */
+  readonly layer3?: {
+    readonly resources: ReadonlyArray<{ readonly path: string; readonly size: number }>;
+    readonly scripts: ReadonlyArray<{ readonly path: string; readonly runtime: 'node' | 'python' | 'shell'; readonly size: number }>;
+  };
 }
 
 /**

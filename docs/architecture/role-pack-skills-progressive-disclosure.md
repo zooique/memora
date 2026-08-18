@@ -1,220 +1,160 @@
-# 角色包 skills 演进方案 · 渐进披露（Progressive Disclosure）
+# Skills 三级渐进披露设计（Progressive Disclosure）
 
-> **定位**：角色包 `manifest.skills` 从"能力声明"演进为"可装载技能系统"，对齐 Agent Skills 行业标准。
-> **状态**：**已实现**（2026-08-15 read_skill + L1；2026-08-18 两级技能统一 + C2 能力独立），本方案为实现蓝本与演进记录。
-> **关联**：[role-pack-spec.md](./role-pack-spec.md) §四（能力声明）/ §2.1（角色包 vs Skills）；样例见 [角色包 manifest 示例](./role-pack-spec.md)。
-
----
-
-## 一、问题定义（种子）
-
-### 1.1 现状（诚实缺口）
-
-角色包 `manifest.skills` 的 `file` 指针当前**不装载正文**；能力面独立为顶层 `capabilities`（C2，2026-08-18），映射工具白名单：
-
-```json
-"skills": [
-  { "file": "skills/write.md", "name": "write", "description": "把成稿写入本地文件" }
-],
-"capabilities": [
-  { "capability": "file:write", "description": "写入文件" }
-]
-```
-
-- `capabilities[].capability: file:write` → 生效（映射 `write_file` 工具白名单）
-- `skills[].file: skills/write.md` → **不生效**（生态兼容指针，正文不装载）
-- `skills[].name` / `description` → L1 常驻暴露给 LLM（渐进披露 L1）
-
-**缺口**：角色包声明了"有这篇技能"，但 LLM 既看不到它的存在（无 name/description 常驻），也无法读取它的正文（无装载工具）。`file` 是"挂着但没通"的指针。
-
-> **已解决（2026-08-15）**：本缺口经渐进披露实现关闭——L1 元数据常驻 + read_skill 工具按需装载正文（见 §五 落地清单）。本节为演进动因的历史记录。
-
-### 1.2 演进目标
-
-对齐 Agent Skills 渐进披露（Progressive Disclosure）行业标准：
-
-| 层级 | 内容 | 装载时机 | 用途 |
-|------|------|---------|------|
-| L1 元数据 | name + description | **常驻**（每轮 system prompt） | LLM 知道"有哪些技能，各是什么" |
-| L2 正文 | skills/*.md 全文 | **按需**（LLM 调用工具读取） | LLM 判定当前任务需要时获取细节 |
-
-**核心转变**：技能装载的判断权从**宿主**（当前 `matchAndInjectSkill` 预匹配注入）转移到 **LLM**（运行时按需调用 `read_skill` 工具）。
+> **定位**：Skills 系统采用三级渐进披露模式，对齐 Claude Skills / Agent Skills 行业标准。
+> **状态**：**L1+L2 已实现**（2026-08-15 read_skill + L1）；**L3 资源/代码分离规划中**（2026-08-18）
+> **关联**：[role-pack-spec.md](./role-pack-spec.md)、[memory-role-pack-boundary.md](./memory-role-pack-boundary.md)
 
 ---
 
-## 二、行业做法（土壤）
+## 一、三级渐进披露模型
 
-### 2.1 Agent Skills（Anthropic 开放标准，2025-12-18）
+### 1.1 设计哲学
 
-- **格式**：文件夹 `SKILL.md` + frontmatter（name/description）+ references/scripts；
-- **渐进披露**：会话开始仅注入每个技能的 name+description（约 100 token/技能），LLM 判定需要时读取完整正文——成本约一行 prompt/技能；
-- **发现**：SDK 索引所有技能，name+description 入 system prompt，正文延迟加载。
+Skills 系统的核心设计是**渐进披露（Progressive Disclosure）**——从最小元数据到完整能力，逐级释放信息，避免一次性把所有技能内容塞进上下文窗口。
 
-### 2.2 Agent Plugins 1.0（2026-08-06，五方+Google）
+### 1.2 三级层次
 
-- **打包**：`plugin.json` + `skills/` + `mcp.json`，文件夹包分发；
-- **仅两种可移植组件**：Agent Skills 与 MCP servers；
-- **与角色包关系**：骨架同构（§十），角色包在其上增加行为层（persona/rules/strategy）。
+| 层级 | 内容 | 装载时机 | Token 成本 | 用途 |
+|------|------|---------|-----------|------|
+| **L1 元数据** | `name` + `description` + `keywords` | **常驻**（每轮 system prompt） | ~100 token/skill | LLM 知道"有哪些技能，各是什么" |
+| **L2 正文** | `SKILL.md` / `.md` 文件全文 | **按需**（LLM 调用 `read_skill` 工具） | ~1k-5k token/skill | LLM 判定需要时获取完整指令 |
+| **L3 资源/脚本** | `resources/`（参考资料）+ `scripts/`（可执行脚本） | **按需**（LLM 调用 `read_resource` / `run_skill_script`） | 0 token/skill（脚本执行结果单独注入） | 资源供参考、脚本执行返回结果 |
 
-### 2.3 vs 现有 memora 预匹配注入
+### 1.3 与主流方案对齐
 
-| 维度 | 现状（matchAndInjectSkill） | 渐进披露（本方案） |
-|------|---------------------------|-------------------|
-| 判断权 | 宿主（关键词/正则 match） | **LLM**（语义理解） |
-| 上下文占用 | 命中即注入整篇正文 | 元数据常驻，正文按需 |
-| 匹配精度 | 关键词，可能误判 | LLM 语义，更准 |
-| 与行业对齐 | 无对应 | **标准做法** |
+| memora | Claude Skills | Agent Skills 标准 |
+|--------|--------------|------------------|
+| L1 元数据 → system prompt | Level 1 Metadata → system prompt | name + description 常驻 |
+| L2 read_skill → 按需读正文 | bash 读取 SKILL.md | 指令正文动态加载 |
+| L3 resources + scripts | references + scripts | 资源/代码与指令分离 |
+
+### 1.4 关键设计决策
+
+#### 决策 1：L1 元数据常驻，不用 `list_skills` 工具查询
+
+**理由**：
+- 元数据（~100 token/skill）成本极低，20 个技能仅 ~2k token
+- LLM 始终可见可用技能，自然选择，无需主动查询
+- 避免多一轮 LLM 调用带来的延迟和成本
+- **与 Claude Skills / OpenAI FC / LangChain Tools 全部一致**
+
+**阈值保护**：当技能数量 > 30 个时，L1 清单自动降级为精简摘要（仅 name + 20 字描述），超过 50 个时切换为 `list_skills` 工具动态查询模式。
+
+#### 决策 2：L3 脚本执行结果不进上下文
+
+**理由**：
+- 脚本可能执行大量计算（数据库查询、文件处理等），结果可能很大
+- 脚本源代码**永远不进入** LLM 上下文——只有脚本的执行结果（最终答案）注入
+- 这确保 Skill 可以包含复杂逻辑而不消耗宝贵的 context window
+- **与 Claude Skills 的 scripts/ 设计完全一致**
+
+#### 决策 3：两级技能同构
+
+| 级别 | 存储位置 | 激活条件 |
+|------|---------|---------|
+| **全局通用技能** | `<configDir>/skills/` | 始终激活 |
+| **角色包技能** | `<configDir>/role-packs/<包>/skills/` | 角色激活时才激活 |
+
+两级技能共享同一套渐进披露机制（L1 清单 + L2 read_skill + L3 resources/scripts），数据源分治，接口统一。
 
 ---
 
-## 三、方案设计（自然生长）
+## 二、L3 资源/代码分离规范
 
-### 3.1 职责分离（SSOT）
-
-以单一真理源为原则，`manifest.skills` 每项字段职责清晰、互不重叠：
-
-| 字段 | 职责 | 消费方 |
-|------|------|--------|
-| `capability` | 中立能力声明 → 映射工具白名单 | `resolveCapabilityTools`（已有） |
-| `file` | **技能正文装载路径** → read_skill 读取 | 新增 `read_skill` 工具 |
-| `name` + `description` | **L1 常驻元数据** → 暴露给 LLM | 新增 L1 元数据注入 |
-
-### 3.2 四层接线（内核 → 宿主 → UI 不动）
+### 2.1 技能目录结构（三级完整形态）
 
 ```
-manifest.skills
-   ├─ capability ──→ resolveCapabilityTools ──→ 工具白名单（已有，不动）
-   ├─ file ──→ read_skill 工具 ──→ RolePackManager.readSkillContent（新增）
-   └─ name+description ──→ L1 元数据注入 system prompt（新增）
+<skill-name>/
+  ├── SKILL.md              # L1 + L2：frontmatter 元数据 + 指令正文
+  ├── resources/            # L3：参考资料（供 read_resource 读取）
+  │   ├── api-spec.md       #   API 规范文档
+  │   └── reference.json    #   结构化参考数据
+  └── scripts/              # L3：可执行脚本（供 run_skill_script 执行）
+      ├── query.sh          #   Shell 脚本
+      ├── process.py        #   Python 脚本
+      └── transform.ts      #   TypeScript 脚本
 ```
 
-**关键**：read_skill 直接读取激活角色包内嵌技能正文（`RolePackManager.readSkillContent`），**不新建并行技能系统、不混入宿主全局 SkillManager**——角色包内嵌技能与宿主全局技能来源分治（职责分离，SSOT）。
+**也支持单文件形式**（简化版，无 L3）：
+```
+skills/
+  └── 代码审查.md           # 单文件 SKILL.md 格式（无 resources/scripts）
+```
 
-### 3.3 新增 `read_skill` 工具（内核）
+### 2.2 L3 资源（resources/）
 
+**用途**：存放技能的参考资料、规范文档、结构化数据等。这些内容不需要常驻上下文，但 LLM 在需要时可以通过 `read_resource` 工具读取。
+
+**工具接口**：
 ```typescript
-/**
- * 渐进披露 L2：按需读取激活角色包内嵌技能正文
- * 参数：name（技能名，来自 L1 元数据）
- * 返回：技能正文（manifest.skills 的 file 指向内容）
- */
-read_skill: {
-  name: 'read_skill',
-  description: '读取指定技能的完整正文（渐进披露，按需调用）',
-  parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
-  handler: (name) => rolePackManager.readSkillContent(name) ?? '技能不存在',
+read_resource: {
+  name: 'read_resource',
+  description: '读取技能的参考资源文件（渐进披露 L3，按需调用）',
+  parameters: {
+    type: 'object',
+    properties: {
+      skillName: { type: 'string', description: '技能名' },
+      resourcePath: { type: 'string', description: '相对 resources/ 的路径' }
+    },
+    required: ['skillName', 'resourcePath']
+  }
 }
 ```
 
-- 标记 **idempotent**（只读，幂等——对齐现有内置工具幂等映射）；
-- 注册进 `BUILTIN_TOOLS`；
-- 受工具白名单约束：角色包需声明 `capability` 才能暴露。
+### 2.3 L3 脚本（scripts/）
 
-### 3.4 L1 元数据注入（新增）
+**用途**：存放可执行脚本。脚本在宿主环境中执行，**源代码不进入 LLM 上下文**——只有执行结果注入。
 
-在 `applyRolePackToolExposure` 同阶段，将激活角色包的 `manifest.skills` 的 name+description 注入 system prompt：
+**脚本执行规则**：
+1. 脚本必须声明 `runtime`（`node` | `python` | `shell`）
+2. 脚本接受参数（从 LLM 的工具调用中传入）
+3. 脚本的 stdout/stderr 捕获后作为工具返回值
+4. 脚本执行有超时限制（默认 30s，最大 120s）
+5. 脚本执行在沙箱中进行，不暴露宿主环境
 
-```text
-【可用技能】
-- write：把成稿写入本地文件
-- search：写作查资料
+**脚本 frontmatter 声明**（嵌入 SKILL.md 的 frontmatter，或脚本文件自身的 frontmatter）：
+```yaml
+---
+name: 代码审查
+description: 审查代码质量
+scripts:
+  - path: scripts/lint.ts
+    runtime: node
+    description: 运行代码 lint 检查
+    timeout: 30
+  - path: scripts/analyze.py
+    runtime: python
+    description: 分析代码复杂度
+    timeout: 60
+---
 ```
 
-- 复用 `RolePackCapability` 已有 name/description 数据，无需新数据源；
-- 每技能一行，常驻省 token。
+**工具接口**：
+```typescript
+run_skill_script: {
+  name: 'run_skill_script',
+  description: '执行技能的可执行脚本（渐进披露 L3，脚本结果返回，源码不进上下文）',
+  parameters: {
+    type: 'object',
+    properties: {
+      skillName: { type: 'string', description: '技能名' },
+      scriptPath: { type: 'string', description: '相对 scripts/ 的路径' },
+      args: { type: 'array', items: { type: 'string' }, description: '传递给脚本的参数' }
+    },
+    required: ['skillName', 'scriptPath']
+  }
+}
+```
 
-### 3.5 与现有 `matchAndInjectSkill` 的关系
+### 2.4 L3 实现清单
 
-**共存策略（不替换，不冲突）**：
-
-| 机制 | 适用技能 | 触发 |
-|------|---------|------|
-| `matchAndInjectSkill`（保留） | 宿主全局技能（configDir/skills/） | 关键词/正则预匹配 |
-| `read_skill`（新增） | 角色包内嵌技能（manifest.skills） | LLM 按需调用 |
-
-两者分治不同技能来源，不重复。角色包内嵌技能走渐进披露，宿主全局技能保留预匹配注入——职责边界清晰，未来可评估统一（非本方案范围）。
-
----
-
-## 四、交互审查（角色包 ↔ 行业 ↔ 内核）
-
-### 4.1 与 Agent Skills 生态互认
-
-- 角色包 `skills/*.md` 即 Agent Skills 格式（同构，§十）；
-- `file` 指针指向的文件符合 Agent Skills 目录规范时，可被其他实现直接装载；
-- **兼容性**：演进为"正文按需装载"是能力增强，非格式变更——`file`/`capability`/`name` 字段语义不变，仅 `file` 由生态指针升级为装载入口。
-
-### 4.2 SSOT 审查
-
-| 检查 | 结论 |
-|------|------|
-| 是否新建平行技能系统？ | ❌ 复用 `RolePackManager.readSkillContent`，`read_skill` 是工具接线 |
-| 字段职责是否重叠？ | ✅ capability/file/name 三职责分离，单一真理源 |
-| 是否越层？ | ✅ 内核只产工具+元数据，宿主装配，UI 不动 |
-| 是否重复造轮子？ | ✅ `name+description` 复用 `RolePackAssembly.skills`，正文经 `readSkillContent` 按需读取 |
-
-### 4.3 风险与边界
-
-| 风险 | 缓解 |
-|------|------|
-| LLM 频繁调 read_skill 增加延迟 | L1 元数据充分描述，LLM 精准判断；技能正文 ≤500 行（既有约束） |
-| 技能正文注入污染上下文 | 渐进披露天然省 token；仅需时装载 |
-| 与宿主全局技能混淆 | 分治策略（§3.5），来源边界清晰 |
-| 幂等/安全 | read_skill 只读，标记 idempotent，受白名单约束 |
-
----
-
-## 五、落地清单（2026-08-15 已实现）
-
-- [x] 内核：新增 `read_skill` 工具（注册 BUILTIN_TOOLS + 幂等映射）
-- [x] 内核：L1 元数据注入（`buildSystemPrompt` 暴露激活角色包 skills name+description）
-- [x] 内核：`RolePackManager.readSkillContent()` 读取内嵌技能正文（L2 数据源）
-- [x] 内核：`ToolExecutor.readSkill` 回调注入 + `read_skill` 执行分支
-- [x] 内核：两级技能统一（2026-08-18）——全局 `buildSkillList` L1 + `read_skill` 双源；C2 能力独立顶层 capabilities
-- [x] 装配：`assembler.ts` 注入 readSkill 回调（rolePackManager → toolExec）
-- [x] 测试：read_skill 读正文 / 元数据注入 / 回调接线 / 幂等（84 文件 / 1986 测试全通过）
-- [x] 文档：role-pack-spec §四 更新"正文按需装载"声明（本文件同步）
-- [x] 评估：与 matchAndInjectSkill 的长期统一策略——**结论：维持双轨，不强行统一**（见 §七）
-
-> **实现决策（偏离原方案一处）**：原方案设想"角色包内嵌技能注册进 SkillManager"，实现时改为**直接经 `RolePackManager.readSkillContent()` 读取**，未混入宿主全局 SkillManager——保持角色包内嵌技能与宿主全局技能来源分治（职责分离，SSOT），read_skill 只读激活角色包的内嵌技能。
-
----
-
-## 六、结论
-
-本方案将角色包 skills 演进为"渐进披露的可装载技能系统"，对齐 Agent Skills 行业标准（L1 元数据常驻 + L2 按需装载）。**核心是复用现有数据源，不新建平行系统**；`file` 指针从"生态指针"变为 read_skill 的装载入口。**C2 定案（2026-08-18）**：能力声明已独立为 manifest 顶层 `capabilities`（能力面=工具白名单），`skills` 回归纯技能文件引用（内容面）——`capabilities`/`file`/`name` 职责分离，单一真理源。
-
-**决策**：已实现。两级技能统一渐进披露（2026-08-18）：全局通用技能（buildSkillList）+ 角色包技能（manifest.skills）同构，read_skill 双源读取。
-
----
-
-## 七、与 matchAndInjectSkill 的统一策略评估（2026-08-15 定案，2026-08-18 两级技能演进）
-
-> **结论**：两级技能统一渐进披露已实现（2026-08-18）——全局技能与角色包技能**同构**（L1 清单 + L2 read_skill），同时保留 `matchAndInjectSkill` 作为全局技能的可选确定性触发（双轨并存的演进路径，非强制统一）。
-
-### 7.1 演进后的事实（2026-08-18）
-
-| 机制 | 数据源 | 形态 |
-|------|--------|------|
-| `buildSkillList`（渐进披露 L1） | 全局 `SkillManager` + 角色包 `manifest.skills` | 两级技能清单常驻 system prompt |
-| `read_skill`（渐进披露 L2） | 双源：先角色包 `readSkillContent`，再全局 `skillManager.get()` | LLM 按需读正文 |
-| `matchAndInjectSkill` | 全局 `SkillManager.match` | 可选确定性触发（保留） |
-
-### 7.2 历史结论（保留为演进记录）
-
-1. 数据源天然分治：宿主全局技能在 `configDir/skills/`，角色包内嵌技能在 `role-packs/<名>/skills/`，共享 configDir 但子目录不同，无重叠。
-2. 职责互补而非冗余：matchAndInjectSkill 解决"宿主确定性触发"，read_skill 解决"LLM 按需装载"。
-3. 统一不能破坏 SSOT：两套来源并入一机制需引入"来源标签"，制造冗余（避免）。
-
-### 7.3 边界
-
-- **两级技能统一（已实现）**：全局 + 角色包同构渐进披露；
-- **matchAndInjectSkill 保留**：全局技能确定性触发，不删除；
-- **能力面独立（C2）**：capabilities 顶层声明（工具白名单），与技能内容面分离。
-
-### 7.4 结论
-
-统一策略 = **维持双轨 + 明确边界**。两套机制服务不同来源、不同判断权，职责互补，共同构成"确定性触发 + 按需装载"的完整技能体系。未来若宿主全局技能需按需装载，由宿主复用 read_skill 路径实现，内核不统一。
+- [x] 设计文档（本文件）
+- [ ] `skill/types.ts`：添加 `SkillResource`、`SkillScript`、`SkillLayer3` 类型
+- [ ] `scanner.ts`：扫描时发现 `resources/` 和 `scripts/` 目录
+- [ ] `SkillManager` / `RolePackManager`：暴露 `listResources()`、`readResource()`、`listScripts()` 方法
+- [ ] `read_resource` 工具实现
+- [ ] `run_skill_script` 工具实现（含沙箱执行、超时控制、结果捕获）
+- [ ] system prompt L1 清单附加 L3 提示（"本技能含资源/脚本"）
 
 ---
 
@@ -222,6 +162,6 @@ read_skill: {
 
 | 日期 | 变更 |
 |------|------|
-| 2026-08-15 | read_skill 工具实现 + L1 元数据注入 + 统一策略评估 |
-| 2026-08-18 | 两级技能统一（全局 buildSkillList + read_skill 双源）；C2 能力独立顶层 capabilities |
-| 2026-08-18 | **SSOT 收敛**：skills 系统支持两种形式（单文件 `.md` + 文件夹 `SKILL.md`，Claude Code 标准）；全局 skills 与角色包 skills 走同一扫描器 `scanMarkdownDir()` + 同一路径计算逻辑，完全同构；修复 `scanPackSkills` file 路径硬编码，正确处理文件夹形式的 `file` 相对路径 |
+| 2026-08-15 | 渐进披露 L1+L2 实现（read_skill + L1 元数据注入） |
+| 2026-08-18 | 两级技能统一；C2 能力独立顶层 capabilities |
+| 2026-08-18 | **重写文档**：明确三级渐进披露模型（L1 元数据 / L2 正文 / L3 资源脚本），对齐 Claude Skills 行业标准 |

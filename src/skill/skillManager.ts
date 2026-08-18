@@ -5,10 +5,11 @@
  *   - 启动时扫描 configDir/skills/ 目录
  *   - 通过关键词匹配 + trigger 正则选择技能
  *   - 支持运行时 register() 注入技能
+ *   - 三级渐进披露：L1 元数据常驻 / L2 read_skill 按需 / L3 resources+scripts
  *
  * 设计原则：
  *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
- *   - 与 PersonaManager 共享 ConfigResourceManager 基类（消除重复扫描/匹配/生命周期）
+ *   - 与 RolePackManager 共享 ConfigResourceManager 基类（消除重复扫描/匹配/生命周期）
  *
  * 触发词说明：
  *   每个 skill 文件的 frontmatter 声明 keywords（逗号分隔）和 trigger（触发正则，可选）。
@@ -17,9 +18,11 @@
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import type { SkillEntry, SkillMatch } from '@/skill/types.js';
-import { parseTrigger, parseKeywords } from '@/utils/scanner.js';
+import type { SkillEntry, SkillMatch, SkillLayer3 } from '@/skill/types.js';
+import { parseTrigger, parseKeywords, discoverLayer3 } from '@/utils/scanner.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
+import { readFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 
 /**
  * 技能匹配最低激活阈值
@@ -135,21 +138,97 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * system prompt，LLM 按需调用 read_skill 读取正文（L2）。两级技能同构——
    * 通用技能全局激活（清单常驻），角色包技能随角色激活（清单随 rolePackPrompt）。
    *
+   * L3 提示：若技能含 resources/scripts，附加 "(含资源/脚本)" 标记。
+   *
    * @returns 技能清单块（无技能时返回空串）
    */
   buildSkillList(): string {
     const listed = this.items.map((skill) => {
       const desc = skill.description ? `：${skill.description}` : '';
-      return `- ${skill.name}${desc}`;
+      const l3Tag = skill.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0)
+        ? '（含资源/脚本）'
+        : '';
+      return `- ${skill.name}${desc}${l3Tag}`;
     });
     return listed.length > 0
       ? `【通用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}`
       : '';
   }
 
+  // ── L3 资源/脚本访问 ──────────────────────────────────
+
+  /**
+   * 读取技能的 L3 资源文件（渐进披露 L3）
+   *
+   * @param skillName 技能名
+   * @param resourcePath 相对 resources/ 的路径（如 "api-spec.md"）
+   * @returns 资源文件内容，不存在返回 null
+   */
+  async readResource(skillName: string, resourcePath: string): Promise<string | null> {
+    const skill = this.get(skillName);
+    if (!skill) return null;
+
+    // 确认资源在 layer3 中（安全检查，防止路径穿越）
+    if (skill.layer3?.resources.some((r) => r.path === resourcePath)) {
+      const skillDir = dirname(skill.filePath);
+      const resourceFullPath = join(skillDir, 'resources', resourcePath);
+      try {
+        return await readFile(resourceFullPath, 'utf-8');
+      } catch (err) {
+        logger.warn({ skill: skillName, resourcePath, err }, '读取 L3 资源失败');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 列出技能的 L3 脚本
+   *
+   * @param skillName 技能名
+   * @returns 脚本列表，无脚本返回空数组
+   */
+  listScripts(skillName: string): SkillLayer3['scripts'] {
+    const skill = this.get(skillName);
+    return skill?.layer3?.scripts ?? [];
+  }
+
+  /**
+   * 获取脚本的完整路径
+   *
+   * @param skillName 技能名
+   * @param scriptPath 相对 scripts/ 的路径
+   * @returns 脚本完整路径，不存在返回 null
+   */
+  getScriptPath(skillName: string, scriptPath: string): string | null {
+    const skill = this.get(skillName);
+    if (!skill?.layer3?.scripts.some((s) => s.path === scriptPath)) return null;
+    const skillDir = dirname(skill.filePath);
+    return join(skillDir, 'scripts', scriptPath);
+  }
+
   // ── 基类抽象方法实现 ──────────────────────────────
 
-  protected createEntry(entry: ScannedMarkdownEntry): SkillEntry {
+  protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
+    // 发现 L3 资源和脚本（仅对文件夹形式的技能有效）
+    let layer3: SkillLayer3 | undefined;
+    const skillDir = dirname(entry.filePath);
+    // 如果 filePath 指向 SKILL.md，skillDir 就是技能目录；如果是单文件 .md，也尝试扫描同级目录
+    const discovered = await discoverLayer3(skillDir);
+    if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
+      layer3 = {
+        resources: discovered.resources.map((r) => ({
+          path: r.path,
+          size: r.size,
+        })),
+        scripts: discovered.scripts.map((s) => ({
+          path: s.path,
+          runtime: s.runtime,
+          size: s.size,
+        })),
+      };
+    }
+
     return {
       name: entry.name,
       keywords: parseKeywords(entry.frontmatter),
@@ -158,6 +237,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       content: entry.body.trim(),
       filePath: entry.filePath,
       layer: 'project',
+      layer3,
     };
   }
 }

@@ -1,10 +1,44 @@
 /**
- * 技能模块类型定义
+ * 技能模块类型定义 — 三级渐进披露
+ *
+ * L1 元数据：name + description + keywords → 常驻 system prompt
+ * L2 正文：content（SKILL.md 全文）→ read_skill 按需加载
+ * L3 资源/脚本：resources + scripts → read_resource / run_skill_script 按需调用
  */
 
-/** 技能条目（从 skills/*.md 解析） */
+/** L3 资源条目（resources/ 目录下的参考文件） */
+export interface SkillResource {
+  /** 资源相对路径（相对技能目录根，如 "resources/api-spec.md"） */
+  path: string;
+  /** 资源描述（可选，供 L1 清单提示） */
+  description?: string;
+  /** 文件大小（字节），用于判断是否需要分块读取 */
+  size?: number;
+}
+
+/** L3 脚本条目（scripts/ 目录下的可执行脚本） */
+export interface SkillScript {
+  /** 脚本相对路径（相对技能目录根，如 "scripts/lint.ts"） */
+  path: string;
+  /** 运行时 */
+  runtime: 'node' | 'python' | 'shell';
+  /** 脚本描述（可选） */
+  description?: string;
+  /** 执行超时（秒，默认 30） */
+  timeout?: number;
+}
+
+/** L3 层数据（资源 + 脚本，可选） */
+export interface SkillLayer3 {
+  /** 资源列表 */
+  resources: SkillResource[];
+  /** 脚本列表 */
+  scripts: SkillScript[];
+}
+
+/** 技能条目（从 skills/*.md 或 skills/<dir>/SKILL.md 解析） */
 export interface SkillEntry {
-  /** 技能名（文件名去 .md） */
+  /** 技能名（文件名去 .md，或目录名） */
   name: string;
   /** 触发关键词列表 */
   keywords: string[];
@@ -12,7 +46,7 @@ export interface SkillEntry {
   trigger?: RegExp;
   /** 技能描述（可选） */
   description?: string;
-  /** 技能 prompt 正文 */
+  /** 技能 prompt 正文（L2 内容） */
   content: string;
   /** 来源路径 */
   filePath: string;
@@ -23,6 +57,13 @@ export interface SkillEntry {
    * 并在 settingsPanelManager 中渲染"全局/项目"标签。
    */
   layer: 'agent' | 'project';
+  /**
+   * L3 层数据（资源 + 脚本，可选）
+   *
+   * 当技能目录包含 resources/ 或 scripts/ 时自动填充。
+   * 三级渐进披露：L3 内容不进 system prompt，由 read_resource / run_skill_script 按需调用。
+   */
+  layer3?: SkillLayer3;
 }
 
 /** 技能匹配结果 */

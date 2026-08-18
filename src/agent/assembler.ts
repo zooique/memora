@@ -389,6 +389,40 @@ export async function assembleComponents(
     return globalSkill ? globalSkill.content : null;
   };
 
+  // 渐进披露 L3：注入 read_resource 资源读取回调
+  // 两级技能统一 L3：先查激活角色包内嵌技能的资源，再查全局通用技能
+  toolExec.readResource = async (skillName: string, resourcePath: string) => {
+    const rolePackResource = await rolePackManager.readSkillResource(skillName, resourcePath);
+    if (rolePackResource) return rolePackResource;
+    return skillManager.readResource(skillName, resourcePath);
+  };
+
+  // 渐进披露 L3：注入 run_skill_script 脚本执行回调
+  toolExec.runSkillScript = async (skillName: string, scriptPath: string, args: string[]) => {
+    // 先查激活角色包内嵌技能的脚本路径
+    const rolePackPath = rolePackManager.getSkillScriptPath(skillName, scriptPath);
+    if (rolePackPath) {
+      const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
+      if (scriptInfo) {
+        const { runSkillScript: runScript, formatScriptResult } = await import('@/skill/skillScriptRunner.js');
+        const result = await runScript(rolePackPath, scriptInfo.runtime, args, scriptInfo.timeout);
+        return formatScriptResult(result);
+      }
+    }
+    // 再查全局通用技能
+    const globalPath = skillManager.getScriptPath(skillName, scriptPath);
+    if (globalPath) {
+      const scripts = skillManager.listScripts(skillName);
+      const scriptInfo = scripts.find((s) => s.path === scriptPath);
+      if (scriptInfo) {
+        const { runSkillScript: runScript, formatScriptResult } = await import('@/skill/skillScriptRunner.js');
+        const result = await runScript(globalPath, scriptInfo.runtime, args, scriptInfo.timeout);
+        return formatScriptResult(result);
+      }
+    }
+    return null;
+  };
+
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
     const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
