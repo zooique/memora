@@ -114,7 +114,13 @@ export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm'
  * 设计纪律：角色只"选择"不"定义"。
  */
 export interface PrepareStrategy {
-  /** 理解确认模式（默认 off）[草案·未接入] */
+  /**
+   * 理解确认模式（默认 off）
+   *
+   * ⚠️ **预留键，不承诺当前生效**：
+   * 此字段仅用于设计空间预留，内核当前不消费此配置。
+   * 角色包可声明，但当前行为不受其影响。
+   */
   readonly understandingConfirm?: UnderstandingConfirm;
   /** 上下文装配策略（默认 hybrid） */
   readonly contextAssembly?: ContextAssembly;
@@ -130,7 +136,13 @@ export interface PrepareStrategy {
   readonly minFallback?: number;
   /** 召回结果相似度阈值 0.0~1.0（默认 0.6）[Phase 2 已消费] */
   readonly recallConfidence?: number;
-  /** 任务分类方式（默认 keyword）[草案·未接入] */
+  /**
+   * 任务分类方式（默认 keyword）
+   *
+   * ⚠️ **预留键，不承诺当前生效**：
+   * 此字段仅用于设计空间预留，内核当前不消费此配置。
+   * 角色包可声明，但当前行为不受其影响。
+   */
   readonly taskClassification?: TaskClassification;
   /**
    * 角色包提炼视角（可选，默认 undefined=通用浓缩）
@@ -182,9 +194,21 @@ export interface ReflectStrategy {
   readonly loopContinue?: LoopContinue;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;
-  /** 记忆写入模式（默认 auto）[草案·未接入] */
+  /**
+   * 记忆写入模式（默认 auto）
+   *
+   * ⚠️ **预留键，不承诺当前生效**：
+   * 此字段仅用于设计空间预留，内核当前不消费此配置。
+   * 角色包可声明，但当前行为不受其影响。
+   */
   readonly memoryWrite?: MemoryWriteMode;
-  /** 会话归档模式（默认 auto）[草案·未接入] */
+  /**
+   * 会话归档模式（默认 auto）
+   *
+   * ⚠️ **预留键，不承诺当前生效**：
+   * 此字段仅用于设计空间预留，内核当前不消费此配置。
+   * 角色包可声明，但当前行为不受其影响。
+   */
   readonly sessionArchive?: SessionArchiveMode;
   /** 用户追问策略（默认 silent） */
   readonly userFollowup?: UserFollowup;
@@ -198,11 +222,23 @@ export interface GlobalStrategy {
   readonly tokenBudget?: number;
   /** 每轮工具步数上限（默认 50）[Tier 3 已消费] */
   readonly stepBudget?: number;
-  /** 单任务总成本上限，0=不限制（默认 0）[草案·未接入] */
+  /**
+   * 单任务总成本上限，0=不限制（默认 0）
+   *
+   * ⚠️ **预留键，不承诺当前生效**：
+   * 此字段仅用于设计空间预留，内核当前不消费此配置。
+   * 角色包可声明，但当前行为不受其影响。
+   */
   readonly costBudget?: number;
   /** 异常时的处理策略（默认 retry） */
   readonly errorHandling?: ErrorHandling;
-  /** 是否允许角色覆盖全局安全规则（默认 inherit=不可覆盖）[草案·未接入] */
+  /**
+   * 是否允许角色覆盖全局安全规则（默认 inherit=不可覆盖）
+   *
+   * ⚠️ **预留键，不承诺当前生效**：
+   * 此字段仅用于设计空间预留，内核当前不消费此配置。
+   * 角色包可声明，但当前行为不受其影响。
+   */
   readonly safetyRule?: SafetyRuleMode;
   /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
@@ -216,16 +252,19 @@ export interface GlobalStrategy {
  * 角色包通过此集合声明行为偏好，未配置的维度使用全局默认值。
  * 设计纪律：所有维度都是预定义的可选值，角色只做"选择"不做"定义"。
  *
- * ⚠️ 诚实化声明（僵尸键治理，role-pack-spec §五）：
- * 本集合是"设计空间"，不是"承诺面"——**仅以下字段被内核实际消费并影响行为**：
+ * ⚠️ **诚实化声明（预留键治理，role-pack-spec §五）**：
+ * 本集合是"设计空间"，不是"承诺面"——**以下字段被内核实际消费并影响行为**：
  *   - prepare：recentRounds / memoryRecall / memoryRecallQuota / minFallback / summaryFocus / contextAssembly / autoSwitch / recallConfidence / summaryRecall
  *   - act：toolMode / temperature / outputLimit / streaming / toolStepLimit / providerRouting / inputInterrupt / multiStepReasoning / toolReadonly / toolApproval
- *   - reflect：summary / handoff / loopContinue / userFollowup / memoryWrite / sessionArchive
+ *   - reflect：summary / handoff / loopContinue / userFollowup
  *   - global：askOn / askLimit / errorHandling / tokenBudget / stepBudget
- * 其余字段（含 toolWhitelist / toolBlacklist 已标 @deprecated）均为**僵尸键**：
- * 角色包可声明，但内核当前不读取、声明不生效——它们承载未来行为分支的
- * 设计空间全景（见 agent-design-philosophy 设计空间表格），尚未接入。消费方
- * 参照此清单，避免误以为"声明即生效"。
+ *
+ * **以下字段为"预留键"，内核当前不消费，声明不生效**：
+ *   - prepare.understandingConfirm / prepare.taskClassification
+ *   - reflect.memoryWrite / reflect.sessionArchive
+ *   - global.costBudget / global.safetyRule
+ *
+ * 预留键仅用于未来行为分支的设计空间预留，角色包作者可声明但不应期待当前版本生效。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */

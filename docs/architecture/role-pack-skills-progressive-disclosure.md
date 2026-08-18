@@ -40,6 +40,11 @@ Skills 系统的核心设计是**渐进披露（Progressive Disclosure）**—�
 
 **阈值保护**：当技能数量 > 30 个时，L1 清单自动降级为精简摘要（仅 name + 20 字描述），超过 50 个时切换为 `list_skills` 工具动态查询模式。
 
+**SSOT 下沉实现**：
+- 技能格式化与压缩逻辑统一由 `SkillManager.formatSkillForPrompt` 方法承载。
+- 角色包管理器（`RolePackManager`）与全局技能管理器（`SkillManager`）均调用此方法，并通过 `compress` 参数控制是否启用压缩模式。
+- 这确保了所有技能展示的格式与压缩策略单一，避免了多处硬编码正则或截断逻辑，符合 SSOT 原则。
+
 #### 决策 2：L3 脚本执行结果不进上下文
 
 **理由**：

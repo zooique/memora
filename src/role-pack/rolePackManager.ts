@@ -17,7 +17,7 @@
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
@@ -268,6 +268,13 @@ async function scanPackSkills(
     const config = item as Record<string, unknown>;
     const file = config['file'];
     if (typeof file === 'string' && file.trim() !== '') {
+      // 路径安全检查：防止 file 字段包含 .. 等路径穿越字符
+      // 将 file 与 packDir 拼接后规范化，确保结果仍在 packDir 内
+      const resolvedPath = resolve(packDir, file);
+      if (!resolvedPath.startsWith(resolve(packDir))) {
+        logger.warn({ file, packDir }, 'manifest.skills.file 路径穿越被阻止，已忽略');
+        continue;
+      }
       manifestSkillConfigs.set(file, config);
     }
   }
@@ -880,21 +887,18 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── 基类抽象方法实现 ──────────────────────────────
 
   /**
-   * 防呆设计：覆写基类的 createEntry 方法。
+   * 从扫描条目构建资源对象
    *
-   * RolePackManager 覆写了 load()/reload() 使用自建扫描路径（parseManifestPack），
-   * 基类 scanAndBuild() 依赖的 loadItems()/reload() 均被覆写，此方法不可达。
-   * 保留实现以满足抽象约束；若被意外调用，显式报错而非静默错误。
+   * RolePackManager 使用自建扫描路径（parseManifestPack），
+   * 基类 scanAndBuild() 依赖的 loadItems()/reload() 均被覆写。
+   * 本方法保留实现以满足抽象约束；默认返回 null，表示不处理单文件扫描。
    *
    * 本管理器使用自定义的 `parseManifestPack` + `buildFromDir` 扫描逻辑
-   * （在 load/reload 方法中实现），不依赖基类默认的 `createEntry` + 目录扫描流程。
-   *
-   * @throws Error 始终抛出，提示使用 parseManifestPack 而非基类默认构建
+   * （在 load/reload 方法中实现），不依赖基类默认的单文件扫描流程。
    */
-  protected createEntry(_entry: ScannedMarkdownEntry): RolePack {
-    throw new Error(
-      'RolePackManager 使用自建扫描路径（load/reload → parseManifestPack），createEntry 不应被调用',
-    );
+  protected async createEntry(_entry: ScannedMarkdownEntry): Promise<RolePack | null> {
+    // RolePackManager 不使用基类的单文件扫描，返回 null 跳过
+    return null;
   }
 
   // ── 系统提示 ──────────────────────────────────────
@@ -927,28 +931,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const compressed = skillCount > L1_COMPRESSED_THRESHOLD;
     const listed = skills.map((s) => {
       const fallbackName = s.file ? this.deriveSkillNameFromFile(s.file) : undefined;
-      let formatted = SkillManager.formatSkillForPrompt(s, fallbackName);
-      if (compressed && formatted) {
-        // 压缩模式：截断描述到 20 字 (简化处理，保留格式但截断内容)
-        formatted = formatted.replace(/：.*?（含资源\/脚本）$/, (match) => {
-          // 截取 "：" 到 "（" 之间的内容
-          const innerMatch = match.match(/^：(.*?)（含资源\/脚本）$/);
-          if (innerMatch) {
-            const captured = innerMatch[1] ?? '';
-            const shortDesc = captured.slice(0, 20) + (captured.length > 20 ? '…' : '');
-            return `：${shortDesc}（含资源/脚本）`;
-          }
-          return match;
-        });
-        // 处理没有 L3 标签的情况
-        if (!/（含资源\/脚本）$/.test(formatted)) {
-           formatted = formatted.replace(/：.*/, (match) => {
-             const shortDesc = match.slice(1, 21) + (match.length > 21 ? '…' : '');
-             return `：${shortDesc}`;
-           });
-        }
-      }
-      return formatted;
+      // SSOT: 使用 SkillManager.formatSkillForPrompt 统一格式化，压缩逻辑由 compress 参数控制
+      return SkillManager.formatSkillForPrompt(s, fallbackName, compressed);
     }).filter(Boolean);
 
     const modeNote = compressed ? '（技能较多，描述已压缩至 20 字，可用 read_skill 读取完整正文）' : '（按需调用 read_skill 读取正文）';

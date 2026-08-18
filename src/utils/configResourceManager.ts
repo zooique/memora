@@ -220,10 +220,16 @@ export abstract class ConfigResourceManager<
    *
    * 支持同步或异步实现（如 SkillManager 需异步 discoverLayer3 扫描 L3 资源）。
    *
+   * 默认实现：返回 null，子类可覆写以提供实际解析逻辑。
+   * 基类 `scanAndBuild` 会跳过返回 null 的条目。
+   *
    * @param entry 扫描器返回的原始条目
-   * @returns 子类资源类型（或 Promise）
+   * @returns 子类资源类型（或 Promise），返回 null 表示跳过该条目
    */
-  protected abstract createEntry(entry: ScannedMarkdownEntry): T | Promise<T>;
+  protected async createEntry(_entry: ScannedMarkdownEntry): Promise<T | null> {
+    // 默认空实现：不解析任何条目，子类可覆写
+    return null;
+  }
 
   // ── 生命周期钩子（子类可选覆写） ──────────────────────────
 
@@ -254,7 +260,10 @@ export abstract class ConfigResourceManager<
     const entries = await scanMarkdownDir(dir);
     for (const entry of entries) {
       const item = await this.createEntry(entry);
-      map.set(entry.name, item);
+      // 如果 createEntry 返回 null，则跳过该条目（基类默认实现返回 null）
+      if (item !== null) {
+        map.set(entry.name, item);
+      }
     }
     return Array.from(map.values());
   }

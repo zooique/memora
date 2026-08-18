@@ -36,7 +36,7 @@ class TestResourceManager extends ConfigResourceManager<TestResource> {
   }
 
   /** 暴露 createEntry 供测试验证 */
-  protected createEntry(entry: ScannedMarkdownEntry): TestResource {
+  protected async createEntry(entry: ScannedMarkdownEntry): Promise<TestResource> {
     // 从 frontmatter 提取 keywords（逗号分隔），body 作为 content（对齐真实子类 parseKeywords 模式）
     return {
       name: entry.name,

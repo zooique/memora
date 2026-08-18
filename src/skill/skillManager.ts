@@ -139,12 +139,23 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    *
    * @param skill 技能条目
    * @param fallbackName 当 skill.name 缺失时的备选名称（如从文件名派生）
+   * @param compress 是否压缩描述（截断至 20 字，用于技能较多时的 token 节约）
    * @returns 格式化后的字符串（如 "- skillName：描述（含资源/脚本）"）
    */
-  static formatSkillForPrompt(skill: { name?: string; description?: string; layer3?: { readonly resources: readonly unknown[]; readonly scripts: readonly unknown[] } } | undefined | null, fallbackName?: string): string {
+  static formatSkillForPrompt(
+    skill: { name?: string; description?: string; layer3?: { readonly resources: readonly unknown[]; readonly scripts: readonly unknown[] } } | undefined | null,
+    fallbackName?: string,
+    compress = false,
+  ): string {
     const label = skill?.name || fallbackName || '';
     if (!label) return '';
-    const desc = skill?.description ? `：${skill.description}` : '';
+    let desc = '';
+    if (skill?.description) {
+      const descText = compress && skill.description.length > 20
+        ? skill.description.slice(0, 20) + '…'
+        : skill.description;
+      desc = `：${descText}`;
+    }
     const hasL3 = skill?.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0);
     const l3Tag = hasL3 ? '（含资源/脚本）' : '';
     return `- ${label}${desc}${l3Tag}`;
