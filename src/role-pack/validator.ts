@@ -143,7 +143,7 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] }, // [草案]
   },
   reflect: {
-    summary: { kind: 'enum', values: ['on', 'off'] }, // [草案]（memora 旧字段 summaryGeneration 为僵尸键）
+    summary: { kind: 'enum', values: ['on', 'off'] },
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
     loopContinue: { kind: 'check', check: isNonNegativeInt },
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },

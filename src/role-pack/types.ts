@@ -84,8 +84,8 @@ export type EndingHandoff = Handoff;
  */
 export type LoopContinue = number;
 
-/** 摘要生成开关 */
-export type SummaryGeneration = 'on' | 'off';
+/** 摘要生成开关（on=生成摘要 / off=不生成） */
+export type Summary = 'on' | 'off';
 
 /** 记忆写入模式：auto=自动写入 / confirm=写入前确认 */
 export type MemoryWriteMode = 'auto' | 'confirm';
@@ -154,15 +154,6 @@ export interface PrepareStrategy {
 export interface ActStrategy {
   /** 工具调用模式（默认 allow；标准键 act.toolMode，§六） */
   readonly toolMode?: ToolMode;
-  /**
-   * @deprecated 僵尸键（未接入，role-pack-spec §五）：内核工具暴露面由 capabilities
-   * 派生（agent.ts applyRolePackToolExposure），不读本字段。空数组语义不参与运行时。
-   */
-  readonly toolWhitelist?: readonly string[];
-  /**
-   * @deprecated 僵尸键（未接入，role-pack-spec §五）：同上，不参与运行时工具暴露。
-   */
-  readonly toolBlacklist?: readonly string[];
   /** 工具批准模式（默认 auto） */
   readonly toolApproval?: ToolApproval;
   /** 工具操作范围（默认 full） */
@@ -191,8 +182,8 @@ export interface ReflectStrategy {
   readonly handoff?: Handoff;
   /** Loop 续跑轮次（默认 0=关闭；0=关闭自审查 / N=最多自审查 N 轮） */
   readonly loopContinue?: LoopContinue;
-  /** 摘要生成开关（默认 on） */
-  readonly summaryGeneration?: SummaryGeneration;
+  /** 摘要生成开关（默认 on；标准键 reflect.summary） */
+  readonly summary?: Summary;
   /** 记忆写入模式（默认 auto） */
   readonly memoryWrite?: MemoryWriteMode;
   /** 会话归档模式（默认 auto） */
@@ -295,6 +286,11 @@ export interface RolePackMeta {
    * 与 keywords 语义互补：解析时合并进匹配词，保证仅声明 trigger 的角色包
    * 也能被自动匹配命中（单一真理源：匹配词只有一个来源 keywords）。
    * 本字段保留 spec 原始值供展示/校验，消费方统一读 keywords。
+   *
+   * 注意：角色包 trigger 为**字符串数组**（精确/包含匹配），不是正则。
+   * 正则匹配能力仅在 Skill 系统中存在（skill.trigger → parseTrigger → RegExp.test）。
+   * 角色包匹配场景为"模糊语义角色切换"，关键词匹配已足够；
+   * Skill 匹配场景为"精确工具/技能触发"，需要正则精度。
    */
   readonly trigger?: readonly string[];
   /** 可选：作者/来源 */
@@ -356,6 +352,12 @@ export interface RolePack {
 
   /** 角色身份设定正文（来自 persona.md；persona 允许缺省，此时为空串） */
   readonly personaContent: string;
+  /**
+   * 角色性格特征（traits），供宿主情感计算（如 affectController）
+   * 从 persona.md 的 frontmatter 中解析（traits.xxx = 0-1 数值）
+   * 示例：{ playfulness: 0.9, warmth: 0.7, formality: 0.3 }
+   */
+  readonly traits?: Record<string, number>;
   /**
    * 确定性规则列表（来自 rules.md，逐行解析）
    * 安全规则，装载时全量注入，不可丢失
@@ -630,8 +632,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   },
   act: {
     toolMode: 'allow',
-    toolWhitelist: [],
-    toolBlacklist: [],
     toolApproval: 'auto',
     toolReadonly: 'full',
     toolStepLimit: 20,
@@ -645,7 +645,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   reflect: {
     handoff: 'wait',
     loopContinue: 0,
-    summaryGeneration: 'on',
+    summary: 'on',
     memoryWrite: 'auto',
     sessionArchive: 'auto',
     userFollowup: 'silent',

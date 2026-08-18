@@ -3,7 +3,7 @@
  *
  * 设计文档（ADR-010 · Agent 门面类）要求宿主项目通过 `import { Agent } from '@zooique/memora'`
  * 一行代码接入。本类负责组件组装和核心对话编排，
- * 领域专属操作委托给专职 Manager（PersonaManager[过渡期] / ToolExecutor / SkillManager / ConfigManager / MemoryInspector）。
+ * 领域专属操作委托给专职 Manager（RolePackManager / ToolExecutor / SkillManager / ConfigManager / MemoryInspector）。
  *
  * 使用方式（最简）：
  *   const agent = new Agent({ projectPath: './my-project', configDir: './agent-config' });
@@ -21,9 +21,10 @@
  *   - 记忆查看 → MemoryInspector
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  *
- * 2026-08-18 PersonaManager 过渡期清理：
- *   - PersonaManager 不再注入 system prompt（角色包唯一）
- *   - 仅承载宿主 API：角色切换/防抖/关键词匹配/traits 提取
+ * 2026-08-18 PersonaManager 完全合并到 RolePackManager（M3 完成）：
+ *   - PersonaManager 的职责（system prompt 注入、切换防抖、关键词匹配、traits 提取）
+ *     全部合并到 RolePackManager
+ *   - RolePackManager 成为角色+技能+规则的唯一真理源
  */
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
@@ -41,7 +42,6 @@ import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js'
 import { SecurityGuard } from '@/security/pathGuard.js';
 import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { recall, boostScores } from '@/memory/recall.js';
-import type { PersonaManager } from '@/persona/personaManager.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import {
@@ -65,7 +65,6 @@ import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents } from '@/agent/assembler.js';
-import { matchPersonaByLlm } from '@/agent/personaMatcher.js';
 import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { renderTaskTable } from '@/agent/taskTableRenderer.js';
@@ -132,9 +131,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private toolExec: ToolExecutor | null = null;
 
   // 新模块
-  private personaManager: PersonaManager | null = null;
   private skillManager: SkillManager | null = null;
-  /** 角色包管理器（M1 清单抽象，为插卡式预留生长点） */
+  /** 角色包管理器（角色+技能+规则的唯一真理源） */
   private rolePackManager_: RolePackManager | null = null;
 
   // 拆分出的专职 Manager
@@ -531,10 +529,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.lastStickySessionId = sessionId;
     }
 
-    // 角色包优先匹配（粘性），persona 兜底（角色包优先/persona 兜底策略）
-    if (!this.tryAutoMatchRolePack(input)) {
-      await this.tryAutoMatchPersona(input);
-    }
+    // 角色包自动匹配（粘性 + LLM 兜底，角色包为唯一入口）
+    await this.tryAutoMatchRolePack(input);
 
     // 基元驱动召回（双通道：语义 + 关键词），受 L2 策略控制
     const strategy = this.getActiveStrategy();
@@ -1414,25 +1410,27 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param checkpoint - 当前检查点（含 role/resource 信息）
    */
   private reinjectContracts(checkpoint: SessionCheckpoint): void {
-    // ① 角色契约重注入：根据检查点角色信息刷新系统 prompt
-    if (this.personaManager && checkpoint.role.name) {
+    // ① 角色包契约重注入：根据检查点角色信息刷新系统 prompt
+    if (this.rolePackManager_ && checkpoint.role.name) {
       try {
-        const prevName = this.personaManager.activeName;
+        const prevName = this.rolePackManager_.activeName;
         if (prevName !== checkpoint.role.name) {
-          // 尝试按检查点角色名切换角色（角色不存在时 switchPersona 抛异常，由 catch 静默降级）
-          this.personaManager.switchPersona(checkpoint.role.name);
-          this.emit(AGENT_EVENTS.personaSwitched, {
-            from: prevName,
-            to: checkpoint.role.name,
-          });
+          // 尝试按检查点角色名激活角色包（角色包不存在时 activate 返回 false）
+          const success = this.rolePackManager_.activate(checkpoint.role.name);
+          if (success) {
+            this.emit(AGENT_EVENTS.personaSwitched, {
+              from: prevName,
+              to: checkpoint.role.name,
+            });
+          }
         }
-        // 刷新角色前缀（无论是否切换都执行，确保角色 prompt 被注入到 loop）
+        // 刷新角色前缀（无论是否切换都执行，确保角色包 prompt 被注入到 loop）
         this.refreshPersonaPrefixOnLoop();
       } catch (err) {
-        // 角色不存在时静默降级：保持当前角色，仅记录日志
+        // 角色包不存在时静默降级：保持当前角色，仅记录日志
         logger.warn(
           { err, roleName: checkpoint.role.name },
-          '契约重注入：角色切换失败，保持当前角色',
+          '契约重注入：角色包切换失败，保持当前角色',
         );
       }
     }
@@ -1965,7 +1963,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       providerRouter: this.#providerRouter,
       projectPath: this.#config.projectPath,
       configDir: this.#config.configDir,
-      personaName: this.#config.personaName,
       activeRolePack: this.#config.activeRolePack,
       maxContextTokens: this.#config.maxContextTokens,
       sessionStore: this.#config.sessionStore,
@@ -2051,7 +2048,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.history = result.history;
     this.loop = result.loop;
     this.toolExec = result.toolExec;
-    this.personaManager = result.personaManager;
     this.skillManager = result.skillManager;
     this.rolePackManager_ = result.rolePackManager;
     this.configManager = result.configManager;
@@ -2295,37 +2291,34 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('switchPersona');
     this.assertNotBusy('切换角色');
 
-    if (!this.personaManager) return null;
+    if (!this.rolePackManager_) return null;
 
     // 同名切换幂等：直接返回角色名，不触发事件链路
-    if (this.personaManager.activeName === name) {
+    if (this.rolePackManager_.activeName === name) {
       return name;
     }
 
-    const prevName = this.personaManager.activeName;
-    try {
-      this.personaManager.switchPersona(name);
-    } catch (err) {
-      // 角色不存在时 PersonaManager 抛 MemoraError，降级为 null 返回
-      logger.warn({ err: toError(err).message, name }, '手动切换角色失败');
+    const prevName = this.rolePackManager_.activeName;
+    const success = this.rolePackManager_.activate(name);
+    if (!success) {
+      logger.warn({ name }, '手动切换角色失败（角色包不存在或切换锁已激活）');
       return null;
     }
 
-    // 同步刷新 AgentLoop 的角色前缀（关键：否则下一次对话仍用旧角色 prompt）
-    // refreshPersonaPrefixOnLoop 内部用 rolePackManager_ 取角色包 prompt（角色包优先）
+    // 同步刷新 AgentLoop 的角色前缀（关键：否则下一次对话仍用旧角色包 prompt）
     this.refreshPersonaPrefixOnLoop();
 
     // 发射切换事件，触发宿主 UI 刷新 + 感知重推导 + 通知队列记录
     this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: name });
-    logger.info({ from: prevName, to: name }, '角色手动切换');
+    logger.info({ from: prevName, to: name }, '角色包手动切换');
     return name;
   }
 
   /**
-   * 获取角色切换锁定状态（透传 PersonaManager，过渡期宿主 API）
+   * 获取角色切换锁定状态（透传 RolePackManager）
    *
    * 与 switchPersona 分离：switchPersona 返回角色名 | null，
-   * 锁定原因查询走独立路径，避免破坏既有契约（cli.ts、sprite.test.ts 等消费者无感）。
+   * 锁定原因查询走独立路径。
    *
    * 宿主 IPC 层调用此方法前置判断锁定状态，区分"切换失败"原因
    * （locked / busy / not_found / invalid），让用户知道为什么没反应。
@@ -2334,8 +2327,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   getPersonaSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
     this.assertInitialized('getPersonaSwitchLockStatus');
-    if (!this.personaManager) return { locked: false, unlockAt: null };
-    return this.personaManager.getSwitchLockStatus();
+    if (!this.rolePackManager_) return { locked: false, unlockAt: null };
+    return this.rolePackManager_.getSwitchLockStatus();
+  }
+
+  /**
+   * 获取当前激活角色包的 traits（宿主情感计算 API）
+   *
+   * @returns traits 键值对，无激活角色包或无 traits 时返回 undefined
+   */
+  getActiveTraits(): Record<string, number> | undefined {
+    return this.rolePackManager_?.getActiveTraits();
   }
 
   /**
@@ -2394,101 +2396,76 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 角色包自动匹配（粘性，角色包优先于 persona）
+   * 角色包自动匹配（粘性，角色包唯一入口）
    *
-   * 在 chat() 回答前执行，优先于 tryAutoMatchPersona。经 RolePackManager.autoMatch
+   * 在 chat() 回答前执行。经 RolePackManager.autoMatch
    * 的粘性语义匹配（§6.2）：首次外部输入命中即锁定当前会话，后续仅互斥包命中才切换。
    * 命中后激活角色包并刷新 system prompt 前缀（装载其 L1 persona）。
+   *
+   * 若关键词匹配未命中，尝试 LLM 辅助语义匹配（低置信度兜底）。
    *
    * @param input 用户输入文本
    * @returns 是否发生了角色包匹配/切换（true 时不再走 persona 兜底）
    */
-  private tryAutoMatchRolePack(input: string): boolean {
+  private async tryAutoMatchRolePack(input: string): Promise<boolean> {
     const rpm = this.rolePackManager_;
     if (!rpm) return false;
-    const matched = rpm.autoMatch(input); // 粘性匹配（含会话内锁定副作用）
-    if (!matched) return false;
-    // 与 switchRolePack 共用同一切换链路（activate + personaSwitched + 前缀刷新，
-    // ADR-017 枝叶层提取），autoMatch 保证 matched ≠ 当前激活名，不触发幂等分支
-    return this.switchRolePack(matched);
+
+    // 第一层：关键词高置信度匹配（含粘性锁定副作用）
+    const matched = rpm.autoMatch(input);
+    if (matched) {
+      return this.switchRolePack(matched);
+    }
+
+    // 第二层：LLM 辅助语义匹配（低置信度兜底，需 backgroundProvider）
+    const bgProvider = this.#backgroundProvider;
+    if (bgProvider && rpm.activeName) {
+      const llmMatched = await this.matchRolePackByLlm(input);
+      if (llmMatched && llmMatched !== rpm.activeName) {
+        return this.switchRolePack(llmMatched);
+      }
+    }
+
+    return false;
   }
 
   /**
-   * 角色自动匹配（best-effort：失败不阻塞对话流程）
-   *
-   * 在 chat() 回答前执行，角色包匹配优先（tryAutoMatchRolePack）。
-   * 两层匹配策略：关键词高置信度 → LLM 辅助（低置信度且 backgroundProvider 已注入时）。
-   * LLM 辅助匹配在 agent 层执行，遵循 backend_layers_rules §分层职责（persona/ 不直接调 LLM）。
-   *
-   * 匹配成功时：切换角色 + 发射 personaSwitched 事件 + 刷新 AgentLoop 前缀。
-   * 匹配失败/异常时：静默降级，保持当前角色。
+   * LLM 辅助角色包语义匹配
    *
    * @param input 用户输入文本
+   * @returns 匹配到的角色包名，无匹配返回 null
    */
-  private async tryAutoMatchPersona(input: string): Promise<void> {
-    if (!this.personaManager) return;
+  private async matchRolePackByLlm(input: string): Promise<string | null> {
+    const rpm = this.rolePackManager_;
+    if (!rpm) return null;
+    const bgProvider = this.#backgroundProvider;
+    if (!bgProvider) return null;
+
     try {
-      let matchedPersona: string | null = null;
-      if (this.personaManager.canAutoMatch()) {
-        matchedPersona = this.personaManager.autoMatch(input);
-        // 关键词低置信度且 backgroundProvider 已注入 → LLM 辅助语义匹配
-        const bgProvider = this.#backgroundProvider;
-        if (!matchedPersona && bgProvider) {
-          matchedPersona = await matchPersonaByLlm(
-            bgProvider,
-            this.personaManager.list,
-            this.personaManager.activeName,
-            input,
-          );
-        }
+      const metaList = rpm.listMeta();
+      if (metaList.length === 0) return null;
+
+      // 构建提示：让 LLM 选择最匹配的角色包
+      const roleList = metaList.map((m) => `${m.name}：${m.description ?? m.displayName ?? ''}`).join('\n');
+      const messages = [
+        { role: 'system' as const, content: `根据用户输入，从以下角色中选择最合适的角色（只输出角色名，不要其他内容）：\n\n${roleList}` },
+        { role: 'user' as const, content: input },
+      ];
+
+      // 使用 chat() 流式方法获取 LLM 响应
+      const stream = bgProvider.chat(messages, { maxTokens: 10, temperature: 0.1 });
+      let response = '';
+      for await (const chunk of stream) {
+        if (chunk.content) response += chunk.content;
       }
-      if (matchedPersona) {
-        const prevName = this.personaManager.activeName;
-        this.personaManager.switchPersona(matchedPersona);
-        this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: matchedPersona });
-        // 刷新 AgentLoop 的角色前缀（与 switchPersona 共用同一段逻辑，ADR-017 枝叶层 2 次提取）
-        this.refreshPersonaPrefixOnLoop();
-        logger.info({ persona: matchedPersona }, '角色自动切换');
-      } else {
-        // 关键词 + LLM 均未命中，且当前角色不是列表首个角色 → 回退到首个角色
-        // "切过去回不来"：用户从默认切到散文作者后，输入无关话题应回到默认角色
-        // 使用 list[0] 而非硬编码 'default'：防止 default 角色被删除后 fallback 抛异常
-        const shouldFallback = this.shouldFallbackToDefault();
-        if (shouldFallback) {
-          const fallbackTarget = this.personaManager.list[0]?.name ?? 'default';
-          const prevName = this.personaManager.activeName;
-          this.personaManager.switchPersona(fallbackTarget);
-          this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: fallbackTarget });
-          this.refreshPersonaPrefixOnLoop();
-          logger.info({ persona: fallbackTarget }, '角色回退默认');
-        }
+      const matchedName = response.trim();
+      if (matchedName && metaList.some((m) => m.name === matchedName)) {
+        return matchedName;
       }
     } catch (err) {
-      logger.warn({ err }, '角色自动匹配失败');
+      logger.warn({ err }, 'LLM 辅助角色包匹配失败');
     }
-  }
-
-  /**
-   * 判断是否应回退到默认角色
-   *
-   * 回退条件（全部满足）：
-   *   1. 当前激活角色不是默认角色（已在默认角色则无需回退）
-   *   2. 角色管理器存在且非锁定状态（锁定时 switchPersona 也会被拦截，回退无意义）
-   *
-   * 注意：bgProvider 未配置时也会触发回退——因为关键词 + LLM 均未命中说明当前角色不匹配本轮对话，
-   * 回退默认角色比卡在错误角色上更合理。
-   *
-   * @returns 是否应回退到默认角色
-   */
-  private shouldFallbackToDefault(): boolean {
-    if (!this.personaManager) return false;
-    // manual 模式下不回退：用户明确固定了角色，回退会破坏其意图
-    if (this.personaManager.currentMode !== 'auto') return false;
-    const status = this.personaManager.getSwitchLockStatus();
-    if (status.locked) return false; // 锁定中不回退，避免无意义调用 switchPersona
-    // 当前角色已是���表首个角色（"默认"角色）→ 无需回退
-    const defaultName = this.personaManager.list[0]?.name;
-    return defaultName !== undefined && this.personaManager.activeName !== defaultName;
+    return null;
   }
 
   /**
@@ -2559,6 +2536,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 按需重载：source 缺省时全量重载，否则只重载指定类型
     const shouldReloadSkill = !source || source === 'skill';
     const shouldReloadPersona = !source || source === 'persona';
+    const shouldReloadRolePack = !source || source === 'rolepack';
 
     if (shouldReloadSkill && this.skillManager) {
       try {
@@ -2569,16 +2547,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    if (shouldReloadPersona && this.personaManager) {
+    if (shouldReloadPersona && this.rolePackManager_) {
       try {
-        result.persona = await this.personaManager.reload();
-        // 角色重载后，刷新 AgentLoop 的角色前缀（角色包优先注入 system prompt）
+        result.persona = await this.rolePackManager_.reload();
+        // 角色重载后，刷新 AgentLoop 的角色前缀
         if (this.loop) {
           this.refreshPersonaPrefixOnLoop();
         }
       } catch (err) {
         errors.push(toError(err));
-        logger.warn({ err: toError(err) }, 'reloadConfig: personaManager.reload 失败');
+        logger.warn({ err: toError(err) }, 'reloadConfig: rolePackManager.reload 失败');
+      }
+    }
+
+    // 角色包重载（source='rolepack' 时独立重载）
+    if (shouldReloadRolePack && this.rolePackManager_ && source === 'rolepack') {
+      try {
+        await this.rolePackManager_.reload();
+        if (this.loop) {
+          this.refreshPersonaPrefixOnLoop();
+        }
+      } catch (err) {
+        errors.push(toError(err));
+        logger.warn({ err: toError(err) }, 'reloadConfig: rolePackManager.reload 失败');
       }
     }
 
@@ -2806,10 +2797,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     // 清理 ArchiveCoordinator（无定时器，只需释放引用）
     this.archiveCoordinator = null;
-    // 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
-    // PersonaManager 为过渡期宿主 API 层，需清理其内部定时器
-    if (this.personaManager) {
-      this.personaManager.close();
+    // 清理 RolePackManager 的切换防抖锁计时器，防止关闭后回调触发
+    if (this.rolePackManager_) {
+      this.rolePackManager_.close();
     }
 
     // 先等待后台归档完成，再移除事件监听器
@@ -2853,8 +2843,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop = null;
     this.toolExec = null;
     // 专职 Manager
-    this.personaManager = null;
     this.skillManager = null;
+    this.rolePackManager_ = null;
     this.configManager = null;
     this.memoryInspector = null;
     this.dedupManager = null;
@@ -3009,14 +2999,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 宿主项目使用访问器时需自行判空，或使用门面方法获得自动错误处理。
 
   /**
-   * 角色管理器（过渡期宿主 API 层，可能为 null）
+   * 角色管理器（RolePackManager，角色+技能+规则的唯一真理源）
    *
-   * ADR-025 档 2-1 后，PersonaManager 不再注入 system prompt（角色包唯一）。
-   * 保留为宿主 API 层：角色切换/防抖/关键词匹配/traits 提取。
+   * ADR-025 档 2-1 后，RolePackManager 是 system prompt 的唯一注入源。
+   * PersonaManager 已完全合并到 RolePackManager。
    * 链式调用建议使用可选链：`agent.persona?.activeName`
    */
-  get persona(): PersonaManager | null {
-    return this.personaManager;
+  get persona(): RolePackManager | null {
+    return this.rolePackManager_;
   }
 
   /**

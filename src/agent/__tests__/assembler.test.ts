@@ -7,7 +7,7 @@
  *   - systemPromptPrefix 组装（personaPrompt 内部非空 + 当前时间注入）
  *   - skillManager 复用（existingSkillManager 注入 vs 新建）
  *   - workProjection provider 选择（backgroundProvider vs provider 降级）
- *   - 配置透传（personaName / configDir / tracer / enableContextSummary）
+ *   - 配置透传（activeRolePack / configDir / tracer / enableContextSummary）
  *
  * 测试范式：真实 InMemoryStorage + 真实 SecurityGuard + mock LlmProvider（chat 返回空 AsyncIterable）+
  * mock fileStore + configDir=undefined 走降级路径，聚焦组装逻辑而非各组件自身行为（各组件已有独立测试）。
@@ -91,7 +91,7 @@ function createInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     backgroundProvider,
     projectPath,
     configDir: undefined,
-    personaName: undefined,
+    activeRolePack: undefined,
     maxContextTokens: 1000,
     sessionStore: undefined,
     tracer: undefined,
@@ -150,23 +150,22 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 15 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 14 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 15 个字段全部存在（history/loop/toolExec/personaManager/
+      // 14 个字段全部存在（history/loop/toolExec/
       // workProjection/skillManager/configManager/memoryInspector/
       // dedupManager/memoryAdvisor/autoConfigRefiner/roundSummaryGenerator/
       // sessionArchiver/textPolisher/rolePackManager）
       // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
       // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
-      // ROLE-PACK：新增 rolePackManager，管理角色包生命周期
+      // ROLE-PACK：新增 rolePackManager，管理角色包生命周期（PersonaManager 已合并）
       // 2026-08-14：移除 userProfile（用户画像收敛为 round-summary 召回）
       // 2026-08-14：移除 insightExtractor（洞察层收敛，摘要即记忆单轨）
       const expectedKeys = [
         'history',
         'loop',
         'toolExec',
-        'personaManager',
         'workProjection',
         'skillManager',
         'configManager',
@@ -188,7 +187,6 @@ describe('assembleComponents', () => {
       expect(output.history).toBeDefined();
       expect(output.loop).toBeDefined();
       expect(output.toolExec).toBeDefined();
-      expect(output.personaManager).toBeDefined();
       expect(output.workProjection).toBeDefined();
       expect(output.skillManager).toBeDefined();
       expect(output.configManager).toBeDefined();
@@ -198,6 +196,7 @@ describe('assembleComponents', () => {
       // SPLIT-3：新增 dedupManager 实例验证（L1 语义去重独立管理器）
       expect(output.dedupManager).toBeDefined();
       expect(output.autoConfigRefiner).toBeDefined();
+      expect(output.rolePackManager).toBeDefined();
     });
   });
 
@@ -245,14 +244,14 @@ describe('assembleComponents', () => {
   // ─── 配置透传 ──────────────────────────────────────────
 
   describe('配置透传', () => {
-    it('personaName 透传到 PersonaManager.load（角色不存在走降级）', async () => {
-      // 传入不存在的 personaName，PersonaManager 应降级到默认角色，组装仍成功
+    it('activeRolePack 透传到 RolePackManager.load（角色不存在走降级）', async () => {
+      // 传入不存在的 activeRolePack，RolePackManager 应降级到默认角色，组装仍成功
       const output = await assembleComponents(
         createPctx(),
-        createInput({ personaName: '不存在的角色' }),
+        createInput({ activeRolePack: '不存在的角色包' }),
       );
-      // personaPrompt 仅内部使用，通过 systemPromptPrefix 间接消费
-      expect(output.personaManager).toBeDefined();
+      // rolePackPrompt 仅内部使用，通过 systemPromptPrefix 间接消费
+      expect(output.rolePackManager).toBeDefined();
     });
 
     it('configDir=undefined 时组装成功（无 fileStore.write 注入）', async () => {

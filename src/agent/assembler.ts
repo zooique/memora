@@ -10,15 +10,14 @@
  *   - Agent 门面类通过 assembleComponents() 获取组件引用
  *   - 组件间的依赖关系在此处显式声明
  *
- * 注：PersonaManager 在 ADR-025 档 2-1 后为过渡期宿主 API 层，
- * 不再注入 system prompt（角色包唯一），仅承载切换/防抖/关键词匹配。
+ * 注：PersonaManager 已合并到 RolePackManager（ADR-025 档 3 收敛），
+ * 角色相关功能统一由 RolePackManager 承载。
  */
 
 import { AgentLoop } from '@/agent/loop.js';
 import { ToolExecutor } from '@/agent/toolExecutor.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
-import { PersonaManager } from '@/persona/personaManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
@@ -94,7 +93,6 @@ type AssembleRuntimeParams = Pick<
   AgentConfig,
   | 'projectPath'
   | 'configDir'
-  | 'personaName'
   | 'activeRolePack'
   | 'maxContextTokens'
   | 'sessionStore'
@@ -170,13 +168,6 @@ export interface AssembleOutput {
   history: MessageHistory;
   loop: AgentLoop;
   toolExec: ToolExecutor;
-  /**
-   * 角色管理器（过渡期宿主 API 层）
-   *
-   * ADR-025 档 2-1 后不再注入 system prompt（角色包唯一），
-   * 仅承载宿主 API：角色切换/防抖/关键词匹配/traits 提取。
-   */
-  personaManager: PersonaManager;
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
   configManager: ConfigManager;
@@ -200,11 +191,10 @@ export interface AssembleOutput {
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
   textPolisher: TextPolishManager;
-  /** 角色包管理器（M1 清单抽象）
+  /** 角色包管理器（角色+技能+规则的唯一真理源）
    *
-   * 装配层引入角色包清单作为统一读取抽象。
-   * 当前与 PersonaManager + SkillManager 共存，行为不变。
-   * 未来角色包文件完备后，可替代独立通道。
+   * PersonaManager 已合并到 RolePackManager，
+   * 角色切换/防抖/关键词匹配/traits 提取统一由 RolePackManager 承载。
    */
   rolePackManager: RolePackManager;
   /** 轮次摘要生成器（记忆即摘要架构，Phase 1） */
@@ -216,7 +206,7 @@ export interface AssembleOutput {
  *
  * 组件创建顺序（解决循环依赖）：
  *   1. 无依赖组件：history, workProjection, toolExec
- *   2. 依赖 Provider 的组件：personaManager, skillManager
+ *   2. 依赖 Provider 的组件：skillManager, rolePackManager
  *   3. AgentLoop（依赖 toolExec + systemPromptPrefix）
  *   4. 依赖 Loop 的组件：configManager, memoryInspector
  *
@@ -343,7 +333,6 @@ export async function assembleComponents(
     backgroundProvider,
     projectPath,
     configDir,
-    personaName,
     activeRolePack,
     maxContextTokens,
     sessionStore,
@@ -378,22 +367,15 @@ export async function assembleComponents(
 
   // ── Phase 2: 依赖 Provider 的组件 ──
 
-  const personaManager = new PersonaManager(configDir);
-  // 档 2-1（ADR-025）：persona 不再注入 system prompt（角色包唯一）；
-  // load 仅初始化目录扫描与激活状态（宿主 API 依赖：switchPersona/autoMatch/traits），
-  // 返回值丢弃。PersonaManager 为过渡期宿主 API 层。
-  await personaManager.load(personaName);
-
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
 
-  // M1 角色包清单：创建角色包管理器，装配层自此只认"清单"不认"来源"
-  // 当前角色包文件为可选，不存在时降级为 PersonaManager + SkillManager 联合
+  // M1 角色包清单：创建角色包管理器，角色相关功能的唯一真理源
   // activeRolePack：宿主注入持久化的用户角色包选择，优先激活；未配置/包不存在回退首个
   const rolePackManager = new RolePackManager(configDir);
   await rolePackManager.load(activeRolePack);
 
-  // 激活角色包的 L1 persona（角色包优先于 persona；无激活角色包时为空串）
+  // 激活角色包的 L1 persona（角色包唯一；无激活角色包时为空串）
   const rolePackPrompt = rolePackManager.buildSystemPrompt();
 
   // 渐进披露 L2：注入 read_skill 技能正文读取回调（read_skill 工具数据源）
@@ -443,7 +425,6 @@ export async function assembleComponents(
     history,
     loop,
     toolExec,
-    personaManager,
     workProjection,
     skillManager,
     configManager,

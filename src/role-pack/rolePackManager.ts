@@ -1,26 +1,19 @@
 /**
  * 角色包管理器 — 继承 ConfigResourceManager，管理角色包的生命周期
  *
- * 2026-08-14 收敛形态（单一形态，无旧格式兼容）：
- *   角色包统一为**文件夹形态**，`manifest.json` 是唯一核心控制文件。
- *   内容文件（persona.md / rules.md / skills/*）独立于 manifest，由 manifest
- *   按路径注册装载——用户既可独立移植内容文档，也可整体装载角色包。
- *   系统此前未启用角色包（无存量包），故不保留单文件 .md / role-pack.md 旧格式。
- *
- * 职责：
- *   - 从 configDir/role-packs/<名>/ 扫描含 manifest.json 的角色包
- *   - 解析 manifest.json（元数据 + L2 策略 + 内容路径注册 + 内嵌技能注册）
- *   - 按路径装载 persona.md / rules.md 正文；skills 仅转译注册形状（正文不装载，
- *     capability 为内核唯一行为入口，见 role-pack-spec §四）
- *   - 提供角色包激活、粘性匹配、互斥切换功能
- *
- * 与 PersonaManager 的关系：
- *   角色包是更上层的抽象，Persona 是角色包 L1 内容层的一部分。
- *   当前角色包管理器为可选组件，与 PersonaManager 共存（M3 远期可替代）。
+ * 2026-08-18 收敛形态（M3 完成，PersonaManager 完全合并）：
+ *   - 角色包统一为**文件夹形态**，`manifest.json` 是唯一核心控制文件。
+ *   - 内容文件（persona.md / rules.md / skills/*）独立于 manifest，由 manifest
+ *     按路径注册装载——用户既可独立移植内容文档，也可整体装载角色包。
+ *   - PersonaManager 职责已完全合并到 RolePackManager：
+ *     * system prompt 注入（buildSystemPrompt）
+ *     * 角色切换防抖锁（activate 内置）
+ *     * 关键词高置信度匹配（autoMatch）
+ *     * 角色 traits 提取（persona.md frontmatter）
  *
  * 设计原则：
  *   - 继承 ConfigResourceManager 基类（复用关键词匹配 / 生命周期）
- *   - 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描）保留在子类
+ *   - 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描 / 切换防抖）保留在子类
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -28,6 +21,7 @@ import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import { resolveSubdir, scanMarkdownDir } from '@/utils/scanner.js';
+import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
 import type {
   RolePack,
@@ -138,6 +132,10 @@ function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined 
  * 同时合并 `trigger` 数组（role-pack-spec §二/§三 字段）：
  * 匹配词只有一个来源 keywords，触发词统一汇入（单一真理源）。
  *
+ * 设计决策：角色包 trigger 为字符串数组（精确/包含匹配），不是正则。
+ * 正则匹配仅在 Skill 系统中存在（parseTrigger → RegExp.test）。
+ * 角色包场景为"角色切换"，关键词匹配已足够；Skill 场景为"精确技能触发"，需要正则。
+ *
  * @param manifest 解析后的 manifest 对象
  * @returns 关键词数组（keywords ∪ trigger，去重）
  */
@@ -156,6 +154,29 @@ function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefin
     return undefined;
   };
   return [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
+}
+
+/**
+ * 从 persona.md frontmatter 解析 traits.* 键值对
+ *
+ * 与 PersonaManager.parseTraits 同源，迁移到 RolePackManager 后统一入口。
+ *
+ * @param personaContent persona.md 的原始内容（含 frontmatter）
+ * @returns traits 键值对（数值），无 traits 时返回 undefined
+ */
+function parseTraits(personaContent: string): Record<string, number> | undefined {
+  if (!personaContent) return undefined;
+  const { frontmatter } = parseFrontmatter(personaContent);
+  const traits: Record<string, number> = {};
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (!key.startsWith('traits.')) continue;
+    const traitName = key.slice(7);
+    const numVal = Number(value);
+    if (!Number.isNaN(numVal)) {
+      traits[traitName] = Math.max(0, Math.min(1, numVal)); // clamp 0-1
+    }
+  }
+  return Object.keys(traits).length > 0 ? traits : undefined;
 }
 
 /**
@@ -313,6 +334,21 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 会话切换时由宿主调用 resetSticky() 复位——粘性不跨会话。
    */
   private stickyLocked = false;
+  /** 角色切换时间戳列表（用于时间窗口缓冲） */
+  private switchTimestamps: number[] = [];
+  /** 缓冲区开关（30s 内 5 次切换后锁定） */
+  private switchLocked = false;
+  /** 锁定恢复计时器 */
+  private unlockTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 锁定自动恢复时间戳（ms epoch） */
+  private unlockAt: number | null = null;
+
+  /** 时间窗口：30 秒 */
+  private static readonly SWITCH_WINDOW_MS = 30_000;
+  /** 窗口内最大切换次数：5 次 */
+  private static readonly MAX_SWITCHES_IN_WINDOW = 5;
+  /** 锁定后自动恢复时间：2 分钟 */
+  private static readonly AUTO_UNLOCK_MS = 120_000;
 
   /**
    * @param configDir 配置目录（角色包在 <configDir>/role-packs/ 下）
@@ -531,7 +567,11 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const rulesPath = declaredRulesPath ?? DEFAULT_RULES_FILENAME;
 
     // 装载独立内容文件
-    const personaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';
+    // persona.md 需要解析 frontmatter 提取 traits，正文仅取 body 部分
+    const rawPersonaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';
+    const { body: personaBody } = parseFrontmatter(rawPersonaContent);
+    const personaContent = personaBody; // 去除 frontmatter 后的正文
+    const traits = parseTraits(rawPersonaContent); // 从 frontmatter 解析 traits
     const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
     const rules = parseRules(rulesContent);
 
@@ -564,6 +604,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       // 角色包特有字段
       meta,
       personaContent,
+      traits,
       rules,
       skills,
       capabilities,
@@ -612,20 +653,77 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 激活指定角色包
+   * 激活指定角色包（带时间窗口缓冲）
+   *
+   * 30s 内超过 5 次切换后锁定 2 分钟（防抖保护，避免频繁切换导致的状态抖动）。
    *
    * @param name 角色包名
-   * @returns 是否成功激活
+   * @returns 是否成功激活（锁定或角色不存在时返回 false）
    */
   activate(name: string): boolean {
+    // 缓冲区检查（限流保护，非错误）
+    if (this.switchLocked) {
+      logger.info({ name }, '角色包切换已锁定（30s 内超过 5 次），保持当前');
+      return false;
+    }
+
     const found = this.items.find((p) => p.meta.name === name);
     if (!found) {
       logger.warn({ name }, '角色包不存在，激活失败');
       return false;
     }
+
+    // 记录切换时间戳并检查是否达到锁定阈值
+    const now = Date.now();
+    this.switchTimestamps.push(now);
+    const windowStart = now - RolePackManager.SWITCH_WINDOW_MS;
+    this.switchTimestamps = this.switchTimestamps.filter((t) => t > windowStart);
+
+    if (this.switchTimestamps.length >= RolePackManager.MAX_SWITCHES_IN_WINDOW) {
+      this.switchLocked = true;
+      this.unlockAt = now + RolePackManager.AUTO_UNLOCK_MS;
+      this.unlockTimer = setTimeout(() => {
+        this.switchLocked = false;
+        this.unlockAt = null;
+        this.unlockTimer = null;
+        this.switchTimestamps = [];
+        logger.info('角色包切换锁已自动恢复');
+      }, RolePackManager.AUTO_UNLOCK_MS);
+      logger.warn('角色包切换过于频繁，已锁定 2 分钟');
+    }
+
     this.activePackName = name;
     logger.info({ name }, '角色包已激活');
     return true;
+  }
+
+  /**
+   * 获取角色切换锁定状态
+   *
+   * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
+   */
+  getSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
+    return { locked: this.switchLocked, unlockAt: this.unlockAt };
+  }
+
+  /**
+   * 获取当前激活角色包的 traits
+   *
+   * @returns traits 键值对，无激活角色包或无 traits 时返回 undefined
+   */
+  getActiveTraits(): Record<string, number> | undefined {
+    if (!this.activePackName) return undefined;
+    const pack = this.items.find((p) => p.meta.name === this.activePackName);
+    return pack?.traits;
+  }
+
+  /**
+   * 设置激活模式（auto / manual）
+   *
+   * @param mode 激活模式
+   */
+  setMode(mode: 'auto' | 'manual'): void {
+    this.mode = mode;
   }
 
   /**
@@ -669,6 +767,21 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 清理资源（关闭时调用）
+   *
+   * 清理切换防抖锁的计时器，防止关闭后回调触发。
+   */
+  close(): void {
+    if (this.unlockTimer) {
+      clearTimeout(this.unlockTimer);
+      this.unlockTimer = null;
+      this.switchLocked = false;
+      this.unlockAt = null;
+      this.switchTimestamps = [];
+    }
+  }
+
+  /**
    * 判断两个角色包是否互斥（exclusiveWith 双向声明其一即互斥）
    *
    * @param a 角色包 A 名
@@ -681,11 +794,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const aExcludesB = packA?.meta.exclusiveWith?.includes(b) ?? false;
     const bExcludesA = packB?.meta.exclusiveWith?.includes(a) ?? false;
     return aExcludesB || bExcludesA;
-  }
-
-  /** 设置激活模式 */
-  setMode(mode: 'auto' | 'manual'): void {
-    this.mode = mode;
   }
 
   /** 获取当前激活模式 */
