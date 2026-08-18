@@ -245,8 +245,8 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
 
     const active = manager.getActive();
     expect(active!.meta.name).toBe('全能写手');
-    // 三个技能全部注册
-    expect(active!.skills.map((s) => s.name)).toEqual(['write', 'search', 'read']);
+    // 三个技能全部注册（目录扫描，顺序为文件系统序——断言排序无关，C3）
+    expect(active!.skills.map((s) => s.name).sort()).toEqual(['read', 'search', 'write']);
     // persona 缺省 → personaPrompt 不含身份设定，仅规则注入
     expect(active!.personaPrompt).toContain('不生成违法内容');
     // 能力声明聚合（仅声明了 capability 的项）
@@ -276,6 +276,34 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
       'file:read',
       'web:search',
     ]);
+  });
+
+  it('skills 目录动态扫描：未声明 manifest.skills 时全量扫描 + frontmatter 元数据（C3）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 不含 skills 字段的 manifest——技能靠目录扫描注册
+    const { skills: _omit, ...manifestNoSkills } = MANIFEST_TECH;
+    void _omit;
+    await writePack(packsDir, '技术文档工程师', manifestNoSkills, {
+      persona: '你是一位技术文档工程师。',
+      skills: {
+        'skills/summarize.md':
+          '---\nname: summarize\ndescription: 提炼要点\n---\n\n# summarize\n内容',
+        'skills/template.md':
+          '---\nname: template\ndescription: 文档模板\n---\n\n# template\n内容',
+      },
+    });
+
+    const manager = new RolePackManager(dir);
+    expect(await manager.load('技术文档工程师')).toBe(1);
+
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    // 目录扫描注册两个技能（顺序为文件系统序，排序无关断言）
+    expect(active!.skills.map((s) => s.name).sort()).toEqual(['summarize', 'template']);
+    // frontmatter description 暴露给 LLM（渐进披露 L1）
+    const summarize = active!.skills.find((s) => s.name === 'summarize');
+    expect(summarize?.description).toBe('提炼要点');
   });
 
   it('handoffPrompt 自洽声明透传（角色包只描述自己，无跨包引用）', async () => {

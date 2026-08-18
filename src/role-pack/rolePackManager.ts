@@ -27,7 +27,7 @@ import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir } from '@/utils/scanner.js';
 import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
 import type {
   RolePack,
@@ -194,35 +194,37 @@ function parseHandoffPrompt(raw: unknown): string | undefined {
 }
 
 /**
- * 从 manifest.skills 数组解析技能注册（对象数组，支持多个添加）
+ * 扫描角色包 skills/ 目录注册技能（目录扫描 + frontmatter，2026-08-18 C3）
  *
- * 每项结构：`{ file?, name?, description? }`（C2 后不再携带 capability——能力声明
- * 已独立为顶层 manifest.capabilities，见 parseManifestCapabilities）。
- * 承载转译为 RolePack.skills 的原始注册形状。
- * file 为**生态兼容指针**（§四）——仅记录路径供生态互认/移植，**正文不装载**
- * （渐进披露 L2 read_skill 按需读，2026-08-18 两级技能统一）。
+ * skills 从「manifest 注册」改为「目录动态扫描」——与全局技能同构（复用
+ * scanMarkdownDir：frontmatter 的 name/description + 正文）。新增技能只写文件，
+ * 无需改 manifest。manifest.skills 保留为**可选过滤**：声明了 file 路径时按
+ * file 过滤扫描结果（白名单语义），未声明则全部扫描（默认零配置）。
  *
- * @param skillsNode manifest.skills 节点
+ * @param packDir 角色包目录
+ * @param skillsNode manifest.skills 节点（可选过滤，null = 全量扫描）
  * @returns 技能注册列表
  */
-function parseManifestSkills(skillsNode: unknown): RolePackManifestSkill[] {
-  if (!Array.isArray(skillsNode)) return [];
-  const skills: RolePackManifestSkill[] = [];
-  for (const item of skillsNode) {
-    if (typeof item !== 'object' || item === null) continue;
-    const record = item as Record<string, unknown>;
-    const file = record['file'];
-    const hasFile = typeof file === 'string' && file.trim() !== '';
-    if (!hasFile) continue;
-    const name = record['name'];
-    const description = record['description'];
-    skills.push({
-      file,
-      name: typeof name === 'string' ? name : undefined,
-      description: typeof description === 'string' ? description : undefined,
-    });
-  }
-  return skills;
+async function scanPackSkills(
+  packDir: string,
+  skillsNode: unknown,
+): Promise<RolePackManifestSkill[]> {
+  const scanned = await scanMarkdownDir(join(packDir, 'skills'));
+  const skills = scanned.map((entry) => ({
+    file: `skills/${entry.name}.md`,
+    name: entry.name,
+    description: entry.frontmatter['description'] ?? undefined,
+  }));
+  // manifest.skills 声明时按 file 过滤（白名单语义）；未声明返回全部
+  if (!Array.isArray(skillsNode)) return skills;
+  const allowedFiles = new Set(
+    skillsNode
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((record) => record['file'])
+      .filter((f): f is string => typeof f === 'string' && f.trim() !== ''),
+  );
+  if (allowedFiles.size === 0) return skills;
+  return skills.filter((s) => allowedFiles.has(s.file));
 }
 
 /**
@@ -525,8 +527,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
     const rules = parseRules(rulesContent);
 
-    // 内嵌技能注册（对象数组，支持多个；C2 后 skills 仅文件引用）
-    const skills = parseManifestSkills(manifest['skills']);
+    // 内嵌技能：目录动态扫描 + frontmatter（C3，manifest.skills 可选过滤；新增技能只写文件）
+    const skills = await scanPackSkills(packDir, manifest['skills']);
     // 能力声明（顶层数组，C2 独立模块——能力面与技能内容分离）
     const capabilities = parseManifestCapabilities(manifest['capabilities']);
 

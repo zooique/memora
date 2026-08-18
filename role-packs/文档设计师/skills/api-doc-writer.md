@@ -1,3 +1,8 @@
+---
+name: api-doc-writer
+description: API 文档写法：端点、参数、请求/响应示例、错误码
+---
+
 # api-doc-writer：API 参考文档写法
 
 ## 用途

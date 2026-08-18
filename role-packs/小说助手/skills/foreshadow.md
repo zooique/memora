@@ -1,3 +1,8 @@
+---
+name: foreshadow
+description: 伏笔与呼应：埋点、回收、可信度控制
+---
+
 # foreshadow：伏笔与呼应
 
 ## 用途

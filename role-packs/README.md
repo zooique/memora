@@ -25,5 +25,6 @@
 |--------|------|-----------|
 | 文档设计师 | 示例：工具型角色包——技术文档设计（API 文档 / 教程 / 架构说明） | 真实 skills/ 文件（read_skill L2）+ capabilities + strategy（toolMode:allow / 低温度）+ handoffPrompt |
 | 小说助手 | 示例：创作型角色包——小说写作（结构 / 人物 / 对白 / 伏笔） | 真实 skills/ 文件 + capabilities + strategy（高温度 / askOn 主动提问）+ handoffPrompt |
+| 方案设计师 | 示例：方法论型角色包——基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）从模糊想法设计自洽方案 | 真实 skills/ 文件（种子收敛/土壤吸收/SSOT 自检）+ capabilities（含 memory:recall / llm:summarize）+ strategy（contextAssembly:hybrid / handoff:loop）+ handoffPrompt |
 
-> 两个示例包**全面覆盖当前角色包设计**：persona.md / rules.md 约定文件名、顶层 capabilities（能力面）、skills 技能文件引用（内容面 + 渐进披露 L2）、strategy 策略、handoffPrompt 衔接提示词。完整角色包规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)。
+> 三个示例包**全面覆盖当前角色包设计**：persona.md / rules.md 约定文件名、顶层 capabilities（能力面）、skills **目录动态扫描**（技能文件 frontmatter 声明 name/description，新增技能只写文件免注册，C3）、strategy 策略、handoffPrompt 衔接提示词。完整角色包规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)。

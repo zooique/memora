@@ -1,3 +1,8 @@
+---
+name: story-structure
+description: 三幕结构与情节点规划：起承转合、激励事件、中点、高潮
+---
+
 # story-structure：三幕结构与情节点规划
 
 ## 用途

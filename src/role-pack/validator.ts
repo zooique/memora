@@ -482,7 +482,7 @@ function validateManifestSkills(
       severity: 'error',
       code: 'SKILLS_NOT_ARRAY',
       path: 'skills',
-      message: 'skills 必须是对象数组（每项 { file?, name?, description? }，§四；C2 后能力声明独立为顶层 capabilities）',
+      message: 'skills 必须是对象数组（每项 { file }，§四；C3 目录扫描，声明项仅作白名单过滤）',
     });
     return;
   }
@@ -500,7 +500,7 @@ function validateManifestSkills(
     }
     const record = item as Record<string, unknown>;
 
-    // C2 后 skills 仅技能文件引用：必须声明 file（§四 生态指针）
+    // C3 目录扫描：manifest.skills 仅白名单过滤，声明项必须含 file（相对 skills/ 的文件名）
     const file = record['file'];
     const hasFile = typeof file === 'string' && file.trim() !== '';
     if (!hasFile) {
@@ -508,11 +508,11 @@ function validateManifestSkills(
         severity: 'error',
         code: 'INVALID_MANIFEST_SKILL',
         path: itemPath,
-        message: `skills[${index}] 必须声明 file（技能文件路径/已注册技能名）；能力声明请放顶层 capabilities（C2）`,
+        message: `skills[${index}] 必须声明 file（技能文件名，如 skills/write.md）；skills 由目录动态扫描（C3），声明项仅作白名单过滤`,
       });
     }
 
-    // name / description 可选字符串
+    // name / description 可选字符串（C3 下元数据在技能文件 frontmatter，此处声明仅兼容忽略）
     for (const optKey of ['name', 'description'] as const) {
       const opt = record[optKey];
       if (opt !== undefined && typeof opt !== 'string') {

@@ -1,3 +1,8 @@
+---
+name: style-guide
+description: 技术写作风格与规范校对：术语一致、语气、可读性
+---
+
 # style-guide：技术写作风格与规范校对
 
 ## 用途

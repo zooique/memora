@@ -1,3 +1,8 @@
+---
+name: dialogue-craft
+description: 对白写法：潜台词、语气区分、推进情节而非填充
+---
+
 # dialogue-craft：对白写法
 
 ## 用途

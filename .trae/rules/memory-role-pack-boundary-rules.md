@@ -57,7 +57,7 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 2. **skills 正文不预装载**：角色包 skill 是"生态指针"，正文靠 `readSkillContent` 按需读；依赖索引正文的宿主 UI 搬迁后会断供。
 3. **guardrail 已摘除（2026-08-17）**：guardrail 空转链（零规则/无扫描映射/无消费者）已随档 1 移除，不再新增 guardrail 相关代码。
 4. **宿主 SQLite schema 不可见**：宿主持有 `WHERE source='rule'` 等查询会静默失效，需宿主核对配合。
-5. **角色包 skills 当前零文件**（2026-08-18 诚实声明）：6 个示例包全是纯能力声明、`skills/` 目录为空——技能内容面是「设计就绪、零负载」，read_skill L2 实读链路待真实技能文件验证。
+5. **skills 目录扫描（C3，2026-08-18）**：角色包 `skills/` 目录**动态扫描**注册（frontmatter 声明 name/description），新增技能只写文件免 manifest 注册——与全局技能池同构。manifest.skills 仅可选白名单过滤。注意：技能文件必须带 frontmatter 才有 description 暴露（渐进披露 L1）。
 
 ## 四、审查点（代码评审时检查）
 
@@ -69,4 +69,5 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 - [ ] 是否在 manifest 声明非约定名内容文件路径？（违反 R7）
 - [ ] 是否在 skills 项里放 capability？（违反 R8）
 - [ ] 是否把通用技能复制进每个角色包？（违反 R9）
+- [ ] 是否在 manifest.skills 里逐项注册技能？（C3 已改目录扫描——新增技能只写文件，无需注册）
 - [ ] `assembler.ts` systemPrompt 装配是否仍存在 persona 兜底？（收敛完成后应唯一走 rolePackPrompt）

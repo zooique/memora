@@ -1,3 +1,8 @@
+---
+name: character-sheet
+description: 人物设定卡：目标、动机、缺陷、弧光，让人物立体
+---
+
 # character-sheet：人物设定卡
 
 ## 用途
