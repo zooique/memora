@@ -83,8 +83,10 @@ function truncateContent(content: string): string {
  * 将会话原始对话归档为 source='content' 记忆条目。
  */
 export class SessionArchiver {
-  /** LLM Provider（用于摘要生成） */
+  /** 当前使用的 Provider（后台优先，降级到默认） */
   private provider: LlmProvider;
+  /** 构造时的默认 Provider（backgroundProvider 为 null 时回退使用） */
+  private readonly defaultProvider: LlmProvider;
   /** 记忆存储（写入 content 类记忆） */
   private index: IMemoryStorage;
   /** 会话存储（加载原始对话消息） */
@@ -96,8 +98,18 @@ export class SessionArchiver {
     sessionStore: ISessionStore | undefined,
   ) {
     this.provider = provider;
+    this.defaultProvider = provider;
     this.index = index;
     this.sessionStore = sessionStore;
+  }
+
+  /**
+   * 注入后台 Provider（由 Agent.setBackgroundProvider 调用）
+   *
+   * 与 AutoConfigRefiner 同模式：null 表示清除后台 Provider，回退到默认 Provider。
+   */
+  setBackgroundProvider(provider: LlmProvider | null): void {
+    this.provider = provider ?? this.defaultProvider;
   }
 
   /**

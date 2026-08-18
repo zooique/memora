@@ -118,10 +118,27 @@ ${SUMMARY_JSON_CONTRACT}`;
  *   await this.roundSummaryGenerator.generate(input, assistantContent, roundId, sessionName);
  */
 export class RoundSummaryGenerator {
+  /** 当前使用的 Provider（后台优先，降级到默认） */
+  private provider: LlmProvider;
+  /** 构造时的默认 Provider（backgroundProvider 为 null 时回退使用） */
+  private readonly defaultProvider: LlmProvider;
+
   constructor(
-    private readonly provider: LlmProvider,
+    provider: LlmProvider,
     private readonly storage: IMemoryStorage,
-  ) {}
+  ) {
+    this.provider = provider;
+    this.defaultProvider = provider;
+  }
+
+  /**
+   * 注入后台 Provider（由 Agent.setBackgroundProvider 调用）
+   *
+   * 与 AutoConfigRefiner 同模式：null 表示清除后台 Provider，回退到默认 Provider。
+   */
+  setBackgroundProvider(provider: LlmProvider | null): void {
+    this.provider = provider ?? this.defaultProvider;
+  }
 
   /**
    * 记忆写入回调（memoryAdded 事件出口）

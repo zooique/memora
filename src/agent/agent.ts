@@ -2313,9 +2313,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
     this.assertNotBusy('切换后台 Provider');
     this.#backgroundProvider = provider;
-    // 同步更新 AutoConfigRefiner 的后台 Provider
+    // 同步更新所有后台组件的 Provider（SSOT：后台组件统一消费 backgroundProvider）
     if (this.autoConfigRefiner) {
       this.autoConfigRefiner.setBackgroundProvider(provider);
+    }
+    if (this.roundSummaryGenerator) {
+      this.roundSummaryGenerator.setBackgroundProvider(provider);
+    }
+    if (this.sessionArchiver) {
+      this.sessionArchiver.setBackgroundProvider(provider);
     }
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }

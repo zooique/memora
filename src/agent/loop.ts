@@ -22,6 +22,10 @@ import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
 import { logger } from '@/logging/logger.js';
+import type { ICompactionStrategy } from '@/agent/compaction.js';
+import { ResultReplacementStrategy } from '@/agent/compaction.js';
+import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/types.js';
+import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -152,6 +156,27 @@ export interface AgentLoopOptions {
    * 通过此字段注入到 LLM 调用参数中，优先级高于全局默认值。
    */
   chatOptions?: Partial<ChatOptions>;
+  /**
+   * 上下文压缩策略（微压缩层，可选）
+   *
+   * 每轮对话前静默执行，将旧 tool_result 替换为占位符以节省上下文空间。
+   * 默认使用 ResultReplacementStrategy（保留最近 3 次完整结果）。
+   * 宿主可注入自定义策略实现不同的压缩行为。
+   */
+  compactionStrategy?: ICompactionStrategy;
+  /**
+   * 重复工具调用拦截器（P1：策略参数化宿主扩展点，可选）
+   *
+   * 注入自定义拦截器后，AgentLoop 在每轮工具执行后调用其 check() 方法，
+   * 根据返回值决定是否注入负反馈 warning 或直接 block。
+   * 未注入时使用 DefaultDuplicateCallInterceptor（基于哈希的机械重复检测）。
+   *
+   * 宿主可实现 DuplicateCallInterceptor 接口实现不同策略：
+   *   - 按工具名差异化阈值（search 阈值大，delete 直接 block）
+   *   - 结合工具结果内容做语义重复判定
+   *   - 完全自定义的重复检测逻辑
+   */
+  duplicateCallInterceptor?: DuplicateCallInterceptor;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -185,6 +210,28 @@ export class AgentLoop {
   private readonly tracer: ITracer;
   /** Reflection 最大重试次数（默认 2） */
   private readonly maxReflectionRetries: number;
+  /**
+   * 上下文压缩策略（微压缩层）
+   *
+   * 默认使用 ResultReplacementStrategy，将旧 tool_result 替换为占位符。
+   * 宿主可通过 AgentLoopOptions.compactionStrategy 注入自定义策略。
+   */
+  private readonly compactionStrategy: ICompactionStrategy;
+  /**
+   * 重复工具调用拦截器实例（P1：策略参数化宿主扩展点）
+   *
+   * 默认使用 DefaultDuplicateCallInterceptor（基于哈希的机械重复检测）。
+   * 宿主可通过 AgentLoopOptions.duplicateCallInterceptor 注入自定义实现。
+   */
+  private readonly duplicateCallInterceptor: DuplicateCallInterceptor;
+  /** 重复工具调用检测阈值（默认 3 次，供拦截器 context 使用） */
+  private readonly duplicateToolCallThreshold: number;
+  /** 上一轮工具调用的哈希（运行时状态，拦截器判定时使用） */
+  private lastToolCallsHash: string = '';
+  /** 连续重复次数（运行时状态，拦截器判定时使用） */
+  private duplicateToolCallCount: number = 0;
+  /** 当前迭代序号（processUserInput 循环内维护，供拦截器 context 使用） */
+  private currentIteration: number = 0;
   /**
    * 当前轮次已推送的 REFLECTION_HINT 次数（显式计数器）
    *
@@ -346,6 +393,13 @@ export class AgentLoop {
     this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
+    // 初始化压缩策略：默认使用 ResultReplacementStrategy，宿主可注入自定义策略
+    this.compactionStrategy = opts.compactionStrategy ?? new ResultReplacementStrategy();
+    // 初始化重复工具调用拦截器：默认使用 DefaultDuplicateCallInterceptor
+    // 宿主可注入自定义 DuplicateCallInterceptor 实现不同策略
+    this.duplicateCallInterceptor =
+      opts.duplicateCallInterceptor ?? new DefaultDuplicateCallInterceptor(3);
+    this.duplicateToolCallThreshold = 3;
     // 主动提问回调（Agent 装配时注入，loop 只负责在检测到 [ASK] 时回调）
     this.onPendingQuestion = opts.onPendingQuestion;
     this.ui = {
@@ -376,6 +430,10 @@ export class AgentLoop {
 只有存在可验证判据时才审查；无明确判据时不强行修改。
 如果满意，请确认并输出最终版本。
 如果需要改进，请直接输出改进后的完整回复。`),
+      duplicateToolCallWarning:
+        opts.messages?.duplicateToolCallWarning ??
+        ((threshold: number) =>
+          `[DUPLICATE_TOOL_CALL_WARNING] 你已连续 ${threshold} 次调用相同工具 + 相同参数，可能陷入死循环。请分析工具结果，改变策略：调整参数、换用其他工具，或直接给出文本回复。`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
 
@@ -444,6 +502,9 @@ export class AgentLoop {
 
       // 重置当前轮次的反思计数器（每轮用户输入独立计算反思次数）
       this.reflectionCountThisTurn = 0;
+      // 重置重复工具调用检测状态（每轮用户输入独立统计）
+      this.lastToolCallsHash = '';
+      this.duplicateToolCallCount = 0;
       // 重置自主工具步标志（每轮用户输入独立计算）
       this.inAutonomousStep = false;
       // P0-3：清残留软暂停标志，防上一轮以 done 结束后跨轮泄漏误触发暂停（D2）
@@ -455,6 +516,7 @@ export class AgentLoop {
       let iteration = 0;
       while (iteration < this.maxIterations) {
         iteration++;
+        this.currentIteration = iteration;
 
         // Tier 3：stepBudget 检查（软上限，0=不限制）
         if (this.stepBudget > 0 && iteration >= this.stepBudget) {
@@ -552,6 +614,9 @@ export class AgentLoop {
     }
     // 重置本轮反思计数（与 processUserInput 一致）
     this.reflectionCountThisTurn = 0;
+    // 重置重复工具调用检测状态（与 processUserInput 一致）
+    this.lastToolCallsHash = '';
+    this.duplicateToolCallCount = 0;
     // P0-3：清残留软暂停标志（续跑前确保干净，防跨轮泄漏 D2）
     this.pauseRequested = false;
     // 重置自审查轮计数（与 processUserInput 一致）
@@ -939,6 +1004,15 @@ export class AgentLoop {
       this.messages = [...safeMessages];
     }
 
+    // ─── 微压缩层：静默压缩旧 tool_result ──────────────────────────
+    // 在截断后、LLM 调用前执行，回收旧工具结果占用的上下文空间
+    // 不影响当前轮次的上下文截断逻辑，是独立的轻量级压缩
+    // OffloadCompactionStrategy 等策略涉及文件 IO，支持异步
+    if (this.compactionStrategy.shouldCompact(this.messages)) {
+      await this.compactionStrategy.compact(this.messages);
+    }
+    // ─── 微压缩层结束 ──────────────────────────────────────────────
+
     // Tier 3：tokenBudget 检查（软上限，0=不限制）
     if (this.tokenBudget > 0) {
       const estimatedTokens = this.contextManager.estimateTokens(this.messages);
@@ -1032,6 +1106,76 @@ export class AgentLoop {
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
     }
+
+    // ─── 重复工具调用检测（拦截器模式） ──────────────────────
+    // P1：策略参数化扩展点——将重复检测逻辑委托给 DuplicateCallInterceptor。
+    // 默认 DefaultDuplicateCallInterceptor 基于哈希做机械检测，
+    // 宿主可注入自定义实现做差异化策略（按工具名调阈值、语义重复判定等）。
+    const currentHash = DefaultDuplicateCallInterceptor.hash(effectiveToolCalls);
+    // 先更新计数（拦截器判定需要最新的 duplicateCount）
+    if (currentHash !== '' && currentHash === this.lastToolCallsHash) {
+      this.duplicateToolCallCount++;
+    } else {
+      this.duplicateToolCallCount = 0;
+    }
+
+    const checkContext: DuplicateCheckContext = {
+      iteration: this.currentIteration,
+      duplicateCount: this.duplicateToolCallCount,
+      lastHash: this.lastToolCallsHash,
+      currentHash,
+      threshold: this.duplicateToolCallThreshold,
+    };
+    const verdict = this.duplicateCallInterceptor.check(effectiveToolCalls, checkContext);
+
+    switch (verdict) {
+      case 'warn': {
+        // 注入负反馈，强制 LLM 改变策略
+        this.messages.push({
+          role: 'system',
+          content: this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold),
+        });
+        logger.warn(
+          {
+            hash: currentHash,
+            count: this.duplicateToolCallCount,
+            interceptor: this.duplicateCallInterceptor.name ?? 'anonymous',
+          },
+          '重复工具调用拦截器触发 warning',
+        );
+        // 注入后重置计数 + 清空 hash，防止持续注入相同 warning 造成上下文噪音
+        this.duplicateToolCallCount = 0;
+        this.lastToolCallsHash = '';
+        break;
+      }
+      case 'block': {
+        // 硬拦截：注入更强的系统消息，明确拒绝继续
+        this.messages.push({
+          role: 'system',
+          content:
+            `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已自动阻止。` +
+            `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
+        });
+        logger.warn(
+          {
+            hash: currentHash,
+            count: this.duplicateToolCallCount,
+            interceptor: this.duplicateCallInterceptor.name ?? 'anonymous',
+          },
+          '重复工具调用拦截器触发 block',
+        );
+        this.duplicateToolCallCount = 0;
+        this.lastToolCallsHash = '';
+        break;
+      }
+      case 'ok':
+      default: {
+        // 正常放行：更新 hash
+        this.lastToolCallsHash = currentHash;
+        break;
+      }
+    }
+    // ─── 拦截器检测结束 ──────────────────────────────────────
 
     // Reflection（反思/自修正）：检查是否有可重试的错误
     // 如果工具结果中有 retryable 错误，在 LLM 上下文中追加反思提示

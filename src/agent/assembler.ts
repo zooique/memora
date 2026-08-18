@@ -274,9 +274,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const globalSkillList = skillManager.buildSkillList();
   const systemPromptPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList, locale);
 
-  const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
+  // 后台组件统一使用 backgroundProvider，降级到前台 provider（SSOT：与 textPolisher 同模式）
+  const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, pctx.index, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
-  const roundSummaryGenerator = new RoundSummaryGenerator(provider, pctx.index);
+  const roundSummaryGenerator = new RoundSummaryGenerator(backgroundProvider ?? provider, pctx.index);
 
   // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
   // 从记忆索引取最近 N 条 round-summary（按 createdAt 降序），拼接为历史摘要回退文本。

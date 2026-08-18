@@ -183,6 +183,16 @@ export interface UIMessages {
    * @returns 系统消息内容
    */
   selfReviewPrompt?: (round: number, total: number) => string;
+  /**
+   * 重复工具调用负反馈提示生成函数
+   *
+   * 当 Agent 连续多次（默认 3 次）调用相同工具 + 相同参数时，
+   * 注入此提示让 LLM 改变策略，防止陷入死循环。
+   *
+   * @param threshold 触发阈值（连续重复次数）
+   * @returns 系统消息内容
+   */
+  duplicateToolCallWarning?: (threshold: number) => string;
 }
 
 // ─── 归档模式（ADR-015） ──────────────────────────────────
@@ -693,6 +703,70 @@ export interface PreExecutionResult {
   denied?: boolean;
   /** 拒绝原因（denied=true 时提供，回传给 LLM 让其调整策略而非重试） */
   reason?: string;
+}
+
+// ─── 重复工具调用拦截器（P1：策略参数化扩展点） ────────────
+
+/**
+ * 重复工具调用检测的判定结果
+ *
+ * 由 DuplicateCallInterceptor.check 返回：
+ *   - 'ok'：调用正常，不做干预
+ *   - 'warn'：注入 system 消息负反馈，提醒 LLM 改变策略
+ *   - 'block'：直接返回兜底文本，跳过工具调用
+ */
+export type DuplicateCheckVerdict = 'ok' | 'warn' | 'block';
+
+/**
+ * 重复工具调用拦截器接口（宿主扩展点）
+ *
+ * 设计哲学：策略参数化——将"如何判定重复、触发什么行为"从 AgentLoop 内部剥离，
+ * 宿主可注入自定义拦截器实现不同策略（如按场景调阈值、按工具名白名单、
+ * 结合工具结果内容做语义重复检测等）。
+ *
+ * 默认实现：DefaultDuplicateCallInterceptor（AgentLoop 内部使用，
+ * 基于工具名+参数哈希的机械重复检测）。
+ *
+ * 宿主可实现此接口注入自定义策略，如：
+ *   - 某些工具（如 search）阈值调大到 5
+ *   - 某些工具（如 delete）直接 block 而非 warn
+ *   - 结合工具结果内容做语义分析（结果无变化才算重复）
+ */
+export interface DuplicateCallInterceptor {
+  /**
+   * 检查本轮工具调用是否构成重复死循环
+   *
+   * @param toolCalls 本轮有效的工具调用列表（已通过 toolStepLimit 截断）
+   * @param context 上下文信息
+   * @returns 判定结果（'ok' | 'warn' | 'block'）
+   */
+  check(
+    toolCalls: readonly { id: string; function: { name: string; arguments: string } }[],
+    context: DuplicateCheckContext,
+  ): DuplicateCheckVerdict;
+
+  /**
+   * 获取拦截器的唯一标识（用于日志/调试，可选但建议实现）
+   */
+  readonly name?: string;
+}
+
+/**
+ * 重复工具调用检测的上下文信息
+ *
+ * 提供给拦截器的只读运行时信息，供宿主策略做更精确的判定。
+ */
+export interface DuplicateCheckContext {
+  /** 当前轮次索引（从 1 开始） */
+  readonly iteration: number;
+  /** 本轮已连续相同调用的次数（AgentLoop 统计，拦截器可直接使用或自行跟踪） */
+  readonly duplicateCount: number;
+  /** 上一轮工具调用的哈希（AgentLoop 计算，拦截器可直接使用） */
+  readonly lastHash: string;
+  /** 当前工具调用的哈希（AgentLoop 计算，拦截器可直接使用） */
+  readonly currentHash: string;
+  /** 当前阈值（默认 3） */
+  readonly threshold: number;
 }
 
 /** Agent 构造选项 */

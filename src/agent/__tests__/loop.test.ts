@@ -2006,3 +2006,374 @@ describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () 
     hashSpy.mockRestore();
   });
 });
+
+describe('AgentLoop · 重复 tool_call 检测', () => {
+  it('首次工具调用不触发负反馈', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 第一轮：首次工具调用，不应触发 warning
+        [
+          {
+            content: '我来读取',
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '内容' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('读文件')) {
+      void chunk;
+    }
+
+    // 不应注入 DUPLICATE_TOOL_CALL_WARNING 系统消息
+    const warningMsg = loop
+      .getMessages()
+      .filter((m) => m.role === 'system')
+      .some((m) => m.content.includes('DUPLICATE_TOOL_CALL_WARNING'));
+    expect(warningMsg).toBe(false);
+  });
+
+  it('连续 4 次相同工具调用触发负反馈注入（threshold=3 表示累计重复 3 次后触发）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('未变更的结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 第 1 轮：首次调用 → 写入 hash，count=0
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 2 轮：相同 → count=1
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 3 轮：相同 → count=2
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c3',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 4 轮：相同 → count=3 ≥ threshold → 触发 warning
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c4',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 5 轮：LLM 收到 warning 后给出文本回复
+        [{ content: '抱歉，我换个思路' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('反复读')) {
+      void chunk;
+    }
+
+    // 最后应注入 DUPLICATE_TOOL_CALL_WARNING 提示
+    const messages = loop.getMessages();
+    const warningCount = messages.filter(
+      (m) => m.role === 'system' && m.content.includes('DUPLICATE_TOOL_CALL_WARNING'),
+    ).length;
+    expect(warningCount).toBeGreaterThanOrEqual(1);
+    // 工具应被调用 4 次
+    expect(toolExecutor).toHaveBeenCalledTimes(4);
+  });
+
+  it('工具参数变化时重置计数，不触发误报', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 第 1 轮：读 a.ts
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 2 轮：仍读 a.ts（相同）
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 3 轮：参数变化 → 应重置计数
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c3',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"b.ts"}' },
+              },
+            ],
+          },
+        ],
+        // 第 4 轮：继续变化
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c4',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"c.ts"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('多次')) {
+      void chunk;
+    }
+
+    // 不应出现重复检测 warning（每轮参数不同）
+    const warningMsg = loop
+      .getMessages()
+      .filter((m) => m.role === 'system')
+      .some((m) => m.content.includes('DUPLICATE_TOOL_CALL_WARNING'));
+    expect(warningMsg).toBe(false);
+  });
+
+  it('不同工具名不触发重复检测', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{"path":"a.ts","content":"x"}' },
+              },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c3',
+                type: 'function',
+                function: { name: 'delete_file', arguments: '{"path":"a.ts"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('换工具')) {
+      void chunk;
+    }
+
+    const warningMsg = loop
+      .getMessages()
+      .filter((m) => m.role === 'system')
+      .some((m) => m.content.includes('DUPLICATE_TOOL_CALL_WARNING'));
+    expect(warningMsg).toBe(false);
+  });
+
+  it('相同参数不同 JSON 格式（空白差异）视为相同调用', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 第 1 轮：规范化后 hash=X → 写入
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'search', arguments: '{"query":"test"}' },
+              },
+            ],
+          },
+        ],
+        // 第 2 轮：空白差异，规范化后仍为 X → count=1
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'search', arguments: '{"query":  "test"}' },
+              },
+            ],
+          },
+        ],
+        // 第 3 轮：相同 → count=2
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c3',
+                type: 'function',
+                function: { name: 'search', arguments: '{"query":"test"}' },
+              },
+            ],
+          },
+        ],
+        // 第 4 轮：相同 → count=3 ≥ threshold → 触发 warning
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c4',
+                type: 'function',
+                function: { name: 'search', arguments: '{"query": "test"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('搜索')) {
+      void chunk;
+    }
+
+    // 参数规范化后应触发 warning
+    const warningMsg = loop
+      .getMessages()
+      .filter((m) => m.role === 'system')
+      .some((m) => m.content.includes('DUPLICATE_TOOL_CALL_WARNING'));
+    expect(warningMsg).toBe(true);
+  });
+
+  it('新用户输入重置重复检测状态', async () => {
+    // 场景：4 次相同工具调用触发 warning
+    const toolExecutor = vi.fn().mockResolvedValue('相同结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'search', arguments: '{"q":"a"}' },
+              },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'search', arguments: '{"q":"a"}' },
+              },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c3',
+                type: 'function',
+                function: { name: 'search', arguments: '{"q":"a"}' },
+              },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c4',
+                type: 'function',
+                function: { name: 'search', arguments: '{"q":"a"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '第一轮结束' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('第一轮')) {
+      void chunk;
+    }
+
+    // 验证：第一轮应注入 1 次 warning
+    const warningAfterFirst = loop
+      .getMessages()
+      .filter((m) => m.role === 'system')
+      .filter((m) => m.content.includes('DUPLICATE_TOOL_CALL_WARNING')).length;
+    expect(warningAfterFirst).toBe(1);
+  });
+});
