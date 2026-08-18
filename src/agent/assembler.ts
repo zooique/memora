@@ -450,12 +450,17 @@ export async function assembleComponents(
     if (activePackName) {
       lines.push('');
       lines.push(`【激活角色包技能（${activePackName}）】`);
-      // 复用 buildSystemPrompt 的技能清单
-      const prompt = rolePackManager.buildSystemPrompt();
-      const skillSectionMatch = prompt.match(/【可用技能[^\n]*】\n([\s\S]*)/);
-      if (skillSectionMatch && skillSectionMatch[1]) {
-        const skillLines = skillSectionMatch[1].trim().split('\n').filter(Boolean);
-        lines.push(...skillLines);
+      // Bug 6 修复：直接用结构化数据（RolePackAssembly.skills），不再正则解析 prompt 文本
+      const assembly = rolePackManager.getActive();
+      const skills = assembly?.skills ?? [];
+      for (const skill of skills) {
+        const label = skill.name ?? (skill.file ? rolePackManager.deriveSkillNameFromFile(skill.file) : '');
+        if (!label) continue;
+        const desc = skill.description ? `：${skill.description}` : '';
+        const l3Tag = skill.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0)
+          ? '（含资源/脚本）'
+          : '';
+        lines.push(`- ${label}${desc}${l3Tag}`);
       }
     }
     return lines.join('\n');

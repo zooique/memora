@@ -384,6 +384,14 @@ export interface RolePack {
    * 未配置的维度使用全局默认值。角色包可以只声明它想改变的部分。
    */
   readonly strategy?: BehaviorStrategy;
+
+  /**
+   * 装配结果缓存（Bug 5 修复：getActive/get 返回缓存，避免重复 mergeStrategy + prompt 构建）
+   *
+   * 由 parseManifestPack 在创建 RolePack 时预计算并缓存。
+   * 角色包装载后不可变，缓存安全。
+   */
+  readonly _cachedAssembly?: RolePackAssembly;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -463,6 +471,13 @@ export interface RolePackManifestSkill {
     readonly resources: ReadonlyArray<{ readonly path: string; readonly size: number }>;
     readonly scripts: ReadonlyArray<{ readonly path: string; readonly runtime: 'node' | 'python' | 'shell'; readonly size: number }>;
   };
+  /**
+   * 技能正文缓存（Bug 4 修复：与全局技能一致，load 时预装载）
+   *
+   * 由 parseManifestPack 在装载时读取并缓存，readSkillContent 直接返回缓存。
+   * null = 未缓存（读失败或文件不存在），undefined = 未装载（懒加载策略）。
+   */
+  readonly content?: string | null;
 }
 
 /**

@@ -262,16 +262,43 @@ async function scanPackSkills(
     };
   });
   const resolved = await Promise.all(skills);
-  // manifest.skills 声明时按 file 过滤（白名单语义）；未声明返回全部
+
+  // Bug 3 修复：区分「未声明 skills」和「skills: []」
+  //   - 未声明 (undefined) → 全量扫描返回（零配置语义）
+  //   - 显式空数组 ([]) → 返回空列表（零技能语义）
   if (!Array.isArray(skillsNode)) return resolved;
-  const allowedFiles = new Set(
-    skillsNode
-      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
-      .map((record) => record['file'])
-      .filter((f): f is string => typeof f === 'string' && f.trim() !== ''),
-  );
-  if (allowedFiles.size === 0) return resolved;
-  return resolved.filter((s) => s.file && allowedFiles.has(s.file));
+  if ((skillsNode as unknown[]).length === 0) return [];
+
+  // Bug 2 修复：manifest.skills 声明了 name/description 时覆盖 frontmatter 原值
+  // 构建 manifest 配置映射，按 file 路径关联
+  const manifestSkillConfigs = new Map<string, Record<string, unknown>>();
+  for (const item of skillsNode) {
+    if (typeof item !== 'object' || item === null) continue;
+    const config = item as Record<string, unknown>;
+    const file = config['file'];
+    if (typeof file === 'string' && file.trim() !== '') {
+      manifestSkillConfigs.set(file, config);
+    }
+  }
+
+  // 白名单过滤 + manifest 元数据覆盖
+  const allowedFiles = new Set(manifestSkillConfigs.keys());
+  return resolved
+    .filter((s) => s.file && allowedFiles.has(s.file))
+    .map((entry) => {
+      const config = manifestSkillConfigs.get(entry.file!);
+      if (!config) return entry;
+      // manifest 声明的 name/description 覆盖 frontmatter 值；未声明则保留原值
+      return {
+        ...entry,
+        name: (typeof config['name'] === 'string' && config['name']!.trim() !== '')
+          ? config['name']!
+          : entry.name,
+        description: (typeof config['description'] === 'string' && config['description']!.trim() !== '')
+          ? config['description']!
+          : entry.description,
+      };
+    });
 }
 
 /**
@@ -600,6 +627,22 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
     // 内嵌技能：目录动态扫描 + frontmatter（C3，manifest.skills 可选过滤；新增技能只写文件）
     const skills = await scanPackSkills(packDir, manifest['skills']);
+
+    // Bug 4 修复：装载时预缓存技能正文（与全局技能一致，消除 readSkillContent 磁盘 IO）
+    // 只缓存有 file 路径的技能（单文件形式直接读，文件夹形式读 SKILL.md）
+    const skillsWithContent = await Promise.all(
+      skills.map(async (skill) => {
+        if (!skill.file) return { ...skill, content: null };
+        const skillAbsPath = join(packDir, skill.file);
+        try {
+          const content = await readContentSafe(skillAbsPath);
+          return { ...skill, content };
+        } catch {
+          return { ...skill, content: null };
+        }
+      }),
+    );
+
     // 能力声明（顶层数组，C2 独立模块——能力面与技能内容分离）
     const capabilities = parseManifestCapabilities(manifest['capabilities']);
 
@@ -618,7 +661,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 内容正文：persona（无 persona 时为空串）
     const content = personaContent;
 
-    return {
+    // Bug 5 修复：预计算装配结果并缓存（角色包装载后不可变，缓存安全）
+    const pack: RolePack = {
       // ConfigResource 约束字段
       name: meta.name,
       keywords: meta.keywords ? [...meta.keywords] : [],
@@ -629,10 +673,13 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       personaContent,
       traits,
       rules,
-      skills,
+      skills: skillsWithContent,
       capabilities,
       strategy,
     };
+    // 预计算装配结果（mergeStrategy + personaPrompt 构建）
+    const cachedAssembly = assembleRolePack(pack);
+    return { ...pack, _cachedAssembly: cachedAssembly };
   }
 
   // ── 角色包管理 ────────────────────────────────────
@@ -645,12 +692,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /**
    * 获取当前激活的角色包装载结果
    *
+   * Bug 5 修复：返回 parseManifestPack 时预缓存的 Assembly，
+   * 避免每次调用重复 mergeStrategy + personaPrompt 构建。
+   *
    * @returns 角色包装载结果，无激活角色包时返回 null
    */
   getActive(): RolePackAssembly | null {
     if (!this.activePackName) return null;
     const pack = this.items.find((p) => p.meta.name === this.activePackName);
-    return pack ? assembleRolePack(pack) : null;
+    return pack?._cachedAssembly ?? null;
   }
 
   /**
@@ -667,12 +717,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /**
    * 按名称获取角色包装载结果
    *
+   * Bug 5 修复：返回 parseManifestPack 时预缓存的 Assembly。
+   *
    * @param name 角色包名
    * @returns 角色包装载结果，不存在返回 null
    */
   get(name: string): RolePackAssembly | null {
     const pack = this.items.find((p) => p.meta.name === name);
-    return pack ? assembleRolePack(pack) : null;
+    return pack?._cachedAssembly ?? null;
   }
 
   /**
@@ -861,7 +913,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!targetName) return '';
     const pack = this.items.find((p) => p.meta.name === targetName);
     if (!pack) return '';
-    const assembly = assembleRolePack(pack);
+    // Bug 5 修复：使用预缓存的 Assembly，避免重复构建
+    const assembly = pack._cachedAssembly ?? assembleRolePack(pack);
 
     const skills = assembly.skills.filter((s) => s.name || s.file);
     const skillCount = skills.length;
@@ -913,6 +966,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   async readSkillContent(skillName: string, packName?: string): Promise<string | null> {
     const found = this.findSkillByName(skillName, packName);
     if (!found || !found.skill.file) return null;
+
+    // Bug 4 修复：优先返回 parseManifestPack 时缓存的正文（与全局技能一致）
+    if (found.skill.content !== undefined && found.skill.content !== null) {
+      return found.skill.content;
+    }
+    // 回退：缓存未就绪（如动态添加的技能）时实时读磁盘
     const skillFilePath = found.skill.file;
     const { pack } = found;
 
@@ -932,12 +991,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── L3 资源/脚本访问 ──────────────────────────────────
 
   /**
-   * 从技能文件路径推导技能名
+   * 从技能文件路径推导技能名（公开方法，供外部消费如 list_skills 回调）
    *
    * 单文件形式：skills/write.md → write
    * 文件夹形式：skills/my-skill/SKILL.md → my-skill
    */
-  private deriveSkillNameFromFile(file: string): string {
+  deriveSkillNameFromFile(file: string): string {
     const parts = file.split(/[\\/]/);
     const last = parts.pop() ?? '';
     if (last === 'SKILL.md' || last === 'SKILL.MD') {

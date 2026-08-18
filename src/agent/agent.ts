@@ -2391,6 +2391,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.emit(AGENT_EVENTS.personaSwitched, { from: prevName ?? '', to: name });
     // 刷新 system prompt 前缀（角色包优先，装载其 L1 persona）
     this.refreshPersonaPrefixOnLoop();
+    // Bug 1 修复：切换角色包后立即刷新工具白名单（与 chat() 行为一致）
+    // 否则需等到下次 chat() 的 preparePhase 才生效，存在工具暴露面窗口
+    this.applyRolePackToolExposure();
     logger.info({ rolePack: name }, '角色包切换');
     return true;
   }
