@@ -401,11 +401,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'notice', level: 'error', message: '会话暂停超时，请重新开始' });
   };
 
-  /** guardrailError：安全规则正则编译失败（安全放行但规则未生效） */
-  private readonly onGuardrailError = (info: { message: string }): void => {
-    this.post({ type: 'notice', level: 'error', message: `安全规则未生效：${info.message}` });
-  };
-
   // ─── 低扰信息出口（info 级 notice，P1 后续波） ───
   // 上下文截断 / 记忆冲突 / 归档失败 / 权重持久化失败 —— 均为「知晓即可」的低频信息，
   // 统一走 notice info 级提示条（语义分级单一通道，不插入消息区，不污染对话历史）。
@@ -468,6 +463,65 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'skill_activated', skillName: name });
   };
 
+  // ─── 项目与工作投影事件（G2/G3 缺口修复，2026-08-18） ───
+
+  /**
+   * projectSwitched：项目切换（内核在 init/close 或显式切换时 emit）
+   *
+   * 转发为 notice info 级提示条，让用户感知当前工作目录已变更。
+   * 内核事件形状：{ from: string | null; to: string; projectName: string }
+   */
+  private readonly onProjectSwitched = (info: { from: string | null; to: string; projectName: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `项目已切换：${info.projectName ?? info.to}`,
+    });
+  };
+
+  /**
+   * workProjectionGenerated：工作投影生成（内核后台投影完成时 emit）
+   *
+   * 转发为 notice info 级提示条，告知用户当前工作投影已更新。
+   * 内核事件形状：{ sourcePath: string; summary: string }
+   */
+  private readonly onWorkProjectionGenerated = (info: { sourcePath: string; summary: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `工作投影已生成：${info.summary ?? info.sourcePath}`,
+    });
+  };
+
+  // ─── 后台事件（G4 缺口修复，2026-08-18 调试可观测性） ───
+
+  /** decayCompleted：记忆衰减完成（后台定时任务） */
+  private readonly onDecayCompleted = (info: { decayedCount: number }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `记忆衰减完成：${info.decayedCount} 条已更新权重`,
+    });
+  };
+
+  /** configReloaded：配置热重载完成 */
+  private readonly onConfigReloaded = (info: { source: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `配置已重载（来源：${info.source}）`,
+    });
+  };
+
+  /** archiveModeChanged：归档模式切换 */
+  private readonly onArchiveModeChanged = (info: { from: string; to: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `归档模式已切换：${info.from} → ${info.to}`,
+    });
+  };
+
   /**
    * 绑定会话级可观测事件 → 错误提示
    *
@@ -485,8 +539,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('sessionResumeBlocked', this.onSessionResumeBlocked);
     a.off('sessionPauseTimedOut', this.onSessionPauseTimedOut);
     a.on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
-    a.off('guardrailError', this.onGuardrailError);
-    a.on('guardrailError', this.onGuardrailError);
     // P1 后续波：低扰信息（截断/归档失败/权重保存失败）→ info 级提示条
     a.off('contextTruncated', this.onContextTruncated);
     a.on('contextTruncated', this.onContextTruncated);
@@ -500,6 +552,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // Phase 3：技能匹配事件 → 提示条显示激活技能
     a.off('skillMatched', this.onSkillMatched);
     a.on('skillMatched', this.onSkillMatched);
+    // G2/G3：项目切换 + 工作投影生成事件 → info 级提示条
+    a.off('projectSwitched', this.onProjectSwitched);
+    a.on('projectSwitched', this.onProjectSwitched);
+    a.off('workProjectionGenerated', this.onWorkProjectionGenerated);
+    a.on('workProjectionGenerated', this.onWorkProjectionGenerated);
+    // G4：后台事件 → info 级提示条（调试可观测性）
+    a.off('decayCompleted', this.onDecayCompleted);
+    a.on('decayCompleted', this.onDecayCompleted);
+    a.off('configReloaded', this.onConfigReloaded);
+    a.on('configReloaded', this.onConfigReloaded);
+    a.off('archiveModeChanged', this.onArchiveModeChanged);
+    a.on('archiveModeChanged', this.onArchiveModeChanged);
   }
 
   /**
@@ -1153,13 +1217,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           continue;
         }
         if (chunk.type === 'text' && chunk.content) {
-          // 转发 chunk（护栏阻断标记随 chunk 透传；阻断文案由内核 content 承载，
-          // 不在此额外 post notice——避免双份提示，排雷 2026-08-17）
+          // 转发 chunk（护栏已移除，chunk 不再携带 guardrailBlocked 标记）
           this.post({
             type: 'chunk',
             content: chunk.content,
             ts: firstChunkTs,
-            guardrailBlocked: chunk.guardrailBlocked,
           });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → webview 渲染「执行中」卡片

@@ -13,7 +13,7 @@
  *   - 功能定位：configDir 下的内置角色包（role-packs/doc-review）承载
  */
 import { Agent, FetchWebSearchProvider } from '@zooique/memora';
-import type { ISessionStore, UIMessages } from '@zooique/memora';
+import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import { join } from 'node:path';
 import { createProvider } from './llmConfig.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
@@ -40,10 +40,6 @@ const CHINESE_MESSAGES: UIMessages = {
   recentConversationLabel: '[最近对话]',
   userLabel: '[用户]',
   assistantLabel: '[助手]',
-  // 护栏提示
-  inputBlockedByGuard: (rule: string) => `[输入被护栏阻断：${rule}]`,
-  guardrailWarningPrefix: '[护栏警告]',
-  outputBlockedByGuard: (rule: string) => `[输出被护栏阻断：${rule}]`,
   // 工具失败重试 / 自审查（低频场景，覆盖保证中文化一致）
   reflectionHint: (remaining: number) =>
     `\n\n[工具调用失败，剩余 ${remaining} 次反思机会，请聚焦修正而非放弃]`,
@@ -86,6 +82,22 @@ export interface AssembleOptions {
 }
 
 /**
+ * 创建 Provider 路由策略（P1-2 多模型路由基础）
+ *
+ * VSCode 插件为单 Provider 配置模型（用户配置面板选择一个激活 Provider），
+ * 因此路由策略当前直接返回同一个 Provider——但保留路由钩子，为未来
+ * 「按任务类型自动选择不同 Provider」场景（如代码用强模型、摘要用快模型）
+ * 预留扩展位。内核 AgentLoop 已实现 providerRouteCache 缓存机制，
+ * 注入 router 后即可激活该优化路径。
+ *
+ * @param provider 当前激活的 LLM Provider
+ * @returns Provider 路由选择器
+ */
+function createProviderRouter(provider: LlmProvider): ProviderRouter {
+  return (_taskType) => provider;
+}
+
+/**
  * 装配并初始化 memora Agent（薄壳，功能定位由内置角色包承载）
  *
  * @returns 已 init 的 Agent 实例
@@ -95,6 +107,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
+  // 1.1 创建 Provider 路由策略（激活 AgentLoop 路由缓存优化；单 Provider 时直接返回同一实例）
+  const providerRouter = createProviderRouter(provider);
 
   // 2. 创建工作区记忆存储 + 会话存储（宿主注入持久化）
   const storage = new WorkspaceStorage(projectPath);
@@ -120,6 +134,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 启动时激活的角色包（用户上次选择，由 extension 从 globalState 注入持久化值）
     activeRolePack,
     provider,
+    // Provider 路由策略（激活 AgentLoop 路由缓存优化；按任务类型返回对应 Provider）
+    providerRouter,
     storage,
     sessionStore: store,
     // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）

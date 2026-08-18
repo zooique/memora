@@ -108,7 +108,7 @@ export { loadConfig } from '@/config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';
 export type { LlmProvider, ChatOptions } from '@/llm/provider.js';
-export type { LlmChunk } from '@/llm/types.js';
+export type { LlmChunk, TaskType, ProviderRouter } from '@/llm/types.js';
 export { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 export type { OpenAICompatibleConfig } from '@/llm/openaiCompatible.js';
 export type { Config } from '@/config/loader.js';
