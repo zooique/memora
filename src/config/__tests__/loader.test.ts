@@ -551,3 +551,119 @@ describe('config/loader · 默认配置降级', () => {
     expect(config.allowedPaths).toEqual([]);
   });
 });
+
+// ─── 错误路径覆盖（7 条内部校验分支） ───────────────────────────────
+
+describe('config/loader · 错误路径覆盖', () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), 'memora-loader-errors-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  /** 辅助：写入配置文件并返回路径 */
+  function writeConfigFile(content: string): string {
+    const configPath = join(tmpHome, 'config.json');
+    writeFileSync(configPath, content, 'utf-8');
+    return configPath;
+  }
+
+  // ── #1: 畸形 JSON ─────────────────────────────────────────────
+
+  it('畸形 JSON 文件应抛 configError', async () => {
+    const configPath = writeConfigFile('{ this is not valid json }');
+    await expect(loadConfig(configPath)).rejects.toThrow('配置文件 JSON 格式错误');
+  });
+
+  // ── #2: providers 为数组 → 静默降级为 undefined（向后兼容设计） ──
+
+  it('providers 为数组时应静默降级为 undefined', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      llm: { provider: 'deepseek', model: 'deepseek-chat', providers: ['not', 'an', 'object'] },
+    }));
+    const config = await loadConfig(configPath);
+    // 数组类型触发早返回，providers 被忽略
+    expect(config.llm.providers).toBeUndefined();
+    // 旧扁平字段仍正常生效
+    expect(config.llm.provider).toBe('deepseek');
+  });
+
+  it('providers.<key> 值为数组时应抛 configError', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      llm: {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        providers: {
+          bad: ['array', 'value'], // 单个 provider 条目是数组
+        },
+      },
+    }));
+    await expect(loadConfig(configPath)).rejects.toThrow('必须是对象');
+  });
+
+  // ── #3: providers.<key> 缺 provider 字段 ─────────────────────
+
+  it('providers.<key> 缺 provider 字段时应抛 configError', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      llm: {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        providers: {
+          bad: { model: 'some-model' }, // 缺 provider 字段
+        },
+      },
+    }));
+    await expect(loadConfig(configPath)).rejects.toThrow('providers.bad.provider');
+  });
+
+  // ── #4: providers.<key> 缺 model 字段 ────────────────────────
+
+  it('providers.<key> 缺 model 字段时应抛 configError', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      llm: {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        providers: {
+          bad: { provider: 'deepseek' }, // 缺 model 字段
+        },
+      },
+    }));
+    await expect(loadConfig(configPath)).rejects.toThrow('providers.bad.model');
+  });
+
+  // ── #5: background 缺 provider 字段 ──────────────────────────
+
+  it('background 缺 provider 字段时应抛 configError', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      llm: {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        background: { model: 'bg-model' }, // 缺 provider 字段
+      },
+    }));
+    await expect(loadConfig(configPath)).rejects.toThrow('background.provider');
+  });
+
+  // ── #6: embedding 缺 model 字段 ─────────────────────────────
+
+  it('embedding 缺 model 字段时应抛 configError', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      embedding: { apiKey: 'sk-emb' }, // 缺 model 字段
+    }));
+    await expect(loadConfig(configPath)).rejects.toThrow('embedding.model');
+  });
+
+  // ── #7: allowedPaths 含非字符串元素 ─────────────────────────
+
+  it('allowedPaths 含非字符串元素时应抛 configError', async () => {
+    const configPath = writeConfigFile(JSON.stringify({
+      llm: { provider: 'deepseek', model: 'deepseek-chat' },
+      allowedPaths: ['/valid/path', 123, '/another'], // 第 2 个元素是数字
+    }));
+    await expect(loadConfig(configPath)).rejects.toThrow('allowedPaths[1]');
+  });
+});
