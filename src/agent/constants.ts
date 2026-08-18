@@ -39,8 +39,8 @@ export const AGENT_CONSTANTS = {
   /** AgentConfig.maxContextTokens 默认值。120K tokens。 */
   DEFAULT_MAX_CONTEXT_TOKENS: 120_000,
 
-  /** recallExcludeSources 默认值——永久记忆不参与增量召回。 */
-  DEFAULT_RECALL_EXCLUDE_SOURCES: ['persona', 'rule', 'skill'] as const,
+  /** recallExcludeSources 默认值——设定记忆已归角色包，不再参与召回排除。 */
+  DEFAULT_RECALL_EXCLUDE_SOURCES: [] as const,
 
   /**
    * systemPrompt 时间注入的默认 locale（对齐"核心库领域无关"原则，可被 AssembleInput.locale 覆盖）。

@@ -207,46 +207,6 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：config 门面
-// ═══════════════════════════════════════════════════════════════
-
-describe('Agent · config 门面', () => {
-  let agent: Agent;
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'memora-test-config-'));
-    mkdirSync(join(tmpDir, 'personas'), { recursive: true });
-    writeFileSync(
-      join(tmpDir, 'personas', 'default.md'),
-      '---\nsource: persona\nname: default\nkeywords: 测试\n---\n\n默认角色',
-      'utf-8',
-    );
-    agent = new Agent({
-      projectPath: tmpDir,
-      provider: new MockProvider(),
-      configDir: tmpDir,
-      dataDir: '.memora',
-      allowedPaths: [tmpDir],
-      permission: 'owner',
-    });
-  });
-
-  afterEach(async () => {
-    await agent.close();
-    try {
-      rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-      /* ignore */
-    }
-  });
-
-  it('init 前 config 应为 null', () => {
-    expect(agent.config).toBeNull();
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
 // 测试：agentLoop.getMessages()
 // ═══════════════════════════════════════════════════════════════
 
@@ -332,7 +292,6 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.initialized).toBe(false);
     expect(agent.rolePack).toBeNull();
     expect(agent.tools).toBeNull();
-    expect(agent.config).toBeNull();
     expect(agent.memory).toBeNull();
 
     // init
@@ -344,7 +303,6 @@ describe('Agent · 生命周期 E2E', () => {
     // Manager 访问器应可用
     expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
-    expect(agent.config).not.toBeNull();
     expect(agent.memory).not.toBeNull();
 
     // chat（流式）
@@ -377,7 +335,6 @@ describe('Agent · 生命周期 E2E', () => {
     // 初始化后所有组件字段应非 null（前置验证）
     expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
-    expect(agent.config).not.toBeNull();
     expect(agent.memory).not.toBeNull();
     expect(agent.agentLoop).not.toBeNull();
     expect(agent.agentHistory).not.toBeNull();
@@ -398,7 +355,6 @@ describe('Agent · 生命周期 E2E', () => {
     // 专职 Manager
     expect(agent.rolePack).toBeNull();
     expect(agent.tools).toBeNull();
-    expect(agent.config).toBeNull();
     expect(agent.memory).toBeNull();
     expect(agent.projects).toBeNull();
     expect(agent.works).toBeNull();
@@ -573,22 +529,6 @@ describe('Agent · Manager 委托模式', () => {
     // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发
     const results = agent.governance!.suggest(undefined, { limit: 2 });
     expect(results.length).toBeLessThanOrEqual(2);
-  });
-
-  it('config 管理器：confirmConfigSuggestion 应注入规则并刷新 bootstrap', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    await agent.config!.confirmConfigSuggestion({
-      type: 'rule',
-      name: 'E2E测试规则',
-      content: '这是一条 E2E 测试规则',
-      confidence: 0.9,
-    });
-
-    const messages = agent.getMessages();
-    const lastSystem = [...messages].reverse().find((m) => m.role === 'system');
-    expect(lastSystem?.content).toContain('E2E测试规则');
   });
 
   // ─── L1~L3 LLM 记忆治理委托（G1） ─────────────────────────
@@ -1629,13 +1569,14 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     expect(agent['rolePackManager_']!.activeName).toBe(initialActive);
   });
 
-  it('reloadConfig(rule) 应跳过重载（rule 已由 addRule 即时注入）', async () => {
+  it('reloadConfig(rule) 应触发角色包重载（rule 是角色包的一部分）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     const result = await agent.reloadConfig('rule');
+    // rule 重载走 rolePack 路径，应触发角色包重新扫描
     expect(result.skill).toBe(0);
-    expect(result.rolePack).toBe(0);
+    expect(result.rolePack).toBeGreaterThan(0);
   });
 
   it('reloadConfig() 无参数应全量重载 skill + rolePack', async () => {
@@ -1905,7 +1846,6 @@ describe('Agent · rebuildComponents() · 手动重建组件', () => {
 
     expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
-    expect(agent.config).not.toBeNull();
     expect(agent.memory).not.toBeNull();
   });
 });

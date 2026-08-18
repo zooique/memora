@@ -41,8 +41,8 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
     expect(parseConfig({}).memory.maxContextTokens).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
   });
 
-  it('默认 recall 排除的 source 应为 persona/rule/skill（已由 bootstrap 注入）', () => {
-    expect(AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES).toEqual(['persona', 'rule', 'skill']);
+  it('默认 recall 排除的 source 应为空（设定记忆已归角色包，不参与召回排除）', () => {
+    expect(AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES).toEqual([]);
   });
 
   it('默认 locale 应为 zh-CN（项目母语，可被 AssembleInput.locale 覆盖）', () => {

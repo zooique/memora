@@ -6,7 +6,6 @@
  *   - 4 阶段组装成功 + 返回值完整性（AssembleOutput 12 个字段）
  *   - systemPromptPrefix 组装（personaPrompt 内部非空 + 当前时间注入）
  *   - skillManager 复用（existingSkillManager 注入 vs 新建）
- *   - workProjection provider 选择（backgroundProvider vs provider 降级）
  *   - 配置透传（activeRolePack / configDir / tracer / enableContextSummary）
  *
  * 测试范式：真实 InMemoryStorage + 真实 SecurityGuard + mock LlmProvider（chat 返回空 AsyncIterable）+
@@ -31,6 +30,7 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { Memory } from '@/memory/types.js';
+import type { FileStore } from '@/memory/store.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -42,10 +42,10 @@ let storage: InMemoryStorage;
 let security: SecurityGuard;
 /** mock provider（chat 返回空 AsyncIterable，assembleComponents 不调用 chat） */
 let provider: LlmProvider;
-/** mock backgroundProvider（用于 workProjection + autoConfigRefiner） */
+/** mock backgroundProvider */
 let backgroundProvider: LlmProvider;
-/** mock fileStore（ConfigManager 持久化回调） */
-let fileStore: { write: ReturnType<typeof vi.fn> };
+/** mock fileStore */
+let fileStore: FileStore;
 
 beforeEach(async () => {
   // 创建临时项目目录
@@ -54,7 +54,7 @@ beforeEach(async () => {
   security = new SecurityGuard(projectPath, projectPath);
   provider = createMockProvider('mock-provider');
   backgroundProvider = createMockProvider('mock-background');
-  fileStore = { write: vi.fn().mockResolvedValue(undefined) };
+  fileStore = createMockFileStore();
 });
 
 afterEach(async () => {
@@ -78,6 +78,21 @@ function createMockProvider(name: string): LlmProvider {
     })();
   });
   return { name, chat: chatMock } as unknown as LlmProvider;
+}
+
+/**
+ * 构造 mock FileStore
+ *
+ * 提供空实现，供 ProjectContext 使用
+ *
+ * @returns mock FileStore
+ */
+function createMockFileStore(): FileStore {
+  return {
+    read: vi.fn().mockResolvedValue(null),
+    write: vi.fn().mockResolvedValue(undefined),
+    list: vi.fn().mockResolvedValue([]),
+  } as unknown as FileStore;
 }
 
 /**
@@ -150,27 +165,22 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 14 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 12 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 14 个字段全部存在（history/loop/toolExec/
-      // workProjection/skillManager/configManager/memoryInspector/
-      // dedupManager/memoryAdvisor/autoConfigRefiner/roundSummaryGenerator/
+      // 12 个字段全部存在（history/loop/toolExec/
+      // workProjection/skillManager/memoryInspector/
+      // dedupManager/memoryAdvisor/roundSummaryGenerator/
       // sessionArchiver/textPolisher/rolePackManager）
-      // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
-      // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
-      // ROLE-PACK：新增 rolePackManager，管理角色包生命周期
       const expectedKeys = [
         'history',
         'loop',
         'toolExec',
         'workProjection',
         'skillManager',
-        'configManager',
         'memoryInspector',
         'dedupManager',
         'memoryAdvisor',
-        'autoConfigRefiner',
         'roundSummaryGenerator',
         'sessionArchiver',
         'textPolisher',
@@ -187,13 +197,9 @@ describe('assembleComponents', () => {
       expect(output.toolExec).toBeDefined();
       expect(output.workProjection).toBeDefined();
       expect(output.skillManager).toBeDefined();
-      expect(output.configManager).toBeDefined();
       expect(output.memoryInspector).toBeDefined();
-      // v2 PROXY-1：新增 memoryAdvisor 实例验证
       expect(output.memoryAdvisor).toBeDefined();
-      // SPLIT-3：新增 dedupManager 实例验证（L1 语义去重独立管理器）
       expect(output.dedupManager).toBeDefined();
-      expect(output.autoConfigRefiner).toBeDefined();
       expect(output.rolePackManager).toBeDefined();
     });
   });
@@ -218,27 +224,6 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── workProjection provider 选择 ──────────────────────
-
-  describe('workProjection provider 选择', () => {
-    it('有 backgroundProvider 时组装成功（workProjection 用 backgroundProvider）', async () => {
-      // backgroundProvider 非空时，workProjection + autoConfigRefiner 均使用 backgroundProvider
-      const output = await assembleComponents(createPctx(), createInput({ backgroundProvider }));
-      expect(output.workProjection).toBeDefined();
-      expect(output.autoConfigRefiner).toBeDefined();
-    });
-
-    it('backgroundProvider=null 时降级用 provider 组装成功', async () => {
-      // 无 backgroundProvider 时，workProjection 降级用前台 provider
-      const output = await assembleComponents(
-        createPctx(),
-        createInput({ backgroundProvider: null }),
-      );
-      expect(output.workProjection).toBeDefined();
-      expect(output.autoConfigRefiner).toBeDefined();
-    });
-  });
-
   // ─── 配置透传 ──────────────────────────────────────────
 
   describe('配置透传', () => {
@@ -250,21 +235,6 @@ describe('assembleComponents', () => {
       );
       // rolePackPrompt 仅内部使用，通过 systemPromptPrefix 间接消费
       expect(output.rolePackManager).toBeDefined();
-    });
-
-    it('configDir=undefined 时组装成功（无 fileStore.write 注入）', async () => {
-      // configDir=undefined 时 ConfigManager 无持久化回调，仅内存模式
-      const output = await assembleComponents(createPctx(), createInput({ configDir: undefined }));
-      expect(output.configManager).toBeDefined();
-    });
-
-    it('configDir 有值时组装成功（fileStore.write 注入 ConfigManager）', async () => {
-      // configDir 提供时 ConfigManager 获得 fileStore.write 回调用于持久化
-      const output = await assembleComponents(
-        createPctx(),
-        createInput({ configDir: projectPath }),
-      );
-      expect(output.configManager).toBeDefined();
     });
 
     it('tracer 注入时组装成功（AgentLoop 接收 tracer）', async () => {

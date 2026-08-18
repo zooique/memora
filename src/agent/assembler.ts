@@ -19,13 +19,11 @@ import type { ProjectContext } from '@/memory/projectManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
-import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 // DedupManager 在组合根装配，承担 L1 语义去重（SPLIT-3 拆分自 MemoryInspector）
 import { DedupManager } from '@/agent/managers/dedupManager.js';
 // MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
-import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 
@@ -33,14 +31,10 @@ import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js
 const ROUND_SUMMARY_LOADER_MAX = 5;
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
-import type { Memory } from '@/memory/types.js';
 import type { AgentConfig, FileConsistencyCheck, PreExecutionResult } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
-// FileStore 用于 configDir 存在时创建 config 级文件存储，
-// 供 ConfigManager.confirmConfigSuggestion 写入配置文件（真理源）
-import { FileStore } from '@/memory/store.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
@@ -209,7 +203,6 @@ export interface AssembleOutput {
   toolExec: ToolExecutor;
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
-  configManager: ConfigManager;
   memoryInspector: MemoryInspector;
   /**
    * 语义去重管理器（L1 LLM 记忆治理）
@@ -225,7 +218,6 @@ export interface AssembleOutput {
    * 不再经 MemoryInspector 转发。assembler 显式返回 advisor 供 Agent 持有。
    */
   memoryAdvisor: MemoryAdvisor;
-  autoConfigRefiner: AutoConfigRefiner;
   /** 会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
@@ -316,34 +308,13 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
  * Phase 4：创建依赖 Loop 的组件
  */
 function createLoopDependentComponents(params: LoopDependentParams) {
-  const { pctx, loop, history, skillManager, configDir, backgroundProvider, callbacks } = params;
-
-  const configFileStore = configDir ? new FileStore(configDir) : null;
+  const { pctx, loop, history, backgroundProvider, callbacks } = params;
 
   const memoryInspector = new MemoryInspector(pctx.index, loop, history);
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
   const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, callbacks?.onDedupCompleted);
 
-  const configManager = new ConfigManager({
-    index: pctx.index,
-    skillManager,
-    injectSystemMessage: (msg: string) => loop.injectSystemMessage(msg),
-    // refreshBootstrapMemories 必须同步 bootstrap 段（SSOT：system prompt 与存储一致）
-    refreshBootstrapMemories: () => loop.refreshBootstrapMemories(configManager.getBootstrapMemories()),
-    writeConfigFile: configFileStore ? (memory: Memory) => configFileStore.write(memory) : undefined,
-    fileConsistencyCheck: callbacks?.fileConsistencyCheck,
-  });
-
-  const autoConfigRefiner = new AutoConfigRefiner(
-    (suggestion) => configManager.suggestionCallback?.(suggestion),
-    {
-      // 已有同名 rule 不再建议，防「血肉结晶为骨骼」重复沉淀
-      isExistingRule: (name) => configManager.listRules().some((r) => r.name === name),
-    },
-  );
-  autoConfigRefiner.setBackgroundProvider(backgroundProvider);
-
-  return { configManager, memoryAdvisor, memoryInspector, dedupManager, autoConfigRefiner };
+  return { memoryAdvisor, memoryInspector, dedupManager };
 }
 
 // ── 主组装函数 ─────────────────────────────────────────────
@@ -501,13 +472,12 @@ export async function assembleComponents(
 
   // ── Phase 4: 依赖 Loop 的组件 ──
 
-  const { configManager, memoryAdvisor, memoryInspector, dedupManager, autoConfigRefiner } =
+  const { memoryAdvisor, memoryInspector, dedupManager } =
     createLoopDependentComponents({
       pctx,
       loop,
       history,
       skillManager,
-      configDir,
       backgroundProvider,
       callbacks,
     });
@@ -518,11 +488,9 @@ export async function assembleComponents(
     toolExec,
     workProjection,
     skillManager,
-    configManager,
     memoryInspector,
     dedupManager,
     memoryAdvisor,
-    autoConfigRefiner,
     sessionArchiver,
     textPolisher,
     rolePackManager,

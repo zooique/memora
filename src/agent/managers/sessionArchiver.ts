@@ -101,7 +101,7 @@ export class SessionArchiver {
   /**
    * 注入后台 Provider（由 Agent.setBackgroundProvider 调用）
    *
-   * 与 AutoConfigRefiner 同模式：null 表示清除后台 Provider，回退到默认 Provider。
+   * null 表示清除后台 Provider，回退到默认 Provider。
    */
   setBackgroundProvider(provider: LlmProvider | null): void {
     this.provider = provider ?? this.defaultProvider;

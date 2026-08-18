@@ -54,8 +54,7 @@ export abstract class ConfigResourceManager<
    * 运行时注入项的名字集合（SSOT-R3-T8）
    *
    * 「该资源是否有磁盘真理源」这一事实必须显式记账，不能从 `filePath` 反推——
-   * 注入方各自填的 filePath 五花八门（曾由 ConfigManager.addSkill 填 `''`，
-   * 直接调 register 的宿主可能填 `'<runtime>'`），是约定而非结构性保证。
+   * 注入方各自填的 filePath 五花八门（直接调 register 的宿主可能填 `'<runtime>'`），是约定而非结构性保证。
    * 由 `registerRuntimeItem()` 唯一登记，`deleteItem()` / `loadItems()` 同步注销。
    */
   private readonly runtimeNames = new Set<string>();

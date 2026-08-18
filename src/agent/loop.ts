@@ -1937,12 +1937,7 @@ export class AgentLoop {
    *   - refreshRolePackPrefix 替换 systemPromptPrefix（角色包 prompt）
    *   - refreshBootstrapMemories 替换 bootstrapMemories（rule + skill）
    *
-   * 调用链：ConfigManager.deleteRule/updateRule/deleteSkill
-   *   → refreshBootstrapMemories 回调（assembler 注入）
-   *   → loop.refreshBootstrapMemories(memories)
-   *   → rebuildSystemMessage()
-   *
-   * @param memories 最新的 rule + skill 活跃记忆数组（由 ConfigManager.getBootstrapMemories 提供）
+   * @param memories 最新的 rule + skill 活跃记忆数组
    */
   refreshBootstrapMemories(memories: Memory[]): void {
     this.opts.bootstrapMemories = memories;

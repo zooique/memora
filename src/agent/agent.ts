@@ -3,7 +3,7 @@
  *
  * 设计文档（ADR-010 · Agent 门面类）要求宿主项目通过 `import { Agent } from '@zooique/memora'`
  * 一行代码接入。本类负责组件组装和核心对话编排，
- * 领域专属操作委托给专职 Manager（RolePackManager / ToolExecutor / SkillManager / ConfigManager / MemoryInspector）。
+ * 领域专属操作委托给专职 Manager（RolePackManager / ToolExecutor / SkillManager / MemoryInspector）。
  *
  * 使用方式（最简）：
  *   const agent = new Agent({ projectPath: './my-project', configDir: './agent-config' });
@@ -17,7 +17,6 @@
  *   const agent = new Agent({ projectPath: './my-project', provider: myProvider, configDir: './agent-config' });
  *
  * 2026-06-12 God Object 拆分：
- *   - 配置管理 → ConfigManager
  *   - 记忆查看 → MemoryInspector
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  */
@@ -35,7 +34,6 @@ import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
-import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
@@ -68,7 +66,6 @@ import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/ses
 import { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
-import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
@@ -145,7 +142,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private rolePackManager_: RolePackManager | null = null;
 
   // 拆分出的专职 Manager
-  private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
   /**
    * 语义去重管理器（L1 LLM 记忆治理）
@@ -165,8 +161,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 记忆治理统一门面（L0/L1/L2/L3 + 诊断） */
   private _governance: MemoryGovernance | null = null;
   private workProjection: WorkProjectionManager | null = null;
-  /** AutoConfigRefiner（模式 3：Agent 智能总结） */
-  private autoConfigRefiner: AutoConfigRefiner | null = null;
   /** SessionArchiver（会话内容归档器，content 类记忆） */
   private sessionArchiver: SessionArchiver | null = null;
   /** 会话命名器（ADR-024：新建会话首次问答自动命名标题） */
@@ -889,7 +883,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 对话后处理：round-summary 生成、角色匹配、技能匹配、AutoConfigRefiner
+   * 对话后处理：round-summary 生成、角色匹配、技能匹配
    *
    * 所有归档/匹配操作均为 best-effort：任何子步骤失败不应影响用户已收到的回答，
    * 失败仅记录日志，不向上抛出异常。
@@ -900,7 +894,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * - `manual` 模式：跳过会话内容自动归档，需用户手动调用 archiveSessionContent()
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
-    // postProcess 全流程 span（角色匹配 + 技能匹配 + 归档 + AutoConfigRefiner）
+    // postProcess 全流程 span（角色匹配 + 技能匹配 + 归档）
     const tracer = this.#config.tracer ?? NOOP_TRACER;
     const span = tracer.startSpan(TRACE_SPANS.POST_PROCESS, {
       archiveMode: this.#config.archiveMode,
@@ -926,23 +920,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
     //   - manual 模式 → 跳过 content 自动归档（用户需手动调用）
     //   - full 模式 → 执行
-    // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
+    // 角色匹配/技能匹配属"配置学习"行为，非归档，每轮都执行。
     const history = this.requireHistory;
 
     // 记忆已收敛为 round-summary 单轨，不再有独立画像/洞察归档路径。
-
-    // AutoConfigRefiner（模式 3：Agent 智能总结）
-    if (this.autoConfigRefiner) {
-      try {
-        // 注册到 pendingArchives，确保 close() 时等待后台分析完成，避免写入已关闭的存储
-        const analyzePromise = this.autoConfigRefiner.analyze(input, assistantContent).catch((err) => {
-          logger.warn({ err }, 'AutoConfigRefiner 分析失败');
-        });
-        history.registerPendingArchive(analyzePromise);
-      } catch (err) {
-        logger.warn({ err }, 'AutoConfigRefiner 初始化失败');
-      }
-    }
 
     // 轮次摘要生成（记忆即摘要架构 Phase 1）
     // Tier 1 策略键开启：reflect.summary = 'off' 时跳过摘要生成
@@ -2118,11 +2099,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.toolExec = result.toolExec;
     this.skillManager = result.skillManager;
     this.rolePackManager_ = result.rolePackManager;
-    this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
     this.dedupManager = result.dedupManager;
     this.memoryAdvisor = result.memoryAdvisor;
-    this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
     this.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
@@ -2306,9 +2285,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertNotBusy('切换后台 Provider');
     this.#backgroundProvider = provider;
     // 同步更新所有后台组件的 Provider（SSOT：后台组件统一消费 backgroundProvider）
-    if (this.autoConfigRefiner) {
-      this.autoConfigRefiner.setBackgroundProvider(provider);
-    }
     if (this.roundSummaryGenerator) {
       this.roundSummaryGenerator.setBackgroundProvider(provider);
     }
@@ -2570,7 +2546,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * - 'skill' → SkillManager.reload() 清空缓存重新扫描 skills/ 目录
    * - 'rolePack' → RolePackManager.reload() 清空缓存重新扫描 role-packs/ 目录（保持激活角色）
    *   角色重载后自动刷新 AgentLoop 前缀（角色包优先）
-   * - 'rule' → 无操作（rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段）
+   * - 'rule' → Rule 通过角色包管理机制热更新
    * - undefined → 重载 skill + rolePack（全量重载）
    *
    * @param source 配置类型，缺省时重载全部可热更新的配置
@@ -2588,10 +2564,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       throw chatBusyError('重载配置');
     }
 
-    // rule 类型由 ConfigManager.deleteRule/updateRule CRUD 即时同步 bootstrap 段（refreshBootstrapMemories 回调），无需 reloadConfig
+    // rule 是角色包的一部分，重载走 rolePack 路径
     if (source === 'rule') {
-      logger.info('rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段，reloadConfig 跳过');
-      return { skill: 0, rolePack: 0 };
+      logger.info('rule 类型重载：触发角色包重新扫描');
+      return this.reloadConfig('rolePack');
     }
 
     const result = { skill: 0, rolePack: 0 };
@@ -2898,13 +2874,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 专职 Manager
     this.skillManager = null;
     this.rolePackManager_ = null;
-    this.configManager = null;
     this.memoryInspector = null;
     this.dedupManager = null;
     this.memoryAdvisor = null;
     this._governance = null;
     this.workProjection = null;
-    this.autoConfigRefiner = null;
     this.sessionArchiver = null;
     this.sessionNamer = null;
     this.textPolisher = null;
@@ -3076,15 +3050,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get skills(): SkillManager | null {
     return this.skillManager;
-  }
-
-  /**
-   * 配置管理器（可能为 null）—— 规则/技能注入 + 配置建议
-   *
-   * 返回 null 时表示 Agent 未初始化。
-   */
-  get config(): ConfigManager | null {
-    return this.configManager;
   }
 
   /**
