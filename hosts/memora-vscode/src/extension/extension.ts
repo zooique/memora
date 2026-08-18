@@ -143,6 +143,98 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // ─── 记忆治理命令（宿主补齐 agent.memory.* / agent.governance.* API 消费） ───
+
+  /** 获取当前工作区的 Agent 实例（懒装配，已装配则直接返回缓存） */
+  const getAgentForCommand = async (): Promise<Agent | null> => {
+    try {
+      return await getOrCreateAgent(workspacePath, providerStore, sessionStore, context.globalState, configDir);
+    } catch {
+      return null;
+    }
+  };
+
+  // 命令：触发记忆衰减（agent.governance.decay()）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.triggerDecay', async () => {
+      const agent = await getAgentForCommand();
+      if (!agent?.governance) {
+        vscode.window.showWarningMessage('Memora Agent 未就绪，无法触发记忆衰减');
+        return;
+      }
+      try {
+        agent.governance.decay();
+        // 衰减指标从 getMetrics() 读取（decay() 本身无返回值，指标由 MemoryDecayScheduler 持有）
+        const decayMetrics = agent.getMetrics().decay;
+        if (decayMetrics) {
+          vscode.window.showInformationMessage(
+            `记忆衰减已触发（累计运行 ${decayMetrics.runCount} 次，共衰减 ${decayMetrics.totalDecayedCount} 条）`,
+          );
+        } else {
+          vscode.window.showInformationMessage('记忆衰减已触发');
+        }
+      } catch (err) {
+        vscode.window.showErrorMessage(`记忆衰减失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+
+  // 命令：查看记忆统计（agent.memory + agent.getMetrics()）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.memoryStats', async () => {
+      const agent = await getAgentForCommand();
+      if (!agent) {
+        vscode.window.showWarningMessage('Memora Agent 未就绪，无法查看记忆统计');
+        return;
+      }
+      const mem = agent.memory;
+      const metrics = agent.getMetrics();
+      const activeCount = mem?.list(1000).length ?? 0;
+      const deletedCount = mem?.listDeleted(1000).length ?? 0;
+      // 来源分布：从 list() 结果自行统计（MemoryInspector 未暴露 getAllSources 公开方法）
+      const sourceMap = new Map<string, number>();
+      if (mem) {
+        for (const m of mem.list(1000)) {
+          sourceMap.set(m.source, (sourceMap.get(m.source) ?? 0) + 1);
+        }
+      }
+      const sourceSummary = [...sourceMap.entries()].map(([src, cnt]) => `${src}: ${cnt}`).join(', ') || '—';
+      const decayInfo = metrics.decay;
+      const decayText = decayInfo
+        ? `已运行 ${decayInfo.runCount} 次，共衰减 ${decayInfo.totalDecayedCount} 条`
+        : '暂无衰减记录';
+      vscode.window.showInformationMessage(
+        `记忆统计：活跃 ${activeCount} 条，回收站 ${deletedCount} 条 | 衰减：${decayText} | 来源分布：${sourceSummary}`,
+      );
+    }),
+  );
+
+  // 命令：清理过期软删除记忆（agent.memory.writePurgeExpired()）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.cleanupMemories', async () => {
+      const agent = await getAgentForCommand();
+      if (!agent?.memory) {
+        vscode.window.showWarningMessage('Memora Agent 未就绪，无法清理记忆');
+        return;
+      }
+      // 确认对话框——防止误操作
+      const confirmed = await vscode.window.showWarningMessage(
+        '将永久删除 30 天前的软删除记忆，此操作不可撤销。',
+        { modal: true },
+        '确认清理',
+        '取消',
+      );
+      if (confirmed !== '确认清理') return;
+      try {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const purged = agent.memory.writePurgeExpired(thirtyDaysAgo);
+        vscode.window.showInformationMessage(`已清理 ${purged} 条过期记忆`);
+      } catch (err) {
+        vscode.window.showErrorMessage(`清理失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+
   // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：
   //   - 新建会话「＋」/ 历史记录（模态浮层）/ 改名笔 均由 webview 内按钮触发（W→E 消息）
   //   - 原「清空对话」（clearChat）为伪需求，由「删除会话记录」覆盖（用户决策 2026-08-17）

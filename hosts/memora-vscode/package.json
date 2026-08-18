@@ -31,6 +31,18 @@
         "command": "memora.configureModel",
         "title": "Memora: 配置大模型",
         "icon": "$(gear)"
+      },
+      {
+        "command": "memora.triggerDecay",
+        "title": "Memora: 触发记忆衰减"
+      },
+      {
+        "command": "memora.memoryStats",
+        "title": "Memora: 查看记忆统计"
+      },
+      {
+        "command": "memora.cleanupMemories",
+        "title": "Memora: 清理过期记忆"
       }
     ],
     "configuration": {
