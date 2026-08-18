@@ -55,7 +55,6 @@ describe('validateSource 校验函数', () => {
     expect(validateSource('persona')).toEqual({ valid: true });
     expect(validateSource('skill')).toEqual({ valid: true });
     expect(validateSource('round-summary')).toEqual({ valid: true });
-    expect(validateSource('profile')).toEqual({ valid: true });
     expect(validateSource('work-projection')).toEqual({ valid: true });
   });
 

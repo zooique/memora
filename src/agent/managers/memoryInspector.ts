@@ -73,7 +73,7 @@ export interface MemorySnapshot {
   working: WorkingMemorySnapshot;
   /** 第 2 层：Bootstrap 记忆（永驻 + 领域） */
   bootstrap: BootstrapSnapshot;
-  /** 第 3 层：归档记忆（round-summary + profile + work-projection） */
+  /** 第 3 层：归档记忆（round-summary + work-projection） */
   archive: ArchiveSnapshot;
 }
 
@@ -101,9 +101,9 @@ export interface BootstrapSnapshot {
   }>;
 }
 
-/** 第 3 层：归档记忆快照（round-summary + profile + work-projection） */
+/** 第 3 层：归档记忆快照（round-summary + work-projection） */
 export interface ArchiveSnapshot {
-  /** 归档记忆总数（round-summary + profile + work-projection） */
+  /** 归档记忆总数（round-summary + work-projection） */
   archiveCount: number;
   currentSession: string;
   /** 当前会话全名（含日期前缀） */
@@ -112,7 +112,6 @@ export interface ArchiveSnapshot {
   /** 归档记忆来源分布 */
   stats: {
     'round-summary': number;
-    profile: number;
     'work-projection': number;
   };
 }
@@ -249,22 +248,15 @@ export class MemoryInspector {
     const workingTotal = workingFull.length;
     const working = workingFull.slice(-WORKING_PREVIEW);
 
-    // 第 2 层：Bootstrap 记忆（永驻 + 领域）——存量兼容展示
-    // ADR-025 档 2：设定记忆（persona/rule/skill）唯一归角色包，索引不再新增；
-    // 此处仅展示存量索引行（宿主迁移清理前保留），不再参与 system prompt 装配
-    // （getBootstrapMemories 已恒空，rolePackPrompt 承载规则注入）。
-    const rules = this.index.getBySource(SOURCE_LABELS.RULE);
-    const personas = this.index.getBySource(SOURCE_LABELS.PERSONA);
-    const skills = this.index.getBySource(SOURCE_LABELS.SKILL);
-    const bootstrap = [...rules, ...personas, ...skills];
+    // 第 2 层：Bootstrap 记忆（永驻 + 领域）—— 已空实现
+    // ADR-025：设定记忆（persona/rule/skill）唯一归角色包，索引不再新增；
+    // getBootstrapMemories 已恒空，rolePackPrompt 承载规则注入。
+    // 此处保留空壳接口供 UI 层调用，避免宿主代码变更。
 
-    // 第 3 层：归档记忆计数（round-summary + profile + work-projection）
-    // round-summary 是当前唯一记忆源（记忆即摘要单轨），计入归档层首要来源；
-    // profile 保留为存量数据治理，不再有新写入。
+    // 第 3 层：归档记忆计数（round-summary + work-projection）
     const roundSummaryCount = this.index.countBySource(SOURCE_LABELS.ROUND_SUMMARY);
-    const profileCount = this.index.countBySource(SOURCE_LABELS.PROFILE);
     const workProjectionCount = this.index.countBySource(SOURCE_LABELS.WORK_PROJECTION);
-    const archiveTotal = roundSummaryCount + profileCount + workProjectionCount;
+    const archiveTotal = roundSummaryCount + workProjectionCount;
 
     return {
       working: {
@@ -278,14 +270,8 @@ export class MemoryInspector {
         ),
       },
       bootstrap: {
-        total: bootstrap.length,
-        items: bootstrap.map((m: Memory) => ({
-          id: m.id,
-          source: m.source,
-          name: m.name,
-          contentPreview: m.content.slice(0, CONTENT_PREVIEW_LEN),
-          score: m.score,
-        })),
+        total: 0,
+        items: [],
       },
       archive: {
         archiveCount: archiveTotal,
@@ -294,7 +280,6 @@ export class MemoryInspector {
         hint: '调 listAllSessions() 获取文件清单',
         stats: {
           'round-summary': roundSummaryCount,
-          profile: profileCount,
           'work-projection': workProjectionCount,
         },
       },

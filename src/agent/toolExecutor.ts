@@ -243,7 +243,7 @@ export class ToolExecutor {
       ]);
     }
     // web_search 仅当 webSearchProvider 已注入时由内核管理，不允许覆盖
-    // 未注入时宿主可自由注册自己的 web_search 实现（如 sprite 的"打开浏览器"模式）
+    // 未注入时宿主可自由注册自己的 web_search 实现
     if (this.webSearchProvider && definition.name === WEB_SEARCH_TOOL.name) {
       throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
         '请使用不同的工具名称',

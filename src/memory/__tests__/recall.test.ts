@@ -74,7 +74,7 @@ describe('recall · 记忆召回', () => {
   it('应该基于查询搜索并返回结果', async () => {
     const results = [
       makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
-      makeMemory({ id: 'profile:1', source: 'profile', score: 0.7 }),
+      makeMemory({ id: 'work-projection:1', source: 'work-projection', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 

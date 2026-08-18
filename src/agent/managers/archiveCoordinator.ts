@@ -6,19 +6,12 @@
  *   2. 归档完成事件发射（memoryAdded / archiveFailed）
  *   3. archiveMode 二态控制集中判断（FIX-P1-4）
  *
- * 收敛说明（2026-08-14）：洞察层（InsightExtractor + archiveInsight + pending 队列）已移除，
- * 记忆收敛为 round-summary 单轨；本类仅保留 content 会话内容归档路径。
- *
  * 设计理由：
  *   agent.ts 原承担 15+ 职责，归档操作是独立的领域职责，
  *   拆分后 Agent 聚焦对话编排，ArchiveCoordinator 聚焦归档操作 + 模式判断。
  *
  * FIX-P1-4（2026-07-24）：archiveMode 二态控制集中到本类
- *   原实现三态判断散落在 3 处：
- *     - Agent.postProcessInner 判断 'manual' 跳过 insight 自动归档
- *     - 宿主 sessionHandlers.ts 判断 'full' 触发 content 自动归档
- *     - ArchiveCoordinator 名为"协调器"实为"执行器"，不感知模式
- *   修复后：
+ *   原实现判断散落在多处，修复后：
  *     - ArchiveCoordinator 构造时注入 getArchiveMode getter
  *     - 归档方法新增 autoTriggered 参数区分自动/手动触发
  *     - 自动触发时由本类内部按模式判断是否跳过（统一协调点）
@@ -86,7 +79,7 @@ export interface ArchiveTriggerOptions {
   /**
    * P3-1: 工作上下文 plan 快照（由调用方从 getCheckpoint() 提取）
    *
-   * 调用方（Agent / sprite handler）从 SessionManager.getCheckpoint().plan
+   * 调用方（Agent / 宿主 handler）从 SessionManager.getCheckpoint().plan
    * 提取后传入，避免 SessionArchiver 直接依赖 SessionManager。
    * includeWorkContext 为 true 时必填。
    */

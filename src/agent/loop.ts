@@ -34,7 +34,7 @@ export interface AgentLoopOptions {
   bootstrapMemories: Memory[]; // 永驻 + 领域记忆
   toolExecutor: (name: string, args: string) => Promise<string>;
   maxIterations?: number;
-  /** 系统 prompt 前缀（角色 + 用户画像 + 技能），注入到 bootstrap 记忆之前 */
+  /** 系统 prompt 前缀（角色包 prompt），注入到 bootstrap 记忆之前 */
   systemPromptPrefix?: string;
   /**
    * 情感基调前缀（Phase 2.1：AffectController 注入）
@@ -271,7 +271,7 @@ export class AgentLoop {
    * 格式：`round-{Date.now()}`，一轮对话内唯一。
    */
   private currentRoundId = '';
-  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
+  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
   private inAutonomousStep = false;
   /**
    * 工具调用是否被 L2 策略阻止（策略 act.toolCalls === 'block' 时置 true）
@@ -656,7 +656,7 @@ export class AgentLoop {
     yield { type: 'done' };
   }
 
-  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供 sprite 决定暂停按钮显隐） */
+  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;
   }
@@ -1908,7 +1908,7 @@ export class AgentLoop {
    * 当角色包切换时，更新系统 prompt 前缀的角色部分。
    * 保留 bootstrapMemories 和 toolDefinitions 不变，只替换 prefix。
    *
-   * @param newPrefix 新的系统 prompt 前缀（包含新角色包 + 用户画像）
+   * @param newPrefix 新的系统 prompt 前缀（包含新角色包 prompt）
    */
   refreshRolePackPrefix(newPrefix: string): void {
     this.opts.systemPromptPrefix = newPrefix;
@@ -1934,7 +1934,7 @@ export class AgentLoop {
    * 重建 system prompt 中的 bootstrap 段，使变更立即对当前会话生效。
    *
    * 与 refreshRolePackPrefix 的区别：
-   *   - refreshRolePackPrefix 替换 systemPromptPrefix（角色包 + 画像）
+   *   - refreshRolePackPrefix 替换 systemPromptPrefix（角色包 prompt）
    *   - refreshBootstrapMemories 替换 bootstrapMemories（rule + skill）
    *
    * 调用链：ConfigManager.deleteRule/updateRule/deleteSkill

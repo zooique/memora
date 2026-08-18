@@ -95,7 +95,7 @@ export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'gener
 /**
  * 记忆解析器 — 验证原始数据并转换为 Memory 类型
  *
- * 提供与原 MemorySchema.parse() 等效的运行时验证能力：
+ * 运行时验证能力：
  * - 非空对象检查
  * - 字段类型验证（string/number）
  * - ISO 8601 日期格式验证
@@ -179,28 +179,21 @@ export function parseMemory(raw: unknown): Memory {
   };
 }
 
-/**
- * 兼容性别名 — 保持原有测试代码 (MemorySchema.parse(...)) 无需修改
- */
-export const MemorySchema = { parse: parseMemory };
-
-// ─── source 标签约定（非枚举，仅为泊文当前使用的约定） ──────
+// ─── source 标签约定（非枚举，仅为当前使用的约定） ──────
 
 /**
- * 泊文当前使用的 source 标签约定
+ * 当前使用的 source 标签约定
  *
  * 注意：source 是开放字符串，新增来源无需改代码
  * 只需在存储时指定 source 字符串即可
  */
 export const SOURCE_LABELS = {
-  /** 角色人格（agent-config/personas/*.md） */
+  /** 角色人格（角色包内容层 persona.md） */
   PERSONA: 'persona',
-  /** 创作规则（agent-config/rules/*.md + .memora/rules/*.md） */
+  /** 创作规则（角色包内容层 rules.md + .memora/rules/*.md） */
   RULE: 'rule',
-  /** 技能定义（agent-config/skills/*.md） */
+  /** 技能定义（角色包 skills/ 目录） */
   SKILL: 'skill',
-  /** 用户画像（存量数据兼容，画像层已于 2026-08-14 收敛移除，不再有新写入） */
-  PROFILE: 'profile',
   /** 作品投影（Agent 读取用户作品时生成的概要） */
   WORK_PROJECTION: 'work-projection',
   /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
@@ -219,5 +212,4 @@ export const SOURCE_LABELS = {
 // - 独立侧车存储（IMemoryRelationStore / InMemoryRelationStore）
 // - 复杂关系类型（contradicts/supports/follows/refines/caused/related）
 // - 冲突检测改用 supersededBy 布尔标记（ADR-021 写路径取代检测）
-// 残留源：SOURCE_LABELS.PROFILE（用户画像层）仍保留（存量数据兼容，供 GOVERNANCE 治理与计数），
-// 但不再有新写入——记忆收敛为 round-summary 单轨。
+// 残留源：PROFILE（画像）已随角色包边界收敛（ADR-025）移除，不再有新写入——记忆收敛为 round-summary 单轨。

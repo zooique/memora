@@ -73,11 +73,11 @@ const createMockProvider = (response: string): LlmProvider =>
 
 describe('DedupManager · M6 合并内容落库', () => {
   it('判定重复且提供 mergedContent 时，保留方 a 的内容应更新为合并内容', async () => {
-    // Given - 两条名称相似（"用户偏好" ⊂ "用户偏好设置" → 相似度 0）的 profile 记忆
+    // Given - 两条名称相似（"用户偏好" ⊂ "用户偏好设置" → 相似度 0）的 work-projection 记忆
     const storage = createMockStorage();
     const memA: Memory = {
       id: 'content:a',
-      source: SOURCE_LABELS.PROFILE,
+      source: SOURCE_LABELS.WORK_PROJECTION,
       name: '用户偏好',
       content: '用户偏好简洁 UI',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -86,7 +86,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     };
     const memB: Memory = {
       id: 'content:b',
-      source: SOURCE_LABELS.PROFILE,
+      source: SOURCE_LABELS.WORK_PROJECTION,
       name: '用户偏好设置',
       content: '用户偏好简洁界面',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -129,7 +129,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     const storage = createMockStorage();
     const memA: Memory = {
       id: 'content:a',
-      source: SOURCE_LABELS.PROFILE,
+      source: SOURCE_LABELS.WORK_PROJECTION,
       name: '用户偏好',
       content: '原始A内容',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -138,7 +138,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     };
     const memB: Memory = {
       id: 'content:b',
-      source: SOURCE_LABELS.PROFILE,
+      source: SOURCE_LABELS.WORK_PROJECTION,
       name: '用户偏好设置',
       content: '原始B内容',
       createdAt: '2026-01-01T00:00:00.000Z',

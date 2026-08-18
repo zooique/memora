@@ -7,20 +7,19 @@
  * 本文件保留类型 schema 测试 + InMemoryStorage source block 集成测试。
  */
 import { describe, expect, it } from 'vitest';
-import { MemorySchema, SOURCE_LABELS } from '@/memory/types.js';
+import { parseMemory, SOURCE_LABELS } from '@/memory/types.js';
 import { STOPWORDS } from '@/utils/segmenter.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { Memory } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
-  it('应该暴露 7 种 source 标签约定', () => {
+  it('应该暴露 6 种 source 标签约定', () => {
     // source 是开放字符串，SOURCE_LABELS 仅为当前约定
     // 含 UNKNOWN（inferSource 兜底值，文件路径未匹配已知目录时的默认标签）
-    expect(Object.keys(SOURCE_LABELS)).toHaveLength(7);
+    expect(Object.keys(SOURCE_LABELS)).toHaveLength(6);
     expect(SOURCE_LABELS.PERSONA).toBe('persona');
     expect(SOURCE_LABELS.RULE).toBe('rule');
     expect(SOURCE_LABELS.SKILL).toBe('skill');
-    expect(SOURCE_LABELS.PROFILE).toBe('profile');
     expect(SOURCE_LABELS.WORK_PROJECTION).toBe('work-projection');
     expect(SOURCE_LABELS.UNKNOWN).toBe('unknown');
     expect(SOURCE_LABELS.ROUND_SUMMARY).toBe('round-summary');
@@ -38,7 +37,7 @@ describe('记忆类型定义', () => {
       score: 0.8,
     };
 
-    const parsed = MemorySchema.parse(memory);
+    const parsed = parseMemory(memory);
     expect(parsed.id).toBe('rule:core');
     expect(parsed.source).toBe('rule');
     expect(parsed.score).toBe(0.8);
@@ -55,7 +54,7 @@ describe('记忆类型定义', () => {
       accessedAt: '2026-06-02T00:00:00.000Z',
       score: 1.5,  // 超出范围
     };
-    expect(() => MemorySchema.parse(invalid)).toThrow();
+    expect(() => parseMemory(invalid)).toThrow();
   });
 
   it('应该接受有效的 source 字符串（开放字符串，非枚举）', () => {
@@ -69,7 +68,7 @@ describe('记忆类型定义', () => {
       accessedAt: '2026-06-02T00:00:00.000Z',
       score: 0.5,
     };
-    expect(() => MemorySchema.parse(customSource)).not.toThrow();
+    expect(() => parseMemory(customSource)).not.toThrow();
   });
 });
 

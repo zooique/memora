@@ -1,7 +1,7 @@
 /**
  * ArchiveCoordinator 单元测试
  *
- * 覆盖范围（洞察层已移除，2026-08-14）：
+ * 覆盖范围：
  *   - archiveSessionContent：null 降级 + memories 事件发射 + 异常处理
  *   - archiveMode 三态控制（content 自动/手动归档）
  *   - emit 回调：内容归档路径事件正确转发

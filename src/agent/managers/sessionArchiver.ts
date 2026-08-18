@@ -3,12 +3,7 @@
  *
  * 职责：
  *   将会话原始对话内容归档为 `source='content'` 记忆条目。
- *   调用 LLM 对会话消息进行摘要，生成可被召回的 content 类记忆，
- *   让 archiveMode 三态真正差异化生效（ADR-015 预留的 content 列扩展点）。
- *
- * 与 InsightExtractor 的区别：
- *   - InsightExtractor：每轮对话后提取"洞察"（source='insight'），粒度细
- *   - SessionArchiver：会话级摘要"对话内容"（source='content'），粒度粗
+ *   调用 LLM 对会话消息进行摘要，生成可被召回的 content 类记忆。
  *
  * 触发时机：
  *   - `full` 模式：会话切换前自动归档（由宿主 sessionHandlers 调用）

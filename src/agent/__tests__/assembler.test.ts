@@ -160,8 +160,6 @@ describe('assembleComponents', () => {
       // v2 PROXY-1：新增 memoryAdvisor，Agent.detectConflicts 直接调用 advisor
       // SPLIT-3：新增 dedupManager，从 MemoryInspector 拆分出 L1 语义去重职责
       // ROLE-PACK：新增 rolePackManager，管理角色包生命周期
-      // 2026-08-14：移除 userProfile（用户画像收敛为 round-summary 召回）
-      // 2026-08-14：移除 insightExtractor（洞察层收敛，摘要即记忆单轨）
       const expectedKeys = [
         'history',
         'loop',

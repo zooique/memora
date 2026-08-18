@@ -10,7 +10,7 @@
  * thinking 事件的 phase 取值：
  * - 'recalling'：正在召回会话记忆（recall 双通道：语义 + 关键词）
  * - 'processing'：正在写入历史/注入技能 prompt
- * - 'archiving'：正在归档用户画像/匹配角色/匹配技能
+ * - 'archiving'：正在归档会话内容/匹配角色/匹配技能
  *
  * error 事件：流式过程中发生错误（如 LLM 超时、连接断开），
  * 替代裸 throw 让宿主能优雅展示错误并清理 UI（避免未处理 rejection 静默卡死）。
@@ -65,7 +65,7 @@ export type ThinkingPhase = 'recalling' | 'processing' | 'archiving' | 'llm_call
  * 仅暴露 UI 展示所需字段，不包含 content（避免向 UI 层泄露完整记忆内容）。
  * - name：可读名称，点击跳转记忆详情
  * - score：相似度分数（0-1），展示召回质量
- * - source：来源标签，可选展示（如 rule/round-summary/profile）
+ * - source：来源标签，可选展示（如 rule/round-summary/work-projection）
  */
 export interface RecalledMemorySummary {
   /** 记忆唯一标识（source:name 格式，用于前端精准跳转详情） */
@@ -74,7 +74,7 @@ export interface RecalledMemorySummary {
   name: string;
   /** 相似度分数（0-1） */
   score: number;
-  /** 来源标签（开放字符串，如 'rule'、'round-summary'、'profile'） */
+  /** 来源标签（开放字符串，如 'rule'、'round-summary'、'work-projection'） */
   source: string;
 }
 
@@ -205,7 +205,7 @@ export interface UIMessages {
  * - `full`（默认）：会话内容（content）在会话切换前自动归档
  * - `manual`：所有归档都需手动触发，postProcess 跳过所有自动归档分支
  *
- * 收敛说明（2026-08-14）：洞察层（InsightExtractor）与用户画像层已移除，
+ * 收敛说明（2026-08-14）：洞察层（InsightExtractor）已移除，
  * 记忆收敛为 round-summary 单轨；archiveMode 三态收敛为二态——
  * 原 `insights-only`（仅洞察自动）因洞察移除而失去语义，与 `manual` 等价，一并移除。
  */
@@ -824,7 +824,6 @@ export interface AgentOptions {
    *
    * - 'full'：会话内容（content）在会话切换前自动归档
    * - 'manual'：所有归档都需手动触发
-   * （2026-08-14：洞察层移除后三态收敛为二态，原 'insights-only' 已移除）
    */
   archiveMode?: ArchiveMode;
   /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */

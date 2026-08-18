@@ -894,9 +894,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 所有归档/匹配操作均为 best-effort：任何子步骤失败不应影响用户已收到的回答，
    * 失败仅记录日志，不向上抛出异常。
    *
-   * ADR-015 归档模式控制（2026-08-14 收敛为二态）：
+   * ADR-015 归档模式控制（二态）：
    * - 角色匹配 + 技能匹配不受 archiveMode 影响（每轮都执行，非归档行为）
-   * - 洞察自动抽取已移除（2026-08-14），记忆收敛为 round-summary 单轨
    * - `full` 模式：会话切换前自动归档会话内容（content）
    * - `manual` 模式：跳过会话内容自动归档，需用户手动调用 archiveSessionContent()
    */
@@ -930,8 +929,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
     const history = this.requireHistory;
 
-    // 用户画像已收敛为 round-summary 召回（2026-08-14），不再有独立画像归档路径。
-    // 洞察自动抽取已移除（2026-08-14）：其能力被 round-summary 吸收，记忆收敛为单轨。
+    // 记忆已收敛为 round-summary 单轨，不再有独立画像/洞察归档路径。
 
     // AutoConfigRefiner（模式 3：Agent 智能总结）
     if (this.autoConfigRefiner) {
@@ -1761,7 +1759,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 内核→宿主信号：当前会话是否可"无输入续跑"（决定 sprite 暂停按钮显隐 + 暂停后继续 UI）
+   * 内核→宿主信号：当前会话是否可"无输入续跑"（决定暂停按钮显隐 + 暂停后继续 UI）
    *
    * 真值条件（按优先级）：
    *  1. 状态机已处于 paused —— 已软暂停，必可经 resumeExecution 续跑（最高优先级）。
@@ -1772,7 +1770,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *     此刻应暴露暂停按钮（用户可在边界挂起）。
    *  3. 检查点存在未完成的计划步骤（hasPendingPlan）—— 多轮推进任务，可续跑下一轮。
    *
-   * 三者皆否（纯单轮问答、无待续目标）→ 返回 false，sprite 对该轮隐藏暂停按钮（仅停止）。
+   * 三者皆否（纯单轮问答、无待续目标）→ 返回 false，对该轮隐藏暂停按钮（仅停止）。
    */
   canContinueWithoutInput(): boolean {
     if (this._sessionManager?.status === 'paused') return true;
@@ -2130,7 +2128,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.textPolisher = result.textPolisher;
     this.roundSummaryGenerator = result.roundSummaryGenerator;
     // 绑定记忆写入回调：新记忆（round-summary）沉淀后 emit('memoryAdded')
-    // 替代原洞察层的「已沉淀」通知出口，保持内核"新记忆产生必通知"契约
     this.roundSummaryGenerator?.setOnMemoryAdded((info) => {
       this.emit(AGENT_EVENTS.memoryAdded, info);
     });

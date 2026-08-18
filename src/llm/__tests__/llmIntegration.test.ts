@@ -21,7 +21,7 @@ describe('真实 LLM 集成测试', () => {
   let agent: Agent;
 
   beforeAll(async () => {
-    // 从用户配置文件加载（与 sprite 宿主一致）
+    // 从用户配置文件加载（与宿主一致）
     let config;
     try {
       config = await loadConfig();

@@ -34,15 +34,12 @@ export function slugify(value: string): string {
  *
  * 统一内核中 15 处散落的 `slice + suffix` 模式（ADR-017 枝叶层 2 次提取）。
  *
- * 与 sprite 的 `shared/truncate.ts` 独立（ADR-002 内核零依赖约束，kernel/sprite 各自维护）。
- *
  * 后缀约定：
  *   - 默认 '…'（Unicode U+2026，1 字符）：UI 预览场景，简洁
  *   - '…[截断]'：LLM prompt 场景，明确告知模型"此处被截断，非原文结束"
  *   - 调用方可通过 suffix 参数自定义
  *
  * ellipsis 统一：将散落的 '...'（ASCII 3 字符）统一为 '…'（Unicode 1 字符），
- * 与 sprite truncate.ts 保持一致。
  *
  * @param text 原始文本
  * @param maxLen 最大保留长度（后缀不计入；截断后总长度 = maxLen + suffix.length）

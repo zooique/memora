@@ -190,9 +190,8 @@ describe('MemoryDecayScheduler', () => {
       expect(cb.calls[0]).toEqual({ decayedCount: 5 });
     });
 
-    it('应传递正确的 sources（profile/work-projection）', () => {
+    it('应传递正确的 sources（work-projection）', () => {
       scheduler.start(storage, 60_000);
-      expect(storage.calls[0]!.sources).toContain('profile');
       expect(storage.calls[0]!.sources).toContain('work-projection');
       expect(storage.calls[0]!.sources).not.toContain('content');
     });
@@ -357,7 +356,7 @@ describe('MemoryDecayScheduler', () => {
 
       it('无低分记忆时返回 skippedReason', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:1', name: 'm1', source: 'content', score: 0.5 }),
           ],
         });
@@ -376,7 +375,7 @@ describe('MemoryDecayScheduler', () => {
     describe('核心流程', () => {
       it('LLM 判定过时时降级 score 到 0.05', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:old', name: '旧版本记忆', source: 'content', score: 0.15, content: '用户使用 React 16 开发' }),
           ],
         });
@@ -402,8 +401,8 @@ describe('MemoryDecayScheduler', () => {
 
       it('LLM 判定未过时时保持原 score（不调用 setScore）', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'profile:1', name: '用户偏好', source: 'profile', score: 0.2, content: '用户偏好函数式编程' }),
+          [SOURCE_LABELS.WORK_PROJECTION]: [
+            createMemory({ id: 'work-projection:1', name: '用户偏好', source: 'work-projection', score: 0.2, content: '用户偏好函数式编程' }),
           ],
         });
         mockProvider = createMockLlmProvider([
@@ -425,11 +424,9 @@ describe('MemoryDecayScheduler', () => {
 
       it('多 source 低分记忆混合收集', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
-            createMemory({ id: 'profile:1', name: 'p1', source: 'profile', score: 0.15 }),
-            createMemory({ id: 'profile:2', name: 'p2', source: 'profile', score: 0.1 }),
-          ],
           [SOURCE_LABELS.WORK_PROJECTION]: [
+            createMemory({ id: 'work-projection:1', name: 'p1', source: 'work-projection', score: 0.15 }),
+            createMemory({ id: 'work-projection:2', name: 'p2', source: 'work-projection', score: 0.1 }),
             createMemory({ id: 'work:1', name: 'w1', source: 'work-projection', score: 0.2 }),
           ],
         });
@@ -458,7 +455,7 @@ describe('MemoryDecayScheduler', () => {
         const memories: Memory[] = Array.from({ length: 25 }, (_, i) =>
           createMemory({ id: `content:${i}`, name: `m${i}`, source: 'content', score: 0.1 }),
         );
-        mockStorage = createMockMemoryStorage({ [SOURCE_LABELS.PROFILE]: memories });
+        mockStorage = createMockMemoryStorage({ [SOURCE_LABELS.WORK_PROJECTION]: memories });
         mockProvider = createMockLlmProvider(
           Array.from({ length: 25 }, (): MockLlmResponse => ({ type: 'json', content: '{"isOutdated": false, "reason": "未过时"}' })),
         );
@@ -476,7 +473,7 @@ describe('MemoryDecayScheduler', () => {
 
       it('按 score 升序排列（最低分优先评估）', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:high', name: 'score较高的记忆', source: 'content', score: 0.25 }),
             createMemory({ id: 'content:low', name: 'score最低的记忆', source: 'content', score: 0.05 }),
             createMemory({ id: 'content:mid', name: 'score居中的记忆', source: 'content', score: 0.15 }),
@@ -506,7 +503,7 @@ describe('MemoryDecayScheduler', () => {
     describe('异常处理', () => {
       it('LLM 返回非法 JSON 时跳过该条', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:bad', name: '非法响应', source: 'content', score: 0.1 }),
           ],
         });
@@ -530,7 +527,7 @@ describe('MemoryDecayScheduler', () => {
 
       it('单条 LLM 调用抛错时不阻塞后续评估', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:err', name: '会抛错的记忆', source: 'content', score: 0.05 }),
             createMemory({ id: 'content:ok', name: '正常的记忆', source: 'content', score: 0.1 }),
           ],
@@ -555,7 +552,7 @@ describe('MemoryDecayScheduler', () => {
       it('部分成功部分失败的混合场景', async () => {
         // 3 条记忆按 score 升序：outdated(0.05) → badjson(0.1) → valid(0.15)
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:outdated', name: '过时记忆', source: 'content', score: 0.05 }),
             createMemory({ id: 'content:badjson', name: '非法JSON', source: 'content', score: 0.1 }),
             createMemory({ id: 'content:valid', name: '有效记忆', source: 'content', score: 0.15 }),
@@ -595,7 +592,7 @@ describe('MemoryDecayScheduler', () => {
         // 准备：mock LlmProvider，让 chat 在 abort 后抛错
         // 这里用真实 storage + 真实 LlmProvider mock，模拟 stop() 中断 inflight
         const mockStorageForAbort = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:1', name: '记忆1', source: 'content', score: 0.05 }),
           ],
         });
@@ -636,7 +633,7 @@ describe('MemoryDecayScheduler', () => {
 
       it('多次 evaluateTimeliness 串行调用应正确清理 inflightEvaluate 引用', async () => {
         mockStorage = createMockMemoryStorage({
-          [SOURCE_LABELS.PROFILE]: [
+          [SOURCE_LABELS.WORK_PROJECTION]: [
             createMemory({ id: 'content:1', name: '记忆1', source: 'content', score: 0.1 }),
           ],
         });

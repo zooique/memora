@@ -27,7 +27,7 @@ import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { byScoreDesc } from '@/utils/array.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
-// LLM 治理源列表（v2 REPEAT-1 闭环，消除 5 处独立维护的 [PROFILE, WORK_PROJECTION] 列表）
+// LLM 治理源列表（统一由 governance.ts 维护）
 import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -51,7 +51,6 @@ const SOURCE_HEALTH_THRESHOLDS = {
 } as const;
 
 // ─── L3 冲突检测常量 ────────────────────────────────────
-// 注：CONFLICT_SOURCES 已统一为 GOVERNANCE_SOURCES（governance.ts），消除 5 处独立维护
 /** 单个 source 内参与配对的记忆条数上限（控制 O(n²) 配对规模） */
 const CONFLICT_CANDIDATES_PER_SOURCE = 10;
 /** 单次 LLM 冲突判断的候选对数上限 */
@@ -362,7 +361,7 @@ export class MemoryAdvisor {
    * 语义冲突检测：扫描同 source 的记忆对，调用 LLM 判断是否存在语义冲突
    *
    * 流程：
-   *   1. 从 profile/work-projection 加载候选记忆（每个 source 取 top 10 条）
+   *   1. 从 work-projection 加载候选记忆（每个 source 取 top 10 条）
    *   2. 同 source 内两两配对，取前 10 对
    *   3. 对每对调用 LLM 判断是否存在语义冲突
    *   4. 返回冲突报告（仅检测，不修复——冲突需要用户决策）

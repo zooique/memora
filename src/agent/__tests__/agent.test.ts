@@ -1265,7 +1265,7 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
 // 测试：archiveMode（ADR-015）· 二态归档模式
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 洞察层收敛为 full|manual）', () => {
+describe('Agent · archiveMode（ADR-015）· 二态归档模式（full|manual）', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -2331,7 +2331,7 @@ describe('Agent · chat() 锁超时机制', () => {
 
 // ═══════════════════════════════════════════════════════════════
 // 测试：软暂停信号 canContinueWithoutInput()（不中断工作模型 v2.1）
-// 决定 sprite 暂停按钮显隐 + 暂停后"继续"UI 的可续跑信号
+// 决定暂停按钮显隐 + 暂停后"继续"UI 的可续跑信号
 // ═══════════════════════════════════════════════════════════════
 
 describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () => {

@@ -79,7 +79,7 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   skillMatched: { skill: string; score: number };
   /** 归档操作失败（fire-and-forget catch 分支发射，宿主可通知用户） */
   archiveFailed: {
-    /** 失败阶段：content（会话内容归档），洞察层已收敛移除 */
+    /** 失败阶段：content（会话内容归档） */
     stage: 'content';
     /** 失败原因摘要（error.message，截断 200 字符避免 payload 过大） */
     message: string;

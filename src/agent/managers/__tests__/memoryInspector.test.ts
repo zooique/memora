@@ -220,31 +220,25 @@ describe('MemoryInspector', () => {
       expect(last.role).toBe('user');
     });
 
-    it('Bootstrap 层：聚合 rule + persona + skill 三类来源', () => {
+    it('Bootstrap 层：已空实现（设定记忆归角色包，索引不再新增）', () => {
       storage.upsert(createMemory({ id: 'rule:r1', source: 'rule', name: 'r1' }));
       storage.upsert(createMemory({ id: 'persona:p1', source: 'persona', name: 'p1' }));
       storage.upsert(createMemory({ id: 'skill:s1', source: 'skill', name: 's1' }));
-      storage.upsert(createMemory({ id: 'content:i1', source: 'content', name: 'i1' }));
       const snap = inspector.snapshot();
-      // bootstrap 只含 rule + persona + skill，不含 content
-      expect(snap.bootstrap.total).toBe(3);
-      const sources = snap.bootstrap.items.map((m) => m.source);
-      expect(sources).toContain('rule');
-      expect(sources).toContain('persona');
-      expect(sources).toContain('skill');
-      expect(sources).not.toContain('content');
+      // Bootstrap 已空实现，设定记忆全走角色包路径
+      expect(snap.bootstrap.total).toBe(0);
+      expect(snap.bootstrap.items).toHaveLength(0);
     });
 
-    it('归档层：round-summary + profile + work-projection 计数', () => {
+    it('归档层：round-summary + work-projection 计数', () => {
       storage.upsert(createMemory({ id: 'round-summary:s1:r1', source: 'round-summary', name: 'rs1' }));
       storage.upsert(createMemory({ id: 'round-summary:s1:r2', source: 'round-summary', name: 'rs2' }));
-      storage.upsert(createMemory({ id: 'profile:p1', source: 'profile', name: 'p1' }));
-      storage.upsert(createMemory({ id: 'work-projection:w1', source: 'work-projection', name: 'w1' }));
+      storage.upsert(createMemory({ id: 'work-projection:wp1', source: 'work-projection', name: 'wp1' }));
+      storage.upsert(createMemory({ id: 'work-projection:wp2', source: 'work-projection', name: 'wp2' }));
       const snap = inspector.snapshot();
       expect(snap.archive.archiveCount).toBe(4);
       expect(snap.archive.stats['round-summary']).toBe(2);
-      expect(snap.archive.stats.profile).toBe(1);
-      expect(snap.archive.stats['work-projection']).toBe(1);
+      expect(snap.archive.stats['work-projection']).toBe(2);
     });
 
     it('currentSession/currentSessionName：null 时降级为 "(none)"', () => {
@@ -417,7 +411,7 @@ describe('MemoryInspector', () => {
   // 相关测试见：
   //   - memoryAdvisor.test.ts（advisor 单元测试，覆盖 sourceHealth/suggest 全场景）
   //   - agent.test.ts（Agent 门面委托测试）
-  //   - sprite.test.ts（宿主 sourceHealth() 集成测试）
+  //   - host.test.ts（宿主 sourceHealth() 集成测试）
 
   // ════════════════════════════════════════════════════════
   // 9. 写操作（writeXxx 前缀）

@@ -3,7 +3,7 @@
  *
  * Node.js 专用纯逻辑库（零 native 编译依赖，详见 ADR-002 §定位澄清）。
  * 宿主项目通过注入 IMemoryStorage 实现持久化。
- * CLI 由宿主项目提供（hosts/memora-sprite/）。
+ * CLI 由宿主项目提供（插件宿主）。
  *
  * 设计哲学：万物皆记忆（详见 architecture_philosophy_rules.md §1）
  * 决策追溯：详见 .trae/rules/decisions/ 下的 ADR
@@ -75,27 +75,7 @@ export type {
   ArchiveSnapshot,
   AgentSearchHit,
   AgentStats,
-  SuggestOptions,
-  SuggestHit,
-  SourceHealthStatus,
-  SourceHealthEntry,
-  SourceHealthReport,
 } from '@/agent/managers/memoryInspector.js';
-// L1 语义去重类型（SPLIT-3 闭环：来源从 MemoryInspector 迁移至 DedupManager）
-export type {
-  DedupPair,
-  DedupVerdict,
-  DedupVerdictSummary,
-  DedupReport,
-} from '@/agent/managers/dedupManager.js';
-export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
-export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
-// 会话内容归档器类型
-export type { SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
-// L2 时效性评估类型（MemoryDecayScheduler）
-export type { TimelinessVerdict, TimelinessReport } from '@/agent/managers/memoryDecayScheduler.js';
-// L3 冲突检测类型（MemoryAdvisor）
-export type { ConflictVerdict, ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 // 记忆治理统一门面
 export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 // 作品投影管理器类型
@@ -188,7 +168,7 @@ export { setLogger, logger } from '@/logging/logger.js';
 // ─── 工具导出 ────────────────────────────────────────────
 // 分词工具：宿主项目（如 SqliteStorage）依赖
 export { segmentText, segmentLower } from '@/utils/segmenter.js';
-// 对象类型守卫：宿主项目（如 spriteConfig）依赖，校验 JSON.parse 结果
+// 对象类型守卫：宿主项目依赖，校验 JSON.parse 结果
 export { isPlainObject } from '@/utils/objects.js';
 // Frontmatter 解析/序列化：宿主项目（如 skillInstaller）依赖
 export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
@@ -218,11 +198,4 @@ export type { ToolErrorCodeValue } from '@/utils/errors.js';
 export { truncate, isValidConfigName, parseConfigId, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
 export { formatDateKey, todayDate } from '@/utils/time.js';
 
-// ─── 评估框架导出（Mock Eval：Agent 行为回归测试，不调用真实 LLM） ───
-// 设计定位：主要供 CI 回归测试使用（MSW Mock LLM），运行时零消费者。
-// 保留导出供外部宿主项目编写自己的 eval 场景；非运行时 API，不应在业务代码中 import。
-export type { EvalScenario, EvalExpectation, EvalResult } from '@/eval/evalTypes.js';
-export { collectAgentChunks, evaluateResult } from '@/eval/evalTypes.js';
-export { EVAL_SCENARIOS } from '@/eval/scenarios.js';
-export { EvalRunner } from '@/eval/evalRunner.js';
-export type { EvalRunnerOptions, EvalSummary } from '@/eval/evalRunner.js';
+// ─── 错误类型导出 ────────────────────────────────────────

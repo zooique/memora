@@ -285,7 +285,7 @@ describe('BuiltinToolHandlers.writeFile', () => {
 
   describe('configDir 已知时路径提示', () => {
     // 构造带 configDir 的 handlers，验证拦截消息中包含实际路径
-    const mockConfigDir = '/home/user/.memora-sprite/config';
+    const mockConfigDir = '/home/user/.memora/config';
     const handlersWithConfig = new BuiltinToolHandlers(
       projectPath,
       security,
