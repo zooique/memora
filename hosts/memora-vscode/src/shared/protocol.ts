@@ -112,6 +112,19 @@ export type WebviewToExtensionMessage =
    * 可安全重复发送（无进行中流时 no-op）。
    */
   | { type: 'stop' }
+  /**
+   * 暂停生成：用户暂停当前 Agent 执行（Phase 4 暂停/恢复）
+   *
+   * 由 webview 暂停按钮触发，host 调 agent.pause() 暂停当前流，
+   * 发送 status:'paused' 通知 webview。
+   */
+  | { type: 'pause' }
+  /**
+   * 恢复生成：用户恢复已暂停的 Agent 执行（Phase 4 暂停/恢复）
+   *
+   * 由 webview 继续按钮触发，host 调 agent.resumeExecution() 续跑。
+   */
+  | { type: 'resume' }
   // ─── 大模型配置面板消息 ───
   /** 请求加载 Provider 列表 */
   | { type: 'cfg_load' }
@@ -239,15 +252,22 @@ export type ExtensionToWebviewMessage =
         decayRunCount?: number;
       };
     }
+  /** 技能激活提示（skillMatched 事件转发，Phase 3 技能系统接入）
+   *
+   * 内核在技能匹配成功时 emit skillMatched，插件转发为 notice info 级提示条。
+   * 让用户看见「本轮用到了什么技能」，主动可见而非黑盒。
+   */
+  | { type: 'skill_activated'; skillName: string }
   /**
-   * LLM 运行状态（P0-2 状态可视化）
+   * Agent 运行状态（P0-2 状态可视化 + Phase 4 暂停/恢复）
    *
    * 让用户看见 Agent 正在做什么，而非静默等待：
    *   - 'thinking'：Agent 正在生成（展示加载动画，输入框禁用）
    *   - 'done'：本轮结束（恢复输入框）
+   *   - 'paused'：Agent 已暂停（用户可点击「继续」恢复执行）
    * 与 done/error 配合，构成完整的「进行中 → 结束」状态机。
    */
-  | { type: 'status'; state: 'thinking' | 'done' }
+  | { type: 'status'; state: 'thinking' | 'done' | 'paused' }
   /** 清空会话完成（webview 收到后清空消息区） */
   | { type: 'clear_ok' }
   /**

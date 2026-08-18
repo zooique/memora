@@ -9,6 +9,11 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
+  "capabilities": [
+    { "capability": "file:read", "description": "读取代码与已有文档作为参考" },
+    { "capability": "file:write", "description": "将技术文档写入文件" },
+    { "capability": "memory:recall", "description": "召回相关技术决策与历史文档" }
+  ],
   "strategy": {
     "prepare": {
       "contextAssembly": "fixed",
@@ -19,10 +24,5 @@
     "act": { "toolMode": "block", "temperature": 0.3, "streaming": "streaming" },
     "reflect": { "summary": "on", "handoff": "wait" },
     "global": { "errorHandling": "retry" }
-  },
-  "persona": "persona.md",
-  "rules": "rules.md",
-  "skills": [
-    { "capability": "llm:summarize", "description": "提炼要点辅助文档结构规划" }
-  ]
+  }
 }

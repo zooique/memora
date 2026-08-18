@@ -295,6 +295,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'stop') {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
         this.handleStop();
+      } else if (msg.type === 'pause') {
+        // Phase 4：暂停生成：调 agent.pause() 暂停当前流
+        this.handlePause();
+      } else if (msg.type === 'resume') {
+        // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
+        void this.handleResumeFromPause();
       }
     });
   }
@@ -406,6 +412,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
+   * skillMatched：技能匹配成功（Phase 3 技能系统接入）
+   *
+   * 内核在 LLM 输出匹配到技能关键词时 emit skillMatched，
+   * 转发为 skill_activated 提示条「已激活技能：xxx」，让用户看见本轮用到了什么技能。
+   * 内核事件形状：{ skill: string, score: number }（skill 为技能名，见 agent.ts matchAndInjectSkill）。
+   */
+  private readonly onSkillMatched = (info: { skill: string; score: number }): void => {
+    const name = info.skill ?? '未知技能';
+    this.post({ type: 'skill_activated', skillName: name });
+  };
+
+  /**
    * 绑定会话级可观测事件 → 错误提示
    *
    * Agent 为单例跨面板展开共享，此处先 off 再 on（命名 handler 引用一致），
@@ -434,6 +452,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // A1（alignment-iteration.md）：角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('personaSwitched', this.onPersonaSwitched);
     a.on('personaSwitched', this.onPersonaSwitched);
+    // Phase 3：技能匹配事件 → 提示条显示激活技能
+    a.off('skillMatched', this.onSkillMatched);
+    a.on('skillMatched', this.onSkillMatched);
   }
 
   /**
@@ -985,6 +1006,44 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._abortController.abort();
   }
 
+  /**
+   * 暂停生成：用户软暂停当前 Agent 执行（Phase 4 暂停/恢复）
+   *
+   * 调 agent.pause('user-pause') 将状态机翻至 paused，当前流在下一 await 点 yield paused chunk，
+   * 随后 consumeFlow 正常收尾并发送 status:'paused'。无进行中流时提示无可暂停。
+   */
+  private handlePause(): void {
+    if (!this._agent) return;
+    if (!this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '当前没有可暂停的生成' });
+      return;
+    }
+    const ok = this._agent.pause('user-pause', 'user');
+    if (!ok) {
+      this.post({ type: 'notice', level: 'error', message: '暂停失败，请重试' });
+    }
+  }
+
+  /**
+   * 从暂停状态恢复执行（Phase 4 暂停/恢复）
+   *
+   * 复用 runFlow + agent.resumeExecution 路径，与对主动提问的回答同构。
+   * 无暂停会话时内核会阻断，宿主捕获后提示用户。
+   */
+  private async handleResumeFromPause(): Promise<void> {
+    if (!this._agent) return;
+    const agent = this._agent;
+    try {
+      await this.runFlow((signal) => agent.resumeExecution(undefined, signal));
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态，支持用户打断
    *  @param gen Agent 流（chat / resumeExecution）
    *  @param controller 本轮 AbortController：stop / 插话经 abort() 中断流；
@@ -1016,6 +1075,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._streaming = true;
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
     let firstChunkTs = new Date().toISOString();
+    // Phase 4：暂停标记——当轮是否收到 paused chunk（软暂停状态）
+    let pausedOnPurpose = false;
     try {
       for await (const chunk of gen) {
         // 显式忽略的 chunk（取舍声明，排雷 2026-08-17）：
@@ -1079,8 +1140,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             error: chunk.error,
           });
         } else if (chunk.type === 'paused') {
-          // Agent 暂停（输入待定/迭代边界软暂停）→ 转发提示条
+          // Agent 暂停（输入待定/迭代边界软暂停）→ 转发提示条 + 标记暂停态
           this.post({ type: 'paused' });
+          pausedOnPurpose = true;
         } else if (chunk.type === 'thinking') {
           // B（alignment-iteration.md）：思考阶段 → 转发真实 phase（召回/处理/归档）
           this.post({ type: 'thinking', phase: chunk.phase });
@@ -1103,15 +1165,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (this._abortController === controller) this._abortController = undefined;
     }
     // 结束状态：用户打断（abort() 已置 signal.aborted）→ interrupted（webview 渲染
-    // 「已停止」并恢复输入框）；正常结束 → done。两者均恢复输入框，仅提示语义不同。
+    // 「已停止」并恢复输入框）；软暂停 → status:paused（按钮切为「继续」）；
+    // 正常结束 → done。三者均恢复/切换按钮态，仅提示语义不同。
     if (controller.signal.aborted) {
       this.post({ type: 'interrupted' });
+      this.post({ type: 'status', state: 'done' });
+    } else if (pausedOnPurpose) {
+      // 软暂停：不推送 done/interrupted，切换为 paused 状态（允许用户继续）
+      this.post({ type: 'status', state: 'paused' });
     } else {
       this.post({ type: 'done' });
+      this.post({ type: 'status', state: 'done' });
       // T2 Follow-up 建议：仅正常结束时推送（零 LLM、纯计算；打断/异常不给不完整回复挂建议）
       this.postSuggestions();
     }
-    this.post({ type: 'status', state: 'done' });
     // 本轮流式结束 → 推送活动指标快照（P2：指纹 + 累计指标，默认折叠展示）
     this.postMetrics();
   }

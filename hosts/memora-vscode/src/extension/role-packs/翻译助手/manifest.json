@@ -9,10 +9,9 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
+  "capabilities": [],
   "strategy": {
     "act": { "toolMode": "block", "temperature": 0.1 },
     "reflect": { "summary": "off" }
-  },
-  "persona": "persona.md",
-  "rules": "rules.md"
+  }
 }

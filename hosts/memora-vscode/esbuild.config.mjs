@@ -11,7 +11,8 @@
  *   ├── extension/extension.js    ← 主入口（内联内核 + 插件代码）
  *   ├── shared/protocol.js        ← 类型声明（webview 编译用，不打包）
  *   ├── webview (各面板)          ← webview 侧代码（不打包，不依赖内核）
- *   └── extension/role-packs      ← 内置角色包（manifest.json + persona/rules .md，copy 处理）
+ *   ├── extension/role-packs      ← 内置角色包（manifest.json + persona/rules/skills .md，copy 处理）
+ *   └── extension/skills          ← 全局技能池（.md，所有角色共享，SkillManager 扫描）
  */
 import * as esbuild from 'esbuild';
 import { copyFileSync, mkdirSync, readdirSync, existsSync, renameSync, statSync } from 'node:fs';
@@ -23,10 +24,12 @@ const DIST = join(__dirname, 'dist');
 const SRC = join(__dirname, 'src');
 
 /**
- * 递归复制资产目录（esbuild 不处理 .md/.json，插件内置角色包需随 dist 分发）
+ * 递归复制资产目录（esbuild 不处理 .md/.json，插件内置角色包和全局技能需随 dist 分发）
  *
  * 角色包目录（src/extension/role-packs/<名>/）由内核 RolePackManager 从
- * configDir/role-packs/ 扫描装载（manifest.json + persona.md + rules.md）。
+ * configDir/role-packs/ 扫描装载（manifest.json + persona.md + rules.md + skills/）。
+ * 全局技能目录（src/extension/skills/）由内核 SkillManager 从
+ * configDir/skills/ 扫描装载（所有角色共享的通用技能）。
  *
  * @param srcDir 源资产目录
  * @param outDir 输出资产目录
@@ -45,14 +48,20 @@ function copyAssetsRecursive(srcDir, outDir) {
   }
 }
 
-/** 复制内置角色包目录（manifest.json + persona.md + rules.md） */
+/** 复制内置角色包目录（manifest.json + persona.md + rules.md + skills/） */
 function copyRolePacks() {
   copyAssetsRecursive(join(SRC, 'extension', 'role-packs'), join(DIST, 'extension', 'role-packs'));
 }
 
+/** 复制全局技能池（.md 文件，所有角色共享） */
+function copyGlobalSkills() {
+  copyAssetsRecursive(join(SRC, 'extension', 'skills'), join(DIST, 'extension', 'skills'));
+}
+
 async function main() {
-  // 1. 复制内置角色包（esbuild 不处理 .md/.json）
+  // 1. 复制内置角色包 + 全局技能（esbuild 不处理 .md/.json）
   copyRolePacks();
+  copyGlobalSkills();
 
   // 2. esbuild 打包 extension 入口（内联 @zooique/memora）
   // 输入与输出为同一文件会冲突，先输出到临时文件再替换

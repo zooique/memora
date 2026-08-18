@@ -9,16 +9,14 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
+  "capabilities": [
+    { "capability": "web:search", "description": "联网搜索查资料、核实信息" },
+    { "capability": "file:write", "description": "将成文写入文件" },
+    { "capability": "file:read", "description": "读取已有文件内容" }
+  ],
   "strategy": {
     "prepare": { "memoryRecall": "full" },
     "act": { "toolMode": "allow", "temperature": 0.7 },
     "reflect": { "handoff": "wait" }
-  },
-  "persona": "persona.md",
-  "rules": "rules.md",
-  "skills": [
-    { "capability": "web:search", "description": "联网搜索查资料、核实信息" },
-    { "capability": "file:write", "description": "将成文写入文件" },
-    { "capability": "file:read", "description": "读取已有文件内容" }
-  ]
+  }
 }

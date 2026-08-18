@@ -297,12 +297,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
-  // 输入框保持可用（支持插话）；done 恢复发送按钮。同时同步思考折叠块。
+  // 输入框保持可用（支持插话）；done 恢复发送按钮；paused 切换为「继续」按钮。
   // SSOT 收敛：身份条已删，生成中状态由思考折叠块（过程可见）+ 发送按钮（可操作）承载。
-  function setStatus(state: 'thinking' | 'done'): void {
+  function setStatus(state: 'thinking' | 'done' | 'paused'): void {
     if (state === 'thinking') {
       // 生成中：展示「思考中…」折叠块（过程透明，ui-redesign.md §7.1）
       setThoughtLabel('思考中…', { thinking: true });
+    } else if (state === 'paused') {
+      // 暂停中：折叠思考块并提示已暂停（可通过「继续」按钮恢复）
+      clearArchivingFallback();
+      if (thoughtEl && thoughtEl.isConnected) {
+        thoughtEl.classList.remove('is-thinking');
+        thoughtEl.open = false;
+      }
     } else {
       // 结束：折叠思考块并停止呼吸（保留折叠态，不落库不重放）
       clearArchivingFallback();
@@ -317,6 +324,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       send.setAttribute('aria-label', '停止生成');
       // 生成中不禁用输入框：用户可输入新消息 → Enter 插话（打断当前生成并重发，
       // mvp-scope 打断能力）。发送按钮此时承担「停止」职责，插话走 Enter 发送。
+    } else if (state === 'paused') {
+      // 暂停中：按钮切为「继续」语义——用户点击即 post resume 消息恢复执行
+      send.classList.remove('loading');
+      send.setAttribute('title', '继续生成');
+      send.setAttribute('aria-label', '继续生成');
     } else {
       send.classList.remove('loading');
       send.setAttribute('title', '发送 (Enter)');
@@ -967,6 +979,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
+    } else if (msg.type === 'skill_activated') {
+      // Phase 3：技能激活提示（skillMatched 事件转发）——让用户看见本轮用到了什么技能
+      showActivity('info', `已激活技能：${msg.skillName}`);
     } else if (msg.type === 'metrics') {
       // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
@@ -1105,16 +1120,27 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
   function sendMessage(): void {
     const text = input.value.trim();
+    // 暂停态且输入为空 → 视为「继续」动作，恢复暂停点之后的执行（用户未输入新请求）
+    const isPaused = send.getAttribute('title') === '继续生成';
+    if (isPaused && !text) {
+      vscode.postMessage({ type: 'resume' });
+      return;
+    }
     if (!text) return;
     input.value = '';
     input.style.height = 'auto';
     vscode.postMessage({ type: 'send', text });
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
-  // mvp-scope 打断能力）。生成中插话走 Enter（见下方 keydown，不经此分支）。
+  // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行，Phase 4 暂停/恢复）。
+  // 生成中插话走 Enter（见下方 keydown，不经此分支）。
   send.addEventListener('click', () => {
     if (send.classList.contains('loading')) {
+      // thinking 态：按钮承担「停止」职责
       vscode.postMessage({ type: 'stop' });
+    } else if (send.getAttribute('title') === '继续生成') {
+      // paused 态：按钮承担「继续」职责，恢复暂停点之后的执行
+      vscode.postMessage({ type: 'resume' });
     } else {
       sendMessage();
     }

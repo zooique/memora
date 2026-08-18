@@ -5,13 +5,15 @@
  *   - 将 memora 记忆持久化到工作区 `.memora/memories.json`（单文件 JSON 数组）
  *   - 实现 IMemoryStorage 接口，注入 Agent，让记忆跨会话存活
  *   - 软删除语义与内核一致：delete 写 deletedAt，查询自动过滤
+ *   - source 校验：upsert 时调 validateSource 拦截无效 source（路径遍历/空字节/首尾空格）
  *
  * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
  * 后续阶段：如需高性能/向量索引，可换 SQLite 或 JsonVectorStore。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { segmentLower, type IMemoryStorage, type Memory } from '@zooique/memora';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { segmentLower, validateSource, type IMemoryStorage, type Memory } from '@zooique/memora';
+import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /** 工作区记忆存储 */
 export class WorkspaceStorage implements IMemoryStorage {
@@ -39,14 +41,10 @@ export class WorkspaceStorage implements IMemoryStorage {
     }
   }
 
-  /** 将当前内存写回文件（原子：先写临时文件再重命名） */
+  /** 将当前内存原子写回文件（先写 .tmp 再 rename，防崩溃损坏） */
   private save(): void {
-    const dir = dirname(this.filePath);
-    mkdirSync(dir, { recursive: true });
     const list = [...this.store.values()];
-    const tmp = `${this.filePath}.tmp`;
-    writeFileSync(tmp, JSON.stringify(list, null, 2), 'utf8');
-    writeFileSync(this.filePath, JSON.stringify(list, null, 2), 'utf8');
+    atomicWriteFileSync(this.filePath, JSON.stringify(list, null, 2));
   }
 
   /** 是否为活跃记忆（未软删除） */
@@ -55,6 +53,11 @@ export class WorkspaceStorage implements IMemoryStorage {
   }
 
   upsert(memory: Memory): void {
+    // 对齐内核 validateSource：拦截路径遍历/空字节/首尾空格等无效 source
+    const result = validateSource(memory.source);
+    if (result.severity === 'block') {
+      throw new Error(`source 校验失败：${result.warning}`);
+    }
     this.store.set(memory.id, memory);
     this.save();
   }

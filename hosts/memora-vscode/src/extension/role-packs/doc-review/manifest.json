@@ -1,32 +1,27 @@
 {
   "name": "doc-review",
-  "displayName": "文档打磨",
+  "displayName": "文档审查员",
   "formatVersion": "1.0.0",
-  "description": "设计文档审阅与代码骨架生成——检查文档自洽性、发现矛盾缺口悬空引用，并根据设计文档生成项目代码骨架",
-  "keywords": [
-    "审阅文档",
-    "自洽检查",
-    "审阅",
-    "审阅设计",
-    "矛盾检测",
-    "缺口检测",
-    "悬空引用",
-    "生成骨架",
-    "代码骨架",
-    "脚手架",
-    "scaffold",
-    "骨架生成",
-    "review design",
-    "reviewDesign"
+  "description": "专业项目文档顾问与代码架构师，审阅设计文档自洽性并根据文档生成项目代码骨架",
+  "version": "1.0.0",
+  "keywords": ["文档", "审查", "代码", "骨架", "架构"],
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "capabilities": [
+    { "capability": "file:read", "description": "读取项目文档与代码文件" },
+    { "capability": "file:write", "description": "写入代码骨架与占位实现" },
+    { "capability": "memory:recall", "description": "召回相关决策与历史设计" }
   ],
-  "trigger": [
-    "/(审阅文档|自洽检查|自洽性|矛盾检测|缺口检测|悬空引用|review design|reviewDesign|生成骨架|代码骨架|脚手架|scaffold|scaffoldProject|生成目录结构)/i"
-  ],
-  "persona": "persona.md",
-  "rules": "rules.md",
   "strategy": {
-    "act": {
-      "toolMode": "allow"
-    }
+    "prepare": {
+      "contextAssembly": "fixed",
+      "recentRounds": 3,
+      "memoryRecall": "limited",
+      "summaryRecall": "on"
+    },
+    "act": { "toolMode": "allow", "temperature": 0.3, "streaming": "streaming" },
+    "reflect": { "handoff": "wait" }
   }
 }

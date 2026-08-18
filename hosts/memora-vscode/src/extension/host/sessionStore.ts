@@ -4,17 +4,19 @@
  * 职责：
  *   - 将 memora 原始对话消息持久化到工作区 `.memora/sessions.json`
  *   - 实现 ISessionStore 接口，注入 Agent，让跨会话对话记录可回溯（traceSummary 依赖）
+ *   - 原子写入：save() 使用 atomicWriteFileSync 防崩溃损坏
  *
  * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   defaultSessionTitle,
   type ISessionStore,
   type SessionMessage,
   type SessionMeta,
 } from '@zooique/memora';
+import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /** 工作区会话存储 */
 export class WorkspaceSessionStore implements ISessionStore {
@@ -53,16 +55,14 @@ export class WorkspaceSessionStore implements ISessionStore {
     }
   }
 
-  /** 将内存写回文件 */
+  /** 将内存原子写回文件（先写 .tmp 再 rename，防崩溃损坏） */
   private save(): void {
-    const dir = dirname(this.filePath);
-    mkdirSync(dir, { recursive: true });
     const data = {
       sessions: Object.fromEntries(this.store),
       checkpoints: Object.fromEntries(this.checkpoints),
       metas: Object.fromEntries(this.metas),
     };
-    writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf8');
+    atomicWriteFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
 
   appendMessage(date: string, session: string, message: SessionMessage): void {
