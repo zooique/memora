@@ -51,9 +51,9 @@ export type {
   RolePackCapability, RolePackManifestSkill, RolePackManifestFile,
   BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
   UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
-  ToolCalls, ToolApproval, ToolReadonly, StreamingMode,
+  ToolApproval, ToolReadonly, StreamingMode,
   ProviderRouting, MultiStepReasoning, InputInterrupt,
-  EndingHandoff, LoopContinue,
+  LoopContinue,
   MemoryWriteMode, SessionArchiveMode, UserFollowup,
   ErrorHandling, SafetyRuleMode,
 } from '@/role-pack/types.js';

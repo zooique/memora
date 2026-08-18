@@ -15,8 +15,6 @@ import { toError } from '@/utils/toError.js';
 export const AGENT_EVENTS = {
   memoryAdded: 'memoryAdded',
   rolePackSwitched: 'rolePackSwitched',
-  /** @deprecated use rolePackSwitched instead */
-  personaSwitched: 'rolePackSwitched',
   decayCompleted: 'decayCompleted',
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
@@ -27,8 +25,6 @@ export const AGENT_EVENTS = {
   configReloaded: 'configReloaded',
   archiveModeChanged: 'archiveModeChanged',
   rolePackSwitchLocked: 'rolePackSwitchLocked',
-  /** @deprecated use rolePackSwitchLocked instead */
-  personaSwitchLocked: 'rolePackSwitchLocked',
   workProjectionGenerated: 'workProjectionGenerated',
   boostPersistFailed: 'boostPersistFailed',
   dedupCompleted: 'dedupCompleted',
@@ -71,8 +67,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   memoryAdded: { id: string; source: string; name: string };
   /** 角色包被切换（自动匹配或手动指定） */
   rolePackSwitched: { from: string | null; to: string };
-  /** @deprecated use rolePackSwitched instead */
-  personaSwitched: { from: string | null; to: string };
   /** 记忆衰减完成 */
   decayCompleted: { decayedCount: number };
   /** 记忆被召回（用于宿主 UI 展示"想起 X 条记忆"） */
@@ -109,8 +103,8 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 切换后模式 */
     to: string;
   };
-  /** 角色切换锁定状态变化（防抖期间用户尝试切换被拒绝时通知） */
-  personaSwitchLocked: {
+  /** 角色包切换锁定状态变化（防抖期间用户尝试切换被拒绝时通知） */
+  rolePackSwitchLocked: {
     /** 锁定原因 */
     reason: string;
     /** 锁定时长（秒） */

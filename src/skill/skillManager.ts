@@ -28,7 +28,7 @@ import { join, dirname } from 'node:path';
  * 技能匹配最低激活阈值
  *
  * score < 此阈值的匹配不激活技能（避免低匹配度噪音）。
- * 与 PersonaManager 的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.3) 一致。
+ * 与角色包管理器的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.3) 一致。
  */
 const SKILL_MATCH_MIN_SCORE = 0.3;
 

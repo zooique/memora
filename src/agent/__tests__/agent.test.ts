@@ -330,7 +330,7 @@ describe('Agent · 生命周期 E2E', () => {
     // 构造
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     expect(agent.initialized).toBe(false);
-    expect(agent.persona).toBeNull();
+    expect(agent.rolePack).toBeNull();
     expect(agent.tools).toBeNull();
     expect(agent.config).toBeNull();
     expect(agent.memory).toBeNull();
@@ -342,7 +342,7 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.context).toBe(ctx);
 
     // Manager 访问器应可用
-    expect(agent.persona).not.toBeNull();
+    expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.config).not.toBeNull();
     expect(agent.memory).not.toBeNull();
@@ -375,7 +375,7 @@ describe('Agent · 生命周期 E2E', () => {
     await agent.init();
 
     // 初始化后所有组件字段应非 null（前置验证）
-    expect(agent.persona).not.toBeNull();
+    expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.config).not.toBeNull();
     expect(agent.memory).not.toBeNull();
@@ -396,7 +396,7 @@ describe('Agent · 生命周期 E2E', () => {
     // 核心组件
     expect(agent.context).toBeNull();
     // 专职 Manager
-    expect(agent.persona).toBeNull();
+    expect(agent.rolePack).toBeNull();
     expect(agent.tools).toBeNull();
     expect(agent.config).toBeNull();
     expect(agent.memory).toBeNull();
@@ -420,7 +420,7 @@ describe('Agent · 生命周期 E2E', () => {
     // 重新 init
     await agent.init();
     expect(agent.initialized).toBe(true);
-    expect(agent.persona).not.toBeNull();
+    expect(agent.rolePack).not.toBeNull();
   });
 
   it('未初始化时调用 chat 应抛出 configError', async () => {
@@ -483,9 +483,9 @@ describe('Agent · Manager 委托模式', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    expect(Array.isArray(agent.persona!.list)).toBe(true);
-    expect(typeof agent.persona!.activeName).toBe('string');
-    expect(['auto', 'manual']).toContain(agent.persona!.currentMode);
+    expect(Array.isArray(agent.rolePack!.list)).toBe(true);
+    expect(typeof agent.rolePack!.activeName).toBe('string');
+    expect(['auto', 'manual']).toContain(agent.rolePack!.currentMode);
   });
 
   it('tools 管理器：list 应包含内置工具', async () => {
@@ -762,7 +762,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     await agent.init();
 
     // 初始角色为扫描顺序第一个（编程专家）
-    const initialName = agent.persona!.activeName;
+    const initialName = agent.rolePack!.activeName;
     expect(initialName).toBe('编程专家');
 
     // 监听 personaSwitched 事件
@@ -781,7 +781,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     expect(switchedTo).toBe('写作助手');
 
     // 验证当前角色已切换
-    expect(agent.persona!.activeName).toBe('写作助手');
+    expect(agent.rolePack!.activeName).toBe('写作助手');
 
     agent.off('rolePackSwitched', () => {});
   });
@@ -1336,17 +1336,17 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
 
-  // ─── switchPersona 手动切换（与自动匹配共享事件链路） ─────
+  // ─── switchRolePack 手动切换（与自动匹配共享事件链路） ─────
 
-  it('switchPersona 应切换角色并发射 personaSwitched 事件', async () => {
+  it('switchRolePack 应切换角色并发射 rolePackSwitched 事件', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     // 初始角色为扫描顺序第一个（编程专家）
-    const initialName = agent.persona!.activeName;
+    const initialName = agent.rolePack!.activeName;
     expect(initialName).toBe('编程专家');
 
-    // 监听 personaSwitched 事件
+    // 监听 rolePackSwitched 事件
     let switchedFrom: string | null = null;
     let switchedTo: string | null = null;
     agent.on('rolePackSwitched', (e) => {
@@ -1354,20 +1354,20 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
       switchedTo = e.to;
     });
 
-    const prompt = agent.switchPersona('写作助手');
+    const ok = agent.switchRolePack('写作助手');
 
-    // 验证返回值是新角色的 system prompt
-    expect(prompt).toContain('写作助手');
+    // 验证返回值为 true
+    expect(ok).toBe(true);
     // 验证事件已触发
     expect(switchedFrom).toBe(initialName);
     expect(switchedTo).toBe('写作助手');
     // 验证当前角色已切换
-    expect(agent.persona!.activeName).toBe('写作助手');
+    expect(agent.rolePack!.activeName).toBe('写作助手');
 
     agent.off('rolePackSwitched', () => {});
   });
 
-  it('switchPersona 同名切换幂等：不触发事件，返回当前 prompt', async () => {
+  it('switchRolePack 同名切换幂等：不触发事件，返回 true', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -1376,38 +1376,40 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
       eventFired = true;
     });
 
-    const initialName = agent.persona!.activeName!;
-    const prompt = agent.switchPersona(initialName);
+    const initialName = agent.rolePack!.activeName!;
+    const ok = agent.switchRolePack(initialName);
 
     // 同名切换不应触发事件
     expect(eventFired).toBe(false);
-    // 但应返回当前角色的 prompt
-    expect(prompt).toContain(initialName);
+    // 但应返回 true（幂等成功）
+    expect(ok).toBe(true);
 
     agent.off('rolePackSwitched', () => {});
   });
 
-  it('switchPersona 角色不存在时返回 null（不抛错）', async () => {
+  it('switchRolePack 角色不存在时返回 false（不抛错）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const initialName = agent.persona!.activeName;
+    const initialName = agent.rolePack!.activeName;
 
-    // 角色不存在时返回 null，不向上抛异常
-    const result = agent.switchPersona('不存在的角色');
-    expect(result).toBeNull();
+    // 角色不存在时返回 false，不向上抛异常
+    const result = agent.switchRolePack('不存在的角色');
+    expect(result).toBe(false);
 
     // 当前角色应保持不变
-    expect(agent.persona!.activeName).toBe(initialName);
+    expect(agent.rolePack!.activeName).toBe(initialName);
   });
 
-  it('switchPersona 对话繁忙时抛错（与 setArchiveMode 一致）', async () => {
+  it('switchRolePack 对话中可切换（自动匹配共用入口，不阻塞）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     // 模拟对话进行中
     (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
-    expect(() => agent!.switchPersona('写作助手')).toThrow(/对话繁忙/);
+    // switchRolePack 是内部统一入口，对话中也允许切换（自动匹配需要）
+    const ok = agent!.switchRolePack('编程专家');
+    expect(ok).toBe(true);
 
     // 恢复空闲状态
     (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
@@ -1415,7 +1417,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
 
   // ─── switchRolePack 手动切换（角色包系统，与自动匹配共享事件链路） ─────
 
-  it('switchRolePack 应切换角色包并发射 personaSwitched 事件', async () => {
+  it('switchRolePack 应切换角色包并发射 rolePackSwitched 事件', async () => {
     // 写两个角色包（manifest.json 文件夹形态）
     const packsDir = join(tmpConfig, 'role-packs');
     const writePack = (dirName: string, manifest: object, persona: string) => {
@@ -1621,8 +1623,8 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
       'utf-8',
     );
 
-    const result = await agent.reloadConfig('persona');
-    expect(result.persona).toBeGreaterThanOrEqual(0);
+    const result = await agent.reloadConfig('rolePack');
+    expect(result.rolePack).toBeGreaterThanOrEqual(0);
     // 激活角色应保持不变
     expect(agent['rolePackManager_']!.activeName).toBe(initialActive);
   });
@@ -1633,16 +1635,16 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
 
     const result = await agent.reloadConfig('rule');
     expect(result.skill).toBe(0);
-    expect(result.persona).toBe(0);
+    expect(result.rolePack).toBe(0);
   });
 
-  it('reloadConfig() 无参数应全量重载 skill + persona', async () => {
+  it('reloadConfig() 无参数应全量重载 skill + rolePack', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     const result = await agent.reloadConfig();
     expect(result.skill).toBeGreaterThan(0);
-    expect(result.persona).toBeGreaterThan(0);
+    expect(result.rolePack).toBeGreaterThan(0);
   });
 
   it('reloadConfig 对话繁忙时应抛错', async () => {
@@ -1901,7 +1903,7 @@ describe('Agent · rebuildComponents() · 手动重建组件', () => {
 
     await agent.rebuildComponents();
 
-    expect(agent.persona).not.toBeNull();
+    expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.config).not.toBeNull();
     expect(agent.memory).not.toBeNull();

@@ -20,11 +20,6 @@
  *   - 配置管理 → ConfigManager
  *   - 记忆查看 → MemoryInspector
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
- *
- * 2026-08-18 PersonaManager 完全合并到 RolePackManager（M3 完成）：
- *   - PersonaManager 的职责（system prompt 注入、切换防抖、关键词匹配、traits 提取）
- *     全部合并到 RolePackManager
- *   - RolePackManager 成为角色+技能+规则的唯一真理源
  */
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
@@ -2354,18 +2349,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 手动切换角色包（宿主 UI 角色选择器入口）
-   *
-   * @deprecated 请使用 {@link switchRolePack}，本方法为过渡期兼容层
-   */
-  switchPersona(name: string): string | null {
-    this.assertInitialized('switchPersona');
-    this.assertNotBusy('切换角色包');
-    const ok = this.switchRolePack(name);
-    return ok ? name : null;
-  }
-
-  /**
    * 获取角色包切换锁定状态（透传 RolePackManager）
    *
    * 宿主 IPC 层调用此方法前置判断锁定状态，区分"切换失败"原因。
@@ -2376,13 +2359,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('getRolePackSwitchLockStatus');
     if (!this.rolePackManager_) return { locked: false, unlockAt: null };
     return this.rolePackManager_.getSwitchLockStatus();
-  }
-
-  /**
-   * @deprecated 请使用 {@link getRolePackSwitchLockStatus}
-   */
-  getPersonaSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
-    return this.getRolePackSwitchLockStatus();
   }
 
   /**
@@ -2595,15 +2571,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 支持的 source：
    * - 'skill' → SkillManager.reload() 清空缓存重新扫描 skills/ 目录
-   * - 'persona' → PersonaManager.reload() 清空缓存重新扫描 personas/ 目录（保持激活角色）
+   * - 'rolePack' → RolePackManager.reload() 清空缓存重新扫描 role-packs/ 目录（保持激活角色）
    *   角色重载后自动刷新 AgentLoop 前缀（角色包优先）
    * - 'rule' → 无操作（rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段）
-   * - undefined → 重载 skill + persona（全量重载）
+   * - undefined → 重载 skill + rolePack（全量重载）
    *
    * @param source 配置类型，缺省时重载全部可热更新的配置
    * @returns 重载结果统计
    */
-  async reloadConfig(source?: string): Promise<{ skill: number; persona: number }> {
+  async reloadConfig(source?: string): Promise<{ skill: number; rolePack: number }> {
     this.assertInitialized('reloadConfig');
     if (this.chatLockManager?.isBusy) {
       // 对话进行中无法热重载：将 source 暂存，待 chat() finally 块释放锁后补执行
@@ -2618,16 +2594,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // rule 类型由 ConfigManager.deleteRule/updateRule CRUD 即时同步 bootstrap 段（refreshBootstrapMemories 回调），无需 reloadConfig
     if (source === 'rule') {
       logger.info('rule 类型由 ConfigManager CRUD 即时同步 bootstrap 段，reloadConfig 跳过');
-      return { skill: 0, persona: 0 };
+      return { skill: 0, rolePack: 0 };
     }
 
-    const result = { skill: 0, persona: 0 };
+    const result = { skill: 0, rolePack: 0 };
     const errors: Error[] = [];
 
     // 按需重载：source 缺省时全量重载，否则只重载指定类型
     const shouldReloadSkill = !source || source === 'skill';
-    const shouldReloadPersona = !source || source === 'persona';
-    const shouldReloadRolePack = !source || source === 'rolepack';
+    const shouldReloadRolePack = !source || source === 'rolePack';
 
     if (shouldReloadSkill && this.skillManager) {
       try {
@@ -2638,23 +2613,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    if (shouldReloadPersona && this.rolePackManager_) {
+    if (shouldReloadRolePack && this.rolePackManager_) {
       try {
-        result.persona = await this.rolePackManager_.reload();
+        result.rolePack = await this.rolePackManager_.reload();
         // 角色重载后，刷新 AgentLoop 的角色前缀
-        if (this.loop) {
-          this.refreshRolePackPrefixOnLoop();
-        }
-      } catch (err) {
-        errors.push(toError(err));
-        logger.warn({ err: toError(err) }, 'reloadConfig: rolePackManager.reload 失败');
-      }
-    }
-
-    // 角色包重载（source='rolepack' 时独立重载）
-    if (shouldReloadRolePack && this.rolePackManager_ && source === 'rolepack') {
-      try {
-        await this.rolePackManager_.reload();
         if (this.loop) {
           this.refreshRolePackPrefixOnLoop();
         }
@@ -2725,7 +2687,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 断言对话未进行中 — 统一守卫，避免在 chat() 进行中执行会破坏状态一致性的操作
    *
    * 提取原因：switchProject / setProvider / setBackgroundProvider / setArchiveMode /
-   * switchPersona / rebuildComponents 等 6 处方法均有相同的 `if (isBusy) throw chatBusyError('XXX')` 守卫，
+   * switchRolePack / rebuildComponents 等 6 处方法均有相同的 `if (isBusy) throw chatBusyError('XXX')` 守卫，
    * 违反 DRY 原则。
    *
    * 注意：reloadConfig 不使用本方法——它在 isBusy 时需暂存 source 而非直接抛错。
@@ -2774,11 +2736,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 获取角色包管理器（M1 清单抽象）
+   * 获取角色包管理器
    *
    * 为插卡式角色包预留的生长点。
    * 角色包是 system prompt 的唯一注入源（ADR-025 档 2-1）。
-   * PersonaManager 为过渡期宿主 API 层，角色包承载全部设定记忆。
    * 返回 null 表示 Agent 未初始化。
    */
   get rolePackManager(): RolePackManager | null {
@@ -3088,7 +3049,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   //
   // 设计策略（ADR-010 §Manager 访问器）：访问器返回 null，门面方法抛错。
   // - 访问器（getter）：返回 Manager | null，供宿主项目链式调用和优雅降级
-  //   （如 `agent.persona?.activeName`、`if (!agent.memory) return []`）
+  //   （如 `agent.rolePack?.activeName`、`if (!agent.memory) return []`）
   // - 门面方法（snapshot/inspect/stats/searchMemories 等）：通过
   //   assertInitialized 抛 MemoraError，提供明确错误信息
   // 宿主项目使用访问器时需自行判空，或使用门面方法获得自动错误处理。
@@ -3097,16 +3058,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 角色包管理器（RolePackManager，角色+技能+规则的唯一真理源）
    *
    * ADR-025 档 2-1 后，RolePackManager 是 system prompt 的唯一注入源。
-   * PersonaManager 已完全合并到 RolePackManager。
    */
   get rolePack(): RolePackManager | null {
-    return this.rolePackManager_;
-  }
-
-  /**
-   * @deprecated 请使用 {@link rolePack}
-   */
-  get persona(): RolePackManager | null {
     return this.rolePackManager_;
   }
 

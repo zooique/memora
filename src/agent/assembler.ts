@@ -9,9 +9,7 @@
  *   - 纯工厂逻辑，不持有状态
  *   - Agent 门面类通过 assembleComponents() 获取组件引用
  *   - 组件间的依赖关系在此处显式声明
- *
- * 注：PersonaManager 已合并到 RolePackManager（ADR-025 档 3 收敛），
- * 角色相关功能统一由 RolePackManager 承载。
+ *   - 角色相关功能统一由 RolePackManager 承载
  */
 
 import { AgentLoop } from '@/agent/loop.js';
@@ -43,8 +41,7 @@ import { configError } from '@/utils/errors.js';
 // FileStore 用于 configDir 存在时创建 config 级文件存储，
 // 供 ConfigManager.confirmConfigSuggestion 写入配置文件（真理源）
 import { FileStore } from '@/memory/store.js';
-// M1 角色包清单：装配层引入角色包管理器，为插卡式提供生长点
-// 当前与 PersonaManager + SkillManager 共存，未来可完全替代
+// 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
 import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
@@ -233,11 +230,7 @@ export interface AssembleOutput {
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
   textPolisher: TextPolishManager;
-  /** 角色包管理器（角色+技能+规则的唯一真理源）
-   *
-   * PersonaManager 已合并到 RolePackManager，
-   * 角色切换/防抖/关键词匹配/traits 提取统一由 RolePackManager 承载。
-   */
+  /** 角色包管理器（角色+技能+规则的唯一真理源） */
   rolePackManager: RolePackManager;
   /** 轮次摘要生成器（记忆即摘要架构，Phase 1） */
   roundSummaryGenerator: RoundSummaryGenerator;

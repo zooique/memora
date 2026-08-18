@@ -78,7 +78,7 @@ export interface ConfigSuggestion {
    * 可选：写入配置文件 frontmatter 的额外元数据
    *
    * 键值对会合并到 frontmatter 中（如 `keywords`、`description`），
-   * 供 PersonaManager.parseKeywords / SkillManager 等加载时解析。
+   * 供角色包管理器 / SkillManager 等加载时解析。
    * 不传时 frontmatter 仅含标准字段（id/source/score/createdAt/accessedAt）。
    */
   metadata?: Record<string, string>;
@@ -288,7 +288,7 @@ export class ConfigManager {
     }
 
     // 同步写入 SQLite index：当前会话的 search_memories / recall 可立即检索到新创建的配置
-    // persona/skill 后续由 reloadConfig → SkillManager.reload / PersonaManager.reload 重新扫描覆盖，
+    // rolePack/skill 后续由 reloadConfig → SkillManager.reload / RolePackManager.reload 重新扫描覆盖，
     // 但 rule 的 reloadConfig 是 no-op（agent.ts 内跳过），必须在此显式同步
     // 重建同名已软删记忆前先 restore，与 loader.ts:100 / updateRule 对称。
     // 否则 upsert 会因「以活跃态覆盖软删除态」抛错，而磁盘文件已在上方 :216 写入，

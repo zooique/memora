@@ -45,9 +45,6 @@ export type AutoSwitch = 'on' | 'off';
 /** 工具调用模式：allow=允许 / block=只回答不执行（role-pack-spec §六 标准键 act.toolMode） */
 export type ToolMode = 'allow' | 'block';
 
-/** @deprecated 旧实现命名（P0 键集对齐前），标准键为 act.toolMode，见 ToolMode */
-export type ToolCalls = ToolMode;
-
 /** 工具批准模式：auto=自动执行 / confirm=执行前征询用户 */
 export type ToolApproval = 'auto' | 'confirm';
 
@@ -70,9 +67,6 @@ export type InputInterrupt = 'allow' | 'block';
 
 /** 结束衔接模式（对齐 Handoff 三选一，role-pack-spec §六 标准键 reflect.handoff）：wait=等待用户 / loop=自动续跑 / end=终止 */
 export type Handoff = 'wait' | 'loop' | 'end';
-
-/** @deprecated 旧实现命名（P0 键集对齐前），标准键为 reflect.handoff，见 Handoff */
-export type EndingHandoff = Handoff;
 
 /**
  * Loop 续跑轮次（Phase 9：自审查轮次可配置）
@@ -459,10 +453,10 @@ export interface RolePackAssembly {
 }
 
 /**
- * 角色包清单（M1 装配层抽象）
+ * 角色包清单（装配层抽象）
  *
  * 装配层只认"清单"不认"来源"。
- * 当前实现从 PersonaManager + SkillManager 聚合，未来可切到角色包文件。
+ * 由 RolePackManager + SkillManager 聚合实现。
  */
 export interface RolePackManifest {
   /** 当前激活的角色包 */

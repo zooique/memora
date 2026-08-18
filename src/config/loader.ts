@@ -137,8 +137,8 @@ export interface Config {
   security: SecurityConfig;
   /** 允许的路径白名单（绝对路径） */
   allowedPaths: string[];
-  /** 默认角色名（对应 personas/*.md） */
-  persona?: string;
+  /** 默认角色包名 */
+  rolePack?: string;
   /** Embedding 配置（可选） */
   embedding?: EmbeddingConfig;
 }
@@ -216,8 +216,8 @@ export function parseConfig(raw: unknown): Config {
   // 解析 allowedPaths
   const allowedPaths = validateAllowedPaths(input.allowedPaths);
 
-  // 解析 persona
-  const persona = typeof input.persona === 'string' ? input.persona : undefined;
+  // 解析默认角色包
+  const rolePack = typeof input.rolePack === 'string' ? input.rolePack : undefined;
 
   // 解析 embedding 配置
   const embedding = parseEmbedding(input.embedding);
@@ -227,7 +227,7 @@ export function parseConfig(raw: unknown): Config {
     memory,
     security,
     allowedPaths,
-    persona,
+    rolePack,
     embedding,
   };
 }

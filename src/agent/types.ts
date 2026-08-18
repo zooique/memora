@@ -26,7 +26,7 @@
  *     │    ├─ messageHistory.ts（历史消息存储）
  *     │    └─ tracer.ts（可观测性 span）
  *     ├─ composer.ts（四级补全器，不中断工作模型）
- *     ├─ personaMatcher.ts（LLM 角色匹配，从 persona 迁入）
+ *     ├─ rolePackMatcher.ts（LLM 辅助角色包匹配）
  *     ├─ builtinToolHandlers.ts（内置工具处理器）
  *     └─ managers/（14 个专职 Manager + 4 辅助/聚合模块）
  *          ├─ archiveCoordinator.ts（归档协调，emit archiveFailed）

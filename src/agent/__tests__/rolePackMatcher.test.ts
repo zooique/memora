@@ -1,7 +1,6 @@
 /**
- * 角色语义匹配器测试（agent 层纯函数模块）
+ * 角色包语义匹配器测试（agent 层纯函数模块）
  *
- * 从 personaManager.test.ts 的 'autoMatch · LLM 辅助判断' 区段迁移。
  * matchRolePackByLlm 是纯函数，直接接收 RolePackMeta[] 参数，无需文件系统 mock。
  *
  * 覆盖范围：
@@ -12,7 +11,7 @@
  *   - prompt 构造：验证 system prompt 包含角色列表且排除当前角色
  */
 import { describe, it, expect, vi } from 'vitest';
-import { matchRolePackByLlm } from '@/agent/personaMatcher.js';
+import { matchRolePackByLlm } from '@/agent/rolePackMatcher.js';
 import type { RolePackMeta } from '@/role-pack/types.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';

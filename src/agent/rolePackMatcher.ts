@@ -1,12 +1,7 @@
 /**
- * 角色语义匹配器 — LLM 辅助角色包匹配（agent 层纯函数模块）
+ * 角色包语义匹配器 — LLM 辅助角色包匹配（agent 层纯函数模块）
  *
- * 从 PersonaManager.matchByLlm 迁移至此，遵循 backend_layers_rules §分层职责：
- * role-pack/ 不直接调 LLM，agent/ 可通过 provider 接口调 LLM。
- *
- * 为 agent/ 根级纯函数模块（非有状态 Manager）。
- *
- * 注：PersonaManager 已合并到 RolePackManager（ADR-025 收敛），
+ * role-pack/ 不直接调 LLM，agent/ 通过 provider 接口调 LLM。
  * 此文件仅承载 LLM 辅助匹配的纯函数逻辑，使用 RolePackMeta 类型。
  */
 import type { LlmProvider } from '@/llm/provider.js';

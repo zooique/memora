@@ -1,15 +1,9 @@
 /**
  * 角色包管理器 — 继承 ConfigResourceManager，管理角色包的生命周期
  *
- * 2026-08-18 收敛形态（M3 完成，PersonaManager 完全合并）：
- *   - 角色包统一为**文件夹形态**，`manifest.json` 是唯一核心控制文件。
- *   - 内容文件（persona.md / rules.md / skills/*）独立于 manifest，由 manifest
- *     按路径注册装载——用户既可独立移植内容文档，也可整体装载角色包。
- *   - PersonaManager 职责已完全合并到 RolePackManager：
- *     * system prompt 注入（buildSystemPrompt）
- *     * 角色切换防抖锁（activate 内置）
- *     * 关键词高置信度匹配（autoMatch）
- *     * 角色 traits 提取（persona.md frontmatter）
+ * 角色包为**文件夹形态**，`manifest.json` 是唯一核心控制文件。
+ * 内容文件（persona.md / rules.md / skills/*）独立于 manifest，由 manifest
+ *   按路径注册装载——用户既可独立移植内容文档，也可整体装载角色包。
  *
  * 设计原则：
  *   - 继承 ConfigResourceManager 基类（复用关键词匹配 / 生命周期）
@@ -155,8 +149,6 @@ function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefin
 
 /**
  * 从 persona.md frontmatter 解析 traits.* 键值对
- *
- * 与 PersonaManager.parseTraits 同源，迁移到 RolePackManager 后统一入口。
  *
  * @param personaContent persona.md 的原始内容（含 frontmatter）
  * @returns traits 键值对（数值），无 traits 时返回 undefined

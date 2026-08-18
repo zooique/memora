@@ -149,9 +149,9 @@ describe('真实 LLM 集成测试', () => {
     }
 
     // 切换到程序员角色
-    const switched = agent.switchPersona('程序员助手');
-    expect(switched).toBeTruthy();
-    expect(agent.persona?.activeName).toBe('程序员助手');
+    const switched = agent.switchRolePack('程序员助手');
+    expect(switched).toBe(true);
+    expect(agent.rolePack?.activeName).toBe('程序员助手');
 
     const input = '帮我看看这段代码有什么问题：const x = ; 请简短回复。';
     let response = '';
@@ -172,7 +172,7 @@ describe('真实 LLM 集成测试', () => {
     }
 
     // 先切回默认角色，避免上一轮测试残留角色干扰本轮自动匹配
-    agent.switchPersona('默认助手');
+    agent.switchRolePack('默认助手');
 
     const input = '帮我写一个 TypeScript 工具函数来深拷贝对象。请简短。';
     let response = '';
