@@ -50,8 +50,12 @@ import {
   resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
+  resolveSummary,
   resolveSummaryFocus,
   resolveToolMode,
+  resolveContextAssembly,
+  resolveToolStepLimit,
+  resolveErrorHandling,
 } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
@@ -64,7 +68,7 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
-import { assembleComponents } from '@/agent/assembler.js';
+import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
 import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { renderTaskTable } from '@/agent/taskTableRenderer.js';
@@ -73,7 +77,7 @@ import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap, AGENT_EVENTS, AGENT_EVENT_SET } from '@/utils/eventEmitter.js';
-import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
@@ -536,9 +540,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const strategy = this.getActiveStrategy();
     // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
     const memoryRecallMode = resolveMemoryRecallMode(strategy);
+    // Tier 2：上下文装配策略（fixed=仅固定轮次 / query=仅语义召回 / hybrid=混合）
+    const contextAssembly = resolveContextAssembly(strategy);
 
     // 根据 L2 策略设置工具调用权限（影响整轮对话），标准键 act.toolMode（§六）
     loop.setToolCallsBlocked(resolveToolMode(strategy) === 'block');
+
+    // Tier 2：根据 L2 策略设置工具步数上限（act.toolStepLimit）
+    loop.setToolStepLimit(resolveToolStepLimit(strategy));
+
+    // Tier 2：根据 L2 策略设置错误处理策略（global.errorHandling）
+    loop.setErrorHandling(resolveErrorHandling(strategy));
 
     // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
     // Phase 9：loopContinue 为 number（0=关闭，N=最多 N 轮）；兼容旧格式 'on'→1 轮 / 'off'→0 轮
@@ -556,7 +568,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.applyRolePackToolExposure();
 
     yield { type: 'thinking', phase: 'recalling' };
-    const recalledMemories = await this.recallAndInject(input, memoryRecallMode);
+    const recalledMemories = await this.recallAndInject(input, memoryRecallMode, contextAssembly);
 
     if (combinedSignal.aborted) return recalledMemories;
 
@@ -698,11 +710,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *   - 'limited'：限额召回（使用 strategy.memoryRecallQuota 限制）
    *   - 'none'：跳过召回，仅注入最近对话
    *
+   * Tier 2 策略键 prepare.contextAssembly 控制装配方式：
+   *   - 'fixed' → 仅加载最近 N 轮，跳过语义召回
+   *   - 'query' → 仅做语义召回，跳过固定轮次注入
+   *   - 'hybrid' → 混合模式（默认），固定轮次 + 语义召回
+   *
    * @param input 用户输入
    * @param memoryRecallMode L2 策略指定的记忆召回模式
+   * @param contextAssembly L2 策略指定的上下文装配方式
    * @returns 召回的记忆列表
    */
-  private async recallAndInject(input: string, memoryRecallMode: MemoryRecallMode): Promise<Memory[]> {
+  private async recallAndInject(
+    input: string,
+    memoryRecallMode: MemoryRecallMode,
+    contextAssembly: 'fixed' | 'query' | 'hybrid',
+  ): Promise<Memory[]> {
     // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
     let recalledMemories: Memory[] = [];
 
@@ -717,7 +739,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 与最近对话注入共用同一 N（resolveRecentRounds），保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"。
     const recentRoundIds = new Set(this.requireHistory.getRecentRoundIds(recentRounds));
 
-    if (memoryRecallMode !== 'none') {
+    // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──
+    if (contextAssembly !== 'fixed' && memoryRecallMode !== 'none') {
       // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
       const tracer = this.#config.tracer ?? NOOP_TRACER;
       const recallSpan = tracer.startSpan(TRACE_SPANS.RECALL_ACTUAL, {
@@ -764,21 +787,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    // Layer 5: 最近对话注入
-    const loop = this.requireLoop;
-    const recentHistory = loop.getRecentHistory(recentRounds);
-    if (recentHistory.length > 0) {
-      const msgs = this.#config.messages;
-      const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
-      const userLabel = msgs?.userLabel ?? 'User';
-      const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
-      const recentPrompt =
-        `${label}\n` +
-        recentHistory
-          .map((m) => `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`)
-          .join('\n');
-      loop.injectSystemMessage(recentPrompt);
-      logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
+    // ── 固定轮次注入：contextAssembly !== 'query' 时执行（fixed / hybrid） ──
+    if (contextAssembly !== 'query') {
+      const loop = this.requireLoop;
+      const recentHistory = loop.getRecentHistory(recentRounds);
+      if (recentHistory.length > 0) {
+        const msgs = this.#config.messages;
+        const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
+        const userLabel = msgs?.userLabel ?? 'User';
+        const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
+        const recentPrompt =
+          `${label}\n` +
+          recentHistory
+            .map((m) => `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`)
+            .join('\n');
+        loop.injectSystemMessage(recentPrompt);
+        logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
+      }
     }
 
     // ── Phase 2：跨窗口召回的摘要按 createdAt 升序排列 ──
@@ -879,7 +904,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 轮次摘要生成（记忆即摘要架构 Phase 1）
-    if (this.roundSummaryGenerator) {
+    // Tier 1 策略键开启：reflect.summary = 'off' 时跳过摘要生成
+    if (this.roundSummaryGenerator && resolveSummary(this.getActiveStrategy()) === 'on') {
       try {
         const roundId = this.requireLoop.getCurrentRoundId();
         const sessionName = history.currentSessionName;
@@ -2341,7 +2367,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 刷新 AgentLoop 的 systemPromptPrefix（角色包唯一）
+   * 刷新 AgentLoop 的 systemPromptPrefix（SSOT：buildSystemPromptPrefix）
    *
    * 提取自 doPostProcess 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
    * 角色包（RolePackManager）是 system prompt 的唯一注入源。
@@ -2352,15 +2378,57 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * - switchPersona / switchRolePack 手动切换成功后
    * - reloadConfig 重载后
    * - loop 为 null 时静默跳过（init 前或 close 后的边界场景）
+   *
+   * 历史：此前只拼接 rolePackPrompt，丢失全局技能清单和时间戳
+   * （首次角色切换后全局技能永久不可见）。现统一走 buildSystemPromptPrefix 真理源。
    */
   private refreshPersonaPrefixOnLoop(): void {
     if (!this.loop) return;
     // 档 2-1（ADR-025）：角色包唯一——无激活角色包时前缀为空（persona 兜底已移除）。
-    // persona 设定不再注入 system prompt，PersonaManager 保留为宿主切换 API。
     const rolePackPrompt = this.rolePackManager_?.buildSystemPrompt() ?? '';
-    const newPrefix =
-      rolePackPrompt ? `${rolePackPrompt}\n\n---\n\n` : '';
+    const globalSkillList = this.skillManager?.buildSkillList() ?? '';
+    const newPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList);
     this.loop.refreshPersonaPrefix(newPrefix);
+    // 同步注入角色包策略中的 ChatOptions 覆盖项（temperature / outputLimit / streaming）
+    this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
+  }
+
+  /**
+   * 从当前激活的角色包策略构建 ChatOptions 覆盖项
+   *
+   * Tier 1 策略键开启：将 act.temperature / act.outputLimit / act.streaming
+   * 映射到 ChatOptions 对应字段，优先级高于全局默认值。
+   *
+   * @returns ChatOptions 覆盖项（无策略声明时返回 undefined）
+   */
+  private buildChatOptionsFromStrategy(): Partial<ChatOptions> | undefined {
+    const strategy = this.getActiveStrategy();
+    if (!strategy) return undefined;
+
+    const chatOptions: Partial<ChatOptions> = {};
+    const act = strategy.act;
+
+    // act.temperature → ChatOptions.temperature
+    const temperature = act?.temperature;
+    if (typeof temperature === 'number' && temperature >= 0 && temperature <= 2) {
+      chatOptions.temperature = temperature;
+    }
+
+    // act.outputLimit → ChatOptions.maxTokens
+    const outputLimit = act?.outputLimit;
+    if (typeof outputLimit === 'number' && outputLimit > 0) {
+      chatOptions.maxTokens = outputLimit;
+    }
+
+    // act.streaming → ChatOptions.stream（streaming='streaming' → true, 'non-streaming' → false）
+    const streaming = act?.streaming;
+    if (streaming === 'streaming') {
+      chatOptions.stream = true;
+    } else if (streaming === 'non-streaming') {
+      chatOptions.stream = false;
+    }
+
+    return Object.keys(chatOptions).length > 0 ? chatOptions : undefined;
   }
 
   /**

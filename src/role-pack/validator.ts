@@ -126,23 +126,30 @@ function isAskOn(value: unknown): boolean {
 // L2 策略键集（role-pack-spec §六 v1 最小集 + P0 提炼键，camelCase 统一命名）
 // 状态标注（P0 键集对齐 2026-08-12）：无标注 = 冻结（memora 真实消费）；
 // `[草案]` = 尚无参考实现消费，保留以征集验证（spec §五 双闸门演进，仍校验语法但语义不承诺一致）
+// 注意：只有被消费的键才保留在校验器中；草案键由类型接口承载，validator 对未知键报 warning
 const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
-    contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] }, // [草案]
     recentRounds: { kind: 'check', check: isPositiveInt },
     memoryRecall: { kind: 'enum', values: ['full', 'limited', 'none'] },
     // P0 键集对齐（2026-08-12）：由实现提炼进标准的键（memora 真实消费，spec §六 提炼行）
     memoryRecallQuota: { kind: 'check', check: isPositiveInt },
-    summaryRecall: { kind: 'enum', values: ['on', 'off'] }, // [草案]
+    minFallback: { kind: 'check', check: isNonNegativeInt },
     // P1 提炼键（2026-08-16 结构化保真，structured-fidelity）：领域无关机制，内容由角色包提供
-    summaryFocus: { kind: 'check', check: isNonEmptyString }, // [草案]
+    summaryFocus: { kind: 'check', check: isNonEmptyString },
+    // Tier 2 开启（2026-08-18）：上下文装配策略
+    contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] },
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },
-    temperature: { kind: 'check', check: isTemperature }, // [草案]
-    streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] }, // [草案]
+    // Tier 1 开启（2026-08-18）：角色包可控温度、输出长度、流式模式
+    temperature: { kind: 'check', check: isTemperature },
+    outputLimit: { kind: 'check', check: isPositiveInt },
+    streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] },
+    // Tier 2 开启（2026-08-18）：工具步数上限（0=无限制，N>0 限制单轮工具步数）
+    toolStepLimit: { kind: 'check', check: isNonNegativeInt },
   },
   reflect: {
+    // Tier 1 开启（2026-08-18）：角色包可控摘要开关
     summary: { kind: 'enum', values: ['on', 'off'] },
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
     loopContinue: { kind: 'check', check: isNonNegativeInt },
@@ -151,7 +158,8 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
   global: {
     askOn: { kind: 'check', check: isAskOn },
     askLimit: { kind: 'check', check: isPositiveInt },
-    errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] }, // [草案]
+    // Tier 2 开启（2026-08-18）：错误处理策略
+    errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
   },
 };
 
@@ -585,6 +593,60 @@ function validateManifestCapabilities(
   });
 }
 
+/**
+ * 校验 trigger 字段的正则误用（role-pack-spec §二/§三）
+ *
+ * 角色包 trigger 为**字符串数组**（精确/包含匹配），不是正则。
+ * 正则匹配仅在 Skill 系统中存在（parseTrigger → RegExp.test）。
+ * 角色包场景为"角色切换"，关键词匹配已足够。
+ *
+ * 检测逻辑：若 trigger 数组中的字符串包含正则语法（`/pattern/flags` 格式），
+ * 给出 warning——该值会被当作字面关键词传入 scoreByKeywords，永远无法匹配。
+ *
+ * @param triggerNode manifest.trigger 节点
+ * @param issues 收集校验问题
+ */
+function validateTriggerField(
+  triggerNode: unknown,
+  issues: RolePackValidationIssue[],
+): void {
+  if (triggerNode === undefined) return;
+
+  // 支持数组和逗号分隔字符串两种写法（与 parseKeywordsAny 对齐）
+  let values: string[];
+  if (Array.isArray(triggerNode)) {
+    values = triggerNode.map((v) => String(v));
+  } else if (typeof triggerNode === 'string') {
+    values = triggerNode.split(',').map((s) => s.trim());
+  } else {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_TRIGGER',
+      path: 'trigger',
+      message: 'trigger 必须是字符串数组或逗号分隔字符串（§二/§三）',
+    });
+    return;
+  }
+
+  // 检测每个 trigger 值是否误用了正则语法
+  // 正则语法模式：以 / 开头、以 / 结尾（可能带 flags），如 /pattern/i
+  const regexPattern = /^\/.+\/[gimsuy]*$/;
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i]!;
+    if (regexPattern.test(value)) {
+      issues.push({
+        severity: 'warning',
+        code: 'TRIGGER_REGEX_MISUSE',
+        path: `trigger[${i}]`,
+        message:
+          `trigger 值 "${value}" 疑似正则语法（/pattern/flags）。` +
+          `角色包 trigger 为字符串精确/包含匹配，不支持正则。` +
+          `正则匹配仅在 Skill 系统中支持。当前值会被当作字面关键词，无法匹配任何输入。`,
+      });
+    }
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 // 公共入口
 // ════════════════════════════════════════════════════════════
@@ -613,6 +675,7 @@ export function validateManifest(
   validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
   validateManifestCapabilities(manifest['capabilities'], issues);
+  validateTriggerField(manifest['trigger'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }

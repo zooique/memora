@@ -50,6 +50,46 @@ import { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
 
 /**
+ * 构建 systemPromptPrefix 的共享函数（SSOT）
+ *
+ * 初始化时和刷新时都必须使用此函数，确保前缀包含：
+ *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
+ *   2. 全局技能 L1 清单（globalSkillList）
+ *   3. 当前时间戳
+ *   4. 分隔线
+ *
+ * 历史：refreshPersonaPrefixOnLoop 此前只拼接 rolePackPrompt，
+ * 丢失全局技能清单和时间戳——首次角色切换后全局技能永久不可见。
+ * 本函数作为唯一真理源，两处调用均走此处。
+ *
+ * @param rolePackPrompt 角色包构建的 prompt（含 L1 persona + 角色包技能清单）
+ * @param globalSkillList 全局技能清单（SkillManager.buildSkillList()）
+ * @param locale 时间格式化 locale
+ * @returns 完整的 systemPromptPrefix
+ */
+export function buildSystemPromptPrefix(
+  rolePackPrompt: string,
+  globalSkillList: string,
+  locale?: string,
+): string {
+  const systemPrefixParts = [rolePackPrompt, globalSkillList].filter(Boolean);
+  const now = new Date();
+  const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
+  return systemPrefixParts.filter(Boolean).join('\n\n') +
+    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
+}
+
+/**
  * 组装器事件回调组
  *
  * T-C2 收敛：此前 8 个回调平铺在 AssembleInput 顶层 + 两个子工厂签名逐字段重复声明；
@@ -229,22 +269,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     sessionStore, locale, callbacks,
   } = params;
 
-  // 系统前缀：角色包唯一（ADR-025 档 2-1：persona 兜底已移除——设定记忆唯一归角色包，
-  // 无激活角色包时降级为空串；PersonaManager 保留为宿主切换 API，不再注入 system prompt）
-  // 全局通用技能清单并列拼入（两级技能统一渐进披露 L1，2026-08-18）：
-  // 通用技能全局激活（清单常驻），角色包技能随角色激活（清单在 rolePackPrompt 内）。
+  // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
+  // 包含角色包 L1 persona + 全局技能清单 + 当前时间戳
   const globalSkillList = skillManager.buildSkillList();
-  const systemPrefixParts = [rolePackPrompt, globalSkillList].filter(Boolean);
-  const now = new Date();
-  const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
-  });
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
-  const systemPromptPrefix =
-    systemPrefixParts.filter(Boolean).join('\n\n') +
-    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
+  const systemPromptPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList, locale);
 
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);

@@ -297,11 +297,19 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
   });
 
   it('独立工具调用应该并发执行而非串行', async () => {
-    // 用延迟 mock 验证并发：两个工具各延迟 100ms
-    // 串行总耗时 ≥200ms，并发总耗时 ≈100ms + 框架开销
-    // 阈值 180ms 留有充分余地，避免 CI 环境抖动
+    // 用并发计数器验证并发（而非时序——时序在高负载 CI 下会 flaky）：
+    // 每个工具执行期间递增 activeCount，记录峰值 maxActive。
+    // 若串行执行，maxActive 永远为 1；若并发执行，maxActive 应达到 2。
+    // 使用 setTimeout(0) 而非 queueMicrotask：确保两个工具都"已启动但未完成"的窗口期，
+    // 因为 yield 会让出事件循环，microtask 在两次 yield 之间就会完成。
+    let activeCount = 0;
+    let maxActive = 0;
     const toolExecutor = vi.fn().mockImplementation(async () => {
-      await new Promise((r) => setTimeout(r, 100));
+      activeCount++;
+      maxActive = Math.max(maxActive, activeCount);
+      // setTimeout(0) 把完成推迟到下一个 macrotask，确保两个工具都已启动
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+      activeCount--;
       return 'done';
     });
 
@@ -321,15 +329,13 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       toolExecutor,
     });
 
-    const start = Date.now();
     for await (const chunk of loop.processUserInput('并发')) {
       void chunk;
     }
-    const elapsed = Date.now() - start;
 
     expect(toolExecutor).toHaveBeenCalledTimes(2);
-    // 并发判定：总耗时接近单个工具耗时（100ms），远小于串行（200ms）
-    expect(elapsed).toBeLessThan(250);
+    // 并发判定：峰值活跃工具数 ≥ 2 → 两个工具同时执行过
+    expect(maxActive).toBeGreaterThanOrEqual(2);
   });
 
   it('tool_start 应批量 yield（全部在 tool_result 之前）', async () => {

@@ -138,6 +138,13 @@ export interface AgentLoopOptions {
    * 截断时强制保留最近 N 轮完整原始对话，宿主可据 provider prompt caching 能力放宽。
    */
   minRecentRounds?: number;
+  /**
+   * ChatOptions 覆盖项（由角色包策略注入）
+   *
+   * 角色包策略 act.temperature / act.outputLimit / act.streaming 等
+   * 通过此字段注入到 LLM 调用参数中，优先级高于全局默认值。
+   */
+  chatOptions?: Partial<ChatOptions>;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -219,6 +226,22 @@ export class AgentLoop {
    * 为 true 时 handleToolCalls 直接返回 'done'，跳过工具执行。
    */
   private toolCallsBlocked = false;
+  /**
+   * 单轮工具调用步数上限（由 Agent 根据 L2 策略 act.toolStepLimit 设置，Tier 2）
+   *
+   * 控制单次 LLM 响应中允许的最大工具调用数量。
+   * 0 表示无限制；>0 时超过上限的工具调用被忽略。
+   */
+  private toolStepLimit = 0;
+  /**
+   * 错误处理策略（由 Agent 根据 L2 策略 global.errorHandling 设置，Tier 2）
+   *
+   * 控制 LLM 调用失败后的处理方式：
+   * - 'retry' → 自动重试（默认，最多 MAX_LLM_RETRIES 次）
+   * - 'degrade' → 降级为纯文本回复（跳过工具调用）
+   * - 'stop' → 立即终止对话，抛出错误
+   */
+  private errorHandling: 'retry' | 'degrade' | 'stop' = 'retry';
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;
   /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
@@ -499,6 +522,29 @@ export class AgentLoop {
    */
   setMaxSelfReviewRounds(rounds: number): void {
     this.maxSelfReviewRounds = rounds > 0 ? Math.floor(rounds) : 0;
+  }
+
+  /**
+   * 设置单轮工具调用步数上限（Tier 2：act.toolStepLimit）
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 act.toolStepLimit 设置。
+   * 0=无限制；>0 时超过上限的工具调用被忽略，仅保留文本内容。
+   *
+   * @param limit 最大工具调用步数（0=无限制）
+   */
+  setToolStepLimit(limit: number): void {
+    this.toolStepLimit = limit >= 0 ? Math.floor(limit) : 0;
+  }
+
+  /**
+   * 设置错误处理策略（Tier 2：global.errorHandling）
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 global.errorHandling 设置。
+   *
+   * @param handling 错误处理策略（'retry' | 'degrade' | 'stop'）
+   */
+  setErrorHandling(handling: 'retry' | 'degrade' | 'stop'): void {
+    this.errorHandling = handling;
   }
 
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
@@ -805,8 +851,19 @@ export class AgentLoop {
       return 'done';
     }
 
+    // Tier 2：工具步数上限检查（act.toolStepLimit）
+    // 当工具调用数超过上限时，仅保留前 N 个，多余的转为纯文本回复
+    let effectiveToolCalls = llmResult.toolCalls!;
+    if (this.toolStepLimit > 0 && effectiveToolCalls.length > this.toolStepLimit) {
+      logger.debug({
+        requested: effectiveToolCalls.length,
+        limit: this.toolStepLimit,
+      }, '工具步数超限，截断至上限');
+      effectiveToolCalls = effectiveToolCalls.slice(0, this.toolStepLimit);
+    }
+
     const execResult = yield* this.executeToolCalls(
-      llmResult.toolCalls!,
+      effectiveToolCalls,
       llmResult.fullContent,
       signal,
     );
@@ -1052,14 +1109,34 @@ export class AgentLoop {
           break;
         }
 
+        // Tier 2：errorHandling === 'stop' → 立即抛出，不重试
+        if (this.errorHandling === 'stop') {
+          llmSpan.recordException(e);
+          llmSpan.end();
+          throw lastError;
+        }
+
         if (streamStarted) {
-          // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
+          // 流式已开始输出，不能重试（用户已看到部分结果）
+          // Tier 2：errorHandling === 'degrade' → 降级为纯文本回复
+          if (this.errorHandling === 'degrade') {
+            logger.warn({ err: e }, 'LLM 流式中途失败，降级为已生成的文本内容');
+            llmSpan.end();
+            return { fullContent, toolCalls: undefined, aborted: false };
+          }
           llmSpan.recordException(e);
           llmSpan.end();
           throw lastError;
         }
         if (attempt >= LOOP_CONSTANTS.MAX_LLM_RETRIES) {
           // 重试次数耗尽
+          // Tier 2：errorHandling === 'degrade' → 降级为纯文本回复
+          if (this.errorHandling === 'degrade') {
+            const degradedMsg = '抱歉，AI 服务暂时不可用，请稍后重试。';
+            logger.warn({ err: e }, 'LLM 重试耗尽，降级回复');
+            llmSpan.end();
+            return { fullContent: degradedMsg, toolCalls: undefined, aborted: false };
+          }
           llmSpan.recordException(e);
           llmSpan.end();
           throw lastError;
@@ -1403,18 +1480,26 @@ export class AgentLoop {
    */
   private buildChatOptions(): ChatOptions {
     const tools = this.opts.toolDefinitions;
-    if (!tools || tools.length === 0) return {};
+    const baseOptions: ChatOptions = {};
 
-    return {
-      tools: tools.map((t) => ({
+    // 工具定义
+    if (tools && tools.length > 0) {
+      baseOptions.tools = tools.map((t) => ({
         type: 'function' as const,
         function: {
           name: t.name,
           description: t.description,
           parameters: t.parameters as Record<string, unknown>,
         },
-      })),
-    };
+      }));
+    }
+
+    // 角色包策略覆盖项（temperature / outputLimit / streaming 等）
+    if (this.opts.chatOptions) {
+      Object.assign(baseOptions, this.opts.chatOptions);
+    }
+
+    return baseOptions;
   }
 
   /**
@@ -1458,6 +1543,18 @@ export class AgentLoop {
   refreshPersonaPrefix(newPrefix: string): void {
     this.opts.systemPromptPrefix = newPrefix;
     this.rebuildSystemMessage();
+  }
+
+  /**
+   * 从角色包策略更新 ChatOptions 覆盖项
+   *
+   * 当角色包切换时，调用此方法将策略中的 temperature/outputLimit/streaming
+   * 等参数注入到 LLM 调用选项中，使角色包的行为偏好立即生效。
+   *
+   * @param chatOptions 角色包策略提取的 ChatOptions 覆盖项
+   */
+  setChatOptions(chatOptions: Partial<ChatOptions> | undefined): void {
+    this.opts.chatOptions = chatOptions && Object.keys(chatOptions).length > 0 ? { ...chatOptions } : undefined;
   }
 
   /**

@@ -116,7 +116,7 @@ export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm'
  * 设计纪律：角色只"选择"不"定义"。
  */
 export interface PrepareStrategy {
-  /** 理解确认模式（默认 off） */
+  /** 理解确认模式（默认 off）[草案·未接入] */
   readonly understandingConfirm?: UnderstandingConfirm;
   /** 上下文装配策略（默认 hybrid） */
   readonly contextAssembly?: ContextAssembly;
@@ -126,13 +126,13 @@ export interface PrepareStrategy {
   readonly memoryRecall?: MemoryRecallMode;
   /** 记忆占用上限 token 数（默认 2000） */
   readonly memoryRecallQuota?: number;
-  /** 摘要召回开关（默认 on） */
+  /** 摘要召回开关（默认 on）[草案·未接入] */
   readonly summaryRecall?: SummaryRecall;
   /** 召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2） */
   readonly minFallback?: number;
-  /** 召回结果相似度阈值 0.0~1.0（默认 0.6） */
+  /** 召回结果相似度阈值 0.0~1.0（默认 0.6）[草案·未接入] */
   readonly recallConfidence?: number;
-  /** 任务分类方式（默认 keyword） */
+  /** 任务分类方式（默认 keyword）[草案·未接入] */
   readonly taskClassification?: TaskClassification;
   /**
    * 角色包提炼视角（可选，默认 undefined=通用浓缩）
@@ -144,7 +144,7 @@ export interface PrepareStrategy {
    * 摘要行为与现状完全一致。
    */
   readonly summaryFocus?: string;
-  /** 角色自动匹配开关（默认 on） */
+  /** 角色自动匹配开关（默认 on）[草案·未接入] */
   readonly autoSwitch?: AutoSwitch;
 }
 
@@ -154,9 +154,9 @@ export interface PrepareStrategy {
 export interface ActStrategy {
   /** 工具调用模式（默认 allow；标准键 act.toolMode，§六） */
   readonly toolMode?: ToolMode;
-  /** 工具批准模式（默认 auto） */
+  /** 工具批准模式（默认 auto）[草案·未接入] */
   readonly toolApproval?: ToolApproval;
-  /** 工具操作范围（默认 full） */
+  /** 工具操作范围（默认 full）[草案·未接入] */
   readonly toolReadonly?: ToolReadonly;
   /** 单轮工具调用步数上限（默认 20） */
   readonly toolStepLimit?: number;
@@ -166,11 +166,11 @@ export interface ActStrategy {
   readonly temperature?: number;
   /** 单轮回答长度上限 token 数（默认 4096） */
   readonly outputLimit?: number;
-  /** Provider 路由策略（默认 auto） */
+  /** Provider 路由策略（默认 auto）[草案·未接入] */
   readonly providerRouting?: ProviderRouting;
-  /** 多步推理模式（默认 auto） */
+  /** 多步推理模式（默认 auto）[草案·未接入] */
   readonly multiStepReasoning?: MultiStepReasoning;
-  /** 输入中断策略（默认 allow） */
+  /** 输入中断策略（默认 allow）[草案·未接入] */
   readonly inputInterrupt?: InputInterrupt;
 }
 
@@ -184,9 +184,9 @@ export interface ReflectStrategy {
   readonly loopContinue?: LoopContinue;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;
-  /** 记忆写入模式（默认 auto） */
+  /** 记忆写入模式（默认 auto）[草案·未接入] */
   readonly memoryWrite?: MemoryWriteMode;
-  /** 会话归档模式（默认 auto） */
+  /** 会话归档模式（默认 auto）[草案·未接入] */
   readonly sessionArchive?: SessionArchiveMode;
   /** 用户追问策略（默认 silent） */
   readonly userFollowup?: UserFollowup;
@@ -196,15 +196,15 @@ export interface ReflectStrategy {
  * 跨阶段全局策略集合
  */
 export interface GlobalStrategy {
-  /** 每轮总 token 上限（默认 8000） */
+  /** 每轮总 token 上限（默认 8000）[草案·未接入] */
   readonly tokenBudget?: number;
-  /** 每轮工具步数上限（默认 50） */
+  /** 每轮工具步数上限（默认 50）[草案·未接入] */
   readonly stepBudget?: number;
-  /** 单任务总成本上限，0=不限制（默认 0） */
+  /** 单任务总成本上限，0=不限制（默认 0）[草案·未接入] */
   readonly costBudget?: number;
   /** 异常时的处理策略（默认 retry） */
   readonly errorHandling?: ErrorHandling;
-  /** 是否允许角色覆盖全局安全规则（默认 inherit=不可覆盖） */
+  /** 是否允许角色覆盖全局安全规则（默认 inherit=不可覆盖）[草案·未接入] */
   readonly safetyRule?: SafetyRuleMode;
   /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
@@ -636,6 +636,62 @@ export function resolveToolMode(strategy: BehaviorStrategy | undefined): ToolMod
 }
 
 /**
+ * 解析摘要生成开关（Tier 1 已消费）：非法值归位 'on'
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的摘要生成开关（on=生成摘要 / off=不生成）
+ */
+export function resolveSummary(strategy: BehaviorStrategy | undefined): 'on' | 'off' {
+  return normalizeEnum(strategy?.reflect?.summary, ['on', 'off'], 'on');
+}
+
+/**
+ * 解析上下文装配策略（Tier 2 已消费）：非法值归位 'hybrid'
+ *
+ * 控制记忆召回与固定轮次注入的组合方式：
+ * - 'fixed' → 仅加载最近 N 轮，不做语义召回
+ * - 'query' → 仅做语义召回，不加载固定轮次
+ * - 'hybrid' → 混合模式（默认），固定轮次 + 语义召回
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的上下文装配策略
+ */
+export function resolveContextAssembly(strategy: BehaviorStrategy | undefined): ContextAssembly {
+  return normalizeEnum(strategy?.prepare?.contextAssembly, ['fixed', 'query', 'hybrid'], 'hybrid');
+}
+
+/**
+ * 解析工具调用步数上限（Tier 2 已消费）：合法正整数采用，非法/缺失回退默认 20
+ *
+ * 控制单次 LLM 响应中允许的最大工具调用数量（所有并行工具调用合计）。
+ * 超过上限时，多余的工具调用被忽略，仅保留文本内容。
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的工具调用步数上限
+ */
+export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.act?.toolStepLimit;
+  // 合法值：0=无限制，N>0=限制步数
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return valid ? candidate : 0;
+}
+
+/**
+ * 解析错误处理策略（Tier 2 已消费）：非法值归位 'retry'
+ *
+ * 控制 LLM 调用失败后的处理方式：
+ * - 'retry' → 自动重试（默认，最多 MAX_LLM_RETRIES 次）
+ * - 'degrade' → 降级为纯文本回复（跳过工具调用）
+ * - 'stop' → 立即终止对话，抛出错误
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的错误处理策略
+ */
+export function resolveErrorHandling(strategy: BehaviorStrategy | undefined): ErrorHandling {
+  return normalizeEnum(strategy?.global?.errorHandling, ['retry', 'degrade', 'stop'], 'retry');
+}
+
+/**
  * 行为策略全局默认值
  *
  * 设计纪律第 2 条：未配置的行为维度使用全局默认值。
@@ -651,6 +707,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     memoryRecallQuota: 2000,
     summaryRecall: 'on',
     minFallback: DEFAULT_MIN_FALLBACK,
+    summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
     recallConfidence: 0.6,
     taskClassification: 'keyword',
     autoSwitch: 'on',

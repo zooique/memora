@@ -9,12 +9,12 @@ import {
 } from '@/role-pack/validator.js';
 import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 
-/** 合法 L2 策略（§六 v1 键集，类型化常量供展开覆写） */
+/** 合法 L2 策略（§六 已消费键集，类型化常量供展开覆写） */
 const validStrategy = {
-  prepare: { contextAssembly: 'hybrid', recentRounds: 3, memoryRecall: 'full', summaryRecall: 'on' },
-  act: { toolMode: 'allow', temperature: 0.7, streaming: 'streaming' },
-  reflect: { summary: 'on', handoff: 'wait' },
-  global: { askOn: ['ambiguity', 'decision'], askLimit: 3, errorHandling: 'retry' },
+  prepare: { recentRounds: 3, memoryRecall: 'full', memoryRecallQuota: 2000, minFallback: 2, summaryFocus: '聚焦核心逻辑' },
+  act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096, streaming: 'streaming' },
+  reflect: { summary: 'on', handoff: 'wait', loopContinue: 0, userFollowup: 'silent' },
+  global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
 };
 
 /** 合法基础 manifest（§2.2：元数据 + 合规 + strategy + 内容注册 + skills） */
@@ -161,14 +161,21 @@ describe('validateManifest：键名合法性', () => {
 });
 
 describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义"）', () => {
-  it('contextAssembly 越界枚举 → INVALID_STRATEGY_VALUE error', () => {
+  it('已开启键 contextAssembly 非法值 → INVALID_STRATEGY_VALUE error（Tier 2 已消费）', () => {
     const result = validate({
       strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, contextAssembly: 'weird' } },
     });
-    const issue = findByCode(result.issues, 'INVALID_STRATEGY_VALUE');
-    expect(issue).toHaveLength(1);
-    expect(issue[0]?.path).toBe('strategy.prepare.contextAssembly');
-    expect(result.valid).toBe(false);
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+    expect(result.valid).toBe(false); // error 阻断
+  });
+
+  it('已开启键 contextAssembly 合法值 → 通过（Tier 2 已消费）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, contextAssembly: 'query' } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+    expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_KEY')).toHaveLength(0);
+    expect(result.valid).toBe(true);
   });
 
   it('recentRounds 非正整数 → error', () => {
@@ -205,6 +212,34 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
   it('temperature 越界（> 2.0）→ error', () => {
     const result = validate({
       strategy: { ...validStrategy, act: { ...validStrategy.act, temperature: 3.5 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('act.outputLimit 非正整数 → error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, outputLimit: -1 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('act.streaming 越界枚举 → error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, streaming: 'invalid' } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('reflect.summary 越界枚举 → error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, summary: 'invalid' } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('minFallback 负数 → error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, minFallback: -1 } },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
