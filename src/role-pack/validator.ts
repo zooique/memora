@@ -138,6 +138,8 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     summaryFocus: { kind: 'check', check: isNonEmptyString },
     // Tier 2 开启（2026-08-18）：上下文装配策略
     contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] },
+    // Tier 3 开启（2026-08-18）：角色自动匹配开关
+    autoSwitch: { kind: 'enum', values: ['on', 'off'] },
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },
@@ -147,6 +149,10 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] },
     // Tier 2 开启（2026-08-18）：工具步数上限（0=无限制，N>0 限制单轮工具步数）
     toolStepLimit: { kind: 'check', check: isNonNegativeInt },
+    // Tier 3 开启（2026-08-18）：Provider 路由策略
+    providerRouting: { kind: 'enum', values: ['auto', 'fixed'] },
+    // Tier 3 开启（2026-08-18）：输入中断策略
+    inputInterrupt: { kind: 'enum', values: ['allow', 'block'] },
   },
   reflect: {
     // Tier 1 开启（2026-08-18）：角色包可控摘要开关
@@ -160,6 +166,10 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     askLimit: { kind: 'check', check: isPositiveInt },
     // Tier 2 开启（2026-08-18）：错误处理策略
     errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
+    // Tier 3 开启（2026-08-18）：Token 预算上限
+    tokenBudget: { kind: 'check', check: isNonNegativeInt },
+    // Tier 3 开启（2026-08-18）：步数预算上限
+    stepBudget: { kind: 'check', check: isNonNegativeInt },
   },
 };
 

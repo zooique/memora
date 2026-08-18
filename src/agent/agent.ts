@@ -56,6 +56,11 @@ import {
   resolveContextAssembly,
   resolveToolStepLimit,
   resolveErrorHandling,
+  resolveAutoSwitch,
+  resolveProviderRouting,
+  resolveInputInterrupt,
+  resolveTokenBudget,
+  resolveStepBudget,
 } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
@@ -533,8 +538,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.lastStickySessionId = sessionId;
     }
 
+    // Tier 3：读取当前策略的 autoSwitch 开关，决定是否允许角色自动匹配
+    const preMatchStrategy = this.getActiveStrategy();
+    const autoSwitch = resolveAutoSwitch(preMatchStrategy);
+
     // 角色包自动匹配（粘性 + LLM 兜底，角色包为唯一入口）
-    await this.tryAutoMatchRolePack(input);
+    // Tier 3：autoSwitch='off' 时跳过自动匹配，锁定当前角色包
+    if (autoSwitch === 'on') {
+      await this.tryAutoMatchRolePack(input);
+    }
 
     // 基元驱动召回（双通道：语义 + 关键词），受 L2 策略控制
     const strategy = this.getActiveStrategy();
@@ -551,6 +563,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // Tier 2：根据 L2 策略设置错误处理策略（global.errorHandling）
     loop.setErrorHandling(resolveErrorHandling(strategy));
+
+    // Tier 3：根据 L2 策略设置 Provider 路由策略（act.providerRouting）
+    loop.setProviderRouting(resolveProviderRouting(strategy));
+
+    // Tier 3：根据 L2 策略设置输入中断策略（act.inputInterrupt）
+    loop.setInputInterrupt(resolveInputInterrupt(strategy));
+
+    // Tier 3：根据 L2 策略设置 Token 预算上限（global.tokenBudget）
+    loop.setTokenBudget(resolveTokenBudget(strategy));
+
+    // Tier 3：根据 L2 策略设置步数预算上限（global.stepBudget）
+    loop.setStepBudget(resolveStepBudget(strategy));
 
     // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
     // Phase 9：loopContinue 为 number（0=关闭，N=最多 N 轮）；兼容旧格式 'on'→1 轮 / 'off'→0 轮

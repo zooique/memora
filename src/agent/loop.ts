@@ -242,6 +242,38 @@ export class AgentLoop {
    * - 'stop' → 立即终止对话，抛出错误
    */
   private errorHandling: 'retry' | 'degrade' | 'stop' = 'retry';
+  /**
+   * Provider 路由策略（由 Agent 根据 L2 策略 act.providerRouting 设置，Tier 3）
+   *
+   * 控制 LLM 调用时的模型路由行为：
+   * - 'auto' → 按任务类型自动路由（默认）
+   * - 'fixed' → 固定使用当前 Provider
+   */
+  private providerRouting: 'auto' | 'fixed' = 'auto';
+  /**
+   * 输入中断策略（由 Agent 根据 L2 策略 act.inputInterrupt 设置，Tier 3）
+   *
+   * 控制执行中插话行为：
+   * - 'allow' → 允许插话（默认）
+   * - 'block' → 阻止插话，排队到下一轮
+   */
+  private inputInterrupt: 'allow' | 'block' = 'allow';
+  /**
+   * Token 预算上限（由 Agent 根据 L2 策略 global.tokenBudget 设置，Tier 3）
+   *
+   * 控制单轮对话的总 token 消耗上限：
+   * - 0 = 不限制（默认 8000）
+   * - N > 0 = 达到上限时提前结束
+   */
+  private tokenBudget = 8000;
+  /**
+   * 步数预算上限（由 Agent 根据 L2 策略 global.stepBudget 设置，Tier 3）
+   *
+   * 控制单轮对话的最大迭代步数（软上限，配合 maxIterations 双重保护）：
+   * - 0 = 不限制（默认 50）
+   * - N > 0 = 达到上限时提前结束
+   */
+  private stepBudget = 50;
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;
   /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
@@ -390,6 +422,15 @@ export class AgentLoop {
       let iteration = 0;
       while (iteration < this.maxIterations) {
         iteration++;
+
+        // Tier 3：stepBudget 检查（软上限，0=不限制）
+        if (this.stepBudget > 0 && iteration >= this.stepBudget) {
+          logger.info({ iteration, stepBudget: this.stepBudget }, '达到步数预算上限');
+          yield { type: 'text', content: this.ui.maxIterationsReached };
+          yield { type: 'done' };
+          return;
+        }
+
         const result = yield* this.handleIteration(iteration, signal);
         // Phase 7+9：自审查轮开始前 emit selfReview chunk，让宿主可展示视觉反馈（round 从 1 起）
         if (result === 'done' && this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
@@ -547,6 +588,50 @@ export class AgentLoop {
     this.errorHandling = handling;
   }
 
+  /**
+   * 设置 Provider 路由策略（Tier 3：act.providerRouting）
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 act.providerRouting 设置。
+   *
+   * @param routing 路由策略（'auto' | 'fixed'）
+   */
+  setProviderRouting(routing: 'auto' | 'fixed'): void {
+    this.providerRouting = routing;
+  }
+
+  /**
+   * 设置输入中断策略（Tier 3：act.inputInterrupt）
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 act.inputInterrupt 设置。
+   *
+   * @param interrupt 中断策略（'allow' | 'block'）
+   */
+  setInputInterrupt(interrupt: 'allow' | 'block'): void {
+    this.inputInterrupt = interrupt;
+  }
+
+  /**
+   * 设置 Token 预算上限（Tier 3：global.tokenBudget）
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 global.tokenBudget 设置。
+   *
+   * @param budget Token 预算上限（0=不限制）
+   */
+  setTokenBudget(budget: number): void {
+    this.tokenBudget = budget >= 0 ? Math.floor(budget) : 0;
+  }
+
+  /**
+   * 设置步数预算上限（Tier 3：global.stepBudget）
+   *
+   * 由 Agent 在每轮对话开始前根据 L2 策略 global.stepBudget 设置。
+   *
+   * @param budget 步数预算上限（0=不限制）
+   */
+  setStepBudget(budget: number): void {
+    this.stepBudget = budget >= 0 ? Math.floor(budget) : 0;
+  }
+
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
   get isPauseRequested(): boolean {
     return this.pauseRequested;
@@ -595,6 +680,12 @@ export class AgentLoop {
    * @param content 插话内容
    */
   interject(content: string): void {
+    // Tier 3：inputInterrupt='block' 时阻止插话，排队到下一轮
+    if (this.inputInterrupt === 'block') {
+      // 排队插话内容，processUserInput 下一轮迭代边界消费
+      this.pendingInterjections.push(content);
+      return;
+    }
     // 追加到队列（支持连续快速插话），然后 abort 控制器中断当前操作
     this.pendingInterjections.push(content);
     this.interjectController.abort();
@@ -786,6 +877,16 @@ export class AgentLoop {
     // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
     if (safeMessages !== this.messages) {
       this.messages = [...safeMessages];
+    }
+
+    // Tier 3：tokenBudget 检查（软上限，0=不限制）
+    if (this.tokenBudget > 0) {
+      const estimatedTokens = this.contextManager.estimateTokens(this.messages);
+      if (estimatedTokens >= this.tokenBudget) {
+        logger.info({ estimatedTokens, tokenBudget: this.tokenBudget }, '达到 Token 预算上限');
+        yield { type: 'text', content: '\n\n[Token budget reached]' };
+        return 'done';
+      }
     }
 
     // P2-8: 注入收敛——每次迭代 LLM 调用前统一注入任务表（消除分散调用点）
@@ -1028,9 +1129,13 @@ export class AgentLoop {
     };
 
     // P1-2 多模型路由：根据当前任务类型选择 Provider
-    const effectiveProvider = this.opts.providerRouter
-      ? this.opts.providerRouter(this.determineTaskType(safeMessages))
-      : this.opts.provider;
+    // Tier 3：providerRouting='fixed' 时跳过动态路由，固定使用当前 Provider
+    const effectiveProvider =
+      this.providerRouting === 'fixed'
+        ? this.opts.provider
+        : this.opts.providerRouter
+          ? this.opts.providerRouter(this.determineTaskType(safeMessages))
+          : this.opts.provider;
 
     // LLM 调用 Span（涵盖重试循环）
     const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {

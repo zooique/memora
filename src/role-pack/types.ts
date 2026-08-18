@@ -144,7 +144,7 @@ export interface PrepareStrategy {
    * 摘要行为与现状完全一致。
    */
   readonly summaryFocus?: string;
-  /** 角色自动匹配开关（默认 on）[草案·未接入] */
+  /** 自动匹配开关（默认 on）[Tier 3 已消费] */
   readonly autoSwitch?: AutoSwitch;
 }
 
@@ -166,11 +166,11 @@ export interface ActStrategy {
   readonly temperature?: number;
   /** 单轮回答长度上限 token 数（默认 4096） */
   readonly outputLimit?: number;
-  /** Provider 路由策略（默认 auto）[草案·未接入] */
+  /** Provider 路由策略（默认 auto）[Tier 3 已消费] */
   readonly providerRouting?: ProviderRouting;
   /** 多步推理模式（默认 auto）[草案·未接入] */
   readonly multiStepReasoning?: MultiStepReasoning;
-  /** 输入中断策略（默认 allow）[草案·未接入] */
+  /** 输入中断策略（默认 allow）[Tier 3 已消费] */
   readonly inputInterrupt?: InputInterrupt;
 }
 
@@ -196,9 +196,9 @@ export interface ReflectStrategy {
  * 跨阶段全局策略集合
  */
 export interface GlobalStrategy {
-  /** 每轮总 token 上限（默认 8000）[草案·未接入] */
+  /** 每轮总 token 上限（默认 8000）[Tier 3 已消费] */
   readonly tokenBudget?: number;
-  /** 每轮工具步数上限（默认 50）[草案·未接入] */
+  /** 每轮工具步数上限（默认 50）[Tier 3 已消费] */
   readonly stepBudget?: number;
   /** 单任务总成本上限，0=不限制（默认 0）[草案·未接入] */
   readonly costBudget?: number;
@@ -220,10 +220,10 @@ export interface GlobalStrategy {
  *
  * ⚠️ 诚实化声明（僵尸键治理，role-pack-spec §五）：
  * 本集合是"设计空间"，不是"承诺面"——**仅以下字段被内核实际消费并影响行为**：
- *   - prepare：recentRounds / memoryRecall / memoryRecallQuota
- *   - act：toolMode
- *   - reflect：handoff / loopContinue / userFollowup
- *   - global：askOn / askLimit
+ *   - prepare：recentRounds / memoryRecall / memoryRecallQuota / minFallback / summaryFocus / contextAssembly / autoSwitch
+ *   - act：toolMode / temperature / outputLimit / streaming / toolStepLimit / providerRouting / inputInterrupt
+ *   - reflect：summary / handoff / loopContinue / userFollowup
+ *   - global：askOn / askLimit / errorHandling / tokenBudget / stepBudget
  * 其余字段（含 toolWhitelist / toolBlacklist 已标 @deprecated）均为**僵尸键**：
  * 角色包可声明，但内核当前不读取、声明不生效——它们承载未来行为分支的
  * 设计空间全景（见 agent-design-philosophy 设计空间表格），尚未接入。消费方
@@ -689,6 +689,80 @@ export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): nu
  */
 export function resolveErrorHandling(strategy: BehaviorStrategy | undefined): ErrorHandling {
   return normalizeEnum(strategy?.global?.errorHandling, ['retry', 'degrade', 'stop'], 'retry');
+}
+
+/**
+ * 解析角色自动匹配开关（Tier 3 已消费）：非法值归位 'on'
+ *
+ * 控制角色包是否允许自动匹配切换：
+ * - 'on' → 允许关键词/LLM 自动匹配切换（默认）
+ * - 'off' → 锁定当前角色包，不自动切换
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的自动匹配开关
+ */
+export function resolveAutoSwitch(strategy: BehaviorStrategy | undefined): AutoSwitch {
+  return normalizeEnum(strategy?.prepare?.autoSwitch, ['on', 'off'], 'on');
+}
+
+/**
+ * 解析 Provider 路由策略（Tier 3 已消费）：非法值归位 'auto'
+ *
+ * 控制 LLM 调用时的模型路由行为：
+ * - 'auto' → 按任务类型自动路由到对应模型（默认）
+ * - 'fixed' → 固定使用当前 Provider，不做路由
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的 Provider 路由策略
+ */
+export function resolveProviderRouting(strategy: BehaviorStrategy | undefined): ProviderRouting {
+  return normalizeEnum(strategy?.act?.providerRouting, ['auto', 'fixed'], 'auto');
+}
+
+/**
+ * 解析输入中断策略（Tier 3 已消费）：非法值归位 'allow'
+ *
+ * 控制执行中插话行为：
+ * - 'allow' → 允许用户在执行中插话（默认，中断当前操作注入新内容）
+ * - 'block' → 阻止执行中插话，排队到下一轮
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的输入中断策略
+ */
+export function resolveInputInterrupt(strategy: BehaviorStrategy | undefined): InputInterrupt {
+  return normalizeEnum(strategy?.act?.inputInterrupt, ['allow', 'block'], 'allow');
+}
+
+/**
+ * 解析 Token 预算上限（Tier 3 已消费）：合法正整数采用，非法/缺失回退默认 8000
+ *
+ * 控制单轮对话的总 token 消耗上限：
+ * - 0 = 不限制
+ * - N > 0 = 达到上限时提前结束迭代
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的 token 预算上限
+ */
+export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.tokenBudget;
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return valid ? candidate : 8000;
+}
+
+/**
+ * 解析步数预算上限（Tier 3 已消费）：合法正整数采用，非法/缺失回退默认 50
+ *
+ * 控制单轮对话的最大迭代步数（软上限，配合 maxIterations 双重保护）：
+ * - 0 = 不限制
+ * - N > 0 = 达到上限时提前结束迭代
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的步数预算上限
+ */
+export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.stepBudget;
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return valid ? candidate : 50;
 }
 
 /**
