@@ -1,7 +1,7 @@
 /**
  * Markdown 目录扫描工具
  *
- * 从 PersonaManager / SkillManager 提取的公共目录扫描逻辑，
+ * 从 RolePackManager / SkillManager 提取的公共目录扫描逻辑，
  * 消除跨模块重复的"扫描 *.md → 解析 frontmatter → 提取字段"代码。
  *
  * 使用异步 I/O（与 FileStore / ToolExecutor 保持一致）。

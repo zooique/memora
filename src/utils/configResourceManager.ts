@@ -1,5 +1,5 @@
 /**
- * 配置资源管理器抽象基类 — 消除 SkillManager 与 PersonaManager 的重复结构
+ * 配置资源管理器抽象基类 — 消除 SkillManager 与 RolePackManager 的重复结构
  *
  * 共同模式（DRY）：
  *   - 扫描 configDir/<subdir>/ 中的 .md 文件
@@ -8,9 +8,9 @@
  *   - load → reload → deleteItem 生命周期
  *
  * 分叉点（子类差异化）：
- *   - createEntry() → 条目构造（Persona 需要 traits 解析，Skill 需要 layer/trigger）
+ *   - createEntry() → 条目构造（RolePack 需要 traits 解析，Skill 需要 layer/trigger）
  *   - buildSystemPrompt() → 系统提示格式
- *   - PersonaManager 额外状态：activePersona / mode / 切换缓冲 → 保留在子类
+ *   - RolePackManager 额外状态：activeRolePackName / mode / 切换缓冲 → 保留在子类
  *   - SkillManager 额外能力：trigger 正则匹配 / register() → 保留在子类
  *
  * 抽象收益验证（§2.2 技术债务的阈值判断）：

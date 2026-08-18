@@ -23,8 +23,6 @@
  *
  *   llm/types.ts ─────→ 纯类型定义（LlmChunk）
  *
- *   persona/types.ts ─→ 纯类型定义（Persona, PersonaMode）
- *
  *   skill/types.ts ───→ 纯类型定义（SkillEntry, SkillMatch）
  *
  *   eval/evalTypes.ts ─→ 纯类型定义（EvalScenario, EvalResult）
@@ -44,7 +42,6 @@ export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
-export type { PersonaMode, Persona } from '@/persona/types.js';
 // 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
   RolePack, RolePackMeta, RolePackAssembly, RolePackManifest,

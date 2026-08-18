@@ -1,20 +1,23 @@
 /**
- * 角色语义匹配器 — LLM 辅助角色匹配（agent 层纯函数模块）
+ * 角色语义匹配器 — LLM 辅助角色包匹配（agent 层纯函数模块）
  *
  * 从 PersonaManager.matchByLlm 迁移至此，遵循 backend_layers_rules §分层职责：
- * persona/ 不直接调 LLM，agent/ 可通过 provider 接口调 LLM。
+ * role-pack/ 不直接调 LLM，agent/ 可通过 provider 接口调 LLM。
  *
  * 为 agent/ 根级纯函数模块（非有状态 Manager）。
+ *
+ * 注：PersonaManager 已合并到 RolePackManager（ADR-025 收敛），
+ * 此文件仅承载 LLM 辅助匹配的纯函数逻辑，使用 RolePackMeta 类型。
  */
 import type { LlmProvider } from '@/llm/provider.js';
-import type { Persona } from '@/persona/types.js';
+import type { RolePackMeta } from '@/role-pack/types.js';
 import { logger } from '@/logging/logger.js';
 
 /** LLM 辅助匹配的 maxTokens 上限（角色名很短，无需长响应） */
 const LLM_MATCH_MAX_TOKENS = 50;
 
 /**
- * LLM 辅助语义角色匹配
+ * LLM 辅助语义角色包匹配
  *
  * 当关键词匹配低置信度或无命中时，由 agent 层调用此函数进行语义级匹配。
  *
@@ -25,26 +28,27 @@ const LLM_MATCH_MAX_TOKENS = 50;
  *   - 候选列表为空（排除当前角色后） → 返回 null
  *
  * @param provider 后台 LLM Provider
- * @param personaList 完整角色列表（函数内部排除当前激活角色）
- * @param activePersonaName 当前激活角色名（排除自身，避免无意义切换）
+ * @param rolePackList 完整角色包元数据列表（函数内部排除当前激活角色）
+ * @param activeRolePackName 当前激活角色包名（排除自身，避免无意义切换）
  * @param userInput 用户输入文本
- * @returns 匹配的角色名，无匹配/失败返回 null
+ * @returns 匹配的角色包名，无匹配/失败返回 null
  */
-export async function matchPersonaByLlm(
+export async function matchRolePackByLlm(
   provider: LlmProvider,
-  personaList: Persona[],
-  activePersonaName: string | undefined,
+  rolePackList: RolePackMeta[],
+  activeRolePackName: string | undefined,
   userInput: string,
 ): Promise<string | null> {
   // 排除当前激活角色（避免无意义切换）
-  const candidates = personaList.filter((p) => p.name !== activePersonaName);
+  const candidates = rolePackList.filter((p) => p.name !== activeRolePackName);
   if (candidates.length === 0) return null;
 
-  // 构造角色列表描述（name + description/content 前缀 + keywords）
-  const personaListText = candidates
+  // 构造角色列表描述（name + description + keywords）
+  const roleListText = candidates
     .map((p) => {
-      const desc = p.description ?? p.content.substring(0, 50).trim();
-      return `- ${p.name}：${desc}（关键词：${p.keywords.join(', ')}）`;
+      const desc = p.description ?? p.displayName ?? '';
+      const kws = (p.keywords ?? []).join(', ');
+      return `- ${p.name}：${desc}（关键词：${kws}）`;
     })
     .join('\n');
 
@@ -55,7 +59,7 @@ export async function matchPersonaByLlm(
           role: 'system',
           content:
             '你是角色匹配助手。根据用户输入，从以下角色中选择最匹配的一个。\n\n' +
-            `角色列表：\n${personaListText}\n\n` +
+            `角色列表：\n${roleListText}\n\n` +
             '规则：\n1. 只返回角色名，不解释\n2. 无匹配返回 "none"',
         },
         { role: 'user', content: userInput },
@@ -75,7 +79,7 @@ export async function matchPersonaByLlm(
     const matched = candidates.find((p) => p.name === trimmed);
     return matched ? matched.name : null;
   } catch (err) {
-    logger.warn({ err }, 'LLM 辅助角色匹配失败，降级为关键词匹配');
+    logger.warn({ err }, 'LLM 辅助角色包匹配失败，降级为关键词匹配');
     return null;
   }
 }
