@@ -46,6 +46,8 @@ import { FileStore } from '@/memory/store.js';
 // M1 角色包清单：装配层引入角色包管理器，为插卡式提供生长点
 // 当前与 PersonaManager + SkillManager 共存，未来可完全替代
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
+// L3 脚本执行器（静态导入，避免每次调用动态加载）
+import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
 
 /**
  * 组装器事件回调组
@@ -404,8 +406,7 @@ export async function assembleComponents(
     if (rolePackPath) {
       const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
       if (scriptInfo) {
-        const { runSkillScript: runScript, formatScriptResult } = await import('@/skill/skillScriptRunner.js');
-        const result = await runScript(rolePackPath, scriptInfo.runtime, args, scriptInfo.timeout);
+        const result = await runSkillScript(rolePackPath, scriptInfo.runtime, args, scriptInfo.timeout);
         return formatScriptResult(result);
       }
     }
@@ -415,8 +416,7 @@ export async function assembleComponents(
       const scripts = skillManager.listScripts(skillName);
       const scriptInfo = scripts.find((s) => s.path === scriptPath);
       if (scriptInfo) {
-        const { runSkillScript: runScript, formatScriptResult } = await import('@/skill/skillScriptRunner.js');
-        const result = await runScript(globalPath, scriptInfo.runtime, args, scriptInfo.timeout);
+        const result = await runSkillScript(globalPath, scriptInfo.runtime, args, scriptInfo.timeout);
         return formatScriptResult(result);
       }
     }

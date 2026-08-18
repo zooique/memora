@@ -323,3 +323,23 @@ function getExt(filename: string): string {
   const dotIndex = filename.lastIndexOf('.');
   return dotIndex >= 0 ? filename.slice(dotIndex).toLowerCase() : '';
 }
+
+/**
+ * 路径穿越防护：检查子路径是否在基目录内
+ *
+ * 将 base + sub 拼接后 resolve 为绝对路径，检查其是否仍以 base 为前缀。
+ * 防止 LLM 通过 `../` 等手段读取/执行技能目录外的文件。
+ *
+ * @param base 基目录绝对路径
+ * @param sub 相对子路径（可能含 `../`）
+ * @returns 安全的完整路径（已 resolve），穿越时返回 null
+ */
+export function resolveSafePath(base: string, sub: string): string | null {
+  const resolvedBase = resolve(base);
+  const fullPath = resolve(base, sub);
+  // 确保完整路径以基目录为前缀（resolve 会消去 ../）
+  if (!fullPath.startsWith(resolvedBase)) {
+    return null;
+  }
+  return fullPath;
+}

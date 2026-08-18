@@ -19,7 +19,7 @@ import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillMatch, SkillLayer3 } from '@/skill/types.js';
-import { parseTrigger, parseKeywords, discoverLayer3 } from '@/utils/scanner.js';
+import { parseTrigger, parseKeywords, discoverLayer3, resolveSafePath } from '@/utils/scanner.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -171,7 +171,12 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     // 确认资源在 layer3 中（安全检查，防止路径穿越）
     if (skill.layer3?.resources.some((r) => r.path === resourcePath)) {
       const skillDir = dirname(skill.filePath);
-      const resourceFullPath = join(skillDir, 'resources', resourcePath);
+      // 路径穿越防护：确保 resourcePath 不逃逸技能 resources/ 目录
+      const resourceFullPath = resolveSafePath(join(skillDir, 'resources'), resourcePath);
+      if (!resourceFullPath) {
+        logger.warn({ skill: skillName, resourcePath }, 'read_resource 路径穿越被阻止');
+        return null;
+      }
       try {
         return await readFile(resourceFullPath, 'utf-8');
       } catch (err) {
@@ -204,7 +209,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     const skill = this.get(skillName);
     if (!skill?.layer3?.scripts.some((s) => s.path === scriptPath)) return null;
     const skillDir = dirname(skill.filePath);
-    return join(skillDir, 'scripts', scriptPath);
+    // 路径穿越防护：确保 scriptPath 不逃逸技能 scripts/ 目录
+    return resolveSafePath(join(skillDir, 'scripts'), scriptPath);
   }
 
   // ── 基类抽象方法实现 ──────────────────────────────

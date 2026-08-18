@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir, discoverLayer3, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
 import type {
@@ -296,7 +296,11 @@ function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapabilit
 }
 
 /**
- * 从 rules.md 内容解析规则列表（逐行 `- ` 无序列表）
+ * 从 rules.md 内容解析规则列表
+ *
+ * 支持两种 Markdown 列表格式：
+ *   - 无序列表：`- 规则内容` 或 `* 规则内容`
+ *   - 有序列表：`1. 规则内容`、`2. 规则内容` 等
  *
  * @param content rules 文件内容
  * @returns 规则字符串列表
@@ -306,7 +310,8 @@ function parseRules(content: string): string[] {
   const rules: string[] = [];
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
-    const match = /^[-*]\s+(.+)$/.exec(trimmed);
+    // 优先匹配无序列表（- 或 *），再匹配有序列表（数字.）
+    const match = /^[-*]\s+(.+)$/.exec(trimmed) || /^\d+\.\s+(.+)$/.exec(trimmed);
     if (match) {
       const rule = match[1]?.trim() ?? '';
       if (rule) rules.push(rule);
@@ -859,18 +864,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       .filter((s) => s.name || s.file)
       .map((s) => {
         // 优先使用 frontmatter name，回退到从 file 路径提取（兼容无 name 的旧技能）
-        let label = s.name ?? '';
-        if (!label && s.file) {
-          // 单文件：skills/write.md → write；文件夹：skills/my-skill/SKILL.md → my-skill
-          const parts = s.file.split(/[\\/]/);
-          // 文件夹形式：取 SKILL.md 所在目录名；单文件形式：取文件名去扩展名
-          const last = parts.pop() ?? '';
-          if (last === 'SKILL.md' || last === 'SKILL.MD') {
-            label = parts.pop() ?? ''; // 取 SKILL.md 前的目录名
-          } else {
-            label = last.replace(/\.(md|markdown)$/i, '');
-          }
-        }
+        const label = s.name ?? (s.file ? this.deriveSkillNameFromFile(s.file) : '');
         const desc = s.description ? `：${s.description}` : '';
         const l3Tag = s.layer3 && (s.layer3.resources.length > 0 || s.layer3.scripts.length > 0)
           ? '（含资源/脚本）'
@@ -898,36 +892,18 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * @returns 技能正文；技能不存在或读取失败返回 null
    */
   async readSkillContent(skillName: string, packName?: string): Promise<string | null> {
-    const targetName = packName ?? this.activePackName;
-    if (!targetName) return null;
-    const pack = this.items.find((p) => p.meta.name === targetName);
-    if (!pack) return null;
-
-    // 按技能名匹配 manifest.skills 项（name 优先，缺省按路径推导）
-    const skill = pack.skills.find((s) => {
-      // 1. frontmatter name 精确匹配
-      if (s.name && s.name === skillName) return true;
-      if (!s.file) return false;
-      // 2. 从 file 路径推导：单文件取文件名去扩展名，文件夹取 SKILL.md 前的目录名
-      const parts = s.file.split(/[\\/]/);
-      const last = parts.pop() ?? '';
-      let derivedName: string;
-      if (last === 'SKILL.md' || last === 'SKILL.MD') {
-        derivedName = parts.pop() ?? ''; // 文件夹形式：skills/my-skill/SKILL.md → my-skill
-      } else {
-        derivedName = last.replace(/\.(md|markdown)$/i, ''); // 单文件：skills/write.md → write
-      }
-      return derivedName === skillName;
-    });
-    if (!skill?.file) return null;
+    const found = this.findSkillByName(skillName, packName);
+    if (!found || !found.skill.file) return null;
+    const skillFilePath = found.skill.file;
+    const { pack } = found;
 
     // 技能文件路径相对角色包目录（manifest.json 所在目录）
-    const skillPath = join(dirname(pack.filePath), skill.file);
+    const skillPath = join(dirname(pack.filePath), skillFilePath);
     try {
       return await readContentSafe(skillPath);
     } catch (err) {
       getLogger().warn(
-        { pack: targetName, skill: skillName, skillPath, err },
+        { pack: pack.meta.name, skill: skillName, skillPath, err },
         'read_skill 读取技能正文失败',
       );
       return null;
@@ -937,13 +913,33 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── L3 资源/脚本访问 ──────────────────────────────────
 
   /**
-   * 解析技能所在目录（供 L3 资源/脚本访问使用）
+   * 从技能文件路径推导技能名
    *
-   * 与 readSkillContent 共享相同的技能定位逻辑：
-   *   - 按技能名匹配 manifest.skills 项（name 优先，缺省按路径推导）
-   *   - 返回技能文件所在目录（SKILL.md 所在目录或 .md 文件所在目录）
+   * 单文件形式：skills/write.md → write
+   * 文件夹形式：skills/my-skill/SKILL.md → my-skill
    */
-  private resolveSkillDir(skillName: string, packName?: string): string | null {
+  private deriveSkillNameFromFile(file: string): string {
+    const parts = file.split(/[\\/]/);
+    const last = parts.pop() ?? '';
+    if (last === 'SKILL.md' || last === 'SKILL.MD') {
+      return parts.pop() ?? ''; // 文件夹形式
+    }
+    return last.replace(/\.(md|markdown)$/i, ''); // 单文件形式
+  }
+
+  /**
+   * 按技能名在指定角色包中查找技能条目
+   *
+   * 匹配策略：frontmatter name 精确匹配优先，其次从 file 路径推导
+   *
+   * @param skillName 技能名
+   * @param packName 角色包名（可选，默认激活角色包）
+   * @returns 匹配的角色包和技能条目，未找到返回 null
+   */
+  private findSkillByName(
+    skillName: string,
+    packName: string | undefined,
+  ): { pack: RolePack; skill: RolePackManifestSkill } | null {
     const targetName = packName ?? this.activePackName;
     if (!targetName) return null;
     const pack = this.items.find((p) => p.meta.name === targetName);
@@ -952,25 +948,32 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const skill = pack.skills.find((s) => {
       if (s.name && s.name === skillName) return true;
       if (!s.file) return false;
-      const parts = s.file.split(/[\\/]/);
-      const last = parts.pop() ?? '';
-      let derivedName: string;
-      if (last === 'SKILL.md' || last === 'SKILL.MD') {
-        derivedName = parts.pop() ?? '';
-      } else {
-        derivedName = last.replace(/\.(md|markdown)$/i, '');
-      }
-      return derivedName === skillName;
+      return this.deriveSkillNameFromFile(s.file) === skillName;
     });
-    if (!skill?.file) return null;
+    if (!skill) return null;
+    return { pack, skill };
+  }
 
-    const skillFilePath = join(dirname(pack.filePath), skill.file);
+  /**
+   * 解析技能所在目录（供 L3 资源/脚本访问使用）
+   *
+   * 与 readSkillContent 共享相同的技能定位逻辑：
+   *   - 按技能名匹配 manifest.skills 项（name 优先，缺省按路径推导）
+   *   - 返回技能文件所在目录（SKILL.md 所在目录或 .md 文件所在目录）
+   */
+  private resolveSkillDir(skillName: string, packName?: string): string | null {
+    const found = this.findSkillByName(skillName, packName);
+    if (!found || !found.skill.file) return null;
+    const skillFilePath = found.skill.file;
+    const { pack } = found;
+
+    const fullSkillPath = join(dirname(pack.filePath), skillFilePath);
     // 技能目录：SKILL.md 在文件夹内 → 文件夹根；单文件 .md → 文件所在目录
-    const skillStat = statSyncSafe(skillFilePath);
+    const skillStat = statSyncSafe(fullSkillPath);
     if (skillStat?.isDirectory()) {
-      return skillFilePath; // 文件夹形式：skills/my-skill/SKILL.md → skills/my-skill/
+      return fullSkillPath; // 文件夹形式：skills/my-skill/SKILL.md → skills/my-skill/
     }
-    return dirname(skillFilePath); // 单文件形式：skills/write.md → skills/
+    return dirname(fullSkillPath); // 单文件形式：skills/write.md → skills/
   }
 
   /**
@@ -985,7 +988,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    const resourceFullPath = join(skillDir, 'resources', resourcePath);
+    // 路径穿越防护：确保 resourcePath 不逃逸技能 resources/ 目录
+    const resourceFullPath = resolveSafePath(join(skillDir, 'resources'), resourcePath);
+    if (!resourceFullPath) {
+      getLogger().warn(
+        { skill: skillName, resourcePath },
+        'read_resource 路径穿越被阻止',
+      );
+      return null;
+    }
     try {
       return await readContentSafe(resourceFullPath);
     } catch (err) {
@@ -1009,7 +1020,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    const fullPath = join(skillDir, 'scripts', scriptPath);
+    // 路径穿越防护：确保 scriptPath 不逃逸技能 scripts/ 目录
+    const fullPath = resolveSafePath(join(skillDir, 'scripts'), scriptPath);
+    if (!fullPath) return null;
     if (accessSyncSafe(fullPath)) {
       return fullPath;
     }
@@ -1027,10 +1040,19 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * @returns 脚本元信息，不存在返回 null
    */
   getSkillScriptInfo(
-    _skillName: string,
+    skillName: string,
     scriptPath: string,
-    _packName?: string,
+    packName?: string,
   ): { runtime: 'node' | 'python' | 'shell'; timeout?: number } | null {
+    // 优先使用已扫描的 L3 数据（scanPackSkills 已发现 layer3.scripts）
+    const found = this.findSkillByName(skillName, packName);
+    if (found?.skill.layer3?.scripts) {
+      const scriptMeta = found.skill.layer3.scripts.find((s) => s.path === scriptPath);
+      if (scriptMeta) {
+        return { runtime: scriptMeta.runtime };
+      }
+    }
+    // 回退：从扩展名推断 runtime
     const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
     const runtimeMap: Record<string, 'node' | 'python' | 'shell'> = {
       '.ts': 'node', '.js': 'node', '.mjs': 'node', '.cjs': 'node',
