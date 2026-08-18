@@ -259,6 +259,29 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'skill_activated'; skillName: string }
   /**
+   * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）
+   *
+   * 角色包激活时由 host 推送：工具模式（allow/block）+ 能力标签列表。
+   * webview 据此在输入区角色徽章旁追加工具权限徽章，让用户直观感知「当前角色能做什么」：
+   *   - block：纯 LLM 模式，无工具暴露
+   *   - allow + capabilities：按能力白名单暴露工具（如只读/可读写+联网）
+   *   - allow + 空 capabilities：全工具暴露
+   */
+  | {
+      type: 'capability_badge';
+      toolMode: 'allow' | 'block';
+      capabilities: { capability: string; label: string }[];
+    }
+  /**
+   * Agent Loop 续跑计数（Phase 4 自动续跑，E1 Loop 增强）
+   *
+   * handoff{decision:'loop'} 自动续跑时推送当前轮次与上限：
+   *   - current：已续跑次数（从 1 起）
+   *   - max：续跑上限（默认 3）
+   * webview 在提示条显示「自动续跑 N/M」，超过上限后提示用户手动介入。
+   */
+  | { type: 'loop_count'; current: number; max: number }
+  /**
    * Agent 运行状态（P0-2 状态可视化 + Phase 4 暂停/恢复）
    *
    * 让用户看见 Agent 正在做什么，而非静默等待：

@@ -21,7 +21,7 @@
       "memoryRecall": "limited",
       "summaryRecall": "on"
     },
-    "act": { "toolMode": "block", "temperature": 0.3, "streaming": "streaming" },
+    "act": { "toolMode": "allow", "temperature": 0.3, "streaming": "streaming" },
     "reflect": { "summary": "on", "handoff": "wait" },
     "global": { "errorHandling": "retry" }
   }

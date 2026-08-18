@@ -106,6 +106,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 当前角色只读徽章（输入区左侧，展示角色名让用户感知当前定位；切换入口在独立「角色」视图）
   const roleBadge = document.getElementById('currentRoleBadge') as HTMLElement | null;
+  // Phase 4 E2：工具权限徽章（输入区角色徽章旁，展示工具模式与能力列表）
+  const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
+  // Phase 3 C3：技能指示器容器（输入区上方，本轮已激活技能列表）
+  const skillIndicator = document.getElementById('skillIndicator') as HTMLElement | null;
+  // Phase 3 C3：当前轮已激活技能名集合（用于持续展示 + 结束时清除）
+  const activeSkills = new Set<string>();
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -370,6 +376,74 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
     roleBadge.hidden = false;
     roleBadge.textContent = currentRoleName;
+  }
+
+  /**
+   * Phase 4 E2：更新工具权限徽章（角色能力面可见性）
+   *
+   * 根据 capability_badge 消息更新：
+   * - block 模式 → 显示「纯 LLM」标签
+   * - allow + 有能力 → 显示能力列表（如「文件」「联网」「记忆」）
+   * - allow + 无能力 → 显示「全部工具」
+   * 无数据时隐藏徽章。
+   */
+  function updateCapabilityBadge(
+    toolMode: 'allow' | 'block',
+    capabilities: { capability: string; label: string }[],
+  ): void {
+    if (!capabilityBadge) return;
+    if (toolMode === 'block') {
+      capabilityBadge.hidden = false;
+      capabilityBadge.textContent = '纯 LLM';
+      capabilityBadge.title = '纯 LLM 模式（无工具暴露）';
+      return;
+    }
+    if (capabilities.length === 0) {
+      capabilityBadge.hidden = false;
+      capabilityBadge.textContent = '全部工具';
+      capabilityBadge.title = '允许所有工具';
+      return;
+    }
+    const labels = [...new Set(capabilities.map((c) => c.label))];
+    capabilityBadge.hidden = false;
+    capabilityBadge.textContent = labels.join(' · ');
+    capabilityBadge.title = `允许：${labels.join('、')}`;
+  }
+
+  /**
+   * Phase 3 C3：添加已激活技能到指示器（本轮持续展示）
+   */
+  function addSkillIndicator(skillName: string): void {
+    if (!skillIndicator) return;
+    activeSkills.add(skillName);
+    renderSkillIndicator();
+  }
+
+  /**
+   * Phase 3 C3：渲染技能指示器（chip 列表样式）
+   */
+  function renderSkillIndicator(): void {
+    if (!skillIndicator) return;
+    skillIndicator.innerHTML = '';
+    if (activeSkills.size === 0) {
+      skillIndicator.hidden = true;
+      return;
+    }
+    skillIndicator.hidden = false;
+    activeSkills.forEach((name) => {
+      const chip = document.createElement('span');
+      chip.className = 'skill-chip';
+      chip.textContent = name;
+      skillIndicator.appendChild(chip);
+    });
+  }
+
+  /**
+   * Phase 3 C3：清除技能指示器（一轮结束 / 新对话开始）
+   */
+  function clearSkillIndicator(): void {
+    activeSkills.clear();
+    renderSkillIndicator();
   }
 
   /**
@@ -980,8 +1054,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
     } else if (msg.type === 'skill_activated') {
-      // Phase 3：技能激活提示（skillMatched 事件转发）——让用户看见本轮用到了什么技能
+      // Phase 3 C3：技能激活 → 添加到持续指示器（本轮可见 + 一次性提示条）
+      addSkillIndicator(msg.skillName);
       showActivity('info', `已激活技能：${msg.skillName}`);
+    } else if (msg.type === 'capability_badge') {
+      // Phase 4 E2：角色能力徽章 → 更新工具权限展示
+      updateCapabilityBadge(msg.toolMode, msg.capabilities);
+    } else if (msg.type === 'loop_count') {
+      // Phase 4 E1：自动续跑计数 → 提示条显示当前轮次
+      showActivity('info', `Agent 自动续跑 ${msg.current}/${msg.max}`);
     } else if (msg.type === 'metrics') {
       // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
@@ -995,6 +1076,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.settleRunning(messages, '已中断');
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
       finalizeStreaming();
+      // Phase 3 C3：一轮结束 → 清除技能指示器
+      clearSkillIndicator();
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 兜底终结残留
       // 「执行中」工具卡片 + 低扰提示「已停止生成」，区分于正常 done。
@@ -1003,6 +1086,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.settleRunning(messages, '已中断');
       finalizeStreaming();
       showActivity('info', '已停止生成');
+      // Phase 3 C3：中断 → 清除技能指示器
+      clearSkillIndicator();
     } else if (msg.type === 'suggestions') {
       // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
       renderFollowUpSuggestions(msg.items);
@@ -1074,6 +1159,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       lastShownDate = undefined;
       // Phase 1：清空活动详情「本次召回」明细区（切会话/清空后不残留上轮召回来源）
       renderRecallDetail([]);
+      // Phase 3 C3：清空会话 → 清除技能指示器
+      clearSkillIndicator();
       updateEmptyState();
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；

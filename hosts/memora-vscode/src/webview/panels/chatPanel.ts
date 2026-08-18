@@ -43,6 +43,9 @@ const MAX_HISTORY_MESSAGES = 200;
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
 const MAX_DOC_CONTEXT_CHARS = 12000;
 
+/** Agent Loop 自动续跑上限（默认 3 轮，防止死循环）——文件级常量，ChatPanel 内部使用 */
+const MAX_LOOP_COUNT = 3;
+
 /**
  * 从活动编辑器快照「当前文档上下文」（2026-08-17 A 层：实时跟随活动编辑器）
  *
@@ -124,6 +127,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前进行中流的 promise：生成中插话需 await 旧流彻底结束再发新流，
    *  避免 chatLock 未释放导致「发起新对话」busy 冲突 */
   private _currentFlow: Promise<void> | undefined;
+  /**
+   * Agent Loop 自动续跑计数（Phase 4 E1 Loop 增强）
+   *
+   * handoff{decision:'loop'} 自动续跑时累加，达到 MAX_LOOP_COUNT 后停止自动续跑，
+   * 提示用户手动介入。每轮新对话 reset 为 0。
+   */
+  private _loopCount = 0;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -193,6 +203,37 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private roleDisplayName(rolePack: string): string {
     const meta = this._agent?.rolePackManager?.listMeta().find((m) => m.name === rolePack);
     return meta?.displayName ?? rolePack;
+  }
+
+  /**
+   * Phase 4 E2：推送工具权限徽章（角色切换后能力面随之变化）
+   *
+   * 从内核 RolePackManager.getActive() 读取当前角色包的 capabilities 与 toolMode，
+   * 映射为可读标签（如 file:read → 只读、web:search → 联网），推送给 webview 渲染徽章。
+   * 能力面标签映射为中文（简单映射，避免前端硬编码）。
+   */
+  private postCapabilityBadge(): void {
+    const agent = this._agent;
+    if (!agent) return;
+    const active = agent.rolePackManager?.getActive();
+    if (!active) return;
+    const toolMode = active.strategy.act?.toolMode ?? 'allow';
+    // 能力标签映射（简单域→中文，复杂描述用 capability.description）
+    const labels = active.capabilities.map((c) => {
+      const [domain] = c.capability.split(':');
+      const domainLabel: Record<string, string> = {
+        file: '文件',
+        web: '联网',
+        memory: '记忆',
+        llm: 'LLM',
+      };
+      const domainText = domainLabel[domain] ?? domain;
+      return {
+        capability: c.capability,
+        label: domainText,
+      };
+    });
+    this.post({ type: 'capability_badge', toolMode, capabilities: labels });
   }
 
   /**
@@ -397,6 +438,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 三层对齐断点 A1（alignment-iteration.md）：内核在粘性匹配或显式激活切换角色包时
    * emit personaSwitched，但插件此前未绑定 → UI 角色选择器不刷新（真实链路断裂）。
    * 此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
+   *
+   * Phase 4 E2：同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。
    */
   private readonly onPersonaSwitched = (info: { from: string | null; to: string }): void => {
     // SSOT 修复（2026-08-17）：从同一 personaSwitched 事件维护内部激活角色状态，
@@ -409,6 +452,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
     this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to) });
+    // Phase 4 E2：同步推送工具权限徽章（角色切换后能力面随之变化）
+    this.postCapabilityBadge();
   };
 
   /**
@@ -679,6 +724,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     void this.pushProviders();
     // A3（alignment-iteration.md）：推送角色包列表到输入区切换下拉
     this.pushRolePacks();
+    // Phase 4 E2：补推工具权限徽章（replaySession 时角色信息已就绪）
+    this.postCapabilityBadge();
   }
 
   /**
@@ -728,6 +775,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 角色切换入口数据（webview 收到后自动显示输入区内下拉）
     this.pushRolePacks();
+    // Phase 4 E2：装配完成即补推工具权限徽章
+    this.postCapabilityBadge();
   }
 
   /**
@@ -945,6 +994,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 用户消息持久化由内核 chat() → appendUser 完成（写入当前会话 _currentSessionId），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
     this.post({ type: 'user', text: input, ts: now });
+    // Phase 4 E1：新用户对话开始 → 重置自动续跑计数（新一轮闭环计数独立）
+    this._loopCount = 0;
 
     // 注入文档上下文（当前任务上下文，不进入记忆召回）
     const chatInput = this._docContext
@@ -1126,9 +1177,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 自审查轮开始 → 转发为过程性提示（活动透明，交叉审核观察 A）
           this.post({ type: 'self_review', round: chunk.round });
         } else if (chunk.type === 'handoff') {
-          // 衔接决策 → 仅 loop 渲染「自动续跑」提示条（wait/end 静默，雷-4 低频）
+          // Phase 4 E1：衔接决策 → loop 自动续跑（限 3 轮，防死循环）
           if (chunk.decision === 'loop') {
+            this._loopCount++;
+            this.post({ type: 'loop_count', current: this._loopCount, max: MAX_LOOP_COUNT });
             this.post({ type: 'handoff', decision: chunk.decision, reason: chunk.reason });
+            // 未达上限 → 300ms 后自动发起下一轮；达上限 → 提示用户手动介入
+            if (this._loopCount < MAX_LOOP_COUNT) {
+              setTimeout(() => {
+                if (!this._agent || controller.signal.aborted) return;
+                void this.runFlow((signal) => this._agent!.chat('继续任务', signal));
+              }, 300);
+            } else {
+              this.post({ type: 'notice', level: 'info', message: '已达自动续跑上限，请手动指示下一步' });
+              // 重置计数，让用户介入后可重新自动续跑
+              this._loopCount = 0;
+            }
           }
         } else if (chunk.type === 'retry') {
           // LLM 失败重试 → 转发低扰提示条
@@ -1326,11 +1390,15 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   </div>
   <div id="inputBar">
     <div id="inputWrap">
+      <!-- Phase 3 C3：技能指示器（本轮已激活技能，持续展示到本轮结束） -->
+      <div id="skillIndicator" class="skill-indicator" hidden></div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        <!-- Composer 左侧组：键盘提示 + 当前角色只读徽章（让用户感知当前定位；切换入口独立在「角色」视图） -->
+        <!-- Composer 左侧组：键盘提示 + 当前角色只读徽章 + 工具权限徽章（让用户感知当前定位；切换入口独立在「角色」视图） -->
         <div class="composer-left">
           <span id="currentRoleBadge" class="role-badge"></span>
+          <!-- Phase 4 E2：工具权限徽章（角色能力面可见性，角色切换时自动更新） -->
+          <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
         </div>
         <!-- Composer 右侧操作组：模型选择 + 发送（SSOT 收敛：角色切换已移至独立角色视图，
              输入区只保留高频操作——模型切换与发送） -->
