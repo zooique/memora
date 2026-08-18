@@ -210,11 +210,19 @@ async function scanPackSkills(
   skillsNode: unknown,
 ): Promise<RolePackManifestSkill[]> {
   const scanned = await scanMarkdownDir(join(packDir, 'skills'));
-  const skills = scanned.map((entry) => ({
-    file: `skills/${entry.name}.md`,
-    name: entry.name,
-    description: entry.frontmatter['description'] ?? undefined,
-  }));
+  // 用 entry.filePath 计算相对路径（支持单文件 .md 和文件夹 SKILL.md 两种形式）
+  const skills = scanned.map((entry) => {
+    // 从绝对路径计算相对于 packDir 的路径，统一用正斜杠
+    const absPath = entry.filePath;
+    let relPath = absPath.slice(packDir.length);
+    if (relPath.startsWith('/') || relPath.startsWith('\\')) relPath = relPath.slice(1);
+    relPath = relPath.replace(/\\/g, '/');
+    return {
+      file: relPath,
+      name: entry.name,
+      description: entry.frontmatter['description'] ?? undefined,
+    };
+  });
   // manifest.skills 声明时按 file 过滤（白名单语义）；未声明返回全部
   if (!Array.isArray(skillsNode)) return skills;
   const allowedFiles = new Set(
@@ -730,7 +738,19 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const listed = assembly.skills
       .filter((s) => s.name || s.file)
       .map((s) => {
-        const label = s.name ?? (s.file ? (s.file.split(/[\\/]/).pop() ?? '').replace(/\.(md|markdown)$/i, '') : '');
+        // 优先使用 frontmatter name，回退到从 file 路径提取（兼容无 name 的旧技能）
+        let label = s.name ?? '';
+        if (!label && s.file) {
+          // 单文件：skills/write.md → write；文件夹：skills/my-skill/SKILL.md → my-skill
+          const parts = s.file.split(/[\\/]/);
+          // 文件夹形式：取 SKILL.md 所在目录名；单文件形式：取文件名去扩展名
+          const last = parts.pop() ?? '';
+          if (last === 'SKILL.md' || last === 'SKILL.MD') {
+            label = parts.pop() ?? ''; // 取 SKILL.md 前的目录名
+          } else {
+            label = last.replace(/\.(md|markdown)$/i, '');
+          }
+        }
         const desc = s.description ? `：${s.description}` : '';
         return `- ${label}${desc}`;
       });
@@ -760,14 +780,21 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const pack = this.items.find((p) => p.meta.name === targetName);
     if (!pack) return null;
 
-    // 按技能名匹配 manifest.skills 项（name 优先，缺省按 fileName 去扩展名匹配）
+    // 按技能名匹配 manifest.skills 项（name 优先，缺省按路径推导）
     const skill = pack.skills.find((s) => {
+      // 1. frontmatter name 精确匹配
       if (s.name && s.name === skillName) return true;
-      if (s.file) {
-        const base = s.file.split(/[\\/]/).pop() ?? '';
-        return base.replace(/\.(md|markdown)$/i, '') === skillName;
+      if (!s.file) return false;
+      // 2. 从 file 路径推导：单文件取文件名去扩展名，文件夹取 SKILL.md 前的目录名
+      const parts = s.file.split(/[\\/]/);
+      const last = parts.pop() ?? '';
+      let derivedName: string;
+      if (last === 'SKILL.md' || last === 'SKILL.MD') {
+        derivedName = parts.pop() ?? ''; // 文件夹形式：skills/my-skill/SKILL.md → my-skill
+      } else {
+        derivedName = last.replace(/\.(md|markdown)$/i, ''); // 单文件：skills/write.md → write
       }
-      return false;
+      return derivedName === skillName;
     });
     if (!skill?.file) return null;
 

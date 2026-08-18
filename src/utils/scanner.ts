@@ -7,7 +7,7 @@
  * 使用异步 I/O（与 FileStore / ToolExecutor 保持一致）。
  */
 
-import { readFile, readdir, access } from 'node:fs/promises';
+import { readFile, readdir, access, stat } from 'node:fs/promises';
 import { resolve, join, basename } from 'node:path';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { getLogger } from '@/utils/loggerHolder.js';
@@ -27,13 +27,25 @@ export interface ScannedMarkdownEntry {
   filePath: string;
 }
 
+/** SKILL.md 文件名（Claude Code 标准，大小写敏感） */
+const SKILL_MAIN_FILE = 'SKILL.md';
+
 /**
- * 扫描目录下的 *.md 文件，解析 frontmatter
+ * 扫描目录下的 Markdown 文件，解析 frontmatter
  *
- * 排除规则：
+ * 支持两种形式：
+ *   1. 单文件形式：直接子项下的 *.md 文件
+ *   2. 文件夹形式：子目录中的 SKILL.md（Claude Code 标准）
+ *
+ * 排除规则（单文件）：
  *   - 文件名以 `.` 开头的隐藏文件
  *   - 文件名以 `_` 前缀的私有文件
  *   - README.md / CHANGELOG.md / LICENSE
+ *
+ * 排除规则（文件夹）：
+ *   - 目录名以 `.` 开头的隐藏目录
+ *   - 目录名以 `_` 开头的私有目录
+ *   - 子目录内无 SKILL.md 则跳过
  *
  * @param dir 目录路径
  * @returns 解析后的条目列表
@@ -46,15 +58,9 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
     return [];
   }
 
-  let files: string[];
+  let items: string[];
   try {
-    files = (await readdir(dir)).filter(
-      (f) =>
-        f.endsWith('.md') &&
-        !f.startsWith('.') &&
-        !f.startsWith('_') &&
-        !EXCLUDED_FILES.has(f),
-    );
+    items = await readdir(dir);
   } catch {
     getLogger().warn({ dir }, '扫描目录失败');
     return [];
@@ -62,7 +68,16 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
 
   const entries: ScannedMarkdownEntry[] = [];
 
-  for (const file of files) {
+  // Phase 1: 直接子项下的 .md 文件（兼容单文件形式）
+  const mdFiles = items.filter(
+    (f) =>
+      f.endsWith('.md') &&
+      !f.startsWith('.') &&
+      !f.startsWith('_') &&
+      !EXCLUDED_FILES.has(f),
+  );
+
+  for (const file of mdFiles) {
     try {
       const filePath = join(dir, file);
       const raw = await readFile(filePath, 'utf-8');
@@ -76,6 +91,46 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
       });
     } catch (err) {
       getLogger().warn({ file, err }, '解析 Markdown 文件失败');
+    }
+  }
+
+  // Phase 2: 子目录中的 SKILL.md（文件夹形式，Claude Code 标准）
+  for (const item of items) {
+    // 跳过隐藏目录和私有目录
+    if (item.startsWith('.') || item.startsWith('_')) continue;
+
+    const itemPath = join(dir, item);
+
+    // 检查是否为目录
+    let isDir: boolean;
+    try {
+      isDir = (await stat(itemPath)).isDirectory();
+    } catch {
+      continue;
+    }
+    if (!isDir) continue;
+
+    // 检查目录内是否存在 SKILL.md
+    const skillPath = join(itemPath, SKILL_MAIN_FILE);
+    try {
+      await access(skillPath);
+    } catch {
+      continue;
+    }
+
+    try {
+      const raw = await readFile(skillPath, 'utf-8');
+      const { frontmatter: fm, body } = parseFrontmatter(raw);
+
+      entries.push({
+        // 文件夹形式：优先 frontmatter name，回退到目录名
+        name: fm['name'] ?? basename(item),
+        frontmatter: fm as Record<string, string>,
+        body,
+        filePath: skillPath,
+      });
+    } catch (err) {
+      getLogger().warn({ dir: item, err }, '解析 SKILL.md 失败');
     }
   }
 

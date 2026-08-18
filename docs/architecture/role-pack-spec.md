@@ -42,8 +42,10 @@
 ├── persona.md                    # 可选：身份设定（约定文件名，§2.3）
 ├── rules.md                      # 可选：确定性规则（约定文件名，§2.3）
 ├── skills/                       # 可选：内嵌技能（目录动态扫描，frontmatter 声明，§四 C3）
-│   ├── write.md
-│   └── search.md
+│   ├── write.md                 # 单文件形式：直接 .md 文件
+│   ├── search.md
+│   └── my-skill/                # 文件夹形式：子目录 SKILL.md（Claude Code 标准）
+│       └── SKILL.md
 ├── references/                   # 可选：知识引用
 ├── assets/                       # 可选：资源（模板、图片、示例）
 └── com.memora/（可选）            # 反域名命名空间：memora 专有行为层（对齐 Agent Plugins 扩展惯例，其他实现忽略）
@@ -166,12 +168,17 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 
 **C2 定案（2026-08-18）**：能力面与内容面分离——`manifest.capabilities`（顶层数组）声明**角色可调用的中立能力**（工具白名单面），skills 回归**技能内容面**。
 
-**C3 定案（2026-08-18）**：skills 从「manifest 注册数组」改为「**目录动态扫描**」——`skills/` 目录下的 `.md` 文件自动注册，frontmatter 声明 `name`/`description`。**新增技能只写文件，无需改 manifest**（与全局技能池 `scanMarkdownDir` 同构）。manifest.skills 可选：声明 `file` 时按文件过滤（白名单语义），未声明则全部扫描。
+**C3 定案（2026-08-18）**：skills 从「manifest 注册数组」改为「**目录动态扫描**」——`skills/` 目录支持**两种形式**（与全局技能池 `scanMarkdownDir` 同构）：
+
+1. **单文件形式**：`skills/*.md` 直接子项下的 `.md` 文件自动注册
+2. **文件夹形式**：`skills/<名>/SKILL.md` 子目录中的 `SKILL.md`（Claude Code 标准）自动注册
+
+frontmatter 声明 `name`/`description`。**新增技能只写文件，无需改 manifest**。manifest.skills 可选：声明 `file` 时按文件过滤（白名单语义），未声明则全部扫描。
 
 ```json
 "skills": [
   { "file": "skills/write.md" },
-  { "file": "skills/search.md" }
+  { "file": "skills/my-skill/SKILL.md" }
 ],
 "capabilities": [
   { "capability": "file:write", "description": "写入文件" },
@@ -193,7 +200,7 @@ description: 把成稿写入本地文件
 ```
 
 - **`capabilities`（顶层，能力面）**：每项 `{ capability: '域:动作', description? }`。声明角色可调用的中立能力，经 capabilityMap 映射为工具白名单（agent.ts applyRolePackToolExposure，「换装 = 换 Agent」）；
-- **`skills`（目录扫描，内容面）**：`skills/*.md` 动态扫描——frontmatter 的 `name`（缺省取文件名）/`description` 暴露给 LLM（L1 清单），正文经渐进披露 L2（read_skill）按需装载；纯能力声明不放 skills（放顶层 capabilities）；
+- **`skills`（目录扫描，内容面）**：`skills/` 下**两种形式**动态扫描——单文件 `skills/*.md` 和文件夹 `skills/<名>/SKILL.md`（Claude Code 标准）。frontmatter 的 `name`（缺省取文件名/目录名）/`description` 暴露给 LLM（L1 清单），正文经渐进披露 L2（read_skill）按需装载；纯能力声明不放 skills（放顶层 capabilities）；
 - **实现映射**：memora 把 `file:write` 映射到内置 `writeFile` 工具；其他实现映射到自有工具；
 - **未知能力**：装载方跳过该能力（可选提示"能力不可用"），不阻塞；
 - 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集。

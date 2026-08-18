@@ -7,6 +7,8 @@
  *   - scanMarkdownDir：排除隐藏文件、_ 前缀、README/CHANGELOG/LICENSE
  *   - scanMarkdownDir：name 字段缺失时回退到文件名
  *   - scanMarkdownDir：解析失败的文件跳过并 warn
+ *   - scanMarkdownDir：文件夹形式 SKILL.md 扫描
+ *   - scanMarkdownDir：混合形式（单文件 + 文件夹）扫描
  *   - parseKeywords：逗号分隔、trim、过滤空值
  *   - parseTrigger：/pattern/flags 与纯 pattern 两种格式
  *   - parseTrigger：非法正则降级返回 undefined
@@ -126,14 +128,93 @@ keywords: 记忆, 归档
       expect(result).toEqual([]);
     });
 
-    it('子目录中的 *.md 不应被扫描（readdir 非递归）', async () => {
+    it('子目录中无 SKILL.md 时 .md 不应被扫描（非 SKILL.md 不触发文件夹扫描）', async () => {
       await mkdir(join(tempDir, 'subdir'));
       await writeFile(join(tempDir, 'subdir', 'nested.md'), '---\nname: nested\n---\n');
       await writeFile(join(tempDir, 'top.md'), '---\nname: top\n---\n');
       const result = await scanMarkdownDir(tempDir);
-      // readdir 返回子目录名，endsWith('.md') 过滤掉 'subdir'
+      // subdir 无 SKILL.md，Phase 2 跳过；top.md 通过 Phase 1 扫描
       expect(result).toHaveLength(1);
       expect(result[0]?.name).toBe('top');
+    });
+
+    it('应扫描子目录中的 SKILL.md（文件夹形式）', async () => {
+      await mkdir(join(tempDir, 'my-skill'));
+      await writeFile(
+        join(tempDir, 'my-skill', 'SKILL.md'),
+        `---
+name: my-skill
+description: 测试技能
+---
+# 技能正文`,
+      );
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe('my-skill');
+      expect(result[0]?.frontmatter['name']).toBe('my-skill');
+      expect(result[0]?.frontmatter['description']).toBe('测试技能');
+      expect(result[0]?.body).toContain('# 技能正文');
+      // filePath 应指向 SKILL.md 文件本身，而非目录
+      expect(result[0]?.filePath).toBe(join(tempDir, 'my-skill', 'SKILL.md'));
+    });
+
+    it('文件夹形式无 frontmatter name 时回退到目录名', async () => {
+      await mkdir(join(tempDir, 'fallback-dir'));
+      await writeFile(join(tempDir, 'fallback-dir', 'SKILL.md'), '---\ndescription: 无 name\n---\nbody');
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe('fallback-dir');
+    });
+
+    it('应扫描多个文件夹形式的 SKILL.md', async () => {
+      await mkdir(join(tempDir, 'skill-a'));
+      await mkdir(join(tempDir, 'skill-b'));
+      await writeFile(join(tempDir, 'skill-a', 'SKILL.md'), '---\nname: A\n---\nA body');
+      await writeFile(join(tempDir, 'skill-b', 'SKILL.md'), '---\nname: B\n---\nB body');
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(2);
+      const names = result.map((e) => e.name).sort();
+      expect(names).toEqual(['A', 'B']);
+    });
+
+    it('混合形式：同时扫描直接 .md 和文件夹 SKILL.md', async () => {
+      // 单文件形式
+      await writeFile(join(tempDir, 'standalone.md'), '---\nname: 独立技能\n---\n独立正文');
+      // 文件夹形式
+      await mkdir(join(tempDir, 'folder-skill'));
+      await writeFile(join(tempDir, 'folder-skill', 'SKILL.md'), '---\nname: 文件夹技能\n---\n文件夹正文');
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(2);
+      // 按字典序排序，中文排序：文件夹技能 < 独立技能
+      const names = result.map((e) => e.name).sort();
+      expect(names).toEqual(['文件夹技能', '独立技能']);
+    });
+
+    it('子目录有 SKILL.md 时应跳过隐藏目录和私有目录', async () => {
+      // 隐藏目录
+      await mkdir(join(tempDir, '.hidden-skill'));
+      await writeFile(join(tempDir, '.hidden-skill', 'SKILL.md'), '---\nname: hidden\n---\n');
+      // 私有目录
+      await mkdir(join(tempDir, '_private-skill'));
+      await writeFile(join(tempDir, '_private-skill', 'SKILL.md'), '---\nname: private\n---\n');
+      // 正常目录
+      await mkdir(join(tempDir, 'visible-skill'));
+      await writeFile(join(tempDir, 'visible-skill', 'SKILL.md'), '---\nname: visible\n---\n');
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe('visible');
+    });
+
+    it('文件夹形式 SKILL.md 无 frontmatter 时回退到目录名', async () => {
+      await mkdir(join(tempDir, 'no-fm-skill'));
+      // 无 frontmatter（不以 --- 开头），parseFrontmatter 返回空 frontmatter
+      await writeFile(join(tempDir, 'no-fm-skill', 'SKILL.md'), '# 纯正文\n无 frontmatter');
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(1);
+      // frontmatter 为空，name 回退到目录名
+      expect(result[0]?.name).toBe('no-fm-skill');
+      expect(result[0]?.frontmatter).toEqual({});
+      expect(result[0]?.body).toContain('# 纯正文');
     });
   });
 

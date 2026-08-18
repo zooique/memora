@@ -224,3 +224,4 @@ read_skill: {
 |------|------|
 | 2026-08-15 | read_skill 工具实现 + L1 元数据注入 + 统一策略评估 |
 | 2026-08-18 | 两级技能统一（全局 buildSkillList + read_skill 双源）；C2 能力独立顶层 capabilities |
+| 2026-08-18 | **SSOT 收敛**：skills 系统支持两种形式（单文件 `.md` + 文件夹 `SKILL.md`，Claude Code 标准）；全局 skills 与角色包 skills 走同一扫描器 `scanMarkdownDir()` + 同一路径计算逻辑，完全同构；修复 `scanPackSkills` file 路径硬编码，正确处理文件夹形式的 `file` 相对路径 |
