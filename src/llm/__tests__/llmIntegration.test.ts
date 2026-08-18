@@ -44,34 +44,42 @@ describe('真实 LLM 集成测试', () => {
     const memoraDir = join(tmpDir, '.memora');
     mkdirSync(memoraDir, { recursive: true });
 
-    // 创建 configDir 下的角色文件（PersonaManager 从 configDir 加载）
-    mkdirSync(join(configDir, 'personas'), { recursive: true });
-
-    // 创建默认角色
+    // 创建 configDir 下的角色包（RolePackManager 从 configDir/role-packs/ 加载）
+    const defaultPackDir = join(configDir, 'role-packs', '默认助手');
+    mkdirSync(defaultPackDir, { recursive: true });
     writeFileSync(
-      join(configDir, 'personas', 'default.md'),
-      `---
-name: 默认助手
-keywords:
-  - 帮助
-  - 助手
----
-你是一个友好的 AI 助手，帮助用户解决问题。
-`,
+      join(defaultPackDir, 'manifest.json'),
+      JSON.stringify({
+        name: '默认助手',
+        displayName: '默认助手',
+        keywords: ['帮助', '助手'],
+        strategy: {},
+      }),
+      'utf-8',
+    );
+    writeFileSync(
+      join(defaultPackDir, 'persona.md'),
+      '你是一个友好的 AI 助手，帮助用户解决问题。',
+      'utf-8',
     );
 
-    // 创建程序员角色（用于角色切换测试）
+    // 创建程序员角色包（用于角色切换测试）
+    const coderPackDir = join(configDir, 'role-packs', '程序员助手');
+    mkdirSync(coderPackDir, { recursive: true });
     writeFileSync(
-      join(configDir, 'personas', 'coder.md'),
-      `---
-name: 程序员助手
-keywords:
-  - 代码
-  - 编程
-  - bug
----
-你是一个专业的程序员助手，擅长代码审查和问题诊断。
-`,
+      join(coderPackDir, 'manifest.json'),
+      JSON.stringify({
+        name: '程序员助手',
+        displayName: '程序员助手',
+        keywords: ['代码', '编程', 'bug'],
+        strategy: {},
+      }),
+      'utf-8',
+    );
+    writeFileSync(
+      join(coderPackDir, 'persona.md'),
+      '你是一个专业的程序员助手，擅长代码审查和问题诊断。',
+      'utf-8',
     );
 
     // 用用户的真实配置创建 Provider

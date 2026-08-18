@@ -522,9 +522,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     let entries: string[];
     try {
       await access(dir);
+      // 按字典序排序，保证扫描顺序确定性（避免文件系统依赖）
       entries = (await readdir(dir)).filter(
         (f) => !f.startsWith('.') && !f.startsWith('_') && !EXCLUDED_FILES.has(f),
-      );
+      ).sort((a, b) => a.localeCompare(b, 'zh-CN'));
     } catch {
       getLogger().debug({ dir }, '角色包目录不存在，跳过');
       return [];

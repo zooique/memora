@@ -20,8 +20,8 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 8 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(8);
+  it('应包含 12 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(12);
   });
 
   it('应包含 read_file / write_file / list_dir / search_memories / trace_summary', () => {
@@ -31,6 +31,15 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(names).toContain('list_dir');
     expect(names).toContain('search_memories');
     expect(names).toContain('trace_summary');
+  });
+
+  it('应包含 L2/L3 渐进披露工具（read_skill / read_resource / run_skill_script / list_resources / list_skills）', () => {
+    const names = BUILTIN_TOOLS.map((t) => t.name);
+    expect(names).toContain('read_skill');
+    expect(names).toContain('read_resource');
+    expect(names).toContain('run_skill_script');
+    expect(names).toContain('list_resources');
+    expect(names).toContain('list_skills');
   });
 
   it('read_skill 应注册为内置工具且标记幂等（渐进披露 L2）', () => {

@@ -50,15 +50,30 @@ class MockProvider extends LlmProvider {
 
 /**
  * 写入项目骨架文件，让 init() 能正常加载
+ *
+ * 2026-08-18 角色包收敛：创建 role-packs/ 文件夹形态角色包
+ * （RolePackManager 扫描 role-packs/<name>/manifest.json，不再加载 personas/*.md）
  */
 function seedProject(_projectPath: string, configDir: string, _dataDir: string): void {
-  mkdirSync(join(configDir, 'personas'), { recursive: true });
-  mkdirSync(join(configDir, 'rules'), { recursive: true });
+  const rolePackDir = join(configDir, 'role-packs', '默认助手');
+  mkdirSync(rolePackDir, { recursive: true });
   writeFileSync(
-    join(configDir, 'personas', 'default.md'),
-    '---\nid: persona:default\nsource: persona\nname: 默认人格\nscore: 1\n---\n\n你是一个测试助手。',
+    join(rolePackDir, 'manifest.json'),
+    JSON.stringify({
+      name: '默认助手',
+      displayName: '默认助手',
+      keywords: ['你好', '帮助'],
+      strategy: {},
+    }),
     'utf-8',
   );
+  writeFileSync(
+    join(rolePackDir, 'persona.md'),
+    '你是一个通用助手。',
+    'utf-8',
+  );
+  // skills 目录保持结构完整
+  mkdirSync(join(configDir, 'skills'), { recursive: true });
 }
 
 /**
@@ -632,32 +647,82 @@ describe('Agent · Manager 委托模式', () => {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * 写入含多角色 + 技能的项目骨架，用于 postProcess 测试
+ * 种子项目：多角色包 + 多技能场景
+ *
+ * 2026-08-18 角色包收敛：创建 role-packs/ 文件夹形态角色包
+ * （RolePackManager 扫描 role-packs/<name>/manifest.json，不再加载 personas/*.md）
  */
 function seedProjectWithPersonasAndSkills(
   _projectPath: string,
   configDir: string,
   _dataDir: string,
 ): void {
-  // 角色文件
-  mkdirSync(join(configDir, 'personas'), { recursive: true });
+  // 角色包 1：编程专家
+  const coderDir = join(configDir, 'role-packs', '编程专家');
+  mkdirSync(coderDir, { recursive: true });
   writeFileSync(
-    join(configDir, 'personas', 'default.md'),
-    '---\nsource: persona\nname: 默认助手\nkeywords: 你好,帮助\n---\n\n你是一个通用助手。',
+    join(coderDir, 'manifest.json'),
+    JSON.stringify({
+      name: '编程专家',
+      displayName: '编程专家',
+      keywords: ['代码', '编程', 'bug', '函数', '调试'],
+      strategy: {},
+    }),
     'utf-8',
   );
   writeFileSync(
-    join(configDir, 'personas', 'coder.md'),
-    '---\nsource: persona\nname: 编程专家\nkeywords: 代码,编程,bug,函数,调试\n---\n\n你是一个编程专家，擅长代码分析和调试。',
-    'utf-8',
-  );
-  writeFileSync(
-    join(configDir, 'personas', 'writer.md'),
-    '---\nsource: persona\nname: 写作助手\nkeywords: 写作,文章,故事,小说\n---\n\n你是一个写作助手，擅长创意写作。',
+    join(coderDir, 'persona.md'),
+    '你是一个编程专家，擅长代码分析和调试。',
     'utf-8',
   );
 
-  // 技能文件
+  // 角色包 2：写作助手
+  const writerDir = join(configDir, 'role-packs', '写作助手');
+  mkdirSync(writerDir, { recursive: true });
+  writeFileSync(
+    join(writerDir, 'manifest.json'),
+    JSON.stringify({
+      name: '写作助手',
+      displayName: '写作助手',
+      keywords: ['写作', '文章', '故事', '小说'],
+      strategy: {},
+    }),
+    'utf-8',
+  );
+  writeFileSync(
+    join(writerDir, 'persona.md'),
+    '你是一个写作助手，擅长创意写作。',
+    'utf-8',
+  );
+
+  // 角色包 3：代码审查助手（带 skills）
+  const reviewerDir = join(configDir, 'role-packs', '代码审查助手');
+  mkdirSync(reviewerDir, { recursive: true });
+  writeFileSync(
+    join(reviewerDir, 'manifest.json'),
+    JSON.stringify({
+      name: '代码审查助手',
+      displayName: '代码审查助手',
+      keywords: ['审查', 'review', '代码质量'],
+      strategy: {},
+      skills: [{ file: 'code-review', name: '代码审查', description: '审查代码质量' }],
+    }),
+    'utf-8',
+  );
+  writeFileSync(
+    join(reviewerDir, 'persona.md'),
+    '你是一个代码审查专家。',
+    'utf-8',
+  );
+  const skillsDir = join(reviewerDir, 'skills');
+  mkdirSync(skillsDir, { recursive: true });
+  writeFileSync(
+    join(skillsDir, 'code-review.md'),
+    '---\nname: 代码审查\ndescription: 审查代码质量\nkeywords: 审查,review,代码质量\n---\n\n审查代码时关注可读性、性能和安全性。',
+    'utf-8',
+  );
+
+  // 全局 skills 目录（用于 reloadConfig 测试）
   mkdirSync(join(configDir, 'skills'), { recursive: true });
   writeFileSync(
     join(configDir, 'skills', 'code-review.md'),
@@ -1385,6 +1450,8 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
     const rpm = agent.rolePackManager!;
+    // 初始角色包已由 seed 自动激活
+    const initialActive = rpm.activeName;
 
     let switched = false;
     agent.on('personaSwitched', () => {
@@ -1393,8 +1460,8 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
 
     const ok = agent.switchRolePack('不存在的角色');
     expect(ok).toBe(false);
-    // 未加载任何角色包时 activeName 保持 null（rolePackManager.activePackName 初始 null）
-    expect(rpm.activeName).toBeNull();
+    // 角色不存在时保持原激活角色不变
+    expect(rpm.activeName).toBe(initialActive);
     expect(switched).toBe(false);
 
     agent.off('personaSwitched', () => {});
@@ -1535,10 +1602,22 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
     const initialActive = agent['rolePackManager_']!.activeName;
 
-    // 新增角色包文件
+    // 新增角色包文件（角色包文件夹形态）
+    const reviewerDir = join(tmpConfig, 'role-packs', '审查员');
+    mkdirSync(reviewerDir, { recursive: true });
     writeFileSync(
-      join(tmpConfig, 'role-packs', 'reviewer', 'persona.md'),
-      '---\nname: 审查员\nkeywords: 审查\n---\n\n你是审查专家',
+      join(reviewerDir, 'manifest.json'),
+      JSON.stringify({
+        name: '审查员',
+        displayName: '审查员',
+        keywords: ['审查'],
+        strategy: {},
+      }),
+      'utf-8',
+    );
+    writeFileSync(
+      join(reviewerDir, 'persona.md'),
+      '你是审查专家',
       'utf-8',
     );
 
