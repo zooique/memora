@@ -35,19 +35,19 @@
 | 多角色包 + `activate()` 切换 | ✅ 已实现 | — |
 | `personaSwitched` 事件 | ✅ 已绑定 | — |
 | 粘性匹配 + 互斥切换 | ✅ 内核自动处理 | — |
-| `skills/` 目录动态扫描（C3） | ⚠️ 未用 | 角色包用 `manifest.skills` 数组声明，而非目录扫描 |
+| `skills/` 目录动态扫描（C3） | ✅ 已对齐 | 5 个角色包均有 `skills/` 目录 + markdown 技能文件 |
 | `capabilities` 独立顶层声明 | ✅ manifest 已有 | — |
-| 两级技能（全局 + 角色包） | ⚠️ 未对齐 | 宿主只有角色包 skills，无全局 `configDir/skills/` 池 |
-| manifest 不声明 persona/rules 路径（R7） | ⚠️ 未对齐 | 部分角色包仍声明 `"persona": "persona.md"` |
+| 两级技能（全局 + 角色包） | ✅ 已对齐 | `src/extension/skills/` 有 3 个全局技能（web-search / code-review / summarize） |
+| manifest 不声明 persona/rules 路径（R7） | ✅ 已对齐 | 全部角色包无路径声明，走约定名 |
 
 #### B. 技能系统
 
 | 内核能力 | 宿主状态 | 差距 |
 |---------|---------|------|
-| `SkillManager` 两级技能 | ⚠️ 未接入 | 宿主未创建全局技能池 |
-| `readSkillContent` 按需加载 | ❌ 未实现 | 宿主无技能加载/匹配 UI |
-| `read_resource` / `run_skill_script` | ❌ 未实现 | 宿主无技能执行能力 |
-| `skillMatched` 事件 | ❌ 未绑定 | 宿主未监听技能匹配事件 |
+| `SkillManager` 两级技能 | ✅ 已接入 | 全局技能池 + 角色包技能 |
+| `readSkillContent` 按需加载 | ✅ 已对齐 | 角色包 `skills/` 目录动态扫描 |
+| `skillMatched` 事件 | ✅ 已绑定 | chatPanel 监听 + chatView UI 指示器 |
+| 技能 UI 指示器 | ✅ 已实现 | 本轮持续展示 skill chip，结束后清除 |
 
 #### C. 记忆系统
 
@@ -61,7 +61,7 @@
 | `decayScores` 自然遗忘 | ✅ 内核自动执行 | — |
 | `validateSource` 校验 | ✅ WorkspaceStorage 实现 | — |
 | 向量索引 `IVectorStore` | ❌ 未实现 | WorkspaceStorage 仅关键词搜索 |
-| `memory/sessionStore.ts` ISessionStore v2 | ⚠️ 部分对齐 | WorkspaceSessionStore 实现了全部必需+可选方法，但宿主扩展方法（deleteSession/truncateFrom）未纳入接口 |
+| `memory/sessionStore.ts` ISessionStore v2 | ✅ 已对齐 | 全部必需+可选方法已实现 |
 
 #### D. Agent Loop
 
@@ -69,13 +69,13 @@
 |---------|---------|------|
 | 流式 AgentChunk | ✅ 全量转发 | — |
 | `thinking{phase}` 阶段 | ✅ 已对齐 | UI 显示"召回/处理/归档" |
-| `handoff` 衔接决策 | ✅ 已转发 | `loop` 决策渲染提示条 |
+| `handoff` 衔接决策 | ✅ 已转发 | `loop` 决策自动续跑（限 3 轮） |
 | `retry` LLM 重试 | ✅ 已转发 | 低扰提示条 |
-| `paused` 暂停 | ✅ 已转发 | 暂停提示 |
+| `paused` 暂停 | ✅ 已实现 | 暂停/恢复按钮对接 agent.pause()/resume() |
 | `selfReview` 自审查 | ✅ 已转发 | 过程性提示 |
 | `questionPending` 主动提问 | ✅ 已实现 | need_clarify → clarify_answer |
-| Loop 自动续跑（`handoff: loop`） | ⚠️ 被动处理 | 宿主仅渲染提示，未自动触发续跑 |
-| `toolWhitelist` 按 capabilities 过滤 | ❌ 未实现 | 工具暴露不随角色包切换 |
+| Loop 自动续跑（`handoff: loop`） | ✅ 已实现 | 自动续跑限 3 轮，超限提示用户手动介入 |
+| `toolWhitelist` 按 capabilities 过滤 | ✅ 已实现 | 工具权限徽章 + allow/block 模式 |
 | `preExecutionCheck` 统一检查点 | ✅ 已注入 | 放行，收敛版不审计 |
 
 #### E. 存储层
@@ -83,8 +83,8 @@
 | 内核能力 | 宿主状态 | 差距 |
 |---------|---------|------|
 | `IFileSystem` 文件操作抽象 | ❌ 未实现 | WorkspaceStorage 直接用 `fs.writeFileSync` |
-| `atomicWriteFile` 原子写入 | ❌ 未使用 | WorkspaceStorage.save() 非原子（写两次还不是原子） |
-| SQLite 生产级存储 | ❌ 未实现 | JSON 文件存储，性能/可靠性受限 |
+| `atomicWriteFile` 原子写入 | ✅ 已使用 | WorkspaceStorage + WorkspaceSessionStore 均用 `atomicWriteFileSync` |
+| SQLite 生产级存储 | ❌ 未实现 | JSON 文件存储，性能/可靠性受限（择机升级） |
 | `StoragePathResolver` 路径解析 | ❌ 未使用 | 宿主直接拼接路径 |
 
 ---
