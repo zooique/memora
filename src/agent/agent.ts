@@ -244,7 +244,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       dataDir: opts.dataDir!,
       registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
-      personaName: opts.persona,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
       confirmWrites: opts.confirmWrites ?? false,

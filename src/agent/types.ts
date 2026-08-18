@@ -799,8 +799,6 @@ export interface AgentOptions {
   registryDir?: string;
   /** 最大上下文 token 数（默认 120000） */
   maxContextTokens?: number;
-  /** 默认角色名 */
-  persona?: string;
   /** 安全权限 */
   permission?: 'owner' | 'guest';
   /** 允许的路径白名单 */
@@ -882,7 +880,6 @@ export type AgentConfig = Omit<
   | 'recallExcludeSources'
   | 'enableContextSummary'
   | 'archiveMode'
-  | 'persona'
 > & {
   dataDir: string;
   maxContextTokens: number;
@@ -892,6 +889,4 @@ export type AgentConfig = Omit<
   recallExcludeSources: string[];
   enableContextSummary: boolean;
   archiveMode: ArchiveMode;
-  /** 默认角色名（AgentOptions.persona 解析后的内部命名） */
-  personaName: string | undefined;
 };
