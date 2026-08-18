@@ -209,14 +209,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * （对齐 Agent UI「执行过程可见」趋势）。纯前端从 thinking phase 聚合，不改内核协议。
    * 工具调用保持独立卡片（Tertiary 层级），不塞进轨迹，避免信息过载。
    */
-  function renderTrace(phase: 'recalling' | 'processing' | 'archiving'): void {
+  function renderTrace(phase: 'recalling' | 'llm_calling' | 'processing' | 'archiving'): void {
     // 三阶段轨迹：召回记忆 → 理解打磨 → 归档记忆（对应闭环 Prepare/Act/Reflect）
+    // llm_calling 归属于 Act 阶段（理解打磨），与 processing 共享同一轨迹位置
     const steps: { label: string; state: 'done' | 'active' | 'pending' }[] = [
       { label: '召回记忆', state: 'pending' },
       { label: '理解打磨', state: 'pending' },
       { label: '归档记忆', state: 'pending' },
     ];
-    const phaseIndex: Record<string, number> = { recalling: 0, processing: 1, archiving: 2 };
+    const phaseIndex: Record<string, number> = { recalling: 0, llm_calling: 1, processing: 1, archiving: 2 };
     const idx = phaseIndex[phase];
     steps.forEach((s, i) => {
       // 当前阶段之前的步骤已完成，当前进行中，之后待执行
@@ -1008,9 +1009,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const label =
         msg.phase === 'recalling'
           ? '召回记忆中…'
-          : msg.phase === 'processing'
-            ? '处理中…'
-            : '归档记忆中…';
+          : msg.phase === 'llm_calling'
+            ? '调用模型中…'
+            : msg.phase === 'processing'
+              ? '处理中…'
+              : '归档记忆中…';
       setThoughtLabel(label, { thinking: true });
       // P2（2026-08-15 执行轨迹）：同步渲染三阶段执行轨迹（✓/●/○），执行过程可见
       renderTrace(msg.phase);

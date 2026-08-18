@@ -383,6 +383,14 @@ export class AgentLoop {
   private readonly enableContextSummary: boolean;
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
   private readonly contextManager: ContextManager;
+  /**
+   * Provider 路由缓存（P1-2 优化：避免每轮重复路由计算）
+   *
+   * SSOT：缓存是 providerRouter 接口的装饰器，不是新机制——
+   * 路由决策逻辑不变，只是在单轮对话内缓存相同 taskType 的结果。
+   * 每轮 processUserInput 开始时清空，跨轮不复用。
+   */
+  private providerRouteCache = new Map<TaskType, LlmProvider>();
 
   // ─── 运行时指标统计 ──────────────────────────────
   private metrics = new LoopMetrics();
@@ -494,8 +502,19 @@ export class AgentLoop {
       // 未传（测试/内部委托调用）时自生成兜底，每轮独立。
       this.currentRoundId = roundId ?? `round-${Date.now()}`;
 
-      // 1. 召回注入（guardrail 输入护栏已随 ADR-025 摘除，仅剩召回注入）
-      yield* this.handleRecallAndInject(recalledMemories);
+      // P1-2：清空 Provider 路由缓存（单轮对话内复用，跨轮重置）
+      this.providerRouteCache.clear();
+
+      // P0：Token 预算前置检查——预算不足时跳过召回注入
+      // SSOT：召回行为由预算状态决定，而非强制召回——
+      // 当上下文 token 已接近上限时，召回注入只会加剧溢出风险，
+      // 应在注入前就阻止，避免无效的召回+注入开销。
+      if (this._shouldSkipRecallInjection()) {
+        logger.debug('Token budget tight, skipping recall injection');
+      } else {
+        // 1. 召回注入（guardrail 输入护栏已随 ADR-025 摘除，仅剩召回注入）
+        yield* this.handleRecallAndInject(recalledMemories);
+      }
 
       // 2. 用户消息 push（安全规范 §6：用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
       this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
@@ -1029,6 +1048,12 @@ export class AgentLoop {
       this.injectSystemMessage(taskTable);
     }
 
+    // P2：流式输出优化——在 LLM 调用前 emit thinking 事件
+    // SSOT：这是 callLlmWithRetry 流式输出的自然扩展，不是新机制——
+    // 让宿主 UI 在等待首 token 到达前就能展示「正在思考...」的视觉反馈，
+    // 消除用户感知的"空白等待"时间。
+    yield { type: 'thinking', phase: 'llm_calling' };
+
     const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, effectiveSignal, iteration);
 
     if (llmResult.aborted) {
@@ -1337,14 +1362,24 @@ export class AgentLoop {
       effectiveOpts.reasoning_effort = 'low';
     }
 
-    // P1-2 多模型路由：根据当前任务类型选择 Provider
-    // Tier 3：providerRouting='fixed' 时跳过动态路由，固定使用当前 Provider
-    const effectiveProvider =
-      this.providerRouting === 'fixed'
-        ? this.opts.provider
-        : this.opts.providerRouter
-          ? this.opts.providerRouter(this.determineTaskType(safeMessages))
-          : this.opts.provider;
+    // P1-2 多模型路由：根据当前任务类型选择 Provider（带缓存优化）
+    // SSOT：缓存是 providerRouter 的装饰器，不是新机制——
+    // 同一 taskType 在单轮对话内映射到同一 Provider，缓存后避免重复路由计算。
+    let effectiveProvider: LlmProvider;
+    if (this.providerRouting === 'fixed') {
+      effectiveProvider = this.opts.provider;
+    } else if (this.opts.providerRouter) {
+      const taskType = this.determineTaskType(safeMessages);
+      const cached = this.providerRouteCache.get(taskType);
+      if (cached) {
+        effectiveProvider = cached;
+      } else {
+        effectiveProvider = this.opts.providerRouter(taskType);
+        this.providerRouteCache.set(taskType, effectiveProvider);
+      }
+    } else {
+      effectiveProvider = this.opts.provider;
+    }
 
     // LLM 调用 Span（涵盖重试循环）
     const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
@@ -2216,6 +2251,35 @@ export class AgentLoop {
         })),
       };
     }
+  }
+
+  /**
+   * 判断是否应跳过召回注入（P0：Token 预算前置检查）
+   *
+   * SSOT：召回行为由预算状态决定——
+   * 当上下文 token 已接近上限时，召回注入只会加剧溢出风险，
+   * 应在注入前就阻止，避免无效的召回+注入开销。
+   *
+   * 判定标准（取任一命中）：
+   * 1. tokenBudget 软上限且当前已达 80% → 跳过
+   * 2. maxContextTokens 硬上限且当前已达 90% → 跳过
+   */
+  private _shouldSkipRecallInjection(): boolean {
+    const currentTokens = this.contextManager.estimateTokens(this.messages);
+
+    // 软上限：tokenBudget（0 = 不限制）
+    if (this.tokenBudget > 0 && currentTokens >= this.tokenBudget * 0.8) {
+      logger.debug({ currentTokens, budget: this.tokenBudget }, 'Token budget 80% reached, skip recall');
+      return true;
+    }
+
+    // 硬上限：maxContextTokens 90% 警戒线
+    if (currentTokens >= this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
+      logger.debug({ currentTokens, max: this.maxContextTokens }, 'Context 90% reached, skip recall');
+      return true;
+    }
+
+    return false;
   }
 }
 

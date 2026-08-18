@@ -2377,3 +2377,265 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
     expect(warningAfterFirst).toBe(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// P0：Token 预算前置检查（性能优化）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · Token 预算前置检查（P0）', () => {
+  it('tokenBudget 达 80% 时应跳过召回注入', async () => {
+    // 使用极小 tokenBudget 模拟预算紧张
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 120_000,
+    });
+
+    // 设置极低的 tokenBudget 触发跳过
+    loop.setTokenBudget(10);
+    // 添加一条长消息让 token 估算达预算阈值
+    loop['messages'].push({
+      role: 'user',
+      content: 'a'.repeat(50), // 估算 ~17 token（远超 10 * 0.8 = 8）
+    } as Message);
+
+    const chunks: AgentChunk[] = [];
+    const recallMemory = makeMemory({ content: '召回内容' });
+    for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
+      chunks.push(chunk);
+    }
+
+    // 不应有 recall chunk（召回被跳过）
+    const recallChunks = chunks.filter((c) => c.type === 'recall');
+    expect(recallChunks).toHaveLength(0);
+  });
+
+  it('tokenBudget 充足时应正常注入召回', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 120_000,
+    });
+
+    // 充足的 tokenBudget
+    loop.setTokenBudget(8000);
+
+    const chunks: AgentChunk[] = [];
+    const recallMemory = makeMemory({ content: '召回内容' });
+    for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
+      chunks.push(chunk);
+    }
+
+    // 应有 recall chunk
+    const recallChunks = chunks.filter((c) => c.type === 'recall');
+    expect(recallChunks).toHaveLength(1);
+  });
+
+  it('无 tokenBudget 时应正常注入召回（默认行为）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // tokenBudget 默认为 8000，充足
+
+    const chunks: AgentChunk[] = [];
+    const recallMemory = makeMemory({ content: '召回内容' });
+    for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
+      chunks.push(chunk);
+    }
+
+    const recallChunks = chunks.filter((c) => c.type === 'recall');
+    expect(recallChunks).toHaveLength(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// P1：Provider 路由缓存（性能优化）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · Provider 路由缓存（P1）', () => {
+  it('同轮多次 LLM 调用应命中缓存', async () => {
+    // 在单次 processUserInput 内（如工具调用循环），多次 LLM 调用应复用缓存
+    const routerCalls: string[] = [];
+    const simpleProvider = mockProvider([{ content: '简单回复' }]);
+
+    const router = vi.fn((taskType: string) => {
+      routerCalls.push(taskType);
+      return simpleProvider;
+    });
+
+    const mockToolExecutor = vi.fn().mockResolvedValue('tool result');
+
+    // 模拟：代码块消息 → 模型先返回工具调用，再返回最终回复（两轮 LLM）
+    const multiProvider = mockMultiTurnProvider([
+      [
+        {
+          toolCalls: [
+            {
+              id: 't1',
+              type: 'function',
+              function: { name: 'search', arguments: '{"q":"test"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '最终回复' }],
+    ]);
+
+    const loop = new AgentLoop({
+      provider: multiProvider,
+      bootstrapMemories: [],
+      toolExecutor: mockToolExecutor,
+      providerRouter: router,
+    });
+
+    // 单次 processUserInput 内含两轮 LLM 调用（工具调用循环）
+    for await (const chunk of loop.processUserInput('```ts\nconst x = 1;\n```')) {
+      void chunk;
+    }
+
+    // 两次 LLM 调用应只触发一次路由（第二次命中缓存）
+    expect(router).toHaveBeenCalledTimes(1);
+    expect(routerCalls[0]).toBe('code');
+  });
+
+  it('不同 taskType 应分别缓存', async () => {
+    const routerCalls: string[] = [];
+    const simpleProvider = mockProvider([{ content: '简单回复' }]);
+
+    const router = vi.fn((taskType: string) => {
+      routerCalls.push(taskType);
+      return simpleProvider;
+    });
+
+    const loop = new AgentLoop({
+      provider: simpleProvider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      providerRouter: router,
+    });
+
+    // 代码块 → code
+    for await (const chunk of loop.processUserInput('```ts\ncode\n```')) {
+      void chunk;
+    }
+    // 长消息 → reasoning
+    for await (const chunk of loop.processUserInput('A'.repeat(600))) {
+      void chunk;
+    }
+    // 短消息 → simple
+    for await (const chunk of loop.processUserInput('你好')) {
+      void chunk;
+    }
+
+    // 三个不同 taskType，每轮 processUserInput 清空缓存，应调用 3 次
+    expect(router).toHaveBeenCalledTimes(3);
+    expect(routerCalls).toEqual(['code', 'reasoning', 'simple']);
+  });
+
+  it('processUserInput 间应清空缓存（跨轮不复用）', async () => {
+    const routerCalls: string[] = [];
+    const simpleProvider = mockProvider([{ content: '回复' }]);
+
+    const router = vi.fn((taskType: string) => {
+      routerCalls.push(taskType);
+      return simpleProvider;
+    });
+
+    const loop = new AgentLoop({
+      provider: simpleProvider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      providerRouter: router,
+    });
+
+    // 第一轮：代码块 → code
+    for await (const chunk of loop.processUserInput('```ts\ncode\n```')) {
+      void chunk;
+    }
+    // 第二轮：同样代码块 → 缓存清空，应重新路由
+    for await (const chunk of loop.processUserInput('```ts\ncode2\n```')) {
+      void chunk;
+    }
+
+    // 跨轮缓存清空，应调用 2 次
+    expect(router).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// P2：流式 thinking 事件（llm_calling phase）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · thinking 事件 llm_calling 阶段（P2）', () => {
+  it('LLM 调用前应 emit thinking(llm_calling) 事件', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复内容' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    const thinkingChunks = chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'thinking' }> =>
+        c.type === 'thinking' && c.phase === 'llm_calling',
+    );
+    expect(thinkingChunks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('thinking(llm_calling) 应在首个 text chunk 之前 emit', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复内容' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    const firstThinkingIdx = chunks.findIndex(
+      (c) => c.type === 'thinking' && c.phase === 'llm_calling',
+    );
+    const firstTextIdx = chunks.findIndex((c) => c.type === 'text');
+
+    expect(firstThinkingIdx).toBeGreaterThanOrEqual(0);
+    expect(firstTextIdx).toBeGreaterThanOrEqual(firstThinkingIdx);
+  });
+
+  it('多轮迭代中每轮 LLM 调用前都应 emit thinking(llm_calling)', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '第一轮' }],
+        [{ content: '第二轮' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 使用 pause/resume 模拟多轮
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('第一轮')) {
+      chunks.push(chunk);
+      if (chunk.type === 'paused') break;
+    }
+    for await (const chunk of loop.continueAfterPause('第二轮')) {
+      chunks.push(chunk);
+    }
+
+    const thinkingCount = chunks.filter(
+      (c) => c.type === 'thinking' && c.phase === 'llm_calling',
+    ).length;
+    // processUserInput + continueAfterPause 各至少一次
+    expect(thinkingCount).toBeGreaterThanOrEqual(2);
+  });
+});

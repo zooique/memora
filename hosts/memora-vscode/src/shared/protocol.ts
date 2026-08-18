@@ -202,11 +202,11 @@ export type ExtensionToWebviewMessage =
   /**
    * Agent 思考阶段（对齐内核 thinking chunk，alignment-iteration.md B）
    *
-   * 内核在回答前/后阶段产出 thinking{phase}（recalling/processing/archiving），
-   * 标识 Agent 正在做什么。webview 据此更新思考折叠块文案（"召回记忆中/处理中/归档记忆中"），
+   * 内核在回答前/后阶段产出 thinking{phase}（recalling/llm_calling/processing/archiving），
+   * 标识 Agent 正在做什么。webview 据此更新思考折叠块文案（"召回记忆中/调用模型中/处理中/归档记忆中"），
    * 是对 status"进行中"的细化——status 管状态机，thinking 管阶段，二者职责分离。
    */
-  | { type: 'thinking'; phase: 'recalling' | 'processing' | 'archiving' }
+  | { type: 'thinking'; phase: 'recalling' | 'llm_calling' | 'processing' | 'archiving' }
   /**
    * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
    *

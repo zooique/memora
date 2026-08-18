@@ -207,6 +207,10 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(tb).not.toBeNull();
     expect(tb.textContent).toContain('召回记忆中');
     expect(tb.open).toBe(false);
+    // llm_calling 阶段切换文案（内核 P2 优化：LLM 调用前 emit thinking）
+    dispatch({ type: 'thinking', phase: 'llm_calling' });
+    expect(tb.textContent).toContain('调用模型中');
+    expect(tb.open).toBe(false);
     // 处理阶段切换文案
     dispatch({ type: 'thinking', phase: 'processing' });
     expect(tb.textContent).toContain('处理中');
@@ -594,6 +598,11 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     const marks = () => [...tb.querySelectorAll('.trace-step')].map((el) => el.className);
     expect(marks()[0]).toContain('active');
     expect(marks()[1]).toContain('pending');
+    expect(marks()[2]).toContain('pending');
+    // 阶段 1.5：召回完成、llm_calling 归属于 Act 阶段（与 processing 同轨迹位置）
+    dispatch({ type: 'thinking', phase: 'llm_calling' });
+    expect(marks()[0]).toContain('done');
+    expect(marks()[1]).toContain('active');
     expect(marks()[2]).toContain('pending');
     // 阶段 2：召回完成、打磨进行中
     dispatch({ type: 'thinking', phase: 'processing' });

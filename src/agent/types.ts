@@ -57,7 +57,7 @@
  */
 
 /** thinking 事件的阶段标识 */
-export type ThinkingPhase = 'recalling' | 'processing' | 'archiving';
+export type ThinkingPhase = 'recalling' | 'processing' | 'archiving' | 'llm_calling';
 
 /**
  * 召回记忆摘要（用于 UI 展示"召回透明度"）
