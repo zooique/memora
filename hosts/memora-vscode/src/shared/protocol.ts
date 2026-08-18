@@ -91,8 +91,8 @@ export type WebviewToExtensionMessage =
    * 角色管理面板切换激活角色包（2026-08-17 独立视图）
    *
    * 由角色管理视图的「设为当前」触发，host 调 agent.switchRolePack(name) 切换（内核
-   * 单一切换入口：activate + emit personaSwitched + 刷新 loop 前缀）；成功后持久化
-   * 用户级激活态。各视图刷新统一由 personaSwitched 事件驱动（设置→loadRoles，对话→
+   * 单一切换入口：activate + emit rolePackSwitched + 刷新 loop 前缀）；成功后持久化
+   * 用户级激活态。各视图刷新统一由 rolePackSwitched 事件驱动（设置→loadRoles，对话→
    * chat_role_pack），无并行推送路径。
    */
   | { type: 'roles_set_active'; name: string }

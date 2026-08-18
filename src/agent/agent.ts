@@ -866,7 +866,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 匹配技能并立即注入本轮对话（当轮生效，不延迟到下一轮）
    *
-   * 与 persona 的 tryAutoMatchPersona 同模式：匹配 → 注入 → 本轮 LLM 即生效。
+   * 与角色包的 tryAutoMatchRolePack 同模式：匹配 → 注入 → 本轮 LLM 即生效。
    * 原设计为 injectActiveSkill（注入上一轮匹配结果），导致用户说"写代码"的第一轮
    * 得不到技能增强，需再发一条消息才生效。已改为实时匹配注入。
    *
@@ -926,7 +926,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private async doPostProcess(input: string, assistantContent: string): Promise<void> {
     // 技能匹配已迁移到 chat() 开头的 matchAndInjectSkill()（当轮实时生效），
-    // 与 persona 的 tryAutoMatchPersona 同模式，消除"第一轮无技能"的一轮延迟问题。
+    // 与角色包的 tryAutoMatchRolePack 同模式，消除"第一轮无技能"的一轮延迟问题。
 
     // ADR-015 + FIX-P1-4: archiveMode 二态控制集中到 ArchiveCoordinator
     // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
@@ -1492,14 +1492,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           // 尝试按检查点角色名激活角色包（角色包不存在时 activate 返回 false）
           const success = this.rolePackManager_.activate(checkpoint.role.name);
           if (success) {
-            this.emit(AGENT_EVENTS.personaSwitched, {
+            this.emit(AGENT_EVENTS.rolePackSwitched, {
               from: prevName,
               to: checkpoint.role.name,
             });
+            this.applyRolePackToolExposure();
           }
         }
         // 刷新角色前缀（无论是否切换都执行，确保角色包 prompt 被注入到 loop）
-        this.refreshPersonaPrefixOnLoop();
+        this.refreshRolePackPrefixOnLoop();
       } catch (err) {
         // 角色包不存在时静默降级：保持当前角色，仅记录日志
         logger.warn(
@@ -2353,62 +2354,35 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 手动切换角色（宿主 UI 角色选择器入口）
+   * 手动切换角色包（宿主 UI 角色选择器入口）
    *
-   * 与 doPostProcess 中的自动匹配走同一条事件链路，确保：
-   *   1. refreshPersonaPrefixOnLoop 刷新 system prompt（角色包优先）
-   *   2. 发射 personaSwitched 事件，触发 spriteLifecycleManager 的完整副作用：
-   *      - emit('personaChanged') 通知宿主 UI
-   *      - proactiveEngine.addNotice('persona', ...) 记录通知
-   *      - perceptionCoordinator.refreshBeforeChat() 基于新角色 traits 重新推导情感基调
-   *
-   * 对话进行中切换角色会破坏当前 system prompt，与项目切换一致拒绝。
-   *
-   * @param name 目标角色名
-   * @returns 切换成功返回角色名；角色不存在或切换失败返回 null
+   * @deprecated 请使用 {@link switchRolePack}，本方法为过渡期兼容层
    */
   switchPersona(name: string): string | null {
     this.assertInitialized('switchPersona');
-    this.assertNotBusy('切换角色');
-
-    if (!this.rolePackManager_) return null;
-
-    // 同名切换幂等：直接返回角色名，不触发事件链路
-    if (this.rolePackManager_.activeName === name) {
-      return name;
-    }
-
-    const prevName = this.rolePackManager_.activeName;
-    const success = this.rolePackManager_.activate(name);
-    if (!success) {
-      logger.warn({ name }, '手动切换角色失败（角色包不存在或切换锁已激活）');
-      return null;
-    }
-
-    // 同步刷新 AgentLoop 的角色前缀（关键：否则下一次对话仍用旧角色包 prompt）
-    this.refreshPersonaPrefixOnLoop();
-
-    // 发射切换事件，触发宿主 UI 刷新 + 感知重推导 + 通知队列记录
-    this.emit(AGENT_EVENTS.personaSwitched, { from: prevName, to: name });
-    logger.info({ from: prevName, to: name }, '角色包手动切换');
-    return name;
+    this.assertNotBusy('切换角色包');
+    const ok = this.switchRolePack(name);
+    return ok ? name : null;
   }
 
   /**
-   * 获取角色切换锁定状态（透传 RolePackManager）
+   * 获取角色包切换锁定状态（透传 RolePackManager）
    *
-   * 与 switchPersona 分离：switchPersona 返回角色名 | null，
-   * 锁定原因查询走独立路径。
-   *
-   * 宿主 IPC 层调用此方法前置判断锁定状态，区分"切换失败"原因
-   * （locked / busy / not_found / invalid），让用户知道为什么没反应。
+   * 宿主 IPC 层调用此方法前置判断锁定状态，区分"切换失败"原因。
    *
    * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
    */
-  getPersonaSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
-    this.assertInitialized('getPersonaSwitchLockStatus');
+  getRolePackSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
+    this.assertInitialized('getRolePackSwitchLockStatus');
     if (!this.rolePackManager_) return { locked: false, unlockAt: null };
     return this.rolePackManager_.getSwitchLockStatus();
+  }
+
+  /**
+   * @deprecated 请使用 {@link getRolePackSwitchLockStatus}
+   */
+  getPersonaSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
+    return this.getRolePackSwitchLockStatus();
   }
 
   /**
@@ -2423,26 +2397,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 刷新 AgentLoop 的 systemPromptPrefix（SSOT：buildSystemPromptPrefix）
    *
-   * 提取自 doPostProcess 自动匹配 + switchPersona 手动切换两处共用逻辑（ADR-017 枝叶层 2 次提取）。
    * 角色包（RolePackManager）是 system prompt 的唯一注入源。
-   * PersonaManager 不再参与 prompt 构建，仅负责宿主切换 API。
    *
    * 调用时机：
-   * - tryAutoMatchRolePack / tryAutoMatchPersona 匹配成功后
-   * - switchPersona / switchRolePack 手动切换成功后
+   * - tryAutoMatchRolePack 匹配成功后
+   * - switchRolePack 手动切换成功后
    * - reloadConfig 重载后
    * - loop 为 null 时静默跳过（init 前或 close 后的边界场景）
    *
    * 历史：此前只拼接 rolePackPrompt，丢失全局技能清单和时间戳
    * （首次角色切换后全局技能永久不可见）。现统一走 buildSystemPromptPrefix 真理源。
    */
-  private refreshPersonaPrefixOnLoop(): void {
+  private refreshRolePackPrefixOnLoop(): void {
     if (!this.loop) return;
-    // 档 2-1（ADR-025）：角色包唯一——无激活角色包时前缀为空（persona 兜底已移除）。
     const rolePackPrompt = this.rolePackManager_?.buildSystemPrompt() ?? '';
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
     const newPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList);
-    this.loop.refreshPersonaPrefix(newPrefix);
+    this.loop.refreshRolePackPrefix(newPrefix);
     // 同步注入角色包策略中的 ChatOptions 覆盖项（temperature / outputLimit / streaming）
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
   }
@@ -2486,35 +2457,30 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 手动切换激活角色包（宿主 UI 角色视图 / 角色选择器入口）
+   * 角色包系统的唯一切换入口（自动匹配 + 手动切换共用）
    *
-   * 角色包系统（rolePackManager）的「单一切换入口」：与 tryAutoMatchRolePack 自动
-   * 匹配共用同一条链路（ADR-017 枝叶层提取），确保任何切换路径都一致地：
-   *   1. RolePackManager.activate 更新激活态（单一真理源 activePackName）
-   *   2. 发射 personaSwitched 事件（from → to）——宿主各视图（设置/对话）订阅此事件刷新
-   *   3. refreshPersonaPrefixOnLoop 刷新 AgentLoop 前缀（下一次对话即用新角色包 L1 persona）
-   *
-   * 与 switchPersona 的区别：本方法操作角色包系统（rolePackManager），是 system prompt 唯一注入源；
-   * switchPersona 操作 PersonaManager（过渡期宿主 API 层），不再注入 prompt。
-   * 不做 assertNotBusy（与自动匹配一致）：切换只影响后续对话的 system prompt，不破坏
-   * 进行中生成。
+   * 任何切换路径都一致地：
+   *   1. RolePackManager.activate 更新激活态（单一真理源）
+   *   2. 发射 rolePackSwitched 事件（from → to）——宿主各视图订阅此事件刷新
+   *   3. refreshRolePackPrefixOnLoop 刷新 AgentLoop 前缀
+   *   4. applyRolePackToolExposure 同步工具白名单
    *
    * @param name 目标角色包名
    * @returns 是否切换成功（角色包不存在返回 false 且不触发事件；同名切换幂等返回 true）
    */
   switchRolePack(name: string): boolean {
+    this.assertInitialized('switchRolePack');
     const rpm = this.rolePackManager_;
     if (!rpm) return false;
     const prevName = rpm.activeName;
-    // 同名切换幂等：不触发事件链路（对齐 switchPersona 语义）
     if (prevName === name) return true;
     const ok = rpm.activate(name);
-    if (!ok) return false;
-    this.emit(AGENT_EVENTS.personaSwitched, { from: prevName ?? '', to: name });
-    // 刷新 system prompt 前缀（角色包优先，装载其 L1 persona）
-    this.refreshPersonaPrefixOnLoop();
-    // Bug 1 修复：切换角色包后立即刷新工具白名单（与 chat() 行为一致）
-    // 否则需等到下次 chat() 的 preparePhase 才生效，存在工具暴露面窗口
+    if (!ok) {
+      logger.warn({ name }, '切换角色包失败（不存在或切换锁已激活）');
+      return false;
+    }
+    this.emit(AGENT_EVENTS.rolePackSwitched, { from: prevName ?? '', to: name });
+    this.refreshRolePackPrefixOnLoop();
     this.applyRolePackToolExposure();
     logger.info({ rolePack: name }, '角色包切换');
     return true;
@@ -2677,7 +2643,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         result.persona = await this.rolePackManager_.reload();
         // 角色重载后，刷新 AgentLoop 的角色前缀
         if (this.loop) {
-          this.refreshPersonaPrefixOnLoop();
+          this.refreshRolePackPrefixOnLoop();
         }
       } catch (err) {
         errors.push(toError(err));
@@ -2690,7 +2656,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       try {
         await this.rolePackManager_.reload();
         if (this.loop) {
-          this.refreshPersonaPrefixOnLoop();
+          this.refreshRolePackPrefixOnLoop();
         }
       } catch (err) {
         errors.push(toError(err));
@@ -3128,11 +3094,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 宿主项目使用访问器时需自行判空，或使用门面方法获得自动错误处理。
 
   /**
-   * 角色管理器（RolePackManager，角色+技能+规则的唯一真理源）
+   * 角色包管理器（RolePackManager，角色+技能+规则的唯一真理源）
    *
    * ADR-025 档 2-1 后，RolePackManager 是 system prompt 的唯一注入源。
    * PersonaManager 已完全合并到 RolePackManager。
-   * 链式调用建议使用可选链：`agent.persona?.activeName`
+   */
+  get rolePack(): RolePackManager | null {
+    return this.rolePackManager_;
+  }
+
+  /**
+   * @deprecated 请使用 {@link rolePack}
    */
   get persona(): RolePackManager | null {
     return this.rolePackManager_;

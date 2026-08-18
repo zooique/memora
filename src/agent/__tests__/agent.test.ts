@@ -768,7 +768,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     // 监听 personaSwitched 事件
     let switchedFrom: string | null = null;
     let switchedTo: string | null = null;
-    agent.on('personaSwitched', (e) => {
+    agent.on('rolePackSwitched', (e) => {
       switchedFrom = e.from;
       switchedTo = e.to;
     });
@@ -783,7 +783,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     // 验证当前角色已切换
     expect(agent.persona!.activeName).toBe('写作助手');
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   it('技能关键词匹配：输入匹配关键词后 skillMatched 事件应立即触发（当轮生效）', async () => {
@@ -1349,7 +1349,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     // 监听 personaSwitched 事件
     let switchedFrom: string | null = null;
     let switchedTo: string | null = null;
-    agent.on('personaSwitched', (e) => {
+    agent.on('rolePackSwitched', (e) => {
       switchedFrom = e.from;
       switchedTo = e.to;
     });
@@ -1364,7 +1364,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     // 验证当前角色已切换
     expect(agent.persona!.activeName).toBe('写作助手');
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   it('switchPersona 同名切换幂等：不触发事件，返回当前 prompt', async () => {
@@ -1372,7 +1372,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     await agent.init();
 
     let eventFired = false;
-    agent.on('personaSwitched', () => {
+    agent.on('rolePackSwitched', () => {
       eventFired = true;
     });
 
@@ -1384,7 +1384,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     // 但应返回当前角色的 prompt
     expect(prompt).toContain(initialName);
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   it('switchPersona 角色不存在时返回 null（不抛错）', async () => {
@@ -1434,7 +1434,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
 
     // 监听 personaSwitched 事件
     let switched: { from: string | null; to: string } | null = null;
-    agent.on('personaSwitched', (e) => {
+    agent.on('rolePackSwitched', (e) => {
       switched = e;
     });
 
@@ -1443,7 +1443,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     expect(rpm.activeName).toBe('技术文档工程师');
     expect(switched).toEqual({ from: '写作助手', to: '技术文档工程师' });
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   it('switchRolePack 角色不存在：返回 false 且不发射事件', async () => {
@@ -1454,7 +1454,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     const initialActive = rpm.activeName;
 
     let switched = false;
-    agent.on('personaSwitched', () => {
+    agent.on('rolePackSwitched', () => {
       switched = true;
     });
 
@@ -1464,7 +1464,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     expect(rpm.activeName).toBe(initialActive);
     expect(switched).toBe(false);
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   it('switchRolePack 同名切换幂等：返回 true 且不发射事件', async () => {
@@ -1484,7 +1484,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     rpm.activate('写作助手');
 
     let switched = false;
-    agent.on('personaSwitched', () => {
+    agent.on('rolePackSwitched', () => {
       switched = true;
     });
 
@@ -1493,7 +1493,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
     expect(rpm.activeName).toBe('写作助手');
     expect(switched).toBe(false);
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   // ─── manual 模式跳过自动归档 ────────────────────────────
@@ -1525,7 +1525,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
 
     // 监听 personaSwitched 事件（非归档行为，应正常触发）
     let personaSwitched = false;
-    agent.on('personaSwitched', () => {
+    agent.on('rolePackSwitched', () => {
       personaSwitched = true;
     });
 
@@ -1534,7 +1534,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（2026-08-14 �
 
     expect(personaSwitched).toBe(true);
 
-    agent.off('personaSwitched', () => {});
+    agent.off('rolePackSwitched', () => {});
   });
 
   // ─── 手动 API（manual 模式下使用） ─────────────────────

@@ -14,7 +14,9 @@ import { toError } from '@/utils/toError.js';
 /** Agent 事件名常量（运行时真理源，与下方 AgentEventMap 键集一致） */
 export const AGENT_EVENTS = {
   memoryAdded: 'memoryAdded',
-  personaSwitched: 'personaSwitched',
+  rolePackSwitched: 'rolePackSwitched',
+  /** @deprecated use rolePackSwitched instead */
+  personaSwitched: 'rolePackSwitched',
   decayCompleted: 'decayCompleted',
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
@@ -24,7 +26,9 @@ export const AGENT_EVENTS = {
   contextTruncated: 'contextTruncated',
   configReloaded: 'configReloaded',
   archiveModeChanged: 'archiveModeChanged',
-  personaSwitchLocked: 'personaSwitchLocked',
+  rolePackSwitchLocked: 'rolePackSwitchLocked',
+  /** @deprecated use rolePackSwitchLocked instead */
+  personaSwitchLocked: 'rolePackSwitchLocked',
   workProjectionGenerated: 'workProjectionGenerated',
   boostPersistFailed: 'boostPersistFailed',
   dedupCompleted: 'dedupCompleted',
@@ -65,7 +69,9 @@ export const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_
 export interface AgentEventMap extends Record<AgentEventName, unknown> {
   /** 记忆被写入存储（round-summary 沉淀、content 会话归档、rule/skill 注入等） */
   memoryAdded: { id: string; source: string; name: string };
-  /** 角色被切换（自动匹配或手动指定） */
+  /** 角色包被切换（自动匹配或手动指定） */
+  rolePackSwitched: { from: string | null; to: string };
+  /** @deprecated use rolePackSwitched instead */
   personaSwitched: { from: string | null; to: string };
   /** 记忆衰减完成 */
   decayCompleted: { decayedCount: number };

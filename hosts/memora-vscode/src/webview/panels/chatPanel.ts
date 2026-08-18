@@ -428,16 +428,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * personaSwitched：角色包切换（内核 emit：粘性匹配自动切换 / 显式 activate / persona 切换）
+   * rolePackSwitched：角色包切换（内核 emit：粘性匹配自动切换 / 显式 activate）
    *
-   * 三层对齐断点 A1（alignment-iteration.md）：内核在粘性匹配或显式激活切换角色包时
-   * emit personaSwitched，但插件此前未绑定 → UI 角色选择器不刷新（真实链路断裂）。
-   * 此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
+   * 三层对齐断点 A1：内核在粘性匹配或显式激活切换角色包时
+   * emit rolePackSwitched，此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
    *
    * Phase 4 E2：同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。
    */
-  private readonly onPersonaSwitched = (info: { from: string | null; to: string }): void => {
-    // SSOT 修复（2026-08-17）：从同一 personaSwitched 事件维护内部激活角色状态，
+  private readonly onRolePackSwitched = (info: { from: string | null; to: string }): void => {
+    // SSOT 修复（2026-08-17）：从同一 rolePackSwitched 事件维护内部激活角色状态，
     // 使其与内核 rolePackManager.activeName 一致，成为 replaySession 的单一真相源。
     // 此前仅 post 给当时可能已被 dispose 的 webview（被静默忽略），未更新 _activeRolePack
     // → 用户从「角色」视图切换后聚焦对话（chat 视图重解析），ensureAgent 因 _agent 已存在
@@ -547,8 +546,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.off('boostPersistFailed', this.onBoostPersistFailed);
     a.on('boostPersistFailed', this.onBoostPersistFailed);
     // A1（alignment-iteration.md）：角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
-    a.off('personaSwitched', this.onPersonaSwitched);
-    a.on('personaSwitched', this.onPersonaSwitched);
+    a.off('rolePackSwitched', this.onRolePackSwitched);
+    a.on('rolePackSwitched', this.onRolePackSwitched);
     // Phase 3：技能匹配事件 → 提示条显示激活技能
     a.off('skillMatched', this.onSkillMatched);
     a.on('skillMatched', this.onSkillMatched);
@@ -877,7 +876,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 处理用户切换激活角色包（输入区角色下拉，alignment-iteration.md A3）
    *
    * 走内核「单一切换入口」agent.switchRolePack(name)：内部完成
-   * RolePackManager.activate + 发射 personaSwitched（onPersonaSwitched 已绑定，
+   * RolePackManager.activate + 发射 rolePackSwitched（onRolePackSwitched 已绑定，
    * 同步 _activeRolePack + 转发 chat_role_pack，UI 徽章 / AI 消息标签即时刷新）
    * + 刷新 AgentLoop 前缀（下一次对话即用新角色包 prompt）。切换失败（角色不存在）
    * 时仅低扰提示，不误导用户。

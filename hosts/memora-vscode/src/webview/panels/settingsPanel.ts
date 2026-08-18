@@ -39,8 +39,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *  undefined = 尚未尝试装配；装配中/成功 = 同一 Promise，并发调用共享一次装配；
    *  失败时 catch 内清空为 undefined，允许下次重试（替代 boolean 标记的冗余空推+重复装配） */
   private _agentPromise: Promise<Agent | undefined> | undefined;
-  /** 是否已绑定 personaSwitched 事件（角色切换可观测，只绑定一次避免重复监听） */
-  private _personaBound = false;
+  /** 是否已绑定 rolePackSwitched 事件（角色切换可观测，只绑定一次避免重复监听） */
+  private _rolePackBound = false;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 getOrCreateAgent） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 全局状态存储（持久化激活角色包，用户级） */
@@ -239,16 +239,16 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       });
     }
     const agent = await this._agentPromise;
-    // 只绑定一次 personaSwitched（角色切换可观测 —— 跨面板一致）
-    if (agent && !this._personaBound) {
-      this._personaBound = true;
-      agent.off('personaSwitched', this.onPersonaSwitched);
-      agent.on('personaSwitched', this.onPersonaSwitched);
+    // 只绑定一次 rolePackSwitched（角色包切换可观测 —— 跨面板一致）
+    if (agent && !this._rolePackBound) {
+      this._rolePackBound = true;
+      agent.off('rolePackSwitched', this.onRolePackSwitched);
+      agent.on('rolePackSwitched', this.onRolePackSwitched);
     }
     return agent;
   }
 
-  private readonly onPersonaSwitched = (): void => {
+  private readonly onRolePackSwitched = (): void => {
     void this.loadRoles();
   };
 
@@ -256,8 +256,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private async activateRole(name: string): Promise<boolean> {
     const agent = await this.ensureAgent();
     if (!agent) return false;
-    // 走内核「单一切换入口」agent.switchRolePack：activate + emit personaSwitched + 刷新 loop 前缀。
-    // 角色视图刷新由 personaSwitched 事件驱动（onPersonaSwitched → loadRoles），不再显式
+    // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。
+    // 角色视图刷新由 rolePackSwitched 事件驱动（onRolePackSwitched → loadRoles），不再显式
     // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT 剪枝，2026-08-17）。
     const ok = agent.switchRolePack(name);
     if (ok) {

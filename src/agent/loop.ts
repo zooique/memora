@@ -1903,14 +1903,14 @@ export class AgentLoop {
   }
 
   /**
-   * 刷新角色 prompt
+   * 刷新角色包 prompt
    *
-   * 当角色切换时，更新系统 prompt 前缀的角色部分。
+   * 当角色包切换时，更新系统 prompt 前缀的角色部分。
    * 保留 bootstrapMemories 和 toolDefinitions 不变，只替换 prefix。
    *
-   * @param newPrefix 新的系统 prompt 前缀（包含新角色 + 用户画像）
+   * @param newPrefix 新的系统 prompt 前缀（包含新角色包 + 用户画像）
    */
-  refreshPersonaPrefix(newPrefix: string): void {
+  refreshRolePackPrefix(newPrefix: string): void {
     this.opts.systemPromptPrefix = newPrefix;
     this.rebuildSystemMessage();
   }
@@ -1933,8 +1933,8 @@ export class AgentLoop {
    * 设定面板对 rule/skill 执行增删改后，调用此方法用最新的记忆数组
    * 重建 system prompt 中的 bootstrap 段，使变更立即对当前会话生效。
    *
-   * 与 refreshPersonaPrefix 的区别：
-   *   - refreshPersonaPrefix 替换 systemPromptPrefix（角色 + 画像）
+   * 与 refreshRolePackPrefix 的区别：
+   *   - refreshRolePackPrefix 替换 systemPromptPrefix（角色包 + 画像）
    *   - refreshBootstrapMemories 替换 bootstrapMemories（rule + skill）
    *
    * 调用链：ConfigManager.deleteRule/updateRule/deleteSkill
