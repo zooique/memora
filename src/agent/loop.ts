@@ -42,6 +42,13 @@ export interface AgentLoopOptions {
   /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
   /**
+   * 内置工具定义列表（Phase 3：act.toolReadonly 消费）
+   *
+   * 用于在只读模式检查时查询工具的 readonly 标记。
+   * 与 toolDefinitions 分离，仅包含内置工具（BUILTIN_TOOLS）。
+   */
+  builtinTools?: ToolDefinition[];
+  /**
    * 上下文窗口 token 上限（默认 120_000，对齐 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）
    *
    * 桌面精灵等长运行场景下，messages 数组随对话轮次无限增长会爆 LLM 上下文窗口。
@@ -274,10 +281,36 @@ export class AgentLoop {
    * - N > 0 = 达到上限时提前结束
    */
   private stepBudget = 50;
+  /**
+   * 多步推理模式（由 Agent 根据 L2 策略 act.multiStepReasoning 设置，Phase 1）
+   *
+   * 控制 LLM 深度思考行为：
+   * - 'auto' → 由 Provider 自行决定（默认）
+   * - 'manual' → 强制快速回答（跳过深度推理）
+   */
+  private multiStepReasoning: 'auto' | 'manual' = 'auto';
+  /**
+   * 工具只读模式（由 Agent 根据 L2 策略 act.toolReadonly 设置，Phase 3）
+   *
+   * 控制工具操作权限范围：
+   * - 'full' → 完整权限（默认）
+   * - 'readonly' → 仅允许只读工具
+   */
+  private toolReadonly: 'full' | 'readonly' = 'full';
+  /**
+   * 工具审批模式（由 Agent 根据 L2 策略 act.toolApproval 设置，Phase 3）
+   *
+   * 控制工具执行审批行为：
+   * - 'auto' → 自动执行（默认）
+   * - 'confirm' → 执行前等待宿主确认
+   */
+  private toolApproval: 'auto' | 'confirm' = 'auto';
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;
   /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
   onRoundBoundary?: (roundInfo: { stepId?: string; summary: string }) => void;
+  /** Phase 3：工具审批回调——当 toolApproval='confirm' 时触发 */
+  onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** P2-8: 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
   /**
@@ -630,6 +663,33 @@ export class AgentLoop {
    */
   setStepBudget(budget: number): void {
     this.stepBudget = budget >= 0 ? Math.floor(budget) : 0;
+  }
+
+  /**
+   * 设置多步推理模式（Phase 1：act.multiStepReasoning）
+   *
+   * @param reasoning 推理模式（'auto' | 'manual'）
+   */
+  setMultiStepReasoning(reasoning: 'auto' | 'manual'): void {
+    this.multiStepReasoning = reasoning;
+  }
+
+  /**
+   * 设置工具只读模式（Phase 3：act.toolReadonly）
+   *
+   * @param readonly 工具模式（'full' | 'readonly'）
+   */
+  setToolReadonly(readonly: 'full' | 'readonly'): void {
+    this.toolReadonly = readonly;
+  }
+
+  /**
+   * 设置工具审批模式（Phase 3：act.toolApproval）
+   *
+   * @param approval 审批模式（'auto' | 'confirm'）
+   */
+  setToolApproval(approval: 'auto' | 'confirm'): void {
+    this.toolApproval = approval;
   }
 
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
@@ -1128,6 +1188,11 @@ export class AgentLoop {
       timeoutMs: LOOP_CONSTANTS.LLM_TIMEOUT_MS,
     };
 
+    // Phase 1：multiStepReasoning='manual' → 强制低推理深度（若 Provider 支持）
+    if (this.multiStepReasoning === 'manual') {
+      effectiveOpts.reasoning_effort = 'low';
+    }
+
     // P1-2 多模型路由：根据当前任务类型选择 Provider
     // Tier 3：providerRouting='fixed' 时跳过动态路由，固定使用当前 Provider
     const effectiveProvider =
@@ -1431,6 +1496,27 @@ export class AgentLoop {
       // 拒绝（denied）：阻止工具意图，返回结构化错误让 LLM 调整策略（而非重试）。
       // 跳过（skip）：幂等去重，返回已有结果让 LLM 继续生成。
       // 放行（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数。
+
+      // Phase 3：toolReadonly='readonly' → 阻止非只读工具
+      if (this.toolReadonly === 'readonly') {
+        const toolDef = this.opts.builtinTools?.find((t) => t.name === tc.function.name);
+        if (toolDef && !toolDef.readonly) {
+          logger.warn(
+            { tool: tc.function.name },
+            '工具只读模式：阻止写入工具执行',
+          );
+          return `[ERR:TOOL:READONLY_DENIED] 工具 "${tc.function.name}" 是写入操作，在只读模式下不可用`;
+        }
+      }
+
+      // Phase 3：toolApproval='confirm' → 触发审批回调
+      if (this.toolApproval === 'confirm') {
+        this.onToolApproval?.({
+          toolName: tc.function.name,
+          args: tc.function.arguments,
+        });
+      }
+
       const preCheck = this.opts.preExecutionCheck?.(tc.function.name, tc.function.arguments);
       if (preCheck?.denied) {
         const reason = preCheck.reason ?? '工具调用被拒绝';

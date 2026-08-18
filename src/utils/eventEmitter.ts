@@ -35,6 +35,8 @@ export const AGENT_EVENTS = {
   /** 任务表已生成（P2.5-2: LLM 通过 task_table_write 生成了任务表，宿主可展示接受/丢弃入口） */
   taskTableGenerated: 'taskTableGenerated',
   needClarify: 'needClarify',
+  /** Phase 1：记忆写入确认事件（reflect.memoryWrite='confirm'） */
+  memoryWriteConfirm: 'memoryWriteConfirm',
   /**
    * Agent 主动提问（回答中检测到 LLM 结构化输出 [ASK] 时触发）
    *
@@ -179,6 +181,18 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 默认选项（可选） */
     options?: string[];
   }[];
+  /**
+   * 记忆写入确认（Phase 1：reflect.memoryWrite='confirm'）
+   *
+   * 当归档协调器在写入记忆前需要用户确认时触发。
+   * 宿主可展示确认 UI，让用户选择接受或拒绝。
+   */
+  memoryWriteConfirm: {
+    /** 待写入的记忆数量 */
+    count: number;
+    /** 待写入的记忆摘要列表 */
+    memories: { id: string; name: string }[];
+  };
   /**
    * Agent 主动提问（回答中 LLM 结构化输出 [ASK] 解析结果）
    *

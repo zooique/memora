@@ -126,11 +126,11 @@ export interface PrepareStrategy {
   readonly memoryRecall?: MemoryRecallMode;
   /** 记忆占用上限 token 数（默认 2000） */
   readonly memoryRecallQuota?: number;
-  /** 摘要召回开关（默认 on）[草案·未接入] */
+  /** 摘要召回开关（默认 on）[Phase 2 已消费] */
   readonly summaryRecall?: SummaryRecall;
   /** 召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2） */
   readonly minFallback?: number;
-  /** 召回结果相似度阈值 0.0~1.0（默认 0.6）[草案·未接入] */
+  /** 召回结果相似度阈值 0.0~1.0（默认 0.6）[Phase 2 已消费] */
   readonly recallConfidence?: number;
   /** 任务分类方式（默认 keyword）[草案·未接入] */
   readonly taskClassification?: TaskClassification;
@@ -154,9 +154,9 @@ export interface PrepareStrategy {
 export interface ActStrategy {
   /** 工具调用模式（默认 allow；标准键 act.toolMode，§六） */
   readonly toolMode?: ToolMode;
-  /** 工具批准模式（默认 auto）[草案·未接入] */
+  /** 工具批准模式（默认 auto）[Phase 3 已消费] */
   readonly toolApproval?: ToolApproval;
-  /** 工具操作范围（默认 full）[草案·未接入] */
+  /** 工具操作范围（默认 full）[Phase 3 已消费] */
   readonly toolReadonly?: ToolReadonly;
   /** 单轮工具调用步数上限（默认 20） */
   readonly toolStepLimit?: number;
@@ -168,7 +168,7 @@ export interface ActStrategy {
   readonly outputLimit?: number;
   /** Provider 路由策略（默认 auto）[Tier 3 已消费] */
   readonly providerRouting?: ProviderRouting;
-  /** 多步推理模式（默认 auto）[草案·未接入] */
+  /** 多步推理模式（默认 auto）[Phase 1 已消费] */
   readonly multiStepReasoning?: MultiStepReasoning;
   /** 输入中断策略（默认 allow）[Tier 3 已消费] */
   readonly inputInterrupt?: InputInterrupt;
@@ -220,9 +220,9 @@ export interface GlobalStrategy {
  *
  * ⚠️ 诚实化声明（僵尸键治理，role-pack-spec §五）：
  * 本集合是"设计空间"，不是"承诺面"——**仅以下字段被内核实际消费并影响行为**：
- *   - prepare：recentRounds / memoryRecall / memoryRecallQuota / minFallback / summaryFocus / contextAssembly / autoSwitch
- *   - act：toolMode / temperature / outputLimit / streaming / toolStepLimit / providerRouting / inputInterrupt
- *   - reflect：summary / handoff / loopContinue / userFollowup
+ *   - prepare：recentRounds / memoryRecall / memoryRecallQuota / minFallback / summaryFocus / contextAssembly / autoSwitch / recallConfidence / summaryRecall
+ *   - act：toolMode / temperature / outputLimit / streaming / toolStepLimit / providerRouting / inputInterrupt / multiStepReasoning / toolReadonly / toolApproval
+ *   - reflect：summary / handoff / loopContinue / userFollowup / memoryWrite / sessionArchive
  *   - global：askOn / askLimit / errorHandling / tokenBudget / stepBudget
  * 其余字段（含 toolWhitelist / toolBlacklist 已标 @deprecated）均为**僵尸键**：
  * 角色包可声明，但内核当前不读取、声明不生效——它们承载未来行为分支的
@@ -763,6 +763,106 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
   const candidate = strategy?.global?.stepBudget;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
   return valid ? candidate : 50;
+}
+
+/**
+ * 解析记忆写入模式（Phase 1 已消费）：非法值归位 'auto'
+ *
+ * 控制记忆写入是否需要用户确认：
+ * - 'auto' → 自动写入（默认）
+ * - 'confirm' → 写入前等待宿主确认
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的记忆写入模式
+ */
+export function resolveMemoryWrite(strategy: BehaviorStrategy | undefined): MemoryWriteMode {
+  return normalizeEnum(strategy?.reflect?.memoryWrite, ['auto', 'confirm'], 'auto');
+}
+
+/**
+ * 解析会话归档模式（Phase 1 已消费）：非法值归位 'auto'
+ *
+ * 控制会话内容自动归档行为：
+ * - 'auto' → 自动归档（默认）
+ * - 'manual' → 仅手动归档
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的会话归档模式
+ */
+export function resolveSessionArchive(strategy: BehaviorStrategy | undefined): SessionArchiveMode {
+  return normalizeEnum(strategy?.reflect?.sessionArchive, ['auto', 'manual'], 'auto');
+}
+
+/**
+ * 解析多步推理模式（Phase 1 已消费）：非法值归位 'auto'
+ *
+ * 控制 LLM 是否启用深度思考：
+ * - 'auto' → 由 Provider 自行决定（默认）
+ * - 'manual' → 强制快速回答（跳过深度推理）
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的多步推理模式
+ */
+export function resolveMultiStepReasoning(strategy: BehaviorStrategy | undefined): MultiStepReasoning {
+  return normalizeEnum(strategy?.act?.multiStepReasoning, ['auto', 'manual'], 'auto');
+}
+
+/**
+ * 解析召回置信度阈值（Phase 2 已消费）：非法值归位 0.3
+ *
+ * 控制语义召回的相似度过滤阈值：
+ * - 0.0~1.0 浮点数，越大越严格
+ * - 默认 0.3（语义召回保底下限）
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的召回置信度阈值
+ */
+export function resolveRecallConfidence(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.prepare?.recallConfidence;
+  const valid = typeof candidate === 'number' && candidate >= 0 && candidate <= 1;
+  return valid ? candidate : 0.3;
+}
+
+/**
+ * 解析摘要召回开关（Phase 2 已消费）：非法值归位 'on'
+ *
+ * 控制摘要记忆是否参与召回：
+ * - 'on' → 摘要和原始记忆一起参与召回（默认）
+ * - 'off' → 仅召回原始记忆，跳过摘要
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的摘要召回开关
+ */
+export function resolveSummaryRecall(strategy: BehaviorStrategy | undefined): SummaryRecall {
+  return normalizeEnum(strategy?.prepare?.summaryRecall, ['on', 'off'], 'on');
+}
+
+/**
+ * 解析工具只读模式（Phase 3 已消费）：非法值归位 'full'
+ *
+ * 控制工具操作权限范围：
+ * - 'full' → 完整权限（默认）
+ * - 'readonly' → 仅允许只读工具
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的工具模式
+ */
+export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): ToolReadonly {
+  return normalizeEnum(strategy?.act?.toolReadonly, ['full', 'readonly'], 'full');
+}
+
+/**
+ * 解析工具审批模式（Phase 3 已消费）：非法值归位 'auto'
+ *
+ * 控制工具执行审批行为：
+ * - 'auto' → 自动执行（默认）
+ * - 'confirm' → 执行前等待宿主确认
+ *
+ * @param strategy 合并后的行为策略
+ * @returns 合法的工具审批模式
+ */
+export function resolveToolApproval(strategy: BehaviorStrategy | undefined): ToolApproval {
+  return normalizeEnum(strategy?.act?.toolApproval, ['auto', 'confirm'], 'auto');
 }
 
 /**

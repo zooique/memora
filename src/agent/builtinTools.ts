@@ -21,6 +21,15 @@ export interface ToolDefinition {
     properties: Record<string, { type: string; description: string; items?: { type: string; properties: Record<string, { type: string; description: string }>; required: string[] } }>;
     required: string[];
   };
+  /**
+   * 工具是否为只读操作（Phase 3：act.toolReadonly 消费）
+   *
+   * - true：只读操作（读文件/搜索/查询），在 readonly 模式下保留
+   * - false：写操作（写文件/删除/修改），在 readonly 模式下被阻止
+   *
+   * 未声明时默认为 false（写入操作），需显式标记只读工具
+   */
+  readonly?: boolean;
 }
 
 // ─── 工具幂等性映射（P3.4 补偿机制） ────────────────────────
@@ -159,6 +168,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',
     description: '读取项目内文件内容。路径必须相对项目根目录。',
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {
@@ -193,6 +203,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'list_dir',
     description:
       '列出目录内容。默认相对项目根目录。受路径白名单保护。递归深度 ≤ 3，自动忽略 .git / node_modules / .memora / dist / coverage / .next。',
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {
@@ -207,6 +218,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'search_memories',
     description:
       '在记忆索引中搜索关键词。支持 match（任一命中，默认）和 near（全部命中）两种模式。',
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {
@@ -222,6 +234,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'trace_summary',
     description:
       '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {

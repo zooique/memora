@@ -61,6 +61,11 @@ import {
   resolveInputInterrupt,
   resolveTokenBudget,
   resolveStepBudget,
+  resolveMultiStepReasoning,
+  resolveToolReadonly,
+  resolveToolApproval,
+  resolveRecallConfidence,
+  resolveSummaryRecall,
 } from '@/role-pack/types.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
@@ -576,6 +581,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // Tier 3：根据 L2 策略设置步数预算上限（global.stepBudget）
     loop.setStepBudget(resolveStepBudget(strategy));
 
+    // Phase 1：根据 L2 策略设置多步推理模式（act.multiStepReasoning）
+    loop.setMultiStepReasoning(resolveMultiStepReasoning(strategy));
+
+    // Phase 3：根据 L2 策略设置工具只读模式（act.toolReadonly）
+    loop.setToolReadonly(resolveToolReadonly(strategy));
+
+    // Phase 3：根据 L2 策略设置工具审批模式（act.toolApproval）
+    loop.setToolApproval(resolveToolApproval(strategy));
+
     // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
     // Phase 9：loopContinue 为 number（0=关闭，N=最多 N 轮）；兼容旧格式 'on'→1 轮 / 'off'→0 轮
     const loopContinue = strategy.reflect?.loopContinue;
@@ -790,6 +804,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             minFallback: resolveMinFallback(this.getActiveStrategy()),
             // 前置互斥排除（§4.3）：在 recall 内取 limit 前过滤当前会话最近 N 轮 round-summary
             excludeRoundIds: recentRoundIds,
+            // Phase 2：召回置信度阈值（0.0-1.0）
+            minSimilarity: resolveRecallConfidence(this.getActiveStrategy()),
           },
         );
       } catch (err) {
@@ -799,6 +815,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         recallSpan.setAttribute('resultCount', recalledMemories.length);
         recallSpan.end();
       }
+
+      // Phase 2：summaryRecall='off' → 过滤摘要类记忆（保留原始记忆）
+      const summaryRecall = resolveSummaryRecall(this.getActiveStrategy());
+      if (summaryRecall === 'off') {
+        recalledMemories = recalledMemories.filter(
+          (m) => m.source !== 'round-summary' && m.source !== 'content-summary',
+        );
+      }
+
       if (recalledMemories.length > 0) {
         this.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
         // boost 持久化拆分为 fire-and-forget，不阻塞 chat 读路径

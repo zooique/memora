@@ -48,6 +48,17 @@ export interface ArchiveCoordinatorOptions {
   readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调（Agent 注入 this.emit） */
   readonly emit: EmitCallback;
+  /**
+   * 获取当前记忆写入模式（Phase 1：reflect.memoryWrite）
+   * 'auto' → 自动写入（默认）；'confirm' → 写入前等待宿主确认
+   */
+  readonly getMemoryWriteMode?: () => 'auto' | 'confirm';
+  /**
+   * 获取当前会话归档模式（Phase 1：reflect.sessionArchive）
+   * 'auto' → 自动归档（默认）；'manual' → 仅手动归档
+   * 若未注入，回退到 getArchiveMode 的值
+   */
+  readonly getSessionArchiveMode?: () => 'auto' | 'manual';
 }
 
 /**
@@ -103,11 +114,17 @@ export class ArchiveCoordinator {
   private readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调 */
   private readonly emit: EmitCallback;
+  /** 获取当前记忆写入模式（Phase 1） */
+  private readonly getMemoryWriteMode?: () => 'auto' | 'confirm';
+  /** 获取当前会话归档模式（Phase 1） */
+  private readonly getSessionArchiveMode?: () => 'auto' | 'manual';
 
   constructor(opts: ArchiveCoordinatorOptions) {
     this.getSessionArchiver = opts.getSessionArchiver;
     this.getArchiveMode = opts.getArchiveMode;
     this.emit = opts.emit;
+    this.getMemoryWriteMode = opts.getMemoryWriteMode;
+    this.getSessionArchiveMode = opts.getSessionArchiveMode;
   }
 
   /**
@@ -134,11 +151,12 @@ export class ArchiveCoordinator {
     session: string,
     options?: ArchiveTriggerOptions,
   ): Promise<SessionArchiveResult> {
-    // 自动触发 + 非 full 模式 → 跳过（原 sessionHandlers.ts 的外部判断逻辑）
-    if (options?.autoTriggered && this.getArchiveMode() !== 'full') {
+    // Phase 1：sessionArchive='manual' 且自动触发 → 跳过（优先于 archiveMode 三态）
+    const archiveMode = this.getSessionArchiveMode?.() ?? (this.getArchiveMode() === 'full' ? 'auto' : 'manual');
+    if (options?.autoTriggered && archiveMode === 'manual') {
       logger.debug(
-        { mode: this.getArchiveMode(), stage: 'content' },
-        '非 full 模式跳过自动 content 归档',
+        { mode: archiveMode, stage: 'content' },
+        'sessionArchive=manual 跳过自动 content 归档',
       );
       return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
@@ -148,6 +166,16 @@ export class ArchiveCoordinator {
     }
     try {
       const result = await sessionArchiver.archiveSessionContent(date, session, options);
+
+      // Phase 1：memoryWrite='confirm' → 写入前发射事件等待宿主确认
+      const writeMode = this.getMemoryWriteMode?.() ?? 'auto';
+      if (writeMode === 'confirm' && result.memories.length > 0) {
+        this.emit('memoryWriteConfirm', {
+          count: result.memories.length,
+          memories: result.memories.map((m) => ({ id: m.id, name: m.name })),
+        });
+      }
+
       // 发射 memoryAdded 事件：宿主可据此刷新记忆面板
       for (const memory of result.memories) {
         this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });

@@ -57,6 +57,17 @@ export interface ChatOptions {
    */
   stream?: boolean;
   /**
+   * 推理深度控制（Phase 1：act.multiStepReasoning 消费）
+   *
+   * 部分 Provider（如 o-series）支持在 API 调用时指定推理深度。
+   * - 'low' → 快速回答，跳过深度推理
+   * - 'medium' → 平衡速度和质量
+   * - 'high' → 深度思考，回答质量高
+   *
+   * 当 Provider 不支持此参数时静默忽略。
+   */
+  reasoning_effort?: 'low' | 'medium' | 'high';
+  /**
    * 中止信号：用于取消正在进行的 LLM 请求
    *
    * AgentLoop 在用户取消对话时传入 AbortSignal，

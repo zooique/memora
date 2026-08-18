@@ -105,6 +105,11 @@ function isTemperature(value: unknown): boolean {
   return typeof value === 'number' && value >= 0 && value <= 2;
 }
 
+/** 召回置信度断言：0.0~1.0 浮点数（recallConfidence 语义召回相似度阈值） */
+function isRecallConfidence(value: unknown): boolean {
+  return typeof value === 'number' && value >= 0 && value <= 1;
+}
+
 /** 非空字符串断言（summaryFocus 提炼视角，空白视为未声明） */
 function isNonEmptyString(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0;
@@ -140,6 +145,10 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] },
     // Tier 3 开启（2026-08-18）：角色自动匹配开关
     autoSwitch: { kind: 'enum', values: ['on', 'off'] },
+    // Phase 2 开启（2026-08-18）：召回置信度阈值（0.0-1.0 浮点数）
+    recallConfidence: { kind: 'check', check: isRecallConfidence },
+    // Phase 2 开启（2026-08-18）：摘要召回开关
+    summaryRecall: { kind: 'enum', values: ['on', 'off'] },
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },
@@ -153,6 +162,12 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     providerRouting: { kind: 'enum', values: ['auto', 'fixed'] },
     // Tier 3 开启（2026-08-18）：输入中断策略
     inputInterrupt: { kind: 'enum', values: ['allow', 'block'] },
+    // Phase 1 开启（2026-08-18）：多步推理模式
+    multiStepReasoning: { kind: 'enum', values: ['auto', 'manual'] },
+    // Phase 3 开启（2026-08-18）：工具只读模式
+    toolReadonly: { kind: 'enum', values: ['full', 'readonly'] },
+    // Phase 3 开启（2026-08-18）：工具审批模式
+    toolApproval: { kind: 'enum', values: ['auto', 'confirm'] },
   },
   reflect: {
     // Tier 1 开启（2026-08-18）：角色包可控摘要开关
@@ -160,6 +175,10 @@ const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRul
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
     loopContinue: { kind: 'check', check: isNonNegativeInt },
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
+    // Phase 1 开启（2026-08-18）：记忆写入模式
+    memoryWrite: { kind: 'enum', values: ['auto', 'confirm'] },
+    // Phase 1 开启（2026-08-18）：会话归档模式
+    sessionArchive: { kind: 'enum', values: ['auto', 'manual'] },
   },
   global: {
     askOn: { kind: 'check', check: isAskOn },
