@@ -117,9 +117,10 @@ export interface AgentLoopOptions {
    */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
   /**
-   * 工具执行前检查回调（设计文档 §7.2.1，统一执行前检查点）
+   * 工具执行前检查回调（设计文档 §7.2.1，统一执行入口 · 单点聚合检查）
    *
-   * 每次工具执行前调用，是"执行前约束"（审批/审计/参数改写/幂等去重）的单一物理落地载体。
+   * 每次工具执行前调用，是"执行前约束"（审批/审计/参数改写/幂等去重）途经的宿主闸门
+   *（与只读/审批闸门同为"单点聚合的多重顺序检查"的一环）。
    * 返回三态（PreExecutionResult）：
    * - 放行（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数；
    * - 跳过（skip=true, 无 denied）：返回 previousResult 让 LLM 继续生成（幂等去重/一次语义）；
@@ -202,6 +203,19 @@ class LoopMetrics {
     return this.recallTotalCount > 0 ? this.recallHitCount / this.recallTotalCount : 0;
   }
 }
+
+/**
+ * 执行前检查决策（T2 名实对齐：单点聚合的多重顺序检查，非单一闸门）
+ *
+ * 聚合三种执行前约束结果，供 executeOneTool 在统一入口消费：
+ * - denied：拒绝，阻止工具意图，返回结构化错误码（LLM 见后调整策略而非重试）
+ * - skip：幂等去重，返回已有结果让 LLM 继续生成
+ * - execute：放行，携带改写后的参数（audit/参数改写）
+ */
+type PreCheckDecision =
+  | { kind: 'denied'; result: string }
+  | { kind: 'skip'; result: string }
+  | { kind: 'execute'; args: string };
 
 export class AgentLoop {
   private messages: Message[] = [];
@@ -1468,10 +1482,61 @@ export class AgentLoop {
   }
 
   /**
+   * 执行前检查（单点聚合的多重顺序检查，见 design-philosophy §7.2.1）
+   *
+   * 在统一入口按顺序叠加三重闸门：只读（toolReadonly）→ 审批（toolApproval）→
+   * 宿主 preExecutionCheck（拒绝/跳过/放行改写）。任一闸门命中即提前返回决策；
+   * 全部放行才进入 execute。只读/审批由 L2 策略驱动，preExecutionCheck 由宿主注入。
+   *
+   * @param tc 工具调用描述（id + function.name + function.arguments）
+   * @returns 三态检查决策
+   */
+  private applyPrechecks(tc: {
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }): PreCheckDecision {
+    const name = tc.function.name;
+    const args = tc.function.arguments;
+
+    // ① 只读闸：toolReadonly='readonly' 阻止非只读工具
+    if (this.strategy.toolReadonly === 'readonly') {
+      const toolDef = this.opts.builtinTools?.find((t) => t.name === name);
+      if (toolDef && !toolDef.readonly) {
+        logger.warn({ tool: name }, '工具只读模式：阻止写入工具执行');
+        return { kind: 'denied', result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用` };
+      }
+    }
+
+    // ② 审批闸：toolApproval='confirm' 触发审批回调（仅通知宿主征询，不阻塞放行）
+    if (this.strategy.toolApproval === 'confirm') {
+      this.onToolApproval?.({ toolName: name, args });
+    }
+
+    // ③ 宿主 preExecutionCheck：拒绝 / 跳过 / 放行（可改写参数）
+    const preCheck = this.opts.preExecutionCheck?.(name, args);
+    if (preCheck?.denied) {
+      const reason = preCheck.reason ?? '工具调用被拒绝';
+      logger.warn({ tool: name, reason }, '工具调用被拒绝（执行前检查）');
+      // PERMISSION_DENIED 是不可重试错误码，LLM 见后会调整策略而非重试
+      return { kind: 'denied', result: `[ERR:TOOL:PERMISSION_DENIED] ${reason}` };
+    }
+    if (preCheck?.skip) {
+      const result = preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
+      logger.debug({ tool: name, argsSignature: args.slice(0, 80) }, '工具已执行，跳过（仅一次语义）');
+      return { kind: 'skip', result };
+    }
+
+    // 放行：若有改写参数则用改写后的参数执行（审计/参数改写）
+    return { kind: 'execute', args: preCheck?.overrideArgs ?? args };
+  }
+
+  /**
    * 执行单个工具（E-803 抽取：为并行化提供独立执行单元）
    *
    * 职责：
    *   - startSpan / endSpan（工具执行 Span，并发时 span 时间重叠，可观测性改进）
+   *   - applyPrechecks 执行前检查（三重闸门，见 §7.2.1）
    *   - raceToolWithSignal 竞争包裹（兼容 signal 中断，每个工具独立 race）
    *   - 异常捕获并转为结构化错误字符串（[ERR:TOOL:code] 前缀，供 Reflection 解析）
    *
@@ -1497,62 +1562,24 @@ export class AgentLoop {
     });
 
     try {
-      // ── 统一执行前检查点（设计文档 §7.2.1，三态）─────────────────
-      // 单一检查点承载全部执行前约束：审批/审计/参数改写（宿主）+ 幂等去重（内部）。
-      // 拒绝（denied）：阻止工具意图，返回结构化错误让 LLM 调整策略（而非重试）。
-      // 跳过（skip）：幂等去重，返回已有结果让 LLM 继续生成。
-      // 放行（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数。
-
-      // Phase 3：toolReadonly='readonly' → 阻止非只读工具
-      if (this.strategy.toolReadonly === 'readonly') {
-        const toolDef = this.opts.builtinTools?.find((t) => t.name === tc.function.name);
-        if (toolDef && !toolDef.readonly) {
-          logger.warn(
-            { tool: tc.function.name },
-            '工具只读模式：阻止写入工具执行',
-          );
-          return `[ERR:TOOL:READONLY_DENIED] 工具 "${tc.function.name}" 是写入操作，在只读模式下不可用`;
-        }
-      }
-
-      // Phase 3：toolApproval='confirm' → 触发审批回调
-      if (this.strategy.toolApproval === 'confirm') {
-        this.onToolApproval?.({
-          toolName: tc.function.name,
-          args: tc.function.arguments,
-        });
-      }
-
-      const preCheck = this.opts.preExecutionCheck?.(tc.function.name, tc.function.arguments);
-      if (preCheck?.denied) {
-        const reason = preCheck.reason ?? '工具调用被拒绝';
-        logger.warn(
-          { tool: tc.function.name, reason },
-          '工具调用被拒绝（执行前检查）',
-        );
+      // ── 执行前检查（单点聚合的多重顺序检查，设计文档 §7.2.1）─────────────────
+      // 三重闸门（只读 → 审批 → preExecutionCheck）经 applyPrechecks 收敛为三态决策
+      const decision = this.applyPrechecks(tc);
+      if (decision.kind === 'denied') {
         toolSpan.setAttribute('denied', true);
-        // PERMISSION_DENIED 是不可重试错误码，LLM 见后会调整策略而非重试
-        return `[ERR:TOOL:PERMISSION_DENIED] ${reason}`;
+        return decision.result;
       }
-      if (preCheck?.skip) {
-        const previousResult = preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
-        logger.debug(
-          { tool: tc.function.name, argsSignature: tc.function.arguments.slice(0, 80) },
-          '工具已执行，跳过（仅一次语义）',
-        );
+      if (decision.kind === 'skip') {
         toolSpan.setAttribute('skipped', true);
-        return previousResult;
+        return decision.result;
       }
-
-      // 放行：若有改写参数则用改写后的参数执行（审计/审批参数改写）
-      const effectiveArgs = preCheck?.overrideArgs ?? tc.function.arguments;
 
       // 工具执行包裹 signal 中断，避免 abort 无法中断卡住的 generator
       // raceToolWithSignal 天然兼容并发：每个调用独立 race，{ once: true } 监听器无副作用
-      const result = await this.raceToolWithSignal(tc.function.name, effectiveArgs, signal);
+      const result = await this.raceToolWithSignal(tc.function.name, decision.args, signal);
       // 通知上层工具执行完成（P3.3 工具幂等 outbox 模式）
       const ok = !result.startsWith('[ERR');
-      this.opts.onToolExecuted?.(tc.function.name, effectiveArgs, result, ok);
+      this.opts.onToolExecuted?.(tc.function.name, decision.args, result, ok);
       return result;
     } catch (err) {
       // 工具执行可能因文件不存在、路径越界等原因失败

@@ -2026,8 +2026,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             this._sessionManager.logToolExecution(record);
           }
         },
-        // 工具执行前检查回调（设计文档 §7.2.1，统一执行前检查点）
-        // 组合宿主审批 + 内部幂等检查为单一检查点：
+        // 工具执行前检查回调（设计文档 §7.2.1，统一执行入口 · 单点聚合检查）
+        // 组合宿主审批 + 内部幂等检查为一处入口（单点聚合，非单一闸门）：
         //   1. 宿主审批优先（可拒绝/跳过/改写参数）——denied 直接短路返回；
         //   2. 宿主放行后，再做内部幂等检查（outbox 仅一次语义）。
         // 未注入宿主回调时完全降级为现状（仅内部幂等检查）。

@@ -18,7 +18,7 @@
 | 批次 | 任务 | 对治债 | 风险 | 状态 |
 |------|------|--------|------|------|
 | 第一批 | **T1** 策略打字收敛（11 setter → 单个策略对象） | 4.2 架构债 + 魔数债 | 中（触点多） | ✅ 已完成（落地记录见 T1） |
-| 第一批 | **T2** "单一检查点"名实对齐 | 4.3 名实出入 | 极低 | 待做 |
+| 第一批 | **T2** "单一检查点"名实对齐 | 4.3 名实出入 | 极低 | ✅ 已完成（落地记录见 T2） |
 | 第二批 | **T4** 文档去时态 / 名实清扫 | 5.2 文档耦合 | 低 | 待做 |
 | 第二批 | **T3** `determineTaskType` 加固或接口化 | 5.2 硬编码启发式 | 中 | 待做（按需） |
 | 慎做 | 僵尸码 / 僵尸键清扫（guardrail、ArchiveMode 三态残留、type→时间窗残留） | 5.2 冗余 | 低 | 仅洁癖层，非结构 |
@@ -119,6 +119,14 @@ loop.setStrategy(partial) ──合并──▶ 内部字段（读取点不变�
 
 - **问题**：文档写"统一单一检查点"（§7.2.1），实现是 `executeOneTool` 内 `toolReadonly → toolApproval → preExecutionCheck` 顺序闸门（[loop.ts](../src/agent/loop.ts#L1679-L1717)）。
 - **改动**（不动行为）：将三段顺序判断收拢为一个私有 `applyPrechecks(tc)` 三态返回；文档同步改称"单点聚合的多重检查"。纯重构、零行为变化。
+
+### 落地记录（2026-08-19 · 纯重构，零行为变化）
+
+- [agent/loop.ts](../src/agent/loop.ts)：新增 `PreCheckDecision` 三态类型 + `applyPrechecks(tc)` 私有方法，将 `executeOneTool` 内的三段顺序闸门（只读 → 审批 → 宿主 preExecutionCheck）**原位抽取**为统一检查决策；`executeOneTool` 消费三态（denied/skip/execute），onToolExecuted 走改写参数。行为守恒（spring 守卫顺序与日志不变）。
+- 文档/注释措辞统一（名实对齐）：[agent-design-philosophy.md §7.2.1](architecture/agent-design-philosophy.md)，及 loop.ts / agent.ts / assembler.ts / types.ts 相关注释，"统一执行前检查点 / 单一检查点 / 单一物理落地载体" → "统一执行入口 · 单点聚合的多重顺序检查"。
+- **验证**：`loop.test.ts` 76 通过；`typecheck` 零错；eslint 清零（改动作业文件）。
+
+---
 
 ## T3：`determineTaskType` 加固（按需）
 

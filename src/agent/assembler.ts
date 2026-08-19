@@ -106,10 +106,10 @@ export interface AssembleCallbacks {
    */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
   /**
-   * 工具执行前检查回调（设计文档 §7.2.1，统一执行前检查点）
+   * 工具执行前检查回调（设计文档 §7.2.1，统一执行入口 · 单点聚合检查）
    *
    * AgentLoop 每次工具执行前调用，是"执行前约束"（审批/审计/参数改写/幂等去重）
-   * 的单一物理落地载体。返回三态（PreExecutionResult）：放行/跳过/拒绝。
+   * 途经的宿主闸门（与只读/审批闸门同为"单点聚合的多重顺序检查"的一环）。返回三态（PreExecutionResult）：放行/跳过/拒绝。
    */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
