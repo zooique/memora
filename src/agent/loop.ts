@@ -1156,8 +1156,8 @@ export class AgentLoop {
     if (/```(?:ts|js|py|go|rust|java|css|html|sql)\b/i.test(content)) {
       return 'code';
     }
-    // 长文本复杂推理判定
-    if (content.length > 500) {
+    // 长文本复杂推理判定（阈值归入 LOOP_CONSTANTS，见 constants.ts T3 注释）
+    if (content.length > LOOP_CONSTANTS.REASONING_INPUT_CHARS) {
       return 'reasoning';
     }
     return 'simple';

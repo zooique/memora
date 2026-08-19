@@ -161,4 +161,14 @@ export const LOOP_CONSTANTS = {
 
   /** 上下文摘要：LLM 调用 maxTokens 参数。 */
   SUMMARY_MAX_TOKENS: 150,
+
+  /**
+   * 任务分类启发式：用户消息超过此长度（字符）判定为 'reasoning'。
+   *
+   * T3 收敛（2026-08-19）：原 loop.determineTaskType 内的魔法数 500 归入内核常数。
+   * 注意这是内核启发式阈值，不属于角色包可影响的 L2 策略维度——任务类型分类是
+   * Provider 路由（影响成本）的内部决策，不开放给角色包配置（避免"策略全景物化"，
+   * 见 memora-polish-roadmap T3）。
+   */
+  REASONING_INPUT_CHARS: 500,
 } as const;

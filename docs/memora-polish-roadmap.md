@@ -128,10 +128,12 @@ loop.setStrategy(partial) ──合并──▶ 内部字段（读取点不变�
 
 ---
 
-## T3：`determineTaskType` 加固（按需）
+## T3：`determineTaskType` 加固（已完成治标 · 注入点明确不做）
 
-- 现状：[loop.ts](../src/agent/loop.ts#L1308-L1322) `>500字符→reasoning`、检代码块→code，用于 Provider 路由（影响成本），过脆。
-- 改动：先做"阈值进 `L2RuntimeStrategy`/配置"（治标）；宿主注入点 `taskTypeResolver?` 对齐既有 `DuplicateCallInterceptor` 的"策略参数化"模式，**仅当出现真实消费场景才做**（避免重蹈第 14 章"全景物化"覆辙）。
+- **现状**：[loop.ts](../src/agent/loop.ts) `>500字符→reasoning`、检代码块→code，用于 Provider 路由（影响成本），魔法数过脆。
+- **治标（已做，2026-08-19）**：魔法数 500 收敛为内核常数 `LOOP_CONSTANTS.REASONING_INPUT_CHARS`（[constants.ts](../src/agent/constants.ts)）。
+  - **语义澄清**：该阈值是**内核启发式**（任务分类是 Provider 路由的内部决策，影响成本），**不属于角色包可影响的 `L2RuntimeStrategy` 维度**，故不入策略对象——避免"策略全景物化"。
+- **注入点（明确不做）**：`taskTypeResolver?` 宿主注入点可对齐 `DuplicateCallInterceptor` 的"策略参数化"模式，但**当前无真实消费场景**，留待出现真实用途再开放，不预埋（单一真理源：不预埋未消费接口）。
 
 ## T4：文档去时态 / 名实清扫
 
