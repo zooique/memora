@@ -165,12 +165,12 @@ loop.setStrategy(partial) ──合并──▶ 内部字段（读取点不变�
 - **A1 检查点迁移实证 ✅ 已落地**：核查发现 `CURRENT_SCHEMA_VERSION=1`（首版），空迁移表是**应然正确**——workbuddy 判"0 注册=安全网没兑现"是误判；真债是[归一化迁环从未被测试覆盖]。用**探针迁移**单测实证「迁环真实调用迁移 + 版本按序归位」，**不伪造 v2 字段演进**（否则违背反全景物化，否决 workbuddy 的 `recallWindow` 假字段方案）。
 - **A2 行为注释校核 ✅ 部分**：修正已知漂移 `resolveToolStepLimit`（注释"回退20" vs 实现 0）；全量巡检（loop/sessionStateMachine 带行号/行为断言注释）留后续。
 
-**B · 收敛/防腐（agent 膨胀，向"收"不向"扩"）**
-- **B1 agent 门面归位**：方案待过目（目标：组件数不增或减、真瘦身）。
-- **B2 宽防线**：`max-lines` 仅防再爆（~2000 起点），**不做** `complexity`/`max-functions-per-file` 硬指标（会逼出别扭小函数 + disable 负债区）。
+**B · 收敛/防腐（agent 膨胀评估结论）**
+- **B1 agent 门面归位 → 判定不做（经归位审计实证）**：审计 agent.ts 对既有 manager 的委托调用仅 12 处、且多为合理编排（`skillManager.match`/`roundSummaryGenerator.generate`/`setBackgroundProvider` 广播等），**几乎无可删的"纯透传二道门"**。其 3000 行绝大多数是真实编排逻辑，**不是可清理的冗余债务**；要降至 1500 只能下沉编排进 manager → 违反"组件数不增"铁律 + 动 chat 核心高危。判定：agent "大门面承载编排"是受"单 Agent 模型"支撑的架构选择，**不强行瘦身**；由 B2 防腐兜住不再膨胀。
+- **B2 宽防线 ✅ 已落地**：eslint `max-lines:2000`（skip blank/comments），对存量超标文件（agent/loop，非瘦身目标现转认为架构常态）与测试目录豁免，只卡增量，不制造 disable 负债区；**不做** `complexity`/`max-functions-per-file` 硬指标（会逼出别扭小函数）。
 
 **C · 治理（前提满足才动）**
-- **C1 记忆契约冻结**：排到 B1 之后、决定正式发布之前（收敛期冻结=提前按暂停）。
+- **C1 记忆契约冻结**：排到**决定正式发布之前**（收敛期冻结=提前按暂停；B1 已判定不做，故不再以其为前置）。
 - **C2 ADR status 字段**：轻量可扫，可随文档维护顺手加。
 
 **明确否决（全景物化陷阱）**：再造 6 个 coordinator（`ArchiveCoordinator/LockManager/SessionManager/SessionStateMachine` 已存在 = 重复造轮子）、`complexity` 硬指标、拆 loop.ts。
