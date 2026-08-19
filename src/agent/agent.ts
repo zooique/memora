@@ -21,7 +21,7 @@
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  */
 import { getBaseName } from '@/utils/path.js';
-import { AGENT_CONSTANTS } from '@/agent/constants.js';
+import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { COMPLETION_LEVELS } from '@/agent/types.js';
 import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard, IdempotencyLevel } from '@/agent/types.js';
@@ -770,13 +770,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       });
 
       try {
+        // 召回条数基准：limited 模式用 token 配额换算为字符预算并在返回后裁剪，
+        // 条数上限仍用 DEFAULT_RECALL_LIMIT（full 与 limited 共用同一有界条数，避免召 2000 条）；
+        // 字符预算 = memoryRecallQuota(token) × CHARS_PER_TOKEN（1 token ≈ 3 字符，见 contextManager 同源估算）。
         recalledMemories = await recall(
           this.requirePctx.index,
           input,
           {
-            limit: memoryRecallMode === 'limited'
-              ? (this.getActiveStrategy().prepare?.memoryRecallQuota ?? AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT)
-              : AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
+            limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
             vectorStore: this.#config.vectorStore,
             excludeSources: this.#config.recallExcludeSources,
             // 会话窗口标识：与 round-summary 写入侧 metadata.sessionName 同源同值
@@ -790,6 +791,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             minSimilarity: resolveRecallConfidence(this.getActiveStrategy()),
           },
         );
+
+        // limited 模式：按 token 配额裁剪召回结果，保证记忆注入的 token 有界
+        // （memory-as-summary §6.5-7/9 配额分层——记忆与摘要各有 token 配额，避免挤占）。
+        if (memoryRecallMode === 'limited') {
+          const quotaTokens = this.getActiveStrategy().prepare?.memoryRecallQuota;
+          if (typeof quotaTokens === 'number' && quotaTokens > 0) {
+            const charBudget = quotaTokens * LOOP_CONSTANTS.CHARS_PER_TOKEN;
+            let usedChars = 0;
+            const trimmed: Memory[] = [];
+            for (const m of recalledMemories) {
+              const cost = m.content.length + 1;
+              if (usedChars + cost > charBudget) break;
+              usedChars += cost;
+              trimmed.push(m);
+            }
+            recalledMemories = trimmed;
+          }
+        }
       } catch (err) {
         recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
         throw err;
@@ -801,9 +820,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // Phase 2：summaryRecall='off' → 过滤摘要类记忆（保留原始记忆）
       const summaryRecall = resolveSummaryRecall(this.getActiveStrategy());
       if (summaryRecall === 'off') {
-        recalledMemories = recalledMemories.filter(
-          (m) => m.source !== 'round-summary' && m.source !== 'content-summary',
-        );
+        recalledMemories = recalledMemories.filter((m) => m.source !== 'round-summary');
       }
 
       if (recalledMemories.length > 0) {

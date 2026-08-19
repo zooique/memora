@@ -381,7 +381,7 @@ export interface IMcpTransport {
 | prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | `[草案]` | 无参考实现消费，待验证 |
 | prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数 | 冻结 | memora 消费（agent.ts 互斥排除 + 最近对话注入轮数，未配置回退默认 3） |
 | prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
-| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token） | 冻结 | memora 消费（agent.ts 限额召回）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
+| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token） | 冻结 | memora 消费（agent.ts 限额召回：limited 模式下将 token 配额换算为字符预算，对召回结果做有界裁剪）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
 | prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |
 | prepare | `prepare.summaryFocus` | 非空字符串 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结 | 由实现提炼进标准（2026-08-16 结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
 | prepare | `prepare.minFallback` | 非负整数 | 召回保底下限（recall 结果不足时用最近记忆补足，0=关闭） | 冻结 | memora 消费（recall.ts 保底补全，未配置回退默认 2） |
