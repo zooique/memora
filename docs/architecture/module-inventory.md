@@ -123,7 +123,7 @@
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
 | `agent/agent.ts` | 🟢 已打磨 | `__tests__/agent.test.ts` | Agent 主入口，状态守卫逻辑 |
-| `agent/loop.ts` | 🟢 已打磨 | `__tests__/loop.test.ts` (67 tests) | AgentLoop 核心，含拦截器集成 |
+| `agent/loop.ts` | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests) | AgentLoop 核心，含拦截器集成 |
 | `agent/composer.ts` | 🟢 已打磨 | `__tests__/composer.test.ts` | 上下文组装 |
 | `agent/contextManager.ts` | 🟢 已打磨 | `__tests__/contextManager.test.ts` | Token 估算、上下文窗口管理 |
 | `agent/compaction.ts` | 🟢 已打磨 | `__tests__/compaction.test.ts` (15 tests) | 微压缩层：ResultReplacement + OffloadCompaction |

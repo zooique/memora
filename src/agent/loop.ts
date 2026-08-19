@@ -268,48 +268,18 @@ export class AgentLoop {
       if (this._shouldSkipRecallInjection()) {
         logger.debug('Token budget tight, skipping recall injection');
       } else {
-        // 1. 召回注入
-        yield* this.handleRecallAndInject(recalledMemories);
+        // 召回注入
+        yield* this._injectRecall(recalledMemories);
       }
 
-      // 2. 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
+      // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
       this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
 
-      // 重置本轮各类运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
-      this.reflectionCountThisTurn = 0;
-      this.lastToolCallsHash = '';
-      this.duplicateToolCallCount = 0;
-      this.inAutonomousStep = false;
-      this.pauseRequested = false;
-      this.selfReviewRound = 0;
+      // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
+      this.resetTurnState();
 
-      // 3. 迭代循环
-      let iteration = 0;
-      while (iteration < this.maxIterations) {
-        iteration++;
-        this.currentIteration = iteration;
-
-        // stepBudget 步数软上限检查（0=不限制）
-        if (this.strategy.stepBudget > 0 && iteration >= this.strategy.stepBudget) {
-          logger.info({ iteration, stepBudget: this.strategy.stepBudget }, '达到步数预算上限');
-          yield { type: 'text', content: this.ui.maxIterationsReached };
-          yield { type: 'done' };
-          return;
-        }
-
-        const result = yield* this.handleIteration(iteration, signal);
-        // 自审查轮开始前 emit selfReview chunk，供宿主展示视觉反馈
-        if (result === 'done' && this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
-          yield { type: 'selfReview', round: this.selfReviewRound + 1 };
-        }
-        // 共享的迭代结果处理（与 continueAfterPause 复用）；返回 false 表示终止循环
-        if (!this.handleIterationResult(result)) return;
-      }
-
-      // 4. 最大迭代兜底
-      logger.warn({ iterations: iteration }, '达到最大迭代次数');
-      yield { type: 'text', content: this.ui.maxIterationsReached };
-      yield { type: 'done' };
+      // 外循环：单轮闭环的重复，直到 Handoff 决定终止
+      yield* this.runIterationLoop(signal);
     } finally {
       responseSpan.end();
     }
@@ -334,11 +304,11 @@ export class AgentLoop {
         break;
 
       case 'correction':
-        yield* this.handleCorrection(event, signal);
+        yield* this.injectMetaNote('[目标修正] 用户更新了目标方向', '已记录目标修正', event.content);
         break;
 
       case 'clarify':
-        yield* this.handleClarify(event, signal);
+        yield* this.injectMetaNote('[澄清回答] 用户补充说明', '已记录补充说明', event.content);
         break;
 
       default:
@@ -361,26 +331,10 @@ export class AgentLoop {
     if (input && input.trim()) {
       this.messages.push({ role: 'user', content: `<user_input>${input}</user_input>` });
     }
-    // 重置本轮各类运行计数状态（与 processUserInput 一致），确保续跑干净
-    this.reflectionCountThisTurn = 0;
-    this.lastToolCallsHash = '';
-    this.duplicateToolCallCount = 0;
-    this.pauseRequested = false;
-    this.selfReviewRound = 0;
-    // 重新进入迭代循环，从保留的 this.messages 续跑
-    let iteration = 0;
-    while (iteration < this.maxIterations) {
-      iteration++;
-      const result = yield* this.handleIteration(iteration, signal);
-      // 自审查轮开始前 emit selfReview chunk（与 processUserInput 一致）
-      if (result === 'done' && this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
-        yield { type: 'selfReview', round: this.selfReviewRound + 1 };
-      }
-      // 共享的迭代结果处理（与 processUserInput 一致）；返回 false 终止循环
-      if (!this.handleIterationResult(result)) return;
-    }
-    yield { type: 'text', content: this.ui.maxIterationsReached };
-    yield { type: 'done' };
+    // 重置本轮运行计数状态（与 processUserInput 一致），确保续跑干净
+    this.resetTurnState();
+    // 重新进入外循环，从保留的 this.messages 续跑
+    yield* this.runIterationLoop(signal);
   }
 
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
@@ -437,6 +391,55 @@ export class AgentLoop {
     return AbortSignal.any(valid);
   }
 
+  /** 输出"达到最大迭代/步数预算"提示并结束（外循环兜底，多入口共享） */
+  private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
+    yield { type: 'text', content: this.ui.maxIterationsReached };
+    yield { type: 'done' };
+  }
+
+  /** 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立；续跑入口同样调用） */
+  private resetTurnState(): void {
+    this.reflectionCountThisTurn = 0;
+    this.lastToolCallsHash = '';
+    this.duplicateToolCallCount = 0;
+    this.inAutonomousStep = false;
+    this.pauseRequested = false;
+    this.selfReviewRound = 0;
+  }
+
+  /**
+   * 外循环主体：单轮闭环的重复（processUserInput/continueAfterPause 共享）。
+   * 每轮 = 一次 handleIteration；stepBudget 软上限与 maxIterations 兜底在此统一收敛。
+   */
+  private async *runIterationLoop(
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    let iteration = 0;
+    while (iteration < this.maxIterations) {
+      iteration++;
+      this.currentIteration = iteration;
+
+      // stepBudget 步数软上限检查（0=不限制）
+      if (this.strategy.stepBudget > 0 && iteration >= this.strategy.stepBudget) {
+        logger.info({ iteration, stepBudget: this.strategy.stepBudget }, '达到步数预算上限');
+        yield* this.emitMaxIterationsReached();
+        return;
+      }
+
+      const result = yield* this.handleIteration(iteration, signal);
+      // 自审查轮开始前 emit selfReview chunk，供宿主展示视觉反馈
+      if (result === 'done' && this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
+        yield { type: 'selfReview', round: this.selfReviewRound + 1 };
+      }
+      // 共享的迭代结果处理；返回 false 表示终止循环
+      if (!this.handleIterationResult(result)) return;
+    }
+
+    // 最大迭代兜底
+    logger.warn({ iterations: iteration }, '达到最大迭代次数');
+    yield* this.emitMaxIterationsReached();
+  }
+
   /** 处理一次迭代结果（processUserInput/continueAfterPause 共享）。
    *  continue→继续；paused→终止；aborted→消费插话后继续；done→注入自审查后继续。
    *  返回 false 表示调用方应终止循环 */
@@ -471,41 +474,16 @@ export class AgentLoop {
     return false;
   }
 
-  /** 处理 correction 事件：将修正内容注入上下文，让 LLM 感知目标变更 */
-  private async *handleCorrection(
-    event: SessionEvent,
-    _signal: AbortSignal | undefined,
+  /** 处理 correction/clarify 事件：以 system 消息注入元信息到上下文（两者结构相同，仅文案不同） */
+  private async *injectMetaNote(
+    systemPrefix: string,
+    ackPrefix: string,
+    content: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    this.messages.push({
-      role: 'system',
-      content: `[目标修正] 用户更新了目标方向：${event.content}`,
-    });
+    this.messages.push({ role: 'system', content: `${systemPrefix}：${content}` });
 
-    yield { type: 'text', content: `已记录目标修正：${event.content}` };
+    yield { type: 'text', content: `${ackPrefix}：${content}` };
     yield { type: 'done' };
-  }
-
-  /** 处理 clarify 事件：将澄清回答注入上下文 */
-  private async *handleClarify(
-    event: SessionEvent,
-    _signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 注入澄清回答到上下文
-    this.messages.push({
-      role: 'system',
-      content: `[澄清回答] 用户补充说明：${event.content}`,
-    });
-
-    yield { type: 'text', content: `已记录补充说明：${event.content}` };
-    yield { type: 'done' };
-  }
-
-  /** 召回注入（子方法 1/4，委托 _injectRecall） */
-  private async *handleRecallAndInject(
-    recalledMemories: readonly Memory[] | undefined,
-  ): AsyncGenerator<AgentChunk, boolean, unknown> {
-    yield* this._injectRecall(recalledMemories);
-    return false;
   }
 
   /** 单次迭代编排（子方法 2/4）：abort 检查 + 上下文摘要/截断 + LLM 调用 + 工具/文本分支路由 */
@@ -606,7 +584,7 @@ export class AgentLoop {
     return yield* this.handleTextResponse(llmResult);
   }
 
-  /** 工具调用分支 + Reflection（子方法 3/4） */
+  /** 工具调用分支 + Reflection（子方法 2/3） */
   private async *handleToolCalls(
     llmResult: LlmCallResult,
     signal: AbortSignal | undefined,
@@ -726,7 +704,7 @@ export class AgentLoop {
     return 'continue';
   }
 
-  /** 纯文本结束（子方法 4/4）：push assistant 消息（含空响应兜底）并 yield done */
+  /** 纯文本结束（子方法 3/3）：push assistant 消息（含空响应兜底）并 yield done */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
