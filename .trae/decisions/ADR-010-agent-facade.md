@@ -91,21 +91,3 @@ Agent 通过只读 getter 暴露 Manager 实例供宿主调用：
 **负面**：
 
 - Agent 类可能成为"上帝类"（需持续关注职责膨胀）
-- ~~当前 `repl.ts` 仍直接 import
-  memory/ 层（T-201 待办），门面类 API 尚未完全覆盖~~
-  ✅ 已修复（翠幕天罗 v1.2：REPL 不再自行创建 providers Map / AgentLoop /
-  MessageHistory）
-  ✅ 已迁移（2026-06-11：CLI + repl.ts 移出至宿主项目，门面类仅服务库模式）
-
-## 变更记录
-
-- 2026-07-20 v2 年轮审判 PROXY-1 闭环：`Agent.detectConflicts` 由经 MemoryInspector
-  转发改为**直接持有 MemoryAdvisor 引用调用**（assembler 显式返回 memoryAdvisor，
-  Agent 新增 `private memoryAdvisor` 字段）。消除 3 层无意义代理
-  `Agent → MemoryInspector → MemoryAdvisor`。MemoryInspector 职责收缩为
-  "读写 + 查询入口（含 sourceHealth / suggest 转发以保持 agent.memory.xxx()
-  公共 API 统一入口语义）"，不再含 L3 冲突检测转发。
-- 2026-07-20 v2 年轮审判 REPEAT-1/2 闭环：提取 `src/memory/governance.ts`
-  作为 LLM 治理源列表 + score 提升量/上限的统一真理源，消除 5 处独立维护的
-  `[INSIGHT, PROFILE, WORK_PROJECTION]` 列表 + 2 处 score 常量重复
-  （memoryInspector / memoryAdvisor / memoryDecayScheduler / recall 共 4 文件改用共享常量）。

@@ -22,17 +22,7 @@ v2.0 版本的 Agent 内置工具列表不含网络搜索能力。用户需求�
 
 ### 1. 接口定义（`src/web-search/types.ts`）
 
-```typescript
-export interface WebSearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-}
-
-export interface IWebSearchProvider {
-  search(query: string, options?: { num?: number }): Promise<WebSearchResult[]>;
-}
-```
+`WebSearchResult { title; url; snippet }` + `IWebSearchProvider.search(query, options?): Promise<WebSearchResult[]>`。完整定义以源码为准，此处不内嵌。
 
 ### 2. 内置实现（`src/web-search/fetchWebSearchProvider.ts`）
 

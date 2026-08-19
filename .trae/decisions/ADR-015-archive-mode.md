@@ -54,36 +54,11 @@ user_profile.md 与 project_memory.md 均明确记载硬约束：
 
 ### 3. 手动触发 API
 
-为 `manual` 模式提供手动归档入口（`insights-only` 模式下 profile/insight 已自动，仅需手动触发对话原始内容归档，由 GAP-2 提供 `archiveSessionContent` API）：
-
-```typescript
-// 手动触发 profile facts 归档（manual 模式下使用）
-async archiveProfileFacts(input: string): Promise<UserProfileEntry[]>
-
-// 手动触发 insight 提取（manual 模式下使用）
-async archiveInsight(input: string, assistantContent: string): Promise<Memory[]>
-
-// GAP-2：手动触发会话原始内容归档（insights-only / manual 模式下使用）
-// 截取最近 50 条消息 → LLM 摘要 → 写入 source='content' 记忆条目
-async archiveSessionContent(date: string, session: string): Promise<SessionArchiveResult>
-```
+为 `manual` 模式提供手动归档入口（`insights-only` 下 profile/insight 已自动，仅需手动触发原始内容归档）。API：`archiveProfileFacts(input)` / `archiveInsight(input, assistantContent)` / `archiveSessionContent(date, session)`（GAP-2：截取最近 50 条消息 → LLM 摘要 → `source='content'`）。签名以 `src/agent/agent.ts` 为准。
 
 ### 4. postProcess 改造
 
-```typescript
-private async postProcess(input: string, assistantContent: string): Promise<void> {
-  // 角色匹配 + 技能匹配不受 archiveMode 影响（每轮都执行）
-  this.runPersonaMatch(input);
-  this.runSkillMatch(input);
-
-  // 归档行为受 archiveMode 控制
-  if (this.#archiveMode === 'manual') return; // 全手动，跳过所有自动归档
-
-  // archiveMode === 'full' | 'insights-only'：profile + insight 都自动
-  this.archiveProfileFactsAuto(input);
-  this.archiveInsightAuto(input, assistantContent);
-}
-```
+角色匹配 + 技能匹配每轮都执行（不受 archiveMode 影响）；归档部分按模式分支——`manual` 直接返回（全跳过），`full`/`insights-only` 自动执行 profile + insight 归档。实现见 `src/agent/agent.ts`。
 
 ## 关键实现
 

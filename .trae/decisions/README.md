@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：37（内核 24 + 精灵 12 + 插件 1）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：36（内核 23 + 精灵 12 + 插件 1）
 
 ---
 
@@ -21,10 +21,8 @@ description: Memora 关键决策年轮
 | [ADR-006](./ADR-006-security-model.md)      | 安全采用两级权限 + 工具白名单 + 路径白名单                | ✅ 已接受 | 安全   |
 | [ADR-007](./ADR-007-testing-strategy.md)    | 测试使用 Vitest + MSW（Mock LLM）                         | ✅ 已接受 | 质量   |
 | [ADR-008](./ADR-008-directory-structure.md) | 目录结构按"职责分层"而非"按类型分层"                      | ✅ 已接受 | 工程   |
-| [ADR-009](./ADR-009-focus-mode.md)          | 专注模式与记忆衰减                                        | ✅ 已接受 | 架构   |
 | [ADR-010](./ADR-010-agent-facade.md)        | Agent 门面类（宿主项目接入入口）                          | ✅ 已接受 | 架构   |
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
-| [ADR-012](./ADR-012-domain-switch.md)       | 领域切换（已废弃，由角色自动匹配替代）                    | ❌ 已废弃 | 架构   |
 | [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档管道（v2.0：单步 LLM 提取 + Jaccard 去重）        | ✅ 已接受 | 架构   |
 | [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ❌ 已废弃（2026-08-14） | 架构   |
 | [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual，GAP-2 已落地 2026-07-03）   | ✅ 已接受 | 架构   |
@@ -38,6 +36,7 @@ description: Memora 关键决策年轮
 | [ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md) | 上下文信任边界与 Agent 行为评估视角 | ✅ 已接受 | 架构 |
 | [ADR-023](./ADR-023-context-cost-injection-defense-loop-convergence.md) | 上下文成本重构、即时注入防御与最小闭环收敛 | ✅ 已接受 | 架构 |
 | [ADR-024](./ADR-024-session-title-layer.md) | 会话标题层：身份与展示标题解耦，首轮闭环自动命名 + 手动改名透传 | ✅ 已接受 | 架构 |
+| [ADR-025](./ADR-025-memory-role-pack-boundary.md) | 记忆系统 × 角色包边界收敛：设定记忆归角色包，记忆库 = 摘要记忆本体 | ✅ 已接受 | 架构 |
 
 ### 精灵宿主（SP 系列）
 
@@ -63,6 +62,8 @@ description: Memora 关键决策年轮
 | [ADR-VC-001](./ADR-VC-001-vscode-plugin-host.md)   | VS Code 插件作为 memora 内核宿主（第二宿主，比 sprite 更薄） | ✅ 已接受 | 形态   |
 
 > **跳号说明**：ADR-005（内核）和 ADR-SP-009~014（精灵）序号保留未使用——内核 005 跳号因初始设计被 ADR-004 合并；精灵 SP-009~014 跳号因精灵 ADR 编号策略与内核 SP 序号对齐，预留 SP-009~014 给未来与内核 SP 序号对齐的扩展。当前精灵 ADR 直接从 SP-008 跳到 SP-015。ADR-017-web-search 为 ADR-017 的同号子模块决策（Web 搜索能力，2026-07-30 回溯补录）；ADR-VC 系列为插件宿主（VS Code）专用前缀，与内核 / 精灵序号互不占用。
+>
+> **深度剪枝（2026-08-19）**：删除 ADR-009（专注模式，零消费）与 ADR-012（领域切换，已废弃）。序号保持空缺不重用——编号是历史的稳定标识，废弃即让位，避免序号错乱。
 
 ---
 
@@ -73,7 +74,7 @@ description: Memora 关键决策年轮
 | 运行时 | 2    | ADR-001, ADR-SP-001  |
 | 数据层 | 3    | ADR-002, ADR-016, ADR-SP-002 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 15   | ADR-004, ADR-009~015, ADR-021~024, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
+| 架构   | 14   | ADR-004, ADR-010~015, ADR-021~025, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
 | 安全   | 2    | ADR-006, ADR-SP-004 |
 | 质量   | 2    | ADR-007, ADR-SP-006 |
 | 工程   | 6    | ADR-008, ADR-017, ADR-020, ADR-SP-005, ADR-SP-007, ADR-SP-018 |
