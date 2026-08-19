@@ -93,6 +93,7 @@ function createInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     tracer: undefined,
     messages: undefined,
     enableContextSummary: false,
+    recallExcludeSources: [],
     existingSkillManager: null,
     ...overrides,
   };
@@ -144,13 +145,14 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 12 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 13 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 12 个字段全部存在（history/loop/toolExec/
+      // 13 个字段全部存在（history/loop/toolExec/
       // workProjection/skillManager/memoryInspector/
       // dedupManager/memoryAdvisor/roundSummaryGenerator/
-      // sessionArchiver/textPolisher/rolePackManager）
+      // sessionArchiver/textPolisher/rolePackManager/
+      // sessionManager——Phase 1.5 由组装器创建，先于 loop）
       const expectedKeys = [
         'history',
         'loop',
@@ -164,6 +166,9 @@ describe('assembleComponents', () => {
         'sessionArchiver',
         'textPolisher',
         'rolePackManager',
+        'sessionManager',
+        'contextPreparer',
+        'checkpointRestoreCoordinator',
       ];
       expect(Object.keys(output).sort()).toEqual(expectedKeys.sort());
     });
@@ -180,6 +185,7 @@ describe('assembleComponents', () => {
       expect(output.memoryAdvisor).toBeDefined();
       expect(output.dedupManager).toBeDefined();
       expect(output.rolePackManager).toBeDefined();
+      expect(output.sessionManager).toBeDefined();
     });
   });
 

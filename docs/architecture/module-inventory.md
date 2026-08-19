@@ -132,7 +132,9 @@
 | `agent/toolExecutor.ts` | 🟢 已打磨 | `__tests__/toolExecutor.test.ts` | 工具执行器 |
 | `agent/builtinTools.ts` | 🟢 已打磨 | `__tests__/builtinTools.test.ts` | 内置工具定义 |
 | `agent/builtinToolHandlers.ts` | 🟢 已打磨 | `__tests__/builtinToolHandlers.test.ts` | 内置工具处理器 |
-| `agent/assembler.ts` | 🟢 已打磨 | `__tests__/assembler.test.ts` | 组件装配 |
+| `agent/assembler.ts` | 🟢 已打磨 | `__tests__/assembler.test.ts` | 组件装配（AgentHooks + 接线回调 + sessionManager + ContextPreparer + CheckpointRestoreCoordinator 分阶段组装） |
+| `agent/contextPreparer.ts` | 🟢 已打磨 | 间接测试（agent.test.ts） | 输入增强管线：角色自动匹配（粘性+LLM 兜底）/ 记忆召回+固定轮次注入 / 技能当轮注入 |
+| `agent/checkpointRestoreCoordinator.ts` | 🟢 已打磨 | 间接测试（agent.test.ts） | 检查点恢复协议：温记忆召回 / 契约重注入 / restore 编排 / 任务表预判 |
 | `agent/tracer.ts` | 🟢 已打磨 | `__tests__/tracer.test.ts` | 可观测性追踪 |
 | `agent/constants.ts` | 🟢 已打磨 | `__tests__/constants.test.ts` | 常量定义 |
 | `agent/types.ts` | 🟢 已打磨 | 间接测试 | 36 个导出类型定义 |
@@ -287,13 +289,13 @@
 | skill/ | 3 | 1 | 2 | 33% |
 | memory/ | 13 | 12 | 1 | 92% |
 | **对话管理**（sessionStore + managers/session* + archiveCoordinator） | **6** | **6** | **0** | **100%** |
-| agent/ (核心) | 15 | 15 | 0 | 100% |
+| agent/ (核心) | 17 | 17 | 0 | 100% |
 | agent/managers/ (治理) | 14 | 14 | 0 | 100% |
 | llm/ | 7 | 6 | 1 | 86% |
 | config/ | 2 | 1 | 1 | 50% |
 | utils/ | 18 | 17 | 1 | 94% |
 | 其他 (security/logging/web-search) | 8 | 8 | 0 | 100% |
-| **总计** | **92** | **86** | **6** | **93%** |
+| **总计** | **94** | **88** | **6** | **94%** |
 
 > 注：纯类型定义文件（types.ts / Interface 文件）不计入"无测试"，其消费方的集成测试已覆盖。对话管理模块文件数包含 memory/sessionStore.ts + 5 个会话相关 managers 文件。2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。
 

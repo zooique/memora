@@ -1159,8 +1159,8 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       // 空闲态直接翻 PAUSED，不残留 pending 状态
       expect(agent.sessionManager!.isPausePending()).toBe(false);
 
-      // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）。
-      // abandonPause 已删除（无生产调用方），改用 resume() 恢复（resume 同样清 pauseMeta）
+      // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）
+      // resume() 恢复运行态并清 pauseMeta
       const resumed = agent.resume();
       expect(resumed).toBe(true);
       expect(agent.sessionManager!.status).toBe('running');

@@ -6,37 +6,30 @@
  * （RolePackManager / ToolExecutor / SkillManager / MemoryInspector）。
  */
 import { getBaseName } from '@/utils/path.js';
-import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { COMPLETION_LEVELS } from '@/agent/types.js';
-import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard, IdempotencyLevel } from '@/agent/types.js';
-import type { SessionEvent, SessionCheckpoint, ResolvedDelta, ToolExecutionRecord } from '@/agent/types.js';
-import type { PreExecutionResult } from '@/agent/types.js';
-import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
+import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard } from '@/agent/types.js';
+import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
 import { Composer } from '@/agent/composer.js';
 import type { PlanContext } from '@/agent/types.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
-import { recall, boostScores } from '@/memory/recall.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
-  resolveRecentRounds,
   resolveHandoff,
   resolveMemoryRecallMode,
-  resolveMinFallback,
   resolveSummary,
   resolveSummaryFocus,
   resolveContextAssembly,
   resolveAutoSwitch,
   resolveL2Strategy,
-  resolveRecallConfidence,
-  resolveSummaryRecall,
 } from '@/role-pack/types.js';
-import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
+import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import { SessionNamer } from '@/agent/managers/sessionNamer.js';
@@ -47,9 +40,12 @@ import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
+// 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
+import type { ContextPreparer } from '@/agent/contextPreparer.js';
+import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
 import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
-import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
-import { renderTaskTable } from '@/agent/taskTableRenderer.js';
+// SessionManager 实例由组装器创建，Agent 仅持有类型引用
+import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
@@ -116,6 +112,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private roundSummaryGenerator: RoundSummaryGenerator | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
+  /** 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点） */
+  private contextPreparer: ContextPreparer | null = null;
+  /** 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判，Agent 保留公开 API 委托） */
+  private checkpointRestoreCoordinator: CheckpointRestoreCoordinator | null = null;
 
   // ─── 不中断工作模型 v2.0 ───────────────────────────────
   /** 四级补全器（四元组 + 三源融合） */
@@ -138,11 +138,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 用 Set 去重——同一 source 只需补执行一次。
    */
   private pendingConfigReload = new Set<string>();
-  /**
-   * 工具执行暂存队列（工具幂等 outbox）
-   * assembler 中 loop 先于 sessionManager 创建，回调暂存于此，flush 阶段统一写入。
-   */
-  private _pendingToolExecutions: ToolExecutionRecord[] = [];
 
   // 衰减职责已拆分至 MemoryDecayScheduler，指标经 getMetrics() 读取
   /** 记忆衰减调度器（init 时创建，close 时销毁） */
@@ -441,7 +436,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 角色包自动匹配（粘性 + LLM 兜底，角色包为唯一入口）
     if (autoSwitch === 'on') {
-      await this.tryAutoMatchRolePack(input);
+      await this.contextPreparer?.tryAutoMatchRolePack(input);
     }
 
     const strategy = this.getActiveStrategy();
@@ -457,13 +452,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.applyRolePackToolExposure();
 
     yield { type: 'thinking', phase: 'recalling' };
-    const recalledMemories = await this.recallAndInject(input, memoryRecallMode, contextAssembly);
+    // 记忆召回 + 固定轮次注入（输入增强管线叶子逻辑，Agent 只留调用点）
+    const recalledMemories = await this.contextPreparer?.recallAndInject(input, memoryRecallMode, contextAssembly) ?? [];
 
     if (combinedSignal.aborted) return recalledMemories;
 
     // 技能当轮注入生效，生成 roundId 供 appendUser 溯源（user/assistant/摘要同 roundId）
     yield { type: 'thinking', phase: 'processing' };
-    this.matchAndInjectSkill(input);
+    this.contextPreparer?.matchAndInjectSkill(input);
 
     const roundId = `round-${Date.now()}`;
     loop.setCurrentRoundId(roundId);
@@ -559,152 +555,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   forceReleaseChatLock(): void {
     this.chatLockManager?.forceRelease();
-  }
-
-  /**
-   * 召回记忆 + 注入最近对话上下文
-   *
-   * 策略控制：'full' 全量 / 'limited' 限额（memoryRecallQuota token 配额裁剪）/ 'none' 跳过仅注入最近对话。
-   * 装配方式 prepare.contextAssembly：'fixed' 仅加载最近 N 轮 / 'query' 仅语义召回 / 'hybrid' 混合（默认）。
-   *
-   * @param memoryRecallMode L2 策略指定的记忆召回模式
-   * @param contextAssembly L2 策略指定的上下文装配方式
-   * @returns 召回的记忆列表
-   */
-  private async recallAndInject(
-    input: string,
-    memoryRecallMode: MemoryRecallMode,
-    contextAssembly: 'fixed' | 'query' | 'hybrid',
-  ): Promise<Memory[]> {
-    // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
-    let recalledMemories: Memory[] = [];
-
-    // 固定加载轮数 N（SSOT 单一来源）：角色包 recentRounds 为合法正整数时采用，缺失/非法降级内核默认；
-    // 互斥窗口与最近对话注入共用同一 N，保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"一致
-    const recentRounds = resolveRecentRounds(this.getActiveStrategy());
-
-    // 互斥 roundId 集合：当前会话最近 N 轮正文已完整加载，其 round-summary 不应再被召回注入。
-    // 前置传入 recall() 在取 limit 前过滤，避免被排除摘要挤占 top-limit 预算（跨会话记忆补位）
-    const recentRoundIds = new Set(this.requireHistory.getRecentRoundIds(recentRounds));
-
-    // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──
-    if (contextAssembly !== 'fixed' && memoryRecallMode !== 'none') {
-      const tracer = this.#config.tracer ?? NOOP_TRACER;
-      const recallSpan = tracer.startSpan(TRACE_SPANS.RECALL_ACTUAL, {
-        queryLength: input.length,
-        hasVectorStore: !!this.#config.vectorStore,
-        memoryRecallMode,
-      });
-
-      try {
-        // 条数上限统一 DEFAULT_RECALL_LIMIT（full/limited 共用有界条数）；
-        // limited 模式在返回后按 token 配额换算的字符预算裁剪
-        recalledMemories = await recall(
-          this.requirePctx.index,
-          input,
-          {
-            limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
-            vectorStore: this.#config.vectorStore,
-            excludeSources: this.#config.recallExcludeSources,
-            // 会话窗口标识与写入侧 sessionName 同源同值，保证"同窗口优先"命中当前会话
-            sessionId: this.requireHistory.currentSessionName,
-            // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
-            minFallback: resolveMinFallback(this.getActiveStrategy()),
-            // 前置互斥排除：取 limit 前过滤当前会话最近 N 轮 round-summary
-            excludeRoundIds: recentRoundIds,
-            // 召回置信度阈值（0.0-1.0）
-            minSimilarity: resolveRecallConfidence(this.getActiveStrategy()),
-          },
-        );
-
-        // limited 配额分层（记忆与摘要各有 token 配额，避免挤占）
-        if (memoryRecallMode === 'limited') {
-          const quotaTokens = this.getActiveStrategy().prepare?.memoryRecallQuota;
-          if (typeof quotaTokens === 'number' && quotaTokens > 0) {
-            const charBudget = quotaTokens * LOOP_CONSTANTS.CHARS_PER_TOKEN;
-            let usedChars = 0;
-            const trimmed: Memory[] = [];
-            for (const m of recalledMemories) {
-              const cost = m.content.length + 1;
-              if (usedChars + cost > charBudget) break;
-              usedChars += cost;
-              trimmed.push(m);
-            }
-            recalledMemories = trimmed;
-          }
-        }
-      } catch (err) {
-        recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-        throw err;
-      } finally {
-        recallSpan.setAttribute('resultCount', recalledMemories.length);
-        recallSpan.end();
-      }
-
-      // summaryRecall='off' → 过滤摘要类记忆（保留原始记忆）
-      const summaryRecall = resolveSummaryRecall(this.getActiveStrategy());
-      if (summaryRecall === 'off') {
-        recalledMemories = recalledMemories.filter((m) => m.source !== 'round-summary');
-      }
-
-      if (recalledMemories.length > 0) {
-        this.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
-        // boost 持久化为 fire-and-forget（软指标 +0.05/次 上限 1.0），失败仅 log 不阻塞 chat 读路径
-        const ids = recalledMemories.map((m) => m.id);
-        void boostScores(this.requirePctx.index, ids).catch((err: unknown) => {
-          logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
-          this.emit(AGENT_EVENTS.boostPersistFailed, { memoryId: ids.join(','), message: toError(err).message });
-        });
-      }
-    }
-
-    // ── 固定轮次注入：contextAssembly !== 'query' 时执行（fixed / hybrid） ──
-    if (contextAssembly !== 'query') {
-      const loop = this.requireLoop;
-      const recentHistory = loop.getRecentHistory(recentRounds);
-      if (recentHistory.length > 0) {
-        const msgs = this.#config.messages;
-        const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
-        const userLabel = msgs?.userLabel ?? 'User';
-        const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
-        const recentPrompt =
-          `${label}\n` +
-          recentHistory
-            .map((m) => `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`)
-            .join('\n');
-        loop.injectSystemMessage(recentPrompt);
-        logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
-      }
-    }
-
-    // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
-    recalledMemories = [...recalledMemories].sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    );
-
-    return recalledMemories;
-  }
-
-  /**
-   * 匹配技能并立即注入本轮对话（当轮生效，与角色包自动匹配同模式）
-   * 匹配策略：regex trigger 优先（score=1.0），其次关键词匹配（阈值 0.3）；
-   * cleanTemporarySystemMessages() 每轮清临时 system 消息，技能 prompt 不跨轮累积。
-   */
-  private matchAndInjectSkill(input: string): void {
-    if (!this.skillManager || !this.loop) return;
-    try {
-      const match = this.skillManager.match(input);
-      if (match) {
-        const skillPrompt = this.skillManager.buildSystemPrompt(match.skill.name);
-        if (skillPrompt) {
-          this.loop.injectSystemMessage(skillPrompt);
-          logger.debug({ skill: match.skill.name, score: match.score }, '技能 prompt 已注入（当轮生效）');
-        }
-        this.emit(AGENT_EVENTS.skillMatched, { skill: match.skill.name, score: match.score });
-      }
-    } catch (err) {
-      logger.warn({ err }, '技能匹配失败');
-    }
   }
 
   /**
@@ -878,7 +728,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
 
       // 预判是否提示 LLM 生成任务表（仅 plan 为空时触发）
-      if (this.shouldGenerateTaskTable(event, this._sessionManager?.getCheckpoint() ?? undefined)) {
+      if (this.checkpointRestoreCoordinator?.shouldGenerateTaskTable(
+        event,
+        this._sessionManager?.getCheckpoint() ?? undefined,
+      )) {
         loop.injectSystemMessage(
           '如果需要分步完成任务，请使用 task_table_write 工具创建任务表，' +
           '包含各步骤的描述（description）。每完成一步使用 task_table_update 工具更新对应步骤状态。' +
@@ -1108,143 +961,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return content;
   }
 
-  // ─── 检查点恢复协议（温记忆按需召回 + 契约重注入） ──
-
-  /**
-   * 温记忆按需召回（检查点恢复协议步骤③）
-   *
-   * 以 mainGoal/currentGoal 查询，从温记忆（归档 recall）召回窗口外早期上下文，
-   * 合并进资源槽（memories + context）并注入 loop 的 system message，让恢复后感知暂停前完整上下文。
-   * 召回失败静默降级，仅记日志，不影响热窗口恢复与契约重注入。
-   */
-  private async warmRecallForCheckpoint(checkpoint: SessionCheckpoint): Promise<void> {
-    // 以 mainGoal/currentGoal 拼接为查询条件
-    const query = [checkpoint.mainGoal, checkpoint.currentGoal]
-      .filter((s) => s && s.trim().length > 0)
-      .join(' ');
-
-    if (!query.trim()) {
-      logger.debug('温记忆按需召回：mainGoal/currentGoal 均为空，跳过');
-      return;
-    }
-
-    try {
-      const recalledMemories = await recall(
-        this.requirePctx.index,
-        query,
-        {
-          limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
-          vectorStore: this.#config.vectorStore,
-          excludeSources: this.#config.recallExcludeSources,
-        },
-      );
-
-      if (recalledMemories.length === 0) {
-        logger.debug({ query }, '温记忆按需召回：无相关记忆');
-        return;
-      }
-
-      // 将召回的温记忆 ID 去重合并到资源槽 memories
-      const sm = this.requireSessionManager;
-      const currentResource = sm.getCheckpoint()?.resource;
-      if (currentResource) {
-        const existingIds = new Set(currentResource.memories);
-        const newIds = recalledMemories
-          .map((m) => m.id)
-          .filter((id) => !existingIds.has(id));
-        if (newIds.length > 0) {
-          sm.updateResource({
-            ...currentResource,
-            memories: [...currentResource.memories, ...newIds],
-            // context 末尾追加温记忆召回摘要，标记召回来源
-            context:
-              currentResource.context +
-              (currentResource.context ? '\n' : '') +
-              `[温记忆召回: ${recalledMemories.map((m) => `${m.source}:${m.name || m.id}`).join(', ')}]`,
-          });
-        }
-      }
-
-      // 将温记忆注入为系统消息，让 Agent 感知暂停前的早期上下文
-      const loop = this.requireLoop;
-      const warmContext = recalledMemories
-        .map((m) => `[${m.source}:${m.name || m.id}] ${m.content}`)
-        .join('\n\n');
-      loop.injectSystemMessage(
-        `[恢复的早期上下文]\n以下为会话暂停前归档的早期上下文：\n\n${warmContext}`,
-      );
-
-      this.emit(AGENT_EVENTS.memoryRecalled, {
-        count: recalledMemories.length,
-        query,
-      });
-
-      logger.info(
-        { count: recalledMemories.length, query },
-        '温记忆按需召回完成，已合并到资源槽并注入参考上下文',
-      );
-    } catch (err) {
-      // 温记忆召回失败时静默降级：仅记录日志，不影响热窗口恢复和后续流程
-      logger.warn({ err }, '温记忆按需召回失败（降级：仅恢复热窗口和契约）');
-    }
-  }
-
-  /**
-   * 契约重注入（检查点恢复协议步骤④），确保恢复后 system prompt 与暂停前一致：
-   * - 角色契约：按检查点角色切换 persona 并刷新 system prompt
-   * - 技能契约：按资源槽文档路径匹配技能注入
-   * - 规则契约：由 AgentLoop 的 bootstrap 机制自动注入，无需额外处理
-   * 角色不存在静默降级（保持当前角色），技能匹配失败仅记日志。
-   */
-  private reinjectContracts(checkpoint: SessionCheckpoint): void {
-    // 角色包契约重注入：按检查点角色名刷新系统 prompt
-    if (this.rolePackManager_ && checkpoint.role.name) {
-      try {
-        const prevName = this.rolePackManager_.activeName;
-        if (prevName !== checkpoint.role.name) {
-          // 角色包不存在时 activate 返回 false
-          const success = this.rolePackManager_.activate(checkpoint.role.name);
-          if (success) {
-            this.emit(AGENT_EVENTS.rolePackSwitched, {
-              from: prevName,
-              to: checkpoint.role.name,
-            });
-            this.applyRolePackToolExposure();
-          }
-        }
-        // 无论是否切换都刷新前缀，确保角色包 prompt 注入 loop
-        this.refreshRolePackPrefixOnLoop();
-      } catch (err) {
-        // 角色包不存在时静默降级：保持当前角色，仅记日志
-        logger.warn(
-          { err, roleName: checkpoint.role.name },
-          '契约重注入：角色包切换失败，保持当前角色',
-        );
-      }
-    }
-
-    // 技能契约重注入：按资源槽文档路径尝试匹配技能
-    if (this.skillManager && this.loop) {
-      try {
-        for (const doc of checkpoint.resource.documents) {
-          this.matchAndInjectSkill(doc);
-        }
-      } catch (err) {
-        logger.warn({ err }, '契约重注入：技能重注入失败');
-      }
-    }
-
-    // 规则契约由 AgentLoop 的 bootstrapMemories 自动注入，无需额外处理
-
-    logger.info(
-      {
-        role: checkpoint.role.name,
-        skillDocCount: checkpoint.resource.documents.length,
-      },
-      '契约重注入完成',
-    );
-  }
-
   /**
    * 暂停会话（用户/Agent/系统均可触发，暂停前自动创建检查点）
    * @param lowRisk 低风险暂停不计入 P4 连续暂停计数（默认 false）
@@ -1288,9 +1004,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     return true;
   }
-
-  /** 兜底停滞计数器——连续无 task_table_update 的回合数 */
-  private _stalledRoundCount = 0;
 
   /**
    * 请求软暂停（不中断工作模型 v2.1）
@@ -1388,28 +1101,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 预判是否应提示 LLM 生成任务表：保守默认 false，仅 plan 为空且输入含明确多步信号时返回 true（不依赖 composer）
-   */
-  private shouldGenerateTaskTable(event: SessionEvent, checkpoint?: SessionCheckpoint): boolean {
-    // 已有任务表不再生成
-    if (!checkpoint || checkpoint.plan.length > 0) return false;
-
-    const content = event.content ?? '';
-
-    // 多步信号关键词（中英文，保守匹配）
-    const multiStepSignals = [
-      '第一步', '第二步', '步骤', '首先', '然后', '接下来',
-      '先做', '再做', '最后', '分步', '逐步',
-      'step 1', 'step1', 'step 2', 'step2',
-      'first', 'then', 'next', 'finally',
-      '计划', '规划', '安排', '任务表',
-      'plan', 'task list', 'todo',
-    ];
-
-    return multiStepSignals.some((signal) => content.includes(signal));
-  }
-
-  /**
    * 内核→宿主信号：当前会话是否可"无输入续跑"（决定暂停按钮显隐 + 暂停后继续 UI）
    *
    * 真值条件：① 状态机已 paused（已软暂停必可续跑，最高优先级——pauseRequested 在下一迭代边界才挂起，
@@ -1483,47 +1174,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
     this.assertInitialized('restoreFromCheckpoint');
-
-    // ①② 快照反序列化 + 热窗口载入（SessionManager，async 需 await）
-    const messageCount = await this.requireSessionManager.restoreFromCheckpoint(checkpoint);
-
-    // ③ 温记忆按需召回（以 mainGoal/currentGoal 查询早期上下文）
-    await this.warmRecallForCheckpoint(checkpoint);
-
-    // ④ 契约重注入（persona/skill）
-    this.reinjectContracts(checkpoint);
-
-    logger.info(
-      { sessionId: checkpoint.sessionId, messageCount },
-      '检查点恢复协议完成（热窗口 + 温记忆 + 契约重注入）',
-    );
-
-    return messageCount;
-  }
-
-  /**
-   * 处理会话事件回调（从 AgentLoop 接收），按事件类型触发状态机转换或检查点更新
-   */
-  private handleSessionEvent(eventType: string, detail: string): void {
-    const sm = this._sessionManager;
-    if (!sm) return;
-
-    switch (eventType) {
-      case 'correction':
-        // 修正事件：更新目标版本
-        sm.updateGoal(detail);
-        break;
-      case 'clarify':
-        // 澄清事件：记录心跳
-        sm.heartbeat();
-        break;
-      case 'chat':
-        // 对话事件：记录心跳
-        sm.heartbeat();
-        break;
-      default:
-        break;
-    }
+    // 恢复协议单一真理源：委托 CheckpointRestoreCoordinator（热窗口载入 → 温记忆召回 → 契约重注入）
+    return this.checkpointRestoreCoordinator!.restore(checkpoint);
   }
 
   /**
@@ -1615,7 +1267,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 组件组装 ─────────────────────────────────────────
 
   /**
-   * 组装所有运行时组件（委托给 assembler 工厂）
+   * 组装所有运行时组件（一行委托给 assembler 工厂）
+   *
+   * 接线回调（工具幂等 outbox / 任务表 / loop 回调 / createSessionManager）已随
+   * 装配下沉到 assembler——Agent 只注入稳定能力（hooks），
+   * 不再持有装配私有状态（暂存队列 / 停滞计数器已移除）。
    */
   private async assembleComponents(pctx: ProjectContext): Promise<void> {
     const result = await assembleComponents(pctx, {
@@ -1631,67 +1287,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       messages: this.#config.messages,
       enableContextSummary: this.#config.enableContextSummary,
       webSearchProvider: this.#config.webSearchProvider,
+      vectorStore: this.#config.vectorStore,
+      recallExcludeSources: this.#config.recallExcludeSources,
       existingSkillManager: this.skillManager,
-      // 事件回调组（8 个平铺回调收进 callbacks，与 AssembleCallbacks 接口对齐）
-      callbacks: {
-        onWorkProjectionGenerated: (sourcePath, summary) => {
-          this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
-        },
-        onContextTruncated: (skippedCount, keptCount) => {
-          this.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });
-        },
-        onDedupCompleted: (report) => {
-          this.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
-        },
-        onSessionEvent: (eventType, detail) => {
-          this.handleSessionEvent(eventType, detail);
-        },
-        // 工具执行完成回调（幂等 outbox + 补偿机制）：记录执行到检查点供恢复排重，幂等级别供补偿识别
-        onToolExecuted: (name, args, toolResult, ok) => {
-          // 幂等级别查内置映射表，自定义工具默认非幂等
-          const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
-          const record: ToolExecutionRecord = {
-            name,
-            argsSignature: args,
-            executedAt: Date.now(),
-            resultSummary: toolResult.slice(0, 100),
-            ok,
-            idempotent,
-          };
-          // loop 先于 sessionManager 创建，回调可能早于其就绪——暂存队列待 flush 统一写入；
-          // 就绪则直写，避免"先 push 缓冲又直写"双写污染及稳态下缓冲无限增长
-          if (!this._sessionManager) {
-            this._pendingToolExecutions.push(record);
-          } else {
-            this._sessionManager.logToolExecution(record);
+      // Agent 稳定能力（emit/守卫/暂停/角色切换）：接线下沉后仅传能力，接线语义在组装器唯一实现
+      hooks: {
+        // 桥接 SessionManager 宽类型事件到 Agent 强类型 emit（校验事件名在 AgentEventMap 内，避免不安全断言）
+        emit: (event, data) => {
+          if (AGENT_EVENT_SET.has(event)) {
+            this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
           }
         },
-        // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查；
-        // 未注入宿主回调时完全降级为仅内部幂等检查
-        preExecutionCheck: (name, args): PreExecutionResult => {
-          // 1. 宿主审批（审批/审计/参数改写/白名单/只读拦截）
-          const hostResult = this.#config.preExecutionCheck?.(name, args);
-          if (hostResult?.denied) return hostResult; // 拒绝：直接短路，阻止工具意图
-          if (hostResult?.skip) return hostResult; // 跳过：宿主决定不执行
-          // 2. 内部幂等检查（补偿机制·仅一次语义）：仅对幂等工具生效，非幂等工具不跳过
-          const sm = this._sessionManager;
-          if (!sm) return { skip: false, overrideArgs: hostResult?.overrideArgs };
-          // 幂等契约委托 shouldSkipForIdempotency（SSOT）：non-idempotent 不跳过（失败可重试）；
-          // 幂等工具仅上次执行成功（ok=true）时跳过
-          const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
-          const idemResult = shouldSkipForIdempotency(
-            sm.getCheckpoint()?.completedToolCalls,
-            name,
-            args,
-            idempotent,
-          );
-          return {
-            skip: idemResult.skip,
-            previousResult: idemResult.previousResult,
-            overrideArgs: hostResult?.overrideArgs,
-          };
-        },
+        isChatBusy: () => this.chatLockManager?.isBusy ?? false,
+        requestPause: (reason, source) => { this.requestPause(reason, source); },
+        preExecutionCheck: this.#config.preExecutionCheck,
         fileConsistencyCheck: this.#config.fileConsistencyCheck,
+        // 输入增强管线角色匹配命中 → Agent 生命周期切换（activate → 事件 → 刷新前缀 → 工具暴露）
+        switchRolePack: (name) => this.switchRolePack(name),
+        // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
+        applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
+        refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
       },
     });
 
@@ -1707,143 +1322,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
     this.roundSummaryGenerator = result.roundSummaryGenerator;
-    // 绑定记忆写入回调：round-summary 沉淀后 emit('memoryAdded')
-    this.roundSummaryGenerator?.setOnMemoryAdded((info) => {
-      this.emit(AGENT_EVENTS.memoryAdded, info);
-    });
-    // 注入 VectorStore 到 MemoryInspector，启用混合搜索
-    if (this.memoryInspector && this.#config.vectorStore) {
-      this.memoryInspector.setVectorStore(this.#config.vectorStore);
-    }
-    // 创建会话管理器（复用 createSessionManager，随后冲洗暂存队列）
-    this._sessionManager = this.createSessionManager();
-    this._flushPendingToolExecutions();
-
-    // 装配 loop 回调：接线 onPaused / onRoundBoundary
-    this.loop.onPaused = () => {
-      // loop 在边界真正挂起时触发，设置 pauseMeta（暂停原因/来源从 SessionStateMachine 读取）
-      const pendingInfo = this._sessionManager?.pendingPauseInfo;
-      this._sessionManager?.setPauseMeta({
-        reason: pendingInfo?.reason ?? '用户主动暂停',
-        source: pendingInfo?.source ?? 'user',
-      });
-    };
-    // 主动提问（回答中检测到 LLM 结构化输出 [ASK]）：发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停。
-    // 与 needClarify（P4 目标槽位补全）触发源不同，但共享 pause/resume 机制
-    this.loop.onPendingQuestion = (questions) => {
-      if (questions.length === 0) return;
-      this.emit(AGENT_EVENTS.questionPending, questions);
-      // 触发软暂停：handleTextResponse 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
-      const reason = `需要澄清：${questions.map((q) => q.question).join('; ')}`;
-      this.requestPause(reason, 'agent');
-    };
-    this.loop.onRoundBoundary = (roundInfo) => {
-      // completeRound 写 roundLog 关联 plan 步骤（取 active 步骤 ID）。此前不传 stepId 使 roundLog 与 plan
-      // 无法关联（不可追溯）；单向引用——plan 仍是任务状态真理源，roundLog 是其时间轴投影（避免双写）
-      const activeStepId = this._sessionManager?.getCheckpoint()?.plan.find(
-        (s) => s.status === 'active',
-      )?.id;
-      this._sessionManager?.completeRound({
-        stepId: activeStepId,
-        summary: roundInfo.summary,
-      });
-
-      // 兜底停滞检测：连续 3 轮无 task_table_update 且 plan 有未完任务 → 将 active step 标记为 blocked
-      this._stalledRoundCount++;
-      if (this._stalledRoundCount >= 3) {
-        const sm = this._sessionManager;
-        const cp = sm?.getCheckpoint();
-        if (cp) {
-          const activeStep = cp.plan.find((s) => s.status === 'active');
-          const hasPending = cp.plan.some((s) => s.status === 'pending' || s.status === 'active');
-          if (activeStep && hasPending) {
-            // 经 updatePlanStepStatus 标脏，checkpointDirty 置位确保阻塞标记可落盘
-            sm?.updatePlanStepStatus(activeStep.id, 'blocked');
-            this.loop?.injectSystemMessage(
-              `[系统] 检测到任务表停滞（连续 3 回合未更新步骤状态），已自动将步骤 "${activeStep.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
-            );
-          }
-        }
-        // 复位计数器（无论是否触发，防止无限触发）
-        this._stalledRoundCount = 0;
-      }
-    };
-
-    // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
-    this.loop.getTaskTable = () => {
-      const cp = this._sessionManager?.getCheckpoint();
-      if (!cp) return '';
-      return renderTaskTable(cp.plan, cp.roundLog);
-    };
-
-    // 装配任务表工具回调（planManager）
-    this.toolExec.planManager = {
-      writePlan: (mode, steps) => {
-        const sm = this._sessionManager;
-        if (!sm) return '[ERR] 会话管理器未就绪';
-        // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
-        const newPlan = sm.writePlan(mode, steps);
-        return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${
-          newPlan.map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`).join('\n')
-        }`;
-      },
-      updateStep: (stepId, status) => {
-        const sm = this._sessionManager;
-        if (!sm) return '[ERR] 会话管理器未就绪';
-        // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）——
-        // 旧实现直改 step.status 未置 checkpointDirty → 计划变更可能永不落盘
-        if (!sm.updatePlanStepStatus(stepId, status)) {
-          return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
-        }
-        const step = sm.getCheckpoint()?.plan.find((s) => s.id === stepId);
-        // 兜底停滞计数器复位（LLM 调用了 task_table_update，说明未停滞）
-        this._stalledRoundCount = 0;
-        return `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
-      },
-      getPlan: () => {
-        const sm = this._sessionManager;
-        const cp = sm?.getCheckpoint();
-        return (cp?.plan ?? []).map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order }));
-      },
-    };
-  }
-
-  /**
-   * 冲洗工具执行暂存队列（工具幂等 outbox）：将 assembler 期间暂存的执行记录写入会话管理器检查点，
-   * 适用于首次组装和重建两种场景。
-   */
-  private _flushPendingToolExecutions(): void {
-    if (this._pendingToolExecutions.length === 0) return;
-    const sm = this._sessionManager;
-    if (!sm) {
-      logger.warn({ pending: this._pendingToolExecutions.length }, '冲洗工具执行队列失败：会话管理器未就绪');
-      return;
-    }
-    for (const record of this._pendingToolExecutions) {
-      sm.logToolExecution(record);
-    }
-    this._pendingToolExecutions = [];
-    logger.debug('工具执行暂存队列冲洗完成');
-  }
-
-  /**
-   * 创建会话管理器（assembleComponents 与 rebuildComponents 共享）：回调访问当前组件（rebuild 后拿最新引用），
-   * forwardEvent 将 SessionManager 宽类型桥接到 Agent 强类型 emit，并校验事件名在 AgentEventMap 内避免不安全断言。
-   */
-  private createSessionManager(): SessionManager {
-    const forwardEvent = (event: string, data: Record<string, unknown>) => {
-      if (AGENT_EVENT_SET.has(event)) {
-        this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
-      }
-    };
-    return new SessionManager(
-      // 惰性 getter：SessionManager 内部调用时 Agent 已 init，用 ! 窄化
-      () => this.history!,
-      () => this.loop!,
-      this.#config.sessionStore,
-      () => this.chatLockManager?.isBusy ?? false,
-      forwardEvent,
-    );
+    // 会话管理器由组装器创建（Phase 1.5，先于 loop），Agent 直接持有
+    this._sessionManager = result.sessionManager;
+    // 输入增强管线由组装器创建（Phase 5），Agent 只保留编排调用点
+    this.contextPreparer = result.contextPreparer;
+    // 检查点恢复协议由组装器创建（Phase 6），Agent 保留公开 API 委托
+    this.checkpointRestoreCoordinator = result.checkpointRestoreCoordinator;
   }
 
   // ─── Provider 管理 ────────────────────────────────────
@@ -1987,70 +1471,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 角色包自动匹配（粘性，角色包唯一入口）：在 chat() 回答前经 RolePackManager.autoMatch 粘性语义匹配——
-   * 首次外部输入命中即锁定当前会话，后续仅互斥包命中才切换；命中后激活并刷新 system prompt 前缀（装 L1 persona）。
-   * 关键词未命中时尝试 LLM 辅助语义匹配（低置信度兜底）。
-   */
-  private async tryAutoMatchRolePack(input: string): Promise<boolean> {
-    const rpm = this.rolePackManager_;
-    if (!rpm) return false;
-
-    // 第一层：关键词高置信度匹配（含粘性锁定副作用）
-    const matched = rpm.autoMatch(input);
-    if (matched) {
-      return this.switchRolePack(matched);
-    }
-
-    // 第二层：LLM 辅助语义匹配（低置信度兜底，需 backgroundProvider）
-    const bgProvider = this.#backgroundProvider;
-    if (bgProvider && rpm.activeName) {
-      const llmMatched = await this.matchRolePackByLlm(input);
-      if (llmMatched && llmMatched !== rpm.activeName) {
-        return this.switchRolePack(llmMatched);
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * LLM 辅助角色包语义匹配
-   * @returns 匹配到的角色包名，无匹配返回 null
-   */
-  private async matchRolePackByLlm(input: string): Promise<string | null> {
-    const rpm = this.rolePackManager_;
-    if (!rpm) return null;
-    const bgProvider = this.#backgroundProvider;
-    if (!bgProvider) return null;
-
-    try {
-      const metaList = rpm.listMeta();
-      if (metaList.length === 0) return null;
-
-      // 构建提示：让 LLM 选择最匹配的角色包
-      const roleList = metaList.map((m) => `${m.name}：${m.description ?? m.displayName ?? ''}`).join('\n');
-      const messages = [
-        { role: 'system' as const, content: `根据用户输入，从以下角色中选择最合适的角色（只输出角色名，不要其他内容）：\n\n${roleList}` },
-        { role: 'user' as const, content: input },
-      ];
-
-      // 流式获取 LLM 响应
-      const stream = bgProvider.chat(messages, { maxTokens: 10, temperature: 0.1 });
-      let response = '';
-      for await (const chunk of stream) {
-        if (chunk.content) response += chunk.content;
-      }
-      const matchedName = response.trim();
-      if (matchedName && metaList.some((m) => m.name === matchedName)) {
-        return matchedName;
-      }
-    } catch (err) {
-      logger.warn({ err }, 'LLM 辅助角色包匹配失败');
-    }
-    return null;
-  }
-
-  /**
    * 手动归档会话（更新 SessionMeta，委托 ArchiveCoordinator）
    *
    * 适用于 manual 模式（用户手动触发；full 模式由宿主切换前自动调用）。
@@ -2140,9 +1560,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 对话进行中重建会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
     this.assertNotBusy('重建组件');
     if (!this.pctx) return;
+    // assembleComponents 内部重建 history/loop/managers，并返回新创建的 sessionManager
     await this.assembleComponents(this.pctx);
-    // assembleComponents 创建新的 history/loop，需重建会话管理器（复用 createSessionManager）
-    this._sessionManager = this.createSessionManager();
   }
 
   // ─── 守卫方法 ───────────────────────────────────────────
@@ -2193,11 +1612,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private get requireHistory(): MessageHistory {
     if (!this.history) throw configError('MessageHistory 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
     return this.history;
-  }
-
-  private get requirePctx(): ProjectContext {
-    if (!this.pctx) throw configError('ProjectContext 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
-    return this.pctx;
   }
 
   private get requireArchiveCoordinator(): ArchiveCoordinator {

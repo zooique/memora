@@ -26,14 +26,24 @@ import { DedupManager } from '@/agent/managers/dedupManager.js';
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
+import { SessionManager } from '@/agent/managers/sessionManager.js';
+// 输入增强管线（角色/记忆/技能增强的叶子逻辑）
+import { ContextPreparer } from '@/agent/contextPreparer.js';
+// 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判）
+import { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
+// 工具幂等契约（接线下沉：onToolExecuted / preExecutionCheck 依赖幂等表 + 补偿判断）
+import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
+// 任务表渲染（接线下沉：loop.getTaskTable 依赖）
+import { renderTaskTable } from '@/agent/taskTableRenderer.js';
 
 /** C1 截断优先复用 round-summary 的最大条数（ADR-023） */
 const ROUND_SUMMARY_LOADER_MAX = 5;
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
-import type { AgentConfig, FileConsistencyCheck, PreExecutionResult } from '@/agent/types.js';
+import type { AgentConfig, FileConsistencyCheck, PreExecutionResult, ToolExecutionRecord, IdempotencyLevel } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
+import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import { configError } from '@/utils/errors.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
@@ -81,39 +91,55 @@ export function buildSystemPromptPrefix(
 }
 
 /**
- * 组装器事件回调组
+ * Agent 门面注入的稳定能力（接线下沉载体）
  *
- * 此前 8 个回调平铺在 AssembleInput 顶层 + 两个子工厂签名逐字段重复声明；
- * 收进单字段 `callbacks`，新增回调只改本接口一处。
+ * 此前 8 个接线回调平铺在 Agent.assembleComponents 内联闭包 + AssembleCallbacks
+ * 逐字段重复声明；收进单一 `hooks` 后，Agent 只传稳定能力（emit/守卫/暂停），
+ * 接线闭包语义在组装器内唯一实现（装配逻辑单一真理源）。
+ *
+ * 边界：只传 Agent 的稳定能力（非私有状态），避免反向依赖泄漏；
+ * hooks 可选——缺省时按 no-op 接线，供纯工厂单测使用。
  */
-export interface AssembleCallbacks {
-  /** 作品投影生成/更新回调（宿主可据此发射事件通知用户） */
-  onWorkProjectionGenerated?: (sourcePath: string, summary: string) => void;
-  /** 上下文截断回调 */
-  onContextTruncated?: (skippedCount: number, keptCount: number) => void;
-  /** 语义去重完成回调 */
-  onDedupCompleted?: (report: { scannedCount: number; pairCount: number; deduplicatedCount: number; demotedIds: string[] }) => void;
+export interface AgentHooks {
   /**
-   * 会话事件回调（不中断工作模型 v2.0）
-   *
-   * AgentLoop 处理 SessionEvent 时通知上层状态机。
+   * 发射 Agent 事件（宿主订阅广播；由 Agent 侧按 AGENT_EVENT_SET 校验事件名合法性）。
+   * 载荷放宽为 unknown：事件数据形状由 AgentEventMap 定（多数为对象，questionPending 为数组），
+   * 桥接侧负责强类型断言。
    */
-  onSessionEvent?: (eventType: string, detail: string) => void;
+  emit: (event: string, data: unknown) => void;
+  /** 会话忙状态查询（SessionManager 守卫） */
+  isChatBusy: () => boolean;
+  /** 主动提问/澄清时请求软暂停（与 needClarify 共享暂停/恢复机制） */
+  requestPause: (reason: string, source: 'user' | 'agent' | 'system') => void;
   /**
-   * 工具执行完成回调（P3.3 执行计划管理·工具幂等）
+   * 宿主工具执行前检查回调（设计文档 §7.2.1，统一执行入口 · 单点聚合检查）
    *
-   * AgentLoop 每次工具执行完成后调用。
-   */
-  onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
-  /**
-   * 工具执行前检查回调（设计文档 §7.2.1，统一执行入口 · 单点聚合检查）
-   *
-   * AgentLoop 每次工具执行前调用，是"执行前约束"（审批/审计/参数改写/幂等去重）
-   * 途经的宿主闸门（与只读/审批闸门同为"单点聚合的多重顺序检查"的一环）。返回三态（PreExecutionResult）：放行/跳过/拒绝。
+   * 审批/审计/参数改写/幂等去重途经的宿主闸门。放行后由组装器内部幂等检查续接。
    */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
-  /** 文件层前置条件断言回调（可选，T5：两段式契约结构化） */
+  /** 文件层前置条件断言回调（可选，T5：两段式契约结构化；预留键，暂未被消费） */
   fileConsistencyCheck?: FileConsistencyCheck;
+  /**
+   * 角色切换回调（输入增强管线角色匹配命中时触发）
+   *
+   * 走 Agent 生命周期（activate → rolePackSwitched 事件 → 刷新前缀 → 工具暴露）；
+   * 缺省 no-op（纯工厂单测不触发切换）。
+   */
+  switchRolePack?: (name: string) => boolean;
+  /**
+   * 角色包激活后应用工具暴露面（检查点恢复协议角色契约重注入触发）
+   *
+   * 走 Agent 生命周期（toolMode/能力白名单 → setToolWhitelist → loop 快照 + system prompt 同步）；
+   * 缺省 no-op（纯工厂单测不触发）。
+   */
+  applyRolePackToolExposure?: () => void;
+  /**
+   * 角色包激活后刷新 loop 前缀（检查点恢复协议角色契约重注入触发）
+   *
+   * 走 Agent 生命周期（buildSystemPromptPrefix 真理源 → loop.refreshRolePackPrefix + ChatOptions）；
+   * 缺省 no-op（纯工厂单测不触发）。
+   */
+  refreshRolePackPrefixOnLoop?: () => void;
 }
 
 /**
@@ -133,6 +159,8 @@ type AssembleRuntimeParams = Pick<
   | 'messages'
   | 'enableContextSummary'
   | 'webSearchProvider'
+  | 'vectorStore'
+  | 'recallExcludeSources'
 >;
 
 /** 组装器输入参数 */
@@ -148,8 +176,8 @@ export interface AssembleInput extends AssembleRuntimeParams {
    * 注入此字段可覆盖默认 locale，实现国际化时间格式。
    */
   locale?: string;
-  /** 事件回调组（8 个平铺回调收敛为一组） */
-  callbacks?: AssembleCallbacks;
+  /** Agent 门面注入的稳定能力（接线下沉载体；缺省按 no-op 接线，供纯工厂单测） */
+  hooks?: AgentHooks;
 }
 
 /**
@@ -171,7 +199,7 @@ type LoopAndDepsParams = Pick<
   | 'enableContextSummary'
   | 'sessionStore'
   | 'locale'
-  | 'callbacks'
+  | 'hooks'
 > & {
   pctx: ProjectContext;
   /** 激活角色包的 L1 persona prompt（档 2-1 后角色包唯一；无激活角色包时为空串） */
@@ -179,6 +207,8 @@ type LoopAndDepsParams = Pick<
   /** 全局技能管理器（构建通用技能清单 + read_skill 全局源，两级技能渐进披露） */
   skillManager: SkillManager;
   toolExec: ToolExecutor;
+  /** 会话管理器（先于 loop 创建，工具执行回调可直接写入，消除暂存队列补丁） */
+  sessionManager: SessionManager;
 };
 
 /**
@@ -188,7 +218,7 @@ type LoopAndDepsParams = Pick<
  */
 type LoopDependentParams = Pick<
   AssembleInput,
-  'configDir' | 'backgroundProvider' | 'callbacks'
+  'configDir' | 'backgroundProvider' | 'hooks'
 > & {
   pctx: ProjectContext;
   loop: AgentLoop;
@@ -226,6 +256,12 @@ export interface AssembleOutput {
   rolePackManager: RolePackManager;
   /** 轮次摘要生成器（记忆即摘要架构，Phase 1） */
   roundSummaryGenerator: RoundSummaryGenerator;
+  /** 会话管理器（接线下沉后由组装器创建并返回，Agent 直接持有） */
+  sessionManager: SessionManager;
+  /** 输入增强管线（角色/记忆/技能增强，Agent 门面保留编排调用点） */
+  contextPreparer: ContextPreparer;
+  /** 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判，Agent 保留公开 API 委托） */
+  checkpointRestoreCoordinator: CheckpointRestoreCoordinator;
 }
 
 /**
@@ -245,13 +281,145 @@ export interface AssembleOutput {
 // ── 子工厂函数 ─────────────────────────────────────────────
 
 /**
+ * 会话事件分发（原 Agent.handleSessionEvent，接线下沉后内联于组装器）
+ *
+ * AgentLoop 处理 SessionEvent 时通知会话管理器：按事件类型触发状态机转换或检查点更新。
+ *
+ * @param sm 会话管理器
+ * @param eventType 事件类型（correction=修正目标 / clarify=澄清心跳 / chat=对话心跳）
+ * @param detail 事件详情（correction 时为目标文本）
+ */
+function dispatchSessionEvent(sm: SessionManager, eventType: string, detail: string): void {
+  switch (eventType) {
+    case 'correction':
+      // 修正事件：更新目标版本
+      sm.updateGoal(detail);
+      break;
+    case 'clarify':
+      // 澄清事件：记录心跳
+      sm.heartbeat();
+      break;
+    case 'chat':
+      // 对话事件：记录心跳
+      sm.heartbeat();
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPaused/onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
+ *
+ * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
+ * 属装配职责（装配逻辑单一真理源）。
+ *
+ * @param loop AgentLoop（装配其 onPaused/onPendingQuestion/onRoundBoundary/getTaskTable）
+ * @param toolExec 工具执行器（装配其 planManager）
+ * @param sessionManager 会话管理器（全部闭包的操作落点）
+ * @param hooks Agent 门面注入的稳定能力（emit/requestPause；可选，缺省 no-op）
+ */
+function wireRuntimeCallbacks(
+  loop: AgentLoop,
+  toolExec: ToolExecutor,
+  sessionManager: SessionManager,
+  hooks: AgentHooks | undefined,
+): void {
+  // 兜底停滞计数器：连续无 task_table_update 的回合数（装配期闭包，rebuild 重建归零）
+  let stalledRoundCount = 0;
+
+  loop.onPaused = () => {
+    // loop 在边界真正挂起时触发，设置 pauseMeta（暂停原因/来源从 SessionStateMachine 读取）
+    const pendingInfo = sessionManager.pendingPauseInfo;
+    sessionManager.setPauseMeta({
+      reason: pendingInfo?.reason ?? '用户主动暂停',
+      source: pendingInfo?.source ?? 'user',
+    });
+  };
+
+  // 主动提问（回答中检测到 LLM 结构化输出 [ASK]）：发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停。
+  // 与 needClarify（P4 目标槽位补全）触发源不同，但共享 pause/resume 机制
+  loop.onPendingQuestion = (questions) => {
+    if (questions.length === 0) return;
+    hooks?.emit(AGENT_EVENTS.questionPending, questions);
+    // 触发软暂停：handleTextResponse 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
+    const reason = `需要澄清：${questions.map((q) => q.question).join('; ')}`;
+    hooks?.requestPause(reason, 'agent');
+  };
+
+  loop.onRoundBoundary = (roundInfo) => {
+    // completeRound 写 roundLog 关联 plan 步骤（取 active 步骤 ID）。此前不传 stepId 使 roundLog 与 plan
+    // 无法关联（不可追溯）；单向引用——plan 仍是任务状态真理源，roundLog 是其时间轴投影（避免双写）
+    const activeStepId = sessionManager.getCheckpoint()?.plan.find(
+      (s) => s.status === 'active',
+    )?.id;
+    sessionManager.completeRound({
+      stepId: activeStepId,
+      summary: roundInfo.summary,
+    });
+
+    // 兜底停滞检测：连续 3 轮无 task_table_update 且 plan 有未完任务 → 将 active step 标记为 blocked
+    stalledRoundCount++;
+    if (stalledRoundCount >= 3) {
+      const cp = sessionManager.getCheckpoint();
+      if (cp) {
+        const activeStep = cp.plan.find((s) => s.status === 'active');
+        const hasPending = cp.plan.some((s) => s.status === 'pending' || s.status === 'active');
+        if (activeStep && hasPending) {
+          // 经 updatePlanStepStatus 标脏，checkpointDirty 置位确保阻塞标记可落盘
+          sessionManager.updatePlanStepStatus(activeStep.id, 'blocked');
+          loop.injectSystemMessage(
+            `[系统] 检测到任务表停滞（连续 3 回合未更新步骤状态），已自动将步骤 "${activeStep.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
+          );
+        }
+      }
+      // 复位计数器（无论是否触发，防止无限触发）
+      stalledRoundCount = 0;
+    }
+  };
+
+  // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
+  loop.getTaskTable = () => {
+    const cp = sessionManager.getCheckpoint();
+    if (!cp) return '';
+    return renderTaskTable(cp.plan, cp.roundLog);
+  };
+
+  // 装配任务表工具回调（planManager）
+  toolExec.planManager = {
+    writePlan: (mode, steps) => {
+      // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
+      const newPlan = sessionManager.writePlan(mode, steps);
+      return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${
+        newPlan.map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`).join('\n')
+      }`;
+    },
+    updateStep: (stepId, status) => {
+      // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）——
+      // 旧实现直改 step.status 未置 checkpointDirty → 计划变更可能永不落盘
+      if (!sessionManager.updatePlanStepStatus(stepId, status)) {
+        return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
+      }
+      const step = sessionManager.getCheckpoint()?.plan.find((s) => s.id === stepId);
+      // 兜底停滞计数器复位（LLM 调用了 task_table_update，说明未停滞）
+      stalledRoundCount = 0;
+      return `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
+    },
+    getPlan: () => {
+      const cp = sessionManager.getCheckpoint();
+      return (cp?.plan ?? []).map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order }));
+    },
+  };
+}
+
+/**
  * Phase 3：创建 AgentLoop 及其直接依赖
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
     provider, backgroundProvider, providerRouter, pctx, rolePackPrompt, skillManager, toolExec,
     maxContextTokens, tracer, messages, enableContextSummary,
-    sessionStore, locale, callbacks,
+    sessionStore, locale, sessionManager, hooks,
   } = params;
 
   // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
@@ -292,10 +460,50 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     tracer,
     messages,
     enableContextSummary,
-    onContextTruncated: callbacks?.onContextTruncated,
-    onSessionEvent: callbacks?.onSessionEvent,
-    onToolExecuted: callbacks?.onToolExecuted,
-    preExecutionCheck: callbacks?.preExecutionCheck,
+    // 上下文截断 → 广播 contextTruncated 事件（宿主可提示用户）
+    onContextTruncated: (skippedCount, keptCount) => {
+      hooks?.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });
+    },
+    // 会话事件 → 分发到会话管理器（状态机转换/心跳，接线下沉后内联）
+    onSessionEvent: (eventType, detail) => dispatchSessionEvent(sessionManager, eventType, detail),
+    // 工具执行完成回调（幂等 outbox 落点）：记录执行到检查点供恢复排重
+    // sessionManager 先于 loop 创建（Phase 1.5），此处可直接写入——无需暂存队列补丁
+    onToolExecuted: (name, args, toolResult, ok) => {
+      // 幂等级别查内置映射表，自定义工具默认非幂等
+      const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
+      const record: ToolExecutionRecord = {
+        name,
+        argsSignature: args,
+        executedAt: Date.now(),
+        resultSummary: toolResult.slice(0, 100),
+        ok,
+        idempotent,
+      };
+      sessionManager.logToolExecution(record);
+    },
+    // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查；
+    // 未注入宿主回调时完全降级为仅内部幂等检查（sessionManager 已就绪，无需就绪守卫）
+    preExecutionCheck: (name, args): PreExecutionResult => {
+      // 1. 宿主审批（审批/审计/参数改写/白名单/只读拦截）
+      const hostResult = hooks?.preExecutionCheck?.(name, args);
+      if (hostResult?.denied) return hostResult; // 拒绝：直接短路，阻止工具意图
+      if (hostResult?.skip) return hostResult; // 跳过：宿主决定不执行
+      // 2. 内部幂等检查（补偿机制·仅一次语义）：仅对幂等工具生效，非幂等工具不跳过
+      // 幂等契约委托 shouldSkipForIdempotency（SSOT）：non-idempotent 不跳过（失败可重试）；
+      // 幂等工具仅上次执行成功（ok=true）时跳过
+      const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
+      const idemResult = shouldSkipForIdempotency(
+        sessionManager.getCheckpoint()?.completedToolCalls,
+        name,
+        args,
+        idempotent,
+      );
+      return {
+        skip: idemResult.skip,
+        previousResult: idemResult.previousResult,
+        overrideArgs: hostResult?.overrideArgs,
+      };
+    },
     roundSummaryLoader,
   });
 
@@ -308,11 +516,13 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
  * Phase 4：创建依赖 Loop 的组件
  */
 function createLoopDependentComponents(params: LoopDependentParams) {
-  const { pctx, loop, history, backgroundProvider, callbacks } = params;
+  const { pctx, loop, history, backgroundProvider, hooks } = params;
 
   const memoryInspector = new MemoryInspector(pctx.index, loop, history);
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, callbacks?.onDedupCompleted);
+  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, (report) => {
+    hooks?.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
+  });
 
   return { memoryAdvisor, memoryInspector, dedupManager };
 }
@@ -336,8 +546,10 @@ export async function assembleComponents(
     enableContextSummary,
     existingSkillManager,
     locale,
+    vectorStore,
+    recallExcludeSources,
   } = input;
-  const callbacks = input.callbacks;
+  const hooks = input.hooks;
 
   // ── Phase 1: 无依赖组件 ──
 
@@ -348,7 +560,10 @@ export async function assembleComponents(
 
   const history = new MessageHistory(sessionStore);
 
-  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider, callbacks?.onWorkProjectionGenerated);
+  // 作品投影生成/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
+  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider, (sourcePath, summary) => {
+    hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
+  });
 
   const toolExec = new ToolExecutor(
     projectPath,
@@ -358,6 +573,22 @@ export async function assembleComponents(
     workProjection,
     configDir,
     sessionStore,
+  );
+
+  // ── Phase 1.5: 会话管理器（先于 loop 创建）──
+
+  // SessionManager 构造只存 getter（getHistory/getLoop 惰性取用），不访问 history/loop 本体——
+  // 因此可先于 loop 创建，使 loop 的工具执行回调（onToolExecuted/preExecutionCheck）装配期即可
+  // 直接写入，消除旧实现"暂存队列 + flush 冲洗"的顺序补丁。
+  // loop 经闭包变量后赋引用（Phase 3 完成）；装配期不会触发 getLoop。
+  let loopRef: AgentLoop | null = null;
+  const sessionManager = new SessionManager(
+    () => history,
+    () => loopRef!,
+    sessionStore,
+    () => hooks?.isChatBusy() ?? false,
+    // 会话事件转发：桥接到 Agent 强类型 emit（Agent 侧按 AGENT_EVENT_SET 校验，避免不安全断言）
+    (event, data) => hooks?.emit(event, data),
   );
 
   // ── Phase 2: 依赖 Provider 的组件 ──
@@ -453,7 +684,7 @@ export async function assembleComponents(
 
   // ── Phase 3: AgentLoop + 其直接依赖 ──
 
-    const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
+  const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
       provider,
       backgroundProvider,
@@ -467,8 +698,13 @@ export async function assembleComponents(
       enableContextSummary,
       sessionStore,
       locale,
-      callbacks,
+      sessionManager,
+      hooks,
     });
+  loopRef = loop;
+
+  // 装配 loop 运行时回调 + 任务表管理（onPaused/onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
+  wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks);
 
   // ── Phase 4: 依赖 Loop 的组件 ──
 
@@ -479,8 +715,64 @@ export async function assembleComponents(
       history,
       skillManager,
       backgroundProvider,
-      callbacks,
+      hooks,
     });
+
+  // 绑定记忆写入回调：round-summary 沉淀后广播 memoryAdded 事件
+  roundSummaryGenerator.setOnMemoryAdded((info) => {
+    hooks?.emit(AGENT_EVENTS.memoryAdded, info);
+  });
+  // 注入 VectorStore 到 MemoryInspector，启用混合搜索
+  if (vectorStore) {
+    memoryInspector.setVectorStore(vectorStore);
+  }
+
+  // ── Phase 5: 输入增强管线 ──
+
+  // ContextPreparer 依赖已装配的 loop/history/skillManager/rolePackManager；
+  // 策略推导走 rolePackManager（SSOT），背景 Provider 后续经 Agent.setBackgroundProvider 同步。
+  const contextPreparer = new ContextPreparer({
+    history,
+    loop,
+    skillManager,
+    rolePackManager,
+    getIndex: () => pctx.index,
+    backgroundProvider,
+    config: {
+      // 组装器可选字段（undefined）收窄为 deps 的显式 null（关闭语义）
+      tracer: tracer ?? null,
+      vectorStore: vectorStore ?? null,
+      recallExcludeSources,
+      messages,
+    },
+    // 事件发射桥接到 Agent 强类型 emit（Agent 侧按 AGENT_EVENT_SET 校验）
+    emit: (event, data) => hooks?.emit(event, data),
+    // 角色匹配命中时走 Agent 生命周期切换（缺省 no-op，供纯工厂单测）
+    switchRolePack: hooks?.switchRolePack ?? (() => false),
+  });
+
+  // ── Phase 6: 检查点恢复协议 ──
+
+  // CheckpointRestoreCoordinator 依赖已装配的 sessionManager/loop/contextPreparer；
+  // 恢复协议只依赖稳定接口（sessionManager/history/loop），生命周期回调由 hooks 注入。
+  const checkpointRestoreCoordinator = new CheckpointRestoreCoordinator({
+    sessionManager,
+    history,
+    loop,
+    getIndex: () => pctx.index,
+    rolePackManager,
+    contextPreparer,
+    config: {
+      tracer: tracer ?? null,
+      vectorStore: vectorStore ?? null,
+      recallExcludeSources,
+    },
+    // 事件发射桥接到 Agent 强类型 emit
+    emit: (event, data) => hooks?.emit(event, data),
+    // 角色契约重注入命中时走 Agent 生命周期（缺省 no-op，供纯工厂单测）
+    applyRolePackToolExposure: hooks?.applyRolePackToolExposure ?? (() => {}),
+    refreshRolePackPrefixOnLoop: hooks?.refreshRolePackPrefixOnLoop ?? (() => {}),
+  });
 
   return {
     history,
@@ -495,5 +787,8 @@ export async function assembleComponents(
     textPolisher,
     rolePackManager,
     roundSummaryGenerator,
+    sessionManager,
+    contextPreparer,
+    checkpointRestoreCoordinator,
   };
 }
