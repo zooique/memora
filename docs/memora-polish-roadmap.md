@@ -156,6 +156,27 @@ loop.setStrategy(partial) ──合并──▶ 内部字段（读取点不变�
 
 ---
 
+## 二、外部审查重排（workbuddy 清单 → memora 哲学过滤，2026-08-19）
+
+> workbuddy 给出 6 项：T1(eslint预算) / T2(迁移实证) / T3(拆coordinator) / T4(冻结契约) / T5(文档治理) / T6(注释校核)。
+> 用 memora 哲学（纸面 vs 实证 / 单一真理源 / 拒全景物化 / 未启用不需兼容）过滤后重排为 A/B/C 三档：
+
+**A · 实证债（先做，纸面→实证）**
+- **A1 检查点迁移实证 ✅ 已落地**：核查发现 `CURRENT_SCHEMA_VERSION=1`（首版），空迁移表是**应然正确**——workbuddy 判"0 注册=安全网没兑现"是误判；真债是[归一化迁环从未被测试覆盖]。用**探针迁移**单测实证「迁环真实调用迁移 + 版本按序归位」，**不伪造 v2 字段演进**（否则违背反全景物化，否决 workbuddy 的 `recallWindow` 假字段方案）。
+- **A2 行为注释校核 ✅ 部分**：修正已知漂移 `resolveToolStepLimit`（注释"回退20" vs 实现 0）；全量巡检（loop/sessionStateMachine 带行号/行为断言注释）留后续。
+
+**B · 收敛/防腐（agent 膨胀，向"收"不向"扩"）**
+- **B1 agent 门面归位**：方案待过目（目标：组件数不增或减、真瘦身）。
+- **B2 宽防线**：`max-lines` 仅防再爆（~2000 起点），**不做** `complexity`/`max-functions-per-file` 硬指标（会逼出别扭小函数 + disable 负债区）。
+
+**C · 治理（前提满足才动）**
+- **C1 记忆契约冻结**：排到 B1 之后、决定正式发布之前（收敛期冻结=提前按暂停）。
+- **C2 ADR status 字段**：轻量可扫，可随文档维护顺手加。
+
+**明确否决（全景物化陷阱）**：再造 6 个 coordinator（`ArchiveCoordinator/LockManager/SessionManager/SessionStateMachine` 已存在 = 重复造轮子）、`complexity` 硬指标、拆 loop.ts。
+
+---
+
 ## 明确不建议做（防过度打磨）
 
 - **拆分 agent.ts / loop.ts 大文件**：拆文件收益 < 风险，且破坏"门面 + 单一执行引擎"的可读性。真正该清的是已摘除功能的**僵尸码/僵尸键**，而非结构拆分。

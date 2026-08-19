@@ -1559,6 +1559,31 @@ describe('SessionManager', () => {
         expect(loaded!.status).toBe('running');
         expect(loaded!.schemaVersion).toBe(999);
       });
+
+      it('低版本检查点经注册迁移升到当前版本（迁移机制实证，A1）', () => {
+        // A1 实证：normalizeCheckpoint 的升迁移循环真实可用（非纸面安全网）。
+        // 临时注册 v0→v1 探针迁移，验证「迁移被实际调用 + 版本按升序归位」。
+        // 探针仅存在于本用例内（finally 清理），不伪造真实 schema 演进。
+        const migrations = (SessionManager as unknown as {
+          checkpointMigrations: Map<number, (cp: { goalChangeSeq: number }) => void>;
+        }).checkpointMigrations;
+        const raw = intactCheckpoint();
+        raw.schemaVersion = 0; // 低于当前版本 → 触发升迁移分支
+        seedDisk(raw);
+        migrations.set(0, (cp) => {
+          cp.goalChangeSeq = 777; // 探针标记：证明该迁移确被归一化流程调用
+        });
+        try {
+          const loaded = manager.loadPersistedCheckpoint();
+          expect(loaded).not.toBeNull();
+          // 迁移被调用 → 探针改写生效（而非被跳过）
+          expect(loaded!.goalChangeSeq).toBe(777);
+          // 升迁移循环将版本归位到当前
+          expect(loaded!.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+        } finally {
+          migrations.delete(0);
+        }
+      });
     });
 
     describe('运行态挂载物卸载（SSOT 资源层 vs 状态层模型 2026-08-10）', () => {

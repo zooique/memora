@@ -238,7 +238,7 @@ export function resolveContextAssembly(strategy: BehaviorStrategy | undefined): 
 }
 
 /**
- * 解析工具调用步数上限（Tier 2 已消费）：合法正整数采用，非法/缺失回退默认 20
+ * 解析工具调用步数上限（Tier 2 已消费）：合法正整数采用，非法/缺失回退默认 0（不限制）
  *
  * 控制单次 LLM 响应中允许的最大工具调用数量（所有并行工具调用合计）。
  * 超过上限时，多余的工具调用被忽略，仅保留文本内容。
