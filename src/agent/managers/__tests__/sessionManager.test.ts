@@ -1,13 +1,15 @@
 /**
  * 单元测试：SessionManager 会话管理器
  *
- * 覆盖 SessionManager 全部 6 个公共方法：
+ * 覆盖 SessionManager 全部公共方法：
  *   - switchSession：切换会话，isChatBusy 时抛 configError
  *   - forkSession：分叉会话，委托 history + applySessionToLoop + emitEvent
  *   - restoreMostRecentSession：恢复最近会话，多分支降级
  *   - restoreSession：恢复指定会话
  *   - loadSessionMessages：加载消息（会切换会话）
  *   - applySessionToLoop：private，通过 restore* 间接测试
+ *   - 检查点生命周期：createCheckpoint / saveCheckpoint / loadPersistedCheckpoint / restoreFromCheckpoint
+ *     （来自 sessionCheckpointLifecycle.test.ts 合并）
  *
  * Mock 策略：5 个回调注入用 vi.fn()，history/loop 用 Partial<T> as T 单层断言
  */
@@ -18,7 +20,7 @@ import type { AgentForkResult } from '@/agent/managers/sessionManager.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
-import type { Role, Standard, ResourceState } from '@/agent/types.js';
+import type { Role, Standard, ResourceState, SessionCheckpoint, ToolExecutionRecord } from '@/agent/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 
 /**
@@ -1210,6 +1212,457 @@ describe('SessionManager', () => {
       // 快进时间超过衰减窗口
       vi.advanceTimersByTime(3_600_000 + 60_000);
       expect(manager.isPauseLimitReached()).toBe(false); // 衰减后为 0
+    });
+  });
+
+  // ── 检查点字段生命周期（T3-1，合并自 sessionCheckpointLifecycle.test.ts）──────
+
+  /** 带「假磁盘」的会话存储，真实保存序列化结果 */
+  function createDiskBackedStore(): {
+    store: ISessionStore;
+    readDisk: () => SessionCheckpoint | null;
+    writeCount: () => number;
+  } {
+    const disk = new Map<string, string>();
+    let writes = 0;
+
+    const store: ISessionStore = {
+      appendMessage: vi.fn(),
+      loadMessages: vi.fn().mockReturnValue([]),
+      listSessions: vi.fn().mockReturnValue([]),
+      copySession: vi.fn(),
+      saveCheckpoint: (sessionId: string, json: string) => {
+        writes += 1;
+        disk.set(sessionId, json);
+      },
+      loadCheckpoint: (sessionId: string) => disk.get(sessionId) ?? null,
+      deleteCheckpoint: (sessionId: string) => {
+        disk.delete(sessionId);
+      },
+    };
+
+    return {
+      store,
+      readDisk: () => {
+        const json = disk.get('2026-06-27-main');
+        return json ? (JSON.parse(json) as SessionCheckpoint) : null;
+      },
+      writeCount: () => writes,
+    };
+  }
+
+  /** 测试用的工具执行记录 */
+  const TOOL_RECORD: ToolExecutionRecord = {
+    name: 'write_file',
+    argsSignature: '{"path":"a.ts"}',
+    executedAt: Date.now(),
+    resultSummary: '已写入 a.ts',
+    ok: true,
+    idempotent: 'non-idempotent',
+  };
+
+  describe('检查点字段生命周期', () => {
+    let manager: SessionManager;
+    let disk: ReturnType<typeof createDiskBackedStore>;
+
+    beforeEach(() => {
+      disk = createDiskBackedStore();
+      manager = new SessionManager(
+        () => createMockHistory(),
+        () => createMockLoop(),
+        disk.store,
+        () => false,
+        vi.fn(),
+      );
+    });
+
+    /** 一份字段齐全的合法检查点，各用例只挖掉待测的那一处 */
+    function intactCheckpoint(): Record<string, unknown> {
+      return {
+        sessionId: '2026-06-27-main',
+        status: 'running',
+        mainGoal: '主目标',
+        currentGoal: '主目标',
+        goalChangeSeq: 0,
+        plan: [],
+        role: { name: 'assistant' },
+        standard: { quality: '', constraints: [] },
+        resource: { documents: [], memories: [], context: '' },
+        hotMemory: [],
+        lastHeartbeat: Date.now(),
+      };
+    }
+
+    /** 往假磁盘直接种入任意结构的检查点 JSON */
+    function seedDisk(raw: Record<string, unknown>): void {
+      disk.store.saveCheckpoint!('2026-06-27-main', JSON.stringify(raw));
+    }
+
+    /** 建立一个三个侧车字段均有值的检查点 */
+    function seedCheckpointWithSidecars(): void {
+      manager.createCheckpoint('主目标');
+      manager.logToolExecution(TOOL_RECORD);
+      manager.completeRound({ summary: '第一回合' });
+      manager.setPauseMeta({
+        reason: '用户主动暂停',
+        source: 'user',
+      });
+    }
+
+    describe('侧车字段跨 pause 存活（T0-1 回归）', () => {
+      it('pause 后内存态应保留 roundLog / completedToolCalls / pauseMeta', () => {
+        seedCheckpointWithSidecars();
+        manager.pause('测试暂停', 'user');
+        const cp = manager.getCheckpoint();
+        expect(cp).not.toBeNull();
+        expect(cp!.completedToolCalls).toHaveLength(1);
+        expect(cp!.completedToolCalls![0]!.name).toBe('write_file');
+        expect(cp!.roundLog).toHaveLength(1);
+        expect(cp!.roundLog![0]!.summary).toBe('第一回合');
+        expect(cp!.pauseMeta?.reason).toBe('用户主动暂停');
+      });
+
+      it('pause 后磁盘态同样应保留三个侧车字段', () => {
+        seedCheckpointWithSidecars();
+        manager.pause('测试暂停', 'user');
+        const onDisk = disk.readDisk();
+        expect(onDisk).not.toBeNull();
+        expect(onDisk!.completedToolCalls).toHaveLength(1);
+        expect(onDisk!.roundLog).toHaveLength(1);
+        expect(onDisk!.pauseMeta?.reason).toBe('用户主动暂停');
+      });
+
+      it('连续多次 pause / resume 不应累积丢失字段', () => {
+        seedCheckpointWithSidecars();
+        for (let i = 0; i < 3; i += 1) {
+          manager.pause(`第 ${i + 1} 次暂停`, 'user');
+          manager.resume();
+        }
+        const onDisk = disk.readDisk();
+        expect(onDisk!.completedToolCalls).toHaveLength(1);
+        expect(onDisk!.roundLog).toHaveLength(1);
+      });
+    });
+
+    describe('结构性守卫：字段集合不得在 pause 时收缩', () => {
+      it('pause 前后检查点的键集合不得收缩，新增键仅限 pausedAt', () => {
+        seedCheckpointWithSidecars();
+        const before = Object.keys(manager.getCheckpoint()!).sort();
+        manager.pause('测试暂停', 'user');
+        const after = Object.keys(manager.getCheckpoint()!).sort();
+        expect(before.every((k) => after.includes(k))).toBe(true);
+        expect(after.filter((k) => !before.includes(k))).toEqual(['pausedAt']);
+      });
+
+      it('落盘快照不应丢失任何有值字段', () => {
+        seedCheckpointWithSidecars();
+        manager.pause('测试暂停', 'user');
+        const memory = manager.getCheckpoint()!;
+        const memoryKeys = Object.entries(memory)
+          .filter(([, v]) => v !== undefined)
+          .map(([k]) => k)
+          .sort();
+        const diskKeys = Object.keys(disk.readDisk()!).sort();
+        expect(diskKeys).toEqual(memoryKeys);
+      });
+    });
+
+    describe('outbox 落盘时机（P3-1 批处理优化）', () => {
+      it('工具执行记录应延迟到回合边界统一落盘', () => {
+        manager.createCheckpoint('主目标');
+        const writesBefore = disk.writeCount();
+        manager.logToolExecution(TOOL_RECORD);
+        const writesAfterLog = disk.writeCount();
+        expect(writesAfterLog).toBe(writesBefore);
+        manager.completeRound({ summary: '测试回合' });
+        const writesAfterRound = disk.writeCount();
+        expect(writesAfterRound).toBeGreaterThan(writesAfterLog);
+        const onDisk = disk.readDisk();
+        expect(onDisk!.completedToolCalls).toHaveLength(1);
+        expect(onDisk!.completedToolCalls![0]!.argsSignature).toBe('{"path":"a.ts"}');
+      });
+
+      it('恢复后应能凭磁盘记录识别出工具已执行', () => {
+        manager.createCheckpoint('主目标');
+        manager.logToolExecution(TOOL_RECORD);
+        manager.pause('暂停', 'user');
+        const revived = new SessionManager(
+          () => createMockHistory(),
+          () => createMockLoop(),
+          disk.store,
+          () => false,
+          vi.fn(),
+        );
+        const loaded = revived.loadPersistedCheckpoint();
+        expect(loaded).not.toBeNull();
+        expect(revived.hasToolExecuted('write_file', '{"path":"a.ts"}')).toBe(true);
+      });
+    });
+
+    describe('异常恢复链落盘（T0-3 回归）', () => {
+      it('recover 后磁盘上的 error.recovered 应为 true 且状态为 running', () => {
+        manager.createCheckpoint('主目标');
+        manager.triggerError('磁盘写满');
+        expect(disk.readDisk()!.status).toBe('error');
+        const ok = manager.recover();
+        expect(ok).toBe(true);
+        const onDisk = disk.readDisk()!;
+        expect(onDisk.status).toBe('running');
+        expect(onDisk.error?.recovered).toBe(true);
+      });
+
+      it('重启后仍应停留在已恢复状态，而非回退为未恢复的异常', () => {
+        manager.createCheckpoint('主目标');
+        manager.triggerError('磁盘写满');
+        manager.recover();
+        const revived = new SessionManager(
+          () => createMockHistory(),
+          () => createMockLoop(),
+          disk.store,
+          () => false,
+          vi.fn(),
+        );
+        const loaded = revived.loadPersistedCheckpoint();
+        expect(loaded!.status).toBe('running');
+        expect(revived.status).toBe('running');
+      });
+    });
+
+    describe('脏标记语义', () => {
+      it('无变更时重复 resume 不应产生多余写盘', () => {
+        manager.createCheckpoint('主目标');
+        manager.pause('暂停', 'user');
+        manager.resume();
+        const baseline = disk.writeCount();
+        manager.resume();
+        expect(disk.writeCount()).toBe(baseline);
+      });
+
+      it('无存储层时应降级为纯内存模式而不抛错', () => {
+        const memoryOnly = new SessionManager(
+          () => createMockHistory(),
+          () => createMockLoop(),
+          undefined,
+          () => false,
+          vi.fn(),
+        );
+        expect(() => {
+          memoryOnly.createCheckpoint('主目标');
+          memoryOnly.logToolExecution(TOOL_RECORD);
+          memoryOnly.pause('暂停', 'user');
+        }).not.toThrow();
+        expect(memoryOnly.getCheckpoint()!.completedToolCalls).toHaveLength(1);
+      });
+    });
+
+    describe('反序列化归一化（T0-1 回归）', () => {
+      it('磁盘检查点缺少 lastHeartbeat 时应补为有限时间戳', () => {
+        const raw = intactCheckpoint();
+        raw.status = 'paused';
+        delete raw.lastHeartbeat;
+        seedDisk(raw);
+        const loaded = manager.loadPersistedCheckpoint();
+        expect(loaded).not.toBeNull();
+        expect(Number.isFinite(loaded!.lastHeartbeat)).toBe(true);
+      });
+
+      it('hotMemory 被截断成非数组时恢复应降级而非抛 TypeError', async () => {
+        const raw = intactCheckpoint();
+        raw.hotMemory = '存储截断后的残片';
+        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+        expect(manager.getCheckpoint()!.hotMemory).toEqual([]);
+      });
+
+      it('error 侧车残缺时应补齐 cause，避免以 undefined 重建异常态', async () => {
+        const raw = intactCheckpoint();
+        raw.status = 'error';
+        raw.error = { at: 1 };
+        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+        const cp = manager.getCheckpoint()!;
+        expect(typeof cp.error?.cause).toBe('string');
+        expect(cp.error!.cause.length).toBeGreaterThan(0);
+        expect(cp.error!.recovered).toBe(false);
+      });
+
+      it('status 为越界值时应归一化为 running', async () => {
+        const raw = intactCheckpoint();
+        raw.status = 'zombie';
+        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+        expect(manager.getCheckpoint()!.status).toBe('running');
+        expect(manager.status).toBe('running');
+      });
+
+      it('补齐的默认值不得在多个检查点之间共享引用', async () => {
+        const first = intactCheckpoint();
+        delete first.plan;
+        await manager.restoreFromCheckpoint(first as unknown as SessionCheckpoint);
+        manager.getCheckpoint()!.plan.push({
+          id: 's1',
+          description: '第一份检查点的步骤',
+          status: 'pending',
+          order: 0,
+        });
+        const second = intactCheckpoint();
+        delete second.plan;
+        await manager.restoreFromCheckpoint(second as unknown as SessionCheckpoint);
+        expect(manager.getCheckpoint()!.plan).toHaveLength(0);
+      });
+
+      it('归一化补齐的默认值应与 createCheckpoint 的默认值同源', async () => {
+        const fresh = manager.createCheckpoint('主目标');
+        const createDefaults = {
+          role: structuredClone(fresh.role),
+          standard: structuredClone(fresh.standard),
+          resource: structuredClone(fresh.resource),
+        };
+        const raw = intactCheckpoint();
+        delete raw.role;
+        delete raw.standard;
+        delete raw.resource;
+        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+        const restored = manager.getCheckpoint()!;
+        expect(restored.role).toEqual(createDefaults.role);
+        expect(restored.standard).toEqual(createDefaults.standard);
+        expect(restored.resource).toEqual(createDefaults.resource);
+      });
+
+      it('磁盘内容为畸形 JSON 时应返回 null 且不污染运行时检查点', () => {
+        disk.store.saveCheckpoint!('2026-06-27-main', '{"sessionId":');
+        expect(manager.loadPersistedCheckpoint()).toBeNull();
+        expect(manager.getCheckpoint()).toBeNull();
+      });
+    });
+
+    describe('检查点 schemaVersion（T1-4 回归）', () => {
+      it('createCheckpoint 产出的检查点应携带当前 schemaVersion', () => {
+        const cp = manager.createCheckpoint('主目标');
+        expect(cp.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+        const onDisk = disk.readDisk()!;
+        expect(onDisk.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+      });
+
+      it('无 schemaVersion 字段的旧检查点经 loadPersistedCheckpoint 应补为当前版本', () => {
+        const raw = intactCheckpoint();
+        delete raw.schemaVersion;
+        seedDisk(raw);
+        const loaded = manager.loadPersistedCheckpoint();
+        expect(loaded).not.toBeNull();
+        expect(loaded!.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
+      });
+
+      it('schemaVersion 高于当前内核版本的检查点应仍可按当前版本恢复', () => {
+        const raw = intactCheckpoint();
+        raw.schemaVersion = 999;
+        seedDisk(raw);
+        const loaded = manager.loadPersistedCheckpoint();
+        expect(loaded).not.toBeNull();
+        expect(loaded!.status).toBe('running');
+        expect(loaded!.schemaVersion).toBe(999);
+      });
+    });
+
+    describe('运行态挂载物卸载（SSOT 资源层 vs 状态层模型 2026-08-10）', () => {
+      it('resume 应卸载 pauseMeta 挂载物（内存态与磁盘态一致）', () => {
+        manager.createCheckpoint('主目标');
+        manager.setPauseMeta({
+          reason: '用户主动暂停',
+          source: 'user',
+        });
+        manager.pause('测试暂停', 'user');
+        expect(manager.getCheckpoint()!.pauseMeta).toBeDefined();
+        manager.resume();
+        const cp = manager.getCheckpoint()!;
+        expect(cp.pauseMeta).toBeUndefined();
+        expect(disk.readDisk()!.pauseMeta).toBeUndefined();
+      });
+
+      it('clearPlan 应清空 plan 与 roundLog（内存态与磁盘态一致）', () => {
+        manager.createCheckpoint('主目标');
+        manager.appendPlanStep('第一步');
+        manager.appendPlanStep('第二步');
+        manager.completeRound({ stepId: undefined, summary: '测试回合' });
+        expect(manager.getCheckpoint()!.plan).toHaveLength(2);
+        expect(manager.getCheckpoint()!.roundLog).toHaveLength(1);
+        manager.clearPlan();
+        const cp = manager.getCheckpoint()!;
+        expect(cp.plan).toHaveLength(0);
+        expect(cp.roundLog).toBeUndefined();
+        const onDisk = disk.readDisk()!;
+        expect(onDisk.plan).toHaveLength(0);
+        expect(onDisk.roundLog).toBeUndefined();
+      });
+
+      it('clearPlan 在无检查点时安全 no-op 不抛错', () => {
+        expect(() => manager.clearPlan()).not.toThrow();
+        expect(manager.getCheckpoint()).toBeNull();
+      });
+    });
+
+    describe('SessionManager · writePlan 模式分发（A3 盲区收敛）', () => {
+      let mgr: SessionManager;
+      let testDisk: ReturnType<typeof createDiskBackedStore>;
+
+      beforeEach(() => {
+        testDisk = createDiskBackedStore();
+        mgr = new SessionManager(
+          () => createMockHistory(),
+          () => createMockLoop(),
+          testDisk.store,
+          () => false,
+          vi.fn(),
+        );
+        mgr.createCheckpoint('主目标');
+      });
+
+      it("'append' 应在现有 plan 上追加步骤", () => {
+        mgr.appendPlanStep('已有步骤');
+        const result = mgr.writePlan('append', [{ description: '新增A' }, { description: '新增B' }]);
+        expect(result).toHaveLength(3);
+        expect(result.map((s: { description: string }) => s.description)).toEqual([
+          '已有步骤',
+          '新增A',
+          '新增B',
+        ]);
+      });
+
+      it("'overwrite' 应等价于追加（不要求 plan 为空）", () => {
+        const result = mgr.writePlan('overwrite', [{ description: '第一步' }, { description: '第二步' }]);
+        expect(result).toHaveLength(2);
+        expect(result.map((s: { description: string }) => s.description)).toEqual(['第一步', '第二步']);
+      });
+
+      it("'update' 应全量替换并保留已有步骤 id 与 status", () => {
+        mgr.appendPlanStep('旧步骤1');
+        mgr.appendPlanStep('旧步骤2');
+        const before = mgr.getCheckpoint()!.plan;
+        const result = mgr.writePlan('update', [{ description: '新步骤1' }, { description: '新步骤2' }]);
+        expect(result).toHaveLength(2);
+        expect(result.map((s: { description: string }) => s.description)).toEqual(['新步骤1', '新步骤2']);
+        expect(result[0]!.id).toBe(before[0]!.id);
+        expect(result[0]!.status).toBe('pending');
+      });
+
+      it("'update' 传入更多步骤时应新建后续步骤并保留前序 id", () => {
+        mgr.appendPlanStep('旧步骤');
+        const result = mgr.writePlan('update', [
+          { description: '新1' },
+          { description: '新2' },
+          { description: '新3' },
+        ]);
+        expect(result).toHaveLength(3);
+        expect(result[0]!.id).toBe(mgr.getCheckpoint()!.plan[0]!.id);
+      });
+
+      it('无检查点时 writePlan 应安全返回空数组（no-op）', () => {
+        const bare = new SessionManager(
+          () => createMockHistory(),
+          () => createMockLoop(),
+          createDiskBackedStore().store,
+          () => false,
+          vi.fn(),
+        );
+        expect(bare.writePlan('append', [{ description: 'x' }])).toEqual([]);
+      });
     });
   });
 });

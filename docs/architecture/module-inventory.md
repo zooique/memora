@@ -2,7 +2,7 @@
 
 > 本文档记录 memora 内核所有模块的当前状态、测试覆盖度、质量评级与打磨优先级。供开发者以模块为单位进行质量改进。
 >
-> **最近更新**：2026-08-18
+> **最近更新**：2026-08-19
 > **设计哲学**：万物皆记忆 · 最小问答闭环 · 单一真理源
 
 ---
@@ -80,12 +80,46 @@
 
 ---
 
-## 四、Agent 核心模块（agent/）
+## 四、对话管理模块（conversation/）
+
+> **核心职责**：会话生命周期管理、会话归档、会话命名、检查点管理
+> **哲学关联**：会话即记忆容器 · 对话记录是记忆溯源的基础
+
+### 4.1 会话存储接口
+
+| 模块文件 | 状态 | 测试文件 | 质量说明 |
+|----------|------|----------|----------|
+| `memory/sessionStore.ts` | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + 全部可选方法（copySession/checkpoint/meta）+ 双层命名（autoName/displayName）类型验证 |
+
+### 4.2 会话管理器
+
+| 模块文件 | 状态 | 测试文件 | 质量说明 |
+|----------|------|----------|----------|
+| `managers/sessionManager.ts` | 🟢 已打磨 | `__tests__/sessionManager.test.ts` | 会话生命周期管理：切换、分叉、恢复、消息加载 |
+| `managers/sessionArchiver.ts` | 🟢 已打磨 | `__tests__/sessionArchiver.test.ts` | 会话归档：生成/更新 SessionMeta（summary/keyTopics） |
+| `managers/sessionNamer.ts` | 🟢 已打磨 | `__tests__/sessionNamer.test.ts` | 会话自动命名：LLM 生成 autoName，支持 displayName 覆盖 |
+| `managers/archiveCoordinator.ts` | 🟢 已打磨 | `__tests__/archiveCoordinator.test.ts` | 归档协调器：归档模式判断、事件发射 |
+
+### 4.3 检查点管理
+
+| 模块文件 | 状态 | 测试文件 | 质量说明 |
+|----------|------|----------|----------|
+| `managers/sessionManager.ts` | 🟢 已打磨 | `__tests__/sessionManager.test.ts` (98 tests) | 检查点字段生命周期测试已合并至 sessionManager 主测试套件 |
+
+**对话管理架构说明**：
+- **会话存储**（ISessionStore）：由宿主实现，memora 内核通过接口读写会话记录
+- **会话元数据**（SessionMeta）：统一承载 autoName、displayName、summary、keyTopics
+- **双层命名**：autoName（LLM 自动生成）+ displayName（用户可修改）
+- **会话归档**：更新 SessionMeta，不写入新的摘要记忆（content 记忆已废弃）
+
+---
+
+## 五、Agent 核心模块（agent/）
 
 > **核心职责**：问答闭环、Loop 执行、工具调度、会话管理
 > **哲学关联**：最小问答闭环 · Loop = 闭环的重复 · 单轮闭环自足可观察
 
-### 4.1 核心执行
+### 5.1 核心执行
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
@@ -113,14 +147,11 @@
 | `agent/__tests__/uninterruptedWorkflow.test.ts` | 🟢 已打磨 | 现有测试 | 不中断工作流集成测试 |
 | `agent/__tests__/degradation.test.ts` | 🟢 已打磨 | 现有测试 | 降级处理测试 |
 
-### 4.3 治理管理器（managers/）
+### 5.3 治理管理器（managers/）
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
-| `managers/sessionManager.ts` | 🟢 已打磨 | `__tests__/sessionManager.test.ts` | 会话生命周期管理 |
-| `managers/sessionArchiver.ts` | 🟢 已打磨 | `__tests__/sessionArchiver.test.ts` | 会话归档 |
-| `managers/sessionNamer.ts` | 🟢 已打磨 | `__tests__/sessionNamer.test.ts` | 会话自动命名 |
-| `managers/sessionCheckpointLifecycle` | 🟢 已打磨 | `__tests__/sessionCheckpointLifecycle.test.ts` | 检查点生命周期 |
+| `managers/sessionManager.ts` | 🟢 已打磨 | `__tests__/sessionManager.test.ts` (98 tests) | 会话生命周期管理 + 检查点生命周期（含合并的测试） |
 | `managers/archiveCoordinator.ts` | 🟢 已打磨 | `__tests__/archiveCoordinator.test.ts` | 归档协调器 |
 | `managers/roundSummaryGenerator.ts` | 🟢 已打磨 | `__tests__/roundSummaryGenerator.test.ts` | 轮次摘要生成 |
 | `managers/memoryGovernance.ts` | 🟢 已打磨 | `__tests__/memoryGovernance.test.ts` | 记忆治理统一门面 |
@@ -137,7 +168,7 @@
 | `managers/llmJudgeHelper.ts` | 🟢 已打磨 | `__tests__/llmJudgeHelper.test.ts` (18 tests) | 三件套模式：流式累积→parseLlmJson→configError 抛错 |
 | `managers/streamAccumulator.ts` | 🟢 已打磨 | `__tests__/streamAccumulator.test.ts` (15 tests) | chunk.content 拼接/空内容跳过/异常传播/options 透传 |
 
-### 4.4 辅助渲染器
+### 5.4 辅助渲染器
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
@@ -145,7 +176,7 @@
 
 ---
 
-## 五、LLM 接入模块（llm/）
+## 六、LLM 接入模块（llm/）
 
 > **核心职责**：LLM Provider 抽象、流式接口、嵌入服务
 
@@ -172,7 +203,7 @@
 
 ---
 
-## 七、基础设施模块
+## 八、基础设施模块
 
 ### 7.1 工具库（utils/）
 
@@ -198,7 +229,7 @@
 | `utils/atomicWrite.ts` | 🟢 已打磨 | `__tests__/atomicWrite.test.ts` (12 tests) | 原子写：临时文件+rename/覆盖写入/大内容/特殊字符/目录不存在异常 |
 | `utils/recallDefaults.ts` | ⚪ 工具 | 无需测试 | 单常量 `DEFAULT_MIN_FALLBACK = 2` |
 
-### 7.2 安全（security/）
+### 8.2 安全（security/）
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
@@ -219,7 +250,7 @@
 | `web-search/webSearchProvider.ts` | 🟢 已打磨 | `__tests__/webSearchProvider.test.ts` | 搜索包装 |
 | `web-search/types.ts` | ⚪ 接口 | 无独立测试 | 搜索类型定义 |
 
-### 7.5 评估框架（eval/）
+### 8.5 评估框架（eval/）
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
@@ -258,26 +289,27 @@
 
 ---
 
-## 九、测试覆盖统计
+## 十、测试覆盖统计
 
 | 层级 | 文件数 | 有测试 | 无测试 | 覆盖率 |
 |------|--------|--------|--------|--------|
 | role-pack/ | 6 | 6 | 0 | 100% |
 | skill/ | 3 | 1 | 2 | 33% |
 | memory/ | 16 | 15 | 1 | 94% |
+| **对话管理**（sessionStore + managers/session* + archiveCoordinator） | **6** | **6** | **0** | **100%** |
 | agent/ (核心) | 15 | 15 | 0 | 100% |
-| agent/managers/ | 19 | 16 | 3 | 84% |
+| agent/managers/ (治理) | 14 | 14 | 0 | 100% |
 | llm/ | 7 | 6 | 1 | 86% |
 | config/ | 2 | 1 | 1 | 50% |
 | utils/ | 18 | 17 | 1 | 94% |
 | 其他 (security/logging/web-search/eval) | 10 | 10 | 0 | 100% |
-| **总计** | **96** | **86** | **10** | **90%** |
+| **总计** | **97** | **91** | **5** | **94%** |
 
-> 注：纯类型定义文件（types.ts / Interface 文件）不计入"无测试"，其消费方的集成测试已覆盖。
+> 注：纯类型定义文件（types.ts / Interface 文件）不计入"无测试"，其消费方的集成测试已覆盖。对话管理模块文件数包含 memory/sessionStore.ts + 5 个会话相关 managers 文件。
 
 ---
 
-## 十、历史打磨记录
+## 十一、历史打磨记录
 
 | 日期 | 打磨内容 | 状态 |
 |------|----------|------|
@@ -291,3 +323,6 @@
 | 2026-08-18 | Tier 1: llmJudgeHelper + streamAccumulator + goalConsistencyChecker（84 tests — 三件套模式/流式累积/约束提取+bigram+Jaccard） | ✅ 完成 |
 | 2026-08-18 | Tier 2: skillScriptRunner + expandEnvVars + strategyKeys（83 tests — 子进程执行/环境变量展开/策略键校验规则） | ✅ 完成 |
 | 2026-08-18 | Tier 3: taskTableRenderer + atomicWrite + sessionStore 契约测试（56 tests — 渲染器/原子写/ISessionStore 全方法契约） | ✅ 完成 |
+| 2026-08-19 | 记忆系统剪枝：content 记忆迁移为 SessionMeta，确立双层命名机制（autoName/displayName） | ✅ 完成 |
+| 2026-08-19 | 模块清单对齐：新增「对话管理模块」分类，明确会话存储/会话管理器/检查点管理三层架构 | ✅ 完成 |
+| 2026-08-19 | 剪枝：sessionCheckpointLifecycle 测试合并到 sessionManager.test.ts，删除独立测试文件 | ✅ 完成 |
