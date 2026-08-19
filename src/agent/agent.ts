@@ -2523,7 +2523,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
    * @param options 触发选项（autoTriggered 默认 false，即手动触发）
-   * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
+   * @returns 归档结果（updatedFields 可能为空，表示无归档价值或 LLM 失败）
    */
   async archiveSessionContent(
     date: string,

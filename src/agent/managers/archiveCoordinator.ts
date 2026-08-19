@@ -107,8 +107,6 @@ export class ArchiveCoordinator {
   private readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调 */
   private readonly emit: EmitCallback;
-  /** 获取当前记忆写入模式（Phase 1） */
-  private readonly getMemoryWriteMode?: () => 'auto' | 'confirm';
   /** 获取当前会话归档模式（Phase 1） */
   private readonly getSessionArchiveMode?: () => 'auto' | 'manual';
 
@@ -116,17 +114,22 @@ export class ArchiveCoordinator {
     this.getSessionArchiver = opts.getSessionArchiver;
     this.getArchiveMode = opts.getArchiveMode;
     this.emit = opts.emit;
-    this.getMemoryWriteMode = opts.getMemoryWriteMode;
     this.getSessionArchiveMode = opts.getSessionArchiveMode;
   }
 
   /**
-   * 归档会话内容（content 类记忆）
+   * 归档会话内容（SessionMeta 归档）
    *
    * 模式判断（FIX-P1-4，集中到本类）：
    *   - 自动触发 + full 模式 → 执行（会话切换前自动归档）
    *   - 自动触发 + manual 模式 → 跳过，用户需手动调用
    *   - 手动触发（任何模式） → 执行（用户意图优先，如"一键归档"按钮）
+   *
+   * 设计变更（2026-08-19，方案 C）：
+   *   - 不再创建 source='content' 记忆条目
+   *   - 改为更新 SessionMeta（summary / keyTopics / autoName）
+   *   - memoryAdded 事件不再发射（无记忆条目创建）
+   *   - archiveFailed 错误处理保留
    *
    * 错误传播契约：
    *   - SessionArchiver LLM 异常 / 写入失败向上抛出（不内部吞掉）。
@@ -137,7 +140,7 @@ export class ArchiveCoordinator {
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
    * @param options 触发选项（autoTriggered 默认 false）
-   * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
+   * @returns 归档结果（updatedFields 可能为空，表示无归档价值或 LLM 失败）
    */
   async archiveSessionContent(
     date: string,
@@ -151,32 +154,23 @@ export class ArchiveCoordinator {
         { mode: archiveMode, stage: 'content' },
         'sessionArchive=manual 跳过自动 content 归档',
       );
-      return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
+      return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     const sessionArchiver = this.getSessionArchiver();
     if (!sessionArchiver) {
-      return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
+      return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     try {
       const result = await sessionArchiver.archiveSessionContent(date, session, options);
 
-      // Phase 1：memoryWrite='confirm' → 写入前发射事件等待宿主确认
-      const writeMode = this.getMemoryWriteMode?.() ?? 'auto';
-      if (writeMode === 'confirm' && result.memories.length > 0) {
-        this.emit('memoryWriteConfirm', {
-          count: result.memories.length,
-          memories: result.memories.map((m) => ({ id: m.id, name: m.name })),
-        });
-      }
+      // 设计变更（方案 C）：不再创建记忆条目，无需 memoryWriteConfirm 或 memoryAdded 事件
+      // SessionMeta 更新直接通过 sessionStore.updateSessionMeta 完成
+      // 宿主可通过 getSessionMeta() 读取最新元数据
 
-      // 发射 memoryAdded 事件：宿主可据此刷新记忆面板
-      for (const memory of result.memories) {
-        this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
-      }
       return result;
     } catch (err) {
       this.handleArchiveError('content', err);
-      return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
+      return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
   }
 

@@ -1,9 +1,16 @@
 /**
- * 会话归档器（content 类归档）
+ * 会话归档器（SessionMeta 归档）
  *
  * 职责：
- *   将会话原始对话内容归档为 `source='content'` 记忆条目。
- *   调用 LLM 对会话消息进行摘要，生成可被召回的 content 类记忆。
+ *   将会话原始对话内容归档为会话元数据（SessionMeta）。
+ *   调用 LLM 对会话消息进行摘要，生成 summary / keyTopics / keyDecisions / openQuestions，
+ *   写入 SessionMeta 供搜索和索引使用。
+ *
+ * 设计变更（2026-08-19，方案 C）：
+ *   - 不再生成 source='content' 记忆（与 round-summary 竞争召回）
+ *   - 改为更新 SessionMeta 会话元数据（keyTopics / summary / autoName）
+ *   - content 作为"会话级摘要记忆"的角色由 round-summary 完全承担
+ *   - SessionMeta 的 summary/keyTopics 仅用于会话搜索/预览，不参与记忆召回
  *
  * 触发时机：
  *   - `full` 模式：会话切换前自动归档（由宿主 sessionHandlers 调用）
@@ -11,23 +18,19 @@
  *
  * 降级策略：
  *   - LLM 不可用：记录日志，不阻塞会话切换（best-effort）
- *   - 会话消息为空：静默跳过，返回空数组
+ *   - 会话消息为空：静默跳过，返回空结果
  *   - sessionStore 未注入：静默跳过
  *
  * 设计：
- *   - 与 InsightExtractor 同模式：构造时注入 provider + storage + sessionStore
+ *   - 与 SessionNamer 同模式：构造时注入 provider + sessionStore
  *   - 不依赖 Agent 实例，通过回调访问会话消息（避免循环依赖）
- *   - LLM 返回的摘要写入 memory storage，source='content'，name=会话标识
+ *   - LLM 返回的摘要写入 SessionMeta（keyTopics / summary / autoName）
  */
 
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { Memory } from '@/memory/types.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
-import { nowIso } from '@/utils/time.js';
-import { truncate } from '@/utils/strings.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
 /** P3-1: 归档选项（用于归档时包含工作上下文） */
@@ -36,7 +39,7 @@ export interface SessionArchiveOptions {
    * P3-1: 是否包含工作上下文（plan 快照）
    *
    * 为 true 时，归档内容会追加当前会话的 plan 步骤列表，
-   * 让记忆包含工作进度信息，便于恢复时了解任务上下文。
+   * 让会话元数据包含工作进度信息。
    */
   includeWorkContext?: boolean;
   /**
@@ -50,8 +53,8 @@ export interface SessionArchiveOptions {
 
 /** 会话归档结果 */
 export interface SessionArchiveResult {
-  /** 写入/更新的记忆条目（通常为 1 条摘要，可能为空） */
-  memories: Memory[];
+  /** 更新的元数据字段（keyTopics / summary / autoName 等） */
+  updatedFields: string[];
   /** 归档的会话标识（YYYY-MM-DD-session） */
   sessionLabel: string;
   /** 归档的消息数量 */
@@ -64,37 +67,40 @@ const MAX_MESSAGES_FOR_SUMMARY = 50;
 /** 摘要提示词中单条消息的最大字符数（防止超长单条消息） */
 const MAX_MESSAGE_CHARS = 500;
 
+/** autoName 最大字符数（从摘要生成时截断） */
+const MAX_AUTO_NAME_CHARS = 20;
+
+/** keyTopics 最大数量（防止标签过多） */
+const MAX_KEY_TOPICS = 5;
+
 /**
  * 截断单条消息内容，防止超长内容撑爆 LLM 上下文
  */
 function truncateContent(content: string): string {
   if (content.length <= MAX_MESSAGE_CHARS) return content;
-  return truncate(content, MAX_MESSAGE_CHARS, '…[截断]');
+  return content.slice(0, MAX_MESSAGE_CHARS) + '…[截断]';
 }
 
 /**
  * 会话归档器
  *
- * 将会话原始对话归档为 source='content' 记忆条目。
+ * 将会话原始对话归档为 SessionMeta 元数据。
+ * 不生成记忆条目，避免与 round-summary 竞争召回。
  */
 export class SessionArchiver {
   /** 当前使用的 Provider（后台优先，降级到默认） */
   private provider: LlmProvider;
   /** 构造时的默认 Provider（backgroundProvider 为 null 时回退使用） */
   private readonly defaultProvider: LlmProvider;
-  /** 记忆存储（写入 content 类记忆） */
-  private index: IMemoryStorage;
-  /** 会话存储（加载原始对话消息） */
+  /** 会话存储（加载原始对话消息 + 写入 SessionMeta） */
   private sessionStore: ISessionStore | undefined;
 
   constructor(
     provider: LlmProvider,
-    index: IMemoryStorage,
     sessionStore: ISessionStore | undefined,
   ) {
     this.provider = provider;
     this.defaultProvider = provider;
-    this.index = index;
     this.sessionStore = sessionStore;
   }
 
@@ -113,18 +119,18 @@ export class SessionArchiver {
    * 流程：
    *   1. 从 sessionStore 加载会话消息
    *   2. 若消息过少（< 2 条），跳过（无归档价值）
-   *   3. 构造摘要提示词，调用 LLM 生成会话摘要
-   *   4. 写入 source='content' 记忆条目
+   *   3. 构造摘要提示词，调用 LLM 生成会话摘要 + 主题标签 + 关键决策
+   *   4. 将结果写入 SessionMeta（keyTopics / summary / autoName）
    *   5. 返回归档结果
    *
    * 错误传播策略：
-   *   - sessionStore 未注入 / 消息过少 / LLM 判断无价值 → 返回 emptyResult（非错误）
-   *   - LLM 异常 / 写入失败 → 向上抛错，由 ArchiveCoordinator 统一 catch 并发射 archiveFailed 事件
+   *   - sessionStore 未注入 / 消息过少 / LLM 判断无价值 → 返回空结果（非错误）
+   *   - LLM 异常 / 写入失败 → 向上抛错，由 ArchiveCoordinator 统一 catch
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
-   * @returns 归档结果（memories 可能为空，表示无归档价值）
-   * @throws LLM 调用或写入异常时抛出，由调用方决定 catch 策略
+   * @returns 归档结果（updatedFields 可能为空，表示无归档价值）
+   * @throws LLM 调用或写入异常时抛出
    */
   async archiveSessionContent(
     date: string,
@@ -133,7 +139,7 @@ export class SessionArchiver {
   ): Promise<SessionArchiveResult> {
     const sessionLabel = `${date}-${session}`;
     const emptyResult: SessionArchiveResult = {
-      memories: [],
+      updatedFields: [],
       sessionLabel,
       messageCount: 0,
     };
@@ -151,42 +157,71 @@ export class SessionArchiver {
       return { ...emptyResult, messageCount: messages.length };
     }
 
-    // LLM 异常向上抛出，由 ArchiveCoordinator 统一 catch + emit archiveFailed
-    const memory = await this.generateSummary(messages, sessionLabel, options);
-    if (!memory) {
+    // LLM 异常向上抛出，由 ArchiveCoordinator 统一 catch
+    const meta = await this.generateSessionMeta(messages, sessionLabel, options);
+    if (!meta) {
       logger.debug({ sessionLabel }, 'SessionArchiver: LLM 判断无摘要价值');
       return { ...emptyResult, messageCount: messages.length };
     }
 
+    // 写入 SessionMeta（updateSessionMeta 写入只读字段）
+    const updatedFields: string[] = [];
+    const partialMeta: Record<string, unknown> = {};
+
+    if (meta.summary) {
+      partialMeta.summary = meta.summary;
+      updatedFields.push('summary');
+    }
+    if (meta.keyTopics && meta.keyTopics.length > 0) {
+      partialMeta.keyTopics = meta.keyTopics;
+      updatedFields.push('keyTopics');
+    }
+    // 仅当会话尚无 autoName 时，从摘要生成一个
+    const existingMeta = this.sessionStore.getSessionMeta?.(sessionLabel);
+    if (!existingMeta?.autoName && meta.autoName) {
+      partialMeta.autoName = meta.autoName;
+      updatedFields.push('autoName');
+    }
+
+    // 写入 SessionMeta（若有字段需要更新）
+    if (updatedFields.length > 0) {
+      this.sessionStore.updateSessionMeta?.(sessionLabel, partialMeta);
+    }
+
     logger.info(
-      { sessionLabel, messageCount: messages.length, memoryId: memory.id },
+      { sessionLabel, messageCount: messages.length, updatedFields },
       'SessionArchiver: 会话内容归档完成',
     );
+
     return {
-      memories: [memory],
+      updatedFields,
       sessionLabel,
       messageCount: messages.length,
     };
   }
 
   /**
-   * 调用 LLM 生成会话摘要并写入记忆存储
+   * 调用 LLM 生成会话元数据（summary / keyTopics / autoName）
    *
    * L4 归档压缩增强：从"简单摘要"升级为"综合提炼"
    *   - summary：核心摘要（50-150 字）
-   *   - keyDecisions：关键决策点（如有）
-   *   - openQuestions：未解决问题（如有）
-   *   - 合并到 Memory.content，提升召回密度
+   *   - keyTopics：关键主题标签（最多 5 个）
+   *   - autoName：从摘要中提炼的简短名称（20 字以内）
+   *   - keyDecisions / openQuestions：结构化信息（合并到 summary 中）
    *
    * @param messages 会话消息列表
-   * @param sessionLabel 会话标识（用于记忆 name 字段）
-   * @returns 写入的记忆条目，null 表示无摘要价值
+   * @param sessionLabel 会话标识
+   * @returns 生成的元数据，null 表示无摘要价值
    */
-  private async generateSummary(
+  private async generateSessionMeta(
     messages: SessionMessage[],
-    sessionLabel: string,
-    options?: SessionArchiveOptions,
-  ): Promise<Memory | null> {
+    _sessionLabel: string,
+    _options?: SessionArchiveOptions,
+  ): Promise<{
+    summary: string;
+    keyTopics: string[];
+    autoName: string;
+  } | null> {
     // 截取最近的消息，防止超长会话撑爆 LLM 上下文
     const recentMessages = messages.slice(-MAX_MESSAGES_FOR_SUMMARY);
 
@@ -198,8 +233,8 @@ export class SessionArchiver {
       })
       .join('\n');
 
-    // L4 综合提炼 prompt：从扁平摘要升级为结构化提炼
-    const summaryPrompt = `你是对话归档助手。请综合提炼以下会话的核心信息，便于后续检索召回。
+    // 综合提炼 prompt：生成结构化元数据
+    const summaryPrompt = `你是会话归档助手。请综合提炼以下会话的核心信息，用于会话搜索和索引。
 
 要求：
 1. 综合提炼（非逐条总结）——压缩冗余，保留高密度知识
@@ -209,9 +244,9 @@ export class SessionArchiver {
 
 输出 JSON：
 {
-  "summary": "核心摘要（50-150 字，涵盖会话主旨）",
-  "keyDecisions": ["关键决策1", "关键决策2"],
-  "openQuestions": ["未解决问题1", "未解决问题2"]
+  "summary": "核心摘要（50-150 字，涵盖会话主旨、关键决策、未解决问题）",
+  "keyTopics": ["主题标签1", "主题标签2", "主题标签3"],
+  "autoName": "简短名称（10-20 字，用于会话列表显示）"
 }
 
 无摘要价值时输出 null。
@@ -232,9 +267,11 @@ ${dialogueText}
 
     const parsed = parseLlmJson<{
       summary?: string;
-      keyDecisions?: unknown;
-      openQuestions?: unknown;
+      keyTopics?: unknown;
+      autoName?: string;
     }>(trimmed);
+
+    // 校验 summary
     const summary = parsed && typeof parsed.summary === 'string' && parsed.summary.trim()
       ? parsed.summary.trim()
       : null;
@@ -243,120 +280,25 @@ ${dialogueText}
       return null;
     }
 
-    // L4 综合提炼：将 keyDecisions 和 openQuestions 合并到 content，提升召回密度
-    let content = buildArchivedContent(summary, parsed?.keyDecisions, parsed?.openQuestions);
-
-    // P3-1: 包含工作上下文时，追加 plan 快照到归档内容
-    if (options?.includeWorkContext && options?.workContextPlan && options.workContextPlan.length > 0) {
-      content += '\n\n[工作进度]\n' + buildWorkContextSection(options.workContextPlan);
+    // 校验 keyTopics（最多 MAX_KEY_TOPICS 个）
+    let keyTopics: string[] = [];
+    if (Array.isArray(parsed?.keyTopics)) {
+      keyTopics = (parsed.keyTopics as unknown[])
+        .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+        .map((t) => t.trim())
+        .slice(0, MAX_KEY_TOPICS);
     }
 
-    // 构造 content 类记忆条目（D6 定案：content = 会话 id 对应的摘要记忆，融入统一摘要模型）
-    // 标签固定为 decision——会话级综合提炼（关键决策/未解决问题/plan 快照）属决策锚点；
-    // sessionName = sessionLabel（会话 id，与 round-summary 同构）；无 roundId（会话级粒度）；
-    // isTraceable=true 支持溯源到整段会话。
-    const now = nowIso();
-    const memory: Memory = {
-      id: `content-${sessionLabel}-${Date.now()}`,
-      source: 'content',
-      name: sessionLabel,
-      content,
-      score: 0.6, // content 类会话归档记忆初始分数
-      createdAt: now,
-      accessedAt: now,
-      isTraceable: true,
-      metadata: {
-        summaryType: 'decision' as const,
-        sessionName: sessionLabel,
-      },
-    };
-
-    // 写入记忆存储（upsert 语义：按 id 覆盖；id 含 Date.now()，同毫秒重复归档会覆盖）
-    this.index.upsert(memory);
-
-    return memory;
-  }
-}
-
-// ─── L4 归档压缩辅助函数 ────────────────────────────────
-
-/**
- * 构建归档记忆的完整内容（摘要 + 关键决策 + 未解决问题）
- *
- * L4 综合提炼：将结构化输出合并为单一 content 字符串，提升召回密度。
- * 格式：
- *   <摘要>
- *
- *   关键决策：
- *   - 决策1
- *   - 决策2
- *
- *   未解决问题：
- *   - 问题1
- *
- * @param summary 核心摘要
- * @param keyDecisionsRaw 关键决策（LLM 输出，需校验）
- * @param openQuestionsRaw 未解决问题（LLM 输出，需校验）
- * @returns 合并后的完整内容
- */
-function buildArchivedContent(
-  summary: string,
-  keyDecisionsRaw: unknown,
-  openQuestionsRaw: unknown,
-): string {
-  const parts: string[] = [summary];
-
-  // 校验并追加关键决策
-  if (Array.isArray(keyDecisionsRaw)) {
-    const decisions = keyDecisionsRaw
-      .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
-      .map((d) => d.trim());
-    if (decisions.length > 0) {
-      parts.push('\n关键决策：');
-      parts.push(...decisions.map((d) => `- ${d}`));
+    // 校验 autoName（截断到 MAX_AUTO_NAME_CHARS）
+    let autoName = '';
+    if (parsed && typeof parsed.autoName === 'string' && parsed.autoName.trim()) {
+      autoName = parsed.autoName.trim().slice(0, MAX_AUTO_NAME_CHARS);
     }
-  }
-
-  // 校验并追加未解决问题
-  if (Array.isArray(openQuestionsRaw)) {
-    const questions = openQuestionsRaw
-      .filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
-      .map((q) => q.trim());
-    if (questions.length > 0) {
-      parts.push('\n未解决问题：');
-      parts.push(...questions.map((q) => `- ${q}`));
+    // 若 LLM 未生成 autoName，从 summary 前几个字提取
+    if (!autoName) {
+      autoName = summary.slice(0, MAX_AUTO_NAME_CHARS);
     }
+
+    return { summary, keyTopics, autoName };
   }
-
-  return parts.join('\n');
-}
-
-/**
- * P3-1: 构建工作上下文文本（plan 快照）
- *
- * 将 plan 步骤列表格式化为可读文本，追加到归档内容中。
- * 格式：
- *   任务步骤（2/3 已完成）：
- *   1. [已完成] 步骤描述
- *   2. [执行中] 步骤描述
- *   3. [待办] 步骤描述
- *
- * @param plan - plan 步骤列表
- * @returns 格式化后的工作上下文文本
- */
-function buildWorkContextSection(
-  plan: Array<{ order: number; description: string; status: string }>,
-): string {
-  const doneCount = plan.filter((s) => s.status === 'done').length;
-  const lines: string[] = [`任务步骤（${doneCount}/${plan.length} 已完成）：`];
-
-  for (const step of plan) {
-    const statusLabel = step.status === 'done' ? '已完成'
-      : step.status === 'active' || step.status === 'in_progress' ? '执行中'
-      : step.status === 'blocked' ? '已阻塞'
-      : '待办';
-    lines.push(`${step.order + 1}. [${statusLabel}] ${step.description}`);
-  }
-
-  return lines.join('\n');
 }

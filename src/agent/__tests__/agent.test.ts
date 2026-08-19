@@ -1488,8 +1488,8 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（full|manual�
     // 手动触发会话内容归档
     const result = await agent.archiveSessionContent('2026-07-04', 'session-1');
 
-    // 应返回归档结果结构
-    expect(result).toHaveProperty('memories');
+    // 应返回归档结果结构（方案 C：updatedFields 替代 memories）
+    expect(result).toHaveProperty('updatedFields');
     expect(result).toHaveProperty('sessionLabel', '2026-07-04-session-1');
   });
 });

@@ -55,10 +55,10 @@ export class SessionNamer {
    * 确保会话拥有标题（仅新建会话首次问答触发）
    *
    * 流程：
-   *   1. 若会话已有标题，跳过（不覆盖手动改名）
+   *   1. 若会话已有 autoName，跳过（不覆盖已生成的自动名称）
    *   2. 调用 LLM 从首条用户消息生成一句话标题
    *   3. 失败/无价值时降级为"新会话 HH:MM"占位
-   *   4. 写入会话标题元数据
+   *   4. 写入 autoName + displayName（初始值一致，用户可后续修改 displayName）
    *
    * best-effort：任何异常都不抛出，由调用方 fire-and-forget。
    *
@@ -78,10 +78,10 @@ export class SessionNamer {
 
     const sessionId = `${date}-${session}`;
 
-    // 会话已有标题则跳过 —— 决策3：仅新建会话首次触发，不覆盖手动改名
+    // 会话已有 autoName 则跳过 —— 仅新建会话首次触发
     const existing = this.sessionStore.getSessionMeta?.(sessionId);
-    if (existing?.title) {
-      logger.debug({ sessionId, title: existing.title }, 'SessionNamer: 会话已有标题，跳过');
+    if (existing?.autoName || existing?.title) {
+      logger.debug({ sessionId, title: existing?.autoName || existing?.title }, 'SessionNamer: 会话已有标题，跳过');
       return;
     }
 
@@ -94,7 +94,15 @@ export class SessionNamer {
       title = defaultTitle();
     }
 
-    // 写入会话标题元数据（宿主未实现 setSessionTitle 时静默失效）
+    // 写入 autoName + displayName（初始值一致）
+    // autoName: LLM 生成的只读名称
+    // displayName: 初始值 = autoName，用户可修改
+    this.sessionStore.updateSessionMeta?.(sessionId, {
+      autoName: title,
+      displayName: title,
+      title, // 向后兼容字段
+    });
+    // 同时调用 setSessionTitle（若宿主实现），确保兼容性
     this.sessionStore.setSessionTitle?.(sessionId, title);
     logger.info({ sessionId, title }, 'SessionNamer: 会话标题已生成');
   }

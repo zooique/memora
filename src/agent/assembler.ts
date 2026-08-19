@@ -260,7 +260,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const systemPromptPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList, locale);
 
   // 后台组件统一使用 backgroundProvider，降级到前台 provider（SSOT：与 textPolisher 同模式）
-  const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, pctx.index, sessionStore);
+  const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
   const roundSummaryGenerator = new RoundSummaryGenerator(backgroundProvider ?? provider, pctx.index);
 
