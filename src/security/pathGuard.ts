@@ -1,12 +1,8 @@
 /**
  * 路径白名单 + 审计日志
- *
- * 4 类允许根 + 28 类禁止规则
- * 详见 ADR-006 · 安全模型
- *
- * 写入二次确认 + 审计日志：未注入 confirmationHandler 时 fail-closed 拒绝写入。
- * 内核纯逻辑库不应依赖交互式终端 I/O（node:readline/promises + node:process），
- * 宿主程序应通过 onWriteConfirmation() 注入自己的确认 UI（Electron/Web/CLI 各自实现）。
+ * 4 类允许根 + 28 类禁止规则。
+ * 写入需二次确认 + 审计日志：未注入 confirmationHandler 时 fail-closed 拒绝写入。
+ * 内核纯逻辑库不依赖交互式终端 I/O，宿主应通过 onWriteConfirmation() 注入自己的确认 UI。
  */
 import { resolve, sep, dirname, basename, join } from 'node:path';
 import { realpathSync } from 'node:fs';
@@ -16,32 +12,23 @@ import { expandHome } from '@/utils/path.js';
 import { nowIso } from '@/utils/time.js';
 
 /**
- * 解析路径的真实绝对路径（解析符号链接链）
- *
- * 安全考量：若不解析符号链接，攻击者可在项目内放置指向 /etc 的符号链接，
- * 绕过白名单前缀匹配访问任意系统目录（P0 符号链接逃逸漏洞）。
- *
- * 策略：
- * - 路径存在时：realpathSync 解析完整符号链接链
- * - 路径不存在时（写入新文件场景）：逐级向上查找已存在的父目录并 realpath，再拼接不存在部分
- * - 全程不存在时：回退到 resolve()（白名单/黑名单仍会兜底校验）
- *
- * @param p 任意路径（相对或绝对）
- * @returns 解析符号链接后的真实绝对路径
+ * 解析符号链接后的真实绝对路径。
+ * 安全考量：不解析符号链接时，攻击者可用项目内指向 /etc 的符号链接绕过白名单前缀匹配访问任意系统目录（路径穿越逃逸）。
+ * 不存在时（写新文件）逐级向上解析已存在父目录再拼接；全程不存在时回退 resolve()（白名单/黑名单仍兜底校验）。
  */
 function resolveRealpath(p: string): string {
   const resolved = resolve(p);
   try {
     return realpathSync(resolved);
   } catch {
-    // 路径不存在 - 递归解析已存在的父目录
+    // 路径不存在：递归解析已存在的父目录
     const parent = dirname(resolved);
     const base = basename(resolved);
     try {
       const realParent = realpathSync(parent);
       return join(realParent, base);
     } catch {
-      // 父目录也不存在 - 继续向上递归
+      // 父目录也不存在：继续向上递归
       const realGrandParent = resolveRealpath(parent);
       return join(realGrandParent, base);
     }
@@ -49,42 +36,41 @@ function resolveRealpath(p: string): string {
 }
 
 const BLOCKED_PATTERNS = [
-  // ─── 系统凭证文件（跨平台，路径段匹配）───
+  // 系统凭证文件（跨平台，路径段匹配）
   /(^|[\\/])\.ssh([\\/]|$)/i,
   /(^|[\\/])\.gnupg([\\/]|$)/i,
   /(^|[\\/])\.netrc$/i,
   /(^|[\\/])\.pgpass$/i,
-  // ─── 包管理器凭证 ───
-  /(^|[\\/])\.gitconfig$/i, // Git 配置（可能含 credential helper token）
-  /(^|[\\/])\.git-credentials$/i, // Git credential store 明文存储
-  /(^|[\\/])\.npmrc$/i, // npm authToken
-  /(^|[\\/])\.pypirc$/i, // PyPI 上传凭证
-  /(^|[\\/])\.gem[\\/]credentials$/i, // RubyGems push 凭证
-  /(^|[\\/])\.composer[\\/]auth\.json$/i, // Composer 凭证
-  /(^|[\\/])\.htpasswd$/i, // Apache Basic Auth 凭证
-  // ─── Linux/macOS 特定凭证文件（向后兼容保留）───
-  /[\\/]etc[\\/]passwd/i, // 用户密码哈希
+  // 包管理器凭证：多为明文存储，可含推发令牌
+  /(^|[\\/])\.gitconfig$/i,
+  /(^|[\\/])\.git-credentials$/i,
+  /(^|[\\/])\.npmrc$/i,
+  /(^|[\\/])\.pypirc$/i,
+  /(^|[\\/])\.gem[\\/]credentials$/i,
+  /(^|[\\/])\.composer[\\/]auth\.json$/i,
+  /(^|[\\/])\.htpasswd$/i,
+  // Linux/macOS 系统账户文件
+  /[\\/]etc[\\/]passwd/i,
   /[\\/]etc[\\/]shadow/i,
-  /[\\/]etc[\\/]gshadow/i, // 组密码哈希
-  /[\\/]etc[\\/]sudoers/i, // sudo 配置
-  // ─── 云服务凭证 ───
+  /[\\/]etc[\\/]gshadow/i,
+  /[\\/]etc[\\/]sudoers/i,
+  // 云服务与容器凭证
   /(^|[\\/])\.aws([\\/]|$)/i,
   /(^|[\\/])\.azure([\\/]|$)/i,
   /(^|[\\/])\.docker([\\/]|$)/i,
   /(^|[\\/])\.kube([\\/]|$)/i,
-  /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i, // gcloud 配置（加 .config 前缀边界，避免误拦用户 gcloud-tools 目录）
-  // ─── 环境变量文件（.env / .env.local / .env.production.local 等多段后缀）───
+  /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i,
+  // 环境变量文件（.env / .env.local / .env.production.local 等多段后缀；.envrc 独立于 .env.* 后缀模式）
   /(^|[\\/])\.env(\.[^\\/]+)?$/i,
-  // .envrc（direnv 配置，可含环境变量和密钥，独立于 .env.* 后缀模式）
   /(^|[\\/])\.envrc$/i,
-  // ─── Windows 系统目录 ───
-  /[\\/]Windows([\\/]|$)/i, // C:\Windows（含 System、System32 等子目录）
-  /[\\/]Program Files([\\/]|$)/i, // C:\Program Files
-  /[\\/]Program Files \(x86\)([\\/]|$)/i, // C:\Program Files (x86)
-  /[\\/]ProgramData([\\/]|$)/i, // C:\ProgramData（系统级应用数据）
-  // ─── Linux/macOS 系统目录（根目录锚定 ^/，避免误伤项目内同名目录）───
+  // Windows 系统目录
+  /[\\/]Windows([\\/]|$)/i,
+  /[\\/]Program Files([\\/]|$)/i,
+  /[\\/]Program Files \(x86\)([\\/]|$)/i,
+  /[\\/]ProgramData([\\/]|$)/i,
+  // Linux/macOS 系统目录（根目录锚定 ^/，避免误伤项目内同名目录）
   /^\/(etc|usr|bin|sbin|var|root|home|lib|lib64|opt)([\\/]|$)/i,
-  // ─── Linux/macOS 虚拟文件系统 + 启动目录（根目录锚定）───
+  // 虚拟文件系统 + 启动目录（根目录锚定）
   /^\/(proc|sys|boot)([\\/]|$)/i,
 ];
 
@@ -92,13 +78,13 @@ export type Permission = 'owner' | 'guest';
 export type WriteDecision = 'confirmed' | 'declined' | 'auto-approved' | 'auto-denied';
 
 export interface AuditEvent {
-  /** 事件类型 */
+  /** 事件类型：路径允许/拒绝、写入确认/拒绝/自动 */
   type: 'path-allow' | 'path-deny' | 'write-confirm' | 'write-decline' | 'write-auto';
   /** 涉及的绝对路径 */
   path: string;
   /** 工具名（read_file / write_file / 自定义工具名） */
   tool?: string;
-  /** 调用链来源（builtin / custom / system），标记安全检查的触发方 */
+  /** 调用链来源，标记安全检查的触发方 */
   source?: 'builtin' | 'custom' | 'system';
   /** 用户决策（写入二次确认场景） */
   decision?: WriteDecision;
@@ -108,20 +94,12 @@ export interface AuditEvent {
   timestamp: string;
 }
 
-/**
- * 审计日志订阅器
- * 默认输出到 pino logger；可被业务层重定向到独立审计文件
- */
+/** 审计日志订阅器：默认输出到 pino logger，可被业务层重定向到独立审计文件 */
 export type AuditListener = (event: AuditEvent) => void;
 
 /**
- * 写入确认请求
- *
- * 宿主程序在非交互式环境（WebUI/桌宠/无终端服务）需要自定义确认 UI。
- * 注入此回调后，SecurityGuard.requestWriteConfirmation() 会调用它而不是直接读 stdin。
- *
- * 返回 true 确认写入，false 拒绝写入。
- * 抛错视为拒绝（fail-closed，安全优先）。
+ * 写入确认请求：宿主在非交互式环境（WebUI/桌宠/无终端）注入自定义确认 UI，
+ * 走此回调而非直接读 stdin。返回 true 确认 / false 拒绝；抛错视为拒绝（fail-closed）。
  */
 export type WriteConfirmationRequest = (info: WriteConfirmationInfo) => Promise<boolean>;
 
@@ -131,35 +109,29 @@ export interface WriteConfirmationInfo {
   targetPath: string;
   /** 工具名（如 write_file） */
   tool: string;
-  /** 人类可读的描述（"写入 100 字符到 foo.md"） */
+  /** 人类可读描述（"写入 100 字符到 foo.md"） */
   description?: string;
   /** 权限模式（owner / guest） */
   permission: Permission;
-  /** 是否需要确认（owner + confirmWrites=false 时为 false，宿主可跳过弹窗） */
+  /** 是否需确认（owner+confirmWrites=false 时为 false，宿主可跳过弹窗） */
   needsConfirm: boolean;
-  /** 文件当前内容预览（截断到 10KB，null 表示新文件）—— 供宿主 UI 展示 diff */
+  /** 文件当前内容预览（截断到 10KB，null 表示新文件）——供宿主 UI 展示 diff */
   beforeContent?: string | null;
-  /** 写入后内容预览（截断到 10KB）—— 供宿主 UI 展示 diff */
+  /** 写入后内容预览（截断到 10KB）——供宿主 UI 展示 diff */
   afterContent?: string;
 }
 
-/** diff 内容最大长度（10KB），防止大文件内容撑爆 IPC 传输和 UI 渲染 */
+/** diff 内容最大长度（10KB），防大文件撑爆 IPC 传输和 UI 渲染 */
 const MAX_DIFF_CONTENT_LENGTH = 10240;
 
-/**
- * 截断 diff 内容到 MAX_DIFF_CONTENT_LENGTH，超出时追加截断标记
- *
- * 重载签名确保返回类型与输入类型的 null/undefined 语义一致：
- * - beforeContent（string | null）→ 返回 string | null
- * - afterContent（string | undefined）→ 返回 string | undefined
- */
+/** 截断 diff 内容到长度上限并追加标记；重载签名保持 beforeContent(null)/afterContent(undefined) 语义一致 */
 function truncateForDiff(content: string | null): string | null;
 function truncateForDiff(content: string | undefined): string | undefined;
 function truncateForDiff(content: string | null | undefined): string | null | undefined;
 function truncateForDiff(content: string | null | undefined): string | null | undefined {
   if (content === null || content === undefined) return content;
   if (content.length <= MAX_DIFF_CONTENT_LENGTH) return content;
-  // 超过上限时截断并追加标记，让用户知道内容被裁剪
+  // 超限截断并追加标记，让用户知道内容被裁剪
   return content.slice(0, MAX_DIFF_CONTENT_LENGTH) + `\n...（已截断，共 ${content.length} 字符）`;
 }
 
@@ -169,9 +141,7 @@ export class SecurityGuard {
   private readonly auditBuffer: AuditEvent[] = [];
   private readonly bufferLimit = 100;
   /**
-   * 注入式写入确认回调。
-   * 宿主注册后，requestWriteConfirmation() 走自定义 UI；
-   * 不注册时回退到终端 readline（CLI 场景）。
+   * 注入式写入确认回调：宿主注册后走自定义 UI；不注册时回退到终端 readline（CLI 场景）。
    */
   private confirmationHandler: WriteConfirmationRequest | null = null;
 
@@ -191,8 +161,7 @@ export class SecurityGuard {
     /** Agent 级数据目录（memora.db/vectors 所在目录） */
     agentDataDir?: string,
   ) {
-    // 构建白名单根目录列表：使用 resolveRealpath 解析符号链接，
-    // 确保白名单基准是真实路径，与 assertPathAllowed 中的 resolveRealpath 对齐
+    // 白名单基准用真实路径（resolveRealpath），与 assertPathAllowed 对齐，避免前缀匹配错位
     this.allowedRoots = [
       resolveRealpath(expandHome(projectPath)),
       resolveRealpath(expandHome(memoraDir)),
@@ -208,27 +177,12 @@ export class SecurityGuard {
     }
   }
 
-  /**
-   * 注册自定义写入确认回调（宿主程序接入）
-   *
-   * 适用于 WebUI/桌宠/无终端服务。注册后，requestWriteConfirmation()
-   * 不再直接读 stdin，而是回调此函数让宿主决定如何提示用户。
-   *
-   * 取消注册：传入 null。
-   *
-   * @example
-   *   securityGuard.onWriteConfirmation(async (info) => {
-   *     return await showConfirmDialog(info.targetPath, info.description);
-   *   });
-   */
+  /** 注册自定义写入确认回调（宿主接入）；取消注册传入 null。WebUI/桌宠等无终端场景走此回调而非读 stdin */
   onWriteConfirmation(handler: WriteConfirmationRequest | null): void {
     this.confirmationHandler = handler;
   }
 
-  /**
-   * 订阅审计事件
-   * @returns 取消订阅函数
-   */
+  /** 订阅审计事件；@returns 取消订阅函数 */
   onAudit(listener: AuditListener): () => void {
     this.listeners.push(listener);
     return () => {
@@ -237,22 +191,19 @@ export class SecurityGuard {
     };
   }
 
-  /**
-   * 获取最近的审计事件（深拷贝，外部不可修改内部缓冲）
-   */
+  /** 获取最近审计事件（深拷贝，外部不可修改内部缓冲） */
   getRecentAudits(limit = 10): AuditEvent[] {
     return this.auditBuffer.slice(-limit).map((e) => ({ ...e }));
   }
 
   /**
-   * 断言路径允许访问
-   * @throws Error 不在白名单时
-   * @param source 调用链来源标记
+   * 断言路径允许访问（命中即拒绝）；黑名单优先，其次白名单前缀匹配（追加 sep 防兄弟目录绕过）。
+   * @throws 不在白名单时
    */
   assertPathAllowed(absolutePath: string, tool?: string, source?: 'builtin' | 'custom' | 'system'): void {
-    // NFKC 规范化，防止全角字符（如 ．．/）绕过黑名单正则
+    // NFKC 规范化，防全角字符（如 ．．/）绕过黑名单正则
     const normalized = absolutePath.normalize('NFKC');
-    // resolveRealpath 解析符号链接，防止通过项目内符号链接逃逸到系统目录
+    // 解析符号链接，防项目内符号链接逃逸到系统目录
     const resolved = resolveRealpath(normalized);
 
     // 1. 黑名单优先
@@ -274,7 +225,7 @@ export class SecurityGuard {
       }
     }
 
-    // 2. 白名单：遍历所有允许的根目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
+    // 2. 白名单：严格前缀匹配（追加 sep 防兄弟目录绕过）
     for (const allowedRoot of this.allowedRoots) {
       if (resolved === allowedRoot || resolved.startsWith(allowedRoot + sep)) {
         this.emitAudit({
@@ -303,26 +254,14 @@ export class SecurityGuard {
   }
 
   /**
-   * 写入操作前请求用户确认
-   *
-   * 规则：
-   *   - guest 模式：始终要求确认
-   *   - owner + confirmWrites=true：要求确认
-   *   - owner + confirmWrites=false：自动批准
-   *
-   * 决策（fail-closed）：
-   *   - 需要确认时，必须通过 onWriteConfirmation() 注入 confirmationHandler
-   *   - 未注入 handler 时，**直接拒绝写入**（返回 false）
-   *   - 理由：内核纯逻辑库不应依赖交互式终端 I/O；宿主程序负责提供确认 UI
-   *   - 安全优先：未配置 = 拒绝，避免无意识放行
-   *
-   * @returns true 确认通过；false 用户拒绝或未注入 handler（fail-closed）
+   * 写入前请求用户确认。guest 或 confirmWrites 需确认；未注入 confirmationHandler 时 fail-closed 拒绝（返回 false），
+   * 理由：内核纯逻辑库不依赖交互式终端 I/O，宿主负责确认 UI；安全优先：未配置 = 拒绝。
    */
   async requestWriteConfirmation(
     targetPath: string,
     tool: string,
     description?: string,
-    /** diff 内容选项（供宿主 UI 展示变更预览，自动截断到 10KB） */
+    /** diff 内容选项（宿主 UI 变更预览用，自动截断到 10KB） */
     options?: { beforeContent?: string | null; afterContent?: string },
   ): Promise<boolean> {
     const needConfirm = this.permission === 'guest' || this.confirmWrites;
@@ -372,13 +311,8 @@ export class SecurityGuard {
   }
 
   /**
-   * 通过宿主注入的 confirmationHandler 进行写入确认
-   *
-   * 从 requestWriteConfirmation 拆分。抛错视为拒绝（fail-closed 安全优先）。
-   * 此方法是唯一的确认执行路径。
-   *
-   * @param info 确认信息（含 diff 内容）
-   * @returns true 确认通过；false 用户拒绝或回调异常
+   * 通过宿主注入的 confirmationHandler 执行写入确认（唯一确认执行路径）。
+   * 抛错视为拒绝（fail-closed 安全优先）。
    */
   private async confirmViaHandler(
     info: WriteConfirmationInfo,
@@ -410,17 +344,13 @@ export class SecurityGuard {
     }
   }
 
-  /**
-   * 触发审计事件 + 写入日志 + 通知订阅者
-   */
+  /** 触发审计事件：缓冲 + 写日志 + 通知订阅者 */
   private emitAudit(event: AuditEvent): void {
-    // 缓冲
     this.auditBuffer.push(event);
     if (this.auditBuffer.length > this.bufferLimit) {
       this.auditBuffer.shift();
     }
 
-    // 写到 pino（结构化日志，方便后续检索）
     if (event.type === 'path-deny' || event.type === 'write-decline') {
       logger.warn({ audit: event }, '安全审计：拒绝');
     } else {

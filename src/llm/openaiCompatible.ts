@@ -17,33 +17,17 @@ export interface OpenAICompatibleConfig {
   defaultModel: string;
 }
 
-/**
- * 错误响应体截断长度（字符数）。
- *
- * handleResponseError 中 4 处 errorText.slice(0, 200) 的统一常量，
- * 避免魔法数字散落，便于后续调整截断策略。
- */
+/** 错误响应体截断长度（字符数）：统一 4 处 errorText.slice(0,200) 的常量，避免魔法数字 */
 const MAX_ERROR_BODY_LEN = 200;
 
 /**
- * chunk 级读超时区分首 chunk 与 chunk 间（reasoning 模型适配）
- *
- * 背景：reasoning 模型（DeepSeek-R1/o1/QwQ 等）首 chunk 前需完成思维链推理，
- *   可能耗时 30-90s；chunk 间正常停顿 < 10s，但复杂推理节点可能短暂停顿。
- *
- * 策略：
- *   - 首 chunk 超时 120s：与请求级超时一致，给 reasoning 模型足够思考时间
- *   - chunk 间超时 60s：首 chunk 已到说明连接正常，60s 足以覆盖正常停顿
- *
- * 判定依据：firstChunkReceived 标志位区分两种阶段
+ * chunk 级读超时区分首 chunk 与 chunk 间（reasoning 适配）：
+ * 首 chunk 前可能思考 30-90s（DeepSeek-R1/o1/QwQ 等）→ 120s；连接正常后停顿 <10s → 60s
  */
 const FIRST_CHUNK_TIMEOUT_MS = 120_000;
 const INTER_CHUNK_TIMEOUT_MS = 60_000;
 
-/**
- * 通用 OpenAI 兼容 Provider
- * 通过 baseUrl 适配不同厂商
- */
+/** 通用 OpenAI 兼容 Provider：通过 baseUrl 适配不同厂商 */
 export class OpenAICompatibleProvider extends LlmProvider {
   readonly name: string;
 
@@ -74,13 +58,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     if (opts.tools) body['tools'] = opts.tools;
     if (opts.maxTokens) body['max_tokens'] = opts.maxTokens;
-    // 结构化输出约束：透传 response_format 到请求 body
-    // 供未来非 tool_call 场景使用（如归档摘要强制 JSON、配置建议提取）
-    // 注意：不能与 tools 同时使用（OpenAI 协议限制），调用方需自行保证互斥
+    // 透传 response_format；不能与 tools 同时使用（OpenAI 协议限制），调用方保证互斥
     if (opts.response_format) body['response_format'] = opts.response_format;
 
-    // 合并 AbortSignal：外部取消信号 + 超时信号（mergeAbortSignals 集中维护，ADR-017 枝叶层 2 次提取）
-    // 确保用户取消和请求超时都能中断 fetch 和流读取
+    // 合并外部取消 + 超时信号，确保用户取消和请求超时都能中断 fetch 和流读取
     const abort = mergeAbortSignals(opts.signal, timeoutMs, 'LLM 请求超时');
 
     let response: Response;
@@ -122,11 +103,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
       );
     }
 
-    // fetch 成功后保留 optsSignal 监听：用户在 SSE 流式阶段取消时，
-    // 仍需通过 mergeAbortSignals 内部的 onOptsAbort 触发 abort 中断 reader.read()。
-    // 注意：{ once: true } 仅在 optsSignal 自身 abort 时移除监听器；
-    // 正常完成或异常路径必须显式 dispose()，否则监听器常驻泄漏。
-    // 下方外层 try-finally 统一调用 abort.dispose()，覆盖所有抛错路径。
+    // fetch 成功后保留 optsSignal 监听，使用户在 SSE 阶段取消也能中断 reader.read()；
+    // 正常完成/异常路径须显式 dispose()，否则监听器常驻泄漏（外层 try-finally 统一调用）
 
     try {
       if (!response.ok) {
@@ -140,22 +118,17 @@ export class OpenAICompatibleProvider extends LlmProvider {
         ]);
       }
 
-      // fetch 成功且响应正常：清除请求级总超时
-      // SSE 阶段由 chunk 级超时（FIRST_CHUNK_TIMEOUT_MS / INTER_CHUNK_TIMEOUT_MS）独立保护
-      // 若保留总超时，长文生成（>timeoutMs）会被错误中断
+      // fetch 成功后清除请求级总超时，SSE 阶段由 chunk 级超时独立保护，否则长文生成（>timeoutMs）会被错误中断
       abort.clearTimer();
 
       try {
-        // 将 abort.signal 传入 SSE 解析器，使超时/取消能中断流读取
         yield* this.parseSseStream(response.body, abort.signal);
       } catch (err) {
-        // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
+        // SSE 解析异常时也 cancel stream 释放底层连接
         await this.safeCancelBody(response);
-        // DOMException（AbortError/TimeoutError）是 LLM 中断协议：
-        // 上游 AgentLoop/contextManager/agent.ts 按 err.name === 'AbortError' 识别，
-        // 必须原样传播，不能包装为 MemoraError（否则中断协议失效）
+        // DOMException（AbortError/TimeoutError）是 LLM 中断协议，按 err.name==='AbortError' 识别，须原样传播不能包装为 MemoraError
         if (err instanceof DOMException) throw err;
-        // 其他未知流读取异常统一包装为 MemoraError（避免裸 throw 逃逸非 MemoraError）
+        // 其他未知流异常统一包装为 MemoraError，避免裸 throw 逃逸非 MemoraError
         throw networkError(
           'LLM 流读取异常',
           toError(err).message,
@@ -169,11 +142,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
   }
 
-  /**
-   * 处理 HTTP 错误响应
-   *
-   * 消费并释放 body，根据状态码抛出相应的错误类型。
-   */
+  /** 处理 HTTP 错误响应：消费并释放 body，按状态码抛相应错误类型 */
   private async handleResponseError(response: Response): Promise<never> {
     const errorText = await response.text().catch(() => '<无法读取响应体>');
     await this.safeCancelBody(response);
@@ -209,14 +178,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
     ]);
   }
 
-  /**
-   * 安全取消 response.body
-   *
-   * 在 SSE 异常和 HTTP 错误处理路径中均需 cancel response.body 释放底层连接，
-   * cancel 本身失败不应阻塞后续错误抛出，仅 debug 记录。
-   *
-   * @param response - HTTP 响应对象
-   */
+  /** 安全取消 response.body：cancel 失败不阻塞后续错误抛出，仅 debug 记录 */
   private async safeCancelBody(response: Response): Promise<void> {
     try {
       await response.body?.cancel();
@@ -226,12 +188,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
   }
 
   /**
-   * 格式化消息为 OpenAI 协议格式
-   *
-   * 关键兼容性处理：
-   *   - assistant 消息带 tool_calls 时，若 content 为空字符串，转为 null
-   *     （部分 LLM provider 对空字符串 content 处理异常，导致请求挂起或报错）
-   *   - tool 消息必须包含 tool_call_id 关联对应的工具调用
+   * 格式化消息为 OpenAI 协议格式：assistant 带 tool_calls 时 content 空串转 null
+   * （部分 provider 对空串 content 处理异常）；tool 消息须带 tool_call_id
    */
   private formatMessages(messages: Message[]): unknown[] {
     return messages.map((m) => {
@@ -241,8 +199,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
       if (m.role === 'assistant' && m.toolCalls) {
         return {
           role: 'assistant',
-          // OpenAI 协议：有 tool_calls 时 content 应为 null（而非空字符串），
-          // 空字符串会导致部分 provider 请求异常或无响应
+          // OpenAI 协议：有 tool_calls 时 content 应为 null（空串会致部分 provider 请求异常）
           content: m.content && m.content.length > 0 ? m.content : null,
           tool_calls: m.toolCalls,
         };
@@ -252,52 +209,34 @@ export class OpenAICompatibleProvider extends LlmProvider {
   }
 
   /**
-   * 解析 SSE 流
-   * OpenAI 协议：data: {...}\n\n
-   *
-   * 支持解析 tool_calls delta（流式工具调用）：
-   * OpenAI 协议中 tool_calls 以 delta 形式分片传输，
-   * 需要跨 chunk 累积 function.name 和 function.arguments，
-   * 在 finish_reason='tool_calls' 或流结束时输出完整的 toolCalls。
-   *
-   * @param body - SSE 响应流
-   * @param signal - 中止信号（超时/用户取消），中断 reader.read() 等待
+   * 解析 SSE 流（data: {...}\n\n）。tool_calls 以 delta 分片传输，
+   * 需跨 chunk 累积 name/arguments，在 finish_reason='tool_calls' 或流结束时输出完整 toolCalls
    */
   private async *parseSseStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncIterable<LlmChunk> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
-    // 流式 tool_calls 累积器：按 index 分片累积 name + arguments
-    // OpenAI 协议：同一个 tool_call 的 name/arguments 可能跨多个 delta 分片到达
+    // 流式 tool_calls 累积器：同一 tool_call 的 name/arguments 可能跨多个 delta 分片到达
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
-    // chunk 级读超时区分首 chunk 与 chunk 间
-    // reader.read() 阻塞时若无超时，连接半挂（NAT/代理/服务端慢响应不关 TCP）会永久等待
-    // 采用 setTimeout + reader.cancel：超时则 cancel reader 让 read() reject 退出
-    //
-    // 区分首 chunk 与 chunk 间（reasoning 模型适配）：
-    //   - 首 chunk 前 LLM 可能思考数十秒（reasoning 模型），用 FIRST_CHUNK_TIMEOUT_MS(120s)
-    //   - 首 chunk 到达后连接已正常，chunk 间停顿用 INTER_CHUNK_TIMEOUT_MS(60s)
+    // chunk 级读超时：无超时则连接半挂（NAT/代理不关 TCP）会永久等待，用 setTimeout + reader.cancel 让 read() reject；
+    // 区分首 chunk（reasoning 思考数十秒，120s）与 chunk 间（连接已正常，60s）
     let firstChunkReceived = false;
 
     try {
       while (true) {
-        // 检查中止信号：超时或用户取消时立即退出
-        // 注意：此处刻意抛 DOMException 而非 MemoraError——
-        // AbortError 是 LLM 中断协议，上游（AgentLoop/contextManager/agent.ts）按
-        // err.name === 'AbortError' 识别用户取消/超时，包装为 MemoraError 会破坏协议
+        // 检查中止信号：刻意抛 DOMException（AbortError）而非 MemoraError——它是 LLM 中断协议，上游按 err.name==='AbortError' 识别
         if (signal?.aborted) {
           throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
         }
 
-        // chunk 级读超时：根据是否收到首 chunk 选择不同超时阈值
-        // reader.cancel() 会让 pending 的 reader.read() 抛 AbortError（DOMException）
+        // 根据是否收到首 chunk 选不同超时阈值；reader.cancel() 让 pending read() 抛 AbortError
         const chunkTimeoutMs = firstChunkReceived
           ? INTER_CHUNK_TIMEOUT_MS
           : FIRST_CHUNK_TIMEOUT_MS;
         const chunkTimer = setTimeout(() => {
-          // cancel 失败也不影响（reader 可能已 done 或被其他路径 cancel），记日志便于排查偶发连接泄漏
+          // cancel 失败不影响，reader 可能已 done 或被其他路径 cancel，记日志排查偶发连接泄漏
           const reason = firstChunkReceived ? 'LLM chunk 间读取超时' : 'LLM 首 chunk 读取超时';
           reader.cancel(new DOMException(reason, 'TimeoutError')).catch((err: unknown) => {
             logger.debug({ err: toError(err).message }, 'reader.cancel 失败（超时清理路径）');
@@ -356,8 +295,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
             if (!choice) continue;
 
             const chunk: LlmChunk = {};
-            // delta.content 可能为 null（tool_calls 场景），!= null 排除 null/undefined
-            // 空字符串在流式中极少出现，但不影响语义，保持原有 truthy 检查即可
+            // delta.content 可能为 null（tool_calls 场景），truthy 检查即可
             if (choice.delta?.content) chunk.content = choice.delta.content;
 
             // 累积 tool_calls delta
@@ -377,8 +315,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
               chunk.toolCalls = this.buildToolCallsFromAccumulators(toolCallAccumulators);
               toolCallAccumulators.clear();
             } else if (choice.finish_reason && toolCallAccumulators.size > 0) {
-              // finish_reason 为 stop/length 等非 tool_calls 值时，清空累积器防止污染下一次调用
-              // （某些模型可能在 stop 时残留不完整的 tool_calls 碎片）
+              // 非 tool_calls 的 finish_reason（stop/length 等）时清空累积器，防残留碎片污染下一次调用
               toolCallAccumulators.clear();
             }
 
@@ -392,22 +329,17 @@ export class OpenAICompatibleProvider extends LlmProvider {
         }
       }
     } finally {
-      // reader.cancel() 彻底释放底层 TCP 连接（releaseLock 仅释放锁不取消流，
-      // 无法避免 generator 提前 break 时底层连接悬挂；也是 CallLlmWithRetry
-      // 无 finally 触发 abort 时的兜底）
-      // 已 done/cancel 的 reader 调 cancel 是 no-op，安全
+      // reader.cancel() 彻底释放底层 TCP 连接（releaseLock 仅释放锁不取消流，防止 break 时连接悬挂）；已 done 的 cancel 是 no-op
       try {
         await reader.cancel();
       } catch (err) {
-        // cancel 失败不阻塞，reader 会被 GC 回收；记日志便于排查偶发连接泄漏
+        // cancel 失败不阻塞，reader 会被 GC 回收；记日志排查偶发连接泄漏
         logger.debug({ err: toError(err).message }, 'reader.cancel 失败（finally 清理路径）');
       }
     }
   }
 
-  /**
-   * 从累积器构建完整的 toolCalls 数组（用于 finish_reason='tool_calls' 场景）
-   */
+  /** 从累积器构建完整 toolCalls 数组（finish_reason='tool_calls' 场景） */
   private buildToolCallsFromAccumulators(
     accs: Map<number, { id: string; name: string; arguments: string }>,
   ): ToolCall[] {
@@ -422,9 +354,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
     return calls;
   }
 
-  /**
-   * 从累积器构建 LlmChunk（用于流结束时的兜底输出）
-   */
+  /** 从累积器构建 LlmChunk（流结束时的兜底输出） */
   private buildToolCallsChunk(
     accs: Map<number, { id: string; name: string; arguments: string }>,
   ): LlmChunk {

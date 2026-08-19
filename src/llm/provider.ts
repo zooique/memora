@@ -1,8 +1,4 @@
-/**
- * LLM Provider 抽象接口
- * 所有 LLM 实现（DeepSeek / 豆包 / OpenAI / Mock）必须实现此接口
- * 详见 ADR-003
- */
+/** LLM Provider 抽象接口：所有 LLM 实现（DeepSeek/豆包/OpenAI/Mock）必须实现 */
 import type { LlmChunk } from '@/llm/types.js';
 
 export interface Message {
@@ -10,13 +6,11 @@ export interface Message {
   content: string;
   // 消息来源名称（可选，用于 function 调用结果标识，与 OpenAI API 对齐）
   name?: string;
-  // 工具调用（assistant 消息）
   toolCalls?: Array<{
     id: string;
     type: 'function';
     function: { name: string; arguments: string };
   }>;
-  // 工具结果（tool 消息）
   toolCallId?: string;
 }
 
@@ -33,13 +27,7 @@ export interface ChatOptions {
       parameters: Record<string, unknown>; // JSON Schema
     };
   }>;
-  /**
-   * 结构化输出约束（OpenAI response_format 兼容协议）
-   *
-   * 当 Provider 支持 structured output 且工具定义标记 strict 时，
-   * AgentLoop 自动生成 json_schema 约束，强制 LLM 输出合法 tool_call。
-   * 不支持的 Provider 静默跳过，fallback 到纯文本 tool_call 模式。
-   */
+  /** 结构化输出约束：Provider 不支持时静默跳过，fallback 到纯文本 tool_call */
   response_format?: {
     type: 'json_schema';
     json_schema: {
@@ -48,61 +36,23 @@ export interface ChatOptions {
       schema: Record<string, unknown>;
     };
   };
-  /**
-   * 强制不使用流式（预留字段，当前无消费者）
-   *
-   * openaiCompatible 始终以 stream:true 发起请求（chat() 返回 AsyncIterable）。
-   * 本字段保留用于未来"非流式回退"场景（如低延迟短回复或 Provider 不支持 SSE 时）。
-   * 保留在公共 API 中以维持 ChatOptions 契约稳定。
-   */
+  /** 预留字段（当前无消费者）：openaiCompatible 始终以 stream:true 发起，chat() 返回 AsyncIterable */
   stream?: boolean;
-  /**
-   * 推理深度控制（Phase 1：act.multiStepReasoning 消费）
-   *
-   * 部分 Provider（如 o-series）支持在 API 调用时指定推理深度。
-   * - 'low' → 快速回答，跳过深度推理
-   * - 'medium' → 平衡速度和质量
-   * - 'high' → 深度思考，回答质量高
-   *
-   * 当 Provider 不支持此参数时静默忽略。
-   */
+  /** 推理深度控制：'low'|'medium'|'high'，Provider 不支持时静默忽略 */
   reasoning_effort?: 'low' | 'medium' | 'high';
-  /**
-   * 中止信号：用于取消正在进行的 LLM 请求
-   *
-   * AgentLoop 在用户取消对话时传入 AbortSignal，
-   * Provider 应将 signal 传给底层 fetch/stream 读取，确保请求可被中断。
-   */
+  /** 中止信号：用户取消时传入，Provider 应传给底层 fetch/stream 以支持中断 */
   signal?: AbortSignal;
-  /**
-   * 请求超时（毫秒）。默认 120 秒。
-   * 超时后抛出 networkError，由 callLlmWithRetry 决定是否重试。
-   */
+  /** 请求超时（毫秒，默认 120s）：超时抛 networkError，由 callLlmWithRetry 决定是否重试 */
   timeoutMs?: number;
 }
 
-/**
- * LLM Provider 抽象类
- * 实现类需实现 chat() 流式方法
- */
+/** LLM Provider 抽象类：实现类需实现 chat() 流式方法 */
 export abstract class LlmProvider {
   abstract readonly name: string;
 
-  /**
-   * 是否支持结构化输出（response_format json_schema）
-   *
-   * 默认 false，子类可覆盖。用于非 tool_call 场景的结构化输出约束
-   * （如归档摘要强制 JSON、配置建议提取等）。调用方在构造 ChatOptions
-   * 时显式传入 response_format，Provider 应将其透传到请求 body。
-   *
-   * 注意：response_format 不能与 tools 同时使用（OpenAI 协议限制），
-   * tool_calls 走独立的 SSE delta 流式协议，无需此约束。
-   */
+  /** 是否支持结构化输出（默认 false）。注意：response_format 不能与 tools 同时使用（OpenAI 协议限制） */
   readonly supportsStructuredOutput: boolean = false;
 
-  /**
-   * 流式对话
-   * 返回 AsyncIterable，每项是一个增量块
-   */
+  /** 流式对话：返回 AsyncIterable，每项是一个增量块 */
   abstract chat(messages: Message[], opts?: ChatOptions): AsyncIterable<LlmChunk>;
 }

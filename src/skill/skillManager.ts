@@ -1,19 +1,8 @@
 /**
- * 技能管理器 — 继承 ConfigResourceManager，扩展 trigger 正则匹配 + 运行时注册
- *
- * 职责：
- *   - 启动时扫描 configDir/skills/ 目录
- *   - 通过关键词匹配 + trigger 正则选择技能
- *   - 支持运行时 register() 注入技能
- *   - 三级渐进披露：L1 元数据常驻 / L2 read_skill 按需 / L3 resources+scripts
- *
- * 设计原则：
- *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
- *   - 与 RolePackManager 共享 ConfigResourceManager 基类（消除重复扫描/匹配/生命周期）
- *
- * 触发词说明：
- *   每个 skill 文件的 frontmatter 声明 keywords（逗号分隔）和 trigger（触发正则，可选）。
- *   skill 文件命名规范：`<技能名>.md`（如"去AI味.md""审视角.md""写代码.md"）。
+ * 技能管理器 — 继承 ConfigResourceManager，扩展 trigger 正则匹配 + 运行时注册。
+ * 单层目录 <configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）。
+ * 三级渐进披露：L1 元数据常驻 / L2 read_skill 按需 / L3 resources+scripts。
+ * 触发：skill 文件 frontmatter 声明 keywords（逗号分隔）和 trigger（触发正则，可选）。
  */
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
@@ -25,10 +14,8 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
 /**
- * 技能匹配最低激活阈值
- *
- * score < 此阈值的匹配不激活技能（避免低匹配度噪音）。
- * 与角色包管理器的 KEYWORD_HIGH_CONFIDENCE_THRESHOLD (0.3) 一致。
+ * 技能匹配最低激活阈值：score 低于此不激活，避免低匹配度噪音
+ * （与角色包管理器 KEYWORD_HIGH_CONFIDENCE_THRESHOLD 0.3 一致）
  */
 const SKILL_MATCH_MIN_SCORE = 0.3;
 
@@ -55,20 +42,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 根据用户输入匹配最合适的技能
-   *
-   * 匹配流程：
-   *   1. 先检查所有 trigger 正则，命中直接返回（最高优先级，score=1.0）
-   *   2. 再检查关键词匹配（复用基类 findBestKeywordMatch）
-   *   3. 关键词得分 < SKILL_MATCH_MIN_SCORE 的匹配不激活
-   *
-   * @param userInput 用户输入文本
-   * @returns 匹配结果，无匹配返回 null
+   * 根据用户输入匹配技能：先 trigger 正则（命中即 score=1.0），
+   * 再关键词匹配（复用基类），得分低于 SKILL_MATCH_MIN_SCORE 不激活
    */
   match(userInput: string): SkillMatch | null {
     if (this.items.length === 0) return null;
 
-    // 1. trigger 正则匹配（最高优先级）
+    // 1. trigger 正则（最高优先级）
     for (const skill of this.items) {
       if (skill.trigger?.test(userInput)) {
         logger.debug({ skill: skill.name, trigger: skill.trigger.source }, '技能触发器匹配');
@@ -93,14 +73,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 注册运行时注入的技能
+   * 注册运行时注入的技能（如 confirmConfigSuggestion 持久化技能）；同名重复注册被拒绝。
    *
-   * 供 SkillManager 运行态注册技能（如 confirmConfigSuggestion 持久化技能、
-   * 或宿主直接注入）。重复注册同名技能会被拒绝。
-   *
-   * 改走基类 registerRuntimeItem 登记——直接 push 进 items 会让 reload() 用磁盘扫描结果
-   * 整体覆盖时抹除注入技能，而 SQLite 的 `skill:<name>` 索引行仍在 → 内存查不到、
-   * recall 仍能召回，两侧分叉。
+   * 必须走基类 registerRuntimeItem 登记——直接 push 进 items 会被 reload() 的磁盘扫描结果覆盖，
+   * 而 SQLite `skill:<name>` 索引行仍在 → 内存查不到、recall 仍能召回，两侧分叉。
    */
   register(skill: SkillEntry): void {
     if (this.items.some((s) => s.name === skill.name)) {
@@ -127,13 +103,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
    * 格式化单个技能为 Prompt 字符串
    *
-   * SSOT：所有技能展示（System Prompt、Tool 回调）必须使用此方法，
-   * 确保格式统一（name + description + L3 tag）。
-   *
-   * @param skill 技能条目
-   * @param fallbackName 当 skill.name 缺失时的备选名称（如从文件名派生）
-   * @param compress 是否压缩描述（截断至 20 字，用于技能较多时的 token 节约）
-   * @returns 格式化后的字符串（如 "- skillName：描述（含资源/脚本）"）
+   * SSOT：所有技能展示（System Prompt、Tool 回调）必须走此方法保证格式统一。
+   * compress=true 时描述截断至 20 字（技能较多时的 token 节约）。
    */
   static formatSkillForPrompt(
     skill: { name?: string; description?: string; layer3?: { readonly resources: readonly unknown[]; readonly scripts: readonly unknown[] } } | undefined | null,
@@ -155,15 +126,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 构建全局技能清单块（渐进披露 L1，与角色包技能清单同格式，2026-08-18）
-   *
-   * 全局 skills 与角色包 skills 统一渐进披露逻辑：清单（name + description）常驻
-   * system prompt，LLM 按需调用 read_skill 读取正文（L2）。两级技能同构——
-   * 通用技能全局激活（清单常驻），角色包技能随角色激活（清单随 rolePackPrompt）。
-   *
-   * L3 提示：若技能含 resources/scripts，附加 "(含资源/脚本)" 标记。
-   *
-   * @returns 技能清单块（无技能时返回空串）
+   * 构建全局技能清单块（渐进披露 L1），与角色包技能清单同格式。
+   * 两级技能同构：通用技能全局激活，角色包技能随角色激活；LLM 按需调 read_skill 读正文（L2）。
+   * 含 resources/scripts 的技能附加 "(含资源/脚本)" 标记。
    */
   buildSkillList(): string {
     const listed = this.items.map((skill) => SkillManager.formatSkillForPrompt(skill));
@@ -175,20 +140,15 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   // ── L3 资源/脚本访问 ──────────────────────────────────
 
   /**
-   * 读取技能的 L3 资源文件（渐进披露 L3）
-   *
-   * @param skillName 技能名
-   * @param resourcePath 相对 resources/ 的路径（如 "api-spec.md"）
-   * @returns 资源文件内容，不存在返回 null
+   * 读取技能的 L3 资源文件（渐进披露 L3）；资源须在 layer3 中且路径不逃逸 resources/ 目录
    */
   async readResource(skillName: string, resourcePath: string): Promise<string | null> {
     const skill = this.get(skillName);
     if (!skill) return null;
 
-    // 确认资源在 layer3 中（安全检查，防止路径穿越）
+    // 确认资源在 layer3 中 + 路径穿越防护
     if (skill.layer3?.resources.some((r) => r.path === resourcePath)) {
       const skillDir = dirname(skill.filePath);
-      // 路径穿越防护：确保 resourcePath 不逃逸技能 resources/ 目录
       const resourceFullPath = resolveSafePath(join(skillDir, 'resources'), resourcePath);
       if (!resourceFullPath) {
         logger.warn({ skill: skillName, resourcePath }, 'read_resource 路径穿越被阻止');
@@ -206,9 +166,6 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
 
   /**
    * 列出技能的 L3 资源
-   *
-   * @param skillName 技能名
-   * @returns 资源列表，无资源返回空数组
    */
   listResources(skillName: string): SkillLayer3['resources'] {
     const skill = this.get(skillName);
@@ -217,9 +174,6 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
 
   /**
    * 列出技能的 L3 脚本
-   *
-   * @param skillName 技能名
-   * @returns 脚本列表，无脚本返回空数组
    */
   listScripts(skillName: string): SkillLayer3['scripts'] {
     const skill = this.get(skillName);
@@ -227,27 +181,21 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 获取脚本的完整路径
-   *
-   * @param skillName 技能名
-   * @param scriptPath 相对 scripts/ 的路径
-   * @returns 脚本完整路径，不存在返回 null
+   * 获取脚本的完整路径（须在 layer3 中且路径不逃逸 scripts/ 目录）
    */
   getScriptPath(skillName: string, scriptPath: string): string | null {
     const skill = this.get(skillName);
     if (!skill?.layer3?.scripts.some((s) => s.path === scriptPath)) return null;
     const skillDir = dirname(skill.filePath);
-    // 路径穿越防护：确保 scriptPath 不逃逸技能 scripts/ 目录
     return resolveSafePath(join(skillDir, 'scripts'), scriptPath);
   }
 
   // ── 基类抽象方法实现 ──────────────────────────────
 
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
-    // 发现 L3 资源和脚本（仅对文件夹形式的技能有效）
+    // 发现 L3 资源和脚本（folder 形式技能目录或单文件 skill 同级目录都会扫描）
     let layer3: SkillLayer3 | undefined;
     const skillDir = dirname(entry.filePath);
-    // 如果 filePath 指向 SKILL.md，skillDir 就是技能目录；如果是单文件 .md，也尝试扫描同级目录
     const discovered = await discoverLayer3(skillDir);
     if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
       layer3 = {

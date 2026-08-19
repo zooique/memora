@@ -1,31 +1,10 @@
 /**
- * 角色包格式校验器（跨实现一致性，role-pack-spec §八）
- *
- * 定位：
- *   - **独立于任何实现**：不依赖 RolePackManager / types.ts 的运行时类型，
- *     只吃"解析后的 manifest.json 对象"，按 role-pack-spec §五/§七 判定；
- *   - 消费方：角色包作者（CLI/IDE 校验）、各实现的装载前预检；
- *   - 与 rolePackManager 的关系：manager 是 memora 装载实现（宽松容错），
- *     本校验器是标准判定（严格按 spec），二者互补——manager 可先校验再装载。
- *
- * 角色包统一为**文件夹形态**，manifest.json 是唯一核心控制文件（§2.2）：
- *   元数据 + L2 策略 + 内容路径注册（persona/rules）+ 内嵌技能注册（skills）。
- * 内容文件（persona.md / rules.md / skills/*）独立于 manifest，由路径注册装载。
- *
- * 校验维度（对应 spec §八）：
- *   1. 必填字段：name / formatVersion（manifest 唯一权威）
- *   2. 键名合法性：顶层已知键 + strategy 各阶段已知键（§六 v1 键集），未知键 warning + 忽略（§五）
- *   3. 版本语义：formatVersion / version 需 semver
- *   4. 合规分档（§七）：interactionType 缺省 tool_assistant；仅显式 companion 时
- *      全量强校验（aiIdentityDisclosure / minorProtection / 虚拟亲密关系红线）
- *   5. 内容路径注册：persona / rules 必须为字符串路径或 null（允许缺省）
- *   6. capabilities 格式（§四）：skills 项可选 capability，声明则须匹配 `域:动作`
- *
- * companion 内容红线（§七 第 5 条）不在本校验器内判定——正文在独立的内容文件
- * （persona.md/rules.md），本校验器为纯函数不读文件；由管理员在装载内容后调用
- * `checkCompanionContentRedline` 检测（见函数文档）。
- *
- * 零依赖、纯函数：不 import 任何 node 模块。
+ * 角色包格式校验器：独立于任何实现、只吃解析后的 manifest.json 对象，按 spec 严格判定
+ * （manager 宽松容错，二者互补）。文件夹形态，manifest.json 为核心控制文件。
+ * 校验：必填字段（name/formatVersion）、键名合法性（未知键 warning+忽略）、版本语义、
+ * 合规分档（interactionType/aiIdentityDisclosure/minorProtection）、策略键、内容路径、
+ * skills/capabilities 格式。companion 内容红线由装载方在读取内容后调用 checkCompanionContentRedline。
+ * 零依赖、纯函数。
  */
 
 import { STRATEGY_KEY_RULES } from './strategyKeys.js';
@@ -58,10 +37,10 @@ export interface RolePackValidateInput {
 }
 
 // ════════════════════════════════════════════════════════════
-// 规则常量（对齐 role-pack-spec §五/§六/§七）
+// 规则常量
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（§2.2 manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能 + 接手衔接） */
+/** 顶层已知键（manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能 + 接手衔接） */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
@@ -69,10 +48,10 @@ const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'strategy', 'skills', 'capabilities', 'persona', 'rules', 'handoffPrompt',
 ]);
 
-/** 合规 interactionType 枚举（§七 第 3 条） */
+/** 合规 interactionType 枚举 */
 const INTERACTION_TYPES: ReadonlySet<string> = new Set(['tool_assistant', 'companion']);
 
-/** companion 全量强校验时的虚拟亲密关系红线特征词（§七 第 5 条） */
+/** companion 全量强校验时的虚拟亲密关系红线特征词 */
 const INTIMATE_REDLINE_PATTERN =
   /虚拟伴侣|虚拟恋人|虚拟亲属|虚拟男友|虚拟女友|虚拟丈夫|虚拟妻子|AI伴侣|AI恋人/;
 
@@ -82,16 +61,9 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 /** 中立能力名格式：`域:动作`（§四，如 file:write / web:search / llm:summarize） */
 const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 
-// ════════════════════════════════════════════════════════════
-// 校验实现 (使用从 strategyKeys.ts 导入的规则)
-// ════════════════════════════════════════════════════════════
+// ── 校验实现 ──────────────────────────────────────
 
-/**
- * 校验顶层键合法性（未知键 warning + 忽略，§五 键级渐进）
- *
- * @param manifest 待校验的 manifest 对象
- * @param issues 收集校验问题
- */
+/** 校验顶层键合法性（未知键 warning + 忽略，不阻塞） */
 function validateTopLevelKeys(
   manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
@@ -107,12 +79,7 @@ function validateTopLevelKeys(
   }
 }
 
-/**
- * 校验必填字段与版本语义（manifest 唯一权威）
- *
- * @param manifest 嵌套 manifest 对象
- * @param issues 收集校验问题
- */
+/** 校验必填字段与版本语义（name 必填；formatVersion 缺省按 1.0.0，声明则须 semver；version 为 warning） */
 function validateMetaFields(
   manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
@@ -128,7 +95,7 @@ function validateMetaFields(
     });
   }
 
-  // formatVersion：缺省按 1.0.0（§五），声明则必须 semver
+  // formatVersion：缺省按 1.0.0，声明则必须 semver
   const formatVersion = manifest['formatVersion'];
   if (
     formatVersion !== undefined &&
@@ -158,15 +125,8 @@ function validateMetaFields(
 }
 
 /**
- * 校验合规元数据字段（§七，分档校验）
- *
- * 标准级可选（缺省 tool_assistant）；仅显式 companion 时全量强校验：
- *   1. aiIdentityDisclosure 必须为 true（缺失即拒绝）
- *   2. minorProtection 必须为 required
- * 正文虚拟亲密关系红线检测另见 checkCompanionContentRedline（归属内容文件层）。
- *
- * @param manifest 嵌套 manifest 对象
- * @param issues 收集校验问题
+ * 校验合规元数据字段：标准级可选（缺省 tool_assistant）；仅显式 companion 时全量强校验
+ * （aiIdentityDisclosure 必须 true、minorProtection 必须 required）。正文虚拟亲密关系红线见 checkCompanionContentRedline。
  */
 function validateComplianceFields(
   manifest: Record<string, unknown>,
@@ -187,7 +147,7 @@ function validateComplianceFields(
   }
   const isCompanion = interactionType === 'companion';
 
-  // aiIdentityDisclosure 类型（缺省 true，§七 第 1 条）
+  // aiIdentityDisclosure 类型（缺省 true）
   const disclosure = manifest['aiIdentityDisclosure'];
   if (disclosure !== undefined && typeof disclosure !== 'boolean') {
     issues.push({
@@ -198,7 +158,7 @@ function validateComplianceFields(
     });
   }
 
-  // minorProtection 取值（§七 第 4 条）
+  // minorProtection 取值（仅支持 required）
   const minorProtection = manifest['minorProtection'];
   if (minorProtection !== undefined && minorProtection !== 'required') {
     issues.push({
@@ -209,7 +169,7 @@ function validateComplianceFields(
     });
   }
 
-  // companion 全量强校验（§七 分档）
+  // companion 全量强校验
   if (isCompanion) {
     if (disclosure !== true) {
       issues.push({
@@ -231,13 +191,8 @@ function validateComplianceFields(
 }
 
 /**
- * 校验 L2 策略键（§六 v1 键集）
- *
- * 键级渐进（§五）：未知阶段/未知键 warning + 忽略；已知键但取值越界 = error
+ * 校验 L2 策略键：未知阶段/未知键 warning + 忽略（键级渐进）；已知键取值越界 = error
  * （策略维度是预定义枚举，角色只"选择"不"定义"）。
- *
- * @param strategyNode manifest.strategy 节点
- * @param issues 收集校验问题
  */
 function validateStrategy(
   strategyNode: unknown,
@@ -311,15 +266,7 @@ function validateStrategy(
   }
 }
 
-/**
- * 校验内容路径注册（persona / rules）
- *
- * 新形态下 persona 允许缺省（§2.2），rules 同样可选。声明值必须为文件路径字符串
- * （相对包根）；null 表示未声明（合法）。其他类型（数字/对象/布尔）为 error。
- *
- * @param manifest 嵌套 manifest 对象
- * @param issues 收集校验问题
- */
+/** 校验内容路径注册（persona/rules 允许缺省 null，声明则须为相对包根的字符串路径） */
 function validateContentPaths(
   manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
@@ -338,16 +285,7 @@ function validateContentPaths(
   }
 }
 
-/**
- * 校验互斥声明格式（exclusiveWith，§13 粘性匹配）
- *
- * exclusiveWith 应为字符串数组（互斥角色包名列表）。声明为其他形状
- * （字符串/数值/对象）为 error；空数组合法（= 无互斥声明）。
- * 声明格式的**集合级**一致性（悬空引用/不对称）见 validateExclusiveSymmetry。
- *
- * @param manifest 嵌套 manifest 对象
- * @param issues 收集校验问题
- */
+/** 校验互斥声明格式（exclusiveWith 须为字符串数组，空数组合法）；集合级对称性见 validateExclusiveSymmetry */
 function validateExclusiveWith(
   manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
@@ -364,15 +302,7 @@ function validateExclusiveWith(
   }
 }
 
-/**
- * 校验接手衔接提示词（manifest.handoffPrompt，角色包自洽声明）
- *
- * 应为字符串（非空）。类型错误仅 warning 不阻塞装载（宿主消费，宽容容错）。
- * 角色包只描述自己，不引用其他角色包（§11 插卡解耦）。
- *
- * @param manifest 嵌套 manifest 对象
- * @param issues 收集校验问题
- */
+/** 校验接手衔接提示词（非空字符串；类型错误仅 warning 不阻塞——宿主消费，宽容容错，角色包只描述自己） */
 function validateHandoffPrompt(
   manifest: Record<string, unknown>,
   issues: RolePackValidationIssue[],
@@ -390,14 +320,7 @@ function validateHandoffPrompt(
 }
 
 /**
- * 校验 skills 注册（manifest.skills 对象数组，§4）
- *
- * 新形态下 skills 以**对象数组**注册，支持多个添加。每项结构：
- *   `{ file?, name?, description?, capability? }`，file（生态指针）或 capability（能力声明）**至少其一**。
- * capability 可选；声明则须匹配 `域:动作`（中立能力命名空间）。
- *
- * @param skillsNode manifest.skills 节点
- * @param issues 收集校验问题
+ * 校验 skills 注册：对象数组，每项须含 file（相对 skills/ 文件名）；C3 目录扫描下声明项仅作白名单过滤
  */
 function validateManifestSkills(
   skillsNode: unknown,
@@ -454,15 +377,7 @@ function validateManifestSkills(
   });
 }
 
-/**
- * 校验顶层 capabilities（C2，2026-08-18 独立模块）
- *
- * capabilities 是角色能力面（工具白名单）声明，独立于 skills 技能文件。
- * 每项须为 `{ capability: '域:动作', description? }`；capability 匹配中立能力名。
- *
- * @param capabilitiesNode manifest.capabilities 节点
- * @param issues 收集校验问题
- */
+/** 校验顶层 capabilities（C2：能力面声明，每项 `{ capability: "域:动作", description? }`） */
 function validateManifestCapabilities(
   capabilitiesNode: unknown,
   issues: RolePackValidationIssue[],
@@ -512,19 +427,7 @@ function validateManifestCapabilities(
   });
 }
 
-/**
- * 解析角色匹配字段（keywords / trigger）为字符串数组
- *
- * 支持两种合法写法（role-pack-spec §2.2「匹配字段双写法」）：
- *   1. 字符串数组：`["文档", "API"]`
- *   2. 逗号分隔字符串：`"文档, API"`
- * 其余类型（数值、对象、数组含非字符串元素等）为非法，返回 null。
- *
- * @param fieldName 字段名（'keywords' / 'trigger'），用于错误路径
- * @param node 字段节点
- * @param issues 收集校验问题
- * @returns 解析后的字符串数组；非法时返回 null（已 push error）
- */
+/** 解析匹配字段（keywords/trigger）为字符串数组：支持数组与逗号串双写法，其余类型为非法返回 null（已 push error） */
 function parseMatchField(
   fieldName: 'keywords' | 'trigger',
   node: unknown,
@@ -563,14 +466,7 @@ function parseMatchField(
   return null;
 }
 
-/**
- * 校验 keywords 字段的类型与取值（§2.2 匹配字段双写法）
- *
- * 复用 parseMatchField 的类型校验；keywords 无正则语义，不做 regex 误用检测。
- *
- * @param keywordsNode manifest.keywords 节点
- * @param issues 收集校验问题
- */
+/** 校验 keywords 字段类型（复用 parseMatchField；无正则语义） */
 function validateKeywordsField(
   keywordsNode: unknown,
   issues: RolePackValidationIssue[],
@@ -579,17 +475,8 @@ function validateKeywordsField(
 }
 
 /**
- * 校验 trigger 字段的类型 + 正则误用（role-pack-spec §2.2/§三）
- *
- * 角色包 trigger 为**字符串数组**（精确/包含匹配），不是正则。
- * 正则匹配仅在 Skill 系统中存在（parseTrigger → RegExp.test）。
- * 角色包场景为"角色切换"，关键词匹配已足够。
- *
- * 检测逻辑：若 trigger 数组中的字符串包含正则语法（`/pattern/flags` 格式），
- * 给出 warning——该值会被当作字面关键词传入 scoreByKeywords，永远无法匹配。
- *
- * @param triggerNode manifest.trigger 节点
- * @param issues 收集校验问题
+ * 校验 trigger 字段类型 + 正则误用：角色包 trigger 为字符串数组（精确/包含匹配）而非正则。
+ * 若值含 `/pattern/flags` 正则语法则 warning——会被当作字面关键词，无法匹配任何输入。
  */
 function validateTriggerField(
   triggerNode: unknown,
@@ -617,19 +504,9 @@ function validateTriggerField(
   }
 }
 
-// ════════════════════════════════════════════════════════════
-// 公共入口
-// ════════════════════════════════════════════════════════════
-
 /**
- * 校验 manifest.json（角色包文件夹形态唯一核心控制文件，§2.2）
- *
- * 校验维度：必填字段（name/formatVersion）、版本语义、合规分档（§七）、
- * L2 策略键（§六）、内容路径注册、skills 注册格式（§4）。
- * 未知键 / 未知策略键 warning + 忽略（§五 键级渐进）。
- *
- * @param manifest 解析后的 manifest.json 对象
- * @returns 校验结果（valid = 无 error；warning 提示但不阻塞装载）
+ * 校验 manifest.json：必填/版本、合规分档、策略键、内容路径、skills/capabilities、匹配字段。
+ * 未知键 warning + 忽略；valid = 无 error（warning 不阻塞装载）。
  */
 export function validateManifest(
   manifest: Record<string, unknown>,
@@ -651,12 +528,7 @@ export function validateManifest(
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }
 
-/**
- * 便捷入口：校验原始 manifest.json 文本
- *
- * @param raw manifest.json 原始文本
- * @returns 校验结果
- */
+/** 便捷入口：校验原始 manifest.json 文本（非法 JSON 返回 INVALID_JSON error） */
 export function validateManifestText(raw: string): RolePackValidationResult {
   try {
     const manifest = JSON.parse(raw) as Record<string, unknown>;
@@ -676,16 +548,7 @@ export function validateManifestText(raw: string): RolePackValidationResult {
   }
 }
 
-/**
- * 校验 companion 角色包内容红线段（§七 第 5 条）
- *
- * 正文在独立内容文件（persona.md/rules.md），本校验器为纯函数不读文件，
- * 故红线检测由装载方在读取内容后调用本函数。仅 companion 角色包需执行；
- * tool_assistant 豁免（§七 分档）。
- *
- * @param content 已读取的 persona + rules 拼接内容
- * @returns 红线违规问题列表（无违规返回空数组）
- */
+/** 校验 companion 内容红线段（虚拟亲密关系）——正文在独立内容文件，本校验器纯函数不读文件，由装载方读内容后调用；tool_assistant 豁免 */
 export function checkCompanionContentRedline(content: string): RolePackValidationIssue[] {
   if (!content) return [];
   if (INTIMATE_REDLINE_PATTERN.test(content)) {

@@ -1,8 +1,5 @@
 /**
- * 角色包行为策略解析器
- *
- * 集中管理行为策略的默认值、解析（resolve*）、合并与装配逻辑。
- * 从 types.ts 拆分而来，旨在降低 types.ts 的复杂度，实现类型定义与行为解析的分离。
+ * 角色包行为策略解析器：集中管理行为策略的默认值、解析（resolve*）、合并与装配逻辑。
  */
 
 // 召回保底下限默认值：跨层共享（role-pack 与 memory 均引用），SSOT 单一来源
@@ -35,23 +32,15 @@ import type {
 // ════════════════════════════════════════════════════════════
 
 /**
- * 上下文固定加载轮数 N 的内核默认值（SSOT 单一默认真理源）
- *
- * 语义（memory-as-summary §4.3）：N ≡ 上下文固定加载的完整对话轮数，
- * 互斥窗口（排除正文已加载轮次的摘要）与最近对话注入共享同一 N，
- * 保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"严格一致。
- * 角色包可经 `prepare.recentRounds` 覆盖；仅在角色包未声明或声明非法时
- * 降级回本默认。agent 层 `AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS`
- * 引用本常量，避免同一维度出现两套平行默认值。
+ * 上下文固定加载轮数 N 的内核默认值（SSOT 单一默认真理源）。
+ * N 同时决定互斥窗口与最近对话注入，保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"严格一致；
+ * 角色包经 `prepare.recentRounds` 覆盖，仅在未声明或非法时降级回本默认。
  */
 export const DEFAULT_RECENT_HISTORY_ROUNDS = 3;
 
 /**
- * 行为策略全局默认值
- *
- * 设计纪律第 2 条：未配置的行为维度使用全局默认值。
- * 角色包可以只声明它想改变的部分——最小角色包即一个含 frontmatter 的声明文件。
- * 作为 const 断言，确保类型推导为字面量值。
+ * 行为策略全局默认值——未配置的维度使用全局默认值，角色包只声明它想改变的部分。
+ * const 断言确保类型推导为字面量值。
  */
 export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   prepare: {
@@ -103,15 +92,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
 // ════════════════════════════════════════════════════════════
 
 /**
- * 枚举值合法性收窄（SSOT 兜底）
- *
- * 角色包 L2 键是枚举开关，非法拼写/错误取值不应静默透传（handoff 会直接
- * yield 给宿主，其他枚举会污染行为分支）。统一在此归位到内核默认。
- *
- * @param value 角色包声明的原始值
- * @param allowed 合法枚举值集合
- * @param fallback 非法/缺失时的内核默认
- * @returns 合法值或内核默认
+ * 枚举值合法性收窄（SSOT 兜底）：角色包 L2 键是枚举开关，非法拼写不应静默透传
+ * （handoff 会直接 yield 给宿主，其他枚举会污染行为分支），统一归位到内核默认。
  */
 function normalizeEnum<T extends string>(
   value: unknown,
@@ -128,59 +110,31 @@ function normalizeEnum<T extends string>(
 // ════════════════════════════════════════════════════════════
 
 /**
- * 解析上下文固定加载轮数 N（SSOT 单一来源）
- *
- * 规则：角色包声明的 `prepare.recentRounds` 为合法的"0 以上正整数"时，
- * **一律采用角色包定义**；仅在缺失/不存在、非整数、<=0 等非法情形才降级
- * 为内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`。
- *
- * 互斥窗口（`getRecentRoundIds`）与最近对话注入（`getRecentHistory`）必须共用
- * 本函数返回值——二者任一单独取数都会造成"正文加载轮数与互斥排除轮数不一致"，
- * 导致第 N 轮内摘要与正文重复注入（memory-as-summary §4.3 的严格相等被破坏）。
- *
- * @param strategy 已合并默认值的完整行为策略（无激活角色包时传 undefined）
- * @returns 合法的固定加载轮数 N（>0 的整数）
+ * 解析上下文固定加载轮数 N（SSOT）：合法的"0 以上正整数"一律采用角色包定义，
+ * 仅缺失/非整数/<=0 时降级内核默认。互斥窗口与最近对话注入必须共用返回值，
+ * 否则"正文加载轮数与互斥排除轮数不一致"会造成第 N 轮摘要与正文重复注入。
  */
 export function resolveRecentRounds(strategy: BehaviorStrategy | undefined): number {
-  // 角色包定义优先：仅当声明的 recentRounds 是"0 以上正整数"才采用
+  // 角色包定义优先：仅声明的 recentRounds 是"0 以上正整数"才采用
   const candidate = strategy?.prepare?.recentRounds;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0;
   return valid ? candidate : DEFAULT_RECENT_HISTORY_ROUNDS;
 }
 
 /**
- * 解析衔接策略（SSOT）：非法值（非 wait/loop/end）归位 'wait'
- *
- * handoff 是唯一会作为 chunk 直接暴露给宿主的枚举——非法值必须归位，
- * 避免宿主收到无法识别的衔接决策。
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的 handoff 枚举值
+ * 解析衔接策略（SSOT）：非法值（非 wait/loop/end）归位 'wait'。
+ * handoff 是唯一会作为 chunk 直接暴露给宿主的枚举，非法值必须归位，避免宿主收到无法识别的决策。
  */
 export function resolveHandoff(strategy: BehaviorStrategy | undefined): Handoff {
   return normalizeEnum(strategy?.reflect?.handoff, ['wait', 'loop', 'end'], 'wait');
 }
 
-/**
- * 解析记忆召回模式（SSOT）：非法值归位 'full'
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的记忆召回模式
- */
+/** 解析记忆召回模式（SSOT）：非法值归位 'full' */
 export function resolveMemoryRecallMode(strategy: BehaviorStrategy | undefined): MemoryRecallMode {
   return normalizeEnum(strategy?.prepare?.memoryRecall, ['full', 'limited', 'none'], 'full');
 }
 
-/**
- * 解析召回保底下限（SSOT）：非负整数才采用，非法/缺失回退内核默认
- *
- * 角色包 `prepare.minFallback` 控制"语义召回不足时用最近记忆补足至该条数"的行为。
- * 归位规则：仅当声明值是"非负整数"才采用；缺失、非整数、负数均回退
- * `DEFAULT_MIN_FALLBACK`（默认 2）。置 0 表示彻底关闭保底。
- *
- * @param strategy 合并后的行为策略
- * @returns 合法召回保底下限（>=0 的整数）
- */
+/** 解析召回保底下限（SSOT）：非负整数才采用，缺失/非整数/负数回退以内置默认，置 0 彻底关闭保底 */
 export function resolveMinFallback(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.prepare?.minFallback;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
@@ -188,64 +142,30 @@ export function resolveMinFallback(strategy: BehaviorStrategy | undefined): numb
 }
 
 /**
- * 解析角色包提炼视角（SSOT）：合法非空字符串采用，缺失/空白归位 undefined（通用浓缩）
- *
- * 领域无关机制：内核只提供"摘要提炼视角可被角色包注入"的通用能力，视角全文由角色包
- * 提供（如编程卡声明代码/diff/表格 + 意图/决策等维度）。声明时替换通用"意图/回答/
- * 决策"归纳框架（JSON 硬契约保留）；未声明 → undefined，round-summary 摘要行为与现状一致。
- *
- * @param strategy 合并后的行为策略
- * @returns 角色包提炼视角（无则 undefined=通用浓缩）
+ * 解析角色包提炼视角（SSOT）：合法非空字符串采用，缺失/空白归位 undefined（通用浓缩）。
+ * 领域无关机制：内核只提供注入能力，视角全文由角色包提供；未声明时 round-summary 行为与现状一致（JSON 与 SummaryType 硬契约保留）。
  */
 export function resolveSummaryFocus(strategy: BehaviorStrategy | undefined): string | undefined {
   const candidate = strategy?.prepare?.summaryFocus;
   return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : undefined;
 }
 
-/**
- * 解析工具调用模式（SSOT）：非法值归位 'allow'
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的工具调用模式
- */
+/** 解析工具调用模式（SSOT）：非法值归位 'allow' */
 export function resolveToolMode(strategy: BehaviorStrategy | undefined): ToolMode {
   return normalizeEnum(strategy?.act?.toolMode, ['allow', 'block'], 'allow');
 }
 
-/**
- * 解析摘要生成开关（Tier 1 已消费）：非法值归位 'on'
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的摘要生成开关（on=生成摘要 / off=不生成）
- */
+/** 解析摘要生成开关（内核已消费）：非法值归位 'on' */
 export function resolveSummary(strategy: BehaviorStrategy | undefined): Summary {
   return normalizeEnum(strategy?.reflect?.summary, ['on', 'off'], 'on');
 }
 
-/**
- * 解析上下文装配策略（Tier 2 已消费）：非法值归位 'hybrid'
- *
- * 控制记忆召回与固定轮次注入的组合方式：
- * - 'fixed' → 仅加载最近 N 轮，不做语义召回
- * - 'query' → 仅做语义召回，不加载固定轮次
- * - 'hybrid' → 混合模式（默认），固定轮次 + 语义召回
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的上下文装配策略
- */
+/** 解析上下文装配策略（内核已消费）：非法值归位 'hybrid'——fixed=仅最近 N 轮 / query=仅语义召回 / hybrid=两者 */
 export function resolveContextAssembly(strategy: BehaviorStrategy | undefined): ContextAssembly {
   return normalizeEnum(strategy?.prepare?.contextAssembly, ['fixed', 'query', 'hybrid'], 'hybrid');
 }
 
-/**
- * 解析工具调用步数上限（Tier 2 已消费）：合法正整数采用，非法/缺失回退默认 0（不限制）
- *
- * 控制单次 LLM 响应中允许的最大工具调用数量（所有并行工具调用合计）。
- * 超过上限时，多余的工具调用被忽略，仅保留文本内容。
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的工具调用步数上限
- */
+/** 解析工具调用步数上限（内核已消费）：合法非负整数采用，非法/缺失回退默认 0（不限制） */
 export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.act?.toolStepLimit;
   // 合法值：0=无限制，N>0=限制步数
@@ -253,133 +173,51 @@ export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): nu
   return valid ? candidate : 0;
 }
 
-/**
- * 解析错误处理策略（Tier 2 已消费）：非法值归位 'retry'
- *
- * 控制 LLM 调用失败后的处理方式：
- * - 'retry' → 自动重试（默认，最多 MAX_LLM_RETRIES 次）
- * - 'degrade' → 降级为纯文本回复（跳过工具调用）
- * - 'stop' → 立即终止对话，抛出错误
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的错误处理策略
- */
+/** 解析错误处理策略（内核已消费）：非法值归位 'retry'——retry=自动重试 / degrade=降级文本 / stop=终止抛出错误 */
 export function resolveErrorHandling(strategy: BehaviorStrategy | undefined): ErrorHandling {
   return normalizeEnum(strategy?.global?.errorHandling, ['retry', 'degrade', 'stop'], 'retry');
 }
 
-/**
- * 解析角色自动匹配开关（Tier 3 已消费）：非法值归位 'on'
- *
- * 控制角色包是否允许自动匹配切换：
- * - 'on' → 允许关键词/LLM 自动匹配切换（默认）
- * - 'off' → 锁定当前角色包，不自动切换
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的自动匹配开关
- */
+/** 解析角色自动匹配开关（内核已消费）：非法值归位 'on'——on=允许自动匹配切换 / off=锁定当前角色包 */
 export function resolveAutoSwitch(strategy: BehaviorStrategy | undefined): AutoSwitch {
   return normalizeEnum(strategy?.prepare?.autoSwitch, ['on', 'off'], 'on');
 }
 
-/**
- * 解析 Provider 路由策略（Tier 3 已消费）：非法值归位 'auto'
- *
- * 控制 LLM 调用时的模型路由行为：
- * - 'auto' → 按任务类型自动路由到对应模型（默认）
- * - 'fixed' → 固定使用当前 Provider，不做路由
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的 Provider 路由策略
- */
+/** 解析 Provider 路由策略（内核已消费）：非法值归位 'auto'——auto=按任务类型路由 / fixed=固定当前 Provider */
 export function resolveProviderRouting(strategy: BehaviorStrategy | undefined): ProviderRouting {
   return normalizeEnum(strategy?.act?.providerRouting, ['auto', 'fixed'], 'auto');
 }
 
-/**
- * 解析输入中断策略（Tier 3 已消费）：非法值归位 'allow'
- *
- * 控制执行中插话行为：
- * - 'allow' → 允许用户在执行中插话（默认，中断当前操作注入新内容）
- * - 'block' → 阻止执行中插话，排队到下一轮
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的输入中断策略
- */
+/** 解析输入中断策略（内核已消费）：非法值归位 'allow'——allow=执行中可插话 / block=排队到下一轮 */
 export function resolveInputInterrupt(strategy: BehaviorStrategy | undefined): InputInterrupt {
   return normalizeEnum(strategy?.act?.inputInterrupt, ['allow', 'block'], 'allow');
 }
 
-/**
- * 解析 Token 预算上限（Tier 3 已消费）：合法正整数采用，非法/缺失回退默认 8000
- *
- * 控制单轮对话的总 token 消耗上限：
- * - 0 = 不限制
- * - N > 0 = 达到上限时提前结束迭代
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的 token 预算上限
- */
+/** 解析 Token 预算上限（内核已消费）：合法非负整数采用，非法/缺失回退默认 8000（0=不限制） */
 export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.tokenBudget;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
   return valid ? candidate : 8000;
 }
 
-/**
- * 解析步数预算上限（Tier 3 已消费）：合法正整数采用，非法/缺失回退默认 50
- *
- * 控制单轮对话的最大迭代步数（软上限，配合 maxIterations 双重保护）：
- * - 0 = 不限制
- * - N > 0 = 达到上限时提前结束迭代
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的步数预算上限
- */
+/** 解析步数预算上限（内核已消费）：合法非负整数采用，非法/缺失回退默认 50（软上限，配合 maxIterations 双重保护，0=不限制） */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
   return valid ? candidate : 50;
 }
 
-/**
- * 解析记忆写入模式（Phase 1 已消费）：非法值归位 'auto'
- *
- * 控制记忆写入是否需要用户确认：
- * - 'auto' → 自动写入（默认）
- * - 'confirm' → 写入前等待宿主确认
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的记忆写入模式
- */
+/** 解析记忆写入模式（内核已消费）：非法值归位 'auto'——auto=自动写入 / confirm=写入前待宿主确认 */
 export function resolveMemoryWrite(strategy: BehaviorStrategy | undefined): MemoryWriteMode {
   return normalizeEnum(strategy?.reflect?.memoryWrite, ['auto', 'confirm'], 'auto');
 }
 
-/**
- * 解析会话归档模式（Phase 1 已消费）：非法值归位 'auto'
- *
- * 控制会话内容自动归档行为：
- * - 'auto' → 自动归档（默认）
- * - 'manual' → 仅手动归档
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的会话归档模式
- */
+/** 解析会话归档模式（内核已消费）：非法值归位 'auto'——auto=自动归档 / manual=仅手动归档 */
 export function resolveSessionArchive(strategy: BehaviorStrategy | undefined): SessionArchiveMode {
   return normalizeEnum(strategy?.reflect?.sessionArchive, ['auto', 'manual'], 'auto');
 }
 
-/**
- * 解析多步推理模式（Phase 1 已消费）：非法值归位 'auto'
- *
- * 控制 LLM 是否启用深度思考：
- * - 'auto' → 由 Provider 自行决定（默认）
- * - 'manual' → 强制快速回答（跳过深度推理）
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的多步推理模式
- */
+/** 解析多步推理模式（内核已消费）：非法值归位 'auto'——auto=Provider 决定 / manual=强制快速回答 */
 export function resolveMultiStepReasoning(strategy: BehaviorStrategy | undefined): MultiStepReasoning {
   return normalizeEnum(strategy?.act?.multiStepReasoning, ['auto', 'manual'], 'auto');
 }

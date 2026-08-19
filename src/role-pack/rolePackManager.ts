@@ -1,13 +1,7 @@
 /**
- * 角色包管理器 — 继承 ConfigResourceManager，管理角色包的生命周期
- *
- * 角色包为**文件夹形态**，`manifest.json` 是唯一核心控制文件。
- * 内容文件（persona.md / rules.md / skills/*）独立于 manifest，由 manifest
- *   按路径注册装载——用户既可独立移植内容文档，也可整体装载角色包。
- *
- * 设计原则：
- *   - 继承 ConfigResourceManager 基类（复用关键词匹配 / 生命周期）
- *   - 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描 / 切换防抖）保留在子类
+ * 角色包管理器：继承 ConfigResourceManager 复用关键词匹配/生命周期；
+ * 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描 / 切换防抖）保留在子类。
+ * manifest.json 为唯一核心控制文件，内容文件独立按路径注册装载。
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
@@ -34,7 +28,7 @@ const L1_COMPRESSED_THRESHOLD = 30;
 /** L1 阈值保护：技能数超过此值时切换为 list_skills 工具动态查询 */
 const L1_LIST_TOOL_THRESHOLD = 50;
 
-/** 合规字段默认值：formatVersion 缺省按 1.0.0（spec §五） */
+/** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
 
 /** 角色包自动匹配关键词置信度阈值（scoredByKeywords） */
@@ -43,30 +37,13 @@ const AUTO_MATCH_THRESHOLD = 0.3;
 /** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
 const EXCLUDED_FILES = new Set(['manifest.json']);
 
-/**
- * 规则文件的约定文件名（2026-08-18 简化）
- *
- * rules.md 为角色包的**约定俗成规则文件**——manifest 未声明 rules 路径时回退此名，
- * 消除「路径写错静默丢规则」错误面。仓库全部角色包均使用此名。
- */
+/** 规则文件约定名：manifest 未声明 rules 路径时回退 rules.md（消除路径写错静默丢规则） */
 const DEFAULT_RULES_FILENAME = 'rules.md';
 
-/**
- * 身份设定文件的约定文件名（2026-08-18 简化，与 rules.md 对称）
- *
- * persona.md 为角色包的**约定俗成身份文件**——manifest 未声明 persona 路径时回退此名。
- * 仓库全部角色包均使用此名。
- */
+/** persona 约定文件名：manifest 未声明 persona 路径时回退 persona.md（与 rules.md 对称） */
 const DEFAULT_PERSONA_FILENAME = 'persona.md';
 
-/**
- * 从 manifest.strategy 节点解析策略声明（JSON 已是嵌套对象）
- *
- * 只取四阶段下声明过的键，未声明的阶段为 undefined（由 mergeStrategy 补默认值）。
- *
- * @param strategyNode manifest.strategy 节点
- * @returns 解析后的策略声明，无 strategy 返回 undefined
- */
+/** 从 manifest.strategy 解析策略声明（只取四阶段下声明过的键，未声明阶段由 mergeStrategy 补默认值，无 strategy 返回 undefined） */
 function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined {
   if (typeof strategyNode !== 'object' || strategyNode === null) return undefined;
 
@@ -87,17 +64,8 @@ function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined 
 }
 
 /**
- * 从 manifest 解析 keywords（兼容数组与逗号字符串两种写法）
- *
- * 同时合并 `trigger` 数组（role-pack-spec §二/§三 字段）：
- * 匹配词只有一个来源 keywords，触发词统一汇入（单一真理源）。
- *
- * 设计决策：角色包 trigger 为字符串数组（精确/包含匹配），不是正则。
- * 正则匹配仅在 Skill 系统中存在（parseTrigger → RegExp.test）。
- * 角色包场景为"角色切换"，关键词匹配已足够；Skill 场景为"精确技能触发"，需要正则。
- *
- * @param manifest 解析后的 manifest 对象
- * @returns 关键词数组（keywords ∪ trigger，去重）
+ * 解析 keywords（数组/逗号串）并合并 trigger 去重（匹配词单一真理源）。
+ * 角色包 trigger 为字符串数组（精确/包含匹配）而非正则——正则仅 Skill 系统存在。
  */
 function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefined {
   const parseField = (key: string): string[] | undefined => {
@@ -116,12 +84,7 @@ function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefin
   return [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
 }
 
-/**
- * 从 persona.md frontmatter 解析 traits.* 键值对
- *
- * @param personaContent persona.md 的原始内容（含 frontmatter）
- * @returns traits 键值对（数值），无 traits 时返回 undefined
- */
+/** 从 persona.md frontmatter 解析 traits.* 数值键值对（clamp 0-1），无 traits 返回 undefined */
 function parseTraits(personaContent: string): Record<string, number> | undefined {
   if (!personaContent) return undefined;
   const { frontmatter } = parseFrontmatter(personaContent);
@@ -137,14 +100,7 @@ function parseTraits(personaContent: string): Record<string, number> | undefined
   return Object.keys(traits).length > 0 ? traits : undefined;
 }
 
-/**
- * 解析互斥声明数组（exclusiveWith）
- *
- * 支持数组与逗号串两种写法。
- *
- * @param raw manifest.exclusiveWith 原始值
- * @returns 互斥角色包名列表，未声明返回 undefined
- */
+/** 解析互斥声明 exclusiveWith（支持数组与逗号串），未声明返回 undefined */
 function parseExclusiveWith(raw: unknown): string[] | undefined {
   if (Array.isArray(raw)) {
     return raw.map((k) => String(k)).filter(Boolean);
@@ -158,31 +114,15 @@ function parseExclusiveWith(raw: unknown): string[] | undefined {
   return undefined;
 }
 
-/**
- * 解析接手衔接提示词（manifest.handoffPrompt，角色包自洽声明）
- *
- * 该角色包被宿主「带入对话」时预填的特色话术。非字符串 / 空白视为未声明（undefined），
- * 由宿主回退通用话术——角色包只描述自己，不引用其他角色包（§11 插卡解耦）。
- *
- * @param raw manifest.handoffPrompt 原始值
- * @returns 非空提示词，未声明/非法返回 undefined
- */
+/** 解析接手衔接提示词（宿主带入对话时预填的话术）；非空字符串，否则 undefined。角色包只描述自己（§11 插卡解耦）。 */
 function parseHandoffPrompt(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || raw.trim() === '') return undefined;
   return raw.trim();
 }
 
 /**
- * 扫描角色包 skills/ 目录注册技能（目录扫描 + frontmatter，2026-08-18 C3）
- *
- * skills 从「manifest 注册」改为「目录动态扫描」——与全局技能同构（复用
- * scanMarkdownDir：frontmatter 的 name/description + 正文）。新增技能只写文件，
- * 无需改 manifest。manifest.skills 保留为**可选过滤**：声明了 file 路径时按
- * file 过滤扫描结果（白名单语义），未声明则全部扫描（默认零配置）。
- *
- * @param packDir 角色包目录
- * @param skillsNode manifest.skills 节点（可选过滤，null = 全量扫描）
- * @returns 技能注册列表
+ * 扫描 skills/ 目录动态注册技能（C3）：复用 scanMarkdownDir，frontmatter 的 name/description+正文。
+ * manifest.skills 仅作可选白名单过滤（声明 file 路径时），未声明则全量扫描（零配置）。
  */
 async function scanPackSkills(
   packDir: string,
@@ -215,9 +155,7 @@ async function scanPackSkills(
   });
   const resolved = await Promise.all(skills);
 
-  // Bug 3 修复：区分「未声明 skills」和「skills: []」
-  //   - 未声明 (undefined) → 全量扫描返回（零配置语义）
-  //   - 显式空数组 ([]) → 返回空列表（零技能语义）
+  // 区分「未声明 skills」（全量扫描）与「skills: []」（零技能）
   if (!Array.isArray(skillsNode)) return resolved;
   if ((skillsNode as unknown[]).length === 0) return [];
 
@@ -229,8 +167,7 @@ async function scanPackSkills(
     const config = item as Record<string, unknown>;
     const file = config['file'];
     if (typeof file === 'string' && file.trim() !== '') {
-      // 路径安全检查：防止 file 字段包含 .. 等路径穿越字符
-      // 将 file 与 packDir 拼接后规范化，确保结果仍在 packDir 内
+      // 路径穿越防护：file 拼接 + resolve 规范化，确保结果仍在 packDir 内
       const resolvedPath = resolve(packDir, file);
       if (!resolvedPath.startsWith(resolve(packDir))) {
         logger.warn({ file, packDir }, 'manifest.skills.file 路径穿越被阻止，已忽略');
@@ -260,16 +197,7 @@ async function scanPackSkills(
     });
 }
 
-/**
- * 从 manifest.capabilities 顶层数组解析能力声明（C2，2026-08-18 独立模块）
- *
- * 能力面（工具白名单）与内容面（技能正文）分离：capabilities 是角色可调用的
- * 中立能力声明，独立于 skills 技能文件。经 capabilityMap 映射为工具白名单
- * （agent.ts applyRolePackToolExposure，「换装 = 换 Agent」）。
- *
- * @param capabilitiesNode manifest.capabilities 节点
- * @returns 能力声明列表
- */
+/** 从 manifest.capabilities 解析能力声明（C2：能力面与技能内容分离，经 capabilityMap 映射为工具白名单） */
 function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapability[] {
   if (!Array.isArray(capabilitiesNode)) return [];
   const capabilities: RolePackCapability[] = [];
@@ -287,16 +215,7 @@ function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapabilit
   return capabilities;
 }
 
-/**
- * 从 rules.md 内容解析规则列表
- *
- * 支持两种 Markdown 列表格式：
- *   - 无序列表：`- 规则内容` 或 `* 规则内容`
- *   - 有序列表：`1. 规则内容`、`2. 规则内容` 等
- *
- * @param content rules 文件内容
- * @returns 规则字符串列表
- */
+/** 解析 rules 内容：支持无序（- / *）与有序（n. ）Markdown 列表，返回规则字符串列表 */
 function parseRules(content: string): string[] {
   if (!content) return [];
   const rules: string[] = [];
@@ -312,12 +231,7 @@ function parseRules(content: string): string[] {
   return rules;
 }
 
-/**
- * 安全读取内容文件（相对包根的路径），失败返回空串（内容文件可选）
- *
- * @param filePath 绝对路径
- * @returns 文件内容，读取失败返回空串
- */
+/** 安全读取内容文件，失败按缺省返回空串（内容文件可选） */
 async function readContentSafe(filePath: string): Promise<string> {
   try {
     return await readFile(filePath, 'utf-8');
@@ -336,11 +250,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /** 当前激活模式 */
   private mode: 'auto' | 'manual' = 'auto';
   /**
-   * 粘性锁定标志（agent-design-philosophy §6.2 粘性匹配）
-   *
-   * 当前会话内首次 autoMatch 命中后置 true：后续外部输入不再全量重匹配，
-   * 仅当输入命中与当前激活包互斥（exclusiveWith）的包时才切换。
-   * 会话切换时由宿主调用 resetSticky() 复位——粘性不跨会话。
+   * 粘性锁定：会话内首次 autoMatch 命中置 true，后续外部输入不再全量重匹配，
+   * 仅当命中与当前激活包互斥（exclusiveWith）的包时才切换；resetSticky 复位，不跨会话。
    */
   private stickyLocked = false;
   /** 角色切换时间戳列表（用于时间窗口缓冲） */
@@ -368,15 +279,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   // ── 生命周期 ──────────────────────────────────────
 
-  /**
-   * 启动时加载：扫描含 manifest.json 的角色包文件夹
-   *
-   * 覆盖基类 loadItems()：基类扫描只支持单文件 *.md，无法覆盖文件夹包形态。
-   * 生命周期（runtime 记账 / deleteItem / 匹配）仍复用基类。
-   *
-   * @param activePack 要激活的角色包名（可选）
-   * @returns 加载的角色包数量
-   */
+  /** 启动加载：扫描含 manifest.json 的角色包文件夹（覆盖基类 loadItems——基类只支持单文件扫描，生命周期其余仍复用基类） */
   async load(activePack?: string): Promise<number> {
     const count = await this.scanRolePacks();
     if (activePack) {
@@ -389,11 +292,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return count;
   }
 
-  /**
-   * 重载角色包（重新扫描 + 保持激活态）
-   *
-   * 覆盖基类 reload()：同 load() 原因，基类扫描无法覆盖文件夹包形态。
-   */
+  /** 重载角色包：重新扫描 + 保持激活态（覆盖基类 reload，基类扫描无法覆盖文件夹包形态） */
   async reload(): Promise<number> {
     const oldActiveName = this.activePackName;
     const count = await this.scanRolePacks();
@@ -418,12 +317,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return count;
   }
 
-  /**
-   * 扫描角色包目录（仅 manifest.json 文件夹形态）
-   *
-   * 每个子目录为一个角色包，须含 manifest.json（核心控制文件）。
-   * 命名：manifest.name 优先，其次文件夹名。
-   */
+  /** 扫描角色包目录：每个子目录为一个角色包，须含 manifest.json；manifest.name 优先于文件夹名 */
   private async scanRolePacks(): Promise<number> {
     const dir = resolveSubdir(this.configDir, this.subdir);
     if (!dir) {
@@ -436,18 +330,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 集合级互斥声明对称性检查（role-pack-spec §13 粘性匹配）
-   *
-   * 互斥是**双向关系**：角色包 A 声明 `exclusiveWith: ['B']`，则 B 应反向声明 A。
-   * 本方法在装载后扫描全部角色包，对非对称声明给出 warning——非对称不会导致
-   * 运行时错误（isExclusiveBetween 采用"单边命中即互斥"），但声明不完整会削弱
-   * 粘性切换的确定性，故提示作者补全。
-   *
-   * 检出的两类问题：
-   *   - 悬空引用：A 声明互斥 B，但角色包 B 不存在；
-   *   - 非对称：A 声明互斥 B，但 B 未反向声明 A。
-   *
-   * @param packs 已装载的角色包列表
+   * 集合级互斥声明对称性检查：互斥是双向关系（A 声明排除 B，B 应反向声明 A）。
+   * 非对称不会导致运行时错误（isExclusiveBetween 单边命中即互斥），但削弱粘性切换确定性，故 warning 提示补全。
    */
   private checkExclusiveSymmetry(packs: readonly RolePack[]): void {
     const byName = new Map(packs.map((p) => [p.meta.name, p.meta.exclusiveWith ?? []]));
@@ -471,12 +355,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     }
   }
 
-  /**
-   * 从角色包目录构建条目列表
-   *
-   * @param dir 角色包目录（<configDir>/role-packs/）
-   * @returns 角色包对象列表
-   */
+  /** 从角色包目录构建条目列表（仅文件夹形态） */
   private async buildFromDir(dir: string): Promise<RolePack[]> {
     let entries: string[];
     try {
@@ -505,13 +384,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return Array.from(map.values());
   }
 
-  /**
-   * 解析单个角色包（manifest.json + 独立内容文件）
-   *
-   * @param packDir 角色包文件夹绝对路径
-   * @param fallbackName 无 manifest.name 时的兜底名（文件夹名）
-   * @returns 角色包对象，解析失败返回 null
-   */
+  /** 解析单个角色包（manifest.json + 独立内容文件），失败返回 null */
   private async parseManifestPack(
     packDir: string,
     fallbackName: string,
@@ -559,37 +432,31 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 解析 L2 策略
     const strategy = parseStrategyNode(manifest['strategy']);
 
-    // 内容路径注册（persona 约定俗成为 persona.md，2026-08-18 简化）：
-    // manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名。
-    // 与 rules.md 对称——身份设定与规则均约定固定文件名，消除路径错误面。
+    // 内容路径注册：manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名 persona.md
     const declaredPersonaPath =
       typeof manifest['persona'] === 'string' && manifest['persona'].trim() !== ''
         ? manifest['persona']
         : null;
     const personaPath = declaredPersonaPath ?? DEFAULT_PERSONA_FILENAME;
-    // rules 约定俗成为固定文件名 rules.md（2026-08-18 简化）：
-    // manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名。
-    // 消除「路径写错静默丢规则」错误面——规则本就约定在此文件。
+    // rules 未声明/空串时回退约定名 rules.md（消除路径写错静默丢规则）
     const declaredRulesPath =
       typeof manifest['rules'] === 'string' && manifest['rules'].trim() !== ''
         ? manifest['rules']
         : null;
     const rulesPath = declaredRulesPath ?? DEFAULT_RULES_FILENAME;
 
-    // 装载独立内容文件
-    // persona.md 需要解析 frontmatter 提取 traits，正文仅取 body 部分
+    // persona 需解析 frontmatter 提取 traits，正文仅取 body 部分
     const rawPersonaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';
     const { body: personaBody } = parseFrontmatter(rawPersonaContent);
-    const personaContent = personaBody; // 去除 frontmatter 后的正文
-    const traits = parseTraits(rawPersonaContent); // 从 frontmatter 解析 traits
+    const personaContent = personaBody;
+    const traits = parseTraits(rawPersonaContent);
     const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
     const rules = parseRules(rulesContent);
 
     // 内嵌技能：目录动态扫描 + frontmatter（C3，manifest.skills 可选过滤；新增技能只写文件）
     const skills = await scanPackSkills(packDir, manifest['skills']);
 
-    // 装载时预缓存技能正文（与全局技能一致，消除 readSkillContent 磁盘 IO）：
-    // 只缓存有 file 路径的技能（单文件形式直接读，文件夹形式读 SKILL.md）
+    // 装载时预缓存技能正文（与全局技能一致，消除 readSkillContent 磁盘 IO）
     const skillsWithContent = await Promise.all(
       skills.map(async (skill) => {
         if (!skill.file) return { ...skill, content: null };
@@ -603,10 +470,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       }),
     );
 
-    // 能力声明（顶层数组，C2 独立模块——能力面与技能内容分离）
+    // 能力声明（顶层数组，C2：能力面与技能内容分离）
     const capabilities = parseManifestCapabilities(manifest['capabilities']);
 
-    // companion 内容红线（§七 第 5 条）：正文在独立内容文件，由装载方读取后检测
+    // companion 内容红线：正文在独立内容文件，由装载方读取后检测
     if (meta.interactionType === 'companion') {
       const redline = checkCompanionContentRedline(personaContent + rulesContent);
       if (redline.length > 0) {
@@ -649,52 +516,27 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return this.activePackName;
   }
 
-  /**
-   * 获取当前激活的角色包装载结果
-   *
-   * 返回 parseManifestPack 时预缓存的 Assembly，
-   * 避免每次调用重复 mergeStrategy + personaPrompt 构建。
-   *
-   * @returns 角色包装载结果，无激活角色包时返回 null
-   */
+  /** 返回 parseManifestPack 时预缓存的 Assembly，避免重复 mergeStrategy + personaPrompt 构建；无激活返回 null */
   getActive(): RolePackAssembly | null {
     if (!this.activePackName) return null;
     const pack = this.items.find((p) => p.meta.name === this.activePackName);
     return pack?._cachedAssembly ?? null;
   }
 
-  /**
-   * 获取当前激活角色包的规则列表（宿主 API：设定记忆归角色包后，规则以角色包为准）
-   *
-   * @returns 规则字符串列表，无激活角色包时返回空数组
-   */
+  /** 当前激活角色包的规则列表（设定记忆归角色包后，规则以角色包为准）；无激活返回空数组 */
   getActiveRules(): readonly string[] {
     if (!this.activePackName) return [];
     const pack = this.items.find((p) => p.meta.name === this.activePackName);
     return pack?.rules ?? [];
   }
 
-  /**
-   * 按名称获取角色包装载结果
-   *
-   * Bug 5 修复：返回 parseManifestPack 时预缓存的 Assembly。
-   *
-   * @param name 角色包名
-   * @returns 角色包装载结果，不存在返回 null
-   */
+  /** 按名称获取预缓存的装配结果，不存在返回 null */
   get(name: string): RolePackAssembly | null {
     const pack = this.items.find((p) => p.meta.name === name);
     return pack?._cachedAssembly ?? null;
   }
 
-  /**
-   * 激活指定角色包（带时间窗口缓冲）
-   *
-   * 30s 内超过 5 次切换后锁定 2 分钟（防抖保护，避免频繁切换导致的状态抖动）。
-   *
-   * @param name 角色包名
-   * @returns 是否成功激活（锁定或角色不存在时返回 false）
-   */
+  /** 激活指定角色包（30s 内超 5 次切换后锁定 2 分钟防抖，避免状态抖动）；锁定或不存在返回 false */
   activate(name: string): boolean {
     // 缓冲区检查（限流保护，非错误）
     if (this.switchLocked) {
@@ -708,7 +550,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       return false;
     }
 
-    // 记录切换时间戳并检查是否达到锁定阈值
+    // 记录切换时间戳并判定是否达到锁定阈值
     const now = Date.now();
     this.switchTimestamps.push(now);
     const windowStart = now - RolePackManager.SWITCH_WINDOW_MS;
@@ -732,46 +574,26 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return true;
   }
 
-  /**
-   * 获取角色切换锁定状态
-   *
-   * @returns locked 是否处于锁定状态；unlockAt 锁定自动恢复时间戳（ms epoch），未锁定时为 null
-   */
+  /** 角色切换锁定状态；unlockAt 为自动恢复时间戳（ms epoch），未锁定 null */
   getSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
     return { locked: this.switchLocked, unlockAt: this.unlockAt };
   }
 
-  /**
-   * 获取当前激活角色包的 traits
-   *
-   * @returns traits 键值对，无激活角色包或无 traits 时返回 undefined
-   */
+  /** 当前激活角色包的 traits，无则 undefined */
   getActiveTraits(): Record<string, number> | undefined {
     if (!this.activePackName) return undefined;
     const pack = this.items.find((p) => p.meta.name === this.activePackName);
     return pack?.traits;
   }
 
-  /**
-   * 设置激活模式（auto / manual）
-   *
-   * @param mode 激活模式
-   */
+  /** 设置激活模式（auto / manual） */
   setMode(mode: 'auto' | 'manual'): void {
     this.mode = mode;
   }
 
   /**
-   * 根据用户输入粘性匹配最合适的角色包（agent-design-philosophy §6.2）
-   *
-   * 粘性语义（状态粘性，非"永不切换"）：
-   *   - 首次外部输入（未锁定）：全量关键词匹配，命中即锁定当前会话；
-   *   - 后续外部输入（已锁定）：仅当输入命中与当前激活包互斥（exclusiveWith）
-   *     的包时才自动切换，否则保持当前；
-   *   - 显式切换由宿主调用 activate() 完成，不经过本方法。
-   *
-   * @param userInput 用户输入文本
-   * @returns 需切换到的角色包名，无匹配/无需切换返回 null
+   * 输入粘性匹配角色包：首次外部输入全量匹配命中即锁定当前会话；
+   * 已锁定后仅当命中与当前激活包互斥（exclusiveWith）时才切换；显式切换走 activate()。
    */
   autoMatch(userInput: string): string | null {
     if (this.mode !== 'auto') return null;
@@ -792,20 +614,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return this.isExclusiveBetween(this.activePackName, matchedName) ? matchedName : null;
   }
 
-  /**
-   * 复位粘性锁定（会话切换时由宿主调用）
-   *
-   * 粘性不跨会话：新会话的首条外部输入重新进行全量匹配。幂等，可重复调用。
-   */
+  /** 复位粘性锁定（会话切换由宿主调用，幂等——粘性不跨会话） */
   resetSticky(): void {
     this.stickyLocked = false;
   }
 
-  /**
-   * 清理资源（关闭时调用）
-   *
-   * 清理切换防抖锁的计时器，防止关闭后回调触发。
-   */
+  /** 清理资源：清除切换防抖锁计时器，防止关闭后回调触发 */
   close(): void {
     if (this.unlockTimer) {
       clearTimeout(this.unlockTimer);
@@ -816,13 +630,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     }
   }
 
-  /**
-   * 判断两个角色包是否互斥（exclusiveWith 双向声明其一即互斥）
-   *
-   * @param a 角色包 A 名
-   * @param b 角色包 B 名
-   * @returns A 与 B 是否互斥
-   */
+  /** 判断两角色包是否互斥：exclusiveWith 双向声明其一即互斥 */
   private isExclusiveBetween(a: string, b: string): boolean {
     const packA = this.items.find((p) => p.meta.name === a);
     const packB = this.items.find((p) => p.meta.name === b);
@@ -836,11 +644,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return this.mode;
   }
 
-  /**
-   * 获取所有角色包摘要列表
-   *
-   * @returns 角色包元数据列表
-   */
+  /** 所有角色包元数据摘要列表 */
   listMeta(): RolePackMeta[] {
     return this.items.map((p) => p.meta);
   }
@@ -848,28 +652,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   // ── 基类抽象方法实现 ──────────────────────────────
 
   /**
-   * 从扫描条目构建资源对象
-   *
-   * RolePackManager 使用自建扫描路径（parseManifestPack），
-   * 基类 scanAndBuild() 依赖的 loadItems()/reload() 均被覆写。
-   * 本方法保留实现以满足抽象约束；默认返回 null，表示不处理单文件扫描。
-   *
-   * 本管理器使用自定义的 `parseManifestPack` + `buildFromDir` 扫描逻辑
-   * （在 load/reload 方法中实现），不依赖基类默认的单文件扫描流程。
+   * 基类抽象实现：本管理器用自建扫描（parseManifestPack/buildFromDir）覆盖了
+   * loadItems/reload，不用基类单文件扫描，恒返回 null 以满足抽象约束。
    */
   protected async createEntry(_entry: ScannedMarkdownEntry): Promise<RolePack | null> {
-    // RolePackManager 不使用基类的单文件扫描，返回 null 跳过
+    // 角色包不用基类的单文件扫描，返回 null 跳过
     return null;
   }
 
   // ── 系统提示 ──────────────────────────────────────
 
-  /**
-   * 构建 system prompt 中的角色包段
-   *
-   * @param name 角色包名（可选，不传使用当前激活角色包）
-   * @returns 角色包 prompt 正文
-   */
+  /** 构建 system prompt 的角色包段：personaPrompt + L1 技能清单（渐进披露）；name 缺省用当前激活包 */
   buildSystemPrompt(name?: string): string {
     const targetName = name ?? this.activePackName;
     if (!targetName) return '';
@@ -904,28 +697,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 读取激活角色包内嵌技能正文（渐进披露 L2，read_skill 工具的数据源）
-   *
-   * 角色包 `manifest.skills` 的 `file` 指向包内技能文件（如 `skills/write.md`），
-   * 正文当前不预装载（role-pack-spec §四 诚实声明）。本方法在 LLM 按需调用
-   * read_skill 时按技能名读取对应正文——file 从"生态指针"变为"装载入口"。
-   *
-   * 路径安全：技能文件路径固定相对于角色包目录（manifest.json 所在目录），
-   * 不接外部输入路径，天然受限在角色包内，无需额外白名单校验。
-   *
-   * @param skillName 技能名（manifest.skills[].name，缺省取 fileName 去扩展名）
-   * @param packName 角色包名（可选，缺省用当前激活角色包）
-   * @returns 技能正文；技能不存在或读取失败返回 null
+   * 读激活角色包内嵌技能正文（渐进披露 L2，read_skill 数据源）。优先返回 parseManifestPack
+   * 时缓存的正文；路径相对角色包目录天然受限，无需额外白名单校验。
    */
   async readSkillContent(skillName: string, packName?: string): Promise<string | null> {
     const found = this.findSkillByName(skillName, packName);
     if (!found || !found.skill.file) return null;
 
-    // 优先返回 parseManifestPack 时缓存的正文（与全局技能一致）
+    // 优先返回 parseManifestPack 时缓存的正文；缓存未就绪（如动态添加的技能）时回退实时读磁盘
     if (found.skill.content !== undefined && found.skill.content !== null) {
       return found.skill.content;
     }
-    // 回退：缓存未就绪（如动态添加的技能）时实时读磁盘
     const skillFilePath = found.skill.file;
     const { pack } = found;
 
@@ -944,12 +726,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   // ── L3 资源/脚本访问 ──────────────────────────────────
 
-  /**
-   * 从技能文件路径推导技能名（公开方法，供外部消费如 list_skills 回调）
-   *
-   * 单文件形式：skills/write.md → write
-   * 文件夹形式：skills/my-skill/SKILL.md → my-skill
-   */
+  /** 从技能文件路径推导技能名（单文件 write.md → write；文件夹 my-skill/SKILL.md → my-skill） */
   deriveSkillNameFromFile(file: string): string {
     const parts = file.split(/[\\/]/);
     const last = parts.pop() ?? '';
@@ -959,15 +736,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return last.replace(/\.(md|markdown)$/i, ''); // 单文件形式
   }
 
-  /**
-   * 按技能名在指定角色包中查找技能条目
-   *
-   * 匹配策略：frontmatter name 精确匹配优先，其次从 file 路径推导
-   *
-   * @param skillName 技能名
-   * @param packName 角色包名（可选，默认激活角色包）
-   * @returns 匹配的角色包和技能条目，未找到返回 null
-   */
+  /** 按技能名在角色包中查找技能条目：frontmatter name 精确匹配优先，其次 file 路径推导；未找到返回 null */
   private findSkillByName(
     skillName: string,
     packName: string | undefined,
@@ -986,13 +755,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return { pack, skill };
   }
 
-  /**
-   * 解析技能所在目录（供 L3 资源/脚本访问使用）
-   *
-   * 与 readSkillContent 共享相同的技能定位逻辑：
-   *   - 按技能名匹配 manifest.skills 项（name 优先，缺省按路径推导）
-   *   - 返回技能文件所在目录（SKILL.md 所在目录或 .md 文件所在目录）
-   */
+  /** 解析技能所在目录（SKILL.md 所在目录或 .md 文件所在目录），供 L3 资源/脚本访问 */
   private resolveSkillDir(skillName: string, packName?: string): string | null {
     const found = this.findSkillByName(skillName, packName);
     if (!found || !found.skill.file) return null;
@@ -1008,14 +771,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return dirname(fullSkillPath); // 单文件形式：skills/write.md → skills/
   }
 
-  /**
-   * 读取技能的 L3 资源文件（渐进披露 L3）
-   *
-   * @param skillName 技能名
-   * @param resourcePath 相对 resources/ 的路径
-   * @param packName 角色包名（可选，默认激活角色包）
-   * @returns 资源文件内容，不存在返回 null
-   */
+  /** 读取技能 L3 资源文件内容（渐进披露 L3），不存在或读取失败返回 null */
   async readSkillResource(skillName: string, resourcePath: string, packName?: string): Promise<string | null> {
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
@@ -1040,26 +796,13 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     }
   }
 
-  /**
-   * 列出技能的 L3 资源清单
-   *
-   * @param skillName 技能名
-   * @param packName 角色包名（可选）
-   * @returns 资源列表，无资源返回空数组
-   */
+  /** 列出技能 L3 资源清单，无资源返回空数组 */
   listSkillResources(skillName: string, packName?: string): ReadonlyArray<{ readonly path: string; readonly size: number }> {
     const found = this.findSkillByName(skillName, packName);
     return found?.skill.layer3?.resources ?? [];
   }
 
-  /**
-   * 获取技能的 L3 脚本完整路径
-   *
-   * @param skillName 技能名
-   * @param scriptPath 相对 scripts/ 的路径
-   * @param packName 角色包名（可选）
-   * @returns 脚本完整路径，不存在返回 null
-   */
+  /** 获取技能 L3 脚本完整路径，不存在返回 null */
   getSkillScriptPath(skillName: string, scriptPath: string, packName?: string): string | null {
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
@@ -1073,16 +816,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return null;
   }
 
-  /**
-   * 获取技能的 L3 脚本元信息（runtime、timeout）
-   *
-   * 从脚本扩展名推断 runtime，或从 SKILL.md frontmatter 的 scripts 声明获取。
-   *
-   * @param skillName 技能名
-   * @param scriptPath 相对 scripts/ 的路径
-   * @param packName 角色包名（可选）
-   * @returns 脚本元信息，不存在返回 null
-   */
+  /** 获取技能 L3 脚本元信息（runtime 从扩展名或 SKILL.md frontmatter 的 scripts 声明推断） */
   getSkillScriptInfo(
     skillName: string,
     scriptPath: string,

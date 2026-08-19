@@ -1,12 +1,7 @@
 /**
- * LLM Provider 工厂
- * 根据配置创建 LLM Provider 实例
- * 详见 ADR-003
- *
- * 内核职责（明确定界）：
- * - 接收 baseUrl + model + apiKey 三板斧，创建 OpenAICompatibleProvider
- * - 不负责 provider 名称 → URL/模型 的映射（预设是宿主层职责）
- * - 不验证 apiKey（是否必需是下游 LLM 服务的决���，内核只是透传管道）
+ * LLM Provider 工厂：根据配置创建 Provider 实例
+ * 内核只接收 baseUrl+model+apiKey 三板斧创建实例；不做 provider 名 → URL/模型 映射（宿主层职责）；
+ * 不验证 apiKey（是否必需是下游 LLM 服务的决策，内核只是透传管道）
  */
 import type { Config } from '@/config/loader.js';
 import { LlmProvider } from '@/llm/provider.js';
@@ -16,12 +11,7 @@ import { configError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 
-/**
- * 单个 Provider 配置（用于 createProviderFromConfig）
- *
- * baseUrl 为可选：内核在 createProviderFromConfig 内部会做空值检查，
- * 缺失时抛出 configError。这样 BackgroundConfig.baseUrl?: string 可以直接传入。
- */
+/** 单个 Provider 配置（createProviderFromConfig 入参）：baseUrl 可选，缺失时内部抛 configError */
 export interface ProviderConfig {
   /** API 基础 URL（可选——内核在 createProviderFromConfig 内部做空值检查并报错） */
   baseUrl?: string;
@@ -33,16 +23,7 @@ export interface ProviderConfig {
   provider?: string;
 }
 
-/**
- * 从单个 Provider 配置创建 LlmProvider 实例
- *
- * 与 createLlmProvider 逻辑相同，但接收的是单个 Provider 配置而非完整 Config。
- * 用于多 Provider 管理场景：Agent 为 providers 映射表中的每个条目调用此函数。
- *
- * @param name - Provider 别名（仅用于日志标识）
- * @param providerConfig - 单个 Provider 的配置（baseUrl + model 必填）
- * @returns LlmProvider 实例
- */
+/** 从单个 Provider 配置创建 LlmProvider 实例（多 Provider 管理场景：为 providers 映射表中每个条目调用） */
 export function createProviderFromConfig(
   name: string,
   providerConfig: ProviderConfig,
@@ -85,13 +66,7 @@ export function createProviderFromConfig(
 
 /**
  * 创建 LLM Provider（从完整 Config）
- *
- * 使用 providers 映射表 + active（唯一配置格式）。
- *
- * 调用方（宿主）应确保 baseUrl + model 已在配置中显式设置。
- *
- * @param config 完整配置
- * @returns 当前激活的 LlmProvider 实例
+ * 唯一配置格式：providers 映射表 + active，宿主应确保 baseUrl+model 已显式设置
  */
 export function createLlmProvider(config: Config): LlmProvider {
   const { llm } = config;
@@ -119,10 +94,7 @@ export function createLlmProvider(config: Config): LlmProvider {
   });
 }
 
-/**
- * Mock LLM Provider
- * 用于测试和开发
- */
+/** Mock LLM Provider：用于测试和开发 */
 class MockProvider extends LlmProvider {
   readonly name = 'mock';
 
@@ -139,17 +111,9 @@ class MockProvider extends LlmProvider {
 }
 
 /**
- * 创建 Provider 路由选择器（P1-2 多模型路由基础）
- *
- * 基于配置中的 providers 映射表 + taskRouter 映射，构建路由函数。
- * 无 providers 配置时直接抛错（providers 是唯一配置格式）。
- *
- * 路由策略：
- * 1. 有 providers 但无 taskRouter → 所有任务类型使用 active Provider
- * 2. 有 providers + taskRouter → 按任务类型路由到对应 Provider
- *
- * @param config 完整配置
- * @returns Provider 路由函数
+ * 创建 Provider 路由选择器（多模型路由）：
+ * 有 providers 无 taskRouter → 所有任务类型用 active Provider；
+ * 有 taskRouter → 按任务类型路由到对应 Provider
  */
 export function createProviderRouter(config: Config): ProviderRouter {
   const { llm } = config;
@@ -162,10 +126,9 @@ export function createProviderRouter(config: Config): ProviderRouter {
     );
   }
 
-  // 解析 taskRouter 配置
   const taskRouter = llm.taskRouter;
   if (!taskRouter || Object.keys(taskRouter).length === 0) {
-    // 无 taskRouter 配置 → 所有任务类型使用 active Provider
+    // 无 taskRouter → 所有任务类型使用 active Provider
     const activeProvider = createLlmProvider(config);
     return () => activeProvider;
   }
@@ -187,7 +150,7 @@ export function createProviderRouter(config: Config): ProviderRouter {
     }
   }
 
-  // 兜底 Provider（taskRouter 中引用了不存在的 provider 名时使用）
+  // 兜底 Provider：taskRouter 引用了不存在的 provider 名时使用
   const fallbackProvider = createLlmProvider(config);
 
   return (taskType: TaskType): LlmProvider => {
