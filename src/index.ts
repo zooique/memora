@@ -25,8 +25,6 @@
  *
  *   skill/types.ts ───→ 纯类型定义（SkillEntry, SkillMatch）
  *
- *   eval/evalTypes.ts ─→ 纯类型定义（EvalScenario, EvalResult）
- *
  *   security/pathGuard.ts ─→ AuditEvent 等安全类型（与 agent/types.ts 解耦）
  *
  * 依赖方向（单向）：agent → memory → utils；agent → llm；agent → security
@@ -107,8 +105,8 @@ export type { Memory, SummaryType } from '@/memory/types.js';
 // Source 校验工具（从 types.ts 拆分到 sourceValidation.ts，公共 API 不变）
 export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
-// source → 子目录映射与路径构造单一真理源（T-A1：宿主 configFileManager 等消费方共享，
-// 消灭 store.ts 私有 SOURCE_TO_DIR 与宿主 TYPE_TO_SUBDIR/硬编码的多处表达）
+// source → 子目录映射与路径构造单一真理源（宿主 configFileManager 等消费方共享，
+// 消灭宿主 TYPE_TO_SUBDIR/硬编码的多处表达）
 export { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sourcePaths.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -151,12 +149,6 @@ export type { ForkResult } from '@/agent/messageHistory.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords } from '@/memory/recall.js';
 export type { RecallOptions } from '@/memory/recall.js';
-// 重排序 + 上下文压缩（RAG 管线增强）
-export { DefaultReranker, compressContext } from '@/memory/reranker.js';
-export type { IReranker, RerankerOptions, ContextCompressionOptions, CompressedContext } from '@/memory/reranker.js';
-// 多跳推理（RAG 管线增强）
-export { multiHopRecall, DefaultQueryExpander } from '@/memory/multiHop.js';
-export type { IQueryExpander, MultiHopOptions, MultiHopResult } from '@/memory/multiHop.js';
 // 混合检索权重配置（RAG 管线增强）
 export type { HybridWeights } from '@/memory/hybridMerge.js';
 export { DEFAULT_VECTOR_SCORE_WEIGHT, DEFAULT_MEMORY_SCORE_WEIGHT } from '@/memory/hybridMerge.js';

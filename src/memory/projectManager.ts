@@ -20,11 +20,8 @@
  */
 import { resolve, join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { FileStore } from '@/memory/store.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { MemoryLoader } from '@/memory/loader.js';
-import type { LoadResult } from '@/memory/loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { expandHome } from '@/utils/path.js';
@@ -47,16 +44,12 @@ export interface ProjectContext {
   memoraDir: string;
   /** Agent 级 memora.db 路径（全局共享，非项目级） */
   dbPath: string;
-  /** 文件存储 */
-  fileStore: FileStore;
   /** SQLite 索引（通过 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
   /** 安全守卫（可空，由 Agent 层注入工厂函数创建） */
   security: SecurityGuard | null;
-  /** 启动时加载的必召记忆 */
+  /** 启动时加载的必召记忆（设定记忆唯一归角色包内容层，恒为空数组——ADR-025） */
   bootstrapMemories: Memory[];
-  /** 加载结果 */
-  loadResult: LoadResult;
 }
 
 /**
@@ -121,8 +114,6 @@ export class ProjectManager {
   private readonly registry: ProjectRegistry;
   /** 锁文件管理器（专职管理 .memora/.lock） */
   private readonly lockManager: LockManager;
-  /** 当前项目级记忆在共享 index 中的 ID 集合（closeProject 时撤销，修复跨项目隔离泄漏） */
-  private currentProjectMemoryIds: Set<string> = new Set();
 
   constructor(options: ProjectManagerOptions) {
     const { dataDir, storage, registryDir, createSecurityGuard } = options;
@@ -166,20 +157,19 @@ export class ProjectManager {
   /**
    * 初始化指定项目
    *
-   * 两层记忆加载：
-   *   1) 项目级：扫描 projectPath/.memora/rules/ + skills/
-   *   2) Agent 级：扫描 configDir 下的所有配置（rules/skills/personas/tools）
+   * 记忆加载（ADR-025 收敛后）：设定记忆（persona/rule/skill）唯一归角色包内容层，
+   * 不再由文件系统扫描进记忆索引——项目初始化只负责：
+   *   - 确保 Agent 级共享存储（memora.db 全局共享，不随项目切换重建）
+   *   - 获取项目级锁 + 创建 .memora/ 目录
+   *   - 安全守卫创建 + 项目注册
    *
    * 全局规则不再由内核硬编码路径，宿主可通过 configDir 统一管理。
    *
-   * memora.db 是 Agent 级共享资源，不随项目切换重建。
-   *
-   * 主体编排（关闭旧项目 + 锁 + 错误回滚）+ loadAllResources（两层加载）
-   * + buildProjectContext（上下文构建）三个子方法分工。
+   * 主体编排（关闭旧项目 + 锁 + 错误回滚）+ buildProjectContext（上下文构建）两个子方法分工。
    *
    * @param projectPath 项目根目录
    * @param projectName 项目名称（可选，默认取目录名）
-   * @param configDir Agent 级配置目录（personas/rules/skills/tools）
+   * @param configDir Agent 级配置目录（用于安全守卫创建）
    */
   async initProject(
     projectPath: string,
@@ -198,12 +188,9 @@ export class ProjectManager {
 
     // 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
     try {
-      // 3) 确保项目目录 + 加载两层资源
+      // 3) 确保项目目录 + Agent 级共享存储
       await mkdir(memoraDir, { recursive: true });
-      const { index, loadResult, projectFileStore } = await this.loadAllResources(
-        memoraDir,
-        configDir,
-      );
+      const { index } = await this.ensureAgentResources();
 
       // 4) 构建并返回项目上下文
       return this.buildProjectContext(
@@ -211,8 +198,6 @@ export class ProjectManager {
         projectName,
         memoraDir,
         index,
-        projectFileStore,
-        loadResult,
         configDir,
       );
     } catch (err) {
@@ -226,59 +211,6 @@ export class ProjectManager {
   }
 
   /**
-   * 加载两层记忆资源
-   *
-   * 职责：确保 Agent 级存储 + 扫描项目级 + 扫描 Agent 级配置，合并加载结果。
-   *
-   * @param memoraDir 项目 .memora/ 目录
-   * @param configDir Agent 级配置目录（可选）
-   * @returns index 存储实例 + loadResult 合并加载结果 + projectFileStore 项目级 FileStore
-   */
-  private async loadAllResources(
-    memoraDir: string,
-    configDir?: string,
-  ): Promise<{
-    index: IMemoryStorage;
-    loadResult: LoadResult;
-    projectFileStore: FileStore;
-  }> {
-    // Agent 级共享资源（memora.db 只有一个）
-    const { index } = await this.ensureAgentResources();
-
-    // 合并加载结果（两层扫描汇总）
-    const loadResult: LoadResult = { loaded: 0, skipped: 0, errors: [] };
-
-    // 1) 项目级 FileStore：扫描 projectPath/.memora/ 下的 rules/ + skills/
-    const projectFileStore = new FileStore(memoraDir);
-    const projectLoader = new MemoryLoader(projectFileStore, index);
-    const projectResult = await projectLoader.loadAllToIndex();
-    loadResult.loaded += projectResult.loaded;
-    loadResult.skipped += projectResult.skipped;
-    loadResult.errors.push(...projectResult.errors);
-    // 记录本项目级记忆 ID，供 closeProject 撤销（修复跨项目隔离泄漏）
-    // 注：STARTUP_SCAN_SOURCES 已清空（ADR-025），loadedIds 恒为空——项目级记忆
-    // 由角色包激活/失活承载，不再由 loader 扫描写入索引。
-    this.currentProjectMemoryIds = new Set(projectResult.loadedIds ?? []);
-
-    // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
-    let configResult: LoadResult | null = null;
-    if (configDir) {
-      const configFileStore = new FileStore(configDir);
-      const configLoader = new MemoryLoader(configFileStore, index);
-      configResult = await configLoader.loadAllToIndex();
-      loadResult.loaded += configResult.loaded;
-      loadResult.skipped += configResult.skipped;
-      loadResult.errors.push(...configResult.errors);
-    }
-
-    // 对账：设定记忆不再经 loader 扫描进索引（ADR-025），无「文件支撑」判定基准，
-    // 孤儿规则对账已停用——rule 由角色包路径（assembleRolePack）承载。
-    // 存量 rule 索引行保留为兼容数据，由宿主迁移清理。
-
-    return { index, loadResult, projectFileStore };
-  }
-
-  /**
    * 构建项目上下文
    *
    * 职责：bootstrap 过滤 + 安全守卫创建 + 项目注册 + 日志 + 返回上下文。
@@ -287,8 +219,6 @@ export class ProjectManager {
    * @param projectName 项目名称（可选，默认取目录名）
    * @param memoraDir 项目 .memora/ 目录
    * @param index 存储实例
-   * @param projectFileStore 项目级 FileStore
-   * @param loadResult 加载结果
    * @param configDir Agent 级配置目录（用于安全守卫创建）
    * @returns 完整的项目上下文
    */
@@ -297,13 +227,11 @@ export class ProjectManager {
     projectName: string | undefined,
     memoraDir: string,
     index: IMemoryStorage,
-    projectFileStore: FileStore,
-    loadResult: LoadResult,
     configDir: string | undefined,
   ): ProjectContext {
     // bootstrap 记忆：设定记忆（persona/rule/skill）唯一归角色包内容层（ADR-025），
     // 不再从索引读取注入——由 assembler 的角色包路径（assembleRolePack → rolePackPrompt）接管。
-    // 存量 rule 索引行保留为兼容数据，不进 bootstrap。
+    // 恒为空数组（显式声明无启动必召记忆）。
     const bootstrapMemories: Memory[] = [];
 
     // 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
@@ -320,7 +248,6 @@ export class ProjectManager {
         projectPath,
         projectName: name,
         memoraDir,
-        loaded: loadResult.loaded,
         bootstrapCount: bootstrapMemories.length,
       },
       '项目初始化完成',
@@ -331,33 +258,20 @@ export class ProjectManager {
       projectName: name,
       memoraDir,
       dbPath: join(this.agentDataDir, 'memora.db'),
-      fileStore: projectFileStore,
       index,
       security,
       bootstrapMemories,
-      loadResult,
     };
   }
 
   /**
    * 关闭当前项目
    * 释放锁文件，但不关闭 Agent 级数据库（memora.db 是共享的）
+   *
+   * 注：设定记忆不再经 loader 扫描写入索引（ADR-025），项目级记忆由角色包
+   * 激活/失活承载，无跨项目隔离泄漏问题，closeProject 不再需要撤销记忆 ID。
    */
   async closeProject(): Promise<void> {
-    // S2 修复：撤销当前项目级记忆，防止跨项目隔离泄漏。
-    // 项目级 rules/skills/personas 由 loadAllResources 写入共享 index（只 add 不 evict），
-    // 若不撤销，切换项目后旧项目规则仍注入新项目 system prompt 与召回结果。
-    // 项目文件仍在磁盘，重新打开同一项目时会重新 upsert 恢复（软删除不影响文件本体）。
-    if (this.agentIndex) {
-      for (const id of this.currentProjectMemoryIds) {
-        try {
-          this.agentIndex.delete(id);
-        } catch (err) {
-          logger.warn({ err, id }, '撤销项目级记忆失败（软删除）');
-        }
-      }
-    }
-    this.currentProjectMemoryIds.clear();
     // Agent 级 index/sessionStore 不关闭——它们是共享的，在整个 Agent 生命周期内持久存在
     await this.lockManager.release();
     this.currentProjectPath = null;

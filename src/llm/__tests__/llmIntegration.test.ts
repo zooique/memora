@@ -30,7 +30,8 @@ describe('真实 LLM 集成测试', () => {
       return;
     }
 
-    if (!config?.llm?.apiKey) {
+    const hasProviderKey = Object.values(config?.llm?.providers ?? {}).some((p) => p?.apiKey);
+    if (!hasProviderKey) {
       console.warn('跳过：配置中缺少 apiKey');
       return;
     }

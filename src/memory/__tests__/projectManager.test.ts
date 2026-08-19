@@ -14,7 +14,12 @@ import type { Config } from '@/config/loader.js';
 
 function makeConfig(dataDir?: string): Config {
   return {
-    llm: { provider: 'mock', apiKey: 'test', baseUrl: 'https://mock.local', model: 'mock', temperature: 0.7 },
+    llm: {
+      providers: {
+        mock: { provider: 'mock', apiKey: 'test', baseUrl: 'https://mock.local', model: 'mock' },
+      },
+      active: 'mock',
+    },
     memory: { dataDir: dataDir || join(tmpdir(), 'memora-pm-test'), maxContextTokens: 80000 },
     security: { permission: 'owner', confirmWrites: false },
     allowedPaths: [],
@@ -49,11 +54,9 @@ describe('ProjectManager · initProject', () => {
     expect(ctx.projectPath).toBe(tmpDir);
     expect(ctx.projectName).toBeDefined();
     expect(ctx.memoraDir).toBe(join(tmpDir, '.memora'));
-    expect(ctx.fileStore).toBeDefined();
     expect(ctx.index).toBeDefined();
     expect(ctx.security).toBeDefined();
     expect(ctx.bootstrapMemories).toBeDefined();
-    expect(ctx.loadResult).toBeDefined();
 
     await pm.shutdown();
   });

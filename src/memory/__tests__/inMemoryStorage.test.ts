@@ -9,7 +9,6 @@
  *   - source 校验失败抛 configError
  *   - 软删除机制：delete/restore/purge/listDeleted/purgeExpired
  *
- * 与 store.test.ts 的区别：store.test.ts 测 FileStore（文件级），
  * 本文件测 InMemoryStorage（内存级），聚焦 sourceCountCache 与衰减逻辑。
  */
 import { describe, it, expect, beforeEach } from 'vitest';

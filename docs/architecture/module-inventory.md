@@ -59,22 +59,21 @@
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
 | `memory/recall.ts` | 🟢 已打磨 | `__tests__/recall.test.ts` | 召回核心逻辑 |
-| `memory/store.ts` | 🟢 已打磨 | `__tests__/store.test.ts` | 记忆 CRUD 操作 |
 | `memory/types.ts` | 🟢 已打磨 | `__tests__/types.test.ts` | 记忆类型定义 |
 | `memory/governance.ts` | 🟢 已打磨 | `__tests__/governance.test.ts` | 分数衰减、clamp 边界 |
 | `memory/lockManager.ts` | 🟢 已打磨 | `__tests__/lockManager.test.ts` | 锁文件管理 |
 | `memory/inMemoryStorage.ts` | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts` | 内存存储实现 |
 | `memory/sourceValidation.ts` | 🟢 已打磨 | `__tests__/sourceValidation.test.ts` | Source 校验 |
 | `memory/sourcePaths.ts` | 🟢 已打磨 | `__tests__/sourcePaths.test.ts` | Source→路径映射 SSOT |
-| `memory/loader.ts` | 🟢 已打磨 | `__tests__/loader.test.ts` | 记忆加载器 |
 | `memory/projectManager.ts` | 🟢 已打磨 | `__tests__/projectManager.test.ts` | 项目管理 |
 | `memory/projectRegistry.ts` | 🟢 已打磨 | `__tests__/projectRegistry.test.ts` | 项目注册表 |
 | `memory/vectorStore.ts` | 🟢 已打磨 | `__tests__/vectorStore.test.ts` | 向量存储 |
-| `memory/reranker.ts` | 🟢 已打磨 | `__tests__/reranker.test.ts` | 重排序 |
-| `memory/multiHop.ts` | 🟢 已打磨 | `__tests__/multiHop.test.ts` | 多跳推理 |
+| `memory/reranker.ts` | ⚪ 接口 | `__tests__/reranker.test.ts` (3 tests) | 重排序接口（IReranker，仅类型；默认实现已剪枝移除） |
 | `memory/hybridMerge.ts` | 🟢 已打磨 | `__tests__/hybridMerge.test.ts` | 混合检索 |
 | `memory/sessionStore.ts` | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + 全部可选方法（copySession/checkpoint/meta）+ 类型验证 |
 | `memory/storageInterface.ts` | ⚪ 接口 | 无独立测试 | IMemoryStorage 接口定义 |
+
+> **2026-08-19 深度剪枝**：`memory/store.ts`（FileStore）、`memory/loader.ts`（MemoryLoader）随「设定记忆归角色包（ADR-025）」整链移除——设定记忆不再由文件扫描进记忆索引，FileStore 无生产消费者；`memory/multiHop.ts`（多跳推理）为内核零消费的僵尸公共 API，随剪枝移除。
 
 **打磨建议**：`sessionStore.ts` 需补充宿主实现的契约测试（copySession 原子性、checkpoint 保存/加载/删除的幂等性）。
 
@@ -250,13 +249,7 @@
 | `web-search/webSearchProvider.ts` | 🟢 已打磨 | `__tests__/webSearchProvider.test.ts` | 搜索包装 |
 | `web-search/types.ts` | ⚪ 接口 | 无独立测试 | 搜索类型定义 |
 
-### 8.5 评估框架（eval/）
-
-| 模块文件 | 状态 | 测试文件 | 质量说明 |
-|----------|------|----------|----------|
-| `eval/evalRunner.ts` | 🟢 已打磨 | `__tests__/evalRunner.test.ts` | 评估运行器 |
-| `eval/evalTypes.ts` | 🟢 已打磨 | `__tests__/evalTypes.test.ts` | 评估类型定义 |
-| `eval/scenarios.ts` | 🟢 已打磨 | `__tests__/scenarios.test.ts` | 评估场景 |
+> **2026-08-19 深度剪枝**：评估框架（`eval/`，evalRunner/evalTypes/scenarios）为运行时零消费者（index.ts 未导出，仅测试自引用），随剪枝整体移除——Agent 行为评估的 CI 回归能力由各宿主按需自建。
 
 ---
 
@@ -295,17 +288,17 @@
 |------|--------|--------|--------|--------|
 | role-pack/ | 6 | 6 | 0 | 100% |
 | skill/ | 3 | 1 | 2 | 33% |
-| memory/ | 16 | 15 | 1 | 94% |
+| memory/ | 13 | 12 | 1 | 92% |
 | **对话管理**（sessionStore + managers/session* + archiveCoordinator） | **6** | **6** | **0** | **100%** |
 | agent/ (核心) | 15 | 15 | 0 | 100% |
 | agent/managers/ (治理) | 14 | 14 | 0 | 100% |
 | llm/ | 7 | 6 | 1 | 86% |
 | config/ | 2 | 1 | 1 | 50% |
 | utils/ | 18 | 17 | 1 | 94% |
-| 其他 (security/logging/web-search/eval) | 10 | 10 | 0 | 100% |
-| **总计** | **97** | **91** | **5** | **94%** |
+| 其他 (security/logging/web-search) | 8 | 8 | 0 | 100% |
+| **总计** | **92** | **86** | **6** | **93%** |
 
-> 注：纯类型定义文件（types.ts / Interface 文件）不计入"无测试"，其消费方的集成测试已覆盖。对话管理模块文件数包含 memory/sessionStore.ts + 5 个会话相关 managers 文件。
+> 注：纯类型定义文件（types.ts / Interface 文件）不计入"无测试"，其消费方的集成测试已覆盖。对话管理模块文件数包含 memory/sessionStore.ts + 5 个会话相关 managers 文件。2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。
 
 ---
 
@@ -326,3 +319,4 @@
 | 2026-08-19 | 记忆系统剪枝：content 记忆迁移为 SessionMeta，确立双层命名机制（autoName/displayName） | ✅ 完成 |
 | 2026-08-19 | 模块清单对齐：新增「对话管理模块」分类，明确会话存储/会话管理器/检查点管理三层架构 | ✅ 完成 |
 | 2026-08-19 | 剪枝：sessionCheckpointLifecycle 测试合并到 sessionManager.test.ts，删除独立测试文件 | ✅ 完成 |
+| 2026-08-19 | 深度剪枝：删除孤儿文件（rolePackMatcher/eval/multiHop）+ RAG 僵尸实现（DefaultReranker/compressContext）+ 配置旧扁平字段 + 策略键别名 + loader/store 空转链 + workProjection 旧格式（tsc 零错误，2236 tests 通过） | ✅ 完成 |

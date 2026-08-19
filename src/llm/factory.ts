@@ -86,9 +86,7 @@ export function createProviderFromConfig(
 /**
  * 创建 LLM Provider（从完整 Config）
  *
- * 兼容两种配置格式：
- *   1. 新格式：llm.providers + llm.active → 使用指定 Provider
- *   2. 旧格式：llm.provider + llm.model + ... → 单 Provider 扁平字段
+ * 使用 providers 映射表 + active（唯一配置格式）。
  *
  * 调用方（宿主）应确保 baseUrl + model 已在配置中显式设置。
  *
@@ -98,29 +96,26 @@ export function createProviderFromConfig(
 export function createLlmProvider(config: Config): LlmProvider {
   const { llm } = config;
 
-  // 优先使用新的多 Provider 格式
-  if (llm.providers && Object.keys(llm.providers).length > 0) {
-    const active = llm.active ?? Object.keys(llm.providers)[0] ?? '';
-    const providerConfig = llm.providers[active];
-    if (!providerConfig) {
-      throw configError('无效的 active Provider', `active="${active}" 不在 providers 映射表中`, [
-        `可用的 Provider：${Object.keys(llm.providers).join(', ')}`,
-        `在配置文件中设置 llm.active 为其中之一`,
-        '或使用 `memora config llm use <name>` 切换',
-      ]);
-    }
-    return createProviderFromConfig(active, {
-      ...providerConfig,
-      baseUrl: providerConfig.baseUrl ?? '',
-    });
+  if (!llm.providers || Object.keys(llm.providers).length === 0) {
+    throw configError(
+      'LLM providers 未配置',
+      'llm.providers 映射表为空或未定义',
+      ['在配置文件中配置 llm.providers（如 deepseek/openai 等）'],
+    );
   }
 
-  // 旧格式：复用 createProviderFromConfig
-  return createProviderFromConfig(llm.provider, {
-    provider: llm.provider,
-    model: llm.model,
-    baseUrl: llm.baseUrl ?? '',
-    apiKey: llm.apiKey,
+  const active = llm.active ?? Object.keys(llm.providers)[0] ?? '';
+  const providerConfig = llm.providers[active];
+  if (!providerConfig) {
+    throw configError('无效的 active Provider', `active="${active}" 不在 providers 映射表中`, [
+      `可用的 Provider：${Object.keys(llm.providers).join(', ')}`,
+      `在配置文件中设置 llm.active 为其中之一`,
+      '或使用 `memora config llm use <name>` 切换',
+    ]);
+  }
+  return createProviderFromConfig(active, {
+    ...providerConfig,
+    baseUrl: providerConfig.baseUrl ?? '',
   });
 }
 
@@ -147,12 +142,11 @@ class MockProvider extends LlmProvider {
  * 创建 Provider 路由选择器（P1-2 多模型路由基础）
  *
  * 基于配置中的 providers 映射表 + taskRouter 映射，构建路由函数。
- * 不配置 taskRouter 时回退到统一的 active Provider（向后兼容）。
+ * 无 providers 配置时直接抛错（providers 是唯一配置格式）。
  *
  * 路由策略：
- * 1. 无多 Provider 配置 → 所有任务类型使用同一个 Provider（旧格式）
- * 2. 有 providers 但无 taskRouter → 所有任务类型使用 active Provider
- * 3. 有 providers + taskRouter → 按任务类型路由到对应 Provider
+ * 1. 有 providers 但无 taskRouter → 所有任务类型使用 active Provider
+ * 2. 有 providers + taskRouter → 按任务类型路由到对应 Provider
  *
  * @param config 完整配置
  * @returns Provider 路由函数
@@ -160,10 +154,12 @@ class MockProvider extends LlmProvider {
 export function createProviderRouter(config: Config): ProviderRouter {
   const { llm } = config;
 
-  // 无多 Provider 配置 → 回退到旧格式，返回统一 Provider
   if (!llm.providers || Object.keys(llm.providers).length === 0) {
-    const singleProvider = createLlmProvider(config);
-    return () => singleProvider;
+    throw configError(
+      'LLM providers 未配置',
+      'llm.providers 映射表为空或未定义',
+      ['在配置文件中配置 llm.providers（如 deepseek/openai 等）'],
+    );
   }
 
   // 解析 taskRouter 配置

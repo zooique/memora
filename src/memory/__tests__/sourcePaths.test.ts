@@ -49,7 +49,7 @@ describe('sourcePaths · source → 目录映射与路径构造（T-A1 单一真
       );
     });
 
-    it('未知 source 透传目录（与 FileStore 开放语义一致）', () => {
+    it('未知 source 透传目录（开放语义）', () => {
       expect(resolveSourceFilePath(BASE, 'custom', 'deep-tool')).toBe(
         join(BASE, 'custom', 'deep-tool.md'),
       );

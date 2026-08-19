@@ -46,7 +46,7 @@ export interface Memory {
   /**
    * 可选：配置文件 frontmatter 的额外元数据
    *
-   * 仅在写入配置文件时使用（FileStore.write 合并到 frontmatter）。
+   * 仅在写入配置文件时使用（写入方合并到 frontmatter）。
    * SQLite index 不存储此字段（运行时检索不需要）。
    * 典型场景：角色包的 keywords/description，供角色包管理器加载时解析。
    */

@@ -16,7 +16,6 @@ import type { ProviderEntryConfig } from '@/llm/types.js';
  * 实际读取时展开为环境变量值。
  *
  * 展开范围覆盖所有可能包含敏感信息的通道：
- *   - llm（前台主通道）：apiKey / baseUrl
  *   - llm.providers（多 Provider 映射表）：每个 Provider 的 apiKey / baseUrl
  *   - llm.background（后台通道）：apiKey / baseUrl
  *   - embedding（向量嵌入通道）：apiKey / baseUrl
@@ -62,8 +61,6 @@ export function expandEnvVars(config: Config): Config {
     ...config,
     llm: {
       ...config.llm,
-      apiKey: expand(config.llm.apiKey),
-      baseUrl: expand(config.llm.baseUrl),
       providers: expandedProviders,
       background: expandedBackground,
     },

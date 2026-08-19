@@ -28,7 +28,12 @@ describe('config/loader · loadConfig', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        llm: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-test123' },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-test123' },
+          },
+          active: 'deepseek',
+        },
         memory: { dataDir: '~/.memora', maxContextTokens: 80000 },
         security: { permission: 'owner', confirmWrites: true },
         allowedPaths: [],
@@ -42,8 +47,7 @@ describe('config/loader · loadConfig', () => {
   it('显式指定 configPath 时应加载该文件', async () => {
     const configPath = writeConfig(tmpHome);
     const config = await loadConfig(configPath);
-    expect(config.llm.provider).toBe('deepseek');
-    expect(config.llm.model).toBe('deepseek-chat');
+    expect(config.llm.providers!.deepseek!.model).toBe('deepseek-chat');
   });
 
   it('显式指定 configPath 时应遮蔽 apiKey', async () => {
@@ -51,17 +55,22 @@ describe('config/loader · loadConfig', () => {
     const configPath = writeConfig(tmpHome);
     const config = await loadConfig(configPath);
     // apiKey 从文件读取，非 ${ENV} 格式 → 保留原值
-    expect(config.llm.apiKey).toBe('sk-test123');
+    expect(config.llm.providers!.deepseek!.apiKey).toBe('sk-test123');
   });
 
   it('apiKey 为 ${ENV_VAR} 格式时应展开为环境变量', async () => {
     const configPath = writeConfig(tmpHome, {
-      llm: { provider: 'deepseek', model: 'deepseek-chat', apiKey: '${MEMORA_TEST_KEY}' },
+      llm: {
+        providers: {
+          deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: '${MEMORA_TEST_KEY}' },
+        },
+        active: 'deepseek',
+      },
     });
     process.env.MEMORA_TEST_KEY = 'env-key-123';
     try {
       const config = await loadConfig(configPath);
-      expect(config.llm.apiKey).toBe('env-key-123');
+      expect(config.llm.providers!.deepseek!.apiKey).toBe('env-key-123');
     } finally {
       delete process.env.MEMORA_TEST_KEY;
     }
@@ -69,11 +78,16 @@ describe('config/loader · loadConfig', () => {
 
   it('apiKey 为 undefined 时 expandEnvVars 应保留 undefined', async () => {
     const configPath = writeConfig(tmpHome, {
-      llm: { provider: 'deepseek', model: 'deepseek-chat' },
+      llm: {
+        providers: {
+          deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+        },
+        active: 'deepseek',
+      },
     });
     // 不传 apiKey 字段
     const config = await loadConfig(configPath);
-    expect(config.llm.apiKey).toBeUndefined();
+    expect(config.llm.providers!.deepseek!.apiKey).toBeUndefined();
   });
 
   it('显式指定不存在的 configPath 时应抛错', async () => {
@@ -84,15 +98,20 @@ describe('config/loader · loadConfig', () => {
   it('${ENV_VAR} 环境变量不存在时应替换为空字符串', async () => {
     const configPath = writeConfig(tmpHome, {
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
-        apiKey: '${NONEXISTENT_ENV_VAR_12345}',
+        providers: {
+          deepseek: {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            apiKey: '${NONEXISTENT_ENV_VAR_12345}',
+          },
+        },
+        active: 'deepseek',
       },
     });
     // 确保环境变量不存在
     delete process.env.NONEXISTENT_ENV_VAR_12345;
     const config = await loadConfig(configPath);
-    expect(config.llm.apiKey).toBe('');
+    expect(config.llm.providers!.deepseek!.apiKey).toBe('');
   });
 });
 
@@ -118,7 +137,12 @@ describe('config/loader · 项目级/用户级配置回退', () => {
     writeFileSync(
       join(projectDir, '.memora', 'config.json'),
       JSON.stringify({
-        llm: { provider: 'project-level', model: 'pro-model', apiKey: 'sk-pro' },
+        llm: {
+          providers: {
+            project: { provider: 'project-level', model: 'pro-model', apiKey: 'sk-pro' },
+          },
+          active: 'project',
+        },
       }),
       'utf-8',
     );
@@ -127,8 +151,8 @@ describe('config/loader · 项目级/用户级配置回退', () => {
     process.cwd = () => projectDir;
 
     const config = await loadConfig();
-    expect(config.llm.provider).toBe('project-level');
-    expect(config.llm.model).toBe('pro-model');
+    expect(config.llm.providers!.project!.provider).toBe('project-level');
+    expect(config.llm.providers!.project!.model).toBe('pro-model');
   });
 });
 
@@ -151,7 +175,12 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        llm: { provider: 'deepseek', model: 'deepseek-chat' },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+          },
+          active: 'deepseek',
+        },
         ...overrides,
       }),
       'utf-8',
@@ -221,16 +250,13 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       }
     });
 
-    it('不配置 providers 时应回退到旧扁平字段（向后兼容）', async () => {
-      const configPath = writeConfigFile({
-        llm: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-flat' },
-      });
+    it('providers 未配置时 providers 为 undefined', async () => {
+      // providers 是唯一配置格式，未配置时 llm.providers 为 undefined（无回退）
+      const configPath = writeConfigFile({ llm: {} });
 
       const config = await loadConfig(configPath);
 
       expect(config.llm.providers).toBeUndefined();
-      expect(config.llm.provider).toBe('deepseek');
-      expect(config.llm.apiKey).toBe('sk-flat');
     });
   });
 
@@ -261,12 +287,13 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       expect(config.llm.taskRouter!.summary).toBe('fast');
     });
 
-    it('不配置 taskRouter 时应为 undefined（向后兼容）', async () => {
+    it('不配置 taskRouter 时应为 undefined', async () => {
       const configPath = writeConfigFile({
         llm: {
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-          apiKey: 'sk-test',
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-test' },
+          },
+          active: 'deepseek',
         },
       });
 
@@ -454,37 +481,57 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
   });
 
   describe('schema 校验', () => {
-    it('temperature=0 应通过（边界值）', async () => {
+    it('providers 内 temperature=0 应通过（边界值）', async () => {
       const configPath = writeConfigFile({
-        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 0 },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', temperature: 0 },
+          },
+          active: 'deepseek',
+        },
       });
 
       const config = await loadConfig(configPath);
 
-      expect(config.llm.temperature).toBe(0);
+      expect(config.llm.providers!.deepseek!.temperature).toBe(0);
     });
 
-    it('temperature=2 应通过（边界值）', async () => {
+    it('providers 内 temperature=2 应通过（边界值）', async () => {
       const configPath = writeConfigFile({
-        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 2 },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', temperature: 2 },
+          },
+          active: 'deepseek',
+        },
       });
 
       const config = await loadConfig(configPath);
 
-      expect(config.llm.temperature).toBe(2);
+      expect(config.llm.providers!.deepseek!.temperature).toBe(2);
     });
 
-    it('temperature>2 时应抛错（校验失败）', async () => {
+    it('providers 内 temperature>2 时应抛错（校验失败）', async () => {
       const configPath = writeConfigFile({
-        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 3 },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', temperature: 3 },
+          },
+          active: 'deepseek',
+        },
       });
 
       await expect(loadConfig(configPath)).rejects.toThrow();
     });
 
-    it('temperature<0 时应抛错（校验失败）', async () => {
+    it('providers 内 temperature<0 时应抛错（校验失败）', async () => {
       const configPath = writeConfigFile({
-        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: -0.5 },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', temperature: -0.5 },
+          },
+          active: 'deepseek',
+        },
       });
 
       await expect(loadConfig(configPath)).rejects.toThrow();
@@ -498,14 +545,19 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       await expect(loadConfig(configPath)).rejects.toThrow();
     });
 
-    it('默认 temperature 应为 0.7', async () => {
+    it('providers 内未配置 temperature 时应为 undefined（无全局默认）', async () => {
       const configPath = writeConfigFile({
-        llm: { provider: 'deepseek', model: 'deepseek-chat' },
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+          },
+          active: 'deepseek',
+        },
       });
 
       const config = await loadConfig(configPath);
 
-      expect(config.llm.temperature).toBe(0.7);
+      expect(config.llm.providers!.deepseek!.temperature).toBeUndefined();
     });
 
     it('默认 maxContextTokens 应为 120000', async () => {
@@ -536,13 +588,10 @@ describe('config/loader · 默认配置降级', () => {
 
   it('项目级不存在时应返回内置默认值（机制不预设策略）', async () => {
     // 内核只提供机制，不预设厂商/路径策略（ADR-002 + ADR-003）
-    // model/dataDir 留空：由宿主显式注入，factory.ts 会校验 model 非空
     const config = await loadConfig();
-    // provider='mock'：唯一内置机制，无 API Key 时不调用真实 API
-    expect(config.llm.provider).toBe('mock');
-    // model 留空：内核不预设厂商模型，由宿主显式填充
-    expect(config.llm.model).toBe('');
-    expect(config.llm.temperature).toBe(0.7);
+    // providers 未预设：由宿主显式配置（mock 通过 providers 显式声明）
+    expect(config.llm.providers).toBeUndefined();
+    expect(config.llm.active).toBeUndefined();
     // dataDir 留空：由宿主通过 configPath 或显式注入，内核不硬编码路径（ADR-002）
     expect(config.memory.dataDir).toBe('');
     expect(config.memory.maxContextTokens).toBe(120_000);
@@ -579,24 +628,20 @@ describe('config/loader · 错误路径覆盖', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('配置文件 JSON 格式错误');
   });
 
-  // ── #2: providers 为数组 → 静默降级为 undefined（向后兼容设计） ──
+  // ── #2: providers 为数组 → 静默降级为 undefined ──
 
   it('providers 为数组时应静默降级为 undefined', async () => {
     const configPath = writeConfigFile(JSON.stringify({
-      llm: { provider: 'deepseek', model: 'deepseek-chat', providers: ['not', 'an', 'object'] },
+      llm: { providers: ['not', 'an', 'object'] },
     }));
     const config = await loadConfig(configPath);
     // 数组类型触发早返回，providers 被忽略
     expect(config.llm.providers).toBeUndefined();
-    // 旧扁平字段仍正常生效
-    expect(config.llm.provider).toBe('deepseek');
   });
 
   it('providers.<key> 值为数组时应抛 configError', async () => {
     const configPath = writeConfigFile(JSON.stringify({
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
         providers: {
           bad: ['array', 'value'], // 单个 provider 条目是数组
         },
@@ -610,8 +655,6 @@ describe('config/loader · 错误路径覆盖', () => {
   it('providers.<key> 缺 provider 字段时应抛 configError', async () => {
     const configPath = writeConfigFile(JSON.stringify({
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
         providers: {
           bad: { model: 'some-model' }, // 缺 provider 字段
         },
@@ -625,8 +668,6 @@ describe('config/loader · 错误路径覆盖', () => {
   it('providers.<key> 缺 model 字段时应抛 configError', async () => {
     const configPath = writeConfigFile(JSON.stringify({
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
         providers: {
           bad: { provider: 'deepseek' }, // 缺 model 字段
         },
@@ -640,8 +681,6 @@ describe('config/loader · 错误路径覆盖', () => {
   it('background 缺 provider 字段时应抛 configError', async () => {
     const configPath = writeConfigFile(JSON.stringify({
       llm: {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
         background: { model: 'bg-model' }, // 缺 provider 字段
       },
     }));
@@ -661,7 +700,12 @@ describe('config/loader · 错误路径覆盖', () => {
 
   it('allowedPaths 含非字符串元素时应抛 configError', async () => {
     const configPath = writeConfigFile(JSON.stringify({
-      llm: { provider: 'deepseek', model: 'deepseek-chat' },
+      llm: {
+        providers: {
+          deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+        },
+        active: 'deepseek',
+      },
       allowedPaths: ['/valid/path', 123, '/another'], // 第 2 个元素是数字
     }));
     await expect(loadConfig(configPath)).rejects.toThrow('allowedPaths[1]');

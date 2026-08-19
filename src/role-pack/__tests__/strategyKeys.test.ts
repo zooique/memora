@@ -3,14 +3,12 @@
  *
  * 覆盖范围：
  *   1. 校验辅助函数（isPositiveInt / isNonNegativeInt / isTemperature / isRecallConfidence / isNonEmptyString / isAskOn）
- *   2. 策略键别名映射（旧→新键兼容）
- *   3. STRATEGY_KEY_RULES 完整性（prepare / act / reflect / global 四组键覆盖 + 规则类型）
+ *   2. STRATEGY_KEY_RULES 完整性（prepare / act / reflect / global 四组键覆盖 + 规则类型）
  *
  * 设计纪律：角色包对策略维度只"选择"不"定义"，因此枚举外取值是 error（机器可判读）
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STRATEGY_KEY_ALIASES,
   STRATEGY_KEY_RULES,
   isPositiveInt,
   isNonNegativeInt,
@@ -192,36 +190,7 @@ describe('strategyKeys — 校验辅助函数', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 2. 策略键别名映射
-// ══════════════════════════════════════════════════════════════
-
-describe('strategyKeys — 别名映射 (Legacy Aliases)', () => {
-
-  it('act.toolCalls → act.toolMode', () => {
-    expect(STRATEGY_KEY_ALIASES['act.toolCalls']).toBe('act.toolMode');
-  });
-
-  it('reflect.endingHandoff → reflect.handoff', () => {
-    expect(STRATEGY_KEY_ALIASES['reflect.endingHandoff']).toBe('reflect.handoff');
-  });
-
-  it('所有别名映射值都存在于 STRATEGY_KEY_RULES 中', () => {
-    for (const [alias, target] of Object.entries(STRATEGY_KEY_ALIASES)) {
-      const [phase, key] = target.split('.');
-      const phaseRules = STRATEGY_KEY_RULES[phase!]!;
-      expect(phaseRules, `别名 ${alias} 的目标 ${target} 阶段 ${phase} 不存在`).toBeDefined();
-      expect(phaseRules![key!], `别名 ${alias} 的目标键 ${key} 不存在`).toBeDefined();
-    }
-  });
-
-  it('别名映射对象包含正确数量的条目', () => {
-    // 验证别名映射表有确定的条目数（类型安全由 TypeScript Readonly 保证）
-    expect(Object.keys(STRATEGY_KEY_ALIASES).length).toBe(2);
-  });
-});
-
-// ══════════════════════════════════════════════════════════════
-// 3. STRATEGY_KEY_RULES 完整性
+// 2. STRATEGY_KEY_RULES 完整性
 // ══════════════════════════════════════════════════════════════
 
 describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {

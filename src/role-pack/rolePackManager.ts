@@ -18,7 +18,6 @@ import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
-import { STRATEGY_KEY_ALIASES } from '@/role-pack/strategyKeys.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import type {
   RolePack,
@@ -61,35 +60,9 @@ const DEFAULT_RULES_FILENAME = 'rules.md';
 const DEFAULT_PERSONA_FILENAME = 'persona.md';
 
 /**
- * 策略阶段键名规范化：旧实现键 → 标准键（spec §六 命名归标准）
- *
- * @param stage 策略阶段（prepare / act / reflect / global）
- * @param fields 该阶段的键值对（来自 manifest.strategy）
- * @returns 规范化后的键值对
- */
-function normalizeStageKeys(stage: string, fields: Record<string, unknown>): Record<string, unknown> {
-  const normalized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    const legacyPath = `${stage}.${key}`;
-    const standardKey = STRATEGY_KEY_ALIASES[legacyPath];
-    if (standardKey) {
-      getLogger().warn(
-        { legacyKey: key, standardKey: standardKey.slice(stage.length + 1) },
-        `策略键 ${legacyPath} 为旧实现命名，已自动迁移到标准键 ${standardKey}（role-pack-spec §六 命名归标准）`,
-      );
-      normalized[standardKey.slice(stage.length + 1)] = value;
-    } else {
-      normalized[key] = value;
-    }
-  }
-  return normalized;
-}
-
-/**
  * 从 manifest.strategy 节点解析策略声明（JSON 已是嵌套对象）
  *
  * 只取四阶段下声明过的键，未声明的阶段为 undefined（由 mergeStrategy 补默认值）。
- * 旧实现键 → 标准键 别名迁移（spec §六 命名归标准）。
  *
  * @param strategyNode manifest.strategy 节点
  * @returns 解析后的策略声明，无 strategy 返回 undefined
@@ -100,11 +73,7 @@ function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined 
   const stages: Record<string, Record<string, unknown>> = {};
   for (const [stage, node] of Object.entries(strategyNode as Record<string, unknown>)) {
     if (typeof node !== 'object' || node === null) continue;
-    const fields: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-      fields[key] = value;
-    }
-    if (Object.keys(fields).length > 0) stages[stage] = normalizeStageKeys(stage, fields);
+    stages[stage] = { ...(node as Record<string, unknown>) };
   }
 
   if (Object.keys(stages).length === 0) return undefined;

@@ -2,13 +2,12 @@
  * expandEnvVars.test.ts — 环境变量展开测试
  *
  * 覆盖范围：
- *   1. llm 主通道（apiKey / baseUrl）
- *   2. llm.providers 多 Provider 映射表
- *   3. llm.background 后台通道
- *   4. embedding 向量嵌入通道
- *   5. 边界场景：undefined 值、不存在的环境变量、字符串中多个占位符
+ *   1. llm.providers 多 Provider 映射表
+ *   2. llm.background 后台通道
+ *   3. embedding 向量嵌入通道
+ *   4. 边界场景：undefined 值、不存在的环境变量、字符串中多个占位符
  *
- * 注：与 loader.test.ts 互补——loader 测试集成路径，本文件测试纯函数
+ * 注：apiKey/baseUrl 只存在于 providers/background 中（主通道扁平字段为唯一 providers 格式）。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { expandEnvVars } from '../expandEnvVars.js';
@@ -18,11 +17,6 @@ import type { Config } from '@/config/loader.js';
 function createConfigWithPlaceholders(): Config {
   return {
     llm: {
-      provider: 'deepseek',
-      model: 'test-model',
-      temperature: 0.7,
-      apiKey: '${TEST_API_KEY}',
-      baseUrl: '${TEST_BASE_URL}',
       providers: {
         provider1: {
           provider: 'deepseek',
@@ -63,70 +57,7 @@ function createConfigWithPlaceholders(): Config {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 1. LLM 主通道展开
-// ══════════════════════════════════════════════════════════════
-
-describe('expandEnvVars — LLM 主通道', () => {
-
-  beforeEach(() => {
-    // 清理测试环境变量
-    delete process.env.TEST_API_KEY;
-    delete process.env.TEST_BASE_URL;
-  });
-
-  it('展开 apiKey 占位符', () => {
-    process.env.TEST_API_KEY = 'sk-test-key-123';
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        apiKey: '${TEST_API_KEY}',
-        baseUrl: undefined,
-        providers: undefined,
-        background: undefined,
-      },
-    };
-    const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBe('sk-test-key-123');
-  });
-
-  it('展开 baseUrl 占位符', () => {
-    process.env.TEST_BASE_URL = 'https://api.example.com';
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        apiKey: undefined,
-        baseUrl: '${TEST_BASE_URL}',
-        providers: undefined,
-        background: undefined,
-      },
-    };
-    const result = expandEnvVars(config);
-    expect(result.llm.baseUrl).toBe('https://api.example.com');
-  });
-
-  it('同时展开 apiKey 和 baseUrl', () => {
-    process.env.TEST_API_KEY = 'sk-key';
-    process.env.TEST_BASE_URL = 'https://api.test.com';
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        apiKey: '${TEST_API_KEY}',
-        baseUrl: '${TEST_BASE_URL}',
-        providers: undefined,
-        background: undefined,
-      },
-    };
-    const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBe('sk-key');
-    expect(result.llm.baseUrl).toBe('https://api.test.com');
-  });
-});
-
-// ══════════════════════════════════════════════════════════════
-// 2. Providers 映射表展开
+// 1. Providers 映射表展开
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — Providers 映射表', () => {
@@ -146,12 +77,6 @@ describe('expandEnvVars — Providers 映射表', () => {
 
     const config: Config = {
       ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        apiKey: undefined,
-        baseUrl: undefined,
-        background: undefined,
-      },
       embedding: undefined,
     };
     const result = expandEnvVars(config);
@@ -170,8 +95,6 @@ describe('expandEnvVars — Providers 映射表', () => {
         ...createConfigWithPlaceholders().llm,
         providers: undefined,
         background: undefined,
-        apiKey: undefined,
-        baseUrl: undefined,
       },
       embedding: undefined,
     };
@@ -194,8 +117,6 @@ describe('expandEnvVars — Providers 映射表', () => {
           },
         },
         background: undefined,
-        apiKey: undefined,
-        baseUrl: undefined,
       },
       embedding: undefined,
     };
@@ -206,7 +127,7 @@ describe('expandEnvVars — Providers 映射表', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 3. Background 后台通道展开
+// 2. Background 后台通道展开
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — Background 后台通道', () => {
@@ -224,8 +145,6 @@ describe('expandEnvVars — Background 后台通道', () => {
       ...createConfigWithPlaceholders(),
       llm: {
         ...createConfigWithPlaceholders().llm,
-        apiKey: undefined,
-        baseUrl: undefined,
         providers: undefined,
       },
       embedding: undefined,
@@ -246,8 +165,6 @@ describe('expandEnvVars — Background 后台通道', () => {
         ...createConfigWithPlaceholders().llm,
         background: undefined,
         providers: undefined,
-        apiKey: undefined,
-        baseUrl: undefined,
       },
       embedding: undefined,
     };
@@ -257,7 +174,7 @@ describe('expandEnvVars — Background 后台通道', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 4. Embedding 向量嵌入通道展开
+// 3. Embedding 向量嵌入通道展开
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — Embedding 向量嵌入通道', () => {
@@ -275,8 +192,6 @@ describe('expandEnvVars — Embedding 向量嵌入通道', () => {
       ...createConfigWithPlaceholders(),
       llm: {
         ...createConfigWithPlaceholders().llm,
-        apiKey: undefined,
-        baseUrl: undefined,
         providers: undefined,
         background: undefined,
       },
@@ -294,8 +209,6 @@ describe('expandEnvVars — Embedding 向量嵌入通道', () => {
       ...createConfigWithPlaceholders(),
       llm: {
         ...createConfigWithPlaceholders().llm,
-        apiKey: undefined,
-        baseUrl: undefined,
         providers: undefined,
         background: undefined,
       },
@@ -307,119 +220,135 @@ describe('expandEnvVars — Embedding 向量嵌入通道', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 5. 边界场景
+// 4. 边界场景
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — 边界场景', () => {
 
-  it('环境变量不存在时替换为空字符串', () => {
+  it('providers 中环境变量不存在时替换为空字符串', () => {
     delete process.env.NONEXISTENT_VAR_XYZ;
     const config: Config = {
       ...createConfigWithPlaceholders(),
       llm: {
-        provider: 'deepseek',
-        model: 'test-model',
-        temperature: 0.7,
-        apiKey: '${NONEXISTENT_VAR_XYZ}',
-        baseUrl: undefined,
-        providers: undefined,
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          only: {
+            provider: 'deepseek',
+            model: 'test-model',
+            apiKey: '${NONEXISTENT_VAR_XYZ}',
+            baseUrl: undefined,
+          },
+        },
         background: undefined,
       },
+      embedding: undefined,
     };
     const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBe('');
+    expect(result.llm.providers!.only!.apiKey).toBe('');
   });
 
-  it('apiKey 为 undefined 时保留 undefined', () => {
+  it('providers 中 apiKey 为 undefined 时保留 undefined', () => {
     const config: Config = {
       ...createConfigWithPlaceholders(),
       llm: {
-        provider: 'deepseek',
-        model: 'test-model',
-        temperature: 0.7,
-        apiKey: undefined,
-        baseUrl: undefined,
-        providers: undefined,
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          only: {
+            provider: 'deepseek',
+            model: 'test-model',
+            apiKey: undefined,
+            baseUrl: undefined,
+          },
+        },
         background: undefined,
       },
+      embedding: undefined,
     };
     const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBeUndefined();
+    expect(result.llm.providers!.only!.apiKey).toBeUndefined();
   });
 
-  it('字符串中包含多个占位符', () => {
+  it('providers 中字符串包含多个占位符', () => {
     process.env.VAR_A = 'aaa';
     process.env.VAR_B = 'bbb';
     const config: Config = {
       ...createConfigWithPlaceholders(),
       llm: {
-        provider: 'deepseek',
-        model: 'test-model',
-        temperature: 0.7,
-        apiKey: '${VAR_A}:${VAR_B}',
-        baseUrl: undefined,
-        providers: undefined,
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          only: {
+            provider: 'deepseek',
+            model: 'test-model',
+            apiKey: '${VAR_A}:${VAR_B}',
+            baseUrl: undefined,
+          },
+        },
         background: undefined,
       },
+      embedding: undefined,
     };
     const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBe('aaa:bbb');
+    expect(result.llm.providers!.only!.apiKey).toBe('aaa:bbb');
     delete process.env.VAR_A;
     delete process.env.VAR_B;
   });
 
-  it('纯文本（无占位符）不做替换', () => {
+  it('providers 中纯文本（无占位符）不做替换', () => {
     const config: Config = {
       ...createConfigWithPlaceholders(),
       llm: {
-        provider: 'deepseek',
-        model: 'test-model',
-        temperature: 0.7,
-        apiKey: 'hardcoded-key-123',
-        baseUrl: 'https://fixed.url.com',
-        providers: undefined,
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          only: {
+            provider: 'deepseek',
+            model: 'test-model',
+            apiKey: 'hardcoded-key-123',
+            baseUrl: 'https://fixed.url.com',
+          },
+        },
         background: undefined,
       },
+      embedding: undefined,
     };
     const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBe('hardcoded-key-123');
-    expect(result.llm.baseUrl).toBe('https://fixed.url.com');
+    expect(result.llm.providers!.only!.apiKey).toBe('hardcoded-key-123');
+    expect(result.llm.providers!.only!.baseUrl).toBe('https://fixed.url.com');
   });
 
-  it('空字符串保留为空字符串', () => {
+  it('providers 中空字符串保留为空字符串', () => {
     const config: Config = {
       ...createConfigWithPlaceholders(),
       llm: {
-        provider: 'deepseek',
-        model: 'test-model',
-        temperature: 0.7,
-        apiKey: '',
-        baseUrl: '',
-        providers: undefined,
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          only: {
+            provider: 'deepseek',
+            model: 'test-model',
+            apiKey: '',
+            baseUrl: '',
+          },
+        },
         background: undefined,
       },
+      embedding: undefined,
     };
     const result = expandEnvVars(config);
-    expect(result.llm.apiKey).toBe('');
-    expect(result.llm.baseUrl).toBe('');
+    expect(result.llm.providers!.only!.apiKey).toBe('');
+    expect(result.llm.providers!.only!.baseUrl).toBe('');
   });
 
   it('返回的是新对象（不修改原配置）', () => {
     const config: Config = {
       ...createConfigWithPlaceholders(),
       llm: {
-        provider: 'deepseek',
-        model: 'test-model',
-        temperature: 0.7,
-        apiKey: '${SOME_VAR}',
-        baseUrl: undefined,
-        providers: undefined,
+        ...createConfigWithPlaceholders().llm,
         background: undefined,
       },
+      embedding: undefined,
     };
-    const originalApiKey = config.llm.apiKey;
+    const originalApiKey = config.llm.providers!['provider1']!.apiKey;
     expandEnvVars(config);
     // 原对象不应被修改
-    expect(config.llm.apiKey).toBe(originalApiKey);
+    expect(config.llm.providers!['provider1']!.apiKey).toBe(originalApiKey);
   });
 });

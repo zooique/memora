@@ -8,11 +8,10 @@
  *
  * API Key 从环境变量读取（不写入配置文件）
  *
- * 多 Provider 管理（v1.2）：
+ * 多 Provider 管理（唯一配置格式）：
  *   - providers：命名 Provider 映射表，key 为别名（如 "deepseek"、"openai"）
  *   - active：当前激活的 Provider 别名
  *   - taskRouter：任务类型到 Provider 别名的路由映射（P1-2 多模型路由基础）
- *   - 不配置 providers 时，回退到旧的单 provider 扁平字段（向后兼容）
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -35,28 +34,16 @@ const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 /**
  * LLM 配置接口
  *
- * provider 允许任意字符串：内核仅内置 'mock' 一种机制（用于无 API Key 的测试/降级），
+ * 多 Provider 映射表（providers + active）是唯一配置格式。
+ * 内核仅内置 'mock' 一种机制（用于无 API Key 的测试/降级），
  * 其他厂商 provider（deepseek/openai/doubao 等）需宿主或用户显式配置 baseUrl + model。
  * 详见 ADR-003（内核只提供机制，不预设厂商策略）
  */
 interface LlmConfig {
-  // 旧格式：单一 provider 扁平字段（向后兼容，providers 未配置时生效）
-  /** Provider 名称 */
-  provider: string;
-  /** 模型名称 */
-  model: string;
-  /** API 基础 URL（可选） */
-  baseUrl?: string;
-  /** API 密钥（可选，从环境变量读取。本地 LLM 可为空） */
-  apiKey?: string;
-  /** 采样温度（0-2） */
-  temperature: number;
   /**
    * 多 Provider 映射表
    *
    * key 为 Provider 别名（如 "deepseek"、"openai"），value 为 Provider 配置。
-   * 配置后，旧扁平字段（provider/model/baseUrl/apiKey）被忽略。
-   * 不配置时回退到旧的单 provider 行为——完全向后兼容。
    */
   providers?: Record<string, ProviderEntryConfig>;
   /**
@@ -69,8 +56,8 @@ interface LlmConfig {
   /**
    * 后台通道配置（多 Provider 路由预留）
    *
-   * 不配时所有消费者复用前台（llm）配置——零破坏性，完全向后兼容。
-   * 配置后，归档/投影/画像等后台操作使用此通道，降低成本。
+   * 不配时所有消费者复用前台（llm）配置——零破坏性。
+   * 配置后，归档/投影等后台操作使用此通道，降低成本。
    * 详见接入指南 §九
    */
   background?: BackgroundConfig;
@@ -91,7 +78,7 @@ interface LlmConfig {
    * ```
    *
    * key 为任务类型，value 为 providers 映射表中的别名。
-   * 不配置时所有任务使用 active Provider（完全向后兼容）。
+   * 不配置时所有任务使用 active Provider。
    */
   taskRouter?: Partial<Record<'simple' | 'reasoning' | 'code' | 'summary', string>>;
 }
@@ -148,10 +135,9 @@ export interface Config {
 // 否则会在对象缺失时使用内部字段的默认值。
 const DEFAULT_CONFIG: Config = {
   llm: {
-    provider: 'mock',
-    // model 留空：factory.ts 会校验并抛出 'LLM model 未配置'，由宿主显式填充
-    model: '',
-    temperature: 0.7,
+    // 无默认 provider（mock 由 factory 在显式配置 provider: 'mock' 时创建）
+    providers: undefined,
+    active: undefined,
   },
   memory: {
     // dataDir 留空：由宿主显式注入，内核不硬编码具体目录路径（ADR-002 v0.6）
@@ -183,12 +169,6 @@ export function parseConfig(raw: unknown): Config {
   const llmInput = asRecordIfObject(input.llm);
 
   const llm: LlmConfig = {
-    provider: typeof llmInput.provider === 'string' ? llmInput.provider : DEFAULT_CONFIG.llm.provider,
-    model: typeof llmInput.model === 'string' ? llmInput.model : DEFAULT_CONFIG.llm.model,
-    // 过滤空字符串：空字符串视为未配置，避免旧格式分支中 resolvedBaseUrl = '' 触发误报
-    baseUrl: typeof llmInput.baseUrl === 'string' && llmInput.baseUrl ? llmInput.baseUrl : undefined,
-    apiKey: typeof llmInput.apiKey === 'string' && llmInput.apiKey ? llmInput.apiKey : undefined,
-    temperature: validateTemperature(llmInput.temperature, DEFAULT_CONFIG.llm.temperature),
     providers: parseProviders(llmInput.providers),
     active: typeof llmInput.active === 'string' ? llmInput.active : undefined,
     background: parseBackground(llmInput.background),

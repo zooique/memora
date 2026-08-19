@@ -30,7 +30,6 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { Memory } from '@/memory/types.js';
-import type { FileStore } from '@/memory/store.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -44,8 +43,6 @@ let security: SecurityGuard;
 let provider: LlmProvider;
 /** mock backgroundProvider */
 let backgroundProvider: LlmProvider;
-/** mock fileStore */
-let fileStore: FileStore;
 
 beforeEach(async () => {
   // 创建临时项目目录
@@ -54,7 +51,6 @@ beforeEach(async () => {
   security = new SecurityGuard(projectPath, projectPath);
   provider = createMockProvider('mock-provider');
   backgroundProvider = createMockProvider('mock-background');
-  fileStore = createMockFileStore();
 });
 
 afterEach(async () => {
@@ -78,21 +74,6 @@ function createMockProvider(name: string): LlmProvider {
     })();
   });
   return { name, chat: chatMock } as unknown as LlmProvider;
-}
-
-/**
- * 构造 mock FileStore
- *
- * 提供空实现，供 ProjectContext 使用
- *
- * @returns mock FileStore
- */
-function createMockFileStore(): FileStore {
-  return {
-    read: vi.fn().mockResolvedValue(null),
-    write: vi.fn().mockResolvedValue(undefined),
-    list: vi.fn().mockResolvedValue([]),
-  } as unknown as FileStore;
 }
 
 /**
@@ -128,11 +109,9 @@ function createPctx(overrides: Partial<ProjectContext> = {}): ProjectContext {
     projectName: 'test-project',
     memoraDir: projectPath,
     dbPath: join(projectPath, 'memora.db'),
-    fileStore,
     index: storage,
     security,
     bootstrapMemories: [],
-    loadResult: { success: true, migrated: false },
     ...overrides,
   } as ProjectContext;
 }

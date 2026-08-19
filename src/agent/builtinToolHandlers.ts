@@ -39,7 +39,7 @@ const TRACE_MESSAGE_CHAR_LIMIT = 2000;
  *
  * 解析 frontmatter 中的 source 字段，若匹配 persona/skill/rule 则返回对应的工具名后缀。
  * 这是内容特征检测——路径拦截易被绕过，但 frontmatter 中的 source 字段
- * 是 FileStore.write 写入的结构特征，LLM 无法绕过。
+ * 是配置文件写入方遵循的结构特征，LLM 无法绕过。
  *
  * @param content 写入内容（可能含 frontmatter）
  * @returns 匹配的 source 标签（'persona' | 'skill' | 'rule'），未匹配返回 null
@@ -83,7 +83,7 @@ export class BuiltinToolHandlers {
    * 配置文件 source 标签（内容特征检测用，frontmatter 中 source 字段值）
    *
    * 路径拦截易被绕过（去掉 personas/ 前缀即可），但配置文件 frontmatter 中必然包含
-   * source: persona/skill/rule —— 这是 FileStore.write 写入的结构特征，LLM 无法绕过。
+   * source: persona/skill/rule —— 这是配置文件写入方遵循的结构特征，LLM 无法绕过。
    */
   static readonly CONFIG_SOURCES: ReadonlySet<string> = new Set(['persona', 'skill', 'rule']);
 
@@ -293,7 +293,7 @@ export class BuiltinToolHandlers {
 
     // 内容特征检测：检查写入内容是否包含配置文件 frontmatter（source: persona/skill/rule）
     // 路径拦截易被绕过（去掉 personas/ 前缀即可），但配置文件 frontmatter 中 source 字段
-    // 是 FileStore.write 写入的结构特征，LLM 无法绕过。
+    // 是配置文件写入方遵循的结构特征，LLM 无法绕过。
     const configSource = checkForConfigSource(content);
     if (configSource) {
       return `错误：写入内容包含 ${configSource} 配置文件的 frontmatter 标记（source: ${configSource}），请使用 create_${configSource} 工具创建，不要使用 write_file。create_${configSource} 会正确写入 ${this.configPathHint(configSource)} 并触发热重载。`;

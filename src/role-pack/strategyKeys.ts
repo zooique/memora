@@ -1,28 +1,13 @@
 /**
  * 策略键名 SSOT (Single Source of Truth)
  *
- * 集中管理角色包策略键名的定义、别名映射和校验规则。
+ * 集中管理角色包策略键名的定义和校验规则。
  * 旨在解决 rolePackManager.ts 和 validator.ts 中策略键名定义分散的问题，
  * 确保新增或修改策略键时只需修改一处。
  */
 
 // ══════════════════════════════════════════════════════════════
-// 1. 策略键别名映射 (Legacy Aliases)
-// ══════════════════════════════════════════════════════════════
-
-/**
- * L2 策略键别名映射（旧实现键 → 标准键，role-pack-spec §六 命名归标准）
- *
- * 存量 manifest 若误写私有键名 act.toolCalls / reflect.endingHandoff，
- * 装载时自动映射到标准键 + warn 提示（平滑兼容，不阻塞装载）。
- */
-export const STRATEGY_KEY_ALIASES: Readonly<Record<string, string>> = {
-  'act.toolCalls': 'act.toolMode',
-  'reflect.endingHandoff': 'reflect.handoff',
-};
-
-// ══════════════════════════════════════════════════════════════
-// 2. 校验规则辅助类型与函数 (Validation Helpers)
+// 1. 校验规则辅助类型与函数 (Validation Helpers)
 // ══════════════════════════════════════════════════════════════
 
 /**

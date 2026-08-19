@@ -13,11 +13,15 @@ import type { Config } from '@/config/loader.js';
 function makeConfig(overrides: Partial<Config['llm']> = {}): Config {
   return {
     llm: {
-      provider: 'deepseek',
-      apiKey: 'sk-test-key',
-      baseUrl: 'https://api.deepseek.com/v1',
-      model: 'deepseek-chat',
-      temperature: 0.7,
+      providers: {
+        deepseek: {
+          provider: 'deepseek',
+          apiKey: 'sk-test-key',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+        },
+      },
+      active: 'deepseek',
       ...overrides,
     },
     memory: { dataDir: '~/.memora', maxContextTokens: 80000 },
@@ -38,11 +42,6 @@ function makeMultiProviderConfig(
 ): Config {
   return {
     llm: {
-      provider: 'deepseek',
-      apiKey: 'sk-test-key',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
-      temperature: 0.7,
       providers,
       active,
     },
@@ -54,13 +53,23 @@ function makeMultiProviderConfig(
 
 describe('createLlmProvider · mock provider', () => {
   it('provider 为 mock 时应该返回 MockProvider', () => {
-    const config = makeConfig({ provider: 'mock' });
+    const config = makeConfig({
+      providers: {
+        mock: { provider: 'mock', model: 'mock-model', baseUrl: 'https://mock.local' },
+      },
+      active: 'mock',
+    });
     const provider = createLlmProvider(config);
     expect(provider.name).toBe('mock');
   });
 
   it('MockProvider 应该能处理空消息列表', async () => {
-    const config = makeConfig({ provider: 'mock' });
+    const config = makeConfig({
+      providers: {
+        mock: { provider: 'mock', model: 'mock-model', baseUrl: 'https://mock.local' },
+      },
+      active: 'mock',
+    });
     const provider = createLlmProvider(config);
     const chunks: string[] = [];
     for await (const chunk of provider.chat([])) {
@@ -70,7 +79,12 @@ describe('createLlmProvider · mock provider', () => {
   });
 
   it('MockProvider 应该返回 finishReason stop', async () => {
-    const config = makeConfig({ provider: 'mock' });
+    const config = makeConfig({
+      providers: {
+        mock: { provider: 'mock', model: 'mock-model', baseUrl: 'https://mock.local' },
+      },
+      active: 'mock',
+    });
     const provider = createLlmProvider(config);
     let finishReason = '';
     for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
@@ -89,29 +103,51 @@ describe('createLlmProvider · 基本创建', () => {
 
   it('自定义 baseUrl 和 model 覆盖默认', () => {
     const config = makeConfig({
-      baseUrl: 'https://custom.api/v1',
-      model: 'custom-model',
+      providers: {
+        custom: { provider: 'deepseek', model: 'custom-model', baseUrl: 'https://custom.api/v1' },
+      },
+      active: 'custom',
     });
     const provider = createLlmProvider(config);
-    expect(provider.name).toBe('deepseek');
+    expect(provider.name).toBe('custom');
   });
 });
 
 describe('createLlmProvider · 错误场景', () => {
   it('缺失 baseUrl 应该抛出 configError', () => {
-    const config = makeConfig({ baseUrl: undefined as unknown as string });
+    const config = makeConfig({
+      providers: {
+        bad: { provider: 'deepseek', model: 'deepseek-chat' as string, baseUrl: '' },
+      },
+      active: 'bad',
+    });
     expect(() => createLlmProvider(config)).toThrow('baseUrl 未配置');
   });
 
   it('缺失 model 应该抛出 configError', () => {
-    const config = makeConfig({ model: undefined as unknown as string });
+    const config = makeConfig({
+      providers: {
+        bad: { provider: 'deepseek', model: '' as string, baseUrl: 'https://api.deepseek.com/v1' },
+      },
+      active: 'bad',
+    });
     expect(() => createLlmProvider(config)).toThrow('model 未配置');
   });
 
   it('apiKey 为空时仍可创建（内核不校验——本地 LLM / Ollama 等场景）', () => {
-    const config = makeConfig({ apiKey: '' });
+    const config = makeConfig({
+      providers: {
+        local: { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', apiKey: '' },
+      },
+      active: 'local',
+    });
     const provider = createLlmProvider(config);
-    expect(provider.name).toBe('deepseek');
+    expect(provider.name).toBe('local');
+  });
+
+  it('providers 未配置时应抛出 configError', () => {
+    const config = makeConfig({ providers: undefined, active: undefined });
+    expect(() => createLlmProvider(config)).toThrow('providers 未配置');
   });
 });
 
@@ -147,10 +183,9 @@ describe('createLlmProvider · 多 Provider 映射表（providers + active）', 
     expect(() => createLlmProvider(config)).toThrow('无效的 active Provider');
   });
 
-  it('providers 为空对象时应回退到旧扁平字段（向后兼容）', () => {
+  it('providers 为空对象时应抛出 configError', () => {
     const config = makeMultiProviderConfig({}, 'deepseek');
-    const provider = createLlmProvider(config);
-    expect(provider.name).toBe('deepseek');
+    expect(() => createLlmProvider(config)).toThrow('providers 未配置');
   });
 
   it('多 Provider 中 mock provider 应正确创建', () => {
@@ -235,18 +270,9 @@ describe('createProviderFromConfig · 单 Provider 独立创建', () => {
 });
 
 describe('createProviderRouter · 多模型路由（P1-2）', () => {
-  it('无 providers 配置时应返回统一 Provider（旧格式向后兼容）', () => {
-    const config = makeConfig({ provider: 'mock', model: 'test-model', baseUrl: 'https://test.api/v1' });
-    const router = createProviderRouter(config);
-    const p1 = router('simple');
-    const p2 = router('reasoning');
-    const p3 = router('code');
-    const p4 = router('summary');
-    // 所有任务类型返回同一个 Provider 实例
-    expect(p1).toBe(p2);
-    expect(p2).toBe(p3);
-    expect(p3).toBe(p4);
-    expect(p1.name).toBe('mock');
+  it('无 providers 配置时应抛出 configError', () => {
+    const config = makeConfig({ providers: undefined, active: undefined });
+    expect(() => createProviderRouter(config)).toThrow('providers 未配置');
   });
 
   it('有 providers 但无 taskRouter 时应返回统一 active Provider', () => {

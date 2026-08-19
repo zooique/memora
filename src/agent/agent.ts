@@ -579,14 +579,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     loop.setToolApproval(resolveToolApproval(strategy));
 
     // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
-    // Phase 9：loopContinue 为 number（0=关闭，N=最多 N 轮）；兼容旧格式 'on'→1 轮 / 'off'→0 轮
+    // loopContinue 为 number（0=关闭，N=最多 N 轮）
     const loopContinue = strategy.reflect?.loopContinue;
-    const maxSelfReviewRounds =
-      typeof loopContinue === 'number'
-        ? loopContinue
-        : loopContinue === 'on'
-          ? 1
-          : 0;
+    const maxSelfReviewRounds = typeof loopContinue === 'number' ? loopContinue : 0;
     loop.setMaxSelfReviewRounds(maxSelfReviewRounds);
 
     // M2.1 换角色 → 工具集切换：按激活角色包的 capabilities 应用工具暴露面

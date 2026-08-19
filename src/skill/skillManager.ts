@@ -93,13 +93,6 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 删除技能（向后兼容别名，委托基类 deleteItem）
-   */
-  deleteSkill(name: string): boolean {
-    return this.deleteItem(name);
-  }
-
-  /**
    * 注册运行时注入的技能
    *
    * 供 SkillManager 运行态注册技能（如 confirmConfigSuggestion 持久化技能、

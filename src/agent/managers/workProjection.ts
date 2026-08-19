@@ -355,8 +355,7 @@ export class WorkProjectionManager {
   /**
    * 从 content 中解码投影元数据
    *
-   * 新格式：首行 JSON + 空行 + summary
-   * 旧格式（HTML 注释）兼容解析
+   * 当前格式：首行 JSON + 空行 + summary
    */
   private decodeContent(content: string): {
     hash: string | null;
@@ -365,42 +364,32 @@ export class WorkProjectionManager {
     keyDecisions: string[];
     summary: string;
   } {
-    // 新格式：首行 JSON
+    // 首行 JSON（唯一格式）
     const firstLine = content.split('\n')[0] ?? '';
-    if (firstLine.startsWith('{')) {
-      try {
-        const meta = JSON.parse(firstLine) as {
-          hash?: string;
-          sourcePath?: string;
-          structure?: string[];
-          decisions?: string[];
-        };
-        const summary = content.slice(firstLine.length).trim();
-        return {
-          hash: meta.hash ?? null,
-          sourcePath: meta.sourcePath ?? '',
-          structure: meta.structure ?? [],
-          keyDecisions: meta.decisions ?? [],
-          summary,
-        };
-      } catch (err) {
-        logger.debug({ err: toError(err).message }, '作品投影 JSON 解析失败，降级到旧格式');
-      }
+    if (!firstLine.startsWith('{')) {
+      // 非 JSON 首行：视为无元数据的旧文本（兜底空元数据）
+      return { hash: null, sourcePath: '', structure: [], keyDecisions: [], summary: content.trim() };
     }
-
-    // 旧格式兼容：HTML 注释
-    const hashMatch = content.match(/<!--\s*wp:hash:(\S+)\s*-->/);
-    const structureMatch = content.match(/<!--\s*wp:structure:(.+?)\s*-->/);
-    const decisionsMatch = content.match(/<!--\s*wp:decisions:(.+?)\s*-->/);
-    const summary = content.replace(/<!--\s*wp:\S+\s*-->\n?/g, '').trim();
-
-    return {
-      hash: hashMatch?.[1] ?? null,
-      sourcePath: '',
-      structure: structureMatch?.[1]?.split('|') ?? [],
-      keyDecisions: decisionsMatch?.[1]?.split('|') ?? [],
-      summary,
-    };
+    try {
+      const meta = JSON.parse(firstLine) as {
+        hash?: string;
+        sourcePath?: string;
+        structure?: string[];
+        decisions?: string[];
+      };
+      const summary = content.slice(firstLine.length).trim();
+      return {
+        hash: meta.hash ?? null,
+        sourcePath: meta.sourcePath ?? '',
+        structure: meta.structure ?? [],
+        keyDecisions: meta.decisions ?? [],
+        summary,
+      };
+    } catch (err) {
+      // JSON 解析失败：降级为空元数据（内容保留为 summary）
+      logger.debug({ err: toError(err).message }, '作品投影 JSON 解析失败');
+      return { hash: null, sourcePath: '', structure: [], keyDecisions: [], summary: content.trim() };
+    }
   }
 
 }

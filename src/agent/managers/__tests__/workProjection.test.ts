@@ -269,7 +269,7 @@ describe('WorkProjectionManager', () => {
 // 覆盖目标：
 //   - CONTENT_TRUNCATE_CHARS=3000 截断边界（验证 LLM 收到截断内容）
 //   - parseLlmJson 字段缺失降级（summary/structure/keyDecisions 各自缺失时的默认值）
-//   - encodeContent/decodeContent 新格式 round-trip + 旧格式 HTML 注释兼容
+//   - encodeContent/decodeContent JSON 格式 round-trip + 非 JSON 内容兜底
 //   - inflight Promise 缓存（同文件并发调用只触发一次 LLM）
 //   - fileName 未传时从 filePath 推导（getBaseName）
 //   - 不同路径同文件名 slug 冲突（id 相同，后写覆盖）
@@ -425,8 +425,8 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(restored!.sourcePath).toBe('/project/file.md');
     });
 
-    it('旧格式 HTML 注释应兼容解码', async () => {
-      // Given - 先用 ensureProjection 生成一个投影（拿到正确的 id），再改 content 为旧格式
+    it('非 JSON 首行内容应兜底为空元数据（旧文本降级）', async () => {
+      // Given - 先用 ensureProjection 生成一个投影（拿到正确的 id），再改 content 为非 JSON 旧文本
       const provider = createMockProvider(
         JSON.stringify({ summary: '临时', structure: [], keyDecisions: [] }),
       );
@@ -434,11 +434,8 @@ describe('WorkProjectionManager K2 深度补测', () => {
       const entry = await manager.ensureProjection('/project/file.md', '内容', 'file.md');
       expect(entry).not.toBeNull();
 
-      // 将 store 中对应 memory 的 content 替换为旧格式（HTML 注释编码）
-      const oldContent = `<!-- wp:hash:abc123 -->
-<!-- wp:structure:模块A|模块B -->
-<!-- wp:decisions:决策1 -->
-这是旧格式的摘要内容`;
+      // 将 store 中对应 memory 的 content 替换为无元数据的纯文本
+      const oldContent = `这是没有元数据的摘要内容`;
       const stored = store.get(entry!.id);
       expect(stored).toBeDefined();
       stored!.content = oldContent;
@@ -446,12 +443,12 @@ describe('WorkProjectionManager K2 深度补测', () => {
       // When
       const restored = await manager.getProjection('/project/file.md');
 
-      // Then - 应正确解析旧格式
+      // Then - 应兜底为空元数据，summary 保留全部内容
       expect(restored).not.toBeNull();
-      expect(restored!.fileHash).toBe('abc123');
-      expect(restored!.structure).toEqual(['模块A', '模块B']);
-      expect(restored!.keyDecisions).toEqual(['决策1']);
-      expect(restored!.summary).toBe('这是旧格式的摘要内容');
+      expect(restored!.fileHash).toBe('');
+      expect(restored!.structure).toEqual([]);
+      expect(restored!.keyDecisions).toEqual([]);
+      expect(restored!.summary).toBe(oldContent);
     });
   });
 

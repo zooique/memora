@@ -1,20 +1,18 @@
 /**
  * 记忆 source → 文件系统目录映射与路径构造（单一真理源）
  *
- * 从 store.ts 提取（SSOT 修复 T-A1）：
- *   - SOURCE_TO_DIR / sourceToDir 原为 FileStore 私有，宿主 configFileManager
- *     另有 TYPE_TO_SUBDIR 私有副本 + 3 处硬编码（skillInstaller/personaWatcher/index.ts）——
- *     同一张「source → 子目录」表 5 处表达，新增 source 类型时漏改即「写 A 读 B」分叉。
- *   - 统一后所有「source → 子目录 / 文件路径」消费方（内核 FileStore + 宿主设定文件层）
- *     从本模块导入，宿主侧不再定义映射。
+ * 背景（SSOT 修复 T-A1）：宿主 configFileManager 曾有 TYPE_TO_SUBDIR 私有副本 +
+ * 3 处硬编码（skillInstaller/personaWatcher/index.ts）——同一张「source → 子目录」
+ * 表多处表达，新增 source 类型时漏改即「写 A 读 B」分叉。
+ * 本模块是唯一真理源，所有「source → 子目录 / 文件路径」消费方（内核 + 宿主设定文件层）
+ * 从本模块导入，宿主侧不再定义映射。
  *
- * 语义约束（与 FileStore 原实现逐字节等价）：
+ * 语义约束：
  *   - SOURCE_TO_DIR 仅覆盖配置类记忆（persona/rule/skill）；
- *     未知 source 透传 source 字符串作目录名（ADR-004 开放字符串设计，store.test.ts:127 有守护）。
+ *     未知 source 透传 source 字符串作目录名（ADR-004 开放字符串设计）。
  *   - source 经 validateSource 校验（拒 `..`/null 字节等），校验失败抛 configError（原语义）。
- *   - name 不做字符白名单（Memory.name 是开放字符串，parseMemory 只查类型），
- *     但做「目标必须在 baseDir/sourceDir 内」的目录前缀纵深防御（防 name 注入 `../` 逃逸子目录，
- *     等价宿主 resolveTargetPath 原 startsWith 防护）。
+ *   - name 不做字符白名单（Memory.name 是开放字符串），
+ *     但做「目标必须在 baseDir/sourceDir 内」的目录前缀纵深防御（防 name 注入 `../` 逃逸子目录）。
  */
 import { resolve, sep } from 'node:path';
 import { configError } from '@/utils/errors.js';
@@ -24,8 +22,8 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 /**
  * 已知 source 到文件系统目录的映射
  *
- * 仅覆盖配置类记忆（启动时扫描的 persona/rule/skill）；
- * 运行时产生的记忆（profile/work-projection）不由 FileStore 管理。
+ * 仅覆盖配置类记忆（persona/rule/skill）；
+ * 运行时产生的记忆（work-projection 等）不由文件目录管理。
  * 未知 source 由 sourceToDir 透传 source 字符串作目录名。
  */
 export const SOURCE_TO_DIR: Readonly<Record<string, string>> = {

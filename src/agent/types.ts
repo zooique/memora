@@ -26,21 +26,18 @@
  *     │    ├─ messageHistory.ts（历史消息存储）
  *     │    └─ tracer.ts（可观测性 span）
  *     ├─ composer.ts（四级补全器，不中断工作模型）
- *     ├─ rolePackMatcher.ts（LLM 辅助角色包匹配）
  *     ├─ builtinToolHandlers.ts（内置工具处理器）
- *     └─ managers/（14 个专职 Manager + 4 辅助/聚合模块）
+ *     └─ managers/（专职 Manager + 辅助/聚合模块）
  *          ├─ archiveCoordinator.ts（归档协调，emit archiveFailed）
- *          ├─ autoConfigRefiner.ts（配置自动优化）
  *          ├─ chatLockManager.ts（并发锁，token 机制）
- *          ├─ configManager.ts（配置加载）
  *          ├─ dedupManager.ts（L1 语义去重）
  *          ├─ memoryAdvisor.ts（L3 记忆建议）
  *          ├─ memoryDecayScheduler.ts（记忆衰减调度）
- *          ├─ memoryInspector.ts（记忆读写统一入口，ADR-014）
+ *          ├─ memoryInspector.ts（记忆读写统一入口）
  *          ├─ sessionArchiver.ts（会话归档）
  *          ├─ sessionManager.ts（会话状态 + 检查点）
  *          ├─ textPolishManager.ts（文本润色）
- *          └─ workProjection.ts（作品投影）
+ *          ├─ workProjection.ts（作品投影）
  *          ─ 辅助模块 ─
  *          ├─ goalConsistencyChecker.ts（P3.1 目标一致性校验）
  *          ├─ llmJudgeHelper.ts（LLM 判断辅助，供记忆衰减等使用）
