@@ -1,7 +1,7 @@
 # Skills 三级渐进披露设计（Progressive Disclosure）
 
 > **定位**：Skills 系统采用三级渐进披露模式，对齐 Claude Skills / Agent Skills 行业标准。
-> **状态**：**L1+L2 已实现**（2026-08-15 read_skill + L1）；**L3 资源/代码分离规划中**（2026-08-18）
+> **状态**：**L1+L2 已实现**（2026-08-15 read_skill + L1）；**L3 资源/代码分离已实现**（2026-08-19，见 [skillManager.ts](../../src/skill/skillManager.ts) `read_resource`/`listResources`、`skillScriptRunner.ts` 沙箱脚本，assembler 注入 L3 回调）
 > **关联**：[role-pack-spec.md](./role-pack-spec.md)、[memory-role-pack-boundary.md](./memory-role-pack-boundary.md)
 
 ---
@@ -154,12 +154,12 @@ run_skill_script: {
 ### 2.4 L3 实现清单
 
 - [x] 设计文档（本文件）
-- [ ] `skill/types.ts`：添加 `SkillResource`、`SkillScript`、`SkillLayer3` 类型
-- [ ] `scanner.ts`：扫描时发现 `resources/` 和 `scripts/` 目录
-- [ ] `SkillManager` / `RolePackManager`：暴露 `listResources()`、`readResource()`、`listScripts()` 方法
-- [ ] `read_resource` 工具实现
-- [ ] `run_skill_script` 工具实现（含沙箱执行、超时控制、结果捕获）
-- [ ] system prompt L1 清单附加 L3 提示（"本技能含资源/脚本"）
+- [x] `skill/types.ts`：添加 `SkillResource`、`SkillScript`、`SkillLayer3` 类型（[types.ts](../../src/skill/types.ts#L10-L36)）
+- [x] `skillManager.ts`：扫描时发现 `resources/` 和 `scripts/` 目录（`discovered.resources/scripts`，[skillManager.ts](../../src/skill/skillManager.ts)）
+- [x] `SkillManager` / `RolePackManager`：暴露 `listResources()`、`readResource()`、`listScripts()` 方法（[skillManager.ts](../../src/skill/skillManager.ts)）
+- [x] `read_resource` 工具实现（[assembler.ts](../../src/agent/assembler.ts) L387 注入回调）
+- [x] `run_skill_script` 工具实现（含沙箱执行、超时控制、结果捕获，[skillScriptRunner.ts](../../src/skill/skillScriptRunner.ts)；assembler L395 注入）
+- [x] system prompt L1 清单附加 L3 提示（"本技能含资源/脚本"，[skillManager.ts](../../src/skill/skillManager.ts)）
 
 ---
 
@@ -170,3 +170,4 @@ run_skill_script: {
 | 2026-08-15 | 渐进披露 L1+L2 实现（read_skill + L1 元数据注入） |
 | 2026-08-18 | 两级技能统一；C2 能力独立顶层 capabilities |
 | 2026-08-18 | **重写文档**：明确三级渐进披露模型（L1 元数据 / L2 正文 / L3 资源脚本），对齐 Claude Skills 行业标准 |
+| 2026-08-19 | **状态更新（N3 盘点）**：L3 资源/代码分离由"规划中"更正为**已实现**（清单 6 项核对落地：`SkillLayer3` 类型 / resources+scripts 扫描 / `listResources`+`readResource`+`listScripts` / `read_resource` 与 `run_skill_script` 工具 / L1 附加"含资源/脚本"提示） |

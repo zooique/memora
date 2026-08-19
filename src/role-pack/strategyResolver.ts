@@ -39,6 +39,22 @@ import type {
 export const DEFAULT_RECENT_HISTORY_ROUNDS = 3;
 
 /**
+ * Token 预算内核默认值（SSOT 单一来源）。
+ * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.tokenBudget`（角色包声明层）、
+ * `resolveTokenBudget` 的非法/缺失回退、`DEFAULT_L2_STRATEGY.tokenBudget`（loop 构造期惰性初始）。
+ * 0 = 不限制。
+ */
+export const DEFAULT_TOKEN_BUDGET = 8000;
+
+/**
+ * 步数预算内核默认值（SSOT 单一来源）。
+ * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.stepBudget`（角色包声明层）、
+ * `resolveStepBudget` 的非法/缺失回退、`DEFAULT_L2_STRATEGY.stepBudget`（loop 构造期惰性初始）。
+ * 软上限，配合 maxIterations 双重保护；0 = 不限制。
+ */
+export const DEFAULT_STEP_BUDGET = 50;
+
+/**
  * 行为策略全局默认值——未配置的维度使用全局默认值，角色包只声明它想改变的部分。
  * const 断言确保类型推导为字面量值。
  */
@@ -77,8 +93,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     userFollowup: 'silent',
   },
   global: {
-    tokenBudget: 8000,
-    stepBudget: 50,
+    tokenBudget: DEFAULT_TOKEN_BUDGET,
+    stepBudget: DEFAULT_STEP_BUDGET,
     costBudget: 0,
     errorHandling: 'retry',
     safetyRule: 'inherit',
@@ -193,18 +209,18 @@ export function resolveInputInterrupt(strategy: BehaviorStrategy | undefined): I
   return normalizeEnum(strategy?.act?.inputInterrupt, ['allow', 'block'], 'allow');
 }
 
-/** 解析 Token 预算上限（内核已消费）：合法非负整数采用，非法/缺失回退默认 8000（0=不限制） */
+/** 解析 Token 预算上限（内核已消费）：合法非负整数采用，非法/缺失回退内核默认（DEFAULT_TOKEN_BUDGET，0=不限制） */
 export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.tokenBudget;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
-  return valid ? candidate : 8000;
+  return valid ? candidate : DEFAULT_TOKEN_BUDGET;
 }
 
-/** 解析步数预算上限（内核已消费）：合法非负整数采用，非法/缺失回退默认 50（软上限，配合 maxIterations 双重保护，0=不限制） */
+/** 解析步数预算上限（内核已消费）：合法非负整数采用，非法/缺失回退内核默认（DEFAULT_STEP_BUDGET，软上限，配合 maxIterations 双重保护，0=不限制） */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
-  return valid ? candidate : 50;
+  return valid ? candidate : DEFAULT_STEP_BUDGET;
 }
 
 /** 解析记忆写入模式（内核已消费）：非法值归位 'auto'——auto=自动写入 / confirm=写入前待宿主确认 */
@@ -297,8 +313,8 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
   errorHandling: 'retry',
   providerRouting: 'auto',
   inputInterrupt: 'allow',
-  tokenBudget: 8000,
-  stepBudget: 50,
+  tokenBudget: DEFAULT_TOKEN_BUDGET,
+  stepBudget: DEFAULT_STEP_BUDGET,
   multiStepReasoning: 'auto',
   toolReadonly: 'full',
   toolApproval: 'auto',

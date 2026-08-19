@@ -21,9 +21,12 @@
 | 第一批 | **T2** "单一检查点"名实对齐 | 4.3 名实出入 | 极低 | ✅ 已完成（落地记录见 T2） |
 | 第二批 | **T4** 文档名实清扫（guardrail 过期引用） | 5.2 文档耦合 | 低 | ✅ 已完成（见 T4） |
 | 第二批 | **T3** `determineTaskType` 加固 | 5.2 硬编码启发式 | 低 | ✅ 已完成（魔数收敛；注入点明确不做） |
-| 慎做 | 僵尸码 / 僵尸键清扫（guardrail、ArchiveMode 三态残留、type→时间窗残留） | 5.2 冗余 | 低 | 仅洁癖层，非结构 |
+| 慎做 | 僵尸码 / 僵尸键清扫（guardrail、ArchiveMode 三态残留、type→时间窗残留） | 5.2 冗余 | 低 | ✅ 已办结（2026-08-19 复核：guardrail 已随档 1 摘除无残留；时间窗已移出 ADR-025 D7；ArchiveMode 仅两态且为活跃 API，非僵尸） |
 | 第二批 | **T5** 接入指南 guardrail 清理 | 5.3 过期文档 | 低 | ✅ 已完成 |
 | 第二批 | **T6** 设计文档时态标注剥离 | 5.2 文档耦合 | 中 | ✅ 已完成 |
+| 复核派生 | **N1** `resolve*` 回退硬编码收敛（单常源） | 单一真理源微债 | 极低 | ✅ 已完成（见 N1） |
+| 复核派生 | **N2** 评审文档↔代码版本同频对表 | 结构性文档债 | 低 | ✅ 已完成（见 N2） |
+| 复核派生 | **N3** 架构文档过期引用盘点 | 文档收口 | 无 | ✅ 已完成（仅 1 处过期，见 N3） |
 
 **排序依据**：风险越低、ROI 越高、越符合单一真理源哲学者越靠前。T1 虽是中风险，但一次收敛两块债（策略 setter 分散 + 魔数分散）且不改运行时语义，故列第一优先。
 
@@ -182,3 +185,59 @@ loop.setStrategy(partial) ──合并──▶ 内部字段（读取点不变�
 - **拆分 agent.ts / loop.ts 大文件**：拆文件收益 < 风险，且破坏"门面 + 单一执行引擎"的可读性。真正该清的是已摘除功能的**僵尸码/僵尸键**，而非结构拆分。
 - **降级记忆治理栈**：记忆是 memora 最强项，不许动。
 - **新增插件系统 / 事件溯源**：harness-borrowing-assessment 已否决，理由依旧成立。
+- **determineTaskType 加宿主注入点 / 升级为角色可配维度**：T3 已治标（魔数收敛），注入点明确**不做**（当前无真实消费，防全景物化），此处不重置。
+- **agent.ts 门面再瘦身**：B1 归位审计实证"纯透传二道门"几乎无可删，3000 行多为真实编排，已判定不当瘦身目标，由 B2 eslint 防线兜住增量。
+
+---
+
+## 三、第 8 部分复核派生任务（2026-08-19 排雷后）
+
+> 由 [memora-agent-kernel-review.md](memora-agent-kernel-review.md) 第 8 部分（同日复核）排雷派生。T1–T6 / A / B 已完成，以下仅登记**真实剩余**——收敛之尾 + 防再犯，不重置任何已判定"不做"项。
+
+### N1 · `resolve*` 回退硬编码收敛（T1 尾巴 · SSOT 微债）
+
+- **现状**：[strategyResolver.ts](../src/role-pack/strategyResolver.ts)：`resolveTokenBudget` 回退字面量 `8000`、`resolveStepBudget` 回退字面量 `50`，与 `DEFAULT_BEHAVIOR_STRATEGY.global` 及 `DEFAULT_L2_STRATEGY` 的常量值重复。
+- **改动**：新增 `DEFAULT_TOKEN_BUDGET = 8000` / `DEFAULT_STEP_BUDGET = 50`（放 strategyResolver.ts 内，SSOT 单一来源），`resolve*` 回退改引用；`DEFAULT_L2_STRATEGY` 与 `DEFAULT_BEHAVIOR_STRATEGY.global` 复用同一常量。
+- **不动**：`resolveL2Strategy(undefined) === DEFAULT_L2_STRATEGY` 守恒测试必须仍通过（该测试是 T1 新增的守恒护栏）。
+- **验证**：`pnpm typecheck` 零错；`resolveL2Strategy` 守恒测试 + 全量 vitest 绿。
+- **优先级**：低（轻微重复，但符合"单一真理源"与数字不散落）。
+
+### 落地记录（2026-08-19 · 单一来源收敛）
+
+- [strategyResolver.ts](../src/role-pack/strategyResolver.ts)：新增 `DEFAULT_TOKEN_BUDGET`（8000）与 `DEFAULT_STEP_BUDGET`（50）两个内核默认常量（SSOT 单一来源），将 4 处硬编码字面量——`DEFAULT_BEHAVIOR_STRATEGY.global.tokenBudget/stepBudget`、`resolveTokenBudget`/`resolveStepBudget` 非法/缺失回退、`DEFAULT_L2_STRATEGY.tokenBudget/stepBudget`——统一引用同一常量。
+- **命名说明**：任务原拟名单一来源命名为 `DEFAULT_RESOLVE_TOKEN_BUDGET`，落地时改为更准确的 `DEFAULT_TOKEN_BUDGET`（因该值同时服务"声明层默认 / resolve 回退 / loop 惰性初始"三处，非仅 resolve 一家，避免误导性命名），文档与代码名实保持一致。
+- **不动**：测试断言中的字面量 8000/50（如 loop.test.ts `setStrategy({ tokenBudget: 8000 })`）是断言值，非 SSOT 债，不改（保持一致语义）。
+- **验证**：`pnpm typecheck` 零错；`strategyResolver.test.ts` **88 通过**（含 T1 守恒 `resolveL2Strategy(undefined) === DEFAULT_L2_STRATEGY`，回退值取自同一常量故守恒天然成立）。eslint 待 pre-commit hook 统一校验。
+
+### N2 · 评审文档→代码版本同频机制（防再犯）
+
+- **问题**：`memora-agent-kernel-review.md` 初稿在 T1/T3 收敛前生成，导致"133KB/2293行/11 setter/魔数分散"等数字在收敛后失真——这正是本次排雷要修正的。
+- **改动**：评审文档维护者在每次大收敛后，复用 `prompts/` 下**已有的审查提示词**（如「聚焦 Memora 的 SSOT 与设计闭环审查」），重核文件行数/字节/setter 数量等可量化断言；并保留一张「评审日期 → 参考代码版本/commit」对表于文首，标注本文依据的代码状态。
+- **不动**：不为此建 CI 自动化（评审是人工判断，不引入定期任务以保持内核简单）。
+- **验证**：下一轮收敛（如 N1 落地）后，按提示词重跑并核对 N1 涉及的数字是否同频。
+- **优先级**：中（结构性文档债，本次已就地补第 8 部分复核，机制是现代化落点）。
+
+### 落地记录（2026-08-19 · 版本同频对表落地）
+
+- [memora-agent-kernel-review.md](memora-agent-kernel-review.md) 文首新增「**版本同频对表**」：三行（初稿基准 / 第八部分复核 / N1 落地复核），各标注参考代码状态 + git 标识；并写明维护规则（每次内核大收敛后复用既有审查提示词重核、仅更新对表与第八部分、不改历史正文）。
+- **不动**：未为此建 CI 自动化（评审是人工判断），维持"评审属人工"的内核简洁。
+
+### N3 · 已固化核心文档过期引用盘点（T4/T5/T6 的收口）
+
+- **背景**：T4/T5/T6 只清了 `agent-design-philosophy.md`（11 处）、`memory-as-summary.md`（22 处）与接入指南/api-reference 的 guardrail 引用；`docs/` 下仍有 11 个架构类文件含 `2026-08-1x` 日期标注，其中部分"标【已落地】"需核对其与当前代码是否仍一致（如 `role-pack-spec.md` 的 L3 状态"规划中/已实现"）。
+- **注意（避免误清）**：`memory-as-summary.md` 中 InsightExtractor **多次提及是其移除原因的说明性保留**（[L516/L521/L526](../architecture/memory-as-summary.md)），对应 `checklist` 的僵尸键盘点职责，**不是待清残留**——盘点时应区分"移除说明（保留）"与"假定的已删除实现引用（清）"。
+- **改动**：逐个核 `docs/architecture/` 下含 `2026-08-1x` 的文件（`role-pack-spec.md`/`structured-fidelity.md`/`host-plugin-alignment.md`/`module-inventory.md`/`role-pack-skills-progressive-disclosure.md`/`mvp-scope.md`/`memory-role-pack-boundary.md`/`recall-mutex-pre-filter.md`/`harness/harness-borrowing-assessment.md`）——仅清"标已落地但代码已删"的过期引用，保留"移除原因说明"；**不做重构**。
+- **不动**：保留设计理由与调研/标准标注（对齐 T6 口径）。
+- **验证**：逐文件留一条"已核，无过期/已修正 X"备注；typecheck 与测试不受影响（纯文档）。
+- **优先级**：中（文档债，可由 N2 机制滚动完成，不急一次铺平）。
+
+### 落地记录（2026-08-19 · 盘点结论：仅 1 处过期）
+
+- **修正**：[role-pack-skills-progressive-disclosure.md](architecture/role-pack-skills-progressive-disclosure.md) L3 状态由"规划中"更正为"**已实现**"，清单 6 项全部核对勾选（[SkillLayer3](../src/skill/types.ts#L10-L36)、`resources`+`scripts` 扫描、`listResources`+`readResource`+`listScripts`、`read_resource` 与 `run_skill_script` 工具（[skillScriptRunner](../src/skill/skillScriptRunner.ts)）、L1 附加"含资源/脚本"提示），并补 2026-08-19 变更记录。
+- **核验准确（不改）**：`role-pack-spec.md` L3 是"代码层（远期/未启用）"，为真实设计预留非过期；`structured-fidelity.md`（summaryFocus 已落地）、`recall-mutex-pre-filter.md`（已落地）、`mvp-scope.md`/`host-plugin-alignment.md`（历史规划快照）状态与代码一致。
+- **说明**：`memory-as-summary.md` 的 InsightExtractor 为移除原因说明，保留（对应 checklist 僵尸键职责）。
+- **验证**：typecheck/测试不受影响（纯文档变更）。
+
+### 任务排序建议
+
+`N1`（纯代码、低风险，单一真理源收尾）→ `N2`（机制防再犯）→ `N3`（文档收口，可滚动）。三者互不依赖，均不触碰"不做"清单。

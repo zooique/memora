@@ -4,6 +4,16 @@
 > 日期：2026-08-19
 > 方法：全文阅读 [agent-design-philosophy.md](architecture/agent-design-philosophy.md)、[types.ts](../src/agent/types.ts)、[loop.ts](../src/agent/loop.ts)、[agent.ts](../src/agent/agent.ts)、[harness-borrowing-assessment.md](harness/harness-borrowing-assessment.md) 后独立给出的判断；所有结论附真实性核查证据。
 
+> **版本同频对表**（防"按旧版本复述失真"）：
+>
+> | 评审区段 | 参考代码状态 | 版本标识 |
+> |---------|-------------|---------|
+> | 第一至七部分（初稿） | T1/T3 收敛**前**（11 离散 setter / 魔数分散 / agent.ts 133KB） | 初稿基准 |
+> | 第八部分（同日复核，2026-08-19） | T1/T3 收敛**后**（单一 `L2RuntimeStrategy` / 魔数入常量 / agent.ts 104.2KB） | git `d914f25e` |
+> | N1 落地复核（2026-08-19） | `DEFAULT_TOKEN_BUDGET`/`DEFAULT_STEP_BUDGET` 单一来源收敛后 | git `d914f25e` |
+>
+> **维护规则**：每次内核大收敛（策略/魔数/名实变更）后，复用 `prompts/` 下既有审查提示词重核本表，并更新上行数字；正文旧断言以第八部分及本表为准，不另改历史段落。
+
 ---
 
 ## 第一部分：真实性核查
@@ -109,3 +119,38 @@ memora 主张"策略是枚举，角色只选择不定义"（SSOT），正确落�
 ## 第七部分：结语
 
 **论"Agent 内核设计思维"，memora 比多数 harness 家族更接近本质；论"工程收敛"，其思想优雅程度已超过实现形态的节制程度。** 最大挑战不是写好某个函数，而是敢于做减法——承认第 14 章的"全景枚举"是设计空间而非必装接口，砍掉零真实消费的策略维度，把"20 个组件的门面 + 11 个策略 setter"收敛到"一个策略对象 + 一组真正的核心接口"。若一个以"最小单元"为哲学的内核仍需维护 133KB 门面，那哲学就该反过来审视实现，而非让实现用注释去合理化膨胀。
+
+---
+
+## 第八部分：同日复核（2026-08-19 · T1/T3 收敛后）
+
+> 本评审初稿在 T1/T3 收敛前生成，部分"实现膨胀"论断已被同日收敛修复。以下为逐条实测复核（`Get-Content | Measure-Object` / 源码直读），修正过时数字并登记新雷，避免读者按本文复述失真。
+
+### 8.1 必须修正（已过时 / 数字误报）
+
+| # | 原文论断 | 实测（2026-08-19） | 判定 |
+|---|---------|-------------------|------|
+| 1 | "agent.ts 约 133KB" | `agent.ts` 实际 **1415 行 / 104.2KB** | 误报（复述旧口径） |
+| 2 | "loop.ts 2293 行" | `loop.ts` 实际 **2255 行 / 66.9KB** | 误报（复述旧口径） |
+| 3 | "11 个 L2 策略离散 setter + 6 基础设施 = 17 个 set" | 策略已收敛为**单一 `L2RuntimeStrategy` 对象 + `setStrategy()` 单入口**（[loop.ts](../src/agent/loop.ts#L392)），由 [resolveL2Strategy](../src/role-pack/strategyResolver.ts#L317) 统一装配；仅存生命周期方法 `setStrategy/setProvider/setChatOptions/setCurrentRoundId` + `refreshToolDefinitions/refreshRolePackPrefix/refreshBootstrapMemories/resetContextSummary/clearPauseRequest`（约 9 个） | 已过时——**单一策略对象已落地，原"离散 setter"债已清** |
+| 4 | "魔数分散各处（tokenBudget=8000/stepBudget=50）" | 已入 [DEFAULT_BEHAVIOR_STRATEGY.global](../src/role-pack/strategyResolver.ts#L79) 与 `DEFAULT_L2_STRATEGY`；`REASONING_INPUT_CHARS=500` 已入 [constants.ts](../src/agent/constants.ts#L157)，注释标注"T3收敛(2026-08-19)"。仅 `resolve*` 回退分支仍硬编码 8000/50 | 大部分已收敛（余轻微重复，非"分散"） |
+| 5 | "agent.ts 25+ 组件" | 实测 24 个 `private` 字段（[agent.ts](../src/agent/agent.ts#L87-L151)），其中组件/manager 约 **20** | 数字微调（20 非 25+），**实质仍存** |
+
+### 8.2 复核为【属实】的核心论断（无需修正）
+
+- **"触发源决定召回"**：`recall()` 仅在外部输入路径（[agent.ts](../src/agent/agent.ts#L602) / L1132）调用并注入 `loop.processUserInput`；Loop 工具自循环不触发 recall。
+- **三重闸门单点执行前检查**：`toolReadonly → toolApproval → preExecutionCheck` 顺序过滤（[loop.ts](../src/agent/loop.ts#L1049)）。
+- **可观测 span**：`systemPromptHash`（[loop.ts](../src/agent/loop.ts#L850)）、`attachedMemoryFingerprint`（L1465）。
+- **记忆即摘要 round-summary 单轨 + InsightExtractor 已移除**。
+- **双通道召回 + hybridMerge 融合 + superseded 去重 + 粘性匹配 + skills 动态扫描 + Composer 四级补全**：全部属实。
+
+### 8.3 复核新发现的雷（原评审未标注）
+
+1. **文档-代码不同步是结构性问题**：本评审与 `agent-design-philosophy.md` 混入大量 `2026-08-xx` 落点与表格，T1/T3 收敛后未同步，按文档复述必然失真。**比文件体积更实际的是文档债。**
+2. **`determineTaskType` 脆弱性压实**：靠单条 user 消息正则检代码块 + `>500` 字符判长度，驱动 Provider 路由（直接影响成本）——见 [loop.ts](../src/agent/loop.ts#L775-L789)，仍是最脆点。
+3. **策略单一对象的收敛质量值得肯定**：`resolve*` 系列"非法值归位内核默认"（[strategyResolver.ts](../src/role-pack/strategyResolver.ts#L98) normalizeEnum）实现严谨。
+
+### 8.4 复核结论
+
+- "设计思维强"（单轮闭环/触发源决定召回、记忆一等公民、可追溯性）**全部经代码证实**。
+- "实现膨胀"最重的 3 条（133KB/2293行/11 setter/魔数分散）中 **2 条为延迟复述且已被同日收敛修复**；**真正站得稳的剩余问题**：`agent.ts` 仍持 ~20 组件字段（属实质）、**文档-代码脱节（最该治理）**、`determineTaskType` 脆弱。
