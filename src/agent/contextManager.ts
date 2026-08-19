@@ -121,33 +121,18 @@ function countCjkAndOther(str: string): { cjkChars: number; otherChars: number }
  * 从 AgentLoop 提取，保持无状态设计（不持有 messages 引用）。
  */
 export class ContextManager {
-  /** 上下文窗口 token 上限（readonly，构造时传入） */
+  // 组合 root 统一注入为字段，类内不承担 Provider 选址逻辑。
   private readonly maxContextTokens: number;
-  /** LLM Provider（用于 generateContextSummary） */
   private readonly provider: LlmProvider;
-  /**
-   * Provider 路由选择器（P1-2 多模型路由基础，可选）
-   *
-   * 有配置时，摘要生成走 'summary' 路由，使用轻量模型。
-   * 不配置时回退到主 Provider（完全向后兼容）。
-   */
   private readonly providerRouter: ProviderRouter | undefined;
-  /** 截断占位消息文案函数 */
   private readonly contextTruncatedFn: (skipped: number, kept: number) => string;
-  /** 可观测性 Tracer（用于 generateContextSummary span 埋点，默认 NOOP） */
   private readonly tracer: ITracer;
 
-  /** 上下文摘要缓存（首次截断后生成，后续截断复用） */
   private contextSummary: string | null = null;
-  /** 摘要缓存生成时的消息数量，用于判断缓存是否过期 */
   private contextSummaryMsgCount: number = 0;
-  /** 截断次数统计（truncateMessages 实际触发截断 +1，供 getMetrics 读取） */
   private _truncationCount: number = 0;
-  /** 截断事件回调（宿主可注入以通知用户） */
   private readonly onContextTruncated: ((skipped: number, kept: number) => void) | undefined;
-  /** 已存轮次摘要加载器（ADR-023 C1，可选；截断时优先复用已存 round-summary） */
   private readonly roundSummaryLoader: (() => string) | undefined;
-  /** 最少保留的最近原始对话轮数（ADR-023 C2，默认 0=不强制） */
   private readonly minRecentRounds: number;
 
   constructor(opts: ContextManagerOptions) {
@@ -158,94 +143,65 @@ export class ContextManager {
     this.onContextTruncated = opts.onContextTruncated;
     this.roundSummaryLoader = opts.roundSummaryLoader;
     this.minRecentRounds = Math.max(0, Math.floor(opts.minRecentRounds ?? 0));
-    // 未注入 tracer 时降级为 NOOP_TRACER（零开销）
     this.tracer = opts.tracer ?? NOOP_TRACER;
   }
 
-  /** 截断次数（供 AgentLoop.getMetrics 读取） */
   get truncationCount(): number {
     return this._truncationCount;
   }
 
   /**
-   * 估算消息数组的 token 数（CJK 中文适配）
+   * 估算消息 token 数。
    *
-   * 区分 CJK 与非 CJK 字符分别估算：
-   *   - CJK 字符（中文/日文/韩文）：cjkChars / CJK_CHARS_PER_TOKEN（1.5）
-   *   - 非 CJK 字符（英文/数字/符号）：otherChars / CHARS_PER_TOKEN（3）
-   * 统一字符估算会严重低估中文（4 字符 ≈ 1.3 token，实际约 4-8 token）。
-   *
-   * toolCalls 的 JSON 序列化字符数也计入（同样区分 CJK/非 CJK）。
-   *
-   * @param messages 消息数组
-   * @returns 估算的 token 数
+   * CJK（中/日/韩）与其它字符密度不同需分开估算：
+   * 统一按 3 字符/token 会严重低估中文（实际约 1.5 字符/token）。
+   * toolCalls 序列化字符同样计入。
    */
   estimateTokens(messages: readonly Message[]): number {
     let cjkChars = 0;
     let otherChars = 0;
     for (const m of messages) {
-      // 消息内容：区分 CJK 与非 CJK 字符
       const contentCounts = countCjkAndOther(m.content);
       cjkChars += contentCounts.cjkChars;
       otherChars += contentCounts.otherChars;
-      // toolCalls 的 JSON 序列化字符数（同样区分 CJK/非 CJK）
       if (m.toolCalls) {
         const toolCallsCounts = countCjkAndOther(JSON.stringify(m.toolCalls));
         cjkChars += toolCallsCounts.cjkChars;
         otherChars += toolCallsCounts.otherChars;
       }
     }
-    // CJK 与非 CJK 分别按各自密度估算后求和
     return Math.ceil(
       cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN +
       otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
     );
   }
 
-  /**
-   * 检查是否需要截断（token 超阈值 + 消息数 > 3）
-   *
-   * @param messages 消息数组
-   * @returns 是否需要截断
-   */
+  /** token 超阈值且消息数 > 3（避免单条消息触发截断）时才需要截断 */
   shouldTruncate(messages: readonly Message[]): boolean {
     return this.estimateTokens(messages) > this.maxContextTokens && messages.length > 3;
   }
 
   /**
-   * 截断消息数组以适配上下文窗口
+   * 截断消息数组以适配上下文窗口。
    *
-   * 策略：保留下方、裁中间、提取关键消息。
-   * - messages[0]（system prompt）始终保留（这是 Agent 的"灵魂"）
-   * - 从尾部向前取最近的消息对（user + assistant + tool），直到估算 token 接近上限
-   * - 从被裁剪的消息中按重要性权重提取关键用户消息，插入到 placeholder 之前
-   * - 头部被裁剪的消息替换为一条摘要占位消息
-   *
-   * 重要性权重：user 消息 > tool 结果 > assistant 回复
-   * 被裁剪的用户消息中，内容较长的（信息量大）优先保留
-   *
-   * 如果 system prompt 本身就超过 maxContextTokens，不做截断（让 LLM API 报错，
-   * 开发者需要缩减 bootstrapMemories 或 toolDefinitions）。
-   *
-   * @param messages 完整消息数组
-   * @param summary 可选的上下文摘要（注入到 system prompt 和 placeholder 之间）
-   * @returns 截断后的消息数组（可能是原数组引用，无修改时）
+   * 策略：保留下方（最近）、裁中间、头部折叠成占位消息。
+   * - messages[0]（system prompt）始终保留；
+   * - 从被裁剪段按重要性（user > tool > assistant）提取关键消息；
+   * - 若 system prompt 本身已超窗口则不截断（配置问题，交由 LLM API 报错）。
    */
   truncateMessages(messages: readonly Message[], summary?: string): readonly Message[] {
     const estimated = this.estimateTokens(messages);
     if (estimated <= this.maxContextTokens || messages.length <= 3) {
-      return messages; // 未超阈值，无需截断
+      return messages;
     }
 
-    // system prompt 单独保留
     const systemMsg = messages[0];
     if (!systemMsg || systemMsg.role !== 'system') {
-      return messages; // 异常：没有 system prompt，不截断
+      return messages;
     }
 
     const systemTokens = this.estimateTokens([systemMsg]);
     if (systemTokens >= this.maxContextTokens) {
-      // system prompt 本身就超了——这是配置问题，不应该截断
       logger.warn(
         { systemTokens, maxContextTokens: this.maxContextTokens },
         'system prompt 已超过上下文窗口上限，请缩减 bootstrapMemories 或 toolDefinitions',
@@ -253,16 +209,15 @@ export class ContextManager {
       return messages;
     }
 
-    // 剩余可用 token 数（留 10% 缓冲给 LLM 响应）
+    // 留 10% 缓冲给 LLM 响应
     const availableTokens =
       Math.floor(this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) - systemTokens;
 
-    // 从尾部向前收集消息（最近的最重要）
+    // 从尾部向前收集最近消息（tail 区）；cutIndex 记录裁剪起始
     const tail: Message[] = [];
     let tailTokens = 0;
-    let cutIndex = messages.length; // 被裁剪区域的起始索引
-    // C2（ADR-023）：强制保留最近 minRecentRounds 轮完整原始对话（不被摘要替代）
-    // 从尾部数 user 消息，每个 user 消息算一轮，其配套消息一并保留。
+    let cutIndex = messages.length;
+    // 强制保留最近 minRecentRounds 轮原始对话，不被摘要替代（0=不强制）
     let forcedTailCount = 0;
     if (this.minRecentRounds > 0) {
       let userSeen = 0;
@@ -275,53 +230,44 @@ export class ContextManager {
       }
     }
     for (let i = messages.length - 1; i >= 1; i--) {
-      // 移除非空断言：循环条件保证索引有效，null 检查兜底
       const msg = messages[i];
       if (!msg) break;
       const msgTokens = this.estimateTokens([msg]);
-      // 强制保留区内的消息不计入 token 上限（C2）；超出强制区才按 token 限制
+      // 强制保留区不计入 token 上限；超出该区才按 token 截断
       const inForced = tail.length < forcedTailCount;
       if (!inForced && tailTokens + msgTokens > availableTokens) {
-        cutIndex = i + 1; // cutIndex 是第一条被保留的尾部消息
-        break; // 再加这条就超了
+        cutIndex = i + 1;
+        break;
       }
-      tail.unshift(msg); // 保持顺序：从尾部取，但插入时保持时间顺序
+      tail.unshift(msg);
       tailTokens += msgTokens;
       cutIndex = i;
     }
 
-    // 计算被裁剪的消息
-    const skipped = cutIndex - 1; // -1 是 system prompt
+    // 去掉 system prompt（-1）；裁剪数为 0 说明全部保留
+    const skipped = cutIndex - 1;
     if (skipped <= 0) {
-      return messages; // 全部保留
+      return messages;
     }
 
-    // 截断次数统计：确实发生了截断（skipped > 0）
     this._truncationCount++;
-    // 通知宿主上下文被截断（如��回调）
     this.onContextTruncated?.(skipped, tail.length);
 
-    // 从被裁剪的消息中按重要性提取关键消息
-    // 重要性权重：user > tool > assistant；内容较长的用户消息优先
+    // 从被裁剪段按重要性提取关键消息（保留信息量最高的用户输入）
     const cutMessages = messages.slice(1, cutIndex);
     const keyMessages = this.extractKeyMessages(cutMessages, availableTokens - tailTokens);
 
-    // 构造一条占位消息，让 LLM 知道有历史被裁剪了
+    // 占位消息：告知 LLM 有历史被裁剪
     const placeholder: Message = {
       role: 'system',
       content: this.contextTruncatedFn(skipped, tail.length),
     };
 
     const truncated: Message[] = [systemMsg];
-
-    // 如果有摘要，插入到 system prompt 和 placeholder 之间
     if (summary) {
       truncated.push({ role: 'system', content: summary });
     }
-
-    // 插入从被裁剪区域提取的关键消息
     truncated.push(...keyMessages);
-
     truncated.push(placeholder);
     truncated.push(...tail);
 
@@ -343,38 +289,25 @@ export class ContextManager {
   }
 
   /**
-   * 从被裁剪的消息中按重要性提取关键消息
-   *
-   * 重要性权重：
-   * - user 消息：权重 3（用户输入信息量最高）
-   * - tool 消息：权重 2（工具结果有参考价值）
-   * - assistant 消息：权重 1（助手回复可从上下文推断）
-   *
-   * 贪心选取：按权重降序 + 内容长度降序排列，逐条选取直到 token 用完。
-   * 最终按原始顺序返回（保持时间线一致性）。
-   *
-   * @param cutMessages 被裁剪的消息数组
-   * @param availableTokens 可用 token 数
-   * @returns 提取的关键消息数组（按原始顺序）
+   * 从被裁剪段按重要性贪心选取关键消息，保留信息量最高的用户输入。
+   * 权重：user=3 > tool=2 > assistant=1，同级按内容长度；最后恢复原始顺序。
    */
   private extractKeyMessages(cutMessages: readonly Message[], availableTokens: number): Message[] {
     if (availableTokens <= 0 || cutMessages.length === 0) return [];
 
-    // 计算每条消息的权重和 token 数
     const weighted = cutMessages.map((msg, index) => ({
       msg,
-      index, // 原始顺序索引
+      index, // 原始顺序索引（最终恢复用）
       weight: this.messageImportance(msg),
       tokens: this.estimateTokens([msg]),
     }));
 
-    // 按权重降序 + 内容长度降序排列
     weighted.sort((a, b) => {
       if (b.weight !== a.weight) return b.weight - a.weight;
       return b.msg.content.length - a.msg.content.length;
     });
 
-    // 贪心选取，直到 token 用完
+    // 贪心选取直到 token 用完
     const selected: typeof weighted = [];
     let usedTokens = 0;
     for (const item of weighted) {
@@ -383,17 +316,12 @@ export class ContextManager {
       usedTokens += item.tokens;
     }
 
-    // 恢复原始顺序（保持时间线一致性）
+    // 恢复原始顺序，保持时间线一致
     selected.sort((a, b) => a.index - b.index);
     return selected.map((item) => item.msg);
   }
 
-  /**
-   * 评估单条消息的重要性权重
-   *
-   * @param msg 消息
-   * @returns 权重值（user=3, tool=2, assistant=1）
-   */
+  /** 消息重要性权重：user>tool>assistant */
   private messageImportance(msg: Message): number {
     if (msg.role === 'user') return 3;
     if (msg.role === 'tool') return 2;
@@ -417,20 +345,12 @@ export class ContextManager {
   }
 
   /**
-   * 获取或创建上下文摘要（带缓存管理）
+   * 获取或创建上下文摘要（带缓存）。
    *
-   * 缓存 TTL：消息数增长超过 SUMMARY_CACHE_TTL_MSGS 时缓存过期，需重新生成。
-   * 首次调用时生成摘要并缓存，后续调用复用缓存直到过期。
-   *
-   * signal 参数让摘要生成可被用户取消中断，
-   * 避免摘要 LLM 调用卡住时 generator 永久挂起（与 executeToolCalls 同源问题）。
-   *
-   * @param messages 当前消息数组（用于生成摘要和判断缓存过期）
-   * @param signal 可选的 AbortSignal，中断摘要生成
-   * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
+   * 缓存 TTL：消息数增长超 SUMMARY_CACHE_TTL_MSGS 即过期重生成。
+   * signal 使摘要 LLM 可被中断，避免其卡住时挂起调用方。
    */
   async getOrCreateSummary(messages: readonly Message[], signal?: AbortSignal): Promise<string> {
-    // 检查缓存是否有效
     const summaryExpired =
       this.contextSummary !== null &&
       messages.length - this.contextSummaryMsgCount > LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS;
@@ -439,7 +359,6 @@ export class ContextManager {
       return this.contextSummary;
     }
 
-    // 生成新摘要（传入 signal 支持中断）
     const summary = await this.generateContextSummary(messages, signal);
     this.contextSummary = summary;
     this.contextSummaryMsgCount = messages.length;
@@ -447,41 +366,28 @@ export class ContextManager {
   }
 
   /**
-   * 生成上下文摘要（enableContextSummary 时调用）
+   * 生成上下文摘要：把被裁剪段压缩成"遗忘补偿"注入 system prompt。
    *
-   * 在首次截断时，提取即将被裁剪的消息中最近几条用户/助手对话，
-   * 调用 provider 生成一句摘要，作为"遗忘补偿"注入到 system prompt 中。
-   *
-   * 通过 tracer span 埋点（TRACE_SPANS.CONTEXT_SUMMARY），
-   * 让宿主监控面板能观察截断频率、摘要生成耗时与失败率。
-   *
-   * signal 参数传入 provider.chat 的 ChatOptions，
-   * 让 fetch 请求和 SSE 流读取都能被 abort 中断；
-   * for await 循环中也检查 signal.aborted 提前退出。
-   *
-   * @param messages 当前消息数组
-   * @param signal 可选的 AbortSignal
-   * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
+   * 策略：
+   * - 优先复用已存的 round-summary（每轮后台生成的零成本产物），仅无已存摘要才调 LLM；
+   * - 走 providerRouter 的 'summary' 路由（轻量模型），未配置则回退主 provider；
+   * - abort 或失败一律降级为空串返回，不影响主流程。
    */
   private async generateContextSummary(
     messages: readonly Message[],
     signal?: AbortSignal,
   ): Promise<string> {
-    // 启动 CONTEXT_SUMMARY span，记录摘要生成的耗时与异常
     const summarySpan = this.tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY, {
       messageCount: messages.length,
       summarizingMessages: Math.min(messages.length - 1, LOOP_CONSTANTS.SUMMARY_MSG_COUNT),
     });
 
     try {
-      // signal 已 abort 时直接返回空，不发起 LLM 调用
       if (signal?.aborted) {
         summarySpan.setAttribute('aborted', true);
         return '';
       }
 
-      // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
-      // 已存摘要是"每轮后台异步生成"的结构化产物，取用零成本、保真；仅无已存摘要才走 LLM。
       if (this.roundSummaryLoader) {
         const existing = this.roundSummaryLoader();
         if (existing) {
@@ -506,12 +412,10 @@ export class ContextManager {
         return '';
       }
 
-      // 选择摘要 Provider（P1-2 多模型路由：有 providerRouter 时走 'summary' 路由）
       const summaryProvider = this.providerRouter
         ? this.providerRouter('summary')
         : this.provider;
 
-      // 将 signal 注入 ChatOptions，让 provider 的 fetch/SSE 能被 abort 中断
       const stream = summaryProvider.chat(
         [
           {
@@ -529,14 +433,12 @@ export class ContextManager {
       );
       let summary = '';
       for await (const chunk of stream) {
-        // 流读取过程中检查 abort，提前退出（provider 收到 abort 会抛 AbortError 进入 catch）
         if (signal?.aborted) {
           summarySpan.setAttribute('aborted', true);
           break;
         }
         if (chunk.content) summary += chunk.content;
       }
-      // 被中断时返回空字符串（降级为无摘要），不缓存
       if (signal?.aborted) {
         return '';
       }
@@ -544,18 +446,16 @@ export class ContextManager {
       logger.info({ summaryLength: summary.length }, '上下文摘要已生成');
       return `[Context summary of earlier conversation]\n${summary}`;
     } catch (err) {
-      // AbortError 是用户主动取消，降级为无摘要，不当作错误
+      // AbortError 是用户主动取消，降级为无摘要而非错误
       if (isAbortError(err)) {
         summarySpan.setAttribute('aborted', true);
         logger.debug('上下文摘要生成被中断，降级为无摘要');
         return '';
       }
-      // 记录异常到 span（不中断 span，标记错误状态）
       summarySpan.recordException(err instanceof Error ? err : new Error(String(err)));
       logger.warn({ err }, '上下文摘要生成失败，降级为无摘要');
       return '';
     } finally {
-      // 无论成功/失败都结束 span
       summarySpan.end();
     }
   }

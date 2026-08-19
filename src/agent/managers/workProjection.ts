@@ -1,24 +1,8 @@
 /**
- * 作品投影管理 — 用户作品的文件级感知
- *
- * 职责：
- *   - Agent 读取用户作品时生成"作品投影"（概要 + 结构 + 关键决策）
- *   - 基于文件 hash 判断是否需要重新生成
- *   - 不复制作品全文——只存概要，文件本体归用户
- *
- * 触发规则（architecture_philosophy_rules.md §1 万物皆记忆 · 第 2 层作品投影）：
- *   - 首次读取（文件 hash 无记录）→ 生成投影
- *   - hash 变更（文件被修改）→ 重新生成
- *   - hash 未变（重复读取）→ 跳过
- *
- * 设计原则：
- *   - 作品 = 用户的产出物（文档、代码等），不归 Agent 管
- *   - 作品投影 = Agent 记住"作品的形象"，source = 'work-projection'
- *   - 文件变化由用户负责
- *
- * 分层说明：
- *   本模块位于 agent/ 层（非 memory/ 层），因为它依赖 LlmProvider 做内容生成。
- *   memory/ 层只做存储和召回，不做 LLM 调用（EmbeddingService 接口注入除外）。
+ * 作品投影管理 — 用户作品的文件级感知：Agent 读取用户作品时生成"作品投影"（概要+结构+关键决策）。
+ * 基于文件 hash 判断是否重生成，不复制作品全文（只存概要，文件本体归用户）。
+ * 触发规则：首次读取（无 hash 记录）→生成；hash 变更→重新生成；hash 未变→跳过。
+ * 分层：位于 agent/ 层（依赖 LlmProvider 做生成；memory/ 层只做存储召回不做 LLM 调用）。
  */
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -33,7 +17,7 @@ import { parseLlmJson } from '@/utils/json.js';
 import { nowIso } from '@/utils/time.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
-/** 作品投影生成时内容截断长度（字符），控制 LLM token 消耗 */
+/** 作品投影生成时内容截断长度（字符），控 LLM token 消耗 */
 const CONTENT_TRUNCATE_CHARS = 3000;
 
 /** 作品投影的持久化结构 */
@@ -54,14 +38,9 @@ export interface WorkProjectionEntry {
   updatedAt: string;
 }
 
-/**
- * 作品投影管理器
- *
- * 分层：agent/ 层 — 调用 LLM 生成投影内容，通过 IMemoryStorage 写入存储。
- * 属于"作品 → 记忆投影"的桥梁组件，不属于 memory/ 的纯存储/召回职责。
- */
+/** 作品投影管理器：agent/ 层，经 LLM 生成投影内容并写入 IMemoryStorage（作品→记忆投影桥梁，非 memory/ 纯存储职责） */
 export class WorkProjectionManager {
-  /** 作品投影生成/更新时的回调（宿主可据此发射事件通知用户） */
+  /** 投影生成/更新回调（宿主据此发射事件） */
   private readonly onGenerated?: (sourcePath: string, summary: string) => void;
 
   constructor(
@@ -72,28 +51,12 @@ export class WorkProjectionManager {
     this.onGenerated = onGenerated;
   }
 
-  /**
-   * in-flight Promise 缓存，防止同文件并发读取时重复调用 LLM
-   * key: sourcePath（同一文件路径只会有一个未完成的生成 Promise）
-   */
+  /** in-flight Promise 缓存（key: sourcePath），防同文件并发读取时重复调 LLM */
   private readonly inflight: Map<string, Promise<WorkProjectionEntry | null>> = new Map();
 
   /**
-   * 检查并更新作品投影
-   *
-   * 核心逻辑：
-   *   1. 计算文件 hash
-   *   2. 查询 SQLite 中是否有该文件的投影（by sourcePath）
-   *   3. 无投影 → 首次读取 → 生成
-   *   4. 有投影但 hash 不同 → 文件已修改 → 重新生成
-   *   5. 有投影且 hash 相同 → 跳过
-   *
-   * 同文件并发调用时复用同一 in-flight Promise，避免重复 LLM 调用。
-   *
-   * @param filePath 作品文件路径
-   * @param content 文件内容
-   * @param fileName 文件名（用于生成标题）
-   * @returns 投影条目，跳过生成返回已有投影
+   * 检查并更新作品投影：计算 hash → 查询已有投影 → 无则生成 / hash 不同则重新生成 / hash 相同则跳过。
+   * 同文件并发复用同一 in-flight Promise 避免重复 LLM 调用。跳过生成时返回已有投影。
    */
   async ensureProjection(
     filePath: string,
@@ -110,14 +73,11 @@ export class WorkProjectionManager {
     try {
       return await promise;
     } finally {
-      // 不论成功失败都清理占位（让下一次调用重新走流程）
       this.inflight.delete(filePath);
     }
   }
 
-  /**
-   * 实际生成投影的核心逻辑
-   */
+  /** 实际生成投影核心逻辑：hash 未变跳过，hash 变了或首次则重新生成（不删旧投影，upsert 覆盖） */
   private async doEnsureProjection(
     filePath: string,
     content: string,
@@ -131,16 +91,13 @@ export class WorkProjectionManager {
     const existing = this.index.getById(existingId);
 
     if (existing) {
-      // 检查 hash 是否变化
       const existingHash = this.parseHash(existing);
       if (existingHash === hash) {
         // hash 未变 → 跳过
         return this.fromMemory(existing);
       }
-      // hash 变了 → 重新生成（不删除旧投影，upsert 覆盖）
     }
 
-    // 生成新投影
     try {
       const projection = await this.generate(name, content);
       const entry: WorkProjectionEntry = {
@@ -153,7 +110,7 @@ export class WorkProjectionManager {
         updatedAt: nowIso(),
       };
 
-      // 写入存储（source = 'work-projection'，语义独立）
+      // 写入存储（source='work-projection'，语义独立）
       this.index.upsert(this.toMemory(entry, hash));
       logger.info(
         { file: filePath, hash, summaryLen: projection.summary.length },
@@ -168,12 +125,7 @@ export class WorkProjectionManager {
     }
   }
 
-  /**
-   * 获取已有的作品投影（不触发生成）
-   *
-   * @param filePath 文件路径
-   * @returns 投影条目，不存在返回 null
-   */
+  /** 获取已有作品投影（不触发生成）；不存在返回 null */
   async getProjection(filePath: string): Promise<WorkProjectionEntry | null> {
     const name = getBaseName(filePath) || 'unknown';
     const id = `work-proj-${slugify(name)}`;
@@ -182,27 +134,16 @@ export class WorkProjectionManager {
   }
 
   /**
-   * 等待所有 inflight 投影生成完成
-   *
-   * Agent.close() 调用此方法，确保所有正在进行的 LLM 生成 Promise
-   * 完成后再关闭 storage，防止 close 后 upsert 写入已关闭的 storage。
-   *
-   * 实现：等待 inflight Map 中所有 Promise 完成（不论成功失败）。
-   * 不 abort LLM 调用——作品投影生成是用户主动触发的高价值操作，
-   * 让正在进行的生成完成比快速失败更合理（与 L2 时效性评估的批量场景不同）。
-   *
-   * @returns 完成 Promise，无 inflight 时立即 resolve
+   * 等待所有 inflight 投影生成完成（Agent.close 调用），防 close 后 upsert 已关闭 storage。
+   * 不 abort LLM——作品投影是用户主动触发的高价值操作，让其完成优于快速失败（与 L2 时效性批量场景不同）。
    */
   async awaitInflight(): Promise<void> {
     if (this.inflight.size === 0) return;
-    // 收集所有 inflight Promise，等待全部完成
     const promises = Array.from(this.inflight.values());
     await Promise.allSettled(promises);
   }
 
-  /**
-   * 加载所有作品投影（按 source 标签召回）
-   */
+  /** 加载所有作品投影（按 source 标签召回） */
   async loadAll(): Promise<WorkProjectionEntry[]> {
     const memories = this.index.getBySource(SOURCE_LABELS.WORK_PROJECTION);
     return memories.map((m: Memory) => this.fromMemory(m));
@@ -210,13 +151,7 @@ export class WorkProjectionManager {
 
   // ── 私有方法 ──────────────────────────────────────
 
-  /**
-   * 调用 LLM 生成作品投影
-   *
-   * @param name 文件名
-   * @param content 文件内容
-   * @returns { summary, structure, keyDecisions }
-   */
+  /** 调用 LLM 生成作品投影（summary/structure/keyDecisions） */
   private async generate(
     name: string,
     content: string,
@@ -269,30 +204,17 @@ export class WorkProjectionManager {
     };
   }
 
-  /**
-   * 计算文件 SHA-256 hash
-   */
+  /** 计算文件 SHA-256 hash（复用 utils/hash.ts 通用指纹函数） */
   private computeHash(content: string): string {
-    // 复用 utils/hash.ts 的通用指纹函数，消除重复实现
     return sha256Fingerprint(content);
   }
 
-  /**
-   * 从 Memory content 中解析 hash
-   *
-   * 复用 decodeContent，避免重复 JSON 解析与 HTML 注释匹配逻辑。
-   * content 格式：JSON 元数据行 + 空行 + summary（旧格式：HTML 注释兼容）
-   */
+  /** 从 Memory content 解析 hash（复用 decodeContent，避免重复 JSON 解析） */
   private parseHash(memory: Memory): string | null {
     return this.decodeContent(memory.content).hash;
   }
 
-  /**
-   * 将 WorkProjectionEntry 转为 Memory（用于写入存储）
-   *
-   * 元数据（hash / structure / keyDecisions）编码为 content 首行 JSON，
-   * summary 保持为可见内容。source = 'work-projection'。
-   */
+  /** 将 WorkProjectionEntry 转 Memory 写存储：元数据（hash/structure/keyDecisions）编码为 content 首行 JSON，summary 保持可见，source='work-projection' */
   private toMemory(entry: WorkProjectionEntry, hash: string): Memory {
     const now = nowIso();
     const fileName = getBaseName(entry.sourcePath);
@@ -313,11 +235,7 @@ export class WorkProjectionManager {
     };
   }
 
-  /**
-   * 从 Memory 恢复 WorkProjectionEntry
-   *
-   * 从 content 的 HTML 注释中解码 hash / structure / keyDecisions
-   */
+  /** 从 Memory 恢复 WorkProjectionEntry（解码 content 中的元数据） */
   private fromMemory(m: Memory): WorkProjectionEntry {
     const { hash, structure, keyDecisions, summary, sourcePath } = this.decodeContent(m.content);
     return {
@@ -332,14 +250,7 @@ export class WorkProjectionManager {
     };
   }
 
-  /**
-   * 将投影元数据编码为 content（JSON 元数据行 + 空行 + summary）
-   *
-   * 格式：
-   *   {"hash":"...","structure":["..."],"decisions":["..."]}
-   *   (空行)
-   *   <summary>
-   */
+  /** 投影元数据编码为 content（JSON 元数据行 + 空行 + summary）。sourcePath 编入元数据使 toMemory→fromMemory 往返不丢字段 */
   private encodeContent(
     hash: string,
     sourcePath: string,
@@ -347,16 +258,11 @@ export class WorkProjectionManager {
     keyDecisions: string[],
     summary: string,
   ): string {
-    // 将 sourcePath 编入元数据，使往返（toMemory → fromMemory）不丢字段
     const meta = JSON.stringify({ hash, sourcePath, structure, decisions: keyDecisions });
     return `${meta}\n\n${summary}`;
   }
 
-  /**
-   * 从 content 中解码投影元数据
-   *
-   * 当前格式：首行 JSON + 空行 + summary
-   */
+  /** 从 content 解码投影元数据（首行 JSON + 空行 + summary）；非 JSON 首行视为无元数据旧文本（兜底空元数据） */
   private decodeContent(content: string): {
     hash: string | null;
     sourcePath: string;
@@ -367,7 +273,6 @@ export class WorkProjectionManager {
     // 首行 JSON（唯一格式）
     const firstLine = content.split('\n')[0] ?? '';
     if (!firstLine.startsWith('{')) {
-      // 非 JSON 首行：视为无元数据的旧文本（兜底空元数据）
       return { hash: null, sourcePath: '', structure: [], keyDecisions: [], summary: content.trim() };
     }
     try {

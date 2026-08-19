@@ -1,11 +1,5 @@
 /**
- * 消息历史：Agent 对话过程中的消息持久化
- *
- * 职责：
- *   - 封装"用户输入 → 会话存储"的追加操作
- *   - 封装"Agent 回复 → 会话存储"的追加操作
- *   - 维护当前会话上下文（date + session）
- *   - 通过 ISessionStore 接口实现会话持久化
+ * 消息历史：封装用户输入/Agent 回复的会话持久化，维护当前会话（date+session），经 ISessionStore 落库。
  */
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
@@ -13,9 +7,7 @@ import { configError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { nowIso, todayDate } from '@/utils/time.js';
 
-/**
- * 分叉结果
- */
+/** 分叉结果 */
 export interface ForkResult {
   /** 新会话标识（不含日期前缀，如 "main-b1"） */
   newSession: string;
@@ -25,27 +17,17 @@ export interface ForkResult {
   messages: SessionMessage[];
 }
 
-/**
- * 消息历史类
- */
+/** 消息历史类 */
 export class MessageHistory {
   /** 当前日期 YYYY-MM-DD */
   private currentDate: string;
   /** 当前会话标识（不含日期前缀） */
   private currentSession: string;
-
-  /**
-   * 挂起的归档企划集合，Agent.close() 等待它们完成
-   * 容纳 Promise<void>（fire-and-forget 内部）
-   */
+  /** 挂起的 fire-and-forget 归档集合，Agent.close() 等待其完成 */
   private pendingArchives: Set<Promise<unknown>> = new Set();
 
   constructor(
-    /**
-     * 会话存储（可选）
-     * 注入后，消息会持久化到宿主提供的存储实现。
-     * 不注入则仅在内存中保存（AgentLoop.messages[]）。
-     */
+    /** 会话存储（可选）；注入则持久化，否则仅在内存保存（AgentLoop.messages[]） */
     private readonly sessionStore?: ISessionStore,
     initialDate?: string,
     initialSession = 'main',
@@ -54,32 +36,25 @@ export class MessageHistory {
     this.currentSession = initialSession;
   }
 
-  /**
-   * 获取当前会话名（日期-会话组合名）
-   */
+  /** 当前会话名（date-session 组合名） */
   get currentSessionName(): string {
     return `${this.currentDate}-${this.currentSession}`;
   }
 
-  /** 获取当前日期 YYYY-MM-DD（只读，供 agent 层使用） */
+  /** 当前日期 YYYY-MM-DD */
   get currentDateValue(): string {
     return this.currentDate;
   }
 
-  /** 获取当前会话标识（只读，供 agent 层使用） */
+  /** 当前会话标识 */
   get currentSessionValue(): string {
     return this.currentSession;
   }
 
   /**
-   * 获取当前会话最近 N 轮的 roundId 集合（互斥排除用，memory-as-summary §4.3）
-   *
-   * 正文已完整加载进上下文的轮次（最近 N 轮），其摘要不应再被召回注入——避免
-   * 正文与摘要重复进上下文（浪费 token + 干扰 LLM 判断）。这是确定性判定：从
-   * sessionStore 加载当前会话消息，取 roundId 非空的最近 N 轮（去重）。
-   *
-   * @param rounds 最近轮数（N ≡ 上下文固定加载轮数）
-   * @returns roundId 唯一集合（按最近优先），无 roundId/sessionStore 不可用时为空数组
+   * 最近 N 轮的 roundId 集合（互斥排除用）。
+   * 已完整加载进上下文的轮次，其摘要不应再被召回注入，避免正文与摘要重复进上下文（浪费 token + 干扰判断）。
+   * 从 sessionStore 取 roundId 非空的最近 N 轮去重；rounds = 上下文固定加载轮数；无 sessionStore/roundId 或异常时返回空数组。
    */
   getRecentRoundIds(rounds: number): string[] {
     if (!this.sessionStore || rounds <= 0) return [];
@@ -102,40 +77,25 @@ export class MessageHistory {
     }
   }
 
-  /**
-   * 获取当前会话标识
-   */
+  /** 当前会话标识 */
   get session(): string {
     return this.currentSession;
   }
 
-  /**
-   * 切换会话
-   * @param newSession - 新会话标识
-   * @returns 新会话的全名
-   */
+  /** 切换会话，返回新会话全名 */
   switchSession(newSession: string): string {
     this.currentSession = newSession;
     return this.currentSessionName;
   }
 
-  /**
-   * 自动生成分支名
-   *
-   * 算法：扫描已存在会话，找到以 sourceSession-b 为前缀的最大序号，+1
-   *
-   * @param sourceSession - 源会话标识
-   * @returns 自动生成的分支名（如 "main-b1"）
-   */
+  /** 自动生成分支名：扫描已有 `sourceSession-bN` 会话，返回最大序号 +1（如 "main-b1"） */
   private autoBranchName(sourceSession: string): string {
     if (!this.sessionStore) return `${sourceSession}-b1`;
     const allSessions = this.sessionStore.listSessions();
     const prefix = `${sourceSession}-b`;
-
-    // 提取匹配前缀的序号
     const existingNumbers: number[] = [];
     for (const fullSession of allSessions) {
-      // fullSession 格式：YYYY-MM-DD-session
+      // fullSession 格式为 YYYY-MM-DD-session
       const parts = fullSession.split('-');
       if (parts.length >= 4) {
         const sessionPart = parts.slice(3).join('-');
@@ -148,88 +108,49 @@ export class MessageHistory {
         }
       }
     }
-
     const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
     return `${prefix}${nextNumber}`;
   }
 
   /**
-   * 分叉当前会话
-   *
-   * 流程：
-   * 1. 从 sessionStore 加载当前会话全部消息
-   * 2. 生成唯一新会话名
-   * 3. 通过 sessionStore.copySession() 复制到新会话
-   * 4. switchSession() 切换当前会话标识到新会话
-   *
-   * @param targetSession - 自定义目标会话名（可选，不传则自动生成）
-   * @returns 分叉结果
-   * @throws 若 sessionStore 未注入、copySession 未实现或当前会话无消息
+   * 分叉当前会话：加载消息 → 生成唯一新会话名 → copySession 复制 → 切换当前会话。
+   * sessionStore 未注入 / copySession 未实现 / 无消息时抛错误；targetSession 当天不可与已有会话重名。
    */
   forkSession(targetSession?: string): ForkResult {
     if (!this.sessionStore) {
-      throw configError('无法分叉会话', 'ISessionStore 未注入', [
-        '在创建 Agent 时注入 sessionStore 参数',
-      ]);
+      throw configError('无法分叉会话', 'ISessionStore 未注入', ['在创建 Agent 时注入 sessionStore 参数']);
     }
-
     if (!this.sessionStore.copySession) {
-      throw configError('无法分叉会话', 'ISessionStore.copySession 未实现', [
-        '升级宿主项目的 ISessionStore 实现，添加 copySession() 方法',
-      ]);
+      throw configError('无法分叉会话', 'ISessionStore.copySession 未实现', ['升级宿主项目的 ISessionStore 实现，添加 copySession() 方法']);
     }
-
     const sourceDate = this.currentDate;
     const sourceSession = this.currentSession;
-
-    // 加载源会话消息
     const messages = this.sessionStore.loadMessages(sourceDate, sourceSession);
     if (messages.length === 0) {
       throw configError('无法分叉会话', '当前会话无消息', ['先进行一些对话后再尝试分叉']);
     }
-
-    // 生成目标会话名
     let newSession: string;
     if (targetSession) {
-      // 检查目标会话在当天是否已存在
+      // 检查目标会话当天是否已存在
       const targetFullName = `${todayDate()}-${targetSession}`;
       const existingSessions = this.sessionStore.listSessions();
       if (existingSessions.includes(targetFullName)) {
-        throw configError('无法分叉会话', `当天会话 "${targetSession}" 已存在`, [
-          '使用不同的名称，或不传参数自动生成',
-        ]);
+        throw configError('无法分叉会话', `当天会话 "${targetSession}" 已存在`, ['使用不同的名称，或不传参数自动生成']);
       }
       newSession = targetSession;
     } else {
       newSession = this.autoBranchName(sourceSession);
     }
-
-    // 计算目标日期
     const targetDate = todayDate();
-
-    // 原子复制消息
     this.sessionStore.copySession(sourceDate, sourceSession, targetDate, newSession);
-
-    // 切换当前会话到新分支
     this.switchSession(newSession);
-
-    logger.info(
-      { from: sourceSession, to: newSession, messageCount: messages.length },
-      '会话分叉完成',
-    );
-
+    logger.info({ from: sourceSession, to: newSession, messageCount: messages.length }, '会话分叉完成');
     return { newSession, date: targetDate, messages };
   }
 
   /**
-   * 追加 user 消息到当前会话
-   * 失败不抛出（消息持久化失败不应阻塞对话）
-   *
-   * 日期使用 todayDate() 动态获取，而非缓存的 this.currentDate，
-   * 确保跨日后消息写入当天目录。
-   *
-   * @param content - 用户消息内容
-   * @param roundId - 当前轮次 ID（可选，用于 sessionStore 溯源）
+   * 追加 user 消息到当前会话（持久化失败不抛出，不阻塞对话）。
+   * 日期用 todayDate() 动态获取，确保跨日后写入当天目录；roundId 用于 sessionStore 溯源。
    */
   async appendUser(content: string, roundId?: string): Promise<void> {
     const message: SessionMessage = {
@@ -238,10 +159,9 @@ export class MessageHistory {
       timestamp: nowIso(),
       ...(roundId ? { roundId } : {}),
     };
-    // 使用 ISessionStore 持久化（如果已注入）
     if (this.sessionStore) {
       try {
-        // 动态获取当天日期，避免跨日后写入旧日期目录
+        // 动态获取当天日期，避免跨日后写入旧目录
         this.sessionStore.appendMessage(todayDate(), this.currentSession, message);
       } catch (err) {
         logger.warn({ err, session: this.currentSessionName }, 'appendUser: 会话持久化失败');
@@ -250,15 +170,7 @@ export class MessageHistory {
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendUser');
   }
 
-  /**
-   * 追加 assistant 消息到当前会话
-   * 失败不抛出
-   *
-   * 日期使用 todayDate() 动态获取，确保跨日后消息写入当天目录。
-   *
-   * @param content - 助手消息内容
-   * @param roundId - 当前轮次 ID（可选，用于 sessionStore 溯源）
-   */
+  /** 追加 assistant 消息到当前会话（持久化失败不抛出）。日期动态获取保跨日；roundId 溯源 */
   async appendAssistant(content: string, roundId?: string): Promise<void> {
     if (!content.trim()) return;
     const message: SessionMessage = {
@@ -267,10 +179,9 @@ export class MessageHistory {
       timestamp: nowIso(),
       ...(roundId ? { roundId } : {}),
     };
-    // 使用 ISessionStore 持久化（如果已注入）
     if (this.sessionStore) {
       try {
-        // 动态获取当天日期，避免跨日后写入旧日期目录
+        // 动态获取当天日期，避免跨日后写入旧目录
         this.sessionStore.appendMessage(todayDate(), this.currentSession, message);
       } catch (err) {
         logger.warn({ err, session: this.currentSessionName }, 'appendAssistant: 会话持久化失败');
@@ -279,11 +190,7 @@ export class MessageHistory {
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendAssistant');
   }
 
-  /**
-   * 列出所有会话标识
-   *
-   * @returns 会话标识列表（格式：YYYY-MM-DD-session），未注入 ISessionStore 则返回空
-   */
+  /** 列出所有会话标识（YYYY-MM-DD-session）；未注入 ISessionStore 返回空 */
   async listAllSessions(): Promise<string[]> {
     if (!this.sessionStore) {
       logger.debug({ hasSessionStore: false }, 'listAllSessions: ISessionStore 未注入，返回空数组');
@@ -292,33 +199,20 @@ export class MessageHistory {
     return this.sessionStore.listSessions();
   }
 
-  /**
-   * 从会话存储恢复历史消息
-   * 用于重启后恢复之前的对话
-   *
-   * @param date - 会话日期 YYYY-MM-DD
-   * @param session - 会话标识
-   * @returns 会话中的消息列表，未注入 ISessionStore 则返回空数组
-   */
+  /** 恢复会话历史并同步当前会话到指定 date/session（保持状态一致）；未注入 ISessionStore 返回空 */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    // 更新当前会话为请求的会话（保持状态一致）
     this.currentDate = date;
     this.currentSession = session;
-
     if (!this.sessionStore) {
       logger.debug({ date, session }, 'loadSessionMessages: ISessionStore 未注入，返回空数组');
       return [];
     }
-
     const messages = this.sessionStore.loadMessages(date, session);
     logger.info({ date, session, count: messages.length }, 'loadSessionMessages');
     return messages;
   }
 
-  /**
-   * 把外部 fire-and-forget 归档注册到 pendingArchives
-   * 供 Agent.chat() 触发 signal 归档时使用
-   */
+  /** 注册外部 fire-and-forget 归档到 pendingArchives，供 Agent.chat() 触发 signal 归档时使用 */
   registerPendingArchive(p: Promise<unknown>): void {
     this.pendingArchives.add(p);
     p.finally(() => {
@@ -327,41 +221,26 @@ export class MessageHistory {
   }
 
   /**
-   * 等待所有挂起的归档完成（Agent.close() 时调用）
-   * 防止 fire-and-forget 还在写 SQLite 时 db 已被 close
-   *
-   * 重要：会捕获**等待期间新加入**的归档（解决 init() → archiveMissingSessions() 的 race）
-   * 实现：用 50ms 间隔轮询检查新加入的 promise，直到所有归档完成或超时
-   *
-   * @param timeoutMs 单次等待超时（默认 5000ms）
-   * @returns 是否所有归档都完成（false 表示有超时）
+   * 等待所有挂起归档完成（Agent.close() 时调用），防止归档写 SQLite 时 db 已被关闭。
+   * 会捕获等待期间新加入的归档（解决 init() → archiveMissingSessions() 的 race）；
+   * 50ms 轮询直到全部完成或超时。
+   * @returns 是否全部完成（false = 超时）
    */
   async awaitPendingArchives(timeoutMs = 5000): Promise<boolean> {
-    // 快速路径：无挂起任务时立即返回（避免空轮询浪费 5s）
+    // 无挂起任务立即返回，避免空轮询耗时
     if (this.pendingArchives.size === 0) return true;
-
     const deadline = Date.now() + timeoutMs;
-
     while (Date.now() < deadline) {
       const current = Array.from(this.pendingArchives);
-
-      if (current.length === 0) {
-        // 所有归档已完成
-        return true;
-      }
-
-      // 有挂起任务 → 等所有 settle
+      if (current.length === 0) return true; // 所有归档已完成
+      // 有挂起任务 → 等所有 settle 或到超时
       const timeout = new Promise<void>((resolve) =>
         safeSetTimeout(resolve, Math.max(50, deadline - Date.now())),
       );
       await Promise.race([Promise.allSettled(current), timeout]);
-
-      // 如果所有都清空了 → 完成
+      // 等待期间可能新加入归档，未清空则下一轮继续等
       if (this.pendingArchives.size === 0) return true;
-
-      // 还有挂起的（可能在等待期间新加入）→ 下一轮继续等
     }
-
     return this.pendingArchives.size === 0;
   }
 }

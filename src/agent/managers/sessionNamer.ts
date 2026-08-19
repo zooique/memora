@@ -1,24 +1,7 @@
 /**
- * 会话命名器（SessionNamer · ADR-024 会话标题层）
- *
- * 职责：
- *   为新建会话生成 autoName + displayName，写入会话元数据（updateSessionMeta）。
- *   标题是独立展示元数据，与会话身份（date-session）解耦，不污染主键。
- *
- * 触发时机：
- *   仅"新建会话的第一次问答闭环"触发（ensureSessionTitle）。
- *   判定以"会话尚无 autoName"为准——新建会话首轮问答前必然无标题，
- *   有 autoName 即不再覆盖，天然满足"只触发一次"，无需粘性锁定。
- *
- * 降级策略：
- *   - sessionStore 未注入：静默跳过（best-effort）
- *   - 会话已有 autoName：跳过（不覆盖已有名称）
- *   - LLM 不可用 / 失败 / 无价值：降级为"新会话 HH:MM"占位
- *
- * 设计：
- *   - 与 SessionArchiver 同形态：复用公共 accumulateStream + parseLlmJson 管线
- *   - 通过 getProvider 惰性获取当前 LLM Provider（setProvider 切换后仍命中最新模型）
- *   - 不依赖 Agent 实例，仅依赖 ISessionStore 的元数据能力
+ * 会话命名器（ADR-024 会话标题层）：为新建会话生成 autoName + displayName 写入元数据，标题与会话身份（date-session）解耦。
+ * 触发时机：仅"新建会话首次问答"触发——判定以"会话尚无 autoName"为准，有即不覆盖，天然只触发一次。
+ * 降级：sessionStore 未注入静默跳过；LLM 失败/无价值降级为"新会话 HH:MM"占位。getProvider 惰性获取当前 Provider。
  */
 
 import { logger } from '@/logging/logger.js';
@@ -27,14 +10,10 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
-/** 标题最大字符数（防止 LLM 输出超长标题） */
+/** 标题最大字符数（防 LLM 输出超长标题） */
 const MAX_TITLE_CHARS = 30;
 
-/**
- * 会话命名器
- *
- * 为会话生成标题，写入会话标题元数据。best-effort，不阻塞主流程。
- */
+/** 会话命名器：为会话生成标题写入元数据。best-effort，不阻塞主流程。 */
 export class SessionNamer {
   /** 惰性获取当前 LLM Provider（setProvider 切换后仍取最新） */
   private getProvider: () => LlmProvider;
@@ -52,19 +31,9 @@ export class SessionNamer {
   }
 
   /**
-   * 确保会话拥有 autoName（仅新建会话首次问答触发）
-   *
-   * 流程：
-   *   1. 若会话已有 autoName，跳过（不覆盖已生成的自动名称）
-   *   2. 调用 LLM 从首条用户消息生成一句话标题
-   *   3. 失败/无价值时降级为"新会话 HH:MM"占位
-   *   4. 写入 autoName + displayName（初始值一致，用户可后续修改 displayName）
-   *
-   * best-effort：任何异常都不抛出，由调用方 fire-and-forget。
-   *
-   * @param date 会话日期 YYYY-MM-DD
-   * @param session 会话标识（不含日期前缀）
-   * @param firstUserContent 首条用户消息内容（标题语义贴合用户意图）
+   * 确保会话拥有 autoName（仅新建会话首次问答触发）。已有 autoName 则跳过（不覆盖）。
+   * LLM 失败/无价值降级为"新会话 HH:MM"占位；写入 autoName + displayName（初始一致，用户可后续改 displayName）。
+   * best-effort：不抛异常，由调用方 fire-and-forget。
    */
   async ensureSessionTitle(
     date: string,
@@ -94,9 +63,7 @@ export class SessionNamer {
       title = defaultTitle();
     }
 
-    // 写入 autoName + displayName（初始值一致）
-    // autoName: LLM 生成的只读名称
-    // displayName: 初始值 = autoName，用户可修改
+    // autoName 为 LLM 生成只读名；displayName 初始值一致、用户可修改
     this.sessionStore.updateSessionMeta?.(sessionId, {
       autoName: title,
       displayName: title,
@@ -104,15 +71,7 @@ export class SessionNamer {
     logger.info({ sessionId, autoName: title }, 'SessionNamer: 会话 autoName 已生成');
   }
 
-  /**
-   * 调用 LLM 生成一句话标题
-   *
-   * 复用 accumulateStream + parseLlmJson 管线（与 SessionArchiver 一致）。
-   * LLM 无价值（空消息/纯打招呼）时返回 null，由调用方降级为占位。
-   *
-   * @param content 首条用户消息内容
-   * @returns 标题字符串，无价值返回 null
-   */
+  /** 调用 LLM 生成一句话标题：复用 accumulateStream + parseLlmJson（与 SessionArchiver 一致）；无价值（空消息/打招呼）返回 null 由调用方降级 */
   private async generateTitle(content: string): Promise<string | null> {
     const prompt = `你是会话命名助手。请根据用户的第一条消息，为会话生成一个简短标题（10 字以内），用于在历史列表中识别。
 
@@ -127,10 +86,9 @@ ${content}
 === 结束 ===`;
 
     const llmMessages: Message[] = [{ role: 'user', content: prompt }];
-    // 流式累积（复用 accumulateStream 工具函数）
     const llmResponse = await accumulateStream(this.getProvider(), llmMessages);
 
-    // 解析 LLM 响应
+    // 解析 LLM 响应（'null' 或无标题视为无价值）
     const trimmed = llmResponse.trim();
     if (!trimmed || trimmed === 'null') {
       return null;
@@ -151,14 +109,7 @@ ${content}
   }
 }
 
-/**
- * 生成占位标题（LLM 不可用/失败/无价值时降级）
- *
- * 格式："新会话 HH:MM"（借鉴 WorkBuddy 占位式命名，best-effort 不阻塞）。
- * 导出供宿主复用（宿主未命名会话的展示占位，单一真理源避免重复实现）。
- *
- * @returns 占位标题
- */
+/** 生成占位标题（LLM 不可用/失败/无价值时降级）："新会话 HH:MM"。导出供宿主复用，单一真理源避免重复实现 */
 export function defaultTitle(): string {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');

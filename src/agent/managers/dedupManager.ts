@@ -1,64 +1,42 @@
 /**
- * 语义去重管理器 — L1 记忆治理子系统
- *
- * 从 MemoryInspector 拆分出来，专责异步 LLM 语义去重。
- * 与 MemoryInspector 的分工：
- *   - MemoryInspector：同步读写入口（snapshot/search/stats/writeXxx/relations）
- *   - DedupManager：异步 LLM 治理（deduplicateMemories）
- *
- * 拆分理由：
- *   - 职责分离——同步读写 vs 异步 LLM 治理是两个独立关注点
- *   - 依赖清晰——MemoryInspector 不再依赖 LLM Provider，纯存储读写
- *   - 可测试性——去重逻辑独立测试，无需 mock loop/history/advisor
- *   - 自包含——去重逻辑（配对 + LLM 判断 + 降级 + prompt）形成自闭合子系统
- *
- * 设计原则：
- *   - 静默降级——backgroundProvider 未注入时返回 skippedReason 报告，不抛错
- *   - 不物理删除——仅降级 score（→ 0.1），保留可恢复性
- *   - 异步执行——不阻塞主对话热路径（由宿主定时任务或用户手动触发）
- *
- * @module agent/managers/dedupManager
+ * 语义去重管理器 — L1 记忆治理子系统（从 MemoryInspector 拆分，专责异步 LLM 语义去重）。
+ * 职责分离：MemoryInspector 纯存储读写，DedupManager 异步 LLM 治理。
+ * 设计原则：未注入 provider 时静默降级返回报告不抛错；不物理删除仅降 score 保留可恢复性；不阻塞主对话热路径。
  */
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-// LLM 语义去重（L1）：backgroundProvider 注入 + 流式累积，参照 TextPolishManager 模式
 import type { LlmProvider, Message } from '@/llm/provider.js';
-// LLM judge 三件套高阶函数（流式累积 + parseLlmJson + configError 异常封装）
+// LLM judge 高阶函数（流式累积 + parseLlmJson + configError 封装）
 import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
-// LLM 治理共享常量（v2 REPEAT-1/2 闭环，消除 5 处独立维护的治理源列表 + 2 处 score 常量重复）
+// LLM 治理共享常量（统一由 governance.ts 维护）
 import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
-// levenshtein 用于名称相似度计算（复用 sourceValidation 中的实现，避免重复造轮子）
 import { levenshtein } from '@/memory/sourceValidation.js';
-// 按 score 降序排序（与 MemoryInspector 共享，避免重复造轮子）
 import { byScoreDesc } from '@/utils/array.js';
-// 时间戳生成（降级时更新 accessedAt）
 import { nowIso } from '@/utils/time.js';
-// 内容截断（送入 LLM 前控制 token 消耗）
 import { truncate } from '@/utils/strings.js';
-// 日志（治理审计 + 失败降级记录）
 import { logger } from '@/logging/logger.js';
 
 // ─── L1 语义去重常量 ────────────────────────────────────
-/** 单次去重扫描的候选记忆条数上限（控制内存和 LLM 调用量） */
+/** 单次去重扫描候选条数上限 */
 const DEDUP_CANDIDATE_LIMIT = 50;
-/** 单次 LLM 判断的候选对数上限（每对约 200 tokens，10 对 ≈ 2000 tokens） */
+/** 单次 LLM 判断候选对数上限（每对约 200 tokens） */
 const DEDUP_PAIR_LIMIT = 10;
-/** 名称相似度阈值（归一化 Levenshtein 距离 ≤ 此值视为名称高度相似，进入 LLM 判断） */
+/** 名称相似度阈值（归一化 Levenshtein 距离 ≤ 此值视为高度相似进入 LLM 判断） */
 const DEDUP_NAME_SIMILARITY_THRESHOLD = 0.3;
-/** LLM 去重判断超时（ms），与 TextPolishManager 一致 */
+/** LLM 去重判断超时（ms） */
 const DEDUP_TIMEOUT_MS = 15_000;
-/** 被判定为重复的记忆降级到此 score（接近 0 但保留可恢复性，不物理删除） */
+/** 判定为重复的记忆降级到此 score（接近 0 但保留可恢复性，不物理删除） */
 const DEDUP_LOW_SCORE = 0.1;
-/** 候选记忆内容预览长度（截断后送入 LLM，控制 token 消耗） */
+/** 候选内容预览长度（送入 LLM 前截断，控制 token） */
 const DEDUP_CONTENT_PREVIEW_LEN = 200;
 
 // ─── L1 语义去重类型 ────────────────────────────────────
 
 /** 名称高度相似的候选记忆对（待 LLM 判断语义等价性） */
 export interface DedupPair {
-  /** 记忆 A（score 较高，作为保留候选） */
+  /** 记忆 A（score 较高，保留候选） */
   a: Memory;
-  /** 记忆 B（score 较低，作为降级候选） */
+  /** 记忆 B（score 较低，降级候选） */
   b: Memory;
   /** 名称归一化相似度（0-1，越小越相似） */
   nameSimilarity: number;
@@ -68,19 +46,19 @@ export interface DedupPair {
 export interface DedupVerdict {
   /** 是否语义等价（true → 降级低分记忆） */
   isDuplicate: boolean;
-  /** 合并后的内容（isDuplicate=true 时提供，保留更完整的信息） */
+  /** 合并后的内容（isDuplicate=true 时提供，保留更完整信息） */
   mergedContent?: string;
-  /** LLM 判断理由（便于审计和调试） */
+  /** LLM 判断理由（便于审计调试） */
   reason: string;
 }
 
-/** 降级记忆的审计详情（DedupReport.verdicts 元素，供 UI 展示"为什么降级"） */
+/** 降级记忆审计详情（供 UI 展示"为什么降级" + 合并后内容） */
 export interface DedupVerdictSummary {
-  /** 被降级的记忆 ID（与 demotedIds 元素一一对应） */
+  /** 被降级记忆 ID（与 demotedIds 一一对应） */
   demotedId: string;
-  /** LLM 判断理由（便于用户审计降级是否合理） */
+  /** LLM 判断理由（便于审计降级是否合理） */
   reason: string;
-  /** 合并后的完整内容（便于用户验证合并质量；未提供 mergedContent 时省略，渲染器负责截断展示） */
+  /** 合并后完整内容（便于验证合并质量；缺失时渲染器负责截断展示） */
   mergedContent?: string;
 }
 
@@ -92,62 +70,36 @@ export interface DedupReport {
   pairCount: number;
   /** LLM 判定为语义等价并执行降级的对数 */
   deduplicatedCount: number;
-  /** 被降级的记忆 ID 列表（score 降至 DEDUP_LOW_SCORE，未物理删除） */
+  /** 被降级记忆 ID 列表（未物理删除） */
   demotedIds: string[];
-  /** 降级审计详情（与 demotedIds 一一对应，供 UI 展示 reason + mergedContentPreview） */
+  /** 降级审计详情（与 demotedIds 一一对应） */
   verdicts?: DedupVerdictSummary[];
-  /** 跳过原因（LLM 不可用 / 无候选对 / LLM 失败降级） */
+  /** 跳过原因（LLM 不可用 / 无候选对） */
   skippedReason?: string;
 }
 
 // ─── 类 ──────────────────────────────────────────────────
 
-/**
- * 语义去重管理器
- *
- * 扫描名称高度相似的记忆对，调用 LLM 判断语义等价性，降级低分记忆。
- *
- * 装配：由 assembler.ts 在组合根创建，backgroundProvider 可选注入。
- * 调用：Agent.deduplicateMemories() 透传至本类。
- */
+/** 语义去重管理器：扫描名称高度相似的记忆对，LLM 判断语义等价性，降级低分记忆。assembler 组合根创建，由 Agent 透传调用。 */
 export class DedupManager {
-  /** 后台 LLM Provider（可选，用于语义去重等异步治理任务，未注入时降级跳过） */
+  /** 后台 LLM Provider（可选，未注入时降级跳过） */
   private readonly backgroundProvider: LlmProvider | null;
 
-  /**
-   * @param index - 记忆存储（用于读写候选记忆）
-   * @param backgroundProvider - 后台 LLM Provider（可选，用于语义去重，未注入时降级跳过）
-   */
   constructor(
     private readonly index: IMemoryStorage,
     backgroundProvider: LlmProvider | null = null,
-    /** 去重完成回调（宿主可据此发射事件通知用户） */
+    /** 去重完成回调（宿主据此发射事件通知用户） */
     private readonly onCompleted?: (report: DedupReport) => void,
   ) {
     this.backgroundProvider = backgroundProvider;
   }
 
   /**
-   * 语义去重：扫描名称高度相似的记忆对，调用 LLM 判断语义等价性
-   *
-   * 流程：
-   *   1. 从 work-projection 加载候选记忆（上限 50 条）
-   *   2. 按名称归一化 Levenshtein 距离筛选相似对（上限 10 对）
-   *   3. 对每对调用 LLM 判断语义等价性（结构化 JSON 输出）
-   *   4. 等价则降级低分记忆（score → 0.1，不物理删除，保留可恢复性）
-   *   5. 返回去重报告
-   *
-   * 安全设计：
-   *   - 不物理删除——仅降级 score，用户可通过宿主 UI 手动恢复
-   *   - LLM 失败降级——返回已处理的报告，不阻塞调用方
-   *   - 异步执行——不阻塞主对话热路径（由宿主定时任务或用户手动触发）
-   *   - backgroundProvider 未注入时静默跳过（返回 skippedReason）
-   *
-   * @param signal 可选的 AbortSignal（取消正在进行的 LLM 判断）
-   * @returns 去重报告
+   * 语义去重：加载候选（上限 50）→ 名称相似度筛选对（上限 10）→ LLM 判断语义等价 → 等价则降级低分方。
+   * 安全设计：不物理删除仅降 score（可恢复）；LLM 失败降级不阻塞；provider 未注入静默返回 skippedReason。
    */
   async deduplicateMemories(signal?: AbortSignal): Promise<DedupReport> {
-    // backgroundProvider 未注入时静默降级（向后兼容）
+    // provider 未注入时静默降级
     if (!this.backgroundProvider) {
       return {
         scannedCount: 0,
@@ -158,17 +110,15 @@ export class DedupManager {
       };
     }
 
-    // ── 步骤 1：加载候选记忆（按 score 降序，取前 50 条） ──
     const candidates: Memory[] = [];
     for (const source of GOVERNANCE_SOURCES) {
       const memories = this.index.getBySource(source);
       candidates.push(...memories);
     }
-    // 按 score 降序排列，优先处理高分记忆（更可能产生重复）
+    // 按 score 降序，优先处理高分记忆（更可能产生重复）
     candidates.sort(byScoreDesc);
     const limited = candidates.slice(0, DEDUP_CANDIDATE_LIMIT);
 
-    // ── 步骤 2：筛选名称高度相似的记忆对 ──
     const pairs = this.findNameOverlapPairs(limited);
     if (pairs.length === 0) {
       return {
@@ -180,7 +130,6 @@ export class DedupManager {
       };
     }
 
-    // ── 步骤 3：逐对调用 LLM 判断语义等价性 ──
     const demotedIds: string[] = [];
     const verdicts: DedupVerdictSummary[] = [];
     let deduplicatedCount = 0;
@@ -189,11 +138,11 @@ export class DedupManager {
       try {
         const verdict = await this.judgeDuplicate(pair, signal);
         if (verdict.isDuplicate) {
-          // 先写合并内容再降级 b：确保合并写入失败时不破坏 b 的原始状态（原子性）
+          // 先写合并内容再降级 b：合并写入失败时不破坏 b 原始状态（原子性）
           if (verdict.mergedContent) {
             this.keepMerged(pair.a, verdict.mergedContent);
           }
-          // 降级低分记忆（b 的 score ≤ a 的 score，因 candidates 已按 score 降序）
+          // b 的 score ≤ a（candidates 已按 score 降序），降级低分方
           this.demoteMemory(pair.b);
           demotedIds.push(pair.b.id);
           // 收集审计详情（供 UI 展示"为什么降级"和"合并后保留了什么"）
@@ -209,7 +158,7 @@ export class DedupManager {
           );
         }
       } catch (err) {
-        // 单对 LLM 判断失败不阻塞后续对，记录警告继续
+        // 单对失败不阻塞后续对
         logger.warn(
           { err, pairId: `${pair.a.id}↔${pair.b.id}` },
           '语义去重：LLM 判断失败，跳过此对',
@@ -228,29 +177,19 @@ export class DedupManager {
   }
 
   /**
-   * 筛选名称高度相似的候选记忆对
-   *
-   * 判定规则（满足任一即视为名称相似）：
-   *   1. 归一化 Levenshtein 距离 ≤ 0.3（如 "用户偏好" vs "用户偏爱"）
-   *   2. 一个名称包含另一个（如 "用户偏好" vs "用户偏好设置"）
-   *
-   * 去重设计：
-   *   - 已配对的记忆不再参与后续配对（避免 A-B-C 三元组产生 A-B + A-C + B-C 三对）
-   *   - 候选对按相似度升序排列（越相似越优先），取前 10 对
-   *
-   * @param candidates 候选记忆列表（已按 score 降序）
-   * @returns 名称相似的记忆对列表（a.score ≥ b.score）
+   * 筛选名称高度相似的候选记忆对。判定：归一化 Levenshtein ≤0.3 或一方包含另一方。
+   * 已配对的记忆不再参与后续配对（避免三元组产生多对）；按相似度升序（越相似越优先）取前 10 对。
    */
   private findNameOverlapPairs(candidates: Memory[]): DedupPair[] {
     const pairs: DedupPair[] = [];
     const usedIds = new Set<string>();
 
-    // 双重循环生成所有可能的对，按相似度排序后贪心选取
+    // 双重循环生成所有可能对，按相似度排序后贪心选取
     const allPairs: Array<{ a: Memory; b: Memory; nameSimilarity: number }> = [];
     for (let i = 0; i < candidates.length; i++) {
       for (let j = i + 1; j < candidates.length; j++) {
-        const a = candidates[i]!; // i 循环内，score 较高
-        const b = candidates[j]!; // j > i，score 较低或相等
+        const a = candidates[i]!; // i 循环内 score 较高
+        const b = candidates[j]!; // j>i score 较低或相等
         const similarity = DedupManager.computeNameSimilarity(a.name, b.name);
         if (similarity <= DEDUP_NAME_SIMILARITY_THRESHOLD) {
           allPairs.push({ a, b, nameSimilarity: similarity });
@@ -258,7 +197,7 @@ export class DedupManager {
       }
     }
 
-    // 按相似度升序排列（越相似越优先处理）
+    // 按相似度升序，越相似越优先处理
     allPairs.sort((x, y) => x.nameSimilarity - y.nameSimilarity);
 
     // 贪心选取：已配对的记忆不再参与后续配对
@@ -273,27 +212,14 @@ export class DedupManager {
     return pairs;
   }
 
-  /**
-   * 计算两个名称的归一化相似度（0-1，越小越相似）
-   *
-   * 综合两种规则取较小值：
-   *   1. 归一化 Levenshtein 距离 = distance / max(len_a, len_b)
-   *   2. 包含关系：若一个名称包含另一个，相似度 = 0（完全相似）
-   *
-   * @param nameA 名称 A
-   * @param nameB 名称 B
-   * @returns 相似度（0=完全相似，1=完全不同）
-   */
+  /** 名称归一化相似度（0-1，越小越相似）。规则：包含关系=0；否则 Levenshtein 距离 / max(len)。 */
   private static computeNameSimilarity(nameA: string, nameB: string): number {
-    // 边界条件：空字符串防御
-    // 空名称会导致 includes("") 恒为 true 返回 0（完全相似），
-    // 让空名称记忆与所有记忆被判高度相似，浪费 LLM 调用并可能误降级。
-    // 此处前置拒绝，空名称与任何名称都视为完全不同（1.0）。
+    // 空名称防御：includes("") 恒真会误判所有记忆高度相似，故空名与任何名称视为完全不同
     if (!nameA || !nameB) {
       return 1;
     }
 
-    // 规则 2：包含关系（如 "用户偏好" vs "用户偏好设置"）
+    // 规则 2：包含关系（如"用户偏好" vs "用户偏好设置"）
     if (nameA.includes(nameB) || nameB.includes(nameA)) {
       return 0;
     }
@@ -306,16 +232,8 @@ export class DedupManager {
   }
 
   /**
-   * 调用 LLM 判断单对记忆的语义等价性
-   *
-   * 使用结构化 JSON 输出（isDuplicate + mergedContent + reason），
-   * 流式累积 + parseLlmJson + 异常封装委托给 llmJudgeHelper.judgeWithLlm。
-   *
-   * LLM 失败时抛出 MemoraError（由 deduplicateMemories 捕获并降级跳过此对）。
-   *
-   * @param pair 候选记忆对
-   * @param signal 可选的 AbortSignal
-   * @returns LLM 判断结果
+   * 调用 LLM 判断单对记忆语义等价：结构化 JSON 输出（isDuplicate+mergedContent+reason）。
+   * 流式累积/解析/异常封装委托 llmJudgeHelper.judgeWithLlm；失败抛 MemoraError 由调用方捕获跳过。
    */
   private async judgeDuplicate(pair: DedupPair, signal?: AbortSignal): Promise<DedupVerdict> {
     const messages = buildDedupMessages(pair);
@@ -337,30 +255,13 @@ export class DedupManager {
     };
   }
 
-  /**
-   * 降级重复记忆（score → DEDUP_LOW_SCORE）
-   *
-   * 安全设计：
-   *   - 不物理删除，仅降低 score，保留可恢复性
-   *   - 合并内容由 keepMerged() 单独写回保留方 a（职责清晰：本方法只降级低分方）
-   *
-   * @param memory 待降级的记忆（低分方）
-   */
+  /** 降级重复记忆（score → DEDUP_LOW_SCORE）。不物理删除仅降分保留可恢复；合并内容由 keepMerged 单独写回 a。 */
   private demoteMemory(memory: Memory): void {
-    // MIND2-L3：改用 setScore 原子操作，消除 spread 旧快照覆盖其他字段的隐性 bug
-    // 原模式用 candidates 旧快照 spread 后整条 upsert，会覆盖期间被 boost/decay 改的 content 等字段
+    // 用 setScore 原子操作，避免 spread 旧快照覆盖期间被 boost/decay 改动的字段
     this.index.setScore(memory.id, DEDUP_LOW_SCORE, nowIso());
   }
 
-  /**
-   * 将合并内容写回保留方（高分记忆 a）
-   *
-   * 保持 a 的 id/source/name/score/createdAt 不变，仅更新 content 为合并后内容并刷新
-   * accessedAt，使"两条重复记忆合并为一条更完整记忆"的语义真正落库。
-   *
-   * @param memory 保留方记忆（高分方）
-   * @param mergedContent LLM 生成的合并后完整内容
-   */
+  /** 将合并内容写回保留方 a：保持 id/source/name/score/createdAt 不变，仅刷新 content + accessedAt */
   private keepMerged(memory: Memory, mergedContent: string): void {
     const updated: Memory = {
       ...memory,
@@ -372,20 +273,9 @@ export class DedupManager {
   }
 }
 
-// ─── L1 语义去重 Prompt 模板（模块级函数，与 TextPolishManager.buildPolishMessages 同模式） ───
+// ─── L1 语义去重 Prompt 模板（模块级函数） ───
 
-/**
- * 构建语义去重判断的 LLM 消息
- *
- * 设计要点：
- *   - system 消息定义判断规则（语义等价 = 表达同一事实/偏好/洞察）
- *   - user 消息携带候选对的内容预览（截断到 200 字符）
- *   - 要求输出结构化 JSON（isDuplicate + mergedContent + reason）
- *   - few-shot 示例降低 LLM 误判率
- *
- * @param pair 候选记忆对
- * @returns system + user 消息数组
- */
+/** 构建语义去重判断的 LLM 消息：system 定义语义等价规则 + user 携带候选对内容预览，few-shot 降误判率 */
 function buildDedupMessages(pair: DedupPair): Message[] {
   const contentA = pair.a.content.length > DEDUP_CONTENT_PREVIEW_LEN
     ? truncate(pair.a.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')

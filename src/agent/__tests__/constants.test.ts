@@ -109,6 +109,6 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(11);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(12);
   });
 });

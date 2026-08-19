@@ -18,12 +18,7 @@ import { DEFAULT_RECENT_HISTORY_ROUNDS } from '@/role-pack/types.js';
  */
 export const AGENT_CONSTANTS = {
   /**
-   * chat() 并发锁超时（毫秒）。超时后中断 generator 并释放锁。
-   *
-   * 取 180s（LLM 120s + 60s 缓冲），与超时体系匹配，作为所有超时失败后的最后兜底：
-   * - chunk 级读超时 30s（openaiCompatible parseSseStream）
-   * - LLM 请求超时 120s（LLM_TIMEOUT_MS）
-   * - 宿主层无进展兜底 60s（chatHandlers STREAM_NO_PROGRESS_TIMEOUT_MS）
+   * chat() 并发锁超时。180s = LLM 120s + 60s 缓冲，作为所有超时后的最后兜底。
    */
   CHAT_LOCK_TIMEOUT_MS: 180_000,
 
@@ -64,24 +59,13 @@ export const AGENT_CONSTANTS = {
   // ─── P2.2：热记忆截断策略 ─────────────────────────────
 
   /**
-   * 热记忆最大对话轮数。20 轮（20 条 user + 20 条 assistant）。
-   *
-   * 超过此阈值时，`extractHotMemory()` 采用 FIFO 策略截断，
-   * 仅保留最近 N 轮对话，防止检查点序列化时热记忆无限膨胀。
-   *
-   * 设计考虑：
-   * - 20 轮 ≈ 40 条消息，在 LLM 上下文中约 8K-12K tokens
-   * - 超过此窗口的早期上下文走温记忆召回（P2.1 恢复协议）
-   * - 同一值作为检查点序列化和恢复时的双端截断依据
+   * 热记忆最大对话轮数。20 轮 ≈ 40 条消息 ≈ 8K-12K tokens。
+   * 超过此窗口的早期上下文走温记忆召回（P2.1 恢复协议）。
    */
   HOT_MEMORY_MAX_ROUNDS: 20,
 
   /**
-   * 热记忆单条消息内容截断长度（字符）。
-   *
-   * 超过此长度的消息内容被截断并追加 `[内容已截断]` 标记。
-   * 防止超长消息（如大段代码输出）撑爆检查点。
-   *
+   * 热记忆单条消息内容截断长度。防止超长消息（如大段代码）撑爆检查点。
    * 500 字符 ≈ 200-350 tokens，覆盖大多数正常对话消息。
    */
   HOT_MEMORY_CONTENT_SLICE: 500,

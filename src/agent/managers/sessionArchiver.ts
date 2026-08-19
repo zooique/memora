@@ -1,19 +1,7 @@
 /**
- * 会话归档器（SessionMeta 归档）
- *
- * 职责：
- *   将会话原始对话内容归档为会话元数据（SessionMeta）。
- *   调用 LLM 对会话消息进行摘要，生成 summary / keyTopics / autoName，
- *   写入 SessionMeta 供搜索和索引使用。
- *
- * 触发时机：
- *   - `full` 模式：会话切换前自动归档（由宿主 sessionHandlers 调用）
- *   - `manual` 模式：用户手动触发（Agent.archiveSession）
- *
- * 降级策略：
- *   - LLM 不可用：记录日志，不阻塞会话切换（best-effort）
- *   - 会话消息为空：静默跳过，返回空结果
- *   - sessionStore 未注入：静默跳过
+ * 会话归档器（SessionMeta 归档）：将原始对话归纳为元数据，LLM 生成 summary/keyTopics/autoName 供搜索索引。
+ * 触发时机：full 模式在会话切换前自动归档；manual 模式用户手动触发（Agent.archiveSession）。
+ * 降级：LLM 不可用/消息为空/sessionStore 未注入时静默跳过或返回空结果，不阻塞会话切换（best-effort）。
  */
 
 import { logger } from '@/logging/logger.js';
@@ -22,21 +10,11 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
-/** P3-1: 归档选项（用于归档时包含工作上下文） */
+/** P3-1: 归档选项（归档时包含工作上下文） */
 export interface SessionArchiveOptions {
-  /**
-   * P3-1: 是否包含工作上下文（plan 快照）
-   *
-   * 为 true 时，归档内容会追加当前会话的 plan 步骤列表，
-   * 让会话元数据包含工作进度信息。
-   */
+  /** 是否包含工作上下文（plan 快照），true 时归档追加 plan 步骤列表，使元数据含工作进度信息 */
   includeWorkContext?: boolean;
-  /**
-   * P3-1: 工作上下文 plan 快照（plan 步骤列表）
-   *
-   * 由调用方从 SessionManager.getCheckpoint().plan 提取后传入。
-   * includeWorkContext 为 true 时必填。
-   */
+  /** 工作上下文 plan 快照（调用方从 SessionManager.getCheckpoint().plan 提取；includeWorkContext 时必填） */
   workContextPlan?: Array<{ order: number; description: string; status: string }>;
 }
 
@@ -50,31 +28,22 @@ export interface SessionArchiveResult {
   messageCount: number;
 }
 
-/** LLM 摘要提示词中的最大消息数（防止超长会话撑爆 LLM 上下文） */
+/** LLM 摘要提示词中的最大消息数（防超长会话撑爆 LLM 上下文） */
 const MAX_MESSAGES_FOR_SUMMARY = 50;
-
-/** 摘要提示词中单条消息的最大字符数（防止超长单条消息） */
+/** 摘要提示词中单条消息最大字符数（防超长单条消息） */
 const MAX_MESSAGE_CHARS = 500;
-
 /** autoName 最大字符数（从摘要生成时截断） */
 const MAX_AUTO_NAME_CHARS = 20;
-
-/** keyTopics 最大数量（防止标签过多） */
+/** keyTopics 最大数量（防标签过多） */
 const MAX_KEY_TOPICS = 5;
 
-/**
- * 截断单条消息内容，防止超长内容撑爆 LLM 上下文
- */
+/** 截断单条消息内容，防止超长内容撑爆 LLM 上下文 */
 function truncateContent(content: string): string {
   if (content.length <= MAX_MESSAGE_CHARS) return content;
   return content.slice(0, MAX_MESSAGE_CHARS) + '…[截断]';
 }
 
-/**
- * 会话归档器
- *
- * 将会话原始对话归档为 SessionMeta 元数据。
- */
+/** 会话归档器：将会话原始对话归档为 SessionMeta 元数据 */
 export class SessionArchiver {
   /** 当前使用的 Provider（后台优先，降级到默认） */
   private provider: LlmProvider;
@@ -92,33 +61,14 @@ export class SessionArchiver {
     this.sessionStore = sessionStore;
   }
 
-  /**
-   * 注入后台 Provider（由 Agent.setBackgroundProvider 调用）
-   *
-   * null 表示清除后台 Provider，回退到默认 Provider。
-   */
+  /** 注入后台 Provider（Agent.setBackgroundProvider 调用）；null 表示回退到默认 Provider */
   setBackgroundProvider(provider: LlmProvider | null): void {
     this.provider = provider ?? this.defaultProvider;
   }
 
   /**
-   * 归档指定会话的对话内容
-   *
-   * 流程：
-   *   1. 从 sessionStore 加载会话消息
-   *   2. 若消息过少（< 2 条），跳过（无归档价值）
-   *   3. 构造摘要提示词，调用 LLM 生成会话摘要 + 主题标签
-   *   4. 将结果写入 SessionMeta（keyTopics / summary / autoName）
-   *   5. 返回归档结果
-   *
-   * 错误传播策略：
-   *   - sessionStore 未注入 / 消息过少 / LLM 判断无价值 → 返回空结果（非错误）
-   *   - LLM 异常 / 写入失败 → 向上抛错，由 ArchiveCoordinator 统一 catch
-   *
-   * @param date 会话日期 YYYY-MM-DD
-   * @param session 会话标识（不含日期前缀）
-   * @returns 归档结果（updatedFields 可能为空，表示无归档价值）
-   * @throws LLM 调用或写入异常时抛出
+   * 归档指定会话：加载消息 → 消息过少（<2）跳过 → LLM 生成摘要/主题 → 写入 SessionMeta。
+   * 错误传播：sessionStore 未注入/消息过少/LLM 判无价值返回空结果（非错误）；LLM 异常/写入失败向上抛给 ArchiveCoordinator 统一 catch。
    */
   async archiveSession(
     date: string,
@@ -137,7 +87,6 @@ export class SessionArchiver {
       return emptyResult;
     }
 
-    // 加载会话消息
     const messages = this.sessionStore.loadMessages(date, session);
     if (messages.length < 2) {
       // 单条消息或空会话无归档价值
@@ -152,7 +101,6 @@ export class SessionArchiver {
       return { ...emptyResult, messageCount: messages.length };
     }
 
-    // 写入 SessionMeta（updateSessionMeta 写入只读字段）
     const updatedFields: string[] = [];
     const partialMeta: Record<string, unknown> = {};
 
@@ -164,14 +112,13 @@ export class SessionArchiver {
       partialMeta.keyTopics = meta.keyTopics;
       updatedFields.push('keyTopics');
     }
-    // 仅当会话尚无 autoName 时，从摘要生成一个
+    // 仅当会话尚无 autoName 时从摘要生成一个
     const existingMeta = this.sessionStore.getSessionMeta?.(sessionLabel);
     if (!existingMeta?.autoName && meta.autoName) {
       partialMeta.autoName = meta.autoName;
       updatedFields.push('autoName');
     }
 
-    // 写入 SessionMeta（若有字段需要更新）
     if (updatedFields.length > 0) {
       this.sessionStore.updateSessionMeta?.(sessionLabel, partialMeta);
     }
@@ -189,17 +136,8 @@ export class SessionArchiver {
   }
 
   /**
-   * 调用 LLM 生成会话元数据（summary / keyTopics / autoName）
-   *
-   * L4 归档压缩增强：从"简单摘要"升级为"综合提炼"
-   *   - summary：核心摘要（50-150 字）
-   *   - keyTopics：关键主题标签（最多 5 个）
-   *   - autoName：从摘要中提炼的简短名称（20 字以内）
-   *   - keyDecisions / openQuestions：结构化信息（合并到 summary 中）
-   *
-   * @param messages 会话消息列表
-   * @param sessionLabel 会话标识
-   * @returns 生成的元数据，null 表示无摘要价值
+   * 调用 LLM 生成会话元数据（summary/keyTopics/autoName），从"简单摘要"升级为"综合提炼"（L4 归档压缩增强）。
+   * @returns 生成的元数据，无摘要价值返回 null
    */
   private async generateSessionMeta(
     messages: SessionMessage[],
@@ -210,10 +148,10 @@ export class SessionArchiver {
     keyTopics: string[];
     autoName: string;
   } | null> {
-    // 截取最近的消息，防止超长会话撑爆 LLM 上下文
+    // 截取最近的消息，防超长会话撑爆 LLM 上下文
     const recentMessages = messages.slice(-MAX_MESSAGES_FOR_SUMMARY);
 
-    // 构造对话文本（截断单条消息，防止超长内容）
+    // 构造对话文本（截断单条消息）
     const dialogueText = recentMessages
       .map((m) => {
         const role = m.role === 'user' ? '用户' : m.role === 'assistant' ? '助手' : '系统';
@@ -244,10 +182,9 @@ ${dialogueText}
 === 会话结束 ===`;
 
     const llmMessages: Message[] = [{ role: 'user', content: summaryPrompt }];
-    // 流式累积（复用 accumulateStream 工具函数）
     const llmResponse = await accumulateStream(this.provider, llmMessages);
 
-    // 解析 LLM 响应
+    // 解析 LLM 响应（'null' 或无 summary 视为无价值）
     const trimmed = llmResponse.trim();
     if (trimmed === 'null' || !trimmed) {
       return null;
@@ -259,7 +196,6 @@ ${dialogueText}
       autoName?: string;
     }>(trimmed);
 
-    // 校验 summary
     const summary = parsed && typeof parsed.summary === 'string' && parsed.summary.trim()
       ? parsed.summary.trim()
       : null;
@@ -277,12 +213,11 @@ ${dialogueText}
         .slice(0, MAX_KEY_TOPICS);
     }
 
-    // 校验 autoName（截断到 MAX_AUTO_NAME_CHARS）
+    // 校验 autoName（截断到 MAX_AUTO_NAME_CHARS）；未生成时从 summary 前几字提取
     let autoName = '';
     if (parsed && typeof parsed.autoName === 'string' && parsed.autoName.trim()) {
       autoName = parsed.autoName.trim().slice(0, MAX_AUTO_NAME_CHARS);
     }
-    // 若 LLM 未生成 autoName，从 summary 前几个字提取
     if (!autoName) {
       autoName = summary.slice(0, MAX_AUTO_NAME_CHARS);
     }

@@ -1,8 +1,5 @@
 /**
- * 记忆类型定义 — 基元驱动模型
- *
- * 设计哲学：万物皆是记忆，用 source 开放字符串替代封闭枚举
- * 详见 ADR-004 · 记忆统一模型
+ * 记忆类型定义 — 基元驱动模型：万物皆是记忆，用 source 开放字符串替代封闭枚举
  */
 
 import { configError } from '@/utils/errors.js';
@@ -10,24 +7,19 @@ import { configError } from '@/utils/errors.js';
 // ─── 共享类型：消息角色（SSOT 单一真理源） ──────────────
 
 /**
- * 消息角色
- *
- * 统一 ChatMessage（agent/types.ts）和 SessionMessage（sessionStore.ts）的角色定义。
- * 包含 tool 角色，用于 LLM 工具调用消息的持久化。
+ * 消息角色：统一 agent/types.ts 的 ChatMessage 与 sessionStore.ts 的 SessionMessage
+ * 含 tool 角色，用于 LLM 工具调用消息的持久化
  */
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
 // ─── 基元定义 ─────────────────────────────────────────────
 
 /**
- * 记忆基元接口
- *
- * 8 个核心字段（v2.1 软删除扩展），无封闭枚举
- * - 7 个基础字段：id/content/source/name/createdAt/accessedAt/score
- * - 1 个可选字段：deletedAt（软删除时间，undefined 表示活跃记忆）
+ * 记忆基元接口：id/content/source/name/createdAt/accessedAt/score 7 个基础字段
+ * + deletedAt 可选（软删除）
  */
 export interface Memory {
-  /** 唯一标识（source:name，如 'rule:core'、'round-summary:session:r1'） */
+  /** 唯一标识，格式 source:name，如 'rule:core'、'round-summary:session:r1' */
   id: string;
   /** 记忆内容（Markdown 文本） */
   content: string;
@@ -41,66 +33,33 @@ export interface Memory {
   accessedAt: string;
   /** 权重（0-1，召回时用于排序） */
   score: number;
-  /** 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理） */
+  /** 软删除时间；非 undefined 表示已删除，回收站保留 30 天后物理清理 */
   deletedAt?: string;
-  /**
-   * 可选：配置文件 frontmatter 的额外元数据
-   *
-   * 仅在写入配置文件时使用（写入方合并到 frontmatter）。
-   * SQLite index 不存储此字段（运行时检索不需要）。
-   * 典型场景：角色包的 keywords/description，供角色包管理器加载时解析。
-   */
+  /** 写配置文件时的 frontmatter 额外元数据；SQLite index 不存储此字段 */
   metadata?: Record<string, string>;
-  /**
-   * 可选：记忆是否可溯源到原始对话记录
-   *
-   * 为 true 时，可通过 sessionId（+ roundId，轮次级）回溯到原始对话。
-   * 为 false 时，表示原始对话已删除，无法追溯。
-   * 对 round-summary 轮次级记忆有意义，其他来源记忆默认为 false。
-   */
+  /** 是否可经 sessionId（+ roundId）回溯到原始对话；round-summary 有意义，其余默认 false */
   isTraceable?: boolean;
-  /**
-   * 可选：摘要是否被手动修改
-   *
-   * 为 true 时，表示摘要内容已被人工修改，可能与原始对话不完全一致。
-   * 仅对 `source='round-summary'` 的记忆有意义。
-   * isTraceable 独立于此字段——修改摘要不代表原始对话不存在。
-   */
+  /** 摘要是否已被人工修改，可能与原始对话不一致；仅 round-summary 有意义 */
   isModified?: boolean;
   /**
-   * 可选：写路径取代检测（ADR-021）——是否有新摘要取代了本条
-   *
-   * 非 undefined 时表示本条摘要已被更新的决策/事实覆盖，不再作为当前事实注入召回
-   * （召回时确定性过滤）。值为取代它的新摘要 id（`round-summary:...`），本条保留以便
-   * `traceSummary` 回溯历史。仅对 `source='round-summary'` 的记忆有意义。
-   *
-   * 设计为**顶层持久化字段**而非 metadata：宿主 SqliteStorage 不持久化 metadata，
-   * 而 superseded 标记必须跨会话生效（"写时定、读时过滤"的持久语义）。
+   * 写路径取代标记：非 undefined 表示已被更新的摘要覆盖，召回时确定性过滤；
+   * 值为取代它的新摘要 id，本条保留以便 traceSummary 回溯。设计为顶层持久化字段而非
+   * metadata（宿主不持久化 metadata，而 superseded 须跨会话生效）
    */
   supersededBy?: string;
 }
 
-/** 默认记忆权重（parseMemory 的默认值行为） */
+/** parseMemory 未提供 score 时的默认权重 */
 export const DEFAULT_MEMORY_SCORE = 0.5;
 
 /**
- * 轮次摘要类型
- *
- * 用于标记 `source='round-summary'` 记忆的摘要类型。
- * 在摘要生成时由 LLM 自动判断，不引入独立分类器。
- * 聚合记忆已取消（统一为单一摘要记忆），故无 aggregated 类型。
+ * round-summary 记忆的摘要类型，摘要生成时由 LLM 自动判断，无独立分类器
  */
 export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'general';
 
 /**
- * 记忆解析器 — 验证原始数据并转换为 Memory 类型
- *
- * 运行时验证能力：
- * - 非空对象检查
- * - 字段类型验证（string/number）
- * - ISO 8601 日期格式验证
- * - score 范围检查（0-1）
- * - 默认值填充（score = 0.5）
+ * 记忆解析器 — 验证原始数据并转换为 Memory
+ * 校验：非空对象、字段类型、ISO 8601 日期、score 0-1、默认值填充（score=0.5）
  *
  * @param raw - 原始数据（通常来自 JSON 解析或数据库查询）
  * @returns 验证通过的 Memory 对象
@@ -141,8 +100,7 @@ export function parseMemory(raw: unknown): Memory {
     }
   }
 
-  // 验证 score 字段（可选，有默认值）
-  // Number.isFinite 同时排除 NaN/Infinity（对齐 zod z.number() 行为）
+  // 验证 score 字段（可选，有默认值）；Number.isFinite 排除 NaN/Infinity（对齐 zod z.number()）
   if (obj.score !== undefined && obj.score !== null) {
     if (typeof obj.score !== 'number' || !Number.isFinite(obj.score) || obj.score < 0 || obj.score > 1) {
       throw configError(
@@ -182,34 +140,19 @@ export function parseMemory(raw: unknown): Memory {
 // ─── source 标签约定（非枚举，仅为当前使用的约定） ──────
 
 /**
- * 当前使用的 source 标签约定
- *
- * 注意：source 是开放字符串，新增来源无需改代码
- * 只需在存储时指定 source 字符串即可
+ * 当前使用的 source 标签约定；source 是开放字符串，新增来源无需改代码，存储时指定即可
  */
 export const SOURCE_LABELS = {
-  /** 角色人格（角色包内容层 persona.md） */
+  /** 角色人格（角色包 content/persona.md） */
   PERSONA: 'persona',
-  /** 创作规则（角色包内容层 rules.md + .memora/rules/*.md） */
+  /** 创作规则（角色包 content/rules.md + .memora/rules/*.md） */
   RULE: 'rule',
   /** 技能定义（角色包 skills/ 目录） */
   SKILL: 'skill',
-  /** 作品投影（Agent 读取用户作品时生成的概要） */
+  /** 作品投影（读取用户作品时生成的概要） */
   WORK_PROJECTION: 'work-projection',
   /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
   ROUND_SUMMARY: 'round-summary',
-  /** 未知来源（inferSource 兜底值，文件路径未匹配已知目录时的默认标签） */
+  /** 未知来源（inferSource 兜底值） */
   UNKNOWN: 'unknown',
 } as const;
-
-// ─── Source 校验（运行时函数迁移到 sourceValidation.ts） ──
-// inferSource / escapeLike / validateSource / levenshtein → src/memory/sourceValidation.ts
-// STOPWORDS → src/utils/segmenter.ts（停用词是分词关注点）
-// SourceValidationSeverity 类型 → src/memory/sourceValidation.ts
-
-// ─── 记忆关系图谱已收敛移除 ─────────────────
-// ADR-014 侧车模型判定为过度设计（W5-网络图谱收敛），已整体移除：
-// - 独立侧车存储（IMemoryRelationStore / InMemoryRelationStore）
-// - 复杂关系类型（contradicts/supports/follows/refines/caused/related）
-// - 冲突检测改用 supersededBy 布尔标记（ADR-021 写路径取代检测）
-// 残留源：PROFILE（画像）已随角色包边界收敛（ADR-025）移除，不再有新写入——记忆收敛为 round-summary 单轨。
