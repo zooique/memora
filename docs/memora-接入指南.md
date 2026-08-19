@@ -33,7 +33,7 @@
 - [五、API 速查](#五api-速查)
 - [六、宿主工具函数](#六宿主工具函数)
 - [七、可观测性接入（ITracer）](#七可观测性接入itracer)
-- [八、内容护栏（Guardrails）](#八内容护栏guardrails)
+- [八、工具错误反思（Reflection）](#八工具错误反思reflection)
 - [九、评估体系（Eval）](#九评估体系eval)
 - [十、多步骤编排](#十多步骤编排)
 - [十一、关键约束](#十一关键约束)
@@ -698,37 +698,9 @@ const agent = new Agent({
 
 ---
 
-## 八、内容护栏（Guardrails）
+## 八、工具错误反思（Reflection）
 
-Memora 支持基于正则的内容护栏，在对话输入和 LLM 输出阶段分别检查，防止恶意输入和敏感信息泄露。
-
-### 护栏规则格式
-
-护栏规则以 `source: "guardrail"` 记忆形式存储，放在 `configDir/rules/guardrails/` 目录下：
-
-```markdown
----
-name: 禁止执行代码
-source: guardrail
----
-
-pattern: /执行|运行|eval|exec/
-action: block
-```
-
-- `pattern`：正则表达式（可选加 `/` 定界符）
-- `action`：`block`（阻断对话）或 `warn`（仅警告）
-
-### 护栏行为
-
-| 阶段 | 命中 block | 命中 warn | 规则异常 |
-|------|-----------|----------|---------|
-| 输入 | 阻断对话，返回阻止消息 | 追加警告文本，继续对话 | 降级放行 + 记日志 |
-| 输出 | 阻断输出，返回阻止消息 | 追加警告文本，继续输出 | 降级放行 + 记日志 |
-
-> **降级优先**：护栏自身异常（如正则编译失败）永远不阻断用户对话。
-
-### 工具错误反思（Reflection）
+> 注：原「内容护栏（Guardrails）」章节已移除——guardrail 是「零规则、无扫描映射、无消费者」的空转链，已随内核摘除（2026-08-17，见 memory-role-pack-boundary.md §4.4）。
 
 当工具执行失败时，错误结果包含 `[ERR:TOOL:code]` 前缀。如果错误码标记为 retryable（如 `FILE_NOT_FOUND`、`ARGUMENT_ERROR`），AgentLoop 会自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。
 
@@ -786,7 +758,7 @@ console.log(result.passed ? '✅ 通过' : `❌ 失败: ${result.failures.join('
 
 | 层次 | 工具 | LLM 调用 | 用途 |
 |------|------|---------|------|
-| Mock Eval | `collectAgentChunks` + `evaluateResult` | 不调用（MSW Mock） | 行为回归（工具调用、护栏、召回） |
+| Mock Eval | `collectAgentChunks` + `evaluateResult` | 不调用（MSW Mock） | 行为回归（工具调用、召回） |
 | 真实 LLM Eval | 宿主自建 | 真实调用 | 回复质量、指令遵循度 |
 
 > Mock Eval 在 CI 中运行，真实 LLM Eval 由宿主项目手动触发。
@@ -818,7 +790,7 @@ for (const chapter of chapters) {
 
 1. **`provider` 是必填项** — Agent 无法独立运行
 2. **configDir** 指向 Agent 级配置目录，所有子项目共享
-3. **项目级 `.memora/`** 只放 `rules/`、`skills/` 和 `guardrails/`
+3. **项目级 `.memora/`** 只放 `rules/`、`skills/`
 4. **角色由关键词自动触发**
 5. **对话历史跨子项目持久化**
 6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.rolePack.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
@@ -828,8 +800,7 @@ for (const chapter of chapters) {
 10. **禁止**项目切换时关闭/重建数据库
 11. **禁止**将配置直接写入 SQLite 作为持久化存储
 12. **项目切换** `switchProject()` 已自动 rebuild，通常无需手动调用 `rebuildComponents()`
-13. **护栏规则**以 `source: "guardrail"` 记忆形式存储，不创建独立子系统
-14. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
+13. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
 
 ---
 

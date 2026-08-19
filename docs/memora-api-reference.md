@@ -201,7 +201,7 @@ async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, voi
 type AgentChunk =
   | { type: 'recall'; memories: RecalledMemorySummary[] }  // 记忆召回（携带摘要列表）
   | { type: 'thinking'; phase: ThinkingPhase }             // 推理阶段
-  | { type: 'text'; content: string; guardrailBlocked?: boolean }  // LLM 文本片段（护栏阻断时 guardrailBlocked=true）
+  | { type: 'text'; content: string }  // LLM 文本片段（流式输出内容）
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }   // 工具调用开始
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }  // 工具调用结果
   | { type: 'aborted'; reason: string }                    // 对话被取消
@@ -224,8 +224,6 @@ interface RecalledMemorySummary {
   source: string;   // 来源标签（开放字符串，如 'rule'、'round-summary'、'work-projection'）
 }
 ```
-
-> **guardrailBlocked 结构化信号**：v1.0 起用结构化字段替代中文文案匹配，eval 框架和宿主 UI 可通过 `chunk.guardrailBlocked === true` 判断护栏触发，无需依赖文案子串匹配。
 
 ### 3.2 `chatSync(input, signal?)` — 同步版（仅供测试用）
 
@@ -353,7 +351,6 @@ interface Memory {
 | `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义 |
 | `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像（存量数据兼容，不再新写入） |
 | `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
-| `SOURCE_LABELS.GUARDRAIL` | `'guardrail'` | 内容护栏规则 |
 | `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（写入型 source 之一，另含 `content` 会话归档） |
 
 > source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
@@ -780,29 +777,9 @@ isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 
 ---
 
-## 十五、内容护栏（Guardrails）
+## 十五、工具错误反思（Reflection）
 
-### 15.1 护栏规则格式
-
-护栏规则以 `source: "guardrail"` 记忆形式存储，放在 `configDir/rules/guardrails/` 目录下：
-
-```markdown
----
-name: 禁止执行代码
-source: guardrail
----
-
-pattern: /执行|运行|eval|exec/
-action: block
-```
-
-### 15.2 护栏行为
-
-- **输入护栏**：用户输入注入上下文前检查，命中 `block` 时阻断对话
-- **输出护栏**：LLM 响应返回用户前检查，命中 `block` 时替换输出
-- **降级策略**：护栏自身异常时降级为"放行 + 记日志"，永远不阻断对话
-
-### 15.3 工具错误反思（Reflection）
+> 注：原「内容护栏（Guardrails）」章节已移除——guardrail 是「零规则、无扫描映射、无消费者」的空转链，已随内核摘除（2026-08-17，见 memory-role-pack-boundary.md §4.4）。本章仅保留原 15.3 的有效内容。
 
 当工具执行失败且错误码为 retryable 时，AgentLoop 自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。默认最多重试 2 次（`maxReflectionRetries`）。
 
