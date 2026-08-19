@@ -116,7 +116,7 @@ export interface ISessionStore {
   getSessionMeta?(sessionId: string): SessionMeta | undefined;
 
   /**
-   * 设置会话标题（可选，ADR-024 会话标题层）
+   * 设置会话显示名称（可选，ADR-024 会话标题层 · 双层命名）
    *
    * 设置用户可修改的显示名称（displayName）。
    * 首轮闭环自动命名使用 updateSessionMeta 写入 autoName；
@@ -154,7 +154,7 @@ export interface ISessionStore {
 }
 
 /**
- * 会话元数据（ADR-024 会话标题层 · 双层命名扩展）
+ * 会话元数据（ADR-024 会话标题层 · 双层命名）
  *
  * 会话身份（date-session）与展示标题解耦：
  * - 身份：ISessionStore 以 date+session 为主键读写消息
@@ -164,24 +164,19 @@ export interface ISessionStore {
  * - autoName: LLM 自动生成的名称（只读，首轮对话后生成）
  * - displayName: 用户可修改的显示名称（覆盖 autoName 显示）
  *
- * 向后兼容：
- * - autoName 为空时，回退到 title（旧字段）
- * - displayName 为空时，回退到 autoName（或 title）
- *
  * sessionId 即 `${date}-${session}`，与 listSessions() 返回格式一致。
  */
 export interface SessionMeta {
   /** 会话标识（格式：YYYY-MM-DD-sessionName，与 listSessions 一致） */
   sessionId: string;
 
-  // ── 双层命名（核心扩展） ──
+  // ── 双层命名（核心） ──
 
   /**
    * 自动生成名称（只读，LLM 生成）
    * - 首轮对话后由 SessionNamer 生成（10 字以内简短标题）
    * - 会话归档时可由 SessionArchiver 更新为更完整的名称
    * - 用户不可修改
-   * - 为空时回退到 title（向后兼容）
    */
   autoName?: string;
 
@@ -189,17 +184,9 @@ export interface SessionMeta {
    * 显示名称（用户可修改）
    * - 初始值 = autoName（由 SessionNamer 同步写入）
    * - 用户修改后，显示层使用此值
-   * - 用户清空时，回退到 autoName（或 title）
+   * - 用户清空时，回退到 autoName
    */
   displayName?: string;
-
-  /**
-   * 用户可读标题（向后兼容字段）
-   * - 旧版单标题模型的 title 字段
-   * - 新版双层命名中，作为 autoName/displayName 的回退
-   * - 宿主实现可继续使用此字段，内核按 displayName → autoName → title 优先级解析
-   */
-  title?: string;
 
   // ── 搜索/索引数据（只读，LLM 生成） ──
 
@@ -230,13 +217,12 @@ export interface SessionMeta {
 /**
  * 获取会话显示名称（双层命名回退逻辑，SSOT 单一真理源）
  *
- * 优先级：displayName → autoName → title → 默认占位
+ * 优先级：displayName → autoName → 默认占位
  *
  * 规则：
  * 1. 用户有自定义名称（displayName 非空）→ 使用 displayName
  * 2. 用户无自定义名称，但有自动名称（autoName 非空）→ 使用 autoName
- * 3. 都为空，但有旧版标题（title 非空）→ 使用 title（向后兼容）
- * 4. 全部为空 → 返回空字符串（由调用方决定占位）
+ * 3. 全部为空 → 返回空字符串（由调用方决定占位）
  *
  * @param meta - 会话元数据
  * @returns 显示名称
@@ -249,16 +235,11 @@ export function getSessionDisplayName(meta: SessionMeta | undefined): string {
   // autoName 次之（LLM 自动生成）
   const autoName = meta.autoName?.trim();
   if (autoName) return autoName;
-  // title 兜底（向后兼容旧版单标题模型）
-  const title = meta.title?.trim();
-  if (title) return title;
   return '';
 }
 
 /**
  * 获取会话自动名称（仅 autoName，用于搜索/索引）
- *
- * 规则：autoName → title → 空
  *
  * @param meta - 会话元数据
  * @returns 自动名称
@@ -266,10 +247,7 @@ export function getSessionDisplayName(meta: SessionMeta | undefined): string {
 export function getSessionAutoName(meta: SessionMeta | undefined): string {
   if (!meta) return '';
   const autoName = meta.autoName?.trim();
-  if (autoName) return autoName;
-  const title = meta.title?.trim();
-  if (title) return title;
-  return '';
+  return autoName ?? '';
 }
 
 /**

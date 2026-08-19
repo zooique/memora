@@ -1481,12 +1481,12 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（full|manual�
 
   // ─── 手动 API（manual 模式下使用） ─────────────────────
 
-  it('archiveSessionContent：手动触发会话内容归档', async () => {
+  it('archiveSession：手动触发会话内容归档', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
     await agent.init();
 
     // 手动触发会话内容归档
-    const result = await agent.archiveSessionContent('2026-07-04', 'session-1');
+    const result = await agent.archiveSession('2026-07-04', 'session-1');
 
     // 应返回归档结果结构（方案 C：updatedFields 替代 memories）
     expect(result).toHaveProperty('updatedFields');
@@ -2430,7 +2430,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
   it('启动时发现超时会话应触发内容归档', async () => {
     // 只监听不改实现：archiveMode 为 manual 时
     // autoTriggered 的 content 归档会立即降级返回，不触碰 LLM
-    const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSessionContent');
+    const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSession');
     const sessionId = `${todayDate()}-main`;
 
     agent = new Agent({
@@ -2452,7 +2452,7 @@ describe('Agent · 暂停超时自动归档（T1-2）', () => {
     });
 
   it('无超时会话时不应触发归档', async () => {
-    const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSessionContent');
+    const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSession');
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
     await agent.init();

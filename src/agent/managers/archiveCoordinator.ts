@@ -1,21 +1,16 @@
 /**
- * 归档协调器（从 agent.ts 拆分）
+ * 归档协调器
  *
  * 职责：
- *   1. 归档会话内容（archiveSessionContent）
- *   2. 归档完成事件发射（memoryAdded / archiveFailed）
- *   3. archiveMode 二态控制集中判断（FIX-P1-4）
+ *   1. 归档会话元数据（SessionMeta）
+ *   2. 归档失败事件发射（archiveFailed）
+ *   3. archiveMode 二态控制集中判断
  *
- * 设计理由：
- *   agent.ts 原承担 15+ 职责，归档操作是独立的领域职责，
- *   拆分后 Agent 聚焦对话编排，ArchiveCoordinator 聚焦归档操作 + 模式判断。
- *
- * FIX-P1-4（2026-07-24）：archiveMode 二态控制集中到本类
- *   原实现判断散落在多处，修复后：
- *     - ArchiveCoordinator 构造时注入 getArchiveMode getter
- *     - 归档方法新增 autoTriggered 参数区分自动/手动触发
- *     - 自动触发时由本类内部按模式判断是否跳过（统一协调点）
- *     - setArchiveMode/getArchiveMode 仍保留在 Agent（涉及 _chatBusy 和 #config）
+ * 归档架构：
+ *   - 记忆系统只有 round-summary（轮次摘要）
+ *   - 会话归档 = 更新 SessionMeta（summary / keyTopics / autoName）
+ *   - SessionMeta 仅用于搜索/索引，不参与记忆召回
+ *   - archiveFailed 错误处理保留
  */
 
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -87,7 +82,7 @@ export interface ArchiveTriggerOptions {
 }
 
 /**
- * 归档协调器（content 会话归档）
+ * 归档协调器
  *
  * 使用方式：
  *   const coordinator = new ArchiveCoordinator({
@@ -96,9 +91,9 @@ export interface ArchiveTriggerOptions {
  *     emit: this.emit.bind(this),
  *   });
  *   // 手动触发（用户主动）
- *   await coordinator.archiveSessionContent(date, session);
+ *   await coordinator.archiveSession(date, session);
  *   // 自动触发（会话切换，full 模式）
- *   await coordinator.archiveSessionContent(date, session, { autoTriggered: true });
+ *   await coordinator.archiveSession(date, session, { autoTriggered: true });
  */
 export class ArchiveCoordinator {
   /** 获取 SessionArchiver 的回调 */
@@ -118,23 +113,17 @@ export class ArchiveCoordinator {
   }
 
   /**
-   * 归档会话内容（SessionMeta 归档）
+   * 归档会话
    *
-   * 模式判断（FIX-P1-4，集中到本类）：
+   * 模式判断：
    *   - 自动触发 + full 模式 → 执行（会话切换前自动归档）
    *   - 自动触发 + manual 模式 → 跳过，用户需手动调用
-   *   - 手动触发（任何模式） → 执行（用户意图优先，如"一键归档"按钮）
-   *
-   * 设计变更（2026-08-19，方案 C）：
-   *   - 不再创建 source='content' 记忆条目
-   *   - 改为更新 SessionMeta（summary / keyTopics / autoName）
-   *   - memoryAdded 事件不再发射（无记忆条目创建）
-   *   - archiveFailed 错误处理保留
+   *   - 手动触发（任何模式） → 执行（用户意图优先）
    *
    * 错误传播契约：
    *   - SessionArchiver LLM 异常 / 写入失败向上抛出（不内部吞掉）。
-   *   - 本方法 catch 异常并发射 archiveFailed({ stage: 'content' }) 事件，
-   *     让宿主 UI 可感知会话内容归档失败。
+   *   - 本方法 catch 异常并发射 archiveFailed({ stage: 'session' }) 事件，
+   *     让宿主 UI 可感知归档失败。
    *   - 失败时返回空降级结果，保证调用方（如 SESSION_SWITCH 自动归档）不中断主流程。
    *
    * @param date 会话日期 YYYY-MM-DD
@@ -142,7 +131,7 @@ export class ArchiveCoordinator {
    * @param options 触发选项（autoTriggered 默认 false）
    * @returns 归档结果（updatedFields 可能为空，表示无归档价值或 LLM 失败）
    */
-  async archiveSessionContent(
+  async archiveSession(
     date: string,
     session: string,
     options?: ArchiveTriggerOptions,
@@ -151,8 +140,8 @@ export class ArchiveCoordinator {
     const archiveMode = this.getSessionArchiveMode?.() ?? (this.getArchiveMode() === 'full' ? 'auto' : 'manual');
     if (options?.autoTriggered && archiveMode === 'manual') {
       logger.debug(
-        { mode: archiveMode, stage: 'content' },
-        'sessionArchive=manual 跳过自动 content 归档',
+        { mode: archiveMode, stage: 'session' },
+        'sessionArchive=manual 跳过自动会话归档',
       );
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
@@ -161,15 +150,10 @@ export class ArchiveCoordinator {
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     try {
-      const result = await sessionArchiver.archiveSessionContent(date, session, options);
-
-      // 设计变更（方案 C）：不再创建记忆条目，无需 memoryWriteConfirm 或 memoryAdded 事件
-      // SessionMeta 更新直接通过 sessionStore.updateSessionMeta 完成
-      // 宿主可通过 getSessionMeta() 读取最新元数据
-
+      const result = await sessionArchiver.archiveSession(date, session, options);
       return result;
     } catch (err) {
-      this.handleArchiveError('content', err);
+      this.handleArchiveError('session', err);
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
   }
@@ -177,10 +161,10 @@ export class ArchiveCoordinator {
   /**
    * 统一处理归档异常：记录日志 + 发射 archiveFailed 事件
    *
-   * @param stage 归档阶段标识（content，供 archiveFailed 事件 payload + 日志）
+   * @param stage 归档阶段标识（session，供 archiveFailed 事件 payload + 日志）
    * @param err 捕获的异常
    */
-  private handleArchiveError(stage: 'content', err: unknown): void {
+  private handleArchiveError(stage: 'session', err: unknown): void {
     // 记录根因到日志（UI 通知走 archiveFailed 事件，日志走 logger.error，两者不替代）
     const label = stage.charAt(0).toUpperCase() + stage.slice(1);
     logger.error({ err, stage }, `archive${label} 异常`);

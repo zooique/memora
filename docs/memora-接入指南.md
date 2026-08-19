@@ -357,6 +357,72 @@ agent.on('sessionForked', (event) => {
 
 ---
 
+## 四.6、会话归档（Archive Session）—— 宿主独立实现
+
+Memora 内核聚焦于“对话与记忆”引擎，不负责管理用户的视觉焦点和会话列表的展示层级。**会话归档（将会话从活跃列表移至历史列表）是一个纯粹的 UI/UX 行为，应由宿主项目独立实现，无需修改 Memora 内核。**
+
+### 设计理念
+
+- **内核职责**：确保对话内容（消息记录、记忆卡片）的持久化和可召回性。会话一旦创建，其内容在生命周期内始终可用。
+- **宿主职责**：管理“活跃会话”与“已归档会话”的视图分离，为用户提供整洁的交互界面。
+
+### 实现方案
+
+宿主项目应在自身的数据模型中扩展会话管理功能：
+
+#### 1. 数据库调整
+
+在宿主的会话数据表中增加一个状态字段，例如 `is_archived`（布尔值或枚举），用于区分会话的展示状态。
+
+```sql
+-- 示例：宿主数据库表结构
+ALTER TABLE sessions ADD COLUMN is_archived BOOLEAN DEFAULT 0;
+```
+
+#### 2. 前端交互实现
+
+- **归档按钮**：在会话列表项中提供“归档”操作按钮。点击时，**不调用** Memora Agent 的任何 API，而是调用宿主自身的后端接口（如 `PUT /api/sessions/{id}/archive`）。
+- **列表分离**：宿主前端应维护两个视图：
+  - **活跃列表**：查询 `is_archived = false` 的会话。
+  - **历史列表**：查询 `is_archived = true` 的会话。
+- **数据同步**：宿主的后端接口负责更新数据库中的 `is_archived` 字段，并通过 WebSocket 或轮询通知前端刷新列表。
+
+### 流程示例
+
+```typescript
+// 宿主前端代码
+async function archiveSession(sessionId: string) {
+  // 1. 调用宿主后端 API
+  const response = await fetch(`/api/sessions/${sessionId}/archive`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  
+  if (response.ok) {
+    // 2. 从活跃列表移除该会话
+    removeSessionFromList(sessionId);
+    // 3. 可选：提示用户已归档
+    showToast('会话已归档至历史记录');
+  }
+}
+
+// 宿主后端路由（伪代码）
+app.put('/api/sessions/:id/archive', (req, res) => {
+  const { id } = req.params;
+  // 4. 更新数据库状态
+  db.updateSessionStatus(id, { is_archived: true });
+  res.json({ success: true });
+});
+```
+
+### 核心优势
+
+- **解耦**：Memora 内核无需感知“归档”这一视图行为，保持纯粹的业务逻辑。
+- **灵活**：宿主可自由扩展“归档”的变体，如“收藏夹”、“置顶”、“多级分类”等，均可在宿主侧独立完成。
+- **稳定**：内核代码零风险，记忆召回逻辑完全不受归档行为影响，确保所有对话内容（无论归档与否）都能被准确回忆。
+
+---
+
 ## 五、API 速查
 
 > 完整定义见 [memora-api-reference.md](./memora-api-reference.md)。

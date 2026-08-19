@@ -161,7 +161,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 记忆治理统一门面（L0/L1/L2/L3 + 诊断） */
   private _governance: MemoryGovernance | null = null;
   private workProjection: WorkProjectionManager | null = null;
-  /** SessionArchiver（会话内容归档器，content 类记忆） */
+  /** SessionArchiver（会话归档器，负责生成/更新 SessionMeta） */
   private sessionArchiver: SessionArchiver | null = null;
   /** 会话命名器（ADR-024：新建会话首次问答自动命名标题） */
   private sessionNamer: SessionNamer | null = null;
@@ -329,7 +329,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录
       this.archiveCoordinator
-        ?.archiveSessionContent(date, session, { autoTriggered: true })
+        ?.archiveSession(date, session, { autoTriggered: true })
         .catch((err) => {
           logger.warn({ err, sessionId }, '暂停超时会话自动归档失败');
         });
@@ -890,8 +890,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * ADR-015 归档模式控制（二态）：
    * - 角色匹配 + 技能匹配不受 archiveMode 影响（每轮都执行，非归档行为）
-   * - `full` 模式：会话切换前自动归档会话内容（content）
-   * - `manual` 模式：跳过会话内容自动归档，需用户手动调用 archiveSessionContent()
+   * - `full` 模式：会话切换前自动归档会话
+   * - `manual` 模式：跳过会话自动归档，需用户手动调用 archiveSession()
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
     // postProcess 全流程 span（角色匹配 + 技能匹配 + 归档）
@@ -2509,29 +2509,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 手动归档会话内容（content 类记忆）
+   * 手动归档会话（更新 SessionMeta）
    *
-   * 适用于 `manual` 模式下用户手动触发会话内容归档。
+   * 适用于 `manual` 模式下用户手动触发会话归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
    * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
    * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
    * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
    *
-   * 归档逻辑已委托给 ArchiveCoordinator
+   * 归档逻辑已委托给 ArchiveCoordinator，归档结果写入 SessionMeta
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
    * @param options 触发选项（autoTriggered 默认 false，即手动触发）
    * @returns 归档结果（updatedFields 可能为空，表示无归档价值或 LLM 失败）
    */
-  async archiveSessionContent(
+  async archiveSession(
     date: string,
     session: string,
     options?: ArchiveTriggerOptions,
   ): Promise<SessionArchiveResult> {
-    this.assertInitialized('archiveSessionContent');
-    return this.requireArchiveCoordinator.archiveSessionContent(date, session, options);
+    this.assertInitialized('archiveSession');
+    return this.requireArchiveCoordinator.archiveSession(date, session, options);
   }
 
   // ─── 配置重载（事件驱动） ───────────────────────

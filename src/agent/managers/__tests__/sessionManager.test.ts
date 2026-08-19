@@ -69,6 +69,7 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
     deleteCheckpoint: vi.fn(),
     getSessionMeta: vi.fn().mockReturnValue(undefined),
     setSessionTitle: vi.fn(),
+    updateSessionMeta: vi.fn(),
     listSessionMetas: vi.fn().mockReturnValue([]),
     ...overrides,
   };
@@ -150,11 +151,11 @@ describe('SessionManager', () => {
       expect(mgr.getSessionMeta('2026-06-27-main')).toBeUndefined();
     });
 
-    it('renameSession 应委托 store.setSessionTitle', () => {
+    it('renameSession 应委托 store.updateSessionMeta 写入 displayName', () => {
       manager.renameSession('2026-06-27-main', '新标题');
-      expect((sessionStore as ISessionStore).setSessionTitle).toHaveBeenCalledWith(
+      expect((sessionStore as ISessionStore).updateSessionMeta).toHaveBeenCalledWith(
         '2026-06-27-main',
-        '新标题',
+        { displayName: '新标题' },
       );
     });
 

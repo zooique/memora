@@ -2,23 +2,23 @@
  * 会话命名器（SessionNamer · ADR-024 会话标题层）
  *
  * 职责：
- *   为新建会话生成用户可读标题，写入会话标题元数据（setSessionTitle）。
+ *   为新建会话生成 autoName + displayName，写入会话元数据（updateSessionMeta）。
  *   标题是独立展示元数据，与会话身份（date-session）解耦，不污染主键。
  *
  * 触发时机：
  *   仅"新建会话的第一次问答闭环"触发（ensureSessionTitle）。
- *   判定以"会话尚无标题"为准——新建会话首轮问答前必然无标题，
- *   手动改名后 title 非空即不再覆盖，天然满足"只触发一次"，无需粘性锁定。
+ *   判定以"会话尚无 autoName"为准——新建会话首轮问答前必然无标题，
+ *   有 autoName 即不再覆盖，天然满足"只触发一次"，无需粘性锁定。
  *
  * 降级策略：
  *   - sessionStore 未注入：静默跳过（best-effort）
- *   - 会话已有标题：跳过（不覆盖手动改名）
- *   - LLM 不可用 / 失败 / 无价值：降级为"新会话 HH:MM"占位（借鉴 WorkBuddy 占位式）
+ *   - 会话已有 autoName：跳过（不覆盖已有名称）
+ *   - LLM 不可用 / 失败 / 无价值：降级为"新会话 HH:MM"占位
  *
  * 设计：
  *   - 与 SessionArchiver 同形态：复用公共 accumulateStream + parseLlmJson 管线
  *   - 通过 getProvider 惰性获取当前 LLM Provider（setProvider 切换后仍命中最新模型）
- *   - 不依赖 Agent 实例，仅依赖 ISessionStore 的标题元数据能力
+ *   - 不依赖 Agent 实例，仅依赖 ISessionStore 的元数据能力
  */
 
 import { logger } from '@/logging/logger.js';
@@ -52,7 +52,7 @@ export class SessionNamer {
   }
 
   /**
-   * 确保会话拥有标题（仅新建会话首次问答触发）
+   * 确保会话拥有 autoName（仅新建会话首次问答触发）
    *
    * 流程：
    *   1. 若会话已有 autoName，跳过（不覆盖已生成的自动名称）
@@ -80,8 +80,8 @@ export class SessionNamer {
 
     // 会话已有 autoName 则跳过 —— 仅新建会话首次触发
     const existing = this.sessionStore.getSessionMeta?.(sessionId);
-    if (existing?.autoName || existing?.title) {
-      logger.debug({ sessionId, title: existing?.autoName || existing?.title }, 'SessionNamer: 会话已有标题，跳过');
+    if (existing?.autoName) {
+      logger.debug({ sessionId, autoName: existing.autoName }, 'SessionNamer: 会话已有 autoName，跳过');
       return;
     }
 
@@ -100,11 +100,8 @@ export class SessionNamer {
     this.sessionStore.updateSessionMeta?.(sessionId, {
       autoName: title,
       displayName: title,
-      title, // 向后兼容字段
     });
-    // 同时调用 setSessionTitle（若宿主实现），确保兼容性
-    this.sessionStore.setSessionTitle?.(sessionId, title);
-    logger.info({ sessionId, title }, 'SessionNamer: 会话标题已生成');
+    logger.info({ sessionId, autoName: title }, 'SessionNamer: 会话 autoName 已生成');
   }
 
   /**

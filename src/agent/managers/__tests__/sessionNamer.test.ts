@@ -106,12 +106,13 @@ class MockSessionStore implements ISessionStore {
     return this.metas.get(sessionId);
   }
 
-  setSessionTitle(sessionId: string, title: string): void {
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
     const existing = this.metas.get(sessionId);
     this.metas.set(sessionId, {
+      ...existing,
       sessionId,
-      title,
-      updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+      ...meta,
+      updatedAt: new Date().toISOString(),
       messageCount: existing?.messageCount ?? 0,
     });
   }
@@ -136,17 +137,18 @@ describe('SessionNamer · ensureSessionTitle 主流程', () => {
     namer = new SessionNamer({ getProvider: () => provider, sessionStore });
   });
 
-  it('正常命名：LLM 返回标题应写入 setSessionTitle', async () => {
+  it('正常命名：LLM 返回标题应写入 updateSessionMeta', async () => {
     await namer.ensureSessionTitle('2026-07-03', 'main', '帮我写一个排序算法');
 
     const meta = sessionStore.getMeta('2026-07-03-main');
-    expect(meta?.title).toBe('测试标题');
+    expect(meta?.autoName).toBe('测试标题');
+    expect(meta?.displayName).toBe('测试标题');
   });
 
-  it('会话已有标题应跳过（不覆盖手动改名）', async () => {
+  it('会话已有 autoName 应跳过（不覆盖）', async () => {
     sessionStore.setMeta({
       sessionId: '2026-07-03-main',
-      title: '手动改好的标题',
+      autoName: '已存在的自动命名',
       updatedAt: new Date().toISOString(),
       messageCount: 3,
     });
@@ -154,7 +156,7 @@ describe('SessionNamer · ensureSessionTitle 主流程', () => {
     await namer.ensureSessionTitle('2026-07-03', 'main', '帮我写代码');
 
     const meta = sessionStore.getMeta('2026-07-03-main');
-    expect(meta?.title).toBe('手动改好的标题');
+    expect(meta?.autoName).toBe('已存在的自动命名');
   });
 
   it('LLM 返回 null（无价值）应降级为占位标题', async () => {
@@ -163,7 +165,7 @@ describe('SessionNamer · ensureSessionTitle 主流程', () => {
     await namer.ensureSessionTitle('2026-07-03', 'main', '你好');
 
     const meta = sessionStore.getMeta('2026-07-03-main');
-    expect(meta?.title).toMatch(/^新会话 \d{2}:\d{2}$/);
+    expect(meta?.autoName).toMatch(/^新会话 \d{2}:\d{2}$/);
   });
 
   it('LLM 抛异常（不可用）应降级为占位标题，不抛出', async () => {
@@ -174,7 +176,7 @@ describe('SessionNamer · ensureSessionTitle 主流程', () => {
     ).resolves.toBeUndefined();
 
     const meta = sessionStore.getMeta('2026-07-03-main');
-    expect(meta?.title).toMatch(/^新会话 \d{2}:\d{2}$/);
+    expect(meta?.autoName).toMatch(/^新会话 \d{2}:\d{2}$/);
   });
 
   it('标题超长应被截断', async () => {
@@ -183,7 +185,7 @@ describe('SessionNamer · ensureSessionTitle 主流程', () => {
     await namer.ensureSessionTitle('2026-07-03', 'main', '内容');
 
     const meta = sessionStore.getMeta('2026-07-03-main');
-    expect(meta?.title?.length).toBeLessThanOrEqual(30);
+    expect(meta?.autoName?.length).toBeLessThanOrEqual(30);
   });
 });
 

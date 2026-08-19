@@ -107,13 +107,13 @@ class InMemorySessionStore implements ISessionStore {
     return this.metas.get(sessionId);
   }
 
-  /** 设置会话标题（可选方法实现） */
+  /** 设置会话显示名称（可选方法实现，写入 displayName） */
   setSessionTitle(sessionId: string, title: string): void {
     const existing = this.metas.get(sessionId);
     if (existing) {
       this.metas.set(sessionId, {
         ...existing,
-        title,
+        displayName: title,
         updatedAt: new Date().toISOString(),
       });
     } else {
@@ -121,9 +121,29 @@ class InMemorySessionStore implements ISessionStore {
       const messageCount = this.countMessagesForSession(sessionId);
       this.metas.set(sessionId, {
         sessionId,
-        title,
+        displayName: title,
         updatedAt: new Date().toISOString(),
         messageCount,
+      });
+    }
+  }
+
+  /** 更新会话元数据（可选方法实现，写入 autoName/keyTopics/summary） */
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
+    const existing = this.metas.get(sessionId);
+    if (existing) {
+      this.metas.set(sessionId, {
+        ...existing,
+        ...meta,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      const messageCount = this.countMessagesForSession(sessionId);
+      this.metas.set(sessionId, {
+        sessionId,
+        updatedAt: new Date().toISOString(),
+        messageCount,
+        ...meta,
       });
     }
   }
@@ -349,7 +369,7 @@ describe('ISessionStore — 可选方法契约', () => {
 
       const meta = store.getSessionMeta('2026-08-18-test');
       expect(meta).toBeDefined();
-      expect(meta!.title).toBe('我的会话');
+      expect(meta!.displayName).toBe('我的会话');
       expect(meta!.sessionId).toBe('2026-08-18-test');
       expect(meta!.messageCount).toBe(1);
     });
@@ -367,8 +387,8 @@ describe('ISessionStore — 可选方法契约', () => {
 
       const metas = store.listSessionMetas();
       expect(metas).toHaveLength(2);
-      expect(metas[0]!.title).toBeDefined();
-      expect(metas[1]!.title).toBeDefined();
+      expect(metas[0]!.displayName).toBeDefined();
+      expect(metas[1]!.displayName).toBeDefined();
     });
 
     it('更新标题时 updatedAt 更新', async () => {
@@ -381,7 +401,7 @@ describe('ISessionStore — 可选方法契约', () => {
 
       store.setSessionTitle('session-1', '新标题');
       const meta2 = store.getSessionMeta('session-1')!;
-      expect(meta2.title).toBe('新标题');
+      expect(meta2.displayName).toBe('新标题');
       expect(meta2.updatedAt).not.toBe(time1);
     });
   });
@@ -433,13 +453,38 @@ describe('ISessionStore — SessionMeta 类型', () => {
   it('元数据结构正确', () => {
     const meta: SessionMeta = {
       sessionId: '2026-08-18-test',
-      title: '测试会话',
+      autoName: '测试会话',
+      displayName: '测试会话',
       updatedAt: '2026-08-18T10:00:00.000Z',
       messageCount: 42,
     };
     expect(meta.sessionId).toBe('2026-08-18-test');
-    expect(meta.title).toBe('测试会话');
+    expect(meta.autoName).toBe('测试会话');
+    expect(meta.displayName).toBe('测试会话');
     expect(meta.updatedAt).toBe('2026-08-18T10:00:00.000Z');
     expect(meta.messageCount).toBe(42);
+  });
+
+  it('支持双层命名回退逻辑', () => {
+    // 仅有 autoName，无 displayName
+    const meta1: SessionMeta = {
+      sessionId: 'test-1',
+      autoName: '自动名称',
+      updatedAt: '2026-08-18T10:00:00.000Z',
+      messageCount: 1,
+    };
+    expect(meta1.autoName).toBe('自动名称');
+    expect(meta1.displayName).toBeUndefined();
+
+    // 有 displayName 覆盖 autoName
+    const meta2: SessionMeta = {
+      sessionId: 'test-2',
+      autoName: '自动名称',
+      displayName: '用户自定义',
+      updatedAt: '2026-08-18T10:00:00.000Z',
+      messageCount: 1,
+    };
+    expect(meta2.autoName).toBe('自动名称');
+    expect(meta2.displayName).toBe('用户自定义');
   });
 });

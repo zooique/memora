@@ -2,18 +2,12 @@
  * ArchiveCoordinator 单元测试
  *
  * 覆盖范围：
- *   - archiveSessionContent：null 降级 + 异常处理
- *   - archiveMode 三态控制（content 自动/手动归档）
- *   - emit 回调：内容归档路径事件正确转发
- *
- * 设计变更（2026-08-19，方案 C）：
- *   - SessionArchiver 不再创建 source='content' 记忆
- *   - 改为更新 SessionMeta（summary / keyTopics / autoName）
- *   - memoryAdded 事件不再发射（无记忆条目创建）
- *   - 只保留 archiveFailed 错误事件
+ *   - archiveSession：null 降级 + 异常处理
+ *   - archiveMode 二态控制（session 自动/手动归档）
+ *   - emit 回调：归档路径事件正确转发
  *
  * 测试范式：
- *   - mock SessionArchiver（archiveSessionContent 控制返回值）
+ *   - mock SessionArchiver（archiveSession 控制返回值）
  *   - 真实 ArchiveCoordinator 实例
  *   - spy emit 回调收集事件
  */
@@ -47,16 +41,16 @@ function createEmitSpy(): {
 
 /**
  * 构造 mock SessionArchiver
- * @param result archiveSessionContent 返回值
+ * @param result archiveSession 返回值
  */
 function createMockSessionArchiver(result: SessionArchiveResult): SessionArchiver {
   return {
-    archiveSessionContent: vi.fn().mockResolvedValue(result),
+    archiveSession: vi.fn().mockResolvedValue(result),
   } as unknown as SessionArchiver;
 }
 
 /**
- * 构造 archiveMode 固定为 full 的 coordinator（content 测试基线）
+ * 构造 archiveMode 固定为 full 的 coordinator（session 测试基线）
  */
 function createCoordinator(
   emitSpy: ReturnType<typeof createEmitSpy>,
@@ -79,11 +73,11 @@ describe('ArchiveCoordinator', () => {
     emitSpy = createEmitSpy();
   });
 
-  describe('archiveSessionContent()', () => {
+  describe('archiveSession()', () => {
     it('getSessionArchiver 返回 null 时应返回空降级结果', async () => {
       const coordinator = createCoordinator(emitSpy);
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+      const result = await coordinator.archiveSession('2026-07-04', 'session-1');
 
       expect(result).toEqual({
         updatedFields: [],
@@ -93,7 +87,7 @@ describe('ArchiveCoordinator', () => {
       expect(emitSpy.events).toHaveLength(0);
     });
 
-    it('SessionArchiver 返回有效结果时应正常返回（不发射 memoryAdded 事件）', async () => {
+    it('SessionArchiver 返回有效结果时应正常返回', async () => {
       const archiveResult: SessionArchiveResult = {
         updatedFields: ['summary', 'keyTopics'],
         sessionLabel: '2026-07-04-session-1',
@@ -102,13 +96,10 @@ describe('ArchiveCoordinator', () => {
       const sessionArchiver = createMockSessionArchiver(archiveResult);
       const coordinator = createCoordinator(emitSpy, sessionArchiver);
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+      const result = await coordinator.archiveSession('2026-07-04', 'session-1');
 
       expect(result).toBe(archiveResult);
-      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 'session-1', undefined);
-      // 设计变更（方案 C）：不再发射 memoryAdded 事件
-      // 因为不创建记忆条目，无需通知宿主
-      expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(0);
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 'session-1', undefined);
     });
 
     it('SessionArchiver 返回空 updatedFields 时不应发射事件', async () => {
@@ -120,20 +111,20 @@ describe('ArchiveCoordinator', () => {
       const sessionArchiver = createMockSessionArchiver(archiveResult);
       const coordinator = createCoordinator(emitSpy, sessionArchiver);
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+      const result = await coordinator.archiveSession('2026-07-04', 'session-1');
 
       expect(result.updatedFields).toEqual([]);
       expect(emitSpy.events).toHaveLength(0);
     });
 
-    it('SessionArchiver 抛出异常时应发射 archiveFailed({ stage: "content" }) 事件并返回降级结果', async () => {
+    it('SessionArchiver 抛出异常时应发射 archiveFailed({ stage: "session" }) 事件并返回降级结果', async () => {
       // 模拟 LLM 异常向上抛出的场景（SessionArchiver 不内部吞掉异常）
       const throwingArchiver = {
-        archiveSessionContent: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
+        archiveSession: vi.fn().mockRejectedValue(new Error('LLM 不可用')),
       } as unknown as SessionArchiver;
       const coordinator = createCoordinator(emitSpy, throwingArchiver);
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+      const result = await coordinator.archiveSession('2026-07-04', 'session-1');
 
       // 应返回空降级结果，不向上抛出（保证 SESSION_SWITCH 自动归档不中断主流程）
       expect(result).toEqual({
@@ -141,11 +132,11 @@ describe('ArchiveCoordinator', () => {
         sessionLabel: '2026-07-04-session-1',
         messageCount: 0,
       });
-      // 应发射 archiveFailed 事件，stage='content'
+      // 应发射 archiveFailed 事件，stage='session'
       const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
       expect(archiveFailedEvents).toHaveLength(1);
       expect(archiveFailedEvents[0]!.payload).toEqual({
-        stage: 'content',
+        stage: 'session',
         message: 'LLM 不可用',
       });
     });
@@ -154,16 +145,16 @@ describe('ArchiveCoordinator', () => {
       // 验证 message.slice(0, 200) 截断逻辑，防止 payload 过大
       const longMessage = 'X'.repeat(300);
       const throwingArchiver = {
-        archiveSessionContent: vi.fn().mockRejectedValue(new Error(longMessage)),
+        archiveSession: vi.fn().mockRejectedValue(new Error(longMessage)),
       } as unknown as SessionArchiver;
       const coordinator = createCoordinator(emitSpy, throwingArchiver);
 
-      await coordinator.archiveSessionContent('2026-07-04', 'session-1');
+      await coordinator.archiveSession('2026-07-04', 'session-1');
 
       const archiveFailedEvents = emitSpy.events.filter((e) => e.event === 'archiveFailed');
       expect(archiveFailedEvents).toHaveLength(1);
       expect(archiveFailedEvents[0]!.payload).toEqual({
-        stage: 'content',
+        stage: 'session',
         message: longMessage.slice(0, 200),
       });
     });
@@ -186,7 +177,7 @@ describe('ArchiveCoordinator', () => {
       });
 
       // close 前：归档正常工作
-      const resultBefore = await coordinator.archiveSessionContent('2026-07-04', 's-1');
+      const resultBefore = await coordinator.archiveSession('2026-07-04', 's-1');
       expect(resultBefore.updatedFields).toHaveLength(1);
 
       // 模拟 Agent close：字段 null 化
@@ -194,7 +185,7 @@ describe('ArchiveCoordinator', () => {
       emitSpy.events.length = 0; // 清空事件
 
       // close 后：归档应降级返回空，不抛错
-      const sessionResult = await coordinator.archiveSessionContent('2026-07-04', 's-1');
+      const sessionResult = await coordinator.archiveSession('2026-07-04', 's-1');
 
       expect(sessionResult).toEqual({
         updatedFields: [],
@@ -205,8 +196,8 @@ describe('ArchiveCoordinator', () => {
     });
   });
 
-  // ─── FIX-P1-4: archiveMode 三态控制集中到 ArchiveCoordinator ───
-  describe('FIX-P1-4: archiveMode 三态控制（content）', () => {
+  // ─── archiveMode 二态控制集中到 ArchiveCoordinator ───
+  describe('archiveMode 控制（session）', () => {
     it('autoTriggered + full 模式 → 执行（调用 SessionArchiver）', async () => {
       const sessionArchiver = createMockSessionArchiver({
         updatedFields: ['summary'],
@@ -215,12 +206,10 @@ describe('ArchiveCoordinator', () => {
       });
       const coordinator = createCoordinator(emitSpy, sessionArchiver, 'full');
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
+      const result = await coordinator.archiveSession('2026-07-04', 's-1', { autoTriggered: true });
 
       expect(result.updatedFields).toHaveLength(1);
-      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalledWith('2026-07-04', 's-1', { autoTriggered: true });
-      // 设计变更：不再发射 memoryAdded 事件
-      expect(emitSpy.events.filter((e) => e.event === 'memoryAdded')).toHaveLength(0);
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1', { autoTriggered: true });
     });
 
     it('autoTriggered + manual 模式 → 跳过', async () => {
@@ -231,10 +220,10 @@ describe('ArchiveCoordinator', () => {
       });
       const coordinator = createCoordinator(emitSpy, sessionArchiver, 'manual');
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 's-1', { autoTriggered: true });
+      const result = await coordinator.archiveSession('2026-07-04', 's-1', { autoTriggered: true });
 
       expect(result.updatedFields).toEqual([]);
-      expect(sessionArchiver.archiveSessionContent).not.toHaveBeenCalled();
+      expect(sessionArchiver.archiveSession).not.toHaveBeenCalled();
     });
 
     it('手动触发 + manual 模式 → 执行（用户意图优先）', async () => {
@@ -245,10 +234,10 @@ describe('ArchiveCoordinator', () => {
       });
       const coordinator = createCoordinator(emitSpy, sessionArchiver, 'manual');
 
-      const result = await coordinator.archiveSessionContent('2026-07-04', 's-1');
+      const result = await coordinator.archiveSession('2026-07-04', 's-1');
 
       expect(result.updatedFields).toHaveLength(1);
-      expect(sessionArchiver.archiveSessionContent).toHaveBeenCalled();
+      expect(sessionArchiver.archiveSession).toHaveBeenCalled();
     });
   });
 });

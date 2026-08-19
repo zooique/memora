@@ -218,7 +218,7 @@ export interface AssembleOutput {
    * 不再经 MemoryInspector 转发。assembler 显式返回 advisor 供 Agent 持有。
    */
   memoryAdvisor: MemoryAdvisor;
-  /** 会话内容归档器（content 类记忆） */
+  /** 会话归档器（负责生成/更新 SessionMeta） */
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
   textPolisher: TextPolishManager;

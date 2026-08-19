@@ -308,27 +308,23 @@ export class SessionManager {
   }
 
   /**
-   * 手动改名会话标题（ADR-024 会话标题层 · 双层命名扩展）
+   * 手动改名会话（ADR-024 会话标题层 · 双层命名）
    *
    * 用户在历史列表的手动改名透传到存储层。
    * 写入 displayName（用户可修改的显示名称），不修改 autoName（LLM 生成的只读名称）。
    * 标题是展示元数据，不参与会话身份。
    *
-   * 双层命名回退逻辑（由 getSessionDisplayName 统一处理）：
+   * 显示层回退逻辑（由 getSessionDisplayName 统一处理）：
    * - displayName 非空 → 使用 displayName（本方法写入的值）
    * - displayName 为空 → 使用 autoName
-   * - autoName 为空 → 使用 title（向后兼容）
    *
-   * 宿主未注入 updateSessionMeta 或 setSessionTitle 时静默 no-op。
+   * 宿主未注入 updateSessionMeta 时静默 no-op。
    *
    * @param sessionId 会话标识（格式：YYYY-MM-DD-sessionName）
    * @param title 用户输入的新标题（写入 displayName）
    */
   renameSession(sessionId: string, title: string): void {
-    // 写入 displayName（用户可修改）
     this.sessionStore?.updateSessionMeta?.(sessionId, { displayName: title });
-    // 同时调用 setSessionTitle（向后兼容宿主旧实现）
-    this.sessionStore?.setSessionTitle?.(sessionId, title);
   }
 
   /**

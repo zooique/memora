@@ -2,16 +2,11 @@
  * SessionArchiver 单元测试
  *
  * 覆盖：
- * - archiveSessionContent 主流程（正常归档、空会话、消息过少）
+ * - archiveSession 主流程（正常归档、空会话、消息过少）
  * - 降级策略（sessionStore 未注入、LLM 失败、LLM 返回 null）
  * - LLM 摘要解析（JSON 解析、null 响应、无效响应）
  * - 消息截断（超长会话、超长单条消息）
  * - SessionMeta 写入（summary / keyTopics / autoName）
- *
- * 设计变更（2026-08-19，方案 C）：
- *   - SessionArchiver 不再生成 source='content' 记忆
- *   - 改为更新 SessionMeta 会话元数据
- *   - 测试验证 updateSessionMeta 被正确调用
  *
  * 测试模式：MockProvider + MockSessionStore（实现 updateSessionMeta）
  */
@@ -159,10 +154,10 @@ function makeMessages(count: number): SessionMessage[] {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：archiveSessionContent 主流程
+// 测试：archiveSession 主流程
 // ═══════════════════════════════════════════════════════════════
 
-describe('SessionArchiver · archiveSessionContent 主流程', () => {
+describe('SessionArchiver · archiveSession 主流程', () => {
   let provider: MockProvider;
   let sessionStore: MockSessionStore;
   let archiver: SessionArchiver;
@@ -174,7 +169,7 @@ describe('SessionArchiver · archiveSessionContent 主流程', () => {
   });
 
   it('正常归档应写入 SessionMeta（summary + keyTopics + autoName）', async () => {
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
 
     expect(result.updatedFields).toContain('summary');
     expect(result.updatedFields).toContain('keyTopics');
@@ -196,7 +191,7 @@ describe('SessionArchiver · archiveSessionContent 主流程', () => {
     sessionStore.updateSessionMeta(sessionId, { autoName: '已有名称' });
     sessionStore.updateCalls = []; // 清空调用记录
 
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
 
     expect(result.updatedFields).not.toContain('autoName');
     expect(result.updatedFields).toContain('summary');
@@ -204,7 +199,7 @@ describe('SessionArchiver · archiveSessionContent 主流程', () => {
   });
 
   it('归档结果不再包含 memories 字段（改为 updatedFields）', async () => {
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
 
     // 新接口使用 updatedFields，不再使用 memories
     expect(result.updatedFields).toBeDefined();
@@ -228,7 +223,7 @@ describe('SessionArchiver · 降级策略', () => {
 
   it('sessionStore 未注入时应静默跳过', async () => {
     const archiver = new SessionArchiver(provider, undefined);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
     expect(result.messageCount).toBe(0);
   });
@@ -236,7 +231,7 @@ describe('SessionArchiver · 降级策略', () => {
   it('LLM 抛出异常时应向上抛出（由 ArchiveCoordinator 统一 catch）', async () => {
     provider.setShouldThrow(true);
     const archiver = new SessionArchiver(provider, sessionStore);
-    await expect(archiver.archiveSessionContent('2026-07-03', 'main')).rejects.toThrow('模拟 LLM 不可用');
+    await expect(archiver.archiveSession('2026-07-03', 'main')).rejects.toThrow('模拟 LLM 不可用');
     // 异常时不应写入任何元数据
     expect(sessionStore.getUpdateCalls()).toHaveLength(0);
   });
@@ -244,7 +239,7 @@ describe('SessionArchiver · 降级策略', () => {
   it('LLM 返回 null 应判定无摘要价值', async () => {
     provider.setResponse('null');
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
     expect(result.messageCount).toBe(4);
   });
@@ -252,28 +247,28 @@ describe('SessionArchiver · 降级策略', () => {
   it('LLM 返回空字符串应判定无摘要价值', async () => {
     provider.setResponse('');
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
   });
 
   it('LLM 返回无 summary 字段的 JSON 应判定无摘要价值', async () => {
     provider.setResponse('{"keyTopics": ["测试"]}');
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
   });
 
   it('LLM 返回 summary 为空字符串应判定无摘要价值', async () => {
     provider.setResponse('{"summary": "", "keyTopics": []}');
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
   });
 
   it('LLM 返回 summary 仅空白字符应判定无摘要价值', async () => {
     provider.setResponse('{"summary": "   ", "keyTopics": []}');
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
   });
 });
@@ -292,7 +287,7 @@ describe('SessionArchiver · 消息过少跳过', () => {
   it('空会话（0 条消息）应跳过归档', async () => {
     const sessionStore = new MockSessionStore([]);
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
     expect(result.messageCount).toBe(0);
   });
@@ -300,7 +295,7 @@ describe('SessionArchiver · 消息过少跳过', () => {
   it('单条消息应跳过归档（无对话价值）', async () => {
     const sessionStore = new MockSessionStore(makeMessages(1));
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields).toHaveLength(0);
     expect(result.messageCount).toBe(1);
   });
@@ -308,7 +303,7 @@ describe('SessionArchiver · 消息过少跳过', () => {
   it('两条消息应正常归档（最低归档阈值）', async () => {
     const sessionStore = new MockSessionStore(makeMessages(2));
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     expect(result.updatedFields.length).toBeGreaterThan(0);
     expect(result.messageCount).toBe(2);
   });
@@ -329,7 +324,7 @@ describe('SessionArchiver · 消息截断', () => {
     // 60 条消息，应截取最后 50 条
     const sessionStore = new MockSessionStore(makeMessages(60));
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     // 截断后仍应正常归档（mock provider 不区分内容长度）
     expect(result.updatedFields.length).toBeGreaterThan(0);
     expect(result.messageCount).toBe(60);
@@ -343,7 +338,7 @@ describe('SessionArchiver · 消息截断', () => {
       { role: 'assistant', content: '回复', timestamp: new Date().toISOString() },
     ]);
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
     // 截断后仍应正常归档
     expect(result.updatedFields.length).toBeGreaterThan(0);
   });
@@ -365,7 +360,7 @@ describe('SessionArchiver · LLM 响应解析', () => {
   it('应正确解析 JSON 格式的元数据响应', async () => {
     provider.setResponse('{"summary": "讨论了项目架构设计", "keyTopics": ["架构", "设计", "讨论"], "autoName": "架构讨论"}');
     const archiver = new SessionArchiver(provider, sessionStore);
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
 
     const lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('讨论了项目架构设计');
@@ -376,7 +371,7 @@ describe('SessionArchiver · LLM 响应解析', () => {
   it('应处理 LLM 返回带前后空白的响应', async () => {
     provider.setResponse('  {"summary": "带空白的摘要", "keyTopics": [], "autoName": "摘要"}  ');
     const archiver = new SessionArchiver(provider, sessionStore);
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
 
     const lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('带空白的摘要');
@@ -385,7 +380,7 @@ describe('SessionArchiver · LLM 响应解析', () => {
   it('应处理非标准 JSON（parseLlmJson 容错）', async () => {
     provider.setResponse('```json\n{"summary": "代码块摘要", "keyTopics": [], "autoName": "代码"}\n```');
     const archiver = new SessionArchiver(provider, sessionStore);
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
 
     const lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('代码块摘要');
@@ -394,7 +389,7 @@ describe('SessionArchiver · LLM 响应解析', () => {
   it('LLM 未返回 autoName 时，应从 summary 前几个字提取', async () => {
     provider.setResponse('{"summary": "这是一段很长的摘要内容，用于测试 autoName 回退逻辑", "keyTopics": ["测试"]}');
     const archiver = new SessionArchiver(provider, sessionStore);
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
 
     const lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.autoName).toBeDefined();
@@ -405,7 +400,7 @@ describe('SessionArchiver · LLM 响应解析', () => {
   it('keyTopics 超过 MAX_KEY_TOPICS(5) 时应截断', async () => {
     provider.setResponse('{"summary": "测试", "keyTopics": ["1", "2", "3", "4", "5", "6", "7"], "autoName": "测试"}');
     const archiver = new SessionArchiver(provider, sessionStore);
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
 
     const lastMeta = sessionStore.getLastMeta();
     expect((lastMeta?.keyTopics as string[]).length).toBeLessThanOrEqual(5);
@@ -430,13 +425,13 @@ describe('SessionArchiver · SessionMeta 更新语义', () => {
 
     // 第一次归档
     provider.setResponse('{"summary": "第一次摘要", "keyTopics": ["第一次"], "autoName": "第一次"}');
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
     let lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('第一次摘要');
 
     // 第二次归档（相同 sessionLabel，不同摘要）
     provider.setResponse('{"summary": "第二次摘要", "keyTopics": ["第二次"], "autoName": "第二次"}');
-    await archiver.archiveSessionContent('2026-07-03', 'main');
+    await archiver.archiveSession('2026-07-03', 'main');
     lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('第二次摘要');
   });
@@ -444,7 +439,7 @@ describe('SessionArchiver · SessionMeta 更新语义', () => {
   it('归档不会写入 source=content 记忆（已迁移到 SessionMeta）', async () => {
     // 验证不再依赖 InMemoryStorage
     const archiver = new SessionArchiver(provider, sessionStore);
-    const result = await archiver.archiveSessionContent('2026-07-03', 'main');
+    const result = await archiver.archiveSession('2026-07-03', 'main');
 
     // 结果使用 updatedFields 而非 memories
     expect(result.updatedFields.length).toBeGreaterThan(0);

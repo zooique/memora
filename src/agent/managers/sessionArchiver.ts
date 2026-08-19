@@ -3,28 +3,17 @@
  *
  * 职责：
  *   将会话原始对话内容归档为会话元数据（SessionMeta）。
- *   调用 LLM 对会话消息进行摘要，生成 summary / keyTopics / keyDecisions / openQuestions，
+ *   调用 LLM 对会话消息进行摘要，生成 summary / keyTopics / autoName，
  *   写入 SessionMeta 供搜索和索引使用。
- *
- * 设计变更（2026-08-19，方案 C）：
- *   - 不再生成 source='content' 记忆（与 round-summary 竞争召回）
- *   - 改为更新 SessionMeta 会话元数据（keyTopics / summary / autoName）
- *   - content 作为"会话级摘要记忆"的角色由 round-summary 完全承担
- *   - SessionMeta 的 summary/keyTopics 仅用于会话搜索/预览，不参与记忆召回
  *
  * 触发时机：
  *   - `full` 模式：会话切换前自动归档（由宿主 sessionHandlers 调用）
- *   - `manual` 模式：用户手动触发（Agent.archiveSessionContent）
+ *   - `manual` 模式：用户手动触发（Agent.archiveSession）
  *
  * 降级策略：
  *   - LLM 不可用：记录日志，不阻塞会话切换（best-effort）
  *   - 会话消息为空：静默跳过，返回空结果
  *   - sessionStore 未注入：静默跳过
- *
- * 设计：
- *   - 与 SessionNamer 同模式：构造时注入 provider + sessionStore
- *   - 不依赖 Agent 实例，通过回调访问会话消息（避免循环依赖）
- *   - LLM 返回的摘要写入 SessionMeta（keyTopics / summary / autoName）
  */
 
 import { logger } from '@/logging/logger.js';
@@ -85,7 +74,6 @@ function truncateContent(content: string): string {
  * 会话归档器
  *
  * 将会话原始对话归档为 SessionMeta 元数据。
- * 不生成记忆条目，避免与 round-summary 竞争召回。
  */
 export class SessionArchiver {
   /** 当前使用的 Provider（后台优先，降级到默认） */
@@ -119,7 +107,7 @@ export class SessionArchiver {
    * 流程：
    *   1. 从 sessionStore 加载会话消息
    *   2. 若消息过少（< 2 条），跳过（无归档价值）
-   *   3. 构造摘要提示词，调用 LLM 生成会话摘要 + 主题标签 + 关键决策
+   *   3. 构造摘要提示词，调用 LLM 生成会话摘要 + 主题标签
    *   4. 将结果写入 SessionMeta（keyTopics / summary / autoName）
    *   5. 返回归档结果
    *
@@ -132,7 +120,7 @@ export class SessionArchiver {
    * @returns 归档结果（updatedFields 可能为空，表示无归档价值）
    * @throws LLM 调用或写入异常时抛出
    */
-  async archiveSessionContent(
+  async archiveSession(
     date: string,
     session: string,
     options?: SessionArchiveOptions,
