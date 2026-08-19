@@ -71,6 +71,10 @@ export default [
       'prefer-const': 'error',
       'no-var': 'error',
       eqeqeq: ['error', 'always'],
+      // B2 防腐（2026-08-19）：内核生产文件行数红线，防再膨胀到 3000 行级。
+      // 仅卡增量：存量超标文件（agent.ts/loop.ts，B1 瘦身目标）与测试目录豁免，
+      // 不制造 disable 负债区。瘦身达标后可收紧此线。
+      'max-lines': ['error', { max: 2000, skipBlankLines: true, skipComments: true }],
     },
   },
   // HC-12：内核纯逻辑库 src/ 禁止直接使用 console（应走 logger）
@@ -86,6 +90,19 @@ export default [
     files: ['src/logging/**/*.ts', 'src/**/__tests__/**/*.ts'],
     rules: {
       'no-console': 'off',
+    },
+  },
+  // B2 防腐：max-lines 豁免（测试文件允许较长；agent.ts/loop.ts 为 B1 瘦身目标，达标前豁免）
+  {
+    files: ['src/**/__tests__/**/*.ts'],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
+  {
+    files: ['src/agent/agent.ts', 'src/agent/loop.ts'],
+    rules: {
+      'max-lines': 'off',
     },
   },
   {
