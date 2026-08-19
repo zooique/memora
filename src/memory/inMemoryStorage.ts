@@ -315,7 +315,6 @@ export class InMemoryStorage implements IMemoryStorage {
    *
    * 优化：直接读取 sourceCountCache，O(1) 复杂度
    * （getAllSources 为 O(sources)，因需拷贝 Map，二者复杂度不同）
-   * 原实现 O(n) 遍历所有记忆，与增量缓存设计不一致
    */
   countBySource(source: string): number {
     return this.sourceCountCache.get(source) ?? 0;

@@ -221,7 +221,7 @@ async function scanPackSkills(
   if (!Array.isArray(skillsNode)) return resolved;
   if ((skillsNode as unknown[]).length === 0) return [];
 
-  // Bug 2 修复：manifest.skills 声明了 name/description 时覆盖 frontmatter 原值
+  // manifest.skills 声明了 name/description 时覆盖 frontmatter 原值
   // 构建 manifest 配置映射，按 file 路径关联
   const manifestSkillConfigs = new Map<string, Record<string, unknown>>();
   for (const item of skillsNode) {
@@ -588,7 +588,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 内嵌技能：目录动态扫描 + frontmatter（C3，manifest.skills 可选过滤；新增技能只写文件）
     const skills = await scanPackSkills(packDir, manifest['skills']);
 
-    // Bug 4 修复：装载时预缓存技能正文（与全局技能一致，消除 readSkillContent 磁盘 IO）
+    // 装载时预缓存技能正文（与全局技能一致，消除 readSkillContent 磁盘 IO）：
     // 只缓存有 file 路径的技能（单文件形式直接读，文件夹形式读 SKILL.md）
     const skillsWithContent = await Promise.all(
       skills.map(async (skill) => {
@@ -621,7 +621,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 内容正文：persona（无 persona 时为空串）
     const content = personaContent;
 
-    // Bug 5 修复：预计算装配结果并缓存（角色包装载后不可变，缓存安全）
+    // 预计算装配结果并缓存（角色包装载后不可变，缓存安全）
     const pack: RolePack = {
       // ConfigResource 约束字段
       name: meta.name,
@@ -652,7 +652,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /**
    * 获取当前激活的角色包装载结果
    *
-   * Bug 5 修复：返回 parseManifestPack 时预缓存的 Assembly，
+   * 返回 parseManifestPack 时预缓存的 Assembly，
    * 避免每次调用重复 mergeStrategy + personaPrompt 构建。
    *
    * @returns 角色包装载结果，无激活角色包时返回 null
@@ -875,7 +875,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!targetName) return '';
     const pack = this.items.find((p) => p.meta.name === targetName);
     if (!pack) return '';
-    // Bug 5 修复：使用预缓存的 Assembly，避免重复构建
+    // 使用预缓存的 Assembly，避免重复构建
     const assembly = pack._cachedAssembly ?? assembleRolePack(pack);
 
     const skills = assembly.skills.filter((s) => s.name || s.file);
@@ -921,7 +921,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const found = this.findSkillByName(skillName, packName);
     if (!found || !found.skill.file) return null;
 
-    // Bug 4 修复：优先返回 parseManifestPack 时缓存的正文（与全局技能一致）
+    // 优先返回 parseManifestPack 时缓存的正文（与全局技能一致）
     if (found.skill.content !== undefined && found.skill.content !== null) {
       return found.skill.content;
     }

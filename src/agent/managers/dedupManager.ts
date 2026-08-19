@@ -6,7 +6,7 @@
  *   - MemoryInspector：同步读写入口（snapshot/search/stats/writeXxx/relations）
  *   - DedupManager：异步 LLM 治理（deduplicateMemories）
  *
- * 拆分理由（SPLIT-3，2026-07-21）：
+ * 拆分理由：
  *   - 职责分离——同步读写 vs 异步 LLM 治理是两个独立关注点
  *   - 依赖清晰——MemoryInspector 不再依赖 LLM Provider，纯存储读写
  *   - 可测试性——去重逻辑独立测试，无需 mock loop/history/advisor
@@ -356,7 +356,7 @@ export class DedupManager {
    * 将合并内容写回保留方（高分记忆 a）
    *
    * 保持 a 的 id/source/name/score/createdAt 不变，仅更新 content 为合并后内容并刷新
-   * accessedAt，使"两条重复记忆合并为一条更完整记忆"的语义真正落库（M6 修复）。
+   * accessedAt，使"两条重复记忆合并为一条更完整记忆"的语义真正落库。
    *
    * @param memory 保留方记忆（高分方）
    * @param mergedContent LLM 生成的合并后完整内容

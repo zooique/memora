@@ -201,7 +201,7 @@ export class SessionManager {
    *
    * 任何替换 loop 工作记忆（switch / fork / restore）的入口都必须经此，
    * 新增派生缓存只需在此注册一处，避免「对称的另一半没写完」
-   * （SSOT-R4-T9 修了 restoreHistory 却漏了 switchSession，导致跨会话陈旧摘要）。
+   * （修了 restoreHistory 却漏了 switchSession，导致跨会话陈旧摘要）。
    * 当前唯一派生缓存是 ContextManager 的上下文摘要。
    */
   private invalidateSessionDerivedState(): void {
@@ -236,7 +236,7 @@ export class SessionManager {
     }
 
     const result = this.getHistory().switchSession(newSession);
-    // 会话已替换：作废上下文摘要等派生缓存，避免陈旧摘要注入新会话（SSOT-R4-T9 对称补全）
+    // 会话已替换：作废上下文摘要等派生缓存，避免陈旧摘要注入新会话
     this.invalidateSessionDerivedState();
     return result;
   }
@@ -932,19 +932,14 @@ export class SessionManager {
    *
    * 将检查点中的热记忆恢复到 AgentLoop 工作记忆，
    * 并恢复状态机到检查点记录的状态。
-   * 异步：内部 await loadSessionMessages 切换会话。
-   *
-   * F2.1 修复：消除 void 悬空。原实现同步返回，loadSessionMessages 异步调用
-   * 悬空未 await，rejection 无人处理（unhandledRejection）。改为 async 后
-   * 调用方 await 等待会话切换完成，消除竞态窗口。
+   * 异步：内部 await loadSessionMessages 切换会话，调用方 await 等待切换完成。
    *
    * @param checkpoint - 要恢复的检查点
    * @returns 恢复的消息数量
    */
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
-    // 与 loadPersistedCheckpoint 共用同一归一化入口。原实现只 warn 不填充，
-    // 下方 `checkpoint.hotMemory.map()` 遇到缺字段的检查点会抛 TypeError；本函数无
-    // catch → 崩进程。归一化原地补齐后，下游可无条件假设必需字段可用。
+    // 与 loadPersistedCheckpoint 共用同一归一化入口：原地补齐缺字段，
+    // 下游可无条件假设必需字段可用（不依赖调用方是否 catch）。
     if (!SessionManager.normalizeCheckpoint(checkpoint)) {
       // 可选链非冗余：类型标注为非空，但外部（宿主 IPC / 旧版持久化）可能传入 null
       logger.error(
@@ -1140,7 +1135,7 @@ export class SessionManager {
         // 若不清理，getWorkContext 会继续返回暂停态，任务面板残留「继续」按钮。
         // 超时检测依赖的是 checkpoint.pausedAt 独立字段，不受影响。
         //
-        // SSOT-R1-T1（2026-08-10）：改走 setPauseMeta 唯一写入口，不再内联赋值。
+        // 改走 setPauseMeta 唯一写入口，不再内联赋值。
         // 内联赋值会绕过 setPauseMeta 的首轮兜底与落盘链路，形成第二条卸载路径；
         // setPauseMeta 内部已含 touchCheckpoint + flushCheckpoint，故此处不再重复调用
         // （上方 checkpoint.status 的改动会随同一次 flush 落盘）。

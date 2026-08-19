@@ -169,9 +169,9 @@ export function parseTrigger(fm: Record<string, string>, key = 'trigger'): RegEx
   try {
     const pattern = String(raw).trim();
     const match = pattern.match(/^\/(.+)\/([gimsuy]*)$/);
-    // QC-17 移除非空断言：使用空值合并回退到 pattern（与 match 为 null 时逻辑一致）
+    // 使用空值合并回退到 pattern（与 match 为 null 时逻辑一致）
     const clean = match?.[1] ?? pattern;
-    // 修复 UTIL-02：使用捕获的 flags（默认 'i'），原实现硬编码 'i' 丢弃了声明的 flags
+    // 使用捕获的 flags（默认 'i'）
     const flags = match?.[2] || 'i';
     return new RegExp(clean, flags);
   } catch {

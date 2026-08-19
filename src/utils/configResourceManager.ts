@@ -51,7 +51,7 @@ export abstract class ConfigResourceManager<
   protected items: T[] = [];
 
   /**
-   * 运行时注入项的名字集合（SSOT-R3-T8）
+   * 运行时注入项的名字集合
    *
    * 「该资源是否有磁盘真理源」这一事实必须显式记账，不能从 `filePath` 反推——
    * 注入方各自填的 filePath 五花八门（直接调 register 的宿主可能填 `'<runtime>'`），是约定而非结构性保证。
@@ -73,9 +73,8 @@ export abstract class ConfigResourceManager<
   /**
    * 获取资源列表（快照）
    *
-   * SSOT-R2-T7（2026-08-10）：返回浅拷贝而非内部数组引用。
-   * 此前直接返回 `this.items`，外部可 push/splice 绕过 `register()` 的重名校验与
-   * `deleteItem()` 的记账日志，等于开了第二个写入口。
+   * 返回浅拷贝而非内部数组引用——防止外部 push/splice 绕过 `register()` 的重名校验与
+   * `deleteItem()` 的记账日志（那等于第二个写入口）。
    * 数组是拷贝，条目对象仍是共享引用（条目按只读语义使用，与 Memory 快照的约定一致）。
    */
   get list(): T[] {
@@ -105,11 +104,10 @@ export abstract class ConfigResourceManager<
   /**
    * 重载资源：重新扫描目录 → 更新缓存（保留运行时注入项）
    *
-   * SSOT-R3-T8（2026-08-10，方案 A「内存优先」）：
-   * 此前直接用扫描结果整体覆盖 `items`，会把运行时注入的资源（如 `Agent.addSkill()`
-   * 经 `SkillManager.register()` 注入的技能）抹除——而这类资源**没有磁盘真理源**，
+   * 不能直接用扫描结果整体覆盖 `items`——那会抹除运行时注入的资源（如 `Agent.addSkill()`
+   * 经 `SkillManager.register()` 注入的技能），而这类资源**没有磁盘真理源**，
    * 抹除即永久丢失；与此同时 SQLite 侧的 `skill:<name>` 索引行仍然活跃，
-   * 两侧就此分叉（内存查不到、recall 仍能召回），且注释承诺的「当前会话内生效」失效。
+   * 两侧就此分叉（内存查不到、recall 仍能召回）。
    *
    * 判据取自 `runtimeNames` 显式记账（见该字段注释），不从 filePath 反推。
    * 同名冲突以磁盘为准：磁盘可持久化，是更强的真理源，此时注入项的记账一并注销。
@@ -160,7 +158,7 @@ export abstract class ConfigResourceManager<
   }
 
   /**
-   * 登记运行时注入的资源（子类 register() 的唯一落点，SSOT-R3-T8）
+   * 登记运行时注入的资源（子类 register() 的唯一落点）
    *
    * 与 `loadItems()` 从磁盘扫描出来的资源区别在于「没有磁盘真理源」，
    * 因此必须记账，`reload()` 才知道不能把它当成"磁盘上已删除"而抹掉。

@@ -289,7 +289,7 @@ export async function recall(
     }
   }
 
-  // ── FIX-P1-2：拆分读/写，recall 只读 + boostScores 显式写 ──
+  // 拆分读/写：recall 只读 + boostScores 显式写
   // 在副本上 boost，仅影响本轮上下文排序；持久化由调用方 fire-and-forget 调用 boostScores，
   // 不阻塞读路径，boost 写入失败不影响 chat 流程。
   const now = nowIso();
@@ -303,7 +303,7 @@ export async function recall(
 }
 
 /**
- * 批量持久化 boost 后的 score（FIX-P1-2：从 recall() 拆分出的显式写操作）
+ * 批量持久化 boost 后的 score（从 recall() 拆分出的显式写操作）
  *
  * 调用方在 recall() 后 fire-and-forget 调用本函数持久化 boost，不阻塞读路径。
  * 失败仅 log 不抛错，避免读路径因 boost 写入失败而中断。

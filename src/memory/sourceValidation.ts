@@ -164,12 +164,12 @@ export function levenshtein(a: string, b: string): number {
 
   const matrix: number[][] = [];
   for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  // QC-17 移除非空断言：提取局部变量并 null 检查
+  // 移除非空断言：提取局部变量并 null 检查
   const row0 = matrix[0];
   if (row0) for (let j = 0; j <= a.length; j++) row0[j] = j;
 
   for (let i = 1; i <= b.length; i++) {
-    // QC-17 移除非空断言：提取局部变量，用 ?? 0 兜底（初始化保证值存在）
+    // 移除非空断言：提取局部变量，用 ?? 0 兜底（初始化保证值存在）
     const rowI = matrix[i];
     const rowPrev = matrix[i - 1];
     if (!rowI || !rowPrev) continue;
@@ -183,6 +183,6 @@ export function levenshtein(a: string, b: string): number {
     }
   }
 
-  // QC-17 移除非空断言：使用可选链 + 空值合并兜底
+  // 移除非空断言：使用可选链 + 空值合并兜底
   return matrix[b.length]?.[a.length] ?? 0;
 }

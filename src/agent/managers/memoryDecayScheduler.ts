@@ -132,7 +132,7 @@ export class MemoryDecayScheduler {
   /**
    * L2 时效性评估的 AbortController
    *
-   * FIX-P0-1：stop() 时 abort，让正在进行的 evaluateTimeliness 尽快结束，
+   * stop() 时 abort，让正在进行的 evaluateTimeliness 尽快结束，
    * 防止 close 后 LLM 回调 upsert 已关闭的 storage。
    * 每次 evaluateTimeliness 启动时重置为新的 controller。
    */
@@ -140,7 +140,7 @@ export class MemoryDecayScheduler {
   /**
    * 当前正在进行的 evaluateTimeliness Promise（null 表示无）
    *
-   * FIX-P0-1：close() 通过 awaitInflight() 等待此 Promise 完成，
+   * close() 通过 awaitInflight() 等待此 Promise 完成，
    * 确保关闭时所有 L2 评估的 upsert 都落在 storage 关闭前。
    */
   private inflightEvaluate: Promise<TimelinessReport> | null = null;
@@ -178,7 +178,7 @@ export class MemoryDecayScheduler {
   /**
    * 停止定期衰减，释放资源
    *
-   * FIX-P0-1：清理定时器 + abort 正在进行的 L2 时效性评估 + 释放 storage 引用，
+   * 清理定时器 + abort 正在进行的 L2 时效性评估 + 释放 storage 引用，
    * 防止 close 后回调触发 upsert 已关闭的 storage。
    *
    * 注意：stop() 不等待 inflightEvaluate 完成（避免阻塞 close 流程），
@@ -201,7 +201,7 @@ export class MemoryDecayScheduler {
   /**
    * 等待正在进行的 L2 时效性评估完成
    *
-   * FIX-P0-1：Agent.close() 在 stop() 后调用此方法，确保所有 inflight 的
+   * Agent.close() 在 stop() 后调用此方法，确保所有 inflight 的
    * evaluateTimeliness Promise 完成（要么正常返回，要么因 abort 快速 reject），
    * 防止 close 后 LLM 回调 upsert 已关闭的 storage。
    *
@@ -287,7 +287,7 @@ export class MemoryDecayScheduler {
    *   - 单条 LLM 失败不阻塞后续评估
    *   - backgroundProvider / index 未注入时静默跳过（向后兼容）
    *
-   * FIX-P0-1：每次启动评估创建新的 AbortController，注册到 inflightEvaluate。
+   * 每次启动评估创建新的 AbortController，注册到 inflightEvaluate。
    * stop() 时 abort 让 LLM 调用快速失败，awaitInflight() 等待 Promise 完成。
    * 外部 signal 仍可与内部 abort 信号同时使用（任一触发即取消）。
    *

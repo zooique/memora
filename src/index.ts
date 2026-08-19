@@ -100,7 +100,7 @@ export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS } from '@/memory/types.js';
-// 记忆关系图谱（ADR-014 侧车模型）已于 2026-08-14 收敛移除：冲突检测改用 supersededBy（ADR-021）
+// 记忆关系图谱（ADR-014 侧车模型）已收敛移除：冲突检测改用 supersededBy（ADR-021）
 export type { Memory, SummaryType } from '@/memory/types.js';
 // Source 校验工具（从 types.ts 拆分到 sourceValidation.ts，公共 API 不变）
 export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';

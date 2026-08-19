@@ -503,7 +503,7 @@ export interface RolePackManifestSkill {
     readonly scripts: ReadonlyArray<{ readonly path: string; readonly runtime: 'node' | 'python' | 'shell'; readonly size: number }>;
   };
   /**
-   * 技能正文缓存（Bug 4 修复：与全局技能一致，load 时预装载）
+   * 技能正文缓存（与全局技能一致，load 时预装载）
    *
    * 由 parseManifestPack 在装载时读取并缓存，readSkillContent 直接返回缓存。
    * null = 未缓存（读失败或文件不存在），undefined = 未装载（懒加载策略）。

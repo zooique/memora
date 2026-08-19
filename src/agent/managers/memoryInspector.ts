@@ -16,12 +16,11 @@
  *     writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *
  * 拆分历史：
- *   - SPLIT-3（2026-07-21）：L1 语义去重（deduplicateMemories）拆分至 DedupManager
- *   - v2 PROXY-1（2026-07-21）：detectConflicts 直连 MemoryAdvisor（消除 3 层代理）
- *   - FIX-P1-3（2026-07-24）：sourceHealth/suggest 直连 MemoryAdvisor，
- *     删除本类转发方法 + advisor 字段，Agent 作为门面委托 advisor（与
- *     detectConflicts 同模式）。本类回归纯存储读写 + 查询入口。
- *   - ADR-014 记忆关系图谱已收敛移除（2026-08-14）：关系查询/写入方法
+ *   - L1 语义去重（deduplicateMemories）拆分至 DedupManager
+ *   - detectConflicts 直连 MemoryAdvisor（消除 3 层代理）
+ *   - sourceHealth/suggest 直连 MemoryAdvisor，删除本类转发方法 + advisor 字段，
+ *     Agent 作为门面委托 advisor（与 detectConflicts 同模式）。本类回归纯存储读写 + 查询入口。
+ *   - ADR-014 记忆关系图谱已收敛移除：关系查询/写入方法
  *     （getRelations/getAllRelations/getRelationPath/getRelationNeighbors/
  *     writeAddRelation/writeRemoveRelation）及 relationStore 注入全部删除。
  */
@@ -149,8 +148,10 @@ export class MemoryInspector {
   private vectorStore: IVectorStore | null = null;
 
   /**
-   * FIX-P1-3（2026-07-24）：移除 advisor 参数，sourceHealth/suggest 改由
-   * Agent 直接委托 MemoryAdvisor（与 detectConflicts 同模式），消除 3 层代理。
+   * 构造记忆管理器
+   *
+   * sourceHealth/suggest 由 Agent 直接委托 MemoryAdvisor（与 detectConflicts 同模式），
+   * 本类不持有 advisor，消除 3 层代理。
    *
    * @param index - 记忆存储（用于读写操作）
    * @param loop - AgentLoop（用于获取工作记忆）
@@ -502,7 +503,7 @@ export class MemoryInspector {
     //    vectorStore 未注入时跳过（降级优先）。
     //    delete 为异步（内部立即 save），本方法保持同步签名（宿主定时器同步消费返回值），
     //    故 fire-and-forget + catch 降级——delete 首行同步 entries.delete，内存立即失效，
-    //    持久化失败仅影响冷启动复活概率（vectorStore.delete 已 FIX-P0-9 立即 save 兜底）。
+    //    持久化失败仅影响冷启动复活概率（vectorStore.delete 已立即 save 兜底）。
     if (this.vectorStore && candidates.length > 0) {
       for (const m of candidates) {
         void this.vectorStore.delete(m.id).catch((err) => {

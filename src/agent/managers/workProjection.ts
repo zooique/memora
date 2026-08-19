@@ -184,7 +184,7 @@ export class WorkProjectionManager {
   /**
    * 等待所有 inflight 投影生成完成
    *
-   * FIX-P0-1：Agent.close() 调用此方法，确保所有正在进行的 LLM 生成 Promise
+   * Agent.close() 调用此方法，确保所有正在进行的 LLM 生成 Promise
    * 完成后再关闭 storage，防止 close 后 upsert 写入已关闭的 storage。
    *
    * 实现：等待 inflight Map 中所有 Promise 完成（不论成功失败）。
@@ -322,7 +322,7 @@ export class WorkProjectionManager {
     const { hash, structure, keyDecisions, summary, sourcePath } = this.decodeContent(m.content);
     return {
       id: m.id,
-      // M1 修复：从 content 还原 sourcePath（旧数据无该字段 → 兜底空串，向后兼容）
+      // 从 content 还原 sourcePath（旧数据无该字段 → 兜底空串）
       sourcePath: sourcePath ?? '',
       fileHash: hash ?? '',
       summary,
@@ -347,7 +347,7 @@ export class WorkProjectionManager {
     keyDecisions: string[],
     summary: string,
   ): string {
-    // M1 修复：将 sourcePath 编入元数据，使往返（toMemory → fromMemory）不丢字段
+    // 将 sourcePath 编入元数据，使往返（toMemory → fromMemory）不丢字段
     const meta = JSON.stringify({ hash, sourcePath, structure, decisions: keyDecisions });
     return `${meta}\n\n${summary}`;
   }

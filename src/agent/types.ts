@@ -671,8 +671,7 @@ import type { ProviderRouter } from '@/llm/types.js';
  * `expected='absent'` 校验文件应已被宿主删除；`expected='exists'` 校验文件应已写入。
  * id 格式：`rule:NAME` 或 `skill:NAME`（排雷 T-B4：保持字符串协议，宿主 index.ts 解析）。
  *
- * 命名类型（T-C1）：此前签名全文散落 5 处（types.ts×2 / assembler.ts×2 / configManager.ts），
- * 提取为本类型统一引用。
+ * 命名类型：签名全文统一引用此类型（消除多处重复声明）。
  */
 export type FileConsistencyCheck = (id: string, expected: 'exists' | 'absent') => boolean;
 
@@ -857,7 +856,7 @@ export interface AgentProjectEntry {
 /**
  * Agent 内部配置（构造参数解析默认值后的形态）
  *
- * T-C1 派生自 AgentOptions（消除 24 字段逐一手写镜像）：
+ * 派生自 AgentOptions（消除 24 字段逐一手写镜像）：
  *   - Omit 掉「不进入内部配置」的字段（provider/backgroundProvider 由 Agent 单独持有）
  *   - 覆盖「构造时 `?? 默认值` 解析后必填」的字段（dataDir/maxContextTokens/permission/...）
  *   - 其余字段继承 AgentOptions 的必填/可选性（与现手写声明逐字段等价）

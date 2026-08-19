@@ -50,7 +50,7 @@ export interface ToolDefinition {
 // append/insert 模式非幂等。当前统一标记为 'idempotent-key'，
 // 因 overwrite 是最常用模式，append/insert 的补偿应在调用方保证。
 // task_table_write 为追加语义（appendPlanStep），重复执行不幂等，
-// 如实标记为 'non-idempotent'（J1 修复：不再被仅一次语义拦截重复追加）。
+// 如实标记为 'non-idempotent'（不再被仅一次语义拦截重复追加）。
 // ──────────────────────────────────────────────────────────
 
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
@@ -84,7 +84,7 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
  *   上次失败（ok === false）不拦截重试，否则失败操作会被静默吞掉。
  *
  * 此判断是幂等契约的 SSOT：agent.ts preExecutionCheck 委托本函数，
- * 避免闭包内重复实现导致契约漂移（J1 修复，2026-08-11）。
+ * 避免闭包内重复实现导致契约漂移。
  *
  * @param records 检查点中的工具执行记录（completedToolCalls）
  * @param name 工具名

@@ -4,7 +4,7 @@
  * 展开配置文件中 ${ENV_VAR} 占位符为实际环境变量值。
  * 覆盖范围：llm.apiKey/baseUrl、providers 映射表、background、embedding。
  *
- * 从 loader.ts 提取（#11 收敛），保持职责单一。
+ * 保持职责单一（从 loader.ts 提取）。
  */
 import type { Config } from '@/config/loader.js';
 import type { ProviderEntryConfig } from '@/llm/types.js';

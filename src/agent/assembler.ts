@@ -20,7 +20,7 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-// DedupManager 在组合根装配，承担 L1 语义去重（SPLIT-3 拆分自 MemoryInspector）
+// DedupManager 在组合根装配，承担 L1 语义去重
 import { DedupManager } from '@/agent/managers/dedupManager.js';
 // MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
@@ -83,7 +83,7 @@ export function buildSystemPromptPrefix(
 /**
  * 组装器事件回调组
  *
- * T-C2 收敛：此前 8 个回调平铺在 AssembleInput 顶层 + 两个子工厂签名逐字段重复声明；
+ * 此前 8 个回调平铺在 AssembleInput 顶层 + 两个子工厂签名逐字段重复声明；
  * 收进单字段 `callbacks`，新增回调只改本接口一处。
  */
 export interface AssembleCallbacks {
@@ -119,7 +119,7 @@ export interface AssembleCallbacks {
 /**
  * 与 AgentConfig 同源的组装运行时参数
  *
- * T-C1/C2：Pick 派生自 AgentConfig（而 AgentConfig 又派生自 AgentOptions），
+ * Pick 派生自 AgentConfig（而 AgentConfig 又派生自 AgentOptions），
  * 消除 AssembleInput 与 AgentConfig 之间 10 个字段的逐一手写重复。
  */
 type AssembleRuntimeParams = Pick<
@@ -148,14 +148,14 @@ export interface AssembleInput extends AssembleRuntimeParams {
    * 注入此字段可覆盖默认 locale，实现国际化时间格式。
    */
   locale?: string;
-  /** 事件回调组（T-C2：8 个平铺回调收敛为一组） */
+  /** 事件回调组（8 个平铺回调收敛为一组） */
   callbacks?: AssembleCallbacks;
 }
 
 /**
  * Phase 3 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
  *
- * T-C2 只收敛了顶层 AssembleInput；子工厂此前内联手写 14 字段（其中 10 个与
+ * 只收敛了顶层 AssembleInput；子工厂此前内联手写 14 字段（其中 10 个与
  * AssembleInput 重复声明，locale 等后加字段曾同时改 3 处）。Pick 派生后
  * 共享字段的类型由 AssembleInput 单一继承——新增字段只改 AssembleInput 一处，
  * 且同一字段两处类型不可能漂移（tsc 锁死）。
@@ -184,7 +184,7 @@ type LoopAndDepsParams = Pick<
 /**
  * Phase 4 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
  *
- * 同 LoopAndDepsParams（T-C2 收敛的第二半）。
+ * 同 LoopAndDepsParams（收敛的第二半）。
  */
 type LoopDependentParams = Pick<
   AssembleInput,
@@ -207,15 +207,15 @@ export interface AssembleOutput {
   /**
    * 语义去重管理器（L1 LLM 记忆治理）
    *
-   * SPLIT-3 闭环（2026-07-21）：从 MemoryInspector 拆分出 deduplicateMemories 职责，
-   * 让 MemoryInspector 回归纯存储读写。Agent.deduplicateMemories() 委托本对象。
+   * 承担 deduplicateMemories 职责，MemoryInspector 回归纯存储读写。
+   * Agent.deduplicateMemories() 委托本对象。
    */
   dedupManager: DedupManager;
   /**
    * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
    *
-   * v2 REPEAT-PROXY-1 闭环：Agent.detectConflicts 收缩为直接调用 advisor，
-   * 不再经 MemoryInspector 转发。assembler 显式返回 advisor 供 Agent 持有。
+   * Agent.detectConflicts 直接调用 advisor，不再经 MemoryInspector 转发。
+   * assembler 显式返回 advisor 供 Agent 持有。
    */
   memoryAdvisor: MemoryAdvisor;
   /** 会话归档器（负责生成/更新 SessionMeta） */

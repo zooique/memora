@@ -273,12 +273,10 @@ export class SessionStateMachine {
   // ─── pending 暂停请求管理（SSOT 收口） ────────────────
 
   /**
-   * 「是否存在在途暂停申请」的唯一判据（SSOT-R1-T4，2026-08-10）
+   * 「是否存在在途暂停申请」的唯一判据（SSOT 收口）
    *
-   * 此前 `requestPause()` 用 `pendingPauseReason !== undefined` 判幂等，
-   * `isPausePending()` 用 `pendingPauseReason !== undefined && status !== 'paused'`，
-   * 同一命题两套判据 → error 态下 isPausePending 报 true 而 requestPause 拒绝，语义打架。
-   * 收口为单一私有判据供二者共用。
+   * `requestPause()` 与 `isPausePending()` 共用同一私有判据，
+   * 保证同一命题只有一套判定（不因 error 态等场景产生两套判据打架）。
    *
    * 注：`pendingPauseInfo` / `consumePendingPause` 需依赖 TS 对字段的 undefined 窄化
    * 才能返回 `reason: string`，故仍内联比较——它们读的是同一字段，不构成第二真理源。
@@ -354,7 +352,7 @@ export class SessionStateMachine {
    * @returns true=暂停申请在途（状态机仍 running）；false=无在途申请或已暂停
    */
   isPausePending(): boolean {
-    // 判据与 requestPause() 共用（SSOT-R1-T4）；status 过滤是本方法额外的语义
+    // 判据与 requestPause() 共用；status 过滤是本方法额外的语义
     // （「在途且尚未真正挂起」），供宿主三态按钮判断，不属于 hasPendingPause 命题。
     return this.hasPendingPause() && this.currentStatus !== 'paused';
   }

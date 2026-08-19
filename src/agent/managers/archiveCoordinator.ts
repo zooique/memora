@@ -30,7 +30,7 @@ export interface ArchiveCoordinatorOptions {
   /** 获取 SessionArchiver（可能为 null） */
   readonly getSessionArchiver: () => SessionArchiver | null;
   /**
-   * 获取当前 archiveMode（FIX-P1-4：二态控制集中到本类）
+   * 获取当前 archiveMode（二态控制集中到本类）
    * Agent 注入 `() => this.#config.archiveMode`，本类据此判断自动触发是否跳过
    */
   readonly getArchiveMode: () => ArchiveMode;
@@ -50,7 +50,7 @@ export interface ArchiveCoordinatorOptions {
 }
 
 /**
- * 归档触发选项（FIX-P1-4）
+ * 归档触发选项
  *
  * 区分"自动触发"（postProcess / 会话切换等系统调用）与"手动触发"（用户主动点击归档按钮）。
  * 自动触发时由 ArchiveCoordinator 按 archiveMode 判断是否跳过；
@@ -98,7 +98,7 @@ export interface ArchiveTriggerOptions {
 export class ArchiveCoordinator {
   /** 获取 SessionArchiver 的回调 */
   private readonly getSessionArchiver: () => SessionArchiver | null;
-  /** 获取当前 archiveMode 的回调（FIX-P1-4） */
+  /** 获取当前 archiveMode 的回调 */
   private readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调 */
   private readonly emit: EmitCallback;

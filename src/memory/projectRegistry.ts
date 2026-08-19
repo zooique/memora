@@ -10,7 +10,7 @@
  * 设计原则：
  *   - 纯文件系统操作，无锁机制（锁由 LockManager 负责）
  *   - 同步 I/O（list getter 契约要求同步返回；注册表操作低频，影响可控）
- *   - 损坏语义区分（FIX-P0-3）：文件不存在 = 首次启动返回空列表；文件损坏 = 抛出
+ *   - 损坏语义区分：文件不存在 = 首次启动返回空列表；文件损坏 = 抛出
  *     ProjectRegistryCorruptError 让调用方决策。list getter 只读降级返回空，
  *     register/unregister 写入路径必须抛错传播，防止用空数据覆盖原文件导致数据丢失
  *
@@ -43,7 +43,7 @@ export interface ProjectEntry {
 /**
  * 项目注册表损坏错误
  *
- * FIX-P0-3：当磁盘上的 projects.json 存在但内容无法解析（JSON 语法错误或结构
+ * 当磁盘上的 projects.json 存在但内容无法解析（JSON 语法错误或结构
  * 不符合 ProjectEntry[] 契约）时抛出。与"文件不存在"语义区分——后者是首次启动
  * 的正常情况，前者意味着数据可能丢失，需要调用方决策（备份/重建/中止）。
  *
@@ -51,7 +51,7 @@ export interface ProjectEntry {
  *   - register/unregister 路径必须让此错误向上传播，避免用空数据覆盖损坏文件
  *   - list getter 可捕获此错误降级返回空数组（只读操作，不破坏数据）
  *
- * 规则对齐（RULE-ALIGN-0729）：继承 MemoraError 而非 Error，统一错误体系
+ * 规则对齐：继承 MemoraError 而非 Error，统一错误体系
  * （project-rules.md §7.1 + coding-convention-rules.md §2）。保留 registryPath
  * 扩展字段以支持调用方备份/排查流程。
  */
@@ -101,7 +101,7 @@ function isProjectEntry(value: unknown): value is ProjectEntry {
  * 顶层必须为数组，否则视为注册表结构损坏（抛错让调用方决策）。
  * 数组内个别条目不合法时仅过滤保留合法条目（容错：单条损坏不毁全部）。
  *
- * FIX-P0-3：顶层非数组不再静默返回空，而是抛 ProjectRegistryCorruptError，
+ * 顶层非数组抛 ProjectRegistryCorruptError，
  * 避免 register 用空数据覆盖原文件导致全部项目记录永久丢失。
  *
  * @param value 待校验的值
@@ -136,7 +136,7 @@ export class ProjectRegistry {
   /**
    * 列出已注册的项目（同步读取，契约要求 getter 风格）
    *
-   * FIX-P0-3：list 是只读操作，损坏时降级返回空数组（UI 显示空列表）。
+   * list 是只读操作，损坏时降级返回空数组（UI 显示空列表）。
    * 与 register/unregister 不同——只读不会用空数据覆盖原文件，降级是安全的。
    * 损坏错误记录 warn 日志便于排查，但不向上抛出避免 UI 崩溃。
    */
@@ -217,7 +217,7 @@ export class ProjectRegistry {
    *
    * 同步读取：list getter 契约要求同步返回，注册表操作低频，同步 I/O 影响可控。
    *
-   * FIX-P0-3：语义区分——
+   * 语义区分：
    *   - 文件不存在：返回空数组（首次启动的正常情况）
    *   - 文件损坏（JSON 解析失败或顶层非数组）：抛出 ProjectRegistryCorruptError
    *     让调用方决策。register/unregister 不捕获此错误，避免用空数据覆盖原文件。

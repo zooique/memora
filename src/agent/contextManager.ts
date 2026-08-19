@@ -275,7 +275,7 @@ export class ContextManager {
       }
     }
     for (let i = messages.length - 1; i >= 1; i--) {
-      // QC-17 移除非空断言：循环条件保证索引有效，null 检查兜底
+      // 移除非空断言：循环条件保证索引有效，null 检查兜底
       const msg = messages[i];
       if (!msg) break;
       const msgTokens = this.estimateTokens([msg]);
@@ -401,7 +401,7 @@ export class ContextManager {
   }
 
   /**
-   * 作废摘要缓存（SSOT-R4-T9，2026-08-10）
+   * 作废摘要缓存
    *
    * 缓存过期靠 `messages.length - contextSummaryMsgCount > TTL` 这个**单向**数值判断，
    * 只覆盖「消息增长」。当消息集合被整体替换（`AgentLoop.restoreHistory` 恢复检查点）

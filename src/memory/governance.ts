@@ -11,7 +11,7 @@
  * 依赖方向：memory/governance.ts 是纯常量模块（零依赖，仅类型 import），
  * 被 agent/managers/ 多个模块消费，符合 agent → memory 单向依赖原则。
  *
- * 治理源（2026-08-19 收敛）：仅保留 WORK_PROJECTION 单一治理源；
+ * 治理源：仅保留 WORK_PROJECTION 单一治理源；
  * PROFILE（画像）已随角色包边界收敛（ADR-025）移除，不再参与运行时治理。
  *
  * 详见 ADR-004（记忆统一模型）：所有 source 都是开放字符串，治理范围由本文件集中维护。

@@ -235,7 +235,7 @@ export class AgentLoop {
   /**
    * 当前轮次已推送的 REFLECTION_HINT 次数（显式计数器）
    *
-   * 替代旧实现通过 messages.filter(startsWith('[REFLECTION_HINT]')).length 推断的方式——
+   * 不通过 messages.filter(startsWith('[REFLECTION_HINT]')).length 推断——
    * 当 ContextManager 裁剪中间段消息时，REFLECTION_HINT 可能被裁掉导致计数失真。
    * 显式字段不受 messages 数组变动影响，状态机更健壮。
    */
@@ -244,9 +244,8 @@ export class AgentLoop {
    *
    * 由 requestPause() 置位，handleIteration 在迭代边界检查并挂起生成器。
    *
-   * SSOT-R2-T6（2026-08-10）：恢复 private。此前为「SSOT 收口后 Agent 直接读写」而改成
-   * public 可写字段，属反向收口——把封装拆开换少一层包装，导致本类既提供只读 getter
-   * `isPauseRequested` 又允许外部随意赋值，不变式无处可守。写入口收敛为下方两个方法。 */
+   * private：本类既提供只读 getter `isPauseRequested`，写入口收敛为下方两个方法，
+   * 保证不变式可守（不允许外部随意赋值）。 */
   private pauseRequested = false;
   /**
    * 主动提问回调（回答中检测到 LLM 结构化输出 `[ASK]` 时调用）
@@ -782,7 +781,7 @@ export class AgentLoop {
   }
 
   /**
-   * 请求在下一迭代边界挂起（软暂停唯一写入口，SSOT-R2-T6）
+   * 请求在下一迭代边界挂起（软暂停唯一写入口）
    *
    * 仅置标志，由 handleIteration 在迭代边界（当前工具步完成后、下一次 LLM 调用前）
    * 真正挂起生成器。保留 this.messages，不 abort——与硬停止（signal.abort）严格区分：
@@ -796,7 +795,7 @@ export class AgentLoop {
   }
 
   /**
-   * 清除在途的软暂停申请（与 requestPause 对称，SSOT-R2-T6）
+   * 清除在途的软暂停申请（与 requestPause 对称）
    *
    * 三类调用场景共用：用户取消暂停（SESSION_CANCEL_PAUSE）、
    * 流结束 finally 清理（防残留导致后续 requestPause 幂等拒绝）、

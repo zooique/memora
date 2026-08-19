@@ -98,9 +98,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 供 SkillManager 运行态注册技能（如 confirmConfigSuggestion 持久化技能、
    * 或宿主直接注入）。重复注册同名技能会被拒绝。
    *
-   * SSOT-R3-T8（2026-08-10）：改走基类 registerRuntimeItem 登记。
-   * 此前直接 push 进 items，reload() 用磁盘扫描结果整体覆盖时会把注入技能抹除，
-   * 而 SQLite 的 `skill:<name>` 索引行仍在 → 内存查不到、recall 仍能召回，两侧分叉。
+   * 改走基类 registerRuntimeItem 登记——直接 push 进 items 会让 reload() 用磁盘扫描结果
+   * 整体覆盖时抹除注入技能，而 SQLite 的 `skill:<name>` 索引行仍在 → 内存查不到、
+   * recall 仍能召回，两侧分叉。
    */
   register(skill: SkillEntry): void {
     if (this.items.some((s) => s.name === skill.name)) {

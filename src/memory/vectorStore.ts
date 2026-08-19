@@ -15,7 +15,7 @@
  * - load() 增加 schema 校验（防止损坏文件污染内存索引）
  * - upsert/batchUpsert 增加维度一致性校验（防止维度错位导致相似度计算崩溃）
  * - save() 串行化（防止并发 save 互相覆盖丢失数据）
- * - delete() 立即 save（FIX-P0-9：防止崩溃后已删除向量复活）
+ * - delete() 立即 save（防止崩溃后已删除向量复活）
  *
  * 详见 ADR-002 · 存储层抽象（向量检索备选方案）
  * 详见 ADR-013 · 记忆归档三步价值过滤
@@ -77,7 +77,7 @@ export interface IVectorStore {
    * 删除向量并立即持久化
    *
    * 与 upsert（标记 dirty 由调用方 save）不同，delete 是低频操作，
-   * 立即 save 可防止崩溃后已删除向量在下次冷启动复活（FIX-P0-9）。
+   * 立即 save 可防止崩溃后已删除向量在下次冷启动复活。
    *
    * @param id 待删除的记忆 ID
    */
@@ -269,7 +269,7 @@ export class JsonVectorStore implements IVectorStore {
     };
 
     await mkdir(dirname(this.storePath), { recursive: true });
-    // M9 修复：原子写，避免写一半崩溃导致 vectors.json 损坏、
+    // 原子写：避免写一半崩溃导致 vectors.json 损坏、
     // 下次加载 isValidVectorStoreFile 失败而整库向量静默清空（向量索引昂贵且只能重算）。
     await atomicWriteFile(this.storePath, JSON.stringify(data));
     this.dirty = false;
@@ -340,8 +340,8 @@ export class JsonVectorStore implements IVectorStore {
   /**
    * 删除向量并立即持久化
    *
-   * FIX-P0-9：原实现仅标记 dirty=true 不 save，崩溃时已删除向量会在下次冷启动复活。
-   * 现改为 async + 立即 save（与 upsert 不对称合理——delete 是低频操作，立即持久化代价可控）。
+   * 立即 save（与 upsert 不对称合理——delete 是低频操作，立即持久化代价可控，
+   * 且可防止崩溃后已删除向量在下次冷启动复活）。
    *
    * @param id 待删除的记忆 ID
    */

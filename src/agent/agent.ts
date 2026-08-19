@@ -146,15 +146,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 语义去重管理器（L1 LLM 记忆治理）
    *
-   * SPLIT-3 闭环（2026-07-21）：从 MemoryInspector 拆分出 deduplicateMemories 职责，
+   * 从 MemoryInspector 拆分出 deduplicateMemories 职责，
    * 让 MemoryInspector 回归纯存储读写。Agent.deduplicateMemories() 委托本对象。
    */
   private dedupManager: DedupManager | null = null;
   /**
    * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
    *
-   * v2 PROXY-1 闭环：Agent.detectConflicts 直接调用 advisor，
-   * 不再经 MemoryInspector 转发，消除 3 层无意义代理。
+   * Agent.detectConflicts 直接调用 advisor，不再经 MemoryInspector 转发，消除 3 层无意义代理。
    * sourceHealth/suggest 仍由 inspector 转发以保持 agent.memory 统一入口语义。
    */
   private memoryAdvisor: MemoryAdvisor | null = null;
@@ -848,11 +847,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 匹配技能并立即注入本轮对话（当轮生效，不延迟到下一轮）
+   * 匹配技能并立即注入本轮对话（当轮生效）
    *
    * 与角色包的 tryAutoMatchRolePack 同模式：匹配 → 注入 → 本轮 LLM 即生效。
-   * 原设计为 injectActiveSkill（注入上一轮匹配结果），导致用户说"写代码"的第一轮
-   * 得不到技能增强，需再发一条消息才生效。已改为实时匹配注入。
    *
    * 匹配策略：regex trigger 优先（score=1.0），其次关键词匹配（阈值 0.3）。
    * 清理机制：cleanTemporarySystemMessages() 每轮开头清除临时 system 消息，
@@ -908,17 +905,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 原 postProcess 逻辑完整保留于此，由外层 postProcess 负责 span 生命周期管理。
    */
   private async doPostProcess(input: string, assistantContent: string): Promise<void> {
-    // 技能匹配已迁移到 chat() 开头的 matchAndInjectSkill()（当轮实时生效），
-    // 与角色包的 tryAutoMatchRolePack 同模式，消除"第一轮无技能"的一轮延迟问题。
+    // 技能匹配在 chat() 开头由 matchAndInjectSkill 当轮实时注入，
+    // 与角色包的 tryAutoMatchRolePack 同模式。
 
-    // ADR-015 + FIX-P1-4: archiveMode 二态控制集中到 ArchiveCoordinator
+    // 归档模式二态控制集中到 ArchiveCoordinator：
     // 此处统一传 { autoTriggered: true }，由 ArchiveCoordinator 内部按 archiveMode 判断是否跳过：
     //   - manual 模式 → 跳过 content 自动归档（用户需手动调用）
     //   - full 模式 → 执行
     // 角色匹配/技能匹配属"配置学习"行为，非归档，每轮都执行。
     const history = this.requireHistory;
 
-    // 记忆已收敛为 round-summary 单轨，不再有独立画像/洞察归档路径。
+    // 记忆为 round-summary 单轨，无独立画像/洞察归档路径。
 
     // 轮次摘要生成（记忆即摘要架构 Phase 1）
     // Tier 1 策略键开启：reflect.summary = 'off' 时跳过摘要生成
@@ -2015,7 +2012,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       enableContextSummary: this.#config.enableContextSummary,
       webSearchProvider: this.#config.webSearchProvider,
       existingSkillManager: this.skillManager,
-      // 事件回调组（T-C2 收敛：8 个平铺回调收进 callbacks，与 AssembleCallbacks 接口对齐）
+      // 事件回调组（8 个平铺回调收进 callbacks，与 AssembleCallbacks 接口对齐）
       callbacks: {
         onWorkProjectionGenerated: (sourcePath, summary) => {
           this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
@@ -2070,7 +2067,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           if (!sm) return { skip: false, overrideArgs: hostResult?.overrideArgs };
           // 幂等契约判断委托 shouldSkipForIdempotency（builtinTools.ts SSOT）：
           // - non-idempotent 不跳过（失败可重试，恢复由补偿机制兜底）
-          // - 幂等工具仅上次执行成功（ok === true）时跳过（J1 修复，与注释对齐）
+          // - 幂等工具仅上次执行成功（ok === true）时跳过
           const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
           const idemResult = shouldSkipForIdempotency(
             sm.getCheckpoint()?.completedToolCalls,
@@ -2509,7 +2506,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 适用于 `manual` 模式下用户手动触发会话归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
-   * FIX-P1-4：新增 options 参数透传给 ArchiveCoordinator。
+   * options 参数透传给 ArchiveCoordinator：
    * 宿主自动触发时传 `{ autoTriggered: true }`，由 ArchiveCoordinator 内部按模式判断；
    * 用户手动触发时无需传 options（默认 autoTriggered=false，无条件执行）。
    *

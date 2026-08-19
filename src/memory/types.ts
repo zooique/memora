@@ -202,12 +202,12 @@ export const SOURCE_LABELS = {
   UNKNOWN: 'unknown',
 } as const;
 
-// ─── Source 校验（运行时函数已迁移到 sourceValidation.ts） ──
+// ─── Source 校验（运行时函数迁移到 sourceValidation.ts） ──
 // inferSource / escapeLike / validateSource / levenshtein → src/memory/sourceValidation.ts
 // STOPWORDS → src/utils/segmenter.ts（停用词是分词关注点）
 // SourceValidationSeverity 类型 → src/memory/sourceValidation.ts
 
-// ─── 记忆关系图谱已收敛移除（2026-08-14） ─────────────────
+// ─── 记忆关系图谱已收敛移除 ─────────────────
 // ADR-014 侧车模型判定为过度设计（W5-网络图谱收敛），已整体移除：
 // - 独立侧车存储（IMemoryRelationStore / InMemoryRelationStore）
 // - 复杂关系类型（contradicts/supports/follows/refines/caused/related）
