@@ -1,7 +1,7 @@
 # 结构化信息保真（Structured Fidelity）设计
 
 > **状态**：已落地首个消费者 + 提炼侧视角下沉（P1+P2，2026-08-16）
-> **来源**：[LLM 视角 memora-as-agent 体感评估排雷](../../tasks/LLM视角memora-agent体感-方案排雷-20260816.md) P1 真实缺口「结构化信息保真」。
+> **来源**：[LLM 视角 memora-as-agent 体感评估排雷](../../tasks/归档/LLM视角memora-agent体感-方案排雷-20260816.md) P1 真实缺口「结构化信息保真」。
 > **关联**：[memory-as-summary.md](./memory-as-summary.md)（记忆即摘要单轨）、[architecture_philosophy_rules.md](../../.trae/rules/architecture_philosophy_rules.md)（§5 领域无关 / §11 角色包插卡 / §8 自然遗忘）、`role-pack/types.ts`（PrepareStrategy）、`roundSummaryGenerator.ts`（摘要生成）。
 
 ---

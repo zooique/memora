@@ -73,7 +73,7 @@ export class BuiltinToolHandlers {
   /**
    * 配置文件目录名集合——这些目录的内容应通过专用工具创建
    *
-   * personas/skills/rules 是 SOURCE_LABELS 的映射目录（store.ts SOURCE_TO_DIR），
+   * personas/skills/rules 是 SOURCE_LABELS 的映射目录（memory/sourcePaths.ts SOURCE_TO_DIR），
    * 通过 create_persona/create_skill/create_rule 工具创建会正确写入 configDir 并触发热重载。
    * write_file 写入 projectPath/personas/ 只会创建"孤儿文件"——不在配置目录中，不会被加载。
    */

@@ -41,14 +41,14 @@
 │  │  ┌──────────────────────────────────────┐│               │
 │  │  │  Agent 面类（编排层）                 ││               │
 │  │  │  - init/close · chat · switchProject ││               │
-│  │  │  - .persona / .tools / .skills       ││               │
-│  │  │  - .config / .memory                 ││               │
+│  │  │  - .rolePack / .tools / .skills      ││               │
+│  │  │  - .governance / .memory             ││               │
 │  │  └──────────┬───────────────────────────┘│               │
 │  │             │ 委托                         │               │
 │  │  ┌──────────┼───────────────────────────┐│               │
-│  │  │ PersonaManager / ToolExecutor        ││               │
-│  │  │ SkillManager / ConfigManager         ││               │
-│  │  │ MemoryInspector                      ││               │
+│  │  │ RolePackManager / SkillManager       ││               │
+│  │  │ ToolExecutor / MemoryInspector       ││               │
+│  │  │ MemoryGovernance                     ││               │
 │  │  └──────────────────────────────────────┘│               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
@@ -117,10 +117,10 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 
 | 访问器 | 类型 | 职责 |
 |--------|------|------|
-| `agent.persona` | `PersonaManager \| null` | 角色管理 |
+| `agent.rolePack` | `RolePackManager \| null` | 角色包管理 |
 | `agent.tools` | `ToolExecutor \| null` | 工具注册与执行 |
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
-| `agent.config` | `ConfigManager \| null` | 规则/技能注入 + 配置建议 |
+| `agent.governance` | `MemoryGovernance \| null` | 记忆治理（去重/衰减/建议编排） |
 | `agent.memory` | `MemoryInspector \| null` | 记忆查询 + 写入（`writeXxx` 前缀） |
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
@@ -418,7 +418,7 @@ interface ISessionStore {
 
 > **switch* 返回值约定**：各 switch 操作返回与其操作语义最匹配的值 ——
 > `switchSession` 返回新会话名（string）、`switchProject` 返回完整项目上下文（AgentContext，含 bootstrap 记忆等）、
-> `personaManager.switchPersona` 返回 system prompt 文本（string）。这是设计性差异，非 bug。
+> `agent.switchRolePack` 返回布尔值（是否切换成功）。这是设计性差异，非 bug。
 
 ### 6.1 Agent 面类方法（项目/会话入口）
 
@@ -482,26 +482,29 @@ export interface ForkResult {
 
 ---
 
-## 七、角色管理（`agent.persona` · PersonaManager）
+## 七、角色包管理（`agent.rolePack` · RolePackManager）
 
-> Manager 访问路径：`agent.persona.xxx`。`init()` 前返回 `null`。
+> Manager 访问路径：`agent.rolePack`（RolePackManager，`init()` 前返回 `null`）。角色包是「设定记忆唯一载体」（persona/rules/skills 归属角色包，见 memory-role-pack-boundary 纪律）。
 
 | 成员 | 类型 | 说明 |
 |------|------|------|
-| `persona.list` | `Persona[]`（getter） | 所有可用角色列表 |
-| `persona.activeName` | `string`（getter） | 当前激活的角色名 |
-| `persona.currentMode` | `PersonaMode`（getter） | 当前匹配模式（`'auto'` / `'manual'`） |
-| `persona.active` | `Persona \| null`（getter） | 当前激活的完整角色对象 |
-| `persona.switchPersona(name)` | 方法 → `string` | 手动切换到指定角色（返回新角色的 system prompt） |
-| `persona.setMode(mode)` | 方法 | 设置匹配模式（`'auto'` / `'manual'`） |
+| `rolePack.listMeta()` | `RolePackMeta[]` | 所有角色包元数据（name/description/keywords/...） |
+| `rolePack.activeName` | `string \| null`（getter） | 当前激活的角色包名（null = 未激活） |
+| `rolePack.currentMode` | `'auto' \| 'manual'`（getter） | 当前匹配模式 |
+| `rolePack.getActive()` | `RolePackAssembly \| null` | 当前激活的完整角色包对象 |
+| `rolePack.activate(name)` | 方法 → `boolean` | 手动切换到指定角色包 |
+| `rolePack.setMode(mode)` | 方法 | 设置匹配模式（`'auto'` / `'manual'`） |
+| `rolePack.resetSticky()` | 方法 | 清空粘性匹配锁存 |
 
 ```typescript
 // 使用示例
-const names = agent.persona.list.map(p => p.name);  // 列出角色
-agent.persona.switchPersona('作家');                  // 切换角色
-agent.persona.setMode('manual');                      // 锁定手动模式
-console.log(agent.persona.activeName);                // 当前角色名
-console.log(agent.persona.currentMode);               // 当前模式
+const rp = agent.rolePack;
+if (!rp) throw new Error('rolePack 未就绪');
+const metas = rp.listMeta();     // 列出所有角色包
+rp.activate('作家');              // 切换角色包
+rp.setMode('manual');             // 锁定手动模式
+console.log(rp.activeName);       // 当前角色包名
+console.log(rp.currentMode);      // 当前模式
 ```
 
 ---
@@ -594,104 +597,7 @@ const agent = new Agent({
 
 ---
 
-## 九、规则与技能注入（`agent.config` · ConfigManager）
-
-> Manager 访问路径：`agent.config.xxx()`。`init()` 前返回 `null`。
-
-### 9.1 规则注入
-
-| 方法 | 用途 | 写到哪里 |
-|------|------|----------|
-| `config.addRule(memory)` | 添加规则（需 `source='rule'`） | SQLite + System Prompt |
-| `config.addSimpleRule(name, content)` | 同上，简化版（自动填充字段） | SQLite + System Prompt |
-
-```typescript
-// 注入规则
-await agent.config.addSimpleRule(
-  '世界观规则',
-  '这是一个东方玄幻世界，修真等级分为炼气、筑基、金丹……',
-);
-```
-
-### 9.2 技能注入
-
-| 方法 | 用途 | 写到哪里 |
-|------|------|----------|
-| `config.addSkill(memory)` | 添加技能（需 `source='skill'`，session-only） | SkillManager |
-| `config.addSimpleSkill(name, content, keywords?)` | 同上，简化版（session-only） | SQLite + SkillManager |
-
-```typescript
-// 注入技能（session-only，注入 SkillManager 内存缓存，重启后丢失）
-await agent.config.addSimpleSkill(
-  '大纲生成',
-  '当用户说“生成大纲”时，按三幕结构生成章节大纲……',
-  ['大纲', '结构', '章节'],  // 可选：触发关键词
-);
-
-// 如需跨会话持久化，写入配置文件
-await agent.config.confirmConfigSuggestion({
-  type: 'skill',
-  name: '大纲生成',
-  content: '当用户说“生成大纲”时……',
-  confidence: 0.9,
-});
-```
-
-### 9.3 配置建议（模式 3：AutoConfigRefiner 自进化）
-
-Agent 在对话后自动分析用户输入和助手回复，提取潜在的配置建议（规则/角色/技能），通过回调通知宿主。这是"三种接入模式"中的模式 3（Agent 智能总结接口）。
-
-#### `AutoConfigRefinerOptions` 配置
-
-```typescript
-interface AutoConfigRefinerOptions {
-  minConfidence?: number;   // 最低置信度阈值（0-1），低于此值的建议被丢弃（默认 0.6）
-  maxSuggestions?: number;  // 单次对话最大建议数（默认 3）
-}
-```
-
-#### 工作流程
-
-```
-对话结束 → Agent.postProcess 异步调用 autoConfigRefiner.analyze()
-  → 有后台 Provider：LLM 分析提取建议
-  → 无后台 Provider：启发式规则降级提取
-  → 短对话（<20 字）跳过
-  → 通过 onConfigSuggestion 回调通知 ConfigManager
-  → ConfigManager 转发给宿主注册的 handler
-  → 宿主 UI 展示建议卡片
-  → 用户确认 → config.confirmConfigSuggestion() 写入配置文件
-```
-
-#### `config` 公开方法
-
-| 方法 | 用途 |
-|------|------|
-| `config.onConfigSuggestion(handler)` | 注册配置建议回调（宿主 UI 展示建议卡片） |
-| `config.confirmConfigSuggestion(suggestion)` | 确认建议，写入配置文件（持久化） |
-
-#### `ConfigSuggestion` 类型
-
-```typescript
-interface ConfigSuggestion {
-  type: 'rule' | 'persona' | 'skill';
-  name: string;
-  content: string;
-  confidence: number;  // 0-1
-  source: string;      // 建议来源描述
-}
-```
-
-**双写机制**：
-- `config.addRule()` → 写 SQLite（会话级，临时）
-- `config.addSkill()` → 写 SQLite + SkillManager（session-only，运行时注入）
-- `config.confirmConfigSuggestion()` → 写配置文件（真理源，重启后自动加载，适用于 rule/persona/skill 三种类型）
-
-> **降级策略**：无后台 Provider 时，AutoConfigRefiner 使用启发式规则提取建议（非 LLM），建议质量较低但仍可用。单条建议回调失败时记日志并继续处理下一条，避免一条失败导致后续全部丢失。
-
----
-
-## 十、作品投影（`agent.works` · WorkProjectionManager）
+## 九、作品投影（`agent.works` · WorkProjectionManager）
 
 作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在 SQLite 中供 Agent 快速召回，避免每次对话都读取完整文件。原始文件内容不进 SQLite，Agent 通过工具按需读取。
 
@@ -740,7 +646,7 @@ agent.tools.registerTool(
 
 ---
 
-## 十一、Provider 管理
+## 十、Provider 管理
 
 | 方法 | 用途 |
 |------|------|
@@ -751,7 +657,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
-## 十二、内部调试
+## 十一、内部调试
 
 > v1.0 起已移除 `getBuildCtx()` 和 `inspect()` 方法。宿主项目可通过以下渠道观察内核状态：
 >
@@ -762,7 +668,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
-## 十三、完整 API 一览
+## 十二、完整 API 一览
 
 ### Agent 面类直接方法
 
@@ -774,7 +680,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
-| 角色 | `switchPersona(name)` / `getPersonaSwitchLockStatus()` / `injectAffect(affectString)` |
+| 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `injectAffect(affectString)` |
 | 手动归档 | `archiveSessionContent(date, session, options?)` |
 | 配置热更新 | `reloadConfig(source?)` |
 | 记忆治理 | `deduplicateMemories(signal?)` / `evaluateTimeliness(signal?)` / `runMemoryDecayOnce()` / `sourceHealth()` / `suggest(query?, options?)` / `detectConflicts(signal?)` |
@@ -782,16 +688,16 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ### Agent 面类只读访问器
 
-`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `persona` / `tools` / `skills` / `config` / `memory` / `works` / `polish`
+`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `rolePack` / `tools` / `skills` / `governance` / `memory` / `works` / `polish`
 
 ### 各 Manager / 组件公开成员
 
 | 访问器 | 类型 | 公开成员 |
 |---------|---------|---------|
-| `agent.persona` | `PersonaManager` | `.list` / `.activeName` / `.currentMode` / `.active` / `.switchPersona()` / `.setMode()` |
+| `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.currentMode` / `.getActive()` / `.activate()` / `.setMode()` / `.resetSticky()` |
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
-| `agent.config` | `ConfigManager` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
+| `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.evaluateTimeliness()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` / `.decay()` |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeBoost()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
@@ -800,11 +706,11 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
-## 十四、可观测性（ITracer / ISpan）
+## 十三、可观测性（ITracer / ISpan）
 
 Memora 内置轻量 Span/Trace 抽象，宿主注入实现后可观测 AgentLoop 行为。
 
-### 14.1 ITracer 接口
+### 13.1 ITracer 接口
 
 ```typescript
 interface ITracer {
@@ -812,7 +718,7 @@ interface ITracer {
 }
 ```
 
-### 14.2 ISpan 接口
+### 13.2 ISpan 接口
 
 ```typescript
 interface ISpan {
@@ -822,7 +728,7 @@ interface ISpan {
 }
 ```
 
-### 14.3 NoopTracer（默认实现）
+### 13.3 NoopTracer（默认实现）
 
 ```typescript
 import { NOOP_TRACER } from '@zooique/memora';
@@ -831,7 +737,7 @@ import { NOOP_TRACER } from '@zooique/memora';
 // NOOP_TRACER.startSpan() 返回共享的 NoopSpan 单例，所有方法为空操作
 ```
 
-### 14.4 TRACE_SPANS 常量
+### 13.4 TRACE_SPANS 常量
 
 ```typescript
 import { TRACE_SPANS } from '@zooique/memora';
@@ -844,11 +750,11 @@ TRACE_SPANS.RESPONSE   // 'response.generate' — 整轮响应
 
 ---
 
-## 十五、工具错误码（ToolErrorCode）
+## 十四、工具错误码（ToolErrorCode）
 
 工具执行失败时，错误结果包含 `[ERR:TOOL:code]` 前缀，供 Reflection 逻辑和宿主项目解析。
 
-### 15.1 错误码枚举
+### 14.1 错误码枚举
 
 | 错误码 | 可重试 | 说明 |
 |--------|--------|------|
@@ -863,7 +769,7 @@ TRACE_SPANS.RESPONSE   // 'response.generate' — 整轮响应
 | `CUSTOM_TOOL_FAILED` | ✅ | 自定义工具执行失败 |
 | `UNKNOWN` | ❌ | 通用错误 |
 
-### 15.2 isRetryableErrorCode()
+### 14.2 isRetryableErrorCode()
 
 ```typescript
 import { ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';
@@ -874,9 +780,9 @@ isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 
 ---
 
-## 十六、内容护栏（Guardrails）
+## 十五、内容护栏（Guardrails）
 
-### 16.1 护栏规则格式
+### 15.1 护栏规则格式
 
 护栏规则以 `source: "guardrail"` 记忆形式存储，放在 `configDir/rules/guardrails/` 目录下：
 
@@ -890,19 +796,19 @@ pattern: /执行|运行|eval|exec/
 action: block
 ```
 
-### 16.2 护栏行为
+### 15.2 护栏行为
 
 - **输入护栏**：用户输入注入上下文前检查，命中 `block` 时阻断对话
 - **输出护栏**：LLM 响应返回用户前检查，命中 `block` 时替换输出
 - **降级策略**：护栏自身异常时降级为"放行 + 记日志"，永远不阻断对话
 
-### 16.3 工具错误反思（Reflection）
+### 15.3 工具错误反思（Reflection）
 
 当工具执行失败且错误码为 retryable 时，AgentLoop 自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。默认最多重试 2 次（`maxReflectionRetries`）。
 
 ---
 
-## 十七、类型导出
+## 十六、类型导出
 
 > 以下导出与 `src/index.ts` 完全对齐（v2.0.3）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
 
@@ -950,9 +856,6 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 
 // 工具
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@zooique/memora';
-
-// 配置建议
-export type { ConfigSuggestion, ConfigSuggestionHandler } from '@zooique/memora';
 
 // 记忆治理
 export type { ConflictInfo } from '@zooique/memora';
@@ -1012,8 +915,8 @@ export type { RecallOptions } from '@zooique/memora';
 export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@zooique/memora';
 export { FetchWebSearchProvider } from '@zooique/memora';
 
-// 角色
-export type { PersonaMode, Persona } from '@zooique/memora';
+// 角色包
+export type { RolePackMeta } from '@zooique/memora';
 
 // 技能
 export type { SkillEntry, SkillMatch } from '@zooique/memora';
@@ -1057,7 +960,7 @@ export type { EvalRunnerOptions, EvalSummary } from '@zooique/memora';
 
 ---
 
-## 十八、安全与约束
+## 十七、安全与约束
 
 ### 核心库零越界
 

@@ -513,7 +513,73 @@ function validateManifestCapabilities(
 }
 
 /**
- * 校验 trigger 字段的正则误用（role-pack-spec §二/§三）
+ * 解析角色匹配字段（keywords / trigger）为字符串数组
+ *
+ * 支持两种合法写法（role-pack-spec §2.2「匹配字段双写法」）：
+ *   1. 字符串数组：`["文档", "API"]`
+ *   2. 逗号分隔字符串：`"文档, API"`
+ * 其余类型（数值、对象、数组含非字符串元素等）为非法，返回 null。
+ *
+ * @param fieldName 字段名（'keywords' / 'trigger'），用于错误路径
+ * @param node 字段节点
+ * @param issues 收集校验问题
+ * @returns 解析后的字符串数组；非法时返回 null（已 push error）
+ */
+function parseMatchField(
+  fieldName: 'keywords' | 'trigger',
+  node: unknown,
+  issues: RolePackValidationIssue[],
+): string[] | null {
+  if (node === undefined) return null;
+
+  if (Array.isArray(node)) {
+    // 数组写法：元素必须全为字符串；含非字符串元素视为非法
+    if (node.some((v) => typeof v !== 'string')) {
+      issues.push({
+        severity: 'error',
+        code: `INVALID_${fieldName.toUpperCase()}`,
+        path: fieldName,
+        message: `${fieldName} 数组的元素必须是字符串（§2.2 匹配字段双写法）`,
+      });
+      return null;
+    }
+    return node.map((s) => String(s));
+  }
+
+  if (typeof node === 'string') {
+    // 逗号分隔字符串写法：拆分 + 去空格
+    return node
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  issues.push({
+    severity: 'error',
+    code: `INVALID_${fieldName.toUpperCase()}`,
+    path: fieldName,
+    message: `${fieldName} 必须是字符串数组或逗号分隔字符串（§2.2 匹配字段双写法）`,
+  });
+  return null;
+}
+
+/**
+ * 校验 keywords 字段的类型与取值（§2.2 匹配字段双写法）
+ *
+ * 复用 parseMatchField 的类型校验；keywords 无正则语义，不做 regex 误用检测。
+ *
+ * @param keywordsNode manifest.keywords 节点
+ * @param issues 收集校验问题
+ */
+function validateKeywordsField(
+  keywordsNode: unknown,
+  issues: RolePackValidationIssue[],
+): void {
+  parseMatchField('keywords', keywordsNode, issues);
+}
+
+/**
+ * 校验 trigger 字段的类型 + 正则误用（role-pack-spec §2.2/§三）
  *
  * 角色包 trigger 为**字符串数组**（精确/包含匹配），不是正则。
  * 正则匹配仅在 Skill 系统中存在（parseTrigger → RegExp.test）。
@@ -529,23 +595,8 @@ function validateTriggerField(
   triggerNode: unknown,
   issues: RolePackValidationIssue[],
 ): void {
-  if (triggerNode === undefined) return;
-
-  // 支持数组和逗号分隔字符串两种写法（与 parseKeywordsAny 对齐）
-  let values: string[];
-  if (Array.isArray(triggerNode)) {
-    values = triggerNode.map((v) => String(v));
-  } else if (typeof triggerNode === 'string') {
-    values = triggerNode.split(',').map((s) => s.trim());
-  } else {
-    issues.push({
-      severity: 'error',
-      code: 'INVALID_TRIGGER',
-      path: 'trigger',
-      message: 'trigger 必须是字符串数组或逗号分隔字符串（§二/§三）',
-    });
-    return;
-  }
+  const values = parseMatchField('trigger', triggerNode, issues);
+  if (!values) return;
 
   // 检测每个 trigger 值是否误用了正则语法
   // 正则语法模式：以 / 开头、以 / 结尾（可能带 flags），如 /pattern/i
@@ -595,6 +646,7 @@ export function validateManifest(
   validateManifestSkills(manifest['skills'], issues);
   validateManifestCapabilities(manifest['capabilities'], issues);
   validateTriggerField(manifest['trigger'], issues);
+  validateKeywordsField(manifest['keywords'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }

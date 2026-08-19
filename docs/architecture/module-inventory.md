@@ -129,7 +129,6 @@
 | `agent/compaction.ts` | 🟢 已打磨 | `__tests__/compaction.test.ts` (15 tests) | 微压缩层：ResultReplacement + OffloadCompaction |
 | `agent/duplicateInterceptor.ts` | 🟢 已打磨 | `__tests__/duplicateInterceptor.test.ts` (22 tests) | 重复 tool_call 检测拦截器 |
 | `agent/messageHistory.ts` | 🟢 已打磨 | `__tests__/messageHistory.test.ts` | 消息历史管理 |
-| `agent/personaMatcher.ts` | 🟢 已打磨 | `__tests__/personaMatcher.test.ts` | Persona 粘性匹配 |
 | `agent/toolExecutor.ts` | 🟢 已打磨 | `__tests__/toolExecutor.test.ts` | 工具执行器 |
 | `agent/builtinTools.ts` | 🟢 已打磨 | `__tests__/builtinTools.test.ts` | 内置工具定义 |
 | `agent/builtinToolHandlers.ts` | 🟢 已打磨 | `__tests__/builtinToolHandlers.test.ts` | 内置工具处理器 |
@@ -158,8 +157,6 @@
 | `managers/memoryDecayScheduler.ts` | 🟢 已打磨 | `__tests__/memoryDecayScheduler.test.ts` | L2 时效性评估 |
 | `managers/memoryAdvisor.ts` | 🟢 已打磨 | `__tests__/memoryAdvisor.test.ts` | L3 冲突检测 |
 | `managers/dedupManager.ts` | 🟢 已打磨 | `__tests__/dedupManager.test.ts` | L1 语义去重 |
-| `managers/configManager.ts` | 🟢 已打磨 | `__tests__/configManager.test.ts` | 配置管理 |
-| `managers/autoConfigRefiner.ts` | 🟢 已打磨 | `__tests__/autoConfigRefiner.test.ts` | 自动配置精化 |
 | `managers/workProjection.ts` | 🟢 已打磨 | `__tests__/workProjection.test.ts` | 作品投影管理 |
 | `managers/textPolishManager.ts` | 🟢 已打磨 | `__tests__/textPolishManager.test.ts` | 文本润色 |
 | `managers/chatLockManager.ts` | 🟢 已打磨 | `__tests__/chatLockManager.test.ts` | 聊天锁管理 |
@@ -319,4 +316,5 @@
 | 2026-08-19 | 记忆系统剪枝：content 记忆迁移为 SessionMeta，确立双层命名机制（autoName/displayName） | ✅ 完成 |
 | 2026-08-19 | 模块清单对齐：新增「对话管理模块」分类，明确会话存储/会话管理器/检查点管理三层架构 | ✅ 完成 |
 | 2026-08-19 | 剪枝：sessionCheckpointLifecycle 测试合并到 sessionManager.test.ts，删除独立测试文件 | ✅ 完成 |
-| 2026-08-19 | 深度剪枝：删除孤儿文件（rolePackMatcher/eval/multiHop）+ RAG 僵尸实现（DefaultReranker/compressContext）+ 配置旧扁平字段 + 策略键别名 + loader/store 空转链 + workProjection 旧格式（tsc 零错误，2236 tests 通过） | ✅ 完成 |
+| 2026-08-19 | 深度剪枝：删除孤儿文件（rolePackMatcher/eval/multiHop）+ RAG 僵尸实现（DefaultReranker/compressContext）+ 配置旧扁平字段 + 策略键别名 + loader/store 空转链 + workProjection 旧格式 + 8-18 会话移除 configManager/autoConfigRefiner + personaMatcher（tsc 零错误，2236 tests 通过） | ✅ 完成 |
+| 2026-08-19 | 深度剪枝核验：module-inventory 去残留行（personaMatcher.ts/configManager.ts/autoConfigRefiner.ts 实体已删，表格归档与此对齐） | ✅ 完成 |

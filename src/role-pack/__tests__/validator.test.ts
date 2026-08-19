@@ -119,6 +119,25 @@ describe('validateManifest：键名合法性', () => {
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
   });
 
+  it('keywords 双写法（§2.2 匹配字段双写法）：字符串数组与逗号分隔字符串均为合法', () => {
+    const asArray = validate({ keywords: ['文档', 'API'] });
+    const asString = validate({ keywords: '文档, API' });
+    expect(asArray.valid).toBe(true);
+    expect(asString.valid).toBe(true);
+    expect(findByCode(asArray.issues, 'INVALID_KEYWORDS')).toHaveLength(0);
+    expect(findByCode(asString.issues, 'INVALID_KEYWORDS')).toHaveLength(0);
+  });
+
+  it('keywords 非法形状（数值/对象/数组含非字符串元素）→ INVALID_KEYWORDS error', () => {
+    const asNumber = validate({ keywords: 12 });
+    const asObject = validate({ keywords: { a: 1 } });
+    const asArrayWithNonString = validate({ keywords: ['文档', 12] });
+    for (const result of [asNumber, asObject, asArrayWithNonString]) {
+      expect(result.valid).toBe(false);
+      expect(findByCode(result.issues, 'INVALID_KEYWORDS')).toHaveLength(1);
+    }
+  });
+
   it('exclusiveWith 非法形状（字符串/数值）→ INVALID_EXCLUSIVE_WITH error', () => {
     const asString = validate({ exclusiveWith: '代码助手' });
     const asNumber = validate({ exclusiveWith: 12 });

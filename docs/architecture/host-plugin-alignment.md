@@ -203,9 +203,10 @@ interface LlmProvider {
     }
   },
   "capabilities": [
-    { "capability": "code:read", "description": "读取代码文件" },
-    { "capability": "code:write", "description": "写入/修改代码" },
-    { "capability": "debug:diagnose", "description": "调试诊断" }
+    { "capability": "file:read", "description": "读取文件" },
+    { "capability": "file:write", "description": "写入文件" },
+    { "capability": "memory:recall", "description": "召回记忆" },
+    { "capability": "web:search", "description": "联网搜索" }
   ]
 }
 ```
@@ -219,12 +220,15 @@ const agent = new Agent({
   // ... 其他选项
 });
 
-// 2. 运行时角色包操作
-agent.persona.list                    // 列出所有角色包
-agent.persona.activeName              // 当前激活的角色包
-agent.persona.switchPersona('工程师')  // 手动切换角色
-agent.persona.setMode('manual')       // 锁定手动模式
-agent.switchRolePack('产品经理')      // 切换角色包
+// 2. 运行时角色包操作（经 agent.rolePack → RolePackManager，role-pack/ 内核 API）
+const rp = agent.rolePack;
+if (rp) {
+  rp.listMeta();            // 列出所有角色包元数据（name/description/...）
+  rp.activeName;            // 当前激活的角色包名（null = 未激活）
+  rp.activate('工程师');     // 按名字手动切换/激活角色包
+  rp.setMode('manual');      // 锁定手动模式（'auto' | 'manual'）
+  rp.resetSticky();          // 清空粘性匹配锁存
+}
 
 // 3. 重新加载角色包配置
 agent.reloadConfig('role-pack-changed');
@@ -241,7 +245,7 @@ agent.reloadConfig('role-pack-changed');
   └─ 互斥触发 → 命中 → 自动切换（如工程师 → 翻译助手）
 ```
 
-**宿主 UI 应展示当前激活角色**：通过 `agent.persona.activeName` 获取，在对话面板顶部显示角色徽章。
+**宿主 UI 应展示当前激活角色**：通过 `agent.rolePack?.activeName` 获取，在对话面板顶部显示角色徽章。
 
 ---
 
@@ -313,17 +317,19 @@ agent.on('skillMatched', (match) => {
 ### 4.4 能力声明与工具暴露
 
 ```
-角色包 capabilities 声明 → 决定工具暴露面
+角色包 capabilities 声明 → 决定工具暴露面（能力字典唯一 truth = 内核 capabilityMap.ts，文档正本见 role-pack-spec §四·一）
   │
-  ├─ 声明了 code:read → 暴露 read_file 工具
-  ├─ 声明了 code:write → 暴露 write_file 工具
-  ├─ 声明了 code:debug → 暴露 search_memories 工具
-  └─ 未声明 → 默认暴露所有工具（向后兼容）
+  ├─ 声明了 file:read → 暴露 read_file 工具
+  ├─ 声明了 file:write → 暴露 write_file 工具
+  ├─ 声明了 memory:recall → 暴露 search_memories 工具
+  └─ 未声明 capabilities → 默认暴露所有工具（保持现状）
 
-宿主自定义能力扩展：
+宿主自定义工具与能力关系：
   agent.tools.registerTool({ name: 'deploy', ... }, handler)
-  → 角色包声明 { capability: 'code:deploy' }
-  → Agent 根据 capabilities 自动过滤工具列表
+  → 工具经 registerTool 注册后可被 LLM 调用
+  → 但能力→工具的暴露只认 capabilityMap（SSOT）：声明一个字典外能力
+    （如 code:deploy、debug:diagnose）会被跳过，不会自动映射到任何工具；
+    要让角色包能力映射到宿主自定义工具，需在能力字典/映射层扩展对应条目
 ```
 
 ---

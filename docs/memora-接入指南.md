@@ -20,7 +20,7 @@
 >
 > **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
 >
-> **v2.0.4 变更**：移除记忆关系图谱与用户画像层。内核收敛删除 ADR-014 记忆关系图谱（IMemoryRelationStore/InMemoryRelationStore/MemoryRelation 侧车）与用户画像层（UserProfile）。用户画像收敛为 round-summary 的 `type=preference` 召回；关系冲突改用 `supersededBy` 布尔标记（ADR-021）。保留 WorkProjectionManager、AutoConfigRefiner、InsightExtractor、`SOURCELABELS.PROFILE`（存量兼容）。（InsightExtractor 后于 2026-08-14 随洞察层收敛一并移除。）
+> **v2.0.4 变更**：移除记忆关系图谱与用户画像层。内核收敛删除 ADR-014 记忆关系图谱（IMemoryRelationStore/InMemoryRelationStore/MemoryRelation 侧车）与用户画像层（UserProfile）。用户画像收敛为 round-summary 的 `type=preference` 召回；关系冲突改用 `supersededBy` 布尔标记（ADR-021）。保留 WorkProjectionManager、AutoConfigRefiner、InsightExtractor、`SOURCELABELS.PROFILE`（存量兼容）。（InsightExtractor 后于 2026-08-14 随洞察层收敛一并移除；AutoConfigRefiner 与 ConfigManager 后随角色包边界收敛移除，角色管理统一走 `agent.rolePack`；`SOURCELABELS.PROFILE` 随画像收敛不再参与运行时治理。）
 >
 ---
 
@@ -44,15 +44,15 @@
 
 **Memora 是一个无法独立运行的智能大脑内核。** 它只有接口，没有"形态"——宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（Persona/Skill/Rule —— Agent 的骨骼，.md 文件 + 内存缓存，确定性注入不经过召回）和**对话记忆**（round-summary —— 轮次摘要即记忆，Agent 的血肉，SQLite + VectorStore，语义召回）。二者通过 `autoConfigRefiner` 连接——对话记忆可生长为设定文件。用户画像已收敛为 round-summary 的 `type=preference` 召回，不再作为独立记忆层。
+**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（角色包 persona/rules/skills —— Agent 的骨骼，.md 文件 + 内存缓存，唯一归角色包、确定性注入不经过召回）和**对话记忆**（摘要记忆 round-summary/content —— Agent 的血肉，SQLite + 语义召回，带 `summaryType` 语义标签）。二者边界一刀切：记忆系统不再承载设定、角色包不承载对话（ADR-025）；偏好类信息沉淀为摘要记忆，不设独立"用户画像"记忆层。
 
 **单 Agent 模型。** 所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
 
-**配置文件是真理源，对话记忆走 SQLite 索引。** Persona/Skill 为纯文件 + 内存缓存；Rule 文件写入 SQLite 供 bootstrap 读取；对话记忆（round-summary）走 SQLite + 语义召回。
+**配置文件是真理源，对话记忆走 SQLite 索引。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary/content 摘要记忆，带 `summaryType` 标签）走 SQLite + 语义召回。
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式（1.0.0）。** Agent 面类只做编排，领域操作委托给 7 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.memory` / `agent.works` / `agent.polish`（文本润色）。
+**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.governance`（记忆治理）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）等。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -212,18 +212,7 @@ agent.tools.registerTool(
 
 > 写入扩展与记忆关键词（`agent.insight.xxx()`）已于 2026-08-14 随洞察层移除，不再提供。记忆统一以 round-summary 沉淀，经 `agent.memory.writeUpsert()` 等 `writeXxx` 方法写入。
 
-### 6. 注入项目规则
-
-> 1.0.0：规则注入走 `agent.config.xxx()`。
-
-```typescript
-await agent.config.addSimpleRule(
-  '世界观规则',
-  '这是一个东方玄幻世界，修真等级分为炼气、筑基、金丹……',
-);
-```
-
-### 7. 查询记忆
+### 6. 查询记忆
 
 > 1.0.0：记忆查询走 `agent.memory.xxx()`。
 
@@ -242,26 +231,29 @@ const stats = agent.memory.stats();
 console.log('记忆总数:', stats.total);
 ```
 
-### 8. 管理角色
+### 7. 管理角色包
 
-> 1.0.0：角色管理走 `agent.persona.xxx`。
+> 统一走 `agent.rolePack.xxx`（RolePackManager）。
 
 ```typescript
-// 列出所有角色
-const names = agent.persona.list.map(p => p.name);
+const rp = agent.rolePack;
+if (rp) {
+  // 列出所有角色包元数据
+  const metas = rp.listMeta();
 
-// 手动切换（返回新角色的 system prompt，可用于 UI 展示）
-const personaPrompt = agent.persona.switchPersona('作家');
+  // 手动切换角色包
+  rp.activate('作家');
 
-// 锁定手动模式（禁止自动匹配）
-agent.persona.setMode('manual');
+  // 锁定手动模式（禁止自动匹配）
+  rp.setMode('manual');
 
-// 查询当前状态
-console.log(agent.persona.activeName);   // '作家'
-console.log(agent.persona.currentMode);  // 'manual'
+  // 查询当前状态
+  console.log(rp.activeName);    // '作家'
+  console.log(rp.currentMode);   // 'manual'
+}
 ```
 
-### 9. 切换项目
+### 8. 切换项目
 
 ```typescript
 // switchProject() 自动 rebuild，无需手动调用 rebuildComponents()
@@ -269,7 +261,7 @@ const ctx = await agent.switchProject('another-novel');
 console.log(`已切换到：${ctx.projectName}`);
 ```
 
-### 10. 关闭
+### 9. 关闭
 
 ```typescript
 await agent.close(); // 释放项目锁 + 关闭数据库
@@ -487,9 +479,9 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | 路径 | Manager | 主要成员 |
 |------|---------|---------|
 | `agent.memory.xxx()` | MemoryInspector | 读：`snapshot()` / `search(q, n)` / `searchHybrid(q, n)` / `stats()` / `list()` / `getById(id)` / `listDeleted()`；写：`writeUpsert()` / `writeDelete()` / `writeRestore()` / `writePurge()` 等（`writeXxx` 前缀）。`suggest()` / `sourceHealth()` 已上移至 `agent.suggest()` / `agent.sourceHealth()` |
-| `agent.config.xxx()` | ConfigManager | `addRule(m)` / `addSimpleRule(n, c)` / `addSkill(m)` / `addSimpleSkill(n, c, k?)` / `onSuggestion(h)` / `confirm(s)` |
+| `agent.governance.xxx()` | MemoryGovernance | `deduplicate()` / `evaluateTimeliness()` / `detectConflicts()` / `sourceHealth()` / `suggest()` / `decay()` |
 | `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` / `list` |
-| `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
+| `agent.rolePack.xxx` | RolePackManager | `.listMeta()` / `.activeName` / `.currentMode` / `.getActive()` / `.activate(n)` / `.setMode(m)` / `.resetSticky()` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
 | `agent.works.xxx()` | WorkProjectionManager | `ensureProjection(path, content)` / `getProjection(path)` / `loadAll()` |
 | `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `conflictDetected` / `projectSwitched` / `skillMatched` / `archiveFailed` |
@@ -829,9 +821,9 @@ for (const chapter of chapters) {
 3. **项目级 `.memora/`** 只放 `rules/`、`skills/` 和 `guardrails/`
 4. **角色由关键词自动触发**
 5. **对话历史跨子项目持久化**
-6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.config.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
+6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.rolePack.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
 7. **作品原始内容不进 SQLite**，Agent 通过工具按需读取
-8. **配置文件是真理源**，`agent-config/` 下的配置由 MemoryLoader 启动时扫描加载
+8. **配置文件是真理源**，`<configDir>/role-packs/` 下的角色包由 RolePackManager 启动时扫描加载
 9. **禁止**为每个子项目创建独立的 memora.db
 10. **禁止**项目切换时关闭/重建数据库
 11. **禁止**将配置直接写入 SQLite 作为持久化存储
