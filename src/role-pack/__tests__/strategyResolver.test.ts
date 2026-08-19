@@ -35,6 +35,8 @@ import {
   resolveToolApproval,
   mergeStrategy,
   assembleRolePack,
+  resolveL2Strategy,
+  DEFAULT_L2_STRATEGY,
 } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 import type {
@@ -694,5 +696,50 @@ describe('跨维度一致性', () => {
     // 原对象不应被修改
     expect(DEFAULT_BEHAVIOR_STRATEGY.act!.toolMode).toBe('allow');
     expect(DEFAULT_BEHAVIOR_STRATEGY).toBe(original);
+  });
+});
+
+// ════════════════════════════════════════════════════════
+// 7. L2 运行时策略（T1 收敛：resolveL2Strategy）
+// ════════════════════════════════════════════════════════
+
+describe('L2 运行时策略 resolveL2Strategy（T1 收敛）', () => {
+  it('无角色包声明时守恒 DEFAULT_L2_STRATEGY（整体默认值）', () => {
+    expect(resolveL2Strategy(undefined)).toEqual(DEFAULT_L2_STRATEGY);
+    expect(resolveL2Strategy({} as BehaviorStrategy)).toEqual(DEFAULT_L2_STRATEGY);
+  });
+
+  it('toolMode=block 映射为 toolCallsBlocked=true，其余守默认', () => {
+    const s = resolveL2Strategy({ act: { toolMode: 'block' } } as BehaviorStrategy);
+    expect(s.toolCallsBlocked).toBe(true);
+    expect(s.errorHandling).toBe('retry');
+    expect(s.providerRouting).toBe('auto');
+  });
+
+  it('loopContinue=N（正整数）映射为 maxSelfReviewRounds，非法值归 0', () => {
+    expect(
+      resolveL2Strategy({ reflect: { loopContinue: 3 } } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(3);
+    // 负 / 小数 / 非 number 均归一为 0（关闭自审查）
+    expect(
+      resolveL2Strategy({ reflect: { loopContinue: -1 } } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(0);
+    expect(
+      resolveL2Strategy({ reflect: { loopContinue: 2.5 } } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(0);
+    expect(
+      resolveL2Strategy({ reflect: { loopContinue: 'on' } } as unknown as BehaviorStrategy)
+        .maxSelfReviewRounds,
+    ).toBe(0);
+  });
+
+  it('act/global 声明值覆盖对应维度', () => {
+    const s = resolveL2Strategy({
+      act: { toolApproval: 'confirm', toolReadonly: 'readonly' },
+      global: { tokenBudget: 120 },
+    } as BehaviorStrategy);
+    expect(s.toolApproval).toBe('confirm');
+    expect(s.toolReadonly).toBe('readonly');
+    expect(s.tokenBudget).toBe(120);
   });
 });

@@ -45,18 +45,9 @@ import {
   resolveMinFallback,
   resolveSummary,
   resolveSummaryFocus,
-  resolveToolMode,
   resolveContextAssembly,
-  resolveToolStepLimit,
-  resolveErrorHandling,
   resolveAutoSwitch,
-  resolveProviderRouting,
-  resolveInputInterrupt,
-  resolveTokenBudget,
-  resolveStepBudget,
-  resolveMultiStepReasoning,
-  resolveToolReadonly,
-  resolveToolApproval,
+  resolveL2Strategy,
   resolveRecallConfidence,
   resolveSummaryRecall,
 } from '@/role-pack/types.js';
@@ -547,41 +538,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // Tier 2：上下文装配策略（fixed=仅固定轮次 / query=仅语义召回 / hybrid=混合）
     const contextAssembly = resolveContextAssembly(strategy);
 
-    // 根据 L2 策略设置工具调用权限（影响整轮对话），标准键 act.toolMode（§六）
-    loop.setToolCallsBlocked(resolveToolMode(strategy) === 'block');
-
-    // Tier 2：根据 L2 策略设置工具步数上限（act.toolStepLimit）
-    loop.setToolStepLimit(resolveToolStepLimit(strategy));
-
-    // Tier 2：根据 L2 策略设置错误处理策略（global.errorHandling）
-    loop.setErrorHandling(resolveErrorHandling(strategy));
-
-    // Tier 3：根据 L2 策略设置 Provider 路由策略（act.providerRouting）
-    loop.setProviderRouting(resolveProviderRouting(strategy));
-
-    // Tier 3：根据 L2 策略设置输入中断策略（act.inputInterrupt）
-    loop.setInputInterrupt(resolveInputInterrupt(strategy));
-
-    // Tier 3：根据 L2 策略设置 Token 预算上限（global.tokenBudget）
-    loop.setTokenBudget(resolveTokenBudget(strategy));
-
-    // Tier 3：根据 L2 策略设置步数预算上限（global.stepBudget）
-    loop.setStepBudget(resolveStepBudget(strategy));
-
-    // Phase 1：根据 L2 策略设置多步推理模式（act.multiStepReasoning）
-    loop.setMultiStepReasoning(resolveMultiStepReasoning(strategy));
-
-    // Phase 3：根据 L2 策略设置工具只读模式（act.toolReadonly）
-    loop.setToolReadonly(resolveToolReadonly(strategy));
-
-    // Phase 3：根据 L2 策略设置工具审批模式（act.toolApproval）
-    loop.setToolApproval(resolveToolApproval(strategy));
-
-    // 根据 L2 策略设置自审查轮次（LLM 纯文本回复后自动审查 N 轮），标准键 reflect.loopContinue（§六）
-    // loopContinue 为 number（0=关闭，N=最多 N 轮）
-    const loopContinue = strategy.reflect?.loopContinue;
-    const maxSelfReviewRounds = typeof loopContinue === 'number' ? loopContinue : 0;
-    loop.setMaxSelfReviewRounds(maxSelfReviewRounds);
+    // 根据 L2 策略装配运行时策略（T1 收敛：原 11 处 setXxx 统一收敛为单一 setStrategy，
+    // 解析由 resolveL2Strategy 聚合完成：工具权限/步数/错误处理/路由/预算/推理/只读/审批/自审查）
+    loop.setStrategy(resolveL2Strategy(strategy));
 
     // M2.1 换角色 → 工具集切换：按激活角色包的 capabilities 应用工具暴露面
     // （toolMode=block 全禁与此正交；未声明 capabilities 时保持全部暴露）

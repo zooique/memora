@@ -27,6 +27,7 @@ import type {
   RolePackAssembly,
   RolePackCapability,
   Summary,
+  L2RuntimeStrategy,
 } from './types.js';
 
 // ════════════════════════════════════════════════════════════
@@ -439,6 +440,62 @@ export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): Too
  */
 export function resolveToolApproval(strategy: BehaviorStrategy | undefined): ToolApproval {
   return normalizeEnum(strategy?.act?.toolApproval, ['auto', 'confirm'], 'auto');
+}
+
+// ════════════════════════════════════════════════════════════
+// L2 运行时策略（loop 运行态）装配
+// ════════════════════════════════════════════════════════════
+
+/**
+ * L2 运行时策略默认值（loop 构造初始态）
+ *
+ * 与各 resolve* 的"非法/缺失回退"默认值保持一致——真正每轮生效值来自 resolveL2Strategy，
+ * 本常量仅作 loop 构造期的惰性初始值（T1 收敛，替代 loop 内 11 个字段初始化魔数）。
+ */
+export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
+  toolCallsBlocked: false,
+  maxSelfReviewRounds: 0,
+  toolStepLimit: 0,
+  errorHandling: 'retry',
+  providerRouting: 'auto',
+  inputInterrupt: 'allow',
+  tokenBudget: 8000,
+  stepBudget: 50,
+  multiStepReasoning: 'auto',
+  toolReadonly: 'full',
+  toolApproval: 'auto',
+};
+
+/**
+ * 解析 L2 运行时策略（T1 收敛：替代 Agent 层 11 处 setXxx 逐项装配）
+ *
+ * 聚合现有 10 个 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
+ * 输入中断、Token/步数预算、多步推理、工具只读、工具审批）+ reflect.loopContinue；
+ * 非法值经各 resolve* 归位内核默认；loopContinue 归一为「0=关闭 / 正整数=N 轮执行上限」。
+ *
+ * @param strategy 合并后的行为策略（角色包声明，可为空）
+ * @returns 注入 AgentLoop 的单一运行时策略对象
+ */
+export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2RuntimeStrategy {
+  // loopContinue → 自审查轮数：合法非负整数采用，否则关闭（0 轮）
+  const loopContinue = strategy?.reflect?.loopContinue;
+  const maxSelfReviewRounds =
+    typeof loopContinue === 'number' && Number.isInteger(loopContinue) && loopContinue >= 0
+      ? loopContinue
+      : 0;
+  return {
+    toolCallsBlocked: resolveToolMode(strategy) === 'block',
+    maxSelfReviewRounds,
+    toolStepLimit: resolveToolStepLimit(strategy),
+    errorHandling: resolveErrorHandling(strategy),
+    providerRouting: resolveProviderRouting(strategy),
+    inputInterrupt: resolveInputInterrupt(strategy),
+    tokenBudget: resolveTokenBudget(strategy),
+    stepBudget: resolveStepBudget(strategy),
+    multiStepReasoning: resolveMultiStepReasoning(strategy),
+    toolReadonly: resolveToolReadonly(strategy),
+    toolApproval: resolveToolApproval(strategy),
+  };
 }
 
 // ════════════════════════════════════════════════════════════

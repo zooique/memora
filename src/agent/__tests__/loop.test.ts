@@ -1216,7 +1216,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setMaxSelfReviewRounds(1);
+    loop.setStrategy({ maxSelfReviewRounds: 1 });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('用户问题')) {
@@ -1256,7 +1256,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setMaxSelfReviewRounds(1);
+    loop.setStrategy({ maxSelfReviewRounds: 1 });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -1292,7 +1292,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setMaxSelfReviewRounds(2);
+    loop.setStrategy({ maxSelfReviewRounds: 2 });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -1328,7 +1328,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setMaxSelfReviewRounds(0);
+    loop.setStrategy({ maxSelfReviewRounds: 0 });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -1360,8 +1360,8 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setToolCallsBlocked(true);
-    loop.setMaxSelfReviewRounds(1);
+    loop.setStrategy({ toolCallsBlocked: true });
+    loop.setStrategy({ maxSelfReviewRounds: 1 });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -1744,7 +1744,7 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
     });
 
     // 设置工具调用阻止
-    loop.setToolCallsBlocked(true);
+    loop.setStrategy({ toolCallsBlocked: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('读取文件')) {
@@ -1785,7 +1785,7 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
     });
 
     // 明确允许工具调用（默认值）
-    loop.setToolCallsBlocked(false);
+    loop.setStrategy({ toolCallsBlocked: false });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('读取文件')) {
@@ -1822,7 +1822,7 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
       toolExecutor,
     });
 
-    loop.setToolCallsBlocked(true);
+    loop.setStrategy({ toolCallsBlocked: true });
 
     const texts: string[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2393,7 +2393,7 @@ describe('AgentLoop · Token 预算前置检查（P0）', () => {
     });
 
     // 设置极低的 tokenBudget 触发跳过
-    loop.setTokenBudget(10);
+    loop.setStrategy({ tokenBudget: 10 });
     // 添加一条长消息让 token 估算达预算阈值
     loop['messages'].push({
       role: 'user',
@@ -2420,7 +2420,7 @@ describe('AgentLoop · Token 预算前置检查（P0）', () => {
     });
 
     // 充足的 tokenBudget
-    loop.setTokenBudget(8000);
+    loop.setStrategy({ tokenBudget: 8000 });
 
     const chunks: AgentChunk[] = [];
     const recallMemory = makeMemory({ content: '召回内容' });

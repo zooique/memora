@@ -26,6 +26,8 @@ import type { ICompactionStrategy } from '@/agent/compaction.js';
 import { ResultReplacementStrategy } from '@/agent/compaction.js';
 import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/types.js';
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
+import type { L2RuntimeStrategy } from '@/role-pack/types.js';
+import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -255,11 +257,12 @@ export class AgentLoop {
    */
   onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
   /**
-   * 自审查最大轮数（由 Agent 根据 L2 策略 reflect.loopContinue 设置，Phase 9）
+   * L2 运行时策略（T1 收敛：单一策略对象，替代 11 个离散 setter 与镜像字段）
    *
-   * 0=关闭自审查；N=LLM 纯文本回复后最多自审查 N 轮。
+   * 由 Agent 每轮经 resolveL2Strategy 解析角色包行为策略后 setStrategy 注入；
+   * loop 构造期以 DEFAULT_L2_STRATEGY 惰性初始化。
    */
-  private maxSelfReviewRounds = 0;
+  private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
   private selfReviewRound = 0;
   /**
@@ -272,85 +275,12 @@ export class AgentLoop {
   private currentRoundId = '';
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
   private inAutonomousStep = false;
-  /**
-   * 工具调用是否被 L2 策略阻止（策略 act.toolCalls === 'block' 时置 true）
-   *
-   * 由 Agent 在每轮对话开始前根据当前激活的角色包策略设置。
-   * 为 true 时 handleToolCalls 直接返回 'done'，跳过工具执行。
+  /*
+   * 策略类字段（toolCallsBlocked / toolStepLimit / errorHandling / providerRouting /
+   * inputInterrupt / tokenBudget / stepBudget / multiStepReasoning / toolReadonly /
+   * toolApproval / maxSelfReviewRounds）已收敛为单一 L2RuntimeStrategy 对象（T1 收敛），
+   * 见上方 strategy 字段。读取点统一走 `this.strategy.<field>`。
    */
-  private toolCallsBlocked = false;
-  /**
-   * 单轮工具调用步数上限（由 Agent 根据 L2 策略 act.toolStepLimit 设置，Tier 2）
-   *
-   * 控制单次 LLM 响应中允许的最大工具调用数量。
-   * 0 表示无限制；>0 时超过上限的工具调用被忽略。
-   */
-  private toolStepLimit = 0;
-  /**
-   * 错误处理策略（由 Agent 根据 L2 策略 global.errorHandling 设置，Tier 2）
-   *
-   * 控制 LLM 调用失败后的处理方式：
-   * - 'retry' → 自动重试（默认，最多 MAX_LLM_RETRIES 次）
-   * - 'degrade' → 降级为纯文本回复（跳过工具调用）
-   * - 'stop' → 立即终止对话，抛出错误
-   */
-  private errorHandling: 'retry' | 'degrade' | 'stop' = 'retry';
-  /**
-   * Provider 路由策略（由 Agent 根据 L2 策略 act.providerRouting 设置，Tier 3）
-   *
-   * 控制 LLM 调用时的模型路由行为：
-   * - 'auto' → 按任务类型自动路由（默认）
-   * - 'fixed' → 固定使用当前 Provider
-   */
-  private providerRouting: 'auto' | 'fixed' = 'auto';
-  /**
-   * 输入中断策略（由 Agent 根据 L2 策略 act.inputInterrupt 设置，Tier 3）
-   *
-   * 控制执行中插话行为：
-   * - 'allow' → 允许插话（默认）
-   * - 'block' → 阻止插话，排队到下一轮
-   */
-  private inputInterrupt: 'allow' | 'block' = 'allow';
-  /**
-   * Token 预算上限（由 Agent 根据 L2 策略 global.tokenBudget 设置，Tier 3）
-   *
-   * 控制单轮对话的总 token 消耗上限：
-   * - 0 = 不限制（默认 8000）
-   * - N > 0 = 达到上限时提前结束
-   */
-  private tokenBudget = 8000;
-  /**
-   * 步数预算上限（由 Agent 根据 L2 策略 global.stepBudget 设置，Tier 3）
-   *
-   * 控制单轮对话的最大迭代步数（软上限，配合 maxIterations 双重保护）：
-   * - 0 = 不限制（默认 50）
-   * - N > 0 = 达到上限时提前结束
-   */
-  private stepBudget = 50;
-  /**
-   * 多步推理模式（由 Agent 根据 L2 策略 act.multiStepReasoning 设置，Phase 1）
-   *
-   * 控制 LLM 深度思考行为：
-   * - 'auto' → 由 Provider 自行决定（默认）
-   * - 'manual' → 强制快速回答（跳过深度推理）
-   */
-  private multiStepReasoning: 'auto' | 'manual' = 'auto';
-  /**
-   * 工具只读模式（由 Agent 根据 L2 策略 act.toolReadonly 设置，Phase 3）
-   *
-   * 控制工具操作权限范围：
-   * - 'full' → 完整权限（默认）
-   * - 'readonly' → 仅允许只读工具
-   */
-  private toolReadonly: 'full' | 'readonly' = 'full';
-  /**
-   * 工具审批模式（由 Agent 根据 L2 策略 act.toolApproval 设置，Phase 3）
-   *
-   * 控制工具执行审批行为：
-   * - 'auto' → 自动执行（默认）
-   * - 'confirm' → 执行前等待宿主确认
-   */
-  private toolApproval: 'auto' | 'confirm' = 'auto';
   /** P2-4: 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;
   /** P2-4: 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
@@ -537,8 +467,8 @@ export class AgentLoop {
         this.currentIteration = iteration;
 
         // Tier 3：stepBudget 检查（软上限，0=不限制）
-        if (this.stepBudget > 0 && iteration >= this.stepBudget) {
-          logger.info({ iteration, stepBudget: this.stepBudget }, '达到步数预算上限');
+        if (this.strategy.stepBudget > 0 && iteration >= this.strategy.stepBudget) {
+          logger.info({ iteration, stepBudget: this.strategy.stepBudget }, '达到步数预算上限');
           yield { type: 'text', content: this.ui.maxIterationsReached };
           yield { type: 'done' };
           return;
@@ -546,7 +476,7 @@ export class AgentLoop {
 
         const result = yield* this.handleIteration(iteration, signal);
         // Phase 7+9：自审查轮开始前 emit selfReview chunk，让宿主可展示视觉反馈（round 从 1 起）
-        if (result === 'done' && this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
+        if (result === 'done' && this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
           yield { type: 'selfReview', round: this.selfReviewRound + 1 };
         }
         // P3-1：共享的迭代结果处理（提取自 processUserInput / continueAfterPause 的重复逻辑）
@@ -645,7 +575,7 @@ export class AgentLoop {
       iteration++;
       const result = yield* this.handleIteration(iteration, signal);
       // Phase 7+9：自审查轮开始前 emit selfReview chunk（与 processUserInput 一致）
-      if (result === 'done' && this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
+      if (result === 'done' && this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
         yield { type: 'selfReview', round: this.selfReviewRound + 1 };
       }
       // P3-1：共享的迭代结果处理（与 processUserInput 一致）
@@ -661,118 +591,16 @@ export class AgentLoop {
   }
 
   /**
-   * 设置工具调用是否被 L2 策略阻止
+   * 设置 L2 运行时策略（T1 收敛：替代 11 个离散 setter 的单一入口）
    *
-   * 由 Agent 在每轮对话开始前根据当前激活的角色包策略设置。
+   * 由 Agent 每轮经 resolveL2Strategy 解析角色包行为策略后调用一次。
+   * 与现 strategy 对象按字段浅合并；未提供的维度保持当前值（构造期默认为 DEFAULT_L2_STRATEGY）。
+   * 归一/默认值只在策略解析层（resolveL2Strategy）做——loop 不再二次兜底（单一真理源）。
    *
-   * @param blocked true=阻止工具调用，LLM 仅输出文本
+   * @param partial 需更新/覆盖的运行时策略维度
    */
-  setToolCallsBlocked(blocked: boolean): void {
-    this.toolCallsBlocked = blocked;
-  }
-
-  /**
-   * 设置自审查最大轮数
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 reflect.loopContinue 设置。
-   * 0=关闭；N>0 时，LLM 生成纯文本回复后自动进入最多 N 轮自审查，检查回复质量。
-   */
-  setMaxSelfReviewRounds(rounds: number): void {
-    this.maxSelfReviewRounds = rounds > 0 ? Math.floor(rounds) : 0;
-  }
-
-  /**
-   * 设置单轮工具调用步数上限（Tier 2：act.toolStepLimit）
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 act.toolStepLimit 设置。
-   * 0=无限制；>0 时超过上限的工具调用被忽略，仅保留文本内容。
-   *
-   * @param limit 最大工具调用步数（0=无限制）
-   */
-  setToolStepLimit(limit: number): void {
-    this.toolStepLimit = limit >= 0 ? Math.floor(limit) : 0;
-  }
-
-  /**
-   * 设置错误处理策略（Tier 2：global.errorHandling）
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 global.errorHandling 设置。
-   *
-   * @param handling 错误处理策略（'retry' | 'degrade' | 'stop'）
-   */
-  setErrorHandling(handling: 'retry' | 'degrade' | 'stop'): void {
-    this.errorHandling = handling;
-  }
-
-  /**
-   * 设置 Provider 路由策略（Tier 3：act.providerRouting）
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 act.providerRouting 设置。
-   *
-   * @param routing 路由策略（'auto' | 'fixed'）
-   */
-  setProviderRouting(routing: 'auto' | 'fixed'): void {
-    this.providerRouting = routing;
-  }
-
-  /**
-   * 设置输入中断策略（Tier 3：act.inputInterrupt）
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 act.inputInterrupt 设置。
-   *
-   * @param interrupt 中断策略（'allow' | 'block'）
-   */
-  setInputInterrupt(interrupt: 'allow' | 'block'): void {
-    this.inputInterrupt = interrupt;
-  }
-
-  /**
-   * 设置 Token 预算上限（Tier 3：global.tokenBudget）
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 global.tokenBudget 设置。
-   *
-   * @param budget Token 预算上限（0=不限制）
-   */
-  setTokenBudget(budget: number): void {
-    this.tokenBudget = budget >= 0 ? Math.floor(budget) : 0;
-  }
-
-  /**
-   * 设置步数预算上限（Tier 3：global.stepBudget）
-   *
-   * 由 Agent 在每轮对话开始前根据 L2 策略 global.stepBudget 设置。
-   *
-   * @param budget 步数预算上限（0=不限制）
-   */
-  setStepBudget(budget: number): void {
-    this.stepBudget = budget >= 0 ? Math.floor(budget) : 0;
-  }
-
-  /**
-   * 设置多步推理模式（Phase 1：act.multiStepReasoning）
-   *
-   * @param reasoning 推理模式（'auto' | 'manual'）
-   */
-  setMultiStepReasoning(reasoning: 'auto' | 'manual'): void {
-    this.multiStepReasoning = reasoning;
-  }
-
-  /**
-   * 设置工具只读模式（Phase 3：act.toolReadonly）
-   *
-   * @param readonly 工具模式（'full' | 'readonly'）
-   */
-  setToolReadonly(readonly: 'full' | 'readonly'): void {
-    this.toolReadonly = readonly;
-  }
-
-  /**
-   * 设置工具审批模式（Phase 3：act.toolApproval）
-   *
-   * @param approval 审批模式（'auto' | 'confirm'）
-   */
-  setToolApproval(approval: 'auto' | 'confirm'): void {
-    this.toolApproval = approval;
+  setStrategy(partial: Partial<L2RuntimeStrategy>): void {
+    this.strategy = { ...this.strategy, ...partial };
   }
 
   /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
@@ -824,7 +652,7 @@ export class AgentLoop {
    */
   interject(content: string): void {
     // Tier 3：inputInterrupt='block' 时阻止插话，排队到下一轮
-    if (this.inputInterrupt === 'block') {
+    if (this.strategy.inputInterrupt === 'block') {
       // 排队插话内容，processUserInput 下一轮迭代边界消费
       this.pendingInterjections.push(content);
       return;
@@ -890,12 +718,12 @@ export class AgentLoop {
     // result === 'done'
     // 自审查轮：LLM 生成纯文本回复后，若配置了自审查轮次且未达上限，注入提示继续 1 轮
     // 当 toolCallsBlocked 时，'done' 来自系统占位文本而非 LLM 回复，跳过自审查（P4-2）
-    if (this.maxSelfReviewRounds > 0 && this.selfReviewRound < this.maxSelfReviewRounds && !this.toolCallsBlocked) {
+    if (this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
       // Phase 9：轮次递增 + 提示携带当前轮次/总轮数
       this.selfReviewRound++;
       this.messages.push({
         role: 'system',
-        content: this.ui.selfReviewPrompt(this.selfReviewRound, this.maxSelfReviewRounds),
+        content: this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds),
       });
       return true;
     }
@@ -1032,10 +860,10 @@ export class AgentLoop {
     // ─── 微压缩层结束 ──────────────────────────────────────────────
 
     // Tier 3：tokenBudget 检查（软上限，0=不限制）
-    if (this.tokenBudget > 0) {
+    if (this.strategy.tokenBudget > 0) {
       const estimatedTokens = this.contextManager.estimateTokens(this.messages);
-      if (estimatedTokens >= this.tokenBudget) {
-        logger.info({ estimatedTokens, tokenBudget: this.tokenBudget }, '达到 Token 预算上限');
+      if (estimatedTokens >= this.strategy.tokenBudget) {
+        logger.info({ estimatedTokens, tokenBudget: this.strategy.tokenBudget }, '达到 Token 预算上限');
         yield { type: 'text', content: '\n\n[Token budget reached]' };
         return 'done';
       }
@@ -1102,7 +930,7 @@ export class AgentLoop {
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, 'aborted' | 'continue' | 'done', unknown> {
     // L2 策略阻止工具调用：跳过执行，仅保留文本内容
-    if (this.toolCallsBlocked) {
+    if (this.strategy.toolCallsBlocked) {
       const blockedMsg = llmResult.fullContent.trim() || '（当前角色不允许调用工具）';
       this.messages.push({ role: 'assistant', content: blockedMsg });
       yield { type: 'text', content: blockedMsg };
@@ -1113,12 +941,12 @@ export class AgentLoop {
     // Tier 2：工具步数上限检查（act.toolStepLimit）
     // 当工具调用数超过上限时，仅保留前 N 个，多余的转为纯文本回复
     let effectiveToolCalls = llmResult.toolCalls!;
-    if (this.toolStepLimit > 0 && effectiveToolCalls.length > this.toolStepLimit) {
+    if (this.strategy.toolStepLimit > 0 && effectiveToolCalls.length > this.strategy.toolStepLimit) {
       logger.debug({
         requested: effectiveToolCalls.length,
-        limit: this.toolStepLimit,
+        limit: this.strategy.toolStepLimit,
       }, '工具步数超限，截断至上限');
-      effectiveToolCalls = effectiveToolCalls.slice(0, this.toolStepLimit);
+      effectiveToolCalls = effectiveToolCalls.slice(0, this.strategy.toolStepLimit);
     }
 
     const execResult = yield* this.executeToolCalls(
@@ -1357,7 +1185,7 @@ export class AgentLoop {
     };
 
     // Phase 1：multiStepReasoning='manual' → 强制低推理深度（若 Provider 支持）
-    if (this.multiStepReasoning === 'manual') {
+    if (this.strategy.multiStepReasoning === 'manual') {
       effectiveOpts.reasoning_effort = 'low';
     }
 
@@ -1365,7 +1193,7 @@ export class AgentLoop {
     // SSOT：缓存是 providerRouter 的装饰器，不是新机制——
     // 同一 taskType 在单轮对话内映射到同一 Provider，缓存后避免重复路由计算。
     let effectiveProvider: LlmProvider;
-    if (this.providerRouting === 'fixed') {
+    if (this.strategy.providerRouting === 'fixed') {
       effectiveProvider = this.opts.provider;
     } else if (this.opts.providerRouter) {
       const taskType = this.determineTaskType(safeMessages);
@@ -1458,7 +1286,7 @@ export class AgentLoop {
         }
 
         // Tier 2：errorHandling === 'stop' → 立即抛出，不重试
-        if (this.errorHandling === 'stop') {
+        if (this.strategy.errorHandling === 'stop') {
           llmSpan.recordException(e);
           llmSpan.end();
           throw lastError;
@@ -1467,7 +1295,7 @@ export class AgentLoop {
         if (streamStarted) {
           // 流式已开始输出，不能重试（用户已看到部分结果）
           // Tier 2：errorHandling === 'degrade' → 降级为纯文本回复
-          if (this.errorHandling === 'degrade') {
+          if (this.strategy.errorHandling === 'degrade') {
             logger.warn({ err: e }, 'LLM 流式中途失败，降级为已生成的文本内容');
             llmSpan.end();
             return { fullContent, toolCalls: undefined, aborted: false };
@@ -1479,7 +1307,7 @@ export class AgentLoop {
         if (attempt >= LOOP_CONSTANTS.MAX_LLM_RETRIES) {
           // 重试次数耗尽
           // Tier 2：errorHandling === 'degrade' → 降级为纯文本回复
-          if (this.errorHandling === 'degrade') {
+          if (this.strategy.errorHandling === 'degrade') {
             const degradedMsg = '抱歉，AI 服务暂时不可用，请稍后重试。';
             logger.warn({ err: e }, 'LLM 重试耗尽，降级回复');
             llmSpan.end();
@@ -1676,7 +1504,7 @@ export class AgentLoop {
       // 放行（skip=false）：允许执行，可选携带 overrideArgs 改写后的参数。
 
       // Phase 3：toolReadonly='readonly' → 阻止非只读工具
-      if (this.toolReadonly === 'readonly') {
+      if (this.strategy.toolReadonly === 'readonly') {
         const toolDef = this.opts.builtinTools?.find((t) => t.name === tc.function.name);
         if (toolDef && !toolDef.readonly) {
           logger.warn(
@@ -1688,7 +1516,7 @@ export class AgentLoop {
       }
 
       // Phase 3：toolApproval='confirm' → 触发审批回调
-      if (this.toolApproval === 'confirm') {
+      if (this.strategy.toolApproval === 'confirm') {
         this.onToolApproval?.({
           toolName: tc.function.name,
           args: tc.function.arguments,
@@ -2262,8 +2090,8 @@ export class AgentLoop {
     const currentTokens = this.contextManager.estimateTokens(this.messages);
 
     // 软上限：tokenBudget（0 = 不限制）
-    if (this.tokenBudget > 0 && currentTokens >= this.tokenBudget * 0.8) {
-      logger.debug({ currentTokens, budget: this.tokenBudget }, 'Token budget 80% reached, skip recall');
+    if (this.strategy.tokenBudget > 0 && currentTokens >= this.strategy.tokenBudget * 0.8) {
+      logger.debug({ currentTokens, budget: this.strategy.tokenBudget }, 'Token budget 80% reached, skip recall');
       return true;
     }
 

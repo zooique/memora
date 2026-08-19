@@ -276,6 +276,40 @@ export interface BehaviorStrategy {
 // ════════════════════════════════════════════════════════════
 
 /**
+ * L2 运行时策略（loop 运行态，单一策略对象）
+ *
+ * 由 BehaviorStrategy（角色包声明）经 resolveL2Strategy 解析 + 默认值兜底后，
+ * 经 AgentLoop.setStrategy 一次性注入，替代原 11 个离散 setter 与镜像字段（T1 收敛）。
+ * 只含"角色包可影响"的行为维度；内核内部常数（重试次数/去重阈值）不在此列。
+ *
+ * 详见 docs/memora-polish-roadmap.md（T1）。
+ */
+export interface L2RuntimeStrategy {
+  /** 工具调用是否被阻止（toolMode==='block' 时为 true） */
+  readonly toolCallsBlocked: boolean;
+  /** 自审查最大轮数（reflect.loopContinue：0=关闭 / N=最多 N 轮） */
+  readonly maxSelfReviewRounds: number;
+  /** 单轮工具调用步数上限（act.toolStepLimit：0=无限制 / N=限制步数） */
+  readonly toolStepLimit: number;
+  /** 错误处理策略（global.errorHandling） */
+  readonly errorHandling: ErrorHandling;
+  /** Provider 路由策略（act.providerRouting） */
+  readonly providerRouting: ProviderRouting;
+  /** 输入中断策略（act.inputInterrupt） */
+  readonly inputInterrupt: InputInterrupt;
+  /** Token 预算上限（global.tokenBudget：0=不限制） */
+  readonly tokenBudget: number;
+  /** 步数预算上限（global.stepBudget：0=不限制） */
+  readonly stepBudget: number;
+  /** 多步推理模式（act.multiStepReasoning） */
+  readonly multiStepReasoning: MultiStepReasoning;
+  /** 工具只读模式（act.toolReadonly） */
+  readonly toolReadonly: ToolReadonly;
+  /** 工具审批模式（act.toolApproval） */
+  readonly toolApproval: ToolApproval;
+}
+
+/**
  * 能力声明（manifest.skills 中带 capability 的项派生）
  *
  * 对齐 role-pack-spec §四：以中立能力命名空间声明（`file:write` / `web:search`），
@@ -571,6 +605,7 @@ export {
   resolveSummaryRecall,
   resolveToolReadonly,
   resolveToolApproval,
+  resolveL2Strategy,
   mergeStrategy,
   assembleRolePack,
 } from './strategyResolver.js';
