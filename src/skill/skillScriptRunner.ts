@@ -108,11 +108,12 @@ function resolveCommand(
     case 'python':
       return { command: 'python', args: [scriptPath, ...args] };
     case 'shell':
-      // Windows 用 cmd /c，其余平台用 sh -c
+      // Windows 用 cmd /c，其余平台用 sh 直接解释脚本文件
+      // 注意：用 sh <scriptPath> 而非 sh -c（-c 把路径当命令执行，依赖文件可执行位，POSIX 下无 chmod 会报 126）
       if (process.platform === 'win32') {
         return { command: 'cmd', args: ['/c', scriptPath, ...args] };
       }
-      return { command: 'sh', args: ['-c', scriptPath, ...args] };
+      return { command: 'sh', args: [scriptPath, ...args] };
     default:
       return { command: scriptPath, args };
   }
