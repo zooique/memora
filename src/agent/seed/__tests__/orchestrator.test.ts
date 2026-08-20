@@ -48,7 +48,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('runChat 完整闭环：prepare → act → reflect → handoff 顺序产出', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');
-    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
+    consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
 
     const { chunks } = await collectGen(
       new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal),
@@ -70,7 +70,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('reflect 守卫：reflect.summary=off 时跳过摘要生成（不沉淀）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');
-    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
+    consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
     // summary=off → runSummary 门控跳过（一次性对话不沉淀）
     useStrategy(mocks, makeStrategy({ summary: 'off' }));
 
@@ -86,7 +86,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('reflect 守卫：prepare.summaryFocus 透传给摘要生成（提炼视角注入）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');
-    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
+    consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
     const focus = '聚焦代码结构与 diff 变更';
     useStrategy(mocks, makeStrategy({ summaryFocus: focus }));
 
@@ -122,7 +122,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('runChat 回答中失败：不触发回答后与 handoff', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
-    consumeControl.result = { content: '', aborted: false, failed: true };
+    consumeControl.result = { content: '', aborted: false, paused: false, failed: true };
 
     const { chunks } = await collectGen(
       new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
@@ -136,7 +136,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('runChat 回答中中断：不触发回答后与 handoff', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
-    consumeControl.result = { content: '部分', aborted: true, failed: false };
+    consumeControl.result = { content: '部分', aborted: true, paused: false, failed: false };
 
     const { chunks } = await collectGen(
       new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
@@ -151,11 +151,34 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
+  it('runChat 回答中软暂停（paused）：问题全文入史但不产摘要、不 handoff（摘要 1:1）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '');
+    // [ASK] 主动提问挂起：streamResult.paused=true，本轮回合未完成
+    consumeControl.result = { content: '这个颜色你喜欢吗？', aborted: false, paused: true, failed: false };
+
+    const { chunks } = await collectGen(
+      new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 暂停轮问题全文仍入史（供续跑上下文完整），但不触发归档指示
+    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
+      '这个颜色你喜欢吗？',
+      expect.any(String),
+    );
+    expect(chunks).not.toContainEqual({ type: 'thinking', phase: 'archiving' });
+    // 摘要推迟到续跑最终轮：本轮不产摘要
+    expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
+    // 续跑态不在闭环出口分岔：不产 handoff
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
+  });
+
   // ── runEvent ────────────────────────────────────────────
   it('runEvent 应生成任务表：shouldGenerateTaskTable 命中 → 注入 TASK_TABLE_HINT', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessEvent(mocks, '事件回复');
-    consumeControl.result = { content: '事件回复', aborted: false, failed: false };
+    consumeControl.result = { content: '事件回复', aborted: false, paused: false, failed: false };
     mocks.checkpointRestoreCoordinator.shouldGenerateTaskTable.mockReturnValue(true);
 
     const { chunks } = await collectGen(
@@ -182,7 +205,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('runEvent 不生成任务表：shouldGenerateTaskTable 未命中 → 不注入', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessEvent(mocks, '回复');
-    consumeControl.result = { content: '回复', aborted: false, failed: false };
+    consumeControl.result = { content: '回复', aborted: false, paused: false, failed: false };
     // 默认 shouldGenerateTaskTable 返回 false
 
     await collectGen(
@@ -198,7 +221,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       getBackgroundProvider: () => mockProvider('complex'),
     });
     stubProcessEvent(mocks, '事件回复');
-    consumeControl.result = { content: '事件回复', aborted: false, failed: false };
+    consumeControl.result = { content: '事件回复', aborted: false, paused: false, failed: false };
     // 已收敛：plan 含 done 步骤 → settle 触发汇报
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
@@ -235,7 +258,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       getBackgroundProvider: () => mockProvider('complex'),
     });
     stubProcessEvent(mocks, '事件回复');
-    consumeControl.result = { content: '事件回复', aborted: false, failed: false };
+    consumeControl.result = { content: '事件回复', aborted: false, paused: false, failed: false };
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
       plan: [{ id: 's1', status: 'done', description: '步骤一' }],
@@ -267,7 +290,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
   it('runResume：act(continueAfterPause) → reflect；无回答前、无 Handoff', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubContinue(mocks, '续跑回复');
-    consumeControl.result = { content: '续跑回复', aborted: false, failed: false };
+    consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
 
     const { chunks } = await collectGen(
       new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal),
@@ -298,7 +321,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       { id: 's2', status: 'pending', description: '步骤二' },
     ];
     mocks.sessionManager.getCheckpoint.mockImplementation(() => ({ sessionId: 'sess', plan }));
-    consumeControl.result = { content: '答', aborted: false, failed: false };
+    consumeControl.result = { content: '答', aborted: false, paused: false, failed: false };
     // 汇报闭环返回文本流
     mocks.loop.runReport.mockReturnValue(textStream('【任务总结汇报】已完成，结论 X'));
 
@@ -365,7 +388,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       plan: [{ id: 's1', status: 'done', description: '步骤一' }],
     });
     stubProcessUserInput(mocks, '规划内容');
-    consumeControl.result = { content: '规划内容', aborted: false, failed: false };
+    consumeControl.result = { content: '规划内容', aborted: false, paused: false, failed: false };
     // 汇报闭环返回空流（LLM 未产出真实收尾内容）
     mocks.loop.runReport.mockImplementation(function* () {});
 
@@ -394,7 +417,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       plan: [{ id: 's1', status: 'done', description: '步骤一' }],
     });
     stubProcessUserInput(mocks, '规划内容');
-    consumeControl.result = { content: '规划内容', aborted: false, failed: false };
+    consumeControl.result = { content: '规划内容', aborted: false, paused: false, failed: false };
     // 汇报仅返回 token 预算占位文本 -> 视作未产出真实收尾
     mocks.loop.runReport.mockReturnValue(
       textStream(`\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}`),
@@ -420,7 +443,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       getBackgroundProvider: () => mockProvider('complex'),
     });
     stubProcessUserInput(mocks, '回复');
-    consumeControl.result = { content: '回复', aborted: false, failed: false };
+    consumeControl.result = { content: '回复', aborted: false, paused: false, failed: false };
     // 未收敛：plan 为空或全 pending
     mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan: [] });
 
@@ -448,7 +471,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     // 显式关闭外部任务循环（0=关闭，见 role-pack-spec global.taskLoopLimit）
     useStrategy(mocks, makeStrategy({ taskLoopLimit: 0 }));
     stubProcessUserInput(mocks, '直接答');
-    consumeControl.result = { content: '直接答', aborted: false, failed: false };
+    consumeControl.result = { content: '直接答', aborted: false, paused: false, failed: false };
     // 即使有已完成 plan 步骤，也不应进入外循环
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
@@ -477,7 +500,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       getBackgroundProvider: () => mockProvider('simple'),
     });
     stubProcessUserInput(mocks, '直接答');
-    consumeControl.result = { content: '直接答', aborted: false, failed: false };
+    consumeControl.result = { content: '直接答', aborted: false, paused: false, failed: false };
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
       plan: [{ id: 's1', status: 'done' }],

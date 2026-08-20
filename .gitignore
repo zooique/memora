@@ -36,6 +36,9 @@ service-account*.json
 .DS_Store
 Thumbs.db
 
+# 工具内部状态
+.workbuddy/
+
 # 用户特定数据
 .memora-data/
 data/local/

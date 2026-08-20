@@ -581,11 +581,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             // 全为低风险才不计入连续暂停计数——用 every：只要存在高风险，本次暂停就确实在索取确认、应消耗配额；
             // some 会让混合场景免费逃逸计数，反向打开滥用面。
             const allLowRisk = composeResult.needClarify.every((q) => q.lowRisk);
-            this.pause(
-              `需要澄清：${composeResult.needClarify.map((q) => q.question).join('; ')}`,
-              'agent',
-              allLowRisk,
-            );
+            const clarifyReason = `需要澄清：${composeResult.needClarify
+              .map((q) => q.question)
+              .join('; ')}`;
+            this.pause(clarifyReason, 'agent', allLowRisk);
+            // P4 直接暂停不经流收口（无 paused chunk）→ 在此补写 pauseMeta，与流中暂停路径一致
+            this._sessionManager?.setPauseMeta({ reason: clarifyReason, source: 'agent' });
             yield { type: 'done' };
             return;
           }
@@ -699,9 +700,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private async *consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
-  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; failed: boolean }, unknown> {
+  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean }, unknown> {
     let content = '';
     let aborted = false;
+    // 软暂停标记：loop 在迭代边界挂起（用户 requestPause / [ASK] 主动提问）时置真，
+    // 供编排器据此推迟摘要——回合未完成不产摘要，保摘要与外部输入 1:1
+    let paused = false;
 
     try {
       for await (const chunk of source) {
@@ -709,7 +713,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 与 requestPause 空闲分支同源，须传 lowRisk=true 保持同一暂停事件契约（否则流中暂停计入 P4 配额）
         if (chunk.type === 'paused') {
           const pendingInfo = this._sessionManager?.consumePendingPause();
-          this.pause(pendingInfo?.reason ?? '用户主动暂停', pendingInfo?.source ?? 'user', true);
+          // 暂停收口统一写 pauseMeta：reason/source 取自 pendingPause（与状态机一致）。
+          // [ASK] 主动提问等"直接暂停路径"不走 loop.onPaused，在此自然补齐，
+          // 重启后宿主可展示"为什么暂停 + 问了什么"
+          const pauseReason = pendingInfo?.reason ?? '用户主动暂停';
+          const pauseSource = pendingInfo?.source ?? 'user';
+          this.pause(pauseReason, pauseSource, true);
+          this._sessionManager?.setPauseMeta({ reason: pauseReason, source: pauseSource });
+          paused = true;
         }
         yield chunk;
         if (chunk.type === 'text') {
@@ -724,7 +735,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       } else {
         yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
       }
-      return { content, aborted, failed: true };
+      return { content, aborted, paused, failed: true };
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求
       this._sessionManager?.cancelPendingPause();
@@ -732,7 +743,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.requireLoop.clearPauseRequest();
     }
 
-    return { content, aborted, failed: false };
+    return { content, aborted, paused, failed: false };
   }
 
   /**

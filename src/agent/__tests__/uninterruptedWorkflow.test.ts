@@ -1948,6 +1948,48 @@ class SingleToolThenTextProvider extends LlmProvider {
   }
 }
 
+/**
+ * [ASK] 主动提问 → 回答 → 续跑 Provider（集成测试专用）
+ *
+ * 设计要点（对抗式复核）：
+ * - 摘要生成器（RoundSummaryGenerator）用主 provider 生成摘要——识别系统标记
+ *   '对话摘要生成器' 返回有效 JSON，同时累计 summaryRequestCount 作为「恒 1:1」断言依据。
+ * - 主对话按「是否已输出过 [ASK]」分岔：首轮输出 [ASK] 挂起等待回答；续跑轮
+ *   （上下文含问题 + 用户回答）正常作答，不再触发 [ASK]。
+ * - 记录续跑轮收到的完整消息列表（resumeMessages），供断言续跑上下文含「问题 + 回答」。
+ */
+class AskThenResumeProvider extends LlmProvider {
+  readonly name = 'mock-ask-resume';
+  /** 摘要生成请求计数（RoundSummaryGenerator 调用次数 = 已产 round-summary 条数） */
+  summaryRequestCount = 0;
+  /** 首轮是否已输出 [ASK]（分岔：首轮挂起，续跑轮正常作答） */
+  private asked = false;
+  /** 续跑轮（第二轮主对话）收到的完整消息列表，供断言上下文含问题 + 回答 */
+  resumeMessages: Message[] | null = null;
+
+  async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    const sysContent = messages.find((m) => m.role === 'system')?.content;
+    // 摘要生成器调用：计数 + 返回有效 JSON（不消耗主对话分岔状态）
+    if (typeof sysContent === 'string' && sysContent.includes('对话摘要生成器')) {
+      this.summaryRequestCount += 1;
+      yield { content: JSON.stringify({ summary: '测试摘要', type: 'general' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    if (!this.asked) {
+      this.asked = true;
+      // 首轮：[ASK] 主动提问，问题全文入史后暂停等待用户回答
+      yield { content: '在读取文件前需要确认：\n[ASK] 你想读哪个文件？' };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    // 续跑轮：上下文应含「问题 + 用户回答」（用户回答已注入 messages），正常收尾
+    this.resumeMessages = messages;
+    yield { content: '好的，继续执行。' };
+    yield { finishReason: 'stop' };
+  }
+}
+
 describe('SSOT 排雷防回归 · 暂停链路', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2042,8 +2084,8 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       agent = makeMultiTurnAgent();
       await agent.init();
       // 关键：不预建 checkpoint，直接走流中暂停路径（真实内核路径，宿主未兜底）。
-      // setPauseMeta 由 loop.onPaused 在 pause() 翻状态机建 checkpoint 之前触发，
-      // 若「无 checkpoint」守卫静默丢弃 pauseMeta，本用例将失败。
+      // pauseMeta 由暂停收口（consumeExecutionStream）在 pause() 建检查点之后写入，
+      // 若「无 checkpoint」时 pauseMeta 静默丢弃，本用例将失败。
       let sawPaused = false;
       for await (const chunk of agent.chat('读取探针文件')) {
         if (chunk.type === 'tool_result') agent.requestPause('首轮流中暂停', 'user');
@@ -2084,7 +2126,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       if (chunk.type === 'tool_result') agent.requestPause('续跑中第二次暂停', 'user');
     }
 
-    // pauseMeta 由 loop.onPaused 回调写入，状态机与检查点必须与之一致
+    // pauseMeta 由暂停收口写入，状态机与检查点必须与之一致
     expect(agent.sessionManager!.getCheckpoint()!.status).toBe('paused');
   });
 
@@ -2130,6 +2172,63 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     }
 
     expect(agent.requestPause('崩溃后的暂停', 'user')).toBe(true);
+  });
+
+  it('Agent 级集成：[ASK] 主动提问 → 暂停不产摘要 → 回答续跑 → 恒 1:1 摘要', { timeout: 30000 }, async () => {
+    const askProvider = new AskThenResumeProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: askProvider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // ── (a)(b)：首轮 [ASK] 主动提问 ─────────────────────────────
+    const pendingEvents: unknown[] = [];
+    agent.on('questionPending', (data: unknown) => pendingEvents.push(data));
+
+    const chunks: Array<{ type: string; content?: string; questions?: unknown }> = [];
+    for await (const chunk of agent.chat('帮我读取一个文件')) {
+      chunks.push(chunk as { type: string; content?: string; questions?: unknown });
+    }
+
+    // 结构化 question_pending 事件发射（宿主可渲染提问 UI）+ 流中 question_pending chunk
+    expect(pendingEvents.length).toBe(1);
+    expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
+    // 会话进入 PAUSED（[ASK] 主动提问走软暂停，等待用户回答续跑）
+    expect(agent.sessionManager!.status).toBe('paused');
+    // (a) 问题全文入史：历史中 assistant 消息含 [ASK] 问题文本
+    const historyText = agent
+      .getMessages()
+      .filter((m) => m.role === 'assistant')
+      .map((m) => String(m.content))
+      .join('\n');
+    expect(historyText).toContain('[ASK] 你想读哪个文件？');
+    // 暂停原因/来源落检查点（收口统一写：source='agent'，重启后宿主可展示"为什么暂停 + 问了什么"）
+    const pauseMeta = agent.sessionManager!.getCheckpoint()!.pauseMeta;
+    expect(pauseMeta).toBeDefined();
+    expect(pauseMeta!.source).toBe('agent');
+    // (b) 暂停轮不产摘要：回合未完成，摘要推迟到续跑最终轮
+    expect(askProvider.summaryRequestCount).toBe(0);
+
+    // ── (c)(d)：回答续跑 → 恒 1:1 摘要 ──────────────────────────
+    for await (const chunk of agent.resumeExecution('我想读 probe.txt')) {
+      chunks.push(chunk as { type: string; content?: string; questions?: unknown });
+    }
+    expect(agent.sessionManager!.status).toBe('running');
+
+    // (c) 续跑上下文含「问题 + 回答」：LLM 下一轮可见自己问过什么 + 用户回答
+    const resumeText = (askProvider.resumeMessages ?? [])
+      .map((m) => String(m.content))
+      .join('\n');
+    expect(resumeText).toContain('[ASK] 你想读哪个文件？');
+    expect(resumeText).toContain('我想读 probe.txt');
+
+    // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
+    await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
   });
 });
 

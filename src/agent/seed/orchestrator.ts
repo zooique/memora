@@ -113,7 +113,7 @@ export class SeedOrchestrator {
           this.deps.getParts().loop.getCurrentRoundId(),
         );
     const acted = yield* this.act(produce);
-    if (acted.failed || acted.aborted) return;
+    if (acted.failed || acted.aborted || acted.paused) return;
 
     // 回答后：普通回答摘要
     this.backgroundReflect(input, acted.content);
@@ -158,7 +158,7 @@ export class SeedOrchestrator {
     // 回答中：消费 loop.processEvent 执行流 + 统一尾处理
     const produce = () => parts.loop.processEvent(event, prepared.recalledMemories, signal);
     const acted = yield* this.act(produce);
-    if (acted.failed || acted.aborted) return;
+    if (acted.failed || acted.aborted || acted.paused) return;
 
     // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
     yield* this.settle(difficulty, input, acted.content, signal);
@@ -184,7 +184,7 @@ export class SeedOrchestrator {
     // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
     const produce = () => this.deps.getParts().loop.continueAfterPause(input, signal);
     const acted = yield* this.act(produce);
-    if (acted.failed || acted.aborted) return;
+    if (acted.failed || acted.aborted || acted.paused) return;
 
     // 回答后（无 Handoff：续跑态不在闭环出口分岔）
     void this.backgroundReflect(input ?? '', acted.content);
@@ -229,6 +229,7 @@ export class SeedOrchestrator {
       return {
         content: assistantContent,
         aborted: true,
+        paused: false,
         failed: false,
       } satisfies StreamConsumeResult;
     }
@@ -238,6 +239,11 @@ export class SeedOrchestrator {
       await history.appendAssistant(assistantContent, loop.getCurrentRoundId());
     } catch (err) {
       logger.warn({ err }, '助手消息历史写入失败');
+    }
+
+    // 暂停挂起轮：本轮无摘要/无归档动作，不产出归档指示（避免 UI 暂停态被 "archiving" 覆盖）
+    if (streamResult.paused) {
+      return streamResult satisfies StreamConsumeResult;
     }
 
     yield { type: 'thinking', phase: 'archiving' };

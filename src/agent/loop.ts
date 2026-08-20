@@ -155,8 +155,6 @@ export class AgentLoop {
   private inAutonomousStep = false;
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
-  /** 暂停回调——loop 在迭代边界真正挂起时调用 */
-  onPaused?: () => void;
   /** 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
   onRoundBoundary?: (roundInfo: { stepId?: string; summary: string }) => void;
   /** 工具审批回调——当 toolApproval='confirm' 时触发 */
@@ -590,10 +588,10 @@ export class AgentLoop {
   private async *_handleInterrupt(
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, 'paused' | 'aborted' | AbortSignal | undefined, unknown> {
-    // 软暂停：在迭代边界挂起生成器（不 abort，保留 this.messages 供续跑）
+    // 软暂停：在迭代边界挂起生成器（不 abort，保留 this.messages 供续跑）；
+    // 暂停通知走 yield {type:'paused'} chunk，由 consumeExecutionStream 收口统一翻态 + 写 pauseMeta
     if (this.pauseRequested) {
       this.pauseRequested = false;
-      this.onPaused?.();
       yield { type: 'paused' };
       return 'paused';
     }
@@ -838,6 +836,12 @@ export class AgentLoop {
     // 约定：`[ASK]` 位于行首（可多条），其后到行尾为问题文本
     const pendingQuestions = this.extractAskQuestions(llmResult.fullContent);
     if (pendingQuestions.length > 0) {
+      // 问题全文入史（含 [ASK] 行周围正文）：续跑时 LLM 需记得自己问过什么，
+      // 否则用户短回答（如"红色"）会在无问题上下文下断链。UI 展示与历史落史分离——
+      // UI 只渲染 question_pending 的问题文本，历史保存全文。
+      if (llmResult.fullContent) {
+        this.appendAssistantText(llmResult.fullContent);
+      }
       // 回调已在此时触发 pause（设 pauseRequested + 状态机 pendingPause），
       // yield paused 后 consumeExecutionStream 会消费 pendingPause 并翻 PAUSED
       this.onPendingQuestion?.(pendingQuestions);

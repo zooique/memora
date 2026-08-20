@@ -316,12 +316,13 @@ function dispatchSessionEvent(sm: SessionManager, eventType: string, detail: str
 }
 
 /**
- * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPaused/onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
+ * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
  *
  * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
  * 属装配职责（装配逻辑单一真理源）。
+ * 注：loop.onPaused 不再在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
  *
- * @param loop AgentLoop（装配其 onPaused/onPendingQuestion/onRoundBoundary/getTaskTable）
+ * @param loop AgentLoop（装配其 onPendingQuestion/onRoundBoundary/getTaskTable）
  * @param toolExec 工具执行器（装配其 planManager）
  * @param sessionManager 会话管理器（全部闭包的操作落点）
  * @param hooks Agent 门面注入的稳定能力（emit/requestPause；可选，缺省 no-op）
@@ -334,15 +335,6 @@ function wireRuntimeCallbacks(
 ): void {
   // 兜底停滞计数器：连续无 task_table_update 的回合数（装配期闭包，rebuild 重建归零）
   let stalledRoundCount = 0;
-
-  loop.onPaused = () => {
-    // loop 在边界真正挂起时触发，设置 pauseMeta（暂停原因/来源从 SessionStateMachine 读取）
-    const pendingInfo = sessionManager.pendingPauseInfo;
-    sessionManager.setPauseMeta({
-      reason: pendingInfo?.reason ?? '用户主动暂停',
-      source: pendingInfo?.source ?? 'user',
-    });
-  };
 
   // 主动提问（回答中检测到 LLM 结构化输出 [ASK]）：发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停。
   // 与 needClarify（P4 目标槽位补全）触发源不同，但共享 pause/resume 机制
@@ -761,7 +753,7 @@ export async function assembleComponents(
     });
   loopRef = loop;
 
-  // 装配 loop 运行时回调 + 任务表管理（onPaused/onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
+  // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks);
 
   // ── 依赖 Loop 的组件 ──

@@ -145,7 +145,7 @@ export function buildParts(mocks: SeedMocks): SeedParts {
 export function createHarness(overrides: Partial<SeedDeps> = {}) {
   // 可变的当前轮 ID（测试借 setCurrentRoundId 状态推进；getCurrentRoundId 读同一状态）
   const consumeControl: ConsumeControl = {
-    result: { content: 'assistant-答', aborted: false, failed: false },
+    result: { content: 'assistant-答', aborted: false, paused: false, failed: false },
   };
   // loop roundId 的原子状态：供 setCurrentRoundId/getCurrentRoundId 共享，模拟真实 loop 的轮次推进
   let currentRoundId = 'round-1';

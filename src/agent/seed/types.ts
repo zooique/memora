@@ -31,11 +31,13 @@ import type { ITracer } from '@/agent/tracer.js';
  * 流消费结果（consumeExecutionStream 的返回约定）
  *
  * content = 累积的文本；aborted = 是否被中断（含 appendAssistant 中断标记前置）；
+ * paused = 是否在迭代边界软暂停挂起（回合未完成，摘要应推迟到续跑最终轮，保摘要 1:1）；
  * failed = 是否执行出错（错误 chunk 已 yield 给调用方，本结果为提前返回信号）。
  */
 export interface StreamConsumeResult {
   content: string;
   aborted: boolean;
+  paused: boolean;
   failed: boolean;
 }
 

@@ -134,7 +134,7 @@ export class SessionStateMachine {
     return this.pendingPauseReason !== undefined;
   }
 
-  /** 待处理暂停信息（只读不消费）；供 loop.onPaused 读暂停信息写 pauseMeta */
+  /** 待处理暂停信息（只读不消费）；供 close() 清理残留暂停 / 暂停收口核对原因来源时读取 */
   get pendingPauseInfo(): { reason: string; source: PauseSource } | null {
     if (this.pendingPauseReason === undefined) return null;
     return { reason: this.pendingPauseReason, source: this.pendingPauseSource };

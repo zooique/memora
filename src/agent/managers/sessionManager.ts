@@ -1073,18 +1073,12 @@ export class SessionManager {
     this.flushCheckpoint();
   }
 
-  /** 设置暂停元数据；传 undefined 清除 */
+  /** 设置暂停元数据；传 undefined 清除。写后必须落盘（清除也落盘，避免磁盘残留与内存分叉） */
   setPauseMeta(meta: PauseMeta | undefined): void {
-    // 首轮兜底：loop.onPaused 早于 pause() 翻状态机，此时可能尚无 checkpoint，
-    // 守卫会让 pauseMeta 静默丢弃 → 重启回落兜底文案。仅"要写入且无 checkpoint"时补建
-    if (!this.checkpoint && meta !== undefined) {
-      this.createCheckpoint();
-    }
+    // 调用方保证检查点已存在：pauseMeta 总在 pause()（建检查点）之后写入（暂停收口统一写）
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();
-    // 必须落盘：本方法由 loop.onPaused 在 pause() 之前触发（与早期注释时序相反），是 pauseMeta 进检查点唯一时机；
-    // 传 undefined 也需落盘，否则清除后磁盘残留 pauseMeta 与内存分叉
     this.flushCheckpoint();
   }
 
