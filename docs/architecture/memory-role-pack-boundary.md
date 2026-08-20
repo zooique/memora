@@ -4,16 +4,16 @@
 
 ## 一、问题
 
-memora 当前存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 记忆库（source: persona/rule/skill），又可由角色包承载（personaContent/rules/skills）。两套装载路径并存导致：
+memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 记忆库（source: persona/rule/skill），又由角色包承载（personaContent/rules/skills）。两套装载路径并存导致：
 
-| 症状 | 证据 |
+| 症状 | 危害 |
 |------|------|
-| 设定记忆仍写入记忆库 | `configManager.ts:352/413/488` upsert rule/skill；`loader.ts:21-23` 启动扫描 PERSONA/RULE/SKILL/GUARDRAIL 进索引 |
+| 设定记忆写入记忆库 | 记忆库混入 persona/rule/skill，非摘要单轨 |
 | 记忆库不「纯」 | 存储含 persona/rule/skill/work-projection/guardrail/content 等 8 类 source，非摘要单轨 |
-| 角色包未完全接管 | `assembler.ts:234` `[rolePackPrompt \|\| personaPrompt]`——角色包优先、persona 兜底，两套并行 |
-| 文档叙事分叉 | `memory-as-summary.md` 的「单轨」只对洞察/画像层成立；设定记忆层从未收敛 |
+| 角色包未完全接管 | 角色包优先、persona 兜底，两套并行，系统提示装配分叉 |
+| 文档叙事分叉 | 「单轨」只对洞察/画像层成立，设定记忆层从不收敛 |
 
-根因：**「设定记忆归角色包」是已设计未落地的目标态**（`rolePackManager.ts:19` 注释「M3 远期可替代」）。本设计将其正式定案。
+根因：**「设定记忆归角色包」与「记忆系统 = 摘要记忆」两条边界此前分开演进，未统一为同一分界。** 本文档将二分法定案。
 
 ## 二、目标态（设计真理源）
 
@@ -34,82 +34,58 @@ memora 当前存在**双轨并存**：设定记忆既走 `agent-config` 目录 �
 
 ### 2.3 目标态存储形态
 
-- **记忆库**：只有**摘要记忆**——`round-summary`（轮次级）+ `content`（会话级，同模型不同粒度，见 [memory-as-summary.md §2.2](memory-as-summary.md)）+ 存量兼容数据（profile / work-projection）。guardrail 空转链已摘除（2026-08-17，零规则无消费者，见 §4.4）。
+- **记忆库**：只有**摘要记忆**——`round-summary`（轮次级）+ `content`（会话级，同模型不同粒度，见 [memory-as-summary.md §2.2](memory-as-summary.md)）+ 存量兼容数据（profile / work-projection）。guardrail 空转链已摘除（零规则、无扫描映射、无消费者）。
 - **角色包**：`<configDir>/role-packs/<名>/`，`manifest.json` 唯一权威 + `persona.md` / `rules.md` / `skills/*` 内容文件（见 [role-pack-spec.md §2.2](role-pack-spec.md)）。
 - **召回**：只对摘要记忆生效（双通道相关性召回 + 会话窗口/时间排序，见 [memory-as-summary.md §4](memory-as-summary.md)）；type 是纯语义标签，不设时效。设定记忆不再进召回面。
 
-## 三、现状差距（核查实证）
+## 三、执行规则（收敛纪律）
 
-| 路径 | 现状 | 目标 | 证据 |
-|------|------|------|------|
-| 启动扫描 | loader 曾扫 PERSONA/RULE/SKILL/GUARDRAIL 进索引 | 不扫设定记忆（已停扫，2026-08-17） | `loader.ts` `STARTUP_SCAN_SOURCES` 已清空 |
-| 运行时写入 | configManager CRUD 三层写入（文件→索引→rule 即时注入） | 只写角色包文件，停写索引 | `configManager.ts:293-294/333/385/496-498` |
-| 系统提示装配 | 角色包优先、persona 兜底 | 角色包唯一 | `assembler.ts:234` |
-| 读取消费者 | loader/projectManager/configManager/memoryInspector 从索引读 rule/skill | 从角色包读（或不再读） | `loader.ts:134-136` 等 |
-| 展示 | memoryInspector snapshot/stats 展示设定记忆 | 展示摘要为主 | `memoryInspector.ts:254-257` |
+### 档 1：停止写入
+> 设定记忆不再写入记忆库——内核启动扫描不对 persona/rule/skill 建索引，运行时无"写索引"入口（`addRule`/`addSimpleRule`/`addSkill`/`addSimpleSkill` 死门面已移除）。存量设定记忆行保留（软删兼容），由宿主一次性迁移清理。
 
-## 四、搬迁路径（分档渐进）
+### 档 2：读取切换
+> 设定读取从记忆库切到角色包——系统提示装配 `systemPrefixParts = [rolePackPrompt]` 唯一（取消 persona 兜底，persona 兜底随本档移除）；`getBootstrapMemories()` 不再返回设定注入，消除「角色包 rules + 索引 rule」双轨重复注入；memoryInspector snapshot 的 bootstrap 层仅作存量兼容展示（不参与装配），角色包读取是宿主 UI 职责。
 
-### 档 0：设计定案（本文档）
+### 档 3：语义对齐
+> 收敛最终形态需语义对齐——**rule 语义不对等**：角色包 `parseRules` 只认 `- `/`* ` 无序列表行，记忆库 rule 是任意 markdown（含元数据/可软删）。搬迁需转换器，把现有规则文件转为角色包 rules.md 可解析格式，否则丢内容。
+>- **guardrail 已摘除**：guardrail 是「零规则、无扫描映射、无消费者」的空转链，与目标态冲突，不作为独立模块保留。原「guardrail 归宿」决策作废。
 
-- 目标态、分界线、搬迁路径、决策点写死为单一真理源。
-- 更新 [role-pack-spec.md §9.2](role-pack-spec.md)（内容层归属声明）与 [memory-as-summary.md §7](memory-as-summary.md)（计划移除补设定记忆迁出）。
+**收敛顺序纪律**：先停写（档 1）后切读（档 2），再语义对齐（档 3），任何一步不得跳过。
 
-### 档 1：停止写入（低风险，向后兼容）
+## 四、决策定案
 
-1. `loader.ts` `STARTUP_SCAN_SOURCES` 移除 PERSONA/RULE/SKILL——索引不再新增设定记忆；存量行保留（软删兼容）。**【已完成 2026-08-17】**——`STARTUP_SCAN_SOURCES` 已清空。
-2. `configManager.ts` 删除 `addRule`/`addSimpleRule`/`addSkill`/`addSimpleSkill` 四个死门面（内核+宿主全仓零调用，`configManager.ts` + 测试同步删除）。**【已完成 2026-08-17 档 1b】**——「运行时注入写索引」是设定记忆进记忆库的最后入口，已移除。
-3. **对抗式修正（2026-08-17）**：原方案「configManager 写索引降级为仅写角色包文件」**不成立**——configManager 只写 configDir + 索引，不写角色包文件（角色包由 RolePackManager 管理）。且宿主 `configFileSyncer` 真实依赖 `updateRule`/`deleteRule`/`confirmConfigSuggestion` 的索引同步链路（保存规则→立即生效）。故档 1b 只删死门面，**读取切换（索引→角色包）归档 2**，需宿主 configFileSyncer 联动改造。
-4. 存量设定记忆数据由宿主提供一次性迁移脚本（文件已在角色包/agent-config 中，SQLite 索引行清空或标记兼容）。
+| # | 决策 | 定案 |
+|---|------|------|
+| D1 | guardrail 归宿 | **作废**——guardrail 空转链已摘除，无此物无需归宿 |
+| D2 | 存量设定记忆数据 | 由宿主提供一次性迁移脚本；文件已在角色包/agent-config 中，SQLite 索引行清空或标记兼容 |
+| D3 | skills 正文展示 | **渐进披露**（readSkillContent 按需读），不在记忆库镜像保留 |
+| D4 | content 会话归档 | **保留**——粒度（会话级）与 round-summary（轮次级）不同，非冗余，无需再议 |
+| D5 | **默认角色包归属** | **宿主职责**。memora 内核不设计「默认角色包」，也不内置默认卡。「默认激活哪张卡」是宿主决策；内核只保证「零角色包激活时系统可运行」。零角色包时**空角色包态**运行（persona 兜底已移除，无角色设定注入） |
 
-**验收**：新会话不再新增 source=rule/skill/persona 记忆（loader 停扫 + configManager 无写索引入口）；`updateRule`/`deleteRule`/`confirmConfigSuggestion` 链路保持可用（宿主面板不回归）。
-
-### 档 2：读取切换（中等风险）**【已完成 2026-08-18 · 纯内核，不依赖宿主联动】**
-
-1. `assembler.ts` 移除 persona 兜底，`systemPrefixParts = [rolePackPrompt]` 唯一。**【完成】**——角色包承载规则注入（`assembleRolePack` 的 personaPrompt 含 rules），persona 不再兜底。
-2. `configManager.getBootstrapMemories()` 返回空数组——消除「角色包 rules + 索引 rule」双轨重复注入。**【完成】**——`updateRule`/`deleteRule`/`confirmConfigSuggestion` 的索引写保留（宿主面板联动），`listRules` 保留为 autoConfigRefiner 写前查重（非注入面）。
-3. `memoryInspector.ts` snapshot 的 bootstrap 层标注存量兼容展示（不参与装配），不强行改读角色包。**【完成·对抗式修正】**——角色包读取是宿主 UI 职责，memoryInspector 展示存量索引行供宿主迁移前核对。
-
-### 档 3：语义对齐（高风险，需先行决策）
-
-- **rule 语义对齐**：角色包 `parseRules` 目前只认 `- `/`* ` 无序列表行（`rolePackManager.ts:226`），记忆库 rule 是任意 markdown（含元数据/可软删）。迁移需转换器：把现有规则文件转为角色包 rules.md 可解析格式，否则搬迁丢内容。
-- **guardrail 已摘除**（2026-08-17）：guardrail 是「零规则、无扫描映射、无消费者」的空转链（`loop.ts` 输入/输出检查 + `assembler.ts` 索引读取），与目标态冲突，已随档 1 一并移除。原 D1「guardrail 归宿」决策作废。
-
-## 五、决策点（待老板拍板）
-
-| # | 决策 | 选项 | 影响 |
-|---|------|------|------|
-| D1 | ~~guardrail 归宿~~ | **已作废（2026-08-17）**——guardrail 空转链已摘除，无此物无需归宿 | 无 |
-| D2 | 存量设定记忆数据 | A. 索引清空 / B. 标记兼容保留 | 决定宿主 SQLite 迁移脚本范围 |
-| D3 | skills 正文展示 | A. 渐进披露（readSkillContent 按需读） / B. 记忆库镜像保留 | 决定宿主 UI 是否改读角色包 |
-| D4 | content 会话归档 | 保留（粒度不同，非冗余） | 已定案，无需重议 |
-| D5 | **默认角色包归属**（2026-08-17 定案） | **宿主职责**。内核不内置默认卡；零激活时降级为「空角色包态」（persona 兜底已随档 2 移除，2026-08-18） | 决定档 2 是否移除 persona 兜底 |
-
-### 5.1 默认角色包边界（D5 定案）
+### 4.1 默认角色包边界（D5 定案）
 
 > **结论：memora 内核不设计「默认角色包」，也不内置默认卡。**「默认激活哪张卡」是宿主决策；内核只保证「零角色包激活时系统可运行」。
 
-- **内核实测现状**：`role-pack/rolePackManager.ts:287-290` `load(activePack?)` 无 activePack 且 `items.length > 0` 才自动激活第一个，零角色包时 `activePackName = null`（不强制必有卡）；`buildSystemPrompt()` 无激活时返回 `''`（空串降级已存在）；`assembler.ts` `systemPrefixParts = [rolePackPrompt]` 唯一（档 2 已移除 persona 兜底，2026-08-18）。
+- **内核实测现状**：`role-pack/rolePackManager.ts` `load(activePack?)` 无 activePack 且 `items.length > 0` 才自动激活第一个，零角色包时 `activePackName = null`（不强制必有卡）；`buildSystemPrompt()` 无激活时返回 `''`（空串降级）；`assembler.ts` `systemPrefixParts = [rolePackPrompt]` 唯一（persona 兜底已移除）。
 - **宿主职责**：默认卡 = 领域决策（通用助手宿主放通用卡、文档宿主放文档卡），经 `<configDir>/role-packs/` 注入（role-pack-spec §9.1 多实例模式）。
 - **对齐哲学**：memora 是纯逻辑库（ADR-002）+ 领域无关（哲学§5），内置默认卡 = 内核耦合领域偏见。
-- **对档位的影响**：persona 兜底已随档 2 移除（2026-08-18，纯内核）——零角色包激活时系统以「空角色包态」运行（无角色设定注入）；宿主接入角色包后经 role-packs/ 注入默认卡。
 
-### 5.2 content 融入与 type 去时效（D6/D7 定案，2026-08-17）
+### 4.2 content 融入与 type 去时效（D6/D7 定案）
 
 > **D6 · content 是「会话 id 对应的摘要记忆」**：`SessionArchiver` 写入的会话级摘要本就是摘要模型的一部分——粒度=会话级（无 roundId，仅 sessionName 溯源），与 round-summary（轮次级，sessionName+roundId 双溯源）同为「摘要 + 标签 + 粒度」统一模型。融入方式：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName` + `isTraceable=true`。
 >
 > **D7 · type 不设时效性**：记忆是否有效由**语义状态**判定（superseded 写时取代 + score 衰减自然沉底），不由时间流逝判定——用户久未使用不构成记忆过期的理由。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃（见 memory-as-summary.md §4.2）。
 
-## 六、隐式依赖（搬迁时易漏）
+## 五、隐式依赖（收敛时易漏）
 
-1. **宿主 SQLite schema 不可见**：`storageInterface.ts:6-14` 注释说明实现侧在宿主；宿主持有 `WHERE source='rule'` 等查询会静默失效，需宿主配合核对。
-2. **`evictOrphanRules` 对账**（`projectManager.ts:299-332`）：基准变化后，删规则要改以角色包文件集为基准，否则规则删除后重启「复活」。
-3. **`closeProject` 跨项目隔离**（`projectManager.ts:398-410`）：项目级记忆撤销语义改为角色包激活/失活。
-4. **`reloadConfig('persona'/'skill')`**（`agent.ts:2535`）：目录迁走后热重载「假成功」，宿主 UI 需适配。
-5. **LLM 工具链提示**：`loop.ts:1438-1441` 引导 LLM 用宿主的 `create_persona/create_rule` 工具，本体在宿主，需同步改造写入目标。
-6. **测试基线**：大量测试直接构造 `source:'rule'` 记忆（`inMemoryStorage.test.ts` 等），搬迁后需同步迁移。
+1. **宿主 SQLite schema 不可见**：`storageInterface.ts` 注释说明实现侧在宿主；宿主持有 `WHERE source='rule'` 等查询会静默失效，需宿主配合核对。
+2. **`evictOrphanRules` 对账**（`projectManager.ts`）：基准变化后，删规则要改以角色包文件集为基准，否则规则删除后重启「复活」。
+3. **`closeProject` 跨项目隔离**（`projectManager.ts`）：项目级记忆撤销语义改为角色包激活/失活。
+4. **`reloadConfig('persona'/'skill')`**（`agent.ts`）：目录迁走后热重载「假成功」，宿主 UI 需适配。
+5. **LLM 工具链提示**：`loop.ts` 引导 LLM 用宿主的 `create_persona/create_rule` 工具，本体在宿主，需同步改造写入目标。
+6. **测试基线**：大量测试直接构造 `source:'rule'` 记忆，搬迁后需同步迁移。
 
-## 七、与其他文档的关系
+## 六、与其他文档的关系
 
 | 文档 | 关系 |
 |------|------|
@@ -119,6 +95,6 @@ memora 当前存在**双轨并存**：设定记忆既走 `agent-config` 目录 �
 | [ADR-025-memory-role-pack-boundary](../decisions/ADR-025-memory-role-pack-boundary.md) | 本设计的 ADR 背书 |
 | [memory-role-pack-boundary-rules](../.trae/rules/memory-role-pack-boundary-rules.md) | 纪律沉淀（防止再次分叉） |
 
-## 八、一句话总判
+## 七、一句话总判
 
-**最终形态 = 角色包管「角色设定」，记忆系统只管「对话摘要」，一刀切干净；记忆库只有一种记忆，靠打标签分类。** 现状是「双轨中间态」，按档 0→1→2→3 渐进收敛，先定案后动刀。
+**最终形态 = 角色包管「角色设定」，记忆系统只管「对话摘要」，一刀切干净；记忆库只有一种记忆，靠打标签分类。** 收敛按「先停写、后切读、再语义对齐」纪律渐进执行，先定案后动刀。

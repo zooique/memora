@@ -273,6 +273,7 @@
 
 > **生长说明**：
 > - **Loop 外循环本体在 L0**：`loop.ts` 的 `processUserInput` 即单轮闭环最小复用单元，对话/Loop/续跑共用同一闭环（[loop-design.md](./loop-design.md)）。
+> - **外循环语义化（生长方向）**：复杂问题由任务链驱动多轮闭环 + 收敛汇报的设计愿景见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)。
 > - **会话记录底座**：`sessionStore.ts` 物理位置在 `memory/`，由宿主实现 `ISessionStore`，承载对话记录——是记忆溯源（traceSummary）与会话延续的共用底座。
 > - **不中断工作流**：`agent/__tests__/uninterruptedWorkflow.test.ts`（不中断工作流集成测试）与 `agent/__tests__/degradation.test.ts`（降级处理测试）验证本层在暂停/续跑/异常下的行为。
 

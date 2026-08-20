@@ -1,6 +1,6 @@
 # 记忆即摘要：溯源式记忆架构设计
 
-> **定位**：设计文档，描述"记忆即摘要"架构——以单轮摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
+> **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
 > **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（单轮问答闭环公理）· [mvp-scope.md](mvp-scope.md)（MVP 边界）
 
@@ -90,18 +90,17 @@
 
 round-summary 与 content **同属摘要模型、粒度不同**（轮次级 vs 会话级），不是两套系统。`traceSummary` 双标识溯源（`builtinToolHandlers.ts`）让每条摘要可回溯到原始对话。
 
-### 2.3 架构
+### 2.3 架构（当前形态）
 
 ```
-重构前：对话记录 → 轮次摘要 → 长期记忆（三层）
-重构后：对话记录（窗口级，仅展示） + 轮次摘要（全局，即唯一记忆）
+对话记录（窗口级，仅展示 + 溯源兜底）
+round-summary（轮次级，唯一记忆单元）
+content（会话级摘要）
 ```
 
-> **实现状态（如实声明）**：上图为**目标态**。用户画像层（`UserProfile` + `userFactExtractor` + `archiveProfileFacts`）**已收敛移除**——画像收敛为 `round-summary` 的 `type=preference` 标签（§3.2）；洞察层（`InsightExtractor` + `archiveInsight`）亦**已移除**——其能力被 round-summary 吸收，记忆收敛为**单轨**（唯一记忆单元 = round-summary，见 §七）。当前系统即此目标态。`traceSummary` 溯源已接对话记录（§四/§4.5 已实现），对话记录作为溯源兜底的运行依赖（§5.2）。
->
-> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）本就是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源）。已补 `summaryType` 标签与 `sessionName` 结构化字段、`isTraceable`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
+> **当前形态**：记忆收敛为**摘要单轨**——唯一记忆单元是 round-summary（轮次级）+ content（会话级），无独立的用户画像层与洞察提炼层。用户画像（UserProfile / userFactExtractor / archiveProfileFacts）与洞察层（InsightExtractor / archiveInsight）不独立存在，其能力并入 round-summary 的 `summaryType` 标签分类（§3.2）。`traceSummary` 溯源接对话记录（§4/§4.5），对话记录作为展示层 + 溯源兜底的运行依赖（§5.2）。
 
-> 注：`archiveCoordinator` 中的 `archiveRoundSummary` 已不存在（round-summary 改由 RoundSummaryGenerator 在 postProcess 直接生成），§七 该项实际已达成。
+> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源），带 `summaryType` 标签 + `sessionName` 结构化字段 + `isTraceable`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 2.4 Round 边界
 
@@ -144,7 +143,7 @@ postProcess → 使用 round-5 生成摘要
 └──────────────────────────────────────────────────┘
 ```
 
-写入 `IMemoryStorage`，`source='round-summary'`。这是系统**轮次级**的记忆产生层——洞察层/画像层已收敛移除，当前即此目标态。**写入型 source 共两类**：`round-summary`（轮次摘要，本层）+ `content`（会话归档，[sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts) 写入，承载会话级综合提炼，见 §7）；`PROFILE` 仅保留为存量数据治理，不再有新写入。
+写入 `IMemoryStorage`，`source='round-summary'`。这是系统**轮次级**的记忆产生层；`content` 会话归档（[sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)）承载会话级综合提炼（见 §7）。**写入型 source 共两类**：`round-summary`（轮次摘要，本层）+ `content`（会话归档）；`PROFILE` 仅保留为存量数据治理，不再有新写入。
 
 ### 3.2 摘要类型（SummaryType）— 语义标签
 
@@ -215,11 +214,9 @@ export interface SessionMessage {
 - 三个步骤中，步骤 2 是过滤（决定召回哪些），步骤 3 是排序（决定呈现顺序）
 - 自然遗忘：记忆是否有效由**语义状态**判定——superseded 写时取代（ADR-021）+ score 衰减自然沉底，**不用时间窗硬过滤**（见 §4.2）
 
-### 4.2 差异化召回（按 type）— 已移除
+### 4.2 差异化召回（按 type）的废弃与替代
 
-> **定论**：type 时间窗口差异化召回**已废弃**。原设计为 `intent`/`general` 设 7 天窗口，理由是「计划过期避免干扰」「低价值降噪音」——但这是**用时间代理语义状态**的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，且误伤「用户久未使用但记忆仍有价值」的场景。
->
-> **替代机制（自然遗忘，哲学§8）**：
+> **定论**：type 时间窗口差异化召回**并非设计形态**。原方案曾为 `intent`/`general` 设 7 天窗口，理由是「计划过期避免干扰」「低价值降噪音」——但这是**用时间代理语义状态**的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，且误伤「用户久未使用但记忆仍有价值」的场景。故 type 时间窗被否决，改用自然遗忘（架构哲学§8）：
 > - **superseded 写时取代**（ADR-021）：计划完成/被覆盖 → 旧摘要被标记取代 → 不再作为当前事实注入；
 > - **score 衰减**（decayScheduler）：久不访问的记忆分数沉底 → 相关性排序自然排不到前面；
 > - **相关性排序**（hybridMerge）：低相关/低分记忆本就进不了 top-N 召回预算。
@@ -308,8 +305,8 @@ LLM 获得完整上下文
 
 召回质量不只由"存了什么"决定——**检索侧（召回后处理）优化收益常高于摄取侧**（2026 行业实证：检索深度 +4.2%、上下文格式化 +2.0%、query bias 修正 +1.4%，均高于摄取侧 chunking +0.8%）。当前召回已具备：
 
-- **rerank（重排序）**：召回结果在最终排序前先经相关性重排，剔除低相关噪声（已实现）。
-- **同会话窗口优先**：`sessionName` 匹配当前会话的摘要优先，跨会话记忆次之（§4.4 维度一，已实现，见实现清单）。
+- **rerank（重排序）**：召回结果在最终排序前先经相关性重排，剔除低相关噪声。
+- **同会话窗口优先**：`sessionName` 匹配当前会话的摘要优先，跨会话记忆次之（§4.4 维度一）。
 
 **远期候选（非承诺，不预埋）**：
 - **query 改写**：把用户输入改写为更适合检索的查询。
@@ -317,7 +314,7 @@ LLM 获得完整上下文
 - **召回格式微调**：调整摘要注入上下文的呈现格式。
 - **上下文检索（contextual retrieval）**：召回命中某摘要后，若其**相邻轮次**（同 `sessionName`、`roundId` 前后 ±N 条）存在高相关摘要，在预算内一并召回，缓解"孤立摘要导致上下文断裂"。边界约束：① 不新增存储层（复用 round-summary 按 roundId 邻接查询）；② 扩展条数设上限（±2 条）；③ 总召回仍受增量召回 token 预算约束（≤10% 上下文窗口）；④ 与互斥排除（§4.3）兼容——相邻但正文已加载的轮次仍排除。
 - **superseded 摘要物理清理**：被取代的摘要（`supersededBy` 标记）当前只被 recall 过滤（§5.4）、可经 `traceSummary` 回溯，**无物理清理**——长期会话会累积被覆盖的历史摘要。若未来需要回收存储，设计方向：按 superseded 时长（如 30 天）周期性软删除 → 回收站保留期 → 物理清理；边界约束：① 保留 `traceSummary` 回溯能力至清理前；② 清理不影响活跃摘要的取代链；③ 复用现有 `purgeExpired` 回收站机制，不新增清理管线。当前不实现（存储累积非瓶颈，属"软删除 + 可回溯"的既有设计权衡）。
-- **召回保底（recall fallback）**：当语义召回结果过少（低于 `minFallback`）时，用最近记忆补足，保证 LLM 每轮至少获得阈值数量的记忆，避免"零召回/极少召回"导致完全无记忆可依。**定位是不可删除的**下限保障，非"项目延续"特化。设计要点：① **条件触发**——仅 `recall()` 结果不足 `minFallback` 才补，语义召回充足时不动作（豆包类话题切换场景因补足量小且排语义命中之后，噪音受控可接受）；② **数据源复用现有空查询通道**——`storage.search('', shortfall)` 按 score 降序取最近记忆（score 已含 boost + 衰减，天然=最近常用），零新增存储接口；③ **补足项排语义命中之后**，不抢占相关性结果；④ 参数 `prepare.minFallback`（默认 2），宿主可设 0 彻底关闭；⑤ 与互斥排除（§4.3）兼容——补足项同样去 `superseded`。区别于"无条件固定注入最近会话摘要"（已放弃）：后者绕过相关性过滤必然污染，本机制是**召回不足才兜底**，符合单一真理源。
+- **召回保底（recall fallback）**：当语义召回结果过少（低于 `minFallback`）时，用最近记忆补足，保证 LLM 每轮至少获得阈值数量的记忆，避免"零召回/极少召回"导致完全无记忆可依。**定位是不可删除的**下限保障，非"项目延续"特化。设计要点：① **条件触发**——仅 `recall()` 结果不足 `minFallback` 才补，语义召回充足时不动作；② **数据源复用现有空查询通道**——`storage.search('', shortfall)` 按 score 降序取最近记忆（score 已含 boost + 衰减，天然=最近常用），零新增存储接口；③ **补足项排语义命中之后**，不抢占相关性结果；④ 参数 `prepare.minFallback`（默认 2），宿主可设 0 彻底关闭；⑤ 与互斥排除（§4.3）兼容——补足项同样去 `superseded`。区别于"无条件固定注入最近会话摘要"（该方案绕过相关性过滤必然污染，已否决），本机制是**召回不足才兜底**，符合单一真理源。
 
 写作等轻量场景当前用默认即可，待检索质量成为实测瓶颈再评估。
 
@@ -344,19 +341,19 @@ LLM 获得完整上下文
 
 > **设计说明**：明确 memora 可追溯性的**边界**——它服务于"对话内容"的可回溯，不承诺"模型每次看到的完整上下文"的可重建。这是从 DeepSeek Harness"模型可见即已记录"（append-only 事件溯源）汲取思想后收敛的结论：**抄思想（可追溯性目标），不抄机制（事件溯源存储）**。
 
-**当前追溯范围（已实现）**：
+**追溯范围**：
 
 - **说了什么（对话内容）**：`trace_summary` 工具经 `loadRawRoundMessages` 回溯原始对话（§4.5/§4.6）。
 - **记忆来源（摘要溯源）**：round-summary 通过 `sessionName + roundId` 软链接回原始对话（§3.3）。
 
 **明确不追溯（边界声明）**：
 
-- **"模型看到了什么"（每次请求的完整上下文：系统提示、召回摘要、装配结果）** 不进入追溯范围。它是**可观测性诉求**，而非记忆诉求——由 **ITracer span** 承载（已落地：`llm.call` span 记录 `systemPromptHash`，`recall.recall` span 记录 `attachedMemoryCount` + `attachedMemoryFingerprint`），**不入 sessionStore**。理由：
+- **"模型看到了什么"（每次请求的完整上下文：系统提示、召回摘要、装配结果）** 不进入追溯范围。它是**可观测性诉求**，而非记忆诉求——由 **ITracer span** 承载（`llm.call` span 记录 `systemPromptHash`，`recall.recall` span 记录 `attachedMemoryCount` + `attachedMemoryFingerprint`），**不入 sessionStore**。理由：
   1. **哲学一致**：架构哲学 §8"自然遗忘优于完美记忆"——记录"模型看到了什么"的全量快照会导致存储无界膨胀，与 memora 轻量定位冲突。
   2. **职责分离**：对话记录是"展示 + 溯源"（记忆系统职责），上下文快照是"调试/评估"（可观测性职责，ITracer），两者不混层。
   3. **投入产出**：memora 已有关键链路（摘要 → 原始对话 → trace_summary）覆盖可追溯的绝大部分价值；"模型看到了什么"仅在调试/评估场景需要，走 ITracer 即有界、可选。
 
-**建议B落地说明**：上述 ITracer 承载已实现，机制/策略分离——
+**ITracer 承载机制**（机制/策略分离）——
 - **系统提示指纹**：`llm.call` span 的 `systemPromptHash` = 最终发给模型的全部 system 消息内容（persona + 规则 + 技能 + 召回注入）的 SHA-256 指纹，由 [utils/hash.ts](../../src/utils/hash.ts) 的 `sha256Fingerprint` 纯函数生成（同时复用于 [workProjection.ts](../../src/agent/managers/workProjection.ts) 的文件 hash，消除重复实现）。
 - **附着记忆指纹**：`recall.recall` span 的 `attachedMemoryCount` / `attachedMemoryFingerprint` = 附着进上下文的记忆条数 + 记忆 ID 集合指纹（[loop.ts](../../src/agent/loop.ts) 注入点埋点）。
 - **边界保持**：只记录 hash、不记录内容；宿主未注入 Tracer（NOOP）时不计算指纹（零开销边界）；span 属性由宿主自行采集/落盘/展示，内核不新增任何存储。
@@ -407,7 +404,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 - **算法本身智能化**：通过权重设计让核心动作词和实体词在相似度计算中贡献更大，而非叠加外部判断规则
 - **下沉到工具层**：关键词提取和相似度计算统一在 `segmenter.ts` 工具层实现，避免业务逻辑层重复实现
 
-> **实现状态（如实声明）**：设计意图是"type 相同且主题相关"，但**实现未按 type 判定**——`supersedeSimilar` 只做"主题相关"（加权 Jaccard 重叠率的确定性判定，见 roundSummaryGenerator.ts），type 不参与。原因：宿主持久化层不持久化 `metadata`，`getBySource` 读回的摘要无 `metadata.summaryType`，type 无法作为**持久化**判定条件（仅 id 是持久化字段）。此为实现简化，非缺陷；若未来宿主持久化 metadata，可升级为"type 相同"前置过滤。
+> **说明（设计约束）**：取代检测的意图是"type 相同且主题相关"，但实际按**主题相关**（加权 Jaccard 重叠率的确定性判定）执行，type 不参与。原因：宿主持久化层不持久化 `metadata`，`getBySource` 读回的摘要无 `metadata.summaryType`，type 无法作为**持久化**判定条件（仅 id 是持久化字段）。若未来宿主持久化 metadata，可升级为"type 相同"前置过滤。
 
 **SSOT 自检**：此设计**不新增存储层**（仍复用 round-summary）、**不新增后台系统**（是 Reflect 的一步，与"生成摘要"同构，fire-and-forget）、**不新增记忆关系图**（仅一个布尔标记 + 指针）。它是**效率挪移**——冲突消解从读路径（高频、每次召回都猜）移到写路径（低频、每轮一次判断），写一次定、读时确定性过滤，比"读时靠 LLM 聚合猜"更符合"确定性优先"。
 
@@ -436,8 +433,6 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | 召回（语义 + 互斥过滤） | `recall()` | 相关摘要列表（双通道召回，排除正文已加载轮次） | 是 |
 | 注入上下文 | `prepareChatContext` | 组装后的 system prompt | 是 |
 | 溯源 | `trace_summary` 工具 | 原始对话记录 | 是（LLM 可选调用） |
-
-> **实现状态（如实声明）**：上表所列**均已落地**。"双通道召回"（[recall.ts](../../src/memory/recall.ts) hybridMerge）、"互斥过滤（排除正文已加载轮次）"（[agent.ts](../../src/agent/agent.ts) `recallAndInject`）、"溯源返回原始对话记录"（[builtinToolHandlers.ts](../../src/agent/builtinToolHandlers.ts) `loadRawRoundMessages`）均已实现。仅"互斥窗口 N 的角色包 `recentRounds` 覆盖"随角色包后置接入。
 
 **闭环验证**：每个环节的产出是下一个环节的输入，不存在断裂或外部依赖。
 
@@ -471,7 +466,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 系统中有两个潜在循环依赖：
 
-**A. 理解输入 vs 角色包匹配**（已解决，见角色包粘性匹配设计）
+**A. 理解输入 vs 角色包匹配**（解决路径，见角色包粘性匹配设计）
 - 第一阶段：原始理解（不依赖角色包），提取触发词
 - 确定性匹配：触发词 → 角色包（正则匹配，不依赖语义）
 - 第二阶段：在角色包视角下深度理解
@@ -495,53 +490,14 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 ---
 
-## 七、实现清单
+## 七、最终形态（总结）
 
-### 已完成
+**摘要单轨**是记忆系统的设计本体：
 
-| 组件 | 文件 | 说明 |
-|------|------|------|
-| RoundSummaryGenerator | `src/agent/managers/roundSummaryGenerator.ts` | 每轮生成 `source='round-summary'` 记忆，含 type |
-| roundId 追踪 | `src/agent/loop.ts` | `processUserInput` 入口分配 roundId |
-| SessionMessage.roundId | `src/agent/types.ts` | 可选字段 |
-| `trace_summary` 工具 | `src/agent/builtinTools.ts` + `builtinToolHandlers.ts` | LLM 可回溯原始对话 |
-| 双通道召回（关键词 + 语义） | `src/memory/recall.ts` | 按相关性召回摘要（hybridMerge，type 不参与过滤） |
-| 时间戳排序 | `src/agent/agent.ts` | `recallAndInject` 返回结果按 `createdAt` 升序（唯一排序键） |
-| 装配 | `src/agent/assembler.ts` | RoundSummaryGenerator 注入到 Agent |
-
-### 计划移除
-
-| 组件 | 文件 | 理由 |
-|------|------|------|
-| InsightExtractor | `src/agent/managers/insightExtractor.ts` | 洞察层（每轮自动抽取长期记忆）已被 round-summary 的 type 分类吸收（preference/fact/decision），冗余移除 |
-| insightExtracted 事件 | `src/utils/eventEmitter.ts` | 洞察移除后无发射方，事件一并移除 |
-| archiveCoordinator 中的 archiveRoundSummary | `src/agent/managers/archiveCoordinator.ts` | 冗余，round-summary 直接在 postProcess 生成 |
-| 设定记忆（persona/rule/skill）写入记忆库 | `src/memory/loader.ts` `STARTUP_SCAN_SOURCES` + `src/agent/managers/configManager.ts` CRUD | 设定记忆唯一归角色包内容层（L1），记忆库 = 摘要记忆本体——见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) §四（待迁出，非本模块已完成项） |
-
-> **最终形态**：聚焦 memora 内核，洞察层（InsightExtractor）**完整移除**，记忆收敛为**摘要单轨**：
-> - **摘要即记忆本体**：写入（RoundSummaryGenerator + type 标签）→ 召回（双通道相关性 + 会话窗口/时间排序）→ 治理（superseded 取代）闭环成立，无需独立洞察提炼层。
-> - **type = 纯语义标签**：不设时间窗口，自然遗忘由 superseded + score 衰减承担。
-> - **memoryAdded 事件由 round-summary 发射**——替代洞察的"已沉淀"通知出口，保持内核"新记忆产生必通知"契约。
-> - **SessionArchiver（content 会话级摘要）保留**——它是**会话 id 对应的摘要记忆**：承载会话级综合提炼（关键决策/未解决问题/plan 快照），粒度（会话级）与 round-summary（轮次级）不同，非冗余；已补 `summaryType` 标签 + `sessionName` 结构化溯源 + `isTraceable`。
-> - **代码已移除**：InsightExtractor 及其装配/自动抽取/手动 `archiveInsight`/`insight` getter/`insightExtracted` 事件从内核清除；`SOURCE_LABELS.INSIGHT` 标签与 role-pack `reflect.insightExtraction` 键 / `llm:insight` 能力一并移除，memora 不残留任何洞察层痕迹。
-
-### 七·一 承诺 vs 实现状态对照（如实声明）
-
-> 本节集中标注本文档各承诺的**真实落地状态**，避免"设计文档 = 已实现"的误读。`✅`=已实现，`⏳`=已决策/设计待实现（关联 ADR 待办）。
-
-| 承诺 | 文档出处 | 实现状态 | 说明 |
-|------|---------|---------|------|
-| RoundSummaryGenerator（round-summary + type） | §3/§7 | ✅ | [roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts) |
-| roundId 入口分配 + SessionMessage.roundId | §2.4/§3.4 | ✅ | [loop.ts](../../src/agent/loop.ts) |
-| createdAt 升序（唯一排序键） | §4.4 | ✅ | [agent.ts](../../src/agent/agent.ts) `recallAndInject` |
-| 同会话窗口优先（sessionName 优先 + 组内 createdAt 升序） | §4.4/§4.7 | ✅ | [recall.ts](../../src/memory/recall.ts) |
-| 双通道召回（关键词 + 语义，type 不参与过滤） | §4.1/§4.2 | ✅ | [recall.ts](../../src/memory/recall.ts) hybridMerge |
-| 互斥排除（正文已加载轮次不召回） | §4.3 | ✅ | [recall.ts](../../src/memory/recall.ts) `RecallOptions.excludeRoundIds` 过滤（N = 角色包 `prepare.recentRounds` 覆盖，未配置回退内核默认 `DEFAULT_RECENT_HISTORY_ROUNDS`=3） |
-| traceSummary 返回原始对话（≤5 条/2000 字） | §4.5/§4.6 | ✅ | [builtinToolHandlers.ts](../../src/agent/builtinToolHandlers.ts) `loadRawRoundMessages`；未注入 sessionStore 时降级为摘要文本 |
-| 写路径取代检测 superseded | §5.4 | ✅ | [roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts) `supersedeSimilar` + [recall.ts](../../src/memory/recall.ts) 过滤 `supersededBy` |
-| 工具结果隔离 `<tool_result>` + 参数校验 + 返回净化 | （关联 ADR-023） | ✅ | [loop.ts](../../src/agent/loop.ts) `<tool_result>` 包裹 + 指令前缀；[toolExecutor.ts](../../src/agent/toolExecutor.ts) `sanitizeExternalText` 净化 |
-| 截断优先用 round-summary | （关联 ADR-023） | ✅ | [contextManager.ts](../../src/agent/contextManager.ts) `roundSummaryLoader` 优先复用已存 round-summary，无已存才走 LLM |
-| 洞察层移除（摘要即记忆单轨） | §2.3/§7 | ✅ | 洞察层（InsightExtractor）已移除，round-summary 单轨；SessionArchiver 会话归档保留（非洞察） |
+- **摘要即记忆本体**：写入（RoundSummaryGenerator + type 标签）→ 召回（双通道相关性 + 会话窗口/时间排序）→ 治理（superseded 取代）闭环成立，无独立洞察提炼层。
+- **type = 纯语义标签**：不设时间窗口，自然遗忘由 superseded + score 衰减承担。
+- **memoryAdded 事件由 round-summary 发射**——作为"新记忆产生必通知"的出口契约。
+- **SessionArchiver（content 会话级摘要）保留**——它是**会话 id 对应的摘要记忆**：承载会话级综合提炼（关键决策/未解决问题/plan 快照），粒度（会话级）与 round-summary（轮次级）不同，非冗余；带 `summaryType` 标签 + `sessionName` 结构化溯源 + `isTraceable`。
 
 ---
 

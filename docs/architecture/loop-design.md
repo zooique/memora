@@ -121,9 +121,26 @@
 
 ---
 
-## 七、关联文档
+## 七、外循环语义化（生长方向）
+
+本文论证的是**现状对齐**（Loop = 闭环的重复在代码中的落地）。更高的目标是让外循环**有语义**——复杂问题不再是无条件重复，而是"任务链驱动 + 收敛汇报"。这属于 [task-driven-closed-loop.md](./task-driven-closed-loop.md)（任务驱动的多轮闭环收敛模型）的设计愿景，本文不复述。
+
+| 现状（loop-design） | 目标（task-driven-closed-loop） |
+|---------------------|--------------------------------|
+| loop = while 无条件重复 | loop = 任务链驱动，有明确起点/终点 |
+| 简单/复杂都进同一循环 | LLM 判难度，简单直接一轮 done |
+| 撞上限终止 | 任务链 done 终止 |
+| 无收尾 | 独立汇报闭环 → 提炼摘要 |
+
+> 两者不冲突：本文证明"loop 复用闭环"这个根；task-driven 文档在此根上长出"任务驱动 + 汇报"的枝叶。演进关系见 [task-driven-closed-loop.md §七](./task-driven-closed-loop.md)。
+
+---
+
+## 八、关联文档
 
 - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 设计哲学真理源（闭环·Loop·内循环·回答后 Handoff 相关章节）
+- [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 外循环语义化：任务驱动的多轮闭环收敛模型（生长方向）
 - [module-inventory.md](./module-inventory.md) —— 模块清单（loop.ts 🟢 76 tests）
+- [方案-seed收敛](../tasks/方案-seed收敛-最小问答闭环真理源-20260820.md) —— 种子收敛方案（含阶段 2 外部任务）
 - `src/agent/loop.ts` —— 实现
-- `src/agent/agent.ts` —— 调用边界（对话/Loop/续跑编排）
+- `src/agent/agent.ts` —— 调用边界

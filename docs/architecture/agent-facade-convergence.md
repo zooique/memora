@@ -1,20 +1,16 @@
 # Agent 门面收敛 · 设计草稿（探索中）
 
-> 状态：**探索中 · 三步骤已实施（Step 1/2/3 完成，行为等价回归通过）** · 关联：单一真理源思维 · 探索期决策沉淀机制 S1 · 2026-08-19
+> 状态：**探索中 · 三步骤已实施完成（行为等价回归通过）**
 >
 > 目标：让 `agent.ts` 从「5 个协议的中枢」收敛为「编排 + 生命周期 + 守卫」的真门面。
 > 本文档为可逆重构的探索期草稿，**不加 ADR、不占编号、不改决策 README 索引**；验证稳定后再按 S2 固化。
 >
-> 实施记录（2026-08-19）：
-> - **Step 1 装配回填** ✅ `assembler.ts` 新增 `AgentHooks`（emit/isChatBusy/requestPause/守卫/switchRolePack），
->   8 个接线回调 + createSessionManager 回填组装器；Agent.assembleComponents 退化为一行委托。
-> - **Step 2 输入增强 → ContextPreparer** ✅ 新增 `contextPreparer.ts`（tryAutoMatchRolePack / recallAndInject / matchAndInjectSkill），
->   assembler Phase 5 创建并返回；Agent 只留编排调用点，删除 4 个下沉方法。
-> - **Step 3 恢复协议 → CheckpointRestoreCoordinator** ✅ 新增 `checkpointRestoreCoordinator.ts`
->   （warmRecall / reinject / restore / shouldGenerateTaskTable），assembler Phase 6 创建并返回；
->   Agent.restoreFromCheckpoint 委托，删除 3 个下沉方法 + 无消费的 requirePctx getter。
-> - **验证** ✅ tsc --noEmit 零错误；agent 相关单测（93+10）全过；全量回归 2243 测试通过。
-> - **体量**：agent.ts 2255 → **1721 行**（-534 行）；新增 3 个专职文件（assembler 694 / contextPreparer 298 / checkpointRestoreCoordinator 246）。
+> **现状（已落地）**：三个横向切面已下沉为专职模块——
+> - **Step 1 装配回填** → `assembler.ts` 新增 `AgentHooks`，Agent.assembleComponents 退化为一行委托
+> - **Step 2 输入增强** → `contextPreparer.ts`（tryAutoMatchRolePack / recallAndInject / matchAndInjectSkill），Agent 留编排调用点
+> - **Step 3 检查点恢复** → `checkpointRestoreCoordinator.ts`（warmRecall / reinject / restore / shouldGenerateTaskTable），Agent.restoreFromCheckpoint 委托
+>
+> **体量**：agent.ts 2255 → 1721 行（-534）；新增 assembler 694 / contextPreparer 298 / checkpointRestoreCoordinator 246
 
 ---
 
