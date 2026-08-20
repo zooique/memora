@@ -55,7 +55,8 @@ let advisor: MemoryAdvisor;
 
 beforeEach(() => {
   storage = new InMemoryStorage();
-  advisor = new MemoryAdvisor(storage);
+  // 显式注入治理源（生产默认 GOVERNANCE_SOURCES 为空）：测治理机制行为需指定测试源
+  advisor = new MemoryAdvisor(storage, null, [SOURCE_LABELS.WORK_PROJECTION]);
 });
 
 // ─── sourceHealth() ───────────────────────────────────────

@@ -34,7 +34,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 
 ### 2.3 目标态存储形态
 
-- **记忆库**：只有**摘要记忆**——`round-summary`（轮次级）+ `content`（会话级，同模型不同粒度，见 [memory-as-summary.md §2.2](memory-as-summary.md)）+ 存量兼容数据（profile / work-projection）。guardrail 空转链已摘除（零规则、无扫描映射、无消费者）。
+- **记忆库**：只有**摘要记忆**——`round-summary`（轮次级）+ `content`（会话级，同模型不同粒度，见 [memory-as-summary.md §2.2](memory-as-summary.md)）。profile / work-projection 已随收敛移出记忆库（作品投影落项目级目录 `<memoraDir>/projections/`，见 [memora-api-reference.md §九](../memora-api-reference.md)）。guardrail 空转链已摘除（零规则、无扫描映射、无消费者）。
 - **角色包**：`<configDir>/role-packs/<名>/`，`manifest.json` 唯一权威 + `persona.md` / `rules.md` / `skills/*` 内容文件（见 [role-pack-spec.md §2.2](role-pack-spec.md)）。
 - **召回**：只对摘要记忆生效（双通道相关性召回 + 会话窗口/时间排序，见 [memory-as-summary.md §4](memory-as-summary.md)）；type 是纯语义标签，不设时效。设定记忆不再进召回面。
 

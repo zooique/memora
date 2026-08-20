@@ -1,25 +1,27 @@
 /**
- * WorkProjectionManager 单元测试
+ * WorkProjectionManager 单元测试（文件存储版）
  *
- * 测试范围：
- *   - 首次读取 → 生成投影
- *   - hash 未变 → 跳过
- *   - hash 变更 → 重新生成
+ * 覆盖范围：
+ *   - 首次读取 → 生成投影并写入项目目录文件
+ *   - hash 未变 → 跳过（不重复调 LLM）
+ *   - hash 变更 → 重新生成（同文件原子覆盖）
  *   - LLM 失败降级
  *   - schema 校验（summary / structure / keyDecisions）
- *   - loadAll / getProjection 查询
+ *   - loadAll / getProjection 查询（真实文件系统）
+ *   - 内容截断边界 / JSON 字段缺失降级
+ *   - inflight 并发缓存 / awaitInflight
+ *   - fileName 推导 / slug 冲突
+ *
+ * 存储：投影落 <临时目录>/projections/，独立于记忆库（记忆系统纯化后行为验证）。
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { Memory } from '@/memory/types.js';
 
-/**
- * 创建 Mock LLM Provider
- *
- * @param response 预设的 LLM 返回 JSON
- */
+/** 创建 Mock LLM Provider（预设返回 JSON） */
 const createMockProvider = (response: string): LlmProvider =>
   ({
     name: 'mock',
@@ -29,40 +31,20 @@ const createMockProvider = (response: string): LlmProvider =>
     }),
   }) as unknown as LlmProvider;
 
-/**
- * 创建 Mock IMemoryStorage（内存存储）
- */
-const createMockStorage = (): IMemoryStorage => {
-  const store = new Map<string, Memory>();
-  return {
-    upsert: vi.fn((memory: Memory) => {
-      store.set(memory.id, memory);
-    }),
-    delete: vi.fn((id: string) => {
-      store.delete(id);
-    }),
-    getById: vi.fn((id: string) => store.get(id) ?? null),
-    getBySource: vi.fn((source: string) =>
-      Array.from(store.values()).filter((m) => m.source === source),
-    ),
-    search: vi.fn(() => []),
-    count: vi.fn(() => store.size),
-    countBySource: vi.fn((source: string) =>
-      Array.from(store.values()).filter((m) => m.source === source).length,
-    ),
-    close: vi.fn(),
-  } as unknown as IMemoryStorage;
-};
-
 describe('WorkProjectionManager', () => {
-  let mockStorage: IMemoryStorage;
+  /** 临时项目目录（模拟 memoraDir，投影写其下 projections/ 子目录） */
+  let memoraDir: string;
 
-  beforeEach(() => {
-    mockStorage = createMockStorage();
+  beforeEach(async () => {
+    memoraDir = await mkdtemp(join(tmpdir(), 'memora-wp-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(memoraDir, { recursive: true, force: true });
   });
 
   describe('ensureProjection', () => {
-    it('应该在首次读取时生成投影', async () => {
+    it('应该在首次读取时生成投影并写入项目目录', async () => {
       // Given
       const mockResponse = JSON.stringify({
         summary: '一个关于成长与选择的故事',
@@ -71,7 +53,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const result = await manager.ensureProjection(
@@ -96,7 +78,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
       const content = '# 第一章\n\n内容...';
 
       // 首次生成
@@ -114,7 +96,7 @@ describe('WorkProjectionManager', () => {
       expect(provider.chat).toHaveBeenCalledTimes(1); // 只调用了一次 LLM
     });
 
-    it('应该在 hash 变更时重新生成', async () => {
+    it('应该在 hash 变更时重新生成（覆盖旧投影文件）', async () => {
       // Given
       const mockResponse1 = JSON.stringify({
         summary: '旧版本的故事',
@@ -136,7 +118,7 @@ describe('WorkProjectionManager', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // 首次生成
       await manager.ensureProjection('/project/novel/chapter-001.md', '# 旧版本', 'chapter-001.md');
@@ -162,7 +144,7 @@ describe('WorkProjectionManager', () => {
           throw new Error('LLM 调用失败');
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const result = await manager.ensureProjection(
@@ -186,7 +168,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
       await manager.ensureProjection('/project/novel/chapter-001.md', '内容', 'chapter-001.md');
 
       // When
@@ -200,7 +182,7 @@ describe('WorkProjectionManager', () => {
     it('应该在无投影时返回 null', async () => {
       // Given
       const provider = createMockProvider('');
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const result = await manager.getProjection('/project/novel/nonexistent.md');
@@ -211,7 +193,7 @@ describe('WorkProjectionManager', () => {
   });
 
   describe('loadAll', () => {
-    it('应该加载所有作品投影', async () => {
+    it('应该加载项目目录下所有作品投影', async () => {
       // Given
       const mockResponse = JSON.stringify({
         summary: '一个故事',
@@ -220,7 +202,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
       await manager.ensureProjection('/project/novel/chapter-001.md', '内容1', 'chapter-001.md');
       await manager.ensureProjection('/project/novel/chapter-002.md', '内容2', 'chapter-002.md');
 
@@ -234,7 +216,7 @@ describe('WorkProjectionManager', () => {
     it('应该在无投影时返回空数组', async () => {
       // Given
       const provider = createMockProvider('');
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const all = await manager.loadAll();
@@ -248,7 +230,7 @@ describe('WorkProjectionManager', () => {
     it('应该在 JSON 解析失败时降级', async () => {
       // Given - LLM 返回非法 JSON
       const provider = createMockProvider('这不是一个合法的 JSON');
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const result = await manager.ensureProjection(
@@ -264,42 +246,17 @@ describe('WorkProjectionManager', () => {
   });
 });
 
-// ─── K2：workProjection 深度补测（截断边界 + JSON 字段缺失 + 编解码往返 + inflight + fileName 推导） ──
-//
-// 覆盖目标：
-//   - CONTENT_TRUNCATE_CHARS=3000 截断边界（验证 LLM 收到截断内容）
-//   - parseLlmJson 字段缺失降级（summary/structure/keyDecisions 各自缺失时的默认值）
-//   - encodeContent/decodeContent JSON 格式 round-trip + 非 JSON 内容兜底
-//   - inflight Promise 缓存（同文件并发调用只触发一次 LLM）
-//   - fileName 未传时从 filePath 推导（getBaseName）
-//   - 不同路径同文件名 slug 冲突（id 相同，后写覆盖）
-//   - loadAll 完整字段恢复
-
+// ─── K2：workProjection 深度补测（截断边界 + JSON 字段缺失 + inflight + fileName 推导 + slug 冲突 + 完整字段恢复） ──
 describe('WorkProjectionManager K2 深度补测', () => {
-  let mockStorage: IMemoryStorage;
-  /** 内存态存储，便于预置数据 */
-  let store: Map<string, Memory>;
+  /** 临时项目目录 */
+  let memoraDir: string;
 
-  beforeEach(() => {
-    store = new Map<string, Memory>();
-    mockStorage = {
-      upsert: vi.fn((memory: Memory) => {
-        store.set(memory.id, memory);
-      }),
-      delete: vi.fn((id: string) => {
-        store.delete(id);
-      }),
-      getById: vi.fn((id: string) => store.get(id) ?? null),
-      getBySource: vi.fn((source: string) =>
-        Array.from(store.values()).filter((m) => m.source === source),
-      ),
-      search: vi.fn(() => []),
-      count: vi.fn(() => store.size),
-      countBySource: vi.fn((source: string) =>
-        Array.from(store.values()).filter((m) => m.source === source).length,
-      ),
-      close: vi.fn(),
-    } as unknown as IMemoryStorage;
+  beforeEach(async () => {
+    memoraDir = await mkdtemp(join(tmpdir(), 'memora-wp-test-k2-'));
+  });
+
+  afterEach(async () => {
+    await rm(memoraDir, { recursive: true, force: true });
   });
 
   describe('内容截断边界', () => {
@@ -318,7 +275,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // 构造 5000 字符的内容
       const longContent = '# 标题\n\n' + 'A'.repeat(5000);
@@ -346,7 +303,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // 构造正好 3000 字符的正文
       const exactContent = 'B'.repeat(3000);
@@ -364,7 +321,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
     it('LLM 返回 JSON 缺少 structure 时应降级为空数组', async () => {
       // Given - JSON 只含 summary，缺 structure/keyDecisions
       const provider = createMockProvider(JSON.stringify({ summary: '只有摘要' }));
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const result = await manager.ensureProjection('/project/file.md', '内容', 'file.md');
@@ -381,7 +338,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
       const provider = createMockProvider(
         JSON.stringify({ structure: ['模块1'], keyDecisions: ['决策1'] }),
       );
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When
       const result = await manager.ensureProjection('/project/file.md', '内容', 'file.md');
@@ -391,64 +348,6 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(result!.summary).toContain('无法获取概要');
       expect(result!.structure).toEqual(['模块1']);
       expect(result!.keyDecisions).toEqual(['决策1']);
-    });
-  });
-
-  describe('encodeContent/decodeContent 编解码', () => {
-    it('新格式 round-trip：写入后读取应保留全部字段', async () => {
-      // Given
-      const provider = createMockProvider(
-        JSON.stringify({
-          summary: '测试摘要',
-          structure: ['模块A', '模块B'],
-          keyDecisions: ['决策1', '决策2'],
-        }),
-      );
-      const manager = new WorkProjectionManager(mockStorage, provider);
-
-      // When - 生成投影
-      const entry = await manager.ensureProjection('/project/file.md', '内容', 'file.md');
-      expect(entry).not.toBeNull();
-
-      // 从 storage 读取并验证字段完整
-      const stored = store.get(entry!.id);
-      expect(stored).toBeDefined();
-      // 通过 getProjection 重新读取（触发 fromMemory 解码）
-      const restored = await manager.getProjection('/project/file.md');
-      expect(restored).not.toBeNull();
-      expect(restored!.summary).toBe('测试摘要');
-      expect(restored!.structure).toEqual(['模块A', '模块B']);
-      expect(restored!.keyDecisions).toEqual(['决策1', '决策2']);
-      expect(restored!.fileHash).toBe(entry!.fileHash);
-      // M1 修复：sourcePath 经 content 元数据往返不丢（旧实现 sourcePath 只存内存，
-      // toMemory → fromMemory 往返后丢失，导致 getProjection 拿不到文件路径）
-      expect(restored!.sourcePath).toBe('/project/file.md');
-    });
-
-    it('非 JSON 首行内容应兜底为空元数据（旧文本降级）', async () => {
-      // Given - 先用 ensureProjection 生成一个投影（拿到正确的 id），再改 content 为非 JSON 旧文本
-      const provider = createMockProvider(
-        JSON.stringify({ summary: '临时', structure: [], keyDecisions: [] }),
-      );
-      const manager = new WorkProjectionManager(mockStorage, provider);
-      const entry = await manager.ensureProjection('/project/file.md', '内容', 'file.md');
-      expect(entry).not.toBeNull();
-
-      // 将 store 中对应 memory 的 content 替换为无元数据的纯文本
-      const oldContent = `这是没有元数据的摘要内容`;
-      const stored = store.get(entry!.id);
-      expect(stored).toBeDefined();
-      stored!.content = oldContent;
-
-      // When
-      const restored = await manager.getProjection('/project/file.md');
-
-      // Then - 应兜底为空元数据，summary 保留全部内容
-      expect(restored).not.toBeNull();
-      expect(restored!.fileHash).toBe('');
-      expect(restored!.structure).toEqual([]);
-      expect(restored!.keyDecisions).toEqual([]);
-      expect(restored!.summary).toBe(oldContent);
     });
   });
 
@@ -469,7 +368,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When - 同文件并发调用两次
       const [result1, result2] = await Promise.all([
@@ -484,9 +383,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(result1!.summary).toBe(result2!.summary);
     });
 
-    // ─── FIX-P0-1：awaitInflight 等待 inflight LLM 生成完成 ───
-
-    it('FIX-P0-1：awaitInflight 应等待正在进行的 LLM 生成完成', async () => {
+    it('awaitInflight 应等待正在进行的 LLM 生成完成', async () => {
       // Given - LLM 调用有延迟，让 ensureProjection 进入 inflight
       let llmResolved = false;
       const provider = {
@@ -502,7 +399,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When - 启动 ensureProjection（不 await），立即调用 awaitInflight
       const projectionPromise = manager.ensureProjection('/project/file.md', '内容', 'file.md');
@@ -516,18 +413,18 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(result!.summary).toBe('awaitInflight 测试');
     });
 
-    it('FIX-P0-1：无 inflight 时 awaitInflight 应立即 resolve', async () => {
+    it('无 inflight 时 awaitInflight 应立即 resolve', async () => {
       const provider = createMockProvider(
         JSON.stringify({ summary: '无 inflight', structure: [], keyDecisions: [] }),
       );
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // 无 inflight 时 awaitInflight 应立即返回
       await manager.awaitInflight();
       // 能到达此行即表示立即 resolve
     });
 
-    it('FIX-P0-1：多文件并发 inflight 时 awaitInflight 应等待全部完成', async () => {
+    it('多文件并发 inflight 时 awaitInflight 应等待全部完成', async () => {
       let pendingCount = 0;
       const provider = {
         name: 'mock-multi-inflight',
@@ -542,7 +439,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // 启动 3 个不同文件的并发生成
       const promises = [
@@ -568,7 +465,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
       const provider = createMockProvider(
         JSON.stringify({ summary: '推导测试', structure: [], keyDecisions: [] }),
       );
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When - 不传 fileName
       const entry = await manager.ensureProjection('/project/docs/readme.md', '内容');
@@ -578,27 +475,27 @@ describe('WorkProjectionManager K2 深度补测', () => {
       expect(entry!.id).toContain('readme');
     });
 
-    it('不同路径同文件名应产生相同 id（slug 冲突，后写覆盖）', async () => {
+    it('不同路径同文件名应落到同一投影文件（slug 冲突，后写覆盖）', async () => {
       // Given
       const provider = createMockProvider(
         JSON.stringify({ summary: '覆盖测试', structure: [], keyDecisions: [] }),
       );
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
 
       // When - 两个不同路径但同文件名
       await manager.ensureProjection('/project-a/file.md', '内容A', 'file.md');
       await manager.ensureProjection('/project-b/file.md', '内容B', 'file.md');
 
-      // Then - 两条记录的 id 相同（slug 都基于 'file.md'），storage 中只有一条
+      // Then - 投影文件只有一条（后写覆盖先写），loadAll 返回 1 条
       const allProjections = await manager.loadAll();
       expect(allProjections).toHaveLength(1);
-      // 后写的覆盖先写的
-      expect(allProjections[0]!.fileHash).not.toBe('');
+      // 后写覆盖先写（内容 B 触发生成）
+      expect(allProjections[0]!.summary).toBe('覆盖测试');
     });
   });
 
   describe('loadAll 完整字段恢复', () => {
-    it('loadAll 应从 storage 恢复 hash/structure/keyDecisions/summary 全部字段', async () => {
+    it('loadAll 应从投影文件恢复 hash/structure/keyDecisions/summary 全部字段', async () => {
       // Given - 生成两个投影
       const provider = createMockProvider(
         JSON.stringify({
@@ -607,7 +504,7 @@ describe('WorkProjectionManager K2 深度补测', () => {
           keyDecisions: ['决策A', '决策B'],
         }),
       );
-      const manager = new WorkProjectionManager(mockStorage, provider);
+      const manager = new WorkProjectionManager(memoraDir, provider);
       await manager.ensureProjection('/project/file1.md', '内容1', 'file1.md');
       await manager.ensureProjection('/project/file2.md', '内容2', 'file2.md');
 
@@ -622,6 +519,8 @@ describe('WorkProjectionManager K2 深度补测', () => {
         expect(proj.keyDecisions).toEqual(['决策A', '决策B']);
         expect(proj.fileHash).toBeTruthy(); // hash 应为 64 位 SHA-256 hex
         expect(proj.fileHash.length).toBe(64);
+        // 文件级感知：sourcePath 经 JSON 文件往返不丢
+        expect(proj.sourcePath).toBeTruthy();
       }
     });
   });

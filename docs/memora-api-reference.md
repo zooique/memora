@@ -345,7 +345,7 @@ agent.memory.snapshot(): MemorySnapshot
 |----|-----|------|
 | 第 1 层 | `snapshot.working` | `WorkingMemorySnapshot` — 当前 AgentLoop 消息（最近 5 条预览 + 总数） |
 | 第 2 层 | `snapshot.bootstrap` | `BootstrapSnapshot` — 规则记忆（名称 + 来源 + 权重，Persona/Skill 已解耦为设定记忆，不进 bootstrap） |
-| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（round-summary + profile + work-projection）+ 当前会话信息 |
+| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（round-summary）+ 当前会话信息 |
 
 ```typescript
 interface MemorySnapshot {
@@ -690,7 +690,9 @@ const agent = new Agent({
 
 ## 九、作品投影（`agent.works` · WorkProjectionManager）
 
-作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在 SQLite 中供 Agent 快速召回，避免每次对话都读取完整文件。原始文件内容不进 SQLite，Agent 通过工具按需读取。
+作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在**项目级目录** `<memoraDir>/projections/<slug>.json`（不进入记忆库/SQLite）。原始文件内容不进投影，Agent 通过工具按需读取。
+
+> **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（score 衰减/去重/冲突检测/时效评估均不覆盖），随项目隔离——换项目即消失。宿主如需让模型感知投影，可显式经 `agent.works.loadAll()` 注入。
 
 ### 类型定义
 
@@ -712,7 +714,7 @@ interface WorkProjectionEntry {
 |------|------|
 | `agent.works.ensureProjection(filePath, content, fileName?)` | 检查并更新作品投影（核心方法）。计算 hash → 查询已有投影 → 无则生成 / hash 变则重新生成 / hash 同则跳过。同文件并发调用时复用 in-flight Promise，避免重复 LLM 调用 |
 | `agent.works.getProjection(filePath)` | 获取已有的作品投影（不触发生成） |
-| `agent.works.loadAll()` | 加载所有作品投影（按 source 标签 `'work-projection'` 召回） |
+| `agent.works.loadAll()` | 加载所有作品投影（扫描项目目录 `<memoraDir>/projections/`，非记忆召回） |
 
 > **注意**：`agent.works` 在 `init()` 前返回 `null`。`ensureProjection` 依赖后台 LLM Provider 生成摘要，未注入 `backgroundProvider` 时使用前台 Provider。
 

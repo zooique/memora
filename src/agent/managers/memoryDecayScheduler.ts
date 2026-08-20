@@ -1,7 +1,8 @@
 /**
- * 记忆衰减调度器（从 agent.ts 拆分）：定期对 work-projection 记忆执行 score 衰减，体现"自然遗忘"。
+ * 记忆衰减调度器（从 agent.ts 拆分）：按 GOVERNANCE_SOURCES 对记忆执行 score 衰减，体现"自然遗忘"。
  * 不衰减 persona/rule/skill（配置型记忆不应衰减）。通过超时回调和 score 判定记忆有效，不引入 type→时间窗口过滤。
  * 可选 L2 时效性评估：衰减后扫描低分记忆（score<阈值），LLM 判断是否已过时，过时降级 score（不物理删除）。
+ * 当前治理源为空（作品投影已移出记忆库，记忆库仅剩 round-summary），衰减循环空转但保留机制。
  */
 
 import { safeSetInterval, clearSafeInterval } from '@/utils/safeTimer.js';
@@ -31,6 +32,8 @@ export interface MemoryDecaySchedulerOptions {
   readonly backgroundProvider?: LlmProvider | null;
   /** 完整记忆存储（可选，用于 L2 读取低分记忆和降级，未注入时跳过） */
   readonly index?: IMemoryStorage | null;
+  /** 治理源列表（默认 GOVERNANCE_SOURCES；空治理源时衰减/评估空转，测试可显式注入） */
+  readonly sources?: readonly string[];
 }
 
 // ─── L2 时效性评估常量 ────────────────────────────────────
@@ -86,6 +89,8 @@ export class MemoryDecayScheduler {
   private readonly onDecayCompleted: DecayCompletedCallback;
   private readonly backgroundProvider: LlmProvider | null;
   private readonly index: IMemoryStorage | null;
+  /** 治理源列表（默认 GOVERNANCE_SOURCES；构造时固化，空治理源时衰减/评估空转） */
+  private readonly sources: readonly string[];
 
   /** 衰减定时器（null=未启动） */
   private decayTimer: ReturnType<typeof setInterval> | null = null;
@@ -107,6 +112,7 @@ export class MemoryDecayScheduler {
     // L2 可选依赖，未注入时 evaluateTimeliness 静默跳过
     this.backgroundProvider = opts.backgroundProvider ?? null;
     this.index = opts.index ?? null;
+    this.sources = opts.sources ?? GOVERNANCE_SOURCES;
   }
 
   /** 启动定期衰减：立即执行首次衰减，再注册定时衰减 */
@@ -152,7 +158,7 @@ export class MemoryDecayScheduler {
     if (!this.storage) return;
     const decaySpan = this.tracer.startSpan(TRACE_SPANS.DECAY);
     try {
-      const decayedCount = this.storage.decayScores([...GOVERNANCE_SOURCES], new Date());
+      const decayedCount = this.storage.decayScores([...this.sources], new Date());
       logger.debug({ decayedCount }, '记忆衰减完成');
 
       this.metricDecayRunCount++;
@@ -225,7 +231,7 @@ export class MemoryDecayScheduler {
   private async doEvaluateTimeliness(signal: AbortSignal): Promise<TimelinessReport> {
     // 加载低分记忆（score<阈值）
     const lowScoreMemories: Memory[] = [];
-    for (const source of GOVERNANCE_SOURCES) {
+    for (const source of this.sources) {
       const memories = this.index!.getBySource(source);
       lowScoreMemories.push(...memories.filter((m) => m.score < TIMELINESS_LOW_SCORE_THRESHOLD));
     }

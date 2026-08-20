@@ -48,7 +48,7 @@ export interface MemorySnapshot {
   working: WorkingMemorySnapshot;
   /** 第 2 层：Bootstrap 记忆 */
   bootstrap: BootstrapSnapshot;
-  /** 第 3 层：归档记忆（round-summary + work-projection） */
+  /** 第 3 层：归档记忆（round-summary） */
   archive: ArchiveSnapshot;
 }
 
@@ -76,7 +76,7 @@ export interface BootstrapSnapshot {
   }>;
 }
 
-/** 第 3 层：归档记忆快照（round-summary + work-projection） */
+/** 第 3 层：归档记忆快照（round-summary） */
 export interface ArchiveSnapshot {
   archiveCount: number;
   currentSession: string;
@@ -86,7 +86,6 @@ export interface ArchiveSnapshot {
   /** 归档记忆来源分布 */
   stats: {
     'round-summary': number;
-    'work-projection': number;
   };
 }
 
@@ -177,10 +176,9 @@ export class MemoryInspector {
     // 第 2 层 Bootstrap 恒空：ADR-025 设定记忆唯一归角色包，索引不再新增，rolePackPrompt 承载规则注入。
     // 保留空壳接口供 UI 层调用，避免宿主代码变更。
 
-    // 第 3 层：归档记忆计数（round-summary + work-projection）
+    // 第 3 层：归档记忆计数（round-summary，记忆库唯一对话记忆）
     const roundSummaryCount = this.index.countBySource(SOURCE_LABELS.ROUND_SUMMARY);
-    const workProjectionCount = this.index.countBySource(SOURCE_LABELS.WORK_PROJECTION);
-    const archiveTotal = roundSummaryCount + workProjectionCount;
+    const archiveTotal = roundSummaryCount;
 
     return {
       working: {
@@ -204,7 +202,6 @@ export class MemoryInspector {
         hint: '调 listAllSessions() 获取文件清单',
         stats: {
           'round-summary': roundSummaryCount,
-          'work-projection': workProjectionCount,
         },
       },
     };

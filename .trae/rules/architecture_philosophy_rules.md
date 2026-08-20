@@ -92,7 +92,7 @@ description:
 | `rule`      | 100% 启动加载（bootstrap） | 安全规则、编码规范 |
 | `skill`     | 设定记忆，不参与 recall  | 领域知识、能力技能 |
 | `content`   | 按相关度增量召回（归档模式三态控制，ADR-015） | 会话归档的工作内容投影 |
-| `work-projection` | 按相关度增量召回 | 作品投影（Agent 读取用户作品生成的概要） |
+| `work-projection` | 不参与 recall（落项目目录 `<memoraDir>/projections/`，随项目隔离） | 作品投影（Agent 读取用户作品生成的概要，2026-08-20 起移出记忆库） |
 | `round-summary` | 按相关度增量召回 | 轮次摘要（记忆即摘要，含 preference/fact/decision/intent/general 类型） |
 | `profile`   | 按相关度增量召回        | 用户画像（存量数据兼容，2026-08-14 起不再新写入） |
 
@@ -186,8 +186,8 @@ domain），其余在 Agent Loop 中按需检索。
 
 **在代码中的体现**：
 
-- `decayScores()` 衰减 profile（存量）/ work-projection 的 score（治理源由 `GOVERNANCE_SOURCES` 统一维护，见 [governance.ts](../../src/memory/governance.ts)；由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）
-- **round-summary 不参与 score 衰减**（2026-08-17 对齐实现）：其"遗忘"由两条机制承担——① 写路径取代检测（`superseded` 标记，ADR-021 + 加权 Jaccard 算法）压制被覆盖的旧摘要；② score 衰减自然沉底（长期未访问的记忆分数衰减，相关性排序自然排不到前面）。**类型时间窗口已废弃**（2026-08-17 定论）：type 不设时效，记忆是否有效由 superseded + score 衰减判定，不由时间流逝判定。score 衰减只作用于 profile/work-projection 这类长期沉淀记忆，避免对轮次级记忆重复施加衰减机制
+- `decayScores()` 按 `GOVERNANCE_SOURCES` 衰减记忆 score（治理源由 [governance.ts](../../src/memory/governance.ts) 统一维护；由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）。当前治理源为空——profile 已随角色包边界收敛移除、work-projection 已随移出记忆库（2026-08-20），衰减循环空转但机制保留，未来新增治理源从 `GOVERNANCE_SOURCES` 声明即可
+- **round-summary 不参与 score 衰减**（2026-08-17 对齐实现）：其"遗忘"由两条机制承担——① 写路径取代检测（`superseded` 标记，ADR-021 + 加权 Jaccard 算法）压制被覆盖的旧摘要；② score 衰减自然沉底（长期未访问的记忆分数衰减，相关性排序自然排不到前面）。**类型时间窗口已废弃**（2026-08-17 定论）：type 不设时效，记忆是否有效由 superseded + score 衰减判定，不由时间流逝判定。score 衰减只作用于治理源声明的长期沉淀记忆，避免对轮次级记忆重复施加衰减机制
 - 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](../decisions/ADR-015-archive-mode.md)）
 - `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）
 - 物理清理：`purgeExpiredMemories(before)` 清理过期软删除记忆；回收站定时器默认保留 30 天

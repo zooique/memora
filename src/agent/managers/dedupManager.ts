@@ -84,14 +84,18 @@ export interface DedupReport {
 export class DedupManager {
   /** 后台 LLM Provider（可选，未注入时降级跳过） */
   private readonly backgroundProvider: LlmProvider | null;
+  /** 治理源列表（默认 GOVERNANCE_SOURCES；空治理源时去重空转，测试可显式注入） */
+  private readonly sources: readonly string[];
 
   constructor(
     private readonly index: IMemoryStorage,
     backgroundProvider: LlmProvider | null = null,
     /** 去重完成回调（宿主据此发射事件通知用户） */
     private readonly onCompleted?: (report: DedupReport) => void,
+    sources: readonly string[] = GOVERNANCE_SOURCES,
   ) {
     this.backgroundProvider = backgroundProvider;
+    this.sources = sources;
   }
 
   /**
@@ -111,7 +115,7 @@ export class DedupManager {
     }
 
     const candidates: Memory[] = [];
-    for (const source of GOVERNANCE_SOURCES) {
+    for (const source of this.sources) {
       const memories = this.index.getBySource(source);
       candidates.push(...memories);
     }

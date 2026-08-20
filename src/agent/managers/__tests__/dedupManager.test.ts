@@ -104,7 +104,7 @@ describe('DedupManager · M6 合并内容落库', () => {
         reason: '语义等价',
       }),
     );
-    const manager = new DedupManager(storage, provider);
+    const manager = new DedupManager(storage, provider, undefined, [SOURCE_LABELS.WORK_PROJECTION]);
 
     // When
     const report = await manager.deduplicateMemories();
@@ -151,7 +151,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     const provider = createMockProvider(
       JSON.stringify({ isDuplicate: true, reason: '语义等价' }),
     );
-    const manager = new DedupManager(storage, provider);
+    const manager = new DedupManager(storage, provider, undefined, [SOURCE_LABELS.WORK_PROJECTION]);
 
     // When
     await manager.deduplicateMemories();

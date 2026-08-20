@@ -561,7 +561,8 @@ export async function assembleComponents(
   const history = new MessageHistory(sessionStore);
 
   // 作品投影生成/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
-  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider, (sourcePath, summary) => {
+  // 投影落项目级目录（pctx.memoraDir/projections/）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
+  const workProjection = new WorkProjectionManager(pctx.memoraDir, backgroundProvider ?? provider, (sourcePath, summary) => {
     hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
   });
 

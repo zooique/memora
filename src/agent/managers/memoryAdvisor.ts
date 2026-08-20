@@ -137,12 +137,16 @@ export interface ConflictReport {
 export class MemoryAdvisor {
   /** 后台 LLM Provider（可选，用于 L3 冲突检测，未注入时跳过） */
   private readonly backgroundProvider: LlmProvider | null;
+  /** 治理源列表（默认 GOVERNANCE_SOURCES；空治理源时推荐/冲突检测空转，测试可显式注入） */
+  private readonly sources: readonly string[];
 
   constructor(
     private readonly index: IMemoryStorage,
     backgroundProvider: LlmProvider | null = null,
+    sources: readonly string[] = GOVERNANCE_SOURCES,
   ) {
     this.backgroundProvider = backgroundProvider;
+    this.sources = sources;
   }
 
   // ─── 源健康诊断 ─────────────────────────────────────────
@@ -243,7 +247,7 @@ export class MemoryAdvisor {
     }
 
     // 按 source 分组采样，确保来源多样性
-    for (const source of GOVERNANCE_SOURCES) {
+    for (const source of this.sources) {
       const count = this.index.countBySource(source);
       if (count > 0 && !excludeSources.includes(source)) {
         const memories = this.index.getBySource(source);
@@ -321,7 +325,7 @@ export class MemoryAdvisor {
     }
 
     const candidates: Memory[] = [];
-    for (const source of GOVERNANCE_SOURCES) {
+    for (const source of this.sources) {
       const memories = this.index.getBySource(source);
       // 按 score 降序取 top N
       const top = memories.sort(byScoreDesc).slice(0, CONFLICT_CANDIDATES_PER_SOURCE);

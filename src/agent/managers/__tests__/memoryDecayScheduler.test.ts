@@ -172,6 +172,8 @@ describe('MemoryDecayScheduler', () => {
     scheduler = new MemoryDecayScheduler({
       tracer: tracer.tracer,
       onDecayCompleted: cb.callback,
+      // 显式注入治理源（生产默认 GOVERNANCE_SOURCES 为空）：runOnce 测试验证 decayScores 收到 sources
+      sources: [SOURCE_LABELS.WORK_PROJECTION],
     });
   });
 
@@ -328,6 +330,7 @@ describe('MemoryDecayScheduler', () => {
         onDecayCompleted: cb.callback,
         backgroundProvider: mockProvider,
         index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
       });
     });
 
@@ -336,6 +339,7 @@ describe('MemoryDecayScheduler', () => {
         const schedulerNoProvider = new MemoryDecayScheduler({
           onDecayCompleted: cb.callback,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
         const report = await schedulerNoProvider.evaluateTimeliness();
         expect(report.scannedCount).toBe(0);
@@ -365,6 +369,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
         const report = await l2Scheduler.evaluateTimeliness();
         expect(report.scannedCount).toBe(0);
@@ -387,6 +392,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -413,6 +419,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -440,6 +447,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -464,6 +472,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -489,6 +498,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         await l2Scheduler.evaluateTimeliness();
@@ -515,6 +525,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -541,6 +552,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -568,6 +580,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         const report = await l2Scheduler.evaluateTimeliness();
@@ -613,6 +626,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProviderForAbort,
           index: mockStorageForAbort,
+          sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         // 启动 evaluateTimeliness（不 await，让它进入 inflight）
@@ -646,6 +660,7 @@ describe('MemoryDecayScheduler', () => {
           onDecayCompleted: cb.callback,
           backgroundProvider: mockProvider,
           index: mockStorage,
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
         });
 
         // 第一次调用

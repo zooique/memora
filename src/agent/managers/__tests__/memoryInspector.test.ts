@@ -230,15 +230,12 @@ describe('MemoryInspector', () => {
       expect(snap.bootstrap.items).toHaveLength(0);
     });
 
-    it('归档层：round-summary + work-projection 计数', () => {
+    it('归档层：round-summary 计数（作品投影已移出记忆库）', () => {
       storage.upsert(createMemory({ id: 'round-summary:s1:r1', source: 'round-summary', name: 'rs1' }));
       storage.upsert(createMemory({ id: 'round-summary:s1:r2', source: 'round-summary', name: 'rs2' }));
-      storage.upsert(createMemory({ id: 'work-projection:wp1', source: 'work-projection', name: 'wp1' }));
-      storage.upsert(createMemory({ id: 'work-projection:wp2', source: 'work-projection', name: 'wp2' }));
       const snap = inspector.snapshot();
-      expect(snap.archive.archiveCount).toBe(4);
+      expect(snap.archive.archiveCount).toBe(2);
       expect(snap.archive.stats['round-summary']).toBe(2);
-      expect(snap.archive.stats['work-projection']).toBe(2);
     });
 
     it('currentSession/currentSessionName：null 时降级为 "(none)"', () => {

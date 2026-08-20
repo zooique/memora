@@ -20,18 +20,17 @@ import {
   DECAY_AGE_DAYS,
   DECAY_AMOUNT,
 } from '@/memory/governance.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
-    it('应仅包含 WORK_PROJECTION 一个 source', () => {
-      expect(GOVERNANCE_SOURCES).toHaveLength(1);
-      expect(GOVERNANCE_SOURCES).toContain(SOURCE_LABELS.WORK_PROJECTION);
+    it('应为空（作品投影已移出记忆库，当前无治理对象）', () => {
+      // WORK_PROJECTION 已随作品投影落项目目录移出记忆库；记忆库仅剩 round-summary（不参与运行时治理）
+      expect(GOVERNANCE_SOURCES).toHaveLength(0);
     });
 
-    it('应与 SOURCE_LABELS 的字符串值对齐', () => {
+    it('应与 SOURCE_LABELS 无对齐（治理源为空）', () => {
       // 锁定具体字符串值，防止 SOURCE_LABELS 重命名后治理范围漂移
-      expect([...GOVERNANCE_SOURCES]).toEqual(['work-projection']);
+      expect([...GOVERNANCE_SOURCES]).toEqual([]);
     });
 
     it('不应包含配置型 source（persona / rule / skill）', () => {

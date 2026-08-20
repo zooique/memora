@@ -369,7 +369,7 @@ SecurityGuard.requestWriteConfirmation
 | 用户是否在线（有交互） | 用户具体在做什么操作 |
 | 当前时间/日程 | 用户的浏览器历史 |
 
-**文件内容感知的例外**：精灵通过 memora 的 work-projection 机制感知文件——Agent 读取文件时生成摘要（source:work-projection），这是用户主动触发的，不是后台监听。
+**文件内容感知的例外**：精灵通过 memora 的 work-projection 机制感知文件——Agent 读取文件时生成概要投影（落项目级目录 `<memoraDir>/projections/`，2026-08-20 起移出记忆库），这是用户主动触发的，不是后台监听。
 
 ## 10. 快速输入浮窗模块（quick-input）
 
