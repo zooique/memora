@@ -87,7 +87,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9.39.5",
     "jsdom": "^30.0.1",
-    "lefthook": "^1.7.0",
+    "lefthook": "^2.1.10",
     "msw": "^2.15.0",
     "pino": "^9.7.0",
     "pino-pretty": "^11.2.0",
