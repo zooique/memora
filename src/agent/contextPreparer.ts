@@ -35,6 +35,7 @@ import { logger } from '@/logging/logger.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { toError } from '@/utils/errors.js';
+import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
  * 输入增强管线的依赖注入接口（Agent 稳定能力的窄面）
@@ -176,24 +177,20 @@ export class ContextPreparer {
       try {
         // 条数上限统一 DEFAULT_RECALL_LIMIT（full/limited 共用有界条数）；
         // limited 模式在返回后按 token 配额换算的字符预算裁剪
-        recalledMemories = await recall(
-          deps.getIndex(),
-          input,
-          {
-            limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
-            // null（deps 关闭语义）收窄为 recall 的可选参数 undefined
-            vectorStore: deps.config.vectorStore ?? undefined,
-            excludeSources: deps.config.recallExcludeSources,
-            // 会话窗口标识与写入侧 sessionName 同源同值，保证"同窗口优先"命中当前会话
-            sessionId: deps.history.currentSessionName,
-            // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
-            minFallback: resolveMinFallback(strategy),
-            // 前置互斥排除：取 limit 前过滤当前会话最近 N 轮 round-summary
-            excludeRoundIds: recentRoundIds,
-            // 召回置信度阈值（0.0-1.0）
-            minSimilarity: resolveRecallConfidence(strategy),
-          },
-        );
+        recalledMemories = await recall(deps.getIndex(), input, {
+          limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
+          // null（deps 关闭语义）收窄为 recall 的可选参数 undefined
+          vectorStore: deps.config.vectorStore ?? undefined,
+          excludeSources: deps.config.recallExcludeSources,
+          // 会话窗口标识与写入侧 sessionName 同源同值，保证"同窗口优先"命中当前会话
+          sessionId: deps.history.currentSessionName,
+          // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
+          minFallback: resolveMinFallback(strategy),
+          // 前置互斥排除：取 limit 前过滤当前会话最近 N 轮 round-summary
+          excludeRoundIds: recentRoundIds,
+          // 召回置信度阈值（0.0-1.0）
+          minSimilarity: resolveRecallConfidence(strategy),
+        });
 
         // limited 配额分层（记忆与摘要各有 token 配额，避免挤占）
         if (memoryRecallMode === 'limited') {
@@ -227,12 +224,18 @@ export class ContextPreparer {
 
       if (recalledMemories.length > 0) {
         deps.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
-        // boost 持久化为 fire-and-forget（软指标 +0.05/次 上限 1.0），失败仅 log 不阻塞 chat 读路径
+        // boost 持久化为 fire-and-forget（软指标 +0.05/次 上限 1.0）；失败经 onFailure 通知宿主，不阻塞 chat 读路径
         const ids = recalledMemories.map((m) => m.id);
-        void boostScores(deps.getIndex(), ids).catch((err: unknown) => {
-          logger.warn({ err }, 'boost 持久化失败（不影响 chat 流程）');
-          deps.emit(AGENT_EVENTS.boostPersistFailed, { memoryId: ids.join(','), message: toError(err).message });
-        });
+        backgroundTask(
+          'boost-scores',
+          () => boostScores(deps.getIndex(), ids),
+          (err: unknown) => {
+            deps.emit(AGENT_EVENTS.boostPersistFailed, {
+              memoryId: ids.join(','),
+              message: toError(err).message,
+            });
+          },
+        );
       }
     }
 
@@ -256,9 +259,7 @@ export class ContextPreparer {
     }
 
     // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
-    recalledMemories = [...recalledMemories].sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    );
+    recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     return recalledMemories;
   }
@@ -282,9 +283,14 @@ export class ContextPreparer {
       if (metaList.length === 0) return null;
 
       // 构建提示：让 LLM 选择最匹配的角色包
-      const roleList = metaList.map((m) => `${m.name}：${m.description ?? m.displayName ?? ''}`).join('\n');
+      const roleList = metaList
+        .map((m) => `${m.name}：${m.description ?? m.displayName ?? ''}`)
+        .join('\n');
       const messages = [
-        { role: 'system' as const, content: `根据用户输入，从以下角色中选择最合适的角色（只输出角色名，不要其他内容）：\n\n${roleList}` },
+        {
+          role: 'system' as const,
+          content: `根据用户输入，从以下角色中选择最合适的角色（只输出角色名，不要其他内容）：\n\n${roleList}`,
+        },
         { role: 'user' as const, content: input },
       ];
 

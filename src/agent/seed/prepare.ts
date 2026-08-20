@@ -12,7 +12,7 @@
  */
 
 import type { AgentChunk } from '@/agent/types.js';
-import { logger } from '@/logging/logger.js';
+import { backgroundTask } from '@/utils/backgroundTask.js';
 import {
   resolveAutoSwitch,
   resolveContextAssembly,
@@ -107,11 +107,13 @@ export class SeedPrepare {
 
     // 会话标题自动命名（fire-and-forget）：仅新建会话首次问答触发（以"会话无标题"判定，不覆盖手动改名）
     if (sessionNamer) {
-      void sessionNamer
-        .ensureSessionTitle(history.currentDateValue, history.currentSessionValue, input)
-        .catch((err: unknown) => {
-          logger.warn({ err }, '会话标题自动命名失败（best-effort，不阻塞对话）');
-        });
+      backgroundTask('session-title', () =>
+        sessionNamer.ensureSessionTitle(
+          history.currentDateValue,
+          history.currentSessionValue,
+          input,
+        ),
+      );
     }
 
     return { input, recalledMemories, aborted: false } satisfies SeedPrepareResult;

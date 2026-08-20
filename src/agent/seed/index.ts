@@ -8,11 +8,8 @@
 
 export { SeedOrchestrator } from './orchestrator.js';
 export type { StreamConsumeResult, SeedParts, SeedDeps, SeedPrepareResult } from './types.js';
-// 三阶段 + Handoff 执行器（门面按路径复用单阶段能力）
+// 回答前执行器（含独立状态 lastStickySessionId，保留独立类）
 export { SeedPrepare } from './prepare.js';
-export { SeedAct } from './act.js';
-export { SeedReflect } from './reflect.js';
-export { SeedHandoff } from './handoff.js';
-// 难度分级（阶段 2）
+// 难度分级（阶段 2，真逻辑 + 独立测试，保留独立类）
 export { DifficultyJudge } from './difficulty.js';
 export type { Difficulty } from './difficulty.js';

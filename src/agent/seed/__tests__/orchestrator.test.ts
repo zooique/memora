@@ -67,6 +67,42 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait', reason: undefined });
   });
 
+  it('reflect 守卫：reflect.summary=off 时跳过摘要生成（不沉淀）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '完成回复');
+    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
+    // summary=off → runSummary 门控跳过（一次性对话不沉淀）
+    useStrategy(mocks, makeStrategy({ summary: 'off' }));
+
+    await collectGen(new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 摘要生成不被调用（reflect 门控生效）
+    expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
+    // 其余闭环仍完整：act 入史、handoff 产出
+    expect(mocks.history.appendAssistant).toHaveBeenCalledWith('完成回复', expect.any(String));
+  });
+
+  it('reflect 守卫：prepare.summaryFocus 透传给摘要生成（提炼视角注入）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '完成回复');
+    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
+    const focus = '聚焦代码结构与 diff 变更';
+    useStrategy(mocks, makeStrategy({ summaryFocus: focus }));
+
+    await collectGen(new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal));
+    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
+
+    // 第五参 = 角色包提炼视角（透传非 undefined）
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '用户输入',
+      '完成回复',
+      expect.any(String),
+      expect.any(String),
+      focus,
+    );
+  });
+
   it('runChat 回答前中断：yield aborted，不进回答中', async () => {
     const ac = new AbortController();
     ac.abort();

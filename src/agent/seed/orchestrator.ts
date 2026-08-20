@@ -19,12 +19,18 @@ import type { AgentChunk, SessionEvent } from '@/agent/types.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { resolveTaskLoopLimit } from '@/role-pack/strategyResolver.js';
-import { resolveActiveStrategy, type SeedDeps, type SeedPrepareResult } from './types.js';
+import {
+  resolveActiveStrategy,
+  type StreamConsumeResult,
+  type SeedDeps,
+  type SeedParts,
+  type SeedPrepareResult,
+} from './types.js';
 import { SeedPrepare } from './prepare.js';
-import { SeedAct } from './act.js';
-import { SeedReflect } from './reflect.js';
-import { SeedHandoff } from './handoff.js';
 import { DifficultyJudge, type Difficulty } from './difficulty.js';
+import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/types.js';
+import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
+import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
  * event 路径任务表预判注入提示（仅 plan 为空且应生成任务表时注入，提示 LLM 分步）
@@ -61,21 +67,12 @@ export class SeedOrchestrator {
   private readonly deps: SeedDeps;
   /** 回答前（装配上下文 + 召回 + 技能 + 用户消息入史） */
   private readonly prepare: SeedPrepare;
-  /** 回答中（统一流消费 + 中断/追加助手消息尾处理） */
-  private readonly act: SeedAct;
-  /** 回答后（round-summary 摘要生成，记忆即摘要单轨） */
-  private readonly reflect: SeedReflect;
-  /** Handoff 衔接决策（闭环出口） */
-  private readonly handoff: SeedHandoff;
   /** 难度分级（回答前判简单/复杂，决定是否触发汇报） */
   private readonly difficulty: DifficultyJudge;
 
   constructor(deps: SeedDeps) {
     this.deps = deps;
     this.prepare = new SeedPrepare(deps);
-    this.act = new SeedAct(deps);
-    this.reflect = new SeedReflect(deps);
-    this.handoff = new SeedHandoff(deps);
     this.difficulty = new DifficultyJudge(() => deps.getBackgroundProvider(), deps.tracer);
   }
 
@@ -101,7 +98,7 @@ export class SeedOrchestrator {
     );
     if (difficulty === 'complex' && taskLoopLimit > 0) {
       yield* this.externalTaskLoop(input, prepared, signal);
-      yield* this.handoff.run();
+      yield* this.handoff();
       return;
     }
 
@@ -115,14 +112,14 @@ export class SeedOrchestrator {
           signal,
           this.deps.getParts().loop.getCurrentRoundId(),
         );
-    const acted = yield* this.act.run(produce);
+    const acted = yield* this.act(produce);
     if (acted.failed || acted.aborted) return;
 
     // 回答后：普通回答摘要
     this.backgroundReflect(input, acted.content);
 
     // Handoff：对外产出衔接决策
-    yield* this.handoff.run();
+    yield* this.handoff();
   }
 
   /**
@@ -160,14 +157,14 @@ export class SeedOrchestrator {
 
     // 回答中：消费 loop.processEvent 执行流 + 统一尾处理
     const produce = () => parts.loop.processEvent(event, prepared.recalledMemories, signal);
-    const acted = yield* this.act.run(produce);
+    const acted = yield* this.act(produce);
     if (acted.failed || acted.aborted) return;
 
     // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
     yield* this.settle(difficulty, input, acted.content, signal);
 
     // Handoff：对外产出衔接决策
-    yield* this.handoff.run();
+    yield* this.handoff();
   }
 
   /**
@@ -186,7 +183,7 @@ export class SeedOrchestrator {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
     const produce = () => this.deps.getParts().loop.continueAfterPause(input, signal);
-    const acted = yield* this.act.run(produce);
+    const acted = yield* this.act(produce);
     if (acted.failed || acted.aborted) return;
 
     // 回答后（无 Handoff：续跑态不在闭环出口分岔）
@@ -199,9 +196,112 @@ export class SeedOrchestrator {
    * @param assistantContent 助手回答（摘要输出侧）
    */
   private backgroundReflect(input: string, assistantContent: string): void {
-    void this.reflect
-      .run(input, assistantContent)
-      .catch((err: unknown) => logger.warn({ err }, '非阻塞后处理失败'));
+    backgroundTask('round-summary', () => this.reflect(input, assistantContent));
+  }
+
+  /** 回答中：消费 produce() 生成的 loop 执行流，统一尾处理。
+   * chat/event/resume 三路径共用（驱动不同 loop 入口），中断/追加助手消息尾处理收在此。
+   */
+  private async *act(
+    produce: () => AsyncGenerator<AgentChunk, void, unknown>,
+  ): AsyncGenerator<AgentChunk, StreamConsumeResult, unknown> {
+    // 流消费统一收口于门面的 consumeExecutionStream（对话/事件/续跑共用同构实现）
+    const streamResult = yield* this.deps.consumeExecutionStream(produce());
+    if (streamResult.failed) return streamResult;
+
+    const assistantContent = streamResult.content;
+    const history = this.deps.getParts().history;
+    const loop = this.deps.getParts().loop;
+
+    // 中断：保留已产出文本 + 中断标记写入历史后返回（不进回答后 / Handoff）
+    if (streamResult.aborted) {
+      if (assistantContent.trim()) {
+        const interruptedMark = this.deps.messages?.interrupted ?? '\n\n[已中断]';
+        try {
+          await history.appendAssistant(
+            assistantContent + interruptedMark,
+            loop.getCurrentRoundId(),
+          );
+        } catch (err) {
+          logger.warn({ err }, '中断消息历史写入失败');
+        }
+      }
+      return {
+        content: assistantContent,
+        aborted: true,
+        failed: false,
+      } satisfies StreamConsumeResult;
+    }
+
+    // 正常完成：助手消息写历史（失败仅记日志，不阻断回答后）
+    try {
+      await history.appendAssistant(assistantContent, loop.getCurrentRoundId());
+    } catch (err) {
+      logger.warn({ err }, '助手消息历史写入失败');
+    }
+
+    yield { type: 'thinking', phase: 'archiving' };
+    return streamResult satisfies StreamConsumeResult;
+  }
+
+  /** 回答后普通摘要：round-summary fire-and-forget，进后台收口 */
+  private async reflect(input: string, assistantContent: string): Promise<void> {
+    await this.runSummary(input, assistantContent, TRACE_SPANS.POST_PROCESS);
+  }
+
+  /** 回答后汇报摘要：以汇报文本为单源（输入侧空，仅由汇报驱动） */
+  private async reflectReported(reportText: string): Promise<void> {
+    await this.runSummary('', reportText, TRACE_SPANS.REPORT);
+  }
+
+  /** 摘要生成统一委托：铺 span + 收敛 round-summary（记忆即摘要单轨），策略门控开才生成 */
+  private async runSummary(
+    input: string,
+    assistantContent: string,
+    spanName: string,
+  ): Promise<void> {
+    const tracer = this.deps.tracer ?? NOOP_TRACER;
+    const span = tracer.startSpan(spanName, { archiveMode: this.deps.archiveMode });
+    try {
+      const { history, loop, roundSummaryGenerator, rolePackManager } =
+        this.deps.getParts() as SeedParts;
+
+      // reflect.summary='off' 时跳过（一次性对话不沉淀）
+      if (
+        roundSummaryGenerator &&
+        resolveSummary(resolveActiveStrategy(rolePackManager)) === 'on'
+      ) {
+        try {
+          const roundId = loop.getCurrentRoundId();
+          const sessionName = history.currentSessionName;
+          // 提炼视角：激活角色包 prepare.summaryFocus → 注入摘要生成（无则通用归纳框架）
+          const summaryFocus = resolveSummaryFocus(resolveActiveStrategy(rolePackManager));
+          const summaryPromise = roundSummaryGenerator.generate(
+            input,
+            assistantContent,
+            roundId,
+            sessionName,
+            summaryFocus,
+          );
+          history.registerPendingArchive(summaryPromise);
+        } catch (err) {
+          logger.warn({ err }, '轮次摘要生成初始化失败');
+        }
+      }
+    } finally {
+      span.end();
+    }
+  }
+
+  /** Handoff 衔接决策：产出闭环出口 chunk（对话等待 / 自动衔接） */
+  private async *handoff(): AsyncGenerator<AgentChunk, void, unknown> {
+    const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager);
+    const handoffStrategy = resolveHandoff(strategy);
+    yield {
+      type: 'handoff',
+      decision: handoffStrategy,
+      reason: handoffStrategy === 'wait' ? undefined : 'L2 策略自动衔接',
+    };
   }
 
   /**
@@ -235,7 +335,7 @@ export class SeedOrchestrator {
 
     // 1) 规划闭环：只调查 + 建任务表，不执行
     parts.loop.injectSystemMessage(PLAN_ONLY_HINT);
-    const planAct = yield* this.act.run(() =>
+    const planAct = yield* this.act(() =>
       parts.loop.processUserInput(
         input,
         prepared.recalledMemories,
@@ -257,7 +357,7 @@ export class SeedOrchestrator {
       // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
       // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId（见 Q4 评审）
       // 执行期临时（self-review/reflection 等）已由 loop.processUserInput 入口自动清理，无需此处手动调用
-      const stepAct = yield* this.act.run(() =>
+      const stepAct = yield* this.act(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
       if (stepAct.failed || stepAct.aborted) return;
@@ -308,9 +408,7 @@ export class SeedOrchestrator {
         logger.warn({ err }, '汇报消息历史写入失败');
       }
       // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨）
-      void this.reflect
-        .runReported(trimmed)
-        .catch((err: unknown) => logger.warn({ err }, '汇报摘要生成失败'));
+      backgroundTask('report-summary', () => this.reflectReported(trimmed));
       return;
     }
     // 无实质收尾 → 回退普通单条摘要（与"未收敛"分支同一真理源，保证收敛恒 1:1）

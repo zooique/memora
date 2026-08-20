@@ -14,11 +14,9 @@ import { configError } from '@/utils/errors.js';
 import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
+import { backgroundTask } from '@/utils/backgroundTask.js';
 // 融合排序算法 + 常量从 hybridMerge 导入（消除对 recall.ts 内部常量的依赖）
-import {
-  hybridMerge,
-  RECALL_LIMIT_MULTIPLIER,
-} from '@/memory/hybridMerge.js';
+import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 // LLM 治理共享常量（统一由 governance.ts 维护）
 import { BOOST_INCREMENT } from '@/memory/governance.js';
 
@@ -256,7 +254,11 @@ export class MemoryInspector {
     // 通道 1：语义搜索（VectorStore 可用时）
     if (this.vectorStore && this.vectorStore.size > 0) {
       try {
-        const vectorResults = await this.vectorStore.search(query, limit * RECALL_LIMIT_MULTIPLIER, 0.3);
+        const vectorResults = await this.vectorStore.search(
+          query,
+          limit * RECALL_LIMIT_MULTIPLIER,
+          0.3,
+        );
         for (const vr of vectorResults) {
           const memory = this.index.getById(vr.id);
           if (memory) {
@@ -339,9 +341,7 @@ export class MemoryInspector {
    */
   writePurge(id: string): void {
     if (this.vectorStore) {
-      void this.vectorStore.delete(id).catch((err) => {
-        logger.warn({ err, memoryId: id }, '物理删除记忆的向量失败，可能残留孤儿向量');
-      });
+      backgroundTask('vector-delete', () => this.vectorStore!.delete(id));
     }
     this.index.purge(id);
   }
@@ -357,9 +357,7 @@ export class MemoryInspector {
     // 同步清理向量防孤儿向量（fire-and-forget；delete 异步但内存立即失效，持久化失败仅影响冷启动复活）
     if (this.vectorStore && candidates.length > 0) {
       for (const m of candidates) {
-        void this.vectorStore.delete(m.id).catch((err) => {
-          logger.warn({ err, memoryId: m.id }, '清理过期记忆的向量失败，可能残留孤儿向量');
-        });
+        backgroundTask('vector-delete', () => this.vectorStore!.delete(m.id));
       }
     }
 

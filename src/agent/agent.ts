@@ -9,7 +9,15 @@ import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { COMPLETION_LEVELS } from '@/agent/types.js';
-import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig, Role, Standard } from '@/agent/types.js';
+import type {
+  AgentChunk,
+  ArchiveMode,
+  AgentOptions,
+  AgentContext,
+  AgentConfig,
+  Role,
+  Standard,
+} from '@/agent/types.js';
 import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
 import { Composer } from '@/agent/composer.js';
 import type { PlanContext } from '@/agent/types.js';
@@ -41,24 +49,37 @@ import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionMa
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
-import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers/archiveCoordinator.js';
-import { TypedEventEmitter, type AgentEventMap, AGENT_EVENTS, AGENT_EVENT_SET } from '@/utils/eventEmitter.js';
+import {
+  ArchiveCoordinator,
+  type ArchiveTriggerOptions,
+} from '@/agent/managers/archiveCoordinator.js';
+import {
+  TypedEventEmitter,
+  type AgentEventMap,
+  AGENT_EVENTS,
+  AGENT_EVENT_SET,
+} from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
+import {
+  backgroundTask,
+  getBackgroundTaskStats as readBackgroundTaskStats,
+} from '@/utils/backgroundTask.js';
+import type { BackgroundTaskStats } from '@/utils/backgroundTask.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
 // ─── Agent 门面类 ───────────────────────────────────────
 
 /**
-   * Memora Agent 门面类
-   *
-   * 单 Agent，单配置，单记忆：每个实例拥有独立的对话管线、消息历史与运行时状态。
-   * 多实例只需 dataDir 不同即可彻底隔离记忆库与会话；forkSession() 分叉对话历史但记忆索引全局共享。
-   * skill 为当轮实时注入，不跨轮缓存。
-   */
+ * Memora Agent 门面类
+ *
+ * 单 Agent，单配置，单记忆：每个实例拥有独立的对话管线、消息历史与运行时状态。
+ * 多实例只需 dataDir 不同即可彻底隔离记忆库与会话；forkSession() 分叉对话历史但记忆索引全局共享。
+ * skill 为当轮实时注入，不跨轮缓存。
+ */
 export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 构造参数分组
   #config: AgentConfig;
@@ -321,9 +342,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       onDecayCompleted: (payload) => {
         this.emit(AGENT_EVENTS.decayCompleted, payload);
         // 衰减循环完成时触发 L2 时效性评估
-        void this._governance?.evaluateTimeliness().catch((err: unknown) => {
-          logger.warn({ err }, 'L2 时效性评估自动触发失败（已降级，不影响衰减循环）');
-        });
+        backgroundTask('timeliness', () =>
+          this._governance ? this._governance.evaluateTimeliness() : Promise.resolve(),
+        );
       },
       backgroundProvider: this.#backgroundProvider,
       index: pctx.index,
@@ -508,13 +529,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       if (checkpoint && this.composer) {
         // 收集计划上下文（执行计划管理）
         const sm = this._sessionManager!;
-        const planCtx: PlanContext | undefined = checkpoint.plan.length > 0
-          ? {
-              stalled: sm.isPlanStalled(),
-              activeStep: sm.getActiveStep()?.description,
-              pendingStep: sm.getNextPendingStep()?.description,
-            }
-          : undefined;
+        const planCtx: PlanContext | undefined =
+          checkpoint.plan.length > 0
+            ? {
+                stalled: sm.isPlanStalled(),
+                activeStep: sm.getActiveStep()?.description,
+                pendingStep: sm.getNextPendingStep()?.description,
+              }
+            : undefined;
 
         const composeResult = this.composer.compose(event, checkpoint, planCtx);
 
@@ -530,7 +552,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             const highRiskQuestions = composeResult.needClarify.filter((q) => !q.lowRisk);
             if (highRiskQuestions.length > 0) {
               logger.warn(
-                { consecutivePauseCount: sm.getConsecutivePauseCount(), filteredCount: highRiskQuestions.length },
+                {
+                  consecutivePauseCount: sm.getConsecutivePauseCount(),
+                  filteredCount: highRiskQuestions.length,
+                },
                 '连续高风险暂停已达上限，强制降级 P3 兜底',
               );
               composeResult.needClarify = composeResult.needClarify.filter((q) => q.lowRisk);
@@ -542,11 +567,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             for (const q of composeResult.needClarify) {
               yield { type: 'text', content: `[需澄清] ${q.question}` };
             }
-            this.emit(AGENT_EVENTS.needClarify, composeResult.needClarify.map((q) => ({
-              slot: q.slot,
-              question: q.question,
-              options: q.options,
-            })));
+            this.emit(
+              AGENT_EVENTS.needClarify,
+              composeResult.needClarify.map((q) => ({
+                slot: q.slot,
+                question: q.question,
+                options: q.options,
+              })),
+            );
             // 全为低风险才不计入连续暂停计数——用 every：只要存在高风险，本次暂停就确实在索取确认、应消耗配额；
             // some 会让混合场景免费逃逸计数，反向打开滥用面。
             const allLowRisk = composeResult.needClarify.every((q) => q.lowRisk);
@@ -594,7 +622,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param input - 可选补充输入（空=续跑原路径；有=注入修正后续轮）
    * @param signal - 可选 AbortSignal（硬停止仍走此路径）
    */
-  async *resumeExecution(input?: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
+  async *resumeExecution(
+    input?: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
     const resumeStatus = this._sessionManager?.status;
     // 错误态续跑须明确失败而非静默吞没：error 态由检查点恢复回填进入，运行时异常走
     // yield { type: 'error' } 不翻状态机，生产链路不会自然离开，必须显式提示重新开始
@@ -728,9 +759,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       const answers = JSON.parse(content) as Array<{ slot: string; answer: string }>;
       if (Array.isArray(answers) && answers.length > 0) {
-        return answers
-          .map((a) => `${slotLabels[a.slot] ?? a.slot}：${a.answer}`)
-          .join('；');
+        return answers.map((a) => `${slotLabels[a.slot] ?? a.slot}：${a.answer}`).join('；');
       }
     } catch {
       // JSON 解析失败：原样返回，不阻断后续流程
@@ -742,11 +771,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 暂停会话（用户/Agent/系统均可触发，暂停前自动创建检查点）
    * @param lowRisk 低风险暂停不计入 P4 连续暂停计数（默认 false）
    */
-  pause(
-    reason: string,
-    source: 'user' | 'agent' | 'system' = 'user',
-    lowRisk = false,
-  ): boolean {
+  pause(reason: string, source: 'user' | 'agent' | 'system' = 'user', lowRisk = false): boolean {
     this.assertInitialized('pause');
     return this.requireSessionManager.pause(reason, source, lowRisk);
   }
@@ -891,9 +916,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 仅 pending/active（可推进）步骤计入"可续跑"——旧判据 s.status!=='done' 把 blocked 也算可续，
     // 与 isPlanStalled（视 blocked 为停滞）反向，导致全 blocked 计划按钮可点但 resumeExecution 早退
     const hasPendingPlan =
-      this._sessionManager?.getCheckpoint()?.plan.some(
-        (s) => s.status === 'pending' || s.status === 'active',
-      ) ?? false;
+      this._sessionManager
+        ?.getCheckpoint()
+        ?.plan.some((s) => s.status === 'pending' || s.status === 'active') ?? false;
     return this.requireLoop.isInAutonomousStep || hasPendingPlan;
   }
 
@@ -918,11 +943,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 创建会话检查点：快照当前运行时状态（热记忆、角色、标准等），生成可序列化检查点
    */
-  createCheckpoint(
-    mainGoal?: string,
-    role?: Role,
-    standard?: Standard,
-  ): SessionCheckpoint | null {
+  createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint | null {
     this.assertInitialized('createCheckpoint');
     return this.requireSessionManager.createCheckpoint(mainGoal, role, standard);
   }
@@ -1076,7 +1097,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           }
         },
         isChatBusy: () => this.chatLockManager?.isBusy ?? false,
-        requestPause: (reason, source) => { this.requestPause(reason, source); },
+        requestPause: (reason, source) => {
+          this.requestPause(reason, source);
+        },
         preExecutionCheck: this.#config.preExecutionCheck,
         fileConsistencyCheck: this.#config.fileConsistencyCheck,
         // 输入增强管线角色匹配命中 → Agent 生命周期切换（activate → 事件 → 刷新前缀 → 工具暴露）
@@ -1382,17 +1405,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // 断言 getter：非空或抛明确错误，替代 this.loop!/history!/pctx! 非空断言
   private get requireLoop(): AgentLoop {
-    if (!this.loop) throw configError('AgentLoop 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    if (!this.loop)
+      throw configError('AgentLoop 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
     return this.loop;
   }
 
   private get requireArchiveCoordinator(): ArchiveCoordinator {
-    if (!this.archiveCoordinator) throw configError('ArchiveCoordinator 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    if (!this.archiveCoordinator)
+      throw configError('ArchiveCoordinator 未初始化', undefined, [
+        '在调用此方法前执行 await agent.init()',
+      ]);
     return this.archiveCoordinator;
   }
 
   private get requireSessionManager(): SessionManager {
-    if (!this._sessionManager) throw configError('SessionManager 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
+    if (!this._sessionManager)
+      throw configError('SessionManager 未初始化', undefined, [
+        '在调用此方法前执行 await agent.init()',
+      ]);
     return this._sessionManager;
   }
 
@@ -1599,6 +1629,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 运行时指标 ────────────────────────────────
 
   /**
+   * 后台任务统计快照（宿主观测后台副作用健康度，纯只读转发 utils 单例）。
+   * @returns 在途 / 成功 / 失败计数
+   */
+  getBackgroundTaskStats(): BackgroundTaskStats {
+    return readBackgroundTaskStats();
+  }
+
+  /**
    * 获取 Agent 运行时指标快照（可观测性）：聚合 AgentLoop 指标与 Agent 层衰减指标；
    * 未初始化返回全零默认值（不抛异常），纯只读同步零副作用，适合宿主定期轮询监控面板。
    */
@@ -1675,5 +1713,4 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   get polish(): TextPolishManager | null {
     return this.textPolisher;
   }
-
 }

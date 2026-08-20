@@ -9,7 +9,7 @@
  *     会更换 loop/history/sessionManager，seed 每次运行经 getParts() 取最新引用，
  *     否则 rebuild 后 seed 将残留陈旧组件引用（关键正确性约束）。
  *   - consumeExecutionStream 是「统一流收口协议」，物理实现仍在门面（Agent），
- *     本处仅声明类型，seed/act 经依赖注入消费（方案的流收口协议归门面）。
+ *     本处仅声明类型，回答中阶段经依赖注入消费（方案的流收口协议归门面）。
  */
 
 import type { AgentLoop } from '@/agent/loop.js';
@@ -22,9 +22,7 @@ import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerat
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
-import {
-  DEFAULT_BEHAVIOR_STRATEGY,
-} from '@/role-pack/types.js';
+import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ITracer } from '@/agent/tracer.js';
