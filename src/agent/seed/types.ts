@@ -1,0 +1,106 @@
+/**
+ * 种子闭环契约类型 — 最小问答闭环（回答前/中/后 + Handoff）的类型定义
+ *
+ * 种子哲学（单轮问答闭环 = 最小单元）：一次触发 → 回答前 → 回答中 → 回答后 →
+ * Handoff。本文件定义这三阶段的输入/输出契约，以及 seed 模块所需的依赖接口。
+ *
+ * 设计纪律：
+ *   - getParts() 以「快照 getter」形式提供当前组件引用——switchProject/rebuildComponents
+ *     会更换 loop/history/sessionManager，seed 每次运行经 getParts() 取最新引用，
+ *     否则 rebuild 后 seed 将残留陈旧组件引用（关键正确性约束）。
+ *   - consumeExecutionStream 是「统一流收口协议」，物理实现仍在门面（Agent），
+ *     本处仅声明类型，seed/act 经依赖注入消费（方案的流收口协议归门面）。
+ */
+
+import type { AgentLoop } from '@/agent/loop.js';
+import type { MessageHistory } from '@/agent/messageHistory.js';
+import type { AgentChunk, ArchiveMode, UIMessages } from '@/agent/types.js';
+import type { ContextPreparer } from '@/agent/contextPreparer.js';
+import type { SessionManager } from '@/agent/managers/sessionManager.js';
+import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
+import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
+import type { RolePackManager } from '@/role-pack/rolePackManager.js';
+import {
+  DEFAULT_BEHAVIOR_STRATEGY,
+} from '@/role-pack/types.js';
+import type { BehaviorStrategy } from '@/role-pack/types.js';
+import type { Memory } from '@/memory/types.js';
+import type { ITracer } from '@/agent/tracer.js';
+
+/**
+ * 流消费结果（consumeExecutionStream 的返回约定）
+ *
+ * content = 累积的文本；aborted = 是否被中断（含 appendAssistant 中断标记前置）；
+ * failed = 是否执行出错（错误 chunk 已 yield 给调用方，本结果为提前返回信号）。
+ */
+export interface StreamConsumeResult {
+  content: string;
+  aborted: boolean;
+  failed: boolean;
+}
+
+/**
+ * 种子三阶段运行所需的组件快照（getParts 的返回值）
+ *
+ * 各 field 对应门面当前持有的组件实例；null 表示尚未创建（如 sessionNamer 在
+ * createPostInitComponents 才创建）。seed 只读不持有，全部由门面提供。
+ */
+export interface SeedParts {
+  loop: AgentLoop;
+  history: MessageHistory;
+  sessionManager: SessionManager | null;
+  rolePackManager: RolePackManager | null;
+  contextPreparer: ContextPreparer;
+  sessionNamer: SessionNamer | null;
+  roundSummaryGenerator: RoundSummaryGenerator | null;
+}
+
+/**
+ * 种子模块的依赖注入接口（门面稳定能力的窄面）
+ *
+ * 与 ContextPreparerDeps / AgentHooks 同构：只传稳定能力，不传可变私有状态。
+ * getParts() 惰性取当前组件（见文件头设计纪律）；applyRolePackToolExposure 与
+ * consumeExecutionStream 是门面私有能力，经回调注入 seed（物理实现仍在门面）。
+ */
+export interface SeedDeps {
+  /** 取当前组件快照（rebuild 后仍为最新引用） */
+  getParts(): SeedParts;
+  /** 可观测性 Tracer（缺省 Noop，reflect 阶段 span 用） */
+  tracer: ITracer | null;
+  /** 归档模式（reflect 阶段 span 标注用） */
+  archiveMode: ArchiveMode;
+  /** 界面文案（中断标记 / 用户中断提示，缺省用内置默认） */
+  messages?: UIMessages;
+  /** 门面能力：应用当前角色包的工具暴露面（回答前换角色后工具集切换） */
+  applyRolePackToolExposure(): void;
+  /** 门面能力：统一流收口协议（消费 loop 执行流 → AgentChunk；物理实现在 Agent） */
+  consumeExecutionStream(
+    source: AsyncGenerator<AgentChunk, void, unknown>,
+  ): AsyncGenerator<AgentChunk, StreamConsumeResult, unknown>;
+}
+
+/**
+ * 回答前（Prepare）运行结果
+ *
+ * input = 原始输入；recalledMemories = 召回记忆（注入 loop 为 system 消息）；
+ * aborted = 回答前阶段已中断（调用方应 yield aborted chunk 并返回，不进回答中）。
+ * roundId 不在此结果中——round 归属以 loop 的 currentRoundId 为单一真理源。
+ */
+export interface SeedPrepareResult {
+  input: string;
+  recalledMemories: Memory[];
+  aborted: boolean;
+}
+
+/**
+ * 从角色包管理器推导当前激活的 L2 行为策略（SSOT）
+ *
+ * 与 ContextPreparer.getActiveStrategy 同源：激活角色包策略优先，未激活/无管理器回退全局默认。
+ * seed 各阶段经此统一取策略，避免各自硬编码默认值。
+ *
+ * @param rolePackManager 角色包管理器（可为空）
+ * @returns 当前激活行为策略
+ */
+export function resolveActiveStrategy(rolePackManager: RolePackManager | null): BehaviorStrategy {
+  return rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
+}

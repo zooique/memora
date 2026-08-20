@@ -19,16 +19,7 @@ import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js'
 import { SecurityGuard } from '@/security/pathGuard.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import {
-  DEFAULT_BEHAVIOR_STRATEGY,
-  resolveHandoff,
-  resolveMemoryRecallMode,
-  resolveSummary,
-  resolveSummaryFocus,
-  resolveContextAssembly,
-  resolveAutoSwitch,
-  resolveL2Strategy,
-} from '@/role-pack/types.js';
+import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -40,6 +31,7 @@ import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
+import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
 import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
@@ -53,10 +45,8 @@ import { ArchiveCoordinator, type ArchiveTriggerOptions } from '@/agent/managers
 import { TypedEventEmitter, type AgentEventMap, AGENT_EVENTS, AGENT_EVENT_SET } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
-import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
-import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -131,8 +121,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private chatLockManager: ChatLockManager | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
-  /** 最近一次角色包粘性匹配的会话 ID（粘性不跨会话，会话切换时复位，由 prepareChatContext 驱动） */
-  private lastStickySessionId: string | null = null;
+  /**
+   * 种子闭环编排器（最小问答闭环唯一编排真理源）：prepare → act → reflect → handoff。
+   * chat() 委托 run()；processEvent()/resumeExecution() 按路径复用单阶段能力。
+   * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
+   */
+  private seedOrchestrator: SeedOrchestrator | null = null;
   /**
    * 对话中因 chatLock 冲突暂存的配置重载请求（锁释放后补执行，兑现"对话后自动加载"）；
    * 用 Set 去重——同一 source 只需补执行一次。
@@ -342,6 +336,41 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.memoryDecayScheduler,
       this.memoryAdvisor,
     );
+
+    // 种子闭环编排器（最小问答闭环唯一编排真理源）：依赖 sessionManager/loop/history 等
+    // 均已就绪（assembleComponents 已完成 + sessionNamer 本方法前段创建），在此构造一次。
+    // getParts() 惰性取当前组件——rebuildComponents（switchProject）更换组件后仍取到最新引用。
+    this.seedOrchestrator = this.createSeedOrchestrator();
+  }
+
+  /**
+   * 构造种子闭环编排器，注入门面稳定能力（getParts 快照 + 工具暴露 + 流收口协议）
+   *
+   * 构造偏好在 agent.ts 而非 assembler.ts（方案的"assembler 构造"）：seed 依赖
+   * sessionNamer（post-init 才创建）与 consumeExecutionStream（门面私有流收口协议），
+   * 二者均无法在 assembler 阶段就绪，故收敛到 post-init 门面组装处。
+   *
+   * @returns 已接线门面能力的 SeedOrchestrator
+   */
+  private createSeedOrchestrator(): SeedOrchestrator {
+    return new SeedOrchestrator({
+      // 组件快照经 getter 惰性取当前引用：rebuildComponents 更换组件后仍读到最新（关键）
+      getParts: () => ({
+        loop: this.loop!,
+        history: this.history!,
+        sessionManager: this._sessionManager,
+        rolePackManager: this.rolePackManager_,
+        contextPreparer: this.contextPreparer!,
+        sessionNamer: this.sessionNamer,
+        roundSummaryGenerator: this.roundSummaryGenerator,
+      }),
+      tracer: this.#config.tracer ?? null,
+      archiveMode: this.#config.archiveMode,
+      messages: this.#config.messages,
+      // 门面私有能力经回调注入 seed（物理实现仍在门面）
+      applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
+      consumeExecutionStream: (source) => this.consumeExecutionStream(source),
+    });
   }
 
   /**
@@ -361,19 +390,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       this._lastInteractionAt = new Date();
 
-      // 上下文准备：角色匹配 → 记忆召回 → 技能注入 → 历史追加
-      const recalledMemories = yield* this.prepareChatContext(input, combinedSignal);
-
-      if (combinedSignal.aborted) {
-        yield {
-          type: 'aborted',
-          reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation',
-        };
-        return;
-      }
-
-      // LLM 流式调用 → 助手消息写历史 → 后处理
-      yield* this.executeChatLoop(input, recalledMemories, combinedSignal);
+      // 委托种子闭环编排器运行一次完整问答闭环（prepare → act → reflect → handoff）
+      yield* this.seedOrchestrator!.run(input, combinedSignal);
     } finally {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       this.chatLockManager?.release(myToken);
@@ -413,123 +431,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 准备对话上下文：角色匹配 → 记忆召回 → 技能注入 → 用户消息写历史
-   * @returns 召回的记忆列表（供 loop.processUserInput 注入为 system 消息）
-   */
-  private async *prepareChatContext(
-    input: string,
-    combinedSignal: AbortSignal,
-  ): AsyncGenerator<AgentChunk, Memory[], unknown> {
-    const loop = this.requireLoop;
-    loop.cleanTemporarySystemMessages();
-
-    // 会话切换时复位角色包粘性（粘性不跨会话）
-    const sessionId = this._sessionManager?.getCheckpoint()?.sessionId ?? '';
-    if (sessionId !== this.lastStickySessionId) {
-      this.rolePackManager_?.resetSticky();
-      this.lastStickySessionId = sessionId;
-    }
-
-    // autoSwitch 决定是否允许角色自动匹配（'off' 时锁定当前角色包）
-    const preMatchStrategy = this.getActiveStrategy();
-    const autoSwitch = resolveAutoSwitch(preMatchStrategy);
-
-    // 角色包自动匹配（粘性 + LLM 兜底，角色包为唯一入口）
-    if (autoSwitch === 'on') {
-      await this.contextPreparer?.tryAutoMatchRolePack(input);
-    }
-
-    const strategy = this.getActiveStrategy();
-    // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
-    const memoryRecallMode = resolveMemoryRecallMode(strategy);
-    // 上下文装配策略：fixed=仅固定轮次 / query=仅语义召回 / hybrid=混合
-    const contextAssembly = resolveContextAssembly(strategy);
-
-    // 单一 setStrategy 聚合 L2 策略（工具权限/步数/错误处理/路由/预算/推理/只读/审批/自审查）
-    loop.setStrategy(resolveL2Strategy(strategy));
-
-    // 换角色 → 按激活角色包的 capabilities 应用工具暴露面（toolMode=block 全禁与此正交）
-    this.applyRolePackToolExposure();
-
-    yield { type: 'thinking', phase: 'recalling' };
-    // 记忆召回 + 固定轮次注入（输入增强管线叶子逻辑，Agent 只留调用点）
-    const recalledMemories = await this.contextPreparer?.recallAndInject(input, memoryRecallMode, contextAssembly) ?? [];
-
-    if (combinedSignal.aborted) return recalledMemories;
-
-    // 技能当轮注入生效，生成 roundId 供 appendUser 溯源（user/assistant/摘要同 roundId）
-    yield { type: 'thinking', phase: 'processing' };
-    this.contextPreparer?.matchAndInjectSkill(input);
-
-    const roundId = `round-${Date.now()}`;
-    loop.setCurrentRoundId(roundId);
-
-    const history = this.requireHistory;
-    await history.appendUser(input, roundId);
-
-    // 会话标题自动命名（fire-and-forget）：仅新建会话首次问答触发（以"会话无标题"判定，不覆盖手动改名）
-    if (this.sessionNamer) {
-      void this.sessionNamer
-        .ensureSessionTitle(history.currentDateValue, history.currentSessionValue, input)
-        .catch((err: unknown) => {
-          logger.warn({ err }, '会话标题自动命名失败（best-effort，不阻塞对话）');
-        });
-    }
-
-    return recalledMemories;
-  }
-
-  /**
-   * 执行 LLM 流式循环 → 追加助手消息 → 触发后处理
-   */
-  private async *executeChatLoop(
-    input: string,
-    recalledMemories: Memory[],
-    combinedSignal: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    const loop = this.requireLoop;
-    const history = this.requireHistory;
-
-    // 流消费统一收口于 consumeExecutionStream（与 processEvent / resumeExecution 共用同构实现，
-    // 避免此前续跑路径漏 paused 分支导致的锁泄漏）
-    const streamResult = yield* this.consumeExecutionStream(
-      // 传 roundId 保证 user/assistant/摘要同 roundId，traceSummary 溯源完整
-      loop.processUserInput(input, recalledMemories, combinedSignal, loop.getCurrentRoundId()),
-    );
-    if (streamResult.failed) return;
-    const assistantContent = streamResult.content;
-    const wasAborted = streamResult.aborted;
-
-    if (wasAborted) {
-      if (assistantContent.trim()) {
-        const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
-        try {
-          await history.appendAssistant(assistantContent + interruptedMark, loop.getCurrentRoundId());
-        } catch (err) {
-          logger.warn({ err }, '中断消息历史写入失败');
-        }
-      }
-      return;
-    }
-
-    try {
-      await history.appendAssistant(assistantContent, loop.getCurrentRoundId());
-    } catch (err) {
-      logger.warn({ err }, '助手消息历史写入失败');
-    }
-
-    yield { type: 'thinking', phase: 'archiving' };
-    // 非阻塞：即使 LLM 摘要生成慢，generator 立即 yield handoff/done 让 UI 结束生成态，后处理后台异步完成
-    this.postProcess(input, assistantContent).catch((err) => {
-      logger.warn({ err }, '非阻塞后处理失败');
-    });
-
-    // Handoff 衔接决策：经 resolveHandoff 归位非法值，避免透传无法识别的衔接决策给宿主
-    const handoffStrategy = resolveHandoff(this.getActiveStrategy());
-    yield { type: 'handoff', decision: handoffStrategy, reason: handoffStrategy === 'wait' ? undefined : 'L2 策略自动衔接' };
-  }
-
-  /**
    * 补执行对话期间暂存的配置重载请求
    */
   private async flushPendingConfigReload(): Promise<void> {
@@ -555,51 +456,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   forceReleaseChatLock(): void {
     this.chatLockManager?.forceRelease();
-  }
-
-  /**
-   * 对话后处理：round-summary 生成、角色匹配、技能匹配
-   *
-   * 所有操作均 best-effort：失败仅记日志，不向上抛、不影响用户已收到的回答。
-   * 归档模式二态：'full' 会话切换前自动归档 / 'manual' 跳过自动归档（用户手动调用 archiveSession()）；
-   * 角色匹配 + 技能匹配非归档行为，不受 archiveMode 影响，每轮都执行。
-   */
-  private async postProcess(input: string, assistantContent: string): Promise<void> {
-    const tracer = this.#config.tracer ?? NOOP_TRACER;
-    const span = tracer.startSpan(TRACE_SPANS.POST_PROCESS, {
-      archiveMode: this.#config.archiveMode,
-    });
-
-    try {
-      await this.doPostProcess(input, assistantContent);
-    } finally {
-      span.end();
-    }
-  }
-
-  /**
-   * postProcess 内部实现（外层负责 span 生命周期），归档二态控制集中在 ArchiveCoordinator：
-   * 统一传 { autoTriggered: true } 由其按 archiveMode 判断是否跳过；角色/技能匹配属"配置学习"，每轮执行。
-   */
-  private async doPostProcess(input: string, assistantContent: string): Promise<void> {
-    const history = this.requireHistory;
-
-    // 记忆为 round-summary 单轨，无独立画像/洞察归档路径。
-
-    // 轮次摘要生成（记忆即摘要架构）：reflect.summary='off' 时跳过
-    if (this.roundSummaryGenerator && resolveSummary(this.getActiveStrategy()) === 'on') {
-      try {
-        const roundId = this.requireLoop.getCurrentRoundId();
-        const sessionName = history.currentSessionName;
-        // 提炼视角：激活角色包 prepare.summaryFocus → 注入摘要生成（结构化角色包以此替换通用归纳框架）
-        const summaryFocus = resolveSummaryFocus(this.getActiveStrategy());
-        // fire-and-forget：不阻塞主流程，失败仅记日志
-        const summaryPromise = this.roundSummaryGenerator.generate(input, assistantContent, roundId, sessionName, summaryFocus);
-        history.registerPendingArchive(summaryPromise);
-      } catch (err) {
-        logger.warn({ err }, '轮次摘要生成初始化失败');
-      }
-    }
   }
 
   /**
@@ -717,9 +573,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // ── chat 事件正常流程（写历史、后处理） ──────────────
       const loop = this.requireLoop;
-      const recalledMemories = yield* this.prepareChatContext(event.content, combinedSignal);
+      // 回答前：委托种子编排器（角色匹配 → 记忆召回 → 技能注入 → 用户消息入史）
+      const prepared = yield* this.seedOrchestrator!.prepare.run(event.content, combinedSignal);
 
-      if (combinedSignal.aborted) {
+      if (prepared.aborted) {
         yield {
           type: 'aborted',
           reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation',
@@ -739,40 +596,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         );
       }
 
-      // 委托给 AgentLoop.processEvent（流消费收口于 consumeExecutionStream）
-      const streamResult = yield* this.consumeExecutionStream(
-        loop.processEvent(event, recalledMemories, combinedSignal),
-      );
-      if (streamResult.failed) return;
-      const assistantContent = streamResult.content;
-      const wasAborted = streamResult.aborted;
+      // 回答中：委托种子编排器消费 AgentLoop.processEvent 执行流 + 统一尾处理
+      const produce = () => loop.processEvent(event, prepared.recalledMemories, combinedSignal);
+      const acted = yield* this.seedOrchestrator!.act.run(produce);
+      if (acted.failed || acted.aborted) return;
 
-      if (wasAborted) {
-        if (assistantContent.trim()) {
-          const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
-          try {
-            await this.requireHistory.appendAssistant(assistantContent + interruptedMark, loop.getCurrentRoundId());
-          } catch (err) {
-            logger.warn({ err }, '中断消息历史写入失败');
-          }
-        }
-        return;
-      }
+      // 回答后：非阻塞生成轮次摘要（记忆即摘要单轨）
+      void this.seedOrchestrator!.reflect
+        .run(event.content, acted.content)
+        .catch((err: unknown) => {
+          logger.warn({ err }, '非阻塞后处理失败');
+        });
 
-      try {
-      await this.requireHistory.appendAssistant(assistantContent, loop.getCurrentRoundId());
-    } catch (err) {
-      logger.warn({ err }, '助手消息历史写入失败');
-    }
-
-    yield { type: 'thinking', phase: 'archiving' };
-      this.postProcess(event.content, assistantContent).catch((err) => {
-        logger.warn({ err }, '非阻塞后处理失败');
-      });
-
-      // Handoff 衔接决策：经 resolveHandoff 归位非法值，避免透传无法识别的衔接决策给宿主
-      const handoffDecision = resolveHandoff(this.getActiveStrategy());
-      yield { type: 'handoff', decision: handoffDecision, reason: handoffDecision === 'wait' ? undefined : 'L2 策略自动衔接' };
+      // Handoff：委托种子编排器产出衔接决策（wait=对话等待 / 其余=L2 策略自动衔接）
+      yield* this.seedOrchestrator!.handoff.run();
     } finally {
       this.chatLockManager?.release(myToken);
       cleanupExternalSignal();
@@ -842,34 +679,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       const loop = this.requireLoop;
 
-      // 流消费与 chat 主路径共用同一实现，杜绝两条路径再次漂移
-      const streamResult = yield* this.consumeExecutionStream(loop.continueAfterPause(input, combinedSignal));
-      if (streamResult.failed) return;
-      const assistantContent = streamResult.content;
-      const wasAborted = streamResult.aborted;
+      // 回答中：委托种子编排器消费 loop.continueAfterPause 执行流 + 统一尾处理
+      // （续跑无回答前；续跑态不产出 Handoff——闭环出口仅在对话/事件路径分岔）
+      const produce = () => loop.continueAfterPause(input, combinedSignal);
+      const acted = yield* this.seedOrchestrator!.act.run(produce);
+      if (acted.failed || acted.aborted) return;
 
-      if (wasAborted) {
-        if (assistantContent.trim()) {
-          const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
-          try {
-            await this.requireHistory.appendAssistant(assistantContent + interruptedMark, loop.getCurrentRoundId());
-          } catch (err) {
-            logger.warn({ err }, '中断消息历史写入失败');
-          }
-        }
-        return;
-      }
-
-      try {
-      await this.requireHistory.appendAssistant(assistantContent, loop.getCurrentRoundId());
-    } catch (err) {
-      logger.warn({ err }, '助手消息历史写入失败');
-    }
-
-    yield { type: 'thinking', phase: 'archiving' };
-      this.postProcess(input ?? '', assistantContent).catch((err) => {
-        logger.warn({ err }, '非阻塞后处理失败');
-      });
+      // 回答后：非阻塞生成轮次摘要（与 chat 尾处理同构）
+      void this.seedOrchestrator!.reflect
+        .run(input ?? '', acted.content)
+        .catch((err: unknown) => {
+          logger.warn({ err }, '非阻塞后处理失败');
+        });
     } finally {
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.chatLockManager?.release(myToken);
@@ -1609,11 +1430,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.loop;
   }
 
-  private get requireHistory(): MessageHistory {
-    if (!this.history) throw configError('MessageHistory 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
-    return this.history;
-  }
-
   private get requireArchiveCoordinator(): ArchiveCoordinator {
     if (!this.archiveCoordinator) throw configError('ArchiveCoordinator 未初始化', undefined, ['在调用此方法前执行 await agent.init()']);
     return this.archiveCoordinator;
@@ -1756,6 +1572,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.textPolisher = null;
     this.roundSummaryGenerator = null;
     this._sessionManager = null;
+    this.seedOrchestrator = null;
     this.projectManager = null;
     this.pctx = null;
   }
