@@ -15,7 +15,6 @@ import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import {
-  MemoraError,
   isAbortError,
   isRetryableErrorCode,
   toError,
@@ -31,6 +30,7 @@ import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/ty
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
+import { ToolRunner } from '@/agent/toolRunner.js';
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -106,18 +106,6 @@ class LoopMetrics {
   }
 }
 
-/**
- * 执行前检查决策：单点聚合的多重顺序检查结果
- *
- * - denied：拒绝，返回结构化错误码（LLM 见后调整策略而非重试）
- * - skip：幂等去重，返回已有结果让 LLM 继续生成
- * - execute：放行，携带改写后的参数
- */
-type PreCheckDecision =
-  | { kind: 'denied'; result: string }
-  | { kind: 'skip'; result: string }
-  | { kind: 'execute'; args: string };
-
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -155,6 +143,8 @@ export class AgentLoop {
   private pauseRequested = false;
   /** 主动提问回调（检测到 `[ASK]` 时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
+  /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
+  private readonly toolRunner: ToolRunner;
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
@@ -253,6 +243,17 @@ export class AgentLoop {
     // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
     this.appendSystemMessage(prefix + this.buildSystemPrompt(opts.bootstrapMemories));
+
+    // 单工具执行器：注入 loop 稳定能力窄面，strategy 经闭包读最新（setStrategy 动态生效）
+    this.toolRunner = new ToolRunner({
+      execute: (name, args) => this.opts.toolExecutor(name, args),
+      builtinTools: opts.builtinTools,
+      preExecutionCheck: opts.preExecutionCheck,
+      onToolExecuted: opts.onToolExecuted,
+      onToolApproval: (info) => this.onToolApproval?.(info),
+      getStrategy: () => this.strategy,
+      tracer: this.tracer,
+    });
   }
 
   /**
@@ -1077,7 +1078,7 @@ export class AgentLoop {
         name: tc.function.name,
         args: tc.function.arguments,
       };
-      toolPromises.push(this.executeOneTool(tc, signal));
+      toolPromises.push(this.toolRunner.runOne(tc, signal));
     }
 
     const results = await Promise.all(toolPromises);
@@ -1104,143 +1105,6 @@ export class AgentLoop {
     }
     this.inAutonomousStep = false;
     return { aborted: false };
-  }
-
-  /** 工具执行与 signal abort 竞争包裹。toolExecutor 签名不接受 signal，无法真正中断；
-   *  用 Promise.race 竞争，signal 先 abort 则返回 [ERR:TOOL:ABORTED]（而非抛 AbortError，
-   *  避免破坏"工具失败回传 LLM"契约；ABORTED 不入错误码体系，不触发 Reflection） */
-  private async raceToolWithSignal(
-    name: string,
-    args: string,
-    signal: AbortSignal | undefined,
-  ): Promise<string> {
-    // 无 signal 时直接执行工具（保持原行为，测试场景常用）
-    if (!signal) {
-      return this.opts.toolExecutor(name, args);
-    }
-
-    // signal 已 abort：直接返回中断错误，不发起工具调用
-    if (signal.aborted) {
-      return '[ERR:TOOL:ABORTED] 错误：工具执行被中断';
-    }
-
-    // abort 监听 Promise（signal abort 时 resolve 错误串）；onAbort 提外层便于 race 后清理
-    let onAbort: (() => void) | null = null;
-    const abortPromise = new Promise<string>((resolve) => {
-      onAbort = () => resolve('[ERR:TOOL:ABORTED] 错误：工具执行被中断');
-      signal.addEventListener('abort', onAbort, { once: true });
-    });
-
-    // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）
-    return Promise.race([this.opts.toolExecutor(name, args), abortPromise]).finally(() => {
-      if (onAbort) signal.removeEventListener('abort', onAbort);
-    });
-  }
-
-  /** 执行前检查：在统一入口按顺序叠加只读 → 审批 → 宿主 preExecutionCheck 三重闸门，
-   *  任一命中即提前返回，全部放行才执行 */
-  private applyPrechecks(tc: {
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }): PreCheckDecision {
-    const name = tc.function.name;
-    const args = tc.function.arguments;
-
-    // ① 只读闸：toolReadonly='readonly' 阻止非只读工具
-    if (this.strategy.toolReadonly === 'readonly') {
-      const toolDef = this.opts.builtinTools?.find((t) => t.name === name);
-      if (toolDef && !toolDef.readonly) {
-        logger.warn({ tool: name }, '工具只读模式：阻止写入工具执行');
-        return {
-          kind: 'denied',
-          result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用`,
-        };
-      }
-    }
-
-    // ② 审批闸：toolApproval='confirm' 触发审批回调（仅通知宿主征询，不阻塞放行）
-    if (this.strategy.toolApproval === 'confirm') {
-      this.onToolApproval?.({ toolName: name, args });
-    }
-
-    // ③ 宿主 preExecutionCheck：拒绝 / 跳过 / 放行（可改写参数）
-    const preCheck = this.opts.preExecutionCheck?.(name, args);
-    if (preCheck?.denied) {
-      const reason = preCheck.reason ?? '工具调用被拒绝';
-      logger.warn({ tool: name, reason }, '工具调用被拒绝（执行前检查）');
-      // PERMISSION_DENIED 不可重试，LLM 见后会调整策略而非重试
-      return { kind: 'denied', result: `[ERR:TOOL:PERMISSION_DENIED] ${reason}` };
-    }
-    if (preCheck?.skip) {
-      const result =
-        preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
-      logger.debug(
-        { tool: name, argsSignature: args.slice(0, 80) },
-        '工具已执行，跳过（仅一次语义）',
-      );
-      return { kind: 'skip', result };
-    }
-
-    // 放行：有改写参数则用改写后的执行（审计/参数改写）
-    return { kind: 'execute', args: preCheck?.overrideArgs ?? args };
-  }
-
-  /**
-   * 执行单个工具（并行独立执行单元，无共享状态，可安全并发）。
-   * 异常捕获后转为 [ERR:TOOL:code] 错误串回传，供 Reflection 解析。
-   */
-  private async executeOneTool(
-    tc: { id: string; type: 'function'; function: { name: string; arguments: string } },
-    signal: AbortSignal | undefined,
-  ): Promise<string> {
-    // 工具执行 Span（并发时多个 span 时间重叠，tracer 可观测并发度）
-    const toolSpan = this.tracer.startSpan(TRACE_SPANS.TOOL_EXEC, {
-      toolName: tc.function.name,
-    });
-
-    try {
-      // 执行前检查（三重闸门收敛为三态决策）
-      const decision = this.applyPrechecks(tc);
-      if (decision.kind === 'denied') {
-        toolSpan.setAttribute('denied', true);
-        return decision.result;
-      }
-      if (decision.kind === 'skip') {
-        toolSpan.setAttribute('skipped', true);
-        return decision.result;
-      }
-
-      // raceToolWithSignal 兼容 signal 中断（每个调用独立 race，监听器无并发副作用）
-      const result = await this.raceToolWithSignal(tc.function.name, decision.args, signal);
-      // 通知上层工具执行完成（供 outbox 幂等模式记录是否已执行）
-      const ok = !result.startsWith('[ERR');
-      this.opts.onToolExecuted?.(tc.function.name, decision.args, result, ok);
-      return result;
-    } catch (err) {
-      // 捕获异常转为结构化错误串回传 LLM 自行调整策略，避免传播到 agent.chat 中断对话
-      const e = toError(err);
-      toolSpan.recordException(e);
-      if (err instanceof MemoraError) {
-        const code = err.errorCode ?? 'UNKNOWN';
-        const result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
-        logger.warn(
-          { tool: tc.function.name, errorCode: code, title: err.title },
-          '工具执行失败，错误已回传给 LLM',
-        );
-        // 通知上层工具执行失败
-        this.opts.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
-        return result;
-      } else {
-        const result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
-        logger.error({ tool: tc.function.name, err }, '工具执行异常');
-        // 通知上层工具执行异常
-        this.opts.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
-        return result;
-      }
-    } finally {
-      toolSpan.end();
-    }
   }
 
   /**
