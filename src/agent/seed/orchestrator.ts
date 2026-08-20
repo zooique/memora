@@ -17,7 +17,8 @@
 
 import type { AgentChunk, SessionEvent } from '@/agent/types.js';
 import { logger } from '@/logging/logger.js';
-import type { SeedDeps } from './types.js';
+import { resolveTaskLoopLimit } from '@/role-pack/strategyResolver.js';
+import { resolveActiveStrategy, type SeedDeps, type SeedPrepareResult } from './types.js';
 import { SeedPrepare } from './prepare.js';
 import { SeedAct } from './act.js';
 import { SeedReflect } from './reflect.js';
@@ -31,6 +32,22 @@ const TASK_TABLE_HINT =
   '如果需要分步完成任务，请使用 task_table_write 工具创建任务表，' +
   '包含各步骤的描述（description）。每完成一步使用 task_table_update 工具更新对应步骤状态。' +
   '任务表仅作参考，LLM 可自行决定执行顺序。';
+
+/**
+ * 外部任务规划闭环提示（阶段 3·完整外循环）：复杂任务第一步只调查 + 建任务表，不执行步骤。
+ * 规划后由 orchestrator 外循环按 pending 步骤逐个拉起独立闭环，避免规划与执行在一次闭环内挤在一起。
+ */
+const PLAN_ONLY_HINT =
+  '这是一个需要多步完成的复杂任务。请先充分调查并建立任务表（task_table_write），' +
+  '明确列出待完成的步骤，但【暂时不要执行任何步骤】。本回合只做规划与建表。';
+
+/**
+ * 单任务步骤闭环的提示（阶段 3·完整外循环）：给定当前待执行步骤，让该闭环专注解这一步骤。
+ * @param description 步骤描述（从任务表 pending 步骤读取）
+ */
+function stepPrompt(description: string): string {
+  return `【执行任务步骤】${description}\n请完成此步骤；完成后用 task_table_update 将该步骤标记为 done 或 blocked。`;
+}
 
 /**
  * 种子闭环编排器
@@ -58,10 +75,7 @@ export class SeedOrchestrator {
     this.act = new SeedAct(deps);
     this.reflect = new SeedReflect(deps);
     this.handoff = new SeedHandoff(deps);
-    this.difficulty = new DifficultyJudge(
-      () => deps.getBackgroundProvider(),
-      deps.tracer,
-    );
+    this.difficulty = new DifficultyJudge(() => deps.getBackgroundProvider(), deps.tracer);
   }
 
   /**
@@ -79,8 +93,16 @@ export class SeedOrchestrator {
       return;
     }
 
-    // 难度分级（回答前）：简单/复杂，决定收敛后是否触发汇报（复杂才可能汇报）
+    // 难度分级（回答前）：复杂且启用外部任务循环 → 外循环（规划 + 每步一闭环 + 汇报）；否则单闭环直接答
     const difficulty = await this.difficulty.classify(input);
+    const taskLoopLimit = resolveTaskLoopLimit(
+      resolveActiveStrategy(this.deps.getParts().rolePackManager),
+    );
+    if (difficulty === 'complex' && taskLoopLimit > 0) {
+      yield* this.externalTaskLoop(input, prepared, signal);
+      yield* this.handoff.run();
+      return;
+    }
 
     // 回答中：消费 loop.processUserInput 执行流（roundId 以 loop 当前轮为真理源）
     const produce = () =>
@@ -95,8 +117,8 @@ export class SeedOrchestrator {
     const acted = yield* this.act.run(produce);
     if (acted.failed || acted.aborted) return;
 
-    // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
-    yield* this.settle(difficulty, input, acted.content, signal);
+    // 回答后：普通回答摘要
+    this.backgroundReflect(input, acted.content);
 
     // Handoff：对外产出衔接决策
     yield* this.handoff.run();
@@ -182,10 +204,109 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 回答后统一收尾：普通回答摘要；或（复杂且收敛）先跑汇报闭环再以汇报文本单源沉淀摘要。
+   * 外部任务驱动外循环（阶段 3·完整外循环）：单个复杂输入 → 多闭环组合。
    *
-   * 汇报闭环 = 再编排一次 `loop.runReport()`（单次生成，自追加汇报为 assistant），
-   * 产出文本作为 round-summary 单源（反射经 reflect.runReported 走既有摘要管线）。
+   * 序列：规划闭环（只建任务表）→ 每步一个独立闭环 → 收敛后汇报闭环。
+   *   - 规划闭环：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步闭环重复执行）。
+   *   - 步闭环：任务表 pending 步骤逐个拉起独立闭环（各自独立 roundId，供消息溯源/互斥排除），
+   *     步内仍可工具多步（内循环保留）。
+   *   - 摘要 1:1：一个外部输入只由收尾汇报产出唯一 round-summary（单源，见 memory-as-summary §2.5）；
+   *     规划/中间步不单独摘要，避免一次复杂输入堆出多条 round-summary。
+   *   - 闭环数受角色包 `global.taskLoopLimit` 约束（外部任务循环步数上限，防无限多步烧 token）。
+   *   - 收敛（任务表存在已完成步骤）→ 汇报闭环 + 汇报单源摘要。
+   *
+   * @param input 用户输入
+   * @param prepared 回答前结果（recalledMemories 供规划闭环注入）
+   * @param signal 中止信号
+   */
+  private async *externalTaskLoop(
+    input: string,
+    prepared: SeedPrepareResult,
+    signal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const parts = this.deps.getParts();
+    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
+
+    // 1) 规划闭环：只调查 + 建任务表，不执行
+    parts.loop.injectSystemMessage(PLAN_ONLY_HINT);
+    const planAct = yield* this.act.run(() =>
+      parts.loop.processUserInput(
+        input,
+        prepared.recalledMemories,
+        signal,
+        parts.loop.getCurrentRoundId(),
+      ),
+    );
+    if (planAct.failed || planAct.aborted) return;
+    // 规划闭环不产摘要（摘要 1:1 只由收尾汇报产出，见 §2.5）；清理规划期注入的临时 system 消息（PLAN_ONLY 等）
+    parts.loop.cleanTemporarySystemMessages();
+
+    // 2) 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）
+    let stepsRun = 0;
+    while (stepsRun < limit) {
+      const next = this.getNextPendingStep();
+      if (!next) break;
+      stepsRun++;
+      this.allocRoundId();
+      const stepAct = yield* this.act.run(() =>
+        parts.loop.processUserInput(stepPrompt(next.description), [], signal),
+      );
+      if (stepAct.failed || stepAct.aborted) return;
+      // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出，见 §2.5）
+    }
+
+    // 3) 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以规划闭环产出走普通单条摘要（保证摘要恒 1:1，不丢记忆）
+    if (this.isConverged()) {
+      yield* this.runReportAndReflect(signal);
+    } else {
+      this.backgroundReflect(input, planAct.content);
+    }
+  }
+
+  /**
+   * 汇报闭环（可复用）：消费 loop.runReport 流 → 汇报文本入会话历史 → 汇报单源摘要。
+   * @param signal 中止信号（汇报生成用）
+   */
+  private async *runReportAndReflect(
+    signal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const parts = this.deps.getParts();
+    let report = '';
+    for await (const chunk of parts.loop.runReport(signal)) {
+      if (chunk.type === 'text') report += chunk.content;
+      yield chunk;
+    }
+    const trimmed = report.trim();
+    if (trimmed) {
+      try {
+        await parts.history.appendAssistant(trimmed, parts.loop.getCurrentRoundId());
+      } catch (err) {
+        logger.warn({ err }, '汇报消息历史写入失败');
+      }
+      // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨）
+      void this.reflect
+        .runReported(trimmed)
+        .catch((err: unknown) => logger.warn({ err }, '汇报摘要生成失败'));
+    }
+  }
+
+  /**
+   * 读取任务表下一个 pending 步骤（外循环步闭环的驱动信号）。
+   * @returns 下一个待执行步骤（description 供步闭环提示）；无则返回 null（收敛）
+   */
+  private getNextPendingStep(): { id: string; description: string } | null {
+    const steps = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
+    const next = steps.find((s) => s.status === 'pending');
+    return next ? { id: next.id, description: next.description } : null;
+  }
+
+  /** 为外循环每个步闭环分配独立 roundId（消息溯源/互斥排除用；摘要恒 1:1 只由收尾汇报产出，见 §2.5） */
+  private allocRoundId(): void {
+    this.deps.getParts().loop.setCurrentRoundId(`round-${Date.now()}`);
+  }
+
+  /**
+   * 回答后统一收尾（阶段 2 路径，event 入口用）：普通回答摘要；或（复杂且收敛）汇报闭环 + 汇报单源摘要。
    *
    * @param difficulty 回答前判定的难度
    * @param input 用户输入（普通摘要输入侧）
@@ -199,25 +320,7 @@ export class SeedOrchestrator {
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     if (difficulty === 'complex' && this.isConverged()) {
-      // 汇报闭环：消费 loop.runReport 流（汇报文本自追加为 assistant；此处兜底持久化到会话历史）
-      const parts = this.deps.getParts();
-      let report = '';
-      for await (const chunk of parts.loop.runReport(signal)) {
-        if (chunk.type === 'text') report += chunk.content;
-        yield chunk;
-      }
-      const trimmed = report.trim();
-      if (trimmed) {
-        try {
-          await parts.history.appendAssistant(trimmed, parts.loop.getCurrentRoundId());
-        } catch (err) {
-          logger.warn({ err }, '汇报消息历史写入失败');
-        }
-        // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨）
-        void this.reflect
-          .runReported(trimmed)
-          .catch((err: unknown) => logger.warn({ err }, '汇报摘要生成失败'));
-      }
+      yield* this.runReportAndReflect(signal);
       return;
     }
     // 普通回答后摘要（既有语义不变）
@@ -225,10 +328,8 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 收敛判定（阶段 2：复杂任务收敛）：session 检查点存在至少一个 plan/task-table 步骤已完成。
-   *
-   * stage-2 无外部任务驱动 loop，故以「已产生并完成至少一个计划步骤」作为收敛信号
-   * （象征一次真实的多步执行）。无计划/无完成步骤 → 未收敛 → 不触发汇报。
+   * 收敛判定：session 检查点存在至少一个 plan/task-table 步骤已完成。
+   * 无计划/无完成步骤 → 未收敛 → 不触发汇报。
    */
   private isConverged(): boolean {
     const plan = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];

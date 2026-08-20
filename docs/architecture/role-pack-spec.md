@@ -405,6 +405,7 @@ export interface IMcpTransport {
 | global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | 冻结-条件消费 | memora 消费（types.ts `assembleRolePack` 提问指令注入，**仅 `reflect.userFollowup=ask` 时生效**）；条件消费 = 字段冻结，但行为仅在指定策略组合下激活 |
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | 冻结-条件消费 | memora 消费（同上，userFollowup=ask 时生效，缺省 3） |
 | global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
+| global | `global.taskLoopLimit` | 非负整数（默认 10，0=关闭） | 外部任务驱动循环步数上限：复杂任务按任务表每步一个闭环的最大步数 | 冻结 | memora 消费（seed/orchestrator `externalTaskLoop` 步数上限，防无限多步烧 token）；**由实现提炼进标准**（阶段 3 对账发现被真实消费后补录） |
 
 ---
 

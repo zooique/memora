@@ -55,6 +55,13 @@ export const DEFAULT_TOKEN_BUDGET = 8000;
 export const DEFAULT_STEP_BUDGET = 50;
 
 /**
+ * 外部任务驱动循环步数上限内核默认值（SSOT 单一来源，阶段 3）。
+ * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.taskLoopLimit`（角色包声明层）、
+ * `resolveTaskLoopLimit` 的非法/缺失回退。0 = 关闭外部任务驱动循环。
+ */
+export const DEFAULT_TASK_LOOP_LIMIT = 10;
+
+/**
  * 行为策略全局默认值——未配置的维度使用全局默认值，角色包只声明它想改变的部分。
  * const 断言确保类型推导为字面量值。
  */
@@ -100,6 +107,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     safetyRule: 'inherit',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 3,
+    taskLoopLimit: DEFAULT_TASK_LOOP_LIMIT,
   },
 } as const;
 
@@ -111,11 +119,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
  * 枚举值合法性收窄（SSOT 兜底）：角色包 L2 键是枚举开关，非法拼写不应静默透传
  * （handoff 会直接 yield 给宿主，其他枚举会污染行为分支），统一归位到内核默认。
  */
-function normalizeEnum<T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-  fallback: T,
-): T {
+function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
     ? (value as T)
     : fallback;
@@ -163,7 +167,9 @@ export function resolveMinFallback(strategy: BehaviorStrategy | undefined): numb
  */
 export function resolveSummaryFocus(strategy: BehaviorStrategy | undefined): string | undefined {
   const candidate = strategy?.prepare?.summaryFocus;
-  return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : undefined;
+  return typeof candidate === 'string' && candidate.trim().length > 0
+    ? candidate.trim()
+    : undefined;
 }
 
 /** 解析工具调用模式（SSOT）：非法值归位 'allow' */
@@ -223,6 +229,13 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
   return valid ? candidate : DEFAULT_STEP_BUDGET;
 }
 
+/** 解析外部任务驱动循环步数上限（阶段 3 内核已消费）：合法非负整数采用，非法/缺失回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
+export function resolveTaskLoopLimit(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.taskLoopLimit;
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return valid ? candidate : DEFAULT_TASK_LOOP_LIMIT;
+}
+
 /** 解析记忆写入模式（内核已消费）：非法值归位 'auto'——auto=自动写入 / confirm=写入前待宿主确认 */
 export function resolveMemoryWrite(strategy: BehaviorStrategy | undefined): MemoryWriteMode {
   return normalizeEnum(strategy?.reflect?.memoryWrite, ['auto', 'confirm'], 'auto');
@@ -234,7 +247,9 @@ export function resolveSessionArchive(strategy: BehaviorStrategy | undefined): S
 }
 
 /** 解析多步推理模式（内核已消费）：非法值归位 'auto'——auto=Provider 决定 / manual=强制快速回答 */
-export function resolveMultiStepReasoning(strategy: BehaviorStrategy | undefined): MultiStepReasoning {
+export function resolveMultiStepReasoning(
+  strategy: BehaviorStrategy | undefined,
+): MultiStepReasoning {
   return normalizeEnum(strategy?.act?.multiStepReasoning, ['auto', 'manual'], 'auto');
 }
 
@@ -402,13 +417,21 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     const askOn = strategy.global?.askOn;
     const askLimit = strategy.global?.askLimit ?? 3;
     const triggerLabels: string[] = [];
-    const triggers = Array.isArray(askOn) ? askOn : (askOn ? [askOn] : []);
+    const triggers = Array.isArray(askOn) ? askOn : askOn ? [askOn] : [];
     for (const t of triggers) {
       switch (t) {
-        case 'ambiguity': triggerLabels.push('遇到模糊不清的情况'); break;
-        case 'decision': triggerLabels.push('需要用户做决策'); break;
-        case 'missing_info': triggerLabels.push('缺少关键信息'); break;
-        case 'confirm': triggerLabels.push('需要用户确认'); break;
+        case 'ambiguity':
+          triggerLabels.push('遇到模糊不清的情况');
+          break;
+        case 'decision':
+          triggerLabels.push('需要用户做决策');
+          break;
+        case 'missing_info':
+          triggerLabels.push('缺少关键信息');
+          break;
+        case 'confirm':
+          triggerLabels.push('需要用户确认');
+          break;
       }
     }
     if (triggerLabels.length > 0) {

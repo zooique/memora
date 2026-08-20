@@ -12,13 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 import type { SessionEvent } from '@/agent/types.js';
-import {
-  createHarness,
-  collectGen,
-  textStream,
-  mockProvider,
-  type SeedMocks,
-} from './harness.js';
+import { createHarness, collectGen, textStream, mockProvider, type SeedMocks } from './harness.js';
 
 /** 让 loop.processUserInput 返回一个文本流（runChat 的 produce 入口） */
 function stubProcessUserInput(mocks: SeedMocks, contentPart: string): void {
@@ -85,7 +79,9 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     stubProcessUserInput(mocks, '');
     consumeControl.result = { content: '', aborted: false, failed: true };
 
-    const { chunks } = await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    const { chunks } = await collectGen(
+      new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
+    );
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
@@ -97,10 +93,15 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     stubProcessUserInput(mocks, '');
     consumeControl.result = { content: '部分', aborted: true, failed: false };
 
-    const { chunks } = await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    const { chunks } = await collectGen(
+      new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
+    );
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(expect.stringContaining('部分'), expect.any(String));
+    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
+      expect.stringContaining('部分'),
+      expect.any(String),
+    );
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
@@ -113,7 +114,11 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     mocks.checkpointRestoreCoordinator.shouldGenerateTaskTable.mockReturnValue(true);
 
     const { chunks } = await collectGen(
-      new SeedOrchestrator(deps).runEvent(chatEvent('事件输入'), '事件输入', new AbortController().signal),
+      new SeedOrchestrator(deps).runEvent(
+        chatEvent('事件输入'),
+        '事件输入',
+        new AbortController().signal,
+      ),
     );
     await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
 
@@ -135,7 +140,9 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     consumeControl.result = { content: '回复', aborted: false, failed: false };
     // 默认 shouldGenerateTaskTable 返回 false
 
-    await collectGen(new SeedOrchestrator(deps).runEvent(chatEvent('输入'), '输入', new AbortController().signal));
+    await collectGen(
+      new SeedOrchestrator(deps).runEvent(chatEvent('输入'), '输入', new AbortController().signal),
+    );
 
     expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalled();
   });
@@ -163,39 +170,57 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
-  // ── runChat · 汇报闭环（阶段 2）────────────────────────
-  it('runChat 复杂且收敛：触发汇报闭环 → 汇报追加历史 + 汇报单源摘要', async () => {
+  // ── runChat · 外部任务驱动外循环（阶段 3）────────────────
+  it('runChat 复杂且启用外部循环：规划闭环 → 每步独立闭环（独立 roundId）→ 收敛后汇报', async () => {
     const { mocks, deps, consumeControl } = createHarness({
       // 难度分级判定为复杂
       getBackgroundProvider: () => mockProvider('complex'),
     });
-    stubProcessUserInput(mocks, '完成回复');
-    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
-    // 收敛：存在已完成 plan 步骤
-    mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan: [{ id: 's1', status: 'done' }] });
+    // 可变任务表：2 个 pending 步骤（步闭环执行后陆续标记 done）
+    const plan: Array<{ id: string; status: string; description: string }> = [
+      { id: 's1', status: 'pending', description: '步骤一' },
+      { id: 's2', status: 'pending', description: '步骤二' },
+    ];
+    mocks.sessionManager.getCheckpoint.mockImplementation(() => ({ sessionId: 'sess', plan }));
+    consumeControl.result = { content: '答', aborted: false, failed: false };
     // 汇报闭环返回文本流
-    mocks.loop.runReport.mockReturnValue(textStream('【任务总结汇报】已完成核心步骤，结论为 X'));
+    mocks.loop.runReport.mockReturnValue(textStream('【任务总结汇报】已完成，结论 X'));
 
-    const { chunks } = await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    // processUserInput 驱动：规划闭环（用户输入）只建表；步闭环（含 stepPrompt）处理一个 pending 并标记 done
+    mocks.loop.processUserInput.mockImplementation(function* (input: string) {
+      if (typeof input === 'string' && input.includes('执行任务步骤')) {
+        const step = plan[plan.findIndex((s) => s.status === 'pending')];
+        if (step) step.status = 'done';
+      }
+      yield { type: 'text', content: '答' };
+    });
+
+    const { chunks } = await collectGen(
+      new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal),
+    );
     await vi.waitFor(() => {
+      // 摘要 1:1：规划/每步不产摘要，仅收尾汇报产出唯一 1 条（单源，见 §2.5）
       expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
     });
 
-    // 触发了汇报闭环
+    // 规划闭环 + 2 个步闭环 = processUserInput 共 3 次
+    expect(mocks.loop.processUserInput).toHaveBeenCalledTimes(3);
+    // 收敛后触发汇报闭环；汇报追加进会话历史（含 roundId 溯源）
     expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
-    // 汇报追加进会话历史（含 roundId 溯源）
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
-      '【任务总结汇报】已完成核心步骤，结论为 X',
-      'round-1',
+      '【任务总结汇报】已完成，结论 X',
+      expect.any(String),
     );
     // 汇报→摘要单源：generate 输入侧为空、输出侧为汇报文本
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
       '',
-      '【任务总结汇报】已完成核心步骤，结论为 X',
-      'round-1',
-      '2026-08-20-main',
+      '【任务总结汇报】已完成，结论 X',
+      expect.any(String),
+      expect.any(String),
       undefined,
     );
+    // 每个步闭环独立 roundId（prepare 设 1 次 + allocRoundId 每步各 1 次 = 3 次）
+    expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(3);
     // 仍产出 handoff（wait）
     expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait' });
   });
@@ -229,7 +254,10 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     });
     stubProcessUserInput(mocks, '直接答');
     consumeControl.result = { content: '直接答', aborted: false, failed: false };
-    mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan: [{ id: 's1', status: 'done' }] });
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'done' }],
+    });
 
     await collectGen(new SeedOrchestrator(deps).runChat('简单问题', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));

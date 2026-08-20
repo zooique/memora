@@ -38,7 +38,10 @@ export function isNonEmptyString(value: unknown): boolean {
 /** askOn 断言：单枚举或元素∈四枚举的数组（可组合） */
 export function isAskOn(value: unknown): boolean {
   const ASK_TRIGGERS: ReadonlySet<string> = new Set([
-    'ambiguity', 'decision', 'missing_info', 'confirm',
+    'ambiguity',
+    'decision',
+    'missing_info',
+    'confirm',
   ]);
   if (typeof value === 'string') return ASK_TRIGGERS.has(value);
   return (
@@ -94,5 +97,6 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
     tokenBudget: { kind: 'check', check: isNonNegativeInt },
     stepBudget: { kind: 'check', check: isNonNegativeInt },
+    taskLoopLimit: { kind: 'check', check: isNonNegativeInt },
   },
 };

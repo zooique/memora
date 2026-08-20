@@ -168,6 +168,8 @@ export interface GlobalStrategy {
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
   /** 每轮主动提问次数上限（默认 3） */
   readonly askLimit?: number;
+  /** 外部任务驱动循环步数上限，0=关闭（默认 10；阶段 3 内核已消费）——复杂任务按任务表每步一个闭环的最大步数 */
+  readonly taskLoopLimit?: number;
 }
 
 /**
@@ -346,7 +348,11 @@ export interface RolePackManifestSkill {
   /** L3 层数据（资源 + 脚本）：由 scanPackSkills 装载时自动发现；L3 不进 system prompt，按需调用 */
   readonly layer3?: {
     readonly resources: ReadonlyArray<{ readonly path: string; readonly size: number }>;
-    readonly scripts: ReadonlyArray<{ readonly path: string; readonly runtime: 'node' | 'python' | 'shell'; readonly size: number }>;
+    readonly scripts: ReadonlyArray<{
+      readonly path: string;
+      readonly runtime: 'node' | 'python' | 'shell';
+      readonly size: number;
+    }>;
   };
   /** 技能正文缓存（load 时预装载，readSkillContent 直取；null=未缓存，undefined=未装载懒加载） */
   readonly content?: string | null;

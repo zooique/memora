@@ -24,7 +24,6 @@ import {
 // ══════════════════════════════════════════════════════════════
 
 describe('strategyKeys — 校验辅助函数', () => {
-
   // ── isPositiveInt ──
   describe('isPositiveInt', () => {
     it('正整数通过', () => {
@@ -194,29 +193,43 @@ describe('strategyKeys — 校验辅助函数', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
-
   const PHASES = ['prepare', 'act', 'reflect', 'global'] as const;
   type Phase = (typeof PHASES)[number];
 
   // 收集所有已知键（文档列出的）
   const EXPECTED_KEYS: Record<Phase, string[]> = {
     prepare: [
-      'recentRounds', 'memoryRecall', 'memoryRecallQuota', 'minFallback',
-      'summaryFocus', 'contextAssembly', 'autoSwitch',
-      'recallConfidence', 'summaryRecall',
+      'recentRounds',
+      'memoryRecall',
+      'memoryRecallQuota',
+      'minFallback',
+      'summaryFocus',
+      'contextAssembly',
+      'autoSwitch',
+      'recallConfidence',
+      'summaryRecall',
     ],
     act: [
-      'toolMode', 'temperature', 'outputLimit', 'streaming',
-      'toolStepLimit', 'providerRouting', 'inputInterrupt',
-      'multiStepReasoning', 'toolReadonly', 'toolApproval',
+      'toolMode',
+      'temperature',
+      'outputLimit',
+      'streaming',
+      'toolStepLimit',
+      'providerRouting',
+      'inputInterrupt',
+      'multiStepReasoning',
+      'toolReadonly',
+      'toolApproval',
     ],
     reflect: [
-      'summary', 'handoff', 'loopContinue', 'userFollowup',
-      'memoryWrite', 'sessionArchive',
+      'summary',
+      'handoff',
+      'loopContinue',
+      'userFollowup',
+      'memoryWrite',
+      'sessionArchive',
     ],
-    global: [
-      'askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget',
-    ],
+    global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget', 'taskLoopLimit'],
   };
 
   it('四个阶段都存在', () => {
@@ -229,7 +242,10 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   it('每个阶段的键数量正确', () => {
     for (const phase of PHASES) {
       const actualKeys = Object.keys(STRATEGY_KEY_RULES[phase]!);
-      expect(actualKeys.length, `阶段 ${phase} 应有 ${EXPECTED_KEYS[phase].length} 个键，实际 ${actualKeys.length}`).toBe(EXPECTED_KEYS[phase].length);
+      expect(
+        actualKeys.length,
+        `阶段 ${phase} 应有 ${EXPECTED_KEYS[phase].length} 个键，实际 ${actualKeys.length}`,
+      ).toBe(EXPECTED_KEYS[phase].length);
     }
   });
 
@@ -247,15 +263,21 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       const rules = STRATEGY_KEY_RULES[phase]!;
       for (const [key, rule] of Object.entries(rules)) {
         const r = rule as KeyRule;
-        expect(r.kind === 'enum' || r.kind === 'check',
-          `键 ${phase}.${key} 的规则应有 kind: 'enum' 或 'check'`).toBe(true);
+        expect(
+          r.kind === 'enum' || r.kind === 'check',
+          `键 ${phase}.${key} 的规则应有 kind: 'enum' 或 'check'`,
+        ).toBe(true);
         if (r.kind === 'enum') {
-          expect(Array.isArray((r as { values: readonly unknown[] }).values),
-            `枚举键 ${phase}.${key} 应有 values 数组`).toBe(true);
+          expect(
+            Array.isArray((r as { values: readonly unknown[] }).values),
+            `枚举键 ${phase}.${key} 应有 values 数组`,
+          ).toBe(true);
         }
         if (r.kind === 'check') {
-          expect(typeof (r as { check: (v: unknown) => boolean }).check,
-            `校验键 ${phase}.${key} 应有 check 函数`).toBe('function');
+          expect(
+            typeof (r as { check: (v: unknown) => boolean }).check,
+            `校验键 ${phase}.${key} 应有 check 函数`,
+          ).toBe('function');
         }
       }
     }
@@ -336,7 +358,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('strategyKeys — KeyRule 类型验证', () => {
-
   it('enum 类型：values 数组', () => {
     const rule: KeyRule = { kind: 'enum', values: ['a', 'b', 'c'] };
     expect(rule.kind).toBe('enum');
