@@ -10,6 +10,8 @@
 // SSOT：最近固定加载轮数默认值下沉到 role-pack/types（策略层级默认真理源），
 // agent 层引用而非重新定义，避免同一维度出现两套平行默认值（见 resolveRecentRounds）。
 import { DEFAULT_RECENT_HISTORY_ROUNDS } from '@/role-pack/strategyResolver.js';
+// SSOT：召回排除默认值下沉到 utils/recallDefaults（记忆层与 agent 层共享，避免两处定义）
+import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 
 /**
  * Agent 门面层常量
@@ -34,8 +36,8 @@ export const AGENT_CONSTANTS = {
   /** AgentConfig.maxContextTokens 默认值。120K tokens。 */
   DEFAULT_MAX_CONTEXT_TOKENS: 120_000,
 
-  /** recallExcludeSources 默认值——设定记忆已归角色包，不再参与召回排除。 */
-  DEFAULT_RECALL_EXCLUDE_SOURCES: [] as const,
+  /** recallExcludeSources 默认值——设定记忆已归角色包，不再参与召回排除（常量下沉 utils 共享）。 */
+  DEFAULT_RECALL_EXCLUDE_SOURCES,
 
   /**
    * systemPrompt 时间注入的默认 locale（对齐"核心库领域无关"原则，可被 AssembleInput.locale 覆盖）。

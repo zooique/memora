@@ -8,13 +8,12 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { IReranker } from '@/memory/reranker.js';
 import { logger } from '@/logging/logger.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { HybridWeights } from '@/memory/hybridMerge.js';
-// 召回保底下限默认值，SSOT 跨层共享
-import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
+// 召回默认值 SSOT 跨层共享（保底下限 + 排除默认）
+import { DEFAULT_MIN_FALLBACK, DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 // 召回 score 提升/上限/下限 + 衰减：复用治理共享常量，与宿主 SqliteStorage.decayScores 同一真源
 import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
 
@@ -46,7 +45,7 @@ export function extractKeywords(input: string): string[] {
 export interface RecallOptions {
   /** 返回数量上限（默认 5） */
   limit?: number;
-  /** 排除的 source（默认 persona/rule/skill——已单独注入 system prompt） */
+  /** 排除的 source（默认空数组——设定记忆已归角色包，不再参与召回排除） */
   excludeSources?: string[];
   /** 向量存储（可选，提供时启用语义搜索） */
   vectorStore?: IVectorStore;
@@ -77,7 +76,7 @@ export async function recall(
 ): Promise<Memory[]> {
   const {
     limit = 5,
-    excludeSources = [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
+    excludeSources = [...DEFAULT_RECALL_EXCLUDE_SOURCES],
     vectorStore,
     minSimilarity = DEFAULT_MIN_SIMILARITY,
     reranker,

@@ -4,11 +4,12 @@
  * L3 冲突检测：异步调 LLM 判断记忆间语义冲突，仅检测不修复（降级哪条由用户决策）。
  */
 import type { Memory } from '@/memory/types.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { ONE_DAY_MS } from '@/memory/recall.js';
 import { nowIso } from '@/utils/time.js';
 import { roundTo } from '@/utils/math.js';
+// 召回排除默认值 SSOT 共享（设定记忆已归角色包，默认不排除）
+import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 // LLM judge 高阶函数（流式累积 + parseLlmJson + configError 封装）
 import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
@@ -80,7 +81,7 @@ export interface SourceHealthReport {
 export interface SuggestOptions {
   /** 返回数量上限（默认 5） */
   limit?: number;
-  /** 排除的 source 标签（默认排除 persona、rule、skill） */
+  /** 排除的 source 标签（默认空数组——设定记忆已归角色包，不再参与召回排除） */
   excludeSources?: string[];
   /** 时效性权重（0-1，默认 0.3）：越高越偏好最近访问的记忆 */
   recencyWeight?: number;
@@ -226,7 +227,7 @@ export class MemoryAdvisor {
   suggest(query?: string, options: SuggestOptions = {}): SuggestHit[] {
     const {
       limit = 5,
-      excludeSources = [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
+      excludeSources = [...DEFAULT_RECALL_EXCLUDE_SOURCES],
       recencyWeight = 0.3,
     } = options;
 

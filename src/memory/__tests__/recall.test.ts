@@ -84,7 +84,7 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.search).toHaveBeenCalledWith('测试 查询', 10); // 提取关键词后组合搜索
   });
 
-  it('应该排除默认的 persona、rule 和 skill source', async () => {
+  it('默认不排除任何 source（设定记忆已归角色包，不再参与召回排除）', async () => {
     const results = [
       makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
       makeMemory({ id: 'rule:1', source: 'rule', score: 0.8 }),
@@ -94,8 +94,8 @@ describe('recall · 记忆召回', () => {
 
     const memories = await recall(mockStorage, '测试');
 
-    // persona、rule 和 skill 全部被排除
-    expect(memories).toHaveLength(0);
+    // persona、rule、skill 均不再被默认排除（历史补丁已随角色包解耦剪枝）
+    expect(memories).toHaveLength(3);
   });
 
   it('应该支持自定义 excludeSources', async () => {
@@ -388,7 +388,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
   });
 
   it('excludeSources 对语义搜索结果也生效', async () => {
-    // 语义搜索返回 persona source，应被排除
+    // 语义搜索返回 persona source，应被显式 excludeSources 排除
     vi.mocked(mockVectorStore.search).mockResolvedValue([
       { id: 'persona:1', similarity: 0.9 },
     ]);
@@ -396,9 +396,12 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
     );
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
+    const memories = await recall(mockStorage, '测试', {
+      vectorStore: mockVectorStore as unknown as IVectorStore,
+      excludeSources: ['persona'],
+    });
 
-    // persona 被默认排除，应返回空
+    // persona 被显式排除，应返回空
     expect(memories).toHaveLength(0);
   });
 

@@ -217,14 +217,20 @@ describe('MemoryAdvisor.suggest()', () => {
       expect(result[1]?.name).toBe('old-low');
     });
 
-    it('默认排除 persona/rule/skill', () => {
+    it('默认不排除任何 source（设定记忆已归角色包，不再参与召回排除）', () => {
+      // 治理源覆盖测试涉及的全部 source（无 query 时按治理源遍历采样；默认 excludeSources 为空时不过滤）
+      const advisorAll = new MemoryAdvisor(storage, null, [
+        SOURCE_LABELS.PERSONA,
+        SOURCE_LABELS.RULE,
+        SOURCE_LABELS.SKILL,
+        SOURCE_LABELS.WORK_PROJECTION,
+      ]);
       storage.upsert(createMemoryDaysAgo(1, { id: 'persona:1', source: SOURCE_LABELS.PERSONA, score: 0.9 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'rule:1', source: SOURCE_LABELS.RULE, score: 0.9 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'skill:1', source: SOURCE_LABELS.SKILL, score: 0.9 }));
       storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.5 }));
-      const result = advisor.suggest();
-      expect(result).toHaveLength(1);
-      expect(result[0]?.source).toBe(SOURCE_LABELS.WORK_PROJECTION);
+      const result = advisorAll.suggest();
+      expect(result).toHaveLength(4);
     });
 
     it('每个 source 采样 top-N（SUGGEST_TOP_PER_SOURCE=3）', () => {
