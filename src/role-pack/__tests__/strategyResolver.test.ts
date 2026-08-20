@@ -15,6 +15,7 @@ import {
   resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
+  resolveMemoryRecallQuota,
   resolveSummaryFocus,
   resolveToolMode,
   resolveSummary,
@@ -38,6 +39,7 @@ import {
   assembleRolePack,
   resolveL2Strategy,
   DEFAULT_L2_STRATEGY,
+  DEFAULT_MEMORY_RECALL_QUOTA,
 } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 import type {
@@ -384,6 +386,30 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('缺失/非数值回退默认', () => {
       expect(resolveMinFallback(undefined)).toBe(DEFAULT_MIN_FALLBACK);
+    });
+  });
+
+  // ── resolveMemoryRecallQuota ──
+  describe('resolveMemoryRecallQuota', () => {
+    it('合法非负整数采用', () => {
+      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: 1500 } })).toBe(1500);
+    });
+
+    it('0 = 不限配额（不裁剪）', () => {
+      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: 0 } })).toBe(0);
+    });
+
+    it('非法值回退默认 2000', () => {
+      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: -1 } })).toBe(
+        DEFAULT_MEMORY_RECALL_QUOTA,
+      );
+      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: 1.5 } })).toBe(
+        DEFAULT_MEMORY_RECALL_QUOTA,
+      );
+    });
+
+    it('缺失回退默认 2000', () => {
+      expect(resolveMemoryRecallQuota(undefined)).toBe(DEFAULT_MEMORY_RECALL_QUOTA);
     });
   });
 

@@ -343,7 +343,7 @@ function validateManifestSkills(
       });
     }
 
-    // name / description 可选字符串（元数据在技能文件 frontmatter，此处声明仅兼容忽略）
+    // name / description 可选字符串（元数据真正在技能文件 frontmatter，此处声明可选，目录扫描时忽略）
     for (const optKey of ['name', 'description'] as const) {
       const opt = record[optKey];
       if (opt !== undefined && typeof opt !== 'string') {

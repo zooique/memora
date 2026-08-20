@@ -26,7 +26,7 @@ export class SessionStateMachine {
   private pauseSource: PauseSource | null = null;
   /** 异常原因（仅 ERROR 有效） */
   private errorCause: string | null = null;
-  /** 待处理暂停原因（软暂停申请，loop 边界挂起后消费）；Agent/AgentLoop 四处冗余字段在此收口为状态机唯一持有 */
+  /** 待处理暂停原因（软暂停申请，loop 边界挂起后消费；由状态机唯一持有） */
   private pendingPauseReason?: string;
   /** 待处理暂停来源（仅 pendingPauseReason 有值时有效） */
   private pendingPauseSource: PauseSource = 'user';

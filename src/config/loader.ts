@@ -292,7 +292,7 @@ function parseBackground(value: unknown): BackgroundConfig | undefined {
 }
 
 /**
- * 解析 taskRouter 配置（key/value 均为字符串，非字符串跳过；不配置时返回 undefined 向后兼容）
+ * 解析 taskRouter 配置（key/value 均为字符串，非字符串跳过；不配置时为 undefined）
  */
 function parseTaskRouter(value: unknown): Partial<Record<string, string>> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

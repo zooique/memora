@@ -20,6 +20,7 @@ import {
   resolveRecentRounds,
   resolveMinFallback,
   resolveRecallConfidence,
+  resolveMemoryRecallQuota,
   resolveSummaryRecall,
 } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
@@ -192,10 +193,10 @@ export class ContextPreparer {
           minSimilarity: resolveRecallConfidence(strategy),
         });
 
-        // limited 配额分层（记忆与摘要各有 token 配额，避免挤占）
+        // limited 配额分层（记忆与摘要各有 token 配额，避免挤占）；配额非法/缺失已由 resolve 归位默认，0=不限配额
         if (memoryRecallMode === 'limited') {
-          const quotaTokens = strategy.prepare?.memoryRecallQuota;
-          if (typeof quotaTokens === 'number' && quotaTokens > 0) {
+          const quotaTokens = resolveMemoryRecallQuota(strategy);
+          if (quotaTokens > 0) {
             const charBudget = quotaTokens * LOOP_CONSTANTS.CHARS_PER_TOKEN;
             let usedChars = 0;
             const trimmed: Memory[] = [];

@@ -62,6 +62,13 @@ export const DEFAULT_STEP_BUDGET = 50;
 export const DEFAULT_TASK_LOOP_LIMIT = 10;
 
 /**
+ * limited 记忆召回 token 配额内核默认值（SSOT 单一来源）。
+ * 同时服务于 `DEFAULT_BEHAVIOR_STRATEGY.prepare.memoryRecallQuota`（角色包声明层）、
+ * `resolveMemoryRecallQuota` 的非法/缺失回退。0 = 不限配额（不裁剪）。
+ */
+export const DEFAULT_MEMORY_RECALL_QUOTA = 2000;
+
+/**
  * 行为策略全局默认值——未配置的维度使用全局默认值，角色包只声明它想改变的部分。
  * const 断言确保类型推导为字面量值。
  */
@@ -71,7 +78,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     contextAssembly: 'hybrid',
     recentRounds: DEFAULT_RECENT_HISTORY_ROUNDS,
     memoryRecall: 'full',
-    memoryRecallQuota: 2000,
+    memoryRecallQuota: DEFAULT_MEMORY_RECALL_QUOTA,
     summaryRecall: 'on',
     minFallback: DEFAULT_MIN_FALLBACK,
     summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
@@ -159,6 +166,16 @@ export function resolveMinFallback(strategy: BehaviorStrategy | undefined): numb
   const candidate = strategy?.prepare?.minFallback;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
   return valid ? candidate : DEFAULT_MIN_FALLBACK;
+}
+
+/**
+ * 解析 limited 记忆召回 token 配额（SSOT）：非负整数才采用，缺失/非整数/负数回退内核默认。
+ * 0 = 不限配额（不裁剪），与 limited 模式下「配额不足即裁剪」的语义一致；非法值不允许静默透传。
+ */
+export function resolveMemoryRecallQuota(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.prepare?.memoryRecallQuota;
+  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return valid ? candidate : DEFAULT_MEMORY_RECALL_QUOTA;
 }
 
 /**
