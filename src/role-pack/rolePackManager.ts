@@ -245,6 +245,8 @@ async function readContentSafe(filePath: string): Promise<string> {
  * 角色包管理器
  */
 export class RolePackManager extends ConfigResourceManager<RolePack> {
+  /** 激活角色包变更回调（首次参数为变前，第二参数为变后；宿主据此同步 UI/记忆标题） */
+  private onActiveChanged: ((from: string | null, to: string | null) => void) | null = null;
   /** 当前激活的角色包名 */
   private activePackName: string | null = null;
   /**
@@ -284,7 +286,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       this.activate(activePack);
     } else if (this.items.length > 0) {
       // 默认激活第一个角色包
-      this.activePackName = this.items[0]!.name;
+      this.setActivePackName(this.items[0]!.name);
     }
     logger.info({ count, active: this.activePackName }, '角色包加载完成');
     return count;
@@ -299,15 +301,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (oldActiveName) {
       const found = this.items.find((p) => p.meta.name === oldActiveName);
       if (found) {
-        this.activePackName = found.meta.name;
+        this.setActivePackName(found.meta.name);
       } else if (this.items.length > 0) {
-        this.activePackName = this.items[0]!.meta.name;
+        this.setActivePackName(this.items[0]!.meta.name);
         logger.warn(
           { oldActive: oldActiveName, newActive: this.activePackName },
           '激活角色包已被删除，回退到第一个',
         );
       } else {
-        this.activePackName = null;
+        this.setActivePackName(null);
       }
     }
 
@@ -505,6 +507,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return this.activePackName;
   }
 
+  /**
+   * 注册激活角色包变更监听：每次激活状态实际变化（切换 / 默认激活 / 回退）时回调。
+   * @param handler 收到（from, to）；to 为 null 表示激活被清空；同名不变不触发
+   */
+  onRolePackActivated(handler: (from: string | null, to: string | null) => void): void {
+    this.onActiveChanged = handler;
+  }
+
   /** 返回 parseManifestPack 时预缓存的 Assembly，避免重复 mergeStrategy + personaPrompt 构建；无激活返回 null */
   getActive(): RolePackAssembly | null {
     if (!this.activePackName) return null;
@@ -558,9 +568,22 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       logger.warn('角色包切换过于频繁，已锁定 2 分钟');
     }
 
-    this.activePackName = name;
+    this.setActivePackName(name);
     logger.info({ name }, '角色包已激活');
     return true;
+  }
+
+  /** 统一激活态赋值：实际变化时触发 onActiveChanged 回调（宿主同步 UI/记忆标题） */
+  private setActivePackName(next: string | null): void {
+    const prev = this.activePackName;
+    this.activePackName = next;
+    if (prev !== next) {
+      try {
+        this.onActiveChanged?.(prev, next);
+      } catch (err) {
+        logger.warn({ err, from: prev, to: next }, '角色包激活回调执行失败');
+      }
+    }
   }
 
   /** 角色切换锁定状态；unlockAt 为自动恢复时间戳（ms epoch），未锁定 null */

@@ -451,6 +451,61 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
   });
 
+  describe('激活变更回调 onRolePackActivated', () => {
+    it('activate 切换时触发 (from, to) 回调', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
+      await writePack(packsDir, '全能写手', MANIFEST_MULTI_SKILL_NO_PERSONA);
+
+      const manager = new RolePackManager(dir);
+      const calls: Array<[string | null, string | null]> = [];
+      manager.onRolePackActivated((from, to) => calls.push([from, to]));
+
+      await manager.load('技术文档工程师');
+      manager.activate('全能写手');
+      expect(calls).toEqual([
+        [null, '技术文档工程师'], // load 时注册回调后经 activePack 参数触发
+        ['技术文档工程师', '全能写手'],
+      ]);
+    });
+
+    it('同名激活不触发回调', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      // load 默认激活第一个（未注册回调故不记录），后再注册回调验证同名幂等
+      const calls: Array<[string | null, string | null]> = [];
+      manager.onRolePackActivated((from, to) => calls.push([from, to]));
+      manager.activate('技术文档工程师');
+      expect(calls).toEqual([]);
+    });
+
+    it('reload 激活包被删除时回退触发回调', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
+      await writePack(packsDir, '全能写手', MANIFEST_MULTI_SKILL_NO_PERSONA);
+
+      const manager = new RolePackManager(dir);
+      const calls: Array<[string | null, string | null]> = [];
+      manager.onRolePackActivated((from, to) => calls.push([from, to]));
+
+      await manager.load('技术文档工程师');
+      manager.activate('全能写手');
+      calls.length = 0; // 清掉前置回调，聚焦 reload 回退
+
+      // 删除当前激活的角色包后 reload → 回退第一个
+      await rm(join(packsDir, '全能写手'), { recursive: true, force: true });
+      await manager.reload();
+      expect(manager.activeName).toBe('技术文档工程师');
+      expect(calls.at(-1)).toEqual(['全能写手', '技术文档工程师']);
+    });
+  });
+
   describe('渐进披露 · read_skill + buildSystemPrompt 技能清单', () => {
     it('readSkillContent 按技能名读取内嵌技能正文（渐进披露 L2）', async () => {
       const packsDir = join(dir, 'role-packs');
