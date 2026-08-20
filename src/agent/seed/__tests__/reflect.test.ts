@@ -77,4 +77,25 @@ describe('SeedReflect 回答后', () => {
     }).deps;
     await expect(new SeedReflect(deps).run('输入', '回复')).resolves.toBeUndefined();
   });
+
+  it('runReported：以汇报文本为单源（输入侧空）生成摘要，span 归因 REPORT', async () => {
+    const { mocks, deps } = createHarness();
+
+    await new SeedReflect(deps).runReported('【汇报】任务已完成，结论 X');
+
+    // 汇报单源：输入侧 ''，输出侧为汇报文本
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '',
+      '【汇报】任务已完成，结论 X',
+      'round-1',
+      '2026-08-20-main',
+      undefined,
+    );
+    expect(mocks.history.registerPendingArchive).toHaveBeenCalledTimes(1);
+    // span 归因 round.report（非普通 a.postProcess）
+    expect(mocks.tracer.startSpan).toHaveBeenCalledWith(
+      'round.report',
+      expect.any(Object),
+    );
+  });
 });

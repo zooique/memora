@@ -16,6 +16,7 @@ import {
   createHarness,
   collectGen,
   textStream,
+  mockProvider,
   type SeedMocks,
 } from './harness.js';
 
@@ -162,22 +163,77 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
-  it('runResume 补输入：input 命中续跑修正，摘要输入侧用原值', async () => {
-    const { mocks, deps, consumeControl } = createHarness();
-    stubContinue(mocks, '续跑');
-    consumeControl.result = { content: '续跑', aborted: false, failed: false };
+  // ── runChat · 汇报闭环（阶段 2）────────────────────────
+  it('runChat 复杂且收敛：触发汇报闭环 → 汇报追加历史 + 汇报单源摘要', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      // 难度分级判定为复杂
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    stubProcessUserInput(mocks, '完成回复');
+    consumeControl.result = { content: '完成回复', aborted: false, failed: false };
+    // 收敛：存在已完成 plan 步骤
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan: [{ id: 's1', status: 'done' }] });
+    // 汇报闭环返回文本流
+    mocks.loop.runReport.mockReturnValue(textStream('【任务总结汇报】已完成核心步骤，结论为 X'));
 
-    await collectGen(new SeedOrchestrator(deps).runResume('补充修正', new AbortController().signal));
-    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
+    const { chunks } = await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await vi.waitFor(() => {
+      expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
+    });
 
-    expect(mocks.loop.continueAfterPause).toHaveBeenCalledWith('补充修正', expect.any(AbortSignal));
-    // 摘要输入侧为 input ?? ''（续跑注入的原值）
+    // 触发了汇报闭环
+    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    // 汇报追加进会话历史（含 roundId 溯源）
+    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
+      '【任务总结汇报】已完成核心步骤，结论为 X',
+      'round-1',
+    );
+    // 汇报→摘要单源：generate 输入侧为空、输出侧为汇报文本
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
-      '补充修正',
-      '续跑',
+      '',
+      '【任务总结汇报】已完成核心步骤，结论为 X',
+      'round-1',
+      '2026-08-20-main',
+      undefined,
+    );
+    // 仍产出 handoff（wait）
+    expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait' });
+  });
+
+  it('runChat 复杂但未收敛（无已完成 plan 步骤）：不触发汇报，走普通摘要', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    stubProcessUserInput(mocks, '回复');
+    consumeControl.result = { content: '回复', aborted: false, failed: false };
+    // 未收敛：plan 为空或全 pending
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan: [] });
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mocks.loop.runReport).not.toHaveBeenCalled();
+    // 走普通回答后摘要（输入侧为用户输入，非空）
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '输入',
+      '回复',
       expect.any(String),
       expect.any(String),
       undefined,
     );
+  });
+
+  it('runChat 简单：不触发汇报，即使有已完成 plan 步骤', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('simple'),
+    });
+    stubProcessUserInput(mocks, '直接答');
+    consumeControl.result = { content: '直接答', aborted: false, failed: false };
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan: [{ id: 's1', status: 'done' }] });
+
+    await collectGen(new SeedOrchestrator(deps).runChat('简单问题', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mocks.loop.runReport).not.toHaveBeenCalled();
   });
 });

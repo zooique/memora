@@ -21,6 +21,7 @@ import type { SessionManager } from '@/agent/managers/sessionManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
+import type { LlmProvider } from '@/llm/provider.js';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
 } from '@/role-pack/types.js';
@@ -80,6 +81,11 @@ export interface SeedDeps {
   consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
   ): AsyncGenerator<AgentChunk, StreamConsumeResult, unknown>;
+  /**
+   * 后台 Provider（难度分级等「回答前视图」轻量判定用；运行时可变，故取函数式）；
+   * 为 null 表示后台不可用 → 判定降级为 unknown，不影响主回答。
+   */
+  getBackgroundProvider(): LlmProvider | null;
 }
 
 /**

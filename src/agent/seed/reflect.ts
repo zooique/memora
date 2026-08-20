@@ -39,10 +39,35 @@ export class SeedReflect {
    * @returns Promise<void>；调用方应以 .catch 包裹（与门面原有非阻塞后处理语义一致）
    */
   async run(input: string, assistantContent: string): Promise<void> {
+    await this.dispatchGenerate(input, assistantContent, TRACE_SPANS.POST_PROCESS);
+  }
+
+  /**
+   * 汇报闭环的摘要沉淀（阶段 2·汇报→摘要）：以汇报文本为单源提炼 round-summary。
+   *
+   * 与 run 的区别：输入侧为空（input=''），摘要完全由汇报文本（assistantContent）驱动——
+   * "汇报即记忆"的单源语义：汇报文本自是一条"我做了什么"的总结，直接作为摘要来源。
+   *
+   * @param reportText 汇报闭环产出的文本
+   * @returns Promise<void>；调用方应以 .catch 包裹（非阻塞语义同 run）
+   */
+  async runReported(reportText: string): Promise<void> {
+    await this.dispatchGenerate('', reportText, TRACE_SPANS.REPORT);
+  }
+
+  /**
+   * 摘要生成统一委托（span 生命周期 + round-summary fire-and-forget）。
+   * @param input 用户输入侧（汇报场景传 '' 实现单源）
+   * @param assistantContent 输出侧文本（回答或汇报）
+   * @param spanName 归因 span（普通回答用 POST_PROCESS / 汇报用 REPORT）
+   */
+  private async dispatchGenerate(
+    input: string,
+    assistantContent: string,
+    spanName: string,
+  ): Promise<void> {
     const tracer = this.deps.tracer ?? NOOP_TRACER;
-    const span = tracer.startSpan(TRACE_SPANS.POST_PROCESS, {
-      archiveMode: this.deps.archiveMode,
-    });
+    const span = tracer.startSpan(spanName, { archiveMode: this.deps.archiveMode });
 
     try {
       const { history, loop, roundSummaryGenerator, rolePackManager } =

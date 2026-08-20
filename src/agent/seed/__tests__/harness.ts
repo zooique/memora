@@ -25,6 +25,8 @@ import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { Memory } from '@/memory/types.js';
+import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
+import type { LlmChunk } from '@/llm/types.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { StreamConsumeResult, SeedDeps, SeedParts } from '@/agent/seed/types.js';
 
@@ -43,6 +45,7 @@ export interface SeedMocks {
     processUserInput: ReturnType<typeof vi.fn>;
     processEvent: ReturnType<typeof vi.fn>;
     continueAfterPause: ReturnType<typeof vi.fn>;
+    runReport: ReturnType<typeof vi.fn>;
     injectSystemMessage: ReturnType<typeof vi.fn>;
   };
   history: {
@@ -151,6 +154,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       processUserInput: vi.fn(),
       processEvent: vi.fn(),
       continueAfterPause: vi.fn(),
+      runReport: vi.fn(),
       injectSystemMessage: vi.fn(),
     },
     history: {
@@ -185,6 +189,8 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     messages: undefined,
     applyRolePackToolExposure: mocks.applyRolePackToolExposure as unknown as SeedDeps['applyRolePackToolExposure'],
     consumeExecutionStream: mocks.consumeExecutionStream as unknown as SeedDeps['consumeExecutionStream'],
+    // 难度分级后台 Provider（默认 NULL → 判定 unknown，不影响既有测试主回答摘要）
+    getBackgroundProvider: () => null,
     ...overrides,
   };
 
@@ -196,6 +202,22 @@ export function textStream(resultContent: string): AsyncGenerator<AgentChunk, vo
   return (async function* () {
     yield { type: 'text', content: resultContent };
   })();
+}
+
+/**
+ * 构造一个按既定判词/文本响应的 mock LlmProvider（测试后台 Provider、难度分级、汇报用）
+ * @param respond 每次 chat 输出该文本（可传函数，第二次起返回 ''）
+ */
+export function mockProvider(respond: string | (() => string)): LlmProvider {
+  const get = typeof respond === 'function' ? respond : () => respond;
+  return {
+    name: 'mock-bg',
+    supportedModels: [],
+    async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+      yield { content: get() };
+      yield { finishReason: 'stop' };
+    },
+  } as unknown as LlmProvider;
 }
 
 /**

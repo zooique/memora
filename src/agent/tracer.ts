@@ -81,6 +81,10 @@ export const TRACE_SPANS = {
   POST_PROCESS: 'archive.postProcess',
   /** 实际记忆召回函数——RECALL span 仅包裹注入动作立即 end，不覆盖召回耗时；此 span 在 recall() 内部埋点，观察真实耗时与双通道命中分布 */
   RECALL_ACTUAL: 'recall.actual',
+  /** 难度分级——回答前判定简单/复杂（阶段 2 种子聚类） */
+  DIFFICULTY: 'round.difficulty',
+  /** 汇报闭环——复杂任务收敛后独立汇报产出（阶段 2） */
+  REPORT: 'round.report',
 } as const;
 
 // ─── 运行时指标快照类型（可观测性增强）────────

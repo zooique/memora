@@ -13,3 +13,6 @@ export { SeedPrepare } from './prepare.js';
 export { SeedAct } from './act.js';
 export { SeedReflect } from './reflect.js';
 export { SeedHandoff } from './handoff.js';
+// 难度分级（阶段 2）
+export { DifficultyJudge } from './difficulty.js';
+export type { Difficulty } from './difficulty.js';

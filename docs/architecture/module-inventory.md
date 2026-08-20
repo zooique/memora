@@ -82,11 +82,11 @@
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
-| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/act/reflect/handoff/orchestrator + harness，29 tests） | 种子三阶段（回答前/中/后）+ Handoff 各自独立执行器；`seed/orchestrator.ts` 为最小问答闭环唯一编排真理源，提供 `runChat`/`runEvent`/`runResume` 三入口 |
+| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/act/reflect/handoff/orchestrator/difficulty + harness，39 tests） | 种子三阶段（回答前/中/后）+ Handoff 各自独立执行器；`seed/orchestrator.ts` 为最小问答闭环唯一编排真理源，提供 `runChat`/`runEvent`/`runResume` 三入口；`seed/difficulty.ts` 回答前 LLM 难度分级（阶段 2） |
 | `agent/loop.ts` | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests) | AgentLoop 核心：单轮闭环执行 + Loop 外循环编排，含拦截器集成 |
 | `agent/agent.ts` | 🟢 已打磨 | `__tests__/agent.test.ts` | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行闭环 |
 
-> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend_layers_rules.md](../.trae/rules/backend_layers_rules.md)）。
+> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。**阶段 2 生长**：`seed/difficulty.ts` 在回答前判简单/复杂，复杂且收敛的主任务闭环后再跑一次 `loop.runReport()` 汇报闭环，其产出作为 round-summary 单源（`reflect.runReported`）——「汇总即记忆」，不破坏既有 loop。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend_layers_rules.md](../.trae/rules/backend_layers_rules.md)）。
 
 ---
 
@@ -352,18 +352,18 @@
 
 | 生长层 | 文件数 | 有测试 | 无测试 | 覆盖率 |
 |--------|--------|--------|--------|--------|
-| L0 种子 · 问答闭环 | 9 | 7 | 2 | 78% |
+| L0 种子 · 问答闭环 | 10 | 8 | 2 | 80% |
 | L1 支撑骨架 | 9 | 9 | 0 | 100% |
 | L2 认知 · 回答前 | 10 | 9 | 1 | 90% |
 | L3 行动 · 回答中 | 14 | 12 | 2 | 86% |
 | L4 沉淀 · 回答后 | 28 | 27 | 1 | 96% |
 | L5 外循环 · 会话延续 | 3 | 3 | 0 | 100% |
 | L6 通用地基 | 24 | 22 | 2 | 92% |
-| **总计** | **97** | **89** | **8** | **92%** |
+| **总计** | **98** | **90** | **8** | **92%** |
 
 > **计数口径**：
 > - 无测试的 8 个文件：`skill/types.ts`、`llm/types.ts`、`web-search/types.ts`、`memory/storageInterface.ts`（纯类型/接口，消费方集成测试覆盖）+ `utils/recallDefaults.ts`（单常量，无需测试）+ `logging/loggerInterface.ts`（纯接口）+ `seed/index.ts`（桶导出）+ `seed/types.ts`（纯类型/契约，经 seed 各单测消费）。
-> - L0 含 `agent/seed/`（7 源文件：index/types/prepare/act/reflect/handoff/orchestrator；5 个有独立单测，index/types 无独立测试）；`seed/__tests__/harness.ts` 为测试装备非测试文件，56 行不单列。
+> - L0 含 `agent/seed/`（8 源文件：index/types/prepare/act/reflect/handoff/orchestrator/difficulty；6 个有独立单测，index/types 无独立测试）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
 > - L4 含 `memory/` 13 文件（`sessionStore.ts` 计入 L5）+ 摘要/治理/会话沉淀 15 个 managers 文件。
 > - L6 含 `utils/` 19 文件（含 `recallDefaults.ts`）+ config/security/logging。
-> - 2026-08-20 种子收敛：L0 增加 `agent/seed/`；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。
+> - 2026-08-20 种子收敛（L0 `agent/seed/`）+ 阶段 2（seed/difficulty 难度分级 + loop.runReport 汇报闭环）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。

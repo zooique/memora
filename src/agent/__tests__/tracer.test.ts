@@ -91,8 +91,8 @@ describe('NOOP_TRACER 单例', () => {
 // ─── TRACE_SPANS 预定义 Span 名称 ─────────────────────────
 
 describe('TRACE_SPANS 预定义 Span 名称常量', () => {
-  it('包含 8 个 AgentLoop 关键节点 Span 名称', () => {
-    expect(Object.keys(TRACE_SPANS)).toHaveLength(8);
+  it('包含 10 个 AgentLoop 关键节点 Span 名称', () => {
+    expect(Object.keys(TRACE_SPANS)).toHaveLength(10);
   });
 
   it('RECALL = "recall.recall"（记忆召回阶段）', () => {

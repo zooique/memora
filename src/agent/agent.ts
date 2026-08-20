@@ -371,6 +371,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 门面私有能力经回调注入 seed（物理实现仍在门面）
       applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
       consumeExecutionStream: (source) => this.consumeExecutionStream(source),
+      getBackgroundProvider: () => this.#backgroundProvider,
     });
   }
 

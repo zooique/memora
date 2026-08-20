@@ -334,6 +334,50 @@ export class AgentLoop {
     yield* this.runIterationLoop(signal);
   }
 
+  /** 汇报系统提示：引导 LLM 对已完成的复杂任务产出自洽的结构化总结报告 */
+  static readonly REPORT_PROMPT =
+    '请基于以上已完成的对话与任务执行过程，用中文输出一份结构化任务总结报告，' +
+    '内容仅包含：目标回顾、已完成的关键步骤、最终结果与结论、遗留事项（如有）。' +
+    '不要调用任何工具，直接输出报告文本。';
+
+  /**
+   * 汇报闭环（阶段 2·汇报）：对已收敛的复杂任务做一次独立汇报生成。
+   *
+   * 设计要点（纯新增，不改造现有循环路径）：
+   *   - 复用 _prepareContext（截断/微压缩/预算）与 callLlmWithRetry（重试/错误兜底），
+   *     保证长任务汇报不撑爆上下文、错误有兜底。
+   *   - 追加一条 system 汇报指令（随下一轮 cleanTemporarySystemMessages 清理，
+   *     不污染后续上下文的指令面）；汇报文本以 assistant 追加进工作记忆（保留下次续跑可引用）。
+   *   - 汇报只做单次生成，不做工具路由——它是"收尾总结"，不应再触发工具。
+   *
+   * @param signal 中止信号
+   * @yields 汇报文本的 text chunk；无（汇报为空/失败）时 yield 空
+   */
+  async *runReport(
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 追加汇报指令为（临时）system 消息，指令进本轮上下文
+    this.appendSystemMessage(AgentLoop.REPORT_PROMPT);
+
+    // 上下文准备（截断+微压缩+预算），安全消息集合供 LLM 调用
+    const prep = await this._prepareContext(signal);
+    if (prep === 'done') {
+      yield { type: 'text', content: '\n\n[Token budget reached]' };
+      return;
+    }
+
+    yield { type: 'thinking', phase: 'llm_calling' };
+    const llmResult = yield* this.callLlmWithRetry(prep.safeMessages, prep.chatOpts, signal, 0);
+    if (llmResult.aborted) return;
+
+    const report = llmResult.fullContent.trim();
+    if (!report) return;
+
+    // 汇报以 assistant 回填工作记忆（保留供历史/摘要沉淀；不触发工具路由）
+    this.appendAssistantText(report);
+    yield { type: 'text', content: report };
+  }
+
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;

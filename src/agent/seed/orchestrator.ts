@@ -22,6 +22,7 @@ import { SeedPrepare } from './prepare.js';
 import { SeedAct } from './act.js';
 import { SeedReflect } from './reflect.js';
 import { SeedHandoff } from './handoff.js';
+import { DifficultyJudge, type Difficulty } from './difficulty.js';
 
 /**
  * event 路径任务表预判注入提示（仅 plan 为空且应生成任务表时注入，提示 LLM 分步）
@@ -48,6 +49,8 @@ export class SeedOrchestrator {
   private readonly reflect: SeedReflect;
   /** Handoff 衔接决策（闭环出口） */
   private readonly handoff: SeedHandoff;
+  /** 难度分级（回答前判简单/复杂，决定是否触发汇报） */
+  private readonly difficulty: DifficultyJudge;
 
   constructor(deps: SeedDeps) {
     this.deps = deps;
@@ -55,6 +58,10 @@ export class SeedOrchestrator {
     this.act = new SeedAct(deps);
     this.reflect = new SeedReflect(deps);
     this.handoff = new SeedHandoff(deps);
+    this.difficulty = new DifficultyJudge(
+      () => deps.getBackgroundProvider(),
+      deps.tracer,
+    );
   }
 
   /**
@@ -72,6 +79,9 @@ export class SeedOrchestrator {
       return;
     }
 
+    // 难度分级（回答前）：简单/复杂，决定收敛后是否触发汇报（复杂才可能汇报）
+    const difficulty = await this.difficulty.classify(input);
+
     // 回答中：消费 loop.processUserInput 执行流（roundId 以 loop 当前轮为真理源）
     const produce = () =>
       this.deps
@@ -85,8 +95,10 @@ export class SeedOrchestrator {
     const acted = yield* this.act.run(produce);
     if (acted.failed || acted.aborted) return;
 
-    // 回答后 + Handoff
-    void this.backgroundReflect(input, acted.content);
+    // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
+    yield* this.settle(difficulty, input, acted.content, signal);
+
+    // Handoff：对外产出衔接决策
     yield* this.handoff.run();
   }
 
@@ -113,6 +125,9 @@ export class SeedOrchestrator {
       return;
     }
 
+    // 难度分级（回答前）：简单/复杂，决定收敛后是否触发汇报
+    const difficulty = await this.difficulty.classify(input);
+
     // 任务表预判（仅 event 路径）：plan 为空且应生成时，提示 LLM 用任务表分步
     const parts = this.deps.getParts();
     const crc = parts.checkpointRestoreCoordinator;
@@ -125,8 +140,10 @@ export class SeedOrchestrator {
     const acted = yield* this.act.run(produce);
     if (acted.failed || acted.aborted) return;
 
-    // 回答后 + Handoff
-    void this.backgroundReflect(input, acted.content);
+    // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
+    yield* this.settle(difficulty, input, acted.content, signal);
+
+    // Handoff：对外产出衔接决策
     yield* this.handoff.run();
   }
 
@@ -162,6 +179,60 @@ export class SeedOrchestrator {
     void this.reflect
       .run(input, assistantContent)
       .catch((err: unknown) => logger.warn({ err }, '非阻塞后处理失败'));
+  }
+
+  /**
+   * 回答后统一收尾：普通回答摘要；或（复杂且收敛）先跑汇报闭环再以汇报文本单源沉淀摘要。
+   *
+   * 汇报闭环 = 再编排一次 `loop.runReport()`（单次生成，自追加汇报为 assistant），
+   * 产出文本作为 round-summary 单源（反射经 reflect.runReported 走既有摘要管线）。
+   *
+   * @param difficulty 回答前判定的难度
+   * @param input 用户输入（普通摘要输入侧）
+   * @param assistantContent 主回答文本（普通摘要输出侧）
+   * @param signal 中止信号（汇报生成用）
+   */
+  private async *settle(
+    difficulty: Difficulty,
+    input: string,
+    assistantContent: string,
+    signal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    if (difficulty === 'complex' && this.isConverged()) {
+      // 汇报闭环：消费 loop.runReport 流（汇报文本自追加为 assistant；此处兜底持久化到会话历史）
+      const parts = this.deps.getParts();
+      let report = '';
+      for await (const chunk of parts.loop.runReport(signal)) {
+        if (chunk.type === 'text') report += chunk.content;
+        yield chunk;
+      }
+      const trimmed = report.trim();
+      if (trimmed) {
+        try {
+          await parts.history.appendAssistant(trimmed, parts.loop.getCurrentRoundId());
+        } catch (err) {
+          logger.warn({ err }, '汇报消息历史写入失败');
+        }
+        // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨）
+        void this.reflect
+          .runReported(trimmed)
+          .catch((err: unknown) => logger.warn({ err }, '汇报摘要生成失败'));
+      }
+      return;
+    }
+    // 普通回答后摘要（既有语义不变）
+    this.backgroundReflect(input, assistantContent);
+  }
+
+  /**
+   * 收敛判定（阶段 2：复杂任务收敛）：session 检查点存在至少一个 plan/task-table 步骤已完成。
+   *
+   * stage-2 无外部任务驱动 loop，故以「已产生并完成至少一个计划步骤」作为收敛信号
+   * （象征一次真实的多步执行）。无计划/无完成步骤 → 未收敛 → 不触发汇报。
+   */
+  private isConverged(): boolean {
+    const plan = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
+    return plan.some((s) => s.status === 'done');
   }
 
   /**
