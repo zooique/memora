@@ -435,13 +435,12 @@ describe('Agent · Manager 委托模式', () => {
     rmSync(tmpData, { recursive: true, force: true });
   });
 
-  it('persona 管理器：list / activeName / currentMode', async () => {
+  it('persona 管理器：list / activeName', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     expect(Array.isArray(agent.rolePack!.list)).toBe(true);
     expect(typeof agent.rolePack!.activeName).toBe('string');
-    expect(['auto', 'manual']).toContain(agent.rolePack!.currentMode);
   });
 
   it('tools 管理器：list 应包含内置工具', async () => {

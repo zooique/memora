@@ -247,8 +247,6 @@ async function readContentSafe(filePath: string): Promise<string> {
 export class RolePackManager extends ConfigResourceManager<RolePack> {
   /** 当前激活的角色包名 */
   private activePackName: string | null = null;
-  /** 当前激活模式 */
-  private mode: 'auto' | 'manual' = 'auto';
   /**
    * 粘性锁定：会话内首次 autoMatch 命中置 true，后续外部输入不再全量重匹配，
    * 仅当命中与当前激活包互斥（exclusiveWith）的包时才切换；resetSticky 复位，不跨会话。
@@ -586,17 +584,11 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return pack?.traits;
   }
 
-  /** 设置激活模式（auto / manual） */
-  setMode(mode: 'auto' | 'manual'): void {
-    this.mode = mode;
-  }
-
   /**
    * 输入粘性匹配角色包：首次外部输入全量匹配命中即锁定当前会话；
    * 已锁定后仅当命中与当前激活包互斥（exclusiveWith）时才切换；显式切换走 activate()。
    */
   autoMatch(userInput: string): string | null {
-    if (this.mode !== 'auto') return null;
     if (this.items.length === 0) return null;
 
     const best = this.findBestKeywordMatch(userInput, AUTO_MATCH_THRESHOLD);
@@ -637,11 +629,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const aExcludesB = packA?.meta.exclusiveWith?.includes(b) ?? false;
     const bExcludesA = packB?.meta.exclusiveWith?.includes(a) ?? false;
     return aExcludesB || bExcludesA;
-  }
-
-  /** 获取当前激活模式 */
-  get currentMode(): 'auto' | 'manual' {
-    return this.mode;
   }
 
   /** 所有角色包元数据摘要列表 */
