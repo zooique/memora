@@ -26,6 +26,7 @@ import {
   resolveInputInterrupt,
   resolveTokenBudget,
   resolveStepBudget,
+  resolveTaskLoopLimit,
   resolveMemoryWrite,
   resolveSessionArchive,
   resolveMultiStepReasoning,
@@ -438,6 +439,14 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: 0 } })).toBe(0);
     });
 
+    it('负数回退默认 8000', () => {
+      expect(resolveTokenBudget({ global: { tokenBudget: -1 } })).toBe(8000);
+    });
+
+    it('小数回退默认 8000', () => {
+      expect(resolveTokenBudget({ global: { tokenBudget: 8000.5 } })).toBe(8000);
+    });
+
     it('缺失回退默认 8000', () => {
       expect(resolveTokenBudget(undefined)).toBe(8000);
     });
@@ -449,8 +458,43 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveStepBudget({ global: { stepBudget: 100 } })).toBe(100);
     });
 
+    it('0 表示不限制', () => {
+      expect(resolveStepBudget({ global: { stepBudget: 0 } })).toBe(0);
+    });
+
+    it('负数回退默认 50', () => {
+      expect(resolveStepBudget({ global: { stepBudget: -1 } })).toBe(50);
+    });
+
+    it('小数回退默认 50', () => {
+      expect(resolveStepBudget({ global: { stepBudget: 1.5 } })).toBe(50);
+    });
+
     it('缺失回退默认 50', () => {
       expect(resolveStepBudget(undefined)).toBe(50);
+    });
+  });
+
+  // ── resolveTaskLoopLimit（阶段 3 外部任务循环步数上限）──
+  describe('resolveTaskLoopLimit', () => {
+    it('合法正整数采用', () => {
+      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 5 } })).toBe(5);
+    });
+
+    it('0 表示关闭外部任务循环', () => {
+      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 0 } })).toBe(0);
+    });
+
+    it('负数回退默认 10', () => {
+      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: -1 } })).toBe(10);
+    });
+
+    it('小数回退默认 10', () => {
+      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 3.14 } })).toBe(10);
+    });
+
+    it('缺失回退默认 10', () => {
+      expect(resolveTaskLoopLimit(undefined)).toBe(10);
     });
   });
 

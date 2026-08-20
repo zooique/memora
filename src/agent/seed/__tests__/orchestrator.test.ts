@@ -13,7 +13,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { SessionEvent } from '@/agent/types.js';
-import { createHarness, collectGen, textStream, mockProvider, type SeedMocks } from './harness.js';
+import {
+  createHarness,
+  collectGen,
+  textStream,
+  mockProvider,
+  makeStrategy,
+  useStrategy,
+  type SeedMocks,
+} from './harness.js';
 
 /** 让 loop.processUserInput 返回一个文本流（runChat 的 produce 入口） */
 function stubProcessUserInput(mocks: SeedMocks, contentPart: string): void {
@@ -322,6 +330,37 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     );
     expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(
       mocks.history.appendUser.mock.calls[0]![1],
+    );
+  });
+
+  it('runChat 复杂但 taskLoopLimit=0（关闭外循环）：走单闭环，不触发规划/步闭环/汇报', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    // 显式关闭外部任务循环（0=关闭，见 role-pack-spec global.taskLoopLimit）
+    useStrategy(mocks, makeStrategy({ taskLoopLimit: 0 }));
+    stubProcessUserInput(mocks, '直接答');
+    consumeControl.result = { content: '直接答', aborted: false, failed: false };
+    // 即使有已完成 plan 步骤，也不应进入外循环
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'done' }],
+    });
+
+    await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 关闭外循环 → 不注入 PLAN_ONLY、不汇报、不 runReport；走单闭环答后摘要
+    expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('暂时不要执行任何步骤'),
+    );
+    expect(mocks.loop.runReport).not.toHaveBeenCalled();
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '复杂任务',
+      '直接答',
+      expect.any(String),
+      expect.any(String),
+      undefined,
     );
   });
 

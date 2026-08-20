@@ -81,6 +81,7 @@ export function makeStrategy(
     summary?: 'on' | 'off';
     handoff?: 'wait' | 'loop' | 'end';
     summaryFocus?: string;
+    taskLoopLimit?: number;
   } = {},
 ): BehaviorStrategy {
   return {
@@ -96,7 +97,10 @@ export function makeStrategy(
       ...(p.summary !== undefined ? { summary: p.summary } : {}),
       ...(p.handoff !== undefined ? { handoff: p.handoff } : {}),
     },
-    global: { ...DEFAULT_BEHAVIOR_STRATEGY.global },
+    global: {
+      ...DEFAULT_BEHAVIOR_STRATEGY.global,
+      ...(p.taskLoopLimit !== undefined ? { taskLoopLimit: p.taskLoopLimit } : {}),
+    },
   } as BehaviorStrategy;
 }
 
