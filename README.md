@@ -6,11 +6,13 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-1983%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2334%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
 **English** → [README.en.md](./README.en.md)
+
+> **正式首发说明**：`3.0.0` 为 @zooique/memora 的正式首发版本。npm 上早于 3.0.0 的版本（2.1.0 及以下）均为早期试验版，已作废（安装即警告），API 与结构以 3.0.0 为准。
 
 ---
 

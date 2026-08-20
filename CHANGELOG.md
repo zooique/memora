@@ -4,7 +4,9 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+> **正式首发说明**：`3.0.0` 为 @zooique/memora 的正式首发版本。npm 上早于 3.0.0 的所有版本（2.1.0 及以下）均为早期试验版，已作废（安装即警告），API 与结构以 3.0.0 为准。
+
+## [3.0.0] - 2026-08-20
 
 ### Added（外部世界工具族：`web_fetch` 搜索→抓取闭环 + `run_code` 通用代码执行）
 
@@ -175,6 +177,8 @@ SSOT 第三轮排雷：15 项契约/一致性缺陷清零，无公共 API 变更
 ### Internal（内部变更，不影响公共 API）
 
 - 测试用例总数 1949 → 1983（+34，80 个测试文件）
+
+## 历史试验版本（已在 npm 作废，请勿使用）
 
 ## [2.1.0] - 2026-08-08
 
