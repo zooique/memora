@@ -91,7 +91,7 @@ interface LlmCallResult {
   aborted: boolean;
 }
 
-/** AgentLoop 运行时指标纯状态容器（progressive-refactor §2.1 模式 A） */
+/** AgentLoop 运行时指标纯状态容器 */
 class LoopMetrics {
   llmCallCount = 0;
   totalInputTokens = 0;
@@ -212,7 +212,7 @@ export class AgentLoop {
         ((
           round: number,
           total: number,
-        ) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——mvp-scope §三·一 防"自说自话"）。检查：
+        ) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——防"自说自话"）。检查：
 1. 本轮目标点是否全部覆盖（用户明确要求的内容是否都处理了）？
 2. 是否遵守了 Rules 中的安全/边界约束（如"不写敏感信息"）？
 3. 产出结构是否完整（正文/代码/文档是否齐全）？

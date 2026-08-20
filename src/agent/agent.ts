@@ -873,7 +873,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 执行中插话（Phase 5）
+   * 执行中插话
    *
    * 在 LLM 执行过程中插入用户输入并中断当前调用，注入下一轮继续处理。
    * 与 requestPause 区别：requestPause 在边界挂起保留上下文待续跑；interject 立即中断、注入新内容继续，用户无感知

@@ -10,7 +10,7 @@
  *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
  *
  * 刻意不做「单 run() + mode 标志」——三条路径的真实差异（runEvent 有任务表注入、runResume
- * 无 prepare/无 handoff）若硬塞进一个开关，会落入哲学 §3.2 的场景特化补丁反模式。
+ * 无 prepare/无 handoff）若硬塞进一个开关，会落入场景特化补丁反模式。
  *
  * 依赖方向：agent/seed/* → agent/loop（种子消费引擎），agent.ts → agent/seed（门面委托种子）。
  */
@@ -311,7 +311,7 @@ export class SeedOrchestrator {
    *   - 规划闭环：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步闭环重复执行）。
    *   - 步闭环：任务表 pending 步骤逐个拉起独立闭环（各自独立 roundId，供消息溯源/互斥排除），
    *     步内仍可工具多步（内循环保留）。
-   *   - 摘要 1:1：一个外部输入只由收尾汇报产出唯一 round-summary（单源，见 memory-as-summary §2.5）；
+   *   - 摘要 1:1：一个外部输入只由收尾汇报产出唯一 round-summary（单源，记忆即摘要单轨）；
    *     规划/中间步不单独摘要，避免一次复杂输入堆出多条 round-summary。
    *   - 闭环数受角色包 `global.taskLoopLimit` 约束（外部任务循环步数上限，防无限多步烧 token）。
    *   - 收敛（任务表存在已完成步骤）→ 汇报闭环 + 汇报单源摘要。
@@ -330,7 +330,7 @@ export class SeedOrchestrator {
 
     // 组合 head id：捕获"这次外部输入"的 roundId（prepare 已分配并 appendUser）。
     // 步闭环会给 loop 分配独立 currentRoundId，故先存 head，收尾摘要时回指——确保
-    // round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源，见 memory-as-summary §2.5）。
+    // round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源）。
     const headRoundId = parts.loop.getCurrentRoundId();
 
     // 1) 规划闭环：只调查 + 建任务表，不执行
@@ -355,13 +355,13 @@ export class SeedOrchestrator {
       if (!next) break;
       stepsRun++;
       // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
-      // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId（见 Q4 评审）
+      // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId
       // 执行期临时（self-review/reflection 等）已由 loop.processUserInput 入口自动清理，无需此处手动调用
       const stepAct = yield* this.act(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
       if (stepAct.failed || stepAct.aborted) return;
-      // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出，见 §2.5）
+      // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
     }
 
     // 3) 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以规划闭环产出走普通单条摘要（保证摘要恒 1:1，不丢记忆）

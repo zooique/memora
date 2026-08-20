@@ -29,9 +29,9 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 
-/** trace_summary 溯源原始对话的最大消息数（memory-as-summary §4.6 规模控制） */
+/** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
-/** trace_summary 单条消息的最大字符数（防长上下文注入，§4.6） */
+/** trace_summary 单条消息的最大字符数（防长上下文注入） */
 const TRACE_MESSAGE_CHAR_LIMIT = 2000;
 
 /**
@@ -475,11 +475,7 @@ export class BuiltinToolHandlers {
    *   - 递归深度 ≤ 3（maxDepth 入参强校验）
    *   - 自动忽略：.git / node_modules / .memora / dist / coverage / .next
    */
-  async listDir(
-    relativePath: string,
-    recursiveStr: string,
-    maxDepthStr: string,
-  ): Promise<string> {
+  async listDir(relativePath: string, recursiveStr: string, maxDepthStr: string): Promise<string> {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'list_dir');
 
@@ -606,11 +602,7 @@ export class BuiltinToolHandlers {
    * @param limitStr 返回数量上限
    * @param modeStr 搜索模式："match"（任一命中，默认）或 "near"（全部命中）
    */
-  async searchMemories(
-    query: string,
-    limitStr: string,
-    modeStr: string,
-  ): Promise<string> {
+  async searchMemories(query: string, limitStr: string, modeStr: string): Promise<string> {
     if (!query) {
       throw toolError(
         'search_memories 工具调用缺少 query 参数',
@@ -666,11 +658,7 @@ export class BuiltinToolHandlers {
    * @param roundId 轮次 ID（可选，不传则返回最近 N 条摘要）
    * @param limitStr 返回结果数量上限（默认 "5"，最大 "20"）
    */
-  async traceSummary(
-    sessionId: string,
-    roundId?: string,
-    limitStr?: string,
-  ): Promise<string> {
+  async traceSummary(sessionId: string, roundId?: string, limitStr?: string): Promise<string> {
     if (!sessionId) {
       throw toolError(
         'trace_summary 工具调用缺少 sessionId 参数',
@@ -698,7 +686,7 @@ export class BuiltinToolHandlers {
       if (!exact) {
         return `（未找到会话 "${sessionId}" 中轮次 "${roundId}" 的摘要）`;
       }
-      // 溯源真实化（memory-as-summary §4.5/§4.6）：优先返回该轮次的原始对话
+      // 溯源真实化：优先返回该轮次的原始对话
       // 仅当宿主注入了 sessionStore 且能定位到对应轮次消息时返回原始对话，
       // 否则回退为摘要文本（保证工具始终可用、不因缺注入而报错）。
       const raw = this.loadRawRoundMessages(sessionId, roundId);
@@ -735,7 +723,7 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * 溯源指定轮次的原始对话消息（memory-as-summary §4.5/§4.6）
+   * 溯源指定轮次的原始对话消息
    *
    * 通过 sessionStore.loadMessages 定位该会话，按 SessionMessage.roundId 过滤出本轮消息。
    * 规模控制：最多 5 条消息，超过则截断并标记 isTruncated。

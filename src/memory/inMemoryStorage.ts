@@ -31,11 +31,10 @@ export class InMemoryStorage implements IMemoryStorage {
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
     if (result.severity === 'block') {
-      throw configError(
-        'source 校验失败，拒绝写入',
-        result.warning,
-        ['请检查 source 字段是否拼写正确', '参考 ADR-004 source 开放字符串规范'],
-      );
+      throw configError('source 校验失败，拒绝写入', result.warning, [
+        '请检查 source 字段是否拼写正确',
+        '参考 source 开放字符串规范',
+      ]);
     }
     if (result.severity === 'warn' && result.warning) {
       logger.warn(
@@ -142,7 +141,9 @@ export class InMemoryStorage implements IMemoryStorage {
 
   /** 文本搜索活跃记忆（segmentLower 与 SqliteStorage/recall 一致），score 降序，limit 默认 10 */
   search(query: string, limit = 10): Memory[] {
-    const activeMemories = Array.from(this.memories.values()).filter((m) => m.deletedAt === undefined);
+    const activeMemories = Array.from(this.memories.values()).filter(
+      (m) => m.deletedAt === undefined,
+    );
     // 空查询或分词无有效 token：按 score 返回
     if (!query.trim()) {
       return this.sortCopyLimit(activeMemories, limit);

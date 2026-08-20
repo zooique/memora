@@ -36,11 +36,17 @@ import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/buil
 // 任务表渲染（接线下沉：loop.getTaskTable 依赖）
 import { renderTaskTable } from '@/agent/taskTableRenderer.js';
 
-/** C1 截断优先复用 round-summary 的最大条数（ADR-023） */
+/** 截断优先复用 round-summary 的最大条数 */
 const ROUND_SUMMARY_LOADER_MAX = 5;
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
-import type { AgentConfig, FileConsistencyCheck, PreExecutionResult, ToolExecutionRecord, IdempotencyLevel } from '@/agent/types.js';
+import type {
+  AgentConfig,
+  FileConsistencyCheck,
+  PreExecutionResult,
+  ToolExecutionRecord,
+  IdempotencyLevel,
+} from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
@@ -86,8 +92,10 @@ export function buildSystemPromptPrefix(
   });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
-  return systemPrefixParts.filter(Boolean).join('\n\n') +
-    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
+  return (
+    systemPrefixParts.filter(Boolean).join('\n\n') +
+    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '')
+  );
 }
 
 /**
@@ -112,7 +120,7 @@ export interface AgentHooks {
   /** 主动提问/澄清时请求软暂停（与 needClarify 共享暂停/恢复机制） */
   requestPause: (reason: string, source: 'user' | 'agent' | 'system') => void;
   /**
-   * 宿主工具执行前检查回调（设计文档 §7.2.1，统一执行入口 · 单点聚合检查）
+   * 宿主工具执行前检查回调（统一执行入口 · 单点聚合检查）
    *
    * 审批/审计/参数改写/幂等去重途经的宿主闸门。放行后由组装器内部幂等检查续接。
    */
@@ -216,10 +224,7 @@ type LoopAndDepsParams = Pick<
  *
  * 同 LoopAndDepsParams（收敛的第二半）。
  */
-type LoopDependentParams = Pick<
-  AssembleInput,
-  'configDir' | 'backgroundProvider' | 'hooks'
-> & {
+type LoopDependentParams = Pick<AssembleInput, 'configDir' | 'backgroundProvider' | 'hooks'> & {
   pctx: ProjectContext;
   loop: AgentLoop;
   history: MessageHistory;
@@ -350,9 +355,9 @@ function wireRuntimeCallbacks(
   loop.onRoundBoundary = (roundInfo) => {
     // completeRound 写 roundLog 关联 plan 步骤（取 active 步骤 ID）。此前不传 stepId 使 roundLog 与 plan
     // 无法关联（不可追溯）；单向引用——plan 仍是任务状态真理源，roundLog 是其时间轴投影（避免双写）
-    const activeStepId = sessionManager.getCheckpoint()?.plan.find(
-      (s) => s.status === 'active',
-    )?.id;
+    const activeStepId = sessionManager
+      .getCheckpoint()
+      ?.plan.find((s) => s.status === 'active')?.id;
     sessionManager.completeRound({
       stepId: activeStepId,
       summary: roundInfo.summary,
@@ -390,9 +395,9 @@ function wireRuntimeCallbacks(
     writePlan: (mode, steps) => {
       // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
       const newPlan = sessionManager.writePlan(mode, steps);
-      return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${
-        newPlan.map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`).join('\n')
-      }`;
+      return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${newPlan
+        .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`)
+        .join('\n')}`;
     },
     updateStep: (stepId, status) => {
       // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）——
@@ -407,7 +412,12 @@ function wireRuntimeCallbacks(
     },
     getPlan: () => {
       const cp = sessionManager.getCheckpoint();
-      return (cp?.plan ?? []).map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order }));
+      return (cp?.plan ?? []).map((s) => ({
+        id: s.id,
+        description: s.description,
+        status: s.status,
+        order: s.order,
+      }));
     },
   };
 }
@@ -417,9 +427,21 @@ function wireRuntimeCallbacks(
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
-    provider, backgroundProvider, providerRouter, pctx, rolePackPrompt, skillManager, toolExec,
-    maxContextTokens, tracer, messages, enableContextSummary,
-    sessionStore, locale, sessionManager, hooks,
+    provider,
+    backgroundProvider,
+    providerRouter,
+    pctx,
+    rolePackPrompt,
+    skillManager,
+    toolExec,
+    maxContextTokens,
+    tracer,
+    messages,
+    enableContextSummary,
+    sessionStore,
+    locale,
+    sessionManager,
+    hooks,
   } = params;
 
   // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
@@ -430,9 +452,12 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   // 后台组件统一使用 backgroundProvider，降级到前台 provider（SSOT：与 textPolisher 同模式）
   const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, sessionStore);
   const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
-  const roundSummaryGenerator = new RoundSummaryGenerator(backgroundProvider ?? provider, pctx.index);
+  const roundSummaryGenerator = new RoundSummaryGenerator(
+    backgroundProvider ?? provider,
+    pctx.index,
+  );
 
-  // C1（ADR-023）：截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
+  // 截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
   // 从记忆索引取最近 N 条 round-summary（按 createdAt 降序），拼接为历史摘要回退文本。
   const roundSummaryLoader = (): string => {
     try {
@@ -452,8 +477,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     provider,
     providerRouter: providerRouter ?? undefined,
     bootstrapMemories: pctx.bootstrapMemories,
-    toolExecutor: (name: string, args: string) =>
-      toolExec.execute(name, args),
+    toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
     systemPromptPrefix,
     toolDefinitions: toolExec.list,
     maxContextTokens,
@@ -521,7 +545,10 @@ function createLoopDependentComponents(params: LoopDependentParams) {
   const memoryInspector = new MemoryInspector(pctx.index, loop, history);
   const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
   const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, (report) => {
-    hooks?.emit(AGENT_EVENTS.dedupCompleted, { deduplicatedCount: report.deduplicatedCount, demotedIds: report.demotedIds });
+    hooks?.emit(AGENT_EVENTS.dedupCompleted, {
+      deduplicatedCount: report.deduplicatedCount,
+      demotedIds: report.demotedIds,
+    });
   });
 
   return { memoryAdvisor, memoryInspector, dedupManager };
@@ -555,16 +582,22 @@ export async function assembleComponents(
 
   // Agent 层总是注入 createSecurityGuard，此处显式校验并收窄类型
   if (!pctx.security) {
-    throw configError('security guard 未注入', undefined, ['检查 AgentOptions.permission 或 createSecurityGuard 配置']);
+    throw configError('security guard 未注入', undefined, [
+      '检查 AgentOptions.permission 或 createSecurityGuard 配置',
+    ]);
   }
 
   const history = new MessageHistory(sessionStore);
 
   // 作品投影生成/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
   // 投影落项目级目录（pctx.memoraDir/projections/）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
-  const workProjection = new WorkProjectionManager(pctx.memoraDir, backgroundProvider ?? provider, (sourcePath, summary) => {
-    hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
-  });
+  const workProjection = new WorkProjectionManager(
+    pctx.memoraDir,
+    backgroundProvider ?? provider,
+    (sourcePath, summary) => {
+      hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
+    },
+  );
 
   const toolExec = new ToolExecutor(
     projectPath,
@@ -631,7 +664,12 @@ export async function assembleComponents(
     if (rolePackPath) {
       const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
       if (scriptInfo) {
-        const result = await runSkillScript(rolePackPath, scriptInfo.runtime, args, scriptInfo.timeout);
+        const result = await runSkillScript(
+          rolePackPath,
+          scriptInfo.runtime,
+          args,
+          scriptInfo.timeout,
+        );
         return formatScriptResult(result);
       }
     }
@@ -641,7 +679,12 @@ export async function assembleComponents(
       const scripts = skillManager.listScripts(skillName);
       const scriptInfo = scripts.find((s) => s.path === scriptPath);
       if (scriptInfo) {
-        const result = await runSkillScript(globalPath, scriptInfo.runtime, args, scriptInfo.timeout);
+        const result = await runSkillScript(
+          globalPath,
+          scriptInfo.runtime,
+          args,
+          scriptInfo.timeout,
+        );
         return formatScriptResult(result);
       }
     }
@@ -653,10 +696,18 @@ export async function assembleComponents(
     // 先查激活角色包，再查全局通用技能
     const roleResources = rolePackManager.listSkillResources(skillName);
     if (roleResources.length > 0) {
-      return JSON.stringify(roleResources.map((r) => ({ path: r.path, size: r.size })), null, 2);
+      return JSON.stringify(
+        roleResources.map((r) => ({ path: r.path, size: r.size })),
+        null,
+        2,
+      );
     }
     const globalResources = skillManager.listResources(skillName);
-    return JSON.stringify(globalResources.map((r) => ({ path: r.path, size: r.size })), null, 2);
+    return JSON.stringify(
+      globalResources.map((r) => ({ path: r.path, size: r.size })),
+      null,
+      2,
+    );
   };
 
   // 渐进披露 L1 补充：注入 list_skills 技能清单回调 (使用 SkillManager.formatSkillForPrompt SSOT)
@@ -675,7 +726,9 @@ export async function assembleComponents(
       const assembly = rolePackManager.getActive();
       const skills = assembly?.skills ?? [];
       for (const skill of skills) {
-        const fallbackName = skill.file ? rolePackManager.deriveSkillNameFromFile(skill.file) : undefined;
+        const fallbackName = skill.file
+          ? rolePackManager.deriveSkillNameFromFile(skill.file)
+          : undefined;
         const formatted = SkillManager.formatSkillForPrompt(skill, fallbackName);
         if (formatted) lines.push(formatted);
       }
@@ -709,15 +762,14 @@ export async function assembleComponents(
 
   // ── Phase 4: 依赖 Loop 的组件 ──
 
-  const { memoryAdvisor, memoryInspector, dedupManager } =
-    createLoopDependentComponents({
-      pctx,
-      loop,
-      history,
-      skillManager,
-      backgroundProvider,
-      hooks,
-    });
+  const { memoryAdvisor, memoryInspector, dedupManager } = createLoopDependentComponents({
+    pctx,
+    loop,
+    history,
+    skillManager,
+    backgroundProvider,
+    hooks,
+  });
 
   // 绑定记忆写入回调：round-summary 沉淀后广播 memoryAdded 事件
   roundSummaryGenerator.setOnMemoryAdded((info) => {

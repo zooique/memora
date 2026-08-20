@@ -1,8 +1,7 @@
 /**
  * AbortSignal 合并工具
  *
- * 从 openaiCompatible.ts 和 embedding.ts 提取的公共"外部信号 + 超时信号"合并逻辑
- * （ADR-017 枝叶层 2 次提取原则，embedding.ts 原注释已自证"与 openaiCompatible.ts 同构"）。
+ * 从 openaiCompatible.ts 和 embedding.ts 提取的公共"外部信号 + 超时信号"合并逻辑（二者同构）。
  *
  * 确保用户取消（optsSignal）和请求超时都能中断 fetch 和流读取。
  */

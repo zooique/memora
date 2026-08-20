@@ -22,7 +22,7 @@ export interface ToolDefinition {
     required: string[];
   };
   /**
-   * 工具是否为只读操作（Phase 3：act.toolReadonly 消费）
+   * 工具是否为只读操作（act.toolReadonly 消费）
    *
    * - true：只读操作（读文件/搜索/查询），在 readonly 模式下保留
    * - false：写操作（写文件/删除/修改），在 readonly 模式下被阻止

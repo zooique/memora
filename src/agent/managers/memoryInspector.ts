@@ -2,7 +2,7 @@
  * 记忆管理器 — 统一的记忆读写入口（从 Agent 拆分）。
  * 写方法 writeXxx 前缀区分写操作。同步返回避免数据不一致；每层只返回前 N 条 + 总数（轻量）。
  * L1 语义去重迁至 DedupManager；detectConflicts/sourceHealth/suggest 由 Agent 门面直连 MemoryAdvisor，
- * 本类回归纯存储读写 + 查询入口。ADR-014 记忆关系图谱已收敛移除。
+ * 本类回归纯存储读写 + 查询入口。记忆关系图谱已收敛移除。
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -171,7 +171,7 @@ export class MemoryInspector {
     const workingTotal = workingFull.length;
     const working = workingFull.slice(-WORKING_PREVIEW);
 
-    // 第 2 层 Bootstrap 恒空：ADR-025 设定记忆唯一归角色包，索引不再新增，rolePackPrompt 承载规则注入。
+    // 第 2 层 Bootstrap 恒空：设定记忆唯一归角色包，索引不再新增，rolePackPrompt 承载规则注入。
     // 保留空壳接口供 UI 层调用，避免宿主代码变更。
 
     // 第 3 层：归档记忆计数（round-summary，记忆库唯一对话记忆）

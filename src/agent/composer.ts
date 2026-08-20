@@ -1,7 +1,7 @@
 /**
  * 四级补全器（Composer）—— 不中断工作模型的输入解析层
  *
- * 设计文档：docs/根基/不中断工作模型演进.html §05
+ * 设计文档：docs/根基/不中断工作模型演进.html
  *
  * 三源融合 + 四级补全链，将 SessionEvent 的增量四元组补全为完整的 ResolvedDelta。
  * 每个槽位独立走补全链，缺省时有明确来源。
@@ -64,7 +64,11 @@ export class Composer {
    * @param planCtx - 可选的计划上下文（P3.3 执行计划管理）
    * @returns 补全结果
    */
-  compose(event: SessionEvent, checkpoint: SessionCheckpoint, planCtx?: PlanContext): ComposeResult {
+  compose(
+    event: SessionEvent,
+    checkpoint: SessionCheckpoint,
+    planCtx?: PlanContext,
+  ): ComposeResult {
     const needClarify: ClarifyQuestion[] = [];
 
     // 每个槽位独立走补全链
@@ -79,19 +83,14 @@ export class Composer {
     // 任务槽：chat 事件走确定性规则（content 即用户意图，语义判断交给 LLM），
     // 永不触发 P4 澄清——「继续」「帮我写 X」都是自然语言任务，content 已携带；
     // 非 chat 事件（command/correction/clarify）保留原补全链（含停滞时 P4 澄清）。
-    const taskSlot = event.type === 'chat'
-      ? this.resolveChatTaskSlot(event, checkpoint, needClarify)
-      : (planCtx?.stalled && event.delta?.task === undefined
-          // 场景：计划已完成/阻塞，用户未明确指定新任务时，
-          // 不应盲目延续 currentGoal，而应询问用户下一步方向
-          ? this.resolveStalledTaskSlot(checkpoint.currentGoal, needClarify, planCtx)
-          : this.resolveSlot(
-              'task',
-              event.delta?.task,
-              checkpoint.currentGoal,
-              '',
-              needClarify,
-            ));
+    const taskSlot =
+      event.type === 'chat'
+        ? this.resolveChatTaskSlot(event, checkpoint, needClarify)
+        : planCtx?.stalled && event.delta?.task === undefined
+          ? // 场景：计划已完成/阻塞，用户未明确指定新任务时，
+            // 不应盲目延续 currentGoal，而应询问用户下一步方向
+            this.resolveStalledTaskSlot(checkpoint.currentGoal, needClarify, planCtx)
+          : this.resolveSlot('task', event.delta?.task, checkpoint.currentGoal, '', needClarify);
 
     const standardSlot = this.resolveSlot(
       'standard',
@@ -101,10 +100,7 @@ export class Composer {
       needClarify,
     );
 
-    const resourceSlot = this.resolveResourceSlot(
-      event.delta?.resource,
-      checkpoint.resource,
-    );
+    const resourceSlot = this.resolveResourceSlot(event.delta?.resource, checkpoint.resource);
 
     return {
       resolved: {
@@ -312,9 +308,7 @@ export class Composer {
       contextParts.push(`待处理：${planCtx.pendingStep}`);
     }
 
-    const contextHint = contextParts.length > 0
-      ? `（${contextParts.join('；')}）`
-      : '';
+    const contextHint = contextParts.length > 0 ? `（${contextParts.join('；')}）` : '';
     const question = `所有计划步骤已完成${contextHint}，请指示下一步方向`;
 
     needClarify.push({

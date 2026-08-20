@@ -7,8 +7,6 @@
  * 设计原则：
  *   - 接口与实现分离：内核只依赖接口，具体实现由宿主或调用方注入
  *   - 重排序在 hybridMerge 之后执行，作为最终排序的"精排"阶段
- *
- * 详见 ADR-004 · 记忆统一模型
  */
 import type { Memory } from '@/memory/types.js';
 

@@ -3,7 +3,6 @@
  *
  * 直接消费者为 utils/scanner.ts、role-pack/rolePackManager.ts（skills 目录 frontmatter 解析）、
  * agent/builtinToolHandlers.ts（角色包技能 frontmatter 解析），并经 index.ts 导出供宿主复用。
- * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */
 
 /**

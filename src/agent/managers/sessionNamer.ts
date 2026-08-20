@@ -1,5 +1,5 @@
 /**
- * 会话命名器（ADR-024 会话标题层）：为新建会话生成 autoName + displayName 写入元数据，标题与会话身份（date-session）解耦。
+ * 会话命名器：为新建会话生成 autoName + displayName 写入元数据，标题与会话身份（date-session）解耦。
  * 触发时机：仅"新建会话首次问答"触发——判定以"会话尚无 autoName"为准，有即不覆盖，天然只触发一次。
  * 降级：sessionStore 未注入静默跳过；LLM 失败/无价值降级为"新会话 HH:MM"占位。getProvider 惰性获取当前 Provider。
  */
@@ -35,11 +35,7 @@ export class SessionNamer {
    * LLM 失败/无价值降级为"新会话 HH:MM"占位；写入 autoName + displayName（初始一致，用户可后续改 displayName）。
    * best-effort：不抛异常，由调用方 fire-and-forget。
    */
-  async ensureSessionTitle(
-    date: string,
-    session: string,
-    firstUserContent: string,
-  ): Promise<void> {
+  async ensureSessionTitle(date: string, session: string, firstUserContent: string): Promise<void> {
     if (!this.sessionStore) {
       logger.debug({ hasSessionStore: false }, 'SessionNamer: 未注入 sessionStore，跳过命名');
       return;
@@ -50,7 +46,10 @@ export class SessionNamer {
     // 会话已有 autoName 则跳过 —— 仅新建会话首次触发
     const existing = this.sessionStore.getSessionMeta?.(sessionId);
     if (existing?.autoName) {
-      logger.debug({ sessionId, autoName: existing.autoName }, 'SessionNamer: 会话已有 autoName，跳过');
+      logger.debug(
+        { sessionId, autoName: existing.autoName },
+        'SessionNamer: 会话已有 autoName，跳过',
+      );
       return;
     }
 
@@ -95,17 +94,16 @@ ${content}
     }
 
     const parsed = parseLlmJson<{ title?: string }>(trimmed);
-    const title = parsed && typeof parsed.title === 'string' && parsed.title.trim()
-      ? parsed.title.trim()
-      : null;
+    const title =
+      parsed && typeof parsed.title === 'string' && parsed.title.trim()
+        ? parsed.title.trim()
+        : null;
 
     if (!title) {
       return null;
     }
     // 截断超长标题，防止撑爆展示
-    return title.length > MAX_TITLE_CHARS
-      ? title.slice(0, MAX_TITLE_CHARS)
-      : title;
+    return title.length > MAX_TITLE_CHARS ? title.slice(0, MAX_TITLE_CHARS) : title;
   }
 }
 

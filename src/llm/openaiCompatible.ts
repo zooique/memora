@@ -2,7 +2,6 @@
  * OpenAI Chat Completions 兼容实现
  *
  * 适用于：DeepSeek / 豆包 / 通义 / Ollama / 任何兼容 OpenAI 协议的 API
- * 详见 ADR-003
  */
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
@@ -149,11 +148,15 @@ export class OpenAICompatibleProvider extends LlmProvider {
     const status = response.status;
 
     if (status === 401 || status === 403) {
-      throw configError('LLM API Key 无效', `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
-        '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
-        '确认 Key 未过期',
-        '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
-      ]);
+      throw configError(
+        'LLM API Key 无效',
+        `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`,
+        [
+          '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
+          '确认 Key 未过期',
+          '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
+        ],
+      );
     }
 
     if (status === 429) {
@@ -164,11 +167,15 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     if (status >= 400 && status < 500) {
-      throw llmError('LLM 请求格式错误', `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
-        '检查消息内容是否含特殊字符',
-        '确认 model 名称正确',
-        '如使用 tools，确认 tool schema 有效',
-      ]);
+      throw llmError(
+        'LLM 请求格式错误',
+        `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`,
+        [
+          '检查消息内容是否含特殊字符',
+          '确认 model 名称正确',
+          '如使用 tools，确认 tool schema 有效',
+        ],
+      );
     }
 
     throw llmError('LLM 服务端错误', `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
@@ -212,7 +219,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
    * 解析 SSE 流（data: {...}\n\n）。tool_calls 以 delta 分片传输，
    * 需跨 chunk 累积 name/arguments，在 finish_reason='tool_calls' 或流结束时输出完整 toolCalls
    */
-  private async *parseSseStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncIterable<LlmChunk> {
+  private async *parseSseStream(
+    body: ReadableStream<Uint8Array>,
+    signal?: AbortSignal,
+  ): AsyncIterable<LlmChunk> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -232,9 +242,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
         }
 
         // 根据是否收到首 chunk 选不同超时阈值；reader.cancel() 让 pending read() 抛 AbortError
-        const chunkTimeoutMs = firstChunkReceived
-          ? INTER_CHUNK_TIMEOUT_MS
-          : FIRST_CHUNK_TIMEOUT_MS;
+        const chunkTimeoutMs = firstChunkReceived ? INTER_CHUNK_TIMEOUT_MS : FIRST_CHUNK_TIMEOUT_MS;
         const chunkTimer = setTimeout(() => {
           // cancel 失败不影响，reader 可能已 done 或被其他路径 cancel，记日志排查偶发连接泄漏
           const reason = firstChunkReceived ? 'LLM chunk 间读取超时' : 'LLM 首 chunk 读取超时';

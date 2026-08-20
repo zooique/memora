@@ -1,5 +1,5 @@
 /**
- * 会话管理器：从 Agent 提取（ADR-010），负责会话切换/分叉/恢复/消息加载。
+ * 会话管理器：从 Agent 拆出的独立会话职责，负责会话切换/分叉/恢复/消息加载。
  * 通过回调访问 Agent 当前组件状态，避免与 history/loop 引用生命周期耦合。
  * 不中断工作模型：会话状态可序列化为 SessionCheckpoint，支持暂停后断点续跑；SessionStateMachine 管理三态流转。
  */
@@ -82,7 +82,10 @@ export class SessionManager {
 
   // ── schemaVersion 迁移分发表（骨架，当前为空表）──
   // key=源版本号，value=将 Partial<SessionCheckpoint> 迁移到下一版本。新增字段不升版本；重命名/删除/改类型必须升 CURRENT_SCHEMA_VERSION 并注册迁移。
-  private static readonly checkpointMigrations = new Map<number, (cp: Partial<SessionCheckpoint>) => void>();
+  private static readonly checkpointMigrations = new Map<
+    number,
+    (cp: Partial<SessionCheckpoint>) => void
+  >();
 
   constructor(
     getHistory: () => MessageHistory,
@@ -234,12 +237,12 @@ export class SessionManager {
     }
   }
 
-  /** 读取会话标题元数据（ADR-024）：供宿主历史列表展示；未注入 getSessionMeta 时标题层静默失效 */
+  /** 读取会话标题元数据：供宿主历史列表展示；未注入 getSessionMeta 时标题层静默失效 */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
     return this.sessionStore?.getSessionMeta?.(sessionId);
   }
 
-  /** 手动改名会话（ADR-024 双层命名）：仅写 displayName（用户可改），不改 autoName（LLM 只读）。显示回退：displayName 非空用之，否则用 autoName */
+  /** 手动改名会话：仅写 displayName（用户可改），不改 autoName（LLM 只读）。显示回退：displayName 非空用之，否则用 autoName */
   renameSession(sessionId: string, title: string): void {
     this.sessionStore?.updateSessionMeta?.(sessionId, { displayName: title });
   }
@@ -395,11 +398,7 @@ export class SessionManager {
   }
 
   /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成可序列化 SessionCheckpoint 并持久化 */
-  createCheckpoint(
-    mainGoal?: string,
-    role?: Role,
-    standard?: Standard,
-  ): SessionCheckpoint {
+  createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint {
     const history = this.getHistory();
 
     // 从 AgentLoop 获取热记忆（FIFO 截断 + 内容截断）
@@ -531,10 +530,7 @@ export class SessionManager {
       }
       // running 无需额外操作
 
-      logger.info(
-        { sessionId, status: checkpoint.status },
-        '已从持久化存储加载会话检查点',
-      );
+      logger.info({ sessionId, status: checkpoint.status }, '已从持久化存储加载会话检查点');
       return checkpoint;
     } catch (err) {
       logger.warn({ err }, '加载持久化检查点失败（降级为内存模式）');
@@ -640,7 +636,10 @@ export class SessionManager {
       cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
     } else if (cp.schemaVersion > AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
       logger.warn(
-        { checkpointVersion: cp.schemaVersion, currentVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION },
+        {
+          checkpointVersion: cp.schemaVersion,
+          currentVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION,
+        },
         '检查点 schemaVersion 高于当前内核版本，尝试按当前版本恢复（可能丢失新版字段语义）',
       );
     } else if (cp.schemaVersion < AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
@@ -667,7 +666,10 @@ export class SessionManager {
       cp.lastHeartbeat = Date.now();
     }
     // 暂停起点损坏时丢弃，回退到 lastHeartbeat，避免 NaN 比较导致永不超时
-    if (cp.pausedAt !== undefined && (typeof cp.pausedAt !== 'number' || !Number.isFinite(cp.pausedAt))) {
+    if (
+      cp.pausedAt !== undefined &&
+      (typeof cp.pausedAt !== 'number' || !Number.isFinite(cp.pausedAt))
+    ) {
       delete cp.pausedAt;
     }
     if (!Array.isArray(cp.plan)) cp.plan = defaults.plan;
@@ -706,10 +708,7 @@ export class SessionManager {
     try {
       raw = JSON.parse(json);
     } catch (err) {
-      logger.warn(
-        { err, fallbackSessionId },
-        '检查点 JSON 解析失败（内容损坏，按无检查点处理）',
-      );
+      logger.warn({ err, fallbackSessionId }, '检查点 JSON 解析失败（内容损坏，按无检查点处理）');
       return null;
     }
     return SessionManager.normalizeCheckpoint(raw, fallbackSessionId);
@@ -766,7 +765,10 @@ export class SessionManager {
       if (checkpoint.error) {
         const transition = this.stateMachine.triggerError(checkpoint.error.cause);
         if (!transition.allowed) {
-          logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点错误态恢复失败，状态机与检查点分叉');
+          logger.error(
+            { transition, sessionId: checkpoint.sessionId },
+            '检查点错误态恢复失败，状态机与检查点分叉',
+          );
         }
       } else {
         // error 字段缺失（旧版/序列化丢字段）无法重建 error 态：强制检查点状态跟随归零结果并显式记录降级，避免永久分叉无日志
@@ -782,7 +784,10 @@ export class SessionManager {
         // 补启暂停超时定时器（原唯一调用点在 pause() 此处绕过，否则恢复的 paused 会话本次运行期无超时检测）
         this.startPauseTimeoutTimer();
       } else {
-        logger.error({ transition, sessionId: checkpoint.sessionId }, '检查点暂停态恢复失败，状态机与检查点分叉');
+        logger.error(
+          { transition, sessionId: checkpoint.sessionId },
+          '检查点暂停态恢复失败，状态机与检查点分叉',
+        );
       }
     }
     // running 状态由 resetToRunning() 承担
@@ -797,14 +802,17 @@ export class SessionManager {
       try {
         await history.loadSessionMessages(date, session);
       } catch (err) {
-        logger.warn({ err, sessionId: checkpoint.sessionId }, '恢复检查点时切换会话失败（热记忆已恢复，继续运行）');
+        logger.warn(
+          { err, sessionId: checkpoint.sessionId },
+          '恢复检查点时切换会话失败（热记忆已恢复，继续运行）',
+        );
       }
     }
 
     // 恢复时补偿降级：补偿管线已降为纯日志，仅记录非幂等工具执行事实供宿主/人工排查
-    const nonIdempotentCount = this.checkpoint.completedToolCalls?.filter(
-      (r) => r.idempotent === 'non-idempotent',
-    ).length ?? 0;
+    const nonIdempotentCount =
+      this.checkpoint.completedToolCalls?.filter((r) => r.idempotent === 'non-idempotent').length ??
+      0;
     if (nonIdempotentCount > 0) {
       logger.warn(
         { sessionId: checkpoint.sessionId, nonIdempotentCount },
@@ -813,7 +821,11 @@ export class SessionManager {
     }
 
     logger.info(
-      { sessionId: checkpoint.sessionId, messageCount: messages.length, truncatedCount: checkpoint.truncatedCount ?? 0 },
+      {
+        sessionId: checkpoint.sessionId,
+        messageCount: messages.length,
+        truncatedCount: checkpoint.truncatedCount ?? 0,
+      },
       '从检查点恢复会话',
     );
 
@@ -863,10 +875,7 @@ export class SessionManager {
   resume(): boolean {
     // 暂停超时阻止恢复
     if (this.checkpoint && this.isPauseTimedOut(this.checkpoint)) {
-      logger.warn(
-        { sessionId: this.checkpoint.sessionId },
-        '暂停超时，无法恢复会话（请重新开始）',
-      );
+      logger.warn({ sessionId: this.checkpoint.sessionId }, '暂停超时，无法恢复会话（请重新开始）');
       this.emitEvent('sessionResumeBlocked', {
         sessionId: this.checkpoint.sessionId,
         reason: 'pause_timed_out',
@@ -914,12 +923,13 @@ export class SessionManager {
   private pruneStalePauseTimestamps(): void {
     const cutoff = Date.now() - SessionManager.CONSECUTIVE_PAUSE_DECAY_MS;
     const before = this.consecutivePauseTimestamps.length;
-    this.consecutivePauseTimestamps = this.consecutivePauseTimestamps.filter(
-      (ts) => ts > cutoff,
-    );
+    this.consecutivePauseTimestamps = this.consecutivePauseTimestamps.filter((ts) => ts > cutoff);
     const pruned = before - this.consecutivePauseTimestamps.length;
     if (pruned > 0) {
-      logger.debug({ pruned, remaining: this.consecutivePauseTimestamps.length }, '过期暂停时间戳已衰减');
+      logger.debug(
+        { pruned, remaining: this.consecutivePauseTimestamps.length },
+        '过期暂停时间戳已衰减',
+      );
     }
   }
 
@@ -1077,7 +1087,10 @@ export class SessionManager {
    * 'update' 全量替换现有 plan（保留已有 id/status 仅覆盖 description）；其它 mode 兜底 no-op。
    * 分发逻辑原嵌 Agent 闭包无法单测，归位本类后由 sessionCheckpointLifecycle.test.ts 覆盖。
    */
-  writePlan(mode: 'overwrite' | 'append' | 'update', steps: Array<{ description: string }>): PlanStep[] {
+  writePlan(
+    mode: 'overwrite' | 'append' | 'update',
+    steps: Array<{ description: string }>,
+  ): PlanStep[] {
     if (!this.checkpoint) return [];
     const existingPlan = this.checkpoint.plan;
     if (mode === 'overwrite' || mode === 'append') {
@@ -1089,7 +1102,12 @@ export class SessionManager {
         const existing = existingPlan[i];
         return existing
           ? { ...existing, description: s.description }
-          : { id: crypto.randomUUID(), order: i, description: s.description, status: 'pending' as const };
+          : {
+              id: crypto.randomUUID(),
+              order: i,
+              description: s.description,
+              status: 'pending' as const,
+            };
       });
       this.updatePlan(updatedPlan);
     }
@@ -1109,10 +1127,7 @@ export class SessionManager {
   }
 
   /** 完成一个回合（SSOT 唯一写点）：单函数内顺序写步骤状态 + roundLog + heartbeat 保证原子性 */
-  completeRound(options: {
-    stepId?: string;
-    summary: string;
-  }): void {
+  completeRound(options: { stepId?: string; summary: string }): void {
     if (!this.checkpoint) return;
 
     // 标记步骤状态（经 updatePlanStepStatus 单一写点，避免旁路契约）
@@ -1252,10 +1267,7 @@ export class SessionManager {
       payload.date = matched[1]!;
       payload.session = matched[2]!;
     } else {
-      logger.warn(
-        { sessionId },
-        '暂停超时会话标识不符合 YYYY-MM-DD-<会话名> 约定，跳过自动归档',
-      );
+      logger.warn({ sessionId }, '暂停超时会话标识不符合 YYYY-MM-DD-<会话名> 约定，跳过自动归档');
     }
 
     this.emitEvent('sessionPauseTimedOut', payload);
@@ -1294,10 +1306,7 @@ export class SessionManager {
     const sessionId = checkpoint.sessionId;
     const pauseDuration = Date.now() - (checkpoint.pausedAt ?? checkpoint.lastHeartbeat);
 
-    logger.warn(
-      { sessionId, pauseDuration },
-      '运行时检测到暂停超时，自动清理检查点',
-    );
+    logger.warn({ sessionId, pauseDuration }, '运行时检测到暂停超时，自动清理检查点');
 
     // 从存储层删除
     if (this.sessionStore?.deleteCheckpoint) {

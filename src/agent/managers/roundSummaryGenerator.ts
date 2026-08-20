@@ -96,10 +96,13 @@ export class RoundSummaryGenerator {
   }
 
   /** 记忆写入回调（memoryAdded 事件出口）：摘要即记忆，新摘要写入后通知宿主「已沉淀」 */
-  private _onMemoryAdded: ((info: { id: string; source: string; name: string }) => void) | null = null;
+  private _onMemoryAdded: ((info: { id: string; source: string; name: string }) => void) | null =
+    null;
 
   /** 绑定记忆写入回调（Agent.init 调用）；传 null 解除绑定 */
-  setOnMemoryAdded(fn: ((info: { id: string; source: string; name: string }) => void) | null): void {
+  setOnMemoryAdded(
+    fn: ((info: { id: string; source: string; name: string }) => void) | null,
+  ): void {
     this._onMemoryAdded = fn;
   }
 
@@ -171,7 +174,7 @@ export class RoundSummaryGenerator {
   }
 
   /**
-   * 写路径取代检测（ADR-021）：记忆冲突消解从"读时猜"移到"写时定"。
+   * 写路径取代检测：记忆冲突消解从"读时猜"移到"写时定"。
    * 扫描同 session 旧摘要，主题高度重叠（关键词重叠率≥阈值）则给旧摘要打 supersededBy 指向本摘要（非删除，可回溯）。
    * 设计取舍：不依赖 metadata.type（宿主不持久化 metadata），改用可从 id 解析的 session 前缀 + 关键词重叠判定（跨宿主可用）；
    * 确定性启发式代替额外 LLM 判断（零成本可测，符合"写一次定、读时确定性过滤" SSOT 纪律）；仅同 session 内判定避免误取代。

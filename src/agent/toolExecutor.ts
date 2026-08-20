@@ -2,7 +2,7 @@
  * 工具执行器
  *
  * 4 个内置工具：read_file / write_file / list_dir / search_memories
- * 详见 ADR-006 · 安全采用两级权限 + 工具白名单 + 路径白名单
+ * 安全采用两级权限 + 工具白名单 + 路径白名单
  *
  * 内置工具实现 + 路径安全已提取到 BuiltinToolHandlers，
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
@@ -21,7 +21,7 @@ import { safeSearch } from '@/web-search/webSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
-// ─── web_search 注入防御常量（ADR-023 C2） ─────────────────
+// ─── web_search 注入防御常量 ─────────────────
 
 /** web_search 查询串最大长度（防过长/恶意查询滥用） */
 const WEB_SEARCH_QUERY_MAX_LEN = 200;
@@ -29,7 +29,7 @@ const WEB_SEARCH_QUERY_MAX_LEN = 200;
 const WEB_SEARCH_RESULT_MAX_LEN = 500;
 
 /**
- * 外部工具返回净化（ADR-023 C2）：去控制字符 + 长度上限
+ * 外部工具返回净化：去控制字符 + 长度上限
  *
  * web_search 返回的是外部不可信内容，注入 LLM 上下文前须净化：
  * 去掉控制字符（防转义/终端注入），再按上限截断（防长上下文注入）。
@@ -133,7 +133,7 @@ export class ToolExecutor {
    * - `string[]`：只暴露白名单内的工具（内置 + web_search 按名单过滤，自定义工具不受限）；
    * - `[]`：空白名单 = 无内置工具暴露（配合 toolMode=block 即全禁）。
    *
-   * 语义（对齐 role-pack-spec §四）：角色包声明 capabilities 后，工具暴露面 = 该角色包
+   * 语义：角色包声明 capabilities 后，工具暴露面 = 该角色包
    * 映射出的工具集——「换角色 → 工具集切换」范式验证的最小实现（mvp-scope 验收标准 7）。
    * 白名单只控制**暴露面**（LLM 可见/可调），不改变 execute 路由。
    */
@@ -144,7 +144,10 @@ export class ToolExecutor {
 
   /** P2-6: 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
   planManager?: {
-    writePlan: (mode: 'overwrite' | 'append' | 'update', steps: Array<{ description: string }>) => string;
+    writePlan: (
+      mode: 'overwrite' | 'append' | 'update',
+      steps: Array<{ description: string }>,
+    ) => string;
     updateStep: (stepId: string, status: 'done' | 'blocked') => string;
     getPlan: () => Array<{ id: string; description: string; status: string; order: number }>;
   };
@@ -174,7 +177,11 @@ export class ToolExecutor {
    * 渐进披露 L3：执行技能的 scripts/ 目录下的可执行脚本。
    * 脚本源码不进入 LLM 上下文，仅执行结果返回。
    */
-  runSkillScript?: (skillName: string, scriptPath: string, args: string[]) => Promise<string | null>;
+  runSkillScript?: (
+    skillName: string,
+    scriptPath: string,
+    args: string[],
+  ) => Promise<string | null>;
 
   /**
    * list_resources 资源清单回调（由 agent 装配时注入）
@@ -320,9 +327,7 @@ export class ToolExecutor {
    */
   get list(): ToolDefinition[] {
     // 条件性包含 web_search 工具：仅当注入了 webSearchProvider 时才暴露给 LLM
-    const baseTools = this.webSearchProvider
-      ? [...BUILTIN_TOOLS, WEB_SEARCH_TOOL]
-      : BUILTIN_TOOLS;
+    const baseTools = this.webSearchProvider ? [...BUILTIN_TOOLS, WEB_SEARCH_TOOL] : BUILTIN_TOOLS;
 
     // 白名单过滤（仅内置/条件工具受控；自定义工具不受限）
     const whitelisted = this.toolWhitelist
@@ -369,10 +374,7 @@ export class ToolExecutor {
     }
 
     const safeArgs = Object.fromEntries(
-      Object.entries(args).map(([k, v]) => [
-        k,
-        typeof v === 'string' ? truncate(v, 200) : v,
-      ]),
+      Object.entries(args).map(([k, v]) => [k, typeof v === 'string' ? truncate(v, 200) : v]),
     );
     logger.info({ tool: name, args: safeArgs }, '执行工具');
 
@@ -428,7 +430,7 @@ export class ToolExecutor {
             ToolErrorCode.ARGUMENT_ERROR,
           );
         }
-        // 参数校验（ADR-023 C2）：query 当不可信输入，做长度上限（allow-list 优先）
+        // 参数校验：query 当不可信输入，做长度上限（allow-list 优先）
         if (query.length > WEB_SEARCH_QUERY_MAX_LEN) {
           throw toolError(
             'web_search query 参数过长',
@@ -443,12 +445,15 @@ export class ToolExecutor {
         if (results.length === 0) {
           return `（未找到与 "${query}" 相关的搜索结果）`;
         }
-        // 返回净化（ADR-023 C2）：外部内容去控制字符 + 长度上限，防长上下文注入
+        // 返回净化：外部内容去控制字符 + 长度上限，防长上下文注入
         return results
           .map((r, i) => {
             const title = sanitizeExternalText(r.title, WEB_SEARCH_RESULT_MAX_LEN);
             const url = sanitizeExternalText(r.url || '(无链接)', WEB_SEARCH_RESULT_MAX_LEN);
-            const snippet = sanitizeExternalText(r.snippet.replace(/\n/g, ' '), WEB_SEARCH_RESULT_MAX_LEN);
+            const snippet = sanitizeExternalText(
+              r.snippet.replace(/\n/g, ' '),
+              WEB_SEARCH_RESULT_MAX_LEN,
+            );
             return `${i + 1}. ${title}\n   URL: ${url}\n   ${snippet}`;
           })
           .join('\n\n');
@@ -463,7 +468,7 @@ export class ToolExecutor {
           return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/update`;
         }
         const stepsRaw = args.steps;
-        const steps = Array.isArray(stepsRaw) ? stepsRaw as Array<{ description: string }> : [];
+        const steps = Array.isArray(stepsRaw) ? (stepsRaw as Array<{ description: string }>) : [];
         if (steps.length === 0) {
           return '[ERR:INVALID_ARG] steps 参数不能为空';
         }
@@ -516,7 +521,7 @@ export class ToolExecutor {
         }
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
-        const scriptArgs = Array.isArray(args['args']) ? args['args'] as string[] : [];
+        const scriptArgs = Array.isArray(args['args']) ? (args['args'] as string[]) : [];
         const result = await this.runSkillScript(skillName, scriptPath, scriptArgs);
         if (result === null) {
           return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
@@ -569,9 +574,7 @@ export class ToolExecutor {
           '未知工具',
           `agent 调用了未注册的工具：${name}`,
           [
-            `已注册工具：${this.list
-              .map((t) => t.name)
-              .join(', ')}`,
+            `已注册工具：${this.list.map((t) => t.name).join(', ')}`,
             '检查 personality.md 是否限制了工具集',
           ],
           undefined,

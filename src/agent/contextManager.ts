@@ -50,7 +50,7 @@ interface ContextManagerOptions {
    */
   readonly onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   /**
-   * 已存轮次摘要加载器（ADR-023 C1，可选）
+   * 已存轮次摘要加载器（截断优先复用，可选）
    *
    * 截断生成上下文摘要前，先尝试取已持久化的 round-summary（零成本、保真），
    * 仅当没有已存摘要时才现调 LLM——让摘要生成退出截断关键路径。
@@ -58,7 +58,7 @@ interface ContextManagerOptions {
    */
   readonly roundSummaryLoader?: () => string;
   /**
-   * 最少保留的最近原始对话轮数（ADR-023 C2，可选，默认 0）
+   * 最少保留的最近原始对话轮数（可选，默认 0）
    *
    * 截断时强制保留最近 N 轮完整原始对话（不被摘要替代），在此基础上再按 token 上限收集。
    * 宿主可据 provider 的 prompt caching（KV cache 复用）能力放宽此值——多塞原始对话几乎
@@ -87,7 +87,7 @@ function isCjkChar(code: number): boolean {
     (code >= 0x4e00 && code <= 0x9fff) || // CJK 统一表意文字
     (code >= 0x3400 && code <= 0x4dbf) || // CJK 扩展A
     (code >= 0x3040 && code <= 0x30ff) || // 日文平假名 + 片假名
-    (code >= 0xac00 && code <= 0xd7af)    // 韩文音节
+    (code >= 0xac00 && code <= 0xd7af) // 韩文音节
   );
 }
 
@@ -171,8 +171,7 @@ export class ContextManager {
       }
     }
     return Math.ceil(
-      cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN +
-      otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
+      cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN + otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
     );
   }
 
@@ -399,7 +398,9 @@ export class ContextManager {
 
       const messagesToSummarize = messages.slice(1);
       const recentMessages = messagesToSummarize
-        .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
+        .filter(
+          (m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'),
+        )
         .slice(-LOOP_CONSTANTS.SUMMARY_MSG_COUNT)
         .map(
           (m) =>
@@ -412,9 +413,7 @@ export class ContextManager {
         return '';
       }
 
-      const summaryProvider = this.providerRouter
-        ? this.providerRouter('summary')
-        : this.provider;
+      const summaryProvider = this.providerRouter ? this.providerRouter('summary') : this.provider;
 
       const stream = summaryProvider.chat(
         [

@@ -20,8 +20,6 @@
  * 与 ProjectManager 的分工（1.0 接口稳定化）：
  *   - LockManager：锁文件获取/释放 + 残留锁检测/清理
  *   - ProjectManager：项目生命周期编排（注册 + 资源加载 + 上下文构建）
- *
- * 详见 ADR-008 · 目录结构按"职责分层"
  */
 import { join } from 'node:path';
 import { hostname } from 'node:os';
@@ -141,7 +139,7 @@ export class LockManager {
    * 则跳过删除保护他人锁。无论是否删除都重置内部状态（本进程不再持有引用）。
    * 未持有锁时为 no-op。
    *
-   * 设计依据（§1.3 不可逆操作的双重保险）：
+   * 设计依据（不可逆操作的双重保险）：
    *   acquire 非阻塞（仅警告），两进程可同时持有「锁文件路径」。
    *   若 release 不校验 PID，进程 A 会 unlink 进程 B 的锁——双重保险缺失。
    */
@@ -169,7 +167,10 @@ export class LockManager {
       }
     } catch (err) {
       // 锁文件不存在或损坏——视为已释放，仅 debug 记录
-      logger.debug({ path: lockPath, err: toError(err).message }, 'release 读取锁文件失败，视为已释放');
+      logger.debug(
+        { path: lockPath, err: toError(err).message },
+        'release 读取锁文件失败，视为已释放',
+      );
     }
   }
 
