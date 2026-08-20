@@ -156,6 +156,77 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalled();
   });
 
+  it('runEvent 复杂且收敛：settle 走汇报闭环，摘要挂 head（阶段 2 溯源）', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      // 难度分级判定为复杂
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    stubProcessEvent(mocks, '事件回复');
+    consumeControl.result = { content: '事件回复', aborted: false, failed: false };
+    // 已收敛：plan 含 done 步骤 → settle 触发汇报
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'done', description: '步骤一' }],
+    });
+    mocks.loop.runReport.mockReturnValue(textStream('【阶段2汇报】已收敛，结论 Y'));
+
+    await collectGen(
+      new SeedOrchestrator(deps).runEvent(
+        chatEvent('事件输入'),
+        '事件输入',
+        new AbortController().signal,
+      ),
+    );
+    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
+
+    // settle 走汇报闭环；汇报单源摘要（输入侧为空）
+    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '',
+      '【阶段2汇报】已收敛，结论 Y',
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
+    // 阶段 2 head 溯源：事件路径无步闭环覆盖 roundId，getCurrentRoundId() = prepare 分配值 = appendUser 同 id
+    expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(
+      mocks.history.appendUser.mock.calls[0]![1],
+    );
+  });
+
+  it('runEvent 复杂收敛但汇报为空：回退主回答普通摘要，仍恒 1 条', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    stubProcessEvent(mocks, '事件回复');
+    consumeControl.result = { content: '事件回复', aborted: false, failed: false };
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'done', description: '步骤一' }],
+    });
+    // 汇报闭环返回空流（LLM 未产出真实收尾）
+    mocks.loop.runReport.mockImplementation(function* () {});
+
+    await collectGen(
+      new SeedOrchestrator(deps).runEvent(
+        chatEvent('事件输入'),
+        '事件输入',
+        new AbortController().signal,
+      ),
+    );
+    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
+
+    // 无实质收尾 → 回退主回答普通摘要（阶段 2 同样恒 1:1）
+    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '事件输入', // 输入侧：event 输入（fallbackInput）
+      '事件回复', // 输出侧：主回答（fallbackContent）
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
+  });
+
   // ── runResume ───────────────────────────────────────────
   it('runResume：act(continueAfterPause) → reflect；无回答前、无 Handoff', async () => {
     const { mocks, deps, consumeControl } = createHarness();
