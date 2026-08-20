@@ -28,7 +28,7 @@ import {
 } from './types.js';
 import { SeedPrepare } from './prepare.js';
 import { DifficultyJudge, type Difficulty } from './difficulty.js';
-import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/types.js';
+import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 

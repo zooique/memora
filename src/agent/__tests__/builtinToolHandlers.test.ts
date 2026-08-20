@@ -738,7 +738,7 @@ describe('BuiltinToolHandlers.traceSummary', () => {
     expect(result).toContain('暂无轮次摘要');
   });
 
-  // ── 溯源真实化（memory-as-summary §4.5/§4.6）：注入 sessionStore 后返回原始对话 ──
+  // ── 溯源真实化：注入 sessionStore 后返回原始对话 ──
 
   it('sessionStore 可用时返回该轮次的原始对话', async () => {
     const store: ISessionStore = {

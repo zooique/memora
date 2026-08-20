@@ -7,7 +7,7 @@
 
 import { safeSetInterval, clearSafeInterval } from '@/utils/safeTimer.js';
 import { logger } from '@/logging/logger.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { nowIso } from '@/utils/time.js';
 import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';

@@ -17,7 +17,8 @@ import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promi
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/pathGuard.js';
-import { toolError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
+import { toolError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';

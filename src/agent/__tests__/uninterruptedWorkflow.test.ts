@@ -1,11 +1,11 @@
 /**
  * 不中断工作模型集成测试
  *
- * 覆盖 P0-P3 全部核心功能：
+ * 覆盖全部核心功能：
  *   - 三态状态机流转（SessionStateMachine）
  *   - 检查点快照与恢复（SessionManager.createCheckpoint/restoreFromCheckpoint）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck/hasToolExecuted）
- *   - 补偿机制（compensateTool/compensateAllNonIdempotent，P1-1 降级后仅日志）
+ *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
  *   - 执行计划管理（advancePlan/completeStep/isPlanStalled）
  *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
  *   - 端到端场景（Agent 门面完整工作流）
@@ -277,7 +277,6 @@ describe('SessionStateMachine · 三态流转', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       const result = sm.recover(checkpoint);
       expect(result.allowed).toBe(true);
@@ -300,7 +299,6 @@ describe('SessionStateMachine · 三态流转', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       const result = sm.recover(checkpoint);
       expect(result.allowed).toBe(false);
@@ -320,7 +318,6 @@ describe('SessionStateMachine · 三态流转', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       const result = sm.recover(checkpoint);
       expect(result.allowed).toBe(false);
@@ -484,7 +481,7 @@ describe('SessionManager · 检查点管理', () => {
       expect(manager.getCheckpoint()!.roundLog![0]!.summary).toBe('测试回合');
     });
 
-    it('T2-1：completeRound 必须走 updatePlanStepStatus 唯一写点（不得直改 status）', () => {
+    it('completeRound 必须走 updatePlanStepStatus 唯一写点（不得直改 status）', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
@@ -501,7 +498,7 @@ describe('SessionManager · 检查点管理', () => {
       spy.mockRestore();
     });
 
-    it('T2-1：无 stepId 的 completeRound 仍记录回合日志（收口不破无步骤路径）', () => {
+    it('无 stepId 的 completeRound 仍记录回合日志（收口不破无步骤路径）', () => {
       manager.createCheckpoint('测试');
       manager.completeRound({ summary: '自由对话回合' });
       const cp = manager.getCheckpoint()!;
@@ -654,7 +651,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     });
   });
 
-  describe('compensateTool（P1-1 降级后仅日志）', () => {
+  describe('compensateTool', () => {
     it('应生成包含工具名称的日志描述', () => {
       const record: ToolExecutionRecord = {
         name: 'write_file',
@@ -670,7 +667,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     });
   });
 
-  describe('compensateAllNonIdempotent（P1-1 降级后仅日志）', () => {
+  describe('compensateAllNonIdempotent', () => {
     it('无非幂等工具时应返回空数组', () => {
       const results = manager.compensateAllNonIdempotent();
       expect(results).toEqual([]);
@@ -713,7 +710,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     });
   });
 
-  describe('restoreFromCheckpoint 非幂等工具日志（P1-1 降级后仅日志）', () => {
+  describe('restoreFromCheckpoint 非幂等工具日志', () => {
     it('恢复时无非幂等工具应正常完成', async () => {
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
@@ -727,7 +724,6 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       const count = await manager.restoreFromCheckpoint(cp);
       expect(count).toBe(0);
@@ -758,7 +754,6 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
           },
         ],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
       // 降级后不再注入系统消息，仅通过 logger.warn 记录
@@ -772,7 +767,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
   });
 
   describe('restoreFromCheckpoint 恢复行为', () => {
-    it('T8：error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
+    it('error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
       // 先让状态机残留 paused（模拟跨会话恢复时的残留状态）
       manager.pause('测试暂停', 'user');
       expect(manager.status).toBe('paused');
@@ -789,17 +784,15 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
 
-      // 修复前：resetToRunning 后状态机 running，但 `status==='error' && error` 两分支都不进
-      // → checkpoint.status 保持 'error' → 永久分叉（断言红）
+      // 契约：恢复 error 检查点后，状态机与检查点 status 同步为 running，避免永久分叉
       expect(manager.status).toBe('running');
       expect(manager.getCheckpoint()!.status).toBe('running');
     });
 
-    it('T9：恢复 paused 检查点后应启动暂停超时定时器（修复前未启动 → 红）', async () => {
+    it('恢复 paused 检查点后应启动暂停超时定时器', async () => {
       const startSpy = vi.spyOn(
         manager as unknown as { startPauseTimeoutTimer: () => void },
         'startPauseTimeoutTimer',
@@ -817,16 +810,14 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
       await manager.restoreFromCheckpoint(cp);
 
-      // 修复前：恢复路径直接 stateMachine.pause 绕过 pause() → 定时器未启动 → 断言红
-      // （恢复的 paused 会话本次运行期无超时检测，只能等下次重启）
+      // 契约：恢复 paused 检查点须启动暂停超时定时器（否则本次运行期无超时检测）
       expect(startSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('T10：loadSessionMessages 失败时应显式降级（catch 挂 handler）而非悬空 rejection', async () => {
+    it('loadSessionMessages 失败时应显式降级（catch 挂 handler）而非悬空 rejection', async () => {
       // mock 会话加载失败（磁盘损坏 / 会话不存在等）
       (history.loadSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error('会话消息加载失败'),
@@ -845,16 +836,13 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
-      // 旧实现：悬空 Promise + rejection 无人处理（unhandledRejection 污染进程）
       await manager.restoreFromCheckpoint(cp);
 
       // 恢复主流程不受影响（热记忆已恢复、状态机已归位）
       expect(manager.status).toBe('running');
       // 让微任务队列排空，使 rejection 走完 handler 链
       await new Promise((resolve) => setTimeout(resolve, 10));
-      // 修复前（无 catch）：warn 未被调 → 断言红
       expect(warnSpy).toHaveBeenCalled();
       expect(history.loadSessionMessages).toHaveBeenCalled();
     });
@@ -982,7 +970,6 @@ describe('SessionManager · 暂停/恢复/异常', () => {
         resource: { documents: [], memories: [], context: '' },
         hotMemory: [],
         lastHeartbeat: Date.now(), // 当前时间，不超时
-        schemaVersion: 1,
       };
       // 通过 loadPersistedCheckpoint 间接测试 pauseTimedOut 检测
       // 存储检查点
@@ -1147,7 +1134,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(() => agent!.pause('test')).toThrow(/未初始化/);
     });
 
-    it('T1-1 空闲态（无活跃流）点暂停应直接翻 PAUSED 且不残留 pending 状态', async () => {
+    it('空闲态（无活跃流）点暂停应直接翻 PAUSED 且不残留 pending 状态', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       // 空闲态：无活跃执行流，isBusy 为 false → requestPause 走直接暂停路径
@@ -1169,7 +1156,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(agent.sessionManager!.status).toBe('paused');
     });
 
-    it('T2-8：用户空闲主动暂停（requestPause）应透传 lowRisk=true，不计入 P4 连续暂停配额', async () => {
+    it('用户空闲主动暂停（requestPause）应透传 lowRisk=true，不计入连续暂停配额', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
@@ -1177,13 +1164,13 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       const ok = agent.requestPause('空闲暂停', 'user');
       expect(ok).toBe(true);
       expect(agent.sessionManager!.status).toBe('paused');
-      // 契约：用户主动暂停不消耗 P4 连续暂停配额 → 计数保持 0（不挤占 Agent 澄清额度）
+      // 契约：用户主动暂停不消耗连续暂停配额 → 计数保持 0（不挤占 Agent 澄清额度）
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
     });
   });
 
-  describe('canContinueWithoutInput（T4 blocked 判据）', () => {
-    it('全部 blocked 计划不应视为可续跑（修复前误判 true → 红）', async () => {
+  describe('canContinueWithoutInput（blocked 判据）', () => {
+    it('全部 blocked 计划不应视为可续跑', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
@@ -1191,7 +1178,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
         { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
         { id: 's2', description: '步骤2', status: 'blocked', order: 2 },
       );
-      // 旧判据 `some(s => s.status !== 'done')` → blocked 也算可续 → true（红）
+      // blocked 步骤不视为可续（仅 pending/active 可续）
       expect(agent.canContinueWithoutInput()).toBe(false);
     });
 
@@ -1216,7 +1203,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(agent.canContinueWithoutInput()).toBe(false);
     });
 
-    it('全 blocked 计划无输入续跑应提示阻塞而非"已完成"（T4 文案防回归）', async () => {
+    it('全 blocked 计划无输入续跑应提示阻塞而非"已完成"', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
@@ -1231,12 +1218,12 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
         chunks.push(chunk as { type: string; content?: string });
       }
       const text = chunks.filter((c) => c.type === 'text').map((c) => c.content).join('');
-      // 旧文案恒说"所有计划步骤已完成" → 断言红
+      // 全 blocked 计划应提示阻塞而非误报"已完成"
       expect(text).toContain('阻塞');
       expect(text).not.toContain('已完成');
     });
 
-    it('错误态不应展示"继续"（T1-2 error 守卫）', async () => {
+    it('错误态不应展示"继续"（error 守卫）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
@@ -1250,8 +1237,8 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     });
   });
 
-  describe('锁忙时的 auto-resume（T5 副作用先于校验修复）', () => {
-    it('锁忙时 processEvent 抛错且状态机不被静默翻转（修复前 running → 红）', async () => {
+  describe('锁忙时的 auto-resume', () => {
+    it('锁忙时 processEvent 抛错且状态机不被静默翻转', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
@@ -1262,8 +1249,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       // 模拟 chat 锁被其他执行流占用
       (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
 
-      // 修复前：autoResumeIfPaused 先执行（状态机翻 running）→ acquireChatLock 才抛错
-      // → PAUSED 被静默吞掉，会话以为自己在跑。修复后：锁先校验，状态机不动。
+      // 锁先校验再动作：acquireChatLock 失败时状态机保持 PAUSED，不被静默吞掉
       const gen = agent.processEvent({ type: 'chat', content: '你好' });
       await expect(async () => {
         // 迭代以驱动生成器执行（chunk 无消费者，仅触发函数体）
@@ -1272,7 +1258,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
         }
       }).rejects.toThrow(/对话繁忙/);
 
-      // 状态机必须保持 PAUSED（修复前为 running → 断言红）
+      // 状态机必须保持 PAUSED
       expect(agent.sessionManager!.status).toBe('paused');
     });
   });
@@ -1301,7 +1287,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     });
   });
 
-  describe('resumeExecution 错误态非静默（T1-2）', () => {
+  describe('resumeExecution 错误态非静默', () => {
     it('错误态续跑应 yield error chunk 且发射 sessionResumeFailed（非静默）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
@@ -1639,7 +1625,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 E：task_table_update 更新步骤必须标脏（T3 防回归）
+   * 场景 E：task_table_update 更新步骤必须标脏
    *
    * 旧缺陷：updateStep 手写 lastHeartbeat 绕过 touchCheckpoint → checkpointDirty 未置位
    * → 计划状态变更永不落盘（flushCheckpoint 见脏才写，sessionManager.ts:418）。
@@ -1647,9 +1633,9 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    * 断言策略：直接 spy touchCheckpoint（运行时存在，TS private 仅编译期约束）。
    * 行为级断言（updateStep 后触发 flush 看写盘）不可靠——chatSync 路径存在其他
    * touchCheckpoint（如 updateGoal），会干扰 dirty 的归属，导致变异验证误绿。
-   * 契约级断言直接锁定「updateStep 必须走标脏路径」，修复前（手写心跳）→ 断言红。
+   * 契约级断言直接锁定「updateStep 必须走标脏路径」。
    */
-  it('场景 E：task_table_update 更新步骤必须标脏（T3 防回归）', { timeout: 30000 }, async () => {
+  it('场景 E：task_table_update 更新步骤必须标脏', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1681,18 +1667,18 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     expect(result).toContain('已标记为 done');
     expect(agent.getCheckpoint()!.plan[0]!.status).toBe('done');
 
-      // 修复前（手写 lastHeartbeat）：touchCheckpoint 未被调 → 断言红
+      // updateStep 必须经标脏路径，touchCheckpoint 应被调用
       expect(touchSpy).toHaveBeenCalledTimes(1);
     });
 
   /**
-   * 场景 G：roundLog 关联 active 步骤（T12 防回归）
+   * 场景 G：roundLog 关联 active 步骤
    *
    * 旧缺陷：loop.onRoundBoundary → completeRound 不传 stepId（恒 undefined）→
    * roundLog 与 plan 无法关联，「哪一回合推进了哪一步」不可追溯。
-   * 修复后：onRoundBoundary 取当前 active 步骤 ID 传入，roundLog 成为 plan 的时间轴投影。
+   * onRoundBoundary 取当前 active 步骤 ID 传入，roundLog 成为 plan 的时间轴投影。
    */
-  it('场景 G：roundLog 应记录 active 步骤 ID（T12 防回归）', { timeout: 30000 }, async () => {
+  it('场景 G：roundLog 应记录 active 步骤 ID', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1718,7 +1704,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
 
     const roundLog = agent.getCheckpoint()!.roundLog ?? [];
     expect(roundLog.length).toBeGreaterThan(0);
-    // 修复前：stepId 恒 undefined → 断言红
+    // roundLog 的 stepId 应关联当前 active 步骤
     expect(roundLog[roundLog.length - 1]!.stepId).toBe(stepId);
   });
 
@@ -1831,7 +1817,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 E：补偿机制——非幂等工具恢复时日志（P1-1 降级后仅日志）
+   * 场景 E：补偿机制——非幂等工具恢复时日志（降级后仅日志）
    *
    * 验证降级后行为：
    *   1. 记录非幂等工具执行
@@ -1839,7 +1825,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    *   3. 验证日志描述包含工具名称
    *   4. 不再检查 compensatedAt 标记
    */
-  it('场景 E：补偿机制——非幂等工具恢复时日志（P1-1 降级）', { timeout: 30000 }, async () => {
+  it('场景 E：补偿机制——非幂等工具恢复时日志（降级）', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1872,15 +1858,6 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// 测试 8：SSOT 排雷防回归（2026-08-09）
-//   P0-1 续跑路径缺 paused 分支 → 三方分叉
-//   P0-2 暂停幂等锁未在 finally 释放 → 暂停按钮永久失效
-//   P0-3 Agent.pause 门面窄化丢弃 lowRisk → 高风险确认配额被挤占
-//   P1   restoreFromCheckpoint 状态迁移静默失败
-// 每条用例均须在修复前失败，否则不具备防回归价值。
-// ═══════════════════════════════════════════════════════════════
-
 /**
  * 「工具步 → 工具步 → 纯文本」多轮 Provider
  *
@@ -1889,7 +1866,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
  *   后处理归档（ArchiveCoordinator）也会调用 provider.chat，若按调用次数计数会被污染，
  *   导致 resume 时轮次错位、无法触发第二次暂停——本用例早期失败的真因即在此。
  * - 文本型 LLM 调用（归档 / 角色匹配等）只产文本，不消耗工具步预算。
- * - 续跑必须至少跨越一次迭代边界才会 yield paused，单轮 MockProvider 无法覆盖 P0-1。
+ * - 续跑必须至少跨越一次迭代边界才会 yield paused，单轮 MockProvider 无法覆盖该场景。
  */
 class ToolThenToolThenTextProvider extends LlmProvider {
   readonly name = 'mock-multi-turn';
@@ -1929,7 +1906,7 @@ class ToolThenToolThenTextProvider extends LlmProvider {
  *
  * 首轮 LLM 调用返回一次 tool_call（name/args 可配置），后续轮次返回普通文本，
  * 模拟 LLM 在拿到工具结果后继续作答。
- * 用于验证执行前检查三态（放行/跳过/拒绝）对工具结果的影响（§7.2.1）。
+ * 用于验证执行前检查三态（放行/跳过/拒绝）对工具结果的影响。
  *
  * RoundSummaryGenerator（记忆即摘要）会用主 provider 生成摘要——识别摘要请求
  * 并返回有效 JSON，避免污染工具轮次计数（与 ToolThenToolThenTextProvider 同策略）。
@@ -2046,7 +2023,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(agent.sessionManager!.status).toBe('paused');
   });
 
-  it('T2-8：流中用户暂停（延迟翻转挂起 :1117）应透传 lowRisk=true，不计入 P4 配额', { timeout: 30000 }, async () => {
+  it('流中用户暂停（延迟翻转挂起）应透传 lowRisk=true，不计入连续暂停配额', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();
     await agent.init();
     expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
@@ -2061,12 +2038,12 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
     });
 
-    it('T2-6：首轮无预建 checkpoint 的流中暂停，pauseMeta 必须落到检查点（防 F4-3 静默丢）', { timeout: 30000 }, async () => {
+    it('首轮无预建 checkpoint 的流中暂停，pauseMeta 必须落到检查点（防静默丢失）', { timeout: 30000 }, async () => {
       agent = makeMultiTurnAgent();
       await agent.init();
       // 关键：不预建 checkpoint，直接走流中暂停路径（真实内核路径，宿主未兜底）。
       // setPauseMeta 由 loop.onPaused 在 pause() 翻状态机建 checkpoint 之前触发，
-      // 修复前会因「无 checkpoint」守卫静默丢弃 pauseMeta。
+      // 若「无 checkpoint」守卫静默丢弃 pauseMeta，本用例将失败。
       let sawPaused = false;
       for await (const chunk of agent.chat('读取探针文件')) {
         if (chunk.type === 'tool_result') agent.requestPause('首轮流中暂停', 'user');
@@ -2080,14 +2057,14 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       expect(cp!.pauseMeta!.reason).toBeDefined();
     });
 
-  it('P0-1：续跑过程中请求暂停，状态机应翻 paused（修复前停留 running）', { timeout: 30000 }, async () => {
+  it('续跑过程中请求暂停，状态机应翻 paused', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();
     await agent.init();
 
     expect(await pauseDuringFirstTurn(agent)).toBe(true);
     expect(agent.sessionManager!.status).toBe('paused');
 
-    // 续跑中再次暂停——此处正是原缺陷点：resumeExecution 只转发 paused chunk 不翻状态机
+    // 续跑中再次暂停：resumeExecution 必须透传 paused chunk 并同步翻状态机
     let sawPausedOnResume = false;
     for await (const chunk of agent.resumeExecution('续跑：继续读取文件')) {
       if (chunk.type === 'tool_result') agent.requestPause('续跑中第二次暂停', 'user');
@@ -2098,7 +2075,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(agent.sessionManager!.status).toBe('paused');
   });
 
-  it('P0-1：续跑中暂停后检查点 status 应同步为 paused（防三方分叉）', { timeout: 30000 }, async () => {
+  it('续跑中暂停后检查点 status 应同步为 paused（防三方分叉）', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();
     await agent.init();
 
@@ -2111,7 +2088,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(agent.sessionManager!.getCheckpoint()!.status).toBe('paused');
   });
 
-  it('P0-2：续跑结束后暂停幂等锁应已释放，可再次 requestPause', { timeout: 30000 }, async () => {
+  it('续跑结束后暂停幂等锁应已释放，可再次 requestPause', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();
     await agent.init();
 
@@ -2125,7 +2102,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(agent.requestPause('第三次暂停', 'user')).toBe(true);
   });
 
-  it('P0-2：流抛出非 abort 错误后，暂停幂等锁仍应释放', { timeout: 30000 }, async () => {
+  it('流抛出非 abort 错误后，暂停幂等锁仍应释放', { timeout: 30000 }, async () => {
     class ExplodingProvider extends LlmProvider {
       readonly name = 'exploding';
       async *chat(_m: Message[], _o?: ChatOptions): AsyncIterable<LlmChunk> {
@@ -2156,7 +2133,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
   });
 });
 
-describe('SSOT 排雷防回归 · 死 command 分支（T1-3 / F1-2）', () => {
+describe('SSOT 排雷防回归 · 死 command 分支', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -2221,12 +2198,12 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     rmSync(tmpData, { recursive: true, force: true });
   });
 
-  it('P0-3：Agent.pause 门面必须转发 lowRisk 到 SessionManager（防契约窄化）', async () => {
+  it('Agent.pause 门面必须转发 lowRisk 到 SessionManager（防契约窄化）', async () => {
     // 注释 (:902) 承诺：澄清问题全为低风险时不计入连续暂停计数。
     // 门面窄化会让 lowRisk 从公共 API 静默不可达——若 Agent.pause 丢弃该参数
     // （始终传 false），下方低风险用例将错误地计数，本用例随之失败。
     // 注：结构性 `.length` 断言在此无效（source 形参带默认值，函数 .length 恒为 1），
-    // 故以行为断言锁死契约，与下方 P0-3 计数用例互为表里。
+    // 故以行为断言锁死契约，与下方 lowRisk 计数用例互为表里。
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
     const before = agent.sessionManager!.getConsecutivePauseCount();
@@ -2234,7 +2211,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before);
   });
 
-  it('P0-3：低风险暂停不应计入连续暂停计数', async () => {
+  it('低风险暂停不应计入连续暂停计数', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -2243,7 +2220,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before);
   });
 
-  it('P0-3：高风险暂停仍应计数（防过度修复）', async () => {
+  it('高风险暂停仍应计数（防过度修复）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -2252,7 +2229,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before + 1);
   });
 
-  it('P1：状态机残留 paused 时恢复 error 检查点，应正确落到 error', async () => {
+  it('状态机残留 paused 时恢复 error 检查点，应正确落到 error', async () => {
     const manager = new SessionManager(
       () => createMockHistory(),
       () => createMockLoop(),
@@ -2271,13 +2248,12 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
       error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
     };
 
-    // 修复前：triggerError 仅允许 running→error，残留 paused 使其静默失败 → 状态机停留 paused
-    // 修复后：resetToRunning() 先归零，再 triggerError → error
+    // resetToRunning() 先归零，再 triggerError，使残留 paused 也能正确落到 error
     await manager.restoreFromCheckpoint(errorCheckpoint);
     expect(manager.status).toBe('error');
   });
 
-  it('P1：P4 澄清暂停前应先应用已确定槽位（防解析成果随暂停丢失）', async () => {
+  it('P4 澄清暂停前应先应用已确定槽位（防解析成果随暂停丢失）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -2288,9 +2264,8 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     expect(agent.sessionManager!.getCheckpoint()!.currentGoal).toBe('');
 
     // correction 事件：role 槽有显式增量（P1 确定），task 槽无 delta 且 currentGoal 为空
-    // → task 走 P4 澄清（needClarify 非空）→ 命中暂停分支。
-    // 修复前 applyResolvedDelta 在 needClarify 分支 return 之后 → role 增量随暂停丢弃；
-    // 修复后先应用已确定槽位再暂停 → 检查点应已含 expert。
+    // → task 走 P4 澄清（needClarify 非空）→ 命中暂停分支；
+    // 暂停前先应用已确定槽位，使检查点已含 expert。
     const chunkTypes: string[] = [];
     for await (const chunk of agent.processEvent({
       type: 'correction',
@@ -2310,10 +2285,10 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 工具执行前检查三态（§7.2.1 统一执行前检查点 · 宿主审批通道）
+// 工具执行前检查三态（统一执行前检查点 · 宿主审批通道）
 // ═══════════════════════════════════════════════════════════════
 
-describe('工具执行前检查三态（宿主审批通道 §7.2.1）', () => {
+describe('工具执行前检查三态（宿主审批通道）', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;

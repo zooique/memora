@@ -122,7 +122,7 @@ function createPctx(overrides: Partial<ProjectContext> = {}): ProjectContext {
 describe('assembleComponents', () => {
   describe('security 校验', () => {
     it('pctx.security=null 抛 MemoraError（显式校验）', async () => {
-      // 安全守卫未注入时，组装器应在 Phase 1 起点抛错，避免后续组件拿到 null security
+      // 安全守卫未注入时，组装器应在起点抛错，避免后续组件拿到 null security
       const pctx = createPctx({ security: null });
       await expect(assembleComponents(pctx, createInput())).rejects.toThrow(MemoraError);
     });
@@ -152,7 +152,7 @@ describe('assembleComponents', () => {
       // workProjection/skillManager/memoryInspector/
       // dedupManager/memoryAdvisor/roundSummaryGenerator/
       // sessionArchiver/textPolisher/rolePackManager/
-      // sessionManager——Phase 1.5 由组装器创建，先于 loop）
+      // sessionManager——由组装器创建，先于 loop）
       const expectedKeys = [
         'history',
         'loop',

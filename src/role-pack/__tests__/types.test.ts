@@ -7,7 +7,7 @@
  *   2. mergeStrategy —— 角色包覆盖后的默认兜底：未声明或空段时保留 DEFAULT_BEHAVIOR_STRATEGY
  *      完整默认，保证"开放给角色包定义的参数，内核必有硬编码兜底"。
  *
- * 背景：互斥窗口与最近对话注入共用 resolveRecentRounds 的返回值（memory-as-summary §4.3），
+ * 背景：互斥窗口与最近对话注入共用 resolveRecentRounds 的返回值，
  * 任何一条分支损坏都会导致"正文加载轮数 ≠ 互斥排除轮数"的重复注入。
  */
 import { describe, it, expect } from 'vitest';
@@ -21,8 +21,8 @@ import {
   mergeStrategy,
   DEFAULT_BEHAVIOR_STRATEGY,
   DEFAULT_RECENT_HISTORY_ROUNDS,
-  type BehaviorStrategy,
-} from '@/role-pack/types.js';
+} from '@/role-pack/strategyResolver.js';
+import type { BehaviorStrategy } from '@/role-pack/types.js';
 // DEFAULT_MIN_FALLBACK 定义于 utils 共享层（SSOT），role-pack 与 memory 均引自此处
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 

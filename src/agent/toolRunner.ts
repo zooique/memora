@@ -14,7 +14,8 @@ import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { TRACE_SPANS } from '@/agent/tracer.js';
-import { MemoraError, toError } from '@/utils/errors.js';
+import { MemoraError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 
 /** 一次工具调用（LLM 输出的工具调用元素；与 Message.toolCalls 元素同构） */

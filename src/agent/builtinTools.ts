@@ -1,10 +1,10 @@
 /**
- * 内置工具定义 + 工具幂等契约（P3.4 补偿机制）
+ * 内置工具定义 + 工具幂等契约（补偿机制）
  *
  * 工具定义（schema/参数描述）与工具执行逻辑分离：
  * - 本文件只包含工具的"声明"（名称、描述、参数 schema）
  * - 工具的"执行"逻辑留在 toolExecutor.ts
- * - 工具的幂等性映射（P3.4）在此定义，供补偿机制判断使用
+ * - 工具的幂等性映射在此定义，供补偿机制判断使用
  */
 
 /**
@@ -32,7 +32,7 @@ export interface ToolDefinition {
   readonly?: boolean;
 }
 
-// ─── 工具幂等性映射（P3.4 补偿机制） ────────────────────────
+// ─── 工具幂等性映射（补偿机制） ────────────────────────
 //
 // 幂等性定义：
 //   - idempotent：天然幂等（读操作），相同参数多次执行结果一致
@@ -81,7 +81,7 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
 };
 
 /**
- * 判断幂等工具是否应跳过执行（仅一次语义，P3.4）
+ * 判断幂等工具是否应跳过执行（仅一次语义）
  *
  * 规则：
  * - non-idempotent 工具永不跳过——失败后允许 LLM 原样重试，恢复时由补偿机制兜底；
@@ -277,7 +277,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['query'],
     },
   },
-  // ── Phase 1: 记忆即摘要·追溯工具 ──────────────────────
+  // ── 记忆即摘要·追溯工具 ──────────────────────
   {
     name: 'trace_summary',
     description:
@@ -293,7 +293,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['sessionId'],
     },
   },
-  // ── P2-6: 任务表管理工具 ──────────────────────────────
+  // ── 任务表管理工具 ──────────────────────────────
   {
     name: 'task_table_write',
     description:

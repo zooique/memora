@@ -27,7 +27,7 @@ import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js'
 import { SecurityGuard } from '@/security/pathGuard.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
+import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -43,7 +43,8 @@ import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
 import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
-import { chatBusyError, configError, isAbortError, toError } from '@/utils/errors.js';
+import { chatBusyError, configError, isAbortError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
 import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
@@ -1126,11 +1127,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
     this.roundSummaryGenerator = result.roundSummaryGenerator;
-    // 会话管理器由组装器创建（Phase 1.5，先于 loop），Agent 直接持有
+    // 会话管理器由组装器创建（先于 loop），Agent 直接持有
     this._sessionManager = result.sessionManager;
-    // 输入增强管线由组装器创建（Phase 5），Agent 只保留编排调用点
+    // 输入增强管线由组装器创建，Agent 只保留编排调用点
     this.contextPreparer = result.contextPreparer;
-    // 检查点恢复协议由组装器创建（Phase 6），Agent 保留公开 API 委托
+    // 检查点恢复协议由组装器创建，Agent 保留公开 API 委托
     this.checkpointRestoreCoordinator = result.checkpointRestoreCoordinator;
   }
 

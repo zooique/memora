@@ -2,8 +2,8 @@
  * LLM Provider 工厂测试
  * 覆盖 Mock Provider / 错误场景 / 多 Provider 映射表（providers + active）
  *
- * 内核已移除 preset 表：baseUrl + model 必须由调用方显式提供，
- * apiKey 不再由内核校验（是否必需是下游 LLM 服务的决定）。
+ * 内核不提供 preset 表：baseUrl + model 必须由调用方显式提供，
+ * apiKey 由下游 LLM 服务决定是否必需，内核不校验。
  */
 import { describe, it, expect } from 'vitest';
 import { createLlmProvider, createProviderFromConfig, createProviderRouter } from '@/llm/factory.js';
@@ -269,7 +269,7 @@ describe('createProviderFromConfig · 单 Provider 独立创建', () => {
   });
 });
 
-describe('createProviderRouter · 多模型路由（P1-2）', () => {
+describe('createProviderRouter · 多模型路由', () => {
   it('无 providers 配置时应抛出 configError', () => {
     const config = makeConfig({ providers: undefined, active: undefined });
     expect(() => createProviderRouter(config)).toThrow('providers 未配置');

@@ -223,11 +223,6 @@ export class ProjectManager {
     return this.registry.list;
   }
 
-  /** 方法形式兼容 0.3 迁移路径（v1.0 公共 API），与 .list 等价 */
-  listProjects(): ProjectEntry[] {
-    return this.registry.list;
-  }
-
   /** 注册项目（委托 ProjectRegistry） */
   registerProject(projectPath: string, name: string): void {
     this.registry.register(projectPath, name);

@@ -8,7 +8,8 @@
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
  */
 import type { SecurityGuard } from '@/security/pathGuard.js';
-import { toolError, configError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
+import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -165,7 +166,7 @@ export class ToolExecutor {
   /** 代码执行提供者（可选，注入时启用 run_code 工具） */
   private readonly codeExecutionProvider?: ICodeExecutionProvider;
 
-  /** P2-6: 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
+  /** 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
   planManager?: {
     writePlan: (
       mode: 'overwrite' | 'append' | 'update',
@@ -178,7 +179,7 @@ export class ToolExecutor {
   /**
    * read_skill 技能正文读取回调（由 agent 装配时注入，处理 read_skill）
    *
-   * 渐进披露 L2 数据源（两级技能统一，2026-08-18）：先查激活角色包内嵌技能
+   * 渐进披露 L2 数据源（两级技能统一）：先查激活角色包内嵌技能
    * （manifest.skills 的 file 指向），再查全局通用技能池（SkillManager 条目）。
    * 委托装配层注入的回调，避免 ToolExecutor 与 rolePackManager/skillManager 强耦合
    * （装配顺序：rolePackManager 在 toolExec 之后创建，用回调注入解耦时序）。
@@ -613,7 +614,7 @@ export class ToolExecutor {
         return stderr ? `${output}\n[stderr] ${stderr}` : output;
       }
       case 'task_table_write': {
-        // P2-6: 写入任务表（overwrite / append / update）
+        // 写入任务表（overwrite / append / update）
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
@@ -629,7 +630,7 @@ export class ToolExecutor {
         return this.planManager.writePlan(writeMode, steps);
       }
       case 'task_table_update': {
-        // P2-6: 更新任务状态
+        // 更新任务状态
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }

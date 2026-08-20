@@ -11,9 +11,8 @@
  *   - stats：记忆库统计
  *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *
- * FIX-P1-3（2026-07-24）：sourceHealth / suggest 已从此处迁移至 Agent 门面直连
- * MemoryAdvisor（与 detectConflicts 同模式），相关测试见 memoryAdvisor.test.ts +
- * agent.test.ts。本测试不再 import MemoryAdvisor。
+ * sourceHealth / suggest 由 Agent 门面直连 MemoryAdvisor（与 detectConflicts 同模式），
+ * 相关测试见 memoryAdvisor.test.ts + agent.test.ts。本测试不再 import MemoryAdvisor。
  *
  * Mock 策略：
  *   - InMemoryStorage 用真实实现（测试夹具，已被 store.test.ts 验证）
@@ -104,8 +103,7 @@ describe('MemoryInspector', () => {
     storage = new InMemoryStorage();
     loop = createMockLoop();
     history = createMockHistory();
-    // advisor 参数已移除，inspector 不再持有 advisor 引用
-    // sourceHealth/suggest 由 Agent 门面直连 advisor，本测试不覆盖（见 memoryAdvisor.test.ts）
+    // inspector 不持有 advisor；sourceHealth/suggest 由 Agent 门面直连 advisor（见 memoryAdvisor.test.ts）
     inspector = new MemoryInspector(storage, loop, history);
   });
 
@@ -522,7 +520,7 @@ describe('MemoryInspector', () => {
       expect(inspector.getDeletedById('rule:2')).toBeNull();
     });
 
-    it('T2-5：writePurgeExpired 应同步清理过期记忆的向量（防孤儿向量被召回）', () => {
+    it('writePurgeExpired 应同步清理过期记忆的向量（防孤儿向量被召回）', () => {
       const mem1 = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       const mem2 = createMemory({ id: 'rule:2', source: 'rule', name: 'r2' });
       inspector.writeUpsert(mem1);
@@ -537,14 +535,13 @@ describe('MemoryInspector', () => {
       const before = new Date(Date.now() + 1000);
       const purgedCount = inspector.writePurgeExpired(before);
       expect(purgedCount).toBe(2);
-      // 修复前（F3-5）：不清理向量 → del 调用 0 次 → 红
-      // 修复后：两个过期记忆的向量均删除 → 绿
+      // 向量同步清理：两个过期记忆的向量均被删除
       expect(del).toHaveBeenCalledTimes(2);
       expect(del).toHaveBeenCalledWith('rule:1');
       expect(del).toHaveBeenCalledWith('rule:2');
     });
 
-    it('T2-5：writePurge 应同步清理向量（手动 purge 不产生孤儿向量）', () => {
+    it('writePurge 应同步清理向量（手动 purge 不产生孤儿向量）', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.writeUpsert(mem);
 
@@ -552,13 +549,12 @@ describe('MemoryInspector', () => {
       inspector.setVectorStore({ size: 1, search: vi.fn(), delete: del } as unknown as IVectorStore);
 
       inspector.writePurge('rule:1');
-      // 修复前：手动 purge 不碰 vectorStore → del 调用 0 次 → 红
-      // 修复后：向量同步删除 → 绿
+      // 手动 purge 也同步清理向量
       expect(del).toHaveBeenCalledTimes(1);
       expect(del).toHaveBeenCalledWith('rule:1');
     });
 
-    it('T2-5：writePurgeExpired 在 vectorStore 未注入时应正常清理记忆（降级）', () => {
+    it('writePurgeExpired 在 vectorStore 未注入时应正常清理记忆（降级）', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.writeUpsert(mem);
       inspector.writeDelete('rule:1');

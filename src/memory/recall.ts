@@ -221,7 +221,7 @@ export async function boostScores(
   now: string = nowIso(),
 ): Promise<void> {
   for (const id of ids) {
-    // MIND2-L3：incrementScore 原子操作，消除 read-modify-write 并发冲突，与 decayScores 同模式
+    // incrementScore 原子操作，消除 read-modify-write 并发冲突，与 decayScores 同模式
     storage.incrementScore(id, BOOST_INCREMENT, now);
   }
 }

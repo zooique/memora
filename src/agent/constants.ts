@@ -9,7 +9,7 @@
 
 // SSOT：最近固定加载轮数默认值下沉到 role-pack/types（策略层级默认真理源），
 // agent 层引用而非重新定义，避免同一维度出现两套平行默认值（见 resolveRecentRounds）。
-import { DEFAULT_RECENT_HISTORY_ROUNDS } from '@/role-pack/types.js';
+import { DEFAULT_RECENT_HISTORY_ROUNDS } from '@/role-pack/strategyResolver.js';
 
 /**
  * Agent 门面层常量
@@ -56,11 +56,11 @@ export const AGENT_CONSTANTS = {
   /** 暂停超时阈值（毫秒）。30 分钟内无心跳则视为超时，自动归档清理。 */
   PAUSE_TIMEOUT_MS: 30 * 60 * 1000,
 
-  // ─── P2.2：热记忆截断策略 ─────────────────────────────
+  // ─── 热记忆截断策略 ─────────────────────────────
 
   /**
    * 热记忆最大对话轮数。20 轮 ≈ 40 条消息 ≈ 8K-12K tokens。
-   * 超过此窗口的早期上下文走温记忆召回（P2.1 恢复协议）。
+   * 超过此窗口的早期上下文走温记忆召回。
    */
   HOT_MEMORY_MAX_ROUNDS: 20,
 
@@ -70,22 +70,12 @@ export const AGENT_CONSTANTS = {
    */
   HOT_MEMORY_CONTENT_SLICE: 500,
 
-  // ─── T2：completedToolCalls FIFO 封顶 ─────────────────
+  // ─── completedToolCalls FIFO 封顶 ─────────────────
   //
   // 工具执行日志无上限时，检查点序列化开销随会话寿命线性增长。
   // 48 条 ≈ 多回合工具调用上限，远超单回合调用量。
-  // 截断策略：优先丢弃幂等工具的最早记录，非幂等永不丢弃（P1-1 补偿降级后不再检查 compensatedAt）。
+  // 截断策略：优先丢弃幂等工具的最早记录，非幂等永不丢弃。
   COMPLETED_TOOL_CALLS_MAX: 48,
-
-  // ─── P1-4：检查点 schema 版本（未来兼容公共前提）───
-  //
-  // 检查点以 SQLite 单 TEXT 列全量覆盖存储，无版本号时字段重命名/跨版本升级
-  // 必然爆（F2-1 的字段缺失场景会在下一次重命名爆发）。本常量标记当前内核的
-  // 检查点结构版本，`createCheckpoint` 写入、`parseCheckpoint` 比对。
-  //
-  // 迁移规则首版仅占位：高于当前版本的旧检查点按当前版本尽力恢复并 warn，
-  // 不做阻断（避免丢弃用户工作）；真正的版本化迁移逻辑未来按版本分支在此展开。
-  CURRENT_SCHEMA_VERSION: 1,
 } as const;
 
 /**
@@ -155,7 +145,7 @@ export const LOOP_CONSTANTS = {
   /**
    * 任务分类启发式：用户消息超过此长度（字符）判定为 'reasoning'。
    *
-   * T3 收敛（2026-08-19）：原 loop.determineTaskType 内的魔法数 500 归入内核常数。
+   * 原 loop.determineTaskType 内的魔法数 500 归入内核常数。
    * 注意这是内核启发式阈值，不属于角色包可影响的 L2 策略维度——任务类型分类是
    * Provider 路由（影响成本）的内部决策，不开放给角色包配置（避免"策略全景物化"，
    * 见 memora-polish-roadmap T3）。

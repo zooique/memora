@@ -55,13 +55,13 @@ export class Composer {
    * 对每个槽位独立执行补全链，返回完整 ResolvedDelta。
    * 若有槽位无法补全（到达 P4），返回 needClarify 并暂停。
    *
-   * 计划停滞感知（P3.3）：当 planCtx.stalled 为 true 时，
+   * 计划停滞感知：当 planCtx.stalled 为 true 时，
    * 任务槽跳过 P2 记忆推断，直接降级 P4 暂停询问，
    * 避免在计划已完成时盲目延续 currentGoal。
    *
    * @param event - 增量事件（含用户输入和可选 delta）
    * @param checkpoint - 当前会话检查点（含历史状态）
-   * @param planCtx - 可选的计划上下文（P3.3 执行计划管理）
+   * @param planCtx - 可选的计划上下文（执行计划管理）
    * @returns 补全结果
    */
   compose(
@@ -283,7 +283,7 @@ export class Composer {
   }
 
   /**
-   * 解析停滞状态下的任务槽（P3.3 执行计划管理）
+   * 解析停滞状态下的任务槽（执行计划管理）
    *
    * 当计划停滞时，任务槽跳过 P2 记忆推断，直接生成 P4 澄清问题。
    * 问题包含当前活跃步骤和待处理步骤信息，辅助用户决策。

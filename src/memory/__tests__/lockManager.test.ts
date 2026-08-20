@@ -11,7 +11,7 @@
  * 设计原则：
  *   - 以代码实际行为为准（characterization test），疑似 bug 在注释 + 报告中标注
  *   - 使用 mkdtempSync 创建隔离临时目录，afterEach 强制清理
- *   - 零 @ts-ignore / as any，遵循 ADR-007 镜像原则
+ *   - 零 @ts-ignore / as any，遵循镜像原则
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -139,7 +139,7 @@ describe('LockManager · release 释放锁', () => {
     expect(lm.currentPath).toBe(lockPath);
   });
 
-  // MIND2-L5：release 前校验 PID 归属，锁被其他进程覆盖时不删除他人锁
+  // release 前校验 PID 归属，锁被其他进程覆盖时不删除他人锁
   it('锁文件被其他进程覆盖时 release 不删除他人锁', async () => {
     const memoraDir = join(tmpDir, '.memora');
     const lm = new LockManager();
@@ -156,7 +156,7 @@ describe('LockManager · release 释放锁', () => {
     expect(lm.currentPath).toBeNull();
   });
 
-  // MIND2-L5：锁文件不存在时 release 视为已释放，不抛错
+  // 锁文件不存在时 release 视为已释放，不抛错
   it('锁文件已被外部删除时 release 视为已释放不抛错', async () => {
     const memoraDir = join(tmpDir, '.memora');
     const lm = new LockManager();

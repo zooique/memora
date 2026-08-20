@@ -125,7 +125,7 @@ export interface AgentHooks {
    * 审批/审计/参数改写/幂等去重途经的宿主闸门。放行后由组装器内部幂等检查续接。
    */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
-  /** 文件层前置条件断言回调（可选，T5：两段式契约结构化；预留键，暂未被消费） */
+  /** 文件层前置条件断言回调（可选，两段式契约结构化；预留键，暂未被消费） */
   fileConsistencyCheck?: FileConsistencyCheck;
   /**
    * 角色切换回调（输入增强管线角色匹配命中时触发）
@@ -177,7 +177,7 @@ type AssembleRuntimeParams = Pick<
 export interface AssembleInput extends AssembleRuntimeParams {
   provider: LlmProvider;
   backgroundProvider: LlmProvider | null;
-  /** Provider 路由选择器（P1-2 多模型路由基础，可选） */
+  /** Provider 路由选择器（多模型路由基础，可选） */
   providerRouter?: ProviderRouter | null;
   /** 已有的 SkillManager（首次为 null，后续复用） */
   existingSkillManager: SkillManager | null;
@@ -191,7 +191,7 @@ export interface AssembleInput extends AssembleRuntimeParams {
 }
 
 /**
- * Phase 3 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
+ * 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
  *
  * 只收敛了顶层 AssembleInput；子工厂此前内联手写 14 字段（其中 10 个与
  * AssembleInput 重复声明，locale 等后加字段曾同时改 3 处）。Pick 派生后
@@ -222,7 +222,7 @@ type LoopAndDepsParams = Pick<
 };
 
 /**
- * Phase 4 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
+ * 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
  *
  * 同 LoopAndDepsParams（收敛的第二半）。
  */
@@ -261,7 +261,7 @@ export interface AssembleOutput {
   textPolisher: TextPolishManager;
   /** 角色包管理器（角色+技能+规则的唯一真理源） */
   rolePackManager: RolePackManager;
-  /** 轮次摘要生成器（记忆即摘要架构，Phase 1） */
+  /** 轮次摘要生成器（记忆即摘要架构） */
   roundSummaryGenerator: RoundSummaryGenerator;
   /** 会话管理器（接线下沉后由组装器创建并返回，Agent 直接持有） */
   sessionManager: SessionManager;
@@ -288,7 +288,7 @@ export interface AssembleOutput {
 // ── 子工厂函数 ─────────────────────────────────────────────
 
 /**
- * 会话事件分发（原 Agent.handleSessionEvent，接线下沉后内联于组装器）
+ * 会话事件分发
  *
  * AgentLoop 处理 SessionEvent 时通知会话管理器：按事件类型触发状态机转换或检查点更新。
  *
@@ -425,7 +425,7 @@ function wireRuntimeCallbacks(
 }
 
 /**
- * Phase 3：创建 AgentLoop 及其直接依赖
+ * 创建 AgentLoop 及其直接依赖
  */
 async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const {
@@ -493,7 +493,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     // 会话事件 → 分发到会话管理器（状态机转换/心跳，接线下沉后内联）
     onSessionEvent: (eventType, detail) => dispatchSessionEvent(sessionManager, eventType, detail),
     // 工具执行完成回调（幂等 outbox 落点）：记录执行到检查点供恢复排重
-    // sessionManager 先于 loop 创建（Phase 1.5），此处可直接写入——无需暂存队列补丁
+    // sessionManager 先于 loop 创建，此处可直接写入——无需暂存队列补丁
     onToolExecuted: (name, args, toolResult, ok) => {
       // 幂等级别查内置映射表，自定义工具默认非幂等
       const idempotent: IdempotencyLevel = BUILTIN_TOOL_IDEMPOTENCY[name] ?? 'non-idempotent';
@@ -539,7 +539,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
 }
 
 /**
- * Phase 4：创建依赖 Loop 的组件
+ * 创建依赖 Loop 的组件
  */
 function createLoopDependentComponents(params: LoopDependentParams) {
   const { pctx, loop, history, backgroundProvider, hooks } = params;
@@ -580,7 +580,7 @@ export async function assembleComponents(
   } = input;
   const hooks = input.hooks;
 
-  // ── Phase 1: 无依赖组件 ──
+  // ── 无依赖组件 ──
 
   // Agent 层总是注入 createSecurityGuard，此处显式校验并收窄类型
   if (!pctx.security) {
@@ -613,12 +613,12 @@ export async function assembleComponents(
     input.codeExecutionProvider,
   );
 
-  // ── Phase 1.5: 会话管理器（先于 loop 创建）──
+  // ── 会话管理器（先于 loop 创建）──
 
   // SessionManager 构造只存 getter（getHistory/getLoop 惰性取用），不访问 history/loop 本体——
   // 因此可先于 loop 创建，使 loop 的工具执行回调（onToolExecuted/preExecutionCheck）装配期即可
   // 直接写入，消除旧实现"暂存队列 + flush 冲洗"的顺序补丁。
-  // loop 经闭包变量后赋引用（Phase 3 完成）；装配期不会触发 getLoop。
+  // loop 经闭包变量后赋引用；装配期不会触发 getLoop。
   let loopRef: AgentLoop | null = null;
   const sessionManager = new SessionManager(
     () => history,
@@ -629,7 +629,7 @@ export async function assembleComponents(
     (event, data) => hooks?.emit(event, data),
   );
 
-  // ── Phase 2: 依赖 Provider 的组件 ──
+  // ── 依赖 Provider 的组件 ──
 
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
@@ -643,7 +643,7 @@ export async function assembleComponents(
   const rolePackPrompt = rolePackManager.buildSystemPrompt();
 
   // 渐进披露 L2：注入 read_skill 技能正文读取回调（read_skill 工具数据源）
-  // 两级技能统一渐进披露（2026-08-18）：先查激活角色包内嵌技能，再查全局通用技能池。
+  // 两级技能统一渐进披露：先查激活角色包内嵌技能，再查全局通用技能池。
   // rolePackManager 在 toolExec 之后创建，用回调注入解耦时序（见 toolExecutor.readSkill 注释）
   toolExec.readSkill = async (skillName: string) => {
     const rolePackContent = await rolePackManager.readSkillContent(skillName);
@@ -740,7 +740,7 @@ export async function assembleComponents(
     return lines.join('\n');
   };
 
-  // ── Phase 3: AgentLoop + 其直接依赖 ──
+  // ── AgentLoop + 其直接依赖 ──
 
   const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
@@ -764,7 +764,7 @@ export async function assembleComponents(
   // 装配 loop 运行时回调 + 任务表管理（onPaused/onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks);
 
-  // ── Phase 4: 依赖 Loop 的组件 ──
+  // ── 依赖 Loop 的组件 ──
 
   const { memoryAdvisor, memoryInspector, dedupManager } = createLoopDependentComponents({
     pctx,
@@ -784,7 +784,7 @@ export async function assembleComponents(
     memoryInspector.setVectorStore(vectorStore);
   }
 
-  // ── Phase 5: 输入增强管线 ──
+  // ── 输入增强管线 ──
 
   // ContextPreparer 依赖已装配的 loop/history/rolePackManager；
   // 策略推导走 rolePackManager（SSOT），背景 Provider 后续经 Agent.setBackgroundProvider 同步。
@@ -807,7 +807,7 @@ export async function assembleComponents(
     switchRolePack: hooks?.switchRolePack ?? (() => false),
   });
 
-  // ── Phase 6: 检查点恢复协议 ──
+  // ── 检查点恢复协议 ──
 
   // CheckpointRestoreCoordinator 依赖已装配的 sessionManager/loop；
   // 恢复协议只依赖稳定接口（sessionManager/history/loop），生命周期回调由 hooks 注入。

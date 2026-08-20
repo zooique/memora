@@ -55,7 +55,7 @@ export type InputInterrupt = 'allow' | 'block';
 /** 结束衔接模式（标准键 reflect.handoff）：wait=等待用户 / loop=自动续跑 / end=终止 */
 export type Handoff = 'wait' | 'loop' | 'end';
 
-/** Loop 续跑轮次：0=关闭自审查 / N=LLM 纯文本回复后最多自审查 N 轮（兼容旧 on→1、off→0） */
+/** Loop 续跑轮次：0=关闭自审查 / N=LLM 纯文本回复后最多自审查 N 轮 */
 export type LoopContinue = number;
 
 /** 摘要生成开关（on=生成摘要 / off=不生成） */
@@ -359,49 +359,14 @@ export interface RolePackManifestSkill {
 }
 
 /**
- * manifest.json 解析结果——文件夹形态角色包的唯一权威：承载元数据 + L2 策略 + 内容路径注册。
- * 内容文件独立于 manifest，由 manifest 按路径注册装载；persona 允许缺省（仅靠策略驱动行为）。
+ * manifest.json 解析结果——文件夹形态角色包的唯一权威：承载元数据 + L2 策略。
+ * 内容文件约定俗成（persona.md / rules.md），manifest 不注册内容路径；persona 允许缺省（仅靠策略驱动行为）。
  */
 export interface RolePackManifestFile {
   /** 元数据（名称 / 版本 / 关键词 / 合规字段等） */
   readonly meta: RolePackMeta;
   /** 行为策略声明（L2，未配置维度由 mergeStrategy 补默认值） */
   readonly strategy?: BehaviorStrategy;
-  /** persona 文件路径（相对包根；null=未声明）。约定俗成为 persona.md，未声明时装载层回退默认名 */
-  readonly persona: string | null;
-  /** rules 文件路径（相对包根；null=未声明）。约定俗成为 rules.md，未声明时装载层回退默认名 */
-  readonly rules: string | null;
   /** 内嵌技能注册（对象数组，支持多个添加） */
   readonly skills: readonly RolePackManifestSkill[];
 }
-
-// 策略解析与默认值已迁移至 strategyResolver.ts；为保持向后兼容，重新导出所有公开 API
-export {
-  DEFAULT_RECENT_HISTORY_ROUNDS,
-  DEFAULT_BEHAVIOR_STRATEGY,
-  resolveRecentRounds,
-  resolveHandoff,
-  resolveMemoryRecallMode,
-  resolveMinFallback,
-  resolveSummaryFocus,
-  resolveToolMode,
-  resolveSummary,
-  resolveContextAssembly,
-  resolveToolStepLimit,
-  resolveErrorHandling,
-  resolveAutoSwitch,
-  resolveProviderRouting,
-  resolveInputInterrupt,
-  resolveTokenBudget,
-  resolveStepBudget,
-  resolveMemoryWrite,
-  resolveSessionArchive,
-  resolveMultiStepReasoning,
-  resolveRecallConfidence,
-  resolveSummaryRecall,
-  resolveToolReadonly,
-  resolveToolApproval,
-  resolveL2Strategy,
-  mergeStrategy,
-  assembleRolePack,
-} from './strategyResolver.js';

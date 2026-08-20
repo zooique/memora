@@ -260,7 +260,7 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
     });
   });
 
-  describe('taskRouter 多模型路由（P1-2）', () => {
+  describe('taskRouter 多模型路由', () => {
     it('配置 taskRouter 时应正确解析', async () => {
       const configPath = writeConfigFile({
         llm: {
@@ -587,12 +587,12 @@ describe('config/loader · 默认配置降级', () => {
   });
 
   it('项目级不存在时应返回内置默认值（机制不预设策略）', async () => {
-    // 内核只提供机制，不预设厂商/路径策略（ADR-002 + ADR-003）
+    // 内核只提供机制，不预设厂商/路径策略
     const config = await loadConfig();
     // providers 未预设：由宿主显式配置（mock 通过 providers 显式声明）
     expect(config.llm.providers).toBeUndefined();
     expect(config.llm.active).toBeUndefined();
-    // dataDir 留空：由宿主通过 configPath 或显式注入，内核不硬编码路径（ADR-002）
+    // dataDir 留空：由宿主通过 configPath 或显式注入，内核不硬编码路径
     expect(config.memory.dataDir).toBe('');
     expect(config.memory.maxContextTokens).toBe(120_000);
     expect(config.security.permission).toBe('owner');

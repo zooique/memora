@@ -4,7 +4,7 @@
  * 覆盖 inferSource / escapeLike / validateSource 三个纯函数。
  * 从 types.test.ts 迁出，与 sourceValidation.ts 1:1 镜像。
  *
- * 设计原则（ADR-004）：source 是开放字符串，校验仅做 typo 检测，
+ * 设计原则：source 是开放字符串，校验仅做 typo 检测，
  * 安全边界（路径遍历、null 字节）必须拒绝。
  */
 import { describe, expect, it } from 'vitest';

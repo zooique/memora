@@ -228,7 +228,7 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
   });
 
-  // ─── 符号链接逃逸防护（P0 安全漏洞）────────────
+  // ─── 符号链接逃逸防护 ────────────
 
   it.skipIf(process.platform === 'win32')('应该拒绝通过项目内符号链接逃逸到项目外目录', () => {
     // 攻击场景：项目内存在指向项目外的符号链接，read_file 通过该链接读取敏感文件

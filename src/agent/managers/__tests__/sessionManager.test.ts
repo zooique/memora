@@ -135,12 +135,12 @@ describe('SessionManager', () => {
 
     it('SSOT 回归：切换会话应触发派生缓存失效（invalidateSessionDerivedState → resetContextSummary）', () => {
       manager.switchSession('new-session');
-      // 会话替换后，上下文摘要等派生缓存必须作废，否则陈旧摘要注入新会话（SSOT-R4-T9 对称补全）
+      // 会话替换后，上下文摘要等派生缓存必须作废，否则陈旧摘要注入新会话（对称补全）
       expect(loop.resetContextSummary).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('getSessionMeta / renameSession（ADR-024 会话标题层）', () => {
+  describe('getSessionMeta / renameSession（会话标题层）', () => {
     it('getSessionMeta 应委托 store.getSessionMeta', () => {
       manager.getSessionMeta('2026-06-27-main');
       expect((sessionStore as ISessionStore).getSessionMeta).toHaveBeenCalledWith(
@@ -456,7 +456,7 @@ describe('SessionManager', () => {
     });
   });
 
-  // ── P0-2：运行时暂停超时检测 ──────────────────────────
+  // ── 运行时暂停超时检测 ──────────────────────────
 
   describe('pauseTimeoutMonitor', () => {
     beforeEach(() => {
@@ -538,20 +538,18 @@ describe('SessionManager', () => {
       expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.anything());
     });
 
-    it('T2-2：pause() 应在唯一状态转换点写入 pausedAt（覆盖空闲直翻与流中延迟翻）', () => {
+    it('pause() 应在唯一状态转换点写入 pausedAt（覆盖空闲直翻与流中延迟翻）', () => {
       manager.pause('测试暂停', 'user');
       const cp = manager.getCheckpoint();
       expect(cp).not.toBeNull();
-      // 修复前：无 pausedAt 字段 → undefined → 红
-      // 修复后：pause() 写 Date.now() → 绿
+      // pause() 写入 Date.now() 时间戳
       expect(cp!.pausedAt).toBeTypeOf('number');
       expect(cp!.pausedAt!).toBeGreaterThan(0);
       expect(cp!.pausedAt!).toBeLessThanOrEqual(Date.now());
     });
 
-    // ── T1-2：运行时超时也必须填充超时会话信息，通过事件载荷传递 ──
-    // F1.3 广播式改造后，超时信息通过事件载荷传递（多监听器可并行消费）。以下测试改为验证
-    // emitEvent 调用含 date/session 字段。
+    // ── 运行时超时也必须填充超时会话信息，通过事件载荷传递 ──
+    // 超时信息经事件载荷传递（多监听器可并行消费），emitEvent 调用含 date/session 字段。
 
     it('运行时超时应通过事件载荷传递超时会话信息', () => {
       manager.pause('测试暂停', 'user');
@@ -609,7 +607,7 @@ describe('SessionManager', () => {
     });
   });
 
-  // ── P1-2：goalChangeSeq 漂移强制暂停 ──────────────────────
+  // ── goalChangeSeq 漂移强制暂停 ──────────────────────
 
   describe('goalChangeSeq drift auto-pause', () => {
     /**
@@ -666,7 +664,7 @@ describe('SessionManager', () => {
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
 
-    it('值未变时应幂等短路：不递增 goalChangeSeq、不发射任何事件（T2-1）', () => {
+    it('值未变时应幂等短路：不递增 goalChangeSeq、不发射任何事件', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
 
       setupCheckpointWithGoal(mainGoal);
@@ -683,7 +681,7 @@ describe('SessionManager', () => {
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
 
-    it('连续多轮不改目标时 goalChangeSeq 保持不变，真实修正仍递增（T2-1 防轮次计数退化）', () => {
+    it('连续多轮不改目标时 goalChangeSeq 保持不变，真实修正仍递增（防轮次计数退化）', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
 
       setupCheckpointWithGoal(mainGoal);
@@ -736,7 +734,7 @@ describe('SessionManager', () => {
     });
   });
 
-  // ── P2-1：consecutivePauseCount 时间衰减 ────────────────
+  // ── consecutivePauseCount 时间衰减 ────────────────
 
   // ── 检查点序列化/反序列化全路径 ──────────────────────────
 
@@ -943,20 +941,19 @@ describe('SessionManager', () => {
       vi.useRealTimers();
     });
 
-    it('T2-2：暂停后 touchCheckpoint 刷新 lastHeartbeat 不应推迟超时判定（pausedAt 为准）', () => {
+    it('暂停后 touchCheckpoint 刷新 lastHeartbeat 不应推迟超时判定（pausedAt 为准）', () => {
       vi.useFakeTimers();
       const loop = createMockLoopWithMessages([]);
       // 核心契约：pausedAt 是暂停起点（31 分钟前 → 超时），
       // lastHeartbeat 刚被 touchCheckpoint（如 updatePlanStepStatus）刷新（新鲜）。
-      // 修复前读 lastHeartbeat → 判不超时 → cp 非 null → 红。
-      // 修复后读 pausedAt → 判超时 → cp 为 null → 绿。
+      // 判定基准是 pausedAt 而非 lastHeartbeat：pausedAt 超时则检查点被清理
       const oldPausedAt = Date.now() - AGENT_CONSTANTS.PAUSE_TIMEOUT_MS - 60_000;
       const store = createMockSessionStore({
         loadCheckpoint: vi.fn().mockReturnValue(JSON.stringify({
           sessionId: '2026-06-27-main',
           status: 'paused',
-          mainGoal: 'T2-2 测试',
-          currentGoal: 'T2-2 测试',
+          mainGoal: '暂停超时测试',
+          currentGoal: '暂停超时测试',
           goalChangeSeq: 0,
           plan: [],
           role: { name: 'assistant' },
@@ -1011,7 +1008,6 @@ describe('SessionManager', () => {
           { role: 'assistant' as const, content: '消息2' },
         ],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
 
       const count = await mgr.restoreFromCheckpoint(checkpoint);
@@ -1047,7 +1043,6 @@ describe('SessionManager', () => {
         hotMemory: [{ role: 'user' as const, content: '消息' }],
         truncatedCount: 5, // 5 条早期消息被截断
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
 
       await mgr.restoreFromCheckpoint(checkpoint);
@@ -1079,7 +1074,6 @@ describe('SessionManager', () => {
         resource: { documents: [], memories: [], context: '' } as ResourceState,
         hotMemory: [],
         lastHeartbeat: Date.now(),
-        schemaVersion: 1,
       };
 
       await mgr.restoreFromCheckpoint(checkpoint);
@@ -1118,7 +1112,7 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('consecutivePauseDecay (P2-1)', () => {
+  describe('consecutivePauseDecay', () => {
     beforeEach(() => {
       vi.useFakeTimers();
     });
@@ -1215,7 +1209,7 @@ describe('SessionManager', () => {
     });
   });
 
-  // ── 检查点字段生命周期（T3-1，合并自 sessionCheckpointLifecycle.test.ts）──────
+  // ── 检查点字段生命周期 ──────
 
   /** 带「假磁盘」的会话存储，真实保存序列化结果 */
   function createDiskBackedStore(): {
@@ -1309,7 +1303,7 @@ describe('SessionManager', () => {
       });
     }
 
-    describe('侧车字段跨 pause 存活（T0-1 回归）', () => {
+    describe('侧车字段跨 pause 存活', () => {
       it('pause 后内存态应保留 roundLog / completedToolCalls / pauseMeta', () => {
         seedCheckpointWithSidecars();
         manager.pause('测试暂停', 'user');
@@ -1367,7 +1361,7 @@ describe('SessionManager', () => {
       });
     });
 
-    describe('outbox 落盘时机（P3-1 批处理优化）', () => {
+    describe('outbox 落盘时机（批处理优化）', () => {
       it('工具执行记录应延迟到回合边界统一落盘', () => {
         manager.createCheckpoint('主目标');
         const writesBefore = disk.writeCount();
@@ -1399,7 +1393,7 @@ describe('SessionManager', () => {
       });
     });
 
-    describe('异常恢复链落盘（T0-3 回归）', () => {
+    describe('异常恢复链落盘', () => {
       it('recover 后磁盘上的 error.recovered 应为 true 且状态为 running', () => {
         manager.createCheckpoint('主目标');
         manager.triggerError('磁盘写满');
@@ -1455,134 +1449,47 @@ describe('SessionManager', () => {
       });
     });
 
-    describe('反序列化归一化（T0-1 回归）', () => {
-      it('磁盘检查点缺少 lastHeartbeat 时应补为有限时间戳', () => {
+    describe('反序列化归一化（严格模式：残缺即拒绝，不做兜底填充）', () => {
+      it('磁盘检查点缺少 lastHeartbeat 时应拒绝加载且不污染运行时检查点', () => {
         const raw = intactCheckpoint();
         raw.status = 'paused';
         delete raw.lastHeartbeat;
         seedDisk(raw);
-        const loaded = manager.loadPersistedCheckpoint();
-        expect(loaded).not.toBeNull();
-        expect(Number.isFinite(loaded!.lastHeartbeat)).toBe(true);
+        expect(manager.loadPersistedCheckpoint()).toBeNull();
+        expect(manager.getCheckpoint()).toBeNull();
       });
 
-      it('hotMemory 被截断成非数组时恢复应降级而非抛 TypeError', async () => {
+      it('hotMemory 被截断成非数组时应中止恢复而非静默降级', async () => {
         const raw = intactCheckpoint();
         raw.hotMemory = '存储截断后的残片';
-        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
-        expect(manager.getCheckpoint()!.hotMemory).toEqual([]);
+        const count = await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+        expect(count).toBe(0);
+        expect(manager.getCheckpoint()).toBeNull();
       });
 
-      it('error 侧车残缺时应补齐 cause，避免以 undefined 重建异常态', async () => {
+      it('status 为越界值时应拒绝恢复', async () => {
+        const raw = intactCheckpoint();
+        raw.status = 'zombie';
+        const count = await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
+        expect(count).toBe(0);
+        expect(manager.getCheckpoint()).toBeNull();
+      });
+
+      it('error 侧车结构非法时应整体清除，异常态降级为 running', async () => {
         const raw = intactCheckpoint();
         raw.status = 'error';
         raw.error = { at: 1 };
         await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
-        const cp = manager.getCheckpoint()!;
-        expect(typeof cp.error?.cause).toBe('string');
-        expect(cp.error!.cause.length).toBeGreaterThan(0);
-        expect(cp.error!.recovered).toBe(false);
-      });
-
-      it('status 为越界值时应归一化为 running', async () => {
-        const raw = intactCheckpoint();
-        raw.status = 'zombie';
-        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
-        expect(manager.getCheckpoint()!.status).toBe('running');
-        expect(manager.status).toBe('running');
-      });
-
-      it('补齐的默认值不得在多个检查点之间共享引用', async () => {
-        const first = intactCheckpoint();
-        delete first.plan;
-        await manager.restoreFromCheckpoint(first as unknown as SessionCheckpoint);
-        manager.getCheckpoint()!.plan.push({
-          id: 's1',
-          description: '第一份检查点的步骤',
-          status: 'pending',
-          order: 0,
-        });
-        const second = intactCheckpoint();
-        delete second.plan;
-        await manager.restoreFromCheckpoint(second as unknown as SessionCheckpoint);
-        expect(manager.getCheckpoint()!.plan).toHaveLength(0);
-      });
-
-      it('归一化补齐的默认值应与 createCheckpoint 的默认值同源', async () => {
-        const fresh = manager.createCheckpoint('主目标');
-        const createDefaults = {
-          role: structuredClone(fresh.role),
-          standard: structuredClone(fresh.standard),
-          resource: structuredClone(fresh.resource),
-        };
-        const raw = intactCheckpoint();
-        delete raw.role;
-        delete raw.standard;
-        delete raw.resource;
-        await manager.restoreFromCheckpoint(raw as unknown as SessionCheckpoint);
-        const restored = manager.getCheckpoint()!;
-        expect(restored.role).toEqual(createDefaults.role);
-        expect(restored.standard).toEqual(createDefaults.standard);
-        expect(restored.resource).toEqual(createDefaults.resource);
+        const cp = manager.getCheckpoint();
+        expect(cp).not.toBeNull();
+        expect(cp!.error).toBeUndefined();
+        expect(cp!.status).toBe('running');
       });
 
       it('磁盘内容为畸形 JSON 时应返回 null 且不污染运行时检查点', () => {
         disk.store.saveCheckpoint!('2026-06-27-main', '{"sessionId":');
         expect(manager.loadPersistedCheckpoint()).toBeNull();
         expect(manager.getCheckpoint()).toBeNull();
-      });
-    });
-
-    describe('检查点 schemaVersion（T1-4 回归）', () => {
-      it('createCheckpoint 产出的检查点应携带当前 schemaVersion', () => {
-        const cp = manager.createCheckpoint('主目标');
-        expect(cp.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
-        const onDisk = disk.readDisk()!;
-        expect(onDisk.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
-      });
-
-      it('无 schemaVersion 字段的旧检查点经 loadPersistedCheckpoint 应补为当前版本', () => {
-        const raw = intactCheckpoint();
-        delete raw.schemaVersion;
-        seedDisk(raw);
-        const loaded = manager.loadPersistedCheckpoint();
-        expect(loaded).not.toBeNull();
-        expect(loaded!.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
-      });
-
-      it('schemaVersion 高于当前内核版本的检查点应仍可按当前版本恢复', () => {
-        const raw = intactCheckpoint();
-        raw.schemaVersion = 999;
-        seedDisk(raw);
-        const loaded = manager.loadPersistedCheckpoint();
-        expect(loaded).not.toBeNull();
-        expect(loaded!.status).toBe('running');
-        expect(loaded!.schemaVersion).toBe(999);
-      });
-
-      it('低版本检查点经注册迁移升到当前版本（迁移机制实证，A1）', () => {
-        // A1 实证：normalizeCheckpoint 的升迁移循环真实可用（非纸面安全网）。
-        // 临时注册 v0→v1 探针迁移，验证「迁移被实际调用 + 版本按升序归位」。
-        // 探针仅存在于本用例内（finally 清理），不伪造真实 schema 演进。
-        const migrations = (SessionManager as unknown as {
-          checkpointMigrations: Map<number, (cp: { goalChangeSeq: number }) => void>;
-        }).checkpointMigrations;
-        const raw = intactCheckpoint();
-        raw.schemaVersion = 0; // 低于当前版本 → 触发升迁移分支
-        seedDisk(raw);
-        migrations.set(0, (cp) => {
-          cp.goalChangeSeq = 777; // 探针标记：证明该迁移确被归一化流程调用
-        });
-        try {
-          const loaded = manager.loadPersistedCheckpoint();
-          expect(loaded).not.toBeNull();
-          // 迁移被调用 → 探针改写生效（而非被跳过）
-          expect(loaded!.goalChangeSeq).toBe(777);
-          // 升迁移循环将版本归位到当前
-          expect(loaded!.schemaVersion).toBe(AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION);
-        } finally {
-          migrations.delete(0);
-        }
       });
     });
 

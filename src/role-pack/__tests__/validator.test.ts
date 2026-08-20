@@ -1,5 +1,5 @@
 /**
- * 角色包格式校验器测试（role-pack-spec §八 / §2.2 manifest.json 唯一核心控制文件）
+ * 角色包格式校验器测试（manifest.json 唯一核心控制文件）
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@/role-pack/validator.js';
 import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 
-/** 合法 L2 策略（§六 已消费键集，类型化常量供展开覆写） */
+/** 合法 L2 策略（已消费键集，类型化常量供展开覆写） */
 const validStrategy = {
   prepare: { recentRounds: 3, memoryRecall: 'full', memoryRecallQuota: 2000, minFallback: 2, summaryFocus: '聚焦核心逻辑' },
   act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096, streaming: 'streaming' },
@@ -17,7 +17,7 @@ const validStrategy = {
   global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
 };
 
-/** 合法基础 manifest（§2.2：元数据 + 合规 + strategy + 内容注册 + skills） */
+/** 合法基础 manifest（元数据 + 合规 + strategy + skills） */
 const validManifest: Record<string, unknown> = {
   name: '测试角色包',
   formatVersion: '1.0.0',
@@ -29,8 +29,6 @@ const validManifest: Record<string, unknown> = {
   aiIdentityDisclosure: true,
   minorProtection: 'required',
   strategy: validStrategy,
-  persona: 'persona.md',
-  rules: 'rules.md',
   skills: [
     { file: 'skills/write.md', name: 'write', description: '写文件' },
     { file: 'skills/search.md', name: 'search' },
@@ -53,16 +51,10 @@ function findByCode(issues: readonly RolePackValidationIssue[], code: string) {
 }
 
 describe('validateManifest：合法 manifest', () => {
-  it('§2.2 完整 manifest（元数据 + 策略 + 内容路径 + 多技能注册）校验通过', () => {
+  it('完整 manifest（元数据 + 策略 + 多技能注册）校验通过', () => {
     const result = validate();
     expect(result.valid).toBe(true);
     expect(result.issues).toEqual([]);
-  });
-
-  it('persona/rules 缺省（null / undefined）为合法（persona 允许缺省）', () => {
-    const result = validate({ persona: null, rules: undefined });
-    expect(findByCode(result.issues, 'INVALID_CONTENT_PATH')).toHaveLength(0);
-    expect(result.valid).toBe(true);
   });
 
   it('skills 未声明为合法（无内嵌技能）', () => {
@@ -91,7 +83,7 @@ describe('validateManifest：版本语义', () => {
     expect(result.valid).toBe(false);
   });
 
-  it('formatVersion 缺省合法（按 1.0.0 处理，§五）', () => {
+  it('formatVersion 缺省合法（按 1.0.0 处理）', () => {
     const result = validate({ formatVersion: undefined });
     expect(findByCode(result.issues, 'INVALID_FORMAT_VERSION')).toHaveLength(0);
   });
@@ -114,12 +106,12 @@ describe('validateManifest：键名合法性', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('已知键（strategy/skills/persona/rules/trigger/exclusiveWith）不报未知键', () => {
+  it('已知键（strategy/skills/trigger/exclusiveWith）不报未知键', () => {
     const result = validate({ trigger: ['测试'], exclusiveWith: ['其他包'] });
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
   });
 
-  it('keywords 双写法（§2.2 匹配字段双写法）：字符串数组与逗号分隔字符串均为合法', () => {
+  it('keywords 双写法：字符串数组与逗号分隔字符串均为合法', () => {
     const asArray = validate({ keywords: ['文档', 'API'] });
     const asString = validate({ keywords: '文档, API' });
     expect(asArray.valid).toBe(true);
@@ -163,7 +155,7 @@ describe('validateManifest：键名合法性', () => {
     expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_STAGE')).toHaveLength(1);
   });
 
-  it('未知策略键 → UNKNOWN_STRATEGY_KEY warning（键级渐进，§五）', () => {
+  it('未知策略键 → UNKNOWN_STRATEGY_KEY warning（键级渐进）', () => {
     const result = validate({
       strategy: { ...validStrategy, act: { ...validStrategy.act, foo: 'bar' } },
     });
@@ -204,7 +196,7 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
 
-  it('memoryRecallQuota 合法正整数 → 通过（P0 提炼进标准的键）', () => {
+  it('memoryRecallQuota 合法正整数 → 通过（提炼进标准的键）', () => {
     const result = validate({
       strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, memoryRecallQuota: 2000 } },
     });
@@ -212,7 +204,7 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(result.valid).toBe(true);
   });
 
-  it('summaryFocus 合法非空字符串 → 通过（P1 结构化保真提炼键）', () => {
+  it('summaryFocus 合法非空字符串 → 通过（结构化保真提炼键）', () => {
     const result = validate({
       strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: '高价值代码片段' } },
     });
@@ -305,20 +297,7 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
   });
 });
 
-describe('validateManifest：内容路径注册（persona / rules）', () => {
-  it('persona 非字符串 → INVALID_CONTENT_PATH error', () => {
-    const result = validate({ persona: 42 });
-    expect(findByCode(result.issues, 'INVALID_CONTENT_PATH')).toHaveLength(1);
-    expect(result.valid).toBe(false);
-  });
-
-  it('rules 为空串 → INVALID_CONTENT_PATH error', () => {
-    const result = validate({ rules: '   ' });
-    expect(findByCode(result.issues, 'INVALID_CONTENT_PATH')).toHaveLength(1);
-  });
-});
-
-describe('validateManifest：skills 注册（对象数组，§4）', () => {
+describe('validateManifest：skills 注册（对象数组）', () => {
   it('skills 非数组 → SKILLS_NOT_ARRAY error', () => {
     const result = validate({ skills: { file: 'x.md' } });
     expect(findByCode(result.issues, 'SKILLS_NOT_ARRAY')).toHaveLength(1);
@@ -329,12 +308,12 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL')).toHaveLength(1);
   });
 
-  it('skills 项缺 file → INVALID_MANIFEST_SKILL error（C2 后 skills 仅文件引用）', () => {
+  it('skills 项缺 file → INVALID_MANIFEST_SKILL error（skills 仅文件引用）', () => {
     const result = validate({ skills: [{ name: 'no-file' }] });
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL').length).toBeGreaterThan(0);
   });
 
-  it('纯能力声明在顶层 capabilities（C2，不再放 skills）合法', () => {
+  it('纯能力声明在顶层 capabilities 合法', () => {
     const result = validate({ capabilities: [{ capability: 'file:read' }] });
     expect(result.valid).toBe(true);
     expect(findByCode(result.issues, 'INVALID_CAPABILITY')).toHaveLength(0);
@@ -347,7 +326,7 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
     expect(findByCode(result.issues, 'INVALID_MANIFEST_SKILL').length).toBeGreaterThan(0);
   });
 
-  it('capabilities 非法格式 → INVALID_CAPABILITY error（C2 顶层校验）', () => {
+  it('capabilities 非法格式 → INVALID_CAPABILITY error（顶层校验）', () => {
     const result = validate({ capabilities: [{ capability: 'writeFile' }] });
     expect(findByCode(result.issues, 'INVALID_CAPABILITY')).toHaveLength(1);
     expect(result.valid).toBe(false);
@@ -369,7 +348,7 @@ describe('validateManifest：skills 注册（对象数组，§4）', () => {
   });
 });
 
-describe('validateManifest：合规分档（§七）', () => {
+describe('validateManifest：合规分档', () => {
   it('interactionType 越界 → INVALID_INTERACTION_TYPE error', () => {
     const result = validate({ interactionType: 'fun' });
     expect(findByCode(result.issues, 'INVALID_INTERACTION_TYPE')).toHaveLength(1);
@@ -416,7 +395,7 @@ describe('validateManifestText：原始文本便捷入口', () => {
   });
 });
 
-describe('checkCompanionContentRedline：companion 内容红线（§七 第 5 条）', () => {
+describe('checkCompanionContentRedline：companion 内容红线', () => {
   it('内容含虚拟伴侣特征 → COMPANION_INTIMATE_REDLINE error', () => {
     const issues = checkCompanionContentRedline('你是用户的虚拟伴侣。');
     expect(issues).toHaveLength(1);

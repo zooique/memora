@@ -1,6 +1,6 @@
 /**
  * 项目管理器测试
- * 覆盖 initProject / closeProject / listProjects / registerProject / 锁文件
+ * 覆盖 initProject / closeProject / list / registerProject / 锁文件
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -101,7 +101,7 @@ describe('ProjectManager · initProject', () => {
     const pm = new ProjectManager({ dataDir: config.memory.dataDir });
     await pm.initProject(tmpDir, 'test-project');
 
-    const projects = pm.listProjects();
+    const projects = pm.list;
     const found = projects.find((p) => p.path === tmpDir);
     expect(found).toBeDefined();
     expect(found?.name).toBe('test-project');
@@ -109,7 +109,7 @@ describe('ProjectManager · initProject', () => {
     await pm.shutdown();
   });
 
-  it('T6 对账已停用：孤儿 rule 不再被清理（设定记忆归角色包，ADR-025）', async () => {
+  it('对账已停用：孤儿 rule 不再被清理（设定记忆归角色包）', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({
       dataDir: config.memory.dataDir,
@@ -130,7 +130,7 @@ describe('ProjectManager · initProject', () => {
       score: 0.8,
     });
 
-    // 同时写入一个真实 rule 文件（原对账逻辑会保留它）
+    // 同时写入一个真实 rule 文件（有文件支撑的规则）
     mkdirSync(join(tmpDir, '.memora', 'rules'), { recursive: true });
     writeFileSync(
       join(tmpDir, '.memora', 'rules', 'real.md'),
@@ -138,8 +138,8 @@ describe('ProjectManager · initProject', () => {
       'utf-8',
     );
 
-    // 重开项目：原对账（清理无文件支撑的孤儿 rule）已停用——
-    // loader 不再扫描设定记忆进索引（ADR-025），「文件支撑」判定基准消失。
+    // 重开项目：对账（清理无文件支撑的孤儿 rule）已停用——
+    // loader 不再扫描设定记忆进索引，「文件支撑」判定基准消失。
     // 存量 rule 索引行保留为兼容数据，由宿主迁移清理。
     const ctx2 = await pm.initProject(tmpDir);
     const rules = ctx2.index.getBySource(SOURCE_LABELS.RULE);
@@ -147,13 +147,13 @@ describe('ProjectManager · initProject', () => {
 
     // 孤儿不再被自动清理（对账停用，不误删存量数据）
     expect(names).toContain('orphan');
-    // 文件规则也不进索引（loader 停扫）——原对账会写入它，现在不会
+    // 文件规则也不进索引（loader 停扫）——对账会写入它，现在不会
     expect(names).not.toContain('real');
 
     await pm.shutdown();
   });
 
-  it('T0-2 对账守卫已随对账停用一并移除（扫描失败不影响索引）', async () => {
+  it('对账守卫已随对账停用一并移除（扫描失败不影响索引）', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({
       dataDir: config.memory.dataDir,
@@ -161,7 +161,7 @@ describe('ProjectManager · initProject', () => {
         new SecurityGuard(projectPath, memoraDir, [], false, 'owner'),
     });
 
-    // 0) 先建立项目骨架（与 T6 用例同序：initProject 负责初始化 .memora 结构）
+    // 0) 先建立项目骨架（与对账停用用例同序：initProject 负责初始化 .memora 结构）
     await pm.initProject(tmpDir);
 
     // 1) 项目级规则文件：loader 停扫后不应进索引
@@ -195,7 +195,7 @@ describe('ProjectManager · 项目注册表', () => {
     pm.registerProject('/path/to/project-a', 'project-a');
     pm.registerProject('/path/to/project-b', 'project-b');
 
-    const projects = pm.listProjects();
+    const projects = pm.list;
     expect(projects).toHaveLength(2);
     expect(projects.find((p) => p.name === 'project-a')).toBeDefined();
     expect(projects.find((p) => p.name === 'project-b')).toBeDefined();
@@ -208,7 +208,7 @@ describe('ProjectManager · 项目注册表', () => {
     pm.registerProject('/path/to/project-a', 'project-a');
     pm.registerProject('/path/to/project-a', 'project-a-renamed');
 
-    const projects = pm.listProjects();
+    const projects = pm.list;
     expect(projects).toHaveLength(1);
     expect(projects[0]!.name).toBe('project-a-renamed');
   });
@@ -221,19 +221,19 @@ describe('ProjectManager · 项目注册表', () => {
     pm.registerProject('/path/to/project-b', 'project-b');
     pm.unregisterProject('/path/to/project-a');
 
-    const projects = pm.listProjects();
+    const projects = pm.list;
     expect(projects).toHaveLength(1);
     expect(projects[0]!.name).toBe('project-b');
   });
 
-  it('FIX-P0-3：注册表 JSON 损坏时 list 降级为空列表，但 register 抛错避免覆盖', async () => {
+  it('注册表 JSON 损坏时 list 降级为空列表，但 register 抛错避免覆盖', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     // 写入损坏的 JSON
     writeFileSync(join(tmpHome, '.memora', 'projects.json'), 'not valid{{{', 'utf-8');
 
     const pm = new ProjectManager({ dataDir: config.memory.dataDir });
     // list 是只读操作，损坏时降级返回空列表（不破坏磁盘数据）
-    const projects = pm.listProjects();
+    const projects = pm.list;
     expect(projects).toHaveLength(0);
 
     // register 路径必须抛错，避免用空数据覆盖损坏文件导致数据永久丢失
@@ -388,7 +388,7 @@ accessedAt: 2026-01-01T00:00:00.000Z
     });
     const ctx = await pm.initProject(tmpDir);
 
-    // 设定记忆归角色包（ADR-025）：loader 不再把项目 rule 扫描进索引
+    // 设定记忆归角色包：loader 不再把项目 rule 扫描进索引
     // ——项目级记忆由角色包激活/失活承载，不经 loader 写入索引。
     expect(ctx.index.getById('rule:proj-rule')).toBeNull();
     expect(ctx.index.getBySource(SOURCE_LABELS.RULE).length).toBe(0);

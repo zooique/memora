@@ -304,7 +304,7 @@ describe('OpenAICompatibleProvider · response_format 透传', () => {
   });
 });
 
-// ─── tool_calls delta 累积（核心 OpenAI 协议解析，P0-6 补齐）──
+// ─── tool_calls delta 累积（核心 OpenAI 协议解析）──
 
 /**
  * 创建模拟 SSE 流响应（tool_calls delta 分片版）

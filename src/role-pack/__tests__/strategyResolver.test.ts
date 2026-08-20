@@ -744,10 +744,10 @@ describe('跨维度一致性', () => {
 });
 
 // ════════════════════════════════════════════════════════
-// 7. L2 运行时策略（T1 收敛：resolveL2Strategy）
+// 7. L2 运行时策略（resolveL2Strategy）
 // ════════════════════════════════════════════════════════
 
-describe('L2 运行时策略 resolveL2Strategy（T1 收敛）', () => {
+describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
   it('无角色包声明时守恒 DEFAULT_L2_STRATEGY（整体默认值）', () => {
     expect(resolveL2Strategy(undefined)).toEqual(DEFAULT_L2_STRATEGY);
     expect(resolveL2Strategy({} as BehaviorStrategy)).toEqual(DEFAULT_L2_STRATEGY);

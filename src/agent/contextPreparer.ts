@@ -21,7 +21,7 @@ import {
   resolveMinFallback,
   resolveRecallConfidence,
   resolveSummaryRecall,
-} from '@/role-pack/types.js';
+} from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
@@ -34,7 +34,7 @@ import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**

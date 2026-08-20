@@ -28,7 +28,7 @@ export type {
   MemoryWriteMode, SessionArchiveMode, UserFollowup,
   ErrorHandling, SafetyRuleMode,
 } from '@/role-pack/types.js';
-export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/types.js';
+export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/strategyResolver.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
 // 角色包格式校验器：manifest.json 唯一核心控制文件 + companion 内容红线检测
 export { validateManifest, validateManifestText, checkCompanionContentRedline } from '@/role-pack/validator.js';

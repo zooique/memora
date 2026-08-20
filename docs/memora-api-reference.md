@@ -396,7 +396,7 @@ interface AgentStats {
 agent.agentLoop.getMessages(): readonly Message[]
 ```
 
-### 4.5 写入方法（P1-2 合并回 MemoryInspector）
+### 4.5 写入方法
 
 记忆的写入统一收口在 `agent.memory`，写方法以 `writeXxx` 前缀命名（同步返回、不调 LLM、不触发异步 IO）：
 
@@ -509,7 +509,7 @@ interface ISessionStore {
 
 ## 六、项目 / 会话管理
 
-> **方法归属**（v1.0 P1-4 拆分后）：项目相关方法在 `agent.projects`（ProjectManager），会话相关方法在 `agent.sessionManager`（SessionManager），仅 `switchProject` / `rebuildComponents` / `forkSession` 保留在 Agent 面类作为常用入口。
+> **方法归属**：项目相关方法在 `agent.projects`（ProjectManager），会话相关方法在 `agent.sessionManager`（SessionManager），仅 `switchProject` / `rebuildComponents` / `forkSession` 保留在 Agent 面类作为常用入口。
 
 > **switch* 返回值约定**：各 switch 操作返回与其操作语义最匹配的值 ——
 > `switchSession` 返回新会话名（string）、`switchProject` 返回完整项目上下文（AgentContext，含 bootstrap 记忆等）、
@@ -953,7 +953,7 @@ isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 
 ## 十六、类型导出
 
-> 以下导出与 `src/index.ts` 完全对齐（v2.0.3）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
+> 以下导出与 `src/index.ts` 完全对齐。`RecalledMemorySummary` 已补齐导出。
 
 ```typescript
 // Agent 与流式事件
@@ -1028,7 +1028,7 @@ export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOU
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
-// 项目注册表 + 锁文件管理（P1-4 拆分）
+// 项目注册表 + 锁文件管理
 export { ProjectRegistry } from '@zooique/memora';
 export type { ProjectEntry } from '@zooique/memora';
 export { LockManager } from '@zooique/memora';

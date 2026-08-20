@@ -144,7 +144,7 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.search).not.toHaveBeenCalled();
   });
 
-  it('FIX-P1-2：recall 只读不写，返回 boost 后的副本（不调用 upsert）', async () => {
+  it('recall 只读不写，返回 boost 后的副本（不调用 upsert）', async () => {
     const original = makeMemory({ id: 'content:1', source: 'content', score: 0.5 });
     vi.mocked(mockStorage.search).mockReturnValue([original]);
 
@@ -160,7 +160,7 @@ describe('recall · 记忆召回', () => {
     expect(original.score).toBe(0.5);
   });
 
-  it('FIX-P1-2：boost 后 score 不应超过上限 1.0（在返回的副本上验证）', async () => {
+  it('boost 后 score 不应超过上限 1.0（在返回的副本上验证）', async () => {
     // 高分记忆（0.98）被召回后 boost +0.05 = 1.03，应被钳制到 1.0
     const highScore = makeMemory({ id: 'content:high', source: 'content', score: 0.98 });
     vi.mocked(mockStorage.search).mockReturnValue([highScore]);
@@ -172,7 +172,7 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.upsert).not.toHaveBeenCalled();
   });
 
-  // ── 召回保底（memory-as-summary §4.7 · recall fallback）──
+  // ── 召回保底（recall fallback）──
 
   it('保底：语义召回不足时用最近记忆补足至 minFallback', async () => {
     // 关键词搜索仅返回 1 条（不足默认 minFallback=2）
@@ -283,9 +283,7 @@ describe('recall · 记忆召回', () => {
   });
 });
 
-// ─── FIX-P1-2：boostScores 显式写操作 ──────────────────────
-
-describe('FIX-P1-2: boostScores · 批量持久化 boost', () => {
+describe('boostScores · 批量持久化 boost', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
@@ -297,7 +295,7 @@ describe('FIX-P1-2: boostScores · 批量持久化 boost', () => {
       search: vi.fn(),
       count: vi.fn(() => 0),
       countBySource: vi.fn(() => 0),
-      // MIND2-L3：boostScores 改用 incrementScore 原子操作（替代 read-modify-write）
+      // boostScores 改用 incrementScore 原子操作（替代 read-modify-write）
       incrementScore: vi.fn(() => true),
       setScore: vi.fn(() => true),
       decayScores: vi.fn(() => 0),
@@ -641,14 +639,9 @@ describe('applyDecayToMemory · 衰减计算边界', () => {
   });
 });
 
-// ─── Phase 2：type 时间窗口差异化召回（§4.2）——已移除（ADR-025 D7） ──────────
-// 2026-08-17 定案：type 是纯语义标签，不设时效。原 intent/general 7 天窗口测试已删除——
-// 记忆有效性由 superseded（写时取代）+ score 衰减承担，不在读路径按时间过滤。
-// 历史依据：memory-as-summary.md §4.2（已废弃）。
+// 会话窗口优先 + 组内时间排序
 
-// ─── Phase 3：会话窗口优先 + 组内时间排序（§4.4） ──────────────
-
-describe('recall · 会话窗口优先 + 组内时间排序（§4.4）', () => {
+describe('recall · 会话窗口优先 + 组内时间排序', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
@@ -730,7 +723,7 @@ describe('recall · 会话窗口优先 + 组内时间排序（§4.4）', () => {
   });
 });
 
-describe('recall · 前置互斥排除（excludeRoundIds，memory-as-summary §4.3）', () => {
+describe('recall · 前置互斥排除（excludeRoundIds）', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {

@@ -130,7 +130,7 @@ describe('Logging · setLogger() 切换', () => {
     };
 
     setLogger(customLogger);
-    // 恢复默认（同步恢复到 console fallback；pino 升级改为懒触发）
+    // 恢复默认（同步恢复到 console fallback；pino 懒触发）
     setLogger(undefined);
 
     // 懒初始化模式下，setLogger(undefined) 不主动触发 pino 升级

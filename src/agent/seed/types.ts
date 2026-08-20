@@ -22,7 +22,7 @@ import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerat
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
-import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
+import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ITracer } from '@/agent/tracer.js';

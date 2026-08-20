@@ -1,5 +1,5 @@
 /**
- * SessionNamer 单元测试（ADR-024 会话标题层）
+ * SessionNamer 单元测试 — 会话标题层
  *
  * 覆盖：
  * - 正常命名：LLM 返回标题 → setSessionTitle 写入

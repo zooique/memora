@@ -7,7 +7,8 @@
 import { resolve, sep, dirname, basename, join } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';
-import { securityError, toError } from '@/utils/errors.js';
+import { securityError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { expandHome } from '@/utils/path.js';
 import { nowIso } from '@/utils/time.js';
 

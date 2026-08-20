@@ -7,8 +7,8 @@
  *   - P3 系统内置默认值
  *   - P4 暂停询问（澄清问题）
  *   - 资源槽数组追加语义
- *   - 计划停滞感知（P3.3 执行计划管理）
- *   - 停滞时显式任务优先（P1 修复）
+ *   - 计划停滞感知（执行计划管理）
+ *   - 停滞时显式任务优先
  *   - 边界条件：空值、引用标记与空检查点
  */
 import { describe, it, expect } from 'vitest';
@@ -37,7 +37,6 @@ function createCheckpoint(overrides?: Partial<SessionCheckpoint>): SessionCheckp
     resource: { documents: [], memories: [], context: '' },
     hotMemory: [],
     lastHeartbeat: Date.now(),
-    schemaVersion: 1,
     ...overrides,
   };
 }
@@ -279,7 +278,7 @@ describe('Composer · 资源槽（数组追加语义）', () => {
   });
 });
 
-describe('Composer · 计划停滞感知（P3.3）', () => {
+describe('Composer · 计划停滞感知', () => {
   it('停滞 + 无显式任务（非 chat）→ P4 澄清', () => {
     const composer = new Composer();
     // 非 chat 事件（correction）：content 不兜底 task，停滞时走 P4

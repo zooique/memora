@@ -18,7 +18,7 @@ import {
   resolveContextAssembly,
   resolveL2Strategy,
   resolveMemoryRecallMode,
-} from '@/role-pack/types.js';
+} from '@/role-pack/strategyResolver.js';
 import {
   resolveActiveStrategy,
   type SeedDeps,

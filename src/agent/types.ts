@@ -308,11 +308,6 @@ export interface SessionCheckpoint {
    * 可选：缺失时超时判定回退到 lastHeartbeat。
    */
   pausedAt?: number;
-  /**
-   * 检查点 schema 版本：createCheckpoint 写入当前版本，parse 读取比对，高于当前版尽力恢复并 warn。
-   * 必需项——无故缺失视为构造方未考虑未来兼容，由 tsc 编译期拦下。
-   */
-  schemaVersion: number;
 }
 
 /** 状态机显式状态转换方法（pause/resume/triggerError/recover 等）的返回值 */
@@ -415,7 +410,6 @@ export type FileConsistencyCheck = (id: string, expected: 'exists' | 'absent') =
  * - 放行（skip=false）：允许执行，可选 overrideArgs 改写参数（审计/参数改写）
  * - 跳过（skip=true, 无 denied）：不执行，返回 previousResult 让 LLM 继续（幂等去重）
  * - 拒绝（skip=true, denied=true）：阻止工具意图（工具批准否决/白名单/只读拦截）
- * 向后兼容旧两态 `{ skip; previousResult? }`，新增 optional 字段补齐三态。
  */
 export interface PreExecutionResult {
   /** 是否跳过执行（true = 跳过或拒绝） */

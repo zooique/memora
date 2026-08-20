@@ -9,8 +9,6 @@
  *   - inferProjectName 静态方法
  *
  * 测试风格对齐 projectManager.test.ts：mkdtempSync 临时目录 + afterEach 清理。
- *
- * 详见 ADR-007 · 测试策略 + ADR-008 · 目录结构（__tests__ 镜像 src/）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
@@ -343,7 +341,7 @@ describe('ProjectRegistry · 持久化（跨实例）', () => {
   });
 });
 
-describe('ProjectRegistry · 损坏语义区分（FIX-P0-3）', () => {
+describe('ProjectRegistry · 损坏语义区分', () => {
   /** 临时目录 */
   let tmpDir: string;
 

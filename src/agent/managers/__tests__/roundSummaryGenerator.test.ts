@@ -1,5 +1,5 @@
 /**
- * RoundSummaryGenerator 单元测试 — 轮次摘要生成 + 写路径取代检测（ADR-021）
+ * RoundSummaryGenerator 单元测试 — 轮次摘要生成 + 写路径取代检测
  *
  * 覆盖点：
  *   1. 生成 round-summary 记忆（含 type 分类）

@@ -696,10 +696,10 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  // ─── sourceCountCache 增量不变量（T4 防回归加固）──────────
+  // ─── sourceCountCache 增量不变量（防回归加固）──────────
   // 锁住「缓存派生计数 == 实时重算」，任何新增写路径若遗忘维护缓存即红。
 
-  describe('sourceCountCache 增量不变量（T4 防回归）', () => {
+  describe('sourceCountCache 增量不变量（防回归）', () => {
     it('任意写序列（upsert/delete/restore/purgeExpired）后缓存计数应与实时重算一致', () => {
       storage.upsert(makeMemory('r1', SOURCE_LABELS.RULE));
       storage.upsert(makeMemory('r2', SOURCE_LABELS.RULE));

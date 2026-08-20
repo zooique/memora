@@ -58,7 +58,7 @@ export class SessionManager {
   private checkpoint: SessionCheckpoint | null = null;
   /** 检查点脏标记（落盘收口）：内存态≠磁盘态时为 true，touchCheckpoint 置位、flushCheckpoint 写盘后清除 */
   private checkpointDirty = false;
-  /** 目标一致性校验器（P3.1 目标版本一致性校验） */
+  /** 目标一致性校验器（目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
    * 连续暂停时间戳数组（时间衰减机制）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降级 P3。
@@ -80,13 +80,6 @@ export class SessionManager {
   /** 暂停超时检测间隔（毫秒），30 秒检查一次心跳 */
   private static readonly PAUSE_TIMEOUT_CHECK_INTERVAL = 30_000;
 
-  // ── schemaVersion 迁移分发表（骨架，当前为空表）──
-  // key=源版本号，value=将 Partial<SessionCheckpoint> 迁移到下一版本。新增字段不升版本；重命名/删除/改类型必须升 CURRENT_SCHEMA_VERSION 并注册迁移。
-  private static readonly checkpointMigrations = new Map<
-    number,
-    (cp: Partial<SessionCheckpoint>) => void
-  >();
-
   constructor(
     getHistory: () => MessageHistory,
     getLoop: () => AgentLoop,
@@ -103,7 +96,7 @@ export class SessionManager {
     this.consistencyChecker = new GoalConsistencyChecker();
   }
 
-  // ─── SSOT 状态机代理（P0-2：封装 stateMachine，暴露有界接口） ───
+  // ─── SSOT 状态机代理（封装 stateMachine，暴露有界接口） ───
 
   /** 会话状态（状态机状态） */
   get status(): SessionStatus {
@@ -370,9 +363,8 @@ export class SessionManager {
 
   /**
    * 检查点必需字段默认值工厂（默认值单一真理源）。
-   * createCheckpoint 新建/合并 与 normalizeCheckpoint 反序列化补齐共用，避免两份并列默认值漂移。
+   * 仅 createCheckpoint 新建/合并时使用——反序列化采用严格模式，不做静默补齐。
    * 必须返回新实例：数组/对象默认值共享引用会让不同检查点互相污染（一个 push 计划步骤另一凭空多出）。
-   * 新增必需字段时同步此处与 validateCheckpointIntegrity 的 REQUIRED_FIELDS。
    */
   private static checkpointDefaults(): Pick<
     SessionCheckpoint,
@@ -437,8 +429,6 @@ export class SessionManager {
       hotMemory,
       truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
       lastHeartbeat: Date.now(),
-      // 每次写检查点标当前内核版本，供未来升级迁移
-      schemaVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION,
     };
 
     // 检查点内容已整体重算，强制落盘
@@ -489,8 +479,8 @@ export class SessionManager {
       const json = this.sessionStore.loadCheckpoint(sessionId);
       if (!json) return null;
 
-      // 反序列化收口：解析 + 字段补齐 + 完整性告警统一由 parseCheckpoint 承担
-      // （原 `JSON.parse(json) as` 断言无运行时效力，残缺检查点会抛错被外层 catch 静默吞掉整个会话）。
+      // 反序列化收口：解析 + 严格校验统一由 parseCheckpoint 承担
+      // （`JSON.parse(json) as` 断言无运行时效力，残缺检查点会抛错被外层 catch 静默吞掉整个会话）。
       const checkpoint = SessionManager.parseCheckpoint(json, sessionId);
       if (!checkpoint) {
         logger.warn({ sessionId }, '持久化检查点无法解析或不可修复，降级为内存模式');
@@ -523,7 +513,7 @@ export class SessionManager {
       // 恢复状态机状态
       if (checkpoint.status === 'paused') {
         this.stateMachine.pause('从持久化检查点恢复', 'system');
-        // 补启暂停超时定时器（原唯一调用点在 pause()，此处绕过 → 否则恢复的 paused 会话本次运行期无超时检测）
+        // 补启暂停超时定时器（唯一调用点在 pause()，此处绕过需补启，否则恢复的 paused 会话本次运行期无超时检测）
         this.startPauseTimeoutTimer();
       } else if (checkpoint.status === 'error' && checkpoint.error) {
         this.stateMachine.triggerError(checkpoint.error.cause);
@@ -539,63 +529,11 @@ export class SessionManager {
   }
 
   /**
-   * 检查点完整性校验：校验必需字段是否完整，缺失仅告警不阻塞。前向兼容（未知字段静默通过，新增必需字段时更新此列表）。
-   * 缺失可能源自旧版本/存储截断/跨版本反序列化。
-   */
-  private static validateCheckpointIntegrity(checkpoint: SessionCheckpoint): boolean {
-    // 必需字段真理源；新增必需字段时同步此处与 checkpointDefaults
-    const REQUIRED_FIELDS: Array<keyof SessionCheckpoint> = [
-      'sessionId',
-      'status',
-      'mainGoal',
-      'currentGoal',
-      'goalChangeSeq',
-      'plan',
-      'role',
-      'standard',
-      'resource',
-      'hotMemory',
-      'lastHeartbeat',
-    ];
-
-    const missingFields: string[] = [];
-
-    for (const field of REQUIRED_FIELDS) {
-      const value = checkpoint[field];
-      if (value === undefined || value === null) {
-        missingFields.push(field);
-      }
-    }
-
-    // 可选字段类型校验：error 存在时必须有 cause/at/recovered
-    if (checkpoint.error) {
-      if (typeof checkpoint.error.cause !== 'string' || !checkpoint.error.cause) {
-        missingFields.push('error.cause');
-      }
-      if (typeof checkpoint.error.at !== 'number') {
-        missingFields.push('error.at');
-      }
-      if (typeof checkpoint.error.recovered !== 'boolean') {
-        missingFields.push('error.recovered');
-      }
-    }
-
-    if (missingFields.length > 0) {
-      logger.warn(
-        { sessionId: checkpoint.sessionId, missingFields },
-        '检查点完整性校验失败：缺失必需字段（来自旧版本或存储截断，以默认值填充后继续）',
-      );
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
    * 检查点归一化（反序列化唯一收口）。
    * 为什么：反序列化此前各写各的，残缺数据或静默丢整会话（loadPersistedCheckpoint 断言无运行时效力被 catch 吞）或崩进程（restore 直接信任外部对象 map() 抛 TypeError）。
-   * 原地改写入参而非返回副本（restore 本就改写同一引用，返回副本会制造双份并列副本）；
-   * 先 validateCheckpointIntegrity 再填充（校验反映磁盘真实缺失才有诊断价值）。
+   * 严格模式：检查点由当前版本 createCheckpoint 全量写入，任一必需字段缺失或类型错误即视为数据损坏，拒绝恢复（返回 null），
+   * 不做静默补齐——兜底填充掩盖根因（缺字段=写入 bug 或存储损坏，应暴露而非糊过去）。
+   * 原地改写入参而非返回副本（restore 本就改写同一引用，返回副本会制造双份并列副本）。
    */
   private static normalizeCheckpoint(
     raw: unknown,
@@ -620,85 +558,56 @@ export class SessionManager {
       cp.sessionId = fallbackSessionId;
     }
 
-    // 先诚实校验（日志反映磁盘真实状态），再填充
-    SessionManager.validateCheckpointIntegrity(cp as SessionCheckpoint);
+    // 必需字段严格校验：任一缺失或类型错误即视为损坏，拒绝恢复（不静默补齐）
+    const invalidFields: string[] = [];
+    const isFiniteNumber = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v);
+    const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+      typeof v === 'object' && v !== null && !Array.isArray(v);
 
-    const defaults = SessionManager.checkpointDefaults();
-
-    // 类型级校验而非仅 `??=`：存储截断/篡改会产生类型错误的值（如 hotMemory 为字符串时 .map 不存在）
     if (cp.status !== 'running' && cp.status !== 'paused' && cp.status !== 'error') {
-      cp.status = 'running';
+      invalidFields.push('status');
     }
+    if (typeof cp.mainGoal !== 'string') invalidFields.push('mainGoal');
+    if (typeof cp.currentGoal !== 'string') invalidFields.push('currentGoal');
+    if (!isFiniteNumber(cp.goalChangeSeq)) invalidFields.push('goalChangeSeq');
+    if (!isFiniteNumber(cp.lastHeartbeat)) invalidFields.push('lastHeartbeat');
+    if (!Array.isArray(cp.plan)) invalidFields.push('plan');
+    if (!Array.isArray(cp.hotMemory)) invalidFields.push('hotMemory');
+    if (!isPlainObject(cp.role)) invalidFields.push('role');
+    if (!isPlainObject(cp.standard)) invalidFields.push('standard');
+    if (!isPlainObject(cp.resource)) invalidFields.push('resource');
 
-    // schemaVersion 补齐与跨版本迁移：旧内核无此字段视作当前版本不阻断恢复（用户工作优先于严格校验）；
-    // 高于当前版本仅告警不阻断；低于当前版本按 checkpointMigrations 升序逐版本迁移（当前为空表，挂载点已就绪）。
-    if (typeof cp.schemaVersion !== 'number' || !Number.isFinite(cp.schemaVersion)) {
-      cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
-    } else if (cp.schemaVersion > AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
+    if (invalidFields.length > 0) {
       logger.warn(
-        {
-          checkpointVersion: cp.schemaVersion,
-          currentVersion: AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION,
-        },
-        '检查点 schemaVersion 高于当前内核版本，尝试按当前版本恢复（可能丢失新版字段语义）',
+        { sessionId: cp.sessionId, invalidFields },
+        '检查点归一化失败：必需字段缺失或类型错误（数据损坏），拒绝恢复',
       );
-    } else if (cp.schemaVersion < AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
-      // 应用已注册的迁移（按版本号升序逐一执行）
-      let v = cp.schemaVersion;
-      while (v < AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION) {
-        const migrate = SessionManager.checkpointMigrations.get(v);
-        if (migrate) {
-          migrate(cp);
-        }
-        v++;
-      }
-      cp.schemaVersion = AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION;
+      return null;
     }
 
-    if (typeof cp.mainGoal !== 'string') cp.mainGoal = defaults.mainGoal;
-    // currentGoal 缺失时继承 mainGoal，与 createCheckpoint 的 `?? prev?.mainGoal` 同语义
-    if (typeof cp.currentGoal !== 'string') cp.currentGoal = cp.mainGoal;
-    if (typeof cp.goalChangeSeq !== 'number' || !Number.isFinite(cp.goalChangeSeq)) {
-      cp.goalChangeSeq = defaults.goalChangeSeq;
-    }
-    if (typeof cp.lastHeartbeat !== 'number' || !Number.isFinite(cp.lastHeartbeat)) {
-      // 用当前时刻而非 0：0 会被 isPauseTimedOut 判为超时 55 年，恢复即被清理
-      cp.lastHeartbeat = Date.now();
-    }
-    // 暂停起点损坏时丢弃，回退到 lastHeartbeat，避免 NaN 比较导致永不超时
-    if (
-      cp.pausedAt !== undefined &&
-      (typeof cp.pausedAt !== 'number' || !Number.isFinite(cp.pausedAt))
-    ) {
+    // 可选字段结构非法视为缺席：optional 字段有合法「未设置」语义，清空而非编造
+    if (cp.pausedAt !== undefined && !isFiniteNumber(cp.pausedAt)) {
       delete cp.pausedAt;
     }
-    if (!Array.isArray(cp.plan)) cp.plan = defaults.plan;
-    if (!Array.isArray(cp.hotMemory)) cp.hotMemory = defaults.hotMemory;
-    if (typeof cp.role !== 'object' || cp.role === null) cp.role = defaults.role;
-    if (typeof cp.standard !== 'object' || cp.standard === null) cp.standard = defaults.standard;
-    if (typeof cp.resource !== 'object' || cp.resource === null) cp.resource = defaults.resource;
-
-    // error 侧车：结构不可用时整体清除，交由 restoreFromCheckpoint 的 T8 降级分支
-    // 显式记录「error 态无法重建」；部分缺失则补齐，保住「曾出错」这一事实。
-    if (cp.error !== undefined) {
-      if (typeof cp.error !== 'object' || cp.error === null) {
-        cp.error = undefined;
-      } else {
-        const err = cp.error as Partial<NonNullable<SessionCheckpoint['error']>>;
-        if (typeof err.cause !== 'string' || !err.cause) {
-          err.cause = '未知异常（检查点缺少 error.cause）';
-        }
-        if (typeof err.at !== 'number' || !Number.isFinite(err.at)) err.at = Date.now();
-        if (typeof err.recovered !== 'boolean') err.recovered = false;
-      }
+    if (
+      cp.error !== undefined &&
+      (!isPlainObject(cp.error) ||
+        typeof cp.error.cause !== 'string' ||
+        !cp.error.cause ||
+        !isFiniteNumber(cp.error.at) ||
+        typeof cp.error.recovered !== 'boolean')
+    ) {
+      // 异常态无法重建时清空，交由 restoreFromCheckpoint 降级为 running 并记录
+      cp.error = undefined;
     }
 
     return cp as SessionCheckpoint;
   }
 
   /**
-   * 检查点反序列化（JSON 入口唯一收口）。JSON.parse 失败（内容损坏）与内容残缺是两类故障，
-   * 解析失败按无检查点处理；解析成功交 normalizeCheckpoint 补齐。损坏或不可修复返回 null。
+   * 检查点反序列化（JSON 入口唯一收口）。JSON.parse 失败（内容损坏）与必需字段残缺是两类故障，
+   * 解析失败按无检查点处理；解析成功交 normalizeCheckpoint 严格校验。损坏或不可修复返回 null。
    */
   private static parseCheckpoint(
     json: string,
@@ -724,9 +633,9 @@ export class SessionManager {
    * 异步：内部 await loadSessionMessages 切换会话，调用方 await 等待完成。
    */
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
-    // 与 loadPersistedCheckpoint 共用归一化入口：原地补齐缺字段，下游可无条件假设必需字段可用
+    // 与 loadPersistedCheckpoint 共用归一化入口：严格校验必需字段，损坏即拒绝恢复
     if (!SessionManager.normalizeCheckpoint(checkpoint)) {
-      // 可选链非冗余：外部（宿主 IPC/旧版持久化）可能传入 null
+      // 可选链非冗余：外部（宿主 IPC）可能传入 null
       logger.error(
         { sessionId: checkpoint?.sessionId },
         '检查点结构不可修复，恢复中止（会话保持当前状态，不做部分恢复）',
@@ -742,7 +651,7 @@ export class SessionManager {
     const messages: Message[] = checkpoint.hotMemory.map((cm) => ({
       role: cm.role,
       content: cm.content,
-      // 恢复 name 字段（P2-2 LLM 上下文一致性）
+      // 恢复 name 字段（LLM 上下文一致性）
       name: cm.name,
       toolCalls: cm.toolCalls,
       toolCallId: cm.toolCallId,
@@ -751,7 +660,7 @@ export class SessionManager {
     // 恢复替换了消息集合：作废派生缓存（与 switch/fork 共用 chokepoint）
     this.invalidateSessionDerivedState();
 
-    // 注入截断一致性标记（P2.2）：热记忆被截断时告知 LLM 有早期消息被截断（可触发温记忆召回），避免上下文缺失困惑
+    // 注入截断一致性标记：热记忆被截断时告知 LLM 有早期消息被截断（可触发温记忆召回），避免上下文缺失困惑
     if (checkpoint.truncatedCount && checkpoint.truncatedCount > 0) {
       this.getLoop().injectSystemMessage(
         `[热记忆截断提示] 本次恢复的会话有 ${checkpoint.truncatedCount} 条早期消息已被截断。这些消息已不在当前上下文中，但相关信息已归档到温记忆中，可通过温记忆召回获取。`,
@@ -771,7 +680,7 @@ export class SessionManager {
           );
         }
       } else {
-        // error 字段缺失（旧版/序列化丢字段）无法重建 error 态：强制检查点状态跟随归零结果并显式记录降级，避免永久分叉无日志
+        // error 字段缺失/结构非法无法重建 error 态：强制检查点状态跟随归零结果并显式记录降级，避免永久分叉无日志
         checkpoint.status = this.stateMachine.status;
         logger.warn(
           { sessionId: checkpoint.sessionId },
@@ -781,7 +690,7 @@ export class SessionManager {
     } else if (checkpoint.status === 'paused') {
       const transition = this.stateMachine.pause('从检查点恢复', 'system');
       if (transition.allowed) {
-        // 补启暂停超时定时器（原唯一调用点在 pause() 此处绕过，否则恢复的 paused 会话本次运行期无超时检测）
+        // 补启暂停超时定时器（唯一调用点在 pause() 此处绕过，否则恢复的 paused 会话本次运行期无超时检测）
         this.startPauseTimeoutTimer();
       } else {
         logger.error(

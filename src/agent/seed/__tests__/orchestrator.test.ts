@@ -315,7 +315,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal),
     );
     await vi.waitFor(() => {
-      // 摘要 1:1：规划/每步不产摘要，仅收尾汇报产出唯一 1 条（单源，见 §2.5）
+      // 摘要 1:1：规划/每步不产摘要，仅收尾汇报产出唯一 1 条（单源）
       expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
     });
 
@@ -336,7 +336,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       undefined,
     );
     // 组合 head 溯源：收尾回指后，round-summary 挂 head（=prepare 分配、appendUser 同一 roundId），
-    // 而非"最后一步"——保证 round-summary 锚定"这次外部输入"（见 memory-as-summary §2.5）
+    // 而非"最后一步"——保证 round-summary 锚定"这次外部输入"
     const headRoundId = mocks.history.appendUser.mock.calls[0]![1];
     expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(headRoundId);
     // 汇报文本同样挂 head（与摘要、用户消息同 roundId，组合内溯源一致）

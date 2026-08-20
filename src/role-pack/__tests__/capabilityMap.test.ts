@@ -35,7 +35,7 @@ describe('resolveCapabilityTools（中立能力 → memora 工具白名单）', 
     expect(resolveCapabilityTools(undefined)).toEqual([]);
   });
 
-  it('未知能力跳过不阻塞（spec §四）', () => {
+  it('未知能力跳过不阻塞', () => {
     const tools = resolveCapabilityTools([
       { capability: 'file:read' },
       { capability: 'unknown:xyz' },

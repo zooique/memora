@@ -17,9 +17,9 @@ import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import {
   isAbortError,
   isRetryableErrorCode,
-  toError,
   type ToolErrorCodeValue,
 } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
@@ -1147,8 +1147,8 @@ export class AgentLoop {
   }
 
   /**
-   * 以 system 消息注入召回记忆。改用 system 而非 user（旧 wrapWithRecalledContext 将记忆嵌入
-   * user 并附反指令，对协议兼容模型不可靠）；末尾追加预算小节，让召回注入规模对模型可见。
+   * 以 system 消息注入召回记忆（user 注入并附反指令对协议兼容模型不可靠）；末尾追加预算小节，
+   * 让召回注入规模对模型可见。
    */
   private injectRecallAsSystem(memories: readonly Memory[]): void {
     const memoryBlock = memories

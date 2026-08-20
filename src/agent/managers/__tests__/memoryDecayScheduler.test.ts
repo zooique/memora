@@ -116,7 +116,7 @@ function createMockLlmProvider(
 /**
  * 构造 mock IMemoryStorage（实现 evaluateTimeliness 所需的 getBySource + setScore）
  *
- * MIND2-L3：demoteOutdatedMemory 改用 setScore 原子操作（替代 spread + upsert），
+ * demoteOutdatedMemory 改用 setScore 原子操作（替代 spread + upsert），
  * 因此 mock 重点记录 setScore 调用，upsert 仅保留供未来 keepMerged 类场景。
  *
  * @param memoriesBySource 按 source 分组的预设记忆
@@ -131,7 +131,7 @@ function createMockMemoryStorage(
     getBySource(source: string): Memory[] {
       return store.get(source) ?? [];
     },
-    // MIND2-L3：setScore 记录调用详情（id + score），供断言降级行为
+    // setScore 记录调用详情（id + score），供断言降级行为
     setScore(id: string, newScore: number): boolean {
       setScoreCalls.push({ id, score: newScore });
       return true;
@@ -399,7 +399,7 @@ describe('MemoryDecayScheduler', () => {
         expect(report.scannedCount).toBe(1);
         expect(report.outdatedCount).toBe(1);
         expect(report.demotedIds).toEqual(['content:old']);
-        // MIND2-L3：验证降级写入——setScore 被调用一次，score 设为 0.05，id 匹配
+        // 验证降级写入——setScore 被调用一次，score 设为 0.05，id 匹配
         expect(mockStorage.setScoreCalls).toHaveLength(1);
         expect(mockStorage.setScoreCalls[0]!.score).toBe(0.05);
         expect(mockStorage.setScoreCalls[0]!.id).toBe('content:old');
@@ -425,7 +425,7 @@ describe('MemoryDecayScheduler', () => {
         const report = await l2Scheduler.evaluateTimeliness();
         expect(report.outdatedCount).toBe(0);
         expect(report.demotedIds).toEqual([]);
-        // MIND2-L3：未过时 → 不应触发 setScore 降级写入
+        // 未过时 → 不应触发 setScore 降级写入
         expect(mockStorage.setScoreCalls).toHaveLength(0);
       });
 
@@ -532,7 +532,7 @@ describe('MemoryDecayScheduler', () => {
         expect(report.scannedCount).toBe(1);
         expect(report.outdatedCount).toBe(0);
         expect(report.demotedIds).toEqual([]);
-        // MIND2-L3：非法 JSON → 未降级 → 不应触发 setScore
+        // 非法 JSON → 未降级 → 不应触发 setScore
         expect(mockStorage.setScoreCalls).toHaveLength(0);
       });
 
@@ -587,15 +587,15 @@ describe('MemoryDecayScheduler', () => {
         expect(report.scannedCount).toBe(3);
         expect(report.outdatedCount).toBe(1);
         expect(report.demotedIds).toEqual(['content:outdated']);
-        // MIND2-L3：仅过时记忆被 setScore 降级写入
+        // 仅过时记忆被 setScore 降级写入
         expect(mockStorage.setScoreCalls).toHaveLength(1);
         expect(mockStorage.setScoreCalls[0]!.score).toBe(0.05);
       });
     });
 
-    // ─── FIX-P0-1：awaitInflight + AbortSignal ───
+    // ─── awaitInflight + AbortSignal ───
 
-    describe('FIX-P0-1：awaitInflight + AbortSignal', () => {
+    describe('awaitInflight + AbortSignal', () => {
       it('无 inflight 时 awaitInflight 应立即 resolve', async () => {
         await scheduler.awaitInflight();
         // 无断言，能到达此行即表示立即 resolve

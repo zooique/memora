@@ -3,7 +3,8 @@
  * 支持批量嵌入与文本→向量缓存（0 新依赖，纯 fetch 调用）
  */
 import { logger } from '@/logging/logger.js';
-import { networkError, configError, llmError, toError } from '@/utils/errors.js';
+import { networkError, configError, llmError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { mergeAbortSignals } from '@/llm/abortSignal.js';
 
 /** Embedding 调用选项：纯调用基础设施类型（signal + timeoutMs），无业务语义 */

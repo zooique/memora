@@ -18,7 +18,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 /**
  * 创建内存版 IMemoryStorage mock（与 workProjection.test.ts 同模式）
  *
- * MIND2-L3：补齐 setScore/incrementScore 原子操作实现，
+ * 补齐 setScore/incrementScore 原子操作实现，
  * 让 demoteMemory 的 setScore 调用真正写入 store，保证 getById 能读到新 score。
  */
 const createMockStorage = (): IMemoryStorage => {
@@ -37,7 +37,7 @@ const createMockStorage = (): IMemoryStorage => {
     count: () => store.size,
     countBySource: (source: string) =>
       Array.from(store.values()).filter((m) => m.source === source).length,
-    // MIND2-L3：setScore 原子更新 score + accessedAt（mock 层直接改内存对象）
+    // setScore 原子更新 score + accessedAt（mock 层直接改内存对象）
     setScore: (id: string, newScore: number, now: string): boolean => {
       const memory = store.get(id);
       if (!memory) return false;
@@ -45,7 +45,7 @@ const createMockStorage = (): IMemoryStorage => {
       memory.accessedAt = now;
       return true;
     },
-    // MIND2-L3：incrementScore 原子增量（clamp 到 [0.1, 1.0]，与 InMemoryStorage 一致）
+    // incrementScore 原子增量（clamp 到 [0.1, 1.0]，与 InMemoryStorage 一致）
     incrementScore: (id: string, delta: number, now: string): boolean => {
       const memory = store.get(id);
       if (!memory) return false;

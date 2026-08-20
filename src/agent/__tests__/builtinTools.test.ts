@@ -281,7 +281,7 @@ describe('builtinTools · RUN_CODE_TOOL（通用计算/验证底座）', () => {
   });
 });
 
-describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY（J1 修复后契约）', () => {
+describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
   it('task_table_write 应如实标记为 non-idempotent（追加语义，重复执行不幂等）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
   });
@@ -299,7 +299,7 @@ describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY（J1 修复后契约）', () 
   });
 });
 
-describe('builtinTools · shouldSkipForIdempotency（仅一次语义 SSOT，J1 修复）', () => {
+describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => {
   const rec = (
     name: string,
     args: string,
@@ -336,7 +336,7 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义 SSOT，J1 �
     expect(result.previousResult).toContain('文件内容');
   });
 
-  it('幂等工具上次执行失败（ok=false）时不跳过——失败可重试（J1 回归防线）', () => {
+  it('幂等工具上次执行失败（ok=false）时不跳过——失败可重试', () => {
     const records = [rec('write_file', '{"path":"a.ts"}', false, 'idempotent-key')];
     expect(shouldSkipForIdempotency(records, 'write_file', '{"path":"a.ts"}', 'idempotent-key')).toEqual({
       skip: false,

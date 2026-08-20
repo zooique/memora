@@ -153,7 +153,7 @@ export function parseConfig(raw: unknown): Config {
 
 /**
  * 类型守卫辅助：非空对象 → Record，否则 → 空对象。
- * 守卫与断言合一（MIND-C2），避免守卫变更时编译器不报类型安全风险。
+ * 守卫与断言合一，避免守卫变更时编译器不报类型安全风险。
  */
 function asRecordIfObject(value: unknown): Record<string, unknown> {
   return (value && typeof value === 'object' && !Array.isArray(value))

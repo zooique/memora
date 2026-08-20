@@ -21,7 +21,7 @@ import type { ContextPreparer } from '@/agent/contextPreparer.js';
 import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
-import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
+import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { Memory } from '@/memory/types.js';

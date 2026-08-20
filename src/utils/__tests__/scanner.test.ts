@@ -133,7 +133,7 @@ keywords: 记忆, 归档
       await writeFile(join(tempDir, 'subdir', 'nested.md'), '---\nname: nested\n---\n');
       await writeFile(join(tempDir, 'top.md'), '---\nname: top\n---\n');
       const result = await scanMarkdownDir(tempDir);
-      // subdir 无 SKILL.md，Phase 2 跳过；top.md 通过 Phase 1 扫描
+      // subdir 无 SKILL.md 被跳过；top.md 被正常扫描
       expect(result).toHaveLength(1);
       expect(result[0]?.name).toBe('top');
     });

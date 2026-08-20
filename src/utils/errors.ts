@@ -3,8 +3,6 @@
  * 4 大类：ConfigError（配置）/ NetworkError（网络）/ LlmError（LLM）/ ToolError（工具）。
  * 展示：标题（一眼看出问题）+ 详情（排查用）+ 建议（怎么修复）。
  */
-export { toError } from '@/utils/toError.js';
-// toError 实现位于 ./toError.ts（纯逻辑、零 logger、浏览器友好），此处 re-export 保持兼容
 
 type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 

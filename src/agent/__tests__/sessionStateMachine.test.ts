@@ -30,7 +30,7 @@ function makeErrorCheckpoint(cause: string, recovered = false): SessionCheckpoin
     resource: { documents: [], memories: [], context: '' },
     hotMemory: [],
     lastHeartbeat: Date.now(),
-    schemaVersion: 1,
+    
   };
 }
 
@@ -48,7 +48,7 @@ function makeNoErrorCheckpoint(): SessionCheckpoint {
     resource: { documents: [], memories: [], context: '' },
     hotMemory: [],
     lastHeartbeat: Date.now(),
-    schemaVersion: 1,
+    
   };
 }
 
@@ -302,7 +302,7 @@ describe('SessionStateMachine — ERROR 恢复校验', () => {
       resource: { documents: [], memories: [], context: '' },
       hotMemory: [],
       lastHeartbeat: Date.now(),
-      schemaVersion: 1,
+      
     };
     const result = sm.recover(checkpoint);
 

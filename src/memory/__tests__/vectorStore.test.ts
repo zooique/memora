@@ -81,7 +81,7 @@ describe('JsonVectorStore · upsert + search', () => {
 
   it('删除向量后不应再搜索到', async () => {
     await store.upsert('mem:1', '文本A');
-    // delete 改为 async + 立即 save
+    // delete 异步化 + 立即 save
     await store.delete('mem:1');
 
     const results = await store.search('文本A', 5, 0.0);
@@ -398,7 +398,7 @@ describe('JsonVectorStore · save 串行化', () => {
     expect(data.entries[0].id).toBe('m1');
   });
 
-  it('delete 后立即 save 持久化（FIX-P0-9）', async () => {
+  it('delete 后立即 save 持久化', async () => {
     const provider = mockEmbeddingService();
     const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
@@ -409,7 +409,7 @@ describe('JsonVectorStore · save 串行化', () => {
     await store.delete('m1');
     expect(store.size).toBe(0);
 
-    // delete 内部已 save，文件立即更新（不再有"未 save 残留"窗口）
+    // delete 内部已 save，文件立即更新
     const dataAfterDelete = JSON.parse(readFileSync(storePath, 'utf-8'));
     expect(dataAfterDelete.entries).toHaveLength(0);
   });

@@ -25,10 +25,10 @@ export const AGENT_EVENTS = {
   sessionResumeBlocked: 'sessionResumeBlocked',
   /** 订阅时宿主据此判断重要事件并 toast 提示 */
   sessionResumeFailed: 'sessionResumeFailed',
-  /** LLM 生成完任务表（P2.5-2），宿主可展示接受/丢弃入口 */
+  /** LLM 生成完任务表，宿主可展示接受/丢弃入口 */
   taskTableGenerated: 'taskTableGenerated',
   needClarify: 'needClarify',
-  /** Phase 1：写入前需确认 */
+  /** 写入前需确认 */
   memoryWriteConfirm: 'memoryWriteConfirm',
   /** 回答中 LLM 输出 [ASK] 时主动提问（与 needClarify 共享暂停/恢复机制） */
   questionPending: 'questionPending',

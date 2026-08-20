@@ -3,9 +3,9 @@
  *
  * 守护语义：
  *   - SOURCE_TO_DIR 映射正确（persona/rule/skill → personas/rules/skills）
- *   - 未知 source 透传作目录名（ADR-004 开放字符串，store.test.ts:127 同语义）
+ *   - 未知 source 透传作目录名（开放字符串，store.test.ts:127 同语义）
  *   - source 非法（`..` 等）抛 configError（validateSource 校验）
- *   - name 注入 `../` 逃逸子目录被目录内纵深防御拦截（原宿主 resolveTargetPath startsWith 防护）
+ *   - name 注入 `../` 逃逸子目录被目录内纵深防御拦截（宿主 resolveTargetPath startsWith 防护）
  *
  * 变异验证点：中和 resolveSourceFilePath 的 startsWith 防御 → 逃逸用例转红。
  */

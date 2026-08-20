@@ -254,7 +254,7 @@ export function resolveMultiStepReasoning(
 }
 
 /**
- * 解析召回置信度阈值（Phase 2 已消费）：非法值归位 0.3
+ * 解析召回置信度阈值：非法值归位 0.3
  *
  * 控制语义召回的相似度过滤阈值：
  * - 0.0~1.0 浮点数，越大越严格
@@ -270,7 +270,7 @@ export function resolveRecallConfidence(strategy: BehaviorStrategy | undefined):
 }
 
 /**
- * 解析摘要召回开关（Phase 2 已消费）：非法值归位 'on'
+ * 解析摘要召回开关：非法值归位 'on'
  *
  * 控制摘要记忆是否参与召回：
  * - 'on' → 摘要和原始记忆一起参与召回（默认）
@@ -284,7 +284,7 @@ export function resolveSummaryRecall(strategy: BehaviorStrategy | undefined): Su
 }
 
 /**
- * 解析工具只读模式（Phase 3 已消费）：非法值归位 'full'
+ * 解析工具只读模式：非法值归位 'full'
  *
  * 控制工具操作权限范围：
  * - 'full' → 完整权限（默认）
@@ -298,7 +298,7 @@ export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): Too
 }
 
 /**
- * 解析工具审批模式（Phase 3 已消费）：非法值归位 'auto'
+ * 解析工具审批模式：非法值归位 'auto'
  *
  * 控制工具执行审批行为：
  * - 'auto' → 自动执行（默认）
@@ -319,7 +319,7 @@ export function resolveToolApproval(strategy: BehaviorStrategy | undefined): Too
  * L2 运行时策略默认值（loop 构造初始态）
  *
  * 与各 resolve* 的"非法/缺失回退"默认值保持一致——真正每轮生效值来自 resolveL2Strategy，
- * 本常量仅作 loop 构造期的惰性初始值（T1 收敛，替代 loop 内 11 个字段初始化魔数）。
+ * 本常量仅作 loop 构造期的惰性初始值（收敛，替代 loop 内 11 个字段初始化魔数）。
  */
 export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
   toolCallsBlocked: false,
@@ -336,7 +336,7 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
 };
 
 /**
- * 解析 L2 运行时策略（T1 收敛：替代 Agent 层 11 处 setXxx 逐项装配）
+ * 解析 L2 运行时策略（收敛：替代 Agent 层 11 处 setXxx 逐项装配）
  *
  * 聚合现有 10 个 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
  * 输入中断、Token/步数预算、多步推理、工具只读、工具审批）+ reflect.loopContinue；
@@ -443,7 +443,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
 
   const personaPrompt = promptParts.join('\n\n');
 
-  // 能力声明：manifest 顶层 capabilities 直接派生（C2 后独立字段，不再从 skills 过滤）
+  // 能力声明：manifest 顶层 capabilities 直接派生
   const capabilities: readonly RolePackCapability[] = pack.capabilities ?? [];
 
   return {

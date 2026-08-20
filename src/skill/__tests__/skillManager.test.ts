@@ -314,7 +314,7 @@ keywords: 文件,读取
     });
   });
 
-  describe('buildSkillList（全局技能清单 · 渐进披露 L1，2026-08-18）', () => {
+  describe('buildSkillList（全局技能清单 · 渐进披露 L1）', () => {
     it('应列出所有技能（name + description）', async () => {
       createSkillFile(
         skillsDir,
@@ -395,7 +395,7 @@ keywords: 搜索,查询
       expect(skillManager.list[0]!.name).toBe('skill-a');
     });
 
-    it('重载应保留运行时注入的技能（SSOT-R3-T8：注入项无磁盘真理源）', async () => {
+    it('重载应保留运行时注入的技能（注入项无磁盘真理源）', async () => {
       createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
@@ -417,7 +417,7 @@ keywords: 搜索,查询
       expect(skillManager.get('skill-a')).not.toBeNull();
     });
 
-    it('同名磁盘文件出现后重载应以磁盘为准（SSOT-R3-T8）', async () => {
+    it('同名磁盘文件出现后重载应以磁盘为准', async () => {
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       skillManager.register({
@@ -535,7 +535,7 @@ keywords: 搜索,查询
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      // SSOT-R2-T7：getter 返回浅拷贝，篡改快照不得改变内部真理源。
+      // getter 返回浅拷贝，篡改快照不得改变内部真理源。
       // （此前 getter 返回 this.items 本体，本测试被弱化为「长度稳定」的同义反复）
       const snapshot = skillManager.list;
       snapshot.push({

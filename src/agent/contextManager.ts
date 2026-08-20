@@ -29,7 +29,7 @@ interface ContextManagerOptions {
   /** LLM Provider（用于生成上下文摘要） */
   readonly provider: LlmProvider;
   /**
-   * Provider 路由选择器（P1-2 多模型路由基础，可选）
+   * Provider 路由选择器（多模型路由基础，可选）
    *
    * 有配置时，摘要生成走 'summary' 路由，使用轻量模型。
    * 不配置时回退到主 Provider（完全向后兼容）。

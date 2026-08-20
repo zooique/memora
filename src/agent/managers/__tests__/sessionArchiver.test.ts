@@ -198,7 +198,7 @@ describe('SessionArchiver · archiveSession 主流程', () => {
     expect(result.updatedFields).toContain('keyTopics');
   });
 
-  it('归档结果不再包含 memories 字段（改为 updatedFields）', async () => {
+  it('归档结果不含 memories 字段，更新信息由 updatedFields 承载', async () => {
     const result = await archiver.archiveSession('2026-07-03', 'main');
 
     // 新接口使用 updatedFields，不再使用 memories

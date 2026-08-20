@@ -10,7 +10,7 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
-/** P3-1: 归档选项（归档时包含工作上下文） */
+/** 归档选项（归档时包含工作上下文） */
 export interface SessionArchiveOptions {
   /** 是否包含工作上下文（plan 快照），true 时归档追加 plan 步骤列表，使元数据含工作进度信息 */
   includeWorkContext?: boolean;

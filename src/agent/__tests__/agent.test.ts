@@ -51,8 +51,8 @@ class MockProvider extends LlmProvider {
 /**
  * 写入项目骨架文件，让 init() 能正常加载
  *
- * 2026-08-18 角色包收敛：创建 role-packs/ 文件夹形态角色包
- * （RolePackManager 扫描 role-packs/<name>/manifest.json，不再加载 personas/*.md）
+ * 创建 role-packs/ 文件夹形态角色包
+ * （RolePackManager 扫描 role-packs/<name>/manifest.json）
  */
 function seedProject(_projectPath: string, configDir: string, _dataDir: string): void {
   const rolePackDir = join(configDir, 'role-packs', '默认助手');
@@ -539,7 +539,7 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // 委托到 MemoryInspector.deduplicateMemories，未注入 backgroundProvider 时降级
-    // MIND2-D4：从 agent.deduplicateMemories() 迁移到 governance.deduplicate()
+    // 从 agent.deduplicateMemories() 迁移到 governance.deduplicate()
     const report = await agent.governance!.deduplicate();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('pairCount');
@@ -555,7 +555,7 @@ describe('Agent · Manager 委托模式', () => {
     await agent.init();
 
     // 委托到 MemoryDecayScheduler.evaluateTimeliness，未注入 backgroundProvider 时降级
-    // MIND2-D4：从 agent.evaluateTimeliness() 迁移到 governance.evaluateTimeliness()
+    // 从 agent.evaluateTimeliness() 迁移到 governance.evaluateTimeliness()
     const report = await agent.governance!.evaluateTimeliness();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('outdatedCount');
@@ -570,7 +570,7 @@ describe('Agent · Manager 委托模式', () => {
 
     // v2 PROXY-1 闭环：直接调用 MemoryAdvisor.detectConflicts（不经 MemoryInspector 转发），
     // 未注入 backgroundProvider 时降级返回 skippedReason
-    // MIND2-D4：从 agent.detectConflicts() 迁移到 governance.detectConflicts()
+    // 从 agent.detectConflicts() 迁移到 governance.detectConflicts()
     const report = await agent.governance!.detectConflicts();
     expect(report).toHaveProperty('scannedCount');
     expect(report).toHaveProperty('pairCount');
@@ -588,8 +588,8 @@ describe('Agent · Manager 委托模式', () => {
 /**
  * 种子项目：多角色包 + 多技能场景
  *
- * 2026-08-18 角色包收敛：创建 role-packs/ 文件夹形态角色包
- * （RolePackManager 扫描 role-packs/<name>/manifest.json，不再加载 personas/*.md）
+ * 创建 role-packs/ 文件夹形态角色包
+ * （RolePackManager 扫描 role-packs/<name>/manifest.json）
  */
 function seedProjectWithPersonasAndSkills(
   _projectPath: string,
@@ -1175,10 +1175,10 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：archiveMode（ADR-015）· 二态归档模式
+// 测试：archiveMode · 二态归档模式
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · archiveMode（ADR-015）· 二态归档模式（full|manual）', () => {
+describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -1337,10 +1337,10 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（full|manual�
       const packDir = join(packsDir, dirName);
       mkdirSync(packDir, { recursive: true });
       writeFileSync(join(packDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
-      writeFileSync(join(packDir, (manifest as { persona: string }).persona), persona, 'utf-8');
+      writeFileSync(join(packDir, 'persona.md'), persona, 'utf-8');
     };
-    writePack('写作助手', { name: '写作助手', formatVersion: '1.0.0', persona: 'persona.md' }, '你是写作助手。');
-    writePack('技术文档工程师', { name: '技术文档工程师', formatVersion: '1.0.0', persona: 'persona.md' }, '你是技术文档工程师。');
+    writePack('写作助手', { name: '写作助手', formatVersion: '1.0.0' }, '你是写作助手。');
+    writePack('技术文档工程师', { name: '技术文档工程师', formatVersion: '1.0.0' }, '你是技术文档工程师。');
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
@@ -1388,7 +1388,7 @@ describe('Agent · archiveMode（ADR-015）· 二态归档模式（full|manual�
     mkdirSync(packDir, { recursive: true });
     writeFileSync(
       join(packDir, 'manifest.json'),
-      JSON.stringify({ name: '写作助手', formatVersion: '1.0.0', persona: 'persona.md' }, null, 2),
+      JSON.stringify({ name: '写作助手', formatVersion: '1.0.0' }, null, 2),
       'utf-8',
     );
     writeFileSync(join(packDir, 'persona.md'), '你是写作助手。', 'utf-8');
@@ -2300,15 +2300,14 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
     expect(agent.canContinueWithoutInput()).toBe(false);
   });
 
-  it('T1-1 空闲态 requestPause 应直接翻 PAUSED（不再延迟，修复悬挂锁）', async () => {
+  it('空闲态 requestPause 应直接翻 PAUSED', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     // RUNNING 且无待续目标 → 不可续跑
     expect(agent.canContinueWithoutInput()).toBe(false);
 
-    // 空闲态申请软暂停：无活跃流可"延迟到 loop 边界挂起"，直接同步翻状态机（T1-1）。
-    // SSOT 收口后：空闲态 requestPause 直接翻 PAUSED，不再通过 pending 延迟。
+    // 空闲态申请软暂停：无活跃流可延迟到 loop 边界挂起，直接同步翻状态机（不经 pending 延迟）。
     agent.requestPause('空闲暂停');
 
     // 关键断言：空闲态应立即翻 PAUSED，且可续跑判定随之变为 true（UI 应展示"继续"）
@@ -2342,10 +2341,10 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：暂停超时自动归档 · T1-2 单一消费点
+// 测试：暂停超时自动归档 · 单一消费点
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · 暂停超时自动归档（T1-2）', () => {
+describe('Agent · 暂停超时自动归档', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -2473,9 +2472,9 @@ describe('Agent · L2 行为策略消费', () => {
     expect(strategy.prepare?.memoryRecallQuota).toBe(2000);
     // 最近几轮固定加载轮数默认 3（角色包 recentRounds 未配置时的兜底）
     expect(strategy.prepare?.recentRounds).toBe(3);
-    // 验证默认策略的 act 维度（标准键 act.toolMode，§六）
+    // 验证默认策略的 act 维度（标准键 act.toolMode）
     expect(strategy.act?.toolMode).toBe('allow');
-    // 验证默认策略的 reflect 维度（标准键 reflect.handoff，§六）
+    // 验证默认策略的 reflect 维度（标准键 reflect.handoff）
     expect(strategy.reflect?.handoff).toBe('wait');
   });
 
@@ -2517,7 +2516,7 @@ describe('Agent · L2 行为策略消费', () => {
     expect(agent.agentLoop).not.toBeNull();
   });
 
-  // ─── recentRounds 覆盖固定加载轮数（2026-08-14 消费接入）──
+  // ─── recentRounds 覆盖固定加载轮数 ──
 
   it('角色包 prepare.recentRounds 应覆盖最近几轮固定加载轮数', async () => {
     // 在 configDir 下写一个带 recentRounds:5 的角色包（manifest.json 文件夹形态，
@@ -2533,7 +2532,6 @@ describe('Agent · L2 行为策略消费', () => {
           description: 'recentRounds 覆盖验证',
           keywords: ['精算'],
           strategy: { prepare: { recentRounds: 5 } },
-          persona: 'persona.md',
         },
         null,
         2,
@@ -2572,7 +2570,6 @@ describe('Agent · L2 行为策略消费', () => {
           description: '非法 recentRounds 降级验证',
           keywords: ['非法'],
           strategy: { prepare: { recentRounds: 0 } },
-          persona: 'persona.md',
         },
         null,
         2,
@@ -2592,7 +2589,7 @@ describe('Agent · L2 行为策略消费', () => {
     expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
   });
 
-  it('角色包优先匹配：粘性 + 互斥切换（§6.2）', async () => {
+  it('角色包优先匹配：粘性 + 互斥切换', async () => {
     // 写一对互斥角色包（翻译助手 ↔ 代码助手，manifest.json 文件夹形态），
     // 验证角色包优先于 persona 匹配
     const packsDir = join(tmpConfig, 'role-packs');
@@ -2600,7 +2597,7 @@ describe('Agent · L2 行为策略消费', () => {
       const packDir = join(packsDir, dirName);
       mkdirSync(packDir, { recursive: true });
       writeFileSync(join(packDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
-      writeFileSync(join(packDir, (manifest as { persona: string }).persona), persona, 'utf-8');
+      writeFileSync(join(packDir, 'persona.md'), persona, 'utf-8');
     };
     writePack(
       '翻译助手',
@@ -2609,7 +2606,6 @@ describe('Agent · L2 行为策略消费', () => {
         formatVersion: '1.0.0',
         keywords: ['翻译', '英译中'],
         exclusiveWith: ['代码助手'],
-        persona: 'persona.md',
       },
       '你是翻译。',
     );
@@ -2620,7 +2616,6 @@ describe('Agent · L2 行为策略消费', () => {
         formatVersion: '1.0.0',
         keywords: ['编程', '写代码'],
         exclusiveWith: ['翻译助手'],
-        persona: 'persona.md',
       },
       '你是程序员。',
     );

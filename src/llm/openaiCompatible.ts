@@ -6,7 +6,8 @@
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk, ToolCall } from '@/llm/types.js';
-import { llmError, networkError, configError, toError } from '@/utils/errors.js';
+import { llmError, networkError, configError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import { mergeAbortSignals } from '@/llm/abortSignal.js';
 

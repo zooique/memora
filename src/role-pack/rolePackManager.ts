@@ -21,7 +21,7 @@ import type {
   RolePackAssembly,
   BehaviorStrategy,
 } from '@/role-pack/types.js';
-import { assembleRolePack } from '@/role-pack/types.js';
+import { assembleRolePack } from '@/role-pack/strategyResolver.js';
 
 /** L1 阈值保护：技能数超过此值时压缩 L1 描述为 20 字摘要 */
 const L1_COMPRESSED_THRESHOLD = 30;
@@ -114,14 +114,14 @@ function parseExclusiveWith(raw: unknown): string[] | undefined {
   return undefined;
 }
 
-/** 解析接手衔接提示词（宿主带入对话时预填的话术）；非空字符串，否则 undefined。角色包只描述自己（§11 插卡解耦）。 */
+/** 解析接手衔接提示词（宿主带入对话时预填的话术）；非空字符串，否则 undefined。角色包只描述自己（插卡解耦）。 */
 function parseHandoffPrompt(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || raw.trim() === '') return undefined;
   return raw.trim();
 }
 
 /**
- * 扫描 skills/ 目录动态注册技能（C3）：复用 scanMarkdownDir，frontmatter 的 name/description+正文。
+ * 扫描 skills/ 目录动态注册技能：复用 scanMarkdownDir，frontmatter 的 name/description+正文。
  * manifest.skills 仅作可选白名单过滤（声明 file 路径时），未声明则全量扫描（零配置）。
  */
 async function scanPackSkills(
@@ -197,7 +197,7 @@ async function scanPackSkills(
     });
 }
 
-/** 从 manifest.capabilities 解析能力声明（C2：能力面与技能内容分离，经 capabilityMap 映射为工具白名单） */
+/** 从 manifest.capabilities 解析能力声明（能力面与技能内容分离，经 capabilityMap 映射为工具白名单） */
 function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapability[] {
   if (!Array.isArray(capabilitiesNode)) return [];
   const capabilities: RolePackCapability[] = [];
@@ -341,12 +341,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         if (!peer) {
           getLogger().warn(
             { pack: pack.meta.name, target: name },
-            '角色包互斥声明指向不存在的角色包（悬空引用，role-pack-spec §13）',
+            '角色包互斥声明指向不存在的角色包（悬空引用）',
           );
         } else if (!peer.includes(pack.meta.name)) {
           getLogger().warn(
             { pack: pack.meta.name, target: name },
-            '角色包互斥声明非对称：目标未反向声明本包（role-pack-spec §13），建议补全',
+            '角色包互斥声明非对称：目标未反向声明本包，建议补全',
           );
         }
       }
@@ -430,18 +430,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 解析 L2 策略
     const strategy = parseStrategyNode(manifest['strategy']);
 
-    // 内容路径注册：manifest 声明路径时尊重（向后兼容），未声明/空串时回退约定名 persona.md
-    const declaredPersonaPath =
-      typeof manifest['persona'] === 'string' && manifest['persona'].trim() !== ''
-        ? manifest['persona']
-        : null;
-    const personaPath = declaredPersonaPath ?? DEFAULT_PERSONA_FILENAME;
-    // rules 未声明/空串时回退约定名 rules.md（消除路径写错静默丢规则）
-    const declaredRulesPath =
-      typeof manifest['rules'] === 'string' && manifest['rules'].trim() !== ''
-        ? manifest['rules']
-        : null;
-    const rulesPath = declaredRulesPath ?? DEFAULT_RULES_FILENAME;
+    // 内容文件约定俗成固定文件名（消除 manifest 路径声明，避免路径写错静默丢内容）
+    const personaPath = DEFAULT_PERSONA_FILENAME;
+    const rulesPath = DEFAULT_RULES_FILENAME;
 
     // persona 需解析 frontmatter 提取 traits，正文仅取 body 部分
     const rawPersonaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';
@@ -451,7 +442,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
     const rules = parseRules(rulesContent);
 
-    // 内嵌技能：目录动态扫描 + frontmatter（C3，manifest.skills 可选过滤；新增技能只写文件）
+    // 内嵌技能：目录动态扫描 + frontmatter（manifest.skills 可选过滤；新增技能只写文件）
     const skills = await scanPackSkills(packDir, manifest['skills']);
 
     // 装载时预缓存技能正文（与全局技能一致，消除 readSkillContent 磁盘 IO）
@@ -468,7 +459,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       }),
     );
 
-    // 能力声明（顶层数组，C2：能力面与技能内容分离）
+    // 能力声明（顶层数组，能力面与技能内容分离）
     const capabilities = parseManifestCapabilities(manifest['capabilities']);
 
     // companion 内容红线：正文在独立内容文件，由装载方读取后检测

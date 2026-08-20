@@ -117,9 +117,6 @@ export class RoundSummaryGenerator {
     sessionName: string,
     focus?: string,
   ): Promise<void> {
-    // 轮次 ID 为空时跳过（兼容旧版本宿主）
-    if (!roundId) return;
-
     try {
       // 有关注点则以角色包提炼视角替换通用视角，JSON 契约固定保留
       const userMessage = `用户输入：${truncate(input, USER_INPUT_LIMIT)}\n\n助手回复：${truncate(assistantContent, ASSISTANT_LIMIT)}`;

@@ -1,5 +1,5 @@
 /**
- * RolePackManager 端到端测试（2026-08-14：单一 manifest.json 文件夹形态）
+ * RolePackManager 端到端测试（单一 manifest.json 文件夹形态）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -19,8 +19,6 @@ const MANIFEST_TECH = {
     prepare: { contextAssembly: 'fixed' },
     reflect: { handoff: 'wait' },
   },
-  persona: 'persona.md',
-  rules: 'rules.md',
   skills: [
     { file: 'skills/summarize.md', name: 'summarize' },
   ],
@@ -35,7 +33,6 @@ const MANIFEST_MULTI_SKILL_NO_PERSONA = {
   formatVersion: '1.0.0',
   keywords: ['写作'],
   strategy: { act: { toolMode: 'block' } },
-  rules: 'rules.md',
   skills: [
     { file: 'skills/write.md', name: 'write' },
     { file: 'skills/search.md', name: 'search' },
@@ -47,26 +44,23 @@ const MANIFEST_MULTI_SKILL_NO_PERSONA = {
   ],
 };
 
-/** 纯能力声明包（顶层 capabilities，C2 后能力面独立于技能文件） */
+/** 纯能力声明包（顶层 capabilities，能力面独立于技能文件） */
 const MANIFEST_PURE_CAPABILITY = {
   name: '项目总监',
   formatVersion: '1.0.0',
   keywords: ['项目管理'],
   strategy: { act: { toolMode: 'allow' } },
-  persona: 'persona.md',
-  rules: 'rules.md',
   capabilities: [
     { capability: 'file:read', description: '读取项目文件' },
     { capability: 'web:search', description: '查询行业资料' },
   ],
 };
 
-/** 接手衔接提示词包（handoffPrompt 自洽声明，§11 角色包独立） */
+/** 接手衔接提示词包（handoffPrompt 自洽声明，角色包独立） */
 const MANIFEST_HANDOFF_PROMPT = {
   name: '写作助手',
   formatVersion: '1.0.0',
   keywords: ['写作'],
-  persona: 'persona.md',
   handoffPrompt: '我已准备好开始写作任务，请告诉我主题与要求；若承接上文，请先概述当前进度。',
 };
 
@@ -76,14 +70,12 @@ const MANIFEST_TRANSLATOR = {
   formatVersion: '1.0.0',
   keywords: ['翻译', '英译中'],
   exclusiveWith: ['代码助手'],
-  persona: 'persona.md',
 };
 const MANIFEST_CODER = {
   name: '代码助手',
   formatVersion: '1.0.0',
   keywords: ['编程', '写代码'],
   exclusiveWith: ['翻译助手'],
-  persona: 'persona.md',
 };
 
 /** 便捷构造：写一个 folder 形态角色包（manifest.json + 可选内容文件） */
@@ -101,14 +93,12 @@ async function writePack(
     'utf-8',
   );
   if (content.persona !== undefined) {
-    // 未声明 persona 路径时回退约定文件名 persona.md（2026-08-18 简化）
-    const personaPath = (manifest['persona'] as string | undefined) ?? 'persona.md';
-    await writeFile(join(packDir, personaPath), content.persona, 'utf-8');
+    // 内容文件约定俗成：身份文件固定为 persona.md（不随 manifest 声明）
+    await writeFile(join(packDir, 'persona.md'), content.persona, 'utf-8');
   }
   if (content.rules !== undefined) {
-    // 未声明 rules 路径时回退约定文件名 rules.md（2026-08-18 简化）
-    const rulesPath = (manifest['rules'] as string | undefined) ?? 'rules.md';
-    await writeFile(join(packDir, rulesPath), content.rules, 'utf-8');
+    // 内容文件约定俗成：规则文件固定为 rules.md（不随 manifest 声明）
+    await writeFile(join(packDir, 'rules.md'), content.rules, 'utf-8');
   }
   if (content.skills) {
     for (const [relPath, body] of Object.entries(content.skills)) {
@@ -119,7 +109,7 @@ async function writePack(
   }
 }
 
-describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
+describe('RolePackManager（manifest 文件夹形态）', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -161,7 +151,7 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     // 技能注册（对象数组，skills 仅文件引用）
     expect(active!.skills).toHaveLength(1);
     expect(active!.skills[0]!.file).toBe('skills/summarize.md');
-    // 能力声明由顶层 capabilities 派生（C2）
+    // 能力声明由顶层 capabilities 派生
     expect(active!.capabilities).toEqual([
       { capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' },
     ]);
@@ -186,13 +176,10 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     expect(active!.meta.displayName).toBe('文档打磨');
   });
 
-  it('manifest 未声明 rules 字段时回退约定文件名 rules.md（2026-08-18 简化）', async () => {
+  it('内容文件按约定文件名装载（persona.md / rules.md，随目录自动发现）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
-    // 不含 rules 字段的 manifest——规则文件约定为 rules.md
-    const { rules: _omit, ...manifestNoRules } = MANIFEST_TECH;
-    void _omit;
-    await writePack(packsDir, '技术文档工程师', manifestNoRules, {
+    await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
       persona: '你是一位技术文档工程师。',
       rules: '- 术语保持一致\n- 不编造 API',
     });
@@ -203,29 +190,9 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
 
     const active = manager.getActive();
     expect(active).not.toBeNull();
-    // 约定 rules.md 被装载并注入 personaPrompt
-    expect(active!.personaPrompt).toContain('术语保持一致');
-  });
-
-  it('manifest 未声明 persona 字段时回退约定文件名 persona.md（2026-08-18 简化）', async () => {
-    const packsDir = join(dir, 'role-packs');
-    await mkdir(packsDir, { recursive: true });
-    // 不含 persona 字段的 manifest——身份文件约定为 persona.md
-    const { persona: _omit, ...manifestNoPersona } = MANIFEST_TECH;
-    void _omit;
-    await writePack(packsDir, '技术文档工程师', manifestNoPersona, {
-      persona: '你是一位技术文档工程师。',
-      rules: '- 术语保持一致',
-    });
-
-    const manager = new RolePackManager(dir);
-    const count = await manager.load('技术文档工程师');
-    expect(count).toBe(1);
-
-    const active = manager.getActive();
-    expect(active).not.toBeNull();
-    // 约定 persona.md 被装载并注入 personaPrompt
+    // 约定 persona.md 与 rules.md 均被装载并注入 personaPrompt
     expect(active!.personaPrompt).toContain('技术文档工程师');
+    expect(active!.personaPrompt).toContain('术语保持一致');
   });
 
   it('多技能注册 + persona 缺省（无 persona.md）', async () => {
@@ -245,7 +212,7 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
 
     const active = manager.getActive();
     expect(active!.meta.name).toBe('全能写手');
-    // 三个技能全部注册（目录扫描，顺序为文件系统序——断言排序无关，C3）
+    // 三个技能全部注册（目录扫描，顺序为文件系统序——断言排序无关）
     expect(active!.skills.map((s) => s.name).sort()).toEqual(['read', 'search', 'write']);
     // persona 缺省 → personaPrompt 不含身份设定，仅规则注入
     expect(active!.personaPrompt).toContain('不生成违法内容');
@@ -256,7 +223,7 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
     ]);
   });
 
-  it('纯能力声明包：顶层 capabilities 独立装载（C2，能力面与技能文件分离）', async () => {
+  it('纯能力声明包：顶层 capabilities 独立装载（能力面与技能文件分离）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
     await writePack(packsDir, '项目总监', MANIFEST_PURE_CAPABILITY, {
@@ -269,16 +236,16 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
 
     const active = manager.getActive();
     expect(active!.meta.name).toBe('项目总监');
-    // C2 后纯能力声明在顶层 capabilities，skills 为空（无技能文件引用）
+    // 纯能力声明在顶层 capabilities，skills 为空（无技能文件引用）
     expect(active!.skills).toHaveLength(0);
-    // capabilities 独立派生（不再从 skills 过滤）
+    // capabilities 独立派生
     expect(active!.capabilities.map((c) => c.capability).sort()).toEqual([
       'file:read',
       'web:search',
     ]);
   });
 
-  it('skills 目录动态扫描：未声明 manifest.skills 时全量扫描 + frontmatter 元数据（C3）', async () => {
+  it('skills 目录动态扫描：未声明 manifest.skills 时全量扫描 + frontmatter 元数据', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
     // 不含 skills 字段的 manifest——技能靠目录扫描注册
@@ -376,14 +343,13 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
       interactionType: 'companion',
       aiIdentityDisclosure: true,
       minorProtection: 'required',
-      persona: 'persona.md',
     }, { persona: '你是用户的虚拟伴侣。' });
 
     const manager = new RolePackManager(dir);
     expect(await manager.load()).toBe(0);
   });
 
-  describe('粘性匹配 · agent-design-philosophy §6.2', () => {
+  describe('粘性匹配', () => {
     async function writeExclusivePacks(): Promise<void> {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
@@ -419,7 +385,6 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
         name: '通用助手',
         formatVersion: '1.0.0',
         keywords: ['通用', '闲聊'],
-        persona: 'persona.md',
       }, { persona: '你是通用助手。' });
 
       const manager = new RolePackManager(dir);
@@ -457,7 +422,6 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
         formatVersion: '1.0.0',
         keywords: ['翻译'],
         exclusiveWith: ['代码助手'],
-        persona: 'persona.md',
       }, { persona: '你是翻译。' });
       // 代码助手声明互斥不存在的"幻影助手"（悬空引用）
       await writePack(packsDir, '代码助手', {
@@ -465,7 +429,6 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
         formatVersion: '1.0.0',
         keywords: ['编程'],
         exclusiveWith: ['幻影助手'],
-        persona: 'persona.md',
       }, { persona: '你是程序员。' });
 
       const manager = new RolePackManager(dir);
@@ -515,7 +478,6 @@ describe('RolePackManager（2026-08-14 manifest 文件夹形态）', () => {
         name: '项目总监',
         formatVersion: '1.0.0',
         keywords: ['项目管理'],
-        persona: 'persona.md',
         skills: [
           { file: 'skills/review.md', capability: 'task:plan', description: '审查计划' },
         ],

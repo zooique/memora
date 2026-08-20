@@ -219,7 +219,7 @@ describe('ConfigResourceManager', () => {
       expect(manager.list).toEqual([]);
     });
 
-    it('返回快照而非内部引用（SSOT-R2-T7）', () => {
+    it('返回快照而非内部引用', () => {
       const res = createResource({ name: 'test' });
       setItems(manager, [res]);
       // 每次返回新数组：外部无法通过 list 拿到内部数组本体
@@ -228,7 +228,7 @@ describe('ConfigResourceManager', () => {
       expect(manager.list).toEqual([res]);
     });
 
-    it('外部修改快照不污染内部状态（SSOT-R2-T7）', () => {
+    it('外部修改快照不污染内部状态', () => {
       setItems(manager, [createResource({ name: 'test' })]);
       const snapshot = manager.list;
       snapshot.push(createResource({ name: '越权注入' }));

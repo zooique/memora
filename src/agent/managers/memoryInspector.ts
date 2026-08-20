@@ -20,15 +20,6 @@ import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 // LLM 治理共享常量（统一由 governance.ts 维护）
 import { BOOST_INCREMENT } from '@/memory/governance.js';
 
-// sourceHealth/suggest 类型再导出，维持 src/index.ts 公共 API 兼容（类型定义在 memoryAdvisor.ts）
-export type {
-  SourceHealthStatus,
-  SourceHealthEntry,
-  SourceHealthReport,
-  SuggestOptions,
-  SuggestHit,
-} from '@/agent/managers/memoryAdvisor.js';
-
 // ─── 常量 ────────────────────────────────────────────────
 
 /** 工作记忆预览条数（最近 N 条） */
@@ -321,7 +312,7 @@ export class MemoryInspector {
    * 记忆不存在时静默返回 false（候选可能来自对话历史，无对应记忆）。
    */
   writeBoost(id: string, increment: number = BOOST_INCREMENT): boolean {
-    // 用 incrementScore 原子操作，消除 read-modify-write 并发冲突（原四步改为存储层一条原子更新）
+    // 用 incrementScore 原子操作，消除 read-modify-write 并发冲突（存储层一条原子更新）
     return this.index.incrementScore(id, increment, nowIso());
   }
 

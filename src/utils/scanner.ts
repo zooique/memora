@@ -68,7 +68,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
 
   const entries: ScannedMarkdownEntry[] = [];
 
-  // Phase 1: 直接子项下的 .md 文件（兼容单文件形式）
+  // 直接子项下的 .md 文件（兼容单文件形式）
   const mdFiles = items.filter(
     (f) =>
       f.endsWith('.md') &&
@@ -94,7 +94,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
     }
   }
 
-  // Phase 2: 子目录中的 SKILL.md（文件夹形式，Claude Code 标准）
+  // 子目录中的 SKILL.md（文件夹形式，Claude Code 标准）
   for (const item of items) {
     // 跳过隐藏目录和私有目录
     if (item.startsWith('.') || item.startsWith('_')) continue;

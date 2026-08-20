@@ -24,7 +24,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < a.length; i++) {
-    // 移除非空断言：循环条件保证索引有效，用 ?? 0 兜底（数学上 0 不影响点积）
+    // 循环条件保证索引有效，用 ?? 0 兜底（数学上 0 不影响点积）
     dot += (a[i] ?? 0) * (b[i] ?? 0);
     normA += (a[i] ?? 0) * (a[i] ?? 0);
     normB += (b[i] ?? 0) * (b[i] ?? 0);

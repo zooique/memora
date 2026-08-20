@@ -40,12 +40,12 @@ export interface RolePackValidateInput {
 // 规则常量
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（manifest 字段集：元数据 + 合规 + 内容注册 + 策略 + 技能 + 接手衔接） */
+/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接） */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
-  'strategy', 'skills', 'capabilities', 'persona', 'rules', 'handoffPrompt',
+  'strategy', 'skills', 'capabilities', 'handoffPrompt',
 ]);
 
 /** 合规 interactionType 枚举 */
@@ -58,7 +58,7 @@ const INTIMATE_REDLINE_PATTERN =
 /** semver（宽松：主.次.修 + 可选预发布/构建元数据） */
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
-/** 中立能力名格式：`域:动作`（§四，如 file:write / web:search / llm:summarize） */
+/** 中立能力名格式：`域:动作`（如 file:write / web:search / llm:summarize） */
 const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 
 // ── 校验实现 ──────────────────────────────────────
@@ -74,7 +74,7 @@ function validateTopLevelKeys(
       severity: 'warning',
       code: 'UNKNOWN_TOP_LEVEL_KEY',
       path: key,
-      message: `未知顶层键 "${key}"，忽略（§五 未知键警告并忽略）`,
+      message: `未知顶层键 "${key}"，忽略（未知键警告并忽略）`,
     });
   }
 }
@@ -91,7 +91,7 @@ function validateMetaFields(
       severity: 'error',
       code: 'MISSING_NAME',
       path: 'name',
-      message: '缺少必填字段 name（唯一标识，§2.2）',
+      message: '缺少必填字段 name（唯一标识）',
     });
   }
 
@@ -105,7 +105,7 @@ function validateMetaFields(
       severity: 'error',
       code: 'INVALID_FORMAT_VERSION',
       path: 'formatVersion',
-      message: `formatVersion 必须是 semver（当前：${String(formatVersion)}），§五 每个版本绑定固定 schema URL`,
+      message: `formatVersion 必须是 semver（当前：${String(formatVersion)}），每个版本绑定固定 schema URL`,
     });
   }
 
@@ -142,7 +142,7 @@ function validateComplianceFields(
       severity: 'error',
       code: 'INVALID_INTERACTION_TYPE',
       path: 'interactionType',
-      message: `interactionType 必须是 tool_assistant | companion（当前：${String(interactionType)}），§七 分档校验`,
+      message: `interactionType 必须是 tool_assistant | companion（当前：${String(interactionType)}），分档校验`,
     });
   }
   const isCompanion = interactionType === 'companion';
@@ -165,7 +165,7 @@ function validateComplianceFields(
       severity: 'error',
       code: 'INVALID_MINOR_PROTECTION',
       path: 'minorProtection',
-      message: `minorProtection 仅支持 required（当前：${String(minorProtection)}），§七 未成年人保护钩子`,
+      message: `minorProtection 仅支持 required（当前：${String(minorProtection)}），未成年人保护钩子`,
     });
   }
 
@@ -176,7 +176,7 @@ function validateComplianceFields(
         severity: 'error',
         code: 'COMPANION_MISSING_AI_DISCLOSURE',
         path: 'aiIdentityDisclosure',
-        message: 'companion 角色包必须强制声明 aiIdentityDisclosure: true（§七 第 1 条）',
+        message: 'companion 角色包必须强制声明 aiIdentityDisclosure: true',
       });
     }
     if (minorProtection !== 'required') {
@@ -184,7 +184,7 @@ function validateComplianceFields(
         severity: 'error',
         code: 'COMPANION_MISSING_MINOR_PROTECTION',
         path: 'minorProtection',
-        message: 'companion 角色包必须声明 minorProtection: required（§七 第 4 条）',
+        message: 'companion 角色包必须声明 minorProtection: required',
       });
     }
   }
@@ -204,7 +204,7 @@ function validateStrategy(
       severity: 'error',
       code: 'INVALID_STRATEGY',
       path: 'strategy',
-      message: 'strategy 必须是嵌套对象（{ prepare/act/reflect/global }，§六）',
+      message: 'strategy 必须是嵌套对象（{ prepare/act/reflect/global }）',
     });
     return;
   }
@@ -217,7 +217,7 @@ function validateStrategy(
         severity: 'warning',
         code: 'UNKNOWN_STRATEGY_STAGE',
         path: stagePath,
-        message: `未知策略阶段 "${stage}"（已知：prepare/act/reflect/global），忽略（§五）`,
+        message: `未知策略阶段 "${stage}"（已知：prepare/act/reflect/global），忽略`,
       });
       continue;
     }
@@ -239,7 +239,7 @@ function validateStrategy(
           severity: 'warning',
           code: 'UNKNOWN_STRATEGY_KEY',
           path: keyPath,
-          message: `未知策略键 "${keyPath}"（L2 键级渐进：已知生效、未知忽略，§六）`,
+          message: `未知策略键 "${keyPath}"（L2 键级渐进：已知生效、未知忽略）`,
         });
         continue;
       }
@@ -251,7 +251,7 @@ function validateStrategy(
             severity: 'error',
             code: 'INVALID_STRATEGY_VALUE',
             path: keyPath,
-            message: `${keyPath} 取值 ${String(value)} 不在枚举 ${rule.values.join(' / ')}（§六）`,
+            message: `${keyPath} 取值 ${String(value)} 不在枚举 ${rule.values.join(' / ')}`,
           });
         }
       } else if (!rule.check(value)) {
@@ -259,28 +259,9 @@ function validateStrategy(
           severity: 'error',
           code: 'INVALID_STRATEGY_VALUE',
           path: keyPath,
-          message: `${keyPath} 取值 ${String(value)} 不符合约束（§六）`,
+          message: `${keyPath} 取值 ${String(value)} 不符合约束`,
         });
       }
-    }
-  }
-}
-
-/** 校验内容路径注册（persona/rules 允许缺省 null，声明则须为相对包根的字符串路径） */
-function validateContentPaths(
-  manifest: Record<string, unknown>,
-  issues: RolePackValidationIssue[],
-): void {
-  for (const key of ['persona', 'rules'] as const) {
-    const value = manifest[key];
-    if (value === undefined || value === null) continue; // 未声明/显式 null：合法缺省
-    if (typeof value !== 'string' || value.trim() === '') {
-      issues.push({
-        severity: 'error',
-        code: 'INVALID_CONTENT_PATH',
-        path: key,
-        message: `${key} 必须为文件路径字符串（相对角色包根，声明则为必填；未声明或 null 表示缺省）`,
-      });
     }
   }
 }
@@ -297,7 +278,7 @@ function validateExclusiveWith(
       severity: 'error',
       code: 'INVALID_EXCLUSIVE_WITH',
       path: 'exclusiveWith',
-      message: 'exclusiveWith 必须是字符串数组（互斥角色包名列表，§13 粘性匹配）',
+      message: 'exclusiveWith 必须是字符串数组（互斥角色包名列表）',
     });
   }
 }
@@ -320,7 +301,7 @@ function validateHandoffPrompt(
 }
 
 /**
- * 校验 skills 注册：对象数组，每项须含 file（相对 skills/ 文件名）；C3 目录扫描下声明项仅作白名单过滤
+ * 校验 skills 注册：对象数组，每项须含 file（相对 skills/ 文件名）；目录扫描下声明项仅作白名单过滤
  */
 function validateManifestSkills(
   skillsNode: unknown,
@@ -332,7 +313,7 @@ function validateManifestSkills(
       severity: 'error',
       code: 'SKILLS_NOT_ARRAY',
       path: 'skills',
-      message: 'skills 必须是对象数组（每项 { file }，§四；C3 目录扫描，声明项仅作白名单过滤）',
+      message: 'skills 必须是对象数组（每项 { file }；目录扫描，声明项仅作白名单过滤）',
     });
     return;
   }
@@ -350,7 +331,7 @@ function validateManifestSkills(
     }
     const record = item as Record<string, unknown>;
 
-    // C3 目录扫描：manifest.skills 仅白名单过滤，声明项必须含 file（相对 skills/ 的文件名）
+    // 目录扫描：manifest.skills 仅白名单过滤，声明项必须含 file（相对 skills/ 的文件名）
     const file = record['file'];
     const hasFile = typeof file === 'string' && file.trim() !== '';
     if (!hasFile) {
@@ -358,11 +339,11 @@ function validateManifestSkills(
         severity: 'error',
         code: 'INVALID_MANIFEST_SKILL',
         path: itemPath,
-        message: `skills[${index}] 必须声明 file（技能文件名，如 skills/write.md）；skills 由目录动态扫描（C3），声明项仅作白名单过滤`,
+        message: `skills[${index}] 必须声明 file（技能文件名，如 skills/write.md）；skills 由目录动态扫描，声明项仅作白名单过滤`,
       });
     }
 
-    // name / description 可选字符串（C3 下元数据在技能文件 frontmatter，此处声明仅兼容忽略）
+    // name / description 可选字符串（元数据在技能文件 frontmatter，此处声明仅兼容忽略）
     for (const optKey of ['name', 'description'] as const) {
       const opt = record[optKey];
       if (opt !== undefined && typeof opt !== 'string') {
@@ -377,7 +358,7 @@ function validateManifestSkills(
   });
 }
 
-/** 校验顶层 capabilities（C2：能力面声明，每项 `{ capability: "域:动作", description? }`） */
+/** 校验顶层 capabilities（能力面声明，每项 `{ capability: "域:动作", description? }`） */
 function validateManifestCapabilities(
   capabilitiesNode: unknown,
   issues: RolePackValidationIssue[],
@@ -388,7 +369,7 @@ function validateManifestCapabilities(
       severity: 'error',
       code: 'CAPABILITIES_NOT_ARRAY',
       path: 'capabilities',
-      message: 'capabilities 必须是对象数组（每项 { capability: "域:动作", description? }，§四）',
+      message: 'capabilities 必须是对象数组（每项 { capability: "域:动作", description? }）',
     });
     return;
   }
@@ -412,7 +393,7 @@ function validateManifestCapabilities(
         code: 'INVALID_CAPABILITY',
         path: `${itemPath}.capability`,
         message:
-          `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}（§四）`,
+          `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}`,
       });
     }
     const description = record['description'];
@@ -442,7 +423,7 @@ function parseMatchField(
         severity: 'error',
         code: `INVALID_${fieldName.toUpperCase()}`,
         path: fieldName,
-        message: `${fieldName} 数组的元素必须是字符串（§2.2 匹配字段双写法）`,
+        message: `${fieldName} 数组的元素必须是字符串（匹配字段双写法）`,
       });
       return null;
     }
@@ -461,7 +442,7 @@ function parseMatchField(
     severity: 'error',
     code: `INVALID_${fieldName.toUpperCase()}`,
     path: fieldName,
-    message: `${fieldName} 必须是字符串数组或逗号分隔字符串（§2.2 匹配字段双写法）`,
+    message: `${fieldName} 必须是字符串数组或逗号分隔字符串（匹配字段双写法）`,
   });
   return null;
 }
@@ -505,7 +486,7 @@ function validateTriggerField(
 }
 
 /**
- * 校验 manifest.json：必填/版本、合规分档、策略键、内容路径、skills/capabilities、匹配字段。
+ * 校验 manifest.json：必填/版本、合规分档、策略键、skills/capabilities、匹配字段。
  * 未知键 warning + 忽略；valid = 无 error（warning 不阻塞装载）。
  */
 export function validateManifest(
@@ -517,7 +498,6 @@ export function validateManifest(
   validateMetaFields(manifest, issues);
   validateComplianceFields(manifest, issues);
   validateStrategy(manifest['strategy'], issues);
-  validateContentPaths(manifest, issues);
   validateExclusiveWith(manifest, issues);
   validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
@@ -557,7 +537,7 @@ export function checkCompanionContentRedline(content: string): RolePackValidatio
         severity: 'error',
         code: 'COMPANION_INTIMATE_REDLINE',
         path: 'persona',
-        message: 'companion 角色包不得携带虚拟亲属/虚拟伴侣特征（内容红线，§七 第 5 条）',
+        message: 'companion 角色包不得携带虚拟亲属/虚拟伴侣特征（内容红线）',
       },
     ];
   }

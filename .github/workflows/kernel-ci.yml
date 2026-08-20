@@ -1,18 +1,14 @@
 # Memora 内核 CI 流水线
 #
-# ⚠️ 大改期暂停自动触发（2026-08-18）：
-#   PersonaManager → RolePackManager 过渡期清理期间，CI 会持续因破坏性变更报错。
-#   恢复方式：将 on.push / on.pull_request 取消注释，移除 workflow_dispatch-only 标记。
-#
 # 触发条件：
+#   - 推送到 main/master 分支
+#   - 拉取请求（PR）
 #   - 手动触发（workflow_dispatch）
-#   - [已暂停] 推送到 main/master 分支
-#   - [已暂停] 拉取请求（PR）
 #
 # 检查项：
 #   - TypeScript 类型检查（tsc --noEmit）
 #   - ESLint 代码规范检查
-#   - Vitest 单元测试（1372 用例）
+#   - Vitest 单元测试（2337 用例）
 #   - 生产构建（tsc + tsc-alias）
 #
 # 说明：内核是纯逻辑库，零 native 依赖，
@@ -21,14 +17,14 @@
 name: Kernel CI
 
 on:
-  # push:        # [已暂停] 大改期结束后恢复
-  #   branches:
-  #     - main
-  #     - master
-  # pull_request: # [已暂停] 大改期结束后恢复
-  #   branches:
-  #     - main
-  #     - master
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
