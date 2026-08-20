@@ -233,10 +233,7 @@ export class AgentLoop {
 
     // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
-    this.messages.push({
-      role: 'system',
-      content: prefix + this.buildSystemPrompt(opts.bootstrapMemories),
-    });
+    this.appendSystemMessage(prefix + this.buildSystemPrompt(opts.bootstrapMemories));
   }
 
   /**
@@ -272,8 +269,8 @@ export class AgentLoop {
         yield* this._injectRecall(recalledMemories);
       }
 
-      // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力）
-      this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
+      // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力，受控写入口统一包裹）
+      this.appendUserMessage(userInput);
 
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
@@ -329,7 +326,7 @@ export class AgentLoop {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 补充输入作为新 user 消息进入上下文（仅当有文本）
     if (input && input.trim()) {
-      this.messages.push({ role: 'user', content: `<user_input>${input}</user_input>` });
+      this.appendUserMessage(input);
     }
     // 重置本轮运行计数状态（与 processUserInput 一致），确保续跑干净
     this.resetTurnState();
@@ -455,7 +452,7 @@ export class AgentLoop {
         const contents = this.pendingInterjections.splice(0);
         this.interjectController = new AbortController();
         for (const content of contents) {
-          this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
+          this.appendUserMessage(content);
         }
         return true;
       }
@@ -465,10 +462,7 @@ export class AgentLoop {
     // toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复，跳过自审查
     if (this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
       this.selfReviewRound++;
-      this.messages.push({
-        role: 'system',
-        content: this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds),
-      });
+      this.appendSystemMessage(this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds));
       return true;
     }
     return false;
@@ -480,19 +474,35 @@ export class AgentLoop {
     ackPrefix: string,
     content: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    this.messages.push({ role: 'system', content: `${systemPrefix}：${content}` });
+    this.appendSystemMessage(`${systemPrefix}：${content}`);
 
     yield { type: 'text', content: `${ackPrefix}：${content}` };
     yield { type: 'done' };
   }
 
-  /** 单次迭代编排（子方法 2/4）：abort 检查 + 上下文摘要/截断 + LLM 调用 + 工具/文本分支路由 */
+  /** 单次迭代编排：编排中断检查 → 上下文准备 → LLM 调用 → 结果路由。
+   *  按抽象层拆分为 _handleInterrupt / _prepareContext / _callAndRoute，
+   *  编排者只保留顺序，各阶段职责内聚在小方法（保持单轮闭环结构完整）。 */
   private async *handleIteration(
     iteration: number,
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
     logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
+    // 中断检查：软暂停（边界挂起可续跑）/ 硬中止（不可续跑）；
+    // 返回合并后的 effectiveSignal（AbortSignal）表示继续执行
+    const gate = yield* this._handleInterrupt(signal);
+    if (gate === 'paused' || gate === 'aborted') return gate;
+
+    // LLM 调用 + 结果路由
+    return yield* this._callAndRoute(iteration, gate);
+  }
+
+  /** 中断检查：软暂停（pauseRequested，边界挂起保留 messages）与硬中止（signal aborted）统一在此裁决。
+   *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
+  private async *_handleInterrupt(
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, 'paused' | 'aborted' | AbortSignal | undefined, unknown> {
     // 软暂停：在迭代边界挂起生成器（不 abort，保留 this.messages 供续跑）
     if (this.pauseRequested) {
       this.pauseRequested = false;
@@ -508,7 +518,59 @@ export class AgentLoop {
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
     }
+    return effectiveSignal;
+  }
 
+  /** LLM 调用 + 结果路由：上下文准备 → 调 LLM → 按 abort/工具/纯文本 分支路由。
+   *  effectiveSignal 已由 _handleInterrupt 合并好，此处直接使用。 */
+  private async *_callAndRoute(
+    iteration: number,
+    effectiveSignal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
+    // ─── 上下文准备：截断 + 微压缩 + tokenBudget 检查 ────────────
+    const prep = await this._prepareContext(effectiveSignal);
+    if (prep === 'done') {
+      yield { type: 'text', content: '\n\n[Token budget reached]' };
+      return 'done';
+    }
+
+    // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
+    yield { type: 'thinking', phase: 'llm_calling' };
+
+    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(prep.safeMessages, prep.chatOpts, effectiveSignal, iteration);
+
+    if (llmResult.aborted) {
+      // 保留已生成的部分文本（追加 interrupted 标记），让下一轮 LLM 识别非完整回复。
+      // 注：工具调用中断在此不处理——executeToolCalls 已 push assistant（含 toolCalls），
+      // 追加文本标记会破坏工具调用结构
+      if (llmResult.fullContent.trim()) {
+        this.appendAssistantText(llmResult.fullContent + this.ui.interrupted);
+      }
+      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      return 'aborted';
+    }
+
+    // 回合边界回调（每次迭代完成后触发，用于 roundLog 记录）
+    if (this.onRoundBoundary) {
+      this.onRoundBoundary({
+        summary: llmResult.fullContent.slice(0, 200),
+      });
+    }
+
+    // ④ 结果路由：工具分支 / 纯文本结束分支
+    if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+      return yield* this.handleToolCalls(llmResult, effectiveSignal);
+    }
+    return yield* this.handleTextResponse(llmResult);
+  }
+
+  /** 上下文准备：摘要截断 → 同步工作记忆 → 微压缩 → tokenBudget 检查 → 任务表注入。
+   *  返回 { chatOpts, safeMessages } 供调用方送 LLM；返回 'done' 表示达到预算上限终止本轮。
+   *  截断/压缩/预算改造 this.messages 的工作记忆，是"资源边界"职责的收敛点。
+   *  纯 async（非生成器）：达到预算上限时返回 'done'，由调用方负责 emit text + 终止。 */
+  private async _prepareContext(
+    effectiveSignal: AbortSignal | undefined,
+  ): Promise<{ chatOpts: ChatOptions; safeMessages: readonly Message[] } | 'done'> {
     // 调用 LLM（带重试 + 截断保护）
     const chatOpts = this.buildChatOptions();
 
@@ -523,7 +585,7 @@ export class AgentLoop {
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
     // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）
     if (safeMessages !== this.messages) {
-      this.messages = [...safeMessages];
+      this.replaceContext([...safeMessages]);
     }
 
     // ─── 微压缩层：静默压缩旧 tool_result ──────────────────────────
@@ -538,7 +600,6 @@ export class AgentLoop {
       const estimatedTokens = this.contextManager.estimateTokens(this.messages);
       if (estimatedTokens >= this.strategy.tokenBudget) {
         logger.info({ estimatedTokens, tokenBudget: this.strategy.tokenBudget }, '达到 Token 预算上限');
-        yield { type: 'text', content: '\n\n[Token budget reached]' };
         return 'done';
       }
     }
@@ -549,39 +610,7 @@ export class AgentLoop {
       this.injectSystemMessage(taskTable);
     }
 
-    // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
-    yield { type: 'thinking', phase: 'llm_calling' };
-
-    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, effectiveSignal, iteration);
-
-    if (llmResult.aborted) {
-      // 保留已生成的部分文本（追加 interrupted 标记），让下一轮 LLM 识别非完整回复。
-      // 注：工具调用中断在此不处理——executeToolCalls 已 push assistant（含 toolCalls），
-      // 追加文本标记会破坏工具调用结构
-      if (llmResult.fullContent.trim()) {
-        this.messages.push({
-          role: 'assistant',
-          content: llmResult.fullContent + this.ui.interrupted,
-        });
-      }
-      yield { type: 'aborted', reason: this.ui.abortedByUser };
-      return 'aborted';
-    }
-
-    // 回合边界回调（每次迭代完成后触发，用于 roundLog 记录）
-    if (this.onRoundBoundary) {
-      this.onRoundBoundary({
-        summary: llmResult.fullContent.slice(0, 200),
-      });
-    }
-
-    // 工具调用分支（用 effectiveSignal 让插话也能中断工具执行）
-    if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-      return yield* this.handleToolCalls(llmResult, effectiveSignal);
-    }
-
-    // 纯文本结束分支
-    return yield* this.handleTextResponse(llmResult);
+    return { chatOpts, safeMessages };
   }
 
   /** 工具调用分支 + Reflection（子方法 2/3） */
@@ -592,7 +621,7 @@ export class AgentLoop {
     // L2 策略阻止工具调用：跳过执行，仅保留文本内容
     if (this.strategy.toolCallsBlocked) {
       const blockedMsg = llmResult.fullContent.trim() || '（当前角色不允许调用工具）';
-      this.messages.push({ role: 'assistant', content: blockedMsg });
+      this.appendAssistantText(blockedMsg);
       yield { type: 'text', content: blockedMsg };
       yield { type: 'done' };
       return 'done';
@@ -640,10 +669,7 @@ export class AgentLoop {
     switch (verdict) {
       case 'warn': {
         // 注入负反馈，强制 LLM 改变策略
-        this.messages.push({
-          role: 'system',
-          content: this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold),
-        });
+        this.appendSystemMessage(this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold));
         logger.warn(
           {
             hash: currentHash,
@@ -659,12 +685,10 @@ export class AgentLoop {
       }
       case 'block': {
         // 硬拦截：注入更强系统消息，明确拒绝继续
-        this.messages.push({
-          role: 'system',
-          content:
-            `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已自动阻止。` +
-            `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
-        });
+        this.appendSystemMessage(
+          `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已自动阻止。` +
+          `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
+        );
         logger.warn(
           {
             hash: currentHash,
@@ -693,10 +717,7 @@ export class AgentLoop {
       // 反思次数用显式计数器限制，避免 messages 裁剪导致计数失真
       if (this.reflectionCountThisTurn < this.maxReflectionRetries) {
         this.reflectionCountThisTurn++;
-        this.messages.push({
-          role: 'system',
-          content: this.ui.reflectionHint(this.maxReflectionRetries - this.reflectionCountThisTurn),
-        });
+        this.appendSystemMessage(this.ui.reflectionHint(this.maxReflectionRetries - this.reflectionCountThisTurn));
       }
     }
 
@@ -723,12 +744,12 @@ export class AgentLoop {
     }
 
     if (llmResult.fullContent) {
-      this.messages.push({ role: 'assistant', content: llmResult.fullContent });
+      this.appendAssistantText(llmResult.fullContent);
     } else {
       // LLM 返回空响应（无文本无工具调用）的兜底，正常不会发生但 provider 边界情况可能触发
       logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
       const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
-      this.messages.push({ role: 'assistant', content: fallbackText });
+      this.appendAssistantText(fallbackText);
       yield { type: 'text', content: fallbackText };
     }
 
@@ -931,11 +952,7 @@ export class AgentLoop {
     fullContent: string,
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
-    this.messages.push({
-      role: 'assistant',
-      content: fullContent,
-      toolCalls,
-    });
+    this.appendAssistantToolCall(fullContent, toolCalls);
 
     // 工具并行执行（保持顺序的并发）：Promise.all 并发所有工具（总耗时≈最慢工具），
     // 但 tool_start/tool_result 与 messages 均按原始顺序 yield/push，保证 Reflection slice 正确
@@ -1148,7 +1165,7 @@ export class AgentLoop {
 
   /** 注入系统消息到消息数组（技能注入、角色切换等场景，动态注入上下文） */
   injectSystemMessage(content: string): void {
-    this.messages.push({ role: 'system', content });
+    this.appendSystemMessage(content);
   }
 
   /**
@@ -1323,7 +1340,7 @@ export class AgentLoop {
 
     if (nonSystemMessages.length === 0) {
       // 空数组=意图清空工作记忆（跨日重置/切空会话），保留 system prompt，防旧上下文残留注入
-      this.messages = this.messages[0] ? [this.messages[0]] : [];
+      this.replaceContext(this.messages[0] ? [this.messages[0]] : []);
       logger.debug({ messageCount: 0 }, '已清空工作记忆（保留 system prompt）');
       return;
     }
@@ -1333,7 +1350,7 @@ export class AgentLoop {
       logger.warn({ hasSystemPrompt: false }, 'restoreHistory: 没有 system prompt，跳过恢复');
       return;
     }
-    this.messages = [systemPrompt, ...nonSystemMessages];
+    this.replaceContext([systemPrompt, ...nonSystemMessages]);
 
     logger.info({ messageCount: nonSystemMessages.length }, '恢复历史对话消息');
   }
@@ -1349,10 +1366,44 @@ export class AgentLoop {
     const permanent = this.messages[0]!;
     const conversationHistory = this.messages.slice(1).filter((m) => m.role !== 'system');
     const removedCount = this.messages.length - 1 - conversationHistory.length;
-    this.messages = [permanent, ...conversationHistory];
+    this.replaceContext([permanent, ...conversationHistory]);
     if (removedCount > 0) {
       logger.debug({ removedCount, remainingMessages: this.messages.length }, '临时 system 消息已清理');
     }
+  }
+
+  // ─── 工作记忆受控写入口 ─────────────────────────────────────
+  // 收敛全部裸 push/replace 写点：每类消息的固定约束（如 <user_input> 包裹）
+  // 内聚在对应写方法内，禁止外部散落裸写 this.messages，杜绝"漏包裹/乱设 role"风险面。
+
+  /** 追加一条 user 消息（统一 <user_input> 标签包裹，防注入攻击） */
+  private appendUserMessage(content: string): void {
+    this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
+  }
+
+  /** 追加一条 system 消息（技能注入、召回、任务表、自审查提示等通用注入通道） */
+  private appendSystemMessage(content: string): void {
+    this.messages.push({ role: 'system', content });
+  }
+
+  /** 追加一条 assistant 纯文本消息（正常 LLM 回复或兜底文本） */
+  private appendAssistantText(content: string): void {
+    this.messages.push({ role: 'assistant', content });
+  }
+
+  /** 追加一条带 toolCalls 的 assistant 消息（executeToolCalls 前导） */
+  private appendAssistantToolCall(fullContent: string, toolCalls: NonNullable<Message['toolCalls']>): void {
+    this.messages.push({ role: 'assistant', content: fullContent, toolCalls });
+  }
+
+  /** 追加一条 tool 消息（executeToolCalls 结果回填） */
+  private appendToolMessage(content: string, toolCallId: string): void {
+    this.messages.push({ role: 'tool', content, toolCallId });
+  }
+
+  /** 整体替换执行上下文（截断落盘 / 恢复历史 / 装配重排：传入的数组已是完整上下文） */
+  private replaceContext(next: Message[]): void {
+    this.messages = next;
   }
 
   // ─── Reflection 辅助方法 ────────────────────────────────
@@ -1410,7 +1461,7 @@ export class AgentLoop {
       // 工具结果隔离：用 <tool_result> 包裹 + 指令前缀，防外部工具返回承载间接注入；
       // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
       const wrapped = this.wrapToolResult(tc.function.name, result);
-      this.messages.push({ role: 'tool', content: wrapped, toolCallId: tc.id });
+      this.appendToolMessage(wrapped, tc.id);
       if (result.startsWith('[ERR')) { this.metrics.toolFailureCount++; }
     }
   }
