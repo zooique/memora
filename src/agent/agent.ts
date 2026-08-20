@@ -111,7 +111,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 四级补全器（四元组 + 三源融合） */
   private composer: Composer | null = null;
 
-  // activeSkill 字段已移除：matchAndInjectSkill 改为当轮实时匹配注入，无需跨轮状态缓存
+  // 技能走两级渐进披露：L1 元数据清单常驻 system prompt + read_skill 按需读正文，无回答前预注入
 
   private _initialized = false;
   // 项目上下文（AgentContext 与 ProjectContext 等价，直接使用后者避免重复字段）

@@ -5,7 +5,7 @@
  *   - 默认策略装配（autoSwitch=on 触发角色匹配、上下文装配、L2 策略注入、工具暴露）
  *   - autoSwitch=off 锁定当前角色包（不触发自动匹配）
  *   - 会话粘性复位（会话切换时 resetSticky，同会话不重复）
- *   - 回答前中断（signal.aborted）→ 返回 aborted，跳过技能注入/用户消息入史
+ *   - 回答前中断（signal.aborted）→ 返回 aborted，跳过用户消息入史
  *   - roundId 生成 + appendUser 溯源 + 会话命名 fire-and-forget
  */
 
@@ -50,7 +50,6 @@ describe('SeedPrepare 回答前', () => {
     expect(mocks.applyRolePackToolExposure).toHaveBeenCalledTimes(1);
     // 记忆召回（默认 full + hybrid）
     expect(mocks.contextPreparer.recallAndInject).toHaveBeenCalledWith('用户输入', 'full', 'hybrid');
-    expect(mocks.contextPreparer.matchAndInjectSkill).toHaveBeenCalledWith('用户输入');
     // roundId 生成 + 用户消息入史（同 roundId 溯源）
     expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(1);
     const roundId = mocks.loop.setCurrentRoundId.mock.calls[0]?.[0];
@@ -106,8 +105,7 @@ describe('SeedPrepare 回答前', () => {
 
     expect(result?.aborted).toBe(true);
     expect(result?.recalledMemories).toEqual([expect.objectContaining({ id: 'x' })]);
-    // 中断后不再注入技能 / 不入史 / 不命名
-    expect(mocks.contextPreparer.matchAndInjectSkill).not.toHaveBeenCalled();
+    // 中断后不再注入用户消息 / 不命名
     expect(mocks.loop.setCurrentRoundId).not.toHaveBeenCalled();
     expect(mocks.history.appendUser).not.toHaveBeenCalled();
     expect(mocks.sessionNamer.ensureSessionTitle).not.toHaveBeenCalled();

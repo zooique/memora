@@ -13,7 +13,6 @@ export const AGENT_EVENTS = {
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
   projectSwitched: 'projectSwitched',
-  skillMatched: 'skillMatched',
   archiveFailed: 'archiveFailed',
   contextTruncated: 'contextTruncated',
   configReloaded: 'configReloaded',
@@ -54,7 +53,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   memoryRecalled: { count: number; query: string };
   sessionForked: { from: string; to: string; messageCount: number };
   projectSwitched: { from: string | null; to: string; projectName: string };
-  skillMatched: { skill: string; score: number };
   archiveFailed: { stage: 'session'; message: string };
   contextTruncated: { skippedCount: number; keptCount: number };
   configReloaded: { source: string };

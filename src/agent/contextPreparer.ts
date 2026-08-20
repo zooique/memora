@@ -4,18 +4,16 @@
  * 职责：
  *   - tryAutoMatchRolePack / matchRolePackByLlm：角色包自动匹配（关键词粘性 + LLM 语义兜底）
  *   - recallAndInject：语义召回 + limited 配额裁剪 + 固定轮次注入
- *   - matchAndInjectSkill：技能匹配与当轮注入
  *
  * 设计原则：
  *   - 只依赖 Agent 注入的稳定能力（deps），不反向依赖 Agent 私有状态（与 AgentHooks 同构）
  *   - 管线逻辑单一真理源：策略解析（recentRounds / minFallback / 配额 / 置信度）随管线走
  *   - Agent 门面保留编排骨架（thinking 阶段 yield 与调用点），叶子逻辑在此唯一实现
- *   - 事件发射（memoryRecalled / boostPersistFailed / skillMatched）经 emit 回调由 Agent 承接
+ *   - 事件发射（memoryRecalled / boostPersistFailed）经 emit 回调由 Agent 承接
  */
 
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
-import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
@@ -50,8 +48,6 @@ export interface ContextPreparerDeps {
   history: MessageHistory;
   /** AgentLoop（最近对话注入） */
   loop: AgentLoop;
-  /** 技能管理器（技能匹配与 prompt 构建） */
-  skillManager: SkillManager;
   /** 角色包管理器（角色匹配 / LLM 兜底列表；可为空） */
   rolePackManager: RolePackManager | null;
   /** 懒取项目记忆索引（requirePctx.index 等价物，避免持有可变 ProjectContext 引用） */
@@ -265,31 +261,6 @@ export class ContextPreparer {
     );
 
     return recalledMemories;
-  }
-
-  /**
-   * 匹配技能并立即注入本轮对话（当轮生效，与角色包自动匹配同模式）
-   * 匹配策略：regex trigger 优先（score=1.0），其次关键词匹配（阈值 0.3）；
-   * cleanTemporarySystemMessages() 每轮清临时 system 消息，技能 prompt 不跨轮累积。
-   *
-   * @param input 用户输入（作为技能匹配 query）
-   */
-  matchAndInjectSkill(input: string): void {
-    const { deps } = this;
-    if (!deps.skillManager || !deps.loop) return;
-    try {
-      const match = deps.skillManager.match(input);
-      if (match) {
-        const skillPrompt = deps.skillManager.buildSystemPrompt(match.skill.name);
-        if (skillPrompt) {
-          deps.loop.injectSystemMessage(skillPrompt);
-          logger.debug({ skill: match.skill.name, score: match.score }, '技能 prompt 已注入（当轮生效）');
-        }
-        deps.emit(AGENT_EVENTS.skillMatched, { skill: match.skill.name, score: match.score });
-      }
-    } catch (err) {
-      logger.warn({ err }, '技能匹配失败');
-    }
   }
 
   /**

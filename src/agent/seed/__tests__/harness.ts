@@ -58,7 +58,6 @@ export interface SeedMocks {
   contextPreparer: {
     tryAutoMatchRolePack: ReturnType<typeof vi.fn>;
     recallAndInject: ReturnType<typeof vi.fn>;
-    matchAndInjectSkill: ReturnType<typeof vi.fn>;
   };
   sessionNamer: { ensureSessionTitle: ReturnType<typeof vi.fn> };
   roundSummaryGenerator: { generate: ReturnType<typeof vi.fn> };
@@ -176,7 +175,6 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     contextPreparer: {
       tryAutoMatchRolePack: vi.fn(async () => false),
       recallAndInject: vi.fn(async () => [] as Memory[]),
-      matchAndInjectSkill: vi.fn(),
     },
     sessionNamer: { ensureSessionTitle: vi.fn(async () => {}) },
     roundSummaryGenerator: { generate: vi.fn(async () => {}) },

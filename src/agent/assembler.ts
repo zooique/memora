@@ -729,12 +729,11 @@ export async function assembleComponents(
 
   // ── Phase 5: 输入增强管线 ──
 
-  // ContextPreparer 依赖已装配的 loop/history/skillManager/rolePackManager；
+  // ContextPreparer 依赖已装配的 loop/history/rolePackManager；
   // 策略推导走 rolePackManager（SSOT），背景 Provider 后续经 Agent.setBackgroundProvider 同步。
   const contextPreparer = new ContextPreparer({
     history,
     loop,
-    skillManager,
     rolePackManager,
     getIndex: () => pctx.index,
     backgroundProvider,
@@ -753,7 +752,7 @@ export async function assembleComponents(
 
   // ── Phase 6: 检查点恢复协议 ──
 
-  // CheckpointRestoreCoordinator 依赖已装配的 sessionManager/loop/contextPreparer；
+  // CheckpointRestoreCoordinator 依赖已装配的 sessionManager/loop；
   // 恢复协议只依赖稳定接口（sessionManager/history/loop），生命周期回调由 hooks 注入。
   const checkpointRestoreCoordinator = new CheckpointRestoreCoordinator({
     sessionManager,
@@ -761,7 +760,6 @@ export async function assembleComponents(
     loop,
     getIndex: () => pctx.index,
     rolePackManager,
-    contextPreparer,
     config: {
       tracer: tracer ?? null,
       vectorStore: vectorStore ?? null,

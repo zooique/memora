@@ -18,7 +18,6 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionManager } from '@/agent/managers/sessionManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import type { ContextPreparer } from '@/agent/contextPreparer.js';
 import { recall } from '@/memory/recall.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
@@ -45,8 +44,6 @@ export interface CheckpointRestoreDeps {
   getIndex: () => IMemoryStorage;
   /** 角色包管理器（角色契约重注入；可为 null） */
   rolePackManager: RolePackManager | null;
-  /** 输入增强管线（技能契约重注入；可为 null） */
-  contextPreparer: ContextPreparer | null;
   /** 宿主可观测性 / 存储 / 文案配置 */
   config: {
     /** 可观测性 Tracer（可选） */
@@ -163,9 +160,8 @@ export class CheckpointRestoreCoordinator {
   /**
    * 契约重注入（恢复协议步骤④），确保恢复后 system prompt 与暂停前一致：
    * - 角色契约：按检查点角色切换 persona 并刷新 system prompt
-   * - 技能契约：按资源槽文档路径匹配技能注入
    * - 规则契约：由 AgentLoop 的 bootstrap 机制自动注入，无需额外处理
-   * 角色不存在静默降级（保持当前角色），技能匹配失败仅记日志。
+   * 角色不存在静默降级（保持当前角色）。
    *
    * @param checkpoint 会话检查点
    */
@@ -198,26 +194,9 @@ export class CheckpointRestoreCoordinator {
       }
     }
 
-    // 技能契约重注入：按资源槽文档路径尝试匹配技能
-    if (deps.contextPreparer) {
-      try {
-        for (const doc of checkpoint.resource.documents) {
-          deps.contextPreparer.matchAndInjectSkill(doc);
-        }
-      } catch (err) {
-        logger.warn({ err }, '契约重注入：技能重注入失败');
-      }
-    }
-
     // 规则契约由 AgentLoop 的 bootstrapMemories 自动注入，无需额外处理
 
-    logger.info(
-      {
-        role: checkpoint.role.name,
-        skillDocCount: checkpoint.resource.documents.length,
-      },
-      '契约重注入完成',
-    );
+    logger.info({ role: checkpoint.role.name }, '契约重注入完成');
   }
 
   /**

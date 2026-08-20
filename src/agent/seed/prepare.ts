@@ -2,10 +2,10 @@
  * 回答前（Prepare）— 种子闭环第一阶段
  *
  * 收敛原 Agent.prepareChatContext 的编排骨架：会话粘性复位 → 策略装配 → 角色
- * 匹配 → 记忆召回 → 技能注入 → roundId → appendUser → 会话命名。
+ * 匹配 → 记忆召回 → roundId → appendUser → 会话命名。
  *
  * 设计原则：
- *   - 叶子逻辑（tryAutoMatchRolePack / recallAndInject / matchAndInjectSkill）在
+ *   - 叶子逻辑（tryAutoMatchRolePack / recallAndInject）在
  *     ContextPreparer 唯一实现，本模块只保留编排骨架（与 ContextPreparer 文档一致）。
  *   - lastStickySessionId（会话切换时复位角色包粘性）随本模块收进——它是"回答前"
  *     职责（注释原文：由 prepareChatContext 驱动），不是门面归属。
@@ -98,9 +98,8 @@ export class SeedPrepare {
       return { input, recalledMemories, aborted: true } satisfies SeedPrepareResult;
     }
 
-    // 技能当轮注入生效，生成 roundId 供 appendUser 溯源（user/assistant/摘要同 roundId）
+    // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
     yield { type: 'thinking', phase: 'processing' };
-    contextPreparer.matchAndInjectSkill(input);
 
     const roundId = `round-${Date.now()}`;
     loop.setCurrentRoundId(roundId);
