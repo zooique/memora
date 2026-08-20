@@ -14,7 +14,13 @@ import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
-import { MemoraError, isAbortError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
+import {
+  MemoraError,
+  isAbortError,
+  isRetryableErrorCode,
+  toError,
+  type ToolErrorCodeValue,
+} from '@/utils/errors.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
@@ -127,6 +133,14 @@ export class AgentLoop {
   private readonly duplicateCallInterceptor: DuplicateCallInterceptor;
   /** 重复工具调用检测阈值（默认 3 次，供拦截器 context 使用） */
   private readonly duplicateToolCallThreshold: number;
+  /**
+   * 执行期临时 system 消息引用集（self-review / reflection / duplicate-warning / metaNote）。
+   * 与 prepare 阶段的「装配性注入」（召回、最近对话）区分：装配注入每轮由 prepare 重建、
+   * 不算临时，吃 cleanTemporarySystemMessages；执行期临时的清理收敛为每轮闭环入口自动执行
+   * （cleanExecutionTemporary），保证跨步残留不堆积。replaceContext 走浅拷贝，
+   * 引用保持有效，按引用 filter 即可安全移除。
+   */
+  private readonly executionTempSystem = new Set<Message>();
   /** 上一轮工具调用的哈希（运行时状态，拦截器判定时使用） */
   private lastToolCallsHash: string = '';
   /** 连续重复次数（运行时状态，拦截器判定时使用） */
@@ -189,7 +203,9 @@ export class AgentLoop {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
       // 流式中断标记：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"
-      interrupted: opts.messages?.interrupted ?? '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
+      interrupted:
+        opts.messages?.interrupted ??
+        '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
       contextTruncated:
         opts.messages?.contextTruncated ??
         ((skipped, kept) =>
@@ -203,7 +219,10 @@ export class AgentLoop {
           `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${remaining}`),
       selfReviewPrompt:
         opts.messages?.selfReviewPrompt ??
-        ((round: number, total: number) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——mvp-scope §三·一 防"自说自话"）。检查：
+        ((
+          round: number,
+          total: number,
+        ) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——mvp-scope §三·一 防"自说自话"）。检查：
 1. 本轮目标点是否全部覆盖（用户明确要求的内容是否都处理了）？
 2. 是否遵守了 Rules 中的安全/边界约束（如"不写敏感信息"）？
 3. 产出结构是否完整（正文/代码/文档是否齐全）？
@@ -261,6 +280,10 @@ export class AgentLoop {
       // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
       this.providerRouteCache.clear();
 
+      // 闭环入口自动清理执行期临时残留（上轮 self-review/reflection/duplicate 等），
+      // 在召回注入之前执行——装配注入（召回/最近对话）不属于 executionTemp，不受影响
+      this.cleanExecutionTemporary();
+
       // Token 预算前置检查：上下文已接近上限时跳过召回注入，避免加剧溢出风险
       if (this._shouldSkipRecallInjection()) {
         logger.debug('Token budget tight, skipping recall injection');
@@ -301,7 +324,11 @@ export class AgentLoop {
         break;
 
       case 'correction':
-        yield* this.injectMetaNote('[目标修正] 用户更新了目标方向', '已记录目标修正', event.content);
+        yield* this.injectMetaNote(
+          '[目标修正] 用户更新了目标方向',
+          '已记录目标修正',
+          event.content,
+        );
         break;
 
       case 'clarify':
@@ -310,7 +337,10 @@ export class AgentLoop {
 
       default:
         // 未知意图降级为 chat 处理
-        logger.warn({ eventType: (event as SessionEvent).type }, '未知 SessionEvent 类型，降级为 chat');
+        logger.warn(
+          { eventType: (event as SessionEvent).type },
+          '未知 SessionEvent 类型，降级为 chat',
+        );
         yield* this.processUserInput(event.content, recalledMemories, signal);
     }
   }
@@ -326,6 +356,8 @@ export class AgentLoop {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 补充输入作为新 user 消息进入上下文（仅当有文本）
     if (input && input.trim()) {
+      // 先清执行期临时残留，再接续跑输入，保证续跑上下文干净（与 processUserInput 入口一致）
+      this.cleanExecutionTemporary();
       this.appendUserMessage(input);
     }
     // 重置本轮运行计数状态（与 processUserInput 一致），确保续跑干净
@@ -353,9 +385,11 @@ export class AgentLoop {
    * @param signal 中止信号
    * @yields 汇报文本的 text chunk；无（汇报为空/失败）时 yield 空
    */
-  async *runReport(
-    signal?: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
+  async *runReport(signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
+    // 汇报入口先清执行期临时残留（上一步闭环的 self-review 等），
+    // 保证汇报只看到规划产物 + 汇报指令，不把步内残留混入收尾上下文（汇报不走 processUserInput）
+    this.cleanExecutionTemporary();
+
     // 追加汇报指令为（临时）system 消息，指令进本轮上下文
     this.appendSystemMessage(AgentLoop.REPORT_PROMPT);
 
@@ -420,14 +454,12 @@ export class AgentLoop {
   }
 
   /** 合并多个 AbortSignal 为一个（任一 abort 即生效）。用 AbortSignal.any() 替代手动监听，避免监听器累积泄漏 */
-  private static combineSignals(
-    ...signals: (AbortSignal | undefined)[]
-  ): AbortSignal | undefined {
+  private static combineSignals(...signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
     const valid = signals.filter((s): s is AbortSignal => s !== undefined);
     if (valid.length === 0) return undefined;
     if (valid.length === 1) return valid[0];
     // 若已有 aborted 的 signal，直接短路返回，避免创建新对象
-    const aborted = valid.find(s => s.aborted);
+    const aborted = valid.find((s) => s.aborted);
     if (aborted) return aborted;
     return AbortSignal.any(valid);
   }
@@ -469,7 +501,12 @@ export class AgentLoop {
 
       const result = yield* this.handleIteration(iteration, signal);
       // 自审查轮开始前 emit selfReview chunk，供宿主展示视觉反馈
-      if (result === 'done' && this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
+      if (
+        result === 'done' &&
+        this.strategy.maxSelfReviewRounds > 0 &&
+        this.selfReviewRound < this.strategy.maxSelfReviewRounds &&
+        !this.strategy.toolCallsBlocked
+      ) {
         yield { type: 'selfReview', round: this.selfReviewRound + 1 };
       }
       // 共享的迭代结果处理；返回 false 表示终止循环
@@ -484,9 +521,7 @@ export class AgentLoop {
   /** 处理一次迭代结果（processUserInput/continueAfterPause 共享）。
    *  continue→继续；paused→终止；aborted→消费插话后继续；done→注入自审查后继续。
    *  返回 false 表示调用方应终止循环 */
-  private handleIterationResult(
-    result: 'aborted' | 'done' | 'continue' | 'paused',
-  ): boolean {
+  private handleIterationResult(result: 'aborted' | 'done' | 'continue' | 'paused'): boolean {
     // continue（工具结果已回填）无需特殊处理
     if (result === 'continue') return true;
     if (result === 'paused') return false;
@@ -504,9 +539,16 @@ export class AgentLoop {
     }
     // result === 'done'：纯文本回复后若启用了自审查且未达上限，注入提示继续 1 轮
     // toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复，跳过自审查
-    if (this.strategy.maxSelfReviewRounds > 0 && this.selfReviewRound < this.strategy.maxSelfReviewRounds && !this.strategy.toolCallsBlocked) {
+    if (
+      this.strategy.maxSelfReviewRounds > 0 &&
+      this.selfReviewRound < this.strategy.maxSelfReviewRounds &&
+      !this.strategy.toolCallsBlocked
+    ) {
       this.selfReviewRound++;
-      this.appendSystemMessage(this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds));
+      this.appendSystemMessage(
+        this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds),
+        { executionTemp: true },
+      );
       return true;
     }
     return false;
@@ -518,7 +560,7 @@ export class AgentLoop {
     ackPrefix: string,
     content: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    this.appendSystemMessage(`${systemPrefix}：${content}`);
+    this.appendSystemMessage(`${systemPrefix}：${content}`, { executionTemp: true });
 
     yield { type: 'text', content: `${ackPrefix}：${content}` };
     yield { type: 'done' };
@@ -581,7 +623,12 @@ export class AgentLoop {
     // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
     yield { type: 'thinking', phase: 'llm_calling' };
 
-    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(prep.safeMessages, prep.chatOpts, effectiveSignal, iteration);
+    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(
+      prep.safeMessages,
+      prep.chatOpts,
+      effectiveSignal,
+      iteration,
+    );
 
     if (llmResult.aborted) {
       // 保留已生成的部分文本（追加 interrupted 标记），让下一轮 LLM 识别非完整回复。
@@ -620,10 +667,7 @@ export class AgentLoop {
 
     // 上下文摘要：启用且需截断时生成（传入 effectiveSignal，让摘要可被取消或插话中断）
     let contextSummary: string | undefined;
-    if (
-      this.enableContextSummary &&
-      this.contextManager.shouldTruncate(this.messages)
-    ) {
+    if (this.enableContextSummary && this.contextManager.shouldTruncate(this.messages)) {
       contextSummary = await this.contextManager.getOrCreateSummary(this.messages, effectiveSignal);
     }
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
@@ -643,7 +687,10 @@ export class AgentLoop {
     if (this.strategy.tokenBudget > 0) {
       const estimatedTokens = this.contextManager.estimateTokens(this.messages);
       if (estimatedTokens >= this.strategy.tokenBudget) {
-        logger.info({ estimatedTokens, tokenBudget: this.strategy.tokenBudget }, '达到 Token 预算上限');
+        logger.info(
+          { estimatedTokens, tokenBudget: this.strategy.tokenBudget },
+          '达到 Token 预算上限',
+        );
         return 'done';
       }
     }
@@ -673,11 +720,17 @@ export class AgentLoop {
 
     // 工具步数软上限检查：超限时仅保留前 N 个，其余转为纯文本
     let effectiveToolCalls = llmResult.toolCalls!;
-    if (this.strategy.toolStepLimit > 0 && effectiveToolCalls.length > this.strategy.toolStepLimit) {
-      logger.debug({
-        requested: effectiveToolCalls.length,
-        limit: this.strategy.toolStepLimit,
-      }, '工具步数超限，截断至上限');
+    if (
+      this.strategy.toolStepLimit > 0 &&
+      effectiveToolCalls.length > this.strategy.toolStepLimit
+    ) {
+      logger.debug(
+        {
+          requested: effectiveToolCalls.length,
+          limit: this.strategy.toolStepLimit,
+        },
+        '工具步数超限，截断至上限',
+      );
       effectiveToolCalls = effectiveToolCalls.slice(0, this.strategy.toolStepLimit);
     }
 
@@ -713,7 +766,10 @@ export class AgentLoop {
     switch (verdict) {
       case 'warn': {
         // 注入负反馈，强制 LLM 改变策略
-        this.appendSystemMessage(this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold));
+        this.appendSystemMessage(
+          this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold),
+          { executionTemp: true },
+        );
         logger.warn(
           {
             hash: currentHash,
@@ -731,7 +787,8 @@ export class AgentLoop {
         // 硬拦截：注入更强系统消息，明确拒绝继续
         this.appendSystemMessage(
           `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已自动阻止。` +
-          `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
+            `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
+          { executionTemp: true },
         );
         logger.warn(
           {
@@ -761,7 +818,10 @@ export class AgentLoop {
       // 反思次数用显式计数器限制，避免 messages 裁剪导致计数失真
       if (this.reflectionCountThisTurn < this.maxReflectionRetries) {
         this.reflectionCountThisTurn++;
-        this.appendSystemMessage(this.ui.reflectionHint(this.maxReflectionRetries - this.reflectionCountThisTurn));
+        this.appendSystemMessage(
+          this.ui.reflectionHint(this.maxReflectionRetries - this.reflectionCountThisTurn),
+          { executionTemp: true },
+        );
       }
     }
 
@@ -1011,7 +1071,12 @@ export class AgentLoop {
     const toolPromises: Promise<string>[] = [];
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
-      yield { type: 'tool_start', toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments };
+      yield {
+        type: 'tool_start',
+        toolCallId: tc.id,
+        name: tc.function.name,
+        args: tc.function.arguments,
+      };
       toolPromises.push(this.executeOneTool(tc, signal));
     }
 
@@ -1067,10 +1132,7 @@ export class AgentLoop {
     });
 
     // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）
-    return Promise.race([
-      this.opts.toolExecutor(name, args),
-      abortPromise,
-    ]).finally(() => {
+    return Promise.race([this.opts.toolExecutor(name, args), abortPromise]).finally(() => {
       if (onAbort) signal.removeEventListener('abort', onAbort);
     });
   }
@@ -1090,7 +1152,10 @@ export class AgentLoop {
       const toolDef = this.opts.builtinTools?.find((t) => t.name === name);
       if (toolDef && !toolDef.readonly) {
         logger.warn({ tool: name }, '工具只读模式：阻止写入工具执行');
-        return { kind: 'denied', result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用` };
+        return {
+          kind: 'denied',
+          result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用`,
+        };
       }
     }
 
@@ -1108,8 +1173,12 @@ export class AgentLoop {
       return { kind: 'denied', result: `[ERR:TOOL:PERMISSION_DENIED] ${reason}` };
     }
     if (preCheck?.skip) {
-      const result = preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
-      logger.debug({ tool: name, argsSignature: args.slice(0, 80) }, '工具已执行，跳过（仅一次语义）');
+      const result =
+        preCheck.previousResult ?? '[SKIP:TOOL:IDEMPOTENT] 工具已执行（outbox 模式跳过）';
+      logger.debug(
+        { tool: name, argsSignature: args.slice(0, 80) },
+        '工具已执行，跳过（仅一次语义）',
+      );
       return { kind: 'skip', result };
     }
 
@@ -1197,11 +1266,12 @@ export class AgentLoop {
       prompt += `\n\n## 可用工具\n\n你可以通过 tool_call 调用以下工具：\n${toolDescs}`;
 
       // 重建 roles/persona、rule、skill 的优先级提示
-      prompt += `\n\n## 工具选择规则（必须遵守）\n\n`
-        + `- 创建/修改角色（Persona）→ 必须使用 create_persona，禁止使用 write_file\n`
-        + `- 创建/修改技能（Skill）→ 必须使用 create_skill，禁止使用 write_file\n`
-        + `- 创建/修改规则（Rule）→ 必须使用 create_rule，禁止使用 write_file\n`
-        + `- 以上三种配置文件的任何操作，永远不要使用 write_file 工具`;
+      prompt +=
+        `\n\n## 工具选择规则（必须遵守）\n\n` +
+        `- 创建/修改角色（Persona）→ 必须使用 create_persona，禁止使用 write_file\n` +
+        `- 创建/修改技能（Skill）→ 必须使用 create_skill，禁止使用 write_file\n` +
+        `- 创建/修改规则（Rule）→ 必须使用 create_rule，禁止使用 write_file\n` +
+        `- 以上三种配置文件的任何操作，永远不要使用 write_file 工具`;
     }
 
     return prompt;
@@ -1218,11 +1288,16 @@ export class AgentLoop {
    */
   private injectRecallAsSystem(memories: readonly Memory[]): void {
     const memoryBlock = memories
-      .map((m) => `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`)
+      .map(
+        (m) =>
+          `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`,
+      )
       .join('\n');
 
     // 预算估算：召回块自身 token + 注入前上下文总量（尚未 push 本条召回消息）
-    const recallTokens = this.contextManager.estimateTokens([{ role: 'system', content: memoryBlock }]);
+    const recallTokens = this.contextManager.estimateTokens([
+      { role: 'system', content: memoryBlock },
+    ]);
     const beforeTokens = this.contextManager.estimateTokens(this.messages);
     const totalTokens = beforeTokens + recallTokens;
     const remaining = Math.max(0, this.maxContextTokens - totalTokens);
@@ -1284,7 +1359,8 @@ export class AgentLoop {
 
   /** 从角色包策略更新 ChatOptions 覆盖项（temperature/outputLimit/streaming 等立即生效） */
   setChatOptions(chatOptions: Partial<ChatOptions> | undefined): void {
-    this.opts.chatOptions = chatOptions && Object.keys(chatOptions).length > 0 ? { ...chatOptions } : undefined;
+    this.opts.chatOptions =
+      chatOptions && Object.keys(chatOptions).length > 0 ? { ...chatOptions } : undefined;
   }
 
   /** 刷新 bootstrap 记忆段（设定面板对 rule/skill 增删改后用最新记忆重建 bootstrap 段）。
@@ -1412,8 +1488,37 @@ export class AgentLoop {
     const removedCount = this.messages.length - 1 - conversationHistory.length;
     this.replaceContext([permanent, ...conversationHistory]);
     if (removedCount > 0) {
-      logger.debug({ removedCount, remainingMessages: this.messages.length }, '临时 system 消息已清理');
+      logger.debug(
+        { removedCount, remainingMessages: this.messages.length },
+        '临时 system 消息已清理',
+      );
     }
+  }
+
+  /**
+   * 清理执行期临时 system 消息（self-review / reflection / duplicate-warning / metaNote）。
+   *
+   * 每轮闭环入口执行一次（processUserInput / continueAfterPause / runReport），清掉上一轮
+   * 执行中产生、下一轮不应再见的残留。与 prepare 阶段的装配性注入区分：装配注入（召回、
+   * 最近对话）不在此集合，保留到 prepare 重建。replaceContext 走浅拷贝保留消息引用，
+   * 故按引用过滤是安全且幂等的。
+   */
+  private cleanExecutionTemporary(): void {
+    if (this.executionTempSystem.size === 0) return;
+    const kept: Message[] = [];
+    const permanent = this.messages[0];
+    this.messages.forEach((m) => {
+      // 保留永驻 system prompt 与所有非执行期临时消息
+      if (m === permanent || !this.executionTempSystem.has(m)) {
+        kept.push(m);
+      }
+    });
+    this.executionTempSystem.clear();
+    logger.debug(
+      { removedCount: this.messages.length - kept.length },
+      '执行期临时 system 消息已清理（闭环入口自动）',
+    );
+    this.replaceContext(kept);
   }
 
   // ─── 工作记忆受控写入口 ─────────────────────────────────────
@@ -1426,8 +1531,13 @@ export class AgentLoop {
   }
 
   /** 追加一条 system 消息（技能注入、召回、任务表、自审查提示等通用注入通道） */
-  private appendSystemMessage(content: string): void {
-    this.messages.push({ role: 'system', content });
+  private appendSystemMessage(content: string, opts: { executionTemp?: boolean } = {}): void {
+    const msg: Message = { role: 'system', content };
+    this.messages.push(msg);
+    // 执行期临时标记：进入 executionTempSystem 引用集，供 cleanExecutionTemporary 在每轮闭环入口自动移除
+    if (opts.executionTemp) {
+      this.executionTempSystem.add(msg);
+    }
   }
 
   /** 追加一条 assistant 纯文本消息（正常 LLM 回复或兜底文本） */
@@ -1436,7 +1546,10 @@ export class AgentLoop {
   }
 
   /** 追加一条带 toolCalls 的 assistant 消息（executeToolCalls 前导） */
-  private appendAssistantToolCall(fullContent: string, toolCalls: NonNullable<Message['toolCalls']>): void {
+  private appendAssistantToolCall(
+    fullContent: string,
+    toolCalls: NonNullable<Message['toolCalls']>,
+  ): void {
     this.messages.push({ role: 'assistant', content: fullContent, toolCalls });
   }
 
@@ -1484,12 +1597,18 @@ export class AgentLoop {
       error: lastError?.message ?? 'unknown error',
     };
     await new Promise<void>((resolve) => {
-      if (signal?.aborted) { resolve(); return; }
+      if (signal?.aborted) {
+        resolve();
+        return;
+      }
       const timeoutId = safeSetTimeout(() => {
         signal?.removeEventListener('abort', onAbort);
         resolve();
       }, delay);
-      const onAbort = () => { clearTimeout(timeoutId); resolve(); };
+      const onAbort = () => {
+        clearTimeout(timeoutId);
+        resolve();
+      };
       signal?.addEventListener('abort', onAbort, { once: true });
     });
   }
@@ -1506,7 +1625,9 @@ export class AgentLoop {
       // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
       const wrapped = this.wrapToolResult(tc.function.name, result);
       this.appendToolMessage(wrapped, tc.id);
-      if (result.startsWith('[ERR')) { this.metrics.toolFailureCount++; }
+      if (result.startsWith('[ERR')) {
+        this.metrics.toolFailureCount++;
+      }
     }
   }
 
@@ -1546,7 +1667,10 @@ export class AgentLoop {
       yield {
         type: 'recall',
         memories: recalledMemories.map((m) => ({
-          id: m.id, name: m.name, score: m.score, source: m.source,
+          id: m.id,
+          name: m.name,
+          score: m.score,
+          source: m.source,
         })),
       };
     }
@@ -1561,13 +1685,19 @@ export class AgentLoop {
 
     // 软上限：tokenBudget（0 = 不限制）
     if (this.strategy.tokenBudget > 0 && currentTokens >= this.strategy.tokenBudget * 0.8) {
-      logger.debug({ currentTokens, budget: this.strategy.tokenBudget }, 'Token budget 80% reached, skip recall');
+      logger.debug(
+        { currentTokens, budget: this.strategy.tokenBudget },
+        'Token budget 80% reached, skip recall',
+      );
       return true;
     }
 
     // 硬上限：maxContextTokens 90% 警戒线
     if (currentTokens >= this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
-      logger.debug({ currentTokens, max: this.maxContextTokens }, 'Context 90% reached, skip recall');
+      logger.debug(
+        { currentTokens, max: this.maxContextTokens },
+        'Context 90% reached, skip recall',
+      );
       return true;
     }
 

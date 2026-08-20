@@ -244,7 +244,8 @@ export class SeedOrchestrator {
       ),
     );
     if (planAct.failed || planAct.aborted) return;
-    // 清理规划期注入的临时 system 消息（PLAN_ONLY 等）——必须先于 abort return，避免残留跨到下一次输入
+    // 清理规划期注入的 PLAN_ONLY（装配控制提示，非执行期临时，不随 loop 入口自动清）——
+    // 必须先于 abort return，避免残留跨到下一次输入
     parts.loop.cleanTemporarySystemMessages();
 
     // 2) 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）
@@ -255,9 +256,7 @@ export class SeedOrchestrator {
       stepsRun++;
       // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
       // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId（见 Q4 评审）
-      // 步闭环入口先清理上一步累积的临时 system 消息（self-review/reflection/duplicate-warning 等），
-      // 履行"每轮 chat() 前清理"纪律——否则跨步堆积会膨胀 token、污染"模型看到了什么"指纹、混入收尾上下文（见 §2.5）
-      parts.loop.cleanTemporarySystemMessages();
+      // 执行期临时（self-review/reflection 等）已由 loop.processUserInput 入口自动清理，无需此处手动调用
       const stepAct = yield* this.act.run(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
@@ -268,9 +267,7 @@ export class SeedOrchestrator {
     // 3) 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以规划闭环产出走普通单条摘要（保证摘要恒 1:1，不丢记忆）
     // 收尾前把 roundId 回指 head：汇报文本与 round-summary 挂"这次外部输入"，而非最后一步（组合溯源）
     parts.loop.setCurrentRoundId(headRoundId);
-    // 收尾前再清一次：清掉最后一步闭环累积的临时 system 消息，确保汇报只看到规划产物 + 汇报指令，
-    // 不把步内 self-review/reflection 等残留混入收尾上下文与摘要来源
-    parts.loop.cleanTemporarySystemMessages();
+    // 汇报入口（loop.runReport）已自动清理上一步执行期临时残留，无需此处手动再清
     if (this.isConverged()) {
       // 收敛路径：汇报有实质内容产汇报单源摘要；汇报为空/token 预算占位 → 回退规划产出普通摘要（恒 1:1）
       yield* this.runReportAndReflect(signal, input, planAct.content);

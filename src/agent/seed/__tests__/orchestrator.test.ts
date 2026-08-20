@@ -308,12 +308,13 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     // 每个步闭环独立 roundId 由 processUserInput 自生成（未传 roundId，mock 不覆盖 currentRoundId）。
     // 故 setCurrentRoundId 仅 prepare 1 次 + 收尾回指 head 1 次 = 2 次（Q4：allocRoundId 冗余已删除）
     expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(2);
-    // 步间临时 system 回收（b）：prepare 入口 + 规划后 + 每步进入前 + 收尾前各清一次。
-    // 保证步内 self-review/reflection 不跨步堆积混入收尾上下文。
+    // 步间临时 system 回收：清理职责已收敛（单一真理源）。
+    // orchestrator 层现只剩 prepare 入口 + 规划后（PLAN_ONLY）两处显式调用；
+    // 步前/收尾前的执行期临时（self-review/reflection）改由 loop.processUserInput/runReport
+    // 入口自动清理（cleanExecutionTemporary），属 loop 内部职责，不在本 mock 断言范围。
     const cleanCount = mocks.loop.cleanTemporarySystemMessages.mock.calls.length;
-    const userInputCalls = mocks.loop.processUserInput.mock.calls.length;
-    // 步数=2：prepare1 + 规划后1 + 步前2 + 收尾前1 = 5；processUserInput = 规划1 + 步2 = 3
-    expect(cleanCount).toBe(userInputCalls + 2); // +2 = prepare 入口 + 收尾前
+    // prepare 入口 1 次 + 规划后（PLAN_ONLY）1 次 = 2 次
+    expect(cleanCount).toBe(2);
     // 仍产出 handoff（wait）
     expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait' });
   });
