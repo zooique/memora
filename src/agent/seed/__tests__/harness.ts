@@ -140,17 +140,22 @@ export function buildParts(mocks: SeedMocks): SeedParts {
  * @returns { mocks, consumeControl, deps }
  */
 export function createHarness(overrides: Partial<SeedDeps> = {}) {
-  // 可变的当前轮 ID（测试借 setCurrentRoundId 状态推进）
+  // 可变的当前轮 ID（测试借 setCurrentRoundId 状态推进；getCurrentRoundId 读同一状态）
   const consumeControl: ConsumeControl = {
     result: { content: 'assistant-答', aborted: false, failed: false },
   };
+  // loop roundId 的原子状态：供 setCurrentRoundId/getCurrentRoundId 共享，模拟真实 loop 的轮次推进
+  let currentRoundId = 'round-1';
 
   const mocks: SeedMocks = {
     loop: {
       cleanTemporarySystemMessages: vi.fn(),
       setStrategy: vi.fn(),
-      setCurrentRoundId: vi.fn(),
-      getCurrentRoundId: vi.fn(() => 'round-1'),
+      // setCurrentRoundId/getCurrentRoundId 共享同一可变状态，还原 loop"单轮内 user/assistant/摘要同 id"的语义
+      setCurrentRoundId: vi.fn((id: string) => {
+        currentRoundId = id;
+      }),
+      getCurrentRoundId: vi.fn(() => currentRoundId),
       processUserInput: vi.fn(),
       processEvent: vi.fn(),
       continueAfterPause: vi.fn(),

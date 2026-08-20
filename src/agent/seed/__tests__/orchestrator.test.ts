@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { SessionEvent } from '@/agent/types.js';
 import { createHarness, collectGen, textStream, mockProvider, type SeedMocks } from './harness.js';
 
@@ -219,10 +220,83 @@ describe('SeedOrchestrator 最小问答闭环', () => {
       expect.any(String),
       undefined,
     );
-    // 每个步闭环独立 roundId（prepare 设 1 次 + allocRoundId 每步各 1 次 = 3 次）
-    expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(3);
+    // 组合 head 溯源：收尾回指后，round-summary 挂 head（=prepare 分配、appendUser 同一 roundId），
+    // 而非"最后一步"——保证 round-summary 锚定"这次外部输入"（见 memory-as-summary §2.5）
+    const headRoundId = mocks.history.appendUser.mock.calls[0]![1];
+    expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(headRoundId);
+    // 汇报文本同样挂 head（与摘要、用户消息同 roundId，组合内溯源一致）
+    expect(mocks.history.appendAssistant.mock.calls.at(-1)?.[1]).toBe(headRoundId);
+    // 每个步闭环独立 roundId 由 processUserInput 自生成（未传 roundId，mock 不覆盖 currentRoundId）。
+    // 故 setCurrentRoundId 仅 prepare 1 次 + 收尾回指 head 1 次 = 2 次（Q4：allocRoundId 冗余已删除）
+    expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(2);
+    // 步间临时 system 回收（b）：prepare 入口 + 规划后 + 每步进入前 + 收尾前各清一次。
+    // 保证步内 self-review/reflection 不跨步堆积混入收尾上下文。
+    const cleanCount = mocks.loop.cleanTemporarySystemMessages.mock.calls.length;
+    const userInputCalls = mocks.loop.processUserInput.mock.calls.length;
+    // 步数=2：prepare1 + 规划后1 + 步前2 + 收尾前1 = 5；processUserInput = 规划1 + 步2 = 3
+    expect(cleanCount).toBe(userInputCalls + 2); // +2 = prepare 入口 + 收尾前
     // 仍产出 handoff（wait）
     expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait' });
+  });
+
+  it('runChat 收敛但汇报为空：回退规划产出普通摘要，仍恒产 1 条', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    // 唯一步骤已 done → 无 pending → 步循环空 → isConverged()=true → 走汇报
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'done', description: '步骤一' }],
+    });
+    stubProcessUserInput(mocks, '规划内容');
+    consumeControl.result = { content: '规划内容', aborted: false, failed: false };
+    // 汇报闭环返回空流（LLM 未产出真实收尾内容）
+    mocks.loop.runReport.mockImplementation(function* () {});
+
+    await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
+    await vi.waitFor(() => {
+      expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
+    });
+
+    // 汇报为空 → 不把空内容当汇报写史，回退规划产出走普通单条摘要（与"未收敛"同一真理源）
+    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '复杂任务', // 输入侧：用户输入（fallbackInput）
+      '规划内容', // 输出侧：规划产出（fallbackContent）
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
+  });
+
+  it('runChat 收敛但汇报仅 token 预算占位：视为无实质收尾，回退普通摘要', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'done', description: '步骤一' }],
+    });
+    stubProcessUserInput(mocks, '规划内容');
+    consumeControl.result = { content: '规划内容', aborted: false, failed: false };
+    // 汇报仅返回 token 预算占位文本 -> 视作未产出真实收尾
+    mocks.loop.runReport.mockReturnValue(
+      textStream(`\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}`),
+    );
+
+    await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
+    await vi.waitFor(() => {
+      expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '复杂任务',
+      '规划内容',
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
   });
 
   it('runChat 复杂但未收敛（无已完成 plan 步骤）：不触发汇报，走普通摘要', async () => {
@@ -238,13 +312,16 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.loop.runReport).not.toHaveBeenCalled();
-    // 走普通回答后摘要（输入侧为用户输入，非空）
+    // 走普通回答后摘要（输入侧为用户输入，非空）；未收敛分支同样挂 head（=appendUser 同 roundId）
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
       '输入',
       '回复',
       expect.any(String),
       expect.any(String),
       undefined,
+    );
+    expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(
+      mocks.history.appendUser.mock.calls[0]![1],
     );
   });
 

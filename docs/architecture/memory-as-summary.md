@@ -135,6 +135,14 @@ postProcess → 使用 round-5 生成摘要
 
 > 该定案已由 `seed/orchestrator.ts` 落地：普通回答 → `reflect.run(input, 答完内容)`；复杂且收敛的外部循环 → 收尾 `reflect.runReported(汇报单源)`（规划/步子闭环不单产摘要）；复杂但未收敛 → 以规划闭环产出走普通单条摘要；`act` 返回 aborted → 不摘要。三者均保证一次外部输入恰产一条 round-summary（摘要 ↔ 外部输入 1:1）。
 
+> **两级摘要防混淆（补充澄清）**：系统有**两轨摘要**，职责不同、互不顶替——
+> - **round-summary（记忆轨）**：跨会话沉淀，即本 §2.5 规则对象。一次外部输入恒 1:1，**决策点唯一**。
+> - **context summary（运行时轨）**：loop 内部 `_prepareContext`/compact 把溢出窗口的旧轮压成骨架注入，保证多轮内部一致性。**内部子闭环的"摘要欲"归这一轨**，不产 round-summary、不入记忆库。
+> - **单一决策点**：「恒1:1」不违背「闭环一摘要」——把"外部输入"视为**最外层闭环**（Trigger=输入；Act=规划+步序列；Reflect=收尾汇报），收尾汇报闭环即该最外层闭环的 Reflect。故**摘要决策点唯一（最外层收尾）**，内部子闭环复用闭环机制但不设 round-summary 决策点。
+> - **上下文注入自洽**：loop 多轮时，被挤出窗口的历史靠 context summary 骨架保留，**不依赖也不应依赖** round-summary 兜底（否则职责错位）；骨架对 code/diff/table 的保真由角色包 `summaryFocus` 承担。
+> - **无实质收尾仍恒 1:1**：收敛但汇报为空/仅 token 预算占位（无真实收尾）→ 回退以该外部输入的主答（阶段 2）/规划产出（阶段 3）走普通单条（`runReportAndReflect`，[orchestrator.ts](../../src/agent/seed/orchestrator.ts)），**不是 0 条**。
+> - **组合溯源（head id，已落地）**：外部任务驱动 loop 的 round-summary 挂在**组合 head id**（= `prepare` 分配、`appendUser` 的 roundId，即"这次外部输入"），而非最后一步——`externalTaskLoop` 收尾时把 roundId 回指 head，使汇报文本与 round-summary 与用户消息同 roundId（组合内溯源自洽）。步闭环仍用独立 sub roundId（消息溯源/互斥排除），但收尾摘要锚定 head。
+
 ---
 
 ## 三、存储模型

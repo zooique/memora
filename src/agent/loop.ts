@@ -362,7 +362,7 @@ export class AgentLoop {
     // 上下文准备（截断+微压缩+预算），安全消息集合供 LLM 调用
     const prep = await this._prepareContext(signal);
     if (prep === 'done') {
-      yield { type: 'text', content: '\n\n[Token budget reached]' };
+      yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}` };
       return;
     }
 
@@ -574,7 +574,7 @@ export class AgentLoop {
     // ─── 上下文准备：截断 + 微压缩 + tokenBudget 检查 ────────────
     const prep = await this._prepareContext(effectiveSignal);
     if (prep === 'done') {
-      yield { type: 'text', content: '\n\n[Token budget reached]' };
+      yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}` };
       return 'done';
     }
 

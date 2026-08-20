@@ -137,6 +137,12 @@ export const LOOP_CONSTANTS = {
   /** 召回记忆内容注入上下文时的截断长度（字符）。 */
   RECALL_CONTENT_SLICE: 200,
 
+  /**
+   * Token 预算耗尽占位文本（SSOT）：会话/汇报在上下文预算触顶时的兜底输出。
+   * orchestrator 需以此判定"无实质收尾"（走回退摘要而非当作真实内容），故集中于此。
+   */
+  TOKEN_BUDGET_REACHED_PLACEHOLDER: '[Token budget reached]',
+
   /** 上下文摘要：参与摘要的最近消息条数。 */
   SUMMARY_MSG_COUNT: 6,
 

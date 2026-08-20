@@ -16,6 +16,7 @@
  */
 
 import type { AgentChunk, SessionEvent } from '@/agent/types.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { resolveTaskLoopLimit } from '@/role-pack/strategyResolver.js';
 import { resolveActiveStrategy, type SeedDeps, type SeedPrepareResult } from './types.js';
@@ -227,6 +228,11 @@ export class SeedOrchestrator {
     const parts = this.deps.getParts();
     const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
 
+    // 组合 head id：捕获"这次外部输入"的 roundId（prepare 已分配并 appendUser）。
+    // 步闭环会给 loop 分配独立 currentRoundId，故先存 head，收尾摘要时回指——确保
+    // round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源，见 memory-as-summary §2.5）。
+    const headRoundId = parts.loop.getCurrentRoundId();
+
     // 1) 规划闭环：只调查 + 建任务表，不执行
     parts.loop.injectSystemMessage(PLAN_ONLY_HINT);
     const planAct = yield* this.act.run(() =>
@@ -238,7 +244,7 @@ export class SeedOrchestrator {
       ),
     );
     if (planAct.failed || planAct.aborted) return;
-    // 规划闭环不产摘要（摘要 1:1 只由收尾汇报产出，见 §2.5）；清理规划期注入的临时 system 消息（PLAN_ONLY 等）
+    // 清理规划期注入的临时 system 消息（PLAN_ONLY 等）——必须先于 abort return，避免残留跨到下一次输入
     parts.loop.cleanTemporarySystemMessages();
 
     // 2) 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）
@@ -247,7 +253,11 @@ export class SeedOrchestrator {
       const next = this.getNextPendingStep();
       if (!next) break;
       stepsRun++;
-      this.allocRoundId();
+      // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
+      // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId（见 Q4 评审）
+      // 步闭环入口先清理上一步累积的临时 system 消息（self-review/reflection/duplicate-warning 等），
+      // 履行"每轮 chat() 前清理"纪律——否则跨步堆积会膨胀 token、污染"模型看到了什么"指纹、混入收尾上下文（见 §2.5）
+      parts.loop.cleanTemporarySystemMessages();
       const stepAct = yield* this.act.run(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
@@ -256,8 +266,14 @@ export class SeedOrchestrator {
     }
 
     // 3) 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以规划闭环产出走普通单条摘要（保证摘要恒 1:1，不丢记忆）
+    // 收尾前把 roundId 回指 head：汇报文本与 round-summary 挂"这次外部输入"，而非最后一步（组合溯源）
+    parts.loop.setCurrentRoundId(headRoundId);
+    // 收尾前再清一次：清掉最后一步闭环累积的临时 system 消息，确保汇报只看到规划产物 + 汇报指令，
+    // 不把步内 self-review/reflection 等残留混入收尾上下文与摘要来源
+    parts.loop.cleanTemporarySystemMessages();
     if (this.isConverged()) {
-      yield* this.runReportAndReflect(signal);
+      // 收敛路径：汇报有实质内容产汇报单源摘要；汇报为空/token 预算占位 → 回退规划产出普通摘要（恒 1:1）
+      yield* this.runReportAndReflect(signal, input, planAct.content);
     } else {
       this.backgroundReflect(input, planAct.content);
     }
@@ -265,10 +281,17 @@ export class SeedOrchestrator {
 
   /**
    * 汇报闭环（可复用）：消费 loop.runReport 流 → 汇报文本入会话历史 → 汇报单源摘要。
+   *
+   * 无实质收尾兜底：若汇报为空、或仅为 token 预算占位（无真实收尾内容），
+   * 则以 fallbackContent 走普通单条摘要——保证"收敛"路径恒产 1 条（摘要↔外部输入恒 1:1）。
    * @param signal 中止信号（汇报生成用）
+   * @param fallbackInput 已落库的输入文本（无实质收尾回退时作摘要的输入源）
+   * @param fallbackContent 回退摘要来源（externalTaskLoop 传规划产出；settle 传主回答）
    */
   private async *runReportAndReflect(
     signal: AbortSignal,
+    fallbackInput: string,
+    fallbackContent: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
     let report = '';
@@ -276,7 +299,11 @@ export class SeedOrchestrator {
       if (chunk.type === 'text') report += chunk.content;
       yield chunk;
     }
-    const trimmed = report.trim();
+    // 剥离 token 预算占位再判空：占位视作"未产出真实收尾"，一并走回退（token 预算耗尽不是收尾）
+    const trimmed = report
+      .trim()
+      .replace(LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER, '')
+      .trim();
     if (trimmed) {
       try {
         await parts.history.appendAssistant(trimmed, parts.loop.getCurrentRoundId());
@@ -287,7 +314,10 @@ export class SeedOrchestrator {
       void this.reflect
         .runReported(trimmed)
         .catch((err: unknown) => logger.warn({ err }, '汇报摘要生成失败'));
+      return;
     }
+    // 无实质收尾 → 回退普通单条摘要（与"未收敛"分支同一真理源，保证收敛恒 1:1）
+    this.backgroundReflect(fallbackInput, fallbackContent);
   }
 
   /**
@@ -298,11 +328,6 @@ export class SeedOrchestrator {
     const steps = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
     const next = steps.find((s) => s.status === 'pending');
     return next ? { id: next.id, description: next.description } : null;
-  }
-
-  /** 为外循环每个步闭环分配独立 roundId（消息溯源/互斥排除用；摘要恒 1:1 只由收尾汇报产出，见 §2.5） */
-  private allocRoundId(): void {
-    this.deps.getParts().loop.setCurrentRoundId(`round-${Date.now()}`);
   }
 
   /**
@@ -319,8 +344,9 @@ export class SeedOrchestrator {
     assistantContent: string,
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 复杂且收敛：汇报闭环 + 汇报单源摘要；汇报为空/占位 → 回退主回答普通摘要（阶段 2 同样恒 1:1）
     if (difficulty === 'complex' && this.isConverged()) {
-      yield* this.runReportAndReflect(signal);
+      yield* this.runReportAndReflect(signal, input, assistantContent);
       return;
     }
     // 普通回答后摘要（既有语义不变）
