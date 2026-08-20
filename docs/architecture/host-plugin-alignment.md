@@ -32,8 +32,8 @@
 │  │  │ (SQLite 实现)    │  │ (文件系统实现)   │  │  (宿主搜索 API)   │  │ │
 │  │  └─────────────────┘  └─────────────────┘  └──────────────────┘  │ │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐  │ │
-│  │  │  ITracer         │  │ IRolePackSource │  │  UI Message Bridge│  │ │
-│  │  │ (OpenTelemetry)  │  │ (角色包目录)    │  │  (事件 → UI 渲染)  │  │ │
+│  │  │  ITracer         │  │ RolePackManager │  │  UI Message Bridge│  │ │
+│  │  │ (OpenTelemetry)  │  │ (configDir 扫描) │  │  (事件 → UI 渲染)  │  │ │
 │  │  └─────────────────┘  └─────────────────┘  └──────────────────┘  │ │
 │  │                                                                    │ │
 │  │  ┌─────────────────────────────────────────────────────────────┐  │ │
@@ -87,7 +87,7 @@
 | 3 | `LlmProvider` | LLM API 调用 | 🟡 中 | 流式对话接口 |
 | 4 | `ITracer` | 可观测性追踪 | 🟢 低 | 不传用 NoopTracer |
 | 5 | `IWebSearchProvider` | 网络搜索 | 🟢 低 | 可选注入 |
-| 6 | `IRolePackSource` | 角色包加载 | 🟢 低 | 目录读取抽象 |
+| 6 | `configDir`（配置目录注入） | 角色包/技能加载 | 🟢 低 | 宿主传入 `configDir`；内核 `RolePackManager` 扫描 `configDir/role-packs/` 完成加载，无需实现接口 |
 | 7 | 工具注册 | IDE 操作能力 | 🟡 中 | `agent.tools.registerTool()` |
 
 ### 2.2 `ImemoryStorage` 接口（15 方法）

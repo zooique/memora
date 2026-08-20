@@ -1,28 +1,122 @@
-# Memora 内核 API 参考手册（v2.1.0）
+# Memora 内核 API 参考手册（v1.0）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
-> **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
+> **本文件用途**：列出内核对外暴露的**全部公开接口**——从最基础的接入接口（〇），到 Agent 面类、对话、记忆、角色包、工具、各 Manager，再到类型导出与安全约束。
 >
-> **版本**：v2.1.0（最后更新：2026-08-14，对应内核 v2.1.0）
+> **版本**：v1.0（纯净接口文档，不含历史变更流水）
+
+---
+
+## 〇、接入基础接口
+
+> **定位**：一个新宿主接入 memora 的**最小接入面**。其余各章是 `Agent` 初始化后暴露的运行时能力；本章回答"接入前必须提供什么"。
 >
-> **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
-> - **Agent God Object 拆分（原 v3.0）**：记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
-> - **可观测性与护栏（原 v3.1）**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。
-> - **作品投影与配置建议（原 v3.2）**：新增 WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
-> - **npm 正式包与基础工具（原 v3.3）**：内核发布 v0.2.0（npm 正式包）。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具（parseFrontmatter/serializeFrontmatter）、事件系统（TypedEventEmitter）、审计类型（AuditEvent 等）、评估框架（collectAgentChunks/evaluateResult）。
->
-> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：DEFAULT_CONFIG 由 `config/loader.ts` 常量声明单一真理源（不再维护独立 schema）、IVectorStore 接口提取（JsonVectorStore 为内置实现）、AbortSignal 合并工具（mergeSignals）、Logger 懒初始化（移除模块顶层 pino 副作用，改为首次日志调用时 maybeUpgradeToPino 懒触发）、评估框架结构化信号（AgentChunk.guardrailBlocked 替代中文文案匹配）、文档全量对齐（包名 @zooique/memora、config.example.json 补全 providers/embedding 段）。
->
-> **v2.0.0 变更**：版本号提升（维护性质，无破坏性 API 变更）。
->
-> **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
->
-> **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
->
-> **v2.1.0 变更**：不中断工作模式 v2.0 与 SSOT 修复版本。新增 `IWebSearchProvider` 接口与 `FetchWebSearchProvider` 默认实现，`web_search` 工具条件性暴露；检查点完整性校验与异步恢复；Composer 非中断模式修复。新增 `AgentOptions.webSearchProvider` 注入字段。无 API 破坏性变更。
->
-> **v2.1.x 维护修订**（2026-08-14）：用户画像与记忆关系图谱从内核收敛移除。用户画像收敛为 round-summary 的 type=preference 召回方式；关系冲突改用 supersededBy 机制（参考 ADR-014 已废弃）。对应 API 参考章节与导出同步清理。
+> **一句话总结**：必做三件事——① 实现 `IMemoryStorage` + `ISessionStore` + `LlmProvider`；② 准备 `configDir`（含 `config.json` 模型表 + `role-packs/` + `skills/`）；③ 传 `projectPath` / `dataDir` / `configDir` 构造 `Agent`。其余接口按需注入，缺省都有降级兜底。
+
+### 〇.1 宿主实现的接口（注入）
+
+| 接口 | 必选 | 声明位置 | 用途 |
+|------|------|---------|------|
+| `LlmProvider` | ✅ 必选 | `src/llm/provider.ts` | 前台 LLM 流式对话（`stream()`），宿主创建 |
+| `IMemoryStorage` | ✅ 必选* | `src/memory/storageInterface.ts` | 记忆持久化，15 方法，推荐 SQLite |
+| `ISessionStore` | ✅ 必选* | `src/memory/sessionStore.ts` | 会话消息持久化，3 必需 + 6 可选方法 |
+| `ITracer` | 可选 | `src/agent/tracer.ts` | 可观测性，不传用 `NoopTracer` |
+| `IWebSearchProvider` | 可选 | `src/web-search/types.ts` | 网络搜索，不注入则不启用 |
+| `ILogger` | 可选 | `src/logging/loggerInterface.ts` | 日志，默认内置 |
+| `IVectorStore` | 可选 | `src/memory/vectorStore.ts` | 语义召回，注入才启用向量搜索（否则降级关键词召回） |
+| `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（归档/投影），不配复用前台 |
+
+\* 不传则内核自动用 `InMemoryStorage` / 内存会话（仅内存不落盘）；做产品必须实现。
+
+### 〇.2 宿主提供的配置资源（`configDir` 下）
+
+`configDir` 是唯一的配置目录入口（含角色包 / 全局技能 / 配置文件）：
+
+```
+configDir/
+├── config.json              ← ★ LLM 配置真理源：providers + active + background + taskRouter
+├── role-packs/              ← 角色包目录（每个包一个文件夹，含 manifest.json）
+│   └── 工程师/
+│       ├── manifest.json    ← 必填：元数据 + strategy + capabilities
+│       ├── persona.md       ← 约定名，可省（身份设定）
+│       ├── rules.md         ← 约定名，可省（安全契约）
+│       └── skills/          ← 角色包内嵌技能（目录动态扫描，可选）
+│           └── ...          ← 形式与全局技能池一致（见下）
+├── skills/                  ← 全局技能池（所有角色共享，可选）
+│   ├── search.md            ← 单文件形式
+│   └── code-review/         ← 文件夹形式（统一大众公认的 Agent Skills 格式）
+│       ├── SKILL.md         ← 技能正文（frontmatter 声明 name/description）
+│       ├── resources/       ← L3 参考资源（参考材料/规范）
+│       ├── scripts/         ← L3 可执行脚本（运行时按需执行）
+│       ├── references/      ← 技能内参考资料
+│       └── assets/          ← 技能内资源（模板/图片/示例）
+```
+
+> **skills 两种形式（两级技能共用统一格式）**：全局技能池（`configDir/skills/`）与角色包内嵌技能（`role-packs/<名>/skills/`）采用**同一套**技能格式，仅激活条件不同（全局始终激活，角色包技能随角色激活）。每个技能为单文件 `*.md` **或** 文件夹 `SKILL.md` 两种形式之一；`references/` / `assets/` 属于**技能内部**的资源目录（文件夹形式的组成部分），非 configDir 或角色包顶层目录。渐进披露：L1 元数据常驻 / L2 `read_skill` 按需读正文 / L3 `read_resource` + `run_skill_script`。
+```
+
+**config.json 大模型列表**（不是独立目录，是配置文件中的映射表）：
+
+```jsonc
+{
+  "providers": { "deepseek": { "baseUrl": "...", "model": "...", "apiKey": "" },
+                 "openai":   { "baseUrl": "...", "model": "...", "apiKey": "" } },
+  "active": "deepseek",        // 激活别名，不配取第一个 key
+  "background": { ... },       // 可选后台通道，节省成本
+  "taskRouter": { "simple": "deepseek", "reasoning": "openai" }
+}
+```
+
+- API Key **不写文件**，从环境变量读取。
+- memora 内核仅内置 `mock` Provider（无 API Key 的测试/降级），其余厂商需宿主在 config.json 显式配置。
+
+### 〇.3 `dataDir` vs `storage` 的区别
+
+两个易混淆的参数：**`storage` 管"如何存取"（接口实例），`dataDir` 管"存到哪个目录"（路径字符串）**。
+
+| | `storage`（IMemoryStorage） | `dataDir` |
+|---|---|---|
+| 本质 | 接口实例（宿主写的类） | 文件系统目录路径（字符串） |
+| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `decayScores`… | 用它拼接落盘路径：`join(dataDir, 'memora.db')`、注册表、锁文件 |
+| 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆 / 项目 / 锁文件放哪个目录"（物理位置） |
+| 谁实现 | 宿主实现（如 SqliteMemoryStorage） | 宿主传路径 |
+| 关系 | `dataDir` 指向目录；宿主通常拿它构造 storage：`new SqliteMemoryStorage(join(dataDir,'memora.db'))` | 内核仍用 `dataDir` 推导 dbPath / registry / lock |
+| 缺省 | 不传 → `InMemoryStorage`（仅内存） | 不传 → 路径为空，相关功能依赖 storage 自带实现 |
+
+一句话：`storage` 是宿主**怎么**存取的实现，`dataDir` 是存取内容**落在哪个目录**的配置——一个管"如何"，一个管"何处"。
+
+### 〇.4 多来源双路径编排（内置 + 用户）
+
+内核**刻意保持"单 `configDir` 输入"**——`SkillManager`/`RolePackManager` 只扫 `<configDir>/skills/`、`<configDir>/role-packs/`，无"多来源"概念。宿主若想开放"内置（随插件打包）+ 用户自定义"双路径，由宿主在传入内核**之前**自行编排归一，两种形态：
+
+| 形态 | 做法 | 适用 |
+|------|------|------|
+| **A. 宿主文件层汇总（推荐，零内核改动）** | 宿主在文件系统层把"内置目录 + 用户目录"合并/软链到**一个 `configDir`** 再传内核 | 角色包、全局技能均可；内容本质同构、希望同池匹配 |
+| **B. 宿主多 Manager 实例聚合** | 宿主建多个 `RolePackManager(configDirA/B)` 各管一个来源，聚合 `listMeta()` 在 UI 层分组展示，激活仍逐个调用 | 来源语义需要区分（UI 分组、只读标记） |
+
+选择依据：内容**不必区分来源**走 A（合并到同一 configDir）；**必须区分来源**（只读/可编辑、分组）走 B（多实例聚合展示）。内核两种都支持。
+
+### 〇.5 构造 `Agent` 的必传参数
+
+```ts
+new Agent({
+  projectPath,            // ✅ 必选：工作区
+  provider,               // ✅ 必选：前台 LLM
+  configDir,              // ✅ 必选：〇.2 的配置根目录
+  dataDir,                // ✅ 必选：记忆数据落地目录
+  storage,                // ✅ 必选：IMemoryStorage 实现
+  sessionStore,           // ✅ 必选：ISessionStore 实现
+  // 可选常用项
+  backgroundProvider,     // 后台 LLM
+  webSearchProvider,      // 网络搜索
+  vectorStore,            // 语义召回
+  tracer,                 // 可观测
+  maxContextTokens,       // 默认 120000
+  permission, allowedPaths, confirmWrites,   // 安全
+  activeRolePack,         // 启动激活的角色包
+})
+```
 
 ---
 
@@ -954,6 +1048,5 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v2.1.0
-**最后更新**：2026-08-14
+**版本**：v1.0
 **配套文档**：[memora-接入指南.md](./memora-接入指南.md)（步骤式教程）
