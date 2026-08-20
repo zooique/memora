@@ -363,6 +363,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         contextPreparer: this.contextPreparer!,
         sessionNamer: this.sessionNamer,
         roundSummaryGenerator: this.roundSummaryGenerator,
+        checkpointRestoreCoordinator: this.checkpointRestoreCoordinator,
       }),
       tracer: this.#config.tracer ?? null,
       archiveMode: this.#config.archiveMode,
@@ -390,8 +391,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       this._lastInteractionAt = new Date();
 
-      // 委托种子闭环编排器运行一次完整问答闭环（prepare → act → reflect → handoff）
-      yield* this.seedOrchestrator!.run(input, combinedSignal);
+      // 委托种子编排器：对话路径完整闭环（prepare → act → reflect → handoff）
+      yield* this.seedOrchestrator!.runChat(input, combinedSignal);
     } finally {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       this.chatLockManager?.release(myToken);
@@ -572,44 +573,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
 
       // ── chat 事件正常流程（写历史、后处理） ──────────────
-      const loop = this.requireLoop;
-      // 回答前：委托种子编排器（角色匹配 → 记忆召回 → 技能注入 → 用户消息入史）
-      const prepared = yield* this.seedOrchestrator!.prepare.run(event.content, combinedSignal);
-
-      if (prepared.aborted) {
-        yield {
-          type: 'aborted',
-          reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation',
-        };
-        return;
-      }
-
-      // 预判是否提示 LLM 生成任务表（仅 plan 为空时触发）
-      if (this.checkpointRestoreCoordinator?.shouldGenerateTaskTable(
-        event,
-        this._sessionManager?.getCheckpoint() ?? undefined,
-      )) {
-        loop.injectSystemMessage(
-          '如果需要分步完成任务，请使用 task_table_write 工具创建任务表，' +
-          '包含各步骤的描述（description）。每完成一步使用 task_table_update 工具更新对应步骤状态。' +
-          '任务表仅作参考，LLM 可自行决定执行顺序。',
-        );
-      }
-
-      // 回答中：委托种子编排器消费 AgentLoop.processEvent 执行流 + 统一尾处理
-      const produce = () => loop.processEvent(event, prepared.recalledMemories, combinedSignal);
-      const acted = yield* this.seedOrchestrator!.act.run(produce);
-      if (acted.failed || acted.aborted) return;
-
-      // 回答后：非阻塞生成轮次摘要（记忆即摘要单轨）
-      void this.seedOrchestrator!.reflect
-        .run(event.content, acted.content)
-        .catch((err: unknown) => {
-          logger.warn({ err }, '非阻塞后处理失败');
-        });
-
-      // Handoff：委托种子编排器产出衔接决策（wait=对话等待 / 其余=L2 策略自动衔接）
-      yield* this.seedOrchestrator!.handoff.run();
+      // 委托种子编排器：SessionEvent 路径闭环（prepare → 任务表预判注入 → act(processEvent)
+      // → reflect → handoff）；任务表预判与流消费均收在编排器内，门面只做一行委托。
+      yield* this.seedOrchestrator!.runEvent(event, event.content, combinedSignal);
     } finally {
       this.chatLockManager?.release(myToken);
       cleanupExternalSignal();
@@ -677,20 +643,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         }
       }
 
-      const loop = this.requireLoop;
-
-      // 回答中：委托种子编排器消费 loop.continueAfterPause 执行流 + 统一尾处理
-      // （续跑无回答前；续跑态不产出 Handoff——闭环出口仅在对话/事件路径分岔）
-      const produce = () => loop.continueAfterPause(input, combinedSignal);
-      const acted = yield* this.seedOrchestrator!.act.run(produce);
-      if (acted.failed || acted.aborted) return;
-
-      // 回答后：非阻塞生成轮次摘要（与 chat 尾处理同构）
-      void this.seedOrchestrator!.reflect
-        .run(input ?? '', acted.content)
-        .catch((err: unknown) => {
-          logger.warn({ err }, '非阻塞后处理失败');
-        });
+      // 委托种子编排器：续跑路径闭环（act(continueAfterPause) → reflect；无回答前、无 Handoff），
+      // 预判短路与锁/状态机守卫留在门面，执行语义收在编排器内。
+      yield* this.seedOrchestrator!.runResume(input, combinedSignal);
     } finally {
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.chatLockManager?.release(myToken);

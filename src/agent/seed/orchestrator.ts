@@ -1,19 +1,21 @@
 /**
  * 种子闭环编排器 — 最小问答闭环的唯一编排真理源（prepare → act → reflect → handoff）
  *
- * 对应方案"[orchestrator.ts = 唯一编排真理源]"。orchestrator.run() 显式表达
- * "一次触发 → 一次性完整闭环"，是种子"自足可重复可观察"三个性质的代码落地。
+ * 对应方案"[orchestrator.ts = 唯一编排真理源]"。「如何串联一个问答闭环」全部收在此处，
+ * 门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
  *
- * 语义对应：
- *   - chat 路径（门面对话）经 run() 走完整种子闭环（prepare → act → reflect → handoff）。
- *   - processEvent / resumeExecution 因 flow 差异（前者有任务表预判注入、后者无 prepare
- *     与 handoff），由门面复用本编排器的 prepare / act / reflect / handoff 单阶段能力
- *     自编排——种子模块是"细胞"，或言编排器提供默认组装，门面保留路径级 flow。
+ * 三个显式命名入口（对应哲学：闭环只认 Trigger，不认 Trigger 来源）：
+ *   - runChat   （对话 Trigger）   完整闭环：prepare → act(processUserInput) → reflect → handoff
+ *   - runEvent  （SessionEvent）   prepare → 任务表预判注入 → act(processEvent) → reflect → handoff
+ *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
+ *
+ * 刻意不做「单 run() + mode 标志」——三条路径的真实差异（runEvent 有任务表注入、runResume
+ * 无 prepare/无 handoff）若硬塞进一个开关，会落入哲学 §3.2 的场景特化补丁反模式。
  *
  * 依赖方向：agent/seed/* → agent/loop（种子消费引擎），agent.ts → agent/seed（门面委托种子）。
  */
 
-import type { AgentChunk } from '@/agent/types.js';
+import type { AgentChunk, SessionEvent } from '@/agent/types.js';
 import { logger } from '@/logging/logger.js';
 import type { SeedDeps } from './types.js';
 import { SeedPrepare } from './prepare.js';
@@ -22,22 +24,30 @@ import { SeedReflect } from './reflect.js';
 import { SeedHandoff } from './handoff.js';
 
 /**
+ * event 路径任务表预判注入提示（仅 plan 为空且应生成任务表时注入，提示 LLM 分步）
+ */
+const TASK_TABLE_HINT =
+  '如果需要分步完成任务，请使用 task_table_write 工具创建任务表，' +
+  '包含各步骤的描述（description）。每完成一步使用 task_table_update 工具更新对应步骤状态。' +
+  '任务表仅作参考，LLM 可自行决定执行顺序。';
+
+/**
  * 种子闭环编排器
  *
- * 聚合回答前/中/后与 Handoff 四阶段，提供最小问答闭环的默认组装（run()）。
- * prepare / act / reflect / handoff 各自可被门面按路径单独复用。
+ * 聚合回答前/中/后与 Handoff 四阶段，提供闭环编排的全部入口（runChat/runEvent/runResume）。
+ * prepare / act / reflect / handoff 各自可测；编排语义只在 orchestrator 唯一实现。
  */
 export class SeedOrchestrator {
   /** 依赖注入（门面稳定能力窄面） */
   private readonly deps: SeedDeps;
   /** 回答前（装配上下文 + 召回 + 技能 + 用户消息入史） */
-  readonly prepare: SeedPrepare;
+  private readonly prepare: SeedPrepare;
   /** 回答中（统一流消费 + 中断/追加助手消息尾处理） */
-  readonly act: SeedAct;
+  private readonly act: SeedAct;
   /** 回答后（round-summary 摘要生成，记忆即摘要单轨） */
-  readonly reflect: SeedReflect;
+  private readonly reflect: SeedReflect;
   /** Handoff 衔接决策（闭环出口） */
-  readonly handoff: SeedHandoff;
+  private readonly handoff: SeedHandoff;
 
   constructor(deps: SeedDeps) {
     this.deps = deps;
@@ -48,21 +58,17 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 运行一次完整的最小问答闭环（chat 路径默认组装）：
-   * 回答前 → 回答中 → 回答后 → Handoff。
+   * 对话路径完整闭环：回答前 → 回答中(processUserInput) → 回答后 → Handoff。
    *
    * @param input 用户输入
    * @param signal 中止信号
    * @yields AgentChunk 事件流（thinking / handoff / 透传 loop 执行流 chunk）
    */
-  async *run(input: string, signal: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
+  async *runChat(input: string, signal: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     // 回答前：装配上下文 + 召回记忆
     const prepared = yield* this.prepare.run(input, signal);
     if (prepared.aborted) {
-      yield {
-        type: 'aborted',
-        reason: this.deps.messages?.abortedByUser ?? 'User cancelled the conversation',
-      };
+      yield { type: 'aborted', reason: this.abortedReasonByUser() };
       return;
     }
 
@@ -79,12 +85,90 @@ export class SeedOrchestrator {
     const acted = yield* this.act.run(produce);
     if (acted.failed || acted.aborted) return;
 
-    // 回答后：非阻塞生成轮次摘要（fire-and-forget，失败仅记日志）
-    void this.reflect
-      .run(input, acted.content)
-      .catch((err: unknown) => logger.warn({ err }, '非阻塞后处理失败'));
-
-    // Handoff：对外产出衔接决策
+    // 回答后 + Handoff
+    void this.backgroundReflect(input, acted.content);
     yield* this.handoff.run();
+  }
+
+  /**
+   * SessionEvent 路径闭环：回答前 → 任务表预判注入 → 回答中(processEvent) → 回答后 → Handoff。
+   *
+   * 与 runChat 的唯一差异是回答中驱动 loop.processEvent + 回答前多一步任务表预判提示——
+   * 该差异是 event Trigger 的闭环内属性，故在编排器内处理而非泄漏到门面。
+   *
+   * @param event 增量事件（chat 语义；驱动 loop.processEvent）
+   * @param input 用户输入内容（= event.content，回答前与回答后共用）
+   * @param signal 中止信号
+   * @yields AgentChunk 事件流
+   */
+  async *runEvent(
+    event: SessionEvent,
+    input: string,
+    signal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 回答前：装配上下文 + 召回记忆
+    const prepared = yield* this.prepare.run(input, signal);
+    if (prepared.aborted) {
+      yield { type: 'aborted', reason: this.abortedReasonByUser() };
+      return;
+    }
+
+    // 任务表预判（仅 event 路径）：plan 为空且应生成时，提示 LLM 用任务表分步
+    const parts = this.deps.getParts();
+    const crc = parts.checkpointRestoreCoordinator;
+    if (crc?.shouldGenerateTaskTable(event, parts.sessionManager?.getCheckpoint() ?? undefined)) {
+      parts.loop.injectSystemMessage(TASK_TABLE_HINT);
+    }
+
+    // 回答中：消费 loop.processEvent 执行流 + 统一尾处理
+    const produce = () => parts.loop.processEvent(event, prepared.recalledMemories, signal);
+    const acted = yield* this.act.run(produce);
+    if (acted.failed || acted.aborted) return;
+
+    // 回答后 + Handoff
+    void this.backgroundReflect(input, acted.content);
+    yield* this.handoff.run();
+  }
+
+  /**
+   * 续跑路径闭环：回答中(continueAfterPause) → 回答后。无回答前、无 Handoff。
+   *
+   * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文（prepare）、不在闭环出口分岔
+   * （handoff）——差异源于 Trigger 的续跑语义，收在编排器内。
+   *
+   * @param input 可选补充输入（空=续跑原路径；有=注入修正后续轮）
+   * @param signal 中止信号
+   * @yields AgentChunk 事件流
+   */
+  async *runResume(
+    input: string | undefined,
+    signal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
+    const produce = () => this.deps.getParts().loop.continueAfterPause(input, signal);
+    const acted = yield* this.act.run(produce);
+    if (acted.failed || acted.aborted) return;
+
+    // 回答后（无 Handoff：续跑态不在闭环出口分岔）
+    void this.backgroundReflect(input ?? '', acted.content);
+  }
+
+  /**
+   * 回答后统一 fire-and-forget 封装：非阻塞生成轮次摘要，失败仅记日志。
+   * @param input 用户输入（摘要输入侧）
+   * @param assistantContent 助手回答（摘要输出侧）
+   */
+  private backgroundReflect(input: string, assistantContent: string): void {
+    void this.reflect
+      .run(input, assistantContent)
+      .catch((err: unknown) => logger.warn({ err }, '非阻塞后处理失败'));
+  }
+
+  /**
+   * 用户中断原因文案（SSOT：优先宿主注入，回退内置默认）
+   * @returns 中断原因文案
+   */
+  private abortedReasonByUser(): string {
+    return this.deps.messages?.abortedByUser ?? 'User cancelled the conversation';
   }
 }

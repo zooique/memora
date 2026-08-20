@@ -18,6 +18,7 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionManager } from '@/agent/managers/sessionManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
+import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/types.js';
@@ -40,6 +41,9 @@ export interface SeedMocks {
     setCurrentRoundId: ReturnType<typeof vi.fn>;
     getCurrentRoundId: ReturnType<typeof vi.fn>;
     processUserInput: ReturnType<typeof vi.fn>;
+    processEvent: ReturnType<typeof vi.fn>;
+    continueAfterPause: ReturnType<typeof vi.fn>;
+    injectSystemMessage: ReturnType<typeof vi.fn>;
   };
   history: {
     appendUser: ReturnType<typeof vi.fn>;
@@ -55,6 +59,7 @@ export interface SeedMocks {
   };
   sessionNamer: { ensureSessionTitle: ReturnType<typeof vi.fn> };
   roundSummaryGenerator: { generate: ReturnType<typeof vi.fn> };
+  checkpointRestoreCoordinator: { shouldGenerateTaskTable: ReturnType<typeof vi.fn> };
   tracer: { startSpan: ReturnType<typeof vi.fn> };
   span: { end: ReturnType<typeof vi.fn> };
   applyRolePackToolExposure: ReturnType<typeof vi.fn>;
@@ -122,6 +127,7 @@ export function buildParts(mocks: SeedMocks): SeedParts {
     contextPreparer: mocks.contextPreparer as unknown as ContextPreparer,
     sessionNamer: mocks.sessionNamer as unknown as SessionNamer,
     roundSummaryGenerator: mocks.roundSummaryGenerator as unknown as RoundSummaryGenerator,
+    checkpointRestoreCoordinator: mocks.checkpointRestoreCoordinator as unknown as CheckpointRestoreCoordinator,
   };
 }
 
@@ -143,6 +149,9 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       setCurrentRoundId: vi.fn(),
       getCurrentRoundId: vi.fn(() => 'round-1'),
       processUserInput: vi.fn(),
+      processEvent: vi.fn(),
+      continueAfterPause: vi.fn(),
+      injectSystemMessage: vi.fn(),
     },
     history: {
       appendUser: vi.fn(async () => {}),
@@ -158,6 +167,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     },
     sessionNamer: { ensureSessionTitle: vi.fn(async () => {}) },
     roundSummaryGenerator: { generate: vi.fn(async () => {}) },
+    checkpointRestoreCoordinator: { shouldGenerateTaskTable: vi.fn(() => false) },
     tracer: { startSpan: vi.fn() },
     span: { end: vi.fn() },
     applyRolePackToolExposure: vi.fn(),

@@ -82,11 +82,11 @@
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
-| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/act/reflect/handoff/orchestrator + harness，26 tests） | 种子三阶段（回答前/中/后）+ Handoff 各自独立执行器；`seed/orchestrator.ts` 为最小问答闭环唯一编排真理源（run() = prepare→act→reflect→handoff） |
+| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/act/reflect/handoff/orchestrator + harness，29 tests） | 种子三阶段（回答前/中/后）+ Handoff 各自独立执行器；`seed/orchestrator.ts` 为最小问答闭环唯一编排真理源，提供 `runChat`/`runEvent`/`runResume` 三入口 |
 | `agent/loop.ts` | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests) | AgentLoop 核心：单轮闭环执行 + Loop 外循环编排，含拦截器集成 |
 | `agent/agent.ts` | 🟢 已打磨 | `__tests__/agent.test.ts` | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行闭环 |
 
-> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；`chat()` 委托 `run()`，`processEvent()`/`resumeExecution()` 按路径复用 prepare/act/reflect/handoff 单阶段。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend_layers_rules.md](../.trae/rules/backend_layers_rules.md)）。
+> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend_layers_rules.md](../.trae/rules/backend_layers_rules.md)）。
 
 ---
 
