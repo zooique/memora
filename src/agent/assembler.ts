@@ -402,8 +402,8 @@ function wireRuntimeCallbacks(
         .join('\n')}`;
     },
     updateStep: (stepId, status) => {
-      // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）——
-      // 旧实现直改 step.status 未置 checkpointDirty → 计划变更可能永不落盘
+      // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）。
+      // 必须经此写点置 checkpointDirty，否则计划变更可能永不落盘
       if (!sessionManager.updatePlanStepStatus(stepId, status)) {
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
       }
@@ -617,7 +617,7 @@ export async function assembleComponents(
 
   // SessionManager 构造只存 getter（getHistory/getLoop 惰性取用），不访问 history/loop 本体——
   // 因此可先于 loop 创建，使 loop 的工具执行回调（onToolExecuted/preExecutionCheck）装配期即可
-  // 直接写入，消除旧实现"暂存队列 + flush 冲洗"的顺序补丁。
+  // 直接写入，无需工具执行期再借助暂存窗口。
   // loop 经闭包变量后赋引用；装配期不会触发 getLoop。
   let loopRef: AgentLoop | null = null;
   const sessionManager = new SessionManager(

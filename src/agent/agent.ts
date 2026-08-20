@@ -108,7 +108,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private dedupManager: DedupManager | null = null;
   /**
    * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
-   * detectConflicts 直连 advisor（免转发），sourceHealth/suggest 仍由 inspector 转发保持统一入口。
+   * 经 governance 门面统一暴露，Agent 不直接持有 advisor。
    */
   private memoryAdvisor: MemoryAdvisor | null = null;
   /** 记忆治理统一门面（L0/L1/L2/L3 + 诊断） */
@@ -1070,9 +1070,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 组装所有运行时组件（一行委托给 assembler 工厂）
    *
-   * 接线回调（工具幂等 outbox / 任务表 / loop 回调 / createSessionManager）已随
-   * 装配下沉到 assembler——Agent 只注入稳定能力（hooks），
-   * 不再持有装配私有状态（暂存队列 / 停滞计数器已移除）。
+   * 接线回调（工具幂等 outbox / 任务表 / loop 回调 / createSessionManager）与装配私有状态
+   * （暂存队列 / 停滞计数器）全部由 assembler 组装收口——Agent 只注入稳定能力（hooks）。
    */
   private async assembleComponents(pctx: ProjectContext): Promise<void> {
     const result = await assembleComponents(pctx, {
@@ -1399,7 +1398,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 断言对话未进行中（统一守卫）：6 处破坏状态一致性操作的相同 isBusy 检查已收敛于此。
+   * 断言对话未进行中（统一守卫）：破坏状态一致性的入口统一在此做 isBusy 检查。
    * reloadConfig 不使用本方法——它在 isBusy 时需暂存 source 而非直接抛错。
    */
   private assertNotBusy(operation: string): void {
@@ -1460,8 +1459,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
-
-  // ─── runMemoryDecay 已迁移至 MemoryDecayScheduler.runOnce ─────
+  // 记忆衰减由 MemoryDecayScheduler 负责；Agent 侧无自有周期逻辑。
 
   // ─── 关闭 ─────────────────────────────────────────────
 

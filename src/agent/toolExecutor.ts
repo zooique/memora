@@ -360,7 +360,7 @@ export class ToolExecutor {
   }
 
   /**
-   * 获取所有工具定义（IX-02：统一为 getter 风格，与 persona/skill 一致）
+   * 获取所有工具定义（getter 风格，与 persona/skill 一致）
    *
    * 白名单语义（M2.1）：
    * - toolWhitelist === null：全部暴露（内置 + web_search 条件 + 自定义工具）；

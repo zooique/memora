@@ -1,8 +1,7 @@
 /**
- * 记忆管理器 — 统一的记忆读写入口（从 Agent 拆分）。
+ * 记忆管理器 — 统一的记忆读写入口。
  * 写方法 writeXxx 前缀区分写操作。同步返回避免数据不一致；每层只返回前 N 条 + 总数（轻量）。
- * L1 语义去重迁至 DedupManager；detectConflicts/sourceHealth/suggest 由 Agent 门面直连 MemoryAdvisor，
- * 本类回归纯存储读写 + 查询入口。记忆关系图谱已收敛移除。
+ * 职责边界：本类只做存储读写与查询；语义去重在 DedupManager，冲突检测/建议在 MemoryAdvisor。
  */
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -297,8 +296,6 @@ export class MemoryInspector {
 
     return { bySource, total };
   }
-
-  // sourceHealth()/suggest() 已移除，由 Agent 门面直连 MemoryAdvisor（同 detectConflicts），消除 3 层转发。
 
   // ─── 写操作（writeXxx 前缀，IMemoryStorage 透传） ───
 

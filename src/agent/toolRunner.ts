@@ -68,7 +68,7 @@ export class ToolRunner {
     });
 
     try {
-      // 执行前检查（三重闸门收敛为三态决策）
+      // 执行前检查：三重闸门输出三态决策（allow / skip / deny）
       const decision = this.applyPrechecks(tc);
       if (decision.kind === 'denied') {
         span.setAttribute('denied', true);

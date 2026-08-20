@@ -86,7 +86,7 @@ export interface UIMessages {
 
 /**
  * 归档模式二态：'full'（默认，content 在会话切换前自动归档）/'manual'（全部手动触发，
- * postProcess 跳过所有自动归档分支）。原三态因洞察层移除收敛为二态（insights-only 已移除）。
+ * postProcess 跳过所有自动归档分支）。
  */
 export type ArchiveMode = 'full' | 'manual';
 

@@ -153,7 +153,7 @@ export class AgentLoop {
   private currentRoundId = '';
   /** 是否正处于自主工具步执行中（供宿主决定暂停按钮显隐，内核→宿主"可续跑"信号） */
   private inAutonomousStep = false;
-  /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）已收敛为
+  /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
   /** 暂停回调——loop 在迭代边界真正挂起时调用 */
   onPaused?: () => void;

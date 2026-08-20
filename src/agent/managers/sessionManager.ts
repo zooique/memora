@@ -6,7 +6,7 @@
 
 import { logger } from '@/logging/logger.js';
 import { chatBusyError, configError } from '@/utils/errors.js';
-// 用 todayDate() 替代 new Date().toISOString().slice(0,10)，修复 UTC 跨天 bug
+// todayDate() 按本地时区取会话日期键；toISOString().slice(0,10) 是 UTC 日期，本地跨天会产生错位
 import { todayDate } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -401,7 +401,7 @@ export class SessionManager {
 
     // 合并语义：以已有检查点为基底展开，仅覆写本次重算的字段。
     // 【禁止改回对象字面量整体重建】——整体重建≈隐式字段白名单，任何未显式列出的字段每次 pause 被静默丢弃
-    // （历史上 roundLog/completedToolCalls/pauseMeta 正因此归零，导致非幂等工具在恢复后重复执行等 bug）。
+    // （整体重建曾使 roundLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
     this.checkpoint = {
       ...(prev ?? {}),
 
@@ -667,8 +667,8 @@ export class SessionManager {
       );
     }
 
-    // 恢复状态机：先强制归零再按检查点重建。原实现直接调 triggerError/pause，二者仅允许从 running 出发，
-    // 跨会话恢复时若状态机残留 paused/error 会静默失败 → 磁盘检查点 status 与内存状态机分叉。
+    // 恢复状态机：先强制归零再按检查点重建——triggerError/pause 仅允许从 running 出发，
+    // 不先归零时若残留 paused/error 会静默失败 → 磁盘检查点 status 与内存状态机分叉。
     this.stateMachine.resetToRunning();
     if (checkpoint.status === 'error') {
       if (checkpoint.error) {
@@ -1024,8 +1024,8 @@ export class SessionManager {
   }
 
   /**
-   * 更新计划步骤状态（plan 步骤状态的唯一写点）。此前 Agent handler 直改 step.status + 手写 lastHeartbeat
-   * 绕过 touchCheckpoint → checkpointDirty 未置位 → 状态变更可能永不落盘。收口此处后状态变更与标脏原子完成。
+   * 更新计划步骤状态（plan 步骤状态的唯一写点）。必须经此写点置 checkpointDirty，
+   * 否则状态变更可能永不落盘，计划变更与标脏在此原子完成。
    */
   updatePlanStepStatus(stepId: string, status: PlanStep['status']): boolean {
     const step = this.checkpoint?.plan.find((s) => s.id === stepId);
