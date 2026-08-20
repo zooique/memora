@@ -400,6 +400,8 @@ import type { ITracer } from '@/agent/tracer.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { MessageRole } from '@/memory/types.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
+import type { IFetchProvider } from '@/web-fetch/types.js';
+import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { ProviderRouter } from '@/llm/types.js';
 
 /**
@@ -507,6 +509,10 @@ export interface AgentOptions {
   archiveMode?: ArchiveMode;
   /** 网络搜索提供者（可选，不配则不启用网络搜索） */
   webSearchProvider?: IWebSearchProvider;
+  /** 网页抓取提供者（可选，不配则不启用 web_fetch；与 webSearchProvider 构成搜索→抓取闭环） */
+  fetchProvider?: IFetchProvider;
+  /** 代码执行提供者（可选，不配则不启用 run_code；执行器与隔离等级由宿主实现） */
+  codeExecutionProvider?: ICodeExecutionProvider;
   /** 文件层前置条件断言回调（可选，未注入则完全降级为现状） */
   fileConsistencyCheck?: FileConsistencyCheck;
   /** 工具执行前检查回调（宿主审批/审计/参数改写通道）：装配时与内部幂等检查组合为单点入口 */

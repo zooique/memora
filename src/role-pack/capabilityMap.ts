@@ -27,6 +27,10 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'file:list': ['list_dir'],
   // 网络域
   'web:search': ['web_search'],
+  // 搜索→抓取闭环：web_fetch 读正文（与 web_search 成对声明，角色包按需声明）
+  'web:fetch': ['web_fetch'],
+  // 通用计算域（宿主注入 ICodeExecutionProvider 才真正暴露，能力声明本身只控制暴露面）
+  'code:execute': ['run_code'],
   // 记忆域
   'memory:recall': ['search_memories'],
   // 任务域

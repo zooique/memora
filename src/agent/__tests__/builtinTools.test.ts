@@ -13,6 +13,8 @@ import {
   BUILTIN_TOOL_IDEMPOTENCY,
   shouldSkipForIdempotency,
   WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
+  RUN_CODE_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
@@ -190,6 +192,95 @@ describe('builtinTools · WEB_SEARCH_TOOL', () => {
   });
 });
 
+describe('builtinTools · WEB_FETCH_TOOL（搜索→抓取闭环第二段）', () => {
+  it('应定义 web_fetch 工具', () => {
+    expect(WEB_FETCH_TOOL).toBeDefined();
+    expect(WEB_FETCH_TOOL.name).toBe('web_fetch');
+  });
+
+  it('应标记为只读工具（readonly=true，抓取读正文）', () => {
+    expect(WEB_FETCH_TOOL.readonly).toBe(true);
+  });
+
+  it('应有非空 description 且提及搜索→抓取闭环', () => {
+    expect(WEB_FETCH_TOOL.description).toBeTruthy();
+    expect(WEB_FETCH_TOOL.description.length).toBeGreaterThan(10);
+    expect(WEB_FETCH_TOOL.description).toContain('web_search');
+  });
+
+  it('parameters.type 应为 "object"', () => {
+    expect(WEB_FETCH_TOOL.parameters.type).toBe('object');
+  });
+
+  it('应定义 url 和 limit 参数', () => {
+    expect(WEB_FETCH_TOOL.parameters.properties.url).toBeDefined();
+    expect(WEB_FETCH_TOOL.parameters.properties.url!.type).toBe('string');
+    expect(WEB_FETCH_TOOL.parameters.properties.limit).toBeDefined();
+    expect(WEB_FETCH_TOOL.parameters.properties.limit!.type).toBe('string');
+  });
+
+  it('url 应为必填参数，limit 可选', () => {
+    expect(WEB_FETCH_TOOL.parameters.required).toContain('url');
+    expect(WEB_FETCH_TOOL.parameters.required).not.toContain('limit');
+  });
+
+  it('应符合 ToolDefinition 类型约束', () => {
+    const isValid: ToolDefinition = {
+      name: WEB_FETCH_TOOL.name,
+      description: WEB_FETCH_TOOL.description,
+      readonly: WEB_FETCH_TOOL.readonly,
+      parameters: {
+        type: WEB_FETCH_TOOL.parameters.type,
+        properties: WEB_FETCH_TOOL.parameters.properties,
+        required: WEB_FETCH_TOOL.parameters.required,
+      },
+    };
+    expect(isValid.name).toBe(WEB_FETCH_TOOL.name);
+  });
+});
+
+describe('builtinTools · RUN_CODE_TOOL（通用计算/验证底座）', () => {
+  it('应定义 run_code 工具', () => {
+    expect(RUN_CODE_TOOL).toBeDefined();
+    expect(RUN_CODE_TOOL.name).toBe('run_code');
+  });
+
+  it('应有非空 description 且说明源码不进上下文', () => {
+    expect(RUN_CODE_TOOL.description).toBeTruthy();
+    expect(RUN_CODE_TOOL.description.length).toBeGreaterThan(10);
+    expect(RUN_CODE_TOOL.description).toContain('源码不进入上下文');
+  });
+
+  it('parameters.type 应为 "object"', () => {
+    expect(RUN_CODE_TOOL.parameters.type).toBe('object');
+  });
+
+  it('应定义 language 和 code 参数', () => {
+    expect(RUN_CODE_TOOL.parameters.properties.language).toBeDefined();
+    expect(RUN_CODE_TOOL.parameters.properties.language!.type).toBe('string');
+    expect(RUN_CODE_TOOL.parameters.properties.code).toBeDefined();
+    expect(RUN_CODE_TOOL.parameters.properties.code!.type).toBe('string');
+  });
+
+  it('language 和 code 均应为必填参数', () => {
+    expect(RUN_CODE_TOOL.parameters.required).toContain('language');
+    expect(RUN_CODE_TOOL.parameters.required).toContain('code');
+  });
+
+  it('应符合 ToolDefinition 类型约束', () => {
+    const isValid: ToolDefinition = {
+      name: RUN_CODE_TOOL.name,
+      description: RUN_CODE_TOOL.description,
+      parameters: {
+        type: RUN_CODE_TOOL.parameters.type,
+        properties: RUN_CODE_TOOL.parameters.properties,
+        required: RUN_CODE_TOOL.parameters.required,
+      },
+    };
+    expect(isValid.name).toBe(RUN_CODE_TOOL.name);
+  });
+});
+
 describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY（J1 修复后契约）', () => {
   it('task_table_write 应如实标记为 non-idempotent（追加语义，重复执行不幂等）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
@@ -197,6 +288,14 @@ describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY（J1 修复后契约）', () 
 
   it('task_table_update 应保持 idempotent（全量替换，真幂等）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_update).toBe('idempotent');
+  });
+
+  it('web_fetch 应标记为 idempotent（读操作，天然幂等）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.web_fetch).toBe('idempotent');
+  });
+
+  it('run_code 应标记为 non-idempotent（任意代码执行有副作用）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.run_code).toBe('non-idempotent');
   });
 });
 

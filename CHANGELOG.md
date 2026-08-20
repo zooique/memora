@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+### Added（外部世界工具族：`web_fetch` 搜索→抓取闭环 + `run_code` 通用代码执行）
+
+源自工具面盘点（tool-surface-roadmap.md）：`web_search` 只搜不抓、通用计算缺失。沿既有范式（接口注入 + 条件性暴露 + 降级优先 + 零依赖边界）补齐两个「连接外部世界」的条件工具。
+
+- **网页抓取（`src/web-fetch/`）**：`IFetchProvider` 接口（与 `IWebSearchProvider` 同构）；`FetchWebFetchProvider` 零依赖默认实现（内置 fetch + 正则清洗 HTML + `<title>` 提取 + maxChars 截断）；`safeFetch` 30s 超时保护包装（失败/超时降级友好提示，不中断主流程）
+- **代码执行（`src/code-exec/`）**：`ICodeExecutionProvider` 接口（沙箱完全由宿主 provider 决定，内核零运行时依赖）；`safeExecuteCode` 120s 超时保护包装（失败/超时降级返回错误结果）
+- **工具集成（`agent/builtinTools.ts` + `toolExecutor.ts`）**：新增 `WEB_FETCH_TOOL` / `RUN_CODE_TOOL` 定义 + 幂等标记（web_fetch=idempotent，run_code=non-idempotent）；条件性暴露（注入 provider 才进入 LLM 工具面）；执行分支含 URL 协议白名单 / 长度上限 / 结果净化 / 三态格式化
+- **注入链打通**：`AgentOptions.fetchProvider` / `codeExecutionProvider` 经 `assembler.ts` → `agent.ts` → `index.ts` 导出（接口 + 默认实现 + safe 包装）
+- **能力映射**：`capabilityMap` 新增 `web:fetch` → web_fetch、`code:execute` → run_code
+- **文档收口**：api-reference（注入接口 / AgentOptions / 内置工具表 / §8.4-8.5 / 类型导出）、接入指南（§4.5 外部世界工具注入）、module-inventory（§3.5）、README（核心能力 + 示例角色包随包）
+- **测试**：新增 7 组（provider 纯函数 × 2、默认实现解析 × 1、工具定义 × 2、条件暴露/执行/冲突 × 2、capability 映射 × 2），含本次 web-fetch/code-exec 共 130 用例全绿
+
+> 非破坏性变更：未注入 provider 时工具不暴露（零依赖边界保持）；`run_code` 沙箱隔离等级由宿主 provider 决定，接入前需评估安全边界。
+
 ### Added（结构化信息保真 + 提炼侧视角下沉：`summaryFocus` 提炼视角机制）
 
 源自 LLM 视角 memora-as-agent 体感评估 P1 缺口「结构化信息保真」 + P2「提炼侧视角对齐」——代码/diff/表格等结构化信息经 round-summary 浓缩后保真度低，且提炼侧「值得记什么」仍为通用视角。沿内核哲学（领域无关 + 角色包插卡）落地的通用机制，让角色包声明「摘要提炼的视角（判断维度 + 结构保留形式）」。

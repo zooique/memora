@@ -167,6 +167,8 @@ type AssembleRuntimeParams = Pick<
   | 'messages'
   | 'enableContextSummary'
   | 'webSearchProvider'
+  | 'fetchProvider'
+  | 'codeExecutionProvider'
   | 'vectorStore'
   | 'recallExcludeSources'
 >;
@@ -607,6 +609,8 @@ export async function assembleComponents(
     workProjection,
     configDir,
     sessionStore,
+    input.fetchProvider,
+    input.codeExecutionProvider,
   );
 
   // ── Phase 1.5: 会话管理器（先于 loop 创建）──

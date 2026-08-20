@@ -73,6 +73,11 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   read_skill: 'idempotent',
   read_resource: 'idempotent',
   run_skill_script: 'non-idempotent',
+  // 条件工具（宿主注入对应 provider 才暴露）：
+  // web_fetch：读操作，天然幂等 ✅
+  // run_code：任意代码执行，有副作用（计算/IO），如实标记非幂等（重复执行结果不可预期）
+  web_fetch: 'idempotent',
+  run_code: 'non-idempotent',
 };
 
 /**
@@ -150,6 +155,47 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
 };
 
 /**
+ * web_fetch 工具定义（独立导出，条件性包含）
+ *
+ * 与 web_search 成对构成「搜索→抓取」闭环：web_search 返回候选链接，web_fetch 读取正文。
+ * 与 BUILTIN_TOOLS 分离的原因同 web_search——仅在宿主注入了 IFetchProvider 时才暴露给 LLM。
+ */
+export const WEB_FETCH_TOOL: ToolDefinition = {
+  name: 'web_fetch',
+  description:
+    '抓取指定网页的正文内容（搜索→抓取闭环的第二段）。当 web_search 找到候选链接、需要读取正文全文时使用。返回清洗后的纯文本。',
+  readonly: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: '要抓取的网页完整 URL（http/https）' },
+      limit: { type: 'string', description: '返回正文最大字符数，默认 "8000"，最大 "50000"' },
+    },
+    required: ['url'],
+  },
+};
+
+/**
+ * run_code 工具定义（独立导出，条件性包含）
+ *
+ * 通用代码执行（计算/数据处理/验证底座）。源码不进入 LLM 上下文，仅执行结果返回。
+ * 仅在宿主注入了 ICodeExecutionProvider 时才暴露给 LLM。
+ */
+export const RUN_CODE_TOOL: ToolDefinition = {
+  name: 'run_code',
+  description:
+    '执行一段代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。',
+  parameters: {
+    type: 'object',
+    properties: {
+      language: { type: 'string', description: '代码语言，如 "python"、"node"、"shell"（可用性取决于宿主执行器）' },
+      code: { type: 'string', description: '要执行的代码内容' },
+    },
+    required: ['language', 'code'],
+  },
+};
+
+/**
  * 工具注册表（8 个始终可用的内置工具）
  *
  * - read_file：读取文件
@@ -162,6 +208,8 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
  * - read_skill：读取激活角色包内嵌技能正文（渐进披露 L2，按需装载）
  *
  * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用），见下方独立定义。
+ * 另有 WEB_FETCH_TOOL（条件性暴露，仅注入了 IFetchProvider 时可用，与 web_search 构成搜索→抓取闭环）。
+ * 另有 RUN_CODE_TOOL（条件性暴露，仅注入了 ICodeExecutionProvider 时可用）。
  * 另有 TRACE_SUMMARY_TOOL（始终可用，与 BUILTIN_TOOLS 中的 trace_summary 定义相同）。
  */
 export const BUILTIN_TOOLS: ToolDefinition[] = [

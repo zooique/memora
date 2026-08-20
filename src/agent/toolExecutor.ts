@@ -14,10 +14,14 @@ import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
-import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
+import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
+import type { IFetchProvider } from '@/web-fetch/types.js';
+import { safeFetch } from '@/web-fetch/webFetchProvider.js';
+import type { ICodeExecutionProvider } from '@/code-exec/types.js';
+import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
@@ -27,6 +31,19 @@ export type { ToolDefinition } from '@/agent/builtinTools.js';
 const WEB_SEARCH_QUERY_MAX_LEN = 200;
 /** web_search 单条结果字段最大长度（防长上下文注入） */
 const WEB_SEARCH_RESULT_MAX_LEN = 500;
+
+// ─── web_fetch / run_code 注入防御常量 ─────────────────
+
+/** web_fetch 的 url 最大长度（防超长/恶意 URL 滥用） */
+const WEB_FETCH_URL_MAX_LEN = 2000;
+/** web_fetch 正文单次返回最大长度（防长上下文注入，对齐 BUILTIN_TOOLS 的 limit 上限） */
+const WEB_FETCH_CONTENT_MAX_LEN = 50_000;
+/** run_code 的 code 最大长度（防超长代码滥用） */
+const RUN_CODE_CODE_MAX_LEN = 50_000;
+/** run_code 的 language 最大长度（防超长语言名滥用） */
+const RUN_CODE_LANGUAGE_MAX_LEN = 32;
+/** run_code 单次结果字段最大长度（防长输出撑爆上下文） */
+const RUN_CODE_RESULT_MAX_LEN = 20_000;
 
 /**
  * 外部工具返回净化：去控制字符 + 长度上限
@@ -142,6 +159,12 @@ export class ToolExecutor {
   /** 网络搜索提供者（可选，注入时启用 web_search 工具） */
   private readonly webSearchProvider?: IWebSearchProvider;
 
+  /** 网页抓取提供者（可选，注入时启用 web_fetch 工具；与 web_search 构成搜索→抓取闭环） */
+  private readonly fetchProvider?: IFetchProvider;
+
+  /** 代码执行提供者（可选，注入时启用 run_code 工具） */
+  private readonly codeExecutionProvider?: ICodeExecutionProvider;
+
   /** P2-6: 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
   planManager?: {
     writePlan: (
@@ -209,8 +232,14 @@ export class ToolExecutor {
     configDir?: string,
     /** 会话存储（可选，trace_summary 溯源原始对话用） */
     sessionStore?: ISessionStore,
+    /** 网页抓取提供者（可选，不传则不启用 web_fetch 工具） */
+    fetchProvider?: IFetchProvider,
+    /** 代码执行提供者（可选，不传则不启用 run_code 工具） */
+    codeExecutionProvider?: ICodeExecutionProvider,
   ) {
     this.webSearchProvider = webSearchProvider;
+    this.fetchProvider = fetchProvider;
+    this.codeExecutionProvider = codeExecutionProvider;
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
     // 构造参数仅用于初始化 BuiltinToolHandlers，ToolExecutor 自身不再持有这些引用
     this.builtinHandlers = new BuiltinToolHandlers(
@@ -252,6 +281,18 @@ export class ToolExecutor {
     // web_search 仅当 webSearchProvider 已注入时由内核管理，不允许覆盖
     // 未注入时宿主可自由注册自己的 web_search 实现
     if (this.webSearchProvider && definition.name === WEB_SEARCH_TOOL.name) {
+      throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
+        '请使用不同的工具名称',
+      ]);
+    }
+    // web_fetch 仅当 fetchProvider 已注入时由内核管理，不允许覆盖
+    if (this.fetchProvider && definition.name === WEB_FETCH_TOOL.name) {
+      throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
+        '请使用不同的工具名称',
+      ]);
+    }
+    // run_code 仅当 codeExecutionProvider 已注入时由内核管理，不允许覆盖
+    if (this.codeExecutionProvider && definition.name === RUN_CODE_TOOL.name) {
       throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
         '请使用不同的工具名称',
       ]);
@@ -326,8 +367,14 @@ export class ToolExecutor {
    *   （自定义工具由宿主注册，属宿主能力面，角色包能力声明不越权过滤宿主工具）。
    */
   get list(): ToolDefinition[] {
-    // 条件性包含 web_search 工具：仅当注入了 webSearchProvider 时才暴露给 LLM
-    const baseTools = this.webSearchProvider ? [...BUILTIN_TOOLS, WEB_SEARCH_TOOL] : BUILTIN_TOOLS;
+    // 条件性包含外部信息工具：仅当注入了对应 provider 时才暴露给 LLM
+    // - web_search：webSearchProvider 注入时
+    // - web_fetch：fetchProvider 注入时（与 web_search 构成搜索→抓取闭环）
+    // - run_code：codeExecutionProvider 注入时
+    let baseTools = BUILTIN_TOOLS;
+    if (this.webSearchProvider) baseTools = [...baseTools, WEB_SEARCH_TOOL];
+    if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
+    if (this.codeExecutionProvider) baseTools = [...baseTools, RUN_CODE_TOOL];
 
     // 白名单过滤（仅内置/条件工具受控；自定义工具不受限）
     const whitelisted = this.toolWhitelist
@@ -457,6 +504,113 @@ export class ToolExecutor {
             return `${i + 1}. ${title}\n   URL: ${url}\n   ${snippet}`;
           })
           .join('\n\n');
+      }
+      case 'web_fetch': {
+        // web_fetch 由 ToolExecutor 直接处理（与 web_search 同侧，均为外部信息获取）
+        // 使用注入的 fetchProvider 抓取网页正文，带超时保护；失败由 safeFetch 降级
+        if (!this.fetchProvider) {
+          return '[ERR:TOOL:NOT_AVAILABLE] 错误：网页抓取功能未配置，请先注入 IFetchProvider';
+        }
+        const url = strArg('url');
+        if (!url) {
+          throw toolError(
+            'web_fetch 工具调用缺少 url 参数',
+            'LLM 未传 url',
+            ['url 不能为空'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        // 参数校验：url 当不可信输入，做长度上限 + 协议白名单（仅 http/https，防 file:// 等本地协议）
+        if (url.length > WEB_FETCH_URL_MAX_LEN) {
+          throw toolError(
+            'web_fetch url 参数过长',
+            `url 超过 ${WEB_FETCH_URL_MAX_LEN} 字符上限`,
+            ['缩短 url'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if (!/^https?:\/\//i.test(url)) {
+          throw toolError(
+            'web_fetch url 协议不支持',
+            `仅支持 http/https 协议：${url.slice(0, 64)}`,
+            ['使用 http 或 https 开头的完整 URL'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const maxChars = Math.min(
+          Number.parseInt(strArg('limit', '8000'), 10) || 8000,
+          WEB_FETCH_CONTENT_MAX_LEN,
+        );
+        const page = await safeFetch(this.fetchProvider, url, { maxChars });
+        if (!page.content) {
+          return `（未能从 "${url}" 提取到正文内容）`;
+        }
+        // 返回净化：外部内容去控制字符 + 长度上限，防长上下文注入
+        const title = sanitizeExternalText(page.title, 500);
+        const content = sanitizeExternalText(page.content, WEB_FETCH_CONTENT_MAX_LEN);
+        return `来源：${page.url || url}\n标题：${title || '(无标题)'}\n\n${content}`;
+      }
+      case 'run_code': {
+        // run_code 由 ToolExecutor 直接处理（通用计算/数据处理/验证底座）
+        // 使用注入的 codeExecutionProvider 执行代码，带超时保护；失败由 safeExecuteCode 降级
+        if (!this.codeExecutionProvider) {
+          return '[ERR:TOOL:NOT_AVAILABLE] 错误：代码执行功能未配置，请先注入 ICodeExecutionProvider';
+        }
+        const language = strArg('language');
+        const code = strArg('code');
+        if (!language) {
+          throw toolError(
+            'run_code 工具调用缺少 language 参数',
+            'LLM 未传 language',
+            ['language 不能为空'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if (!code) {
+          throw toolError(
+            'run_code 工具调用缺少 code 参数',
+            'LLM 未传 code',
+            ['code 不能为空'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        // 参数校验：language/code 当不可信输入，做长度上限（防超长滥用）
+        if (language.length > RUN_CODE_LANGUAGE_MAX_LEN) {
+          throw toolError(
+            'run_code language 参数过长',
+            `language 超过 ${RUN_CODE_LANGUAGE_MAX_LEN} 字符上限`,
+            ['使用简短的语言名，如 "python"、"node"'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if (code.length > RUN_CODE_CODE_MAX_LEN) {
+          throw toolError(
+            'run_code code 参数过长',
+            `code 超过 ${RUN_CODE_CODE_MAX_LEN} 字符上限`,
+            ['精简代码或分步执行'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const result = await safeExecuteCode(this.codeExecutionProvider, code, language);
+        // 结果净化：stdout/stderr 当外部内容去控制字符 + 长度上限，防长上下文注入
+        const stdout = sanitizeExternalText(result.stdout, RUN_CODE_RESULT_MAX_LEN);
+        const stderr = sanitizeExternalText(result.stderr, RUN_CODE_RESULT_MAX_LEN);
+        // 格式化：超时/失败/成功三态，语义对齐 formatScriptResult
+        if (result.timedOut) {
+          return `[CODE_TIMEOUT] 代码执行超时\nstdout: ${stdout}\nstderr: ${stderr}`;
+        }
+        if (result.exitCode !== 0) {
+          return `[CODE_ERROR] 代码执行失败（退出码: ${result.exitCode}）\nstdout: ${stdout}\nstderr: ${stderr}`;
+        }
+        const output = stdout || '(无输出)';
+        return stderr ? `${output}\n[stderr] ${stderr}` : output;
       }
       case 'task_table_write': {
         // P2-6: 写入任务表（overwrite / append / update）

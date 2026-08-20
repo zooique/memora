@@ -127,6 +127,131 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('web_fetch / run_code（未注入提供者）', () => {
+    it('list 不应包含 web_fetch 与 run_code 工具', () => {
+      const names = executor.list.map((t) => t.name);
+      expect(names).not.toContain('web_fetch');
+      expect(names).not.toContain('run_code');
+    });
+
+    it('执行 web_fetch 应返回不可用提示', async () => {
+      const result = await executor.execute('web_fetch', JSON.stringify({ url: 'https://example.com' }));
+      expect(result).toContain('网页抓取功能未配置');
+    });
+
+    it('执行 run_code 应返回不可用提示', async () => {
+      const result = await executor.execute('run_code', JSON.stringify({ language: 'node', code: 'console.log(1)' }));
+      expect(result).toContain('代码执行功能未配置');
+    });
+  });
+
+  describe('web_fetch（注入提供者）', () => {
+    let execWithFetch: ToolExecutor;
+    const mockFetchProvider = {
+      async fetch(url: string, options?: { maxChars?: number }) {
+        return {
+          url,
+          title: '抓取标题',
+          content: `正文内容（${options?.maxChars ?? 8000}）`.repeat(10),
+        };
+      },
+    };
+
+    beforeAll(() => {
+      execWithFetch = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockFetchProvider,
+      );
+    });
+
+    it('注入 fetchProvider 后 list 应包含 web_fetch 工具', () => {
+      const names = execWithFetch.list.map((t) => t.name);
+      expect(names).toContain('web_fetch');
+    });
+
+    it('执行 web_fetch 应返回标题 + 净化后的正文', async () => {
+      const result = await execWithFetch.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com/page' }),
+      );
+      expect(result).toContain('来源：https://example.com/page');
+      expect(result).toContain('标题：抓取标题');
+      expect(result).toContain('正文内容');
+    });
+
+    it('缺少 url 参数应抛 MemoraError（必填参数校验）', async () => {
+      await expect(execWithFetch.execute('web_fetch', JSON.stringify({}))).rejects.toThrow(
+        '工具参数缺失',
+      );
+    });
+
+    it('非 http/https 协议的 url 应抛错（协议白名单）', async () => {
+      await expect(
+        execWithFetch.execute('web_fetch', JSON.stringify({ url: 'file:///etc/passwd' })),
+      ).rejects.toThrow(/协议不支持/);
+    });
+  });
+
+  describe('run_code（注入提供者）', () => {
+    let execWithCode: ToolExecutor;
+    const mockCodeProvider = {
+      async execute(code: string, language: string) {
+        if (code.includes('boom')) {
+          return { stdout: '', stderr: 'reference error', exitCode: 1, timedOut: false };
+        }
+        return { stdout: `${language}:ok`, stderr: '', exitCode: 0, timedOut: false };
+      },
+    };
+
+    beforeAll(() => {
+      execWithCode = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockCodeProvider,
+      );
+    });
+
+    it('注入 codeExecutionProvider 后 list 应包含 run_code 工具', () => {
+      const names = execWithCode.list.map((t) => t.name);
+      expect(names).toContain('run_code');
+    });
+
+    it('执行 run_code 成功应返回 stdout', async () => {
+      const result = await execWithCode.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'console.log(1)' }),
+      );
+      expect(result).toContain('node:ok');
+    });
+
+    it('执行 run_code 失败（退出码非 0）应返回 CODE_ERROR', async () => {
+      const result = await execWithCode.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'boom()' }),
+      );
+      expect(result).toContain('CODE_ERROR');
+      expect(result).toContain('reference error');
+    });
+
+    it('缺少 language/code 参数应抛 MemoraError（必填参数校验）', async () => {
+      await expect(execWithCode.execute('run_code', JSON.stringify({ language: 'node' }))).rejects.toThrow(
+        '工具参数缺失',
+      );
+    });
+  });
+
   describe('read_file', () => {
     it('应能读取项目内文件', async () => {
       const result = await executor.execute('read_file', JSON.stringify({ path: 'src/index.ts' }));
@@ -580,6 +705,44 @@ describe('工具执行器（6 个工具）', () => {
         },
       };
       expect(() => executorWithProvider.registerTool(webSearchDef, async () => '')).toThrow(/不能覆盖内置工具/);
+    });
+
+    it('注入 fetchProvider 后，注册 web_fetch 应抛错', () => {
+      const mockFetch = { fetch: async () => ({ url: '', title: '', content: '' }) };
+      const executorWithFetch = new ToolExecutor(
+        tmpProject, security, index, undefined, undefined, undefined, undefined, mockFetch,
+      );
+      const fetchDef = {
+        name: 'web_fetch',
+        description: '试图覆盖内核 web_fetch',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      expect(() => executorWithFetch.registerTool(fetchDef, async () => '')).toThrow(/不能覆盖内置工具/);
+    });
+
+    it('注入 codeExecutionProvider 后，注册 run_code 应抛错', () => {
+      const mockCode = {
+        async execute() {
+          return { stdout: '', stderr: '', exitCode: 0, timedOut: false };
+        },
+      };
+      const executorWithCode = new ToolExecutor(
+        tmpProject, security, index, undefined, undefined, undefined, undefined, undefined, mockCode,
+      );
+      const codeDef = {
+        name: 'run_code',
+        description: '试图覆盖内核 run_code',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      expect(() => executorWithCode.registerTool(codeDef, async () => '')).toThrow(/不能覆盖内置工具/);
     });
   });
 });

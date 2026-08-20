@@ -43,6 +43,7 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 | **零依赖内核** | 核心层无任何第三方运行时依赖，持久化由宿主通过接口注入 |
 | **内容护栏** | 正则规则 + block/warn 双动作，输入输出双向检查 |
 | **可观测性** | ITracer 接口 + 结构化 span，宿主可接入任意 APM |
+| **外部世界工具** | 条件性暴露 `web_search` / `web_fetch`（搜索→抓取闭环）/ `run_code`（通用代码执行）——宿主注入 provider 才启用，内核保持零运行时依赖 |
 
 ## 快速开始
 
@@ -241,6 +242,10 @@ npm run build        # 编译到 dist/
 - [接入指南](docs/memora-接入指南.md) — 宿主项目开发者完整接入手册
 - [API 参考](docs/memora-api-reference.md) — 公共 API 速查
 - [配置示例](config.example.json) — LLM / Embedding / 安全配置模板
+
+## 示例角色包（随包发布）
+
+npm 包内置 `role-packs/` 示例角色库（`小说助手` / `文档设计师` / `方案设计师`），每个包为文件夹形态（`manifest.json` 核心控制 + `persona.md` / `rules.md` / `skills/` 内容层）。复制到 `configDir/role-packs/` 即可装载，未声明角色包时 Agent 仍可正常对话（走默认策略）。详见 [role-pack-spec](docs/architecture/role-pack-spec.md)。
 
 ## 宿主项目
 

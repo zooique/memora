@@ -184,6 +184,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       enableContextSummary: opts.enableContextSummary ?? true,
       archiveMode: opts.archiveMode ?? 'full',
       webSearchProvider: opts.webSearchProvider,
+      fetchProvider: opts.fetchProvider,
+      codeExecutionProvider: opts.codeExecutionProvider,
       fileConsistencyCheck: opts.fileConsistencyCheck,
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
@@ -1085,6 +1087,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       messages: this.#config.messages,
       enableContextSummary: this.#config.enableContextSummary,
       webSearchProvider: this.#config.webSearchProvider,
+      fetchProvider: this.#config.fetchProvider,
+      codeExecutionProvider: this.#config.codeExecutionProvider,
       vectorStore: this.#config.vectorStore,
       recallExcludeSources: this.#config.recallExcludeSources,
       existingSkillManager: this.skillManager,

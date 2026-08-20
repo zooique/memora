@@ -23,6 +23,8 @@
 | `ISessionStore` | ✅ 必选* | `src/memory/sessionStore.ts` | 会话消息持久化，3 必需 + 6 可选方法 |
 | `ITracer` | 可选 | `src/agent/tracer.ts` | 可观测性，不传用 `NoopTracer` |
 | `IWebSearchProvider` | 可选 | `src/web-search/types.ts` | 网络搜索，不注入则不启用 |
+| `IFetchProvider` | 可选 | `src/web-fetch/types.ts` | 网页抓取（搜索→抓取闭环第二段），不注入则不启用 |
+| `ICodeExecutionProvider` | 可选 | `src/code-exec/types.ts` | 通用代码执行（沙箱由宿主提供），不注入则不启用 |
 | `ILogger` | 可选 | `src/logging/loggerInterface.ts` | 日志，默认内置 |
 | `IVectorStore` | 可选 | `src/memory/vectorStore.ts` | 语义召回，注入才启用向量搜索（否则降级关键词召回） |
 | `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（归档/投影），不配复用前台 |
@@ -184,6 +186,8 @@ new Agent({
 | `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
 | `archiveMode` | `ArchiveMode` | ❌ | 归档模式（ADR-015，默认 `'full'`）。`'full'`：会话内容在会话切换前自动归档；`'manual'`：全部需手动触发（2026-08-14 洞察层移除后三态收敛为二态，原 `'insights-only'` 已移除） |
 | `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索提供者注入（提供时自动暴露 `web_search` 工具给 LLM，不传则不暴露） |
+| `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取提供者注入（提供时自动暴露 `web_fetch` 工具给 LLM，与 `webSearchProvider` 成对构成「搜索→抓取」闭环，不传则不暴露） |
+| `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行提供者注入（提供时自动暴露 `run_code` 工具给 LLM，沙箱执行能力完全由宿主 provider 决定，内核零运行时依赖，不传则不暴露） |
 
 > **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十七 类型导出），pino 升级为懒初始化（首次日志调用时触发，import 零副作用）。
 
@@ -604,7 +608,7 @@ console.log(rp.currentMode);      // 当前模式
 
 > 工具注册/执行走 `agent.tools.xxx()`。
 
-### 8.1 内置工具（5 个）
+### 8.1 内置工具（7 个）
 
 | 工具名 | 用途 | 参数 |
 |--------|------|------|
@@ -613,6 +617,8 @@ console.log(rp.currentMode);      // 当前模式
 | `list_dir` | 列出目录内容（递归深度 ≤ 3） | `path?`, `recursive?`, `maxDepth?` |
 | `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` |
 | `web_search` | 搜索互联网（条件性暴露，仅在注入 `IWebSearchProvider` 时可用） | `query`, `limit?` |
+| `web_fetch` | 抓取网页正文（条件性暴露，仅在注入 `IFetchProvider` 时可用；与 `web_search` 成对构成「搜索→抓取」闭环，读候选链接正文） | `url`, `limit?` |
+| `run_code` | 执行代码并返回结果（条件性暴露，仅在注入 `ICodeExecutionProvider` 时可用；源码不进上下文，仅结果返回） | `language`, `code` |
 
 ### 8.2 `agent.tools` — ToolExecutor
 
@@ -683,6 +689,70 @@ interface IWebSearchProvider {
 const agent = new Agent({
   // ... 其他选项
   webSearchProvider: new FetchWebSearchProvider(), // 使用内置默认实现
+});
+```
+
+### 8.4 `IFetchProvider` — 网页抓取注入接口（搜索→抓取闭环第二段）
+
+> 宿主实现此接口并注入 `AgentOptions.fetchProvider`，即可让 Agent 读取 `web_search` 找到的候选链接正文。
+> 未注入时，Agent 不会暴露 `web_fetch` 工具给 LLM。
+> 内核提供 `FetchWebFetchProvider` 作为基于内置 `fetch` + 正则清洗 HTML 的零依赖默认实现；`safeFetch` 为带 30s 超时保护的包装（抓取失败/超时降级返回友好提示，不中断主流程）。
+
+```typescript
+// 抓取结果
+interface FetchedPage {
+  url: string;
+  title: string;
+  content: string;
+  contentType?: string;
+}
+
+// 抓取选项
+interface FetchOptions {
+  maxChars?: number;  // 正文截断字符数上限
+}
+
+// 网页抓取提供者接口
+interface IFetchProvider {
+  fetch(url: string, options?: FetchOptions): Promise<FetchedPage>;
+}
+
+// 注入方式
+const agent = new Agent({
+  // ... 其他选项
+  fetchProvider: new FetchWebFetchProvider(), // 使用内置默认实现
+});
+```
+
+### 8.5 `ICodeExecutionProvider` — 代码执行注入接口
+
+> 宿主实现此接口并注入 `AgentOptions.codeExecutionProvider`，即可让 Agent 拥有通用代码执行能力（计算 / 数据处理 / 验证）。
+> 未注入时，Agent 不会暴露 `run_code` 工具给 LLM。
+> **内核零运行时依赖**：沙箱执行（语言白名单 / 资源限制 / 网络隔离）完全由宿主 provider 决定；`safeExecuteCode` 为带 120s 超时保护的包装（执行失败/超时降级返回错误结果，不中断主流程）。
+
+```typescript
+// 执行结果
+interface CodeExecutionResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+}
+
+// 执行选项
+interface CodeExecutionOptions {
+  timeoutMs?: number;  // 单次执行超时上限
+}
+
+// 代码执行提供者接口
+interface ICodeExecutionProvider {
+  execute(code: string, language: string, options?: CodeExecutionOptions): Promise<CodeExecutionResult>;
+}
+
+// 注入方式（沙箱实现由宿主提供）
+const agent = new Agent({
+  // ... 其他选项
+  codeExecutionProvider: mySandboxProvider,
 });
 ```
 
@@ -929,6 +999,12 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 
 // 工具
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@zooique/memora';
+// 网页抓取（搜索→抓取闭环第二段）
+export type { IFetchProvider, FetchedPage, FetchOptions } from '@zooique/memora';
+export { FetchWebFetchProvider, safeFetch } from '@zooique/memora';
+// 代码执行（通用计算底座）
+export type { ICodeExecutionProvider, CodeExecutionResult, CodeExecutionOptions } from '@zooique/memora';
+export { safeExecuteCode } from '@zooique/memora';
 
 // 记忆治理
 export type { ConflictInfo } from '@zooique/memora';

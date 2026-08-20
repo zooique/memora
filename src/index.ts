@@ -86,6 +86,23 @@ export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-s
 // FetchWebSearchProvider：默认搜索实现（零依赖开箱即用）；safeSearch：带超时保护的搜索包装（宿主可复用）
 export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
 export { safeSearch } from '@/web-search/webSearchProvider.js';
+
+// ─── 网页抓取导出（搜索→抓取闭环第二段） ──────────────────────
+// IFetchProvider 接口：宿主项目可实现此接口注入自定义抓取实现
+export type { IFetchProvider, FetchedPage, FetchOptions } from '@/web-fetch/types.js';
+// FetchWebFetchProvider：默认抓取实现（零依赖开箱即用）；safeFetch：带超时保护的抓取包装（宿主可复用）
+export { FetchWebFetchProvider } from '@/web-fetch/fetchWebFetchProvider.js';
+export { safeFetch } from '@/web-fetch/webFetchProvider.js';
+
+// ─── 代码执行导出（通用计算底座） ────────────────────────────
+// ICodeExecutionProvider 接口：宿主项目可实现此接口注入沙箱执行器（内核不内置执行器，保持零依赖）
+export type {
+  ICodeExecutionProvider,
+  CodeExecutionResult,
+  CodeExecutionOptions,
+} from '@/code-exec/types.js';
+// safeExecuteCode：带超时保护的执行包装（宿主可复用）
+export { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 // 项目注册表 + 锁文件管理：宿主可直接使用或通过 ProjectManager 间接委托
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';

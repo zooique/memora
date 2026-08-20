@@ -56,4 +56,14 @@ describe('resolveCapabilityTools（中立能力 → memora 工具白名单）', 
     const tools = resolveCapabilityTools([{ capability: 'task:plan' }]);
     expect(tools).toEqual(['task_table_write', 'task_table_update']);
   });
+
+  it('web:fetch 映射到 web_fetch 工具（搜索→抓取闭环第二段）', () => {
+    const tools = resolveCapabilityTools([{ capability: 'web:fetch' }]);
+    expect(tools).toEqual(['web_fetch']);
+  });
+
+  it('code:execute 映射到 run_code 工具（通用计算底座）', () => {
+    const tools = resolveCapabilityTools([{ capability: 'code:execute' }]);
+    expect(tools).toEqual(['run_code']);
+  });
 });

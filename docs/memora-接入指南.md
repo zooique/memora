@@ -208,6 +208,36 @@ agent.tools.registerTool(
 );
 ```
 
+### 4.5 外部世界工具注入（可选，条件性暴露）
+
+> 内核提供三个「连接外部世界」的条件工具：`web_search`（搜索）/ `web_fetch`（读网页正文）/ `run_code`（执行代码）。**宿主注入对应 provider 才暴露，未注入则工具不进入 LLM 工具面**——内核保持零运行时依赖。
+
+```typescript
+import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/memora';
+import type { ICodeExecutionProvider } from '@zooique/memora';
+
+// ① 网页抓取（搜索→抓取闭环：web_search 找链接，web_fetch 读正文）
+const fetchProvider = new FetchWebFetchProvider(); // 内置零依赖默认实现
+
+// ② 代码执行（沙箱完全由宿主提供——语言白名单/资源限制/网络隔离）
+const codeExecutionProvider: ICodeExecutionProvider = {
+  async execute(code, language, options) {
+    // 例：经宿主沙箱执行，返回 stdout/stderr/exitCode/timedOut
+    return { stdout: '42', stderr: '', exitCode: 0, timedOut: false };
+  },
+};
+
+const agent = new Agent({
+  projectPath: '/path/to/novel-project',
+  provider,
+  // webSearchProvider: new FetchWebSearchProvider(),  // 搜索（已有）
+  fetchProvider,            // 可选：暴露 web_fetch
+  codeExecutionProvider,    // 可选：暴露 run_code
+});
+```
+
+> **注意**：`run_code` 是通用执行能力（源码不进上下文，仅结果返回），执行隔离等级完全由宿主 provider 决定；接入前务必评估沙箱安全边界。
+
 ### 5. 记忆关键词与写入扩展（已移除）
 
 > 写入扩展与记忆关键词（`agent.insight.xxx()`）已于 2026-08-14 随洞察层移除，不再提供。记忆统一以 round-summary 沉淀，经 `agent.memory.writeUpsert()` 等 `writeXxx` 方法写入。
@@ -441,6 +471,9 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
 | `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
+| `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索（提供时暴露 `web_search` 工具） |
+| `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取（提供时暴露 `web_fetch` 工具，与 `webSearchProvider` 成对构成「搜索→抓取」闭环） |
+| `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行（提供时暴露 `run_code` 工具，沙箱由宿主提供） |
 
 ### Agent 生命周期与状态
 
