@@ -190,10 +190,8 @@ export class AgentLoop {
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
-      // 流式中断标记：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"
-      interrupted:
-        opts.messages?.interrupted ??
-        '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
+      // 流式中断标记：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"（SSOT：默认文案下沉 LOOP_CONSTANTS）
+      interrupted: opts.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
       contextTruncated:
         opts.messages?.contextTruncated ??
         ((skipped, kept) =>

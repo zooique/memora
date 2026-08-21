@@ -216,7 +216,8 @@ export class SeedOrchestrator {
     // 中断：保留已产出文本 + 中断标记写入历史后返回（不进回答后 / Handoff）
     if (streamResult.aborted) {
       if (assistantContent.trim()) {
-        const interruptedMark = this.deps.messages?.interrupted ?? '\n\n[已中断]';
+        // 中断标记默认文案与 loop 统一走 LOOP_CONSTANTS（SSOT），避免宿主未注入 messages 时两处降级不一致
+        const interruptedMark = this.deps.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK;
         try {
           await history.appendAssistant(
             assistantContent + interruptedMark,
@@ -366,7 +367,13 @@ export class SeedOrchestrator {
       const stepAct = yield* this.act(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
-      if (stepAct.failed || stepAct.aborted) return;
+      if (stepAct.failed || stepAct.aborted) {
+        // 中断/失败路径也要沉淀：摘要与外部输入恒 1:1，但中断时不能零沉淀。
+        // 复用「未收敛」兜底（backgroundReflect），以"这次外部输入 + 已完成规划产出"落一条
+        // 回退摘要——保住"记忆即摘要"单轨在任务中断时不断层（记忆连续）。
+        this.backgroundReflect(input, planAct.content);
+        return;
+      }
       // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
     }
 

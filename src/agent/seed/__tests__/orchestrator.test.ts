@@ -12,7 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
-import type { SessionEvent } from '@/agent/types.js';
+import type { AgentChunk, SessionEvent } from '@/agent/types.js';
 import {
   createHarness,
   collectGen,
@@ -510,5 +510,61 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.loop.runReport).not.toHaveBeenCalled();
+  });
+
+  it('runChat 步闭环中断：仍落一条回退摘要（中断不丢记忆）', async () => {
+    const { mocks, deps } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    // 1 个 pending 步：规划闭环成功后步闭环中断 → 提前 return 前的步中断分支须落回退摘要
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      sessionId: 'sess',
+      plan: [{ id: 's1', status: 'pending', description: '步骤一' }],
+    });
+    // 规划闭环（用户输入）产出规划文本；步闭环（stepPrompt）产出步内文本
+    mocks.loop.processUserInput.mockImplementation(function* (input: string) {
+      yield { type: 'text', content: input.includes('执行任务步骤') ? '步内' : '规划产出' };
+    });
+    // 流收口计数：第 1 次（规划）成功；第 2 次（步）中断 → 触发步中断沉淀
+    let consumeCall = 0;
+    mocks.consumeExecutionStream.mockImplementation(
+      async function* (source: AsyncGenerator<AgentChunk, void, unknown>) {
+        for await (const chunk of source) yield chunk;
+        consumeCall++;
+        if (consumeCall === 1) {
+          return { content: '规划产出', aborted: false, paused: false, failed: false };
+        }
+        return { content: '步内', aborted: true, paused: false, failed: false };
+      },
+    );
+
+    await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
+    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
+
+    // 步中断仍落回退摘要：源 = 用户输入 + 已完成规划产出（复用「未收敛」兜底真值，摘要↔输入恒 1:1）
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
+      '复杂任务',
+      '规划产出',
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
+    // 中断后不进入收敛汇报
+    expect(mocks.loop.runReport).not.toHaveBeenCalled();
+  });
+
+  it('中断标记 SSOT：宿主未注入 messages 时用 DEFAULT_INTERRUPTED_MARK（与 loop 同真值）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '');
+    consumeControl.result = { content: '部分', aborted: true, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 中断历史写入拼接 DEFAULT_INTERRUPTED_MARK（非旧的短"[已中断]"），与 loop 降级一致
+    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
+      '部分' + LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
+      expect.any(String),
+    );
   });
 });
