@@ -601,6 +601,16 @@ export class AgentLoop {
       yield { type: 'aborted', reason: this.ui.abortedByUser };
       return 'aborted';
     }
+
+    // block 模式排队插话消费：inputInterrupt='block' 时 interject() 只入队不 abort
+    // （避免中断执行），排队内容在此迭代边界统一注入为 user 消息——否则 pending 永不被消费。
+    // allow 分支走上方 aborted 路径由 handleIterationResult 消费，这里只处理未 abort 的 block 排队。
+    if (this.pendingInterjections.length > 0) {
+      const contents = this.pendingInterjections.splice(0);
+      for (const content of contents) {
+        this.appendUserMessage(content);
+      }
+    }
     return effectiveSignal;
   }
 

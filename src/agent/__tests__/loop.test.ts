@@ -1521,6 +1521,45 @@ describe('AgentLoop · 执行中插话', () => {
     expect(secondInjected).toBe(true);
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
+
+  it('inputInterrupt=block 时排队插话在迭代边界被消费注入（不中断执行）', async () => {
+    const toolExecutor = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 50)),
+    );
+    const loop = new AgentLoop({
+      // 两轮：先工具调用，再纯文本回复（block 插话排队后仍需继续到纯文本结束）
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '已处理排队插话' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    // 开启 block 模式：interject 只入队不 abort
+    loop.setStrategy({ inputInterrupt: 'block' });
+
+    // 工具执行中触发 block 插话（入队，不中断工具执行）
+    setTimeout(() => loop.interject('排队消息'), 10);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('帮我处理')) {
+      chunks.push(chunk);
+    }
+
+    // 排队插话应在迭代边界被消费并注入为 user 消息（block 语义落实）
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('排队消息'))).toBe(true);
+    // 未因插话 abort，正常走到纯文本结束
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('已处理排队插话');
+  }, 15000);
 });
 
 // ═══════════════════════════════════════════════════════════════
