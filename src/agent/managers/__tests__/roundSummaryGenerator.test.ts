@@ -181,4 +181,35 @@ describe('RoundSummaryGenerator', () => {
     // 新 r2 仍被召回
     expect(result.some((m) => m.id === 'round-summary:session-a:r2')).toBe(true);
   });
+
+  it('取代检测候选窗口收敛：超出最近 N 条（SUPERSEDE_CANDIDATE_WINDOW）的旧摘要不被取代', async () => {
+    // 预置 21 条同 session 同主题摘要（窗口 20），每个 roundId 错开 createdAt（倒序取最近 20 条可确定）
+    const window = 20;
+    for (let i = 1; i <= window + 1; i++) {
+      seedSummary(
+        storage,
+        'session-a',
+        `r${i}`,
+        '用户偏好深色主题界面的简洁风格',
+        'preference',
+      );
+      // 重写 createdAt 递增：r1 最旧 … r21 最新（确定性排序）
+      storage.upsert({
+        ...storage.getById(`round-summary:session-a:r${i}`)!,
+        createdAt: `2020-01-01T00:00:${String(i).padStart(2, '0')}.000Z`,
+      });
+    }
+
+    // 生成新同主题摘要 r-new：窗口取最近 20 条（r2..r21 按 createdAt 降序），最旧 r1 应不被取代
+    const gen = new RoundSummaryGenerator(
+      makeProvider('用户偏好深色主题的极简现代界面', 'preference'),
+      storage,
+    );
+    await gen.generate('用户输入', '助手回复', 'r-new', 'session-a');
+
+    // 超出窗口的最旧同主题 r1 不被取代（候选窗口只覆盖最近 N 条）
+    expect(storage.getById('round-summary:session-a:r1')?.supersededBy).toBeUndefined();
+    // 窗口内最近的同主题 r2 被取代（验证收敛仍保留最近取代语义）
+    expect(storage.getById('round-summary:session-a:r2')?.supersededBy).toBe('round-summary:session-a:r-new');
+  });
 });

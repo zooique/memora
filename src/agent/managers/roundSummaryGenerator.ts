@@ -28,6 +28,13 @@ const SUMMARY_CONTENT_LIMIT = 500;
 const DEFAULT_SUMMARY_SCORE = 0.5;
 /** 取代检测的关键词重叠率阈值：同 session 新旧摘要关键词 Jaccard 重叠率≥此值则旧摘要被新摘要覆盖（打 supersededBy 标记，非删除） */
 const SUPERSEDE_OVERLAP_THRESHOLD = 0.5;
+
+/**
+ * 取代检测的候选窗口（条）：每次生成只对「同 session 最近 N 条摘要」做取代判定。
+ * 取代语义是「新决策替换旧同主题决策」，时间越近、同 session 越可能是被覆盖对象——
+ * 收敛扫描范围避免全库 round-summary 全量遍历（O(n) 退化），计算面不随会话轮次无界增长。
+ */
+const SUPERSEDE_CANDIDATE_WINDOW = 20;
 /** LLM 温度参数（低温度确保摘要格式稳定） */
 const LLM_TEMPERATURE = 0.3;
 
@@ -162,8 +169,8 @@ export class RoundSummaryGenerator {
       this.storage.upsert(memory);
       // memoryAdded 事件出口：宿主「已沉淀」提示的可观测通道
       this._onMemoryAdded?.({ id: memory.id, source: memory.source, name: memory.name });
-      // 写路径取代检测同 session 同主题旧摘要
-      this.supersedeSimilar(memory);
+      // 写路径取代检测：仅对「同 session 最近 N 条」摘要判定（收敛扫描范围，避免全库 O(n) 遍历）
+      this.supersedeSimilar(memory, this.getSessionCandidates(memory));
       logger.debug({ memoryId, summaryType, sessionName, roundId }, '轮次摘要已生成');
     } catch (err) {
       logger.warn({ err, roundId }, '轮次摘要生成失败');
@@ -171,27 +178,46 @@ export class RoundSummaryGenerator {
   }
 
   /**
-   * 写路径取代检测：记忆冲突消解从"读时猜"移到"写时定"。
-   * 扫描同 session 旧摘要，主题高度重叠（关键词重叠率≥阈值）则给旧摘要打 supersededBy 指向本摘要（非删除，可回溯）。
-   * 设计取舍：不依赖 metadata.type（宿主不持久化 metadata），改用可从 id 解析的 session 前缀 + 关键词重叠判定（跨宿主可用）；
-   * 确定性启发式代替额外 LLM 判断（零成本可测，符合"写一次定、读时确定性过滤" SSOT 纪律）；仅同 session 内判定避免误取代。
+   * 构造取代检测候选：同 session 且未被取代的摘要，按时间倒序取最近 N 条（SUPERSEDE_CANDIDATE_WINDOW）。
+   * 取代语义是"本 session 内新决策替换旧同主题决策"——收敛到同 session 近期摘要，
+   * 避免全库 round-summary 全量遍历（跨 session 的长期历史不参与取代判定，无跨 session 覆盖语义）。
+   *
+   * @param newMemory 新生成的摘要（以 id 的 session 前缀定位本 session）
+   * @returns 候选摘要列表（倒序取最近 N 条，供 supersedeSimilar 逐一判定）
    */
-  private supersedeSimilar(newMemory: Memory): void {
-    try {
-      // 从新摘要 id 推导同 session 前缀（id 格式：round-summary:<sessionName>:<roundId>）
-      const sessionName = newMemory.metadata?.sessionName;
-      if (!sessionName) return;
-      const sessionPrefix = `round-summary:${sessionName}:`;
+  private getSessionCandidates(newMemory: Memory): Memory[] {
+    const sessionName = newMemory.metadata?.sessionName;
+    if (!sessionName) return [];
+    const sessionPrefix = `round-summary:${sessionName}:`;
 
+    const all = this.storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
+    // 同 session + 未取代（排除自身）：按 createdAt 降序，取最近 N 条作候选
+    return all
+      .filter((old) => old.id.startsWith(sessionPrefix) && !old.supersededBy && old.id !== newMemory.id)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, SUPERSEDE_CANDIDATE_WINDOW);
+  }
+
+  /**
+   * 写路径取代检测：记忆冲突消解从"读时猜"移到"写时定"。
+   * 对给定的同 session 近窗口候选（candidates）逐一判定主题重叠——重叠率≥阈值则给旧摘要打 supersededBy 指向本摘要（非删除，可回溯）。
+   *
+   * 设计取舍：
+   * - 不依赖 metadata.type（宿主不持久化 metadata），改用可从 id 解析的 session 前缀 + 关键词重叠判定（跨宿主可用）；type 是纯语义标签，
+   *   旁路 == "同一主题不同类（如 preference 覆盖 decision）可能被取代" 的已知取舍（见 memory-as-summary §5.4 说明）。
+   * - 升级条件：若未来宿主持久化 metadata（getBySource 读回含 summaryType），可升级为"type 相同"前置过滤，进一步收紧取代面——当前不预埋。
+   * - 确定性启发式代替额外 LLM 判断（零成本可测，符合"写一次定、读时确定性过滤" SSOT 纪律）；仅同 session 内判定避免误取代。
+   *
+   * @param newMemory 新生成的摘要
+   * @param candidates 取代检测候选（由 getSessionCandidates 收敛，调用方传入而非内部全库扫描）
+   */
+  private supersedeSimilar(newMemory: Memory, candidates: Memory[]): void {
+    try {
       const newWeightedKeywords = extractEnhancedKeywords(newMemory.content);
       if (newWeightedKeywords.length === 0) return;
 
-      const all = this.storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
-      for (const old of all) {
-        if (old.id === newMemory.id) continue;
-        // 仅同 session
-        if (!old.id.startsWith(sessionPrefix)) continue;
-        // 已 superseded 的跳过（避免重复标记）
+      for (const old of candidates) {
+        // 已 superseded 的跳过（避免重复标记；getSessionCandidates 已过滤，此处幂等兜底）
         if (old.supersededBy) continue;
 
         // 加权 Jaccard 让动作词/实体词贡献更大，更准识别"多轮逐步细化"的主题延续
