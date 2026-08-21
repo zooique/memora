@@ -40,8 +40,7 @@ Memora is a **brain kernel that cannot run standalone** — it has interfaces bu
 | **Agent-Persona Separation** | Agent is a pure memory engine; persona is a personality vessel. Switch personas without losing memories |
 | **Unified Memory Model** | Everything is a "Memory" primitive, distinguished by open-string `source` — no closed enums |
 | **Domain-agnostic** | Same architecture, different memory configs → different domains |
-| **Zero-dependency Kernel** | No third-party runtime dependencies; persistence injected by host via interfaces |
-| **Content Guardrails** | Regex rules + block/warn actions, bidirectional input/output checking |
+| **Node.js-only · Zero third-party runtime deps** | Depends on Node built-ins (`node:*`); no third-party runtime dependencies / native / host APIs. Persistence injected by host via interfaces |
 | **Observability** | ITracer interface + structured spans, plug into any APM |
 
 ## Quick Start
