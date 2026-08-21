@@ -7,13 +7,13 @@
 
 ## 一、目标语义（三契约，来自设计意图）
 
-用户的意图——loop 是对问答闭环的**编排**，闭环一个接一个连续执行，闭环之间存在**气口**：
+用户的意图——loop 是对执行闭环的**编排**，闭环一个接一个连续执行，闭环之间存在**气口**：
 
-1. **气口暂停**：用户申请暂停 → **当前问答闭环结束后**在气口（步与步之间 / 闭环之间）暂停，不打断正在执行的闭环。
+1. **气口暂停**：用户申请暂停 → **当前执行闭环结束后**在气口（步与步之间 / 闭环之间）暂停，不打断正在执行的闭环。
 2. **无损续跑整链**：暂停后恢复 → **无损跑完整条剩余任务链**（剩余 pending 步 + 收尾汇报），而非只续当前步。
 3. **气口插话/补充**：气口可插入信息 / 输入补充说明，然后再续跑。
 
-与哲学的关系：闭环序列 = 最小单元（单轮问答闭环）的重复；气口 = 闭环边界 = 天然暂停点（agent-design-philosophy §2）。本设计让外循环（externalTaskLoop）的暂停点对齐到"闭环边界"，消除「栈上 while 被暂停打断、续跑不回 while」的结构性矛盾。
+与哲学的关系：闭环序列 = 最小单元（单轮执行闭环）的重复；气口 = 闭环边界 = 天然暂停点（agent-design-philosophy §2）。本设计让外循环（externalTaskLoop）的暂停点对齐到"闭环边界"，消除「栈上 while 被暂停打断、续跑不回 while」的结构性矛盾。
 
 ## 二、当前结构矛盾（根因）
 
@@ -87,7 +87,7 @@ while(有 pending 步):
 ---
 
 > **关联文档**：
-> - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 最小单元 = 单轮问答闭环；闭环边界 = 天然暂停点
+> - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 最小单元 = 单轮执行闭环；闭环边界 = 天然暂停点
 > - [memory-as-summary.md](./memory-as-summary.md) —— 摘要↔外部输入恒 1:1；软暂停不摘要
 > - [loop-design.md](./loop-design.md) —— 暂停/续跑机制（迭代边界）
 > - [pause-ask-resume-design.md](./pause-ask-resume-design.md) —— 三机制修复（入史/摘要门控/pauseMeta）

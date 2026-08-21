@@ -69,7 +69,7 @@
 │  设计真理源：                                                            │
 │  · 角色包 = 设定（persona/rules/skills/capabilities），文件驱动         │
 │  · 记忆系统 = 摘要记忆（round-summary），SQLite + 向量召回              │
-│  · Agent Loop = 最小问答闭环，Loop/召回/摘要都是闭环的自然生长         │
+│  · Agent Loop = 最小执行闭环，Loop/召回/摘要都是闭环的自然生长         │
 │  · 配置 = 单一真理源（config.json + 角色包 manifest.json）             │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

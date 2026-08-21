@@ -109,7 +109,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 
 > 顶层目录结构以 [project-rules.md §3](./project-rules.md) 为唯一冻结契约；下方为**快照性质**的内部约定，随重构漂移、**不构成冻结契约**。
 
-**模块内部通用结构**：每个模块 = `index.ts`（公共 API）+ `types.ts`（类型）+ `core.ts`/`helpers.ts`（实现）。`agent/` 含标准文件 `agent.ts`/`assembler.ts`/`loop.ts`/`contextPreparer.ts`/`checkpointRestoreCoordinator.ts` + `managers/`（专职 Manager/服务类，当前 17 个，清单以源码为准）+ `seed/`（种子聚合目录：最小问答闭环的唯一编排真理源，`seed/orchestrator.ts` 聚合 prepare/act/reflect/handoff 四阶段，供 `agent.ts` 门面委托；`agent/seed/* → agent/loop` 消费引擎，`agent.ts → agent/seed` 委托，不新建顶层模块）；`utils/` 集中存放跨层共享纯函数（errors/array/objects/path/time/segmenter 等）。
+**模块内部通用结构**：每个模块 = `index.ts`（公共 API）+ `types.ts`（类型）+ `core.ts`/`helpers.ts`（实现）。`agent/` 含标准文件 `agent.ts`/`assembler.ts`/`loop.ts`/`contextPreparer.ts`/`checkpointRestoreCoordinator.ts` + `managers/`（专职 Manager/服务类，当前 17 个，清单以源码为准）+ `seed/`（种子聚合目录：最小执行闭环的唯一编排真理源，`seed/orchestrator.ts` 聚合 prepare/act/reflect/handoff 四阶段，供 `agent.ts` 门面委托；`agent/seed/* → agent/loop` 消费引擎，`agent.ts → agent/seed` 委托，不新建顶层模块）；`utils/` 集中存放跨层共享纯函数（errors/array/objects/path/time/segmenter 等）。
 
 > **具体文件清单以 `src/` 实际代码为真理源**，不在本文冻结——避免随重构腐化的冗余快照。
 

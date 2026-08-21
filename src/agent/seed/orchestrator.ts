@@ -1,7 +1,7 @@
 /**
- * 种子闭环编排器 — 最小问答闭环的唯一编排真理源（prepare → act → reflect → handoff）
+ * 种子闭环编排器 — 最小执行闭环的唯一编排真理源（prepare → act → reflect → handoff）
  *
- * 对应方案"[orchestrator.ts = 唯一编排真理源]"。「如何串联一个问答闭环」全部收在此处，
+ * 对应方案"[orchestrator.ts = 唯一编排真理源]"。「如何串联一个执行闭环」全部收在此处，
  * 门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
  *
  * 三个显式命名入口（对应哲学：闭环只认 Trigger，不认 Trigger 来源）：

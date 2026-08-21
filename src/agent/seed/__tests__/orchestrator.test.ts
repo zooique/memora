@@ -1,7 +1,7 @@
 /**
  * 种子闭环编排器独立单元测试
  *
- * 覆盖 SeedOrchestrator（最小问答闭环唯一编排真理源）的三个显式命名入口：
+ * 覆盖 SeedOrchestrator（最小执行闭环唯一编排真理源）的三个显式命名入口：
  *   - runChat：完整闭环 prepare → act(processUserInput) → reflect → handoff
  *   - runEvent：prepare → 任务表预判注入 → act(processEvent) → reflect → handoff
  *   - runResume：act(continueAfterPause) → reflect（无回答前、无 Handoff）
@@ -43,7 +43,7 @@ function chatEvent(content: string): SessionEvent {
   return { type: 'chat', content, delta: {} } as SessionEvent;
 }
 
-describe('SeedOrchestrator 最小问答闭环', () => {
+describe('SeedOrchestrator 最小执行闭环', () => {
   // ── runChat ────────────────────────────────────────────
   it('runChat 完整闭环：prepare → act → reflect → handoff 顺序产出', async () => {
     const { mocks, deps, consumeControl } = createHarness();

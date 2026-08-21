@@ -2,7 +2,7 @@
 
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
-> **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（单轮问答闭环公理）· [mvp-scope.md](mvp-scope.md)（MVP 边界）
+> **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（单轮执行闭环公理）· [mvp-scope.md](mvp-scope.md)（MVP 边界）
 
 ---
 
@@ -61,10 +61,10 @@
 
 ### 2.2 设计推导
 
-从 SSOT 公理出发——单轮问答闭环是最小单元：
+从 SSOT 公理出发——单轮执行闭环是最小单元：
 
 ```
-一轮问答闭环 = 用户输入 + LLM 回复 + 轮次摘要
+一轮执行闭环 = 用户输入 + LLM 回复 + 轮次摘要
                   ↑                         ↑
               Trigger（外部输入）         Reflect（后处理）
 ```
@@ -78,7 +78,7 @@
 │
 ├─ round-summary  轮次级摘要（每一轮对话一条）
 │    ├─ sessionName   会话 id（YYYY-MM-DD-会话名）
-│    ├─ roundId       问答闭环 id（本轮唯一）
+│    ├─ roundId       执行闭环 id（本轮唯一）
 │    ├─ summaryType   标签（preference/decision/fact/intent/general）
 │    └─ 溯源：roundId + sessionId → 回溯本轮原始对话
 │
@@ -129,7 +129,7 @@ postProcess → 使用 round-5 生成摘要
 - **来源**（「简单直接」与「loop 收尾汇报」是同一规则的两种取值，都指向"答完/收尾那轮"）：
   - 直接回答（简单）= 答完那轮即答案 → 提炼该答案；
   - 外部任务驱动 loop·复杂收敛 = 收尾汇报闭环 → 提炼汇报（阶段 2+3 `reflect.runReported` 以汇报文本为单源）。
-- **触发时刻**：问答闭环「答完/收尾」即触发（非 tool 迭代、非暂停边界）。对话 `wait` 态（答完等用户）同样答完即摘要——"结束指令"非此处触发条件。
+- **触发时刻**：执行闭环「答完/收尾」即触发（非 tool 迭代、非暂停边界）。对话 `wait` 态（答完等用户）同样答完即摘要——"结束指令"非此处触发条件。
 - **硬中止（abort / 用户取消）**：不打完 → **不摘要**（残缺半成品不入记忆）；但已产出内容以 `[已中断]` 标记写进对话历史（保真留存，供 `traceSummary` 回溯）。历史保细节、记忆不收纳残缺，两者分离。
 - **软暂停（requestPause，可续跑）**：暂停时**不立即摘要**；若后续续跑并真正答完 → 该轮**仍会**摘要。
 
@@ -527,7 +527,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 ---
 
 > **关联资源**：
-> - [agent-design-philosophy.md](agent-design-philosophy.md) —— 单轮问答闭环公理
+> - [agent-design-philosophy.md](agent-design-philosophy.md) —— 单轮执行闭环公理
 > - [mvp-scope.md](mvp-scope.md) —— MVP 能力边界
 > - [role-pack-spec.md](role-pack-spec.md) —— 角色包标准（L2 召回键作为**后置覆盖**，不阻塞本模块）
 > - [memory-role-pack-boundary.md](memory-role-pack-boundary.md) —— 记忆系统 × 角色包边界收敛（设定记忆归角色包，记忆库 = 摘要记忆本体）

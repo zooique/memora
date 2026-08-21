@@ -14,7 +14,7 @@
 |----|------|
 | 文件 | `src/agent/loop.ts`（1493 行） |
 | 状态 | 🟢 已打磨（76 tests） |
-| 职责 | 单轮问答闭环的执行 + Loop（外循环）编排 |
+| 职责 | 单轮执行闭环的执行 + Loop（外循环）编排 |
 | 上游 | `agent.ts` 调用 `processUserInput` / `continueAfterPause` / `processEvent` |
 | 下游 | `contextManager.ts`（截断/摘要）、`compaction.ts`（微压缩）、`duplicateInterceptor.ts`（重复拦截）、`role-pack` 策略（L2） |
 

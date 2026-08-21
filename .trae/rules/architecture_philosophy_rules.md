@@ -237,7 +237,7 @@ domain），其余在 Agent Loop 中按需检索。
 
 ## 11. 角色包是参数集，插卡解耦（通用引擎 ↔ 专业卡）
 
-**原则**：memora 内核是单轮问答闭环的通用引擎，角色包是参数集——persona（身份）、rules（规则）、capabilities（能力）、strategy（策略）四件套作为外部可注入的参数，将通用引擎配置为特定领域的专家。**通用性和专业性在此正交解耦**。
+**原则**：memora 内核是执行闭环的通用引擎，角色包是参数集——persona（身份）、rules（规则）、capabilities（能力）、strategy（策略）四件套作为外部可注入的参数，将通用引擎配置为特定领域的专家。**通用性和专业性在此正交解耦**。
 
 ### 11.1 插卡模型
 
@@ -281,7 +281,7 @@ function singleTurn(context: Context, rolePack: RolePack): Handoff {
 - **管理器不是独立系统**——管理是 Handoff 阶段"匹配→切换"策略的一部分
 - **能力映射不是独立系统**——映射是 Act 阶段工具暴露面配置的一部分
 
-一切"看起来像独立模块"的东西，本质上都是闭环不同阶段的行为。**这与"单轮问答闭环是 Agent 最小完整单元"（single-truth-source-mindset.md）完全同构。**
+一切"看起来像独立模块"的东西，本质上都是闭环不同阶段的行为。**这与"执行闭环是 Agent 最小完整单元"（single-truth-source-mindset.md）完全同构。**
 
 ### 11.4 验证标准
 

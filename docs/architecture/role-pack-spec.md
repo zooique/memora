@@ -5,7 +5,7 @@
 > **memora 与本标准的关系**：memora 是**首个实现（reference implementation）**，本规范**不绑定 memora**。其他 Agent 实现本规范后即可装载生态中的角色包。
 > **类比**：USB-C（接口标准）/ Docker 镜像（可移植容器）/ HTML（浏览器兼容的文档标准）。
 >
-> **演进状态**：角色包标准当前处于**草案演进期**。memora 优先打磨内核基础（问答闭环 + 记忆系统），其运行不依赖角色包键；**角色包字段 v1 冻结延后至基础接口定型后**——避免标准字段随基础演进反复横跳。本章节中依赖未冻结基础或尚无参考实现消费的键一律以 `[草案]` 标注（§六状态列），不承诺跨实现一致行为。硬通货要素（签名 / 依赖声明 / 目录）作为远期演进方向随 v1 冻结一并规划，当前不设计。
+> **演进状态**：角色包标准当前处于**草案演进期**。memora 优先打磨内核基础（执行闭环 + 记忆系统），其运行不依赖角色包键；**角色包字段 v1 冻结延后至基础接口定型后**——避免标准字段随基础演进反复横跳。本章节中依赖未冻结基础或尚无参考实现消费的键一律以 `[草案]` 标注（§六状态列），不承诺跨实现一致行为。硬通货要素（签名 / 依赖声明 / 目录）作为远期演进方向随 v1 冻结一并规划，当前不设计。
 
 ---
 
@@ -389,9 +389,10 @@ export interface IMcpTransport {
 | 组 | 键 | 取值（枚举） | 含义 | 状态 | 实现消费要求 |
 |----|----|------------|------|------|------------|
 | prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | `[草案]` | 无参考实现消费，待验证 |
-| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数 | 冻结 | memora 消费（agent.ts 互斥排除 + 最近对话注入轮数，未配置回退默认 3） |
+| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数（**废弃**：被「上下文预算装配」动态轮数取代，见本节文末） | 废弃 | 仅过渡期保留；动态填充后轮数为派生值，不再显式声明 |
 | prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
-| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token） | 冻结 | memora 消费（agent.ts 限额召回：limited 模式下将 token 配额换算为字符预算，对召回结果做有界裁剪）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
+| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token，绝对量） | 冻结 | memora 消费（agent.ts 限额召回：limited 模式下将 token 配额换算为字符预算，对召回结果做有界裁剪）；**语义拟演进**：动态容量下绝对 token 不自洽，拟改「百分比」（见本节文末） |
+| prepare | `prepare.memoryRecallPercent` | 0.0~1.0 或 0~100 | 记忆召回占可用预算的百分比（键名/取值待定） | `[草案]` | 无实现消费；拟取代 memoryRecallQuota 的绝对值语义 |
 | prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |
 | prepare | `prepare.summaryFocus` | 非空字符串 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结 | 由实现提炼进标准（结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
 | prepare | `prepare.minFallback` | 非负整数 | 召回保底下限（recall 结果不足时用最近记忆补足，0=关闭） | 冻结 | memora 消费（recall.ts 保底补全，未配置回退默认 2） |
@@ -406,6 +407,24 @@ export interface IMcpTransport {
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | 冻结-条件消费 | memora 消费（同上，userFollowup=ask 时生效，缺省 3） |
 | global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
 | global | `global.taskLoopLimit` | 非负整数（默认 10，0=关闭） | 外部任务驱动循环步数上限：复杂任务按任务表每步一个闭环的最大步数 | 冻结 | memora 消费（seed/orchestrator `externalTaskLoop` 步数上限，防无限多步烧 token）；**由实现提炼进标准**（阶段 3 对账发现被真实消费后补录） |
+
+### 上下文预算装配（动态轮数，探索中）
+
+> **状态**：探索中（可逆未定案）。完整对话进入量从「固定 N 轮（recentRounds）」改为「按上下文预算动态填充」，轮数为派生值、不显式声明。容量来自模型运行时，分配偏好来自角色包。
+
+- **动机**：固定 N 轮与内容长短脱节——短消息浪费容量、长内容（代码粘贴）超限触发 contextManager 截断丢旧消息。
+- **预算模型**：
+
+```
+可用预算 = Provider窗口 − 固定开销(system+persona+rules+技能L1+工具schema) − 本轮用户输入 − 输出预留(≈15~20%)
+记忆摘要层 = 可用预算 × 记忆百分比（角色包设，只装截断窗口之外的旧摘要）
+完整对话层 = 可用预算 × (1 − 记忆百分比)，从最近往回塞到 ~90% 止（留 buffer 防抖）
+动态轮数   = 对话层能装几轮就是几轮（派生值，不显式声明）
+```
+
+- **三层分工**：容量（Provider/模型，运行时）→ 百分比（角色包）→ 轮数（内核按预算填充派生）。
+- **受影响键**：`recentRounds` 废弃（轮数语义消失）；`memoryRecallQuota` 绝对 token 语义在动态容量下不自洽，拟演进为百分比（`memoryRecallPercent` 草案）；`contextAssembly`（fixed/query/hybrid）开关语义保留，仅「fixed/hybrid 的最近对话装载」由固定 N 轮改按预算填充。
+- **互斥约束**：记忆层与最近对话层须维持互斥（round-summary 与正文不双写）；互斥窗口从「固定 N」改为「跟随实际注入轮数」，否则第 N 轮前后摘要与正文重复注入。
 
 ---
 
@@ -444,7 +463,7 @@ export interface IMcpTransport {
 | `role-packs/`（memora 仓库） | 示例角色包（翻译助手 / 技术文档工程师 / 项目总监） |
 | [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | memora 视角的角色包定位（插卡机模型，通用引擎 ↔ 专业卡） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
-| 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（问答闭环 / 记忆系统）定型后——见本文档定位宣言 |
+| 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（执行闭环 / 记忆系统）定型后——见本文档定位宣言 |
 
 > 标准优先于实现（P0 键集对齐）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 

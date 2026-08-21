@@ -142,7 +142,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
     archiveCoordinator: ArchiveCoordinator | null;
     /**
-     * 种子闭环编排器（最小问答闭环唯一编排真理源）：prepare → act → reflect → handoff。
+     * 种子闭环编排器（最小执行闭环唯一编排真理源）：prepare → act → reflect → handoff。
      * chat() 委托 run()；processEvent()/resumeExecution() 按路径复用单阶段能力。
      * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
      */
@@ -374,7 +374,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.internals.memoryAdvisor,
     );
 
-    // 种子闭环编排器（最小问答闭环唯一编排真理源）：依赖 sessionManager/loop/history 等
+    // 种子闭环编排器（最小执行闭环唯一编排真理源）：依赖 sessionManager/loop/history 等
     // 均已就绪（assembleComponents 已完成 + sessionNamer 本方法前段创建），在此构造一次。
     // getParts() 惰性取当前组件——rebuildComponents（switchProject）更换组件后仍取到最新引用。
     this.internals.seedOrchestrator = this.createSeedOrchestrator();
