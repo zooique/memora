@@ -329,23 +329,26 @@ export class MemoryInspector {
 
     const now = Date.now();
     const cutoff = new Date(now - DECAY_AGE_DAYS * ONE_DAY_MS).toISOString();
-    // 全量活跃记忆（search 空查询降级为按 score 返回全部），规避新存储接口
-    const all = this.index.search('', Number.MAX_SAFE_INTEGER);
+    // 优先走存储实现 listFading（宿主可用 SQL 优化）；存储未实现时回退 search+本地过滤。
+    // 两路径返回均为沉底顺序（accessedAt 升序 → score 升序），语义一致。
+    const candidates: Memory[] = this.index.listFading
+      ? this.index.listFading(cutoff, limit)
+      : this.index
+          .search('', Number.MAX_SAFE_INTEGER)
+          .filter((m) => m.accessedAt < cutoff)
+          .sort(byFadingAsc)
+          .slice(0, limit);
 
-    const fading = all
-      .filter((m) => m.accessedAt < cutoff) // 距今超过阈值未访问 → 候选
-      .sort(byFadingAsc) // accessedAt 升序 → score 升序
-      .slice(0, limit)
-      .map((m) => ({
-        id: m.id,
-        name: m.name,
-        source: m.source,
-        score: m.score,
-        contentPreview: truncate(m.content, SEARCH_PREVIEW_LEN),
-        createdAt: m.createdAt,
-        accessedAt: m.accessedAt,
-        daysSinceAccess: -daysBetween(m.accessedAt, now), // 距上次访问天数
-      }));
+    const fading = candidates.map((m) => ({
+      id: m.id,
+      name: m.name,
+      source: m.source,
+      score: m.score,
+      contentPreview: truncate(m.content, SEARCH_PREVIEW_LEN),
+      createdAt: m.createdAt,
+      accessedAt: m.accessedAt,
+      daysSinceAccess: -daysBetween(m.accessedAt, now), // 距上次访问天数
+    }));
 
     return fading;
   }

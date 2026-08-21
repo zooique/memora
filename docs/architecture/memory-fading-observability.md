@@ -52,15 +52,18 @@ listFading(opts?: { limit?: number }): FadingMemory[];
 - `daysSinceAccess` 计算复用 `ONE_DAY_MS`——**其上提至 `utils/time.ts`**（当前散落 `memory/recall.ts:26` + `memoryAdvisor.test.ts:20`，SSOT 收敛），Inspector 引用 `utils/time` 避免 agent→memory 内部常量反向语义。
 - 排序的"低分"沿用 `DECAY_FLOOR` 概念（越低越接近沉底），不引入新阈值。
 
-### 3.3 分层落点（排雷收敛后）
+### 3.3 分层落点（排雷收敛 · 2026-08-21 更新：可选方法下沉）
+
+> **下沉策略**：经评估，`IMemoryStorage` 是内核对外契约（2 个宿主实现 + 已发布副本）。为守内核契约纯洁性、不破坏旧宿主，采用**可选方法**（与 `close?` 同风格）。`listFading?` 宿主可不实现，未实现时上层 `MemoryInspector` 走 `search('')+本地过滤` 回退；宿主实现时可用一条 SQL 高效完成。探索期**不强改旧宿主**。
 
 | 层 | 改动 | 说明 |
 |----|------|------|
-| `utils/time.ts` | 上提 `ONE_DAY_MS`（从 `recall.ts` 移入，recall 改写引用） | SSOT 跨层共享，消除 agent 反向依赖 memory 内部常量 |
-| `utils/array.ts` | 新增 `byFadingAsc(...)` 排序比较器 | 按 `accessedAt` 升序、次按 `score` 升序，存储/Inspector 共用，避免比较器内联（R4） |
-| `MemoryInspector` | 新增 `listFading(opts?)` | 组装 `daysSinceAccess`/预览 + limit 校验 + 空 `[]` 兜底 |
-| `IMemoryStorage` | **不动**（暂不加方法） | 等宿主真实消费（S2）再下沉存储接口方法 |
-| 宿主 `SqliteStorage`（后续/可选） | SQL：`WHERE accessed_at < $cutoff AND score < $ceiling ORDER BY score ASC LIMIT ?` | 宿主接入时按需优化，本轮不改 |
+| `IMemoryStorage` | 新增**可选**方法 `listFading?(before, limit?)` | 契约声明，宿主可不实现（不破坏现有实现） |
+| `InMemoryStorage` | 实现 `listFading` | 遍历活跃记忆过滤 + `byFadingAsc` 排序（沉底顺序） |
+| `utils/array.ts` | `byFadingAsc` 排序比较器 | accessedAt 升序 → score 升序（已落地） |
+| `utils/time.ts` | `ONE_DAY_MS`/`daysBetween` | SSOT 跨层共享（已落地） |
+| `MemoryInspector` | `listFading(opts?)` 优先 `index.listFading?`，未实现回退 `search('')` | 两路径语义一致（沉底顺序 + `FadingMemory` 形态） |
+| 宿主 `SqliteStorage`（后续/可选） | SQL：`WHERE accessed_at < ? AND deleted_at IS NULL ORDER BY accessed_at, score LIMIT ?` | **不强改**，宿主按需接入即得 SQL 优化 |
 
 ### 3.4 返回值（Inspector 层）
 
