@@ -541,6 +541,26 @@ describe('ContextManager.getOrCreateSummary()', () => {
     expect(provider.chat).toHaveBeenCalledTimes(2); // 重新生成
   });
 
+  it('resetSummary 作废缓存后重新生成（即使消息集合变短）', async () => {
+    // 首次生成
+    const longMessages = [createMessage('SYS', { role: 'system' })];
+    for (let i = 0; i < 12; i++) {
+      longMessages.push(createMessage(`消息 ${i}`));
+    }
+    await manager.getOrCreateSummary(longMessages);
+    expect(provider.chat).toHaveBeenCalledTimes(1);
+
+    // reset 后换成更短的消息集合：长度差为负，若无 reset 会误判"未过期"复用陈旧摘要
+    // （restoreHistory 整体替换历史即此场景）；reset 显式作废 → 必须重新生成
+    manager.resetSummary();
+    const shortMessages = [
+      createMessage('SYS', { role: 'system' }),
+      createMessage('新会话消息'),
+    ];
+    await manager.getOrCreateSummary(shortMessages);
+    expect(provider.chat).toHaveBeenCalledTimes(2); // 作废后重建，非复用陈旧缓存
+  });
+
   it('LLM 失败降级：返回空字符串', async () => {
     const failingProvider = createMockProvider([], true);
     const failingManager = createContextManager(1000, failingProvider);

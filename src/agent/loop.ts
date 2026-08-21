@@ -1324,6 +1324,11 @@ export class AgentLoop {
 
   /**
    * 恢复历史消息（跳过 system，只恢复 user/assistant/tool；传空数组=清空工作记忆，保留 system prompt）
+   *
+   * 历史集合被整体替换是上下文摘要缓存的失效点（见 ContextManager.resetSummary 注释：
+   * 若新历史更短，长度差反推会误判"未过期"，把上一段会话的陈旧摘要注入新上下文）。
+   * 故整体替换（清空 / 恢复检查点）经此入口时统一作废摘要缓存——调用方无需各自记得调 reset，
+   * 失效动作与替换动作同处（SSOT）。
    */
   restoreHistory(historyMessages: readonly Message[]): void {
     // 过滤掉 system 消息（已有初始化的 system prompt）
@@ -1332,6 +1337,8 @@ export class AgentLoop {
     if (nonSystemMessages.length === 0) {
       // 空数组=意图清空工作记忆（跨日重置/切空会话），保留 system prompt，防旧上下文残留注入
       this.replaceContext(this.messages[0] ? [this.messages[0]] : []);
+      // 历史整体清空：作废上下文摘要缓存，防上一段会话摘要残留注入
+      this.contextManager.resetSummary();
       logger.debug({ messageCount: 0 }, '已清空工作记忆（保留 system prompt）');
       return;
     }
@@ -1342,6 +1349,8 @@ export class AgentLoop {
       return;
     }
     this.replaceContext([systemPrompt, ...nonSystemMessages]);
+    // 历史整体替换（恢复检查点/切换会话）：作废上下文摘要缓存，防陈旧摘要注入新上下文
+    this.contextManager.resetSummary();
 
     logger.info({ messageCount: nonSystemMessages.length }, '恢复历史对话消息');
   }
