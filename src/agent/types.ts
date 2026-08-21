@@ -6,7 +6,15 @@
  */
 
 /** thinking 事件的阶段标识 */
-export type ThinkingPhase = 'recalling' | 'processing' | 'archiving' | 'llm_calling';
+export type ThinkingPhase =
+  | 'recalling'
+  | 'processing'
+  | 'archiving'
+  | 'llm_calling'
+  // 外部任务外循环阶段标记：规划 / 第 N 步 / 汇报
+  | 'planning'
+  | 'step'
+  | 'reporting';
 
 /**
  * 召回记忆摘要（仅暴露 UI 展示所需字段，不含 content，避免泄露完整记忆内容）
@@ -27,7 +35,13 @@ export type HandoffDecision = 'wait' | 'loop' | 'end';
 
 export type AgentChunk =
   | { type: 'recall'; memories: RecalledMemorySummary[] }
-  | { type: 'thinking'; phase: ThinkingPhase }
+  | {
+      type: 'thinking';
+      phase: ThinkingPhase;
+      /** 步级进度（仅 phase='step' 携带）：当前步序号 / 步数上限，供宿主精确展示进度 */
+      index?: number;
+      limit?: number;
+    }
   | {
       type: 'text';
       content: string;

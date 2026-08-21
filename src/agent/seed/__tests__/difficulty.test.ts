@@ -4,7 +4,7 @@
  * 覆盖 DifficultyJudge.classify：
  *   - 后台不可用（null）→ unknown（不阻断主回答）
  *   - 判词复杂 → complex / 简单 → simple（改大小写 + 模糊包含）
- *   - 无法解析（空）→ unknown；非空但无法识别 → 保守视 complex
+ *   - 无法解析（空 / 非空乱码）→ unknown（判不了即不入外部任务循环，可逆降级优先）
  *   - 后台 LLM 异常 → 降级 unknown（不抛）
  */
 
@@ -40,9 +40,9 @@ describe('DifficultyJudge 难度分级', () => {
     await expect(judge.classify('输入')).resolves.toBe('unknown');
   });
 
-  it('非空但无法识别 → 保守视 complex（复杂才可能触发汇报，误判简单会漏汇报）', async () => {
+  it('非空但无法识别 → unknown（判不了即不触发外部任务循环，可逆降级优先）', async () => {
     const judge = new DifficultyJudge(() => mockProvider('无法判断的乱码'), NULL_TRACER);
-    await expect(judge.classify('输入')).resolves.toBe('complex');
+    await expect(judge.classify('输入')).resolves.toBe('unknown');
   });
 
   it('后台 LLM 抛异常 → 降级 unknown，不向上抛', async () => {

@@ -374,8 +374,17 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     const cleanCount = mocks.loop.cleanTemporarySystemMessages.mock.calls.length;
     // prepare 入口 1 次 + 规划后（PLAN_ONLY）1 次 = 2 次
     expect(cleanCount).toBe(2);
-    // 仍产出 handoff（wait）
-    expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait' });
+    // 外循环阶段标记（供宿主区分「规划 / 第 N 步 / 汇报」）
+    expect(chunks).toContainEqual({ type: 'thinking', phase: 'planning' });
+    expect(chunks).toContainEqual({
+      type: 'thinking',
+      phase: 'step',
+      index: 1,
+      limit: expect.any(Number),
+    });
+    expect(chunks).toContainEqual({ type: 'thinking', phase: 'reporting' });
+    // 外部任务收尾产出的 handoff 携带「外部任务收尾汇报」语义（区别于普通答完）
+    expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait', reason: '外部任务收尾汇报' });
   });
 
   it('runChat 收敛但汇报为空：回退规划产出普通摘要，仍恒产 1 条', async () => {
@@ -512,11 +521,11 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(mocks.loop.runReport).not.toHaveBeenCalled();
   });
 
-  it('runChat 步闭环中断：仍落一条回退摘要（中断不丢记忆）', async () => {
+  it('runChat 步闭环中断：不产摘要（残缺半成品不入记忆，与单闭环一致）', async () => {
     const { mocks, deps } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),
     });
-    // 1 个 pending 步：规划闭环成功后步闭环中断 → 提前 return 前的步中断分支须落回退摘要
+    // 1 个 pending 步：规划闭环成功后步闭环中断 → 中断不产摘要，仅保真对话历史
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
       plan: [{ id: 's1', status: 'pending', description: '步骤一' }],
@@ -525,7 +534,7 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     mocks.loop.processUserInput.mockImplementation(function* (input: string) {
       yield { type: 'text', content: input.includes('执行任务步骤') ? '步内' : '规划产出' };
     });
-    // 流收口计数：第 1 次（规划）成功；第 2 次（步）中断 → 触发步中断沉淀
+    // 流收口计数：第 1 次（规划）成功；第 2 次（步）中断
     let consumeCall = 0;
     mocks.consumeExecutionStream.mockImplementation(
       async function* (source: AsyncGenerator<AgentChunk, void, unknown>) {
@@ -539,16 +548,11 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     );
 
     await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
-    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
+    // 给后台异步留出间隙，随后断言"中断不沉淀摘要"
+    await new Promise((r) => setTimeout(r, 20));
 
-    // 步中断仍落回退摘要：源 = 用户输入 + 已完成规划产出（复用「未收敛」兜底真值，摘要↔输入恒 1:1）
-    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
-      '复杂任务',
-      '规划产出',
-      expect.any(String),
-      expect.any(String),
-      undefined,
-    );
+    // 中断不产 round-summary：与主路径 act aborted 一致（哲学硬中止不产摘要）
+    expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
     // 中断后不进入收敛汇报
     expect(mocks.loop.runReport).not.toHaveBeenCalled();
   });

@@ -98,7 +98,7 @@ export class SeedOrchestrator {
     );
     if (difficulty === 'complex' && taskLoopLimit > 0) {
       yield* this.externalTaskLoop(input, prepared, signal);
-      yield* this.handoff();
+      yield* this.handoff(true);
       return;
     }
 
@@ -300,14 +300,22 @@ export class SeedOrchestrator {
     }
   }
 
-  /** Handoff 衔接决策：产出闭环出口 chunk（对话等待 / 自动衔接） */
-  private async *handoff(): AsyncGenerator<AgentChunk, void, unknown> {
+  /** Handoff 衔接决策：产出闭环出口 chunk（对话等待 / 自动衔接）。
+   *  @param externalTaskReported 本闭环是否为外部任务收尾（runChat 外循环路径传 true，
+   *    供宿主区分"普通答完"与"外部任务收敛汇报完"，以对齐 poll-round-summary 时机） */
+  private async *handoff(
+    externalTaskReported = false,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
     const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager);
     const handoffStrategy = resolveHandoff(strategy);
     yield {
       type: 'handoff',
       decision: handoffStrategy,
-      reason: handoffStrategy === 'wait' ? undefined : 'L2 策略自动衔接',
+      reason: externalTaskReported
+        ? '外部任务收尾汇报'
+        : handoffStrategy === 'wait'
+          ? undefined
+          : 'L2 策略自动衔接',
     };
   }
 
@@ -341,6 +349,7 @@ export class SeedOrchestrator {
     const headRoundId = parts.loop.getCurrentRoundId();
 
     // 1) 规划闭环：只调查 + 建任务表，不执行
+    yield { type: 'thinking', phase: 'planning' };
     parts.loop.injectSystemMessage(PLAN_ONLY_HINT);
     const planAct = yield* this.act(() =>
       parts.loop.processUserInput(
@@ -361,6 +370,8 @@ export class SeedOrchestrator {
       const next = this.getNextPendingStep();
       if (!next) break;
       stepsRun++;
+      // 步级进度标记（供宿主区分「正在执行第几步」）：index=当前步序号，limit=步数上限
+      yield { type: 'thinking', phase: 'step', index: stepsRun, limit };
       // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
       // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId
       // 执行期临时（self-review/reflection 等）已由 loop.processUserInput 入口自动清理，无需此处手动调用
@@ -368,10 +379,9 @@ export class SeedOrchestrator {
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
       if (stepAct.failed || stepAct.aborted) {
-        // 中断/失败路径也要沉淀：摘要与外部输入恒 1:1，但中断时不能零沉淀。
-        // 复用「未收敛」兜底（backgroundReflect），以"这次外部输入 + 已完成规划产出"落一条
-        // 回退摘要——保住"记忆即摘要"单轨在任务中断时不断层（记忆连续）。
-        this.backgroundReflect(input, planAct.content);
+        // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」，与主路径 act 的
+        // aborted/failed 语义一致，规划/步两出口对称）。已产出内容由对话历史以中断标记
+        // 保真留存供 traceSummary 回溯——历史保细节、摘要不收纳残缺，两者分离。
         return;
       }
       // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
@@ -383,6 +393,7 @@ export class SeedOrchestrator {
     // 汇报入口（loop.runReport）已自动清理上一步执行期临时残留，无需此处手动再清
     if (this.isConverged()) {
       // 收敛路径：汇报有实质内容产汇报单源摘要；汇报为空/token 预算占位 → 回退规划产出普通摘要（恒 1:1）
+      yield { type: 'thinking', phase: 'reporting' };
       yield* this.runReportAndReflect(signal, input, planAct.content);
     } else {
       this.backgroundReflect(input, planAct.content);

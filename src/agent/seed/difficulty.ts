@@ -68,10 +68,12 @@ export class DifficultyJudge {
         if (chunk.content) raw += chunk.content;
       }
       const verdict = raw.trim().toLowerCase();
-      if (verdict.includes('complex')) return 'complex';
       if (verdict.includes('simple')) return 'simple';
-      // 解析不到明确判词 → 视复杂处理风险更低（复杂才可能触发汇报，误判简单会漏汇报）
-      return verdict === '' ? 'unknown' : 'complex';
+      if (verdict.includes('complex')) return 'complex';
+      // 解析不到明确判词 → 判不了即 unknown（不触发外循环）。difficulty 是附加降级路径，
+      // 误判 complex 会无谓触发外部任务循环（多轮执行 + 汇报烧 token），故判不了不折叠为
+      // complex，与类注释「解析失败返回 unknown」一致。
+      return 'unknown';
     } catch (err) {
       span.recordException?.(err instanceof Error ? err : new Error(String(err)));
       logger.warn({ err }, '难度判定失败（降级 unknown，不阻断回答）');
