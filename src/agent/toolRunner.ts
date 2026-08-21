@@ -127,7 +127,10 @@ export class ToolRunner {
       }
     }
 
-    // ② 审批闸：toolApproval='confirm' 触发审批回调（仅通知宿主征询，不阻塞放行）
+    // ② 审批闸：toolApproval='confirm' 触发审批回调（仅通知宿主征询，不阻塞放行）。
+    // 职责边界：onToolApproval 只"通知"宿主有 toolApproval=confirm 的高风险调用，不承担放行/拒绝决策；
+    // 真正的决策闸是③ preExecutionCheck（宿主返回 denied 即拒绝）。宿主须在 preExecutionCheck 做 confirm
+    // 拦截，勿期待 onToolApproval 的返回能阻止执行（它无返回值，回调后仍继续到③）。
     if (strategy.toolApproval === 'confirm') {
       this.deps.onToolApproval?.({ toolName: name, args });
     }
