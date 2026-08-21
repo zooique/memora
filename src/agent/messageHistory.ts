@@ -151,6 +151,8 @@ export class MessageHistory {
   /**
    * 追加 user 消息到当前会话（持久化失败不抛出，不阻塞对话）。
    * 日期用 todayDate() 动态获取，确保跨日后写入当天目录；roundId 用于 sessionStore 溯源。
+   * 同步 currentDate：实际写入的日期即会话当下归属（SSOT），跨日后 currentDateValue/currentSessionName
+   * 与持久化一致——摘要/标题/互斥排除的日期锚点不错位。
    */
   async appendUser(content: string, roundId?: string): Promise<void> {
     const message: SessionMessage = {
@@ -162,7 +164,10 @@ export class MessageHistory {
     if (this.sessionStore) {
       try {
         // 动态获取当天日期，避免跨日后写入旧目录
-        this.sessionStore.appendMessage(todayDate(), this.currentSession, message);
+        const writeDate = todayDate();
+        // 同步当前会话日期为实际写入日期（跨日首轮后读侧锚点与写入一致）
+        this.currentDate = writeDate;
+        this.sessionStore.appendMessage(writeDate, this.currentSession, message);
       } catch (err) {
         logger.warn({ err, session: this.currentSessionName }, 'appendUser: 会话持久化失败');
       }
@@ -182,7 +187,10 @@ export class MessageHistory {
     if (this.sessionStore) {
       try {
         // 动态获取当天日期，避免跨日后写入旧目录
-        this.sessionStore.appendMessage(todayDate(), this.currentSession, message);
+        const writeDate = todayDate();
+        // 同步当前会话日期为实际写入日期（跨日首轮后读侧锚点与写入一致）
+        this.currentDate = writeDate;
+        this.sessionStore.appendMessage(writeDate, this.currentSession, message);
       } catch (err) {
         logger.warn({ err, session: this.currentSessionName }, 'appendAssistant: 会话持久化失败');
       }

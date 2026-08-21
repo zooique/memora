@@ -45,6 +45,29 @@ describe('MessageHistory · 基本操作', () => {
     await expect(history.appendAssistant('')).resolves.toBeUndefined();
     await expect(history.appendAssistant('   ')).resolves.toBeUndefined();
   });
+
+  it('跨日追加后 currentDateValue 同步为实际写入日期（写入是与读侧锚点一致）', async () => {
+    // mock sessionStore 捕获写入的 date
+    let capturedDate: string | undefined;
+    const mockStore = {
+      appendMessage: (date: string) => {
+        capturedDate = date;
+      },
+      loadMessages: () => [],
+      listSessions: () => [],
+    };
+    // 构造一个"昨天"的初始化日期，模拟跨日后第一次追加
+    const history = new MessageHistory(mockStore, '2000-01-01', 'main');
+    expect(history.currentDateValue).toBe('2000-01-01');
+
+    await history.appendUser('跨日后消息');
+    // 写入日期应是今天（todayDate，与 currentDate 同步）
+    expect(capturedDate).toBeDefined();
+    // currentDate 已同步到写入日期（非昨天的初始化值）
+    expect(history.currentDateValue).toBe(capturedDate);
+    // currentSessionName 与写入 date 一致（摘要/标题/互斥锚点不错位）
+    expect(history.currentSessionName).toBe(`${capturedDate}-main`);
+  });
 });
 
 describe('MessageHistory · listAllSessions', () => {
