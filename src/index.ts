@@ -25,7 +25,7 @@ export type {
   ToolApproval, ToolReadonly, StreamingMode,
   ProviderRouting, MultiStepReasoning, InputInterrupt,
   LoopContinue,
-  MemoryWriteMode, SessionArchiveMode, UserFollowup,
+  UserFollowup,
   ErrorHandling, SafetyRuleMode,
 } from '@/role-pack/types.js';
 export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/strategyResolver.js';

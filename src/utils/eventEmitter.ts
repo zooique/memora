@@ -28,8 +28,6 @@ export const AGENT_EVENTS = {
   /** LLM 生成完任务表，宿主可展示接受/丢弃入口 */
   taskTableGenerated: 'taskTableGenerated',
   needClarify: 'needClarify',
-  /** 写入前需确认 */
-  memoryWriteConfirm: 'memoryWriteConfirm',
   /** 回答中 LLM 输出 [ASK] 时主动提问（与 needClarify 共享暂停/恢复机制） */
   questionPending: 'questionPending',
   goalDriftDetected: 'goalDriftDetected',
@@ -70,10 +68,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   sessionResumeBlocked: { sessionId: string; reason: string };
   sessionResumeFailed: { sessionId?: string; reason: string };
   needClarify: { slot: string; question: string; options?: string[] }[];
-  memoryWriteConfirm: {
-    count: number;
-    memories: { id: string; name: string }[];
-  };
   questionPending: { slot: string; question: string }[];
   goalDriftDetected: {
     sessionId: string;

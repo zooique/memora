@@ -46,6 +46,10 @@ const RUN_CODE_LANGUAGE_MAX_LEN = 32;
 /** run_code 单次结果字段最大长度（防长输出撑爆上下文） */
 const RUN_CODE_RESULT_MAX_LEN = 20_000;
 
+// ─── run_skill_script 注入防御常量 ─────────────────
+/** run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN） */
+const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
+
 /**
  * 外部工具返回净化：去控制字符 + 长度上限
  *
@@ -386,6 +390,18 @@ export class ToolExecutor {
   }
 
   /**
+   * 完整内置工具定义（只读闸查询用，单一真理源）
+   *
+   * 含全部始终内置工具 + 条件工具（web_search / web_fetch / run_code，仅定义层面，
+   * 不论 provider 是否注入）。不过白名单过滤、不含自定义工具——只读闸（ToolRunner）需要
+   * 「全部内置定义」以查 readonly 标记，而非「当前暴露面」（被白名单过滤的工具 LLM 调不到，
+   * 但 readonly 语义应覆盖全部内置写操作）。工具定义知识归本类，装配层经此取值而非重复 import。
+   */
+  get builtinDefinitions(): ToolDefinition[] {
+    return [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL];
+  }
+
+  /**
    * 执行工具调用
    *
    * 新增参数类型校验。
@@ -681,7 +697,8 @@ export class ToolExecutor {
         if (result === null) {
           return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
         }
-        return result;
+        // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（8-1 对齐 run_code 的防护），防刷屏撑爆上下文
+        return sanitizeExternalText(result, RUN_SCRIPT_RESULT_MAX_LEN);
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单

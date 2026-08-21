@@ -22,8 +22,6 @@ export interface ArchiveCoordinatorOptions {
   readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调（Agent 注入 this.emit） */
   readonly emit: EmitCallback;
-  /** 记忆写入模式：auto=自动（默认）/ confirm=写前等宿主确认 */
-  readonly getMemoryWriteMode?: () => 'auto' | 'confirm';
   /** 会话归档模式：auto=自动（默认）/ manual=仅手动；未注入回退 getArchiveMode */
   readonly getSessionArchiveMode?: () => 'auto' | 'manual';
 }

@@ -32,7 +32,7 @@ const SUPERSEDE_OVERLAP_THRESHOLD = 0.5;
 /**
  * 取代检测的候选窗口（条）：每次生成只对「同 session 最近 N 条摘要」做取代判定。
  * 取代语义是「新决策替换旧同主题决策」，时间越近、同 session 越可能是被覆盖对象——
- * 收敛扫描范围避免全库 round-summary 全量遍历（O(n) 退化），计算面不随会话轮次无界增长。
+ * 候选构造仍需全量读（getBySource 过滤同 session），窗口收敛的是取代判定（关键词重叠计算）到最近 N 条，避免对全库摘要逐一做重叠计算（O(n) 退化）。
  */
 const SUPERSEDE_CANDIDATE_WINDOW = 20;
 /** LLM 温度参数（低温度确保摘要格式稳定） */
@@ -169,7 +169,7 @@ export class RoundSummaryGenerator {
       this.storage.upsert(memory);
       // memoryAdded 事件出口：宿主「已沉淀」提示的可观测通道
       this._onMemoryAdded?.({ id: memory.id, source: memory.source, name: memory.name });
-      // 写路径取代检测：仅对「同 session 最近 N 条」摘要判定（收敛扫描范围，避免全库 O(n) 遍历）
+      // 写路径取代检测：仅对「同 session 最近 N 条」摘要做取代判定（收敛重叠计算面，避免对全库摘要逐一计算）
       this.supersedeSimilar(memory, this.getSessionCandidates(memory));
       logger.debug({ memoryId, summaryType, sessionName, roundId }, '轮次摘要已生成');
     } catch (err) {
@@ -180,7 +180,7 @@ export class RoundSummaryGenerator {
   /**
    * 构造取代检测候选：同 session 且未被取代的摘要，按时间倒序取最近 N 条（SUPERSEDE_CANDIDATE_WINDOW）。
    * 取代语义是"本 session 内新决策替换旧同主题决策"——收敛到同 session 近期摘要，
-   * 避免全库 round-summary 全量遍历（跨 session 的长期历史不参与取代判定，无跨 session 覆盖语义）。
+   * 候选经 getBySource 全量读后过滤，取代判定的重叠计算只跑最近 N 条（跨 session 长期历史不参与取代判定，无跨 session 覆盖语义）。
    *
    * @param newMemory 新生成的摘要（以 id 的 session 前缀定位本 session）
    * @returns 候选摘要列表（倒序取最近 N 条，供 supersedeSimilar 逐一判定）

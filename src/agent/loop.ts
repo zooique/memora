@@ -276,7 +276,7 @@ export class AgentLoop {
 
     try {
       // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
-      this.currentRoundId = roundId ?? `round-${Date.now()}`;
+      this.currentRoundId = roundId ?? this.allocRoundId();
 
       // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
       this.providerRouteCache.clear();
@@ -1354,6 +1354,11 @@ export class AgentLoop {
   /** 设置当前轮次 ID（appendUser 在 processUserInput 之前调用，故需提前生成供 RoundSummaryGenerator 使用） */
   setCurrentRoundId(roundId: string): void {
     this.currentRoundId = roundId;
+  }
+
+  /** 分配新轮次 ID（SSOT：prepare 提前生成与 processUserInput 回退生成共用唯一出处，避免 round-模板串重复漂移） */
+  allocRoundId(): string {
+    return `round-${Date.now()}`;
   }
 
   /**

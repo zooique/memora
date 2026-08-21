@@ -118,6 +118,13 @@ export class MemoryDecayScheduler {
   /** 启动定期衰减：立即执行首次衰减，再注册定时衰减 */
   start(storage: IMemoryStorageLike, intervalMs: number): void {
     this.storage = storage;
+    // 治理源为空时挂起周期调度：无对象可衰减，不注册 timer（避免空转链——
+    // 周期性空跑 decayScores([]) 仍发射事件/记 span/累指标）；保留手动 runOnce
+    // 能力（governance.decay() 仍可调用，空源时 runOnce 内短路）。
+    if (this.sources.length === 0) {
+      logger.debug('治理源为空，衰减调度挂起（不注册周期 timer）');
+      return;
+    }
     this.runOnce();
     this.decayTimer = safeSetInterval(() => this.runOnce(), intervalMs);
   }
@@ -156,6 +163,11 @@ export class MemoryDecayScheduler {
    */
   runOnce(): void {
     if (!this.storage) return;
+    // 治理源为空时短路：无对象可衰减，不发射事件/不记录 span/不累加指标（防空转链）
+    if (this.sources.length === 0) {
+      logger.debug('治理源为空，记忆衰减跳过');
+      return;
+    }
     const decaySpan = this.tracer.startSpan(TRACE_SPANS.DECAY);
     try {
       const decayedCount = this.storage.decayScores([...this.sources], new Date());

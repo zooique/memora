@@ -61,12 +61,6 @@ export type LoopContinue = number;
 /** 摘要生成开关（on=生成摘要 / off=不生成） */
 export type Summary = 'on' | 'off';
 
-/** 记忆写入模式：auto=自动写入 / confirm=写入前确认 */
-export type MemoryWriteMode = 'auto' | 'confirm';
-
-/** 会话归档模式：auto=自动归档 / manual=手动归档 */
-export type SessionArchiveMode = 'auto' | 'manual';
-
 /** 用户追问策略：ask=主动引导对话 / silent=只等输入 */
 export type UserFollowup = 'ask' | 'silent';
 
@@ -144,10 +138,6 @@ export interface ReflectStrategy {
   readonly loopContinue?: LoopContinue;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;
-  /** 记忆写入模式（默认 auto；预留键，内核不消费） */
-  readonly memoryWrite?: MemoryWriteMode;
-  /** 会话归档模式（默认 auto；预留键，内核不消费） */
-  readonly sessionArchive?: SessionArchiveMode;
   /** 用户追问策略（默认 silent） */
   readonly userFollowup?: UserFollowup;
 }
@@ -179,7 +169,7 @@ export interface GlobalStrategy {
  * prepare 的 recentRounds/memoryRecall/memoryRecallQuota/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
  * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
- * 预留键（prepare.understandingConfirm/taskClassification、reflect.memoryWrite/sessionArchive、global.costBudget/safetyRule）内核不消费，声明不生效。
+ * 预留键（prepare.understandingConfirm/taskClassification、global.costBudget/safetyRule）内核不消费，声明不生效。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */

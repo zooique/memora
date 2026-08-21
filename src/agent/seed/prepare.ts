@@ -101,7 +101,7 @@ export class SeedPrepare {
     // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
     yield { type: 'thinking', phase: 'processing' };
 
-    const roundId = `round-${Date.now()}`;
+    const roundId = loop.allocRoundId();
     loop.setCurrentRoundId(roundId);
     await history.appendUser(input, roundId);
 

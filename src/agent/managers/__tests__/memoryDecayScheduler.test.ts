@@ -216,6 +216,22 @@ describe('MemoryDecayScheduler', () => {
       expect(tracer.spans[0]!.exceptions).toHaveLength(1);
       expect(tracer.spans[0]!.exceptions[0]!.message).toBe('storage 不可用');
     });
+
+    it('治理源为空时 start/runOnce 应短路（防空转链：不调 decayScores / 不发事件 / 不记 span）', () => {
+      // 生产默认 GOVERNANCE_SOURCES=[]：无治理对象时衰减调度应挂起，而非周期性空转
+      const emptyScheduler = new MemoryDecayScheduler({
+        onDecayCompleted: cb.callback,
+        sources: [],
+      });
+      emptyScheduler.start(storage, 60_000);
+      // 挂起：不执行首次衰减、不注册 timer（无 decayScores 调用）
+      expect(storage.calls).toHaveLength(0);
+      expect(cb.calls).toHaveLength(0);
+      // 手动 runOnce 同样短路
+      emptyScheduler.runOnce();
+      expect(storage.calls).toHaveLength(0);
+      expect(cb.calls).toHaveLength(0);
+    });
   });
 
   describe('指标统计', () => {
@@ -306,6 +322,8 @@ describe('MemoryDecayScheduler', () => {
       const cb2 = createMockCallback();
       const schedulerNoTracer = new MemoryDecayScheduler({
         onDecayCompleted: cb2.callback,
+        // 显式注入非空治理源：本用例验证 tracer 降级，与「空源挂起」行为解耦
+        sources: [SOURCE_LABELS.WORK_PROJECTION],
       });
       const storage2 = createMockStorage(10);
       schedulerNoTracer.start(storage2, 60_000);

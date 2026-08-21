@@ -80,8 +80,11 @@ export class EmbeddingProvider {
     return first.vector;
   }
 
-  /** 批量嵌入：一次请求嵌入多条（减少 API 调用），结果顺序与输入一致 */
-  async batchEmbed(texts: string[], options?: EmbeddingOptions): Promise<EmbeddingResult[]> {
+  /** 批量嵌入：一次请求嵌入多条（减少 API 调用），结果与输入**索引对齐**（缺失项保留 null 占位，不压缩索引） */
+  async batchEmbed(
+    texts: string[],
+    options?: EmbeddingOptions,
+  ): Promise<(EmbeddingResult | null)[]> {
     // 过滤已缓存的
     const uncached: string[] = [];
     const uncachedIndices: number[] = [];
@@ -156,24 +159,33 @@ export class EmbeddingProvider {
         data: Array<{ embedding: number[]; index: number }>;
       };
 
-      // 按 index 排序（API 不保证顺序）
+      // 按 index 排序（API 不保证顺序；排序仅保证确定性，填充按 index 精确映射）
       const sorted = data.data.sort((a, b) => a.index - b.index);
 
-      // 填充结果 + 更新缓存
-      for (let i = 0; i < uncached.length; i++) {
-        const text = uncached[i];
+      // 按 API 返回的 index 精确映射回输入数组位置（7-1 修复）：
+      // data[i].index 指向 uncached 中的位置，缺失的 index（无对应 data 项）对应 results 位置保持 null 占位。
+      // 不能按数组位置取 sorted[i]——index 不连续（API 部分缺失）时按位置取会让后续项错位。
+      for (const item of sorted) {
+        const inputPos = item.index;
+        if (inputPos === undefined) continue;
+        const text = uncached[inputPos];
         if (!text) continue;
-        const vector = sorted[i]?.embedding;
+        const vector = item.embedding;
         if (!vector) {
-          logger.warn({ text: text.slice(0, 50), index: i }, 'Embedding 缺失，跳过');
+          logger.warn(
+            { text: text.slice(0, 50), index: inputPos },
+            'Embedding 缺失，跳过',
+          );
           continue;
         }
         this.setCache(text, vector);
-        const idx = uncachedIndices[i];
+        const idx = uncachedIndices[inputPos];
         if (idx !== undefined) results[idx] = { text, vector };
       }
 
-      return results.filter((r): r is EmbeddingResult => r !== null);
+      // 保留 null 占位返回：缺失项不 filter 压缩索引（7-1 修复）——调用方按 results[i]
+      // 取第 i 条时索引对齐，缺失项由调用方（batchUpsert）`if (!result) continue` 容错跳过
+      return results;
     } finally {
       abort.dispose();
     }

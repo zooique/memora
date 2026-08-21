@@ -226,8 +226,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'handoff',
       'loopContinue',
       'userFollowup',
-      'memoryWrite',
-      'sessionArchive',
     ],
     global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget', 'taskLoopLimit'],
   };

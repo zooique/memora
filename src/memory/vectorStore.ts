@@ -12,12 +12,15 @@ import { cosineSimilarity } from '@/utils/math.js';
 import type { EmbeddingOptions } from '@/llm/embedding.js';
 
 /**
- * 嵌入服务接口：生成文本嵌入向量，batchEmbed 顺序与输入一致。
+ * 嵌入服务接口：生成文本嵌入向量，batchEmbed 结果与输入索引对齐（缺失项为 null 占位，不压缩索引）。
  * EmbeddingProvider（llm/embedding.ts）结构子类型满足；options 透传 signal/timeoutMs 支持外部取消。
  */
 export interface EmbeddingService {
-   embed(text: string, options?: EmbeddingOptions): Promise<number[]>;
-   batchEmbed(texts: string[], options?: EmbeddingOptions): Promise<Array<{ text: string; vector: number[] }>>;
+  embed(text: string, options?: EmbeddingOptions): Promise<number[]>;
+  batchEmbed(
+    texts: string[],
+    options?: EmbeddingOptions,
+  ): Promise<Array<{ text: string; vector: number[] } | null>>;
 }
 
 /**

@@ -28,8 +28,6 @@ import {
   resolveTokenBudget,
   resolveStepBudget,
   resolveTaskLoopLimit,
-  resolveMemoryWrite,
-  resolveSessionArchive,
   resolveMultiStepReasoning,
   resolveRecallConfidence,
   resolveSummaryRecall,
@@ -122,8 +120,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(r.handoff).toBe('wait');
     expect(r.loopContinue).toBe(0);
     expect(r.summary).toBe('on');
-    expect(r.memoryWrite).toBe('auto');
-    expect(r.sessionArchive).toBe('auto');
     expect(r.userFollowup).toBe('silent');
   });
 
@@ -263,30 +259,6 @@ describe('resolve* 函数 — 基础策略解析', () => {
     it('非法/缺失值回退默认 allow', () => {
       expect(resolveInputInterrupt({ act: { inputInterrupt: 'bad' as never } })).toBe('allow');
       expect(resolveInputInterrupt(undefined)).toBe('allow');
-    });
-  });
-
-  // ── resolveMemoryWrite ──
-  describe('resolveMemoryWrite', () => {
-    it('合法值透传', () => {
-      expect(resolveMemoryWrite({ reflect: { memoryWrite: 'confirm' } })).toBe('confirm');
-    });
-
-    it('非法/缺失值回退默认 auto', () => {
-      expect(resolveMemoryWrite({ reflect: { memoryWrite: 'bad' as never } })).toBe('auto');
-      expect(resolveMemoryWrite(undefined)).toBe('auto');
-    });
-  });
-
-  // ── resolveSessionArchive ──
-  describe('resolveSessionArchive', () => {
-    it('合法值透传', () => {
-      expect(resolveSessionArchive({ reflect: { sessionArchive: 'manual' } })).toBe('manual');
-    });
-
-    it('非法/缺失值回退默认 auto', () => {
-      expect(resolveSessionArchive({ reflect: { sessionArchive: 'bad' as never } })).toBe('auto');
-      expect(resolveSessionArchive(undefined)).toBe('auto');
     });
   });
 

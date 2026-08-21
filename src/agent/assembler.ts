@@ -226,11 +226,10 @@ type LoopAndDepsParams = Pick<
  *
  * 同 LoopAndDepsParams（收敛的第二半）。
  */
-type LoopDependentParams = Pick<AssembleInput, 'configDir' | 'backgroundProvider' | 'hooks'> & {
+type LoopDependentParams = Pick<AssembleInput, 'backgroundProvider' | 'hooks'> & {
   pctx: ProjectContext;
   loop: AgentLoop;
   history: MessageHistory;
-  skillManager: SkillManager;
 };
 
 /** 组装器输出（所有创建的组件引用） */
@@ -474,6 +473,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
     systemPromptPrefix,
     toolDefinitions: toolExec.list,
+    // 完整内置定义注入只读闸（toolReadonly 查询 readonly 标记；单一真理源取 toolExec.builtinDefinitions）
+    builtinTools: toolExec.builtinDefinitions,
     maxContextTokens,
     tracer,
     messages,
@@ -762,7 +763,6 @@ export async function assembleComponents(
     pctx,
     loop,
     history,
-    skillManager,
     backgroundProvider,
     hooks,
   });

@@ -124,6 +124,8 @@ export function shouldSkipForIdempotency(
 export const WEB_SEARCH_TOOL: ToolDefinition = {
   name: 'web_search',
   description: '搜索互联网获取实时信息。当需要最新数据、新闻、文档或无法从记忆中找到答案时使用。',
+  // 读操作：readonly 模式下保留（对齐 web_fetch / search_memories）
+  readonly: true,
   parameters: {
     type: 'object',
     properties: {

@@ -88,8 +88,6 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
     loopContinue: { kind: 'check', check: isNonNegativeInt },
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
-    memoryWrite: { kind: 'enum', values: ['auto', 'confirm'] },
-    sessionArchive: { kind: 'enum', values: ['auto', 'manual'] },
   },
   global: {
     askOn: { kind: 'check', check: isAskOn },

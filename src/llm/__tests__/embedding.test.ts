@@ -238,7 +238,7 @@ describe('EmbeddingProvider · batchEmbed 边界', () => {
     expect(results[1]!.vector).toEqual([0.2]); // 新嵌入
   });
 
-  it('API 返回缺失向量时应跳过（warn 不抛错）', async () => {
+  it('API 返回缺失向量时应保留 null 占位（索引对齐，warn 不抛错）', async () => {
     // API 返回空 data 数组
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,
@@ -246,7 +246,29 @@ describe('EmbeddingProvider · batchEmbed 边界', () => {
     } as Response);
 
     const results = await provider.batchEmbed(['文本']);
-    expect(results).toEqual([]);
+    // 7-1 修复：缺失项保留 null 占位（长度=输入长度），不 filter 压缩索引
+    expect(results).toHaveLength(1);
+    expect(results[0]).toBeNull();
+  });
+
+  it('部分缺失时保留 null 占位，消费方按索引取不错位（7-1 回归）', async () => {
+    // 输入 3 条，API 只返回 index 0、2（缺失 index 1）
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [
+          { embedding: [0.1], index: 0 },
+          { embedding: [0.3], index: 2 },
+        ],
+      }),
+    } as Response);
+
+    const results = await provider.batchEmbed(['A', 'B', 'C']);
+    // 索引对齐：第 0 条 A、第 1 条 B 缺失(null 占位)、第 2 条 C——不因缺失压缩导致错位
+    expect(results).toHaveLength(3);
+    expect(results[0]!.vector).toEqual([0.1]);
+    expect(results[1]).toBeNull();
+    expect(results[2]!.vector).toEqual([0.3]);
   });
 
   it('embed 空结果应抛错（batchEmbed 返回空）', async () => {

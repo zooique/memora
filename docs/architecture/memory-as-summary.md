@@ -245,6 +245,8 @@ export interface SessionMessage {
 > - **相关性排序**（hybridMerge）：低相关/低分记忆本就进不了 top-N 召回预算。
 >
 > 三者共同保证「低价值记忆自然退出召回面」，无需 type 时间窗。type 回归纯语义标签（§3.2）。
+>
+> **当前形态诚实声明（2026-08-21 收敛）**：记忆库收敛为摘要单轨后，score 衰减面向「治理源」（`GOVERNANCE_SOURCES`，当前为空，衰减调度已挂起不周期空转），**round-summary 不参与时间衰减**——摘要是事实记录（"聊过什么"），无"过时"语义；其 score 由召回 boost 驱动（越常用越重要），记忆有效性由 superseded 写时取代判定。故上述"score 衰减沉底"机制当前不作用于 round-summary，治理源回归时恢复。
 
 ### 4.2.1 角色包召回开关 × type 标签（两层协作）
 

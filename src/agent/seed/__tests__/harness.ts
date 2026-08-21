@@ -41,6 +41,7 @@ export interface SeedMocks {
     cleanTemporarySystemMessages: ReturnType<typeof vi.fn>;
     setStrategy: ReturnType<typeof vi.fn>;
     setCurrentRoundId: ReturnType<typeof vi.fn>;
+    allocRoundId: ReturnType<typeof vi.fn>;
     getCurrentRoundId: ReturnType<typeof vi.fn>;
     setWithinExternalTask: ReturnType<typeof vi.fn>;
     isWithinExternalTask: boolean;
@@ -153,6 +154,8 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
   };
   // loop roundId 的原子状态：供 setCurrentRoundId/getCurrentRoundId 共享，模拟真实 loop 的轮次推进
   let currentRoundId = 'round-1';
+  // allocRoundId 自增计数：每次分配返回不重复的 round id（等价真实 loop 的 round-${Date.now()}）
+  let allocCounter = 0;
   // 外循环上下文原子状态：供 setWithinExternalTask/… 读写，模拟真实 loop 的跨方法上下文
   let withinExternalTask = false;
   let externalTaskHeadRoundId = '';
@@ -165,6 +168,8 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       setCurrentRoundId: vi.fn((id: string) => {
         currentRoundId = id;
       }),
+      // allocRoundId 生成新轮次 ID（prepare 提前分配，供 setCurrentRoundId/appendUser 同源使用）
+      allocRoundId: vi.fn(() => `round-alloc-${++allocCounter}`),
       getCurrentRoundId: vi.fn(() => currentRoundId),
       // 外循环上下文：setter 写状态、getter 读状态（与真实 loop 的属性 getter 一致，作为续跑推进的判断依据）
       setWithinExternalTask: vi.fn((v: boolean) => {

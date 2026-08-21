@@ -6,6 +6,12 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToolRunner, type ToolCall, type ToolRunnerDeps } from '@/agent/toolRunner.js';
+import {
+  BUILTIN_TOOLS,
+  WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
+  RUN_CODE_TOOL,
+} from '@/agent/builtinTools.js';
 import { MemoraError } from '@/utils/errors.js';
 import { NOOP_TRACER } from '@/agent/tracer.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
@@ -62,6 +68,32 @@ describe('ToolRunner 单工具执行', () => {
 
     expect(result.startsWith('[ERR:TOOL:READONLY_DENIED]')).toBe(true);
     expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  it('只读闸（生产全量内置定义）：readonly 放行 web_search/web_fetch/read_file，阻止 run_code/write_file', async () => {
+    // 修复 4-1/4-2 后的生产注入形态：assembler 传 toolExec.builtinDefinitions（全量内置含条件工具）
+    const builtinTools = [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL];
+    const execute = vi.fn(async () => 'OK');
+    const deps = makeDeps({
+      execute,
+      builtinTools,
+      getStrategy: () => strategy({ toolReadonly: 'readonly' }),
+    });
+    const runner = new ToolRunner(deps);
+
+    // 只读工具（含条件工具 web_search / web_fetch）放行执行
+    await runner.runOne(tc('web_search', '{"query":"x"}'));
+    await runner.runOne(tc('web_fetch', '{"url":"https://a"}'));
+    await runner.runOne(tc('read_file', '{"path":"a"}'));
+    expect(execute).toHaveBeenCalledTimes(3);
+
+    // 写/执行工具（write_file / run_code）被只读闸拒绝
+    const deniedWrite = await runner.runOne(tc('write_file', '{"path":"a","content":"x"}'));
+    expect(deniedWrite.startsWith('[ERR:TOOL:READONLY_DENIED]')).toBe(true);
+    const deniedCode = await runner.runOne(tc('run_code', '{"language":"python","code":"x"}'));
+    expect(deniedCode.startsWith('[ERR:TOOL:READONLY_DENIED]')).toBe(true);
+    // 拒绝路径不入 execute（execute 仅被上 3 个只读工具调用）
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 
   it('宿主 preCheck 拒绝 → denied', async () => {

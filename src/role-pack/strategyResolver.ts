@@ -8,8 +8,6 @@ import type {
   BehaviorStrategy,
   Handoff,
   MemoryRecallMode,
-  MemoryWriteMode,
-  SessionArchiveMode,
   AutoSwitch,
   ContextAssembly,
   ErrorHandling,
@@ -102,8 +100,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     handoff: 'wait',
     loopContinue: 0,
     summary: 'on',
-    memoryWrite: 'auto',
-    sessionArchive: 'auto',
     userFollowup: 'silent',
   },
   global: {
@@ -251,16 +247,6 @@ export function resolveTaskLoopLimit(strategy: BehaviorStrategy | undefined): nu
   const candidate = strategy?.global?.taskLoopLimit;
   const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
   return valid ? candidate : DEFAULT_TASK_LOOP_LIMIT;
-}
-
-/** 解析记忆写入模式（内核已消费）：非法值归位 'auto'——auto=自动写入 / confirm=写入前待宿主确认 */
-export function resolveMemoryWrite(strategy: BehaviorStrategy | undefined): MemoryWriteMode {
-  return normalizeEnum(strategy?.reflect?.memoryWrite, ['auto', 'confirm'], 'auto');
-}
-
-/** 解析会话归档模式（内核已消费）：非法值归位 'auto'——auto=自动归档 / manual=仅手动归档 */
-export function resolveSessionArchive(strategy: BehaviorStrategy | undefined): SessionArchiveMode {
-  return normalizeEnum(strategy?.reflect?.sessionArchive, ['auto', 'manual'], 'auto');
 }
 
 /** 解析多步推理模式（内核已消费）：非法值归位 'auto'——auto=Provider 决定 / manual=强制快速回答 */

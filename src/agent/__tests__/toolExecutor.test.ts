@@ -79,6 +79,22 @@ describe('工具执行器（6 个工具）', () => {
       expect(names.length).toBe(12);
     });
 
+    it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
+      const defs = executor.builtinDefinitions;
+      const names = defs.map((t) => t.name);
+      // 始终内置 12 + 条件 3（web_search / web_fetch / run_code）
+      expect(names.length).toBe(15);
+      expect(names).toContain('write_file');
+      expect(names).toContain('web_search');
+      expect(names).toContain('web_fetch');
+      expect(names).toContain('run_code');
+      // 只读闸语义完整性：写/执行工具非只读（falsy），读工具只读（含 web_search 4-2 修复）
+      expect(defs.find((t) => t.name === 'write_file')!.readonly).toBeFalsy();
+      expect(defs.find((t) => t.name === 'run_code')!.readonly).toBeFalsy();
+      expect(defs.find((t) => t.name === 'web_search')!.readonly).toBe(true);
+      expect(defs.find((t) => t.name === 'web_fetch')!.readonly).toBe(true);
+    });
+
     it('每个工具应有 name + description + parameters（含 required 数组）', () => {
       for (const tool of BUILTIN_TOOLS) {
         expect(tool.name).toBeTruthy();
@@ -112,6 +128,36 @@ describe('工具执行器（6 个工具）', () => {
       await expect(executor.execute('read_skill', JSON.stringify({}))).rejects.toThrow(
         '工具参数缺失',
       );
+    });
+  });
+
+  describe('run_skill_script（渐进披露 L3）', () => {
+    it('未注入 runSkillScript 回调时返回不可用提示', async () => {
+      const result = await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(result).toContain('run_skill_script 不可用');
+    });
+
+    it('超长输出被截断到上限（8-1 对齐 run_code 防护，防刷屏撑爆上下文）', async () => {
+      executor.runSkillScript = async () => 'x'.repeat(50_000);
+      const result = await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      // 20KB 上限 + 截断省略号：返回不被超长输出撑爆
+      expect(result.length).toBeLessThanOrEqual(20_001);
+      expect(result.endsWith('…')).toBe(true);
+    });
+
+    it('正常输出原样返回（不截断）', async () => {
+      executor.runSkillScript = async () => 'lint 通过，0 errors';
+      const result = await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(result).toBe('lint 通过，0 errors');
     });
   });
 
