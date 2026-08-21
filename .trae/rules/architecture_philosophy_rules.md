@@ -130,13 +130,13 @@ domain），其余在 Agent Loop 中按需检索。
 
 **在代码中的体现**：
 
-- `bootstrap` 只加载 `rule` 来源标签（Persona 由 `systemPromptPrefix` 注入，Skill 由 `matchAndInjectSkill` 当轮动态注入）
+- `bootstrap` 只加载 `rule` 来源标签（Persona 由 `systemPromptPrefix` 确定性注入，Skill 经渐进披露——L1 元数据常驻、L2 `read_skill` 按需读取）
 - `insight` / `archive` 级记忆不进启动加载，由 `recall()` 在 Loop 中按需召回（async，双通道：语义搜索 + 关键词搜索，结果合并去重）
 - 向量搜索失败时静默降级到关键词——保护专注态不被网络抖动打断
 - 单次增量召回 Token 预算不超过上下文窗口的 10%
 - 归档时走记忆归档三原则过滤，拒绝低价值重复信息
 - **冲突消解（ADR-021）**：记忆冲突通过 `supersededBy` 布尔标记表达（写路径取代检测，读时过滤），不再使用关系图谱侧车（ADR-014 已废弃）
-- `recall()` 默认 `excludeSources = [persona, rule, skill]`（设定记忆不进入召回，双重防御）
+- `recall()` 默认 `excludeSources` 为空（`DEFAULT_RECALL_EXCLUDE_SOURCES = []`，设定记忆已不写入记忆库、ADR-025，无需在召回侧排除）
 
 **禁止**：
 

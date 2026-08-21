@@ -5,8 +5,8 @@
 [![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-2334%20passed-brightgreen)](https://vitest.dev)
+[![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2369%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -43,7 +43,6 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 | **统一记忆模型** | 一切统一为「记忆」，通过 `source` 开放字符串区分，无封闭枚举 |
 | **领域可插拔** | 同一套架构，加载不同记忆配置即可适配不同领域 |
 | **零依赖内核** | 核心层无任何第三方运行时依赖，持久化由宿主通过接口注入 |
-| **内容护栏** | 正则规则 + block/warn 双动作，输入输出双向检查 |
 | **可观测性** | ITracer 接口 + 结构化 span，宿主可接入任意 APM |
 | **外部世界工具** | 条件性暴露 `web_search` / `web_fetch`（搜索→抓取闭环）/ `run_code`（通用代码执行）——宿主注入 provider 才启用，内核保持零运行时依赖 |
 
@@ -133,10 +132,10 @@ await agent.close();
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
 │  │  - 双通道记忆召回（语义 + 关键词）       │               │
-│  │  - 记忆治理 L1-L4（去重/时效/冲突/衰减） │               │
-│  │  - 角色匹配 / 技能匹配 / 护栏检查        │               │
+│  │  - 记忆治理机制（去重/时效/冲突/衰减）   │               │
+│  │  - 角色 / 技能匹配（渐进披露）          │               │
 │  │  - 工具注册 / 工具执行 / 反思重试        │               │
-│  │  - 会话归档 / 洞察提取        │               │
+│  │  - 会话归档 / 外部任务循环              │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -157,49 +156,25 @@ await agent.close();
 
 ```
 src/
-├── index.ts          # 库导出入口（纯类型 + 接口导出，无 CLI）
-├── agent/            # Agent 门面 + AgentLoop 执行引擎
+├── index.ts          # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
+├── agent/            # Agent 门面 + AgentLoop + seed/（单轮问答闭环）
 │   ├── agent.ts      # 门面类（宿主唯一入口）
 │   ├── loop.ts       # 核心循环（推理 → 工具调用 → 反思重试）
-│   ├── assembler.ts  # 组件组装器（纯工厂，不持有状态）
-│   ├── toolExecutor.ts    # 工具注册与执行
-│   ├── contextManager.ts  # 上下文窗口管理（截断 + 摘要）
-│   ├── guardrail.ts       # 内容护栏（正则 + block/warn）
-│       └── managers/          # 13 个专职 Manager + 辅助模块
-│       ├── archiveCoordinator.ts   # 归档协调（会话归档 + 洞察提取）
-│       ├── memoryInspector.ts      # 记忆读写（CRUD + 搜索 + 统计）
-│       ├── memoryGovernance.ts     # 治理统一门面（L1-L4）
-│       ├── dedupManager.ts         # L1 语义去重
-│       ├── memoryDecayScheduler.ts # L4 定时衰减 + L2 时效评估
-│       ├── memoryAdvisor.ts        # L3 冲突检测 + 健康诊断
-│       ├── insightExtractor.ts     # 对话洞察提取
-│       ├── sessionManager.ts       # 会话管理（分叉/切换）
-│       ├── sessionArchiver.ts      # 会话内容归档
-│       ├── configManager.ts        # 配置管理（规则/技能热加载）
-│       ├── autoConfigRefiner.ts    # 自进化配置建议
-│       ├── workProjection.ts       # 作品投影管理
-│       ├── textPolishManager.ts    # 文本润色
-│       └── chatLockManager.ts      # 对话并发锁
-├── memory/           # 记忆引擎
-│   ├── types.ts          # Memory 基元（8 字段）
-│   ├── storageInterface.ts  # IMemoryStorage 接口（16 方法）
-│   ├── recall.ts         # 双通道召回（语义 + 关键词）
-│   ├── hybridMerge.ts    # 融合排序算法
-│   ├── vectorStore.ts    # IVectorStore + JsonVectorStore
-│   ├── governance.ts     # 治理共享常量（衰减/提升/上限）
-│   └── projectManager.ts # 多项目注册 + 锁管理
-├── llm/              # LLM 适配层
-│   ├── provider.ts       # LlmProvider 抽象类
-│   ├── openaiCompatible.ts  # OpenAI 兼容协议实现
-│   ├── embedding.ts      # EmbeddingProvider（/embeddings 端点）
-│   └── factory.ts        # createLlmProvider 工厂
-├── persona/          # 角色管理（纯文件 + 内存缓存）
-├── skill/            # 技能管理（关键词匹配 + 当轮注入）
-├── security/         # 安全策略（两级权限 + 路径白名单 + 审计）
-├── config/           # 配置加载（JSON + 环境变量插值）
-├── logging/          # 日志（ILogger 接口 + 懒初始化）
-├── eval/             # 评估框架（EvalScenario + EvalRunner，CI 用）
-└── utils/            # 工具函数（事件系统/分词/分片/错误/定时器）
+│   ├── assembler.ts  # 组件组装器（纯工厂）
+│   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts / checkpointRestoreCoordinator.ts ···
+│   ├── seed/         # 最小问答闭环（prepare → act/difficulty → reflect，含外部任务外循环）
+│   └── managers/     # 16 个专职 Manager/服务类（memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
+├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 召回 / 混合排序 / 向量 / 治理常量）
+├── role-pack/        # 角色包（manifest 解析 + validator + strategyResolver + 能力映射）
+├── skill/            # 技能管理（全局池 + 角色包绑定，渐进披露 + skillScriptRunner）
+├── llm/              # LLM 适配层（provider + openaiCompatible + factory + embedding）
+├── security/         # 安全策略（路径守卫 / 写入确认）
+├── config/           # 配置加载
+├── code-exec/        # 通用代码执行抽象（条件暴露）
+├── web-search/       # 网络搜索抽象（条件暴露）
+├── web-fetch/        # 网页抓取抽象（条件暴露）
+├── logging/          # 日志（ILogger 接口 + console fallback）
+└── utils/            # 工具函数（scanner / segmenter / 事件系统 / 原子写）
 ```
 
 ## 技术栈
@@ -220,12 +195,13 @@ src/
 
 | 指标 | 数值 |
 |------|------|
-| 源码 | 96 文件 / 24,646 行 |
-| 测试 | 85 文件 / 27,764 行（测试代码量 > 生产代码量） |
-| 测试通过 | 2,006+ |
-| 语句覆盖 | 89.3% |
-| 分支覆盖 | 81.7% |
-| 函数覆盖 | 91.7% |
+| 源码 | 101 个生产文件（src/，零第三方运行时依赖） |
+| 测试 | 94 个测试文件 |
+| 测试通过 | 2,369 通过 / 1 skip |
+| 语句覆盖 | 85.4% |
+| 分支覆盖 | 79.2% |
+| 函数覆盖 | 88.3% |
+| 行覆盖 | 86.9% |
 | 运行时依赖 | **0** |
 | 架构决策记录 | 25 个 ADR |
 
@@ -251,7 +227,9 @@ npm 包内置 `role-packs/` 示例角色库（`小说助手` / `文档设计师`
 
 ## 宿主项目
 
-[memora-sprite](hosts/memora-sprite/) — 基于 Electron 的桌面精灵宿主（v1.5.0），展示 Memora 内核的完整接入方式：SQLite 持久化、向量索引、系统托盘、全局快捷键、记忆图谱可视化。
+[memora-vscode](hosts/memora-vscode/) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、双通道召回、角色包管理与记忆视图。
+
+> 桌面精灵宿主（memora-sprite）已独立仓库独立开发。
 
 ## 贡献
 

@@ -45,15 +45,13 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`（已移出内核，宿主项目自行实现） | 历史参考：解析命令、REPL 循环、用户交互 | 直接调数据库（应通过 memory/ 层）             |
-| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（17 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/DedupManager/GoalConsistencyChecker/LlmJudgeHelper/MemoryAdvisor/MemoryDecay/MemoryGovernance/MemoryInspector/RoundSummaryGenerator/SessionArchiver/SessionManager/StreamAccumulator/TextPolish/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 辅助模块（llmJudgeHelper/streamAccumulator）+ 对话快照 + 作品投影<br>**注**：Agent 门面类总计持有约 **23 个组件字段**——其中 14 个为直接持有的专职 Manager 字段（managers/ 下 17 个文件中另 3 个——goalConsistencyChecker/llmJudgeHelper/streamAccumulator——由 SessionManager 等内部组合持有），其余 9 个为来自其他层的引用（projectManager/history/loop/toolExec/personaManager/skillManager/rolePackManager/pctx/composer）。新增 Manager 时请同步更新此计数。 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（`managers/` 下 16 个：ArchiveCoordinator/ChatLockManager/DedupManager/GoalConsistencyChecker/LlmJudgeHelper/MemoryAdvisor/MemoryDecayScheduler/MemoryGovernance/MemoryInspector/RoundSummaryGenerator/SessionArchiver/SessionManager/SessionNamer/StreamAccumulator/TextPolishManager/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 对话快照 + 作品投影 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
-| `persona/`  | 角色管理、关键词匹配、system prompt 组装 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入 | 直接调 LLM                                      |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
 | `security/` | 路径白名单、写入确认（fail-closed，未注入 handler 时拒绝，HC-03）、Prompt 注入防御 | 业务逻辑、交互式终端 I/O（readline 由宿主注入） |
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
 | `logging/`  | 日志输出                                           | 业务逻辑                                        |
-| `eval/`     | Agent 行为评估场景定义（EvalScenario 类型 + 工具函数，仅测试用，不参与运行时） | 业务逻辑、运行时调用                             |
 | `role-pack/` | 角色包类型定义与行为策略基元（三层结构：L1 内容 + L2 策略 + L3 代码预留；纯类型与工具函数，不参与运行时 Agent Loop） | 运行时调用、依赖 LLM 或存储                     |
 | `web-search/` | 网络搜索抽象接口（IWebSearchProvider）与默认实现（FetchWebSearchProvider，零依赖）；通过 AgentOptions 条件注入，不参与强制内置 | 业务逻辑、领域耦合                              |
 
@@ -69,14 +67,12 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 ```
 agent/      →  llm/         （对话调用 Provider）
             →  memory/      （记忆存储 + 召回 + 冲突消解 supersededBy）
-            →  persona/     （角色管理，通过 PersonaManager）
+            →  role-pack/   （角色包匹配与策略，通过 RolePackManager）
             →  skill/       （技能管理，通过 SkillManager）
             →  security/    （路径校验，跨切）
 memory/     →  utils/       （frontmatter 解析 + segmenter 分词）
             →  security/    （type-only：ProjectManager.init() 需 SecurityGuard 创建项目路径守卫）
             →  （依赖倒置例外：vectorStore.ts 通过 import type 引入 llm/embedding.js 的 EmbeddingOptions——类型定义在实现方 llm/，消费者 memory/ 以 type-only 引用。EmbeddingService 方向相反，见 llm/ 行）
-persona/    →  utils/       （frontmatter 解析 + segmenter 分词）
-            →  （不依赖 memory/：PersonaManager 已从 SQLite 索引解耦，纯文件+内存缓存）
 skill/      →  utils/       （frontmatter 解析 + segmenter 分词 + scanner 扫描）
             →  （不依赖 memory/：SkillManager 已从 SQLite 索引解耦，纯文件+内存缓存）
 llm/        →  memory/      （type-only：EmbeddingService 接口定义在 memory/、llm/ provider 实现。属依赖倒置：消费者 memory/ 定义接口契约，实现方 llm/ 遵守。EmbeddingOptions 方向相反，见 memory/ 例外行）
@@ -107,7 +103,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 - ❌ `llm/` 反向依赖 `agent/`
 - ❌ `memory/` 反向依赖宿主 `cli/`
 - ❌ `security/` 被宿主 `cli/` 绕过（所有写操作必须经 security 校验）
-- ❌ `memory/` 依赖 `persona/` 或 `skill/`（依赖方向不可逆）
+- ❌ `memory/` 依赖 `skill/` 或 `role-pack/`（依赖方向不可逆）
 
 ## 模块内文件命名（约定快照）
 

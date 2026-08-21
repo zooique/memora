@@ -1013,8 +1013,6 @@ export type { ConflictInfo } from '@zooique/memora';
 export type { SessionArchiveResult } from '@zooique/memora';
 // 作品投影
 export type { WorkProjectionEntry } from '@zooique/memora';
-// AutoConfigRefiner
-export type { AutoConfigRefinerOptions } from '@zooique/memora';
 
 // 记忆
 export { SOURCE_LABELS } from '@zooique/memora';

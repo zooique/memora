@@ -69,18 +69,18 @@ memora/                          # Git 仓库根目录
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 对话快照 + 作品投影 + 关联推荐
-├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回）
-├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
-├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
-├── role-pack/      # 角色包与行为策略定义（三层结构：L1 内容 + L2 策略 + L3 代码预留）
-├── llm/            # LLM 适配层
-├── security/       # 安全策略
+├── agent/          # Agent 门面 + AgentLoop（seed/ 最小问答闭环编排）+ 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 上下文装配
+├── code-exec/      # 通用代码执行抽象（ICodeExecutionProvider + 沙箱由宿主提供）
 ├── config/         # 配置加载
+├── llm/            # LLM 适配层
 ├── logging/        # 日志（ILogger 接口 + console fallback）
-├── eval/           # 评估框架（EvalScenario 类型 + 工具函数）
-├── web-search/     # 网络搜索抽象（IWebSearchProvider 接口 + FetchWebSearchProvider 实现）
-└── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
+├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回）
+├── role-pack/      # 角色包与行为策略定义（三层结构：L1 内容 + L2 策略 + L3 代码预留）
+├── security/       # 安全策略
+├── skill/          # 技能管理（configDir/skills/ + 角色包 skills/ 扫描，渐进披露）
+├── utils/          # 工具函数（含 eventEmitter.ts 事件系统 / scanner / configResourceManager）
+├── web-fetch/      # 网页抓取抽象（IFetchProvider + FetchWebFetchProvider，条件暴露）
+└── web-search/     # 网络搜索抽象（IWebSearchProvider + FetchWebSearchProvider，条件暴露）
 ```
 
 > **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./new-module-guide.md)，并经 ADR 记录）。模块**内部**的命名与拆分约定（index.ts / types.ts / core.ts / helpers.ts 等标准文件）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——若两处描述冲突，以本节为准。
