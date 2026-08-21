@@ -1247,7 +1247,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(agent.sessionManager!.status).toBe('paused');
 
       // 模拟 chat 锁被其他执行流占用
-      (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+      (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
 
       // 锁先校验再动作：acquireChatLock 失败时状态机保持 PAUSED，不被静默吞掉
       const gen = agent.processEvent({ type: 'chat', content: '你好' });

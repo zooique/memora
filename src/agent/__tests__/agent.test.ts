@@ -924,11 +924,11 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
     await agent.chatSync('你好');
 
     // 模拟 chat 忙碌（直接设置内部状态以测试并发锁行为）
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
 
     expect(() => agent!.forkSession()).toThrow(/对话繁忙/);
 
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
   });
 });
 
@@ -1242,11 +1242,11 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     await agent.init();
 
     // 模拟对话进行中
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
     expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
 
     // 恢复空闲状态
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
   });
 
   // ─── switchRolePack 手动切换（与自动匹配共享事件链路） ─────
@@ -1319,13 +1319,13 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     await agent.init();
 
     // 模拟对话进行中
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
     // switchRolePack 是内部统一入口，对话中也允许切换（自动匹配需要）
     const ok = agent!.switchRolePack('编程专家');
     expect(ok).toBe(true);
 
     // 恢复空闲状态
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
   });
 
   // ─── switchRolePack 手动切换（角色包系统，与自动匹配共享事件链路） ─────
@@ -1566,9 +1566,9 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 模拟对话繁忙
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
     await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
-    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
+    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
   });
 
   it('对话繁忙时 reloadConfig(persona/skill) 应暂存到 pendingConfigReload', async () => {
@@ -1576,7 +1576,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 模拟对话繁忙
-    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig('persona')).rejects.toThrow(/对话繁忙/);
     await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
@@ -1590,7 +1590,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig()).rejects.toThrow(/对话繁忙/);
     expect(agent['pendingConfigReload'].size).toBe(0);
@@ -1601,7 +1601,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig('rule')).rejects.toThrow(/对话繁忙/);
     // rule 在 chatLock busy 阶段被暂存（补执行时 reloadConfig('rule') 会 no-op 返回）
@@ -1614,7 +1614,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 暂存一个请求
-    const lock = (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig('persona')).rejects.toThrow(/对话繁忙/);
     expect(agent['pendingConfigReload'].size).toBe(1);

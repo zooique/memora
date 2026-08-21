@@ -91,7 +91,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** Provider 路由选择器（多模型路由基础，可选） */
   #providerRouter: ProviderRouter | null = null;
 
-  // 运行时组件（init 后填充）
+  // 运行时组件（init 后填充）——宿主 getter 契约字段（projects/memory/works/polish/sessionManager 等）保持独立
   private projectManager: ProjectManager | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
@@ -104,62 +104,75 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // 拆分出的专职 Manager
   private memoryInspector: MemoryInspector | null = null;
-  /** 语义去重管理器（L1 LLM 记忆治理，从 MemoryInspector 拆出，令其回归纯存储读写） */
-  private dedupManager: DedupManager | null = null;
-  /**
-   * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
-   * 经 governance 门面统一暴露，Agent 不直接持有 advisor。
-   */
-  private memoryAdvisor: MemoryAdvisor | null = null;
   /** 记忆治理统一门面（L0/L1/L2/L3 + 诊断） */
   private _governance: MemoryGovernance | null = null;
-  private workProjection: WorkProjectionManager | null = null;
-  /** SessionArchiver（会话归档器，负责生成/更新 SessionMeta） */
-  private sessionArchiver: SessionArchiver | null = null;
-  /** 会话命名器（新建会话首次问答自动命名标题） */
-  private sessionNamer: SessionNamer | null = null;
   /** TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化） */
   private textPolisher: TextPolishManager | null = null;
-  /** 轮次摘要生成器（记忆即摘要架构） */
-  private roundSummaryGenerator: RoundSummaryGenerator | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
-  /** 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点） */
-  private contextPreparer: ContextPreparer | null = null;
-  /** 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判，Agent 保留公开 API 委托） */
-  private checkpointRestoreCoordinator: CheckpointRestoreCoordinator | null = null;
+  /** WorkProjectionManager（作品投影生成/更新，宿主经 works getter 消费） */
+  private workProjection: WorkProjectionManager | null = null;
 
-  // ─── 不中断工作模型 v2.0 ───────────────────────────────
-  /** 四级补全器（四元组 + 三源融合） */
-  private composer: Composer | null = null;
-
-  // 技能走两级渐进披露：L1 元数据清单常驻 system prompt + read_skill 按需读正文，无回答前预注入
+  // ─── 纯内部组件聚合（无宿主 getter 契约，init 后填充、close 统一清空） ───
+  /**
+   * 内部组件聚合对象——收敛 12 个「仅门面内部消费、不对宿主暴露」的专职组件，
+   * 减少门面扁平字段数；宿主 getter 契约字段（memory/works/polish 等）不在此列。
+   */
+  private internals: {
+    /** 语义去重管理器（L1 LLM 记忆治理，从 MemoryInspector 拆出，令其回归纯存储读写） */
+    dedupManager: DedupManager | null;
+    /** 记忆顾问（L3 冲突检测 / sourceHealth / suggest，经 governance 门面统一暴露） */
+    memoryAdvisor: MemoryAdvisor | null;
+    /** SessionArchiver（会话归档器，负责生成/更新 SessionMeta） */
+    sessionArchiver: SessionArchiver | null;
+    /** 会话命名器（新建会话首次问答自动命名标题） */
+    sessionNamer: SessionNamer | null;
+    /** 轮次摘要生成器（记忆即摘要架构） */
+    roundSummaryGenerator: RoundSummaryGenerator | null;
+    /** 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点） */
+    contextPreparer: ContextPreparer | null;
+    /** 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判，Agent 保留公开 API 委托） */
+    checkpointRestoreCoordinator: CheckpointRestoreCoordinator | null;
+    /** 四级补全器（四元组 + 三源融合，不中断工作模型 v2.0） */
+    composer: Composer | null;
+    /** chat() 并发锁管理器（并发锁 + token 校验 + 超时保护 + 外部 signal 合并，init 时创建、close 时销毁） */
+    chatLockManager: ChatLockManager | null;
+    /** 记忆衰减调度器（init 时创建，close 时销毁） */
+    memoryDecayScheduler: MemoryDecayScheduler | null;
+    /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
+    archiveCoordinator: ArchiveCoordinator | null;
+    /**
+     * 种子闭环编排器（最小问答闭环唯一编排真理源）：prepare → act → reflect → handoff。
+     * chat() 委托 run()；processEvent()/resumeExecution() 按路径复用单阶段能力。
+     * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
+     */
+    seedOrchestrator: SeedOrchestrator | null;
+  } = {
+    dedupManager: null,
+    memoryAdvisor: null,
+    sessionArchiver: null,
+    sessionNamer: null,
+    roundSummaryGenerator: null,
+    contextPreparer: null,
+    checkpointRestoreCoordinator: null,
+    composer: null,
+    chatLockManager: null,
+    memoryDecayScheduler: null,
+    archiveCoordinator: null,
+    seedOrchestrator: null,
+  };
 
   private _initialized = false;
   // 项目上下文（AgentContext 与 ProjectContext 等价，直接使用后者避免重复字段）
   private pctx: ProjectContext | null = null;
 
-  /** chat() 并发锁管理器（并发锁 + token 校验 + 超时保护 + 外部 signal 合并，init 时创建、close 时销毁） */
-  private chatLockManager: ChatLockManager | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
-  /**
-   * 种子闭环编排器（最小问答闭环唯一编排真理源）：prepare → act → reflect → handoff。
-   * chat() 委托 run()；processEvent()/resumeExecution() 按路径复用单阶段能力。
-   * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
-   */
-  private seedOrchestrator: SeedOrchestrator | null = null;
   /**
    * 对话中因 chatLock 冲突暂存的配置重载请求（锁释放后补执行，兑现"对话后自动加载"）；
    * 用 Set 去重——同一 source 只需补执行一次。
    */
   private pendingConfigReload = new Set<string>();
-
-  // 衰减职责已拆分至 MemoryDecayScheduler，指标经 getMetrics() 读取
-  /** 记忆衰减调度器（init 时创建，close 时销毁） */
-  private memoryDecayScheduler: MemoryDecayScheduler | null = null;
-  /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
-  private archiveCoordinator: ArchiveCoordinator | null = null;
 
   constructor(opts: AgentOptions) {
     super();
@@ -246,7 +259,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const { sessionId, date, session } = payload;
       if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录
-      this.archiveCoordinator
+      this.internals.archiveCoordinator
         ?.archiveSession(date, session, { autoTriggered: true })
         .catch((err) => {
           logger.warn({ err, sessionId }, '暂停超时会话自动归档失败');
@@ -321,26 +334,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private createPostInitComponents(pctx: ProjectContext): void {
     // chat() 并发锁管理器（生命周期与 Agent 实例一致）
-    this.chatLockManager = new ChatLockManager();
+    this.internals.chatLockManager = new ChatLockManager();
 
     // 四级补全器（不中断工作模型 v2.0）
-    this.composer = new Composer();
+    this.internals.composer = new Composer();
 
     // 归档操作委托给 ArchiveCoordinator（content 会话归档）
-    this.archiveCoordinator = new ArchiveCoordinator({
-      getSessionArchiver: () => this.sessionArchiver,
+    this.internals.archiveCoordinator = new ArchiveCoordinator({
+      getSessionArchiver: () => this.internals.sessionArchiver,
       getArchiveMode: () => this.#config.archiveMode,
       emit: (event, payload) => this.emit(event, payload as never),
     });
 
     // 会话命名器：新建会话首次问答自动命名标题；惰性获取当前 provider（切换后仍命中最新模型）
-    this.sessionNamer = new SessionNamer({
+    this.internals.sessionNamer = new SessionNamer({
       getProvider: () => this.#provider,
       sessionStore: this.#config.sessionStore,
     });
 
     // 记忆衰减职责委托给 MemoryDecayScheduler
-    this.memoryDecayScheduler = new MemoryDecayScheduler({
+    this.internals.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
       onDecayCompleted: (payload) => {
         this.emit(AGENT_EVENTS.decayCompleted, payload);
@@ -352,19 +365,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       backgroundProvider: this.#backgroundProvider,
       index: pctx.index,
     });
-    this.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
+    this.internals.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
 
     // 记忆治理统一门面（L0/L1/L2/L3 + 诊断）
     this._governance = new MemoryGovernance(
-      this.dedupManager,
-      this.memoryDecayScheduler,
-      this.memoryAdvisor,
+      this.internals.dedupManager,
+      this.internals.memoryDecayScheduler,
+      this.internals.memoryAdvisor,
     );
 
     // 种子闭环编排器（最小问答闭环唯一编排真理源）：依赖 sessionManager/loop/history 等
     // 均已就绪（assembleComponents 已完成 + sessionNamer 本方法前段创建），在此构造一次。
     // getParts() 惰性取当前组件——rebuildComponents（switchProject）更换组件后仍取到最新引用。
-    this.seedOrchestrator = this.createSeedOrchestrator();
+    this.internals.seedOrchestrator = this.createSeedOrchestrator();
   }
 
   /**
@@ -384,10 +397,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         history: this.history!,
         sessionManager: this._sessionManager,
         rolePackManager: this.rolePackManager_,
-        contextPreparer: this.contextPreparer!,
-        sessionNamer: this.sessionNamer,
-        roundSummaryGenerator: this.roundSummaryGenerator,
-        checkpointRestoreCoordinator: this.checkpointRestoreCoordinator,
+        contextPreparer: this.internals.contextPreparer!,
+        sessionNamer: this.internals.sessionNamer,
+        roundSummaryGenerator: this.internals.roundSummaryGenerator,
+        checkpointRestoreCoordinator: this.internals.checkpointRestoreCoordinator,
       }),
       tracer: this.#config.tracer ?? null,
       archiveMode: this.#config.archiveMode,
@@ -417,10 +430,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._lastInteractionAt = new Date();
 
       // 委托种子编排器：对话路径完整闭环（prepare → act → reflect → handoff）
-      yield* this.seedOrchestrator!.runChat(input, combinedSignal);
+      yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal);
     } finally {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
-      this.chatLockManager?.release(myToken);
+      this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
       // 补执行对话期间暂存的配置重载请求
       await this.flushPendingConfigReload();
@@ -444,7 +457,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 获取对话锁 — 返回锁上下文
    */
   private acquireChatLock(signal?: AbortSignal) {
-    const chatLock = this.chatLockManager;
+    const chatLock = this.internals.chatLockManager;
     if (!chatLock) throw configError('ChatLockManager', 'ChatLockManager 未初始化', []);
     if (chatLock.isBusy) {
       throw chatBusyError('发起新对话');
@@ -481,7 +494,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 原 generator 仍可能后台运行但不影响新调用。幂等（未忙时 no-op）。
    */
   forceReleaseChatLock(): void {
-    this.chatLockManager?.forceRelease();
+    this.internals.chatLockManager?.forceRelease();
   }
 
   /**
@@ -529,7 +542,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 四级补全：将 SessionEvent.delta 与当前检查点融合
       const checkpoint = this._sessionManager?.getCheckpoint();
-      if (checkpoint && this.composer) {
+      if (checkpoint && this.internals.composer) {
         // 收集计划上下文（执行计划管理）
         const sm = this._sessionManager!;
         const planCtx: PlanContext | undefined =
@@ -541,7 +554,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
               }
             : undefined;
 
-        const composeResult = this.composer.compose(event, checkpoint, planCtx);
+        const composeResult = this.internals.composer.compose(event, checkpoint, planCtx);
 
         // 必须先应用已确定槽位（applyResolvedDelta 对 P4_CLARIFY 槽位有守卫），再处理 P4 澄清，
         // 否则本轮增量（如 correction 的 delta.role）随暂停丢弃，解析成果丢失
@@ -608,9 +621,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // ── chat 事件正常流程（写历史、后处理） ──────────────
       // 委托种子编排器：SessionEvent 路径闭环（prepare → 任务表预判注入 → act(processEvent)
       // → reflect → handoff）；任务表预判与流消费均收在编排器内，门面只做一行委托。
-      yield* this.seedOrchestrator!.runEvent(event, event.content, combinedSignal);
+      yield* this.internals.seedOrchestrator!.runEvent(event, event.content, combinedSignal);
     } finally {
-      this.chatLockManager?.release(myToken);
+      this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
       await this.flushPendingConfigReload();
     }
@@ -681,10 +694,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 委托种子编排器：续跑路径闭环（act(continueAfterPause) → reflect；无回答前、无 Handoff），
       // 预判短路与锁/状态机守卫留在门面，执行语义收在编排器内。
-      yield* this.seedOrchestrator!.runResume(input, combinedSignal);
+      yield* this.internals.seedOrchestrator!.runResume(input, combinedSignal);
     } finally {
       // 与 chat() 同构：释放锁 + 清理外部 signal
-      this.chatLockManager?.release(myToken);
+      this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
     }
   }
@@ -987,7 +1000,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
     this.assertInitialized('restoreFromCheckpoint');
     // 恢复协议单一真理源：委托 CheckpointRestoreCoordinator（热窗口载入 → 温记忆召回 → 契约重注入）
-    return this.checkpointRestoreCoordinator!.restore(checkpoint);
+    return this.internals.checkpointRestoreCoordinator!.restore(checkpoint);
   }
 
   /**
@@ -1111,7 +1124,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
             this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
           }
         },
-        isChatBusy: () => this.chatLockManager?.isBusy ?? false,
+        isChatBusy: () => this.internals.chatLockManager?.isBusy ?? false,
         requestPause: (reason, source) => {
           this.requestPause(reason, source);
         },
@@ -1131,18 +1144,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.skillManager = result.skillManager;
     this.rolePackManager_ = result.rolePackManager;
     this.memoryInspector = result.memoryInspector;
-    this.dedupManager = result.dedupManager;
-    this.memoryAdvisor = result.memoryAdvisor;
+    this.internals.dedupManager = result.dedupManager;
+    this.internals.memoryAdvisor = result.memoryAdvisor;
     this.workProjection = result.workProjection;
-    this.sessionArchiver = result.sessionArchiver;
+    this.internals.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
-    this.roundSummaryGenerator = result.roundSummaryGenerator;
+    this.internals.roundSummaryGenerator = result.roundSummaryGenerator;
     // 会话管理器由组装器创建（先于 loop），Agent 直接持有
     this._sessionManager = result.sessionManager;
     // 输入增强管线由组装器创建，Agent 只保留编排调用点
-    this.contextPreparer = result.contextPreparer;
+    this.internals.contextPreparer = result.contextPreparer;
     // 检查点恢复协议由组装器创建，Agent 保留公开 API 委托
-    this.checkpointRestoreCoordinator = result.checkpointRestoreCoordinator;
+    this.internals.checkpointRestoreCoordinator = result.checkpointRestoreCoordinator;
   }
 
   // ─── Provider 管理 ────────────────────────────────────
@@ -1162,11 +1175,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertNotBusy('切换后台 Provider');
     this.#backgroundProvider = provider;
     // 同步更新所有后台组件（统一消费 backgroundProvider）
-    if (this.roundSummaryGenerator) {
-      this.roundSummaryGenerator.setBackgroundProvider(provider);
+    if (this.internals.roundSummaryGenerator) {
+      this.internals.roundSummaryGenerator.setBackgroundProvider(provider);
     }
-    if (this.sessionArchiver) {
-      this.sessionArchiver.setBackgroundProvider(provider);
+    if (this.internals.sessionArchiver) {
+      this.internals.sessionArchiver.setBackgroundProvider(provider);
     }
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }
@@ -1314,7 +1327,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async reloadConfig(source?: string): Promise<{ skill: number; rolePack: number }> {
     this.assertInitialized('reloadConfig');
-    if (this.chatLockManager?.isBusy) {
+    if (this.internals.chatLockManager?.isBusy) {
       // 对话中无法热重载：暂存 source 待锁释放后补执行；undefined（全量）不暂存——无具体来源，补执行语义不明
       if (source) {
         this.pendingConfigReload.add(source);
@@ -1413,7 +1426,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * reloadConfig 不使用本方法——它在 isBusy 时需暂存 source 而非直接抛错。
    */
   private assertNotBusy(operation: string): void {
-    if (this.chatLockManager?.isBusy) {
+    if (this.internals.chatLockManager?.isBusy) {
       throw chatBusyError(operation);
     }
   }
@@ -1426,11 +1439,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   private get requireArchiveCoordinator(): ArchiveCoordinator {
-    if (!this.archiveCoordinator)
+    if (!this.internals.archiveCoordinator)
       throw configError('ArchiveCoordinator 未初始化', undefined, [
         '在调用此方法前执行 await agent.init()',
       ]);
-    return this.archiveCoordinator;
+    return this.internals.archiveCoordinator;
   }
 
   private get requireSessionManager(): SessionManager {
@@ -1479,17 +1492,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async close(): Promise<void> {
     // 清理 chat 锁管理器（递增 token 使进行中 chat() 的 finally 跳过清理，close 已接管）
-    this.chatLockManager?.dispose();
-    this.chatLockManager = null;
+    this.internals.chatLockManager?.dispose();
+    this.internals.chatLockManager = null;
     // 先 stop() abort L2 LLM 调用再 awaitInflight()，防止 close 后 LLM 回调 upsert 已关闭的 storage
-    if (this.memoryDecayScheduler) {
-      this.memoryDecayScheduler.stop();
+    if (this.internals.memoryDecayScheduler) {
+      this.internals.memoryDecayScheduler.stop();
       try {
-        await this.memoryDecayScheduler.awaitInflight();
+        await this.internals.memoryDecayScheduler.awaitInflight();
       } catch (err) {
         logger.warn({ err: toError(err) }, 'close: memoryDecayScheduler.awaitInflight 失败');
       }
-      this.memoryDecayScheduler = null;
+      this.internals.memoryDecayScheduler = null;
     }
     // 等待 WorkProjection inflight 生成完成，防止 close 后 upsert 已关闭的 storage
     if (this.workProjection) {
@@ -1522,7 +1535,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._sessionManager.destroy();
     }
     // ArchiveCoordinator 无定时器，仅释放引用
-    this.archiveCoordinator = null;
+    this.internals.archiveCoordinator = null;
     // 清理 RolePackManager 切换防抖锁计时器，防止关闭后回调触发
     if (this.rolePackManager_) {
       this.rolePackManager_.close();
@@ -1563,18 +1576,27 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.skillManager = null;
     this.rolePackManager_ = null;
     this.memoryInspector = null;
-    this.dedupManager = null;
-    this.memoryAdvisor = null;
     this._governance = null;
     this.workProjection = null;
-    this.sessionArchiver = null;
-    this.sessionNamer = null;
     this.textPolisher = null;
-    this.roundSummaryGenerator = null;
     this._sessionManager = null;
-    this.seedOrchestrator = null;
     this.projectManager = null;
     this.pctx = null;
+    // 纯内部组件聚合整体置 null（新增内部组件只需在字段声明与 createPostInitComponents 登记）
+    this.internals = {
+      dedupManager: null,
+      memoryAdvisor: null,
+      sessionArchiver: null,
+      sessionNamer: null,
+      roundSummaryGenerator: null,
+      contextPreparer: null,
+      checkpointRestoreCoordinator: null,
+      composer: null,
+      chatLockManager: null,
+      memoryDecayScheduler: null,
+      archiveCoordinator: null,
+      seedOrchestrator: null,
+    };
   }
 
   // ─── 只读访问器 ───────────────────────────────────────
@@ -1628,7 +1650,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   get isBusy(): boolean {
-    return this.chatLockManager?.isBusy ?? false;
+    return this.internals.chatLockManager?.isBusy ?? false;
   }
 
   get lastInteractionAt(): Date | null {
@@ -1656,7 +1678,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   getMetrics(): AgentMetrics {
     // 衰减指标从 MemoryDecayScheduler 读取
-    const decayMetrics = this.memoryDecayScheduler?.getMetrics() ?? {
+    const decayMetrics = this.internals.memoryDecayScheduler?.getMetrics() ?? {
       runCount: 0,
       totalDecayedCount: 0,
       lastRunAt: null,

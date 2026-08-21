@@ -11,6 +11,8 @@
 > - **Step 3 检查点恢复** → `checkpointRestoreCoordinator.ts`（warmRecall / reinject / restore / shouldGenerateTaskTable），Agent.restoreFromCheckpoint 委托
 >
 > **体量**：agent.ts 2255 → 1721 行（-534）；新增 assembler 694 / contextPreparer 298 / checkpointRestoreCoordinator 246
+>
+> **最小切片（2026-08-21）**：P0 审查建议"capability 聚合"经评估——宿主 getter（memory/works/polish/sessionManager 等）是公共契约不可动、字段聚合不减少方法数、项目文档已声明"守卫/字段区移动收益低"。收敛为**仅聚合纯内部组件**：12 个无宿主 getter 契约的专职组件（dedupManager/memoryAdvisor/sessionArchiver/sessionNamer/roundSummaryGenerator/contextPreparer/checkpointRestoreCoordinator/composer/chatLockManager/memoryDecayScheduler/archiveCoordinator/seedOrchestrator）收进 `Agent.internals` 聚合对象，扁平 private 字段 51 → 40，nullify 生命周期样板收敛；宿主 getter 契约字段保持独立（零 breaking change）。
 
 ---
 
