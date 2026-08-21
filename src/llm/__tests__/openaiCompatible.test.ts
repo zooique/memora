@@ -304,6 +304,53 @@ describe('OpenAICompatibleProvider · response_format 透传', () => {
   });
 });
 
+// ─── reasoning_effort 透传（multiStepReasoning='manual' 触达 OpenAI 兼容端点）──
+
+describe('OpenAICompatibleProvider · reasoning_effort 透传', () => {
+  it('传入 reasoning_effort 时应透传到请求 body（loop 端 multiStepReasoning 依赖此契约）', async () => {
+    // 捕获请求 body 验证透传
+    let capturedBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/chat/completions', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return createSseResponse('ok');
+      }),
+    );
+
+    const provider = makeProvider();
+    // 模拟 loop 在 multiStepReasoning='manual' 时强制低推理深度的调用
+    for await (const chunk of provider.chat(
+      [{ role: 'user', content: 'quick' }],
+      { reasoning_effort: 'low' },
+    )) {
+      void chunk;
+    }
+
+    // 验证 reasoning_effort 完整透传到请求 body
+    expect(capturedBody).toBeDefined();
+    expect(capturedBody!.reasoning_effort).toBe('low');
+  });
+
+  it('未传入 reasoning_effort 时请求 body 不应包含该字段', async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/chat/completions', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return createSseResponse('ok');
+      }),
+    );
+
+    const provider = makeProvider();
+    for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
+      void chunk;
+    }
+
+    // 未传入时不应透传 undefined，body 不应包含该字段
+    expect(capturedBody).toBeDefined();
+    expect(capturedBody!).not.toHaveProperty('reasoning_effort');
+  });
+});
+
 // ─── tool_calls delta 累积（核心 OpenAI 协议解析）──
 
 /**

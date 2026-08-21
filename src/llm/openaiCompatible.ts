@@ -60,6 +60,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
     if (opts.maxTokens) body['max_tokens'] = opts.maxTokens;
     // 透传 response_format；不能与 tools 同时使用（OpenAI 协议限制），调用方保证互斥
     if (opts.response_format) body['response_format'] = opts.response_format;
+    // 透传推理深度（reasoning_effort）：loop 在 multiStepReasoning='manual' 时设置 'low'
+    // 实现快速回答，必须转达给 provider 才生效（此前已声明+消费但未见转达，契约断裂）
+    if (opts.reasoning_effort) body['reasoning_effort'] = opts.reasoning_effort;
 
     // 合并外部取消 + 超时信号，确保用户取消和请求超时都能中断 fetch 和流读取
     const abort = mergeAbortSignals(opts.signal, timeoutMs, 'LLM 请求超时');
