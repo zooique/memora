@@ -181,12 +181,19 @@ export class SeedOrchestrator {
     input: string | undefined,
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    const parts = this.deps.getParts();
     // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
-    const produce = () => this.deps.getParts().loop.continueAfterPause(input, signal);
+    const produce = () => parts.loop.continueAfterPause(input, signal);
     const acted = yield* this.act(produce);
     if (acted.failed || acted.aborted || acted.paused) return;
 
-    // 回答后（无 Handoff：续跑态不在闭环出口分岔）
+    // 外部任务循环续跑整链：续完当前循环后，若仍处于外循环上下文 → 推进剩余步 + 收尾汇报
+    // （摘要统一由 completeExternalTask 收尾产出，保持摘要↔外部输入恒 1:1，不在此重复产摘要）
+    if (parts.loop.isWithinExternalTask) {
+      yield* this.completeExternalTask(signal, input ?? '', acted.content);
+      return;
+    }
+    // 普通续跑（非外循环）：答后摘要
     void this.backgroundReflect(input ?? '', acted.content);
   }
 
@@ -322,14 +329,11 @@ export class SeedOrchestrator {
   /**
    * 外部任务驱动外循环（阶段 3·完整外循环）：单个复杂输入 → 多闭环组合。
    *
-   * 序列：规划闭环（只建任务表）→ 每步一个独立闭环 → 收敛后汇报闭环。
-   *   - 规划闭环：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步闭环重复执行）。
-   *   - 步闭环：任务表 pending 步骤逐个拉起独立闭环（各自独立 roundId，供消息溯源/互斥排除），
-   *     步内仍可工具多步（内循环保留）。
-   *   - 摘要 1:1：一个外部输入只由收尾汇报产出唯一 round-summary（单源，记忆即摘要单轨）；
-   *     规划/中间步不单独摘要，避免一次复杂输入堆出多条 round-summary。
-   *   - 闭环数受角色包 `global.taskLoopLimit` 约束（外部任务循环步数上限，防无限多步烧 token）。
-   *   - 收敛（任务表存在已完成步骤）→ 汇报闭环 + 汇报单源摘要。
+   * 序列：规划闭环（只建任务表）→ [completeExternalTask] 步序列 + 收尾汇报。
+   *   - 规划闭环：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步闭环重复执行）；
+   *     规划在迭代边界软暂停 → 现场保留，续跑完规划后继续整链。
+   *   - 步序列 + 收尾由 [completeExternalTask] 承担（可重入，runChat 规划后与 runResume 续跑共用）。
+   *   - 进入外循环上下文时持久 head roundId（loop），续跑收尾摘要回指——组合溯源跨暂停保留。
    *
    * @param input 用户输入
    * @param prepared 回答前结果（recalledMemories 供规划闭环注入）
@@ -341,12 +345,14 @@ export class SeedOrchestrator {
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
-    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
 
     // 组合 head id：捕获"这次外部输入"的 roundId（prepare 已分配并 appendUser）。
-    // 步闭环会给 loop 分配独立 currentRoundId，故先存 head，收尾摘要时回指——确保
-    // round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源）。
+    // 步闭环会给 loop 分配独立 currentRoundId，故先把 head 持久到 loop，收尾摘要时回指——
+    // 确保 round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源，跨暂停-续跑保留）。
     const headRoundId = parts.loop.getCurrentRoundId();
+    parts.loop.setExternalTaskHeadRoundId(headRoundId);
+    // 进入外循环上下文（规划 + 步序列 + 收尾）——续跑入口据此决定是否继续推进任务链
+    parts.loop.setWithinExternalTask(true);
 
     // 1) 规划闭环：只调查 + 建任务表，不执行
     yield { type: 'thinking', phase: 'planning' };
@@ -356,15 +362,46 @@ export class SeedOrchestrator {
         input,
         prepared.recalledMemories,
         signal,
-        parts.loop.getCurrentRoundId(),
+        headRoundId,
       ),
     );
-    if (planAct.failed || planAct.aborted) return;
-    // 清理规划期注入的 PLAN_ONLY（装配控制提示，非执行期临时，不随 loop 入口自动清）——
-    // 必须先于 abort return，避免残留跨到下一次输入
+    if (planAct.paused) {
+      // 规划闭环在迭代边界软暂停：现场保留（含 PLAN_ONLY 约束），续跑完规划后继续整链，不产摘要
+      return;
+    }
+    if (planAct.failed || planAct.aborted) {
+      // 规划中断/失败：清 PLAN_ONLY 防残留跨下一次输入；残缺半成品不入记忆（同主路径 act 语义）
+      parts.loop.cleanTemporarySystemMessages();
+      parts.loop.setWithinExternalTask(false);
+      return;
+    }
+    // 规划成功：清 PLAN_ONLY（装配控制提示，非执行期临时，需显式清理），进入步序列 + 收尾
     parts.loop.cleanTemporarySystemMessages();
+    yield* this.completeExternalTask(signal, input, planAct.content);
+  }
 
-    // 2) 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）
+  /**
+   * 可重入推进外部任务链（runChat 复杂路径规划后 / runResume 续跑共用）。
+   *
+   * 从下一个 pending 步执行步闭环序列直至收敛收尾汇报：
+   *   - 每个步闭环独立 roundId（消息溯源/互斥排除隔离），不产摘要（摘要恒 1:1 只由收尾汇报产出）；
+   *   - 步闭环 paused → return 保留现场（软暂停），续跑从下一 pending 步继续整链；
+   *   - 收尾前把 roundId 回指 loop.externalTaskHeadId（组合溯源：摘要锚定"这次外部输入"）；
+   *   - 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 普通单条摘要（恒 1:1）。
+   *
+   * @param signal 中止信号
+   * @param input 用户输入（未收敛兜底摘要的输入侧）
+   * @param planFallback 未收敛兜底摘要的内容侧（首次=规划产出；续跑=最后闭环产出）
+   */
+  private async *completeExternalTask(
+    signal: AbortSignal,
+    input: string,
+    planFallback: string,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const parts = this.deps.getParts();
+    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
+
+    // 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）
     let stepsRun = 0;
     while (stepsRun < limit) {
       const next = this.getNextPendingStep();
@@ -374,30 +411,32 @@ export class SeedOrchestrator {
       yield { type: 'thinking', phase: 'step', index: stepsRun, limit };
       // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
       // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId
-      // 执行期临时（self-review/reflection 等）已由 loop.processUserInput 入口自动清理，无需此处手动调用
       const stepAct = yield* this.act(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
       );
       if (stepAct.failed || stepAct.aborted) {
-        // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」，与主路径 act 的
-        // aborted/failed 语义一致，规划/步两出口对称）。已产出内容由对话历史以中断标记
-        // 保真留存供 traceSummary 回溯——历史保细节、摘要不收纳残缺，两者分离。
+        // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」），任务链终止
+        parts.loop.setWithinExternalTask(false);
+        return;
+      }
+      if (stepAct.paused) {
+        // 本闭环自然结束后软暂停：保留现场，续跑从下一 pending 步继续整链
         return;
       }
       // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
     }
 
-    // 3) 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以规划闭环产出走普通单条摘要（保证摘要恒 1:1，不丢记忆）
-    // 收尾前把 roundId 回指 head：汇报文本与 round-summary 挂"这次外部输入"，而非最后一步（组合溯源）
-    parts.loop.setCurrentRoundId(headRoundId);
+    // 收尾：收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以 planFallback 走普通单条摘要（保证恒 1:1）
+    parts.loop.setCurrentRoundId(parts.loop.externalTaskHeadId);
     // 汇报入口（loop.runReport）已自动清理上一步执行期临时残留，无需此处手动再清
     if (this.isConverged()) {
-      // 收敛路径：汇报有实质内容产汇报单源摘要；汇报为空/token 预算占位 → 回退规划产出普通摘要（恒 1:1）
       yield { type: 'thinking', phase: 'reporting' };
-      yield* this.runReportAndReflect(signal, input, planAct.content);
+      yield* this.runReportAndReflect(signal, input, planFallback);
     } else {
-      this.backgroundReflect(input, planAct.content);
+      this.backgroundReflect(input, planFallback);
     }
+    // 任务链已收尾：清除外循环上下文（供后续续跑不误入已结束链）
+    parts.loop.setWithinExternalTask(false);
   }
 
   /**

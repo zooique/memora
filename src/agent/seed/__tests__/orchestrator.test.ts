@@ -309,6 +309,67 @@ describe('SeedOrchestrator 最小问答闭环', () => {
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
+  it('外部任务：步闭环软暂停保留现场，runResume 续跑补完剩余步并收尾汇报（摘要恒 1:1）', async () => {
+    const { mocks, deps } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    // 任务表：s1 已完成（本次续跑继承），s2/s3 pending；processUserInput 每执行一个 pending 步标记 done（规划不标记）
+    const plan: Array<{ id: string; status: string; description: string }> = [
+      { id: 's1', status: 'done', description: '步骤一' },
+      { id: 's2', status: 'pending', description: '步骤二' },
+      { id: 's3', status: 'pending', description: '步骤三' },
+    ];
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ sessionId: 'sess', plan });
+    mocks.loop.processUserInput.mockImplementation(function* (input: string) {
+      if (typeof input === 'string' && input.includes('执行任务步骤')) {
+        const step = plan.find((s) => s.status === 'pending');
+        if (step) step.status = 'done';
+      }
+      yield { type: 'text', content: '步内' };
+    });
+    mocks.loop.runReport.mockReturnValue(textStream('【任务汇报】已完成'));
+
+    // 流收口：call1=规划成功；call2=步2 软暂停；call3=续跑后步3 成功
+    let consumeCall = 0;
+    mocks.consumeExecutionStream.mockImplementation(
+      async function* (source: AsyncGenerator<AgentChunk, void, unknown>) {
+        for await (const chunk of source) yield chunk;
+        consumeCall++;
+        if (consumeCall === 1) {
+          return { content: '规划', aborted: false, paused: false, failed: false };
+        }
+        if (consumeCall === 2) {
+          return { content: '步2', aborted: false, paused: true, failed: false };
+        }
+        return { content: '步3', aborted: false, paused: false, failed: false };
+      },
+    );
+
+    // ── 第 1 段：runChat 外循环，步2 软暂停 → 现场保留、不收尾不产摘要
+    await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mocks.loop.setWithinExternalTask).toHaveBeenLastCalledWith(true);
+    expect(mocks.loop.isWithinExternalTask).toBe(true); // 任务链未收尾，保留现场
+    expect(mocks.loop.runReport).not.toHaveBeenCalled();
+    expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
+
+    // ── 第 2 段：runResume 续跑 → 补完剩余 pending 步（s3）并收尾汇报（摘要恒 1:1）
+    stubContinue(mocks, '续跑');
+    const { chunks } = await collectGen(
+      new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal),
+    );
+    await vi.waitFor(() => expect(mocks.loop.runReport).toHaveBeenCalledTimes(1));
+
+    expect(mocks.loop.continueAfterPause).toHaveBeenCalledTimes(1);
+    // 续跑后走 completeExternalTask：执行剩余 s3 步，最终收尾汇报
+    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    // 汇报单源摘要，摘要↔外部输入恒 1:1（暂停轮 0 条 + 收尾汇报 1 条）
+    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
+    expect(mocks.loop.isWithinExternalTask).toBe(false); // 收尾后清除上下文
+    expect(chunks).toContainEqual({ type: 'thinking', phase: 'reporting' });
+  });
+
   // ── runChat · 外部任务驱动外循环（阶段 3）────────────────
   it('runChat 复杂且启用外部循环：规划闭环 → 每步独立闭环（独立 roundId）→ 收敛后汇报', async () => {
     const { mocks, deps, consumeControl } = createHarness({

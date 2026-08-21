@@ -141,6 +141,10 @@ export class AgentLoop {
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
+  /** 外部任务循环上下文标志：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
+  private withinExternalTask = false;
+  /** 外循环组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
+  private externalTaskHeadRoundId = '';
   /** 主动提问回调（检测到 `[ASK]` 时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
@@ -436,6 +440,26 @@ export class AgentLoop {
   /** 清除在途的软暂停申请（与 requestPause 对称：用户取消/流结束清理/暂停超时清扫共用） */
   clearPauseRequest(): void {
     this.pauseRequested = false;
+  }
+
+  /** 标记当前是否处于外部任务循环上下文（规划/步开启，编排器收尾后清除） */
+  setWithinExternalTask(v: boolean): void {
+    this.withinExternalTask = v;
+  }
+
+  /** 查询是否处于外部任务循环上下文（续跑入口判断"是否继续推进任务链"的唯一依据） */
+  get isWithinExternalTask(): boolean {
+    return this.withinExternalTask;
+  }
+
+  /** 设置外循环组合溯源 head roundId（编排器规划后写入，续跑读取回指收尾摘要） */
+  setExternalTaskHeadRoundId(roundId: string): void {
+    this.externalTaskHeadRoundId = roundId;
+  }
+
+  /** 读取外循环组合溯源 head roundId（续跑收尾时回指，保证摘要锚定"这次外部输入"） */
+  get externalTaskHeadId(): string {
+    return this.externalTaskHeadRoundId;
   }
 
   /** 执行中插话：立即中断当前 LLM/工具操作，注入内容后下一轮继续。

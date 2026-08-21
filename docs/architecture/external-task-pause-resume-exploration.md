@@ -1,62 +1,95 @@
-# 外部任务「气口暂停 → 续跑整链」探索项（探索中 · 未固化）
+# 外部任务「气口暂停 → 续跑整链」设计定案（docs 架构层）
 
-> **定位**：**探索期文档，非 ADR**（遵循探索期决策沉淀纪律 —— 可逆、未稳定、未固化，先验证后固化）。
-> 本页承载「外部任务循环的暂停-续跑」完整语义设计，当前**状态为挂起（探索中），未被任何代码消费，不占 ADR 编号、不改决策 README 索引**。
-> 评估通过并被真实场景复现消费后，才固化为 ADR。
+> **定位**：**设计定案（docs 架构层），由用户设计方案固化而来**。**当前非 ADR**（S1 探索期→此处将方案 A 定为实施蓝图）；待实施落地、被 `src` 引用 / 规则引用 / 真实场景复现消费后，按探索期决策沉淀纪律 S2 固化 ADR（三条件之一即补）。
+> 本文是 D1（外部任务循环 paused 状态丢失）方案 A 的实施依据。
 
 ---
 
-## 一、目标语义（来自设计意图）
+## 一、目标语义（三契约，来自设计意图）
 
-用户在外部任务执行中的"暂停"不是硬停止，而是**申请**：在问答闭环衔接的**气口**（步与步之间、规划后、汇报前）暂停，保留现场；恢复后应**跑完整条剩余任务链**（剩余 pending 步 → 收尾汇报），而非只续当前步。
+用户的意图——loop 是对问答闭环的**编排**，闭环一个接一个连续执行，闭环之间存在**气口**：
 
-## 二、当前结构（现状矛盾点）
+1. **气口暂停**：用户申请暂停 → **当前问答闭环结束后**在气口（步与步之间 / 闭环之间）暂停，不打断正在执行的闭环。
+2. **无损续跑整链**：暂停后恢复 → **无损跑完整条剩余任务链**（剩余 pending 步 + 收尾汇报），而非只续当前步。
+3. **气口插话/补充**：气口可插入信息 / 输入补充说明，然后再续跑。
 
-外部任务循环的串联逻辑目前是**编排器栈上的 `while`**（[orchestrator.ts](../../src/agent/seed/orchestrator.ts) 的 `externalTaskLoop`）：
+与哲学的关系：闭环序列 = 最小单元（单轮问答闭环）的重复；气口 = 闭环边界 = 天然暂停点（agent-design-philosophy §2）。本设计让外循环（externalTaskLoop）的暂停点对齐到"闭环边界"，消除「栈上 while 被暂停打断、续跑不回 while」的结构性矛盾。
+
+## 二、当前结构矛盾（根因）
 
 ```
-planning 闭环 → for each pending step: 步闭环 → 收敛 → 汇报闭环
+externalTaskLoop 用栈上 while 串联：规划闭环 → for each pending step: 步闭环 → 收尾汇报
 ```
 
-而软暂停由 [loop.ts](../../src/agent/loop.ts) 内部 `_handleInterrupt` 在**迭代边界**消费 `pauseRequested` 返回 `'paused'`，终止 `runIterationLoop`。
+- 暂停由 loop.ts `_handleInterrupt` 在**迭代边界**消费 `requestPause`（loop.ts），在**步内/规划内迭代之间**生效，不在步间气口。
+- 续跑 `continueAfterPause` 只恢复 **loop 内部迭代**（保留 `this.messages`），不知道自己在外部任务链里；它不回编排器 while，故只续当前步，不接续剩余 pending 步与汇报。
 
-**矛盾**：编排器的 `while` 是栈上逻辑；暂停打断了栈，续跑入口 `runResume → loop.continueAfterPause` 只恢复 **loop 内部迭代**（`this.messages` 保留），**不知道**自己属于外部任务链，续完当前步即结束，不会回到编排器 `while` 继续剩余 pending 步与汇报。这导致「续跑只回当前步、不跑整链」。
+## 三、设计定案：可重入外循环推进（方案 A）
 
-## 三、候选方案（待验证）
+### 3.1 单一真理源：把「推进外部任务链」提炼为可重入方法
 
-### 方案 A：可重入编排（完整满足目标，改动较大）
-- 把「执行外部任务链」提炼为可重入推进函数，`runChat`（复杂路径）与 `runResume` 续跑共用，杜绝复制。
-- loop 增加 `withinExternalTask` 状态标志（规划/步开启、汇报后清除），作为续跑入口判断「是否继续推链」的唯一依据（SSOT）。
-- 暂停统一收敛到推进函数顶部的**气口检查**（不再在步内 `act().paused` 分支各自判断），三个分支收敛为一个。
-- 代价：跨 loop + orchestrator + 单测 + docs，需引入「外循环进行中」状态与续跑入口语义分支。
+不再用"栈上 while + 续跑裸 continue"两段割裂，而是**一个推进入口，runChat 复杂路径与 runResume 续跑路径共用**：
 
-### 方案 B：最小修复（保正确性，续跑仍只回当前步）
-- 步/规划闭环 `paused → return`（与主路径对齐，保现场待续跑），不新增状态、不改续跑入口。
-- 不满足「续跑跑完整条链」——仅是修复"暂停后继续拉下一 pending 步"的越界行为。
+- orchestrator 私有 `completeExternalTask(signal, { fromResume })`：一次调用推进到"一个暂停点或收敛"。规划只在 `fromResume=false`（首次）执行；此后每步一闭环；无 pending → 收尾汇报。
+- `runChat` 复杂路径：规划 → `completeExternalTask`；出口 `handoff(externalTaskReported=true)`。
+- `runResume`：续跑当前闭环后，若 `loop.withinExternalTask && 未收敛` → 继续 `completeExternalTask({fromResume:true})`（接续剩余链）；否则维持裸 `continueAfterPause`（普通单闭环续跑，行为零变化）。
 
-## 四、待验证问题
+### 3.2 外循环上下文标志（SSOT 落点）
 
-1. **气口暂停的副作用**：若用户在长步中途 requestPause，请求会延迟到步结束后的气口才生效。这是"不打断步"的正确代价，但需和宿主对齐暂停按钮的响应预期。
-2. **续跑入口语义分裂风险**：方案 A 让 `runResume` 承担「续单闭环」与「续任务链」双职责，需靠 `withinExternalTask` 分支；是否违背哲学「闭环只认 Trigger 不认来源」，需评审。
-3. **状态落点**：`withinExternalTask` 放 loop 是否合适，还是应放编排器/检查点，需按单一真理源裁定。
-4. **续跑后收敛汇报的 roundId 归属**：整链续跑后 `setCurrentRoundId(headRoundId)` 的时机是否仍自洽（组合溯源）。
+loop 新增 `withinExternalTask: boolean`：规划/步闭环开启时置 true，收尾汇报后清 false。它唯一决定续跑入口"是否继续推链"，避免 runResume 用 `if isComplex` 猜测。
 
-## 五、风险与成本
+### 3.3 气口暂停
 
-- 方案 A 工程范围大；方案 B 不满足完整意图。
-- 本探索项**当前不产生代码改动**（含已确认的「中断不产摘要」修复，见 D2，已在 orchestrator 落地，此处不涉及）。
+暂停请求统一在推进函数的气口（拉下一个 pending 步**之前**）检查：
 
-## 六、决策状态
+```
+while(有 pending 步):
+    若 pausePending(loop.isPauseRequested)：return（本气口暂停，现场保留）
+    yield { thinking, phase:'step', index, limit }
+    执行步闭环
+    若 步闭环 paused：return（视为"本闭环自然结束后暂停"，同样保留现场）
+```
 
-- **挂起（探索中）**：待结合真实场景（复杂任务执行中暂停→续跑）验证方案 A 可行性与副作用后，再决定是否固化。
-- 未固化为 ADR，未修改决策索引。
+要点：`requestPause` 命中时绝不跳过步/绝不半途开新闭环；暂停后 plan 与 loop.messages 均保留，续跑重入推进。
+
+### 3.4 插话 / 补充输入
+
+- 插话（interject）沿用 loop 既有机制（迭代边界消费为 user 消息），气口暂停点同样可插。
+- 补充输入由 `runResume(input)` 的 `input` 承载（continueAfterPause 入史后继续）。
+
+## 四、落地要点（改动面）
+
+| 文件 | 改动 |
+|------|------|
+| `loop.ts` | 新增 `withinExternalTask` 字段 + `setWithinExternalTask()`（或 enter/exit）；暴露 `isPauseRequested`（已有）供气口检查 |
+| `orchestrator.ts` | 提炼 `completeExternalTask`；`externalTaskLoop` 改为「规划 + 调 completeExternalTask」；`runResume` 加外循环分支 |
+| `seed/types.ts` | （可选）SeedParts 无需新增；依赖 loop 公开接口 |
+
+## 五、边界与取舍
+
+- **暂停粒度**：本定案允许"暂停在步内迭代边界"（loop 迭代边界）与"步间气口"并存，二者都保留现场、续跑都整链——生效点以 loop 的 `requestPause` 实际触发边界为准，不承诺"严格只在步后"。若需严格"当前闭环完整执行完才停"，需再调 loop 打断语义（风险更大，延后评估）。
+- **续跑范围**：整链续跑在 `fromResume=true` 时从"下一个 pending 步"继续到收尾汇报（一次续跑推进完毕）；多轮暂停-续跑可反复。
+- **回归安全**：非外循环的单闭环续跑走 `fromResume=false`/普通分支，行为零变化。
+
+## 六、验证计划
+
+1. 气口暂停：外循环步间 requestPause → 不拉下一步、保留现场。
+2. 续跑整链：runResume 续跑当前步后 → 接续剩余 pending 步 + 收尾汇报。
+3. 补充输入：runResume(input) 入史后继续。
+4. 摘要 1:1：整链续跑后仍仅收尾汇报产 1 条 round-summary（组合 head 回溯不变）。
+5. tsc --noEmit 零错误 · seed 单测 · 全量回归。
+
+## 七、决策状态
+
+- **设计已定案（docs 架构层）**，作为 D1 方案 A 实施蓝图。
+- 未固化为 ADR；实施被引用/消费后再按 S2 固化。
 
 ---
 
 > **关联文档**：
-> - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 最小单元 = 单轮问答闭环
-> - [memory-as-summary.md](./memory-as-summary.md) —— 摘要↔外部输入恒 1:1
-> - [loop-design.md](./loop-design.md) —— 软暂停/续跑机制
+> - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 最小单元 = 单轮问答闭环；闭环边界 = 天然暂停点
+> - [memory-as-summary.md](./memory-as-summary.md) —— 摘要↔外部输入恒 1:1；软暂停不摘要
+> - [loop-design.md](./loop-design.md) —— 暂停/续跑机制（迭代边界）
+> - [pause-ask-resume-design.md](./pause-ask-resume-design.md) —— 三机制修复（入史/摘要门控/pauseMeta）
 > - [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 外部任务驱动外循环
-> - [pause-ask-resume-design.md](./pause-ask-resume-design.md) —— 暂停/续跑设计
 > - 主实现：[orchestrator.ts](../../src/agent/seed/orchestrator.ts)、[loop.ts](../../src/agent/loop.ts)

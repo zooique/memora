@@ -42,6 +42,10 @@ export interface SeedMocks {
     setStrategy: ReturnType<typeof vi.fn>;
     setCurrentRoundId: ReturnType<typeof vi.fn>;
     getCurrentRoundId: ReturnType<typeof vi.fn>;
+    setWithinExternalTask: ReturnType<typeof vi.fn>;
+    isWithinExternalTask: boolean;
+    setExternalTaskHeadRoundId: ReturnType<typeof vi.fn>;
+    externalTaskHeadId: string;
     processUserInput: ReturnType<typeof vi.fn>;
     processEvent: ReturnType<typeof vi.fn>;
     continueAfterPause: ReturnType<typeof vi.fn>;
@@ -149,6 +153,9 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
   };
   // loop roundId 的原子状态：供 setCurrentRoundId/getCurrentRoundId 共享，模拟真实 loop 的轮次推进
   let currentRoundId = 'round-1';
+  // 外循环上下文原子状态：供 setWithinExternalTask/… 读写，模拟真实 loop 的跨方法上下文
+  let withinExternalTask = false;
+  let externalTaskHeadRoundId = '';
 
   const mocks: SeedMocks = {
     loop: {
@@ -159,6 +166,19 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
         currentRoundId = id;
       }),
       getCurrentRoundId: vi.fn(() => currentRoundId),
+      // 外循环上下文：setter 写状态、getter 读状态（与真实 loop 的属性 getter 一致，作为续跑推进的判断依据）
+      setWithinExternalTask: vi.fn((v: boolean) => {
+        withinExternalTask = v;
+      }),
+      get isWithinExternalTask() {
+        return withinExternalTask;
+      },
+      setExternalTaskHeadRoundId: vi.fn((id: string) => {
+        externalTaskHeadRoundId = id;
+      }),
+      get externalTaskHeadId() {
+        return externalTaskHeadRoundId;
+      },
       processUserInput: vi.fn(),
       processEvent: vi.fn(),
       continueAfterPause: vi.fn(),
