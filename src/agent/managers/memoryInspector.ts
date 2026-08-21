@@ -10,14 +10,15 @@ import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
-import { nowIso } from '@/utils/time.js';
+import { nowIso, ONE_DAY_MS, daysBetween } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
+import { byFadingAsc } from '@/utils/array.js';
 import { logger } from '@/logging/logger.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 // 融合排序算法 + 常量从 hybridMerge 导入（消除对 recall.ts 内部常量的依赖）
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 // LLM 治理共享常量（统一由 governance.ts 维护）
-import { BOOST_INCREMENT } from '@/memory/governance.js';
+import { BOOST_INCREMENT, DECAY_AGE_DAYS } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -100,6 +101,26 @@ export interface AgentStats {
   bySource: Record<string, number>;
   /** 记忆总数 */
   total: number;
+}
+
+/** 即将自然沉底的记忆（健康观测 · MemoryInspector.listFading 返回） */
+export interface FadingMemory {
+  /** 记忆唯一标识（${source}:${name} 格式） */
+  id: string;
+  /** 记忆名称 */
+  name: string;
+  /** 来源标签 */
+  source: string;
+  /** 当前权重（0-1，越低越接近沉底） */
+  score: number;
+  /** 内容预览（截断到 SEARCH_PREVIEW_LEN） */
+  contentPreview: string;
+  /** 创建时间（ISO 8601） */
+  createdAt?: string;
+  /** 上次访问时间（ISO 8601） */
+  accessedAt: string;
+  /** 距上次访问天数（对齐 DECAY_AGE_DAYS 语义） */
+  daysSinceAccess: number;
 }
 
 // ─── 类 ──────────────────────────────────────────────────
@@ -280,6 +301,53 @@ export class MemoryInspector {
       contentPreview: truncate(memory.content, SEARCH_PREVIEW_LEN),
       createdAt: memory.createdAt,
     }));
+  }
+
+  // ─── 健康观测 ─────────────────────────────────────────
+
+  /**
+   * 列出"即将自然沉底"的记忆：仅返回距今超过 DECAY_AGE_DAYS 未访问的活跃记忆，
+   * 按沉底顺序（最久未访问在前、同天分数最低在前）取前 limit 条。纯只读健康观测，
+   * 不触发衰减（decayScores/applyDecayToMemory 均不调用），不改治理空转现状。
+   *
+   * 空库 / 无候选（全部活跃记忆均在阈值内）→ 返回 []。
+   *
+   * 说明：经 index.search('')（空查询=全部活跃记忆）遍历后本地过滤排序，
+   * 不新增 IMemoryStorage 接口方法；宿主量大时可按需下沉 SQL 优化（见设计草稿）。
+   *
+   * @param opts.limit - 返回上限（默认 50，须正整数）
+   */
+  listFading(opts: { limit?: number } = {}): FadingMemory[] {
+    const limit = opts.limit ?? 50;
+    if (limit <= 0 || !Number.isInteger(limit)) {
+      throw configError(
+        '无效 limit',
+        `limit 必须是正整数，收到 ${limit}`,
+        ['使用 limit = 50（默认值）'],
+      );
+    }
+
+    const now = Date.now();
+    const cutoff = new Date(now - DECAY_AGE_DAYS * ONE_DAY_MS).toISOString();
+    // 全量活跃记忆（search 空查询降级为按 score 返回全部），规避新存储接口
+    const all = this.index.search('', Number.MAX_SAFE_INTEGER);
+
+    const fading = all
+      .filter((m) => m.accessedAt < cutoff) // 距今超过阈值未访问 → 候选
+      .sort(byFadingAsc) // accessedAt 升序 → score 升序
+      .slice(0, limit)
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        source: m.source,
+        score: m.score,
+        contentPreview: truncate(m.content, SEARCH_PREVIEW_LEN),
+        createdAt: m.createdAt,
+        accessedAt: m.accessedAt,
+        daysSinceAccess: -daysBetween(m.accessedAt, now), // 距上次访问天数
+      }));
+
+    return fading;
   }
 
   // ─── 统计 ─────────────────────────────────────────────

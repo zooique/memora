@@ -14,7 +14,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import { ONE_DAY_MS } from '@/memory/recall.js';
+import { ONE_DAY_MS } from '@/utils/time.js';
 import { MemoraError } from '@/utils/errors.js';
 import type { Memory } from '@/memory/types.js';
 

@@ -3,7 +3,8 @@
  * 覆盖关键词提取 + recall 函数 + boostScore 上限 + applyDecayToMemory 衰减边界
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { recall, extractKeywords, applyDecayToMemory, boostScores, ONE_DAY_MS } from '@/memory/recall.js';
+import { recall, extractKeywords, applyDecayToMemory, boostScores } from '@/memory/recall.js';
+import { ONE_DAY_MS } from '@/utils/time.js';
 import { RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';

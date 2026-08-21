@@ -13,11 +13,9 @@ import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
+import { ONE_DAY_MS } from '@/utils/time.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
-
-/** 1 天的毫秒数（与 recall.ts ONE_DAY_MS 一致，本地复用避免跨模块导入） */
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 构造单条记忆（覆盖 Memory 7 字段，支持覆写）

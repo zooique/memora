@@ -9,7 +9,7 @@ import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { IReranker } from '@/memory/reranker.js';
 import { logger } from '@/logging/logger.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
-import { nowIso } from '@/utils/time.js';
+import { nowIso, ONE_DAY_MS } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { HybridWeights } from '@/memory/hybridMerge.js';
 // 召回默认值 SSOT 跨层共享（保底下限 + 排除默认）
@@ -21,9 +21,6 @@ import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOU
 
 /** 语义搜索默认相似度阈值 */
 const DEFAULT_MIN_SIMILARITY = 0.3;
-
-/** 一天对应的毫秒数 */
-export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 从文本提取关键词：segmentText 精确分词 + 停用词过滤 + 英文词补充 + 去重。

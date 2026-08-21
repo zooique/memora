@@ -28,6 +28,7 @@ import type { Memory } from '@/memory/types.js';
 import type { Message } from '@/llm/provider.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
+import { nowIso } from '@/utils/time.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -574,6 +575,100 @@ describe('MemoryInspector', () => {
       const purgedCount = inspector.writePurgeExpired(before);
       expect(purgedCount).toBe(0);
       expect(inspector.getDeletedById('rule:1')).not.toBeNull();
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
+  // 7. listFading（健康观测 · 即将自然沉底）
+  // ════════════════════════════════════════════════════════
+
+  describe('listFading', () => {
+    it('只返回超过 DECAY_AGE_DAYS 未访问的记忆（近期访问的被过滤）', () => {
+      storage.upsert(
+        createMemory({ id: 'content:fading', name: 'fading', accessedAt: '2020-01-01T00:00:00.000Z' }),
+      );
+      storage.upsert(createMemory({ id: 'content:recent', name: 'recent', accessedAt: nowIso() }));
+
+      const fading = inspector.listFading();
+      const first = fading[0]!;
+      expect(fading).toHaveLength(1);
+      expect(first.id).toBe('content:fading');
+    });
+
+    it('按沉底顺序排序：最久未访问在前，同天分数最低在前', () => {
+      storage.upsert(
+        // 同 accessedAt，低分（0.2）应排前
+        createMemory({ id: 'content:a', name: 'a', accessedAt: '2020-01-01T00:00:00.000Z', score: 0.2 }),
+      );
+      storage.upsert(
+        createMemory({ id: 'content:b', name: 'b', accessedAt: '2020-01-01T00:00:00.000Z', score: 0.8 }),
+      );
+      storage.upsert(
+        // 更久未访问（2019）应整体在前
+        createMemory({ id: 'content:c', name: 'c', accessedAt: '2019-01-01T00:00:00.000Z', score: 0.5 }),
+      );
+
+      const ids = inspector.listFading().map((m) => m.id);
+      expect(ids[0]).toBe('content:c'); // 最久在前
+      expect(ids[1]).toBe('content:a'); // 同天低分在前
+      expect(ids[2]).toBe('content:b');
+    });
+
+    it('limit 控制返回条数且默认 50', () => {
+      for (let i = 0; i < 5; i++) {
+        storage.upsert(
+          createMemory({
+            id: `content:old-${i}`,
+            name: `old-${i}`,
+            accessedAt: '2020-01-01T00:00:00.000Z',
+          }),
+        );
+      }
+      expect(inspector.listFading({ limit: 2 })).toHaveLength(2);
+      expect(inspector.listFading().length).toBeLessThanOrEqual(50);
+    });
+
+    it('limit 非正整数应抛 configError', () => {
+      storage.upsert(
+        createMemory({ id: 'content:old', name: 'old', accessedAt: '2020-01-01T00:00:00.000Z' }),
+      );
+      expect(() => inspector.listFading({ limit: 0 })).toThrow();
+      expect(() => inspector.listFading({ limit: -1 })).toThrow();
+      expect(() => inspector.listFading({ limit: 1.5 })).toThrow();
+    });
+
+    it('空库返回空数组', () => {
+      expect(inspector.listFading()).toEqual([]);
+    });
+
+    it('daysSinceAccess 为距上次访问的完整天数且为正', () => {
+      storage.upsert(
+        createMemory({ id: 'content:old', name: 'old', accessedAt: nowIso() }),
+      );
+      storage.upsert(
+        createMemory({
+          id: 'content:fading',
+          name: 'fading',
+          accessedAt: '2020-01-01T00:00:00.000Z',
+          score: 0.2,
+        }),
+      );
+      const fading = inspector.listFading();
+      expect(fading[0]!.daysSinceAccess).toBeGreaterThan(365);
+    });
+
+    it('contentPreview 应截断到 SEARCH_PREVIEW_LEN（120 字符）', () => {
+      storage.upsert(
+        createMemory({
+          id: 'content:old',
+          name: 'old',
+          accessedAt: '2020-01-01T00:00:00.000Z',
+          content: 'x'.repeat(300),
+        }),
+      );
+      const fading = inspector.listFading();
+      // 长内容截断到 120 + '…'（与 search 的 SEARCH_PREVIEW_LEN 约定一致）
+      expect(fading[0]!.contentPreview.length).toBe(121);
     });
   });
 });

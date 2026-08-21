@@ -8,6 +8,22 @@
  * 用于格式化任意 Date 为 YYYY-MM-DD（本地时区）。
  */
 
+/** 一天对应的毫秒数（跨层共享，供衰减年龄/沉底天数换算） */
+export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 计算距目标时间的完整天数（向下取整，负数 = 未来）
+ *
+ * @param iso 目标时间的 ISO 8601 字符串
+ * @param now 相对当前时刻（毫秒时间戳）
+ * @returns 完整天数（非整输入非法时返回 NaN）
+ */
+export function daysBetween(iso: string, now?: number): number {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return NaN;
+  return Math.floor((t - (now ?? Date.now())) / ONE_DAY_MS);
+}
+
 /**
  * 获取当前时间的 ISO 8601 时间戳
  *

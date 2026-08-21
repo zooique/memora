@@ -43,6 +43,7 @@ export type {
   ArchiveSnapshot,
   AgentSearchHit,
   AgentStats,
+  FadingMemory,
 } from '@/agent/managers/memoryInspector.js';
 export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';

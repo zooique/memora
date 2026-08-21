@@ -5,8 +5,7 @@
  */
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { ONE_DAY_MS } from '@/memory/recall.js';
-import { nowIso } from '@/utils/time.js';
+import { nowIso, ONE_DAY_MS } from '@/utils/time.js';
 import { roundTo } from '@/utils/math.js';
 // 召回排除默认值 SSOT 共享（设定记忆已归角色包，默认不排除）
 import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
