@@ -537,6 +537,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /** 激活指定角色包（30s 内超 5 次切换后锁定 2 分钟防抖，避免状态抖动）；锁定或不存在返回 false */
   activate(name: string): boolean {
+    // 幂等短路（SSOT）：同包重复激活是 no-op——无回调、无副作用，不应消耗切换限流配额。
+    // 「激活目标 == 当前激活」这一事实归属操作本身（而非门面），保证原生 API 与门面语义一致。
+    if (this.activePackName === name) {
+      return true;
+    }
+
     // 缓冲区检查（限流保护，非错误）
     if (this.switchLocked) {
       logger.info({ name }, '角色包切换已锁定（30s 内超过 5 次），保持当前');

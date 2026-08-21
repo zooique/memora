@@ -484,6 +484,26 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(calls).toEqual([]);
     });
 
+    it('同名重复激活不消耗切换配额（幂等短路，SSOT）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
+      await writePack(packsDir, '全能写手', MANIFEST_MULTI_SKILL_NO_PERSONA);
+
+      const manager = new RolePackManager(dir);
+      await manager.load('技术文档工程师');
+
+      // 远超市限阈值地重复激活同一已激活包——幂等短路使每次都是 no-op，不累计切换配额
+      const MAX = 100;
+      for (let i = 0; i < MAX; i++) {
+        expect(manager.activate('技术文档工程师')).toBe(true);
+      }
+      // 未触发限流锁：后续真切换仍可进行（若同包激活消耗配额，早该锁定）
+      expect(manager.getSwitchLockStatus().locked).toBe(false);
+      expect(manager.activate('全能写手')).toBe(true);
+      expect(manager.activeName).toBe('全能写手');
+    });
+
     it('reload 激活包被删除时回退触发回调', async () => {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
