@@ -36,6 +36,31 @@ const TRACE_MESSAGE_LIMIT = 5;
 const TRACE_MESSAGE_CHAR_LIMIT = 2000;
 
 /**
+ * 文件读取返回的最大字符数（防长上下文注入）
+ *
+ * read_file 返回的项目文件内容同为工具结果——按哲学"工具结果做基础净化与长度上限"
+ * 对齐 web_search/web_fetch/run_code 的防御：超大文件内容不整段进入 LLM 上下文，
+ * 避免撑爆 ContextManager token 上限、与控制字符注入面回归一致。
+ */
+const FILE_READ_MAX_LEN = 50_000;
+
+/**
+ * 工具结果返回净化：去控制字符 + 长度上限
+ *
+ * 与 toolExecutor.sanitizeExternalText 同语义（外部/项目文件内容注入 LLM 前统一净化），
+ * 保持内置文件工具与 web 系工具的注入防御一致。
+ *
+ * @param text 原始文本
+ * @param maxLen 最大长度
+ * @returns 净化后的文本
+ */
+function sanitizeToolResult(text: string, maxLen: number): string {
+  // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
+  const cleaned = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen)}…` : cleaned;
+}
+
+/**
  * 检测写入内容是否为配置文件（persona/skill/rule）
  *
  * 解析 frontmatter 中的 source 字段，若匹配 persona/skill/rule 则返回对应的工具名后缀。
@@ -180,13 +205,14 @@ export class BuiltinToolHandlers {
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
-      // 读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取）
+      // 读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取；投影用原始内容，不净化）
       if (this.workProjection) {
         this.workProjection.ensureProjection(absolutePath, content, relativePath).catch((err) => {
           logger.warn({ err, path: absolutePath }, '作品投影生成失败');
         });
       }
-      return content;
+      // 返回净化：工具结果同哲学"长度上限 + 去控制字符"（超大文件不整段进上下文，防注入/撑爆）
+      return sanitizeToolResult(content, FILE_READ_MAX_LEN);
     } catch (err) {
       const e = toError(err);
       // 区分 ENOENT（文件不存在）和其他 IO 错误
@@ -537,7 +563,11 @@ export class BuiltinToolHandlers {
     if (entries.length === 0) {
       return `（目录为空或所有条目都被忽略）${absolutePath}`;
     }
-    return `目录 ${absolutePath} 共有 ${entries.length} 个条目：\n${entries.map((e) => `  ${e}`).join('\n')}`;
+    // 返回净化：目录树同为工具结果，做长度上限（避免超大目录整段进上下文，与 read_file 防御一致）
+    return sanitizeToolResult(
+      `目录 ${absolutePath} 共有 ${entries.length} 个条目：\n${entries.map((e) => `  ${e}`).join('\n')}`,
+      FILE_READ_MAX_LEN,
+    );
   }
 
   /**

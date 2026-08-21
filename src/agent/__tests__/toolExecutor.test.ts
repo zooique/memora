@@ -288,6 +288,29 @@ describe('工具执行器（6 个工具）', () => {
         expect((err as MemoraError).detail).toContain('path');
       }
     });
+
+    it('超大文件内容应被截断（长度上限净化，防长上下文注入）', async () => {
+      // 构造远超 FILE_READ_MAX_LEN（50_000）的大文件
+      const bigContent = 'x'.repeat(60_000);
+      const bigFile = 'src/big-file.txt';
+      await executor.execute('write_file', JSON.stringify({ path: bigFile, content: bigContent }));
+      const result = await executor.execute('read_file', JSON.stringify({ path: bigFile }));
+      // 读回被截断（≤50000 + 省略号），而非整段 60_000 字符进上下文
+      expect(result.length).toBeLessThanOrEqual(50_001);
+      expect(result.endsWith('…')).toBe(true);
+    });
+
+    it('含控制字符的文件内容应被净化（去控制字符）', async () => {
+      const messyContent = 'line1\u0000control\u001bEscape\nline2';
+      const messyFile = 'src/messy-file.txt';
+      await executor.execute('write_file', JSON.stringify({ path: messyFile, content: messyContent }));
+      const result = await executor.execute('read_file', JSON.stringify({ path: messyFile }));
+      // 控制字符（\u0000、\u001b）被移除
+      expect(result).not.toContain('\u0000');
+      expect(result).not.toContain('\u001b');
+      // 可打印内容保留
+      expect(result).toContain('line1');
+    });
   });
 
   describe('write_file', () => {
