@@ -20,6 +20,14 @@ import { join, dirname } from 'node:path';
 const SKILL_MATCH_MIN_SCORE = 0.3;
 
 /**
+ * 解析来源层（agent / project）：SSOT 收口——仅接受合法枚举值，
+ * 非法/缺失回退 'project'（与历史默认一致，防御 frontmatter 手误导致契约外值透传宿主）。
+ */
+function resolveLayer(raw: unknown): 'agent' | 'project' {
+  return raw === 'agent' ? 'agent' : 'project';
+}
+
+/**
  * 技能管理器
  */
 export class SkillManager extends ConfigResourceManager<SkillEntry> {
@@ -218,7 +226,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       description: entry.frontmatter['description'],
       content: entry.body.trim(),
       filePath: entry.filePath,
-      layer: 'project',
+      // 来源层（agent / project）：解析 frontmatter.layer，非法/缺失回退 project（与现状默认一致）。
+      // 宿主按此渲染「全局/项目」分层标签（host-alignment 约定 layer: agent 声明）。
+      layer: resolveLayer(entry.frontmatter['layer']),
       layer3,
     };
   }

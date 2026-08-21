@@ -360,6 +360,29 @@ keywords: 搜索,查询
 
   // ─── reload（事件驱动热重载） ─────────────────────
 
+  describe('layer 解析（agent / project 分层）', () => {
+    it('frontmatter.layer=agent 应解析为 agent', async () => {
+      createSkillFile(skillsDir, 'agent-skill.md', '---\nkeywords: a\nlayer: agent\n---\n# Agent 技能');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      expect(skillManager.get('agent-skill')?.layer).toBe('agent');
+    });
+
+    it('frontmatter 无 layer 时应回退 project（默认）', async () => {
+      createSkillFile(skillsDir, 'project-skill.md', '---\nkeywords: b\n---\n# 项目技能');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      expect(skillManager.get('project-skill')?.layer).toBe('project');
+    });
+
+    it('frontmatter.layer 为非法值时应回退 project（防御契约外值透传宿主）', async () => {
+      createSkillFile(skillsDir, 'bad-skill.md', '---\nkeywords: c\nlayer: unknown-layer\n---\n# 非法层技能');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      expect(skillManager.get('bad-skill')?.layer).toBe('project');
+    });
+  });
+
   describe('reload', () => {
     it('重载应反映目录变更（新增技能）', async () => {
       // 初始加载 1 个技能
