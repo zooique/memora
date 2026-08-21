@@ -8,7 +8,7 @@
  */
 
 import { readFile, readdir, access, stat } from 'node:fs/promises';
-import { resolve, join, basename } from 'node:path';
+import { resolve, join, basename, sep } from 'node:path';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 
@@ -327,8 +327,12 @@ function getExt(filename: string): string {
 /**
  * 路径穿越防护：检查子路径是否在基目录内
  *
- * 将 base + sub 拼接后 resolve 为绝对路径，检查其是否仍以 base 为前缀。
+ * 将 base + sub 拼接后 resolve 为绝对路径，检查其是否以 base 为边界前缀。
  * 防止 LLM 通过 `../` 等手段读取/执行技能目录外的文件。
+ *
+ * 边界前缀（追加 sep）：防兄弟目录绕过——`base=/x/skills/myskill`，
+ * 若不追加 `sep`，`/x/skills/myskill-evil/f` 会以 `myskill` 为前缀误放行。
+ * 与 SecurityGuard.assertPathAllowed 的 `allowedRoot + sep` 同标准（防前缀绕过统一事实）。
  *
  * @param base 基目录绝对路径
  * @param sub 相对子路径（可能含 `../`）
@@ -337,9 +341,9 @@ function getExt(filename: string): string {
 export function resolveSafePath(base: string, sub: string): string | null {
   const resolvedBase = resolve(base);
   const fullPath = resolve(base, sub);
-  // 确保完整路径以基目录为前缀（resolve 会消去 ../）
-  if (!fullPath.startsWith(resolvedBase)) {
-    return null;
+  // 基目录自身或其边界前缀（追加 sep）；resolve 会消去 ../ 并规范化路径
+  if (fullPath === resolvedBase || fullPath.startsWith(resolvedBase + sep)) {
+    return fullPath;
   }
-  return fullPath;
+  return null;
 }

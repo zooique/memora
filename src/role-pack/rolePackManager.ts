@@ -780,10 +780,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /** 读取技能 L3 资源文件内容（渐进披露 L3），不存在或读取失败返回 null */
   async readSkillResource(skillName: string, resourcePath: string, packName?: string): Promise<string | null> {
+    // layer3 白名单前置检查：资源必须已由 scanPackSkills 发现并登记（与全局 SkillManager 同标准），
+    // 防止未在清单内的路径（含兄弟目录前缀、escape 符）被 resolveSafePath 误放行
+    const found = this.findSkillByName(skillName, packName);
+    const registered = found && found.skill.layer3?.resources.some((r) => r.path === resourcePath);
+    if (!registered) return null;
+
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    // 路径穿越防护：确保 resourcePath 不逃逸技能 resources/ 目录
+    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（确保 resourcePath 不逃逸技能 resources/ 目录）
     const resourceFullPath = resolveSafePath(join(skillDir, 'resources'), resourcePath);
     if (!resourceFullPath) {
       getLogger().warn(
@@ -811,10 +817,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /** 获取技能 L3 脚本完整路径，不存在返回 null */
   getSkillScriptPath(skillName: string, scriptPath: string, packName?: string): string | null {
+    // layer3 白名单前置检查：脚本必须已由 scanPackSkills 发现并登记（与 getSkillScriptInfo 同标准），
+    // 防止未在清单内的路径被 resolveSafePath 误放行（对齐 readSkillResource 的双层防护）
+    const found = this.findSkillByName(skillName, packName);
+    const registered = found && found.skill.layer3?.scripts.some((s) => s.path === scriptPath);
+    if (!registered) return null;
+
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    // 路径穿越防护：确保 scriptPath 不逃逸技能 scripts/ 目录
+    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（确保 scriptPath 不逃逸技能 scripts/ 目录）
     const fullPath = resolveSafePath(join(skillDir, 'scripts'), scriptPath);
     if (!fullPath) return null;
     if (accessSyncSafe(fullPath)) {

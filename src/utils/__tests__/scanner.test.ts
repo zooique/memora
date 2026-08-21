@@ -23,6 +23,7 @@ import {
   parseKeywords,
   parseTrigger,
   resolveSubdir,
+  resolveSafePath,
 } from '@/utils/scanner.js';
 import { setLogger } from '@/utils/loggerHolder.js';
 
@@ -324,6 +325,37 @@ description: 测试技能
     it('configDir 为空字符串时应返回 undefined（falsy 短路）', () => {
       // 空字符串是 falsy，触发 if (!configDir) 分支
       expect(resolveSubdir('', 'rules')).toBeUndefined();
+    });
+  });
+
+  describe('resolveSafePath', () => {
+    it('子路径在基目录内时应返回完整路径', () => {
+      const base = '/base/resources';
+      expect(resolveSafePath(base, 'api.md')).toBe(resolve(base, 'api.md'));
+      expect(resolveSafePath(base, 'sub/doc.md')).toBe(resolve(base, 'sub/doc.md'));
+    });
+
+    it('基目录自身（sub 为空串）应放行', () => {
+      const base = '/base/resources';
+      // resolve(base, '') === 基目录绝对路径（Windows 带盘符）
+      expect(resolveSafePath(base, '')).toBe(resolve(base, ''));
+    });
+
+    it('逃逸基目录的 ../ 应返回 null', () => {
+      expect(resolveSafePath('/base/resources', '../other/secret.txt')).toBeNull();
+    });
+
+    it('兄弟目录前缀不得绕过（防前缀边界缺陷）', () => {
+      // 基目录 /base/resources，兄弟目录 /base/resources-evil
+      // 若只做 startsWith 无 sep 边界，"../resources-evil/x" 解析为 /base/resources-evil/x
+      // 会以 /base/resources 为前缀误放行；修复后（追加 sep 边界）应严格拒绝
+      expect(resolveSafePath('/base/resources', '../resources-evil/sneaky.txt')).toBeNull();
+      // 更深一层：base 的兄弟名以 base 名+额外字符开头
+      expect(resolveSafePath('/base/skills/myskill', '../myskill-evil/f.txt')).toBeNull();
+      // 子路径以 base 名严格的子目录开头（合法）应放行，区分边界
+      expect(resolveSafePath('/base/skills/myskill', 'resource/api.md')).toBe(
+        resolve('/base/skills/myskill', 'resource/api.md'),
+      );
     });
   });
 });

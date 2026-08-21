@@ -595,5 +595,41 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(prompt).toContain('summarize');
       expect(prompt).toContain('read_skill');
     });
+
+    it('readSkillResource：L3 layer3 白名单拦截（未登记/兄弟目录路径被拒）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      const skillPack = join(packsDir, '文档专家', 'skills', 'doc-gen');
+      // 构造文件夹式技能：SKILL.md + resources/api.md（使 scanPackSkills 发现 layer3.resources）
+      await mkdir(join(skillPack, 'resources'), { recursive: true });
+      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 文档生成\n---\n# 文档生成\n', 'utf-8');
+      await writeFile(join(skillPack, 'resources', 'api.md'), 'API 参考文档内容', 'utf-8');
+      // 兄弟目录：模拟攻击者想越权读取的 resources-evil/
+      await mkdir(join(packsDir, '文档专家', 'skills', 'doc-gen-evil'), { recursive: true });
+      await writeFile(
+        join(packsDir, '文档专家', 'skills', 'doc-gen-evil', 'secret.txt'),
+        '越权内容',
+        'utf-8',
+      );
+      await writeFile(
+        join(packsDir, '文档专家', 'manifest.json'),
+        JSON.stringify({
+          name: '文档专家',
+          keywords: ['文档'],
+          skills: { 'skills/doc-gen/SKILL.md': {} },
+        }),
+        'utf-8',
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('文档专家');
+
+      // 已登记的资源可读（layer3 内）
+      const ok = await manager.readSkillResource('文档生成', 'api.md');
+      expect(ok).toBe('API 参考文档内容');
+
+      // 未登记的路径拒绝：兄弟目录穿越（resolveSafePath 边界前缀拦截）
+      const bad = await manager.readSkillResource('文档生成', '../doc-gen-evil/secret.txt');
+      expect(bad).toBeNull();
+    });
   });
 });
