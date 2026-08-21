@@ -2,12 +2,12 @@
 
 > **定位**：设计文档（探索期，未定案）——记录内核「提交给 LLM 的工具面」的设计薄弱点与补全路线，分「第一版必须补齐」与「未来实现」两类，供第一版落地决策与后续实现对齐。
 > **原则**：对照 2026 大厂工具生态（Claude / OpenAI / Gemini）自查；**抄思想不抄机制**——工具扩展遵循 memora 既有范式（接口注入 + 条件暴露 + 零依赖 + 降级优先），不照搬大厂平台机制。
-> **状态**：§三 第一版必须补齐已落地（2026-08-20，tsc + 122 测试通过）；余下为未来实现（可逆规划，未固化 ADR；验证稳定后按[探索期决策沉淀机制](../../.trae/rules/exploration-decision-sedimentation-rules.md)升格）。
+> **状态**：§三 第一版必须补齐；余下为未来实现（可逆规划，未固化 ADR；验证稳定后按[探索期决策沉淀机制](../../.trae/rules/exploration-decision-sedimentation-rules.md)升格）。
 > **关联**：[mvp-scope.md](mvp-scope.md)（MVP 工具边界）· [harness-borrowing-assessment.md](../harness/harness-borrowing-assessment.md)（工具执行前拦截收敛）· [role-pack-skills-progressive-disclosure.md](role-pack-skills-progressive-disclosure.md)（技能渐进披露）
 
 ---
 
-## 一、工具面现状（2026-08-20 代码核查）
+## 一、工具面现状
 
 [builtinTools.ts](../../src/agent/builtinTools.ts) 全部工具归四域：
 
@@ -39,7 +39,7 @@
 
 ---
 
-## 三、第一版必须补齐（已落地 2026-08-20）
+## 三、第一版必须补齐
 
 > 两条均为「连接外部世界」能力，与既有范式完全同构（接口注入 + 条件暴露 + 降级优先），不引入新机制、不破坏零依赖边界。
 

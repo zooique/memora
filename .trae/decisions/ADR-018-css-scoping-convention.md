@@ -8,7 +8,7 @@ description: "CSS 作用域规范：面板前缀 + BEM 风格 + 单一真理源�
 > **状态**：✅ 已接受
 > **日期**：2026-07-13
 > **来源**：感知模块 UI 污染体验评审——layout.css 与 chat-perception.css 的 BARE 类（`.affect-label`/`.context-label` 等）被感知面板 DOM 继承，perception.css 后加载只能覆盖显式声明的属性，未声明的 `width`/`text-align`/`flex` 被继承导致 label 截断、track 垂直伸展
-> **依赖**：[ADR-017](./ADR-017-natural-growth-redefinition.md)（枝叶层 2 次提取原则）、[ADR-SP-015](./ADR-SP-015-panel-manager-composition.md)（PanelManager 组合模式）、[ADR-008](./ADR-008-directory-structure.md)（目录结构）
+> **依赖**：[ADR-017](./ADR-017-natural-growth-redefinition.md)（枝叶层 2 次提取原则）、[ADR-008](./ADR-008-directory-structure.md)（目录结构）
 
 ## 背景
 
@@ -106,7 +106,7 @@ L3 内容（content）：markdown
 | 考虑 | 说明 |
 |------|------|
 | **源头治理 vs 事后补救** | BARE 类污染的根因是作用域泄漏，perception.css 的 scoped 覆盖是事后补救，新增类时容易遗漏。面板前缀从源头隔离作用域 |
-| **与 PanelManager 对齐** | [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) 已确立 PanelManager 类的命名前缀（`PerceptionPanelManager`、`DashboardPanelManager`），CSS 前缀与 JS 前缀对齐，心智模型一致 |
+| **面板前缀契约** | CSS 面板前缀与对应 JS 面板命名前缀对齐，保持心智模型一致 |
 | **L1/L2/L3 与分层架构对齐** | 对应 [backend_layers_rules.md](../rules/backend_layers_rules.md) 的"内核 → 宿主 → 组件"分层，CSS 也有"全局 → 面板 → 组件"三层 |
 | **降低心智负担** | 看到 `.perception-xxx` 一定属于感知面板，看到 `.dashboard-xxx` 一定属于仪表盘，无需翻找多个文件 |
 | **不引入 CSS Modules 的理由** | Electron 场景下 PostCSS 构建链增加复杂度，且 CSP 对 style-src 限制严格；BEM + 面板前缀是零成本方案 |

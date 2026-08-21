@@ -1,26 +1,12 @@
-# Memora · 接入指南 v2.0.4
+# Memora · 接入指南 v3.0.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v2.0.4（最后更新：2026-08-14）
+> **当前稳定版**：v3.0.0。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
 >
-> **1.0.0 之前：核心能力演进**（原内部里程碑 v3.0–v3.3，于 npm 0.2.0 前后完成）：
-> - **Agent God Object 拆分（原 v3.0）**：记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference.md)。
-> - **可观测性与护栏（原 v3.1）**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
-> - **关系图谱与画像（原 v3.2）**：新增 WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。（原 ADR-014 记忆关系图谱 IMemoryRelationStore 与 UserProfile 用户画像已随 v2.0.4 收敛删除，见下方变更。）
-> - **npm 正式包与基础工具（原 v3.3）**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
->
-> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：DEFAULT_CONFIG 由 `config/loader.ts` 常量声明单一真理源（不再维护独立 schema）、IVectorStore 接口提取（JsonVectorStore 内置实现）、AbortSignal 合并工具、Logger 懒初始化（移除模块顶层副作用）、评估框架结构化信号（guardrailBlocked 替代文案匹配）、文档全量对齐（包名 @zooique/memora）。
->
-> **v2.0.0 变更**：版本号提升（维护性质，无破坏性 API 变更）。
->
-> **v2.0.1 变更**：文档版本号对齐（v1.0.2 → v2.0.1）。无 API 破坏性变更，仅同步文档与版本戳。
->
-> **v2.0.2 变更**：万物皆记忆 v2（双轨模型——设定记忆 + 对话记忆）。Persona/Skill 从 SQLite 索引解耦，改为纯文件 + 内存缓存。Skill 匹配改为当轮实时注入。详见 [CHANGELOG](../CHANGELOG.md)。
->
-> **v2.0.3 变更**：npm 发布配置修复与质量加固。新增 `publishConfig.access = "public"`、`exports` 增加 `default` 回退条件、`keywords` 扩充至 18 个。无 API 破坏性变更。
->
-> **v2.0.4 变更**：移除记忆关系图谱与用户画像层。内核收敛删除 ADR-014 记忆关系图谱（IMemoryRelationStore/InMemoryRelationStore/MemoryRelation 侧车）与用户画像层（UserProfile）。用户画像收敛为 round-summary 的 `type=preference` 召回；关系冲突改用 `supersededBy` 布尔标记（ADR-021）。保留 WorkProjectionManager、AutoConfigRefiner、InsightExtractor、`SOURCELABELS.PROFILE`（存量兼容）。（InsightExtractor 后于 2026-08-14 随洞察层收敛一并移除；AutoConfigRefiner 与 ConfigManager 后随角色包边界收敛移除，角色管理统一走 `agent.rolePack`；`SOURCELABELS.PROFILE` 随画像收敛不再参与运行时治理。）
+> **对接入者有影响的迁移结论**（不含历史流水，细节见 [API 参考手册](./memora-api-reference.md)）：
+> - 1.0 为正式发布，API 已稳定；2.0 起设定记忆（persona/rules/skills）解耦为纯文件 + 内存缓存，唯一归角色包、不进记忆库（ADR-025），角色管理统一走 `agent.rolePack`。
+> - 已移除：`SqliteStorage`（移出内核，由宿主实现 `IMemoryStorage`）、洞察层（`insight.*`）、AutoConfigRefiner / ConfigManager、记忆关系图谱与用户画像层（偏好收敛为 round-summary，冲突改用 `supersededBy` 布尔标记）。
 >
 ---
 
@@ -210,10 +196,10 @@ agent.tools.registerTool(
 
 ### 4.5 外部世界工具注入（可选，条件性暴露）
 
-> 内核提供三个「连接外部世界」的条件工具：`web_search`（搜索）/ `web_fetch`（读网页正文）/ `run_code`（执行代码）。**宿主注入对应 provider 才暴露，未注入则工具不进入 LLM 工具面**——内核保持零运行时依赖。
+> 三个「连接外部世界」的条件工具——`web_search` / `web_fetch` / `run_code`——**宿主注入对应 provider 才暴露，未注入则不进入 LLM 工具面**，内核保持零运行时依赖。各工具的用途、参数与单工具注入方式见 [API 参考手册](./memora-api-reference.md) §8；此处演示三者**一起**注入的组合写法。
 
 ```typescript
-import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/memora';
+import { Agent, FetchWebFetchProvider } from '@zooique/memora';
 import type { ICodeExecutionProvider } from '@zooique/memora';
 
 // ① 网页抓取（搜索→抓取闭环：web_search 找链接，web_fetch 读正文）
@@ -230,13 +216,13 @@ const codeExecutionProvider: ICodeExecutionProvider = {
 const agent = new Agent({
   projectPath: '/path/to/novel-project',
   provider,
-  // webSearchProvider: new FetchWebSearchProvider(),  // 搜索（已有）
+  // webSearchProvider: new FetchWebSearchProvider(),  // 搜索（web_search，参见参考手册 §8.3）
   fetchProvider,            // 可选：暴露 web_fetch
   codeExecutionProvider,    // 可选：暴露 run_code
 });
 ```
 
-> **注意**：`run_code` 是通用执行能力（源码不进上下文，仅结果返回），执行隔离等级完全由宿主 provider 决定；接入前务必评估沙箱安全边界。
+> **注意**：`run_code` 是通用执行能力（源码不进上下文，仅结果返回），执行隔离等级完全由宿主 provider 决定；接入前务必评估沙箱安全边界（参见参考手册 §8.5）。
 
 ### 5. 记忆关键词与写入扩展（已移除）
 
@@ -447,192 +433,24 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 
 ## 五、API 速查
 
-> 完整定义见 [memora-api-reference.md](./memora-api-reference.md)。
+> 构造选项、生命周期、对话、项目/会话、各 Manager、事件、Provider 管理等**完整条目与类型定义**详见 [memora-api-reference.md](./memora-api-reference.md)。此处只列接入期最常用的几个入口：
 
-### 构造选项 `AgentOptions`
+| 操作 | 入口 | 详见参考手册 |
+|------|------|------|
+| 构造 | `new Agent({ projectPath, provider, configDir, dataDir })` | §二 · AgentOptions |
+| 对话 | `agent.chat(input)`（流式）/ `agent.chatSync(input)` | §三 |
+| 记忆 | `agent.memory.snapshot()/search()/writeXxx()` | §四 |
+| 角色包 | `agent.rolePack.listMeta()/activate()/setMode()` | §七 |
+| 工具 | `agent.tools.registerTool()/execute()` | §八 |
+| 会话 | `agent.forkSession()` / `agent.sessionManager.*` | §六 |
 
-| 选项 | 类型 | 必须 | 说明 |
-|------|------|------|------|
-| `projectPath` | `string` | ✅ | 项目路径 |
-| `provider` | `LlmProvider` | ✅ | 前台 LLM Provider |
-| `backgroundProvider` | `LlmProvider` | ❌ | 后台 Provider（投影） |
-| `configDir` | `string` | ❌ | 配置目录（personas/rules/skills） |
-| `dataDir` | `string` | ❌ | 记忆数据目录（默认 ~/.memora） |
-| `registryDir` | `string` | ❌ | 项目注册表目录（默认与 dataDir 相同） |
-| `maxContextTokens` | `number` | ❌ | 上下文窗口上限（默认 120000） |
-| `persona` | `string` | ❌ | 默认角色名 |
-| `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
-| `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
-| `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
-| `storage` | `IMemoryStorage` | ❌ | 存储层注入 |
-| `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索；内置实现 `JsonVectorStore`） |
-| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`） |
-| `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
-| `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
-| `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
-| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
-| `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索（提供时暴露 `web_search` 工具） |
-| `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取（提供时暴露 `web_fetch` 工具，与 `webSearchProvider` 成对构成「搜索→抓取」闭环） |
-| `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行（提供时暴露 `run_code` 工具，沙箱由宿主提供） |
-
-### Agent 生命周期与状态
-
-| 成员 | 说明 |
-|------|------|
-| `agent.init()` | 初始化（创建存储、加载配置、组装组件），返回 `AgentContext` |
-| `agent.close()` | 安全关闭（释放锁 + 关闭数据库） |
-| `agent.initialized` | 只读 getter，`boolean` |
-| `agent.isBusy` | 只读 getter，`boolean`（是否正在对话中） |
-| `agent.lastInteractionAt` | 只读 getter，`Date \| null`，最近一次对话时间 |
-| `agent.context` | 只读 getter，`AgentContext \| null`，当前项目上下文 |
-
-### 对话
-
-| 方法 | 说明 |
-|------|------|
-| `agent.chat(input, signal?)` | 流式对话，返回 `AsyncGenerator<AgentChunk>` |
-| `agent.chatSync(input, signal?)` | 同步对话（测试用） |
-
-### 项目 / 会话
-
-| 方法 | 说明 |
-|------|------|
-| `agent.projects.listProjects()` / `agent.projects.list` | 列出已注册的子项目 |
-| `agent.switchProject(name)` | 切换到其他子项目 |
-| `agent.rebuildComponents()` | 通常不需要手动调用（`switchProject` 已自动执行），仅在强制刷新配置时使用 |
-| `agent.switchSession(name)` | 切换当前会话（同步，返回新会话名） |
-| `agent.forkSession(name?)` | 分叉当前会话（复制完整消息历史到新分支） |
-| `agent.loadSessionMessages(date, session)` | 加载指定日期/会话的消息 |
-| `agent.restoreSession(date, session)` | 恢复指定日期/会话 |
-| `agent.restoreMostRecentSession()` | 启动时恢复最近一次会话 |
-| `agent.agentHistory.listAllSessions()` | 列出所有会话文件名 |
-
-### Manager 速查表
-
-| 路径 | Manager | 主要成员 |
-|------|---------|---------|
-| `agent.memory.xxx()` | MemoryInspector | 读：`snapshot()` / `search(q, n)` / `searchHybrid(q, n)` / `stats()` / `list()` / `getById(id)` / `listDeleted()`；写：`writeUpsert()` / `writeDelete()` / `writeRestore()` / `writePurge()` 等（`writeXxx` 前缀）。`suggest()` / `sourceHealth()` 已上移至 `agent.suggest()` / `agent.sourceHealth()` |
-| `agent.governance.xxx()` | MemoryGovernance | `deduplicate()` / `evaluateTimeliness()` / `detectConflicts()` / `sourceHealth()` / `suggest()` / `decay()` |
-| `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` / `list` |
-| `agent.rolePack.xxx` | RolePackManager | `.listMeta()` / `.activeName` / `.currentMode` / `.getActive()` / `.activate(n)` / `.setMode(m)` / `.resetSticky()` |
-| `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
-| `agent.works.xxx()` | WorkProjectionManager | `ensureProjection(path, content)` / `getProjection(path)` / `loadAll()` |
-| `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `conflictDetected` / `projectSwitched` / `skillMatched` / `archiveFailed` |
-
-### Provider 管理
-
-| 方法 | 说明 |
-|------|------|
-| `agent.setProvider(provider)` | 运行时切换前台 Provider |
-| `agent.setBackgroundProvider(provider)` | 运行时切换后台 Provider |
+> 记忆治理（去重/时效/冲突/衰减）统一走 `agent.governance` 或 Agent 层方法，见参考手册 §四 与「记忆治理」章节。
 
 ---
 
 ## 六、宿主工具函数
 
-```typescript
-import {
-  createLlmProvider,
-  createProviderFromConfig,
-  loadConfig,
-  InMemoryStorage,
-  JsonVectorStore,
-  EmbeddingProvider,
-  setLogger,
-  logger,
-  segmentText,
-  parseFrontmatter,
-  serializeFrontmatter,
-  safeSetTimeout,
-  safeSetInterval,
-  clearSafeTimeout,
-  clearSafeInterval,
-  recall,
-  extractKeywords,
-  SOURCE_LABELS,
-  inferSource,
-  escapeLike,
-  validateSource,
-  MemoraError,
-  toError,
-  NOOP_TRACER,
-  TRACE_SPANS,
-  ToolErrorCode,
-  isRetryableErrorCode,
-  TypedEventEmitter,
-  collectAgentChunks,
-  evaluateResult,
-} from '@zooique/memora';
-import type {
-  ProviderConfig,
-  Config,
-  IMemoryStorage,
-  ILogger,
-  ISessionStore,
-  SessionMessage,
-  Memory,
-  SourceValidationSeverity,
-  LlmProvider,
-  LlmChunk,
-  ChatOptions,
-  AgentChunk,
-  ThinkingPhase,
-  UIMessages,
-  ArchiveMode,
-  AgentOptions,
-  AgentContext,
-  AgentProjectEntry,
-  AgentForkResult,
-  ToolDefinition,
-  ToolHandler,
-  ToolContext,
-  WriteExtensions,
-  MemoryKeywords,
-  MemorySnapshot,
-  WorkingMemorySnapshot,
-  BootstrapSnapshot,
-  ArchiveSnapshot,
-  AgentSearchHit,
-  AgentStats,
-  SuggestOptions,
-  SuggestHit,
-  SourceHealthStatus,
-  SourceHealthEntry,
-  SourceHealthReport,
-  ConfigSuggestion,
-  ConfigSuggestionHandler,
-  AutoConfigRefinerOptions,
-  SessionArchiveResult,
-  WorkProjectionEntry,
-  PersonaMode,
-  Persona,
-  SkillEntry,
-  SkillMatch,
-  RecallOptions,
-  EmbeddingService,
-  EmbeddingConfig,
-  EmbeddingResult,
-  AgentEventMap,
-  AgentEventName,
-  AgentEventHandler,
-  ForkResult,
-  ITracer,
-  ISpan,
-  AgentMetrics,
-  ToolErrorCodeValue,
-  EvalScenario,
-  EvalExpectation,
-  EvalResult,
-  AuditEvent,
-  AuditListener,
-  Permission,
-  WriteDecision,
-  WriteConfirmationInfo,
-  WriteConfirmationRequest,
-  OpenAICompatibleProvider,
-  OpenAICompatibleConfig,
-} from '@zooique/memora';
-```
+> 所有可导入工具函数/类型的**完整 import 清单与导出声明**见 [memora-api-reference.md](./memora-api-reference.md) §十六。下表列出常用函数与其用途：
 
 | 函数/类型 | 用途 |
 |-----------|------|

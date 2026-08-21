@@ -157,8 +157,7 @@ export const LOOP_CONSTANTS = {
    *
    * 原 loop.determineTaskType 内的魔法数 500 归入内核常数。
    * 注意这是内核启发式阈值，不属于角色包可影响的 L2 策略维度——任务类型分类是
-   * Provider 路由（影响成本）的内部决策，不开放给角色包配置（避免"策略全景物化"，
-   * 见 memora-polish-roadmap T3）。
+   * Provider 路由（影响成本）的内部决策，不开放给角色包配置（避免"策略全景物化"）。
    */
   REASONING_INPUT_CHARS: 500,
 

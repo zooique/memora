@@ -48,7 +48,7 @@ src/
 
 > **实时结构以 [project-rules.md §3](../rules/project-rules.md) 为唯一真理源**：本「目录结构（当前）」块为决策时快照（截至 v0.2 / 2026-06-02），Manager 计数与具体文件可能已随后续演进漂移，仅供追溯，**不构成冻结契约**。
 
-> **已移出至精灵宿主项目**（详见 [ADR-SP-007](./ADR-SP-007-directory-structure.md)）：
+> **已移出至宿主项目**（宿主各自实现）：
 > - `cli/` → `hosts/memora-sprite/src/cli.ts`
 > - `SqliteStorage`（原 `memory/index.ts`） → `hosts/memora-sprite/src/storage/sqliteStorage.ts`
 > - `SqliteRelationStore`（ADR-014 侧车实现） → `hosts/memora-sprite/src/storage/sqliteRelationStore.ts`
@@ -140,5 +140,5 @@ src/
 - v0.7 当前 13 个：ArchiveCoordinator / AutoConfigRefiner / ChatLock / Config / Insight / MemoryAdvisor / MemoryDecay / MemoryInspector / RelationBuilder / Session / SessionArchiver / TextPolish / WorkProjection
 - 新增 6 个 Manager/服务类：ArchiveCoordinator（归档协调）、ChatLock（并发锁）、MemoryAdvisor（记忆建议）、MemoryDecay（记忆衰减）、RelationBuilder（关系构建）、TextPolish（文本润色，无状态服务类）
 - UserFactExtractor 保留在 agent/ 根级（纯函数模块，非 Manager）
-- TextPolishManager 命名沿用"Manager"后缀但实际是无状态服务类（详见 [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) §3 补录）
+- TextPolishManager 命名沿用"Manager"后缀但实际是无状态服务类
 - 本次年轮同步触发自 2026-07-16 根须体系健康度诊断（发现 Manager 数量三处不同步）

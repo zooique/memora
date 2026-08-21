@@ -208,7 +208,7 @@
 
     "skills": {
       "type": "array",
-      "description": "可选白名单过滤（C3 目录动态扫描，2026-08-18）：skills/ 目录下 .md 自动注册（frontmatter 声明 name/description），本字段声明 file 时按文件过滤（白名单语义）。声明项须含 file（技能文件名，如 skills/write.md）。",
+      "description": "可选白名单过滤（C3 目录动态扫描）：skills/ 目录下 .md 自动注册（frontmatter 声明 name/description），本字段声明 file 时按文件过滤（白名单语义）。声明项须含 file（技能文件名，如 skills/write.md）。",
       "items": {
         "type": "object",
         "required": ["file"],
@@ -232,7 +232,7 @@
 
     "capabilities": {
       "type": "array",
-      "description": "能力声明（顶层数组，C2 独立模块，2026-08-18）。角色能力面（工具白名单）与技能内容面分离。",
+      "description": "能力声明（顶层数组，C2 独立模块）。角色能力面（工具白名单）与技能内容面分离。",
       "items": {
         "type": "object",
         "required": ["capability"],

@@ -91,8 +91,6 @@ description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继�
 
 **原则**：相同结构的页面/面板通过工厂声明差异（columns / actions / search / apiPath 等），工厂处理通用逻辑（分页、搜索、加载、空状态）。一个 ListPage 工厂 + 8 份配置，胜过 8 个手写的列表 Manager。这是「嫁接而非并列」原则在页面层的落地——通用结构是调用链，页面差异是分支点。
 
-**与 sprite 现状的关系**：sprite 的记忆面板、审计面板、设置面板有共同结构（标题 + 列表 + 详情）。当前每个 PanelManager 手写完整 DOM，差异点和共同点混在一起。迁移目标：抽离 ListPanel / DetailPanel 工厂，面板通过配置声明差异。
-
 | 类型 | 心智规则 |
 | ---- | ---- |
 | **DO** | **领域原语 / 明确第二消费者 → 设计期即抽工厂**——当某页面结构属于**领域原语**（列表 / 详情 / 表单 / 搜索）或已有明确/近确定的第二消费者时，首次实现即抽离工厂（对齐 ADR-017 Scenario A：新代码设计期抽取，不再等"3 次"）。工厂接收配置声明，差异通过配置参数表达；异类页面经 `customRender` 逃生舱接入，不强行纳入（防 God Object） |
@@ -105,8 +103,6 @@ description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继�
 
 **原则**：组件按依赖方向分层，高层可依赖低层，低层不可依赖高层。统一导出口让 import 路径收敛，避免散乱。这与后端的分层架构同构——`controller → service → repository` 是单向依赖，前端 `data → navigation → form → feedback → base` 也是单向依赖。
 
-**与 sprite 现状的关系**：sprite 已有 controllers/helpers/panels/components 扁平分层，但缺少 `components/index.ts` 统一导出口，import 路径散乱。迁移目标：建立 base/feedback/form/navigation/data 五层（或 sprite 自定义的分层）+ 统一导出口。
-
 | 类型 | 心智规则 |
 | ---- | ---- |
 | **DO** | **按依赖方向分层**——base（Button / Icon）→ feedback（Toast / Modal / Confirm）→ form（Input / Select / FormBuilder）→ navigation（Layout / PageHeader / Tabs）→ data（DataTable / ListPage / SearchPanel）。高层可依赖低层，低层不可依赖高层。data 层可依赖 form + navigation + feedback，但 form 不可依赖 data |
@@ -118,8 +114,6 @@ description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继�
 ### §四.4 Manager 与 Component 的边界——编排与封装分离
 
 **原则**：Manager 负责业务编排（多组件协调、跨面板通信、状态管理），Component 负责视觉封装（DOM 结构、交互状态、事件处理）。Manager 持有 Component 实例，不直接 createElement。这是「单一职责」在 UI 层的落地——Manager 不应同时是状态容器 + DOM 操作类 + 事件总线。
-
-**与 sprite 现状的关系**：现有 PanelManager 同时承担业务编排和 DOM 操作，是 DOM 与编排耦合的反模式。迁移目标：Manager 持有 Component 实例，DOM 操作下沉到 Component，Manager 专注编排。
 
 | 类型 | 心智规则 |
 | ---- | ---- |

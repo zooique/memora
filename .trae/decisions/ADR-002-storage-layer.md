@@ -17,7 +17,7 @@ Memora 需要彻底独立于具体数据库实现。宿主项目（如泊文 Ele
 | 项               | 选择                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | 存储接口         | **IMemoryStorage**（纯 TS 接口，零依赖）                     |
-| SQLite 实现      | **SqliteStorage**（已移出到宿主 `hosts/memora-sprite/src/storage/sqliteStorage.ts`，见 [ADR-SP-007](./ADR-SP-007-directory-structure.md)） |
+| SQLite 实现      | **SqliteStorage**（已移出至宿主项目，由宿主各自实现持久化，内核经 `IMemoryStorage` 接口注入） |
 | 内存实现         | **InMemoryStorage implements IMemoryStorage**（测试用 + fallback） |
 | 依赖管理         | better-sqlite3 完全从 memora 移除，由宿主项目管理            |
 | 注入方式         | Agent 构造函数可选参数 `storage?: IMemoryStorage`            |

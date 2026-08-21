@@ -11,7 +11,7 @@ description:
 
 **原则**：Agent 接触的一切内容都是"记忆"。记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
 
-> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。**角色包内容收敛（2026-08-18）**：内容文件约定名（persona.md/rules.md）、能力声明独立顶层 capabilities（C2）、技能两级渐进披露（通用全局 + 角色包绑定，§11.5）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，正按档 0→3 收敛至目标态。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
+> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。**角色包内容收敛（2026-08-18）**：内容文件约定名（persona.md/rules.md）、能力声明独立顶层 capabilities（C2）、技能两级渐进披露（通用全局 + 角色包绑定，§11.5）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，已收敛至目标态（§1.1/§1.2 即目标态描述——设定记忆纯文件装载、不写 SQLite / 记忆库）。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 1.1 两层记忆模型
 
@@ -42,33 +42,17 @@ description:
 └──────────────────────────────────────────────────┘
 ```
 
-**桥梁**：`autoConfigRefiner` 将对话洞察转化为设定文件——骨骼从血肉中结晶。
+**桥梁**：设定记忆与对话记忆经 `summaryFocus` 提炼视角衔接（见 §1.2），无 `autoConfigRefiner` 独立转化链路。
 
-### 1.2 Persona、Rule、Skill 的各自定位
+### 1.2 设定记忆的唯一承载 = 角色包（Persona / Rule / Skill）
 
-**Persona（角色）**：
-- 存储：`configDir/personas/*.md`（文件真理源）+ 内存缓存（Persona[]）
-- 注入：`systemPromptPrefix`（当轮生效，由 `refreshPersonaPrefix` 动态更新）
-- 匹配：触发词确定性匹配（精确/正则优先，score=1.0），在 `chat()` 开头执行；
-  匹配机制见 [agent-design-philosophy.md §6.2](../../docs/architecture/agent-design-philosophy.md#62-召回相关)——角色包匹配是
-  确定性信号采集（见 §4「代码与模型分工」），语义理解不参与匹配
-- 模式：auto（自动匹配）/ manual（手动固定）
-- 回退：默认回到 `list[0]`（首个角色）
-- 锁定：30s 内 5 次切换 → 2 分钟自动恢复
-- **不写入 SQLite**：Persona 是设定记忆，无召回路径消费者
+设定记忆（persona / rules / skills）**唯一归角色包**（`role-packs/<名>/manifest.json` 核心控制 + 内容文件 persona.md / rules.md / skills/），**纯文件 + 内存缓存装载，不写 SQLite / 记忆库**（见 [memory-role-pack-boundary-rules.md](./memory-role-pack-boundary-rules.md) R1/R3/R7，ADR-025）。旧 `configDir/personas|rules|skills + SQLite 索引` 模型及其 API（`PersonaManager` / `ConfigManager` / `matchAndInjectSkill` / `bootstrapMemories getBySource('rule')`）已全部随收敛移除，不再作为设定记忆入口。
 
-**Skill（技能）**：
-- 存储：`configDir/skills/*.md`（文件真理源）+ 内存缓存（SkillEntry[]）
-- 注入：`injectSystemMessage`（当轮实时注入，由 `matchAndInjectSkill` 在 recall 后执行）
-- 匹配：regex trigger 优先（score=1.0），其次关键词匹配（阈值 0.3）
-- 自然过期：`cleanTemporarySystemMessages` 每轮清理临时注入
-- **不写入 SQLite**：Skill 是设定记忆，无召回路径消费者
+- **Persona**：`persona.md` 约定名（未声明即回退）；确定性注入 systemPromptPrefix；粘性触发词匹配（`autoSwitch` + `exclusiveWith` 互斥，确定性信号而非语义匹配）；能力声明在 manifest 顶层 `capabilities`（C2）。不写 SQLite / 记忆库。
+- **Skill**：全局技能池 `configDir/skills/`（全局激活）+ 角色包 `skills/`（角色激活才激活），两级统一**渐进披露**——L1 元数据常驻 system prompt、L2 `read_skill` 按需读正文、L3 `read_resource`/`run_skill_script`，目录动态扫描（C3）。不写 SQLite / 记忆库。
+- **Rule**：`rules.md` 约定名；确定性注入、始终在线。不写 SQLite / 记忆库。
 
-**Rule（规则）**：
-- 存储：`configDir/rules/*.md`（文件真理源）+ SQLite 索引（`source: rule`）
-- 注入：`bootstrapMemories` → `messages[0]`（始终在线，由 `refreshBootstrapMemories` 更新）
-- CRUD：通过 `ConfigManager` 操作 SQLite + 回调刷新 system prompt
-- **保留在 SQLite**：bootstrap 路径通过 `getBySource('rule')` 读取，这是唯一合法的索引消费
+**桥梁**：`summaryFocus` 提炼视角（角色包 prepare 策略）让对话的归纳沉淀为摘要记忆的同时，以角色包视角决定"值得记什么"——骨骼（角色包视角）与血肉（摘要记忆）经**单一记忆单轨**（摘要即记忆）衔接，不再有 `autoConfigRefiner` 独立转化链路。
 
 ### 1.3 记忆冲突消解（侧车模型已废弃）
 
@@ -77,7 +61,7 @@ description:
 ### 1.4 禁止
 
 - ❌ 创建 `RulesService` / `SkillsService` / `TopicsService` 等独立子系统
-  - 例外：PersonaManager / SkillManager 是顶层过滤器，不是"独立子系统"，它们是设定记忆的入口
+  - 例外：RolePackManager / SkillManager 是设定记忆的入口（角色包 / 技能装载），不是"独立子系统"
 - ❌ 为不同记忆类型建立不同的存储后端
 - ❌ 引入"系统提示词硬编码"
 - ❌ 将 Persona/Skill 数据写入 SQLite（无召回消费者，纯浪费）
@@ -186,7 +170,7 @@ domain），其余在 Agent Loop 中按需检索。
 
 **在代码中的体现**：
 
-- `decayScores()` 按 `GOVERNANCE_SOURCES` 衰减记忆 score（治理源由 [governance.ts](../../src/memory/governance.ts) 统一维护；由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）。当前治理源为空——profile 已随角色包边界收敛移除、work-projection 已随移出记忆库（2026-08-20），衰减循环空转但机制保留，未来新增治理源从 `GOVERNANCE_SOURCES` 声明即可
+- `decayScores()` 按 `GOVERNANCE_SOURCES` 衰减记忆 score（治理源由 [governance.ts](../../src/memory/governance.ts) 统一维护；由内核 Agent 定时调度，宿主经 `decayCompleted` 事件确认）。当前治理源为空——profile 已随角色包边界收敛移除、work-projection 已随移出记忆库（2026-08-20），衰减循环空转但机制保留，未来新增治理源从 `GOVERNANCE_SOURCES` 声明即可
 - **round-summary 不参与 score 衰减**（2026-08-17 对齐实现）：其"遗忘"由两条机制承担——① 写路径取代检测（`superseded` 标记，ADR-021 + 加权 Jaccard 算法）压制被覆盖的旧摘要；② score 衰减自然沉底（长期未访问的记忆分数衰减，相关性排序自然排不到前面）。**类型时间窗口已废弃**（2026-08-17 定论）：type 不设时效，记忆是否有效由 superseded + score 衰减判定，不由时间流逝判定。score 衰减只作用于治理源声明的长期沉淀记忆，避免对轮次级记忆重复施加衰减机制
 - 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](../decisions/ADR-015-archive-mode.md)）
 - `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）

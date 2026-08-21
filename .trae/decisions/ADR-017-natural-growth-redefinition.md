@@ -102,6 +102,5 @@ description: 自然生长原则重新定义：分层适用
 本 ADR 影响以下文件中的"自然生长"定义：
 
 - [backend_layers_rules.md](../rules/backend_layers_rules.md) §判断标准——"暂不实现，等 3 次以上重复需求再提取"改为分层表述 + 枝叶层 2 次提取
-- [sprite-project-rules.md](../rules/sprite-project-rules.md) §8——"自然生长原则"引用更新为分层定义 + 枝叶层 2 次提取
 - [ADR-002](./ADR-002-storage-layer.md) §同步优先决策——"3 次以上重复（自然生长原则）"改为"2 次以上重复（枝叶层 2 次提取原则）"
-- [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) §不提取基类的理由——"出现 3 次以上相同模式才提取"改为"枝叶层 2 次提取原则"，"何时重新评估"阈值 ≥3 改为 ≥2
+- 差异化原则：废弃"出现 3 次以上相同模式才提取"，改为"枝叶层 2 次提取原则"，"何时重新评估"阈值 ≥3 改为 ≥2

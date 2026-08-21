@@ -237,7 +237,7 @@ Refs: {任务来源说明}
 ```
 
 - `type`：refactor（重构）/ fix（修复）/ feat（新增功能）
-- `scope`：sprite / kernel / docs 等
+- `scope`：kernel / docs 等
 - 单行 ≤ 100 字符，body 每行 ≤ 100 字符
 - 多行 body 用多个 `-m` 参数传递（PowerShell here-string 在长参数下易失效）
 

@@ -1,7 +1,7 @@
 # Skills 三级渐进披露设计（Progressive Disclosure）
 
 > **定位**：Skills 系统采用三级渐进披露模式，对齐 Claude Skills / Agent Skills 行业标准。
-> **状态**：**L1+L2 已实现**（2026-08-15 read_skill + L1）；**L3 资源/代码分离已实现**（2026-08-19，见 [skillManager.ts](../../src/skill/skillManager.ts) `read_resource`/`listResources`、`skillScriptRunner.ts` 沙箱脚本，assembler 注入 L3 回调）
+> **状态**：L1/L2/L3 渐进披露已落地——L1 元数据清单、L2 `read_skill` 按需读正文、L3 `read_resource`/`run_skill_script`（实现见 [skillManager.ts](../../src/skill/skillManager.ts) `read_resource`/`listResources`、`skillScriptRunner.ts` 沙箱脚本，assembler 注入 L3 回调）
 > **关联**：[role-pack-spec.md](./role-pack-spec.md)、[memory-role-pack-boundary.md](./memory-role-pack-boundary.md)
 
 ---

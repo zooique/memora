@@ -5,9 +5,9 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 
 # 通用编码约束规则
 
-> **适用范围**：Memora 内核（`src/`）+ 精灵宿主（`hosts/memora-sprite/src/`）全部 TS/JS 代码
+> **适用范围**：Memora 内核（`src/`）+ 插件宿主（memora-vscode）全部 TS/JS 代码
 > **与现有规则关系**：与 [backend_layers_rules.md §分层职责](./backend_layers_rules.md) 互补（前者定边界，本文件定写法）；与 [security_rules.md](./security_rules.md) 正交（前者管权限，本文件管健壮性）
-> **技术栈前提**：TypeScript 5 strict + ESM + Node.js ≥ 22（精灵宿主 Node.js 24），详见 [ADR-001](../decisions/ADR-001-runtime-stack.md) / [ADR-SP-001](../decisions/ADR-SP-001-runtime.md)
+> **技术栈前提**：TypeScript 5 strict + ESM + Node.js ≥ 22，详见 [ADR-001](../decisions/ADR-001-runtime-stack.md)
 
 ## 1. 契约与入参校验
 
@@ -130,7 +130,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 
 **Memora 适配**：命名规范详见 [project-rules.md §4](./project-rules.md)（文件夹连字符、TS 文件小驼峰、类大驼峰、常量全大写下划线）。
 
-**CSS 作用域与命名规范**：本文件不重复定义。统一规范见 [backend_layers_rules.md §前端 CSS 三层作用域模型](./backend_layers_rules.md)（L1/L2/L3 三层模型、面板前缀 + BEM、单一真理源约束），权威定义见 [ADR-018 · CSS 作用域规范](../decisions/ADR-018-css-scoping-convention.md)。
+**CSS 作用域与命名规范**：本文件不重复定义。权威定义见 [ADR-018 · CSS 作用域规范](../decisions/ADR-018-css-scoping-convention.md)。
 
 ## 7. 分支与兜底取舍
 
@@ -159,7 +159,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 下层感知上层——禁止跨层直接调用 |
 | DON'T | 业务代码重复实现通用能力 |
 
-**Memora 适配**：内核与宿主的职责边界详见 [backend_layers_rules.md §核心库 vs 宿主项目职责边界](./backend_layers_rules.md)；精灵宿主的分层详见 [sprite-project-rules.md](./sprite-project-rules.md)。
+**Memora 适配**：内核与宿主的职责边界详见 [backend_layers_rules.md §核心库 vs 宿主项目职责边界](./backend_layers_rules.md)。
 
 ## 9. 稳定性隐性约束
 

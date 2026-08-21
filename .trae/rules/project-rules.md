@@ -9,7 +9,7 @@ description: Memora 项目总则、技术栈清单、目录结构
 > **架构定位**：memora = 通用闭环引擎（插卡机），角色包 = 参数集（卡）。**通用性由内核保证，专业性由角色包驱动**。详见 [architecture_philosophy_rules.md §11](./architecture_philosophy_rules.md)
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/decisions/` 下 37 个 ADR（内核 24 + 精灵 12 + 插件 1）
+> **决策追溯**：决策年轮 `.trae/decisions/`（内核 + 插件；编号规则、跳号与废弃状态以 [decisions/README](../decisions/README.md) 为单一真源）
 
 ## 1. 不可违反的硬约束
 
@@ -21,19 +21,17 @@ description: Memora 项目总则、技术栈清单、目录结构
 4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
 5. **配置文件是真理源**：配置文件是持久化真理源，SQLite 仅作运行时索引（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
 6. **内核 Node.js 专属 + 零第三方依赖**：memora 是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto` 等），但 `dependencies` 字段为空（零第三方运行时依赖）。不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（Electron/browser API 等）。pino 作为可选 `peerDependencies`（`optional: true`）+ `optionalDependencies` 保留，零配置时宿主开箱即用，宿主也可注入自定义 `ILogger` 覆盖（详见 [ADR-002 v0.9 定位定论](../decisions/ADR-002-storage-layer.md)）
-7. **文件层两段式契约**：ConfigManager 写 API（addRule/deleteRule/updateRule/deleteSkill）只同步 SQLite 索引层，**不操作文件**。文件层写入/删除由宿主 `configFileSyncer` 先完成，再调用 ConfigManager 同步索引。ConfigManager 通过可选 `fileConsistencyCheck` 回调前置断言文件操作状态，防止"重启复活"（详见 [configManager.ts](../../src/agent/managers/configManager.ts) 文件级注释）
+7. **设定记忆 = 文件即资源（纯文件装载）**：persona / rules / skills 设定记忆唯一归角色包 / 技能池，以**纯文件 + 内存缓存**装载（见 [memory-role-pack-boundary-rules.md](./memory-role-pack-boundary-rules.md) R1/R3/R9），**不写入 SQLite / 记忆库**。配置文件是真理源，内核只读；新增 / 修改设定记忆由宿主直接落文件、由扫描装载（Skills 目录动态扫描、RolePackManager 扫描）。已无「写 API 同步 SQLite 索引」这一中间层——历史 `ConfigManager` 的两段式契约（`addRule`/`deleteRule`/`updateRule`/`deleteSkill` + `fileConsistencyCheck`）已随角色包边界收敛移除，不再引用。
 8. **检查点版本迁移机制**：`SessionCheckpoint.schemaVersion` 是检查点结构的版本标识，支持向前兼容的迁移。`SessionManager.checkpointMigrations` 静态分发表注册按版本号升序的迁移函数，`normalizeCheckpoint` 在加载时自动应用。新增检查点字段必须：① 递增 `CURRENT_SCHEMA_VERSION`；② 在 `checkpointMigrations` 中注册迁移（详见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts) 及 [constants.ts](../../src/agent/constants.ts) `AGENT_CONSTANTS.CURRENT_SCHEMA_VERSION`）
-9. **IPC 通道数量治理**：精灵宿主 IPC 通道总数接近 150 条时应启动治理评估。新增 IPC 通道必须：① 确认是否可通过现有通道组合达成（避免重复注册）；② 在 `ipc/` 目录下统一注册（quick-input 窗口内联注册例外，见 [sprite-project-rules.md §10.2](./sprite-project-rules.md)）；③ 新增通道后更新通道计数（当前计数约 125 条，治理阈值 150 条）
 
 ## 2. 技术栈清单
 
 | 类别   | 选型                                         | 决策                                                  |
 | ------ | -------------------------------------------- | ----------------------------------------------------- |
 | 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](../decisions/ADR-001-runtime-stack.md)       |
-|        | （精灵宿主要求 Node.js 24 LTS，详见 [ADR-SP-001](../decisions/ADR-SP-001-runtime.md)） | |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](../decisions/ADR-002-storage-layer.md)       |
 | 冲突消解 | supersededBy 布尔标记（写路径取代检测，读时过滤） | [ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) |
-| 归档模式 | archiveMode 三态控制（full / insights-only / manual） | [ADR-015](../decisions/ADR-015-archive-mode.md)    |
+| 归档模式 | archiveMode 二态控制（full / manual，insights-only 已随洞察层移除） | [ADR-015](../decisions/ADR-015-archive-mode.md) |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](../decisions/ADR-003-llm-adapter.md)         |
 | 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.8](../decisions/ADR-002-storage-layer.md)  |
 | 安全   | 两级权限 + 路径白名单                        | [ADR-006](../decisions/ADR-006-security-model.md)      |
@@ -42,7 +40,7 @@ description: Memora 项目总则、技术栈清单、目录结构
 
 ## 2.5 同仓库多 Package 结构（Monorepo）
 
-本仓库包含两个独立的 npm package，共享同一个 Git 仓库但各自有独立的 `package.json`、`tsconfig`、测试和构建流程：
+本仓库包含 memora **内核**（纯逻辑库）与第一宿主 **VS Code 插件**（`hosts/memora-vscode/`），各自有独立的 `package.json`、`tsconfig`、测试与构建流程，共享同一 Git 仓库。桌面精灵宿主（memora-sprite）已独立仓库、独立开发，不再受本仓库规则约束。
 
 ```
 memora/                          # Git 仓库根目录
@@ -51,29 +49,20 @@ memora/                          # Git 仓库根目录
 ├── package.json                 # memora 内核（纯逻辑库）
 ├── tsconfig.json
 ├── src/                         # memora 内核源码（§3 目录结构）
-├── tasks/                       # 统一任务追踪（内核 + 精灵共享，唯一真理源）
+├── tasks/                       # 统一任务追踪（内核 + 插件共享，唯一真理源）
 │
 └── hosts/
-    ├── memora-vscode/            # 第一宿主：VS Code 插件（当前主战场，演示 memora 内核能力）
-    └── memora-sprite/            # 早期桌面精灵宿主（已搁置，实现保留供参考）
-        ├── .trae/rules/         # 精灵专属规则（仅 directory-structure.md）
-        ├── package.json         # 精灵独立 package（name: "memora-sprite"）
-        ├── tsconfig.json        # 精灵独立 tsconfig（含 electron 多配置）
-        ├── src/                 # 展示项目源码（electron + renderer + storage + web）
-        ├── assets/              # 精灵静态资源（icon.svg 是真理源，PNG 由脚本生成）
-        └── scripts/             # 构建脚本（含 sync-memora.mjs、generate-icons.mjs）
+    └── memora-vscode/            # 第一宿主：VS Code 插件（当前主战场，演示 memora 内核能力）
 ```
 
 **关键约束**：
 
 | 规则 | 说明 |
 |------|------|
-| 独立 package | 两个 package 各自 `npm install`、`npm test`、`npm run build`，互不依赖对方的 devDependencies |
+| 独立 package | 内核与宿主各自 `npm install` / `npm test` / `npm run build`，互不依赖对方的 devDependencies |
 | 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
 | 内核 Node.js 专属 | memora 内核是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（fs/path/os/crypto），但不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（详见 [ADR-002 v0.9](../decisions/ADR-002-storage-layer.md)） |
-| 展示项目依赖内核 | 展示项目通过 `sync-memora.mjs` 分发内核：编译内核 `src/` → `dist/`，最小化复制到展示项目 `node_modules/memora/`（仅含 dist + 元数据）；源码 import 保持 `from 'memora'`。`file:../..` 已于 2026-07-17 废弃（Junction 会将全量仓库打入 asar，详见 [ADR-SP-005](../decisions/ADR-SP-005-package-management.md)） |
-| 规则分层 | 仓库级规则在 `.trae/rules/`，展示项目专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束展示项目 |
-| 任务统一 | 根 `tasks/` 是唯一任务追踪目录（内核 + 精灵共享），`hosts/memora-sprite/tasks/` 已合并归档 |
+| 宿主依赖内核 | 宿主以独立 package 方式依赖内核（安装版本化的 `@zooique/memora`，见 [ADR-002](../decisions/ADR-002-storage-layer.md) / [ADR-VC-001](../decisions/ADR-VC-001-vscode-plugin-host.md)） |
 
 ## 3. 目录结构（不允许修改）
 
@@ -142,11 +131,10 @@ chore: 升级 dependencies
 | UI 工程化心智 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) |
 | 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
 | 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
-| 精灵宿主 | [sprite-project-rules.md](./sprite-project-rules.md) |
 | 跨文档引用 / 新增模块 | [cross-document-reference.md](./cross-document-reference.md) / [new-module-guide.md](./new-module-guide.md) |
 | 决策记录（37 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
 
-> 宿主实现文档位于 `hosts/memora-sprite/.trae/rules/`（仅 directory-structure.md）。任务追踪统一在根 `tasks/`（唯一真理源）。
+> 任务追踪统一在根 `tasks/`（唯一真理源）。
 >
 > **架构说明书**：集成设计哲学、闭环设计、数据模型、角色包体系、思维模式速查的完整参考文档，位于 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)。
 >
@@ -155,7 +143,7 @@ chore: 升级 dependencies
 ## 7. AI 行为 DO/DON'T 速查表
 
 > 本节集中列出 AI 在编写/修改 memora 内核代码时的实施级 DO/DON'T 规则。
-> §1 硬约束是原则级，本节是实施级补充。sprite 专属规则见 [sprite-project-rules.md](./sprite-project-rules.md)。
+> §1 硬约束是原则级，本节是实施级补充。
 
 ### 7.1 代码质量
 
@@ -201,7 +189,7 @@ chore: 升级 dependencies
 | ---- | ---- |
 | DO | 底层问题优先修复（架构/基础设施层面，避免积重难返） |
 | DO | 代码修复独立可回滚（每次修复独立提交） |
-| DO | 自动归档根据 `archiveMode` 执行（full / insights-only / manual 三态） |
+| DO | 自动归档根据 `archiveMode` 执行（full / manual 二态） |
 | DO | LLM 工具调用传递 `tools` 参数，SSE 流正确解析 `tool_calls` delta |
 
 ### 7.6 代码组织与治理

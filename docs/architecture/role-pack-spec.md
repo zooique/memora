@@ -5,7 +5,7 @@
 > **memora 与本标准的关系**：memora 是**首个实现（reference implementation）**，本规范**不绑定 memora**。其他 Agent 实现本规范后即可装载生态中的角色包。
 > **类比**：USB-C（接口标准）/ Docker 镜像（可移植容器）/ HTML（浏览器兼容的文档标准）。
 >
-> **演进状态（2026-08-13）**：角色包标准当前处于**草案演进期**。memora 优先打磨内核基础（问答闭环 + 记忆系统），其运行不依赖角色包键；**角色包字段 v1 冻结延后至基础接口定型后**——避免标准字段随基础演进反复横跳。本章节中依赖未冻结基础或尚无参考实现消费的键一律以 `[草案]` 标注（§六状态列），不承诺跨实现一致行为。硬通货要素（签名 / 依赖声明 / 目录）作为远期演进方向随 v1 冻结一并规划，当前不设计。
+> **演进状态**：角色包标准当前处于**草案演进期**。memora 优先打磨内核基础（问答闭环 + 记忆系统），其运行不依赖角色包键；**角色包字段 v1 冻结延后至基础接口定型后**——避免标准字段随基础演进反复横跳。本章节中依赖未冻结基础或尚无参考实现消费的键一律以 `[草案]` 标注（§六状态列），不承诺跨实现一致行为。硬通货要素（签名 / 依赖声明 / 目录）作为远期演进方向随 v1 冻结一并规划，当前不设计。
 
 ---
 
@@ -20,7 +20,7 @@
 
 ## 二、文件格式（文件夹包：manifest.json 唯一核心控制文件）
 
-**格式决策（2026-08-14 收敛）**：角色包统一为**文件夹包（bundle）** 形态——系统此前未启用角色包（无存量包），故**不保留单文件 .md / role-pack.md 旧格式**。每个角色包 = 一个文件夹，`manifest.json` 是**唯一核心控制文件**（元数据 + L2 策略 + 内容路径注册 + capabilities 注册），内容文件（persona.md / rules.md / skills/*）作为独立文档装载（skills 目录动态扫描，C3）。
+**格式决策**：角色包统一为**文件夹包（bundle）** 形态——系统此前未启用角色包（无存量包），故**不保留单文件 .md / role-pack.md 旧格式**。每个角色包 = 一个文件夹，`manifest.json` 是**唯一核心控制文件**（元数据 + L2 策略 + 内容路径注册 + capabilities 注册），内容文件（persona.md / rules.md / skills/*）作为独立文档装载（skills 目录动态扫描，C3）。
 
 > **设计要点（内容文件独立性）**：persona / rules / skills 是独立 Markdown 文档，用户既可**独立移植**这些文档到其他项目，也可**整体装载**角色包。manifest 只做路径注册，不内嵌正文——元数据/策略单一真理源在 manifest，正文单一真理源在内容文件，二者不双写。
 
@@ -92,9 +92,9 @@
 ### 2.3 内容文件独立性与零声明约定
 
 - **persona.md / rules.md / skills/* 是独立 Markdown 文档**。用户可**独立移植**这些文档，也可**整体装载**角色包；
-- **内容文件零声明（2026-08-18 统一）**：`persona.md`（身份）、`rules.md`（规则）为**约定文件名**——manifest 未声明时装载器回退约定名，**无需在 manifest 声明**；`skills/` 目录动态扫描（C3）。manifest 只承载「非约定内容」；声明路径仅为向后兼容的自由命名；
-- **persona.md 为约定文件名（2026-08-18 简化，与 rules.md 对称）**：身份设定**约定俗成为 `persona.md`**——manifest 未声明 `persona` 字段时装载器回退约定名；
-- **rules.md 为约定文件名（2026-08-18 简化）**：rules 规则文件**约定俗成为 `rules.md`**——manifest 未声明 `rules` 字段时装载器回退约定名。消除「路径写错静默丢规则」错误面；
+- **内容文件零声明**：`persona.md`（身份）、`rules.md`（规则）为**约定文件名**——manifest 未声明时装载器回退约定名，**无需在 manifest 声明**；`skills/` 目录动态扫描（C3）。manifest 只承载「非约定内容」；声明路径仅为向后兼容的自由命名；
+- **persona.md 为约定文件名**：身份设定**约定俗成为 `persona.md`**——manifest 未声明 `persona` 字段时装载器回退约定名；
+- **rules.md 为约定文件名**：rules 规则文件**约定俗成为 `rules.md`**——manifest 未声明 `rules` 字段时装载器回退约定名。消除「路径写错静默丢规则」错误面；
 - **persona 允许缺省**：`persona.md` 文件不存在时，角色包无身份设定，仅靠策略驱动行为；
 - 内容文件**不含 frontmatter**——元数据/策略单一真理源在 manifest.json，正文单一真理源在内容文件，二者不双写。
 
@@ -102,8 +102,8 @@
 
 - **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 目录声明 + capabilities 注册全部在此，无第二份权威，同字段永不双写；
 - **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；**均缺省回退约定名 `persona.md`/`rules.md`，零声明**，§2.3）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）；
-- **内容文件零声明（2026-08-18）**：`persona.md` / `rules.md` / `skills/` 全部**约定俗成**——persona 与 rules 不声明即回退约定名，skills 目录动态扫描。manifest 只承载「非约定内容」：capabilities、strategy、handoffPrompt、元数据与合规字段；
-- **skills 目录扫描（C3，2026-08-18）**：`skills/` 目录下的 `.md` 文件**动态扫描**注册——文件 frontmatter 声明 `name`/`description`，正文为技能内容。**新增技能只写文件，无需改 manifest**。manifest.skills 可选：声明 `file` 时按文件过滤（白名单语义），未声明则全部扫描；
+- **内容文件零声明**：`persona.md` / `rules.md` / `skills/` 全部**约定俗成**——persona 与 rules 不声明即回退约定名，skills 目录动态扫描。manifest 只承载「非约定内容」：capabilities、strategy、handoffPrompt、元数据与合规字段；
+- **skills 目录扫描（C3）**：`skills/` 目录下的 `.md` 文件**动态扫描**注册——文件 frontmatter 声明 `name`/`description`，正文为技能内容。**新增技能只写文件，无需改 manifest**。manifest.skills 可选：声明 `file` 时按文件过滤（白名单语义），未声明则全部扫描；
 - **capabilities 字段集**：`capability`（必填，中立能力名 `域:动作`，§四）+ `description`（可选）；声明角色可调用的中立能力（工具白名单面）；
 - **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**（`rules` 未声明时回退约定名 `rules.md`）；**skills 目录动态扫描**（frontmatter 元数据 + 正文经 read_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 - **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
@@ -113,7 +113,7 @@
 
 **定位**：`handoffPrompt` 是该角色包**被宿主带入对话（激活 + 聚焦）时**预填输入框的特色衔接话术——作者为「这个角色接手任务时怎么说」定制的提示词。缺省由宿主回退通用话术。
 
-**设计边界（2026-08-17 定案）**：角色包是**独立自洽**的装载卡（§11 插卡解耦）——**只描述自己，不引用其他角色包**。跨包移交（A→B 交接链）属宿主层工作流编排（§十一 A2A 预留：依赖声明由宿主解析，远期非承诺），**不进角色包格式**；角色包之间的切换由用户主动通过宿主「带入对话」原语完成。
+**设计边界**：角色包是**独立自洽**的装载卡（§11 插卡解耦）——**只描述自己，不引用其他角色包**。跨包移交（A→B 交接链）属宿主层工作流编排（§十一 A2A 预留：依赖声明由宿主解析，远期非承诺），**不进角色包格式**；角色包之间的切换由用户主动通过宿主「带入对话」原语完成。
 
 ```jsonc
 {
@@ -166,7 +166,7 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 - 枚举式行为开关，角色只"选择"不"定义"；
 - **已知键生效，未知键警告并忽略（warn + ignore，不阻塞装载）**——杜绝拼写错误被静默吞掉（对齐 Agent Plugins「reported and ignored」，见 §五）。
 
-> **边界声明（2026-08-13）**：L2 枚举是**行为参数**层——角色在此只能"选择"预定义开关，不能"定义"逻辑，这保证可安全传播。**它不承诺"思维过程"的差异化**：真正决定角色专业性的，是 L1 内容层（persona/rules 知识）与远期 L3 代码层（自定义能力）。角色包的价值分层 = **L1 专业性 / L2 行为偏好 / L3（远期）能力扩展**。"角色包代替 skills"（§2.1）兑现的是"内容分发 + 行为分发"，"思维过程分发"依赖 L1/L3，非 L2 枚举职责。
+> **边界声明**：L2 枚举是**行为参数**层——角色在此只能"选择"预定义开关，不能"定义"逻辑，这保证可安全传播。**它不承诺"思维过程"的差异化**：真正决定角色专业性的，是 L1 内容层（persona/rules 知识）与远期 L3 代码层（自定义能力）。角色包的价值分层 = **L1 专业性 / L2 行为偏好 / L3（远期）能力扩展**。"角色包代替 skills"（§2.1）兑现的是"内容分发 + 行为分发"，"思维过程分发"依赖 L1/L3，非 L2 枚举职责。
 
 ### L3：代码层（远期）
 
@@ -176,9 +176,9 @@ L1 是纯文本契约——**即使实现不认识 L2/L3，也能完整装载 L1
 
 ## 四、能力声明（capabilities 独立模块 + skills 目录扫描）
 
-**C2 定案（2026-08-18）**：能力面与内容面分离——`manifest.capabilities`（顶层数组）声明**角色可调用的中立能力**（工具白名单面），skills 回归**技能内容面**。
+**C2 定案**：能力面与内容面分离——`manifest.capabilities`（顶层数组）声明**角色可调用的中立能力**（工具白名单面），skills 回归**技能内容面**。
 
-**C3 定案（2026-08-18）**：skills 从「manifest 注册数组」改为「**目录动态扫描**」——`skills/` 目录支持**两种形式**（与全局技能池 `scanMarkdownDir` 同构）：
+**C3 定案**：skills 从「manifest 注册数组」改为「**目录动态扫描**」——`skills/` 目录支持**两种形式**（与全局技能池 `scanMarkdownDir` 同构）：
 
 1. **单文件形式**：`skills/*.md` 直接子项下的 `.md` 文件自动注册
 2. **文件夹形式**：`skills/<名>/SKILL.md` 子目录中的 `SKILL.md`（Claude Code 标准）自动注册
@@ -222,7 +222,7 @@ description: 把成稿写入本地文件
 > - **L2 按需装载**：LLM 调用 `read_skill` 工具，按技能名读取 `file` 指向的技能正文——`file` 从"生态指针"变为"装载入口"；
 > - **标准契约**：`capability` 保证生效（工具暴露面）；技能正文装载经 `read_skill` 按需提供，实现应支持 `read_skill` 以兑现渐进披露（memora 已实现，见 [role-pack-skills-progressive-disclosure.md](./role-pack-skills-progressive-disclosure.md)）。
 >
-> **两级技能统一（2026-08-18）**：memora 技能体系由**两级**构成，共用同一渐进披露逻辑——**通用技能（全局池 `configDir/skills/`，全局激活）** + **角色包技能（`manifest.skills`，角色激活才激活）**。两级均以「L1 清单（name + description 常驻 system prompt）+ L2 `read_skill` 按需读正文」同构工作：
+> **两级技能统一**：memora 技能体系由**两级**构成，共用同一渐进披露逻辑——**通用技能（全局池 `configDir/skills/`，全局激活）** + **角色包技能（`manifest.skills`，角色激活才激活）**。两级均以「L1 清单（name + description 常驻 system prompt）+ L2 `read_skill` 按需读正文」同构工作：
 > - 通用技能清单随 system prompt 常驻（`SkillManager.buildSkillList`），角色包技能清单随 `rolePackPrompt`（角色激活时）；
 > - `read_skill` 先查激活角色包技能、再查全局通用技能池（`assembler` 装配注入）；
 > - 两级同构避免「通用技能在每个角色包复制一份」——全局一份，角色包只声明角色特有技能。
@@ -355,7 +355,7 @@ export interface IMcpTransport {
 - **major 演进（1.0 → 2.0）**：键名/语义变更或 L1 结构变化——提供**迁移器**（读旧版 → 写新版），装载器对旧 major 拒绝加载并提示迁移；
 - 校验器同时支持「声明格式版本校验」与「可迁移性检查」。
 
-**双闸门演进（键级，P0 对账定案 2026-08-12）——新键进入标准的门槛**：
+**双闸门演进（键级）——新键进入标准的门槛**：
 
 任何键要进入标准正文（§六），必须依次通过两道闸门；未通过验证门的键只能以 `[草案]` 状态保留在 §六 征集实现验证：
 
@@ -382,7 +382,7 @@ export interface IMcpTransport {
 
 > 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.contextAssembly`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
 >
-> **状态列含义（P0 键集对齐，2026-08-12）**：
+> **状态列含义（P0 键集对齐）**：
 > - **冻结** = 有参考实现（memora）真实消费 + 语义/命名已归标准——任何实现应支持一致行为；
 > - **`[草案]`** = 尚无参考实现消费，保留在标准正文以征集实现验证（§五 双闸门演进：通过验证门才可冻结）——实现可装载（按未知键 warn + ignore 的键级渐进），但不承诺跨实现一致行为。
 
@@ -393,7 +393,7 @@ export interface IMcpTransport {
 | prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
 | prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token） | 冻结 | memora 消费（agent.ts 限额召回：limited 模式下将 token 配额换算为字符预算，对召回结果做有界裁剪）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
 | prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |
-| prepare | `prepare.summaryFocus` | 非空字符串 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结 | 由实现提炼进标准（2026-08-16 结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
+| prepare | `prepare.summaryFocus` | 非空字符串 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结 | 由实现提炼进标准（结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
 | prepare | `prepare.minFallback` | 非负整数 | 召回保底下限（recall 结果不足时用最近记忆补足，0=关闭） | 冻结 | memora 消费（recall.ts 保底补全，未配置回退默认 2） |
 | act | `act.toolMode` | `allow` / `block` | 是否允许工具调用 | 冻结 | memora 消费（agent.ts 工具开关）；命名归标准（旧 `act.toolCalls`） |
 | act | `act.temperature` | 0.0~2.0 | 生成随机性 | `[草案]` | 无参考实现消费，待验证 |
@@ -423,7 +423,7 @@ export interface IMcpTransport {
 
 **范式方向约束（最重要的一条）**：角色包生态的立身之本是**生产力**（工作助手、知识问答、工具执行）——**不做情感陪伴、不做虚拟恋人**。豆包/千问 2026-07 下线的是无工具、无决策、不可控的 UGC 陪聊 Bot；千问保留并加码的正是"协议化、工具化、能落地"的工具型 Agent——角色包标准站在这条政策允许且鼓励的赛道上。
 
-**安全审计（角色包发布前提，2026-08-13 声明）**：角色包是可下载、可共享的装载卡——是**供应链攻击载体**。行业实测：公开技能库中 **36% 含提示注入**（Snyk）、平均质量仅 6.2/12（SkillsBench）——无审计的开放目录是风险源。因此**安全审计是角色包进入可传播目录的前提**（不只合规）：角色包的 persona/rules/strategy/内嵌 skills 在发布前须经注入检测与质量审查；memora 作为 reference implementation 对下载角色包做基础注入扫描，发现恶意内容拒绝装载。签名/完整性校验（防篡改）随"硬通货"远期规划一并落地（见定位宣言演进状态）。**当前不实现，先确立硬门槛。**
+**安全审计（角色包发布前提）**：角色包是可下载、可共享的装载卡——是**供应链攻击载体**。行业实测：公开技能库中 **36% 含提示注入**（Snyk）、平均质量仅 6.2/12（SkillsBench）——无审计的开放目录是风险源。因此**安全审计是角色包进入可传播目录的前提**（不只合规）：角色包的 persona/rules/strategy/内嵌 skills 在发布前须经注入检测与质量审查；memora 作为 reference implementation 对下载角色包做基础注入扫描，发现恶意内容拒绝装载。签名/完整性校验（防篡改）随"硬通货"远期规划一并落地（见定位宣言演进状态）。**当前不实现，先确立硬门槛。**
 
 ---
 
@@ -446,9 +446,9 @@ export interface IMcpTransport {
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 | 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（问答闭环 / 记忆系统）定型后——见本文档定位宣言 |
 
-> 标准优先于实现（P0 键集对齐，2026-08-12）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
+> 标准优先于实现（P0 键集对齐）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 
-### 9.1 来源边界声明（2026-08-15 审查定案）
+### 9.1 来源边界声明
 
 > **问题**：角色包来源区分（内置 vs 插件贡献 vs 未来用户自定义）应该由谁承担？
 > **结论**：**内核不感知来源语义，多来源由宿主以多实例（multi-instance）承载**。此声明是"内核-宿主"职责边界的一部分，防止来源区分逻辑反向渗入内核。
@@ -483,7 +483,7 @@ export interface IMcpTransport {
 
 **伏笔的正确形态**：不预埋字段，而是**明确边界让未来自然生长**（单一真理源）。未来开放用户自定义时，宿主只需：新目录放用户角色包 → 新建 `RolePackManager` 实例 → 聚合两实例列表展示。内核一行不改。
 
-#### 示例库 vs 宿主生产库（2026-08-15 边界澄清）
+#### 示例库 vs 宿主生产库
 
 > **问题**：memora 仓库根 `role-packs/` 与宿主内置（如插件 `src/extension/role-packs/`）存在同名角色包，是否需强制同步？
 > **结论**：**不追求同步**。两者定位不同、归属独立、生命周期各自演进，不属于 SSOT 反模式（stale mirror）。
@@ -500,7 +500,7 @@ export interface IMcpTransport {
 
 > 根示例库的接入者指引见 [role-packs/README.md](../../role-packs/README.md)（声明性入口，本处为规范性定义）。
 
-### 9.2 内容层归属声明（2026-08-17 定案）
+### 9.2 内容层归属声明
 
 > **问题**：persona / rules / skills 的「内容」由谁承载？角色包还是记忆系统？
 > **结论**：**设定记忆（persona / rules / skills）唯一归角色包内容层（L1）**；记忆系统只承载**对话记忆**（round-summary，按 summaryType 分类）。二者是两种东西，不互存、不双写。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md)。
@@ -517,7 +517,7 @@ export interface IMcpTransport {
 1. **记忆库不写入设定记忆**：`persona` / `rule` / `skill` 不作为记忆库 source 写入（当前 `configManager` / `loader` 的写入路径待收敛，见 memory-role-pack-boundary.md §四档 1）。
 2. **角色包不写对话记忆**：角色包只承载设定，不承载轮次摘要。
 3. **存量兼容**：已写入记忆库的存量设定记忆行保留（软删兼容），但不再有新写入；宿主提供一次性迁移即可清理。
-4. **guardrail 已摘除（2026-08-17）**：guardrail 为「零规则、无扫描映射、无消费者」的空转链，已随档 1 一并移除；原「guardrail 归宿待定」决策作废（见 memory-role-pack-boundary.md §四档 3）。
+4. **guardrail 已摘除**：guardrail 为「零规则、无扫描映射、无消费者」的空转链，已随档 1 一并移除；原「guardrail 归宿待定」决策作废（见 memory-role-pack-boundary.md §四档 3）。
 
 **演进状态**：当前实现为「双轨中间态」（角色包与 PersonaManager/SkillManager 并存，[assembler.ts](../../src/agent/assembler.ts:234) 角色包优先、persona 兜底）；按档 0→3 渐进收敛至本目标态。
 

@@ -27,7 +27,7 @@ Memora 内核已有完整的记忆 score 治理机制：
 - 谓词常量集中在 [governance.ts](../../src/memory/governance.ts)（SSOT）：`DECAY_AGE_DAYS=7` / `DECAY_FLOOR=0.1` / `DECAY_AMOUNT=0.02`。
 - **事实**：`GOVERNANCE_SOURCES=[]`（作品投影移出记忆库后治理空转）。即**当前无记忆实际在衰减**。因此 `listFading` 定位为**通用健康观测**（凡久未访问即可能"被遗忘"，与是否真的进了治理源无关），而非修复衰减空转——那是另一个独立议题，不在 C1 范围。
 
-## 三、设计（排雷修正版 2026-08-21）
+## 三、设计
 
 > **本次排雷决定性修正（R5）**：原案"给 `IMemoryStorage` 加必选/可选接口方法"被 **排雷否决**——当前无宿主真实消费点，预埋存储接口违反自然生长（ADR-017 Scenario B「无明确消费者暂缓」）。收敛为：**内核只落 `MemoryInspector.listFading` 一个只读出口 + InMemory 实现**，**暂不动 `IMemoryStorage` 接口**；待宿主记忆面板真实接入（≥1 消费，S2 触发）后再下沉存储接口方法。这消除了 R3（可选方法静默降级）、R1（签名语义散落）两个架构雷。
 
@@ -52,7 +52,7 @@ listFading(opts?: { limit?: number }): FadingMemory[];
 - `daysSinceAccess` 计算复用 `ONE_DAY_MS`——**其上提至 `utils/time.ts`**（当前散落 `memory/recall.ts:26` + `memoryAdvisor.test.ts:20`，SSOT 收敛），Inspector 引用 `utils/time` 避免 agent→memory 内部常量反向语义。
 - 排序的"低分"沿用 `DECAY_FLOOR` 概念（越低越接近沉底），不引入新阈值。
 
-### 3.3 分层落点（排雷收敛 · 2026-08-21 更新：可选方法下沉）
+### 3.3 分层落点（可选方法下沉）
 
 > **下沉策略**：经评估，`IMemoryStorage` 是内核对外契约（2 个宿主实现 + 已发布副本）。为守内核契约纯洁性、不破坏旧宿主，采用**可选方法**（与 `close?` 同风格）。`listFading?` 宿主可不实现，未实现时上层 `MemoryInspector` 走 `search('')+本地过滤` 回退；宿主实现时可用一条 SQL 高效完成。探索期**不强改旧宿主**。
 
@@ -94,14 +94,6 @@ interface FadingMemory {
 - 宿主记忆管理视图展示「可能遗忘 N 条」区（对应用户"主动可见"体验原则）；
 - **消费达到 S2 触发条件（宿主 src≥1 引用 `MemoryInspector.listFading` 真实调用）后**：① 固化为 ADR；② 届时再评估是否下沉 `IMemoryStorage` 接口方法（当前预埋收益 < 契约成本）。
 
-## 六、待办（排雷修正 · 2026-08-21 已实施）
+## 六、实施约束（R5 收敛）
 
-> **验证**：tsc --noEmit 零错误 · 全量 vitest 94 文件 / 2365 passed / 1 skipped。memoryInspector 新增 7 用例（48 passed）。
-
-- [x] `utils/time.ts` 上提 `ONE_DAY_MS`（recall.ts 改写引用 + `memoryAdvisor.ts`/`inMemoryStorage.test.ts`/`recall.test.ts`/`memoryAdvisor.test.ts` 导入同步），SSOT 收敛；并新增 `daysBetween` 通用天数差函数
-- [x] `utils/array.ts` 新增 `byFadingAsc`（accessedAt 升序 + score 升序）
-- [x] `MemoryInspector.listFading(opts?)`：遍历候选 + `DECAY_AGE_DAYS` 阈值 + limit 校验 + 空 `[]` 兜底 + `daysSinceAccess` 计算 + `FadingMemory` 类型导出至 `src/index.ts`
-- [x] 单测：排序顺序（久未在前/低分优先）/ 阈值过滤 / limit 校验 / 空库返回 `[]` / daysSinceAccess 计算 / contentPreview 截断
-- [x] tsc --noEmit 零错误 + 全量测试通过
-
-**注意**：本轮按排雷 R5 收敛，**未改动 `IMemoryStorage` 接口**（仅 Inspector 层 + 复用 `index.search('')` 遍历）。宿主接入后若量大，再评估下沉存储 SQL / 接口方法（见 §五 S2 触发）。
+> **未改动 `IMemoryStorage` 接口**（仅 Inspector 层 + 复用 `index.search('')` 遍历，见 §3.1）。宿主接入后若量大，再评估下沉存储 SQL / 接口方法（见 §五 S2 触发）。

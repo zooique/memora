@@ -44,7 +44,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
-| `cli/`（已移出内核，宿主项目自行实现） | 历史参考：解析命令、REPL 循环、用户交互（精灵宿主使用 Electron 主进程替代） | 直接调数据库（应通过 memory/ 层）             |
+| `cli/`（已移出内核，宿主项目自行实现） | 历史参考：解析命令、REPL 循环、用户交互 | 直接调数据库（应通过 memory/ 层）             |
 | `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager/服务类（17 个：ArchiveCoordinator/AutoConfigRefiner/ChatLock/Config/DedupManager/GoalConsistencyChecker/LlmJudgeHelper/MemoryAdvisor/MemoryDecay/MemoryGovernance/MemoryInspector/RoundSummaryGenerator/SessionArchiver/SessionManager/StreamAccumulator/TextPolish/WorkProjection）+ 聚合门面（memoryGovernance，聚合 L0-L3 治理委托）+ 辅助模块（llmJudgeHelper/streamAccumulator）+ 对话快照 + 作品投影<br>**注**：Agent 门面类总计持有约 **23 个组件字段**——其中 14 个为直接持有的专职 Manager 字段（managers/ 下 17 个文件中另 3 个——goalConsistencyChecker/llmJudgeHelper/streamAccumulator——由 SessionManager 等内部组合持有），其余 9 个为来自其他层的引用（projectManager/history/loop/toolExec/personaManager/skillManager/rolePackManager/pctx/composer）。新增 Manager 时请同步更新此计数。 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装 | 直接调 LLM                                      |
@@ -96,7 +96,7 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 |----|------|
 | IMemoryStorage 接口 | 所有方法同步（与 better-sqlite3 API 对齐） |
 | 适用环境 | Node.js 专用内核，不支持浏览器直接运行 |
-| 浏览器访问方案 | 通过宿主层 Web 调试通道（`hosts/memora-sprite/src/web/`），HTTP 路由消费 HostContext |
+| 浏览器访问方案 | 通过宿主层 Web 通道，HTTP 路由消费 HostContext |
 | 异步存储后端 | 不支持。未来如需 IndexedDB 等异步后端，需先启动 IAsyncMemoryStorage 预研（触发条件见 ADR-002） |
 | VectorStore 例外 | 语义搜索 `search()` 返回 `Promise<Memory[]>`（网络调用必须异步），与 IMemoryStorage 同步接口并行无冲突 |
 
@@ -120,22 +120,3 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 ## 新增模块流程
 
 > 详见 [new-module-guide.md](./new-module-guide.md)
-
-## 前端 CSS 三层作用域模型
-
-> **来源**：[ADR-018 · CSS 作用域规范](../decisions/ADR-018-css-scoping-convention.md)
-> **适用范围**：精灵宿主渲染进程（`hosts/memora-sprite/src/electron/renderer/styles/`）
-
-| 层级 | 作用域 | 命名规范 | 文件归属 |
-|------|--------|----------|----------|
-| **L1 全局基础** | 跨面板共享的设计令牌与原子类 | `--var-xxx` 变量 / `.btn-primary` 等通用组件类 | tokens.css + base.css + layout.css 的 `#app`/`#titlebar`/`#sidebar`/`.panel`/`.nav-btn` 等 |
-| **L2 面板专属** | 单个面板内的所有样式 | **面板前缀 + BEM**（如 `.perception-affect-grid`） | `<panel>.css`（如 perception.css） |
-| **L3 组件局部** | 可复用的独立组件（modal/toast/dropdown） | 组件名 + BEM | modal.css / toast.css 等独立组件文件 |
-
-**核心约束**：
-
-- 面板专属类必须加面板前缀（`perception-` / `dashboard-` / `memory-` / `settings-`），chat 主面板例外
-- L2 面板之间不得相互依赖——如需覆盖说明类名复用出错
-- 单一真理源——每个面板样式集中在单一 CSS 文件，禁止跨文件重复定义
-- CSS 加载顺序遵循 L1 → L3 → L2 依赖链
-- 违反约束的典型表现：BARE 类（无前缀通用类）被其他面板 DOM 继承导致属性污染（如 layout.css 中曾存在的 `.affect-label` 固定宽度被感知面板继承导致文字截断）

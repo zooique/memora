@@ -1,13 +1,15 @@
 ---
 alwaysApply: false
-description: Agent 归档模式（full / insights-only / manual）三态控制
+description: Agent 归档模式（full / manual 二态；insights-only 已随洞察层移除收敛）
 ---
 
 # ADR-015 · Agent 归档模式三态控制
 
-> **状态**：✅ 已接受（content 列于 GAP-2 落地后完整生效；GAP-2 已于 2026-07-03 落地，三态归档完整生效）
+> **状态**：✅ 已接受（ArchiveMode 现状收敛为**二态 full / manual**）
 > **日期**：2026-07-02（新枝破土·GAP-1 收敛）/ 2026-07-03（GAP-2 收敛）
 > **来源**：新枝破土循环——扫描发现 archiveMode 硬约束在 user_profile.md / project_memory.md 中明确记载，但源代码中完全未实现
+
+> **🔁 收敛声明（2026-08-14 洞察层移除）**：`insights-only` 模式以及 profile/insight 提炼类归档，随「洞察层移除」一并失效——`UserProfile`/`InsightExtractor` 已移除，`ArchiveMode` 三态缩为**二态 full / manual**。下文遗留的 insights-only / profile / insight 描述均为历史，以本收敛声明为准。**仍生效部分**：`full` 模式下 `content` 会话归档（SessionArchiver）与 `archiveSessionContent` 手动 API 不变（见 api-reference `AgentOptions.archiveMode`）。
 
 ## 背景
 

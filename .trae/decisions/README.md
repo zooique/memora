@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：36（内核 23 + 精灵 12 + 插件 1）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **范围**：内核 + 插件宿主（memora-vscode）
 
 ---
 
@@ -38,32 +38,17 @@ description: Memora 关键决策年轮
 | [ADR-024](./ADR-024-session-title-layer.md) | 会话标题层：身份与展示标题解耦，首轮闭环自动命名 + 手动改名透传 | ✅ 已接受 | 架构 |
 | [ADR-025](./ADR-025-memory-role-pack-boundary.md) | 记忆系统 × 角色包边界收敛：设定记忆归角色包，记忆库 = 摘要记忆本体 | ✅ 已接受 | 架构 |
 
-### 精灵宿主（SP 系列）
-
-| ID                                                  | 标题                                              | 状态      | 类别   |
-| --------------------------------------------------- | ------------------------------------------------- | --------- | ------ |
-| [ADR-SP-001](./ADR-SP-001-runtime.md)              | 运行时栈：Node.js 24 LTS + TS5 + ESM              | ✅ 已接受 | 运行时 |
-| [ADR-SP-002](./ADR-SP-002-storage.md)              | 存储层：better-sqlite3 + 同库会话                  | ✅ 已接受 | 数据层 |
-| [ADR-SP-003](./ADR-SP-003-desktop-shell.md)        | 桌面壳：阶段一 CLI → 阶段二 Electron              | ✅ 已接受 | 形态   |
-| [ADR-SP-004](./ADR-SP-004-perception.md)           | 感知原则：上下文感知而非内容感知                   | ✅ 已接受 | 安全   |
-| [ADR-SP-005](./ADR-SP-005-package-management.md)   | 包管理：npm + file: 协议                           | ✅ 已接受 | 工程   |
-| [ADR-SP-006](./ADR-SP-006-testing.md)              | 测试：Vitest + InMemoryStorage + 临时 SQLite       | ✅ 已接受 | 质量   |
-| [ADR-SP-007](./ADR-SP-007-directory-structure.md)  | 目录结构：hosts/memora-sprite/ 按职责分层          | ✅ 已接受 | 工程   |
-| [ADR-SP-008](./ADR-SP-008-v8-ui-refactor.md)       | v8 UI 重构：双主题 CSS 变量 + 悬浮核心窗口         | ✅ 已接受 | 前端   |
-| [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) | PanelManager 组合模式约定（阶段 C 架构演进沉淀） | ✅ 已接受 | 架构   |
-| [ADR-SP-016](./ADR-SP-016-ui-mixin-pattern.md) | UIManager Mixin 拆分模式（applyMixins + uiDelegations/ 委托群） | ✅ 已接受 | 架构 |
-| [ADR-SP-017](./ADR-SP-017-quick-input-architecture.md) | 快速输入浮窗架构：窗口管理器内联 IPC + Controller/Completion 双类解耦 + LLM 回调注入 | ✅ 已接受 | 架构 |
-| [ADR-SP-018](./ADR-SP-018-cross-process-encoding.md) | 跨进程非 ASCII 数据传递：文件 I/O + 原始数据提取（绕过 nut-js 编码 bug + stdout 管道污染 + 竞态条件） | ✅ 已接受 | 工程 |
-
 ### 插件宿主（VC 系列）
 
 | ID                                                  | 标题                                              | 状态      | 类别   |
 | --------------------------------------------------- | ------------------------------------------------- | --------- | ------ |
-| [ADR-VC-001](./ADR-VC-001-vscode-plugin-host.md)   | VS Code 插件作为 memora 内核宿主（第二宿主，比 sprite 更薄） | ✅ 已接受 | 形态   |
+| [ADR-VC-001](./ADR-VC-001-vscode-plugin-host.md)   | VS Code 插件作为 memora 内核宿主 | ✅ 已接受 | 形态   |
 
-> **跳号说明**：ADR-005（内核）和 ADR-SP-009~014（精灵）序号保留未使用——内核 005 跳号因初始设计被 ADR-004 合并；精灵 SP-009~014 跳号因精灵 ADR 编号策略与内核 SP 序号对齐，预留 SP-009~014 给未来与内核 SP 序号对齐的扩展。当前精灵 ADR 直接从 SP-008 跳到 SP-015。ADR-017-web-search 为 ADR-017 的同号子模块决策（Web 搜索能力，2026-07-30 回溯补录）；ADR-VC 系列为插件宿主（VS Code）专用前缀，与内核 / 精灵序号互不占用。
+> **跳号说明**：ADR-005（内核）序号保留未使用（初始设计被 ADR-004 合并）；ADR-017-web-search 为 ADR-017 的同号子模块决策（Web 搜索能力，2026-07-30 回溯补录）；ADR-VC 系列为插件宿主（VS Code）专用前缀，与内核序号互不占用。
 >
 > **深度剪枝（2026-08-19）**：删除 ADR-009（专注模式，零消费）与 ADR-012（领域切换，已废弃）。序号保持空缺不重用——编号是历史的稳定标识，废弃即让位，避免序号错乱。
+>
+> **精灵宿主独立（2026-08-21）**：ADR-SP 系列（精灵宿主决策，SP-001~008/015~018）随精灵独立仓库开发，已从本仓库 decisions 移除并归档至精灵仓库。本仓库决策年轮仅保留内核 + 插件宿主（memora-vscode，第一宿主）。
 
 ---
 
@@ -71,15 +56,15 @@ description: Memora 关键决策年轮
 
 | 类别   | 数量 | ADR 列表             |
 | ------ | ---- | -------------------- |
-| 运行时 | 2    | ADR-001, ADR-SP-001  |
-| 数据层 | 3    | ADR-002, ADR-016, ADR-SP-002 |
+| 运行时 | 1    | ADR-001 |
+| 数据层 | 2    | ADR-002, ADR-016 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 14   | ADR-004, ADR-010~015, ADR-021~025, ADR-SP-015, ADR-SP-016, ADR-SP-017 |
-| 安全   | 2    | ADR-006, ADR-SP-004 |
-| 质量   | 2    | ADR-007, ADR-SP-006 |
-| 工程   | 6    | ADR-008, ADR-017, ADR-020, ADR-SP-005, ADR-SP-007, ADR-SP-018 |
-| 前端   | 3    | ADR-018, ADR-019, ADR-SP-008 |
-| 形态   | 2    | ADR-SP-003, ADR-VC-001 |
+| 架构   | 11   | ADR-004, ADR-010~015, ADR-021~025 |
+| 安全   | 1    | ADR-006 |
+| 质量   | 1    | ADR-007 |
+| 工程   | 3    | ADR-008, ADR-017, ADR-020 |
+| 前端   | 2    | ADR-018, ADR-019 |
+| 形态   | 1    | ADR-VC-001 |
 
 ---
 

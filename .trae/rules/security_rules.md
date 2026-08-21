@@ -20,7 +20,7 @@ description: 安全规范（最小权限、显式允许、审计可追溯）
 **4 类允许**：
 
 - ✅ 项目目录（`process.cwd()`）
-- ✅ 数据目录（内核由宿主通过 `MEMORA_DATA_DIR` 环境变量注入 / `~/.memora-sprite/` 精灵宿主）
+- ✅ 数据目录（内核由宿主通过 `MEMORA_DATA_DIR` 环境变量注入）
 - ✅ 用户显式白名单（`config.allowedPaths`）
 - ✅ stdout/stderr（不需要路径）
 
