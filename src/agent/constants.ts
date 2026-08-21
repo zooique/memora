@@ -153,4 +153,11 @@ export const LOOP_CONSTANTS = {
    * 见 memora-polish-roadmap T3）。
    */
   REASONING_INPUT_CHARS: 500,
+
+  /**
+   * 任务分类检测窗口：determineTaskType 从后向前取最近 N 条 user 消息做代码块检测，
+   * 避免多轮对话中"含代码的请求不在最后一条"被误判为 simple（错配 Provider 成本失真）。
+   * 长文本（reasoning）判定仍以最近一条 user 消息为准（反映当前轮意图）。
+   */
+  TASK_TYPE_WINDOW: 3,
 } as const;

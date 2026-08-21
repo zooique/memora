@@ -106,8 +106,12 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     expect(LOOP_CONSTANTS.SUMMARY_MAX_TOKENS).toBe(150);
   });
 
+  it('任务分类检测窗口应为 3 条 user 消息（多轮含代码请求不误判）', () => {
+    expect(LOOP_CONSTANTS.TASK_TYPE_WINDOW).toBe(3);
+  });
+
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(13);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(14);
   });
 });

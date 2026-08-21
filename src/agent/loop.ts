@@ -881,16 +881,21 @@ export class AgentLoop {
 
   /** 确定当前回合任务类型（多模型路由）：含代码块→code；长文本(>500字符)→reasoning；其余→simple */
   private determineTaskType(messages: readonly Message[]): TaskType {
-    // 从后向前查找最后一条 user 消息
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
-    const content = lastUserMsg?.content ?? '';
+    // 从后向前取最近 N 条 user 消息作为检测窗口（多轮对话中真正含代码的请求可能不在最后一条）
+    const recentUserContents: string[] = [];
+    for (let i = messages.length - 1; i >= 0 && recentUserContents.length < LOOP_CONSTANTS.TASK_TYPE_WINDOW; i--) {
+      if (messages[i]?.role === 'user') {
+        recentUserContents.push(messages[i]!.content ?? '');
+      }
+    }
 
-    // 代码相关关键词检测：含代码块标记
-    if (/```(?:ts|js|py|go|rust|java|css|html|sql)\b/i.test(content)) {
+    // 代码相关关键词检测：窗口内任一条含代码块标记 → code（避免含代码请求被后续追问稀释误判）
+    if (recentUserContents.some((c) => /```(?:ts|js|py|go|rust|java|css|html|sql)\b/i.test(c))) {
       return 'code';
     }
-    // 长文本复杂推理判定（阈值归入 LOOP_CONSTANTS）
-    if (content.length > LOOP_CONSTANTS.REASONING_INPUT_CHARS) {
+    // 长文本复杂推理判定（以最近一条 user 消息反映当前轮意图；阈值归入 LOOP_CONSTANTS）
+    const lastContent = recentUserContents[0] ?? '';
+    if (lastContent.length > LOOP_CONSTANTS.REASONING_INPUT_CHARS) {
       return 'reasoning';
     }
     return 'simple';

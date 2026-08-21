@@ -11,6 +11,7 @@
 > | 第一至七部分（初稿） | T1/T3 收敛**前**（11 离散 setter / 魔数分散 / agent.ts 133KB） | 初稿基准 |
 > | 第八部分（同日复核，2026-08-19） | T1/T3 收敛**后**（单一 `L2RuntimeStrategy` / 魔数入常量 / agent.ts 104.2KB） | git `d914f25e` |
 > | N1 落地复核（2026-08-19） | `DEFAULT_TOKEN_BUDGET`/`DEFAULT_STEP_BUDGET` 单一来源收敛后 | git `d914f25e` |
+> | 8.5 复核（2026-08-21） | 门面最小切片（`Agent.internals` 聚合 12 纯内部组件，字段 51→40）+ 召回排除剪枝 + `determineTaskType` 窗口加固后 | git `686073bb`（见 [8.5](#85-后续复核-2026-08-21)） |
 >
 > **维护规则**：每次内核大收敛（策略/魔数/名实变更）后，复用 `prompts/` 下既有审查提示词重核本表，并更新上行数字；正文旧断言以第八部分及本表为准，不另改历史段落。
 
@@ -154,3 +155,30 @@ memora 主张"策略是枚举，角色只选择不定义"（SSOT），正确落�
 
 - "设计思维强"（单轮闭环/触发源决定召回、记忆一等公民、可追溯性）**全部经代码证实**。
 - "实现膨胀"最重的 3 条（133KB/2293行/11 setter/魔数分散）中 **2 条为延迟复述且已被同日收敛修复**；**真正站得稳的剩余问题**：`agent.ts` 仍持 ~20 组件字段（属实质）、**文档-代码脱节（最该治理）**、`determineTaskType` 脆弱。
+
+---
+
+## 8.5 后续复核（2026-08-21 · 门面最小切片 + 召回剪枝 + 路由加固后）
+
+> 依据用户「问诊：炼化归元 + 提交推送」按 8.4 遗留问题逐项处理。**行号一律改为锚定稳定符号（函数/常量名），不再引用易漂移的行号。**
+
+### 8.5.1 8.4 遗留问题处置
+
+| 8.4 遗留问题 | 处置 | 状态 |
+|-------------|------|------|
+| `agent.ts` 仍持 ~20 组件字段 | **门面最小切片**：新增 `Agent.internals` 聚合对象（[agent.ts](../src/agent/agent.ts#L121-L163)），12 个无宿主 getter 契约的纯内部组件收编；宿主 getter 契约字段（memory/works/polish/sessionManager 等）保持独立。扁平 private 字段 **51 → 40**，nullify 生命周期样板收敛 | ✅ 已收敛（git `686073bb`） |
+| 文档-代码脱节（最该治理） | 本轮以"版本同频对表 + 8.5 复核"追加维护，正文旧断言不改（遵 8.0 维护规则）；行号引用改为函数/常量名锚定 | ✅ 已治理 |
+| `determineTaskType` 脆弱 | **窗口加固**：[loop.ts determineTaskType](../src/agent/loop.ts#L882-L902) 检测窗口从"最后一条 user"扩到最近 `TASK_TYPE_WINDOW=3` 条（[constants.ts](../src/agent/constants.ts#L157-L162)），多轮含代码请求不误判 code；reasoning 仍以最近一条为准 | ✅ 已加固（见 8.5.2） |
+
+### 8.5.2 determineTaskType 加固细节
+
+- **旧实现**：`[...messages].reverse().find(m => m.role === 'user')` 只取最后一条 user，代码块正则 + `>500` 长度阈值。
+- **脆弱点**：多轮对话中真正含代码的请求若不在最后一条 → 误判 simple → 错配 Provider（成本/质量失真）。
+- **加固**：从后向前取最近 `TASK_TYPE_WINDOW=3` 条 user 消息，窗口内**任一条**含代码块 → `code`；长文本（reasoning）仍以最近一条 user 为准（反映当前轮意图）。补充多轮回归测试（上一轮代码 + 本轮追问 → code）。
+- **边界**：这是内核启发式（Provider 路由内部决策），不开放角色包配置（遵 8.0 对 `REASONING_INPUT_CHARS` 的同类判断）。
+
+### 8.5.3 当前体量（2026-08-21 实测，`Get-Content | Measure-Object`）
+
+- `agent.ts`：**1752 行**（门面最小切片后扁平字段 40，含 `internals` 聚合）。
+- `loop.ts`：**1591 行**（determineTaskType 加固后）。
+- 行号引用更新原则：本小节后一律用**符号锚定**（如 [Agent.internals](../src/agent/agent.ts#L121-L163) / [determineTaskType](../src/agent/loop.ts#L882-L902)），行号仅作定位辅助、不承诺长期稳定。

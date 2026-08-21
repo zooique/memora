@@ -1694,6 +1694,34 @@ describe('AgentLoop · 多模型路由', () => {
     expect(texts[0]).toBe('简单回答');
   });
 
+  it('多轮对话：上一轮含代码块、本轮追问 → 仍路由到 code（检测窗口覆盖最近 N 条 user）', async () => {
+    // 回归：老实现只取最后一条 user 消息，本轮追问（无代码）会误判 simple → 错配 Provider
+    const codeProvider = mockProvider([{ content: '代码分析结果' }]);
+    const fallbackProvider = mockProvider([{ content: '通用回复' }]);
+    const routerSpy = vi.fn().mockImplementation((taskType: string) => {
+      return taskType === 'code' ? codeProvider : fallbackProvider;
+    });
+
+    const loop = new AgentLoop({
+      provider: fallbackProvider,
+      providerRouter: routerSpy,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 第一轮：贴代码请求
+    for await (const chunk of loop.processUserInput('```ts\nconst x = 1\n```')) {
+      void chunk;
+    }
+    // 第二轮：本轮无代码块（简单追问），但窗口内上一轮含代码 → 仍应判 code
+    for await (const chunk of loop.processUserInput('这个类型是什么？')) {
+      void chunk;
+    }
+
+    // 第二轮路由应命中 code（检测窗口 = 最近 3 条 user，含上一轮代码请求）
+    expect(routerSpy).toHaveBeenCalledWith('code');
+  });
+
   it('不配置 providerRouter 时应使用默认 Provider（向后兼容）', async () => {
     const defaultProvider = mockProvider([{ content: '默认回复' }]);
 
@@ -2518,22 +2546,22 @@ describe('AgentLoop · Provider 路由缓存', () => {
       providerRouter: router,
     });
 
-    // 代码块 → code
-    for await (const chunk of loop.processUserInput('```ts\ncode\n```')) {
+    // 短消息 → simple
+    for await (const chunk of loop.processUserInput('你好')) {
       void chunk;
     }
     // 长消息 → reasoning
     for await (const chunk of loop.processUserInput('A'.repeat(600))) {
       void chunk;
     }
-    // 短消息 → simple
-    for await (const chunk of loop.processUserInput('你好')) {
+    // 代码块 → code（放最后：代码进入 TASK_TYPE_WINDOW 后后续轮也会判 code，此处验证缓存隔离故置于末尾）
+    for await (const chunk of loop.processUserInput('```ts\ncode\n```')) {
       void chunk;
     }
 
     // 三个不同 taskType，每轮 processUserInput 清空缓存，应调用 3 次
     expect(router).toHaveBeenCalledTimes(3);
-    expect(routerCalls).toEqual(['code', 'reasoning', 'simple']);
+    expect(routerCalls).toEqual(['simple', 'reasoning', 'code']);
   });
 
   it('processUserInput 间应清空缓存（跨轮不复用）', async () => {
