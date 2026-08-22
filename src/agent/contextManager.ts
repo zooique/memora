@@ -22,6 +22,11 @@ import { logger } from '@/logging/logger.js';
 import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
 import { isAbortError } from '@/utils/errors.js';
 
+/** 软上限摘要化判定标记：第一级替换产物文案前缀（compaction.ts ReplaceRoundsStrategy） */
+export const SOFT_LIMIT_SUMMARY_MARKER_ROUND = 'Round summary · roundId:';
+/** 软上限摘要化判定标记：第二级压缩产物文案前缀（loop.compressContext） */
+export const SOFT_LIMIT_SUMMARY_MARKER_COMPRESS = 'Compressed context';
+
 /** ContextManager 构造选项（模块私有，0 外部 import） */
 interface ContextManagerOptions {
   /** 上下文窗口 token 上限 */
@@ -178,6 +183,27 @@ export class ContextManager {
   /** token 超阈值且消息数 > 3（避免单条消息触发截断）时才需要截断 */
   shouldTruncate(messages: readonly Message[]): boolean {
     return this.estimateTokens(messages) > this.maxContextTokens && messages.length > 3;
+  }
+
+  /**
+   * 软上限判定：上下文逼近容量上限（≥ 缓冲阈值）且已出现摘要化产物时，注入收尾信号让 LLM 收敛。
+   * 从 AgentLoop._shouldInjectSoftLimitWrapup 迁入（与 estimateTokens/maxContextTokens 同属上下文预算层）。
+   *
+   * @param messages 当前工作记忆（读型判定，不修改）
+   * @returns 是否应注入软上限收尾信号
+   */
+  shouldInjectSoftLimitWrapup(messages: readonly Message[]): boolean {
+    // 容量阈值：上下文逼近 maxContextTokens 警戒线（≥ CONTEXT_TOKENS_BUFFER_RATIO）
+    const currentTokens = this.estimateTokens(messages);
+    if (currentTokens < this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
+      return false;
+    }
+    // 摘要化佐证：上下文存在替换/压缩摘要产物（正文已大量摘要化）
+    return messages.some(
+      (m) =>
+        m.content.includes(SOFT_LIMIT_SUMMARY_MARKER_ROUND) ||
+        m.content.includes(SOFT_LIMIT_SUMMARY_MARKER_COMPRESS),
+    );
   }
 
   /**
