@@ -94,20 +94,16 @@
               "enum": ["fixed", "query", "hybrid"],
               "description": "最近轮次加载策略（[草案]）"
             },
-            "recentRounds": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "固定加载轮数（冻结，memora 真实消费）"
-            },
             "memoryRecall": {
               "type": "string",
               "enum": ["full", "limited", "none"],
               "description": "长期记忆召回策略（冻结）"
             },
-            "memoryRecallQuota": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "记忆召回限额 token（冻结，由实现提炼进标准）"
+            "memoryRecallPercent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "记忆召回占可用预算的百分比 cap（[草案]，0.0~1.0，默认 0.4）"
             },
             "summaryRecall": {
               "type": "string",

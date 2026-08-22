@@ -190,7 +190,7 @@ interface LlmProvider {
   "strategy": {
     "prepare": {
       "memoryRecall": "full",
-      "memoryRecallQuota": 2000
+      "memoryRecallPercent": 0.4
     },
     "act": {
       "toolMode": "allow",

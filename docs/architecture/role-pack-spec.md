@@ -62,7 +62,7 @@
   "author": "memora",
   "interactionType": "tool_assistant",
   "strategy": {
-    "prepare": { "contextAssembly": "fixed", "recentRounds": 5 },
+    "prepare": { "contextAssembly": "fixed", "memoryRecallPercent": 0.4 },
     "act": { "toolMode": "allow", "temperature": 0.6 },
     "reflect": { "handoff": "wait" }
   },
@@ -389,9 +389,9 @@ export interface IMcpTransport {
 | 组 | 键 | 取值（枚举） | 含义 | 状态 | 实现消费要求 |
 |----|----|------------|------|------|------------|
 | prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | `[草案]` | 无参考实现消费，待验证 |
-| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数（**废弃**：被「上下文预算装配」动态轮数取代，见本节文末） | 废弃 | 仅过渡期保留；动态填充后轮数为派生值，不再显式声明 |
+| prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数（**删除**：被「上下文预算装配」动态轮数取代，见本节文末；实现直接移除，不留过渡兼容） | 废弃 | 动态填充后轮数为派生值，不再显式声明 |
 | prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
-| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token，绝对量） | 冻结 | memora 消费（agent.ts 限额召回：limited 模式下将 token 配额换算为字符预算，对召回结果做有界裁剪）；**语义拟演进**：动态容量下绝对 token 不自洽，拟改「百分比」（见本节文末） |
+| prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token，绝对量）（**删除**：过渡到百分比，见本节文末；实现直接移除 `resolveMemoryRecallQuota`） | 废弃 | limited 裁剪改为按 `memoryRecallPercent` cap 换算 |
 | prepare | `prepare.memoryRecallPercent` | 0.0~1.0（角色包设） | 记忆召回占可用预算的百分比（cap 非 quota）：记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 剩余预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写 | `[草案]` | 通过验证门后冻结；拟取代 `memoryRecallQuota` 的绝对值语义 |
 | prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |
 | prepare | `prepare.summaryFocus` | 非空字符串 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结 | 由实现提炼进标准（结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
@@ -507,8 +507,8 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 
 #### F. 受影响键与互斥约束
 
-- **废弃**：`recentRounds`（轮数语义消失，动态填充后轮数为派生值）。
-- **拟演进**：`memoryRecallQuota`（绝对 token 语义在动态容量下不自洽，拟由键① `memoryRecallPercent` 取代，过渡期两者并存，通过验证门后老键降级为别名）。
+- **删除**：`recentRounds`（轮数语义消失，动态填充后轮数为派生值；实现直接移除，不留过渡兼容）。
+- **删除**：`memoryRecallQuota`（绝对 token 语义在动态容量下不自洽，由键① `memoryRecallPercent` 取代；实现直接移除 `resolveMemoryRecallQuota`）。
 - **开关保留**：`contextAssembly`（fixed/query/hybrid）语义保留，仅「fixed/hybrid 的最近对话装载」由固定 N 轮改按预算填充。
 - **互斥约束**：记忆摘要层与完整对话层须维持互斥。**互斥是"完整对话层实际注入轮数"这个事实的派生物**（不是独立参数）：`excludeRoundIds` = 完整对话层注入的正文轮次集合，记忆摘要层只装这些轮次之外的旧摘要——因果闭合，无需单独计算窗口（洞 2 解法）。
 
