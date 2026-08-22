@@ -23,7 +23,7 @@ import {
   resolveSummaryRecall,
 } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
-import { computeContextBudget } from '@/agent/budget.js';
+import { computeContextBudget, isInputTooLarge } from '@/agent/budget.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -174,6 +174,23 @@ export class ContextPreparer {
       inputTokens,
       memoryRecallPercent: resolveMemoryRecallPercent(strategy),
     });
+
+    // ── 装配前判负（洞 3 独立路径） ──
+    // 顶级锚点划走后剩余预算低于最小可运行阈值 → 该输入无法支撑至少一轮正文，
+    // 装配前确定性降级（跳过召回与完整对话层注入），并通知宿主提示放文件用 read_file 读。
+    // 与软上限（摘要饱和）是不同失败原因，不占用软上限统计。
+    if (isInputTooLarge(budget)) {
+      deps.emit(AGENT_EVENTS.inputTooLarge, {
+        inputLength: input.length,
+        remainingTokens: budget.remainingTokens,
+        hint: '内容过大，建议放进文件用 read_file 读',
+      });
+      logger.warn(
+        { inputLength: input.length, remainingTokens: budget.remainingTokens },
+        '装配前判负：输入过大，跳过召回与完整对话层注入',
+      );
+      return [];
+    }
 
     // 派生完整对话层轮次集合（动态轮数 + 第一条必在场，次级锚点）
     const dialogue = loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens);

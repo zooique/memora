@@ -22,6 +22,10 @@ export const DEFAULT_DIALOGUE_FILL_RATIO = 0.9;
 /** 顶级锚点倍数：触发输入 + 首个回答（首个回答暂以输入长度估算，双倍输入） */
 export const DEFAULT_ANCHOR_ANSWER_FACTOR = 2;
 
+/** 最小可运行对话层余量（token）：剩余预算低于此值判定「输入过大」装配前判负。
+ *  洞 3：触发输入本身过大是与软上限不同的失败原因，走独立装配前判负路径，不污染软上限统计。 */
+export const MIN_RUNNABLE_DIALOGUE_TOKENS = 128;
+
 /** 预算计算入参 */
 export interface ContextBudgetInput {
   /** Provider 窗口容量（token）——优先 provider contextWindow，缺失降级 maxContextTokens */
@@ -88,6 +92,15 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
     dialogueBudgetTokens,
     memoryLayerCapTokens,
   };
+}
+
+/**
+ * 装配前判负（洞 3 独立路径）：顶级锚点（触发输入 + 首个回答）划走后剩余预算低于
+ * 最小可运行阈值 → 该输入无法支撑至少一轮正文，装配前确定性拒绝/降级。
+ * 与软上限（摘要饱和）是不同失败原因：走独立路径，不占用软上限统计。
+ */
+export function isInputTooLarge(budget: ContextBudget): boolean {
+  return budget.remainingTokens < MIN_RUNNABLE_DIALOGUE_TOKENS;
 }
 
 /** 完整对话层轮次派生结果 */

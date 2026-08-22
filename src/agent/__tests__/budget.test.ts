@@ -10,6 +10,8 @@ import { describe, it, expect } from 'vitest';
 import {
   computeContextBudget,
   deriveDialogueRounds,
+  isInputTooLarge,
+  MIN_RUNNABLE_DIALOGUE_TOKENS,
   DEFAULT_OUTPUT_RESERVE_RATIO,
   DEFAULT_DIALOGUE_FILL_RATIO,
 } from '@/agent/budget.js';
@@ -136,5 +138,28 @@ describe('deriveDialogueRounds · 完整对话层轮次派生（动态轮数 + �
     const result = deriveDialogueRounds([800], 1000);
     expect(result.recentRoundCount).toBe(1);
     expect(result.firstRoundIncluded).toBe(false);
+  });
+});
+
+describe('isInputTooLarge · 装配前判负（洞 3 独立路径）', () => {
+  it('剩余预算低于最小可运行阈值 → 输入过大', () => {
+    // 超大输入：锚点划走剩余预算归零
+    const budget = computeContextBudget({
+      windowTokens: 10_000,
+      fixedOverheadTokens: 2_000,
+      inputTokens: 20_000,
+    });
+    expect(budget.remainingTokens).toBe(0);
+    expect(isInputTooLarge(budget)).toBe(true);
+  });
+
+  it('剩余预算充足 → 判定非输入过大（正常装配路径）', () => {
+    const budget = computeContextBudget({
+      windowTokens: 120_000,
+      fixedOverheadTokens: 5_000,
+      inputTokens: 100,
+    });
+    expect(budget.remainingTokens).toBeGreaterThan(MIN_RUNNABLE_DIALOGUE_TOKENS);
+    expect(isInputTooLarge(budget)).toBe(false);
   });
 });

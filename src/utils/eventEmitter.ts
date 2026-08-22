@@ -27,6 +27,8 @@ export const AGENT_EVENTS = {
   sessionResumeFailed: 'sessionResumeFailed',
   /** LLM 生成完任务表，宿主可展示接受/丢弃入口 */
   taskTableGenerated: 'taskTableGenerated',
+  /** 装配前判负（洞 3）：触发输入过大，剩余预算无法支撑至少一轮正文——与软上限不同失败原因 */
+  inputTooLarge: 'inputTooLarge',
   needClarify: 'needClarify',
   /** 回答中 LLM 输出 [ASK] 时主动提问（与 needClarify 共享暂停/恢复机制） */
   questionPending: 'questionPending',
@@ -68,6 +70,12 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   sessionResumeBlocked: { sessionId: string; reason: string };
   sessionResumeFailed: { sessionId?: string; reason: string };
   needClarify: { slot: string; question: string; options?: string[] }[];
+  /** 装配前判负载荷：剩余预算详情 + 给宿主的降级提示（建议放文件用 read_file 读） */
+  inputTooLarge: {
+    inputLength: number;
+    remainingTokens: number;
+    hint: string;
+  };
   questionPending: { slot: string; question: string }[];
   goalDriftDetected: {
     sessionId: string;
