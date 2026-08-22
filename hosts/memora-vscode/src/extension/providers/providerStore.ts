@@ -24,6 +24,8 @@ const CFG_SECTION = 'memora';
 const CFG_PROVIDERS = 'providers';
 /** activeProvider 配置键 */
 const CFG_ACTIVE = 'activeProvider';
+/** backgroundProvider 配置键（G5 后台模型通道，2026-08-23：空 = 与实时对话相同） */
+const CFG_BACKGROUND = 'backgroundProvider';
 /** SecretStorage apiKey key 前缀 */
 const SECRET_PREFIX = 'memora.provider';
 
@@ -205,6 +207,10 @@ export class ProviderStore {
     const providers = this.readConfig().filter((p) => p.name !== name);
     await this.writeConfig(providers);
     await this.secrets.delete(this.secretKey(name));
+    // 删除的若是后台模型 Provider，清除后台通道引用（避免悬空指向不存在的 name）
+    if (name === this.getBackgroundName()) {
+      await this.setBackground('');
+    }
     return { ok: true };
   }
 
@@ -234,6 +240,44 @@ export class ProviderStore {
     await vscode.workspace
       .getConfiguration(CFG_SECTION)
       .update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Global);
+  }
+
+  /**
+   * 读取后台模型 Provider 的 name（G5 多 Provider 路由）
+   *
+   * 空（undefined）= 后台任务与实时对话使用同一 Provider（未独立配置后台通道）。
+   *
+   * @returns 后台 Provider 的 name；未配置返回 undefined
+   */
+  getBackgroundName(): string | undefined {
+    return vscode.workspace.getConfiguration(CFG_SECTION).get<string>(CFG_BACKGROUND);
+  }
+
+  /**
+   * 设置后台模型 Provider 的 name（G5 多 Provider 路由）
+   *
+   * name 为空字符串表示「清除后台独立配置」，后台任务回退到与实时对话相同 Provider。
+   *
+   * @param name 后台 Provider 别名（空串清除）
+   */
+  async setBackground(name: string): Promise<void> {
+    await vscode.workspace
+      .getConfiguration(CFG_SECTION)
+      .update(CFG_BACKGROUND, name || undefined, vscode.ConfigurationTarget.Global);
+  }
+
+  /**
+   * 获取后台 Provider 的完整配置（含真实 apiKey；G5）
+   *
+   * 未配置后台通道（getBackgroundName 为空）或该 name 不存在时返回 undefined。
+   *
+   * @returns 后台 Provider config；无独立后台配置返回 undefined
+   */
+  async getBackground(): Promise<LlmProviderConfig | undefined> {
+    const name = this.getBackgroundName();
+    if (!name) return undefined;
+    const all = await this.list();
+    return all.find((p) => p.name === name);
   }
 
   /**

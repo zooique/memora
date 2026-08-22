@@ -15,7 +15,7 @@
 import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/memora';
 import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import { join } from 'node:path';
-import { createProvider } from './llmConfig.js';
+import { createProvider, createBackgroundProvider } from './llmConfig.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
@@ -125,6 +125,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
+  // 1.0 创建后台模型 Provider（G5：后台任务走独立轻量模型；未配置回退与实时对话相同）
+  const backgroundProvider = await createBackgroundProvider(providerStore);
   // 1.1 创建 Provider 路由策略（激活 AgentLoop 路由缓存优化；单 Provider 时直接返回同一实例）
   const providerRouter = createProviderRouter(provider);
 
@@ -154,6 +156,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     provider,
     // Provider 路由策略（激活 AgentLoop 路由缓存优化；按任务类型返回对应 Provider）
     providerRouter,
+    // 后台模型 Provider（G5：摘要/归档/洞察等后台任务走独立轻量模型；undefined 回退前台）
+    backgroundProvider,
     storage,
     sessionStore: store,
     // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）

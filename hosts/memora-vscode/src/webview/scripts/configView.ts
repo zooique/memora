@@ -30,6 +30,8 @@ export interface ConfigViewDeps {
 interface ProvidersPayload {
   providers: LlmProviderConfig[];
   activeName: string | undefined;
+  /** 后台模型 Provider name（G5：空 = 与实时对话相同） */
+  backgroundName?: string;
 }
 
 /**
@@ -44,6 +46,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;
   const btnAdd = root.querySelector('#btnAdd') as HTMLButtonElement;
+  // 后台模型下拉（G5，2026-08-23）：选择后台任务的独立 Provider（空 = 同实时对话）
+  const bgModel = root.querySelector('#bgModel') as HTMLSelectElement;
   btnAdd.title = '新增一个大模型 API 配置';
   const modal = root.querySelector('#modal') as HTMLElement;
   const modalTitle = root.querySelector('#modalTitle') as HTMLElement;
@@ -159,6 +163,26 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       list.appendChild(createGroupTitle(document, '其他 Provider'));
       others.forEach((p) => list.appendChild(buildCard(p)));
     }
+    // ④ 后台模型下拉选项（G5）：排除激活 Provider（后台可配置任意已保存的 Provider）
+    renderBackground(data.providers, data.backgroundName);
+  }
+
+  /**
+   * 渲染后台模型下拉选项（G5 多 Provider 路由）
+   *
+   * 选项 = 全部已配置 Provider（含激活），另加「同实时对话」默认空项。
+   * backgroundName 为空（同实时对话）时选中默认项。
+   */
+  function renderBackground(providers: LlmProviderConfig[], backgroundName?: string): void {
+    // 保留「同实时对话」默认空项
+    bgModel.innerHTML = '<option value="">同实时对话</option>';
+    providers.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.displayName || p.name;
+      bgModel.appendChild(opt);
+    });
+    bgModel.value = backgroundName ?? '';
   }
 
   /** 构建单个 Provider 卡片（含图标，ui-redesign.md §6.2） */
@@ -251,6 +275,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   });
 
   btnAdd.addEventListener('click', () => openModal());
+  // G5：后台模型下拉切换 → post cfg_set_background（host 持久化 + 热更新 agent）
+  bgModel.addEventListener('change', () => {
+    vscode.postMessage({ type: 'cfg_set_background', name: bgModel.value });
+  });
   btnCancel.addEventListener('click', closeModal);
   // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
   cfgForm.addEventListener('submit', (e) => {

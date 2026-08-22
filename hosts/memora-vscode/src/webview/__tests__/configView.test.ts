@@ -21,6 +21,11 @@ const HTML = `
       <span id="statBar" class="stat-bar" hidden></span>
       <button id="btnAdd" class="btn">添加 API</button>
     </div>
+    <div class="cfg-bg">
+      <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>
+      <select id="bgModel" class="cfg-bg-select"><option value="">同实时对话</option></select>
+      <p class="cfg-bg-hint"></p>
+    </div>
     <div id="list"></div>
     <div id="modal" class="modal-mask">
       <div class="modal">
@@ -56,11 +61,11 @@ function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
   return { postMessage };
 }
 
-/** 向 webview 分发一条 cfg_loaded 消息，驱动 render */
-function dispatchLoaded(providers: unknown[], activeName?: string): void {
+/** 向 webview 分发一条 cfg_loaded 消息，驱动 render（G5：可选 backgroundName） */
+function dispatchLoaded(providers: unknown[], activeName?: string, backgroundName?: string): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type: 'cfg_loaded', providers, activeName },
+      data: { type: 'cfg_loaded', providers, activeName, backgroundName },
     }),
   );
 }
@@ -168,5 +173,60 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(titles.some((t) => t && t.includes('修改该 API 的配置'))).toBe(true);
     // 头部「添加 API」按钮 tooltip
     expect(document.getElementById('btnAdd')?.getAttribute('title')).toContain('新增一个大模型 API 配置');
+  });
+
+  // ─── G5 后台模型通道（2026-08-23） ───
+
+  it('cfg_loaded 渲染后台模型下拉选项（全部 Provider + 默认同实时对话）', () => {
+    mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek'), makeProvider('local', { displayName: '本地' })],
+      'deepseek',
+    );
+    const bg = document.getElementById('bgModel') as HTMLSelectElement;
+    // 默认空项 + 两个 Provider 选项
+    expect(bg.options.length).toBe(3);
+    expect(bg.options[0]?.value).toBe('');
+    expect(bg.options[0]?.textContent).toBe('同实时对话');
+    expect(bg.options[1]?.textContent).toBe('deepseek');
+    expect(bg.options[2]?.textContent).toBe('本地');
+    // 未配置后台 → 选中默认空项
+    expect(bg.value).toBe('');
+  });
+
+  it('cfg_loaded 带 backgroundName → 后台下拉回显所选 Provider', () => {
+    mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek'), makeProvider('local', { displayName: '本地' })],
+      'deepseek',
+      'local',
+    );
+    const bg = document.getElementById('bgModel') as HTMLSelectElement;
+    expect(bg.value).toBe('local');
+  });
+
+  it('后台模型下拉切换（选 Provider）→ postMessage cfg_set_background', () => {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek'), makeProvider('local', { displayName: '本地' })],
+      'deepseek',
+    );
+    const bg = document.getElementById('bgModel') as HTMLSelectElement;
+    bg.value = 'local';
+    bg.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'cfg_set_background', name: 'local' });
+  });
+
+  it('后台模型下拉切回「同实时对话」→ postMessage cfg_set_background 空串', () => {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek'), makeProvider('local', { displayName: '本地' })],
+      'deepseek',
+      'local',
+    );
+    const bg = document.getElementById('bgModel') as HTMLSelectElement;
+    bg.value = '';
+    bg.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'cfg_set_background', name: '' });
   });
 });

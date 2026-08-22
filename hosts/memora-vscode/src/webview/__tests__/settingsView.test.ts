@@ -35,6 +35,7 @@ const HTML = `
   </div>
   <div id="config-root" hidden>
     <div class="header"><h2>大模型配置</h2><span id="statBar" class="stat-bar" hidden></span><button id="btnAdd" class="btn">添加 API</button></div>
+    <div class="cfg-bg"><label for="bgModel">后台模型（可选）</label><select id="bgModel"><option value="">同实时对话</option></select><p class="cfg-bg-hint"></p></div>
     <div id="list"></div>
     <div id="modal" class="modal-mask">
       <div class="modal">

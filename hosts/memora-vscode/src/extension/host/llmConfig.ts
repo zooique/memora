@@ -55,3 +55,28 @@ export async function createProvider(
     provider: env.MEMORA_PROVIDER ?? 'memora',
   });
 }
+
+/**
+ * 创建后台模型 Provider（G5 多 Provider 路由，2026-08-23）
+ *
+ * 后台任务（轮次摘要 / 会话归档 / 洞察提取 / 去重判定）走独立 Provider，可选用轻量快模型
+ * 节省成本。store 未配置后台通道（getBackgroundName 为空 / name 不存在）返回 undefined——
+ * 内核 backgroundProvider 缺省回退到与实时对话相同 Provider，零破坏性。
+ *
+ * @param store Provider 存储（读取后台 Provider 选择）
+ * @returns 后台 LlmProvider 实例；无独立后台配置返回 undefined
+ */
+export async function createBackgroundProvider(
+  store?: ProviderStore,
+): Promise<LlmProvider | undefined> {
+  if (!store) return undefined;
+  const background = await store.getBackground();
+  if (!background) return undefined;
+  // 与 createProvider 同构：复用内核工厂构建 OpenAI 兼容 Provider
+  return createProviderFromConfig('memora-background', {
+    baseUrl: background.baseUrl,
+    model: background.model,
+    apiKey: background.apiKey,
+    provider: background.provider,
+  });
+}

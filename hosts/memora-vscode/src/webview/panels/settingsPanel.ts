@@ -13,6 +13,7 @@
 import * as vscode from 'vscode';
 import type { Agent, MemoryInspector } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
+import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
 import type {
   ExtensionToWebviewMessage,
@@ -204,6 +205,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       }
       return;
     }
+    if (msg.type === 'cfg_set_background') {
+      // G5：设置后台模型 Provider（持久化 + 热更新 agent.setBackgroundProvider）
+      await this.setBackgroundProvider(msg.name);
+      return;
+    }
     if (msg.type === 'cfg_test') {
       try {
         const r = await this.store.test(msg.config);
@@ -332,7 +338,39 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   private async loadConfig(): Promise<void> {
     const providers = await this.store.listMasked();
-    this.post({ type: 'cfg_loaded', providers, activeName: this.store.getActiveName() });
+    this.post({
+      type: 'cfg_loaded',
+      providers,
+      activeName: this.store.getActiveName(),
+      backgroundName: this.store.getBackgroundName(),
+    });
+  }
+
+  /**
+   * 设置后台模型 Provider（cfg_set_background，G5 多 Provider 路由）
+   *
+   * 持久化后台 Provider 选择后热更新 agent.setBackgroundProvider：后台任务（摘要/归档/
+   * 洞察等）后续走独立轻量模型；name 为空 → setBackgroundProvider(null) 回退与实时对话相同。
+   * 成功后刷新配置面板（后台模型下拉回显）。
+   */
+  private async setBackgroundProvider(name: string): Promise<void> {
+    try {
+      await this.store.setBackground(name);
+      const agent = await this.ensureAgent();
+      if (agent) {
+        // 读刚持久化的选择创建后台 Provider（空 → undefined → 传给内核 null 回退前台）
+        const background = await createBackgroundProvider(this.store);
+        agent.setBackgroundProvider(background ?? null);
+      }
+      await this.loadConfig();
+      this.post({ type: 'notice', level: 'info', message: name ? `后台模型已切换为「${name}」` : '后台模型已回退（与实时对话相同）' });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `切换后台模型失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   // ─── 记忆子视图数据加载 ───
@@ -663,6 +701,14 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <h2>大模型配置</h2>
       <span id="statBar" class="stat-bar" hidden></span>
       <button id="btnAdd" class="btn">添加 API</button>
+    </div>
+    <!-- 后台模型通道（G5 多 Provider 路由，2026-08-23）：后台任务（摘要/归档/洞察）独立轻量模型 -->
+    <div class="cfg-bg">
+      <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>
+      <select id="bgModel" class="cfg-bg-select" aria-label="后台模型，用于后台任务（摘要/归档/洞察）">
+        <option value="">同实时对话</option>
+      </select>
+      <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 洞察提取）走此模型，可选用轻量快模型节省成本。</p>
     </div>
     <div id="list">
       <p class="hint">加载中…</p>

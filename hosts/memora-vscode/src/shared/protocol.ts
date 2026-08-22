@@ -153,6 +153,13 @@ export type WebviewToExtensionMessage =
   | { type: 'cfg_delete'; name: string }
   /** 设为当前激活 Provider */
   | { type: 'cfg_set_active'; name: string }
+  /**
+   * 设置后台模型 Provider（G5 多 Provider 路由，2026-08-23）
+   *
+   * 由大模型面板「后台模型」下拉触发：host 持久化后台 Provider 选择（空串 = 与实时对话
+   * 相同，不清除后台任务通道），并热更新 agent.setBackgroundProvider。
+   */
+  | { type: 'cfg_set_background'; name: string }
   /** 测试 Provider 连接 */
   | { type: 'cfg_test'; config: LlmProviderConfig }
   // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
@@ -450,7 +457,7 @@ export type ExtensionToWebviewMessage =
     }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */
-  | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined }
+  | { type: 'cfg_loaded'; providers: LlmProviderConfig[]; activeName: string | undefined; backgroundName?: string }
   /** 配置操作结果（保存/删除/设当前/测试） */
   | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' }
   // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
