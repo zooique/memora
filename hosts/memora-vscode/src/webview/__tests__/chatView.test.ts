@@ -15,6 +15,7 @@ const HTML = `
     <span id="sessionTitleText"></span>
     <button id="renameSessionBtn"></button>
     <span class="session-title-bar__spacer"></span>
+    <button id="forkSessionBtn"></button>
     <button id="newSessionBtn"></button>
   </div>
   <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
@@ -493,10 +494,12 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     vi.restoreAllMocks();
   });
 
-  it('标题条按钮：改名/新建 发送对应消息；历史按钮请求列表', () => {
+  it('标题条按钮：改名/分叉/新建 发送对应消息；历史按钮请求列表', () => {
     const { postMessage } = mountChatView();
     (document.getElementById('renameSessionBtn') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'rename_request' });
+    (document.getElementById('forkSessionBtn') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'fork_session' });
     (document.getElementById('newSessionBtn') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'new_session' });
     (document.getElementById('historyBtn') as HTMLElement).click();

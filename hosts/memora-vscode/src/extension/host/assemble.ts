@@ -12,7 +12,7 @@
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
  *   - 功能定位：configDir 下的内置角色包（role-packs/doc-review）承载
  */
-import { Agent, FetchWebSearchProvider } from '@zooique/memora';
+import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/memora';
 import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import { join } from 'node:path';
 import { createProvider } from './llmConfig.js';
@@ -140,6 +140,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     sessionStore: store,
     // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）
     webSearchProvider: new FetchWebSearchProvider(),
+    // 网页抓取（B8 首发生长：补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）
+    fetchProvider: new FetchWebFetchProvider(),
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
     // 执行前检查（P3：激进对齐 §7.2.1 统一检查点；收敛版仅放行——

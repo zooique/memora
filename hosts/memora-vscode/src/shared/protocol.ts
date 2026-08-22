@@ -1,3 +1,5 @@
+import type { ThinkingPhase } from '@zooique/memora';
+
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
  *
@@ -49,6 +51,14 @@ export type WebviewToExtensionMessage =
    * 旧会话随之归档进历史记录（可经 session_list 弹窗加载回来或删除）。
    */
   | { type: 'new_session' }
+  /**
+   * 分叉当前会话（标题条「分叉」按钮触发，B3 会话生命周期补齐，2026-08-22）
+   *
+   * host 调 agent.forkSession() 将当前对话复制为新分支会话并切入，UI 回放新分支；
+   * 当前会话为空或对话繁忙时内核会拒绝并通知（host 兜底提示）。记忆索引全局共享，
+   * fork 仅分叉对话历史不隔离记忆空间。
+   */
+  | { type: 'fork_session' }
   /**
    * 请求历史会话列表（标题条「历史」按钮触发，2026-08-17 会话管理重构）
    *
@@ -206,7 +216,7 @@ export type ExtensionToWebviewMessage =
    * 标识 Agent 正在做什么。webview 据此更新思考折叠块文案（"召回记忆中/调用模型中/处理中/归档记忆中"），
    * 是对 status"进行中"的细化——status 管状态机，thinking 管阶段，二者职责分离。
    */
-  | { type: 'thinking'; phase: 'recalling' | 'llm_calling' | 'processing' | 'archiving' }
+  | { type: 'thinking'; phase: ThinkingPhase }
   /**
    * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
    *
@@ -252,12 +262,6 @@ export type ExtensionToWebviewMessage =
         decayRunCount?: number;
       };
     }
-  /** 技能激活提示（skillMatched 事件转发，Phase 3 技能系统接入）
-   *
-   * 内核在技能匹配成功时 emit skillMatched，插件转发为 notice info 级提示条。
-   * 让用户看见「本轮用到了什么技能」，主动可见而非黑盒。
-   */
-  | { type: 'skill_activated'; skillName: string }
   /**
    * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）
    *

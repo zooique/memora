@@ -117,6 +117,8 @@ export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
 export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
+// 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现
+export { getSessionDisplayName } from '@/memory/sessionStore.js';
 // 会话占位标题单一真理源，避免宿主重复实现
 export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNamer.js';
 // 宿主可条件性控制 trace_summary 工具的可见性

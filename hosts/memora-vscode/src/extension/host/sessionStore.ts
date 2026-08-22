@@ -74,7 +74,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     const existing = this.metas.get(key);
     this.metas.set(key, {
       sessionId: key,
-      title: existing?.title ?? defaultSessionTitle(),
+      displayName: existing?.displayName ?? defaultSessionTitle(),
       updatedAt: new Date().toISOString(),
       messageCount: list.length,
     });
@@ -168,7 +168,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     const last = msgs[msgs.length - 1];
     return {
       sessionId,
-      title: defaultSessionTitle(),
+      displayName: defaultSessionTitle(),
       updatedAt: last?.timestamp ?? new Date(0).toISOString(),
       messageCount: msgs.length,
     };
@@ -181,7 +181,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     const existing = this.metas.get(sessionId);
     this.metas.set(sessionId, {
       sessionId,
-      title,
+      displayName: title,
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       messageCount: existing?.messageCount ?? 0,
     });

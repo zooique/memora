@@ -14,6 +14,8 @@ import type {
   MemoryRecallItemDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+// ThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
+import type { ThinkingPhase } from '@zooique/memora';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
@@ -108,10 +110,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const roleBadge = document.getElementById('currentRoleBadge') as HTMLElement | null;
   // Phase 4 E2：工具权限徽章（输入区角色徽章旁，展示工具模式与能力列表）
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
-  // Phase 3 C3：技能指示器容器（输入区上方，本轮已激活技能列表）
-  const skillIndicator = document.getElementById('skillIndicator') as HTMLElement | null;
-  // Phase 3 C3：当前轮已激活技能名集合（用于持续展示 + 结束时清除）
-  const activeSkills = new Set<string>();
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -209,7 +207,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * （对齐 Agent UI「执行过程可见」趋势）。纯前端从 thinking phase 聚合，不改内核协议。
    * 工具调用保持独立卡片（Tertiary 层级），不塞进轨迹，避免信息过载。
    */
-  function renderTrace(phase: 'recalling' | 'llm_calling' | 'processing' | 'archiving'): void {
+  function renderTrace(phase: ThinkingPhase): void {
     // 三阶段轨迹：召回记忆 → 理解打磨 → 归档记忆（对应闭环 Prepare/Act/Reflect）
     // llm_calling 归属于 Act 阶段（理解打磨），与 processing 共享同一轨迹位置
     const steps: { label: string; state: 'done' | 'active' | 'pending' }[] = [
@@ -217,7 +215,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       { label: '理解打磨', state: 'pending' },
       { label: '归档记忆', state: 'pending' },
     ];
-    const phaseIndex: Record<string, number> = { recalling: 0, llm_calling: 1, processing: 1, archiving: 2 };
+    // 外循环阶段（planning/step/reporting）归入 Act 阶段展示，避免出现未知阶段占位
+    const phaseIndex: Record<string, number> = {
+      recalling: 0,
+      llm_calling: 1,
+      processing: 1,
+      planning: 1,
+      step: 1,
+      reporting: 1,
+      archiving: 2,
+    };
     const idx = phaseIndex[phase];
     steps.forEach((s, i) => {
       // 当前阶段之前的步骤已完成，当前进行中，之后待执行
@@ -409,42 +416,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     capabilityBadge.hidden = false;
     capabilityBadge.textContent = labels.join(' · ');
     capabilityBadge.title = `允许：${labels.join('、')}`;
-  }
-
-  /**
-   * Phase 3 C3：添加已激活技能到指示器（本轮持续展示）
-   */
-  function addSkillIndicator(skillName: string): void {
-    if (!skillIndicator) return;
-    activeSkills.add(skillName);
-    renderSkillIndicator();
-  }
-
-  /**
-   * Phase 3 C3：渲染技能指示器（chip 列表样式）
-   */
-  function renderSkillIndicator(): void {
-    if (!skillIndicator) return;
-    skillIndicator.innerHTML = '';
-    if (activeSkills.size === 0) {
-      skillIndicator.hidden = true;
-      return;
-    }
-    skillIndicator.hidden = false;
-    activeSkills.forEach((name) => {
-      const chip = document.createElement('span');
-      chip.className = 'skill-chip';
-      chip.textContent = name;
-      skillIndicator.appendChild(chip);
-    });
-  }
-
-  /**
-   * Phase 3 C3：清除技能指示器（一轮结束 / 新对话开始）
-   */
-  function clearSkillIndicator(): void {
-    activeSkills.clear();
-    renderSkillIndicator();
   }
 
   /**
@@ -1006,15 +977,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       setStatus(msg.state);
     } else if (msg.type === 'thinking') {
       // B（alignment-iteration.md）：思考阶段 → 更新思考折叠块文案（真实 phase，非笼统"思考中"）
-      const label =
-        msg.phase === 'recalling'
-          ? '召回记忆中…'
-          : msg.phase === 'llm_calling'
-            ? '调用模型中…'
-            : msg.phase === 'processing'
-              ? '处理中…'
-              : '归档记忆中…';
-      setThoughtLabel(label, { thinking: true });
+      // 阶段文案映射：recalling=召回 / llm_calling=调用模型 / processing=处理 / planning=规划 /
+      // step=分步执行 / reporting=收尾汇报 / archiving=归档（外循环阶段重放收敛到主标签）
+      const thoughtLabels: Record<ThinkingPhase, string> = {
+        recalling: '召回记忆中…',
+        llm_calling: '调用模型中…',
+        processing: '处理中…',
+        planning: '规划中…',
+        step: '分步执行中…',
+        reporting: '收尾汇报中…',
+        archiving: '归档记忆中…',
+      };
+      setThoughtLabel(thoughtLabels[msg.phase] ?? '思考中…', { thinking: true });
       // P2（2026-08-15 执行轨迹）：同步渲染三阶段执行轨迹（✓/●/○），执行过程可见
       renderTrace(msg.phase);
       // 归档停滞兜底：archiving 激活即调度超时折叠；其他 phase（新轮次/回溯）清除定时器
@@ -1056,10 +1030,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
-    } else if (msg.type === 'skill_activated') {
-      // Phase 3 C3：技能激活 → 添加到持续指示器（本轮可见 + 一次性提示条）
-      addSkillIndicator(msg.skillName);
-      showActivity('info', `已激活技能：${msg.skillName}`);
     } else if (msg.type === 'capability_badge') {
       // Phase 4 E2：角色能力徽章 → 更新工具权限展示
       updateCapabilityBadge(msg.toolMode, msg.capabilities);
@@ -1079,8 +1049,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.settleRunning(messages, '已中断');
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
       finalizeStreaming();
-      // Phase 3 C3：一轮结束 → 清除技能指示器
-      clearSkillIndicator();
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 兜底终结残留
       // 「执行中」工具卡片 + 低扰提示「已停止生成」，区分于正常 done。
@@ -1089,8 +1057,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.settleRunning(messages, '已中断');
       finalizeStreaming();
       showActivity('info', '已停止生成');
-      // Phase 3 C3：中断 → 清除技能指示器
-      clearSkillIndicator();
     } else if (msg.type === 'suggestions') {
       // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
       renderFollowUpSuggestions(msg.items);
@@ -1162,8 +1128,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       lastShownDate = undefined;
       // Phase 1：清空活动详情「本次召回」明细区（切会话/清空后不残留上轮召回来源）
       renderRecallDetail([]);
-      // Phase 3 C3：清空会话 → 清除技能指示器
-      clearSkillIndicator();
       updateEmptyState();
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；
@@ -1297,8 +1261,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       historyMenu.appendChild(item);
     }
   }
-  // 标题条按钮：改名笔 / 新建「＋」
+  // 标题条按钮：改名笔 / 分叉 / 新建「＋」
   renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
+  const forkSessionBtn = document.getElementById('forkSessionBtn') as HTMLButtonElement;
+  forkSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'fork_session' }));
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时请求最新列表」——
   // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）

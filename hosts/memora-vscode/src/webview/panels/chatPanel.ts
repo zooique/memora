@@ -18,6 +18,7 @@ import * as vscode from 'vscode';
 import {
   defaultSessionTitle,
   formatDateKey,
+  getSessionDisplayName,
   type Agent,
   type AgentChunk,
   type ISessionStore,
@@ -313,6 +314,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'new_session') {
         // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史（2026-08-17 会话管理重构）
         void this.newSessionFromCommand();
+      } else if (msg.type === 'fork_session') {
+        // 标题条「分叉」→ 当前对话复制为新分支并切入（B3 会话生命周期补齐）
+        void this.forkCurrentSession();
       } else if (msg.type === 'session_list') {
         // 标题条「历史」按钮 → 返回非当前会话列表供 webview 渲染模态浮层
         this.pushSessionList();
@@ -451,20 +455,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * skillMatched：技能匹配成功（Phase 3 技能系统接入）
-   *
-   * 内核在 LLM 输出匹配到技能关键词时 emit skillMatched，
-   * 转发为 skill_activated 提示条「已激活技能：xxx」，让用户看见本轮用到了什么技能。
-   * 内核事件形状：{ skill: string, score: number }（skill 为技能名，见 agent.ts matchAndInjectSkill）。
-   */
-  private readonly onSkillMatched = (info: { skill: string; score: number }): void => {
-    const name = info.skill ?? '未知技能';
-    this.post({ type: 'skill_activated', skillName: name });
-  };
-
-  // ─── 项目与工作投影事件（G2/G3 缺口修复，2026-08-18） ───
-
-  /**
    * projectSwitched：项目切换（内核在 init/close 或显式切换时 emit）
    *
    * 转发为 notice info 级提示条，让用户感知当前工作目录已变更。
@@ -548,9 +538,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // A1（alignment-iteration.md）：角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('rolePackSwitched', this.onRolePackSwitched);
     a.on('rolePackSwitched', this.onRolePackSwitched);
-    // Phase 3：技能匹配事件 → 提示条显示激活技能
-    a.off('skillMatched', this.onSkillMatched);
-    a.on('skillMatched', this.onSkillMatched);
     // G2/G3：项目切换 + 工作投影生成事件 → info 级提示条
     a.off('projectSwitched', this.onProjectSwitched);
     a.on('projectSwitched', this.onProjectSwitched);
@@ -608,7 +595,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       type: 'session_list_data',
       sessions: metas.map((m) => ({
         sessionId: m.sessionId,
-        title: m.title,
+        title: getSessionDisplayName(m),
         updatedAt: m.updatedAt,
       })),
     });
@@ -626,7 +613,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private async handleDeleteSession(sessionId: string): Promise<void> {
     const meta = this.sessionStore.getSessionMeta(sessionId);
-    const title = meta?.title ?? sessionId;
+    const title = getSessionDisplayName(meta) || sessionId;
     const choice = await vscode.window.showWarningMessage(
       `确定删除会话「${title}」？此操作不可恢复。`,
       { modal: true },
@@ -678,9 +665,33 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 改当前会话名（由「✎ 改当前会话名」触发）：InputBox 输入新标题，调内核
-   * renameSession 写入元数据（不改会话身份），UI 刷新标题
+   * 分叉当前会话（标题条「分叉」触发，B3 会话生命周期补齐，2026-08-22）
+   *
+   * 薄壳消费内核 forkSession()：把当前对话复制为新分支并切入（工作记忆同步到新分支）。
+   * fork 不分叉记忆——记忆索引全局共享，仅对话历史分叉；空会话/对话繁忙由内核拒绝，
+   * host 兜底转错误通知。
    */
+  public async forkCurrentSession(): Promise<void> {
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再分叉会话' });
+      return;
+    }
+    const agent = await this.getAgentOrWarn();
+    if (!agent) return;
+    try {
+      // forkSession() 返回新分支名（不含日期前缀），切换并回放由本方法统一收口
+      const { newSession } = agent.forkSession();
+      this._currentSessionId = `${formatDateKey(new Date())}-${newSession}`;
+      this.replayCurrentSession();
+      this.post({ type: 'notice', level: 'info', message: `已分叉新会话「${newSession}」` });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   public async renameCurrentSession(): Promise<void> {
     const title = await vscode.window.showInputBox({
       prompt: '输入新的会话名称',
@@ -1002,7 +1013,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */
   private currentSessionTitle(): string {
-    return this.sessionStore.getSessionMeta(this._currentSessionId)?.title ?? defaultSessionTitle();
+    return getSessionDisplayName(this.sessionStore.getSessionMeta(this._currentSessionId)) || defaultSessionTitle();
   }
 
   /** 持久化一条消息 */
@@ -1400,6 +1411,9 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
     </button>
     <span class="session-title-bar__spacer"></span>
+    <button id="forkSessionBtn" class="session-title-bar__btn" title="分叉当前会话为新分支" aria-label="分叉当前会话为新分支">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+    </button>
     <button id="newSessionBtn" class="session-title-bar__btn" title="新建会话" aria-label="新建会话">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     </button>
@@ -1451,8 +1465,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   </div>
   <div id="inputBar">
     <div id="inputWrap">
-      <!-- Phase 3 C3：技能指示器（本轮已激活技能，持续展示到本轮结束） -->
-      <div id="skillIndicator" class="skill-indicator" hidden></div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
         <!-- Composer 左侧组：键盘提示 + 当前角色只读徽章 + 工具权限徽章（让用户感知当前定位；切换入口独立在「角色」视图） -->

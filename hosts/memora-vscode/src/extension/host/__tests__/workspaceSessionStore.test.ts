@@ -107,7 +107,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(list[0]?.content).toBe('你好');
     const meta = store.getSessionMeta('2026-08-17-main');
     expect(meta?.messageCount).toBe(1);
-    expect(meta?.title).toBeTruthy();
+    expect(meta?.displayName).toBeTruthy();
   });
 
   it('loadMessages 返回副本：修改返回值不污染存储', () => {
@@ -126,7 +126,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     reopened.load();
     expect(reopened.loadMessages('2026-08-17', 'main')).toHaveLength(1);
     expect(reopened.loadCheckpoint?.('2026-08-17-main')).toBe('{"status":"paused"}');
-    expect(reopened.getSessionMeta('2026-08-17-main')?.title).toBe('会话一');
+    expect(reopened.getSessionMeta('2026-08-17-main')?.displayName).toBe('会话一');
   });
 
   it('saveCheckpoint 覆盖写 + deleteCheckpoint 清除', () => {
@@ -142,7 +142,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const before = store.getSessionMeta('2026-08-17-main')?.updatedAt;
     store.setSessionTitle?.('2026-08-17-main', '改名');
     expect(store.getSessionMeta('2026-08-17-main')?.updatedAt).toBe(before);
-    expect(store.getSessionMeta('2026-08-17-main')?.title).toBe('改名');
+    expect(store.getSessionMeta('2026-08-17-main')?.displayName).toBe('改名');
   });
 
   it('getSessionMeta 无 meta 的旧会话 → 从消息推导占位（updatedAt=末条时间戳）', () => {

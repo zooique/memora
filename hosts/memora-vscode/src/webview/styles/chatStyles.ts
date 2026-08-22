@@ -442,26 +442,6 @@ export const chatStyles = `
     user-select: none;
   }
   .capability-badge[hidden] { display: none; }
-  /* Phase 3 C3：技能指示器（输入区上方，本轮已激活技能 chip 列表） */
-  .skill-indicator {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-1, 4px);
-    padding: var(--sp-1, 4px) 0;
-    min-height: 0;
-  }
-  .skill-indicator[hidden] { display: none; }
-  .skill-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px var(--sp-2, 6px);
-    font-size: var(--font-xs, 10px);
-    color: var(--accent, #0e639c);
-    background: rgba(14, 99, 156, 0.08);
-    border-radius: var(--radius-pill, 999px);
-    white-space: nowrap;
-    user-select: none;
-  }
   /* Composer 右侧操作组：模型选择器 + 发送按钮，与左侧提示分组（space-between 布局） */
   .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
 
