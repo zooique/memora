@@ -15,7 +15,7 @@
 import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/memora';
 import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import { join } from 'node:path';
-import { createProvider, createBackgroundProvider } from './llmConfig.js';
+import { createProvider, createBackgroundProvider, createVectorStore } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
@@ -128,6 +128,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   const provider = await createProvider(providerStore, env ?? process.env);
   // 1.0 创建后台模型 Provider（G5：后台任务走独立轻量模型；未配置回退与实时对话相同）
   const backgroundProvider = await createBackgroundProvider(providerStore);
+  // 1.0b 创建向量存储（G1：配置 Embedding 时启用记忆语义检索；未配置回退关键词搜索）
+  const vectorStore = await createVectorStore(providerStore, join(projectPath, '.memora'));
   // 1.1 创建 Provider 路由策略（激活 AgentLoop 路由缓存优化；单 Provider 时直接返回同一实例）
   const providerRouter = createProviderRouter(provider);
 
@@ -167,6 +169,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（G2：local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
+    // 向量存储（G1：配置 Embedding 时启用语义召回；undefined 则 searchHybrid 回退关键词）
+    vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
     // 执行前检查（P3：激进对齐 §7.2.1 统一检查点；收敛版仅放行——

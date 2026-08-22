@@ -9,6 +9,7 @@
  * 入口），在 webview HTML 中 <script src> 引用（CSP script-src 'self'）。
  */
 import type {
+  EmbeddingInfoDto,
   ExtensionToWebviewMessage,
   LlmProviderConfig,
   WebviewToExtensionMessage,
@@ -32,6 +33,8 @@ interface ProvidersPayload {
   activeName: string | undefined;
   /** 后台模型 Provider name（G5：空 = 与实时对话相同） */
   backgroundName?: string;
+  /** 向量检索（Embedding）配置回显（G1） */
+  embedding?: EmbeddingInfoDto;
 }
 
 /**
@@ -48,6 +51,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const btnAdd = root.querySelector('#btnAdd') as HTMLButtonElement;
   // 后台模型下拉（G5，2026-08-23）：选择后台任务的独立 Provider（空 = 同实时对话）
   const bgModel = root.querySelector('#bgModel') as HTMLSelectElement;
+  // 向量检索（Embedding）区（G1，2026-08-23）
+  const eModel = root.querySelector('#e-model') as HTMLInputElement;
+  const eBaseUrl = root.querySelector('#e-baseurl') as HTMLInputElement;
+  const eApiKey = root.querySelector('#e-apikey') as HTMLInputElement;
+  const btnSaveEmbedding = root.querySelector('#btnSaveEmbedding') as HTMLButtonElement;
+  const btnClearEmbedding = root.querySelector('#btnClearEmbedding') as HTMLButtonElement;
+  const embeddingStatus = root.querySelector('#embeddingStatus') as HTMLElement;
   btnAdd.title = '新增一个大模型 API 配置';
   const modal = root.querySelector('#modal') as HTMLElement;
   const modalTitle = root.querySelector('#modalTitle') as HTMLElement;
@@ -165,6 +175,26 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     }
     // ④ 后台模型下拉选项（G5）：排除激活 Provider（后台可配置任意已保存的 Provider）
     renderBackground(data.providers, data.backgroundName);
+    // ⑤ 向量检索（Embedding）回显（G1）
+    renderEmbedding(data.embedding);
+  }
+
+  /**
+   * 渲染向量检索（Embedding）配置回显（G1）
+   *
+   * 回填 model/baseUrl；已启用态以状态行提示；apiKey 永不回传真实值。
+   */
+  function renderEmbedding(embedding?: EmbeddingInfoDto): void {
+    eModel.value = embedding?.model ?? '';
+    eBaseUrl.value = embedding?.baseUrl ?? '';
+    if (embedding?.enabled) {
+      const keyText = embedding.keyConfigured ? '已配置 API Key' : '⚠️ 未配置 API Key（点「保存并启用」可补）';
+      embeddingStatus.hidden = false;
+      embeddingStatus.textContent = `语义检索已启用 · ${keyText} · 重启插件后生效`;
+    } else {
+      embeddingStatus.hidden = true;
+      embeddingStatus.textContent = '';
+    }
   }
 
   /**
@@ -278,6 +308,14 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   // G5：后台模型下拉切换 → post cfg_set_background（host 持久化 + 热更新 agent）
   bgModel.addEventListener('change', () => {
     vscode.postMessage({ type: 'cfg_set_background', name: bgModel.value });
+  });
+  // G1：保存并启用向量检索（Embedding）→ post cfg_save_embedding
+  btnSaveEmbedding.addEventListener('click', () => {
+    vscode.postMessage({ type: 'cfg_save_embedding', config: { model: eModel.value, baseUrl: eBaseUrl.value, apiKey: eApiKey.value } });
+  });
+  // G1：停用向量检索 → post cfg_clear_embedding
+  btnClearEmbedding.addEventListener('click', () => {
+    vscode.postMessage({ type: 'cfg_clear_embedding' });
   });
   btnCancel.addEventListener('click', closeModal);
   // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义

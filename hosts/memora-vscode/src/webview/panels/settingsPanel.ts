@@ -210,6 +210,16 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.setBackgroundProvider(msg.name);
       return;
     }
+    if (msg.type === 'cfg_save_embedding') {
+      // G1：保存向量检索（Embedding）配置（重启插件后由装配注入 vectorStore 生效）
+      await this.saveEmbedding(msg.config);
+      return;
+    }
+    if (msg.type === 'cfg_clear_embedding') {
+      // G1：清除向量检索（Embedding）配置
+      await this.clearEmbedding();
+      return;
+    }
     if (msg.type === 'cfg_test') {
       try {
         const r = await this.store.test(msg.config);
@@ -338,12 +348,49 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   private async loadConfig(): Promise<void> {
     const providers = await this.store.listMasked();
+    // G1:对账 Embedding 配置回显（enabled + 非敏感字段 + 是否已配 key）
+    const embedCfg = await this.store.getEmbeddingConfig();
+    const keyConfigured = (await this.store.getEmbeddingSecret()).length > 0;
     this.post({
       type: 'cfg_loaded',
       providers,
       activeName: this.store.getActiveName(),
       backgroundName: this.store.getBackgroundName(),
+      embedding: {
+        enabled: embedCfg.enabled,
+        model: embedCfg.model,
+        baseUrl: embedCfg.baseUrl,
+        keyConfigured,
+      },
     });
+  }
+
+  /**
+   * 保存向量检索（Embedding）配置（G1：cfg_save_embedding）
+   *
+   * 持久化后提示「重启插件生效」——vectorStore 在 Agent 装配时注入，当前运行实例
+   * 无热更新入口（不同于 G5 backgroundProvider 的 setBackgroundProvider），
+   * 重启后由 createVectorStore 注入语义召回。
+   */
+  private async saveEmbedding(config: { model: string; baseUrl: string; apiKey: string }): Promise<void> {
+    const r = await this.store.saveEmbedding(config);
+    if (r.ok) {
+      this.post({ type: 'notice', level: 'info', message: '向量检索配置已保存，重启插件后启用语义召回' });
+    } else {
+      this.post({ type: 'notice', level: 'error', message: r.message ?? '保存向量检索配置失败' });
+    }
+    await this.loadConfig();
+  }
+
+  /** 清除向量检索（Embedding）配置（G1：cfg_clear_embedding） */
+  private async clearEmbedding(): Promise<void> {
+    try {
+      await this.store.clearEmbedding();
+      this.post({ type: 'notice', level: 'info', message: '向量检索已关闭（回退关键词搜索）' });
+    } catch (err) {
+      this.post({ type: 'notice', level: 'error', message: `清除向量检索配置失败：${err instanceof Error ? err.message : String(err)}` });
+    }
+    await this.loadConfig();
   }
 
   /**
@@ -710,6 +757,29 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </select>
       <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 洞察提取）走此模型，可选用轻量快模型节省成本。</p>
     </div>
+    <!-- 向量检索区（G1 记忆语义检索，2026-08-23）：配置 Embedding 后记忆搜索启用语义召回 -->
+    <details id="embeddingCfg" class="embedding-cfg">
+      <summary>向量检索（Embedding，可选）</summary>
+      <div class="embedding-fields">
+        <div class="field">
+          <label for="e-model">Embedding 模型</label>
+          <input id="e-model" type="text" placeholder="如 text-embedding-3-small" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="e-baseurl">API Base URL</label>
+          <input id="e-baseurl" type="url" placeholder="https://api.example.com/v1" autocomplete="url" />
+        </div>
+        <div class="field">
+          <label for="e-apikey">API Key（留空保持不变）</label>
+          <input id="e-apikey" type="password" placeholder="sk-…" autocomplete="new-password" />
+        </div>
+        <div class="embedding-actions">
+          <button id="btnSaveEmbedding" class="btn">保存并启用</button>
+          <button id="btnClearEmbedding" class="btn btn-secondary">停用</button>
+        </div>
+        <p id="embeddingStatus" class="embedding-status" hidden></p>
+      </div>
+    </details>
     <div id="list">
       <p class="hint">加载中…</p>
     </div>

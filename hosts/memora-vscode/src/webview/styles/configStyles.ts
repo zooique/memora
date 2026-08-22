@@ -46,6 +46,19 @@ export const configStyles = `
   #config-root .cfg-bg-select:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
   #config-root .cfg-bg-hint { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin: var(--sp-2, 6px) 0 0; }
 
+  /* ============ Components：向量检索（Embedding）区（G1，2026-08-23） ============ */
+  #config-root .embedding-cfg {
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    font-size: var(--font-md, 12px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  #config-root .embedding-cfg summary { cursor: pointer; }
+  #config-root .embedding-cfg summary:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+  #config-root .embedding-fields { margin-top: var(--sp-2, 6px); padding: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius, 6px); }
+  #config-root .embedding-actions { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-3, 8px); }
+  #config-root .embedding-status { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin: var(--sp-2, 6px) 0 0; }
+
   /* ============ Components：Provider 卡片 ============ */
   #config-root .card { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px); padding: var(--sp-4, 10px); margin-bottom: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-lg, 8px); background: var(--surface-sidebar); }
   #config-root .card.active { border-color: var(--accent, #0e639c); }

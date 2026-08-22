@@ -26,6 +26,16 @@ const HTML = `
       <select id="bgModel" class="cfg-bg-select"><option value="">同实时对话</option></select>
       <p class="cfg-bg-hint"></p>
     </div>
+    <details id="embeddingCfg" class="embedding-cfg">
+      <summary>向量检索（Embedding，可选）</summary>
+      <div class="embedding-fields">
+        <div class="field"><label for="e-model">Embedding 模型</label><input id="e-model" type="text" /></div>
+        <div class="field"><label for="e-baseurl">API Base URL</label><input id="e-baseurl" type="url" /></div>
+        <div class="field"><label for="e-apikey">API Key</label><input id="e-apikey" type="password" /></div>
+        <div class="embedding-actions"><button id="btnSaveEmbedding" class="btn">保存并启用</button><button id="btnClearEmbedding" class="btn btn-secondary">停用</button></div>
+        <p id="embeddingStatus" class="embedding-status" hidden></p>
+      </div>
+    </details>
     <div id="list"></div>
     <div id="modal" class="modal-mask">
       <div class="modal">
@@ -61,11 +71,11 @@ function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
   return { postMessage };
 }
 
-/** 向 webview 分发一条 cfg_loaded 消息，驱动 render（G5：可选 backgroundName） */
-function dispatchLoaded(providers: unknown[], activeName?: string, backgroundName?: string): void {
+/** 向 webview 分发一条 cfg_loaded 消息，驱动 render（G5：可选 backgroundName；G1：可选 embedding） */
+function dispatchLoaded(providers: unknown[], activeName?: string, backgroundName?: string, embedding?: unknown): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type: 'cfg_loaded', providers, activeName, backgroundName },
+      data: { type: 'cfg_loaded', providers, activeName, backgroundName, embedding },
     }),
   );
 }
@@ -228,5 +238,60 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     bg.value = '';
     bg.dispatchEvent(new Event('change'));
     expect(postMessage).toHaveBeenCalledWith({ type: 'cfg_set_background', name: '' });
+  });
+
+  // ─── G1 向量检索（Embedding）区（2026-08-23） ───
+
+  it('cfg_loaded 未配置 embedding → 状态行隐藏', () => {
+    mountConfigView();
+    dispatchLoaded([]);
+    const status = document.getElementById('embeddingStatus') as HTMLElement;
+    expect(status.hidden).toBe(true);
+  });
+
+  it('cfg_loaded 已配置 embedding → 回填 model/baseUrl + 状态行（含 keyConfigured）', () => {
+    mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek')],
+      'deepseek',
+      undefined,
+      { enabled: true, model: 'text-embedding-3-small', baseUrl: 'https://api.example.com/v1', keyConfigured: true },
+    );
+    expect((document.getElementById('e-model') as HTMLInputElement).value).toBe('text-embedding-3-small');
+    expect((document.getElementById('e-baseurl') as HTMLInputElement).value).toBe('https://api.example.com/v1');
+    const status = document.getElementById('embeddingStatus') as HTMLElement;
+    expect(status.hidden).toBe(false);
+    expect(status.textContent).toContain('语义检索已启用');
+    expect(status.textContent).toContain('已配置 API Key');
+  });
+
+  it('已配置但缺 API Key → 状态行提示未配置 key', () => {
+    mountConfigView();
+    dispatchLoaded(
+      [makeProvider('deepseek')],
+      'deepseek',
+      undefined,
+      { enabled: true, model: 'm', baseUrl: 'https://api.example.com/v1', keyConfigured: false },
+    );
+    const status = document.getElementById('embeddingStatus') as HTMLElement;
+    expect(status.textContent).toContain('未配置 API Key');
+  });
+
+  it('点「保存并启用」→ postMessage cfg_save_embedding（组装表单值）', () => {
+    const { postMessage } = mountConfigView();
+    (document.getElementById('e-model') as HTMLInputElement).value = 'text-embedding-3-small';
+    (document.getElementById('e-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('e-apikey') as HTMLInputElement).value = 'sk-test';
+    (document.getElementById('btnSaveEmbedding') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'cfg_save_embedding',
+      config: { model: 'text-embedding-3-small', baseUrl: 'https://api.example.com/v1', apiKey: 'sk-test' },
+    });
+  });
+
+  it('点「停用」→ postMessage cfg_clear_embedding', () => {
+    const { postMessage } = mountConfigView();
+    (document.getElementById('btnClearEmbedding') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'cfg_clear_embedding' });
   });
 });
