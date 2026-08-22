@@ -261,6 +261,11 @@ export type ExtensionToWebviewMessage =
         /** D（alignment-iteration.md）：记忆衰减运行次数 */
         decayRunCount?: number;
       };
+      /**
+       * 最近操作流（B9 可观测补齐）：透明面板渲染的操作序列 span 标签（新→旧）。
+       * 由 host 从 vscodeTracer 提取，只含中文展现标签不含量化属性；缺省为无。
+       */
+      trace?: { label: string }[];
     }
   /**
    * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）

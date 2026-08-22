@@ -1337,6 +1337,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!show) return;
     const fp = vscodeTracer.getLatestFingerprints();
     const m = this._agent.getMetrics();
+    // B9 可观测补齐：提取最近操作流（span 标签序列）供透明面板渲染
+    const traces = vscodeTracer.getRecentTraces(20);
     this.post({
       type: 'metrics',
       fingerprints: {
@@ -1353,6 +1355,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         llmTokenOut: m.llm.totalOutputTokens,
         decayRunCount: m.decay?.runCount,
       },
+      trace: traces,
     });
   }
 

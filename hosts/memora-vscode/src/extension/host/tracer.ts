@@ -75,6 +75,62 @@ export class VscodeTracer implements ITracer {
   }
 
   /**
+   * 提取最近最近几轮的 span 作为「透明面板」的操作流（B9 可观测补齐）
+   *
+   * 把本类已采集但此前仅用于指纹提取的 span 缓冲暴露出来，供透明面板渲染操作序列
+   * （召回 → LLM → 工具 → 响应…）。只回传 span 名 + 关键属性加工成的展现标签，
+   * 不传原始内容（延续「指纹可观测、不入存储」的可追溯性边界）。
+   *
+   * @param limit 返回条数上限（默认 20，新→旧排序；超界由调用方控制）
+   * @returns 最近已结束 span 的展现序列（新→旧）
+   */
+  getRecentTraces(limit = 20): { label: string }[] {
+    // 倒序遍历取最近 limit 条，映射为中文展现标签
+    return this.spans
+      .slice(-limit)
+      .reverse()
+      .map((s) => ({ label: VscodeTracer.labelFor(s) }));
+  }
+
+  /**
+   * 将一条 span 映射为透明面板的展现标签（中文，工具 span 附带工具名）
+   *
+   * 命中 TRACE_SPANS 已知 span 名时给出语义化中文标签；未知名回退原始 span 名。
+   *
+   * @param record 已采集的 span 记录
+   * @returns 展现标签
+   */
+  private static labelFor(record: SpanRecord): string {
+    switch (record.name) {
+      case TRACE_SPANS.LLM_CALL:
+        return 'LLM 调用';
+      case TRACE_SPANS.TOOL_EXEC: {
+        // 工具 span 附带具体工具名（toolRunner 埋点），展现「工具·<名>」更透明
+        const tool = record.attributes.tool;
+        return typeof tool === 'string' ? `工具·${tool}` : '工具';
+      }
+      case TRACE_SPANS.RECALL:
+        return '记忆召回';
+      case TRACE_SPANS.RECALL_ACTUAL:
+        return '召回执行';
+      case TRACE_SPANS.RESPONSE:
+        return '响应生成';
+      case TRACE_SPANS.CONTEXT_SUMMARY:
+        return '压缩摘要';
+      case TRACE_SPANS.POST_PROCESS:
+        return '会话归档';
+      case TRACE_SPANS.DECAY:
+        return '记忆衰减';
+      case TRACE_SPANS.DIFFICULTY:
+        return '难度分级';
+      case TRACE_SPANS.REPORT:
+        return '收尾汇报';
+      default:
+        return record.name;
+    }
+  }
+
+  /**
    * 提取最近一轮的「模型看到了什么」指纹（§5.2.1 可追溯性边界）
    *
    * 从最近已结束的 llm.call span 取 systemPromptHash、recall span 取附着记忆指纹。

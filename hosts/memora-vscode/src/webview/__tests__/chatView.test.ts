@@ -244,6 +244,45 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(metrics.textContent).toContain('出 500');
     expect(metrics.textContent).toContain('记忆衰减 4 次');
   });
+
+  it('metrics 渲染最近操作流（B9 透明面板 trace 展示）', () => {
+    mountChatView();
+    const metrics = document.getElementById('activityMetrics') as HTMLElement;
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 2 },
+      metrics: {
+        llmCallCount: 3,
+        recallHitRate: 0.5,
+        toolFailureCount: 1,
+        truncationCount: 0,
+      },
+      trace: [{ label: '响应生成' }, { label: '工具·read_file' }, { label: '记忆召回' }],
+    });
+    expect(metrics.hidden).toBe(false);
+    expect(metrics.textContent).toContain('操作流');
+    expect(metrics.textContent).toContain('› 响应生成');
+    expect(metrics.textContent).toContain('› 工具·read_file');
+    expect(metrics.textContent).toContain('› 记忆召回');
+  });
+
+  it('metrics 无操作流时渲染不受影响（trace 缺省）', () => {
+    mountChatView();
+    const metrics = document.getElementById('activityMetrics') as HTMLElement;
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'abc123' },
+      metrics: {
+        llmCallCount: 1,
+        recallHitRate: 0,
+        toolFailureCount: 0,
+        truncationCount: 0,
+      },
+    });
+    expect(metrics.hidden).toBe(false);
+    // 未携带 trace / trace 为空 → 不出现「操作流」段
+    expect(metrics.textContent).not.toContain('操作流');
+  });
 });
 
 describe('chatView 打断能力（mvp-scope stop / 插话）', () => {

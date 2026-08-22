@@ -938,6 +938,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         (typeof msg.metrics.decayRunCount === 'number'
           ? ' · 记忆衰减 ' + msg.metrics.decayRunCount + ' 次'
           : ''),
+      // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
+      ...(msg.trace && msg.trace.length > 0
+        ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]
+        : []),
     ];
     activityMetrics.textContent = lines.join('\n');
     activityMetrics.hidden = false;
