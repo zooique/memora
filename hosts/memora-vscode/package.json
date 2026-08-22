@@ -43,6 +43,10 @@
       {
         "command": "memora.cleanupMemories",
         "title": "Memora: 清理过期记忆"
+      },
+      {
+        "command": "memora.demo",
+        "title": "Memora: 运行能力演示（隔离演示区）"
       }
     ],
     "configuration": {

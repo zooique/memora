@@ -19,6 +19,7 @@
  */
 import type {
   ExtensionToWebviewMessage,
+  SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createConfigView } from './configView.js';
@@ -34,7 +35,7 @@ export interface SettingsViewDeps {
 }
 
 /** 子选项卡标识（与 HTML 中 data-tab / 根容器 id 对齐） */
-type SettingsTab = 'roles' | 'config' | 'memory';
+type SettingsTab = 'roles' | 'config' | 'memory' | 'skills';
 
 /**
  * 初始化设置面板 webview 交互（选项卡切换 + 挂载三个子视图）
@@ -47,13 +48,14 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   // 避免子视图各自调用导致后续调用返回失效对象、postMessage 静默失败（角色/记忆卡加载根因）
   const vscode = acquireVsCodeApi();
 
-  // 选项卡按钮 + 三个子视图根容器（HTML 骨架固定 id，查询走全局 getElementById——
+  // 选项卡按钮 + 四个子视图根容器（HTML 骨架固定 id，查询走全局 getElementById——
   // 根容器本身是唯一 id，只有根容器【内部】的子元素才做 root 内查询隔离）
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-btn'));
   const roots: Record<SettingsTab, HTMLElement> = {
     roles: document.getElementById('roles-root') as HTMLElement,
     config: document.getElementById('config-root') as HTMLElement,
     memory: document.getElementById('memory-root') as HTMLElement,
+    skills: document.getElementById('skills-root') as HTMLElement,
   };
 
   /** 切换子选项卡：高亮对应按钮 + 显示对应根容器（其余隐藏；保留子视图 DOM 不重建，无闪烁） */
@@ -72,7 +74,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab;
-      if (tab === 'roles' || tab === 'config' || tab === 'memory') switchTab(tab);
+      if (tab === 'roles' || tab === 'config' || tab === 'memory' || tab === 'skills') switchTab(tab);
     });
   });
 
@@ -101,8 +103,99 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     console.error('[memora-settings] rolesView 挂载失败:', err);
   }
 
+  // 技能子视图初始化（2026-08-22 新增）
+  createSkillsView({ vscode, window, root: roots.skills });
+
   // ready 握手：三个子视图全部挂载（消息监听器已注册）后，由容器统一通知 host 就绪；
   // host 收到后统一推送三个子视图数据（对齐 chatPanel replaySession 的 ready 时序修复，
   // 避免首帧推送在监听器注册前到达而被丢弃）
   vscode.postMessage({ type: 'ready' });
+}
+
+/**
+ * 技能子视图初始化与渲染
+ *
+ * 职责：
+ *   - 监听 host 的 skills_loaded 消息，渲染全局技能列表
+ *   - 提供刷新按钮，触发 skills_load 请求
+ */
+function createSkillsView({
+  vscode,
+  window,
+  root,
+}: {
+  vscode: { postMessage(msg: WebviewToExtensionMessage): void };
+  window: Window;
+  root: HTMLElement;
+}): void {
+  const listEl = root.querySelector<HTMLElement>('#skillsList');
+  const countEl = root.querySelector<HTMLElement>('#skillCount');
+  const refreshBtn = root.querySelector<HTMLButtonElement>('#btnRefreshSkills');
+
+  if (!listEl || !countEl || !refreshBtn) return;
+
+  // 刷新按钮事件
+  refreshBtn.addEventListener('click', () => {
+    vscode.postMessage({ type: 'skills_load' });
+    listEl.innerHTML = '<p class="hint">加载中…</p>';
+  });
+
+  // 监听 host 的 skills_loaded 消息
+  window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
+    const msg = event.data;
+    if (msg.type === 'skills_loaded') {
+      renderSkills(listEl, countEl, msg.skills);
+    }
+  });
+}
+
+/** 渲染技能列表 */
+function renderSkills(
+  listEl: HTMLElement,
+  countEl: HTMLElement,
+  skills: SkillDto[],
+): void {
+  // 更新计数
+  if (skills.length > 0) {
+    countEl.textContent = `${skills.length} 个技能`;
+    countEl.hidden = false;
+  } else {
+    countEl.hidden = true;
+  }
+
+  // 空状态
+  if (skills.length === 0) {
+    listEl.innerHTML = '<p class="hint">暂无全局技能。创建 <code>.md</code> 文件到 <code>~/.memora/skills/</code> 添加自定义技能。</p>';
+    return;
+  }
+
+  // 按名称排序
+  const sorted = [...skills].sort((a, b) => a.name.localeCompare(b.name));
+
+  // 渲染技能卡片
+  listEl.innerHTML = sorted
+    .map(
+      (s) => `
+    <div class="skill-item">
+      <div class="skill-header">
+        <h3 class="skill-name">${escapeHtml(s.name)}</h3>
+        ${s.trigger ? `<code class="skill-trigger">${escapeHtml(s.trigger)}</code>` : ''}
+      </div>
+      <p class="skill-desc">${escapeHtml(s.description)}</p>
+      ${
+        s.keywords.length > 0
+          ? `<div class="skill-keywords">${s.keywords.map((k) => `<span class="keyword-chip">${escapeHtml(k)}</span>`).join('')}</div>`
+          : ''
+      }
+    </div>
+  `,
+    )
+    .join('');
+}
+
+/** HTML 转义（防注入） */
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }

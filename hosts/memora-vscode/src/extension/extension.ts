@@ -22,6 +22,7 @@ import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
+import { runDemoCommand } from './commands/demo.js';
 import { ACTIVE_ROLE_PACK_KEY } from '../shared/constants.js';
 
 /**
@@ -141,6 +142,14 @@ export function activate(context: vscode.ExtensionContext): void {
       settingsProvider.switchTab('config');
       void vscode.commands.executeCommand(`${MemoraSettingsViewProvider.viewType}.focus`);
     }),
+  );
+
+  // 命令：运行能力演示（隔离演示区 → Output Channel，2026-08-22）
+  // 在全局隔离目录装配独立 Agent，注入编排提示词跑通「搜索→抓取→写文件→总结→记忆沉淀」
+  // 完整链路，Output Channel 流式呈现；完整展示内核的角色包/loop/记忆/工具/可观测能力。
+  // 隔离设计：独立 projectPath 且不传 sessionStore，产物绝不污染当前工作区（用户决策）。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.demo', () => runDemoCommand(configDir)),
   );
 
   // ─── 记忆治理命令（宿主补齐 agent.memory.* / agent.governance.* API 消费） ───

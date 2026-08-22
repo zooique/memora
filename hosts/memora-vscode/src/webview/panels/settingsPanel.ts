@@ -18,6 +18,7 @@ import type {
   ExtensionToWebviewMessage,
   MemoryItemDto,
   MemoryStatsDto,
+  SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
@@ -46,7 +47,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 全局状态存储（持久化激活角色包，用户级） */
   private _globalState: vscode.Memento | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
-  private _pendingTab: 'roles' | 'config' | 'memory' | undefined;
+  private _pendingTab: 'roles' | 'config' | 'memory' | 'skills' | undefined;
   /** 对话面板提供者（角色 handoff 预填需跨 webview 投递，由 extension 注入） */
   private _chatProvider: MemoraChatViewProvider | undefined;
 
@@ -113,6 +114,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void this.loadRoles();
       void this.loadConfig();
       void this.loadMemory();
+      void this.loadSkills();
       return;
     }
 
@@ -216,6 +218,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
     if (msg.type === 'memory_search') {
       await this.searchMemory(msg.query, msg.limit);
+      return;
+    }
+
+    // ─── 技能子视图消息 ───
+    if (msg.type === 'skills_load') {
+      await this.loadSkills();
       return;
     }
   }
@@ -336,6 +344,32 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  // ─── 技能子视图数据加载 ───
+
+  /** 加载全局技能列表 */
+  private async loadSkills(): Promise<void> {
+    const agent = await this.ensureAgent();
+    const sm = agent?.skills;
+    if (!sm) {
+      this.post({ type: 'skills_loaded', skills: [] });
+      return;
+    }
+    const skills: SkillDto[] = sm.list.map((s: {
+      name: string;
+      description?: string;
+      keywords: string[];
+      trigger?: RegExp;
+      filePath: string;
+    }) => ({
+      name: s.name,
+      description: s.description ?? '',
+      keywords: s.keywords,
+      trigger: s.trigger?.source,
+      filePath: s.filePath,
+    }));
+    this.post({ type: 'skills_loaded', skills });
+  }
+
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(msg);
@@ -347,7 +381,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 向 webview 推送 settings_switch_tab 指令，webview 切换选项卡高亮 + 显示对应子视图；
    * 视图尚未就绪时缓存待切选项卡，等 ready 握手后补发（避免命令消息被丢弃）。
    */
-  public switchTab(tab: 'roles' | 'config' | 'memory'): void {
+  public switchTab(tab: 'roles' | 'config' | 'memory' | 'skills'): void {
     this._pendingTab = tab;
     if (this._view) {
       this.post({ type: 'settings_switch_tab', tab });
@@ -410,11 +444,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
 </style>
 </head>
 <body>
-  <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 -->
+  <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 / 技能 -->
   <div class="tabs" role="tablist" aria-label="设置选项卡">
     <button class="tab-btn active" data-tab="memory" role="tab" aria-selected="true">记忆</button>
     <button class="tab-btn" data-tab="roles" role="tab" aria-selected="false">角色</button>
     <button class="tab-btn" data-tab="config" role="tab" aria-selected="false">大模型</button>
+    <button class="tab-btn" data-tab="skills" role="tab" aria-selected="false">技能</button>
   </div>
 
   <!-- 记忆子视图（memory 选项卡，默认首页） -->
@@ -490,6 +525,20 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </div>
     </div>
     <div id="toast"></div>
+  </div>
+
+  <!-- 技能子视图（skills 选项卡，2026-08-22 新增） -->
+  <div id="skills-root" role="tabpanel" aria-label="技能" hidden>
+    <div class="header">
+      <h2>全局技能</h2>
+      <span id="skillCount" class="stat-bar" hidden></span>
+      <button id="btnRefreshSkills" class="btn btn-secondary">刷新</button>
+    </div>
+    <div class="hint">全局技能是所有角色包共享的能力，存储在 <code>~/.memora/skills/</code> 目录下。</div>
+    <div id="skillsList">
+      <p class="hint">加载中…</p>
+    </div>
+    <p class="footer-hint">技能按名称排序。可创建 <code>.md</code> 文件到 <code>~/.memora/skills/</code> 添加自定义技能。</p>
   </div>
 
   <script src="${scriptUri}"></script>

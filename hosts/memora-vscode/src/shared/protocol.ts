@@ -160,7 +160,14 @@ export type WebviewToExtensionMessage =
    * host 调 MemoryInspector.searchHybrid(query, limit)（语义+关键词混合检索），
    * 返回带 score/similarity 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
-  | { type: 'memory_search'; query: string; limit?: number };
+  | { type: 'memory_search'; query: string; limit?: number }
+  // ─── 技能管理面板消息（2026-08-22 新增） ───
+  /**
+   * 请求加载全局技能列表（技能视图打开/刷新时触发）
+   *
+   * host 调 SkillManager.list() 返回：全局技能列表。
+   */
+  | { type: 'skills_load' };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -414,14 +421,14 @@ export type ExtensionToWebviewMessage =
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
+
   // ─── 设置视图消息（2026-08-17 选项卡合并） ───
-  /**
-   * 切换设置视图的子选项卡（host → webview 指令）
-   *
-   * 由「配置大模型」命令触发：聚焦设置视图后切换到「大模型」子选项卡，
-   * 让命令落点与用户意图一致（而非停在默认的「角色」选项卡）。
-   */
-  | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' }
+  /** 切换设置视图的子选项卡（host → webview 指令） */
+  | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' | 'skills' }
+
+  // ─── 技能管理面板消息（2026-08-22 新增） ───
+  /** 全局技能列表加载完成（对 skills_load 的应答） */
+  | { type: 'skills_loaded'; skills: SkillDto[] }
   // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───
   /**
    * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）
@@ -486,4 +493,18 @@ export interface MemoryItemDto {
   content: string;
   /** 创建时间（ISO 8601，可选） */
   createdAt?: string;
+}
+
+/** 全局技能条目（技能视图列表，2026-08-22 新增） */
+export interface SkillDto {
+  /** 技能名称 */
+  name: string;
+  /** 技能描述 */
+  description: string;
+  /** 关键词列表（用于触发匹配） */
+  keywords: string[];
+  /** 触发正则（可选） */
+  trigger?: string;
+  /** 技能文件路径（相对 configDir/skills/） */
+  filePath?: string;
 }
