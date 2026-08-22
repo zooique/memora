@@ -15,6 +15,7 @@
  */
 import type {
   ExtensionToWebviewMessage,
+  GovernanceStatsDto,
   MemoryItemDto,
   MemoryStatsDto,
   WebviewToExtensionMessage,
@@ -66,6 +67,14 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;
   const searchInput = root.querySelector('#searchInput') as HTMLInputElement;
+
+  // 治理区元素（G4，2026-08-23：统计卡 + 衰减/清理按钮 + 结果提示）
+  const govActive = root.querySelector('#govActive') as HTMLElement | null;
+  const govDeleted = root.querySelector('#govDeleted') as HTMLElement | null;
+  const govDecayRun = root.querySelector('#govDecayRun') as HTMLElement | null;
+  const govDetail = root.querySelector('#govDetail') as HTMLElement | null;
+  const btnDecay = root.querySelector('#btnDecay') as HTMLButtonElement | null;
+  const btnCleanup = root.querySelector('#btnCleanup') as HTMLButtonElement | null;
 
   /** 当前搜索词（非空表示处于搜索模式，列表模式为空串） */
   let activeQuery = '';
@@ -172,7 +181,37 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     statBar.textContent = `共 ${stats.total} 条` + (parts.length > 0 ? ` · ${parts.join(' · ')}` : '');
   }
 
-  // 消息接收：memory_loaded 渲染列表，memory_search_result 渲染搜索结果
+  /** 渲染治理统计（活跃 / 回收站 / 衰减次数 + 累计衰减条数详情） */
+  function renderGovernance(stats: GovernanceStatsDto): void {
+    if (govActive) govActive.textContent = String(stats.active);
+    if (govDeleted) govDeleted.textContent = String(stats.deleted);
+    if (govDecayRun) govDecayRun.textContent = String(stats.decay?.runCount ?? 0);
+    if (govDetail && stats.decay && stats.decay.totalDecayedCount > 0) {
+      govDetail.hidden = false;
+      govDetail.classList.remove('gov-error');
+      govDetail.textContent = `累计衰减 ${stats.decay.totalDecayedCount} 条记忆`;
+    } else if (govDetail) {
+      govDetail.hidden = true;
+    }
+  }
+
+  /**
+   * 展示治理操作结果（governance_result）并刷新数据
+   *
+   * 治理操作会改变记忆库（衰减改 score 顺序 / 清理删条目）→ 重新拉取治理数据 + 列表，
+   * 保证治理区统计与列表实时一致。
+   */
+  function showGovernanceResult(msg: { ok: boolean; message?: string; action: 'decay' | 'cleanup' }): void {
+    if (govDetail) {
+      govDetail.hidden = false;
+      govDetail.textContent = msg.message ?? (msg.ok ? '操作完成' : '操作失败');
+      govDetail.classList.toggle('gov-error', !msg.ok);
+    }
+    vscode.postMessage({ type: 'governance_load' });
+    vscode.postMessage({ type: 'memory_load' });
+  }
+
+  // 消息接收：memory_loaded 渲染列表，memory_search_result 渲染搜索结果，governance_* 渲染治理区
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'memory_loaded') {
@@ -186,7 +225,19 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       // 迟到的旧搜索结果会被丢弃，避免残影覆盖列表态。
       if (payload.query !== searchInput.value.trim()) return;
       render(payload.hits, payload.query);
+    } else if (msg.type === 'governance_loaded') {
+      renderGovernance(msg.stats);
+    } else if (msg.type === 'governance_result') {
+      showGovernanceResult(msg);
     }
+  });
+
+  // 治理按钮：触发衰减 / 清理过期（确认由 host 侧弹窗，webview 只发消息）
+  btnDecay?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'governance_decay' });
+  });
+  btnCleanup?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'governance_cleanup' });
   });
 
   // 搜索：非空提交搜索，清空回列表（防抖避免每击键都触发 IPC）
@@ -206,6 +257,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     }, 300);
   });
 
-  // 首屏：请求加载列表
+  // 首屏：请求加载列表 + 治理统计
   vscode.postMessage({ type: 'memory_load' });
+  vscode.postMessage({ type: 'governance_load' });
 }

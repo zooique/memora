@@ -16,6 +16,7 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
 import type {
   ExtensionToWebviewMessage,
+  GovernanceStatsDto,
   MemoryItemDto,
   MemoryStatsDto,
   SkillDto,
@@ -228,6 +229,20 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    // ─── 记忆治理消息（G4，2026-08-23） ───
+    if (msg.type === 'governance_load') {
+      await this.loadGovernance();
+      return;
+    }
+    if (msg.type === 'governance_decay') {
+      await this.runDecay();
+      return;
+    }
+    if (msg.type === 'governance_cleanup') {
+      await this.runCleanup();
+      return;
+    }
+
     // ─── 技能子视图消息 ───
     if (msg.type === 'skills_load') {
       await this.loadSkills();
@@ -352,6 +367,115 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       const message = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Memora 记忆搜索失败：${message}`);
       this.post({ type: 'memory_search_result', query, hits: [] });
+    }
+  }
+
+  // ─── 记忆治理数据加载（G4，2026-08-23） ───
+
+  /** 治理数据清理阈值：永久删除 N 天前的软删除记忆（与 memora.cleanupMemories 命令对齐） */
+  private static readonly CLEANUP_DAYS = 30;
+
+  /**
+   * 加载记忆治理统计（governance_load 应答）
+   *
+   * 活跃数取自 memory.stats()，回收站数取自 listDeleted()，衰减记录取自 getMetrics().decay。
+   * agent.memory 未就绪时推送全零统计（webview 渲染空治理区）。
+   */
+  private async loadGovernance(): Promise<void> {
+    const agent = await this.ensureAgent();
+    const memory = agent?.memory;
+    if (!memory) {
+      const decay = agent?.getMetrics().decay ?? undefined;
+      this.post({
+        type: 'governance_loaded',
+        stats: {
+          active: 0,
+          deleted: 0,
+          bySource: {},
+          ...(decay ? { decay } : {}),
+        },
+      });
+      return;
+    }
+    const stats = memory.stats();
+    const deleted = memory.listDeleted(1000).length;
+    const decay = agent?.getMetrics().decay ?? undefined;
+    const governance: GovernanceStatsDto = {
+      active: stats.total,
+      deleted,
+      bySource: stats.bySource,
+      ...(decay ? { decay } : {}),
+    };
+    this.post({ type: 'governance_loaded', stats: governance });
+  }
+
+  /**
+   * 触发一次记忆衰减（governance_decay）
+   *
+   * 走内核单入口 agent.governance.decay()（与 memora.triggerDecay 命令同路径），
+   * 完成后从 getMetrics().decay 读取最新计数推给 webview，并刷新治理统计。
+   */
+  private async runDecay(): Promise<void> {
+    const agent = await this.ensureAgent();
+    if (!agent?.governance) {
+      this.post({ type: 'governance_result', ok: false, message: 'Agent 未就绪，无法触发记忆衰减', action: 'decay' });
+      return;
+    }
+    try {
+      agent.governance.decay();
+      const decay = agent.getMetrics().decay;
+      const message = decay
+        ? `记忆衰减完成（累计运行 ${decay.runCount} 次，共衰减 ${decay.totalDecayedCount} 条）`
+        : '记忆衰减完成';
+      this.post({ type: 'governance_result', ok: true, message, action: 'decay' });
+      await this.loadGovernance();
+    } catch (err) {
+      this.post({
+        type: 'governance_result',
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+        action: 'decay',
+      });
+    }
+  }
+
+  /**
+   * 清理过期软删除记忆（governance_cleanup）
+   *
+   * 破坏性操作：弹确认框后调 agent.memory.writePurgeExpired(N 天前) 永久删除，
+   * 完成后刷新治理统计与记忆列表（复刻 memora.cleanupMemories 命令语义）。
+   */
+  private async runCleanup(): Promise<void> {
+    const agent = await this.ensureAgent();
+    if (!agent?.memory) {
+      this.post({ type: 'governance_result', ok: false, message: 'Agent 未就绪，无法清理记忆', action: 'cleanup' });
+      return;
+    }
+    const confirmed = await vscode.window.showWarningMessage(
+      `将永久删除 ${MemoraSettingsViewProvider.CLEANUP_DAYS} 天前的软删除记忆，此操作不可撤销。`,
+      { modal: true },
+      '确认清理',
+      '取消',
+    );
+    if (confirmed !== '确认清理') return;
+    try {
+      const cutoff = new Date(Date.now() - MemoraSettingsViewProvider.CLEANUP_DAYS * 24 * 60 * 60 * 1000);
+      const purged = agent.memory.writePurgeExpired(cutoff);
+      this.post({
+        type: 'governance_result',
+        ok: true,
+        message: `已清理 ${purged} 条过期记忆`,
+        action: 'cleanup',
+      });
+      await this.loadGovernance();
+      await this.loadMemory();
+    } catch (err) {
+      this.post({
+        type: 'governance_result',
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+        action: 'cleanup',
+      });
     }
   }
 
@@ -494,6 +618,30 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="list">
       <p class="hint">加载中…</p>
     </div>
+
+    <!-- 记忆治理区（G4，2026-08-23：统计卡 + 衰减/清理操作） -->
+    <div id="governance" class="governance" role="region" aria-label="记忆治理">
+      <div class="governance-stats">
+        <div class="governance-stat">
+          <span id="govActive" class="gov-num">0</span>
+          <span class="gov-label">活跃</span>
+        </div>
+        <div class="governance-stat">
+          <span id="govDeleted" class="gov-num">0</span>
+          <span class="gov-label">回收站</span>
+        </div>
+        <div class="governance-stat">
+          <span id="govDecayRun" class="gov-num">0</span>
+          <span class="gov-label">衰减次数</span>
+        </div>
+      </div>
+      <div class="governance-actions">
+        <button id="btnDecay" class="btn btn-secondary" title="触发一次记忆权重衰减（自然遗忘）">触发衰减</button>
+        <button id="btnCleanup" class="btn btn-secondary" title="永久删除 30 天前的软删除记忆（不可撤销）">清理过期</button>
+      </div>
+      <p id="govDetail" class="governance-detail" hidden></p>
+    </div>
+
     <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
 

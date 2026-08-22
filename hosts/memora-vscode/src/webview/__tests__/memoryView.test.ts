@@ -13,10 +13,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createMemoryView } from '../scripts/memoryView.js';
-import type { MemoryItemDto, MemoryStatsDto } from '../../shared/protocol.js';
+import type { GovernanceStatsDto, MemoryItemDto, MemoryStatsDto } from '../../shared/protocol.js';
 
 /** 覆盖 createMemoryView 全部查询引用的最小 HTML 骨架（子视图挂载在 #memory-root 根容器内，
- *  与设置视图选项卡合并后的 id 空间隔离约定一致） */
+ *  与设置视图选项卡合并后的 id 空间隔离约定一致；含 G4 记忆治理区骨架） */
 const HTML = `
   <div id="memory-root">
     <div class="header">
@@ -27,6 +27,18 @@ const HTML = `
       <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" />
     </div>
     <div id="list"><p class="hint">加载中…</p></div>
+    <div id="governance" class="governance">
+      <div class="governance-stats">
+        <div class="governance-stat"><span id="govActive" class="gov-num">0</span><span class="gov-label">活跃</span></div>
+        <div class="governance-stat"><span id="govDeleted" class="gov-num">0</span><span class="gov-label">回收站</span></div>
+        <div class="governance-stat"><span id="govDecayRun" class="gov-num">0</span><span class="gov-label">衰减次数</span></div>
+      </div>
+      <div class="governance-actions">
+        <button id="btnDecay" class="btn btn-secondary">触发衰减</button>
+        <button id="btnCleanup" class="btn btn-secondary">清理过期</button>
+      </div>
+      <p id="govDetail" class="governance-detail" hidden></p>
+    </div>
     <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
 `;
@@ -58,6 +70,15 @@ function dispatchSearchResult(query: string, hits: MemoryItemDto[]): void {
   window.dispatchEvent(
     new MessageEvent('message', {
       data: { type: 'memory_search_result', query, hits },
+    }),
+  );
+}
+
+/** 向 webview 分发一条 governance_loaded 消息，驱动治理区渲染 */
+function dispatchGovernanceLoaded(stats: GovernanceStatsDto): void {
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      data: { type: 'governance_loaded', stats },
     }),
   );
 }
@@ -190,5 +211,73 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // ─── G4 记忆治理区（2026-08-23） ───
+
+  it('首屏加载 → 额外发送 governance_load', () => {
+    const { postMessage } = mountMemoryView();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'governance_load' });
+  });
+
+  it('governance_loaded 渲染治理统计（活跃/回收站/衰减次数 + 累计详情）', () => {
+    mountMemoryView();
+    dispatchGovernanceLoaded({
+      active: 5,
+      deleted: 2,
+      bySource: { 'round-summary': 5 },
+      decay: { runCount: 3, totalDecayedCount: 12, lastRunAt: '2026-08-23T00:00:00.000Z' },
+    });
+    expect(document.getElementById('govActive')?.textContent).toBe('5');
+    expect(document.getElementById('govDeleted')?.textContent).toBe('2');
+    expect(document.getElementById('govDecayRun')?.textContent).toBe('3');
+    // 累计衰减详情可见（totalDecayedCount > 0）
+    const detail = document.getElementById('govDetail');
+    expect(detail?.hidden).toBe(false);
+    expect(detail?.textContent).toContain('12 条');
+  });
+
+  it('governance_loaded 无衰减记录 → 衰减次数 0 且详情隐藏', () => {
+    mountMemoryView();
+    dispatchGovernanceLoaded({ active: 0, deleted: 0, bySource: {} });
+    expect(document.getElementById('govDecayRun')?.textContent).toBe('0');
+    expect(document.getElementById('govDetail')?.hidden).toBe(true);
+  });
+
+  it('点击「触发衰减」→ postMessage governance_decay', () => {
+    const { postMessage } = mountMemoryView();
+    (document.getElementById('btnDecay') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'governance_decay' });
+  });
+
+  it('点击「清理过期」→ postMessage governance_cleanup', () => {
+    const { postMessage } = mountMemoryView();
+    (document.getElementById('btnCleanup') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'governance_cleanup' });
+  });
+
+  it('governance_result 显示结果并重新拉取治理数据 + 列表', () => {
+    const { postMessage } = mountMemoryView();
+    postMessage.mockClear();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'governance_result', ok: true, message: '已清理 3 条过期记忆', action: 'cleanup' },
+      }),
+    );
+    expect(document.getElementById('govDetail')?.textContent).toBe('已清理 3 条过期记忆');
+    expect(postMessage).toHaveBeenCalledWith({ type: 'governance_load' });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_load' });
+  });
+
+  it('governance_result 失败 → 详情带错误样式', () => {
+    mountMemoryView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'governance_result', ok: false, message: 'Agent 未就绪', action: 'decay' },
+      }),
+    );
+    const detail = document.getElementById('govDetail') as HTMLElement;
+    expect(detail.hidden).toBe(false);
+    expect(detail.classList.contains('gov-error')).toBe(true);
   });
 });

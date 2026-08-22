@@ -131,4 +131,50 @@ export const memoryStyles = `
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
   }
+
+  /* ============ Components：记忆治理区（G4，2026-08-23） ============ */
+  #memory-root .governance {
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  /* 统计卡：三列（活跃 / 回收站 / 衰减次数） */
+  #memory-root .governance-stats {
+    display: flex;
+    gap: var(--sp-3, 8px);
+    margin-bottom: var(--sp-3, 8px);
+  }
+  #memory-root .governance-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    padding: var(--sp-3, 8px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius, 6px);
+    background: var(--surface-sidebar);
+  }
+  #memory-root .gov-num { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); }
+  #memory-root .gov-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  /* 操作按钮：衰减（低扰次按钮）+ 清理（强调不可逆性） */
+  #memory-root .governance-actions { display: flex; gap: var(--sp-2, 6px); }
+  #memory-root .btn {
+    flex: 1;
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    border-radius: var(--radius, 6px);
+    border: none;
+    cursor: pointer;
+    background: var(--accent, #0e639c);
+    color: var(--accent-foreground, #ffffff);
+    font-size: var(--font-md, 12px);
+  }
+  #memory-root .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
+  #memory-root .btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+  /* 结果提示：默认次要色，失败时错误色 */
+  #memory-root .governance-detail {
+    margin-top: var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  #memory-root .governance-detail.gov-error { color: var(--vscode-errorForeground, #f48771); }
 `;
