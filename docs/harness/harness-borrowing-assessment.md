@@ -16,7 +16,7 @@ DeepSeek Harness（2026-08-13 开源，MIT）提出三大可借鉴点：
 
 另有三条中 ROI 建议：Turn/Step 双层循环、子 Agent 委派、通用 inject API。
 
-**评估方法**：对照 memora 现有代码（loop.ts / toolExecutor.ts / contextManager.ts / sessionStore.ts / agent.ts / configManager.ts）逐条排雷，识别：重复定义、架构分层冲突、哲学冲突、过度设计四类雷区，再给出收敛后的最终采纳结论。
+**评估方法**：对照 memora 现有代码（loop.ts / toolExecutor.ts / contextManager.ts / sessionStore.ts / agent.ts / sessionManager.ts）逐条排雷，识别：重复定义、架构分层冲突、哲学冲突、过度设计四类雷区，再给出收敛后的最终采纳结论。
 
 ---
 
@@ -79,7 +79,7 @@ DeepSeek Harness（2026-08-13 开源，MIT）提出三大可借鉴点：
 | 项目 | 内容 |
 |------|------|
 | **Harness 参照** | `agent.inject(contextBlock, { ttl })` 运行时注入上下文 |
-| **memora 现状** | `injectSystemMessage(content)` 已是公开的通用运行时注入 API（[loop.ts](../../src/agent/loop.ts#L1425)），被 configManager / sessionManager / agent 广泛调用；`affectPrefix` 只是它的一个带语义的特例 |
+| **memora 现状** | `injectSystemMessage(content)` 已是公开的通用运行时注入 API（[loop.ts](../../src/agent/loop.ts#L1397)），被 sessionManager / agent / contextPreparer / orchestrator 等广泛调用；`affectPrefix` 只是它的一个带语义的特例 |
 | **雷区** | ⚠️ **重复定义**：`agent.inject()` 泛化后与现有 `injectSystemMessage` + `cleanTemporarySystemMessages`（TTL 清理）完全重叠 |
 | **排雷结论** | **不采纳新 API**。现有 `injectSystemMessage` 已是通用注入通道，affectPrefix 不必泛化 |
 | **判定** | ❌ **否决** |

@@ -243,11 +243,9 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `projectName` | `string` | 项目名称（从注册表读取，或取目录名） |
 | `memoraDir` | `string` | `.memora/` 目录的绝对路径 |
 | `dbPath` | `string` | memora.db 路径 |
-| `fileStore` | `FileStore` | 文件存储 |
 | `index` | `IMemoryStorage` | 记忆存储接口 |
 | `security` | `SecurityGuard` | 安全守卫 |
 | `bootstrapMemories` | `Memory[]` | 启动时加载的必召记忆 |
-| `loadResult` | `LoadResult` | 加载结果（成功数 / 失败数） |
 
 ### 2.7 事件订阅（`agent.on()` / `agent.off()` / `agent.once()`）
 
