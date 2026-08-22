@@ -2,6 +2,8 @@
 
 > 定位：设计文档，描述召回互斥排除采用**前置过滤**（在 recall() 取 limit 前排除当前会话最近 N 轮 round-summary）的最终形态。关联：memory-as-summary §4.3 互斥排除、§4.7 召回保底。
 
+> **演进状态**：本设计以 `recentRounds` 固定 N 轮为前提（当前落地形态）。探索方向为「动态轮数」——互斥窗口从「固定 N」改为「跟随实际注入轮数」，`recentRoundIds` 来源将由 `resolveRecentRounds`（固定 N）改为实际注入轮号集合，`recentRounds` 键随之废弃，见 [role-pack-spec.md](role-pack-spec.md)。
+
 ## 一、为什么要前置排除
 
 当前会话进行多轮后，最近 N 轮问答通过 `recentRounds` **全量加载**进上下文，其 round-summary 不应再被召回注入。

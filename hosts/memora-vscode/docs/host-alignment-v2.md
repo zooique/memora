@@ -438,7 +438,7 @@ case 'loop':
 |--------|---------|
 | 角色包 = 设定卡 | 5 个角色包，可切换，粘性匹配 |
 | 记忆 = 摘要记忆 | round-summary 自动生成，WorkingMemoryInspector 消费 |
-| Loop = 闭环自然生长 | 最小问答闭环，handoff 控制循环 |
+| Loop = 闭环自然生长 | 最小执行闭环，handoff 控制循环 |
 | 单一真理源 | protocol.ts 统一消息协议 |
 | 薄壳装配 | assemble.ts 注入所有依赖 |
 
