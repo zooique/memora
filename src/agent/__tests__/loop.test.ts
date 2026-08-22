@@ -437,6 +437,36 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
     expect(messages.some((m) => m.content.includes('Round summary'))).toBe(false);
     expect(loop.getReplacedRoundIds()).toEqual([]);
   });
+
+  it('上下文被截断重排 → 替换层跳过（roundId 尾部对齐失效，避免错位替换正文）', async () => {
+    // 首轮回答足够长：推高上下文 token，使二轮触发真实截断重排（而非 system prompt 超限分支）
+    const longAnswer = '第一轮回答' + 'x'.repeat(600);
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: longAnswer }], // turn0：首轮（长回答）
+        [{ content: '第二轮回答' }], // turn1：二轮
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      replaceRoundsKeepRecent: 1,
+      // round-1 有已存摘要（替换层本有机会替换），但二轮截断重排后应跳过
+      getRoundSummary: (roundId) => (roundId === 'round-1' ? '摘要：第一轮干的事' : null),
+      maxContextTokens: 200, // 窗口大于 system prompt、小于二轮整体 → 触发截断重排
+    });
+
+    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+      // drain
+    }
+    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+      // drain
+    }
+
+    // 二轮 LLM 调用前 _prepareContext 触发截断重排 → 替换层跳过（roundId 尾部对齐失效）
+    // 即使 round-1 有已存摘要也不替换，避免错位替换正文；空间维护交回截断机制
+    expect(loop.getReplacedRoundIds()).toEqual([]);
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('Round summary · roundId: round-1'))).toBe(false);
+  });
 });
 
 describe('AgentLoop · 软上限终止（摘要层达容量上限 → 收尾信号）', () => {

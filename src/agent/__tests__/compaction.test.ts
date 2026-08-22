@@ -384,4 +384,35 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     expect(replacedIds).toContain('round-1');
     expect(replacedIds).toContain('round-2');
   });
+
+  it('上下文被截断重排（isContextTruncated=true）→ 替换层跳过（shouldCompact=false、compact no-op）', () => {
+    const onReplaced = vi.fn();
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 1,
+      getSummary: (rid) => summaryMap.get(rid) ?? null,
+      roundIds: () => makeSeq(4),
+      onReplaced,
+      isContextTruncated: () => true,
+    });
+    const messages = createRoundMessages(4);
+    // 截断重排后 roundId 尾部对齐映射失效 → 跳过替换，避免错位替换正文
+    expect(strategy.shouldCompact(messages)).toBe(false);
+    strategy.compact(messages);
+    expect(onReplaced).not.toHaveBeenCalled();
+    // 正文保持原样
+    expect(messages.some((m) => m.content.includes('Round summary'))).toBe(false);
+  });
+
+  it('上下文未被截断 → 替换正常生效（isContextTruncated=false）', () => {
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 1,
+      getSummary: (rid) => summaryMap.get(rid) ?? null,
+      roundIds: () => makeSeq(4),
+      isContextTruncated: () => false,
+    });
+    const messages = createRoundMessages(4);
+    expect(strategy.shouldCompact(messages)).toBe(true);
+    strategy.compact(messages);
+    expect(messages.some((m) => m.content.includes('Round summary · roundId: round-1'))).toBe(true);
+  });
 });

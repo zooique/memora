@@ -108,21 +108,26 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
   private readonly getSummary: (roundId: string) => string | null;
   /** 取当前轮次 id 序列（与消息中 user 轮次顺序一致，loop 维护）；从尾部对齐最近轮 */
   private readonly roundIds: () => readonly string[];
+  /** 上下文是否刚被截断重排（roundIdSequence 与消息轮次无法可靠对齐时跳过替换，交截断机制兜底） */
+  private readonly isContextTruncated: () => boolean;
 
   /**
    * @param options keepRecentRounds 保留最近正文轮数 / getSummary 按 roundId 取摘要 /
-   *   roundIds 轮次 id 序列 / onReplaced 被替换轮的 roundId 回调（供装配 exclude 记账，防二次召回）
+   *   roundIds 轮次 id 序列 / onReplaced 被替换轮的 roundId 回调（供装配 exclude 记账，防二次召回）/
+   *   isContextTruncated 上下文是否被截断重排（截断会提取 key messages 重插中间，尾部对齐映射失效，跳过替换）
    */
   constructor(options: {
     keepRecentRounds: number;
     getSummary: (roundId: string) => string | null;
     roundIds: () => readonly string[];
     onReplaced?: (roundId: string) => void;
+    isContextTruncated?: () => boolean;
   }) {
     this.keepRecentRounds = options.keepRecentRounds;
     this.getSummary = options.getSummary;
     this.roundIds = options.roundIds;
     this.onReplaced = options.onReplaced;
+    this.isContextTruncated = options.isContextTruncated ?? (() => false);
   }
 
   /** 被替换轮 roundId 回调（装配时间线互斥：该轮摘要已随替换注入上下文，下次装配须 exclude 防双写） */
@@ -146,8 +151,11 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
     return rounds;
   }
 
-  /** @inheritdoc 存在越界轮次（超出保留轮数）时需替换 */
+  /** @inheritdoc 上下文未被截断重排且存在越界轮次（超出保留轮数）时需替换 */
   shouldCompact(messages: readonly Message[]): boolean {
+    // 截断会提取 key messages 重插中间，roundIdSequence 尾部对齐映射失效——
+    // 此时跳过替换（错位替换正文比不替换危害更大），空间维护交回截断机制的摘要注入
+    if (this.isContextTruncated()) return false;
     return this.groupRounds(messages).length > this.keepRecentRounds;
   }
 
@@ -157,6 +165,8 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
    * 从后往前替换，避免索引位移。无摘要的轮次保持不动（交第二级压缩）。
    */
   compact(messages: Message[]): void {
+    // 双保险：截断重排后 roundId 尾部对齐失效 → 即使被直接调用也不替换（空间维护交回截断机制）
+    if (this.isContextTruncated()) return;
     const rounds = this.groupRounds(messages);
     // 越界轮次：保留最近 keepRecentRounds 轮，其余为可替换区（LRU 最早先换）
     const replaceableCount = Math.max(0, rounds.length - this.keepRecentRounds);
