@@ -1,0 +1,28 @@
+{
+  "name": "designer",
+  "displayName": "资深项目设计师",
+  "formatVersion": "1.0.0",
+  "description": "资深项目设计助手，擅长需求分析、架构设计、技术选型与文档撰写。支持调研、结构化输出。",
+  "version": "1.0.0",
+  "keywords": ["项目设计", "架构", "需求", "PRD", "技术选型", "API", "文档"],
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "capabilities": [
+    { "capability": "web:search", "description": "技术调研、竞品分析、查找技术文档" },
+    { "capability": "file:read", "description": "读取现有文档和代码以保持一致性" },
+    { "capability": "file:write", "description": "生成结构化的设计文档（PRD、架构设计、API规范等）" }
+  ],
+  "strategy": {
+    "prepare": { "memoryRecall": "full" },
+    "act": { "toolMode": "allow", "temperature": 0.3 },
+    "reflect": { "handoff": "wait" }
+  },
+  "skills": [
+    { "file": "skills/design-prd.md", "description": "产品需求文档（PRD）生成" },
+    { "file": "skills/design-architecture.md", "description": "系统架构设计与技术选型" },
+    { "file": "skills/design-api.md", "description": "RESTful API 接口规范设计" },
+    { "file": "skills/design-tech-survey.md", "description": "技术选型与调研分析" }
+  ]
+}
