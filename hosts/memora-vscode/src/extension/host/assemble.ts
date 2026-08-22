@@ -159,7 +159,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     provider,
     // Provider 路由策略（激活 AgentLoop 路由缓存优化；按任务类型返回对应 Provider）
     providerRouter,
-    // 后台模型 Provider（G5：摘要/归档/洞察等后台任务走独立轻量模型；undefined 回退前台）
+    // 后台模型 Provider（G5：摘要/归档/润色/去重等后台任务走独立轻量模型；undefined 回退前台）
     backgroundProvider,
     storage,
     sessionStore: store,

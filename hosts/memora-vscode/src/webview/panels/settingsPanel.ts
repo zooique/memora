@@ -397,7 +397,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 设置后台模型 Provider（cfg_set_background，G5 多 Provider 路由）
    *
    * 持久化后台 Provider 选择后热更新 agent.setBackgroundProvider：后台任务（摘要/归档/
-   * 洞察等）后续走独立轻量模型；name 为空 → setBackgroundProvider(null) 回退与实时对话相同。
+   * 润色/去重等）后续走独立轻量模型；name 为空 → setBackgroundProvider(null) 回退与实时对话相同。
    * 成功后刷新配置面板（后台模型下拉回显）。
    */
   private async setBackgroundProvider(name: string): Promise<void> {
@@ -749,13 +749,13 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span id="statBar" class="stat-bar" hidden></span>
       <button id="btnAdd" class="btn">添加 API</button>
     </div>
-    <!-- 后台模型通道（G5 多 Provider 路由，2026-08-23）：后台任务（摘要/归档/洞察）独立轻量模型 -->
+    <!-- 后台模型通道（G5 多 Provider 路由，2026-08-23）：后台任务（摘要/归档/润色）独立轻量模型 -->
     <div class="cfg-bg">
       <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>
-      <select id="bgModel" class="cfg-bg-select" aria-label="后台模型，用于后台任务（摘要/归档/洞察）">
+      <select id="bgModel" class="cfg-bg-select" aria-label="后台模型，用于后台任务（摘要/归档/润色）">
         <option value="">同实时对话</option>
       </select>
-      <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 洞察提取）走此模型，可选用轻量快模型节省成本。</p>
+      <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 文本润色 / 语义去重）走此模型，可选用轻量快模型节省成本。</p>
     </div>
     <!-- 向量检索区（G1 记忆语义检索，2026-08-23）：配置 Embedding 后记忆搜索启用语义召回 -->
     <details id="embeddingCfg" class="embedding-cfg">

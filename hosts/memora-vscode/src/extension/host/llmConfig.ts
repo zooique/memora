@@ -60,7 +60,7 @@ export async function createProvider(
 /**
  * 创建后台模型 Provider（G5 多 Provider 路由，2026-08-23）
  *
- * 后台任务（轮次摘要 / 会话归档 / 洞察提取 / 去重判定）走独立 Provider，可选用轻量快模型
+ * 后台任务（轮次摘要 / 会话归档 / 文本润色 / 去重判定）走独立 Provider，可选用轻量快模型
  * 节省成本。store 未配置后台通道（getBackgroundName 为空 / name 不存在）返回 undefined——
  * 内核 backgroundProvider 缺省回退到与实时对话相同 Provider，零破坏性。
  *
