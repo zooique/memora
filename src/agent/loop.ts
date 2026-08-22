@@ -197,7 +197,7 @@ export class AgentLoop {
   /** 被替换轮 roundId 集合（第一级替换把越界轮正文换成已存摘要；装配 exclude 据此防二次召回） */
   private readonly replacedRoundIds: Set<string> = new Set();
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
-  private lastContextWasTruncated = false;
+  private isLastContextTruncated = false;
   /** 两级空间管理压缩链（第一级替换 → 第二级 tool_result 占位 → 第二级超大结果卸载兜底） */
   private readonly compactionStrategies: ICompactionStrategy[];
   /** Provider 路由缓存（单轮内缓存同一 taskType，避免每轮重复路由计算），跨轮清空不复用 */
@@ -225,7 +225,7 @@ export class AgentLoop {
           this.replacedRoundIds.add(roundId);
         },
         // 截断重排后 roundId 尾部对齐失效 → 替换层跳过（空间维护交回截断机制）
-        isContextTruncated: () => this.lastContextWasTruncated,
+        isContextTruncated: () => this.isLastContextTruncated,
       }),
       this.compactionStrategy,
       new OffloadCompactionStrategy(),
@@ -754,10 +754,10 @@ export class AgentLoop {
     }
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
     // 记录本次是否截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效）
-    this.lastContextWasTruncated = safeMessages !== this.messages;
+    this.isLastContextTruncated = safeMessages !== this.messages;
     // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）；
     // 同时按剩余 user 轮数修剪 roundIdSequence 前端（被截断的旧轮 id 不再参与替换映射，保持尾部对齐）
-    if (this.lastContextWasTruncated) {
+    if (this.isLastContextTruncated) {
       this.replaceContext([...safeMessages]);
       this.trimRoundIdSequenceToMessages();
     }
@@ -1281,11 +1281,8 @@ export class AgentLoop {
   }
 
   /**
-   * 定位当前触发输入（顶级锚点）之前、最早的执行闭环。
-   *
-   * 语义边界（compress_context 只压"根之前的旧轮次"）：当前输入所在轮次永不压缩；
-   * 上下文无当前输入之前的旧轮次（新对话第一轮）时返回 null——compress_context 报
-   * 「无可压缩目标」，由软上限收尾闭环，而不是把触发输入压掉继续硬跑。
+   * 定位当前触发输入（顶级锚点）之前最早的执行闭环；无旧轮次（新对话第一轮）返回 null
+   * （当前输入永不压缩——交软上限收尾闭环而非压掉触发输入继续硬跑）。
    */
   private findEarliestRound(): Message[] | null {
     // 最后一个 user = 当前触发输入（顶级锚点，永不压缩）
