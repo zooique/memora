@@ -26,6 +26,7 @@ import { roundTo } from '@/utils/math.js';
 import { logger } from '@/logging/logger.js';
 import type { ICompactionStrategy } from '@/agent/compaction.js';
 import { ResultReplacementStrategy } from '@/agent/compaction.js';
+import { deriveDialogueRounds } from '@/agent/budget.js';
 import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/types.js';
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
@@ -1329,21 +1330,54 @@ export class AgentLoop {
     };
   }
 
-  /** 获取最近 N 轮对话（user + assistant，默认 3 轮），供注入 system prompt 见上文 */
-  getRecentHistory(rounds = 3): Array<{ role: 'user' | 'assistant'; content: string }> {
+  /** 估算消息 token 数（CJK 感知，委托 ContextManager）——装配层/预算派生复用同一估算真理源 */
+  estimateTokens(messages: readonly Message[]): number {
+    return this.contextManager.estimateTokens(messages);
+  }
+
+  /**
+   * 按预算容量派生完整对话层轮次集合（动态轮数，role-pack-spec §C/§D）。
+   * 从最近往回塞到预算止，会话第一条问答闭环必然在场（次级锚点：默认在场，压缩可让位）。
+   *
+   * @param maxTokens 完整对话层预算（token，由上下文预算计算派生）
+   * @returns 注入的历史序列 + 最近轮数（供互斥 roundId 排除）+ 是否显式补了第一条
+   */
+  getRecentHistoryWithinBudget(maxTokens: number): {
+    history: Array<{ role: 'user' | 'assistant'; content: string }>;
+    recentRoundCount: number;
+    firstRoundIncluded: boolean;
+  } {
     // 过滤出 user + assistant 消息（排除 system 和 tool）
     const conversationMessages = this.messages.filter(
       (m): m is { role: 'user' | 'assistant'; content: string } =>
         m.role === 'user' || m.role === 'assistant',
     );
 
-    // 取最后 N 轮（每轮 = 1 user + 1 assistant，共 2 条）
-    const recentMessages = conversationMessages.slice(-rounds * 2);
+    // 按 user 消息切分为轮次（每轮 = 该 user 起至下一个 user 前的所有消息）
+    const rounds: Array<{ role: 'user' | 'assistant'; content: string }[]> = [];
+    for (const m of conversationMessages) {
+      if (m.role === 'user') {
+        rounds.push([m]);
+      } else if (rounds.length > 0) {
+        rounds[rounds.length - 1]!.push(m);
+      }
+    }
 
-    return recentMessages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    // 每轮 token 成本（最旧在前），经纯函数派生最近轮数 + 第一条是否显式补入
+    const roundCosts = rounds.map((r) => this.contextManager.estimateTokens(r));
+    const { recentRoundCount, firstRoundIncluded } = deriveDialogueRounds(roundCosts, maxTokens);
+
+    // 组装注入历史：显式补的第一条（若有）+ 最近 recentRoundCount 轮
+    const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (firstRoundIncluded && rounds.length > 0) {
+      history.push(...rounds[0]!);
+    }
+    const recentStart = Math.max(0, rounds.length - recentRoundCount);
+    for (let i = recentStart; i < rounds.length; i++) {
+      history.push(...rounds[i]!);
+    }
+
+    return { history, recentRoundCount, firstRoundIncluded };
   }
 
   /** 获取当前轮次 ID（processUserInput 入口分配，多 iteration 共享），空串表示无活动轮次 */

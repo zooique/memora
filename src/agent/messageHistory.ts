@@ -77,6 +77,25 @@ export class MessageHistory {
     }
   }
 
+  /**
+   * 当前会话第一条轮次的 roundId（会话起点背景，互斥排除用）。
+   * 装配时若第一条不在最近轮内（长会话），完整对话层显式补入第一条，其 roundId 须计入 exclude
+   * 避免其摘要被二次召回（与 getRecentRoundIds 同源同值）。
+   */
+  getFirstRoundId(): string | null {
+    if (!this.sessionStore) return null;
+    try {
+      const messages = this.sessionStore.loadMessages(this.currentDate, this.currentSession);
+      for (const m of messages) {
+        if (m.roundId) return m.roundId;
+      }
+      return null;
+    } catch (err) {
+      logger.warn({ err }, '获取首轮 roundId 失败，跳过互斥排除');
+      return null;
+    }
+  }
+
   /** 当前会话标识 */
   get session(): string {
     return this.currentSession;

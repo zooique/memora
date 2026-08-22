@@ -792,6 +792,8 @@ export async function assembleComponents(
       vectorStore: vectorStore ?? null,
       recallExcludeSources,
       messages,
+      // 上下文预算装配的容量来源（动态轮数派生基准）
+      maxContextTokens,
     },
     // 事件发射桥接到 Agent 强类型 emit（Agent 侧按 AGENT_EVENT_SET 校验）
     emit: (event, data) => hooks?.emit(event, data),

@@ -208,6 +208,60 @@ describe('AgentLoop · processUserInput 纯文本流式输出', () => {
   });
 });
 
+describe('AgentLoop · getRecentHistoryWithinBudget（动态轮数 + 第一条必在场）', () => {
+  /** 跑 N 轮纯文本问答，构造多轮历史（每轮 = 1 user + 1 assistant） */
+  async function buildLoop(rounds: number): Promise<AgentLoop> {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    for (let i = 1; i <= rounds; i++) {
+      for await (const {} of loop.processUserInput(`提问${i}`)) {
+        // drain
+      }
+    }
+    return loop;
+  }
+
+  it('预算充足 → 全部轮次纳入，第一条已在最近轮内，不显式补', async () => {
+    const loop = await buildLoop(3);
+    const result = loop.getRecentHistoryWithinBudget(1_000_000);
+    // system 排除：3 轮 = 6 条 user/assistant 消息
+    expect(result.history.length).toBe(6);
+    expect(result.recentRoundCount).toBe(3);
+    expect(result.firstRoundIncluded).toBe(false);
+  });
+
+  it('预算有限 → 从最近往回塞，第一条不在最近轮内时显式补入（次级锚点）', async () => {
+    const loop = await buildLoop(3);
+    // 预算只够 1 轮左右：recentRoundCount=1（最近一轮），第一条不在内 → 显式补入
+    const result = loop.getRecentHistoryWithinBudget(20);
+    expect(result.recentRoundCount).toBe(1);
+    expect(result.firstRoundIncluded).toBe(true);
+    // 注入历史 = 第一条 + 最近一轮（首条 user 内容在场）
+    expect(result.history[0]!.content).toContain('提问1');
+  });
+
+  it('预算极小 → 仍保最近一轮 + 显式补第一条', async () => {
+    const loop = await buildLoop(2);
+    const result = loop.getRecentHistoryWithinBudget(1);
+    expect(result.recentRoundCount).toBe(1);
+    expect(result.firstRoundIncluded).toBe(true);
+    // 历史含第一条（提问1）+ 最近一轮（提问2）
+    const contents = result.history.map((m) => m.content).join('|');
+    expect(contents).toContain('提问1');
+    expect(contents).toContain('提问2');
+  });
+
+  it('estimateTokens 委托 ContextManager（CJK 感知估算）', async () => {
+    const loop = await buildLoop(1);
+    const tokens = loop.estimateTokens([{ role: 'user', content: '你好世界' }]);
+    // 4 个 CJK 字符 ≈ 4/1.5 = 2.67 → ceil 3
+    expect(tokens).toBe(3);
+  });
+});
+
 describe('AgentLoop · processUserInput 工具调用循环', () => {
   it('应该执行工具调用并继续循环', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('工具执行结果');

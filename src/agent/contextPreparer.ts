@@ -23,6 +23,7 @@ import {
   resolveSummaryRecall,
 } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
+import { computeContextBudget } from '@/agent/budget.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -65,6 +66,8 @@ export interface ContextPreparerDeps {
     recallExcludeSources: string[] | undefined;
     /** 界面文案（最近对话 / 用户 / 助手标签） */
     messages: UIMessages | undefined;
+    /** 上下文窗口容量（token）——动态预算装配的容量来源（优先 provider contextWindow，缺失降级 maxContextTokens） */
+    maxContextTokens: number;
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
   emit: (event: string, data: unknown) => void;
@@ -157,13 +160,32 @@ export class ContextPreparer {
     const strategy = this.getActiveStrategy();
     let recalledMemories: Memory[] = [];
 
-    // 最近对话注入轮数（阶段 1 桥接：内核固定默认；阶段 2 改由上下文预算动态派生轮数）。
-    // 互斥窗口与最近对话注入共用同一轮数，保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"一致
-    const recentRoundCount = AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS;
+    // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
+    // 容量来源：maxContextTokens（优先 provider contextWindow，缺失降级）；固定开销取 system prompt；
+    // 顶级锚点 = 触发输入 + 首个回答预留（独立划块，永不压缩）；完整对话层从最近往回塞到 ~90% 止
+    const loop = deps.loop;
+    const loopMessages = loop.getMessages();
+    const fixedOverheadTokens =
+      loopMessages.length > 0 ? loop.estimateTokens([loopMessages[0]!]) : 0;
+    const inputTokens = loop.estimateTokens([{ role: 'user', content: input }]);
+    const budget = computeContextBudget({
+      windowTokens: deps.config.maxContextTokens,
+      fixedOverheadTokens,
+      inputTokens,
+      memoryRecallPercent: resolveMemoryRecallPercent(strategy),
+    });
 
-    // 互斥 roundId 集合：当前会话最近 N 轮正文已完整加载，其 round-summary 不应再被召回注入。
-    // 前置传入 recall() 在取 limit 前过滤，避免被排除摘要挤占 top-limit 预算（跨会话记忆补位）
-    const recentRoundIds = new Set(deps.history.getRecentRoundIds(recentRoundCount));
+    // 派生完整对话层轮次集合（动态轮数 + 第一条必在场，次级锚点）
+    const dialogue = loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens);
+
+    // 互斥 roundId 集合 = 完整对话层实际注入轮次集合（最近 dialogue.recentRoundCount 轮 +
+    // 显式补的第一条）。前置传入 recall() 在取 limit 前过滤，避免正文/替换产物被二次召回
+    // （装配时间线互斥：exclude = 实际注入轮次，因果闭合，无需额外互斥机制）
+    const recentRoundIds = new Set(deps.history.getRecentRoundIds(dialogue.recentRoundCount));
+    if (dialogue.firstRoundIncluded) {
+      const firstRoundId = deps.history.getFirstRoundId();
+      if (firstRoundId) recentRoundIds.add(firstRoundId);
+    }
 
     // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──
     if (contextAssembly !== 'fixed' && memoryRecallMode !== 'none') {
@@ -176,7 +198,7 @@ export class ContextPreparer {
 
       try {
         // 条数上限统一 DEFAULT_RECALL_LIMIT（full/limited 共用有界条数）；
-        // limited 模式在返回后按 token 配额换算的字符预算裁剪
+        // limited 模式在返回后按记忆摘要层 cap（剩余预算 × memoryRecallPercent）换算的字符预算裁剪
         recalledMemories = await recall(deps.getIndex(), input, {
           limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
           // null（deps 关闭语义）收窄为 recall 的可选参数 undefined
@@ -186,18 +208,15 @@ export class ContextPreparer {
           sessionId: deps.history.currentSessionName,
           // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
           minFallback: resolveMinFallback(strategy),
-          // 前置互斥排除：取 limit 前过滤当前会话最近 N 轮 round-summary
+          // 前置互斥排除：取 limit 前过滤完整对话层实际注入轮次的 round-summary
           excludeRoundIds: recentRoundIds,
           // 召回置信度阈值（0.0-1.0）
           minSimilarity: resolveRecallConfidence(strategy),
         });
 
-        // limited 裁剪：按 memoryRecallPercent cap 换算 token 预算（记忆占最大窗口的比例上限）。
-        // 阶段 1 桥接：以 DEFAULT_MAX_CONTEXT_TOKENS 为基数（无预算模型前的临时换算）；
-        // 阶段 2 改由「可用预算」动态派生。cap 非 quota——只封顶不挤占对话层
+        // limited 裁剪：记忆摘要层 cap = 剩余预算 × memoryRecallPercent（cap 非 quota，只封顶不挤占对话层）
         if (memoryRecallMode === 'limited') {
-          const percent = resolveMemoryRecallPercent(strategy);
-          const tokenBudget = Math.round(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS * percent);
+          const tokenBudget = budget.memoryLayerCapTokens;
           if (tokenBudget > 0) {
             const charBudget = tokenBudget * LOOP_CONSTANTS.CHARS_PER_TOKEN;
             let usedChars = 0;
@@ -242,10 +261,9 @@ export class ContextPreparer {
       }
     }
 
-    // ── 固定轮次注入：contextAssembly !== 'query' 时执行（fixed / hybrid） ──
+    // ── 完整对话层注入：contextAssembly !== 'query' 时执行（fixed / hybrid） ──
     if (contextAssembly !== 'query') {
-      const loop = deps.loop;
-      const recentHistory = loop.getRecentHistory(recentRoundCount);
+      const recentHistory = dialogue.history;
       if (recentHistory.length > 0) {
         const msgs = deps.config.messages;
         const label = msgs?.recentConversationLabel ?? '[Recent conversation]';

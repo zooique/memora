@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
+import type { SessionMessage } from '@/memory/sessionStore.js';
 
 describe('MessageHistory · 基本操作', () => {
   it('构造函数应初始化默认日期和会话', () => {
@@ -129,5 +130,56 @@ describe('MessageHistory · pendingArchives', () => {
 
     const allDone = await history.awaitPendingArchives(100);
     expect(allDone).toBe(false);
+  });
+});
+
+describe('MessageHistory · getFirstRoundId（会话起点背景互斥排除）', () => {
+  /** 构造带 roundId 的 sessionStore mock */
+  function mockStoreWithMessages(
+    messages: Array<Pick<SessionMessage, 'role' | 'content' | 'roundId'>>,
+  ) {
+    return {
+      appendMessage: () => {},
+      loadMessages: () =>
+        messages.map((m) => ({ timestamp: '2026-01-01T00:00:00.000Z', ...m }) as SessionMessage),
+      listSessions: () => [],
+    };
+  }
+
+  it('返回第一条带 roundId 的消息的 roundId', () => {
+    const history = new MessageHistory(
+      mockStoreWithMessages([
+        { role: 'user', content: '第一问', roundId: 'round-1' },
+        { role: 'assistant', content: '答', roundId: 'round-1' },
+        { role: 'user', content: '第二问', roundId: 'round-2' },
+      ]),
+      '2026-01-01',
+      'main',
+    );
+    expect(history.getFirstRoundId()).toBe('round-1');
+  });
+
+  it('首条无 roundId 时跳过取下一条有 roundId 的', () => {
+    const history = new MessageHistory(
+      mockStoreWithMessages([
+        { role: 'user', content: '旧消息' },
+        { role: 'user', content: '新消息', roundId: 'round-9' },
+      ]),
+      '2026-01-01',
+      'main',
+    );
+    expect(history.getFirstRoundId()).toBe('round-9');
+  });
+
+  it('无 sessionStore / 无 roundId 时返回 null', () => {
+    const empty = new MessageHistory();
+    expect(empty.getFirstRoundId()).toBeNull();
+
+    const noRounds = new MessageHistory(
+      mockStoreWithMessages([{ role: 'user', content: '无 roundId' }]),
+      '2026-01-01',
+      'main',
+    );
+    expect(noRounds.getFirstRoundId()).toBeNull();
   });
 });
