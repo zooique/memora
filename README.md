@@ -221,11 +221,12 @@ npm run build        # 编译到 dist/
 
 - [接入指南](docs/memora-接入指南.md) — 宿主项目开发者完整接入手册
 - [API 参考](docs/memora-api-reference.md) — 公共 API 速查
+- [角色包开放键指南](docs/role-pack-开放键指南.md) — manifest.json 开放键使用指南（三层消费方 + 速查）
 - [配置示例](config.example.json) — LLM / Embedding / 安全配置模板
 
 ## 示例角色包（随包发布）
 
-npm 包内置 `role-packs/` 示例角色库（`小说助手` / `文档设计师` / `方案设计师`），每个包为文件夹形态（`manifest.json` 核心控制 + `persona.md` / `rules.md` / `skills/` 内容层）。复制到 `configDir/role-packs/` 即可装载，未声明角色包时 Agent 仍可正常对话（走默认策略）。详见 [role-pack-spec](docs/architecture/role-pack-spec.md)。
+npm 包内置 `role-packs/` 示例角色库（`小说助手` / `文档设计师` / `方案设计师`），每个包为文件夹形态（`manifest.json` 核心控制 + `persona.md` / `rules.md` / `skills/` 内容层）。复制到 `configDir/role-packs/` 即可装载，未声明角色包时 Agent 仍可正常对话（走默认策略）。开放键使用详见 [角色包开放键指南](docs/role-pack-开放键指南.md)；中立规范见仓库内 [role-pack-spec](docs/architecture/role-pack-spec.md)。
 
 ## 宿主项目
 

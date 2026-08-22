@@ -123,6 +123,19 @@ describe('recall · 记忆召回', () => {
     expect(memories).toHaveLength(3);
   });
 
+  it('limit 超上限应 clamp 到 100（防 ×multiplier 放大底层搜索）', async () => {
+    const results = Array.from({ length: 150 }, (_, i) =>
+      makeMemory({ id: `content:${i}`, source: 'content', score: 0.5 }),
+    );
+    vi.mocked(mockStorage.search).mockReturnValue(results);
+
+    const memories = await recall(mockStorage, '测试', { limit: 100000 });
+
+    // clamp 后 limit=100，底层 search 请求 limit×2=200，返回不超过 100 条
+    expect(memories).toHaveLength(100);
+    expect(mockStorage.search).toHaveBeenCalledWith('测试', 200);
+  });
+
   it('应该按 score 降序排列', async () => {
     const results = [
       makeMemory({ id: 'content:1', source: 'content', score: 0.5 }),

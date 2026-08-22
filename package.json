@@ -12,7 +12,8 @@
     "LICENSE",
     "role-packs",
     "docs/memora-api-reference.md",
-    "docs/memora-接入指南.md"
+    "docs/memora-接入指南.md",
+    "docs/role-pack-开放键指南.md"
   ],
   "publishConfig": {
     "access": "public"

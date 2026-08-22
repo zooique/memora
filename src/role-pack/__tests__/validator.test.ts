@@ -484,3 +484,61 @@ describe('validateManifest：handoffPrompt 接手衔接提示词（自洽声明�
     expect(findByCode(result.issues, 'INVALID_HANDOFF_PROMPT')).toHaveLength(0);
   });
 });
+
+describe('validateManifest：非策略键字段上限（开放字段防无条件填写）', () => {
+  it('keywords 超过 20 个 → INVALID_KEYWORDS error', () => {
+    const result = validate({ keywords: Array.from({ length: 21 }, (_, i) => `关键词${i}`) });
+    expect(findByCode(result.issues, 'INVALID_KEYWORDS').length).toBeGreaterThan(0);
+    expect(result.valid).toBe(false);
+  });
+
+  it('单个关键词超过 50 字符 → INVALID_KEYWORDS error', () => {
+    const result = validate({ keywords: ['a'.repeat(51)] });
+    expect(findByCode(result.issues, 'INVALID_KEYWORDS').length).toBeGreaterThan(0);
+    expect(result.valid).toBe(false);
+  });
+
+  it('trigger 超过 20 个 → INVALID_TRIGGER error', () => {
+    const result = validate({ trigger: Array.from({ length: 21 }, (_, i) => `触发${i}`) });
+    expect(findByCode(result.issues, 'INVALID_TRIGGER').length).toBeGreaterThan(0);
+  });
+
+  it('exclusiveWith 超过 20 个 → EXCLUSIVE_WITH_TOO_MANY error', () => {
+    const result = validate({ exclusiveWith: Array.from({ length: 21 }, (_, i) => `包${i}`) });
+    expect(findByCode(result.issues, 'EXCLUSIVE_WITH_TOO_MANY')).toHaveLength(1);
+  });
+
+  it('skills 白名单超过 50 项 → SKILLS_TOO_MANY error', () => {
+    const skills = Array.from({ length: 51 }, (_, i) => ({ file: `skills/s${i}.md` }));
+    const result = validate({ skills });
+    expect(findByCode(result.issues, 'SKILLS_TOO_MANY')).toHaveLength(1);
+  });
+
+  it('capabilities 超过 50 项 → CAPABILITIES_TOO_MANY error', () => {
+    const caps = Array.from({ length: 51 }, (_, i) => ({ capability: `dom:act${i}` }));
+    const result = validate({ capabilities: caps });
+    expect(findByCode(result.issues, 'CAPABILITIES_TOO_MANY')).toHaveLength(1);
+  });
+
+  it('handoffPrompt 超过 2000 字符 → HANDOFF_PROMPT_TOO_LONG error', () => {
+    const result = validate({ handoffPrompt: 'a'.repeat(2001) });
+    expect(findByCode(result.issues, 'HANDOFF_PROMPT_TOO_LONG')).toHaveLength(1);
+    expect(result.valid).toBe(false);
+  });
+
+  it('元数据字符串（description/author）超过 200 字符 → META_STRING_TOO_LONG error', () => {
+    const result = validate({ description: 'd'.repeat(201), author: 'a'.repeat(201) });
+    expect(findByCode(result.issues, 'META_STRING_TOO_LONG')).toHaveLength(2);
+    expect(result.valid).toBe(false);
+  });
+
+  it('边界值合法（恰好 20 词 / 2000 字符 / 50 项）→ 通过', () => {
+    const result = validate({
+      keywords: Array.from({ length: 20 }, (_, i) => `关键词${i}`),
+      handoffPrompt: 'h'.repeat(2000),
+      skills: Array.from({ length: 50 }, (_, i) => ({ file: `skills/s${i}.md` })),
+      capabilities: Array.from({ length: 50 }, (_, i) => ({ capability: `dom:act${i}` })),
+    });
+    expect(result.valid).toBe(true);
+  });
+});

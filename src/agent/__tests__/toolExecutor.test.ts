@@ -119,6 +119,14 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('润色');
     });
 
+    it('超长技能正文被截断到上限（防超长技能注入上下文）', async () => {
+      executor.readSkill = async () => 'x'.repeat(60_000);
+      const result = await executor.execute('read_skill', JSON.stringify({ name: 'huge' }));
+      // 50KB 上限 + 截断省略号：返回不被超长技能正文撑爆
+      expect(result.length).toBeLessThanOrEqual(50_001);
+      expect(result.endsWith('…')).toBe(true);
+    });
+
     it('技能不存在时返回 SKILL_NOT_FOUND', async () => {
       executor.readSkill = async () => null;
       const result = await executor.execute('read_skill', JSON.stringify({ name: 'nope' }));

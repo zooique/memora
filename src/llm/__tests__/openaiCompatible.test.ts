@@ -650,3 +650,42 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
     }).rejects.toThrow('LLM 请求超时');
   });
 });
+
+describe('OpenAICompatibleProvider · 请求参数边界（maxTokens/timeoutMs 归一化）', () => {
+  /** 捕获请求体并返回 mock 流 */
+  async function captureBody(
+    provider: OpenAICompatibleProvider,
+    opts: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    let captured: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/chat/completions', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return createSseResponse('ok');
+      }),
+    );
+    for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }], opts)) {
+      void chunk;
+    }
+    expect(captured).toBeDefined();
+    return captured!;
+  }
+
+  it('maxTokens 合法值（1~65536）应透传 max_tokens', async () => {
+    const body = await captureBody(makeProvider(), { maxTokens: 2000 });
+    expect(body['max_tokens']).toBe(2000);
+  });
+
+  it('maxTokens 越界（>65536 / 负数 / 0 / 非数值）应忽略（不传 max_tokens）', async () => {
+    for (const bad of [70000, -5, 0, 'big' as unknown as number]) {
+      const body = await captureBody(makeProvider(), { maxTokens: bad });
+      expect(body['max_tokens']).toBeUndefined();
+    }
+  });
+
+  it('timeoutMs 超大值应回退默认（请求仍正常完成，不被大值语义影响）', async () => {
+    const body = await captureBody(makeProvider(), { timeoutMs: 999_999_999 });
+    expect(body['max_tokens']).toBeUndefined();
+    expect(body['stream']).toBe(true);
+  });
+});

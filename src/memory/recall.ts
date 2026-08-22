@@ -22,6 +22,9 @@ import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOU
 /** 语义搜索默认相似度阈值 */
 const DEFAULT_MIN_SIMILARITY = 0.3;
 
+/** 召回返回条数上限：100 已远超任何真实召回需求，防止 limit × RECALL_LIMIT_MULTIPLIER 放大底层搜索 */
+const MAX_RECALL_LIMIT = 100;
+
 /**
  * 从文本提取关键词：segmentText 精确分词 + 停用词过滤 + 英文词补充 + 去重。
  */
@@ -72,7 +75,7 @@ export async function recall(
   options: RecallOptions = {},
 ): Promise<Memory[]> {
   const {
-    limit = 5,
+    limit: rawLimit = 5,
     excludeSources = [...DEFAULT_RECALL_EXCLUDE_SOURCES],
     vectorStore,
     minSimilarity = DEFAULT_MIN_SIMILARITY,
@@ -81,6 +84,9 @@ export async function recall(
     sessionId,
     excludeRoundIds,
   } = options;
+
+  // 数量上限：limit clamp 到 [1, MAX_RECALL_LIMIT]（公共 API 防呆，防超大值 × RECALL_LIMIT_MULTIPLIER 放大底层搜索）
+  const limit = Math.max(1, Math.min(MAX_RECALL_LIMIT, Math.floor(rawLimit)));
 
   const merged = new Map<string, { memory: Memory; vectorScore: number }>();
 
@@ -167,7 +173,8 @@ export async function recall(
   }
 
   // 召回保底：active 少于 minFallback 时用空查询通道按 score 降序补最近记忆，排语义命中后、同过滤（excludeSources+去 superseded），置 0 关闭
-  const fallbackFloor = options.minFallback ?? DEFAULT_MIN_FALLBACK;
+  // 数量上限：minFallback 同样 clamp 到 [0, MAX_RECALL_LIMIT]（公共 API 防呆，防空查询通道 shortfall 放大底层搜索）
+  const fallbackFloor = Math.max(0, Math.min(MAX_RECALL_LIMIT, options.minFallback ?? DEFAULT_MIN_FALLBACK));
   // 仅"有查询意图"（关键词非空）时保底
   if (fallbackFloor > 0 && keywords.length > 0 && active.length < fallbackFloor) {
     const shortfall = fallbackFloor - active.length;

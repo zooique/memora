@@ -61,6 +61,26 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 /** 中立能力名格式：`域:动作`（如 file:write / web:search / llm:summarize） */
 const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 
+// ════════════════════════════════════════════════════════════
+// 非策略键字段上限常量（SSOT：validator 校验报错 + rolePackManager 运行时兜底共用）
+// 策略键数值区间在 strategyKeys.ts；此处管策略键之外的开放字段，防止无条件填写导致资源失控
+// ════════════════════════════════════════════════════════════
+
+/** 匹配词（keywords/trigger）最大数量：防止匹配词列表膨胀拖慢 autoMatch */
+export const MAX_MATCH_WORDS = 20;
+/** 单个匹配词最大长度（字符）：防止巨型关键词注入匹配词源 */
+export const MAX_MATCH_WORD_LEN = 50;
+/** 互斥声明（exclusiveWith）最大数量：防止互斥关系图膨胀 */
+export const MAX_EXCLUSIVE_WITH = 20;
+/** skills 白名单最大数量：与 L1 列表工具阈值同量级，防止白名单膨胀 */
+export const MAX_MANIFEST_SKILLS = 50;
+/** capabilities 最大数量：防止能力声明面膨胀 */
+export const MAX_CAPABILITIES = 50;
+/** handoffPrompt 最大长度（字符）：接手话术防巨型注入 prompt */
+export const MAX_HANDOFF_PROMPT_LEN = 2000;
+/** 元数据字符串字段（name/description/author 等）最大长度（字符） */
+export const MAX_META_STRING_LEN = 200;
+
 // ── 校验实现 ──────────────────────────────────────
 
 /** 校验顶层键合法性（未知键 warning + 忽略，不阻塞） */
@@ -79,6 +99,11 @@ function validateTopLevelKeys(
   }
 }
 
+/** 元数据字符串字段（进展示/标识，超长无意义，统一校验报错） */
+const META_STRING_FIELDS: ReadonlyArray<string> = [
+  'name', 'displayName', 'description', 'author', 'homepage', 'repository', 'license',
+];
+
 /** 校验必填字段与版本语义（name 必填；formatVersion 缺省按 1.0.0，声明则须 semver；version 为 warning） */
 function validateMetaFields(
   manifest: Record<string, unknown>,
@@ -93,6 +118,19 @@ function validateMetaFields(
       path: 'name',
       message: '缺少必填字段 name（唯一标识）',
     });
+  }
+
+  // 元数据字符串长度上限（防巨型字符串注入 UI/标识/prompt）
+  for (const field of META_STRING_FIELDS) {
+    const value = manifest[field];
+    if (typeof value === 'string' && value.length > MAX_META_STRING_LEN) {
+      issues.push({
+        severity: 'error',
+        code: 'META_STRING_TOO_LONG',
+        path: field,
+        message: `${field} 超过长度上限 ${MAX_META_STRING_LEN} 字符（当前 ${value.length}）`,
+      });
+    }
   }
 
   // formatVersion：缺省按 1.0.0，声明则必须 semver
@@ -284,6 +322,16 @@ function validateExclusiveWith(
       path: 'exclusiveWith',
       message: 'exclusiveWith 必须是字符串数组（互斥角色包名列表）',
     });
+    return;
+  }
+  // 数量上限：互斥关系图防膨胀（粘性切换遍历按包数×声明数放大）
+  if (value.length > MAX_EXCLUSIVE_WITH) {
+    issues.push({
+      severity: 'error',
+      code: 'EXCLUSIVE_WITH_TOO_MANY',
+      path: 'exclusiveWith',
+      message: `exclusiveWith 最多 ${MAX_EXCLUSIVE_WITH} 个互斥角色包（当前 ${value.length}）`,
+    });
   }
 }
 
@@ -300,6 +348,16 @@ function validateHandoffPrompt(
       code: 'INVALID_HANDOFF_PROMPT',
       path: 'handoffPrompt',
       message: 'handoffPrompt 应为非空字符串（角色包被带入对话时预填的接手衔接提示词）',
+    });
+    return;
+  }
+  // 长度上限：接手话术预填进对话，防巨型注入
+  if (value.length > MAX_HANDOFF_PROMPT_LEN) {
+    issues.push({
+      severity: 'error',
+      code: 'HANDOFF_PROMPT_TOO_LONG',
+      path: 'handoffPrompt',
+      message: `handoffPrompt 最多 ${MAX_HANDOFF_PROMPT_LEN} 字符（当前 ${value.length}）`,
     });
   }
 }
@@ -320,6 +378,16 @@ function validateManifestSkills(
       message: 'skills 必须是对象数组（每项 { file }；目录扫描，声明项仅作白名单过滤）',
     });
     return;
+  }
+
+  // 数量上限：白名单防膨胀（目录扫描已全量，声明项仅过滤，超限无意义）
+  if (skillsNode.length > MAX_MANIFEST_SKILLS) {
+    issues.push({
+      severity: 'error',
+      code: 'SKILLS_TOO_MANY',
+      path: 'skills',
+      message: `skills 白名单最多 ${MAX_MANIFEST_SKILLS} 项（当前 ${skillsNode.length}）`,
+    });
   }
 
   skillsNode.forEach((item, index) => {
@@ -378,6 +446,16 @@ function validateManifestCapabilities(
     return;
   }
 
+  // 数量上限：能力声明面防膨胀
+  if (capabilitiesNode.length > MAX_CAPABILITIES) {
+    issues.push({
+      severity: 'error',
+      code: 'CAPABILITIES_TOO_MANY',
+      path: 'capabilities',
+      message: `capabilities 最多 ${MAX_CAPABILITIES} 项（当前 ${capabilitiesNode.length}）`,
+    });
+  }
+
   capabilitiesNode.forEach((item, index) => {
     const itemPath = `capabilities[${index}]`;
     if (typeof item !== 'object' || item === null) {
@@ -420,6 +498,7 @@ function parseMatchField(
 ): string[] | null {
   if (node === undefined) return null;
 
+  let values: string[];
   if (Array.isArray(node)) {
     // 数组写法：元素必须全为字符串；含非字符串元素视为非法
     if (node.some((v) => typeof v !== 'string')) {
@@ -431,24 +510,44 @@ function parseMatchField(
       });
       return null;
     }
-    return node.map((s) => String(s));
-  }
-
-  if (typeof node === 'string') {
+    values = node.map((s) => String(s));
+  } else if (typeof node === 'string') {
     // 逗号分隔字符串写法：拆分 + 去空格
-    return node
+    values = node
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  } else {
+    issues.push({
+      severity: 'error',
+      code: `INVALID_${fieldName.toUpperCase()}`,
+      path: fieldName,
+      message: `${fieldName} 必须是字符串数组或逗号分隔字符串（匹配字段双写法）`,
+    });
+    return null;
   }
 
-  issues.push({
-    severity: 'error',
-    code: `INVALID_${fieldName.toUpperCase()}`,
-    path: fieldName,
-    message: `${fieldName} 必须是字符串数组或逗号分隔字符串（匹配字段双写法）`,
-  });
-  return null;
+  // 数量上限：匹配词列表防膨胀（autoMatch 按 包数×词数 全量遍历）
+  if (values.length > MAX_MATCH_WORDS) {
+    issues.push({
+      severity: 'error',
+      code: `INVALID_${fieldName.toUpperCase()}`,
+      path: fieldName,
+      message: `${fieldName} 最多 ${MAX_MATCH_WORDS} 个匹配词（当前 ${values.length}）`,
+    });
+  }
+  // 单个匹配词长度上限：防巨型关键词注入匹配词源
+  for (let i = 0; i < values.length; i++) {
+    if (values[i]!.length > MAX_MATCH_WORD_LEN) {
+      issues.push({
+        severity: 'error',
+        code: `INVALID_${fieldName.toUpperCase()}`,
+        path: `${fieldName}[${i}]`,
+        message: `${fieldName} 单个匹配词最多 ${MAX_MATCH_WORD_LEN} 字符（当前 ${values[i]!.length}）`,
+      });
+    }
+  }
+  return values;
 }
 
 /** 校验 keywords 字段类型（复用 parseMatchField；无正则语义） */

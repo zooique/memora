@@ -49,24 +49,26 @@
 
 | 键 | 类型 | 必填 | 默认 | 说明 |
 |----|------|------|------|------|
-| `name` | string | ✅ | 无 | 唯一标识（缺失则用文件夹名兜底） |
-| `displayName` | string | 否 | `name` | UI 展示名，缺省回退 `name` |
-| `description` | string | 否 | 无 | 角色包描述 |
+| `name` | string | ✅ | 无 | 唯一标识（缺失则用文件夹名兜底）；≤200 字符 |
+| `displayName` | string | 否 | `name` | UI 展示名，缺省回退 `name`；≤200 字符 |
+| `description` | string | 否 | 无 | 角色包描述；≤200 字符 |
 | `version` | string | 否 | 无 | 建议 semver（`1.0.0`） |
 | `formatVersion` | string | 否 | `1.0.0` | 声明则须 semver；版本迁移见规范 §五 |
-| `keywords` | string[] 或逗号串 | 否 | 无 | 自动匹配关键词 |
-| `trigger` | string[] 或逗号串 | 否 | 无 | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并 |
-| `author` | string | 否 | 无 | 作者/来源 |
+| `keywords` | string[] 或逗号串 | 否 | 无 | 自动匹配关键词；最多 20 个，单个 ≤50 字符 |
+| `trigger` | string[] 或逗号串 | 否 | 无 | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并；最多 20 个，单个 ≤50 字符 |
+| `author` | string | 否 | 无 | 作者/来源；≤200 字符 |
 | `interactionType` | `tool_assistant` / `companion` | 否 | `tool_assistant` | companion 触发全量强校验 |
 | `aiIdentityDisclosure` | boolean | 否 | `true` | companion 必须显式 `true` |
 | `minorProtection` | `required` | 否 | `required` | 未成年人保护钩子，仅支持 `required` |
-| `exclusiveWith` | string[] 或逗号串 | 否 | 无 | 互斥角色包名（粘性切换判定） |
-| `handoffPrompt` | string | 否 | 无 | 被带入对话时预填的接手话术 |
-| `skills` | 对象数组 | 否 | 无 | 技能白名单（`{ file, name?, description? }`）；不声明则全量扫描 |
-| `capabilities` | 对象数组 | 否 | `[]` | 能力声明（`{ capability, description? }`） |
+| `exclusiveWith` | string[] 或逗号串 | 否 | 无 | 互斥角色包名（粘性切换判定）；最多 20 个 |
+| `handoffPrompt` | string | 否 | 无 | 被带入对话时预填的接手话术；≤2000 字符 |
+| `skills` | 对象数组 | 否 | 无 | 技能白名单（`{ file, name?, description? }`）；不声明则全量扫描；最多 50 项 |
+| `capabilities` | 对象数组 | 否 | `[]` | 能力声明（`{ capability, description? }`）；最多 50 项 |
 | `strategy` | 嵌套对象 | 否 | 全局默认 | L2 行为策略（见 §三） |
 
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
+>
+> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MATCH_WORDS` / `MAX_MATCH_WORD_LEN` / `MAX_EXCLUSIVE_WITH` / `MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
 
 ---
 

@@ -19,6 +19,21 @@ import { expandEnvVars } from '@/config/expandEnvVars.js';
  */
 const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 
+// ════════════════════════════════════════════════════════════
+// 配置边界常量（SSOT：config 层唯一来源，防无条件填写导致资源失控）
+// ════════════════════════════════════════════════════════════
+
+/** maxContextTokens 下限：低于此无法承载最小上下文装配 */
+const MIN_MAX_CONTEXT_TOKENS = 1000;
+/** maxContextTokens 上限：200000 覆盖 128k 上下文窗口的两倍冗余（与 strategyKeys.MAX_TOKEN_BUDGET 同量级） */
+const MAX_MAX_CONTEXT_TOKENS = 200_000;
+/** contextWindow 下限：低于此无意义（provider 上下文窗口声明） */
+const MIN_CONTEXT_WINDOW = 1000;
+/** contextWindow 上限：2M 覆盖当前所有模型上下文窗口 */
+const MAX_CONTEXT_WINDOW = 2_000_000;
+/** allowedPaths 最大条数：路径白名单防膨胀 */
+const MAX_ALLOWED_PATHS = 50;
+
 /**
  * LLM 配置接口。providers + active 是唯一格式；内核仅内置 'mock'（无 API Key 的测试/降级），
  * 其他厂商 provider 需宿主或用户显式配置 baseUrl + model。
@@ -123,9 +138,10 @@ export function parseConfig(raw: unknown): Config {
 
   const memory: MemoryConfig = {
     dataDir: typeof memoryInput.dataDir === 'string' ? memoryInput.dataDir : DEFAULT_CONFIG.memory.dataDir,
-    maxContextTokens: (typeof memoryInput.maxContextTokens === 'number' && Number.isFinite(memoryInput.maxContextTokens))
-      ? memoryInput.maxContextTokens
-      : DEFAULT_CONFIG.memory.maxContextTokens,
+    maxContextTokens: validateMaxContextTokens(
+      memoryInput.maxContextTokens,
+      DEFAULT_CONFIG.memory.maxContextTokens,
+    ),
   };
 
   const securityInput = asRecordIfObject(input.security);
@@ -199,6 +215,35 @@ function validateTemperature(value: unknown, defaultValue: number): number {
 }
 
 /**
+ * 验证 maxContextTokens（上下限内），非法类型取默认值，超出范围抛错。
+ * 上下限防配置成 0/负数（上下文预算异常）或超大值（资源失控）。
+ */
+function validateMaxContextTokens(value: unknown, defaultValue: number): number {
+  // Number.isFinite 同时排除 NaN/Infinity
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value < MIN_MAX_CONTEXT_TOKENS || value > MAX_MAX_CONTEXT_TOKENS) {
+      throw configError(
+        'maxContextTokens 配置项超出范围',
+        `当前值: ${value}（合法范围 ${MIN_MAX_CONTEXT_TOKENS}-${MAX_MAX_CONTEXT_TOKENS}）`,
+        [`将 maxContextTokens 调整为 ${MIN_MAX_CONTEXT_TOKENS}-${MAX_MAX_CONTEXT_TOKENS} 之间的数字`],
+      );
+    }
+    return value;
+  }
+  return defaultValue;
+}
+
+/**
+ * 验证 contextWindow（可选，provider 上下文窗口声明）：类型非法或超出范围返回 undefined（不声明）。
+ * 越界回退 undefined 而非报错——窗口声明是提示性字段，缺失时内核按 active 配置兜底。
+ */
+function validateContextWindow(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (value < MIN_CONTEXT_WINDOW || value > MAX_CONTEXT_WINDOW) return undefined;
+  return value;
+}
+
+/**
  * 验证 permission（仅 owner/guest），空值取默认，非法抛错
  */
 function validatePermission(value: unknown): 'owner' | 'guest' {
@@ -216,7 +261,7 @@ function validatePermission(value: unknown): 'owner' | 'guest' {
 }
 
 /**
- * 验证 allowedPaths 数组，元素非字符串抛错
+ * 验证 allowedPaths 数组，元素非字符串抛错；超过最大条数截断（防白名单膨胀）
  */
 function validateAllowedPaths(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -227,7 +272,10 @@ function validateAllowedPaths(value: unknown): string[] {
     assertString(value[i], `allowedPaths[${i}]`);
   }
 
-  return value as string[];
+  // 数量上限：路径白名单防膨胀（超过则截断保留前 MAX_ALLOWED_PATHS 条）
+  return value.length > MAX_ALLOWED_PATHS
+    ? value.slice(0, MAX_ALLOWED_PATHS) as string[]
+    : value as string[];
 }
 
 /**
@@ -262,7 +310,7 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
       baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
-      contextWindow: (typeof p.contextWindow === 'number' && Number.isFinite(p.contextWindow)) ? p.contextWindow : undefined,
+      contextWindow: validateContextWindow(p.contextWindow),
     };
   }
 

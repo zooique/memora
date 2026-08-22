@@ -11,7 +11,13 @@ import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
-import { validateManifest, checkCompanionContentRedline } from '@/role-pack/validator.js';
+import {
+  validateManifest,
+  checkCompanionContentRedline,
+  MAX_MATCH_WORDS,
+  MAX_EXCLUSIVE_WITH,
+  MAX_HANDOFF_PROMPT_LEN,
+} from '@/role-pack/validator.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import type {
   RolePack,
@@ -43,6 +49,17 @@ const DEFAULT_RULES_FILENAME = 'rules.md';
 /** persona 约定文件名：manifest 未声明 persona 路径时回退 persona.md（与 rules.md 对称） */
 const DEFAULT_PERSONA_FILENAME = 'persona.md';
 
+/**
+ * 内容文件正文最大长度（字符）：persona/rules/skills 全文防膨胀，超限截断。
+ * 外部可控内容（角色包正文）装载进内存/上下文前统一限长，对齐 toolExecutor 外部内容防护。
+ */
+const MAX_CONTENT_FILE_LEN = 200_000;
+
+/**
+ * manifest.json 最大长度（字符）：JSON 必须完整解析不可截断，超限直接跳过装载。
+ */
+const MAX_MANIFEST_LEN = 512 * 1024;
+
 /** 从 manifest.strategy 解析策略声明（只取四阶段下声明过的键，未声明阶段由 mergeStrategy 补默认值，无 strategy 返回 undefined） */
 function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined {
   if (typeof strategyNode !== 'object' || strategyNode === null) return undefined;
@@ -66,6 +83,7 @@ function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined 
 /**
  * 解析 keywords（数组/逗号串）并合并 trigger 去重（匹配词单一真理源）。
  * 角色包 trigger 为字符串数组（精确/包含匹配）而非正则——正则仅 Skill 系统存在。
+ * 数量上限运行时兜底：validator 报错，此处截断保证运行时安全值（防匹配词列表膨胀拖慢 autoMatch）。
  */
 function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefined {
   const parseField = (key: string): string[] | undefined => {
@@ -81,7 +99,8 @@ function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefin
     }
     return undefined;
   };
-  return [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
+  const merged = [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
+  return merged.length > MAX_MATCH_WORDS ? merged.slice(0, MAX_MATCH_WORDS) : merged;
 }
 
 /** 从 persona.md frontmatter 解析 traits.* 数值键值对（clamp 0-1），无 traits 返回 undefined */
@@ -100,24 +119,30 @@ function parseTraits(personaContent: string): Record<string, number> | undefined
   return Object.keys(traits).length > 0 ? traits : undefined;
 }
 
-/** 解析互斥声明 exclusiveWith（支持数组与逗号串），未声明返回 undefined */
+/** 解析互斥声明 exclusiveWith（支持数组与逗号串），未声明返回 undefined；数量上限运行时兜底（validator 报错，此处截断） */
 function parseExclusiveWith(raw: unknown): string[] | undefined {
+  let result: string[] | undefined;
   if (Array.isArray(raw)) {
-    return raw.map((k) => String(k)).filter(Boolean);
-  }
-  if (typeof raw === 'string') {
-    return raw
+    result = raw.map((k) => String(k)).filter(Boolean);
+  } else if (typeof raw === 'string') {
+    result = raw
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
   }
-  return undefined;
+  if (result && result.length > MAX_EXCLUSIVE_WITH) {
+    result = result.slice(0, MAX_EXCLUSIVE_WITH);
+  }
+  return result;
 }
 
-/** 解析接手衔接提示词（宿主带入对话时预填的话术）；非空字符串，否则 undefined。角色包只描述自己（插卡解耦）。 */
+/** 解析接手衔接提示词（宿主带入对话时预填的话术）；非空字符串，否则 undefined。角色包只描述自己（插卡解耦）。长度上限运行时兜底（validator 报错，此处截断）。 */
 function parseHandoffPrompt(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || raw.trim() === '') return undefined;
-  return raw.trim();
+  const trimmed = raw.trim();
+  return trimmed.length > MAX_HANDOFF_PROMPT_LEN
+    ? trimmed.slice(0, MAX_HANDOFF_PROMPT_LEN)
+    : trimmed;
 }
 
 /**
@@ -231,10 +256,15 @@ function parseRules(content: string): string[] {
   return rules;
 }
 
-/** 安全读取内容文件，失败按缺省返回空串（内容文件可选） */
-async function readContentSafe(filePath: string): Promise<string> {
+/**
+ * 安全读取内容文件，失败按缺省返回空串（内容文件可选）；超长截断防膨胀。
+ * @param filePath 文件绝对路径
+ * @param maxLen 最大长度（字符），超限截断（默认 MAX_CONTENT_FILE_LEN）
+ */
+async function readContentSafe(filePath: string, maxLen = MAX_CONTENT_FILE_LEN): Promise<string> {
   try {
-    return await readFile(filePath, 'utf-8');
+    const content = await readFile(filePath, 'utf-8');
+    return content.length > maxLen ? content.slice(0, maxLen) : content;
   } catch {
     getLogger().warn({ file: filePath }, '角色包内容文件读取失败，按缺省处理');
     return '';
@@ -394,7 +424,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 读取并解析 manifest.json
     let manifest: Record<string, unknown>;
     try {
-      manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as Record<string, unknown>;
+      const manifestRaw = await readFile(manifestPath, 'utf-8');
+      // manifest.json 必须完整解析不可截断，超限直接跳过装载（防超大 JSON 撑爆内存）
+      if (manifestRaw.length > MAX_MANIFEST_LEN) {
+        getLogger().warn(
+          { manifestPath, size: manifestRaw.length, max: MAX_MANIFEST_LEN },
+          'manifest.json 超出大小上限，跳过该角色包',
+        );
+        return null;
+      }
+      manifest = JSON.parse(manifestRaw) as Record<string, unknown>;
     } catch (err) {
       getLogger().warn({ manifestPath, err }, 'manifest.json 读取或解析失败，跳过该角色包');
       return null;

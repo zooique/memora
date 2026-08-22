@@ -50,6 +50,12 @@ const RUN_CODE_RESULT_MAX_LEN = 20_000;
 /** run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN） */
 const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
 
+// ─── read_skill / read_resource 注入防御常量 ─────────────────
+/** read_skill 技能正文单次返回最大长度（防超长技能正文注入上下文；静态文档对齐 read_file 的 FILE_READ_MAX_LEN） */
+const SKILL_CONTENT_MAX_LEN = 50_000;
+/** read_resource 资源正文单次返回最大长度（防超长资源注入上下文；与 read_skill 同标准） */
+const RESOURCE_CONTENT_MAX_LEN = 50_000;
+
 /**
  * 外部工具返回净化：去控制字符 + 长度上限
  *
@@ -670,7 +676,8 @@ export class ToolExecutor {
         if (content === null) {
           return `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包未声明该技能，或技能正文读取失败）`;
         }
-        return content;
+        // 返回净化：技能正文当外部内容去控制字符 + 长度上限（防超长技能正文撑爆上下文）
+        return sanitizeExternalText(content, SKILL_CONTENT_MAX_LEN);
       }
       case 'read_resource': {
         // 渐进披露 L3：读取技能的参考资源文件
@@ -683,7 +690,8 @@ export class ToolExecutor {
         if (resourceContent === null) {
           return `[ERR:RESOURCE_NOT_FOUND] 未找到资源 "${resourcePath}"（技能 "${skillName}" 无此资源，或资源读取失败）`;
         }
-        return resourceContent;
+        // 返回净化：资源正文当外部内容去控制字符 + 长度上限（防超长资源撑爆上下文）
+        return sanitizeExternalText(resourceContent, RESOURCE_CONTENT_MAX_LEN);
       }
       case 'run_skill_script': {
         // 渐进披露 L3：执行技能的可执行脚本（脚本源码不进上下文，仅结果返回）

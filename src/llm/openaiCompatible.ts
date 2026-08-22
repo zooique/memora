@@ -20,6 +20,33 @@ export interface OpenAICompatibleConfig {
 /** 错误响应体截断长度（字符数）：统一 4 处 errorText.slice(0,200) 的常量，避免魔法数字 */
 const MAX_ERROR_BODY_LEN = 200;
 
+// ─── LLM 请求参数边界（外部注入防失控） ─────────────────
+
+/** maxTokens 上限：65536 覆盖当前所有模型 max_tokens 能力上限（与 strategyKeys.MAX_OUTPUT_LIMIT 一致） */
+const MAX_MAX_TOKENS = 65536;
+/** timeoutMs 上限：5 分钟，防配置超大值导致请求等待失控（下限不设，测试/调试用小值模拟超时） */
+const MAX_TIMEOUT_MS = 300_000;
+
+/**
+ * 归一化 maxTokens：合法 1~MAX_MAX_TOKENS 返回原值，越界/非法返回 undefined（不传，让服务端默认）。
+ * 防配置负值/零值（协议错误）或超大值（资源失控）。
+ */
+function normalizeMaxTokens(value: number | undefined): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (value < 1 || value > MAX_MAX_TOKENS) return undefined;
+  return Math.floor(value);
+}
+
+/**
+ * 归一化 timeoutMs：合法（≤MAX_TIMEOUT_MS 且 >0）返回原值，越界/非法回退默认。
+ * 防超大值等待失控；不设下限以保留测试用小超时值。
+ */
+function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  if (value <= 0 || value > MAX_TIMEOUT_MS) return fallback;
+  return value;
+}
+
 /**
  * chunk 级读超时区分首 chunk 与 chunk 间（reasoning 适配）：
  * 首 chunk 前可能思考 30-90s（DeepSeek-R1/o1/QwQ 等）→ 120s；连接正常后停顿 <10s → 60s
@@ -45,8 +72,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
   async *chat(messages: Message[], opts: ChatOptions = {}): AsyncIterable<LlmChunk> {
     const url = `${this.config.baseUrl}/chat/completions`;
     const model = opts.model ?? this.config.defaultModel;
-    // 请求超时控制：默认 120s，可通过 opts.timeoutMs 覆盖
-    const timeoutMs = opts.timeoutMs ?? OpenAICompatibleProvider.DEFAULT_TIMEOUT_MS;
+    // 请求超时控制：默认 120s，可通过 opts.timeoutMs 覆盖（越界回退默认，防超大值等待失控）
+    const timeoutMs = normalizeTimeoutMs(opts.timeoutMs, OpenAICompatibleProvider.DEFAULT_TIMEOUT_MS);
+    // maxTokens 边界归一：合法 1~MAX_MAX_TOKENS 才透传，越界/非法忽略（让服务端默认）
+    const maxTokens = normalizeMaxTokens(opts.maxTokens);
 
     const body: Record<string, unknown> = {
       model,
@@ -57,7 +86,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
     };
 
     if (opts.tools) body['tools'] = opts.tools;
-    if (opts.maxTokens) body['max_tokens'] = opts.maxTokens;
+    if (maxTokens !== undefined) body['max_tokens'] = maxTokens;
     // 透传 response_format；不能与 tools 同时使用（OpenAI 协议限制），调用方保证互斥
     if (opts.response_format) body['response_format'] = opts.response_format;
     // 透传推理深度（reasoning_effort）：loop 在 multiStepReasoning='manual' 时设置 'low'

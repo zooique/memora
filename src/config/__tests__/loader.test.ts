@@ -711,3 +711,74 @@ describe('config/loader · 错误路径覆盖', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('allowedPaths[1]');
   });
 });
+
+// ─── 配置边界（防无条件填写导致资源失控） ─────────────────────────────
+
+describe('config/loader · 配置边界校验', () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), 'memora-loader-bounds-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  /** 辅助：写入含 llm.providers 的配置文件 */
+  function writeConfig(content: Record<string, unknown>): string {
+    const configPath = join(tmpHome, 'config.json');
+    writeFileSync(configPath, JSON.stringify(content), 'utf-8');
+    return configPath;
+  }
+
+  /** 基础 LLM 配置（避免其他字段缺失干扰边界校验） */
+  function withProviders(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      llm: {
+        providers: {
+          deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+        },
+        active: 'deepseek',
+      },
+      ...overrides,
+    };
+  }
+
+  it('maxContextTokens 低于下限（< 1000）应抛错', async () => {
+    const configPath = writeConfig(withProviders({ memory: { maxContextTokens: 500 } }));
+    await expect(loadConfig(configPath)).rejects.toThrow('maxContextTokens');
+  });
+
+  it('maxContextTokens 超过上限（> 200000）应抛错', async () => {
+    const configPath = writeConfig(withProviders({ memory: { maxContextTokens: 999999 } }));
+    await expect(loadConfig(configPath)).rejects.toThrow('maxContextTokens');
+  });
+
+  it('maxContextTokens 合法值应保留', async () => {
+    const configPath = writeConfig(withProviders({ memory: { maxContextTokens: 100_000 } }));
+    const config = await loadConfig(configPath);
+    expect(config.memory.maxContextTokens).toBe(100_000);
+  });
+
+  it('allowedPaths 超过 50 条应截断（防白名单膨胀）', async () => {
+    const paths = Array.from({ length: 60 }, (_, i) => `/path/${i}`);
+    const configPath = writeConfig(withProviders({ allowedPaths: paths }));
+    const config = await loadConfig(configPath);
+    expect(config.allowedPaths).toHaveLength(50);
+  });
+
+  it('contextWindow 越界应回退 undefined（不声明）', async () => {
+    const configPath = writeConfig({
+      llm: {
+        providers: {
+          // 低于下限 1000，视为未声明
+          deepseek: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 100 },
+        },
+        active: 'deepseek',
+      },
+    });
+    const config = await loadConfig(configPath);
+    expect(config.llm.providers!.deepseek!.contextWindow).toBeUndefined();
+  });
+});

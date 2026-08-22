@@ -78,7 +78,7 @@ export function isSummaryFocus(value: unknown): boolean {
   );
 }
 
-/** askOn 断言：单枚举或元素∈四枚举的数组（可组合） */
+/** askOn 断言：单枚举或元素∈四枚举的数组（可组合）；数组长度 ≤ 枚举数（防重复堆叠） */
 export function isAskOn(value: unknown): boolean {
   const ASK_TRIGGERS: ReadonlySet<string> = new Set([
     'ambiguity',
@@ -90,6 +90,8 @@ export function isAskOn(value: unknown): boolean {
   return (
     Array.isArray(value) &&
     value.length > 0 &&
+    // 数量上限：可组合触发项最多 4 个（去重后），防重复堆叠膨胀 prompt 注入指令
+    value.length <= ASK_TRIGGERS.size &&
     value.every((v) => typeof v === 'string' && ASK_TRIGGERS.has(v))
   );
 }
