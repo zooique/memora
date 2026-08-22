@@ -86,12 +86,14 @@ export interface PrepareStrategy {
   readonly understandingConfirm?: UnderstandingConfirm;
   /** 上下文装配策略（默认 hybrid） */
   readonly contextAssembly?: ContextAssembly;
-  /** 固定加载的最近轮次数（默认 3） */
-  readonly recentRounds?: number;
   /** 记忆召回模式（默认 full） */
   readonly memoryRecall?: MemoryRecallMode;
-  /** 记忆占用上限 token 数（默认 2000） */
-  readonly memoryRecallQuota?: number;
+  /**
+   * 记忆召回占可用预算的百分比 cap（0.0~1.0，默认 0.4；cap 非 quota）。
+   * 记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 剩余预算 × 该值；只装完整对话层未覆盖的旧摘要。
+   * 取代旧绝对 token 配额语义（动态容量下绝对 token 不自洽）。
+   */
+  readonly memoryRecallPercent?: number;
   /** 摘要召回开关（默认 on；内核已消费） */
   readonly summaryRecall?: SummaryRecall;
   /** 召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2；内核已消费） */
@@ -166,7 +168,7 @@ export interface GlobalStrategy {
  * L2 行为策略全集
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
- * prepare 的 recentRounds/memoryRecall/memoryRecallQuota/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
+ * prepare 的 memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
  * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
  * 预留键（prepare.understandingConfirm/taskClassification、global.costBudget/safetyRule）内核不消费，声明不生效。

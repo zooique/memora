@@ -7,7 +7,7 @@
  *
  * 设计原则：
  *   - 只依赖 Agent 注入的稳定能力（deps），不反向依赖 Agent 私有状态（与 AgentHooks 同构）
- *   - 管线逻辑单一真理源：策略解析（recentRounds / minFallback / 配额 / 置信度）随管线走
+ *   - 管线逻辑单一真理源：策略解析（记忆百分比 / minFallback / 置信度）随管线走
  *   - Agent 门面保留编排骨架（thinking 阶段 yield 与调用点），叶子逻辑在此唯一实现
  *   - 事件发射（memoryRecalled / boostPersistFailed）经 emit 回调由 Agent 承接
  */
@@ -17,10 +17,9 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
-  resolveRecentRounds,
   resolveMinFallback,
   resolveRecallConfidence,
-  resolveMemoryRecallQuota,
+  resolveMemoryRecallPercent,
   resolveSummaryRecall,
 } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
@@ -158,13 +157,13 @@ export class ContextPreparer {
     const strategy = this.getActiveStrategy();
     let recalledMemories: Memory[] = [];
 
-    // 固定加载轮数 N（SSOT 单一来源）：角色包 recentRounds 为合法正整数时采用，缺失/非法降级内核默认；
-    // 互斥窗口与最近对话注入共用同一 N，保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"一致
-    const recentRounds = resolveRecentRounds(strategy);
+    // 最近对话注入轮数（阶段 1 桥接：内核固定默认；阶段 2 改由上下文预算动态派生轮数）。
+    // 互斥窗口与最近对话注入共用同一轮数，保证"正文加载 N 轮 ⟺ 互斥排除 N 轮"一致
+    const recentRoundCount = AGENT_CONSTANTS.DEFAULT_RECENT_HISTORY_ROUNDS;
 
     // 互斥 roundId 集合：当前会话最近 N 轮正文已完整加载，其 round-summary 不应再被召回注入。
     // 前置传入 recall() 在取 limit 前过滤，避免被排除摘要挤占 top-limit 预算（跨会话记忆补位）
-    const recentRoundIds = new Set(deps.history.getRecentRoundIds(recentRounds));
+    const recentRoundIds = new Set(deps.history.getRecentRoundIds(recentRoundCount));
 
     // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──
     if (contextAssembly !== 'fixed' && memoryRecallMode !== 'none') {
@@ -193,11 +192,14 @@ export class ContextPreparer {
           minSimilarity: resolveRecallConfidence(strategy),
         });
 
-        // limited 配额分层（记忆与摘要各有 token 配额，避免挤占）；配额非法/缺失已由 resolve 归位默认，0=不限配额
+        // limited 裁剪：按 memoryRecallPercent cap 换算 token 预算（记忆占最大窗口的比例上限）。
+        // 阶段 1 桥接：以 DEFAULT_MAX_CONTEXT_TOKENS 为基数（无预算模型前的临时换算）；
+        // 阶段 2 改由「可用预算」动态派生。cap 非 quota——只封顶不挤占对话层
         if (memoryRecallMode === 'limited') {
-          const quotaTokens = resolveMemoryRecallQuota(strategy);
-          if (quotaTokens > 0) {
-            const charBudget = quotaTokens * LOOP_CONSTANTS.CHARS_PER_TOKEN;
+          const percent = resolveMemoryRecallPercent(strategy);
+          const tokenBudget = Math.round(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS * percent);
+          if (tokenBudget > 0) {
+            const charBudget = tokenBudget * LOOP_CONSTANTS.CHARS_PER_TOKEN;
             let usedChars = 0;
             const trimmed: Memory[] = [];
             for (const m of recalledMemories) {
@@ -243,7 +245,7 @@ export class ContextPreparer {
     // ── 固定轮次注入：contextAssembly !== 'query' 时执行（fixed / hybrid） ──
     if (contextAssembly !== 'query') {
       const loop = deps.loop;
-      const recentHistory = loop.getRecentHistory(recentRounds);
+      const recentHistory = loop.getRecentHistory(recentRoundCount);
       if (recentHistory.length > 0) {
         const msgs = deps.config.messages;
         const label = msgs?.recentConversationLabel ?? '[Recent conversation]';

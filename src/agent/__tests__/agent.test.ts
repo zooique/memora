@@ -2469,9 +2469,8 @@ describe('Agent · L2 行为策略消费', () => {
     const strategy = agent.getActiveStrategy();
     // 验证默认策略的 prepare 维度
     expect(strategy.prepare?.memoryRecall).toBe('full');
-    expect(strategy.prepare?.memoryRecallQuota).toBe(2000);
-    // 最近几轮固定加载轮数默认 3（角色包 recentRounds 未配置时的兜底）
-    expect(strategy.prepare?.recentRounds).toBe(3);
+    // 记忆召回百分比 cap 默认 0.4（cap 非 quota）
+    expect(strategy.prepare?.memoryRecallPercent).toBe(0.4);
     // 验证默认策略的 act 维度（标准键 act.toolMode）
     expect(strategy.act?.toolMode).toBe('allow');
     // 验证默认策略的 reflect 维度（标准键 reflect.handoff）
@@ -2516,10 +2515,10 @@ describe('Agent · L2 行为策略消费', () => {
     expect(agent.agentLoop).not.toBeNull();
   });
 
-  // ─── recentRounds 覆盖固定加载轮数 ──
+  // ─── memoryRecallPercent 覆盖记忆召回百分比 cap ──
 
-  it('角色包 prepare.recentRounds 应覆盖最近几轮固定加载轮数', async () => {
-    // 在 configDir 下写一个带 recentRounds:5 的角色包（manifest.json 文件夹形态，
+  it('角色包 prepare.memoryRecallPercent 应覆盖记忆召回百分比 cap', async () => {
+    // 在 configDir 下写一个带 memoryRecallPercent:0.6 的角色包（manifest.json 文件夹形态，
     // init 自动扫描并激活第一个）
     const packDir = join(tmpConfig, 'role-packs', '精算师');
     mkdirSync(packDir, { recursive: true });
@@ -2529,9 +2528,9 @@ describe('Agent · L2 行为策略消费', () => {
         {
           name: '精算师',
           formatVersion: '1.0.0',
-          description: 'recentRounds 覆盖验证',
+          description: 'memoryRecallPercent 覆盖验证',
           keywords: ['精算'],
-          strategy: { prepare: { recentRounds: 5 } },
+          strategy: { prepare: { memoryRecallPercent: 0.6 } },
         },
         null,
         2,
@@ -2545,10 +2544,9 @@ describe('Agent · L2 行为策略消费', () => {
 
     // 角色包被激活，getActiveStrategy 返回其策略（消费入口：recallAndInject 读取此值）
     const strategy = agent.getActiveStrategy();
-    expect(strategy.prepare?.recentRounds).toBe(5);
+    expect(strategy.prepare?.memoryRecallPercent).toBe(0.6);
 
-    // 多轮对话走 recallAndInject，消费 recentRounds 不抛错即验证覆盖路径生效
-    // （默认 3 轮兜底已在上述"默认策略"测试断言）
+    // 多轮对话走 recallAndInject，消费 memoryRecallPercent 不抛错即验证覆盖路径生效
     const chunks: AgentChunk[] = [];
     for await (const chunk of agent.chat('你好')) {
       chunks.push(chunk);
@@ -2556,20 +2554,20 @@ describe('Agent · L2 行为策略消费', () => {
     expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
   });
 
-  it('角色包声明非法 recentRounds（0）应降级内核默认，对话不抛错', async () => {
-    // 非法值（0）经 mergeStrategy 覆盖默认 3，但消费处 resolveRecentRounds 检测到
-    // 非"0 以上正整数"而降级回内核默认兜底——SSOT：开放参数必有硬编码兜底
-    const packDir = join(tmpConfig, 'role-packs', '非法轮数');
+  it('角色包声明非法 memoryRecallPercent（1.5）应降级内核默认，对话不抛错', async () => {
+    // 非法值（1.5）经 mergeStrategy 覆盖默认 0.4，但消费处 resolveMemoryRecallPercent 检测到
+    // 越界（>1）而降级回内核默认兜底——SSOT：开放参数必有硬编码兜底
+    const packDir = join(tmpConfig, 'role-packs', '非法百分比');
     mkdirSync(packDir, { recursive: true });
     writeFileSync(
       join(packDir, 'manifest.json'),
       JSON.stringify(
         {
-          name: '非法轮数',
+          name: '非法百分比',
           formatVersion: '1.0.0',
-          description: '非法 recentRounds 降级验证',
+          description: '非法 memoryRecallPercent 降级验证',
           keywords: ['非法'],
-          strategy: { prepare: { recentRounds: 0 } },
+          strategy: { prepare: { memoryRecallPercent: 1.5 } },
         },
         null,
         2,
@@ -2581,7 +2579,7 @@ describe('Agent · L2 行为策略消费', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 消费路径（recallAndInject → resolveRecentRounds）对非法值降级，整轮对话不抛错
+    // 消费路径（recallAndInject → resolveMemoryRecallPercent）对非法值降级，整轮对话不抛错
     const chunks: AgentChunk[] = [];
     for await (const chunk of agent.chat('你好')) {
       chunks.push(chunk);

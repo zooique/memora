@@ -2,17 +2,17 @@
  * role-pack/types.ts 纯函数回归测试
  *
  * 覆盖两类 SSOT 兜底契约：
- *   1. resolveRecentRounds —— 上下文固定加载轮数 N 的单一解析：角色包合法值优先，
- *      缺失/非法（0、负数、非整数、非数字、显式 undefined）一律降级内核默认。
+ *   1. resolveMemoryRecallPercent —— 记忆召回百分比 cap 的单一解析：角色包合法值（0.0~1.0）优先，
+ *      缺失/越界（负、超 1、非数字、显式 undefined）一律降级内核默认。
  *   2. mergeStrategy —— 角色包覆盖后的默认兜底：未声明或空段时保留 DEFAULT_BEHAVIOR_STRATEGY
  *      完整默认，保证"开放给角色包定义的参数，内核必有硬编码兜底"。
  *
- * 背景：互斥窗口与最近对话注入共用 resolveRecentRounds 的返回值，
- * 任何一条分支损坏都会导致"正文加载轮数 ≠ 互斥排除轮数"的重复注入。
+ * 背景：记忆召回百分比是"记忆摘要层占可用预算的上限 cap"（cap 非 quota）——完整对话层优先，
+ * 百分比只封顶防止记忆挤占对话。
  */
 import { describe, it, expect } from 'vitest';
 import {
-  resolveRecentRounds,
+  resolveMemoryRecallPercent,
   resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
@@ -20,66 +20,71 @@ import {
   resolveToolMode,
   mergeStrategy,
   DEFAULT_BEHAVIOR_STRATEGY,
-  DEFAULT_RECENT_HISTORY_ROUNDS,
+  DEFAULT_MEMORY_RECALL_PERCENT,
 } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 // DEFAULT_MIN_FALLBACK 定义于 utils 共享层（SSOT），role-pack 与 memory 均引自此处
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 
-describe('resolveRecentRounds · 上下文字段固定加载轮数 N（SSOT 单一来源）', () => {
-  it('角色包声明合法正整数时，一律采用角色包定义', () => {
-    expect(resolveRecentRounds({ prepare: { recentRounds: 5 } } as unknown as BehaviorStrategy)).toBe(5);
-    expect(resolveRecentRounds({ prepare: { recentRounds: 1 } } as unknown as BehaviorStrategy)).toBe(1);
+describe('resolveMemoryRecallPercent · 记忆召回百分比 cap（SSOT 单一来源）', () => {
+  it('角色包声明合法百分比（0.0~1.0）时，一律采用角色包定义', () => {
+    expect(
+      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0.6 } } as unknown as BehaviorStrategy),
+    ).toBe(0.6);
+    expect(
+      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0 } } as unknown as BehaviorStrategy),
+    ).toBe(0);
+    expect(
+      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1 } } as unknown as BehaviorStrategy),
+    ).toBe(1);
   });
 
   it('未传入策略（undefined）时降级为内核默认', () => {
-    expect(resolveRecentRounds(undefined)).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+    expect(resolveMemoryRecallPercent(undefined)).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
   });
 
-  it('策略为空对象 / prepare 段缺失 recentRounds 时降级为内核默认', () => {
-    expect(resolveRecentRounds({} as unknown as BehaviorStrategy)).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
-    expect(resolveRecentRounds({ prepare: {} } as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_RECENT_HISTORY_ROUNDS,
+  it('策略为空对象 / prepare 段缺失 memoryRecallPercent 时降级为内核默认', () => {
+    expect(resolveMemoryRecallPercent({} as unknown as BehaviorStrategy)).toBe(
+      DEFAULT_MEMORY_RECALL_PERCENT,
+    );
+    expect(resolveMemoryRecallPercent({ prepare: {} } as unknown as BehaviorStrategy)).toBe(
+      DEFAULT_MEMORY_RECALL_PERCENT,
     );
   });
 
-  it('recentRounds 为 0（非"0 以上正整数"）时降级为内核默认', () => {
-    expect(resolveRecentRounds({ prepare: { recentRounds: 0 } } as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_RECENT_HISTORY_ROUNDS,
-    );
-  });
-
-  it('recentRounds 为负数时降级为内核默认', () => {
-    expect(resolveRecentRounds({ prepare: { recentRounds: -1 } } as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_RECENT_HISTORY_ROUNDS,
-    );
-  });
-
-  it('recentRounds 为非整数（小数）时降级为内核默认', () => {
-    expect(resolveRecentRounds({ prepare: { recentRounds: 2.5 } } as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_RECENT_HISTORY_ROUNDS,
-    );
-  });
-
-  it('recentRounds 为非数字（字符串）时降级为内核默认', () => {
-    expect(resolveRecentRounds({ prepare: { recentRounds: '5' } } as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_RECENT_HISTORY_ROUNDS,
-    );
-  });
-
-  it('recentRounds 显式为 undefined（角色包空值覆盖默认）时降级为内核默认', () => {
+  it('memoryRecallPercent 为负数（<0）时降级为内核默认', () => {
     expect(
-      resolveRecentRounds({ prepare: { recentRounds: undefined } } as unknown as BehaviorStrategy),
-    ).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: -0.1 } } as unknown as BehaviorStrategy),
+    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
+  });
+
+  it('memoryRecallPercent 超过 1（>1）时降级为内核默认', () => {
+    expect(
+      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1.5 } } as unknown as BehaviorStrategy),
+    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
+  });
+
+  it('memoryRecallPercent 为非数字（字符串）时降级为内核默认', () => {
+    expect(
+      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: '0.5' } } as unknown as BehaviorStrategy),
+    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
+  });
+
+  it('memoryRecallPercent 显式为 undefined（角色包空值覆盖默认）时降级为内核默认', () => {
+    expect(
+      resolveMemoryRecallPercent({
+        prepare: { memoryRecallPercent: undefined },
+      } as unknown as BehaviorStrategy),
+    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
   });
 });
 
 describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
   it('角色包仅声明部分键时，其余键保留内核默认（兜底）', () => {
     const merged = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
-      prepare: { recentRounds: 5 },
+      prepare: { memoryRecallPercent: 0.6 },
     } as unknown as BehaviorStrategy);
-    expect(merged.prepare?.recentRounds).toBe(5);
+    expect(merged.prepare?.memoryRecallPercent).toBe(0.6);
     expect(merged.prepare?.memoryRecall).toBe('full');
     expect(merged.act?.toolMode).toBe('allow');
     expect(merged.reflect?.handoff).toBe('wait');
@@ -94,7 +99,7 @@ describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
     const merged = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
       prepare: undefined,
     } as unknown as BehaviorStrategy);
-    expect(merged.prepare?.recentRounds).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+    expect(merged.prepare?.memoryRecallPercent).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
     expect(merged.prepare?.memoryRecall).toBe('full');
   });
 });

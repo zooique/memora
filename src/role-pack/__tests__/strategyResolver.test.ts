@@ -10,12 +10,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
-  DEFAULT_RECENT_HISTORY_ROUNDS,
-  resolveRecentRounds,
+  resolveMemoryRecallPercent,
   resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
-  resolveMemoryRecallQuota,
   resolveSummaryFocus,
   resolveToolMode,
   resolveSummary,
@@ -37,7 +35,7 @@ import {
   assembleRolePack,
   resolveL2Strategy,
   DEFAULT_L2_STRATEGY,
-  DEFAULT_MEMORY_RECALL_QUOTA,
+  DEFAULT_MEMORY_RECALL_PERCENT,
 } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 import type {
@@ -91,9 +89,8 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     const p = DEFAULT_BEHAVIOR_STRATEGY.prepare!;
     expect(p.understandingConfirm).toBe('off');
     expect(p.contextAssembly).toBe('hybrid');
-    expect(p.recentRounds).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
     expect(p.memoryRecall).toBe('full');
-    expect(p.memoryRecallQuota).toBe(2000);
+    expect(p.memoryRecallPercent).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
     expect(p.summaryRecall).toBe('on');
     expect(p.minFallback).toBe(DEFAULT_MIN_FALLBACK);
     expect(p.recallConfidence).toBe(0.6);
@@ -134,9 +131,9 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(g.askLimit).toBe(3);
   });
 
-  it('DEFAULT_RECENT_HISTORY_ROUNDS 常量与默认值一致', () => {
-    expect(DEFAULT_RECENT_HISTORY_ROUNDS).toBe(3);
-    expect(DEFAULT_BEHAVIOR_STRATEGY.prepare!.recentRounds).toBe(3);
+  it('DEFAULT_MEMORY_RECALL_PERCENT 常量与默认值一致', () => {
+    expect(DEFAULT_MEMORY_RECALL_PERCENT).toBe(0.4);
+    expect(DEFAULT_BEHAVIOR_STRATEGY.prepare!.memoryRecallPercent).toBe(0.4);
   });
 });
 
@@ -316,28 +313,35 @@ describe('resolve* 函数 — 基础策略解析', () => {
 // ════════════════════════════════════════════════════════
 
 describe('resolve* 函数 — 数值解析', () => {
-  // ── resolveRecentRounds ──
-  describe('resolveRecentRounds', () => {
-    it('合法正整数采用', () => {
-      expect(resolveRecentRounds({ prepare: { recentRounds: 5 } })).toBe(5);
-      expect(resolveRecentRounds({ prepare: { recentRounds: 1 } })).toBe(1);
-    });
-
-    it('0 回退默认（0 不是正整数）', () => {
-      expect(resolveRecentRounds({ prepare: { recentRounds: 0 } })).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+  // ── resolveMemoryRecallPercent ──
+  describe('resolveMemoryRecallPercent', () => {
+    it('合法百分比（0.0~1.0）采用', () => {
+      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0.5 } })).toBe(0.5);
+      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0 } })).toBe(0);
+      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1 } })).toBe(1);
     });
 
     it('负数回退默认', () => {
-      expect(resolveRecentRounds({ prepare: { recentRounds: -1 } })).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: -0.1 } })).toBe(
+        DEFAULT_MEMORY_RECALL_PERCENT,
+      );
     });
 
-    it('小数回退默认', () => {
-      expect(resolveRecentRounds({ prepare: { recentRounds: 3.5 } })).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+    it('超过 1 回退默认', () => {
+      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1.5 } })).toBe(
+        DEFAULT_MEMORY_RECALL_PERCENT,
+      );
     });
 
-    it('缺失/非数值回退默认', () => {
-      expect(resolveRecentRounds(undefined)).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
-      expect(resolveRecentRounds({ prepare: {} })).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+    it('非数值回退默认', () => {
+      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: '0.5' } as never })).toBe(
+        DEFAULT_MEMORY_RECALL_PERCENT,
+      );
+    });
+
+    it('缺失回退默认', () => {
+      expect(resolveMemoryRecallPercent(undefined)).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
+      expect(resolveMemoryRecallPercent({ prepare: {} })).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
     });
   });
 
@@ -358,30 +362,6 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('缺失/非数值回退默认', () => {
       expect(resolveMinFallback(undefined)).toBe(DEFAULT_MIN_FALLBACK);
-    });
-  });
-
-  // ── resolveMemoryRecallQuota ──
-  describe('resolveMemoryRecallQuota', () => {
-    it('合法非负整数采用', () => {
-      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: 1500 } })).toBe(1500);
-    });
-
-    it('0 = 不限配额（不裁剪）', () => {
-      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: 0 } })).toBe(0);
-    });
-
-    it('非法值回退默认 2000', () => {
-      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: -1 } })).toBe(
-        DEFAULT_MEMORY_RECALL_QUOTA,
-      );
-      expect(resolveMemoryRecallQuota({ prepare: { memoryRecallQuota: 1.5 } })).toBe(
-        DEFAULT_MEMORY_RECALL_QUOTA,
-      );
-    });
-
-    it('缺失回退默认 2000', () => {
-      expect(resolveMemoryRecallQuota(undefined)).toBe(DEFAULT_MEMORY_RECALL_QUOTA);
     });
   });
 
@@ -724,12 +704,12 @@ describe('assembleRolePack — 角色包装配', () => {
 // ════════════════════════════════════════════════════════
 
 describe('跨维度一致性', () => {
-  it('DEFAULT_BEHAVIOR_STRATEGY 的 prepare.recentRounds 与 DEFAULT_RECENT_HISTORY_ROUNDS 一致', () => {
-    expect(DEFAULT_BEHAVIOR_STRATEGY.prepare!.recentRounds).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+  it('DEFAULT_BEHAVIOR_STRATEGY 的 prepare.memoryRecallPercent 与 DEFAULT_MEMORY_RECALL_PERCENT 一致', () => {
+    expect(DEFAULT_BEHAVIOR_STRATEGY.prepare!.memoryRecallPercent).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
   });
 
-  it('resolveRecentRounds(undefined) 与 DEFAULT_RECENT_HISTORY_ROUNDS 一致', () => {
-    expect(resolveRecentRounds(undefined)).toBe(DEFAULT_RECENT_HISTORY_ROUNDS);
+  it('resolveMemoryRecallPercent(undefined) 与 DEFAULT_MEMORY_RECALL_PERCENT 一致', () => {
+    expect(resolveMemoryRecallPercent(undefined)).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
   });
 
   it('mergeStrategy 不改变 DEFAULT_BEHAVIOR_STRATEGY 引用', () => {

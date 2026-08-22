@@ -10,7 +10,7 @@ export type KeyRule =
   | { readonly kind: 'enum'; readonly values: readonly unknown[] }
   | { readonly kind: 'check'; readonly check: (value: unknown) => boolean };
 
-/** 正整数断言（recentRounds / askLimit） */
+/** 正整数断言（askLimit / outputLimit） */
 export function isPositiveInt(value: unknown): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
@@ -18,6 +18,11 @@ export function isPositiveInt(value: unknown): boolean {
 /** 非负整数断言（loopContinue，0=关闭自审查） */
 export function isNonNegativeInt(value: unknown): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+/** 百分比断言：0.0~1.0（memoryRecallPercent，cap 非 quota） */
+export function isPercent(value: unknown): boolean {
+  return typeof value === 'number' && value >= 0 && value <= 1;
 }
 
 /** 温度断言：0.0~2.0（act.temperature） */
@@ -57,10 +62,9 @@ export function isAskOn(value: unknown): boolean {
  */
 export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
-    recentRounds: { kind: 'check', check: isPositiveInt },
     memoryRecall: { kind: 'enum', values: ['full', 'limited', 'none'] },
-    // 由实现提炼进标准、memora 真实消费的键
-    memoryRecallQuota: { kind: 'check', check: isPositiveInt },
+    // 记忆召回百分比 cap（0.0~1.0，cap 非 quota；取代旧绝对 token 配额语义）
+    memoryRecallPercent: { kind: 'check', check: isPercent },
     minFallback: { kind: 'check', check: isNonNegativeInt },
     // 领域无关机制，内容由角色包提供
     summaryFocus: { kind: 'check', check: isNonEmptyString },

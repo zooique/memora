@@ -19,7 +19,6 @@
   "strategy": {
     "prepare": {
       "contextAssembly": "fixed",
-      "recentRounds": 3,
       "memoryRecall": "limited",
       "summaryRecall": "on"
     },

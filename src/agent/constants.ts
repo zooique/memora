@@ -7,9 +7,8 @@
  * 10 个 magic number 分布在 2 文件，已达提取阈值，故集中提取。
  */
 
-// SSOT：最近固定加载轮数默认值下沉到 role-pack/types（策略层级默认真理源），
-// agent 层引用而非重新定义，避免同一维度出现两套平行默认值（见 resolveRecentRounds）。
-import { DEFAULT_RECENT_HISTORY_ROUNDS } from '@/role-pack/strategyResolver.js';
+// 阶段 1 桥接：最近对话注入轮数内核默认在 agent 层本地定义（角色包固定轮数解析随旧键删除
+// 而移除）；阶段 2 改由上下文预算动态派生。
 // SSOT：召回排除默认值下沉到 utils/recallDefaults（记忆层与 agent 层共享，避免两处定义）
 import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 
@@ -49,11 +48,11 @@ export const AGENT_CONSTANTS = {
   DEFAULT_RECALL_LIMIT: 5,
 
   /**
-   * 最近对话历史注入轮数（SSOT）：引用 role-pack 内核默认（单一默认真理源）。
-   * 角色包可经 prepare.recentRounds 覆盖；互斥窗口与最近对话注入由
-   * resolveRecentRounds(strategy) 统一解析，本常量仅作未配置/非法时的兜底。
+   * 最近对话历史注入轮数内核默认（阶段 1 桥接，固定 3 轮）。
+   * 原角色包固定轮数键已删除，不再可由角色包覆盖；
+   * 阶段 2 改由上下文预算动态派生轮数（装配不再依赖固定 N 轮）。
    */
-  DEFAULT_RECENT_HISTORY_ROUNDS,
+  DEFAULT_RECENT_HISTORY_ROUNDS: 3,
 
   /** 暂停超时阈值（毫秒）。30 分钟内无心跳则视为超时，自动归档清理。 */
   PAUSE_TIMEOUT_MS: 30 * 60 * 1000,

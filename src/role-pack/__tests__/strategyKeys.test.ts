@@ -12,6 +12,7 @@ import {
   STRATEGY_KEY_RULES,
   isPositiveInt,
   isNonNegativeInt,
+  isPercent,
   isTemperature,
   isRecallConfidence,
   isNonEmptyString,
@@ -79,6 +80,27 @@ describe('strategyKeys — 校验辅助函数', () => {
     it('非数字类型不通过', () => {
       expect(isNonNegativeInt('0')).toBe(false);
       expect(isNonNegativeInt(null)).toBe(false);
+    });
+  });
+
+  // ── isPercent ──
+  describe('isPercent', () => {
+    it('0.0 ~ 1.0 范围内通过', () => {
+      expect(isPercent(0)).toBe(true);
+      expect(isPercent(0.4)).toBe(true);
+      expect(isPercent(1.0)).toBe(true);
+    });
+
+    it('超出范围不通过', () => {
+      expect(isPercent(-0.1)).toBe(false);
+      expect(isPercent(1.1)).toBe(false);
+      expect(isPercent(2)).toBe(false);
+    });
+
+    it('非数字类型不通过', () => {
+      expect(isPercent('0.4')).toBe(false);
+      expect(isPercent(null)).toBe(false);
+      expect(isPercent(undefined)).toBe(false);
     });
   });
 
@@ -199,9 +221,8 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   // 收集所有已知键（文档列出的）
   const EXPECTED_KEYS: Record<Phase, string[]> = {
     prepare: [
-      'recentRounds',
       'memoryRecall',
-      'memoryRecallQuota',
+      'memoryRecallPercent',
       'minFallback',
       'summaryFocus',
       'contextAssembly',
@@ -316,12 +337,12 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
 
   // ── 具体校验函数验证 ──
   describe('校验函数验证', () => {
-    it('prepare.recentRounds 使用 isPositiveInt', () => {
-      const rule = STRATEGY_KEY_RULES.prepare!.recentRounds!;
+    it('prepare.memoryRecallPercent 使用 isPercent', () => {
+      const rule = STRATEGY_KEY_RULES.prepare!.memoryRecallPercent!;
       expect(rule.kind).toBe('check');
       const checkRule = rule as { check: (v: unknown) => boolean };
-      expect(checkRule.check(5)).toBe(true);
-      expect(checkRule.check(0)).toBe(false);
+      expect(checkRule.check(0.4)).toBe(true);
+      expect(checkRule.check(1.5)).toBe(false);
     });
 
     it('act.temperature 使用 isTemperature', () => {
