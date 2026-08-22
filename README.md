@@ -46,7 +46,7 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 | **领域可插拔** | 同一套架构，加载不同记忆配置即可适配不同领域 |
 | **零第三方依赖内核** | 依赖 Node.js 内置 `node:*` 模块，无任何第三方运行时依赖 / native / 宿主 API，持久化由宿主通过接口注入 |
 | **可观测性** | ITracer 接口 + 结构化 span，宿主可接入任意 APM |
-| **外部世界工具** | 条件性暴露 `web_search` / `web_fetch`（搜索→抓取闭环）/ `run_code`（通用代码执行）——宿主注入 provider 才启用，内核保持零运行时依赖 |
+| **外部世界工具** | 条件性暴露 `web_search`（注入 `IWebSearchProvider`，内核自带 `FetchWebSearchProvider`）/ `web_fetch`（注入 `IFetchProvider`，内核自带 `FetchWebFetchProvider`）/ `run_code`（注入 `ICodeExecutionProvider`）——宿主注入对应 provider 才启用，内核保持零运行时依赖 |
 
 ## 快速开始
 
@@ -146,13 +146,13 @@ await agent.close();
 
 内核通过接口与外部世界交互，宿主按需注入：
 
-| 接口 | 职责 | 内置实现 |
-|------|------|----------|
-| `IMemoryStorage` | 记忆 CRUD + 搜索 + 衰减 | `InMemoryStorage` |
-| `IVectorStore` | 语义向量索引 | `JsonVectorStore` |
-| `ISessionStore` | 会话历史持久化 | 无（宿主实现） |
-| `ILogger` | 日志输出 | console fallback |
-| `ITracer` | 可观测性 span | `NOOP_TRACER` |
+| 接口 | 职责 | 内置实现 | 宿主注意 |
+|------|------|----------|----------|
+| `IMemoryStorage` | 记忆 CRUD + 搜索 + 衰减 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
+| `IVectorStore` | 语义向量索引 | `JsonVectorStore` | 无 |
+| `ISessionStore` | 会话历史 + 检查点持久化 | 无（宿主实现） | 实现 `saveCheckpoint/loadPersistedCheckpoint` 即获得跨进程会话恢复 |
+| `ILogger` | 日志输出 | console fallback | 无 |
+| `ITracer` | 可观测性 span | `NOOP_TRACER` | 无 |
 
 ## 项目结构
 
