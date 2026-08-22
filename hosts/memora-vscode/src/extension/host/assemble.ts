@@ -16,6 +16,7 @@ import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/m
 import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import { join } from 'node:path';
 import { createProvider, createBackgroundProvider } from './llmConfig.js';
+import { createLocalCodeExecutor } from './codeExecutor.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
@@ -164,6 +165,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     webSearchProvider: new FetchWebSearchProvider(),
     // 网页抓取（B8 首发生长：补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）
     fetchProvider: new FetchWebFetchProvider(),
+    // 代码执行（G2：local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
+    codeExecutionProvider: createLocalCodeExecutor(),
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
     // 执行前检查（P3：激进对齐 §7.2.1 统一检查点；收敛版仅放行——
