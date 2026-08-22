@@ -404,6 +404,84 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
   });
 });
 
+describe('AgentLoop · 软上限终止（摘要层达容量上限 → 收尾信号）', () => {
+  it('上下文逼近容量上限且正文已摘要化 → 注入 SOFT_LIMIT 收尾信号', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '收敛回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 10, // 极小窗口：上下文必然逼近容量上限
+    });
+    // 注入摘要化产物（第一级替换标记），作为"正文已大量摘要化"佐证
+    loop.injectSystemMessage('Round summary · roundId: round-1\n摘要内容');
+    for await (const {} of loop.processUserInput('测试')) {
+      // drain
+    }
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('SOFT_LIMIT'))).toBe(true);
+  });
+
+  it('压缩产物标记同样触发软上限（第二级压缩佐证）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '收敛回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 10,
+    });
+    loop.injectSystemMessage('Compressed context · 临时压缩摘要');
+    for await (const {} of loop.processUserInput('测试')) {
+      // drain
+    }
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('SOFT_LIMIT'))).toBe(true);
+  });
+
+  it('上下文充足（未达容量阈值）时不注入软上限信号', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '正常回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 120_000, // 大窗口：上下文远未达阈值
+    });
+    loop.injectSystemMessage('Round summary · roundId: round-1\n摘要内容');
+    for await (const {} of loop.processUserInput('测试')) {
+      // drain
+    }
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('SOFT_LIMIT'))).toBe(false);
+  });
+
+  it('软上限信号为执行期临时（下一轮闭环入口即弃，不跨轮堆积）', async () => {
+    const provider = mockMultiTurnProvider([
+      [{ content: '回答一' }], // turn0：首轮触发软上限
+      [{ content: '回答二' }], // turn1：二轮
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 10,
+    });
+    loop.injectSystemMessage('Round summary · roundId: round-1\n摘要内容');
+
+    for await (const {} of loop.processUserInput('测试一')) {
+      // drain
+    }
+    expect(
+      loop.getMessages().filter((m) => m.content.includes('SOFT_LIMIT')).length,
+    ).toBe(1);
+
+    // 第二轮：入口 cleanExecutionTemporary 清理旧信号；上下文仍饱和 → 重新注入新信号（不堆积）
+    for await (const {} of loop.processUserInput('测试二')) {
+      // drain
+    }
+    // 旧信号已弃、仅剩本轮重新注入的 1 条（若未清理会累积为 2 条）
+    expect(
+      loop.getMessages().filter((m) => m.content.includes('SOFT_LIMIT')).length,
+    ).toBe(1);
+  });
+});
+
 describe('AgentLoop · processUserInput 工具调用循环', () => {
   it('应该执行工具调用并继续循环', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('工具执行结果');

@@ -426,10 +426,12 @@ export class SeedOrchestrator {
       // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
     }
 
-    // 收尾：收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 以 planFallback 走普通单条摘要（保证恒 1:1）
+    // 收尾：收敛 → 汇报闭环 + 汇报单源摘要；硬上限触顶且有未完成步骤 → 汇报进度 + 列未完成
+    // （触顶不是硬止损，等用户输入按记忆递归续接）；其余未收敛 → 以 planFallback 走普通单条摘要（保证恒 1:1）
     parts.loop.setCurrentRoundId(parts.loop.externalTaskHeadId);
     // 汇报入口（loop.runReport）已自动清理上一步执行期临时残留，无需此处手动再清
-    if (this.isConverged()) {
+    const hitLimitWithPending = stepsRun >= limit && this.getNextPendingStep() !== undefined;
+    if (this.isConverged() || hitLimitWithPending) {
       yield { type: 'thinking', phase: 'reporting' };
       yield* this.runReportAndReflect(signal, input, planFallback);
     } else {

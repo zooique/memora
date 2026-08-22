@@ -582,6 +582,42 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     expect(mocks.loop.runReport).not.toHaveBeenCalled();
   });
 
+  it('runChat 复杂：taskLoopLimit 触顶且有未完成步骤 → 强制汇报进度+列未完成（不等话硬断）', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      // 难度分级判定为复杂
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    // 硬上限 1 步：2 个 pending 步骤只执行 1 步即触顶，仍有未完成步骤
+    useStrategy(mocks, makeStrategy({ taskLoopLimit: 1 }));
+    const plan: Array<{ id: string; status: string; description: string }> = [
+      { id: 's1', status: 'pending', description: '步骤一' },
+      { id: 's2', status: 'pending', description: '步骤二' },
+    ];
+    mocks.sessionManager.getCheckpoint.mockImplementation(() => ({ sessionId: 'sess', plan }));
+    consumeControl.result = { content: '答', aborted: false, paused: false, failed: false };
+    // 汇报闭环返回"进度 + 未完成"报告（触顶不是硬止损）
+    mocks.loop.runReport.mockReturnValue(textStream('【触顶汇报】已完成步骤一，未完成步骤二'));
+
+    mocks.loop.processUserInput.mockImplementation(function* (input: string) {
+      if (typeof input === 'string' && input.includes('执行任务步骤')) {
+        const step = plan.find((s) => s.status === 'pending');
+        if (step) step.status = 'done';
+      }
+      yield { type: 'text', content: '答' };
+    });
+
+    await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
+    await vi.waitFor(() => {
+      // 触顶且有未完成 → 汇报闭环（进度 + 列未完成），非冷断
+      expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
+    });
+    // 汇报文本写入会话历史（供下次输入按记忆递归续接）
+    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
+      '【触顶汇报】已完成步骤一，未完成步骤二',
+      expect.any(String),
+    );
+  });
+
   it('runChat 步闭环中断：不产摘要（残缺半成品不入记忆，与单闭环一致）', async () => {
     const { mocks, deps } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),

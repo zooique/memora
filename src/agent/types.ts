@@ -82,6 +82,8 @@ export interface UIMessages {
   interrupted?: string;
   /** 上下文窗口截断提示生成函数 */
   contextTruncated?: (skipped: number, kept: number) => string;
+  /** 软上限收尾信号（默认内置中文提示）：摘要层达容量上限时注入，让 LLM 收敛产出最终交付 */
+  softLimitWrapup?: string;
   /** 最近对话标签（默认 "[Recent conversation]"） */
   recentConversationLabel?: string;
   /** 用户角色标签（默认 "User"） */

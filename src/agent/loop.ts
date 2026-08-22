@@ -39,6 +39,11 @@ import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
 
+/** 软上限摘要化判定标记：第一级替换产物文案前缀（compaction.ts ReplaceRoundsStrategy） */
+const SOFT_LIMIT_SUMMARY_MARKER_ROUND = 'Round summary · roundId:';
+/** 软上限摘要化判定标记：第二级压缩产物文案前缀（loop.compressContext） */
+const SOFT_LIMIT_SUMMARY_MARKER_COMPRESS = 'Compressed context';
+
 export interface AgentLoopOptions {
   provider: LlmProvider;
   /** Provider 路由选择器（多模型路由基础，可选） */
@@ -234,6 +239,12 @@ export class AgentLoop {
         opts.messages?.contextTruncated ??
         ((skipped, kept) =>
           `[Context window management] ${skipped} earlier messages have been trimmed to maintain conversation flow. ${kept} recent messages are preserved along with the full system prompt. Ask the user if you need to review earlier content.`),
+      // 软上限收尾信号（摘要层达容量上限时注入）：LLM 收敛产出最终交付，不再调用工具
+      softLimitWrapup:
+        opts.messages?.softLimitWrapup ??
+        '\n\n[SOFT_LIMIT] 上下文空间已接近容量上限，正文已被大量摘要化（摘要层已饱和）。' +
+          '请立即收敛：基于现有内容产出最终交付与结论，不要再调用工具。' +
+          '如需回溯细节，可先调用 trace_summary 再收敛。',
       recentConversationLabel: opts.messages?.recentConversationLabel ?? '[Recent conversation]',
       userLabel: opts.messages?.userLabel ?? 'User',
       assistantLabel: opts.messages?.assistantLabel ?? 'Assistant',
@@ -754,6 +765,16 @@ export class AgentLoop {
       }
     }
     // ─── 压缩链结束 ─────────────────────────────────────────────
+
+    // 软上限（内核确定性检测）：上下文逼近容量上限且正文大量摘要化（摘要层达容量上限）
+    // → 注入收尾信号，LLM 收敛产出最终交付（executionTemp，下一轮闭环入口即弃）
+    if (this._shouldInjectSoftLimitWrapup()) {
+      this.appendSystemMessage(this.ui.softLimitWrapup, { executionTemp: true });
+      logger.warn(
+        { estimatedTokens: this.contextManager.estimateTokens(this.messages), max: this.maxContextTokens },
+        '软上限：摘要层达容量上限，注入收尾信号，LLM 收敛产出最终交付',
+      );
+    }
 
     // tokenBudget 软上限检查（0=不限制）
     if (this.strategy.tokenBudget > 0) {
@@ -1839,6 +1860,25 @@ export class AgentLoop {
     }
 
     return false;
+  }
+
+  /**
+   * 软上限检测（内核确定性，role-pack-spec §E.2）：完整对话层除顶级锚点外已大量摘要化
+   * 且上下文 token 达容量上限 → 注入收尾信号让 LLM 收敛。触发点是「容量阈值」（确定性物理量），
+   * 不是「是否全变摘要」的状态快照。
+   */
+  private _shouldInjectSoftLimitWrapup(): boolean {
+    // 容量阈值：上下文逼近 maxContextTokens 警戒线（≥ 90%）
+    const currentTokens = this.contextManager.estimateTokens(this.messages);
+    if (currentTokens < this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
+      return false;
+    }
+    // 摘要化佐证：上下文存在替换/压缩摘要产物（正文已大量摘要化）
+    return this.messages.some(
+      (m) =>
+        m.content.includes(SOFT_LIMIT_SUMMARY_MARKER_ROUND) ||
+        m.content.includes(SOFT_LIMIT_SUMMARY_MARKER_COMPRESS),
+    );
   }
 }
 
