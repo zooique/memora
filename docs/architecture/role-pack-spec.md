@@ -388,24 +388,24 @@ export interface IMcpTransport {
 
 | 组 | 键 | 取值（枚举） | 含义 | 状态 | 实现消费要求 |
 |----|----|------------|------|------|------------|
-| prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | `[草案]` | 无参考实现消费，待验证 |
+| prepare | `prepare.contextAssembly` | `fixed` / `query` / `hybrid` | 最近轮次加载策略 | 冻结 | memora 消费（seed/prepare.ts 上下文装配策略选择，非法值归位 hybrid）；**由实现提炼进标准**（对账发现被真实消费后补录） |
 | prepare | `prepare.recentRounds` | 正整数 | 固定加载轮数（**删除**：被「上下文预算装配」动态轮数取代，见本节文末；实现直接移除，不留过渡兼容） | 废弃 | 动态填充后轮数为派生值，不再显式声明 |
 | prepare | `prepare.memoryRecall` | `full` / `limited` / `none` | 长期记忆召回 | 冻结 | memora 消费（agent.ts 召回装配） |
 | prepare | `prepare.memoryRecallQuota` | 正整数 | 记忆召回限额（token，绝对量）（**删除**：过渡到百分比，见本节文末；实现直接移除 `resolveMemoryRecallQuota`） | 废弃 | limited 裁剪改为按 `memoryRecallPercent` cap 换算 |
-| prepare | `prepare.memoryRecallPercent` | 0.0~1.0（角色包设） | 记忆召回占可用预算的百分比（cap 非 quota）：记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 剩余预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写 | `[草案]` | 通过验证门后冻结；拟取代 `memoryRecallQuota` 的绝对值语义 |
-| prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | `[草案]` | 无参考实现消费，待验证 |
+| prepare | `prepare.memoryRecallPercent` | 0.0~1.0（角色包设） | 记忆召回占可用预算的百分比（cap 非 quota）：记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 剩余预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写 | 冻结 | memora 消费（contextPreparer.ts 记忆摘要层 cap 换算，非法/越界回退默认 0.4）；**由实现提炼进标准**；拟取代 `memoryRecallQuota` 的绝对值语义（该键废弃） |
+| prepare | `prepare.summaryRecall` | `on` / `off` | 摘要召回 | 冻结 | memora 消费（contextPreparer.ts 摘要召回开关，非法值归位 on）；**由实现提炼进标准**（对账发现被真实消费后补录） |
 | prepare | `prepare.summaryFocus` | 非空字符串 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结 | 由实现提炼进标准（结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
 | prepare | `prepare.minFallback` | 非负整数 | 召回保底下限（recall 结果不足时用最近记忆补足，0=关闭）。仅作用于**运行前装配**的召回保底，不作用于 loop 自循环阶段的压缩摘要上限 | 冻结 | memora 消费（recall.ts 保底补全，未配置回退默认 2）；语义边界锁定在装配前，loop 压缩上限由内核预算检测决定，不在该键管辖 |
 | act | `act.toolMode` | `allow` / `block` | 是否允许工具调用 | 冻结 | memora 消费（agent.ts 工具开关）；命名归标准（旧 `act.toolCalls`） |
-| act | `act.temperature` | 0.0~2.0 | 生成随机性 | `[草案]` | 无参考实现消费，待验证 |
-| act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 | `[草案]` | 无参考实现消费，待验证 |
-| reflect | `reflect.summary` | `on` / `off` | 摘要生成 | `[草案]` | 无参考实现消费，待验证（memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
+| act | `act.temperature` | 0.0~2.0 | 生成随机性 | 冻结 | memora 消费（agent.ts `buildChatOptionsFromStrategy` 注入 ChatOptions.temperature，越界忽略）；**由实现提炼进标准**（对账发现被真实消费后补录） |
+| act | `act.streaming` | `streaming` / `non-streaming` | 输出方式 | 冻结 | memora 消费（agent.ts `buildChatOptionsFromStrategy` 注入 ChatOptions.stream）；**由实现提炼进标准**（对账发现被真实消费后补录） |
+| reflect | `reflect.summary` | `on` / `off` | 摘要生成 | 冻结 | memora 消费（seed/orchestrator.ts 轮次摘要生成开关，非法值归位 on）；**由实现提炼进标准**（对账发现被真实消费后补录；memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动） |
 | reflect | `reflect.handoff` | `wait` / `loop` / `end` | 衔接决策 | 冻结 | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`） |
 | reflect | `reflect.loopContinue` | 0 或正整数（兼容旧 'on'→1 / 'off'→0） | 自审查轮数：LLM 纯文本回复后自动审查 N 轮（0=关闭） | 冻结 | memora 消费（agent.ts 自审查轮数，mvp-scope §三·一）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
 | reflect | `reflect.userFollowup` | `ask` / `silent` | 用户追问策略：ask=主动引导对话 / silent=只等输入 | 冻结 | memora 消费（agent.ts 衔接 + types.ts 提问指令注入）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录） |
 | global | `global.askOn` | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合） | 冻结-条件消费 | memora 消费（types.ts `assembleRolePack` 提问指令注入，**仅 `reflect.userFollowup=ask` 时生效**）；条件消费 = 字段冻结，但行为仅在指定策略组合下激活 |
 | global | `global.askLimit` | 正整数（默认 3） | 每任务提问上限 | 冻结-条件消费 | memora 消费（同上，userFollowup=ask 时生效，缺省 3） |
-| global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | `[草案]` | 无参考实现消费，待验证 |
+| global | `global.errorHandling` | `retry` / `degrade` / `stop` | 异常策略 | 冻结 | memora 消费（strategyResolver `resolveErrorHandling` → loop 异常处理分支，非法值归位 retry）；**由实现提炼进标准**（对账发现被真实消费后补录） |
 | global | `global.taskLoopLimit` | 非负整数（默认 10，0=关闭） | 外部任务驱动循环步数上限：复杂任务按任务表每步一个闭环的最大步数 | 冻结 | memora 消费（seed/orchestrator `externalTaskLoop` 步数上限，防无限多步烧 token）；**由实现提炼进标准**（阶段 3 对账发现被真实消费后补录） |
 
 ### 角色包配置边界：机制参数开放判定标准（决策依据）

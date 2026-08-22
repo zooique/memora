@@ -38,6 +38,15 @@ import {
   DEFAULT_MEMORY_RECALL_PERCENT,
 } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
+import {
+  MAX_MIN_FALLBACK,
+  MAX_TOOL_STEP_LIMIT,
+  MAX_LOOP_CONTINUE,
+  MAX_TOKEN_BUDGET,
+  MAX_STEP_BUDGET,
+  MAX_TASK_LOOP_LIMIT,
+  MAX_SUMMARY_FOCUS_LENGTH,
+} from '@/role-pack/strategyKeys.js';
 import type {
   BehaviorStrategy,
   RolePack,
@@ -356,6 +365,12 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveMinFallback({ prepare: { minFallback: -1 } })).toBe(DEFAULT_MIN_FALLBACK);
     });
 
+    it('越上界回退默认（防无条件填写）', () => {
+      expect(resolveMinFallback({ prepare: { minFallback: MAX_MIN_FALLBACK + 1 } })).toBe(
+        DEFAULT_MIN_FALLBACK,
+      );
+    });
+
     it('小数回退默认', () => {
       expect(resolveMinFallback({ prepare: { minFallback: 1.5 } })).toBe(DEFAULT_MIN_FALLBACK);
     });
@@ -386,6 +401,12 @@ describe('resolve* 函数 — 数值解析', () => {
     it('缺失回退 undefined', () => {
       expect(resolveSummaryFocus(undefined)).toBeUndefined();
     });
+
+    it('超长字符串回退 undefined（防巨型注入）', () => {
+      expect(
+        resolveSummaryFocus({ prepare: { summaryFocus: 'a'.repeat(MAX_SUMMARY_FOCUS_LENGTH + 1) } }),
+      ).toBeUndefined();
+    });
   });
 
   // ── resolveToolStepLimit ──
@@ -400,6 +421,10 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('负数回退默认 0', () => {
       expect(resolveToolStepLimit({ act: { toolStepLimit: -1 } })).toBe(0);
+    });
+
+    it('越上界回退默认 0（防无条件填写）', () => {
+      expect(resolveToolStepLimit({ act: { toolStepLimit: MAX_TOOL_STEP_LIMIT + 1 } })).toBe(0);
     });
 
     it('缺失回退默认 0', () => {
@@ -425,6 +450,10 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: 8000.5 } })).toBe(8000);
     });
 
+    it('越上界回退默认 8000（防无条件填写）', () => {
+      expect(resolveTokenBudget({ global: { tokenBudget: MAX_TOKEN_BUDGET + 1 } })).toBe(8000);
+    });
+
     it('缺失回退默认 8000', () => {
       expect(resolveTokenBudget(undefined)).toBe(8000);
     });
@@ -448,6 +477,10 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveStepBudget({ global: { stepBudget: 1.5 } })).toBe(50);
     });
 
+    it('越上界回退默认 50（防无条件填写）', () => {
+      expect(resolveStepBudget({ global: { stepBudget: MAX_STEP_BUDGET + 1 } })).toBe(50);
+    });
+
     it('缺失回退默认 50', () => {
       expect(resolveStepBudget(undefined)).toBe(50);
     });
@@ -469,6 +502,10 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('小数回退默认 10', () => {
       expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 3.14 } })).toBe(10);
+    });
+
+    it('越上界回退默认 10（防无条件填写）', () => {
+      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: MAX_TASK_LOOP_LIMIT + 1 } })).toBe(10);
     });
 
     it('缺失回退默认 10', () => {
@@ -751,6 +788,11 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
     ).toBe(0);
     expect(
       resolveL2Strategy({ reflect: { loopContinue: 'on' } } as unknown as BehaviorStrategy)
+        .maxSelfReviewRounds,
+    ).toBe(0);
+    // 越上界归一为 0（防无条件填写导致无限自审查）
+    expect(
+      resolveL2Strategy({ reflect: { loopContinue: MAX_LOOP_CONTINUE + 1 } } as BehaviorStrategy)
         .maxSelfReviewRounds,
     ).toBe(0);
   });

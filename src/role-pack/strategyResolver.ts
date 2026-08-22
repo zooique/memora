@@ -4,6 +4,17 @@
 
 // 召回保底下限默认值：跨层共享（role-pack 与 memory 均引用），SSOT 单一来源
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
+// 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
+import {
+  MAX_ASK_LIMIT,
+  MAX_LOOP_CONTINUE,
+  MAX_MIN_FALLBACK,
+  MAX_STEP_BUDGET,
+  MAX_SUMMARY_FOCUS_LENGTH,
+  MAX_TASK_LOOP_LIMIT,
+  MAX_TOKEN_BUDGET,
+  MAX_TOOL_STEP_LIMIT,
+} from './strategyKeys.js';
 import type {
   BehaviorStrategy,
   Handoff,
@@ -138,10 +149,14 @@ export function resolveMemoryRecallMode(strategy: BehaviorStrategy | undefined):
   return normalizeEnum(strategy?.prepare?.memoryRecall, ['full', 'limited', 'none'], 'full');
 }
 
-/** 解析召回保底下限（SSOT）：非负整数才采用，缺失/非整数/负数回退以内置默认，置 0 彻底关闭保底 */
+/** 解析召回保底下限（SSOT）：整数且 ∈ [0, MAX_MIN_FALLBACK] 才采用，缺失/越界回退以内置默认，置 0 彻底关闭保底 */
 export function resolveMinFallback(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.prepare?.minFallback;
-  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_MIN_FALLBACK;
   return valid ? candidate : DEFAULT_MIN_FALLBACK;
 }
 
@@ -156,12 +171,15 @@ export function resolveMemoryRecallPercent(strategy: BehaviorStrategy | undefine
 }
 
 /**
- * 解析角色包提炼视角（SSOT）：合法非空字符串采用，缺失/空白归位 undefined（通用浓缩）。
+ * 解析角色包提炼视角（SSOT）：非空字符串且 ≤ MAX_SUMMARY_FOCUS_LENGTH 字符才采用，
+ * 缺失/空白/超长回退 undefined（通用浓缩）。
  * 领域无关机制：内核只提供注入能力，视角全文由角色包提供；未声明时 round-summary 行为与现状一致（JSON 与 SummaryType 硬契约保留）。
  */
 export function resolveSummaryFocus(strategy: BehaviorStrategy | undefined): string | undefined {
   const candidate = strategy?.prepare?.summaryFocus;
-  return typeof candidate === 'string' && candidate.trim().length > 0
+  return typeof candidate === 'string' &&
+    candidate.trim().length > 0 &&
+    candidate.length <= MAX_SUMMARY_FOCUS_LENGTH
     ? candidate.trim()
     : undefined;
 }
@@ -181,11 +199,15 @@ export function resolveContextAssembly(strategy: BehaviorStrategy | undefined): 
   return normalizeEnum(strategy?.prepare?.contextAssembly, ['fixed', 'query', 'hybrid'], 'hybrid');
 }
 
-/** 解析工具调用步数上限（内核已消费）：合法非负整数采用，非法/缺失回退默认 0（不限制） */
+/** 解析工具调用步数上限（内核已消费）：整数且 ∈ [0, MAX_TOOL_STEP_LIMIT] 才采用，非法/越界回退默认 0（不限制） */
 export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.act?.toolStepLimit;
-  // 合法值：0=无限制，N>0=限制步数
-  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  // 合法值：0=无限制，1~MAX_TOOL_STEP_LIMIT=限制步数
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_TOOL_STEP_LIMIT;
   return valid ? candidate : 0;
 }
 
@@ -209,24 +231,36 @@ export function resolveInputInterrupt(strategy: BehaviorStrategy | undefined): I
   return normalizeEnum(strategy?.act?.inputInterrupt, ['allow', 'block'], 'allow');
 }
 
-/** 解析 Token 预算上限（内核已消费）：合法非负整数采用，非法/缺失回退内核默认（DEFAULT_TOKEN_BUDGET，0=不限制） */
+/** 解析 Token 预算上限（内核已消费）：整数且 ∈ [0, MAX_TOKEN_BUDGET] 才采用，非法/越界回退内核默认（DEFAULT_TOKEN_BUDGET，0=不限制） */
 export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.tokenBudget;
-  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_TOKEN_BUDGET;
   return valid ? candidate : DEFAULT_TOKEN_BUDGET;
 }
 
-/** 解析步数预算上限（内核已消费）：合法非负整数采用，非法/缺失回退内核默认（DEFAULT_STEP_BUDGET，软上限，配合 maxIterations 双重保护，0=不限制） */
+/** 解析步数预算上限（内核已消费）：整数且 ∈ [0, MAX_STEP_BUDGET] 才采用，非法/越界回退内核默认（DEFAULT_STEP_BUDGET，软上限，配合 maxIterations 双重保护，0=不限制） */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
-  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_STEP_BUDGET;
   return valid ? candidate : DEFAULT_STEP_BUDGET;
 }
 
-/** 解析外部任务驱动循环步数上限（阶段 3 内核已消费）：合法非负整数采用，非法/缺失回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
+/** 解析外部任务驱动循环步数上限（阶段 3 内核已消费）：整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
 export function resolveTaskLoopLimit(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.taskLoopLimit;
-  const valid = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_TASK_LOOP_LIMIT;
   return valid ? candidate : DEFAULT_TASK_LOOP_LIMIT;
 }
 
@@ -330,10 +364,13 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
  * @returns 注入 AgentLoop 的单一运行时策略对象
  */
 export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2RuntimeStrategy {
-  // loopContinue → 自审查轮数：合法非负整数采用，否则关闭（0 轮）
+  // loopContinue → 自审查轮数：整数且 ∈ [0, MAX_LOOP_CONTINUE] 才采用，否则关闭（0 轮）
   const loopContinue = strategy?.reflect?.loopContinue;
   const maxSelfReviewRounds =
-    typeof loopContinue === 'number' && Number.isInteger(loopContinue) && loopContinue >= 0
+    typeof loopContinue === 'number' &&
+    Number.isInteger(loopContinue) &&
+    loopContinue >= 0 &&
+    loopContinue <= MAX_LOOP_CONTINUE
       ? loopContinue
       : 0;
   return {
@@ -399,7 +436,15 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
   // 主动提问指令注入：userFollowup=ask 时，将 askOn/askLimit 转为 LLM 指令
   if (strategy.reflect?.userFollowup === 'ask') {
     const askOn = strategy.global?.askOn;
-    const askLimit = strategy.global?.askLimit ?? 3;
+    // askLimit 需 ∈ [1, MAX_ASK_LIMIT] 才注入 prompt，越界回退默认 3（防 LLM 指令注入失控次数）
+    const rawAskLimit = strategy.global?.askLimit ?? 3;
+    const askLimit =
+      typeof rawAskLimit === 'number' &&
+      Number.isInteger(rawAskLimit) &&
+      rawAskLimit >= 1 &&
+      rawAskLimit <= MAX_ASK_LIMIT
+        ? rawAskLimit
+        : 3;
     const triggerLabels: string[] = [];
     const triggers = Array.isArray(askOn) ? askOn : askOn ? [askOn] : [];
     for (const t of triggers) {

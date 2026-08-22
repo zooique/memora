@@ -290,6 +290,52 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(str.issues, 'INVALID_STRATEGY_VALUE').length).toBeGreaterThan(0);
   });
 
+  // ── 数值键越上界（区间上限纪律：开放键不能无条件填写）──
+  it('outputLimit 越上界（> MAX_OUTPUT_LIMIT）→ error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, outputLimit: 999999 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('tokenBudget 越上界（> MAX_TOKEN_BUDGET）→ error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, global: { ...validStrategy.global, tokenBudget: 1000000 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('askLimit 越上界（> MAX_ASK_LIMIT）→ error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, global: { ...validStrategy.global, askLimit: 999 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('loopContinue 越上界（> MAX_LOOP_CONTINUE）→ error', () => {
+    const result = validate({
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 999 } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('summaryFocus 超长（> MAX_SUMMARY_FOCUS_LENGTH）→ error（防巨型注入）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: 'a'.repeat(501) } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('越界错误消息带合法区间提示（指导填写）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, global: { ...validStrategy.global, tokenBudget: 999999 } },
+    });
+    const issue = findByCode(result.issues, 'INVALID_STRATEGY_VALUE')[0];
+    expect(issue).toBeDefined();
+    expect(issue!.message).toContain('合法区间');
+    expect(issue!.message).toContain('[0, 200000]');
+  });
+
   it('userFollowup 枚举合法（ask/silent）且非枚举 error（雷-3b）', () => {
     const ok = validate({
       strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, userFollowup: 'ask' } },

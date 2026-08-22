@@ -2,7 +2,7 @@
  * strategyKeys.test.ts — 策略键 SSOT 测试
  *
  * 覆盖范围：
- *   1. 校验辅助函数（isPositiveInt / isNonNegativeInt / isTemperature / isRecallConfidence / isNonEmptyString / isAskOn）
+ *   1. 校验辅助函数（isPercent / isTemperature / isRecallConfidence / isSummaryFocus / isAskOn）
  *   2. STRATEGY_KEY_RULES 完整性（prepare / act / reflect / global 四组键覆盖 + 规则类型）
  *
  * 设计纪律：角色包对策略维度只"选择"不"定义"，因此枚举外取值是 error（机器可判读）
@@ -10,13 +10,20 @@
 import { describe, it, expect } from 'vitest';
 import {
   STRATEGY_KEY_RULES,
-  isPositiveInt,
-  isNonNegativeInt,
   isPercent,
   isTemperature,
   isRecallConfidence,
-  isNonEmptyString,
+  isSummaryFocus,
   isAskOn,
+  MAX_MIN_FALLBACK,
+  MAX_OUTPUT_LIMIT,
+  MAX_TOOL_STEP_LIMIT,
+  MAX_LOOP_CONTINUE,
+  MAX_ASK_LIMIT,
+  MAX_TOKEN_BUDGET,
+  MAX_STEP_BUDGET,
+  MAX_TASK_LOOP_LIMIT,
+  MAX_SUMMARY_FOCUS_LENGTH,
   type KeyRule,
 } from '../strategyKeys.js';
 
@@ -25,64 +32,6 @@ import {
 // ══════════════════════════════════════════════════════════════
 
 describe('strategyKeys — 校验辅助函数', () => {
-  // ── isPositiveInt ──
-  describe('isPositiveInt', () => {
-    it('正整数通过', () => {
-      expect(isPositiveInt(1)).toBe(true);
-      expect(isPositiveInt(10)).toBe(true);
-      expect(isPositiveInt(100)).toBe(true);
-    });
-
-    it('0 不通过', () => {
-      expect(isPositiveInt(0)).toBe(false);
-    });
-
-    it('负数不通过', () => {
-      expect(isPositiveInt(-1)).toBe(false);
-      expect(isPositiveInt(-10)).toBe(false);
-    });
-
-    it('浮点数不通过', () => {
-      expect(isPositiveInt(1.5)).toBe(false);
-      expect(isPositiveInt(0.1)).toBe(false);
-    });
-
-    it('非数字类型不通过', () => {
-      expect(isPositiveInt('1')).toBe(false);
-      expect(isPositiveInt(null)).toBe(false);
-      expect(isPositiveInt(undefined)).toBe(false);
-      expect(isPositiveInt({})).toBe(false);
-      expect(isPositiveInt([])).toBe(false);
-    });
-  });
-
-  // ── isNonNegativeInt ──
-  describe('isNonNegativeInt', () => {
-    it('正整数通过', () => {
-      expect(isNonNegativeInt(1)).toBe(true);
-      expect(isNonNegativeInt(10)).toBe(true);
-    });
-
-    it('0 通过', () => {
-      expect(isNonNegativeInt(0)).toBe(true);
-    });
-
-    it('负数不通过', () => {
-      expect(isNonNegativeInt(-1)).toBe(false);
-      expect(isNonNegativeInt(-10)).toBe(false);
-    });
-
-    it('浮点数不通过', () => {
-      expect(isNonNegativeInt(0.5)).toBe(false);
-      expect(isNonNegativeInt(1.0001)).toBe(false);
-    });
-
-    it('非数字类型不通过', () => {
-      expect(isNonNegativeInt('0')).toBe(false);
-      expect(isNonNegativeInt(null)).toBe(false);
-    });
-  });
-
   // ── isPercent ──
   describe('isPercent', () => {
     it('0.0 ~ 1.0 范围内通过', () => {
@@ -148,27 +97,25 @@ describe('strategyKeys — 校验辅助函数', () => {
     });
   });
 
-  // ── isNonEmptyString ──
-  describe('isNonEmptyString', () => {
-    it('非空字符串通过', () => {
-      expect(isNonEmptyString('hello')).toBe(true);
-      expect(isNonEmptyString('  hello  ')).toBe(true);
-      expect(isNonEmptyString('你好世界')).toBe(true);
+  // ── isSummaryFocus（带长度上限）──
+  describe('isSummaryFocus', () => {
+    it('非空字符串且不超长通过', () => {
+      expect(isSummaryFocus('编程方案视角')).toBe(true);
+      expect(isSummaryFocus('a'.repeat(MAX_SUMMARY_FOCUS_LENGTH))).toBe(true);
     });
 
-    it('空字符串不通过', () => {
-      expect(isNonEmptyString('')).toBe(false);
+    it('超长字符串不通过（防巨型注入）', () => {
+      expect(isSummaryFocus('a'.repeat(MAX_SUMMARY_FOCUS_LENGTH + 1))).toBe(false);
     });
 
-    it('纯空白字符串不通过', () => {
-      expect(isNonEmptyString('   ')).toBe(false);
-      expect(isNonEmptyString('\t\n')).toBe(false);
+    it('空/空白字符串不通过', () => {
+      expect(isSummaryFocus('')).toBe(false);
+      expect(isSummaryFocus('   ')).toBe(false);
     });
 
     it('非字符串类型不通过', () => {
-      expect(isNonEmptyString(123)).toBe(false);
-      expect(isNonEmptyString(null)).toBe(false);
-      expect(isNonEmptyString(undefined)).toBe(false);
+      expect(isSummaryFocus(123)).toBe(false);
+      expect(isSummaryFocus(null)).toBe(false);
     });
   });
 
@@ -353,21 +300,94 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       expect(checkRule.check(3.0)).toBe(false);
     });
 
-    it('reflect.loopContinue 使用 isNonNegativeInt', () => {
+    it('reflect.loopContinue 使用区间断言（0~MAX_LOOP_CONTINUE）', () => {
       const rule = STRATEGY_KEY_RULES.reflect!.loopContinue!;
       expect(rule.kind).toBe('check');
-      const checkRule = rule as { check: (v: unknown) => boolean };
+      const checkRule = rule as { check: (v: unknown) => boolean; range?: { min: number; max: number } };
       expect(checkRule.check(0)).toBe(true);
       expect(checkRule.check(3)).toBe(true);
       expect(checkRule.check(-1)).toBe(false);
+      expect(checkRule.range).toEqual({ min: 0, max: MAX_LOOP_CONTINUE });
     });
 
-    it('global.askLimit 使用 isPositiveInt', () => {
+    it('global.askLimit 使用区间断言（1~MAX_ASK_LIMIT）', () => {
       const rule = STRATEGY_KEY_RULES.global!.askLimit!;
       expect(rule.kind).toBe('check');
-      const checkRule = rule as { check: (v: unknown) => boolean };
+      const checkRule = rule as { check: (v: unknown) => boolean; range?: { min: number; max: number } };
       expect(checkRule.check(3)).toBe(true);
       expect(checkRule.check(0)).toBe(false);
+      expect(checkRule.range).toEqual({ min: 1, max: MAX_ASK_LIMIT });
+    });
+  });
+
+  // ── 数值键区间上界（SSOT：开放键必须有上下限，防无条件填写）──
+  describe('strategyKeys — 数值键区间上界', () => {
+    // 每个数值键：check 断言内置完整区间 + range 元数据与断言同源（防双写漂移）
+    const CASES: Array<{ key: string; rule: KeyRule; min: number; max: number; probe: number }> = [
+      { key: 'prepare.minFallback', rule: STRATEGY_KEY_RULES.prepare!.minFallback!, min: 0, max: MAX_MIN_FALLBACK, probe: MAX_MIN_FALLBACK + 1 },
+      { key: 'prepare.recallConfidence', rule: STRATEGY_KEY_RULES.prepare!.recallConfidence!, min: 0, max: 1, probe: 1.1 },
+      { key: 'prepare.memoryRecallPercent', rule: STRATEGY_KEY_RULES.prepare!.memoryRecallPercent!, min: 0, max: 1, probe: 1.1 },
+      { key: 'act.temperature', rule: STRATEGY_KEY_RULES.act!.temperature!, min: 0, max: 2, probe: 2.1 },
+      { key: 'act.outputLimit', rule: STRATEGY_KEY_RULES.act!.outputLimit!, min: 1, max: MAX_OUTPUT_LIMIT, probe: MAX_OUTPUT_LIMIT + 1 },
+      { key: 'act.toolStepLimit', rule: STRATEGY_KEY_RULES.act!.toolStepLimit!, min: 0, max: MAX_TOOL_STEP_LIMIT, probe: MAX_TOOL_STEP_LIMIT + 1 },
+      { key: 'reflect.loopContinue', rule: STRATEGY_KEY_RULES.reflect!.loopContinue!, min: 0, max: MAX_LOOP_CONTINUE, probe: MAX_LOOP_CONTINUE + 1 },
+      { key: 'global.askLimit', rule: STRATEGY_KEY_RULES.global!.askLimit!, min: 1, max: MAX_ASK_LIMIT, probe: MAX_ASK_LIMIT + 1 },
+      { key: 'global.tokenBudget', rule: STRATEGY_KEY_RULES.global!.tokenBudget!, min: 0, max: MAX_TOKEN_BUDGET, probe: MAX_TOKEN_BUDGET + 1 },
+      { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: 0, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
+      { key: 'global.taskLoopLimit', rule: STRATEGY_KEY_RULES.global!.taskLoopLimit!, min: 0, max: MAX_TASK_LOOP_LIMIT, probe: MAX_TASK_LOOP_LIMIT + 1 },
+    ];
+
+    it('所有数值键都带 range 元数据（上下限齐全）', () => {
+      for (const { key, rule, min, max } of CASES) {
+        expect(rule.kind, `${key} 应为 check`).toBe('check');
+        if (rule.kind === 'check') {
+          expect(rule.range, `${key} 必须声明 range 上下限`).toBeDefined();
+          expect(rule.range!.min, `${key} 下限`).toBe(min);
+          expect(rule.range!.max, `${key} 上限`).toBe(max);
+        }
+      }
+    });
+
+    it('越上界值一律不通过（防无条件填写资源失控）', () => {
+      for (const { key, rule, probe } of CASES) {
+        if (rule.kind === 'check') {
+          expect(rule.check(probe), `${key} 越上界 ${probe} 应拒绝`).toBe(false);
+        }
+      }
+    });
+
+    it('下界边界值通过（0 或 1 语义合法）', () => {
+      for (const { key, rule, min } of CASES) {
+        if (rule.kind === 'check') {
+          expect(rule.check(min), `${key} 下界 ${min} 应通过`).toBe(true);
+        }
+      }
+    });
+
+    // 浮点比例/温度键：允许小数，仅约束区间；其余数值键为整数键
+    const FLOAT_KEYS: ReadonlySet<string> = new Set([
+      'prepare.recallConfidence',
+      'prepare.memoryRecallPercent',
+      'act.temperature',
+    ]);
+
+    it('非整数不通过（整数区间键必须为整数）', () => {
+      for (const { key, rule } of CASES) {
+        if (rule.kind === 'check' && rule.range && !FLOAT_KEYS.has(key)) {
+          expect(rule.check(0.5), `${key} 浮点 0.5 应拒绝`).toBe(false);
+        }
+      }
+    });
+
+    it('浮点键允许小数但拒绝超区间', () => {
+      for (const { key, rule, max } of CASES) {
+        if (rule.kind === 'check' && rule.range && FLOAT_KEYS.has(key)) {
+          // 0.5 在 [0, 1]/[0, 2] 区间内是合法浮点
+          expect(rule.check(0.5), `${key} 浮点 0.5 应通过`).toBe(true);
+          // 超过上界的浮点拒绝（如 1.5 对 0~1 键）
+          expect(rule.check(max + 0.5), `${key} 超上界浮点应拒绝`).toBe(false);
+        }
+      }
     });
   });
 });

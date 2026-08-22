@@ -255,11 +255,15 @@ function validateStrategy(
           });
         }
       } else if (!rule.check(value)) {
+        // 数值键（带 range 元数据）报错时展示合法区间，指导填写；无区间键仅提示不符合约束
+        const range = rule.range
+          ? `，合法区间 [${rule.range.min}, ${rule.range.max}]`
+          : '';
         issues.push({
           severity: 'error',
           code: 'INVALID_STRATEGY_VALUE',
           path: keyPath,
-          message: `${keyPath} 取值 ${String(value)} 不符合约束`,
+          message: `${keyPath} 取值 ${String(value)} 不符合约束${range}`,
         });
       }
     }

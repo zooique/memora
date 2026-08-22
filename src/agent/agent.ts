@@ -28,6 +28,7 @@ import { SecurityGuard } from '@/security/pathGuard.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
+import { MAX_OUTPUT_LIMIT } from '@/role-pack/strategyKeys.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -1258,9 +1259,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       chatOptions.temperature = temperature;
     }
 
-    // act.outputLimit → ChatOptions.maxTokens
+    // act.outputLimit → ChatOptions.maxTokens（需 ∈ [1, MAX_OUTPUT_LIMIT]，越界忽略防资源失控）
     const outputLimit = act?.outputLimit;
-    if (typeof outputLimit === 'number' && outputLimit > 0) {
+    if (
+      typeof outputLimit === 'number' &&
+      outputLimit > 0 &&
+      outputLimit <= MAX_OUTPUT_LIMIT
+    ) {
       chatOptions.maxTokens = outputLimit;
     }
 
