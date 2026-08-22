@@ -342,6 +342,18 @@ export type ExtensionToWebviewMessage =
        * 由 host 从 vscodeTracer 提取，只含中文展现标签不含量化属性；缺省为无。
        */
       trace?: { label: string }[];
+      /**
+       * 路径守卫审计概要（G6 安全/装配透明，2026-08-23）
+       *
+       * 累计安全审计次数 + 拒绝次数 + 最近若干条（只含 basename 路径，防折叠区冗长）。
+       * 数据源 = 内核 SecurityGuard.onAudit（路径守卫读/写/审计事件；guardrail 已从内核
+       * 移除，路径守卫是当前唯一真实安全信号）。
+       */
+      securityAudit?: {
+        total: number;
+        denied: number;
+        recent: { type: string; path: string; tool?: string }[];
+      };
     }
   /**
    * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）

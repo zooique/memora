@@ -984,6 +984,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ...(msg.trace && msg.trace.length > 0
         ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]
         : []),
+      // G6 安全/装配透明：路径守卫审计概要（有审计事件才显示；basename 路径）
+      ...(msg.securityAudit && msg.securityAudit.total > 0
+        ? [
+            '安全审计 ' + msg.securityAudit.total + ' 次 · 拒绝 ' + msg.securityAudit.denied +
+              (msg.securityAudit.recent.length > 0
+                ? ' · 最近：' + msg.securityAudit.recent.map((r) => r.type + ' ' + r.path).join(', ')
+                : ''),
+          ]
+        : []),
     ];
     activityMetrics.textContent = lines.join('\n');
     activityMetrics.hidden = false;

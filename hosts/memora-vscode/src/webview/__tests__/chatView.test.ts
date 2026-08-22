@@ -968,3 +968,44 @@ describe('chatView 断点续跑提示条（G3，2026-08-23）', () => {
     expect(document.querySelector('.checkpoint-banner')).toBeNull();
   });
 });
+
+describe('chatView 安全审计指标（G6，2026-08-23）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('metrics 带 securityAudit → 可观测区渲染安全审计行（basename 路径）', () => {
+    mountChatView();
+    dispatch({
+      type: 'metrics',
+      fingerprints: { attachedMemoryCount: 2 },
+      metrics: { llmCallCount: 3, recallHitRate: 0.5, toolFailureCount: 1, truncationCount: 0 },
+      securityAudit: {
+        total: 4,
+        denied: 1,
+        recent: [
+          { type: 'path-allow', path: 'foo.ts' },
+          { type: 'path-deny', path: 'out.js' },
+        ],
+      },
+    });
+    const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
+    expect(metricsEl.textContent).toContain('安全审计 4 次 · 拒绝 1');
+    expect(metricsEl.textContent).toContain('path-allow foo.ts');
+    expect(metricsEl.textContent).toContain('path-deny out.js');
+  });
+
+  it('metrics 无 securityAudit → 不显示安全审计行', () => {
+    mountChatView();
+    dispatch({
+      type: 'metrics',
+      fingerprints: {},
+      metrics: { llmCallCount: 1, recallHitRate: 0, toolFailureCount: 0, truncationCount: 0 },
+    });
+    const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
+    expect(metricsEl.textContent).not.toContain('安全审计');
+  });
+});

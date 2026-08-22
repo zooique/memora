@@ -114,9 +114,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 以本会话为准（单一真理源），不再有跨天合并视图。
    */
   private _currentSessionId: string;
-  /** 是否正在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
+  /** 是否在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
    *  避免重放清空消息区后，进行中的 chunk 污染重放视图（对抗评估 P1-3） */
   private _streaming = false;
+  /**
+   * 路径守卫安全审计累计（G6 安全/装配透明，2026-08-23）
+   *
+   * 由 agent.security.onAudit 订阅累计：total 总审计次数、denied 拒绝次数。
+   * audit 事件为内核 SecurityGuard 在路径读/写审批时产出（guardrail 移除后唯一安全信号）。
+   */
+  private _securityAuditTotal = 0;
+  private _securityAuditDenied = 0;
+  private _recentSecurityAudits: { type: string; path: string; tool?: string }[] = [];
+  /** 安全审计订阅取消函数（幂等管理，防重复绑定） */
+  private _securityAuditUnsub: (() => void) | undefined;
   /**
    * 当前进行中流的 AbortController（mvp-scope 打断能力）
    *
@@ -184,6 +195,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 与 ensureAgent 懒装配路径保持一致：注入即绑定，确保事件通知两条路径都生效
     // （bindAgentNoticeEvents 内部先 off 再 on，幂等，折叠展开重复注入不重复注册）
     this.bindAgentNoticeEvents();
+    // G6：绑定路径守卫安全审计订阅（幂等，先取消旧订阅再绑新）
+    this.bindSecurityAudit();
     // 装配注入后补推角色信息（时序竞态修复，2026-08-15）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
@@ -371,6 +384,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agent = await this._getAgent(ws);
       // 装配成功后绑定会话级可观测事件 → 错误提示（会话异常/恢复失败等，不插入消息区）
       this.bindAgentNoticeEvents();
+      // G6：绑定路径守卫安全审计订阅（幂等）
+      this.bindSecurityAudit();
       // 装配完成后补推角色信息（时序竞态修复，2026-08-15）：
       // 与 setAgent 路径一致——ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
       // 装配完成即补推，避免输入区角色选择器永久缺失；面板未就绪时 post 静默，
@@ -553,6 +568,37 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('configReloaded', this.onConfigReloaded);
     a.off('archiveModeChanged', this.onArchiveModeChanged);
     a.on('archiveModeChanged', this.onArchiveModeChanged);
+  }
+
+  /**
+   * 绑定路径守卫安全审计订阅（G6 安全/装配透明）
+   *
+   * 订阅 agent.security.onAudit（内核 SecurityGuard 在路径读/写审批时产出审计事件），
+   * 累计 total/denied 计数 + 保留最近若干条供可观测折叠区展示。幂等：先取消旧订阅再绑新。
+   */
+  private bindSecurityAudit(): void {
+    if (this._securityAuditUnsub) {
+      this._securityAuditUnsub();
+      this._securityAuditUnsub = undefined;
+    }
+    const guard = this._agent?.security;
+    if (!guard) return;
+    // 回调累积计数 + 保底最近 3 条（duck-type 匹配内核 AuditEvent，避免强依赖内部类型）
+    this._securityAuditUnsub = guard.onAudit((event) => {
+      const type = (event as { type?: string }).type ?? 'audit';
+      const path = (event as { path?: string }).path ?? '';
+      const tool = (event as { tool?: string }).tool;
+      this._securityAuditTotal += 1;
+      if (type === 'path-deny' || type === 'write-decline') {
+        this._securityAuditDenied += 1;
+      }
+      // 路径取 basename 防折叠区冗长（可读且不泄露完整目录结构）
+      const base = path.split(/[\\/]/).pop() ?? path;
+      this._recentSecurityAudits.push({ type, path: base, tool });
+      if (this._recentSecurityAudits.length > 3) {
+        this._recentSecurityAudits.shift();
+      }
+    });
   }
 
   /**
@@ -1397,6 +1443,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const m = this._agent.getMetrics();
     // B9 可观测补齐：提取最近操作流（span 标签序列）供透明面板渲染
     const traces = vscodeTracer.getRecentTraces(20);
+    // G6 安全/装配透明：推送路径守卫审计概要（有审计事件才携带）
+    const securityAudit =
+      this._securityAuditTotal > 0
+        ? { total: this._securityAuditTotal, denied: this._securityAuditDenied, recent: [...this._recentSecurityAudits] }
+        : undefined;
     this.post({
       type: 'metrics',
       fingerprints: {
@@ -1414,6 +1465,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         decayRunCount: m.decay?.runCount,
       },
       trace: traces,
+      ...(securityAudit ? { securityAudit } : {}),
     });
   }
 
