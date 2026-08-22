@@ -51,7 +51,7 @@
 └── com.memora/（可选）            # 反域名命名空间：memora 专有行为层（对齐 Agent Plugins 扩展惯例，其他实现忽略）
 ```
 
-**manifest.json 示例**（元数据 + 策略 + 内容路径 + 技能注册，全部单一权威）：
+**manifest.json 示例**（元数据 + 策略 + capabilities + skills 白名单，全部单一权威；persona.md / rules.md 为约定文件名零声明，不注册路径）：
 
 ```json
 {
@@ -66,8 +66,6 @@
     "act": { "toolMode": "allow", "temperature": 0.6 },
     "reflect": { "handoff": "wait" }
   },
-  "persona": "persona.md",
-  "rules": "rules.md",
   "skills": [
     { "file": "skills/write.md", "name": "write" },
     { "file": "skills/search.md", "name": "search" }
@@ -382,6 +380,8 @@ export interface IMcpTransport {
 
 > 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.contextAssembly`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
 >
+> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` / `prepare.autoSwitch` / `prepare.recallConfidence` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。
+>
 > **状态列含义（P0 键集对齐）**：
 > - **冻结** = 有参考实现（memora）真实消费 + 语义/命名已归标准——任何实现应支持一致行为；
 > - **`[草案]`** = 尚无参考实现消费，保留在标准正文以征集实现验证（§五 双闸门演进：通过验证门才可冻结）——实现可装载（按未知键 warn + ignore 的键级渐进），但不承诺跨实现一致行为。
@@ -554,7 +554,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 
 ## 八、校验（跨实现一致性）
 
-- 提供**格式校验器**（独立于任何实现）：校验 manifest.json 的必填字段（`name`/`formatVersion`）、键名合法性、版本语义、L2 策略键（§六）、内容路径注册（`persona`/`rules`）、capabilities 格式（§四）、**合规字段（§七，分档：仅 `companion` 角色包全量强校验，`tool_assistant` 默认值兜底）**；skills 为目录扫描（C3），技能文件 frontmatter 由装载器读取，不在 manifest 校验面；
+- 提供**格式校验器**（独立于任何实现）：校验 manifest.json 的必填字段（`name`/`formatVersion`）、键名合法性、版本语义、顶层字段类型与上限（§二，含 handoffPrompt）、L2 策略键与区间（§六）、capabilities 格式（§四）、**合规字段（§七，分档：仅 `companion` 角色包全量强校验，`tool_assistant` 默认值兜底）**；**内容文件零声明**——persona/rules 为约定文件名，不校验路径注册，由装载器回退约定名；skills 为目录扫描（C3），技能文件 frontmatter 由装载器读取，不在 manifest 校验面；
 - **内容红线检测 = 装载边界的"守门提示"（§七 第 5 条，区别于格式校验器）**：正文在独立内容文件（persona.md/rules.md），格式校验器为**纯函数不读文件**——它只保证 manifest.json 的"格式正确"，是**正确性守门人**；而 companion 虚拟亲密关系红线是**安全守门人**，由装载方在读取内容后调用 `checkCompanionContentRedline` 检测，触发即拒绝装载。二者职责分离：**格式校验器管"合不合规范"，内容红线检测管"该不该放行"**——前者失败提示修正格式，后者失败（仅 `companion`）直接拦截，不作为格式问题混报；`manifest.json` 层仅校验合规字段声明（interactionType / disclosure / minorProtection）；
 - 校验通过 = 任何实现可装载；校验失败 = 实现拒绝加载并给出原因；
 - 目标是生态内角色包**一次编写，处处装载**。
@@ -566,7 +566,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 | 项 | 说明 |
 |----|------|
 | memora | **reference implementation**（首个实现本标准的 Agent 内核）；**合规从严执行**：标准级合规字段为可选 + 分档（§七），memora 实现级强制 AI 身份标注等合规义务 |
-| `role-packs/`（memora 仓库） | 示例角色包（翻译助手 / 技术文档工程师 / 项目总监） |
+| `role-packs/`（memora 仓库） | 示例角色包（小说助手 / 文档设计师 / 方案设计师，结构参考，不参与运行时分发） |
 | [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | memora 视角的角色包定位（插卡机模型，通用引擎 ↔ 专业卡） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 | 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（执行闭环 / 记忆系统）定型后——见本文档定位宣言 |

@@ -40,10 +40,11 @@ export interface RolePackValidateInput {
 // 规则常量
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接） */
+/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接 + 标准远期键） */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
+  'minKernelVersion', 'extensions',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
   'strategy', 'skills', 'capabilities', 'handoffPrompt',
 ]);
@@ -158,6 +159,20 @@ function validateMetaFields(
       code: 'INVALID_VERSION',
       path: 'version',
       message: `version 建议使用 semver（当前：${String(version)}）`,
+    });
+  }
+
+  // minKernelVersion：标准远期键（spec §五 定义），格式不规范仅提示不阻塞——实现按「未知键 warn + ignore」处理
+  const minKernelVersion = manifest['minKernelVersion'];
+  if (
+    minKernelVersion !== undefined &&
+    (typeof minKernelVersion !== 'string' || !SEMVER_PATTERN.test(minKernelVersion))
+  ) {
+    issues.push({
+      severity: 'warning',
+      code: 'INVALID_MIN_KERNEL_VERSION',
+      path: 'minKernelVersion',
+      message: `minKernelVersion 建议使用 semver（当前：${String(minKernelVersion)}）`,
     });
   }
 }

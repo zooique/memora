@@ -2,17 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://role-pack.dev/schemas/1.0.0/role-pack.schema.json",
   "title": "RolePack Spec v1.0.0",
-  "description": "角色包标准 v1.0.0 JSON Schema —— 可共享的 Agent 行为单元格式。适用于文件夹形态角色包的 manifest.json 校验（元数据 + strategy + 内容路径注册 + skills 注册）。",
+  "description": "角色包标准 v1.0.0 JSON Schema —— 可共享的 Agent 行为单元格式。适用于文件夹形态角色包的 manifest.json 校验（元数据 + strategy + capabilities 注册 + skills 白名单）。内容文件（persona.md/rules.md/skills/）约定俗成，不注册路径（零声明）。字段上限与 src/role-pack/validator.ts 对齐（SSOT）。",
   "type": "object",
   "required": ["name", "formatVersion"],
 
   "properties": {
     "name": {
       "type": "string",
+      "maxLength": 200,
       "description": "角色包名称，全局唯一标识"
     },
     "displayName": {
       "type": "string",
+      "maxLength": 200,
       "description": "UI 展示名（本地化，可选）。与 name 职责分离：name 为内部唯一标识，displayName 为面向用户的展示名，缺省回退 name"
     },
     "formatVersion": {
@@ -27,40 +29,52 @@
     },
     "description": {
       "type": "string",
+      "maxLength": 200,
       "description": "角色包简短描述"
     },
     "keywords": {
       "type": "array",
-      "items": { "type": "string" },
-      "description": "关键词列表，用于搜索与分类"
+      "maxItems": 20,
+      "items": { "type": "string", "maxLength": 50 },
+      "description": "关键词列表（自动匹配，最多 20 个，单个 ≤50 字符）"
     },
     "trigger": {
       "type": "array",
-      "items": { "type": "string" },
-      "description": "触发词列表，用于角色包自动匹配"
+      "maxItems": 20,
+      "items": { "type": "string", "maxLength": 50 },
+      "description": "触发词列表（精确/包含匹配，非正则；与 keywords 合并去重为单一匹配词源，最多 20 个，单个 ≤50 字符）"
     },
     "author": {
       "type": "string",
+      "maxLength": 200,
       "description": "角色包作者"
     },
     "homepage": {
       "type": "string",
       "format": "uri",
+      "maxLength": 200,
       "description": "项目主页"
     },
     "repository": {
       "type": "string",
       "format": "uri",
+      "maxLength": 200,
       "description": "源码仓库地址"
     },
     "license": {
       "type": "string",
+      "maxLength": 200,
       "description": "开源许可证标识"
     },
     "minKernelVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "最低内核版本要求（semver），高于实现版本时实现拒绝加载或警告降级运行"
+      "description": "最低内核版本要求（semver，远期键）：高于实现版本时实现拒绝加载或警告降级运行；实现按未知键 warn + ignore 处理"
+    },
+    "handoffPrompt": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "接手衔接提示词：角色包被宿主带入对话（激活 + 聚焦）时预填输入框的特色话术，缺省由宿主回退通用话术（宿主消费，内核仅透传 + 校验）"
     },
 
     "interactionType": {
@@ -72,53 +86,72 @@
     "aiIdentityDisclosure": {
       "type": "boolean",
       "default": true,
-      "description": "是否向用户明确标注 AI 身份"
+      "description": "是否向用户明确标注 AI 身份（companion 必须显式 true）"
     },
     "minorProtection": {
       "type": "string",
-      "enum": ["required", "optional"],
+      "enum": ["required"],
       "default": "required",
-      "description": "未成年人保护模式"
+      "description": "未成年人保护模式（仅支持 required）"
+    },
+    "exclusiveWith": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string" },
+      "description": "互斥角色包名列表（粘性匹配切换裁决，最多 20 个）"
     },
 
     "strategy": {
       "type": "object",
-      "description": "L2 行为策略（键级渐进，未知键 warn + ignore）",
+      "description": "L2 行为策略（键级渐进，未知键 warn + ignore；键集与区间对齐 src/role-pack/strategyKeys.ts）",
       "properties": {
         "prepare": {
           "type": "object",
           "description": "回答前阶段策略",
           "properties": {
-            "contextAssembly": {
-              "type": "string",
-              "enum": ["fixed", "query", "hybrid"],
-              "description": "最近轮次加载策略（[草案]）"
-            },
             "memoryRecall": {
               "type": "string",
               "enum": ["full", "limited", "none"],
-              "description": "长期记忆召回策略（冻结）"
+              "description": "长期记忆召回模式（默认 full）"
             },
             "memoryRecallPercent": {
               "type": "number",
               "minimum": 0,
               "maximum": 1,
-              "description": "记忆召回占可用预算的百分比 cap（[草案]，0.0~1.0，默认 0.4）"
-            },
-            "summaryRecall": {
-              "type": "string",
-              "enum": ["on", "off"],
-              "description": "摘要召回开关（[草案]）"
+              "description": "记忆摘要层占剩余预算上限百分比（cap 非 quota，默认 0.4）"
             },
             "minFallback": {
               "type": "integer",
               "minimum": 0,
-              "description": "召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2，冻结，memora 真实消费）"
+              "maximum": 100,
+              "description": "召回保底下限（语义召回不足时补足最近记忆条数，0=关闭，默认 2）"
             },
             "summaryFocus": {
               "type": "string",
               "minLength": 1,
-              "description": "角色包提炼视角：控制 round-summary 生成时「值得记什么」的判断视角（冻结，memora 真实消费；非空字符串才合法，空白视为未声明）"
+              "maxLength": 500,
+              "description": "角色包提炼视角：决定 round-summary「值得记什么」的信息维度与保留形式（非空字符串，≤500 字符）"
+            },
+            "contextAssembly": {
+              "type": "string",
+              "enum": ["fixed", "query", "hybrid"],
+              "description": "上下文装配策略（默认 hybrid）"
+            },
+            "autoSwitch": {
+              "type": "string",
+              "enum": ["on", "off"],
+              "description": "允许自动匹配切换角色包（默认 on）"
+            },
+            "recallConfidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "召回相似度阈值（越大越严格，默认 0.6）"
+            },
+            "summaryRecall": {
+              "type": "string",
+              "enum": ["on", "off"],
+              "description": "摘要是否参与召回（默认 on）"
             }
           },
           "additionalProperties": false
@@ -130,18 +163,55 @@
             "toolMode": {
               "type": "string",
               "enum": ["allow", "block"],
-              "description": "工具调用模式：allow=允许 / block=只回答不执行（冻结）"
+              "description": "工具调用模式：allow=允许 / block=只回答不执行（默认 allow）"
             },
             "temperature": {
               "type": "number",
               "minimum": 0,
               "maximum": 2,
-              "description": "生成随机性（[草案]）"
+              "description": "生成随机性（默认 0.7）"
+            },
+            "outputLimit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536,
+              "description": "单轮回答长度上限（token，默认 4096）"
             },
             "streaming": {
               "type": "string",
               "enum": ["streaming", "non-streaming"],
-              "description": "输出方式（[草案]）"
+              "description": "输出方式（默认 streaming）"
+            },
+            "toolStepLimit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "单轮工具调用步数上限（0=无限制，默认 20）"
+            },
+            "providerRouting": {
+              "type": "string",
+              "enum": ["auto", "fixed"],
+              "description": "Provider 路由策略（默认 auto）"
+            },
+            "inputInterrupt": {
+              "type": "string",
+              "enum": ["allow", "block"],
+              "description": "执行中是否接受新输入（默认 allow）"
+            },
+            "multiStepReasoning": {
+              "type": "string",
+              "enum": ["auto", "manual"],
+              "description": "多步推理模式（默认 auto）"
+            },
+            "toolReadonly": {
+              "type": "string",
+              "enum": ["full", "readonly"],
+              "description": "工具操作范围（默认 full）"
+            },
+            "toolApproval": {
+              "type": "string",
+              "enum": ["auto", "confirm"],
+              "description": "工具批准模式（默认 auto）"
             }
           },
           "additionalProperties": false
@@ -153,22 +223,23 @@
             "summary": {
               "type": "string",
               "enum": ["on", "off"],
-              "description": "摘要生成开关（[草案]）"
+              "description": "是否生成轮次摘要（默认 on）"
             },
             "handoff": {
               "type": "string",
               "enum": ["wait", "loop", "end"],
-              "description": "衔接决策：wait=等待用户 / loop=自动续跑 / end=终止（冻结）"
+              "description": "衔接决策：wait=等待用户 / loop=自动续跑 / end=终止（默认 wait）"
             },
             "loopContinue": {
               "type": "integer",
               "minimum": 0,
-              "description": "自审查最大轮数（0=关闭，N=最多 N 轮；冻结，memora 真实消费）"
+              "maximum": 10,
+              "description": "自审查最大轮数（0=关闭，N=最多 N 轮，默认 0）"
             },
             "userFollowup": {
               "type": "string",
               "enum": ["ask", "silent"],
-              "description": "用户追问策略：ask=主动引导对话 / silent=只等输入（冻结，memora 真实消费）"
+              "description": "用户追问策略：ask=主动引导对话 / silent=只等输入（默认 silent）"
             }
           },
           "additionalProperties": false
@@ -179,21 +250,41 @@
           "properties": {
             "askOn": {
               "type": "array",
+              "maxItems": 4,
               "items": {
                 "type": "string",
                 "enum": ["ambiguity", "decision", "missing_info", "confirm"]
               },
-              "description": "Agent 主动提问触发场景（冻结-条件消费：userFollowup=ask 时生效）"
+              "description": "Agent 主动提问触发场景（可组合，最多 4 个；userFollowup=ask 时生效）"
             },
             "askLimit": {
               "type": "integer",
               "minimum": 1,
-              "description": "每任务提问上限（冻结-条件消费：userFollowup=ask 时生效，默认 3）"
+              "maximum": 10,
+              "description": "每轮主动提问次数上限（默认 3；userFollowup=ask 时生效）"
             },
             "errorHandling": {
               "type": "string",
               "enum": ["retry", "degrade", "stop"],
-              "description": "异常处理策略（[草案]）"
+              "description": "异常处理策略（默认 retry）"
+            },
+            "tokenBudget": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200000,
+              "description": "每轮总 token 预算上限（0=不限制，默认 8000）"
+            },
+            "stepBudget": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 500,
+              "description": "每轮工具步数预算上限（软上限，0=不限制，默认 50）"
+            },
+            "taskLoopLimit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "外部任务驱动循环步数上限（0=关闭，默认 10）"
             }
           },
           "additionalProperties": false
@@ -204,7 +295,8 @@
 
     "skills": {
       "type": "array",
-      "description": "可选白名单过滤（C3 目录动态扫描）：skills/ 目录下 .md 自动注册（frontmatter 声明 name/description），本字段声明 file 时按文件过滤（白名单语义）。声明项须含 file（技能文件名，如 skills/write.md）。",
+      "maxItems": 50,
+      "description": "可选白名单过滤（C3 目录动态扫描）：skills/ 目录下 .md 自动注册（frontmatter 声明 name/description），本字段声明 file 时按文件过滤（白名单语义，最多 50 项）。声明项须含 file（技能文件名，如 skills/write.md）。",
       "items": {
         "type": "object",
         "required": ["file"],
@@ -228,7 +320,8 @@
 
     "capabilities": {
       "type": "array",
-      "description": "能力声明（顶层数组，C2 独立模块）。角色能力面（工具白名单）与技能内容面分离。",
+      "maxItems": 50,
+      "description": "能力声明（顶层数组，C2 独立模块，最多 50 项）。角色能力面（工具白名单）与技能内容面分离；以中立能力命名空间声明，由各实现映射到自有工具。",
       "items": {
         "type": "object",
         "required": ["capability"],
@@ -247,23 +340,9 @@
       }
     },
 
-    "persona": {
-      "type": "string",
-      "description": "persona 内容文件路径（相对角色包根），允许缺省（不声明或 null）"
-    },
-    "rules": {
-      "type": "string",
-      "description": "rules 内容文件路径（相对角色包根），允许缺省"
-    },
-    "exclusiveWith": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "互斥角色包名列表（粘性匹配切换裁决，§6.2）"
-    },
-
     "extensions": {
       "type": "object",
-      "description": "反域名命名空间扩展（如 `com.memora/`），其他实现忽略",
+      "description": "反域名命名空间扩展（如 `com.memora/`，对齐 Agent Plugins 惯例），其他实现忽略；实现按未知键 warn + ignore 处理",
       "additionalProperties": true
     }
   },

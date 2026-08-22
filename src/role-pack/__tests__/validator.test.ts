@@ -542,3 +542,24 @@ describe('validateManifest：非策略键字段上限（开放字段防无条件
     expect(result.valid).toBe(true);
   });
 });
+
+describe('validateManifest：标准远期键（minKernelVersion / extensions）', () => {
+  it('minKernelVersion 合法 semver → 通过，不报未知键', () => {
+    const result = validate({ minKernelVersion: '1.0.0' });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
+    expect(findByCode(result.issues, 'INVALID_MIN_KERNEL_VERSION')).toHaveLength(0);
+  });
+
+  it('minKernelVersion 非 semver → INVALID_MIN_KERNEL_VERSION warning（不阻塞）', () => {
+    const result = validate({ minKernelVersion: 'v1' });
+    expect(findByCode(result.issues, 'INVALID_MIN_KERNEL_VERSION')).toHaveLength(1);
+    expect(findByCode(result.issues, 'INVALID_MIN_KERNEL_VERSION')[0]?.severity).toBe('warning');
+  });
+
+  it('extensions 反域名扩展 → 认识不校验，不报未知键', () => {
+    const result = validate({ extensions: { 'com.memora': { foo: 'bar' } } });
+    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+});
