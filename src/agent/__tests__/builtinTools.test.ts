@@ -22,8 +22,8 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 12 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(12);
+  it('应包含 13 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(13);
   });
 
   it('应包含 read_file / write_file / list_dir / search_memories / trace_summary', () => {
@@ -33,6 +33,11 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(names).toContain('list_dir');
     expect(names).toContain('search_memories');
     expect(names).toContain('trace_summary');
+  });
+
+  it('应包含第二级压缩工具 compress_context（LLM 主动触发兜底）', () => {
+    const names = BUILTIN_TOOLS.map((t) => t.name);
+    expect(names).toContain('compress_context');
   });
 
   it('应包含 L2/L3 渐进披露工具（read_skill / read_resource / run_skill_script / list_resources / list_skills）', () => {

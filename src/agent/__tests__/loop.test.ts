@@ -262,6 +262,148 @@ describe('AgentLoop · getRecentHistoryWithinBudget（动态轮数 + 第一条�
   });
 });
 
+describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时摘要收尾即弃）', () => {
+  it('压缩最早的执行闭环为临时摘要；下轮闭环入口即弃（不进上下文）', async () => {
+    // 4+1 轮 provider：首轮问答 / 二轮工具调用(compress_context) / 压缩摘要 / 二轮文本 / 三轮问答
+    const provider = mockMultiTurnProvider([
+      [{ content: '第一轮回答' }], // turn0：首轮纯文本
+      [
+        {
+          content: '上下文过长',
+          toolCalls: [
+            {
+              id: 'call_compress',
+              type: 'function',
+              function: { name: 'compress_context', arguments: '{"target":"earliest_round"}' },
+            },
+          ],
+        },
+      ], // turn1：二轮请求压缩
+      [{ content: '临时摘要：首轮干的事' }], // turn2：压缩摘要（provider 现场压）
+      [{ content: '第二轮回答' }], // turn3：二轮续答
+      [{ content: '第三轮回答' }], // turn4：三轮纯文本
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 首轮：建立历史（可被压缩的次级锚点）
+    for await (const {} of loop.processUserInput('第一个任务')) {
+      // drain
+    }
+    // 二轮：LLM 主动触发 compress_context → 最早的执行闭环被压成临时摘要，顶级锚点不动
+    for await (const {} of loop.processUserInput('当前任务')) {
+      // drain
+    }
+    let messages = loop.getMessages();
+    const tempSummary = messages.find((m) => m.content.includes('Compressed context'));
+    expect(tempSummary).toBeDefined();
+    expect(tempSummary!.content).toContain('临时摘要：首轮干的事');
+    // 顶级锚点（当前任务输入）仍在场（永不压缩）
+    expect(messages.some((m) => m.content.includes('当前任务'))).toBe(true);
+    // 首轮正文已被压缩替换（不再含原首轮 user 内容）
+    expect(messages.some((m) => m.content.includes('第一个任务'))).toBe(false);
+
+    // 三轮：新一轮闭环入口清理执行期临时残留 → 压缩摘要收尾即弃
+    for await (const {} of loop.processUserInput('新任务')) {
+      // drain
+    }
+    messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('Compressed context'))).toBe(false);
+  });
+
+  it('compress_context 无目标时返回提示，不抛错阻断工具链', async () => {
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '压缩',
+          toolCalls: [
+            {
+              id: 'call_compress',
+              type: 'function',
+              function: { name: 'compress_context', arguments: '{"target":"largest_tool_result"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '无工具结果的提示' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+    // 无 tool 结果可压缩 → compressContext 返回提示，工具链不抛错、对话正常收尾
+    expect(chunks.some((c) => c.type === 'done')).toBe(true);
+  });
+});
+
+describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保护）', () => {
+  it('第一级替换：越界旧轮替换成已存摘要，roundId 上报供装配 exclude；最近轮保留', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '第一轮回答' }], // turn0：首轮
+        [{ content: '第二轮回答' }], // turn1：二轮
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      // 第一级替换：保留最近 1 轮，首轮有已存摘要 → 越界即替换
+      replaceRoundsKeepRecent: 1,
+      getRoundSummary: (roundId) => (roundId === 'round-1' ? '摘要：第一轮干的事' : null),
+    });
+
+    // 两轮外部输入，显式指定 roundId（round-1 有已存摘要）
+    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+      // drain
+    }
+    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+      // drain
+    }
+
+    // 二轮 LLM 调用前 _prepareContext 触发压缩链：round-1 越界且有摘要 → 替换成摘要 system 消息
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('Round summary · roundId: round-1'))).toBe(true);
+    // 最近轮（round-2 = 顶级锚点当前输入）正文保留
+    expect(messages.some((m) => m.content.includes('任务二'))).toBe(true);
+    // 被替换轮 roundId 记账（装配 exclude 防二次召回）
+    expect(loop.getReplacedRoundIds()).toContain('round-1');
+    // 顶级锚点（任务二输入）不因替换而丢失
+    expect(messages.some((m) => m.content.includes('任务一'))).toBe(false);
+  });
+
+  it('无已存摘要的越界轮不替换（交第二级压缩）；replacedRoundIds 不记账', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '第一轮回答' }], // turn0：首轮
+        [{ content: '第二轮回答' }], // turn1：二轮
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      replaceRoundsKeepRecent: 1,
+      // 无任何已存摘要 → 替换层 no-op
+      getRoundSummary: () => null,
+    });
+
+    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+      // drain
+    }
+    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+      // drain
+    }
+
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('Round summary'))).toBe(false);
+    expect(loop.getReplacedRoundIds()).toEqual([]);
+  });
+});
+
 describe('AgentLoop · processUserInput 工具调用循环', () => {
   it('应该执行工具调用并继续循环', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('工具执行结果');

@@ -479,6 +479,18 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     tracer,
     messages,
     enableContextSummary,
+    // 替换式压缩第一级：按 roundId 取已存 round-summary（无摘要返回 null，该轮不替换交第二级压缩）
+    getRoundSummary: (roundId: string): string | null => {
+      try {
+        const found = pctx.index
+          .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
+          .find((s) => s.metadata?.roundId === roundId);
+        return found ? found.content : null;
+      } catch {
+        // 记忆索引异常时降级为 null（替换层 no-op），不阻断压缩链
+        return null;
+      }
+    },
     // 上下文截断 → 广播 contextTruncated 事件（宿主可提示用户）
     onContextTruncated: (skippedCount, keptCount) => {
       hooks?.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });

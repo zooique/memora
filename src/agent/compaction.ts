@@ -90,6 +90,105 @@ export class ResultReplacementStrategy implements ICompactionStrategy {
   }
 }
 
+/** 替换式压缩策略默认保留最近正文轮数（LRU：超出则最早先换） */
+export const DEFAULT_REPLACE_KEEP_RECENT_ROUNDS = 5;
+
+/**
+ * 替换式压缩策略（第一级 · 内核自动 LRU）
+ *
+ * 空间不足时，把完整对话层中越界轮次的正文**替换成它自己的已存记忆摘要**（从库取现成，
+ * 零生成成本）。按 LRU（最早先换）；被替换轮 roundId 计入装配 exclude（装配时间线互斥，
+ * 绝不双写）。替换是机械搬移，无需 LLM，**不暴露为 LLM 工具**。
+ *
+ * 作用对象：已沉淀记忆摘要的问答闭环；无摘要的轮次由第二级压缩（LLM 触发）兜底。
+ */
+export class ReplaceRoundsStrategy implements ICompactionStrategy {
+  private readonly keepRecentRounds: number;
+  /** 取该轮 roundId 对应的已存 round-summary（无摘要返回 null，该轮不替换） */
+  private readonly getSummary: (roundId: string) => string | null;
+  /** 取当前轮次 id 序列（与消息中 user 轮次顺序一致，loop 维护）；从尾部对齐最近轮 */
+  private readonly roundIds: () => readonly string[];
+
+  /**
+   * @param options keepRecentRounds 保留最近正文轮数 / getSummary 按 roundId 取摘要 /
+   *   roundIds 轮次 id 序列 / onReplaced 被替换轮的 roundId 回调（供装配 exclude 记账，防二次召回）
+   */
+  constructor(options: {
+    keepRecentRounds: number;
+    getSummary: (roundId: string) => string | null;
+    roundIds: () => readonly string[];
+    onReplaced?: (roundId: string) => void;
+  }) {
+    this.keepRecentRounds = options.keepRecentRounds;
+    this.getSummary = options.getSummary;
+    this.roundIds = options.roundIds;
+    this.onReplaced = options.onReplaced;
+  }
+
+  /** 被替换轮 roundId 回调（装配时间线互斥：该轮摘要已随替换注入上下文，下次装配须 exclude 防双写） */
+  private readonly onReplaced?: (roundId: string) => void;
+
+  /** 按 user 消息边界分组为轮次（返回每轮 [start,end] 索引）；系统 prompt 与非 user 消息归入所在轮 */
+  private groupRounds(messages: readonly Message[]): Array<{ start: number; end: number }> {
+    const rounds: Array<{ start: number; end: number }> = [];
+    let start = -1;
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i]!.role === 'user') {
+        if (start !== -1) {
+          rounds.push({ start, end: i - 1 });
+        }
+        start = i;
+      }
+    }
+    if (start !== -1) {
+      rounds.push({ start, end: messages.length - 1 });
+    }
+    return rounds;
+  }
+
+  /** @inheritdoc 存在越界轮次（超出保留轮数）时需替换 */
+  shouldCompact(messages: readonly Message[]): boolean {
+    return this.groupRounds(messages).length > this.keepRecentRounds;
+  }
+
+  /**
+   * 执行替换：最早先换（LRU），把越界轮次正文替换成它自己的已存记忆摘要。
+   * 轮次 id 从序列**尾部**对齐最近轮（截断丢弃旧轮后仍与最近轮保持对齐）；
+   * 从后往前替换，避免索引位移。无摘要的轮次保持不动（交第二级压缩）。
+   */
+  compact(messages: Message[]): void {
+    const rounds = this.groupRounds(messages);
+    // 越界轮次：保留最近 keepRecentRounds 轮，其余为可替换区（LRU 最早先换）
+    const replaceableCount = Math.max(0, rounds.length - this.keepRecentRounds);
+    if (replaceableCount === 0) return;
+
+    const seq = this.roundIds();
+    // 从尾部对齐：round[i] 的 roundId = seq[seq.length - rounds.length + i]（仅当索引有效）
+    const replaceable = rounds.slice(0, replaceableCount);
+
+    // 从后往前替换，保证早于它的轮次索引不受位移影响
+    for (let k = replaceable.length - 1; k >= 0; k--) {
+      const round = replaceable[k]!;
+      const seqIndex = seq.length - rounds.length + k;
+      const roundId = seqIndex >= 0 && seqIndex < seq.length ? seq[seqIndex] : undefined;
+      if (!roundId) continue;
+      const summary = this.getSummary(roundId);
+      if (!summary) continue; // 无已存摘要 → 该轮不替换（交第二级压缩）
+
+      // 整轮正文替换为一条摘要 system 消息（保留 roundId 供 trace_summary 回溯）
+      const replacement: Message = {
+        role: 'system',
+        content:
+          `[Round summary · roundId: ${roundId}]\n${summary}\n` +
+          `（该轮正文已替换为记忆摘要，细节可经 trace_summary 回溯原始对话）`,
+      };
+      messages.splice(round.start, round.end - round.start + 1, replacement);
+      // 记账被替换轮 roundId（装配时间线互斥：下次装配 exclude 防其摘要被二次召回）
+      this.onReplaced?.(roundId);
+    }
+  }
+}
+
 /**
  * 卸载式压缩策略（Offloading Strategy）
  *

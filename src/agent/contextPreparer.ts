@@ -196,12 +196,16 @@ export class ContextPreparer {
     const dialogue = loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens);
 
     // 互斥 roundId 集合 = 完整对话层实际注入轮次集合（最近 dialogue.recentRoundCount 轮 +
-    // 显式补的第一条）。前置传入 recall() 在取 limit 前过滤，避免正文/替换产物被二次召回
-    // （装配时间线互斥：exclude = 实际注入轮次，因果闭合，无需额外互斥机制）
+    // 显式补的第一条 + 第一级替换产物 roundId）。前置传入 recall() 在取 limit 前过滤，
+    // 避免正文/替换产物被二次召回（装配时间线互斥：exclude = 实际注入轮次，因果闭合）
     const recentRoundIds = new Set(deps.history.getRecentRoundIds(dialogue.recentRoundCount));
     if (dialogue.firstRoundIncluded) {
       const firstRoundId = deps.history.getFirstRoundId();
       if (firstRoundId) recentRoundIds.add(firstRoundId);
+    }
+    // 第一级替换产物：越界轮正文已替换成其记忆摘要并随上下文注入，其 roundId 须 exclude 防双写
+    for (const replacedRoundId of loop.getReplacedRoundIds()) {
+      recentRoundIds.add(replacedRoundId);
     }
 
     // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──

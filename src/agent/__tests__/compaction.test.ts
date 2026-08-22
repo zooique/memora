@@ -11,6 +11,8 @@ import type { Message } from '@/llm/provider.js';
 import {
   ResultReplacementStrategy,
   OffloadCompactionStrategy,
+  ReplaceRoundsStrategy,
+  DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
   estimateTokens,
 } from '@/agent/compaction.js';
 
@@ -252,5 +254,134 @@ describe('estimateTokens', () => {
 
   it('对空字符串返回 0', () => {
     expect(estimateTokens('')).toBe(0);
+  });
+});
+
+describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
+  /** 构造 N 轮问答消息（system + 每轮 user/assistant） */
+  function createRoundMessages(roundCount: number): Message[] {
+    const messages: Message[] = [{ role: 'system', content: 'System prompt' }];
+    for (let i = 1; i <= roundCount; i++) {
+      messages.push({ role: 'user', content: `提问${i}` });
+      messages.push({ role: 'assistant', content: `回答${i}` });
+    }
+    return messages;
+  }
+
+  /** 构造与轮次对齐的 roundId 序列 */
+  function makeSeq(roundCount: number): string[] {
+    return Array.from({ length: roundCount }, (_, i) => `round-${i + 1}`);
+  }
+
+  /** 构造摘要映射：round-1/round-2 有摘要，其余无 */
+  const summaryMap = new Map<string, string>([
+    ['round-1', '摘要：第一轮内容'],
+    ['round-2', '摘要：第二轮内容'],
+  ]);
+
+  it('shouldCompact：轮次超出保留数 → true', () => {
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 2,
+      getSummary: () => null,
+      roundIds: () => makeSeq(3),
+    });
+    expect(strategy.shouldCompact(createRoundMessages(3))).toBe(true);
+  });
+
+  it('shouldCompact：轮次未超出保留数 → false', () => {
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 5,
+      getSummary: () => null,
+      roundIds: () => makeSeq(3),
+    });
+    expect(strategy.shouldCompact(createRoundMessages(3))).toBe(false);
+  });
+
+  it('compact：LRU 最早先换，越界轮替换成其已存摘要，保留最近轮正文', () => {
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 2,
+      getSummary: (rid) => summaryMap.get(rid) ?? null,
+      roundIds: () => makeSeq(4),
+    });
+    const messages = createRoundMessages(4);
+    strategy.compact(messages);
+
+    // 越界 2 轮（round-1、round-2）有摘要 → 替换成摘要 system 消息
+    const contents = messages.map((m) => m.content).join('\n');
+    expect(contents).toContain('Round summary · roundId: round-1');
+    expect(contents).toContain('摘要：第一轮内容');
+    expect(contents).toContain('Round summary · roundId: round-2');
+    // 最近 2 轮正文保留
+    expect(contents).toContain('提问3');
+    expect(contents).toContain('回答4');
+  });
+
+  it('compact：无已存摘要的越界轮不替换（交第二级压缩）', () => {
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 1,
+      // 只有 round-1 有摘要，round-2 无
+      getSummary: (rid) => (rid === 'round-1' ? '摘要一' : null),
+      roundIds: () => makeSeq(3),
+    });
+    const messages = createRoundMessages(3);
+    strategy.compact(messages);
+
+    const contents = messages.map((m) => m.content).join('\n');
+    expect(contents).toContain('Round summary · roundId: round-1');
+    // round-2 无摘要 → 正文保留
+    expect(contents).toContain('提问2');
+    expect(contents).toContain('回答2');
+  });
+
+  it('compact：序列尾部对齐（截断丢旧轮后，最近轮仍映射正确）', () => {
+    // 消息只剩 2 轮（对应 round-2、round-3），但序列保留 3 个 id（round-1 已被截断）
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 1,
+      getSummary: (rid) => (rid === 'round-2' ? '摘要二' : null),
+      roundIds: () => makeSeq(3),
+    });
+    const messages = createRoundMessages(2);
+    strategy.compact(messages);
+
+    // 越界轮（消息第 0 轮）映射到序列尾部对齐 → round-2（有摘要）被替换；
+    // 最近轮（消息第 1 轮 → round-3）正文保留
+    const contents = messages.map((m) => m.content).join('\n');
+    expect(contents).toContain('Round summary · roundId: round-2');
+    expect(contents).toContain('提问2');
+  });
+
+  it('compact：轮次未越界时不修改', () => {
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 5,
+      getSummary: (rid) => summaryMap.get(rid) ?? null,
+      roundIds: () => makeSeq(3),
+    });
+    const messages = createRoundMessages(3);
+    const before = messages.map((m) => m.content).join('|');
+    strategy.compact(messages);
+    const after = messages.map((m) => m.content).join('|');
+    expect(after).toBe(before);
+  });
+
+  it('DEFAULT_REPLACE_KEEP_RECENT_ROUNDS 默认保留 5 轮', () => {
+    expect(DEFAULT_REPLACE_KEEP_RECENT_ROUNDS).toBe(5);
+  });
+
+  it('互斥记账：被替换轮的 roundId 经 onReplaced 上报（装配 exclude 防二次召回）', () => {
+    const replacedIds: string[] = [];
+    const strategy = new ReplaceRoundsStrategy({
+      keepRecentRounds: 2,
+      getSummary: (rid) => summaryMap.get(rid) ?? null,
+      roundIds: () => makeSeq(4),
+      onReplaced: (roundId) => {
+        replacedIds.push(roundId);
+      },
+    });
+    const messages = createRoundMessages(4);
+    strategy.compact(messages);
+
+    // 越界 2 轮（round-1、round-2）有摘要 → 均上报 roundId
+    expect(replacedIds).toContain('round-1');
+    expect(replacedIds).toContain('round-2');
   });
 });

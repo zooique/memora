@@ -9,6 +9,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
+import { COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
 import type { AgentChunk, UIMessages, SessionEvent, PreExecutionResult } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
@@ -25,7 +26,12 @@ import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
 import { logger } from '@/logging/logger.js';
 import type { ICompactionStrategy } from '@/agent/compaction.js';
-import { ResultReplacementStrategy } from '@/agent/compaction.js';
+import {
+  ResultReplacementStrategy,
+  ReplaceRoundsStrategy,
+  OffloadCompactionStrategy,
+  DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
+} from '@/agent/compaction.js';
 import { deriveDialogueRounds } from '@/agent/budget.js';
 import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/types.js';
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
@@ -78,8 +84,13 @@ export interface AgentLoopOptions {
   /** ChatOptions 覆盖项（角色包策略注入 temperature/outputLimit/streaming 等，优先于默认值） */
   chatOptions?: Partial<ChatOptions>;
   /** 上下文压缩策略（微压缩层，每轮把旧 tool_result 替换为占位符省空间）；
-   *  默认 ResultReplacementStrategy（保留最近 3 次完整结果），宿主可注入自定义策略 */
+   *  默认 ResultReplacementStrategy（保留最近 3 次完整结果），宿主可注入自定义策略。
+   *  作为两级空间管理的**第二级**（tool_result 占位）参与压缩链 */
   compactionStrategy?: ICompactionStrategy;
+  /** 已存轮次摘要按 roundId 取（替换式压缩第一级用）；未注入时替换层降级为 no-op（返回 null） */
+  getRoundSummary?: (roundId: string) => string | null;
+  /** 替换式压缩保留最近正文轮数（默认 DEFAULT_REPLACE_KEEP_RECENT_ROUNDS=5，LRU 最早先换） */
+  replaceRoundsKeepRecent?: number;
   /** 重复工具调用拦截器。每轮工具执行后调用 check() 决定注入 warning 或 block；
    *  未注入时用 DefaultDuplicateCallInterceptor（哈希机械检测），宿主可注入差异化策略 */
   duplicateCallInterceptor?: DuplicateCallInterceptor;
@@ -176,6 +187,12 @@ export class AgentLoop {
   private readonly enableContextSummary: boolean;
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
   private readonly contextManager: ContextManager;
+  /** 轮次 id 序列（每轮外部输入一个 roundId，替换式压缩按尾部对齐最近轮映射已存摘要） */
+  private readonly roundIdSequence: string[] = [];
+  /** 被替换轮 roundId 集合（第一级替换把越界轮正文换成已存摘要；装配 exclude 据此防二次召回） */
+  private readonly replacedRoundIds: Set<string> = new Set();
+  /** 两级空间管理压缩链（第一级替换 → 第二级 tool_result 占位 → 第二级超大结果卸载兜底） */
+  private readonly compactionStrategies: ICompactionStrategy[];
   /** Provider 路由缓存（单轮内缓存同一 taskType，避免每轮重复路由计算），跨轮清空不复用 */
   private providerRouteCache = new Map<TaskType, LlmProvider>();
 
@@ -188,6 +205,22 @@ export class AgentLoop {
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
     this.compactionStrategy = opts.compactionStrategy ?? new ResultReplacementStrategy();
+    // 两级空间管理压缩链：第一级替换（LRU 内核自动，取已存摘要，无摘要 no-op）→
+    // 第二级 tool_result 占位（宿主注入或默认 ResultReplacementStrategy）→ 第二级超大结果卸载兜底
+    this.compactionStrategies = [
+      new ReplaceRoundsStrategy({
+        keepRecentRounds: opts.replaceRoundsKeepRecent ?? DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
+        // 未注入 getRoundSummary 时降级为 no-op（返回 null，替换层不生效）
+        getSummary: opts.getRoundSummary ?? (() => null),
+        roundIds: () => this.roundIdSequence,
+        // 被替换轮记账：装配 exclude 据此防二次召回（装配时间线互斥）
+        onReplaced: (roundId) => {
+          this.replacedRoundIds.add(roundId);
+        },
+      }),
+      this.compactionStrategy,
+      new OffloadCompactionStrategy(),
+    ];
     this.duplicateCallInterceptor =
       opts.duplicateCallInterceptor ?? new DefaultDuplicateCallInterceptor(3);
     this.duplicateToolCallThreshold = 3;
@@ -278,6 +311,8 @@ export class AgentLoop {
     try {
       // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
       this.currentRoundId = roundId ?? this.allocRoundId();
+      // 记录轮次 id 序列（替换式压缩第一级按尾部对齐最近轮，映射已存摘要；截断时同步修剪）
+      this.roundIdSequence.push(this.currentRoundId);
 
       // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
       this.providerRouteCache.clear();
@@ -703,17 +738,22 @@ export class AgentLoop {
       contextSummary = await this.contextManager.getOrCreateSummary(this.messages, effectiveSignal);
     }
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
-    // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）
+    // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）；
+    // 同时按剩余 user 轮数修剪 roundIdSequence 前端（被截断的旧轮 id 不再参与替换映射，保持尾部对齐）
     if (safeMessages !== this.messages) {
       this.replaceContext([...safeMessages]);
+      this.trimRoundIdSequenceToMessages();
     }
 
-    // ─── 微压缩层：静默压缩旧 tool_result ──────────────────────────
-    // 在截断后、LLM 调用前执行，回收旧工具结果占用的空间；独立异步轻量压缩
-    if (this.compactionStrategy.shouldCompact(this.messages)) {
-      await this.compactionStrategy.compact(this.messages);
+    // ─── 两级空间管理压缩链 ─────────────────────────────────────
+    // 第一级：替换（内核自动 LRU，取已存记忆摘要换越界轮次正文，无摘要 no-op）
+    // 第二级：tool_result 占位（ResultReplacementStrategy）+ 超大结果卸载兜底（OffloadCompactionStrategy）
+    for (const strategy of this.compactionStrategies) {
+      if (strategy.shouldCompact(this.messages)) {
+        await strategy.compact(this.messages);
+      }
     }
-    // ─── 微压缩层结束 ──────────────────────────────────────────────
+    // ─── 压缩链结束 ─────────────────────────────────────────────
 
     // tokenBudget 软上限检查（0=不限制）
     if (this.strategy.tokenBudget > 0) {
@@ -1120,7 +1160,12 @@ export class AgentLoop {
         name: tc.function.name,
         args: tc.function.arguments,
       };
-      toolPromises.push(this.toolRunner.runOne(tc, signal));
+      // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
+      toolPromises.push(
+        tc.function.name === COMPRESS_CONTEXT_TOOL.name
+          ? this.compressContext(tc.function.arguments, signal)
+          : this.toolRunner.runOne(tc, signal),
+      );
     }
 
     const results = await Promise.all(toolPromises);
@@ -1147,6 +1192,127 @@ export class AgentLoop {
     }
     this.inAutonomousStep = false;
     return { aborted: false };
+  }
+
+  /**
+   * 第二级压缩（LLM 主动触发兜底）：把最早的执行闭环或超大工具结果现场压成临时摘要替换。
+   *
+   * 作用对象是尚无记忆摘要的东西（第一级替换只对已沉淀摘要的问答闭环可用）；压缩摘要是
+   * loop 内临时态（标记 executionTemp，下一轮闭环入口即弃），不进记忆库。
+   *
+   * @param args 工具参数 JSON（{ target: 'earliest_round' | 'largest_tool_result' }）
+   * @param signal 中止信号
+   * @returns 回传给 LLM 的确认串（失败/无目标时返回提示，不抛错阻断工具链）
+   */
+  private async compressContext(args: string, signal?: AbortSignal): Promise<string> {
+    try {
+      // 解析目标（非法/缺失降级 earliest_round）
+      let target: string;
+      try {
+        target = (JSON.parse(args) as { target?: string }).target ?? 'earliest_round';
+      } catch {
+        target = 'earliest_round';
+      }
+
+      // 定位目标消息
+      const targetMsgs =
+        target === 'largest_tool_result' ? this.findLargestToolResult() : this.findEarliestRound();
+      if (!targetMsgs || targetMsgs.length === 0) {
+        return '[compress_context] 无可压缩目标（上下文为空或目标不存在）';
+      }
+
+      // LLM 现场压成临时摘要
+      const summary = await this.summarizeForCompression(targetMsgs, signal);
+      if (!summary) {
+        return '[compress_context] 摘要生成失败，已跳过（不破坏上下文）';
+      }
+
+      // 替换为目标内容为临时摘要 system 消息（executionTemp：loop 收尾即弃）
+      const tempSummaryMsg: Message = {
+        role: 'system',
+        content: `[Compressed context · 临时压缩摘要（loop 收尾即弃，细节可能丢失）]\n${summary}`,
+      };
+      const first = targetMsgs[0]!;
+      const last = targetMsgs[targetMsgs.length - 1]!;
+      const startIdx = this.messages.indexOf(first);
+      const endIdx = last === first ? startIdx : this.messages.indexOf(last);
+      if (startIdx === -1 || endIdx === -1) {
+        return '[compress_context] 目标已不在当前上下文，已跳过';
+      }
+      this.messages.splice(startIdx, endIdx - startIdx + 1, tempSummaryMsg);
+      this.executionTempSystem.add(tempSummaryMsg);
+
+      logger.info(
+        { target, replacedCount: targetMsgs.length },
+        'compress_context 已压缩为临时摘要（loop 收尾即弃）',
+      );
+      return `[compress_context] 已把目标压缩为临时摘要（${summary.length} 字，loop 收尾即弃）：${summary.slice(0, 80)}`;
+    } catch (err) {
+      logger.warn({ err: toError(err).message }, 'compress_context 压缩失败，已跳过');
+      return '[compress_context] 压缩失败，已跳过（不阻断工具链）';
+    }
+  }
+
+  /** 定位最早的执行闭环（第一个 user 轮次起的消息区间；顶级锚点之外的次级锚点允许压缩） */
+  private findEarliestRound(): Message[] | null {
+    const firstUserIdx = this.messages.findIndex((m) => m.role === 'user');
+    if (firstUserIdx === -1) return null;
+    // 收集从第一个 user 到下一个 user 之前的所有消息（最早的执行闭环）
+    const out: Message[] = [];
+    for (let i = firstUserIdx; i < this.messages.length; i++) {
+      const m = this.messages[i]!;
+      if (m.role === 'user' && out.length > 0) break; // 已到下一条 user，停止
+      out.push(m);
+    }
+    return out;
+  }
+
+  /** 定位最大的 tool 结果（超大 tool_result 的压缩目标） */
+  private findLargestToolResult(): Message[] | null {
+    let largest: Message | null = null;
+    for (const m of this.messages) {
+      if (m.role === 'tool' && m.toolCallId && (!largest || m.content.length > largest.content.length)) {
+        largest = m;
+      }
+    }
+    return largest ? [largest] : null;
+  }
+
+  /** 用 provider 把目标内容压成临时摘要（走 summary 路由，轻量模型优先；失败降级空串） */
+  private async summarizeForCompression(
+    targetMsgs: readonly Message[],
+    signal?: AbortSignal,
+  ): Promise<string> {
+    try {
+      const content = targetMsgs
+        .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`)
+        .join('\n');
+      if (!content) return '';
+
+      const summaryProvider = this.opts.providerRouter
+        ? this.opts.providerRouter('summary')
+        : this.opts.provider;
+      const stream = summaryProvider.chat(
+        [
+          {
+            role: 'system',
+            content:
+              'Summarize the following conversation/execution excerpt into a concise temporary summary (1-3 sentences). ' +
+              'Keep key facts, decisions, and tool purposes. This is temporary context compression.',
+          },
+          { role: 'user', content },
+        ],
+        { maxTokens: LOOP_CONSTANTS.SUMMARY_MAX_TOKENS, temperature: 0, signal },
+      );
+      let summary = '';
+      for await (const chunk of stream) {
+        if (signal?.aborted) break;
+        if (chunk.content) summary += chunk.content;
+      }
+      return summary.trim();
+    } catch {
+      return '';
+    }
   }
 
   /**
@@ -1335,6 +1501,11 @@ export class AgentLoop {
     return this.contextManager.estimateTokens(messages);
   }
 
+  /** 被替换轮 roundId 列表（第一级替换产物；装配层合并进 exclude 防其摘要被二次召回） */
+  getReplacedRoundIds(): readonly string[] {
+    return Array.from(this.replacedRoundIds);
+  }
+
   /**
    * 按预算容量派生完整对话层轮次集合（动态轮数，role-pack-spec §C/§D）。
    * 从最近往回塞到预算止，会话第一条问答闭环必然在场（次级锚点：默认在场，压缩可让位）。
@@ -1514,6 +1685,19 @@ export class AgentLoop {
   /** 整体替换执行上下文（截断落盘 / 恢复历史 / 装配重排：传入的数组已是完整上下文） */
   private replaceContext(next: Message[]): void {
     this.messages = next;
+  }
+
+  /**
+   * 截断后按剩余 user 轮数修剪 roundIdSequence 前端。
+   * 被截断丢弃的旧轮 id 不再参与替换映射——保持「序列尾部 ↔ 消息最近轮」对齐，
+   * 替换式压缩（第一级 LRU）据尾部对齐取已存摘要，避免把摘要错配到错误轮次。
+   */
+  private trimRoundIdSequenceToMessages(): void {
+    // user 消息数 = 轮次数（system prompt / tool / 注入的装配性 system 块不计）
+    const userCount = this.messages.filter((m) => m.role === 'user').length;
+    if (this.roundIdSequence.length > userCount) {
+      this.roundIdSequence.splice(0, this.roundIdSequence.length - userCount);
+    }
   }
 
   // ─── Reflection 辅助方法 ────────────────────────────────

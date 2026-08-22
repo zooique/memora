@@ -68,6 +68,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   search_memories: 'idempotent',
   web_search: 'idempotent',
   trace_summary: 'idempotent',
+  // 第二级压缩：由 loop 拦截执行（现场压临时摘要，loop 收尾即弃），幂等
+  compress_context: 'idempotent',
   task_table_write: 'non-idempotent',
   task_table_update: 'idempotent',
   read_skill: 'idempotent',
@@ -153,6 +155,32 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
       limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
     },
     required: ['sessionId'],
+  },
+};
+
+/**
+ * compress_context 工具定义（独立导出，第二级压缩：LLM 主动触发兜底）
+ *
+ * 作用对象：尚无记忆摘要的东西——loop 进行中的执行闭环、超大 tool_result。
+ * 现场压成**临时压缩摘要**替换，loop 收尾即弃、不进记忆库。
+ * 与第一级替换（内核自动 LRU，从库取现成摘要）互补：替换只对"已沉淀摘要的问答闭环"可用，
+ * 压缩只对"无记忆摘要的执行闭环/工具结果"可用——同一空间管理链条的两级。
+ * 由 AgentLoop 拦截执行（非 ToolExecutor），执行逻辑在 loop.compressContext。
+ */
+export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
+  name: 'compress_context',
+  description:
+    '当上下文过长时压缩空间（第二级压缩，LLM 主动触发兜底）：把最早的执行闭环或超大工具结果' +
+    '现场压成临时摘要替换，loop 收尾即弃。当无法通过替换释放空间（无已存摘要）时使用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      target: {
+        type: 'string',
+        description: '压缩目标："earliest_round"（最早的执行闭环，默认）或 "largest_tool_result"（最大的工具结果）',
+      },
+    },
+    required: [],
   },
 };
 
@@ -295,6 +323,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['sessionId'],
     },
   },
+  // ── 两级空间管理·第二级压缩（LLM 主动触发兜底）──────
+  COMPRESS_CONTEXT_TOOL,
   // ── 任务表管理工具 ──────────────────────────────
   {
     name: 'task_table_write',
