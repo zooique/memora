@@ -15,6 +15,7 @@
 import * as vscode from 'vscode';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import type { Agent } from '@zooique/memora';
 import { assembleAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
@@ -49,6 +50,8 @@ let agentPromise: Promise<Agent> | null = null;
  *   用户级而非工作区级——角色选择是用户偏好，2026-08-17 存储层级收敛）
  * @param configDir 插件内置配置目录（SSOT 修复：由 extension.extensionUri 显式定位，
  *   而非 assemble 内 import.meta.url 相对推断——esbuild bundle 后路径漂移导致角色包加载失败）
+ * @param userSkillsDir 用户技能目录（可选，2026-08-22 新增）
+ * @param userRolePacksDir 用户角色包目录（可选，2026-08-22 新增，预留扩展）
  */
 function getOrCreateAgent(
   projectPath: string,
@@ -56,6 +59,8 @@ function getOrCreateAgent(
   sessionStore: WorkspaceSessionStore,
   globalState: vscode.Memento,
   configDir: string,
+  userSkillsDir?: string,
+  userRolePacksDir?: string,
 ): Promise<Agent> {
   if (!agentPromise) {
     // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核默认激活首个）
@@ -66,6 +71,8 @@ function getOrCreateAgent(
       sessionStore,
       activeRolePack,
       configDir,
+      userSkillsDir,
+      userRolePacksDir,
     }).catch(
       (err) => {
         // 装配失败则重置，下次命令重试
@@ -90,6 +97,34 @@ export function activate(context: vscode.ExtensionContext): void {
   // 相对推断——esbuild bundle 后路径漂移导致内置角色包加载为 0。
   const configDir = join(context.extensionUri.fsPath, 'dist', 'extension');
 
+  // 用户技能目录（2026-08-22 新增）：使用 VS Code 全局存储目录
+  // 路径示例：C:\Users\SJ\AppData\Roaming\Code\User\globalStorage\zooique.memora-vscode\skills\
+  // 与内置技能分离，支持用户独立管理；目录不存在时自动创建
+  const userSkillsDir = join(context.globalStorageUri.fsPath, 'skills');
+  void mkdir(userSkillsDir, { recursive: true }).catch(() => {
+    // 目录创建失败不阻塞插件启动，用户技能功能不可用而已
+  });
+
+  // 用户角色包目录（2026-08-22 新增，预留扩展点）：
+  // 
+  // ⚠️ 当前状态：角色包**不开放给用户**，仅支持内置角色包
+  // - 内置角色包：由插件开发者提供，存储在插件安装目录的 dist/extension/role-packs/
+  // - 用户角色包：当前禁止创建/加载，目录仅为未来开放预留
+  //
+  // 设计决策（2026-08-22）：
+  // - 与技能系统不同，角色包包含更复杂的 persona.md + rules.md + skills/ 结构
+  // - 开放用户角色包需要设计校验机制、安全检查和版本兼容策略
+  // - 当前阶段优先验证内置角色包的价值，待用户场景明确后再开放
+  //
+  // 若未来开放用户角色包：
+  // 1. 宿主侧新增角色包管理 UI（创建/导入/删除）
+  // 2. 内核侧 loadExtraDir() 已就绪，可直接复用
+  // 3. 参考用户技能的 globalStorage 方案，路径统一管理
+  const userRolePacksDir = join(context.globalStorageUri.fsPath, 'role-packs');
+  void mkdir(userRolePacksDir, { recursive: true }).catch(() => {
+    // 目录创建失败不阻塞插件启动
+  });
+
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
   const workspacePath = resolveWorkspacePath();
   const sessionStore = new WorkspaceSessionStore(workspacePath);
@@ -101,7 +136,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
   chatProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
+    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir),
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
@@ -114,9 +149,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
   settingsProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
+    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir),
   );
   settingsProvider.setGlobalState(context.globalState);
+  // 注入用户技能目录（用于「打开目录」按钮功能）
+  settingsProvider.setUserSkillsDir(userSkillsDir);
   // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
   context.subscriptions.push(
@@ -128,7 +165,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () =>
       openChatCommand(
         (projectPath) =>
-          getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir),
+          getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir),
         chatProvider,
       ),
     ),
@@ -157,7 +194,7 @@ export function activate(context: vscode.ExtensionContext): void {
   /** 获取当前工作区的 Agent 实例（懒装配，已装配则直接返回缓存） */
   const getAgentForCommand = async (): Promise<Agent | null> => {
     try {
-      return await getOrCreateAgent(workspacePath, providerStore, sessionStore, context.globalState, configDir);
+      return await getOrCreateAgent(workspacePath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir);
     } catch {
       return null;
     }

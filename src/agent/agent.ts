@@ -1747,6 +1747,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.skillManager;
   }
 
+  /** 角色包管理器（返回 null 表示未初始化或角色包系统未加载） */
+  get rolePacks(): RolePackManager | null {
+    return this.rolePackManager_;
+  }
+
   /** 记忆查看器（快照 + 搜索 + 统计；宿主常用 `const mem = agent.memory; if (!mem) return []`） */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;

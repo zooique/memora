@@ -131,6 +131,7 @@ function createSkillsView({
   const listEl = root.querySelector<HTMLElement>('#skillsList');
   const countEl = root.querySelector<HTMLElement>('#skillCount');
   const refreshBtn = root.querySelector<HTMLButtonElement>('#btnRefreshSkills');
+  const openDirBtn = root.querySelector<HTMLButtonElement>('#btnOpenSkillsDir');
 
   if (!listEl || !countEl || !refreshBtn) return;
 
@@ -139,6 +140,13 @@ function createSkillsView({
     vscode.postMessage({ type: 'skills_load' });
     listEl.innerHTML = '<p class="hint">加载中…</p>';
   });
+
+  // 打开目录按钮事件
+  if (openDirBtn) {
+    openDirBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'skills_open_dir' });
+    });
+  }
 
   // 监听 host 的 skills_loaded 消息
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
@@ -155,9 +163,16 @@ function renderSkills(
   countEl: HTMLElement,
   skills: SkillDto[],
 ): void {
+  // 分别统计内置和用户技能
+  const agentCount = skills.filter((s) => s.layer !== 'user').length;
+  const userCount = skills.length - agentCount;
+
   // 更新计数
   if (skills.length > 0) {
-    countEl.textContent = `${skills.length} 个技能`;
+    const parts: string[] = [];
+    if (agentCount > 0) parts.push(`${agentCount} 内置`);
+    if (userCount > 0) parts.push(`${userCount} 用户`);
+    countEl.textContent = parts.length > 0 ? parts.join(' · ') + ` · 共 ${skills.length} 个` : `${skills.length} 个技能`;
     countEl.hidden = false;
   } else {
     countEl.hidden = true;
@@ -165,20 +180,25 @@ function renderSkills(
 
   // 空状态
   if (skills.length === 0) {
-    listEl.innerHTML = '<p class="hint">暂无全局技能。创建 <code>.md</code> 文件到 <code>~/.memora/skills/</code> 添加自定义技能。</p>';
+    listEl.innerHTML = '<p class="hint">暂无全局技能。<br>📁 用户技能目录：<code>VS Code 全局存储 / skills /</code><br>在该目录下创建 <code>.md</code> 文件即可添加自定义技能。</p>';
     return;
   }
 
-  // 按名称排序
-  const sorted = [...skills].sort((a, b) => a.name.localeCompare(b.name));
+  // 按类型分组排序：内置优先，同类型按名称排序
+  const sorted = [...skills].sort((a, b) => {
+    const layerOrder = (s: SkillDto) => (s.layer === 'user' ? 1 : 0);
+    if (layerOrder(a) !== layerOrder(b)) return layerOrder(a) - layerOrder(b);
+    return a.name.localeCompare(b.name);
+  });
 
   // 渲染技能卡片
   listEl.innerHTML = sorted
     .map(
       (s) => `
-    <div class="skill-item">
+    <div class="skill-item ${s.layer === 'user' ? 'skill-user' : 'skill-agent'}">
       <div class="skill-header">
         <h3 class="skill-name">${escapeHtml(s.name)}</h3>
+        <span class="skill-badge ${s.layer === 'user' ? 'badge-user' : 'badge-agent'}">${s.layer === 'user' ? '用户' : '内置'}</span>
         ${s.trigger ? `<code class="skill-trigger">${escapeHtml(s.trigger)}</code>` : ''}
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>

@@ -899,6 +899,43 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!runtime) return null;
     return { runtime };
   }
+
+  /**
+   * 加载用户目录的角色包（宿主调用，用于扩展内置角色包池）
+   *
+   * 与 load() 的区别：
+   * - load() 从 configDir/role-packs/ 扫描内置角色包（有磁盘真理源）
+   * - loadExtraDir() 从额外目录扫描用户角色包（运行时注入，reload 时保留）
+   *
+   * 设计哲学：内核保持单一真理源（configDir/role-packs/），宿主负责扩展用户目录。
+   * 用户角色包通过 registerRuntimeItem 注入，reload() 时会保留（同名冲突以磁盘为准）。
+   *
+   * @param dir 用户角色包目录（每个子目录为一个角色包，须含 manifest.json）
+   * @returns 加载的角色包数量
+   */
+  async loadExtraDir(dir: string): Promise<number> {
+    let count = 0;
+    try {
+      // buildFromDir 接受任意目录路径，不依赖 configDir
+      const packs = await this.buildFromDir(dir);
+      for (const pack of packs) {
+        // 跳过已存在的角色包（内置优先）
+        if (this.items.some((p) => p.meta.name === pack.meta.name)) {
+          logger.info({ name: pack.meta.name }, '用户角色包与内置重名，跳过');
+          continue;
+        }
+        this.registerRuntimeItem(pack);
+        count++;
+      }
+      if (count > 0) {
+        this.checkExclusiveSymmetry(this.items);
+      }
+    } catch (err) {
+      logger.warn({ dir, err }, '加载用户角色包失败');
+    }
+    logger.info({ count, dir }, '用户角色包加载完成');
+    return count;
+  }
 }
 
 /**

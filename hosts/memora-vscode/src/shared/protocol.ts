@@ -167,7 +167,13 @@ export type WebviewToExtensionMessage =
    *
    * host 调 SkillManager.list() 返回：全局技能列表。
    */
-  | { type: 'skills_load' };
+  | { type: 'skills_load' }
+  /**
+   * 请求打开用户技能目录（技能视图的「打开目录」按钮触发）
+   *
+   * host 调用 VS Code 命令在系统文件管理器中打开用户技能目录。
+   */
+  | { type: 'skills_open_dir' };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -505,6 +511,8 @@ export interface SkillDto {
   keywords: string[];
   /** 触发正则（可选） */
   trigger?: string;
-  /** 技能文件路径（相对 configDir/skills/） */
+  /** 技能文件路径（用于定位来源） */
   filePath?: string;
+  /** 技能层级来源：'agent'（内置）或 'user'（用户自定义） */
+  layer?: 'agent' | 'user';
 }

@@ -77,6 +77,24 @@ export interface AssembleOptions {
    * Agent init 时优先激活；未配置/包不存在回退首个角色包。
    */
   activeRolePack?: string;
+  /**
+   * 用户技能目录（可选，2026-08-22 新增）
+   *
+   * 用户自定义技能存储路径（如 globalStorage/skills/），由宿主确定并注入。
+   * Agent init 完成后，SkillManager 会扫描该目录并注册技能（运行时注入）。
+   * 与内置技能（configDir/skills/）分离，支持用户独立管理。
+   */
+  userSkillsDir?: string;
+  /**
+   * 用户角色包目录（可选，2026-08-22 新增，预留扩展点）
+   *
+   * ⚠️ 当前状态：角色包**不开放给用户**，仅支持内置角色包
+   * - 此参数仅为未来扩展预留，当前宿主不会传入有效值
+   * - 内核 loadExtraDir() 方法已就绪，宿主开放时直接调用即可
+   *
+   * 设计决策见 extension.ts 中 userRolePacksDir 的完整注释
+   */
+  userRolePacksDir?: string;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -103,7 +121,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir } = options;
+  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir } = options;
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
@@ -155,6 +173,21 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）
   await agent.init();
+
+  // 5. 加载用户技能（可选，宿主扩展内置技能池）
+  // 用户技能与内置技能分离：内置从 configDir/skills/ 扫描，用户从 userSkillsDir 扫描
+  if (userSkillsDir) {
+    await agent.skills?.loadExtraDir(userSkillsDir);
+  }
+
+  // 6. 加载用户角色包（⚠️ 当前禁用，预留扩展点）
+  //
+  // 当前角色包不开放给用户（详见 AssembleOptions.userRolePacksDir 注释）
+  // userRolePacksDir 参数当前为 undefined，此分支不会执行
+  // 未来开放时：宿主传入用户目录 → 内核 loadExtraDir() 加载
+  if (userRolePacksDir) {
+    await agent.rolePacks?.loadExtraDir(userRolePacksDir);
+  }
 
   return agent;
 }

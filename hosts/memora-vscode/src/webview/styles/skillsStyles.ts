@@ -5,6 +5,7 @@
  *   - 以 #skills-root 前缀限定，与其他子视图样式隔离，避免串扰；
  *   - 复用 tokens.ts 中的设计令牌；
  *   - 技能卡片风格简洁清晰，展示名称、描述、关键词和触发条件。
+ *   - 区分内置技能（configDir/skills/）和用户技能（userSkillsDir/）
  */
 
 export const skillsStyles = `
@@ -18,11 +19,22 @@ export const skillsStyles = `
     align-items: center;
     justify-content: space-between;
     margin-bottom: var(--sp-3, 8px);
+    gap: var(--sp-2, 6px);
   }
 
   #skills-root .header h2 {
     margin: 0;
     font-size: var(--font-lg, 14px);
+  }
+
+  #skills-root .header-actions {
+    display: flex;
+    gap: var(--sp-2, 6px);
+  }
+
+  #skills-root .header-actions .btn {
+    font-size: var(--font-sm, 12px);
+    padding: 4px 10px;
   }
 
   #skills-root .hint {
@@ -46,6 +58,16 @@ export const skillsStyles = `
     border-radius: var(--radius, 6px);
   }
 
+  /* 用户技能：左侧绿色边框标识 */
+  #skills-root .skill-item.skill-user {
+    border-left: 3px solid #4caf50;
+  }
+
+  /* 内置技能：左侧蓝色边框标识 */
+  #skills-root .skill-item.skill-agent {
+    border-left: 3px solid #0e639c;
+  }
+
   #skills-root .skill-header {
     display: flex;
     align-items: center;
@@ -57,6 +79,25 @@ export const skillsStyles = `
     margin: 0;
     font-size: var(--font-md, 13px);
     color: var(--text-primary, #cccccc);
+  }
+
+  /* 来源徽章 */
+  #skills-root .skill-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.4;
+  }
+
+  #skills-root .skill-badge.badge-agent {
+    color: #90caf9;
+    background: rgba(14, 99, 156, 0.2);
+  }
+
+  #skills-root .skill-badge.badge-user {
+    color: #81c784;
+    background: rgba(76, 175, 80, 0.15);
   }
 
   #skills-root .skill-trigger {

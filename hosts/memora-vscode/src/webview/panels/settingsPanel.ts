@@ -50,6 +50,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _pendingTab: 'roles' | 'config' | 'memory' | 'skills' | undefined;
   /** 对话面板提供者（角色 handoff 预填需跨 webview 投递，由 extension 注入） */
   private _chatProvider: MemoraChatViewProvider | undefined;
+  /** 用户技能目录路径（由 extension 注入，用于打开目录功能） */
+  private _userSkillsDir: string | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -73,6 +75,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 注入对话面板提供者（角色 handoff 预填跨 webview 投递，由 extension 装配时注入） */
   public setChatProvider(p: MemoraChatViewProvider): void {
     this._chatProvider = p;
+  }
+
+  /** 注入用户技能目录路径（用于打开目录功能） */
+  public setUserSkillsDir(dir: string): void {
+    this._userSkillsDir = dir;
   }
 
   /** 视图被解析（侧边栏展开）时初始化 */
@@ -226,6 +233,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.loadSkills();
       return;
     }
+    if (msg.type === 'skills_open_dir') {
+      this.openUserSkillsDir();
+      return;
+    }
   }
 
   // ─── 角色子视图数据加载 ───
@@ -360,14 +371,33 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       keywords: string[];
       trigger?: RegExp;
       filePath: string;
+      layer?: 'agent' | 'project';
     }) => ({
       name: s.name,
       description: s.description ?? '',
       keywords: s.keywords,
       trigger: s.trigger?.source,
       filePath: s.filePath,
+      // 内置技能（configDir/skills/）标记为 'agent'，用户技能（userSkillsDir）标记为 'user'
+      layer: s.layer === 'project' ? 'user' : 'agent',
     }));
     this.post({ type: 'skills_loaded', skills });
+  }
+
+  /** 打开用户技能目录（在系统文件管理器中显示） */
+  private openUserSkillsDir(): void {
+    if (!this._userSkillsDir) {
+      void vscode.window.showWarningMessage('用户技能目录未配置');
+      return;
+    }
+    const uri = vscode.Uri.file(this._userSkillsDir);
+    void vscode.commands.executeCommand('revealFileInOS', uri).then(
+      () => {},
+      () => {
+        // revealFileInOS 可能失败，回退用 showItemInFolder
+        void vscode.commands.executeCommand('showItemInFolder', uri);
+      },
+    );
   }
 
   /** 向 webview 发送消息 */
@@ -532,13 +562,16 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div class="header">
       <h2>全局技能</h2>
       <span id="skillCount" class="stat-bar" hidden></span>
-      <button id="btnRefreshSkills" class="btn btn-secondary">刷新</button>
+      <div class="header-actions">
+        <button id="btnOpenSkillsDir" class="btn btn-secondary" title="打开用户技能目录">📁 打开目录</button>
+        <button id="btnRefreshSkills" class="btn btn-secondary">刷新</button>
+      </div>
     </div>
-    <div class="hint">全局技能是所有角色包共享的能力，存储在 <code>~/.memora/skills/</code> 目录下。</div>
+    <div class="hint">全局技能是所有角色包共享的能力。支持单文件 <code>.md</code> 和文件夹 <code>SKILL.md</code> 两种格式。</div>
     <div id="skillsList">
       <p class="hint">加载中…</p>
     </div>
-    <p class="footer-hint">技能按名称排序。可创建 <code>.md</code> 文件到 <code>~/.memora/skills/</code> 添加自定义技能。</p>
+    <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>
   </div>
 
   <script src="${scriptUri}"></script>

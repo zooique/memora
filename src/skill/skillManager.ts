@@ -8,7 +8,7 @@ import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillMatch, SkillLayer3 } from '@/skill/types.js';
-import { parseTrigger, parseKeywords, discoverLayer3, resolveSafePath } from '@/utils/scanner.js';
+import { parseTrigger, parseKeywords, discoverLayer3, resolveSafePath, scanMarkdownDir } from '@/utils/scanner.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -199,6 +199,38 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   // ── 基类抽象方法实现 ──────────────────────────────
+
+  /**
+   * 加载用户目录的技能（宿主调用，用于扩展内置技能池）
+   *
+   * 与 load() 的区别：
+   * - load() 从 configDir/skills/ 扫描内置技能（有磁盘真理源）
+   * - loadExtraDir() 从额外目录扫描用户技能（运行时注入，reload 时保留）
+   *
+   * 设计哲学：内核保持单一真理源（configDir/skills/），宿主负责扩展用户目录。
+   * 用户技能通过 registerRuntimeItem 注入，reload() 时会保留（同名冲突以磁盘为准）。
+   *
+   * @param dir 用户技能目录（如 ~/.memora/skills/）
+   * @returns 加载的技能数量
+   */
+  async loadExtraDir(dir: string): Promise<number> {
+    const entries = await scanMarkdownDir(dir);
+    let count = 0;
+    for (const entry of entries) {
+      // 跳过已存在的技能（内置技能优先）
+      if (this.items.some((s) => s.name === entry.name)) {
+        logger.info({ name: entry.name }, '用户技能与内置重名，跳过');
+        continue;
+      }
+      const skill = await this.createEntry(entry);
+      if (skill) {
+        this.registerRuntimeItem(skill);
+        count++;
+      }
+    }
+    logger.info({ count, dir }, '用户技能加载完成');
+    return count;
+  }
 
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
     // 发现 L3 资源和脚本（folder 形式技能目录或单文件 skill 同级目录都会扫描）
