@@ -20,9 +20,8 @@
 - [六、宿主工具函数](#六宿主工具函数)
 - [七、可观测性接入（ITracer）](#七可观测性接入itracer)
 - [八、工具错误反思（Reflection）](#八工具错误反思reflection)
-- [九、评估体系（Eval）](#九评估体系eval)
-- [十、多步骤编排](#十多步骤编排)
-- [十一、关键约束](#十一关键约束)
+- [九、多步骤编排](#九多步骤编排)
+- [十、关键约束](#十关键约束)
 
 ---
 
@@ -38,7 +37,7 @@
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.governance`（记忆治理）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）等。
+**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.governance`（记忆治理）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）共 7 个业务 Manager（另有 `projects` / `security` / `sessionManager` 等）。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -51,7 +50,7 @@
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 8 个 Manager getter（委托模式，含文本润色）      │               │
+│  │  - 7 个业务 Manager getter（rolePack/tools/skills/memory/governance/works/polish，委托模式）      │               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
@@ -89,11 +88,12 @@ npm install @zooique/memora
 ### 2. 创建 Provider + Agent
 
 ```typescript
-import { Agent, createLlmProvider, JsonVectorStore, setLogger } from '@zooique/memora';
+import { Agent, createProviderFromConfig, JsonVectorStore, setLogger } from '@zooique/memora';
 import type { IMemoryStorage, ILogger, EmbeddingService } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider（Agent 不关心 API Key）
-const provider = createLlmProvider({
+// createProviderFromConfig 是"单个 provider"入口；多 provider + active 随 loadConfig 路由见 api-reference §十 Provider 管理
+const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
@@ -101,7 +101,7 @@ const provider = createLlmProvider({
 });
 
 // 可选：后台 Provider（投影等后台操作）
-const backgroundProvider = createLlmProvider({
+const backgroundProvider = createProviderFromConfig('background', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
@@ -455,9 +455,9 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 
 | 函数/类型 | 用途 |
 |-----------|------|
-| `createLlmProvider(config)` | 从扁平配置创建 LlmProvider 实例 |
-| `createProviderFromConfig(name, config)` | 从命名配置创建 LlmProvider 实例 |
-| `loadConfig(path?)` | 加载 memora.json 配置文件 |
+| `createLlmProvider(config)` | 从完整 Config（`llm.providers` + `active`）创建激活 Provider（配合 `loadConfig`） |
+| `createProviderFromConfig(name, config)` | 从命名配置创建单个 Provider 实例（扁平参数） |
+| `loadConfig(path?)` | 加载 `.memora/config.json` 项目级配置文件（或传入显式 configPath） |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
 | `JsonVectorStore` | 向量存储内置实现（实现 IVectorStore 接口，宿主注入 EmbeddingService 后创建，启用语义搜索） |
 | `EmbeddingProvider` | OpenAI 兼容 Embedding 端点实现（满足 EmbeddingService 接口） |
@@ -483,8 +483,6 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |
 | `isRetryableErrorCode(code)` | 判断错误码是否可重试（5 种 retryable） |
 | `TypedEventEmitter` | 类型安全的事件发射器（Agent 继承此类） |
-| `collectAgentChunks(gen)` | 从 AgentChunk 流收集行为数据（Mock Eval 用） |
-| `evaluateResult(name, collected, expected)` | 比对期望与结果（Mock Eval 用） |
 
 **注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
 
@@ -568,56 +566,7 @@ Reflection 默认最多重试 2 次（`maxReflectionRetries`），防止无限�
 
 ---
 
-## 九、评估体系（Eval）
-
-Memora 提供了 Mock Eval 框架，用于 Agent 行为回归测试（不发起真实 LLM 调用）。
-
-### 类型定义
-
-```typescript
-import type { EvalScenario, EvalExpectation, EvalResult } from '@zooique/memora';
-// Eval 类型已从 memora 主包导出，宿主项目可直接 import
-```
-
-### 评估场景示例
-
-```typescript
-const scenario: EvalScenario = {
-  name: '只读查询不应调用 write_file',
-  description: '用户只查询信息时，Agent 不应写入文件',
-  input: '帮我看看第一章写了什么',
-  expect: {
-    toolsCalled: ['read_file'],       // 期望调用 read_file
-    toolsNotCalled: ['write_file'],   // 不应调用 write_file
-  },
-};
-```
-
-### 评估工具函数
-
-```typescript
-import { collectAgentChunks, evaluateResult } from '@zooique/memora';
-
-// 从 AgentChunk 流中收集行为数据
-const collected = await collectAgentChunks(agent.chat('帮我看看第一章'));
-
-// 比对期望
-const result = evaluateResult(scenario.name, collected, scenario.expect);
-console.log(result.passed ? '✅ 通过' : `❌ 失败: ${result.failures.join('; ')}`);
-```
-
-### 两种评估层次
-
-| 层次 | 工具 | LLM 调用 | 用途 |
-|------|------|---------|------|
-| Mock Eval | `collectAgentChunks` + `evaluateResult` | 不调用（MSW Mock） | 行为回归（工具调用、召回） |
-| 真实 LLM Eval | 宿主自建 | 真实调用 | 回复质量、指令遵循度 |
-
-> Mock Eval 在 CI 中运行，真实 LLM Eval 由宿主项目手动触发。
-
----
-
-## 十、多步骤编排
+## 九、多步骤编排
 
 Memora 是单 Agent 模型（ADR-011），不内置多 Agent 编排。宿主项目可通过多次调用 `agent.chat()` 实现复杂工作流：
 
@@ -634,11 +583,11 @@ for (const chapter of chapters) {
 **编排要点**：
 - 每次 `chat()` 共享同一个 AgentLoop 上下文（记忆、角色、技能）
 - 宿主负责流程控制（条件分支、并行、错误处理）
-- 如需隔离上下文，使用 `agent.switchSession()` 或 `agent.forkSession()`
+- 如需隔离上下文，使用 `agent.sessionManager.switchSession()` 或 `agent.forkSession()`
 
 ---
 
-## 十一、关键约束
+## 十、关键约束
 
 1. **`provider` 是必填项** — Agent 无法独立运行
 2. **configDir** 指向 Agent 级配置目录，所有子项目共享

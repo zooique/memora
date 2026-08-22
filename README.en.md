@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-2443%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2446%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -54,11 +54,12 @@ npm install @zooique/memora
 ### Create an Agent
 
 ```typescript
-import { Agent, createLlmProvider } from '@zooique/memora';
+import { Agent, createProviderFromConfig } from '@zooique/memora';
 
 // Host responsibility: create an LLM Provider
 // Works with any OpenAI Chat Completions-compatible service
-const provider = createLlmProvider({
+// createProviderFromConfig is the single-provider entry; for multi-provider + active see createLlmProvider(loadConfig())
+const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
@@ -93,8 +94,8 @@ const reply = await agent.chatSync('What language do I like?');
 ### Memory Management
 
 ```typescript
-// Search memories (hybrid: semantic + keyword)
-const hits = await agent.memory.searchHybrid('TypeScript preference', { limit: 5 });
+// Search memories (hybrid: semantic + keyword), limit is a number
+const hits = await agent.memory.searchHybrid('TypeScript preference', 5);
 
 // Governance (exposed via agent.governance facade, LLM-judged)
 const report = await agent.governance.deduplicate();
@@ -192,7 +193,7 @@ src/
 |--------|-------|
 | Source | 104 production files (src/, zero third-party runtime deps) |
 | Tests | 96 test files |
-| Tests Passing | 2,443 passed / 1 skipped |
+| Tests Passing | 2,446 passed / 1 skipped |
 | Statement Coverage | 85.8% |
 | Branch Coverage | 79.6% |
 | Function Coverage | 88.5% |
@@ -218,7 +219,7 @@ npm run build        # Compile to dist/
 
 ## Host Project
 
-[memora-sprite](hosts/memora-sprite/) — An Electron-based desktop sprite host (v1.5.0), demonstrating a complete Memora integration: SQLite persistence, vector indexing, system tray, global shortcuts, and memory graph visualization.
+[memora-sprite](https://gitee.com/zooique/memora/tree/main/hosts/memora-sprite) — An Electron-based desktop sprite host (v1.5.0), demonstrating a complete Memora integration: SQLite persistence, vector indexing, system tray, global shortcuts, and memory graph visualization.
 
 ## Why Memora?
 
@@ -233,7 +234,7 @@ npm run build        # Compile to dist/
 
 ## Contributing
 
-This project follows the "Big Tree Model" engineering philosophy. Architecture Decision Records (ADRs) are in `.trae/decisions/`.
+This project follows the "Big Tree Model" engineering philosophy. Architecture Decision Records (ADRs) are in the repository [.trae/decisions/](https://gitee.com/zooique/memora/tree/main/.trae/decisions).
 
 ## License
 

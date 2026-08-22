@@ -19,6 +19,7 @@
       "provider": "doubao",
       "model": "doubao-pro",
       "apiKey": "${MEMORA_BACKGROUND_API_KEY}",
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
       "temperature": 0.5
     }
   },

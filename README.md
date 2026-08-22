@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-2443%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2446%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -59,10 +59,11 @@ npm install @zooique/memora
 ### 创建 Agent
 
 ```typescript
-import { Agent, createLlmProvider } from '@zooique/memora';
+import { Agent, createProviderFromConfig } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider（兼容所有 OpenAI Chat Completions 协议的服务）
-const provider = createLlmProvider({
+// createProviderFromConfig 是"单个 provider"入口；多 provider + active 路由见 createLlmProvider(loadConfig())
+const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
@@ -97,8 +98,8 @@ const reply = await agent.chatSync('我喜欢什么语言？');
 ### 记忆管理
 
 ```typescript
-// 搜索记忆
-const hits = await agent.memory.searchHybrid('TypeScript 偏好', { limit: 5 });
+// 搜索记忆（limit 为数字）
+const hits = await agent.memory.searchHybrid('TypeScript 偏好', 5);
 
 // 记忆治理（经 agent.governance 门面委托暴露，LLM 判断）
 const report = await agent.governance.deduplicate();
@@ -196,7 +197,7 @@ src/
 |------|------|
 | 源码 | 104 个生产文件（src/，零第三方运行时依赖） |
 | 测试 | 96 个测试文件 |
-| 测试通过 | 2,443 通过 / 1 skip |
+| 测试通过 | 2,446 通过 / 1 skip |
 | 语句覆盖 | 85.8% |
 | 分支覆盖 | 79.6% |
 | 函数覆盖 | 88.5% |
@@ -227,13 +228,13 @@ npm 包内置 `role-packs/` 示例角色库（`小说助手` / `文档设计师`
 
 ## 宿主项目
 
-[memora-vscode](hosts/memora-vscode/) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、双通道召回、角色包管理与记忆视图。
+[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、双通道召回、角色包管理与记忆视图。
 
-> 桌面精灵宿主（memora-sprite）已独立仓库独立开发。
+> 桌面精灵宿主（memora-sprite）亦作为参考宿主位于本仓库 `hosts/memora-sprite`（Electron 桌面应用，展示 SQLite 持久化 / 向量索引 / 系统托盘 / 全局快捷键）。
 
 ## 贡献
 
-本项目遵循"大树模型"工程哲学。技术决策记录（ADR）位于 `.trae/decisions/`。
+本项目遵循"大树模型"工程哲学。技术决策记录（ADR）位于仓库 [.trae/decisions/](https://gitee.com/zooique/memora/tree/main/.trae/decisions)。
 
 ## 许可证
 

@@ -3,9 +3,9 @@
 > **面向对象**：安装 `@zooique/memora` 后，编写 / 理解角色包（role pack）的开发者——既包括**宿主接入者**（要把角色包能力接进自己的产品），也包括**角色包作者**（要填写 `manifest.json`）。
 > **定位**：本指南回答「manifest.json 里的开放键填什么、**被谁消费**、有什么上限」。它是 memora 发布包内的角色包使用入口。
 > **相关文档**：
-> - 中立规范（跨所有 Agent 实现的契约，**仓库内文档**）：[role-pack-spec.md](./architecture/role-pack-spec.md)
-> - 详细填写手册（含全部区间 / 错误修正 / 键的落实状态，**仓库内文档**）：[role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md)
-> - 示例角色包（结构参考，不参与运行时分发）：[role-packs/](../role-packs/README.md)
+> - 中立规范（跨所有 Agent 实现的契约，随包发布）：[role-pack-spec.md](./architecture/role-pack-spec.md)
+> - 详细填写手册（含全部区间 / 错误修正 / 键的落实状态，随包发布）：[role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md)
+> - 示例角色包（结构参考，随包发布、不参与宿主运行时装载）：[role-packs/](../role-packs/README.md)
 
 ---
 
@@ -83,9 +83,11 @@
 | 键 | 类型 | 消费方 | 上限 | 说明 |
 |----|------|--------|------|------|
 | `name` | string | ③ UI / 内核标识 | ≤200 字符 | 唯一标识（缺失用文件夹名兜底） |
+| `formatVersion` | string | ① 内核校验（**必填**） | semver（x.y.z） | 格式版本，绑定固定 schema URL，发布后不变 |
 | `displayName` | string | ③ UI | ≤200 字符 | UI 展示名，缺省回退 `name` |
 | `description` | string | ③ UI | ≤200 字符 | 角色包描述 |
 | `author` | string | ③ UI | ≤200 字符 | 作者/来源 |
+| `version` | string | ③ 分发 | semver（x.y.z） | 角色包自身版本（可选） |
 
 ### 3.2 中立接口层（宿主接入）
 
@@ -103,6 +105,14 @@
 | `exclusiveWith` | string[] 或逗号串 | ① 内核互斥 | 最多 20 个 | 互斥角色包名（粘性切换判定） |
 | `skills` | 对象数组 | ① 内核扫描 | ≤50 项 | 技能白名单（`{ file, name?, description? }`） |
 | `strategy` | 嵌套对象 | ① 内核行为 | 各数值键有上下限（见 authoring-guide §四） | L2 行为策略（prepare/act/reflect/global） |
+
+### 3.4 合规 / 分档层
+
+| 键 | 类型 | 消费方 | 上限 | 说明 |
+|----|------|--------|------|------|
+| `interactionType` | string 枚举 | ① 内核合规 | `tool_assistant` / `companion`（缺省 `tool_assistant`） | 交互类型：工具型（豁免区间）vs 拟人化陪伴（完整合规校验） |
+| `aiIdentityDisclosure` | boolean | ① 内核合规 | `true`（缺省） | 是否向用户明确标注 AI 身份（companion 必须显式 true） |
+| `minorProtection` | string 枚举 | ① 内核合规 | `required`（缺省） | 未成年人保护模式（当前仅支持 required） |
 
 > **越界行为统一**：开发期 `validator` 校验报 error（拒绝装载提示）；运行时按上限截断 / 回退默认（宽容容错）。
 

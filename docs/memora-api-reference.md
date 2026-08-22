@@ -62,11 +62,13 @@ configDir/
 
 ```jsonc
 {
-  "providers": { "deepseek": { "baseUrl": "...", "model": "...", "apiKey": "" },
-                 "openai":   { "baseUrl": "...", "model": "...", "apiKey": "" } },
-  "active": "deepseek",        // 激活别名，不配取第一个 key
-  "background": { ... },       // 可选后台通道，节省成本
-  "taskRouter": { "simple": "deepseek", "reasoning": "openai" }
+  "llm": {
+    "providers": { "deepseek": { "baseUrl": "...", "model": "...", "apiKey": "" },
+                   "openai":   { "baseUrl": "...", "model": "...", "apiKey": "" } },
+    "active": "deepseek",        // 激活别名，不配取第一个 key
+    "background": { ... },       // 可选后台通道，节省成本
+    "taskRouter": { "simple": "deepseek", "reasoning": "openai" }
+  }
 }
 ```
 
@@ -960,7 +962,7 @@ isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 
 ## 十六、类型导出
 
-> 以下导出与 `src/index.ts` 完全对齐。`RecalledMemorySummary` 已补齐导出。
+> 以下**精选子集**为宿主最常用的公开导出，全部经 `@zooique/memora` 再导出（无幻影）；未在清单中的其他导出（如 `DuplicateCallInterceptor` / `FadingMemory` / `SessionManager` / `ProviderRouter` / `SummaryType` 等）以 `src/index.ts` 为准。治理报告类型（`DedupReport` / `SourceHealthReport` 等）经方法返回推断，不列为显式导出。
 
 ```typescript
 // Agent 与流式事件
@@ -988,17 +990,8 @@ export type {
   ArchiveSnapshot,
   AgentSearchHit,
   AgentStats,
-  SuggestOptions,
-  SuggestHit,
-  SourceHealthStatus,
-  SourceHealthEntry,
-  SourceHealthReport,
 } from '@zooique/memora';
-// 记忆治理 / 健康度（Agent 层方法返回的报告类型）
-export type { DedupPair, DedupVerdict, DedupVerdictSummary, DedupReport } from '@zooique/memora';
-export type { TimelinessVerdict, TimelinessReport } from '@zooique/memora';
-export type { ConflictVerdict, ConflictReport } from '@zooique/memora';
-// 记忆治理统一门面
+// 记忆治理统一门面（治理 / 健康度报告类型经方法返回推断，未列为公开显式导出）
 export { MemoryGovernance } from '@zooique/memora';
 // 文本润色
 export type { PolishResult } from '@zooique/memora';
@@ -1013,11 +1006,6 @@ export { FetchWebFetchProvider, safeFetch } from '@zooique/memora';
 export type { ICodeExecutionProvider, CodeExecutionResult, CodeExecutionOptions } from '@zooique/memora';
 export { safeExecuteCode } from '@zooique/memora';
 
-// 记忆治理
-export type { ConflictInfo } from '@zooique/memora';
-
-// 会话归档
-export type { SessionArchiveResult } from '@zooique/memora';
 // 作品投影
 export type { WorkProjectionEntry } from '@zooique/memora';
 
@@ -1104,12 +1092,6 @@ export type {
   WriteConfirmationInfo,
   WriteConfirmationRequest,
 } from '@zooique/memora';
-
-// 评估
-export type { EvalScenario, EvalExpectation, EvalResult } from '@zooique/memora';
-export { collectAgentChunks, evaluateResult } from '@zooique/memora';
-export { EVAL_SCENARIOS, EvalRunner } from '@zooique/memora';
-export type { EvalRunnerOptions, EvalSummary } from '@zooique/memora';
 ```
 
 ---
