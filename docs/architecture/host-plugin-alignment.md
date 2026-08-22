@@ -225,7 +225,7 @@ if (rp) {
   rp.listMeta();            // 列出所有角色包元数据（name/description/...）
   rp.activeName;            // 当前激活的角色包名（null = 未激活）
   rp.activate('工程师');     // 按名字手动切换/激活角色包
-  rp.setMode('manual');      // 锁定手动模式（'auto' | 'manual'）
+  rp.autoMatch('写代码');    // 输入粘性匹配角色包（首次命中锁定）
   rp.resetSticky();          // 清空粘性匹配锁存
 }
 

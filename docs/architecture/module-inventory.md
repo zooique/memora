@@ -82,7 +82,7 @@
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
-| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/act/reflect/handoff/orchestrator/difficulty + harness，39 tests） | 种子三阶段（回答前/中/后）+ Handoff 各自独立执行器；`seed/orchestrator.ts` 为最小执行闭环唯一编排真理源，提供 `runChat`/`runEvent`/`runResume` 三入口；`seed/difficulty.ts` 回答前 LLM 难度分级（阶段 2） |
+| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/orchestrator/difficulty + harness，39 tests） | 种子三阶段（回答前/中/后）+ Handoff 由 `seed/orchestrator.ts` 唯一编排（prepare/act/reflect/handoff 三阶段执行器并入 orchestrator）；`seed/difficulty.ts` 回答前 LLM 难度分级（阶段 2） |
 | `agent/loop.ts` | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests) | AgentLoop 核心：单轮闭环执行 + Loop 外循环编排，含拦截器集成 |
 | `agent/agent.ts` | 🟢 已打磨 | `__tests__/agent.test.ts` | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行闭环（宿主 getter 契约字段独立，纯内部组件聚合于 `internals`） |
 
@@ -132,7 +132,7 @@
 | `role-pack/rolePackManager.ts` | 🟢 已打磨 | `__tests__/rolePackManager.test.ts` | 角色包文件夹形态加载与装配 |
 | `role-pack/validator.ts` | 🟢 已打磨 | `__tests__/validator.test.ts` | manifest.json 核心控制校验 + companion 内容红线检测（`checkCompanionContentRedline`） |
 | `role-pack/capabilityMap.ts` | 🟢 已打磨 | `__tests__/capabilityMap.test.ts` | 能力声明映射与检查 |
-| `role-pack/strategyResolver.ts` | 🟢 已打磨 | `__tests__/strategyResolver.test.ts` (84 tests) | 默认值完整性、21 个 resolve 函数、mergeStrategy、assembleRolePack 装配逻辑 |
+| `role-pack/strategyResolver.ts` | 🟢 已打磨 | `__tests__/strategyResolver.test.ts` (84 tests) | 默认值完整性、22 个 resolve 函数、mergeStrategy、assembleRolePack 装配逻辑 |
 | `role-pack/strategyKeys.ts` | 🟢 已打磨 | `__tests__/strategyKeys.test.ts` (48 tests) | 6 个校验辅助函数 + 别名映射 + 4 阶段 25+ 策略键规则完整性验证 |
 
 ### 2.3 技能（skill/ · 能力清单）
@@ -377,7 +377,7 @@
 
 > **计数口径**：
 > - 无测试的 8 个文件：`skill/types.ts`、`llm/types.ts`、`web-search/types.ts`、`memory/storageInterface.ts`（纯类型/接口，消费方集成测试覆盖）+ `utils/recallDefaults.ts`（单常量，无需测试）+ `logging/loggerInterface.ts`（纯接口）+ `seed/index.ts`（桶导出）+ `seed/types.ts`（纯类型/契约，经 seed 各单测消费）。
-> - L0 含 `agent/seed/`（8 源文件：index/types/prepare/act/reflect/handoff/orchestrator/difficulty；6 个有独立单测，index/types 无独立测试）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
+> - L0 含 `agent/seed/`（5 源文件：index/types/prepare/orchestrator/difficulty；3 个有独立单测，index/types 无独立测试——prepare/act/reflect/handoff 三阶段执行器并入 orchestrator，无独立文件）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
 > - L4 含 `memory/` 13 文件（`sessionStore.ts` 计入 L5）+ 摘要/治理/会话沉淀 15 个 managers 文件。
-> - L6 含 `utils/` 19 文件（含 `recallDefaults.ts`）+ config/security/logging。
+> - L6 含 `utils/` 20 文件（含 `recallDefaults.ts`、`backgroundTask.ts`）+ config/security/logging。
 > - 2026-08-20 种子收敛（L0 `agent/seed/`）+ 阶段 2（seed/difficulty 难度分级 + loop.runReport 汇报闭环）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。

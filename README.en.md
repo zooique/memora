@@ -135,7 +135,7 @@ await agent.close();
 └────────────────────────────────────────────────────────────┘
 ```
 
-### Six Injectable Interfaces
+### Five Injectable Interfaces
 
 The kernel interacts with the outside world through interfaces. Hosts inject implementations as needed:
 

@@ -35,5 +35,5 @@
     "permission": "owner",
     "confirmWrites": false
   },
-  "allowedPaths": ["${HOME}/projects"]
+  "allowedPaths": []
 }

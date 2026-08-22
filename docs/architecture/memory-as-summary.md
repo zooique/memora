@@ -166,7 +166,7 @@ postProcess → 使用 round-5 生成摘要
 └──────────────────────────────────────────────────┘
 ```
 
-写入 `IMemoryStorage`，`source='round-summary'`。这是系统**轮次级**的记忆产生层；`content` 会话归档（[sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)）承载会话级综合提炼（见 §7）。**写入型 source 共两类**：`round-summary`（轮次摘要，本层）+ `content`（会话归档）；`PROFILE` 仅保留为存量数据治理，不再有新写入。
+写入 `IMemoryStorage`，`source='round-summary'`。这是系统**轮次级**的记忆产生层；`content` 会话归档（[sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)）承载会话级综合提炼（见 §7）。**写入型 source 共两类**：`round-summary`（轮次摘要，本层）+ `content`（会话归档）。
 
 ### 3.2 摘要类型（SummaryType）— 语义标签
 

@@ -209,9 +209,9 @@ description: 把成稿写入本地文件
 
 - **`capabilities`（顶层，能力面）**：每项 `{ capability: '域:动作', description? }`。声明角色可调用的中立能力，经 capabilityMap 映射为工具白名单（agent.ts applyRolePackToolExposure，「换装 = 换 Agent」）；
 - **`skills`（目录扫描，内容面）**：`skills/` 下**两种形式**动态扫描——单文件 `skills/*.md` 和文件夹 `skills/<名>/SKILL.md`（Claude Code 标准）。frontmatter 的 `name`（缺省取文件名/目录名）/`description` 暴露给 LLM（L1 清单），正文经渐进披露 L2（read_skill）按需装载；纯能力声明不放 skills（放顶层 capabilities）；
-- **实现映射**：memora 把 `file:write` 映射到内置 `writeFile` 工具；其他实现映射到自有工具；
+- **实现映射**：memora 把 `file:write` 映射到内置 `write_file` 工具；其他实现映射到自有工具；
 - **未知能力**：装载方跳过该能力（可选提示"能力不可用"），不阻塞；
-- 命名空间采用 `域:动作`（`file:` / `web:` / `llm:` / `tool:`），扩展由社区协商，先保持最小集。
+- 命名空间采用 `域:动作`（`file:` / `web:` / `memory:` / `task:` / `llm:` / `code:`），扩展由社区协商，先保持最小集。
 
 **capability 是内核唯一行为入口**：`manifest.capabilities` 声明的能力（如 `web:search`）装载时映射到工具白名单；未声明 capabilities 的角色包 → 白名单为 null（全部暴露，保持现状）。
 
@@ -237,6 +237,8 @@ description: 把成稿写入本地文件
 | `file:write` | 写入/创建本地文件系统文件 | 需提供路径范围与权限限制（memora → `write_file`） | 冻结 |
 | `file:list` | 列举目录下文件列表 | 需提供目录路径与权限控制（memora → `list_dir`） | 冻结 |
 | `web:search` | 网络搜索获取实时信息 | 需注入 `IWebSearchProvider`（memora → `web_search`） | 冻结 |
+| `web:fetch` | 抓取指定网页正文 | 需注入 `IFetchProvider`（memora → `web_fetch`，与 `web:search` 成对构成「搜索→抓取」闭环） | 冻结 |
+| `code:execute` | 通用代码执行（计算/数据处理/验证） | 需注入 `ICodeExecutionProvider`（memora → `run_code`，沙箱由宿主提供） | 冻结 |
 | `memory:recall` | 从长期记忆系统中召回相关记忆 | 基础记忆能力，Agent 应支持（memora → `search_memories`） | 冻结 |
 | `task:plan` | 管理任务计划（创建/更新表格） | 需提供任务管理系统（memora → `task_table_write` / `task_table_update`） | 冻结 |
 | `llm:summarize` | 调用 LLM 做文本摘要 | 内核内部能力，无需独立工具映射（memora 映射为空） | 冻结 |

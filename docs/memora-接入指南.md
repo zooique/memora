@@ -126,7 +126,7 @@ const agent = new Agent({
   configDir: '/path/to/agent-config',
   dataDir: '.memora',
   maxContextTokens: 120000,
-  persona: '作家',
+  activeRolePack: '作家',
   permission: 'owner',
   allowedPaths: ['.'],
   confirmWrites: false,
@@ -260,12 +260,13 @@ if (rp) {
   // 手动切换角色包
   rp.activate('作家');
 
-  // 锁定手动模式（禁止自动匹配）
-  rp.setMode('manual');
+  // 输入粘性匹配角色包（首次命中锁定，仅互斥命中才切换）
+  const matched = rp.autoMatch('写一段小说开篇');
+  console.log('匹配到:', matched);
 
   // 查询当前状态
   console.log(rp.activeName);    // '作家'
-  console.log(rp.currentMode);   // 'manual'
+  console.log(rp.getActiveTraits());
 }
 ```
 
@@ -440,7 +441,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | 构造 | `new Agent({ projectPath, provider, configDir, dataDir })` | §二 · AgentOptions |
 | 对话 | `agent.chat(input)`（流式）/ `agent.chatSync(input)` | §三 |
 | 记忆 | `agent.memory.snapshot()/search()/writeXxx()` | §四 |
-| 角色包 | `agent.rolePack.listMeta()/activate()/setMode()` | §七 |
+| 角色包 | `agent.rolePack.listMeta()/activate()/autoMatch()` | §七 |
 | 工具 | `agent.tools.registerTool()/execute()` | §八 |
 | 会话 | `agent.forkSession()` / `agent.sessionManager.*` | §六 |
 
@@ -471,7 +472,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `clearSafeInterval(id)` | 清除安全间隔器 |
 | `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
-| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / PROFILE / WORK_PROJECTION / GUARDRAIL / ROUND_SUMMARY） |
+| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |

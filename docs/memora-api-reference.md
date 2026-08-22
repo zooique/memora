@@ -450,9 +450,9 @@ interface Memory {
 | `SOURCE_LABELS.PERSONA` | `'persona'` | 角色人格 |
 | `SOURCE_LABELS.RULE` | `'rule'` | 创作规则 |
 | `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义 |
-| `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像（存量数据兼容，不再新写入） |
 | `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
 | `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（写入型 source 之一，另含 `content` 会话归档） |
+| `SOURCE_LABELS.UNKNOWN` | `'unknown'` | 未知来源（inferSource 兜底值） |
 
 > source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
 

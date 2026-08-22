@@ -12,10 +12,10 @@
 
 | 项 | 内容 |
 |----|------|
-| 文件 | `src/agent/loop.ts`（1493 行） |
+| 文件 | `src/agent/loop.ts`（1918 行） |
 | 状态 | 🟢 已打磨（76 tests） |
 | 职责 | 单轮执行闭环的执行 + Loop（外循环）编排 |
-| 上游 | `agent.ts` 调用 `processUserInput` / `continueAfterPause` / `processEvent` |
+| 上游 | `agent.ts` 经 `seed/orchestrator.ts`（`runChat`/`runEvent`/`runResume`）委托调用 `processUserInput` / `continueAfterPause` / `processEvent` |
 | 下游 | `contextManager.ts`（截断/摘要）、`compaction.ts`（微压缩）、`duplicateInterceptor.ts`（重复拦截）、`role-pack` 策略（L2） |
 
 **核心事实**：loop.ts 是「单轮闭环」与「循环编排」的**合体**——这正是哲学所要求的形态。哲学指出：**Loop 的每一轮都是一次完整的单轮闭环，Loop 只是在 Handoff 处选择"继续"**。因此 loop.ts 不需要第二套引擎，也不应该拆成两个模块；它天然是一个"能重复自己的闭环"。
