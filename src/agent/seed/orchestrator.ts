@@ -387,6 +387,9 @@ export class SeedOrchestrator {
    *   - 收尾前把 roundId 回指 loop.externalTaskHeadId（组合溯源：摘要锚定"这次外部输入"）；
    *   - 收敛 → 汇报闭环 + 汇报单源摘要；未收敛 → 普通单条摘要（恒 1:1）。
    *
+   * 职责按内聚拆分：步循环（runStepSequence）+ 收尾决策（finalizeExternalTask），
+   * 本方法仅作编排壳——步序列中途中止/软暂停（runStepSequence 返回 false）则不进入收尾。
+   *
    * @param signal 中止信号
    * @param input 用户输入（未收敛兜底摘要的输入侧）
    * @param planFallback 未收敛兜底摘要的内容侧（首次=规划产出；续跑=最后闭环产出）
@@ -396,10 +399,31 @@ export class SeedOrchestrator {
     input: string,
     planFallback: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）；false = 中止/软暂停提前返回，不收尾
+    const seq = yield* this.runStepSequence(signal);
+    if (!seq.continueFinalize) return;
+
+    // 步序列正常走完（收敛或触顶）→ 收尾决策 + 清场
+    yield* this.finalizeExternalTask(signal, input, planFallback, seq.stepsRun);
+  }
+
+  /**
+   * 顺序执行任务表待办步骤的步闭环序列（每步独立 roundId，不产摘要）。
+   *
+   * 三个出口（收敛/中止/软暂停）收进一个布尔返回语义，调用方据此决定是否进入收尾：
+   *   - 无 pending 步骤 → break（收敛），返回 true；
+   *   - 某步中止/失败 → 即时清场（残缺不入记忆），返回 false；
+   *   - 某步软暂停 → 保留现场（续跑从下一 pending 继续），返回 false（此时不清场，现场保留）。
+   *
+   * @param signal 中止信号
+   * @returns { continueFinalize, stepsRun } 是否应继续收尾 + 实际执行步数（供收尾判定触顶）
+   */
+  private async *runStepSequence(
+    signal: AbortSignal,
+  ): AsyncGenerator<AgentChunk, { continueFinalize: boolean; stepsRun: number }, unknown> {
     const parts = this.deps.getParts();
     const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
 
-    // 步闭环序列：每步独立 roundId（消息溯源用，不产摘要）
     let stepsRun = 0;
     while (stepsRun < limit) {
       const next = this.getNextPendingStep();
@@ -415,14 +439,37 @@ export class SeedOrchestrator {
       if (stepAct.failed || stepAct.aborted) {
         // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」），任务链终止
         parts.loop.setWithinExternalTask(false);
-        return;
+        return { continueFinalize: false, stepsRun };
       }
       if (stepAct.paused) {
         // 本闭环自然结束后软暂停：保留现场，续跑从下一 pending 步继续整链
-        return;
+        return { continueFinalize: false, stepsRun };
       }
       // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
     }
+
+    return { continueFinalize: true, stepsRun };
+  }
+
+  /**
+   * 外部任务链收尾决策 + 清场（步序列正常走完后调用）。
+   *
+   * 收敛/触顶 → 汇报闭环 + 汇报单源摘要；未收敛 → 普通单条摘要（保证摘要恒 1:1）。
+   * 两种收尾后均清外循环上下文（供后续续跑不误入已结束链）。
+   *
+   * @param signal 中止信号
+   * @param input 用户输入（未收敛兜底摘要的输入侧）
+   * @param planFallback 未收敛兜底摘要的内容侧（首次=规划产出；续跑=最后闭环产出）
+   * @param stepsRun 步序列实际执行步数（供触顶判定）
+   */
+  private async *finalizeExternalTask(
+    signal: AbortSignal,
+    input: string,
+    planFallback: string,
+    stepsRun: number,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const parts = this.deps.getParts();
+    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
 
     // 收尾：收敛 → 汇报闭环 + 汇报单源摘要；硬上限触顶且有未完成步骤 → 汇报进度 + 列未完成
     // （触顶不是硬止损，等用户输入按记忆递归续接）；其余未收敛 → 以 planFallback 走普通单条摘要（保证恒 1:1）
