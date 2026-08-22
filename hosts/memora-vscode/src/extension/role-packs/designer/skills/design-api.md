@@ -37,3 +37,209 @@ keywords: ['API', 'RESTful', '接口', '端点', '请求', '响应']
 *   **一致性**：所有 API 的命名、参数风格、错误处理、响应格式都必须保持高度一致。
 *   **状态码**：正确使用 HTTP 状态码（200 OK, 201 Created, 400 Bad Request, 404 Not Found 等）。
 *   **示例**：提供具体的请求和响应示例，便于开发者理解。
+
+### 输出模板
+
+生成 API 设计文档时，请遵循以下标准结构：
+
+```markdown
+# {{项目名}} API 接口设计文档
+
+> **版本**：v1.0  
+> **作者**：{{作者}}  
+> **创建日期**：{{日期}}  
+> **关联架构文档**：[链接到架构设计文档]  
+> **Base URL**：`https://api.example.com/v1`
+
+---
+
+## 1. 通用规范
+
+### 1.1 认证
+<!-- 描述认证方式：Bearer Token / API Key / OAuth 2.0 等 -->
+
+### 1.2 通用响应格式
+```json
+{
+  "code": 0,           // 0 表示成功，非 0 表示错误
+  "message": "success", // 描述信息
+  "data": {},          // 业务数据
+  "timestamp": 1234567890
+}
+```
+
+### 1.3 通用错误码
+| 错误码 | HTTP 状态码 | 说明 |
+|--------|-------------|------|
+| 0 | - | 成功 |
+| 40000 | 400 | 参数错误 |
+| 40100 | 401 | 未授权 |
+| 40300 | 403 | 禁止访问 |
+| 40400 | 404 | 资源不存在 |
+| 50000 | 500 | 服务器内部错误 |
+
+### 1.4 分页规范
+- 请求参数：`page` (从 1 开始), `page_size` (默认 20, 最大 100)
+- 响应结构：
+```json
+{
+  "data": [...],
+  "pagination": {
+    "total": 100,
+    "page": 1,
+    "page_size": 20,
+    "total_pages": 5
+  }
+}
+```
+
+---
+
+## 2. 用户模块
+
+### 2.1 用户注册
+**POST** `/users`
+
+**请求体**：
+```json
+{
+  "username": "string (必填，3-20 位)",
+  "email": "string (必填，邮箱格式)",
+  "password": "string (必填，8-20 位)"
+}
+```
+
+**成功响应** (201 Created)：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "id": "uuid",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+**错误响应** (400 Bad Request)：
+```json
+{
+  "code": 40000,
+  "message": "邮箱已注册",
+  "data": null
+}
+```
+
+---
+
+### 2.2 获取用户列表
+**GET** `/users`
+
+**查询参数**：
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| page_size | int | 否 | 每页条数，默认 20 |
+| keyword | string | 否 | 搜索关键词 |
+
+**成功响应** (200 OK)：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": [
+    {
+      "id": "uuid",
+      "username": "john_doe",
+      "email": "john@example.com"
+    }
+  ],
+  "pagination": {
+    "total": 50,
+    "page": 1,
+    "page_size": 20,
+    "total_pages": 3
+  }
+}
+```
+
+---
+
+### 2.3 获取用户详情
+**GET** `/users/:id`
+
+**路径参数**：
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 用户 ID |
+
+**成功响应** (200 OK)：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "id": "uuid",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+**错误响应** (404 Not Found)：
+```json
+{
+  "code": 40400,
+  "message": "用户不存在",
+  "data": null
+}
+```
+
+---
+
+### 2.4 更新用户
+**PUT** `/users/:id`
+
+**请求体**：
+```json
+{
+  "username": "string (可选)",
+  "email": "string (可选)",
+  "password": "string (可选)"
+}
+```
+
+**成功响应** (200 OK)：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "id": "uuid",
+    "username": "john_updated",
+    "email": "john@example.com"
+  }
+}
+```
+
+---
+
+### 2.5 删除用户
+**DELETE** `/users/:id`
+
+**成功响应** (204 No Content)：无响应体
+
+---
+
+## 附录
+<!-- 相关文档、术语表、变更记录 -->
+
+### 变更记录
+| 版本 | 日期 | 变更说明 |
+|------|------|----------|
+| v1.0 | {{日期}} | 初始版本 |
+```
