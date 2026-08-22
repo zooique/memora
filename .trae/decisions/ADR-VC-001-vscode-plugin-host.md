@@ -7,7 +7,7 @@ description: VS Code 插件作为 memora 内核宿主（第二个宿主、比 sp
 
 > **状态**：✅ 已接受
 > **日期**：2026-08-13
-> **依赖**：[ADR-002](./ADR-002-storage-layer.md)（三层架构）、[ADR-004](./ADR-004-memory-unification.md)、[agent-design-philosophy.md](../architecture/agent-design-philosophy.md)
+> **依赖**：[ADR-002](./ADR-002-storage-layer.md)（三层架构）、[ADR-004](./ADR-004-memory-unification.md)、[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)
 > **定位**：VS Code 插件作为 memora 内核宿主（当前第一宿主）
 
 ## 背景
@@ -102,6 +102,6 @@ hosts/memora-vscode/
 
 ## 引用
 
-- 架构文档：[mvp-scope.md](../architecture/mvp-scope.md)、[agent-design-philosophy.md](../architecture/agent-design-philosophy.md)
+- 架构文档：[mvp-scope.md](../../docs/architecture/mvp-scope.md)、[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)
 - 关联宿主：memora-vscode（本 ADR 定义的插件宿主本身）
 - 内核导出：[index.ts](../../src/index.ts)

@@ -112,7 +112,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要，详见 [project-rules.md §7.3](./project-rules.md)） |
 | DON'T | 一次性全量加载大数据集 |
 
-**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建；配置文件是真理源，SQLite 是运行时索引（详见 [project-rules.md §1.4 / §1.5](./project-rules.md)）；禁止在 SQLite 中存储原始工作内容（见 [project-rules.md §7.3](./project-rules.md)）。
+**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建；配置文件是真理源，SQLite 是运行时索引（详见 [project-rules.md §1（配置文件是真理源）](./project-rules.md)）；禁止在 SQLite 中存储原始工作内容（见 [project-rules.md §7.3](./project-rules.md)）。
 
 ## 6. 函数与变量规范
 

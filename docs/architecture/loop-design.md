@@ -141,6 +141,6 @@
 - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 设计哲学真理源（闭环·Loop·内循环·回答后 Handoff 相关章节）
 - [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 外循环语义化：任务驱动的多轮闭环收敛模型（生长方向）
 - [module-inventory.md](./module-inventory.md) —— 模块清单（loop.ts 🟢 76 tests）
-- [方案-seed收敛](../tasks/方案-seed收敛-最小问答闭环真理源-20260820.md) —— 种子收敛方案（含阶段 2 外部任务）
+- [方案-seed收敛](../../tasks/归档/方案-seed收敛-最小问答闭环真理源-20260820.md) —— 种子收敛方案（含阶段 2 外部任务）
 - `src/agent/loop.ts` —— 实现
 - `src/agent/agent.ts` —— 调用边界

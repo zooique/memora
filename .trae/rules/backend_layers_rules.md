@@ -16,7 +16,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 职能           | 核心库（`src/`）                                                        | 宿主项目（`hosts/` / 外部）           | 当前状态      |
 | -------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------- |
 | LLM 对话       | ✅ 提供 provider 抽象 + 流式协议                                        | —                                     | ✅ 已有       |
-| 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回（用户画像已收敛为 round-summary 的 type=preference 召回，见 [memory-as-summary.md](../architecture/memory-as-summary.md)） | —                                     | ✅ 已有       |
+| 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回（用户画像已收敛为 round-summary 的 type=preference 召回，见 [memory-as-summary.md](../../docs/architecture/memory-as-summary.md)） | —                                     | ✅ 已有       |
 | 安全           | ✅ 提供路径白名单 + 写入确认 + 权限模型                                 | —                                     | ✅ 已有       |
 | 通用文件 I/O   | ✅ 提供 4 个内置工具                                                    | —                                     | ✅ 已有       |
 | 工具注册机制   | ✅ 提供 `tools.registerTool()` + `tools.execute()`                       | ✅ 注册具体领域工具                   | ✅ 已有       |

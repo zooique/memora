@@ -1,10 +1,9 @@
 /**
  * 种子闭环编排器 — 最小执行闭环的唯一编排真理源（prepare → act → reflect → handoff）
  *
- * 对应方案"[orchestrator.ts = 唯一编排真理源]"。「如何串联一个执行闭环」全部收在此处，
- * 门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
+ * 「如何串联一个执行闭环」全部收在此处，门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
  *
- * 三个显式命名入口（对应哲学：闭环只认 Trigger，不认 Trigger 来源）：
+ * 三个显式命名入口（闭环只认 Trigger、不认来源，见 [agent-design-philosophy.md §2.1 Trigger](../../../docs/architecture/agent-design-philosophy.md)）：
  *   - runChat   （对话 Trigger）   完整闭环：prepare → act(processUserInput) → reflect → handoff
  *   - runEvent  （SessionEvent）   prepare → 任务表预判注入 → act(processEvent) → reflect → handoff
  *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
@@ -12,7 +11,6 @@
  * 刻意不做「单 run() + mode 标志」——三条路径的真实差异（runEvent 有任务表注入、runResume
  * 无 prepare/无 handoff）若硬塞进一个开关，会落入场景特化补丁反模式。
  *
- * 依赖方向：agent/seed/* → agent/loop（种子消费引擎），agent.ts → agent/seed（门面委托种子）。
  */
 
 import type { AgentChunk, SessionEvent } from '@/agent/types.js';
@@ -41,7 +39,7 @@ const TASK_TABLE_HINT =
   '任务表仅作参考，LLM 可自行决定执行顺序。';
 
 /**
- * 外部任务规划闭环提示（阶段 3·完整外循环）：复杂任务第一步只调查 + 建任务表，不执行步骤。
+ * 外部任务规划闭环提示（完整外循环）：复杂任务第一步只调查 + 建任务表，不执行步骤。
  * 规划后由 orchestrator 外循环按 pending 步骤逐个拉起独立闭环，避免规划与执行在一次闭环内挤在一起。
  */
 const PLAN_ONLY_HINT =
@@ -49,7 +47,7 @@ const PLAN_ONLY_HINT =
   '明确列出待完成的步骤，但【暂时不要执行任何步骤】。本回合只做规划与建表。';
 
 /**
- * 单任务步骤闭环的提示（阶段 3·完整外循环）：给定当前待执行步骤，让该闭环专注解这一步骤。
+ * 单任务步骤闭环的提示（完整外循环）：给定当前待执行步骤，让该闭环专注解这一步骤。
  * @param description 步骤描述（从任务表 pending 步骤读取）
  */
 function stepPrompt(description: string): string {
@@ -268,7 +266,7 @@ export class SeedOrchestrator {
     await this.runSummary('', reportText, TRACE_SPANS.REPORT);
   }
 
-  /** 摘要生成统一委托：铺 span + 收敛 round-summary（记忆即摘要单轨），策略门控开才生成 */
+  /** 摘要生成统一委托：铺 span + 收敛 round-summary（记忆即摘要单轨，见 [memory-as-summary.md](../../../docs/architecture/memory-as-summary.md)），策略门控开才生成 */
   private async runSummary(
     input: string,
     assistantContent: string,
@@ -327,7 +325,7 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 外部任务驱动外循环（阶段 3·完整外循环）：单个复杂输入 → 多闭环组合。
+   * 外部任务驱动外循环（完整外循环）：单个复杂输入 → 多闭环组合。
    *
    * 序列：规划闭环（只建任务表）→ [completeExternalTask] 步序列 + 收尾汇报。
    *   - 规划闭环：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步闭环重复执行）；
@@ -472,7 +470,7 @@ export class SeedOrchestrator {
       } catch (err) {
         logger.warn({ err }, '汇报消息历史写入失败');
       }
-      // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨）
+      // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨，见 [memory-as-summary.md](../../../docs/architecture/memory-as-summary.md)）
       backgroundTask('report-summary', () => this.reflectReported(trimmed));
       return;
     }
@@ -491,7 +489,7 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 回答后统一收尾（阶段 2 路径，event 入口用）：普通回答摘要；或（复杂且收敛）汇报闭环 + 汇报单源摘要。
+   * 回答后统一收尾（event 入口用）：普通回答摘要；或（复杂且收敛）汇报闭环 + 汇报单源摘要。
    *
    * @param difficulty 回答前判定的难度
    * @param input 用户输入（普通摘要输入侧）
@@ -504,7 +502,7 @@ export class SeedOrchestrator {
     assistantContent: string,
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 复杂且收敛：汇报闭环 + 汇报单源摘要；汇报为空/占位 → 回退主回答普通摘要（阶段 2 同样恒 1:1）
+    // 复杂且收敛：汇报闭环 + 汇报单源摘要；汇报为空/占位 → 回退主回答普通摘要（同样恒 1:1）
     if (difficulty === 'complex' && this.isConverged()) {
       yield* this.runReportAndReflect(signal, input, assistantContent);
       return;

@@ -160,7 +160,7 @@ export interface GlobalStrategy {
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
   /** 每轮主动提问次数上限（默认 3） */
   readonly askLimit?: number;
-  /** 外部任务驱动循环步数上限，0=关闭（默认 10；阶段 3 内核已消费）——复杂任务按任务表每步一个闭环的最大步数 */
+  /** 外部任务驱动循环步数上限，0=关闭（默认 10；外部任务循环已消费）——复杂任务按任务表每步一个闭环的最大步数 */
   readonly taskLoopLimit?: number;
 }
 

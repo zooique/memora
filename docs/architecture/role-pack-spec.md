@@ -569,7 +569,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 |----|------|
 | memora | **reference implementation**（首个实现本标准的 Agent 内核）；**合规从严执行**：标准级合规字段为可选 + 分档（§七），memora 实现级强制 AI 身份标注等合规义务 |
 | `role-packs/`（memora 仓库） | 示例角色包（小说助手 / 文档设计师 / 方案设计师，结构参考，不参与运行时分发） |
-| [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | memora 视角的角色包定位（插卡机模型，通用引擎 ↔ 专业卡） |
+| [architecture_philosophy_rules.md §11](../../.trae/rules/architecture_philosophy_rules.md) | memora 视角的角色包定位（插卡机模型，通用引擎 ↔ 专业卡） |
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 | 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（执行闭环 / 记忆系统）定型后——见本文档定位宣言 |
 
@@ -668,7 +668,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 
 **预留原则**：
 
-1. **角色包不自洽**（[architecture_philosophy_rules.md §11.2](../rules/architecture_philosophy_rules.md)）：角色包不包含执行引擎，依赖宿主 Agent 的闭环引擎运行。这一特性天然适用于多 Agent 场景——每个角色包实例是一个独立 Agent，由宿主编排。
+1. **角色包不自洽**（[architecture_philosophy_rules.md §11.2](../../.trae/rules/architecture_philosophy_rules.md)）：角色包不包含执行引擎，依赖宿主 Agent 的闭环引擎运行。这一特性天然适用于多 Agent 场景——每个角色包实例是一个独立 Agent，由宿主编排。
 2. **interactionType 扩展点**：`interactionType` 字段（§七）当前为 `tool_assistant` / `companion` 二分，未来可扩展 `gateway` 或 `coordinator` 等角色类型，由宿主注入 A2A 路由逻辑。
 3. **能力声明可路由**：`capabilities` 声明（§四）是中立能力名，多 Agent 宿主可基于能力名将子任务路由到对应角色包实例——memora 的插卡模型天然支持这种"Triage and Specialist"架构（2026 年行业标准，见 [§四·二 MCP 集成设计](#四二-mcp-集成设计接口定义--角色包声明路径)）。
 4. **当前不实现**：memora 内核不包含 A2A 客户端代码，不定义 A2A 传输接口。多 Agent 编排由宿主（如 memora-sprite）在闭环引擎之上实现，内核不感知。

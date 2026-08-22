@@ -100,7 +100,7 @@ content（会话级摘要）
 
 > **当前形态**：记忆收敛为**摘要单轨**——唯一记忆单元是 round-summary（轮次级）+ content（会话级），无独立的用户画像层与洞察提炼层。用户画像（UserProfile / userFactExtractor / archiveProfileFacts）与洞察层（InsightExtractor / archiveInsight）不独立存在，其能力并入 round-summary 的 `summaryType` 标签分类（§3.2）。`traceSummary` 溯源接对话记录（§4/§4.5），对话记录作为展示层 + 溯源兜底的运行依赖（§5.2）。
 
-> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源），带 `summaryType` 标签 + `sessionName` 结构化字段 + `isTraceable`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
+> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源），带 `summaryType` 标签 + `sessionName` 结构化字段 + `isTraceable`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 2.4 Round 边界
 
@@ -531,8 +531,8 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 > - [mvp-scope.md](mvp-scope.md) —— MVP 能力边界
 > - [role-pack-spec.md](role-pack-spec.md) —— 角色包标准（L2 召回键作为**后置覆盖**，不阻塞本模块）
 > - [memory-role-pack-boundary.md](memory-role-pack-boundary.md) —— 记忆系统 × 角色包边界收敛（设定记忆归角色包，记忆库 = 摘要记忆本体）
-> - [ADR-021](../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.4）
-> - [ADR-023](../.trae/decisions/ADR-023-context-cost-injection-defense-loop-convergence.md) —— 摘要成本重构（截断优先用 round-summary）+ 即时注入防御
+> - [ADR-021](../../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.4）
+> - [ADR-023](../../.trae/decisions/ADR-023-context-cost-injection-defense-loop-convergence.md) —— 摘要成本重构（截断优先用 round-summary）+ 即时注入防御
 > - `src/agent/managers/roundSummaryGenerator.ts` —— RoundSummaryGenerator 实现
 >
 > **模块边界**：本模块（摘要即记忆）是**内核基础，独立于角色包**——召回策略、互斥窗口 N、配额均由内核默认值驱动，可脱离角色包单独运行与测试。角色包 L2 召回键（`memoryRecall`/`summaryRecall` 等）是对本模块的**可选覆盖**，随角色包后置交付，不构成前置依赖（§4.2.1 / §4.3）。

@@ -48,9 +48,9 @@
 
 ### 切面 1：装配回填 → assembler.ts（Step 1 · 最低风险）
 
-**现状**：[assembleComponents L1620-L1810](file:///f:/zooique/memora/src/agent/agent.ts#L1620-L1810) 的 178 行里，「组装」只有开头一段，主体是 8 个接线回调
+**现状**：[assembleComponents](../../src/agent/agent.ts) 的 178 行里，「组装」只有开头一段，主体是 8 个接线回调
 （preExecutionCheck / onToolExecuted / planManager 写计划·改步骤·取计划三个闭包）；
-[createSessionManager L1833-L1847](file:///f:/zooique/memora/src/agent/agent.ts#L1833-L1847) 的 90 行同理。
+[createSessionManager](../../src/agent/agent.ts) 的 90 行同理。
 
 **做法**：给 `assembler.ts` 工厂增加 `AgentHooks` 参数（emit / assertNotBusy / 会话管理 / 策略 / 后处理的稳定引用），
 把接线闭包下沉；Agent 的 `assembleComponents` 退化为一行委托。最贴合「逻辑下沉到单一真理源」。
@@ -59,7 +59,7 @@
 
 ### 切面 2：输入增强管线 → ContextPreparer（Step 2）
 
-**现状**：[recallAndInject L574-L686](file:///f:/zooique/memora/src/agent/agent.ts#L574-L686)（108 行：语义召回 + limited 配额 + 固定轮次注入）
+**现状**：[recallAndInject](../../src/agent/agent.ts)（108 行：语义召回 + limited 配额 + 固定轮次注入）
 + matchAndInjectSkill + tryAutoMatchRolePack / matchRolePackByLlm，约 180 行。
 
 **本质**：一条完整的「外部输入 → 召回/技能/角色增强」管线，正是「触发源决定召回」哲学的实体。
@@ -71,8 +71,8 @@
 
 ### 切面 3：检查点恢复协议 → CheckpointRestoreCoordinator（Step 3 · 最独立）
 
-**现状**：[warmRecallForCheckpoint L1120](file:///f:/zooique/memora/src/agent/agent.ts#L1120-L1199) + reinjectContracts + restoreFromCheckpoint +
-[shouldGenerateTaskTable L1393-L1484](file:///f:/zooique/memora/src/agent/agent.ts#L1393-L1484)，约 300 行，只在 resume 时激活。
+**现状**：[warmRecallForCheckpoint](../../src/agent/agent.ts) + reinjectContracts + restoreFromCheckpoint +
+[shouldGenerateTaskTable](../../src/agent/agent.ts)，约 300 行，只在 resume 时激活。
 
 **本质**：一套完整领域协议——恢复时「召回什么 / 注入什么 / 预判什么」。
 

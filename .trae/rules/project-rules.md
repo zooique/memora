@@ -168,7 +168,7 @@ chore: 升级 dependencies
 | ---- | ---- |
 | DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要） |
 | DON'T | 混合技能定义与内存存储（技能通过 `skills/` 文件夹管理） |
-| DON'T | 直接修改 config schema（配置文件是真理源，§1.5） |
+| DON'T | 直接修改 config schema（配置文件是真理源，§1） |
 | DO | 工作内容通过宿主工具访问，内核仅保留投影 |
 | DO | 切换项目用 `close()`，完全终止用 `shutdown()` |
 

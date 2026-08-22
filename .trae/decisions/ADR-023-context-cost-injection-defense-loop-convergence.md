@@ -8,7 +8,7 @@ description: 基于梁文锋视角对抗审查的落地——①摘要即记忆�
 > **状态**：✅ 已接受
 > **日期**：2026-08-13
 > **来源**：以梁文锋视角的对抗性审查（效率/保真/模型能力本位）——结合真实代码核实的落地
-> **依赖**：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)（写路径取代）、[ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md)（信任边界）、[memory-as-summary.md](../architecture/memory-as-summary.md)、[agent-design-philosophy.md](../architecture/agent-design-philosophy.md)
+> **依赖**：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)（写路径取代）、[ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md)（信任边界）、[memory-as-summary.md](../../docs/architecture/memory-as-summary.md)、[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)
 
 ## 背景
 
@@ -77,7 +77,7 @@ description: 基于梁文锋视角对抗审查的落地——①摘要即记忆�
 
 ## 引用
 
-- 架构文档：[agent-design-philosophy.md](../architecture/agent-design-philosophy.md) §12.2（截断策略）/ §6.3（信任边界）
-- 架构文档：[memory-as-summary.md](../architecture/memory-as-summary.md) §5.2 / §5.4
+- 架构文档：[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §12.2（截断策略）/ §6.3（信任边界）
+- 架构文档：[memory-as-summary.md](../../docs/architecture/memory-as-summary.md) §5.2 / §5.4
 - 相关代码：[loop.ts](../../src/agent/loop.ts)、[contextManager.ts](../../src/agent/contextManager.ts)、[recall.ts](../../src/memory/recall.ts)、[roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts)
 - 关联：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)、[ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md)

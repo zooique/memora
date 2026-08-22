@@ -8,7 +8,7 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 > **状态**：✅ 已接受
 > **日期**：2026-08-17
 > **来源**：用户设计意图核对（第一性原理：设定记忆与对话记忆是两种东西，不互存不双写）；对抗式核查（grep 实证现有双轨并存）
-> **依赖**：[ADR-004](./ADR-004-memory-unification.md)（记忆 source 基元模型）、[memory-role-pack-boundary.md](../architecture/memory-role-pack-boundary.md)（设计真理源）、[role-pack-spec.md §9.2](../architecture/role-pack-spec.md)（角色包标准内容层归属）、[memory-as-summary.md](../architecture/memory-as-summary.md)（摘要即记忆）
+> **依赖**：[ADR-004](./ADR-004-memory-unification.md)（记忆 source 基元模型）、[memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md)（设计真理源）、[role-pack-spec.md §9.2](../../docs/architecture/role-pack-spec.md)（角色包标准内容层归属）、[memory-as-summary.md](../../docs/architecture/memory-as-summary.md)（摘要即记忆）
 
 ## 背景
 

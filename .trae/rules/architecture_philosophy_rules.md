@@ -11,7 +11,7 @@ description:
 
 **原则**：Agent 接触的一切内容都是"记忆"。记忆分为两类轨道——**设定记忆**（骨骼）和**对话记忆**（血肉），各自有独立的存储和访问模型。
 
-> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。**角色包内容收敛（2026-08-18）**：内容文件约定名（persona.md/rules.md）、能力声明独立顶层 capabilities（C2）、技能两级渐进披露（通用全局 + 角色包绑定，§11.5）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，已收敛至目标态（§1.1/§1.2 即目标态描述——设定记忆纯文件装载、不写 SQLite / 记忆库）。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../../decisions/ADR-025-memory-role-pack-boundary.md)。
+> **承载形态收敛（ADR-025，2026-08-17）**：设定记忆的**唯一承载形态 = 角色包**（`role-packs/<名>/` 下 persona.md / rules.md / skills/*），不再是散落的 `configDir/personas|rules|skills` 目录 + SQLite 索引；记忆系统 = **摘要记忆本体**（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类，type 不设时效）。**角色包内容收敛（2026-08-18）**：内容文件约定名（persona.md/rules.md）、能力声明独立顶层 capabilities（C2）、技能两级渐进披露（通用全局 + 角色包绑定，§11.5）。本节的 `configDir/*.md` + SQLite 描述为**当前实现状态**，已收敛至目标态（§1.1/§1.2 即目标态描述——设定记忆纯文件装载、不写 SQLite / 记忆库）。详见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) 与 [ADR-025](../decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 1.1 两层记忆模型
 
@@ -80,7 +80,7 @@ description:
 | `round-summary` | 按相关度增量召回 | 轮次摘要（记忆即摘要，含 preference/fact/decision/intent/general 类型） |
 | `profile`   | 按相关度增量召回        | 用户画像（存量数据兼容，2026-08-14 起不再新写入） |
 
-**记忆关系图谱已移除**：独立侧车模型（`MemoryRelation`/`IMemoryRelationStore`/`RelationBuilder`）判定为过度设计并整体移除（ADR-014 废弃，2026-08-14），冲突检测改用 `supersededBy` 布尔标记（见 §1.3）；用户画像收敛为 `round-summary` 的 `type=preference` 召回（见 [memory-as-summary.md](../architecture/memory-as-summary.md)）。
+**记忆关系图谱已移除**：独立侧车模型（`MemoryRelation`/`IMemoryRelationStore`/`RelationBuilder`）判定为过度设计并整体移除（ADR-014 废弃，2026-08-14），冲突检测改用 `supersededBy` 布尔标记（见 §1.3）；用户画像收敛为 `round-summary` 的 `type=preference` 召回（见 [memory-as-summary.md](../../docs/architecture/memory-as-summary.md)）。
 
 ## 3. 冷热分离（File vs DB）
 

@@ -57,7 +57,7 @@ export const DEFAULT_TOKEN_BUDGET = 8000;
 export const DEFAULT_STEP_BUDGET = 50;
 
 /**
- * 外部任务驱动循环步数上限内核默认值（SSOT 单一来源，阶段 3）。
+ * 外部任务驱动循环步数上限内核默认值（SSOT 单一来源）。
  * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.taskLoopLimit`（角色包声明层）、
  * `resolveTaskLoopLimit` 的非法/缺失回退。0 = 关闭外部任务驱动循环。
  */
@@ -253,7 +253,7 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
   return valid ? candidate : DEFAULT_STEP_BUDGET;
 }
 
-/** 解析外部任务驱动循环步数上限（阶段 3 内核已消费）：整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
+/** 解析外部任务驱动循环步数上限（外部任务循环已消费）：整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
 export function resolveTaskLoopLimit(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.taskLoopLimit;
   const valid =

@@ -86,7 +86,7 @@
 | `agent/loop.ts` | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests) | AgentLoop 核心：单轮闭环执行 + Loop 外循环编排，含拦截器集成 |
 | `agent/agent.ts` | 🟢 已打磨 | `__tests__/agent.test.ts` | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行闭环（宿主 getter 契约字段独立，纯内部组件聚合于 `internals`） |
 
-> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。**阶段 2 生长**：`seed/difficulty.ts` 在回答前判简单/复杂，复杂且收敛的主任务闭环后再跑一次 `loop.runReport()` 汇报闭环，其产出作为 round-summary 单源（`reflect.runReported`）——「汇总即记忆」。**阶段 3 生长**：orchestrator 外循环驱动器（`externalTaskLoop`）——复杂任务拆成「规划闭环 → 每步独立闭环（独立 roundId 供消息溯源/互斥排除，不单产摘要）→ 收敛后汇报」，步数上限经角色包 `global.taskLoopLimit` 配置；摘要恒「外部输入 ↔ round-summary 1:1」，仅收尾汇报产出唯一摘要（见 memory-as-summary §2.5）。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend_layers_rules.md](../.trae/rules/backend_layers_rules.md)）。
+> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。**阶段 2 生长**：`seed/difficulty.ts` 在回答前判简单/复杂，复杂且收敛的主任务闭环后再跑一次 `loop.runReport()` 汇报闭环，其产出作为 round-summary 单源（`reflect.runReported`）——「汇总即记忆」。**阶段 3 生长**：orchestrator 外循环驱动器（`externalTaskLoop`）——复杂任务拆成「规划闭环 → 每步独立闭环（独立 roundId 供消息溯源/互斥排除，不单产摘要）→ 收敛后汇报」，步数上限经角色包 `global.taskLoopLimit` 配置；摘要恒「外部输入 ↔ round-summary 1:1」，仅收尾汇报产出唯一摘要（见 memory-as-summary §2.5）。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend_layers_rules.md](../../.trae/rules/backend_layers_rules.md)）。
 
 ---
 
@@ -266,7 +266,7 @@
 
 ### 4.4 会话级沉淀（managers/ · 会话归档与命名）
 
-> **生长来源**：回答后的沉淀不止轮次摘要——它还长出**会话级**产物：会话归档（content 会话级摘要）、会话标题（首轮闭环自动命名）。粒度（会话级）与 round-summary（轮次级）不同，同属摘要模型（[memory-as-summary.md](./memory-as-summary.md) §2.2；[ADR-024](../decisions/ADR-024-session-title-layer.md)）。
+> **生长来源**：回答后的沉淀不止轮次摘要——它还长出**会话级**产物：会话归档（content 会话级摘要）、会话标题（首轮闭环自动命名）。粒度（会话级）与 round-summary（轮次级）不同，同属摘要模型（[memory-as-summary.md](./memory-as-summary.md) §2.2；[ADR-024](../../.trae/decisions/ADR-024-session-title-layer.md)）。
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|

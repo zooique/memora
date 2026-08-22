@@ -91,9 +91,9 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 |------|------|
 | [role-pack-spec.md](role-pack-spec.md) | 角色包标准本体；§9.2 补内容层归属声明（本设计落点） |
 | [memory-as-summary.md](memory-as-summary.md) | 记忆即摘要架构；§7 补「设定记忆迁出」待办 |
-| [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | 插卡机模型哲学——角色包承载设定的哲学依据 |
-| [ADR-025-memory-role-pack-boundary](../decisions/ADR-025-memory-role-pack-boundary.md) | 本设计的 ADR 背书 |
-| [memory-role-pack-boundary-rules](../.trae/rules/memory-role-pack-boundary-rules.md) | 纪律沉淀（防止再次分叉） |
+| [architecture_philosophy_rules.md §11](../../.trae/rules/architecture_philosophy_rules.md) | 插卡机模型哲学——角色包承载设定的哲学依据 |
+| [ADR-025-memory-role-pack-boundary](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md) | 本设计的 ADR 背书 |
+| [memory-role-pack-boundary-rules](../../.trae/rules/memory-role-pack-boundary-rules.md) | 纪律沉淀（防止再次分叉） |
 
 ## 七、一句话总判
 

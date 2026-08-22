@@ -8,7 +8,7 @@ description: 第四轮质量审查架构决策——H1 上下文装配信任边�
 > **状态**：✅ 已接受
 > **日期**：2026-08-13
 > **来源**：架构文档第四轮质量审查（安全 / 可观测 / 2026 生态维度）
-> **依赖**：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)（写路径取代检测）、[agent-design-philosophy.md](../architecture/agent-design-philosophy.md)（§6.3 / §13.x）、[role-pack-spec.md](../architecture/role-pack-spec.md)（§七）
+> **依赖**：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)（写路径取代检测）、[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)（§6.3 / §13.x）、[role-pack-spec.md](../../docs/architecture/role-pack-spec.md)（§七）
 
 ## 背景
 
@@ -75,6 +75,6 @@ description: 第四轮质量审查架构决策——H1 上下文装配信任边�
 
 ## 引用
 
-- 架构文档：[agent-design-philosophy.md](../architecture/agent-design-philosophy.md) §6.3（信任边界）/ §13.x（评估视角）
-- 架构文档：[role-pack-spec.md](../architecture/role-pack-spec.md) §七（安全审计）
+- 架构文档：[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §6.3（信任边界）/ §13.x（评估视角）
+- 架构文档：[role-pack-spec.md](../../docs/architecture/role-pack-spec.md) §七（安全审计）
 - 关联：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)

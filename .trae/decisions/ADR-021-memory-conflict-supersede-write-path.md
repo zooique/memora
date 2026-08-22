@@ -8,7 +8,7 @@ description: 对抗性审查架构决策收敛——核心：记忆冲突消解�
 > **状态**：✅ 已接受
 > **日期**：2026-08-13
 > **来源**：架构文档第三轮对抗性审查（第一性原理 + SSOT 自检），依据拍板方案落地
-> **依赖**：[ADR-004](./ADR-004-memory-unification.md)（记忆 source 基元模型）、[memory-as-summary.md](../architecture/memory-as-summary.md)（摘要即记忆）、[agent-design-philosophy.md](../architecture/agent-design-philosophy.md)（单轮闭环公理）
+> **依赖**：[ADR-004](./ADR-004-memory-unification.md)（记忆 source 基元模型）、[memory-as-summary.md](../../docs/architecture/memory-as-summary.md)（摘要即记忆）、[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)（单轮闭环公理）
 
 ## 背景
 
@@ -108,8 +108,8 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 ## 引用
 
-- 架构文档：[memory-as-summary.md](../architecture/memory-as-summary.md) §5.4 / §5.2 / §4.7
-- 架构文档：[agent-design-philosophy.md](../architecture/agent-design-philosophy.md) §2.1 / §13 / §13.x / §14.3
-- 架构文档：[mvp-scope.md](../architecture/mvp-scope.md) §三
-- 架构文档：[role-pack-spec.md](../architecture/role-pack-spec.md) §三 L2
+- 架构文档：[memory-as-summary.md](../../docs/architecture/memory-as-summary.md) §5.4 / §5.2 / §4.7
+- 架构文档：[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §2.1 / §13 / §13.x / §14.3
+- 架构文档：[mvp-scope.md](../../docs/architecture/mvp-scope.md) §三
+- 架构文档：[role-pack-spec.md](../../docs/architecture/role-pack-spec.md) §三 L2
 - 关联：[ADR-004](./ADR-004-memory-unification.md) 记忆 source 基元模型

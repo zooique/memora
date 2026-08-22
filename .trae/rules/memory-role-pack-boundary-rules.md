@@ -7,7 +7,7 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 
 > **一句话**：**"你是谁、你怎么做事"归角色包（设定记忆）；"聊了什么、发生过什么"归记忆系统（摘要记忆）。** 两者一刀切，各管各的，不互存、不双写。
 >
-> 设计真理源：[memory-role-pack-boundary.md](../docs/architecture/memory-role-pack-boundary.md) · ADR：[ADR-025](../decisions/ADR-025-memory-role-pack-boundary.md)
+> 设计真理源：[memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md) · ADR：[ADR-025](../decisions/ADR-025-memory-role-pack-boundary.md)
 
 ---
 

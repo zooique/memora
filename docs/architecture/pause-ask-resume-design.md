@@ -92,7 +92,7 @@ handleTextResponse 检测到 pendingQuestions：
 
 ### P0-2 修复 A2+B1：暂停轮不产摘要 ——「回合完成」信号下沉
 
-**生长点**：orchestrator 对 `aborted` 已有"不摘要"门控（L161/L187），`paused` 是同一个"结束原因枚举"的另一取值。在 `StreamConsumeResult` 上补 `paused` 字段并接线，是**枚举的自然扩展**，非新机制。同时把 [memory-as-summary §2.5](file:///f:/zooique/memora/docs/architecture/memory-as-summary.md#L134) 已定案、未落地的"软暂停不摘要"真正实现，消除文档-实现脱节（SSOT 收口）。
+**生长点**：orchestrator 对 `aborted` 已有"不摘要"门控（L161/L187），`paused` 是同一个"结束原因枚举"的另一取值。在 `StreamConsumeResult` 上补 `paused` 字段并接线，是**枚举的自然扩展**，非新机制。同时把 [memory-as-summary §2.5](../../docs/architecture/memory-as-summary.md) 已定案、未落地的"软暂停不摘要"真正实现，消除文档-实现脱节（SSOT 收口）。
 
 **方案**：
 1. `consumeExecutionStream` 遇 `chunk.type === 'paused'` 时置 `paused: true`；

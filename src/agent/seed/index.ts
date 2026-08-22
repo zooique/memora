@@ -10,6 +10,6 @@ export { SeedOrchestrator } from './orchestrator.js';
 export type { StreamConsumeResult, SeedParts, SeedDeps, SeedPrepareResult } from './types.js';
 // 回答前执行器（含独立状态 lastStickySessionId，保留独立类）
 export { SeedPrepare } from './prepare.js';
-// 难度分级（阶段 2，真逻辑 + 独立测试，保留独立类）
+// 难度分级（真逻辑 + 独立测试，保留独立类）
 export { DifficultyJudge } from './difficulty.js';
 export type { Difficulty } from './difficulty.js';

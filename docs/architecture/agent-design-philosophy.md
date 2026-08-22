@@ -435,7 +435,7 @@ Agent 基于装配好的上下文，调用 LLM 生成回答。生成过程的纪
 
 #### 8.1.1 会话标题：会话级展示元数据（自然生长）
 
-回答后的沉淀不止"轮次摘要"——它还会长出一个**会话级**产物：**会话标题**。它服务于两个目的：让会话在历史列表中可被用户识别、可被导航。详见 [ADR-024](../decisions/ADR-024-session-title-layer.md)。
+回答后的沉淀不止"轮次摘要"——它还会长出一个**会话级**产物：**会话标题**。它服务于两个目的：让会话在历史列表中可被用户识别、可被导航。详见 [ADR-024](../../.trae/decisions/ADR-024-session-title-layer.md)。
 
 **身份与标题解耦**：会话主键仍是 `date-session`（身份），标题是独立存在的展示元数据，不污染主键。标题不是会话身份的一部分，而是"回答后沉淀"的会话级产物——如同轮次摘要是对话级产物，标题是会话级产物。
 
@@ -808,7 +808,7 @@ loop 内溢出时：对话记录 ──压缩──▶ 压缩摘要（loop 内�
 | **M2（文件格式）** | 角色包文件格式 + 角色包管理器（复用 ConfigResourceManager 基类） | **已完成**（role-pack-spec.md 标准 + types.ts 完整类型 + validator 校验器） |
 | **远期** | 角色池（下载 / 共享 / 手动选择 / 自动选择） | 待实现 |
 
-**已解决**：多角色包冲突裁决——参见 [role-pack-spec.md §九](role-pack-spec.md#九与-memora-的关系)（角色包标准）与 [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md)（插卡机模型）。核心方案：优先级金字塔（P0 全局安全规则 > P1 角色包 priority > P2 加载顺序 > P3 conflictStrategy）+ 五类冲突解决策略（strictest/specific/latest/merge/reject）。
+**已解决**：多角色包冲突裁决——参见 [role-pack-spec.md §九](role-pack-spec.md#九与-memora-的关系)（角色包标准）与 [architecture_philosophy_rules.md §11](../../.trae/rules/architecture_philosophy_rules.md)（插卡机模型）。核心方案：优先级金字塔（P0 全局安全规则 > P1 角色包 priority > P2 加载顺序 > P3 conflictStrategy）+ 五类冲突解决策略（strictest/specific/latest/merge/reject）。
 
 ### 14.3 行为策略全景：三阶段的完整枚举
 

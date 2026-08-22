@@ -196,4 +196,4 @@
 - [loop-design.md](./loop-design.md) —— Loop = 闭环重复的现状映射
 - [memory-as-summary.md](./memory-as-summary.md) —— 摘要即记忆，汇报→摘要的落点
 - [module-inventory.md](./module-inventory.md) —— 模块现状清单
-- 方案：[tasks/方案-seed收敛-最小问答闭环真理源-20260820.md](../tasks/方案-seed收敛-最小问答闭环真理源-20260820.md)
+- 方案：[tasks/方案-seed收敛-最小问答闭环真理源-20260820.md](../../tasks/归档/方案-seed收敛-最小问答闭环真理源-20260820.md)

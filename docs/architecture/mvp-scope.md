@@ -4,7 +4,7 @@
 >
 > **定位**：MVP = 验证「先聊后干」主链路的第一个可用产品——陪用户聊出思路，拍板后自动生成文章并写入本地文件。
 > **原则**：MVP 是**全量设计的子集**。MVP 内不引入全量设计之外的新机制；砍掉的能力一律后置，不预埋接口、不半实现。
-> **关联**：[role-pack-spec.md](role-pack-spec.md)（角色包标准本体）· [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md)（插卡机设计哲学）
+> **关联**：[role-pack-spec.md](role-pack-spec.md)（角色包标准本体）· [architecture_philosophy_rules.md §11](../../.trae/rules/architecture_philosophy_rules.md)（插卡机设计哲学）
 
 ---
 
@@ -144,7 +144,7 @@ MVP 闭环含**自审查轮**（§一）：成品写入前，Agent 基于**外�
 |------|------|
 | [role-pack-spec.md](role-pack-spec.md) | 角色包标准本体，MVP 是其中 L1 + 核心 L2 键子集 |
 | [memory-as-summary.md](memory-as-summary.md) | 记忆 = 摘要即记忆的 MVP 落地（§一 记忆行、§六-8 记忆跨任务复用验收） |
-| [architecture_philosophy_rules.md §11](../.trae/rules/architecture_philosophy_rules.md) | 插卡机设计哲学，定义 MVP 的角色包定位（通用引擎 ↔ 专业卡） |
+| [architecture_philosophy_rules.md §11](../../.trae/rules/architecture_philosophy_rules.md) | 插卡机设计哲学，定义 MVP 的角色包定位（通用引擎 ↔ 专业卡） |
 
 ---
 
